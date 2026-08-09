@@ -18,6 +18,17 @@ import { evalPrefixPredicate } from "../shared/aggregate.ts";
 import { captureLoadedFiles } from "../loaders/index.ts";
 import { sandboxLayerStateOf, type SandboxLayer } from "../sandbox/layer.ts";
 import {
+  assertPathWithinEvalOwner,
+  activateEvalRootHooks,
+  EvalRootPreflightError,
+  moduleFactsForEval,
+  originForEval,
+  preflightEvalRootSources,
+  preflightEvalRoots,
+  type EvalRootIssueCode,
+  type ResolvedEvalRoot,
+} from "./eval-roots.ts";
+import {
   discoverEval,
   discoverExperiment,
   isEvalDefinition,
@@ -25,6 +36,7 @@ import {
 } from "../types.ts";
 import type {
   AnyEvalDefinition,
+  Config,
   DiscoveredEval,
   DiscoveredExperiment,
   ExperimentDefinition,
@@ -39,11 +51,19 @@ export type DiscoveryIssueCode =
   | "discovery.invalid-export"
   | "discovery.invalid-dataset-key"
   | "discovery.source-capture-failed"
-  | "discovery.leak-gate-failed";
+  | "discovery.leak-gate-failed"
+  | EvalRootIssueCode;
 
 export interface DiscoveryIssue {
   readonly file: string;
   readonly code: DiscoveryIssueCode;
+  /** Preserve the root barrier's machine fields through P4 discovery. */
+  readonly mount?: string;
+  readonly dependency?: string;
+  readonly packageFile?: string;
+  readonly evalFile?: string;
+  readonly specifier?: string;
+  readonly field?: string;
   readonly message: string;
   readonly actions: readonly string[];
 }
@@ -59,6 +79,27 @@ interface EvalEntry {
   readonly baseId: string;
   readonly kind: "file" | "folder";
 }
+
+interface EvalDiscoveryScope {
+  /** Capability boundary and source-capture root. */
+  readonly ownerRoot: string;
+  /** Directory whose descendants form relative Eval ids. */
+  readonly evalRoot: string;
+  /** Mounted package metadata; absent for project-local discovery. */
+  readonly external?: ResolvedEvalRoot;
+}
+
+interface ExternalLoaderCapture {
+  readonly modules: ReadonlySet<string>;
+  readonly paths: readonly string[];
+  readonly criteriaPaths: readonly string[];
+  readonly privatePaths: readonly string[];
+}
+
+// ESM only evaluates a shared module once.  Preserve its loader registrations
+// by module closure so a later Eval that reaches the cached module receives the
+// same data/criteria/private facts instead of silently losing fingerprint input.
+const externalLoaderCaptures = new Map<string, ExternalLoaderCapture[]>();
 
 type EvalModuleExport =
   | AnyEvalDefinition
@@ -116,6 +157,28 @@ function issue(
 
 function causeMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
+}
+
+/** Preserve P4's structured root error codes through Effect's discovery batch. */
+function discoveryErrorFromCause(
+  cause: unknown,
+  fallback: { readonly file: string; readonly code: DiscoveryIssueCode; readonly actions: readonly string[] },
+): DiscoveryError {
+  if (cause instanceof EvalRootPreflightError) {
+    return discoveryError(cause.issues.map((rootIssue) => ({
+      file: rootIssue.evalFile ?? fallback.file,
+      ...(rootIssue.mount === undefined ? {} : { mount: rootIssue.mount }),
+      ...(rootIssue.dependency === undefined ? {} : { dependency: rootIssue.dependency }),
+      ...(rootIssue.packageFile === undefined ? {} : { packageFile: rootIssue.packageFile }),
+      ...(rootIssue.evalFile === undefined ? {} : { evalFile: rootIssue.evalFile }),
+      ...(rootIssue.specifier === undefined ? {} : { specifier: rootIssue.specifier }),
+      ...(rootIssue.field === undefined ? {} : { field: rootIssue.field }),
+      code: rootIssue.code,
+      message: rootIssue.message,
+      actions: rootIssue.actions,
+    })));
+  }
+  return issue(fallback.file, fallback.code, causeMessage(cause), fallback.actions);
 }
 
 function importModule(file: string, root: string, kind: "eval" | "experiment"): Effect.Effect<unknown, DiscoveryError> {
@@ -283,6 +346,7 @@ function leakGateHintsForLayer(
   layer: SandboxLayer | undefined,
   baseDir: string,
   file: string,
+  ownerRoot: string,
 ): Effect.Effect<Option.Option<LeakGateHints>, DiscoveryError> {
   if (layer === undefined) return Effect.succeed(Option.none());
   const state = sandboxLayerStateOf(layer);
@@ -293,16 +357,33 @@ function leakGateHintsForLayer(
     const contextDir = leakGate.context._tag === "Url"
       ? fileURLToPath(leakGate.context.value)
       : resolve(baseDir, leakGate.context.value);
-    return Effect.succeed(Option.some({ buildContexts: [{ contextDir, label: "dockerfile" }] }));
+    const dockerfile = resolve(contextDir, leakGate.dockerfile);
+    return Effect.tryPromise({
+      try: async () => {
+        const hints: LeakGateHints = { buildContexts: [{ contextDir, label: "dockerfile" }] };
+        await assertLeakGatePathsOwned(hints, ownerRoot, [dockerfile]);
+        return Option.some(hints);
+      },
+      catch: (cause) => issue(
+        file,
+        "discovery.leak-gate-failed",
+        causeMessage(cause),
+        ["Keep Dockerfile Sandbox inputs inside the Eval owner package."],
+      ),
+    });
   }
   const composeFile = leakGate.file._tag === "Url" ? new URL(leakGate.file.value) : leakGate.file.value;
   return Effect.tryPromise({
     try: async () => {
       const { leakGateHintsFromComposeFile } = await import("../sandbox/compose.ts");
-      const { hints } = await leakGateHintsFromComposeFile(composeFile, {
+      const { hints, composePath, inspection } = await leakGateHintsFromComposeFile(composeFile, {
         mainService: leakGate.workspaceService,
         baseDir,
       });
+      const dockerfiles = inspection.services.flatMap((service) => service.build === undefined
+        ? []
+        : [resolve(resolve(dirname(composePath), service.build.context), service.build.dockerfile ?? "Dockerfile")]);
+      await assertLeakGatePathsOwned(hints, ownerRoot, [composePath, ...dockerfiles]);
       return Option.some(hints);
     },
     catch: (cause) => issue(
@@ -314,12 +395,30 @@ function leakGateHintsForLayer(
   });
 }
 
+/** Every host path that a Sandbox declaration makes NiceEval read is owner-scoped. */
+async function assertLeakGatePathsOwned(
+  hints: LeakGateHints,
+  ownerRoot: string,
+  explicitPaths: readonly string[] = [],
+): Promise<void> {
+  const paths = [
+    ...explicitPaths,
+    ...hints.buildContexts.flatMap((context) => [
+      context.contextDir,
+      ...(context.dockerignorePath === undefined ? [] : [context.dockerignorePath]),
+    ]),
+    ...(hints.bindMounts ?? []).map((mount) => mount.source),
+  ];
+  for (const path of paths) await assertPathWithinEvalOwner(path, ownerRoot);
+}
+
 function runLeakGate(
   definition: AnyEvalDefinition,
   input: {
     readonly evalId: string;
     readonly file: string;
     readonly baseDir: string;
+    readonly ownerRoot: string;
     readonly criteriaPaths: readonly string[];
     readonly privatePaths: readonly string[];
   },
@@ -328,8 +427,7 @@ function runLeakGate(
     ...input.criteriaPaths.map((path) => ({ path, kind: "verifier" as const })),
     ...input.privatePaths.map((path) => ({ path, kind: "private" as const })),
   ]);
-  if (hidden.length === 0) return Effect.void;
-  return leakGateHintsForLayer(definition.sandbox, input.baseDir, input.file).pipe(
+  return leakGateHintsForLayer(definition.sandbox, input.baseDir, input.file, input.ownerRoot).pipe(
     Effect.flatMap(Option.match({
       onNone: () => Effect.void,
       onSome: (hints) => Effect.tryPromise({
@@ -350,20 +448,54 @@ function runLeakGate(
   );
 }
 
+function projectExternalLoaderCapture(
+  scope: EvalDiscoveryScope,
+  moduleFacts: NonNullable<import("../types.ts").DiscoveredEval["moduleFacts"]>,
+  captured: { readonly paths: readonly string[]; readonly criteriaPaths: readonly string[]; readonly privatePaths: readonly string[] },
+): { readonly paths: readonly string[]; readonly criteriaPaths: readonly string[]; readonly privatePaths: readonly string[] } {
+  const owner = resolve(scope.ownerRoot);
+  const modules = new Set(moduleFacts.modules);
+  const records = externalLoaderCaptures.get(owner) ?? [];
+  const paths = new Set(captured.paths);
+  const criteriaPaths = new Set(captured.criteriaPaths);
+  const privatePaths = new Set(captured.privatePaths);
+  for (const record of records) {
+    if (![...record.modules].some((module) => modules.has(module))) continue;
+    for (const path of record.paths) paths.add(path);
+    for (const path of record.criteriaPaths) criteriaPaths.add(path);
+    for (const path of record.privatePaths) privatePaths.add(path);
+  }
+  records.push(Object.freeze({
+    modules,
+    paths: Object.freeze([...captured.paths]),
+    criteriaPaths: Object.freeze([...captured.criteriaPaths]),
+    privatePaths: Object.freeze([...captured.privatePaths]),
+  }));
+  externalLoaderCaptures.set(owner, records);
+  return Object.freeze({
+    paths: Object.freeze([...paths].sort()),
+    criteriaPaths: Object.freeze([...criteriaPaths].sort()),
+    privatePaths: Object.freeze([...privatePaths].sort()),
+  });
+}
+
 function discoverEvalEntry(
   entry: EvalEntry,
-  root: string,
+  scope: EvalDiscoveryScope,
 ): Effect.Effect<readonly DiscoveredEval[], DiscoveryError> {
+  const root = scope.ownerRoot;
   const fileLabel = relative(root, entry.file).split(sep).join("/");
   return Effect.gen(function*() {
     const captured = yield* Effect.tryPromise({
-      try: () => captureLoadedFiles(() => import(pathToFileURL(entry.file).href)),
-      catch: (cause) => issue(
-        fileLabel,
-        "discovery.import-failed",
-        causeMessage(cause),
-        ["Fix module loading and loader declarations."],
+      try: () => captureLoadedFiles(
+        () => import(pathToFileURL(entry.file).href),
+        { root: scope.ownerRoot, ownerRoot: scope.ownerRoot },
       ),
+      catch: (cause) => discoveryErrorFromCause(cause, {
+        file: fileLabel,
+        code: "discovery.import-failed",
+        actions: ["Fix module loading and loader declarations."],
+      }),
     });
     const module = yield* decodeEvalModule(captured.value, fileLabel);
     const expanded = yield* expandEvalExport(module.default, entry, root);
@@ -376,42 +508,121 @@ function discoverEvalEntry(
         ["Make the eval source file readable."],
       ),
     });
-    const loaderDataPaths = Object.freeze([...captured.paths]);
-    const criteriaPaths = Object.freeze([...captured.criteriaPaths]);
-    const privatePaths = Object.freeze([...captured.privatePaths]);
     const baseDir = dirname(entry.file);
+    // Both local and mounted Evals get a transfer/module projection.  Mounted
+    // owners additionally receive P4 hook facts; local Evals retain their
+    // existing resolver semantics while no longer treating every upload as an
+    // opaque dynamic transfer.
+    const moduleFacts = yield* Effect.tryPromise({
+      try: () => moduleFactsForEval(entry.file, scope.ownerRoot),
+      catch: (cause) => discoveryErrorFromCause(cause, {
+        file: fileLabel,
+        code: "discovery.import-failed",
+        actions: ["Keep static Eval module edges inside the owning project or package."],
+      }),
+    });
+    const loaderCapture = scope.external === undefined
+      ? captured
+      : projectExternalLoaderCapture(scope, moduleFacts, captured);
+    const loaderDataPaths = Object.freeze([...loaderCapture.paths]);
+    const criteriaPaths = Object.freeze([...loaderCapture.criteriaPaths]);
+    const privatePaths = Object.freeze([...loaderCapture.privatePaths]);
     const [leakErrors] = yield* Effect.partition(expanded, ({ id, definition }) => runLeakGate(definition, {
       evalId: id,
       file: fileLabel,
       baseDir,
+      ownerRoot: scope.ownerRoot,
       criteriaPaths,
       privatePaths,
     }), { concurrency: 1 });
     if (leakErrors.length > 0) {
       return yield* Effect.fail(discoveryError(leakErrors.flatMap((error) => error.issues)));
     }
-    return Object.freeze(expanded.map(({ id, definition }) => discoverEval(definition, {
-      id,
+    return Object.freeze(expanded.map(({ id, definition }) => {
+      const origin = scope.external === undefined ? undefined : originForEval(scope.external, id);
+      return discoverEval(definition, {
+      id: scope.external === undefined ? id : `${scope.external.mount}/${id}`,
       baseDir,
       sourcePath: entry.file,
       source,
       loaderDataPaths,
       criteriaPaths,
       privatePaths,
-    })));
+      ownerRoot: scope.ownerRoot,
+      evalRoot: scope.evalRoot,
+      ...(origin === undefined ? {} : { origin }),
+      moduleFacts,
+      });
+    }));
   });
 }
 
 /** Effect-native discovery core; Promise conversion is restricted to discoverEvals(). */
 export function discoverEvalsEffect(root: string): Effect.Effect<readonly DiscoveredEval[], DiscoveryError> {
   const dir = join(root, "evals");
-  return collectEvalEntries(dir, root).pipe(
-    Effect.flatMap((entries) => collectAll(entries, (entry) => discoverEvalEntry(entry, root))),
+  const scope: EvalDiscoveryScope = { ownerRoot: root, evalRoot: dir };
+  return discoverEvalScopeEffect(scope);
+}
+
+function discoverEvalScopeEffect(scope: EvalDiscoveryScope): Effect.Effect<readonly DiscoveredEval[], DiscoveryError> {
+  const external = scope.external;
+  return collectEvalEntries(scope.evalRoot, scope.ownerRoot).pipe(
+    Effect.mapError((error) => external === undefined
+      ? error
+      : discoveryError(error.issues.map((entry) => entry.code === "discovery.duplicate-id"
+        ? {
+            ...entry,
+            code: "eval-root.duplicate-relative-id" as const,
+            message: `Mounted root ${JSON.stringify(external.mount)} has duplicate relative Eval ids: ${entry.message}`,
+          }
+        : entry)),
+    ),
+    Effect.flatMap((entries) => collectAll(entries, (entry) => discoverEvalEntry(entry, scope))),
   );
 }
 
 export function discoverEvals(root: string): Promise<readonly DiscoveredEval[]> {
   return runDiscoveryPromise(discoverEvalsEffect(root));
+}
+
+/**
+ * Shared Eval-definition consumer boundary.  Every command that needs Eval
+ * definitions must call this instead of scanning project `evals/` directly:
+ * preflight finishes before external code is imported, hooks get one owner map,
+ * and duplicate final ids are rejected across all roots at once.
+ */
+export async function discoverProjectEvals(
+  root: string,
+  config: Pick<Config, "evalRoots">,
+): Promise<readonly DiscoveredEval[]> {
+  const externalRoots = await preflightEvalRoots(root, config);
+  if (externalRoots.length === 0) return discoverEvals(root);
+  externalLoaderCaptures.clear();
+  await preflightEvalRootSources(externalRoots);
+  activateEvalRootHooks(externalRoots);
+  const local = await discoverEvals(root);
+  // Loader capture and the hook-observation queue are process-scoped facts.
+  // Keep external owners serial here so one package cannot consume another
+  // package's observed edges or registered loader files.
+  const groups: (readonly DiscoveredEval[])[] = [];
+  for (const external of externalRoots) {
+    groups.push(await runDiscoveryPromise(discoverEvalScopeEffect({
+      ownerRoot: external.packageRoot,
+      evalRoot: external.evalRoot,
+      external,
+    })));
+  }
+  const all = [...local, ...groups.flat()].sort((a, b) => a.id.localeCompare(b.id));
+  const byId = new Map<string, DiscoveredEval[]>();
+  for (const evalDef of all) byId.set(evalDef.id, [...(byId.get(evalDef.id) ?? []), evalDef]);
+  const duplicates = [...byId.entries()].flatMap(([id, owners]) => owners.length < 2 ? [] : [{
+    file: owners.map((owner) => owner.sourcePath).join(", "),
+    code: "discovery.duplicate-id" as const,
+    message: `Duplicate final Eval id ${JSON.stringify(id)} across local and mounted Eval roots.`,
+    actions: Object.freeze(["Change a mount prefix or remove the duplicate Eval entry."]),
+  }]);
+  if (duplicates.length > 0) throw discoveryError(duplicates);
+  return Object.freeze(all);
 }
 
 function discoverExperimentFile(

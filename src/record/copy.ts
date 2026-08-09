@@ -146,6 +146,7 @@ async function planOneSnapshot(
     ...(run.timings?.length ? { timings: run.timings } : {}),
     ...(run.sandboxBuilds?.length ? { sandboxBuilds: run.sandboxBuilds } : {}),
     ...(knownEvalIds.length ? { knownEvalIds } : {}),
+    ...(run.definitionOrigins !== undefined ? { definitionOrigins: run.definitionOrigins } : {}),
     ...(run.name !== undefined ? { name: run.name } : {}),
   };
   planned.push({ path: join(destSnapDir, RUN_FILE), bytes: Buffer.from(JSON.stringify(meta, null, 2), "utf-8") });

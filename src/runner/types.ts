@@ -335,6 +335,8 @@ export interface AcceptedResult {
   acceptedFingerprint: string;
   /** 新旧 manifest/config 的完整差异清单。 */
   differences: AcceptedDifference[];
+  /** Exact current static transfer plan explicitly authorized for this re-anchor. */
+  acceptedExecutionPlanDigest?: string;
 }
 
 /** `niceeval exp rename` 写入新结果的来源与身份审计记录。 */
@@ -381,6 +383,16 @@ export interface EvalResult {
   model?: string;
   verdict: Verdict;
   fingerprint?: string;
+  /**
+   * The definition selected for this invocation.  Carries refresh this value while
+   * retaining `executionOrigin`, so a record never attributes old execution bytes
+   * to a newly mounted package revision.
+   */
+  definitionOrigin?: EvalDefinitionOrigin;
+  /** Provenance at the time this attempt actually ran (or its carried source ran). */
+  executionOrigin?: EvalDefinitionOrigin;
+  /** Immutable runtime/transfer evidence used to decide whether this result can carry. */
+  executionInputs?: ExecutionInputs;
   /** 产出该结果时的 Run 级配置身份。 */
   configHash?: string;
   attempt: number;
@@ -580,6 +592,8 @@ export interface InvocationShape {
    * 不由落盘面自己猜。省略只出现在没有携带规划的直调场景。
    */
   configHashes?: ReadonlyMap<string, string>;
+  /** Current Eval provenance index by experiment; Record attempts duplicate each origin inline. */
+  definitionOrigins?: ReadonlyMap<string, globalThis.Record<string, EvalDefinitionOrigin>>;
 }
 
 export interface Reporter {
@@ -785,6 +799,22 @@ export interface DiscoveredEvalFacts {
    * 同一文件里多个 eval(数组默认导出)共享同一份引用——哈希与内容天然相同,不重复读盘。
    */
   readonly source: CapturedEvalSource;
+  /**
+   * Capability boundary for every local path consumed by this Eval.  Local evals use
+   * the consumer project root; mounted evals use the real package root.  It is kept
+   * as a discovery fact rather than inferred from `sourcePath`, because an external
+   * eval root may deliberately be a nested directory of its package.
+   */
+  readonly ownerRoot?: string;
+  /** The directory that supplied this Eval's relative id (local `evals/` or a mount root). */
+  readonly evalRoot?: string;
+  /** Installed-package provenance for a mounted Eval; absent for project-local Eval. */
+  readonly origin?: ExternalEvalOrigin;
+  /**
+   * Discovery's projected module graph.  It is intentionally not exposed to author
+   * predicates: it is an execution/carry fact, not user-authored Eval metadata.
+   */
+  readonly moduleFacts?: EvalModuleFacts;
 }
 
 /** discovery 保留 factory 的 evaluationKind 判别、私有品牌与对应 test context。 */
@@ -1013,6 +1043,112 @@ export interface EvalDescriptor {
    */
   readonly evaluationKind: EvaluationKind;
   readonly metadata?: Readonly<globalThis.Record<string, JsonValue>>;
+  /** Installed package provenance for a mounted Eval.  Project-local evals omit it. */
+  readonly origin?: ExternalEvalOrigin;
+}
+
+/** A direct package dependency mounted as an additional Eval discovery root. */
+export interface PackageEvalRoot {
+  /** The direct dependency key in the consumer's package.json (an npm alias is allowed). */
+  readonly package: string;
+  /** Package-root-relative discovery directory.  Omitted means `evals`. */
+  readonly root?: string;
+}
+
+/** Portable, credential-free identity projected from the consumer lockfile. */
+export type InstalledPackageIdentity =
+  | {
+      readonly kind: "git";
+      readonly commit: string;
+      readonly lockfile: "pnpm" | "npm" | "yarn";
+      readonly lockDigest: string;
+    }
+  | {
+      readonly kind: "registry" | "tarball";
+      readonly integrity: string;
+      readonly lockfile: "pnpm" | "npm" | "yarn";
+      readonly lockDigest: string;
+    }
+  | {
+      readonly kind: "workspace" | "file";
+      readonly contentDigest: string;
+      readonly lockfile: "pnpm" | "npm" | "yarn";
+      readonly lockDigest: string;
+    };
+
+/** Public provenance of one Eval mounted from an installed package. */
+export interface ExternalEvalOrigin {
+  readonly kind: "package";
+  readonly mount: string;
+  readonly root: string;
+  readonly relativeEvalId: string;
+  readonly dependency: string;
+  readonly package: {
+    readonly name: string;
+    readonly version?: string;
+    readonly repository?: string;
+    readonly license?: string;
+  };
+  readonly installed: InstalledPackageIdentity;
+}
+
+/** A portable graph edge captured while discovering an Eval definition. */
+export interface EvalModuleEdge {
+  readonly parent: string;
+  readonly specifier: string;
+  readonly target?: string;
+  /** Node's actual resolution conditions when the linker observed this edge. */
+  readonly conditions?: readonly string[];
+  readonly kind: "static-import" | "static-export" | "literal-import" | "literal-require";
+}
+
+/** A statically reproducible host-to-Sandbox transfer planned before an Attempt. */
+export interface StaticTransferPlanEntry {
+  /** Source-order occurrence in the statically proven transfer program. */
+  readonly sequence: number;
+  readonly kind: "file" | "directory";
+  /** Owner-root-relative source, never a local absolute path. */
+  readonly source: string;
+  /** Portable target (`$WORKDIR` represents an omitted directory target). */
+  readonly target: string;
+  readonly digest: string;
+  readonly ignore?: readonly string[];
+}
+
+/**
+ * Per-Eval projection of the actual/static module graph.  `limitations` are
+ * deliberately structured carry facts: discovery remains usable for a fresh run
+ * when analysis cannot prove a complete graph, but the resulting attempt is not
+ * eligible for carry.
+ */
+export interface EvalModuleFacts {
+  readonly version: 1;
+  readonly modules: readonly string[];
+  readonly edges: readonly EvalModuleEdge[];
+  readonly dependencies: readonly globalThis.Record<string, JsonValue>[];
+  readonly transferPlan: readonly StaticTransferPlanEntry[];
+  readonly limitations: readonly {
+    readonly code: string;
+    readonly file?: string;
+    readonly detail?: string;
+  }[];
+}
+
+/** Definition provenance follows an attempt so carried records never lie about execution. */
+export type EvalDefinitionOrigin = ExternalEvalOrigin | { readonly kind: "project" };
+
+/** Immutable execution-input evidence written inline on an attempt. */
+export interface ExecutionInputs {
+  readonly version: 1;
+  readonly digest: string;
+  readonly planDigest?: string;
+  readonly eligible: boolean;
+  readonly limitations: readonly {
+    readonly code: string;
+    readonly detail?: string;
+  }[];
+  readonly transfers: readonly globalThis.Record<string, JsonValue>[];
+  readonly runtimeModuleEdges: readonly EvalModuleEdge[];
 }
 
 export interface Config {
@@ -1059,6 +1195,8 @@ export interface Config {
    * 精确 key 优先于通配。只在没有网关实测成本(`usage.costUSD`)时才会用到——实测优先于估算恒成立。
    */
   pricing?: globalThis.Record<string, PriceOverride>;
+  /** Additional Eval roots mounted from direct installed package dependencies. */
+  evalRoots?: Readonly<globalThis.Record<string, PackageEvalRoot>>;
 }
 
 /** 每百万 token 的美元单价;省略的桶退回 `inputPerMTok`(cache token 本质也是 input)。 */

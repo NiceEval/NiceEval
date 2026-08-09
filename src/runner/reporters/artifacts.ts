@@ -48,6 +48,7 @@ export function Artifacts(root = ".niceeval"): ArtifactsReporter {
         // configHash 同理:规划期按 experiment 分组算好(见 InvocationShape.configHashes),
         // 这里只转手,不重新推导配置身份。
         ...(shape?.configHashes ? { configHashes: shape.configHashes } : {}),
+        ...(shape?.definitionOrigins ? { definitionOrigins: shape.definitionOrigins } : {}),
       });
       finishedByEvent.clear();
     },

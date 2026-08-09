@@ -10,7 +10,7 @@ import { assertEvidenceCoverage } from "../assertions/coverage.ts";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import type { AgentSetupManifest, DiagnosticRecord, EvalResult, ExperimentRunInfo, LocalizedText, SandboxBuildRecord, TimingActivity } from "../types.ts";
+import type { AgentSetupManifest, DiagnosticRecord, EvalDefinitionOrigin, EvalResult, ExperimentRunInfo, LocalizedText, SandboxBuildRecord, TimingActivity } from "../types.ts";
 import type { CommandExitEvidence, DiffArtifact, O11ySummary, SourceArtifact, StreamEvent, TraceSpan } from "../types.ts";
 import { RECORD_FORMAT, RECORD_SCHEMA_VERSION } from "../types.ts";
 import { RESULT_FILE, RUN_FILE, artifactFileOf, attemptDirOf, experimentDirOf } from "./format.ts";
@@ -55,6 +55,8 @@ export interface WriterOptions {
    * 后者优先——`niceeval accept` 走的正是这条显式路径。
    */
   configHashes?: ReadonlyMap<string, string>;
+  /** Current discovery provenance by experiment/eval, projected only as a Run index. */
+  definitionOrigins?: ReadonlyMap<string, globalThis.Record<string, EvalDefinitionOrigin>>;
 }
 
 /** 快照级声明:一个 experiment 声明一次,这些字段不塞进每条 attempt。 */
@@ -73,6 +75,8 @@ export interface RunDeclaration {
   experiment?: ExperimentRunInfo;
   /** 该实验已知的 eval 并集(残缺检测的分母);转换只覆盖部分题目时如实交代全集。 */
   knownEvalIds?: string[];
+  /** Current discovery provenance index.  Attempt fields remain the compatibility source of truth. */
+  definitionOrigins?: globalThis.Record<string, EvalDefinitionOrigin>;
   /** 项目名(来自 config.name),透传给 `niceeval view` 顶部 hero 显示。 */
   name?: LocalizedText;
   /** 本 Run 的指纹输入清单(evalId → 清单),与 `run.json` 同批写成;省略则不写该文件。 */
@@ -194,6 +198,11 @@ export function createWriter(root: string, opts: WriterOptions): Writer {
       startedAt: decl.startedAt,
       ...(configHash !== undefined ? { configHash } : {}),
       ...(decl.knownEvalIds?.length ? { knownEvalIds: [...new Set(decl.knownEvalIds)] } : {}),
+      ...(decl.definitionOrigins !== undefined
+        ? { definitionOrigins: { ...decl.definitionOrigins } }
+        : opts.definitionOrigins?.get(decl.experimentId) !== undefined
+          ? { definitionOrigins: { ...opts.definitionOrigins.get(decl.experimentId)! } }
+          : {}),
       ...(decl.name !== undefined ? { name: decl.name } : {}),
     };
     const dir = await createSnapshotDir(root, decl.experimentId);
@@ -246,6 +255,7 @@ export function createWriter(root: string, opts: WriterOptions): Writer {
           ...(finishOpts?.timings?.length ? { timings: finishOpts.timings } : {}),
           ...(finishOpts?.sandboxBuilds?.length ? { sandboxBuilds: finishOpts.sandboxBuilds } : {}),
           ...(state.meta.knownEvalIds?.length ? { knownEvalIds: state.meta.knownEvalIds } : {}),
+          ...(state.meta.definitionOrigins !== undefined ? { definitionOrigins: state.meta.definitionOrigins } : {}),
           ...(name !== undefined ? { name } : {}),
         };
         state.meta = finalMeta;
@@ -267,6 +277,9 @@ export function createWriter(root: string, opts: WriterOptions): Writer {
           const { state } = handle;
           if (decl.knownEvalIds?.length) {
             state.meta.knownEvalIds = [...new Set([...(state.meta.knownEvalIds ?? []), ...decl.knownEvalIds!])];
+          }
+          if (decl.definitionOrigins !== undefined) {
+            state.meta.definitionOrigins = { ...(state.meta.definitionOrigins ?? {}), ...decl.definitionOrigins };
           }
           if (decl.completedAt !== undefined) state.declCompletedAt = decl.completedAt;
           if (decl.name !== undefined) state.declName = decl.name;

@@ -9,12 +9,13 @@
 import { spawn } from "node:child_process";
 import { hostname } from "node:os";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeSync } from "node:fs";
 import { dirname, join, relative, resolve as resolvePath, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs as nodeParseArgs } from "node:util";
 import { Effect } from "effect";
-import { discoverEvals, discoverExperiments } from "./runner/discover.ts";
+import { discoverExperiments, discoverProjectEvals } from "./runner/discover.ts";
+import { bootstrapEvalRootHooks, preflightEvalRoots } from "./runner/eval-roots.ts";
 import { browsableExperimentPaths, evalPrefixPredicate, matchExperimentSelector } from "./shared/aggregate.ts";
 import { runEvals, type AgentRun } from "./runner/run.ts";
 import { cacheKey, missingReason, planCarry, type CarryPlan, type DispatchGroup } from "./runner/fingerprint.ts";
@@ -105,6 +106,65 @@ import type {
   Verdict,
 } from "./types.ts";
 
+// `bin/niceeval.js` marks only its isolated list worker with this private
+// process-global.  It intentionally is not an environment switch: user config
+// observes environment variables, while this is transport wiring internal to a
+// single fresh CLI process.
+const LIST_MACHINE_WORKER = (globalThis as typeof globalThis & {
+  [key: symbol]: unknown;
+})[Symbol.for("niceeval.list-machine-worker")] === true;
+const LIST_MACHINE_FD = 3;
+const MAX_LIST_MACHINE_FRAME_BYTES = 1024 * 1024;
+
+class ListMachineUserError extends Error {
+  constructor(readonly code: string, message: string) {
+    super(message);
+    this.name = "ListMachineUserError";
+  }
+}
+
+function writeListMachineFrame(document: unknown): void {
+  const payload = Buffer.from(JSON.stringify(document), "utf8");
+  if (payload.byteLength > MAX_LIST_MACHINE_FRAME_BYTES) {
+    throw new Error("List machine response exceeds the 1 MiB protocol limit.");
+  }
+  const header = Buffer.allocUnsafe(4);
+  header.writeUInt32BE(payload.byteLength);
+  writeSync(LIST_MACHINE_FD, header);
+  writeSync(LIST_MACHINE_FD, payload);
+}
+
+function machineErrorDocument(error: unknown): {
+  format: "niceeval.error";
+  schemaVersion: 1;
+  error: { code: string; message: string; issues?: unknown };
+} {
+  const candidate = error as { code?: unknown; issues?: unknown } | undefined;
+  const issues = Array.isArray(candidate?.issues) ? candidate.issues : undefined;
+  const issueCode = issues?.[0] !== undefined && typeof issues[0] === "object" && issues[0] !== null &&
+    typeof (issues[0] as { code?: unknown }).code === "string"
+    ? (issues[0] as { code: string }).code
+    : undefined;
+  return {
+    format: "niceeval.error",
+    schemaVersion: 1,
+    error: {
+      code: typeof candidate?.code === "string" ? candidate.code : issueCode ?? "niceeval.error",
+      // The parent treats this as a stable machine field, not a diagnostic
+      // transcript.  Keep stacks out of it so Error implementation details do
+      // not become part of the protocol (human CLI errors still use formatThrown).
+      message: error instanceof Error ? error.message : String(error),
+      ...(issues === undefined ? {} : { issues }),
+    },
+  };
+}
+
+function failListUserError(code: string, message: string): never {
+  if (LIST_MACHINE_WORKER) throw new ListMachineUserError(code, message);
+  process.stderr.write(message);
+  process.exit(1);
+}
+
 /**
  * view 的可预期用户错误:版本不同的报告(npx 提示)、位置参数/组合语义错误、
  * --report 装载失败。打一句直说问题与下一步后退出,不抛堆栈。
@@ -173,6 +233,10 @@ export interface Flags {
   orphans: boolean;
   /** `exp` 命令专用:只对选中实验各执行一次实验级 teardown,不派发 attempt、不跑 setup。 */
   teardown: boolean;
+  /** `list` 命令专用:只检查外部 Eval root，不执行第三方 Eval 模块。 */
+  preflight: boolean;
+  /** `accept` 命令专用:精确授权当前 transfer plan digest；可重复。 */
+  acceptTransfer?: string[];
 }
 
 // 表驱动的 flag 定义(node:util parseArgs)。--no-x 显式声明,不依赖 allowNegative(需 Node 20.14+,
@@ -259,6 +323,10 @@ const FLAG_OPTIONS = {
   page: { type: "string" },
   /** `exp` 命令专用:补齐被强杀打断的实验级 teardown——只对选中的实验各执行一次 teardown(新进程语义),不派发 attempt、不跑 setup;没有遗留登记也照常执行。与 eval 前缀位置参数组合是用法错误。 */
   teardown: { type: "boolean" },
+  /** `list` 命令专用:只验证外部 Eval root 的安装事实，不导入 Eval。 */
+  preflight: { type: "boolean" },
+  /** `accept` 命令专用:精确授权一个 current transfer plan digest；可重复。 */
+  "accept-transfer": { type: "string", multiple: true },
   /** 只打印本次会匹配到的 eval × 运行配置,不实际执行(人读文本或 `--json` 单文档,见「机器怎么读:--json」)。 */
   dry: { type: "boolean" },
   /** 忽略上次运行结果,不跳过已通过的 (experiment, eval) 组合,强制全部重跑。 */
@@ -284,8 +352,7 @@ function numberFlag(name: string, raw: string | undefined): number | undefined {
   if (raw === undefined) return undefined;
   const n = Number(raw);
   if (!Number.isFinite(n)) {
-    process.stderr.write(t("cli.flag.invalidNumber", { flag: name, value: raw }));
-    process.exit(1);
+    failListUserError("cli.usage", t("cli.flag.invalidNumber", { flag: name, value: raw }));
   }
   return n;
 }
@@ -332,15 +399,13 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
     if (arg.startsWith("--host=")) {
       const value = arg.slice("--host=".length);
       if (value.length === 0) {
-        process.stderr.write("--host=<address> requires a non-empty address, or use bare --host.\n");
-        process.exit(1);
+        failListUserError("cli.usage", "--host=<address> requires a non-empty address, or use bare --host.\n");
       }
     }
     if (arg.startsWith("--source=")) {
       const value = arg.slice("--source=".length);
       if (value.length === 0) {
-        process.stderr.write("--source=<path> requires a non-empty captured source path, or use bare --source.\n");
-        process.exit(1);
+        failListUserError("cli.usage", "--source=<path> requires a non-empty captured source path, or use bare --source.\n");
       }
       sourceValue = value;
       return "--source";
@@ -353,8 +418,7 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
     if (arg.startsWith("--keep-sandbox=")) {
       const tier = arg.slice("--keep-sandbox=".length);
       if (tier !== "failed" && tier !== "all") {
-        process.stderr.write(`--keep-sandbox only accepts "failed" (default) or "all", got "${tier}".\n`);
-        process.exit(1);
+        failListUserError("cli.usage", `--keep-sandbox only accepts "failed" (default) or "all", got "${tier}".\n`);
       }
       keepSandboxTier = tier;
       return "--keep-sandbox";
@@ -362,8 +426,7 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
     if (arg.startsWith("--timing=")) {
       const mode = arg.slice("--timing=".length);
       if (mode !== "summary" && mode !== "full") {
-        process.stderr.write(`--timing only accepts "summary" (default) or "full", got "${mode}".\n`);
-        process.exit(1);
+        failListUserError("cli.usage", `--timing only accepts "summary" (default) or "full", got "${mode}".\n`);
       }
       timingMode = mode;
       return "--timing";
@@ -371,8 +434,7 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
     if (arg.startsWith("--rerun=")) {
       const mode = arg.slice("--rerun=".length);
       if (mode !== "failed" && mode !== "all") {
-        process.stderr.write(`--rerun only accepts "failed" (default) or "all", got "${mode}".\n`);
-        process.exit(1);
+        failListUserError("cli.usage", `--rerun only accepts "failed" (default) or "all", got "${mode}".\n`);
       }
       rerunMode = mode;
       return "--rerun";
@@ -382,8 +444,7 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
     // 落到 node:util parseArgs 的通用「unknown option」文案——给出专门的 error:/fix: 两行,
     // 指向唯一还存在的两条路径:不加 flag 跑人读文本,机器面用 `--json`。
     if (arg === "--output" || arg.startsWith("--output=")) {
-      process.stderr.write(t("cli.flag.outputRemoved"));
-      process.exit(1);
+      failListUserError("cli.usage", t("cli.flag.outputRemoved"));
     }
     return arg;
   });
@@ -395,8 +456,7 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
     values = parsed.values as globalThis.Record<string, string | boolean | undefined>;
     rawPositionals = parsed.positionals;
   } catch (e) {
-    process.stderr.write(t("cli.flag.parseError", { message: e instanceof Error ? e.message : String(e) }));
-    process.exit(1);
+    failListUserError("cli.usage", t("cli.flag.parseError", { message: e instanceof Error ? e.message : String(e) }));
   }
 
   // 第一个位置参数必须是已知命令;其余是 eval id 前缀 / view 输入。
@@ -407,8 +467,7 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
   if (rawPositionals.length > 0) {
     const candidate = rawPositionals[0];
     if (!isCliCommand(candidate)) {
-      process.stderr.write(t("cli.command.unknown", { command: candidate }));
-      process.exit(1);
+      failListUserError("cli.usage", t("cli.command.unknown", { command: candidate }));
     }
     command = candidate;
     positionals = rawPositionals.slice(1);
@@ -460,8 +519,43 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
     theme: values.theme as string | undefined,
     orphans: values.orphans === true,
     teardown: values.teardown === true,
+    preflight: values.preflight === true,
+    acceptTransfer: values["accept-transfer"] as string[] | undefined,
   };
   return { command, positionals, flags };
+}
+
+/** P0 list grammar: fail before dotenv/config can execute user code. */
+function validateListGrammar(command: CliCommand, positionals: readonly string[], flags: Flags): void {
+  if (flags.preflight && command !== "list") {
+    failListUserError("list.grammar", "--preflight is only available with `niceeval list`.\n");
+  }
+  if (flags.acceptTransfer !== undefined && command !== "accept") {
+    failListUserError("list.grammar", "--accept-transfer is only available with `niceeval accept`.\n");
+  }
+  if (command !== "list") return;
+  if (positionals.length > 1) {
+    failListUserError("list.grammar", "niceeval list accepts at most one eval-prefix.\n");
+  }
+  const allowed = new Set<keyof Flags>(["tag", "json", "preflight", "help", "version"]);
+  const unsupported = (Object.entries(flags) as [keyof Flags, Flags[keyof Flags]][])
+    .find(([key, value]) => !allowed.has(key) && value !== undefined && value !== false);
+  if (unsupported !== undefined) {
+    failListUserError(
+      "list.grammar",
+      `niceeval list does not accept --${unsupported[0].replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}.\n`,
+    );
+  }
+  if (flags.preflight && (positionals.length > 0 || flags.tag !== undefined)) {
+    failListUserError("list.grammar", "niceeval list --preflight cannot be combined with an eval-prefix or --tag.\n");
+  }
+}
+
+function listOriginSource(evalDef: DiscoveredEval): string {
+  if (evalDef.origin === undefined) return "project";
+  return evalDef.origin.package.version === undefined
+    ? evalDef.origin.package.name
+    : `${evalDef.origin.package.name}@${evalDef.origin.package.version}`;
 }
 
 /**
@@ -672,6 +766,7 @@ function parseAcceptLocators(positionals: string[], flags: Flags): string[] {
     ["--theme", flags.theme],
     ["--orphans", flags.orphans],
     ["--teardown", flags.teardown],
+    ["--preflight", flags.preflight],
   ];
   const bad = unsupported.find(([flag, value]) => {
     // `--no-open` / `--no-early-exit` are represented as false, but are still
@@ -693,14 +788,25 @@ interface AcceptLocatorResult {
 }
 
 /** 调用 acceptance core；CLI 只负责 cwd/记录根边界、输出与退出码，不重建结果或启动 runner。 */
-async function runAcceptCommand(cwd: string, locators: readonly string[], recordRoot: string | undefined): Promise<void> {
+async function runAcceptCommand(
+  cwd: string,
+  locators: readonly string[],
+  recordRoot: string | undefined,
+  acceptTransfer: readonly string[] | undefined,
+): Promise<void> {
   const mod = await import("./runner/accept.ts") as {
-    acceptLocators(input: { cwd: string; locators: readonly string[]; recordRoot?: string }): Promise<readonly AcceptLocatorResult[]>;
+    acceptLocators(input: {
+      cwd: string;
+      locators: readonly string[];
+      recordRoot?: string;
+      acceptTransfer?: readonly string[];
+    }): Promise<readonly AcceptLocatorResult[]>;
   };
   const results = await mod.acceptLocators({
     cwd,
     locators,
     ...(recordRoot !== undefined ? { recordRoot } : {}),
+    ...(acceptTransfer === undefined ? {} : { acceptTransfer }),
   });
   for (const result of results) {
     process.stdout.write(t("cli.accept.done", {
@@ -1179,6 +1285,10 @@ async function packageVersion(): Promise<string> {
 async function main(): Promise<void> {
   const cwd = process.cwd();
   const { command, positionals, flags } = parseArgs(process.argv.slice(2));
+  // The hook is registered before any dynamic config import.  It stays inert for
+  // local-only commands; external owner roots are activated only after P2 preflight.
+  bootstrapEvalRootHooks();
+  validateListGrammar(command, positionals, flags);
   // Session / Docker profile 查询必须是纯读取路径：连 dotenv 与界面 locale 也不从项目装载，
   // 否则一个有副作用/损坏的 config 会让 `session list` 违背「不加载配置」契约。
   if (command !== "session" && command !== "docker") {
@@ -1205,12 +1315,15 @@ async function main(): Promise<void> {
   if (command === "accept") {
     const locators = parseAcceptLocators(positionals, flags);
     try {
-      await runAcceptCommand(cwd, locators, flags.record);
+      await runAcceptCommand(cwd, locators, flags.record, flags.acceptTransfer);
     } catch (e) {
       // acceptance core 的资格/定位错误都是用户可修复的：不进入 runner 的崩溃路径，
       // 直接给出一行错误并以 1 退出，保证不会误报“已派发 attempt”。
+      const code = e !== null && typeof e === "object" && typeof (e as { code?: unknown }).code === "string"
+        ? `${(e as { code: string }).code}: `
+        : "";
       process.stderr.write(t("cli.accept.failed", {
-        error: e instanceof Error ? e.message : String(e),
+        error: `${code}${e instanceof Error ? e.message : String(e)}`,
       }));
       process.exit(1);
     }
@@ -1388,18 +1501,87 @@ async function main(): Promise<void> {
   }
 
   const config = await loadConfig(cwd);
+  // List owns an explicit P2 display.  Discovery intentionally repeats the
+  // preflight as its reusable P1/P2 barrier; the second read is harmless and
+  // keeps every non-list Eval consumer on the same boundary.
+  const listedRoots = command === "list" ? await preflightEvalRoots(cwd, config) : undefined;
+  if (command === "list" && flags.preflight) {
+    const document = {
+      format: "niceeval.eval-roots" as const,
+      schemaVersion: 1 as const,
+      roots: listedRoots!.map((root) => ({
+        mount: root.mount,
+        root: root.root,
+        dependency: root.dependency,
+        package: root.package,
+        installed: root.installed,
+      })),
+    };
+    if (flags.json) {
+      if (LIST_MACHINE_WORKER) writeListMachineFrame(document);
+      else process.stdout.write(`${JSON.stringify(document)}\n`);
+    } else {
+      process.stdout.write(`Eval roots (${listedRoots!.length}):\n`);
+      for (const root of listedRoots!) {
+        const version = root.package.version === undefined ? root.package.name : `${root.package.name}@${root.package.version}`;
+        process.stdout.write(`  ${root.mount}  ${version}  ${root.root}\n`);
+      }
+    }
+    return;
+  }
+  const allEvals = await discoverProjectEvals(cwd, config);
+  const taggedEvals = flags.tag ? allEvals.filter((e) => e.tags?.includes(flags.tag as string)) : allEvals;
+  const evals = command === "list" && positionals[0] !== undefined
+    ? taggedEvals.filter((evalDef) => evalPrefixPredicate([positionals[0]!])(evalDef.id))
+    : taggedEvals;
+
+  if (command === "list") {
+    if (evals.length === 0 && (positionals[0] !== undefined || flags.tag !== undefined)) {
+      const prefixes = [...new Set(allEvals.map((evalDef) => evalDef.id.split("/")[0] ?? evalDef.id))].sort();
+      failListUserError(
+        "list.no-match",
+        `list.no-match: no Eval matches ${JSON.stringify(positionals[0] ?? `tag:${flags.tag}`)}. Available prefixes: ${prefixes.join(", ") || "(none)"}.\n`,
+      );
+    }
+    if (flags.json) {
+      const document = {
+        format: "niceeval.evals" as const,
+        schemaVersion: 1 as const,
+        evals: evals.map((evalDef) => ({
+          id: evalDef.id,
+          ...(evalDef.description === undefined ? {} : { description: evalDef.description }),
+          tags: [...(evalDef.tags ?? [])],
+          evaluationKind: evalDef.evaluationKind,
+          ...(evalDef.origin === undefined ? {} : { origin: evalDef.origin }),
+        })),
+      };
+      if (LIST_MACHINE_WORKER) writeListMachineFrame(document);
+      else process.stdout.write(`${JSON.stringify(document)}\n`);
+      return;
+    }
+    if (listedRoots !== undefined && listedRoots.length > 0) {
+      process.stdout.write(`Eval roots (${listedRoots.length}):\n`);
+      for (const root of listedRoots) {
+        const version = root.package.version === undefined ? root.package.name : `${root.package.name}@${root.package.version}`;
+        process.stdout.write(`  ${root.mount}  ${version}  ${root.root}\n`);
+      }
+    }
+    if (listedRoots === undefined || listedRoots.length === 0) {
+      process.stdout.write(t("cli.list.header", { count: evals.length }));
+      for (const e of evals) process.stdout.write(`  ${e.id}${e.description ? `  — ${e.description}` : ""}\n`);
+    } else {
+      process.stdout.write(`EVAL${" ".repeat(42)}SOURCE\n`);
+      for (const e of evals) {
+        const id = e.id.length > 44 ? `${e.id.slice(0, 41)}…` : e.id;
+        process.stdout.write(`${id.padEnd(46)}${listOriginSource(e)}${e.description ? `  — ${e.description}` : ""}\n`);
+      }
+    }
+    return;
+  }
   const maxBuildConcurrency = flags.maxBuildConcurrency ?? config.maxBuildConcurrency ?? 2;
   if (!Number.isInteger(maxBuildConcurrency) || maxBuildConcurrency <= 0) {
     process.stderr.write(`maxBuildConcurrency must be a positive integer, got ${maxBuildConcurrency}.\n`);
     process.exit(1);
-  }
-  const allEvals = await discoverEvals(cwd);
-  const evals = flags.tag ? allEvals.filter((e) => e.tags?.includes(flags.tag as string)) : allEvals;
-
-  if (command === "list") {
-    process.stdout.write(t("cli.list.header", { count: evals.length }));
-    for (const e of evals) process.stdout.write(`  ${e.id}${e.description ? `  — ${e.description}` : ""}\n`);
-    process.exit(0);
   }
 
   const agentRuns: AgentRun[] = [];
@@ -2028,6 +2210,18 @@ if (
   process.argv[1]?.endsWith(`${sep}.bin${sep}niceeval`)
 ) {
   main().catch(async (e) => {
+    // The parent bin process owns human/JSON output for isolated `list --json`.
+    // Never print user/config/Eval errors from the worker's captured streams.
+    if (LIST_MACHINE_WORKER) {
+      try {
+        writeListMachineFrame(machineErrorDocument(e));
+      } catch {
+        // A broken protocol is intentionally represented by a missing frame;
+        // the parent turns that into a deterministic exit-2 protocol error.
+      }
+      process.exitCode = 1;
+      return;
+    }
     process.stderr.write(
       e instanceof SandboxLayerLinkError
         ? `${formatSandboxLayerLinkError(e)}\n`

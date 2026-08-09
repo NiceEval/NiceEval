@@ -54,6 +54,7 @@ import { agentInstallPlansForRun } from "./config-identity.ts";
 import { recordFact, type FactValue } from "../shared/facts.ts";
 import { formatTurnLabel } from "../shared/turn-label.ts";
 import { createSourceRegistry, withSourceRegistry, type SourceRegistry } from "../source-loc.ts";
+import { ExecutionInputTracker } from "./execution-inputs.ts";
 import {
   attemptFailureInfo,
   resolveAttemptFailureClass,
@@ -173,6 +174,8 @@ export function runAttemptEffect(
   const { evalDef, run, attempt } = a;
   const niceevalRoot = opts.niceevalRoot ?? `${process.cwd()}/.niceeval`;
   const t0 = Date.now();
+  const executionInputs = new ExecutionInputTracker(evalDef);
+  const definitionOrigin = evalDef.origin ?? ({ kind: "project" } as const);
 
   const base: EvalResult = {
     id: evalDef.id,
@@ -183,6 +186,9 @@ export function runAttemptEffect(
     model: run.model,
     verdict: "errored",
     fingerprint: a.fingerprint,
+    definitionOrigin,
+    executionOrigin: definitionOrigin,
+    executionInputs: executionInputs.snapshot(),
     configHash: a.configHash,
     attempt,
     startedAt: new Date(t0).toISOString(),
@@ -749,6 +755,7 @@ export function runAttemptEffect(
           facts,
           commands,
           sensitiveValues,
+          executionInputs,
           concurrencySlot,
           declareFailure,
           layerCleanups,
@@ -853,6 +860,9 @@ export function runAttemptEffect(
     Effect.map((r: EvalResult): EvalResult => {
       const withEvidence: EvalResult = {
         ...r,
+        definitionOrigin,
+        executionOrigin: r.executionOrigin ?? definitionOrigin,
+        executionInputs: executionInputs.snapshot(),
         ...(diagnostics.length > 0 ? { diagnostics: [...diagnostics] } : {}),
         ...(Object.keys(facts).length > 0 ? { facts: { ...facts } } : {}),
         ...(commands.length > 0 ? { commands: [...commands] } : {}),
@@ -1008,6 +1018,8 @@ interface AttemptResources {
   commands: CommandExitEvidence[];
   /** `CommandOptions.sensitiveValues` 的 Attempt 级内存集合；只由命令包装写、结果封口读。 */
   sensitiveValues: Set<string>;
+  /** Immutable host-transfer evidence for this Attempt. */
+  executionInputs: ExecutionInputTracker;
   /** turn 级重试退避期间释放/收回的全局并发槽位;透传给 createEvalContext。 */
   concurrencySlot?: ConcurrencySlot;
   /** 终局失败的空间轴回执(runAttemptEffect 持有的同一个闭包):body 的失败路径与 finally 里的
@@ -1060,6 +1072,7 @@ async function runAttemptBody(
     facts,
     commands,
     sensitiveValues,
+    executionInputs,
     concurrencySlot,
     declareFailure,
     layerCleanups,
@@ -1249,6 +1262,7 @@ async function runAttemptBody(
       telemetry,
       otel,
       evalBaseDir: evalDef.baseDir,
+      executionInputs,
       feedback,
       fact,
       concurrencySlot,
@@ -1630,6 +1644,9 @@ const EVAL_RESULT_REDACTION_EXEMPT_KEYS = [
   "model",
   "verdict",
   "fingerprint",
+  "definitionOrigin",
+  "executionOrigin",
+  "executionInputs",
   "configHash",
   "attempt",
   "startedAt",

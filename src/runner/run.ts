@@ -27,6 +27,7 @@ import {
 import { resolveJudge } from "./judge-config.ts";
 import type {
   DiagnosticRecord,
+  EvalDefinitionOrigin,
   EvalResult,
   InvocationShape,
   InvocationSummary,
@@ -36,6 +37,7 @@ import type {
   ReporterRegistration,
   SandboxBuildRecord,
 } from "../types.ts";
+import { ExecutionInputTracker } from "./execution-inputs.ts";
 import type {
   AgentRun,
   Attempt,
@@ -312,6 +314,8 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     const key = runPairKey(r.experimentId, r.id);
     const fp = plannedFingerprints.get(key);
     const configHash = plannedConfigHashes.get(key);
+    const currentOrigin = preparedPairsByKey.get(key)?.evalDef.origin ?? ({ kind: "project" } as const);
+    const executionOrigin = r.executionOrigin ?? r.definitionOrigin ?? ({ kind: "project" } as const);
     const migration = migratedFromByResult.get(r);
     if (fp === undefined) return r;
     if (migration !== undefined) {
@@ -321,6 +325,8 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         ...withoutAcceptedFrom,
         fingerprint: fp,
         configHash,
+        definitionOrigin: currentOrigin,
+        executionOrigin,
         migratedFrom: migration,
         ...(runtimeCarriedAcceptingByResult.has(r)
           ? { carriedAccepting: [...(runtimeCarriedAcceptingByResult.get(r) ?? [])] }
@@ -331,6 +337,8 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
       ...r,
       fingerprint: fp,
       configHash,
+      definitionOrigin: currentOrigin,
+      executionOrigin,
       ...(runtimeCarriedAcceptingByResult.has(r)
         ? { carriedAccepting: [...(runtimeCarriedAcceptingByResult.get(r) ?? [])] }
         : {}),
@@ -589,9 +597,13 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   // 而是按同一份 (run, evalDef) 组合重取一遍——id 里出现分隔符时切字符串会静默错位。
   const manifestsByExperiment = new Map<string, RunManifests>();
   const configHashesByExperiment = new Map<string, string>();
+  const definitionOriginsByExperiment = new Map<string, globalThis.Record<string, EvalDefinitionOrigin>>();
   for (const run of opts.agentRuns) {
     if (!run.experimentId) continue;
     for (const evalDef of selectedEvalsForRun(opts.evals, run)) {
+      const origins = definitionOriginsByExperiment.get(run.experimentId) ?? {};
+      origins[evalDef.id] = evalDef.origin ?? ({ kind: "project" } as const);
+      definitionOriginsByExperiment.set(run.experimentId, origins);
       const key = cacheKey(run, evalDef.id);
       const manifest = manifestsByKey?.get(key);
       if (manifest !== undefined) {
@@ -631,6 +643,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     runIds,
     ...(manifestsByExperiment.size > 0 ? { manifests: manifestsByExperiment } : {}),
     ...(configHashesByExperiment.size > 0 ? { configHashes: configHashesByExperiment } : {}),
+    ...(definitionOriginsByExperiment.size > 0 ? { definitionOrigins: definitionOriginsByExperiment } : {}),
   };
   // eval 级 reporters:实例只观测引用它的 eval(经 scopeReporter 过滤转发)。
   // 已经挂在全局 reporters 里的同一实例不重复挂;同一实例被多个 eval 引用时合并观测集
@@ -2230,6 +2243,8 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
               if (declaration) closeHaltGate(a, declaration);
             }
             const failedBeforeDispatch = blockedError ?? leaseError;
+            const preDispatchOrigin = a.evalDef.origin ?? ({ kind: "project" } as const);
+            const preDispatchInputs = new ExecutionInputTracker(a.evalDef).snapshot();
             const evaluated = failedBeforeDispatch
               ? ({
                   id: a.evalDef.id,
@@ -2246,6 +2261,9 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
                   model: a.run.model,
                   verdict: "errored",
                   fingerprint: a.fingerprint,
+                  definitionOrigin: preDispatchOrigin,
+                  executionOrigin: preDispatchOrigin,
+                  executionInputs: preDispatchInputs,
                   attempt: a.attempt,
                   startedAt: new Date().toISOString(),
                   durationMs: 0,

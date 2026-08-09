@@ -13,7 +13,10 @@ export const MANIFESTS_FILE = "manifests.json";
 /** 指纹算法与清单覆盖面的持久化版本；旧清单缺字段时按 legacy 0 读取。 */
 export const LEGACY_FINGERPRINT_VERSION = 0;
 export const FINGERPRINT_ALGORITHM_VERSION = 2;
-export const FINGERPRINT_COVERAGE_VERSION = 1;
+// v2 adds actual reachable dependency identities, the canonical runtime revision,
+// and static transfer evidence.  Schema stays 15: this is an input-coverage gate,
+// so old records conservatively fresh-run instead of becoming unreadable.
+export const FINGERPRINT_COVERAGE_VERSION = 2;
 
 /**
  * 一条 eval 的指纹输入清单。三块与指纹输入一一对应:
@@ -37,6 +40,12 @@ export interface EvalManifest {
   plan?: JsonValue;
   source: globalThis.Record<string, string>;
   data: globalThis.Record<string, string>;
+  /** Actual reachable bare dependency identities, keyed by stable specifier/locator. */
+  dependencies: globalThis.Record<string, string>;
+  /** Canonical NiceEval runtime-contract revision and hook protocol facts. */
+  runtime: globalThis.Record<string, string>;
+  /** Static transfer plan facts.  Dynamic transfer intentionally appears as a limitation instead. */
+  transfer: globalThis.Record<string, string>;
 }
 
 /** `manifests.json` 的落盘形状:evalId → 该 eval 的清单。 */
@@ -60,6 +69,15 @@ export function parseRunManifests(raw: unknown): RunManifests {
       ...(entry.plan === undefined ? {} : { plan: entry.plan }),
       source: (typeof entry.source === "object" && entry.source !== null ? entry.source : {}) as globalThis.Record<string, string>,
       data: (typeof entry.data === "object" && entry.data !== null ? entry.data : {}) as globalThis.Record<string, string>,
+      dependencies: (typeof entry.dependencies === "object" && entry.dependencies !== null
+        ? entry.dependencies
+        : {}) as globalThis.Record<string, string>,
+      runtime: (typeof entry.runtime === "object" && entry.runtime !== null
+        ? entry.runtime
+        : {}) as globalThis.Record<string, string>,
+      transfer: (typeof entry.transfer === "object" && entry.transfer !== null
+        ? entry.transfer
+        : {}) as globalThis.Record<string, string>,
     };
   }
   return out;

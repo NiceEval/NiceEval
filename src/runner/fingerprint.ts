@@ -35,6 +35,7 @@ import {
   counterfactualConfigIdentity,
   type ConfigIdentity,
 } from "./config-identity.ts";
+import { runtimeContractFacts } from "./eval-roots.ts";
 
 export function cacheKey(run: AgentRun, evalId: string): string {
   if (run.experimentId === undefined) {
@@ -113,10 +114,11 @@ async function fingerprintPreparedPair(
   const identity = projection.identity;
   const configHash = hashConfigIdentity(identity);
   const source = await sourceClosure(evalDef, sourceCache);
+  const ownerRoot = evalDef.ownerRoot ?? process.cwd();
   const loaderData = await Promise.all(
     [...(evalDef.loaderDataPaths ?? [])].sort().map(
       async (path): Promise<readonly [string, string]> =>
-        [relative(process.cwd(), path), await cachedRead(path, sourceCache)],
+        [relativePortable(ownerRoot, path), await cachedRead(path, sourceCache)],
     ),
   );
   // 判据树(loadCriteria 登记)进的是「项目根相对路径 × 内容流式哈希」对:内容从不进内存,
@@ -125,7 +127,7 @@ async function fingerprintPreparedPair(
   const criteria = await Promise.all(
     [...(evalDef.criteriaPaths ?? [])].sort().map(
       async (path): Promise<readonly [string, string]> =>
-        [relative(process.cwd(), path), await cachedContentHash(path, sourceCache)],
+        [relativePortable(ownerRoot, path), await cachedContentHash(path, sourceCache)],
     ),
   );
   // private 与 criteria 同口径(路径 × 流式内容哈希),分键存放——混进 criteria 会让
@@ -133,9 +135,25 @@ async function fingerprintPreparedPair(
   const privateFiles = await Promise.all(
     [...(evalDef.privatePaths ?? [])].sort().map(
       async (path): Promise<readonly [string, string]> =>
-        [relative(process.cwd(), path), await cachedContentHash(path, sourceCache)],
+        [relativePortable(ownerRoot, path), await cachedContentHash(path, sourceCache)],
     ),
   );
+  const dependencies = Object.freeze(Object.fromEntries((evalDef.moduleFacts?.dependencies ?? []).map((dependency) => {
+    const stable = JSON.stringify(dependency);
+    return [dependency.specifier ?? stable, hashText(stable)] as const;
+  })));
+  const runtime = await runtimeContractFacts(
+    pair.plan._tag === "Sandbox" ? pair.plan.providerPlan.provider : undefined,
+  );
+  // Transfer planning is intentionally represented even when it is empty: v2 says
+  // that the execution-input face was considered.  A nonliteral transfer is not
+  // invented into the plan; its limitation makes fresh execution possible but
+  // prevents carry.
+  const transfer = Object.freeze(Object.fromEntries([
+    ["plan", hashText(JSON.stringify(evalDef.moduleFacts?.transferPlan ?? []))],
+    ["limitations", hashText(JSON.stringify((evalDef.moduleFacts?.limitations ?? [])
+      .filter((item) => item.code === "dynamic-transfer")))],
+  ]));
   const payload = {
     configHash,
     pairPlan: pair.identity,
@@ -146,6 +164,9 @@ async function fingerprintPreparedPair(
       metadata: evalDef.metadata ?? {},
     },
     loaderData,
+    dependencies,
+    runtime,
+    transfer,
     // 没登记判据树的 eval 完全不带这个键:空数组也会改变 payload 的字节,让所有存量结果
     // 一次性作废,而它们的判据面本来什么都没变。
     ...(criteria.length > 0 ? { criteria } : {}),
@@ -168,6 +189,9 @@ async function fingerprintPreparedPair(
       ...criteria,
       ...privateFiles,
     ])),
+    dependencies,
+    runtime,
+    transfer,
   });
   return { fingerprint: hash(payload), manifest };
 }
@@ -204,15 +228,21 @@ async function streamHash(path: string): Promise<string> {
 
 /** 项目内静态 import 图；外部包和动态 import 有意不进入闭包。 */
 async function sourceClosure(evalDef: DiscoveredEval, cache?: Map<string, Promise<string>>): Promise<Array<[string, string]>> {
-  const root = process.cwd();
+  const root = evalDef.ownerRoot ?? process.cwd();
+  if (evalDef.moduleFacts !== undefined && evalDef.moduleFacts.modules.length > 0) {
+    return Promise.all(evalDef.moduleFacts.modules.map(async (path) => {
+      const absolute = resolve(root, path);
+      return [path, await cachedRead(absolute, cache)] as [string, string];
+    })).then((files) => files.sort(([a], [b]) => a.localeCompare(b)));
+  }
   const visited = new Set<string>();
   const files: Array<[string, string]> = [];
   const visit = async (path: string): Promise<void> => {
     const absolute = resolve(path);
-    if (visited.has(absolute) || !absolute.startsWith(`${root}/`) && absolute !== root) return;
+    if (visited.has(absolute) || !isWithin(root, absolute)) return;
     visited.add(absolute);
     const content = await cachedRead(absolute, cache);
-    files.push([relative(root, absolute), content]);
+    files.push([relativePortable(root, absolute), content]);
     const specs = [...content.matchAll(/\b(?:import|export)\s+(?:[^"'()]*?\s+from\s+)?["']([^"']+)["']/g)]
       .flatMap((match) => match[1] === undefined ? [] : [match[1]]);
     for (const spec of specs) {
@@ -223,6 +253,15 @@ async function sourceClosure(evalDef: DiscoveredEval, cache?: Map<string, Promis
   };
   await visit(evalDef.sourcePath);
   return files.sort(([a], [b]) => a.localeCompare(b));
+}
+
+function relativePortable(root: string, file: string): string {
+  return relative(root, file).split("\\").join("/");
+}
+
+function isWithin(parent: string, child: string): boolean {
+  const rel = relative(parent, child);
+  return rel === "" || rel !== ".." && !rel.startsWith("../") && !rel.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`);
 }
 
 async function resolveModule(from: string, specifier: string): Promise<string | undefined> {
@@ -253,6 +292,7 @@ export type DispatchReason =
   | "errored"
   | "previous-result"
   | "exceeds-timeout"
+  | "unverified-inputs"
   | "rerun"
   | "keep-sandbox"
   | "incompatible"
@@ -408,6 +448,11 @@ export function carryGateFor(
     !fingerprints.has(r.fingerprint) ||
     (r.configHash !== undefined && r.configHash !== configHash && !options.accept?.length)
   ) return carryBlocked("fingerprint", "previous-result");
+  // Dynamic module/transfer capability is allowed to complete a fresh Attempt,
+  // but its observed inputs cannot be proven for a later carry.  The execution
+  // manifest is attempt-local evidence, so do not infer eligibility from a static
+  // plan alone.
+  if (r.executionInputs?.eligible === false) return carryBlocked("eligibility", "unverified-inputs");
   // `durationMs` 在 `EvalResult` 上是必填字段,正常落盘不会缺失;这里的 `typeof` 防御只处理
   // 磁盘数据损坏等异常情形——保守地判不可携带,而不是当 0 处理(当 0 会让所有旧记录都通过
   // 判据,把「数据缺失」悄悄伪装成「跑得很快」)。
