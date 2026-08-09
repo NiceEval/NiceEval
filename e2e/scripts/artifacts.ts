@@ -6,18 +6,128 @@
 // A declared `.niceeval` path is diagnostic evidence only: this module
 // never parses those files or feeds them into a pass/fail decision.
 
-import { basename, join, relative } from "node:path";
-import { existsSync } from "node:fs";
-import { cp, mkdir, readdir } from "node:fs/promises";
+import { basename, join, relative, resolve, sep } from "node:path";
+import { copyFile, lstat, mkdir, readdir } from "node:fs/promises";
+
+import { artifactPatternError, isCanonicalRelativePath } from "./manifest.ts";
+
+function isContained(root: string, target: string, allowRoot = false): boolean {
+  const resolvedRoot = resolve(root);
+  const resolvedTarget = resolve(target);
+  return (allowRoot && resolvedTarget === resolvedRoot) || resolvedTarget.startsWith(`${resolvedRoot}${sep}`);
+}
+
+function containedPath(root: string, target: string, label: string, allowRoot = false): string {
+  const resolved = resolve(target);
+  if (!isContained(root, resolved, allowRoot)) {
+    throw new Error(`${label} escapes its containment root: ${target}`);
+  }
+  return resolved;
+}
+
+async function lstatOrUndefined(path: string) {
+  try {
+    return await lstat(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
+/** Create only contained real directories; never follow a destination symlink. */
+async function ensureSafeDirectory(root: string, target: string): Promise<string> {
+  const rootPath = resolve(root);
+  const targetPath = containedPath(rootPath, target, "artifact destination", true);
+  await mkdir(rootPath, { recursive: true });
+  const rootStat = await lstat(rootPath);
+  if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
+    throw new Error(`artifact root is not a real directory: ${rootPath}`);
+  }
+
+  const tail = relative(rootPath, targetPath);
+  if (tail === "") return targetPath;
+  let current = rootPath;
+  for (const part of tail.split(sep)) {
+    if (part.length === 0 || part === "." || part === "..") {
+      throw new Error(`invalid contained artifact destination segment ${JSON.stringify(part)}`);
+    }
+    current = containedPath(rootPath, join(current, part), "artifact destination");
+    const existing = await lstatOrUndefined(current);
+    if (existing === undefined) {
+      await mkdir(current);
+      continue;
+    }
+    if (!existing.isDirectory() || existing.isSymbolicLink()) {
+      throw new Error(`artifact destination contains a non-directory or symlink: ${current}`);
+    }
+  }
+  return targetPath;
+}
+
+async function assertRealDirectory(path: string, label: string): Promise<void> {
+  const stat = await lstatOrUndefined(path);
+  if (stat === undefined) return;
+  if (!stat.isDirectory() || stat.isSymbolicLink()) {
+    throw new Error(`${label} must be a real directory, not a symlink or special file: ${path}`);
+  }
+}
+
+async function copySafeFile(source: string, destinationRoot: string, destination: string): Promise<void> {
+  const sourceStat = await lstat(source);
+  if (!sourceStat.isFile() || sourceStat.isSymbolicLink()) {
+    throw new Error(`artifact source must be a regular non-symlink file: ${source}`);
+  }
+  const destinationPath = containedPath(destinationRoot, destination, "artifact destination");
+  const existing = await lstatOrUndefined(destinationPath);
+  if (existing !== undefined && (!existing.isFile() || existing.isSymbolicLink())) {
+    throw new Error(`artifact destination is not a regular file: ${destinationPath}`);
+  }
+  await copyFile(source, destinationPath);
+}
+
+/** Recursively copy only real directories and regular files, rejecting every source symlink. */
+async function copySafeTree(
+  sourceRoot: string,
+  source: string,
+  destinationRoot: string,
+  destination: string,
+): Promise<void> {
+  const sourcePath = containedPath(sourceRoot, source, "artifact source", true);
+  const sourceStat = await lstat(sourcePath);
+  if (!sourceStat.isDirectory() || sourceStat.isSymbolicLink()) {
+    throw new Error(`artifact directory source must be a real directory: ${sourcePath}`);
+  }
+  const destinationPath = await ensureSafeDirectory(destinationRoot, destination);
+  const entries = await readdir(sourcePath, { withFileTypes: true });
+  entries.sort((left, right) => left.name.localeCompare(right.name));
+  for (const entry of entries) {
+    const childSource = containedPath(sourceRoot, join(sourcePath, entry.name), "artifact source");
+    const childDestination = containedPath(destinationRoot, join(destinationPath, entry.name), "artifact destination");
+    const childStat = await lstat(childSource);
+    if (childStat.isSymbolicLink()) {
+      throw new Error(`artifact source symlink is not allowed: ${childSource}`);
+    }
+    if (childStat.isDirectory()) {
+      await copySafeTree(sourceRoot, childSource, destinationRoot, childDestination);
+    } else if (childStat.isFile()) {
+      await copySafeFile(childSource, destinationRoot, childDestination);
+    } else {
+      throw new Error(`artifact source special file is not allowed: ${childSource}`);
+    }
+  }
+}
 
 /** Per-repo directory under the durable artifactRoot (not under scratchRoot). */
 export function repoArtifactDir(artifactRoot: string, repoId: string): string {
-  return join(artifactRoot, repoId);
+  if (!isCanonicalRelativePath(repoId)) {
+    throw new Error(`repo id is not a canonical contained artifact path: ${JSON.stringify(repoId)}`);
+  }
+  return containedPath(artifactRoot, join(artifactRoot, repoId), "repo artifact directory");
 }
 
 /** Absolute path of the structured receipt JSON for one repo. */
 export function repoReceiptPath(artifactRoot: string, repoId: string): string {
-  return join(artifactRoot, repoId, "receipt.json");
+  return join(repoArtifactDir(artifactRoot, repoId), "receipt.json");
 }
 
 function globToRegExp(pattern: string): RegExp {
@@ -33,7 +143,10 @@ export interface CollectResult {
 
 /**
  * Copy e2e.json `artifacts` patterns out of the isolated copy into destDir.
- * Supports `dir/**` and a single top-level filename glob; other shapes warn and skip.
+ * The manifest has already rejected unsafe patterns; this remains a defensive
+ * second boundary for direct callers. Paths are containment checked before
+ * every read/write, and source symlinks/special files are rejected rather
+ * than copied into a durable upload root.
  */
 export async function collectArtifacts(
   copyDir: string,
@@ -42,36 +155,38 @@ export async function collectArtifacts(
 ): Promise<CollectResult> {
   const collected: string[] = [];
   const warnings: string[] = [];
-  await mkdir(destDir, { recursive: true });
+  const copyRoot = resolve(copyDir);
+  const destinationRoot = resolve(destDir);
+  await assertRealDirectory(copyRoot, "isolated artifact copy root");
+  await ensureSafeDirectory(destinationRoot, destinationRoot);
 
   for (const pattern of patterns) {
+    const patternError = artifactPatternError(pattern);
+    if (patternError !== undefined) {
+      throw new Error(`unsafe artifact pattern ${JSON.stringify(pattern)}: ${patternError}`);
+    }
     if (pattern.endsWith("/**")) {
       const dirName = pattern.slice(0, -3);
-      const src = join(copyDir, dirName);
-      if (existsSync(src)) {
-        const dest = join(destDir, dirName);
-        await cp(src, dest, { recursive: true, force: true });
+      const src = containedPath(copyRoot, join(copyRoot, dirName), "artifact source");
+      if (await lstatOrUndefined(src)) {
+        const dest = containedPath(destinationRoot, join(destinationRoot, dirName), "artifact destination");
+        await copySafeTree(copyRoot, src, destinationRoot, dest);
         collected.push(dirName);
       }
       continue;
     }
-    if (pattern.includes("/")) {
-      warnings.push(
-        `artifacts pattern "${pattern}" has an unsupported shape (only "dir/**" or a top-level filename glob are supported) — skipping`,
-      );
-      continue;
-    }
     const regex = globToRegExp(pattern);
-    let entries: string[];
-    try {
-      entries = await readdir(copyDir);
-    } catch {
-      continue;
-    }
-    for (const name of entries) {
-      if (!regex.test(name)) continue;
-      await cp(join(copyDir, name), join(destDir, name), { recursive: true, force: true });
-      collected.push(name);
+    const entries = await readdir(copyRoot, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!regex.test(entry.name)) continue;
+      const source = containedPath(copyRoot, join(copyRoot, entry.name), "artifact source");
+      const destination = containedPath(destinationRoot, join(destinationRoot, entry.name), "artifact destination");
+      const sourceStat = await lstat(source);
+      if (!sourceStat.isFile() || sourceStat.isSymbolicLink()) {
+        throw new Error(`top-level artifact glob matched a non-regular or symlink source: ${source}`);
+      }
+      await copySafeFile(source, destinationRoot, destination);
+      collected.push(entry.name);
     }
   }
 

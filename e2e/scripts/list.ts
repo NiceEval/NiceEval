@@ -24,7 +24,7 @@ function formatRequires(requires: RepoRequires | undefined): string {
 }
 
 function formatExecutor(executor: E2ERepoManifest["executor"]): string {
-  return executor.kind === "docker" ? `docker (${executor.image})` : "host";
+  return executor.kind;
 }
 
 function printRepo(repo: DiscoveredRepo): void {

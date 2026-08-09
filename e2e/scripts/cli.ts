@@ -16,7 +16,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { repoRootDir } from "./discovery.ts";
-import { main as planMain } from "./plan.ts";
+import { main as planMain, printResolvedPlan, resolvePlan, type PlanEntry } from "./plan.ts";
+import { OwnedProcessSupervisor, type E2EExecutionControl } from "./owned-process.ts";
 
 function loadRootEnv(): void {
   const envPath = join(repoRootDir(), ".env");
@@ -31,21 +32,21 @@ export function splitNativeArgs(argv: readonly string[]): { selectionArgs: reado
 
 export function buildDefaultRunArgs(
   candidatePath: string,
-  selectionArgs: readonly string[],
+  plannedRepoIds: readonly string[],
   nativeArgs: readonly string[],
 ): string[] {
   return [
     "--candidate",
     candidatePath,
-    ...selectionArgs,
+    ...plannedRepoIds.flatMap((id) => ["--repo", id]),
     ...(nativeArgs.length === 0 ? [] : ["--", ...nativeArgs]),
   ];
 }
 
 export interface DefaultFlowDependencies {
   candidatePath: string;
-  /** Plan returns the number of selected repos; 0 or negative skips pack/run. */
-  plan: (selectionArgs: readonly string[]) => Promise<number>;
+  /** The one resolved plan whose exact repo-id set must be replayed by run. */
+  plan: (selectionArgs: readonly string[]) => Promise<readonly PlanEntry[]>;
   pack: (out: string) => Promise<{ path: string }>;
   run: (runArgs: readonly string[]) => Promise<void>;
 }
@@ -61,13 +62,13 @@ export async function executeDefault(
 ): Promise<boolean> {
   const { selectionArgs, nativeArgs } = splitNativeArgs(argv);
   const selected = await dependencies.plan(selectionArgs);
-  if (selected <= 0) return false;
+  if (selected.length === 0) return false;
   const candidate = await dependencies.pack(dependencies.candidatePath);
-  await dependencies.run(buildDefaultRunArgs(candidate.path, selectionArgs, nativeArgs));
+  await dependencies.run(buildDefaultRunArgs(candidate.path, selected.map((entry) => entry.id), nativeArgs));
   return true;
 }
 
-async function runDefault(argv: readonly string[]): Promise<void> {
+async function runDefault(argv: readonly string[], execution: E2EExecutionControl): Promise<void> {
   const temporaryDirectory = await mkdtemp(join(tmpdir(), "niceeval-e2e-default-"));
   const candidatePath = join(temporaryDirectory, "candidate.tgz");
   try {
@@ -75,16 +76,20 @@ async function runDefault(argv: readonly string[]): Promise<void> {
     const { main: runMain } = await import("./run.ts");
     await executeDefault(argv, {
       candidatePath,
-      plan: planMain,
+      plan: async (selectionArgs) => {
+        const plan = resolvePlan(selectionArgs);
+        printResolvedPlan(plan);
+        return plan.entries;
+      },
       pack: async (out) => {
-        const candidate = await packCandidate(repoRootDir(), out);
+        const candidate = await packCandidate(repoRootDir(), out, {}, execution);
         console.log(`[e2e] packed candidate: ${candidate.path}`);
         console.log(`[e2e] candidate fingerprint: ${candidate.integrity} (sha256:${candidate.sha256})`);
         return candidate;
       },
       run: async (runArgs) => {
         loadRootEnv();
-        await runMain(runArgs);
+        await runMain(runArgs, execution);
       },
     });
   } finally {
@@ -92,7 +97,67 @@ async function runDefault(argv: readonly string[]): Promise<void> {
   }
 }
 
-export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
+class RootSignalLifecycle {
+  readonly supervisor = new OwnedProcessSupervisor();
+  readonly abortController = new AbortController();
+
+  private received = 0;
+  private cancellationSignal: "SIGINT" | "SIGTERM" | undefined;
+  private shutdown: Promise<void> | undefined;
+
+  readonly onSignal = (signal: NodeJS.Signals): void => {
+    if (signal !== "SIGINT" && signal !== "SIGTERM") return;
+    this.received += 1;
+    if (this.received === 1) {
+      this.cancellationSignal = signal;
+      // Abort first: no new runner stage may begin after the first signal.
+      this.abortController.abort(signal);
+      // The supervisor forwards the same signal to every active owned group,
+      // waits its grace period, then KILLs if needed. We deliberately do not
+      // call process.exit: close handlers must drain output and cleanup.
+      this.shutdown = this.supervisor.stop(signal).catch((error: unknown) => {
+        console.error(`[e2e] signal shutdown failed: ${(error as Error).message}`);
+      });
+      return;
+    }
+
+    // A second SIGINT/SIGTERM is an explicit escalation, but we still await
+    // child `close` so receipt capture and runner cleanup can finish.
+    void this.supervisor.forceKill().catch((error: unknown) => {
+      console.error(`[e2e] forced signal shutdown failed: ${(error as Error).message}`);
+    });
+  };
+
+  install(): void {
+    process.on("SIGINT", this.onSignal);
+    process.on("SIGTERM", this.onSignal);
+  }
+
+  remove(): void {
+    process.removeListener("SIGINT", this.onSignal);
+    process.removeListener("SIGTERM", this.onSignal);
+  }
+
+  get control(): E2EExecutionControl {
+    return { supervisor: this.supervisor, abortSignal: this.abortController.signal };
+  }
+
+  get cancelled(): boolean {
+    return this.cancellationSignal !== undefined;
+  }
+
+  async settle(): Promise<void> {
+    await this.shutdown;
+    await this.supervisor.waitForIdle();
+  }
+
+  applyExitCode(): void {
+    if (this.cancellationSignal === "SIGINT") process.exitCode = 130;
+    if (this.cancellationSignal === "SIGTERM") process.exitCode = 143;
+  }
+}
+
+async function dispatch(argv: readonly string[], execution: E2EExecutionControl): Promise<void> {
   const [command, ...rest] = argv;
 
   if (command === "plan") {
@@ -102,25 +167,57 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
 
   if (command === "pack") {
     const { main: packMain } = await import("./pack.ts");
-    await packMain(rest);
+    await packMain(rest, execution);
+    return;
+  }
+
+  if (command === "takeover") {
+    loadRootEnv();
+    const { main: takeoverMain } = await import("./takeover.ts");
+    await takeoverMain(rest, execution);
+    return;
+  }
+
+  if (command === "verify-release") {
+    const { main: verifyReleaseMain } = await import("./verify-release.ts");
+    await verifyReleaseMain(rest);
     return;
   }
 
   const runArgs = command === "run" ? rest : argv;
   if (command !== undefined && command !== "run" && !command.startsWith("-")) {
-    console.error(`[e2e] unknown command ${JSON.stringify(command)}; expected pack, plan or run`);
+    console.error(`[e2e] unknown command ${JSON.stringify(command)}; expected pack, plan, run, takeover or verify-release`);
     process.exitCode = 1;
     return;
   }
 
   if (command === undefined || command.startsWith("-")) {
-    await runDefault(argv);
+    await runDefault(argv, execution);
     return;
   }
 
   loadRootEnv();
   const { main: runMain } = await import("./run.ts");
-  await runMain(runArgs);
+  await runMain(runArgs, execution);
+}
+
+/** The one process-wide signal state machine for all root CLI commands. */
+export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
+  const lifecycle = new RootSignalLifecycle();
+  lifecycle.install();
+  try {
+    await dispatch(argv, lifecycle.control);
+  } catch (error) {
+    if (lifecycle.cancelled) {
+      console.error(`[e2e] cancelled while draining owned processes: ${(error as Error).message}`);
+    } else {
+      throw error;
+    }
+  } finally {
+    await lifecycle.settle();
+    lifecycle.remove();
+    lifecycle.applyExitCode();
+  }
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

@@ -89,22 +89,44 @@ function hasChangedPath(repo: DiscoveredRepo, diffPaths: readonly string[]): boo
 
 /**
  * Changes to the candidate, the shared harness, the Testkit, the root
- * workspace/lock or the injection contract invalidate every repo path
- * optimization: plan must fail open and select every harness consumer (and
- * the whole lane) instead of silently running fewer repos.
+ * workspace/lock, the injection contract, or any packed package input
+ * invalidate every repo path optimization: plan must fail open and select the
+ * whole lane instead of silently running fewer repos.
  */
 export function hasGlobalImpact(diffPaths: readonly string[]): boolean {
   return diffPaths.some((rawPath) => {
     const path = normalizePath(rawPath);
+    const rootPackMetadata =
+      path === ".npmrc" ||
+      path === ".npmignore" ||
+      path === ".gitignore" ||
+      path === "package-lock.json" ||
+      path === "npm-shrinkwrap.json" ||
+      path === "pnpmfile.cjs" ||
+      path === ".pnpmfile.cjs" ||
+      /^README(?:\.[^/]+)?\.md$/i.test(path) ||
+      /^(?:LICENSE|NOTICE|CHANGELOG)(?:\.[^/]+)?$/i.test(path);
     return (
       path.startsWith("src/") ||
       path.startsWith("packages/testkit/") ||
       path.startsWith("e2e/scripts/") ||
+      path.startsWith("bin/") ||
+      // `dist/` is a published package input even when its normal producer is
+      // `src/`; a checked-in or generated dist-only change must not be omitted
+      // by the path optimization.
+      path.startsWith("dist/") ||
+      path.startsWith("scripts/package-runtime/") ||
+      path === "scripts/generate-reference.ts" ||
+      path === "INDEX.md" ||
+      path === "INDEX.template.md" ||
+      path.startsWith("docs-site/zh/") ||
+      path.startsWith("docs-site/images/") ||
       path === ".github/workflows/e2e.yml" ||
       path === "package.json" ||
       path === "pnpm-lock.yaml" ||
       path === "pnpm-workspace.yaml" ||
-      /^tsconfig(?:\.[^/]+)?\.json$/.test(path)
+      /^tsconfig(?:\.[^/]+)?\.json$/.test(path) ||
+      rootPackMetadata
     );
   });
 }
@@ -133,22 +155,22 @@ export function selectRepos(all: readonly DiscoveredRepo[], options: SelectionOp
     explicitlyRequested = all.filter((repo) => requested.has(repo.manifest.id));
   }
 
-  if (
-    options.lane !== undefined &&
-    explicitlyRequested.length > 0 &&
-    !explicitlyRequested.some((repo) => repo.manifest.lanes.includes(options.lane))
-  ) {
-    const available = explicitlyRequested
-      .map((repo) => `${repo.manifest.id}: ${repo.manifest.lanes.join(", ")}`)
-      .join("; ");
-    throw new Error(
-      `--repo selection is unavailable in lane ${JSON.stringify(options.lane)}. Available lanes: ${available}`,
-    );
+  const requestedLane = options.lane;
+  if (requestedLane !== undefined && explicitlyRequested.length > 0) {
+    const unavailable = explicitlyRequested.filter((repo) => !repo.manifest.lanes.includes(requestedLane));
+    if (unavailable.length > 0) {
+      const available = unavailable
+        .map((repo) => `${repo.manifest.id}: ${repo.manifest.lanes.join(", ")}`)
+        .join("; ");
+      throw new Error(
+        `--repo selection is unavailable in lane ${JSON.stringify(requestedLane)} for: ${available}`,
+      );
+    }
   }
 
   const requestedIds = repoIds.length > 0 ? new Set(repoIds) : undefined;
   const requestedDiffPaths = options.diffPaths && options.diffPaths.length > 0 ? options.diffPaths : undefined;
-  const diffPaths = requestedDiffPaths !== undefined && !hasGlobalImpact(requestedDiffPaths)
+  const diffPaths = repoIds.length === 0 && requestedDiffPaths !== undefined && !hasGlobalImpact(requestedDiffPaths)
     ? requestedDiffPaths
     : undefined;
 
@@ -157,6 +179,9 @@ export function selectRepos(all: readonly DiscoveredRepo[], options: SelectionOp
     if (options.lane !== undefined && !manifest.lanes.includes(options.lane)) return false;
     if (requestedIds !== undefined && !requestedIds.has(manifest.id)) return false;
     if (options.capability !== undefined && !manifest.areas.some((area) => area === options.capability)) return false;
+    // An explicit --repo is an operator decision, not a path-filter hint.
+    // Never turn it into a false-green empty plan merely because an unrelated
+    // --diff-path happened to be supplied by a caller.
     if (diffPaths !== undefined && !hasChangedPath(repo, diffPaths)) return false;
     return true;
   });
@@ -165,17 +190,30 @@ export function selectRepos(all: readonly DiscoveredRepo[], options: SelectionOp
 /** Read-only best effort diff lookup. Any failure, including an empty result, is fail-open. */
 export function tryReadDiffPaths(cwd: string): readonly string[] | undefined {
   try {
-    const result = spawnSync("git", ["diff", "--name-only", "--no-renames", "HEAD"], {
+    const tracked = spawnSync("git", ["diff", "--name-only", "--no-renames", "HEAD"], {
       cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     });
-    if (result.error || result.status !== 0 || typeof result.stdout !== "string") return undefined;
-    const paths = result.stdout
-      .split(/\r?\n/)
+    const untracked = spawnSync("git", ["ls-files", "--others", "--exclude-standard", "-z"], {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    if (
+      tracked.error ||
+      tracked.status !== 0 ||
+      typeof tracked.stdout !== "string" ||
+      untracked.error ||
+      untracked.status !== 0 ||
+      typeof untracked.stdout !== "string"
+    ) {
+      return undefined;
+    }
+    const paths = [...tracked.stdout.split(/\r?\n/), ...untracked.stdout.split("\0")]
       .map(normalizePath)
       .filter((path) => path.length > 0);
-    return paths.length > 0 ? paths : undefined;
+    return paths.length > 0 ? [...new Set(paths)] : undefined;
   } catch {
     return undefined;
   }
@@ -242,9 +280,41 @@ function printHumanPlan(entries: readonly PlanEntry[], lane: Lane): void {
   }
   console.log(`${entries.length} e2e shard(s) selected for lane ${lane}:\n`);
   for (const entry of entries) {
-    const executor = entry.executor.kind === "docker" ? `docker (${entry.executor.image})` : "host";
-    console.log(`- ${entry.id}  [${entry.capabilities.join(", ")}]  executor=${executor}`);
+    console.log(`- ${entry.id}  [${entry.capabilities.join(", ")}]  executor=host`);
     console.log(`    dir: ${entry.dir}  shard: ${entry.shard}`);
+  }
+}
+
+export interface ResolvedPlan {
+  cli: PlanCli;
+  entries: PlanEntry[];
+}
+
+/** Resolve once so default pack/run can replay the exact planned repo-id set. */
+export function resolvePlan(argv: readonly string[]): ResolvedPlan {
+  const cli = parsePlanCli(argv);
+  const e2eRoot = e2eRootDir();
+  const { repos, errors } = discoverAllRepos(e2eRoot);
+  if (errors.length > 0) {
+    throw new Error(`repo discovery found ${errors.length} problem(s): ${errors.join("; ")}`);
+  }
+  const diffPaths = cli.diffPaths ?? tryReadDiffPaths(resolve(e2eRoot, ".."));
+  return {
+    cli,
+    entries: makePlan(repos, e2eRoot, {
+      lane: cli.lane,
+      repoIds: cli.repoIds,
+      diffPaths,
+      capability: cli.capability,
+    }),
+  };
+}
+
+export function printResolvedPlan(plan: ResolvedPlan): void {
+  if (plan.cli.json) {
+    console.log(JSON.stringify(plan.entries));
+  } else {
+    printHumanPlan(plan.entries, plan.cli.lane);
   }
 }
 
@@ -256,30 +326,9 @@ function printHumanPlan(entries: readonly PlanEntry[], lane: Lane): void {
  */
 export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
   try {
-    const cli = parsePlanCli(argv);
-    const e2eRoot = e2eRootDir();
-    const { repos, errors } = discoverAllRepos(e2eRoot);
-    if (errors.length > 0) {
-      console.error(`[e2e] repo discovery found ${errors.length} problem(s):\n`);
-      for (const error of errors) console.error(`  - ${error}`);
-      process.exitCode = 1;
-      return -1;
-    }
-
-    const diffPaths = cli.diffPaths ?? tryReadDiffPaths(resolve(e2eRoot, ".."));
-    const entries = makePlan(repos, e2eRoot, {
-      lane: cli.lane,
-      repoIds: cli.repoIds,
-      diffPaths,
-      capability: cli.capability,
-    });
-
-    if (cli.json) {
-      console.log(JSON.stringify(entries));
-    } else {
-      printHumanPlan(entries, cli.lane);
-    }
-    return entries.length;
+    const plan = resolvePlan(argv);
+    printResolvedPlan(plan);
+    return plan.entries.length;
   } catch (error) {
     console.error(`[e2e] ${(error as Error).message}`);
     process.exitCode = 1;

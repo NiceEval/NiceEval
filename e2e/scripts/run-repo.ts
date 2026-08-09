@@ -12,8 +12,7 @@
 // the installed package must live in that copy's pnpm virtual store, never as
 // a link back to the checkout.
 
-import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { basename, join, relative, resolve, sep } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import { copyFile, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -31,12 +30,21 @@ import {
 } from "./testkit.ts";
 import { buildChildEnv } from "./secrets.ts";
 import { collectArtifacts, repoArtifactDir, repoReceiptPath } from "./artifacts.ts";
+import { preflightBrowsers, preflightHostCapabilities } from "./preflight.ts";
+import {
+  createUnmanagedExecutionControl,
+  isExecutionCancelled,
+  type E2EExecutionControl,
+  type OwnedProcessResult,
+} from "./owned-process.ts";
 import {
   classifyFromReceipt,
+  hasUnconfirmedOwnedGroup,
   retainCapture,
   type Category,
   type CommandCapture,
   type RepoReceipt,
+  type StageName,
   type StageReceipt,
   type TestkitReceipt,
 } from "./receipt.ts";
@@ -85,13 +93,14 @@ export function appendNativeArgs(command: readonly string[], nativeArgs: readonl
   return [...command, ...nativeArgs];
 }
 
-const EXCLUDED_FROM_COPY = new Set(["node_modules", ".niceeval", ".git", ".env"]);
+/** Basenames deliberately omitted from every isolated scenario/source snapshot. */
+export const E2E_COPY_EXCLUDED_BASENAMES = new Set(["node_modules", ".niceeval", ".git", ".env"]);
 
 export async function copyRepoIsolated(sourceDir: string, destDir: string): Promise<void> {
   await mkdir(destDir, { recursive: true });
   await cp(sourceDir, destDir, {
     recursive: true,
-    filter: (src) => !EXCLUDED_FROM_COPY.has(basename(src)),
+    filter: (src) => !E2E_COPY_EXCLUDED_BASENAMES.has(basename(src)),
   });
 }
 
@@ -148,65 +157,77 @@ function verifyAllInjections(
  * Spawn a command, stream output to the parent, and retain full stdout/stderr
  * for receipts (especially on failure / timeout).
  */
-export function runCommand(
+function commandCapture(result: OwnedProcessResult): CommandCapture {
+  return {
+    exitCode: result.exitCode,
+    signal: result.signal,
+    timedOut: result.timedOut,
+    cancelled: result.cancelled,
+    stdout: result.stdout,
+    stderr: result.stderr,
+    ...(result.error === undefined ? {} : { error: result.error }),
+    processGroupOwned: result.processGroupOwned,
+    groupCleanup: result.groupCleanup,
+  };
+}
+
+export async function runCommand(
   command: readonly string[],
   cwd: string,
   env: NodeJS.ProcessEnv,
   timeoutMs: number,
+  execution: E2EExecutionControl,
 ): Promise<CommandCapture> {
-  return new Promise((resolvePromise, reject) => {
-    const [cmd, ...args] = command;
-    const child = spawn(cmd, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
-    let timedOut = false;
-    let stdout = "";
-    let stderr = "";
-
-    child.stdout?.setEncoding("utf8");
-    child.stderr?.setEncoding("utf8");
-    child.stdout?.on("data", (chunk: string) => {
-      stdout += chunk;
-      process.stdout.write(chunk);
-    });
-    child.stderr?.on("data", (chunk: string) => {
-      stderr += chunk;
-      process.stderr.write(chunk);
-    });
-
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill("SIGKILL");
-    }, timeoutMs);
-
-    child.on("error", (err) => {
-      clearTimeout(timer);
-      reject(err);
-    });
-    child.on("exit", (code, signal) => {
-      clearTimeout(timer);
-      resolvePromise({
-        exitCode: code,
-        signal,
-        timedOut,
-        stdout,
-        stderr,
-      });
-    });
+  const result = await execution.supervisor.run(command, {
+    cwd,
+    env,
+    output: "capture",
+    stream: true,
+    timeoutMs,
+    abortSignal: execution.abortSignal,
   });
+  return commandCapture(result);
 }
 
-function unsupportedExecutorDetail(repo: DiscoveredRepo): string {
-  const ex = repo.manifest.executor;
-  if (ex.kind === "docker") {
-    return `executor kind "docker" (image ${ex.image}) is unsupported by this host runner`;
-  }
-  return `executor kind ${JSON.stringify((ex as { kind: string }).kind)} is unsupported by this host runner`;
+export interface RunRepoOptions {
+  /** Shared top-level cancellation and process ownership state. */
+  execution?: E2EExecutionControl;
+  /** A fixed source snapshot for takeover, otherwise the discovered repo directory. */
+  sourceDir?: string;
+  /** Durable subdirectory under artifactRoot, used to keep takeover receipts distinct. */
+  runLabel?: string;
+  /** Scratch subdirectory under runs/, used to name an intentionally shared copy. */
+  workdirKey?: string;
+  /** Deliberate repeated tests in one installed copy; this is not a retry mechanism. */
+  testRuns?: number;
+  /** Human-readable identity recorded when a takeover deliberately reuses one copy. */
+  copyId?: string;
+  /** Digest of the fixed takeover source snapshot that produced this copy. */
+  sourceSnapshotDigest?: string;
+}
+
+function withInvocationId(env: NodeJS.ProcessEnv, invocationId: string): NodeJS.ProcessEnv {
+  return { ...env, NICEEVAL_E2E_INVOCATION_ID: invocationId };
+}
+
+function cancelledStage(stage: StageName, detail: string): StageReceipt {
+  return { stage, ok: false, cancelled: true, detail };
+}
+
+function nextFailureStage(stages: readonly StageReceipt[]): StageName {
+  if (!stages.some((stage) => stage.stage === "preflight")) return "preflight";
+  if (!stages.some((stage) => stage.stage === "prepare")) return "prepare";
+  if (!stages.some((stage) => stage.stage === "install")) return "install";
+  if (!stages.some((stage) => stage.stage === "injection")) return "injection";
+  if (!stages.some((stage) => stage.stage === "browser")) return "browser";
+  return "test";
 }
 
 /**
- * Run one discovered repo in an external temp copy under scratchRoot/runs/<id>/.
- * Artifacts + receipt land under independent artifactRoot/<id>/ (durable; never
- * under scratchRoot or the e2e source tree). The working copy is always removed
- * in finally; cleanup failure never masks an earlier stage error.
+ * Run one discovered repo in an external temp copy under scratchRoot/runs/.
+ * Artifacts + receipt land under independent artifactRoot (or runLabel) and
+ * the working copy is always removed. A `testRuns` value above one is an
+ * explicit takeover observation in the same installed copy, never retry.
  */
 export async function runRepo(
   repo: DiscoveredRepo,
@@ -216,12 +237,22 @@ export async function runRepo(
   allSecretNames: ReadonlySet<string>,
   nativeArgs: readonly string[],
   testkit?: TestkitPackage,
+  options: RunRepoOptions = {},
 ): Promise<RepoRunResult> {
+  const execution = options.execution ?? createUnmanagedExecutionControl();
   const repoId = repo.manifest.id;
-  const copyDir = join(scratchRoot, "runs", repoId);
-  const artifactDir = repoArtifactDir(artifactRoot, repoId);
-  const receiptPath = repoReceiptPath(artifactRoot, repoId);
+  const copyDir = join(scratchRoot, "runs", options.workdirKey ?? repoId);
+  const scopedArtifactRoot = options.runLabel === undefined ? artifactRoot : join(artifactRoot, options.runLabel);
+  const artifactDir = repoArtifactDir(scopedArtifactRoot, repoId);
+  const receiptPath = repoReceiptPath(scopedArtifactRoot, repoId);
+  const sourceDir = options.sourceDir ?? repo.dir;
+  const testRuns = options.testRuns ?? 1;
+  if (!Number.isInteger(testRuns) || testRuns < 1) {
+    throw new Error(`testRuns must be a positive integer, got ${testRuns}`);
+  }
+
   const stages: StageReceipt[] = [];
+  const invocationIds: string[] = [];
   let testExitCode: number | null = null;
   let copyCreated = false;
   let testkitInjected = false;
@@ -230,185 +261,283 @@ export async function runRepo(
 
   try {
     durableCandidatePath = await materializeCandidateArtifact(artifactRoot, candidate);
-    if (repo.manifest.executor.kind !== "host") {
-      const detail = unsupportedExecutorDetail(repo);
-      stages.push({ stage: "install", ok: false, detail });
-    } else {
-      await copyRepoIsolated(repo.dir, copyDir);
-      copyCreated = true;
+    const setupInvocationId = randomUUID();
+    invocationIds.push(setupInvocationId);
+    const preflightEnv = withInvocationId(
+      buildChildEnv(process.env, allSecretNames, repo.manifest.secrets),
+      setupInvocationId,
+    );
 
-      // --- prepare: harness pre-flight guards (fail before any install/test) ---
-      const consumesTestkit = repo.manifest.harness?.testkit === true;
-      const prepareViolations = checkTestkitSourceClean(copyDir);
-      if (consumesTestkit && testkit === undefined) {
-        prepareViolations.push(
-          "harness.testkit: true declared but the workspace Testkit was not built — declared-but-not-injected must fail before test",
-        );
-      }
-      if (!consumesTestkit) {
-        const imports = scanForTestkitImports(copyDir);
-        if (imports.length > 0) {
-          prepareViolations.push(
-            `repo imports @niceeval/testkit without declaring harness.testkit: true (${imports.join(", ")}) — undeclared imports must fail before test`,
-          );
-        }
-      }
-      const prepareOk = prepareViolations.length === 0;
+    if (isExecutionCancelled(execution)) {
+      stages.push(cancelledStage("preflight", "cancelled before capability preflight"));
+    } else {
+      const preflight = await preflightHostCapabilities(repo.manifest, preflightEnv, execution);
       stages.push({
-        stage: "prepare",
-        ok: prepareOk,
-        detail: prepareOk
-          ? consumesTestkit
-            ? "source clean; harness.testkit declared"
-            : "source clean; no testkit declared"
-          : `prepare failed: ${prepareViolations.join("; ")}`,
+        stage: "preflight",
+        ok: preflight.ok,
+        invocationId: setupInvocationId,
+        ...(preflight.cancelled ? { cancelled: true } : {}),
+        ...(preflight.failureCategory === undefined ? {} : { failureCategory: preflight.failureCategory }),
+        checks: preflight.checks,
+        detail: preflight.cancelled
+          ? "cancelled during capability preflight"
+          : preflight.ok
+            ? "declared host capabilities available"
+            : `configuration preflight failed: ${preflight.checks.filter((check) => !check.ok).map((check) => check.detail).join("; ")}`,
       });
 
-      if (prepareOk) {
-        await pointAtCandidateTarball(copyDir, durableCandidatePath);
-        if (consumesTestkit) {
-          await injectTestkitDirectory(copyDir, testkit as TestkitPackage);
-          testkitInjected = true;
-        }
+      if (preflight.ok && !preflight.cancelled) {
+        await copyRepoIsolated(sourceDir, copyDir);
+        copyCreated = true;
 
-        // --- install ---
-        const installCmd = ["pnpm", "install", "--no-frozen-lockfile"] as const;
-        const installEnv = buildChildEnv(process.env, allSecretNames, []);
-        let installCapture: CommandCapture;
-        try {
-          installCapture = await runCommand(installCmd, copyDir, installEnv, 30 * 60_000);
-        } catch (err) {
-          installCapture = {
-            exitCode: null,
-            signal: null,
-            timedOut: false,
-            stdout: "",
-            stderr: (err as Error).message,
-          };
-        }
-        const installOk = installCapture.exitCode === 0 && !installCapture.timedOut;
-        stages.push({
-          stage: "install",
-          ok: installOk,
-          command: [...installCmd],
-          capture: retainCapture(installCapture, installOk),
-          detail: installOk
-            ? "pnpm install ok"
-            : installCapture.timedOut
-              ? "pnpm install timed out"
-              : `pnpm install failed (exit ${installCapture.exitCode}) in the isolated copy`,
-        });
-
-        if (installOk) {
-          // --- injection: candidate bytes plus optional Testkit directory ---
-          let injectionOk = false;
-          let injectionDetail: string;
-          try {
-            if (!existsSync(join(copyDir, "pnpm-lock.yaml"))) {
-              injectionOk = false;
-              injectionDetail = "could not read isolated copy's pnpm-lock.yaml: file missing";
-            } else {
-              const lockText = readFileSync(join(copyDir, "pnpm-lock.yaml"), "utf8");
-              const verdict = verifyAllInjections(
-                lockText,
-                candidate,
-                testkitInjected ? testkit : undefined,
-                copyDir,
-              );
-              injectionOk = verdict.ok;
-              if (verdict.ok) testkitResolvedPath = verdict.testkitResolvedPath;
-              injectionDetail = verdict.ok
-                ? testkitInjected
-                  ? `candidate integrity matches lockfile; ${verdict.testkitDetail}`
-                  : "candidate integrity matches lockfile"
-                : `injection verification failed: ${verdict.reason}`;
-            }
-          } catch (err) {
-            injectionOk = false;
-            injectionDetail = `could not read isolated copy's pnpm-lock.yaml: ${(err as Error).message}`;
+        if (isExecutionCancelled(execution)) {
+          stages.push(cancelledStage("prepare", "cancelled before source prepare"));
+        } else {
+          // --- prepare: harness pre-flight guards (fail before any install/test) ---
+          const consumesTestkit = repo.manifest.harness?.testkit === true;
+          const prepareViolations = checkTestkitSourceClean(copyDir);
+          if (consumesTestkit && testkit === undefined) {
+            prepareViolations.push(
+              "harness.testkit: true declared but the workspace Testkit was not built — declared-but-not-injected must fail before test",
+            );
           }
-          stages.push({ stage: "injection", ok: injectionOk, detail: injectionDetail });
-
-          // Never run an unproven candidate: skip test and collection on failure.
-          if (injectionOk) {
-            // --- test ---
-            const childEnv = buildChildEnv(process.env, allSecretNames, repo.manifest.secrets);
-            const timeoutMs = repo.manifest.timeoutMinutes * 60_000;
-            const testCmd = appendNativeArgs(repo.manifest.command, nativeArgs);
-            let testCapture: CommandCapture;
-            try {
-              testCapture = await runCommand(testCmd, copyDir, childEnv, timeoutMs);
-            } catch (err) {
-              testCapture = {
-                exitCode: null,
-                signal: null,
-                timedOut: false,
-                stdout: "",
-                stderr: (err as Error).message,
-              };
-            }
-            testExitCode = testCapture.exitCode;
-            const testOk = testCapture.exitCode === 0 && !testCapture.timedOut;
-            stages.push({
-              stage: "test",
-              ok: testOk,
-              command: testCmd,
-              capture: retainCapture(testCapture, testOk),
-              detail: testCapture.timedOut
-                ? "exceeded e2e.json timeoutMinutes; process killed"
-                : testOk
-                  ? "command exited 0"
-                  : `exit ${testCapture.exitCode}`,
-            });
-
-            // --- collect into durable artifactRoot only (never source or scratch) ---
-            try {
-              const { collected, warnings } = await collectArtifacts(
-                copyDir,
-                artifactDir,
-                repo.manifest.artifacts,
+          if (!consumesTestkit) {
+            const imports = scanForTestkitImports(copyDir);
+            if (imports.length > 0) {
+              prepareViolations.push(
+                `repo imports @niceeval/testkit without declaring harness.testkit: true (${imports.join(", ")}) — undeclared imports must fail before test`,
               );
-              for (const warning of warnings) console.warn(`[e2e] ${warning}`);
+            }
+          }
+          const prepareOk = prepareViolations.length === 0;
+          stages.push({
+            stage: "prepare",
+            ok: prepareOk,
+            detail: prepareOk
+              ? consumesTestkit
+                ? "source clean; harness.testkit declared"
+                : "source clean; no testkit declared"
+              : `prepare failed: ${prepareViolations.join("; ")}`,
+          });
+
+          if (prepareOk) {
+            if (isExecutionCancelled(execution)) {
+              stages.push(cancelledStage("install", "cancelled before candidate injection and install"));
+            } else {
+              await pointAtCandidateTarball(copyDir, durableCandidatePath);
+              if (consumesTestkit) {
+                await injectTestkitDirectory(copyDir, testkit as TestkitPackage);
+                testkitInjected = true;
+              }
+
+              // --- install ---
+              const installCmd = ["pnpm", "install", "--no-frozen-lockfile"] as const;
+              const installEnv = withInvocationId(buildChildEnv(process.env, allSecretNames, []), setupInvocationId);
+              const installCapture = await runCommand(installCmd, copyDir, installEnv, 30 * 60_000, execution);
+              const installOk =
+                installCapture.exitCode === 0 &&
+                !installCapture.timedOut &&
+                !installCapture.cancelled &&
+                installCapture.error === undefined &&
+                !hasUnconfirmedOwnedGroup(installCapture);
               stages.push({
-                stage: "collect",
-                ok: true,
-                collected,
-                detail:
-                  collected.length > 0
-                    ? `wrote ${collected.length} artifact path(s) under ${artifactDir}`
-                    : `no artifacts matched under ${artifactDir}`,
+                stage: "install",
+                ok: installOk,
+                invocationId: setupInvocationId,
+                ...(installCapture.cancelled ? { cancelled: true } : {}),
+                command: [...installCmd],
+                capture: retainCapture(installCapture, installOk),
+                detail: installCapture.cancelled
+                  ? `cancelled during pnpm install (${installCapture.signal ?? "root signal"})`
+                  : installOk
+                    ? "pnpm install ok"
+                    : hasUnconfirmedOwnedGroup(installCapture)
+                      ? `pnpm install leader exited but owned process-group cleanup was not confirmed: ${installCapture.groupCleanup.detail}`
+                    : installCapture.timedOut
+                      ? "pnpm install timed out after TERM → grace → KILL"
+                      : `pnpm install failed (${installCapture.error ?? installCapture.signal ?? `exit ${installCapture.exitCode}`}) in the isolated copy`,
               });
-            } catch (err) {
-              stages.push({
-                stage: "collect",
-                ok: false,
-                detail: `collect failed: ${(err as Error).message}`,
-              });
+
+              if (installOk) {
+                if (isExecutionCancelled(execution)) {
+                  stages.push(cancelledStage("injection", "cancelled before injection verification"));
+                } else {
+                  // --- injection: candidate bytes plus optional Testkit directory ---
+                  let injectionOk = false;
+                  let injectionDetail: string;
+                  try {
+                    if (!existsSync(join(copyDir, "pnpm-lock.yaml"))) {
+                      injectionOk = false;
+                      injectionDetail = "could not read isolated copy's pnpm-lock.yaml: file missing";
+                    } else {
+                      const lockText = readFileSync(join(copyDir, "pnpm-lock.yaml"), "utf8");
+                      const verdict = verifyAllInjections(
+                        lockText,
+                        candidate,
+                        testkitInjected ? testkit : undefined,
+                        copyDir,
+                      );
+                      injectionOk = verdict.ok;
+                      if (verdict.ok) testkitResolvedPath = verdict.testkitResolvedPath;
+                      injectionDetail = verdict.ok
+                        ? testkitInjected
+                          ? `candidate integrity matches lockfile; ${verdict.testkitDetail}`
+                          : "candidate integrity matches lockfile"
+                        : `injection verification failed: ${verdict.reason}`;
+                    }
+                  } catch (error) {
+                    injectionOk = false;
+                    injectionDetail = `could not read isolated copy's pnpm-lock.yaml: ${(error as Error).message}`;
+                  }
+                  stages.push({
+                    stage: "injection",
+                    ok: injectionOk,
+                    invocationId: setupInvocationId,
+                    detail: injectionDetail,
+                  });
+
+                  // Never run an unproven candidate: skip test and collection on failure.
+                  if (injectionOk) {
+                    const browser = await preflightBrowsers(
+                      repo.manifest.requires?.browsers,
+                      copyDir,
+                      preflightEnv,
+                      execution,
+                    );
+                    if (repo.manifest.requires?.browsers !== undefined) {
+                      stages.push({
+                        stage: "browser",
+                        ok: browser.ok,
+                        invocationId: setupInvocationId,
+                        ...(browser.cancelled ? { cancelled: true } : {}),
+                        ...(browser.failureCategory === undefined ? {} : { failureCategory: browser.failureCategory }),
+                        checks: browser.checks,
+                        detail: browser.cancelled
+                          ? "cancelled during browser preflight"
+                          : browser.ok
+                            ? "declared browser capabilities available"
+                            : `browser preflight failed: ${browser.checks.filter((check) => !check.ok).map((check) => check.detail).join("; ")}`,
+                      });
+                    }
+
+                    if (browser.ok && !browser.cancelled) {
+                      const timeoutMs = repo.manifest.timeoutMinutes * 60_000;
+                      const testCmd = appendNativeArgs(repo.manifest.command, nativeArgs);
+                      for (let attempt = 1; attempt <= testRuns; attempt += 1) {
+                        if (isExecutionCancelled(execution)) {
+                          stages.push(cancelledStage("test", `cancelled before test invocation ${attempt}`));
+                          break;
+                        }
+                        const invocationId = randomUUID();
+                        invocationIds.push(invocationId);
+                        const childEnv = withInvocationId(
+                          buildChildEnv(process.env, allSecretNames, repo.manifest.secrets),
+                          invocationId,
+                        );
+                        const testCapture = await runCommand(testCmd, copyDir, childEnv, timeoutMs, execution);
+                        testExitCode = testCapture.exitCode;
+                        const testOk =
+                          testCapture.exitCode === 0 &&
+                          !testCapture.timedOut &&
+                          !testCapture.cancelled &&
+                          testCapture.error === undefined &&
+                          !hasUnconfirmedOwnedGroup(testCapture);
+                        stages.push({
+                          stage: "test",
+                          attempt,
+                          invocationId,
+                          ok: testOk,
+                          ...(testCapture.cancelled ? { cancelled: true } : {}),
+                          command: testCmd,
+                          capture: retainCapture(testCapture, testOk),
+                          detail: testCapture.cancelled
+                            ? `cancelled during test invocation ${attempt} (${testCapture.signal ?? "root signal"})`
+                            : testCapture.timedOut
+                              ? `test invocation ${attempt} exceeded e2e.json timeoutMinutes; owned group received TERM → grace → KILL`
+                              : hasUnconfirmedOwnedGroup(testCapture)
+                                ? `test invocation ${attempt} leader exited but owned process-group cleanup was not confirmed: ${testCapture.groupCleanup.detail}`
+                              : testOk
+                                ? `test invocation ${attempt} exited 0`
+                                : `test invocation ${attempt} failed (${testCapture.error ?? testCapture.signal ?? `exit ${testCapture.exitCode}`})`,
+                        });
+                        if (testCapture.cancelled) break;
+                      }
+
+                      // --- collect into durable artifactRoot only (never source or scratch) ---
+                      try {
+                        const { collected, warnings } = await collectArtifacts(
+                          copyDir,
+                          artifactDir,
+                          repo.manifest.artifacts,
+                        );
+                        for (const warning of warnings) console.warn(`[e2e] ${warning}`);
+                        stages.push({
+                          stage: "collect",
+                          ok: true,
+                          collected,
+                          detail:
+                            collected.length > 0
+                              ? `wrote ${collected.length} artifact path(s) under ${artifactDir}`
+                              : `no artifacts matched under ${artifactDir}`,
+                        });
+                      } catch (error) {
+                        stages.push({
+                          stage: "collect",
+                          ok: false,
+                          detail: `collect failed: ${(error as Error).message}`,
+                        });
+                      }
+                    }
+                  }
+                }
+              }
             }
           }
         }
       }
     }
-  } catch (err) {
+  } catch (error) {
     stages.push({
-      stage: stages.some((s) => s.stage === "injection")
-        ? "injection"
-        : stages.some((s) => s.stage === "install")
-          ? "install"
-          : "prepare",
+      stage: nextFailureStage(stages),
       ok: false,
-      detail: (err as Error).message,
+      ...(isExecutionCancelled(execution) ? { cancelled: true } : {}),
+      detail: isExecutionCancelled(execution)
+        ? `cancelled while preparing runner state: ${(error as Error).message}`
+        : (error as Error).message,
     });
   } finally {
+    // A root signal stops new child stages, but a copy that already exists
+    // still gets its declared diagnostics collected before cleanup. This is
+    // intentionally filesystem-only work after the supervisor has drained
+    // the owned process group.
+    if (
+      isExecutionCancelled(execution) &&
+      (copyCreated || existsSync(copyDir)) &&
+      !stages.some((stage) => stage.stage === "collect")
+    ) {
+      try {
+        const { collected, warnings } = await collectArtifacts(copyDir, artifactDir, repo.manifest.artifacts);
+        for (const warning of warnings) console.warn(`[e2e] ${warning}`);
+        stages.push({
+          stage: "collect",
+          ok: true,
+          collected,
+          detail: `collected diagnostics after cancellation under ${artifactDir}`,
+        });
+      } catch (error) {
+        stages.push({ stage: "collect", ok: false, detail: `collect after cancellation failed: ${(error as Error).message}` });
+      }
+    }
+
     // Unconditional working-copy cleanup; failure must not mask earlier outcomes.
     if (copyCreated || existsSync(copyDir)) {
       let cleanupOk = true;
       let cleanupDetail = `removed ${copyDir}`;
       try {
         await rm(copyDir, { recursive: true, force: true });
-      } catch (err) {
+      } catch (error) {
         cleanupOk = false;
-        cleanupDetail = `cleanup failed for ${copyDir}: ${(err as Error).message}`;
+        cleanupDetail = `cleanup failed for ${copyDir}: ${(error as Error).message}`;
         console.error(`[e2e] ${cleanupDetail}`);
       }
       stages.push({
@@ -434,6 +563,11 @@ export async function runRepo(
       : undefined;
   const receipt: RepoReceipt = {
     repoId,
+    invocationIds,
+    testInvocations: stages.filter((stage) => stage.stage === "test" && stage.capture !== undefined).length,
+    ...(options.copyId === undefined ? {} : { copyId: options.copyId }),
+    ...(options.runLabel === undefined ? {} : { runLabel: options.runLabel }),
+    ...(options.sourceSnapshotDigest === undefined ? {} : { sourceSnapshotDigest: options.sourceSnapshotDigest }),
     artifactDir,
     receiptPath,
     stages,
@@ -453,8 +587,8 @@ export async function runRepo(
   try {
     await mkdir(artifactDir, { recursive: true });
     await writeFile(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, "utf8");
-  } catch (err) {
-    const detail = `failed to write receipt ${receiptPath}: ${(err as Error).message}`;
+  } catch (error) {
+    const detail = `failed to write receipt ${receiptPath}: ${(error as Error).message}`;
     console.error(`[e2e] ${detail}`);
     stages.push({ stage: "collect", ok: false, detail });
     const persistenceFailure = classifyFromReceipt({ stages, detail: receipt.detail });
@@ -467,7 +601,7 @@ export async function runRepo(
     exitCode: testExitCode,
     category: receipt.category,
     detail: receipt.detail,
-    attempts: 1,
+    attempts: receipt.testInvocations,
     receipt,
     artifactDir,
     receiptPath,

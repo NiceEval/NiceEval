@@ -11,7 +11,14 @@ import { readFile, rm, writeFile } from "node:fs/promises";
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { parse } from "yaml";
 
-import { runInherited } from "./injection.ts";
+import {
+  createUnmanagedExecutionControl,
+  isExecutionCancelled,
+  E2EExecutionCancelledError,
+  hasConfirmedOwnedGroupCleanup,
+  throwIfExecutionCancelled,
+  type E2EExecutionControl,
+} from "./owned-process.ts";
 
 export interface TestkitPackage {
   /** Absolute packages/testkit directory in the current checkout. */
@@ -27,15 +34,28 @@ export interface TestkitBuildDependencies {
   buildTestkit?: (pkgDir: string) => Promise<number>;
 }
 
-async function buildTestkitSource(pkgDir: string): Promise<number> {
-  return runInherited("pnpm", ["build"], pkgDir, false);
+async function buildTestkitSource(pkgDir: string, control: E2EExecutionControl): Promise<number> {
+  const result = await control.supervisor.run(["pnpm", "build"], {
+    cwd: pkgDir,
+    env: process.env,
+    output: "inherit",
+    timeoutMs: 30 * 60_000,
+    abortSignal: control.abortSignal,
+  });
+  if (result.cancelled || isExecutionCancelled(control)) {
+    throw new E2EExecutionCancelledError("workspace Testkit build cancelled");
+  }
+  return result.exitCode === 0 && hasConfirmedOwnedGroupCleanup(result) ? 0 : 1;
 }
 
 /** Clean-build and validate the private workspace Testkit once. */
 export async function buildTestkitPackage(
   repoRoot: string,
   dependencies: TestkitBuildDependencies = {},
+  execution: E2EExecutionControl | undefined = undefined,
 ): Promise<TestkitPackage> {
+  const control = execution ?? createUnmanagedExecutionControl();
+  throwIfExecutionCancelled(control);
   const pkgDir = resolve(repoRoot, "packages", "testkit");
   const pkgJsonPath = join(pkgDir, "package.json");
   if (!existsSync(pkgJsonPath)) {
@@ -62,9 +82,12 @@ export async function buildTestkitPackage(
     throw new Error("packages/testkit/package.json must declare a non-empty version for diagnostics");
   }
 
+  throwIfExecutionCancelled(control);
   await rm(join(pkgDir, "dist"), { recursive: true, force: true });
-  const build = dependencies.buildTestkit ?? buildTestkitSource;
-  const buildCode = await build(pkgDir);
+  const buildCode = dependencies.buildTestkit === undefined
+    ? await buildTestkitSource(pkgDir, control)
+    : await dependencies.buildTestkit(pkgDir);
+  throwIfExecutionCancelled(control);
   if (buildCode !== 0) {
     throw new Error(`Testkit clean build failed (exit ${buildCode}) in ${pkgDir}`);
   }

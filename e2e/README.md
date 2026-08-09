@@ -32,6 +32,10 @@ e2e/
 pnpm e2e plan --lane pr --json
 pnpm e2e pack --out /tmp/niceeval-candidate.tgz
 pnpm e2e run --candidate /tmp/niceeval-candidate.tgz --repo cli
+pnpm e2e takeover --candidate /tmp/niceeval-candidate.tgz --repo report \
+  -- --run test/report.browser.spec.ts -t "打开"
+pnpm e2e verify-release --plan /tmp/release-plan.json --candidate /tmp/niceeval-candidate.tgz \
+  --receipt-root /tmp/release-receipts --tag v0.4.6
 
 # 默认模式依次 plan → pack 一次 candidate → 按需 build 一次 Testkit → 运行
 pnpm e2e --lane pr
@@ -44,10 +48,18 @@ Testkit 没有单独的 tarball 参数。它是同仓库的私有测试工具，
 ## 选择与失败
 
 - `plan` 只读 manifest，不 pack、不安装、不读取 secret。
-- `run` 在临时副本依次执行 install、injection attestation、test、artifact collection 与 cleanup。
+- `run` 在临时副本依次执行 capability preflight、install、injection attestation、browser preflight、test、artifact collection 与 cleanup。
 - 选择使用 `--lane`、`--repo`、`--diff-path` 和 capability；不存在旧 `group` 参数。
-- 测试非零退出归 regression；安装、注入、artifact 或 cleanup 失败归 infra。Adapter 不用 exit 75 或日志正则猜分类。
+- 显式 `--repo` 不受 `--diff-path` 过滤；candidate 的 `bin/`、`dist/`、package-runtime/reference/docs 输入、root pack 配置或共享 runner 改动会 fail-open 选择整条 lane。
+- 默认入口只生成一次 plan；run 只接收该 plan 的精确 Repo ID 集。local diff 同时含 tracked 与未忽略 untracked 路径。
+- 测试非零退出归 regression；安装、注入、artifact 或 cleanup 失败归 infra；缺 runtime、Docker daemon、browser 或 declared secret 归 configuration；根 signal 归 cancelled。Adapter 不用 exit 75 或日志正则猜分类。
 - 原始收据、JUnit 与声明的 artifact 写入 durable artifact root；隔离副本在 cleanup 阶段删除。
+
+根 CLI 只管理它创建的 detached process group：SIGINT/SIGTERM 第一次先停止新阶段并转发同 signal，grace 后 KILL，等待 `close` 后再检查 group 是否消失；第二次立即 KILL。每个 command capture 的 `groupCleanup` 都写入探测、信号和终态。场景自己的 container、server、Sandbox 或新 session 仍由场景 receipt 负责。每个原生 test command 获得新 `NICEEVAL_E2E_INVOCATION_ID`，不含 secret。
+
+子进程保留 PATH、locale 和 Node/pnpm 等普通变量。未由当前 Repo 声明的 token、key、secret、password、credential、auth、jwt 与数据库连接变量会被剥离。preflight、install 和 test 共用这项策略，receipt 不写值。
+
+`takeover` 固定一次 candidate、checkout/source snapshot 与按需 Testkit build，留下三个新副本、一个同已安装副本连续两次、Repo 默认并行和目标单项的 receipt；它不是 retry。summary 带 source snapshot 的 SHA-256 文件清单，所有 receipt 绑定该 digest，并核验矩阵结构与 cleanup。`verify-release` 只在本地验证非空 plan、receipt 精确集/全 pass、candidate 与保留 tarball digest，以及 package/tag 身份，不发布。
 
 ## 单项调试
 

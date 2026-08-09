@@ -10,6 +10,7 @@ import { parseArgs } from "node:util";
 
 import { repoRootDir } from "./discovery.ts";
 import { buildCandidateTarball, readCandidateTarball, type CandidateTarball } from "./injection.ts";
+import type { E2EExecutionControl } from "./owned-process.ts";
 
 export interface PackDependencies {
   buildCandidateTarball?: typeof buildCandidateTarball;
@@ -41,6 +42,7 @@ export async function packCandidate(
   repoRoot: string,
   out: string,
   dependencies: PackDependencies = {},
+  execution: E2EExecutionControl | undefined = undefined,
 ): Promise<CandidateTarball> {
   const outputPath = resolve(out);
   if (!outputPath.endsWith(".tgz")) {
@@ -52,7 +54,7 @@ export async function packCandidate(
   try {
     const build = dependencies.buildCandidateTarball ?? buildCandidateTarball;
     const read = dependencies.readCandidateTarball ?? readCandidateTarball;
-    const packed = await build(repoRoot, temporaryDirectory, { quiet: true });
+    const packed = await build(repoRoot, temporaryDirectory, { quiet: true, control: execution });
     const generated = (await readdir(temporaryDirectory)).filter((name) => name.endsWith(".tgz"));
     if (generated.length !== 1) {
       throw new Error(`expected exactly one generated candidate in ${temporaryDirectory}`);
@@ -65,10 +67,13 @@ export async function packCandidate(
   }
 }
 
-export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
+export async function main(
+  argv: readonly string[] = process.argv.slice(2),
+  execution: E2EExecutionControl | undefined = undefined,
+): Promise<void> {
   try {
     const cli = parsePackCli(argv);
-    const candidate = await packCandidate(repoRootDir(), cli.out);
+    const candidate = await packCandidate(repoRootDir(), cli.out, {}, execution);
     console.log(JSON.stringify({ path: candidate.path, sha512: candidate.integrity, sha256: candidate.sha256 }));
   } catch (error) {
     console.error(`[e2e] ${(error as Error).message}`);

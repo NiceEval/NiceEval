@@ -70,9 +70,7 @@ test/
 `e2e.json` 只描述编排条件：
 
 ```ts
-type Executor =
-  | { kind: "host" }
-  | { kind: "docker"; image: string };
+type Executor = { kind: "host" };
 
 interface E2ERepoManifest {
   schemaVersion: 1;
@@ -108,8 +106,15 @@ interface E2ERepoManifest {
 }
 ```
 
-manifest 不含测试标题、expected、page matrix、历史 bug 或 contract anchor。`paths` 只是选择优化；无法计算 diff 时多跑，
-不能静默少跑。显式 `--repo <id>` 命中已知 Repo、却被所选 lane 全部过滤时必须非零退出并列出可用 lane，不能把零项当成功。
+manifest 不含测试标题、expected、page matrix、历史 bug 或 contract anchor。`paths` 只是选择优化。
+无法计算 diff 时多跑，不能静默少跑。显式 `--repo <id>` 不受 `--diff-path` 过滤。
+多个显式 Repo 中任一个不在所选 lane 时，命令必须非零退出并列出该 Repo 的可用 lane。
+`requires.runtimes`、`docker`、`browsers`、platform 与 secret 在 test 前有结构化 preflight。
+`externalNetwork: true` 在 receipt 中写为“声明但未主动预检”。通用探测不能替代 Repo 自己拥有的 provider/network 行为。
+
+`id` 是 canonical 相对路径。它允许 `adapter/ai-sdk`，但不允许绝对路径、空段、dot traversal、反斜杠或控制符。
+`artifacts` 只允许 canonical `dir/**` 或顶层文件 glob。非法形状使 discovery 聚合报错。
+collector 逐段检查 copy root 与 artifact root，拒绝 source symlink、后代 symlink、特殊文件及目标 symlink。
 
 ## Candidate 信任链与 Testkit 注入
 
@@ -140,16 +145,13 @@ Release 必须发布通过 preflight 的同一 tarball；验收后重新 pack �
 
 ## Executor 与被测 Backend 分开
 
-Executor 回答测试进程在哪里运行：
-
-- `host`：本机 / Actions runner 的隔离副本；
-- `docker`：固定 digest 镜像内的隔离副本，不把源码树可写挂载进容器。
+Executor 当前只回答一种运行位置：`host`，即本机 / Actions runner 的隔离副本。
 
 被测 backend 回答 NiceEval 连接什么：本地 HTTP 进程、Docker Compose 服务、真实 SDK、真实 CLI、远端 provider 或 sandbox。
 它是 Repo 自己的 fixture，不进入通用 executor 类型。
 
-因此 Docker executor 不自动证明真实 provider；host executor 连接 Docker sandbox 也不等于没有 Docker 边界。
-第一版只实现 host 和 Docker 两种 executor。
+Docker 是 Repo 的 backend / sandbox 依赖，不属于 executor 类型。host executor 连接 Docker sandbox 不等于没有 Docker 边界；
+声明 `requires.docker: true` 的 Repo 在 daemon 缺失时获得 `configuration`，不能留一个声明后运行时报 unsupported 的假契约。
 
 ## 数据与观察边界
 
@@ -176,8 +178,22 @@ Executor 回答测试进程在哪里运行：
 - 本地 `--keep-workdir` 是显式诊断选项，CI 永远收 artifact 后删除隔离副本；
 - secret 只进子进程变量集合，摘要和 artifact 统一脱敏，不写进 fixture、manifest 或命令行。
 
-隔离是可靠性的必要条件，但不等于可靠性已经成立。新增、接管或实质修改 owner 时，同一测试还要在三个全新副本、
-同一副本连续两次、所属 Repo 默认并行和文件 / 标题单项运行中全部通过，并取得 owned resource 终结收据。
+未声明的敏感名变量不会进入 preflight、install 或 test。敏感名包含 token、key、secret、password、credential、auth、jwt 与数据库连接名。
+PATH、locale、代理路由及 Node/pnpm 的普通运行变量保留。receipt 绝不写 secret 值。
+
+根 runner 给每个原生 test command 注入新的非秘密 `NICEEVAL_E2E_INVOCATION_ID`。它的 outer supervisor 只拥有自己创建的 detached
+process group；测试另开 session、container、server 或 Sandbox 时，仍由该 Repo 在资源 receipt 中证明终结。Owner 接管的 same-copy
+两次 test 保留同一个安装副本，但必须使用两个不同的 invocation ID，且 receipt 按 test attempt 关联这两个 ID，避免 artifact namespace
+collision 假红。
+
+child `close` 后，runner 还会探测自己的 process group。残留组依次收到 TERM、grace 与 KILL。
+capture 中的 groupCleanup 写入这次探测、所发信号与确认终态。它只承诺自己创建的 detached group。
+
+隔离是可靠性的必要条件，但不等于可靠性已经成立。
+新增、接管或实质修改 owner 时，使用根 `takeover` 入口固定 candidate、checkout、Testkit 与 source snapshot。
+同一测试还要在三个全新副本、同一已安装副本连续两次、所属 Repo 默认并行和文件 / 标题单项运行中全部通过。
+takeover summary 写入 source snapshot 的相对路径、字节数、SHA-256 清单和总 digest。
+每份 receipt 绑定该 digest；矩阵核验六个观察标签、copy ID、attempt、唯一 invocation ID 与 cleanup 终态。
 测试级 retry 不参与这项验收；任一次意外失败都说明自动化 owner 尚未成立。
 
 ## Adapter Repo

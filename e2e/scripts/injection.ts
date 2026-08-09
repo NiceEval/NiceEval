@@ -11,10 +11,17 @@
 //   3. So after install, we read the lockfile back and compare — never the
 //      repo's own printed version/producer string.
 
-import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
+
+import {
+  createUnmanagedExecutionControl,
+  hasConfirmedOwnedGroupCleanup,
+  isExecutionCancelled,
+  E2EExecutionCancelledError,
+  type E2EExecutionControl,
+} from "./owned-process.ts";
 
 export interface CandidateTarball {
   /** Absolute path to the built .tgz. */
@@ -27,14 +34,6 @@ export interface CandidateTarball {
   sha256: string;
   name: string;
   version: string;
-}
-
-export function runInherited(cmd: string, args: string[], cwd: string, quiet: boolean): Promise<number> {
-  return new Promise((resolvePromise, reject) => {
-    const child = spawn(cmd, args, { cwd, stdio: quiet ? "ignore" : "inherit" });
-    child.on("error", reject);
-    child.on("exit", (code) => resolvePromise(code ?? 1));
-  });
 }
 
 function fingerprint(bytes: Buffer, tarballPath: string): CandidateTarball {
@@ -70,14 +69,30 @@ export function readCandidateTarball(tarballPath: string): CandidateTarball {
 export async function buildCandidateTarball(
   repoRoot: string,
   destDir: string,
-  options: { quiet?: boolean } = {},
+  options: { quiet?: boolean; control?: E2EExecutionControl } = {},
 ): Promise<CandidateTarball> {
   mkdirSync(destDir, { recursive: true });
 
-  const code = await runInherited("pnpm", ["pack", "--pack-destination", destDir], repoRoot, options.quiet === true);
-  if (code !== 0) {
+  const control = options.control ?? createUnmanagedExecutionControl();
+  const packed = await control.supervisor.run(["pnpm", "pack", "--pack-destination", destDir], {
+    cwd: repoRoot,
+    env: process.env,
+    output: options.quiet === true ? "capture" : "inherit",
+    stream: options.quiet !== true,
+    timeoutMs: 30 * 60_000,
+    abortSignal: control.abortSignal,
+  });
+  if (packed.cancelled || isExecutionCancelled(control)) {
+    throw new E2EExecutionCancelledError("e2e candidate packing cancelled");
+  }
+  if (
+    packed.exitCode !== 0 ||
+    packed.signal !== null ||
+    packed.error !== undefined ||
+    !hasConfirmedOwnedGroupCleanup(packed)
+  ) {
     throw new Error(
-      `pnpm pack failed (exit ${code}) while building the candidate niceeval tarball from ${repoRoot} — fix the build before running the e2e matrix`,
+      `pnpm pack failed (${!hasConfirmedOwnedGroupCleanup(packed) ? packed.groupCleanup.detail : packed.error ?? packed.signal ?? `exit ${packed.exitCode}`}) while building the candidate niceeval tarball from ${repoRoot} — fix the build before running the e2e matrix`,
     );
   }
 

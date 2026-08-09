@@ -9,6 +9,8 @@
 // source package.json/lockfiles never declare @niceeval/testkit
 // (docs/engineering/testing/testkit.md「构建与采用门禁」6).
 
+import { posix } from "node:path";
+
 export const SCHEMA_VERSION = 1 as const;
 
 export const AREAS = [
@@ -33,7 +35,8 @@ export type Platform = (typeof PLATFORMS)[number];
 export const BROWSERS = ["chromium", "firefox", "webkit"] as const;
 export type Browser = (typeof BROWSERS)[number];
 
-export type Executor = { kind: "host" } | { kind: "docker"; image: string };
+/** The root runner currently executes scenario commands on the host only. */
+export type Executor = { kind: "host" };
 
 export interface RepoRequires {
   docker?: boolean;
@@ -82,7 +85,7 @@ const TOP_LEVEL_FIELDS = new Set([
   "artifacts",
 ]);
 
-const EXECUTOR_FIELDS = new Set(["kind", "image"]);
+const EXECUTOR_FIELDS = new Set(["kind"]);
 const REQUIRES_FIELDS = new Set([
   "docker",
   "externalNetwork",
@@ -132,6 +135,59 @@ function enumMembers(values: readonly string[]): string {
 }
 
 /**
+ * A manifest id is also an artifact-directory relative path. Keep it in one
+ * portable canonical spelling so `adapter/ai-sdk` remains valid while root
+ * escapes, empty segments, backslashes, and dot traversal cannot reach the
+ * caller's artifact root.
+ */
+export function isCanonicalRelativePath(value: string): boolean {
+  return (
+    value.length > 0 &&
+    value === value.trim() &&
+    !value.includes("\\") &&
+    !value.includes("\0") &&
+    !value.includes(":") &&
+    !/[\r\n]/.test(value) &&
+    !posix.isAbsolute(value) &&
+    value !== "." &&
+    value !== ".." &&
+    !value.startsWith("../") &&
+    posix.normalize(value) === value
+  );
+}
+
+function isCanonicalArtifactDirectory(value: string): boolean {
+  return isCanonicalRelativePath(value) && !/[\[\]{}*?]/.test(value);
+}
+
+/**
+ * Only a canonical directory subtree or a top-level filename glob is a valid
+ * collector input. The latter deliberately has no path separator, so even a
+ * broad `*` remains inside the isolated copy root.
+ */
+export function artifactPatternError(value: string): string | undefined {
+  if (value.endsWith("/**")) {
+    const directory = value.slice(0, -3);
+    return isCanonicalArtifactDirectory(directory)
+      ? undefined
+      : "must use a canonical contained directory before /**";
+  }
+  if (
+    value.length === 0 ||
+    value !== value.trim() ||
+    value.includes("/") ||
+    value.includes("\\") ||
+    value.includes("\0") ||
+    value.includes(":") ||
+    value === "." ||
+    value === ".."
+  ) {
+    return "must be a top-level filename glob or canonical dir/**";
+  }
+  return undefined;
+}
+
+/**
  * Parse and strictly validate one `e2e.json` value.
  *
  * All problems are collected and returned; the caller treats any non-empty
@@ -151,8 +207,10 @@ export function parseManifest(raw: unknown, source: string): ManifestParseResult
     errors.push(`${source}: "schemaVersion" must be ${SCHEMA_VERSION}, got ${JSON.stringify(raw.schemaVersion)}`);
   }
 
-  if (typeof raw.id !== "string" || raw.id.trim() === "") {
-    errors.push(`${source}: "id" must be a non-empty string, got ${JSON.stringify(raw.id)}`);
+  if (typeof raw.id !== "string" || !isCanonicalRelativePath(raw.id)) {
+    errors.push(
+      `${source}: "id" must be a canonical contained relative path (for example "adapter/ai-sdk"), got ${JSON.stringify(raw.id)}`,
+    );
   }
 
   if (!isEnumArray(raw.areas, AREAS)) {
@@ -170,16 +228,10 @@ export function parseManifest(raw: unknown, source: string): ManifestParseResult
       const ex = raw.executor;
       errors.push(...unknownFields(EXECUTOR_FIELDS, ex, source));
 
-      if (typeof ex.kind !== "string" || (ex.kind !== "host" && ex.kind !== "docker")) {
+      if (typeof ex.kind !== "string" || ex.kind !== "host") {
         errors.push(
-          `${source}: "executor.kind" must be ${enumMembers(["host", "docker"])}, got ${JSON.stringify(ex.kind)}`,
+          `${source}: "executor.kind" must be host, got ${JSON.stringify(ex.kind)}`,
         );
-      } else if (ex.kind === "docker") {
-        if (typeof ex.image !== "string" || ex.image.trim() === "") {
-          errors.push(
-            `${source}: "executor.image" must be a non-empty string for a docker executor, got ${JSON.stringify(ex.image)}`,
-          );
-        }
       }
     }
   } else {
@@ -216,6 +268,11 @@ export function parseManifest(raw: unknown, source: string): ManifestParseResult
 
   if (!isStringArray(raw.artifacts)) {
     errors.push(`${source}: "artifacts" must be an array of strings, got ${JSON.stringify(raw.artifacts)}`);
+  } else {
+    for (const artifact of raw.artifacts) {
+      const error = artifactPatternError(artifact);
+      if (error !== undefined) errors.push(`${source}: artifact pattern ${JSON.stringify(artifact)} ${error}`);
+    }
   }
 
   let requires: RepoRequires | undefined;
@@ -294,14 +351,13 @@ export function parseManifest(raw: unknown, source: string): ManifestParseResult
   if (errors.length > 0) return { ok: false, errors };
 
   const ex = raw.executor as Record<string, unknown>;
-  const executor: Executor =
-    ex.kind === "docker" ? { kind: "docker", image: ex.image as string } : { kind: "host" };
+  const executor: Executor = { kind: "host" };
 
   return {
     ok: true,
     manifest: {
       schemaVersion: SCHEMA_VERSION,
-      id: (raw.id as string).trim(),
+      id: raw.id as string,
       areas: raw.areas as readonly Area[],
       lanes: raw.lanes as readonly Lane[],
       executor,
