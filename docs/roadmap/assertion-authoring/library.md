@@ -192,24 +192,6 @@ expected path 先按 Sandbox workdir-relative 规则归一；重复项是 author
 内容条件只证明字符串存在，不声称文件只改了该 token，也不做字节级 patch equality。
 对应内容是 binary、oversized 或 provider 无法提供时，结果是 unavailable。
 
-## Judge 交接
-
-完整 Turn 的开放式诊断直接使用 LLM Judge Runtime 已有作用域接收者：
-
-```ts
-turn.judge.llm({
-  name: "诊断结论",
-  rubric: "结合本轮完整工具调用、工具输出和最终回复，判断归因与修复建议是否正确。",
-  scoreMode: "binary",
-}).points(4).gate();
-```
-
-`turn.judge.llm()` 的默认 current material 包含该轮用户输入、assistant message 与按 Observation 顺序排列的可用行为事件。
-作者不需要 `material.turn(turn)`，也不应只传 `turn.message` 丢掉 tool calls。
-
-机器可确定的 command 顺序、工具输入与 Sandbox diff 不重复交给 Judge。
-CLI Human 输出中的 locator 关联、诊断含义和建议质量由完整 Turn Judge 判断。
-
 ## 普通路径边界
 
 本 Roadmap 不导出 `match.text.*`、`match.json.*` 或新的 Match AST。
