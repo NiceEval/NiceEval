@@ -159,6 +159,16 @@ reuse: reset Case  -> author commands -> agent.ensure 循环 -> Agent
 某个检查命令的已安装内容在 reset 后仍然存在时,它的检查会命中;reset 删除了该内容时,当前 Attempt 重新安装,这是正确性结果,不是缓存失败。
 reset 语义、寿命确认与污染诊断见 [Sandbox 复用](reuse.md)。
 
+## 命令计划怎样投影这条时序
+
+`niceeval exp <选择> --dry --commands` 直接消费 link、physical planning 与 carry 的完成态，把本页时序投影为 Experiment → lane → slot。装配器拥有生命周期语义；human 的 `COMMAND PLAN` 框和 JSON 的 `commandPlan` 只投影同一棵树，不能各自重排节点。
+
+它只声明运行器能保证的偏序：不同 Eval lane 可以并发，不生成全局序号；`sandboxReuse` lane 按 Attempt 串行；Eval Group lane 按 group member 声明序、再按 Attempt index 串行。Group 过滤与 carry 只移除对应 slot，不改变剩余 member-major 顺序。
+
+fresh slot 把 Case materialize / lifecycle setup、逐 Attempt body、lifecycle teardown / Provider finalizer 放在自己的 steps 内。reuse 与 Group lane 把共享 physical lifecycle 放在 slots 外；但 reset 失败、寿命不足或故障退休会换实例并重跑 physical lifecycle，所以面板将其标成可重复条件，不声称“整场恰好一次”。
+
+dispatch slot 的 activation 仍受 late carry、预算、early-exit、fail-fast、取消与运行期失败影响；静态列出不等于实际执行。carry slot 不跨入任何 lifecycle，固定是 `carried · no commands`。Sandbox lifecycle hook、Agent setup / teardown、test 与 Provider callback 保留其真实位置并标为 opaque；把 hook 内的动作挪进 `.prepare()` 只为让预览变 exact 会改变执行频次与资源寿命，禁止这样改语义。
+
 ## 准备、lifecycle 与 baseline
 
 两层作者 command 和 agent.ensure 循环都属于 Agent 开始前的基础设施活动。

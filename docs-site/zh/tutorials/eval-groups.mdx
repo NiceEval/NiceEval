@@ -179,7 +179,7 @@ export default defineEvalGroup({
 | `eval-group-member-overlap` | 每条评估用例只放进一个组，并且只列一次 |
 | `eval-group-member-layer` | 把成员的 `template`、`.setup()` 和 `.teardown()` 移到评估组或 Experiment |
 | `eval-group-sandbox-reuse-conflict` | 从 Experiment 删除 `sandboxReuse: true` |
-| `sandbox.unexpected-for-direct-agent` | 改用 Sandbox 型 Agent |
+| `eval-group-direct-agent` | 改用 Sandbox 型 Agent，或让这个 Experiment 不再选择分组评估 |
 | `sandbox.reuse-unavailable` | 换成支持 Sandbox 复用的 Provider |
 | `eval-group-incompatible` | 让成员得到相同的物理 Sandbox 计划，或按兼容的 `template` 拆组 |
 

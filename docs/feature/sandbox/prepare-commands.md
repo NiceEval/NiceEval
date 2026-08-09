@@ -1,7 +1,7 @@
-# 内置 prepare 命令 —— checkout、installTool 与计划面成本
+# 内置 prepare 命令 —— checkout、installTool 与命令计划
 
 `prepare()` 命令每条 Attempt 都重新执行,昂贵动作靠真实检查快速命中;这条 cadence 由[三方准备时序](lifecycle.md)固定。
-本页定义两件事:最常见昂贵动作的官方写法(`checkout()` 与 `installTool()`),以及 `--dry` 怎样在创建任何 Sandbox 前展示复用的成本分摊。
+本页定义两件事:最常见昂贵动作的官方写法(`checkout()` 与 `installTool()`),以及 `--dry --commands` 怎样在创建任何 Sandbox 前诚实展示它们能证明的命令分支。
 
 两条内置命令都是 `defineSandboxCommand()` 的封装:检查、缺失时执行、执行后复检一次成型,identity 由纯数据参数构成。
 Runner 与 [SandboxLayer](layers.md) 协议不含任何内置命令专属分支;对框架而言它们就是带稳定 identity 的普通 prepare 命令。
@@ -105,17 +105,21 @@ template 预装只是让 `probe` 首测即命中的一种手段。
 - 缓存服从 reset 与活状态边界:reset 只恢复 workdir,不触碰镜像;Sandbox lifecycle hook 拥有的路径内置命令不写入。
 - 缓存不可用或损坏时按首次执行处理(重新走网络或重装),不产生额外错误类别。
 
-## `--dry` 复用成本视图
+## `--dry --commands` 的可证明边界
 
-对声明 `sandboxReuse: true` 的 Experiment,`--dry` 逐命令展示成本类别与依据,不创建任何 Sandbox:
+`niceeval exp <选择> --dry --commands` 仍按每条 Attempt 展示 prepare，不把 reuse 误写成“命令只执行一次”。复用只把 physical lifecycle 提到 lane 外；每个 dispatch slot 仍列出自己的 prepare 与 agent.ensure，carry slot 则明确是 `carried · no commands`。
 
-| 类别 | 判定 | 含义 |
-|---|---|---|
-| 检查命中型 | 内置命令自己声明 | 首条 Attempt 全额执行;周期内后续 Attempt 预计只付一次探测或本地写入 |
-| 每题重新执行 | 其余全部命令 | 每条 Attempt 全额执行,包括作者自写的 `defineSandboxCommand()` 封装 |
+命令工厂把执行闭包已经消费的同一份规范化数据私绑到计划：
 
-类别是声明,不是运行结果;命中与否始终由运行时探测决定,视图只回答「复用预计省什么」。
-fresh 模式的 `--dry` 不展示该视图,因为每条 Attempt 都是首次执行。
+- `command(executable, args, options)` 精确投影 argv 数组。
+- `shell(script, options)` 精确投影 JSON string 形式的 script。
+- `installTool()` 投影完整条件树：先运行 `probe` 探测命令；探测未命中才 install，再用同一命令 recheck。子命令若由 `command()` / `shell()` 创建就是 exact；普通 `defineSandboxCommand()` 虽然有稳定 fingerprint identity，仍是 opaque。
+- `checkout()` 的 cache 检查、mirror 修复、动态 workdir 与 Git 分支依赖 live Sandbox 状态，因此整体标为 opaque；计划不把内部实现源码当协议。
+- 普通 `.prepare(async (sandbox) => …)` 与 `defineSandboxCommand(identity, run)` 的 `run` 都标为 opaque。公开 identity 可由作者自行命名，不能拿 id / inputs 猜它会执行什么。
+
+`cwd`、`user`、`timeoutMs` 与 env key 可以展示；env value 与 stdin 只记 redaction，不进入 human / JSON 命令计划。argv 与 shell script 本身会原样进入计划，因此不得直接嵌 token、密码或私有正文；用 env、credential provider 或受管内容通道传递秘密。
+
+这个输出回答“按当前静态计划，哪些命令分支可能位于哪里”，不预测探测命令是否命中、不运行 callback，也不是成本估算器。实际分支与命令结果仍由运行后的 execution 证据回答。
 
 ## 不做什么
 

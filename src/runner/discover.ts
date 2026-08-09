@@ -43,6 +43,9 @@ export type DiscoveryIssueCode =
   | "discovery.duplicate-id"
   | "discovery.import-failed"
   | "discovery.invalid-export"
+  | "eval-group-member-unresolved"
+  | "eval-group-member-overlap"
+  | "eval-group-member-layer"
   | "discovery.invalid-dataset-key"
   | "discovery.source-capture-failed"
   | "discovery.leak-gate-failed";
@@ -497,18 +500,18 @@ export function discoverEvals(
       module.default.evals.forEach((definition, index) => {
         const matches = resolved[index]!;
         if (matches.length !== 1) {
-          issues.push({ file: label, code: "discovery.invalid-export", message: `eval-group-member-unresolved: member ${index} resolves to ${matches.length} discovered Evals.`, actions: ["Import the exact default definition object from an eval entry."] });
+          issues.push({ file: label, code: "eval-group-member-unresolved", message: `Eval Group ${JSON.stringify(id)} member ${index} resolves to ${matches.length} discovered Evals.`, actions: ["Import the exact default definition object from an eval entry."] });
           return;
         }
         const member = matches[0]!;
         const prior = claimed.get(definition);
         if (prior !== undefined) {
-          issues.push({ file: label, code: "discovery.invalid-export", message: `eval-group-member-overlap: Eval ${JSON.stringify(member.id)} is already in group ${JSON.stringify(prior)}.`, actions: ["List each Eval exactly once in one group."] });
+          issues.push({ file: label, code: "eval-group-member-overlap", message: `Eval ${JSON.stringify(member.id)} in Eval Group ${JSON.stringify(id)} is already claimed by Eval Group ${JSON.stringify(prior)}.`, actions: ["List each Eval exactly once in one group."] });
           return;
         }
         const state = member.sandbox === undefined ? undefined : sandboxLayerStateOf(member.sandbox);
         if (state?.kind === "template-bearing" || (state?.setupHooks.length ?? 0) > 0 || (state?.teardownHooks.length ?? 0) > 0) {
-          issues.push({ file: label, code: "discovery.invalid-export", message: `eval-group-member-layer: Eval ${JSON.stringify(member.id)} owns a template or lifecycle hook.`, actions: ["Move the template and lifecycle hooks to the Experiment or Eval Group; keep only prepare commands on the Eval."] });
+          issues.push({ file: label, code: "eval-group-member-layer", message: `Eval ${JSON.stringify(member.id)} in Eval Group ${JSON.stringify(id)} owns a template or lifecycle hook.`, actions: ["Move the template and lifecycle hooks to the Experiment or Eval Group; keep only prepare commands on the Eval."] });
           return;
         }
         claimed.set(definition, id);

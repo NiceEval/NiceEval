@@ -55,11 +55,13 @@ export {
   createHumanRenderer,
   renderDurableLines,
   renderHumanDryPlan,
+  renderHumanCommandPlan,
   formatElapsed,
   formatTokenCount,
   type HumanRendererOptions,
   type HumanDryPlanInput,
   type HumanDryPlanRow,
+  type HumanCommandPlanOptions,
 } from "./human.ts";
 export {
   createJsonRenderer,
@@ -92,3 +94,14 @@ export {
   type LockWaitEvent,
   type ReceiptEvent,
 } from "./json.ts";
+export {
+  assembleCommandPlan,
+  type AssembleCommandPlanInput,
+  type CommandPlan,
+  type CommandPlanExperiment,
+  type CommandPlanLane,
+  type CommandPlanOwner,
+  type CommandPlanRowInput,
+  type CommandPlanSlot,
+  type CommandPlanStep,
+} from "../command-plan.ts";

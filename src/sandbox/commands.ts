@@ -87,10 +87,70 @@ export interface SandboxCommandIdentity {
 const STABLE_SANDBOX_COMMAND: unique symbol = Symbol("niceeval.sandbox.command.stable");
 const STABLE_SANDBOX_COMMANDS = new WeakSet<object>();
 const SANDBOX_COMMAND_IDENTITIES = new WeakMap<object, SandboxCommandIdentity>();
+const SANDBOX_COMMAND_PLANS = new WeakMap<object, SandboxCommandPlanNode>();
 
 export interface StableSandboxCommand extends SandboxCommand {
   readonly [STABLE_SANDBOX_COMMAND]: true;
 }
+
+/**
+ * `--dry --commands` 能证明的声明式命令。这里只保存执行闭包已经消费的同一份规范化数据；
+ * 普通 `defineSandboxCommand(identity, run)` 不会因为 identity 看起来像内建 id 就获得计划。
+ */
+export type SandboxCommandPlanRedaction =
+  | "env-values"
+  | "header-values"
+  | "stdin"
+  | "sensitive-values"
+  | "command";
+
+export type SandboxCommandPlanCommand =
+  | {
+      readonly kind: "argv";
+      readonly executable: string;
+      readonly args: readonly string[];
+      readonly cwd?: string;
+      readonly user?: string;
+      readonly timeoutMs?: number;
+      readonly envKeys?: readonly string[];
+    }
+  | {
+      readonly kind: "shell";
+      readonly script: string;
+      readonly cwd?: string;
+      readonly user?: string;
+      readonly timeoutMs?: number;
+      readonly envKeys?: readonly string[];
+    };
+
+export interface SandboxCommandPlanCondition {
+  readonly code: string;
+  readonly summary: string;
+}
+
+interface SandboxCommandPlanNodeBase {
+  readonly label?: string;
+  readonly condition?: SandboxCommandPlanCondition;
+}
+
+export type SandboxCommandPlanNode =
+  | (SandboxCommandPlanNodeBase & {
+      readonly truth: "exact";
+      readonly command: SandboxCommandPlanCommand;
+      readonly redactions?: readonly SandboxCommandPlanRedaction[];
+    })
+  | (SandboxCommandPlanNodeBase & {
+      readonly truth: "conditional";
+      readonly children: readonly SandboxCommandPlanNode[];
+    })
+  | (SandboxCommandPlanNodeBase & {
+      readonly truth: "opaque";
+      readonly reason: { readonly code: string; readonly summary: string };
+    })
+  | (SandboxCommandPlanNodeBase & {
+      readonly truth: "known-no-command";
+      readonly reason?: { readonly code: string; readonly summary: string };
+    });
 
 export type SandboxCommandDeclaration =
   | {
@@ -207,6 +267,23 @@ export function defineSandboxCommand(
   identity: SandboxCommandIdentity,
   run: SandboxCommand,
 ): StableSandboxCommand {
+  return defineStableSandboxCommand(identity, run);
+}
+
+/** @internal 内建命令用它把执行与预览绑定到同一个 factory 产物；不从公开 identity 反推。 */
+export function definePlannedSandboxCommand(
+  identity: SandboxCommandIdentity,
+  run: SandboxCommand,
+  plan: SandboxCommandPlanNode,
+): StableSandboxCommand {
+  return defineStableSandboxCommand(identity, run, freezePlanNode(plan));
+}
+
+function defineStableSandboxCommand(
+  identity: SandboxCommandIdentity,
+  run: SandboxCommand,
+  plan?: SandboxCommandPlanNode,
+): StableSandboxCommand {
   if (typeof run !== "function") throw new TypeError("defineSandboxCommand run must be a function");
   const normalized = normalizeIdentity(identity);
   const stable = (async (sandbox: SandboxCommandTarget, context: SandboxCommandContext): Promise<void> => {
@@ -217,7 +294,74 @@ export function defineSandboxCommand(
   });
   STABLE_SANDBOX_COMMANDS.add(stable);
   SANDBOX_COMMAND_IDENTITIES.set(stable, normalized);
+  if (plan !== undefined) SANDBOX_COMMAND_PLANS.set(stable, plan);
   return Object.freeze(stable);
+}
+
+function freezePlanNode(node: SandboxCommandPlanNode): SandboxCommandPlanNode {
+  const condition = node.condition === undefined ? {} : { condition: Object.freeze({ ...node.condition }) };
+  const label = node.label === undefined ? {} : { label: node.label };
+  if (node.truth === "exact") {
+    const command = node.command.kind === "argv"
+      ? Object.freeze({
+          ...node.command,
+          args: Object.freeze([...node.command.args]),
+          ...(node.command.envKeys === undefined ? {} : { envKeys: Object.freeze([...node.command.envKeys]) }),
+        })
+      : Object.freeze({
+          ...node.command,
+          ...(node.command.envKeys === undefined ? {} : { envKeys: Object.freeze([...node.command.envKeys]) }),
+        });
+    return Object.freeze({
+      truth: "exact" as const,
+      ...label,
+      ...condition,
+      command,
+      ...(node.redactions === undefined ? {} : { redactions: Object.freeze([...node.redactions]) }),
+    });
+  }
+  if (node.truth === "conditional") {
+    return Object.freeze({
+      truth: "conditional" as const,
+      ...label,
+      ...condition,
+      children: Object.freeze(node.children.map(freezePlanNode)),
+    });
+  }
+  if (node.truth === "opaque") {
+    return Object.freeze({
+      truth: "opaque" as const,
+      ...label,
+      ...condition,
+      reason: Object.freeze({ ...node.reason }),
+    });
+  }
+  return Object.freeze({
+    truth: "known-no-command" as const,
+    ...label,
+    ...condition,
+    ...(node.reason === undefined ? {} : { reason: Object.freeze({ ...node.reason }) }),
+  });
+}
+
+function planOptions(options: Readonly<SandboxCommandOptions>): {
+  readonly cwd?: string;
+  readonly user?: string;
+  readonly timeoutMs?: number;
+  readonly envKeys?: readonly string[];
+  readonly redactions?: readonly SandboxCommandPlanRedaction[];
+} {
+  const envKeys = options.env === undefined ? undefined : Object.freeze(Object.keys(options.env));
+  const redactions: SandboxCommandPlanRedaction[] = [];
+  if (envKeys !== undefined && envKeys.length > 0) redactions.push("env-values");
+  if (options.stdin !== undefined) redactions.push("stdin");
+  return Object.freeze({
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    ...(options.user === undefined ? {} : { user: options.user }),
+    ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+    ...(envKeys === undefined || envKeys.length === 0 ? {} : { envKeys }),
+    ...(redactions.length === 0 ? {} : { redactions: Object.freeze(redactions) }),
+  });
 }
 
 export function command(
@@ -231,7 +375,8 @@ export function command(
   }
   const normalizedArgs = Object.freeze([...args]);
   const normalizedOptions = normalizeCommandOptions(options, "command options");
-  return defineSandboxCommand(
+  const preview = planOptions(normalizedOptions);
+  return definePlannedSandboxCommand(
     {
       id: "niceeval.sandbox.command",
       revision: "1",
@@ -244,13 +389,27 @@ export function command(
     async (sandbox) => {
       await sandbox.runCommandOrThrow(normalizedExecutable, normalizedArgs, normalizedOptions);
     },
+    {
+      truth: "exact",
+      command: {
+        kind: "argv",
+        executable: normalizedExecutable,
+        args: normalizedArgs,
+        ...(preview.cwd === undefined ? {} : { cwd: preview.cwd }),
+        ...(preview.user === undefined ? {} : { user: preview.user }),
+        ...(preview.timeoutMs === undefined ? {} : { timeoutMs: preview.timeoutMs }),
+        ...(preview.envKeys === undefined ? {} : { envKeys: preview.envKeys }),
+      },
+      ...(preview.redactions === undefined ? {} : { redactions: preview.redactions }),
+    },
   );
 }
 
 export function shell(script: string, options?: SandboxCommandOptions): StableSandboxCommand {
   if (typeof script !== "string") throw new TypeError("shell script must be a string");
   const normalizedOptions = normalizeCommandOptions(options, "shell options");
-  return defineSandboxCommand(
+  const preview = planOptions(normalizedOptions);
+  return definePlannedSandboxCommand(
     {
       id: "niceeval.sandbox.shell",
       revision: "1",
@@ -258,6 +417,18 @@ export function shell(script: string, options?: SandboxCommandOptions): StableSa
     },
     async (sandbox) => {
       await sandbox.runShellOrThrow(script, normalizedOptions);
+    },
+    {
+      truth: "exact",
+      command: {
+        kind: "shell",
+        script,
+        ...(preview.cwd === undefined ? {} : { cwd: preview.cwd }),
+        ...(preview.user === undefined ? {} : { user: preview.user }),
+        ...(preview.timeoutMs === undefined ? {} : { timeoutMs: preview.timeoutMs }),
+        ...(preview.envKeys === undefined ? {} : { envKeys: preview.envKeys }),
+      },
+      ...(preview.redactions === undefined ? {} : { redactions: preview.redactions }),
     },
   );
 }
@@ -278,6 +449,11 @@ export function sandboxCommandDeclarationOf(command: SandboxCommand): SandboxCom
 export function sandboxCommandIdentityOf(command: SandboxCommand): SandboxCommandIdentity | undefined {
   const declaration = sandboxCommandDeclarationOf(command);
   return declaration.kind === "stable" ? declaration.identity : undefined;
+}
+
+/** @internal 只读 factory 私有品牌；未知 stable command 仍是 opaque，绝不按 identity 猜。 */
+export function sandboxCommandPlanOf(command: SandboxCommand): SandboxCommandPlanNode | undefined {
+  return SANDBOX_COMMAND_PLANS.get(command as object);
 }
 
 /** Link/fingerprint 层可把 identity 投影成普通 JSON；content handle 只暴露 kind + digest。 */

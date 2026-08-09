@@ -44,7 +44,10 @@ export interface PreparedRunPair {
 export class SandboxRunPlanningInvariantError extends Data.TaggedError(
   "SandboxRunPlanningInvariantError",
 )<{
-  readonly code: "sandbox.run-planning-invariant";
+  readonly code:
+    | "sandbox.run-planning-invariant"
+    | "eval-group-sandbox-reuse-conflict"
+    | "eval-group-incompatible";
   readonly message: string;
 }> {}
 
@@ -134,8 +137,8 @@ export function linkRunSandboxes(
     for (const evalDef of selectedEvalsForRun(evals, run)) {
       if (evalDef.evalGroup !== undefined && run.sandboxReuse === true) {
         return Effect.fail(new SandboxRunPlanningInvariantError({
-          code: "sandbox.run-planning-invariant",
-          message: `eval-group-sandbox-reuse-conflict: Experiment ${JSON.stringify(experimentId)} selects Eval Group ${JSON.stringify(evalDef.evalGroup.id)} while declaring sandboxReuse: true. Eval Groups own reuse; remove sandboxReuse.`,
+          code: "eval-group-sandbox-reuse-conflict",
+          message: `Experiment ${JSON.stringify(experimentId)} selects Eval Group ${JSON.stringify(evalDef.evalGroup.id)} while declaring sandboxReuse: true. Eval Groups own reuse; remove sandboxReuse.`,
         }));
       }
       const input: SandboxLayerPairInput = {
@@ -251,6 +254,28 @@ export function prepareRunSandboxes(
   services: SandboxPlanningServices = liveSandboxPlanningServices(),
   options: SandboxRunPlanningOptions = {},
 ): Effect.Effect<readonly PreparedRunPair[], SandboxRunPlanningError> {
+  if (options.keepSandbox !== undefined) {
+    const conflicts = runs.flatMap((run) => selectedEvalsForRun(evals, run)
+      .filter((evalDef) => evalDef.evalGroup !== undefined)
+      .map((evalDef) => ({
+        experimentId: run.experimentId,
+        evalGroupId: evalDef.evalGroup!.id,
+      })));
+    const unique = [...new Map(conflicts.map((entry) => [
+      JSON.stringify([entry.experimentId, entry.evalGroupId]),
+      entry,
+    ])).values()];
+    if (unique.length > 0) {
+      return Effect.fail(new SandboxRunPlanningInvariantError({
+        code: "sandbox.run-planning-invariant",
+        message:
+          `--keep-sandbox cannot be combined with Eval Group reuse ` +
+          `(${unique.map(({ experimentId, evalGroupId }) =>
+            `${JSON.stringify(experimentId)} / ${JSON.stringify(evalGroupId)}`).join(", ")}). ` +
+          "Drop --keep-sandbox or select only ungrouped Evals.",
+      }));
+    }
+  }
   return Effect.flatMap(linkRunSandboxes(evals, runs), (linkedPairs) =>
     Effect.flatMap(
       planLinkedRuns(linkedPairs.map(({ pair, authorBaseDirs, run, evalDef }) => ({
@@ -292,8 +317,8 @@ export function prepareRunSandboxes(
           const previous = groupPlans.get(key);
           if (previous !== undefined && previous !== physical) {
             return Effect.fail(new SandboxRunPlanningInvariantError({
-              code: "sandbox.run-planning-invariant",
-              message: `eval-group-incompatible: Eval Group ${JSON.stringify(group.id)} has different physical Sandbox plans across its selected members in Experiment ${JSON.stringify(entry.run.experimentId)}. Split the group by compatible template/provider identity.`,
+              code: "eval-group-incompatible",
+              message: `Eval Group ${JSON.stringify(group.id)} has different physical Sandbox plans across its selected members in Experiment ${JSON.stringify(entry.run.experimentId)}. Split the group by compatible template/provider identity.`,
             }));
           }
           groupPlans.set(key, physical);

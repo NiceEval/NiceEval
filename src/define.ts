@@ -18,7 +18,12 @@ import type {
   TestContext,
   JsonValue,
 } from "./types.ts";
-import { brandEvalDefinition, brandEvalGroupDefinition, brandExperimentDefinition } from "./types.ts";
+import {
+  brandEvalDefinition,
+  brandEvalGroupDefinition,
+  brandExperimentDefinition,
+  isEvalDefinition,
+} from "./types.ts";
 import { t } from "./i18n/index.ts";
 import {
   customProviderSandbox,
@@ -40,6 +45,13 @@ export function defineEvalGroup<const Sandbox extends SandboxLayer | undefined>(
   if (!Array.isArray(input.evals) || input.evals.length === 0) {
     throw new TypeError("defineEvalGroup evals must be a non-empty array of defineEval()/defineScoreEval() definitions.");
   }
+  input.evals.forEach((member, index) => {
+    if (!isEvalDefinition(member)) {
+      throw new TypeError(
+        `defineEvalGroup evals[${index}] must be the object returned by defineEval() or defineScoreEval().`,
+      );
+    }
+  });
   assertSandboxLayer(input.sandbox, "defineEvalGroup");
   const [first, ...rest] = input.evals;
   return brandEvalGroupDefinition({ evals: Object.freeze([first, ...rest]), ...(input.sandbox ? { sandbox: input.sandbox } : {}) });

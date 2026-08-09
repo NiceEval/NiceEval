@@ -62,6 +62,8 @@ export class ReusableSandboxPool {
   private readonly waiters: Array<() => void> = [];
   private creating = 0;
   private stopped = false;
+  /** Provider 可观察的物理 owner；Group 池不能随首个未携入成员改用另一个 Eval ID。 */
+  private readonly materializationOwnerId: string;
   /** 本次 Run 内的 Sandbox 编号计数器;淘汰的实例不让号,编号在结果里永远指向同一个实例。 */
   private created = 0;
 
@@ -73,7 +75,10 @@ export class ReusableSandboxPool {
     private readonly runtimeServices: SandboxRuntimeServices = liveSandboxRuntimeServices,
     private readonly agent?: SandboxAgent,
     private readonly runTiming?: import("./timing.ts").RunTimingRecorder,
-  ) {}
+    materializationOwnerId?: string,
+  ) {
+    this.materializationOwnerId = materializationOwnerId ?? plan.pair.evalId;
+  }
 
   /** 把整座池登记进调用方 Scope；Invocation 中断与正常结束走同一条 stop finalizer。 */
   managed(): Effect.Effect<this, never, Scope.Scope> {
@@ -179,7 +184,7 @@ export class ReusableSandboxPool {
       const entryScope = yield* Scope.make();
       const materialized = yield* Scope.extend(materializeSandboxRunPlan({
         plan: this.plan,
-        evalId: this.plan.pair.evalId,
+        evalId: this.materializationOwnerId,
         deadline,
         feedback: this.feedback,
         signal: this.setupContext.signal,

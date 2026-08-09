@@ -98,6 +98,10 @@ import { bindRunnerRunObservabilityDiagnosticsV1 } from "../o11y/record/runner-p
 export class RunModeConflictError extends Data.TaggedError("RunModeConflictError")<{
   readonly keepSandbox: NonNullable<RunOptions["keepSandbox"]>;
   readonly conflictingExperimentIds: readonly string[];
+  readonly conflictingEvalGroups: readonly {
+    readonly experimentId: string | undefined;
+    readonly evalGroupId: string;
+  }[];
   readonly message: string;
 }> {}
 
@@ -132,7 +136,8 @@ export type { AgentRun, RunOptions } from "./types.ts";
 
 type SandboxReusePoolScope =
   | { readonly _tag: "Shared" }
-  | { readonly _tag: "Eval"; readonly evalId: string };
+  | { readonly _tag: "Eval"; readonly evalId: string }
+  | { readonly _tag: "EvalGroup"; readonly evalGroupId: string };
 
 /** 复用池只按物理 Sandbox 与物理 lifecycle 分组；prepare commands 在每次 lease 后重放。 */
 export function sandboxReusePoolKey(input: {
@@ -213,19 +218,39 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // 两种 ownership 不能同时成立；在 carry planning/build/provider 等任何资源动作之前
   // 拒绝，避免产生“已登记 kept 但 pool finalizer 又销毁”的假现场。
   if (opts.keepSandbox !== undefined) {
+    const conflictingEvalGroups = [...new Map(opts.agentRuns.flatMap((run) =>
+      selectedEvalsForRun(opts.evals, run)
+        .filter((evalDef) => evalDef.evalGroup !== undefined)
+        .map((evalDef) => {
+          const value = Object.freeze({
+            experimentId: run.experimentId,
+            evalGroupId: evalDef.evalGroup!.id,
+          });
+          return [JSON.stringify([value.experimentId, value.evalGroupId]), value] as const;
+        }))
+      ).values()];
     const conflictingExperiments = [...new Set(
       opts.agentRuns
-        .filter((run) => run.sandboxReuse)
+        .filter((run) =>
+          run.sandboxReuse || conflictingEvalGroups.some((group) => group.experimentId === run.experimentId)
+        )
         .map((run) => run.experimentId),
     )];
-    if (conflictingExperiments.length > 0) {
+    if (conflictingExperiments.length > 0 || conflictingEvalGroups.length > 0) {
       throw new RunModeConflictError({
         keepSandbox: opts.keepSandbox,
         conflictingExperimentIds: Object.freeze(conflictingExperiments),
+        conflictingEvalGroups: Object.freeze(conflictingEvalGroups),
         message:
-          `--keep-sandbox cannot be combined with sandboxReuse: true ` +
-          `(experiments: ${conflictingExperiments.map((id) => JSON.stringify(id)).join(", ")}). ` +
-          "Drop --keep-sandbox or use an experiment that does not reuse sandboxes.",
+          `--keep-sandbox cannot be combined with reusable Sandbox ownership` +
+          `${conflictingExperiments.length === 0
+            ? ""
+            : ` (experiments: ${conflictingExperiments.map((id) => JSON.stringify(id)).join(", ")})`}` +
+          `${conflictingEvalGroups.length === 0
+            ? ""
+            : ` (Eval Groups: ${conflictingEvalGroups.map(({ experimentId, evalGroupId }) =>
+              `${JSON.stringify(experimentId)} / ${JSON.stringify(evalGroupId)}`).join(", ")})`}. ` +
+          "Drop --keep-sandbox or select only fresh, ungrouped Evals.",
       });
     }
   }
@@ -320,34 +345,69 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     preparedPlansByRun.set(prepared.run, plans);
   }
 
-  // 展开 attempts
-  // 外层按「round」(run index)迭代,内层按 eval 迭代:同一 key 的第 i+1 次 attempt 排在
-  // 所有 eval 的第 i 次之后,earlyExit 开启时第 0 轮通过的 eval,其后续轮大多还没入池就被跳过。
-  // 注意这只是省钱的吞吐优化,不是正确性前提 —— 即便同 key 的 attempt 同时在飞,
-  // 首个通过会 abort 同 key 其余 attempt,且它们的结果被下面的去重检查丢弃,不会重复计入。
+  // 展开 attempts。每个 Eval Group 是一条 member-major lane；每个未分组 Eval 是一条
+  // attempt-major lane。先按 lane 深度铺成全 Invocation 的 wave，保证任一 lane 的下一槽位
+  // 都不会排到其它 lane 的首槽位之前。carried 槽位先从 lane 删除，不占 wave 也不触发 Sandbox。
   const attempts: Attempt[] = [];
   const groupedPredecessors = new WeakMap<Attempt, Promise<void>>();
   const groupedReleases = new WeakMap<Attempt, () => void>();
   const groupedTails = new Map<AgentRun, Map<string, Promise<void>>>();
+  const dispatchWaveNumbers = new WeakMap<Attempt, number>();
+  type SchedulingSlot = {
+    readonly run: AgentRun;
+    readonly i: number;
+    readonly evalDef: ReturnType<typeof selectedEvalsForRun>[number];
+  };
+  const lanes: SchedulingSlot[][] = [];
   for (const run of opts.agentRuns) {
     // selectedEvalIds 已由 CLI 在构造 AgentRun 时对候选 eval 各求值一次算好(见
     // eval-selection.ts 的 resolveExperimentEvals());这里只按 resolved id 取 eval,
     // 不重新调用用户谓词(见 docs/feature/record/architecture.md「selectedEvalIds」)。
     const evals = selectedEvalsForRun(opts.evals, run);
-    const grouped = new Map<string, typeof evals>();
+    const grouped = new Map<string, Array<(typeof evals)[number]>>();
     for (const evalDef of evals) {
       if (evalDef.evalGroup === undefined) continue;
       grouped.set(evalDef.evalGroup.id, [...(grouped.get(evalDef.evalGroup.id) ?? []), evalDef]);
     }
-    const slots = [
-      ...[...Array(run.attempts).keys()].flatMap((i) => evals
-        .filter((evalDef) => evalDef.evalGroup === undefined)
-        .map((evalDef) => ({ i, evalDef }))),
-      ...[...grouped.values()].flatMap((members) => members
+    const addedGroups = new Set<string>();
+    for (const evalDef of evals) {
+      if (evalDef.evalGroup === undefined) {
+        lanes.push([...Array(run.attempts).keys()].map((i) => ({ run, i, evalDef })));
+        continue;
+      }
+      if (addedGroups.has(evalDef.evalGroup.id)) continue;
+      addedGroups.add(evalDef.evalGroup.id);
+      const members = grouped.get(evalDef.evalGroup.id) ?? [];
+      lanes.push(members
         .toSorted((left, right) => left.evalGroup!.index - right.evalGroup!.index)
-        .flatMap((evalDef) => [...Array(run.attempts).keys()].map((i) => ({ i, evalDef })))),
-    ];
-    for (const { i, evalDef } of slots) {
+        .flatMap((member) => [...Array(run.attempts).keys()].map((i) => ({ run, i, evalDef: member }))));
+    }
+  }
+  const runnableLanes = lanes
+    .map((lane) => lane.filter(({ run, i, evalDef }) =>
+      !carriedAttemptsByKey.get(cacheKey(run, evalDef.id))?.has(i)))
+    .filter((lane) => lane.length > 0);
+  // LPT 仍作为 wave 内的稳定 tie-breaker：关键路径较长的 Experiment 先入同一波，但每一波
+  // 最多只给每条 lane 一个新机会，不能再把整条长 Run 堆到其它 Group 前面。
+  const runnableCountByRun = new Map<AgentRun, number>();
+  for (const lane of runnableLanes) {
+    const run = lane[0]!.run;
+    runnableCountByRun.set(run, (runnableCountByRun.get(run) ?? 0) + lane.length);
+  }
+  const rounds = (run: AgentRun): number => {
+    const width = Math.min(run.maxConcurrency ?? opts.maxConcurrency, opts.maxConcurrency);
+    return Math.ceil((runnableCountByRun.get(run) ?? 0) / width);
+  };
+  runnableLanes.sort((left, right) => rounds(right[0]!.run) - rounds(left[0]!.run));
+  const slots: Array<SchedulingSlot & { readonly wave: number }> = [];
+  const waveCount = Math.max(0, ...runnableLanes.map((lane) => lane.length));
+  for (let wave = 0; wave < waveCount; wave += 1) {
+    for (const lane of runnableLanes) {
+      const slot = lane[wave];
+      if (slot !== undefined) slots.push({ ...slot, wave });
+    }
+  }
+  for (const { run, i, evalDef, wave } of slots) {
         const carryKey = cacheKey(run, evalDef.id);
         // 携带以 attempt 为粒度:只跳过这个具体序号确实被携入的那些(见 fingerprint.ts 的
         // `carriedAttemptsByKey`),不是"这个组合有过携入就跳过前 N 个"——attempts:5 里若只有
@@ -389,6 +449,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           sandboxPlansByEval,
         };
         attempts.push(attempt);
+        dispatchWaveNumbers.set(attempt, wave);
         if (evalDef.evalGroup !== undefined) {
           let tails = groupedTails.get(run);
           if (tails === undefined) groupedTails.set(run, (tails = new Map()));
@@ -399,31 +460,35 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           groupedReleases.set(attempt, release);
           tails.set(evalDef.evalGroup.id, settled);
         }
-    }
   }
 
-  // 派发顺序:瓶颈优先(docs/runner.md「派发顺序:瓶颈优先,追求最小总墙钟时间」)。
-  // 单次 attempt 耗时未知且假设同批内大致均匀,轮次数(该 run 的 attempt 数 / 有效并发宽度,
-  // 向上取整)就是耗时的代理指标——把 identical-machine 调度的 LPT 规则推广到 moldable job
-  // 场景:轮次多的 run 是关键路径瓶颈,让它先抢到并发位,总时长才接近瓶颈自身的串行耗时,
-  // 而不是「瓶颈耗时 + 排在它前面的其它 run 先跑完的耗时」。只在建 attempt 列表时算一次,
-  // 不随 earlyExit / fail-fast / budget 实际提前收尾而重算(动态调整不值得为一个尽力而为的
-  // 启发式引入)。只重排派发顺序,不改两级信号量本身;结果仍按发现顺序输出(见下方 sort)。
-  {
-    const byRun = new Map<AgentRun, Attempt[]>();
-    for (const a of attempts) {
-      let group = byRun.get(a.run);
-      if (!group) byRun.set(a.run, (group = []));
-      group.push(a);
+  // wave N+1 只有在 wave N 的每条槽位都至少拿到过一次全局并发位（或在此前确定不派发）
+  // 后才可排队。这样不依赖 Effect Semaphore 的内部唤醒顺序，也不会让同一 lane 的后续槽位
+  // 持续重排到其它 Group / 未分组 Eval 的首槽位之前。
+  const dispatchWaveReady = new WeakMap<Attempt, Promise<void>>();
+  const dispatchWaveArrive = new WeakMap<Attempt, () => void>();
+  const attemptsByWave = new Map<number, Attempt[]>();
+  for (const attempt of attempts) {
+    const wave = dispatchWaveNumbers.get(attempt)!;
+    attemptsByWave.set(wave, [...(attemptsByWave.get(wave) ?? []), attempt]);
+  }
+  let previousWave = Promise.resolve();
+  for (const wave of [...attemptsByWave.keys()].sort((left, right) => left - right)) {
+    const members = attemptsByWave.get(wave)!;
+    let remaining = members.length;
+    let resolveWave!: () => void;
+    const settled = new Promise<void>((resolve) => { resolveWave = resolve; });
+    for (const attempt of members) {
+      dispatchWaveReady.set(attempt, previousWave);
+      let arrived = false;
+      dispatchWaveArrive.set(attempt, () => {
+        if (arrived) return;
+        arrived = true;
+        remaining -= 1;
+        if (remaining === 0) resolveWave();
+      });
     }
-    const rounds = (run: AgentRun, count: number): number => {
-      const width = Math.min(run.maxConcurrency ?? opts.maxConcurrency, opts.maxConcurrency);
-      return Math.ceil(count / width);
-    };
-    const groups = [...byRun.entries()];
-    groups.sort((a, b) => rounds(b[0], b[1].length) - rounds(a[0], a[1].length));
-    attempts.length = 0;
-    for (const [, group] of groups) attempts.push(...group);
+    previousWave = settled;
   }
 
   // 预检 judge:验证 API key + 端点可达,避免跑完 agent 才发现 judge 不通。
@@ -684,13 +749,15 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     | { readonly _tag: "Fresh" }
     | { readonly _tag: "Reuse"; readonly pool: ReusableSandboxPool };
   const reusePoolKeyOf = (a: Attempt): string | undefined => {
-    if (!a.run.sandboxReuse || a.run.agent.kind !== "sandbox" || a.plan._tag !== "Sandbox") return undefined;
+    if ((!a.run.sandboxReuse && a.evalDef.evalGroup === undefined) || a.run.agent.kind !== "sandbox" || a.plan._tag !== "Sandbox") return undefined;
     return sandboxReusePoolKey({
       providerPlan: a.plan.providerPlan.identity,
       agentInstalls: [...agentInstallPlansForRun(a.run)],
-      scope: a.plan.pair.hasEvalLifecycleHooks
-        ? { _tag: "Eval", evalId: a.evalDef.id }
-        : { _tag: "Shared" },
+      scope: a.evalDef.evalGroup !== undefined
+        ? { _tag: "EvalGroup", evalGroupId: a.evalDef.evalGroup.id }
+        : a.plan.pair.hasEvalLifecycleHooks
+          ? { _tag: "Eval", evalId: a.evalDef.id }
+          : { _tag: "Shared" },
     });
   };
   const acquiredReuseAttempts = new WeakSet<Attempt>();
@@ -720,12 +787,24 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     let pool = bySpec.get(key);
     if (!pool) {
       // 物理 Sandbox lifecycle 不属于任一 Attempt；反馈与事实落到所属 Experiment 的 Run。
-      const setupContext = makeExperimentHookContext(a.run, "sandbox.create");
-      const capacity = Math.max(1, Math.min(opts.maxConcurrency, a.run.maxConcurrency ?? opts.maxConcurrency));
+      const experimentContext = makeExperimentHookContext(a.run, "sandbox.create");
+      const setupContext = {
+        ...experimentContext,
+        ...(a.evalDef.evalGroup === undefined ? {} : { evalGroup: {
+          id: a.evalDef.evalGroup.id,
+          definitionHash: a.evalDef.evalGroup.definitionHash,
+        } }),
+      };
+      const capacity = a.evalDef.evalGroup === undefined
+        ? Math.max(1, Math.min(opts.maxConcurrency, a.run.maxConcurrency ?? opts.maxConcurrency))
+        : 1;
+      const materializationOwnerId = a.evalDef.evalGroup === undefined
+        ? a.plan.pair.evalId
+        : JSON.stringify(["eval-group", a.run.experimentId, a.evalDef.evalGroup.id]);
       pool = new ReusableSandboxPool(a.plan, capacity, {
         progress: setupContext.progress,
         diagnostic: setupContext.diagnostic,
-      }, setupContext, liveSandboxRuntimeServices, a.run.agent.kind === "sandbox" ? a.run.agent : undefined, runTiming);
+      }, setupContext, liveSandboxRuntimeServices, a.run.agent.kind === "sandbox" ? a.run.agent : undefined, runTiming, materializationOwnerId);
       bySpec.set(key, pool);
       return pool.managed().pipe(Effect.map((managed) => ({ _tag: "Reuse", pool: managed }) as const));
     }
@@ -2300,8 +2379,10 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         // 独占串行 provider(如 local):同一 provider 名的所有 attempt 共享一把 permit=1 的锁,
         // 包在全局位之外(见上面 exclusiveSemFor 的注释)。
         const exclusiveSem = exclusiveSemFor(a.plan);
+        const arriveAtDispatchWave = dispatchWaveArrive.get(a)!;
         const dispatch = withGlobalSlot(haltAwait(a), (slot) =>
           Effect.gen(function* () {
+            arriveAtDispatchWave();
             // 拿到位子的这一刻再问一次闸:排在独占 provider 锁 / 实验闸本地信号量上的那段等待
             // 不在上面的竞速覆盖范围里(竞速只包全局位),闸可能正是在那段时间落下的。
             if (checkDispatchHalt(a).halted) return { kind: "recheck" } as const;
@@ -2358,10 +2439,12 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             yield* outcome.window;
           }
         });
+        const waveReady = dispatchWaveReady.get(a) ?? Promise.resolve();
+        const wavePipeline = Effect.promise(() => waveReady).pipe(Effect.flatMap(() => pipeline));
         const predecessor = groupedPredecessors.get(a);
         const orderedPipeline = predecessor === undefined
-          ? pipeline
-          : Effect.promise(() => predecessor).pipe(Effect.flatMap(() => pipeline));
+          ? wavePipeline
+          : Effect.promise(() => predecessor).pipe(Effect.flatMap(() => wavePipeline));
         // 实验级 teardown 结算:每个 attempt 收尾(含被 preflight 跳过、被中断的、被用例锁
         // 被 preflight 跳过、被中断的)都从身份集合移除；最后一个触发 ExperimentDef.teardown。ensuring
         // 在中断路径同样执行，重复 finalizer 也不会让状态下溢。
@@ -2380,9 +2463,12 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           : withExpLifecycle.pipe(
               Effect.ensuring(releaseCaseLockIfDone(caseState, a.attempt)),
             );
-        if (predecessor === undefined) return withCaseLifecycle;
+        const withWaveLifecycle = withCaseLifecycle.pipe(
+          Effect.ensuring(Effect.sync(arriveAtDispatchWave)),
+        );
+        if (predecessor === undefined) return withWaveLifecycle;
         const releaseSuccessor = groupedReleases.get(a)!;
-        return withCaseLifecycle.pipe(Effect.ensuring(Effect.sync(releaseSuccessor)));
+        return withWaveLifecycle.pipe(Effect.ensuring(Effect.sync(releaseSuccessor)));
       },
       { concurrency: opts.maxConcurrency, discard: true },
     ).pipe(

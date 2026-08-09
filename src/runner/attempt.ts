@@ -1648,6 +1648,10 @@ async function runAttemptBody(
       sandbox,
       evalId: evalDef.id,
       attempt: { id: evalDef.id, index: attempt },
+      ...(evalDef.evalGroup === undefined ? {} : { evalGroup: {
+        id: evalDef.evalGroup.id,
+        definitionHash: evalDef.evalGroup.definitionHash,
+      } }),
       model: run.model,
       reasoningEffort: run.reasoningEffort,
       flags: run.flags,

@@ -94,7 +94,8 @@ export interface SandboxLayerDeclarationView {
 export type SandboxLinkIssueCode =
   | "sandbox.template-missing"
   | "sandbox.template-conflict"
-  | "sandbox.unexpected-for-direct-agent";
+  | "sandbox.unexpected-for-direct-agent"
+  | "eval-group-direct-agent";
 
 export interface SandboxLinkIssue {
   readonly code: SandboxLinkIssueCode;
@@ -105,6 +106,7 @@ export interface SandboxLinkIssue {
     readonly agentName: string;
   };
   readonly eval: SandboxLayerDeclarationView;
+  readonly group?: SandboxLayerDeclarationView;
   readonly experiment: SandboxLayerDeclarationView;
   readonly summary: string;
   readonly actions: readonly string[];
@@ -150,6 +152,9 @@ export function formatSandboxLayerLinkError(error: SandboxLayerLinkError): strin
   for (const issue of error.issues) {
     lines.push(`${issue.code}: ${issue.summary}`);
     lines.push(`  eval:       ${declarationSummary(issue.eval)}`);
+    if (issue.group !== undefined) {
+      lines.push(`  eval group: ${declarationSummary(issue.group)}`);
+    }
     lines.push(`  experiment: ${declarationSummary(issue.experiment)}`);
     for (const action of issue.actions) lines.push(`  fix: ${action}`);
     lines.push("");
@@ -369,16 +374,23 @@ function issue(
   pair: SandboxLinkIssue["pair"],
   evalContribution: NormalizedContribution,
   experimentContribution: NormalizedContribution,
+  groupContribution?: NormalizedContribution,
 ): SandboxLinkIssue {
+  const group = groupContribution === undefined ? {} : { group: groupContribution.view };
   if (code === "sandbox.template-missing") {
     return Object.freeze({
       code,
       pair,
       eval: evalContribution.view,
+      ...group,
       experiment: experimentContribution.view,
-      summary: `Eval "${pair.evalId}" and Experiment "${pair.experimentId}" do not declare a Sandbox template.`,
+      summary: groupContribution === undefined
+        ? `Eval "${pair.evalId}" and Experiment "${pair.experimentId}" do not declare a Sandbox template.`
+        : `Eval Group "${groupContribution.owner.id}", Eval "${pair.evalId}", and Experiment "${pair.experimentId}" do not declare a Sandbox template.`,
       actions: Object.freeze([
-        "Declare one template-bearing SandboxLayer on the Eval or Experiment.",
+        groupContribution === undefined
+          ? "Declare one template-bearing SandboxLayer on the Eval or Experiment."
+          : "Declare one template-bearing SandboxLayer on the Eval Group or Experiment; grouped Eval members may only contribute prepare commands.",
         "If this pairing is unintended, change the Experiment selector so the pair is not linked.",
       ]),
     });
@@ -388,11 +400,28 @@ function issue(
       code,
       pair,
       eval: evalContribution.view,
+      ...group,
       experiment: experimentContribution.view,
-      summary: `Eval "${pair.evalId}" and Experiment "${pair.experimentId}" both declare a Sandbox template.`,
+      summary: groupContribution === undefined
+        ? `Eval "${pair.evalId}" and Experiment "${pair.experimentId}" both declare a Sandbox template.`
+        : `Eval Group "${groupContribution.owner.id}", Eval "${pair.evalId}", and Experiment "${pair.experimentId}" declare more than one Sandbox template.`,
       actions: Object.freeze([
-        "Remove one template-bearing layer; NiceEval starts one Sandbox Case and does not merge or prioritize templates.",
+        "Keep exactly one template-bearing layer; NiceEval starts one Sandbox Case and does not merge or prioritize templates.",
         "If only some combinations are compatible, split the Experiment selector.",
+      ]),
+    });
+  }
+  if (code === "eval-group-direct-agent") {
+    return Object.freeze({
+      code,
+      pair,
+      eval: evalContribution.view,
+      ...group,
+      experiment: experimentContribution.view,
+      summary: `Eval Group "${groupContribution!.owner.id}" cannot run with Direct Agent "${pair.agentName}".`,
+      actions: Object.freeze([
+        "Use a Sandbox Agent for every Experiment that selects this Eval Group.",
+        "If the Experiment must stay direct, change its selector so it does not select grouped Evals.",
       ]),
     });
   }
@@ -400,6 +429,7 @@ function issue(
     code,
     pair,
     eval: evalContribution.view,
+    ...group,
     experiment: experimentContribution.view,
     summary: `Direct Agent "${pair.agentName}" cannot use an explicit SandboxLayer.`,
     actions: Object.freeze([
@@ -482,7 +512,9 @@ export function linkSandboxLayers(
       const groupContribution = input.group === undefined ? undefined : normalizeContribution("eval-group", input.group);
 
       if (pair.agentKind === "direct") {
-        if (evalContribution.explicit || experimentContribution.explicit || groupContribution !== undefined) {
+        if (groupContribution !== undefined) {
+          issues.push(issue("eval-group-direct-agent", pair, evalContribution, experimentContribution, groupContribution));
+        } else if (evalContribution.explicit || experimentContribution.explicit) {
           issues.push(issue("sandbox.unexpected-for-direct-agent", pair, evalContribution, experimentContribution));
         } else {
           linked.push(Object.freeze({
@@ -498,9 +530,9 @@ export function linkSandboxLayers(
       const contributions = [experimentContribution, ...(groupContribution === undefined ? [] : [groupContribution]), evalContribution];
       const templates = contributions.filter(isTemplateContribution);
       if (templates.length === 0) {
-        issues.push(issue("sandbox.template-missing", pair, evalContribution, experimentContribution));
+        issues.push(issue("sandbox.template-missing", pair, evalContribution, experimentContribution, groupContribution));
       } else if (templates.length > 1) {
-        issues.push(issue("sandbox.template-conflict", pair, evalContribution, experimentContribution));
+        issues.push(issue("sandbox.template-conflict", pair, evalContribution, experimentContribution, groupContribution));
       } else {
         const template = templates[0]!;
         const ordered = template.owner.kind === "eval-group"
