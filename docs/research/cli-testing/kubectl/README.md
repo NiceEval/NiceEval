@@ -27,7 +27,7 @@ kubectl 的命令测试、Kubernetes E2E framework 与 Prow job 分布在三个�
 
 **事实。** Command suite 使用 `KUBE_TEMP`、测试专用 HOME 与临时 kubeconfig，并启动本地 etcd/API server。面向真实集群的 E2E 为测试创建唯一 namespace，把资源生命周期绑定到该 namespace。
 
-**推断。** kubectl 的隔离对象不是源码目录，而是用户配置、控制面和 namespace。NiceEval 应按产品真实状态边界隔离 repo、HOME、cache、record root、server storage 与 adapter 配置。
+**推断。** kubectl 的隔离对象不是源码目录，而是用户配置、控制面和 namespace。NiceEval 应按产品真实状态边界隔离 repo、HOME、cache、`.niceeval` RecordStore、server storage 与 adapter 配置。
 
 ## 3. stdout、stderr、exit、JSON 与 golden 如何断言
 

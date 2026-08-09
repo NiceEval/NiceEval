@@ -62,7 +62,7 @@ or `niceeval sandbox delete` to destroy.
 
 ```text
 ID        PROVIDER  STATE    CHECKPOINT                    EXPIRES
-rtn_8f3a  vercel    dormant  fresh post-teardown · @1x7f  in 18h
+rtn_8f3a  vercel    dormant  fresh post-teardown · @1efw5…  in 18h
 rtn_91c2  docker    dormant  pool retired · 4 assignments no provider expiry
 rtn_a10e  vercel    unknown  cleanup incomplete            recovery required
 ```
@@ -112,7 +112,7 @@ CLI 用旧条目中的 provider 与精确 sandbox id inspect；不能只凭本�
 - v2 metadata 与 registry 的 project、retention id、operation token 一致；
 - controller inspect 能证明主 Sandbox 与全部伴随资源的归属；
 - 没有有效 lease；
-- 条目超过 TTL 或单 record root 数量上限，或资源是已核实的同宿主 orphan。
+- 条目超过 TTL 或单一 `.niceeval` RecordStore 数量上限，或资源是已核实的同宿主 orphan。
 
 `--dry` 只列出会销毁的资源和理由。
 正式执行时，destroy 成功或 inspect 证明 gone 后才移除 registry。

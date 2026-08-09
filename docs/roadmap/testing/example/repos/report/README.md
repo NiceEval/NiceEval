@@ -6,7 +6,7 @@ screenshot 和失败时的 browser context 关闭由 Playwright 管理。
 - `exported-navigation.spec.ts` 证明导出首页的真实 `href` 能打开正确 Attempt；
 - `first-eval-to-debug.spec.ts` 证明 `init → list → dry → exp → show → view → browser` 的完整新手旅程。
 
-Journey 使用 Testkit 的项目副本，不删除或改写 Report Repo 的共享 config 与结果根。
+Journey 使用 Testkit 的项目副本，不删除或改写 Report Repo 的共享 config 与 `.niceeval` RecordStore。
 
 ```sh
 # NiceEval 根目录；runner 注入候选 tarball

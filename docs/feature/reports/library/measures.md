@@ -1,180 +1,104 @@
 # 计算函数、分组与读数值
 
-Reports 的公共计算面由 Reducer、Calculation、分组函数、`aggregate()`、`metricValue()` 与 `evidenceRow()` 组成。
-完整形状见[Library · 分组函数与计算函数](../library.md#分组函数与计算函数)；准入边界见 [Calculations](../calculations.md)。
+Reports 的公共计算面由 Projector、Calculation、Reducer、`rollup()`、`aggregate()`、`metricValue()` 与 `evidenceRow()` 组成。
+完整定义见 [Library](../library.md#分组函数与计算函数)。`CalculationInput`、`ProjectorRequest`、`MetricCoverage`、`MetricValue` 与 `CoverageMember` 都只在该链接的 Reports Library 小节定义。
 
 ## Calculation
 
-Calculation 是 `rollup()` 产生的函数值。
-它定义每条 Attempt 怎样取值，以及题内和跨题分别怎样折叠：
+Calculation 静态列出 Projector dependency，并以纯函数计算其已交付输入：
 
 ```ts
-export const changedLines = rollup(
-  async (attempt) => {
-    const diff = await attempt.diff();
-    return diff ? countChangedLines(diff) : null;
+const workspaceDiffRequest = projectorRequest({
+  requestId: "workspace-diff",
+  projector: workspaceDiff,
+  input: { includeGenerated: false },
+});
+
+const changedLines = defineCalculation({
+  namespace: "acme.checkout",
+  name: "changed-lines",
+  version: "1",
+  requests: [workspaceDiffRequest],
+  evaluate(input) {
+    return mapEvidence(input.get(workspaceDiffRequest), (diff) =>
+      countChangedLines(diff, input.member.attempt),
+    );
   },
-  {
-    withinEval: min,
-    acrossEvals: mean,
-    unit: "lines",
-    better: "lower",
-  },
-);
-```
-
-官方与用户 Calculation 走同一条 `rollup()` 路径。
-公开入口提供 `mean`、`sum`、`min`、`max` 与 `percentile(p)`；空集合保持 `null`。
-
-## 分组函数
-
-分组以题级单元（Experiment × Eval）为单位。
-`aggregate().by` 的分组函数从 `AggregationSubject` 同步返回稳定字符串：
-
-```ts
-interface AggregationSubject {
-  readonly experimentId: string;
-  readonly evalId: string;
-  readonly run: Run;
-}
-
-agent(subject);
-experiment(subject);
-evalId(subject);
-model(subject);
-```
-
-官方函数读固定事实：`experiment` ← `experimentId`，`agent` / `model` ← Run 顶层，flags / labels / 运行配置 ← `run.experiment`。
-作者也可以在 `by` 里传普通同步函数，例如：
-
-```ts
-by: {
-  memory: (subject) =>
-    String(subject.run.experiment?.labels?.memory ?? "(missing)"),
-}
-```
-
-分组函数拿不到 AttemptHandle，因此不可能把同一道题的 attempts 切开。
-它们不读取时钟、随机数、网络或文件系统。
-
-## MetricValue
-
-聚合读数使用 MetricValue：
-
-```ts
-interface MetricValue {
-  value: number | null;
-  unit?: string;
-  format?: MetricFormat;
-  better?: "higher" | "lower";
-  bounds?: { min?: number; max?: number };
-  samples: number;
-  total: number;
-  basis: "attempt" | "eval" | "run" | "pair";
-  refs: readonly AttemptLocator[];
-}
-```
-
-`value: null` 表示缺数据或不适用，不等于零。
-`rollup()` 返回的 Calculation 固定 `basis: "eval"`：samples / total 数题级单元，`refs` 恒为 Attempt locator。
-renderer 根据 `value + format + locale` 格式化，计算函数不生成 display 字符串。
-
-## 官方 Calculation
-
-官方入口至少提供 `passRate`、`costUSD`、`durationMs`、`tokens` 与 `totalScore`。
-每个官方 Calculation 都声明 unit、better、bounds 与两个 reducer。
-超时样本的耗时下界进入专用耗时 Calculation，不能当作精确 `durationMs` 参与普通均值。
-
-`tokens` 的 Attempt 值固定为 `inputTokens + cacheReadTokens + cacheCreationTokens + outputTokens`。
-缓存桶缺失按零处理；`inputTokens` 或 `outputTokens` 缺失时返回 null，不拿局部数据冒充完整流量。
-其 `perEval` reducer 对同题 Attempts 取平均，`acrossEvals` reducer 再让各题级值等权参与总体平均。
-报告中的“平均 Tokens”因而是可比读数，不是范围总量。
-总量与缓存桶属于 usage 审计面，由 `niceeval show ... --usage` 提供。
-
-需要报告特有公式时，在报告旁写普通函数。
-delta、stability、scoreboard 与 frontier 不因出现在内建报告里就成为公共 Calculation。
-
-## 题型构成与主读数
-
-一个范围的对比主读数由其中出现的题型决定，裁决见[计分粒度](../../assertions/library/score-points.md#横截面聚合两种题型各读各的)。
-通过制读通过率，计分制读总分。
-
-题型是定义期事实；同一 experiment 可以同时包含两种题型。
-这个选择不依赖任何 attempt 结果，题目一行代码没跑时就有答案。
-
-```ts
-type EvaluationKindComposition = "pass" | "points" | "mixed";
-
-const composition = await evaluationKindComposition(sample);
-```
-
-`evaluationKindComposition(sample)` 是公开函数；取自 Run 的 Record 中定义期字段 `evaluationKind`。
-
-**主读数映射是单点规则**，官方消费者都引用这一条，不各自另设判据：
-
-| 构成 | 主读数 | 官方消费面的行为 |
-|---|---|---|
-| `"pass"` | `passRate` | 摘要主 KPI、实验列表主列、默认散点 y 轴与预排序全用通过率 |
-| `"points"` | `totalScore` | 同上位置全部换成总分；通过率不出现（不摆空列） |
-| `"mixed"` | 两者并排、各读各的 | 两个 KPI 都显示；按题型拆组后各用自己的主读数 |
-
-`Table` 与图表不感知题型。
-分支只发生在首页任务函数、`SampleSummary`、`SampleOverview` 等显式读取该字段的组合里。
-自定义报告需要同样切换时，调用同一个 `evaluationKindComposition(sample)`。
-
-题型选择属于报告任务函数，不藏在图表或组件的默认绑定里。
-混合题型不能把两种无共同单位的数值压成一个“总分”。
-
-## 维度与数值轴
-
-`aggregate().by` 的官方分组是 `agent`、`model`、`experiment`、`evalId`。
-flags、labels 与顶层运行配置从 `subject.run.experiment` 用普通函数读取，不从 experiment id 字符串猜语义。
-
-图表与摘要组合仍接受维度构造器，用来声明离散轴、series 或数值轴身份：
-
-```ts
-type RunConfigKey = keyof ExperimentRunInfo | "model" | "agent";
-
-function flag(name: string, options?: DimensionOptions): DimensionRef;
-function label(name: string, options?: DimensionOptions): DimensionRef;
-function runConfig(name: RunConfigKey, options?: DimensionOptions): DimensionRef;
-function numericFlag(name: string, options?: NumericAxisOptions): NumericAxis;
-function numericLabel(name: string, options?: NumericAxisOptions): NumericAxis;
-function numericRunConfig(
-  name: RunConfigKey,
-  options?: NumericRunConfigAxisOptions,
-): NumericAxis;
-```
-
-- `flag()` 读 `ExperimentDefinition.flags`，即 agent / eval 可见的运行参数。
-- `label()` 读 `ExperimentDefinition.labels`，即运行时不可见的报告归类标注。
-- `runConfig()` 读 Run 的 [`ExperimentRunInfo`](../../record/architecture.md#runjson)投影，外加桥接到顶层的 `model` / `agent`。
-
-labels 的声明语义见[Experiments · labels](../../experiments/library.md#labels声明归类坐标不进运行时)。
-
-```ts
-const memory = label("memory");
-const webResearch = flag("webResearch");
-const reasoning = runConfig("reasoningEffort");
-```
-
-`flag()`、`label()` 与 `runConfig()` 只声明分组身份，不冒充数值轴。
-数值进程用 `numericFlag` / `numericLabel` / `numericRunConfig`：未声明、非数值或未命中 map 的值返回 `null`，图表不绘该点并报告缺失。
-
-```ts
-const budget = numericFlag("budget", { unit: "tokens" });
-const reasoning = numericRunConfig("reasoningEffort", {
-  map: { low: 1, medium: 2, high: 3 },
 });
 ```
 
-attempt 级 `facts` 不进入 `aggregate().by`：分组主体是题级单元，拿不到单条 Attempt。
-要按运行事实筛选或列表，用 `sample.filter`、实体转换或报告旁普通函数。
+`mapEvidence()` 保留 basedOn、verification、causes 与 issues。
+Calculation 不能读 Record、网络或任意 Store，也不能用 `null` 抹去 unavailable。
+每个 Calculation 还有写入 plan identity 的 canonical JSON `configuration`：普通
+`defineCalculation()` 是 `{}`，`rollup()` / `aggregate()` 保存其规范化构造参数。
 
-复合归类把多个维度字段并进 `by` 或图表的 `color` / `point` 键；成员显示键冲突时计算报错，不能静默合组。
+## 分组函数
+
+`aggregate().by` 的 `eval` / `mode` 只读取固定 Sample membership 的 Contribution；`agent` /
+`experiment` 则声明内建 Record Projector dependency：
+
+```ts
+const performance = aggregate(sample, {
+  id: "performance",
+  by: ["experiment", "agent"],
+  measures: { passRate, costUSD },
+  unavailable: "exclude",
+});
+```
+
+agent Projector 读取与 Contribution / Attempt 绑定的 agent provenance。
+experiment Projector 读取认证的 Run / Contribution experiment evidence。
+
+executor 把完整 contribution node、runId、contributionId、revision 与 membershipSlot 作为规范化
+Projector input。因此 request、memo identity 与 ReportExportPlan 都能审计。
+
+Projector unavailable 的成员进入
+`AggregateResult.coverage.unavailable`，不产生 `unknown` group 或从 Sample 字段猜值。
+
+自定义 group 接收一个 membership 的冻结 provenance 视图，必须同步返回稳定标量。
+它不接收 raw event、Projection value 或 renderer context。
+
+## MetricValue
+
+每个聚合读数保留 available 或 unavailable 的完整 EvidenceValue 语义：
+
+`MetricCoverage` 与 `MetricValue` 的完整 discriminated union 在 [Reports Library](../library.md#分组函数与计算函数)。
+零 included 成员一定生成 state 为 unavailable 的 `MetricValue`。
+available 结果的 verification 使用所有纳入 evidence 的最差等级，并合并全部 issues。
+unavailable 结果保存非空 causes、coverage、basedOn 与 refs，不含也不合成 verification；这与
+Record-owned `EvidenceValue` 的 unavailable 分支一致。
+
+`aggregate()` 的 request output 是 `AggregateResult { rows, coverage }`；放进 ReportData 后是完整
+`AggregateData = EvidenceValue<AggregateResult>`。顶层 coverage 负责 Sample 与 group assignment，
+每个 MetricValue.coverage 负责该 group 内 measure reducer。Table / charts 原样接 AggregateData；
+artifact 也持久化相同 discriminated JSON，不存在未包装 rows / null / 空数组的替代形状。
+
+## 官方 Calculation
+
+官方入口提供 `passRate`、`costUSD`、`durationMs`、`tokens` 与 `totalScore` 等 Calculation。
+它们与用户定义的 Calculation 通过同一个 executor、memo 和 EvidenceValue 规则运行。
+
+成本、耗时、usage、verdict 和 score 都来自对应 Projector。
+没有被 snapshot 进 Record 的事实只能产生 unavailable，不由报告补猜。
+
+## 题型构成与主读数
+
+题型、模型、flags 与 labels 都必须来自固定 membership provenance 或明示的 Projector；Agent 使用
+上述内建 group Projector，不能从 Sample 不拥有的字段或 id 字符串反推。
+首页、摘要和图表可以基于已计划的 composition 选择显示哪些 metrics；这种分支不允许添加新数据请求。
+
+混合题型显示各自可比较的 MetricValue，不把没有共同单位的数值压成一个分数。
+
+## 维度与数值轴
+
+维度声明映射到 ReportPlan 中已有 group key 或 snapshot provenance。
+数值轴只能消费已有 MetricValue 或带 basedOn 的外部 snapshot Projection。
+
+字段不存在、类型不匹配或不在固定 Sample 内时，executor 产生有依据的 unavailable 值。
+图表只显示该值，不从显示字段回推 Record 结构。
 
 ## 相关阅读
 
-- [Calculations](../calculations.md) —— 两级聚合、报告旁算法与准入判据。
-- [Library](../library.md) —— `aggregate()` 的完整签名与结果推导。
-- [格式化](presentation.md) —— MetricValue 的 locale 与轴刻度。
+- [Calculations](../calculations.md) —— 两级聚合与报告旁算法。
+- [Library](../library.md) —— `aggregate()`、MetricValue 与结果行。
+- [格式化](presentation.md) —— locale、verification 与 unavailable 的显示。

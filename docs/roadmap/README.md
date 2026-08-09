@@ -1,10 +1,10 @@
 # Roadmap
 
-这里放已经定稿、尚未落地的目标功能契约。
-Roadmap 与 Feature 使用相同的最终状态体裁；两者只区分是否已经完成实现与验收，不区分设计成熟度。
+这里放已经定稿、尚未被产品采用为当前契约的方向。
+Roadmap 与 Feature 使用相同的最终状态体裁；两者区分采用状态，不区分设计成熟度或源码进度。
 
 讨论过程、候选比较与待裁决分歧放进 [`../design/`](../design/README.md)，翻案历史放进 [`../../memory/`](../../memory/INDEX.md)。
-目标落地并验收后并入 [`../feature/`](../feature/)，不在正文保留迁移时间线。
+方向被采用为唯一当前目标时并入 [`../feature/`](../feature/)，不在正文保留迁移时间线。
 
 ## 结构
 
@@ -26,7 +26,6 @@ Roadmap 与 Feature、Design 候选共用 [Feature Design Package](../_template/
 - [Sandbox 默认停驻与回收](sandbox-retention/README.md) —— 失败类 Sandbox 的有界停驻、明确销毁、持久管理与安全 GC
 - [Docker 执行配置](docker-profiles/README.md) —— 官方 Docker Sandbox 的可验证执行 profile、rootless privileged 单容器 DinD、跨进程硬配额与故障回收
 - [Provider Cache 生命周期](materialization-cache/README.md) —— 让 NiceEval 创建的 provider cache 可盘点、可解释并可安全回收
-- [运行观测协议](observation-protocol/README.md) —— Agent 事件流、Live、Record、OTel 与 Report 投影共用一份事实协议
 - [注入凭据的转写脱敏](credential-redaction/README.md) —— 已知凭据值的精确替换
 - [Prepare 阶段瞬时失败自愈](prepare-transient-retry/README.md) —— 内置 prepare 命令的瞬时重试
 - [有序 Eval 序列](ordered-sequences/README.md) —— 用独立 Sequence 声明现有 Eval 的顺序、完整重新执行与执行 lineage

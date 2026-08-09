@@ -302,7 +302,7 @@ export interface BaseTestContext<H extends BaseAssertionHandle = AssertionHandle
   diagnostic(input: DiagnosticInput): void;
   /** `progress({ message: msg })` 的别名(调试日志),不出现在最终结果里。 */
   log(msg: string): void;
-  /** 立即中止本评估用例并标记为 skipped(verdict / EvalResult.skipReason),reason 不能为空。 */
+  /** 立即中止本评估用例,形成 `skipped` Verdict Claim;`reason` 不能为空。 */
   skip(reason: string): never;
 
   // 值断言

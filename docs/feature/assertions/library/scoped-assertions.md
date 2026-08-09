@@ -34,7 +34,7 @@ t.calledTool("get_weather", { count: 2 }); // 全 attempt
 | `maxTokens(max)` / `maxCost(usd)` | token（`inputTokens + outputTokens`，cache 桶不计——护栏花钱用 `maxCost`）或估算成本不超上限 |
 
 负断言和上限断言依赖完整证据。
-所需通道非 complete 时，这些断言记为 `unavailable`，不会按空证据静默通过；非 `.optional()` 断言评不了会使 Attempt `errored`。
+所需通道非 complete 时，这些断言形成 `unavailable` Assertion Claim，不会按空证据静默通过；非 `.optional()` 断言评不了会形成 Attempt 的 `errored` Verdict Claim，而非 lifecycle state。
 正断言在非 complete 通道上没找到匹配时，同样记 `unavailable` 而不是 failed。
 
 `count` 为精确数字且实测已超出时是确凿失败。

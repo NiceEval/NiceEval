@@ -12,7 +12,7 @@ If your app already emits OTel traces — AI SDK telemetry, LangGraph's LangSmit
 
 ## How it works (one paragraph)
 
-At run time [NiceEval](https://niceeval.com/) starts a local OTLP receiver. Spans the app sends are attributed to the corresponding `send` turn, normalized into GenAI semantics, and written into `EvalResult.trace`, then displayed as a waterfall by `npx niceeval view`. **Spans only feed the waterfall — they never enter the event stream and never affect assertions.** Missing instrumentation, late spans, or dropped batches only degrade waterfall completeness; they never affect any verdict.
+At run time [NiceEval](https://niceeval.com/) starts a local OTLP receiver. Spans the app sends are attributed to the corresponding `send` turn, normalized into GenAI semantics, and committed as supplemental telemetry Observations into the durable Observation stream, then displayed as a waterfall by `npx niceeval view` via the trace Projection. **Spans never affect assertions** — they do not change Agent behavior, execution errors, or Verdicts. Missing instrumentation, late spans, or dropped batches only degrade waterfall completeness; they never affect any verdict.
 
 ## Wiring it up
 

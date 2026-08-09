@@ -22,27 +22,28 @@ user-facing Notice
 
 Record 只持久化运行时真正观察到的内容:
 
-- `AttemptError` 是让 attempt 进入 `errored` 的唯一致命失败证据;`message` 保留为原始原因摘要。
-- `DiagnosticRecord` 是不必改变 verdict 的运行 observation;只带 `code`、`level`、`phase`、`detail`、`context` 与 `count`。
+- Runner 收尾前的暂态 typed execution error 写入 Record 时规范化为结构化执行错误 Observation，`message` 保留为原始原因摘要。它是
+  `errored` Verdict Claim 的依据之一，不进入 `AttemptPayloadV1`，也不把 Attempt lifecycle 改成 verdict token。
+- diagnostic Observation 不必改变 Verdict Claim；它只带 `code`、`level`、`phase`、`detail`、`context` 与 `count`。
 - `detail` 只描述当时观察到的现象,`context` 保存支撑 code 的结构化依据。
 - observation 不带本地化文案、修复建议、忽略条件或 `command`。
 
-`DiagnosticRecord.level` 是写入方当时观察到的运行影响,不是最终 Notice 严重度,也不是 verdict 的别名。
+diagnostic Observation 的 `level` 是写入方当时观察到的运行影响,不是最终 Notice 严重度,也不是 verdict 的别名。
 读取 policy 可以结合宿主、范围和其它事实上调或下调 Notice。
 
-证据采集失败不能只凭 phase 映射成 `AttemptError`。
-同一项采集被非 optional 断言消费时属于 required evidence unavailable；只服务 optional 断言或报告 artifact 时写 `DiagnosticRecord`，并保留其它证据形成的 Verdict。
+证据采集失败不能只凭 phase 伪造成终局执行错误。
+同一项采集被非 optional 断言消费时属于 required evidence unavailable；断言 Claim 如实保留 unavailable，Verdict Claim 据此形成 `errored`。只服务 optional 断言或报告读面时写 diagnostic Observation，并保留其它证据形成的 Verdict Claim。
 `workspace-diff-unavailable` 与 telemetry 配置 / 收集 diagnostic 都必须保存 provider、操作、对象和底层 cause 的有界摘要，不能退回笼统的 `fetch failed` 或 `[unknown] terminated`。
 
 ### Read: Issue
 
-Issue 是从 Record、artifact 可达性、诊断 observation 与 Sample 选择结果中派生的可重算结构。
+Issue 是从 Record、事实对象可达性、诊断 observation 与 Sample 选择结果中派生的可重算结构。
 它用稳定 code 表达类别,并携带定位与判断所需的原始事实。
 例如:
 
-- `unfinished-run`:experiment id、startedAt 与目录;
-- `unreadable-run`:目录、reason 与可用的 producer 身份;
-- `dangling-evidence`:attempt 身份、artifactBase 与原声明的 artifacts;
+- `unfinished-run`:experiment id、startedAt 与 Record 提交状态;
+- `unreadable-run`:Run 身份、reason 与可用的 producer 身份;
+- `dangling-evidence`:attempt 身份与缺失的事实对象引用;
 - persisted diagnostic 的 Issue:observation code、phase、observed level、detail、context 与 count。
 
 Issue 不写回 `.niceeval`,也不带呈现 message、Notice severity、action 或 command。
@@ -105,7 +106,7 @@ CLI 不从 `Error.message` 正则抠命令,但这不等于 `message` 可以没�
 
 ## 即时 CLI 错误
 
-argv 读取、config 加载、Record root 打开和报告装载失败时没有 `.niceeval` observation 可写。
+argv 读取、config 加载、RecordStore 打开和报告装载失败时没有 `.niceeval` observation 可写。
 CLI 仍先构造一个瞬时结构化 Issue,再经同一份 catalog 渲染两行反馈:
 
 ```text

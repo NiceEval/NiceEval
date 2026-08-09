@@ -1,71 +1,55 @@
-# `niceeval view` —— 在浏览器读结果
+# `niceeval view` —— 在浏览器读固定结果
 
-`niceeval view` 把 Record root 呈现为本地网页：可见内容来自装载报告的 pages。
-装载哪一份按 `--report` → 项目配置的 `report` 字段 → 内建 `standard` 的[三档取值链](#自定义报告与外壳)决定；两处都没有时是[内建报告](library/built-in.md)的报告、Attempts、追踪三张导航页，加 `attempt` 与 `experiment` 两张不进导航的参数化页。
-自定义报告没有声明同 id 页时，view 用内建 `standard` 的参数化页按 id 补位，保证官方组件交出的[目标](library.md#目标与下钻)仍可下钻；显式声明则替换它。
-view 只拥有目标寻址、导航与 dialog 摆放，不拥有另一套详情区块。
-它不依赖外部服务。
-
-本地模式与静态导出共用**同一条站点管线**：管线的输入是 Record root 加可选收窄（位置参数 / `--exp`）。
-收窄把根滤成只含匹配实验与 attempt 的**有效根**。
-管线把每张导航页按界面语言渲染成一块报告 HTML，再为每张参数化页按 `params.enumerate(有效根)` 把每个实例写成 `<pageId>/<key>.html`。
-`index.html` 是承载报告块的外壳，`artifact/` 携带前端会读取的证据文件。
-宿主不携带 page 的取数或布局知识。
-
-照构建工具的心智读这两种模式最省事：**`--out` 是 build，不带选项的 `view` 是同一个 build 挂上 watch，再加一个本地 server**。
-差别只有建完之后停不停——`--out` 建一次、写盘、退出；本地模式建完起 server，然后盯着输入[持续重建](#持续重建)。
-每一次重建都是同一条管线的完整重跑，页面上换掉的那一块是重建后的新输出，不是对旧输出的差分。
-
-**本地看到的就是发出去的，量的是块，不是文件布局。**
-同一输入下，同一页同一语言的那块报告 HTML 在两个宿主下逐字节一致，参数化页文档、`assets/` 与 `artifact/` 同路径逐字节一致。
-报告块住在哪个文件里按宿主能力分：
-
-| 宿主 | 报告块的投递 | 为什么 |
-|---|---|---|
-| `--out` | 全部页与语言预烘进 `index.html` | 导出的站点要脱离 server 读，`file://` 直接打开也不能靠 fetch 取块 |
-| 本地模式 | `index.html` 只预烘浏览器当前订阅的那一块，其余在 `report/<pageId>.<locale>.html` 按需渲染 | server 在场，切页时取一次即可，重建因此不必渲染看不见的块 |
+`niceeval view` 把一个固定 Sample 的 ReportPlan、ReportData 和不可变页面树呈现为本地网页。
+它保留导航、深链、主题、本地重建与静态站交付，但不在浏览器或 web renderer 中重新读取 Record。
 
 ## 打开与收窄
 
 ```sh
 niceeval view
-niceeval view weather                  # eval id 前缀，只收窄报告槽
-niceeval view --exp agents/codex       # 按 experiment id 路径收窄
-niceeval view --exp agents/codex/gpt-5.4 # 只看一个 experiment
-niceeval view --record site-data/run  # 换记录根
-niceeval view --run .niceeval/dev-e2b_codex-e2b/2026-07-12T10-08/run.json
-                                       # 只打开这一份 Run
-niceeval view --no-open                # 只打印 URL
-niceeval view --port 4400              # 固定本地端口
-niceeval view --host                    # 监听全部网卡，打印本机与局域网可打开地址
-niceeval view --host 127.0.0.1          # 只监听指定地址
-niceeval view --report reports/exam.tsx
-niceeval view --report reports/site.tsx --page exam   # 多页报告，指定初始页
-niceeval view --report standard        # 内建视图名，回到默认报告
-niceeval view --theme ./themes/acme.ts # 换一份主题，不动报告文件
+niceeval view security/
+niceeval view --exp compare/candidate
+niceeval view --run compare/candidate@r17
+niceeval view --record ./shared-record
+niceeval view --report ./reports/security.tsx
+niceeval view --report ./reports/security.tsx --page overview
+niceeval view --theme ./themes/acme.ts
+niceeval view --no-open
+niceeval view --port 4400
 ```
 
-位置参数只有一种含义：eval id 前缀，与 `show` 一致。
-Record root 用 `--record <dir>` 传入，单开一份 Run 用 `--run <file>`——文件与目录都不进位置参数，位置参数的含义不随文件系统状态改变。
+位置参数是 eval id 前缀；`--exp` 和 `--run` 缩小要生成的固定 Sample selection。
+`--record` 选择 Record Store 位置，随后 reader 固定到一个 `RecordGraphRef`。
+`--report`、项目默认报告和内建 `standard` 仍按同一条装载链选择 ReportDefinition。
 
-本地 server 默认监听全部 IPv4 网卡（等价于 `--host 0.0.0.0`）；启动后会列出本机 `127.0.0.1` 与每个局域网 IPv4 地址，直接点其中符合访问位置的一条即可。`--host [address]` 可改为只监听指定地址；只写 `--host` 不带地址时，与省略该 flag 同样监听全部网卡。
-默认让操作系统随机分配端口；`--port <n>` 指定首选端口，被占用时从 n 起向上顺延最多 20 个，全被占用才报错。
+收窄先得到固定 Sample，再运行一次 plan。
+视图不按 locator、时间或 provenance 再造第二套成员集合；携带、接受与重命名只在已生成的 membership 中说明 provenance。
 
-不带选项的 `niceeval view` 默认把 Record root 中的完整 Sample 作为各页 `load` 的 base。
-`--exp` 按 experiment id 路径收窄，位置参数按 eval id 前缀收窄；两者可组合取交集。
-携带进当前配置的 Attempt 与本次新执行的 Attempt 同等属于当前 Sample；`view` 不提供按携带出处切换当前结果集的开关。
-目标 URL 按 `#/<pageId>/<key>` 选择对应参数化页，`key` 经该页 `params.decode` 还原参数后交给它的 `load` 求输入——attempt 页因此对收窄之内、即使不在当前结果集里的历史 attempt 也能打开；收窄之外的实例不可达。
-同一份收窄交给 `--out` 时决定出站内容。
+## plan/data/render 与深链
+
+每次有效浏览构建按以下顺序执行：
+
+1. 冻结报告 module graph 与参数。
+2. 打开固定 `RecordGraphRef`，并 materialize 一份 `sources` 恰含该项的 Sample。
+3. 运行一次 `definition.plan({ sample, parameters })`，枚举所有 page instance、Calculation 与 Projector request。
+4. executor 生成 immutable ReportData。
+5. 每个 page instance render 一次，text 和 web 共用结果树。
+
+普通导航页使用 `#/<page-id>`。
+参数化详情页的 URL 对应 Plan 中已有的 page instance；点击或直接打开深链不会启动逐请求的数据阶段，也不能获取未枚举的 Attempt。
+无法服务的 target 显示结构化错误，不打开空 dialog，也不临时查询其它 Store。
+
+dialog 仍只是已生成详情页面的摆放方式。
+无 JavaScript 时，独立页面内容完整可读；JavaScript 只增加导航、对话框和局部浏览行为。
 
 ## 持续重建
 
-本地模式建完站点起 server，然后盯着输入继续重建。
-它服务两种坐着不动的循环：
+本地模式可以观察 Record、报告 module graph、主题和配置。
+检测到变化后，它重新冻结输入、重新打开 `RecordGraphRef`、重新 materialize 一份单 source Sample，并生成新的 ReportPlan 与 ReportData。
 
-- **一边跑一边看。**
-  `niceeval exp` 每写完一个 attempt，页面上就多一行，不必反复重开命令。
-- **一边改报告一边看。**
-  改报告或组件文件存盘，浏览器里那一页就换成新样子，当前 tab、滚动位置与打开的详情 dialog 都留在原处。
+旧页面不在同一次 render 中漂移到新的 source Graph。
+当新计划成功后，server 替换订阅页面的已生成 HTML；外壳或主题资产变化时整页重载。
+计划、参数或 evidence closure 验证失败时，server 保留上一份可用页面并显示错误，直到下一次成功构建。
 
 ### 重建理由是一个闭集
 
@@ -73,7 +57,7 @@ Record root 用 `--record <dir>` 传入，单开一份 Run 用 `--run <file>`—
 
 | 输入 | 触发重建的事件 |
 |---|---|
-| 有效根内的 Record | 新 Run 目录、新写出的 `result.json` 与证据文件、`run.json` 补写 `completedAt` |
+| 有效根内的 Record | head CAS 到新的 committed `RecordGraphRef` |
 | 报告文件与它的整棵 import 图 | 改 `--report` 指向的文件，或改它 import 的**自定义组件**、读数、工具模块；项目配置的 `report` 字段同理 |
 | 主题文件与它的 import 图 | 改 `--theme` 指向的主题或它 import 的令牌模块 |
 | 项目配置 | `niceeval.config.ts` |
@@ -107,8 +91,8 @@ Record root 用 `--record <dir>` 传入，单开一份 Run 用 `--run <file>`—
 ### 重建语义
 
 - **整条管线重跑，没有增量档位。**
-  重新扫 Record root、重新选 Sample、重新装载组件树、重新渲染。
-  一个 attempt 落盘会改变 coverage 分母和全部聚合数字，「只追加一行」算出来的数与全量重建不一致——那正是[跨层不变量](../reading/README.md#跨三层的不变量)第一条要挡的东西。
+  重新打开新的 `RecordGraphRef`、重新 materialize Sample、重新执行计划并重新渲染。
+  一个 Attempt 提交会改变 coverage 分母和聚合结果，「只追加一行」会让页面内部使用不同 revision。
 - **事件去抖后合成一次重建。**
   一次运行收尾时多个 artifact 连续落盘，合成一次。
   重建期间又来事件，在本次结束后再建一次，不排队堆积。
@@ -148,202 +132,87 @@ Record root 用 `--record <dir>` 传入，单开一份 Run 用 `--run <file>`—
 两档都保留当前路由（`#/<pageId>` 与 `#/<pageId>/<key>`）。
 正在看的参数化页实例在重建后仍在有效根内就停在原处；被收窄之外的新数据不影响页面。
 
-与正在运行的实验的关系由 Record 格式担保，不靠 view 自己防抖：`result.json` 一次原子写成，站点只会看到已封口的 attempt，读不到半份 Record。
-Run 尚未补写 `completedAt` 是这个场景的常态，按[未收尾 Run](../record/architecture.md#读取规则) 如实读出并产生读取期 Issue，不等收尾才显示。
+与正在运行的实验的关系由 Record commit 担保，不靠 view 自己防抖。
+head 只会指向已经完成 CAS 的 immutable Graph；未收尾 Run 与 Attempt 也以该 revision 中已经提交的完整性状态如实显示。
 
 **没有关掉持续重建的 flag。**
 本地模式的存在理由就是盯着看；要一份静止不动的快照，那就是 `--out` 的输出，用浏览器直接打开即可。
+浏览器切页、改 locale、展开 dialog 或刷新页面都不会增加 Projector request。
+这些行为只消费当前计划已经生成的结果。
 
 ## 页面构成
 
-- **导航机器与品牌位：** 页头左端是恒定的 NiceEval 字标，右侧是 page 导航、外部链接与语言切换。
-  导航只列 `navigation !== false` 的 pages，并按声明顺序排列；参数化详情页不进导航，宿主不追加项。
-  浏览器标题、外壳链接、页脚与资产按[外壳契约](library/shell.md#外壳字段穷尽)消费；hero、Notice 和 Run 诊断都是 page 内的[站点组件](components/site/README.md)。
-- **默认报告页（内建首页）：** 页首是 `Hero`，随后是首页任务函数产出的 Notice、摘要、成本 × 主读数 points 和 Experiment rows。
-  实验表可展开查看 Eval 与 attempt 证据。
-  每个 experiment 直接消费当前 Sample 的物理 attempts；运行期选择计划不在报告层二次筛选结果。
-  散点有 `line` label 时按线归类并连线，否则按 agent 归类且不连线。
-  `--report` 用自定义报告替换整份页面声明，配置的 `report` 字段把同一替换设为项目默认。
-- **Attempts 页（内建）：** `toAttemptRows(sample.attempts)` 把范围内所有 Attempt 投影成 rows，再交给带过滤的 `Table`。
-- **追踪页（内建）：** `toTraceNodes(sample)` 用 canonical OTel 字段产生执行时间树，再交给 `Waterfall`。
-- **Attempt 详情（内建参数化页）：** `standard` 声明 [`standardAttemptPage`](library.md#参数化页attempt-与-experiment-详情)，render 是 [`AttemptDetails`](components/attempt-detail/README.md)。
-  它用公开组件装配判定、断言、修复 prompt、时间树、usage、对话、trace 和 diff。
-  `AttemptAssessment` 内的`AttemptNotices` 统一解释 snapshot error 与 persisted diagnostics。
-  用户可把 content 换成任意公开组合。
-- **Experiment 详情（内建参数化页）：** `standard` 声明 `standardExperimentPage`，render 是 [`ExperimentDetails`](components/experiment-detail/README.md)。
-  默认散点的实验点、层级表的实验行都以它为下钻目标。
-- **Copy fix prompt：** 批量修复 prompt 由[`SampleFixPrompt`](components/summaries/sample-fix-prompt.md) 提供；attempt 详情保留单条失败的复制入口。
+- **导航与品牌位**：只列出 plan 中 `navigation !== false` 的 page instance，并按计划顺序显示。
+- **标准概览**：消费固定 Sample 的 coverage、MetricValue、available verification / issues 与 unavailable causes。
+- **Attempt 与 Experiment 详情**：消费 plan 中声明的 details Projection，不读取 raw event schema。
+- **组件资产**：由已生成的组件树收集；脚本不改变数据或证据资格。
+- **主题**：`--theme` 与报告 theme 字段继续决定同一份静态 CSS 和视觉令牌。
 
-## 参数化页的 dialog 摆放
-
-目标链接在浏览器里打开的是对应参数化页的同一份 web 输出：基础链接直达 `<pageId>/<key>.html`，增强脚本拦截后把那份内容放进 dialog，并把浏览状态写成 `#/<pageId>/<key>`。
-拦截按报告清单里的参数化页 id 判定，宿主不认识具体实体；attempt 深链因此形如 `#/attempt/@<locator>`，experiment 深链形如 `#/experiment/<key>`。
-dialog 是摆放，不是第二套内容（attempt 页的区块与字段见 [详情的呈现](components/attempt-detail/presentation.md)）。
-
-宿主在这层只负责下面这些机器：
-
-| 行为 | 契约 |
-|---|---|
-| 打开 | 点击目标链接，或直接落在 `#/<pageId>/<key>` 深链上 |
-| 关闭 | 关闭按钮、`Esc`、点击遮罩三条等价 |
-| 关闭后的地址 | 点链接打开的走一次后退，深链落地的原地抹掉 hash，不把读者弹出站外 |
-| 焦点 | 打开时焦点进入 dialog 并留在内部，关闭后回到原处 |
-| 滚动 | 宿主只给纵向滚动，且锁住背景页；横向滚动归组件自己（源码块整块横滚） |
-| 嵌套下钻 | dialog 内的目标链接照常打开新 dialog（实验详情里点 attempt 即此路径） |
-| 取不到内容 | 不开空 dialog；控制台说明哪个目标取不到 |
-| 修饰键点击 | 放行浏览器原生行为，在新标签页打开那份独立文档 |
-
-内容宽度与最大高度由壳给定，页面内容不为弹窗换一套排版：同一个目标在独立文档里与在 dialog 里是同一份字节。
-无 JavaScript 时链接照常导航到独立文档，详情完整可读。
-
-本地持续重建成功后，已打开的参数化页 dialog 重新读取同一个目标文档，并在原位替换内容。
-刷新不关闭 dialog，不改变 hash 或 history 归属，也不要求重新运行 Eval。
-旧目标的迟到响应不能替换随后打开的新目标；刷新失败时保留上一份可用内容。
+组件既不选择 Record 成员，也不把 UI 字段反向映射为 Claim、event 或 object 查询。
 
 ## 静态导出
 
 ```sh
-niceeval view --out site                            # 导出完整记录根
-niceeval view --exp agents/codex --out site      # 只发布一个 experiment 路径范围
-niceeval view weather --out site                    # 只发布匹配 eval id 前缀的部分
-niceeval view --record site-data/run --out site    # 对 publish 产出的发布根导出
+niceeval view --out site
+niceeval view --exp compare/candidate --out site
+niceeval view security/ --out site
+niceeval view --report ./reports/security.tsx --out site
 ```
 
-`--out` 把站点输出原样写进一个目录，不设确认关卡。
-**出站的就是收窄到的**：位置参数 / `--exp` 是站点管线的输入，对本地与导出同义——页面 Sample 与 `artifact/` 证据树跟随同一份收窄，被滤掉的实验与 attempt 的证据文件不出站，对它们的深链在导出站如实显示证据缺失。
-等价说法：`view <收窄> --out` 就是先把根滤成只含匹配部分、再对这份根导出；不收窄时导出完整 Record root。
-页面能引用的 attempt 恒在输出内（页共享同一份收窄后的 Sample），站内的证据引用不会因收窄断链。
-发布给谁、内容是否适合公开，在选择收窄与构建 Record root 时决定（瘦身与更复杂的挑选见 [`publish`](../record/library.md#发布publish)）。
-输出恒为目录：
+`--out` 通过 `loadReportDefinition()` 冻结同一报告模块图，再由公开的 `exportReport()` 消费这份
+FrozenReportDefinition、Sample、固定 source reader 集合、参数和 target。executor 在执行 trace
+闭合后生成 finalized `ReportExportPlan`；作者不手写它，也不能在 render 过程中补充证据。
+
+输出是独立的 Report artifact，而不是 Record 副本。
+artifact 保存纯 JSON page payload、最终 text / HTML 与内容寻址资产；它不保存含函数的
+`ReportNode`。`openReportArtifact()` 无需报告模块和源 Record 即可验证并重开，且不会
+重跑 renderer。
+典型目录包含：
 
 ```text
 site/
 ├── index.html
-├── attempt/                 # 参数化页一页一个目录；文件名是 URL 编码后的 params.encode 产物
-│   └── <key>.html           # 该页对一个参数实例的完整静态 web 面（attempt 页的 key 就是 locator）
-├── experiment/
-│   └── <key>.html
-├── assets/                  # 外壳 scripts / styles 的 {src} 资产与 head 标签的本地 src/href 资产，按内容哈希命名
-└── artifact/
-    └── <run-path>/
-        ├── sources/
-        │   └── <sha256>.json    # Run 级源码去重仓库；attempt 的 sources.json 只是引用，正文在这里
-        └── <attempt-path>/
-            ├── sources.json     # {path, sha256} 引用列表
-            ├── events.json
-            ├── trace.json
-            └── diff.json        # 根里有才出现；缺时证据位置如实显示缺失
+├── pages/
+├── assets/
+├── report-plan.json
+└── evidence/
+    └── <proof-digest>.json
 ```
 
-站内 `artifact/` 树因此自包含：其中 `sources.json` 按引用指向同 Run 的`sources/<sha256>.json`。
-携带条目的源码正文由复制管线归拢进本 Run 的`sources/`，静态站不需要原 Run 在场。
-这个存储去重机制与页面渲染路径无关：`toAttemptSource(attempt)` 消费的源码已在 AttemptEvidence 中解引用，构建期直接写进对应 Attempt 页面的初始 HTML。
+`evidence/` 中的分页 `RecordEvidenceProofIndexV1` 收录本次交付消费的 event、object、Claim 与 authenticated absence。每项 proof 都绑定源 `RecordGraphRef`、归档原始 bytes 与 canonical path。
+源 Claim、stream GraphNode 和其它源节点不会成为静态站 Store 的活动节点。
 
-多页报告仍只用一个 `index.html`：导航页是 `#/<pageId>` 路由，托管方不需要为每页配置路径。
-
-参数化页不同：基础目标链接直接指向 `<pageId>/<key>.html`，保证无 JavaScript 也能读完整详情；增强脚本拦截后才把同一文档内容放进 dialog，并把浏览状态写成 `#/<pageId>/<key>`。
-
-所有 HTML 都按自身相对位置生成 `assets/` / `artifact/` 引用，所以站点根、子目录、直接打开文件与常见 cleanUrls 托管都不断链。
-托管方把站点根暴露成无尾斜杠路径（`/showcase/memory` 直接服务 `index.html`，且带斜杠形态被 308 回无斜杠）时，浏览器按文档 URL 的**目录**定位相对引用会少一层。
-
-`index.html` 因此在 `<head>` 最前面落一个 `<base>`，把站点根写成目录形态，后续所有相对引用（attempt 链接、证据 fetch、head 资产标签）都按它定位。
-`<base>` 在路径已是目录形态（`/`、`/sub/`）时不插入，末段带扩展名（`/out/index.html`、`file://` 直接打开）时取其目录。
-`index.html` 按构造恒是站点根，这条判定不需要托管方配置。
-参数化页文档住在真实的 `<pageId>/` 目录下，相对引用天然对齐，不参与这套归一。
-
-`assets/` 只在外壳声明了本地资产（`scripts` / `styles` 的 `{src}`，或 `head` 标签 `attrs` 里的本地 `src` / `href`）时出现；资产按 `assets/<sha256><ext>` 写入并改写 HTML 引用，同内容且同扩展名的资产去重，不受源文件同名影响。
-`head` 里的外链（`http(s)://`）不进 `assets/`，原样落在标签上由读者浏览器加载。
-导出的站点会原样携带并在读者浏览器执行这些脚本，发布防呆不检查脚本内容。
-
-attempt 页面的基础内容——判定、断言、时间树、对话、diagnostics、usage、trace、diff 摘要与可展开细节——已经在构建期写进该 locator 的静态 HTML，不依赖浏览器再去 fetch。
-`artifact/` 是与 HTML 平行的独立证据树，只服务下载、外部程序读取与渐进增强的补充链接，不是页面基础内容的数据出处。
-因此不提供“单个 HTML”导出：站点仍需要 `assets/`（样式 / 脚本）与 `artifact/`（独立证据文件）等外部文件，这是站点由多个物理文件构成的结构性原因，与页面是否需要联网取数无关。
-
-导出没有档位：`view --out` 把收窄范围内存在且前端会读取的证据文件全部随站复制，不做体积取舍。
-这批文件是 `sources.json` 及其引用的 Run 级 `sources/<sha256>.json` 正文、`commands.json`、`events.json`、`trace.json` 与 `diff.json`；缺的在对应证据位置如实显示缺失，不猜也不冒充。
-体积取舍不在导出层做：要瘦站点，在构建发布根时用 [`publish({ artifacts })`](../record/library.md#发布publish) 决定带什么（其默认不带 diff）。
-唯一永不复制的是 `o11y.json`——报告数字在导出时已烘进 HTML，浏览器不读它，这是「前端读什么带什么」规则的推论，不是一个档位。
-
-**命令行收窄管选择实验与 eval，`publish` 管导出参数表达不了的构根。**
-按实验或 eval id 前缀发布，直接用位置参数 / `--exp` 收窄导出。
-需要更多控制时先用 [`publish`](../record/library.md#发布publish) 构建发布根，再对发布根导出——它涵盖三类场景：瘦身（`artifacts` 挑证据种类）、任意谓词挑选 Run（收窄只有前缀语义），以及把发布根作为数据签进仓库长期托管：
-
-```ts
-const results = await openRecord(".niceeval");
-await publish(latestRunSample(record), "site-data/run", {
-  artifacts: ["commands", "sources", "events", "trace"],   // 瘦身：不带 diff
-});
-// 然后：niceeval view --record site-data/run --out site
-```
-
-反过来，「报告聚焦某实验、证据保持全量」是看法层的事，在报告文件里表达——组件 `input` 传收窄后的 Sample，导出时不收窄。
-
-`artifact/` 由与 [`publish()`](../record/library.md#发布publish) 同一条复制管线产出（同一 50 MiB 预检、同一布局知识）。
-导出的站点包含收窄范围内**完整的原始证据**——prompt、工具参数、完整输出、源码——深链一点开就是原文；运行进程注入的秘密由格式在采集侧挡在结果文件之外（[Record · 复制与瘦身](../record/library.md#发布publish)）。
-
-## 结果版本与错误
-
-扫描整个 Record root 时，单个不可读 Run 不会挡住其它结果；每个被跳过的 Run 形成一条`unreadable-run` [Sample Issue](../sample/library.md#issue-code-全集)（含目录与原因），由页内`SampleNotices` 显示。
-用 `--run` 明确指定单个 Run 文件时，该文件不可读会让命令失败。
-
-| 场景 | 行为 |
-|---|---|
-| 非 niceeval JSON | 忽略 |
-| schemaVersion 不兼容 | 跳过并建议用产出它的 niceeval 版本打开 |
-| JSON 损坏或必需字段错误 | 标为 malformed |
-| attempt 已写入但缺 `run.json` | 标为 incomplete |
-| 单个 attempt 缺可选 artifact | 页面可打开，在该证据位置显示缺失 |
-
-零可读结果时，本地 server 不启动，`--out` 也不会生成空站。
-读取不会迁移或改写历史结果。
-
-## 自定义报告与外壳
-
-```sh
-niceeval view --report reports/exam.tsx               # 树形态：报告树替换默认外壳的报告槽
-niceeval view --report reports/site.tsx               # 配置对象形态：品牌外壳 + 多页导航
-niceeval view --report reports/site.tsx --page exam   # 指定初始页
-```
-
-报告文件同时可被 `niceeval show --report` 使用。
-官方组件都有 web 和 text 两个渲染面，所以同一张 page 在浏览器和终端保持相同数据口径；同一个下钻目标，view 换成静态详情链接与 dialog 路由，show 换成带完整 `--report` 上下文的下钻命令。
-写法见 [Library](library.md#definereport-保留静态-page-边界)。
-
-报告文件的默认导出恒为 `defineReport` 的返回值：树形态展开为 id 为 `report` 的单张页；[配置对象形态](library/shell.md)声明外壳与 pages。
-写好的定义填进 `niceeval.config.ts` 的 `report` 字段，不带选项的 `niceeval view` 就默认装载它，团队里不必人人记住 `--report`（[项目默认报告](#自定义报告与外壳)）。
-view 只把 `navigation !== false` 的 pages 列进导航；每张页的输入由它自己的 `load` 从 Sample 与 `PageLoadContext` 求出。
-未声明标准库同 id 参数化页时，view 按 id 补位内建页，但不把它加入导航或改写报告定义。
-`--page <id>` 未命中或试图在没有参数时打开参数化 page，均按完整用户反馈报错。
-
-内建首页的两个渲染面共享同一份实体与读数数据：web 面使用可排序的实验表，text 面使用紧凑列表；两面都直接消费完整 Sample，不设实验组选择器。
-端到端通过率、成本、耗时、Tokens、判定构成和证据引用来自同一份计算结果。
+导出只复制 Plan 明确消费的 evidence closure。
+源 Record 已有、但导出时无法读取、验证或复制的依据使整个导出失败；不能把它显示成 `not-recorded`。
+source reader 与 proof closure 失败都显示同一个 artifact-owned
+`report-evidence-closure-failed`。
+它同时按 `phase` 保留完整 `RecordSourceFailure` 或 `RecordEvidenceProofFailure`；view 不把 typed
+cause 压成一段字符串。
 
 ## 主题
 
-站点外观由一份和 Report 分开的 Theme 配置对象决定。
-`--theme` 换一次外观而不动报告文件，报告自己的 `theme` 外壳字段是它自带的外观，两者与项目配置、内建 [`basalt`](themes/basalt.md) 组成[四档取值链](library/theme.md#装载链)：
+`--theme` 仍是 web 面选项：
 
 ```sh
-niceeval view --theme ./themes/acme.ts                       # 换成自己的主题
-niceeval view --report reports/site.tsx --theme ./themes/acme.ts
-niceeval view --theme basalt                                 # 内建主题名，回到官方外观
-niceeval view --theme ./themes/acme.ts --out site            # 导出带同一份主题
+niceeval view --theme basalt
+niceeval view --theme ./themes/acme.ts
+niceeval view --theme ./themes/acme.ts --out site
 ```
 
-主题同时作用于 view 导航 chrome 与页内报告组件，本地模式和 `--out` 使用同一份静态 CSS。
-主题的令牌与它自带的 `styles` 在报告外壳的 `styles` 之前加载，所以报告作者的自定义样式压在主题之上。
+主题只改变视觉令牌及其 CSS 变量值。
+它不能新增 Data request、改变 Sample membership、重新计算 MetricValue 或替换 verification。
 
-浅色与深色由主题的 `appearance` 决定：`system` 时初始跟随浏览器 / OS，页头带一个浅 / 深切换控件，读者的选择按站点记在浏览器本地；`light` / `dark` 锁定全站，不渲染控件。
-无 JavaScript 时初始 HTML 就是声明的外观，切换控件是增强层，不改变任何数值。
+## 错误与边界
 
-`--theme` 是 web 面的 flag：`niceeval show --theme …` 按完整用户反馈报错并指向 `view`。
-不含路径的名称一律查内建主题名表，不回落到文件探测；想装载文件就写成带路径形。
-令牌全集、语义边界与 CSS 级联见[主题](library/theme.md)。
+- 零成员仍按 coverage 显示；无效参数是 `report-parameters-invalid`，未知 page 或不可达 target 是 `report-target-invalid`。
+- unavailable evidence 仍以原始 causes 与 basedOn 呈现，不冒充空白成功，也不合成 verification。
+- Report artifact 与 SampleBundle 使用独立 Store；静态站不能被 `openRecord()` 当作 Record 打开。
+- `view` 不提供以页面字段、网络回调或客户端交互读取计划外数据的旁路。
 
 ## 相关阅读
 
-- [Show](show.md) —— 同一批结果的终端入口。
-- [Reports Library](library.md) —— 自定义报告槽；外壳与多页见[分篇](library/shell.md)。
-- [Theme](library/theme.md) —— Theme 配置对象、装载链、令牌全集与 CSS 覆写。
-- [Record](../record/README.md) —— view 读取与导出的数据。
-- [Architecture](architecture.md) —— 报告宿主与「宿主只剩机器」的边界清单。
+- [Show](show.md) —— 同一份计划的终端入口。
+- [Reports Library](library.md) —— ReportDefinition、参数、target 和 exportReport。
+- [Theme](library/theme.md) —— Theme 配置对象、令牌和装载链。
+- [Sample](../sample/README.md) —— 固定样本与独立 Sample Bundle。
+- [Architecture](architecture.md) —— executor、结果树和 evidence closure。

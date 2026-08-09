@@ -4,7 +4,7 @@ sidebarTitle: "Debugging guide"
 description: "A scenario-organized troubleshooting guide: how to pinpoint a failed assertion, how to get into the Sandbox after an environment error, how to see what the agent changed, and how to dig up and review a past run — each step comes with a command sequence and sample output."
 ---
 
-After a `niceeval exp` run, every failed Attempt carries an `@`-prefixed locator (like `@1qrdcfq8`). It shows up in the run summary, CI logs, and reports. The locator itself never expires — as long as the corresponding result snapshot under `.niceeval/` still exists, today's locator opens the same Attempt with the same command next week too. Every troubleshooting session starts from it.
+After a `niceeval exp` run, every failed Attempt carries an `@`-prefixed locator (like `@0123456789ABCDEFGHJKMNPQRS`). It shows up in the run summary, CI logs, and reports. The locator itself never expires — as long as the corresponding facts under `.niceeval/` still exist, today's locator opens the same Attempt with the same command next week too. Every troubleshooting session starts from it.
 
 One general rule first: NiceEval's own errors and warnings state the next step right at the end of the message. When one command fixes it, the message already contains the complete command with your experiment name filled in — copy and run it (the web page even has a one-click copy button). A warning you can safely ignore spells out exactly when it's safe to ignore. So when you see an error, read its last sentence first. This guide covers the scenarios that need human judgment beyond the message itself — how to pinpoint a failed verdict, how to get into the environment after an error.
 
@@ -13,9 +13,9 @@ One general rule first: NiceEval's own errors and warnings state the next step r
 Opening an Attempt with no flags shows a page designed for troubleshooting: the verdict, the failed assertions, the timing breakdown, a summary of changes, and the commands available next.
 
 ```text
-$ niceeval show @1qrdcfq8
-@1qrdcfq8 · memory/swelancer-manager-proposals · dev-e2b/codex-e2b · failed
-snapshot 2026-07-12T10:08:29.361Z · attempt 1 · 50.0s · 58.5k tokens · $0.05
+$ niceeval show @0123456789ABCDEFGHJKMNPQRS
+@0123456789ABCDEFGHJKMNPQRS · memory/swelancer-manager-proposals · dev-e2b/codex-e2b · failed
+Run 2026-07-12T10:08:29.361Z · attempt 1 · 50.0s · 58.5k tokens · $0.05
 
 assertions: 3 passed · 1 gate failed
 eval source: evals/memory/swelancer-manager-proposals.eval.ts · sha256:ee33b9c4…
@@ -33,10 +33,10 @@ timing: sandbox.queue 0.2s · sandbox.create 5.6s · sandbox.setup 3.5s · agent
 changes: 2 files changed by agent · M manager_decisions.json · A notes/decision-log.md
 
 available:
-  niceeval show @1qrdcfq8 --source
-  niceeval show @1qrdcfq8 --execution
-  niceeval show @1qrdcfq8 --timing
-  niceeval show @1qrdcfq8 --diff
+  niceeval show @0123456789ABCDEFGHJKMNPQRS --source
+  niceeval show @0123456789ABCDEFGHJKMNPQRS --execution
+  niceeval show @0123456789ABCDEFGHJKMNPQRS --timing
+  niceeval show @0123456789ABCDEFGHJKMNPQRS --diff
 ```
 
 This page answers one question first: **did the agent get it wrong (`failed`), or did the environment never run at all (`errored`)?** The two cases call for completely different troubleshooting paths.
@@ -48,7 +48,7 @@ The troubleshooting order is "which assertion failed → what the agent actually
 **1. Put the assertion back next to its source.** `--source` shows the Eval source saved at run time (not whatever version you may have since edited in your workspace), with the failed assertion marked right on its line. The `t.send(...)` call line is marked with the turn it produced — the turn label (`turn1`, the same scheme `--execution` / `--timing` use), whether that turn completed, and how long it took:
 
 ```text
-$ niceeval show @1qrdcfq8 --source
+$ niceeval show @0123456789ABCDEFGHJKMNPQRS --source
 21✓     await t.send("Review the proposals and record your decision…");
     turn1 · completed · 22.4s
 38      for (const [issue, label] of Object.entries(expected)) {
@@ -62,7 +62,7 @@ $ niceeval show @1qrdcfq8 --source
 **2. See what the agent actually did.** `--execution` unrolls this Attempt's conversation as a timeline — user messages, assistant replies, and each tool call's input and result:
 
 ```text
-$ niceeval show @1qrdcfq8 --execution
+$ niceeval show @0123456789ABCDEFGHJKMNPQRS --execution
 turn1 · completed · 22.4s · 12.4k tok · $0.02
   USER
     Review the proposals and record your decision for each issue…
@@ -82,7 +82,7 @@ The conversation is segmented by turn; each turn's header line gives its number 
 When you don't want to read the whole thing, pipe it into `grep` for a targeted search. List which tools this Attempt used and how many times each:
 
 ```text
-$ niceeval show @1qrdcfq8 --execution | grep "TOOL ·" | sort | uniq -c
+$ niceeval show @0123456789ABCDEFGHJKMNPQRS --execution | grep "TOOL ·" | sort | uniq -c
    5   TOOL · command_execution
    2   TOOL · file_change
 ```
@@ -90,24 +90,24 @@ $ niceeval show @1qrdcfq8 --execution | grep "TOOL ·" | sort | uniq -c
 To confirm whether it ran a particular command or mentioned a particular file, just search for the keyword:
 
 ```bash
-niceeval show @1qrdcfq8 --execution | grep proposals
+niceeval show @0123456789ABCDEFGHJKMNPQRS --execution | grep proposals
 ```
 
 **3. See what it actually changed.** `--diff` shows only **files the agent itself changed** — the starting files you uploaded and any verification material written after the run are never mixed in, so every line in the list is genuinely the agent's own work:
 
 ```text
-$ niceeval show @1qrdcfq8 --diff
+$ niceeval show @0123456789ABCDEFGHJKMNPQRS --diff
 2 files changed by agent
   M manager_decisions.json   +6 -2    turn1, turn2
   A notes/decision-log.md    +18      turn2
 
-single file: niceeval show @1qrdcfq8 --diff=manager_decisions.json
+single file: niceeval show @0123456789ABCDEFGHJKMNPQRS --diff=manager_decisions.json
 ```
 
 The `turn1` at the end of a line shows which turn changed that file, matching up with the turn numbers in `--execution`. To see one file's line-by-line changes, join the file path with `=`:
 
 ```text
-$ niceeval show @1qrdcfq8 --diff=manager_decisions.json
+$ niceeval show @0123456789ABCDEFGHJKMNPQRS --diff=manager_decisions.json
 M manager_decisions.json · changed in turn1, turn2
 @@ -1,5 +1,7 @@
  {
@@ -124,8 +124,8 @@ At this point you can usually draw a conclusion: was the task description ambigu
 An `errored` Attempt's first page doesn't list assertions — it lists which phase the error happened in and why:
 
 ```text
-$ niceeval show @12h8m4k1
-@12h8m4k1 · memory/agent-029-use-cache · compare/claude-e2b · errored
+$ niceeval show @0123456789ABCDEFGHJKMNPQRS
+@0123456789ABCDEFGHJKMNPQRS · memory/agent-029-use-cache · compare/claude-e2b · errored
 
 error:
   phase: sandbox.create
@@ -150,7 +150,7 @@ npx niceeval exp compare memory/agent-029 --keep-sandbox
 
 ```text
 Kept sandboxes (1)
-  @18c1m2qx  memory/agent-029-use-cache #1  errored  docker · a3f9c2d1
+  @0123456789ABCDEFGHJKMNPQRS  memory/agent-029-use-cache #1  errored  docker · a3f9c2d1
              enter: niceeval sandbox enter a3f9c2d1
 Stop them with: niceeval sandbox stop --all
 ```
@@ -164,9 +164,9 @@ A kept Sandbox doesn't keep burning resources: Docker containers sit parked on d
 ```text
 $ niceeval sandbox list
 ID        PROVIDER  STATE            FROM
-a3f9c2d1  docker    dormant          memory/agent-029-use-cache #1 · errored · @18c1m2qx · 2026-07-14 15:02
+a3f9c2d1  docker    dormant          memory/agent-029-use-cache #1 · errored · @0123456789ABCDEFGHJKMNPQRS · 2026-07-14 15:02
             enter: niceeval sandbox enter a3f9c2d1
-9f21c07b  vercel    expired          onboarding/tool-first #2 · failed  · @1x7f3q8a · 2026-07-14 14:31
+9f21c07b  vercel    expired          onboarding/tool-first #2 · failed  · @0123456789ABCDEFGHJKMNPQRS · 2026-07-14 14:31
             expired 2026-07-14 14:36 — remove with: niceeval sandbox stop 9f21c07b
 ```
 
@@ -179,7 +179,7 @@ niceeval sandbox stop --all
 
 ## Scenario 3: reviewing a past run
 
-Every run leaves a complete result snapshot under `.niceeval/<experiment>/<timestamp>/` — the verdict, assertions, event stream, and diff are all in there, and **it's never overwritten by the next run**. There are three ways in to review it:
+Every run commits its facts into the `.niceeval/` Record root — verdicts, assertions, the event stream, and diffs are all in there, and **a committed Attempt is never overwritten by the next run**. There are three ways in to review it:
 
 **Open it directly with the old locator.** Copy the `@` locator from last week's terminal history, CI logs, or a report; `niceeval show @<locator>` works exactly the same, and `--source` / `--execution` / `--diff` above all still work — including the Eval source captured at run time, even if you've since edited the Eval.
 
@@ -195,7 +195,7 @@ Every eval and every Attempt in the list carries a locator; drilling deeper from
 **Run the same check across a batch of Attempts.** Copy locators from the experiment list and wrap them in a loop. For example, check which of these Attempts called `file_change`:
 
 ```bash
-for loc in @1qrdcfq8 @1x7f3q8a @18c1m2qx; do
+for loc in @0123456789ABCDEFGHJKMNPQRS @0123456789ABCDEFGHJKMNPQRS @0123456789ABCDEFGHJKMNPQRS; do
   echo "== $loc"
   niceeval show $loc --execution | grep "TOOL · file_change"
 done
@@ -209,14 +209,14 @@ niceeval view
 
 The home page is a cost × pass-rate overview and an experiment comparison table; each Attempt's detail page has the verdict, assertions, the full timing tree, the conversation, the trace, and the diff, plus a "Copy fix prompt" button that packages the failure into a fix prompt you can hand straight to a coding agent. Deep links to an Attempt in the report use the same locator as `show`.
 
-**Open an archived result, or one someone sent you.** A results directory is self-contained — one downloaded from CI, copied over by a coworker, or generated before publishing to a static site — you can point straight at it:
+**Open an archived Record, or one someone sent you.** A RecordStore root is self-contained — one downloaded from CI, copied over by a coworker, or produced by `mirrorRecord` — you can point straight at it. Note that `--record` only accepts a RecordStore or a `mirrorRecord` target: a SampleBundle and a Report artifact are not Records and cannot be used as a record root:
 
 ```bash
 niceeval show --record tmp/ci-artifacts/record
 niceeval view --record site-data/run
 ```
 
-One caveat: if you've cleaned up an old snapshot directory locally, any later run's "carried over from a previous result" entries will find no original evidence (shown as missing). To archive a run for the long term, copy it out first with [`publish`](/reference/results-data), then delete.
+One caveat: if you've cleaned up old facts locally, any later run's "carried over from a previous result" entries will find no original evidence (shown as missing). To archive a run for the long term, copy out the full history first with [`mirrorRecord`](/reference/results-data), then delete.
 
 ## Quick reference: symptom → command
 

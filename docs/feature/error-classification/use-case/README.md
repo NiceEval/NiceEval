@@ -7,8 +7,8 @@
 
 | 你看到的现象 | 读哪篇 |
 | --- | --- |
-| `errored` 的 message 带 `retries exhausted` 后缀,或 activity 里见过 `turn retry` | [读懂 errored](reading-errored.md)(重试耗尽分支) |
-| `errored` 是流中断 / 连接重置,message **没有**重试摘要后缀 | [读懂 errored](reading-errored.md)(不可重试分支) |
+| `errored` Verdict Claim 的 message 带 `retries exhausted` 后缀,或 activity 里见过 `turn retry` | [读懂 errored](reading-errored.md)(重试耗尽分支) |
+| `errored` Verdict Claim 对应流中断 / 连接重置,message **没有**重试摘要后缀 | [读懂 errored](reading-errored.md)(不可重试分支) |
 | 几十条 attempt 报同一个死因,各自白烧一个沙箱——起跑(setup / 探测 / fixture 校验)就死 | [抛出点声明死因](declare-fatal-scope.md) |
 | 同上,但死在 run 中途,以对某个 host 的连接错误浮出 | [写分类器](write-a-classifier.md)(实验侧) |
 | 自家 agent 的限流文案被判了不可重试 | [写分类器](write-a-classifier.md)(adapter 侧) |

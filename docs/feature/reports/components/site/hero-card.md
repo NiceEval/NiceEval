@@ -1,30 +1,41 @@
 # `HeroCard`
 
 [`Hero`](hero.md) 使用的站点身份原语。
-它只收已经算好的 Sample 摘要；标题由调用者显式传入。
+它只收已经生成的 Sample summary；标题由调用者显式传入。
 
 ```ts
+interface HeroLogo {
+  readonly src: string;
+  readonly alt: string;
+}
+
+interface HeroLink {
+  readonly label: LocalizedText;
+  readonly href: string;
+}
+
 interface HeroContent {
-  /** Sample 中最新 Run 的开始时间；空 Sample 为 null，不编造当前时间。 */
-  latestStartedAt: string | null;
-  /** 构成当前结果集的 Run 数；大于 1 时 web 面标注「由 N 次运行合成」。 */
-  runs: number;
+  readonly sample: SampleRef;
+  readonly membershipCount: number;
+  readonly coverage: MetricCoverage;
 }
 
 interface HeroCardProps {
-  title: LocalizedText;
-  data: HeroContent;
-  logo?: HeroLogo;
-  description?: LocalizedText;
-  links?: readonly HeroLink[];
-  className?: string;
+  readonly title: LocalizedText;
+  readonly content: HeroContent;
+  readonly logo?: HeroLogo;
+  readonly description?: LocalizedText;
+  readonly links?: readonly HeroLink[];
+  readonly className?: string;
 }
 ```
 
-`HeroLogo` 与 `HeroLink` 的形状见 [`Hero`](hero.md)。
-web 面依次渲染可选 logo、hero 标题（`<h1>`）、可选介绍、可选链接组与品牌行，不显示运行 meta。
-text 面输出标题、可选介绍、可选链接与 meta，不含纯视觉 logo 和品牌行。最后运行时间按 text 面的 locale 格式化；`latestStartedAt` 为 null 时显示内置「暂无运行」文案。
-`niceeval/report/react` 导出同名纯组件，web 行为一致——品牌跟着组件走，不区分官方宿主与嵌入页面。
+`HeroLogo`、`HeroLink`、`HeroContent` 与 `HeroCardProps` 的唯一 owner 是本页。
+`SampleRef` 来自 [Sample Library](../../../sample/library.md#选择器source-集合与-sampleref)。
+`MetricCoverage` 来自 [Reports Library](../../library.md#分组函数与计算函数)；`LocalizedText` 来自 [Reports Library](../../library.md#通用值文本与参数)。
+
+web 面依次渲染可选 logo、标题、介绍、链接与品牌行。
+text 面显示同一份 Sample identity、成员数与 coverage；它不读取当前时间，也不重新打开 Record。
 
 ## 相关阅读
 

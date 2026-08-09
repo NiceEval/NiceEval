@@ -218,20 +218,22 @@ reset 或 cleanup 无法恢复已知边界时退休物理实例。
 
 ## 错误语义
 
+下表的 `errored` 是由结构化执行错误 Observation 支撑的 Verdict Claim；它不是 Attempt lifecycle state。受影响的 Attempt 仍只在 `active`、`completed`、`abandoned` 三态中收敛。
+
 | 失败点 | 结果 |
 |---|---|
 | 配对两方都带 template | `sandbox.template-conflict`,全矩阵聚合,零 Provider I/O |
 | 配对两方都没有 template | `sandbox.template-missing`,全矩阵聚合,零 Provider I/O |
 | Direct Agent 搭配 SandboxLayer | `sandbox.unexpected-for-direct-agent` |
 | template factory / 平台 / capability 不可用 | physical planning 聚合错误,零 build / create |
-| Provider build / start / ready | Attempt `errored`,归 Case |
-| template owner 的作者 command | Attempt `errored`,归 `sandbox.prepare.<templateOwner>` |
-| 第二作者 layer 的 command | Attempt `errored`,归对应 owner 的 `sandbox.prepare` |
-| agent.ensure 循环的 探测 配对、install 或复检 | Attempt `errored`,归 `agent.ensure` |
-| Sandbox lifecycle setup | Attempt `errored`;已创建的物理实例仍依序运行 teardown 后停止 |
+| Provider build / start / ready | 形成 `errored` Verdict Claim,归 Case |
+| template owner 的作者 command | 形成 `errored` Verdict Claim,归 `sandbox.prepare.<templateOwner>` |
+| 第二作者 layer 的 command | 形成 `errored` Verdict Claim,归对应 owner 的 `sandbox.prepare` |
+| agent.ensure 循环的 探测 配对、install 或复检 | 形成 `errored` Verdict Claim,归 `agent.ensure` |
+| Sandbox lifecycle setup | 形成 `errored` Verdict Claim;已创建的物理实例仍依序运行 teardown 后停止 |
 | Sandbox lifecycle teardown | 追加 warning diagnostic，继续其余 teardown 并停止 provider |
 | command cleanup / Agent teardown | 保留原结果并追加 cleanup 诊断;必要时退休复用周期 |
-| Provider finalizer | 使用独立于 Attempt 的有界 cleanup signal；失败写入 `sandbox-stop-failed` Case cleanup 诊断并保留可重试/孤儿认领的资源所有权，不改写原始 Attempt 判定 |
+| Provider finalizer | 使用独立于 Attempt 的有界 cleanup signal；失败写入 `sandbox-stop-failed` Case cleanup Diagnostic Observation 并保留可重试/孤儿认领的资源所有权，不改写原始 Verdict Claim |
 
 ## 相关阅读
 

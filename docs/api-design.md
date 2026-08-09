@@ -11,11 +11,14 @@ CLI 的命令与 flag 另见 [CLI](cli.md)，但沿用同一条调用点清晰�
 API 应让第一次使用它的人在调用处看出“这一步要什么、会发生什么、得到什么”：
 
 ```ts
-const record = await openRecord(".niceeval");
+await using store = await openRecordStore(root);
+await using record = await openRecord(store);
+const sample = await materializeSample(record, selection);
 const trimmed = sample.pipe(dropExperiments("compare/broken"));
 ```
 
-`openRecord` 表明它会打开外部资源，`dropExperiments` 表明它从 Sample 剔除哪些成员。
+`openRecordStore` 表明它会把 root 绑定为外部资源，`openRecord` 表明它会在已打开的 Store 上建立 Record handle，
+`dropExperiments` 表明它从 Sample 剔除哪些成员。
 两者不需要把 reader、文件扫描或集合遍历步骤写进名字。
 
 清晰优先于简短，但长度不是清晰的替代品。
@@ -43,16 +46,16 @@ const trimmed = sample.pipe(dropExperiments("compare/broken"));
 
 | 角色 | 命名形态 | 例子 |
 |---|---|---|
-| 执行动作或产生副作用 | 动词短语 | `publish`、`runEvals` |
-| 打开、加载或读取外部资源 | `openX` / `loadX` / `readX` | `openRecord`、`loadYaml` |
-| 创建运行时对象 | `createX` | `createAgentSession` |
+| 执行动作或产生副作用 | 动词短语 | `exportSample`、`runEvals` |
+| 打开、加载或读取外部资源 | `openX` / `loadX` / `readX` | `openRecordStore`、`openRecord`、`loadYaml` |
+| 创建运行时对象 | `createX` | `createAgentSession`；`createRecordStore` 只创建 unbound backend，不能冒充已打开的 root |
 | 声明并校验定义 | `defineX` | `defineEval`、`defineExperiment` |
 | 返回逻辑视图或派生值 | 结果名或准确的计算动词 | `estimateCost` |
 | 判断条件 | `isX` / `hasX` / `canX` | `isDefined`、`hasSections` |
 | 转换表示 | `toX` / `fromX` / `targetFromSource` | 词根写明目标与输入表示 |
 | 收窄不可变集合 | `filterX` / `onlyX` / `dropX` | `filterAttempts`、`dropExperiments` |
 | 类型、组件与值对象 | 名词 | `Record`、`Sample`、`AttemptEvidence` |
-| 事件回调 | `onX` | `onEvalComplete` |
+| 事件回调 | `onX` | `onAttemptReceipt` |
 
 同一个前缀只表达一种稳定动作：
 
@@ -60,7 +63,7 @@ const trimmed = sample.pipe(dropExperiments("compare/broken"));
 - `createX` 创建运行时实例，不冒充纯定义。
 - `openX` 建立到外部资源的读取面，错误必须能定位该资源。
 - `loadX` 把外部内容完整读入值，不暗示持续句柄。
-- `publish` 跨可信边界构造自包含发布包，不只是文件复制。
+- `exportSample` 跨可信边界构造独立样本交付包，不只是文件复制。
 
 纯查询可以使用名词性结果名，但“纯”不自动推出“名词性”。
 结果名必须准确指向返回对象，并足以区分相邻查询；否则使用能说明计算或选择语义的准确动词。
@@ -127,7 +130,7 @@ getSampleSummary(...);      // 差：get 没增加可观察语义
 不能一边按返回对象命名，另一边按内部遍历成员命名，再用单复数制造表面对称。
 
 返回集合不表示函数名必然复数。
-`openRecord()` 返回一个带集合导航能力的 `Record`，所以是单数；`dropExperiments()` 的动作直接作用于多个 Experiment，所以是复数。
+`openRecord(store)` 返回一个带集合导航能力的 `Record`，所以是单数；`dropExperiments()` 的动作直接作用于多个 Experiment，所以是复数。
 
 ## 选择 API 先固定命名视角
 
@@ -158,6 +161,39 @@ getSampleSummary(...);      // 差：get 没增加可观察语义
 因此 `latest` 不能只靠日常语感表示“最好用的当前结果”，`current` 也不能暗中表示“时间最大的 Run”。
 出处差异若不改变用户决策，就只保留为明细事实；不得因为实现能区分，就增加筛选器、转换或公开状态。
 
+`Record` 不是 `current` / `latest` 的结果选择面。`.niceeval` 是长期追加的 RecordStore；`openRecordStore(root)` 绑定并打开该 Store，`openRecord(store)` 打开它声明的 head，GraphRef 才固定一个不可变 revision。需要选择或比较事实时，API 必须显式产生带成员、分母与 provenance 的 Sample，或接受一个明确 GraphRef，不能按目录、时间、最近 Run 或 snapshot 文件隐式选取。这种显式成员范围称为有效选择（Effective selection）。
+
+## Record 的资源、导出与证明调用形状
+
+Record 的 root、handle、导出输入集和镜像快照都必须在调用点可见：
+
+```ts
+await using store = await openRecordStore(root);
+await using record = await openRecord(store);
+const historical = openRecordGraph(store, ref);
+
+const sample = await materializeSample(record, selection);
+
+await exportSample(sample, { sources, target });
+const report = await loadReportDefinition(reportModule);
+await exportReport(report, { sample, sources, parameters, target });
+```
+
+`createRecordStore` 只创建 unbound backend；只有 `openRecordStore(root)` 能把 backend 绑定到一个 `.niceeval`
+RecordStore。`materializeSample` 接收已打开的 `recordHandle`，不能接收未经 handle 包装的 `record.ref`。
+这样 selection 的读依据和资源生命周期不会在调用点消失。`sources` 的类型是 `RecordSourceSet`；导出 API 不从
+Sample、目录或宿主条件猜测它。
+
+镜像先捕获、后执行，不能让实现暗中在复制途中改变 source revision：
+
+```ts
+const snapshot = await captureRecordMirrorSnapshot(source);
+await mirrorRecord(source, target, { snapshot });
+```
+
+`mirrorRecord` 没有省略 `snapshot` 的重载。event、object、claim 与 absence 的证据证明也不再分裂：分页
+`RecordEvidenceProofIndexV1` 的 `evidenceProofs` 是唯一统一 index，已删除 `EventProofV1` / `eventProofs`。
+
 ## 可观察的选择差异必须进入公开形状
 
 实现步骤不进名字，但会改变用户决策的选择差异不是实现细节。
@@ -181,13 +217,14 @@ getSampleSummary(...);      // 差：get 没增加可观察语义
 | 形状 | 使用条件 |
 |---|---|
 | `record.operation()` | 操作只导航或读取 Record 已有事实，不引入新的判断层 |
-| `operation(record)` 从 `niceeval/sample` 导出 | 操作根据 Record 派生 Sample，并引入选择、涵盖或可靠性判断 |
+| `operation(record)` 从 `niceeval/sample` 导出 | 操作根据已打开的 Record handle 派生 Sample，并引入选择、涵盖或可靠性判断 |
 | `sample.operation()` | 操作依赖既有 Sample 语义，且仍返回或观察同一领域对象 |
 | `sample.pipe(operator())` | 多个不可变转换需要顺序组合，并共享 `Sample → Sample` 形状 |
 
 “方法更短”或“自由函数更函数式”都不是理由。
 若操作跨越领域层，模块归属应让这个边界在 import 和调用点可见。
-按此规则，从 Record 推导 Sample 的官方选择器属于 `niceeval/sample` 的自由函数；它们不长在 Record 上，也不因最终命名采用名词短语而变成静态值。
+按此规则，从 Record 推导 Sample 的官方选择器属于 `niceeval/sample` 的自由函数；`materializeSample(recordHandle, selection)`
+不长在 Record 上，也不能退化成传未经 handle 包装的 `record.ref` 的静态值。
 
 ## 选择函数与判别字段共用语义词根
 
@@ -235,15 +272,13 @@ getSampleSummary(...);      // 差：get 没增加可观察语义
 评审完整调用，而不是只读导出名：
 
 ```ts
-import { publish } from "niceeval/record";
+import { exportSample } from "niceeval/sample";
 
-await publish(sample, outputDir, {
-  artifacts: ["events", "trace"],
-});
+await exportSample(sample, { sources, target: outputDir });
 ```
 
 模块说明领域，函数名说明动作，参数名说明边界，类型限制合法组合。
-函数名不必重复成 `publishRecordSampleToDirectory`。
+函数名不必重复成 `exportSampleBundleToDirectory`。
 
 参数遵守三条规则：
 
@@ -270,23 +305,24 @@ makeEval({ ... });    // 差：make 没说明定义、验证还是执行
 ### 打开事实与读取文件
 
 ```ts
-openRecord(".niceeval");  // 好：打开记录根，返回可导航的事实句柄
-getResults(".niceeval");  // 差：Results 指代不明，get 也没交代资源边界
-loadRecord(".niceeval");  // 差：若返回懒读取句柄，load 会错误暗示已经完整读入
+await using store = await openRecordStore(root); // 好：绑定并打开 RecordStore
+await using record = await openRecord(store);    // 好：打开可导航的事实句柄
+getResults(root);                                // 差：Results 指代不明，get 也没交代资源边界
+loadRecord(root);                                // 差：若返回懒读取句柄，load 会错误暗示已经完整读入
 ```
 
 `open` 与 `load` 的差别是可观察契约，不是措辞喜好。
 
-### 发布与复制
+### 导出与复制
 
 ```ts
-publish(sample, dir);       // 好：按发布边界构造自包含产物
-copyRuns(sample, dir);      // 差：把解引用、覆盖补记与预检讲成文件复制
-processArtifacts(sample);   // 差：process 没有用户可判断的结果
+exportSample(sample, { sources, target: dir }); // 好：按导出边界构造独立样本交付包
+copyRuns(sample, dir);                           // 差：把解引用、覆盖补记与预检讲成文件复制
+processArtifacts(sample);                        // 差：process 没有用户可判断的结果
 ```
 
 函数按用户任务命名，内部机制留在契约与实现。
-`publish` 的改名理由见[Record / Sample / Reports 分层裁决](../memory/record-sample-report-three-layer-split.md)。
+导出家族（`mirrorRecord` / `exportSample` / `exportReport`）的命名理由见[Record / Sample / Reports 分层裁决](../memory/record-sample-report-three-layer-split.md)。
 
 ### Matcher 与布尔判断
 

@@ -44,7 +44,7 @@ test("show --json 经 pipe 仍交付完整文档", async () => {
   expect(result.exitCode, result.diagnostic()).toBe(0);
   expect(Buffer.byteLength(result.stdout)).toBeGreaterThan(128 * 1024);
 
-  const document = result.json<AttemptDocument>();
+  const document = parseJson<ShowDocument>(result.stdout);
   expect(document.format).toBe("niceeval.show");
   expect(document.data).toContainEqual(expect.objectContaining({ id: "tail-sentinel" }));
 });
@@ -64,12 +64,12 @@ init → exp --dry → exp → show --history → show @locator --execution → 
 只看最终导出站会把前面错误都折叠成“页面没开”；只检查每条短命令又无法证明 locator 和结果能跨域传递。
 Journey E2E 同时保留过程检查点和最终目标，完整代码见 [Example](../example/README.md)。
 
-Journey E2E 使用独立项目副本和结果根。失败后保留副本时，摘要必须给出从第一条失败命令开始的复现方式。
+Journey E2E 使用独立项目副本和独立 `.niceeval` RecordStore。失败后保留副本时，摘要必须给出从第一条失败命令开始的复现方式。
 
 ## 功能 Repo 与 Adapter Repo 不混用
 
 功能 Repo 使用签入的确定性 Agent / backend fixture，证明 NiceEval 自己拥有的行为。Adapter Repo 使用真实 SDK、CLI、provider
-或该协议的本地故障端，只证明该上游入口的兼容性。两者可以共用 Testkit，但不共享 package graph、fixture、secret、结果根或
+或该协议的本地故障端，只证明该上游入口的兼容性。两者可以共用 Testkit，但不共享 package graph、fixture、secret、`.niceeval` Store 或
 昂贵 evidence。功能 Journey 不放进 `adapter/ai-sdk`；Adapter 兼容性检查调用 `exp` / `show` 也不获得 CLI 或 Report 的矩阵所有权。
 
 ## Adapter
@@ -118,7 +118,7 @@ Report Repo 用真实 Experiment 产生结果，再通过公开入口读取：
 ## Runner
 
 Runner Repo 使用确定性本地 Agent 产生可区分的 plan、dispatch、carry 与 history 证据。`carry-reuse.test.ts`、
-`history-dedup.test.ts` 等子功能是同一 Repo 内的测试文件；修改 config、Eval 或当前结果的 case 使用私有项目副本。
+`history-dedup.test.ts` 等子功能是同一 Repo 内的测试文件；修改 config、Eval 或写入 RecordStore 的 case 使用私有项目副本与明确 GraphRef。
 这些命题不依赖真实 provider 身份，因此不能借用 `adapter/ai-sdk` 或 `adapter/codex-cli` 的运行结果。
 
 ## Package 与 CLI

@@ -67,7 +67,7 @@ Invocation B: replan carry → acquire if work remains → create Sandbox B
 
 - `sharedState` 只保证两条状态轨迹不交错，不合并两个 Invocation 的 Eval 发现顺序。后一题必须读前一题的实验仍用单一 Invocation、固定选择集与 `--rerun all`。
 - 持有者被强杀后，等待方可在心跳过期后接管互斥，但 NiceEval 不能证明外部状态没有半次写入。作者必须原子提交 checkpoint；做不到时换新 key 与干净 cohort 从头重建。
-- Sandbox 在 Attempt 中途消失时，当前 Attempt 记 `errored`，不静默重跑。Sandbox lifecycle `teardown()` 必须早于 Provider finalizer；若 checkpoint save 只因 Sandbox 已停止而失败，这是实现违反收尾顺序，不是并行运行的正常结果。
+- Sandbox 在 Attempt 中途消失时，Runner 写执行错误 Observation 并形成当前 Attempt 的 `errored` Verdict Claim，不静默重跑。Sandbox lifecycle `teardown()` 必须早于 Provider finalizer；若 checkpoint save 只因 Sandbox 已停止而失败，这是实现违反收尾顺序，不是并行运行的正常结果。
 - 租约只在共享同一 `.niceeval` Record 根的进程间生效。不同机器、不同工作副本或不共享文件系统时，外部数据库或 checkpoint 要自己提供分布式互斥。
 - 改变 `sharedState.key` 表示换了状态轨迹，因此进入 `configHash` 并作废旧结果。两个配置指向同一底层状态却误写不同 key，属于作者契约违约。
 

@@ -87,7 +87,7 @@ Feature 文档是语义的唯一出处。
 | [assertions.md](assertions.md) | matcher、collector、scope、judge、verdict | 构造的证据图（`AssertionEvaluationContext`）；judge 只 fake 传输层（截获 fetch） | [e2e/adapter](../e2e/adapter/README.md)：真实证据上判定一致、真实裁判模型 |
 | [sandbox.md](sandbox.md)                       | provider 之上的共同逻辑：路径、IO/provision 重试、生命周期编排、diff 归因、主 Sandbox 实例及伴随资源 | 内存 provider 实现自有 `Sandbox` 接口                                | [e2e --group sandbox](../e2e/README.md)：真实 provider 跑同一 contract suite |
 | [adapters.md](adapters.md)                     | Agent ensure 循环、身份 / staged payload digest、断网义务、复用与 environment 隔离 | 脚本化安装层 + recording Sandbox（自有接口）                   | [e2e/adapter](../e2e/adapter/README.md)：真实 Agent CLI 安装与探测           |
-| [record.md](record.md)                         | writer / reader、身份、`evidenceState`、publish、开放 timing activity      | 不 fake：构造数据 + 每例独立的真实临时目录                           | [e2e/report](../e2e/report.md)：真实运行的落盘与读回                         |
+| [record.md](record.md)                         | 提交 / 读取、身份与 locator、闭包与完整性、receipt、mirror / export、开放 timing activity | 不 fake：构造数据 + 每例独立的真实临时目录                           | [e2e/report](../e2e/report.md)：真实运行的提交与读回                         |
 
 | [reports.md](reports.md)                       | 数据源 `compute()`、装载、树解码                                          | 构造的 Sample / evidence fixture                                      | [e2e/report](../e2e/report.md)：真实输出上的出口与渲染                       |
 

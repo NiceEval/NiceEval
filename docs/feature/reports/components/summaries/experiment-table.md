@@ -1,12 +1,16 @@
 # Experiment table
 
-`ExperimentTable` 显示当前 Sample 的实验详情：
+`ExperimentTable` 显示 plan 已交付的实验层级数据：
 
 ```tsx
-<ExperimentTable />
+<ExperimentTable rows={rows} />
 ```
 
-它从显式 `input` 或当前 `ctx.scope` 读取唯一一份 Sample，调用 `toExperimentRows()`，再交给官方层级 `Table`：
+`rows` 是按 experiment 分组的完整 `AggregateData`。组件先判别外层 EvidenceValue；available 时
+消费 `value.rows` 与顶层 `value.coverage`，unavailable 时显示完整 causes / basedOn，不以 `[]`
+伪装成“没有实验”。
+
+页面在 plan 中声明 Experiment summary Projector 与 MetricValue request，再把结果作为 `rows` 交给组件：
 
 ```text
 Experiment
@@ -14,59 +18,25 @@ Experiment
     └── Attempt
 ```
 
-报告组件不调用 Sample 转换，也不读取 Run 的运行期计划。
-判定计票、通过率、得分、耗时、tokens 与成本全部只消费 `sample.attempts`。
+组件不重新选择 Sample membership，也不读取 Run、raw event 或 renderer context。
 
-## 当前结果只有一种
+## 成员与 provenance
 
-实际执行、携带合入与从可比旧 Run 补入的 Attempt 都是 current 结果，使用同一行形状并正常计票。
-`AttemptHandle.carried` 只在 Attempt 详情中说明该 Attempt 来自哪次 Run，不产生表格筛选、降饱和样式或额外分类。
+每个 Attempt 行显示完整 AttemptRef 和该固定 Sample membership 的 provenance。
+`executed`、`carried`、`accepted` 与 `renamed` 都是明确的 contribution mode，不产生第二套计票规则。
 
-不同 `configHash` 的历史结果不进入表格读数。
-它只帮助 Sample 把缺口原因判断为 `previous-result`，并提供可下钻的旧 locator；旧 verdict 不作为当前表格的参考值显示。
+Experiment、Eval 与 Attempt 行各自显示已建立的 MetricValue、coverage、下钻 refs，以及 available 分支的 verification；unavailable 分支显示 causes 与 basedOn。
+组件不会从 locator、字段名或时间推断 origin Run、adopted revision 或证据资格。
 
-## 身份格与行数
+## 缺口与动作
 
-Experiment 身份格只显示 experiment id，例如 `compare/codex`。
-Eval 与 Attempt 不因只有一次 Attempt 合并：Eval 行表达题级折叠，Attempt 行保留 locator、判定、耗时、成本与下钻入口。
+coverage 中的 excluded 与 unavailable 成员保留为明确占位行。
+每行显示 Sample 已确定的原因和 membership 或 EvidenceRef；表格不挑一个主因，也不把原因改写为零值。
 
-Attempt 行身份格只有 locator，判定长在 locator 上：前面一个判定符，整个 locator 取判定语义色。
-
-| 判定 | 判定符 | 色 |
-|---|---|---|
-| passed | `✓` | positive |
-| failed | `✗` | negative |
-| errored | `!` | warning |
-
-模型与 Agent 只有 Experiment 口径；主读数只在 Experiment 与路径段组显示。
-耗时、成本与 Tokens 在 Experiment、路径段组、Eval、Attempt 四层各显示自己的口径：
-
-- Experiment：先对每个 Eval 的 Attempts 取平均，再让所有 Eval 等权参与总体平均。
-- 路径段组：只在该组包含的 Eval 上执行同样的两级平均。
-- Eval：该题所有 Attempts 的平均。
-- Attempt：该次 Attempt 的精确值；单样本也沿用同一列，因此列名统一为“平均耗时”“平均 Tokens”“平均成本”。
-
-Tokens 表示完整模型流量，计算为 `inputTokens + cacheReadTokens + cacheCreationTokens + outputTokens`。
-两个缓存桶未提供时按零处理；`inputTokens` 或 `outputTokens` 未提供时，该 Attempt 的 Tokens 为缺数据。
-它是用于横向比较的平均量，不是范围总量；需要总用量与缓存明细时使用 `niceeval show ... --usage`。
-
-`searchable` 默认为 `true`。
-`sort`、`locale` 与 `className` 透传给官方 `Table`。
-
-## 缺口原因与动作
-
-缺口 Eval 保留一条占位行，不进入任何聚合读数。
-占位行读取 `SampleCoverage.missing`：
-
-- `never-run` 显示“尚未运行”，动作是运行对应 Eval。
-- `previous-result` 显示“当前配置下没有结果”，并提供最近旧 locator；动作是重新运行，或由用户显式执行 `niceeval accept @<locator>`。
-
-旧 locator 只是审计与授权入口。
-Reports 不预判 `accept` 一定成功，也不把旧 verdict、时距或样式混入当前结果。
+需要重跑、接受或重新选择范围的动作由上层 host 根据已交付 provenance 提供。
+ExperimentTable 不假设某个动作一定可行，也不在 UI 中修改 Record。
 
 ## 报告没有口径开关
 
-Experiment 表格不提供改变 Sample 贡献集合、分母口径或导出值的控件。
-排序、搜索和视觉折叠可以改变行的摆放或可见性，但不能改变任何统计。
-
-show、view 或站点需要不同范围时，由宿主重新打开 Record、创建 Sample 并重新渲染整份报告。
+排序、搜索与折叠只改变已生成行的摆放或可见性。
+它们不能改变 Sample 成员、coverage、Calculation policy 或 ReportPlan。

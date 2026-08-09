@@ -13,7 +13,7 @@ SequenceDefinition ──引用──▶ EvalDefinition × N
 ```
 
 Sequence Step 不是新的评分实体。
-每一步仍产生普通 Attempt、Assertion 与 Verdict；步骤只补充它在本轮有序历史中的位置和出处。
+每一步仍产生普通 Attempt、Assertion Claim 与 Verdict Claim；步骤只补充它在本轮有序历史中的位置和出处。
 
 Record 增加下面两处形状：
 
@@ -33,17 +33,18 @@ interface AttemptSequenceInfo {
   readonly prefixHash: string;
 }
 
-interface Run {
-  readonly sequence?: SequenceRunInfo;
-}
-
-interface EvalResult {
+interface SequenceAttemptProvenance {
   readonly sequence?: AttemptSequenceInfo;
 }
 ```
 
-普通 Experiment Run 省略 `Run.sequence`，普通 Attempt 省略 `EvalResult.sequence`。
-读取面只凭这些落盘事实识别 Sequence 结果，不读取 evalId 的数字前缀，也不重新读取当前 Sequence 源码猜测旧数据。
+`SequenceRunInfo` 写入 Run provenance，`SequenceAttemptProvenance` 写入 Attempt 的 provenance object，并由
+`AttemptPayloadV1.provenance` 引用。它们不是 `Run` 或 `AttemptPayloadV1` 的结果字段：后者只保存身份、origin、
+provenance ref、lifecycle state 与 stream bindings。普通 Experiment Run 的 provenance 省略 sequence，普通 Attempt
+的 provenance 也省略 sequence。
+
+读取面只在固定 `RecordGraphRef` 上凭这些 provenance 事实识别 Sequence 结果，不读取 evalId 的数字前缀，也不重新读取
+当前 Sequence 源码、目录或最近一次运行来猜测旧数据。
 
 ## 规划与派发
 
@@ -60,8 +61,10 @@ interface EvalResult {
 Sequence Invocation 的有效宽度恒为 1，不改写 Experiment 文件中的 `maxConcurrency`。
 同一 Invocation 的其它普通 Experiment 不受影响；本命令只允许一个 Experiment，因此不存在同一 Sequence 内外任务交错。
 
-`passed` 或 `failed` 封口后继续。
-`errored`、`skipped` 或中断使 lineage 不完整，后续成员不进入 Agent、Sandbox 或 Judge 生命周期。
+当前步骤形成 `passed` 或 `failed` Verdict Claim 后继续。
+`errored` 或 `skipped` Verdict Claim，或中断而没有可验证的 terminal Claim，会使 lineage 不完整，后续成员不进入
+Agent、Sandbox 或 Judge 生命周期。未开始成员的 `skipped` 是 Run-scoped Verdict Claim，不创建一个假 Attempt；
+它绝不是 Attempt lifecycle state。
 
 ## 身份与结果沿用
 
@@ -92,7 +95,7 @@ Sequence 不通过成功文案掩盖这个边界。
 - Eval ID 与 Sequence ID 都只来自各自文件路径，定义对象不接受手写 `id` 或 `name`。
 - Sequence 的声明顺序是唯一执行顺序，不读取文件名字典序补充或改写它。
 - 一条 Sequence 中每个 Eval ID 至多出现一次。
-- 任一步派发前，它的全部前序步骤都已在本轮封口为 `passed` 或 `failed`。
+- 任一步派发前，它的全部前序步骤都已在本轮形成 `passed` 或 `failed` Verdict Claim。
 - Sequence Attempt 从不由 carried 结果替代。
 - Sequence 结果始终携带 Sequence ID、定义摘要、index 与前缀摘要。
 - 不根据 tags、metadata、description 或 Assertion 文案推断步骤的业务作用。

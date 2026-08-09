@@ -20,7 +20,7 @@ Most teams start here, and for many this tier is all they ever need.
 
 Same `send`, same event mapping — the only change is that your application also sends its OTel spans to [NiceEval](https://niceeval.com/). If the app is already instrumented (AI SDK telemetry, LangGraph, OpenLLMetry / OpenInference, hand-rolled gen_ai spans), this is zero change; if not, what you add is a piece of generic OTel initialization — that is observability infrastructure, not a modification built for eval purposes.
 
-What this tier buys is **observability**: the call waterfall in `niceeval view` — every model call and tool execution inside the application, each with its own latency and tokens, laid out as a per-turn timeline. Assertions are unaffected: spans only feed the waterfall — they never enter the event stream or feed assertions. See [OTel Integration](/tutorials/connect-otel) for the walkthrough.
+What this tier buys is **observability**: the call waterfall in `niceeval view` — every model call and tool execution inside the application, each with its own latency and tokens, laid out as a per-turn timeline. Assertions are unaffected: spans are supplemental telemetry Observations that never feed assertions. See [OTel Integration](/tutorials/connect-otel) for the walkthrough.
 
 ## Tier 3: application changes + experiment flags
 

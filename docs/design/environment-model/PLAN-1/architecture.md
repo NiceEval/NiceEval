@@ -95,7 +95,7 @@ BuildKey 构建在 Attempt 创建 Sandbox 前按 Run 级 single-flight 协调。
 
 ### Provision identity
 
-Experiment 的有序 `{ name, identity }` 列表进入 `configHash`,并以同一形状落进 `run.json` 与 manifest。
+Experiment 的有序 `{ name, identity }` 列表进入 `configHash`,并以同一形状提交进 Run payload 与 manifest。
 Provision 函数体不哈希;有语义的脚本、payload 与模型输入必须经 digest 或 revision 进入 identity。
 
 完整 Attempt fingerprint 因而由两条正交轴组成:

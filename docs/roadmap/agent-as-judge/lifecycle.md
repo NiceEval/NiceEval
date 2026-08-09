@@ -27,12 +27,13 @@ assertions.evaluate
   → validate decision
   → optional correction send
   → agent.teardown
-  → finalize execution
-  → emit AssertionResult
+  → close judge Observation stream
+  → emit Judge Claim + Assertion Claim
 ```
 
 Direct 形态不创建 Sandbox。
-setup 失败后仍执行配对 teardown；teardown 失败会保留已经取得的 decision，但 execution 记 unavailable，避免把无法确认静止的 evaluator 当成完整证据。
+setup 失败后仍执行配对 teardown；teardown 失败形成执行错误 Observation。若它使协议完成无法验证，Assertion Claim 为
+`unavailable`；已验证的 Judge Claim 不会被悄悄改写成零分。
 
 ## Sandbox Agent Judge
 
@@ -51,8 +52,8 @@ assertions.evaluate
   → judge agent.teardown
   → judge sandbox teardown
   → resolve judge Sandbox physical release
-  → finalize execution
-  → emit AssertionResult
+  → close judge Observation stream
+  → emit Judge Claim + Assertion Claim
 ```
 
 快照在裁判 Sandbox 的 prepare 之后导入，只替换 workdir。
@@ -71,10 +72,12 @@ send、decision 校验或协议修正失败都不跳过 Agent teardown、Sandbox
 
 裁判 Sandbox 是独立 fresh 物理资源。
 它按 [Sandbox 默认停驻与回收](../sandbox-retention/README.md)求值 release；provenance 标出 `purpose: "judge"` 与父 locator。
-裁判执行 unavailable 或 cleanup incomplete 时进入失败类候选，不能借父 Attempt Verdict 猜选中结果。
+裁判执行的 unavailable Assertion Claim 或 cleanup-incomplete Observation 使它进入失败类候选，不能借父 Attempt 的
+Verdict Claim 猜选中结果。
 
 用户中断同时取消在飞的裁判 Agent 与裁判 Sandbox 命令树。
-无法证明裁判 driver 与命令树已经静止时，必须销毁裁判 Sandbox；Direct Agent 则把 execution 记 unavailable，并完成 Adapter 能提供的 teardown。
+无法证明裁判 driver 与命令树已经静止时，必须销毁裁判 Sandbox；Direct Agent 则写入结构化执行错误 Observation，并完成
+Adapter 能提供的 teardown，由 Assertion Claim 表达 `unavailable`。
 
 ## 次数
 
@@ -90,4 +93,4 @@ send、decision 校验或协议修正失败都不跳过 Agent teardown、Sandbox
 | 裁判 Sandbox physical release | 创建后 1 |
 
 一次协议修正不重新调查，也不新建 Session。
-Agent 若自行在首次任务中多轮调用模型或工具，那些物理动作属于 Adapter 内部行为，全部登记在同一个裁判 execution。
+Agent 若自行在首次任务中多轮调用模型或工具，那些物理动作属于 Adapter 内部行为，全部登记在同一个 judge Observation stream。

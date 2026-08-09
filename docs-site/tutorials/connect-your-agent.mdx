@@ -198,7 +198,7 @@ async send(input, ctx) {
 
 `progress` is short-lived status that later updates overwrite; `diagnostic` is a bounded record you can still review after the run ends. Neither can specify a phase or output stream, and neither automatically changes `Turn.status` or the Attempt verdict. Infrastructure errors — a failed connection, parsing that cannot continue — should throw an exception; a normal failure of the Agent under test is expressed with `Turn.status: "failed"`.
 
-The terminal shows only a one-layer summary of the error, plus the locator. The full code, message, cause, stack, and diagnostics are in `result.json`; view them with `niceeval show @<locator>`. An OTel trace only adds call relationships and timing — it is not a prerequisite for recording errors.
+The terminal shows only a one-layer summary of the error, plus the locator. The full code, message, cause, stack, and diagnostics live in the Record's Attempt facts; view them with `niceeval show @<locator>`. An OTel trace only adds call relationships and timing — it is not a prerequisite for recording errors.
 
 To evaluate local and production separately, create two Experiment files and pass in different factory parameters:
 

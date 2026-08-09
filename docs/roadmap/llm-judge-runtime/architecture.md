@@ -1,7 +1,8 @@
 # 原生 LLM Judge Runtime —— 架构
 
 Judge Runtime 位于 Assertion collector 与模型 Provider 之间。
-它把作者的 Check 编译成规范化图，再把图的最终 Decision 投影为一条 AssertionResult。
+它把作者的 Check 编译成规范化图，再把图的最终 Decision 形成一条 Assertion Claim；Verdict collector 再形成
+Verdict Claim，三者都不改变 Attempt 的 `active` / `completed` / `abandoned` lifecycle。
 
 ## 编译与执行时序
 
@@ -21,8 +22,8 @@ Attempt finalize
   ├─ resolve and snapshot materials
   ├─ schedule graph nodes
   ├─ validate final Decision
-  ├─ append judge artifact records
-  └─ emit one AssertionResult
+  ├─ append judge Observations and Judge Claim
+  └─ emit one Assertion Claim
 ```
 
 profile 与模态要求在 discovery 时已知。
@@ -125,7 +126,7 @@ Provider 不能重写 rubric、调换材料角色或私自改变评分范围。
 1. 读取字节，并校验大小上限。
 2. 根据声明、扩展名和内容确定 MIME；冲突时报作者错误。
 3. 文本按 UTF-8 解码并保留 media type；二进制计算 SHA-256。
-4. 生成材料清单，并把尚无稳定 Record 出处的字节写入 attempt blob 存储。
+4. 生成材料清单，并把尚无稳定 Record 出处的字节写入由 provenance / Observation 强引用的 typed evidence object。
 5. 汇总实际模态，与 Eval 的 `judge.llm.uses` 和 Provider capabilities 对照。
 
 Runtime 不做隐式 OCR、语音转录、图片描述或 PDF 文本抽取。
@@ -161,6 +162,8 @@ type JudgeNodeResult =
   | { status: "unavailable"; reason: JudgeUnavailableReason; detail?: string }
   | { status: "skipped"; because: string };
 ```
+
+这些是 Judge Graph node 的执行状态，不是 Attempt lifecycle 或 Verdict Claim token。
 
 得分为 0 的模型判断仍是 `completed`。
 网络、能力和响应协议问题是 `unavailable`；没有被选择的 fallback 分支是 `skipped`。
@@ -198,18 +201,19 @@ Runtime 拥有重试策略，Provider 关闭隐式重试。
 结构化输出读取失败允许重试一次，但仍计入 `maxAttempts` 与图总预算。
 
 退避优先使用 `Retry-After`，否则使用指数全抖动。
-每次尝试的状态、服务端 code、延迟和用量进入节点登记；凭据、完整响应 header 和敏感 body 不落盘。
+每次物理请求的状态、服务端 code、延迟和原始 usage 都追加为 judge Observation；凭据、完整响应 header 和敏感 body
+不落盘。重试策略、规范化 Decision 与诊断由引用这些 Observation 的 Judge Claim 表达，不另造 `retryAttempts` 结果真源。
 
 ## Assertion 映射
 
-一张图只产生一条 AssertionResult。
+一张图只产生一条 Assertion Claim。
 最终节点 completed 时，`decision.score` 交给 Assertion collector：
 
 - 没有阈值的 soft Judge 登记 score，并得到 `outcome: "passed"`。
 - `.atLeast(x)` 与 `.gate(x)` 使用既有阈值规则得到 passed 或 failed。
 - `.points(n)` 使用 `n × score` 计算实得分。
 
-最终节点 unavailable 时，AssertionResult 使用 `outcome: "unavailable"`。
+最终节点 unavailable 时，Assertion Claim 使用 `outcome: "unavailable"`。
 `reason` 取稳定的 Judge 原因码，`evidence` 只放有界诊断摘要。
 `.optional()` 与 Verdict 的传播规则保持不变。
 
@@ -227,7 +231,8 @@ interface AssertionBase {
 ```
 
 普通 Assertion 不带 `evaluator`。
-报告通过 `executionId` 读取完整节点登记，不从 `detail` 或 `evidence` 反推身份。
+`executionId` 是 provenance、Observation 和 Claim 之间的 correlation；报告只在固定 GraphRef 上通过 Projector 读取相关
+evidence，不从 `detail` 或 `evidence` 反推身份，也不读取私有结果文件。
 `kind: "agent"` 的分支由 Agent-as-Judge 定义，本主题不改变其 execution。
 
 ## unavailable 原因
@@ -246,40 +251,31 @@ type JudgeUnavailableReason =
 
 配方定义错误、未声明 profile、实际模态超出 `judge.llm.uses` 与确定性节点抛错是作者错误。
 它们进入 Eval 错误反馈，不伪装成模型证据 unavailable。
-profile、凭据或预检失败发生在派发前，使用 `judge-precheck-failed` Attempt 错误，不创建 Judge execution。
+profile、凭据或预检失败发生在派发前，形成带 `judge-precheck-failed` reason 的 Run-scoped structured execution-error Observation。
+它还形成 precheck Claim，不创建 Attempt 或 judge stream；RunReceipt 如实表达没有派发的成员。
 
 ## Record
 
-每个 Attempt 的 LLM Judge 数据写入 `judge.json`：
+LLM Judge 不写 `judge.json`、`result.json` 或 Attempt 私有 blob 路径，也不把节点结果写入 AttemptPayloadV1。
+每条 Assertion evaluation 使用一个 execution correlation；它的配方、profile 身份、材料摘要与图结构属于 provenance，
+并由 Attempt 的 provenance ref 指向。
 
-```ts
-interface JudgeArtifact {
-  version: 1;
-  executions: LlmJudgeExecution[];
-}
+每个物理模型请求、节点开始/结束、fallback 选择、重试、原始 usage、规范化响应摘要与结构化执行错误都追加到带该
+correlation 的 judge Observation stream。Provider 的完整原始响应、敏感 body 与凭据不落盘；可以保存经边界裁剪、脱敏的
+Observation 摘要。节点的 `completed` / `unavailable` / `skipped` 仍只是图节点状态。
 
-interface LlmJudgeExecution {
-  id: string;
-  assertionSourceOrder: number;
-  recipe: { id: string; version: number; graphHash: string };
-  profiles: Record<string, { providerId: string; identity: JsonValue; model: string }>;
-  materials: JudgeMaterialRecord[];
-  nodes: JudgeNodeRecord[];
-  output: JudgeNodeResult;
-  usage?: Usage;
-}
-```
+最终 Decision 形成 Judge Claim，引用它消费的材料与节点 Observation；Assertion collector 再形成一条 Assertion Claim。
+两类 Claim 的 `basedOn` 是 typed EvidenceTarget，不能用一个 `executionId` 或人读摘要代替证据。缺材料、调用失败或超时
+先形成结构化 execution-error Observation，再支持 `outcome: "unavailable"` 的 Assertion Claim；Verdict collector
+按既有规则形成 Verdict Claim。
 
-节点按稳定 id 排列，登记依赖、状态、耗时、物理尝试、Decision 与实际模型。
-Provider 的原始完整响应不落盘；有界服务端摘要可进入失败 attempt。
-
-二进制材料写在 attempt 的 `blobs/<sha256>`。
-`JudgeMaterialRecord` 保存 role、media type、字节数、SHA-256、出处引用与 blob 相对路径。
-已经存在于权威 Record artifact 的文本只保存出处引用、hash 和有界预览，不复制整份内容。
-`retention: "digest"` 的材料不写 blob；它仍保存原内容 hash，并标明内容不可从 Record 复原。
+二进制材料作为内容寻址的 typed evidence object 保存，并由 provenance 或 Observation 写 strong reference；已在 Record 中
+有权威出处的文本只保存 evidence ref、hash 与有界预览，不复制整份内容。`retention: "digest"` 只保存原内容 hash、
+大小、MIME 与脱敏预览，并明确内容不可从该 GraphRef 复原。
 
 show 的默认 Assertion 行仍只显示名称、score、阈值与 unavailable 摘要。
-`show @locator --judge` 和 view 的 Judge 详情展示配方、profile、材料、节点、理由、引用、重试与用量。
+`show @locator --judge` 和 view 的 Judge Projection 在固定 GraphRef 上展示配方、profile、材料、节点 Observation、
+Judge Claim、理由、引用、重试与 usage；它们不是 Record 内的第二份 report artifact。
 
 ## 身份与携带
 
@@ -294,6 +290,8 @@ rubric、配方源码和输入绑定属于 Eval 源码或数据身份。
 凭据值、临时 request id、运行耗时和模型输出不进入身份。
 
 任何 Judge 身份变化都使依赖它的 Attempt 不可携带。
+可携带时，新的 RunContribution 明确采用原 Attempt revision，连同该 revision 的 provenance、Observation 与 Claim 读取；
+不复制、不重挂也不新建 locator。
 只配置未被 Eval 声明使用的 profile，不改变该 Eval 的配置身份。
 
 ## 架构不变量
@@ -303,5 +301,5 @@ rubric、配方源码和输入绑定属于 Eval 源码或数据身份。
 - 0 分是有效 Decision，缺证据没有数值分数。
 - Provider 不能看到未读取 URL，也不能把不支持的模态静默转成文本。
 - 图内模型调用都经过同一个 scheduler、预算、重试和 Record 管道。
-- 一个 `t.judge.llm` 调用恰好对应一条 AssertionResult 和一条 LlmJudgeExecution。
+- 一个 `t.judge.llm` 调用恰好对应一条 Assertion Claim；实际执行时有一个仅作 correlation 的 judge Observation stream。
 - 报告展示的 score、模型、理由和引用都能追溯到同一个 `executionId`。

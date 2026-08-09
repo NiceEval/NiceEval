@@ -59,8 +59,8 @@ Sandbox 创建、快照导入和销毁作为该行的 detail 呈现，不增加�
     judge: codex · sandbox · gpt-5.4 · 2m 11s · $0.18
 ```
 
-`niceeval show @<locator> --execution` 把裁判放在独立的 `JUDGE EXECUTIONS` 区块。
-每次 execution 显示 Agent Session、工具调用、命令、协议修正轮、usage、引用证据和回收结果，不混入被测执行树。
+`niceeval show @<locator> --execution` 在固定 GraphRef 上把裁判投影到独立的 `JUDGE EXECUTIONS` 区块。
+每个 correlation 显示 Agent Session、工具调用、命令、协议修正轮、usage Observation、引用证据和回收结果，不混入被测执行树。
 
 `niceeval show @<locator> --diff` 只显示被测 Agent 的 diff。
 裁判在副本中的修改不进入该切片；view 的 Agent Judge 详情可以显示裁判命令，但不提供裁判 diff 作为被测证据。
@@ -87,6 +87,5 @@ interface AgentJudgeMachineRef {
 subject 与 judge usage 作为两个互斥桶输出。
 总成本可以从两个桶求和，但机器输出不提供一个丢失角色归属的 usage 数组。
 
-机器输出保留完整 `AgentJudgeDecision` 与 AssertionResult 的 evaluator 引用。
+机器输出保留完整 `AgentJudgeDecision` Claim 与 Assertion Claim 的 evaluator 引用。
 人读面的 rationale 截断不改变 JSON 值；Record 转写边界仍对裁判事件执行已知凭据脱敏与字段预算。
-

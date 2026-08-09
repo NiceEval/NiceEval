@@ -247,9 +247,9 @@ const FLAG_OPTIONS = {
   stats: { type: "boolean" },
   /** `show` / `view` 命令专用:按路径段前缀收窄 experiment(与 `niceeval exp` 位置参数同一套匹配);目录路径会选中其下全部配置。可重复;出现两次以上进入对照语义——每次出现必须恰好解析到一个 experiment,顺序即对照条件顺序、首个是基准,`@<locator>` 与重复 `--exp` 互斥。`view --out` 时同一收窄决定出站内容。 */
   exp: { type: "string", multiple: true },
-  /** `show` / `view` / `accept` / `sandbox enter|list|stop` 共用:记录根目录(`.niceeval` 之外的另一个根,如 `publish` 产出的发布根)。 */
+  /** `show` / `view` / `accept` / `sandbox enter|list|stop` 共用:选择另一个 RecordStore 根(如 `mirrorRecord` 的目标目录);`exportSample` 的 SampleBundle 不是 Record,不能作记录根。 */
   record: { type: "string" },
-  /** `view` 命令专用:只打开这一份快照文件(`run.json`);文件不可读时命令失败(扫描模式只跳过)。 */
+  /** `view` 命令专用:在已固定的 `RecordGraphRef` 内选择一个 Run reference,不是文件也不是独立根;不存在或歧义时命令失败(扫描模式只跳过)。 */
   run: { type: "string" },
   /** `show` / `view` 命令专用:用文件默认导出的 `defineReport(...)` 替换两者共用的默认报告。 */
   report: { type: "string" },
@@ -261,7 +261,7 @@ const FLAG_OPTIONS = {
   teardown: { type: "boolean" },
   /** 只打印本次会匹配到的 eval × 运行配置,不实际执行(人读文本或 `--json` 单文档,见「机器怎么读:--json」)。 */
   dry: { type: "boolean" },
-  /** 忽略上次运行结果,不跳过已通过的 (experiment, eval) 组合,强制全部重跑。 */
+  /** `sandbox prune` 专用:除 orphan 外也销毁 unverified 实例;`exp` 明确拒绝此 flag,重跑失败项或全部项请用 `--rerun` / `--rerun all`。 */
   force: { type: "boolean" },
   /** `exp` 命令专用:重新运行失败项(裸写/failed)或全部项(all),不改变长期指纹。 */
   rerun: { type: "boolean" },

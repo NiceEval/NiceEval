@@ -24,7 +24,9 @@ fixture 是一个已接入 niceeval 且跑出过结果的用户项目切片：�
 | attempt execution 有实质内容（thinking、工具调用、失败线索在 transcript 里） | 深挖题的答案落点 |
 
 第一份 fixture 从 coding-agent-memory-evals（多 coding agent × 多 memory 方案的对比评估项目）导出。
-导出裁剪规则：只收组成当前 `show` 视图的 Run 及其 attempt 输出（`events.json`、`trace.json`），历史 Run 不进 fixture；裁剪后的数据必须仍能让 `niceeval show` 完整复现出题时的视图。
+导出裁剪规则：明确固定一个 `RecordGraphRef`，只收组成该 `show` 视图的 Run 及其 Attempt Observation stream、
+trace evidence 与所引用的 Claim；不按目录、时间或“当前/最近”结果选事实。裁剪后的数据必须仍能让
+`niceeval show` 在该 GraphRef 上完整复现出题时的视图。
 
 每次运行把 fixture 复制进隔离 workspace 并注入候选 niceeval tarball（注入模型同 [E2E 的候选包注入](../testing/e2e/README.md)），agent 对结果数据只读探查。
 数据永不重跑，题库的标准答案在出题时由人工从这份数据核对并随 fixture 签入——数据不变，答案就不腐烂。

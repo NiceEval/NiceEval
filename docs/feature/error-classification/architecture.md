@@ -45,7 +45,7 @@ export interface SendFailure {
 /** adapter 可选分类器:返回 undefined 表示「不认识,交给后续链路」。 */
 export type SendFailureClassifier = (failure: SendFailure) => FailureClass | undefined;
 
-/** 与最终 AttemptError 和回退分类器同源的有界、脱敏失败摘要。 */
+/** 与最终执行错误 Observation 和回退分类器同源的有界、脱敏失败摘要。 */
 export function sendFailureText(failure: SendFailure): string;
 
 /** 实验级分类器的输入:本实验任意 per-attempt 阶段的一次终局失败。 */
@@ -96,7 +96,7 @@ fatal 错误类的契约是 `_tag` 与 `class` 两个数据字段,识别一律�
 `failureClassOf` 沿 `cause` 链逐层查找、取最外层携带分类的错误——作者的 fatal 错误类被上层库包装再抛时声明不丢失。
 
 fatal 错误类不继承任何 effect 类型,公开 `.d.ts` 零 effect 依赖——用户只写 async 函数的公开 API 边界不因此破例。
-fatal 错误类只涵盖空间轴的两个非默认档;默认档(`scope: "attempt"` 的普通失败)不需要类——任何未分类的抛出本来就落成本 attempt `errored`,给默认行为发明类型是噪音。
+fatal 错误类只涵盖空间轴的两个非默认档;默认档(`scope: "attempt"` 的普通失败)不需要类——任何未分类的抛出都会形成执行错误 Observation，并可据此形成 `errored` Verdict Claim，给默认行为发明类型是噪音。
 
 `Agent` 上的挂载面是可选字段 `classifySendFailure?: SendFailureClassifier`(完整 interface 见 [agent 契约](../adapters/architecture/agent-contract.md#agent-与-turn))。`completed` / `waiting` 是正常形态；`failed` 是可信、可评分的领域失败，三者都不进 send 执行失败分类。
 `kind: "direct"` 与 `kind: "sandbox"` 的 agent 走同一条链,契约不分身份。
@@ -146,12 +146,12 @@ scope 由止损机制消费,映射与判据单源在 [Sandbox · Provisioning �
 2. 调 `agent.send(input, ctx)`。
    返回 `completed` / `waiting` / `failed` Turn → 原样交回管道,循环结束；领域失败 Turn 从不重试。
 3. reject `SendFailure` → 走分类链。
-   `retryable: false`，`acceptance !== "rejected"`，或两层重试预算任一耗尽 → 循环结束，写 `AttemptError{code: "agent-send-failed"}` 并携带其 `FailureClass` 向下浮出。
+   `retryable: false`，`acceptance !== "rejected"`，或两层重试预算任一耗尽 → 循环结束，写 `agent-send-failed` 结构化执行错误 Observation，并把其 `FailureClass` 交给收尾；它随后作为 `errored` Verdict Claim 的 basedOn，不成为 Attempt state。
 4. `retryable: true` → 退避睡眠 → 回到 2,原样重发同一个 `TurnInput`。
 
 `scope` 不影响重试行为:执行体只读时间轴。
-被吸收的失败不进入逻辑会话事件流,避免重发产生的半截消息参与行为断言；但每次物理尝试都追加到 Attempt 的 `retryAttempts`,保留 acceptance、分类、events、usage、process 与耗时。
-顶层 usage / cost 汇总所有物理尝试，最终成功不会抹掉前面已经花掉的 token 与钱。
+被吸收的失败不进入逻辑会话事件流,避免重发产生的半截消息参与行为断言；但每次物理尝试都追加一条带 acceptance、分类、events、usage、process 与耗时依据的 typed Observation 到该 Attempt 的绑定 stream。它们不形成 `AttemptPayloadV1.retryAttempts` 或第二套结果真源。
+usage Projector 汇总所有物理尝试，成本 Claim 引用这些 usage Observation；最终成功不会抹掉前面已经花掉的 token 与钱。
 被吸收的失败仍不到止损机制；它是可观测证据，不是终局失败([组合规则](README.md#分类))。
 
 ### 退避与槽位
@@ -159,7 +159,7 @@ scope 由止损机制消费,映射与判据单源在 [Sandbox · Provisioning �
 | 参数 | 契约 |
 | --- | --- |
 | send 级预算 | 每次 send 调用封顶 4 次尝试(首次 + 至多 3 次重试),退避的指数底数按本次 send 内的重试序号走 |
-| attempt 级预算 | 整个 attempt 全部 send 加总的重试次数封顶 8 次;预算耗尽后,后续可重试失败不再重试、直接浮出。两层预算叠加:单轮抖动由 send 级吸收,多轮持续挣扎由 attempt 级止损——宿主条件系统性出问题时该如实 `errored`,不该把 attempt 泡在退避里蚕食 deadline |
+| attempt 级预算 | 整个 attempt 全部 send 加总的重试次数封顶 8 次;预算耗尽后,后续可重试失败不再重试、直接浮出。两层预算叠加:单轮抖动由 send 级吸收,多轮持续挣扎由 attempt 级止损——宿主条件系统性出问题时应如实形成 `errored` Verdict Claim，不该把 Attempt 泡在退避里蚕食 deadline |
 | 退避 | 指数 + 全抖动:第 n 次重试前睡 `uniform(0, 5s × 2^(n-1))`,上界依次 5s / 10s / 20s |
 | 槽位 | 睡眠期间释放**全局并发位**,睡醒重新排队(与 [provisioning 重试](../sandbox/architecture.md#provisioning-失败与重试)同形的槽位接口,不共享实现)——被限流的一批 attempt 不占着全局名额陪睡。让出的位立刻派给排队中的 attempt:全局位保吞吐,不保「限流时降压」——agent 侧按用户计的并发限额在退避期间仍被新 attempt 顶满,退避换不来空余限额,live 面板的 `running` 行数也因此可超过全局上限(睡眠者计 running 但不持位)。要「被限流时不加压」,用实验级 `maxConcurrency` 限制——它**不释放**:名额与 attempt 同生命周期(语义单点见 [Runner · 调度](../../runner.md#调度有界并发)),退避期间继续持有,串行 / 降速实验被限流时不向同实验放行更多 attempt |
 | 中断 | 退避睡眠可被 interruption 干净打断;随后仍须重新取得已释放的全局并发位,才会把中断向外传播——这是 permit 记账不丢失优先于中断及时性的阶段性取舍。attempt 外层 deadline 原样生效,重试不延长任何预算,不新增第二套超时语义 |
@@ -170,7 +170,7 @@ scope 由止损机制消费,映射与判据单源在 [Sandbox · Provisioning �
 
 止损机制消费终局失败的空间轴，粒度两级：每个 experiment 一个实验级止损，每个 (experiment, eval) 一个 eval 级止损；实验级止损触发蕴含该实验全部 eval 级止损。
 
-**触发**:attempt 封口时读取终局失败携带的 `FailureClass.scope`——`"eval"` 触发对应 eval 级止损，`"experiment"` 触发实验级止损。
+**触发**:Attempt 收尾时读取终局执行错误 Observation 携带的 `FailureClass.scope`——`"eval"` 触发对应 eval 级止损，`"experiment"` 触发实验级止损。Verdict Claim 以同一 Observation 为依据；止损不借 lifecycle state 推断 verdict。
 触发幂等：并发 attempt 同时声明同一死因是常态,重复触发只折叠诊断计数。
 止损在 invocation 内不可逆：在飞 attempt 后续成功不重开——作者背书的判定不被单次成功推翻,抖动的服务不该让调度来回摆;恢复的正路是修复后重跑(见下)。
 
@@ -178,8 +178,8 @@ scope 由止损机制消费,映射与判据单源在 [Sandbox · Provisioning �
 等待集中同机制下的 attempt 走既有 interruption 通路中止、退出等待集。
 检查点存在良性竞态——机制触发的瞬间可能有 attempt 已越过检查、照常跑完,代价是多烧一个沙箱,不为它引入额外互斥。
 
-**记账**:未派发的 attempt 计入 `unstarted`,完成状态 `incomplete`(与 run 级 fail-fast 停派发同一计数通路,见 [Runner · 完成状态](../../runner.md#完成状态));不为没跑过的 attempt 制造 `errored` 条目。
-退出码由观察到失败的那条 `errored` attempt 保证判红。
+**记账**:未派发的工作计入 `unstarted`,完成状态 `incomplete`(与 run 级 fail-fast 停派发同一计数通路,见 [Runner · 完成状态](../../runner.md#完成状态));不为没跑过的工作制造 Attempt、`errored` Verdict Claim 或 locator。
+退出码由观察到失败的那条 `errored` Verdict Claim 保证判红。
 
 **诊断**：每次触发止损经[实验域诊断通路](../../runner.md#实验域诊断持久化)落一条：
 
@@ -198,12 +198,12 @@ scope 由止损机制消费,映射与判据单源在 [Sandbox · Provisioning �
 
 **生命周期边界**:
 
-- 实验级 `setup` 里抛 fatal 错误类,与抛任何错误同义——既有语义(全部 attempt 记 `errored(experiment-setup-failed)`、不派发,见 [Experiments](../experiments/library.md#实验级共享服务setup-与-teardown))已是最大止损,不设第二条路径。
+- 实验级 `setup` 里抛 fatal 错误类,与抛任何错误同义——它在派发前形成 Run-scoped 执行错误 Observation 与 incomplete receipt，不制造一批 `errored(experiment-setup-failed)` Attempt；已是最大止损,不设第二条路径。
 - 实验级 `teardown` 里抛,降级为普通 teardown 诊断——teardown 时点已无可保护的派发余量,且止损状态不跨 invocation,声明无处生效。
 - per-attempt teardown 里抛,verdict 处理沿用既有规则(teardown 失败是诊断、不改 verdict),但 scope 声明照常触发止损——知识就是知识,兄弟 attempt 还在派发中。
 
 **无持久状态**：机制随 invocation 消亡,唯一持久痕迹是 `dispatch-halted` 诊断。
-`errored` 与 `unstarted` 均不进指纹缓存,修复后重跑同一条命令即增量续跑,不需要任何解除机制。
+带 `errored` Verdict Claim 的成员与 `unstarted` 均不具备携带资格；修复后使用 `--rerun failed` 增量重跑,不需要任何解除机制。
 
 ## Effect 边界
 
@@ -212,8 +212,14 @@ scope 由止损机制消费,映射与判据单源在 [Sandbox · Provisioning �
 - **公开面(Promise 世界)**:fatal 错误类、`FailureClass`、分类器类型都是纯 TypeScript,零 effect 依赖;用户与 adapter 作者只写 async 函数的公开 API 哲学不变。
   路由借 Effect 生态的 tagged error 习语——`_tag` 数据字段路由、类只负责构造数据——但不 import 它。
 - **attempt 边界（Effect 世界）**：Promise 侧的失败穿过边界时归一化为内部 tagged error（`Data.TaggedError`，携带 `FailureClass` 与 phase）。实验级 / eval 级止损用 `Effect.makeLatch`（close 幂等、免费满足触发幂等不变量）；等待集中止走既有 interruption。
-- **结果建模(`E = never`)**:attempt fiber 的类型保持 `Effect<EvalResult>`,错误通道刻意为空——`errored` 是 eval runner 的合法结果,不是调度失败;scope 信号经封口读取触发止损，不走错误通道向上传播。
-  Effect 的失败三分法与本设计的格子一一对应:typed failure ↔ 被分类的失败,defect ↔ 未分类的意外异常(默认格,`"unexpected-error"`),interrupt ↔ 超时 / 用户中断 / earlyExit / 止损中止,三者不混流。
+- **结果建模(`E = never`)**：attempt fiber 的类型保持 `Effect<AttemptReceiptSnapshot>`，错误通道刻意为空。
+
+  - 执行错误先落为 Observation，最终 receipt 引用 complete / partial / not-recorded `RecordCommit`。
+  - `errored` 是 Verdict Claim 的合法值，不是调度失败或 Attempt state。
+  - scope 信号由同一 typed evidence 在收尾时读取触发止损，不走错误通道向上传播。
+  - Effect 的失败三分法与本设计的格子一一对应：typed failure ↔ 被分类的失败。
+    defect ↔ 未分类的意外异常（默认格，`"unexpected-error"`）。
+    interrupt ↔ 超时 / 用户中断 / earlyExit / 止损中止；三者不混流。
 
 重试执行体活在 context 层的 Promise 世界：中断响应走 `ctx.signal` 链，槽位释放走 attempt 层注入的 release / reacquire 桥接回调。退避形状（指数 + 全抖动）与 Effect Schedule 同形，不共享实现——`Schedule` 表达不了「睡眠期间释放并发位」的契约。
 
@@ -221,17 +227,17 @@ scope 由止损机制消费,映射与判据单源在 [Sandbox · Provisioning �
 
 - **重试中**:走 attempt 的 activity 行,期望形态 `turn retry 2/4 (rate_limit) — waiting 8s`——括号里的词就是分类的 `reason`,声明方自造词原样展示;不产生 diagnostic——这是正常自愈过程。
   重试成功后 activity 恢复常态,永久输出零痕迹。
-- **重试耗尽**：浮出的失败 message 追加重试摘要，注明耗尽的是哪层预算。send 级形态 `… · retries exhausted (4 attempts, rate_limit)`；attempt 级形态 `… · attempt retry budget exhausted (8 retries, rate_limit)`。未发生过重试的失败不加后缀。
-  摘要只进 message、不进结构化字段——它回答的是人读 `errored` 时的「框架试过了吗」,不是程序要分支的数据。
+- **重试耗尽**：终局执行错误 Observation 的人读摘要追加重试信息，注明耗尽的是哪层预算。send 级形态 `… · retries exhausted (4 attempts, rate_limit)`；attempt 级形态 `… · attempt retry budget exhausted (8 retries, rate_limit)`。未发生过重试的失败不加后缀。
+  摘要只进人读 message；结构化 classification 与逐次 retry Observation 才是程序依据。它回答的是人读 `errored` Verdict Claim 时的「框架试过了吗」。
 - **触发止损**：反馈流一条 error 级通知，人读文本按[诊断体裁](../experiments/cli.md#人在终端里怎么用)给 error 符号——`✗ experiment halted (dispatch-halted): <message>` / `✗ eval halted: <message>`。`--json` 是同一条诊断的 `warning` 事件（`code: "dispatch-halted"`、`level: "error"`，eval 级止损带 `evalId`）。
   两面都只在首次触发时出现一行、不带折叠计数:触发后被中止的等待集 attempt 不逐条刷屏,数量体现在完成状态的 `unstarted` 里。
-  `run.json` 诊断见[止损执行体](#止损执行体)。
+  Record 诊断见[止损执行体](#止损执行体)。
 
 ## 不变量
 
 - 重试只包 `agent.send` 一次调用;会话记账、事件流、send 区间都以「一次逻辑 send」为单位,重试对它们不可见。
 - 分类链的任何一道都不能制造新失败;浮出的必须是最终一次尝试的原始错误(message 允许追加重试摘要)。
-- send 执行错误统一落 `AttemptError.code: "agent-send-failed"`；领域失败 Turn 只参与断言，不使用该 code。`errored` 不缓存、下次运行照常重跑；scope 不改写错误种类。
+- send 执行错误统一写为 `code: "agent-send-failed"` 的 Execution-error Observation；领域失败 Turn 只参与断言，不使用该 code。`errored` Verdict Claim 不具备携带资格、下次按 `--rerun failed` 重跑；scope 不改写错误种类。
 - 受理证据门只否决时间轴且压过一切分类器；只有结构化 `acceptance: "rejected"` 能放行重试，它不触碰空间轴。
 - 回退分类器永不给出超出 `"attempt"` 的 scope;扩 scope 的声明只能来自携带作者知识的通道(抛出点、adapter / 实验分类器、provisioning 的可证明配置死因)。
 - 被重试吸收的失败不抵达止损机制；抵达止损机制的一定是终局失败。

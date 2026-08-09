@@ -1,54 +1,77 @@
 ---
 title: "Publish a report through CI"
 sidebarTitle: "Publish via CI"
-description: "Commit a record directory that has passed the publish size precheck, and CI exports the report site with a single view --record. Oversized files produce an actionable error before you ever commit."
+description: "Pick a fixed selection, export the Sample as an auditable SampleBundle for downstream consumers, or export the report site directly from a Record Store root with view --out; CI builds with a single view --record."
 ---
 
-`niceeval view --out <dir>` exports the viewer into a plain static directory: reports, snapshot lists, transcripts, and the trace waterfall, exactly like what local `niceeval view` shows (export behavior is covered in [Viewing Results · Exporting and Static Hosting](/tutorials/viewing-results#exporting-and-static-hosting)). Publishing through CI only requires getting the result data into the build machine's hands — but do not commit the local source of truth `.niceeval/` directly: per-string truncation can stop one runaway output from ballooning, but it cannot guarantee a whole file stays under a Git host's limit. First use `publish` to produce a publish record root that has passed the 50 MiB per-file precheck, then commit that directory.
+`niceeval view --out <dir>` exports the viewer into a plain static directory: reports, snapshot lists, transcripts, and the trace waterfall, exactly like what local `niceeval view` shows (export behavior is covered in [Viewing Results · Exporting and Static Hosting](/tutorials/viewing-results#exporting-and-static-hosting)). `view --out` goes through the public `exportReport()`: it consumes one fixed Sample and exports a Report artifact — not a Record copy, and `openRecord()` cannot open it again.
 
-## Producing a committable results directory
+Publishing through CI only requires getting the result data into the build machine's hands. Two paths: pass a `.niceeval/` copy as a CI artifact (or commit it to the repo directly) and run `view --record <data root> --out` on it; or export a fixed selection as a `SampleBundle` for downstream analysis — a `SampleBundle` is not a Record, and `--record` does not accept it.
 
-Create `scripts/publish-results.ts` (the project's evals and config are already TypeScript, so the script uses `.ts` too, and runs directly via `tsx`):
+## Picking a fixed selection and exporting a SampleBundle
+
+To hand an auditable sample to a colleague or downstream analysis (not to `view --record`), pin a `RecordGraphRef`, materialize a fixed Sample, and write it into a standalone `SampleBundleStore`. Create `scripts/export-sample.ts` (the project's evals and config are already TypeScript, so the script uses `.ts` too, and runs directly via `tsx`):
 
 ```javascript
 import { rm } from "node:fs/promises";
-import { openRecord, publish } from "niceeval/record";
-import { latestRunSample } from "niceeval/sample";
+import {
+  createRecordSourceSet,
+  openRecord,
+  openRecordStore,
+} from "niceeval/record";
+import {
+  createSampleBundleStore,
+  exportSample,
+  materializeSample,
+  openSampleBundle,
+} from "niceeval/sample";
 
-const output = "report-data";
-const record = await openRecord(".niceeval");
+const output = "sample-data";
+await using recordStore = await openRecordStore(".niceeval");
+await using record = await openRecord(recordStore); // pin this head once
+const sample = await materializeSample(record, {
+  runs: ["compare/candidate"],                      // explicit full-ID arrays: runs / evals / experiments
+});
 
 await rm(output, { recursive: true, force: true });
-await publish(latestRunSample(record), output, {
-  artifacts: ["sources", "events", "trace", "o11y", "agentSetup"],
+await using sources = await createRecordSourceSet([record]);
+await using bundleStore = await createSampleBundleStore(output);
+const bundleRef = await exportSample(sample, {
+  sources,
+  target: bundleStore,
 });
+
+const bundle = await openSampleBundle(bundleStore, bundleRef);  // reads only what was copied
+console.log(bundle.ref, bundle.sample.members.length);
 ```
 
-Run `npx tsx scripts/publish-results.ts`, then commit `report-data/`. `publish` checks every file it is about to publish before creating the directory; if any file exceeds 50 MiB, the whole copy fails, lists the path, the size, and what to do about it, and leaves no half-written directory behind. `diff` is not published by default; add it to `artifacts` explicitly when you need it, and it is bound by the same budget. Oversized events / trace left behind by an older version are never silently rewritten — the precheck asks you to exclude that class of evidence or rerun with the current version.
+`materializeSample()` only reads the current Contributions of the selected Runs in the fixed Graph and materializes each slot as a member; when the writer advances the head, reopen the Record and produce another Sample.
+`exportSample()` never rewrites anything; the Bundle keeps the full members, coverage, provenance, and membership proofs, and `openSampleBundle()` only reads what the bundle copied — it never re-runs the Record's current selection.
+**A `SampleBundle` is not a Record** — `view --record` does not accept it; the static site's data root must be a Record Store (`.niceeval/` or a copy of it).
 
 ## The build command is the export command
 
 ```bash
-npx niceeval view --record report-data --out site
+npx niceeval view --record .niceeval --out site
 ```
 
 To publish only a subset of experiments, hand the narrowing directly to the export command — the page and its evidence then contain only the narrowed scope (see [Viewing Results · Exporting and Static Hosting](/tutorials/viewing-results#exporting-and-static-hosting)):
 
 ```bash
-npx niceeval view --record report-data --exp compare --out site
+npx niceeval view --record .niceeval --exp compare --out site
 ```
 
-`view` fails outright with a non-zero exit code on zero readable results — it never exports an empty report. If the `report-data/` checkout is broken, or every stored snapshot is incompatible with the current niceeval's `schemaVersion` and gets skipped wholesale, the build fails and Vercel / GitHub Pages keeps the previous deployment. The error lists every skipped snapshot directory with its reason, and for the `schemaVersion` case also gives the `npx niceeval@<version> view` command that can view the old data directly.
+`view` fails outright with a non-zero exit code on zero readable results — it never exports an empty report. If the data-root checkout is broken, or every stored fact is incompatible with the current niceeval's container version and gets skipped wholesale, the build fails and Vercel / GitHub Pages keeps the previous deployment. The error lists every skipped object with its reason, and for the version-incompatibility case also gives the `npx niceeval@<version> view` command that can view the old data directly.
 
 ## Publishing a custom report
 
 Without `--report`, the published site is the default report's three pages (Report, Attempts, Traces). To switch to your own pages, pass a [`defineReport` report file](/tutorials/custom-reports) to `--report` — attempt detail (transcript, trace, code view) stays in the same site, and every number in the report drills into its corresponding evidence, exactly like local `view --report`:
 
 ```bash
-npx niceeval view --record report-data --report reports/exam.tsx --out site
+npx niceeval view --record .niceeval --report reports/exam.tsx --out site
 ```
 
-The report file is committed in the repo just like `report-data/` — edit the layout, push, and the live site updates. With the `vercel.json` / workflow below, just swap the build command for this one line; nothing else needs to change.
+The report file is committed in the repo — edit the layout, push, and the live site updates. With the `vercel.json` / workflow below, just swap the build command for this one line; nothing else needs to change.
 
 ## Connecting site analytics and third-party scripts
 
@@ -95,7 +118,7 @@ There are only a few rules:
 ```json
 {
   "installCommand": "pnpm install --frozen-lockfile",
-  "buildCommand": "npx niceeval view --record report-data --out site",
+  "buildCommand": "npx niceeval view --record .niceeval --out site",
   "outputDirectory": "site"
 }
 ```
@@ -125,7 +148,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: npx niceeval view --record report-data --out site
+      - run: npx niceeval view --record .niceeval --out site
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
@@ -140,8 +163,8 @@ jobs:
         uses: actions/deploy-pages@v4
 ```
 
-The daily loop: run the eval locally, run `npx tsx scripts/publish-results.ts`, commit the updated `report-data/`, and push. The publish directory keeps only the latest result Run per experiment; to publish under a different selection policy, swap out `latestRunSample(record)` in the script. Your local `.niceeval/` can keep the full history and diffs — there is no need to cut away debugging evidence just to satisfy a Git limit.
+The daily loop: run the eval locally, run `npx tsx scripts/export-sample.ts` to produce the downstream `sample-data/` when needed, and build the site with `npx niceeval view --record .niceeval --out site`, deploying `site/`. `view --out` only copies the evidence closure the Plan consumes; narrowing flags like `--exp` decide what leaves the site. Your local `.niceeval/` can keep the full history and diffs — there is no need to cut away debugging evidence just to satisfy a Git limit.
 
-## What gets published is the selected evidence
+## What gets published is the planned evidence
 
-The full site export carries the transcripts, source snapshots, and traces selected in the publish results root. Newly written oversized events / trace strings may carry structured truncation markers. `publish` only selects files and runs the whole-file size precheck — it never rewrites content. Anyone can browse the published site down to prompts and tool outputs, so confirm the results are fit to make public before you publish to the public internet — NiceEval never writes environment variable values or command output into result files when it records a run, so what ends up in the transcript is only the Agent's own input and output plus your eval's task itself.
+The full site export carries the transcript, source, and trace evidence closure the Plan consumes. Oversized values carry structured truncation markers. `view --out` goes through `exportReport()` and produces a Report artifact — it never rewrites content, and the output is not a Record copy that `openRecord()` can open. Anyone can browse the published site down to prompts and tool outputs, so confirm the results are fit to make public before you publish to the public internet. The serialization policy only redacts known credentials — command stdout / stderr can be recorded as Observation evidence — so review all evidence by hand before publishing; do not assume sensitive content is filtered automatically.

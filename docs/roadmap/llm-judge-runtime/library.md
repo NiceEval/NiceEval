@@ -2,6 +2,8 @@
 
 公开作者面只有一个 LLM 注册入口：`t.judge.llm(check)`。
 `turn.judge.llm` 与 `session.judge.llm` 使用同一份 Check，只改变 `material.current()` 的默认 scope。
+这里的 `current` 只指正在执行的调用点 scope，不按目录、时间或最近结果选择 Record 事实；Judge 读取面始终由固定
+`RecordGraphRef` 锚定。
 
 ## 单条 rubric
 
@@ -127,7 +129,7 @@ Turn 材料包含该轮用户输入、附件、assistant message 与可用行为
 文件扩展名只用于给出 MIME 候选；内容与声明冲突时报作者错误。
 HTTP URL 不是材料出处，调用方应先取得字节，再使用项目文件或内联文件。
 
-`retention` 省略时是 `full`，材料内容随 Judge provenance 保存。
+`retention` 省略时是 `full`，材料内容以 typed evidence object 由 Judge provenance / Observation 强引用保存。
 `digest` 只保存 hash、大小、MIME 与有界脱敏预览；Provider 仍读取原内容，报告会明确标出内容未保留。
 
 Provider 接收读取后的规范内容 part：

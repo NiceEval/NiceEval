@@ -1,4 +1,4 @@
 # Attempt assessment
 
-Attempt 详情先调用 `toAttemptNotices(attempt)`。
-源码可用时调用 `toAttemptSource(attempt)` 并交给 SourceView；否则调用 `toAttemptAssertions(attempt)` 并交给 Table。
+Attempt 详情在 plan 中声明 notice、源码和断言的 Projector request。
+executor 交付的 EvidenceValue 决定 SourceView 或 Table 如何显示既有数据；renderer 不读取 Record，也不以源码是否存在为由追加另一条请求。

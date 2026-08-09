@@ -11,7 +11,9 @@
 />
 ```
 
-MetricValue 的 unit、format、samples、total 与 refs 保持完整，renderer 按 locale 格式化。
+MetricValue 的 unit、format、coverage、basedOn 与 refs 保持完整。renderer 按 locale 格式化。
+available 分支原样显示 verification / issues。unavailable 分支原样显示全部 causes，且没有
+verification 字段。
 缺数据显示明确占位，不转成零。
 
 Grid 根据格数与自身可用宽度换列，不读取视口宽度。
@@ -26,7 +28,7 @@ text 面按终端显示列选择一行或多行；web 面使用容器查询。
 │ Pass rate    │ Experiments │ Evals │
 │ 80%          │ 3           │ 5     │
 ├──────────────┼─────────────┴───────┤
-│ Attempts     │ Eval results        │
+│ Attempts     │ Eval outcomes       │
 │ 5            │ 4 passed · 1 failed │
 ╰──────────────┴─────────────────────╯
 ```

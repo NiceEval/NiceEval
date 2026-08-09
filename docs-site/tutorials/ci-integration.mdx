@@ -13,7 +13,7 @@ By default, [NiceEval](https://niceeval.com/) exits non-zero when any gate fails
 ```bash
 npx niceeval exp ci \
   --strict \
-  --junit .niceeval/junit.xml
+  --junit ./artifacts/niceeval-junit.xml
 ```
 
 CI doesn't need a separate output mode: human text without `--json`, on a non-TTY (a CI log page), automatically degrades to an append-only stream — no boxes, no ANSI, only appending a line at start, on each failure/error, on each diagnostic, and at the final verdict; passed attempts are never printed one by one. That log is for people to read; platform annotations go through `--junit`, and a JSON summary is read from the results plane after the run (see below).
@@ -36,7 +36,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx niceeval exp ci --strict --junit .niceeval/junit.xml
+      - run: npx niceeval exp ci --strict --junit ./artifacts/niceeval-junit.xml
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -63,7 +63,7 @@ Without `--json`, `niceeval exp` prints human text. On a non-TTY — exactly wha
 ```text
 PLAN
   1 attempts · 1 evals × 1 configs · concurrency 2
-✗ @1v9b841a basic [mock]
+✗ @52KG9EFW5TB8167MXJ30SYZCNA basic [mock]
     gate: equals("definitely-not-ok")
         expected "definitely-not-ok" · received ok
 FAILED                                                                                            0s
@@ -71,38 +71,38 @@ FAILED                                                                          
   2 new tok
 
 FAILURES
-  ✗ @1v9b841a basic [mock]
+  ✗ @52KG9EFW5TB8167MXJ30SYZCNA basic [mock]
       gate: equals("definitely-not-ok")
           expected "definitely-not-ok" · received ok
 NEXT
-  Inspect: niceeval show @1v9b841a
-  Eval:    niceeval show @1v9b841a --source
-  Trace:   niceeval show @1v9b841a --execution
-  Diff:    niceeval show @1v9b841a --diff
+  Inspect: niceeval show @52KG9EFW5TB8167MXJ30SYZCNA
+  Eval:    niceeval show @52KG9EFW5TB8167MXJ30SYZCNA --source
+  Trace:   niceeval show @52KG9EFW5TB8167MXJ30SYZCNA --execution
+  Diff:    niceeval show @52KG9EFW5TB8167MXJ30SYZCNA --diff
   Compare: niceeval view
   RESULTS
-  .niceeval/basic_mock/<snapshot>
+  RecordStore root: .niceeval/ (fixed at the invoked head)
 ```
 
-The exit code is the first-line red/green signal; JUnit and the results snapshot are the complete machine interface — this log is only for people to read, search, and locate. An `errored` attempt (an execution error, not a failed assertion) is the same kind of unindented stream line, carrying a locator, the eval/experiment identity, the formal phase when known, and a one-line `reason` summary — for example `✗ @12h8m4k1 fixtures/button [ci/codex] errored · sandbox.create` followed by `sandbox-rate-limit: E2B sandbox allocation failed after 5 attempts`. The full cause, stack, and diagnostics live in the attempt's `result.json` — keep the artifacts and run `niceeval show @<locator>` to review them.
+The exit code is the first-line red/green signal; JUnit and the Record are the complete machine interface — this log is only for people to read, search, and locate. An `errored` attempt (an execution error, not a failed assertion) is the same kind of unindented stream line, carrying a locator, the eval/experiment identity, the formal phase when known, and a one-line `reason` summary — for example `✗ @0123456789ABCDEFGHJKMNPQRS fixtures/button [ci/codex] errored · sandbox.create` followed by `sandbox-rate-limit: E2B sandbox allocation failed after 5 attempts`. The full cause, stack, and diagnostics live in the Record's Attempt facts — run `niceeval show @<locator>` to review them.
 
-When something needs to parse run events programmatically (a custom annotation adapter, a live dashboard), add `--json` to that same command to get the same facts as an NDJSON event stream, starting with `start` and ending with `result`:
+When something needs to parse run events programmatically (a custom annotation adapter, a live dashboard), add `--json` to that same command to get the same facts as `InvocationMachineRecord` NDJSON — the LiveRecord sequence ends with exactly one `receipt`:
 
 ```bash
-npx niceeval exp ci --strict --junit .niceeval/junit.xml --json
+npx niceeval exp ci --strict --junit ./artifacts/niceeval-junit.xml --json
 ```
 
 When you just need a JSON summary file, don't parse the run log — read the results plane after the run instead:
 
 ```bash
-npx niceeval show --json > .niceeval/ci-summary.json
+npx niceeval show --json > ./artifacts/niceeval-summary.json
 ```
 
 <Tip>
-  If the repo uses pnpm, swap that command for `pnpm --silent exec niceeval show --json > .niceeval/ci-summary.json`. `pnpm exec` prints a startup banner to stdout by default, which ends up inside the redirected JSON file; `--silent` turns that banner off.
+  If the repo uses pnpm, swap that command for `pnpm --silent exec niceeval show --json > ./artifacts/niceeval-summary.json`. `pnpm exec` prints a startup banner to stdout by default, which ends up inside the redirected JSON file; `--silent` turns that banner off.
 </Tip>
 
-`show --json` reads the results root's single current state, including compatible carried results. Narrow by experiment with `--exp`; when CI must audit one physical Run rather than the current waterline, address that Run explicitly instead of filtering current results by provenance.
+`show --json` first pins one `RecordGraphRef`, materializes one fixed Sample, and reads that fixed membership — including compatible carried results — never a moving "current state". Narrow by experiment with `--exp`; when CI must audit one physical Run rather than the fixed Sample, address that Run explicitly instead of filtering the Sample by provenance.
 
 The `--json` / `--junit` output the CLI is explicitly told to write, and the default results artifact, are all required outputs: a write failure must turn the job red, not just log a warning and exit 0. To also report results to an experiment platform such as Braintrust, see [Reporters](./reporters).
 
@@ -116,7 +116,7 @@ This is useful when you only want to confirm that eval files load and configurat
 
 ## Cache `.niceeval/`
 
-You can cache `.niceeval/` in CI, but make sure the fingerprint covers every input that affects the result. For nightly benchmarks, keeping the full artifacts is usually more valuable.
+You can cache `.niceeval/` in CI, but make sure the fingerprint covers every input that affects the result. For nightly benchmarks, keeping the full Record facts is usually more valuable.
 
 ## Control concurrency
 

@@ -47,10 +47,10 @@ teardown 已经执行，registry 也没有证明新配置、Hook 与 reset ancho
 2. 用 `retain` 判断是否为候选；
 3. 非候选直接 destroy；
 4. 候选按 `release` 选择 suspend 或 destroy；
-5. 完成后运行单 record root GC。
+5. 完成后运行单一 `.niceeval` RecordStore GC。
 
 同一物理池承接十条 Attempt 仍只产生一个 release 结果。
-carried、skipped 与未派发工作不进入这条时序。
+carried Attempt、只形成 Run-scoped `skipped` Verdict Claim 的未派发成员与其它未派发工作都不进入这条时序。
 
 ## Release failure
 

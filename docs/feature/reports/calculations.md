@@ -1,11 +1,11 @@
 # 报告作者 API —— 计算边界
 
-本篇定义哪些计算属于公共内核，哪些只是某份报告里的普通函数，以及组件目录的准入边界。
-作者 API 总览见 [README](README.md)，完整调用形状见 [Library](library.md)。
+本篇定义哪些计算进入公共 Reports 内核，哪些留在某份报告旁。
+完整调用形状见 [Library](library.md)。
 
 ## 内核保留五类值
 
-公共计算内核只保留五类值：
+公共计算面只保留以下角色：
 
 ```ts
 mean;
@@ -14,319 +14,147 @@ min;
 max;
 percentile(0.95);
 
+defineCalculation;
 rollup;
 aggregate;
 metricValue;
 evidenceRow;
 
-agent;
-experiment;
-evalId;
-model;
-
-passRate;
-costUSD;
-durationMs;
-// 其它官方与用户 Calculation
+MeasureCell;
+MetricValue;
+EvidenceValue;
 ```
 
-其中：
+- Projector 由 Record 的 `defineAttemptProjector<Input, Params, T>()` 声明事实读取与 provenance；
+- Projector 同时声明规范化 defaults、实际 object dependencies，并从 `projectNormalized()` 返回 raw `T`；
+- Calculation 声明静态 projector dependency、canonical JSON configuration 与纯 evaluate；
+- rollup 声明 group 内、group 间和 unavailable policy；
+- aggregate 把 Sample membership 转成带顶层 coverage 的 AggregateResult；
+- MetricValue 与 EvidenceRow 是复杂算法的证据终点。
 
-- reducer 折叠一组数字；
-- `rollup()` 把单 Attempt 取值函数变成 Calculation；
-- `aggregate()` 在 Sample 上按分组函数执行多个 Calculation；
-- 分组函数和 Calculation 都是普通函数值。
-- `metricValue()` / `evidenceRow()` 只负责复杂算法的证据结果终结，不替算法定义公式。
-
-公共内核不提供 `history()`、`delta()`、`stability()`、`pivot()` 或 `frontier()`。
+公共内核不因为一张报告需要它就新增 `history()`、`delta()`、`stability()`、`pivot()` 或 `frontier()`。
 
 ## Reducer 是函数，不是字符串
 
-`rollup()` 的两个阶段接收 Reducer 函数值：
-
 ```ts
-const p95DurationMs = rollup(
-  attemptDurationMs,
-  {
-    withinEval: percentile(0.95),
-    acrossEvals: mean,
-  },
-);
+const p95DurationMs = rollup(durationMs, {
+  withinEval: percentile(0.95),
+  acrossEvals: mean,
+  unavailable: "exclude",
+});
 ```
 
-内置 Reducer 包含 `mean`、`sum`、`min`、`max` 与 `percentile(p)`。
-省略阶段时默认 `mean`；null 在进入 Reducer 前排除，空集合仍为 null。
+`mean`、`sum`、`min`、`max` 与 `percentile(p)` 都是纯函数。
+它们只接收已经被 rollup policy 纳入的 available 值；不能把 unavailable 改写成 `null`、零或空数组。
 
-不提供通用 `count` 与 `countDistinct`：
-
-- count 必须先说明数 Attempt、Eval、Run 还是非空读数；
-- distinct 必须说明 identity，以及跨 Eval 是否继续去重；
-- 各 Eval 的 distinct count 相加不等于全局 distinct count。
-
-参与聚合的 Attempt 数可以用具名 Calculation `observedAttemptCount` 表达。
-Eval、Run 或 Experiment 数量则从 Sample 对应事实计算；这样单位、identity 与 coverage 含义都留在定义中。
-
-`percentile(p)` 被保留，是因为耗时尾部读数有稳定需求，并且两级语义可以显式写出来。
-它使用排序后相邻值的线性插值，参数必须位于 `[0, 1]`。
+`percentile(p)` 接受闭区间 `[0, 1]`，对有序样本做稳定线性插值。
+count 或 distinct 必须先声明 identity、分母和 unavailable policy，因此不作为无主语 reducer 提供。
 
 ## Sample 不增加 map
 
-Sample 只负责表达比较总体、`coverage` 和选择问题。
-它已有两个不可互换的转换：
+Sample 负责固定比较总体、coverage、membership 与 provenance。
+它提供的范围改变会生成固定选择：
 
 ```ts
-sample.scope({ experiments, evals });
-sample.filter(predicate);
+const security = narrowSample(sample, {
+  experiments: ["compare/"],
+  evals: ["security/"],
+});
 ```
 
-`scope()` 改变总体，`filter()` 删除观测。
-两者同步维护 attempts、historyAttempts、runs、coverage 与 issues。
+Sample 不提供 map、groupBy、reduce、pipe 或任意 predicate callback。
+这些操作会让结果脱离完整 source 集合、分母和 membership proof。
 
-Sample 不增加：
-
-```ts
-sample.map(...);
-sample.groupBy(...);
-sample.reduce(...);
-sample.pipe(...);
-```
-
-这些方法会产生一个无法回答“还是不是 Sample”的中间值。
-一旦 map 改变 Attempt 形状，coverage 与 issues 不再知道怎样随行；一旦 groupBy 改变粒度，Sample 层就开始承担 Reports 的聚合职责。
-
-作者需要普通数组时显式取值：
-
-```ts
-const attempts = sample.attempts;
-const historyAttempts = sample.historyAttempts;
-```
-
-从此使用 JavaScript 的 `map`、`filter`、`toSorted` 与 `slice`。
-需要保住两级聚合和 refs 时，不对数组手写 reduce，而是把 Sample 交给 `aggregate()`。
+需要分组或数值，使用 `aggregate()`；需要普通展示结构，使用已交付 ReportData 上的纯转换。
+`aggregate()` request 在 ReportData 中得到的是 `EvidenceValue<AggregateResult>`，不是 rows；组件只在
+available 分支消费 `value.rows`，并保留 `value.coverage` 与最外层 evidence metadata。
 
 ## 报告旁算法不退出证据契约
 
-“不进入核心计算目录”只表示没有通用公式，不表示可以返回没有 provenance 的 number。
-
-非 rollup 算法必须使用：
-
-```ts
-metricValue({
-  value,
-  samples,
-  total,
-  basis,
-  evidence,
-});
-
-evidenceRow({
-  dimension,
-  metric,
-});
-```
-
-`metricValue()` 强制算法声明分子、分母口径和相关 Attempt；`evidenceRow()` 产生图表需要的行级 refs。
-`aggregate()` 内部也使用同一结果终结规则。
-
-因此保障分成两层：
-
-- `rollup()` / `aggregate()` 保障常见两级标量聚合的公式；
-- `metricValue()` / `evidenceRow()` 保障复杂算法不会漏掉 samples、total、basis 与 refs。
-
-后一层不能证明作者的 delta 或 stability 公式正确，但能让错误公式仍然可复算、可下钻，并让缺失分母显式出现。
-
-## `history` 不是函数
-
-历史已经是 Sample 上的普通值：
+成对差异、稳定性和固定题集成绩单不能强行写入通用 rollup。
+它们仍必须从已计划的 MeasureCell 和 EvidenceValue 出发：
 
 ```ts
-sample.historyAttempts;
+interface DeltaPoint {
+  readonly baseline: MeasureCell<number>;
+  readonly candidate: MeasureCell<number>;
+  readonly delta: EvidenceValue<number>;
+}
+
+function pairedDelta(
+  baseline: readonly MeasureCell<number>[],
+  candidate: readonly MeasureCell<number>[],
+): readonly DeltaPoint[] {
+  // 按明确 identity 配对；保留两个输入的 EvidenceValue。
+}
 ```
 
-因此不提供：
+`MeasureCell` 与 `EvidenceValue` 分别由 [Reports Library](library.md#分组函数与计算函数) 和 [Record Library](../record/library.md#evidencevaluevalue-与-verification-两轴) owner 定义；`DeltaPoint` 只属于这个报告旁算法示例。
 
-```ts
-history(sample, options);
-```
+结束时使用 `metricValue()` 与 `evidenceRow()`。
+这两项要求算法明确 coverage、refs 和 EvidenceValue，而非返回 bare number 或把不可用输入抹成空值。
+`evidenceRow()` 额外要求所有自定义字段属于 `ReportJsonObject`；任意 class instance、Date、Map、
+函数或 `undefined` 不因“是 object”就能进入结果行。
 
-需要一幅历史柱状图时，page render 直接从 historyAttempts 计算 points：
+## 历史是另一份固定选择
 
-```tsx
-const points = await historyPoints(sample.historyAttempts);
+趋势、时间线和回归比较需要一个明确的图版本与成员集合。
+报告把它作为单独 materialized Sample 或显式的 Sample union 交给 plan，而不是让一个 `history()` 函数在 render 时扫描 Record。
 
-return (
-  <Bars
-    points={points}
-    x="run"
-    y="passRate"
-  />
-);
-```
-
-`historyPoints()` 是这份报告里的普通函数。
-它直接读取 AttemptHandle，并用公开 reducer 实现这张图声明的历史口径；它不需要伪装成一个可供 `aggregate()` 执行的通用 Calculation。
-返回的每个历史点仍通过 `metricValue()` / `evidenceRow()` 构造。
-如果三个以上独立报告重复同一套正确性规则，再评估它是否值得成为公开工具。
-在重复出现之前，不能因为当前产品有一张历史页就先造一个公共概念。
+这样每个历史点都有完整 source Graph 集合、adopted revision 和 membership proof。
+如果选择策略改变，就产生新的 Sample identity 和新的 ReportPlan。
 
 ## `scoreboard` 是模式，不是 API
 
-成绩单有固定题集分母，并区分 notRun、unscorable 与真实零分。
-这与 `aggregate()` 的空值策略相反：coverage 缺口在聚合里不冒充零，在成绩单里必须按 0 分占住分母。
-因此成绩单不是 `aggregate()` 的别名。
-
-它也不预留一个 `scoreboardRows()` 公开函数。
-权重、满分、分组这些评分表意见没有跨报告的统一语义，一个通用签名只是把分歧藏进 rubric 类型；这与 `stability()` 被拒绝的理由相同。
-
-具体成绩单在报告旁手写，只依赖公共内核：
+成绩单的固定题集、权重、满分和不计分 policy 属于业务契约。
+它可在报告旁用已计划的 MeasureCell 写成纯函数：
 
 ```ts
-const perQuestion = await aggregate(sample, {
-  by: { evalId, agent },
-  values: { passRate },
-});
-
-// 报告旁代码对 rubric 补零、加权，
-// 每格与总分经 metricValue() 交出 basis: "eval" 的固定 total，
-// 总分 evidence 直接复用各题格 MetricValue 的 refs。
-```
-
-缺题仍占 total，已有 Attempt 全部进入 refs；不能先删除 notRun 行再对剩余结果求平均。
-三个以上独立报告重复同一套 rubric 语义时，再按下方计算准入判据评估升格。
-
-## `delta` 不是内核
-
-成对差异必须先按 Experiment × Eval 对齐，再计算差值，最后跨 Eval 聚合。
-两个总平均数直接相减不等价。
-
-这条正确性值得由一个普通函数封装：
-
-```ts
-async function pairedDelta(
-  sample: Sample,
-  options: DeltaOptions,
-): Promise<readonly DeltaPoint[]> {
-  // 显式配对，并用 metricValue / evidenceRow 交出结果。
-}
-```
-
-但它不进入顶层计算内核：
-
-- 只有成对实验比较使用；
-- 输出形状由具体报告决定；
-- baseline / candidate 的选择语义尚未证明能跨报告稳定复用；
-- `aggregate()` 不需要理解“candidate”和“baseline”。
-
-内建差异报告与用户报告必须能调用同一份 `pairedDelta()` 实现。
-它可以与该内建报告一起具名导出，或先作为公开示例存在；不能拥有绕过公共 reducer 和证据结果构造器的私有计算路径。
-配对不完整时仍以 `basis: "pair"` 保留固定 total，已有一侧 Attempt 进入 refs，不能静默删行。
-
-## `stability` 不是内核
-
-“稳定性”可能指方差、跨 Run verdict 翻转、置信区间、连续失败次数或某个产品阈值。
-一个叫 `stability()` 的函数会把尚未统一的问题伪装成统一概念。
-
-具体报告直接写普通函数：
-
-```ts
-async function stabilityPoints(
-  attempts: readonly AttemptHandle[],
-): Promise<readonly StabilityPoint[]> {
-  // 明确公式与阈值，并返回 EvidenceRow。
-}
-```
-
-函数可以具名导出、单独测试和被用户 import。
-只有公式、输入与输出在多个报告之间真正相同后，才考虑升为公共工具。
-
-## `pivot` 没有必要
-
-`pivot()` 只是把长数组换成矩阵形状。
-它不读取 Sample，不保护聚合正确性，也不产生新的领域事实。
-
-报告可以使用普通 JavaScript：
-
-```ts
-const columns = [...new Set(points.map((point) => point.agent))];
-const rows = Object.entries(
-  Object.groupBy(points, (point) => point.eval),
-).map(([evalId, values]) => ({
-  eval: evalId,
-  values: Object.fromEntries(
-    values.map((point) => [point.agent, point.passRate]),
-  ),
-}));
-```
-
-如果矩阵组件需要固定输入形状，转换函数属于该组件 package，例如 `toMatrixRows(points)`，不属于 Sample 或计算内核。
-
-## `frontier` 没有必要
-
-Pareto frontier 是默认质量—成本散点的一种呈现选择。
-散点本身只需要全部 points：
-
-```tsx
-<Scatter
-  points={performance}
-  x="costUSD"
-  y="passRate"
-/>
-```
-
-需要强调前沿时，默认报告可以局部计算：
-
-```ts
-const highlighted = paretoFrontier(performance, {
-  minimize: "costUSD",
-  maximize: "passRate",
+const scoreboard = calculateScoreboard(cells, rubric);
+const total = metricValue({
+  result: scoreboard.evidence,
+  coverage: scoreboard.coverage,
+  refs: scoreboard.refs,
+  unit: "points",
 });
 ```
 
-`paretoFrontier()` 是普通数组算法。
-它不进入 `niceeval/report` 顶层入口，也不改变 Scatter 的输入协议。
+缺题仍保留在 coverage；已有依据继续留在 refs。
+只有多个独立报告具有相同输入、公式和输出语义时，才考虑把一个算法提升到公共内核。
+
+## `delta`、`stability` 与 `frontier` 留在报告旁
+
+这些名字没有跨产品统一的比较键、阈值或展示结果。
+它们的合法形态是纯函数：输入是 Plan 已经声明的 ReportData，输出是带 EvidenceValue 的结果值。
+
+它们不能在 renderer 中读取新的 projector，不能依赖原始事件 schema，也不能把缺失一侧从分母中悄悄删除。
 
 ## 报告组件不认识计算名
 
-`Col`、`Table`、`Bars`、`Scatter` 与 `Stat` 只认识传入值：
+`Col`、`Table`、`Bars`、`Scatter` 与 `Stat` 只认识已经建立的 props 值。Table 与图表的 aggregate
+overload 认识完整 AggregateData，先判别外层 EvidenceValue，再读取 AggregateResult；它们不接未包装的
+`aggregate().value.rows` 逃生形状。
+它们不知道一个点来自 pass rate、delta、scoreboard 或外部 snapshot，也不会触发计算。
 
-```tsx
-<Col>
-  <Bars points={historyPoints} x="run" y="passRate" />
-  <Scatter points={performance} x="costUSD" y="passRate" />
-  <Table rows={performance} />
-</Col>
-```
-
-组件不知道 Sample 派生 points 来自 `aggregate()` 还是局部函数，只要求它们满足 EvidenceRow 契约。
-完全不含 NiceEval 读数的外部标量序列经显式 `external` 声明绘图。
-它们不认识 history、delta、stability、pivot 或 frontier。
-
-这条边界保证新增一个分析问题时，先增加普通计算函数，而不是扩张组件目录、Sample API 或框架查询语言。
+这条边界让新增分析先成为纯 Calculation 或报告旁函数，而不是扩张组件目录或建立第二种查询语言。
 
 ## 计算的准入判据
 
-一个新函数进入公共计算内核前必须同时满足：
+新函数进入公共计算内核前必须同时满足：
 
 1. 至少三个独立报告需要相同输入、公式与输出语义。
-2. 普通 JavaScript 写法容易产生看起来正确但实际错误的结果。
-3. 函数能用 Sample、AttemptHandle、Calculation 和普通结果值表达，不要求新的运行时注册协议。
+2. 普通实现容易产生看似合理、却遗漏 coverage 或 evidence 的错误。
+3. 它能用静态 Projector dependency、纯 Calculation 与 EvidenceValue 表达。
 4. 官方报告与用户报告调用同一个公开实现。
 
-不满足四条时，函数留在使用它的报告旁边。
+不满足时，函数留在使用它的报告旁。
 
 ## 组件的准入判据
 
-组件目录按渲染形状增长，不按领域问题增长。
-一个组件只有三种合法出身，按顺序判定：
+组件目录按显示形状增长，不按领域问题增长：
 
-1. **原语。**
-   它的 text / web renderer 里有现有原语组合写不出的渲染逻辑。
-   名字必须是形状词：`Waterfall`、`Conversation` 过，`Scoreboard` 不过——它渲染出来就是 `Table`。
-   原语承担双面义务；web 能力找不到诚实的 text 降级时，它是宿主机器而不是组件。
-2. **糖组件。**
-   恰好等价于「一个同步无 IO 的官方投影 + 一个原语」，展开式一行、公开可照抄，且 props 不含任何改变数值的选项。
-   带 limit、阈值或排序默认的候选是报告片段，写成普通函数。
-3. **其余一切不是组件。**
-   领域计算是函数，先留在报告旁，过上面四条判据才进公共内核；成品装配是具名 PageDefinition 或内建报告；呈现偏好是现有原语的显示属性。
+1. **原语**：text 与 web 都有现有组合无法表达的显示逻辑。
+2. **糖组件**：只组合同步纯投影和原语，不能改变数值或证据资格。
+3. **其余内容**：领域计算是 Calculation 或报告旁函数；页面装配属于 ReportPlan；呈现偏好属于现有 props。
 
-一句话判据：领域名词只能命名函数或内建报告，不能命名组件。
+自定义 renderer 必须消费已冻结的值，不能向 plan、executor 或 Store 反向请求数据。

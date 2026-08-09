@@ -66,7 +66,7 @@ history 每行给出时间、verdict、结果摘要、耗时、成本与 locator
 它是 CLI 验收的主入口：从这里断言 verdict，也从这里提取后续证据切面命令所需的 locator。
 
 ```ts
-function latestAttemptLine(evalId: string): string {
+function selectedAttemptLine(evalId: string): string {
   const lines = sh(`pnpm exec niceeval show ${evalId} --history`)
     .split("\n")
     .filter((l) => l.includes("@"));
@@ -74,18 +74,18 @@ function latestAttemptLine(evalId: string): string {
     lines.length > 0,
     `show --history 里 ${evalId} 没有任何 attempt 行——实验没跑到这条 Eval`,
   );
-  return lines.at(-1)!;
+  return onlyLineForExpectedEvalRevision(lines, evalId);
 }
 
 for (const id of EXPECTED_EVALS) {
-  const line = latestAttemptLine(id);
+  const line = selectedAttemptLine(id);
   assert.ok(
     line.includes("passed"),
-    `${id} 最新 attempt 不是 passed：${line}\n用行尾 locator 执行 pnpm exec niceeval show @<locator> 看主失败断言`,
+    `${id} 选中的 Attempt 没有 passed Verdict Claim：${line}\n用行尾 locator 执行 pnpm exec niceeval show @<locator> 看主失败断言`,
   );
 }
 
-const locator = latestAttemptLine("weather/brooklyn").match(/@\S+/)![0];
+const locator = selectedAttemptLine("weather/brooklyn").match(/@\S+/)![0];
 ```
 
 ## 用例四：`show --execution`——调用与入参都存在，OTel 数据可见

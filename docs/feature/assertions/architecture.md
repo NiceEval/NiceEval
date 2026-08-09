@@ -1,7 +1,7 @@
 # Assertions —— 架构
 
 值 matcher、作用域检查与 Judge 最终都进入同一个 Assertion collector。
-collector 只产出 `AssertionResult[]`；执行状态与断言怎样折叠成 Verdict 由 [Verdict](../verdict/README.md) 定义。
+collector 只形成 `Assertion Claim[]`；执行错误 Observation 与 Assertion Claim 怎样折叠成 Verdict Claim 由 [Verdict](../verdict/README.md) 定义。四个 verdict token 不属于 Attempt lifecycle。
 
 ```text
 value / scope / judge / sandbox / efficiency
@@ -10,9 +10,9 @@ value / scope / judge / sandbox / efficiency
            Assertion collector
                     │
                     ▼
-           AssertionResult[] ─────┐
-                                  ├──► Verdict
-Runner execution state + strict ──┘
+          Assertion Claim[] ──────┐
+                                  ├──► Verdict Claim
+执行错误 Observation + strict ─────┘
 ```
 
 ## 设计主题
@@ -24,14 +24,14 @@ Severity 与四态折叠不属于本层，见 [Verdict](../verdict/architecture.
 
 **Assertion（输入态）** 是 matcher、作用域断言与 Judge 这些「怎么查」的表达。
 例如 [`custom-assertions`](library/custom-assertions.md) 里的 `function jsonValid(): Assertion`。
-collector 把每次检查折叠成的「查出了什么」是 **`AssertionResult`（结果态）**。
-`Verdict` 表达整个 Attempt 的互斥结果。
-多个 Attempt 的报告聚合通过率和平均耗时，不制造第五种 Verdict。
+collector 把每次检查折叠成的「查出了什么」是 **Assertion Claim**。
+Verdict Claim 表达整个 Attempt revision 的互斥判断；Attempt 自身只处在 `active` / `completed` / `abandoned` lifecycle。
+多个 Attempt 的报告在固定 GraphRef 上通过 Projector 聚合通过率和平均耗时，不制造第五种 Verdict Claim。
 
-## 断言条目（AssertionResult）
+## 断言条目（Assertion Claim）
 
-`result.json` 的 `assertions` 数组元素，也是 [Severity 与 Verdict](../verdict/architecture.md) 判定规则的输入。
-字段契约单点定义在这里，[Record Format](../record/architecture.md#resultjson) 引用而不复写：
+Record 的 Assertion Claim 是 [Severity 与 Verdict](../verdict/architecture.md) 判定规则的输入。
+字段契约单点定义在这里，[Record Format](../record/architecture.md) 引用而不复写：
 
 ```typescript
 interface ProjectSourceFrame {
@@ -72,13 +72,13 @@ interface AssertionBase {
   detail?: string;
   /** 断言在 eval 源码中的声明位置与调用路径，`--source` 据此装配源码调用树。 */
   loc?: SourceLoc;
-  /** 与 ScoreEntry、用户 send 共用的 attempt 级发生顺序；历史记录可省略，当前产物必写。 */
+  /** 与 score Claim、用户 send 共用的 Attempt stream sequence；历史记录可省略，当前 Claim 必写。 */
   sourceOrder?: number;
   /** `.points(n)` 声明的可得分值；failed / unavailable 也保留，未链 points 与通过制省略。 */
   pointsAvailable?: number;
 }
 
-type AssertionResult =
+type AssertionClaim =
   | (AssertionBase & {
       outcome: "passed" | "failed";
       /** 归一化得分:值断言 0/1,judge 等打分断言 0..1。 */
@@ -111,10 +111,10 @@ type AssertionResult =
     });
 
 /**
- * `t.score(label, n)` 的直接给分记录,与 `AssertionResult` 分属两个数组——它不是一条被评估的
- * 断言,没有 severity、没有 outcome,不参与判定或质量分,只贡献分数面:
+ * `t.score(label, n)` 形成的 score Claim，与 Assertion Claim 分属两个 Claim kind——它不是一条被评估的
+ * 断言，没有 severity、没有 outcome，不参与 Verdict 或质量分，只贡献分数面：
  */
-interface ScoreEntry {
+interface ScoreClaim {
   /** 作者传入的 label,原样进报告。 */
   label: string;
   /** 直接给分,n >= 0(见[计分粒度](library/score-points.md))。 */
@@ -123,7 +123,7 @@ interface ScoreEntry {
   groupPath?: string[];
   /** 调用点，同 AssertionBase.loc。 */
   loc?: SourceLoc;
-  /** 与断言、用户 send 共用的 attempt 级发生顺序；历史记录可省略，当前产物必写。 */
+  /** 与断言、用户 send 共用的 Attempt stream sequence；历史记录可省略，当前 Claim 必写。 */
   sourceOrder?: number;
 }
 ```
@@ -137,14 +137,16 @@ interface ScoreEntry {
 普通聚合代码按 `outcome` 分支，不会把证据缺口算成零分。
 
 这份字段全集是穷尽的。
-show、view 与报告需要的每个展示字段都在表内，不存在「放入 `name` 再拆」的隐式约定。
-`expected`、`received` 与 `evidence` 是有界预览，而不是原始值。
-原始证据保存在 `events.json`、`diff.json` 等 artifact 里。
-判定只消费 `severity`、`outcome`、`optional`、`score` 与 `threshold`；`points` 与
-`pointsAvailable` 不参与判定。`pointsAvailable` 是单个给分项的分值，不是 eval 的全局满分声明；
-展示 “0 / 5” 必须读取这两个独立字段，不能从实得 `points` 或归一化 `score` 反推分母。
 
-`points` 与 `ScoreEntry` 是计分制(`defineScoreEval`)才会出现的分数面数据;通过制 eval 的 `AssertionResult` 永不带 `points`,其 attempt 条目也永不携带 `ScoreEntry`。
+- show、view 与报告需要的每个展示字段都在表内，不存在「放入 `name` 再拆」的隐式约定。
+- `expected`、`received` 与 `evidence` 是有界预览，而不是原始值。
+- 原始事件、源码与变更证据以 Observation 追加到 Record。
+  diff、trace、usage 等由固定 GraphRef 的 Projector 读取，不存在 `events.json` / `diff.json` 等私有事实文件。
+- 判定只消费 `severity`、`outcome`、`optional`、`score` 与 `threshold`；`points` 与 `pointsAvailable` 不参与判定。
+  `pointsAvailable` 是单个给分项的分值，不是 eval 的全局满分声明。
+  展示 “0 / 5” 必须读取这两个独立字段，不能从实得 `points` 或归一化 `score` 反推分母。
+
+`points` 与 Score Claim 是计分制(`defineScoreEval`)才会出现的分数面数据；通过制 eval 的 Assertion Claim 永不带 `points`，也不会形成 score Claim。它们都不进入 AttemptPayloadV1。
 两者共用同一套 `groupPath` 折叠约定, 分数面的逐层求和规则见[计分粒度](library/score-points.md#折叠树判定面分数面质量分)。
 
 计分制条目里 `severity`、`points` 与 `stopOnFailure` 分别回答硬不硬、挣不挣分、停不停：得分点是 `severity: "soft"` + 有 `points`，硬要求是 `severity: "gate"`，前置再显式带 `stopOnFailure: true`。

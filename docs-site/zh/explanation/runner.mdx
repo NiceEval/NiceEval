@@ -93,7 +93,7 @@ npx niceeval exp compare/bub       # 终端 1
 npx niceeval exp compare/bub       # 终端 2
 ```
 
-每次运行写自己的结果快照目录，互不覆盖。就算两条命令选中了同一批评估用例，NiceEval 也不会把任何一条跑两遍：每条评估用例开跑前会在 `.niceeval/locks/` 下拿一把带心跳的锁，锁是跑到哪条拿哪条，不会一口气把整批占住。
+每次运行提交自己的 Record 事实，互不覆盖。就算两条命令选中了同一批评估用例，NiceEval 也不会把任何一条跑两遍：每条评估用例开跑前会在 `.niceeval/locks/` 下拿一把带心跳的锁，锁是跑到哪条拿哪条，不会一口气把整批占住。
 
 另一次运行撞到锁，就先去跑还没人认领的评估用例——所以同一条命令开两个终端就是加速：两边自动认领不同的评估用例，各按自己的 `--max-concurrency` 推进，总吞吐接近两边之和。撞锁的评估用例在 live 面板上单独计成 `elsewhere`（别人在运行），并显示一行 `waiting on another run` 说明在等谁。
 
@@ -105,7 +105,11 @@ npx niceeval exp compare/bub       # 终端 2
 
 ## Turn 瞬时错误重试
 
-限流、连接建立失败这类瞬时错误，NiceEval 会在同一个 Turn 里自动做有限次数的指数退避重试，不需要你重跑整个实验。等待重试的 Attempt 会把全局并发名额让给别的 Attempt，但实验自己的 `maxConcurrency` 名额不让——声明了 `maxConcurrency: 1` 的串行实验在退避期间也不会有第二个 Attempt 提前进场。只有能确认 Agent 还没开始处理这次输入的错误才会重试——请求已经开始、中途断流的情况不重试，直接记为 `errored`，避免 Agent 把已经做过的操作再做一遍。重试用尽仍失败时，该 Attempt 记为 `errored`，下次运行照常重试（见上面的缓存规则）。
+限流、连接建立失败这类瞬时错误，NiceEval 会在同一个 Turn 里自动做有限次数的指数退避重试，不需要你重跑整个实验。
+
+等待重试的 Attempt 会把全局并发名额让给别的 Attempt，但实验自己的 `maxConcurrency` 名额不让。声明了 `maxConcurrency: 1` 的串行实验在退避期间，也不会有第二个 Attempt 提前进场。
+
+只有能确认 Agent 还没开始处理这次输入的错误才会重试。请求已经开始或中途断流时，不重试，直接形成 `errored` Verdict Claim，避免 Agent 把已经做过的操作再做一遍。重试用尽仍失败时，该 Attempt 也形成 `errored` Verdict Claim；下次运行照常重试（见上面的缓存规则）。
 
 ## 声明失败的波及范围
 
@@ -118,7 +122,7 @@ import { ExperimentFatalError } from "niceeval";
 throw new ExperimentFatalError("记忆服务探活失败——修好隧道、更新 .env 后重跑");
 ```
 
-只影响一条评估用例的死因（fixture 缺失）抛 `EvalFatalError`，只停这一条的剩余 Attempt，别的评估用例照常跑。错误 message 会原样出现在终端通知和结果快照里，写成「现象 + 下一步」，就是留给修的人的字条。服务在 run 中途死掉、失败以连接错误的形态冒出来时，给 Experiment 配 `classifyFailure`，只认自己共享服务的 host 来识别它。
+只影响一条评估用例的死因（fixture 缺失）抛 `EvalFatalError`，只停这一条的剩余 Attempt，别的评估用例照常跑。错误 message 会原样出现在终端通知和 Record 里，写成「现象 + 下一步」，就是留给修的人的字条。服务在 run 中途死掉、失败以连接错误的形态冒出来时，给 Experiment 配 `classifyFailure`，只认自己共享服务的 host 来识别它。
 
 停下来的 Attempt 计入 `unstarted`，这次运行的结论是 `incomplete`，不会伪装成全绿。同批其它 Experiment 不受影响。修好环境后重跑同一条命令就是续跑：已通过的照常复用，只补跑死掉与没跑的部分，没有任何标记要解除。只声明你能确定的死因——「看起来像基建问题」不算确定。拿不准就让它落成单条 Attempt 的失败，多烧的是一个 Sandbox 的钱，错停的是整批数据。
 
@@ -136,22 +140,22 @@ npx niceeval exp local --timeout 300000 --budget 5
 
 ```bash
 npx niceeval exp local          # 人读文本：TTY 下原地刷新 live 面板，非 TTY（管道、CI 日志）自动降级成只追加的文本流
-npx niceeval exp local --json   # 机器面：stdout 一行一个 JSON 对象，start 打头、result 收尾
+npx niceeval exp local --json   # 机器面:stdout 一行一个 InvocationMachineRecord,LiveRecord 末尾一条 receipt
 ```
 
 `--json` 不逐条打印每次状态变化：只有失败、错误和去重后的 warning 立即追加一行，长时间没有这些事件才补一条 `progress` 心跳。两种形态读取同一套事实，调度、判定和 artifact 完全一致，只是呈现不同。
 
 Runner 在评估用例完成后把结果交给 Reporters：
 
-- JSON artifacts 用于后续分析。
+- `Json(path)` 保存同一份 LiveRecord 流与最终 `InvocationReceipt`，供后续分析。
 - JUnit reporter 适合 CI。
 - Braintrust reporter 把一次运行作为实验上报，跨提交比较。
 
 挂载方式和 Braintrust 配置见 [Reporter 上报](/zh/tutorials/reporters)。
 
-## 输出目录
+## 结果写入 Record
 
-每次运行会写入该实验的结果快照目录 `.niceeval/<experiment>/<快照>/`。目录包含快照级 `snapshot.json`。每个 Attempt 的 `result.json`（判定、断言、结构化错误、diagnostics）和按需生成的 `events.json`、`sources.json`、`trace.json`、`o11y.json`、`diff.json` 等拆分 artifact。瞬时 progress 不落盘。
+每次运行把判定、断言、结构化错误与 diagnostics 随 Attempt 提交进 `.niceeval/` 这个长期 Record 事实根。事件、源码、trace、o11y 与 diff 以 Observation 事实保存，读取面由 Projector 重建。瞬时 progress 不落盘。
 
 ## 推荐调试流程
 

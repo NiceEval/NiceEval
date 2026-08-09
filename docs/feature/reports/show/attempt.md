@@ -1,95 +1,51 @@
 # 单 Attempt 默认详情
 
-范围恰好命中一个 Attempt 且没有显式切片时，`show` 调用 `attemptDetailsResult(attempt)`，再用 Attempt 详情的 text 面显示结果。
-同一 Result 也供 `--json` 使用。
+范围恰好选择一个 Attempt、且没有显式切片时，`show` 先形成只含该成员的固定 Sample。标准 ReportDefinition 的 `plan()` 枚举对应详情 instance、所需 Projector 与 Calculation；executor 生成 ReportData 后，text 面只渲染这份数据。
+
+同一个 ReportData 子树也供 `--json` 使用。两种输出不会各自读取 Record 或重新计算证据。
 
 ## 默认顺序
 
-1. locator、Experiment、Eval、Attempt 与 verdict。
-2. 开始时间、耗时、成本、得分与 usage。
-3. facts：`ctx.fact()` 上报的运行事实完整键值表，有才显示。
-4. 结构化 error 与 persisted diagnostics。
-5. 标注 Eval 源码；源码不可用时显示断言表。
-6. 生命周期 timing。
-7. 对话、trace 与 diff 的紧凑摘要。
+1. 完整 AttemptRef、origin Run、membership slot 与 adopted revision。
+2. verdict、usage、耗时、成本、得分和其它已交付读数。
+3. unavailable evidence 的全部 causes 与 basedOn，或 available limited evidence 的 verification 与全部 issues。
+4. snapshot facts、notice、源码、执行、时间线、对话、trace 与文件差异的已计划投影。
+5. 同一 ReportPlan 已存在的下钻 target。
 
-每类证据各自决定是否有内容。
-缺失时整块省略或显示明确缺失，不留下空标题，也不猜一个零值。
+每个区块都由 plan 中的 data request 决定。没有可显示内容时，区块输出零内容或原样显示 unavailable；不能猜零值、主因或成功状态。
 
-顶部 text 摘要的耗时与执行时间轴使用同一 `formatDurationMs` 口径；例如落盘值
-`254334ms` 显示为 `@1qrdcfq8 · passed · 4m 14s`，不会把原始毫秒直接拼进用户输出。
+顶部摘要、时间线与表格复用同一份 MetricValue 和 EvidenceValue。格式化只改变 text/web 形状，
+不改变 coverage、refs、unavailable causes / basedOn 或 available verification / issues。
 
-## Usage
+## Usage 与 facts
 
-`usageResult(attempt)` 是详情、`--usage` 与 JSON 的共同结果。
-轮数与工具调用数来自标准事件流；token 与请求计数来自落盘 Usage；成本来自相同 Attempt 事实。
+Usage Projector 声明行为计数、token、请求和成本所需的 snapshot 事实。缺少任一字段时，输出相应 EvidenceValue；详情和 `--usage` 使用同一数据入口，聚合策略由该 target 的 Calculation 明确声明。
 
-缓存拆分存在时，输入 token 区分 uncached input 与 cache read。
-协议没有拆分事实时只显示 input tokens。
+Facts Projector 读取与 AttemptRef 绑定的 snapshot facts，并交付完整键值表。开放键集合不会在 renderer 中按 key 名扩展成新的查询；没有内容时详情不摆空表。具体值形状见 [Attempt Facts](../components/attempt-detail/attempt-facts.md)。
 
-```text
-usage: 6 turns · 21 tool calls · 62.3k uncached in
-       + 942.6k cache read / 6.7k out · 24 requests · $1.14
-```
+## 源码、notice 与时间线
 
-某段事实缺失时对应片段整段省略；全部缺失时 usage 行不出现。
+源码、断言、notice、生命周期、对话和 diff 都是 plan 中预先列出的投影。Source、Execution、Timing 与 Diff target 可以把同一 ReportData 的相应部分排成不同显示形状，但不能以 flag 或展开操作补发读取。
 
-## Facts
-
-`factsResult(attempt)` 是详情与 JSON 的共同结果，把 `AttemptRecord.facts`（[运行时观测](../../record/architecture.md#facts运行事实)）投影成完整键值表——facts 是开放键集合，不像 Usage 有固定小字段，因此渲染整张表而不是压成一行摘要。
-
-```text
-facts:
-  memory.notesLoaded       73
-  nowledge.endpoint        https://tunnel.example
-```
-
-没有 `ctx.fact()` 上报过任何事实时整块省略，不摆空表。
-按落盘 key 的插入顺序显示，不重新排序。
-组装口径单源见 [Attempt Facts](../components/attempt-detail/attempt-facts.md)。
-
-## 断言与源码
-
-有 Eval 源码时，`toAttemptSource(attempt)` 返回标注源码；否则 `toAttemptAssertions(attempt)` 返回断言 rows。
-两条路径使用同一份 AssertionResult 和源码锚。
-
-失败断言按原始声明顺序显示，并保留 group、matcher、expected、received 与位置。
-全通过断言可以按 group 折叠；计分制得分点无论 passed 与否都逐条显示。
-
-## 错误与 diagnostics
-
-`toAttemptNotices(attempt)` 把结构化 error 和 diagnostics 转成 Callout items。
-error phase、diagnostic phase 与 timing 使用同一套 LifecyclePhase 名字。
-未知 diagnostic code 保留原始 detail，不猜 action。
-
-diagnostic level 不等于 verdict。
-passed 或 failed Attempt 也可以带 cleanup warning。
-
-## Timing
-
-`toTimelineNodes(attempt)` 返回主链阶段与子节点。
-紧凑首页保留每个存在的 LifecyclePhase，并折叠子节点；`--timing` 显示同一结果的完整 text 投影。
-
-没有 phases 时整块省略，不从总耗时猜阶段。
+导出时，源 Record 中已有而不能复制或验证的依据使导出失败；它不能在详情中伪装成 `not-recorded` 或普通 unavailable。
 
 ## 显式切片
 
-- [`--source`](eval-source.md) —— 完整标注源码或单文件。
-- [`--execution`](execution.md) —— 对话与工具调用。
-- [`--timing`](timing.md) —— 生命周期阶段与 spans。
-- [`--usage`](usage.md) —— 范围内用量表。
-- [`--diff`](diff.md) —— 文件差异。
+- [`--source`](eval-source.md) —— 已计划的源码或断言投影。
+- [`--execution`](execution.md) —— 已计划的对话与工具调用投影。
+- [`--timing`](timing.md) —— 已计划的生命周期阶段与 spans。
+- [`--usage`](usage.md) —— 固定 Sample 上的 usage target。
+- [`--diff`](diff.md) —— 已计划的文件差异投影。
 
-这些切片各调用一个公开任务函数，不从 AttemptDetails 组件树切数据。
+这些切片各有确定 target；没有一条从 AttemptDetails 组件树反向抽取数据。
 
 ## 自定义报告
 
-项目配置的默认报告不接管 `show @<locator>`；这条命令始终提供官方诊断首页，与 `--source`、`--execution`、`--timing`、`--usage`、`--diff` 组成稳定的证据读取面。
-
-只有显式带 `--report <file>` 时，单 Attempt 范围才进入该报告的 `attempt` page。报告没有这张参数化页时命令报错；显式选择报告意味着要求它负责呈现，宿主不静默换回官方详情。
+显式 `--report <file>` 时，固定 Sample 中的 Attempt 只有在所选定义已于 plan 中枚举其详情 instance 时才可打开。没有该 instance 则命令报错；宿主不静默换回标准详情。
 
 ## 相关阅读
 
 - [`AttemptDetails`](../components/attempt-detail/README.md)
-- [show](../show.md)
-- [ShowJson](json.md)
+- [Show](../show.md)
+- [Show JSON](json.md)
+- [Reports Library · 参数化页](../library.md#参数化页attempt-与-experiment-详情)

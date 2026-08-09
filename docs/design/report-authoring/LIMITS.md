@@ -137,8 +137,8 @@ page render 直接接收 Sample 或 AttemptEvidence，调用普通函数后把�
 
 ## Record 不是数据库
 
-结果是文件树：`result.json` 逐 attempt 一份，`o11y.json`、diff 与 trace 是按需读取的 artifact。
-任何查询面都要先回答「什么时候从磁盘读取、一次读取多少」，而懒加载正是大 artifact 不拖垮树读取的原因。
+结果是事实对象图：Attempt payload 逐 attempt 一份，Observation stream、diff 与 trace 是按需读取的 typed payload。
+任何查询面都要先回答「什么时候从 Record 读取、一次读取多少」，而闭包与懒加载正是大事实对象不拖垮读取的原因。
 
 ## 结果形状不是平表
 

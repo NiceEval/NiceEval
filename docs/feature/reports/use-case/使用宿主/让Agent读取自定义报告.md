@@ -8,14 +8,12 @@ niceeval show
 niceeval show memory/retention --page failures
 ```
 
-两个宿主选择同一份 Sample，并执行同一个 page render。
-一个 page 实例产生的同一棵值树分别交给 text 与 web renderer。
+两个宿主形成同一类固定 Sample，并执行同一个 ReportDefinition 的一次 `plan()`。每个 page instance 的 `render(data)` 只运行一次；text 与 web renderer 分别呈现同一棵不可变树。
 
-web 可以提供排序、tooltip、折叠与 dialog；text 使用声明过的降级表达相同终值、缺失与证据 refs。
-几何不必相同，事实不能静默减少。
+web 可以提供排序、tooltip、折叠与 dialog；text 使用声明过的降级形状显示相同的已定值与 evidence
+refs，并保留 available verification / issues 或 unavailable causes / basedOn。几何不必相同，事实
+不能静默减少。
 
-需要稳定机器形状时，使用内建 show 切片的 `--json`。
-任意自定义报告树不序列化成 JSON；机器结果来自公开任务函数。
+需要稳定机器形状时，使用内建 show target 的 `--json`。任意自定义组件树不序列化成 JSON；机器交付使用公开 `exportReport()` 或内建 ReportData target。
 
-报告声明 attempt page 后，浏览器 locator 与 `niceeval show @<locator>` 进入同一 PageDefinition。
-未声明时浏览器仍使用官方详情页，而 show 保留普通 locator 文本；要让两面共用官方定义，把 `standardAttemptPage` 放进自己的 pages 数组。
+报告用 `attemptDetailPages(sample, …)` 枚举详情 instance 后，浏览器深链与 `niceeval show @<locator> --report …` 才能指向同一 instance。没有枚举时，宿主明确报错；不会回落到另一张页面或在 render 时读取 Attempt。

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 400" role="img" aria-labelledby="figTitle figDesc">
-  <title id="figTitle">结果携带必须通过五道门</title>
-  <desc id="figDesc">一条历史 Attempt 依次通过终态、指纹、超时资格、rerun 口径和留存模式五道门后才被携带，任何一门失败都转为真实派发。</desc>
+  <title id="figTitle">Attempt 采用必须通过五道门</title>
+  <desc id="figDesc">一条历史 Attempt 依次通过终态、指纹、超时资格、rerun 口径和留存模式五道门后，才以 carried Contribution 进入本次 Run。任何一门失败都转为真实派发。</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
       <path d="M0 0 L8 4 L0 8 z" fill="#74747b" />
@@ -36,7 +36,7 @@
     </style>
   </defs>
   <rect x="0.5" y="0.5" width="1239" height="399" class="canvas" />
-  <text x="32" y="48" class="title">携带资格：六门串联，缺一门就真派发</text>
+  <text x="32" y="48" class="title">携带资格：五门串联，缺一门就真派发</text>
   <text x="32" y="88" class="label mono">历史 Attempt</text>
   <path d="M176 112 H1192" class="rule-strong" />
   <rect x="176.5" y="96.5" width="175" height="104" class="box" /><text x="196" y="126" class="label">终态</text><text x="196" y="158">passed</text><text x="196" y="182">failed</text>
@@ -44,6 +44,6 @@
   <rect x="576.5" y="96.5" width="175" height="104" class="box" /><text x="596" y="126" class="label">资格</text><text x="596" y="158" class="mono">executionMs</text><text x="596" y="182">未超时</text>
   <rect x="776.5" y="96.5" width="175" height="104" class="box" /><text x="796" y="126" class="label">口径</text><text x="796" y="158" class="mono">--rerun</text><text x="796" y="182">仍采信</text>
   <rect x="976.5" y="96.5" width="215" height="104" class="box" /><text x="996" y="126" class="label">模式</text><text x="996" y="158">无当前</text><text x="996" y="182">留存 Sandbox</text>
-  <path d="M1192 148 V248 H1000" class="arrow" /><rect x="800.5" y="232.5" width="399" height="80" class="box good-s" /><text x="820" y="262" class="label good">携带进本次 Run</text><text x="820" y="286" class="note">不花 agent / sandbox 成本</text>
+  <path d="M1192 148 V248 H1000" class="arrow" /><rect x="800.5" y="232.5" width="399" height="80" class="box good-s" /><text x="820" y="262" class="label good">carried Contribution 采用</text><text x="820" y="286" class="note">Attempt 的 origin 与 locator 不变</text>
   <path d="M248 200 V344 H600 M408 200 V344 M568 200 V344 M728 200 V344 M888 200 V344 M1080 312 V344 H600" class="bad-s rule-strong" /><text x="448" y="376" class="bad">任一门失败 → 真派发</text>
 </svg>

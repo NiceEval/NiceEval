@@ -148,7 +148,8 @@ Runner 优先读取 `Turn.data`。
 Runner 不从普通叙事中搜索或猜测对象边界。
 
 第一次返回不合 schema 时，Runner 在同一 Agent Session 发送一次只包含校验错误的修正请求。
-第二次仍不合法时，Assertion 记 `unavailable`，reason 为 `agent-judge-invalid-decision`。
+第二次仍不合法时，Assertion 形成 `outcome: "unavailable"` 的 Assertion Claim，reason 为 `agent-judge-invalid-decision`，
+并引用响应校验 Observation。
 这次修正是协议续接，不重新创建工作区，也不重新执行整条裁判任务。
 
 ## 错误与 unavailable
@@ -162,4 +163,5 @@ Runner 不从普通叙事中搜索或猜测对象边界。
 | `agent-judge-timeout` | 整条裁判生命周期耗尽 `judge.agent.timeoutMs` |
 
 以上原因都不产生 0 分。
-它们进入既有 `unavailable` 数据；非 `.optional()` 使 Attempt `errored`，`.optional()` 只允许该证据缺席。
+它们先作为结构化执行错误 Observation，再进入既有 `unavailable` Assertion Claim；非 `.optional()` 使 Verdict collector
+形成 `errored` Verdict Claim，`.optional()` 只允许该证据缺席。它们从不成为 Attempt lifecycle state。

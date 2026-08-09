@@ -5,12 +5,14 @@
 错误是 SDK、CLI、网络栈制造的,制造者用不了 niceeval 的 fatal 错误类;回退分类器只认通用形状,认不出私有知识。
 两个真实场景:
 
-- **实验作者**:探活只在 setup 阶段跑。
-  实验级 `setup` 时隧道还活着、跑到一半死掉,后续失败不再长成「探测 failed」——它以第三方错误的形态浮出:agent 在 turn 里调记忆服务撞 `ECONNREFUSED`,turn 失败、attempt `errored`,一条条重复。
+- **实验作者**：探活只在 setup 阶段跑。
+  实验级 `setup` 时隧道还活着、跑到一半死掉，后续失败不再长成「探测 failed」。
+  它以第三方错误的形态浮出：agent 在 turn 里调记忆服务撞 `ECONNREFUSED`，turn 失败。
+  Attempt 写入执行错误 Observation 并形成 `errored` Verdict Claim，一条条重复。
   回退看不出这是实验级死因(连接错误千千万),adapter 也不认识(它懂自家 CLI 协议,不懂你的实验拓扑)——知道「这个 host 是全实验共享的隧道」的只有你。
   挂载点:`ExperimentDefinition.classifyFailure`。
 - **adapter 作者**:对接的 agent 服务有自己的限流表达——不是 429、文案里也没有 "retry later",比如固定短语 `ACME_QUEUE_FULL` 加退出码 75。
-  回退只能判不可重试,每次撞上都白白 `errored`,批跑里还可能连续复现触发 fail-fast——协议知识在你手里。
+  回退只能判不可重试,每次撞上都白白形成 `errored` Verdict Claim，批跑里还可能连续复现触发 fail-fast——协议知识在你手里。
   挂载点:`Agent.classifySendFailure`；是否未受理先由 Adapter 写入 `SendFailure.acceptance`。
 
 两个挂载点走同一条纪律:**取证 → 裁决可证明性 → 挂分类器 → 验证**。
@@ -18,7 +20,7 @@
 ## 全流程
 
 1. **取证**。
-   从 `errored` 的 message 拿到原始文案(分类器读的失败文本与它同源,见 [Architecture · 分类链](../architecture.md#分类链)),确认没有重试摘要后缀(= 当前被判不可重试):
+   从 `errored` Verdict Claim 所基于执行错误 Observation 的 message 拿到原始文案(分类器读的失败文本与它同源,见 [Architecture · 分类链](../architecture.md#分类链)),确认没有重试摘要后缀(= 当前被判不可重试):
 
    ```text
    This send returned failed (turn status = failed): agent run exited with code 1 ·
@@ -66,8 +68,10 @@ adapter factory 上只认协议短语(完整写法与要点见 [Library](../libr
 4. **验证**。
    单元层用按脚本失败的 fake agent 断言分类结果;真实运行里的生效观察面:
 
-   - 实验分类器命中：该失败判为终局（`retryable: false`，不进重试）且携带 `scope: "experiment"`——attempt 照常 `errored`，实验止损生效，反馈流出现 `experiment halted (dispatch-halted)`（`reason` 词进诊断文案）。余量计 `unstarted`、其它实验不连坐。
-     attempt 照常 `errored`,实验止损生效,反馈流出现 `experiment halted (dispatch-halted)`(`reason` 词进诊断文案),余量计 `unstarted`、其它实验不连坐。
+   - 实验分类器命中：该失败判为终局（`retryable: false`，不进重试）且携带 `scope: "experiment"`。
+     Attempt 照常收敛 lifecycle，执行错误 Observation 形成 `errored` Verdict Claim，实验止损生效。
+     反馈流出现 `experiment halted (dispatch-halted)`，并把 `reason` 写进诊断文案。
+     余量计 `unstarted`，其它实验不连坐。
      修好后重跑即续跑,止损语义与[抛出点声明](declare-fatal-scope.md)完全相同。
    - adapter 分类器命中:activity 行出现 `turn retry 2/4 (acme_queue_full)`,重试成功的 attempt 结果零痕迹。
 

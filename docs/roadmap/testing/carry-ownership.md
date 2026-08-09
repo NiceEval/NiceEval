@@ -34,7 +34,7 @@ Repo 中运行安装后的 `pnpm exec niceeval exp`，从公开 `--dry --json` �
 | manifest comparison | fingerprint 不同且无 delta 时仍返回 unchanged；缺 manifest 时猜出具名差异 |
 | migration audit | 自动迁移伪装成人工 accept；from / to 版本未校验 |
 
-真实 Repo 不重复这张表，只选择能证明 CLI 接线与历史 bug 的代表。反过来，Unit 不模拟安装后的 CLI、外部 cwd、持久化结果根
+真实 Repo 不重复这张表，只选择能证明 CLI 接线与历史 bug 的代表。反过来，Unit 不模拟安装后的 CLI、外部 cwd、持久化 `.niceeval` RecordStore
 或三次用户运行来冒充 E2E。
 
 取锁后重查、并发 lease 与 retry 时序不是 fingerprint 输入矩阵的更多 case。它们各自在带 barrier / fake clock 的 Unit 文件里
@@ -58,7 +58,7 @@ const current = manifestFixture.current({ config: { model: "new" } });
 const legacy = manifestFixture.legacy({ config: { model: "old" } });
 
 const previousResult = dryPlanFixture.previousResult({
-  locator: "@1A1B2C3D4E5F",
+  locator: "@2VRHPQ4D2KG9EFW5TB8167MXJ3",
   comparison: comparisonFixture.changed({
     selector: "config:model",
     from: "old",
@@ -78,7 +78,7 @@ builder；需要 fixture 自己计算预期才能继续通过时，应先停下�
 | Human / JSON 各自复制 carry 矩阵 | 删除矩阵，只留各自输出差异 | 对应 formatter / schema Unit |
 | results / accept 手写完整 manifest | 改用最小 builder，不新增重复测试 | 原 Record / Accept Unit |
 | 完整运行中重复穷举 fingerprint 输入 | 只留计划与实际携入闭环 | Runner carry 场景 Repo |
-| 共享结果根中的 full / partial 顺序测试 | 移入隔离副本 | `runner/carry-reuse.test.ts` 单边界 E2E |
+| 共享 RecordStore 中的 full / partial 顺序测试 | 移入隔离副本 | `runner/carry-reuse.test.ts` 单边界 E2E |
 
 迁移完成必须满足：
 

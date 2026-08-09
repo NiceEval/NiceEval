@@ -14,7 +14,7 @@ description: "NiceEval 内置的 claude-code、codex、bub 适配器分别做到
 | 事件流完整性 | `calledTool` / `toolOrder` / `usedNoTools` / `maxToolCalls` / `messageIncludes` / `noFailedActions` / `event` / `eventOrder` 等整套作用域断言。**负断言（`notCalledTool` 等）有完整事件流才可信** |
 | 会话续接 | 跨轮记忆断言、`t.newSession()` 会话隔离 |
 | HITL（人工介入） | `t.parked()`、`t.requireInputRequest()`、`t.respond()` / `t.respondAll()` |
-| `tracing` | `EvalResult.trace`、`niceeval view` 的调用瀑布图 |
+| `tracing` | trace Projection、`niceeval view` 的调用瀑布图 |
 
 ## 三个内置 agent 分别做到哪
 
@@ -37,9 +37,9 @@ description: "NiceEval 内置的 claude-code、codex、bub 适配器分别做到
 ### claude-code
 
 - 连接方式：Sandbox 里 spawn `claude --print --dangerously-skip-permissions`，读回 `~/.claude/projects/**/*.jsonl` 最新一份 transcript。
-- 会话续接：`ctx.session.id` 有值时追加 `--resume <id>`。transcript 解出的会话 id 经 `ctx.session.capture()` 写回。
-- 鉴权：`ANTHROPIC_API_KEY`，可选 `ANTHROPIC_BASE_URL`。配置项见下方 `ClaudeCodeConfig`。
-- `tracing` 通过 claude CLI 原生 OTLP trace spans（beta）配置，协议是 `http/protobuf`。env 里设置 `CLAUDE_CODE_ENABLE_TELEMETRY` 与 `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA`（beta 开关，须显式开启）把 endpoint 交给 CLI。`EvalResult.trace` 能看到 interaction / llm_request / tool 层级的瀑布图。
+- 会话续接：`ctx.session.id` 有值时追加 `--resume <id>`；transcript 解出的会话 id 经 `ctx.session.capture()` 写回。
+- 鉴权：`ANTHROPIC_API_KEY`，可选 `ANTHROPIC_BASE_URL`；配置项见下方 `ClaudeCodeConfig`。
+- `tracing` 通过 claude CLI 原生 OTLP trace spans（beta）配置，协议为 `http/protobuf`。在 env 中设置 `CLAUDE_CODE_ENABLE_TELEMETRY` 与 `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA`（须显式开启的 beta 开关），即可把 endpoint 交给 CLI。trace Projection 显示 interaction / llm_request / tool 层级的瀑布图。
 
 ### codex
 

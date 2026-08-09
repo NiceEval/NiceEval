@@ -1,51 +1,24 @@
 # `--diff`：核对 agent 实际改动
 
-`--diff` 是 attempt-detail 组件族对应区块的 text 面，显示的是 [agent 归因增量](../../sandbox/architecture.md#变更归因send-区间与分类账)：只有 agent 在 send 区间内改动的文件，起始 fixture 与验证材料不混在里面。
-单独使用 `--diff` 是文件级摘要——状态、增删行数、哪几轮改的：
+`--diff` 是 Attempt detail 的 Diff target。
+plan 声明 Diff Projector，executor 交付 `EvidenceValue<readonly DiffFile[]>`，text 与 web 显示同一份结果。
 
-```text
-$ niceeval show @1qrdcfq8 --diff
-@1qrdcfq8 · memory/swelancer-manager-proposals · dev-e2b/codex-e2b · failed
-
-2 files changed by agent
-  M manager_decisions.json   +6 -2    turn1, turn2
-  A notes/decision-log.md    +18      turn2
-
-single file: niceeval show @1qrdcfq8 --diff=manager_decisions.json
+```sh
+niceeval show @01J4C6N8PQRS2TVWXY9ZABCD3E --diff
+niceeval show @01J4C6N8PQRS2TVWXY9ZABCD3E --diff=src/example.ts
 ```
 
-`--diff=<path>` 输出单文件 patch，**按 send 区间逐段渲染**（`diff.json` 存的就是逐区间 delta，区间之间可能夹着 eval 侧写入，不产出跨区间合成 patch）。
-区间分隔按[隔条](../library/layout.md#区域框text-面的框线体裁)渲染成 `── window <turn>`，不套面板框：patch 正文要保持逐行可复制、可直接喂给 `git apply` 一类工具，框线前缀会把它废掉：
+默认输出文件摘要：状态、增删行数、已建立的 change window 与完整 AttemptRef。
+路径模式是规范化 target 参数，必须对应 Plan 已枚举的 Diff data；它不会在命令执行时扫描工作目录。
 
-```text
-$ niceeval show @1qrdcfq8 --diff=manager_decisions.json
-M manager_decisions.json · touched in turn1, turn2
+patch 按 Projector 已建立的 change interval 分段显示，不合成跨区间 patch。
+二进制或预算省略的内容保留明确状态和 causes，不能假装没有改动。
 
-── window turn1
-@@ -1,5 +1,6 @@
- {
--  "15193": { "selected_proposal_id": 1 },
-+  "15193": { "selected_proposal_id": 4 },
-
-── window turn2
-@@ -2,6 +2,7 @@
-+  "15201": { "selected_proposal_id": 2 },
-```
-
-`--diff=<path>` 必须用 `=` 连写，空格后的 token 会被当作 eval id 位置参数。
-二进制文件在摘要里显示字节数变化，不输出 patch。
-`diff.json` 缺失（direct agent、或发布时未带 `diff`）时如实输出 `diff unavailable` 并说明原因，不猜。
-
-摘要与单文件 patch 都读 [`diffResult(attempt)`](../components/attempt-detail/attempt-diff.md) 这一份投影。
- web 面把同一批文件排成[路径树](../components/primitives/diff-view.md#web-面路径树)，行首字母、增删行数与区间标签逐字同源。
-
-读取历史 `diff.json` 时，旧 artifact 的坐标标签作为落盘值原样保留，不回写迁移；但在
-`show --diff` 与 web 展示边界归一为 `turnN` 或 `sessionK/turnN`。其它 opaque window
-标签原样保留。
+源 Record 没有 workspace-change evidence 时，Diff target 显示 unavailable。
+源 Record 中已有、但 export 无法复制或验证时，导出失败而不是显示普通缺失。
 
 ## 相关阅读
 
-- [`--execution`](execution.md) —— 改动发生的那一轮说了什么、调了什么工具。
-- [Attempt diff](../components/attempt-detail/attempt-diff.md) —— 差异的出处、派生规则与可用性。
-- [`DiffView`](../components/primitives/diff-view.md) —— 值形状与 web 面的路径树。
-- [Record Library](../../record/library.md) —— `diff.json` 的区间结构与脚本消费。
+- [Attempt diff](../components/attempt-detail/attempt-diff.md) —— Diff Projection。
+- [`DiffView`](../components/primitives/diff-view.md) —— web 面。
+- [show](../show.md) —— target 选择。

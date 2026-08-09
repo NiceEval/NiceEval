@@ -15,12 +15,12 @@ $ niceeval show --exp dev-e2b/codex-e2b --usage
 用量 · dev-e2b/codex-e2b · 6 个 attempt
 
 locator      eval                                 结果    turns   tools   uncached in   cache read     out    requests   成本
-@160iuj3h    memory/agent-037-updatetag-cache     ✓ 通过      4       9         48.2k       201.5k    5.1k         13   $0.09
-@1sxmo0m1    memory/repomod-hello-world-api       ✓ 通过     11      28        122.9k       1.98M    12.4k         39   $0.57
-@1qrdcfq8    memory/swelancer-manager-proposals   ✗ 失败      2       3         13.9k        38.2k    6.4k          9   $0.05
-@1pcdj0az    memory/terminal-cancel-async-tasks   ✓ 通过      6      14         71.0k       513.7k    8.0k         20   $0.13
-@13wrnsc4    memory/terminal-pypi-server          ✗ 失败      7      19         88.3k       690.1k    9.2k         26   $0.19
-@18etnsw5    memory/tool-call-observability       ✓ 通过      1       2          6.1k        11.0k    1.8k          3   $0.02
+@01J4C6N8PQRS2TVWXY9ZABCD3E    memory/agent-037-updatetag-cache     ✓ 通过      4       9         48.2k       201.5k    5.1k         13   $0.09
+@01J4C6N8PQRS2TVWXY9ZABCD3F    memory/repomod-hello-world-api       ✓ 通过     11      28        122.9k       1.98M    12.4k         39   $0.57
+@01J4C6N8PQRS2TVWXY9ZABCD3G    memory/swelancer-manager-proposals   ✗ 失败      2       3         13.9k        38.2k    6.4k          9   $0.05
+@01J4C6N8PQRS2TVWXY9ZABCD3H    memory/terminal-cancel-async-tasks   ✓ 通过      6      14         71.0k       513.7k    8.0k         20   $0.13
+@01J4C6N8PQRS2TVWXY9ZABCD3J    memory/terminal-pypi-server          ✗ 失败      7      19         88.3k       690.1k    9.2k         26   $0.19
+@01J4C6N8PQRS2TVWXY9ZABCD3K    memory/tool-call-observability       ✓ 通过      1       2          6.1k        11.0k    1.8k          3   $0.02
 
 合计                                              4/6 通过    31      75        350.4k       3.43M    42.9k        110   $1.05
 ```
@@ -28,11 +28,11 @@ locator      eval                                 结果    turns   tools   unca
 - 行按 experimentId、evalId、attempt 序排列；范围含多个 experiment 时逐 experiment 分节，节尾各自合计。
 - 缺失字段的格显示 `—`，且不计入合计——缺 usage 不按零聚合，与[证据完整性](../../adapters/architecture/evidence.md)同一条纪律；合计行有任何 `—` 参与的列在数值后标 `*`，表示合计不完整。
 - 对照范围（重复 `--exp`）下，`--usage` 输出逐 eval 的用量矩阵：每条件一组列，配对与占位规则同[对照矩阵](compare.md)。
-- `--json` 输出同一批 `AttemptSnapshot` 的结构化数组，信封与指针见 [`--json`](json.md)；逐字段形状不在这里重复声明。
+- `--json` 输出同一批完整 AttemptRef 与 EvidenceValue 的结构化数据，信封与指针见 [`--json`](json.md)；逐字段形状不在这里重复声明。
 
 ## 相关阅读
 
-- [Attempt 详情组件 · `AttemptUsage` 组装口径（单源）](../components/attempt-detail/attempt-usage.md#组装口径单源) —— 组装口径与 `AttemptSnapshot` 形状的单源。
+- [Attempt 详情组件 · `AttemptUsage` 组装口径（单源）](../components/attempt-detail/attempt-usage.md#组装口径单源) —— 组装口径与完整 AttemptRef 的单源。
 - [Record · Usage 与 facts](../../record/architecture.md#usage) —— 落盘字段的家。
 - [失败诊断首页](attempt.md) —— 单 attempt 的 `usage:` 行。
 - [对照矩阵](compare.md) —— 条件间的用量差。

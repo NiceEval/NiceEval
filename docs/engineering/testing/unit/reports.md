@@ -22,18 +22,18 @@ const scope = reportScopeFixture({
     {
       id: "compare/codex",
       evals: [
-        { id: "a", attempts: ["passed", "failed", "passed"] }, // 题内 2/3
-        { id: "b", attempts: ["passed"] }, // 题内 1
-        { id: "c", attempts: ["errored"] }, // 端到端记 0
-        { id: "d", attempts: ["skipped"] }, // 不进有效样本
+        { id: "a", verdictClaims: ["passed", "failed", "passed"] }, // 题内 2/3
+        { id: "b", verdictClaims: ["passed"] }, // 题内 1
+        { id: "c", verdictClaims: ["errored"] }, // 端到端记 0
+        { id: "d", verdictClaims: ["skipped"] }, // 不进有效样本
       ],
     },
   ],
 });
 ```
 
-这个 fixture 中端到端两级聚合 = 5/9、排除 errored 的条件口径 = 5/6、attempt 平铺 = 3/5、先折叠 verdict 再计票 = 2/3——四个值彼此不同，测试才能发现口径被换掉。
-各题 attempt 数必须不同，否则两级聚合与平铺可能恰好相等。
+这个 fixture 中端到端两级聚合 = 5/9、排除 `errored` Verdict Claim 的条件口径 = 5/6、Attempt 平铺 = 3/5、先折叠 Verdict Claim 再计票 = 2/3——四个值彼此不同，测试才能发现口径被换掉。
+各题 Attempt revision 数必须不同，否则两级聚合与平铺可能恰好相等。
 
 **MetricValue fixture** 共享三种不能混淆的值：measuredZero（value 0、有样本）、partial（有值、证据完整度不满）、missing（value null、零样本）。
 每个组件至少验证 `null` 不被显示成 `0`、partial 保留证据完整度、refs 没有被渲染前计算丢掉。
@@ -118,8 +118,8 @@ const scope = reportScopeFixture({
   - `renderTarget` 单路径：attempt 目标与 experiment 目标走同一条分派，宿主分派代码里 grep 不到实体词（断言面是公开分派函数对两类目标的行为等价，不是源码文本）。
   - `params` 往返：`decode(encode(p))` 与 p 深相等；`enumerate` 对有效根给出全部实例（attempt 页 = 全部 locator，experiment 页 = 全部 experiment id），收窄之外不出现。
   - `ctx.href`：目标页存在给 URL；页不存在、encode 抛错给 `undefined`，组件输出纯文本节点，不产出空 href。
-  - `targetOfRefs`：恰好一个 ref 给 attempt 目标；零个与多个都给 `undefined`。区分力场景是双 refs 行——旧的「取 refs[0]」实现在这一格是唯一会绿的错误答案。
-  - 图表 `pointTarget`：显式函数逐点生效；省略走 `targetOfRefs`；`external` 图表没有该属性。
+  - 下钻默认规则：恰好一个 ref 给 attempt 目标；零个与多个都给 `undefined`。区分力场景是双 refs 行——旧的「取 refs[0]」实现在这一格是唯一会绿的错误答案。
+  - 图表 `pointTarget`：显式函数逐点生效；省略走下钻默认规则；`external` 图表没有该属性。
   - `ExperimentScatter` 点目标：默认指向 `experiment` 页且参数是该点实验 id；报告无 `experiment` 页时点无链接。
   - `ExperimentDetails`：收窄恰好一个实验时六区块投影同一份转换结果；零个或多个实验按完整用户反馈报错；experiment 作用域 facts 进 notices 区块。
   - 断言面是组件树与公开函数返回值；dialog 打开、hash 路由与导出站几何归 e2e 报告域。
@@ -174,8 +174,8 @@ const scope = reportScopeFixture({
 - **Attempt 行的判定长在 locator 上** （[契约](../../../feature/reports/components/summaries/experiment-table.md)）：断言面是 `experimentListContent` 产出的 Cell 树与 text / web 两面输出字符串。
   逐项核对：
 
-  - attempt 行的 locator 格携带该次判定，三态各产出自己的判定符与语义 class。
-  - 区分力场景是「同一道题下 failed 与 errored 各一次 attempt」——两行的 class 与判定符都不同，证明判定没有被折成「非 passed」一档。
+  - Attempt 行的 locator 格携带该 revision 的 Verdict Claim，三态各产出自己的判定符与语义 class。
+  - 区分力场景是「同一道题下 failed 与 errored 各一次 Attempt」——两行的 class 与判定符都不同，证明 Claim 没有被折成「非 passed」一档。
   - 判定符与色同场：两面输出里判定符都在，不靠 class 单独表意。
   - 没有判定的 locator 格（`--history` 等场景）不带判定 class，也不凭空补判定符。
 - **判定构成列每层都有值** （[契约](../../../feature/reports/components/summaries/experiment-table.md)）：断言面是 `experimentListContent` 产出的 Cell 树与 text / web 两面输出字符串。
@@ -183,7 +183,7 @@ const scope = reportScopeFixture({
 
   - Eval 行的判定构成格是该题 attempts 的计票，与 experiment 行数题的计票同一 Cell 形态。
     区分力场景是「先 failed 后 passed 的重试」——计票是 `1 通过 · 1 失败`，只按题目级折叠判定填格的错误实现在这一格丢掉失败那一票。
-  - Attempt 行的判定构成格是该次判定；同题下 failed 与 errored 两行的格不同，证明没有折成「非 passed」一档。
+  - Attempt 行的判定构成格是该次 Verdict Claim；同题下 failed 与 errored 两行的格不同，证明没有折成「非 passed」一档。
   - 格子落在层级表列集存在的 key 上：experiment 列集渲染后 Eval 与 Attempt 行的判定构成列不是 `—` （[cell-key-must-match-column-set](../../../../memory/cell-key-must-match-column-set.md)）。
   - 两面显示同源：计票与单判定的 text 面经 `formatCellText` 按 locale 取判定词，单判定带 `verdictMark` 判定符；web 面同一格带 `niceeval-verdict-*` 语义 class。
 - **占位行的两类缺口** （[契约](../../../feature/reports/components/summaries/experiment-table.md#缺口原因与动作)）：断言面是 `experimentListContent` 产出的 Cell 树与 text / web 两面输出字符串；web 面只断言原因与可操作 locator 同场，不断言浏览器布局。
@@ -193,12 +193,12 @@ const scope = reportScopeFixture({
     区分力场景是「同一个 Sample 里一道题从未跑过、另一道题只有旧 configHash 的结果」——两行必须给出不同的格，把两档折成同一种占位的实现在这里失败。
   - Reports 不遍历 `historyAttempts` 自行寻找替代判定；删除 Sample 的 `previous` 后，报告不得从历史补回 reference。
   - previous 只解释缺口，不进任何计数：带 previous 的占位行前后，该 experiment 的判定计票、通过率与样本命中范围分母逐字不变。
-- **报告只有一份当前输入**：`ExperimentTable`、默认首页任务和导出模型只消费传入的同一份 `Sample.attempts`。
+- **报告只有一份固定输入**：`ExperimentTable`、默认首页任务和导出模型只消费传入的同一份、由明确 GraphRef materialize 的 `Sample.attempts`。
   fixture 在 Run 元数据放入与 attempts 冲突的旧 `selectedEvalIds`，断言行、聚合与导出仍完整；组件树中不存在 fresh toggle 或第二份 Content。
 - **`formatTimeDistance` 的读法与导出面** （[契约](../../../feature/reports/library/presentation.md#显式历史中的相对时距)）：断言面是函数返回值。
   四个区间各一条，`en` 与 `zh-CN` 各取一条代表场景；不足一个单位的时长取一个单位，不打零。
   区分力场景是 90 分钟——只有按区间分派才区别于恒定按天取整的 `1d`。
-- **对照矩阵的当前结果同源** （[契约](../../../feature/reports/show/compare.md)）：断言面是 `deltaTableData` 产出的 `DeltaCell`/`DeltaData` 与 CLI text 输出字符串。
+- **对照矩阵的固定 Sample 同源** （[契约](../../../feature/reports/show/compare.md)）：断言面是 `deltaTableData` 产出的 `DeltaCell`/`DeltaData` 与 CLI text 输出字符串。
   逐项核对：
 
   - 每个条件只从同一 Sample 的 attempts 取值；携带条目照常参与，旧配置 history 不补入缺席格。
@@ -350,7 +350,9 @@ const scope = reportScopeFixture({
   - 每个 tab 起一条隔条，名称后带 `n/m` 位次；`Tabs` 自己不画框。
   - tab 正文不缩进：同一张宽表在 tab 里与直接放在页上的输出逐字相同。
   - 区分力：tab 里放 `Section` 时框由那个 `Section` 画，输出里只有一层边框。
-- **宿主装载等价**：不带选项的 `show`/`view` 与 `--report` 在装载边界消费同一份 definition（同引用）与同规则选出的当前 Sample（深等）；两宿主都不提供出处过滤或第二套当前结果口径——不比较终端输出与 HTML，渲染面与进程级读面行为归 E2E。
+- **宿主装载等价**：不带选项的 `show`/`view` 与 `--report` 在装载边界消费同一份 definition（同引用）。
+  它们也消费由同一固定 `RecordGraphRef` 与规范化 selection 生成的 `MaterializedSample`（深等），不按时间戳或可变 head 另选成员。
+  这里不比较终端输出与 HTML；渲染面与进程级读面行为归 E2E。
 - **报告取值链与 `--report` 值判别**：两宿主共用的读取函数，断言面是读取出的 definition 引用与错误对象，不经渲染。
   - 三档取值链按 `--report` → `config.report` → 内建 `standard` 逐档回落。
     每档产出的 definition 与直接 import 该定义同引用。
@@ -363,10 +365,10 @@ const scope = reportScopeFixture({
     区分力场景是「没写 `--report` 但配了 `config.report`」——把出处按 `--report` 是否在场二分的实现在这一格说成内建。
   - fresh import 让装载入口及其项目内 import 子图失效；改报告文件或它 import 的组件后下一次装载读到新内容。
 - **view 数据装载（ViewScan）**：`loadViewScan` 的数据层语义以返回结构、Map/Set 内容与错误对象为断言面。
-  - unreadable 的三种原因如实进 `viewData`（producer 感知的升级提示）。
-  - 报告槽 Sample 是当前结果集口径（与 show 同一 `currentSample`，`composedRuns` 反映跨快照合成）。
-  - 跨快照按 attempt 身份键去重；`--resume` 复印件不给证据室索引灌票。
-  - 新布局落盘直接可读（写入面 / 读取面同一契约）；零可读结果直说不渲染空页面。
+  - Store / Graph / payload 失败按 Record 的穷尽错误与 `EvidenceValue` 轴如实进入数据层。
+  - 报告槽与 show 使用同一固定 `RecordGraphRef`、规范化 `SampleSelection` 和 `MaterializedSample` identity。
+  - membership 按完整 `SampleMemberIdentityV1` 与 proof 验证；不得按时间、locator 或对象引用去重。
+  - 新布局落盘直接可读（写入面 / 读取面同一契约）；零成员与 unavailable coverage 仍是可分辨结果。
   - `viewData` 只含证据室元信息，不携带统计输出。
   - 自定义报告未声明 attempt-input page 时，ViewScan 补官方详情页与 locator 索引，但不把隐式页混入自定义导航；显式详情页仍优先。
   - 报告文件或其项目内依赖变更后下一次装载读取新内容（namespaced import，不复用陈旧模块缓存）。
@@ -414,12 +416,12 @@ const scope = reportScopeFixture({
   - web 保留全部路径并只设置默认 open；file 按捕获路径后缀唯一匹配并显示全文。零命中与多命中都是可分辨的用法错误。
   - text、web 与 ShowJson 消费同一个 `AnnotatedSourceResult`，旧的按命中数猜单文件投影不得再出现在公开或内部读取路径。
 - **`attemptAssertions` 的计分制字段**：
-  - `.points` 挣分随所在 `AssertionResult` 一起出现，包括「失败的检查点挣 0 分」。
+  - `.points` 挣分随所在 Assertion Claim 一起出现，包括「失败的检查点挣 0 分」。
   - **得分点不参与 passed 收纳**：passed 的得分点逐条进平铺列表、不折进 `passedGroups` 计数（[收纳豁免](../../../feature/assertions/library/display.md#计分制points-与给分条目)）。
   - 得分点挣满计数（`2/5 得分点挣满`）是 data 层字段。
-  - `t.score(label, n)` 的给分条目与断言分属两个数组，按 `groupPath.join(" > ")` 分组。
+  - `t.score(label, n)` 的 score Claim 与 Assertion Claim 分属两个 Claim kind，按 `groupPath.join(" > ")` 分组。
   - 没有 assertion 但存在给分条目时 `attemptAssertions` 不是 `null`。
-  - 通过制 attempt 的 `scoreEntries` 字段恒省略；`validateAssertionsData` 校验 `scoreEntries` 结构。
+  - 通过制 Attempt 的 score Claim Projection 恒为空；`validateAssertionsData` 校验 score Claim Projection 结构，而不是读取 AttemptPayloadV1 字段。
 - **计分制的 attempt 详情数据**：`attemptSummary` 的本轮挣分字段只在计分制 attempt 出现；它是详情页总分的唯一出现处。
   标注源码树投影得分点的挣分 / 满分、`t.score` 给分、前置中止的 `⤓`，以及后续源码行的未到达状态。
   `attemptFixPrompt` 把丢分与前置中止都算可操作失败。计分制挣满且未中止才返回 `null`；通过制 passed 恒为 `null`。
@@ -433,7 +435,7 @@ const scope = reportScopeFixture({
 - **show 终端宿主的文案纯函数**：`show` 的纯函数以返回值为断言面，不依赖终端排版。
   `verdictReasonLine` 把多行 `error.message` 收为首行并移除控制字节；完整 message 只在 attempt 详情块展开。
   `showCommand` / `otherPagesText` 按 `HostCommandContext` 生成可复现的页 / 组索引命令，只列未渲染页并携带完整上下文。
-  选择收窄、`--history` 时间轴与用法错误矩阵是进程级读面行为，在真实进程的退出码与 stderr 上验收，归 [E2E 功能域 · 报告与读面](../e2e/report.md)；跨 Run 的当前 Sample 选择与去重语义归[单元测试 Record / Sample](record.md)的 `currentSample()` 类别。
+  选择收窄、`--history` 时间轴与用法错误矩阵是进程级读面行为，在真实进程的退出码与 stderr 上验收，归 [E2E 功能域 · 报告与读面](../e2e/report.md)；跨 Run 的显式 materialize、union 与 conflict 语义归[单元测试 Record / Sample](record.md)的 Sample 类别。
 - **o11y 数据派生**：
   - `estimateCost` 对未知 Model 返回 `null`。
     缺少 Usage 时不猜零成本。
@@ -468,7 +470,7 @@ const scope = reportScopeFixture({
   - 只有 `cacheReadTokens` 在场才显示 "uncached in"；`requests` 缺失时省略整段。
   - 含 `—` 的合计列标不完整。断言面是 `attemptUsage`。
 - **facts 完整键值表投影**：口径单源见 [Attempt Facts](../../../feature/reports/components/attempt-detail/attempt-facts.md)。
-  - `attemptFactsData` 按 `AttemptRecord.facts` 落盘 key 的插入顺序投影为 `{ key, value }[]`；facts 缺失或为空对象时返回 `null`，不摆空表。
+  - `attemptFactsData` 按 attempt 的 facts Observation 的 key 插入顺序投影为 `{ key, value }[]`；facts 缺失或为空对象时返回 `null`，不摆空表。
   - 断言面是 `attemptFactsData` 的返回值，以及 `standardAttemptRender`（内建 `show` 默认页）与公开 `AttemptDetails` 组件两条渲染路径各自的 text 面输出——两条路径分别组装数据，只测一条会漏另一条忘记接线的回归。
    attempt 首页 `usage:` / `facts` 表、`--usage` 表、缺失占位与分节怎样被用户看到，统一由 Report E2E 从公开 CLI 验收，不在 show 单元测试复述文本。
 - **execution 的预算、句柄与 grep**：
@@ -492,7 +494,7 @@ const scope = reportScopeFixture({
   用户怎样从 locator 下钻，见[`@locator` 用例](../../../feature/reports/use-case/调试/按定位符下钻.md)。
 
 - **`--timing` 的两棵树与 sandboxBuild 卡**（[契约](../../../feature/reports/show/timing.md)）：
-  - 带 attempt locator 时投影 `result.json.phases` 生命周期树；不带 locator 时投影 `RunMeta.timings`。
+  - 带 attempt locator 时投影 attempt 的耗时事实生命周期树；不带 locator 时投影 Run 侧时间树。
   - 未知 activity key 渲染 producer 的 `label`，不查 LifecyclePhase 参照点标签表。
   - sandboxBuild 专用卡从 `sandboxBuilds` provenance 读 locator / inputs / 依赖 attempt，经 `timingNodeId` 取耗时，不解读 timing label。
   - fixture 要同时有 Run activity 与 attempt phases，证明两棵树分流、互不冒充。

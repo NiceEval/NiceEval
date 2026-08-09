@@ -25,12 +25,12 @@ When the run finishes, the summary lists which Sandboxes were kept and how to en
 
 ```text
 Kept sandboxes (1)
-  @1x7f3q9k  onboarding/tool-first #1  errored  docker · a3f9c2d1
+  @0123456789ABCDEFGHJKMNPQRS  onboarding/tool-first #1  errored  docker · a3f9c2d1
              enter: niceeval sandbox enter a3f9c2d1
 Stop them with: niceeval sandbox stop --all
 ```
 
-Each line gives you three things: the attempt locator (use `niceeval show @1x7f3q9k` to see the evidence written to disk), the Sandbox instance id, and the command to enter it. A kept Sandbox doesn't sit there burning resources — a Docker container stops on disk, an E2B microVM pauses billing, a Vercel Sandbox saves its filesystem. `niceeval sandbox enter` wakes it up, then opens a shell in `workdir`; when you exit the shell, the environment automatically goes back to sleep (pass `--leave-running` to keep it running instead). Once inside, you're looking at the environment exactly as it was when that attempt finished — run commands, browse files, reproduce the failure by hand.
+Each line gives you three things: the attempt locator (use `niceeval show @0123456789ABCDEFGHJKMNPQRS` to see the evidence written to disk), the Sandbox instance id, and the command to enter it. A kept Sandbox doesn't sit there burning resources — a Docker container stops on disk, an E2B microVM pauses billing, a Vercel Sandbox saves its filesystem. `niceeval sandbox enter` wakes it up, then opens a shell in `workdir`; when you exit the shell, the environment automatically goes back to sleep (pass `--leave-running` to keep it running instead). Once inside, you're looking at the environment exactly as it was when that attempt finished — run commands, browse files, reproduce the failure by hand.
 
 ## List and clean up
 

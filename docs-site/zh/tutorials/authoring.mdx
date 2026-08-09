@@ -161,7 +161,7 @@ export default defineEval({
 });
 ```
 
-`progress` 只更新运行中的短期状态，不进入结果。`diagnostic` 会写进当前 Attempt 的 `result.json`，但不会代替断言或自动改变判定：业务结论仍用 `t.check` / `t.require` / gate。基础设施无法继续时抛出异常。
+`progress` 只更新运行中的短期状态，不进入结果。`diagnostic` 会随当前 Attempt 提交进 Record，但不会代替断言或自动改变判定。业务结论仍用 `t.check` / `t.require` / gate；基础设施无法继续时抛出异常。
 
 ## 评估的生命周期
 

@@ -50,7 +50,7 @@ npx niceeval exp local fixtures/button --attempts 5 --early-exit
 
 ## Cache
 
-[NiceEval](https://niceeval.com/) can skip results already judged `passed` or `failed`, based on a fingerprint of inputs, configuration, and relevant files — both are settled verdicts. `errored` (timeouts, Sandbox crashes, and other framework/environment-level, non-deterministic failures) always retries. Cache is useful for iteration speed, but turn it off explicitly (`--force`) or clear the relevant cache when you are debugging non-deterministic behavior.
+[NiceEval](https://niceeval.com/) can carry forward results already judged `passed` or `failed`, based on a fingerprint of inputs, configuration, and relevant files — both are settled verdict Claims. `errored` (timeouts, Sandbox crashes, and other framework/environment-level, non-deterministic failures) always retries. Cache is useful for iteration speed, but rerun only the failed evals with `--rerun` or everything with `--rerun all` when you are debugging non-deterministic behavior.
 
 ## Timeout and budget
 
@@ -66,14 +66,14 @@ Feedback while a run is in flight only comes in two forms; reporters are a diffe
 
 ```bash
 npx niceeval exp local          # human text: a live-refreshing TTY panel, or an append-only text stream on non-TTY (pipes, CI logs)
-npx niceeval exp local --json   # machine face: one JSON object per line on stdout, starting with `start` and ending with `result`
+npx niceeval exp local --json   # machine face: one InvocationMachineRecord per line on stdout; LiveRecords end with one receipt
 ```
 
 `--json` does not print every state change: only failures, errors, and deduplicated warnings append a line immediately, and a `progress` heartbeat only appears after a stretch with none of those events. Both forms read the same facts — scheduling, verdicts, and artifacts stay identical, only the presentation changes.
 
 After each eval finishes, the runner hands the result to reporters:
 
-- JSON artifacts support later analysis.
+- `Json(path)` saves the same LiveRecord stream plus the final `InvocationReceipt` for later analysis.
 - the JUnit reporter fits CI.
 - the Braintrust reporter reports a run as an experiment for comparison across commits.
 
@@ -81,7 +81,7 @@ See [Reporter integrations](/tutorials/reporters) for how to wire reporters in a
 
 ## Output directory
 
-Each run writes to that experiment's results snapshot directory, `.niceeval/<experiment>/<snapshot>/`, including snapshot-level `snapshot.json`, plus, per Attempt, `result.json` (verdict, assertions, structured errors, diagnostics) and artifacts generated as needed such as `events.json`, `sources.json`, `trace.json`, `o11y.json`, and `diff.json`. Transient progress is never persisted.
+Each run commits verdicts, assertions, structured errors, and diagnostics with its Attempts into the long-lived `.niceeval/` Record root. Events, sources, traces, o11y, and diffs are stored as Observations and rebuilt by Projectors on the read side. Transient progress is never persisted.
 
 ## Recommended debugging flow
 

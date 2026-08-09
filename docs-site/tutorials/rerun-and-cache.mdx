@@ -1,7 +1,7 @@
 ---
 title: "Rerun only the evals affected by a change"
 sidebarTitle: "Reruns and cache"
-description: "NiceEval carries completed attempts into the next run and dispatches only the missing or invalidated work. Learn what invalidates results, how to inspect the plan, and when to use --accept or --rerun."
+description: "NiceEval carries completed attempts into the next run and dispatches only the missing or invalidated work. Learn what invalidates results, how to inspect the plan, and when to accept a locator or use --rerun."
 ---
 
 When you repeat the same command, NiceEval carries completed results forward instead of paying for the same Agent and Sandbox work again. Only missing or invalidated Attempts are dispatched.
@@ -49,7 +49,7 @@ The fingerprint is only one gate:
 | Gate | Requirement |
 | --- | --- |
 | Terminal state | The verdict is `passed` or `failed`; `errored` and `skipped` always rerun |
-| Fingerprint | The eval fingerprint matches, or every difference was authorized with `--accept` |
+| Fingerprint | The eval fingerprint matches the current config's fingerprint |
 | Eligibility | Its execution time does not exceed the currently resolved `timeoutMs` |
 | Rerun policy | The current `--rerun` mode still trusts that verdict |
 | Execution mode | The Attempt is outside the current `--keep-sandbox` band |
@@ -95,30 +95,30 @@ plan: 36 attempts · 36 evals × 1 configs · attempts 1
 0 carried in from cache · 36 to run
 
 compare/baseline  01  previous-result passed: config:flags.tunnelUrl changed (https://a1b2.trycloudflare.com → https://c3d4.trycloudflare.com)
-  prior:  @1A1B2C3D4E5F (passed)
-  accept: niceeval accept @1A1B2C3D4E5F
+  prior:  @2VRHPQ4D2KG9EFW5TB8167MXJ3 (passed)
+  accept: niceeval accept @2VRHPQ4D2KG9EFW5TB8167MXJ3
 ```
 
 `previous-result passed` means that the historical verdict passed, but the current fingerprint has changed, so the result cannot be carried from cache yet. The difference explanation and execution evidence are separate: `fingerprint version changed` only means that the input difference cannot be expanded from the current manifest. It does not mean that execution, diff, or timing evidence is gone. Open the locator, verify that the verdict still holds, and then accept it:
 
 ```bash
-npx niceeval show @1A1B2C3D4E5F --timing
-npx niceeval accept @1A1B2C3D4E5F
-npx niceeval accept @1A1B2C3D4E5F @5E6F7G8H9J0K
+npx niceeval show @2VRHPQ4D2KG9EFW5TB8167MXJ3 --timing
+npx niceeval accept @2VRHPQ4D2KG9EFW5TB8167MXJ3
+npx niceeval accept @2VRHPQ4D2KG9EFW5TB8167MXJ3 @67MXJ30SYZCNAVRHPQ4D2KG9EF
 ```
 
 ```text
 ╭─ PLAN ─────────────────────────────────────────────╮
-│ Accepted @1A1B2C3D4E5F as @1D4C3B2A1F5E          │
+│ Accepted @2VRHPQ4D2KG9EFW5TB8167MXJ3 · mode: accepted                       │
 │ Current fingerprint: 5f3b…                      │
 ╰──────────────────────────────────────────────────╯
 ```
 
-Acceptance writes a new result under the current fingerprint and records its source locator, old and new fingerprints, and difference summary. When you pass several explicit locators, NiceEval validates all of them before writing anything. If any locator fails, it writes nothing. Otherwise it groups them by experiment and creates one snapshot per experiment. One command may accept results from several experiments, but it never accepts unlisted results merely because they share the same difference, and there is no bulk-accept option.
+`accept` runs an atomic precheck over all explicit locators and writes nothing when any of them fails. On success it groups them by experiment, opens a new Run per experiment, and writes one accept Claim per explicit member (saving the current config identity, the adopted Attempt ref, and a readable difference audit) plus a `mode: "accepted"` RunContribution whose `basisClaims` point at that Claim. The Contribution adopts the original Attempt's explicit revision — it never copies or reparents the Attempt, Verdict, evidence, or Provenance, and it never produces another locator; the Run's immutable `RecordGraphRef` and receipt are returned. The command never accepts unlisted results merely because they share the same difference, and there is no bulk-accept option.
 
-Fingerprint-version migrations that NiceEval knows and can prove equivalent carry automatically and record `migratedFrom`. Migrations that cannot be proven appear as `previous-result` and require acceptance or a rerun. The output does not use the ambiguous phrase `details unavailable`.
+Differences that cannot be proven equivalent appear as `previous-result` and require an explicit `accept` or a rerun. The output does not use the ambiguous phrase `details unavailable`.
 
-Very old records may contain locators that do not follow the current format. In that case, `--dry` prints `accept: unavailable (legacy locator …)` instead of suggesting a command that must fail. Rerun that eval to produce a new locator that can be accepted.
+A locator that is missing `@`, is not 26 characters, contains illegal letters, or has an invalid high bit returns `malformed-locator` instead of suggesting a command that must fail. Copy the full canonical locator, or rerun that eval to produce one that can be accepted.
 
 Historical `passed` and `failed` results can be accepted. Whether a result came from Sandbox reuse, or whether the current experiment declares `sandboxReuse: true`, does not affect eligibility. Results with `errored` or `skipped` verdicts cannot be accepted, and neither can execution modes that require a real Sandbox to remain available. The command explains the reason instead of silently running the experiment.
 
@@ -137,11 +137,11 @@ npx niceeval exp compare --rerun
 npx niceeval exp compare --rerun all
 ```
 
-`--accept` only opens the fingerprint gate. With `--rerun failed`, an accepted historical `failed` result still reruns, while an accepted `passed` result may carry forward. `--accept` and `--rerun all` are mutually exclusive because one authorizes cache use and the other rejects all cached results.
+Acceptance is a standalone `niceeval accept @locator...` command, not an `exp` flag. With `--rerun failed`, an accepted historical `failed` result still reruns, while an accepted `passed` result may carry forward. `--rerun all` rejects all cached results.
 
 ## Resume an interrupted Run
 
-An Attempt writes `result.json` after its cleanup chain completes. Its trustworthiness does not depend on the enclosing Run reaching a normal end. After Ctrl-C, `kill -9`, or a CI timeout, repeat the same command: completed terminal Attempts carry forward and only the missing work runs.
+An Attempt commits its facts after its cleanup chain completes. Their trustworthiness does not depend on the enclosing Run reaching a normal end. After Ctrl-C, `kill -9`, or a CI timeout, repeat the same command: committed terminal Attempts carry forward and only the missing work runs.
 
 Concurrent invocations use the same rule. Before dispatch, each eval takes a lease and checks the records again; work completed by another invocation carries forward, while still-missing Attempts run locally.
 

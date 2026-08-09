@@ -50,15 +50,15 @@ AI 通常按任务选择这些入口：
   <Step title="读取失败">
     ```bash
     npx niceeval show
-    npx niceeval show @1k2m9qtr
+    npx niceeval show @0123456789ABCDEFGHJKMNPQRS
     ```
 
     第一条命令显示当前各实验的通过率、成本、耗时，以及每个评估用例的紧凑 Attempt locator——locator 本身就是证据入口，不在列表里编码证据可用性。第二条命令直接打开选中的 Attempt，页面末尾的 `available:` 只列出这个 Attempt 实际可用的证据命令。
   </Step>
   <Step title="按问题读取证据">
     ```bash
-    npx niceeval show @1k2m9qtr --execution
-    npx niceeval show @1c3h6tbn --diff
+    npx niceeval show @0123456789ABCDEFGHJKMNPQRS --execution
+    npx niceeval show @0123456789ABCDEFGHJKMNPQRS --diff
     ```
 
     `--execution` 合并 AI 输出与 trace：标准事件流提供消息、thinking、tool call/result 和 Skill load。OTel 在能够关联时给同一节点补开始时间、耗时、父子关系和错误状态。没有 OTel 时步骤仍完整，只不显示时间。
@@ -66,8 +66,8 @@ AI 通常按任务选择这些入口：
     不带证据 flag 时，`show @<id>` 是失败诊断首页。它先列出失败断言的 group、matcher、expected、received、原因和源码位置，再给执行、生命周期阶段耗时与文件变化摘要。Coding Agent 应先读取这一页。需要追查值的来源时，再打开对应证据。
 
     ```text
-    $ niceeval show @1k2m9qtr
-    @1k2m9qtr · weather/brooklyn · compare/codex-gpt-5.4 · failed
+    $ niceeval show @0123456789ABCDEFGHJKMNPQRS
+    @0123456789ABCDEFGHJKMNPQRS · weather/brooklyn · compare/codex-gpt-5.4 · failed
     snapshot 2026-07-09T10-00-00-000Z-x1f2 · attempt 2 · 41.2s · 12.3k tokens · $0.04
     eval source: evals/weather/brooklyn.eval.ts · sha256:8d47…
 
@@ -91,18 +91,18 @@ AI 通常按任务选择这些入口：
     changes · diff unavailable
     reason: this Attempt did not produce workspace file changes
 
-    full eval source: …/weather/brooklyn/a2/sources.json
+    full eval source: niceeval show @<locator> --source
     available:
-      niceeval show @1k2m9qtr --source
-      niceeval show @1k2m9qtr --execution
-      niceeval show @1k2m9qtr --timing
+      niceeval show @0123456789ABCDEFGHJKMNPQRS --source
+      niceeval show @0123456789ABCDEFGHJKMNPQRS --execution
+      niceeval show @0123456789ABCDEFGHJKMNPQRS --timing
     ```
 
-    `--execution` 把 AI 消息、Skill load、工具调用和工具结果排成一棵执行树。它只展示 Agent 可理解的事件。没有关联到这些事件的 SDK / runtime span 不逐行输出，只报告省略数量并保留 `trace.json` 路径。下面的 Attempt 有 OTel，所以能关联的节点同时带相对时间与耗时：
+    `--execution` 把 AI 消息、Skill load、工具调用和工具结果排成一棵执行树。它只展示 Agent 可理解的事件。没有关联到这些事件的 SDK / runtime span 不逐行输出，只报告省略数量；完整展开使用 `niceeval show @<locator> --execution`。下面的 Attempt 有 OTel，所以能关联的节点同时带相对时间与耗时：
 
     ```text
-    $ niceeval show @1k2m9qtr --execution
-    @1k2m9qtr · weather/brooklyn · compare/codex-gpt-5.4 · failed · OTel timing
+    $ niceeval show @0123456789ABCDEFGHJKMNPQRS --execution
+    @0123456789ABCDEFGHJKMNPQRS · weather/brooklyn · compare/codex-gpt-5.4 · failed · OTel timing
 
     USER
       布鲁克林今天天气怎么样？
@@ -120,16 +120,16 @@ AI 通常按任务选择这些入口：
       布鲁克林当前约 18°C，有雨。
 
     total 4.0s · 1 skill load · 1 tool call · 2 AI messages
-    full events: …/weather/brooklyn/a2/events.json
+    full events: show @<locator> --execution
     69 unlinked telemetry spans omitted; inspect the OTel trace for framework timing.
-    full OTel trace: …/weather/brooklyn/a2/trace.json
+    full OTel trace: niceeval show @<locator> --execution
     ```
 
     没有 OTel 时仍用标准事件流展示相同的步骤，只去掉时间列和瀑布关系，不把“缺时间”误写成“没有执行”：
 
     ```text
-    $ niceeval show @1nx4dpwq --execution
-    @1nx4dpwq · weather/brooklyn · compare/bub-gpt-5.4 · failed
+    $ niceeval show @0123456789ABCDEFGHJKMNPQRS --execution
+    @0123456789ABCDEFGHJKMNPQRS · weather/brooklyn · compare/bub-gpt-5.4 · failed
 
     USER
       布鲁克林今天天气怎么样？
@@ -147,21 +147,21 @@ AI 通常按任务选择这些入口：
       布鲁克林当前约 18°C，有雨。
 
     timing unavailable · OTel trace was not collected
-    full events: …/weather/brooklyn/a2/events.json
+    full events: show @<locator> --execution
     ```
 
     diff 是被测 Agent 在 Sandbox 工作区造成的文件变化，不是评估用例源码的新旧差异。只有 Sandbox 评估用例才会收集到 diff——非 Sandbox 评估用例或 agent 确实没碰任何文件时，attempt 页的 `available:` 列表会省略 `--diff`。默认先给文件级摘要，避免把大段补丁写入 Agent 上下文。`--diff=<文件>` 再展开单个文件，原始 artifact 路径始终保留：
 
     ```text
-    $ niceeval show @1c3h6tbn --diff
-    @1c3h6tbn · fixtures/button · compare/bub-gpt-5.4 · errored
+    $ niceeval show @0123456789ABCDEFGHJKMNPQRS --diff
+    @0123456789ABCDEFGHJKMNPQRS · fixtures/button · compare/bub-gpt-5.4 · errored
 
     M src/components/Button.tsx   +42 −3
     A src/components/Button.css   +18
 
     2 files changed · +60 −3
-    full diff: …/fixtures/button/a1/diff.json
-    next: niceeval show @1c3h6tbn --diff=src/components/Button.tsx
+    full diff: niceeval show @<locator> --diff
+    next: niceeval show @0123456789ABCDEFGHJKMNPQRS --diff=src/components/Button.tsx
     ```
 
     用这组输出检查信息是否足够：
@@ -178,7 +178,7 @@ AI 通常按任务选择这些入口：
     以上任何一条 `show` 命令加 `--json`，都会把同一范围、同一切片选出的同一批实体输出成一份结构化 JSON 文档到 stdout，而不是排好版的文本。字段名与落盘类型保持一致，Coding Agent 不用再解析人读格式：
 
     ```bash
-    npx niceeval show @1puv8ydu --json
+    npx niceeval show @0123456789ABCDEFGHJKMNPQRS --json
     ```
 
     ```json
@@ -189,7 +189,7 @@ AI 通常按任务选择这些入口：
       "sample": { "resultsRoot": "…", "experiments": ["compare/claude-mempal"], "fresh": false },
       "data": {
         "summary": {
-          "locator": "@1puv8ydu",
+          "locator": "@0123456789ABCDEFGHJKMNPQRS",
           "identity": { "experimentId": "compare/claude-mempal", "evalId": "react-datepicker/pr-6058", "attempt": 0 },
           "verdict": "failed",
           "durationMs": 29800,
@@ -250,47 +250,49 @@ AI 通常按任务选择这些入口：
 
 ## 从输出读取诊断信号
 
-`--json` 在 stdout 上输出一行一个 JSON 对象的 NDJSON 流——这才是 Coding Agent 应该解析的部分。首行是携带流身份的 `start` 事件。之后只有失败、错误或去重后的 warning 立即追加一行，长时间没有这些事件才补一条 `progress` 心跳（存活信号，不是结果数据源）。最后一个事件永远是给出结论、计数和快照路径的 `result`：
+`--json` 在 stdout 上输出 `InvocationMachineRecord` NDJSON：每条都是 LiveRecord（snapshot / observation / claim / heartbeat），末尾恰好一条 `receipt`（`InvocationReceipt`）。`watch --json` 只发 LiveRecord，没有 receipt。这才是 Coding Agent 应该解析的部分；机器协议不另定义私有运行事件名：
 
 ```text
-{"format":"niceeval.exp","schemaVersion":1,"event":"start","total":15,"configs":1,"concurrency":8,"reused":0}
-{"event":"failure","locator":"@1k2m9qtr","evalId":"weather/brooklyn","experimentId":"local","severity":"gate","assertion":"calledTool(\"get_weather\")","received":"0 tool calls"}
-{"event":"result","status":"failed","passed":14,"failed":1,"errored":0,"reused":0,"completion":"complete","snapshots":[".niceeval/local/2026-07-09T10-00-00-000Z-x1f2/"]}
+{"type":"snapshot","reason":"attach","cursor":"…","snapshot":{"invocationId":"…","status":"active","counters":{…}}}
+{"type":"observation","cursor":"…","observation":{"name":"niceeval.attempt.started",…}}
+{"type":"claim","cursor":"…","scope":"attempt","claim":{"kind":"verdict","value":{"verdict":"failed"},…}}
+{"type":"receipt","receipt":{"invocationId":"…","completion":"incomplete","runs":[…],"record":{"state":"complete","graph":{…}}}}
 ```
 
-Coding Agent 应从 `failure` / `error` 事件里取出 `locator`，再逐个运行 `niceeval show @<id>` 或按需加证据 flag。事件按发生顺序追加，不用等到 `result` 才开始处理已经拿到的 locator。不要用 `progress` 心跳判断结果，它只说明进程还活着。`--json` 不做数量截断——每条失败都是独立事件，量大时用 `niceeval view` 或结果快照做批量分析。机器读取以结果快照为事实来源：
+Coding Agent 应从 `claim` / `observation` 记录里取出 `locator`，再逐个运行 `niceeval show @<id>` 或按需加证据 flag。记录按发生顺序追加，不用等到 `receipt` 才开始处理已经拿到的 locator。
+
+`receipt` 是唯一收尾：只有 `record` 为 `complete`（或 `partial`）时才携带 `RecordGraphRef`，`not-recorded` 没有 GraphRef。`complete` 才承诺该范围的 required facts 与终态关系可验证。机器读取以 `.niceeval/` 的 Record 事实为事实来源：
 
 ```text
-.niceeval/<experiment>/<快照>/
-├── snapshot.json
-└── <eval-id>/a<attempt>/
-    ├── result.json
-    ├── events.json
-    ├── trace.json
-    └── diff.json
+.niceeval/                              # 长期 Record 事实根
+├── Attempt payload                     # 身份、origin Run、provenance ref、state 与 stream bindings
+├── Observation stream                  # 实际发生了什么:事件、diagnostic、错误
+└── Claim                               # 当时依据证据作出的判断
+
+Record 之外:Projection 读模型(show / view),由 Projector 按需现算
 ```
 
-- `snapshot.json` 记录实验身份、运行配置、格式版本和时间。
-- `result.json` 记录该 Attempt 的判定、断言、结构化错误、diagnostics 和用量。瞬时 progress 不落盘。
-- `events.json` 是对话与工具调用事件，`trace.json` 是调用链，`diff.json` 是 Sandbox 文件变化。
-- 某类证据不存在时，对应文件不会生成。先以 `show` 的提示为准，不要假设每个目录都有全部文件。
+- Attempt payload 只保存身份、origin Run、provenance ref、生命周期 state 与 stream bindings，不直接保存判定、断言或用量。
+- 实际发生——事件、diagnostic、结构化错误、用量——在 Observation stream；当时判断——Verdict、Assertion、估算成本——在 Claim。
+- trace 是调用链，diff 是 Sandbox 文件变化；usage、diff 与 timing 读面是 Record 之外的 Projection，由 Projector 现算。
+- 某类证据未被采集时，Projector 如实返回 `not-recorded`。先以 `show` 的提示为准，不要假设每次运行都有全部证据。
 
-`show` 的默认结果可能合成自多次运行：每个 Experiment × 评估用例选择最新判定，因此局部重跑后仍能看到其它评估用例的旧结果。该视图用于查看每条评估用例的最新已知判定。同一版代码的整体结果必须通过一次 `--rerun all` 全量运行确认。
+`show` 的默认结果来自固定 Sample 的 current Contribution：每个 Experiment × 评估用例显示被采用的判定。局部重跑后，未重跑的 slot 通过 `carried` / `accepted` Contribution 沿用历史 Attempt。该视图用于查看每条评估用例在被采用 revision 上的判定；同一版代码的整体结果必须通过一次 `--rerun all` 全量运行确认。
 
 ## 结果复用条件
 
-不传 `--rerun all` 时，NiceEval 会比较当前指纹与最近结果。指纹由两部分组成：
+不传 `--rerun all` 时，计划先固定一个 source `RecordGraphRef`，从其中各 Run 的 current Contribution 与明确 membership/ordinal 读取候选，再用指纹判断该固定候选是否合格。指纹由两部分组成：
 
 - **评估用例的源码**：`.eval.ts` 文件本身，加上它 import 的项目内模块，以及用 `loadYaml` / `loadJson` / `loadText` 读进来的数据文件。
 - **运行配置**：实验 ID、Agent、model、flags、Sandbox、`Judge` 的模型与端点，以及 `--strict`。
 
 超时上限不在指纹里：它决定等不等得到，不决定跑出来的结果是什么。改大改小都不会作废已完成的结果。
 
-| 最近结果与当前输入 | 本次行为 |
+| 固定候选与当前输入 | 本次行为 |
 | --- | --- |
-| 指纹相同，判定为 `passed` 或 `failed` | 携入旧结果，不重新执行 |
+| 指纹相同，判定为 `passed` 或 `failed` | 携入该固定候选，不重新执行 |
 | 指纹不同 | 重新执行 |
-| 最近结果为 `errored` 或 `skipped` | 重新执行 |
+| 候选判定为 `errored` 或 `skipped` | 重新执行 |
 | 使用 `--rerun` | 只有 `passed` 携入，失败项重新执行 |
 | 使用 `--rerun all` | 忽略旧结果，全部重新执行 |
 

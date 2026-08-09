@@ -19,7 +19,7 @@ The [NiceEval](https://niceeval.com/) CLI is the entry point for discovering, ru
     Discover and print all evals without running them.
   </Card>
   <Card title="npx niceeval clean" icon="trash">
-    Remove historical snapshot artifacts under `.niceeval/`.
+    Remove historical facts and snapshots under `.niceeval/`.
   </Card>
   <Card title="npx niceeval show [id-prefix | @locator]" icon="terminal">
     Read results in the terminal; use `@<locator>` or an eval ID prefix to drill into assertions, Eval source, the execution event stream, diffs, and history.
@@ -99,19 +99,18 @@ The table below is generated from the CLI's flag-parsing table; any flag outside
 | `--diff` | boolean | `show` command only: a summary of file changes in the sandbox; `--diff=<file-path>` shows the full diff for one file (the path must be joined with `=`). |
 | `--history` | boolean | `show` command only: an execution timeline — for every matched experiment × eval, it sections off and lists each attempt's time / verdict / summary / duration / cost / locator; mutually exclusive with `--report`. |
 | `--grep` | string | `show` command only: combines with `--execution` only; a JS regex — emits only matching execution cards (role text, tool names, input, result; plus display/stdout/stderr for failed commands), with a cross-attempt summary `N matches in M attempts` at the end. Mutually exclusive with `--expand`. |
-| `--expand` | string | `show` command only: combines with `--execution` only and requires the range to hit exactly one attempt; expands one card's complete stored content (untruncated). Handle syntax `t<turn>.c<card>` (agent events) or `cmd<n>` (failed Sandbox commands), taken from the hint a truncated card carries. Mutually exclusive with `--grep`. |
+| `--expand` | string | `show` command only: combines with `--execution` only and requires the range to hit exactly one attempt; expands one card's complete stored content. Handle syntax `t<turn>.c<card>` (agent events) or `cmd<n>` (failed Sandbox commands), taken from the preview hint a transformed card carries. Mutually exclusive with `--grep`. |
 | `--usage` | boolean | `show` command only: a per-attempt usage table for the range (`UsageTable` assembly) — verdict, turns, tool calls, token breakdown, and cost; with multiple experiments it sections per experiment with per-section totals, missing fields render `—` and stay out of the sums. Under an `@<locator>` range it degrades to that attempt's single-row table. |
 | `--stats` | boolean | `show` command only: the eval × experiment stability matrix (`StabilityMatrix` assembly) — each cell counts verdicts across that combination's complete execution history (deduped across snapshots, no comparability gate), answering "which evals have never passed"; mutually exclusive with `@<locator>` and `--report`. |
 | `--exp` | string | `show` / `view` command only: narrow to an experiment by path-segment prefix (the same matching as the `niceeval exp` positional argument); a group name selects every configuration in the group. Repeatable; appearing two or more times enters compare semantics — each occurrence must resolve to exactly one experiment, in the order given (the first is the baseline), and `@<locator>` conflicts with a repeated `--exp`. With `view --out`, the same narrowing decides what gets exported. |
-| `--record` | string | Shared by `show` / `view` / `sandbox enter\|list\|stop`: the record root directory (a root other than `.niceeval`, such as a publish root produced by `publish`). |
-| `--run` | string | `view` command only: open only this one Run file (`run.json`); the command fails if the file can't be read (scan mode just skips it). |
+| `--record` | string | Shared by `show` / `view` / `sandbox enter\|list\|stop`: select another RecordStore root (such as a `mirrorRecord` target directory); an `exportSample` SampleBundle is not a Record and cannot be used as a record root. |
+| `--run` | string | `view` command only: select one Run reference within a fixed `RecordGraphRef` — not a file, not a standalone root; the command fails when it is missing or ambiguous (scan mode just skips it). |
 | `--report` | string | `show` / `view` command only: replace the default report shared by both with the `defineReport(...)` a file default-exports. |
 | `--page` | string | `show` / `view` command only: pick the report's initial page; `show` renders that page and appends an index of the remaining pages, `view` uses it as the initial route. An unmatched page id exits as a usage error and lists the available page ids. |
 | `--dry` | boolean | Only print which evals × run configs would match, without actually running them (human text, or a single JSON plan document with `--json`). |
-| `--json` | boolean | `exp` command only: the machine face — a single ordered NDJSON event stream on stdout (one JSON object per line) for coding agents, CI annotation adapters, and scripts; `--dry --json` emits a single JSON plan document instead of a stream. Omit it for human text (TTY live panel / non-TTY append stream). |
-| `--force` | boolean | Ignore the previous run's results — do not skip (experiment, eval) pairs that already passed, forcing a full rerun. |
+| `--json` | boolean | `exp` command only: the machine face — `InvocationMachineRecord` NDJSON on stdout (LiveRecords ending with exactly one `receipt`), for coding agents, CI annotation adapters, and scripts; `watch --json` emits LiveRecords only. `--dry --json` emits a single JSON plan document instead of a stream. Omit it for human text (TTY live panel / non-TTY append stream). |
+| `--force` | boolean | `sandbox prune` only: also destroys unverified instances. `exp` rejects it; use `--rerun` / `--rerun all` there. |
 | `--rerun` | boolean | `exp` command only: re-run the failures (bare, or `failed`) or everything (`all`), without changing the long-term fingerprint. |
-| `--accept` | string | `exp` command only: authorize carrying results forward across one named fingerprint difference; repeatable. The selector points at one difference obtained by subtracting the manifests (`config:<field path>` such as `config:judge.model`, `source:<path>`, `data:<path>`; `opaque:no-manifest` when the earlier side has no manifest), spelled exactly as `--dry` prints that reason. With no value: when stderr is a TTY, NiceEval prints the plan and then asks "reuse or re-run" for each difference group, prints the equivalent command with values, and runs your choices; with no value off a TTY it is a usage error. An entry carried in this way is re-fingerprinted under this run's terms, so the next run of the same command matches on its own and does not need the flag again; the differences crossed are recorded on that entry's `carriedAccepting`. Combining it with `--rerun all` is a usage error. |
 | `--strict` | boolean | Recommended in CI: make soft-threshold (`soft`) failures also count toward the whole eval's verdict. |
 | `--early-exit` / `--no-early-exit` | boolean | Stop an eval's remaining attempts once one attempt passes. |
 | `--open` / `--no-open` | boolean | `view` command only: automatically open a browser after startup (default behavior). |
@@ -141,7 +140,7 @@ Run a named experiment, comparing agents, models, or flags in a matrix. Argument
 
 ## Two output forms: human text and `--json`
 
-`exp` has exactly two output forms. They only change what gets displayed — never selection, scheduling, verdicts, artifacts, or the exit code:
+`exp` has exactly two output forms. They only change what gets displayed — never selection, scheduling, verdicts, Record commits, or the exit code:
 
 ```bash
 # No flag = human text: a dynamic dashboard on a TTY, auto-degrading to an append-only plain stream in pipes/CI logs
@@ -151,7 +150,7 @@ npx niceeval exp compare
 npx niceeval exp compare --json
 
 # CI gate: exit code + JUnit; for a JSON summary, redirect `show --json` after the run
-npx niceeval exp compare --strict --junit .niceeval/junit.xml
+npx niceeval exp compare --strict --junit ./artifacts/niceeval-junit.xml
 ```
 
 See [Runner · Reporter](/explanation/runner#reporter) for how the two forms compare; see [Agent Feedback Loop](/tutorials/agent-feedback-loop) for the full agent loop (reading the event stream, drilling into a locator, targeted reruns); see [CI Integration](/tutorials/ci-integration) for GitHub Actions setup, exit codes, and JUnit.
@@ -162,23 +161,23 @@ See [Runner · Reporter](/explanation/runner#reporter) for how the two forms com
 npx niceeval view
 ```
 
-Open the local record viewer. It shares the same default report and the same default selection as `show`: for each experiment and each eval, it takes the latest verdict across runs; when you rerun only some evals, the rest are filled in from earlier runs. `show` prints terminal text, `view` renders a web page with interactive evidence browsing; eval ID prefixes, `--exp`, and `--record` narrow both the same way. See [Viewing results](/tutorials/viewing-results) for the full story.
+Open the local record viewer. It shares the same default report and the same default selection as `show`: both pin one `RecordGraphRef`, materialize one fixed Sample, and show the verdict each eval's current Contribution selects; when you rerun only some evals, untouched slots adopt historical Attempts through `carried` / `accepted` Contributions. `show` prints terminal text, `view` renders a web page with interactive evidence browsing; eval ID prefixes, `--exp`, and `--record` narrow both the same way. See [Viewing results](/tutorials/viewing-results) for the full story.
 
 ## `show [id-prefix...]`
 
 ```bash
 npx niceeval show
 npx niceeval show weather/brooklyn
-npx niceeval show @1k2m9qrs
-npx niceeval show @1k2m9qrs --source
-npx niceeval show @1k2m9qrs --execution
+npx niceeval show @0123456789ABCDEFGHJKMNPQRS
+npx niceeval show @0123456789ABCDEFGHJKMNPQRS --source
+npx niceeval show @0123456789ABCDEFGHJKMNPQRS --execution
 npx niceeval show fixtures/button --diff
 npx niceeval show weather/brooklyn --history
 ```
 
 `show` is the terminal entry point for results — suited both to a person reading directly and to a coding agent drilling down level by level inside its context window. The positional argument picks which evals to look at (an ID prefix), or picks exactly one attempt with `@<locator>`. With no positional argument, it shows the default comparison report partitioned by experiment group; giving an eval ID prefix only narrows the evals the report covers, it does not change the group boundaries.
 
-`@<locator>` with no evidence flag gives that attempt's compact overview (assertion summary, execution summary, optional OTel timing, diff summary). `--source`, `--execution`, `--timing`, and `--diff` are evidence facets: each one accepts any range, not just a single `@<locator>` — a range covering more than one attempt renders one section per attempt, sorted by experiment id, eval id, then attempt order. `--record <dir>` sets the record root, and `--history` shows the cross-run trend. `--exp` is repeatable: one occurrence narrows the sample, two or more enters compare semantics (each `--exp` must resolve to exactly one experiment, in the order given). See [Viewing results](/tutorials/viewing-results) for the full reading order, output examples, and artifact details.
+`@<locator>` with no evidence flag gives that attempt's compact overview (assertion summary, execution summary, optional OTel timing, diff summary). `--source`, `--execution`, `--timing`, and `--diff` are evidence facets: each one accepts any range, not just a single `@<locator>` — a range covering more than one attempt renders one section per attempt, sorted by experiment id, eval id, then attempt order. `--record <dir>` sets the record root, and `--history` shows the cross-run trend. `--exp` is repeatable: one occurrence narrows the sample, two or more enters compare semantics (each `--exp` must resolve to exactly one experiment, in the order given). See [Viewing results](/tutorials/viewing-results) for the full reading order, output examples, and evidence details.
 
 ## `--early-exit` and `--strict`
 

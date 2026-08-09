@@ -1,7 +1,7 @@
 # 内建摘要任务
 
 摘要、Experiment 比较、Notice、修复 prompt、失败清单与稳定性页面由官方组合组件装配。
-组合组件从当前 Sample 取数，再把普通值交给显示原语。
+组合组件只接收 plan 声明、executor 交付的 ReportData，再把已定值交给显示原语。
 
 - [Sample summary](sample-summary.md)
 - [Experiment scatter](experiment-scatter.md)

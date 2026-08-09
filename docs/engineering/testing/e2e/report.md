@@ -10,30 +10,33 @@
 
 ## 验收计划
 
-仓库运行一个小型真实 Experiment，包含 passed / failed / errored 三态 attempt，然后对同一份事实逐出口核对：
+仓库运行一个小型真实 Experiment，形成 `passed` / `failed` / `errored` Verdict Claim 的 Attempt，然后对同一份固定 GraphRef 事实逐出口核对。Attempt lifecycle 另行只使用 `active` / `completed` / `abandoned`：
 
-### 1. 落盘格式
+### 1. 提交格式
 
-`run.json`、attempt 目录的 `result.json`、`events.json`、`sources.json`、`o11y.json`（有 tracing 面时含 `trace.json`）的字段与版本依据 [Record Format](../../../feature/record/architecture.md) 契约逐项断言。`verdict` 四态、断言明细、`durationMs` / `usage` / `estimatedCostUSD` 三件套成组出现；Run 封口同时写入 `completedAt` 与实验域 diagnostics，`run.json` 不含逐 attempt 数据。
+提交进 `.niceeval` 长期追加 RecordStore 的 Run / Attempt / Stream / Claim 与证据闭包，依据 [Record Format](../../../feature/record/architecture.md) 契约逐项断言。
+AttemptPayloadV1 只含 identity、origin、provenance ref、lifecycle 与 stream bindings。
+执行错误 / diagnostics / raw usage / 事件是 Observation；断言 / Judge / Verdict / 估算成本是 Claim；`durationMs` / usage / diff / trace 是 Projector 读面。
+Run 提交与实验域 Diagnostic Observation 同批完成，Run payload 不含逐 Attempt 数据。
 
 ### 2. 公开读取面
 
-`openRecord()` 遍历出的 Run、diagnostics、attempt 与推导聚合和盘上文件一致——读取面是落盘事实的忠实投影，不是第二份口径。
-`current()` 的 Sample 保留构成当前结果集的真实 Run，diagnostics 只随这些 Run 透传，不聚合进 Sample 或 Attempt。
+`openRecordGraph(store, ref)` 在 receipt 给出的 GraphRef 上读出的 Run、Diagnostic Observation、Attempt 与推导聚合和提交的事实一致——读取面是提交事实的忠实 Projection，不是第二份口径。
+测试显式构造 Sample selection；不得用 `current()`、最近 Run、目录顺序或时间戳选择事实。diagnostics 只随明确成员的 Run 透传，不聚合进 Sample 或 Attempt。
 
 ### 3. 机器出口
 
 - CLI `--json` 输出的机器摘要与读取面口径一致。
-- `niceeval show --json` 的信封用 `sample`回显范围，`view` 判别 10 个内建 task Result 的 `data`形状；history attempt 用 `runStartedAt`。
-- 对同一份真实 Record，text 与 JSON 必须选出同一批实体且公共派生字段同值，证明两面消费同一 task Result，不是 CLI 私有公式。
-- 显式 `--junit` 文件里 `failed` 折叠为 `<failure>`、`errored` 折叠为 `<error>`，用例集合与实际 attempt 对应。
+- `niceeval show --json` 的信封回显明确 Sample / GraphRef 范围，`view` 判别内建 Projection 的 `data` 形状；history Attempt 使用其明确 revision / origin，不用 `runStartedAt` 选取。
+- 对同一份真实 Record，text 与 JSON 必须选出同一批由 GraphRef / Sample 明确的实体且公共派生字段同值，证明两面消费同一 Projection，不是 CLI 私有公式。
+- 显式 `--junit` 文件里带 `failed` Verdict Claim 的 Attempt 折叠为 `<failure>`、带 `errored` Verdict Claim 的 Attempt 折叠为 `<error>`，用例集合与实际 Attempt revision 对应。
 
 ### 4. 读面 CLI 行为
 
 show / view 对这份真实结果的可观察行为按 [Show](../../../feature/reports/show.md) 与 [View](../../../feature/reports/view.md) 契约验收：
 
 - **选择与收窄**：位置参数按 eval id 前缀、`--exp` / `--record` 在两个宿主用同一套规则；漏写 `@` 的 locator 按前缀处理并明确报无匹配、列出候选。
-- **历史与多页**：`show --history` 按 attempt 身份键跨 Run 去重、升序逐轮列出，与 `--report` 互斥按用法错误退出；多页报告渲染初始页并附带可复现上下文的 `--page` 索引命令。
+- **历史与多页**：`show --history` 按 Attempt revision / locator 明确列出，不按最近 Run 或时间重选事实，与 `--report` 互斥按用法错误退出；多页报告渲染初始页并附带可复现上下文的 `--page` 索引命令。
 - **用法错误矩阵**：读面 flag 的组合语义在真实进程上以非零退出与 `error:` / `fix:` 三段式验收。
   这些错误全部发生在装载与渲染之前，不产生模型调用。
   逐项核对：
@@ -46,9 +49,9 @@ show / view 对这份真实结果的可观察行为按 [Show](../../../feature/r
 - **证据切面**：项目配置自定义报告且不含 attempt page 时，不带 `--report` 的 `show @<locator>` 仍显示官方诊断首页；显式 `@<locator> --report <file>` 才进入该报告的 attempt page。`--source` / `--execution` / `--timing` / `--diff` 在真实证据上工作；`--timing` 的有界诊断树与 `--timing=full` 全量展开按契约取样；落盘无 phases 时如实显示 unavailable，不猜。
 - **Sample warnings**：局部补跑、过旧、不可读 Run 形成结构化 warning 且两宿主一致；单个坏 Run 不阻塞其余；零可读结果时 `show` 非零退出、`view` 不启动 server。
 - **Run diagnostics**：真实 Run 的实验域 diagnostic 在两个宿主都按 experiment → Run 的出处呈现；直接传入的 Run[] 的自定义报告同样可见，出处、时效、level、message、command 与 count 不被合并或改写。
-- **导出与 server**：`view --out` 导出站与本地 server 对同一路径逐字节一致；收窄对页面 Sample 与 `artifact/` 证据树同步生效；`attempt/<locator>.html` 无 JavaScript 完整可读；`o11y.json` 永不出站。
-- 本地 server 的 attempt 详情路由按完整 Record 根寻址，不受 `--exp` 等收窄限制；与 `show @<locator>` 同一套按 Record 根语义寻址，`--out` 只产出收窄内可达 locator 对应的文档。
-- `sources.json` 出站（server 响应与 `--out` 导出）恒为解引用后的 `{path, content}[]`，不是落盘的两层去重引用格式（先例：[memory/attempt-locator-and-source-dedup](../../../../memory/attempt-locator-and-source-dedup.md)）。
+- **导出与 server**：`view --out` 导出站与本地 server 对同一路径逐字节一致；收窄对页面 Sample 与证据闭包同步生效；`attempt/<locator>.html` 无 JavaScript 完整可读；o11y 数据永不出站。
+- 本地 server 的 Attempt 详情路由按完整 Record GraphRef / locator 寻址，不受 `--exp` 等收窄限制；与 `show @<locator>` 同一套按 RecordStore 语义寻址，`--out` 只产出收窄内可达 locator 对应的文档。
+- 源码事实出站（server 响应与 `--out` 导出）恒为解引用后的 `{path, content}[]`，不是落盘的两层去重引用格式（先例：[memory/attempt-locator-and-source-dedup](../../../../memory/attempt-locator-and-source-dedup.md)）。
 
 ### 5. 渲染面
 

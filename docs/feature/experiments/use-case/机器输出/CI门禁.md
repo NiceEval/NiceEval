@@ -12,25 +12,25 @@ niceeval 不需要专门的 CI 档——日志页给人看,默认的人读文本
    ```sh
    niceeval exp ci \
      --strict \
-     --junit .niceeval/junit.xml
+     --junit ./niceeval-junit.xml
    ```
 
 2. 日志是人读追加流,整流走单一 `stdout`——CI runner 分开缓冲两个 OS stream 也不会把失败行和结束摘要打乱序([流边界](../../cli.md#输出流和落盘节奏))。
    需要机器消费运行事件(自建注解 adapter、实时看板)时加 [`--json`](../../cli.md#机器怎么读--json) 换成 NDJSON,两种形态事实一致。
 3. 门禁只认退出码:`0` 全部通过且运行完整完成计划;`1` 有 `failed` / `errored`、budget 未完成计划或 required reporter 写失败;`2` 未捕获崩溃;`130` 中断。
    折叠规则见 [Runner · 退出码](../../../../runner.md#退出码)。
-4. 归档文件:`--junit` 是整次运行的最终聚合,收尾时写临时文件并原子替换目标——CI 归档到的要么是完整文件,要么不存在。
-   attempt 级 Run 逐个原子落盘,进程中断时已完成的照常可读(见 [CLI · 输出流和落盘节奏](../../cli.md#输出流和落盘节奏))。
-   需要 JSON 汇总交给自建看板时,运行后 `niceeval show --json > summary.json`——读结果面拿到的比任何运行期汇总文件都全。
-   注意口径:`show --json` 读的是 Record 根唯一的当前结果集（含兼容的携带结果）；Record 根跨运行持久时用 `--exp` 收窄实验。若要门禁某一物理 Run，显式读取该 Run，不按出处过滤当前结果。
-5. JUnit 交给平台做测试注解;完整数据以文件和 Run 为准。
+4. 归档文件：`--junit` 是整次运行的最终聚合，收尾时写临时文件并原子替换目标——CI 归档到的要么是完整文件，要么不存在。
+   每个成功 Record commit 都产生不可变 GraphRef；进程中断后，已提交的 Attempt、Contribution 与 Claim 仍可通过 receipt 打开。
+   需要 JSON 汇总交给自建看板时，归档 InvocationReceipt 的 GraphRef，再在该固定 revision 上运行 `show --json`。
+   不按可变 head、时间或目录选择一组事实；跨运行的比较必须显式 materialize Sample。
+5. JUnit 交给平台做测试注解；完整数据以 receipt 指向的 RecordGraphRef 为准。
 
 ## 边界
 
 - `--junit` 不是终端格式开关,与输出形态正交;它是 required reporter,写失败必须判红,不降级成 warning。
 - 只有连形态都没能确定的 argv / 配置加载错误走 `stderr`(人读 `error:` + `fix:` 两行)。
 - budget 到顶时完成态是 `incomplete`、退出码 `1`,不伪装全绿——流程见 [`--budget` 用例](../预算上限.md)。
-- `--dry` 不创建 Run 或 JUnit。
+- `--dry` 不创建 Invocation、Run、Claim、Contribution 或 JUnit。
 
 ## 相关阅读
 

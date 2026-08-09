@@ -1,14 +1,29 @@
 // feature: docs/feature/experiments/cli.md
 import { resolve } from "node:path";
-import { command, withProjectCopy } from "@niceeval/testkit";
+import { command, only, withProjectCopy } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 
 // NiceEval 根目录：pnpm e2e --repo cli -- --run test/process-streams-and-exit.test.ts
 // 已安装候选包的隔离 Repo 根：pnpm test --run test/process-streams-and-exit.test.ts
 
-interface ExpEvent {
-  event: string;
-  status?: string;
+interface InvocationReceiptRecord {
+  type: "receipt";
+  receipt: {
+    completion: "complete" | "incomplete" | "interrupted";
+    record: { state: "complete" | "partial" | "not-recorded" };
+  };
+}
+
+type InvocationMachineRecord =
+  | { type: "snapshot" | "observation" | "claim" | "heartbeat" }
+  | InvocationReceiptRecord;
+
+function invocationReceipt(
+  records: readonly InvocationMachineRecord[],
+  diagnostic: string,
+): InvocationReceiptRecord {
+  const receipts = records.filter((record): record is InvocationReceiptRecord => record.type === "receipt");
+  return only(receipts, () => true, diagnostic);
 }
 
 const niceeval = command(["pnpm", "--silent", "exec", "niceeval"]);
@@ -24,14 +39,14 @@ test("JSON 模式保持 stdout、stderr 与 exit code 的公开分工", async ()
     const passed = await niceeval.run(["exp", "passing", "--rerun", "all", "--json"], { cwd: root });
     expect(passed.exitCode, passed.diagnostic()).toBe(0);
     expect(passed.stderr).toBe("");
-    expect(passed.ndjson<ExpEvent>().at(-1))
-      .toMatchObject({ event: "result", status: "passed" });
+    expect(invocationReceipt(passed.ndjson<InvocationMachineRecord>(), passed.diagnostic()))
+      .toMatchObject({ type: "receipt", receipt: { completion: "complete", record: { state: "complete" } } });
 
     const failed = await niceeval.run(["exp", "failing", "--rerun", "all", "--json"], { cwd: root });
     expect(failed.exitCode, failed.diagnostic()).toBe(1);
     expect(failed.stderr).toBe("");
-    expect(failed.ndjson<ExpEvent>().at(-1))
-      .toMatchObject({ event: "result", status: "failed" });
+    expect(invocationReceipt(failed.ndjson<InvocationMachineRecord>(), failed.diagnostic()))
+      .toMatchObject({ type: "receipt", receipt: { completion: "complete", record: { state: "complete" } } });
 
     const usageError = await niceeval.run(["show", "missing-eval", "--json"], { cwd: root });
     expect(usageError.exitCode, usageError.diagnostic()).not.toBe(0);

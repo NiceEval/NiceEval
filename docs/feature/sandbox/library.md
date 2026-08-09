@@ -382,15 +382,15 @@ const layer = e2bSandbox({ template: "niceeval-agents" })
 - `diagnostic` 是真实异常、退化或需要处理的问题,会进入永久输出。
   正常容量、缓存大小、版本和命中状态本身是中性观测,不能无条件伪装成 warning。
   只有达到明确且可解释的风险条件时才上报 diagnostic。
-- `facts` 是中性运行观测,例如本次实际使用的版本、缓存大小和命中状态;它进入结果供事后审计,不参与 fingerprint。
+- `facts` 是中性运行 Observation,例如本次实际使用的版本、缓存大小和命中状态;它进入 Record 供事后审计,不参与 fingerprint 或 AttemptPayloadV1。
 
 反馈通道不能指定 phase——runner 从当前 command 的 owner 自动得出阶段。
-反馈也不替代控制流:上例明确选择降级继续;如果 Sandbox 或当前操作无法继续,应直接抛出原错误,让 Attempt 进入 `errored`。
+反馈也不替代控制流:上例明确选择降级继续;如果 Sandbox 或当前操作无法继续,应直接抛出原错误,让 Runner 写结构化执行错误 Observation，并据此形成 `errored` Verdict Claim。Attempt lifecycle 仍只收敛到 `completed` 或 `abandoned`。
 
 `context.facts(key, value)` 上报运行时观测。
-它落进本 Attempt 的 `result.json`(`AttemptRecord.facts`),在 show 详情的完整键值表、对照矩阵与 `--json` 中作为一等观测量呈现。
+它作为 Observation 随本 Attempt 的 stream 提交进 Record,在 show 详情的完整键值表、对照矩阵与 `--json` 中作为一等观测量呈现。
 计划内自变量必须同时进入 `flags`、model、agent、sandbox 配置等 fingerprint 输入；无法配置化的外部可变状态变化后用 `--rerun all` 重跑。
-key/value 形状、合并与复用边界见 [Results · facts](../record/architecture.md#facts运行事实):
+key/value 形状、合并与复用边界见 [Record · Architecture](../record/architecture.md):
 
 ```typescript
 context.facts("build-cache.bytes", cacheBytes);

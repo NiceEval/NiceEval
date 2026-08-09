@@ -6,7 +6,8 @@ Agent-as-Judge 让一条 Assertion 由独立 Agent 执行，使开放式判据�
 ## 核心心智
 
 Agent Judge 是 Assertion 的 evaluator，不是第二个被测对象。
-每条 Agent Judge 断言启动一条独立 Agent Session，取得结构化判分结果，再进入既有 `AssertionResult` 与 Verdict 折叠链。
+每条 Agent Judge 断言启动一条独立 Agent Session，先形成结构化 Judge Claim，再形成既有 Assertion Claim 与
+Verdict Claim 折叠链；这些 Claim 不改变 Attempt 的 `active` / `completed` / `abandoned` lifecycle。
 
 ```text
 被测 Agent ──> Turn / events / 最终工作区
@@ -19,7 +20,7 @@ Agent Judge 是 Assertion 的 evaluator，不是第二个被测对象。
             score + rationale + evidence
                           │
                           ▼
-             AssertionResult ──> Verdict
+             Assertion Claim ──> Verdict Claim
 ```
 
 rubric、材料、严重度与阈值属于 Eval；Agent、model、Sandbox 与超时属于裁判执行配置。
@@ -71,7 +72,7 @@ Direct Agent Judge 不创建也不伪造 Sandbox。
 - `t.judge.agent()` 的 rubric、材料与链式严重度 API。
 - Direct 与 Sandbox Agent Judge 的执行配置。
 - 被测 workdir 的隔离快照、裁判生命周期与错误语义。
-- 结构化判分协议、裁判事件、usage、成本与复核依据。
+- 结构化 Judge / Assertion Claim，以及裁判 Observation、usage Projection、成本 Claim 与复核依据。
 - Agent Judge 配置进入指纹、结果携带与裁判 A/B 的规则。
 
 本主题不包含：

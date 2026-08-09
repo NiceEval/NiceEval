@@ -1,91 +1,89 @@
 # 完整示例
 
-本页按任务索引完整例子。
-API 的穷尽形状只在 [Library](../library.md) 定义，用例不复制第二份契约。
+本页按任务索引 Reports 的 plan/data/render 写法。
+API 穷尽形状只在 [Library](../library.md) 定义。
 
 ## 质量与成本
 
 ```tsx
-export default defineReport(async (sample) => {
-  const performance = await aggregate(sample, {
-    by: { agent },
-    values: { passRate, costUSD },
-  });
+export default defineReport({
+  plan({ sample }) {
+    const performance = aggregate(sample, {
+      id: "quality-cost",
+      by: ["agent"],
+      measures: { passRate, costUSD },
+      unavailable: "exclude",
+    });
 
-  return (
-    <Col>
-      <Scatter
-        points={performance}
-        x="costUSD"
-        y="passRate"
-        point="agent"
-      />
-      <Table rows={performance} />
-    </Col>
-  );
+    return {
+      pages: [
+        {
+          id: "overview",
+          title: "Overview",
+          data: { performance },
+          render({ performance }) {
+            return (
+              <Col>
+                <Scatter points={performance} x="costUSD" y="passRate" />
+                <Table rows={performance} />
+              </Col>
+            );
+          },
+        },
+      ],
+    };
+  },
 });
 ```
 
-同一份 EvidenceRow 数组同时交给图和表。
+同一份 executor 结果交给图和表；两面 renderer 共享相同的组件树。这里的 `performance` 是完整
+`AggregateData`（`EvidenceValue<AggregateResult>`），不是 rows 数组。两个组件在 available 时读取
+`value.rows` / `value.coverage`，在 unavailable 时原样显示 causes 与 basedOn。
+
+`overview` 使用唯一的普通页 shorthand：同时省略 instanceId / route 时，executor 补成
+`overview`、`/overview` 与空 parameters。参数化页不能用这个 shorthand。
 
 ## 失败清单
 
-```tsx
-export default defineReport((sample) => {
-  const failures = sample
-    .scope({ evals: "security/" })
-    .filter((attempt) =>
-      attempt.result.verdict === "failed" ||
-      attempt.result.verdict === "errored"
-    );
-
-  const attempts = failures.attempts
-    .toSorted((a, b) =>
-      (attemptCostUSD(b.result) ?? 0) -
-      (attemptCostUSD(a.result) ?? 0)
-    )
-    .slice(0, 50);
-
-  return <AttemptList attempts={attempts} />;
-});
-```
+失败页在 plan 中声明 verdict Projector request 与只依赖该 request 的 failure Calculation。
+它把 executor 已交付的 `AttemptDetailsData` 行传给 [`AttemptList`](../components/summaries/failure-list.md)，不在组件或 renderer 中重新读取 verdict。
+过滤条件是 Calculation 的规范化输入，而不是任意 predicate callback。
 
 ## 自定义读数
 
 ```ts
-export const changedLines = rollup(
-  async (attempt) => {
-    const diff = await attempt.diff();
-    return diff ? countChangedLines(diff) : null;
+const workspaceDiffRequest = projectorRequest({
+  requestId: "workspace-diff",
+  projector: workspaceDiff,
+  input: { includeGenerated: false },
+});
+
+const changedLines = defineCalculation({
+  namespace: "acme.checkout",
+  name: "changed-lines",
+  version: "1",
+  requests: [workspaceDiffRequest],
+  evaluate(input) {
+    return mapEvidence(input.get(workspaceDiffRequest), (diff) =>
+      countChangedLines(diff, input.member.attempt),
+    );
   },
-  {
-    withinEval: min,
-    acrossEvals: mean,
-    unit: "lines",
-    better: "lower",
-  },
-);
+});
 ```
 
-把它放进 `aggregate(...).values`，与官方 Calculation 使用同一条路径。
+把它放进 `aggregate(...).measures`，并明确指定 rollup 的 unavailable policy。
 
 ## 报告旁复杂算法
 
-成对差异、稳定性、固定题集成绩单与历史趋势各自声明公式和分母，最后通过 `metricValue()` 与 `evidenceRow()` 构造结果。
-它们不注册成查询，不进入图表组件，也不扩张 Sample API。
+成对差异、稳定性、固定题集成绩单与趋势都在计划后的纯函数中完成。
+它们使用 MeasureCell、EvidenceValue、coverage 和 refs，最后通过 `metricValue()` 与 `evidenceRow()` 交出结果。
 
-完整叙事见：
-
-- [固定题集成绩单](../use-case/分析/固定题集成绩单.md)
-- [测量成对差异](../use-case/分析/测量成对差异.md)
-- [诊断可靠性](../use-case/分析/诊断可靠性.md)
-- [跟踪实验历史](../use-case/分析/跟踪实验历史.md)
-
-## 多页与 React
+## 多页、React 与导出
 
 - [构建多页报告](../use-case/构建报告/构建多页报告.md)
 - [嵌入产品](../use-case/交付报告/嵌入产品.md)
 - [接入外部业务数据](../use-case/构建报告/接入外部业务数据.md)
+- [导出静态站](../use-case/交付报告/导出静态站.md)
 
 ## 相关阅读
 

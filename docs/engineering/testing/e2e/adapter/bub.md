@@ -28,7 +28,7 @@ Repo ID 是 `adapter/bub`；manifest 声明 `areas: ["adapter"]`、live lanes、
 两代必须成对钉：Bub 0.3.10 起 vendor 了 `bub.tape`，之后的插件从那里取类型；配 0.3.9 直接 import 失败。
 反过来旧插件按 republic 的类型校验，配新 Bub 是 span 全被拒、时间轨静默为空（契约见 [Bub 契约页 · 装哪一版 Bub](../../../../feature/adapters/sdk/bub/README.md#装哪一版-bub)）。
 
-`legacy` 放在验收顺序最后跑：结果目录一旦有两个实验，`show` 默认报告就折叠成实验汇总表，前面按 Eval id 断言它的步骤必须在只有 `ci` 结果时完成。
+`legacy` 放在验收顺序最后跑：固定 RecordGraphRef 的 Sample 一旦包含两个实验，`show` 默认报告就折叠成实验汇总表；前面按 Eval id 断言的步骤必须在 selection 只含 `ci` 时完成。
 
 ## 仓库验收
 

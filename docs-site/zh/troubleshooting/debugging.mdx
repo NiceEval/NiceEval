@@ -4,7 +4,7 @@ sidebarTitle: "Debug 手册"
 description: "一份按场景组织的排查手册：断言失败怎么定位、环境错误怎么进 Sandbox、agent 改了什么怎么看、旧的运行怎么翻出来复盘——每一步都有命令顺序和输出示例。"
 ---
 
-跑完一次 `niceeval exp`，失败的 Attempt 都带一个 `@` 开头的定位符（如 `@1qrdcfq8`）。它出现在运行摘要、CI 日志和报告里，定位符本身不会过期——只要 `.niceeval/` 里对应的结果快照还在，今天的定位符下周还能用同一条命令打开同一次 Attempt。所有排查都从它开始。
+跑完一次 `niceeval exp`，失败的 Attempt 都带一个 `@` 开头的定位符（如 `@0123456789ABCDEFGHJKMNPQRS`）。它出现在运行摘要、CI 日志和报告里，定位符本身不会过期——只要 `.niceeval/` 里对应的 Record 事实还在，今天的定位符下周还能用同一条命令打开同一次 Attempt。所有排查都从它开始。
 
 先说一条通用规则：NiceEval 自己的报错和警告都在消息末尾直接给出下一步。能用一条命令解决的，消息里就是替换好实验名的完整命令，复制执行即可（网页里还可以一键复制）。可以不管的警告会写明「什么情况下可以忽略」。所以看到报错先读完最后一句。本手册处理的是消息之外还需要人工判断的场景——判定失败了怎么定位、环境错误怎么进现场。
 
@@ -13,9 +13,9 @@ description: "一份按场景组织的排查手册：断言失败怎么定位、
 不带任何参数打开 Attempt，第一页就是为排查设计的：判定、失败的断言、耗时分布、改动概览，以及下一步可用的命令。
 
 ```text
-$ niceeval show @1qrdcfq8
-@1qrdcfq8 · memory/swelancer-manager-proposals · dev-e2b/codex-e2b · failed
-snapshot 2026-07-12T10:08:29.361Z · attempt 1 · 50.0s · 58.5k tokens · $0.05
+$ niceeval show @0123456789ABCDEFGHJKMNPQRS
+@0123456789ABCDEFGHJKMNPQRS · memory/swelancer-manager-proposals · dev-e2b/codex-e2b · failed
+Run 2026-07-12T10:08:29.361Z · attempt 1 · 50.0s · 58.5k tokens · $0.05
 
 assertions: 3 passed · 1 gate failed
 eval source: evals/memory/swelancer-manager-proposals.eval.ts · sha256:ee33b9c4…
@@ -33,10 +33,10 @@ timing: sandbox.queue 0.2s · sandbox.create 5.6s · sandbox.setup 3.5s · agent
 changes: 2 files changed by agent · M manager_decisions.json · A notes/decision-log.md
 
 available:
-  niceeval show @1qrdcfq8 --source
-  niceeval show @1qrdcfq8 --execution
-  niceeval show @1qrdcfq8 --timing
-  niceeval show @1qrdcfq8 --diff
+  niceeval show @0123456789ABCDEFGHJKMNPQRS --source
+  niceeval show @0123456789ABCDEFGHJKMNPQRS --execution
+  niceeval show @0123456789ABCDEFGHJKMNPQRS --timing
+  niceeval show @0123456789ABCDEFGHJKMNPQRS --diff
 ```
 
 看这一页先回答一个问题：**是 agent 答错了（`failed`），还是环境根本没跑起来（`errored`）？** 两种情况的排查路线完全不同。
@@ -50,7 +50,7 @@ available:
 主干之后，不会落进未映射断言。`t.send(...)` 的调用行还会标出对应 Turn 的状态和耗时：
 
 ```text
-$ niceeval show @1qrdcfq8 --source
+$ niceeval show @0123456789ABCDEFGHJKMNPQRS --source
 21✓     await t.send("Review the proposals and record your decision…");
     turn1 · completed · 22.4s
 38      for (const [issue, label] of Object.entries(expected)) {
@@ -64,7 +64,7 @@ $ niceeval show @1qrdcfq8 --source
 **2. 看 agent 当时做了什么。** `--execution` 把这次 Attempt 的对话按时间线展开——用户消息、assistant 回复、每次工具调用的入参和结果：
 
 ```text
-$ niceeval show @1qrdcfq8 --execution
+$ niceeval show @0123456789ABCDEFGHJKMNPQRS --execution
 turn1 · completed · 22.4s · 12.4k tok · $0.02
   USER
     Review the proposals and record your decision for each issue…
@@ -84,7 +84,7 @@ turn1 · completed · 22.4s · 12.4k tok · $0.02
 不想通读全文时，接 `grep` 定向查。列出这次 Attempt 用过哪些工具、各多少次：
 
 ```text
-$ niceeval show @1qrdcfq8 --execution | grep "TOOL ·" | sort | uniq -c
+$ niceeval show @0123456789ABCDEFGHJKMNPQRS --execution | grep "TOOL ·" | sort | uniq -c
    5   TOOL · command_execution
    2   TOOL · file_change
 ```
@@ -92,7 +92,7 @@ $ niceeval show @1qrdcfq8 --execution | grep "TOOL ·" | sort | uniq -c
 想确认它有没有跑过某条命令、有没有提到某个文件，直接搜关键词：
 
 ```bash
-niceeval show @1qrdcfq8 --execution | grep proposals
+niceeval show @0123456789ABCDEFGHJKMNPQRS --execution | grep proposals
 ```
 
 超长的工具结果只显示前 3 行预览，但截断尾巴自带这张卡片的展开句柄——整行复制就是看全量的下一条命令，不用去翻 `events.json`：
@@ -100,26 +100,26 @@ niceeval show @1qrdcfq8 --execution | grep proposals
 ```text
   result · completed · exit 0
     Proposal 1: …
-    (+412 lines · 18553 chars · niceeval show @1qrdcfq8 --execution --expand t1.c17)
+    (+412 lines · 18553 chars · niceeval show @0123456789ABCDEFGHJKMNPQRS --execution --expand t1.c17)
 
-$ niceeval show @1qrdcfq8 --execution --expand t1.c17    # 只输出这张卡片，完整不截断
+$ niceeval show @0123456789ABCDEFGHJKMNPQRS --execution --expand t1.c17    # 只输出这张卡片，完整不截断
 ```
 
 **3. 看它到底改了什么。** `--diff` 只显示 **agent 自己改动的文件**——你上传的起始文件、跑完后写入的验证材料不会混在里面，所以列表里的每一行都真的是 agent 干的：
 
 ```text
-$ niceeval show @1qrdcfq8 --diff
+$ niceeval show @0123456789ABCDEFGHJKMNPQRS --diff
 2 files changed by agent
   M manager_decisions.json   +6 -2    turn1, turn2
   A notes/decision-log.md    +18      turn2
 
-single file: niceeval show @1qrdcfq8 --diff=manager_decisions.json
+single file: niceeval show @0123456789ABCDEFGHJKMNPQRS --diff=manager_decisions.json
 ```
 
 行尾的 `turn1` 表示这个文件是在第几轮对话里被改的，能和 `--execution` 的轮次对上。要看单个文件的逐行改动，用 `=` 连写文件路径：
 
 ```text
-$ niceeval show @1qrdcfq8 --diff=manager_decisions.json
+$ niceeval show @0123456789ABCDEFGHJKMNPQRS --diff=manager_decisions.json
 M manager_decisions.json · changed in turn1, turn2
 @@ -1,5 +1,7 @@
  {
@@ -136,8 +136,8 @@ M manager_decisions.json · changed in turn1, turn2
 `errored` 的第一页不列断言，而是列出错误发生在哪个阶段、什么原因：
 
 ```text
-$ niceeval show @12h8m4k1
-@12h8m4k1 · memory/agent-029-use-cache · compare/claude-e2b · errored
+$ niceeval show @0123456789ABCDEFGHJKMNPQRS
+@0123456789ABCDEFGHJKMNPQRS · memory/agent-029-use-cache · compare/claude-e2b · errored
 
 error:
   phase: sandbox.create
@@ -162,7 +162,7 @@ npx niceeval exp compare memory/agent-029 --keep-sandbox
 
 ```text
 Kept sandboxes (1)
-  @18c1m2qx  memory/agent-029-use-cache #1  errored  docker · a3f9c2d1
+  @0123456789ABCDEFGHJKMNPQRS  memory/agent-029-use-cache #1  errored  docker · a3f9c2d1
              enter: niceeval sandbox enter a3f9c2d1
 Stop them with: niceeval sandbox stop --all
 ```
@@ -176,9 +176,9 @@ Stop them with: niceeval sandbox stop --all
 ```text
 $ niceeval sandbox list
 ID        PROVIDER  STATE            FROM
-a3f9c2d1  docker    dormant          memory/agent-029-use-cache #1 · errored · @18c1m2qx · 2026-07-14 15:02
+a3f9c2d1  docker    dormant          memory/agent-029-use-cache #1 · errored · @0123456789ABCDEFGHJKMNPQRS · 2026-07-14 15:02
             enter: niceeval sandbox enter a3f9c2d1
-9f21c07b  vercel    expired          onboarding/tool-first #2 · failed  · @1x7f3q8a · 2026-07-14 14:31
+9f21c07b  vercel    expired          onboarding/tool-first #2 · failed  · @0123456789ABCDEFGHJKMNPQRS · 2026-07-14 14:31
             expired 2026-07-14 14:36 — remove with: niceeval sandbox stop 9f21c07b
 ```
 
@@ -191,7 +191,7 @@ niceeval sandbox stop --all
 
 ## 场景三：复盘旧的运行
 
-每次运行都会在 `.niceeval/<实验>/<时间戳>/` 下留一份完整的结果快照，判定、断言、事件流、diff 都在里面，**不会被下一次运行覆盖**。复盘有三个入口：
+每次运行都会把完整事实提交进 `.niceeval/` 这个长期 Record 事实根，判定、断言、事件流、diff 都在里面，**已提交的 Attempt 不会被下一次运行覆盖**。复盘有三个入口：
 
 **用旧定位符直接打开。** 从上周的终端记录、CI 日志或报告里复制 `@` 定位符，`niceeval show @<定位符>` 照常工作，上面的 `--source` / `--execution` / `--diff` 全部可用——包括那份运行时的评估用例源码，哪怕你后来把评估用例改了。
 
@@ -207,7 +207,7 @@ niceeval show memory/swelancer --exp compare/bub   # 收窄到某道题
 **同一个检查刷一批 Attempt。** 从实验列表里复制定位符，套一层循环。比如核对这几次 Attempt 里谁调用过 `file_change`：
 
 ```bash
-for loc in @1qrdcfq8 @1x7f3q8a @18c1m2qx; do
+for loc in @0123456789ABCDEFGHJKMNPQRS @0123456789ABCDEFGHJKMNPQRS @0123456789ABCDEFGHJKMNPQRS; do
   echo "== $loc"
   niceeval show $loc --execution | grep "TOOL · file_change"
 done
@@ -221,14 +221,14 @@ niceeval view
 
 首页是成本 × 通过率总览和实验对比表。每个 Attempt 的详情页有判定、断言、完整时间树、对话、trace 和[按路径排成树的文件改动](/zh/tutorials/viewing-results#attempt-详情里的文件改动)，还有「Copy fix prompt」按钮——把失败整理成一段可以直接交给 coding agent 的修复提示词。报告里的 Attempt 深链和 `show` 用同一套定位符。
 
-**打开归档或别人发来的结果。** 结果目录是自包含的——从 CI 下载的、同事拷给你的、发布到静态站前生成的目录，都能直接指过去：
+**打开归档或别人发来的 Record。** RecordStore 根是自包含的——从 CI 下载的、同事拷给你的、`mirrorRecord` 复制的副本，都能直接指过去。注意 `--record` 只接受 RecordStore 或 `mirrorRecord` 目标：SampleBundle 和 Report artifact 都不是 Record，不能作记录根：
 
 ```bash
 niceeval show --record tmp/ci-artifacts/record
 niceeval view --record site-data/run
 ```
 
-一个注意点：如果本地清理过旧快照目录，之后的运行里「沿用上次结果」的条目会找不到原始证据（显示为缺失）。要长期归档某次运行，先用 [`publish`](/zh/reference/results-data) 复制出一份再删。
+一个注意点：如果本地清理过旧事实，之后的运行里「沿用上次结果」的条目会找不到原始证据（显示为缺失）。要长期归档某次运行，先用 [`mirrorRecord`](/zh/reference/results-data) 复制一份完整历史再删。
 
 ## 速查：症状 → 命令
 

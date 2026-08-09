@@ -1,14 +1,14 @@
 # Assertions
 
 Assertion 是一次可留档的检查。
-值 matcher、作用域检查、Sandbox 验证、资源上限和 Judge 都产出同一种 `AssertionResult`；这一层负责检查什么、证据是否完整以及结果怎样落盘，不决定整个 Attempt 的最终状态。
+值 matcher、作用域检查、Sandbox 验证、资源上限和 Judge 都形成同一种 **Assertion Claim**；这一层负责检查什么、证据是否完整以及当时的判断怎样落盘，不决定 Attempt 的 lifecycle 或最终 Verdict Claim。
 
 ## 从哪里开始
 
 | 目的 | 入口 |
 |---|---|
 | 写值、作用域或自定义 Assertion | [Library](library.md) |
-| 理解 `AssertionResult`、scope 与 evidence | [Architecture](architecture.md) |
+| 理解 Assertion Claim、scope 与 evidence | [Architecture](architecture.md) |
 | 理解通过制、计分制与题内计分项 | [计分粒度](library/score-points.md) |
 | 查看 Assertion 在 show / view 中的投影 | [展示](library/display.md) |
 

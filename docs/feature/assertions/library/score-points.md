@@ -9,9 +9,9 @@ Experiment 不得改变计分语义；「怎么算分」是题目的契约，不
 
 ## 通过制（`defineEval`，默认）：一个 eval 一分
 
-- 一条 eval 的一次 attempt 折叠成四态 [Verdict](../../verdict/architecture.md)，`passed` 记 1、其余记 0； `attempts > 1` 时按通过率。
+- 一条 eval 的一次 Attempt revision 形成四值 [Verdict Claim](../../verdict/architecture.md)，`passed` Claim 记 1、其余 Claim 记 0； `attempts > 1` 时按通过率。它不占用 Attempt lifecycle state。
   这个数就是内置读数 [`endToEndPassRate`](../../reports/library/measures.md#内置读数)，通过制的对比主读数读的是它。
-- 断言只是 verdict 的**内部构成**：一条 eval 写 3 条还是 20 条 gate，对比里都是一分。
+- Assertion Claim 只是 Verdict Claim 的**内部构成**：一条 eval 写 3 条还是 20 条 gate，对比里都是一分。
   这与 eve 的模型一致：一个 eval 就是一分，soft 分数 tracked-only。
 
 通过制是**对的默认**，三个理由：
@@ -51,9 +51,9 @@ eval 得分 = Σ 各给分项的挣分        （纯累加,无分母）
 | 链的词 | 角色 | 落到哪个读数 | 失败的后果 |
 |---|---|---|---|
 | `.points(n)` | 得分点 | 分数面：挣 `n × score` | 丢这 n 分，继续往下跑 |
-| `.points(n).gate(x?)` | 得分点兼硬要求 | 分数面 + 判定面 | 丢这 n 分，Attempt failed，继续执行 |
-| `.gate(x?)` | 硬要求 | 判定面 | Attempt failed，继续执行 |
-| `.gate(x?).stopOnFailure()` | 硬前置 | 判定面 | Attempt failed，并就地结束 `test()` |
+| `.points(n).gate(x?)` | 得分点兼硬要求 | 分数面 + 判定面 | 丢这 n 分，形成 `failed` Verdict Claim，继续执行 |
+| `.gate(x?)` | 硬要求 | 判定面 | 形成 `failed` Verdict Claim，继续执行 |
+| `.gate(x?).stopOnFailure()` | 硬前置 | 判定面 | 形成 `failed` Verdict Claim，并就地结束 `test()` |
 | 不链 | 观测 | 质量分（soft 均值） | 照记 failed（用 matcher 自带的线），不影响判定 |
 | `.atLeast(x)` | 观测（带通过线） | 质量分（soft 均值） | 低于 `x` 记 failed，不影响判定 |
 | `.soft()` | 观测（纯留档） | 质量分（soft 均值） | 无（不设线，永不 failed） |
@@ -66,10 +66,10 @@ eval 得分 = Σ 各给分项的挣分        （纯累加,无分母）
 - **观测的通过线只改那一行的显示**：judge 这类默认没有线的打分断言靠 `.atLeast(x)` 把「装好了但质量差」显示成失败行；0/1 断言不需要它——matcher 自带的线在计分制照常生效，没做到的检查点如实记 `failed` 挣 0 分。
 - **`--strict` 两种题型同义**：带线 soft 升级为 gate；它不添加 `.stopOnFailure()`。
 - **`t.require` 两种题型都有**：它是 `t.check(...).gate().stopOnFailure()` 的值断言简写。
-- **中止挣 0，基础设施得 null，严格分开**：前置失败强制结束，后面的给分代码不执行、那些分自然没挣到——agent 没走到是它的责任，低分成立；沙箱炸了、judge 没 key 是 `errored`，整题分数为 `null`、不折成 0——评不了不是 agent 差。
-  带 `.points` 的断言 `unavailable`（仅 `.optional()` 情形，否则整题已 errored）不挣分、在报告里如实标注。
-- **丢分不是失败**：五步走完三步的 attempt 是 `passed` 且挣 3 分，「做到几成」由分数面回答，不借判定面表达； verdict 回答的是「这次的分数完不完整」（[四态与优先级](../../verdict/architecture.md#verdict)）。
-   `errored` / `skipped` 与通过制同义，缓存、重试、发现单位照旧。
+- **中止挣 0，基础设施得 null，严格分开**：前置失败强制结束，后面的给分代码不执行、那些分自然没挣到——agent 没走到是它的责任，低分成立；沙箱炸了、Judge 没 key 会形成 `errored` Verdict Claim，整题分数为 `null`、不折成 0——评不了不是 agent 差。
+  带 `.points` 的断言形成 unavailable Assertion Claim（仅 `.optional()` 情形，否则整题形成 `errored` Verdict Claim）时不挣分、在报告里如实标注。
+- **丢分不是失败**：五步走完三步的 Attempt 可形成 `passed` Verdict Claim 且挣 3 分，「做到几成」由分数面回答，不借判定面表达；Verdict Claim 回答的是「这次的分数完不完整」（[四态与优先级](../../verdict/architecture.md#verdict)）。
+   `errored` / `skipped` Claim 与通过制同义，缓存、重试、发现单位照旧。
 - **`attempts > 1`**：eval 得分取各 attempt 的均值（`null` 跳过，全 `null` 为 `null`），与通过制按通过率聚合同构。
 
 两种题内写法（完整用例见[计分制用例](../../eval/use-case/rubric-points.md)）：
@@ -109,7 +109,7 @@ export default defineScoreEval({
 
 ![评分证据的四层折叠树](assets/score-fold-tree.svg)
 
-- **判定面（verdict，两种题型都有）**：通过制里由 severity 决定，severity 是折叠树的**边属性**：gate 边一票否决；`atLeast` 边失败记 failed、默认不传播、`--strict` 下翻成 gate 边；`soft()` 边永不传播。
+- **判定面（Verdict Claim，两种题型都有）**：通过制里由 severity 决定，severity 是折叠树的**边属性**：gate 边一票否决；`atLeast` 边失败形成 failed Assertion Claim、默认不传播、`--strict` 下翻成 gate 边；`soft()` 边永不传播。
    `--strict` 是作用于所有层和两种题型的同一个旋钮，组层、eval 层不另设规则。
   计分制里的 points 只进入分数面；只有 gate 进入判定面。
 - **分数面（挣分，计分制才有）**：由给分项构成，逐层求和；组的分数读数 = 组内给分项挣分之和（「正确性挣 45 分」）。
@@ -127,7 +127,7 @@ gate 不进质量分：10 条全过的 gate 加一个 0.6 的 judge 会把均值
 
 ## 横截面聚合：两种题型各读各的
 
-- **通过制实验**：主读数是**通过率**（Σ passed / Σ 题数，每题一票），回答「它做对了几道题」。
+- **通过制实验**：主读数是**通过率**（Σ `passed` Verdict Claim / Σ 题数，每题一票），回答「它做对了几道题」。
 - **计分制实验**：主读数是**总分**（Σ 各 eval 挣分），回答「它一共挣了多少分」。
   分值多的题分量就大——这是作者用分值声明的题目分量；同一实验内全部题都在同一套分值语境里，总分才可比。
 - **混型 Experiment 同时给出两个读数**。
@@ -159,7 +159,7 @@ gate 不进质量分：10 条全过的 gate 加一个 0.6 的 judge 会把均值
 
 - **实验列表按题型选主列**：通过制实验出通过率列，计分制实验出总分列，两型并存时两列都出、不适用的格显示 `—`。
   判据是[主读数映射](../../reports/library/measures.md#题型构成与主读数)这一条单点规则，列集合的完整契约在 [`toExperimentRows(sample)`](../../reports/library.md)。
-- **组级读数在 attempt 详情下钻**：非 passed 断言按声明顺序平铺、标题即分组路径，passed 断言按组折成计数行， `t.score` 给分条目单独成区块并按 `groupPath` 分组（[断言与 Turn 的展示](./display.md)）。
+- **组级读数在 Attempt 详情下钻**：非 passed Assertion Claim 按声明顺序平铺、标题即分组路径，passed Assertion Claim 按组折成计数行， `t.score` 给分条目单独成区块并按 `groupPath` 分组（[断言与 Turn 的展示](./display.md)）。
   「哪层死的」「哪个组挣了多少分」的逐条证据在那里读——组是折叠树的层级，不是跨 experiment 聚合的报告行维度。
 
 ## 怎么选题型

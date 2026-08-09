@@ -18,7 +18,7 @@
 
 功能测试与 Adapter 测试使用两组不同 Repo。CLI、Runner、Report、Package 与 Lifecycle 使用自己的确定性消费项目；
 `adapter/` 是兼容性 collection。AI SDK、Codex CLI、Claude Code、OpenCode、Bub 与本地协议 fixture 都是独立叶子 Repo，
-各自安装候选包并拥有结果根。两组只共用根 runner 与机械 Testkit，不互借 fixture、依赖或运行结果。
+各自安装候选包并拥有独立 `.niceeval` RecordStore。两组只共用根 runner 与机械 Testkit，不互借 fixture、依赖或运行结果。
 
 ## 两层与两种 E2E 体裁
 
@@ -113,7 +113,7 @@ pnpm e2e --lane main --repo adapter/codex-cli
 - 根 runner 生成并核对唯一待测 tarball；每个场景 Repo 在隔离副本安装同一 artifact，并保留原始进程收据和单文件重跑入口。
 - 场景 Repo 精确锁定稳定 Testkit；产品 gate 只注入 NiceEval candidate，不让外层裁判与被测对象一起变化。
 - JSON pipe、CommonJS package 与 Adapter 工具身份各有能杀死对应旧错误的 owner。
-- Report 单边界 E2E 只读消费证据；会修改配置、结果或服务的流程拥有私有项目副本与结果根。
+- Report 单边界 E2E 只读消费证据；会修改配置、RecordStore 或服务的流程拥有私有项目副本与独立 `.niceeval` Store。
 - Journey E2E 跨 CLI、Report 等产品域，并在每个公开接缝立即检查身份与结果。
 - PR、main、nightly 与 release lane 共用同一发现、注入、执行、分类和 artifact 协议。
 - 新 owner 通过公开契约、历史错误 kill 与单项重跑后接管，同批删除被替代 owner，不长期保留双份体系。

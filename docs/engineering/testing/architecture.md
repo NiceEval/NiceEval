@@ -61,7 +61,7 @@ Outcome 测试不得 import 根 `src/`、候选内部子路径或生产类型，
 
 E2E 有两组隔离 Repo。`cli`、`runner`、`record`、`report`、`package` 与 `lifecycle` 是功能场景，使用确定性本地 fixture 验收
 NiceEval 自己拥有的行为；`adapter/<id>` 是兼容性场景，使用对应真实 SDK / CLI 或协议故障端。两组只共用机械 Testkit，
-不共用依赖图、fixture、secret、结果根或领域 expected。
+不共用依赖图、fixture、secret、`.niceeval` RecordStore 或领域 expected。
 
 ## 从用户目标选择测试形态
 
@@ -86,12 +86,12 @@ Journey 可以有多个检查点，但检查点只能证明终态所需身份、
 每条测试正文都应能被读成五个阶段，但无需为阶段建立 DSL：
 
 ```ts
-test("导出报告能打开失败 Attempt", async () => {
+test("导出报告能打开带 failed Verdict Claim 的 Attempt", async () => {
   const run = await runProcess(/* invoke: pnpm exec niceeval exp … */);
   expect(run.exitCode, run.diagnostic()).toBe(1); // outcome
 
   const history = parseJson(await showHistory()); // observe
-  const locator = onlyFailedAttempt(history).locator;
+  const locator = onlyAttemptWithVerdictClaim(history, "failed").locator;
 
   const exported = await runProcess(/* invoke: pnpm exec niceeval view --out … */);
   expect(exported.exitCode, exported.diagnostic()).toBe(0); // outcome
@@ -206,7 +206,7 @@ interface ProcessResult {
 
 - 每个 Repo 执行在新的副本中；重试也使用新副本。
 - 一个单边界 E2E Repo 可以在 `beforeAll` 生成一次昂贵证据，随后只读测试并行消费。
-- 会改变“当前结果”的验证必须获得自己的结果根或独立 Repo，不能靠文件调用顺序保护共享状态。
+- 会写入 RecordStore 的验证必须获得自己的 `.niceeval` Store 或独立 Repo，并固定所读 GraphRef，不能靠文件调用顺序保护共享状态。
 - 会改配置或 fixture 的 mutation 必须发生在该测试的私有副本，并以新进程消费；禁止修改共享
   `niceeval.config.ts` 后在 `finally` 写回，因为崩溃、并行与 watcher 都会泄漏中间状态。
 - Journey E2E 自己拥有一份可变项目，并按命令顺序立即检查；其它测试不读取它的中间状态。

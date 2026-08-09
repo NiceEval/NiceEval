@@ -44,7 +44,7 @@ example/
 
 新增**功能命题**若能共享 package graph、config、executor、lane 和隔离策略，就在对应功能 Repo 增加文件。
 新增**适配器命题**只能进入 `adapter/<id>`；每个真实 SDK / CLI 仍各自拥有叶子 Repo。
-两组 Repo 不因都执行 `pnpm exec niceeval` 而合并，也不互借 fixture、依赖或结果根。
+两组 Repo 不因都执行 `pnpm exec niceeval` 而合并，也不互借 fixture、依赖或 `.niceeval` RecordStore。
 
 这与已调研项目的结构一致：Vite 用 `playground/<project>/__tests__`，Vitest 用 `test/e2e/fixtures/<project>`。
 Playwright 用 `tests/<product-area>/*.spec.ts`。三者都用产品域与行为定位测试，没有建立名为 `mechanism` 的测试层。
@@ -156,7 +156,7 @@ Adapter Repo 只为证明某个外部入口的协议兼容性保留最小 `exp �
 ## Adapter 为什么是多个 Repo
 
 Adapter 不是功能测试 Repo 的一种 fixture，也不是一个平铺测试文件夹。[`repos/adapter/`](repos/adapter/README.md) 是独立 collection，
-`ai-sdk`、`codex-cli`、`local-protocol` 各自是独立 consumer、依赖图、secret 条件和结果根。
+`ai-sdk`、`codex-cli`、`local-protocol` 各自是独立 consumer、依赖图、secret 条件和 `.niceeval` RecordStore。
 以后增加 Claude Code、OpenCode、Bub 或 E2B 时，按同一形状增加叶子 Repo；不把多个适配器写入一份
 package 与一份 `.niceeval` 结果中，也不拿这些 Repo 运行通用功能 Journey。示例只表达结构和 oracle，
 不要求为了读文档真的搭完所有付费后端。

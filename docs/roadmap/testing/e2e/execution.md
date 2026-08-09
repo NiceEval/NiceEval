@@ -111,7 +111,7 @@ PR path filter 来自 manifest `paths`，只是省时提示：plan 无法可靠�
 ## 并发
 
 - 无密钥 host Repo 可按 CPU 并行，每个 Repo 独立副本；
-- Repo 内保留 Vitest / Playwright 的默认文件级并行；短命控制文件、结果根、项目副本与资源名按 case 隔离；
+- Repo 内保留 Vitest / Playwright 的默认文件级并行；短命控制文件、`.niceeval` RecordStore、项目副本与资源名按 case 隔离；
 - Docker Repo 按 runner CPU / memory 设置 `max-parallel`；
 - live provider 按 provider / account 建 concurrency group，避免同一配额互相制造 429；
 - Lifecycle case 用独立进程组、动态端口和 run ID 核对自己的 orphan，不得因兄弟任务存在就误判；
@@ -158,4 +158,4 @@ Release 使用已经发布且精确锁定的 Testkit，不从待发布 checkout 
 - 注入身份核验失败与待测包不可消费使用不同失败分类，并保留各自的原始收据。
 - Adapter 与 Report Repo 使用原生测试文件和标题分片，不把多个命题压进线性脚本。
 - CLI、Runner、Report、Package 与 live Adapter 共用根 runner 的 pack → plan → run → artifact 链；workflow 不复制选择或注入逻辑。
-- 共用 runner 不等于共用 Repo；功能与 Adapter 始终是不同 matrix cell、依赖安装和结果根。
+- 共用 runner 不等于共用 Repo；功能与 Adapter 始终是不同 matrix cell、依赖安装和 `.niceeval` RecordStore。

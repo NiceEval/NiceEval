@@ -38,7 +38,7 @@ test/
 按需要增加 `agents/`、`reports/`、`src/`、`compose.yaml`、`Dockerfile` 和静态 fixture。
 目录不必为了形式把每个子功能拆成 Repo。`runner/carry-reuse.test.ts` 与 `runner/history-dedup.test.ts` 可以消费相同的
 功能依赖图；`report/first-eval-to-debug.spec.ts` 可以在自己的项目副本里完成 Journey。只有依赖、secret、executor、lane
-或资源所有权改变时才增加 Repo；测试会写状态时先给它私有项目副本或结果根，不靠拉长 Repo 名隔离。
+或资源所有权改变时才增加 Repo；测试会写状态时先给它私有项目副本或 `.niceeval` RecordStore，不靠拉长 Repo 名隔离。
 
 ## 两套 Repo 的边界
 
@@ -49,7 +49,7 @@ test/
 | 证明对象 | NiceEval 自己拥有的公开功能与跨功能 Journey | 一个外部 SDK / CLI 的真实协议兼容性 |
 | Agent / backend | Repo 内签入的确定性 fixture | 对应真实 SDK、CLI、provider 或该协议的本地故障端 |
 | 依赖图 | NiceEval candidate 与功能所需的最小依赖 | NiceEval candidate 加该 adapter 的精确上游依赖 |
-| 结果根 | 该功能 Repo 的隔离结果 | 每个 `adapter/<id>` 自己的隔离结果 |
+| `.niceeval` RecordStore | 该功能 Repo 的隔离 Store | 每个 `adapter/<id>` 自己的隔离 Store |
 | 测试范围 | CLI、Runner、Report、Package、Lifecycle 和功能 Journey | 最小运行路径加 adapter 特有的事件、usage、session、工具身份或故障 |
 
 功能测试不能为了“更真实”改去 `adapter/ai-sdk` 或 `adapter/codex-cli` 运行；那会把功能回归与上游网络、凭据和版本漂移
@@ -57,7 +57,7 @@ test/
 
 `adapter/` 是独立于功能 Repo 的 collection，不能把所有 adapter test 放入同一个叶子项目。
 `ai-sdk/`、`codex-cli/`、`claude-code/`、`opencode/`、`bub/` 等每个上游入口都拥有自己的 package、配置、
-凭据边界、结果根与公开 readback。
+凭据边界、`.niceeval` RecordStore 与公开 readback。
 无密钥的 `local-protocol/` 只拥有确定性 transport / fault / cleanup，不得用它的 canned event 宣称 live adapter 兼容。
 
 ## Repo Manifest
@@ -153,7 +153,7 @@ Executor 回答测试进程在哪里运行：
 
 - 根 runner 每个 Repo、每次重试都创建新副本；
 - Vitest 文件保留默认并行，且不依赖顺序；同一 Repo 的共享 evidence 在 prepare 完成后只读；
-- 需要写的测试使用独立结果根 / 项目副本；只有运行世界也不同，才为 Journey 增加独立 Repo；
+- 需要写的测试使用独立 `.niceeval` Store / 项目副本；只有运行世界也不同，才为 Journey 增加独立 Repo；
 - 短命控制文件位于 `withTempDir()` 创建的系统临时目录，每条 case 一份；需收集的 `.niceeval` / JUnit / trace 仍位于隔离 Repo 内；
 - Docker container、network、volume 名带 run ID，不使用全局固定名；
 - 本地 `--keep-workdir` 是显式诊断选项，CI 永远收 artifact 后删除隔离副本；

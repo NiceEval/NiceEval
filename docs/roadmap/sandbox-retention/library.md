@@ -15,8 +15,8 @@ interface SandboxRetentionPolicy {
   readonly idleTtlMs?: number;
   /** Provider 必须强制执行的单次 active 上限；必须是正有限毫秒数。 */
   readonly maxActiveMs?: number;
-  /** 单一 record root 经 GC 收敛后的未过期条目数量上限。 */
-  readonly maxStoppedPerRecordRoot?: number;
+  /** 单一 RecordStore 经 GC 收敛后的未过期条目数量上限。 */
+  readonly maxStoppedPerRecordStore?: number;
 }
 
 interface Config {
@@ -34,7 +34,7 @@ export default defineConfig({
     retain: "failed",
     idleTtlMs: 24 * 60 * 60_000,
     maxActiveMs: 60 * 60_000,
-    maxStoppedPerRecordRoot: 20,
+    maxStoppedPerRecordStore: 20,
   },
 });
 ```
@@ -52,7 +52,7 @@ export default defineConfig({
 | `retain` | `failed` | `failed` |
 | `idleTtlMs` | `86_400_000` | `86_400_000` |
 | `maxActiveMs` | 未设 | 未设 |
-| `maxStoppedPerRecordRoot` | `20` | `20` |
+| `maxStoppedPerRecordStore` | `20` | `20` |
 
 `CI` 是宿主执行事实。
 `process.env.CI` 去掉空白后非空，且小写值不是 `0` 或 `false` 时，调用处于 CI。
@@ -68,14 +68,14 @@ Runner 从 Provider session 上限、Invocation deadline、Attempt deadline 与 
 
 | 物理 Sandbox | `failed` 是否选择 | `all` 是否选择 |
 |---|---:|---:|
-| fresh `failed` / `errored` | 是 | 是 |
-| fresh `passed`，cleanup 完整 | 否 | 是 |
+| fresh 的 Verdict Claim 为 `failed` / `errored` | 是 | 是 |
+| fresh 的 Verdict Claim 为 `passed`，cleanup 完整 | 否 | 是 |
 | fresh cleanup 不完整 | 是 | 是 |
 | pool 因失败或不安全状态退休 | 是 | 是 |
 | pool 正常回到 reset anchor | 否 | 是 |
-| Judge fresh `failed` / `errored` 或 cleanup 不完整 | 是 | 是 |
+| Judge fresh 的 Verdict Claim 为 `failed` / `errored`，或 cleanup 不完整 | 是 | 是 |
 
-carried Attempt、skipped Attempt 与尚未派发的工作没有本次物理 Sandbox，不产生候选。
+carried Attempt、只有 Run-scoped `skipped` Verdict Claim 的未派发成员与尚未派发的工作都没有本次物理 Sandbox，不产生候选。
 一台复用池实例只选择一次，不按它承接的 Attempt 数重复计算。
 Judge Sandbox 按裁判自身 execution 与 cleanup 选择，不借用父 Attempt 的 Verdict。
 
@@ -105,7 +105,7 @@ Provider 只有 dormant 硬到期缺失时仍可接受，但反馈必须标出 `
 Provider 支持硬到期时，controller 同时写入不晚于该时刻的 `providerExpiresAt`。
 `auto` 不接受无限值，也不把 Provider 最小期限静默改短或改长。
 
-`maxStoppedPerRecordRoot` 是单一 `.niceeval/` registry 的收敛数量，不是全项目成本上界。
+`maxStoppedPerRecordStore` 是单一 `.niceeval/` RecordStore registry 的收敛数量，不是全项目成本上界。
 并发 Invocation 可以短暂超过它；其它 checkout 与 CI runner 不在同一计数中。
 跨 runner 的硬边界只来自 `providerExpiresAt`。
 

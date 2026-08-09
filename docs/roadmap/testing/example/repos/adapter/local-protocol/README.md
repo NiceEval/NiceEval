@@ -39,4 +39,4 @@ pnpm test
 |---|---|
 | `experiments/local.ts` | `uiMessageStreamAgent`，base URL 读 `LOCAL_BACKEND_URL`（测试注入） |
 | `evals/local/roundtrip.eval.ts` | 正常消息往返（本 Repo 总把它对准 5xx fixture，断言不执行） |
-| `test/local-backend-failure.test.ts` | 5xx → attempt errored、error 事件带 `agent.run` 阶段与含 `502` 的原因、最终 `result failed`、history 读回 `errored` |
+| `test/local-backend-failure.test.ts` | 5xx → `agent.run` 结构化执行错误 Observation → `errored` Verdict Claim；公开事件带 `agent.run` 阶段与含 `502` 的原因，receipt / history 在明确 GraphRef 上读回该 Claim |

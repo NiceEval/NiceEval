@@ -29,20 +29,43 @@
 
 ## 投影
 
-`projectSourceView()` 是唯一裁行与展开入口：
+`projectSourceView()` 是 SourceView Calculation 内唯一的裁行与展开入口：
 
 ```ts
+interface SourceViewOptions {
+  readonly mode: "default" | "full" | "file" | "web";
+  readonly file?: string;
+  readonly budgetLines?: number;
+}
+
+interface SourceContentLine {
+  readonly line: number;
+  readonly text?: string;
+  readonly annotations: readonly string[];
+}
+
+interface SourceContentNode {
+  readonly kind: "source" | "package" | "unavailable" | "detached" | "unmapped";
+  readonly label: string;
+  readonly lines: readonly SourceContentLine[];
+  readonly defaultOpen: boolean;
+  readonly children: readonly SourceContentNode[];
+}
+
+interface SourceContent {
+  readonly roots: readonly SourceContentNode[];
+}
+
 projectSourceView(
   source: AnnotatedEvalSource,
-  options: {
-    mode: "default" | "full" | "file" | "web";
-    file?: string;
-    budgetLines?: number;
-  },
-): SourceContent
+  options: SourceViewOptions,
+): SourceContent;
 ```
 
-`AnnotatedSourceResult` 保留与完整树相同的节点关系，但节点的 `lines` 只含本次要展示的行，并为每条调用边声明默认展开态。
+`AnnotatedEvalSource` 的唯一 owner 是[源码树 Architecture](architecture.md#sourceprojection)。
+`SourceViewOptions`、`SourceContentLine`、`SourceContentNode`、`SourceContent` 与 `projectSourceView()` 的唯一 owner 是本页。
+
+`SourceContent` 保留与完整树相同的节点关系，但节点的 `lines` 只含本次要展示的行，并为每条调用边声明默认展开态。
 省略区段不进入数组，渲染面按行号不连续显示 `... N lines`。
 
 ### 行选择
@@ -84,7 +107,7 @@ web 模式保留全部路径，用原生 `<details>` 表达展开。
 | 中间项目文件没有正文 | 保留 unavailable 段，更深节点继续挂在其下 |
 | 经过第三方包 | 保留不可展开的 package 段，更深节点继续挂在其下 |
 | 没有声明位置 | 断言与给分条目进入 unmapped |
-| 没有任何源码 | `evalSource` 为 `null`，源码切片报告 unavailable |
+| 没有任何源码 | `SourceProjection.tree` 是 unavailable EvidenceValue，源码切片原样显示全部 causes 与 basedOn |
 
 归属与建树只依赖已有事实，不根据函数名、断言数量或文件名猜调用关系。
 
@@ -93,5 +116,5 @@ web 模式保留全部路径，用原生 `<details>` 表达展开。
 - text 面只负责缩进层级、汇总行、省略行和终端宽度截断。
 - web 面只负责 `<details>`、汇总 pill、行状态和源码横向滚动。
 
-两个面都消费 `AnnotatedSourceResult`，不重新分桶、汇总或选择上下文行。
-web 视觉细节见 [`toAttemptSource(attempt)`](../components/primitives/source-view.md)。
+两个面都消费 `SourceContent`，不重新分桶、汇总或选择上下文行。
+web 视觉细节见 [`SourceView`](../components/primitives/source-view.md)。

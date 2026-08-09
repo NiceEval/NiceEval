@@ -1,53 +1,36 @@
 # Attempt diff
 
-`diffResult(attempt)` 是 Attempt 详情、`show --diff` 与 JSON 共用的任务结果：
+Diff 是参数化 Attempt detail page 在 plan 中声明的 Projection：
 
 ```ts
-interface DiffResult {
-  locator: AttemptLocator;
-  /** 按路径排序；净无变化的文件不在里面。 */
-  files: readonly DiffFile[];
+interface DiffProjection {
+  attempt: AttemptRef;
+  files: EvidenceValue<readonly DiffFile[]>;
 }
 ```
 
-`toDiffFiles(attempt)` 返回同一份 `files`，供 [`DiffView`](../primitives/diff-view.md) 直接消费。
-`DiffFile` 的字段形状在 `DiffView` 的值形状里定稿，两个入口不各写一份。
+`DiffProjection` 的唯一 owner 是本页；`AttemptRef` 与 `EvidenceValue` 由 [Record Library](../../../record/library.md#runcontribution-与-attempt-handle) owner，`DiffFile` 由 [`DiffView`](../primitives/diff-view.md#值形状) owner。
+
+`DiffView` 只消费 `files` 已有的 available 或 unavailable 结果。
+Attempt details、show diff target 与 JSON target 共享同一份 ReportData entry，不各自读取 workspace 证据。
 
 ## 差异从哪里来
 
-显示的是 [agent 归因增量](../../../sandbox/architecture.md#变更归因send-区间与分类账)：
+Diff Projector 从 Record 中已经 snapshot 的 workspace-change evidence 构造文件级视图。
+它的 `ProjectionReadContext` 跟踪每个读取对象、event 和 Claim，因此结果的 `basedOn` 能复核 provenance。
 
-1. runner 在 workdir 上打一本私有 git 分类账，每个 send 区间前后各取一次快照。
-2. `workspace.diff` 阶段导出每个 send 区间的 delta，落盘为 [`diff.json`](../../../record/architecture.md#diffjson)，形状是 `DiffWindow[]`。
-3. 这份投影在 send 区间序列之上派生文件级视图：净状态、触碰区间、逐区间 patch。
-
-因此清单里只有 agent 在 send 区间内改动的文件。
-`EvalDefinition.setup` 准备的素材与 send 区间外的普通 Sandbox 写入都不进这份清单。
-`diff.ignore` / `diff.include` 调整归因排除清单，判断口径与这份投影完全一致。
-
-## 派生规则
-
-- 净状态取首个触碰区间的起点与最后触碰区间的终点。
-  动过但净无变化的文件（创建又删除、改回原样）不进 `files`。
-- `added` / `removed` 是公共前后缀修剪后的上界近似：单区域编辑精确，复杂编辑给出上界。
-- 逐区间 patch 原样来自该区间的 before/after，不跨区间合成。
-- 二进制文件只带字节数，不带 patch。
+Projector 可以给出净状态、触碰区间与 patch 等纯显示值。
+它不得在读取时扫描工作目录、运行 git、请求网络或依据当前 sandbox 状态猜差异。
 
 ## 可用性
 
-`diff.json` 缺失时整段是明确缺失，不伪造成「零个文件改动」：
+缺少 workspace-change evidence 时，`files` 是 unavailable EvidenceValue，而不是空文件列表。
+causes 保留「源 Record 未采集」「权限或 capability 不支持」「对象损坏」等全部已知原因。
 
-| 情况 | 表现 |
-|---|---|
-| 沙箱型 Attempt，agent 一个文件都没动 | 清单为空，区块零输出 |
-| direct agent（没有 NiceEval 管理的 workspace） | 声明这次 Attempt 没有 diff 证据 |
-| 发布的 Record root 未带 `diff` artifact | 声明证据未随发布带上，并给出期望路径 |
-
-`publish({ artifacts })` 默认不带 `diff`。
-要让静态站的 Attempt 详情有文件差异，发布时显式选上它。
+源 Record 有 evidence、但 Report artifact 无法复制或验证它时，导出失败；该故障不能改写为普通的 unavailable 结果。
 
 ## 相关阅读
 
 - [`DiffView`](../primitives/diff-view.md) —— 值形状、路径树与内联预算。
-- [`--diff`](../../show/diff.md) —— 终端切片与单文件 patch。
-- [Record Library](../../../record/library.md) —— 用脚本消费 `diff.json` 的区间结构。
+- [`show`](../../show.md) —— 终端 target。
+- [Record Library](../../../record/library.md) —— Projector 的事实读取边界。

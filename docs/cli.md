@@ -16,12 +16,12 @@ src/cli.ts              入口:parseArgs → 按 command 分派 → main() 收�
 ├─ runner/run.ts         调度核心:两级并发闸、指纹携带、budget、reporter 编排(Effect)
 │  └─ runner/attempt.ts  单个 attempt 生命周期:沙箱/OTel 资源、超时、评分(Effect)
 ├─ runner/feedback/*     反馈 coordinator:形态解析、纯 reducer、human/json renderer、终端 sink
-├─ runner/reporters/*    Artifacts(默认 required)/ JUnit / Json(显式指定则 required)/ Braintrust(best-effort)
-├─ show/index.ts         只读路径:解析落盘 result.json,渲染终端证据切面(不经 run.ts)
+├─ runner/reporters/*    JUnit / Json(显式指定则 required)/ Braintrust(best-effort);Record 提交由 Runner 内置
+├─ show/index.ts         只读路径:解析 Record 事实根,渲染终端证据切面(不经 run.ts)
 └─ view/index.ts         只读路径:起本地 server 或 --out 静态导出(不经 run.ts)
 ```
 
-`show` 与 `view` 不依赖 `niceeval.config.ts`,不发现 eval、不跑 agent——它们直接读 `.niceeval/` 下已经落盘的 Run(见 [Results](feature/record/architecture.md)),所以不进入 `run.ts` / `attempt.ts` 这条 Effect 调度链,是两条独立的同步-为主读取路径。
+`show` 与 `view` 不依赖 `niceeval.config.ts`,不发现 eval、不跑 agent——它们打开 `.niceeval` 这个跨 Invocation / Experiment / Run 长期追加的 RecordStore，并在明确的 GraphRef 上读取或投影事实（见 [Record](feature/record/architecture.md)）。它们不按目录、最近 Run、时间戳或私有 snapshot 文件挑事实，所以不进入 `run.ts` / `attempt.ts` 这条 Effect 调度链,是两条独立的同步-为主读取路径。
 
 ## 数据流:argv → 退出码
 
@@ -45,15 +45,15 @@ process.argv
                 同时喂给 RunFeedbackPlan 与 runEvals,dashboard/事件流的"携入"展示与真实调度共用同一次判断)
               → 建对应形态的 renderer(human / json 二选一)+ 一个 FeedbackCoordinator,
                 coordinator.start(plan) —— run 激活后终端只有这一个协调者(见下「反馈 coordinator」)
-              → 建 reporters(ReporterRegistration[]):默认 Artifacts 与显式 --json/--junit 标 required,
+              → 建 reporters(ReporterRegistration[]):显式 --json/--junit 标 required,
                 config.reporters 标 best-effort(见下「required reporter」)
               → 注册 SIGINT/SIGTERM 三级响应(见下)
               → runEvals({ config, evals, agentRuns, reporters, signal, priorResults, carryPlan, … })  # 进入 Effect 调度核心
               → 收尾:stopAllSandboxes() 异常强清(只清运行清理集合;--keep-sandbox 留存的沙箱已在
                 verdict 定稿时先原子登记注册表、再移出集合,见 feature/sandbox/architecture.md)
                 → coordinator.stopDynamic() → 把 coordinator 累计的诊断
-                折成 InvocationCompletion → coordinator.finish({ summary, completion, paths, json, junit }) 打印
-                最终摘要与 Run 路径 → 按 CompletionStatus 与 evalLevelStats 折叠的 verdict 统一计算退出码
+                折成 InvocationCompletion → coordinator.finish({ receipt, completion, paths, json, junit }) 打印
+                最终摘要与 Record 路径 → 按 CompletionStatus 与 evalLevelStats 折叠的 verdict 统一计算退出码
 ```
 
 `exp` 是唯一进入 Effect 调度核心(`run.ts` → `attempt.ts`)的分支;其余命令要么是一次性的同步动作,要么是只读路径,不需要结构化并发或资源生命周期管理,因而不用 Effect(见下节)。
@@ -78,7 +78,7 @@ ESM 宿主仍是推荐形态:CJS 编译面下 config / eval 文件用不了顶�
 ## 反馈 coordinator:一个 run 只有一个终端协调者
 
 输出形态(人读文本 / `--json`)只决定"终端展示",不进入调度核心,也不是一种 `Reporter`。
-`Reporter` (`onEvent` / `onInvocationStart` / `onEvalComplete` / `onInvocationComplete`)只负责把完成结果写到别处(artifacts、JSON、JUnit、Braintrust、用户自定义平台)。
+`Reporter` (`onRecord` / `onAttemptReceipt` / `onInvocationReceipt`)只负责把完成结果送到别处(JSON、JUnit、Braintrust、用户自定义平台)。
 `cli.ts` 不再构造 `Console` / `Live` / `Quiet` 这类兼职当展示层的 reporter,两种形态各自的展示逻辑全部收在 `src/runner/feedback/`:
 
 ```text
@@ -106,7 +106,7 @@ run 未激活或 coordinator 尚未构造时回退到 `src/tty-line.ts` 的 boot
 ### required reporter
 
 `cli.ts` 给每个 `Reporter` 实例包一层 `ReporterRegistration { reporter, name, required, target? }`。
-默认 `Artifacts`、显式 `--json` / `--junit` 标 `required: true`。
+Record 提交由 Runner 内置完成;显式 `--json` / `--junit` 标 `required: true`。
 它们是 agent / CI 读结果的唯一权威入口,写失败必须让 completion / 退出码判红。
 
 `config.reporters` 标 `required: false`。
@@ -118,12 +118,12 @@ run 未激活或 coordinator 尚未构造时回退到 `src/tty-line.ts` 的 boot
 
 ### locator 在调度前生成
 
-`runEvals()` 在展开/调度任何 attempt 之前就为每个 Experiment 预分配持久化 `runId`,并在构造 fresh attempt plan 时立即计算 `locator = encodeAttemptLocator({ runId, evalId, attempt })`。
+`runEvals()` 在展开/调度任何 attempt 之前就为每个 Experiment 预分配持久化 `runId`,并在构造 fresh attempt plan 时立即为每个 attempt 生成完整 128-bit `attemptId`,locator 是它的 26 字符规范大写 Crockford 编码。
 这个值作为 attempt 身份的一部分传进 `runAttempt`,不是完成后再写回结果。
-于是 verdict 定稿时提交的留存注册表、feedback coordinator 的 failure / kept 事件、reporter 的 `eval:complete` 与最终 `result.json` 从第一次观察起就拿到同一个 locator。
+于是 verdict 定稿时提交的留存注册表、feedback coordinator 的 failure / kept 事件、reporter 的 `onAttemptReceipt` 与最终提交进 Record 的 Attempt 事实从第一次观察起就拿到同一个 locator。
 
-Artifacts writer 经 `RunShape.runIds` 使用同一份身份并把出处写成 `locatorRunId`。
-自动携带的条目仍原样保留旧 locator 与出处 Run,不按当前 invocation 重算。
+`AttemptPayloadV1` 只保留 identity、origin Run、provenance ref、lifecycle state 与 stream bindings；Attempt 的出处即其 origin Run。执行错误、诊断、事件与 raw usage 是 Observation，断言、Judge、Verdict 与估算成本是 Claim，读面由 Projector 生成。
+携带合入的条目保留 origin Run 身份,不按当前 invocation 重算,携带语义经 Claim 与 RunContribution 表达。
 
 ## 终端框线:一个渲染件,全仓消费
 

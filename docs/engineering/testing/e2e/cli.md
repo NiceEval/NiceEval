@@ -20,8 +20,8 @@
 | Experiment       | 内容                    | 预期                                                            |
 | ---------------- | ----------------------- | --------------------------------------------------------------- |
 | 正常             | 断言通过的 Eval         | 按 Eval 级折叠后退出 `0`                                        |
-| deliberate-fail  | 断言必然不通过的 Eval   | attempt verdict `failed`，进程非零退出                          |
-| deliberate-error | 必然产生执行错误的 Eval | attempt verdict `errored`，进程非零退出，且与 `failed` 判然有别 |
+| deliberate-fail  | 断言必然不通过的 Eval   | Attempt 的 Verdict Claim 为 `failed`，进程非零退出                          |
+| deliberate-error | 必然产生执行错误的 Eval | 执行错误 Observation 支撑 Attempt 的 `errored` Verdict Claim，进程非零退出，且与 `failed` 判然有别 |
 
 ### 缓存
 

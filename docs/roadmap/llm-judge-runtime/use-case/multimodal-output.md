@@ -47,11 +47,12 @@ export default defineEval({
 });
 ```
 
-材料读取器读取并 snapshot 两个文件。
+材料读取器读取两个文件，并为本次 Judge evaluation 形成有内容摘要的 typed evidence refs。
 图片作为 image part 进入 Provider，CSV 作为带 `reference` role 的文本 part 进入同一规范请求。
 
 Provider 不支持 image 时，这个 Eval × Experiment pair 在预检阶段得到 `judge-capability-unavailable`。
-图片不存在、过大或 MIME 不匹配时，Judge Assertion 得到 `judge-material-unavailable`，并按既有 Verdict 规则折叠。
+图片不存在、过大或 MIME 不匹配时，先形成 `judge-material-unavailable` 的结构化执行错误 Observation，再得到
+`outcome: "unavailable"` 的 Assertion Claim，并按既有 Verdict Claim 规则折叠。
 
 结果详情用下面的入口复核：
 

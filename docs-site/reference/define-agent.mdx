@@ -360,7 +360,7 @@ verdict — throw an exception when you cannot continue.
 fact(key: string, value: string | number | boolean): void;
 ```
 
-Records a neutral runtime observation on the current attempt. Facts do not change the Turn status, verdict, score, or fingerprint.
+Records a neutral runtime observation. Each call appends one Observation; same-key facts never overwrite history, and the latest-fact Projector reads the last sequence. Facts do not change the Turn status, verdict, score, or fingerprint.
 
 #### `log`
 

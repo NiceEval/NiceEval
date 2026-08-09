@@ -28,15 +28,17 @@ interface PlanDocument {
   matrix: Array<{ experimentId: string; evalId: string; reused: boolean }>;
 }
 
-interface RunEvent {
-  event: string;
-  status?: string;
-  verdict?: string;
-  evalId?: string;
-  passed?: number;
-  failed?: number;
-  completion?: string;
+interface InvocationReceiptRecord {
+  type: "receipt";
+  receipt: {
+    completion: "complete" | "incomplete" | "interrupted";
+    record: { state: "complete" | "partial" | "not-recorded" };
+  };
 }
+
+type InvocationMachineRecord =
+  | { type: "snapshot" | "observation" | "claim" | "heartbeat" }
+  | InvocationReceiptRecord;
 
 interface HistorySection {
   experimentId: string;
@@ -76,9 +78,15 @@ function historySection(result: ProcessReceipt, evalId: string): HistorySection 
   );
 }
 
+function invocationReceipt(result: ProcessReceipt): InvocationReceiptRecord {
+  const receipts = result.ndjson<InvocationMachineRecord>()
+    .filter((record): record is InvocationReceiptRecord => record.type === "receipt");
+  return only(receipts, () => true, result.diagnostic());
+}
+
 // 跨域用户目标闭合：init → list → dry → exp → history → locator → execution →
 // view --out → 浏览器。每个接缝立即检查（e2e/README.md「Journey」），
-// 通过 eval 的完成由 result 计数与历史读回双重证明。
+// 通过 eval 的完成由 InvocationReceipt 与历史读回双重证明。
 test("新项目能列出并运行评测、定位失败 Attempt、证明通过评测完成、再交付静态报告", async ({ page }) => {
   await withProjectCopy(PROJECT_COPY, async ({ root }) => {
     const runCli = (args: readonly string[]) => niceeval.run(args, { cwd: root });
@@ -117,23 +125,12 @@ test("新项目能列出并运行评测、定位失败 Attempt、证明通过评
     expect(plan.matrix.every((row) => row.reused === false)).toBe(true);
     expect(plan.reused).toBe(0);
 
-    // exp：通过一条、失败一条；result 计数精确证明 passing eval 完成了。
+    // exp：通过一条、失败一条；receipt 证明 Invocation 已完整收束。
     const invocation = await runCli(["exp", "onboarding", "--rerun", "all", "--json"]);
     expect(invocation.exitCode, `[run]\n${invocation.diagnostic()}`).toBe(1);
-    const events = invocation.ndjson<RunEvent>();
-    const passesEvent = only(
-      events,
-      (item) => item.event === "eval" && item.evalId === "onboarding/passes",
-      invocation.diagnostic(),
-    );
-    expect(passesEvent.verdict).toBe("passed");
-    const result = only(events, (item) => item.event === "result", invocation.diagnostic());
-    expect(result).toMatchObject({
-      event: "result",
-      status: "failed",
-      passed: 1,
-      failed: 1,
-      completion: "complete",
+    expect(invocationReceipt(invocation)).toMatchObject({
+      type: "receipt",
+      receipt: { completion: "complete", record: { state: "complete" } },
     });
 
     // history：失败 attempt 的 locator 从公开历史取得；通过 eval 的历史身份同样可读。

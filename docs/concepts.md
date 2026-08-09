@@ -46,12 +46,12 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
 | 断言 | Assertion | 对结果、行为、证据或资源使用提出的一项可写入的检查;产出 0–1 分数或 `unavailable` | [Assertions](./feature/assertions/README.md) |
-| 判定 | Verdict | 一个 Attempt 的四态终态:`passed` / `failed` / `errored` / `skipped` | [Severity 与 Verdict](./feature/verdict/architecture.md) |
+| 判定 | Verdict | 依据证据形成的 Verdict Claim，值为 `passed` / `failed` / `errored` / `skipped`；不是 Attempt lifecycle state | [Severity 与 Verdict](./feature/verdict/architecture.md) |
 | 严重度 | Severity | gate 不过即 `failed`;soft 默认不改判定,`--strict` 下才计入 | [Severity 与 Verdict](./feature/verdict/architecture.md) |
 | Judge 断言 | LLM-judged assertion | 把材料和 rubric 交给裁判模型求分的 Assertion;默认 soft、无阈值 | [LLM-as-a-judge](./feature/judge/library.md) |
 | 判分预检 | Judge precheck | 派发前对判分端点的最小探测;失败只作废含 Judge 断言的 Eval,不拦整次运行 | [派发前预检](./feature/judge/library.md#派发前预检) |
 | 断言范围 | Assertion scope | `t.*` 看 Attempt、`session.*` 看 Agent Session、`turn.*` 看 Turn 已发生的事件 | [Scopes](./feature/assertions/architecture/scopes.md) |
-| 证据完整度 | Evidence coverage (`evidenceCoverage`) | Adapter 对事件、action、message、usage、status 与 data 是否采集完整的必填逐通道声明 | [证据与完整性](feature/adapters/architecture/evidence.md) |
+| 证据完整度 | Evidence coverage (`evidenceCoverage`) | Adapter 在 Provenance 与 Turn Observation 中声明的逐通道采集完整度；Projector 与 Assertion Claim 以它解释证据缺口，不写入 AttemptPayloadV1 | [证据与完整性](feature/adapters/architecture/evidence.md) |
 
 ### 计分粒度
 
@@ -127,7 +127,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 裁判执行配置 | JudgeConfig | 裁判 model、端点、凭据变量名与超时；可由 Experiment 做 A/B，不包含 rubric 或 severity | [Judge](feature/judge/library.md#模型与鉴权) |
 | 实验 flags | Flags | A/B 条件键,经 `ctx.flags` 给 Adapter、`t.flags` 给 eval | [Flags、labels 与 facts](feature/experiments/use-case/实验值归属/) |
 | 实验 labels | Labels | 只供报告分组的坐标;不透传、不参与可比性配置 | [Flags、labels 与 facts](feature/experiments/use-case/实验值归属/) |
-| 运行时观测 | Runtime observation (`facts`) | 运行时才知道、由 `ctx.fact()` 主动上报并随结果保存的值;不进配置或指纹 | [Flags、labels 与 facts](feature/experiments/use-case/实验值归属/) |
+| 运行时观测 | Runtime observation (`facts`) | 运行时才知道、由 `ctx.fact()` 主动上报为 Observation 的值；不进配置、指纹或 AttemptPayloadV1 | [Flags、labels 与 facts](feature/experiments/use-case/实验值归属/) |
 | 模型(`model` 字段) | Model | Experiment 为 agent 指定的模型标识;省略则用 agent 原生默认 | [Experiments](feature/experiments/library.md) |
 | 推理强度 | Reasoning effort (`reasoningEffort`) | 独立于 `model` 的推理强度档位;归属与 `model` 一致 | [Experiments](feature/experiments/library.md) |
 | 首过即停 | EarlyExit | 一个 eval 先过一次即中止其余 Attempt 的策略;配置名 `earlyExit` | [Early exit](feature/experiments/use-case/首过即停.md) |
@@ -145,8 +145,8 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 运行器 | Runner | 负责发现、有界并发、重试、缓存与结果交付的调度引擎 | [Runner](runner.md) |
 | 生命周期 Hook | Hook | Experiment 与 Agent 层的成对 `setup` / `teardown` 回调;Sandbox 与 Eval 的准备走 layer 的 `prepare()` | [Runner](runner.md) |
 | Invocation | Invocation | 一次 CLI 调用的瞬时编排与 live 聚合边界;可打开多个 Run,不进入 Record | [Runner](runner.md) |
-| 调度 Session | Invocation session | 一次 `niceeval exp` 调度的可查询索引，可包含多个 Experiment Run；与 Attempt 内的 Agent Session 不同 | [Session 查询](feature/experiments/cli.md#session-查询) |
-| 失活调度 Session | Expired invocation session (`expired`) | 心跳超过阈值的调度 Session 条目；只供诊断，不证明进程仍在运行 | [Session 查询](feature/experiments/cli.md#session-查询) |
+| Invocation 索引 | Invocation index | 以 `invocationId` 为键的 live 查询投影，可关联多个 Experiment Run；不进入 Record entity catalog，也不同于 Attempt 内的 Agent Session | [Session 查询](feature/experiments/cli.md#session-查询) |
+| 失活 Invocation 索引 | Expired invocation index (`expired`) | 心跳超过阈值的外部索引项；只供诊断，不证明进程仍在运行 | [Session 查询](feature/experiments/cli.md#session-查询) |
 | 派发 | Dispatch | 把一个 Attempt 交出去开始执行;排队等待不算派发,停止派发不抢占在飞项 | [Runner](runner.md) |
 | 并发位 | Concurrency slot | 全局 `maxConcurrency` 的一个名额,只在 Attempt 真正执行时占用 | [Runner](runner.md) |
 | 实验并发限制 | Experiment concurrency limit | `ExperimentDefinition.maxConcurrency` 对本 Invocation 内一个实验的 Attempt 并发限制 | [Max concurrency](feature/experiments/use-case/并发/限制全局并发.md) |
@@ -168,7 +168,6 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 超时 | Timeout | Adapter 内层超时加 Runner 外层 Attempt deadline;排队不计入 | [Runner](runner.md) |
 | 总耗时 | Elapsed time | 一次 Invocation 从开始到结束经过的时间，包含并行重叠和排队 | [Runner](runner.md) |
 | 阶段耗时 | Phase duration | 一个生命周期阶段实际经过的时间，由 Attempt 时间树写入 | [Benchmark](engineering/benchmark/README.md) |
-| 超时样本的耗时下界 | Duration lower bound for timed-out samples | 超时时只知道真实耗时大于超时线;统计上称为右删失 | [Measures](feature/reports/library/measures.md) |
 
 ### 缓存与结果沿用
 
@@ -197,24 +196,38 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| artifact | Artifact | Run 目录里的 `run.json`、Attempt `result.json` 与证据文件 | [Record](feature/record/architecture.md) |
-| 诊断 | Diagnostic | 不改判定的操作性事实,按 Attempt 或 Run 归属落盘 | [Record](feature/record/architecture.md) |
-| 生命周期阶段 | `LifecyclePhase` | Runner 保留的 attempt 生命周期参照点闭集;决定主链、收尾与耗时口径 | [Record](feature/record/architecture.md) |
-| timing activity | `TimingActivity` | 开放 key 的工作计时节点,Run 与 attempt 共用同一形状 | [Record](feature/record/architecture.md) |
-| Record root | Record root | 结果目录树的根,默认 `.niceeval/` | [Record library](feature/record/library.md) |
-| Record | Record | `openRecord()` 打开 Record root 得到的事实层句柄,一点判断都不许有 | [Record library](feature/record/library.md) |
-| 结果 Run | Run | 一个 Experiment 在一次 Invocation 中产生的持久化执行批次;包含该实验的 Attempt 与结果沿用关系 | [Record](feature/record/architecture.md) |
-| Attempt 定位符 | AttemptLocator | `@` 前缀的稳定短引用,不是数组下标或目录路径 | [Record](feature/record/architecture.md) |
+| artifact | Artifact | 用户导出的可交付物(Report artifact)或领域 role；不是 Record 文件注册表 | [Record](feature/record/architecture.md) |
+| Observation | Observation | 运行后无法重新取得、只陈述实际发生了什么的不变事实 payload | [Record](feature/record/architecture.md) |
+| Claim | Claim | evaluator 依据明确证据在当时作出的判断；Verdict、Assertion 与估算成本都是 Claim | [Record](feature/record/architecture.md) |
+| Projector | Projector | 从 committed Record 确定性计算一种中性读模型的纯函数，经追踪式 ProjectionReadContext 自动形成 `basedOn` | [Record](feature/record/architecture.md) |
+| Projection | Projection | Projector 一次求值得到的普通读模型；可重建，不进入 Record | [Record](feature/record/architecture.md) |
+| Reducer | Reducer | 按事件顺序把 Observation 归约成运行状态的纯函数 | [Record](feature/record/architecture.md) |
+| snapshot | snapshot | Reducer 在指定 stream sequence 上产生的有界运行状态副本；是 live 传输数据，不是 Record 真源 | [Record](feature/record/architecture.md) |
+| Observation Hub | Observation Hub | 一次 Invocation 内校验、排序并分发 Observation 的唯一入口 | [Record](feature/record/architecture.md) |
+| 诊断 | Diagnostic | 不改判定的操作性事实，按 Attempt 或 Run 归属写入 Record | [Record](feature/record/architecture.md) |
+| 生命周期阶段 | `LifecyclePhase` | Runner 保留的 attempt 生命周期参照点闭集；决定主链、收尾与耗时口径 | [Record](feature/record/architecture.md) |
+| timing activity | `TimingActivity` | timing Projector 从 lifecycle / command / turn Observation 读出的开放 key 工作节点，Run 与 Attempt 读面共用同一形状 | [Record](feature/record/architecture.md) |
+| committed Graph root | Graph root | 每次提交的 Graph root 都是不可变 durable revision；mutable 元数据只有同一 Store 的 head 与 append-only committedRoots，与提交原子更新 | [Record](feature/record/architecture.md) |
+| RecordGraphRef | `RecordGraphRef` | recordId 与固定 Graph root 的组合；EvidenceRef、`RecordCommit` 的 partial / complete 分支与 `openRecordGraph()` 用它引用事实 | [Record](feature/record/architecture.md) |
+| Graph node | `GraphNodeV1` | 把一个 opaque typed payload 与它的容器强依赖分开的内容寻址节点 | [Record](feature/record/architecture.md) |
+| strong edge | `StrongEdgeV1` | copier、verifier、GC 与导出器都必须跟随的容器依赖；不代替领域 relation | [Record](feature/record/architecture.md) |
+| RunContribution | RunContribution | 表达 carry / accept / rename 对既有 Attempt 的贡献语义；不复制或 reparent 执行事实 | [Record](feature/record/architecture.md) |
+| Receipt | `InvocationReceipt` / `AttemptReceiptSnapshot` | 运行建立的窄身份、执行终态与穷尽 `RecordCommit`；可以嵌套 Run / Attempt receipt，但不复制宽结果对象 | [Record](feature/record/architecture.md) |
+| EvidenceValue | `EvidenceValue<T>` | Projector 读模型的 value 与 verification 两轴状态；truncated / redacted / missing / corrupt 不折叠成 null | [Record](feature/record/architecture.md) |
+| RecordStore | RecordStore | 一个 `.niceeval` 是跨 Invocation / Experiment / Run 的长期 RecordStore | [Record library](feature/record/library.md) |
+| Record | Record | `await using store = await openRecordStore(root)` 绑定并打开 RecordStore，`await using record = await openRecord(store)` 打开当下 head，`openRecordGraph(store, ref)` 只重开明确给定的 immutable revision | [Record library](feature/record/library.md) |
+| 结果 Run | Run | 一个 Experiment 的持久化执行批次；Attempt 永属 origin Run，carry 经 Claim 与 RunContribution 表达 | [Record](feature/record/architecture.md) |
+| Attempt 定位符 | AttemptLocator | 完整 128-bit `attemptId` 的 26 字符规范大写 Crockford 编码；CLI 写 `@` 加 26 字符 | [Record](feature/record/architecture.md) |
+| SampleBundle | SampleBundle | `exportSample` 产出的独立样本交付包 | [Sample](feature/sample/README.md) |
 
 ### 样本选择
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
 | Sample(样本) | Sample | 挑好的 Attempt、涵盖事实与结构化挑选警告;`pipe` 只删减 | [Sample](feature/sample/README.md) |
-| 当前结果集 | Current result set | 当前 `configHash` 下每个 Experiment × Eval 的有效物理 Attempt 集合；出处不改变计票 | [Sample](feature/sample/README.md#唯一心智) |
+| 可比结果集 | Comparable result set | 固定 GraphRef 与 `configHash` 下每个 Experiment × Eval 的有效物理 Attempt 集合；出处不改变计票，也不按目录、时间或最近结果重选 | [Sample](feature/sample/README.md#唯一心智) |
 | 样本命中范围 | Sample coverage (`sample.coverage`) | 一份 Sample 对已知 Eval 总体命中了哪些、缺哪些；与 Adapter 的 evidence coverage 无关 | [Sample](feature/sample/library.md#缺口与分母) |
-| 结果缺口 | Result gap (`SampleMissing`) | 当前结果集没有某道题的 Attempt；`never-run` 表示从未运行，`previous-result` 表示只有不可比的旧结果 | [Sample](feature/sample/README.md#缺口不是第二套结果) |
-| 执行历史 | History | Record 里的历次物理 Attempt，用于回看稳定性和旧结果，不是另一套当前状态 | [Sample](feature/sample/README.md#常见用途) |
+| 执行历史 | History | Record 里的历次物理 Attempt，用于回看稳定性和旧结果，不是另一套可变事实状态 | [Sample](feature/sample/README.md#常见用途) |
 
 ### 报告
 
@@ -231,7 +244,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 下钻目标 | ReportTarget | 组件交给宿主的「页 id + 参数」值；宿主经 `ctx.href()` 换 URL，换不出就是纯文本 | [Reports library](feature/reports/library.md#目标与下钻) |
 | 原语 | Primitive | 只负责一种稳定结果形状、不认识 NiceEval 领域对象，并提供 text / web 两面 | [Report components](feature/reports/components/README.md) |
 | 宿主 | Host | 打开结果、选择 Sample 并渲染 Report 的 show 或 view | [Reports architecture](feature/reports/architecture.md) |
-| 有效根 | Effective root | Record root 经位置参数或 `--exp` 收窄后的部分 | [View](feature/reports/view.md) |
+| 有效选择 | Effective selection | 指定 RecordGraphRef 经位置参数或 `--exp` 收窄出的成员；不替换或推断 GraphRef | [View](feature/reports/view.md) |
 | 持续重建 | Continuous rebuild | `niceeval view` 监听输入变化并重跑整条建站管线 | [View](feature/reports/view.md) |
 | 相对时距 | Time distance (`formatTimeDistance`) | 一条结果距参照点多久的紧凑人读读法,如 `12d` | [Presentation](feature/reports/library/presentation.md#相对时距是数据不是文案) |
 | 默认报告 | —(角色名,非 API) | 不传 `--report` 时 show / view 装载的内建普通 Report | [Default report](feature/reports/show/default-report.md) |
@@ -250,7 +263,6 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 实体糖组件 | `AttemptList` / `ExperimentList` / `EvalList` | 官方同步投影加一个通用原语 | [Reports library](feature/reports/library.md#实体转换) |
 | Attempt 详情 | `AttemptDetails` | 显示一份 attempt 页 `load` 装配的 AttemptEvidence | [Attempt detail](feature/reports/components/attempt-detail/README.md) |
 | Experiment 详情 | `ExperimentDetails` | 显示收窄到单个实验的 Sample 的完整读面 | [Experiment detail](feature/reports/components/experiment-detail/README.md) |
-| 下钻默认规则 | `targetOfRefs()` | refs 恰好一个才给 attempt 目标的全库唯一默认规则 | [Reports library](feature/reports/library.md#目标与下钻) |
 
 ### 配置与 CLI
 
@@ -269,16 +281,6 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Agent Judge | Agent Judge | 作为 Assertion evaluator 运行的独立 Agent；调查证据后返回分数、理由与引用，不拥有 Verdict | [Agent-as-Judge](roadmap/agent-as-judge/README.md) |
 | Eval 序列 | Sequence (`defineSequence`) | 引用现有 Eval ID，并要求从第一步开始按声明顺序真实执行的文件派生定义 | [有序 Eval 序列](roadmap/ordered-sequences/README.md) |
 | Sandbox 复用组 | Sandbox reuse group | `evals/` 中显式声明必须共用一台活跃 Sandbox 的 Eval 集合；选中即生效，组外 Attempt 保持 fresh | [分组 Sandbox 复用](roadmap/sandbox-reuse-groups/README.md) |
-| Observation | Observation | 运行后无法重新取得、只陈述实际发生了什么的不可变事实 | [运行观测协议](roadmap/observation-protocol/README.md) |
-| Claim | Claim | evaluator 根据明确依据在当时作出的判断 | [运行观测协议](roadmap/observation-protocol/architecture.md#provenance-与-claim) |
-| Reducer | Reducer | 按事件顺序把 Observation 归约成运行状态的纯函数 | [运行观测协议](roadmap/observation-protocol/architecture.md#reducer-与-snapshot) |
-| snapshot | snapshot | Reducer 在指定 stream sequence 上产生的有界运行状态副本 | [运行观测协议](roadmap/observation-protocol/architecture.md#reducer-与-snapshot) |
-| Projector | Projector | 从 sealed Record 确定性计算一种中性读模型的纯函数 | [运行观测协议](roadmap/observation-protocol/architecture.md#report-与-projector-边界) |
-| Projection | Projection | Projector 一次求值得到的普通值;可重建,不进入 Record | [运行观测协议](roadmap/observation-protocol/architecture.md#report-与-projector-边界) |
-| Observation Hub | Observation Hub | 一次 Invocation 内校验、排序并分发 Observation 的唯一入口 | [运行观测协议](roadmap/observation-protocol/architecture.md#observation-hub-与-sink) |
-| Graph root | `GraphRootV1` | `layout.json.head` 指向的不可变对象图入口；只声明 open/sealed 与 subject，不等同于 Reducer snapshot | [运行观测协议](roadmap/observation-protocol/architecture.md#graph-rootmutable-head-与封口) |
-| Graph node | `GraphNodeV1` | 把一个 opaque typed payload 与它的容器强依赖分开的内容寻址节点 | [运行观测协议](roadmap/observation-protocol/architecture.md#强依赖与通用遍历) |
-| strong edge | `StrongEdgeV1` | copier、verifier、GC 与 Report exporter 都必须跟随的容器依赖；不代替领域 relation | [运行观测协议](roadmap/observation-protocol/architecture.md#强依赖与通用遍历) |
 
 ## 禁用写法
 

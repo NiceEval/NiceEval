@@ -8,8 +8,8 @@
 
 | | 内容 |
 |---|---|
-| **做** | 发现 eval、算指纹决定跳过、建 attempt 列表、有界并发调度、首过即停、把结果交给报告器、落盘 artifact、定退出码 |
-| **不做** | 怎么驱动 agent(Agent / Adapter)、怎么声明 Assertion 或调用 Judge、结果存成什么格式(Record writer / Reporter) |
+| **做** | 发现 eval、算指纹决定跳过、建 attempt 列表、有界并发调度、首过即停、把结果交给报告器、提交 Record、定退出码 |
+| **不做** | 怎么驱动 agent(Agent / Adapter)、怎么声明 Assertion 或调用 Judge、结果存成什么格式(Record 提交 / Reporter) |
 
 它是协调者,不是执行者。
 
@@ -94,7 +94,7 @@ runner 对它加一道 provider 级串行限制,显式 `--max-concurrency` 或�
 ### 派发前的判分预检
 
 计划里存在要真派发且会执行 judge 断言的 eval 时,派发开始前先对判分端点做一次最小探测。
-预检失败只作废需要 judge 的那些 eval——它们的 attempt 不派发、逐条落成 `errored`(`error.phase: "judge.precheck"`),其余 eval 照常派发,与实验级 setup 失败的「派发前确定性失败」同一语义家族。
+预检失败只阻止需要 judge 的那些 eval 派发：没有开始的工作保持 `unstarted`，不伪造 Attempt、locator 或 `errored` Verdict Claim。失败本身写为 Run-scoped `judge.precheck` 执行错误 Observation，并由 `RunReceipt` 表示未完整完成；其余 eval 照常派发。这与实验级 setup 的「派发前确定性失败」同一语义家族。
 探测预算、重试与失败反馈的契约单源在[Judge · 派发前预检](feature/judge/library.md#派发前预检)。
 
 ## 派发顺序:瓶颈优先,追求最小总耗时
@@ -198,14 +198,14 @@ fixtures/button   codex         pass@5 = 3/5 (60%)   mean 41s · 72k tok · $0.3
 
 ![Attempt 结果的停派发三叉](assets/runner-dispatch-outcomes.svg)
 
-- **只有 `passed` 触发首过即停。**
-  每个 eval 配一个 `AbortController`,某 attempt 通过且 `earlyExit` 开就 `abort()` 同 eval 其余 attempt。
-- **`errored` 不触发。**
-  因一次 errored 停掉其余样本等于放弃重试机会,还会把基建抖动放大成整题无结果。
+- **只有 `passed` Verdict Claim 触发首过即停。**
+  每个 eval 配一个 `AbortController`,某 Attempt 形成该 Claim 且 `earlyExit` 开就 `abort()` 同 eval 其余 Attempt。
+- **`errored` Verdict Claim 不触发。**
+  因一次该 Claim 停掉其余样本等于放弃重试机会,还会把基建抖动放大成整题无结果。
 - **声明的致命错误熔断与 streak 推断并存、互不替代。**
   声明是作者背书下的第一次即停,streak 是无声明时的保守回退(熔断的契约见[执行失败分类](feature/error-classification/README.md#自愈阶梯与止损阶梯))。
 - **send 执行层的瞬时故障不进这条判定。**
-  可证明未受理的限流、连接建立失败在这之前已被有界重试吸收；streak 看到的 `agent-send-failed` 是重试耗尽或受理状态不安全后的最终 Attempt error。可信的 `Turn{status: "failed"}` 是可评分领域结果，不进入执行错误重试或 streak 推断(契约见[执行失败分类](feature/error-classification/README.md))。
+  可证明未受理的限流、连接建立失败在这之前已被有界重试吸收；streak 看到的 `agent-send-failed` 是重试耗尽或受理状态不安全后的最终执行错误 Observation。可信的 `Turn{status: "failed"}` 是可评分领域结果，不进入执行错误重试或 streak 推断(契约见[执行失败分类](feature/error-classification/README.md))。
 - **earlyExit 不改变派发节奏,只减少已派发的浪费。**
   同一个 eval 的多个 attempt 该不该并发跑,由[有界并发](#调度有界并发)的并发位数决定,与 earlyExit 是否开无关:`attempts: N` 建的 N 个 fiber 一起进等待集,有几个位就并发跑几个,不会等前一个出结果再决定要不要派发下一个。
 - **abort 只作用于还在等待集里的 fiber。**
@@ -222,7 +222,7 @@ budget 按**域**计,不是全局总上限:
 - 实验的 `budget` 字段与 `--budget` 替换设定的都是**每个域各自**的上限。
 - 一次运行选中 N 个实验,就是 N 份各自独立的上限,总花费上界是各域之和。
 
-判据只有一条:**已完成 attempt 的实测花费**。
+判据只有一条:**已完成 Attempt 的 raw usage Observation 经固定 GraphRef 的 usage Projector 所得读数，以及基于同一依据形成的估算成本 Claim**。
 
 - 一个域的已完成花费一旦到顶,就停止向该域派发新 attempt。
   已经在飞的照常跑完,不会被中途打断。
@@ -233,7 +233,7 @@ budget 按**域**计,不是全局总上限:
 拿不到成本数据时分两种:
 
 - 连续多个**已经发起 agent turn** 的 attempt 都拿不到成本数据(agent 不报用量)→ budget 对该域不可执行,给一条去重后的 warning,不每个 attempt 重复提示。
-- `sandbox.create`、setup 等发生在首个 agent turn 之前的错误没有成本事实 → 只报告其结构化 attempt error,不额外产生 budget warning。
+- `sandbox.create`、setup 等发生在首个 agent turn 之前的错误没有成本事实 → 只报告其结构化执行错误 Observation,不额外产生 budget warning。
 
 预算耗尽而导致的未派发 attempt 数量计入运行[完成状态](#完成状态)的 `unstarted`,让整次运行的完成状态落在 `incomplete`,不能在 CI 里伪装成全绿。
 
@@ -269,8 +269,8 @@ provider 侧提供「创建、重置、销毁」的能力;什么时候预创建�
 ## 超时:双层保护
 
 - **Adapter 内层超时** —— agent CLI 自己的超时。
-- **运行器外层超时** —— attempt deadline 用 Effect 的 interruption 中断 Scope 里的 verdict-producing 工作 fiber。
-  超时折成 `errored` draft:`error.code = "timeout"`,`error.phase` = 中断时已打开的生命周期阶段。
+- **运行器外层超时** —— Attempt deadline 用 Effect 的 interruption 中断 Scope 里的工作 fiber。
+  超时写成 `code: "timeout"` 的结构化执行错误 Observation，保存中断时已打开的生命周期阶段；它是随后 `errored` Verdict Claim 的依据，而非 Attempt state。
 - **外层 Scope 不关闭。**
   有界收尾(收尾链、留存决策)仍在同一个 Scope 的 release 里照常完成,与[Sandbox 的 Scope / finalizer 模型](feature/sandbox/architecture.md#留存keep与注册表)同一套语义:即使 agent 卡死也能强行收尾。
 
@@ -278,23 +278,23 @@ provider 侧提供「创建、重置、销毁」的能力;什么时候预创建�
 
 **deadline 从 `sandbox.create` 起算,不含等并发位的排队。**
 一条 eval 拿到的执行预算因此只由 `timeoutMs` 决定,不随本次开了多大并发、队列排多长而缩水。
-把排队算进去,同一条命令在 `--max-concurrency 2` 和 `20` 下就会产出不同的 `errored` 集合,还会加剧下面那条删失偏差——排得久的条件被系统性更早截断。
+把排队算进去,同一条命令在 `--max-concurrency 2` 和 `20` 下就会产出不同的 `errored` Verdict Claim 集合,还会加剧下面那条删失偏差——排得久的条件被系统性更早截断。
 
-落盘侧按同一口径记 `executionMs`(见[Results · result.json](feature/record/architecture.md#resultjson)),[携带资格判据](feature/experiments/cache.md#携带资格timeoutms-不进哈希)拿它跟 `timeoutMs` 比,两侧量的是同一段时间。
+提交侧追加同一口径的 timing boundary Observations；固定 GraphRef 的 timing Projector 读出 `executionMs`（见 [Record · Architecture](feature/record/architecture.md)），[携带资格判据](feature/experiments/cache.md#携带资格timeoutms-不进哈希)拿它跟 `timeoutMs` 比，两侧量的是同一段时间。
 
 **超时不丢证据。**
 中断终止的是「继续执行」,不撤销「已经观察到的事实」。
-事件接收器、usage 累计与 timing recorder 都归属 attempt 的外层 Scope,不随 body fiber 一起消失——这与[结果封口发生在 Scope release 之后](feature/record/architecture.md#resultjson)是同一条纪律,从 timing 推广到全部证据通道。
+事件接收器、raw usage 累计与 timing boundary Observation recorder 都归属 Attempt 的外层 Scope,不随 body fiber 一起消失——这与[结果提交发生在 Scope release 之后](feature/record/architecture.md)是同一条纪律,从 timing 推广到全部证据通道。
 
-超时 attempt 的落盘因此与正常 errored 同构:
+超时 Attempt 的提交因此与正常形成 `errored` Verdict Claim 的情况同构:
 
 | 证据通道 | 超时下落什么 |
 |---|---|
-| `events.json` | 截至中断时刻已归一化的全部事件。进行中一轮已收到的部分照常保留,不新增事件种类,中断事实由 `error` 表达 |
-| `usage` | 已累计轮次的如实值 |
-| `sources` | 照常 |
-| `diff.json` | 收尾链开始之前照常折叠一次 `workspace.diff`——沙箱此刻仍然活着,而「agent 走到了哪」正是超时诊断最需要的证据(计时记入收尾段,不入 `durationMs` 口径) |
-| `artifacts` | 如实声明实际写出的文件 |
+| Observation stream | 截至中断时刻已归一化的全部事件照常提交。进行中一轮已收到的部分照常保留；中断另为结构化执行错误 Observation，不新增私有 `error` payload |
+| usage | 已累计轮次的 raw usage Observation；总量由 usage Projector 读取 |
+| 源码事实 | 照常 |
+| workspace change | 收尾链开始之前照常追加原始变更证据；沙箱此刻仍然活着，而固定 GraphRef 的 diff Projector 可读「agent 走到了哪」（计时记入收尾段，不入 timing Projection 的 `durationMs` 口径） |
+| Record 提交 | 如实声明实际写出的对象,`RecordCommit` 为 `partial` |
 
 `show @<locator> --execution` 对超时 attempt 展示的是被打断前的真实执行过程,不是空壳。
 
@@ -303,14 +303,14 @@ provider 侧提供「创建、重置、销毁」的能力;什么时候预创建�
 Runner 不按“发生在评分前还是评分后”粗分致命性，而是在采集前读取 Assertion collector 登记的证据需求。
 非 optional 断言依赖的通道是 required；optional 断言和没有断言消费的报告 artifact 是 supplemental。
 
-- required 采集失败不伪造空值，对应断言记 `unavailable`，最终按 Verdict 规则进入 `errored`。
-- supplemental 采集失败追加带原 phase 的 diagnostic，省略没有成功写出的 artifact，继续 finalize 其它断言。
+- required 采集失败不伪造空值，对应断言形成 `unavailable` Assertion Claim，最终按 Verdict 规则形成 `errored` Verdict Claim。
+- supplemental 采集失败追加带原 phase 的 Diagnostic Observation，省略没有成功写出的 artifact，继续 finalize 其它断言。
 - OTel span 不参与断言，因此 `telemetry.configure` 与 `telemetry.collect` 失败始终走 supplemental 分支。
-- 已存在致命错误时，后续收尾或 supplemental 采集只能追加 diagnostic，不能替换第一条 `AttemptError`。
+- 已存在致命执行错误 Observation 时，后续收尾或 supplemental 采集只能追加 Diagnostic Observation，不能替换最初的结构化错误事实。
 
 例如 Terminal-Bench 只把 `run-tests.sh` 的 `CommandResult` 交给 `commandSucceeded()`。
 Sandbox 在命令返回后消失、导致 diff 导出失败时，Runner 保留命令断言的 Verdict，并记下 `workspace-diff-unavailable`。
-同一条 Eval 若声明 `t.sandbox.fileChanged()`，diff 就是 required，导出失败必须 `errored`，不能把空 diff 判成文件没改。
+同一条 Eval 若声明 `t.sandbox.fileChanged()`，diff 就是 required，导出失败必须形成 `errored` Verdict Claim，不能把空 diff 判成文件没改。
 
 **超时线是删失线,不是中立的公平线。**
 `timeoutMs` 压在耗时分布上沿时,测出的是「谁先撞线」而不是「谁做得完」。
@@ -375,131 +375,81 @@ cleanup 只在 command 成功取得资源后经 `context.onCleanup()` 登记,未
 完整分工表见[Sandbox library](feature/sandbox/library.md)。
 
 **下游分析**(二次评分、自定义指标)走 [reporter](observability.md#reporters),不另设运行 Hook。
-这是从 agent-eval 的 `onRunComplete` 收敛过来的(见[设计参照](feature/experiments/reference/agent-eval.md#niceeval-没跟什么));NiceEval 自己的对应回调名是 `onInvocationComplete`。
+这是从 agent-eval 的 `onRunComplete` 收敛过来的(见[设计参照](feature/experiments/reference/agent-eval.md#niceeval-没跟什么));NiceEval 自己的对应回调名是 `onInvocationReceipt`。
 
 ## Reporter 与运行器事件
 
-`Reporter` 是运行器与外部系统之间唯一的公开回调面:三个生命周期 Hook 加一条结构化事件流。
+`Reporter` 是运行器与外部系统之间唯一的公开回调面:一条 LiveRecord 事实流加两个 receipt 窄回调。
 跨 Experiment 的边界是当次 Invocation,不是持久化 Run。
 
 ```ts
 interface Reporter {
-  onEvent?(event: ReporterEvent): void | Promise<void>;
-  onInvocationStart?(evals: { id: string }[], shape?: InvocationShape): void | Promise<void>;
-  onEvalComplete?(result: EvalResult): void | Promise<void>;
-  onInvocationComplete?(summary: InvocationSummary): void | Promise<void>;
+  onRecord?(record: LiveRecord): void | Promise<void>;
+  onAttemptReceipt?(receipt: AttemptReceiptSnapshot): void | Promise<void>;
+  onInvocationReceipt?(receipt: InvocationReceipt): void | Promise<void>;
 }
 ```
 
-`onInvocationStart` 只接收 `evals` 与 `shape`,不接收单一 `agent`。
-一次 Invocation 可能横跨多个 `(agent, model, flags)` 配置(`compare` 多 agent、一次运行选中多个实验文件),塞一个顶层 `agent` 参数只能代表其中一份配置,对其余配置是谎言。
-需要知道这次 Invocation 涉及哪些 agent 时,从陆续到达的逐条 `EvalResult.agent` 去重派生,不读启动参数里的单值。
+`onRecord` 逐条收到与 `watch` / `exp --json` 同一份 LiveRecord NDJSON。
+它由 snapshot / observation / claim / heartbeat 组成,穷尽形状见 [Record · CLI](feature/record/cli.md)。
+observation 与 claim 逐字使用 Record 协议形状,不另定义 `eval:start` / `eval:complete` / `result_summary` 这类私有事件。
+计划级信号(earlyExit、budget 耗尽)与终态计数以 Claim 或 Diagnostic Observation 进入同一条流。
+snapshot 是 live transport 的有界状态副本,不是 Record 真源。
+
+`onAttemptReceipt` 在 attempt 收尾后携带 `AttemptReceiptSnapshot`：Invocation、origin Run、Experiment、Attempt、locator、Eval、ordinal、执行终态与穷尽 `RecordCommit`。
+它不是 Verdict 的替代数据——判定、断言与诊断仍从 Record 读取；`not-recorded` 没有 GraphRef，`partial` 与 `complete` 才分别携带最后 durable revision 或完整 revision。
+
+`onInvocationReceipt` 在全部 Run 收尾后收到 `InvocationReceipt`，其中是 `RunReceipt` / `AttemptReceiptSnapshot`、整体 `RecordCommit` 与 terminal live snapshot，不聚合宽结果对象。
+
+Reporter 契约只有上面三个回调。
+一次 Invocation 可能横跨多个 `(agent, model, flags)` 配置(`compare` 多 agent、一次运行选中多个实验文件),顶层没有单一 `agent` 可填——塞一个只能代表其中一份配置,对其余配置是谎言。
+需要知道这次 Invocation 涉及哪些 agent 时，按 receipt 中的固定 GraphRef 打开 Attempt Provenance，或运行已登记的 Projector 后去重；receipt 本身不复制 agent、model 或配置。
 
 ```ts
-/** onInvocationStart 的运行规模:去重后 eval 数 × 配置(agent×model×flags)数 → 总 attempt 数。 */
-interface InvocationShape {
-  /** 去重后实际要跑的 eval 数(= evals.length)。 */
-  evals: number;
-  /** (agent, model, flags) 配置组合数;compare 多 agent 时 > 1。 */
-  configs: number;
-  /** 总 attempt 数(evals × configs × attempts);逐行输出与汇总计数都按它。 */
-  totalAttempts: number;
-  /** 本次运行实际生效的全局并发数(flag/env/config/sandbox 默认值解析后的结果);
-   *  实验级 maxConcurrency 只在该实验内部限流,不改这个全局值。 */
-  maxConcurrency: number;
-  /** 本次 Invocation 的展示时间锚点；不承担 Run 或 Attempt 身份。 */
-  snapshotStartedAt?: string;
-}
-
-/** 一次 Invocation 的纯运行时内存聚合(reporter 契约用);落盘格式契约在 niceeval/record 的 RunMeta / AttemptRecord,见 [Results · Architecture](feature/record/architecture.md)。 */
-interface InvocationSummary {
-  /** 项目名(来自 config.name),透传给 `niceeval view` 顶部 hero 显示。 */
-  name?: LocalizedText;
-  startedAt: string;
-  completedAt: string;
-  passed: number;
-  /** 断言不通过的数量;不包含 errored。 */
-  failed: number;
-  skipped: number;
-  /** 环境、超时、adapter、agent runtime 等执行错误数量;与 failed 互斥。 */
-  errored: number;
-  durationMs: number;
-  usage?: Usage;
-  estimatedCostUSD?: number;
-  results: EvalResult[];
+/** 一次 Invocation 的窄收尾回执；判定、用量、耗时与统计都从固定 GraphRef 读取或投影。 */
+interface InvocationReceipt {
+  invocationId: InvocationId;
+  completion: "complete" | "partial" | "not-recorded";
+  record: RecordCommit;
+  runs: readonly RunReceipt[];
+  terminalSnapshot: LiveSnapshot;
 }
 ```
 
-`InvocationSummary` 同样不携带顶层 `agent` / `model`:跨配置的一次 Invocation 没有单一身份可填。
-每条 `EvalResult` 自带 `agent` / `model`,需要按 agent 分组或统计时从 `results` 派生,不读一个必然对某些行撒谎的顶层值。
+`InvocationReceipt` 不携带顶层 `agent` / `model`、Verdict 计数、用量、成本或逐条结果。
+跨配置的一次 Invocation 没有单一身份可填；逐 Attempt 的事实经 `onRecord` 与 `onAttemptReceipt` 到达。
+需要按 agent 分组、统计或读取 Verdict Claim 时，固定到 receipt 给出的 GraphRef 后运行对应 Projector。
+不要读取一个必然对某些行撒谎的宽汇总。
 
-这条裁决对内建与自定义 reporter 一视同仁——例如 Braintrust reporter 的 experiment 级 metadata 从收到的逐条 `EvalResult` 去重得到当次涉及的 agent 集合,而不是从启动参数读单一 agent。
+这条裁决对内建与自定义 reporter 一视同仁——例如 Braintrust reporter 的 experiment 级 metadata 从收到的逐条 `onAttemptReceipt` 携带的归属去重得到当次涉及的 agent 集合,而不是从启动参数读单一 agent。
 
-`onEvent` 收到的结构化事件流:
+Verdict Claim 的值互斥：`passed` / `failed` / `errored` / `skipped`，没有 `scored` 中间态；它不进入 `InvocationReceipt`。断言或评分不通过与宿主运行条件、超时、adapter 或 agent runtime 问题分别由基于证据的 Claim 区分。
 
-```text
-invocation:start           { evals, shape }
-eval:start                 { eval, agent, model, attempt, experimentId }
-eval:complete               { result }                # EvalResult,fresh 结果此时已带最终 locator(见下)
-invocation:earlyExit        { evalId, experimentId }
-invocation:budgetExceeded   { experimentId, budget, spent }
-invocation:saved            { summary }
-invocation:summary          { summary }
-experiment:complete         { experimentId, completedAt, carriedResults, diagnostics, name? }
-```
+fresh attempt 的最终 `locator` 在构造调度计划时就由预先分配的 `runId` 与完整 128-bit `attemptId` 派生并完成 CAS reservation,再传入执行体。
+所以留存注册表、feedback、`onAttemptReceipt` 与最终提交进 Record 的 Attempt 事实从第一次观察起就是同一个 locator,reporter 不需要等提交完成。
 
-判别式联合逐条对应上表。
-`eval:start` 仍带单一 `agent`——它是单个 eval 这一次派发实际用的那份配置,不是跨配置汇总,不受上面顶层单值裁决约束。
-
-```ts
-type ReporterEvent =
-  | { type: "invocation:start"; evals: { id: string }[]; shape: InvocationShape }
-  | { type: "eval:start"; eval: { id: string }; agent: Agent; model?: string; attempt: number; experimentId?: string }
-  | { type: "eval:complete"; result: EvalResult }
-  | { type: "invocation:earlyExit"; evalId: string; experimentId?: string }
-  | { type: "invocation:budgetExceeded"; budget: number; spent: number }
-  | { type: "invocation:saved"; summary: InvocationSummary }
-  | { type: "invocation:summary"; summary: InvocationSummary }
-  | {
-      type: "experiment:complete";
-      experimentId: string;
-      completedAt: string;
-      carriedResults: EvalResult[];
-      diagnostics: readonly DiagnosticRecord[];
-      /** 项目名(来自 config.name),同一 Invocation 内所有 Experiment 共享同一个值。 */
-      name?: LocalizedText;
-    };
-```
-
-`verdict` 是互斥的判定分类:`passed` / `failed` / `errored` / `skipped`,没有 `scored` 中间态。
-`invocation:summary.failed` 只统计断言或评分不通过,宿主运行条件、超时、adapter 或 agent runtime 问题统计到 `errored`。
-
-fresh attempt 的最终 `locator` 在构造调度计划时就由预先分配的 `runId` 与 `{evalId, attempt}` 算好、完成 Record root 碰撞登记，再传入执行体。
-所以留存注册表、feedback、`eval:complete` 与落盘 `result.json` 从第一次观察起就是同一个值,reporter 不需要等 artifact 落盘。
-
-终端反馈(human dashboard 与 `--json` 的单一 stdout 事件流)不消费这条 `Reporter` 事件流。
+终端反馈(human dashboard 与 `--json` 的单一 stdout 事件流)不消费这条 `Reporter` 回调面。
 它们由一个独立的反馈 coordinator 消费另一条内部事件通道,只服务当前输出形态,不对外暴露,详见[CLI · 反馈 coordinator](cli.md#反馈-coordinator一个-run-只有一个终端协调者)。
 
 ## Experiment 收尾协议
 
-一次 Invocation 可以横跨多个 Experiment,但落盘的完整性单位是 Run——每个 Experiment 一份、各自独立收尾(见[Results · run.json](feature/record/architecture.md#runjson))。
+一次 Invocation 可以横跨多个 Experiment,但提交的完整性单位是 Run——每个 Experiment 一份、各自独立收尾(见 [Record · Architecture](feature/record/architecture.md))。
 
-`experiment:complete` 是比 `invocation:summary` 更早、比单个 `eval:complete` 更粗的事件,标记「这一个 Experiment 已经彻底跑完」。
-它让内建 Artifacts 精确地在那一刻封口对应的 Run,而不是等整个 Invocation 结束才一次性封全部 Run。
+Run 的 Record 提交在对应 Experiment 收尾完成那一刻完成,而不是等整个 Invocation 结束才一次性提交全部 Run；每个成功提交固定一个不可变 GraphRef。
 
-- **触发时机**:该 Experiment 的 `ExperimentDefinition.teardown`(若声明)完成之后、`invocation:summary` 之前。
-- **谁消费**:内建 `Artifacts` reporter 订阅它,对每个 experimentId 各自调用它自己 Run 的 `snap.finish({ completedAt, diagnostics, name })`(见 [Results · Library](feature/record/library.md))。
-- **`name`**:整次 Invocation 共享的项目名(来自 `config.name`),随每个 Experiment 各自的收尾一并落盘,不必等到 `invocation:summary` 才补写。
-- **`carriedResults`**:该 Experiment 本次携带合入(fingerprint 命中、未真实执行)的历史终态结果,随收尾一并落盘。
+- **触发时机**:该 Experiment 的 `ExperimentDefinition.teardown`(若声明)完成之后、`onInvocationReceipt` 之前提交该 Run。
+- **谁提交**:Runner 在 Run 收尾时提交 Record,`RecordCommit` 为 `complete` / `partial`;reporter 经 `onRecord` 与 `onAttemptReceipt` 观察,不参与写入。
+- **`name`**:整次 Invocation 共享的项目名(来自 `config.name`),随该 Run 的提交一并保存。
+- **携带采用**:该 Experiment 本次采用（fingerprint 命中、未真实执行）的历史 Attempt revision 只以 Run-scoped Claim 与 `RunContribution` 表达；执行事实保留在 origin Run，不复制、不重挂、不生成新 locator。
 
-跨 Experiment 共享的事实(用户中断、reporter 写失败、provider 级并发提示)不属于任何单个 Experiment,不走这条事件。
+跨 Experiment 共享的事实(用户中断、reporter 写失败、provider 级并发提示)不属于任何单个 Experiment,不随任何单个 Run 提交。
 它们只出现在 `InvocationCompletion.reporterErrors` 或反馈流的运行级 diagnostic 里。
 
 ## 实验域诊断持久化
 
 有一类操作性事实**属于某次 Run 整体、但定位不到单个 Attempt**——teardown 失败、budget 不可执行、实验级 Hook 超时。
-这类事实必须落进对应 Run 的 `diagnostics`(见[Results · run.json](feature/record/architecture.md#runjson))。
-只出现在运行期的终端反馈里不算完:反馈是这一次运行的即时通知,`run.json` 才是这次运行「发生过什么」的持久化事实。
+这类事实必须作为 Run-scoped Diagnostic Observation 写入对应 Run 的 Record 事实(见 [Record · Architecture](feature/record/architecture.md))。
+只出现在运行期的终端反馈里不算完:反馈是这一次运行的即时通知,提交进 Record 的事实才是这次运行「发生过什么」的持久化事实。
 
 产生处必须显式给出:
 
@@ -519,14 +469,14 @@ interface ExperimentDiagnosticInput {
 ```
 
 `experimentId` 只用于把这条诊断路由到正确的 Run,不进入持久化的 `DiagnosticRecord`。
-持久化形状与 attempt 级 `DiagnosticRecord` 完全一致(见 [Results · run.json](feature/record/architecture.md#runjson)),因为归属已经隐含在该事实所属的 `run.json` 身份里,不重复存。
+持久化形状与 attempt 级 `DiagnosticRecord` 完全一致(见 [Record · Architecture](feature/record/architecture.md)),因为归属已经隐含在该事实所属的 Run 身份里,不重复存。
 
 相同 `dedupeKey`(或省略时的 `code`)只在同一个 Run 内折叠、`count` 递增;不同 Experiment、不同 Run 各自独立计数,不跨 Run 合并。
 
-这条持久化通路与运行期的即时反馈通路(`ctx.diagnostic` → 反馈流 →人读文本 / `--json` 展示)相互独立、互不派生:运行期反馈让操作者第一时间看到问题,持久化让读者事后从 `run.json` 回顾。
+这条持久化通路与运行期的即时反馈通路(`ctx.diagnostic` → 反馈流 →人读文本 / `--json` 展示)相互独立、互不派生:运行期反馈让操作者第一时间看到问题,持久化让读者事后从 Record 回顾。
 
-消费方(内建 Artifacts reporter、自定义 reporter)不得靠读反馈流通知的 key 或 message 反推该往哪个 Run 写。
-每个产生处直接构造上面的 `ExperimentDiagnosticInput`,由运行器在该 Experiment 域内按 Run 累计,再通过 [`experiment:complete`](#experiment-收尾协议) 事件整批交给 Artifacts,由它在对应 Run 封口时一次写入。
+消费方(reporter)不得靠读反馈流通知的 key 或 message 反推该往哪个 Run 写。
+每个产生处直接构造上面的 `ExperimentDiagnosticInput`,由运行器在该 Experiment 域内按 Run 累计,随该 Run 的提交一次写入。
 
 ## 完成状态
 
@@ -546,26 +496,26 @@ interface InvocationCompletion {
 }
 ```
 
-- budget 耗尽、确定性错误触发 run 级 fail-fast(见[首过即停](#首过即停earlyexit)),或作者声明的致命错误熔断触发(见[执行失败分类 · 止损语义](feature/error-classification/README.md#止损语义))而停止派发时 → `incomplete`,`unstarted` 是这几类未派发 attempt 的合计。
+- budget 耗尽、确定性错误触发 run 级 fail-fast(见[首过即停](#首过即停earlyexit)),或作者声明的致命错误熔断触发(见[执行失败分类 · 止损语义](feature/error-classification/README.md#止损语义))而停止派发时 → `incomplete`,`unstarted` 是这几类未派发 Attempt 的合计；它们不伪造 Attempt 或 Verdict Claim。
 - 用户或平台中断(Ctrl+C / SIGTERM)→ `interrupted`。
 - 任一 [required reporter](cli.md#required-reporter) 写失败 → 非 `complete`;失败明细进 `reporterErrors`,`required` 字段区分它是否让整体判红。
 - 首过即停省略的重复验证次数单独计入 `earlyExitUnstarted`,不进入 `unstarted`——它是已知 verdict 下主动省下的成本,不是遗漏。
 
-CI 的最终判定(退出码、`result` 事件)必须读当场的 `InvocationCompletion`,不能只看 `passed` / `failed` / `errored` 计数:预算耗尽但零 `failed` / `errored` 的一次 Invocation 仍然不是「全绿」。
+CI 的最终判定(退出码、`result` 事件)必须读当场的 `InvocationCompletion`,不能只看 `passed` / `failed` / `errored` Verdict Claim 计数:预算耗尽但零 `failed` / `errored` Claim 的一次 Invocation 仍然不是「全绿」。
 
-这个判定结果不自动进入 `.niceeval/`;需要留档时配置 `Json(path)` reporter 写 `InvocationSummary`。
+这个判定结果不自动进入 `.niceeval/`;需要留档时配置 `Json(path)` reporter 保存同一份 LiveRecord 流与最终 `InvocationReceipt`。
 
 ## 退出码
 
-退出码由 `InvocationCompletion.status` 与按 `(experiment, eval)` 折叠后的 verdict 共同决定。
+退出码由 `InvocationCompletion.status` 与按 `(experiment, eval)` 折叠后的 Verdict Claim 共同决定。
 两种输出形态(见[Experiments · CLI 反馈模型](feature/experiments/cli.md))共用同一套语义:
 
-- `0` —— `status: "complete"`,且没有任一 `(experiment, eval)` 组合判定为 `failed`(含 `--strict` 下 soft 未达标而改判的)或 `errored`。
-- `1` —— 至少一个组合 `failed` / `errored`;或 `status: "incomplete"`(budget 未跑完全部计划);或存在 required reporter 写失败。
+- `0` —— `status: "complete"`,且没有任一 `(experiment, eval)` 组合的 Verdict Claim 为 `failed`(含 `--strict` 下 soft 未达标而改判的)或 `errored`。
+- `1` —— 至少一个组合的 Verdict Claim 为 `failed` / `errored`;或 `status: "incomplete"`(budget 未跑完全部计划);或存在 required reporter 写失败。
 - `2` —— CLI / 运行器未捕获的崩溃。
 - `130` —— `status: "interrupted"`(用户或平台中断)。
 
-退出码按 eval 折叠,不按 attempt 折叠:同一个 eval 被 `attempts` + `earlyExit` 重试吸收的失败(先挂一次、后来某次通过)不会让进程判红,只有该 eval 最终判定为 `failed` / `errored` 才计入。
+退出码按 eval 折叠,不按 Attempt 折叠:同一个 eval 被 `attempts` + `earlyExit` 重试吸收的失败(先挂一次、后来某次通过)不会让进程判红,只有该 eval 最终 Verdict Claim 为 `failed` / `errored` 才计入。
 
 ## 相关阅读
 
@@ -575,4 +525,4 @@ CI 的最终判定(退出码、`result` 事件)必须读当场的 `InvocationCom
 - [Experiments · CLI 反馈模型](feature/experiments/cli.md) —— 人读文本与 `--json` 怎样展示这篇讲的调度、预算与完成状态。
 - [CLI](cli.md) —— `exp` 怎么把这些调度行为接进 Effect 核心与反馈 coordinator。
 - [Sandbox](feature/sandbox/README.md) —— 预热与复用的 provider 支持,以及预置逻辑放哪。
-- [Observability](observability.md) —— 运行器产出的 artifact 与报告。
+- [Observability](observability.md) —— 运行器提交的 Record 事实与报告。

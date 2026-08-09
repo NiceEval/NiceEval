@@ -1,15 +1,31 @@
 # Attempt facts
 
-`attemptFactsData(attempt)` 投影 `AttemptRecord.facts`——生命周期代码经 `ctx.fact()` 上报的[运行时观测](../../../record/architecture.md#facts运行事实)——为完整键值表：`{ key, value }[]`，按落盘 key 的插入顺序排列，不重新排序、不按 key 名分组。
+Attempt facts 是一个由 `defineAttemptProjector()` 构造的投影，不是详情组件对 Record 字段的直接访问。它通过 `ProjectionReadContext` 读取与完整 `AttemptRef` 绑定的 snapshot fact，并把读取链交给 executor 形成 `basedOn`。
 
-facts 是开放键集合：一次运行可能上报零到几十个键，键名与值形状都由生命周期代码决定。这与 Usage 固定的几个已知字段不同，因此组件渲染整张表而不是压成一行摘要——压缩会丢内容，而 facts 恰恰是「这次实际观测到了什么」的审计证据。
+```ts
+interface AttemptFactsData {
+  readonly facts: EvidenceValue<readonly FactCell[]>;
+}
 
-`AttemptRecord.facts` 缺失或为空对象时，`factsResult` 返回 `null`；组件零输出，不摆空表。
-value 是 `string | number | boolean` 标量，两面都按 `String(value)` 显示，不做数值格式化（facts 不是读数，没有单位换算或千分位的必要）。
+interface FactCell {
+  readonly key: string;
+  readonly value: string | number | boolean;
+}
+```
 
-Run 级 `RunMeta.facts`（experiment 生命周期上报的观测）不在这张表里；attempt 详情只读 attempt 作用域的 facts，Run 级观测的呈现不在本组件范围。
+`AttemptFactsData` 与 `FactCell` 的唯一 owner 是本页；`EvidenceValue` 由 [Record Library](../../../record/library.md#evidencevaluevalue-与-verification-两轴) owner。
+
+Projector 参数、完整 Graph、attemptId 与 adopted NodeRef 都进入 identity。事实 schema 属于 Record 的写入方；Reports 只消费 Projector 已交付的值，不按 key 名、event 名或 UI 字段反推其它事实。
+
+facts 是开放键集合，因此详情在 `available` 时显示完整键值表与 verification，而不是压成一行摘要。
+`unavailable` 时组件显示全部 causes 与 basedOn，不合成 verification；它不以空对象、零值或自行挑出的主因替代该状态。
+
+text 与 web 对同一份 `AttemptFactsData` 使用相同顺序。若无可显示项，Plan 中的详情 data 已明确该分支，组件只输出零内容，不会趁展开时读取新的证据。
+
+其它作用域的事实必须有独立的 Projector、Calculation 和数据入口；Attempt 详情不会把它们混入当前 Attempt 的 facts 表。
 
 ## 相关阅读
 
-- [Record · facts：运行事实](../../../record/architecture.md#facts运行事实) —— 上报通道、归属与落盘字段契约。
-- [show 详情 · Facts](../../show/attempt.md#facts) —— 终端呈现示例。
+- [Attempt 详情](README.md) —— 已计划详情数据的容器。
+- [Reports Library](../../library.md#分组函数与计算函数) —— Projector、Calculation 与 EvidenceValue。
+- [Record](../../../record/README.md) —— snapshot 事实的写入契约。

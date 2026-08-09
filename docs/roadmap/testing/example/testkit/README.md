@@ -21,11 +21,11 @@
 ## 功能 Repo 的调用点
 
 - [CLI pipe](../repos/cli/test/show-json-pipe.test.ts)：`command()` 与收据的 `json()`；128 KiB、sentinel 和 bug 引用仍可见。
-- [CLI 状态写入](../repos/cli/test/process-streams-and-exit.test.ts)：`withProjectCopy()` 给每个 case 独立结果根；exit、stream 与
+- [CLI 状态写入](../repos/cli/test/process-streams-and-exit.test.ts)：`withProjectCopy()` 给每个 case 独立 `.niceeval` RecordStore；exit、stream 与
   NDJSON 预期仍留在 CLI owner。
 - [Runner carry](../repos/runner/test/carry-reuse.test.ts)：`withProjectCopy()` 拥有副本生命周期；排除项、链接策略、
   schemaVersion、reused 关系与对应 memory 留在正文。
-- [Lifecycle](../repos/lifecycle/test/interrupt-cleanup.test.ts)：`withProjectCopy()` 隔离结果根，`withTempDir()` 为每条 case 分配控制文件，`withProcess()` 拥有进程；
+- [Lifecycle](../repos/lifecycle/test/interrupt-cleanup.test.ts)：`withProjectCopy()` 隔离 `.niceeval` RecordStore，`withTempDir()` 为每条 case 分配控制文件，`withProcess()` 拥有进程；
   signal、teardown、PID、端口和下一消费者仍由测试断言。
 - [Report](../repos/report/test/exported-navigation.spec.ts)：Testkit 只运行 CLI；浏览器仍使用 Playwright Test 的 `page` fixture。
 - [Journey](../repos/report/test/first-eval-to-debug.spec.ts)：与 Report 共用消费现场，`withProjectCopy()` 隔离新项目；

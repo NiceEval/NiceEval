@@ -1,54 +1,31 @@
-# `--history`：一个 eval 的执行时间轴
+# `--history`：一个 Eval 的固定执行时间轴
 
-`niceeval show <eval 前缀> --history` 回答「这道题历次跑下来发生了什么」。
-默认报告只呈现当前 Sample 的汇总；`--history` 把匹配的 eval 摊开成逐 attempt 的执行时间轴，从时间轴上任意一次执行都能继续下钻取证。
+`niceeval show <eval 前缀> --history` 选择一个明确的历史 Sample 集合，并由 History target 的 ReportPlan 显示执行时间轴。
+它不是 render 时扫描 Record 的便利通道。
 
-## 分节与行内字段
+## 计划与显示
 
-Sample 中匹配的每个 `experimentId + evalId` 组合各成一节，分节按 experimentId、evalId 排序依次堆叠。
-节内是跨 Run 按 [attempt 身份键](../../record/library.md#身份键)去重后的历次 attempt，按 startedAt 升序，一次执行一行，行内字段依次为：开始时间、verdict、单行结果摘要（主失败断言或结构化 error 的一层摘要，与默认报告同一[单行压缩形态](../../assertions/library/display.md#单行压缩形态)）、耗时、成本与 locator。
-locator 固定收尾：它是从这一行继续下钻的入口，贴在行尾最容易整段复制。
+history target 在 plan 中列出每个要显示的完整 AttemptRef、相应 membership provenance 与所需 Projector。
+executor 生成开始时间、verdict、摘要、耗时、成本、verification 和 refs；text/web 只显示同一份结果。
 
-## 输出
+每个 `experiment × eval` 组合形成一节，行按计划中稳定的历史顺序显示。
+每行的 locator、record 和 adopted revision 一起构成下钻 identity，不能把 locator 当作唯一键。
 
-时间轴是有边界、可整体阅读的面板，每节按[区域框](../library/layout.md#区域框text-面的框线体裁)渲染：`experimentId · evalId` 嵌上边框左侧，执行数与通过 / 失败计数嵌上边框右侧；框外页首一行汇总 Sample 命中的范围。
+## 与当前比较的分工
 
-```text
-$ niceeval show memory/swelancer --history
-执行历史 · memory/swelancer 匹配 1 个 eval · 2 个 experiment
+标准概览消费一份固定的输入 Sample。
+历史 target 消费调用方明确列出的历史 Sample 或 `unionSamples()` 结果；它不依据 model、flags、时间或文件布局自动决定哪些旧成员仍可比。
 
-╭─ dev-e2b/codex-e2b · memory/swelancer-manager-proposals ───────────────────── 5 次执行 · 3 通过 2 失败 ─╮
-│ 2026-06-28 09:12  ✓ 通过  —                                                   2m 04s   $0.08  @160iuj3h │
-│ 2026-07-01 18:40  ✗ 失败  equals(4) · received 3                               50.0s   $0.05  @1qrdcfq8 │
-│ 2026-07-05 11:27  ✓ 通过  —                                                   2m 48s   $0.13  @1pcdj0az │
-│ 2026-07-08 22:03  ✗ 失败  commandSucceeded() · received exit 1 · "…1 failed"  2m 53s   $0.19  @13wrnsc4 │
-│ 2026-07-12 10:08  ✓ 通过  —                                                   2m 10s   $0.11  @1m3akx2d │
-╰─────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-
-╭─ dev-e2b/claude-e2b · memory/swelancer-manager-proposals ──────────────────── 2 次执行 · 2 通过 0 失败 ─╮
-│ 2026-07-02 15:31  ✓ 通过  —                                                   3m 05s   $0.44  @1w7kqe2f │
-│ 2026-07-12 10:21  ✓ 通过  —                                                   2m 41s   $0.37  @1hv93mdz │
-╰─────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-```
-
-结果摘要列与默认报告同一口径：passed 固定为 `—`，failed 只显示主失败断言的单行压缩，errored 显示结构化 error 的一层摘要；超宽先折单行再按列宽截断，绝不逐行铺开命令输出。
-时间轴上任意一行都可下钻：复制行尾 locator，`niceeval show @1qrdcfq8` 打开这次执行的诊断首页，继续看断言、对话、时间树与 diff（[失败诊断首页](attempt.md)）。
-
-## 与当前结果集的分工
-
-默认报告的聚合走 `currentSample()` 的[可比性前提](../../sample/library.md#当前选择器)：改过 model、flags 或 sandbox 后，旧配置 Run 命中的题不再拼入当前结果集，只以 coverage 占位行提示补跑。
-`--history` 站在这层过滤之外——时间轴不设可比性门槛，旧配置下的执行同样按时间在轴上。
-两个读数配合区分「时好时坏」的两种病因：红绿交替发生在同一套配置内，是 agent 行为不稳定，下钻对比失败与通过的两次执行；红绿分界正对配置改动，是 Run 级趋势，不归 `--history`，用报告库的[历史示例](../library/examples.md#历史一个实验的逐次 Run 走势)。
+因此读者可区分：同一明确成员集合中的执行变化，以及由选择策略本身造成的范围变化。
 
 ## 边界
 
-- 与 `--report` 互斥：两者都占据主输出，`--history` 是宿主证据面的时间轴，直接读取 Record evidence 做终端投影，不经报告树；报告组件（如 `Grid` 的直角数据格）对它不适用。
-- 前缀匹配不到任何有结果的 eval 时明确报无匹配并列出有结果的 eval，不做模糊猜测（[契约](../show.md#无匹配与不可读结果)）。
+- `--history` 与显式 `--report` 互斥，因为两者选择不同主 target。
+- 无匹配、未知历史 instance 或无法生成计划时，show 非零退出并指出 Sample identity。
+- 一行的 unavailable evidence 保留原始 causes 与 basedOn，不合成 verification，也不以空摘要代替。
 
 ## 相关阅读
 
-- [`--stats`](stats.md) —— 同一证据面聚合成的 eval × experiment 稳定性矩阵。
-- [不带选项的 `show` 的默认报告](default-report.md) —— 当前结果集与 Result 摘要口径。
-- [失败诊断首页](attempt.md) —— 从时间轴一行的 locator 打开一次 attempt。
-- [Library · 布局](../library/layout.md#区域框text-面的框线体裁) —— 区域框的单源体裁。
-- [用例 · 时好时坏](../use-case/调试/查看不稳定历史.md) —— 排查 flaky eval 的全流程叙事。
+- [Show](../show.md) —— target 和完整 AttemptRef。
+- [Sample Library](../../sample/library.md) —— 历史选择与 unionSamples。
+- [用例 · Experiment 历史](../use-case/分析/跟踪实验历史.md) —— 跨 Run 趋势的计划方式。

@@ -2,28 +2,28 @@
 
 ## 数据建模
 
-一条 Agent Judge Assertion 从属于 Attempt，但它拥有独立的 evaluator execution。
-被测 Agent Session 与裁判 Agent Session 是同级角色，不把裁判事件混入被测事件范围。
+一条 Agent Judge Assertion 从属于 Attempt，但它拥有独立的 evaluator execution correlation。
+被测 Agent Session 与裁判 Agent Session 是同级角色，不把裁判事件混入被测事件范围；correlation 不是新的
+Record 结果实体或 Attempt payload。
 
 ```text
 Attempt
 ├─ subject Agent Session 1..n
-├─ AssertionResult 1..n
-└─ Agent Judge execution 0..n
-   ├─ rubric + material manifest
-   ├─ judge Agent Session
-   ├─ optional judge Sandbox
-   └─ AgentJudgeDecision
+├─ Assertion Claim 1..n
+└─ judge Observation stream 0..n
+   ├─ execution provenance
+   ├─ judge Agent Session / optional judge Sandbox facts
+   └─ AgentJudgeDecision Claim
 ```
 
-每条 Agent Judge Assertion 恰好关联零或一个 Agent Judge execution。
-配置或工作区在创建前已经不可用时没有 execution；一旦创建，成功、失败、事件、usage 与回收结果都保留在同一个 execution 下。
+每条 Agent Judge Assertion 恰好关联零或一个 Agent Judge execution correlation。
+配置或工作区在创建前已经不可用时没有 judge stream；一旦创建，发生的 session、错误、事件、usage 与回收结果都按
+correlation 追加为 Observation。它们不作为字段写入 AttemptPayloadV1，也不形成第二套结果真源。
 
 ```ts
-interface AgentJudgeExecution {
+interface AgentJudgeExecutionProvenance {
   id: string;
   assertionSourceOrder: number;
-  state: "completed" | "unavailable";
   agent: {
     name: string;
     kind: "direct" | "sandbox";
@@ -34,14 +34,13 @@ interface AgentJudgeExecution {
     sha256: string;
     workspace?: { sha256: string };
   };
-  sessionId?: string;
-  decision?: AgentJudgeDecision;
-  usage?: Usage;
-  unavailable?: { reason: string; evidence?: string };
 }
 ```
 
-`AssertionResult` 的数据基类增加可选 evaluator 引用：
+这份 descriptor 是 provenance；session id、raw usage、诊断、命令、回收与结构化执行错误均是同一 judge stream 的
+Observation。`AgentJudgeDecision` 是引用这些 Observation / material 的 Judge Claim。
+
+`Assertion Claim` 的数据基类增加可选 evaluator 引用：
 
 ```ts
 interface AgentAssertionEvaluatorRef {
@@ -55,7 +54,8 @@ interface AssertionBase {
 ```
 
 Agent Judge 成功形成 decision 时必须写引用。
-创建 execution 之前就失败的 unavailable 没有引用，原因直接留在 AssertionResult。
+创建 execution 之前就失败时，先形成 Run- or Attempt-scoped structured execution-error Observation。
+随后 Assertion Claim 以 `outcome: "unavailable"` 引用该 evidence；没有伪造 execution 或 Attempt state。
 
 ## 证据流
 
@@ -75,10 +75,10 @@ protocol version ─> output schema ──────────────�
                                       validate ─> one correction turn
                                                        │
                                                        ▼
-                                            AgentJudgeDecision
+                                            AgentJudgeDecision Claim
                                                        │
                                                        ▼
-                                             AssertionResult
+                                             Assertion Claim
 ```
 
 材料与 workdir 文件都是不可信 evidence。
@@ -98,7 +98,8 @@ Runner 先封口被测 Agent 的全部 send 区间，再捕获快照。
 Runner 不以只读 mount 伪装隔离，因为裁判可能需要构建、生成缓存或执行会写临时文件的测试。
 
 捕获或导入失败时，不允许回退到被测 Sandbox，也不允许只传 diff 后继续宣称完成了 workspace 判分。
-该 Assertion 记 `agent-judge-workspace-unavailable`。
+该 Assertion 形成 `outcome: "unavailable"` 的 Assertion Claim，reason 为 `agent-judge-workspace-unavailable`，并引用
+捕获或导入失败的结构化执行错误 Observation。
 
 ## 执行与结果边界
 
@@ -111,8 +112,9 @@ core 不按 Adapter 名或模型名分支；`kind` 只决定是否创建裁判 S
 Agent Judge 的事件带 `role: "judge"` 与 execution id。
 作用域断言只读取 `role: "subject"` 的事件，因此裁判运行的 shell、工具与消息不会让 `calledTool()`、`maxTokens()` 或 `messageIncludes()` 改变判断。
 
-subject usage 与 judge usage 分列保存。
-Attempt 总成本可以显示两者之和，但报告必须同时保留 `subject` 与 `judge` 两个分量，不能把裁判成本算成被测 Agent 成本。
+subject usage 与 judge usage 分列为 Observation。
+固定 GraphRef 的 Projector 可以显示两者之和，但报告必须同时保留 `subject` 与 `judge` 两个分量，不能把裁判成本算成
+被测 Agent 成本；估算金额另是引用 usage 与价格表的 Claim。
 
 ## 判分不变量
 
@@ -127,10 +129,10 @@ Attempt 总成本可以显示两者之和，但报告必须同时保留 `subject
 
 rubric、材料摘要、协议版本、裁判配置身份与 workdir 摘要属于 Provenance。
 裁判 Session 的事件、Turn、usage、诊断与回收事实属于 Observation。
-`AgentJudgeDecision` 与映射后的 AssertionResult 是 Claim，并引用对应 execution 与材料。
+`AgentJudgeDecision` 与映射后的 Assertion Claim 是 Claim，并通过 evaluator correlation、Observation evidence 与材料引用彼此关联。
 
 show 默认在 Assertion 行显示 score、threshold 与 rationale 摘要。
-`--execution` 在 subject 执行树之外增加 `judge` 分支，列出调查步骤、工具调用、协议修正轮与 usage。
+`--execution` 在固定 GraphRef 的 subject 执行树之外增加 `judge` Projection 分支，列出调查步骤、工具调用、协议修正轮与 usage。
 view 可以从 evidence 引用跳到裁判看到的材料或 workdir 快照清单，但不能把裁判修改后的副本展示成被测 diff。
 
 ## 身份与结果携带
@@ -147,7 +149,8 @@ view 可以从 evidence 引用跳到裁判看到的材料或 workdir 快照清�
 它们属于本次 Attempt 的运行事实，不能反向定义运行配置。
 
 改变任一裁判身份输入会使相关 Attempt 的历史结果不可携带。
-同一结果被携带时，原 Agent Judge execution、decision 与 usage 一起携带，不重新运行裁判。
+同一结果被携带时，新的 RunContribution 明确采用原 Attempt revision；其 judge Observation、Judge Claim 与 Assertion Claim
+随该 revision 被读取，不复制、不重挂也不重新运行裁判。
 
 ## 并发与预算
 
@@ -155,7 +158,7 @@ Agent Judge 在对应 Attempt 的 Assertion 求值阶段运行，并继续占用
 不同 Attempt 的裁判可以受全局与 Experiment 并发限制并行；同一 Attempt 的 Assertion 保持声明顺序，不并发启动多个 Agent Judge。
 
 `judge.agent.timeoutMs` 涵盖裁判 Sandbox 创建、快照导入、Agent setup、首次 send、一次协议修正、teardown 与销毁。
-Attempt deadline 的剩余时间是外层上限；两者取更早者，超时出处写入 unavailable evidence。
+Attempt deadline 的剩余时间是外层上限；两者取更早者，超时出处写入执行错误 Observation，并支持 unavailable Assertion Claim。
 
 Agent Judge usage 进入独立 judge 成本桶，也计入 Experiment 的总预算护栏。
 预算预测与停止派发不能只计算被测 Agent，否则 Agent-as-Judge 会绕过成本上限。

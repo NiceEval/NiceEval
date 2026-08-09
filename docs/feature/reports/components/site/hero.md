@@ -1,46 +1,36 @@
 # `Hero`
 
-`Hero` 在 web 面显示站点标题与品牌行；text 面另外显示最后运行时间与构成当前结果集的 Run 数。
-它从当前 page 的 `Sample` 计算这些普通值；也可以用 `input` 显式传入另一份 `Sample`：
+`Hero` 在 web 面显示站点标题与品牌行，在 text 面显示已交付的 Sample summary。
+它接收明确的 content，不从 page 上下文或 Sample Store 取数：
 
 ```tsx
 <Hero
+  content={summary}
   logo={{ src: memoryBenchLogo, alt: "MemoryBench" }}
   description={{
-    en: "Does memory help coding agents ship better code?",
-    "zh-CN": "记忆能否帮助 coding agent 交付更好的代码？",
+    default: "Does memory help coding agents ship better code?",
+    translations: {
+      "zh-CN": "记忆能否帮助 coding agent 交付更好的代码？",
+    },
   }}
-  links={[
-    { label: "GitHub", href: "https://github.com/acme/memorybench" },
-  ]}
 />
 ```
 
 ```ts
 interface HeroProps {
-  title?: LocalizedText;
-  input?: Sample;
-  logo?: HeroLogo;
-  description?: LocalizedText;
-  links?: readonly HeroLink[];
-  className?: string;
-}
-
-interface HeroLogo {
-  src: string;
-  alt: LocalizedText;
-}
-
-interface HeroLink {
-  label: LocalizedText;
-  href: string;
+  readonly title?: LocalizedText;
+  readonly content: HeroContent;
+  readonly logo?: HeroLogo;
+  readonly description?: LocalizedText;
+  readonly links?: readonly HeroLink[];
+  readonly className?: string;
 }
 ```
 
-省略 `title` 时，`Hero` 使用报告标题；省略 `input` 时，使用当前 page 的 `Sample`。
-需要站点无关的标题区可以直接使用 [`HeroCard`](hero-card.md)。
- `logo`、`description` 与 `links` 都是可选的品牌内容。
-布局、响应式间距、链接体裁与深浅色适配由 Hero 的官方样式负责，报告作者不需要为标准品牌区写页级 CSS。
+`HeroContent`、`HeroLogo` 与 `HeroLink` 的完整形状只在 [HeroCard](hero-card.md) 定义；`LocalizedText` 只在 [Reports Library](../../library.md#通用值文本与参数) 定义。
+
+省略 `title` 时使用报告标题。
+布局、响应式间距、链接体裁与深浅色适配由 Hero 的官方样式负责；它们不改变 Sample、coverage 或 evidence。
 
 ## 相关阅读
 

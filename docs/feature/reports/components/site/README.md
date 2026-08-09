@@ -10,5 +10,5 @@
 
 - [组件树](../README.md) —— 组合规则与共用呈现 props。
 - [内建报告](../../library/built-in.md) —— 这些身份件组成默认站点的样子。
-- [外壳与多页](../../library/shell.md) —— `ctx.report.title` 的回退链与品牌契约。
+- [外壳与多页](../../library/shell.md) —— `ReportDefinition.title` 与品牌契约。
 - [Sample 页区块](../summaries/README.md) —— 默认站点其余区块的家。

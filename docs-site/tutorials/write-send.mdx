@@ -71,7 +71,7 @@ if (!res.requestId) {
 }
 ```
 
-`progress` is not persisted; a diagnostic is saved with the Attempt and can be reviewed through its locator. If the HTTP connection fails or the response cannot be parsed, just throw — the runner records that the error occurred in `agent.run` and marks the Attempt `errored`.
+`progress` is not persisted; a diagnostic is saved with the Attempt and can be reviewed through its locator. If the HTTP connection fails or the response cannot be parsed, just throw — the runner records that the error occurred in `agent.run` and forms the `errored` Verdict Claim.
 
 **This step unlocks**: `t.reply`, `t.messageIncludes()`, all the conversation material for the Judge, and **model comparison** on the Experiment side. `ctx.model` comes from the Experiment's `model`; the runner passes it through verbatim and the Adapter only forwards it. For integration tiers, see [Tier](/explanation/tier).
 

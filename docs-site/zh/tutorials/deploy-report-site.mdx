@@ -4,28 +4,28 @@ sidebarTitle: "报告站上线"
 description: "把 .niceeval 直接提交进仓库、配一份排除运行时状态的 .gitignore,再用不装整仓依赖的 CI 脚本和 Vercel CLI,在打 tag 时把报告站发布上线。"
 ---
 
-[通过 CI 发布报告](/zh/tutorials/publish-report)讲的是用 `publish()` 剪出一份经过单文件大小预检的瘦身目录,适合结果要脱离原始记录根、按需挑选证据的场景——它会挡住任何一个超过 50 MiB 的文件,包括极端情况下过大的 `events.json` / `trace.json`。这一页讲另一条更直接的路:把 `.niceeval` 原样提交进仓库(排除几类不该提交的运行时状态),用一份不依赖仓库自身 `node_modules` 的构建脚本,让 CI 只在你打 tag 时把它发布到 Vercel。这条路跳过了 `publish()` 的体积预检,适合单条 Attempt 的证据体积在实践中稳定可控的项目;不确定会不会撞见罕见的超大输出,或者想要一份和原始记录根解耦的瘦身目录,选前一条路。
+[通过 CI 发布报告](/zh/tutorials/publish-report)讲的是用 `exportSample` 生成独立的 `SampleBundle` 提交进仓库,适合结果要脱离原始记录根、按需挑选证据的场景。这一页讲另一条更直接的路:把 `.niceeval` 原样提交进仓库(排除几类不该提交的运行时状态),用一份不依赖仓库自身 `node_modules` 的构建脚本,让 CI 只在你打 tag 时把它发布到 Vercel。这条路不做导出选择,适合单条 Attempt 的证据体积在实践中稳定可控的项目;想要一份和原始记录根解耦的独立目录,选前一条路。
 
 ## `.niceeval/` 里,哪些是站点要的数据
 
 `.niceeval/` 下同时混着结果数据和几类运行时状态,只有第一类是报告站要读的东西:
 
-- **每个实验的 Run 目录**(`<实验>/<时间戳-后缀>/`)是评估结果本身——`run.json`、每条 Attempt 的 `result.json` 与证据文件。这是站点数据源。
-- **`.niceeval/locks/`** 是并发跑评估用例时的用例锁,一条 `(experiment, eval)` 一个心跳文件。持有者每 10 秒重写一次心跳,全部 Attempt 正常收尾后自己删掉锁,不需要手工清理。被 `kill -9` 或断电打断的运行不会释放锁——文件会留在磁盘上,但不是需要主动清理的垃圾:心跳落后 30 秒即视为过期,下一次运行会自动接管。它是进程运行时状态,不是评估结果,提交进仓库既没用也会造成误导(读到一份早已作废的心跳文件)。
-- **`.niceeval/sessions/`** 是一次 `niceeval exp` 调度留下的清单,只被 `niceeval session list` / `session show` 读取,回答"这批调度还在不在跑"。构建报告站的 `niceeval view` 不读它。
+- **`.niceeval/` 的 Record 事实**是评估结果本身——判定、断言、结构化错误与诊断随 Attempt 提交,事件、源码、trace 与 diff 以 Observation 保存。这是站点数据源。
+- **`.niceeval/locks/`** 是并发跑评估用例时的用例锁,一条 `(experiment, eval)` 一个心跳文件。持有者每 10 秒重写一次心跳,全部 Attempt 正常收尾后自己删掉锁,不需要手工清理。
 
-`diff.json` 单独说体积。Agent 一次工具调用能产生任意大的输出,diff 归因逐窗口落盘、不做跨窗口压缩也不截断,单条 Attempt 的 `diff.json` 因此可能到上百 MB。它确实会被 `niceeval view` 用到——存在时,对应 Attempt 详情页的"文件差异"区块会显示它;但报告首页、实验对比这些聚合视图不需要它。缺失时"文件差异"区块如实显示证据未提供,不影响页面其余部分——为体积把它排除在提交范围之外是划算的取舍,不是功能损失。
+  被 `kill -9` 或断电打断的运行不会释放锁。心跳落后 30 秒即视为过期,下一次运行会自动接管。它是进程运行时状态,不是评估结果；提交进仓库只会让人读到一份早已作废的心跳文件。
+Invocation index 是外部 reducer projection（keyed by `invocationId`），与 `watch` / receipt 共享同一 identity 与 reducer；它不是 Record entity，也不公开物理目录，不属于站点数据。
+
+diff 单独说体积。Agent 一次工具调用能产生任意大的输出,diff 归因逐窗口保存、不做跨窗口压缩也不截断,单条 Attempt 的 diff 事实因此可能到上百 MB。它确实会被 `niceeval view` 用到——Attempt 详情页的"文件差异"区块经 diff Projector 读取它;但报告首页、实验对比这些聚合视图不需要它。缺失时"文件差异"区块如实显示证据未提供,不影响页面其余部分。Record evidence 一律经 API / Projector 读取，体积取舍由证据闭包决定，不由文件路径表达。
 
 ## 推荐的 `.gitignore`
 
 ```gitignore
 # .niceeval/ 提交进仓库,是报告站的数据源。只排除运行时状态:
-.niceeval/**/diff.json   # 单条 Attempt 可达上百 MB,只服务 Attempt 详情页的文件差异区块
 .niceeval/locks/         # 用例锁,进程运行时状态;强杀后的残留文件靠心跳过期自动接管,不用清理
-.niceeval/sessions/      # niceeval exp 的调度清单,只被 session list 读取,站点不读它
 ```
 
-其余结果数据——`run.json`、`result.json`、`events.json`、`trace.json`、`sources.json`、`o11y.json`、`agent-setup.json`——原样提交。
+其余 Record 事实与证据对象——Attempt payload、Observation stream、Claim、trace、源码——原样提交。
 
 ## CI 构建:不装整仓依赖
 
@@ -143,7 +143,7 @@ git push origin v0.3.0
 
 <CardGroup cols={2}>
   <Card title="通过 CI 发布报告" icon="rotate-right" href="/zh/tutorials/publish-report">
-    另一条路:用 publish() 剪出瘦身、经过大小预检的发布目录。
+    另一条路:用 exportSample 生成独立的 SampleBundle 提交进仓库。
   </Card>
   <Card title="在 CI 中运行 NiceEval" icon="gear" href="/zh/tutorials/ci-integration">
     把评估用例本身接进 GitHub Actions。

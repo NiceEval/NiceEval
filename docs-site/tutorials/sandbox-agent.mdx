@@ -154,20 +154,20 @@ export default defineSandboxAgent({
 `setup`, each `send`, and `teardown` all get feedback methods scoped to themselves:
 
 - `ctx.progress({ message, current?, total? })` updates the current short-lived status. It suits installing a CLI, running a turn, or reading a transcript. Do not call it per token or per JSONL frame.
-- `ctx.diagnostic({ code, level, message, data?, dedupeKey? })` records protocol degradation, missing transcripts, and cleanup problems. It goes into the permanent terminal events and into `result.json`.
-- Throw when you cannot keep running. The runner marks the attempt `errored` and records the phase it happened in, plus the error code, message, cause, and stack.
+- `ctx.diagnostic({ code, level, message, data?, dedupeKey? })` records protocol degradation, missing transcripts, and cleanup problems. It goes into the permanent terminal events and is committed with the Attempt as an Observation into the Record.
+- Throw when you cannot keep running. The runner records the phase it happened in, plus the error code, message, cause, and stack, and forms the `errored` Verdict Claim.
 
 Do not call `console.log/error` or write to `process.stdout/stderr` directly from an adapter. That tears apart the human dashboard and breaks the ordering of CI logs.
 
 When a sandbox or adapter error shows up during a run, the terminal gives you an attempt locator:
 
 ```text
-✗ @12h8m4k1 fixtures/button [local] errored · agent setup
+✗ @5TB8167MXJ30SYZCNAVRHPQ4D2 fixtures/button [local] errored · agent setup
     agent-install-failed: npm install my-agent exited with code 1
-    Inspect: niceeval show @12h8m4k1
+    Inspect: niceeval show @5TB8167MXJ30SYZCNAVRHPQ4D2
 ```
 
-Run `niceeval show @12h8m4k1` to see the structured error, the diagnostics, and the lifecycle phases that completed. `--timing` gives a bounded diagnostic time tree (queueing, sandbox startup, the shell inside setup/teardown hooks, the agent CLI's install and launch commands, each send, correlated OTel model/tool spans, and cleanup), so you can see directly which layer the error or timeout happened in, and where the time went before that. When the tree has more than 80 detail nodes, it keeps the failures, the slow points, and the head/tail samples, and reports how many were omitted; use `--timing=full` when you need to audit node by node. `--execution` instead uses the event stream as the skeleton to see what the agent did; when OTel is present, it only attaches timing to events it can uniquely correlate. Sandbox creation can fail before telemetry is established, so reviewing the error does not depend on a trace.
+Run `niceeval show @5TB8167MXJ30SYZCNAVRHPQ4D2` to see the structured error, the diagnostics, and the lifecycle phases that completed. `--timing` gives a bounded diagnostic time tree (queueing, sandbox startup, the shell inside setup/teardown hooks, the agent CLI's install and launch commands, each send, correlated OTel model/tool spans, and cleanup), so you can see directly which layer the error or timeout happened in, and where the time went before that. When the tree has more than 80 detail nodes, it keeps the failures, the slow points, and the head/tail samples, and reports how many were omitted; use `--timing=full` when you need to audit node by node. `--execution` instead uses the event stream as the skeleton to see what the agent did; when OTel is present, it only attaches timing to events it can uniquely correlate. Sandbox creation can fail before telemetry is established, so reviewing the error does not depend on a trace.
 
 ## `ctx.model` and `ctx.flags`
 

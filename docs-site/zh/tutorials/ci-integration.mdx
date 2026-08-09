@@ -13,7 +13,7 @@ description: "把 NiceEval 接入 GitHub Actions 或任意 CI。评估用例失�
 ```bash
 npx niceeval exp ci \
   --strict \
-  --junit .niceeval/junit.xml
+  --junit ./artifacts/niceeval-junit.xml
 ```
 
 CI 不需要单独的输出模式：不加 `--json` 时的人读文本在非 TTY（CI 日志页）下自动降级成只追加的流——不画框、不带 ANSI，只在开始、失败/错误、diagnostic 和最终结论时追加一行，通过的 Attempt 不逐条打印。这份日志给人看。平台注解走 `--junit`，需要 JSON 汇总时在运行后读结果面（见下）。
@@ -36,7 +36,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx niceeval exp ci --strict --junit .niceeval/junit.xml
+      - run: npx niceeval exp ci --strict --junit ./artifacts/niceeval-junit.xml
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -63,7 +63,7 @@ jobs:
 ```text
 PLAN
   1 attempts · 1 evals × 1 configs · concurrency 2
-✗ @1v9b841a basic [mock]
+✗ @52KG9EFW5TB8167MXJ30SYZCNA basic [mock]
     gate: equals("definitely-not-ok")
         expected "definitely-not-ok" · received ok
 FAILED                                                                                            0s
@@ -71,40 +71,40 @@ FAILED                                                                          
   2 new tok
 
 FAILURES
-  ✗ @1v9b841a basic [mock]
+  ✗ @52KG9EFW5TB8167MXJ30SYZCNA basic [mock]
       gate: equals("definitely-not-ok")
           expected "definitely-not-ok" · received ok
 NEXT
-  Inspect: niceeval show @1v9b841a
-  Eval:    niceeval show @1v9b841a --source
-  Trace:   niceeval show @1v9b841a --execution
-  Diff:    niceeval show @1v9b841a --diff
+  Inspect: niceeval show @52KG9EFW5TB8167MXJ30SYZCNA
+  Eval:    niceeval show @52KG9EFW5TB8167MXJ30SYZCNA --source
+  Trace:   niceeval show @52KG9EFW5TB8167MXJ30SYZCNA --execution
+  Diff:    niceeval show @52KG9EFW5TB8167MXJ30SYZCNA --diff
   Compare: niceeval view
   RESULTS
-  .niceeval/basic_mock/<snapshot>
+  RecordStore root: .niceeval/ (fixed at the invoked head)
 ```
 
-退出码是第一层红绿信号。JUnit 和结果快照是完整机器接口，这份日志只给人读，用于搜索和定位。
+退出码是第一层红绿信号。JUnit 和 Record 是完整机器接口，这份日志只给人读，用于搜索和定位。
 
-`errored`（执行错误，不是断言不过）的流事件同样是一条不缩进的行，带 locator、eval/experiment 身份、已知时的正式 phase 和一层 reason 摘要。例如 `✗ @12h8m4k1 fixtures/button [ci/codex] errored · sandbox.create` 后接 `sandbox-rate-limit: E2B sandbox allocation failed after 5 attempts`。详细 cause、stack 和 diagnostics 保存在 Attempt 的 `result.json`，可在保留 artifact 后运行 `niceeval show @<locator>` 回顾。
+`errored`（执行错误，不是断言不过）的流事件同样是一条不缩进的行，带 locator、eval/experiment 身份、已知时的正式 phase 和一层 reason 摘要。例如，`✗ @0123456789ABCDEFGHJKMNPQRS fixtures/button [ci/codex] errored · sandbox.create` 后接 `sandbox-rate-limit: E2B sandbox allocation failed after 5 attempts`。详细 cause、stack 和 diagnostics 保存在 Record 的 Attempt 事实里，可运行 `niceeval show @<locator>` 回顾。
 
-需要机器解析运行事件（自建 annotation adapter、实时看板）时把这条命令加上 `--json`，得到同一套事实的 NDJSON 事件流，`start` 打头、`result` 收尾：
+需要机器解析运行事件（自建 annotation adapter、实时看板）时把这条命令加上 `--json`，得到同一套事实的 `InvocationMachineRecord` NDJSON——LiveRecord 序列末尾恰好一条 `receipt`：
 
 ```bash
-npx niceeval exp ci --strict --junit .niceeval/junit.xml --json
+npx niceeval exp ci --strict --junit ./artifacts/niceeval-junit.xml --json
 ```
 
 需要一份 JSON 汇总文件时不解析运行日志，运行后单独读结果面：
 
 ```bash
-npx niceeval show --json > .niceeval/ci-summary.json
+npx niceeval show --json > ./artifacts/niceeval-summary.json
 ```
 
 <Tip>
-  仓库用 pnpm 时把上面这条换成 `pnpm --silent exec niceeval show --json > .niceeval/ci-summary.json`。`pnpm exec` 默认会在 stdout 最前面打印一段启动信息，混进重定向的 JSON 文件。`--silent` 关掉这段前缀。
+  仓库用 pnpm 时把上面这条换成 `pnpm --silent exec niceeval show --json > ./artifacts/niceeval-summary.json`。`pnpm exec` 默认会在 stdout 最前面打印一段启动信息，混进重定向的 JSON 文件；`--silent` 关掉这段前缀。
 </Tip>
 
-`show --json` 读的是结果根唯一的当前结果集，包含仍与当前配置兼容的携带结果。用 `--exp` 收窄实验。若 CI 要审计某一份物理 Run，而非当前结果集，应显式读取该 Run，不按来源过滤当前结果。
+`show --json` 先固定一个 `RecordGraphRef`，materialize 一份固定 Sample，再读取这份固定 membership，其中包含仍兼容的携带结果，不存在移动的「当前状态」。用 `--exp` 收窄实验。若 CI 要审计某一份物理 Run，而非这份固定 Sample，应显式读取该 Run，不按来源过滤 Sample。
 
 CLI 显式要求的 `--json` / `--junit` 输出和默认 results artifact 都是 required 输出：写入失败必须让 job 判红，不能只留 warning 后退出 0。把结果同时上报到 Braintrust 等实验平台的配置见 [Reporter 上报](./reporters)。
 
@@ -118,7 +118,7 @@ npx niceeval list
 
 ## 缓存 `.niceeval/`
 
-可以在 CI 中缓存 `.niceeval/`，但要确保 fingerprint 覆盖了影响结果的输入。对于 nightly 基准，通常保留完整 artifacts 更有价值。
+可以在 CI 中缓存 `.niceeval/`，但要确保 fingerprint 覆盖了影响结果的输入。对于 nightly 基准，通常保留完整 Record 事实更有价值。
 
 ## 控制并发
 

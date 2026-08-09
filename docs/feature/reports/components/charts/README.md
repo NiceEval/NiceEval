@@ -1,137 +1,45 @@
 # 图表
 
-图表接 page render 已经算好的 `points`。
-`Scatter`、`Line`、`Bars` 与 `Area` 各自声明显示形状，不读取 Sample，不执行 Calculation。
+图表接 page render 已经拿到的 evidence-bearing `points`。
+`Scatter`、`Line`、`Bars` 与 `Area` 只声明显示形状，不读取 Sample、执行 Calculation 或打开 Store。
 
 ## 共同输入
 
-从 Sample 派生的每一行必须满足 EvidenceRow：
+从 Sample 派生的 aggregate 输入必须是完整 [`AggregateData`](../../library.md#分组函数与计算函数)，
+也就是 `EvidenceValue<AggregateResult>`；`AggregateResult.rows` 的每一项是带 established
+MetricValue 的 `EvidenceRow`。`refs` 与 `basedOn` 形状只在 Reports Library 定义；Record-owned
+`AttemptRef` 与 `EvidenceRef` 也由该页链接到 Record owner。
 
-```ts
-interface EvidenceRow {
-  refs: readonly AttemptLocator[];
-}
-```
+MetricValue 自带 available/unavailable、coverage 与 refs；available 另带 verification，unavailable 另带 causes。
+业务 snapshot 同样必须经 Projector 成为带 basedOn 的值；图表没有绕过证据的 external 模式。
 
-行中的读数字段使用 MetricValue。
-纯外部业务序列可以使用普通数值，但必须在组件上显式声明 `external`，且不显示 Attempt 下钻。
-
-字段属性引用 points 的对象键：
+## `Scatter`、`Line`、`Bars` 与 `Area`
 
 ```tsx
-<Scatter
-  points={performance}
-  x="costUSD"
-  y="passRate"
-  point="agent"
-/>
+<Scatter points={performance} x="costUSD" y="passRate" point="experiment" />
+<Line points={history} x="revision" y="passRate" series="agent" />
+<Bars points={ranking} x="agent" y="passRate" />
 ```
 
-字段不存在、不是可绘制类型或某行形状不一致时，错误指出组件、属性、字段与结果路径。
+外层 AggregateData unavailable 时，图表显示全部 causes / basedOn，不画一张空图。available 时才
+读取 `points.value.rows`，并显示 `points.value.coverage` 中未能分组的成员；行内 unavailable causes
+或 available verification 限制再由 MetricValue 原样显示。
+`connectNulls`、limit、layout 和视觉强调只改变呈现，不生成值、不合并 coverage，也不将 unavailable 变成零。
 
-## `Scatter`
-
-`Scatter` 用于两个读数的点云。
-`point` 指定点身份，`series` 可选地把 points 拆成多个可见系列：
-
-```tsx
-<Scatter
-  points={performance}
-  x="costUSD"
-  y="passRate"
-  point="experiment"
-  series="agent"
-/>
-```
-
-点默认不连接。
-质量—成本前沿由报告旁普通数组函数计算，再通过显示属性突出；它不是 `Scatter` 的计算能力。
-
-## `Line`
-
-`Line` 用于时间、数值参数或确有顺序的维度：
-
-```tsx
-<Line
-  points={history}
-  x="run"
-  y="passRate"
-  series="agent"
-/>
-```
-
-缺点默认断线。
-`connectNulls` 只改变线段，不制造 MetricValue 或零值。
-
-## `Bars`
-
-`Bars` 用于排行、分组与可相加的堆叠：
-
-```tsx
-<Bars
-  points={ranking}
-  x="agent"
-  y="passRate"
-  sort={{ field: "passRate", direction: "desc" }}
-  limit={10}
-  layout="horizontal"
-/>
-```
-
-`limit` 只隐藏排序后的多余类别，不生成“其他”聚合桶。
-需要合并长尾时，先在 `aggregate().by` 中定义分桶函数，让组合器从原始 Attempt 重新聚合。
-`layout` 控制 web 面使用横向排行条或纵向坐标柱；默认值是 `"vertical"`。
-text 面恒用横向排行条，保留分类标签、格式化终值与样本命中范围。
-
-## `Area`
-
-`Area` 用于累计量或区间。
-只有单位相同且可相加的系列才能堆叠。
-缺点默认断开，不把缺失当零填满面积。
-
-## 组合坐标图
-
-确需在同一坐标系组合多种 mark 时使用 `ComposedChart`。
-每个 series 显式声明 mark、字段与轴；多个轴必须具名，不根据单位猜测绑定。
-
-组合图仍只消费同一份 points，不重新聚合。
+需要不同 group、长尾桶或粒度时，在 ReportPlan 中声明另一个 aggregate request。
+图表不能在交互时重算。
 
 ## 点击目标
 
 图表原语不决定「点开去哪」。
-每种图接受一个目标函数，由放图的上层供给语义：
-
-```tsx
-<Scatter
-  points={performance}
-  x="costUSD"
-  y="passRate"
-  point="experiment"
-  pointTarget={(row) => ({
-    page: "experiment",
-    params: { experiment: row.experiment },
-  })}
-/>
-```
-
-省略 `pointTarget` 时按 [`targetOfRefs()`](../../library.md#目标与下钻) 默认规则：行级 refs 恰好一个才成为 attempt 目标，多 refs 不猜。
-目标经宿主 `ctx.href()` 换 URL；宿主服务不了的目标是纯图形点，不生成假链接。
-`external` 图表没有 refs，也没有 `pointTarget` 属性。
-原语的属性与实现里没有实体词，attempt、experiment 只出现在上层供给的目标值里。
-
-## 值域与方向
-
-MetricValue 的 `better` 决定“更好”朝右或朝上；未声明时不猜方向。
-`bounds` 约束自然量程，renderer 在数据极值外保留呼吸边距。
-
-tooltip、图例、轴刻度与下钻只读取 points 已有值。
-locale 切换重新格式化，不重新执行 page render。
+上层只能提供 ReportPlan 中已经枚举的 `ReportTarget`；多个 refs 时组件显示明确列表，不猜一个 Attempt。
+宿主无法服务 target 时，点保持纯图形并显示可解释的状态。
 
 ## 两面
 
-- web 面输出真实 SVG / DOM、图例、tooltip 与证据链接；没有 JavaScript 时标签和数值仍可读。
-- text 面用字符图或精确值表表达同一组 points；空间不足时保留轴、系列名与终值，不静默删除系列。
-- 页级视觉身份按 `(分组字段, 完整值)` 分配；同一个 Agent 在图与表中保持相同颜色、线型或符号。
+- web 面输出真实 SVG / DOM、图例和已有 target 链接；无 JavaScript 时标签和数值仍可读。
+- text 面用字符图或精确值表表达同一组 points；空间不足时保留系列名、终值和 EvidenceValue 状态。
+- locale 切换只格式化，不重新执行 ReportPlan 或 Calculation。
 
 ## 相关阅读
 

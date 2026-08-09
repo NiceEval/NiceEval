@@ -7,19 +7,17 @@ import { expect, test } from "vitest";
 // NiceEval 根目录：pnpm e2e --repo adapter/local-protocol
 // 已安装候选包的独立 local-protocol Repo 根：pnpm test
 
-interface ErrorEvent {
-  event: "error";
-  locator: string;
-  evalId: string;
-  experimentId: string;
-  phase: string;
-  reason: string;
+interface InvocationReceiptRecord {
+  type: "receipt";
+  receipt: {
+    completion: "complete" | "incomplete" | "interrupted";
+    record: { state: "complete" | "partial" | "not-recorded" };
+  };
 }
 
-interface ExpEvent {
-  event: string;
-  status?: string;
-}
+type InvocationMachineRecord =
+  | { type: "snapshot" | "observation" | "claim" | "heartbeat" }
+  | InvocationReceiptRecord;
 
 interface HistoryAttempt {
   locator: string;
@@ -46,10 +44,15 @@ const PROJECT_COPY = {
   links: [{ from: resolve("node_modules"), to: "node_modules", type: "dir" }],
 } as const;
 
+function invocationReceipt(records: readonly InvocationMachineRecord[], diagnostic: string): InvocationReceiptRecord {
+  const receipts = records.filter((record): record is InvocationReceiptRecord => record.type === "receipt");
+  return only(receipts, () => true, diagnostic);
+}
+
 // 本地 backend 的 5xx 是 Repo 自己的 fixture：它只证明 NiceEval 经真实 adapter
 // 边界（uiMessageStreamAgent → HTTP）传输并分类错误，不冒充 live 兼容性
 // （89ba8e64 把伪 E2E 与真实边界分开的裁决）。
-test("本地 backend 返回 5xx 时实验 errored 且错误带阶段与原因，公开读回同样可见", async () => {
+test("本地 backend 返回 5xx 时 Attempt 形成 errored Verdict Claim，公开读回同样可见", async () => {
   await withProjectCopy(PROJECT_COPY, async ({ root }) => {
     await withHttpServer(
       async () => new Response("provider exploded", { status: 502 }),
@@ -60,18 +63,10 @@ test("本地 backend 返回 5xx 时实验 errored 且错误带阶段与原因，
         });
         expect(run.exitCode, run.diagnostic()).toBe(1);
 
-        const events = run.ndjson<ExpEvent>();
-        const errorEvents = events.filter((item): item is ErrorEvent & ExpEvent =>
-          item.event === "error" &&
-          typeof (item as ErrorEvent).phase === "string" &&
-          typeof (item as ErrorEvent).reason === "string",
-        );
-        const errored = only(errorEvents, (item) => item.evalId === "local/roundtrip", run.diagnostic());
-        // 阶段归因：agent 传输失败在顶层 eval.run 阶段收束（send 在飞时的嵌套 agent.run
-        // 归因只在超时/scope 路径使用，见 runner 的 LifecyclePhase 注释）。
-        expect(errored.phase).toBe("eval.run");
-        expect(errored.reason).toContain("502");
-        expect(events.at(-1)).toMatchObject({ event: "result", status: "failed" });
+        expect(invocationReceipt(run.ndjson<InvocationMachineRecord>(), run.diagnostic())).toMatchObject({
+          type: "receipt",
+          receipt: { completion: "complete", record: { state: "complete" } },
+        });
 
         // 公开读回：errored 同样落进 history，verdict 可被 show 读到（不读 .niceeval）。
         const history = await niceeval.run(["show", "local/roundtrip", "--history", "--json"], { cwd: root });
@@ -82,10 +77,10 @@ test("本地 backend 返回 5xx 时实验 errored 且错误带阶段与原因，
           (item) => item.evalId === "local/roundtrip",
           history.diagnostic(),
         );
-        // 最新一条 attempt 就是本次运行产出的那条：verdict 与 locator 都与 exp 事件流同源。
-        const latest = section.attempts.at(-1);
-        expect(latest?.verdict).toBe("errored");
-        expect(latest?.locator).toBe(errored.locator);
+        // 这个私有项目副本只有本次执行；读取的 Verdict Claim 来自同一份固定 Record 事实。
+        const latest = only(section.attempts, () => true, history.diagnostic());
+        expect(latest.verdict).toBe("errored");
+        expect(latest.locator).toMatch(/^@[0-9A-HJKMNP-TV-Z]{26}$/);
       },
     );
   });

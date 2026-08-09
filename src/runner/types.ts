@@ -696,7 +696,7 @@ export interface EvalAuthorFields {
   reporters?: Reporter[];
   /** 覆盖项目级 / CLI 的单次 attempt 超时(毫秒),只对这一条评估用例生效。 */
   timeoutMs?: number;
-  /** 任意附加元数据,原样透传进 EvalResult,不参与调度或打分;供自定义 reporter 消费。 */
+  /** 任意附加元数据,作为 Attempt Provenance 保存,不参与调度或打分;供自定义 reporter 消费。 */
   metadata?: globalThis.Record<string, JsonValue>;
   /**
    * 调整 agent diff 的归因排除清单(仅 Sandbox 型;见 docs/feature/eval/README.md):两个数组都是
@@ -916,9 +916,9 @@ export interface ExperimentAuthorFields {
    * 共享」的宿主机资源(隧道、mock server、license 租约)。本实验第一个通过派发许可的
    * attempt 触发(memoized,并发 attempt 等同一个结果;全部结果被 carry 携入时不执行)。
    * setup 不返回值;产物写模块级变量,`teardown` 与同文件 agent / sandbox 钩子从闭包读,
-   * runner 不做值的中介。setup 抛错 → 本实验所有 attempt 记 `errored`
+   * runner 不做值的中介。setup 抛错 → 本实验所有 attempt 形成 `errored` Verdict Claim
    * (code `"experiment-setup-failed"`、phase `"experiment.setup"`),同批其它实验不受影响。
-   * 函数体不进 fingerprint,改了钩子逻辑用 `--force` 强制重跑。
+   * 函数体不进 fingerprint,改了钩子逻辑用 `--rerun all` 明确全部重跑。
    * 见 docs/feature/experiments/architecture.md「实验级生命周期」。
    */
   setup?: (ctx: ExperimentHookContext) => void | Promise<void>;

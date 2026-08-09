@@ -15,7 +15,7 @@ const agent = codexAgent({
 });
 ```
 
-`path` 相对运行 niceeval 的项目根。Adapter 将内容写到目标 Agent 能发现的位置；路径不存在或内容无法安装时，attempt 在 setup 阶段报错。
+`path` 相对运行 niceeval 的项目根。Adapter 将内容写到目标 Agent 能发现的位置；路径不存在或内容无法安装时，setup 阶段写结构化执行错误 Observation，并形成该 Attempt 的 `errored` Verdict Claim。
 
 ## 安装 Repo Skill
 
@@ -83,7 +83,7 @@ const agent = codexAgent({
 - `phase` 分别是 `agent.post-setup` / `agent.pre-teardown`，`owner` 是当前 agent。
 - 多个 Hook 按数组顺序执行；成对的 `preTeardown` 数组承载收尾：按逆序、先于 agent teardown 执行（LIFO 镜像——`postSetup` 跑在 agent 安装之后，`preTeardown` 就跑在 agent 收尾之前），当且仅当 `postSetup` 的时点走到过才触发。
 - Hook 通过 `onCleanup()` 登记的收尾在 `preTeardown` 之后按全局逆序执行；其中一项失败不会阻断后续收尾，失败最后一并上报。
-- Hook 抛错按基础设施错误计（attempt errored），不是 agent 解题失败。
+- Hook 抛错按基础设施错误计（结构化执行错误 Observation → `errored` Verdict Claim），不是 agent 解题失败；Attempt lifecycle 仍不使用 verdict token。
 
 Hook 往 codex 全局配置里登记的 hook 不需要交互式信任确认即可生效——Codex Adapter 执行时绕过 codex 的 hook 信任门槛，见 [Codex CLI · 执行信任姿态](../sdk/codex-cli/README.md#执行信任姿态)。
 
@@ -180,7 +180,7 @@ model、reasoning effort 和业务 flags 仍由 experiment 配置；扩展内容
 
 ## 查看安装结果
 
-Sandbox Agent setup 写出安装 manifest，attempt 结果保存实际安装的 Skill、出处、ref、插件、实际版本，以及原生配置文件的项目相对路径与 SHA-256；manifest 不保存配置文件正文。安装失败属于基础设施错误，不记作 Agent 解题失败。
+Sandbox Agent setup 写出安装 manifest 对应的 Observation；固定 GraphRef 上可读实际安装的 Skill、出处、ref、插件、实际版本，以及原生配置文件的项目相对路径与 SHA-256。manifest 不保存配置文件正文。安装失败属于基础设施错误，写执行错误 Observation 与 `errored` Verdict Claim，不记作 Agent 解题失败。
 
 每个 Agent 支持的字段和示例见：
 

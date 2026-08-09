@@ -111,7 +111,7 @@ Bug escape 后按顺序处理：
 | 线性 CLI 大脚本的一段 | 拆分 | 按行为命名的 E2E 文件，可按标题单跑 |
 | 内部宿主模拟外部 cwd | 删除 | Package 场景 Repo 已从候选 tarball 证明 |
 | 完整 DTO snapshot | 删除 / 收窄 | 无公开契约；独有算法留最小 unit |
-| 会修改共享结果的 readback | 隔离 | 独立 Repo 或独立结果根，不靠顺序 |
+| 会修改共享 RecordStore 的 readback | 隔离 | 独立 Repo 或独立 `.niceeval` Store，不靠顺序 |
 
 新旧测试不能无限期并行。新 owner 只有通过当前候选、历史 bug kill 和本地单项重跑后才接管；接管同批删除旧 owner。
 
@@ -141,7 +141,7 @@ Bug escape 后按顺序处理：
 | 新 bug 逃逸 | 先加强已有 owner 并证明能杀死旧实现；只有新边界无法由它表达时才新增测试 |
 | 运行设施变化 | 只改 candidate、process、server 或 cleanup 收据层；领域 expected 不随 executor 改写 |
 | Snapshot 大面积变化 | 先检查结构化字段和用户语义；只接受属于该 snapshot owner 的稳定表示变化，不批量确认 |
-| 测试需要依赖兄弟顺序 | 分配私有 Repo / 结果根；不增加 `serial` 或“必须最后”注释掩盖共享状态 |
+| 测试需要依赖兄弟顺序 | 分配私有 Repo / `.niceeval` Store；不增加 `serial` 或“必须最后”注释掩盖共享状态 |
 
 这套决策允许真正的契约变化修改测试，同时阻止内部重构把大量 E2E 拖进同一个 diff。
 

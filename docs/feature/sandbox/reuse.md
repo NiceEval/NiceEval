@@ -118,7 +118,7 @@ Runner 只按分类账恢复 `workdir`;`/opt`、`$HOME`、`/tmp` 等 workdir 外
 
 大型持久 build/cache 由作者负责生命周期治理。
 作者必须选择容量上限、达到上限前的可解释阈值告警、清除或轮换策略,以及无法安全清除时退休 Sandbox 的策略。
-正常的容量、缓存大小、版本和命中状态写入为 `facts`;只有达到明确风险阈值才报 `diagnostic`,清除或轮换无法保证继续安全时应退休 Sandbox 或抛出异常。
+正常的容量、缓存大小、版本和命中状态写入为 `facts` Observation;只有达到明确风险阈值才报 `diagnostic` Observation,清除或轮换无法保证继续安全时应退休 Sandbox 或抛出异常。
 
 reset 删除了某个已安装内容时,当前 Attempt 的检查会未命中并重新安装;这是正确性结果,不是缓存失败。
 reset 失败后,该 Sandbox 立即停止承接 Attempt,并追加一条运行级 diagnostic(`sandbox-reset-failed`,点名实例编号与失败原文)。
@@ -130,7 +130,7 @@ reset 失败后,该 Sandbox 立即停止承接 Attempt,并追加一条运行级 
 
 | 字段 | 对象 | 到期结果 |
 |---|---|---|
-| Experiment `timeoutMs` | 一条 Attempt | Attempt 记为 `errored`，随后执行有界收尾 |
+| Experiment `timeoutMs` | 一条 Attempt | 写 timeout 执行错误 Observation 并形成 `errored` Verdict Claim，随后执行有界收尾 |
 | Sandbox Provider `lifetimeMs` | 一个 Sandbox | Provider 到期后停止 Sandbox |
 
 不能为了让 Sandbox 活得更久而提高 Experiment `timeoutMs`。
@@ -190,7 +190,7 @@ DinD同样遵守这条边界。
 替代 Sandbox 就绪后再次检查。
 如果替代创建已消耗过多时间，本次 Run 报错，不反复创建同样的替代 Sandbox。
 
-Sandbox 在 Attempt 中途消失时，该 Attempt 记为 `errored`。
+Sandbox 在 Attempt 中途消失时，Runner 写结构化执行错误 Observation，并形成该 Attempt 的 `errored` Verdict Claim。
 Runner 不静默重跑，因为 Agent 可能已经产生成本或外部副作用。
 
 ## 结果与结果沿用
@@ -209,7 +209,7 @@ Runner 不静默重跑，因为 Agent 可能已经产生成本或外部副作用
 「prepare 可重复执行、不依赖 workdir 外残留」是作者义务，但违约的症状（下游 Eval 莫名失败）不指向复用，作者靠肉眼比对无从发现。
 框架必须自己把线索说出来。
 Run 收尾时，声明 `sandboxReuse` 的 Experiment 按 Sandbox 实例与承接序号聚合判定。
-当首承接（序号 1）正常、而某实例序号 ≥ 2 的 Attempt 集中失败或集中 `errored` 在同一生命周期阶段时，结束反馈追加一条运行级 diagnostic，点名实例、序号区间与阶段，提示复用残留的可能性。
+当首承接（序号 1）正常、而某实例序号 ≥ 2 的 Attempt 集中失败或集中形成 `errored` Verdict Claim 且指向同一生命周期阶段时，结束反馈追加一条运行级 Diagnostic Observation，点名实例、序号区间与阶段，提示复用残留的可能性。
 诊断只指路，不改判定。
 
 携带结果不会伪造 Sandbox 生命周期：它只复用已落盘的判定和证据。后续实际派发的 Attempt 仍从本次 Invocation 创建的 Sandbox 开始，并按当前复用规则运行。
@@ -218,7 +218,7 @@ Run 收尾时，声明 `sandboxReuse` 的 Experiment 按 Sandbox 实例与承接
 
 ## 与其它能力组合
 
-- **`--rerun`**：与普通 Experiment 相同；`failed` 和 `all` 档要求相应 Attempt 真实重跑。
+- **`--rerun`**：与普通 Experiment 相同；`--rerun` 或 `--rerun failed` 重跑失败成员，`--rerun all` 要求全部 Attempt 真实重跑。
 - **`attempts > 1`**：每次运行仍是一条 Attempt，开始前重置 workdir。
 - **首过即停**：语义不变，取消的 Attempt 不触发新 Sandbox 创建。
 - **`--keep-sandbox`**：与 `sandboxReuse: true` 互斥；最终现场不只属于某一条 Attempt。
@@ -228,8 +228,8 @@ Run 收尾时，声明 `sandboxReuse` 的 Experiment 按 Sandbox 实例与承接
 
 ## 失败与收尾
 
-- prepare 命令失败：当前 Attempt `errored`，执行已登记 cleanup；reset 成功后 Sandbox 可以继续承接。
-- 领域判定 failed：照常执行 Agent 与 cleanup 收尾；命令树静止且 reset 成功后 Sandbox 可以继续。
+- prepare 命令失败：当前 Attempt 形成 `errored` Verdict Claim，执行已登记 cleanup；reset 成功后 Sandbox 可以继续承接。
+- 领域判定的 Verdict Claim 为 `failed`：照常执行 Agent 与 cleanup 收尾；命令树静止且 reset 成功后 Sandbox 可以继续。
 - Attempt 超时、取消、interruption 或 `agent-send-failed`：先确认 Agent driver 与受管命令树终止；任一项无法证明就停止该 Sandbox，不进入 reset / 复用。
 - reset 失败：停止该 Sandbox 并追加一条运行级 diagnostic（`sandbox-reset-failed`），后续 Attempt 等待替代 Sandbox。
 - 寿命确认不通过：按「派发前确认」轮换——停止该 Sandbox、创建替代 Sandbox，这是正常调度而不是异常，不发 diagnostic。

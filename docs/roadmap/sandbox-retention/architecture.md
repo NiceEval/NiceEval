@@ -220,11 +220,11 @@ Provider session 上限、Invocation deadline、Attempt deadline 与 `maxActiveM
 自动 GC 在 `exp` 启动和每个物理 release 后运行。
 没有 NiceEval 进程时，只有 Provider 到期是墙钟保证；本地 `pruneAfter` 只是下一次 GC 的资格。
 
-超过单 record root 数量上限时，条目按以下顺序淘汰；同类最旧的 `lastUsedAt` 先删：
+超过单一 `.niceeval` RecordStore 数量上限时，条目按以下顺序淘汰；同类最旧的 `lastUsedAt` 先删：
 
 1. cleanup 完整的 pool reset anchor；
-2. cleanup 完整的 fresh passed；
-3. cleanup 完整的 fresh failed / errored；
+2. cleanup 完整且 Verdict Claim 为 `passed` 的 fresh；
+3. cleanup 完整且 Verdict Claim 为 `failed` / `errored` 的 fresh；
 4. cleanup 完整的 retired pool；
 5. cleanup 不完整的任意 checkpoint。
 

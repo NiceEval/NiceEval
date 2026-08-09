@@ -1,90 +1,57 @@
-# `--json`：任何视图的结构化形态
+# `--json`：内建 target 的结构化形态
 
-`--json` 是 show 的第二个输出形态：同一范围、同一切片选出的同一批实体，输出成一个 JSON 文档到 stdout。
-text 面与 `--json` 消费同一套选择、去重与聚合规则；两面共有的派生字段必须同值——因为绝大多数切片装配为同一份报告组件树，text 面与 `data` 字段消费的是同一次组件树求值的输出（[「show 的切片是组件选择」](../architecture.md#show-的切片是组件选择)），同值是构造保证，不是两套手写投影之间需要人工维持的纪律。
-JSON 是结构化审计面，可以保留 text 为注意力预算省略的字段、完整字符串与完整树，因此它是 text 的数据超集，不承诺两个形态包含完全相同的字段集合。
+`--json` 是 show 对内建 target 的结构化输出。
+它与 text 面共享同一个固定 Sample sources、ReportPlan 和 ReportData；JSON 不是另一条选择、读取或聚合路径。
 
-脚本消费走这里，不翻 `.niceeval/` 原始文件：读取面的当前选择、去重与 coverage 缺口都在 show 里实现过一遍，脚本自己扫目录必然复刻出第二套不一致的口径。
-需要比 show 视图更自由的读取时用 [`niceeval/record` 库读取面](../../record/library.md)，仍然不直接碰磁盘布局。
+脚本消费应读取这个信封或 [Record](../../record/library.md) 的公开读取面，不扫描存储布局或复刻 Sample membership。
 
 ## 信封
 
-```typescript
-type ShowJson =
-  | (ShowJsonBase & { view: "leaderboard"; data: StandardOverviewResult })
-  | (ShowJsonBase & { view: "compare"; data: ComparisonResult })
-  | (ShowJsonBase & { view: "attempt"; data: AttemptDetailsResult })
-  | (ShowJsonBase & { view: "source"; data: AnnotatedSourceResult | readonly AnnotatedSourceResult[] })
-  | (ShowJsonBase & { view: "execution"; data: ConversationResult | readonly ConversationResult[] })
-  | (ShowJsonBase & { view: "timing"; data: TimingResult | readonly TimingResult[] })
-  | (ShowJsonBase & { view: "usage"; data: readonly UsageResult[] })
-  | (ShowJsonBase & { view: "diff"; data: DiffResult | readonly DiffResult[] })
-  | (ShowJsonBase & { view: "history"; data: HistoryResult })
-  | (ShowJsonBase & { view: "stats"; data: StabilityResult });
-
-interface ShowJsonBase {
+```ts
+interface ShowJson {
   format: "niceeval.show";
-  /** 破坏性形状变更时递增；新增可选字段不递增，消费方忽略未知字段。 */
-  schemaVersion: 1;
-  /** 本次调用解析后的范围回显。 */
-  sample: {
-    resultsRoot: string;
-    evalPrefix?: string;
-    /** 解析后的 experiment id 全集；对照视图下顺序即条件顺序，首个是基准。 */
-    experiments: string[];
-  };
+  schemaVersion: 2;
+  sources: SampleSources;
+  sample: SampleRef;
+  plan: ReportPlanRef;
+  target: ReportTarget;
+  data: ReportJsonValue;
 }
 ```
 
-- 输出是**一个**顶层 JSON 文档，不是 NDJSON；stdout 只有这个文档，人读的进度与警告走 stderr。
-- **范围含多个 attempt 时**，逐 Attempt 视图的 `data` 是对应任务 Result 的数组，排序与 text 面分节同序；text 面的节头与合计行是渲染面派生，不进 `data`。
-- 错误路径与 text 面一致：无匹配、用法冲突、零可读结果按同样的判定非零退出，错误信息走 stderr，不输出半个 JSON。
-- 字符串值忠实转发落盘内容：终端形态的列宽截断、卡片预览预算**都不适用**；落盘时已被 [256 KiB 上限](../../record/architecture.md#大值截断)截断的值带原样的 `truncated` 标记，`--json` 不追溯还原也不二次截断。
+`data` 是内建 target 已生成的 ReportData 子树。
+它可以比 text 多保留完整字符串或详情字段，但共同的 MetricValue、EvidenceValue、coverage、basedOn 与 refs 必须字节等价。
 
-### 通用 attempt 投影
+## Attempt 投影
 
-多个 view 的 `data` 内部仍需要引用具体某次 Attempt。
-这份投影收在信封层，供各任务 Result 复用或收窄：
+需要提到某次 Attempt 时，JSON 使用完整引用而非持久化结果的摊平副本：
 
-```typescript
-/** attempt 的通用投影：EvalResult 全字段 + 归属身份。 */
-type AttemptJson = EvalResult & {
-  experimentId: string;
-  /** 所属（或携带来源）Run 的 startedAt。 */
-  runStartedAt: string;
-};
+```ts
+interface AttemptJson {
+  attempt: AttemptRef;
+  membership: SampleMembership;
+  evidence: readonly EvidenceValue<ReportJsonValue>[];
+}
 ```
 
-字段名复用 [Record 落盘类型](../../record/architecture.md)，不为 JSON 输出发明第二套命名；派生量由对应 Result 类型声明，本页不重复定义。
+`ShowJson` 与 `AttemptJson` 的唯一 owner 是本页。
+`SampleSources` 与 `SampleRef` 由 [Sample Library](../../sample/library.md#选择器source-集合与-sampleref) owner。
+`SampleMembership` 由 [Sample Library](../../sample/library.md#成员address-与-member-identity) owner。
+`ReportPlanRef`、`ReportTarget` 与 `ReportJsonValue` 由 [Reports Library](../library.md#通用值文本与参数) owner。
+`AttemptRef` 与 `EvidenceValue` 由 [Record Library](../../record/library.md#attempt-与-attemptref) owner。
 
-## `data`：按 view 找任务结果
-
-`data` 字段不是 show 另起的第二套形状。
-每个内建切片先执行一个公开任务函数，再把同一 Result 交给 text 组件与 JSON 序列化。
-宿主不序列化任意报告树，也不通过切树猜数据：
-
-| `view` | `data` 单源 |
-|---|---|
-| `leaderboard` | `standardOverviewResult(sample)` |
-| `compare` | `comparisonResult(sample, options)` |
-| `attempt` | `attemptDetailsResult(attempt)`；不包含报告树 |
-| `source` | `annotatedSourceResult(attempt, options)` |
-| `execution` | `conversationResult(attempt)` |
-| `timing` | `timingResult(attempt)` |
-| `usage` | `usageResult(attempt)` 的数组 |
-| `diff` | `diffResult(attempt)` |
-| `history` | `historyResult(attempts, options)` |
-| `stats` | `stabilityResult(sample, options)` |
+`AttemptRef` 包含完整 `record`、`attemptId`、`locator` 和 adopted NodeRef。
+消费者不能用 locator 字符串替代 graph 或 adopted identity。
 
 ## 边界
 
-- 终端渲染面的注意力预算——卡片预览、`--timing` 80 detail node、列宽截断——不适用于 `--json`：这些是对应组件 text 渲染面的选项，JSON 面恒为完整树结构的输出（[切片表](../architecture.md#show-的切片是组件选择)）。
-  `--timing` 的 JSON 输出等价 `--timing=full` 的节点集合。
-- `--expand` 与 `--json` 组合是用法错误：JSON 形态本来就不截断卡片，没有可展开的东西。
-- 与 `--report` 互斥：报告树表达「怎么看」，`--json` 输出「是什么」（[范围契约](../show.md#选择结果范围)）。
+- JSON 不序列化任意组件树，也不从组件树反向猜数据。
+- `--json` 与显式自定义 `--report` 互斥；自定义交付使用 `exportReport()`。
+- 参数、范围或 target 无效时，show 非零退出且不输出半个 JSON。
+- 分支原样保留：available 保留 verification / issues，unavailable 保留 causes / basedOn；JSON 不把它们折叠为 null。
 
 ## 相关阅读
 
-- [Reports Architecture · show 的切片是组件选择](../architecture.md#show-的切片是组件选择) —— 每个 view 对应哪个组件、为什么两面同值是构造保证。
-- [Record Architecture](../../record/architecture.md) —— 被复用的落盘类型形状。
-- [Record Lib](../../record/library.md) —— 需要自由组合读取时的库入口。
+- [Show](../show.md) —— 范围、target 与终端路径。
+- [Library](../library.md#导出报告) —— ReportData 与 artifact 交付。
+- [Sample](../../sample/library.md) —— SampleRef 和 membership proof。

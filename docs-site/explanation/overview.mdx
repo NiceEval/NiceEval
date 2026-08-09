@@ -36,8 +36,8 @@ Subject under test / Sandbox Provider
   <Card title="Reports" icon="file-lines">
     Writes console, JSON, JUnit, and other reports.
   </Card>
-  <Card title="Artifacts" icon="folder-open">
-    Saves summaries, event streams, transcripts, diffs, and test output.
+  <Card title="Record" icon="folder-open">
+    Facts are committed into the `.niceeval/` Record root: Claims, Observation streams, and evidence.
   </Card>
 </CardGroup>
 
@@ -79,10 +79,10 @@ That boundary keeps NiceEval generic. Evaluating your own AI agent, Claude Code,
     The isolated runtime environment used by coding agents.
   </Accordion>
   <Accordion title="Turn">
-    The immutable result snapshot of one `t.send()`.
+    The immutable runtime result of one `t.send()`.
   </Accordion>
-  <Accordion title="Artifact">
-    A structured result file written to disk after a run.
+  <Accordion title="Record">
+    Verdicts, assertions, and diagnostics are saved as Claims; raw behavior as Observations. Reports and SampleBundles are standalone deliverables.
   </Accordion>
   <Accordion title="Experiment">
     A run configuration that compares multiple agents, models, or flags as a matrix.
@@ -97,7 +97,7 @@ That boundary keeps NiceEval generic. Evaluating your own AI agent, Claude Code,
   <Step title="Agent send">Call the adapter so the subject under test produces a `Turn`.</Step>
   <Step title="Evaluate assertions">Run assertions, Judge checks, and tests.</Step>
   <Step title="Verdict">Fold every result into `passed`, `failed`, `errored`, or `skipped`.</Step>
-  <Step title="Reporting & artifacts">Write reports and save structured files.</Step>
+  <Step title="Reporting & Record">Write reports and commit Record facts.</Step>
 </Steps>
 
 ## Related reading

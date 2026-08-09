@@ -29,7 +29,7 @@ interface CalloutGroup {
   /** 组头徽标：一条事实一枚，文案由数据源给。 */
   badges?: readonly LocalizedText[];
   items: readonly CalloutItem[];
-  /** 嵌套一层来源分组（experiment → run 这类）；只有一个孩子时不渲染空壳层级。 */
+  /** 嵌套一层 provenance 分组（experiment → run 这类）；只有一个孩子时不渲染空壳层级。 */
   groups?: readonly CalloutGroup[];
 }
 
@@ -39,6 +39,8 @@ interface CalloutsProps {
   className?: string;
 }
 ```
+
+`CalloutItem`、`CalloutGroup` 与 `CalloutsProps` 的唯一 owner 是本页；`LocalizedText` 与 `ReportLocale` 由 [Reports Library](../../library.md#通用值文本与参数) owner。
 
 ## 摘要恒可见，其余默认折叠
 

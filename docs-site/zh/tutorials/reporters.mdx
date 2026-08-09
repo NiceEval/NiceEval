@@ -4,7 +4,7 @@ sidebarTitle: "Reporter 上报"
 description: "用内置 reporters 把评估用例结果送到 Braintrust 实验、JUnit XML 或自定义目的地。"
 ---
 
-[NiceEval](https://niceeval.com/) 自己跑、自己判分。Reporter 负责把完成结果送到其它目的地。运行中的反馈（人读文本或 `--json`）由 `niceeval exp` 自己决定，不是用户配置的 Reporter。`.niceeval/` results artifacts 始终开启。其余 Reporter 从 `niceeval/reporters` 导入，按需挂载。
+[NiceEval](https://niceeval.com/) 自己跑、自己判分。Reporter 负责把完成结果送到其它目的地。运行中的反馈（人读文本或 `--json`）由 `niceeval exp` 自己决定，不是用户配置的 Reporter。`.niceeval/` 的 Record 提交始终由 Runner 内置完成。其余 Reporter 从 `niceeval/reporters` 导入，按需挂载。
 
 挂载位置有两个：
 
@@ -84,7 +84,7 @@ export default defineEval({
 
 ## JUnit 与 Json
 
-`JUnit(path)` 输出 JUnit XML，让失败出现在 CI 的测试报告 UI 里。临时生成可以直接用 CLI 的 `--junit <path>`，不用改配置。`Json(path)` 把完整 `InvocationSummary` 落成一个 JSON 文件，喂下游脚本或 dashboard。CI 场景的完整接法见[CI 集成](./ci-integration)。
+`JUnit(path)` 输出 JUnit XML，让失败出现在 CI 的测试报告 UI 里。临时生成可以直接用 CLI 的 `--junit <path>`，不用改配置。`Json(path)` 保存与 `watch` / `exp --json` 同一份 LiveRecord 流，外加最终 `InvocationReceipt`，供下游脚本或 dashboard 使用。CI 场景的完整接法见[CI 集成](./ci-integration)。
 
 ## 自定义 reporter
 
@@ -94,20 +94,22 @@ reporter 是实现若干可选回调的对象，拿到的是和内置 reporter �
 import type { Reporter } from "niceeval";
 
 const notify: Reporter = {
-  async onEvalComplete(result) {
-    if (result.verdict === "failed") {
+  async onRecord(record) {
+    if (record.type !== "claim") return;
+    if (record.claim.kind !== "verdict") return;
+    const verdict = record.claim.value;
+    if (verdict.verdict === "failed") {
       await fetch("http://localhost:3000/notify", {
         method: "POST",
-        body: JSON.stringify({ eval: result.id, agent: result.agent }),
+        body: JSON.stringify({ eval: verdict.evalId, agent: verdict.agent }),
       });
     }
   },
 };
 ```
 
-- `onInvocationStart(evals, shape)`：运行开始，收到本次实际要跑的评估用例列表和运行规模。
-- `onEvalComplete(result)`：每个 attempt 完成即时触发，回调串行化，不会交错。
-- `onInvocationComplete(summary)`：运行结束，收到聚合汇总。
-- `onEvent(event)`：更细粒度的事件流（`eval:start`、`invocation:budgetExceeded` 等）。
+- `onRecord(record)`：逐条 LiveRecord（snapshot / observation / claim / heartbeat），与 `watch` / `exp --json` 同一份流；判定以 verdict Claim 进入这条流。
+- `onAttemptReceipt(receipt)`：每个 attempt 提交后触发，携带窄持久化状态（locator、提交状态与 `RecordGraphRef`）；回调串行化，不会交错。
+- `onInvocationReceipt(receipt)`：运行结束，收到最终 `InvocationReceipt`（完成计数与提交身份）。
 
-用户在 config/评估用例中挂载的 Reporter 默认是 best-effort：抛错会形成永久 diagnostic，但不会中断在飞 Attempt。CLI 显式要求的 `--json` / `--junit` 与默认 results artifacts 是 required 输出，写失败会让最终运行判红。只有目的地没被内置覆盖时才需要自定义——`.niceeval/` 的 artifacts 已经记录了完整结果，事后分析直接读它（见[查看结果](./viewing-results)）。
+用户在 config/评估用例中挂载的 Reporter 默认是 best-effort：抛错会形成永久 diagnostic，但不会中断在飞 Attempt。CLI 显式要求的 `--json` / `--junit` 是 required 输出，写失败会让最终运行判红。只有目的地没被内置覆盖时才需要自定义——`.niceeval/` 的 Record 已经记录了完整结果，事后分析直接读它（见[查看结果](./viewing-results)）。

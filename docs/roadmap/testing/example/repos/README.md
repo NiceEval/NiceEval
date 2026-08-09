@@ -1,7 +1,7 @@
 # E2E 场景 Repo 索引
 
 这里有两套独立的真实消费项目。它们共用根 runner 与 `@niceeval/testkit`，但不共用场景 Repo、依赖图、fixture、secret、
-结果根或领域 expected。
+`.niceeval` RecordStore 或领域 expected。
 
 ## 功能场景 Repo
 

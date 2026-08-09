@@ -36,8 +36,8 @@ Subject under test / Sandbox Provider
   <Card title="报告" icon="file-lines">
     输出控制台、JSON、JUnit 等报告。
   </Card>
-  <Card title="Artifacts" icon="folder-open">
-    保存 summary、event stream、transcript、diff 和测试输出。
+  <Card title="Record" icon="folder-open">
+    事实提交进 `.niceeval/` Record 根：Claim、Observation stream 与证据。
   </Card>
 </CardGroup>
 
@@ -80,10 +80,10 @@ Subject under test / Sandbox Provider
     给 coding agent 使用的隔离运行环境。
   </Accordion>
   <Accordion title="Turn">
-    一次 `t.send()` 的不可变结果快照。
+    一次 `t.send()` 的不可变结果。
   </Accordion>
-  <Accordion title="Artifact">
-    运行后落盘的结构化结果文件。
+  <Accordion title="Record">
+    判定、断言与诊断以 Claim 保存，原始行为以 Observation 保存；报告与 SampleBundle 是独立交付物。
   </Accordion>
   <Accordion title="Experiment">
     用矩阵方式比较多个 agent、model 或 flags 的运行配置。
@@ -98,7 +98,7 @@ Subject under test / Sandbox Provider
   <Step title="Agent send">调用 adapter，让被测对象产出 `Turn`。</Step>
   <Step title="Assertions 与 Verdict">执行断言和 Judge，再折叠最终 Verdict。</Step>
   <Step title="Verdict">把所有结果折叠为 `passed`、`failed`、`errored` 或 `skipped`。</Step>
-  <Step title="Reporting & artifacts">输出报告并保存结构化文件。</Step>
+  <Step title="Reporting & Record">输出报告并提交 Record 事实。</Step>
 </Steps>
 
 ## 相关阅读

@@ -37,6 +37,8 @@ type CopyBlockProps = {
 };
 ```
 
+`CopyBlockContent` 与 `CopyBlockProps` 的唯一 owner 是本页；`LocalizedText` 与 `ReportLocale` 由 [Reports Library](../../library.md#通用值文本与参数) owner。
+
 ## 渲染
 
 - web 面：原生 `<details>` 折叠块，标题行右侧是复制按钮，展开即全文。

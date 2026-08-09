@@ -51,7 +51,8 @@ export default defineEval({
 ```
 
 图编译结果包含 `factuality`、`usefulness` 和 `overall` 三个稳定节点。
-只有 `overall` 的 Decision 进入 AssertionResult；两个分项和聚合过程进入 `judge.json`。
+只有 `overall` 的 Decision 形成 Assertion Claim；两个分项、聚合过程与物理请求都进入带同一 correlation 的 judge
+Observation stream，并由最终 Judge Claim 引用。它们不写入 `judge.json` 或 Attempt payload。
 
 某个模型节点请求失败时，`overall` 因依赖 unavailable 而 unavailable。
 配方只有显式使用 `g.fallback(...)`，才能用另一个节点结果继续产生 Decision。

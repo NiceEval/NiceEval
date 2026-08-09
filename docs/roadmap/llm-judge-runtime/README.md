@@ -38,9 +38,9 @@ Judge Check
        └─ retry / budget / capability checks
              │
              ▼
-       Judge Decision ──────> AssertionResult
+       Judge Decision Claim ──> Assertion Claim ──> Verdict Claim
              │
-             └──────────────> judge artifact
+             └──────────────> judge Observation stream / typed evidence
 ```
 
 `Judge Decision` 恒包含 `0..1` 分数、简短理由和材料引用。
@@ -55,8 +55,8 @@ Judge Check
 | 材料读取器 | 读取 scope、文件与内联内容，生成稳定材料清单 | 猜测材料角色或支持能力 |
 | Judge Runtime | 校验图、调度节点、预算、重试与 fallback | 理解某家模型 SDK |
 | Judge Provider | 能力声明、预检、规范请求转换和原始响应归一 | 决定 rubric、阈值或 Verdict |
-| Assertion collector | 把最终 Decision 写成 AssertionResult | 展开图节点或调用模型 |
-| Record | 保存判分 provenance、节点结果与材料引用 | 重新执行 Judge Graph |
+| Assertion collector | 把最终 Decision 写成 Assertion Claim | 展开图节点或调用模型 |
+| Record | 保存判分 provenance、节点 Observation、Judge / Assertion Claim 与材料引用 | 重新执行 Judge Graph |
 
 ## 设计原则
 
@@ -84,7 +84,7 @@ LLM Judge 只对已给材料执行有界模型请求，不主动打开仓库、�
 - 文本、对话、图片、音频与一般文件的规范化材料模型。
 - Judge Profile、Provider 能力、预检、预算、并发和重试。
 - 结构化 Decision、节点 unavailable、fallback 与 Assertion 映射。
-- `judge.json`、内容寻址 blob、show / view 的判分详情投影。
+- 内容寻址的 typed evidence、judge Observation stream，以及 show / view 的判分详情 Projection。
 - Eval 对 Judge profile 和模态要求的静态声明。
 
 本主题不包含：

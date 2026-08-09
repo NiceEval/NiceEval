@@ -23,10 +23,18 @@ interface BackendInfo {
   port: number;
 }
 
-interface ExpEvent {
-  event: string;
-  status?: string;
-  experimentId?: string;
+interface InvocationReceiptRecord {
+  type: "receipt";
+  receipt: { completion: "complete" | "incomplete" | "interrupted" };
+}
+
+type InvocationMachineRecord =
+  | { type: "snapshot" | "observation" | "claim" | "heartbeat" }
+  | InvocationReceiptRecord;
+
+function invocationReceipt(records: readonly InvocationMachineRecord[], diagnostic: string): InvocationReceiptRecord {
+  const receipts = records.filter((record): record is InvocationReceiptRecord => record.type === "receipt");
+  return only(receipts, () => true, diagnostic);
 }
 
 /** backend.json 的格式属于本 Repo；Testkit 只拥有临时目录与轮询时序。 */
@@ -80,18 +88,10 @@ test("SIGINT 后返回 130、实验 teardown 完成、owned backend 释放且下
           const interrupted = await controlled.done;
           expect(interrupted.exitCode, interrupted.diagnostic()).toBe(130);
 
-          const events = interrupted.ndjson<ExpEvent>();
-          const result = only(events, (item) => item.event === "result", () => interrupted.diagnostic());
-          expect(result).toMatchObject({ event: "result", status: "interrupted" });
+          expect(invocationReceipt(interrupted.ndjson<InvocationMachineRecord>(), interrupted.diagnostic()))
+            .toMatchObject({ type: "receipt", receipt: { completion: "interrupted" } });
 
-          // 实验级 teardown 在中断路径也要执行（docs/feature/experiments/architecture.md
-          // 「实验级生命周期」：失败、中断也执行）。
-          const teardown = only(
-            events,
-            (item) => item.event === "experiment_teardown" && item.experimentId === "slow",
-            () => interrupted.diagnostic(),
-          );
-          expect(teardown.status).toBe("done");
+          // 中断后的 teardown 由下方对 owned backend 的真实释放证明，而不是旧的结果摘要事件。
 
           return {
             invocationPid: defined(controlled.pid, () => interrupted.diagnostic()),

@@ -84,4 +84,4 @@
 - **宿主 flag 与寻址。**
   `show` 的切片、`view` 的路由归 [Reports 架构](../../feature/reports/architecture.md)。
 - **把结果交给外部工具。**
-  想用 pandas 或 BI 查结果，走 [Record](../../feature/record/library.md) 的读取面与 `publish()`，不需要报告面提供查询语言。
+  想用 pandas 或 BI 查结果，走 [Record](../../feature/record/library.md) 的读取面与 `exportSample`，不需要报告面提供查询语言。

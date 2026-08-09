@@ -1,57 +1,87 @@
-# Sample —— 当前结果集
+# Sample —— 固定 source 集合上的已定选择
 
-[Record](../record/README.md) 回答「盘上有什么」。
-Sample 回答「当前配置下，每道题现在有什么有效结果」。
+[Record](../record/README.md) 回答一个不可变 Graph 保存了什么；Sample 回答一个或多个固定 source Graph 的 Run membership 选中了哪些 Attempt，以及 denominator 中哪些成员属于 included、excluded 或 unavailable。
 
-```typescript
-import { openRecord } from "niceeval/record";
-import { currentSample } from "niceeval/sample";
+```ts
+import { resolve } from "node:path";
+import { openRecord, openRecordStore } from "niceeval/record";
+import { createSampleBundleStore, materializeSample } from "niceeval/sample";
 
-const record = await openRecord(".niceeval");
-const sample = currentSample(record, { experiments: "compare/" });
+const root = resolve(process.cwd(), ".niceeval");
+await using store = await openRecordStore(root);
+await using record = await openRecord(store);
+const sample = await materializeSample(record, {
+  runs: ["compare/candidate"],
+});
 
-sample.attempts; // 当前配置下每道题选出的 Attempt
-sample.coverage; // 完整分母与结构化缺口原因
-sample.issues;   // 无法落到单题缺口上的读取问题
+// create requires an absolute local root that does not exist yet.
+const bundleRoot = resolve(process.cwd(), ".niceeval-sample-bundle");
+await using bundleStore = await createSampleBundleStore(bundleRoot);
 ```
+
+`record` 是 [Record Library](../record/library.md#打开-record) 提供的固定 revision 读取 capability；生成值中的 `sources` 保存它的完整 `record.ref`。一次 `materializeSample()` 产生只含这一项的 `sources`；writer 推进 head 后，调用方必须重新打开 Record 并生成另一份 Sample。
+
+本地 Record Store 的 Library root 必须是绝对路径。项目惯用的 `.niceeval` 先相对调用进程的
+`process.cwd()` 做一次路径 resolution，再把绝对结果传给 `openRecordStore()`；Sample 不另设接受相对 root 的入口。
 
 ## 唯一心智
 
-主报告只有一份 current 结果集。
-每个 Experiment × Eval 在当前 `configHash` 下有物理 Attempt 就进入 `sample.attempts`，否则进入 coverage 缺口。
+Sample 不是目录、时间或“最新结果”的惰性查询。
+它是已经生成的值，保存 identity、规范化 sources、成员、denominator、coverage、provenance 与 Record-owned membership proof。
 
-Attempt 是实际执行、携带合入还是从可比旧 Run 补入，只属于 provenance 事实，不改变它是不是 current，也不改变计票。
-不同 `configHash` 的旧结果只用于解释缺口和进入 History，不混进当前报告。
+每个 Run revision 先以 durable `expectedMembershipSlots` 定义分母，再以 strong edge 列出已有 slot 的
+current Record-owned `RunContributionHandle`。Sample 逐个 expected slot 交代 included 或
+`unavailable / not-recorded`；已有 contribution 的 `executed`、`carried`、`accepted` 与 `renamed` 都是
+同一种成员事实。Attempt 始终属于 origin Run，当前 Run 只通过 Contribution 采用它。
 
-## 缺口不是第二套结果
+每个成员直接保留 Record-owned `AttemptRef` 与 `RunContributionHandle`。后者含 node、contributionId、revision、runId、evalId、membershipSlot 与 mode；Sample 和 Reports 都不能自行重建它，或只用 locator 代替。
 
-缺口统一表示「当前配置下没有结果」，并带下一步所需的原因：
+## 成员、证据与范围
 
-- `never-run`：Record 历史里从未出现这道题的物理 Attempt。
-- `previous-result`（旧结果缺口）：历史里有结果，但没有一条能代表当前配置；缺口可带最近旧 locator，供用户重跑或显式 `niceeval accept`。
+成员读数使用 Record-owned `EvidenceValue` 的两轴形状。available/unavailable、verification、全部 causes、issues 与 basedOn 随 Sample 保留；图表、Calculation 与 renderer 不重算它们。
 
-两种原因都不进入通过率、得分、成本或样本命中范围的分子。
-原因只帮助用户决定下一步，不把旧 verdict 变成半有效结果。
-
-## 常见用途
+coverage 精确保存 denominator、included、excluded 与 unavailable。收窄会生成新的固定 Sample，并保留 parent sources；它不会把 predicate 留给后续读取或 renderer。
 
 | 用户目标 | 入口 |
 |---|---|
-| 看当前配置下的完整水平 | `currentSample(record)` |
-| 收窄实验或题目 | `currentSample(record, { experiments, evals })` 或 `sample.scope()` |
-| 按数据质量删减当前观测 | `sample.filter()` |
-| 查看一次 Run 的事实 | Record 中的 `Run` 与 `niceeval show --run` |
-| 查看历次执行 | `niceeval show --history` 或 History 页面 |
-| 人工确认旧结果仍适用 | `niceeval accept @<locator>` |
-| 发布一份自包含 Run | `latestRunSample(record)` 后交给 `publish()` |
+| 从一个固定 Record 生成可复核总体 | `materializeSample(record, selection)` |
+| 从该总体收窄实验、Eval 或成员 | `narrowSample(sample, selector)` |
+| 合并多份已定 Sample | `unionSamples(samples, conflictPolicy)` |
+| 交付独立、可验证的样本包 | `exportSample(sample, { sources, target })` |
+| 打开收到的样本包 | `openSampleBundle(source, ref)` |
+| 呈现固定样本 | [Reports](../reports/README.md) |
 
-`latestRunSample()` 服务发布和单 Run 审计，不定义另一种结果状态。
-默认 show、view、自定义报告与统计都从 `currentSample()` 出发。
+## 多 source union 与交付
+
+跨 Record 只能合并已经生成的 Sample。`unionSamples()` 把 input sources 按完整 `RecordGraphRef` 的 JCS bytes 去重并排序，得到非空 `sources` 集合。它不会留下单数 graph，也不会猜主 Graph。
+
+每个 denominator row 的 slot identity 含完整 source Graph、结构化 address、Run node、experimentId 与
+evalId；已有 member 再纳入完整 Record-owned Contribution 与 AttemptRef。address 固定为 recordId、
+runId、membershipSlot。不同 address 永不折叠；同一 address 的 slot/source、Contribution revision 或
+adopted node 不同默认 conflict。
+
+`exportSample()` 返回公开 `SampleBundleRef`，并写入独立、可保存多个 immutable Bundle 的 `SampleBundleStore`。导出时显式传入由固定 Record handle 构造的 `RecordSourceSet`；纯 `MaterializedSample` 不隐藏 Store 或 reader。
+
+`SampleBundleStore` 只能由 create/open 取得，是 runtime-branded `AsyncDisposable` capability。close 幂等且只释放自己的 retain；已经开始的 child export/read retain 可以独立完成。真实 closed capability 与伪造或其它 Store kind 的 invalid handle 使用互斥 typed failure。
+
+`MaterializedSample` 也不是结构相同就可信的普通 object。`exportSample()` 与 Reports 在读取字段前都使用
+Sample-owned `validateMaterializedSample()`。
+伪造或被篡改的值直接给出 `SampleValidationError`，不能被当成空 Sample、零 coverage 或 unavailable。
+
+Bundle durable payload 是精确定义的 `SampleBundleDigestPreimageV1 { schema, manifest }`，调用方只通过
+`SampleBundleRef` 打开它。分页的 `RecordEvidenceProofIndexV1` 交付 event、object、Claim 与
+authenticated absence proof。
+
+Bundle 不会把源 Claim 或 stream GraphNode 当作自身活动节点。
+导出先校验 caller-supplied Sample。source set 的失败直接传播 Record-owned `RecordSourceError`。
+固定 source 的 membership/proof prerequisite read 直接传播 `RecordReadError`。
+proof 构建、递归闭合、archive、验证或写入统一 index 的失败直接传播 `RecordEvidenceProofError`。
+这些 owner error 都不包装成 Bundle Store failure。
 
 ## 相关阅读
 
-- [Library](library.md) —— current 选择、缺口原因与转换形状。
-- [参考方案](reference/README.md) —— 显式选择与转换从哪里学。
-- [用例手册](use-case/README.md) —— 局部补跑与人工接受的完整路径。
-- [Record](../record/README.md) —— 被选择的物理事实。
-- [Reports](../reports/README.md) —— 只消费一份 Sample 的呈现层。
+- [Library](library.md) —— sources、选择、coverage、union、Bundle 与成员 identity 的完整形状。
+- [局部补跑](use-case/partial-rerun.md) —— 一个 Run revision 怎样形成固定成员。
+- [收窄样本](use-case/收窄样本.md) —— 将范围收窄为新的固定值。
+- [参考方案](reference/README.md) —— 固定选择与可验证交付的取舍。
+- [Record](../record/README.md) —— Sample 所读取的不可变事实图。

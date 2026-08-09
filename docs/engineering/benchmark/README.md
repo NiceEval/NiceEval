@@ -1,27 +1,28 @@
 # Phase Timings 与安装基准
 
-本机制由两部分组成：写入每个 Attempt 的阶段计时契约，以及直接调用单次 Attempt 引擎的安装基准台。
-`AttemptRecord.phases` 的持久化类型单归 [Record Format](../../feature/record/architecture.md)，本篇定义阶段边界语义与基准消费方式。
+本机制由两部分组成：写入每个 Attempt 的阶段边界 Observation、由 timing Projector 读出的阶段计时契约，以及直接调用单次 Attempt 引擎的安装基准台。
+Attempt 的耗时 Observation 与读取面时间树的类型单归 [Record Format](../../feature/record/architecture.md)，本篇定义阶段边界语义与基准消费方式。
 
 ## 要回答的问题
 
 横向对比 sandbox provider 与 adapter 的**安装速度**和**安装正确率**:docker / e2b / vercel 谁起得快、起得稳;codex / claude-code / bub 在各家沙箱里装 CLI 要多久、装挂的概率多大。
 这既是优化冷启动的前提(测不到就没法优化),也是超时归因的前提——一个 attempt 顶到 `timeoutMs`,到底是 agent 干活慢,还是安装 / 模型预热吃掉了预算,数据必须能回答。
 
-Attempt 级总 `durationMs` 无法区分沙箱创建、生命周期 Hook、依赖安装、CLI 安装、逐轮 send 与评分，也无法指出 errored 结果终止在哪个阶段。
+单一 `durationMs` timing Projection 无法区分沙箱创建、生命周期 Hook、依赖安装、CLI 安装、逐轮 send 与评分，也无法指出 `errored` Verdict Claim 的执行依据出现在哪个阶段。
 进度 `log()` 是人读的临时反馈，不构成可持久化、可聚合的机器口径。
 
-设计分两层：**① 契约层** —— 每个 attempt 落盘 per-phase 计时（`phases` 字段），让每一次正常的 eval 运行都自动是一次采样。**② 基准层** —— `bench/` 直接调用 runner 内部单次 attempt 引擎的一组脚本，与单元测试、CI 门禁都无关，本地随手可跑：优化安装路径时改一版实现、跑一轮基准、和上一轮 Run 对比。
+设计分两层：**① 契约层** —— Runner 为每个 Attempt 追加阶段边界 Observation，`timing` Projector 在固定 revision 上读出 per-phase 时间树，让每一次正常的 eval 运行都自动是一次采样。**② 基准层** —— `bench/` 直接调用 runner 内部单次 attempt 引擎的一组脚本，与单元测试、CI 门禁都无关，本地随手可跑：优化安装路径时改一版实现、跑一轮基准、和上一轮 Run 对比。
 
-## 契约:`AttemptRecord.phases`
+## 契约:Attempt 阶段耗时 Projection
 
-`result.json` 的 `AttemptRecord`（同时是内存里的 `EvalResult`）包含一个可选字段：
+`AttemptPayloadV1` 不含计时字段；它只保存 identity、origin、Provenance ref、lifecycle state 与 stream bindings。固定 `AttemptRef` 后，内建 `timing` Projector 返回如下读取面形状：
 
 ```typescript
-interface AttemptRecord {
-  // …既有字段不变…
-  /** 阶段计时,按执行顺序;只记实际发生的阶段。缺失 = 旧数据或非 runner 产出。 */
-  phases?: PhaseTiming[];
+interface AttemptTimingProjection {
+  /** 主链的读取期总耗时。 */
+  durationMs: number;
+  /** 按执行顺序的阶段读面；只投影实际发生过的阶段。 */
+  phases: readonly PhaseTiming[];
 }
 
 interface PhaseTiming {
@@ -36,7 +37,9 @@ interface PhaseTiming {
 }
 ```
 
-`LifecyclePhase` 闭集与 `PhaseTiming` / `TimingActivity` 的类型定义单归 [Record · 两层时间模型](../../feature/record/architecture.md#两层时间模型生命周期参照点与开放-activity),这里不复写第二份;本篇定义各阶段的边界语义与消费方式。
+生命周期、命令与 turn 的开始、结束、失败和关联身份都先作为 Observation 保存。
+`LifecyclePhase` 闭集与 `PhaseTiming` / `TimingActivity` 的 Projection 语义单归 [Record · Architecture](../../feature/record/architecture.md)，这里不复写第二份。
+本篇只定义阶段边界语义与消费方式。
 
 ### 阶段边界
 
@@ -62,7 +65,7 @@ interface PhaseTiming {
 
 `sandbox.queue` 到 `telemetry.collect` 是**主链**,涵盖到判定与主证据收集完成。
 `agent.teardown` / `sandbox.cleanup` / `sandbox.stop` 是**收尾段**,主链成败都执行,cleanup 按全局准备顺序逆序(Agent 先收、Provider 资源最后收)。
-最终 `AttemptRecord` 在两段都结束后才组装,但 `durationMs` 的计量终点仍是主链末端。
+两段结束后，Runner 才收敛 Attempt lifecycle、terminal Claim 与 receipt；`durationMs` Projection 的计量终点仍是主链末端。
 语义规则:
 
 - **只记实际发生的阶段**。
@@ -70,12 +73,14 @@ interface PhaseTiming {
   主链在某一步抛错时,该步之前已经执行的收尾动作照常写入(如 `sandbox.create` 失败则整个收尾段缺席——沙箱从未存在)。
 - **顺序即执行序**,与生命周期文档的调用链一致;收尾段总排在主链条目之后。
 - **错误归因**:主链阶段抛错时,该条目以抛错时刻封口并标 `failed: true`,其后无主链条目。
-  errored 结果「死在哪一步」= 主链最后一条 `failed` 条目,不设单独的 `failedPhase` 字段(可从数组一行推导的东西不重复落盘)。
-  收尾阶段的 `failed` 各自独立:cleanup 失败是 diagnostic、不改判定,所以一个 passed attempt 也可以带一条 `failed` 的 `sandbox.cleanup`。
-- **超时归因**：计时收集器在阶段开始时即登记 open 条目。attempt 总超时（`Effect.timeoutTo`）中断整段 body 时，超时路径构造的结果同样携带已收集的 phases，in-flight 阶段以中断时刻封口并标 `failed`——「顶到 timeoutMs 的 attempt 卡在哪」直接可读。
+  `errored` Verdict Claim 的「执行依据出现在哪一步」= 主链最后一条 `failed` Projection 条目,不设单独的 `failedPhase` 字段(可从数组一行推导的东西不重复落盘)。
+  收尾阶段的 `failed` 各自独立:cleanup 失败是 Diagnostic Observation、不改 Verdict Claim，所以带 `passed` Verdict Claim 的 Attempt 也可以投影出一条 `failed` 的 `sandbox.cleanup`。
+- **超时归因**：计时收集器在阶段开始时即登记 open Observation。
+  attempt 总超时（`Effect.timeoutTo`）中断整段 body 时，in-flight timing Observation 在中断时刻封口并标 `failed`。
+  执行错误 Observation 是 `errored` Verdict Claim 的依据，因此可直接读出「顶到 timeoutMs 的 Attempt 卡在哪」。
 - **`durationMs` 口径**:`durationMs` 只涵盖主链,不含收尾——收尾失败只是 diagnostic、不改判定,跨实验的判定耗时不该被收尾拖长。
   因此 ∑ 主链 phases ≤ `durationMs`(差值为阶段间粘合代码);收尾段条目在这个口径之外单独可读——「判定早已确定、进程还在等收尾」这类问题(cleanup 卡住、provider stop 卡住)的归因数据就在这里。
-  最终 record 虽在 Scope release 后才组装,也不把收尾反加进 `durationMs`。
+  即使最终 receipt 在 Scope release 后才形成，Projection 也不把收尾反加进 `durationMs`。
 - **`sandbox.queue` 单列**:容器创建被信号量限流,并发下排队等待可以远大于创建本身。
   混进 `sandbox.create` 会让「provider 起沙箱要多久」这个被测量被实验的并发度污染;单列后 create 的口径跨实验可比。
 - **prepare 链 phase 级合计、时间树逐层展开**:作者 command 可以是 opaque callback,跨实验的聚合与对比只在 phase 层进行——`sandbox.prepare` / `sandbox.cleanup` 各合计一条。
@@ -85,40 +90,40 @@ interface PhaseTiming {
   因此 `workspace.baseline`、`agent.ensure`、`agent.setup`、`telemetry.configure`、`eval.run`、`workspace.diff` 与收尾阶段都能写入自己发出的公开 command。
   provider 内部 `runCommand`→`runShell` 的实现转调不重复记；Agent CLI 内部工具不经过该接口,仍由 events + OTel 提供。
 - **turn 是 runner 包络,OTel 是轮内细节**:`eval.run.children` 的 turn 用 runner 单调时钟量 `send` 端到端耗时,并保存 session/turn 身份、`traceId` 与归属方式。
-  消费方按 `traceId` 从 `trace.json` 临时挂接 agent/model/tool spans；没有 OTel 时 turn 耗时仍可用。
+  消费方按 `traceId` 从 telemetry Observation 临时挂接 agent/model/tool spans；没有 OTel 时 turn 耗时仍可用。
 - **并发不可求和**:`startOffsetMs` 恢复 sibling 的先后与重叠。
   command、turn 与 OTel span 都可能包含或并发,children duration 不可简单相加后同父节点比较。
-- **命令证据有界且脱敏**:时间树只保存 command display、状态与 exit code；display 截断并脱敏,env value 和 stdout/stderr 不进入 `result.json`。
+- **命令证据有界且脱敏**:命令 Observation 只保存 command display、状态与 exit code；timing Projection 读取这些字段。display 截断并脱敏,env value 和 stdout/stderr 不进入 Record。
   安装期间的人读进度与诊断仍走 `ctx.progress` / `ctx.diagnostic`(见 [Experiments · 生命周期代码怎样向这次运行反馈](../../feature/experiments/library.md#生命周期代码怎样向这次运行反馈))。
-- **Scope release 后封口**:`sandbox.stop` 与 receiver close 属于 Effect finalizer,共用 attempt timing recorder；Scope release 完成后才组装最终结果。
-  finalizer 失败写 timing/diagnostic,不能让 body 先封口而丢失收尾事实。
+- **Scope release 后封口**:`sandbox.stop` 与 receiver close 属于 Effect finalizer,共用 attempt timing recorder；Scope release 完成后才收敛 lifecycle、Claim 与 receipt。
+  finalizer 失败写阶段 Observation / Diagnostic Observation，不能让 body 先封口而丢失收尾事实。
 
 ### 形状与落点的裁决
 
 - **为什么是有序数组而不是固定字段 record**:顺序天然携带「死在哪一步之前」;缺席语义干净(没跑 = 没条目,不用在 0 / undefined 之间选);新增阶段不改类型形状。
   聚合侧按 `name` 分组,和 record 一样是一行代码。
-- **为什么住 `result.json` 而不是 OTel trace**:trace 是条件输出(agent 配了 tracing、receiver 起了才有),而 runner phase / command / turn 计时必须无条件产出。
-  phases 是判定条目旁的运行事实,家在权威条目里；`show --timing` 可以按 `traceId` 把两者组合成一个视图,但不因此把 runner 节点伪造成 OTel span,也不把 span 复制进 phases。
+- **为什么住 Record 而不是 OTel trace**:trace 是条件输出(agent 配了 tracing、receiver 起了才有),而 runner phase / command / turn Observation 必须无条件产出。
+  `phases` 是这些 Observation 的读取面；`show --timing` 可以按 `traceId` 把两者组合成一个视图,但不因此把 runner 节点伪造成 OTel span,也不把 span 复制进 `phases`。
 - **为什么不给进度行加时间戳再挖掘**:进度行是人读的 UI 文案,把它变成机器口径意味着改文案就破坏数据管道;计时和展示各自独立,共享的只是阶段边界这几个代码位置。
-- **兼容性**:纯增量的可选字段与闭集增补,读取面「忠实磁盘、忽略未知字段」的契约不变,`schemaVersion` 不升。
+- **兼容性**:新增阶段使用新的 Observation schema 或 Projector version；不向 AttemptPayloadV1 塞可选字段，也不触发 frozen container 升版。
   读取器读到闭集之外的阶段名时原样透传、渲染面按未知阶段列在末尾,不报错。
-  携带条目的 phases 随 `result.json` 原样携带。
+  携带条目保留 origin Run 的耗时事实,不按新 Run 重算。
 
 ### 消费边界
 
-普通 `niceeval exp` 由 runner 写入 `phases`，`niceeval/record` 读取面原样透传。
+普通 `niceeval exp` 由 Runner 提交 attempt 阶段 Observation，`niceeval/record` 读取面经 timing Projector 重建时间树。
 消费面有四个:
 
 - **`niceeval show`**:attempt 首页的 `timing:` 行给主链分解与收尾合计;`--timing` 切面给 phase → hook/turn → command → OTel 的统一时间树。
   契约见 [Show `--timing`](../../feature/reports/show/timing.md)。
 - **`niceeval view`**:Attempt 详情的阶段耗时区,同一份 phases 的图形面。
   契约见 [View](../../feature/reports/view.md)。
-- **结果读取 API**:`niceeval/record` 原样透传,聚合脚本按 `name` 分组。
-- **`bench/`**:不经过 CLI,也不写 `.niceeval/result.json`;它直接调用 runner 的单次 Attempt 引擎,从内存返回值读取同一份 `phases`。
-  与 CLI 路径共享阶段名和计时语义,只在是否经过 discover、是否持久化上不同。
+- **结果读取 API**:`niceeval/record` 的 timing Projector 返回 Projection，聚合脚本按 `name` 分组。
+- **`bench/`**:不经过 CLI,也不写 Record;它直接调用 Runner 的单次 Attempt 引擎，从内存的同形 timing Projection 读取耗时。
+  与 CLI 路径共享阶段名和计时语义,只在是否经过 discover、是否提交上不同。
 
-Runner 时间树不写入 OTel trace,也不混入独立的 Traces 瀑布图——span 仍来自被测 agent(见 [Observability](../../observability.md)),phases 是 runner 侧运行事实。
-`show --timing` 与 Attempt 时间详情会在读取时按 turn `traceId` 组合两条数据；这只是展示投影,两类 artifact 仍各有各的家。
+Runner 时间树不写入 OTel trace,也不混入独立的 Traces 瀑布图——span 仍来自被测 agent(见 [Observability](../../observability.md)),`phases` 是 Runner Observation 的 Projection。
+`show --timing` 与 Attempt 时间详情会在读取时按 turn `traceId` 组合两条数据；这只是展示投影,两类事实仍各有各的家。
 
 ## 基准:`bench/` 直接调用的内部脚本
 
@@ -187,7 +192,7 @@ npx tsx bench/run.ts docker --attempts 10  # 默认也是 10(见下)
 
 串行执行、不并发，让排队等待恒近 0，attempt 序号与冷 / 热次序一一对应。
 
-每次调用拿到的结果里带逐阶段耗时（对齐上节「契约：`AttemptRecord.phases`」的阶段名与语义）。
+每次调用拿到的结果里带逐阶段耗时（对齐上节「契约：Attempt 阶段耗时」的阶段名与语义）。
 
 循环跑完，`stats.ts` 里的纯函数当场算出 min/median/max、首个 / 后续 attempt 分列、三类失败计数，`console.table` 直接打到终端——没有「先跑再另开一步 show --report」这一步。
 
@@ -197,7 +202,7 @@ npx tsx bench/run.ts docker --attempts 10  # 默认也是 10(见下)
 
 ### `compare.ts`:两份 Run 的 noise-aware 判据
 
-`run.ts` 顺手把算好的统计量(不是完整 attempt 条目)写一份 JSON 到 `bench/.snapshots/<provider>-<agent>-<timestamp>.json`,格式是 bench 自己的私有格式,不是 `.niceeval/` 的 Results Format。
+`run.ts` 顺手把算好的统计量(不是完整 attempt 条目)写一份 JSON 到 `bench/.snapshots/<provider>-<agent>-<timestamp>.json`,格式是 bench 自己的私有格式,不是 `.niceeval/` 的 Record 格式。
 `compare.ts` 读两份 Run、直接打印判定,同样是"调用即打印"的脚本,不经过任何渲染层:
 
 ```sh
@@ -230,7 +235,7 @@ npx tsx bench/compare.ts bench/.snapshots/docker-codex-<old>.json bench/.snapsho
 
 复用 `src/runner/attempt.test.ts` 的 attempt 组件 fixture（内存 fake Sandbox + scripted Agent，不起 CLI、不联网、不起容器）。它已经证明准备链全序与抛错路径，phases 是同一个组件边界的另一个观察面，新增断言不新增 fixture：
 
-1. **全序与闭集**:成功 attempt 的 `result.json` 里 phases 顺序与生命周期一致,阶段名全部落在 `LifecyclePhase` 闭集内且不含 `agent.run`,`durationMs ≥ 0` 且 ∑ 主链 phases ≤ 总 `durationMs`;收尾段条目总排在主链之后。
+1. **全序与闭集**:成功 attempt 提交的耗时事实里 phases 顺序与生命周期一致,阶段名全部落在 `LifecyclePhase` 闭集内且不含 `agent.run`,`durationMs ≥ 0` 且 ∑ 主链 phases ≤ 总 `durationMs`;收尾段条目总排在主链之后。
 2. **错误归因**:`sandbox.prepare` 抛错的 fixture,主链止于 `sandbox.prepare` 且该条 `failed: true`,其后无主链条目(`agent.ensure` 从未出现);已创建沙箱的收尾段照常有条目。
 3. **remote 无沙箱阶段**:direct agent 的结果不含任何 `sandbox.*` / `workspace.*` 条目。
 4. **收尾独立 failed**:已登记 cleanup 抛错的 fixture,`sandbox.cleanup` 条目标 `failed: true`、`sandbox.stop` 照常写入,verdict 不因此改变。
@@ -243,6 +248,6 @@ npx tsx bench/compare.ts bench/.snapshots/docker-codex-<old>.json bench/.snapsho
 ## 相关阅读
 
 - [Sandbox · 沙箱在生命周期里的位置](../../feature/sandbox/architecture.md#沙箱在生命周期里的位置) —— phases 阶段边界的出处,也是 `runAttemptBody` 执行序的出处。
-- [Record Format](../../feature/record/architecture.md) —— `result.json` 的权威条目契约与 `phases` 字段。
+- [Record Format](../../feature/record/architecture.md) —— Attempt 耗时事实与时间树的权威契约。
 - [E2E CI](../testing/e2e/README.md) —— 回归门禁侧的沙箱矩阵,与 bench 的分工见「运行纪律」;`bench/` 触达 runner 内部函数与 e2e 触达 CLI 子进程是同一类仓库内部特权。
 - [Observability](../../observability.md) —— 为什么 phases 不走 OTel trace。

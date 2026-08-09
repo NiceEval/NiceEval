@@ -1,7 +1,7 @@
 # Verdict
 
-Verdict 是一个 Attempt 的互斥终态：`passed`、`failed`、`errored` 或 `skipped`。
-这一层拥有 Severity、`--strict`、`unavailable` 传播和四态优先级；它消费执行状态与 `AssertionResult[]`，不执行检查，也不调用 Judge。
+Verdict 是依据一个 Attempt revision 的证据形成的互斥 Claim：`passed`、`failed`、`errored` 或 `skipped`。
+它不是 Attempt lifecycle state：Attempt 只会是 `active`、`completed` 或 `abandoned`。这一层拥有 Severity、`--strict`、`unavailable` 传播和四态优先级；它消费执行错误 Observation 与 Assertion Claim，不执行检查，也不调用 Judge。
 
 ## 从哪里开始
 

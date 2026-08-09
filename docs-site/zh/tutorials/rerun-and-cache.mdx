@@ -179,30 +179,34 @@ plan: 36 attempts · 36 evals × 1 configs · attempts 1
 0 carried in from cache · 36 to run
 
 compare/baseline  01  previous-result passed: config:flags.tunnelUrl changed (https://a1b2.trycloudflare.com → https://c3d4.trycloudflare.com)
-  prior:  @1A1B2C3D4E5F (passed)
-  accept: niceeval accept @1A1B2C3D4E5F
+  prior:  @2VRHPQ4D2KG9EFW5TB8167MXJ3 (passed)
+  accept: niceeval accept @2VRHPQ4D2KG9EFW5TB8167MXJ3
 ```
 
 `previous-result passed` 说明历史结论是通过的、但当前指纹已变化。它还不能被缓存直接携带。差异解释与执行证据是两条轴：`fingerprint version changed` 只说明输入差异无法按当前 manifest 展开，不表示 execution、diff 或 timing 丢失。先用 locator 打开证据，确认结论仍然成立后接受它：
 
 ```bash
-npx niceeval show @1A1B2C3D4E5F --timing
-npx niceeval accept @1A1B2C3D4E5F
-npx niceeval accept @1A1B2C3D4E5F @5E6F7G8H9J0K
+npx niceeval show @2VRHPQ4D2KG9EFW5TB8167MXJ3 --timing
+npx niceeval accept @2VRHPQ4D2KG9EFW5TB8167MXJ3
+npx niceeval accept @2VRHPQ4D2KG9EFW5TB8167MXJ3 @67MXJ30SYZCNAVRHPQ4D2KG9EF
 ```
 
 ```text
 ╭─ PLAN ──────────────────────────────────────────╮
-│ Accepted @1A1B2C3D4E5F as @1D4C3B2A1F5E          │
+│ Accepted @2VRHPQ4D2KG9EFW5TB8167MXJ3 · mode: accepted                        │
 │ Current fingerprint: 5f3b…                      │
 ╰─────────────────────────────────────────────────╯
 ```
 
-接受会写出使用当前指纹的新结果，并记下各自的来源 locator、旧/新指纹和差异摘要。多个显式 locator 先全部验证，任一条失败时零写入。全部通过后按 locator 各自所属的 experiment 分组，每组生成一个 snapshot——多个 experiment 可以在一条命令里一起接受。命令不会因为共同差异接受未列出的结果，也没有批量接受选项。
+`accept` 对全部显式 locator 做原子预检，预检失败时零写入。预检通过后按 Experiment 分组，每个 Experiment 建立一个新的 Run。
 
-NiceEval 已知且能证明等价的 fingerprint 版本迁移会自动携带，并留下 `migratedFrom`。无法证明的迁移才显示 `previous-result` 并要求接受或重跑。输出不会使用含义不清的 `details unavailable`。
+每个显式成员会写入一条 accept Claim，保存当前配置身份、被采用的 Attempt ref 与可读的差异审计。它还会写入一条 `mode: "accepted"` 的 RunContribution，`basisClaims` 指向该 Claim。
 
-很早的落盘可能带有不符合当前 locator 格式的旧值。此时 `--dry` 会显示 `accept: unavailable (legacy locator …)`，不会给出一个必然失败的命令。重新运行该 eval 即可生成新的可接受 locator。
+Contribution 采用原 Attempt 的明确 revision，不复制或重设 Attempt、Verdict、evidence 或 Provenance 的父级，也不产生另一个 locator。该 Run 的 immutable `RecordGraphRef` 与 receipt 一并返回。命令不会因为共同差异接受未列出的结果，也没有批量接受选项。
+
+无法证明等价的差异会显示 `previous-result` 并要求显式 `accept` 或重跑。输出不会使用含义不清的 `details unavailable`。
+
+locator 缺少 `@`、不是 26 个字符、含非法字母或高位不合法时返回 `malformed-locator`，不会给出一个必然失败的命令。复制完整 canonical locator，或重新运行该 eval。
 
 `passed` 和 `failed` 的历史结果可以接受。结果是否来自复用 Sandbox、当前实验是否声明 `sandboxReuse: true`，都不影响接受资格。`errored`、`skipped`，以及要求保留真实 Sandbox 现场的执行模式不能接受。命令会说明原因，不会自动改为运行实验。
 
@@ -227,7 +231,7 @@ npx niceeval exp compare --rerun all    # Agent CLI 升级、镜像重建，全�
 
 ## 中断的运行重跑就是续跑
 
-Attempt 的 `result.json` 在收尾链完成后一次写成，判定可信与否与这次运行有没有正常结束无关。被 Ctrl-C 或 `kill -9` 打断的运行，已经落盘的终态照常沿用。
+Attempt 的事实随收尾链完成后一次提交，判定可信与否与这次运行有没有正常结束无关。被 Ctrl-C 或 `kill -9` 打断的运行，已经提交的终态照常沿用。
 
 所以长批次撞上 CI 时限或宿主超时之后，恢复路径就是重跑同一条命令：只花缺失 Attempt 的成本，重跑前不需要任何手工清理。完整的恢复流程见[被强杀之后接着跑](/zh/troubleshooting/recover-after-kill)。
 

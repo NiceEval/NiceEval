@@ -208,9 +208,8 @@ Discovered 3 evals
 Results:  2 passed, 1 failed, 0 skipped
 ```
 
-详细 artifact 落在该实验的 Run 目录 `.niceeval/<experiment>/<run>/`。
-Run 级 `run.json`,以及每个 attempt 目录下的 `result.json`(判定、断言、结构化错误与 diagnostics)。
-按需生成 `commands.json`（非零 Sandbox 命令）、`events.json`、`sources.json`、`trace.json`、`o11y.json`、`diff.json`。结构详见 [Record Format](feature/record/architecture.md)。
+每次运行的结构化执行错误、diagnostic、事件、源码与 raw trace / usage 随 origin Run 以 Observation 追加进 `.niceeval` RecordStore；断言、Judge、Verdict 与估算成本是带依据的 Claim。diff、timing、trace 与 usage 的读面由固定 GraphRef 上的 Projector 重建，不存在按最近结果或私有 snapshot 文件选择事实的路径。
+结构详见 [Record Format](feature/record/architecture.md)。
 
 ## 接进 CI
 

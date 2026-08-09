@@ -15,7 +15,7 @@
 | Sandbox 能力只出现在正确构造路径                      | 公共类型与运行时 capability guard     | remote/sandbox 两种 Agent                    |
 | eval 相对路径按定义文件目录定位                       | Sandbox 收到的规范化路径              | recording Sandbox                            |
 | setup 时机与 cleanup                                  | 生命周期事件顺序                      | 记下调用序的 setup/cleanup 闭包              |
-| turn 瞬时错误分类与重试                               | 重试次数、会话记账、最终 AttemptError | 按脚本抛错或返回 failed Turn 的 Agent        |
+| turn 瞬时错误分类与重试                               | 重试次数、会话记账、最终 `agent-send-failed` 执行错误 Observation 与其依据的 Verdict Claim | 按脚本抛错或返回 failed Turn 的 Agent        |
 
 ## Fixture 规范
 
@@ -64,7 +64,7 @@ session 续接规则由生产 Context 决定，测试通过 `received` 断言 Co
 - **目录入口与重名冲突**：`evals/foo/eval.ts`（及 `.tsx`）与 `foo.eval.ts` 同等发现，id 均为目录/文件路径推导的 `foo`；同 id 双入口并存时启动期报重名（点名两条路径），不按扫描顺序替换；无 `eval.ts` 的目录（如 `_lib/`）不被发现成 eval。
   目录入口的默认 profile id 等于该目录相对 `evals/` 的路径（从输入数组生成多条 eval条目共用入口目录的 profile id，不用从输入数组生成多条 eval后缀）。
 - **动态本地输入与泄漏检查**：普通本地上传记下 source tree、目标与 send 区间；materializer 记下全部 build context 与 Agent 可达 bind mount closure。
-  判定封口前交叉比对两份真实证据；send 区间外才上传的测试若已对 Agent 可见，Attempt `errored`。
+  判定封口前交叉比对两份真实证据；send 区间外才上传的测试若已对 Agent 可见，写执行错误 Observation 并形成 Attempt 的 `errored` Verdict Claim。
   过滤规则本身可序列化进 BuildKey 输入（与「求值后的 context 内容」并列，供 sandbox identity 消费）；改 `.dockerignore` / 额外过滤规则在内容未变时仍改变规则面。
 - **普通顺序与 send 区间**：send 前上传对该轮可见；send 返回后上传不进入过去 turn，也不进入 agent diff；上传后再次 send 时下一轮可见。
   不存在 `afterAgent` 状态机或独立 phase，时间树按 `eval.run` 下的真实调用顺序写入。
@@ -75,9 +75,9 @@ session 续接规则由生产 Context 决定，测试通过 `received` 断言 Co
 - **send 与 turn**：`send` 的输入形态与不可变 Turn；send 后 `reply`/`events`/`sessionId` 反映本轮结果——直接观察用户会读取的值，只断言 `agent.send` 被调用一次发现不了 Context 暴露旧 Run 的 bug；`turn.status` 三值与 usage 可缺失。
   - **多轮 Usage 累计的诚实口径**：adapter 未报告的字段（`requests`、cache 计数）累计后保持省略，不得以 0/每轮 +1 凑数，fixture 要区分「报了 0」与「没报」两态。
   - 轮标签铸造规则（主会话 `turn<N>`、新会话 `session<K>/turn<N>`）；`sendFile` 的 MIME 推断与错误反馈；turn 级断言失败不中断 `test()`。
-- **宿主侧行为摘要 `t.o11y`**：读取时从当前 attempt 已累积事件经 `buildO11ySummary()` 现算；多轮之间反映截至最近一次已返回 `send` 的行为；direct 与 sandbox Agent 同一行为。
+- **宿主侧行为摘要 `t.o11y`**：读取时从当前 Attempt stream 已累积的事件 Observation 经 `buildO11ySummary()` 现算；多轮之间反映截至最近一次已返回 `send` 的行为；direct 与 sandbox Agent 同一行为。
   沙箱内零框架痕迹要有区分力断言：sandbox 型 attempt 全程 workdir 下不出现框架文件，用户命令与 agent 进程的 env 不含框架变量。
-  安装 manifest 由 adapter 在宿主侧交给运行器存成 attempt artifact，不经沙箱磁盘。
+  安装 manifest 由 Adapter 在宿主侧交给运行器存成 Attempt stream Observation，不经沙箱磁盘，也不写入 AttemptPayloadV1。
 - **Session**：session 与主 session 的读写隔离（各自续接、respond 不串消费），同时新 session 的事件仍汇入 `t.*` 聚合——隔离与聚合两面都要有区分力场景。
 - **作用域断言的接收者行为**：`t.*` 全量聚合 + final timing、`session.*` 时点 Run、`turn.*` 本轮独占；接收者专属 API 的类型边界。
   判定语义的完整矩阵归[Assertions、Judge 与 Verdict](assertions.md)，这里只测接收者行为。
@@ -86,12 +86,12 @@ session 续接规则由生产 Context 决定，测试通过 `received` 断言 Co
   - `respond`/`respondAll` 的续接与跨 session 隔离。
 - **Sandbox 能力暴露面**：`t.sandbox` 只在声明 capability 时存在，未声明时是明确错误而非 undefined；文件只经显式上传进入沙箱；本地路径按 eval 定义文件目录定位；`t.sandbox` 面不含生命周期动作。
   路径、命令与生命周期契约归 [Sandbox](sandbox.md)。
-- **judge 作用域与诊断**：判卷材料随接收者分层、`{ on }` 替换；`diagnostic` 不改变 verdict、scope 不可伪装；`progress` 不进最终输出。
+- **judge 作用域与诊断**：判卷材料随接收者分层、`{ on }` 替换；Diagnostic Observation 不改变 Verdict Claim、scope 不可伪装；`progress` 不进最终输出。
   judge 的评分与模型求值归 [Assertions、Judge 与 Verdict](assertions.md)。
 - **send 执行错误与重试**：`Turn{status: "failed"}` 是可信领域终态，只参与 `succeeded()` 等断言、绝不进入重试；CLI 非零、signal、transport 中断与无法解码终态 reject `SendFailure` 并最终落 `agent-send-failed`。
   - `acceptance` 的 `rejected` / `started` / `unknown` 三态都要有区分力场景：只有 `rejected` 且分类为 retryable 才重发；空 events、非零退出和限流文案不能把 unknown 升格。
   - adapter 分类器的自定义 reason 原样透出，返回 `undefined` 与抛错都回落且不掩盖原始失败；重试只包 `agent.send`、会话记账不重算。
-  - 被吸收尝试不进入逻辑事件流，但按顺序完整写入 `retryAttempts`（acceptance、分类、events、usage、process、耗时），顶层 usage / cost 包含所有物理尝试。
+  - 被吸收尝试不进入逻辑事件流，但每次物理尝试都按顺序追加一条绑定 stream 的 typed retry Observation（acceptance、分类、events、raw usage、process、耗时依据）；不得建立 `retryAttempts` 或第二套结果真源。总 usage 由 Projector 读取，估算成本是基于同一依据的 Claim。
   - send 级与 attempt 级预算各自封顶，多轮 send 时前者重置、后者持续扣减；耗尽后 message 注明耗尽层，退避可被中断干净打断。
 - **send settle 与命令树**：一次逻辑 send 的归因区间涵盖全部物理尝试；返回或拒绝前，重试证据已写入且 Agent 命令树终止或静止。命令 timeout、取消、Attempt interruption 与 runtime cancellation 都必须在 Promise settle 前确认受管命令树终止；做不到时停止整个 Sandbox。正常命令结束后关闭 transport 不得误杀作者有意启动的任务服务。
 - **失败分类链的两轴扩展**：

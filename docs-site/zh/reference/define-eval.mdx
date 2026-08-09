@@ -83,7 +83,7 @@ timeoutMs?: number;
 metadata?: globalThis.Record<string, JsonValue>;
 ```
 
-任意附加元数据,原样透传进 EvalResult,不参与调度或打分;供自定义 reporter 消费。
+任意附加元数据,作为 Attempt Provenance 保存,不参与调度或打分;供自定义 reporter 消费。
 
 #### `diff`
 
@@ -255,7 +255,7 @@ log(msg: string): void;
 skip(reason: string): never;
 ```
 
-立即中止本评估用例并标记为 skipped(verdict / EvalResult.skipReason),reason 不能为空。
+立即中止本评估用例,形成 `skipped` Verdict Claim;`reason` 不能为空。
 
 #### `check`
 
