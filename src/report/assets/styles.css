@@ -1178,6 +1178,9 @@ table.niceeval-report,
   display: block;
   height: 100%;
   min-width: 2px;
+}
+.niceeval-chart
+  .niceeval-chart-bar-fill:not(.niceeval-series-fill-v2):not(.niceeval-series-fill-v3):not(.niceeval-series-fill-v4) {
   background: color-mix(in srgb, var(--series) 74%, var(--panel));
 }
 .niceeval-chart .niceeval-chart-bar-value {
@@ -1225,6 +1228,9 @@ table.niceeval-report,
   height: 10px;
   flex: 0 0 auto;
   border-radius: var(--radius);
+}
+.niceeval-chart
+  .niceeval-chart-legend-swatch:not(.niceeval-series-fill-v2):not(.niceeval-series-fill-v3):not(.niceeval-series-fill-v4) {
   background: color-mix(in srgb, var(--series) 74%, var(--panel));
 }
 .niceeval-chart .niceeval-chart-legend-swatch-svg {

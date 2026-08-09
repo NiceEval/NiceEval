@@ -24,3 +24,9 @@
 4. `SeriesPatternDefs` 由 Chart 注入文档；HTML 路径不引用 pattern 但仍挂色类 + 图案类。
 
 落点：`src/report/presentation.ts`、`src/report/assets/series-encoding.ts`、`src/report/definition/primitives/chart.tsx`、`src/report/assets/styles.css`；覆盖在 `src/report/presentation.test.tsx`（含五条件可辨自检）。
+
+## 2026-08-09 浏览器级补修
+
+首轮修复只在呈现值与 DOM 层生效，浏览器最终仍画成纯色。实时 MemoryBench 页面已经给 baseline / obelisk 挂上 `niceeval-series-fill-v3` / `niceeval-series-fill-v4`，但样式表后部的 `.niceeval-chart-bar-fill { background: … }` 与 `.niceeval-chart-legend-swatch { background: … }` 具有相同优先级且声明更晚。`background` shorthand 因此把前面的 `background-image` 重置为 `none`。
+
+原验收只断言两个 `fill` 字符串不同，没有从真实浏览器观察 computed style 或像素结果，所以得到假绿。补修把柱与图例的纯色 `background` 限定为没有 `niceeval-series-fill-v2..v4` 的 variant 1；图案变体继续完整拥有 `background-color`、`background-image` 与 `background-size`。真实验收必须从安装后的报告入口打开 MemoryBench，确认 baseline 与 obelisk 的 computed `background-image` 都不是 `none` 且彼此不同。
