@@ -1,0 +1,130 @@
+---
+title: "共享评估：从已安装 package 挂载评估用例"
+sidebarTitle: "共享评估"
+description: "把普通 NiceEval 项目作为 package 安装到另一个项目，再用 evalRoots 挂载其中的评估用例；预检安装身份、查看来源并运行共享用例。"
+---
+
+一组评估用例需要被多个项目复用时，不用再复制文件，也不用维护 NiceEval 专用 manifest。发布方仍是普通 TypeScript package；消费方把它声明为直接依赖，再在 `niceeval.config.ts` 里选择要挂载的目录。
+
+挂载名会成为评估 ID 的前缀。下面把 `@acme/shared-evals` 的 `evals/` 挂到 `shared`，包里的 `login.eval.ts` 因而叫 `shared/login`。
+
+## 准备发布方 package
+
+发布方按普通 NiceEval 项目组织评估用例、共享模块和 Fixture：
+
+```text
+shared-evals/
+├─ package.json
+├─ evals/
+│  └─ login.eval.ts
+└─ fixtures/
+   └─ starter-app/
+```
+
+把评估用例实际会读取的文件放进发布内容，并把运行期 bare import 声明为普通 `dependencies`。先检查 tarball 里确实有这些文件：
+
+```bash
+npm pack --dry-run
+```
+
+同时用普通 `files` 或 `.npmignore` 排除 `.niceeval/`、`.env*`、构建缓存和其它消费方不需要的项目数据。共享机制不会替 package owner 改写发布清单；`npm pack --dry-run` 的文件数和体积也应纳入检查。
+
+发布方不需要新增 suite、adapter 或 lock 文件。Registry、tarball、Git、file 与 workspace 仍由 package manager 选择和安装；NiceEval 只读取消费项目已经锁定的结果。
+
+## 在消费项目安装并挂载
+
+先把共享 package 加成消费项目的直接依赖。CI 更适合不可变的 registry version、tarball 或 Git commit；开发时也可以使用 workspace：
+
+```bash
+pnpm add -D @acme/shared-evals
+```
+
+然后配置挂载名、package dependency key 和 package 内目录：
+
+```ts
+// niceeval.config.ts
+import { defineConfig } from "niceeval";
+
+export default defineConfig({
+  evalRoots: {
+    shared: {
+      package: "@acme/shared-evals",
+      root: "evals",
+    },
+  },
+});
+```
+
+`root` 省略时就是 `evals`。`package` 写消费项目 `package.json` 里的 dependency key，因此 npm alias 也写 alias 名，不写安装后 manifest 的 `name`。
+
+## 先预检，再导入评估用例
+
+预检只核对配置、直接依赖、lockfile、安装位置和 package 内容，不导入评估模块：
+
+```bash
+pnpm exec niceeval list --preflight
+```
+
+成功后再看完整列表：
+
+```bash
+pnpm exec niceeval list shared
+```
+
+有人读的输出会显示 mount、安装身份和每条评估用例的来源。自动化可以请求单个 JSON 文档：
+
+```bash
+pnpm exec niceeval list --preflight --json
+pnpm exec niceeval list shared --json
+```
+
+`list --json` 的纯 JSON 保证要求启动时没有 `NODE_OPTIONS`、`--require`、`--import` 或 loader preload；不满足时会返回 `eval-root.preloaded-owner-unsupported`，而不是输出一半 JSON。
+
+## 像项目内评估一样运行
+
+共享评估进入同一套选择、计划和运行流程。位置参数使用挂载后的 ID：
+
+```bash
+pnpm exec niceeval exp baseline shared/login --dry
+pnpm exec niceeval exp baseline shared/login
+```
+
+外部 package 里的 `import { defineEval } from "niceeval"` 会绑定到消费方这份 NiceEval runtime；package 自己嵌套安装的另一份 NiceEval 不会取得运行时所有权。ESM 与 CommonJS package 都走这条规则。
+
+结果会同时保存两类来源：当前定义来自哪个已安装 package，以及这次执行实际使用了哪一版定义。后来升级 package 并携带旧结果时，历史执行来源不会被改写成新版本。
+
+## Fixture 变化与接受旧结果
+
+静态可证明的 `uploadFile()`、`uploadDirectory()` 输入会进入执行指纹。Fixture 或可达 dependency 改变时，只作废实际受影响的评估用例。
+
+如果要把一条历史结果接受到新的静态 transfer plan，普通 `accept` 会先拒绝并打印当前 plan digest。只有显式确认那一个 digest 才会继续：
+
+```bash
+pnpm exec niceeval accept @LOCATOR \
+  --accept-transfer sha256:CURRENT_PLAN_DIGEST
+```
+
+动态拼出来的 transfer 路径仍可 fresh run，但证据不完整，不能靠 `--accept-transfer` 把它升级成可携带结果。
+
+## 支持边界
+
+- 使用 Node 22.15 或更高版本。没有 `evalRoots` 的本地项目不受这条门槛影响。
+- 共享 package 必须是消费项目的直接依赖，并由 npm、pnpm 或采用 node-modules linker 的 Yarn 安装；Yarn Plug'n'Play 当前不支持。
+- lockfile 与实际安装树必须能唯一证明所选 package。证明不了时会报 `eval-root.installation-unverifiable`，不会按 name/version 猜一份。
+- 评估根目录、相对 import 与 transfer source 必须留在 package owner 内；逃逸会在导入或发送前被拒绝。
+- 共享评估选择 Docker、E2B 或 Vercel 等 provider 时，消费项目仍要按该 provider 的普通安装步骤提供 NiceEval optional peer；上游的传递依赖不会替代消费方 canonical runtime 的 provider 依赖。
+- 外部评估代码是可执行依赖。完整 `list` 会运行模块顶层代码；只有 `list --preflight` 不导入评估模块。
+
+## 常见失败怎么处理
+
+| 错误码 | 先检查什么 | 下一步 |
+| --- | --- | --- |
+| `eval-root.package-undeclared` | package 是否在消费项目的直接依赖里 | 用当前 package manager 添加依赖并重新安装 |
+| `eval-root.package-uninstalled` | `node_modules` 与 lockfile 是否同步 | 执行 frozen install |
+| `eval-root.installation-unverifiable` | lockfile 能否唯一对应实际安装位置 | 修复 lockfile，或换成有完整 integrity / commit 的交付形态 |
+| `eval-root.missing` | package 内是否真的包含配置的 `root` | 修正 `root` 或发布内容 |
+| `eval-root.outside-package` | root、相对 import 或 symlink 是否逃出 package | 把模块和 Fixture 留在 package 内 |
+| `eval-root.niceeval-api-incompatible` | 共享评估是否导入了消费方没有的 NiceEval API | 升级消费方 NiceEval，或选择兼容的共享 package |
+| `eval-root.node-unsupported` | 当前 `node --version` | 升级到 Node 22.15+，或移除 `evalRoots` |
+
+配置字段的完整类型见 [`defineConfig` 参考](/zh/reference/define-config)，筛选和机器输出见 [CLI 参考](/zh/reference/cli)。

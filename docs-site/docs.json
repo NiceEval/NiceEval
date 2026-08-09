@@ -686,6 +686,7 @@
                   "zh/tutorials/write-experiment",
                   "zh/tutorials/experiments",
                   "zh/tutorials/fixtures",
+                  "zh/tutorials/share-evals",
                   "zh/tutorials/dataset-fanout",
                   "zh/tutorials/criteria-files",
                   "zh/tutorials/evaluation-kinds"

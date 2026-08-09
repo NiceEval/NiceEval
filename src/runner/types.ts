@@ -1043,15 +1043,15 @@ export interface EvalDescriptor {
    */
   readonly evaluationKind: EvaluationKind;
   readonly metadata?: Readonly<globalThis.Record<string, JsonValue>>;
-  /** Installed package provenance for a mounted Eval.  Project-local evals omit it. */
+  /** 从已安装 package 挂载的评估来源；项目内评估省略。 */
   readonly origin?: ExternalEvalOrigin;
 }
 
-/** A direct package dependency mounted as an additional Eval discovery root. */
+/** 作为额外评估发现根挂载的直接 package dependency。 */
 export interface PackageEvalRoot {
-  /** The direct dependency key in the consumer's package.json (an npm alias is allowed). */
+  /** 消费项目 package.json 里的直接 dependency key；允许 npm alias。 */
   readonly package: string;
-  /** Package-root-relative discovery directory.  Omitted means `evals`. */
+  /** 相对 package root 的评估发现目录；省略时为 `evals`。 */
   readonly root?: string;
 }
 
@@ -1195,7 +1195,7 @@ export interface Config {
    * 精确 key 优先于通配。只在没有网关实测成本(`usage.costUSD`)时才会用到——实测优先于估算恒成立。
    */
   pricing?: globalThis.Record<string, PriceOverride>;
-  /** Additional Eval roots mounted from direct installed package dependencies. */
+  /** 从已安装的直接 package dependency 挂载额外评估根目录。 */
   evalRoots?: Readonly<globalThis.Record<string, PackageEvalRoot>>;
 }
 

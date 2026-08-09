@@ -147,8 +147,9 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 | 行为 | 文件 |
 |---|---|
 | 发现(evals/ 的 *.eval.ts / *.eval.tsx 与目录入口 eval.ts,experiments/ 的实验,路径推导 id;同 id 双入口报重名) | `src/runner/discover.ts` |
+| 已安装 package 的共享 Eval root(`Config.evalRoots`,P1–P4 预检/owner hook/lock 身份、mount 前缀与 definition provenance) | `src/runner/eval-roots.ts`(安装与运行时边界)、`src/runner/discover.ts`(多 root 发现)、`src/load-config.ts` / `src/loaders/index.ts`(配置与 canonical runtime 接线)、`src/runner/types.ts`(公开类型);契约见 `docs/feature/eval/sharing.md`,选型存档见 `docs/design/eval-suite-sharing/` |
 | Eval 源码捕获、folder-local 目录入口 base id、loader 隐藏输入登记与 build context 交叉检查 | `src/runner/eval-source.ts`、`src/loaders/index.ts`;接线在 `src/runner/discover.ts` |
-| 普通本地上传的 transfer manifest 与动态泄漏比对 | `src/sandbox/` 上传包装、`src/runner/attempt.ts`、fingerprint/carry planner 与 materializer closure 登记;契约见 `docs/feature/eval/use-case/criteria-files.md` |
+| 普通本地上传的 transfer manifest、不可变 snapshot 与动态泄漏比对 | `src/runner/execution-inputs.ts`(计划/执行证据与 snapshot)、`src/context/context.ts`(Sandbox 包装)、`src/runner/attempt.ts`、`src/runner/fingerprint.ts` / `src/runner/accept.ts`(carry 与显式 transfer 接受);契约见 `docs/feature/eval/use-case/criteria-files.md` 与 `docs/feature/eval/sharing.md` |
 | 有界并发调度 + 首过即停 + budget 已花费护栏(不做预测性预扣);Run 级共享准备(构建协调 / staged payload 准备)不占 attempt 并发位 | `src/runner/run.ts` |
 | 并发 Invocation 协作(用例锁防双跑；`maxConcurrency` 只限本 Invocation；`sharedState.key` 按完整 Experiment/Sandbox lifecycle 独占外部状态) | `src/runner/run.ts`、`src/runner/eval-lock.ts`、`src/runner/state-lease.ts` |
 | 单 attempt 生命周期(沙箱 / OTLP 接收器 Scope、超时硬边界、沙箱编排固定段、LifecyclePhase 转换、Agent Ensure 调用) | `src/runner/attempt.ts` |
@@ -165,7 +166,7 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 | 本地结果保存格式(Run 目录 `.niceeval/<experiment>/<run>/run.json` + attempt 级 `result.json` / JSON artifact;runner 调度前预分配 `runId`,按 `{runId,evalId,attempt}` 生成并登记 fresh `locator`,Artifacts writer 原样写入同一 `runId` 与 `locatorRunId`;carry 保留出处身份;reader 折叠同出处副本、保留不同出处多候选并区分 malformed / not-found / ambiguous) | `src/runner/run.ts`(Run 身份分配、locator 生成与 Record root 碰撞预检)、`src/runner/reporters/artifacts.ts`(reporter 薄壳,转交预分配 Run 身份并按 experimentId 路由)、`src/record/locator.ts`(60-bit Crockford 编码、多候选索引与写入登记检查)、`src/record/open.ts`(`locatorRunId` / `artifactBase` 出处回溯与 `resolveLocator` 三类失败)、`src/record/writer.ts`(`createWriter`;写入面收窄类型 `AttemptEntry = Omit<EvalResult, …>`)、`src/record/types.ts`(`RunMeta` / `AttemptHandle.locatorIdentity`)、`src/runner/types.ts`(`EvalResult`——architecture.md `result.json` 一节里的 `AttemptRecord` 是该持久化形状的文档概念名,对应的运行时类型就是它;同文件的 `RECORD_SCHEMA_VERSION` / `RECORD_FORMAT` 常量随 `EvalResult` 同址声明,经 `src/types.ts` facade 转出给 `src/record/` 域 import,不在 `src/record/types.ts` 里重新声明) |
 | 实验改名与结果重绑(`exp rename`:同 fingerprint 的跨 experimentId 审计迁移、整批预检与单 snapshot 写入) | `src/runner/rename-experiment.ts`(资格门、计划与写入)、`src/cli.ts`(命令拆解与人读/JSON 反馈)、`src/runner/types.ts`(`RenamedResult` / `EvalResult.renamedFrom`) |
 | `EvalResult.evaluationKind`(直接取 factory 固定的 `evalDef.evaluationKind`；缺失定义拒绝进入运行)与 `scoreEntries`(仅 `evaluationKind: "points"` 时落) | `src/runner/attempt.ts`(`runAttemptEffect` 组装 `EvalResult` 处) |
-| CLI(exp / show / list / view / clean / init,--help,parseArgs 表驱动,.env 加载,输出形态判定;调度项没有进程变量层,见[Architecture · 配置与凭据边界](architecture.md)) | `src/cli.ts` |
+| CLI(exp / show / list / view / clean / init,--help,parseArgs 表驱动,.env 加载,输出形态判定;`list --json` 的隔离 worker、协议帧、输出/超时上限与进程树回收在预编译入口;调度项没有进程变量层,见[Architecture · 配置与凭据边界](architecture.md)) | `src/cli.ts`、`bin/niceeval.js` |
 | `niceeval show` 终端宿主(Sample 合成当前结果集、--history 逐 experimentId+evalId 分节的 attempt 执行时间轴、--report/--page 经 report/runtime/host.ts 装载 + 组合语义矩阵、证据切面 --source/--execution/--timing/--diff;Run 级与 attempt 级 timing 树、未知 activity key 通用 label 投影、sandboxBuild 专用卡读 provenance) | `src/show/{index,compose,render,command}.ts` + `src/report/runtime/host.ts`(两宿主共用) |
 | 测试集与判据文件加载器(loadJson / loadYaml / loadText) | `src/loaders/index.ts` |
 

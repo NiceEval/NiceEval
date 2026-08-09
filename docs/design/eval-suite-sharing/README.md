@@ -8,6 +8,7 @@
 
 这个设计比较三种交付形态：复制题目、建立 NiceEval registry、挂载另一个已安装 NiceEval 项目的 Eval 目录。
 推荐 [PLAN-3](PLAN-3/README.md)：分发与版本由项目已有的 package manager 负责，NiceEval 只扩展多根发现和逐 Eval 出处登记。
+落地后的现行契约在 [Feature · 共享 Eval](../../feature/eval/sharing.md)；本目录保留候选比较与选型理由。
 
 ## 推荐路径一眼看完
 
