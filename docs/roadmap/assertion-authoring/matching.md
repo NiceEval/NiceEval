@@ -1,131 +1,156 @@
-# Assertion 作者面 —— Rule
+# Assertion 作者面 —— Match 与组合
 
-普通作者只在调用点写领域参数。
-这些对象不是可构造、保存或组合的通用 Match AST。
+## 值 matcher
 
-## TextRule
-
-文本文件与其它明确 string value 使用单层 inline rule：
+`t.check()` 的第二参数是纯比较器，不携带 severity、threshold、optional 或 points：
 
 ```ts
-type TextAtom =
-  | { readonly exact: string; readonly contains?: never }
-  | { readonly contains: string; readonly exact?: never };
+type MatchDomain = "value" | "tool" | "event";
+declare const matchBrand: unique symbol;
 
-type TextRule = TextAtom & {
-  readonly excludes?: TextAtom | readonly [TextAtom, ...TextAtom[]];
+interface Match<in T, out R, D extends MatchDomain> {
+  readonly domain: D;
+  readonly name: string;
+  readonly [matchBrand]: (candidate: T) => R;
+}
+
+interface BooleanMatch<in T, out R extends T, D extends MatchDomain = "value"> extends Match<T, R, D> {
+  readonly kind: "boolean";
+}
+
+interface ScoreMatch<in T> extends Match<T, T, "value"> {
+  readonly kind: "score";
+}
+
+type ValueMatch<T, R extends T = T> = BooleanMatch<T, R, "value"> | ScoreMatch<T>;
+type ToolMatch<R extends LogicalToolOccurrence = LogicalToolOccurrence> = BooleanMatch<LogicalToolOccurrence, R, "tool">;
+type EventMatch<R extends MatchableEvent = MatchableEvent> = BooleanMatch<MatchableEvent, R, "event">;
+```
+
+`matchBrand` 由 declaration 私有持有，不导出，也不公开任意 `evaluate()` 入口。普通作者只能使用具名工厂，不能手写 selector object 或匿名 evaluator。matcher 成功后的 `R` 必须是原 candidate 的收窄类型，不是转换后的新值；`matches(schema)` 只验证 Standard Schema，schema transform 不偷偷改变 Match 输出。
+
+内部候选求值结果固定为 `matched | mismatched | unavailable`。`matched` 携带同一个 candidate 的 refinement；另外两种携带非空诊断，`unavailable` 还携带 coverage reason。它不使用 `passed | failed`，因为一笔 occurrence mismatch 不等于集合 Assertion failed。
+
+`includes()` / `excludes()` 只接收 string，不把任意值 `String()` 后搜索。`equals()` 是深相等，`matches()` 消费 Standard Schema。identifier slot 继续使用直接传入的 string exact；工具名、事件类型、executable、argv token 与 Sandbox path 都属于 identifier。
+
+```ts
+t.check(t.reply, includes("Brooklyn"));
+t.check(t.sandbox.file("experiments/local.ts"), and(includes("runtime:python"), excludes("runtime:node")));
+t.check(turn.data, matches(ResultSchema));
+```
+
+关系由 matcher 名字决定，不由接收位置猜：没有未包装 string＝contains、直接 RegExp＝pattern，也没有 `{ contains, excludes }` 这一套旁路 rule。
+
+## `and()` 与 `or()`
+
+两者至少接收两个同 domain 的 `BooleanMatch<T, R, D>`；`similarity()` 等连续 `ScoreMatch` 在类型层不能进入组合。
+
+```ts
+type TupleIntersection<T extends readonly unknown[]> = T extends readonly [infer Head, ...infer Tail] ? Head & TupleIntersection<Tail> : unknown;
+
+declare function and<T, D extends MatchDomain, const R extends readonly [T, T, ...T[]]>(...matches: { [K in keyof R]: BooleanMatch<T, R[K], D> }): BooleanMatch<T, TupleIntersection<R>, D>;
+declare function or<T, D extends MatchDomain, const R extends readonly [T, T, ...T[]]>(...matches: { [K in keyof R]: BooleanMatch<T, R[K], D> }): BooleanMatch<T, R[number], D>;
+```
+
+求值规则：
+
+- `and()`：任一 failed → failed；否则任一 unavailable → unavailable；否则 passed；
+- `or()`：任一 passed → passed；否则任一 unavailable → unavailable；否则 failed；
+- 两者按声明顺序 await 全部子项，输出每个未通过子项的诊断；
+- 子 matcher 抛错不是 failed 或 unavailable，而是 evaluator defect；
+- source resolution 在组合之外先执行一次，因此 `or()` 不能用另一分支掩盖文件读取失败。
+
+JavaScript / `any` 的登记边界仍校验至少两项、同 domain 和布尔种类。诊断按组合树和子项索引保留，经现有脱敏与预算规则写入 `AssertionResult.expected`、`received` 与 `evidence`；内部 evaluator defect 不能被另一个决定性分支掩盖。
+
+不增加 `not()`。文本否定已有 `excludes()`；其它否定关系等真实重复需求出现后再命名。
+
+## 单 occurrence `ToolMatch`
+
+```ts
+type ToolStatus = "pending" | "completed" | "failed" | "rejected";
+type LogicalCommandOccurrence = LogicalToolOccurrence & {
+  readonly command: Extract<CommandProjection, { readonly kind: "command" }>;
 };
-```
 
-普通路径不接受直接传入的 RegExp，也不提供 `pattern`。
-Harness 的规则若只能靠一段复杂正则才读得懂，应先寻找结构化领域事实；自由文本关系不应继续膨胀这套确定性规则。
+declare function commandMatch(executable: string, options?: {
+  argsStart?: readonly string[];
+  excludes?: readonly string[];
+  status?: ToolStatus;
+}): ToolMatch<LogicalCommandOccurrence>;
 
-`exact` 使用 code-unit equality。
-`contains` 使用大小写敏感的 literal substring，并拒绝空字符串。
+declare function toolMatch(name: string, options?: {
+  input?: BooleanMatch<JsonValue, JsonValue, "value">;
+  status?: ToolStatus;
+}): ToolMatch;
 
-`excludes` 只约束满足主 atom 的同一个 candidate：
-
-```ts
-t.check(t.sandbox.file("experiments/local.ts"), { contains: "runtime:python", excludes: { contains: "runtime:node" } });
-```
-
-框架不 trim、不做 Unicode normalization、不调用 `String(value)`，也不序列化其它值后搜索。
-identifier slot 继续接受未包装的非空 string，并固定 exact；工具名、executable、argv token 与 Sandbox path 都是 identifier。
-
-## ToolMatch command 字段
-
-command 是既有 `ToolMatch` 的内联窄字段：
-
-```ts
-interface CommandMatch {
-  readonly executable: string;
-  readonly argsStart?: readonly string[];
-  readonly excludes?: readonly string[];
+interface ScopedAssertions<H> {
+  calledTool(match: ToolMatch, options?: { count?: number }): H;
+  notCalledTool(match: ToolMatch): H;
+  toolOrder(matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]]): H;
 }
 ```
 
-匹配一笔 occurrence 时同时满足：
+`toolMatch()` 与 `commandMatch()` 都返回 domain=`tool` 的 `BooleanMatch`。command 没有独立 identity，因此不占一个 Match domain，也不再嵌进 `toolMatch()`。省略 `status` 表示“不限制 lifecycle”；需要 completed 必须显式写。直接传 `{ name, status }` 与 string shorthand 都不是公共入口。
 
-1. 标准 logical projection 可用；
-2. logical executable 与 `command.executable` exact；
-3. logical argv 以 `command.argsStart` 逐 token exact 开头；
-4. logical argv 不含任一 `excludes` exact token。
-
-空 executable、空 expected token 或重复 `excludes` 是 author error。
-command 字段不对 raw shell text 做语法 parse，不做 basename 猜测，不跨 token 搜索 substring，也不暴露 original / wrapper selector。
-
-Observation Protocol 在 Assertion 之前把已证明透明的 direct、`pnpm exec`、`pnpm --silent exec` 与无选项 `npx` 投影成同一套 logical executable / argv。
-runner 自己的 `--silent` 不进入 logical argv，目标命令边界后的 token 原样保留。
-logical 只表示请求的 CLI，不证明 package provenance、版本或物理 binary。
-
-`input`、`output`、`status` 与 `command` 匹配同一笔 occurrence。
-`calledTool()` 与 `toolOrder()` 调用同一个单 occurrence evaluator，因此不会出现两套 command 语义。
-
-`ToolSelector` 只给这份 matcher 补上 tool name，并删除 count：
+`name`、`input`、logical command 与 `status` 都在同一笔 occurrence 上求值。需要同时约束 command 与 Adapter 工具分类时，使用 `and(commandMatch(...), toolMatch(...))`；两个 matcher 不会各自搜索 occurrence。字段 definite mismatch 压过 unavailable。当前不公开 `output`，因为缺失 output 还没有 `absent | opaque` 的证据状态，不能诚实地区分“确定没有”与“没观察到”。次数不属于 matcher：
 
 ```ts
-type ToolSelector = { readonly name: string } & Omit<ToolMatch, "count">;
+turn.calledTool(toolMatch("shell", { status: "completed" }), { count: 1 }).gate();
+turn.notCalledTool(toolMatch("shell", { input: matches(ForbiddenInputSchema) })).gate();
+turn.calledTool(and(commandMatch("niceeval", { argsStart: ["show"] }), toolMatch("shell", { status: "completed" }))).gate();
 ```
 
-`toolOrder()` 的每一项消费一个不同 actual index。
-它按 request position 做子序列匹配，不把 status 或 command 字段解释成 finish-before-start 因果关系。
-单 occurrence 字段求值中 definite mismatch 压过 indeterminate；order 同时检查 definite 与 possible 两种子序列，opaque candidate 不能被粗略当成已调用或未调用。
+`toolOrder()` 用单调 cursor 消费不同 occurrence，只证明 request subsequence；它不证明前一项 finish-before-start，也不建立因果关系。
 
-## Tool input path exclusion
+`calledTool(..., { count })` 是 exact count，必须是正 safe integer；零次使用 `notCalledTool()`。tool count 按 distinct occurrence identity，`toolOrder()` 按 occurrence start position 匹配有序子序列，每项消费不同 occurrence。partial / opaque 证据继续分别计算 definite path 与 possible path，不能把缺证据折成 failed。
+
+## `commandMatch()`
+
+`command` 只读取 durable logical projection：
+
+1. logical executable 与第一个参数 exact；
+2. logical argv 以 `argsStart` 逐 token exact 开头；
+3. logical argv 不含任一 `excludes` exact token。
+
+Adapter 先证明 original argv，Observation Protocol 再统一处理 direct、exact `pnpm exec`、`pnpm --silent exec` 与无 runner-option 的 exact `npx`。core 不按工具名、input key 或 raw shell text猜 command；opaque logical command 产生 unavailable。
+
+`commandMatch()` 只保留 `executable`、`argsStart`、`excludes` 与共用 lifecycle `status`。cwd、env、raw text、wrapper、stdout、RegExp 与 predicate 不进入它；新增透明 wrapper 只能升级封闭 normalizer profile，不能开放 Eval 侧 registry。
+
+`status` 不属于 command projection，而是 `toolMatch()` 与 `commandMatch()` 共用的 lifecycle evidence。
+只有可信 `TurnOutcome.waiting` 下仍未解决的 operation，或原生协议明确给出的 pending，才能 definite match `pending`。
+partial stream 中只有 start、没有可信 finish 时，status 是 unavailable，不能冒充 pending。
+
+## `eventMatch()`
+
+`eventMatch()` 返回 domain=`event` 的 `BooleanMatch`，并按 event type 使用封闭 options 映射。普通 message 字段复用文本 matcher；tool start/finish 必须关联 logical occurrence 后复用同一个 `ToolMatch`，event 自己不复制 name/input/command/status：
 
 ```ts
-interface ToolInputExclusion {
-  readonly paths: readonly [string, ...string[]];
+interface EventOptionsByType {
+  readonly message: { readonly role?: "assistant" | "user"; readonly text?: BooleanMatch<string, string, "value"> };
+  readonly "operation.started": { readonly tool?: ToolMatch };
+  readonly "operation.finished": { readonly tool?: ToolMatch };
 }
+
+declare function eventMatch<K extends keyof EventOptionsByType>(
+  type: K,
+  options?: EventOptionsByType[K],
+): EventMatch<Extract<MatchableEvent, { readonly type: K }>>;
+
+turn.event(eventMatch("message", { role: "assistant", text: includes("done") })).gate();
+turn.eventOrder([eventMatch("operation.finished", { tool: toolMatch("send_email", { status: "rejected" }) }), eventMatch("message", { role: "assistant", text: includes("not sent") })]).gate();
 ```
 
-path 先按 `/` 与 `\\` 切成非空 components，再对工具 input 的每个 string leaf 做连续 component 匹配。
-相对路径、绝对路径和 Windows separator 使用同一规则。
+关联器按流位置把 started 与 finished 配成一笔唯一 occurrence。
+`operationId` 只是允许完成后复用的配对 token，不能作为全局 identity。
 
-输入字符串中的目标前后必须是路径边界。
-字母、数字、`_`、`.` 与 `-` 的相邻文本不会被误当作 component 边界。
+- `event()` 的 exact count 是正 safe integer；零次使用 `notEvent()`；
+- event count 按 distinct event identity；
+- `eventOrder()` 按 `EventPosition` 消费不同事件；
+- 同一 tool occurrence 的 start 与 finish 是两个 event。
 
-这项关系只用于 `toolInputsExclude()`。
-它不是通用 string matcher，也不能嵌进 `calledTool().input`。
-
-## Sandbox change 条件
-
-```ts
-interface FileChangeOptions {
-  readonly beforeIncludes?: string;
-  readonly afterIncludes?: string;
-}
-```
-
-两个字段都是大小写敏感的 literal substring，并拒绝空字符串。
-它们和 path、change kind 共同匹配一条 agent change entry。
-
-added 没有 before，deleted 没有 after。
-作者对缺失一侧写内容条件时是确定 mismatch；内容被 elide 或读取证据不完整时是 unavailable。
-
-`changedPaths(paths)` 是 exact set relation，不是 ordered array relation：
-
-- expected 顺序不影响结果；
-- expected 重复 path 是 author error；
-- actual 的额外或缺失 path 都 failed；
-- partial diff 尚不能排除缺失 path 时 unavailable。
+`toolOrder()` 只证明 request subsequence。
+只有显式排列 finish 与下一笔 start，才证明 finish-before-start。
 
 ## 不提供通用 JSON rule
 
-本作者面不增加 `JsonRule`、递归 `shape`、数组 `exact/unordered`、field presence 或 schema wrapper。
-它们会把普通 Harness 变成 JSON 查询语言，并把某个 CLI 的展示 envelope 固化成核心 API。
-
-任意应用值已有 `t.check()` 与 `niceeval/expect`。
-Standard Schema 继续适合业务结构；`niceeval show` 的诊断语义不由 Eval 自行 parse 或匹配 JSON。
-
-## TypeScript 消歧
-
-领域对象使用封闭字段并依赖 excess-property checking：
-
-- `ToolSelector.name` 只能表示 exact tool identifier；
-- `ToolMatch.command` 只能接受 `CommandMatch`；
-- `{ exact }` 与 `{ contains }` 是互斥的 `TextAtom`；
-- `TextRule`、`CommandMatch` 与 `ToolInputExclusion` 互不赋值。
-
-JavaScript、`any` 或扩散对象绕过静态检查时，登记边界执行同一套穷尽 runtime validation。
-互斥字段、空值或未知字段同步报告 author error，不登记一条永远匹配不到的 Assertion。
+本作者面不增加 `JsonRule`、`shape`、数组 `exact/unordered`、field presence 或匿名 predicate。应用已经拿到的结构值用 `equals()` 或 `matches(schema)`；`niceeval show` 的业务诊断不通过匹配某个公开 JSON envelope来冒充语义判断。

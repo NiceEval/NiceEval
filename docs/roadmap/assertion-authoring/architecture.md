@@ -21,6 +21,14 @@ AssertionResult + evidence
 Adapter 负责解释原生协议。
 core 不按工具名、JSON key 或显示文本猜 command；Assertion evaluator 也不读取 Adapter 私有 transcript。
 
+## Matcher 与登记分层
+
+Value matcher 是 `value → evaluation` 的纯函数；它不知道 score eval、points、gate、optional 或调用 scope。`t.check()` 先读取可能的 `EvidenceSource<T>`，再把唯一 candidate 交给 matcher，最后由 Assertion handle 决定登记策略。
+
+布尔与连续评分使用不同品牌类型。布尔 matcher 默认登记为 gate，可以进入 `and()` / `or()`；连续评分 matcher 默认登记为无隐含阈值的 soft，只能由调用点显式 `.atLeast(x)` / `.gate(x)` 建立通过线。
+
+组合 matcher 全量、顺序求值子项以保留诊断。确定逻辑结果不会吞掉 evaluator exception；matcher 抛出、返回越界 score 或非法 result envelope 都是 defect，必须让 Attempt errored。
+
 ## Command projection
 
 每笔 tool `operation.started` 都携带穷尽的 command classification：
@@ -103,16 +111,22 @@ interface LogicalToolOccurrence {
   readonly input: JsonValue;
   readonly command: CommandProjection;
   readonly start: EventPosition;
-  readonly finish?: EventPosition;
-  readonly status: "pending" | "completed" | "failed" | "rejected";
+  readonly lifecycle:
+    | { readonly state: "available"; readonly status: "pending" }
+    | { readonly state: "available"; readonly status: "completed" | "failed" | "rejected"; readonly finish: EventPosition }
+    | { readonly state: "opaque"; readonly reason: "partial-stream" | "missing-lifecycle-evidence" };
 }
 ```
 
 command 是同一笔 tool occurrence 的标准投影，不拥有第二个 identity。
-`ToolMatch.command`、input、output 与 status 都在这组 occurrence 上运行。
+`commandMatch()`、`toolMatch()` 与 lifecycle status 都在这组 occurrence 上运行。
+
+只有可信 `TurnOutcome.waiting` 下仍未解决的 operation，或原生协议明确提供的 pending，才产生 available pending。partial stream 中只观察到 start、没有可信 finish 时，lifecycle 必须 opaque，不能把“没有看见结束”冒充 definite pending。
+
+started 与 finished 按流位置配对并绑定唯一 occurrence identity。`operationId` 是允许一笔 operation 结束后复用的配对 token，不是可以放进全局 Map 后永久引用的 occurrence identity。
 
 orphan finish 没有可信 start、input 或 command classification。
-它只能进入协议诊断，不能满足 `ToolMatch.command`。
+它只能进入协议诊断，不能满足 `commandMatch()`。
 
 ## Actions coverage
 
@@ -124,12 +138,12 @@ Adapter 只有同时满足以下条件，才能声明 `actions: complete`：
 4. 没有无法识别的 action kind、丢失的 start 或未交代的截断。
 
 logical invocation opaque 不必自动降低整个 actions channel。
-它表示 occurrence 集合已知，但依赖 invocation 的 selector 仍可能 unavailable。
+它表示 occurrence 集合已知，但依赖 invocation 的 match 仍可能 unavailable。
 
 Adapter 无法判断 command / not-command 时必须降低 actions coverage。
 它不能因为工具名是 `shell`，或 input 含 `command`、`cmd`、`program`、`args` 而宣称 complete。
 
-## ToolMatch command 真值
+## `commandMatch()` 真值
 
 一笔 occurrence 的 command 字段只读取 logical，有三种结果：
 
@@ -140,11 +154,14 @@ Adapter 无法判断 command / not-command 时必须降低 actions coverage。
 | logical opaque | indeterminate |
 | not-command | definite mismatch |
 
-ToolMatch 的 name、input、output、status 与 command 使用三值 AND。
+`toolMatch()` 的 name、input 与 status，以及 `commandMatch()` 的 logical command 与 status，都使用同一份单 occurrence 三值 evaluator。
+`and(commandMatch(...), toolMatch(...))` 也在该 occurrence 上求值。
+
+output 在 Observation Protocol 能区分 absent 与 opaque 前不进入公共 matcher。
 任一字段 definite mismatch 就使整笔 occurrence definite mismatch；全部字段 definite match 才是 definite match；其余才是 indeterminate。
 因此与其它字段已经矛盾的 opaque command 不会污染候选集合，false 压过 unknown。
 
-`calledTool()` 找到一笔 completed definite ToolMatch 就可 passed。
+`calledTool()` 找到满足 match 的 definite occurrence 就可 passed；省略 status 不附加 lifecycle 条件。
 没有 definite match，且 actions complete、没有 compatible indeterminate candidate 时 failed；其余是 unavailable。
 
 负存在性与 count 复用同一 occurrence 真值：
@@ -152,16 +169,16 @@ ToolMatch 的 name、input、output、status 与 command 使用三值 AND。
 - `notCalledTool()` 发现 definite match 立即 failed；compatible indeterminate candidate 或 partial actions 使结果 unavailable；只有 complete 且没有 possible match 才 passed；
 - exact count 的 definite matches 已超过 expected 时立即 failed；只有 actions complete、没有 indeterminate candidate 且 definite count 等于 expected 才 passed；
 - definite count 尚未超额，但 partial / indeterminate 仍可能改变 exact count 时 unavailable；
-- count predicate 只在 complete、无 indeterminate、count 唯一确定时调用；任意不确定区间不猜 predicate 的单调性，返回 unavailable。
+
+exact count 必须是正 safe integer，零次使用负存在性断言。tool count 按 distinct occurrence identity；event count 按 distinct event identity。
 
 ## `toolOrder()` 顺序
 
 `toolOrder()` 按 request position 对 logical tool occurrences 做子序列匹配。
-每个 selector 由 `name` 和去掉 count 的同一份 `ToolMatch` 组成。
-既有 string selector 在登记边界等价为只含 `{ name }` 的 selector，不建立第二套匹配语义。
+每个 `ToolMatch` 只描述单个 occurrence；exact count 留在集合断言的第二参数。直接传 selector 对象与 string shorthand 都不进入登记边界。
 
 算法对同一组 occurrence 计算两条子序列关系：definite path 只接受 definite match；possible path 接受 definite match 或 indeterminate candidate。
-两者都按单调 cursor 消费不同 actual index，不相关工具可以穿插；一笔 occurrence 不能占两个 selector，`multiple-executions` 也不会被拆成多笔。
+两者都按单调 cursor 消费不同 actual index，不相关工具可以穿插；一笔 occurrence 不能占两个 match，`multiple-executions` 也不会被拆成多笔。
 
 - 存在 definite path 时 passed，即使 actions partial；
 - 没有 definite path，但存在 possible path 时 unavailable；
@@ -170,7 +187,7 @@ ToolMatch 的 name、input、output、status 与 command 使用三值 AND。
 
 例如 `[A? opaque, B definite]` 对 `[A, B]` 是 unavailable；`[B definite, A definite]` 在 complete channel 上 failed；唯一一笔同时可能匹配 A / B 的 occurrence 不能复用，因此在 complete channel 上 failed。
 
-selector 的 `status: "completed"` 只证明该 occurrence 最终 completed。
+`toolMatch(..., { status: "completed" })` 或 `commandMatch(..., { status: "completed" })` 只证明该 occurrence 最终 completed。
 它不证明前一项 finish 早于后一项 start，也不建立工具输出被下一步消费的因果关系。
 
 `toolOrder()` 不证明动态 locator 被后续命令复用、show 输出影响了后续动作，或最终 reply 基于这些证据。
@@ -184,7 +201,9 @@ logical match 的文案固定说明它是逻辑命令请求，不是物理 binar
 
 original 与 logical preview 复用 Observation Record 已执行的 secret redaction、truncation 与预算结果。
 Assertion evaluator 不复制未脱敏 argv，也不从 tool input 重建一份旁路 evidence。
-`toolOrder()` unavailable 必须指出第一个无法确定的 selector index、normalizer 和 opaque reason，不能误报成“未调用 niceeval”。
+`toolOrder()` unavailable 必须指出第一个无法确定的 match index、normalizer 和 opaque reason，不能误报成“未调用 niceeval”。
+
+候选 matcher 的内部结果使用 `matched | mismatched | unavailable`，不复用 Assertion 的 `passed | failed | unavailable`：一笔 candidate mismatch 不等于集合 Assertion failed。组合诊断按组合树与子项索引保留，再经既有脱敏、截断与预算规则确定性映射到 `AssertionResult.expected`、`received` 与 `evidence`；任何 matcher defect 都不能被另一个决定性分支吞掉。
 
 ## 工具输入负断言
 
@@ -227,13 +246,13 @@ exact set 的三值规则是：
 
 ### 同一条 change 的前后文本
 
-带 `FileChangeOptions` 的 `fileChanged()` 在 agent diff 的 send 区间中寻找一条同时满足 path、kind 与内容条件的 entry。
-两个内容条件不能分别由不同 send 区间满足。
+带 before / after matcher 的 `fileChanged()` 在 agent diff 的 send 区间中寻找一条同时满足 path、kind 与内容条件的 entry。
+两个 matcher 不能分别由不同 send 区间满足。
 
-available UTF-8 内容按 literal substring 检查。
+available UTF-8 内容交给对应的 string `BooleanMatch`。
 binary、oversized 或 provider 不支持内容证据时是 unavailable；确定缺少 before / after 或文本不命中时 failed。
 
-该断言只证明 before / after 各含一段文本。
+该断言只证明 before / after 各自满足声明的 matcher。
 它不证明只修改了一个 token，也不把内容重新读取为最终文件后再冒充 change evidence。
 
 ## 延迟 Sandbox file
@@ -257,9 +276,10 @@ CLI 无法呈现这些事实时，应暴露 NiceEval 呈现缺口；Eval 不能�
 以下情况在登记边界同步报告 author error：
 
 - 空 executable、空 command token、重复 excludes；
-- 空 path exclusion、重复 expected changed path；
-- inline rule 同时出现互斥关系或空 contains；
-- `toolOrder()` 少于两项；
+- 空 path exclusion、重复 expected changed path、空的 file change options；
+- `and()` / `or()` 少于两个布尔 matcher；
+- `toolOrder()` 少于两项或传入非 ToolMatch；
+- exact count 不是正 safe integer；
 - `.points(0)` 或非有限 points。
 
 以下情况是 failed：
@@ -279,8 +299,8 @@ CLI 无法呈现这些事实时，应暴露 NiceEval 呈现缺口；Eval 不能�
 
 ## 防止 API 膨胀
 
-普通 API 不共享万能 `Rule` 联合，也不提供 `allOf`、`oneOf`、`not` 或 arbitrary predicate。
+普通 API 不共享万能 `Rule` 联合，也不提供递归 JSON AST 或 `not()`。`and()` / `or()` 只组合纯布尔 matcher，不拥有 observation、scope 或登记策略。
 一个新方法必须满足四个条件：有标准 observation owner、至少两个真实下游、可定义 coverage、无法由现有领域方法清楚表达。
 
-这次只扩展既有 `ToolMatch`、让 `toolOrder()` 接受同源 `ToolSelector`，并补齐既有 `t.sandbox`。
+这次只建立纯 `Match` 协议、让 presence/order 接受同源 `ToolMatch` / `EventMatch`，并补齐既有 `t.sandbox`。普通路径只保留独立工厂，不允许直接传 selector 对象、string shorthand、`match.*` namespace 或 fluent 别名。
 Harness 的输出格式、case 名和评分 rubric 留在用例，不能反向进入 core API。
