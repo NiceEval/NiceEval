@@ -15,13 +15,32 @@ import type { EvidenceCoverageChannel } from "./coverage.ts";
 import { matchesJson } from "../shared/json-match.ts";
 import type {
   JsonValue,
+  JsonMatch,
   AssertionEvaluationContext,
   StreamEvent,
   SubagentCall,
-  SubagentMatch,
   ToolCall,
-  ToolMatch,
 } from "../types.ts";
+
+/**
+ * Pre-Fact selectors are an implementation detail of this legacy module.
+ * They deliberately do not share the branded Match API: public tool matching
+ * is now `ToolMatch` from assertions/match.ts and repetition belongs to the
+ * scoped producer's options.
+ */
+interface LegacyToolSelector {
+  readonly input?: JsonMatch;
+  readonly count?: number | ((count: number) => boolean);
+  readonly output?: JsonMatch;
+  readonly status?: "pending" | "completed" | "failed" | "rejected";
+}
+
+interface LegacySubagentSelector {
+  readonly count?: number | ((count: number) => boolean);
+  readonly status?: "pending" | "completed" | "failed";
+  readonly remoteUrl?: string | RegExp | ((url: string) => boolean);
+  readonly output?: JsonMatch;
+}
 
 // ── 覆盖折叠 ──
 
@@ -35,7 +54,7 @@ function coverageGap(ctx: AssertionEvaluationContext, channel: EvidenceCoverageC
 // ── 工具匹配小语言 ──
 
 /** `match.input` 使用共享递归 JsonMatch；undefined 只表示未提供过滤条件。 */
-function matchTopLevelInput(actual: JsonValue, expected: ToolMatch["input"]): boolean {
+function matchTopLevelInput(actual: JsonValue, expected: LegacyToolSelector["input"]): boolean {
   if (expected === undefined) return true;
   return matchesJson(actual, expected);
 }
@@ -55,7 +74,7 @@ function isDefinitiveCountOvershoot(n: number, count: number | ((n: number) => b
   return typeof count === "number" && n > count;
 }
 
-function toolMatches(tc: ToolCall, name: string, match?: ToolMatch): boolean {
+function toolMatches(tc: ToolCall, name: string, match?: LegacyToolSelector): boolean {
   if (tc.name !== name && tc.originalName !== name) return false;
   if (match?.status && tc.status !== match.status) return false;
   if (match?.input !== undefined && !matchTopLevelInput(tc.input, match.input)) return false;
@@ -98,7 +117,7 @@ function describeSubagents(calls: readonly SubagentCall[]): string | undefined {
     .join("\n");
 }
 
-function subagentMatches(call: SubagentCall, name: string, match?: SubagentMatch): boolean {
+function subagentMatches(call: SubagentCall, name: string, match?: LegacySubagentSelector): boolean {
   if (call.name !== name) return false;
   if (match?.status && call.status !== match.status) return false;
   if (match?.remoteUrl !== undefined) {
@@ -123,8 +142,8 @@ function describeCountExpectation(count: number | ((n: number) => boolean) | und
   return `exactly ${count}`;
 }
 
-/** ToolMatch 的期望描述(`≥1 call matching input.city = "Brooklyn"` 之类)。 */
-function describeToolExpectation(name: string, match?: ToolMatch): string {
+/** 旧 Judge selector 的期望描述(`≥1 call matching input.city = "Brooklyn"` 之类)。 */
+function describeToolExpectation(name: string, match?: LegacyToolSelector): string {
   const conditions: string[] = [];
   if (match?.input !== undefined) {
     if (match.input instanceof RegExp) conditions.push(`input matches ${match.input}`);
@@ -208,7 +227,7 @@ export function messageIncludes(token: string | RegExp): Spec {
   };
 }
 
-export function calledTool(name: string, match?: ToolMatch): Spec {
+export function calledTool(name: string, match?: LegacyToolSelector): Spec {
   return {
     name: `calledTool(${name})`,
     severity: "gate",
@@ -237,7 +256,7 @@ export function calledTool(name: string, match?: ToolMatch): Spec {
   };
 }
 
-export function notCalledTool(name: string, match?: Omit<ToolMatch, "count">): Spec {
+export function notCalledTool(name: string, match?: Omit<LegacyToolSelector, "count">): Spec {
   return {
     name: `notCalledTool(${name})`,
     severity: "gate",
@@ -342,7 +361,7 @@ export function noFailedActions(): Spec {
   };
 }
 
-export function calledSubagent(name: string, match?: SubagentMatch): Spec {
+export function calledSubagent(name: string, match?: LegacySubagentSelector): Spec {
   return {
     name: `calledSubagent(${name})`,
     severity: "gate",

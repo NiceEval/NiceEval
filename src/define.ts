@@ -97,9 +97,8 @@ export function defineEval(def: EvalInput): EvalDefinition<"pass", TestContext> 
 }
 
 /**
- * 计分制 eval:题内用给分词汇(`.points(n)` / `t.score(label, n)`)叠加挣分,对比读总分而不是
- * 通过率。字段与 `defineEval` 完全同形,唯一区别是 `test(t)` 的 `t` 额外提供给分词汇——禁止
- * 提供 id,从路径推导(见 docs/feature/eval/README.md「defineScoreEval:计分制题型」)。
+ * 计分制 eval:Fact verdict uses 与 Fact score uses 可以读取同一份证据；正常路径必须返回
+ * `t.finishScore()` 的品牌完成令牌。字段与 `defineEval` 同形，禁止提供 id，由发现期推导。
  */
 export function defineScoreEval(
   def: ScoreEvalInput,

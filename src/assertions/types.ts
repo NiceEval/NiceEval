@@ -4,6 +4,252 @@ import type { Severity, SourceLoc } from "../shared/types.ts";
 import type { DerivedFacts, StreamEvent, Usage } from "../o11y/types.ts";
 import type { ResolvedEvidenceCoverage } from "./coverage.ts";
 
+// ── Evaluation facts ──────────────────────────────────────────────────────
+//
+// A Fact is deliberately not an assertion handle.  Producers only describe a
+// piece of evidence; verdict and score consumers live in context/collector.
+// The brands stay module-private so callers cannot manufacture a Fact that is
+// not owned by the current Attempt collector.
+
+export type FactPhase = "now" | "final";
+
+declare const evaluationFactBrand: unique symbol;
+declare const evidenceSourceBrand: unique symbol;
+declare const usageEvidenceFactBrand: unique symbol;
+declare const scoreCompletionBrand: unique symbol;
+
+export interface BooleanFact<out R = unknown, P extends FactPhase = FactPhase> {
+  readonly kind: "boolean";
+  readonly phase: P;
+  readonly [evaluationFactBrand]: () => R;
+}
+
+export interface ScoreFact<P extends FactPhase = FactPhase> {
+  readonly kind: "score";
+  readonly phase: P;
+  readonly [evaluationFactBrand]: () => number;
+}
+
+/** A source whose material is intentionally resolved only when its Fact runs. */
+export interface EvidenceSource<out T, P extends FactPhase = "final"> {
+  readonly phase: P;
+  /** Module-private provenance prevents callers from manufacturing a deferred source. */
+  readonly [evidenceSourceBrand]: () => T;
+}
+
+/** Narrow core-only capability for usage coverage; ordinary Facts cannot opt out. */
+export interface UsageEvidenceFact<P extends FactPhase = FactPhase> extends BooleanFact<unknown, P> {
+  readonly [usageEvidenceFactBrand]: true;
+}
+
+export interface FactUseOptions {
+  readonly key?: string;
+  readonly label?: string;
+}
+
+export interface ScoreThresholdOptions extends FactUseOptions {
+  readonly atLeast: number;
+}
+
+/** Private completion token returned by `finishScore()` on the normal path. */
+export interface ScoreCompletion {
+  readonly [scoreCompletionBrand]: true;
+}
+
+export interface FactResultBase {
+  readonly factId: string;
+  readonly name: string;
+  readonly groupPath?: readonly string[];
+  readonly producerLoc?: SourceLoc;
+  readonly sourceOrder: number;
+  readonly dependencyFactIds: readonly string[];
+  readonly expected?: string;
+  readonly received?: string;
+  readonly evidence?: string;
+}
+
+/** A terminal Attempt issue as seen by Fact folding; Fact evaluator errors narrow this further. */
+export interface AttemptFactError {
+  readonly class: "agent" | "execution" | "author" | "evaluator";
+  readonly code: string;
+  readonly message: string;
+}
+
+export interface EvaluationFactError extends AttemptFactError {
+  readonly class: "evaluator";
+}
+
+export type EvaluationFactResult =
+  | (FactResultBase & {
+      readonly factKind: "boolean";
+      readonly outcome: "passed" | "failed";
+    })
+  | (FactResultBase & {
+      readonly factKind: "score";
+      readonly outcome: "scored";
+      readonly normalizedScore: number;
+    })
+  | (FactResultBase & {
+      readonly factKind: "boolean" | "score";
+      readonly outcome: "unavailable";
+      readonly reason: string;
+    })
+  | (FactResultBase & {
+      readonly factKind: "boolean" | "score";
+      readonly outcome: "errored";
+      readonly error: EvaluationFactError;
+    })
+  | (FactResultBase & {
+      readonly factKind: "boolean" | "score";
+      readonly outcome: "notReachedByControl" | "notReachedByError";
+      readonly reason: string;
+    });
+
+export interface FactUseBase {
+  readonly key?: string;
+  readonly consumerLoc?: SourceLoc;
+  readonly sourceOrder: number;
+}
+
+export type VerdictFactUseResult = FactUseBase & {
+  readonly useKind: "verdict";
+  readonly method: "assert" | "require" | "assertIfCovered";
+  readonly label?: string;
+  readonly target:
+    | { readonly kind: "boolean"; readonly factId: string }
+    | { readonly kind: "score"; readonly factId: string; readonly atLeast: number };
+} & (
+    | { readonly outcome: "passed" | "failed" }
+    | { readonly outcome: "unavailable" | "notApplicable"; readonly reason: string }
+    | { readonly outcome: "errored"; readonly error: EvaluationFactError }
+    | { readonly outcome: "notReachedByControl" | "notReachedByError"; readonly reason: string }
+  );
+
+export type ScoreFactUseResult = FactUseBase & {
+  readonly useKind: "score";
+  readonly label: string;
+} & (
+    | {
+        readonly input: { readonly kind: "direct"; readonly earned: number };
+        readonly outcome: "scored";
+        readonly earned: number;
+      }
+    | ({
+        readonly input: { readonly kind: "fact"; readonly factId: string; readonly max: number };
+      } &
+        (
+          | { readonly outcome: "scored"; readonly earned: number }
+          | { readonly outcome: "unavailable"; readonly reason: string }
+          | { readonly outcome: "errored"; readonly error: EvaluationFactError }
+          | { readonly outcome: "notReachedByControl" | "notReachedByError"; readonly reason: string }
+        ))
+  );
+
+interface LegacyJudgeResultBase {
+  readonly name: `judge:${string}`;
+  readonly detail: string;
+  readonly groupPath?: readonly string[];
+  readonly loc?: SourceLoc;
+  readonly sourceOrder: number;
+}
+
+interface LegacyJudgePolicyBase {
+  readonly verdict:
+    | { readonly kind: "gate"; readonly atLeast: number }
+    | { readonly kind: "soft"; readonly atLeast?: number };
+  readonly optional: boolean;
+  readonly stopOnFailure: boolean;
+}
+
+export type LegacyJudgePolicy = LegacyJudgePolicyBase & (
+  | { readonly scoring: { readonly kind: "quality" } }
+  | { readonly scoring: { readonly kind: "points"; readonly max: number } }
+);
+
+/** The closed, private-bridge result envelope for one registered Judge spec. */
+export type LegacyJudgeAssertionResult =
+  | (LegacyJudgeResultBase & {
+      readonly policy: LegacyJudgePolicyBase & { readonly scoring: { readonly kind: "quality" } };
+      readonly outcome: "passed" | "failed";
+      readonly normalizedScore: number;
+      readonly evidence?: string;
+    })
+  | (LegacyJudgeResultBase & {
+      readonly policy: LegacyJudgePolicyBase & { readonly scoring: { readonly kind: "points"; readonly max: number } };
+      readonly outcome: "passed" | "failed";
+      readonly normalizedScore: number;
+      readonly earnedPoints: number;
+      readonly evidence?: string;
+    })
+  | (LegacyJudgeResultBase & {
+      readonly policy: LegacyJudgePolicy;
+      readonly outcome: "unavailable";
+      readonly reason: string;
+      readonly evidence?: string;
+    })
+  | (LegacyJudgeResultBase & {
+      readonly policy: LegacyJudgePolicy;
+      readonly outcome: "errored";
+      readonly error: EvaluationFactError;
+    })
+  | (LegacyJudgeResultBase & {
+      readonly policy: LegacyJudgePolicy;
+      readonly outcome: "notReachedByControl" | "notReachedByError";
+      readonly reason: string;
+    });
+
+export interface AttemptFactTrace {
+  readonly facts: readonly EvaluationFactResult[];
+  readonly uses: readonly (VerdictFactUseResult | ScoreFactUseResult)[];
+  readonly legacyJudgeAssertions: readonly LegacyJudgeAssertionResult[];
+}
+
+export interface UnavailableAttemptIssue {
+  readonly kind: "unavailable";
+  readonly reason: string;
+  readonly factId?: string;
+  readonly useSourceOrder?: number;
+  readonly legacyJudgeSourceOrder?: number;
+}
+
+export interface ErrorAttemptIssue {
+  readonly kind: "error";
+  readonly error: AttemptFactError;
+  readonly factId?: string;
+  readonly useSourceOrder?: number;
+  readonly legacyJudgeSourceOrder?: number;
+}
+
+export type AttemptFactIssue = UnavailableAttemptIssue | ErrorAttemptIssue;
+
+export type PassFactAttemptOutcome =
+  | { readonly verdict: "passed" | "failed" }
+  | { readonly verdict: "errored"; readonly issues: readonly [AttemptFactIssue, ...AttemptFactIssue[]] }
+  | { readonly verdict: "skipped"; readonly reason: string };
+
+export type ScoreFactAttemptOutcome =
+  | { readonly status: "scored"; readonly earnedScore: number; readonly creditedScore: number }
+  | {
+      readonly status: "invalid";
+      readonly earnedScore: number;
+      readonly creditedScore: 0;
+      readonly issues: readonly AttemptFactIssue[];
+    }
+  | {
+      readonly status: "unavailable";
+      readonly earnedScore: number;
+      readonly creditedScore: null;
+      readonly issues: readonly [UnavailableAttemptIssue, ...UnavailableAttemptIssue[]];
+    }
+  | {
+      readonly status: "errored";
+      readonly earnedScore: number;
+      readonly creditedScore: null;
+      readonly errors: readonly [ErrorAttemptIssue, ...ErrorAttemptIssue[]];
+      readonly issues: readonly UnavailableAttemptIssue[];
+    }
+  | { readonly status: "skipped"; readonly earnedScore: number; readonly creditedScore: null; readonly reason: string };
+
 // 覆盖代数(解析 / 降级 / 聚合)住在 coverage.ts;类型经这里进聚合 facade(src/types.ts)。
 export type {
   EvidenceCoverageChannel,
@@ -11,35 +257,6 @@ export type {
   ResolvedEvidenceCoverageEntry,
   ResolvedEvidenceCoverageStatus,
 } from "./coverage.ts";
-
-/** 值断言(expect 匹配器)。纯函数 score + 可链式改严重度 / 阈值 / optional。 */
-export interface ValueAssertion {
-  readonly name: string;
-  readonly severity: Severity;
-  readonly threshold?: number;
-  /** `.optional()` 链过的标记:评不了只记 unavailable,不把 attempt 拖成 errored。 */
-  readonly isOptional?: boolean;
-  /** 期望条件的有界文本描述(如 `contains "Brooklyn"`),失败时进 AssertionResult.expected。 */
-  readonly expected?: string;
-  score(value: unknown): number | Promise<number>;
-  /** 转成硬门槛断言:未达阈值(省略 threshold 则按 score >= 1,即满分判定)整条评估用例判为 failed。返回新实例,不改原对象。 */
-  gate(threshold?: number): ValueAssertion;
-  /**
-   * 转成软阈值断言:未达 threshold 时该条记为 failed,但默认不拖累整条评估用例的 verdict;
-   * `--strict` 运行下,软阈值失败也会把整条评估用例的 verdict 计为 failed。返回新实例,不改原对象。
-   */
-  atLeast(threshold: number): ValueAssertion;
-  /**
-   * 转成纯记录的软断言:不设通过线,分数照实落盘、永不使该条 failed(judge 的默认严重度就是它)。
-   * 无参数——要设线用 `.atLeast(threshold)`,不提供同义的 `soft(threshold)`。返回新实例,不改原对象。
-   */
-  soft(): ValueAssertion;
-  /**
-   * 允许这条断言证据缺席:评不了时只记录 `outcome: "unavailable"`,不影响判定。
-   * 与 severity 正交(severity 说影不影响质量判定,optional 说证据允不允许缺席)。返回新实例,不改原对象。
-   */
-  optional(): ValueAssertion;
-}
 
 /**
  * 断言记录的公共字段(见 docs/feature/assertions/architecture.md「断言记录」——字段契约的单点定义)。

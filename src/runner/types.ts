@@ -10,9 +10,12 @@ import type { LinkedRunPlan } from "../sandbox/plan.ts";
 import type { BuildKey } from "../sandbox/identity.ts";
 import type {
   AssertionResult,
+  AttemptFactTrace,
   DiffArtifact,
   JudgeConfig,
   PrimaryAssertionSummary,
+  ScoreCompletion,
+  ScoreFactAttemptOutcome,
   ScoreEntry,
 } from "../assertions/types.ts";
 import type { ScoreTestContext, TestContext } from "../context/types.ts";
@@ -403,6 +406,14 @@ export interface EvalResult {
   executionMs?: number;
   assertions: AssertionResult[];
   /**
+   * New Fact graph trace. Record/show still need their own envelope migration;
+   * fresh runner results keep this as a non-enumerable in-memory property so
+   * the legacy writer cannot accidentally emit a hybrid result.json.
+   */
+  factTrace?: AttemptFactTrace;
+  /** Structured Score Fact outcome; likewise in-memory until Record migrates. */
+  scoreResult?: ScoreFactAttemptOutcome;
+  /**
    * 题型:`defineEval` → `"pass"`,`defineScoreEval` → `"points"`,定义期事实,与
    * `EvalDescriptor.evaluationKind` 同源。省略等价于 `"pass"`——兼容此字段引入前写入的落盘与未声明它的
    * 第三方 harness(见 docs/feature/record/architecture.md「result.json」)。
@@ -720,7 +731,7 @@ export type ScoreEvalInput = EvalAuthorFields & {
   id?: IdComesFromFilePath;
   evaluationKind?: EvaluationKindComesFromFactory;
   configHash?: ConfigHashComesFromPlanning;
-  test(t: ScoreTestContext): Promise<void> | void;
+  test(t: ScoreTestContext): ScoreCompletion | Promise<ScoreCompletion>;
 };
 
 /** Factory 完成默认归一后的 Eval 字段；Definition 不再复用作者输入的 optional 半状态。 */
@@ -743,9 +754,13 @@ export interface EvalDefinitionFields {
 }
 
 /** Factory 产物保留精确 evaluationKind / context，并带模块私有品牌，不能由对象字面量伪造。 */
+type EvalTestReturn<Kind extends EvaluationKind> = Kind extends "points"
+  ? ScoreCompletion | Promise<ScoreCompletion>
+  : void | Promise<void>;
+
 export interface EvalDefinition<Kind extends EvaluationKind, Context> extends EvalDefinitionFields {
   readonly evaluationKind: Kind;
-  test(t: Context): Promise<void> | void;
+  test(t: Context): EvalTestReturn<Kind>;
   readonly [EVAL_DEFINITION]: true;
 }
 
@@ -755,7 +770,7 @@ export type AnyEvalDefinition =
 
 /** @internal 唯一写入 Definition 私有品牌的构造辅助；不从公共入口导出。 */
 export function brandEvalDefinition<Kind extends EvaluationKind, Context>(
-  value: EvalDefinitionFields & { evaluationKind: Kind; test(t: Context): Promise<void> | void },
+  value: EvalDefinitionFields & { evaluationKind: Kind; test(t: Context): EvalTestReturn<Kind> },
 ): EvalDefinition<Kind, Context> {
   Object.defineProperty(value, EVAL_DEFINITION, { value: true });
   return Object.freeze(value) as EvalDefinition<Kind, Context>;

@@ -32,7 +32,6 @@ import { createEvalContext } from "../context/context.ts";
 import { createAgentSession } from "../context/session.ts";
 import { EvalRequirementFailed, EvalSkipped } from "../context/control-flow.ts";
 import { isSendFailure, sendFailureText } from "../context/send-failures.ts";
-import { computeVerdict } from "../shared/verdict.ts";
 import { deriveRunFacts, buildO11ySummary } from "../o11y/derive.ts";
 import { estimateCost } from "../o11y/cost.ts";
 import { t } from "../i18n/index.ts";
@@ -83,7 +82,6 @@ import type {
   TraceSpan,
   Usage,
   RetryAttemptRecord,
-  ScoreTestContext,
 } from "../types.ts";
 import { reportAttemptLifecycle, reportDiagnostic, reportKept } from "./feedback/sink.ts";
 import { encodeAttemptKey, runWho } from "./types.ts";
@@ -190,9 +188,6 @@ export function runAttemptEffect(
     assertions: [],
     evidenceCoverage: run.agent.evidenceCoverage,
     evaluationKind: evalDef.evaluationKind ?? "pass",
-    // 资源获取/硬超时等在 collector 尚不可用前就可能收束；计分制的异常骨架也保持该字段的
-    // 读取面（空数组而非缺失），与正常路径一致。
-    ...(evalDef.evaluationKind === "points" ? { scoreEntries: [] } : {}),
   };
 
   /**
@@ -876,7 +871,11 @@ export function runAttemptEffect(
             sources: timeoutSources ?? [],
           }
         : withSandbox;
-      return redactEvalResultEvidence(completed, sensitiveValues);
+      // The Fact result is useful to in-process reporters immediately, but
+      // Record still owns a separate breaking envelope migration. Keep these
+      // fields readable on EvalResult without letting the existing writer's
+      // object spread serialize a hybrid old/new result.json.
+      return keepFactOutcomeInMemory(redactEvalResultEvidence(completed, sensitiveValues));
     }),
   );
 }
@@ -1296,15 +1295,20 @@ async function runAttemptBody(
     );
 
     let error: AttemptError | undefined;
+    let errorClass: import("../assertions/types.ts").AttemptFactError["class"] | undefined;
     let skipReason: string | undefined;
     try {
-      await withSourceRegistry(sourceRegistry, () => evalDef.test(context as ScoreTestContext));
-      // test() 正常返回也要结算待决前置:最后一条前置挂了而后面没有 t.* 调用时,
-      // 中止信号在这里抛出(判定与写了 await 完全一致)。
-      const aborted = await state.collector.settlePrerequisites();
-      if (aborted !== undefined) throw new EvalRequirementFailed(aborted);
+      const completion = await withSourceRegistry(sourceRegistry, () => evalDef.test(context as never));
+      // Preserve the legacy Judge handle's supported unawaited
+      // `.stopOnFailure()` path at the normal-return boundary.
+      await state.collector.settleLegacyPrerequisites();
+      if (evalDef.evaluationKind === "points") state.collector.completeScore(completion);
+      else state.collector.completePass();
     } catch (e) {
-      if (e instanceof EvalSkipped) skipReason = e.reason;
+      if (e instanceof EvalSkipped) {
+        skipReason = e.reason;
+        state.collector.closeForSkip(e.reason);
+      }
       else if (e instanceof EvalRequirementFailed) {
         /* 断言已记录,非执行错误 */
       } else {
@@ -1313,6 +1317,8 @@ async function runAttemptBody(
         // 作者从 test(t) 体内抛的 ExperimentFatalError / EvalFatalError 也走这条分支。
         declareFailure(getPhase() ?? "eval.run", e);
         error = errorFromThrown(e, getPhase(), res.attemptTimeout);
+        errorClass = isSendFailure(e) ? "agent" : "author";
+        state.collector.closeForError(firstLine(formatThrown(e)));
       }
     }
 
@@ -1351,6 +1357,7 @@ async function runAttemptBody(
           // Spec 的直接读取，则补一条 AttemptError，至少不能把空 diff 当成 passed/failed。
           if (diffRequirements.diff.requiredConsumers === 0 && error === undefined) {
             error = errorFromThrown(diffError, "workspace.diff", res.attemptTimeout);
+            errorClass = "execution";
           }
         } else {
           feedback.diagnostic({
@@ -1407,17 +1414,30 @@ async function runAttemptBody(
       },
     };
     if (!skipReason) enterPhase("assertions.evaluate");
-    // 类型面挡住通过制 t.points()/t.score()，但 tsx 与 JS 可绕过；持久化边界必须再门控一次。
-    const assertions = skipReason
-      ? []
-      : await state.collector.finalize(assertionEvaluationContext, {
-          includePoints: evalDef.evaluationKind === "points",
-          // assertions.evaluate 阶段唯一值得解释的等待是「在等裁判模型」:有判分断言时逐条推进 detail,
-          // 没有则整段不发 detail(见 docs/feature/experiments/cli.md「Attempt 阶段」)。
-          // 文本是契约字面量,中英一致,不进 i18n。
-          onJudgeProgress: ({ index, total, check }) => log(`judge ${index}/${total} · ${check}`),
-        });
-    const verdict = computeVerdict({ error, assertions, skipReason, strict: run.strict });
+    const finalizedFacts = await state.collector.finalize(assertionEvaluationContext, {
+      // Keep the legacy Judge handle's live progress wording while its result
+      // is isolated in the Fact trace sidecar.
+      onJudgeProgress: ({ index, total, check }) => log(`judge ${index}/${total} · ${check}`),
+      ...(error === undefined || errorClass === undefined
+        ? {}
+        : {
+            externalErrors: [{
+              kind: "error" as const,
+              error: { class: errorClass, code: error.code, message: error.message },
+            }],
+          }),
+    });
+    // Record/show have not migrated to FactTrace yet.  Keep their old field
+    // empty rather than projecting a lossy faux AssertionResult; the canonical
+    // result is carried separately for the next integration slice.
+    const assertions: import("../types.ts").AssertionResult[] = [];
+    const verdict = factVerdict(
+      finalizedFacts.pass,
+      finalizedFacts.score,
+      error,
+      skipReason,
+      evalDef.evaluationKind ?? "pass",
+    );
 
     // 收 OTLP trace:给最后一批导出留点落地时间,再 collect(空则不挂)。
     // codex 的 OTLP 把内部 Rust tracing 全导出来(handle_responses / append_items … 上万条);
@@ -1506,11 +1526,9 @@ async function runAttemptBody(
       startedAt: new Date(t0).toISOString(),
       durationMs,
       assertions,
+      factTrace: finalizedFacts.trace,
       evaluationKind: evalDef.evaluationKind ?? "pass",
-      // 只在计分制 eval 上落 scoreEntries(t.score 直接给分记录);通过制 eval 的 t 上没有
-      // t.score,collector.scoreEntries 恒为空数组,省略即等价于空数组
-      // (见 docs/feature/record/architecture.md「result.json」)。
-      ...(evalDef.evaluationKind === "points" ? { scoreEntries: state.collector.scoreEntries } : {}),
+      ...(evalDef.evaluationKind === "points" ? { scoreResult: finalizedFacts.score } : {}),
       ...(state.manager.retryAttempts.length > 0 ? { retryAttempts: state.manager.retryAttempts } : {}),
       usage,
       estimatedCostUSD: cost,
@@ -1652,6 +1670,8 @@ const EVAL_RESULT_REDACTION_EXEMPT_KEYS = [
 
 const EVAL_RESULT_REDACTED_EVIDENCE_KEYS = [
   "assertions",
+  "factTrace",
+  "scoreResult",
   "scoreEntries",
   "retryAttempts",
   "error",
@@ -1696,6 +1716,25 @@ function redactEvalResultEvidence(result: EvalResult, sensitiveValues: ReadonlyS
     ...result,
     ...redactedEvidence,
   };
+}
+
+/**
+ * `record/writer.ts` deliberately persists the enumerable EvalResult shape.
+ * Fact traces cannot join that old schema until Record's version and
+ * evaluation-algorithm migration land, so preserve them as in-memory
+ * properties rather than accidentally emitting a mixed envelope.
+ */
+function keepFactOutcomeInMemory(result: EvalResult): EvalResult {
+  for (const key of ["factTrace", "scoreResult"] as const) {
+    if (result[key] === undefined) continue;
+    Object.defineProperty(result, key, {
+      value: result[key],
+      enumerable: false,
+      configurable: true,
+      writable: true,
+    });
+  }
+  return result;
 }
 
 /**
@@ -1850,6 +1889,26 @@ function withCommandTiming(
  * 其它文件(包括 callers 链中的 helper)在首次引用后由 registry 冻结；这里仅把已知路径
  * 补成 artifact。读取失败不能删掉 loc，投影会将该路径表示为 unavailable。
  */
+function factVerdict(
+  pass: import("../assertions/types.ts").PassFactAttemptOutcome,
+  score: import("../assertions/types.ts").ScoreFactAttemptOutcome,
+  error: AttemptError | undefined,
+  skipReason: string | undefined,
+  kind: "pass" | "points",
+): import("../types.ts").Verdict {
+  if (kind === "points") {
+    // A known hard Fact failure is deliberately stronger than later
+    // unavailable/evaluator issues: ScoreFactAttemptOutcome retains them as
+    // issues while `invalid` fixes creditedScore to zero.
+    if (score.status === "invalid") return "failed";
+    if (error !== undefined || score.status === "errored" || score.status === "unavailable") return "errored";
+    if (skipReason !== undefined || score.status === "skipped") return "skipped";
+    return "passed";
+  }
+  if (error !== undefined) return "errored";
+  return pass.verdict;
+}
+
 async function collectSources(
   events: readonly StreamEvent[],
   assertions: readonly EvalResult["assertions"][number][],
