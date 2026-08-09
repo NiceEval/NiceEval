@@ -11,7 +11,7 @@ import {
   openRecordStore,
 } from "niceeval/record";
 
-const root = join(process.cwd(), ".niceeval");
+const root = join(process.cwd(), ".niceeval", "record");
 await using store = await openRecordStore(root);
 await using record = await openRecord(store);
 const attempt = await record.resolveAttempt("@01J8ZK3M6P4T7V9X2C5N8QW0RY");

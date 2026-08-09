@@ -10,8 +10,11 @@ Record 还拥有 Provenance、Claim、Run、Attempt、内容图、提交事务�
 
 ## 核心心智
 
-`.niceeval` 对应一个 Record。
-它可以跨多次 Invocation、多个 Experiment 和多个 Run 追加事实；每次成功提交都会产生一个不可变 `RecordGraphRef`。
+`.niceeval` 是项目的多 owner workspace state container，不对应一个 Record。
+bundled CLI 的 RecordStore 精确位于 `<project>/.niceeval/record`；这个子根可以跨多次 Invocation、多个 Experiment 和多个 Run 追加事实。
+
+`sandboxes`、`teardowns`、`sessions` 和 locks 是 `.niceeval` 内其它 owner 的 sibling，Record 不读取、认领或删除它们。
+每次成功提交都会产生一个不可变 `RecordGraphRef`。
 默认打开读取最新 head，receipt、Sample 和 Report 则固定到明确的 revision，后续写入不会让既有读结果漂移。
 它们保存完整 `RecordGraphRef`，不会按时间、latest 或 most recent 重新挑选结果。
 
@@ -93,6 +96,11 @@ carry、accept 和 rename 不复制执行事实，也不把 Attempt 改挂到新
 - Agent 增量事件、LiveRecord、Reducer snapshot 和 Invocation receipt；
 - 固定 revision 的 Record handle、追踪式 Projector、`EvidenceValue` 两轴状态和 memo identity；
 - `watch`、机器输出、locator 寻址、typed mirror snapshot 与选择性证明的职责边界。
+
+Library 调用传入的 root 永远是实际 Store root，不附加 `.niceeval`、`record` 或任何其它后缀。
+bundled CLI 只把项目根映射到 `<project>/.niceeval/record`，再将这个绝对路径交给 Library。
+创建只认领该精确子根；已有目标、缺失目标和错误 format 各自使用 Store 的 typed failure。
+它不会领养 `.niceeval` 父目录、改写 sibling，或自动迁移、删除既有用户结果。
 
 本功能不定义 Verdict 词表、Sample 选择算法、Report 页面布局、远程控制面或 OTel collector。
 这些 owner 通过 typed payload、Projector 和公开句柄接入，不扩张 frozen core。

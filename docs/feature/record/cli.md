@@ -3,6 +3,19 @@
 `watch` 是旁路观察面，`exp --json` 是发起者的机器事件面，`show` 与 `view` 是固定 revision 的审计面。
 它们共享 Observation、Claim、Reducer 和 receipt，不复制生命周期状态机。
 
+## Store root 与 clean
+
+bundled CLI 把项目 root 唯一映射为 `<project>/.niceeval/record`，并把这个绝对路径作为实际
+RecordStore root 交给 Library。`.niceeval` 只是 workspace state container；`sandboxes`、`teardowns`、
+`sessions` 和 locks 都是其它 owner 的 sibling，不是 RecordStore 内容。
+
+`niceeval clean` 只删除这个 Record-owned root，或调用方明确指定的 Record-derived target。它不扫描或
+认领 `.niceeval` 父目录，不触碰任何 sibling。已有用户结果不会被 create、open、clean 或 route switch
+自动迁移或删除；删除只作用于被明确选择的 Record-owned target。
+
+CLI 的 `--record` 类输入一律是实际 Store root。传入 `.niceeval` 不会由 CLI 或 Library 补成
+`.niceeval/record`；项目默认路径的映射只发生在 bundled CLI 的项目入口。
+
 ## watch
 
 ```bash
@@ -231,6 +244,22 @@ capture/parse 的失败只显示 `RecordMirrorSnapshotError.failure.code`。mirr
 `RecordMirrorError.failure.code`，并保留 source/target、component 或 phase。resource-limit 还保留
 `limit` / `observed`；首次 `expected: null` conflict 还保留 actual Layout。CLI 不得把这些结果压成
 “同步失败”、`*-failed` 或 unknown cause。
+
+## 镜像后的单一路由
+
+完整 mirror 是 route switch 的前置条件。source 与 target 都通过完整 committed-root history 和每个
+Graph 的 strong closure 验证后，Runner、读取命令和交付物才可以切到 target。部分复制、只复制 head 或
+只验证 target Layout 都不能切换 route。
+
+一次 route switch 必须在同一个固定 GraphRef 上审计以下可观察面：
+
+- Runner 的 `InvocationReceipt`、Reporter 与机器输出；
+- `src` 的公开类型与 exports；
+- Sample、Reports、`show` 与 `view`；
+- rename、copy、reuse 与 fingerprint。
+
+这些入口只保留一条读写 route。它们不双写、不在失败时回退到旧 Store，也不提供兼容适配器。
+旧 `publish` 面从 CLI、Library exports 与 route 中删除，不改名为 mirror 或其它命令。
 
 ## Invocation receipt 与退出状态
 

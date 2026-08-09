@@ -3,6 +3,9 @@
 Verdict 是依据一个 Attempt revision 的证据形成的互斥 Claim：`passed`、`failed`、`errored` 或 `skipped`。
 它不是 Attempt lifecycle state：Attempt 只会是 `active`、`completed` 或 `abandoned`。这一层拥有 Severity、`--strict`、`unavailable` 传播和四态优先级；它消费执行错误 Observation 与 Assertion Claim，不执行检查，也不调用 Judge。
 
+每个 terminal Verdict 都是一个固定的 Attempt-scoped `niceeval.verdict/1` Claim；其 ID、anchor、catalog
+membership 与内建 Projector 由 [Architecture](architecture.md#durable-verdict-claim) 定义。
+
 ## 从哪里开始
 
 | 目的 | 入口 |

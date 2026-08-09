@@ -185,7 +185,7 @@ interface RecordWalkerResourceLimit {
 descriptor，`depth` 计算从 Graph root 开始的最大 edge 深度，`bytes` 计算已读取 raw bytes 的累计值。
 实现或 Store 可以选择其中任意上限，但不能把上限改写成未命名的 transport quota。
 
-verifier、完整镜像、GC 和选择性导出共用同一个 walker：
+full verifier、完整镜像与 GC 共用同一个 walker：
 
 1. 验证 Graph root descriptor 与原始字节。
 2. 读取 subject node、payload descriptor 与 dependency pages。
@@ -195,6 +195,9 @@ verifier、完整镜像、GC 和选择性导出共用同一个 walker：
 预算耗尽返回 `resource-limit { limit: RecordWalkerResourceLimit, observed }`。
 缺对象返回 `missing-object`；digest 或 size 不符返回 `corrupt`。
 这些状态不能改写成“未采集”。
+
+完整 strong closure 只属于 verify、mirror 与 GC。
+选择性 proof/export 只读取它所声明的 evidence path、archive 与 Claim basis closure，不能以全图遍历替代或暗中追加它。
 
 ### 验证与信任边界
 
@@ -245,6 +248,7 @@ type RecordGraphViolationCode =
   | "radix-successor-invalid"
   | "digest-collision"
   | "claim-basis-cycle"
+  | "verdict-claim-invalid"
   | "known-payload-schema-invalid"
   | "known-payload-invariant-invalid";
 
@@ -274,26 +278,37 @@ permission、IO、backend unavailable 或 resource exhaustion 必须 reject
 `RecordGraphVerificationError`，不能伪装为 invalid。`valid` 不表达 producer、receipt 或
 attestation。
 
-打开只做 minimal bootstrap：Layout snapshot、committed-root membership path、GraphRoot、
-subject、RecordSubject，以及它直接引用的 catalog、locator 与 previous dependency。locator index 的
-bootstrap ref 属于 direct bootstrap。
+打开只做 minimal bootstrap，严格按以下顺序进行：
 
-它的 radix payload、后继 branch / leaf page、leaf 指向的 Attempt 与其它 entity、stream、Claim、
-Provenance 保持 lazy。损坏的 Layout、root、subject 或 direct bootstrap dependency 是 open failure。
-稍后才读到的错误 locator page、Attempt、iterator item 或 payload decode 归 lazy read path。
+1. 在第一个 `await` 前发起临时 Store retain；它只保护这次打开的 bootstrap。
+2. await 该 retain 后读取 Layout。`openRecord()` 从这份 Layout 固定 head；`openRecordGraph()` 先运行时校验 explicit `RecordGraphRef`，再从同一 Layout 确认 recordId。
+3. 取得 handle 自己的 backend retain 与固定 ref 的 read lease。read lease 建立前不能读取 Graph object。
+4. 只经这个 read lease 读取并核对 committed-root membership path、GraphRoot、subject、RecordSubject，以及它直接引用的 catalog、locator 与 previous dependency。
+5. 后续所有 membership 与 raw-object read 都经同一个 handle read lease。
+6. 最后释放临时 Store retain。
 
-minimal bootstrap 的 failure 以第一个不可继续的 component 分类：missing object、corrupt bytes/
-edge、unsupported digest、unsupported schema 或 unsupported capability。
+explicit `RecordGraphRef` 不是由 TypeScript 类型保证的可信输入。
+其 runtime shape、typed descriptor、digest 或 recordId 前置形状无效时，`openRecordGraph()` 以独立的 `open-record-graph` failure 拒绝。
+它不把这种输入归成 empty、not-committed 或 bootstrap failure。
+
+`openRecord()` 的 Layout head 在 committed-root path 中没有精确 membership 是 bootstrap corrupt。
+`openRecordGraph()` 的合法 explicit ref 没有精确 membership 才是 `record-graph-not-committed`。
+历史 explicit open 只验证该 ref 自己的 committed membership 与其 revision；它不按调用时 head 的 generation 推导、替换或拒绝历史 revision。
+
+radix payload、后继 branch / leaf page、leaf 指向的 Attempt 与其它 entity、stream、Claim、Provenance 保持 lazy。
+损坏的 Layout、root、subject 或 direct bootstrap dependency 是 open failure；稍后才读到的 locator page、Attempt、iterator item 或 payload decode 属于 lazy read path。
+
+minimal bootstrap 的 failure 以第一个不可继续的 component 分类：missing object、corrupt bytes/edge、unsupported digest、unsupported schema 或 unsupported capability。
 它们属于 `RecordOpenError`，不能改成 lazy read 或 generic graph-invalid。
 
-bootstrap 之后的相同五类问题只在实际 entity、stream、Claim、Provenance、iterator item 或
-payload decoder 被访问时成为 `RecordReadError`。iterator 在这个首次 failure 后永久完成，已交付的
-item 不失效。
+bootstrap 之后的相同五类问题只在实际 entity、stream、Claim、Provenance、iterator item 或 payload decoder 被访问时成为 `RecordReadError`。
+iterator 在这个首次 failure 后永久完成，已交付的 item 不失效。
 
 ## Record 单位与 revision
 
 一个 `RecordStore` 管理一个内容对象命名空间和一个可选的 bound Layout。
-它对应一份 `.niceeval` 长期事实根，可以跨 Invocation、Experiment 和 Run 追加。
+它对应一份实际 Store root 下的长期事实根，可以跨 Invocation、Experiment 和 Run 追加。
+bundled CLI 把这个 root 固定为 `<project>/.niceeval/record`；`.niceeval` 本身仍是多个 owner 共用的 state container。
 unbound Store 尚没有 Record；Report、SampleBundle 与 mirror target 都使用各自独立的 Store。
 
 ```ts
@@ -604,8 +619,8 @@ membership proof 重算 page path、key preimage 与 leaf graph。nonmembership 
 `RadixNonMembershipTerminalV1<CommittedRootPageRefV1>`，并在 empty root、prefix mismatch、
 missing child 或 mismatched leaf 停止。
 
-Layout bootstrap 先验证 marker、Layout JCS、typed committed-root page 与 head membership。随后，
-它从每个 leaf GraphRootRef 统一走 strong closure。
+Layout bootstrap 先验证 marker、Layout JCS、typed committed-root page 与 head membership。
+它不从每个 committed leaf 走 strong closure；历史 root 的完整 closure 只由 verify、mirror 或 GC 读取。
 
 GC 的 mark roots 是所有 committed leaf、尚未过期 staging、read retain 与显式 pin。普通 catalog
 的 current 指针和 subject.previous 都不能替代 committed radix 的 retention。
@@ -1722,6 +1737,7 @@ type RecordStoreState = "open" | "closing" | "closed";
 interface RecordStore extends AsyncDisposable {
   readonly [recordStoreBrand]: "niceeval.record-store/1";
   readonly state: RecordStoreState;
+  close(): Promise<void>;
 }
 ```
 
@@ -1970,9 +1986,9 @@ expired lease 不能保护 GC。barrier 取得 immutable snapshot 后才允许 s
 active 期间使用。barrier close 先结束阻塞、再释放 GC retain，callback throw 也必须走这条路径。
 
 本地 backend 先为每个公开 Store 保留 store retain。每个 handle、writer 和 source reader 从它取得
-独立 retain。`openRecord()` 先读 Layout、再用它固定的 GraphRef 打开 read lease；bootstrap 与后续
-lazy read 都只通过该 lease 的 `readObject()`。write transaction 将 put 与 staging pin 原子化；GC 只
-使用同一 barrier 内的 `BackendGcSnapshot`。
+独立 retain。`openRecord()` 按 minimal bootstrap 的 retain 顺序，在读 Layout 后固定 GraphRef，再建立
+handle retain/read lease；bootstrap 与后续 lazy read 都只通过该 lease 的 `readObject()`。
+write transaction 将 put 与 staging pin 原子化；GC 只使用同一 barrier 内的 `BackendGcSnapshot`。
 
 对 SourceSet，public SourceSet 是每个 `{ kind: "record-source-reader", ref }` retain 的 owner；
 `source()` 返回的 branded reader view 是 borrowed capability，不拥有 retain。reader operation 在

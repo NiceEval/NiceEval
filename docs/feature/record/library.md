@@ -511,9 +511,6 @@ interface RecordEvidenceRegistryInput {
   readonly evidenceRegistry?: RecordEvidenceRegistryV1;
 }
 
-interface RecordEvidenceProofConsumerInput
-  extends RecordEvidenceRegistryInput {}
-
 function createRecordEvidenceRegistryV1(
   definition: RecordEvidenceRegistryDefinitionV1,
 ): RecordEvidenceRegistryV1;
@@ -646,18 +643,26 @@ builtin representation 逐项检查 selector 的 runId 等于 Run payload 的 ru
 `expectedMembershipSlots` 恰有一个 membershipSlot/evalId 匹配项，且 `contributions` 没有该 membershipSlot。
 满足时返回 selected selector value；其它 transformation operation 返回 `unsupported`。
 
-writer、`openRecord()`、`openRecordGraph()` 与 proof consumer 省略 registry 时复用同一 builtin instance。
-本任务只提供 registry，尚未把它接入 reader/writer。
+`niceeval.expected-membership-slot-selector/1` 是 Record evidence representation capability，不是
+Projector。它只验证一个 Run payload 中的 expected slot 与当前 contribution absence；它不能读取 Store、
+建立 Projection memo、决定 Verdict，或替代 Sample coverage。
 
-writer、`openRecord()`、`openRecordGraph()` 与每个 proof consumer 都显式接受
-`RecordEvidenceRegistryInput`。省略时，它们使用同一个 builtin registry singleton。创建出的 writer、
-RecordHandle、SourceSet reader、Projector session 与 proof consumer 都捕获当时的 registry instance，
-不会随某个全局变量或后续注册改变。
+Registry 不绑定 Store、root、backend 或 GraphRef。相同 capability key 只说明查找 key 相同，不说明
+callback 实现、闭包或 registry instance 相同。
+
+writer、`openRecord()` 与 `openRecordGraph()` 显式接受 `RecordEvidenceRegistryInput`；省略时使用同一个
+builtin registry singleton。创建出的 writer、RecordHandle、SourceSet reader 与 Projector session 都捕获当时的
+exact registry instance，不会随全局变量或后续注册改变。
+
+纯结构的 Record evidence proof parse/verify 不接收 registry，也不运行 representation、filter、selector
+codec 或 policy callback。proof exporter 只从它的 `RecordSourceSet` 继承已捕获的 registry；它不另收
+另一个 proof consumer input，也不按 Store 查找 registry。
 
 `createRecordSourceSet()` 的输入 handle 必须持有同一个 registry instance。不同实例即使 definition
 逐字相等也以 `record-source-registry-mismatch` 拒绝。redaction policy handle 也绑定创建它的 registry，
-不能交给另一个实例执行。每个 capability 的 owner 负责保证调用纯同步且确定；它不得读取时钟、网络、
-随机数或可变外部状态。
+不能交给另一个实例执行。memo 与 session 不跨 registry instance；同 key 的两个实现不能共享 memo、reader
+session、proof export 或 Bundle open state。每个 capability 的 owner 负责保证调用纯同步且确定；它不得读取
+时钟、网络、随机数或可变外部状态。
 
 `RecordEvidenceCapabilityError` 是 capability 调用的独立 typed failure。它不能改写为 corrupt、
 unsupported、EvidenceValue limitation 或 `ProjectorExecutionError`。
@@ -681,6 +686,21 @@ interface RecordFailureMeta<Operation extends string> {
   readonly operation: Operation;
   readonly retryable: boolean;
   readonly cause: unknown | null;
+}
+
+type RecordCleanupStage =
+  | "release-temporary-store-retain"
+  | "close-read-lease"
+  | "release-handle-retain";
+
+interface RecordCleanupSuppressed {
+  readonly stage: RecordCleanupStage;
+  readonly cause: unknown | null;
+}
+
+interface RecordOpenCleanup {
+  /** Machine-readable cleanup failures that never replace the primary open failure. */
+  readonly cleanupSuppressed: readonly RecordCleanupSuppressed[];
 }
 
 type RecordStoreOperation = "create" | "open" | "close";
@@ -758,7 +778,12 @@ type RecordBootstrapFailureCode =
   | "record-open-bootstrap-unsupported-schema"
   | "record-open-bootstrap-unsupported-capability";
 
-type RecordOpenFailure =
+type RecordOpenFailure = RecordOpenCleanup & (
+  | (RecordFailureMeta<"open-record-graph"> & {
+      readonly code: "record-graph-ref-invalid";
+      readonly value: unknown;
+      readonly issue: "shape" | "record-id" | "graph-ref";
+    })
   | (RecordFailureMeta<RecordOpenOperation> & {
       readonly code: "record-empty";
     })
@@ -793,7 +818,8 @@ type RecordOpenFailure =
       readonly object?: DescriptorV1;
       readonly limit: RecordWalkerResourceLimit;
       readonly observed: number;
-    });
+    })
+);
 
 type RecordReadFailure =
   | (RecordFailureMeta<RecordReadOperation> & {
@@ -915,6 +941,13 @@ class RecordStoreError extends Error {
 class RecordOpenError extends Error {
   readonly failure: RecordOpenFailure;
 }
+type RecordHandleCloseFailure = RecordFailureMeta<"close-record-handle"> & {
+  readonly code: "record-handle-close-failed";
+  readonly cleanupSuppressed: readonly RecordCleanupSuppressed[];
+};
+class RecordHandleCloseError extends Error {
+  readonly failure: RecordHandleCloseFailure;
+}
 class RecordReadError extends Error {
   readonly failure: RecordReadFailure;
 }
@@ -1003,6 +1036,7 @@ archive 字节数的固定全局上限。
 | `openRecordStore()` | `RecordStoreError`：`record-store-root-invalid`、`record-store-url-scheme-unsupported`、`record-store-missing`、`record-store-invalid-format`、`record-store-corrupt`，或 operation 为 `open` 的 `record-store-permission-denied`、`record-store-unavailable`、`record-store-io-failure` |
 | `RecordStore` close / async dispose | `RecordStoreError`：operation 为 `close` 的 `record-store-permission-denied`、`record-store-unavailable`、`record-store-io-failure`；重复 close 复用第一次 settled result，不产生 closed 或 already-exists failure |
 | `openRecord()`、`openRecordGraph()` | `RecordOpenError` |
+| `RecordHandle.close()` / async dispose | `RecordHandleCloseError` |
 | lazy entity/stream/Claim/Provenance read and async iterator | `RecordReadError` |
 | `resolveAttempt()` 的 locator parse、RecordHandle brand/state 与已验证 index nonmembership | `RecordLookupError` |
 | `resolveAttempt()` 的 locator index page traversal 与 adopted Attempt read | `RecordReadError` |
@@ -1035,24 +1069,50 @@ Store kind 或 version 错误是 `record-store-invalid-format`。
 Store 声称精确 format，但物理 marker、metadata、journal 或 Layout 损坏时是
 `record-store-corrupt`。
 
-Store wrapper close 只释放它自己的 retain，并对 lifecycle 幂等。close 开始后不能创建新的
-public child capability；已取得独立 retain 的 handle、writer 与 SourceSet reader 可以完成。真实
-closed Store 只会由接收 Store capability 的其它入口按各自 owner failure 表达，factory 与重复 close
-都不产生 `record-store-closed`。
+Store wrapper close 先停止 public child capability admission，再释放它自己的 retain，并对 lifecycle 幂等。
+第一次调用创建的 settled Promise 与结果或 Error 都被缓存；后续 close/async dispose 返回同一个 Promise，
+不会再次释放 retain。
 
-root 在触碰 Store 前规范化。空值、非绝对路径、畸形 URL、带 query/fragment 的 root 与非法
-file host 是 `record-store-root-invalid`；未知 URL scheme 是
-`record-store-url-scheme-unsupported`。两者不会降格成 missing、permission 或 IO。
+close cleanup 失败后 public Store 仍永久 closed。已取得独立 retain 的 handle、writer 与 SourceSet reader 可以完成。
+真实 closed Store 只会由接收 Store capability 的其它入口按各自 owner failure 表达。
+factory 与重复 close 都不产生 `record-store-closed`。
+
+root 在触碰 Store 前规范化。空值、非绝对路径、畸形 URL、带 query/fragment 的 root 与非法 file host 都是
+`record-store-root-invalid`；未知 URL scheme 是 `record-store-url-scheme-unsupported`。
+两者不会降格成 missing、permission 或 IO。
+
+Library root 就是实际 Store root；它绝不自动拼接 `.niceeval` 或 `record`。
 bundled local factory 只接受绝对本地 path 或无 host 的 `file:` URL。
-远端 backend 必须先在自己的 integration 中产生 runtime-branded `RecordStore`，不能把任意 URL
-偷渡给 local factory。
+远端 backend 必须先在自己的 integration 中产生 runtime-branded `RecordStore`，不能把任意 URL 偷渡给 local factory。
+
+`createRecordStore(root)` 只认领不存在的精确 `root`。它可以在已有 `.niceeval` 父目录内创建 `record` 子根，
+却不领养、清空、格式化或删除父目录和 sibling。
+
+任何已存在的目标项都是 `record-store-already-exists`。`openRecordStore(root)` 的不存在目标是
+`record-store-missing`。
+普通目录、普通 file、缺 marker 或声明其它 format 是 `record-store-invalid-format`。
+声明精确 format 但 marker、metadata、journal 或 Layout 损坏才是 `record-store-corrupt`。
+create/open 都不自动迁移或删除旧用户结果。
 
 `openRecord()` 与 `openRecordGraph()` 负责 empty、explicit graph 与 minimal-bootstrap failure。
-`openRecordGraph()` 先比对 `ref.recordId` 与 bound Layout；不相等只会是
-`record-graph-record-id-mismatch`。minimal bootstrap 的每个失败先按第一个不可继续的 component
-定位。
-它再归为 missing-object、corrupt、unsupported-digest、unsupported-schema 或
-unsupported-capability，绝不合并成宽泛的 invalid。
+`openRecordGraph()` 先运行时校验 explicit ref；非法 shape、recordId 或 graph descriptor 只会是
+`record-graph-ref-invalid`。
+随后它比对 `ref.recordId` 与 bound Layout；不相等只会是 `record-graph-record-id-mismatch`。
+合法 explicit ref 的 authenticated nonmembership 才是 `record-graph-not-committed`。
+
+minimal bootstrap 的每个失败先按第一个不可继续的 component 定位。
+它再归为 missing-object、corrupt、unsupported-digest、unsupported-schema 或 unsupported-capability，绝不合并成宽泛的 invalid。
+
+`openRecord()` 的 head membership 缺失或损坏属于 `committed-root-membership` bootstrap corrupt，
+不是 `record-graph-not-committed`。历史 explicit ref 只按自身 committed membership 与 revision 打开，
+不参考调用时 head generation。
+
+打开在第一个 await 前启动 temporary Store retain。它读取 Layout 后固定 ref，取得 handle retain 和 read lease，
+才经该 lease 做全部 bootstrap membership/raw-object read，最后释放 temporary retain。
+
+bootstrap 主失败始终是 `RecordOpenError.failure`；temporary retain 的释放失败只放入
+`failure.cleanupSuppressed`，不取代主错误。
+打开成功后的 retain release 失败也必须关闭刚建立的 handle 资源，并按同一 primary/suppressed 顺序返回。
 
 lazy entity、stream、Claim、Provenance 与 decoder read 只会报告明确的失败 code。
 它们是 missing-object、corrupt、unsupported-digest、unsupported-schema、
@@ -1534,6 +1594,15 @@ unbound Store 以 `RecordOpenError` 的 `record-empty` reject。
 所有 child handle 固定同一 GraphRef。
 
 ```ts
+declare const recordStoreBrand: unique symbol;
+type RecordStoreState = "open" | "closing" | "closed";
+
+interface RecordStore extends AsyncDisposable {
+  readonly [recordStoreBrand]: "niceeval.record-store/1";
+  readonly state: RecordStoreState;
+  close(): Promise<void>;
+}
+
 function createRecordStore(
   root: string | URL,
 ): Promise<RecordStore>;
@@ -1565,6 +1634,8 @@ interface RecordHandle extends AsyncDisposable {
   readonly state: RecordHandleState;
   readonly ref: RecordGraphRef;
   readonly recordId: string;
+
+  close(): Promise<void>;
 
   runs(): AsyncIterable<RunHandle>;
   attempts(): AsyncIterable<AttemptHandle>;
@@ -1600,6 +1671,7 @@ interface RecordSourceSet extends AsyncDisposable {
   readonly [recordSourceSetBrand]: "niceeval.record-source-set/1";
   readonly state: RecordCapabilityState;
   readonly refs: readonly [RecordGraphRef, ...RecordGraphRef[]];
+  close(): Promise<void>;
   source(ref: RecordGraphRef): Promise<RecordSourceReader>;
 }
 
@@ -1615,7 +1687,8 @@ bytes 排序。
 每个 source fork 是 SourceSet 内部的一条固定 revision reader。SourceSet 是 retain owner：它为该
 reader 持有 owner 为 `{ kind: "record-source-reader", ref }` 的 backend retain。`source()` 返回该
 reader 的 borrowed、runtime-branded view。view 不能 dispose，也不取得自己的 backend retain；它的
-`state` 始终投影 SourceSet 的 state。SourceSet 只持这些 reader，不持 Projector registry 或 memo。
+`state` 始终投影 SourceSet 的 state。SourceSet 只持这些 reader，不持 Projector registry、memo 或
+Report session。
 
 reader 返回的 RunHandle 与 AttemptHandle 也是 borrowed capability。它们以 SourceSet 作为 owner，
 `state` 始终投影同一个 SourceSet；已经读取的 metadata 与领域 `lifecycle` 仍是普通 immutable value。
@@ -1629,10 +1702,11 @@ iterable 时不取得 retain；其
 `[Symbol.asyncIterator]()` 首次启动时在 gate 内取得 retain，并持有到 iterator complete、`return()`
 或 `throw()`。
 
-SourceSet close 在同一 gate 内把 state 线性化为 `closed`。之后不再接纳 operation retain；已经取得
+SourceSet 首次 close 在同一 gate 内把 state 线性化为 `closed`。之后不再接纳 operation retain；已经取得
 retain 的 source operation 不被取消，完成后才释放 retain。close 在所有这类 retain 释放后再释放每条
-内部 reader retain。reader 及其已返回 child handle 的 capability state 同时变为 `closed`；它不关闭
-调用方原来的 RecordHandle。
+内部 reader retain。第一次调用的 settled Promise 与结果或 Error 被缓存；cleanup 失败后 SourceSet 仍永久
+closed。reader 及其已返回 child handle 的 capability state 同时变为 `closed`；它不关闭调用方原来的
+RecordHandle。
 
 brand 合法但 close 已线性化后，`source()` 与新的 `resolveAttempt()` 都 reject
 `RecordSourceError { failure: { operation: "read-source", code: "record-source-closed" } }`。
@@ -1659,8 +1733,9 @@ export error，不能把它降格成 source 缺失或普通导出失败。
 
 直接打开的 RecordHandle 在自身生命周期里用共享 atomic registry/memo 支持 nested project：同一
 Handle、同一 `ProjectionIdentityV1` 只执行一次；同一 ID 的不同 Projector object 稳定失败。
-不同 `exportReport` 建立相互隔离的 cross-source session，`exportSample` 不创建 projection
-session。
+每次 `exportReport` 建立一个独立的 cross-source session。session 从输入 SourceSet reader 捕获 registry
+instance 与自己的 memo；SourceSet 不拥有 session 或 memo，SourceSet close 也不关闭已经建立的 Report
+session。`exportSample` 不创建 projection session。
 
 `state` 是 RecordHandle、RunHandle 与 AttemptHandle 唯一的 capability state。RunHandle 与
 AttemptHandle 的 owner 是创建它们的 RecordHandle 或 SourceSet。关闭 owner 会原子地使它派生的
@@ -1669,6 +1744,16 @@ child `state` 进入 `closed`；child 没有独立 dispose。
 它们的 `lifecycle` 是已读取 Run 或 Attempt payload 的领域状态，关闭 capability 时不会改变。只读
 metadata 可以保留为此前取得的普通值。后续 capability read 必须先检查 owner state，并经 owner 的
 admission gate 取得 operation retain。
+
+RecordHandle 的 close 也使用自己的 admission gate。首次 close 立即阻止新的 iterator、lookup、Projector
+和 lazy read admission，但不会取消已经取得 operation retain 的工作。它等待这些 operation 完成，再关闭
+read lease 并释放 handle retain。无论成功或失败，public state 都永久为 `closed`；后续 close/async dispose
+复用首次 settled Promise/error。
+
+handle 在 close 时拥有 pending backend read lease 与 retain 的明确所有权。read lease 的 local unlink
+失败不能阻止随后释放 retain；若两步都失败，`RecordHandleCloseError.failure` 保留第一个 cleanup failure，
+其它失败按顺序放入 `cleanupSuppressed`。public API 只暴露这份 typed failure，不暴露 backend implementation
+类型，也不从 `Error.message` 推断状态。
 
 ### Run、Contribution 与 Attempt handle
 
@@ -2098,7 +2183,8 @@ unexpected user code 只成为 `ProjectorExecutionError`，不能伪装成 unava
 | root dependency closure 的 runtime brand 与同 ID object registration | `ProjectorRegistrationError` |
 | normalizer returned invalid Result 或规范化结果无效 | `ProjectorInputError` |
 | normalizer throw，或作者函数 / result 的执行错误 | `ProjectorExecutionError` |
-| 已验证事实不足、损坏、权限受限或 resource limit | framework 形成 `EvidenceValue` unavailable / limited |
+| 已验证事实不足、普通 evidence limitation、权限受限或 resource limit | framework 形成 `EvidenceValue` unavailable / limited |
+| 已检测到 Graph structural violation | `RecordReadError`：`record-graph-invalid`，直接穿过 Projector framework |
 | 读取期间 backend unavailable 或 IO | `ProjectorReadError` |
 | 已进入 read 的 capability 被撤销、操作遭拒或 auth session 失效 | `RecordReadError` |
 
@@ -2157,6 +2243,7 @@ interface ProjectionReadContext {
     filter: VersionedSelector,
     selector?: VersionedSelector,
   ): Promise<Tracked<readonly Claim[]>>;
+  claimById(id: string): Promise<TrackedOptional<Claim>>;
   events(
     binding: StreamBindingSelector,
     filter: VersionedSelector,
@@ -2235,6 +2322,11 @@ body-dependent Claim filter 单独声明非空、同 schema 的 selector depende
 
 完整 Claim catalog 扫描中的匹配项和已排除项都进入依据。不能通过只归档命中 Claim 声称列表完整。
 
+`ctx.claimById(id)` 是 exact Claim catalog lookup primitive，不接收 filter、selector、Store 或 raw object。
+它自动 trace 完整 catalog point lookup：找到时纳入 exact membership 与 Claim object；找不到时纳入 authenticated
+nonmembership。Projector 通过 `ctx.require()` 把后者转换为 unavailable，不能把 absence 当作一个普通 Claim、
+空数组或自行构造的 basedOn。
+
 每次成功、缺失或失败读取都由框架把 EvidenceRef、selector、membership、absence 与 verification issue
 写入内部 trace。
 Projector 作者不能手写、删除或替换 basedOn。identity、Provenance、历史 Claim 与 nested
@@ -2305,7 +2397,11 @@ Sample 选择固定 GraphRef 中的 current RunContribution，并把 AttemptRef 
 
 `exportSample(sample, { sources, target })` 写独立 SampleBundle Store。
 `sources` 必须是显式传入的 `RecordSourceSet`，不能从 sample、target 或全局状态隐式取得。
-`openSampleBundle(source, ref)` 只能读取 bundle 已复制的成员、coverage 和证据，不能重新运行 Record 的 current 选择。
+`openSampleBundle(source, ref, input?)` 显式接受可选 registry，并捕获该 exact instance；省略时使用 builtin
+singleton。它只能读取 bundle 已复制的成员、coverage 和证据，不能重新运行 Record 的 current 选择。
+
+`exportSample` 与 Reports 的 `exportReport` 都不另收 registry input。它们只能从 `sources: RecordSourceSet`
+继承 exact registry instance，不能按 Store、key 或全局变量重取实现。
 
 Reports owner 的 `exportReport` 也必须在其输入中显式接收 `RecordSourceSet`。
 Record 不定义 Reports 的其它输入字段或输出形状。
@@ -2322,6 +2418,7 @@ function exportSample(
 function openSampleBundle(
   source: SampleBundleStore,
   ref: SampleBundleRef,
+  input?: RecordEvidenceRegistryInput,
 ): Promise<SampleBundle>;
 ```
 
@@ -2526,7 +2623,7 @@ import {
   openRecordStore,
 } from "niceeval/record";
 
-const root = join(process.cwd(), ".niceeval");
+const root = join(process.cwd(), ".niceeval", "record");
 await using store = await openRecordStore(root);
 await using headAtOpen = await openRecord(store);
 const attempt = await headAtOpen.resolveAttempt(

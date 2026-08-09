@@ -7,7 +7,7 @@ import { resolve } from "node:path";
 import { openRecord, openRecordStore } from "niceeval/record";
 import { createSampleBundleStore, materializeSample } from "niceeval/sample";
 
-const root = resolve(process.cwd(), ".niceeval");
+const root = resolve(process.cwd(), ".niceeval", "record");
 await using store = await openRecordStore(root);
 await using record = await openRecord(store);
 const sample = await materializeSample(record, {
@@ -21,8 +21,9 @@ await using bundleStore = await createSampleBundleStore(bundleRoot);
 
 `record` 是 [Record Library](../record/library.md#打开-record) 提供的固定 revision 读取 capability；生成值中的 `sources` 保存它的完整 `record.ref`。一次 `materializeSample()` 产生只含这一项的 `sources`；writer 推进 head 后，调用方必须重新打开 Record 并生成另一份 Sample。
 
-本地 Record Store 的 Library root 必须是绝对路径。项目惯用的 `.niceeval` 先相对调用进程的
-`process.cwd()` 做一次路径 resolution，再把绝对结果传给 `openRecordStore()`；Sample 不另设接受相对 root 的入口。
+本地 Record Store 的 Library root 必须是绝对路径。bundled CLI 把项目的 `.niceeval/record` 转换为相对
+`process.cwd()` 的绝对路径，再把这个实际 Store root 传给 `openRecordStore()`。
+Sample 不另设接受相对 root 的入口，也不把 `.niceeval` 当 Store root。
 
 ## 唯一心智
 
@@ -42,13 +43,16 @@ current Record-owned `RunContributionHandle`。Sample 逐个 expected slot 交�
 
 coverage 精确保存 denominator、included、excluded 与 unavailable。收窄会生成新的固定 Sample，并保留 parent sources；它不会把 predicate 留给后续读取或 renderer。
 
+Sample coverage 只证明 expected membership slot 与 Contribution 的事实。它不调用或模拟 Verdict Projector。
+真实 `builtins.verdict` 的 smoke 只验证 durable Verdict Claim 的 lookup、anchor 与投影，两者是独立职责。
+
 | 用户目标 | 入口 |
 |---|---|
 | 从一个固定 Record 生成可复核总体 | `materializeSample(record, selection)` |
 | 从该总体收窄实验、Eval 或成员 | `narrowSample(sample, selector)` |
 | 合并多份已定 Sample | `unionSamples(samples, conflictPolicy)` |
 | 交付独立、可验证的样本包 | `exportSample(sample, { sources, target })` |
-| 打开收到的样本包 | `openSampleBundle(source, ref)` |
+| 打开收到的样本包 | `openSampleBundle(source, ref, input?)` |
 | 呈现固定样本 | [Reports](../reports/README.md) |
 
 ## 多 source union 与交付
@@ -60,9 +64,11 @@ evalId；已有 member 再纳入完整 Record-owned Contribution 与 AttemptRef�
 runId、membershipSlot。不同 address 永不折叠；同一 address 的 slot/source、Contribution revision 或
 adopted node 不同默认 conflict。
 
-`exportSample()` 返回公开 `SampleBundleRef`，并写入独立、可保存多个 immutable Bundle 的 `SampleBundleStore`。导出时显式传入由固定 Record handle 构造的 `RecordSourceSet`；纯 `MaterializedSample` 不隐藏 Store 或 reader。
+`exportSample()` 返回公开 `SampleBundleRef`，并写入独立、可保存多个 immutable Bundle 的 `SampleBundleStore`。导出时显式传入由固定 Record handle 构造的 `RecordSourceSet`；纯 `MaterializedSample` 不隐藏 Store、reader 或 registry。导出只继承 SourceSet 捕获的 registry instance，不另按 Store 或全局状态查找。
 
 `SampleBundleStore` 只能由 create/open 取得，是 runtime-branded `AsyncDisposable` capability。close 幂等且只释放自己的 retain；已经开始的 child export/read retain 可以独立完成。真实 closed capability 与伪造或其它 Store kind 的 invalid handle 使用互斥 typed failure。
+
+`openSampleBundle(source, ref, { evidenceRegistry }?)` 可以显式接收 registry，并把传入的 exact instance 捕获到打开的 Bundle capability；省略时使用 builtin instance。纯结构 proof parse/verify 不运行 registry callback。
 
 `MaterializedSample` 也不是结构相同就可信的普通 object。`exportSample()` 与 Reports 在读取字段前都使用
 Sample-owned `validateMaterializedSample()`。

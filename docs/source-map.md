@@ -129,7 +129,7 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 | 题型发现投影与混型保真(`evalDescriptorOf` 把定义期 `evaluationKind` 投影进 `EvalDescriptor`；同一 Experiment 的两类 Eval 都进入调度与落盘) | `src/runner/eval-selection.ts`、`src/runner/run.ts` |
 | `t.require` 中止语义(通过制的前置词;前置断言按 gate 登记,未过即抛 `EvalRequirementFailed`,`test()` 后续代码不再执行,已登记的 Assertion Claim 决定 Verdict Claim;`runAttemptEffect` 捕获该异常时不造执行错误 Observation。计分制的 `.gate()` 中止复用同一条异常与捕获分支) | `src/context/context.ts`(`require`)、`src/context/control-flow.ts`(`EvalRequirementFailed`)、`src/runner/attempt.ts`(捕获分支) |
 | LLM-as-judge(OpenAI 兼容 /chat/completions；单条 `{model}` → Experiment → Eval → config 逐字段定值；model/key 缺失记 `unavailable`) | `src/assertions/judge.ts`、`src/runner/config.ts` |
-| Verdict Claim 规则(`passed` / `failed` / `errored` / `skipped`;非 optional 的 `unavailable` Assertion Claim → `errored`;计分制 Attempt 的 `failed` Claim 只由前置中止产生,得分点丢分不参与判定)。四个 token 从不进入 Attempt 的 `active` / `completed` / `abandoned` lifecycle | `src/shared/verdict.ts` |
+| Verdict 四态折叠、durable `niceeval.verdict/1` Attempt Claim（固定 ID preimage、anchor、active nonmembership、terminal membership 与 `verdict-claim-invalid`）、内建 `niceeval/verdict/1` Projector 的 exact Claim lookup 与 graph-invalid 边界 | `src/shared/verdict.ts`(折叠)、`src/record/protocol/verdict.ts`(Claim shape/ID/anchor/key)、`src/record/graph/{catalog,verification,read}.ts`(catalog 与 full verification)、`src/record/{attempt-evidence,open}.ts`(Projector context/读取面)、`src/runner/attempt.ts`(形成 terminal Claim) |
 | 证据完整性(Agent 必填六通道 `EvidenceCoverage`、`completeEvidenceCoverage`、`TurnEvidenceCoverage` 降档、Adapter Provenance 与 Turn Observation 的 `evidenceCoverage`、worst 聚合、三值折叠；不写入 AttemptPayloadV1) | `src/assertions/coverage.ts`(算法)+ `src/agents/types.ts`(声明类型)+ `src/assertions/scoped.ts`(`coverageGap` 折叠接线) |
 | diff 数据派生(`DiffArtifact = DiffWindow[]` → 文件汇总 / 匹配谓词) | `src/assertions/diff.ts` |
 
@@ -162,10 +162,11 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 | 终端框线渲染件(区域框契约的唯一物理实现:宽度上限 100、边框嵌字与「先保标题后保 meta」截断次序、嵌套 Section 降横隔、非 TTY/窄终端降级为无框文本;同步纯函数,不做 IO)+ 三处消费方 | `src/report/model/panel.ts`(`renderPanel` + `encodeDividerLine`/`decodeDividerLine`/`rowsFromBodyText` 的嵌套桥接);消费方:`src/report/definition/primitives.tsx`(`Section` text 面,`panelMode` 经 `TextContext`/`HostTextRenderOptions` 从 `niceeval show` 的真实 TTY/`NO_COLOR` 探测注入)、`src/runner/feedback/human.ts`(PLAN/live 面板/`FAILED`·`PASSED`/`FAILURES`/`KEPT SANDBOXES`/`NEXT`,`panelCapabilityOf(io)` 按 `io.stderr.isTTY` + `io.env.NO_COLOR` 判定)、`src/sandbox/cli-commands.ts`(`list`/`history`,启动时探测一次) |
 | 机器 / 平台 reporter(Json / JUnit(同目录 temp→rename 原子写)/ Braintrust) | `src/runner/reporters/{json,braintrust,index}.ts` |
 | eval 级折叠 / 计票口径(CLI 退出码与 view 共用) | `src/shared/verdict.ts` |
-| Record 提交与身份(每次提交写新的 committed Graph root,并与 mutable 元数据 head + append-only committedRoots 原子更新;runner 在外部副作用前 CAS reservation;完整性由 stream / Attempt / Run / receipt 表达;carry / accept / rename 经 Claim 与 RunContribution,Attempt 永属 origin Run;Attempt locator 是完整 128-bit `attemptId` 的 26 字符规范大写 Crockford 编码,CLI 是 `@` 加 26 字符) | `src/record/`(容器、实体 catalog、Attempt locator index 与 payload 类型)、`src/runner/run.ts`(Run 身份分配、CAS reservation 与提交) |
+| Record 提交与身份(每次提交写新的 committed Graph root,并与 mutable 元数据 head + append-only committedRoots 原子更新;runner 在外部副作用前 CAS reservation;完整性由 stream / Attempt / Run / receipt 表达;carry / accept / rename 经 Claim 与 RunContribution,Attempt 永属 origin Run;Attempt locator 是完整 128-bit `attemptId` 的 26 字符规范大写 Crockford 编码,CLI 是 `@` 加 26 字符) | `src/record/{writer,protocol/entities,graph/{catalog,committed-roots,verification}}.ts`、`src/runner/{run,attempt}.ts` |
 | 实验改名与结果重绑(`exp rename`:同 fingerprint 的跨 experimentId 审计迁移、整批预检与 rename Claim 写入) | `src/runner/rename-experiment.ts`(资格门、计划与写入)、`src/cli.ts`(命令拆解与人读/JSON 反馈) |
 | `evaluationKind`(直接取 factory 固定的 `evalDef.evaluationKind`；缺失定义拒绝进入运行)与仅 points 题形成的 score Claim | `src/runner/attempt.ts`(`runAttemptEffect` 的 Claim 组装处) |
-| CLI(exp / show / list / view / clean / init,--help,parseArgs 表驱动,.env 加载,输出形态判定;调度项没有进程变量层,见[Architecture · 配置与凭据边界](architecture.md)) | `src/cli.ts` |
+| bundled CLI root 映射(`<project>/.niceeval/record`)、owner-aware `clean`、`--record` 实际 Store root 与 mirror 后单一路由 | `src/cli.ts`、`src/record/store/{root,paths,record-store}.ts`、`src/record/{index,open,copy}.ts` |
+| route switch 的 receipt、Reporter、机器输出、公开 types/exports、Sample/Reports/show/view、rename/copy/reuse/fingerprint 审计；旧 `publish` 删除而非改名 | `src/runner/{run,attempt,report,rename-experiment,fingerprint}.ts`、`src/runner/reporters/{json,artifacts}.ts`、`src/{types,index,cli}.ts`、`src/record/{index,publish,copy}.ts`、`src/sample/index.ts`、`src/report/index.ts`、`src/show/`、`src/view/` |
 | `niceeval show` 终端宿主(显式 GraphRef / Sample selection 决定成员，绝不以最近 Run、目录或时间重选事实；`--history` 逐 experimentId+evalId 分节的 Attempt 时间轴、--report/--page 经 report/runtime/host.ts 装载 + 组合语义矩阵、证据切面 --source/--execution/--timing/--diff;Run 级与 Attempt 级 timing Projection、未知 activity key 通用 label 投影、sandboxBuild 专用卡读 provenance) | `src/show/{index,compose,render,command}.ts` + `src/report/runtime/host.ts`(两宿主共用) |
 | 测试集与判据文件加载器(loadJson / loadYaml / loadText) | `src/loaders/index.ts` |
 
@@ -176,7 +177,7 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 Record 保存不可变 Observation 与带依据的 Claim，读取经 Projector 进 Report；Sample 的样本选择归中性的 Sample 层：
 
 ```text
-.niceeval  RecordStore(跨 Invocation / Experiment / Run 长期追加)
+<project>/.niceeval/record  RecordStore(跨 Invocation / Experiment / Run 长期追加)
   │
   │  openRecordStore(root)        绑定 root 并打开 Store
   │  openRecord(store)            打开 Store 的声明 head（不按它选择事实）
@@ -209,13 +210,14 @@ Record 保存不可变 Observation 与带依据的 Claim，读取经 Projector �
 
 | 行为 | 文件 |
 |---|---|
-| `await using store = await openRecordStore(root)` 绑定 root 并打开 Store；`await using record = await openRecord(store)` 只打开 Store 的声明 head；`openRecordGraph(store, ref)` 重开明确的不可变 revision。`createRecordStore` 只创建 unbound backend，不能替代打开 root。Record handle 只读 Observation / Claim，选择与聚合不在这一层，也不按目录、时间或最近 Run 选事实 | `src/record/` |
+| Record Store root、精确子根 create/open、temporary retain → Layout → fixed ref → handle retain/read lease 的 minimal bootstrap，以及 Store/Handle/SourceSet 的 close/admission ownership | `src/record/store/{root,paths,record-store,retain,read-lease,graph-access,gate}.ts`、`src/record/open.ts`、`src/record/index.ts` |
+| `await using store = await openRecordStore(root)` 绑定实际 root 并打开 Store；`await using record = await openRecord(store)` 只打开 Store 的声明 head；`openRecordGraph(store, ref)` 重开明确的不可变 revision。Record handle 只读 Observation / Claim，选择与聚合不在这一层，也不按目录、时间或最近 Run 选事实 | `src/record/{index,open,types}.ts` |
 | Record 容器(frozen typed-object Graph:RecordSubject、Merkle entity catalog、Attempt locator index 与 Run / Attempt / Stream / Claim / RunContribution payload；AttemptPayloadV1 只含 identity、origin、provenance ref、lifecycle、stream bindings；每次提交产生新的 committed Graph root,与 head + append-only committedRoots 原子更新;完整性由 stream / Attempt / Run / receipt 表达) | `src/record/` |
-| 先 `captureRecordMirrorSnapshot(source)`，再以 `mirrorRecord(source, target, { snapshot })` 复制完整 Record committed root 历史；没有省略 snapshot 的重载 | `src/record/` |
-| `materializeSample(recordHandle, selection)` / `narrowSample(sample, selector)` / `unionSamples(samples, conflictPolicy)`；Sample 必须由已打开的 Record handle materialize，不能传未经 handle 包装的 `record.ref`。结构化 denominator、included、excluded、unavailable、provenance 与 `SampleRef` | `src/sample/index.ts` |
-| `createSampleBundleStore` / `openSampleBundleStore` / `exportSample(sample, { sources: RecordSourceSet, target })` / `openSampleBundle`；SampleBundle 是独立 Store capability，不能由 `openRecord(store)` 或 `--record` 打开 | `src/sample/index.ts` |
-| `loadReportDefinition(entryModule)` / `createReportArtifactStore` / `openReportArtifactStore` / `exportReport(frozenDefinition, { sample, sources: RecordSourceSet, parameters, target })` / `openReportArtifact` | `src/report/index.ts` |
-| 分页 `RecordEvidenceProofIndexV1` / `evidenceProofs` 为 event、object、claim 与 absence 提供统一 proof index；已删除 `EventProofV1` / `eventProofs` | `src/record/` |
+| 先 `captureRecordMirrorSnapshot(source)`，再以 `mirrorRecord(source, target, { snapshot })` 复制完整 Record committed root history 与每个 Graph strong closure；没有省略 snapshot 的重载 | `src/record/{copy,open}.ts`、`src/record/graph/{traversal,verification,committed-root-verify}.ts`、`src/record/store/{backend,record-store}.ts` |
+| `materializeSample(recordHandle, selection)` / `narrowSample(sample, selector)` / `unionSamples(samples, conflictPolicy)`；Sample coverage 只读取 expected membership capability，与真实 Verdict Projector smoke 分开 | `src/sample/index.ts`、`src/record/evidence/builtin.ts` |
+| `createSampleBundleStore` / `openSampleBundleStore` / `exportSample(sample, { sources: RecordSourceSet, target })` / `openSampleBundle(source, ref, input?)`；Bundle export 只继承 SourceSet registry，Bundle open 捕获显式 registry | `src/sample/index.ts`、`src/record/{open,attempt-evidence}.ts`、`src/record/evidence/{registry,builtin}.ts` |
+| `loadReportDefinition(entryModule)` / `createReportArtifactStore` / `openReportArtifactStore` / `exportReport(frozenDefinition, { sample, sources: RecordSourceSet, parameters, target })` / `openReportArtifact`；每次 export 有独立 session，SourceSet 不拥有 memo/session | `src/report/{index,runtime/host,runtime/page-render}.ts`、`src/record/{open,attempt-evidence}.ts` |
+| 分页 `RecordEvidenceProofIndexV1` / `evidenceProofs` 为 event、object、Claim 与 absence 提供统一 proof index；纯结构 parse/verify 不依赖 registry，export 只从 SourceSet 继承 instance | `src/record/graph/{proof-index,evidence-path,verification}.ts`、`src/record/attempt-evidence.ts`、`src/record/evidence/{registry,builtin}.ts` |
 | 落盘截断(单值预算,events / spans 写入前截断并标记) | `src/record/truncate.ts` |
 | 分层契约(RecordSubject / AttemptHandle(含 origin Run)/ Observation / Claim / `RunContribution` / receipt 类型；`TimingActivity` / `TimingOrigin` 是 Projection，`SandboxBuildRecord` 是 Run-scoped Observation，而非 Attempt 或 Run payload) | `src/record/types.ts` |
 | `rollup` / `aggregate` / `metricValue` / `evidenceRow` 与分组函数(`agent` / `model` / `experiment` / `evalId`)；官方 Calculation `passRate` / `costUSD` / `totalScore` 等 | `src/report/model/calculation.ts`(公开导出在 `src/report/index.ts`;测试 `calculation.test.ts`) |

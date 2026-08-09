@@ -100,6 +100,77 @@ Failed 压过 skipped，避免 `t.skip()` 掩盖此前登记的硬失败。
 得分点丢分本身不产生 `failed` Verdict Claim；显式 gate 不通过仍产生该 Claim。
 `.stopOnFailure()` 只决定是否继续执行，不新增第五种 Verdict Claim。
 
+## Durable Verdict Claim
+
+Verdict 是 Attempt-scoped durable Claim。它的完整容器、catalog 和 strong edge 规则由
+[Record Architecture](../record/architecture.md#provenanceclaim-evidencetarget-与归档) 定义；本节冻结
+Verdict 专属字段，不能由 Runner、Report 或 Projector 改写。
+
+```ts
+type VerdictValueV1 = {
+  readonly verdict: "passed" | "failed" | "errored" | "skipped";
+  readonly strict: boolean;
+};
+
+interface VerdictClaimIdPreimageV1 {
+  readonly schema: "niceeval.verdict-claim-id/1";
+  readonly attempt: NodeRefV1;
+}
+
+interface DurableVerdictClaimV1 {
+  readonly scope: { readonly kind: "attempt"; readonly attemptId: AttemptId };
+  readonly claim: {
+    readonly id: DigestV1;
+    readonly kind: "verdict";
+    readonly schema: "niceeval.verdict/1";
+    readonly value: VerdictValueV1;
+    readonly evaluator: {
+      readonly namespace: "niceeval";
+      readonly name: "verdict";
+      readonly version: "1";
+    };
+    readonly basedOn: readonly EvidenceTarget[];
+    readonly producedAt: string;
+  };
+}
+```
+
+`value` 恰为 `{ verdict, strict }`，没有其它字段。`evaluator` 恰为所示三个字段，没有 `model`
+或其它字段。它的 exact identifier 是 `niceeval/verdict/1`，不是一个可配置的 Judge 或模型调用。
+
+claim id 的 preimage 恰为 `{ schema: "niceeval.verdict-claim-id/1", attempt: NodeRefV1 }`。
+对这个完整对象做 RFC 8785 JCS、无 BOM UTF-8 编码并计算 SHA-256。
+结果编码唯一为 `sha256:` 加 64 个小写十六进制字符。不能拼 attemptId、locator、recordId、当前 head 或文本字段，
+也不能协商摘要算法。
+
+`basedOn` 有且只有一个 Verdict anchor：它是 `kind: "object"`、省略 `selector`、并且 `node` 与此
+Attempt revision 的 object node 完全相同的 target。该 target 的 `niceeval.claim-basis-object` strong edge
+必须存在并逐项指向同一个 node。其它 basis 可以说明执行错误或断言，但不能替代、复制或模糊这个 anchor。
+
+full verifier 对 strong closure 中每个可投影的 Attempt revision 执行此检查。
+范围包括 catalog 当前项、RunContribution adopted 项和 history 里的 revision。
+
+它以该 revision 的 NodeRef 导出 Claim catalog key。Attempt 仍为 `active` 时，key 必须有 authenticated nonmembership。
+Attempt 为 terminal 时，key 必须有 exact membership，且 membership 指向这份 exact Claim。
+catalog occupancy、scope/attempt identity、id、evaluator、value、anchor 或 strong edge 任一不符都是 `verdict-claim-invalid`。
+
+## 内建 Verdict Projector
+
+`builtins.verdict` 是固定的 Attempt Projector。它的 id 为 `niceeval/verdict/1`，即
+`{ namespace: "niceeval", name: "verdict", version: "1" }`。parameter schema 固定为
+`niceeval.verdict-projector-parameters/1`，defaults 固定为 `{}`，normalization 只接受空对象。
+它的唯一输出形状是 `{ verdict, strict }`，没有附加字段。
+
+Projector 从 framework-owned adopted Attempt revision 导出 Verdict Claim id，再只调用
+`ProjectionReadContext.claimById()` 这个 exact Claim catalog lookup primitive。primitive 自动 trace
+membership 或 authenticated nonmembership，以及读到的 Claim object；Projector 不直接接触 Store、backend、
+raw object、catalog page 或 registry callback。
+
+strong closure 或 Verdict Claim node 损坏形成 `RecordReadError` 的 `record-graph-invalid`，它穿过
+Projector framework，不改写为 unavailable 或 `ProjectorExecutionError`。若 Claim value 与 Verdict anchor
+可读，但其余 basis 无法完整复核，Projector 返回 available value 和 `verification: "unverified"`；只有
+value 或 anchor 本身不可读时才没有 Verdict value。
+
 ## 证据不可用（unavailable）不折叠成通过
 
 一条断言评不了和它通过、失败都是两回事。

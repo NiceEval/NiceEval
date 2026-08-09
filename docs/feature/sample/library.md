@@ -26,6 +26,7 @@ import type {
   NonEmptyArray,
   RecordEvidenceProofError,
   RecordEvidenceProofIndexRefV1,
+  RecordEvidenceRegistryInput,
   RecordGraphRef,
   RecordHandle,
   RecordReadError,
@@ -705,6 +706,7 @@ function exportSample(
 function openSampleBundle(
   source: SampleBundleStore,
   ref: SampleBundleRef,
+  input?: RecordEvidenceRegistryInput,
 ): Promise<SampleBundle>;
 ```
 
@@ -783,6 +785,10 @@ close 只可能给出 operation 为 close 的 backend failure。
 `exportSample()` 另外消费 Record-owned `RecordSourceSet`。SourceSet 可以含额外 reader，但导出只读取
 `sample.sources` 中逐个完整匹配的 `RecordGraphRef`。
 
+`exportSample()` 不接收 registry input；它只继承 SourceSet 已捕获的 exact registry instance。Reports 的
+`exportReport()` 遵守同一规则。相同 capability key 不能让两个 registry instance 共享 proof、memo 或
+session。
+
 缺少任一 source、reader 已关闭或 SourceSet 自身无效直接传播 `RecordSourceError`。已取得 reader 后的
 实际 member/proof prerequisite read 是上列的 `RecordReadError`。
 
@@ -797,6 +803,10 @@ SourceSet 的 runtime brand、lifecycle 与 source membership 只由 Record owne
 Sample 不为这三种情形另造 failure code。
 
 `exportSample()` 与 `openSampleBundle()` 只接受 create/open 成功返回且尚未 close 的 target/source Store capability。入口先检查 runtime brand，再检查 lifecycle，因此伪造 handle 与真实 closed handle 的 failure 不会因对象字段巧合而重叠。
+
+`openSampleBundle()` 的第三个参数是显式 `RecordEvidenceRegistryInput`。它在入口时捕获 exact registry
+instance；省略时捕获 builtin singleton。Bundle 的后续 reader/session 不能按 Store、capability key 或全局
+变量替换该 instance。纯结构的 bundle/proof parse 与 verify 不调用 registry callback。
 
 一个 Store 可保存多个 immutable Bundle。`exportSample()` 可以写入已打开的非空 `input.target`：相同 `SampleBundleRef` 对应完全相同 canonical bytes 时幂等成功；不同 bytes 返回 `sample-bundle-corrupt`，绝不覆写。
 `SampleBundleRef` 只由成功 export 返回。`openSampleBundle()` 只读取 target Store 内已保存的 bundle，不重新执行 Record selection。
