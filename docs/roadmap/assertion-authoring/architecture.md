@@ -25,9 +25,15 @@ core 不按工具名、JSON key 或显示文本猜 command；Assertion evaluator
 
 Value matcher 是 `value → evaluation` 的纯函数；它不知道 score eval、points、gate、optional 或调用 scope。`t.check()` 先读取可能的 `EvidenceSource<T>`，再把唯一 candidate 交给 matcher，最后由 Assertion handle 决定登记策略。
 
-布尔与连续评分使用不同品牌类型。布尔 matcher 默认登记为 gate，可以进入 `and()` / `or()`；连续评分 matcher 默认登记为无隐含阈值的 soft，只能由调用点显式 `.atLeast(x)` / `.gate(x)` 建立通过线。
+布尔与连续评分使用不同品牌类型。只有布尔 matcher 可以进入 `and()` / `or()`。
+
+登记默认值按 Eval 类型决定：`defineEval` 的 BooleanMatch 默认 gate，ScoreMatch 默认无阈值 soft。
+`defineScoreEval` 的两类 matcher 都默认 soft observation；BooleanMatch mismatch 仍记 failed，但只有显式 `.gate()` 才影响 verdict。
 
 组合 matcher 全量、顺序求值子项以保留诊断。确定逻辑结果不会吞掉 evaluator exception；matcher 抛出、返回越界 score 或非法 result envelope 都是 defect，必须让 Attempt errored。
+
+具名 `satisfies()`、`defineValueMatch()` 与 `defineScoreMatch()` 是 value-only 扩展边界。
+自定义 evaluator 只能返回 boolean 或 `[0,1]` score，不能自行声明 unavailable；标准 EvidenceSource、coverage-aware matcher、Judge 与 provider 才拥有证据缺席分类。
 
 ## Command projection
 
@@ -208,6 +214,55 @@ Assertion evaluator 不复制未脱敏 argv，也不从 tool input 重建一份�
 
 候选 matcher 的内部结果使用 `matched | mismatched | unavailable`，不复用 Assertion 的 `passed | failed | unavailable`：一笔 candidate mismatch 不等于集合 Assertion failed。组合诊断按组合树与子项索引保留，再经既有脱敏、截断与预算规则确定性映射到 `AssertionResult.expected`、`received` 与 `evidence`；任何 matcher defect 都不能被另一个决定性分支吞掉。
 
+### show 诊断形状
+
+以下文本是本 Roadmap 要求 `niceeval show @locator` 产生的具体投影，不是伪造一套调试对象。
+实现可以调整缩进与截断宽度，但不能丢掉 matcher tree、决定分支、coverage reason 或 occurrence 定位。
+
+`and()` 失败时，`.label()` 只替换标题，matcher 仍留在 assertion detail：
+
+```text
+✗ gate · runtime tag
+    assertion: and(includes("runtime:python"), excludes("runtime:node"))
+    expected: all 2 matchers matched
+    received: "image: runtime:node"
+    evidence:
+      [0] mismatched · expected contains "runtime:python"
+      [1] mismatched · expected excludes "runtime:node"
+```
+
+logical command opaque 时，集合 Assertion 不能把 unavailable 降成“没有调用”：
+
+```text
+◌ unavailable · turn1 · calledTool(commandMatch("niceeval", argsStart=["show"]))
+    expected: logical executable "niceeval", argv starts ["show"]
+    reason: logical-command-opaque: compound-shell
+    evidence: occurrence turn1/op3 · original=opaque · logical-command/v1
+```
+
+工具输入 partial 且没有可见命中时，负存在性也不能通过：
+
+```text
+◌ unavailable · turn1 · notCalledTool(toolMatch(input=referencesAnyPath(3 paths)))
+    expected: no observed occurrence definitely references a forbidden path
+    reason: tool-input-coverage-partial
+    evidence: occurrence turn1/op4 · opaquePointers=["/command"]
+```
+
+负存在性包住 `or()` 时，失败输出必须定位命中的 occurrence 与决定分支：
+
+```text
+✗ gate · turn1 · notCalledTool(or(toolMatch("read_file"), toolMatch("file_read")))
+    expected: no occurrence matched either branch
+    received: occurrence turn1/op2 · name="read_file"
+    evidence:
+      [0] matched · tool name exactly "read_file"
+      [1] mismatched · tool name was not "file_read"
+```
+
+这些 preview 全部经过既有 secret redaction、控制字节移除与大小预算。
+完整 matcher spec 与原始未脱敏输入不会因诊断需要被旁路保存。
+
 ## 工具输入负断言
 
 工具输入负约束复用 `notCalledTool(toolMatch({ input }))`，不增加路径专用 scoped method。它只检查标准 tool occurrence 的 input evidence，不检查 stdout、assistant reply、子进程变量集合、文件描述符或 OS syscall。
@@ -287,6 +342,7 @@ CLI 无法呈现这些事实时，应暴露 NiceEval 呈现缺口；Eval 不能�
 - `and()` / `or()` 少于两个布尔 matcher；
 - `toolOrder()` 少于两项或传入非 ToolMatch；
 - exact count 不是正 safe integer；
+- `.label()` 接收空 string；
 - `.points(0)` 或非有限 points。
 
 以下情况是 failed：
@@ -303,10 +359,12 @@ CLI 无法呈现这些事实时，应暴露 NiceEval 呈现缺口；Eval 不能�
 - diff 内容是 binary 或 oversized，但 Assertion 需要内容。
 
 只有框架、Adapter、provider 或 evaluator 违反自身协议时，Attempt 才 errored。
+自定义 matcher throw / reject、返回非 boolean、非有限 score 或 `[0,1]` 外 score 都属于 evaluator defect。
 
 ## 防止 API 膨胀
 
-普通 API 不共享万能 `Rule` 联合，也不提供递归 JSON AST 或 `not()`。`and()` / `or()` 只组合纯布尔 matcher，不拥有 observation、scope 或登记策略。
+普通 API 不共享万能 `Rule` 联合，也不提供递归 JSON AST。`and()` / `or()` 只组合纯布尔 matcher，不拥有 observation、scope 或登记策略。
+`not()` 只反转 value-domain BooleanMatch；它不进入 tool / event domain，也不替代集合负存在性。
 一个新方法必须满足四个条件：有标准 observation owner、至少两个真实下游、可定义 coverage、无法由现有领域方法清楚表达。
 
 这次只建立纯 `Match` 协议、让 presence/order 接受同源 `ToolMatch` / `EventMatch`，并补齐既有 `t.sandbox`。普通路径只保留独立工厂，不允许直接传 selector 对象、string shorthand、`match.*` namespace 或 fluent 别名。

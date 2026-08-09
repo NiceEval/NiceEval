@@ -6,19 +6,21 @@
 
 ```ts
 type MatchDomain = "value" | "tool" | "event";
-declare const matchBrand: unique symbol;
+declare const matchInputBrand: unique symbol;
+declare const matchRefinementBrand: unique symbol;
 
-interface Match<in T, out R, D extends MatchDomain> {
+interface Match<in T, D extends MatchDomain> {
   readonly domain: D;
   readonly name: string;
-  readonly [matchBrand]: (candidate: T) => R;
+  readonly [matchInputBrand]: (candidate: T) => void;
 }
 
-interface BooleanMatch<in T, out R extends T, D extends MatchDomain = "value"> extends Match<T, R, D> {
+interface BooleanMatch<in T, out R extends T, D extends MatchDomain = "value"> extends Match<T, D> {
   readonly kind: "boolean";
+  readonly [matchRefinementBrand]: () => R;
 }
 
-interface ScoreMatch<in T> extends Match<T, T, "value"> {
+interface ScoreMatch<in T> extends Match<T, "value"> {
   readonly kind: "score";
 }
 
@@ -27,19 +29,90 @@ type ToolMatch<R extends LogicalToolOccurrence = LogicalToolOccurrence> = Boolea
 type EventMatch<R extends MatchableEvent = MatchableEvent> = BooleanMatch<MatchableEvent, R, "event">;
 ```
 
-`matchBrand` 由 declaration 私有持有，不导出，也不公开任意 `evaluate()` 入口。普通作者只能使用具名工厂，不能手写 selector object 或匿名 evaluator。matcher 成功后的 `R` 必须是原 candidate 的收窄类型，不是转换后的新值；`matches(schema)` 只验证 Standard Schema，schema transform 不偷偷改变 Match 输出。
+两个 brand 都由 declaration 私有持有，不导出。输入 brand 与 refinement brand 分开，使 `ScoreMatch<T>` 的 `T` 只处于逆变位置；它不会伪造一个没有意义的输出 refinement。
+
+普通作者使用具名工厂，不能手写 selector object。matcher 成功后的 `R` 必须是原 candidate 的收窄类型，不是转换后的新值。
+`matches(schema)` 只验证 Standard Schema，并按 `InferInput` 收窄；schema transform 的 `InferOutput` 不会替换原 candidate。
 
 内部候选求值结果固定为 `matched | mismatched | unavailable`。`matched` 携带同一个 candidate 的 refinement；另外两种携带非空诊断，`unavailable` 还携带 coverage reason。它不使用 `passed | failed`，因为一笔 occurrence mismatch 不等于集合 Assertion failed。
 
-`includes()` / `excludes()` 只接收 string，不把任意值 `String()` 后搜索。`equals()` 是深相等，`matches()` 消费 Standard Schema。identifier slot 继续使用直接传入的 string exact；工具名、事件类型、executable、argv token 与 Sandbox path 都属于 identifier。
+文本 matcher 只消费 string，不把任意值 `String()` 后搜索：
+
+```ts
+interface TextMatchOptions {
+  readonly stripComments?: boolean;
+}
+
+declare function includes(text: string, options?: TextMatchOptions): BooleanMatch<string, string>;
+declare function excludes(text: string, options?: TextMatchOptions): BooleanMatch<string, string>;
+declare function pattern(expression: RegExp, options?: TextMatchOptions): BooleanMatch<string, string>;
+declare function not<T>(match: BooleanMatch<T, T, "value">): BooleanMatch<T, T, "value">;
+```
+
+`includes()` / `excludes()` 分别表示字面子串存在与不存在；`pattern()` 才执行 RegExp。
+带 `g` 或 `y` 的 RegExp 每次求值前把 `lastIndex` 归零，matcher 不修改作者传入实例的最终 `lastIndex`。
+负正则写 `not(pattern(/.../))`；`not()` 只接受 value-domain BooleanMatch，不接受 ToolMatch、EventMatch 或 ScoreMatch，也不产生补集 refinement。
+
+`stripComments` 保留现有能力，先按 NiceEval 的代码注释规则得到纯文本，再执行对应关系。
+它不是通用语言 parser；无法可靠识别的文件类型应省略该选项。
+`equals()` 是深相等，`matches()` 消费 Standard Schema。identifier slot 继续使用直接传入的 string exact；工具名、事件类型、executable、argv token 与 Sandbox path 都属于 identifier。
 
 ```ts
 t.check(t.reply, includes("Brooklyn"));
 t.check(t.sandbox.file("experiments/local.ts"), and(includes("runtime:python"), excludes("runtime:node")));
+t.check(t.sandbox.file("src/index.ts"), not(pattern(/console\.log\s*\(/, { stripComments: true })));
 t.check(turn.data, matches(ResultSchema));
 ```
 
 关系由 matcher 名字决定，不由接收位置猜：没有未包装 string＝contains、直接 RegExp＝pattern，也没有 `{ contains, excludes }` 这一套旁路 rule。
+
+### Standard Schema 与原值
+
+```ts
+declare function matches<S extends StandardSchemaV1>(
+  schema: S,
+): BooleanMatch<unknown, StandardSchemaV1.InferInput<S>, "value">;
+```
+
+`t.require(raw, matches(schema))` 通过后返回严格同一个 `raw`，类型只收窄到 `InferInput<S>`。
+例如 `StandardSchemaV1<string, number>` 的 transform schema 通过后仍返回 string，不返回 number。
+作者需要 transform output 时应显式调用 schema parser；转换不是比较。
+
+coerce 或 preprocess schema 的 `InferInput` 若为 unknown，matcher 不承诺更窄类型。
+[`type-prototype.ts`](reference/type-prototype.ts) 使用真实 `@standard-schema/spec` 类型锁定这项行为。
+
+### 自定义 value matcher
+
+内置 matcher 不足时，value domain 保留两个具名高级工厂：
+
+```ts
+declare function satisfies<T, R extends T>(label: string, predicate: (value: T) => value is R): BooleanMatch<T, R>;
+declare function satisfies<T>(label: string, predicate: (value: T) => boolean | Promise<boolean>): BooleanMatch<T, T>;
+
+declare function defineValueMatch<T, R extends T>(spec: {
+  readonly name: string;
+  readonly evaluate: (value: T) => value is R;
+}): BooleanMatch<T, R>;
+declare function defineValueMatch<T>(spec: {
+  readonly name: string;
+  readonly evaluate: (value: T) => boolean | Promise<boolean>;
+}): BooleanMatch<T, T>;
+
+declare function defineScoreMatch<T>(spec: {
+  readonly name: string;
+  readonly score: (value: T) => number | Promise<number>;
+}): ScoreMatch<T>;
+```
+
+`satisfies()` 适合调用点的一次性条件，label 必填并进入 matcher detail。可复用 matcher 使用 `defineValueMatch()`；连续分数使用 `defineScoreMatch()`。
+同步 type guard 可以收窄原 candidate；异步 boolean evaluator 不收窄。
+
+自定义 matcher 不能返回 unavailable。throw、reject、非 boolean 结果、非有限 score 或 `[0,1]` 外 score 都是 evaluator defect，使 Attempt errored。
+unavailable 只由标准 EvidenceSource、coverage-aware 内置 matcher、Judge 或 provider 等具名 evidence owner 产生。
+这些工厂只创建 value matcher，不允许自定义 ToolMatch 或 EventMatch 绕过 Observation Protocol coverage。
+
+现有 `makeAssertion()` 的能力由两条路径接替：boolean checker 用 `defineValueMatch()`，连续 scorer 用 `defineScoreMatch()`。
+severity、threshold、optional 与 points 改由 Assertion handle 声明。
 
 ### `referencesAnyPath()`
 
@@ -60,23 +133,48 @@ declare function referencesAnyPath(
 两者至少接收两个同 domain 的 `BooleanMatch<T, R, D>`；`similarity()` 等连续 `ScoreMatch` 在类型层不能进入组合。
 
 ```ts
-type TupleIntersection<T extends readonly unknown[]> = T extends readonly [infer Head, ...infer Tail] ? Head & TupleIntersection<Tail> : unknown;
+type RefinementOf<M> = M extends BooleanMatch<infer _T, infer R, infer _D> ? R : never;
+type RefinementIntersection<M extends readonly unknown[]> = M extends readonly [infer Head, ...infer Tail]
+  ? RefinementOf<Head> & RefinementIntersection<Tail>
+  : unknown;
 
-declare function and<T, D extends MatchDomain, const R extends readonly [T, T, ...T[]]>(...matches: { [K in keyof R]: BooleanMatch<T, R[K], D> }): BooleanMatch<T, TupleIntersection<R>, D>;
-declare function or<T, D extends MatchDomain, const R extends readonly [T, T, ...T[]]>(...matches: { [K in keyof R]: BooleanMatch<T, R[K], D> }): BooleanMatch<T, R[number], D>;
+declare function and<
+  T,
+  R extends T,
+  D extends MatchDomain,
+  const Rest extends readonly [
+    BooleanMatch<NoInfer<T>, T, NoInfer<D>>,
+    ...BooleanMatch<NoInfer<T>, T, NoInfer<D>>[],
+  ],
+>(first: BooleanMatch<T, R, D>, ...rest: Rest): BooleanMatch<T, T & R & RefinementIntersection<Rest>, D>;
+
+declare function or<
+  T,
+  R extends T,
+  D extends MatchDomain,
+  const Rest extends readonly [
+    BooleanMatch<NoInfer<T>, T, NoInfer<D>>,
+    ...BooleanMatch<NoInfer<T>, T, NoInfer<D>>[],
+  ],
+>(first: BooleanMatch<T, R, D>, ...rest: Rest): BooleanMatch<T, T & (R | RefinementOf<Rest[number]>), D>;
 ```
+
+第一个 matcher 固定 candidate 与 domain，后续 matcher 只能消费同一 candidate、属于同一 domain。
+`and()` 返回 refinement 交集，`or()` 返回 refinement 并集；两者至少接收两项。
+[`type-prototype.ts`](reference/type-prototype.ts) 还锁定跨 domain、ScoreMatch 与 `not(commandMatch(...))` 都是编译错误。
 
 求值规则：
 
-- `and()`：任一 failed → failed；否则任一 unavailable → unavailable；否则 passed；
-- `or()`：任一 passed → passed；否则任一 unavailable → unavailable；否则 failed；
+- `and()`：任一 mismatched → mismatched；否则任一 unavailable → unavailable；否则 matched；
+- `or()`：任一 matched → matched；否则任一 unavailable → unavailable；否则 mismatched；
 - 两者按声明顺序 await 全部子项，输出每个未通过子项的诊断；
-- 子 matcher 抛错不是 failed 或 unavailable，而是 evaluator defect；
+- 子 matcher 抛错不是 mismatched 或 unavailable，而是 evaluator defect；
 - source resolution 在组合之外先执行一次，因此 `or()` 不能用另一分支掩盖文件读取失败。
 
 JavaScript / `any` 的登记边界仍校验至少两项、同 domain 和布尔种类。诊断按组合树和子项索引保留，经现有脱敏与预算规则写入 `AssertionResult.expected`、`received` 与 `evidence`；内部 evaluator defect 不能被另一个决定性分支掩盖。
 
-不增加 `not()`。文本否定已有 `excludes()`；其它否定关系等真实重复需求出现后再命名。
+`not()` 采用同一三态：matched 与 mismatched 互换，unavailable 保持 unavailable，evaluator defect 继续抛出。
+它不进入 tool / event domain；集合负存在性仍由 `notCalledTool()` / `notEvent()` 表达。
 
 ## 单 occurrence `ToolMatch`
 

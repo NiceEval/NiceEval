@@ -167,7 +167,7 @@
     "docs-site/images"
   ],
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p docs/roadmap/assertion-authoring/reference/tsconfig.json",
     "lint": "pnpm run lint:docs && pnpm run lint:docs-site",
     "lint:docs": "vitest run --project lint-docs",
     "lint:docs-site": "vitest run --project lint-docs-site && pnpm run docs:validate && pnpm run docs:links",
@@ -211,6 +211,7 @@
     "@radix-ui/react-collapsible": "^1.1.14",
     "@radix-ui/react-dialog": "^1.1.17",
     "@radix-ui/react-tabs": "^1.1.15",
+    "@standard-schema/spec": "1.1.0",
     "@tailwindcss/postcss": "^4.3.3",
     "@tailwindcss/vite": "^4.3.1",
     "@types/dockerode": "^3.3.31",

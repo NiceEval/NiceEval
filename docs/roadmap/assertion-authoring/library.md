@@ -4,7 +4,8 @@
 
 ```ts
 interface TestContext<H> {
-  check<T, R extends T>(subject: T | EvidenceSource<T>, match: ValueMatch<T, R>): H;
+  check<T, R extends T>(subject: T | EvidenceSource<T>, match: BooleanMatch<T, R, "value">): H;
+  check<T>(subject: T | EvidenceSource<T>, match: ScoreMatch<T>): H;
   require<T, R extends T>(value: T, match: BooleanMatch<T, R, "value">): Promise<R>;
 }
 
@@ -13,13 +14,22 @@ interface EvalSandbox<H> {
 }
 ```
 
-`t.check()` 只负责“subject × matcher”并登记 Assertion。布尔 matcher 在通过制默认 gate；连续评分 matcher 默认 soft 且没有隐含阈值，作者在 handle 上明确写 `.atLeast(x)` 或 `.gate(x)`。
+`t.check()` 只负责“subject × matcher”并登记 Assertion。默认登记策略同时取决于 Eval 类型与 matcher kind：
+
+| Eval | BooleanMatch | ScoreMatch |
+|---|---|---|
+| `defineEval` | gate | soft，无阈值 |
+| `defineScoreEval` | soft observation；mismatch 仍记 failed | soft，无阈值 |
+
+`defineScoreEval` 中只有显式 `.gate()` 才让 Assertion 进入判定面；`.points(n)` 只让它进入分数面。
+`.gate()` 不隐式中止 test，只有 `.stopOnFailure()` 改变控制流。
 
 `t.require()` 只接受布尔 matcher，等价于 `await t.check(value, matcher).gate().stopOnFailure()` 并在通过后返回原值。延迟 source 不进入 `require()`，避免返回一个看似已收窄、实际仍未读取的引用。
 
 ```ts
 t.check(t.reply, and(includes("Brooklyn"), excludes("draft")));
 t.check(t.reply, or(includes("sunny"), includes("clear")));
+t.check(t.reply, pattern(/result:\s+passed/i));
 t.check(t.reply, similarity(expected)).atLeast(0.6);
 t.check(t.sandbox.file("experiments/local.ts"), and(includes("runtime:python"), excludes("runtime:node"))).points(2).gate();
 ```
@@ -37,19 +47,46 @@ missing 不会变成空字符串，因此 `excludes()` 不能让不存在的文�
 
 ## Assertion handle
 
-matcher 不带登记策略；策略只在 `t.check()` 或领域断言返回的 handle：
+matcher 不带登记策略；策略只在 `t.check()` 或领域断言返回的 handle。三个 handle 的完整公开形状是：
 
 ```ts
-interface BaseAssertionHandle<H> {
-  gate(threshold?: number): H;
-  atLeast(threshold: number): H;
-  soft(): H;
-  optional(): H;
-  stopOnFailure(): Promise<H>;
+interface AssertionHandle {
+  label(label: string): AssertionHandle;
+  gate(threshold?: number): AssertionHandle;
+  atLeast(threshold: number): AssertionHandle;
+  soft(): AssertionHandle;
+  optional(): AssertionHandle;
+  stopOnFailure(): Promise<AssertionHandle>;
+}
+
+interface ScoreAssertionHandle {
+  label(label: string): ScoreAssertionHandle;
+  points(points: number): ScorePointHandle;
+  gate(threshold?: number): ScoreAssertionHandle;
+  atLeast(threshold: number): ScoreAssertionHandle;
+  soft(): ScoreAssertionHandle;
+  optional(): ScoreAssertionHandle;
+  stopOnFailure(): Promise<ScoreAssertionHandle>;
+}
+
+interface ScorePointHandle {
+  label(label: string): ScorePointHandle;
+  gate(threshold?: number): ScorePointHandle;
+  optional(): ScorePointHandle;
+  stopOnFailure(): Promise<ScorePointHandle>;
 }
 ```
 
+`AssertionHandle` 属于 `defineEval`；`ScoreAssertionHandle` 属于 `defineScoreEval`。
+`.points(n)` 返回的 `ScorePointHandle` 不能再次 points，也不能 `.soft()` / `.atLeast()`，避免同一证据重复进入分数面与质量分。
+
 Score Assertion 直接链 `.gate()` 是零分硬要求。只有 `.points(n)` 进入可得分总数，且 `n` 必须是正有限数；`.points(0).gate()` 是 author error。
+
+`.label(text)` 只替换展示标题，并把 matcher 的原名保留在 `AssertionBase.detail`。
+label 必须非空，但可以重复；它不是跨 Attempt / Run identity，也不提供 `.key()`。
+除 `.stopOnFailure()` 返回 Promise 外，每个链式方法都返回当前 handle 状态，所以 `.label()` 与 `.gate()` / `.points()` / `.optional()` 的链序无关。
+
+[`type-prototype.ts`](reference/type-prototype.ts) 同时证明合法链与应被 TypeScript 拒绝的链。
 
 ## Tool 与 event match
 
@@ -118,4 +155,10 @@ interface EvalSandbox<H> {
 
 ## 普通路径边界
 
-`niceeval/expect` 只导出独立工厂：值关系使用 `includes()` / `equals()`，领域 occurrence 使用 `toolMatch()` / `eventMatch()` / `commandMatch()`，组合统一使用 `and()` / `or()`。不同时提供 `match.*`、fluent 同义入口或递归 JSON AST；Sandbox 事实仍从 `t.sandbox` 进入。
+`niceeval/expect` 只导出独立工厂。
+字面文本用 `includes()` / `excludes()`，RegExp 用 `pattern()`，结构验证用 `matches()`。
+领域 occurrence 使用 `toolMatch()` / `eventMatch()` / `commandMatch()`，组合统一使用 `and()` / `or()`。
+不同时提供 `match.*`、fluent 同义入口或递归 JSON AST；Sandbox 事实仍从 `t.sandbox` 进入。
+
+一次性自定义值条件使用 label 必填的 `satisfies()`；复用检查或 scorer 使用 `defineValueMatch()` / `defineScoreMatch()`。
+这些是高级 value-only 入口，不扩张 ToolMatch / EventMatch，也不能自行返回 unavailable。

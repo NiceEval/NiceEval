@@ -3,6 +3,9 @@
 本研究比较 Eve 与 NiceEval 的断言作者面，并用 NiceEval-Eval Harness 检查候选 API 是否解决真实用户问题。
 它只提供带日期的设计输入，不构成 NiceEval 的目标契约。
 
+> 本页列出的 `ToolMatch.command`、`ToolSelector` 与 `toolInputsExclude()` 是阶段性候选，已被当前 [Assertion 作者面 Roadmap](../roadmap/assertion-authoring/README.md) 取代。
+> 目标契约使用一等 `commandMatch()`、共用 `ToolMatch`，并以 `notCalledTool(toolMatch({ input: referencesAnyPath(...) }))` 表达 observed-input 负约束。
+
 ## 观察版本
 
 观察日期是 2026-08-08。
@@ -57,9 +60,9 @@ turn.calledTool("shell", { input });
 因此普通 Harness 不应导入 `match.*`，也不应靠共享规则构造器隐藏复杂度。
 调用点应直接从 `turn` 或 `t.sandbox` 开始。
 
-## 先复用，再扩展
+## 阶段性候选：先复用，再扩展
 
-研究逐项比较 Harness 需求与 Eve / NiceEval 已有能力：
+下表保存研究当时的候选，供理解决策演进；它不是目标签名：
 
 | 需求 | 裁决 |
 |---|---|
@@ -75,7 +78,7 @@ turn.calledTool("shell", { input });
 
 这次扩展的中心不是“名字更好看的新断言词汇”，而是让既有 scoped methods 能消费标准 observation。
 
-## Command projection 的真实边界
+## Command projection 的稳定边界
 
 coding-agent Adapter 会遇到 raw shell、argv、`program + args` 与 SDK display summary。
 core 无法仅凭 `shell`、`Bash`、`command_execution` 或 input key 判断它们语义等价。
@@ -92,7 +95,8 @@ core 无法仅凭 `shell`、`Bash`、`command_execution` 或 input key 判断它
 目标契约因此在 tokenization 之后增加唯一、版本化且封闭的 logical normalizer，只识别已有真实需求的 direct、`pnpm exec`、`pnpm --silent exec` 与无选项 `npx`。
 普通 `CommandMatch` 只看 logical argv；original 继续用于脱敏审计，core 不回读 raw shell text，作者也不枚举 wrapper OR。
 
-`toolOrder()` 与 `calledTool()` 必须复用同一个 `ToolMatch.command` evaluator。
+`toolOrder()` 与 `calledTool()` 必须复用同一个 logical command evaluator。
+当前 Roadmap 把它表达为一等 `commandMatch()`，不再嵌进 `ToolMatch.command`。
 顺序断言已经证明 command 存在时，普通 E2E 不再重复登记存在性分。
 
 Eve 的 `toolOrder()` 只证明 request subsequence。
@@ -106,8 +110,9 @@ Harness 需要的动态 locator 复用、工具输出因果与最终 reply 顺�
 Eve 的 matcher mini-language 能用 RegExp 或 predicate 搜索 tool input。
 但“禁止 `.niceeval`、`evals` 与 `agents` 路径 component”要求作者维护跨平台边界正则，调用点难读且容易漏报。
 
-`toolInputsExclude({ paths })` 把这项稳定关系放回作用域方法。
-它只检查 observed input string leaves；coverage 不完整且没有已知命中时是 unavailable。
+阶段性候选曾使用 `toolInputsExclude({ paths })`。
+当前 Roadmap 改为组合既有负存在性与 value matcher，使同一 `ToolMatch` 能复用于 presence、absence、count 与 order。
+它仍只检查 observed input string leaves；coverage 不完整且没有已知命中时是 unavailable。
 
 该方法不检查 stdout、assistant reply、子进程变量集合或 OS syscall。
 它不能被描述为文件访问审计。
@@ -146,6 +151,5 @@ Eval 不能改读 `.niceeval` 私有文件补齐。
 NiceEval 应保留 Eve 的 scope-first 风格，也应保留自己的 `unavailable`、evidence coverage、题内 points 与 optional 语义。
 普通调用点不需要新的 Match AST 或大量新方法。
 
-最终方向是：给既有 `ToolMatch` 增加只消费 logical command 的字段，让 `toolOrder()` 接受同源 selector，给 `t.sandbox` 补 exact path set，并增加一条诚实的 observed-input 路径负断言。
-
-目标契约见 [Assertion 作者面 Roadmap](../roadmap/assertion-authoring/README.md)。
+本研究确认了 scope-first、logical command、exact Sandbox path set 与 observed-input coverage 的需求。
+具体语法已经由后续 Roadmap 收敛；目标契约只以 [Assertion 作者面 Roadmap](../roadmap/assertion-authoring/README.md) 为准。
