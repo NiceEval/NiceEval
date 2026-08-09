@@ -11,7 +11,7 @@ description: "NiceEval 内置的 claude-code、codex、bub 适配器分别做到
 | 能力 | 对应的断言 / API |
 |---|---|
 | 收发消息（基础契约） | `t.send()`（可多次调用）、`t.reply`、`turn.outputEquals` / `outputMatches`、按状态判断的 `t.succeeded()` |
-| 事件流完整性 | `calledTool` / `toolOrder` / `usedNoTools` / `maxToolCalls` / `messageIncludes` / `noFailedActions` / `event` / `eventOrder` 等整套作用域断言；**负断言（`notCalledTool` 等）有完整事件流才可信** |
+| 事件流完整性 | `calledTool` / `toolOrder` / `usedNoTools` / `maxToolCalls` / `messageIncludes` / `noFailedActions` / `event` / `eventOrder` 等整套作用域断言。**负断言（`notCalledTool` 等）有完整事件流才可信** |
 | 会话续接 | 跨轮记忆断言、`t.newSession()` 会话隔离 |
 | HITL（人工介入） | `t.parked()`、`t.requireInputRequest()`、`t.respond()` / `t.respondAll()` |
 | `tracing` | `EvalResult.trace`、`niceeval view` 的调用瀑布图 |
@@ -27,7 +27,9 @@ description: "NiceEval 内置的 claude-code、codex、bub 适配器分别做到
 三者都用 `defineSandboxAgent` 构造（`Agent.kind` 恒为 `"sandbox"`），所以 `t.sandbox.fileChanged()` / diff 断言、文件 IO、命令执行在三个 agent 上都能用，不受这张表限制。
 
 <Warning>
-三个内置 sandbox agent 目前都**不支持 HITL**：`send` 只返回 `"completed"` / `"failed"`，从不返回 `"waiting"`，也不吐 `input.requested` 事件。需要 `t.respond()` / `t.requireInputRequest()` 时：被测对象是 AI SDK `useChat` 后端的话，用下文的内置 `uiMessageStreamAgent`（v7 tool approval 原生映射成 HITL）；其它被测对象自己写 adapter：实现 `waiting` 状态 + `input.requested` 事件 + resume 交回，[`examples/zh/tier1/pi-sdk`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/pi-sdk) / [`examples/zh/tier1/claude-sdk`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/claude-sdk) 都有手写 HITL 的现成参考。
+三个内置 sandbox agent 都**不支持 HITL**：`send` 只返回 `"completed"` / `"failed"`，从不返回 `"waiting"`，也不吐 `input.requested` 事件。
+
+需要 `t.respond()` / `t.requireInputRequest()` 时：被测对象是 AI SDK `useChat` 后端的话，用下文的内置 `uiMessageStreamAgent`（v7 tool approval 原生映射成 HITL）。其它被测对象自己写 adapter：实现 `waiting` 状态 + `input.requested` 事件 + resume 交回，[`examples/zh/tier1/pi-sdk`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/pi-sdk) / [`examples/zh/tier1/claude-sdk`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/claude-sdk) 都有手写 HITL 的现成参考。
 </Warning>
 
 ## 逐 agent 细节
@@ -35,20 +37,20 @@ description: "NiceEval 内置的 claude-code、codex、bub 适配器分别做到
 ### claude-code
 
 - 连接方式：Sandbox 里 spawn `claude --print --dangerously-skip-permissions`，读回 `~/.claude/projects/**/*.jsonl` 最新一份 transcript。
-- 会话续接：`ctx.session.id` 有值时追加 `--resume <id>`；transcript 解出的会话 id 经 `ctx.session.capture()` 写回。
-- 鉴权：`ANTHROPIC_API_KEY`，可选 `ANTHROPIC_BASE_URL`；配置项见下方 `ClaudeCodeConfig`。
-- `tracing` 通过 claude CLI 原生 OTLP trace spans（beta）配置，协议 `http/protobuf`：env 里设置 `CLAUDE_CODE_ENABLE_TELEMETRY` 与 `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA`（beta 开关，须显式开启）把 endpoint 交给 CLI；`EvalResult.trace` 能看到 interaction / llm_request / tool 层级的瀑布图。
+- 会话续接：`ctx.session.id` 有值时追加 `--resume <id>`。transcript 解出的会话 id 经 `ctx.session.capture()` 写回。
+- 鉴权：`ANTHROPIC_API_KEY`，可选 `ANTHROPIC_BASE_URL`。配置项见下方 `ClaudeCodeConfig`。
+- `tracing` 通过 claude CLI 原生 OTLP trace spans（beta）配置，协议是 `http/protobuf`。env 里设置 `CLAUDE_CODE_ENABLE_TELEMETRY` 与 `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA`（beta 开关，须显式开启）把 endpoint 交给 CLI。`EvalResult.trace` 能看到 interaction / llm_request / tool 层级的瀑布图。
 
 ### codex
 
 - 连接方式：Sandbox 里跑 `codex exec --json`（续接时是 `codex exec resume <id> --json`），stdout JSONL 当 transcript。命令带 `--dangerously-bypass-approvals-and-sandbox` 与 `--dangerously-bypass-hook-trust`：Sandbox 里没人能回答 codex 的交互确认，插件或 `postSetup` 装好的 hook 因此不需要交互授信就能生效。
-- 鉴权：`CODEX_API_KEY`（不是 `OPENAI_API_KEY`），可选 `CODEX_BASE_URL` 接 OpenAI 兼容代理；配置项见下方 `CodexConfig`。
+- 鉴权：`CODEX_API_KEY`（不是 `OPENAI_API_KEY`），可选 `CODEX_BASE_URL` 接 OpenAI 兼容代理。配置项见下方 `CodexConfig`。
 - `tracing` 通过 `~/.codex/config.toml` 的 `[otel.trace_exporter.otlp-http]` 段配置，协议 `http/json`。
 
 ### bub
 
 - 连接方式：Sandbox 里跑 `bub run` + `--session-id`，从 `~/.bub/tapes/<hash>.jsonl` 读 tape 当 transcript。
-- 鉴权：`BUB_API_KEY` + `BUB_API_BASE`（OpenAI 兼容代理）；配置项见下方 `BubConfig`。
+- 鉴权：`BUB_API_KEY` + `BUB_API_BASE`（OpenAI 兼容代理）。配置项见下方 `BubConfig`。
 - `tracing` 通过环境变量注入（`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` 等），协议 `http/protobuf`。
 - 安装走 `uv tool install`（非 npm 包），首次安装带 checkpoint 缓存以加速后续 Sandbox。
 
@@ -345,8 +347,9 @@ export default uiMessageStreamAgent({
 它替你做好的能力：
 
 - **收发 + 事件流**：SSE 帧经 `ai` 包官方的框架无关 reducer `readUIMessageStream`（`useChat` 内部同款）归约，工具调用/结果/消息文本从消息 parts 直构——**不要求应用接 OTel**。
-- **会话续接**：协议是服务端零状态、「客户端带全量历史」——工厂用 Adapter 私有的 typed slot 存整份 `UIMessage[]`，每轮原样重放；新会话线（`t.newSession()` 之后）还没有写过这个 slot。
-- **HITL**：AI SDK v7 tool approval（工具带 `needsApproval: true`）原生映射——part 停在 `approval-requested` 时该 Turn 的 `status: "waiting"` + `input.requested`；`t.respond("approve" / "deny")` 翻译成 `approval-responded` 原地改写该 part、原样重发 `messages` 触发服务端续跑（和真实前端 `addToolApprovalResponse()` + `sendMessage()` 的协议行为一致，没有单独的 approve 端点）。拒绝的调用以 `rejected` 落进事件流，且默认带「不要重试」的 reason（`denyReason` 可覆盖）——不带的话模型经常原样重发同一个调用。
+- **会话续接**：协议是服务端零状态、「客户端带全量历史」——工厂用 Adapter 私有的 typed slot 存整份 `UIMessage[]`，每轮原样重放。新会话线（`t.newSession()` 之后）还没有写过这个 slot。
+- **HITL**：AI SDK v7 tool approval（工具带 `needsApproval: true`）原生映射——part 停在 `approval-requested` 时该 Turn 的 `status: "waiting"` + `input.requested`。`t.respond("approve" / "deny")` 翻译成 `approval-responded` 原地改写该 part、原样重发 `messages` 触发服务端续跑（和真实前端 `addToolApprovalResponse()` + `sendMessage()` 的协议行为一致）。它没有单独的 approve 端点。
+- **拒绝**：调用以 `rejected` 落进事件流，且默认带「不要重试」的 reason（`denyReason` 可覆盖）——不带的话模型经常原样重发同一个调用。
 - **usage / 瀑布图**：UI Message Stream 协议帧里没有 usage，所以 `t.maxTokens` 这类用量断言在这个内置件上默认没有数据（应用把 usage 放进 message metadata 属于应用自己的协议扩展）。瀑布图是另一回事：应用有 OTel 埋点（如官方 `@ai-sdk/otel`）时，按 [OTel 接入](/zh/tutorials/connect-otel)把 span 发给 [NiceEval](https://niceeval.com/)，`niceeval view` 就有完整瀑布图——span 只进瀑布图，不喂断言。
 
 需要在评估用例项目里安装 `ai`（可选 peer 依赖，协议 reducer 来自它）。完整可跑示例：[`examples/zh/tier1/ai-sdk-v7`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/ai-sdk-v7)。
@@ -426,7 +429,7 @@ spanMapper?: SpanMapper;
 
 ## OpenAI 兼容响应转换器：`turnFromChatCompletion` / `turnFromResponses`
 
-`turnFromChatCompletion(res)` / `turnFromResponses(res)`（`niceeval/adapter` 导出）把 OpenAI 的两种响应形状——Chat Completions 与 Responses——整段响应零映射转成 `Turn`：不限于 OpenAI 官方，任何声明兼容这两种协议形状的服务都能用。
+`turnFromChatCompletion(res)` / `turnFromResponses(res)`（`niceeval/adapter` 导出）把 OpenAI 的两种响应形状：Chat Completions 与 Responses。它会把整段响应零映射转成 `Turn`：不限于 OpenAI 官方，任何声明兼容这两种协议形状的服务都能用。
 
 ```ts
 import { completeEvidenceCoverage, defineAgent, turnFromChatCompletion } from "niceeval/adapter";
@@ -441,11 +444,11 @@ export default defineAgent({
 });
 ```
 
-两种形状对负断言（`notCalledTool` 等）的可信度不同：Chat Completions 不承诺「响应 = 完整过程」（应用可能在服务端跑完工具循环，只把最终答案给你），负断言只能当「没看到」，不能当「确实没发生」；Responses 的协议契约里 `output` 数组记录了模型这一轮决定做的全部事（包括每个 `function_call`），负断言可信。两个转换器产出的 `Turn` 形状本身相同，这条差异只体现在你对负断言的解读上。
+两种形状对负断言（`notCalledTool` 等）的可信度不同：Chat Completions 不承诺「响应 = 完整过程」（应用可能在服务端跑完工具循环，只把最终答案给你），负断言只能当「没看到」，不能当「确实没发生」。Responses 的协议契约里 `output` 数组记录了模型这一轮决定做的全部事（包括每个 `function_call`），负断言可信。两个转换器产出的 `Turn` 形状本身相同，这条差异只体现在你对负断言的解读上。
 
 ## SDK 事件流转换器：`createClaudeSdkEventStream` / `createPiAgentEventStream` / `createCodexThreadEventStream`
 
-各 agent SDK 的流式协议是 SDK 定义的通用协议，不是某个应用的私有格式——原生帧 → 标准事件的映射知识在官方包里（`niceeval/adapter` 导出），自己写无侵入 adapter 时只剩**传输粘合**（应用把流放在哪个端点、审批走什么端点）。逐帧驱动这个循环本身也是官方件（`driveFrameStream`，见下一节），不用手写 `for` 循环：
+各 Agent SDK 的流式协议由 SDK 定义，不是某个应用的私有格式。`niceeval/adapter` 已经提供原生帧到标准事件的转换器。自己编写非侵入式 Adapter 时，只需填写应用接口和审批接口的地址。`driveFrameStream`（见下一节）会逐帧读取结果，不需要再写 `for` 循环：
 
 ```ts
 import { sseJsonFrames, createClaudeSdkEventStream, driveFrameStream } from "niceeval/adapter";
@@ -455,20 +458,20 @@ const stream = createClaudeSdkEventStream();               // SDKMessage → 标
 return driveFrameStream(frames, stream, ctx);         // 逐帧喂 stream.add()，汇总成 Turn
 ```
 
-- **`createClaudeSdkEventStream`**（Claude Agent SDK `SDKMessage`）：`assistant` 的 text/tool_use 块、`user` 的 tool_result 块、`system`/`permission_denied`（→ `rejected`）、`result` 的 usage；`markRejected()` 登记被拒调用。
+- **`createClaudeSdkEventStream`**（`SDKMessage`）：`assistant` 的 text/tool_use 块、`user` 的 tool_result 块、`system`/`permission_denied`（→ `rejected`）、`result` 的 usage。`markRejected()` 登记被拒调用。
 - **`createPiAgentEventStream`**（pi-agent-core `AgentEvent`）：`message_end` 的文本/thinking/usage、`tool_execution_start/end` 的工具对。
-- **`createCodexThreadEventStream`**（Codex SDK `ThreadEvent`）：`agent_message`/`reasoning` 的消息类、工具项（`command_execution` / `mcp_tool_call` / `file_change` / `web_search` → 配对的 tool `operation.started` + `operation.finished`）、`turn.completed` 的 usage、错误帧。瀑布图要 codex CLI 原生 OTLP（config.toml 的 `[otel]` 块）把 span 发给 [NiceEval](https://niceeval.com/)，配官方 `mapCodexSpans` 归一。
+- **`createCodexThreadEventStream`**（Codex SDK `ThreadEvent`）：`agent_message`/`reasoning` 的消息类。工具项包括：`command_execution` / `mcp_tool_call` / `file_change` / `web_search` → 配对的 tool `operation.started` + `operation.finished`。`turn.completed` 的 usage、错误帧。瀑布图要 codex CLI 原生 OTLP（config.toml 的 `[otel]` 块）把 span 发给 [NiceEval](https://niceeval.com/)，配官方 `mapCodexSpans` 归一。
 
-可跑参考：[`examples/zh/tier1`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1) 下 claude-sdk / pi-sdk / codex-sdk 三个 adapter 就是这三个转换器 + `driveFrameStream` + 传输粘合。
+可运行的参考实现位于 [`examples/zh/tier1`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1)。其中 Claude SDK、pi SDK 和 Codex SDK 的 Adapter 都由转换器、`driveFrameStream` 和应用接口配置组成。
 
 ## 通用「拼装方式」件：`driveFrameStream` / `deltaStream` + `ctx.session`
 
-一个手写 send 里真正互不相干的只有三段：transport（怎么发）、reduce（原始数据 → 事件，上一节的转换器管这个）、编排（会话续接 + HITL 暂停恢复）。第三段和任何具体协议无关，纯粹是控制流模式——服务端历史用 `ctx.session.id` / `capture`，客户端历史和 HITL 停轮现场用 `createSessionSlot<T>()` 声明的 Adapter 私有 slot，经 `ctx.session.get` / `set` / `take` 存取（`AgentSession`，见 [Adapter 概念](/zh/explanation/adapter#上下文：agentcontext)）；剩下真正跨协议复用的只有两个官方件：
+一个手写 send 里真正互不相干的只有三段：transport（怎么发）、reduce（原始数据 → 事件，上一节的转换器管这个）、编排（会话续接 + HITL 暂停恢复）。第三段和任何具体协议无关，纯粹是控制流模式。服务端历史用 `ctx.session.id` / `capture`，客户端历史和 HITL 停轮现场用 `createSessionSlot<T>()` 声明的 Adapter 私有 slot，经 `ctx.session.get` / `set` / `take` 存取（`AgentSession`，见 [Adapter 概念](/zh/explanation/adapter#上下文：agentcontext)）。剩下真正跨协议复用的只有两个官方件：
 
 | 件 | 解决什么 |
 |---|---|
 | `driveFrameStream(cursor, reducer, ctx, onFrame?)` | 逐帧喂 reducer、处理传输帧、检测 HITL 暂停信号——循环本身收成一个函数。暂停时 `cursor` 不关闭，`onFrame` 里用 `ctx.session.set(slot, cursor)` 存住它，回答轮 `ctx.session.take(slot)` 取回接着读，不重新发起请求 |
-| `deltaStream(spec)` | 逐 token / 逐参数增量的通用累加器——原始 OpenAI/Anthropic 流式 API、自己手写的 token-by-token 后端这类"没有整段落地帧"的协议用它；声明"这一帧对应哪个操作"（文本增量/工具参数增量/收尾），拼接时机它自己管 |
+| `deltaStream(spec)` | 逐 token / 逐参数增量的通用累加器——原始 OpenAI/Anthropic 流式 API、自己手写的 token-by-token 后端这类"没有整段落地帧"的协议用它。声明"这一帧对应哪个操作"（文本增量/工具参数增量/收尾），拼接时机它自己管 |
 
 ```ts
 const pendingSlot = createSessionSlot<Pending>("my-adapter/pending");
@@ -495,11 +498,11 @@ return driveFrameStream(cursor, stream, ctx, (frame, derived) => {
 });
 ```
 
-三个 Tier 1 示例（claude-sdk、pi-sdk 用 `driveFrameStream` + typed slot，codex-sdk 只用 `driveFrameStream`）已经用这套件重写，Adapter 只剩 transport 与 `onFrame` 里"这一帧要不要额外处理"的判断，没有手写循环和模块级 Map。
+三个 Tier 1 示例（claude-sdk、pi-sdk 用 `driveFrameStream` + typed slot，codex-sdk 只用 `driveFrameStream`）已经用这套件重写。Adapter 只剩 transport 与 `onFrame` 里"这一帧要不要额外处理"的判断，没有手写循环和模块级 Map。
 
 ## `turnFromAiSdk`：AI SDK 结果 → 事件流转换器
 
-`turnFromAiSdk`（`niceeval/adapter` 导出）在自己写的 adapter 里用（比如 HTTP web agent 的服务端直构，见 `examples/zh/ai-sdk/`）。它把 AI SDK 的 `generateText` / `streamText` 结果映射成 `{ events, usage, status }`——`toolCallId` 精确配对、时序保真、`tool-error` 映射成失败的 tool `operation.finished`、usage 聚合（v4 / v5 / v7 字段漂移都兜住）——直接铺进 `Turn`：
+`turnFromAiSdk`（`niceeval/adapter` 导出）在自己写的 adapter 里用（比如 HTTP web agent 的服务端直构，见 `examples/zh/ai-sdk/`）。它把 AI SDK 的 `generateText` / `streamText` 结果映射成 `{ events, usage, status }`。`toolCallId` 精确配对、时序保真、`tool-error` 映射成失败的 tool `operation.finished`、usage 聚合（v4 / v5 / v7 字段漂移都兜住）——直接铺进 `Turn`：
 
 ```ts
 import { completeEvidenceCoverage, defineAgent, turnFromAiSdk } from "niceeval/adapter";
@@ -519,11 +522,11 @@ export default defineAgent({
 ## 怎么选
 
 - 被测对象是 AI SDK 应用（`useChat` 后端）：内置 `uiMessageStreamAgent` 无侵入接入，零映射（含 HITL）。
-- 被测对象是其它 agent 系统（HTTP / gRPC 服务）：无侵入接入，手写事件映射（官方转换器能覆盖大半）——[`examples/zh/tier1`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1) 下五个示例全是这条路；应用已埋 OTel 的话顺手接上，多一张瀑布图。
-- 需要调用瀑布图（`niceeval view` 的 trace）：`claude-code` / `codex` / `bub` 三个都自发 OTLP（claude-code 走 CLI 的 beta 遥测，span 只有结构与计时）；自己写的 adapter 声明 `tracing` 即可（见 OTel 指南）。
-- 需要人工审批 / 多步确认（HITL）：`uiMessageStreamAgent` 原生支持（AI SDK v7 tool approval）；Sandbox 型三个都不支持，其它被测对象自己写 Adapter，拿 `driveFrameStream` + typed slot 拼（Tier 1 示例里 pi-sdk / claude-sdk 有现成写法）。
+- 被测对象是其它 agent 系统（HTTP / gRPC 服务）：无侵入接入，手写事件映射（官方转换器能覆盖大半）——[`examples/zh/tier1`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1) 下五个示例全是这条路。应用已埋 OTel 的话顺手接上，多一张瀑布图。
+- 需要调用瀑布图（`niceeval view` 的 trace）：`claude-code` / `codex` / `bub` 三个都自发 OTLP（claude-code 走 CLI 的 beta 遥测，span 只有结构与计时）。自己写的 adapter 声明 `tracing` 即可（见 OTel 指南）。
+- 需要人工审批 / 多步确认（HITL）：`uiMessageStreamAgent` 原生支持（AI SDK v7 tool approval）。Sandbox 型三个都不支持，其它被测对象自己写 Adapter，拿 `driveFrameStream` + typed slot 拼（Tier 1 示例里 pi-sdk / claude-sdk 有现成写法）。
 - 想跑一个 coding agent 改代码、看 diff、判断工具调用：`claude-code` / `codex` / `bub`（收发 + 事件流 + 会话续接 + workspace + sandbox）。
-- 后端协议是自己发明的、没有官方 SDK 转换器可用：别从零手写 send——挑一种 reduce 形状（整段落地写小映射，逐 token 增量用 `deltaStream`），服务端会话续接用 `ctx.session.id` / `capture`，客户端历史或 HITL 现场用 typed slot，拼起来就是 send。
+- 后端协议是自己发明的、没有官方 SDK 转换器可用时，别从零手写 send。挑一种 reduce 形状（整段落地写小映射，逐 token 增量用 `deltaStream`），服务端会话续接用 `ctx.session.id` / `capture`，客户端历史或 HITL 现场用 typed slot，拼起来就是 send。
 
 ## 相关阅读
 

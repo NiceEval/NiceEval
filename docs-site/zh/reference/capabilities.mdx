@@ -16,7 +16,7 @@ description: "Agent 的构造方式、运行时行为与必填的六通道 evide
 | 能力 | 怎么获得 | 对证据的影响 |
 |---|---|---|
 | `t.sandbox` / `t.sandbox.fileChanged()` 等文件系统断言 | 用 `defineSandboxAgent` 构造（`Agent.kind` 恒为 `"sandbox"`） | Sandbox 结果断言消费 Attempt 的 agent 归因 diff，不对应 `evidenceCoverage` 的某个通道 |
-| `tracing`（OTLP 接收 → `niceeval view` 瀑布图） | CLI 型 Agent 配置 `tracing`；长驻应用在 config 配置固定的 `telemetry` 端口 | Span 只进时间瀑布图，不能填补行为证据缺口 |
+| `tracing`（OTLP 接收 → `niceeval view` 瀑布图） | CLI 型 Agent 配置 `tracing`。长驻应用在 config 配置固定的 `telemetry` 端口 | Span 只进时间瀑布图，不能填补行为证据缺口 |
 | 跨轮续接与 `t.newSession()` 隔离 | 用 `ctx.session.id` / `capture` 续接后端会话，或用 `ctx.session.get` / `set` 保存 Adapter 私有的强类型历史 | 会话接法决定实际行为，不从一个 evidence bit 推断 |
 | HITL（`t.respond()`） | `send` 返回 `status: "waiting"` 和 `input.requested` | 下一轮回答按结构化 request ID 对位 |
 | Compaction 可见 | 官方 parser 或完整的手写映射发出 `compaction` 事件 | `t.event("compaction")` 还要受下方 `events` 覆盖声明约束 |
@@ -43,7 +43,7 @@ type EvidenceCoverageEntry =
     };
 ```
 
-只有 Adapter 确实完整采到全部通道时才用 `completeEvidenceCoverage`。官方 converter 会给出它对所归一协议的覆盖声明；手写映射必须把六个通道逐项如实写清：
+只有 Adapter 确实完整采到全部通道时才用 `completeEvidenceCoverage`。官方 converter 会给出它对所归一协议的覆盖声明。手写映射必须把六个通道逐项如实写清：
 
 ```ts
 import type { EvidenceCoverage } from "niceeval/adapter";
@@ -58,7 +58,7 @@ const evidenceCoverage = {
 } satisfies EvidenceCoverage;
 ```
 
-`Turn.evidenceCoverage` 是可选的逐轮**降级**。只列这一轮比 Agent 默认值更差的通道，例如 stream 在 usage 到达前断开。省略的通道继承 Agent 声明；Turn 不能把默认覆盖升格。
+`Turn.evidenceCoverage` 是可选的逐轮**降级**。只列这一轮比 Agent 默认值更差的通道，例如 stream 在 usage 到达前断开。省略的通道继承 Agent 声明。Turn 不能把默认覆盖升格。
 
 ## 覆盖怎样改变断言结果
 
@@ -73,7 +73,7 @@ Coverage 防止「没采到」看起来像「确认没发生」：
 
 `unavailable` 断言始终带机器可读原因落盘，绝不静默丢弃，也不折成通过：
 
-- 非 optional 的 unavailable 断言让 Attempt `errored`；
+- 非 optional 的 unavailable 断言让 Attempt `errored`。
 - 显式链 `.optional()` 的断言仍显示 unavailable，但不影响 Verdict。
 
 Judge 也遵守同一条 Verdict 规则，但有自己的不可用原因：Judge 模型或 API key 解析不到、Judge 调用失败、响应取不出分数，都会得到 `unavailable`。所以 Judge 并非「永远可用」。

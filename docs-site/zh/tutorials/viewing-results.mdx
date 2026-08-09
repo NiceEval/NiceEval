@@ -4,7 +4,7 @@ sidebarTitle: "查看结果"
 description: "用 niceeval show 在终端按 @<locator> 查看 Attempt 的评估用例源码、执行记录与 diff，对照多个条件、看稳定性与用量、跨 Attempt 搜索执行记录，或用 niceeval view 在网页中查看同一份证据。"
 ---
 
-每次运行后，[NiceEval](https://niceeval.com/) 都会把结构化结果写入该实验的 **Run** 目录 `.niceeval/<experiment>/<run>/`。Run 记录实际产生的物理 Attempts 与已知题分母；`show` / `view` 直接比较当前 Sample 中的 experiments。
+每次运行后，[NiceEval](https://niceeval.com/) 都会把结构化结果写入该实验的 **Run** 目录 `.niceeval/<experiment>/<run>/`。Run 记录实际产生的物理 Attempts 与已知题分母。`show` / `view` 直接比较当前 Sample 中的 experiments。
 
 ## 控制台输出
 
@@ -26,7 +26,7 @@ description: "用 niceeval show 在终端按 @<locator> 查看 Attempt 的评估
 ╰──────────────────────────────────────────────────────────────────────── $0.84 ─╯
 ```
 
-在终端里跑的时候，运行中的那个框会原位刷新总数和 active slots，不把历史帧推进 scrollback；失败、错误和去重后的 diagnostic 以无框行留下来，都带 locator。输出被管道接走或终端太窄时，同样的内容会退化成不带框的纯文本。跑完框会换成结论、失败清单和下一步命令三块。完整的运行、读取、修复与重跑流程见 [Coding Agent 反馈闭环](/zh/tutorials/agent-feedback-loop)。
+在终端里跑的时候，运行中的那个框会原位刷新总数和 active slots，不把历史帧推进 scrollback。失败、错误和去重后的 diagnostic 以无框行留下来，都带 locator。输出被管道接走或终端太窄时，同样的内容会退化成不带框的纯文本。跑完框会换成结论、失败清单和下一步命令三块。完整的运行、读取、修复与重跑流程见 [Coding Agent 反馈闭环](/zh/tutorials/agent-feedback-loop)。
 
 ## `.niceeval/<experiment>/<快照>/`
 
@@ -64,13 +64,13 @@ niceeval show @1c3h6twx --diff      # sandbox 里的文件改动
 niceeval show weather/brooklyn --history      # 跨 run 时间轴：抖动与回归拐点
 ```
 
-`@<locator>` 是一次 Attempt 的持久、不透明身份，形如 `@1k2m9qrs`：由 `{experimentId, 快照时刻, evalId, attempt 序号}` 这个身份元组确定性派生，同一份落盘结果反复解析恒得到同一个值。它出现在 `niceeval show` 的分组明细里，直接复制粘贴就能定位到那一次运行。列表里的 locator 只打印 `@<id>`，不追加判定或证据能力缩写；打开 Attempt 首页后，`available` 会列出实际可用的证据命令。
+`@<locator>` 是一次 Attempt 的持久、不透明身份，形如 `@1k2m9qrs`：由 `{experimentId, 快照时刻, evalId, attempt 序号}` 这个身份元组确定性派生，同一份落盘结果反复解析恒得到同一个值。它出现在 `niceeval show` 的分组明细里，直接复制粘贴就能定位到那一次运行。列表里的 locator 只打印 `@<id>`，不追加判定或证据能力缩写。打开 Attempt 首页后，`available` 会列出实际可用的证据命令。
 
-Sandbox 创建、setup 或 teardown 错误不依赖 trace。`result.json` 保存错误的 `code`、`message`、生命周期阶段（`phase`）、有限 cause/stack 和 diagnostics；trace 只在存在时补调用关系与耗时。Attempt 在 cleanup、teardown 和 sandbox stop 结束后才封口写入，因此收尾 diagnostic 也能回顾。
+Sandbox 创建、setup 或 teardown 错误不依赖 trace。`result.json` 保存错误的 `code`、`message`、生命周期阶段（`phase`）、有限 cause/stack 和 diagnostics。trace 只在存在时补调用关系与耗时。Attempt 在 cleanup、teardown 和 sandbox stop 结束后才封口写入，因此收尾 diagnostic 也能回顾。
 
 同一个 Experiment 多次运行会留下多份结果。不带 `@<locator>` 的默认视图显示每个 Experiment × 评估用例最新的判定，并可能从同一个 Experiment 的多次运行中组合结果。按前缀只重跑部分评估用例时，其余评估用例的判定从更早的运行补齐。每份判定都带有生成时间，因此可以识别组合结果的来源。组合结果可能包含不同版本的被测代码，最终判定应以 `--rerun all` 全量重跑为准。
 
-用 eval id 前缀收窄范围时，同一个评估用例的多次 Attempt 全部按顺序列出，不做默认展开；需要精确查看就复制该行的 `@<locator>`。`--exp agents/codex` 按 experiment id 路径收窄；`--record` 换记录根，`--run` 只看某一次 Run。
+用 eval id 前缀收窄范围时，同一个评估用例的多次 Attempt 全部按顺序列出，不做默认展开。需要精确查看就复制该行的 `@<locator>`。`--exp agents/codex` 按 experiment id 路径收窄。`--record` 换记录根，`--run` 只看某一次 Run。
 
 `niceeval view` 的每个视图都有 CLI 对应物：
 
@@ -81,19 +81,19 @@ Sandbox 创建、setup 或 teardown 错误不依赖 trace。`result.json` 保存
 | 单次 Attempt 摘要（断言、执行、diff 与证据可用性） | `niceeval show @<locator>` |
 | 评估用例源码标注（断言标回源码行） | `niceeval show @<locator> --source` |
 | AI 对话、thinking、Skill 加载与工具调用（有 OTel 时补时间） | `niceeval show @<locator> --execution` |
-| 单次 Attempt 的阶段耗时分解 | `niceeval show @<locator> --timing`；逐节点审计用 `--timing=full` |
+| 单次 Attempt 的阶段耗时分解 | `niceeval show @<locator> --timing`。逐节点审计用 `--timing=full` |
 | 文件改动 | `niceeval show @<locator> --diff` |
-| 历史 Run 列表 | `niceeval show <eval id> --history`；钉死某一次用 `view --run <run.json>` 或复制该行 `@<locator>` 直接 `show` |
+| 历史 Run 列表 | `niceeval show <eval id> --history`。固定某一次用 `view --run <run.json>` 或复制该行 `@<locator>` 直接 `show` |
 
 ### 默认分组比较报告
 
-不带 flag 的 `niceeval show` 直接输出当前 Sample 的成本 × 端到端成功率图和实验列表。每个 experiment 的 eval 数与指标分母来自当前 Sample 的物理 Attempts 与已知题覆盖；运行期选择计划不会在报告层二次过滤。
+不带 flag 的 `niceeval show` 直接输出当前 Sample 的成本 × 端到端成功率图和实验列表。每个 experiment 的 eval 数与指标分母来自当前 Sample 的物理 Attempts 与已知题覆盖。运行期选择计划不会在报告层二次过滤。
 
-实验列表先给固定列汇总，再按 experiment → 评估用例 → Attempt 展开。locator 只保留 `@<id>`；完整断言和 evidence 留在 `niceeval show @<locator>`。只有一个 experiment 时散点仍显示单点。
+实验列表先给固定列汇总，再按 experiment → 评估用例 → Attempt 展开。locator 只保留 `@<id>`。完整断言和 evidence 留在 `niceeval show @<locator>`。只有一个 experiment 时散点仍显示单点。
 
 ### 用 eval 前缀收窄默认报告
 
-eval id 前缀不是另一套视图——它只是把当前 Sample 收窄到匹配的评估用例，渲染的仍是和裸 `niceeval show` 同一份默认报告：散点图、固定列汇总，再按 experiment → 评估用例 → Attempt 展开，只是这里的评估用例只剩下匹配前缀的那些。同一个评估用例的多次 Attempt 全部按顺序逐条列出，不做「默认展开某一次」的取舍：
+eval id 前缀不是另一套视图——它只是把当前 Sample 收窄到匹配的评估用例，渲染的仍是和不带筛选参数的 `niceeval show` 同一份默认报告：散点图、固定列汇总，再按 experiment → 评估用例 → Attempt 展开，只是这里的评估用例只剩下匹配前缀的那些。同一个评估用例的多次 Attempt 全部按顺序逐条列出，不做「默认展开某一次」的取舍：
 
 ```text
 $ niceeval show weather/brooklyn
@@ -141,13 +141,13 @@ Other pages:
   traces     Traces     niceeval show weather/brooklyn --page traces
 ```
 
-`compare/bub-gpt-5.4` 下只有一次 Attempt（`@14617z2e`）；`compare/codex-gpt-5.4` 下三次 Attempt 全部展开（`@14m0duci`、`@1rxhuidh`、`@1jwsgp2j`），逐行给出各自的判定、耗时、成本与失败摘要，被截断的 `received` 值末尾带 `…`。复制其中任意一行的 `@<locator>` 继续 `niceeval show @<locator>`，就能打开那一次 Attempt 的诊断首页看完整断言与证据。
+`compare/bub-gpt-5.4` 下只有一次 Attempt（`@14617z2e`）。`compare/codex-gpt-5.4` 下三次 Attempt 全部展开（`@14m0duci`、`@1rxhuidh`、`@1jwsgp2j`），逐行给出各自的判定、耗时、成本与失败摘要，被截断的 `received` 值末尾带 `…`。复制其中任意一行的 `@<locator>` 继续 `niceeval show @<locator>`，就能打开那一次 Attempt 的诊断首页看完整断言与证据。
 
-资源列在整张层级表里使用同一口径：Experiment 与路径组是跨 Eval 宏平均，Eval 是 Attempts 平均，Attempt 是精确值。“平均 Tokens”计入 uncached input、cache read、cache creation 与 output。这里显示的是比较均值，不是总量；总量与计价桶明细使用 `niceeval show ... --usage` 查看。
+资源列在整张层级表里使用同一口径：Experiment 与路径组是跨 Eval 宏平均，Eval 是 Attempts 平均，Attempt 是精确值。“平均 Tokens”计入 uncached input、cache read、cache creation 与 output。这里显示的是比较均值，不是总量。总量与计价桶明细使用 `niceeval show ... --usage` 查看。
 
 ### `@<locator>`：一次 Attempt 的摘要
 
-不带证据 flag 的 `niceeval show @<locator>` 是失败诊断首页：除断言计票外，失败项直接列 group、matcher、expected、received、原因和源码位置；随后给出评估用例源码可用性、Agent 事件计数、OTel 计时可用性与工作区 diff 摘要。该页用于定位失败原因；需要追查 Agent 结果的来源时，再打开对应证据视图：
+不带证据 flag 的 `niceeval show @<locator>` 是失败诊断首页：除断言计票外，失败项直接列 group、matcher、expected、received、原因和源码位置。随后给出评估用例源码可用性、Agent 事件计数、OTel 计时可用性与工作区 diff 摘要。该页用于定位失败原因。需要追查 Agent 结果的来源时，再打开对应证据视图：
 
 ```text
 $ niceeval show @1k2m9qrs
@@ -175,14 +175,14 @@ available:
   niceeval show @1k2m9qrs --timing
 ```
 
-该视图只给摘要，不复现完整证据。完整源码、事件流和文件列表分别由对应的证据 flag 展开。`changes` 行会说明 diff 不可用的具体原因：此处的 `weather/brooklyn` 不是 Sandbox 评估用例，因此从未收集工作区改动；Sandbox 评估用例未修改文件时则显示「没有产生工作区文件改动」。
+该视图只给摘要，不复现完整证据。完整源码、事件流和文件列表分别由对应的证据 flag 展开。`changes` 行会说明 diff 不可用的具体原因：此处的 `weather/brooklyn` 不是 Sandbox 评估用例，因此从未收集工作区改动。Sandbox 评估用例未修改文件时则显示「没有产生工作区文件改动」。
 
 ### `--source`、`--execution`、`--timing`、`--diff`：四个证据切面
 
 四个证据 flag 既可以加在 `@<locator>` 后面（精确到一次 Attempt），也可以加在任意收窄出结果的范围后面——eval id 前缀、`--exp` 都可以。范围里有不止一次 Attempt 时，输出按 Attempt 逐条分节，每节开头一行 `@<locator> · <评估用例 id> · <experiment id> · <判定>` 标出这一节是哪次 Attempt。可以同时传多个证据 flag，一次输出全部要看的切面。
 
-`--source` 显示运行时保存的评估用例源码调用树。入口文件是主干；断言写在项目内共享 helper 时，
-NiceEval 把 helper 片段挂在入口调用行下面。全通过的 helper 默认只留检查计票，失败、丢分或前置
+`--source` 显示运行时保存的评估用例源码调用树。入口文件是主干。断言写在项目内共享辅助函数时，
+NiceEval 把辅助函数片段挂在入口调用行下面。全通过的辅助函数默认只留检查计票，失败、丢分或前置
 中止的路径默认展开。只有没有源码位置的断言才单独进入 unmapped 段，永不丢弃：
 
 ```text
@@ -208,15 +208,15 @@ assertions: 1 passed · 1 gate failed · 1 soft below target
 full eval source: .niceeval/compare_codex-gpt-5.4/2026-07-09T10-00-00-000Z-x1f2/weather/brooklyn/a2/sources.json
 ```
 
-每个项目内文件在本次 Attempt 第一次引用它时保存。它不是当前工作区里同名文件的最新内容；评估
-用例或共享 helper 改过之后再看旧 Attempt，看到的仍是当时那一版。调用链缺失时，helper 片段按文件
-列在主干后面；缺少某份正文时保留路径和行号。没有捕获到任何源码时如实说明
+每个项目内文件在本次 Attempt 第一次引用它时保存。它不是当前工作区里同名文件的最新内容。评估
+用例或共享辅助函数改过之后再看旧 Attempt，看到的仍是当时那一版。调用链缺失时，辅助函数片段按文件
+列在主干后面。缺少某份正文时保留路径和行号。没有捕获到任何源码时如实说明
 `eval source unavailable for this attempt`，不伪造空文档。
 
 需要展开全通过路径时运行 `niceeval show @<locator> --source=full`。只读一个文件的完整正文时运行
-`niceeval show @<locator> --source=<项目相对路径>`；路径支持唯一后缀匹配，重名时会列出候选。
+`niceeval show @<locator> --source=<项目相对路径>`。路径支持唯一后缀匹配，重名时会列出候选。
 
-`--execution` 把标准事件流（消息、thinking、Skill 加载、工具调用/结果、subagent、错误）排成一棵执行树；这次 Attempt 接入过 OTel 时，同一节点能关联到的 span 会补上相对时间与耗时。无法关联到 Agent 事件的 SDK / runtime span 不逐行混入执行记录，只在结尾报告省略数量并指向完整 `trace.json`。没接入 OTel 时骨架、顺序和内容不变，只去掉时间列并标 `timing unavailable`：
+`--execution` 把标准事件流（消息、thinking、Skill 加载、工具调用/结果、subagent、错误）排成一棵执行树。这次 Attempt 接入过 OTel 时，同一节点能关联到的 span 会补上相对时间与耗时。无法关联到 Agent 事件的 SDK / runtime span 不逐行混入执行记录，只在结尾报告省略数量并指向完整 `trace.json`。没接入 OTel 时骨架、顺序和内容不变，只去掉时间列并标 `timing unavailable`：
 
 ```text
 $ niceeval show @1k2m9qrs --execution
@@ -262,7 +262,7 @@ full events: fixtures/button/a1/events.json
 full OTel trace: fixtures/button/a1/trace.json
 ```
 
-超长的工具结果既不整段打印、也不被一刀切丢掉。卡片正文是**有界预览**：每个内容段（消息正文；工具卡的 input 与 result 各算一段）最多显示前 3 行，保留原始换行，另有每段 1 KiB 兜底防单行超长。有折叠的卡片在卡尾报被折的行数与字符数，并自带这张卡片的**展开句柄**——整行就是下一条可直接复制的命令。预览负责回答「这一步做了什么、结果开头长什么样」，让整个 attempt 的树落在一两屏内；要看全量再花第二条命令：
+超长的工具结果既不整段打印、也不被一刀切丢掉。卡片正文是**有界预览**：每个内容段（消息正文。工具卡的 input 与 result 各算一段）最多显示前 3 行，保留原始换行，另有每段 1 KiB 上限防止单行过长。有折叠的卡片在卡尾报被折的行数与字符数，并自带这张卡片的**展开句柄**——整行就是下一条可直接复制的命令。预览负责回答「这一步做了什么、结果开头长什么样」，让整个 attempt 的树落在一两屏内。要看全量再花第二条命令：
 
 ```text
 $ niceeval show @1c3h6twx --execution
@@ -277,7 +277,7 @@ TOOL · command_execution  5.2s · 1.9s
     (+3055 lines · 263161 chars · niceeval show @1c3h6twx --execution --expand t2.c3)
 ```
 
-`--expand` 接截断尾巴里的句柄，单独输出这一张卡片的完整落盘内容（原始换行，不再截断），其余卡片不打印；范围必须恰好命中一个 attempt。句柄 `t<轮次>.c<轮内卡序>`（失败 Sandbox 命令卡是 `cmd<n>`）由 `events.json` 的事件序确定性派生，同一 attempt 反复解析恒定——昨天终端记录里抄来的句柄今天照样有效：
+`--expand` 接截断尾巴里的句柄，单独输出这一张卡片的完整落盘内容（原始换行，不再截断），其余卡片不打印。范围必须恰好命中一个 attempt。句柄 `t<轮次>.c<轮内卡序>`（失败 Sandbox 命令卡是 `cmd<n>`）由 `events.json` 的事件序确定性派生，同一 attempt 反复解析恒定——昨天终端记录里抄来的句柄今天照样有效：
 
 ```text
 $ niceeval show @1c3h6twx --execution --expand t2.c3
@@ -292,7 +292,7 @@ TOOL · command_execution  5.2s · 1.9s
     …完整落盘内容逐行继续，不再截断…
 ```
 
-两点边界：展开还原的是**落盘证据**——单个值落盘时有 256 KiB 上限，超限的值展开后如实标注 `truncated` 与原始字节数，不冒充运行时全量；`--json` 面恒输出完整值、从不截断，因此它与 `--expand` 互斥——没有可展开的东西。
+两点边界：展开还原的是**落盘证据**——单个值落盘时有 256 KiB 上限，超限的值展开后如实标注 `truncated` 与原始字节数，不冒充运行时全量。`--json` 面恒输出完整值、从不截断，因此它与 `--expand` 互斥——没有可展开的东西。
 
 没有 OTel 接入时，同一棵树去掉时间列，节点内容原样保留：
 
@@ -345,11 +345,11 @@ sandbox.stop         1.2s
 
 收尾阶段不计入 Attempt 总耗时，单独分组列出——「判定早就出了、进程还在等收尾」这类问题看这一组。缩进表示包含关系，不表示子项可以相加：命令、turn 和 OTel span 都可能嵌套或并发。
 
-裸 `--timing` 会完整列出 phase，并把 phase 下的细节控制在 80 个节点内。超过上限时，它优先保留失败路径、最慢节点与首尾时序，在省略位置显示节点数、未展示的失败数，并给出 `--timing=full`。小树中两种模式输出相同；`--timing=full` 不设节点上限，适合审计旧结果或把完整树重定向到文件。NiceEval 不自动启动 pager，因此管道、CI 和 coding agent 不会等待键盘输入。命令可能并发，省略行不会把子节点耗时相加。
+不带值的 `--timing` 会完整列出 phase，并把 phase 下的细节控制在 80 个节点内。超过上限时，它优先保留失败路径、最慢节点与首尾时序，在省略位置显示节点数、未展示的失败数，并给出 `--timing=full`。小树中两种模式输出相同。`--timing=full` 不设节点上限，适合审计旧结果或把完整树重定向到文件。NiceEval 不自动启动 pager，因此管道、CI 和 coding agent 不会等待键盘输入。命令可能并发，省略行不会把子节点耗时相加。
 
 Operation 名称由执行工作的组件在采集时写入。例如一次 Workspace diff 导出可以显示为 `export workspace diff · 1 window · 3,302 files`，并包含一条真实的批量 shell。展示层不会解析 `git show` 等命令文本来推测 `git show ×N` 分组。旧 artifact 记录大量调用时，默认模式提供有界摘要，`--timing=full` 可以逐条核对。`--timing` 会分别显示 Sandbox 创建、安装命令和轮内模型或工具耗时。旧结果或第三方结果没有阶段数据时，两种模式都会提示 `phase timing unavailable`。
 
-`--diff` 默认给文件级摘要（落盘的 diff 只有改动后的全文，没有基线可比对增删行数，所以每个改动过的文件都标 `M`、后面跟它现在的行数，不区分新建与修改）；看单个文件的完整内容用 `--diff=<文件路径>`——路径必须用 `=` 连写，位置参数永远留给评估用例 id 前缀 / `@<locator>`：
+`--diff` 默认给文件级摘要（落盘的 diff 只有改动后的全文，没有基线可比对增删行数，所以每个改动过的文件都标 `M`、后面跟它现在的行数，不区分新建与修改）。看单个文件的完整内容用 `--diff=<文件路径>`——路径必须用 `=` 连写，位置参数永远留给评估用例 id 前缀 / `@<locator>`：
 
 ```text
 $ niceeval show @1c3h6twx --diff
@@ -366,23 +366,23 @@ $ niceeval show @1c3h6twx --diff=src/components/Button.tsx
 
 ### 给 coding agent 的最短阅读路径
 
-把下面这条闭环交给 coding agent 即可。每一步只在上一层不足以定位问题时继续，避免一开始就把完整 artifact 塞进上下文：
+把下面这条闭环交给 coding agent 即可。每一步只在上一层不足以定位问题时继续，避免一开始就把完整 artifact 写入上下文：
 
 ```text
 1. 运行 niceeval show，找到失败或出错的 eval，从紧凑索引里摘一个 @<locator>。
 2. 运行 niceeval show <eval-id>，读取该题各 experiment 的判定、默认 attempt 的断言明细,
    以及每行末尾的 @<locator>。
 3. 运行 niceeval show @<locator>，从摘要确认这次 Attempt 捕获的证据类型。
-4. 按问题选择 --source、--execution、--timing 或 --diff；可以同时传多个证据 flag。
+4. 按问题选择 --source、--execution、--timing 或 --diff。可以同时传多个证据 flag。
 5. 输出被截断时，读取末尾标出的 sources.json、events.json、trace.json 或 diff.json 原始路径。
-6. 修复后重跑该 eval，再用 niceeval show <eval-id> 验证新的 @<locator>；收工前用 --rerun all 全量重跑确认整体结果。
+6. 修复后重跑该 eval，再用 niceeval show <eval-id> 验证新的 @<locator>。收工前用 --rerun all 全量重跑确认整体结果。
 ```
 
 `--source` 显示评估用例检查内容和断言结果，`--execution` 显示 Agent 消息与调用（可关联时附 OTel 时间），`--timing` 显示 Attempt 各阶段耗时，`--diff` 显示 Sandbox 文件改动。按诊断目标选择证据，不需要每次读取全部四种视图。
 
 ### 历史与抖动：`--history`
 
-不带 `--history` 时，`niceeval show` 只显示每个 experiment × 评估用例的最新判定；`--history` 把一道评估用例的历次执行摊开成时间轴：每个 experiment × 评估用例一个框，框内按开始时间从早到晚一行一次执行——时间、判定、失败摘要、耗时、成本，行尾是这次执行的 `@<locator>`：
+不带 `--history` 时，`niceeval show` 只显示每个 experiment × 评估用例的最新判定。`--history` 把一道评估用例的历次执行摊开成时间轴：每个 experiment × 评估用例一个框，框内按开始时间从早到晚一行一次执行——时间、判定、失败摘要、耗时、成本，行尾是这次执行的 `@<locator>`：
 
 ```text
 $ niceeval show weather/brooklyn --history
@@ -516,7 +516,7 @@ memory/uv-lock-refresh                       —                         ✓1 �
 totals                                       ✓4 ✗3 !1                  ✓6 ✗3 !0
 ```
 
-`never passed` 的题先怀疑题目本身（prompt 缺公开契约、断言过强），再怀疑 agent；`!`（执行错误）扎堆的列先修 provider 限流或并发，两者都不该记到对照条件头上。要看某一格的逐次执行，下钻 `niceeval show <eval 前缀> --history`。
+`never passed` 的题先怀疑题目本身（prompt 缺公开契约、断言过强），再怀疑 agent。`!`（执行错误）扎堆的列先修 provider 限流或并发，两者都不该记到对照条件头上。要看某一格的逐次执行，下钻 `niceeval show <eval 前缀> --history`。
 
 ### 贵在哪：`--usage`
 
@@ -536,7 +536,7 @@ locator     eval                                 result       turns   tools   un
 total                                            6/8 passed      16      16        880.6k        3.5M*   54.8k        131   $4.05
 ```
 
-`uncached in`（`inputTokens`，未命中缓存的输入）与 `cache read`（`cacheReadTokens`，缓存命中）是两个互斥的计价桶，相加才是每轮真正送进模型的上下文量：协议逐轮重发上下文时，膨胀多在 `cache read`，这层拆分才能回答「贵在哪」，只看单个数字看不出来。缺字段的格显示 `—`，不按 0 计入合计；合计列有缺失参与时标 `*`。
+`uncached in`（`inputTokens`，未命中缓存的输入）与 `cache read`（`cacheReadTokens`，缓存命中）是两个互斥的计价桶，相加才是每轮真正送进模型的上下文量。协议逐轮重发上下文时，膨胀多在 `cache read`，这层拆分才能回答「贵在哪」，只看单个数字看不出来。缺字段的格显示 `—`，不按 0 计入合计。合计列有缺失参与时标 `*`。
 
 ### agent 到底 search 了没：`--execution --grep`
 
@@ -589,7 +589,7 @@ niceeval show --exp compare/claude-mempal --usage --json
 }
 ```
 
-拼趋势、进 CI、喂给下一个分析步骤都从这里读；脚本自己扫 `.niceeval/` 原始文件必然复刻出第二套不一致的选择和去重口径。`--json` 输出一个顶层 JSON 文档，不是 NDJSON；字段名与落盘类型保持一致，不为展示发明第二套命名。
+拼趋势、进 CI、喂给下一个分析步骤都从这里读。脚本自己扫 `.niceeval/` 原始文件必然复刻出第二套不一致的选择和去重口径。`--json` 输出一个顶层 JSON 文档，不是 NDJSON。字段名与落盘类型保持一致，不为展示发明第二套命名。
 
 ## `niceeval view`：在网页看证据
 
@@ -597,7 +597,7 @@ niceeval show --exp compare/claude-mempal --usage --json
 npx niceeval view
 ```
 
-这会打开本地结果查看器。它的首页报告和 `niceeval show` 选结果的规则一模一样：对每个 experiment 的每道评估用例，取时间上最新的那份判定，同一个 experiment 跨多次运行拼出来；收窄范围（评估用例 ID 前缀、`--exp`）时按同一条规则收窄。你可以浏览评估用例、查看 agent 的对话与工具调用、读 diff、检查断言结果。数据不会上传到外部服务。
+这会打开本地结果查看器。它的首页报告和 `niceeval show` 选结果的规则一模一样：对每个 experiment 的每道评估用例，取时间上最新的那份判定，同一个 experiment 跨多次运行拼出来。收窄范围（评估用例 ID 前缀、`--exp`）时按同一条规则收窄。你可以浏览评估用例、查看 agent 的对话与工具调用、读 diff、检查断言结果。数据不会上传到外部服务。
 
 <Tip>
   失败后立刻运行 `npx niceeval view`，可以直接打开刚刚那次运行的 artifacts。
@@ -605,13 +605,13 @@ npx niceeval view
 
 `view` 的首页直接显示当前 Sample 的摘要、成本 × 端到端成功率散点图与实验表。传 `--report` 就换成自己的报告。Attempt 详情里的 transcript、时间树、trace 与 diff 始终可用。
 
-网页版可以排序实验表、筛行、展开 experiment、悬停散点看数值；这些操作不改判定口径。
+网页版可以排序实验表、筛行、展开 experiment、悬停散点看数值。这些操作不改判定口径。
 
 实验表一层层展开到 Attempt 时，定位符前面带判定符、整个定位符按判定着色：`✓` 绿是通过、`✗` 红是失败、`!` 黄是错误。扫一眼就知道哪几次要点开，失败的断言细节在 Attempt 详情里。
 
 ### Attempt 详情里的文件改动
 
-文件改动按路径排成一棵树。目录行给出这棵子树改了几个文件、合计加删多少行；文件行前面是状态字母，`A` 是新增、`M` 是修改、`D` 是删除。点开一个文件行就看到改动内容，按 `t.send()` 的轮次分段，段头是轮标签（`turn1`）——和对话、时间树里的轮标签是同一个，可以对着看这一轮说了什么。
+文件改动按路径排成一棵树。目录行给出这棵子树改了几个文件、合计加删多少行。文件行前面是状态字母，`A` 是新增、`M` 是修改、`D` 是删除。点开一个文件行就看到改动内容，按 `t.send()` 的轮次分段，段头是轮标签（`turn1`）——和对话、时间树里的轮标签是同一个，可以对着看这一轮说了什么。
 
 改动内容太大时不内联：单个文件超过 64 KiB，或一页内联合计超过 512 KiB 时，那些文件行显示 `niceeval show @<定位符> --diff=<路径>`，复制到终端看完整内容。二进制文件只显示字节数变化。
 
@@ -626,7 +626,13 @@ niceeval exp compare/codex        # 终端 A
 niceeval view --exp compare/codex # 终端 B
 ```
 
-每写完一个 Attempt，页面上就多一行；重建完成后页面自己重载，并且停在你正在看的那一页或那个 Attempt 上。
+每写完一个 Attempt，页面上就多一行。重建完成后页面自己重载，并且停在你正在看的那一页或那个 Attempt 上。终端会在新页面可用后打印本机完成时间：
+
+```text
+10:09:29 [niceeval view] 热重载完成
+```
+
+每次成功重建各打印一行。重建失败只打印错误，不会同时打印完成行。
 
 盯着一个正在写的目录看不会读到半份数据：`result.json` 一次原子写成，所以页面要么看不见这个 Attempt，要么看见它的完整判定。运行还没收尾时页面上会有一条结构化警告说明这一点，跑完自行消失。
 
@@ -648,7 +654,7 @@ niceeval view --report reports/site.tsx
 npx niceeval view --out site
 ```
 
-NiceEval 写入 `<dir>/index.html`，并把查看器要读取的 artifact（`sources.json`、`events.json`、`trace.json`，有 `diff.json` 也带上）复制到 `<dir>/artifact/` 下。把整个目录交给任何静态托管（Vercel、GitHub Pages 或 `python3 -m http.server`），代码视图、transcript 和 trace 瀑布图都和本地 `niceeval view` 一致；表格排序、过滤和图表悬停也照常可用——所需脚本已内联进页面，浏览器禁用 JS 时页面仍完整可读，只是少这些浏览操作。
+NiceEval 写入 `<dir>/index.html`，并把查看器要读取的 artifact（`sources.json`、`events.json`、`trace.json`，有 `diff.json` 也带上）复制到 `<dir>/artifact/` 下。把整个目录交给任何静态托管（Vercel、GitHub Pages 或 `python3 -m http.server`），代码视图、transcript 和 trace 瀑布图都和本地 `niceeval view` 一致。表格排序、过滤和图表悬停也照常可用——所需脚本已内联进页面，浏览器禁用 JS 时页面仍完整可读，只是少这些浏览操作。
 
 只想发布一部分结果时，把本地查看用的收窄直接交给导出：
 
@@ -661,7 +667,7 @@ npx niceeval view weather --out site                # 只发布 weather 开头�
 
 `--out` 只接受目录。没有单文件导出：代码视图、transcript 和 trace 依赖 artifact 文件，单个 HTML 装不下完整证据。要把结果发给别人，托管整站发链接即可。
 
-零可读结果时 `view` 直接报错、非零退出——本地服务起不来，`--out` 不导出空页面。错误逐条列出被跳过的快照目录与原因；落盘 schemaVersion 与当前版本不兼容时，还给出能直接查看旧落盘的 `npx niceeval@<版本> view` 命令。
+零可读结果时 `view` 直接报错、非零退出——本地服务起不来，`--out` 不导出空页面。错误逐条列出被跳过的快照目录与原因。落盘 schemaVersion 与当前版本不兼容时，还给出能直接查看旧落盘的 `npx niceeval@<版本> view` 命令。
 
 两点限制：
 
@@ -709,16 +715,16 @@ OTLP trace 或标准化后的 span 数据。它是可选的执行关系和耗时
   <Tab title="skipped">评估用例被主动跳过。</Tab>
 </Tabs>
 
-Soft 断言的分数记录在 `assertions[].score` 里；非 `--strict` 模式下，它们不会产生额外的 verdict。
+Soft 断言的分数记录在 `assertions[].score` 里。非 `--strict` 模式下，它们不会产生额外的 verdict。
 
 ## 调试建议
 
 - 默认报告里失败/错误的题每条自带下钻命令：`niceeval show <eval id>` 先看断言明细，行尾的 `@<locator>` 可以直接精确下钻到某一次 Attempt。
 - 检查评估用例内容和断言结果时使用 `--source`，断言标注会对应到源码行。
-- 检查 Agent 消息和调用时使用 `--execution`；关联成功的 OTel 时间会显示在同一事件旁。
-- coding-agent 失败时看 `--diff` 和 `--execution` 里的工具调用；两者结合能看出「改错了文件」还是「压根没调用该调用的工具」。
+- 检查 Agent 消息和调用时使用 `--execution`。关联成功的 OTel 时间会显示在同一事件旁。
+- coding-agent 失败时看 `--diff` 和 `--execution` 里的工具调用。两者结合能看出「改错了文件」还是「压根没调用该调用的工具」。
 - Sandbox 评估用例运行缓慢或超时时，先看 `--timing`。该视图分别列出排队、Sandbox 启动、setup hook 中的 shell、Agent 安装命令、每轮 `send`、可关联的 OTel model/tool 以及收尾阶段耗时。
 - 同批题在多个条件下跑过时，用多个 `--exp` 看逐题对照矩阵，不要只盯着两次单条件的默认报告肉眼对比。
-- 怀疑某道题本身有问题（不是这次条件变化导致）时，先看 `--stats` 里它是不是在所有条件、所有历史执行里都 `never passed`；要网页版（散点、堆叠柱和可下钻矩阵）用 `niceeval view --report stability`。
+- 怀疑某道题本身有问题（不是这次条件变化导致）时，先看 `--stats` 里它是不是在所有条件、所有历史执行里都 `never passed`。要网页版（散点、堆叠柱和可下钻矩阵）用 `niceeval view --report stability`。
 - 只想处理失败时，`niceeval view --report failures` 打开内建失败视图：待处理清单、批量修复 prompt 和逐条下钻都在一页。
 - 定位被测程序或评估用例缺陷并完成重跑的流程见 [Coding Agent 反馈闭环](/zh/tutorials/agent-feedback-loop)。

@@ -16,7 +16,7 @@ npx niceeval exp ci \
   --junit .niceeval/junit.xml
 ```
 
-CI 不需要单独的输出模式：不加 `--json` 时的人读文本在非 TTY（CI 日志页）下自动降级成只追加的流——不画框、不带 ANSI，只在开始、失败/错误、diagnostic 和最终结论时追加一行，通过的 Attempt 不逐条打印。这份日志给人看；平台注解走 `--junit`，需要 JSON 汇总时在运行后读结果面（见下）。
+CI 不需要单独的输出模式：不加 `--json` 时的人读文本在非 TTY（CI 日志页）下自动降级成只追加的流——不画框、不带 ANSI，只在开始、失败/错误、diagnostic 和最终结论时追加一行，通过的 Attempt 不逐条打印。这份日志给人看。平台注解走 `--junit`，需要 JSON 汇总时在运行后读结果面（见下）。
 
 ## GitHub Actions 示例
 
@@ -58,7 +58,7 @@ jobs:
 
 ## JSON、JUnit 和结构化错误
 
-不加 `--json` 时 `niceeval exp` 输出人读文本；在非 TTY（CI 日志页正是这种环境）下自动降级成只追加、不画框的纯文本流——`PLAN` 与收尾的结论、`FAILURES`、`NEXT` 仍是完整的信息面板，只是不再画边框：标题单独成行，正文缩进两列。失败与错误发生时先各自追加一条不缩进的流事件行，收尾时再被 `FAILURES` 面板收拢复述一遍。一次门禁断言失败的真实非 TTY 输出：
+不加 `--json` 时 `niceeval exp` 输出人读文本。在非 TTY（CI 日志页正是这种环境）下自动降级成只追加、不画框的纯文本流——`PLAN` 与收尾的结论、`FAILURES`、`NEXT` 仍是完整的信息面板，只是不再画边框：标题单独成行，正文缩进两列。失败与错误发生时先各自追加一条不缩进的流事件行，收尾时再被 `FAILURES` 面板收拢复述一遍。一次门禁断言失败的真实非 TTY 输出：
 
 ```text
 PLAN
@@ -84,7 +84,9 @@ NEXT
   .niceeval/basic_mock/<snapshot>
 ```
 
-退出码是第一层红绿信号；JUnit 和结果快照是完整机器接口，这份日志只给人读，用于搜索和定位。`errored`（执行错误，不是断言不过）的流事件同样是一条不缩进的行，带 locator、eval/experiment 身份、已知时的正式 phase 和一层 reason 摘要，例如 `✗ @12h8m4k1 fixtures/button [ci/codex] errored · sandbox.create` 后接 `sandbox-rate-limit: E2B sandbox allocation failed after 5 attempts`。详细 cause、stack 和 diagnostics 保存在 Attempt 的 `result.json`，可在保留 artifact 后运行 `niceeval show @<locator>` 回顾。
+退出码是第一层红绿信号。JUnit 和结果快照是完整机器接口，这份日志只给人读，用于搜索和定位。
+
+`errored`（执行错误，不是断言不过）的流事件同样是一条不缩进的行，带 locator、eval/experiment 身份、已知时的正式 phase 和一层 reason 摘要。例如 `✗ @12h8m4k1 fixtures/button [ci/codex] errored · sandbox.create` 后接 `sandbox-rate-limit: E2B sandbox allocation failed after 5 attempts`。详细 cause、stack 和 diagnostics 保存在 Attempt 的 `result.json`，可在保留 artifact 后运行 `niceeval show @<locator>` 回顾。
 
 需要机器解析运行事件（自建 annotation adapter、实时看板）时把这条命令加上 `--json`，得到同一套事实的 NDJSON 事件流，`start` 打头、`result` 收尾：
 
@@ -99,10 +101,10 @@ npx niceeval show --json > .niceeval/ci-summary.json
 ```
 
 <Tip>
-  仓库用 pnpm 时把上面这条换成 `pnpm --silent exec niceeval show --json > .niceeval/ci-summary.json`。`pnpm exec` 默认会在 stdout 最前面打印一段启动信息，混进重定向的 JSON 文件；`--silent` 关掉这段前缀。
+  仓库用 pnpm 时把上面这条换成 `pnpm --silent exec niceeval show --json > .niceeval/ci-summary.json`。`pnpm exec` 默认会在 stdout 最前面打印一段启动信息，混进重定向的 JSON 文件。`--silent` 关掉这段前缀。
 </Tip>
 
-`show --json` 读的是结果根唯一的当前结果集，包含仍与当前配置兼容的携带结果。用 `--exp` 收窄实验；若 CI 要审计某一份物理 Run，而非当前结果集，应显式读取该 Run，不按来源过滤当前结果。
+`show --json` 读的是结果根唯一的当前结果集，包含仍与当前配置兼容的携带结果。用 `--exp` 收窄实验。若 CI 要审计某一份物理 Run，而非当前结果集，应显式读取该 Run，不按来源过滤当前结果。
 
 CLI 显式要求的 `--json` / `--junit` 输出和默认 results artifact 都是 required 输出：写入失败必须让 job 判红，不能只留 warning 后退出 0。把结果同时上报到 Braintrust 等实验平台的配置见 [Reporter 上报](./reporters)。
 

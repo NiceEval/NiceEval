@@ -61,7 +61,7 @@ cd "$REPO"
 node_modules/.bin/niceeval view --record .niceeval --out site
 ```
 
-链接回仓库根这一步不只是为了能在仓库根用相对路径 `node_modules/.bin/niceeval` 调用:后续如果传自定义 `--report reports/xxx.tsx`,`tsx` 会用仓库自己的 `tsconfig`(`jsx: "react-jsx"`)编译这个文件,文件里的 `import "niceeval/report"` 按文件位置解析——resolve 得从仓库根的 `node_modules` 找起。不管当下用不用自定义报告,这一步都值得做,省得以后加了自定义报告才发现构建脚本要重写。
+链接回仓库根这一步不只是为了能在仓库根用相对路径 `node_modules/.bin/niceeval` 调用。后续如果传自定义 `--report reports/xxx.tsx`,`tsx` 会用仓库自己的 `tsconfig`(`jsx: "react-jsx"`)编译这个文件,文件里的 `import "niceeval/report"` 按文件位置解析。模块查找得从仓库根的 `node_modules` 找起。不管当下用不用自定义报告,这一步都值得做,省得以后加了自定义报告才发现构建脚本要重写。
 
 `vercel.json` 指向这份脚本,并跳过 Vercel 默认的 install 步骤:
 

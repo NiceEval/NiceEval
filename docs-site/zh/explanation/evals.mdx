@@ -46,7 +46,7 @@ npx niceeval exp local weather
 npx niceeval exp local weather/brooklyn
 ```
 
-这种方式让 ID 稳定、可读，并自然跟目录结构保持一致。位置参数采用裸字符串前缀：`terminal-swe-bench` 也会命中 `terminal-swe-bench-astropy-1`，不要求后一个字符必须是 `/`。
+这种方式让 ID 稳定、可读，并自然跟目录结构保持一致。位置参数采用字符串前缀：`terminal-swe-bench` 也会命中 `terminal-swe-bench-astropy-1`，不要求后一个字符必须是 `/`。
 
 ## 生命周期
 
@@ -90,7 +90,7 @@ npx niceeval exp local weather/brooklyn
 
 ## gate 与 soft
 
-`gate` 是硬门槛，失败会让 eval 失败；`soft` 参与打分，但不一定让 eval 失败。完整规则见 [Assert](/zh/explanation/assert)。
+`gate` 是硬门槛，失败会让 eval 失败。`soft` 参与打分，但不一定让 eval 失败。完整规则见 [Assert](/zh/explanation/assert)。
 
 ## `*.eval.ts` 约定
 
@@ -122,5 +122,5 @@ export default rows.map((row) =>
 
 ## 相关阅读
 
-- [实验](/zh/explanation/experiment) — 另一半：评谁、怎么跑；为什么和评估用例分开（晚绑定）。
+- [实验](/zh/explanation/experiment) — 另一半：评谁、怎么跑。为什么和评估用例分开（晚绑定）。
 - [Assert](/zh/explanation/assert) — gate 与 soft 的完整判定规则。

@@ -1246,9 +1246,22 @@ async function main(): Promise<void> {
       process.stdout.write(t("cli.view.exportedDir", { out }));
       process.exit(0);
     }
-    const server = await startViewServer({ input: viewInput.input, port: flags.port, host: flags.host, scan, watchRoot: cwd }).catch(
-      exitOnViewUserError,
-    );
+    const server = await startViewServer({
+      input: viewInput.input,
+      port: flags.port,
+      host: flags.host,
+      scan,
+      watchRoot: cwd,
+      onRebuild: (completedAt) => {
+        const time = new Intl.DateTimeFormat("en-GB", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hourCycle: "h23",
+        }).format(completedAt);
+        process.stdout.write(t("cli.view.hotReloadComplete", { time }));
+      },
+    }).catch(exitOnViewUserError);
     process.stdout.write(t("cli.view.urls", { urls: server.urls.map((url) => `  ${url}`).join("\n") }));
     if (flags.open !== false) {
       const opened = await openBrowser(server.url);

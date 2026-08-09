@@ -6,11 +6,11 @@ description: "报告脚下的数据层：openRecord 把 .niceeval/ 的落盘 art
 
 import { RecordShape } from '/snippets/diagram-record-shape.jsx';
 
-[自定义报告](/zh/tutorials/custom-reports)用到的转换函数、组件与双面 renderer 脚下还有一层：`niceeval/record`，落盘 artifact 的读取器。官方两扇门和全部报告读的都是这一层，没有私有数据通道；报告表达不了的口径，下到这层直接拿数据算。
+[自定义报告](/zh/tutorials/custom-reports)用到的转换函数、组件与双面 renderer 脚下还有一层：`niceeval/record`，落盘 artifact 的读取器。官方两扇门和全部报告读的都是这一层，没有私有数据通道。报告表达不了的口径，下到这层直接拿数据算。
 
 什么时候下到这层：
 
-- **口径连 `aggregate()` / `rollup()` 都折不出。** 表格、矩阵、成绩单、散点都是「折叠」；分布类的看法（直方图、逐事件分析）不是折叠，要自己遍历 attempt。
+- **口径连 `aggregate()` / `rollup()` 都折不出。** 表格、矩阵、成绩单、散点都是「折叠」。分布类的看法（直方图、逐事件分析）不是折叠，要自己遍历 attempt。
 - **把结果喂进自己的系统。** 数据仓库、告警、内部平台——吃类型化数据，不吃磁盘布局。
 - **把别家平台的结果转成 NiceEval 格式。** 写入面保证「写出去的就是读得回的」，转完 `niceeval show` / `view` / 自定义报告全套直接能用。
 
@@ -82,10 +82,10 @@ await attempt.sources();       // SourceArtifact[] | null
 三条要点：
 
 - **懒加载即存在性判断。** artifact 缺失返回 `null`，不抛错——Direct Agent 没有 `diff.json` 时，`await attempt.diff()` 就是 `null`，你据此决定跳过还是报缺。
-- **读不了的落盘不静默。** 版本不兼容、目录损坏的 Run 进 `unreadable` 并带原因；要不要展示由你定，但缺口永远被算出来。
+- **读不了的落盘不静默。** 版本不兼容、目录损坏的 Run 进 `unreadable` 并带原因。要不要展示由你定，但缺口永远被算出来。
 - **同进程内按句柄记忆化。** 两处都读同一个 `diff()` 不会把上百 MB 读两遍。
 
-`attempt.result.error` 是让 Attempt 进入 `errored` 的唯一致命执行错误，包含稳定 `code`、人可读 `message`、发生错误的 lifecycle operation，以及可选的有限 cause/stack。`attempt.result.diagnostics` 可以与任意判定共存，保存运行仍可继续或收尾时发现的问题。瞬时 `progress` 不落盘；OTel trace 也不是错误存储的前提。
+`attempt.result.error` 是让 Attempt 进入 `errored` 的唯一致命执行错误，包含稳定 `code`、人可读 `message`、发生错误的 lifecycle operation，以及可选的有限 cause/stack。`attempt.result.diagnostics` 可以与任意判定共存，保存运行仍可继续或收尾时发现的问题。瞬时 `progress` 不落盘。OTel trace 也不是错误存储的前提。
 
 ## 超大输出会被截断
 
@@ -110,9 +110,9 @@ for (const e of events ?? []) {
 }
 ```
 
-这条上限管的是**单个字符串值**，不是整个 JSON 文件。一个文件可以有很多正常值；`diff.json` 和源码也不能截断，因为它们要保持完整语义。所以 `.niceeval/` 适合做本地事实根，不默认适合直接提交进 Git。发布前用下面的 `publish` 做 artifact 选择和整文件大小检查。
+这条上限管的是**单个字符串值**，不是整个 JSON 文件。一个文件可以有很多正常值。`diff.json` 和源码也不能截断，因为它们要保持完整语义。所以 `.niceeval/` 适合做本地事实根，不默认适合直接提交进 Git。发布前用下面的 `publish` 做 artifact 选择和整文件大小检查。
 
-截断发生在持久化边界，不能替 agent runtime 限制发给模型的工具输出。如果 runtime 先把 50 MB 工具结果完整塞进模型请求并收到 413，NiceEval 仍会把 Attempt 记为 `errored`；这里只保证失败后的 events / trace 不再被同一段输出撑爆。
+截断发生在持久化边界，不能替 agent runtime 限制发给模型的工具输出。如果 runtime 先把 50 MB 工具结果完整写入模型请求并收到 413，NiceEval 仍会把 Attempt 记为 `errored`。这里只保证失败后的 events / trace 不再被同一段输出撑爆。
 
 ## 版本：谁写的、读不读得了
 
@@ -128,11 +128,11 @@ for (const s of record.unreadable) {
 
 `"incomplete"` 是极小概率的一种：有 attempt 落盘、却没有 `run.json`——只可能出现在「Run 目录建好、元数据还没写完」的极小窗口里进程死亡，或人为删了文件。它和「进程中断」的常态不是一回事：进程中断的常态是**未收尾 Run**（`run.json` 在，只是缺 `completedAt`），这种 Run 能正常读，已落盘的 attempt 全部可见，只是选择器选中它时会带一条未收尾 Issue（见下文），不会被归进 `unreadable`。
 
-旧版本的结果不会丢：磁盘上原样还在，用写它的那个工具就能看——`producer.name` 是 `"niceeval"` 时，提示用户 `npx niceeval@<producer.version> view`；是第三方 harness 时如实报出它的名字和版本，别拼一句错误的 npx 命令。`unreadable` 给你的信息刚好够做对这个分支。
+旧版本的结果不会丢：磁盘上原样还在，用写它的那个工具就能看——`producer.name` 是 `"niceeval"` 时，提示用户 `npx niceeval@<producer.version> view`。是第三方 harness 时如实报出它的名字和版本，别拼一句错误的 npx 命令。`unreadable` 给你的信息刚好够做对这个分支。
 
 ## Run 就是这个目录
 
-**Run = 单次跑的实验**，物理上就是一个 Run 目录（`.niceeval/<experiment>/<run>/`），没有更低一层。`niceeval exp compare` 一次 CLI 调用会给涉及的每个实验各开一个独立的 Run 目录，互相不合并、没有跨实验的聚合落盘——「每个 experiment 最新一次」因此天然是 Run 粒度：周一跑了整组 compare，周二只重跑 `compare/bub-gpt-5.4`，bub 的最新 Run 落在周二，codex 的还在周一，`exp.runs[0]` 各自反映各自的历史。
+**Run = 单次跑的实验**，物理上就是一个 Run 目录（`.niceeval/<experiment>/<run>/`），没有更低一层。`niceeval exp compare` 一次 CLI 调用会给涉及的每个实验各开一个独立的 Run 目录，互相不合并、没有跨实验的聚合落盘。「每个 experiment 最新一次」因此天然是 Run 粒度：周一跑了整组 compare，周二只重跑 `compare/bub-gpt-5.4`，bub 的最新 Run 落在周二，codex 的还在周一，`exp.runs[0]` 各自反映各自的历史。
 
 ## 选口径：`latestRunSample` / `currentSample`
 
@@ -182,7 +182,7 @@ current.coverage[0];
 // }
 ```
 
-缺口是逐题的事实，所以呈现在题的位置上。`never-run` 表示从未有过物理 Attempt；`previous-result` 表示存在旧但不兼容的结果，它只提供解释或显式 accept 入口，不计入当前结果集。CI 判断 `coverage.some((c) => c.missing.length > 0)` 即可。
+缺口是逐题的事实，所以呈现在题的位置上。`never-run` 表示从未有过物理 Attempt。`previous-result` 表示存在旧但不兼容的结果，它只提供解释或显式 accept 入口，不计入当前结果集。CI 判断 `coverage.some((c) => c.missing.length > 0)` 即可。
 
 `issues` 收的是定位不到具体某道题的完整性问题：选中的 Run 没收尾（进程中断）、落盘读不了，每种都带可判断的结构化字段和渲染好的英文 `message`（要展示就原样打）。
 
@@ -197,7 +197,7 @@ Sample 是[自定义报告](/zh/tutorials/custom-reports)和下文 `publish` 的
 coverage 与 issues 随行，`toExperimentRows(sample)` 生成覆盖缺口占位行，
 `toSampleNotices(sample)` 解释读取期 Issue。
 过滤后的 Sample 会同步修剪 Attempt、Run、coverage 与 issues，并保留 provenance。
-`filter` 只做删减；替换式重挑应重新选择 Sample。
+`filter` 只做删减。替换式重挑应重新选择 Sample。
 
 ## 一个真实脚本：分布不是折叠
 
@@ -223,7 +223,7 @@ for (const attempt of sample.attempts) {
 
 即使在这条最深的路径上也不碰磁盘布局：路径拼接、存在性、版本过滤、Run 切分全被库消化。要把这份分布摆进报告页，先在 page render 里算成普通值，再用 [`defineRenderer`](/zh/tutorials/custom-reports#编写新的显示形状) 包一个双面显示形状。
 
-一条跨 Run 累计时的义务：NiceEval 默认把上一轮已有确定判定（passed / failed）、且评估用例代码和配置没变的结果携带合入新 Run（`--force` 全部重跑），同一个 attempt 因此可能存在于多份落盘。携带条目不是空壳：它带着原执行的 `startedAt`(身份锚)与证据借用信息，懒加载按候选顺序回退。身份键 `(experimentId, evalId, attempt, startedAt)` 的四个字段都在数据上。reader 忠实反映这份重复；跨历史聚合前用 `dedupeAttempts` 按身份键去重，重复保留最新 Run 里的那份——报告的聚合路径内置这条，自己写脚本时记得过一遍：
+一条跨 Run 累计时的义务：NiceEval 默认把上一轮已有确定判定（passed / failed）、且评估用例代码和配置没变的结果携带合入新 Run（`--force` 全部重跑），同一个 attempt 因此可能存在于多份落盘。携带条目不是空壳：它带着原执行的 `startedAt`(身份锚)与证据借用信息，懒加载按候选顺序回退。身份键 `(experimentId, evalId, attempt, startedAt)` 的四个字段都在数据上。reader 忠实反映这份重复。跨历史聚合前用 `dedupeAttempts` 按身份键去重，重复保留最新 Run 里的那份——报告的聚合路径内置这条，自己写脚本时记得过一遍：
 
 ```typescript
 import { dedupeAttempts } from "niceeval/record";
@@ -234,7 +234,7 @@ const { attempts, warnings } = dedupeAttempts(all); // resume 合入的重复被
 
 ## 写：`createWriter`
 
-写入面和读取面是同一组类型的两半：reader 的 `attempt.result` 由两部分拼成——Run 级字段（experimentId / agent / model / startedAt / producer）来自 `writer.run()` 的一次声明，其余全部字段来自 `writeAttempt` 的第一个参数；第二个参数是 reader 懒加载的 artifact。用它把别家平台、自研 harness 的结果转成 NiceEval 格式：
+写入面和读取面是同一组类型的两半：reader 的 `attempt.result` 由两部分拼成。Run 级字段（experimentId / agent / model / startedAt / producer）来自 `writer.run()` 的一次声明，其余全部字段来自 `writeAttempt` 的第一个参数。第二个参数是 reader 懒加载的 artifact。用它把别家平台、自研 harness 的结果转成 NiceEval 格式：
 
 ```typescript
 import { createWriter } from "niceeval/record";
@@ -260,7 +260,7 @@ for (const r of convertedResults) {
 await run.finish();                    // 给这个 Run 补 completedAt,没有跨实验聚合
 ```
 
-`writer.run()` 就是读取面「实验 → Run」层次的镜像：转多个 experiment 就各开一个 Run，experimentId / agent / model / startedAt 这些 Run 级元数据在这里声明一次，不用塞进每条 Attempt；可选的 `knownEvalIds` 是覆盖缺口的分母，发布时会自动补记。转完的目录就是标准记录目录：`niceeval show` / `niceeval view` 直接能看，自定义报告直接能算。每个文件恰好写入一次：`run.json` 开跑即写、收尾只补 `completedAt`；`result.json` 与 artifact 随 Attempt 完成落盘。
+`writer.run()` 就是读取面「实验 → Run」层次的镜像：转多个 experiment 就各开一个 Run，experimentId / agent / model / startedAt 这些 Run 级元数据在这里声明一次，不用写入每条 Attempt。可选的 `knownEvalIds` 是覆盖缺口的分母，发布时会自动补记。转完的目录就是标准记录目录：`niceeval show` / `niceeval view` 直接能看，自定义报告直接能算。每个文件恰好写入一次：`run.json` 开跑即写、收尾只补 `completedAt`。`result.json` 与 artifact 随 Attempt 完成落盘。
 
 ## 发布：`publish`
 
@@ -272,17 +272,17 @@ import { latestRunSample } from "niceeval/sample";
 
 const record = await openRecord(".niceeval");
 await publish(latestRunSample(record), "site-data/run", {
-  artifacts: ["sources", "events", "trace", "o11y"],   // diff 不截断,缺省也不带;
+  artifacts: ["sources", "events", "trace", "o11y"],   // diff 不截断,默认也不带;
 });                                                     // 每个待发布文件还会经过 50 MiB 预检;
                                                         // o11y 只有几 KB,报告用到 turns 这类
                                                         // 读 o11y 的指标就把它带上,不然渲染成「—」
 ```
 
-第一个参数收 `Sample` 或手工挑的 `Run[]`——和自定义报告同一个输入约定。`artifacts` 的合法值是 `"events" | "trace" | "o11y" | "agentSetup" | "diff" | "sources"`；缺省带除 `diff` 外的五类。目标目录已存在且非空时报错，不静默覆盖——发布脚本要幂等就自己先清目标目录。
+第一个参数收 `Sample` 或手工挑的 `Run[]`——和自定义报告同一个输入约定。`artifacts` 的合法值是 `"events" | "trace" | "o11y" | "agentSetup" | "diff" | "sources"`。默认带除 `diff` 外的五类。目标目录已存在且非空时报错，不静默覆盖——发布脚本要幂等就自己先清目标目录。
 
-复制开始前，NiceEval 会规划全部目标文件并检查序列化后的大小。任一文件超过固定的 50 MiB，整次复制在创建目标目录前失败，错误会列出路径、实际大小和处理建议。你可以从 `artifacts` 排除那类证据；如果是旧版本留下的超大 events / trace，用当前版本重跑后再发布。这个检查既覆盖没有逐值截断的源码 / diff，也覆盖单值都正常但累计过大的 JSON，避免直到 `git push` 才撞上 Git host 的单文件限制。
+复制开始前，NiceEval 会规划全部目标文件并检查序列化后的大小。任一文件超过固定的 50 MiB，整次复制在创建目标目录前失败，错误会列出路径、实际大小和处理建议。你可以从 `artifacts` 排除那类证据。如果是旧版本留下的超大 events / trace，用当前版本重跑后再发布。这个检查既覆盖没有逐值截断的源码 / diff，也覆盖单值都正常但累计过大的 JSON，避免直到 `git push` 才撞上 Git host 的单文件限制。
 
-大小预检只决定整次复制成功或失败，不会从一个超大文件中间删内容。复制忠实于源：artifact 按原字节复制，不重新序列化、不改写。唯一随行补记的是挑选时的**覆盖事实**：覆盖缺口的分母是实验的历史并集，而发布目录没有历史——所以每个复制出的 Run 带上 `knownEvalIds`（复制时刻该实验已知的评估用例并集），reader 端把它并进 `exp.knownEvalIds` 的计算（取本地历史与 Run 携带值的并集）。发布目录上重新 `openRecord()` 后，用同一选择器重算覆盖缺口，不靠发布者转述。复制出的目录就是标准记录目录，`niceeval view --record <目录>` 直接能看；要让报告站随 push 自动更新，workflow 见[通过 CI 发布报告](/zh/tutorials/publish-report)。
+大小预检只决定整次复制成功或失败，不会从一个超大文件中间删内容。复制忠实于源：artifact 按原字节复制，不重新序列化、不改写。唯一随行补记的是挑选时的**覆盖事实**：覆盖缺口的分母是实验的历史并集，而发布目录没有历史——所以每个复制出的 Run 带上 `knownEvalIds`（复制时刻该实验已知的评估用例并集），reader 端把它并进 `exp.knownEvalIds` 的计算（取本地历史与 Run 携带值的并集）。发布目录上重新 `openRecord()` 后，用同一选择器重算覆盖缺口，不靠发布者转述。复制出的目录就是标准记录目录，`niceeval view --record <目录>` 直接能看。要让报告站随 push 自动更新，workflow 见[通过 CI 发布报告](/zh/tutorials/publish-report)。
 
 ## 分层速览
 

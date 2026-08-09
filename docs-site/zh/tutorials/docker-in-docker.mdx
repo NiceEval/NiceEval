@@ -9,7 +9,7 @@ description: "根据任务信任边界选择 Docker socket、raw privileged DinD
 
 | 模式 | 什么时候用 | 启动成本 | 安全边界 |
 | --- | --- | --- | --- |
-| Docker socket | 可信 Agent、个人开发机、已有 daemon，优先启动速度 | 最低，共用已有 daemon | Agent拥有该 daemon的完整控制权；rootful socket通常等价宿主 root |
+| Docker socket | 可信 Agent、个人开发机、已有 daemon，优先启动速度 | 最低，共用已有 daemon | Agent拥有该 daemon的完整控制权。rootful socket通常等价宿主 root |
 | Raw privileged DinD | 一次性 VM或专用 runner，需要独立 image、network和 cache | 每个 Sandbox启动 inner daemon | outer container是 raw privileged，不是安全隔离方案 |
 | Managed rootless DinD | 不可信 Agent、共享宿主、并发评估、需要资源准入和强杀恢复 | 最高，需要宿主 profile | privileged限制在受管 rootless user namespace或专用 VM，并有 watchdog与容量契约 |
 
@@ -19,7 +19,7 @@ description: "根据任务信任边界选择 Docker socket、raw privileged DinD
 Sandbox保活、容器内 TTL和 `docker info`探活，不会向任意镜像动态安装 Docker。
 
 不能直接把未经派生的 `docker:<version>-dind`写成 `source.image`。该镜像没有 NiceEval supervisor
-需要的 Node，也没有被测 Agent的工具；创建时会以
+需要的 Node，也没有被测 Agent的工具。创建时会以
 `dind-image-incompatible: missing node`失败。请使用下面的 Dockerfile，或先发布等价的派生镜像，
 再让 `source`引用它。
 
@@ -62,10 +62,10 @@ export default defineExperiment({
 NiceEval会解析 symlink、确认最终目标是 Unix socket，把它挂到 Sandbox内固定的
 `/var/run/docker.sock`，并按 socket的数值 GID给 `node`添加补充组。启动 Agent前，NiceEval会确认
 镜像没有预设 Docker endpoint或 context，而且默认 `docker info`与显式访问这个 Unix socket得到同一个
-daemon；CLI缺失、用户无法访问 socket或镜像把默认 endpoint改到别处时，Sandbox创建失败。
+daemon。CLI缺失、用户无法访问 socket或镜像把默认 endpoint改到别处时，Sandbox创建失败。
 
 这项检查只固定 Agent启动时的默认用法，不是安全边界。Agent之后仍可显式传 `docker --host`访问另一个
-endpoint；不可信任务需要依赖 managed模式的网络策略，而不是依赖 Docker CLI的默认值。
+endpoint。不可信任务需要依赖 managed模式的网络策略，而不是依赖 Docker CLI的默认值。
 
 <Warning>
   这不是隔离方案。Agent可以通过 socket创建 privileged容器、挂宿主目录，并操作同一 daemon上的
@@ -92,12 +92,12 @@ RUN apk add --no-cache ca-certificates git nodejs npm python3 \
 选择 `dockerAccess: { mode: "dind", ... }` 就同时选择了 NiceEval 的 DinD 镜像协议。
 provider 会覆盖派生镜像的原有 `ENTRYPOINT` 和 `CMD`，先检查 `docker-init`、
 `node`、`docker`、`dockerd-entrypoint.sh`、`timeout` 和 `tail`，再启动自己的
-supervisor。supervisor 同时监督官方 `dockerd-entrypoint.sh dockerd`与 Sandbox 保活进程；
+supervisor。supervisor 同时监督官方 `dockerd-entrypoint.sh dockerd`与 Sandbox 保活进程。
 任一进程提前退出都会停止 outer container，而不会留下一台看似存活但无法使用
 Docker 的 Sandbox。
 
 inner daemon 只监听 `/var/run/docker.sock`，不开放 2375/2376 TCP endpoint。
-Agent 仍以 `user: "node"` 运行；上面 Dockerfile 在构建期把 `node` 加入
+Agent 仍以 `user: "node"` 运行。上面 Dockerfile 在构建期把 `node` 加入
 `docker` 组，因此不需要 `chown root:node` 或 `chmod 666` socket。如果镜像缺少工具、
 用户不在 `docker` 组、daemon 提前退出或 readiness 超时，NiceEval 会在删除创建失败的
 容器前收集有界日志尾部并报出可操作的原因。
@@ -196,7 +196,7 @@ npx niceeval exp dind-managed
 
 `doctor --smoke`会在该 profile上启动一次 DinD容器，并实际运行内层
 `docker run --rm alpine:3.20 true`。它证明 profile支持 nested Docker，但不会检查项目自己的
-Dockerfile；项目镜像仍由默认 `docker info` readiness验证。
+Dockerfile。项目镜像仍由默认 `docker info` readiness验证。
 
 ## 在 Eval里验证 Docker任务
 
@@ -219,5 +219,5 @@ export default defineEval({
 });
 ```
 
-socket模式的命令操作显式选择的外层 daemon；两种 DinD模式操作 Sandbox内的 inner daemon。
-`sandbox`也可以直接写在 `defineEval({ sandbox: ... })`里；多条 Eval共用配置时写在 Experiment上。
+socket模式的命令操作显式选择的外层 daemon。两种 DinD模式操作 Sandbox内的 inner daemon。
+`sandbox`也可以直接写在 `defineEval({ sandbox: ... })`里。多条 Eval共用配置时写在 Experiment上。

@@ -1,7 +1,7 @@
 ---
 title: "defineEval：声明、配置并运行 NiceEval 评估用例"
 sidebarTitle: "defineEval"
-description: "defineEval 参考：选项、test context t、Turn 返回值、Sandbox helper，以及数组和 keyed record 测试集导出。"
+description: "defineEval 参考：选项、test context t、Turn 返回值、Sandbox 辅助函数，以及数组和 keyed record 测试集导出。"
 ---
 
 `defineEval` 是编写评估用例的主要入口。每个评估用例文件调用一次，传入描述和 `test(t)`，并默认导出结果。
@@ -106,7 +106,9 @@ test(t: TestContext): Promise<void> | void;
 
 ## Test context: `t`
 
-`t`（`TestContext`）是评估用例作者拿到的高层上下文。运行器按 agent 的实际能力组装它——`t.sandbox` 这类字段只在 `defineSandboxAgent` 构造的 agent 上才有意义，完整规则见[能力位参考](/zh/reference/capabilities)。下面签名里的 `H` 是断言句柄类型：`defineEval` 的 `t` 上 `H` 恒为 `AssertionHandle`；计分制 `defineScoreEval` 的 `t`（`ScoreTestContext`）换成 `ScoreAssertionHandle`——多出 `.points(n)` 这一个给分词。严重度三个词在两种题型里含义相同：`.gate()` 只声明「不过就 failed」，不改变 `test()` 的控制流；要「这步不成立就别往下跑了」再链 `.stopOnFailure()`，或者用值断言的简写 `t.require()`（两种题型都有）。跨两种题型复用的 helper 把参数标注成 `BaseTestContext<H>`，两种 `t` 都能传进去。详见[计分制](/zh/tutorials/evaluation-kinds#走完三步也要记三分)。全部成员：
+`t`（`TestContext`）是评估用例作者拿到的高层上下文。运行器按 agent 的实际能力组装它——`t.sandbox` 这类字段只在 `defineSandboxAgent` 构造的 agent 上才有意义，完整规则见[能力位参考](/zh/reference/capabilities)。
+
+下面签名里的 `H` 是断言句柄类型：`defineEval` 的 `t` 上 `H` 恒为 `AssertionHandle`。计分制 `defineScoreEval` 的 `t`（`ScoreTestContext`）换成 `ScoreAssertionHandle`——多出 `.points(n)` 这一个给分词。严重度三个词在两种题型里含义相同：`.gate()` 只声明「不过就 failed」，不改变 `test()` 的控制流。要「这步不成立就别往下跑了」再链 `.stopOnFailure()`，或者用值断言的简写 `t.require()`（两种题型都有）。跨两种题型复用的辅助函数把参数标注成 `BaseTestContext<H>`，两种 `t` 都能传进去。详见[计分制](/zh/tutorials/evaluation-kinds#走完三步也要记三分)。全部成员：
 
 {/* GENERATED:BEGIN test-context */}
 
@@ -474,7 +476,7 @@ t.judge.autoevals.closedQA(rubric, { on: t.reply }).atLeast(0.75);
 t.judge.autoevals.summarizes(sourceText, { on: t.reply }).atLeast(0.7);
 ```
 
-`t.judge.autoevals` 目前有三个方法：`factuality`（回复与 `expected` 事实是否一致）、`closedQA`（回复是否满足给定问题或 rubric）、`summarizes`（回复是否是给定原文 `source` 的合格摘要）。三者都直接用 [autoevals](https://github.com/braintrustdata/autoevals)（braintrust）库的评分器，`{ on: t.reply }` 指定被评的文本。
+`t.judge.autoevals` 有三个方法：`factuality`（回复与 `expected` 事实是否一致）、`closedQA`（回复是否满足给定问题或 rubric）、`summarizes`（回复是否是给定原文 `source` 的合格摘要）。三者都直接用 [autoevals](https://github.com/braintrustdata/autoevals)（braintrust）库的评分器，`{ on: t.reply }` 指定被评的文本。
 
 ## `Turn` 返回类型
 
@@ -709,4 +711,4 @@ export default rows.map((row) =>
 
 数组导出会生成稳定 ID：`file/0000`、`file/0001` 等。
 
-已有稳定业务 key 时也可以默认导出 `Record<string, EvalDef>`。例如 key `15193` 在 `swelancer.eval.ts` 中生成 `swelancer/15193`。key 必须是非空单一路径片段，不能是 `.` / `..`，不能含 `/`、`\\` 或控制字符；发现顺序按 key 字典序固定。
+已有稳定业务 key 时也可以默认导出 `Record<string, EvalDef>`。例如 key `15193` 在 `swelancer.eval.ts` 中生成 `swelancer/15193`。key 必须是非空单一路径片段，不能是 `.` / `..`，不能含 `/`、`\\` 或控制字符。发现顺序按 key 字典序固定。

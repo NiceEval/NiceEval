@@ -6,13 +6,13 @@ description: "分七步编写 Adapter 的 send 函数：发送消息、续接会
 
 import { TurnRoundtrip } from '/snippets/diagram-turn-roundtrip.jsx';
 
-[Adapter](/zh/explanation/adapter) 定义了 `send` 的契约：接收 `TurnInput` 和 `AgentContext`，返回 `Turn`。本教程从发送一条消息开始，逐步加入完整接入所需的能力。每一步只增加少量代码，已有部分以 `// ……省略` 标出；步骤末尾列出新增数据支持的断言。完成任一步后，都可以把对应断言写进评估用例，重跑 `npx niceeval exp`，再在 `niceeval view` 中检查多轮轨迹、用量、工具事件或待回答请求。
+[Adapter](/zh/explanation/adapter) 定义了 `send` 的契约：接收 `TurnInput` 和 `AgentContext`，返回 `Turn`。本教程从发送一条消息开始，逐步加入完整接入所需的能力。每一步只增加少量代码，已有部分以 `// ……省略` 标出。步骤末尾列出新增数据支持的断言。完成任一步后，都可以把对应断言写进评估用例，重跑 `npx niceeval exp`，再在 `niceeval view` 中检查多轮轨迹、用量、工具事件或待回答请求。
 
 三个贯穿全文的原则：
 
 - **连接用户前端正在使用的接口。** Adapter 调用相同端点并接收相同格式，不为评估用例新建接口，也不 import 应用内部代码直接调用函数。具体原因见[接入你的 Agent](/zh/tutorials/connect-your-agent)。
-- **只手写 transport。** URL、鉴权和请求体取决于应用。`niceeval/adapter` 提供从原始返回到标准事件流的转换器；`ctx.session` 提供会话续接与 HITL 暂停恢复所需的状态 API。
-- **运行反馈走 `ctx`，不直接写终端。** 长步骤用 `ctx.progress(...)`；需要在运行后回顾的退化或异常上下文用 `ctx.diagnostic(...)`；无法继续时抛错。不要从 Adapter 调用 `console.log/error` 或写 `process.stdout/stderr`。
+- **只手写 transport。** URL、鉴权和请求体取决于应用。`niceeval/adapter` 提供从原始返回到标准事件流的转换器。`ctx.session` 提供会话续接与 HITL 暂停恢复所需的状态 API。
+- **运行反馈走 `ctx`，不直接写终端。** 长步骤用 `ctx.progress(...)`。需要在运行后回顾的退化或异常上下文用 `ctx.diagnostic(...)`。无法继续时抛错。不要从 Adapter 调用 `console.log/error` 或写 `process.stdout/stderr`。
 
 <TurnRoundtrip />
 
@@ -22,9 +22,9 @@ import { TurnRoundtrip } from '/snippets/diagram-turn-roundtrip.jsx';
 
 | 协议 | 定义方 | 说明 | 参考 |
 |---|---|---|---|
-| **Chat Completions** | OpenAI；业界事实标准，几乎所有模型服务商都提供兼容端点 | 无状态一问一答：客户端每轮发完整 `messages` 列表，一个 JSON 回来 | [API 参考](https://platform.openai.com/docs/api-reference/chat) |
-| **Responses / Open Responses** | OpenAI（Responses API）；Open Responses 是基于它的开放规范，OpenAI 发起、Hugging Face 等社区共建，用于多提供商互操作 | 有状态、面向 agent：请求带 `previous_response_id` 由服务端续接历史，`output` 数组承诺记录全过程 | [API 参考](https://platform.openai.com/docs/api-reference/responses) · [Open Responses 规范](https://www.openresponses.org/specification) |
-| **AI SDK（Vercel）** | Vercel；TypeScript 生态的事实标准 | 不是线上协议而是 SDK：`generateText` 返回完整结果，`useChat` 走它定义的 UI Message Stream 流协议 | [generateText 参考](https://ai-sdk.dev/docs/reference/ai-sdk-core/generate-text) · [UI Message Stream 协议](https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol) |
+| **Chat Completions** | OpenAI。业界事实标准，几乎所有模型服务商都提供兼容端点 | 无状态一问一答：客户端每轮发完整 `messages` 列表，一个 JSON 回来 | [API 参考](https://platform.openai.com/docs/api-reference/chat) |
+| **Responses / Open Responses** | OpenAI（Responses API）。Open Responses 是基于它的开放规范，OpenAI 发起、Hugging Face 等社区共建，用于多提供商互操作 | 有状态、面向 agent：请求带 `previous_response_id` 由服务端续接历史，`output` 数组承诺记录全过程 | [API 参考](https://platform.openai.com/docs/api-reference/responses) · [Open Responses 规范](https://www.openresponses.org/specification) |
+| **AI SDK（Vercel）** | Vercel。TypeScript 生态的事实标准 | 不是线上协议而是 SDK：`generateText` 返回完整结果，`useChat` 走它定义的 UI Message Stream 流协议 | [generateText 参考](https://ai-sdk.dev/docs/reference/ai-sdk-core/generate-text) · [UI Message Stream 协议](https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol) |
 
 以下步骤使用 Chat Completions 形接口。Responses 形接口和流式接口的替换实现分别在第二步和第四步给出。
 
@@ -48,7 +48,7 @@ export default defineAgent({
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         messages: [{ role: "user", content: input.text }],
-        model: ctx.model,                                         // ← experiment.model 经 ctx.model 到这里；应用接口不支持选模型就删掉这行
+        model: ctx.model,                                         // ← experiment.model 经 ctx.model 到这里。应用接口不支持选模型就删掉这行
       }),
       signal: ctx.signal,                                         // ← 运行器的超时与取消
     }).then((r) => r.json());
@@ -73,9 +73,9 @@ if (!res.requestId) {
 }
 ```
 
-`progress` 不落盘；diagnostic 会随 Attempt 保存并可通过 locator 回顾。HTTP 连接失败或响应无法解析时直接抛错，runner 会记录错误发生在 `agent.run`，并把 Attempt 标为 `errored`。
+`progress` 不落盘。diagnostic 会随 Attempt 保存并可通过 locator 回顾。HTTP 连接失败或响应无法解析时直接抛错，runner 会记录错误发生在 `agent.run`，并把 Attempt 标为 `errored`。
 
-**这一步支持**：`t.reply`、`t.messageIncludes()`、Judge 的全部对话材料，以及 Experiment 侧的**模型对比**。`ctx.model` 来自 Experiment 的 `model`；运行器原样传递，Adapter 只负责转发。接入等级见 [Tier](/zh/explanation/tier)。
+**这一步支持**：`t.reply`、`t.messageIncludes()`、Judge 的全部对话材料，以及 Experiment 侧的**模型对比**。`ctx.model` 来自 Experiment 的 `model`。运行器原样传递，Adapter 只负责转发。接入等级见 [Tier](/zh/explanation/tier)。
 
 它有两个明显的局限：每轮都是一场全新对话（第二次 `t.send` 接不上第一次），工具调用完全看不见。后面两步各解决一个。
 
@@ -108,11 +108,11 @@ export default defineAgent({
 
     const res = await fetch(`${BASE_URL}/v1/chat/completions`, {
       // ……method、headers、signal 同第一步，省略
-      body: JSON.stringify({ messages, model: ctx.model }),        // ← 变化：发的是完整历史；model 同第一步转发
+      body: JSON.stringify({ messages, model: ctx.model }),        // ← 变化：发的是完整历史。model 同第一步转发
     }).then((r) => r.json());
 
     const reply = res.choices[0].message;
-    ctx.session.set(historySlot, [...messages, reply]); // ← 写回；同一条线的下一轮 get() 自动带上
+    ctx.session.set(historySlot, [...messages, reply]); // ← 写回。同一条线的下一轮 get() 自动带上
 
     return {
       status: "completed",
@@ -122,7 +122,7 @@ export default defineAgent({
 });
 ```
 
-注意这里**没有"第一轮"分支**：新会话线的 `ctx.session.get(historySlot)` 自然返回 `undefined`，`?? []` 归一为空历史——"第一次发"的形态是新会话线的自然结果，不是要你判断的条件。也不需要在 `defineAgent` 上声明任何能力：接了 `ctx.session`，多轮就续得上；没接，每轮各是一场新对话。
+注意这里**没有"第一轮"分支**：新会话线的 `ctx.session.get(historySlot)` 自然返回 `undefined`，`?? []` 归一为空历史——"第一次发"的形态是新会话线的自然结果，不是要你判断的条件。也不需要在 `defineAgent` 上声明任何能力：接了 `ctx.session`，多轮就续得上。没接，每轮各是一场新对话。
 
 应用接口收会话 id 的话，历史在服务端，Adapter 只记 id——`send` 里只改两处：
 
@@ -216,10 +216,10 @@ type StreamEvent =
 | AI SDK `generateText` 的完整结果 | `turnFromAiSdk(result)` | 无需手写映射 |
 | 流式：SDK 原生事件透传（一帧一个完整单元） | `createClaudeSdkEventStream()` / `createPiAgentEventStream()` / `createCodexThreadEventStream()` | 无需手写映射 |
 | 流式：AI SDK 的 UI Message Stream（`useChat` 协议） | `uiMessageStreamAgent()` | 无需手写 `send` 或事件映射 |
-| 流式：逐 token / 逐参数增量 | 协议方官方 reducer；没有才用 `deltaStream({ toOps })` | 一张"帧类型 → 操作"映射表 |
+| 流式：逐 token / 逐参数增量 | 协议方官方 reducer。没有才用 `deltaStream({ toOps })` | 一张"帧类型 → 操作"映射表 |
 | 只有最终答案 | 手写几条 events | 一条 `message` 起步（第一步就是这个档） |
 
-内置转换器按响应形状工作，不假设具体应用协议。只有增量流且协议方没有现成 reducer 时才需要编写映射；映射只声明每一帧对应的操作，拼接、配对和落盘时机由 `deltaStream` 处理。
+内置转换器按响应形状工作，不假设具体应用协议。只有增量流且协议方没有现成 reducer 时才需要编写映射。映射只声明每一帧对应的操作，拼接、配对和落盘时机由 `deltaStream` 处理。
 
 归一完成后，你吐哪种事件，评估用例作者就能写哪族断言：
 
@@ -241,7 +241,7 @@ Chat Completions 响应**不保证包含完整过程记录**。应用可能在�
 - **停轮**：返回 `status: "waiting"`，并且每个待回答的问题吐一条带稳定 `id` 的 `input.requested` 事件——`t.parked()`、`t.requireInputRequest()` 读它，回答靠这个 `id` 对位。
 - **回答轮**：评估用例里的 `t.respond(...)` 到 Adapter 是**又一次普通的 `send`**（还是同一条会话线、同一份状态），人的裁决以结构化形式随 `input.responses` 到达，每条带 `requestId`、`optionId` 或 `text`（形态见[不同回答的入参](/zh/explanation/adapter#不同回答的入参)）。Adapter 先把裁决交回应用，再接着取结果。被人拒绝的调用，tool `operation.finished` 的 `status` 置 `"rejected"` 而不是 `"failed"`——拒绝是人的决定、不是工具故障，`noFailedActions()` 不误伤。
 
-"停轮时读了一半的现场"（比如一条读到一半的 SSE 流）也存在 `ctx.session` 上：Adapter 先用 `createSessionSlot<Pending>()` 创建私有 slot，停轮时 `ctx.session.set(slot, pending)`，回答轮开头 `ctx.session.take(slot)` 取回——取到即清除，一次消费。
+"停轮时读了一半的现场"（比如一条读到一半的 SSE 流）也存在 `ctx.session` 上。Adapter 先用 `createSessionSlot<Pending>()` 创建私有 slot，停轮时 `ctx.session.set(slot, pending)`，回答轮开头 `ctx.session.take(slot)` 取回。取到即清除，一次消费。
 
 HITL 几乎总是发生在流式接口上（停在流中间），所以这一步的示例换成一个以 SSE 透传原生事件的应用——它同时用上前面几步的全部内容（完整可跑版本见 [tier1 示例](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1)）：
 
@@ -307,7 +307,7 @@ export default defineAgent({
 
 应用已经埋了点（标准 OTel HTTP 服务端埋点即可）的话，接入分两半——一半是启动期配置，一半在 `send` 里。分清它们就是分清「不变的」和「每轮变的」。
 
-**端点是启动期配置，不从 send 传。** [NiceEval](https://niceeval.com/) 的 OTLP 接收地址每次运行都一样，所以它不走 `ctx`：在 `niceeval.config.ts` 里把接收端口钉住，应用启动时把自己的 OTel exporter 指向这个固定 URL，之后跑多少次评估用例都不用再改：
+**端点是启动期配置，不从 send 传。** [NiceEval](https://niceeval.com/) 的 OTLP 接收地址每次运行都一样，所以它不走 `ctx`：在 `niceeval.config.ts` 里把接收端口固定，应用启动时把自己的 OTel exporter 指向这个固定 URL，之后跑多少次评估用例都不用再改：
 
 ```ts
 // niceeval.config.ts
@@ -333,18 +333,18 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318/v1/traces node server.js
 
 `ctx.telemetry` 只在配置了 OTel 接入时出现，没配时 spread 一个 `undefined` 也安全，这行可以常驻。不带这个头 span 也能收到，但归属退化成时间窗口、该 agent 的轮次会降为串行——带上它是并发下归属准确的来源。
 
-**这一步支持**：`niceeval view` 中按轮显示调用瀑布图，包括模型调用、工具执行、耗时与 token。断言仍读取前几步产生的事件；span 只用于瀑布图。接收器配置和 span 归属规则见 [OTel 接入](/zh/tutorials/connect-otel)。
+**这一步支持**：`niceeval view` 中按轮显示调用瀑布图，包括模型调用、工具执行、耗时与 token。断言仍读取前几步产生的事件。span 只用于瀑布图。接收器配置和 span 归属规则见 [OTel 接入](/zh/tutorials/connect-otel)。
 
 ## 第七步：透传 experiment 的 flags（A/B 对比）
 
-应用把变体暴露成可切换的配置后，experiment 声明 `flags`，运行器每轮经 `ctx.flags` 原样递给 `send`；Adapter 不解释它们的含义，只随请求转发——应用按参数切换变体：
+应用把变体暴露成可切换的配置后，experiment 声明 `flags`，运行器每轮经 `ctx.flags` 原样递给 `send`。Adapter 不解释它们的含义，只随请求转发——应用按参数切换变体：
 
 ```ts
       // ……send 其余部分同前，省略
       body: JSON.stringify({
         messages,
-        model: ctx.model,        // ← 第一步就转发的 experiment.model；这里一起列出
-        flags: ctx.flags,      // ← experiment.flags 原样透传；没配时是 {}
+        model: ctx.model,        // ← 第一步就转发的 experiment.model。这里一起列出
+        flags: ctx.flags,      // ← experiment.flags 原样透传。没配时是 {}
       }),
 ```
 
@@ -360,7 +360,7 @@ export default defineExperiment({
 });
 ```
 
-两个 experiment 文件各声明一份 `flags`，`npx niceeval exp` 分别跑同一批评估用例，就是一组 A/B 对比。这是三档接入里的 Tier 3（要求应用配合暴露开关），投入与回报见 [Tier](/zh/explanation/tier)；`flags` 与 `model`、`attempts` 等其余 experiment 字段见[写实验](/zh/tutorials/write-experiment)。
+两个 experiment 文件各声明一份 `flags`，`npx niceeval exp` 分别跑同一批评估用例，就是一组 A/B 对比。这是三档接入里的 Tier 3（要求应用配合暴露开关），投入与回报见 [Tier](/zh/explanation/tier)。`flags` 与 `model`、`attempts` 等其余 experiment 字段见[写实验](/zh/tutorials/write-experiment)。
 
 **这一步支持**：同一批评估用例跨变体的成绩对比。
 
@@ -370,11 +370,11 @@ export default defineExperiment({
 
 | 评估用例 API | Adapter 调用 | `send` 输入 |
 |---|---|---|
-| `t.send(text)` | 一次 `send` | `input.text`；`ctx.session` 是这条会话线的自有状态 |
-| `t.sendFile(path, text?)` | 一次 `send` | 同上，外加 `input.files`（base64 的 `InputFile[]`）；按应用接口的方式放进请求体，不支持多模态就忽略 |
-| `t.newSession()` | 不直接触发 `send` | 开第二条会话线；该线随后第一次 `send` 拿到一份**全空的**状态——和整个评估用例的第一次 `send` 形态完全相同 |
-| `t.respond(...answers)` | 一次**普通的** `send` | `input.text` = 回答文本；`input.responses` 逐请求一条 `{ requestId, optionId }`（自由文本回答则是 `{ requestId, text }`）；还是同一条线、同一份状态 |
-| `t.respondAll(optionId)` | 一次**普通的** `send` | 同上，每条待处理请求各一条回答；`optionId` 已在评估用例侧对每条请求校验过存在，写错直接抛，不会静默传给应用 |
+| `t.send(text)` | 一次 `send` | `input.text`。`ctx.session` 是这条会话线的自有状态 |
+| `t.sendFile(path, text?)` | 一次 `send` | 同上，外加 `input.files`（base64 的 `InputFile[]`）。按应用接口的方式放进请求体，不支持多模态就忽略 |
+| `t.newSession()` | 不直接触发 `send` | 开第二条会话线。该线随后第一次 `send` 拿到一份**全空的**状态——和整个评估用例的第一次 `send` 形态完全相同 |
+| `t.respond(...answers)` | 一次**普通的** `send` | `input.text` = 回答文本。`input.responses` 逐请求一条 `{ requestId, optionId }`（自由文本回答则是 `{ requestId, text }`）。还是同一条线、同一份状态 |
+| `t.respondAll(optionId)` | 一次**普通的** `send` | 同上，每条待处理请求各一条回答。`optionId` 已在评估用例侧对每条请求校验过存在，写错直接抛，不会静默传给应用 |
 
 ## 相关阅读
 

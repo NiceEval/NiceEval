@@ -340,6 +340,7 @@ export const en = {
   "cli.run.experimentRequiredHint": "Hint: \"{{pattern}}\" is an experiment{{kind}}; you probably meant: niceeval exp {{pattern}}\n",
   "cli.run.experimentRequiredKnown": "Discovered experiments: {{experiments}}\n",
   "cli.view.exportedDir": "Exported static report site: {{out}} (serve the whole directory with any static host; opening index.html via file:// cannot fetch artifacts)\n",
+  "cli.view.hotReloadComplete": "{{time}} [niceeval view] hot reload complete\n",
   "cli.view.incompatible": "{{dir}}: written by niceeval {{producer}} (schemaVersion {{schemaVersion}}); this CLI reads schemaVersion {{supported}}.\nRun `{{command}}` to view it.\n",
   "cli.view.noResults": "No results found under {{root}}. Run `niceeval exp` first, then `niceeval view`.\n",
   "cli.view.incompatibleForeign": "{{dir}}: written by {{name}} {{version}} (schemaVersion {{schemaVersion}}); this CLI reads schemaVersion {{supported}}.\nOpen this report with the tool that produced it.\n",

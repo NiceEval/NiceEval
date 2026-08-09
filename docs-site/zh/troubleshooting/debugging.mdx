@@ -6,7 +6,7 @@ description: "一份按场景组织的排查手册：断言失败怎么定位、
 
 跑完一次 `niceeval exp`，失败的 Attempt 都带一个 `@` 开头的定位符（如 `@1qrdcfq8`）。它出现在运行摘要、CI 日志和报告里，定位符本身不会过期——只要 `.niceeval/` 里对应的结果快照还在，今天的定位符下周还能用同一条命令打开同一次 Attempt。所有排查都从它开始。
 
-先说一条通用规则：NiceEval 自己的报错和警告都在消息末尾直接给出下一步。能用一条命令解决的，消息里就是替换好实验名的完整命令，复制执行即可（网页里还可以一键复制）；可以不管的警告会写明「什么情况下可以忽略」。所以看到报错先读完最后一句；本手册处理的是消息之外还需要人工判断的场景——判定失败了怎么定位、环境错误怎么进现场。
+先说一条通用规则：NiceEval 自己的报错和警告都在消息末尾直接给出下一步。能用一条命令解决的，消息里就是替换好实验名的完整命令，复制执行即可（网页里还可以一键复制）。可以不管的警告会写明「什么情况下可以忽略」。所以看到报错先读完最后一句。本手册处理的是消息之外还需要人工判断的场景——判定失败了怎么定位、环境错误怎么进现场。
 
 ## 第一步永远是 `niceeval show @<定位符>`
 
@@ -43,10 +43,10 @@ available:
 
 ## 场景一：断言失败（failed）——agent 跑完了，但结果不对
 
-排查顺序是「哪条断言挂了 → agent 当时做了什么 → 它到底改了什么」。
+排查顺序是「哪条断言失败 → agent 当时做了什么 → 它到底改了什么」。
 
 **1. 把断言放回源码。** `--source` 显示运行时保存的源码调用树，不读取工作区里的后来版本。入口
-文件是主干；共享 helper 中的失败断言内联在入口调用行下。调用链缺失时，helper 片段按文件列在
+文件是主干。共享辅助函数中的失败断言内联在入口调用行下。调用链缺失时，辅助函数片段按文件列在
 主干之后，不会落进未映射断言。`t.send(...)` 的调用行还会标出对应 Turn 的状态和耗时：
 
 ```text
@@ -167,7 +167,7 @@ Kept sandboxes (1)
 Stop them with: niceeval sandbox stop --all
 ```
 
-`niceeval sandbox enter a3f9c2d1` 会唤醒现场并在 workdir 打开 shell——手动执行安装命令看真实报错、翻 `$HOME` 下的配置、检查 `PATH`，这些都在 artifact 之外，只有活现场能回答；退出 shell 后现场自动回到休眠，不白烧资源。保留策略、各 provider 的差别见[保留 Sandbox 现场](/zh/troubleshooting/debug-sandbox)。
+`niceeval sandbox enter a3f9c2d1` 会唤醒现场并在 workdir 打开 shell——手动执行安装命令看真实报错、翻 `$HOME` 下的配置、检查 `PATH`，这些都在 artifact 之外，只有活现场能回答。退出 shell 后现场自动回到休眠，不白烧资源。保留策略、各 provider 的差别见[保留 Sandbox 现场](/zh/troubleshooting/debug-sandbox)。
 
 ## 查看和清理留下的 Sandbox
 
@@ -219,7 +219,7 @@ done
 niceeval view
 ```
 
-首页是成本 × 通过率总览和实验对比表；每个 Attempt 的详情页有判定、断言、完整时间树、对话、trace 和[按路径排成树的文件改动](/zh/tutorials/viewing-results#attempt-详情里的文件改动)，还有「Copy fix prompt」按钮——把失败整理成一段可以直接交给 coding agent 的修复提示词。报告里的 Attempt 深链和 `show` 用同一套定位符。
+首页是成本 × 通过率总览和实验对比表。每个 Attempt 的详情页有判定、断言、完整时间树、对话、trace 和[按路径排成树的文件改动](/zh/tutorials/viewing-results#attempt-详情里的文件改动)，还有「Copy fix prompt」按钮——把失败整理成一段可以直接交给 coding agent 的修复提示词。报告里的 Attempt 深链和 `show` 用同一套定位符。
 
 **打开归档或别人发来的结果。** 结果目录是自包含的——从 CI 下载的、同事拷给你的、发布到静态站前生成的目录，都能直接指过去：
 
@@ -234,7 +234,7 @@ niceeval view --record site-data/run
 
 | 症状 | 命令顺序 |
 |---|---|
-| 断言挂了，不知道为什么 | `show @loc` → `show @loc --source` |
+| 断言失败，不知道为什么 | `show @loc` → `show @loc --source` |
 | 想知道 agent 当时做了什么 | `show @loc --execution` |
 | 想确认有没有调用过某个工具 / 搜对话关键词 | `show @loc --execution \| grep "TOOL ·" \| sort \| uniq -c` / `\| grep <关键词>` |
 | 工具结果被截断，想看完整内容 | 复制截断尾巴里的命令：`show @loc --execution --expand t2.c3` |
@@ -244,5 +244,5 @@ niceeval view --record site-data/run
 | 装依赖失败、CLI 起不来、跑一半超时 | 重跑该评估用例加 `--keep-sandbox` → `niceeval sandbox enter <id>` |
 | 想看文件实际内容（agent 没改的、起始材料、`$HOME`） | 重跑加 `--keep-sandbox`（failed 也留）→ `sandbox enter` 进 workdir 看 |
 | 留了哪些 Sandbox、清理 | `sandbox list` → `sandbox stop <id>` / `--all` |
-| 复盘上周那次失败 | 翻出旧定位符 → `show @loc`；不记得就 `show --exp <实验>` |
+| 复盘上周那次失败 | 翻出旧定位符 → `show @loc`。不记得就 `show --exp <实验>` |
 | 一批失败一起看 | `niceeval view` → Attempt 详情 → Copy fix prompt |
