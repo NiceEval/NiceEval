@@ -101,18 +101,16 @@ export default defineExperiment({
 ## 工作流程
 
 ```text
-createSandbox
-  → sandbox spec 的 .setup() 钩子?    # 环境准备（按实验装东西）。没挂就跳过
-  → eval 的 setup?                   # 这条 eval 的 Fixture（如果定义了）
-  → adapter.setup?                   # 装 CLI / 写 agent 配置
-  → test(t): uploadDirectory(...)     # 写入这条 eval 的起始文件
-  → adapter.send(input, ctx)          # agent 在这一步改动的文件才进 diff
-  → test(t): runCommand(...)          # 手工运行验证命令
-  → 汇总 agent 改动的文件              # 供 t.sandbox.diff / fileChanged 使用
-  → 评分与判定
-  → adapter.teardown?                 # agent 收尾
-  → sandbox spec 的 .teardown() 钩子?  # 环境收尾（如回存状态），销毁前最后跑
-  → sandbox.stop()
+创建 Sandbox
+  → 运行 Sandbox 的 setup 生命周期
+  → 运行评估的 setup 生命周期，准备 Fixture
+  → 检查 Agent CLI 版本，需要时安装并复检
+  → 运行 Adapter 的 setup，写入鉴权和运行配置
+  → 运行 test(t)，写入起始文件
+  → Adapter 调用 Agent，记录期间的文件变化
+  → 运行验证命令，完成评分和判定
+  → 运行 Adapter 和 Sandbox 的 teardown 生命周期
+  → 停止 Sandbox
 ```
 
 起始文件和验证命令都写在 `test(t)` 中。agent 执行阶段只能看到你已经写进 sandbox 的文件。
@@ -128,7 +126,7 @@ NiceEval 在 Sandbox 里另开一本私有 Git 仓库，每次 `t.send()` 前后
 - **workdir 根下没有第二个 Git 仓库。** 被测 checkout 直接放在 workdir 根。workdir 里出现 submodule 或另一个 clone 进来的仓库时，这一步直接报执行错误并列出路径，因为那个仓库里的普通文件改动会从记录里静默消失。确实不参与评分的仓库用 `diff.ignore` 整体排除。
 - **改动发生在 `t.send()` 期间。** 最后一次 `t.send()` 之后写入的文件算你的验证材料，不进这份记录。
 
-`.git`、`node_modules`、`__pycache__`、Python 虚拟环境、常见构建产物和包管理器缓存默认排除——不排除的话，`setup` 里一次 `npm install` 就能让记录涨到几万个文件。要调整就写评估用例的 `diff` 字段：
+`.git`、`node_modules`、`__pycache__`、Python 虚拟环境、常见构建产物和包管理器缓存默认排除。否则，环境准备中的一次 `npm install` 就可能产生几万个文件。要调整就写评估用例的 `diff` 字段：
 
 ```typescript
 export default defineEval({
@@ -149,23 +147,28 @@ pattern 是 gitignore 风格，以 workdir 根为基准：不带 `/` 的匹配�
 ## 自定义 sandbox agent
 
 ```ts
-import { completeEvidenceCoverage, defineSandboxAgent } from "niceeval/adapter";
-import { command } from "niceeval/sandbox";
+import {
+  completeEvidenceCoverage,
+  createNpmCliInstaller,
+  defineSandboxAgent,
+  resolveAgentBin,
+} from "niceeval/adapter";
+
+const { ensure, installer } = createNpmCliInstaller({
+  identity: { agent: "my-agent", version: "1.0.0", revision: "1" },
+  packageName: "my-agent",
+  bin: "my-agent",
+});
 
 export default defineSandboxAgent({
   name: "my-agent",
   evidenceCoverage: completeEvidenceCoverage,
-  ensure: {
-    identity: { agent: "my-agent", version: "1.0.0" },
-    probe: command("my-agent", ["--version"]),
-  },
-  async setup(sandbox, ctx) {
-    ctx.progress({ message: "检查 my-agent 安装" });
-    await sandbox.runCommand("npm", ["install", "-g", "my-agent"]);
-  },
+  ensure,
+  installers: [installer],
   async send(input, ctx) {
     ctx.progress({ message: "运行 my-agent CLI" });
-    await ctx.sandbox.runCommand("my-agent", ["run", input.text, "--json-out", "agent-events.json"]);
+    const bin = await resolveAgentBin(ctx.sandbox, "my-agent");
+    await ctx.sandbox.runCommand(bin, ["run", input.text, "--json-out", "agent-events.json"]);
     const transcript = await ctx.sandbox.readText("agent-events.json");
     if (transcript.trim() === "") {
       ctx.diagnostic({
@@ -182,9 +185,11 @@ export default defineSandboxAgent({
 });
 ```
 
+`createNpmCliInstaller` 会在宿主机准备 npm 包，再把它送入 Sandbox。Sandbox 里不需要安装 Node.js 或 npm。完整步骤见[为自定义 Sandbox Agent 安装 CLI](/zh/tutorials/install-custom-sandbox-agent)。
+
 `setup`、每次 `send` 和 `teardown` 都拿到各自作用域的反馈方法：
 
-- `ctx.progress({ message, current?, total? })` 更新当前短期状态，适合安装 CLI、运行 Turn、读取 transcript。不要逐 token 或逐 JSONL frame 调用。
+- `ctx.progress({ message, current?, total? })` 更新当前短期状态，适合写运行配置、运行 Turn 和读取 transcript。不要逐 token 或逐 JSONL frame 调用。
 - `ctx.diagnostic({ code, level, message, data?, dedupeKey? })` 保存协议退化、transcript 缺失和清理问题。它会进入终端永久事件和 `result.json`。
 - 无法继续运行时抛出异常，runner 会把 Attempt 标为 `errored`，并保存发生阶段、错误码、message、cause 和 stack。
 
@@ -193,8 +198,7 @@ export default defineSandboxAgent({
 运行中看到 Sandbox 或 Adapter 错误时，终端会给出 Attempt locator：
 
 ```text
-✗ @12h8m4k1 fixtures/button [local] errored · agent setup
-    agent-install-failed: npm install my-agent exited with code 1
+✗ @12h8m4k1 fixtures/button [local] errored · agent ensure
     Inspect: niceeval show @12h8m4k1
 ```
 
