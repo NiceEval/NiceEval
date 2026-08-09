@@ -102,8 +102,49 @@ Agent 仍以 `user: "node"` 运行。上面 Dockerfile 在构建期把 `node` �
 用户不在 `docker` 组、daemon 提前退出或 readiness 超时，NiceEval 会在删除创建失败的
 容器前收集有界日志尾部并报出可操作的原因。
 
+派生镜像不要设置 `DOCKER_HOST` 或 `DOCKER_CONTEXT`。NiceEval 会先确认默认 context，
+再核对不带 endpoint 选项的 `docker info` 与显式 `/var/run/docker.sock` 是否到达同一个 daemon。
+这项 compatibility check 通过后，才会执行作者声明的 readiness。
+
 这个协议不承诺保留任意 service image 的启动语义。如果你要评测一个必须依赖自己
 `ENTRYPOINT` / `CMD` 的服务组，应该使用 Compose Sandbox，由 Compose 声明服务进程。
+
+### 在 setup 中准备 Attempt 运行时
+
+Dockerfile 只烘焙固定工具、只读归档和项目初始文件。需要 inner daemon 的操作放进 Sandbox 级
+`setup`，不要放进镜像 `ENTRYPOINT`。下面的 setup 可以导入离线 image、把项目初始文件复制到可写
+workspace，并运行项目自己的 smoke check：
+
+```ts title="lib/dind-sandbox.ts"
+import { dockerfileSandbox } from "niceeval/sandbox";
+
+export const dindSandbox = dockerfileSandbox({
+  context: new URL("../sandbox/", import.meta.url),
+  user: "node",
+  dockerAccess: {
+    mode: "dind",
+    isolation: "raw-privileged",
+  },
+  readiness: {
+    command: ["docker", "info"],
+    user: "node",
+    timeoutMs: 30_000,
+  },
+}).setup(async (sandbox, ctx) => {
+  ctx.progress({ message: "准备 inner Docker 运行时" });
+  const result = await sandbox.runCommand("prepare-inner-runtime", [], {
+    user: "root",
+    stream: true,
+  });
+  if (result.exitCode !== 0) {
+    throw new Error(result.stderr || "inner Docker 运行时准备失败");
+  }
+});
+```
+
+NiceEval 会先启动并验证 inner daemon，再执行这个 setup，最后运行 Agent。setup 非零退出时，
+Attempt 在 `sandbox.create` 阶段记为 `errored`，不会把半成品 Sandbox 交给 Agent。固定内容留在 image layer，
+每个 Attempt 只复制或导入必须写入 tmpfs 或 inner data-root 的状态，可以减少重复安装和网络漂移。
 
 ### Raw privileged DinD
 
@@ -197,6 +238,37 @@ npx niceeval exp dind-managed
 `doctor --smoke`会在该 profile上启动一次 DinD容器，并实际运行内层
 `docker run --rm alpine:3.20 true`。它证明 profile支持 nested Docker，但不会检查项目自己的
 Dockerfile。项目镜像仍由默认 `docker info` readiness验证。
+
+### 为 DinD 设置运行并发
+
+`resources.memoryBytes` 限制一台 Sandbox，不会自动设置 Run 的并发数。DinD 还会占用 inner
+image、BuildKit、tmpfs 和 page cache，默认并发对本机可能过高。先用较小并发完成 smoke run：
+
+```bash
+pnpm exec niceeval exp dind-managed --max-concurrency 2
+```
+
+再根据宿主的可用内存、CPU 和磁盘吞吐逐步增加。可以先用
+`可用内存 ÷ memoryBytes` 估算保守上限，同时为宿主 Docker、NiceEval 和其它进程留余量。
+Experiment 只服务这类重型 Sandbox 时，也可以直接设置 `maxConcurrency`。
+
+### 定位 DinD 创建失败
+
+创建失败后使用终端给出的 Attempt 定位符，不要直接翻运行产物：
+
+```bash
+pnpm exec niceeval show @1ABC234DEF
+```
+
+常见错误与处理方式：
+
+| 公开错误 | 处理方式 |
+| --- | --- |
+| `DOCKER_HOST must be unset` 或 `DOCKER_CONTEXT must be unset` | 删除镜像里的 endpoint/context 环境变量，让默认 endpoint 指向 `/var/run/docker.sock` |
+| `dind-image-incompatible: missing ...` | 从固定版本 `docker:<version>-dind` 派生，并补齐错误列出的工具 |
+| `permission denied` | 在构建期把 `user` 对应的 Agent 用户加入镜像内 `docker` 组 |
+| Docker access compatibility timeout | 从 `niceeval show` 给出的有界 `dockerd.log` 尾部检查 daemon 启动、socket 与 storage driver |
+| 启动前提示 orphan Sandbox | 先用 `niceeval sandbox list --orphans` 只读核对，再显式运行 `niceeval sandbox prune` |
 
 ## 在 Eval里验证 Docker任务
 

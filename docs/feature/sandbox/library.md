@@ -281,6 +281,19 @@ NiceEval不向镜像安装 Docker。三种模式的镜像都要带 Docker CLI；
 bootstrap 与 supervisor，同时监督 inner dockerd、Sandbox keeper、日志与容器内 TTL。
 这是 DinD 模式的明确镜像协议，不是对任意 service image 的 OCI 启动兼容承诺。
 
+DinD 镜像不得用 `DOCKER_HOST` 或 `DOCKER_CONTEXT` 改写默认 endpoint。provider 在执行作者
+readiness 前先验证默认 Docker context，并确认不带 endpoint 选项的 `docker info` 与显式
+`unix:///var/run/docker.sock` 到达同一个 daemon。
+
+镜像烘焙固定工具、归档和只读项目初始文件；必须等
+inner daemon 就绪才能做的初始化放进 Sandbox `.setup()`。例如导入离线 image、把项目初始文件复制到
+可写 workspace，或执行依赖 inner Docker 的 smoke check。setup 失败归入 Sandbox 创建，不会把
+未准备好的 Sandbox 交给 Agent。
+
+生命周期分工只有一条顺序：镜像提供静态内容，provider 启动并验证 daemon，Sandbox setup 准备本次
+Attempt 的可写状态，随后才运行 Agent。镜像 `ENTRYPOINT`、作者 readiness 与 Sandbox setup 不能承担
+同一项初始化职责；保留两套入口会让 build 成功但 Attempt 缺运行时状态。
+
 bootstrap、supervisor 与 dockerd 以 root 运行；Agent、普通 Sandbox 命令与默认
 `docker info` 仍以 factory `user` 执行，未声明 factory `user` 时沿用镜像 `USER`。
 合规派生镜像应在构建期把该 Agent 用户加入 `docker` 组；NiceEval 不会把
@@ -291,6 +304,10 @@ bootstrap、supervisor 与 dockerd 以 root 运行；Agent、普通 Sandbox 命�
 带 `exec,nosuid,nodev`，因为 DinD 的 inner rootfs 需要执行文件。使用 `tmpfs` 或只读 rootfs
 的 sandbox 是 `DestroyOnly`：stop 后内容会丢失，因此 `--keep-sandbox` 不会伪装成可保留。
 这些字段只属于单容器 Docker image/Dockerfile provider，Compose 尚不接受它们。
+
+`resources` 限制一台 Sandbox，不决定 Run 的并发宽度。作者仍要按宿主可用内存、CPU、inner image
+导入峰值和其它同时运行的进程设置 Experiment `maxConcurrency` 或 CLI `--max-concurrency`。
+`memoryBytes` 乘并发数可以作为内存上界的保守起点，但不能代替宿主容量监控。
 
 Docker provider 不注入 `host.docker.internal`，并统一把 `Sandbox.otlpHost` 声明为 `null`。
 一个 host-gateway 别名不能证明宿主防火墙允许容器回连；把它报告成能力会让 exporter 把 trace
