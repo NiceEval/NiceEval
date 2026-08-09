@@ -1,7 +1,7 @@
 # Assertion 作者面类型原型
 
 本目录保存 Roadmap 公开类型的可编译原型，不提供运行时实现。
-[`type-prototype.ts`](type-prototype.ts) 使用真实 Standard Schema 类型验证 matcher refinement、domain 组合与 Assertion handle 状态机。
+[`type-prototype.ts`](type-prototype.ts) 使用真实 Standard Schema 类型验证 matcher refinement、domain 组合、Fact phase、消费边界与 Score 完成协议。
 
 修改 `matching.md` 或 `library.md` 中的公开签名后运行：
 

@@ -100,49 +100,122 @@ declare function defineScoreMatch<T>(spec: {
   readonly score: (value: T) => number | Promise<number>;
 }): ScoreMatch<T>;
 
+type FactPhase = "now" | "final";
+declare const factBrand: unique symbol;
+declare const usageCoverageBrand: unique symbol;
+declare const scoreCompletionBrand: unique symbol;
+
+interface BooleanFact<out R = unknown, P extends FactPhase = FactPhase> {
+  readonly kind: "boolean";
+  readonly phase: P;
+  readonly [factBrand]: () => R;
+}
+
+interface ScoreFact<P extends FactPhase = FactPhase> {
+  readonly kind: "score";
+  readonly phase: P;
+  readonly [factBrand]: () => number;
+}
+
+interface UsageEvidenceFact<P extends FactPhase = FactPhase> extends BooleanFact<unknown, P> {
+  readonly [usageCoverageBrand]: true;
+}
+
+interface ScoreCompletion {
+  readonly [scoreCompletionBrand]: true;
+}
+
+interface FactUseOptions {
+  readonly key?: string;
+  readonly label?: string;
+}
+
+interface ScoreThresholdOptions extends FactUseOptions {
+  readonly atLeast: number;
+}
+
 interface TestContext {
-  require<T, R extends T>(value: T, match: BooleanMatch<T, R, "value">): Promise<R>;
+  check<T, R extends T>(subject: T, match: BooleanMatch<T, R, "value">): BooleanFact<R, "now">;
+  check<T>(subject: T, match: ScoreMatch<T>): ScoreFact<"now">;
+
+  assert<R, P extends FactPhase>(fact: BooleanFact<R, P>, options?: FactUseOptions): void;
+  assert<P extends FactPhase>(fact: ScoreFact<P>, options: ScoreThresholdOptions): void;
+  assertIfCovered<P extends FactPhase>(fact: UsageEvidenceFact<P>, options?: FactUseOptions): void;
+
+  require<R>(fact: BooleanFact<R, "now">, options?: FactUseOptions): Promise<R>;
+  require(fact: ScoreFact<"now">, options: ScoreThresholdOptions): Promise<number>;
+  require<T, R extends T>(
+    value: T,
+    match: BooleanMatch<T, R, "value">,
+    options?: FactUseOptions,
+  ): Promise<R>;
 }
 
-interface AssertionHandle {
-  label(label: string): AssertionHandle;
-  gate(threshold?: number): AssertionHandle;
-  atLeast(threshold: number): AssertionHandle;
-  soft(): AssertionHandle;
-  optional(): AssertionHandle;
-  stopOnFailure(): Promise<AssertionHandle>;
+interface ScoreTestContext extends TestContext {
+  score<P extends FactPhase>(
+    label: string,
+    fact: BooleanFact<unknown, P> | ScoreFact<P>,
+    options: { readonly key?: string; readonly max: number },
+  ): void;
+  score(label: string, direct: { readonly key?: string; readonly earned: number }): void;
+  finishScore(): ScoreCompletion;
 }
 
-interface ScoreAssertionHandle {
-  label(label: string): ScoreAssertionHandle;
-  points(points: number): ScorePointHandle;
-  gate(threshold?: number): ScoreAssertionHandle;
-  atLeast(threshold: number): ScoreAssertionHandle;
-  soft(): ScoreAssertionHandle;
-  optional(): ScoreAssertionHandle;
-  stopOnFailure(): Promise<ScoreAssertionHandle>;
+interface KeyedFactUseOptions extends FactUseOptions {
+  readonly key: string;
 }
 
-interface ScorePointHandle {
-  label(label: string): ScorePointHandle;
-  gate(threshold?: number): ScorePointHandle;
-  optional(): ScorePointHandle;
-  stopOnFailure(): Promise<ScorePointHandle>;
+interface KeyedScoreThresholdOptions extends KeyedFactUseOptions {
+  readonly atLeast: number;
+}
+
+interface ReplayGradingFactUses {
+  assert<R, P extends FactPhase>(fact: BooleanFact<R, P>, options: KeyedFactUseOptions): void;
+  assert<P extends FactPhase>(fact: ScoreFact<P>, options: KeyedScoreThresholdOptions): void;
+  assertIfCovered<P extends FactPhase>(fact: UsageEvidenceFact<P>, options: KeyedFactUseOptions): void;
+}
+
+interface ReplayScoreFactUses extends ReplayGradingFactUses {
+  score<P extends FactPhase>(
+    label: string,
+    fact: BooleanFact<unknown, P> | ScoreFact<P>,
+    options: { readonly key: string; readonly max: number },
+  ): void;
+  score(label: string, direct: { readonly key: string; readonly earned: number }): void;
+}
+
+interface ScoreEvalInput {
+  test(t: ScoreTestContext): ScoreCompletion | Promise<ScoreCompletion>;
 }
 
 type HasId = { readonly id: string };
 type HasTitle = { readonly title: string };
 
 declare const t: TestContext;
+declare const scoreT: ScoreTestContext;
+declare const grading: ReplayGradingFactUses;
+declare const scoreGrading: ReplayScoreFactUses;
 declare const candidate: unknown;
 declare const hasId: BooleanMatch<unknown, HasId>;
 declare const hasTitle: BooleanMatch<unknown, HasTitle>;
 declare const command: ToolMatch<LogicalCommandOccurrence>;
 declare const event: EventMatch;
 declare const score: ScoreMatch<string>;
-declare const assertionHandle: AssertionHandle;
-declare const scoreHandle: ScoreAssertionHandle;
+declare const finalFact: BooleanFact<void, "final">;
+declare const usageFact: UsageEvidenceFact<"final">;
 declare const transformingSchema: StandardSchemaV1<string, number>;
+
+function proveReplayUseKeys(): void {
+  grading.assert(finalFact, { key: "final-valid" });
+  grading.assertIfCovered(usageFact, { key: "usage-covered" });
+  scoreGrading.score("回答质量", finalFact, { key: "answer-quality", max: 10 });
+  scoreGrading.score("代码精简", { key: "code-simplicity", earned: 2 });
+
+  // @ts-expect-error Replayable grading requires a key for every verdict use.
+  grading.assert(finalFact);
+  // @ts-expect-error Replayable grading requires a key for every score use.
+  scoreGrading.score("回答质量", finalFact, { max: 10 });
+}
 
 async function proveRefinements(): Promise<void> {
   const both = await t.require(candidate, and(hasId, hasTitle));
@@ -167,6 +240,23 @@ async function proveRefinements(): Promise<void> {
   const asyncValue = await t.require(candidate, asyncMatch);
   // @ts-expect-error Async boolean evaluators do not refine the candidate.
   asyncValue.id;
+
+  const hasIdFact = t.check(candidate, hasId);
+  t.assert(hasIdFact);
+  const id = await t.require(t.check(candidate, hasId));
+  id.id.toUpperCase();
+
+  const quality = t.check("answer", score);
+  t.assert(quality, { atLeast: 0.7 });
+  await t.require(quality, { atLeast: 0.7 });
+
+  t.assert(finalFact);
+  // @ts-expect-error A final Fact cannot control code before finalization.
+  await t.require(finalFact);
+
+  t.assertIfCovered(usageFact);
+  // @ts-expect-error Coverage policy is restricted to branded usage Facts.
+  t.assertIfCovered(hasIdFact);
 }
 
 defineValueMatch({
@@ -190,13 +280,33 @@ and(command, score);
 // @ts-expect-error not() is value-only and cannot negate a ToolMatch.
 not(command);
 
-assertionHandle.label("answer").gate().optional();
-scoreHandle.label("answer").points(2).label("answer").gate().optional();
-// @ts-expect-error Passing evals do not expose points().
-assertionHandle.points(2);
-// @ts-expect-error A scored point cannot be scored twice.
-scoreHandle.points(2).points(1);
-// @ts-expect-error A scored point cannot re-enter the quality-score surface.
-scoreHandle.points(2).soft();
-// @ts-expect-error A scored point cannot add a soft threshold.
-scoreHandle.points(2).atLeast(0.5);
+const boolFact = t.check(candidate, hasId);
+const scoreFact = t.check("answer", score);
+
+scoreT.score("has id", boolFact, { max: 2 });
+scoreT.score("quality", scoreFact, { max: 10 });
+scoreT.score("direct", { earned: 3 });
+t.assert(scoreFact, { atLeast: 0.5 });
+
+// @ts-expect-error A Score Fact needs an explicit threshold when used for verdict.
+t.assert(scoreFact);
+// @ts-expect-error Passing TestContext does not expose score().
+t.score("has id", boolFact, { max: 2 });
+// @ts-expect-error Facts do not expose the retired points() chain.
+boolFact.points(2);
+// @ts-expect-error Score completion has no unverifiable early-exit options.
+scoreT.finishScore({ reason: "early" });
+
+const validScoreEval: ScoreEvalInput = {
+  test(context) {
+    context.score("zero is explicit", { earned: 0 });
+    return context.finishScore();
+  },
+};
+void validScoreEval;
+
+const invalidScoreEval: ScoreEvalInput = {
+  // @ts-expect-error A normal Score Eval path must return ScoreCompletion.
+  test() {},
+};
+void invalidScoreEval;

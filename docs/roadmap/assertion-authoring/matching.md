@@ -2,7 +2,7 @@
 
 ## 值 matcher
 
-`t.check()` 的第二参数是纯比较器，不携带 severity、threshold、optional 或 points：
+`t.check()` 的第二参数是纯比较器，不携带判定用途、计分用途或控制流策略：
 
 ```ts
 type MatchDomain = "value" | "tool" | "event";
@@ -34,7 +34,10 @@ type EventMatch<R extends MatchableEvent = MatchableEvent> = BooleanMatch<Matcha
 普通作者使用具名工厂，不能手写 selector object。matcher 成功后的 `R` 必须是原 candidate 的收窄类型，不是转换后的新值。
 `matches(schema)` 只验证 Standard Schema，并按 `InferInput` 收窄；schema transform 的 `InferOutput` 不会替换原 candidate。
 
-内部候选求值结果固定为 `matched | mismatched | unavailable`。`matched` 携带同一个 candidate 的 refinement；另外两种携带非空诊断，`unavailable` 还携带 coverage reason。它不使用 `passed | failed`，因为一笔 occurrence mismatch 不等于集合 Assertion failed。
+内部候选求值结果固定为 `matched | mismatched | unavailable`。
+`matched` 携带同一个 candidate 的 refinement，另外两种携带非空诊断；`unavailable` 还携带 coverage reason。
+
+它不使用 `passed | failed`，因为一笔 occurrence mismatch 不等于集合 Fact failed。
 
 文本 matcher 只消费 string，不把任意值 `String()` 后搜索：
 
@@ -58,10 +61,16 @@ declare function not<T>(match: BooleanMatch<T, T, "value">): BooleanMatch<T, T, 
 `equals()` 是深相等，`matches()` 消费 Standard Schema。identifier slot 继续使用直接传入的 string exact；工具名、事件类型、executable、argv token 与 Sandbox path 都属于 identifier。
 
 ```ts
-t.check(t.reply, includes("Brooklyn"));
-t.check(t.sandbox.file("experiments/local.ts"), and(includes("runtime:python"), excludes("runtime:node")));
-t.check(t.sandbox.file("src/index.ts"), not(pattern(/console\.log\s*\(/, { stripComments: true })));
-t.check(turn.data, matches(ResultSchema));
+t.assert(t.check(t.reply, includes("Brooklyn")));
+t.assert(t.check(
+  t.sandbox.file("experiments/local.ts"),
+  and(includes("runtime:python"), excludes("runtime:node")),
+));
+t.assert(t.check(
+  t.sandbox.file("src/index.ts"),
+  not(pattern(/console\.log\s*\(/, { stripComments: true })),
+));
+t.assert(t.check(turn.data, matches(ResultSchema)));
 ```
 
 关系由 matcher 名字决定，不由接收位置猜：没有未包装 string＝contains、直接 RegExp＝pattern，也没有 `{ contains, excludes }` 这一套旁路 rule。
@@ -111,8 +120,8 @@ declare function defineScoreMatch<T>(spec: {
 unavailable 只由标准 EvidenceSource、coverage-aware 内置 matcher、Judge 或 provider 等具名 evidence owner 产生。
 这些工厂只创建 value matcher，不允许自定义 ToolMatch 或 EventMatch 绕过 Observation Protocol coverage。
 
-现有 `makeAssertion()` 的能力由两条路径接替：boolean checker 用 `defineValueMatch()`，连续 scorer 用 `defineScoreMatch()`。
-severity、threshold、optional 与 points 改由 Assertion handle 声明。
+现有 `makeAssertion()` 的能力由两条路径接替：boolean checker 使用 `defineValueMatch()`，连续 scorer 使用 `defineScoreMatch()`。
+它们只创建 Fact，判定阈值与计分由 `t.assert()` / `t.require()` / `t.score()` 明确登记。
 
 ### `referencesAnyPath()`
 
@@ -171,7 +180,8 @@ declare function or<
 - 子 matcher 抛错不是 mismatched 或 unavailable，而是 evaluator defect；
 - source resolution 在组合之外先执行一次，因此 `or()` 不能用另一分支掩盖文件读取失败。
 
-JavaScript / `any` 的登记边界仍校验至少两项、同 domain 和布尔种类。诊断按组合树和子项索引保留，经现有脱敏与预算规则写入 `AssertionResult.expected`、`received` 与 `evidence`；内部 evaluator defect 不能被另一个决定性分支掩盖。
+JavaScript / `any` 的登记边界仍校验至少两项、同 domain 和布尔种类。
+诊断按组合树和子项索引保留，经现有脱敏与预算规则写入 FactResult；内部 evaluator defect 不能被另一个决定性分支掩盖。
 
 `not()` 采用同一三态：matched 与 mismatched 互换，unavailable 保持 unavailable，evaluator defect 继续抛出。
 它不进入 tool / event domain；集合负存在性仍由 `notCalledTool()` / `notEvent()` 表达。
@@ -200,10 +210,10 @@ declare function toolMatch(options: {
   status?: ToolStatus;
 }): ToolMatch;
 
-interface ScopedAssertions<H> {
-  calledTool(match: ToolMatch, options?: { count?: number }): H;
-  notCalledTool(match: ToolMatch): H;
-  toolOrder(matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]]): H;
+interface ScopedFacts<P extends FactPhase> {
+  calledTool(match: ToolMatch, options?: { count?: number }): BooleanFact<LogicalToolOccurrence, P>;
+  notCalledTool(match: ToolMatch): BooleanFact<void, P>;
+  toolOrder(matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]]): BooleanFact<void, P>;
 }
 ```
 
@@ -212,9 +222,11 @@ interface ScopedAssertions<H> {
 `name`、`input`、logical command 与 `status` 都在同一笔 occurrence 上求值。需要同时约束 command 与 Adapter 工具分类时，使用 `and(commandMatch(...), toolMatch(...))`；两个 matcher 不会各自搜索 occurrence。字段 definite mismatch 压过 unavailable。当前不公开 `output`，因为缺失 output 还没有 `absent | opaque` 的证据状态，不能诚实地区分“确定没有”与“没观察到”。次数不属于 matcher：
 
 ```ts
-turn.calledTool(toolMatch("shell", { status: "completed" }), { count: 1 }).gate();
-turn.notCalledTool(toolMatch("shell", { input: matches(ForbiddenInputSchema) })).gate();
-turn.calledTool(and(commandMatch("niceeval", { argsStart: ["show"] }), toolMatch("shell", { status: "completed" }))).gate();
+t.assert(turn.calledTool(toolMatch("shell", { status: "completed" }), { count: 1 }));
+t.assert(turn.notCalledTool(toolMatch("shell", { input: matches(ForbiddenInputSchema) })));
+t.assert(turn.calledTool(
+  and(commandMatch("niceeval", { argsStart: ["show"] }), toolMatch("shell", { status: "completed" })),
+));
 ```
 
 `notCalledTool(match)` 的逻辑是“scope 内不存在满足 match 的 occurrence”。因此：
@@ -223,7 +235,8 @@ turn.calledTool(and(commandMatch("niceeval", { argsStart: ["show"] }), toolMatch
 - 只禁止同一笔 occurrence 同时满足 A 与 B，写 `notCalledTool(and(A, B))`；
 - `notCalledTool(and(A, B))` 不会禁止只满足 A 或只满足 B 的 occurrence。
 
-Value matcher 只能经 `toolMatch({ input })` 提升到 tool domain。`notCalledTool(or(A, B))` 在一个三态 Assertion 内保留正确的德摩根语义，不应拆成两条可能分别产生 failed 与 unavailable 的 gate。
+Value matcher 只能经 `toolMatch({ input })` 提升到 tool domain。
+`notCalledTool(or(A, B))` 在一个三态 Fact 内保留正确的德摩根语义，不应拆成两个各自登记的判定用途。
 
 `toolOrder()` 用单调 cursor 消费不同 occurrence，只证明 request subsequence；它不证明前一项 finish-before-start，也不建立因果关系。
 
@@ -261,8 +274,11 @@ declare function eventMatch<K extends keyof EventOptionsByType>(
   options?: EventOptionsByType[K],
 ): EventMatch<Extract<MatchableEvent, { readonly type: K }>>;
 
-turn.event(eventMatch("message", { role: "assistant", text: includes("done") })).gate();
-turn.eventOrder([eventMatch("operation.finished", { tool: toolMatch("send_email", { status: "rejected" }) }), eventMatch("message", { role: "assistant", text: includes("not sent") })]).gate();
+t.assert(turn.event(eventMatch("message", { role: "assistant", text: includes("done") })));
+t.assert(turn.eventOrder([
+  eventMatch("operation.finished", { tool: toolMatch("send_email", { status: "rejected" }) }),
+  eventMatch("message", { role: "assistant", text: includes("not sent") }),
+]));
 ```
 
 关联器按流位置把 started 与 finished 配成一笔唯一 occurrence。

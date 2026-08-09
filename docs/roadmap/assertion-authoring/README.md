@@ -2,60 +2,97 @@
 
 ## 用户需要
 
-Eval 作者只需要回答三类问题：拿什么证据、如何比较、观察哪个 scope。普通调用应能在一行内读完，不先声明共享 matcher，不暴露 Match AST，也不让 `t.check()` 同时承担文件读取、JSON 查询和领域事件解释。
+Eval 作者先描述一个可求值的事实，再明确选择它影响判定、控制流还是分数。
+事实本身不携带严重度、计分值或停止策略，同一事实只求值一次。
 
 ```ts
-t.check(t.sandbox.file("experiments/local.ts"), and(includes("runtime:python"), excludes("runtime:node"))).points(2).gate();
-t.check(t.sandbox.file("src/index.ts"), not(pattern(/console\.log\s*\(/, { stripComments: true })));
-turn.calledTool(commandMatch("niceeval", { argsStart: ["show"], status: "completed" })).gate();
-turn.toolOrder([
-  commandMatch("niceeval", { argsStart: ["exp", "local"] }),
-  commandMatch("niceeval", { argsStart: ["show"], status: "completed" }),
-]).gate();
+const changed = t.sandbox.fileChanged("experiments/local.ts", {
+  before: includes("runtime:node"),
+  after: includes("runtime:python"),
+});
+
+t.assert(changed);
+t.score("runtime 配置修复", changed, { max: 2 });
 ```
 
-这里有一套统一语法，而不是三套 DSL：
+判定与控制流使用两个直接动词：
 
-- `t.check(subject, matcher)` 把值或延迟 source 与纯 matcher 配对；
-- `includes()`、`pattern()`、`referencesAnyPath()`、`toolMatch()`、`commandMatch()`、`eventMatch()` 与布尔组合器都从 `niceeval/expect` 构造纯 `Match`；
-- `t`、session、turn 的领域断言消费同一个 `ToolMatch` / `EventMatch`，接收者只改变 scope；
-- 文件 source、diff 和文件行为统一留在 `t.sandbox`。
+```ts
+t.assert(turn.succeeded());
 
-## 最小扩展
+const config = await t.require(t.check(rawConfig, matches(ConfigSchema)));
+```
 
-本 Roadmap 只补现有词汇无法诚实表达的能力：
+`t.assert(fact)` 要求事实通过，但继续执行后续独立检查。
+`await t.require(fact)` 也要求事实通过，并说明后续代码依赖它；失败或无法求值时结束依赖路径。
 
-- matcher 与 severity、threshold、optional、points 分离；登记策略只在 Assertion handle；
-- 布尔 matcher 可用 `and()` / `or()` 正交组合，连续评分 matcher 不进入布尔组合；
-- 字面文本、RegExp 与 Standard Schema 分别使用 `includes()` / `excludes()`、`pattern()` 与 `matches()`，不因统一语法丢失现有 `stripComments`；
-- presence、absence、count 与 order 复用同一份单 occurrence `ToolMatch` / `EventMatch`；
-- `commandMatch()` 是一类 `ToolMatch`，消费 Observation Protocol 的 logical command，不要求作者知道 Adapter 工具名，也不匹配 raw shell text；
-- `t.sandbox.file(path)` 是延迟 `EvidenceSource<string>`，缺失文件不能冒充空字符串；
-- `notCalledTool(toolMatch({ input }))` 复用工具负存在性；`changedPaths()`、`noChanges()` 与带内容条件的 `fileChanged()` 补齐 Harness 所需的标准事实。
+## 一套正交词汇
 
-普通 API 只提供独立 matcher 工厂，不再允许直接传 selector 对象、string shorthand、`match.*` namespace、fluent 同义入口、递归 JSON rule、匿名 `where` 或第二套 order 语义。结构数据继续用 `equals()` 或 Standard Schema 的 `matches()`；CLI 的业务含义由公开输出与完整 Turn 语义判断，不把某个 JSON envelope 固化进 core。
+作者面分为三层：
 
-需要自定义值关系时，具名 `satisfies()`、`defineValueMatch()` 与 `defineScoreMatch()` 是高级逃生口。
-它们不能创建 ToolMatch / EventMatch，也不能自行制造 unavailable；Observation Protocol coverage 仍由 core 拥有。
+- `t.check(subject, matcher)`、作用域方法与 Sandbox 方法只创建评估事实；
+- `t.assert()`、`t.require()` 与受限的 `t.assertIfCovered()` 只创建判定用途；
+- `t.score()` 只创建计分用途，并且只存在于 `defineScoreEval`。
+
+新的 Fact 作者面不包含 `.gate()`、`.soft()`、`.optional()`、`.stopOnFailure()` 或 `.points()`。
+CLI 也不提供 `--strict` 来改写源码已经声明的判定语义。
+
+`.points(n)` 不作为 `t.score()` 的链式别名存在。
+链式别名会重新把事实生产、判定和计分压回一个 handle，使调用顺序再次承担隐藏策略。
+
+`t.score(label, fact, { max })` 明确表示按事实计分。
+作者已经算好分数时使用 `t.score(label, { earned })`，两个签名不会靠位置参数猜含义。
+
+## 本轮 Judge 边界
+
+本 Roadmap 不修改任何公开 LLM / Judge API。
+`t.judge.autoevals.*` 与 `turn.judge.autoevals.*` 的方法名、参数、返回句柄链、配置求值、网络调用和诊断语义保持现状；它们不是本轮公开 Fact producer。
+
+实现只在 `buildJudge()` 已有的 `deps.record(...)` 注入缝上接一个私有 legacy Judge adapter。
+它让 Judge spec 继续只求值一次，并把 adapter 归一化出的封闭 `LegacyJudgeAssertionResult` 作为隔离 sidecar 交给 Attempt 折叠；Fact 图不遍历它，Eval 作者也拿不到 `JudgeFact`。
+这项兼容岛仍保留 Judge 现有的链式策略，后续若要迁移必须单独设计和验收，不能顺手改进本轮 Assertion 实现。
+
+## 证据与比较
+
+`includes()`、`pattern()`、`referencesAnyPath()`、`toolMatch()`、`commandMatch()`、`eventMatch()` 与布尔组合器都从 `niceeval/expect` 构造纯 `Match`。
+matcher 不知道 Eval 类型，也不决定判定或计分用途。
+
+`t`、session 与 turn 的领域方法消费同一份 `ToolMatch` / `EventMatch`，接收者只改变 scope。
+文件 source、diff 和文件行为统一留在 `t.sandbox`。
+
+普通 API 不接受未包装 selector、string shorthand、`match.*` namespace、递归 JSON rule 或第二套 order 语义。
+结构数据使用 `equals()` 或 Standard Schema 的 `matches()`；CLI 的业务含义不固化成某个 JSON envelope。
 
 ## 结果边界
 
-确定性 Assertion 继续产生 `passed | failed | unavailable`：
+Boolean Fact 的求值结果是 `passed | failed | unavailable`。
+Score Fact 的可用结果是 `[0,1]` 归一化分数；非有限值或越界值属于 evaluator error，不能裁剪。
 
-- available candidate 与 matcher 不符是 failed；
-- source、logical command 或 coverage 不足，且事实仍可能成立，是 unavailable；
-- matcher、Adapter 或 provider 违反自身协议，才使 Attempt errored。
+事实结果与用途结果分别留档。
+同一个事实可以各有一个判定用途和一个计分用途，报告因此能说明“事实是什么”“为何不通过”和“挣了多少分”，不再从字段组合反推角色。
 
-布尔组合不会掩盖证据缺口：`and()` 中 failed 压过 unavailable；`or()` 中 passed 压过 unavailable。两者按声明顺序求值全部子项以保留诊断，但 matcher 抛错仍是 evaluator defect。
+`defineScoreEval` 允许在同一次 Agent Attempt 中同时写约束和计分。
+约束失败产生 `invalid`，诊断保留已挣分数，但聚合贡献固定为 0；证据不足产生 `unavailable`，聚合贡献为 `null`。
+
+## 研究取舍
+
+- [Eve](../../research/assertion-api-dx/eve.md) 的 scope-first receiver 和独立 `require` 证明了“事实在哪里”与“后续代码是否依赖它”应直接可读；NiceEval 因而保留 receiver，但把 Fact 与用途彻底拆开。
+- [Inspect AI](../../research/assertion-api-dx/inspect-ai.md) 的 `unscored`、[Braintrust](../../research/assertion-api-dx/braintrust-autoevals.md) 的 `score=None` 和 [smevals](../../research/assertion-api-dx/smevals.md) 的 `score: null` 都拒绝用假零分表示未完成评分；NiceEval 用显式 `unavailable` 联合保留原因。
+- [Pydantic Evals](../../research/assertion-api-dx/pydantic-evals.md) 的具名多结果和 [LangSmith](../../research/assertion-api-dx/langsmith.md) 的 feedback key 说明了稳定人类名称的价值；NiceEval 把 `key` 放在 Fact use，不让它冒充 Fact 或 Evidence identity。
+- [Ori Eval](../../research/assertion-api-dx/ori-eval.md) 的 Jest 式 `to*` 方法很易上手，但 NiceEval 不复制第二套 matcher method；值关系继续统一进 `niceeval/expect`。
 
 ## 入口
 
-- [Library](library.md) —— 公开方法与类型形状。
+- [Library](library.md) —— Fact、`assert`、`require` 与 `score` 的公开形状。
 - [Rule](matching.md) —— matcher 的组合与消歧语义。
-- [Architecture](architecture.md) —— source、command projection、coverage 与错误分类。
-- [Use Case](use-case/README.md) —— 两道单轮 Harness 的用户需要与最终调用。
-- [类型原型](reference/README.md) —— 可独立运行的 TypeScript refinement 与 handle 状态机证明。
+- [Architecture](architecture.md) —— Fact 图、证据、结果状态与 Record 边界。
+- [CLI](cli.md) —— `--strict` 退出后的退出码、展示与 JUnit 映射。
+- [Use Case](use-case/README.md) —— 两道单轮 Harness 的完整调用。
+- [类型原型](reference/README.md) —— 可独立运行的 TypeScript refinement 证明。
 - [Research](../../research/assertion-api-dx/README.md) —— 外部 eval 框架的作者体验对照。
 
-稳定 regrade identity 不由 matcher name 或 `.label()` 冒充。
-保存 matcher spec、版本、证据以及可寻址 key 属于后续 regrade 设计；本 Roadmap 不继续扩 matcher 承担它。
+稳定 regrade identity 不由 matcher name 或展示 label 冒充。
+Fact 用途可以声明稳定 `key`；replayable grading 中每个 `assert`、`assertIfCovered` 与 `score` 都必须提供 key。
+
+key 只负责跨 Grading 对齐作者声明，不替代 `factId`、Claim identity 或 evidence locator。
+Execution 与 Grading 怎样分离、选择和落盘，由[可重评分 Eval](../replayable-grading/README.md)定义。

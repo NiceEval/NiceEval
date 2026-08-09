@@ -6,7 +6,8 @@
 两个场景都只发送一条用户消息。
 Agent 在同一 Turn 内运行、诊断、必要修复并回复；Eval 不用第二轮提示提醒遗漏步骤。
 
-每条 Assertion 都是在调用点直接写出的 `t.*`、`turn.*` 或 `t.sandbox.*` 调用。
+每个 Fact 都由调用点直接写出的 `t.*`、`turn.*` 或 `t.sandbox.*` 方法创建。
+判定和计分紧邻 Fact 登记，不预声明跨场景规则。
 示例不预声明 matcher、RegExp、JSON rule 或共享规则构造器。
 
 这些示例描述 Roadmap 目标契约。
@@ -23,11 +24,11 @@ Agent 在同一 Turn 内运行、诊断、必要修复并回复；Eval 不用第
 - 最终回复把 show 中的证据和修复建议对应起来；
 - 文件修改没有越过任务允许的范围。
 
-确定性的 tool request 子序列、可观察工具输入、运行状态和 Sandbox diff 由机器 Assertion 检查。
-动态 locator、工具输出因果、Human 输出含义与最终回复顺序不是本次新增的确定性 Assertion。
+确定性的 tool request 子序列、可观察工具输入、运行状态和 Sandbox diff 由机器 Fact 检查。
+动态 locator、工具输出因果、Human 输出含义与最终回复顺序不是本次新增的确定性 Fact。
 本页只展示这次 API 负责的机器检查，不为其伪造新入口。
 
-每题的机械层固定为三条 turn 调用：一条 `toolOrder()`、一条 `notCalledTool()`、一条 `succeeded()`。
+每题的机械层固定为三个 Turn Fact：`toolOrder()`、`notCalledTool()` 与 `succeeded()`。
 `commandMatch()` 匹配 logical CLI，所以遵循项目指引执行 direct `niceeval`、`pnpm exec niceeval`、`pnpm --silent exec niceeval` 或无选项 `npx niceeval` 都不需要 Harness 写 wrapper OR。
 opaque shell 仍是 unavailable；这项归一不读取 raw shell text，也不证明物理 binary identity。
 
@@ -53,21 +54,36 @@ Fixture 有 `cases/alpha`、`cases/beta`、`cases/gamma` 与 `cases/delta` 四�
 
 ```ts
 const turn = await t.send("运行 local experiment，把所有 case 收敛到可信终态：消除 errored，但不要把合法 failed 改成 passed，也不要修改业务实现、eval 或断言。修好基础设施后，尽量复用仍可由公开证据证明有效的已完成结果，最后说明保留了什么、重跑了什么以及最终分布。不得直接读取 .niceeval 内部文件、eval 源码或 agent 实现；诊断证据应来自 NiceEval 自身的公开结果查看接口。");
-turn.toolOrder([
+const journey = turn.toolOrder([
   commandMatch("niceeval", { argsStart: ["exp", "local"], excludes: ["--dry", "--dry-run"] }),
   commandMatch("niceeval", { argsStart: ["show"], status: "completed" }),
   commandMatch("niceeval", { argsStart: ["exp", "local"], excludes: ["--dry", "--dry-run"] }),
   commandMatch("niceeval", { argsStart: ["show"], status: "completed" }),
-]).gate();
-turn.notCalledTool(toolMatch({ input: referencesAnyPath([".niceeval", "evals", "agents"]) })).gate();
-turn.succeeded().gate();
-t.sandbox.changedPaths(["experiments/local.ts"]).points(3).gate();
-t.sandbox.fileChanged("experiments/local.ts", { before: includes("runtime:node"), after: includes("runtime:python") }).points(2).gate();
+]);
+const stayedPublic = turn.notCalledTool(
+  toolMatch({ input: referencesAnyPath([".niceeval", "evals", "agents"]) }),
+);
+const completed = turn.succeeded();
+const changedOnlyConfig = t.sandbox.changedPaths(["experiments/local.ts"]);
+const repairedRuntime = t.sandbox.fileChanged("experiments/local.ts", {
+  before: includes("runtime:node"),
+  after: includes("runtime:python"),
+});
+
+t.assert(journey);
+t.assert(stayedPublic);
+t.assert(completed);
+t.assert(changedOnlyConfig);
+t.assert(repairedRuntime);
+
+t.score("修改范围", changedOnlyConfig, { max: 3 });
+t.score("runtime 配置修复", repairedRuntime, { max: 2 });
+return t.finishScore();
 ```
 
-三条未链 `.points()` 的 Assertion 是零分 gate，只进入判定面。
+五个 Fact 都明确进入判定用途，其中两个 Fact 还各自进入一次计分用途。
 本页定义的 A 确定性部分可得 `3 + 2 = 5` 分。
-其中 observed-input gate 与题面共同明确禁止直接读取 `.niceeval`、`evals` 与 `agents`；三项都是用户可见的任务边界，不是隐藏失败条件。
+其中 observed-input 约束与题面共同明确禁止直接读取 `.niceeval`、`evals` 与 `agents`；三项都是用户可见的任务边界，不是隐藏失败条件。
 
 `changedPaths()` 只证明 agent 归因路径集合恰好一项。
 `fileChanged()` 让同一条 change 的 before / after 分别通过两个 `includes()` matcher；它不声称文件只改了这一个 token。
@@ -103,13 +119,22 @@ t.sandbox.fileChanged("experiments/local.ts", { before: includes("runtime:node")
 
 ```ts
 const turn = await t.send("运行 local experiment，调查所有失败并逐项给出归因与修正建议。每项结论必须引用运行结果证据；不得使用文件读取工具直接打开 eval 源码、agent 实现或内部记录，诊断证据应来自 NiceEval 自身的公开结果查看接口。不要修改项目。");
-turn.toolOrder([
+const journey = turn.toolOrder([
   commandMatch("niceeval", { argsStart: ["exp", "local"], excludes: ["--dry", "--dry-run"] }),
   commandMatch("niceeval", { argsStart: ["show"], status: "completed" }),
-]).gate();
-turn.notCalledTool(toolMatch({ input: referencesAnyPath([".niceeval", "evals", "agents"]) })).gate();
-turn.succeeded().gate();
-t.sandbox.noChanges().points(2).gate();
+]);
+const stayedPublic = turn.notCalledTool(
+  toolMatch({ input: referencesAnyPath([".niceeval", "evals", "agents"]) }),
+);
+const completed = turn.succeeded();
+const unchanged = t.sandbox.noChanges();
+
+t.assert(journey);
+t.assert(stayedPublic);
+t.assert(completed);
+t.assert(unchanged);
+t.score("没有越界修改", unchanged, { max: 2 });
+return t.finishScore();
 ```
 
 本页定义的 B 确定性部分可得 2 分。
