@@ -74,11 +74,23 @@ presence、absence、count 与 order 复用同一个单 occurrence match。`coun
 ```ts
 turn.calledTool(commandMatch("niceeval", { argsStart: ["show"], status: "completed" })).gate();
 turn.calledTool(toolMatch("shell", { status: "failed" }), { count: 1 }).gate();
-turn.toolOrder([commandMatch("niceeval", { argsStart: ["exp", "local"], excludes: ["--dry", "--dry-run"] }), commandMatch("niceeval", { argsStart: ["show"], status: "completed" })]).gate();
+turn.toolOrder([
+  commandMatch("niceeval", { argsStart: ["exp", "local"], excludes: ["--dry", "--dry-run"] }),
+  commandMatch("niceeval", { argsStart: ["show"], status: "completed" }),
+]).gate();
 turn.event(eventMatch("message", { role: "assistant", text: includes("done") })).gate();
 ```
 
 `commandMatch()` 与 `toolMatch()` 都匹配同一个 logical tool occurrence。普通命令断言只写前者；只有确实还要约束 Adapter 工具分类时，才写 `and(commandMatch(...), toolMatch(...))`。组合的两个分支在同一笔 occurrence 上求值，不会分别寻找两笔工具调用。
+
+负存在性仍接收同一个 `ToolMatch`：
+
+```ts
+t.notCalledTool(or(toolMatch("read_file"), toolMatch("file_read"))).gate();
+t.notCalledTool(and(toolMatch("shell"), commandMatch("cat"))).gate();
+```
+
+禁止“任一候选工具”用 `or()`；要求同一笔 occurrence 同时满足多个条件才用 `and()`。
 
 ## Sandbox 领域断言
 

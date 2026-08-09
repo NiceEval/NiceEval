@@ -7,7 +7,10 @@ Eval 作者只需要回答三类问题：拿什么证据、如何比较、观察
 ```ts
 t.check(t.sandbox.file("experiments/local.ts"), and(includes("runtime:python"), excludes("runtime:node"))).points(2).gate();
 turn.calledTool(commandMatch("niceeval", { argsStart: ["show"], status: "completed" })).gate();
-turn.toolOrder([commandMatch("niceeval", { argsStart: ["exp", "local"] }), commandMatch("niceeval", { argsStart: ["show"], status: "completed" })]).gate();
+turn.toolOrder([
+  commandMatch("niceeval", { argsStart: ["exp", "local"] }),
+  commandMatch("niceeval", { argsStart: ["show"], status: "completed" }),
+]).gate();
 ```
 
 这里有一套统一语法，而不是三套 DSL：
