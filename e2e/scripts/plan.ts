@@ -39,6 +39,8 @@ export interface PlanCli {
   lane: Lane;
   repoIds: readonly string[];
   diffPaths?: readonly string[];
+  /** Explicitly disable both supplied and implicit working-tree path filtering. */
+  noDiff: boolean;
   capability?: string;
   json: boolean;
 }
@@ -240,6 +242,7 @@ export function parsePlanCli(argv: readonly string[]): PlanCli {
       repo: { type: "string", multiple: true, default: [] },
       "diff-path": { type: "string", multiple: true },
       diff: { type: "string", multiple: true },
+      "no-diff": { type: "boolean", default: false },
       capability: { type: "string" },
       json: { type: "boolean", default: false },
     },
@@ -249,12 +252,17 @@ export function parsePlanCli(argv: readonly string[]): PlanCli {
 
   const lane = parseLane(values.lane);
   const diffPaths = [...valueAsStrings(values["diff-path"]), ...valueAsStrings(values.diff)];
+  const noDiff = values["no-diff"] === true;
+  if (noDiff && diffPaths.length > 0) {
+    throw new Error("--no-diff cannot be combined with --diff-path or --diff");
+  }
   const capability = typeof values.capability === "string" ? values.capability : undefined;
 
   return {
     lane,
     repoIds: valueAsStrings(values.repo),
     diffPaths: diffPaths.length > 0 ? diffPaths : undefined,
+    noDiff,
     capability,
     json: values.json === true,
   };
@@ -298,7 +306,7 @@ export function resolvePlan(argv: readonly string[]): ResolvedPlan {
   if (errors.length > 0) {
     throw new Error(`repo discovery found ${errors.length} problem(s): ${errors.join("; ")}`);
   }
-  const diffPaths = cli.diffPaths ?? tryReadDiffPaths(resolve(e2eRoot, ".."));
+  const diffPaths = cli.noDiff ? undefined : cli.diffPaths ?? tryReadDiffPaths(resolve(e2eRoot, ".."));
   return {
     cli,
     entries: makePlan(repos, e2eRoot, {

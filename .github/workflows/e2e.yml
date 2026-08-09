@@ -119,8 +119,11 @@ jobs:
           if [ -n "$repo" ]; then
             args+=(--repo "$repo")
           fi
-          # 能求 diff 时交给 plan 做 path 省时；否则 fail-open 跑 lane 全集
-          if [ "$GITHUB_EVENT_NAME" = "pull_request" ] || [ "$GITHUB_EVENT_NAME" = "push" ]; then
+          # Release 明确跑全集；其它 lane 能求 diff 时交给 plan 做 path 省时，
+          # 否则 fail-open 跑 lane 全集。
+          if [ "$LANE" = "release" ]; then
+            args+=(--no-diff)
+          elif [ "$GITHUB_EVENT_NAME" = "pull_request" ] || [ "$GITHUB_EVENT_NAME" = "push" ]; then
             if [ -n "${BASE_SHA:-}" ] && git cat-file -e "$BASE_SHA" 2>/dev/null; then
               while IFS= read -r path; do
                 [ -n "$path" ] && args+=(--diff-path "$path")

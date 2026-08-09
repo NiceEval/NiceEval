@@ -31,6 +31,7 @@ pnpm e2e --lane pr --repo adapter/local-protocol
 ```sh
 pnpm e2e pack --out artifacts/niceeval-candidate.tgz
 pnpm e2e plan --lane pr --json
+pnpm e2e plan --lane release --no-diff --json
 pnpm e2e run --candidate artifacts/niceeval-candidate.tgz --repo report --artifact-root artifacts/e2e/report
 
 # Owner 接管可靠性收据：target 必须在 -- 后给出原生文件/标题参数
@@ -199,7 +200,7 @@ plan 无法可靠取得 diff、共享 runner/package 入口变化或 manifest �
 - root `.npmrc`、`.npmignore`、`.gitignore`、自动纳入文件、pnpm 配置、package metadata 与 root tsconfig。
 
 本地 diff 同时读取 tracked 改动和未忽略 untracked 路径。多个显式 Repo 中有任一不属于 lane 时，plan 失败，不能静默删掉它。
-Release 不用 path filter。
+Release 固定传 `--no-diff`，不用 path filter；`--no-diff` 与显式 `--diff-path` / `--diff` 同时出现时属于配置错误。
 
 ## Docker
 
