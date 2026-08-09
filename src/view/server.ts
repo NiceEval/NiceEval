@@ -38,6 +38,8 @@ export interface ViewOptions {
   scan?: ViewScanOptions;
   /** 本地模式观察的项目根；静态导出忽略。 */
   watchRoot?: string;
+  /** watch 触发的新产物已经构建并发布；初始构建与请求期补建不调用。 */
+  onRebuild?: (completedAt: Date) => void;
 }
 
 export interface ViewServer {
@@ -328,9 +330,14 @@ export async function startViewServer(opts: ViewOptions = {}): Promise<ViewServe
   try { await rebuild(); } catch (error) { throw error; }
 
   const scheduler = new ViewRebuildScheduler(async (reason) => {
-    try { await rebuild(reason); } catch { /* keep serving the preceding SitePlan */ }
+    let succeeded = false;
+    try {
+      await rebuild(reason);
+      succeeded = true;
+    } catch { /* keep serving the preceding SitePlan */ }
     // 改动可能新增/删除 import:重算闭集,新引入的组件文件从下一次变更起就被盯着。
     await syncProjectWatch();
+    if (succeeded) opts.onRebuild?.(new Date());
   });
   // 记录侧仍是整根递归监听:新 Run 目录、result.json 与证据文件都要接住。
   const recordRoot = resolve(input ?? ".niceeval");
