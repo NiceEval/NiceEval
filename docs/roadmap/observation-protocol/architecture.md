@@ -226,8 +226,15 @@ Record、Live 和 OTel exporter 共享这份转写后的 durable envelope，不�
 另一种允许形态是按事件 schema 的固定规则截断并标记；不能让一条事件独占无界文件。
 这个预算只约束一条事件的编码，不限制一个 stream 能保存多少事件。
 
-Attempt 只有在 Attempt-scoped finalizer 完成、事件流封口、Claim 写入且 Record sink 确认后才成为完整数据。
-进程中断留下的未封口 stream 保留为 incomplete evidence；Reader 不补造 Outcome、Verdict 或缺失事件。
+内联 Eval 的 Attempt 只有在 Attempt-scoped finalizer 完成、事件流封口、Claim 与内联结果写入且 Record sink 确认后才成为完整数据。
+
+Replayable Eval 把这个边界拆成两个独立封口的 Record graph。
+Execution graph 在 finalizer、事件流、`ExecutionOutcome` 与 Record sink 完成后封口。
+它不等待任何评分 Claim。
+
+Grading graph 在该次 `GradingRun` 的 Claim、`GradingResult` 与 Record sink 完成后单独封口。
+对外观测分别使用 `execution.finished` 与 `grading.finished`；不定义把两个阶段混成一个事实的 `attempt.finished`。
+进程中断留下的未封口 stream 保留为 incomplete evidence；Reader 不补造 `ExecutionOutcome`、`GradingResult`、Verdict 或缺失事件。
 
 Attempt-scoped finalizer 包含 Agent teardown、已登记 cleanup 与 Sandbox lifecycle teardown。
 物理 Sandbox 的 suspend / destroy 随后进入 Invocation resource completion。
@@ -300,6 +307,15 @@ interface EvidenceRef {
   target: EvidenceTarget;
 }
 
+type ClaimBasis =
+  | EvidenceTarget
+  | GraphEvidenceTarget;
+
+interface GraphEvidenceTarget {
+      source: RecordGraphRef;
+      target: EvidenceTarget;
+}
+
 interface Claim<T extends JsonValue = JsonValue> {
   id: string;
   kind: string;
@@ -310,16 +326,27 @@ interface Claim<T extends JsonValue = JsonValue> {
     version: string;
     model?: string;
   };
-  basedOn: EvidenceTarget[];
+  basedOn: ClaimBasis[];
   producedAt: string;
 }
 ```
 
-持久化 Claim 的 `basedOn` 保存 `EvidenceTarget`，所属 Claim node 必须对每个 target node 写 strong edge。
+普通的同图 Claim 在 `basedOn` 中直接保存 `EvidenceTarget`，所属 Claim node 必须对每个 target node 写 strong edge。
+
+Grading Claim 需要依据已封口 Execution graph 时，使用带 `source` 的跨图 `ClaimBasis`。
+Writer 必须确认 Execution graph 已 sealed，且 target 位于它的强闭包。
+它还要把该 `RecordGraphRef` 登记为 Grading graph 的外部强依赖。
+copier、verifier、GC 与 Report exporter 必须跟随这条跨图边。
+
+容器表示不改变冻结的 `StrongEdgeV1`。
+Writer 在 Grading graph 内建立 graph-anchor node：它的 payload descriptor 指向被引用的 `GraphRootV1` 原始字节，dependencies 对该 root 的 subject node 写 strong edge。
+Claim node 再对 graph-anchor node 写 strong edge。
+这个形状同时保留 exact GraphRoot identity 与通用遍历闭包，不在业务 payload 里藏一条 generic walker 看不见的 descriptor。
+
 Claim 不能嵌入最终 GraphRootRef；否则 Graph root 包含 Claim、Claim 又包含 Graph root digest，会形成无法构造的内容哈希自引用。
 
-Reader 从一个明确 Graph root 读取 Claim 后，把每个 target 与当前 `RecordGraphRef` 组合成对外 `EvidenceRef`。
-`recordId` 是领域身份，`graph` 是该次读取内容的权威身份；Reader 必须验证 target 确实位于该 root 的强闭包。
+Reader 从一个明确 Graph root 读取 Claim 后，把同图 target 与当前 `RecordGraphRef` 组合成对外 `EvidenceRef`，并保留跨图 target 中已封存的 `source`。
+`recordId` 是领域身份，`graph` 是该次读取内容的权威身份；Reader 必须验证 target 确实位于它声明的 sealed root 强闭包。
 
 同一 `recordId` 可以在迟到事实进入后产生新的 Graph root；已经返回的 EvidenceRef 仍绑定原 root，不能跟随 mutable `layout.json` 漂移。
 `node` 和 `stream` 保存完整 typed reference，不能只用 digest 猜 media type。
@@ -573,7 +600,7 @@ Projection 没有 Record identity、Graph root 生命周期或文档引用。
 Projection 类型属于 Library API，不是磁盘 document schema。
 不兼容的读模型变化使用新的 Projector 版本；它可以继续读取同一份 sealed Record，不触发 Record decoder、转换或重写。
 
-Claim evaluator 可以调用 Projector，但保存 Claim 时必须确认全部 EvidenceRef 来自当前 Record graph，并把它们展开为底层 EvidenceTarget。
+Claim evaluator 可以调用 Projector。普通 Claim 保存时必须确认全部 EvidenceRef 来自当前 Record graph，并把它们展开为底层 EvidenceTarget；Grading Claim 可以保留指向已 sealed Execution graph 的跨图 `ClaimBasis`。
 Claim 不能引用一个 Projection 值、Report artifact 或运行期 snapshot。
 evaluator 版本必须涵盖它依赖的 Projector 语义，使依赖变化产生新的 Claim evaluator 身份。
 
@@ -596,7 +623,7 @@ artifact 的 generator 版本和输入摘要只解释这份交付物，不把它
 4. OTel 缺失不得改变 Agent 行为节点、执行错误和 Verdict，只允许 timing 能力降级。
 5. Reader 必须保留未知事件与未知 typed object 的原始字节；不知道一种 schema 不能让已知内容不可读。
 6. Projector 升级不得改写历史 Claim，也不得要求重写原始 Observation。
-7. 每条 Claim 的全部 `basedOn` 必须是完整 NodeRef，Claim node 必须写对应 strong edge；Reader 对外返回时再限定到当前 sealed Graph root。
+7. 每条 Claim 的全部 `basedOn` 必须是完整 NodeRef；同图 target 写 graph 内 strong edge，跨图 target 写带 sealed `RecordGraphRef` 的外部 strong edge，Reader 不得把两者重新绑定到其它 root。
 8. Record sink 未确认的 Attempt 不能作为完整结果进入 Sample。
 9. Record 可读性不得依赖曾经计算出的 Projection；删除 snapshot、索引与 Report artifact 后，sealed Record 仍能重新产生同版本 Projection。
 10. Observation stream 的分段边界不得改变事件 sequence、logical digest 或任何 Projector 结果。
