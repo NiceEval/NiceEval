@@ -987,6 +987,24 @@ v1 不定义 Claim 或 Observation 的二级 query index。Projector 若要证�
 ## Observation envelope 与 transformation
 
 ```ts
+interface RedactionPolicyIdV1 {
+  readonly namespace: string;
+  readonly name: string;
+  readonly version: string;
+}
+
+type EvidenceTransformationV1 =
+  | {
+      readonly kind: "redacted";
+      readonly selector: VersionedSelector;
+      readonly policy: RedactionPolicyIdV1;
+    }
+  | {
+      readonly kind: "truncated";
+      readonly selector: VersionedSelector;
+      readonly inputBytes: number;
+    };
+
 interface ObservationEvent<T extends JsonValue = JsonValue> {
   format: "niceeval.observation";
   id: string;
@@ -1014,29 +1032,51 @@ interface ObservationEvent<T extends JsonValue = JsonValue> {
   body: T;
 }
 
-type EvidenceTransformationV1 =
-  | {
-      kind: "truncated";
-      selector: VersionedSelector;
-      originalBytes: number;
-    }
-  | {
-      kind: "redacted";
-      selector: VersionedSelector;
-      policy: string;
-    };
+interface TransformedEvidenceV1 {
+  readonly schema: "niceeval.transformed-evidence/1";
+  readonly result: NodeRefV1;
+  readonly transformations: readonly [
+    EvidenceTransformationV1,
+    ...EvidenceTransformationV1[],
+  ];
+}
 ```
 
-`name` 与 body `schema` 独立版本化。
-未知事件作为 opaque event 保留，不让无关 Projector 或整个 Run 失效。
+`RedactionPolicyIdV1` 的三个字符串都非空且不含 NUL。`inputBytes` 是 JSON-safe unsigned integer，
+表示该 truncated step 在全部前序 step 之后看到的即时 selected input 字节数。JSON 按 RFC 8785 JCS
+bytes 计量，包含字符串引号与转义；非 JSON 的计量由精确 representation capability 唯一定义。
+它不是最初未 transformation 值的宽泛输入长度。持久化内容不保存 original ref、value、hash 或 length，
+也没有顶层 `selector`、`resultSelector` 或同义替代字段。
 
-Adapter 产生完整内存事件。
-Record serialization policy 在持久化与离开进程前执行凭据替换和预算 transformation。
-redacted transformation 只保存 selector 与 policy，绝不保存原值或秘密。
+`ObservationEvent.transformations` 可以为空。非空的 event 序列与 wrapper 序列都满足同一规则：
+全部 selector 的 `schema` 字符串逐字相同；所有 `redacted` 条目都在所有 `truncated` 条目之前；
+输入顺序与重复条目都保留。未知 selector schema 与未知 policy ID 按原有 JSON 结构保存，不改写为
+某个已知选择器或 policy。
 
-单个 envelope 最大 1 MiB。
-更大的完整 payload 使用独立 typed object 与 strong edge；另一种合法形态是按 event schema 的固定规则 transformation。
-对大型非 event 证据使用 `TransformedEvidenceV1` wrapper，保存结果 node、selector 和 transformation metadata。
+内存中的 composition 先展平 inner sequence，再接上 outer sequence，不重排任一 step。两侧必须确认
+同一个 logical evidence root；否则 writer 以 `logical-root-mismatch` 拒绝，不能把两个根拼成一个 wrapper。
+
+`TransformedEvidenceV1` 使用 media type
+`application/vnd.niceeval.transformed-evidence.v1+jcs`。它的 GraphNode 只有 ordinal 0 的一条
+strong edge：`niceeval.transformed-evidence-result` 指向 `result`。它恰有一个 dependency EdgePage，
+且 `pages: []`。wrapper 不分页，和所有对象一样受 16 MiB 的 `RECORD_FILE_MAX_BYTES` 限制。
+
+结果 node 不能是另一个 `TransformedEvidenceV1` wrapper。payload 内的 `result` 与这条 edge target
+必须逐项相等。
+
+protocol 导出 `validateEvidenceTransformationSequenceV1`、`validateTransformedEvidenceV1` 与
+`validateTransformedEvidenceResultEdgeV1`，供 writer 与 verifier 调用。它们只检查可见的本地形状和 edge
+合同。读取目标 payload 后确认非嵌套 wrapper 属于跨对象检查，不能被单纯 Schema shape 伪装成已经证明。
+
+`name` 与 body `schema` 独立版本化。未知事件作为 opaque event 保留，不让无关 Projector 或整个 Run
+失效。
+
+Adapter 产生完整内存事件。Record serialization policy 在持久化与离开进程前执行凭据替换和预算
+transformation。redacted transformation 只保存 selector 与 policy ID，绝不保存原值或秘密。
+
+单个 envelope 最大 1 MiB。更大的完整 payload 使用独立 typed object 与 strong edge，或按 event schema
+的固定规则 transformation。大型非 event 证据使用 `TransformedEvidenceV1`，只保存结果 node 与
+transformation metadata。
 
 ## LifecyclePhase 与 Usage
 
@@ -1582,12 +1622,19 @@ step。
 - object proof 的 `object` archive 必须与 target node 的完整 Descriptor 相等；其 archives 还必须含
   target GraphNode payload 与完整 dependency-page chain。
   - selector 省略时证明整个 object。
-  - v1 唯一内建 object selector 是 `niceeval.expected-membership-slot-selector/1`，且只接受 Run payload。
-    selector.value.runId 必须等于 payload.runId。
+  - `niceeval.expected-membership-slot-selector/1` 保留为内建 exact object representation key，且只接受
+    Run payload。selector.value.runId 必须等于 payload.runId。
   - expectedMembershipSlots 中必须恰有一项同时等于 selector 的 membershipSlot 与 evalId。
   - payload.contributions 不得含该 membershipSlot；完整 dependency-page chain 也不得有对应的
     current-contribution edge。任一条件不满足都会使 selector proof 无效。
-  - 未知 selector schema 是 `unsupported-schema`，不能当作已验证的 object 子选择。
+  - 其它 object selector 使用 `(selectorSchema, mediaType)` 的精确 representation capability，对
+    archive 中的完整 payload 验证选择结果。
+  - selector codec 缺失时，语义 EvidenceValue 是 `unsupported-schema`。codec 已知但精确
+    representation capability 缺失时，才是 `unsupported-capability`。两种情况下结构 proof 仍可通过，
+    不能把 artifact 说成 invalid，也不新增 `proof-unsupported`。已安装 capability 发现 selector 非法或
+    archive 选择结果不符时，才是 proof target 或 artifact invalid。
+  - `TransformedEvidenceV1` wrapper proof 可以只归档 metadata。它的语义 verifier 必须逐项确认
+    wrapper payload `result`、wrapper strong-edge target 与 result EvidenceRef target 相等。
 - Claim proof 的 `claim` archive 必须与 target node 相等。`basedOn` 是按 JCS bytes 去重并升序的
   `EvidenceRef`；每一项都必须在同一个 proof index 有唯一 entry，绝不递归内联另一个 proof。
 - absence proof 的 `absence` 必须与 target.index 完全相同。entity 与 locator 查询必须携带对应 radix
