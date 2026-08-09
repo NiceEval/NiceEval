@@ -6,6 +6,14 @@ import type { Argv } from "./process.js";
 
 export const DEFAULT_GRACE_MS = 2000;
 
+const PROCESS_GROUP_POLL_MS = 25;
+
+function errorCode(error: unknown): string | undefined {
+  return typeof error === "object" && error !== null && "code" in error
+    ? String((error as { code?: unknown }).code)
+    : undefined;
+}
+
 export interface StartOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
@@ -99,7 +107,10 @@ export class ProcessHandle {
           return;
         }
         this.timedOut = true;
-        void this.terminate();
+        // startProcess is an escape hatch whose caller must still dispose the
+        // handle. Keep a failed group cleanup on `termination` for dispose()
+        // to surface instead of creating an unhandled rejection here.
+        void this.terminate().catch(() => {});
       }, options.timeoutMs);
     }
   }
@@ -147,9 +158,57 @@ export class ProcessHandle {
     }
   }
 
+  private ownedGroupExists(): boolean {
+    if (!this.processGroup || this.pid === undefined) {
+      return false;
+    }
+    try {
+      process.kill(-this.pid, 0);
+      return true;
+    } catch (error) {
+      if (errorCode(error) === "ESRCH") return false;
+      if (errorCode(error) === "EPERM") return true;
+      throw error;
+    }
+  }
+
+  private async waitForOwnedGroupExit(timeoutMs: number): Promise<boolean> {
+    const deadline = Date.now() + Math.max(0, timeoutMs);
+    while (this.ownedGroupExists()) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) return false;
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, Math.min(PROCESS_GROUP_POLL_MS, remaining));
+      });
+    }
+    return true;
+  }
+
+  private async terminateOwnedGroup(): Promise<void> {
+    if (!this.ownedGroupExists()) {
+      await this.done;
+      return;
+    }
+
+    this.sendTermination("SIGTERM");
+    if (!(await this.waitForOwnedGroupExit(this.graceMs))) {
+      this.sendTermination("SIGKILL");
+      if (!(await this.waitForOwnedGroupExit(this.graceMs))) {
+        throw new Error(
+          `process group ${this.pid} still exists after SIGTERM and SIGKILL`,
+        );
+      }
+    }
+    await this.done;
+  }
+
   private terminate(): Promise<void> {
     if (this.termination !== undefined) return this.termination;
     this.terminated = true;
+    if (this.processGroup) {
+      this.termination = this.terminateOwnedGroup();
+      return this.termination;
+    }
     this.sendTermination("SIGTERM");
     this.termination = new Promise<void>((resolve) => {
       const settle = () => {
@@ -177,7 +236,7 @@ export class ProcessHandle {
         new Error("process never started; cannot dispose it"),
       );
     }
-    if (this.settled) {
+    if (this.settled && !this.processGroup) {
       return;
     }
     await this.terminate();
@@ -185,6 +244,11 @@ export class ProcessHandle {
 }
 
 export function startProcess(argv: Argv, options: StartOptions = {}): ProcessHandle {
+  if (options.processGroup === true && process.platform === "win32") {
+    throw new Error(
+      "processGroup: true requires POSIX process-group signals and is unsupported on win32",
+    );
+  }
   const child = spawn(argv[0], argv.slice(1), {
     cwd: options.cwd ?? process.cwd(),
     env: options.env === undefined ? process.env : { ...process.env, ...options.env },
