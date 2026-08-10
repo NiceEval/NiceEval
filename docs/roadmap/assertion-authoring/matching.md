@@ -8,6 +8,7 @@
 type MatchDomain = "value" | "tool" | "event";
 declare const matchInputBrand: unique symbol;
 declare const matchRefinementBrand: unique symbol;
+declare const thresholdedScoreMatchBrand: unique symbol;
 
 interface Match<in T, D extends MatchDomain> {
   readonly domain: D;
@@ -22,6 +23,12 @@ interface BooleanMatch<in T, out R extends T, D extends MatchDomain = "value"> e
 
 interface ScoreMatch<in T> extends Match<T, "value"> {
   readonly kind: "score";
+  atLeast(threshold: number): ThresholdedScoreMatch<T>;
+}
+
+interface ThresholdedScoreMatch<in T> {
+  readonly kind: "thresholded-score-match";
+  readonly [thresholdedScoreMatchBrand]: (candidate: T) => void;
 }
 
 type ValueMatch<T, R extends T = T> = BooleanMatch<T, R, "value"> | ScoreMatch<T>;
@@ -29,7 +36,9 @@ type ToolMatch<R extends LogicalToolOccurrence = LogicalToolOccurrence> = Boolea
 type EventMatch<R extends MatchableEvent = MatchableEvent> = BooleanMatch<MatchableEvent, R, "event">;
 ```
 
-两个 brand 都由 declaration 私有持有，不导出。输入 brand 与 refinement brand 分开，使 `ScoreMatch<T>` 的 `T` 只处于逆变位置；它不会伪造一个没有意义的输出 refinement。
+三个 brand 都由 declaration 私有持有，不导出。输入 brand 与 refinement brand 分开，使 `ScoreMatch<T>` 的 `T` 只处于逆变位置；它不会伪造一个没有意义的输出 refinement。`ThresholdedScoreMatch` 是不透明 verdict 输入，不属于 `ValueMatch`，不能进入 `score()` 或布尔组合。
+
+`ScoreMatch.atLeast(n)` 同步校验有限 `[0,1]` 阈值并返回冻结的纯 view。它保留底层 matcher identity，但不求值、不创建 Fact、不登记 use。只有 `check(valueOrSource, thresholdedMatch)` 或 `require(value, thresholdedMatch)` 会消费它；旧写法 `check(value, scoreMatch, { atLeast: n })` 是类型错误。
 
 普通作者使用具名工厂，不能手写 selector object。matcher 成功后的 `R` 必须是原 candidate 的收窄类型，不是转换后的新值。
 `matches(schema)` 只验证 Standard Schema，并按 `InferInput` 收窄；schema transform 的 `InferOutput` 不会替换原 candidate。
@@ -61,16 +70,16 @@ declare function not<T>(match: BooleanMatch<T, T, "value">): BooleanMatch<T, T, 
 `equals()` 是深相等，`matches()` 消费 Standard Schema。identifier slot 继续使用直接传入的 string exact；工具名、事件类型、executable、argv token 与 Sandbox path 都属于 identifier。
 
 ```ts
-t.assert(t.check(t.reply, includes("Brooklyn")));
-t.assert(t.check(
+t.check(t.reply, includes("Brooklyn"));
+t.check(
   t.sandbox.file("experiments/local.ts"),
   and(includes("runtime:python"), excludes("runtime:node")),
-));
-t.assert(t.check(
+);
+t.check(
   t.sandbox.file("src/index.ts"),
   not(pattern(/console\.log\s*\(/, { stripComments: true })),
-));
-t.assert(t.check(turn.data, matches(ResultSchema)));
+);
+t.check(turn.data, matches(ResultSchema));
 ```
 
 关系由 matcher 名字决定，不由接收位置猜：没有未包装 string＝contains、直接 RegExp＝pattern，也没有 `{ contains, excludes }` 这一套旁路 rule。
@@ -121,7 +130,7 @@ unavailable 只由标准 EvidenceSource、coverage-aware 内置 matcher、Judge 
 这些工厂只创建 value matcher，不允许自定义 ToolMatch 或 EventMatch 绕过 Observation Protocol coverage。
 
 现有 `makeAssertion()` 的能力由两条路径接替：boolean checker 使用 `defineValueMatch()`，连续 scorer 使用 `defineScoreMatch()`。
-它们只创建 Fact，判定阈值与计分由 `t.assert()` / `t.require()` / `t.score()` 明确登记。
+它们只创建 Match。判定阈值与计分由 `t.check()` / `t.require()` / `t.score()` 明确登记；value 或 source 加 Match 的调用会原子创建 Fact 并登记 use。
 
 ### `referencesAnyPath()`
 
@@ -222,9 +231,9 @@ interface ScopedFacts<P extends FactPhase> {
 `name`、`input`、logical command 与 `status` 都在同一笔 occurrence 上求值。需要同时约束 command 与 Adapter 工具分类时，使用 `and(commandMatch(...), toolMatch(...))`；两个 matcher 不会各自搜索 occurrence。字段 definite mismatch 压过 unavailable。当前不公开 `output`，因为缺失 output 还没有 `absent | opaque` 的证据状态，不能诚实地区分“确定没有”与“没观察到”。次数不属于 matcher：
 
 ```ts
-t.assert(turn.calledTool(toolMatch("shell", { status: "completed" }), { count: 1 }));
-t.assert(turn.notCalledTool(toolMatch("shell", { input: matches(ForbiddenInputSchema) })));
-t.assert(turn.calledTool(
+t.check(turn.calledTool(toolMatch("shell", { status: "completed" }), { count: 1 }));
+t.check(turn.notCalledTool(toolMatch("shell", { input: matches(ForbiddenInputSchema) })));
+t.check(turn.calledTool(
   and(commandMatch("niceeval", { argsStart: ["show"] }), toolMatch("shell", { status: "completed" })),
 ));
 ```
@@ -260,6 +269,44 @@ partial stream 中只有 start、没有可信 finish 时，status 是 unavailabl
 
 ## `eventMatch()`
 
+Tool 与 event 是两个观察层级，不是两套同义断言：
+
+- tool occurrence 是一次归一化的逻辑调用；started 与 finished 被关联成同一 identity，适合判断 name、input、status、次数与调用 request 次序；
+- event 是 typed timeline 中的一行；同一 tool occurrence 的 started 与 finished 是两个 event，message 也是 event，适合表达 lifecycle 与消息之间的时序。
+
+因此默认优先用 `calledTool`、`notCalledTool` 和 `toolOrder`。只有需求必须区分 started / finished，或必须把工具 lifecycle 与 message 排在同一时间线上时，才进入 event 层。作者面保持 scope producer 与 matcher 分离的 `turn.event(eventMatch(...))`，不增加 `t.event(type, opts)` 这种把两层折成一个调用的旁路。
+
+event 作者面不泄露 raw Adapter `StreamEvent`。`eventMatch` 与 `eventsSatisfy` 只读取一份封闭、冻结的 `AssertionEvent` 投影：
+
+```ts
+declare const assertionEventIdentityBrand: unique symbol;
+declare const toolOccurrenceIdentityBrand: unique symbol;
+
+type AssertionEventIdentity = string & { readonly [assertionEventIdentityBrand]: true };
+type ToolOccurrenceIdentity = string & { readonly [toolOccurrenceIdentityBrand]: true };
+
+interface EventPosition {
+  readonly turnOrdinal: number;
+  readonly eventOrdinal: number;
+}
+
+interface AssertionToolReference {
+  readonly id: ToolOccurrenceIdentity;
+  readonly name: string;
+}
+
+type AssertionEvent =
+  | { readonly id: AssertionEventIdentity; readonly position: EventPosition;
+      readonly type: "message"; readonly role: "assistant" | "user"; readonly text: string }
+  | { readonly id: AssertionEventIdentity; readonly position: EventPosition;
+      readonly type: "operation.started"; readonly tool: AssertionToolReference }
+  | { readonly id: AssertionEventIdentity; readonly position: EventPosition;
+      readonly type: "operation.finished"; readonly tool: AssertionToolReference;
+      readonly status: "completed" | "failed" | "rejected" };
+```
+
+`AssertionEvent.id` 是稳定 event identity，`tool.id` 是关联 started/finished 的 logical occurrence identity。两者用不同 nominal brand 区分，字符串内容没有协议语义，也不能与 raw `operationId` 互换；作者只应依赖相等关系。投影不公开 raw operationId、Adapter metadata、output 或 command projection；普通字段匹配仍交给 `eventMatch` 与嵌套 `ToolMatch`。
+
 `eventMatch()` 返回 domain=`event` 的 `BooleanMatch`，并按 event type 使用封闭 options 映射。普通 message 字段复用文本 matcher；tool start/finish 必须关联 logical occurrence 后复用同一个 `ToolMatch`，event 自己不复制 name/input/command/status：
 
 ```ts
@@ -272,10 +319,23 @@ interface EventOptionsByType {
 declare function eventMatch<K extends keyof EventOptionsByType>(
   type: K,
   options?: EventOptionsByType[K],
-): EventMatch<Extract<MatchableEvent, { readonly type: K }>>;
+): EventMatch<Extract<AssertionEvent, { readonly type: K }>>;
 
-t.assert(turn.event(eventMatch("message", { role: "assistant", text: includes("done") })));
-t.assert(turn.eventOrder([
+interface AggregateEventFacts<P extends FactPhase> {
+  event(match: EventMatch, options?: { count?: number }): BooleanFact<AssertionEvent, P>;
+  notEvent(match: EventMatch): BooleanFact<void, P>;
+}
+
+interface OrderedEventFacts<P extends FactPhase> extends AggregateEventFacts<P> {
+  eventOrder(matches: readonly [EventMatch, EventMatch, ...EventMatch[]]): BooleanFact<void, P>;
+  eventsSatisfy(
+    label: string,
+    predicate: (events: readonly AssertionEvent[]) => boolean | Promise<boolean>,
+  ): BooleanFact<void, P>;
+}
+
+t.check(turn.event(eventMatch("message", { role: "assistant", text: includes("done") })));
+t.check(turn.eventOrder([
   eventMatch("operation.finished", { tool: toolMatch("send_email", { status: "rejected" }) }),
   eventMatch("message", { role: "assistant", text: includes("not sent") }),
 ]));
@@ -286,11 +346,16 @@ t.assert(turn.eventOrder([
 
 - `event()` 的 exact count 是正 safe integer；零次使用 `notEvent()`；
 - event count 按 distinct event identity；
-- `eventOrder()` 按 `EventPosition` 消费不同事件；
+- `eventOrder()` 按 `EventPosition` 消费不同事件，证明有序子序列；未匹配事件可以穿插；
 - 同一 tool occurrence 的 start 与 finish 是两个 event。
 
-`toolOrder()` 只证明 request subsequence。
-只有显式排列 finish 与下一笔 start，才证明 finish-before-start。
+`toolOrder()` 按 occurrence start position 只证明 request subsequence。只有在 `eventOrder()` 中显式排列前一笔 finish 与下一笔 start，才证明 finish-before-start。
+
+`toolOrder`、`eventOrder` 与 `eventsSatisfy` 只存在于一个 Turn 或一个 Session。Session 内的 `EventPosition` 按 `(turnOrdinal, eventOrdinal)` 形成全序；Turn 使用这份顺序的单轮切片。根 `t` 可以聚合 event/tool presence、absence 与 count，但多个 Session 可以并发，因此根 scope 不提供这三个 order-sensitive producer。
+
+`eventsSatisfy(label, predicate)` 只保留给内置 matcher 无法表达的跨事件关联，例如“finished event 中的关联 token 必须等于随后 message 引用的 token”。任意 predicate 没有可证明的单调性，所以它只在 scope 的 event evidence complete 时运行；证据不完整直接产生 unavailable，不能把当前切片的 `false` 当成 failed。
+
+这个入口把作者耦合到 typed event stream，predicate throw/reject 属于 evaluator defect，因此不应用于普通 presence、count 或 order；这些需求必须走具名 producer。核心后续补出稳定的具名语义时，应以具名 matcher/producer 取代这个 escape hatch。
 
 ## 不提供通用 JSON rule
 

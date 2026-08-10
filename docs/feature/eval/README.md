@@ -36,7 +36,7 @@ export default defineEval({
 项目级配置是没写时的默认出处，压不掉 eval 写下的值。
 `timeoutMs` 可由 experiment 或 `--timeout` 设置替换。`judge: true` 从 Experiment 与项目 Config 继承；`judge: { ... }` 声明 capability 并按字段替换它们。没有在 eval 上声明 `judge` 时，创建 Judge Fact 是同步作者错误。
 
-Runner 将求值后的 Judge 配置冻结一次，用同一份值做 fingerprint、预检与 evaluator 执行。Fact recipe 没有 `{ model }` 替换层。阈值属于 `t.assert` 或 `await t.require` 的 Fact use；计分属于 `t.score`。见 [LLM-as-judge](../judge/library.md#capability-与配置)。
+Runner 将求值后的 Judge 配置冻结一次，用同一份值做 fingerprint、预检与 evaluator 执行。Fact recipe 没有 `{ model }` 替换层。阈值由 `ScoreFact.atLeast(n)` 绑定，再交给 `t.check` 或 `await t.require`；计分属于 `t.score`。见 [LLM-as-judge](../judge/library.md#capability-与配置)。
 完整求值链见 [Experiments · 配置求值链](../experiments/architecture.md#配置求值链一次求值处处同源)。
 
 `sandbox` 放一个 `SandboxLayer`，两种形态（类型与 factory 契约单源在 [Sandbox Layer](../sandbox/layers.md)）：
@@ -118,7 +118,7 @@ export default defineScoreEval({
       await t.sandbox.runCommand("pnpm", ["test"]),
       commandSucceeded(),
     );
-    t.assert(tests, { label: "测试通过" });
+    t.check(tests, { label: "测试通过" });
     t.score("测试通过", tests, { max: 2 });
 
     const config = t.sandbox.fileChanged("db-gpt/.env");
@@ -131,7 +131,7 @@ export default defineScoreEval({
 `t.score(label, fact, { max })` 让 Boolean Fact 通过挣满 `max`、失败挣 0，让 Score Fact 按归一化分数比例挣分。
 `t.score(label, { earned })` 写入作者已算好的非负分数。
 同一个 Fact 可以相邻登记一个判定用途和一个计分用途，evaluator 仍只运行一次。
-后续代码依赖即时 Fact 时使用两种题型共用的 `await t.require(fact)`；多个独立要求使用 `t.assert(fact)` 继续收集。
+后续代码依赖即时 Fact 时使用两种题型共用的 `await t.require(fact)`；多个独立要求使用 `t.check(fact)` 继续收集。
 
 `test` 正常返回时，Runner 自动关闭计分收集器。没有 score use 的正常路径得到 0 分；`require` 未通过、Judge Fact 不可用或 `t.skip()` 仍按各自终态收尾。
 

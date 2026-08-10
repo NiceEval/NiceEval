@@ -12,9 +12,9 @@ const weather = t.calledTool(toolMatch("get_weather", {
 const oneDeploy = t.calledTool(toolMatch("deploy"), { count: 1 });
 const approved = t.calledTool(toolMatch("send_email", { status: "completed" }));
 
-t.assert(weather, { label: "查询 Brooklyn 天气" });
-t.assert(oneDeploy, { label: "只部署一次" });
-t.assert(approved, { label: "邮件已发送" });
+t.check(weather, { label: "查询 Brooklyn 天气" });
+t.check(oneDeploy, { label: "只部署一次" });
+t.check(approved, { label: "邮件已发送" });
 ```
 
 省略 `{ count }` 表示至少一条匹配调用；给出正整数表示恰好该数量。上限或谓词条件应作为自定义 Match 或专门的 Fact producer 表达，不通过 consumer 参数猜测语义。
@@ -25,7 +25,7 @@ t.assert(approved, { label: "邮件已发送" });
 const noRawRecordRead = t.notCalledTool(toolMatch("shell", {
   input: equals<JsonValue>({ command: "cat .niceeval/result.json" }),
 }));
-t.assert(noRawRecordRead, { label: "不直接读取记录文件" });
+t.check(noRawRecordRead, { label: "不直接读取记录文件" });
 ```
 
 工具输入的结构由 `matches`、`equals` 等 value Match 描述。若输入证据不完整，只有有决定性正证据的 Match 才能通过；不能证明不存在或精确次数的 Fact 会如实成为 `unavailable`。

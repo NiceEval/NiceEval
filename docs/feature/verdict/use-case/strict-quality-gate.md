@@ -5,14 +5,14 @@
 
 ```typescript
 const quality = turn.judge.autoevals.closedQA("回答是否完整且准确？");
-t.assert(quality, { atLeast: 0.8, label: "回答质量" });
+t.check(quality.atLeast(0.8), { label: "回答质量" });
 ```
 
 需要在同一行阻止依赖后续步骤时使用 `require`：
 
 ```typescript
 const quality = turn.judge.autoevals.closedQA("回答是否满足安全要求？");
-await t.require(quality, { atLeast: 0.9, label: "安全质量" });
+await t.require(quality.atLeast(0.9), { label: "安全质量" });
 await t.send("继续执行下一步");
 ```
 

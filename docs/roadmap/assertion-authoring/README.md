@@ -1,14 +1,14 @@
 # Assertion 作者面
 
-Eval 作者先创建 Fact，再显式声明每个 Fact 的 use。producer、verdict、控制流和计分不混在链式 handle 中。
+Eval 作者用明确的 consumer 声明 Fact 的 use。scope、Sandbox 与 Judge 先创建 Fact；value 或 EvidenceSource 加 Match 的便利调用原子地创建 Fact 并登记 use。producer、verdict、控制流和计分不混在链式 handle 中。
 
 ```ts
 const turn = await t.send("修复 runtime 配置。");
 const changed = t.sandbox.fileChanged("experiments/local.ts");
 const quality = turn.judge.autoevals.closedQA("回答是否解释了修复？");
 
-t.assert(changed);
-t.assert(quality, { atLeast: 0.8 });
+t.check(changed);
+t.check(quality.atLeast(0.8));
 t.score("配置修复", changed, { max: 2 });
 ```
 
@@ -16,14 +16,14 @@ Judge 是 native `ScoreFact<"now">` producer。它和值、scope、Sandbox Fact 
 
 ## 词汇
 
-- `t.check`、scope producer、Sandbox producer 与 Judge recipe 创建 BooleanFact 或 ScoreFact。
-- `t.assert` 创建 verdict use，并在收尾时求值。
-- `await t.require` 创建 verdict use，立即求值并表达后续代码依赖。
+- scope producer、Sandbox producer 与 Judge recipe 创建 BooleanFact 或 ScoreFact。
+- `t.check` 是同步 verdict consumer。已有 Fact 返回同一 Fact；value 或 source 加 Match 创建 Fact 并登记 verdict use。
+- `await t.require` 是立即 verdict consumer，返回 Promise 并表达后续代码依赖。
 - `t.score` 只在 `defineScoreEval` 创建 score use。
 
 每个 Fact 最多有一个 verdict use 和一个 score use。没有 use 的 Fact 是 author error，且不请求 Judge evaluator。
 
-不存在 `.gate()`、`.soft()`、`.optional()`、`.observe()`、`.points()`、`.stopOnFailure()` 或运行期 `--strict`。作者在 use 调用处直接写阈值、label、key 与分值。
+不存在 `.gate()`、`.soft()`、`.optional()`、`.observe()`、`.points()`、`.stopOnFailure()`、`t.assert`、`t.assertIfCovered`、`t.fact` 或运行期 `--strict`。`ScoreMatch.atLeast(n)` 与 `ScoreFact.atLeast(n)` 只创建 threshold view；`check` 或 `require` 才登记 verdict use。
 
 ## Judge capability
 

@@ -9,11 +9,11 @@
 
    ```typescript
    const draft = await t.send("帮我拟一封跟进邮件。");
-   t.assert(draft.succeeded(), { label: "草稿发送成功" });
-   t.assert(t.check(draft.message, includes("此致")), { label: "邮件落款" });
+   t.check(draft.succeeded(), { label: "草稿发送成功" });
+   t.check(draft.message, includes("此致"), { label: "邮件落款" });
 
    const professional = draft.judge.autoevals.closedQA("语气是否专业？");
-   t.assert(professional, { atLeast: 0.8, label: "草稿语气" });
+   t.check(professional.atLeast(0.8), { label: "草稿语气" });
    ```
 
 2. 跨 Turn 的质量问题在根级 `t.judge` 明确组装材料。输入和输出都是作者选择、已经得到的字符串：
@@ -26,7 +26,7 @@
      input: ["列出风险。", "再给出回滚方案。"].join("\n\n"),
      output: [first.message, second.message].join("\n\n"),
    });
-   t.assert(consistent, { atLeast: 0.8, label: "跨轮一致性" });
+   t.check(consistent.atLeast(0.8), { label: "跨轮一致性" });
    ```
 
 3. 需要互不干扰的会话时使用 `t.newSession()`。session 仍可生产作用域 Fact，但不提供 Judge namespace：
@@ -34,7 +34,7 @@
    ```typescript
    const other = t.newSession();
    await other.send("查旧金山天气");
-   t.assert(other.calledTool(toolMatch("get_weather")), { label: "分支查询" });
+   t.check(other.calledTool(toolMatch("get_weather")), { label: "分支查询" });
    ```
 
 ## 边界

@@ -3,13 +3,13 @@
 作用域断言和结果视图读取 **agent 归因增量**——runner 的变更分类账把每次 `t.send()` 区间内的 workspace 变化归给 agent；起始 fixture 与 agent 跑完后写入的校验材料不在其中（归因契约见 [Architecture · 变更归因](../architecture.md#变更归因send-区间与分类账)）。
 
 ```ts
-t.assert(t.sandbox.fileChanged("src/index.ts"));
-t.assert(t.sandbox.fileDeleted("src/legacy.ts"));
-t.assert(t.sandbox.notInDiff(/console\.log/));
-t.assert(t.sandbox.noFailedShellCommands());
+t.check(t.sandbox.fileChanged("src/index.ts"));
+t.check(t.sandbox.fileDeleted("src/legacy.ts"));
+t.check(t.sandbox.notInDiff(/console\.log/));
+t.check(t.sandbox.noFailedShellCommands());
 
-t.assert(t.check(t.sandbox.diff.get("src/index.ts"), includes("await")));
-t.assert(t.check(t.sandbox.file("package.json"), matches(PackageSchema)));
+t.check(t.sandbox.diff.get("src/index.ts"), includes("await"));
+t.check(t.sandbox.file("package.json"), matches(PackageSchema));
 ```
 
 | API | 类型 | 用法 |

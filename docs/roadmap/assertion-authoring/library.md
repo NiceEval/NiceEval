@@ -1,27 +1,33 @@
 # Assertion 作者面 —— Library
 
-## Fact producer
+## Consumer-first verdict
 
 ```ts
-const value = t.check(turn.message, includes("done"));
-const score = t.check(turn.message, similarity("done"));
-const file = t.sandbox.file("README.md");
-const documented = t.check(file, includes("Install"));
+t.check(turn.message, includes("done"));
+t.check(turn.message, similarity("done").atLeast(0.8));
+t.check(t.sandbox.file("README.md"), includes("Install"));
 ```
 
-BooleanFact 表示可通过或失败的证据。ScoreFact 表示 `[0,1]` 归一化分数。producer 只创建节点，不读取 deferred evidence 或改变 Attempt 终态。
+BooleanFact 表示可通过或失败的证据。ScoreFact 表示 `[0,1]` 归一化分数。scope、Sandbox 与 Judge producer 只创建节点，不读取 deferred evidence 或改变 Attempt 终态。value 或 EvidenceSource 加 Match 的 `check` 会创建节点并同步登记 verdict use。
 
 ## Fact use
 
 ```ts
-t.assert(value, { key: "reply-done", label: "回复完成" });
-t.assert(score, { atLeast: 0.8, label: "回复质量" });
+const booleanFact = turn.succeeded();
+const scoreFact = turn.judge.autoevals.closedQA("回答是否清楚？");
 
-const parsed = await t.require(t.check(raw, matches(Schema)));
-await t.require(score, { atLeast: 0.9 });
+t.check(booleanFact, { key: "reply-done", label: "回复完成" });
+t.check(scoreFact.atLeast(0.8), { label: "回复质量" });
+
+const parsed = await t.require(raw, matches(Schema));
+const normalized = await t.require(
+  turn.judge.autoevals.closedQA("回答是否给出下一步？").atLeast(0.9),
+);
 ```
 
-BooleanFact 的 verdict use 不需要阈值。ScoreFact 的 verdict use 必须提供有限 `[0,1]` `atLeast`。`assert` 延迟求值；`require` 只接收 `now` Fact，并且在创建 use 后立即求值。
+BooleanFact 的 verdict use 不需要阈值。连续分数必须先经 `ScoreMatch.atLeast(n)` 或 `ScoreFact.atLeast(n)` 形成 threshold view。`check` 同步返回底层 existing Fact 或新 Fact，并在收尾时求值。`require` 的每个 overload 都返回 Promise；Boolean 路径返回原 candidate 的 refinement，分数路径返回归一化分数。
+
+`atLeast()` 在调用时校验有限 `[0,1]` 阈值。它是纯包装，不创建 Fact、不登记 use、不求值。value/source 的 thresholded match 与 existing ScoreFact 的 thresholded view 都只能交给 `check` 或 `require`；`score` 只接受未阈值化的 Match/Fact。
 
 `key` 是可选的稳定 use identity，`label` 是人读标题。key 在一个 Eval 内唯一。
 
@@ -33,7 +39,7 @@ export default defineEval({
   async test(t) {
     const turn = await t.send("概括变更。");
     const quality = turn.judge.autoevals.summarizes("原始需求");
-    t.assert(quality, { atLeast: 0.8 });
+    t.check(quality.atLeast(0.8));
   },
 });
 ```
@@ -45,10 +51,11 @@ export default defineEval({
 ```ts
 const quality = turn.judge.autoevals.closedQA("回答是否清楚？");
 t.score("回答质量", quality, { max: 10, key: "quality" });
+t.score("回复相似度", turn.message, similarity("清楚回答"), { max: 4, key: "reply-similarity" });
 t.score("格式", { earned: 1, key: "format" });
 ```
 
-`score` 仅存在于 `defineScoreEval`。Fact score use 的 `max` 必须为正有限数；direct score 的 `earned` 必须为非负有限数。Score Eval 正常返回时自动收尾；没有 score use 时得到 0 分，并保留空 Fact/use 图。
+`score` 仅存在于 `defineScoreEval`。existing Fact 计分返回同一 Fact；value 或 source 加 Match 计分返回新 Fact；direct score 返回 `void`。Fact score use 的 `max` 必须为正有限数；direct score 的 `earned` 必须为非负有限数。Score Eval 正常返回时自动收尾；没有 score use 时得到 0 分，并保留空 Fact/use 图。
 
 ## 错误时点
 

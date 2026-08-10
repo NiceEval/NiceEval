@@ -32,8 +32,8 @@ export default defineEval({
 | `succeeded` / `calledTool` / `toolOrder` / `event` / `maxTokens` … | 作用域断言：断 agent 做了什么、花了多少 | [Assertions · 作用域断言](../assertions/library/scoped-assertions.md) | [过程与成本](use-case/process-and-cost.md) · [calledTool 全参数](use-case/calledtool.md) |
 | `t.group` | 分组断言：报告区块，组名同时是对比的得分点维度 | [Assertions · 值断言 · 分组](../assertions/library/value-assertions.md#分组) | [过程与成本](use-case/process-and-cost.md) |
 | `t.score(label, fact, { max })` / `t.score(label, { earned })` | 计分制给分（仅 `defineScoreEval` 的 `t`）：将 Fact 映射为分数，或直接登记已算分数 | [Assertions · 计分](../assertions/library/score-points.md) | [计分制](use-case/rubric-points.md) |
-| `t.check` / `t.assert` / `t.require` + `niceeval/expect` matcher | 生产值 Fact，再显式登记 verdict use；`require` 立即求值并停止依赖路径 | [Assertions · 值断言](../assertions/library/value-assertions.md) | [单轮](use-case/first-single-turn.md) · [沙箱](use-case/sandbox-coding.md) |
-| `t.assert(scoreFact, { atLeast })` / `await t.require(scoreFact, { atLeast })` | ScoreFact 的阈值与控制流；不存在链式 severity 或缺席策略 | [Verdict](../verdict/architecture.md) | [过程与成本](use-case/process-and-cost.md) · [裁判评质量](use-case/judge-quality.md) |
+| `t.check` / `t.require` + `niceeval/expect` matcher | 原子创建值 Fact 并登记 verdict use；`require` 立即求值并停止依赖路径 | [Assertions · 值断言](../assertions/library/value-assertions.md) | [单轮](use-case/first-single-turn.md) · [沙箱](use-case/sandbox-coding.md) |
+| `t.check(scoreFact.atLeast(n))` / `await t.require(scoreFact.atLeast(n))` | ScoreFact 的阈值与控制流；不存在链式 severity 或缺席策略 | [Verdict](../verdict/architecture.md) | [过程与成本](use-case/process-and-cost.md) · [裁判评质量](use-case/judge-quality.md) |
 | `t.judge` / `turn.judge` | LLM-as-judge：根级显式材料或 immutable Turn 材料，均返回 ScoreFact | [Judge](../judge/library.md) | [裁判评质量](use-case/judge-quality.md) |
 | `t.sandbox.*` | 沙箱文件 IO、命令执行、agent diff 断言 | [Sandbox · 文件与命令](../sandbox/library/operations.md) · [断言结果](../sandbox/library/asserting-results.md) | [沙箱 coding 任务](use-case/sandbox-coding.md) |
 | `sandbox` + `.prepare(command)` | 题目起点与逐 Attempt 准备命令 | [Sandbox Layer](../sandbox/layers.md) | [Fixture 与反馈](use-case/fixtures-lifecycle.md) |

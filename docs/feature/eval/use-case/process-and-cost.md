@@ -9,9 +9,9 @@ const ranExperiment = t.calledTool(toolMatch("shell"));
 const readTwice = t.calledTool(toolMatch("file_read"), { count: 2 });
 const avoidedRecordFiles = t.notCalledTool(toolMatch("raw_record_reader"));
 
-t.assert(ranExperiment, { label: "运行实验" });
-t.assert(readTwice, { label: "读取两次" });
-t.assert(avoidedRecordFiles, { label: "未直接读取记录" });
+t.check(ranExperiment, { label: "运行实验" });
+t.check(readTwice, { label: "读取两次" });
+t.check(avoidedRecordFiles, { label: "未直接读取记录" });
 ```
 
 工具的名称、输入与状态在 `toolMatch` 中表达；确切次数是 `calledTool` 的 `{ count }`。需要验证相对顺序时，先创建多个 `toolMatch`，再把它们传给 `toolOrder` 并消费结果。
@@ -19,14 +19,14 @@ t.assert(avoidedRecordFiles, { label: "未直接读取记录" });
 ```typescript
 const read = toolMatch("read_file");
 const write = toolMatch("write_file");
-t.assert(t.toolOrder([read, write]), { label: "先读后写" });
+t.check(turn.toolOrder([read, write]), { label: "先读后写" });
 ```
 
 成本、token 和事件也遵循同一模式：producer 不改变 Verdict，只有相应 Fact use 才改变它。尚未决定是否计入的指标不要创建悬空 Fact；先确定 consumer，或直接不声明该检查。
 
 ## 证据不足
 
-否定检查、次数和上限需要完整证据。若证据不足，Fact 为 `unavailable`，普通 `assert` / `require` 消费将 Attempt 标为 `errored`。这不是 Agent 未达标，也没有可选或软消费绕过该状态。
+否定检查、次数和上限需要完整证据。若证据不足，Fact 为 `unavailable`，普通 `check` / `require` 消费将 Attempt 标为 `errored`。这不是 Agent 未达标，也没有可选或软消费绕过该状态。
 
 ## 相关阅读
 

@@ -8,7 +8,7 @@ show、view、报告列表、source 标注和 failure feedback 都读取同一�
 
 ```text
 Fact      judge:closedQA("回答是否清楚？")   scored      score 0.86
-Fact use  Judge clarity                         passed      assert atLeast 0.8
+Fact use  Judge clarity                         passed      check atLeast 0.8
 Fact use  Answer quality                        scored      17.2 / 20
 ```
 

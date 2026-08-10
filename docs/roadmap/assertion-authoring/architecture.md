@@ -46,9 +46,13 @@ const fact = t.judge.autoevals.closedQA("是否回答问题？", {
 });
 ```
 
-三个 recipe 都返回 `ScoreFact<"now">`。创建 Fact 只注册 node；`assert`、`require` 或 `score` 才让它可达。没有 use 的 Fact 是 author error，且不启动 evaluator。
+三个 recipe 都返回 `ScoreFact<"now">`。创建 Fact 只注册 node；`check`、`require` 或 `score` 才让它可达。没有 use 的 Fact 是 author error，且不启动 evaluator。
 
 每个 node memoize 一次 evaluator promise。一个 Fact 最多登记一个 verdict use 与一个 score use。依赖 Fact 随 root use 可达；不可达 node 不读取 deferred evidence 或调用 Judge。
+
+连续分数的阈值不放在 consumer options。`ScoreMatch.atLeast(n)` 创建 `ThresholdedScoreMatch`，`ScoreFact.atLeast(n)` 创建指向同一 owned Fact 的 `ThresholdedScoreFact`。两种 view 都是冻结的纯描述：不创建 Fact、不登记 use、不改变可达性。
+
+`check` 或 `require` 只在消费 threshold view 时把 `n` 写进 verdict use。value/source 加 thresholded match 时，Fact 与 use 仍在一个事务内创建；existing ScoreFact 的 view 保留原 producer location，consumer location 指向 `check` 或 `require`。`score` 拒绝 threshold view，只消费底层连续分数。
 
 ## 求值、串行与控制流
 
@@ -56,7 +60,7 @@ const fact = t.judge.autoevals.closedQA("是否回答问题？", {
 
 进度内容是 `judge · <check>` 加已耗时。只有收尾前已知的可达 Judge 批次才显示 `k/n`；不猜测动态或未到达节点。
 
-`require` 在调用时原子登记 verdict use、检查悬空 Fact，并立即开始 `now` Fact 求值。满足 threshold 才返回值；failed、unavailable 或 evaluator error 用受管控制信号结束依赖路径。作者必须观察其 Promise；未观察或仍 pending 的 requirement 在下一受管边界是 author error。
+`require` 在调用时原子登记 verdict use、检查悬空 Fact，并立即开始 `now` Fact 求值。分数路径从 threshold view 取得阈值；满足后返回 normalized score。failed、unavailable 或 evaluator error 用受管控制信号结束依赖路径。作者必须观察其 Promise；未观察或仍 pending 的 requirement 在下一受管边界是 author error。
 
 ScoreFact 的有效分数是有限 `[0,1]`。collector 拒绝 clamp。evaluator 返回非法结构、非法 error 或越界 score 时生成 evaluator error。
 
@@ -74,7 +78,7 @@ Judge evaluator 的 transport 或 HTTP 失败是普通 Fact unavailable。模型
 
 ## 原子 Record 协议
 
-schemaVersion 17 与 `evaluationAlgorithm: "fact-use/v2"` 一起切换。Attempt 直接持久化：
+schemaVersion 18 与 `evaluationAlgorithm: "fact-use/v3"` 一起切换。Attempt 直接持久化：
 
 ```ts
 interface AttemptFactRecord {

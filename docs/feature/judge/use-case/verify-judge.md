@@ -22,7 +22,7 @@ export default defineEval({
       input: "operation completed successfully",
       output: "operation completed successfully",
     });
-    t.assert(fact, { atLeast: 0.8 });
+    t.check(fact.atLeast(0.8));
   },
 });
 ```

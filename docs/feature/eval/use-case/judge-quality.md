@@ -13,7 +13,7 @@ LLM-as-judge 的三个 recipe 都创建 `[0,1]` 的 `ScoreFact`：封闭式问�
      async test(t) {
        const turn = await t.send("帮我拟一封跟进邮件。");
        const professional = turn.judge.autoevals.closedQA("语气是否专业？");
-       t.assert(professional, { atLeast: 0.8, label: "专业语气" });
+       t.check(professional.atLeast(0.8), { label: "专业语气" });
      },
    });
    ```
@@ -26,14 +26,14 @@ LLM-as-judge 的三个 recipe 都创建 `[0,1]` 的 `ScoreFact`：封闭式问�
      input: "请完成重构并写说明。",
      output: notes,
    });
-   t.assert(documented, { atLeast: 0.7, label: "重构说明" });
+   t.check(documented.atLeast(0.7), { label: "重构说明" });
    ```
 
-3. 用 Fact use 声明这条 rubric 的用途。`assert` 设置阈值并继续；`require` 在当前位置立即求值；计分 Eval 用 `score` 按连续分比例给分：
+3. 用 Fact use 声明这条 rubric 的用途。`check` 设置阈值并继续；`require` 在当前位置立即求值；计分 Eval 用 `score` 按连续分比例给分：
 
    ```typescript
    const quality = turn.judge.autoevals.closedQA("回答是否切题且完整？");
-   t.assert(quality, { atLeast: 0.8 });
+   t.check(quality.atLeast(0.8));
    // 在 defineScoreEval 中：t.score("回答质量", quality, { max: 20 });
    ```
 
@@ -41,7 +41,7 @@ LLM-as-judge 的三个 recipe 都创建 `[0,1]` 的 `ScoreFact`：封闭式问�
 
 - 未声明 `judge` 却创建 Judge Fact 是同步作者错误。
 - 没有 `session.judge`、`{ on }`、路径猜测、隐式最后输入或单次 `{ model }` 替换。文件材料必须先经公开 Sandbox API 读成字符串。
-- Fact 创建惰性；没有 `assert`、`require` 或 `score` 消费的 Judge Fact 是作者错误，且不会请求模型。
+- Fact 创建惰性；没有 `check`、`require` 或 `score` 消费的 Judge Fact 是作者错误，且不会请求模型。
 - 没有模型或 key 时不会做网络预检。消费后的 Fact 是 `unavailable`，Attempt 因此 `errored`。已配置端点的预检失败是 setup error；运行期传输失败是 `unavailable` Fact。
 - “必须出现某个词”这类精确规则应使用 `includes` 等 matcher。Judge 只能看见传入材料，不能据此推断未提供的工具调用或文件内容。
 

@@ -11,7 +11,7 @@ export default defineScoreEval({
     const turn = await t.send("总结需求。");
     const quality = turn.judge.autoevals.summarizes("原始需求");
 
-    t.assert(quality, { atLeast: 0.7, label: "最低质量" });
+    t.check(quality.atLeast(0.7), { label: "最低质量" });
     t.score("摘要质量", quality, { max: 20 });
     t.score("格式", { earned: 2 });
   },
@@ -34,4 +34,4 @@ score Attempt 的 terminal：
 
 正常返回且没有 score use 时，Attempt 仍为 `scored`，`earnedScore` 与 `creditedScore` 都是 0。这个非 null 的零分进入同题平均与跨题求和；Fact/use 图保持为空，不合成占位计分项。
 
-没有 `points` 链式 API、隐式满分、软观察分或运行期 strict 开关。作者把每个 consumer 的阈值、上限和分值直接写在 `assert` 与 `score` 调用处。
+没有 `points` 链式 API、隐式满分、软观察分或运行期 strict 开关。`.atLeast(n)` 只绑定连续分数的 verdict 阈值；`max` 与 direct `earned` 仍写在 `score` 调用处。

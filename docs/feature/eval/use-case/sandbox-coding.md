@@ -14,15 +14,15 @@ export default defineEval({
     await t.send("把 src/legacy.js 里的回调全部改写成 async/await，保持行为不变。 ");
 
     const test = await t.sandbox.runCommand("npm", ["test"]);
-    t.assert(t.check(test, commandSucceeded()), { label: "测试通过" });
-    t.assert(t.sandbox.fileChanged("src/legacy.js"), { label: "修改目标文件" });
+    t.check(test, commandSucceeded(), { label: "测试通过" });
+    t.check(t.sandbox.fileChanged("src/legacy.js"), { label: "修改目标文件" });
     const diff = t.sandbox.diff.get("src/legacy.js") ?? "";
-    t.assert(t.check(diff, includes("await")), { label: "使用 await" });
+    t.check(diff, includes("await"), { label: "使用 await" });
     const quality = t.judge.autoevals.closedQA("重构是否保持原有错误处理？", {
       input: "重构 src/legacy.js，保持原有错误处理。",
       output: diff,
     });
-    t.assert(quality, { atLeast: 0.7, label: "重构质量" });
+    t.check(quality.atLeast(0.7), { label: "重构质量" });
   },
 });
 ```

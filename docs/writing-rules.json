@@ -5,14 +5,57 @@
     "docs-site/zh"
   ],
   "publicApiExamples": {
-    "$why": "公开示例必须与可运行的 Fact/Match 作者面和 CLI 同步。所有 Fact（包括 Judge ScoreFact）先由 producer 创建，再由 t.assert、t.require 或 t.score 消费。",
+    "$why": "公开示例必须与可运行的 consumer-first Fact/Match 作者面和 CLI 同步。scope、Sandbox 与 Judge 是 Fact producer；value 或 EvidenceSource 加 Match 的便利调用会原子地创建 Fact 并登记 use。常见 verdict 直接写 t.check(...)，控制流依赖写 await t.require(...)，计分制写 t.score(...)。",
+    "consumerFirstContract": {
+      "$why": "常见意图不应要求作者先保存 producer Fact 再调用第二个 verdict API。显式 Fact 只用于同一证据同时需要 verdict 与 score，或需要复用 producer Fact 的情形。",
+      "verdictConsumers": {
+        "check": "所有 overload 同步返回同一个或新建的 Fact。BooleanMatch 直接参与判定；连续分数先用 scoreMatch.atLeast(n) 或 scoreFact.atLeast(n) 绑定阈值。",
+        "require": "所有 overload 返回 Promise。Boolean 路径返回原 candidate 或 refinement；阈值化分数路径返回 normalized number；final Fact 与 EvidenceSource 不能 require。",
+        "checkIfCovered": "只消费 UsageEvidenceFact，返回同一 Fact。它不是普通 Fact 的 optional verdict API。"
+      },
+      "scoreThreshold": {
+        "$why": "atLeast 是连续分数成为判定条件的核心语义，不是 key、label 一类 use metadata。链式绑定让值 matcher 与已有 Judge ScoreFact 使用同一种读法，同时保持 check 同步返回 Fact、require 始终返回 Promise。",
+        "match": "t.check(value, scoreMatch.atLeast(0.8), metadata?)",
+        "fact": "t.check(scoreFact.atLeast(0.8), metadata?)",
+        "require": "await t.require(value, scoreMatch.atLeast(0.8), metadata?) 或 await t.require(scoreFact.atLeast(0.8), metadata?)",
+        "constraint": "atLeast() 只创建不可变 threshold view，不创建 Fact、不登记 use、不求值；t.score 只接受未阈值化的 ScoreMatch 或 ScoreFact。"
+      },
+      "score": "只由 ScoreTestContext 提供。existing Fact 或 value/EvidenceSource 加 Match 返回同一或新 Fact；direct earned score 返回 void。",
+      "examples": [
+        {
+          "bad": "const reply = t.check(turn.message, includes(\"done\")); t.assert(reply);",
+          "good": "t.check(turn.message, includes(\"done\"));"
+        },
+        {
+          "bad": "const parsed = t.check(raw, matches(Schema)); await t.require(parsed);",
+          "good": "const parsed = await t.require(raw, matches(Schema));"
+        },
+        {
+          "bad": "t.check(value, scoreMatch, { atLeast: 0.8 });",
+          "good": "t.check(value, scoreMatch.atLeast(0.8));"
+        },
+        {
+          "bad": "t.check(scoreFact, { atLeast: 0.8 });",
+          "good": "t.check(scoreFact.atLeast(0.8));"
+        }
+      ],
+      "recordProtocol": {
+        "schemaVersion": 18,
+        "evaluationAlgorithm": "fact-use/v3",
+        "verdictMethods": [
+          "check",
+          "require",
+          "checkIfCovered"
+        ]
+      }
+    },
     "rejectedCliFlags": [
       {
         "flag": "--strict",
         "roots": [
           "docs-site/zh"
         ],
-        "use": "在 Eval 源码中用 t.assert(...) 或 await t.require(...) 明确登记硬要求",
+        "use": "在 Eval 源码中用 t.check(...) 或 await t.require(...) 明确登记硬要求",
         "why": "CLI 已把 --strict 当未知选项拒绝，公开站继续展示会让用户复制出启动前即失败的命令"
       }
     ],
@@ -29,22 +72,43 @@
     ],
     "ordinaryFactChainMethods": [
       {
+        "method": "assert",
+        "roots": [
+          "docs/feature",
+          "docs/roadmap/assertion-authoring",
+          "docs-site/zh"
+        ],
+        "use": "常见 Boolean verdict 写 t.check(valueOrSource, match)；已有 Fact 写 t.check(fact)，控制流依赖写 await t.require(...)",
+        "why": "t.assert 已从公开作者面删除。把常见 verdict 合并进 check，避免 producer 加第二个 consumer 的两步调用"
+      },
+      {
+        "method": "assertIfCovered",
+        "roots": [
+          "docs/feature",
+          "docs/roadmap/assertion-authoring",
+          "docs-site/zh"
+        ],
+        "use": "只对 UsageEvidenceFact 写 t.checkIfCovered(fact)",
+        "why": "t.assertIfCovered 已从公开作者面删除；coverage 例外仍是窄的 usage Fact consumer"
+      },
+      {
+        "method": "fact",
+        "roots": [
+          "docs/feature",
+          "docs/roadmap/assertion-authoring",
+          "docs-site/zh"
+        ],
+        "use": "值或 EvidenceSource 加 Match 时直接写 t.check、await t.require 或 t.score",
+        "why": "t.fact 已从公开作者面删除；便利 overload 会原子创建 Fact 并登记相应 use"
+      },
+      {
         "method": "gate",
         "roots": [
           "docs-site/zh",
           "docs/feature/eval/README.md"
         ],
-        "use": "Boolean Fact 用 t.assert(fact)，需要立即停止依赖路径时用 await t.require(fact)",
-        "why": "Fact 没有 gate 句柄；用 t.assert(fact) 或 await t.require(fact) 显式登记 verdict use"
-      },
-      {
-        "method": "atLeast",
-        "roots": [
-          "docs-site/zh",
-          "docs/feature/eval/README.md"
-        ],
-        "use": "Score Fact 用 t.assert(fact, { atLeast })，计分时用 t.score(label, fact, { max })",
-        "why": "Score Fact 没有 atLeast 句柄；把阈值写在 t.assert / t.require 的 options 中"
+        "use": "Boolean Fact 用 t.check(fact)，需要立即停止依赖路径时用 await t.require(fact)",
+        "why": "Fact 没有 gate 句柄；用 t.check(fact) 或 await t.require(fact) 显式登记 verdict use"
       },
       {
         "method": "points",
@@ -61,10 +125,12 @@
         "callee": "t.score",
         "roots": [
           "docs-site/zh",
-          "docs/feature/eval/README.md"
+          "docs/feature/eval/README.md",
+          "docs/feature/assertions",
+          "docs/roadmap/assertion-authoring"
         ],
-        "use": "事实计分写 t.score(label, fact, { max })，直接给分写 t.score(label, { earned })",
-        "why": "t.score(label, number) 已从 ScoreTestContext 删除"
+        "use": "事实计分写 t.score(label, fact, { max })；常见值或 source 计分写 t.score(label, valueOrSource, match, { max })；直接给分写 t.score(label, { earned })",
+        "why": "t.score(label, number) 已从 ScoreTestContext 删除；score 只在 ScoreTestContext 上存在"
       }
     ],
     "removedEvaluationKinds": [

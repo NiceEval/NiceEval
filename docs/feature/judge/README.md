@@ -10,12 +10,12 @@ export default defineEval({
   async test(t) {
     const turn = await t.send("解释这个变更。");
     const quality = turn.judge.autoevals.closedQA("回答是否解释了风险？");
-    t.assert(quality, { atLeast: 0.8 });
+    t.check(quality.atLeast(0.8));
   },
 });
 ```
 
-Judge Fact 在 `assert`、`require` 或计分 Eval 的 `score` 消费前不调用模型。每个 Fact 最多有一个 verdict use 和一个 score use，求值结果在这两个 use 之间复用。
+Judge Fact 在 `check`、`require` 或计分 Eval 的 `score` 消费前不调用模型。每个 Fact 最多有一个 verdict use 和一个 score use，求值结果在这两个 use 之间复用。
 
 ## 从哪里开始
 

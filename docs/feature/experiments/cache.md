@@ -208,7 +208,7 @@ export default defineEval({
     await t.send("把 recall 结果写进 out.md");   // 改 prompt → 这一条重跑
     t.check(await t.sandbox.pathExists("out.md"), isTrue());  // 改断言 → 这一条重跑
 
-    t.fact("endpoint", tunnel.url);
+    t.check(tunnel.url, isDefined("endpoint"));
     //  改这行代码 → 这一条重跑,因为字节变了
     //  但 tunnel.url 的值不进指纹:换一个地址重跑,已完成结果照常携带
   },

@@ -4,7 +4,7 @@
 
 ```text
 Unknown option: --strict
-Express required facts with t.assert(...) or await t.require(...) in the Eval source.
+Express required facts with t.check(...) or await t.require(...) in the Eval source.
 ```
 
 ## Attempt terminal 与退出码
@@ -37,4 +37,4 @@ Judge clarity · unavailable · judge-model-unresolved
 
 ## JSON 与 Record
 
-schema 17 的 JSON 直接公开 `evaluationAlgorithm: "fact-use/v2"`、`factResults`、`factUses` 和计分 Eval 的 `scoreResult`。旧 schema 是 unsupported，CLI 不转换、拼接或部分读取它。
+schema 18 的 JSON 直接公开 `evaluationAlgorithm: "fact-use/v3"`、`factResults`、`factUses` 和计分 Eval 的 `scoreResult`。旧 schema 是 unsupported，CLI 不转换、拼接或部分读取它。

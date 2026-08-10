@@ -24,7 +24,7 @@
 
 ## 通过制还是计分制
 
-`defineEval` 通过 `t.assert` 与 `await t.require` 的 verdict use 折叠为四态 Verdict。
+`defineEval` 通过 `t.check` 与 `await t.require` 的 verdict use 折叠为四态 Verdict。
 `defineScoreEval` 用 `t.score` 叠加得分，并在 `test` 正常返回时自动收尾；它的终态保留 `scored`、`invalid`、`unavailable`、`errored` 或 `skipped`。
 
 | 用例 | 推荐形态 |
@@ -34,7 +34,7 @@
 | 部分完成也有比较意义 | `defineScoreEval` + score use |
 | 开放式质量 | Judge ScoreFact，再选择 verdict use、score use 或两者 |
 
-每个 Fact 都先由 producer 创建，再由 `assert`、`require` 或 `score` 消费。没有链式 severity、可选消费或 `.points()`。
+scope、Sandbox 与 Judge Fact 由 producer 创建，再由 `check`、`require` 或 `score` 消费。值或 EvidenceSource 加 Match 的 consumer-first 调用会原子创建 Fact 与 use。没有链式 severity、可选消费或 `.points()`。
 
 ## API → 篇目对照
 
@@ -44,7 +44,7 @@
 | `turn.succeeded` / `turn.judge` / `t.newSession()` / `session.*` | [多轮与并行会话](multi-turn-sessions.md) |
 | `parked` / `requireInputRequest` / `respond` / `respondAll` | [HITL 审批](hitl-approval.md) |
 | `calledTool` / `notCalledTool` / `toolOrder` / `event` | [过程与成本](process-and-cost.md) · [calledTool 匹配](calledtool.md) |
-| `t.check` / `t.assert` / `t.require` / `niceeval/expect` matcher | [单轮](first-single-turn.md) · [沙箱](sandbox-coding.md) |
+| `t.check` / `t.require` / `niceeval/expect` matcher | [单轮](first-single-turn.md) · [沙箱](sandbox-coding.md) |
 | `t.judge` / `turn.judge` / `autoevals.*` | [裁判评质量](judge-quality.md) |
 | `t.score` | [计分制](rubric-points.md) |
 | 数组导出 / keyed record 导出 / `loadYaml` / `loadJson` | [测试集从输入数组生成多条 eval](dataset-fanout.md) |

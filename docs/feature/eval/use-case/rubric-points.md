@@ -42,7 +42,7 @@ const quality = t.judge.autoevals.closedQA("说明是否讲清动机和风险？
   output: notes,
 });
 
-t.assert(quality, { atLeast: 0.7, label: "最低说明质量" });
+t.check(quality.atLeast(0.7), { label: "最低说明质量" });
 t.score("说明质量", quality, { max: 20, key: "notes-quality" });
 ```
 

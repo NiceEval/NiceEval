@@ -1,16 +1,16 @@
 # Judge —— 库用法
 
-Judge 的三个 recipe 都返回 `ScoreFact<"now">`：`closedQA`、`factuality` 和 `summarizes`。它们只创建惰性的 Fact；判定、控制流和计分分别由 `t.assert`、`await t.require` 与 `t.score` 声明。
+Judge 的三个 recipe 都返回 `ScoreFact<"now">`：`closedQA`、`factuality` 和 `summarizes`。它们只创建惰性的 Fact；判定、控制流和计分分别由 `t.check`、`await t.require` 与 `t.score` 声明。
 
 ```ts
 const correctness = turn.judge.autoevals.factuality("Brooklyn 的天气是晴朗。");
-t.assert(correctness, { atLeast: 0.9, label: "天气事实" });
+t.check(correctness.atLeast(0.9), { label: "天气事实" });
 
 const summary = t.judge.autoevals.summarizes("原始需求", {
   input: "请总结需求。",
   output: t.reply,
 });
-t.assert(summary, { atLeast: 0.8 });
+t.check(summary.atLeast(0.8));
 ```
 
 `ScoreFact` 的分数必须是有限数字且位于 `[0,1]`。Judge 返回无效结构或范围外分数时，Fact 是 evaluator error；NiceEval 不裁剪分数。
@@ -56,7 +56,7 @@ const fact = t.judge.autoevals.closedQA("文档是否说明安装步骤？", {
   input: source,
   output: t.reply,
 });
-t.assert(fact, { atLeast: 0.8 });
+t.check(fact.atLeast(0.8));
 ```
 
 传文件时，先通过公开 `Sandbox` API 读取成字符串，再放入 `{ input, output }`。Judge 不接受路径猜测、`{ on }`、隐式 last input 或单次模型替换。
@@ -65,7 +65,7 @@ t.assert(fact, { atLeast: 0.8 });
 
 ```ts
 const turn = await t.send("用两句话说明风险。");
-t.assert(turn.judge.autoevals.closedQA("回答是否恰好说明风险？"), { atLeast: 0.8 });
+t.check(turn.judge.autoevals.closedQA("回答是否恰好说明风险？").atLeast(0.8));
 ```
 
 没有 `session.judge`。跨 Turn 的判断由作者在根级 API 中显式组合文本材料。
@@ -75,20 +75,20 @@ t.assert(turn.judge.autoevals.closedQA("回答是否恰好说明风险？"), { a
 通过制 Eval 使用 verdict use：
 
 ```ts
-t.assert(turn.judge.autoevals.closedQA("回答是否切题？"), { atLeast: 0.75 });
+t.check(turn.judge.autoevals.closedQA("回答是否切题？").atLeast(0.75));
 ```
 
 需要立即决定后续控制流时使用 `require`。它立即开始该 Fact 的求值，达到阈值才继续；低分、unavailable 或 evaluator error 都结束依赖路径，最终 Fact/use 图决定 Attempt 终态。
 
 ```ts
-await t.require(turn.judge.autoevals.factuality("答案必须是 42。"), { atLeast: 1 });
+await t.require(turn.judge.autoevals.factuality("答案必须是 42。").atLeast(1));
 ```
 
 计分 Eval 可以只创建 score use，也可以与 verdict use 复用同一 Fact：
 
 ```ts
 const quality = turn.judge.autoevals.summarizes("原始材料");
-t.assert(quality, { atLeast: 0.7 });
+t.check(quality.atLeast(0.7));
 t.score("摘要质量", quality, { max: 20, key: "summary-quality" });
 ```
 

@@ -1,6 +1,6 @@
 # Verdict —— CLI 预期反馈
 
-CLI 不提供改变 Fact use 语义的全局开关。把质量线写在 eval 中：`t.assert(scoreFact, { atLeast })` 或 `await t.require(scoreFact, { atLeast })`。
+CLI 不提供改变 Fact use 语义的全局开关。把质量线写在 eval 中：`t.check(scoreFact.atLeast(n))` 或 `await t.require(scoreFact.atLeast(n))`。
 
 ## 退出与展示
 

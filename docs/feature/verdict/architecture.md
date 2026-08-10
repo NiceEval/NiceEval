@@ -1,6 +1,6 @@
 # Verdict 与 Fact use
 
-Fact producer 只描述一项证据。`t.assert`、`await t.require` 和 `t.score` 才让它影响 Attempt。
+Fact producer 只描述一项证据。`t.check`、`await t.require` 和 `t.score` 才让它影响 Attempt。
 同一个 Fact 最多有一个 verdict use 和一个 score use；两种用途共享同一次求值结果。
 
 ## 通过制
@@ -14,12 +14,12 @@ Fact producer 只描述一项证据。`t.assert`、`await t.require` 和 `t.scor
 否则                                                   → passed
 ```
 
-`t.assert(fact)` 登记检查并继续执行。`await t.require(fact)` 在当前位置立即求值；不通过、不可用或 evaluator error 时停止依赖它的后续代码，并将同一条 use 如实写入结果。
-Score Fact 必须带 `{ atLeast }` 才能登记 verdict use：
+`t.check(fact)` 登记检查并继续执行。`await t.require(fact)` 在当前位置立即求值；不通过、不可用或 evaluator error 时停止依赖它的后续代码，并将同一条 use 如实写入结果。
+Score Fact 必须先用 `.atLeast(n)` 形成 threshold view，才能登记 verdict use：
 
 ```typescript
 const answerQuality = turn.judge.autoevals.closedQA("回答是否切题？");
-t.assert(answerQuality, { atLeast: 0.8, label: "回答质量" });
+t.check(answerQuality.atLeast(0.8), { label: "回答质量" });
 ```
 
 没有“观察但不消费”的 Judge 路径。创建后从未消费的 Fact 是作者错误，且不会发出 evaluator 请求。
