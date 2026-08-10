@@ -9,7 +9,6 @@ import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type {
   CommandProjection,
   LogicalToolOccurrence,
-  StreamEvent,
 } from "../o11y/types.ts";
 import type { JsonValue } from "../shared/types.ts";
 import { stripComments } from "../util.ts";
@@ -66,6 +65,15 @@ const matchInputBrand: unique symbol = Symbol("niceeval.match.input");
 const matchRefinementBrand: unique symbol = Symbol("niceeval.match.refinement");
 const matchEvaluatorBrand: unique symbol = Symbol("niceeval.match.evaluator");
 const positiveWitnessBrand: unique symbol = Symbol("niceeval.match.positive-witness");
+const thresholdedScoreMatchBrand: unique symbol = Symbol("niceeval.thresholdedScoreMatch");
+const assertionEventIdentityBrand: unique symbol = Symbol("niceeval.assertionEventIdentity");
+const assertionEventPositionBrand: unique symbol = Symbol("niceeval.assertionEventPosition");
+const toolOccurrenceIdentityBrand: unique symbol = Symbol("niceeval.toolOccurrenceIdentity");
+const matchBrands = new WeakSet<object>();
+const thresholdedScoreMatches = new WeakMap<object, {
+  readonly match: ScoreMatch<unknown>;
+  readonly threshold: number;
+}>();
 
 export interface Match<in T, D extends MatchDomain> {
   readonly domain: D;
@@ -81,6 +89,12 @@ export interface BooleanMatch<in T, out R extends T, D extends MatchDomain = "va
 
 export interface ScoreMatch<in T> extends Match<T, "value"> {
   readonly kind: "score";
+  atLeast(threshold: number): ThresholdedScoreMatch<T>;
+}
+
+export interface ThresholdedScoreMatch<in T> {
+  readonly kind: "thresholded-score-match";
+  readonly [thresholdedScoreMatchBrand]: (candidate: T) => void;
 }
 
 export type ValueMatch<T, R extends T = T> = BooleanMatch<T, R, "value"> | ScoreMatch<T>;
@@ -95,18 +109,46 @@ export type ToolMatch<R extends LogicalToolOccurrence = LogicalToolOccurrence> =
   "tool"
 >;
 
-type MessageEvent = Extract<StreamEvent, { readonly type: "message" }>;
-type ToolOperationEvent =
-  | Extract<StreamEvent, { readonly type: "operation.started" }>
-  | Extract<StreamEvent, { readonly type: "operation.finished" }>;
+export type AssertionEventIdentity = string & { readonly [assertionEventIdentityBrand]: true };
+export type ToolOccurrenceIdentity = string & { readonly [toolOccurrenceIdentityBrand]: true };
 
-/**
- * 事件事实的受控输入。operation 事件必须由 scope 在同一位置关联到 logical occurrence；
- * Match 不会自行按 operationId、tool name 或 input 再猜一次。
- */
-export type MatchableEvent = MessageEvent | (ToolOperationEvent & { readonly occurrence: LogicalToolOccurrence });
+export interface AssertionEventPosition {
+  readonly turnOrdinal: number;
+  readonly eventOrdinal: number;
+  readonly [assertionEventPositionBrand]: true;
+}
 
-export type EventMatch<R extends MatchableEvent = MatchableEvent> = BooleanMatch<MatchableEvent, R, "event">;
+export interface AssertionToolReference {
+  readonly id: ToolOccurrenceIdentity;
+  readonly name: string;
+}
+
+export type AssertionEvent =
+  | {
+      readonly id: AssertionEventIdentity;
+      readonly position: AssertionEventPosition;
+      readonly type: "message";
+      readonly role: "assistant" | "user";
+      readonly text: string;
+    }
+  | {
+      readonly id: AssertionEventIdentity;
+      readonly position: AssertionEventPosition;
+      readonly type: "operation.started";
+      readonly tool: AssertionToolReference;
+    }
+  | {
+      readonly id: AssertionEventIdentity;
+      readonly position: AssertionEventPosition;
+      readonly type: "operation.finished";
+      readonly tool: AssertionToolReference;
+      readonly status: "completed" | "failed" | "rejected";
+    };
+
+export type MatchableEvent = AssertionEvent;
+export type EventMatch<R extends AssertionEvent = AssertionEvent> = BooleanMatch<AssertionEvent, R, "event">;
+
+const assertionEventOccurrences = new WeakMap<object, LogicalToolOccurrence>();
 
 export type RefinementOf<M> = M extends BooleanMatch<infer _T, infer R, infer _D> ? R : never;
 export type RefinementIntersection<M extends readonly unknown[]> = M extends readonly [infer Head, ...infer Tail]
@@ -191,7 +233,9 @@ function assertBooleanEvaluation<R>(value: unknown, label: string): BooleanMatch
 }
 
 function internalMatchOf(value: unknown, label: string): InternalMatch {
-  if (!isRecord(value)) throw new TypeError(`${label} must be a Match created by niceeval/expect`);
+  if (!isRecord(value) || !matchBrands.has(value)) {
+    throw new TypeError(`${label} must be a Match created by niceeval/expect`);
+  }
   const match = value as unknown as InternalMatch;
   if (
     (match.domain !== "value" && match.domain !== "tool" && match.domain !== "event") ||
@@ -202,6 +246,50 @@ function internalMatchOf(value: unknown, label: string): InternalMatch {
     throw new TypeError(`${label} must be a Match created by niceeval/expect`);
   }
   return match;
+}
+
+/** @internal Runtime brand guard used by the context overload dispatcher. */
+export function isManagedMatch(value: unknown): boolean {
+  return isRecord(value) && matchBrands.has(value);
+}
+
+/** @internal Reject Match-shaped raw subjects instead of silently treating them as ordinary values. */
+export function looksLikeMatch(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  return (value.domain === "value" || value.domain === "tool" || value.domain === "event") &&
+    (value.kind === "boolean" || value.kind === "score") && typeof value.name === "string";
+}
+
+/** @internal Runtime brand guard for ScoreMatch.atLeast(). */
+export function isManagedThresholdedScoreMatch(value: unknown): value is ThresholdedScoreMatch<unknown> {
+  return isRecord(value) && thresholdedScoreMatches.has(value);
+}
+
+/** @internal Reserve threshold-view-shaped raw inputs at the authoring boundary. */
+export function looksLikeThresholdedScoreMatch(value: unknown): boolean {
+  return isRecord(value) && value.kind === "thresholded-score-match";
+}
+
+/** @internal Resolve a threshold view without evaluating its underlying Match. */
+export function thresholdedScoreMatchValue(value: unknown): {
+  readonly match: ScoreMatch<unknown>;
+  readonly threshold: number;
+} {
+  const resolved = isRecord(value) ? thresholdedScoreMatches.get(value) : undefined;
+  if (resolved === undefined) {
+    throw new TypeError("value must be a threshold view created by ScoreMatch.atLeast()");
+  }
+  return resolved;
+}
+
+/** @internal The value-side consumer accepts only a real, value-domain Match. */
+export function assertManagedValueMatch(
+  value: unknown,
+  label = "match",
+): BooleanMatch<unknown, unknown, "value"> | ScoreMatch<unknown> {
+  const match = internalMatchOf(value, label);
+  if (match.domain !== "value") throw new TypeError(`${label} must be a value-domain Match`);
+  return value as BooleanMatch<unknown, unknown, "value"> | ScoreMatch<unknown>;
 }
 
 function assertBooleanMatch(value: unknown, label: string, domain?: MatchDomain): InternalMatch {
@@ -228,21 +316,114 @@ function createBooleanMatch<T, R extends T, D extends MatchDomain>(
     [matchEvaluatorBrand]: async (candidate: T) => evaluate(candidate),
     ...(options.positiveWitness === true ? { [positiveWitnessBrand]: true as const } : {}),
   };
-  return Object.freeze(result) as BooleanMatch<T, R, D>;
+  const match = Object.freeze(result) as BooleanMatch<T, R, D>;
+  matchBrands.add(match);
+  return match;
 }
 
 function createScoreMatch<T>(
   name: string,
   evaluate: (candidate: T) => number | Promise<number>,
 ): ScoreMatch<T> {
+  let match: ScoreMatch<T>;
   const result = {
     domain: "value" as const,
     name,
     kind: "score" as const,
     [matchInputBrand]: (_candidate: T) => undefined,
     [matchEvaluatorBrand]: async (candidate: T) => evaluate(candidate),
+    atLeast(threshold: number) {
+      assertUnitThreshold(threshold, "ScoreMatch.atLeast() threshold");
+      const view: ThresholdedScoreMatch<T> = {
+        kind: "thresholded-score-match",
+        [thresholdedScoreMatchBrand]: (_candidate: T) => undefined,
+      };
+      thresholdedScoreMatches.set(view, { match: match as ScoreMatch<unknown>, threshold });
+      return Object.freeze(view);
+    },
   };
-  return Object.freeze(result) as ScoreMatch<T>;
+  match = Object.freeze(result) as ScoreMatch<T>;
+  matchBrands.add(match);
+  return match;
+}
+
+function assertUnitThreshold(value: unknown, label: string): asserts value is number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) {
+    throw new TypeError(`${label} must be a finite number in [0, 1]`);
+  }
+}
+
+function freezeEventPosition(turnOrdinal: number, eventOrdinal: number): AssertionEventPosition {
+  return Object.freeze({ turnOrdinal, eventOrdinal }) as AssertionEventPosition;
+}
+
+function assertionEventId(
+  session: string,
+  turn: string,
+  turnOrdinal: number,
+  eventOrdinal: number,
+): AssertionEventIdentity {
+  return JSON.stringify([
+    "niceeval.assertion-event/1",
+    session,
+    turn,
+    turnOrdinal,
+    eventOrdinal,
+  ]) as AssertionEventIdentity;
+}
+
+/** @internal Project a raw message into the closed assertion-event surface. */
+export function makeAssertionMessageEvent(input: {
+  readonly session: string;
+  readonly turn: string;
+  readonly turnOrdinal: number;
+  readonly eventOrdinal: number;
+  readonly role: "assistant" | "user";
+  readonly text: string;
+}): Extract<AssertionEvent, { readonly type: "message" }> {
+  return Object.freeze({
+    id: assertionEventId(input.session, input.turn, input.turnOrdinal, input.eventOrdinal),
+    position: freezeEventPosition(input.turnOrdinal, input.eventOrdinal),
+    type: "message" as const,
+    role: input.role,
+    text: input.text,
+  });
+}
+
+/** @internal Project a correlated tool lifecycle row without exposing raw adapter fields. */
+export function makeAssertionToolEvent(input: {
+  readonly session: string;
+  readonly turn: string;
+  readonly turnOrdinal: number;
+  readonly eventOrdinal: number;
+  readonly type: "operation.started" | "operation.finished";
+  readonly occurrence: LogicalToolOccurrence;
+  readonly status?: "completed" | "failed" | "rejected";
+}): Extract<AssertionEvent, { readonly type: "operation.started" | "operation.finished" }> {
+  const base = {
+    id: assertionEventId(input.session, input.turn, input.turnOrdinal, input.eventOrdinal),
+    position: freezeEventPosition(input.turnOrdinal, input.eventOrdinal),
+    tool: Object.freeze({
+      id: input.occurrence.id as ToolOccurrenceIdentity,
+      name: input.occurrence.name.canonical ?? input.occurrence.name.original,
+    }),
+  };
+  const event = input.type === "operation.started"
+    ? Object.freeze({ ...base, type: "operation.started" as const })
+    : Object.freeze({
+        ...base,
+        type: "operation.finished" as const,
+        status: input.status ?? (() => {
+          throw new TypeError("operation.finished assertion event requires status");
+        })(),
+      });
+  assertionEventOccurrences.set(event, input.occurrence);
+  return event;
+}
+
+/** @internal Retrieve the correlated occurrence for eventMatch(tool). */
+export function assertionEventOccurrence(event: AssertionEvent): LogicalToolOccurrence | undefined {
+  return assertionEventOccurrences.get(event);
 }
 
 /** 供 Fact / scope owner 消费 BooleanMatch；普通作者面不会导出此 evaluator。 */
@@ -633,6 +814,8 @@ function optionalLabel(label: string | undefined, factory: string): string {
 }
 
 /** 非 null / undefined 的 value matcher；泛型调用可保留原 candidate 的非空收窄。 */
+export function isDefined(label?: string): BooleanMatch<unknown, {}>;
+export function isDefined<T>(label?: string): BooleanMatch<T, Exclude<T, null | undefined>>;
 export function isDefined<T = unknown>(label?: string): BooleanMatch<T, Exclude<T, null | undefined>> {
   const name = optionalLabel(label, "isDefined");
   return createBooleanMatch("value", name, (value) => {
@@ -711,10 +894,10 @@ function deepEqualInner(a: unknown, b: unknown, seen: Map<object, object>): bool
   return true;
 }
 
-export function equals<T>(expected: T): BooleanMatch<T, T> {
+export function equals<const T>(expected: T): BooleanMatch<unknown, T> {
   const name = "equals(value)";
-  return createBooleanMatch("value", name, (candidate) => {
-    if (deepEqual(candidate, expected)) return matched(candidate, diagnostic("equals-match", `${name} matched`));
+  return createBooleanMatch<unknown, T, "value">("value", name, (candidate) => {
+    if (deepEqual(candidate, expected)) return matched(expected, diagnostic("equals-match", `${name} matched`));
     return mismatched(diagnostic("equals-mismatch", `${name} did not match`));
   });
 }
@@ -1070,7 +1253,7 @@ function occurrenceNameResult(occurrence: LogicalToolOccurrence, expected: strin
   }
   // `unknown` means the adapter could not map this domain-specific tool onto
   // NiceEval's canonical vocabulary. It must not hide the original name that
-  // the author can still assert exactly.
+  // the author can still check exactly.
   const observed = occurrence.name.canonical === undefined || occurrence.name.canonical === "unknown"
     ? occurrence.name.original
     : occurrence.name.canonical;
@@ -1298,10 +1481,7 @@ export interface EventOptionsByType {
     readonly text?: BooleanMatch<string, string, "value">;
   };
   readonly "operation.started": { readonly tool?: ToolMatch };
-  readonly "operation.finished": {
-    readonly tool?: ToolMatch;
-    readonly output?: BooleanMatch<JsonValue, JsonValue, "value">;
-  };
+  readonly "operation.finished": { readonly tool?: ToolMatch };
 }
 
 type MatchableEventType = keyof EventOptionsByType;
@@ -1340,13 +1520,8 @@ function messageEventResult(
 
 async function toolEventResult(event: MatchableEvent, match: ToolMatch | undefined): Promise<BooleanMatchEvaluation<unknown>> {
   if (match === undefined) return matched(event, diagnostic("event-type-match", "event type matched"));
-  if (event.type === "operation.started" && event.operation.kind !== "tool") {
-    return mismatched(diagnostic("tool-event-mismatch", "operation.started event is not a tool operation"));
-  }
-  if (event.type === "operation.finished" && event.kind !== "tool") {
-    return mismatched(diagnostic("tool-event-mismatch", "operation.finished event is not a tool operation"));
-  }
-  if (!("occurrence" in event) || event.occurrence === undefined) {
+  const occurrence = assertionEventOccurrence(event);
+  if (occurrence === undefined) {
     return unavailable(
       "event-tool-occurrence-unavailable",
       diagnostic("event-tool-occurrence-unavailable", "operation event has no associated logical tool occurrence", {
@@ -1354,24 +1529,13 @@ async function toolEventResult(event: MatchableEvent, match: ToolMatch | undefin
       }),
     );
   }
-  return evaluateBooleanMatch(match, event.occurrence);
-}
-
-function finishedOutputResult(
-  event: Extract<MatchableEvent, { readonly type: "operation.finished" }>,
-  match: BooleanMatch<JsonValue, JsonValue, "value"> | undefined,
-): Promise<BooleanMatchEvaluation<unknown>> {
-  if (match === undefined) return Promise.resolve(matched(event, diagnostic("event-output-unrestricted", "event output is unrestricted")));
-  if (event.output === undefined) {
-    return Promise.resolve(mismatched(diagnostic("event-output-missing", "operation.finished event has no output", { expected: match.name })));
-  }
-  return evaluateBooleanMatch(match, event.output);
+  return evaluateBooleanMatch(match, occurrence);
 }
 
 export function eventMatch<K extends keyof EventOptionsByType>(
   type: K,
   options?: EventOptionsByType[K],
-): EventMatch<Extract<MatchableEvent, { readonly type: K }>> {
+): EventMatch<Extract<AssertionEvent, { readonly type: K }>> {
   if (!isMatchableEventType(type)) throw new TypeError("eventMatch() type is not supported");
 
   if (type === "message") {
@@ -1391,19 +1555,13 @@ export function eventMatch<K extends keyof EventOptionsByType>(
         event,
         role as "assistant" | "user" | undefined,
         text as BooleanMatch<string, string, "value"> | undefined,
-      ) as Promise<BooleanMatchEvaluation<Extract<MatchableEvent, { readonly type: K }>>>;
-    }) as EventMatch<Extract<MatchableEvent, { readonly type: K }>>;
+      ) as Promise<BooleanMatchEvaluation<Extract<AssertionEvent, { readonly type: K }>>>;
+    }) as EventMatch<Extract<AssertionEvent, { readonly type: K }>>;
   }
 
-  const normalized = assertPlainOptions(
-    options,
-    `eventMatch(${type}) options`,
-    type === "operation.finished" ? ["tool", "output"] : ["tool"],
-  );
+  const normalized = assertPlainOptions(options, `eventMatch(${type}) options`, ["tool"]);
   const tool = normalized.tool;
   if (tool !== undefined) assertBooleanMatch(tool, `eventMatch(${type}) options.tool`, "tool");
-  const output = normalized.output;
-  if (output !== undefined) assertBooleanMatch(output, `eventMatch(${type}) options.output`, "value");
   const name = `eventMatch(${type})`;
   return createBooleanMatch("event", name, async (event) => {
     if (event.type !== type) {
@@ -1411,20 +1569,11 @@ export function eventMatch<K extends keyof EventOptionsByType>(
     }
     const fields = await evaluateFields([
       { label: "tool", evaluate: () => toolEventResult(event, tool as ToolMatch | undefined) },
-      ...(event.type === "operation.finished"
-        ? [{
-            label: "output",
-            evaluate: () => finishedOutputResult(
-              event,
-              output as BooleanMatch<JsonValue, JsonValue, "value"> | undefined,
-            ),
-          }]
-        : []),
     ]);
-    return combineConjunction<MatchableEvent, Extract<MatchableEvent, { readonly type: K }>>(
+    return combineConjunction<AssertionEvent, Extract<AssertionEvent, { readonly type: K }>>(
       event,
       name,
       fields,
     );
-  }) as EventMatch<Extract<MatchableEvent, { readonly type: K }>>;
+  }) as EventMatch<Extract<AssertionEvent, { readonly type: K }>>;
 }

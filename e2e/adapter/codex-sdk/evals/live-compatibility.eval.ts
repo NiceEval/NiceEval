@@ -27,11 +27,11 @@ export default defineEval({
         "Do not use network access, edit files, or run any other command.",
     );
     await t.require(first.succeeded());
-    t.assert(t.check(first.message, includes(marker)));
+    t.check(first.message, includes(marker));
 
     // The public converter supplies the canonical shell identity and the paired
     // completed result from the unmodified command_execution ThreadItem.
-    t.assert(
+    t.check(
       first.calledTool(
         toolMatch("shell", {
           input: satisfies(
@@ -48,37 +48,31 @@ export default defineEval({
         }),
       ),
     );
-    t.assert(first.noFailedActions());
-    t.assert(
-      t.check(
-        first.usage?.inputTokens,
-        satisfies(
-          "input token usage is positive",
-          (value) => typeof value === "number" && value > 0,
-        ),
+    t.check(first.noFailedActions());
+    t.check(
+      first.usage?.inputTokens,
+      satisfies(
+        "input token usage is positive",
+        (value) => typeof value === "number" && value > 0,
       ),
     );
-    t.assert(
-      t.check(
-        first.usage?.outputTokens,
-        satisfies(
-          "output token usage is positive",
-          (value) => typeof value === "number" && value > 0,
-        ),
+    t.check(
+      first.usage?.outputTokens,
+      satisfies(
+        "output token usage is positive",
+        (value) => typeof value === "number" && value > 0,
       ),
     );
-    t.assert(
-      t.check(
-        t.sessionId,
-        isDefined("thread.started must be captured as the session id"),
-      ),
+    t.check(
+      t.sessionId,
+      isDefined("thread.started must be captured as the session id"),
     );
 
     const resumed = await t.send(
       "Without running a command, tell me the private sentinel from my preceding message exactly.",
     );
     await t.require(resumed.succeeded());
-    t.assert(t.check(resumed.message, includes(sentinel)));
-    t.assert(t.succeeded());
+    t.check(resumed.message, includes(sentinel));
+    t.check(t.succeeded());
   },
 });

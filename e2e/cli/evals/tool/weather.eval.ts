@@ -12,7 +12,7 @@ export default defineEval({
       "What is the weather like in Brooklyn right now? You must call the get_weather tool to check, do not guess.",
     );
     await t.require(turn.succeeded());
-    t.assert(
+    t.check(
       turn.calledTool(
         toolMatch("get_weather", {
           input: satisfies(

@@ -12,7 +12,7 @@ describe("公开文档的 API 示例", () => {
     expect(hits.length, formatApiExampleLintHits(hits)).toBe(0);
   });
 
-  it("只给 Judge 兼容句柄保留 gate、atLeast 与 points 链", () => {
+  it("允许 threshold view，但拒绝已删除的 Fact handle 链", () => {
     const hits = lintApiCodeExample(
       "example.ts",
       [
@@ -25,7 +25,8 @@ describe("公开文档的 API 示例", () => {
     );
 
     expect(hits.map((hit) => hit.rule)).toEqual([
-      "ordinary-fact.atLeast",
+      "ordinary-fact.gate",
+      "ordinary-fact.points",
       "ordinary-fact.points",
     ]);
   });

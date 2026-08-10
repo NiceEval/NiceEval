@@ -163,7 +163,7 @@ export const zhCN = {
   "cli.flag.invalidNumber": "标志 --{{flag}} 需要数字,收到 \"{{value}}\"。\n",
   "cli.flag.outputRemoved": "error: unknown option '--output'\n  fix: 不加 flag 运行得到人读文本;机器面用 --json\n",
   "cli.flag.strictRemoved":
-    "Unknown option: --strict\nExpress required facts with t.assert(...) or await t.require(...) in the Eval source.\n",
+    "Unknown option: --strict\nExpress required facts with t.check(...) or await t.require(...) in the Eval source.\n",
   "runner.budgetUnenforceable":
     "{{budgetKey}} 的 budget:连续多个 attempt 完成后都拿不到成本数据(agent 不上报用量且模型不在价格表)——该 agent 的 budget 无法执行,取消护栏继续跑。\n",
   "runner.experimentTeardownFailed":

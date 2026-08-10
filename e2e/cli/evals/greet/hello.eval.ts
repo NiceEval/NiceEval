@@ -11,7 +11,7 @@ export default defineEval({
       "Reply with exactly this sentence and nothing else: Hello, niceeval!",
     );
     await t.require(turn.succeeded());
-    t.assert(
+    t.check(
       t.event(
         eventMatch("message", { role: "assistant", text: pattern(/Hello/i) }),
       ),

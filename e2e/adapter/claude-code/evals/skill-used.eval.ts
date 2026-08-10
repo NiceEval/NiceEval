@@ -6,11 +6,9 @@
 // loadedSkill 与回答里的 fixture marker 共同证明 skill 的接线和行为，不再为这一条确定性
 // 协议事实引入第二个 judge 模型与额外凭据。
 import { defineEval } from "niceeval";
-import { eventMatch, includes } from "niceeval/expect";
-
+import { eventMatch, includes, satisfies } from "niceeval/expect";
 const TOPIC = "niceeval-e2e-skill-topic-926";
 const OTHER_SKILLS = ["e2e-checklist", "e2e-decoy"] as const;
-
 export default defineEval({
   description:
     "Skills:挂载的本地 Skill 产生 skill.loaded 事件,其内容会影响回答",
@@ -20,29 +18,35 @@ export default defineEval({
       `${TOPIC} 是什么?回答前先检查你是否有一个关于这个确切主题的 skill,如果有就使用它。`,
     );
     await t.require(turn1.succeeded());
-
     await t.group("原生 Skill 工具被调用,归一为 skill.loaded", () => {
-      t.assert(turn1.loadedSkill("e2e-marker"));
-      t.assert(session1.loadedSkill("e2e-marker"));
-      t.assert(t.loadedSkill("e2e-marker"));
-      t.assert(
+      t.check(turn1.loadedSkill("e2e-marker"));
+      t.check(session1.loadedSkill("e2e-marker"));
+      t.check(t.loadedSkill("e2e-marker"));
+      t.check(
         t.event(
           eventMatch("message", { role: "assistant", text: includes("926") }),
         ),
       );
-      t.assert(
-        turn1.eventsSatisfy("skill.loaded event count", (events) =>
-          events.filter((event) => event.type === "skill.loaded").length === 1,
+      t.check(
+        turn1.events,
+        satisfies<typeof turn1.events>(
+          "skill.loaded event count",
+          (events) =>
+            events.filter((event) => event.type === "skill.loaded").length ===
+            1,
         ),
       );
-      t.assert(
-        turn1.eventsSatisfy("marker 题没有误加载其它 Skill", (events) =>
+      t.check(
+        turn1.events,
+        satisfies<typeof turn1.events>(
+          "marker 题没有误加载其它 Skill",
+          (events) =>
             events.every(
               (event) =>
                 event.type !== "skill.loaded" ||
                 !OTHER_SKILLS.some((skill) => skill === event.skill),
             ),
-          ),
+        ),
       );
     });
   },

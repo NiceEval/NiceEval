@@ -1,6 +1,5 @@
 import { defineEval } from "niceeval";
 import { eventMatch, satisfies, toolMatch } from "niceeval/expect";
-
 export default defineEval({
   description: "同一套确定性工具证据在 turn、session 与 t scope 的边界一致",
   async test(t) {
@@ -9,9 +8,8 @@ export default defineEval({
     const branch = t.newSession();
     const branchTurn = await branch.send("assertion/scopes-branch");
     await t.require(branchTurn.succeeded());
-
     await t.group("turn scope", () => {
-      t.assert(
+      t.check(
         mainTurn.event(
           eventMatch("operation.finished", {
             tool: toolMatch("scope_main_tool", {
@@ -26,21 +24,29 @@ export default defineEval({
               ),
               status: "completed",
             }),
-            output: satisfies("scope main tool output", (output) =>
-              typeof output === "object" &&
-              output !== null &&
-              !Array.isArray(output) &&
-              output.marker === "scope-main-output",
-            ),
           }),
           { count: 1 },
         ),
       );
-      t.assert(mainTurn.notCalledTool(toolMatch("scope_branch_tool")));
-      t.assert(mainTurn.calledTool(toolMatch("scope_main_tool")));
-      t.assert(mainTurn.maxToolCalls(1));
-      t.assert(mainTurn.noFailedActions());
-      t.assert(
+      t.check(
+        mainTurn.events,
+        satisfies<typeof mainTurn.events>("scope main tool output", (events) =>
+          events.some(
+            (event) =>
+              event.type === "operation.finished" &&
+              event.kind === "tool" &&
+              typeof event.output === "object" &&
+              event.output !== null &&
+              !Array.isArray(event.output) &&
+              event.output.marker === "scope-main-output",
+          ),
+        ),
+      );
+      t.check(mainTurn.notCalledTool(toolMatch("scope_branch_tool")));
+      t.check(mainTurn.calledTool(toolMatch("scope_main_tool")));
+      t.check(mainTurn.maxToolCalls(1));
+      t.check(mainTurn.noFailedActions());
+      t.check(
         mainTurn.eventOrder([
           eventMatch("operation.started"),
           eventMatch("operation.finished"),
@@ -48,9 +54,8 @@ export default defineEval({
         ]),
       );
     });
-
     await t.group("session scope", () => {
-      t.assert(
+      t.check(
         branch.event(
           eventMatch("operation.finished", {
             tool: toolMatch("scope_branch_tool", {
@@ -65,38 +70,53 @@ export default defineEval({
               ),
               status: "completed",
             }),
-            output: satisfies("scope branch tool output", (output) =>
-              typeof output === "object" &&
-              output !== null &&
-              !Array.isArray(output) &&
-              output.marker === "scope-branch-output",
-            ),
           }),
           { count: 1 },
         ),
       );
-      t.assert(branch.notCalledTool(toolMatch("scope_main_tool")));
-      t.assert(branch.maxTokens(5));
-      t.assert(branch.maxCost(0));
-      t.assert(
-        branch.eventsSatisfy("branch session 只有一笔真实工具调用", (events) =>
-          events.filter((event) => event.type === "operation.started").length === 1,
+      t.check(
+        branch.events,
+        satisfies<typeof branch.events>("scope branch tool output", (events) =>
+          events.some(
+            (event) =>
+              event.type === "operation.finished" &&
+              event.kind === "tool" &&
+              typeof event.output === "object" &&
+              event.output !== null &&
+              !Array.isArray(event.output) &&
+              event.output.marker === "scope-branch-output",
+          ),
+        ),
+      );
+      t.check(branch.notCalledTool(toolMatch("scope_main_tool")));
+      t.check(branch.maxTokens(5));
+      t.check(branch.maxCost(0));
+      t.check(
+        branch.eventsSatisfy(
+          "branch session 只有一笔真实工具调用",
+          (events) =>
+            Object.isFrozen(events) &&
+            events.every(
+              (event) =>
+                Object.isFrozen(event) && Object.isFrozen(event.position),
+            ) &&
+            events.filter((event) => event.type === "operation.started")
+              .length === 1,
         ),
       );
     });
-
     await t.group("attempt scope", () => {
-      t.assert(
+      t.check(
         t.calledTool(toolMatch("scope_main_tool", { status: "completed" }), {
           count: 1,
         }),
       );
-      t.assert(
+      t.check(
         t.calledTool(toolMatch("scope_branch_tool", { status: "completed" }), {
           count: 1,
         }),
       );
-      t.assert(
+      t.check(
         t.notCalledTool(
           toolMatch("never_called", {
             input: satisfies('"never_called" input', (input) =>
@@ -108,23 +128,10 @@ export default defineEval({
           }),
         ),
       );
-      t.assert(
-        t.toolOrder([
-          toolMatch("scope_main_tool"),
-          toolMatch("scope_branch_tool"),
-        ]),
-      );
-      t.assert(t.maxToolCalls(2));
-      t.assert(t.noFailedActions());
-      t.assert(t.event(eventMatch("operation.started"), { count: 2 }));
-      t.assert(t.event(eventMatch("operation.finished"), { count: 2 }));
-      t.assert(
-        t.eventOrder([
-          eventMatch("operation.started"),
-          eventMatch("operation.finished"),
-          eventMatch("message"),
-        ]),
-      );
+      t.check(t.maxToolCalls(2));
+      t.check(t.noFailedActions());
+      t.check(t.event(eventMatch("operation.started"), { count: 2 }));
+      t.check(t.event(eventMatch("operation.finished"), { count: 2 }));
     });
   },
 });

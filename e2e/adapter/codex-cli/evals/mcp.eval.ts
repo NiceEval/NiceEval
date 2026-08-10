@@ -29,7 +29,7 @@ export default defineEval({
     await t.require(turn.succeeded());
 
     await t.group("stdio MCP 工具调用且入参正确", () => {
-      t.assert(
+      t.check(
         t.calledTool(
           toolMatch("e2e.get-sum", {
             input: satisfies(
@@ -46,10 +46,10 @@ export default defineEval({
         ),
       );
     });
-    t.assert(t.check(turn.message, includes("123")));
+    t.check(turn.message, includes("123"));
 
     await t.group("远程 HTTP MCP 工具调用且入参正确", () => {
-      t.assert(
+      t.check(
         t.calledTool(
           toolMatch("deepwiki.read_wiki_structure", {
             input: satisfies(
@@ -68,6 +68,6 @@ export default defineEval({
 
     // 反例:这个仓库没有挂载天气 MCP server,同一段事件流不应该出现这个工具调用——
     // 证明转换器不会为不存在的挂载编造归一结果。
-    t.assert(t.notCalledTool(toolMatch("weather.get_weather")));
+    t.check(t.notCalledTool(toolMatch("weather.get_weather")));
   },
 });

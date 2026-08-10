@@ -1,7 +1,7 @@
 ---
 title: "NiceEval 里的 Judge：用 ScoreFact 评开放式输出"
 sidebarTitle: "Judge"
-description: "用 t.judge 和 turn.judge 创建 Judge ScoreFact，再通过 t.assert、t.require 或 t.score 明确使用它。"
+description: "用 t.judge 和 turn.judge 创建 Judge ScoreFact，再通过 t.check、t.require 或 t.score 明确使用它。"
 ---
 
 Judge 用独立裁判模型评估难以用精确 Match 表达的质量，例如事实一致性、摘要忠实度和说明是否清楚。
@@ -11,7 +11,7 @@ Judge 用独立裁判模型评估难以用精确 Match 表达的质量，例如�
 const turn = await t.send("用两句话说明这项变更的风险。");
 const quality = turn.judge.autoevals.closedQA("回答是否清楚说明了风险？");
 
-t.assert(quality, { atLeast: 0.8, label: "风险说明质量" });
+t.check((quality).atLeast(0.8), { label: "风险说明质量" });
 ```
 
 ## 三个 recipe
@@ -26,7 +26,7 @@ t.assert(quality, { atLeast: 0.8, label: "风险说明质量" });
 
 ```ts
 const fact = turn.judge.autoevals.factuality("退款期限是 30 天。");
-t.assert(fact, { atLeast: 0.9, label: "退款事实" });
+t.check((fact).atLeast(0.9), { label: "退款事实" });
 ```
 
 根级 `t.judge.autoevals.*` 用于跨轮、文件或其他自定义材料，必须显式传入两个字符串：
@@ -37,7 +37,7 @@ const explanation = t.judge.autoevals.closedQA("文档是否说明了安装和�
   input: "安装服务并在 NOTES.md 中说明安装和回滚。",
   output: notes,
 });
-t.assert(explanation, { atLeast: 0.8, label: "操作说明" });
+t.check((explanation).atLeast(0.8), { label: "操作说明" });
 ```
 
 文件先经公开 Sandbox API 读取成字符串。Judge API 不接收路径、`{ on }`、隐式最后一条输入或单次模型覆盖。`session.judge` 也不是公开 API；跨 session 的材料由作者显式组合。
@@ -51,7 +51,7 @@ export default defineEval({
   judge: true,
   async test(t) {
     const turn = await t.send("总结需求。");
-    t.assert(turn.judge.autoevals.summarizes("原始需求"), { atLeast: 0.8 });
+    t.check((turn.judge.autoevals.summarizes("原始需求")).atLeast(0.8));
   },
 });
 ```
@@ -82,14 +82,14 @@ Fact 只在消费时求值。选择用途时写在 `t` 上：
 ```ts
 const quality = turn.judge.autoevals.closedQA("回答是否准确且完整？");
 
-t.assert(quality, { atLeast: 0.8, label: "回答质量" });
-await t.require(quality, { atLeast: 0.8, label: "下一步前的质量检查" });
+t.check((quality).atLeast(0.8), { label: "回答质量" });
+await t.require(quality.atLeast(0.8), { label: "下一步前的质量检查" });
 // defineScoreEval 中：t.score("回答质量", quality, { max: 20 });
 ```
 
-`assert` 记录 verdict use 并继续执行。`require` 在当前位置立即开始求值，低于阈值、不可用或 evaluator error 时停止依赖该结果的后续代码。`score` 只在 `defineScoreEval` 中可用，按归一化分数比例计分。
+`check` 记录 verdict use 并继续执行。`require` 在当前位置立即开始求值，低于阈值、不可用或 evaluator error 时停止依赖该结果的后续代码。`score` 只在 `defineScoreEval` 中可用，按归一化分数比例计分。
 
-同一个 Fact 最多有一个 verdict use 和一个 score use，evaluator 只运行一次。未被 `assert`、`require` 或 `score` 消费的 Judge Fact 是作者错误，不会请求模型。一个 Attempt 中的 Judge evaluator 按声明顺序串行执行。
+同一个 Fact 最多有一个 verdict use 和一个 score use，evaluator 只运行一次。未被 `check`、`require` 或 `score` 消费的 Judge Fact 是作者错误，不会请求模型。一个 Attempt 中的 Judge evaluator 按声明顺序串行执行。
 
 ## 配置、预检与失败
 
@@ -101,12 +101,12 @@ Judge 给出的理由写入通用 `explanation`。`evidence` 只保存裁剪、�
 
 ## 结果读取
 
-记录使用 schema 17，直接保存 `factResults` 和 `factUses`。`niceeval show`、网页报告和失败反馈从同一张图生成摘要：失败或不可用 use 优先显示，成功的已消费 ScoreFact 显示归一化分数。
+记录使用 schema 18，直接保存 `factResults` 和 `factUses`。`niceeval show`、网页报告和失败反馈从同一张图生成摘要：失败或不可用 use 优先显示，成功的已消费 ScoreFact 显示归一化分数。
 
 成功、已消费且没有 score use 的 ScoreFact 各计一次 `examScore`。有 score use 的 Fact 只进入 `totalScore`。Judge 没有专用的断言结果或展示分支。
 
 ## 相关阅读
 
 - [Fact 与断言](/zh/explanation/assert) — Fact、use 和终态。
-- [通过制与计分制](/zh/tutorials/evaluation-kinds) — `assert`、`require` 与 `score` 的选择。
+- [通过制与计分制](/zh/tutorials/evaluation-kinds) — `check`、`require` 与 `score` 的选择。
 - [驱动](/zh/explanation/drive) — Turn、session 与跨轮材料。

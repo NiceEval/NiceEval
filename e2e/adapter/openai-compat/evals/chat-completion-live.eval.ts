@@ -1,8 +1,6 @@
 // owner: docs/engineering/testing/e2e/adapter/openai-compat.md#chat-completion-live
-
 import { defineEval } from "niceeval";
 import { satisfies, toolMatch } from "niceeval/expect";
-
 export default defineEval({
   description:
     "真实 ChatCompletion 保留强制 function call 的 id/name/arguments 与 usage",
@@ -11,7 +9,7 @@ export default defineEval({
       "run the one-request Chat Completions compatibility check",
     );
     await t.require(turn.succeeded());
-    t.assert(
+    t.check(
       turn.calledTool(
         toolMatch("lookup_live_chat_fixture", {
           input: satisfies(
@@ -27,32 +25,31 @@ export default defineEval({
         { count: 1 },
       ),
     );
-    t.assert(
-      turn.eventsSatisfy("live Chat Completion exposes a provider call id", (events) =>
+    t.check(
+      turn.events,
+      satisfies<typeof turn.events>(
+        "live Chat Completion exposes a provider call id",
+        (events) =>
           events.some(
             (event) =>
               event.type === "operation.started" &&
               event.operationId.length > 0 &&
               event.operation.name === "lookup_live_chat_fixture",
           ),
-        ),
-    );
-    t.assert(
-      t.check(
-        turn.usage?.inputTokens,
-        satisfies(
-          "input token usage is positive",
-          (value) => typeof value === "number" && value > 0,
-        ),
       ),
     );
-    t.assert(
-      t.check(
-        turn.usage?.outputTokens,
-        satisfies(
-          "output token usage is positive",
-          (value) => typeof value === "number" && value > 0,
-        ),
+    t.check(
+      turn.usage?.inputTokens,
+      satisfies(
+        "input token usage is positive",
+        (value) => typeof value === "number" && value > 0,
+      ),
+    );
+    t.check(
+      turn.usage?.outputTokens,
+      satisfies(
+        "output token usage is positive",
+        (value) => typeof value === "number" && value > 0,
       ),
     );
   },

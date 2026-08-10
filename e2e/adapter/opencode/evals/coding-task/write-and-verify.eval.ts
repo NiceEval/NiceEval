@@ -15,7 +15,7 @@ export default defineEval({
     await t.require(turn.succeeded());
     await t.group("写入 notes.txt,再串行 shell 读回来", () => {
       // marker 同时必须在两个工具输入中出现，能杀死「只留工具名/路径、丢掉实际参数」的归一。
-      t.assert(
+      t.check(
         t.calledTool(
           toolMatch("file_write", {
             input: satisfies('"file_write" input', (input) =>
@@ -26,7 +26,7 @@ export default defineEval({
           }),
         ),
       );
-      t.assert(
+      t.check(
         t.calledTool(
           toolMatch("shell", {
             input: satisfies('"shell" input', (input) =>
@@ -37,9 +37,9 @@ export default defineEval({
           }),
         ),
       );
-      t.assert(t.toolOrder([toolMatch("file_write"), toolMatch("shell")]));
-      t.assert(t.noFailedActions());
+      t.check(turn.toolOrder([toolMatch("file_write"), toolMatch("shell")]));
+      t.check(t.noFailedActions());
     });
-    t.assert(t.check(turn.message, includes(TOOL_PAYLOAD)));
+    t.check(turn.message, includes(TOOL_PAYLOAD));
   },
 });

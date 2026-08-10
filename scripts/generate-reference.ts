@@ -546,7 +546,7 @@ function computeRegionBody(regionId: string, sources: SourceMap): string {
         ...extractInterfaceMembers(
           sources["src/context/types.ts"],
           "src/context/types.ts",
-          "ScopedFactProducers",
+          "AggregateScopedFactProducers",
         ),
         ...extractInterfaceMembers(sources["src/context/types.ts"], "src/context/types.ts", "TestContext"),
       ]);
@@ -555,7 +555,12 @@ function computeRegionBody(regionId: string, sources: SourceMap): string {
         ...extractInterfaceMembers(
           sources["src/context/types.ts"],
           "src/context/types.ts",
-          "ScopedFactProducers",
+          "AggregateScopedFactProducers",
+        ),
+        ...extractInterfaceMembers(
+          sources["src/context/types.ts"],
+          "src/context/types.ts",
+          "OrderedScopedFactProducers",
         ),
         ...extractInterfaceMembers(sources["src/context/types.ts"], "src/context/types.ts", "TurnHandle"),
       ]);

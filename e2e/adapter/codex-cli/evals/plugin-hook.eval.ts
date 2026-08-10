@@ -31,12 +31,12 @@ export default defineEval({
       async () => {
         const cacheDir = `~/.codex/plugins/cache/${MARKETPLACE_NAME}/${PLUGIN_NAME}`;
         const versions = await t.sandbox.runShell(`ls ${cacheDir}`);
-        t.assert(t.check(versions.stdout, includes(PLUGIN_VERSION)));
+        t.check(versions.stdout, includes(PLUGIN_VERSION));
 
         const check = await t.sandbox.runShell(
           `test -f ${cacheDir}/${PLUGIN_VERSION}/hooks.json`,
         );
-        t.assert(t.check(check.exitCode, equals(0)));
+        t.check(check.exitCode, equals(0));
       },
     );
 
@@ -46,7 +46,7 @@ export default defineEval({
       'Say "ok" and nothing else. Do not run any commands or read any files.',
     );
     await t.require(turn.succeeded());
-    t.assert(t.succeeded());
+    t.check(t.succeeded());
 
     await t.group(
       "hook 证据:SessionStart 钩子的输出真的落进了 Codex 自己的 session 记录",
@@ -54,8 +54,8 @@ export default defineEval({
         const probe = await t.sandbox.runShell(
           `f=$(find ~/.codex/sessions -name "*${t.sessionId}*.jsonl" | head -1); test -n "$f" && cat "$f"`,
         );
-        t.assert(t.check(probe.exitCode, equals(0)));
-        t.assert(t.check(probe.stdout, includes(HOOK_SENTINEL)));
+        t.check(probe.exitCode, equals(0));
+        t.check(probe.stdout, includes(HOOK_SENTINEL));
       },
     );
   },

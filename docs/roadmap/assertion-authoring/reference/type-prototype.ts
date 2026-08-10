@@ -185,26 +185,28 @@ interface DirectScoreOptions {
   readonly earned: number;
 }
 
+type AcceptsMatchInput<T, I> = [T] extends [I] ? unknown : never;
+
 interface TestContext {
   check<F extends BooleanFact<unknown, FactPhase>>(fact: F, options?: FactUseOptions): F;
   check<F extends ScoreFact<FactPhase>>(fact: ThresholdedScoreFact<F>, options?: FactUseOptions): F;
 
-  check<V, P extends FactPhase, R extends V>(
-    source: EvidenceSource<V, P>,
-    match: BooleanMatch<NoInfer<V>, R, "value">,
+  check<V, I, P extends FactPhase, R extends I>(
+    source: EvidenceSource<V, P> & AcceptsMatchInput<V, NoInfer<I>>,
+    match: BooleanMatch<I, R, "value">,
     options?: FactUseOptions,
-  ): BooleanFact<R, P>;
+  ): BooleanFact<V & R, P>;
   check<V, P extends FactPhase>(
     source: EvidenceSource<V, P>,
     match: ThresholdedScoreMatch<NoInfer<V>>,
     options?: FactUseOptions,
   ): ScoreFact<P>;
 
-  check<V, R extends V>(
-    value: V & AuthorValue<V>,
-    match: BooleanMatch<NoInfer<V>, R, "value">,
+  check<V, I, R extends I>(
+    value: V & AuthorValue<V> & AcceptsMatchInput<V, NoInfer<I>>,
+    match: BooleanMatch<I, R, "value">,
     options?: FactUseOptions,
-  ): BooleanFact<R, "now">;
+  ): BooleanFact<V & R, "now">;
   check<V>(
     value: V & AuthorValue<V>,
     match: ThresholdedScoreMatch<NoInfer<V>>,
@@ -221,11 +223,11 @@ interface TestContext {
     fact: ThresholdedScoreFact<F>,
     options?: FactUseOptions,
   ): Promise<number>;
-  require<V, R extends V>(
-    value: V & AuthorValue<V>,
-    match: BooleanMatch<NoInfer<V>, R, "value">,
+  require<V, I, R extends I>(
+    value: V & AuthorValue<V> & AcceptsMatchInput<V, NoInfer<I>>,
+    match: BooleanMatch<I, R, "value">,
     options?: FactUseOptions,
-  ): Promise<R>;
+  ): Promise<V & R>;
   require<V>(
     value: V & AuthorValue<V>,
     match: ThresholdedScoreMatch<NoInfer<V>>,
@@ -242,12 +244,12 @@ interface ScoreTestContext extends TestContext {
   ): F;
   score<F extends ScoreFact<FactPhase>>(label: string, fact: F, options: ScoreUseOptions): F;
 
-  score<V, P extends FactPhase, R extends V>(
+  score<V, I, P extends FactPhase, R extends I>(
     label: string,
-    source: EvidenceSource<V, P>,
-    match: BooleanMatch<NoInfer<V>, R, "value">,
+    source: EvidenceSource<V, P> & AcceptsMatchInput<V, NoInfer<I>>,
+    match: BooleanMatch<I, R, "value">,
     options: ScoreUseOptions,
-  ): BooleanFact<R, P>;
+  ): BooleanFact<V & R, P>;
   score<V, P extends FactPhase>(
     label: string,
     source: EvidenceSource<V, P>,
@@ -255,12 +257,12 @@ interface ScoreTestContext extends TestContext {
     options: ScoreUseOptions,
   ): ScoreFact<P>;
 
-  score<V, R extends V>(
+  score<V, I, R extends I>(
     label: string,
-    value: V & AuthorValue<V>,
-    match: BooleanMatch<NoInfer<V>, R, "value">,
+    value: V & AuthorValue<V> & AcceptsMatchInput<V, NoInfer<I>>,
+    match: BooleanMatch<I, R, "value">,
     options: ScoreUseOptions,
-  ): BooleanFact<R, "now">;
+  ): BooleanFact<V & R, "now">;
   score<V>(
     label: string,
     value: V & AuthorValue<V>,

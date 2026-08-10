@@ -243,4 +243,4 @@ npx niceeval show weather/brooklyn --history
 | `2` | 运行时崩溃（未捕获异常），CLI 顶层捕获后退出。 |
 | `130` | 收到中断信号（Ctrl-C / SIGTERM）后退出。 |
 
-通过制的硬要求由评估源码里的 `t.assert(...)` / `t.require(...)` 明确声明；计分制的有效性要求同样写在 Fact use 上。CLI 不会再用全局 flag 改写作者声明的判定语义。
+通过制的硬要求由评估源码里的 `t.check(...)` / `t.require(...)` 明确声明；计分制的有效性要求同样写在 Fact use 上。CLI 不会再用全局 flag 改写作者声明的判定语义。

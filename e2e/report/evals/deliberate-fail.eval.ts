@@ -7,6 +7,6 @@ export default defineEval({
   description: "deliberate-fail:确定性失败断言",
 
   async test(t) {
-    t.assert(t.check(1 + 1, equals(3)));
+    t.check(1 + 1, equals(3));
   },
 });

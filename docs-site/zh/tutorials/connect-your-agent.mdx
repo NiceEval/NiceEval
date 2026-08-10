@@ -85,12 +85,9 @@ export default defineEval({
   description: "退款政策问答",
   async test(t) {
     const turn = await t.send("你们的退款政策是什么?");
-    t.assert(turn.succeeded(), { label: "请求成功" });
-    t.assert(t.check(turn.message, includes("30")), { label: "说明退款期限" });
-    t.assert(turn.judge.autoevals.closedQA("回答是否说明了退款期限？"), {
-      atLeast: 0.7,
-      label: "退款政策质量",
-    });
+    t.check(turn.succeeded(), { label: "请求成功" });
+    t.check(turn.message, includes("30"), { label: "说明退款期限" });
+    t.check((turn.judge.autoevals.closedQA("回答是否说明了退款期限？")).atLeast(0.7), { label: "退款政策质量" });
   },
 });
 ```

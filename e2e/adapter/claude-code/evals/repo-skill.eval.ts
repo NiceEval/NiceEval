@@ -13,8 +13,8 @@ export default defineEval({
       const installed = await t.sandbox.runShell(
         `test -f ${SKILL_PATH} && grep -F 'ebook-convert' ${SKILL_PATH}`,
       );
-      t.assert(t.check(installed.exitCode, equals(0)));
-      t.assert(t.check(installed.stdout, includes("ebook-convert")));
+      t.check(installed.exitCode, equals(0));
+      t.check(installed.stdout, includes("ebook-convert"));
     });
 
     const turn = await t.send(
@@ -22,8 +22,8 @@ export default defineEval({
         "novel.epub to novel.azw3. Do not run the command or create files.",
     );
     await t.require(turn.succeeded());
-    t.assert(turn.loadedSkill(SKILL_NAME));
-    t.assert(t.check(turn.message, includes(EXPECTED_COMMAND)));
-    t.assert(t.noFailedActions());
+    t.check(turn.loadedSkill(SKILL_NAME));
+    t.check(turn.message, includes(EXPECTED_COMMAND));
+    t.check(t.noFailedActions());
   },
 });

@@ -26,6 +26,10 @@ export {
 } from "../assertions/match.ts";
 
 export type {
+  AssertionEvent,
+  AssertionEventIdentity,
+  AssertionEventPosition,
+  AssertionToolReference,
   BooleanMatch,
   CommandMatchOptions,
   EventMatch,
@@ -35,6 +39,7 @@ export type {
   MatchDomain,
   MatchableEvent,
   ScoreMatch,
+  ThresholdedScoreMatch,
   TextMatchOptions,
   ToolMatch,
   ToolMatchOptions,

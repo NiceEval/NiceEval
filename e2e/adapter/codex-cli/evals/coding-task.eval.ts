@@ -37,7 +37,7 @@ export default defineEval({
     await t.require(turn.succeeded());
 
     await t.group("文件变更事件已归一,调用与结果配对", () => {
-      t.assert(
+      t.check(
         t.calledTool(
           toolMatch("file_edit", {
             input: satisfies(
@@ -56,7 +56,7 @@ export default defineEval({
       );
     });
     await t.group("shell 调用已归一,调用与结果配对", () => {
-      t.assert(
+      t.check(
         t.calledTool(
           toolMatch("shell", {
             input: satisfies(
@@ -75,15 +75,15 @@ export default defineEval({
       );
     });
 
-    t.assert(t.check(turn.message, includes(cmdMarker)));
+    t.check(turn.message, includes(cmdMarker));
 
     // 双重核实:沙箱磁盘上的文件内容也要对得上(不是只信事件流自称)——目标行换了,其余行原样。
-    t.assert(t.sandbox.fileChanged(relPath));
+    t.check(t.sandbox.fileChanged(relPath));
     await t.group("目标行换了,其余行原样", () => {
-      t.assert(t.check(t.sandbox.file(relPath), includes(newMarker)));
-      t.assert(t.check(t.sandbox.file(relPath), excludes(oldMarker)));
-      t.assert(t.check(t.sandbox.file(relPath), includes("alpha")));
-      t.assert(t.check(t.sandbox.file(relPath), includes("omega")));
+      t.check(t.sandbox.file(relPath), includes(newMarker));
+      t.check(t.sandbox.file(relPath), excludes(oldMarker));
+      t.check(t.sandbox.file(relPath), includes("alpha"));
+      t.check(t.sandbox.file(relPath), includes("omega"));
     });
   },
 });

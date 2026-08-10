@@ -299,7 +299,7 @@ Sandbox Agent，只有它的回调拿到带真实 `sandbox` 的 `SandboxAgentCon
 | `t.send`、`t.sendFile`、`t.check`、`t.judge`… | 任何 Agent 都有 | 无 |
 | 多次 `t.send()`、`t.reply`、`t.newSession()` | `send` 里接了 `ctx.session` 的续接存取器（typed slot 或 `id` + `capture()`）——没接则每轮各是新对话 | 无——存取器就在 `ctx` 上 |
 | `t.respond()` / `t.parked()` 等 HITL | send 返回过 `"waiting"` + `input.requested` 事件 | 无——做到了就是有 |
-| `t.calledTool()` / `t.toolOrder()` 等正断言 | events 里有配对的 `operation.started` / `operation.finished` | 无——有事件就能断 |
+| `turn.calledTool()` / `turn.toolOrder()` 等正断言 | events 里有配对的 `operation.started` / `operation.finished` | 无——有事件就能断 |
 | `t.notCalledTool()` / `t.usedNoTools()` 等负断言**可信** | 事件来自带完整性证明的官方转换器 | 无——证明随转换器返回值走 |
 | `t.sandbox`、`t.sandbox.fileChanged()` 等 | `defineSandboxAgent` 构造 | 无 |
 | `EvalResult.trace`、`niceeval view` 瀑布图 | `tracing` 块存在（span 只进瀑布图，不喂断言） | 无——块本来就要写 |

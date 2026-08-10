@@ -59,7 +59,7 @@ export default defineConfig({
 三个要提醒用户的点：
 
 - **配错不会假装通过。** 模型或 key 解析不到、网关拒绝鉴权、判分请求超时时，已消费的 Judge Fact 记为 `unavailable` 并带上原因，Attempt 为 `errored`。
-- **配完先验一次。** 写一条带 `judge: true` 的轻量评估用例，让 `turn.judge.autoevals.closedQA(...)` 产生 Fact，再用 `t.assert(fact, { atLeast: 0.8 })` 消费它。跑完 `niceeval show <评估用例 id>` 确认有分数与 Fact/use 摘要。
+- **配完先验一次。** 写一条带 `judge: true` 的轻量评估用例，让 `turn.judge.autoevals.closedQA(...)` 产生 Fact，再用 `t.check(fact.atLeast(0.8))` 消费它。跑完 `niceeval show <评估用例 id>` 确认有分数与 Fact/use 摘要。
 - **没有用户在场（自治接入）时不要直接跳过 Judge**：先看环境里是否已有可用 key，例如 `OPENAI_API_KEY` 或 `DEEPSEEK_API_KEY`。有就用 `apiKeyEnv` 指向它并验证；没有时先写精确 Match，并在收尾说明 Judge 没有配置。
 - Judge 模型要**与被测 Agent 分离**，避免同一个模型给自己的输出打分。配置按 Eval、Experiment、项目配置逐字段解析；三种 recipe 见 [Judge](/zh/explanation/judge)。
 

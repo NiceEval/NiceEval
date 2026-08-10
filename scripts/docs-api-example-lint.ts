@@ -121,10 +121,6 @@ function ruleMessage(rule: ApiRuleBase, found: string): string {
   return `公开示例使用了${found}——改用${rule.use};${rule.why}`;
 }
 
-function isJudgeCompatibilityChain(receiver: ts.Expression, sourceFile: ts.SourceFile): boolean {
-  return /(^|\.)judge\./.test(receiver.getText(sourceFile));
-}
-
 export function lintApiCodeExample(
   file: string,
   source: string,
@@ -153,7 +149,9 @@ export function lintApiCodeExample(
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
       const method = node.expression.name.text;
       const chainRule = chainRules.get(method);
-      if (chainRule && !isJudgeCompatibilityChain(node.expression.expression, sourceFile)) {
+      const receiver = node.expression.expression.getText(sourceFile);
+      const isRemovedAuthorFactFactory = method !== "fact" || receiver === "t";
+      if (chainRule && isRemovedAuthorFactFactory) {
         hits.push({
           file,
           line: sourceLine(sourceFile, node.expression.name, firstContentLine),

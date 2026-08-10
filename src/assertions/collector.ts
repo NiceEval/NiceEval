@@ -3,20 +3,29 @@
 import type { AssertionEvaluationContext, SourceLoc } from "../types.ts";
 import { captureLoc } from "../source-loc.ts";
 import { EvalRequirementFailed } from "../context/control-flow.ts";
-import type {
-  AttemptFactIssue,
-  ErrorAttemptIssue,
-  BooleanFact,
-  EvaluationFactError,
-  EvaluationFactResult,
-  FactPhase,
-  FactUseOptions,
-  ScoreFact,
-  ScoreFactAttemptOutcome,
-  ScoreFactUseResult,
-  ScoreThresholdOptions,
-  UsageEvidenceFact,
-  VerdictFactUseResult,
+import {
+  isManagedFact,
+  isManagedUsageEvidenceFact,
+  isManagedThresholdedScoreFact,
+  thresholdedScoreFactValue,
+  makeBooleanFact,
+  makeScoreFact,
+  makeUsageEvidenceFact,
+  type AttemptFactIssue,
+  type ErrorAttemptIssue,
+  type BooleanFact,
+  type EvaluationFactError,
+  type EvaluationFactResult,
+  type FactPhase,
+  type FactUseOptions,
+  type ScoreFact,
+  type ScoreFactAttemptOutcome,
+  type ScoreFactUseResult,
+  type ThresholdedScoreFact,
+  type DirectScoreOptions,
+  type ScoreUseOptions,
+  type UsageEvidenceFact,
+  type VerdictFactUseResult,
 } from "./types.ts";
 
 export type EvidenceChannel = "diff";
@@ -61,7 +70,7 @@ type FactRuntimeOutcome =
       /**
        * Core-only provenance: this absence was declared by the Agent at
        * creation time, rather than caused by a later truncation or transport
-       * downgrade. `assertIfCovered()` is the sole consumer allowed to turn
+       * downgrade. `checkIfCovered()` is the sole consumer allowed to turn
        * precisely this case into notApplicable.
        */
       readonly usageUnavailableAtCreation?: true;
@@ -75,15 +84,19 @@ export interface FactDefinition<R, P extends FactPhase> {
   readonly name: string;
   readonly phase: P;
   readonly value: R;
+  /** Shared by an atomic value/source consumer's new Fact and its use. */
+  readonly producerLoc?: SourceLoc;
   readonly evaluate: (context: AssertionEvaluationContext) => Promise<BooleanFactEvaluation> | BooleanFactEvaluation;
   readonly dependencyFacts?: readonly (BooleanFact<unknown, FactPhase> | ScoreFact<FactPhase>)[];
-  readonly usageEvidence?: boolean;
+  readonly usageEvidence?: true;
   readonly evidence?: EvidenceChannel;
 }
 
 export interface ScoreFactDefinition<P extends FactPhase> {
   readonly name: string;
   readonly phase: P;
+  /** Shared by an atomic value/source consumer's new Fact and its use. */
+  readonly producerLoc?: SourceLoc;
   readonly evaluate: (context: AssertionEvaluationContext) => Promise<ScoreFactEvaluation> | ScoreFactEvaluation;
   readonly dependencyFacts?: readonly (BooleanFact<unknown, FactPhase> | ScoreFact<FactPhase>)[];
   readonly evidence?: EvidenceChannel;
@@ -115,7 +128,7 @@ interface FactNode {
 interface VerdictUseNode {
   readonly kind: "verdict";
   readonly node: FactNode;
-  readonly method: "assert" | "require" | "assertIfCovered";
+  readonly method: "check" | "require" | "checkIfCovered";
   readonly label?: string;
   readonly key: string | undefined;
   readonly atLeast?: number;
@@ -146,6 +159,12 @@ interface DirectScoreUseNode {
 
 type FactUseNode = VerdictUseNode | FactScoreUseNode | DirectScoreUseNode;
 
+interface NormalizedVerdictUseOptions {
+  readonly key: string | undefined;
+  readonly label: string | undefined;
+  readonly atLeast: number | undefined;
+}
+
 interface Requirement<R> {
   readonly use: VerdictUseNode;
   readonly node: FactNode;
@@ -154,6 +173,56 @@ interface Requirement<R> {
   promise: Promise<R> | undefined;
   baseSettled: boolean;
   pendingContinuations: number;
+}
+
+type RequirementThen<R> = <TResult1 = R, TResult2 = never>(
+  onfulfilled?: ((value: R) => TResult1 | PromiseLike<TResult1>) | null,
+  onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
+) => Promise<TResult1 | TResult2>;
+
+/**
+ * A native Promise surface that preserves the collector's requirement-observe
+ * bookkeeping.  A plain thenable makes `require()` look awaitable but breaks
+ * the public Promise contract and runtime checks such as `instanceof Promise`.
+ */
+class ManagedRequirementPromise<R> extends Promise<R> {
+  // Native Promise chaining must construct ordinary Promises. Otherwise
+  // Promise.prototype.then would call this specialised constructor with its
+  // executor rather than our source/observer pair.
+  static override get [Symbol.species](): PromiseConstructor {
+    return Promise;
+  }
+
+  constructor(
+    source: Promise<R>,
+    private readonly observeThen: RequirementThen<R>,
+  ) {
+    super((resolve, reject) => {
+      source.then(resolve, reject);
+    });
+  }
+
+  override then<TResult1 = R, TResult2 = never>(
+    onfulfilled?: ((value: R) => TResult1 | PromiseLike<TResult1>) | null,
+    onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
+  ): Promise<TResult1 | TResult2> {
+    return this.observeThen(onfulfilled, onrejected);
+  }
+
+  override catch<TResult = never>(
+    onrejected?: ((reason: unknown) => TResult | PromiseLike<TResult>) | null,
+  ): Promise<R | TResult> {
+    return this.observeThen(undefined, onrejected);
+  }
+
+  override finally(onfinally?: (() => void | undefined) | null): Promise<R> {
+    return this.observeThen(
+      (value) => Promise.resolve(onfinally?.()).then(() => value),
+      (error) => Promise.resolve(onfinally?.()).then(() => {
+        throw error;
+      }),
+    );
+  }
 }
 
 interface FactCollectorOptions {
@@ -240,10 +309,18 @@ export class FactCollector {
     this.diffConsumers += 1;
   }
 
-  createBooleanFact<R, P extends FactPhase>(definition: FactDefinition<R, P>): BooleanFact<R, P> {
+  createBooleanFact<P extends FactPhase>(
+    definition: FactDefinition<unknown, P> & { readonly usageEvidence: true },
+  ): UsageEvidenceFact<P>;
+  createBooleanFact<R, P extends FactPhase>(definition: FactDefinition<R, P>): BooleanFact<R, P>;
+  createBooleanFact(
+    definition: FactDefinition<unknown, FactPhase>,
+  ): BooleanFact<unknown, FactPhase> | UsageEvidenceFact<FactPhase> {
     this.assertCanRegister();
     const dependencies = (definition.dependencyFacts ?? []).map((fact) => this.nodeFor(fact));
-    const fact = Object.freeze({ kind: "boolean" as const, phase: definition.phase }) as BooleanFact<R, P>;
+    const fact = definition.usageEvidence === true
+      ? makeUsageEvidenceFact(definition.phase)
+      : makeBooleanFact<unknown, FactPhase>(definition.phase);
     const node: FactNode = {
       fact,
       id: `fact-${this.nodes.length + 1}`,
@@ -251,7 +328,7 @@ export class FactCollector {
       kind: "boolean",
       phase: definition.phase,
       value: definition.value,
-      producerLoc: captureLoc(),
+      producerLoc: definition.producerLoc ?? captureLoc(),
       sourceOrder: this.nextSourceOrder(),
       ...(this.groupStack.length > 0 ? { groupPath: this.groupStack.slice() } : {}),
       dependencies,
@@ -270,7 +347,7 @@ export class FactCollector {
   createScoreFact<P extends FactPhase>(definition: ScoreFactDefinition<P>): ScoreFact<P> {
     this.assertCanRegister();
     const dependencies = (definition.dependencyFacts ?? []).map((fact) => this.nodeFor(fact));
-    const fact = Object.freeze({ kind: "score" as const, phase: definition.phase }) as ScoreFact<P>;
+    const fact = makeScoreFact<P>(definition.phase);
     const node: FactNode = {
       fact,
       id: `fact-${this.nodes.length + 1}`,
@@ -278,7 +355,7 @@ export class FactCollector {
       kind: "score",
       phase: definition.phase,
       value: undefined,
-      producerLoc: captureLoc(),
+      producerLoc: definition.producerLoc ?? captureLoc(),
       sourceOrder: this.nextSourceOrder(),
       ...(this.groupStack.length > 0 ? { groupPath: this.groupStack.slice() } : {}),
       dependencies,
@@ -295,32 +372,55 @@ export class FactCollector {
     return fact;
   }
 
-  assert<R, P extends FactPhase>(fact: BooleanFact<R, P>, options?: FactUseOptions): void;
-  assert<P extends FactPhase>(fact: ScoreFact<P>, options: ScoreThresholdOptions): void;
-  assert(fact: BooleanFact<unknown, FactPhase> | ScoreFact<FactPhase>, options?: FactUseOptions | ScoreThresholdOptions): void {
+  /** Register a non-blocking verdict use and return the same Fact. */
+  check<R, P extends FactPhase>(fact: BooleanFact<R, P>, options?: FactUseOptions, consumerLoc?: SourceLoc): BooleanFact<R, P>;
+  check<F extends ScoreFact<FactPhase>>(fact: ThresholdedScoreFact<F>, options?: FactUseOptions, consumerLoc?: SourceLoc): F;
+  check(
+    factOrThreshold: BooleanFact<unknown, FactPhase> | ThresholdedScoreFact<ScoreFact<FactPhase>>,
+    options?: FactUseOptions,
+    consumerLoc?: SourceLoc,
+  ): BooleanFact<unknown, FactPhase> | ScoreFact<FactPhase> {
     this.assertCanRegister();
+    const thresholded = isManagedThresholdedScoreFact(factOrThreshold)
+      ? thresholdedScoreFactValue(factOrThreshold)
+      : undefined;
+    const fact = thresholded?.fact ?? factOrThreshold as BooleanFact<unknown, FactPhase>;
     const node = this.nodeFor(fact);
-    const atLeast = node.kind === "score" ? this.thresholdOptions(options, "assert") : undefined;
-    this.addVerdictUse(node, "assert", options, atLeast);
+    const normalized = this.normalizeVerdictOptions(options, "check", thresholded?.threshold);
+    this.addVerdictUse(node, "check", normalized, consumerLoc ?? captureLoc());
+    return fact;
   }
 
-  assertIfCovered<P extends FactPhase>(fact: UsageEvidenceFact<P>, options?: FactUseOptions): void {
+  checkIfCovered<P extends FactPhase>(fact: UsageEvidenceFact<P>, options?: FactUseOptions, consumerLoc?: SourceLoc): UsageEvidenceFact<P> {
     this.assertCanRegister();
+    if (!isManagedUsageEvidenceFact(fact)) {
+      throw new TypeError("checkIfCovered() accepts only a core usage evidence Fact");
+    }
     const node = this.nodeFor(fact);
-    if (!node.usageEvidence) throw new TypeError("assertIfCovered() accepts only a core usage evidence Fact");
-    this.addVerdictUse(node, "assertIfCovered", options, undefined);
+    if (!node.usageEvidence) throw new TypeError("checkIfCovered() accepts only a core usage evidence Fact");
+    const normalized = this.normalizeVerdictOptions(options, "checkIfCovered");
+    this.addVerdictUse(node, "checkIfCovered", normalized, consumerLoc ?? captureLoc());
+    return fact;
   }
 
-  require<R>(fact: BooleanFact<R, "now">, options?: FactUseOptions): Promise<R>;
-  require(fact: ScoreFact<"now">, options: ScoreThresholdOptions): Promise<number>;
-  require<R>(fact: BooleanFact<R, "now"> | ScoreFact<"now">, options?: FactUseOptions | ScoreThresholdOptions): Promise<R | number> {
+  require<R>(fact: BooleanFact<R, "now">, options?: FactUseOptions, consumerLoc?: SourceLoc): Promise<R>;
+  require<F extends ScoreFact<"now">>(fact: ThresholdedScoreFact<F>, options?: FactUseOptions, consumerLoc?: SourceLoc): Promise<number>;
+  require<R>(
+    factOrThreshold: BooleanFact<R, "now"> | ThresholdedScoreFact<ScoreFact<"now">>,
+    options?: FactUseOptions,
+    consumerLoc?: SourceLoc,
+  ): Promise<R | number> {
     // `require(value, match)` creates a Fact immediately before it gets here.
     // Register this use first, then check graph reachability atomically.
     this.beforeManagedBoundary("require", { checkDangling: false });
+    const thresholded = isManagedThresholdedScoreFact(factOrThreshold)
+      ? thresholdedScoreFactValue(factOrThreshold)
+      : undefined;
+    const fact = thresholded?.fact ?? factOrThreshold as BooleanFact<R, "now">;
     const node = this.nodeFor(fact);
     if (node.phase !== "now") throw new TypeError("require() accepts only phase: now Facts");
-    const atLeast = node.kind === "score" ? this.thresholdOptions(options, "require") : undefined;
-    const use = this.addVerdictUse(node, "require", options, atLeast);
+    const normalized = this.normalizeVerdictOptions(options, "require", thresholded?.threshold);
+    const use = this.addVerdictUse(node, "require", normalized, consumerLoc ?? captureLoc());
     this.assertNoDanglingFacts();
     const requirement: Requirement<R | number> = {
       use,
@@ -343,54 +443,75 @@ export class FactCollector {
   score<P extends FactPhase>(
     label: string,
     fact: BooleanFact<unknown, P> | ScoreFact<P>,
-    options: { readonly key?: string; readonly max: number },
-  ): void;
-  score(label: string, direct: { readonly key?: string; readonly earned: number }): void;
-  score(
-    label: string,
-    factOrDirect: BooleanFact<unknown, FactPhase> | ScoreFact<FactPhase> | { readonly key?: string; readonly earned: number },
-    options?: { readonly key?: string; readonly max: number },
-  ): void {
+    options: ScoreUseOptions,
+    consumerLoc?: SourceLoc,
+  ): BooleanFact<unknown, P> | ScoreFact<P> {
     this.assertCanRegister();
     if (this.evaluationKind !== "score") throw new Error("score() is available only in defineScoreEval");
     this.assertLabel(label, "score()");
-    if (this.isFact(factOrDirect)) {
-      if (options === undefined) throw new TypeError("score(label, fact, { max }) requires max");
-      if (!Number.isFinite(options.max) || options.max <= 0) {
-        throw new TypeError("score() max must be a positive finite number");
-      }
-      const node = this.nodeFor(factOrDirect);
-      if (this.scoreUseByFact.has(node.fact)) throw new Error(`Fact ${node.name} already has a score use`);
-      const key = this.validateKey(options.key);
-      const use: FactScoreUseNode = {
-        kind: "score",
-        input: "fact",
-        node,
-        label,
-        key,
-        max: options.max,
-        consumerLoc: captureLoc(),
-        sourceOrder: this.nextSourceOrder(),
-      };
-      this.scoreUseByFact.set(node.fact, use);
-      this.uses.push(use);
-      return;
-    }
-    if (options !== undefined || !("earned" in factOrDirect)) {
-      throw new TypeError("score(label, direct) accepts only { earned, key? }");
-    }
-    if (!Number.isFinite(factOrDirect.earned) || factOrDirect.earned < 0) {
-      throw new TypeError("score() earned must be a non-negative finite number");
-    }
+    const normalized = this.normalizeScoreUseOptions(options, "score()");
+    const node = this.nodeFor(fact);
+    if (this.scoreUseByFact.has(node.fact)) throw new Error(`Fact ${node.name} already has a score use`);
+    const key = this.validateKey(normalized.key);
+    const use: FactScoreUseNode = {
+      kind: "score",
+      input: "fact",
+      node,
+      label: normalized.label ?? label,
+      key,
+      max: normalized.max,
+      consumerLoc: consumerLoc ?? captureLoc(),
+      sourceOrder: this.nextSourceOrder(),
+    };
+    this.scoreUseByFact.set(node.fact, use);
+    this.uses.push(use);
+    return fact;
+  }
+
+  /** Internal direct-score path; the public context overload dispatches here. */
+  directScore(label: string, direct: DirectScoreOptions, consumerLoc?: SourceLoc): void {
+    this.assertCanRegister();
+    if (this.evaluationKind !== "score") throw new Error("score() is available only in defineScoreEval");
+    this.assertLabel(label, "score()");
+    const normalized = this.normalizeDirectScoreOptions(direct);
     this.uses.push({
       kind: "score",
       input: "direct",
       label,
-      key: this.validateKey(factOrDirect.key),
-      earned: factOrDirect.earned,
-      consumerLoc: captureLoc(),
+      key: this.validateKey(normalized.key),
+      earned: normalized.earned,
+      consumerLoc: consumerLoc ?? captureLoc(),
       sourceOrder: this.nextSourceOrder(),
     });
+  }
+
+  /**
+   * Value/source consumers create a Fact and a use as one author operation.
+   * If any subsequent validation fails, remove every node/use/key registered
+   * by this transaction so no unreachable Fact is observable at completion.
+   */
+  atomically<T>(register: () => T): T {
+    const nodeCount = this.nodes.length;
+    const useCount = this.uses.length;
+    const requirementCount = this.requirementList.length;
+    const priorKeys = new Set(this.keys);
+    const priorDiffConsumers = this.diffConsumers;
+    try {
+      return register();
+    } catch (error) {
+      const addedUses = this.uses.splice(useCount);
+      for (const use of addedUses) {
+        if (use.kind === "verdict") this.verdictUseByFact.delete(use.node.fact);
+        if (use.kind === "score" && use.input === "fact") this.scoreUseByFact.delete(use.node.fact);
+      }
+      const addedNodes = this.nodes.splice(nodeCount);
+      for (const node of addedNodes) this.nodeByFact.delete(node.fact);
+      this.requirementList.splice(requirementCount);
+      this.keys.clear();
+      for (const key of priorKeys) this.keys.add(key);
+      this.diffConsumers = priorDiffConsumers;
+      throw error;
+    }
   }
 
   async withGroup<T>(title: string, fn: () => Promise<T> | T): Promise<T> {
@@ -516,12 +637,8 @@ export class FactCollector {
     return { ...graph, pass: this.foldPass(graph, externalErrors), score: this.foldScore(graph, externalErrors) };
   }
 
-  private isFact(value: unknown): value is BooleanFact<unknown, FactPhase> | ScoreFact<FactPhase> {
-    return typeof value === "object" && value !== null && this.nodeByFact.has(value);
-  }
-
   private nodeFor(fact: BooleanFact<unknown, FactPhase> | ScoreFact<FactPhase>): FactNode {
-    const node = typeof fact === "object" && fact !== null ? this.nodeByFact.get(fact) : undefined;
+    const node = isManagedFact(fact) ? this.nodeByFact.get(fact) : undefined;
     if (node === undefined) throw new TypeError("Fact belongs to a different Attempt or was not created by this context");
     return node;
   }
@@ -534,18 +651,18 @@ export class FactCollector {
   private addVerdictUse(
     node: FactNode,
     method: VerdictUseNode["method"],
-    options: FactUseOptions | ScoreThresholdOptions | undefined,
-    atLeast: number | undefined,
+    options: NormalizedVerdictUseOptions,
+    consumerLoc: SourceLoc | undefined,
   ): VerdictUseNode {
     if (this.verdictUseByFact.has(node.fact)) throw new Error(`Fact ${node.name} already has a verdict use`);
     const use: VerdictUseNode = {
       kind: "verdict",
       node,
       method,
-      ...(options?.label === undefined ? {} : { label: this.nonEmpty(options.label, `${method}() label`) }),
-      key: this.validateKey(options?.key),
-      ...(atLeast === undefined ? {} : { atLeast }),
-      consumerLoc: captureLoc(),
+      ...(options.label === undefined ? {} : { label: options.label }),
+      key: this.validateKey(options.key),
+      ...(options.atLeast === undefined ? {} : { atLeast: options.atLeast }),
+      consumerLoc,
       sourceOrder: this.nextSourceOrder(),
     };
     this.verdictUseByFact.set(node.fact, use);
@@ -553,12 +670,62 @@ export class FactCollector {
     return use;
   }
 
-  private thresholdOptions(options: FactUseOptions | ScoreThresholdOptions | undefined, method: string): number {
-    if (options === undefined || !("atLeast" in options)) {
-      throw new TypeError(`${method}() needs { atLeast } for a Score Fact`);
+  private normalizeVerdictOptions(
+    options: FactUseOptions | undefined,
+    method: string,
+    atLeast?: number,
+  ): NormalizedVerdictUseOptions {
+    const record = this.optionsRecord(options, `${method}() options`, ["key", "label"]);
+    const key = this.optionalKey(record.key, `${method}() key`);
+    const label = this.optionalLabel(record.label, `${method}() label`);
+    return { key, label, atLeast };
+  }
+
+  private normalizeScoreUseOptions(options: unknown, method: string): { readonly key: string | undefined; readonly label: string | undefined; readonly max: number } {
+    const record = this.optionsRecord(options, `${method} options`, ["key", "label", "max"]);
+    if (!("max" in record)) throw new TypeError(`${method} requires { max }`);
+    if (typeof record.max !== "number" || !Number.isFinite(record.max) || record.max <= 0) {
+      throw new TypeError("score() max must be a positive finite number");
     }
-    this.assertThreshold(options.atLeast, `${method}() atLeast`);
-    return options.atLeast;
+    return {
+      key: this.optionalKey(record.key, "score() key"),
+      label: this.optionalLabel(record.label, "score() options label"),
+      max: record.max,
+    };
+  }
+
+  private normalizeDirectScoreOptions(value: DirectScoreOptions): DirectScoreOptions {
+    const record = this.optionsRecord(value, "score(label, direct)", ["earned", "key"]);
+    if (!("earned" in record) || typeof record.earned !== "number" || !Number.isFinite(record.earned) || record.earned < 0) {
+      throw new TypeError("score() earned must be a non-negative finite number");
+    }
+    return { key: this.optionalKey(record.key, "score() key"), earned: record.earned };
+  }
+
+  private optionsRecord(value: unknown, label: string, allowed: readonly string[]): globalThis.Record<string, unknown> {
+    if (value === undefined) return {};
+    if (!this.isOptionsObject(value)) throw new TypeError(`${label} must be an options object`);
+    for (const key of Object.keys(value)) {
+      if (!allowed.includes(key)) throw new TypeError(`${label} does not support option ${JSON.stringify(key)}`);
+    }
+    return value;
+  }
+
+  private isOptionsObject(value: unknown): value is globalThis.Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+  }
+
+  private optionalKey(value: unknown, label: string): string | undefined {
+    if (value === undefined) return undefined;
+    if (typeof value !== "string") throw new TypeError(`${label} must be a string`);
+    this.assertKeySyntax(value);
+    return value;
+  }
+
+  private optionalLabel(value: unknown, label: string): string | undefined {
+    if (value === undefined) return undefined;
+    if (typeof value !== "string") throw new TypeError(`${label} must be a non-empty string`);
+    return this.nonEmpty(value, label);
   }
 
   private assertThreshold(value: number, label: string): void {
@@ -578,19 +745,23 @@ export class FactCollector {
 
   private validateKey(key: string | undefined): string | undefined {
     if (key === undefined) return undefined;
-    if (!/^[a-z0-9][a-z0-9._/-]{0,127}$/.test(key)) {
-      throw new TypeError("Fact use key must match [a-z0-9][a-z0-9._/-]{0,127}");
-    }
+    this.assertKeySyntax(key);
     if (this.keys.has(key)) throw new Error(`Fact use key ${JSON.stringify(key)} is already used`);
     this.keys.add(key);
     return key;
+  }
+
+  private assertKeySyntax(key: string): void {
+    if (!/^[a-z0-9][a-z0-9._/-]{0,127}$/.test(key)) {
+      throw new TypeError("Fact use key must match [a-z0-9][a-z0-9._/-]{0,127}");
+    }
   }
 
   private assertNoDanglingFacts(): void {
     const reachable = this.reachableNodes();
     const dangling = this.nodes.find((node) => !reachable.has(node));
     if (dangling !== undefined) {
-      throw new Error(`Evaluation Fact ${JSON.stringify(dangling.name)} has no assert, require, or score use`);
+      throw new Error(`Evaluation Fact ${JSON.stringify(dangling.name)} has no check, require, or score use`);
     }
   }
 
@@ -616,7 +787,7 @@ export class FactCollector {
       this.maybeSettleRequirement(requirement);
     };
     const isPromiseLike = (value: unknown): value is PromiseLike<unknown> =>
-      typeof value === "object" && value !== null && typeof (value as { then?: unknown }).then === "function";
+      typeof value === "object" && value !== null && "then" in value && typeof value.then === "function";
     const observeThen = <TResult1 = R, TResult2 = never>(
       onfulfilled?: ((value: R) => TResult1 | PromiseLike<TResult1>) | null,
       onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
@@ -655,27 +826,11 @@ export class FactCollector {
         (error) => invoke(onrejected as ((value: unknown) => unknown) | null | undefined, error, true) as TResult2,
       );
     };
-    const thenable = {
-      then: <TResult1 = R, TResult2 = never>(
-        onfulfilled?: ((value: R) => TResult1 | PromiseLike<TResult1>) | null,
-        onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
-      ): Promise<TResult1 | TResult2> => observeThen(onfulfilled, onrejected),
-      catch: <TResult = never>(onrejected?: ((reason: unknown) => TResult | PromiseLike<TResult>) | null): Promise<R | TResult> =>
-        observeThen(undefined, onrejected),
-      finally: (onfinally?: (() => void) | null): Promise<R> =>
-        observeThen(
-          async (value) => {
-            onfinally?.();
-            return value;
-          },
-          async (error) => {
-            onfinally?.();
-            throw error;
-          },
-        ) as Promise<R>,
-      [Symbol.toStringTag]: "Promise",
-    };
-    return thenable as Promise<R>;
+    const managed = new ManagedRequirementPromise(requirement.promise!, observeThen);
+    // Keep host unhandled-rejection reporting quiet until the author observes
+    // the requirement through the overridden Promise methods above.
+    Promise.prototype.then.call(managed, undefined, () => undefined);
+    return managed;
   }
 
   private async settleRequirement<R>(requirement: Requirement<R>): Promise<R> {
@@ -914,7 +1069,7 @@ export class FactCollector {
         if (result.outcome === "unavailable") {
           return {
             ...base,
-            outcome: use.method === "assertIfCovered" && use.node.usageUnavailableAtCreation
+            outcome: use.method === "checkIfCovered" && use.node.usageUnavailableAtCreation
               ? "notApplicable"
               : "unavailable",
             reason: result.reason,
@@ -1022,7 +1177,7 @@ export class FactCollector {
         // A core usage Fact whose *only* consumers became notApplicable is
         // deliberately not an Attempt issue. It still keeps its unavailable
         // Fact row and its explicit notApplicable use in the graph; a score
-        // consumer, ordinary assert, or dependency-only node remains honest
+        // consumer, ordinary check, or dependency-only node remains honest
         // evidence insufficiency.
         const allNotApplicable = consumers.length > 0 && consumers.every(
           (use) => use.useKind === "verdict" && use.outcome === "notApplicable",

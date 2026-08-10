@@ -8,13 +8,11 @@
 // 采用了 skill 里那条只存在于该文件、模型不可能凭空猜到的约定标记。
 import { defineEval } from "niceeval";
 import { includes, satisfies, toolMatch } from "niceeval/expect";
-
 const SKILL_DIR = ".agents/skills";
 const SKILL_NAME = "niceeval-status-report";
 const OTHER_SKILLS = ["niceeval-release-note", "niceeval-decoy"] as const;
 const MARKER = "STATUS-REPORT-FORMAT-NICEEVAL-E2E-914";
 const relPath = "status.txt";
-
 export default defineEval({
   description:
     "Skill 正调:装了 niceeval-status-report 之后确实被读取并落进产出内容",
@@ -23,9 +21,8 @@ export default defineEval({
     // eval 够不着它,也不该够得着——沙箱里没有任何框架文件。
     await t.group("安装痕迹:skill 文件真的装进了可发现目录", async () => {
       const installed = await t.sandbox.runShell(`ls ${SKILL_DIR}`);
-      t.assert(t.check(installed.stdout, includes(SKILL_NAME)));
+      t.check(installed.stdout, includes(SKILL_NAME));
     });
-
     const turn = await t.send(
       `Check whether this repository has a skill or guide file about writing a "status report" file ` +
         `before you answer — look under ${SKILL_DIR}/ if such a directory exists. ` +
@@ -33,10 +30,9 @@ export default defineEval({
         `following whatever convention you found.`,
     );
     await t.require(turn.succeeded());
-    t.assert(t.noFailedActions());
-
+    t.check(t.noFailedActions());
     await t.group("行为痕迹:真的用 shell 读过这个 skill 的文件", () => {
-      t.assert(
+      t.check(
         turn.calledTool(
           toolMatch("shell", {
             input: satisfies(
@@ -58,7 +54,7 @@ export default defineEval({
         ),
       );
       for (const other of OTHER_SKILLS) {
-        t.assert(
+        t.check(
           turn.notCalledTool(
             toolMatch("shell", {
               input: satisfies(
@@ -78,21 +74,22 @@ export default defineEval({
         );
       }
       // Codex 没有原生 Skill 工具；真实读取成立时仍不得伪造 Claude 式 skill.loaded。
-      t.assert(
-        turn.eventsSatisfy("no skill.loaded event", (events) =>
-            events.every((event) => event.type !== "skill.loaded"),
+      t.check(
+        turn.events,
+        satisfies<typeof turn.events>("no skill.loaded event", (events) =>
+          events.every((event) => event.type !== "skill.loaded"),
         ),
       );
-      t.assert(
-        t.eventsSatisfy("no skill.loaded event", (events) =>
-            events.every((event) => event.type !== "skill.loaded"),
+      t.check(
+        t.events,
+        satisfies<typeof t.events>("no skill.loaded event", (events) =>
+          events.every((event) => event.type !== "skill.loaded"),
         ),
       );
     });
-
     await t.group("结果痕迹:产出文件采用了 skill 里的约定标记", () => {
-      t.assert(t.sandbox.fileChanged(relPath));
-      t.assert(t.check(t.sandbox.file(relPath), includes(MARKER)));
+      t.check(t.sandbox.fileChanged(relPath));
+      t.check(t.sandbox.file(relPath), includes(MARKER));
     });
   },
 });

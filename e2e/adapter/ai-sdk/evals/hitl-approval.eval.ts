@@ -9,8 +9,8 @@ import {
   eventMatch,
   pattern,
   toolMatch,
+  satisfies,
 } from "niceeval/expect";
-
 export default defineEval({
   description:
     "审批请求(approval-requested)会阻塞执行直到给出答复;approve 恢复为 completed,deny 则为 rejected 且从未产生工具结果",
@@ -18,15 +18,18 @@ export default defineEval({
     const draft = await t.send(
       "[REQUIRE_CALCULATE_TOOL] 用计算器算一下 (23+19)*3 等于多少",
     );
-    t.assert(t.check(draft.status, equals("waiting")));
-    t.assert(draft.parked());
-    t.assert(
+    t.check(draft.status, equals("waiting"));
+    t.check(draft.parked());
+    t.check(
       draft.calledTool(toolMatch("calculate", { status: "pending" }), {
         count: 1,
       }),
     );
-    t.assert(
-      draft.eventsSatisfy("审批前不应存在已完成的 calculate 结果", (events) => {
+    t.check(
+      draft.events,
+      satisfies<typeof draft.events>(
+        "审批前不应存在已完成的 calculate 结果",
+        (events) => {
           const calcIds = new Set(
             events.flatMap((event) =>
               event.type === "operation.started" &&
@@ -43,38 +46,37 @@ export default defineEval({
               calcIds.has(event.operationId) &&
               event.status === "completed",
           );
-        }),
+        },
+      ),
     );
     t.requireInputRequest({ action: "calculate" });
-
     const approved = await t.respond("approve");
-    t.assert(approved.succeeded());
-    t.assert(t.calledTool(toolMatch("calculate", { status: "completed" })));
-    t.assert(
+    t.check(approved.succeeded());
+    t.check(t.calledTool(toolMatch("calculate", { status: "completed" })));
+    t.check(
       t.event(
         eventMatch("message", { role: "assistant", text: pattern(/126/) }),
       ),
     );
-
     // Deny branch on an independent session line — same prompt, the opposite decision.
     const denied = t.newSession();
     const deniedDraft = await denied.send(
       "[REQUIRE_CALCULATE_TOOL] 用计算器算 (23+19)*3。",
     );
-    t.assert(deniedDraft.parked());
-    t.assert(denied.parked());
-    t.assert(
+    t.check(deniedDraft.parked());
+    t.check(denied.parked());
+    t.check(
       denied.calledTool(toolMatch("calculate", { status: "pending" }), {
         count: 1,
       }),
     );
     denied.requireInputRequest({ action: "calculate" });
     const turn = await denied.respond("deny");
-    t.assert(t.check(turn.status, equals("completed")));
-    t.assert(denied.calledTool(toolMatch("calculate", { status: "rejected" })));
-    t.assert(
+    t.check(turn.status, equals("completed"));
+    t.check(denied.calledTool(toolMatch("calculate", { status: "rejected" })));
+    t.check(
       denied.notCalledTool(toolMatch("calculate", { status: "completed" })),
     );
-    t.assert(denied.noFailedActions());
+    t.check(denied.noFailedActions());
   },
 });

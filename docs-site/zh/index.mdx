@@ -80,15 +80,15 @@ export default defineEval({
 
   async test(t) {
     const turn = await t.send("北京今天天气怎么样？");
-    t.assert(turn.succeeded(), { label: "Turn 成功" });
+    t.check(turn.succeeded(), { label: "Turn 成功" });
 
     await t.group("调用 get_weather 且回答天气", () => {
-      t.assert(t.calledTool(toolMatch("get_weather")), { label: "调用天气工具" });
-      t.assert(t.check(turn.message, includes("天气")), { label: "说明天气" });
+      t.check(t.calledTool(toolMatch("get_weather")), { label: "调用天气工具" });
+      t.check(turn.message, includes("天气"), { label: "说明天气" });
     });
 
     const grounded = turn.judge.autoevals.closedQA("助手是否基于工具返回的天气数据作答？");
-    t.assert(grounded, { atLeast: 0.7, label: "回答有依据" });
+    t.check((grounded).atLeast(0.7), { label: "回答有依据" });
   },
 });
 ```

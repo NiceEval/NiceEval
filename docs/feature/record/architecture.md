@@ -59,7 +59,7 @@
 ```json
 {
   "format": "niceeval.results",
-  "schemaVersion": 17,
+  "schemaVersion": 18,
   "producer": {
     "name": "niceeval",
     "version": "0.12.0"
@@ -71,7 +71,7 @@
 }
 ```
 
-当前 `schemaVersion` 是 `17`。这次原子切换把 Attempt 的判定图固定为 `evaluationAlgorithm: "fact-use/v2"`、`factResults` 与 `factUses`；含旧 assertion 或 Judge sidecar 的 Run 文件整份不支持读取。
+当前 `schemaVersion` 是 `18`。Attempt 的判定图固定为 `evaluationAlgorithm: "fact-use/v3"`、`factResults` 与 `factUses`；含旧 verdict method 或 Judge sidecar 的 Run 文件整份不支持读取。
 历史各版本的字段差异与升版原因不在正文维护，记在 memory 的 results-schema-version-history 条目。
 读取器不需要这份历史；版本不同一律按下节的不兼容路径处理。
 
@@ -456,8 +456,8 @@ interface AttemptRecord {
   executionMs?: number;
   /** Runner 阶段计时，按执行顺序；只记录实际发生的阶段。 */
   phases?: PhaseTiming[];
-  /** 原子 Fact/use 算法标识；schema 17 必为 `"fact-use/v2"`。 */
-  evaluationAlgorithm: "fact-use/v2";
+  /** 原子 Fact/use 算法标识；schema 18 必为 `"fact-use/v3"`。 */
+  evaluationAlgorithm: "fact-use/v3";
   /** 题型:`defineEval` → `"pass"`,`defineScoreEval` → `"score"`，定义期事实，与 `EvalDescriptor.evaluationKind` 同源。 */
   evaluationKind: "pass" | "score";
   /** 每个 producer 的一次求值结果；`explanation` 是 evaluator 理由，`evidence` 只保存裁剪、脱敏的判分材料。 */

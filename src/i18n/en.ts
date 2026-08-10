@@ -167,7 +167,7 @@ export const en = {
   "cli.flag.outputRemoved":
     "error: unknown option '--output'\n  fix: run without a flag for human text; use --json for the machine feed\n",
   "cli.flag.strictRemoved":
-    "Unknown option: --strict\nExpress required facts with t.assert(...) or await t.require(...) in the Eval source.\n",
+    "Unknown option: --strict\nExpress required facts with t.check(...) or await t.require(...) in the Eval source.\n",
   "runner.budgetUnenforceable":
     "budget for {{budgetKey}}: several attempts completed without any cost data (agent reports no usage and the model is not in the price table) — the budget cannot be enforced for this agent; continuing without the guard.\n",
   "runner.experimentTeardownFailed":

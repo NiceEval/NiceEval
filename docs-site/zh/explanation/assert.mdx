@@ -1,19 +1,20 @@
 ---
 title: "NiceEval Fact、Match 与用途"
 sidebarTitle: "Fact 与断言"
-description: "用 Match 和作用域 producer 创建 Fact，再用 t.assert、t.require 与 t.score 明确登记判定和分数。"
+description: "用 Match 和作用域 producer 创建 Fact，再用 t.check、t.require 与 t.score 明确登记判定和分数。"
 ---
 
-NiceEval 把“观察到什么”和“如何使用观察”分开。Match 只比较一个候选值；`t.check(...)`、Turn、Session 和 Sandbox producer 创建 Fact；`t.assert(...)`、`t.require(...)` 与 `t.score(...)` 才让 Fact 影响结果。
+NiceEval 把“观察到什么”和“如何使用观察”分开。Match 只比较一个候选值；Turn、Session、Sandbox 和 Judge producer 创建 Fact。`t.check(...)`、`t.require(...)` 与 `t.score(...)` 让 Fact 影响结果；值加 Match 的便利写法会在同一次调用中创建并消费 Fact。
 
 ```ts
 import { includes, similarity } from "niceeval/expect";
 
-const containsResult = t.check(turn.message, includes("完成"));
-const answerQuality = t.check(turn.message, similarity(expected));
-
-t.assert(containsResult, { label: "回复说明完成" });
-t.assert(answerQuality, { atLeast: 0.8, label: "回复质量" });
+const containsResult = t.check(turn.message, includes("完成"), {
+  label: "回复说明完成",
+});
+const answerQuality = t.check(turn.message, similarity(expected).atLeast(0.8), {
+  label: "回复质量",
+});
 ```
 
 创建 Fact 不会隐式改变 Attempt。每条需要检查的规则都在消费位置明确登记，因此本地、CI 和重跑使用同一套判定。
@@ -22,8 +23,8 @@ t.assert(answerQuality, { atLeast: 0.8, label: "回复质量" });
 
 | 入口 | 用途 | 控制流 |
 |---|---|---|
-| `t.assert(fact)` | Boolean Fact 的 verdict use | 继续执行，收集独立结果 |
-| `t.assert(scoreFact, { atLeast })` | ScoreFact 的阈值 verdict use | 继续执行 |
+| `t.check(fact)` | Boolean Fact 的 verdict use | 继续执行，收集独立结果 |
+| `t.check(scoreFact.atLeast(n))` | ScoreFact 的阈值 verdict use | 继续执行 |
 | `await t.require(fact, options)` | 即时 Fact 的 verdict use，并取得通过结果 | 未通过或不可用时停止依赖路径 |
 
 `defineScoreEval` 还提供 `t.score(label, fact, { max })`。它登记 score use：Boolean Fact 通过获得 `max`，ScoreFact 按归一化分数比例获得分数。
@@ -50,13 +51,12 @@ t.assert(answerQuality, { atLeast: 0.8, label: "回复质量" });
 ```ts
 import { equals, includes, matches, satisfies, similarity } from "niceeval/expect";
 
-t.assert(t.check(turn.message, includes("订单已确认")));
-t.assert(t.check(turn.data, equals({ status: "refund", amount: 42 })));
-t.assert(t.check(turn.data, matches(OrderSchema)));
-t.assert(t.check(turn.message.length, satisfies("回复不是空文本", (length) => length > 0)));
+t.check(turn.message, includes("订单已确认"));
+t.check(turn.data, equals({ status: "refund", amount: 42 }));
+t.check(turn.data, matches(OrderSchema));
+t.check(turn.message.length, satisfies("回复不是空文本", (length) => length > 0));
 
-const quality = t.check(turn.message, similarity("期望答案"));
-t.assert(quality, { atLeast: 0.8 });
+const quality = t.check(turn.message, similarity("期望答案").atLeast(0.8));
 ```
 
 Match 不携带阈值、分值、可选性或控制流。Score Match 返回无效结构、非有限数或区间外数值时，Fact 为 evaluator error，不会被裁剪。
@@ -69,9 +69,9 @@ Match 不携带阈值、分值、可选性或控制流。Score Match 返回无�
 import { toolMatch } from "niceeval/expect";
 
 const turn = await t.send("运行检查并修复问题。");
-t.assert(turn.succeeded(), { label: "Turn 成功" });
-t.assert(turn.calledTool(toolMatch("shell")), { label: "使用 shell" });
-t.assert(turn.calledTool(toolMatch("read_file"), { count: 2 }), { label: "读取两次" });
+t.check(turn.succeeded(), { label: "Turn 成功" });
+t.check(turn.calledTool(toolMatch("shell")), { label: "使用 shell" });
+t.check(turn.calledTool(toolMatch("read_file"), { count: 2 }), { label: "读取两次" });
 ```
 
 否定检查和精确次数依赖完整证据。证据不足时，Fact 为 `unavailable`；普通消费会让 Attempt `errored`，而不是把空事件当作通过。
@@ -83,11 +83,11 @@ t.assert(turn.calledTool(toolMatch("read_file"), { count: 2 }), { label: "读取
 ```ts
 import { commandSucceeded, includes } from "niceeval/expect";
 
-t.assert(t.sandbox.fileChanged("src/Button.tsx"), { label: "修改 Button" });
-t.assert(t.check(t.sandbox.file("src/Button.tsx"), includes("export function Button")));
+t.check(t.sandbox.fileChanged("src/Button.tsx"), { label: "修改 Button" });
+t.check(t.sandbox.file("src/Button.tsx"), includes("export function Button"));
 
 const testResult = await t.sandbox.runCommand("pnpm", ["test"]);
-t.assert(t.check(testResult, commandSucceeded()), { label: "项目测试通过" });
+t.check(testResult, commandSucceeded(), { label: "项目测试通过" });
 ```
 
 文件缺失是确定失败；权限、传输或超时导致的证据问题是 `unavailable`，不会把空字符串当内容继续匹配。
@@ -96,10 +96,10 @@ t.assert(t.check(testResult, commandSucceeded()), { label: "项目测试通过" 
 
 ```ts
 const changed = t.sandbox.fileChanged("experiments/local.ts");
-t.assert(changed, { label: "配置有效" });
+t.check(changed, { label: "配置有效" });
 t.score("配置修复", changed, { max: 2 });
 
-const quality = t.check(turn.message, similarity(expectedAnswer));
+const quality = t.check(turn.message, similarity(expectedAnswer).atLeast(0.8));
 t.score("回答质量", quality, { max: 20 });
 t.score("代码精简", { earned: tierPoints });
 ```
@@ -112,10 +112,10 @@ Judge recipe 返回 ScoreFact，因此使用方式与其他连续 Fact 相同：
 
 ```ts
 const quality = turn.judge.autoevals.closedQA("回答是否具体且礼貌？");
-t.assert(quality, { atLeast: 0.7, label: "回答质量" });
+t.check((quality).atLeast(0.7), { label: "回答质量" });
 ```
 
-Judge 没有链式阈值、可选消费、观察消费或计分 API。材料、配置和失败语义见 [Judge](/zh/explanation/judge)。
+`.atLeast()` 只创建不可变阈值 view，不会求值或登记用途。Judge 没有可选消费、观察消费或 Fact 自带的计分 API。材料、配置和失败语义见 [Judge](/zh/explanation/judge)。
 
 ## 相关阅读
 

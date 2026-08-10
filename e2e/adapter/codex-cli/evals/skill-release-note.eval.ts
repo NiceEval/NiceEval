@@ -2,13 +2,11 @@
 // 未读取其它已安装 Skill 是同一轮里的反选证据。
 import { defineEval } from "niceeval";
 import { includes, satisfies, toolMatch } from "niceeval/expect";
-
 const SKILL_DIR = ".agents/skills";
 const SKILL_NAME = "niceeval-release-note";
 const OTHER_SKILLS = ["niceeval-status-report", "niceeval-decoy"] as const;
 const MARKER = "RELEASE-NOTE-FORMAT-NICEEVAL-E2E-731";
 const relPath = "release-note.txt";
-
 export default defineEval({
   description:
     "Skill 正调:release note 只读取对应 Skill，不误读 status / decoy",
@@ -18,9 +16,8 @@ export default defineEval({
         `Then create ${relPath} announcing "adapter skill matrix expanded", following only that matching convention.`,
     );
     await t.require(turn.succeeded());
-    t.assert(turn.noFailedActions());
-
-    t.assert(
+    t.check(turn.noFailedActions());
+    t.check(
       turn.calledTool(
         toolMatch("shell", {
           input: satisfies(
@@ -42,7 +39,7 @@ export default defineEval({
       ),
     );
     for (const other of OTHER_SKILLS) {
-      t.assert(
+      t.check(
         turn.notCalledTool(
           toolMatch("shell", {
             input: satisfies(
@@ -61,17 +58,19 @@ export default defineEval({
         ),
       );
     }
-    t.assert(
-      turn.eventsSatisfy("no skill.loaded event", (events) =>
-          events.every((event) => event.type !== "skill.loaded"),
+    t.check(
+      turn.events,
+      satisfies<typeof turn.events>("no skill.loaded event", (events) =>
+        events.every((event) => event.type !== "skill.loaded"),
       ),
     );
-    t.assert(
-      t.eventsSatisfy("no skill.loaded event", (events) =>
-          events.every((event) => event.type !== "skill.loaded"),
+    t.check(
+      t.events,
+      satisfies<typeof t.events>("no skill.loaded event", (events) =>
+        events.every((event) => event.type !== "skill.loaded"),
       ),
     );
-    t.assert(t.sandbox.fileChanged(relPath));
-    t.assert(t.check(t.sandbox.file(relPath), includes(MARKER)));
+    t.check(t.sandbox.fileChanged(relPath));
+    t.check(t.sandbox.file(relPath), includes(MARKER));
   },
 });

@@ -106,6 +106,6 @@ Judge 最多进行三次物理 evaluator 调用。408、429、5xx 和连接类�
 
 ## 持久化与读取
 
-schema 17 的 `result.json` 直接保存 `factResults` 与 `factUses`，算法标识为 `fact-use/v2`。Judge 没有 sidecar 或专用结果联合；show、view、failure feedback 与 reporter 都从同一张 Fact/use 图读取。
+schema 18 的 `result.json` 直接保存 `factResults` 与 `factUses`，算法标识为 `fact-use/v3`。Judge 没有 sidecar 或专用结果联合；show、view、failure feedback 与 reporter 都从同一张 Fact/use 图读取。
 
 成功且已消费的 Judge ScoreFact 可以进入 `examScore`。有 score use 的同一 Fact 只进入 `totalScore`。Braintrust 导出 normalized score，并在存在 verdict use 时用稳定 use key 导出 0 或 1 的 threshold verdict；unavailable 与 evaluator error 只进入 metadata。

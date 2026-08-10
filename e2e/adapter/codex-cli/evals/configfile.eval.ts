@@ -15,6 +15,6 @@ export default defineEval({
         "If you cannot search the web, say so explicitly instead of guessing.",
     );
     await t.require(turn.succeeded());
-    t.assert(t.notCalledTool(toolMatch("web_search")));
+    t.check(t.notCalledTool(toolMatch("web_search")));
   },
 });

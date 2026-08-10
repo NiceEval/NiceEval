@@ -122,7 +122,7 @@ type EvalExecutionSandbox = SandboxOperations &
 ```
 
 上述成员的参数、HITL 消歧、Sandbox command 退出码、取消与反馈语义不重新定义，仍由已有 [Eval Context](../../feature/eval/library/context.md) 与 [Sandbox Operations](../../feature/sandbox/library/operations.md) 约束。
-它不暴露 `check`、`assert`、`score`、Judge 或 Fact `require`。
+它不暴露 Fact producer / consumer、`score`、Judge 或 Fact `require`。
 普通分支、throw 与 skip 属于 execution，并进入 execution identity。
 
 ## Grading 定义
@@ -142,29 +142,27 @@ export default defineEvalGrading({
   }),
 
   grade(g, ref, input) {
-    g.assert(ref.draft.succeeded(), { key: "draft-succeeded" });
-    g.assert(g.check(ref.draft.message, includes(input.signoff)), {
+    g.check(ref.draft.succeeded(), { key: "draft-succeeded" });
+    g.check(ref.draft.message, includes(input.signoff), {
       key: "draft-signoff",
     });
 
-    g.assert(
+    g.check(
       ref.audit.through(ref.auditTurn).calledTool(toolMatch("mail_log")),
       { key: "audit-session-checked-log" },
     );
 
-    g.assert(g.calledTool(toolMatch("send_email"), { count: 1 }), {
+    g.check(g.calledTool(toolMatch("send_email"), { count: 1 }), {
       key: "attempt-sent-once",
     });
 
-    g.assert(
-      g.check(
-        { draft: ref.draft.message, sent: ref.sent.message },
-        satisfies("发送结果与草稿一致", ({ draft, sent }) => sent.includes(draft)),
-      ),
+    g.check(
+      { draft: ref.draft.message, sent: ref.sent.message },
+      satisfies("发送结果与草稿一致", ({ draft, sent }) => sent.includes(draft)),
       { key: "cross-turn-consistency" },
     );
 
-    g.assert(g.sandbox.during(ref.sent).fileChanged("outbox.json"), {
+    g.check(g.sandbox.during(ref.sent).fileChanged("outbox.json"), {
       key: "sent-turn-wrote-outbox",
     });
   },
@@ -176,9 +174,8 @@ Grading context 是受信任 TypeScript 中的 Record 只读 capability，不提
 
 ```ts
 interface EvalGradingContext extends ScopedFacts<"final"> {
-  check: TestContext["check"];
-  assert: KeyedAssert;
-  assertIfCovered: KeyedAssertIfCovered;
+  check: KeyedCheck;
+  checkIfCovered: KeyedCheckIfCovered;
   readonly sandbox: ReplaySandboxFacts;
   sessions(): readonly ReplaySession[];
   turns(): readonly ReplayTurn[];
@@ -248,12 +245,10 @@ export default defineEvalGrading({
     rubric: await loadPrivateText(new URL("./rubric.private.md", import.meta.url)),
   }),
   grade(g, ref, input) {
-    g.assert(
-      g.check(
-        ref.draft.message,
-        satisfies("符合私有 rubric", (message) =>
-          appliesPrivateRubric(message, input.rubric),
-        ),
+    g.check(
+      ref.draft.message,
+      satisfies("符合私有 rubric", (message) =>
+        appliesPrivateRubric(message, input.rubric),
       ),
       { key: "private-rubric" },
     );

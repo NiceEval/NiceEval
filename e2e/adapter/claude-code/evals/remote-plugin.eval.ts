@@ -16,13 +16,8 @@ export default defineEval({
         const installed = await t.sandbox.runShell(
           `find ${cache} -path '*/skills/frontend-design/SKILL.md' -type f | head -1`,
         );
-        t.assert(t.check(installed.exitCode, equals(0)));
-        t.assert(
-          t.check(
-            installed.stdout,
-            includes("skills/frontend-design/SKILL.md"),
-          ),
-        );
+        t.check(installed.exitCode, equals(0));
+        t.check(installed.stdout, includes("skills/frontend-design/SKILL.md"));
       },
     );
 
@@ -31,8 +26,8 @@ export default defineEval({
         "Do not use tools or edit files.",
     );
     await t.require(turn.succeeded());
-    t.assert(turn.loadedSkill("frontend-design:frontend-design"));
-    t.assert(t.check(turn.message, includes(LIVE_MARKER)));
-    t.assert(t.noFailedActions());
+    t.check(turn.loadedSkill("frontend-design:frontend-design"));
+    t.check(turn.message, includes(LIVE_MARKER));
+    t.check(t.noFailedActions());
   },
 });

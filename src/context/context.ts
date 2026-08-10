@@ -20,8 +20,18 @@ import {
   type ChangeContentState,
 } from "../assertions/diff.ts";
 import {
+  assertManagedValueMatch,
+  assertionEventOccurrence,
   evaluateBooleanMatch,
   evaluateScoreMatch,
+  isManagedMatch,
+  isManagedThresholdedScoreMatch,
+  looksLikeMatch,
+  looksLikeThresholdedScoreMatch,
+  makeAssertionMessageEvent,
+  makeAssertionToolEvent,
+  thresholdedScoreMatchValue,
+  type AssertionEvent,
   type BooleanMatch,
   type BooleanMatchEvaluation,
   type EventMatch,
@@ -29,12 +39,24 @@ import {
   type ScoreMatch,
   type ToolMatch,
 } from "../assertions/match.ts";
-import type { FactPhase, ResolvedJudgeConfig } from "../assertions/types.ts";
+import {
+  isManagedEvidenceSource,
+  isManagedFact,
+  isManagedThresholdedScoreFact,
+  isManagedUsageEvidenceFact,
+  looksLikeEvidenceSource,
+  looksLikeFact,
+  looksLikeThresholdedScoreFact,
+  thresholdedScoreFactValue,
+  type FactPhase,
+  type ResolvedJudgeConfig,
+} from "../assertions/types.ts";
 import { buildJudge, buildTurnJudge } from "../assertions/judge.ts";
 import type { ResolvedEvidenceCoverage, EvidenceCoverageChannel } from "../assertions/coverage.ts";
 import { EvalSkipped } from "./control-flow.ts";
-import { FileRef, resolveDeferredFileText } from "./deferred-file-content.ts";
+import { createDeferredFileSource, deferredFilePath, resolveDeferredFileText } from "./deferred-file-content.ts";
 import { resolveEvalLocalPath } from "../sandbox/paths.ts";
+import { captureLoc } from "../source-loc.ts";
 import { matchesJson } from "../shared/json-match.ts";
 import { deriveLogicalToolOccurrences, buildO11ySummary, deriveRunFacts } from "../o11y/derive.ts";
 import { SessionManager, RunSession, lastAssistantText } from "./session.ts";
@@ -46,6 +68,7 @@ import type {
   DiffData,
   EvalSandbox,
   EvidenceSource,
+  FactUseOptions,
   InputFile,
   InputRequest,
   InputRequestFilter,
@@ -55,7 +78,10 @@ import type {
   RespondAnswer,
   Sandbox,
   ScoreFact,
+  ScoreUseOptions,
+  ThresholdedScoreFact,
   SessionHandle,
+  SourceLoc,
   StreamEvent,
   TestContext,
   Turn,
@@ -174,7 +200,10 @@ async function booleanValueOutcome<T, R extends T>(
   match: BooleanMatch<T, R, "value">,
   value: T,
 ): Promise<BooleanFactEvaluation> {
-  return booleanOutcome(await evaluateBooleanMatch(match, value));
+  const outcome = booleanOutcome(await evaluateBooleanMatch(match, value));
+  // A Boolean Match proves a refinement of its candidate; it never gets to
+  // substitute a different runtime value for `require()` to return.
+  return outcome.outcome === "passed" ? { ...outcome, value } : outcome;
 }
 
 async function scoreValueOutcome<T>(match: ScoreMatch<T>, value: T): Promise<ScoreFactEvaluation> {
@@ -380,16 +409,23 @@ function noFailedActionsOutcome(evidence: ScopeEvidence): BooleanFactEvaluation 
   return unavailable === undefined ? { outcome: "passed" } : { outcome: "unavailable", reason: unavailable };
 }
 
-function eventsSatisfyOutcome(
+async function eventsSatisfyOutcome(
   evidence: ScopeEvidence,
   label: string,
-  predicate: (events: readonly StreamEvent[]) => boolean,
-): BooleanFactEvaluation {
-  if (predicate(evidence.events)) return { outcome: "passed" };
+  predicate: (events: readonly AssertionEvent[]) => boolean | Promise<boolean>,
+): Promise<BooleanFactEvaluation> {
   const unavailable = coverageReason(evidence.coverage, "events");
-  return unavailable === undefined
-    ? { outcome: "failed", expected: label, received: `${evidence.events.length} events in scope` }
-    : { outcome: "unavailable", reason: unavailable };
+  if (unavailable !== undefined) return { outcome: "unavailable", reason: unavailable };
+  const projected = eventsFor(evidence);
+  if (projected.unassociatedOperation) {
+    return { outcome: "unavailable", reason: "event-tool-occurrence-unavailable" };
+  }
+  const events = Object.freeze([...projected.candidates]);
+  const result = await predicate(events);
+  if (typeof result !== "boolean") throw new TypeError(`eventsSatisfy(${JSON.stringify(label)}) predicate returned a non-boolean result`);
+  return result
+    ? { outcome: "passed" }
+    : { outcome: "failed", expected: label, received: `${events.length} events in scope` };
 }
 
 function maxTokensOutcome(evidence: ScopeEvidence, max: number): BooleanFactEvaluation {
@@ -520,30 +556,46 @@ function eventsFor(evidence: ScopeEvidence): EventCandidates {
     }
     for (const [index, event] of turn.events.entries()) {
       if (event.type === "message") {
-        candidates.push(event);
+        candidates.push(makeAssertionMessageEvent({
+          session: turn.session,
+          turn: turn.turn,
+          turnOrdinal: turn.ordinal,
+          eventOrdinal: index,
+          role: event.role,
+          text: event.text,
+        }));
       } else if (event.type === "operation.started" && event.operation.kind === "tool") {
         const occurrence = starts.get(index);
         if (occurrence === undefined) unassociatedOperation = true;
-        else candidates.push({ ...event, occurrence });
+        else candidates.push(makeAssertionToolEvent({
+          session: turn.session,
+          turn: turn.turn,
+          turnOrdinal: turn.ordinal,
+          eventOrdinal: index,
+          type: "operation.started",
+          occurrence,
+        }));
       } else if (event.type === "operation.finished" && event.kind === "tool") {
         const occurrence = finishes.get(index);
         if (occurrence === undefined) unassociatedOperation = true;
-        else candidates.push({ ...event, occurrence });
+        else candidates.push(makeAssertionToolEvent({
+          session: turn.session,
+          turn: turn.turn,
+          turnOrdinal: turn.ordinal,
+          eventOrdinal: index,
+          type: "operation.finished",
+          occurrence,
+          status: event.status,
+        }));
       }
     }
-  }
-  // `t` and session scopes also contain the author-input messages SessionManager
-  // inserts. They are real message evidence even though they are not part of a
-  // Turn's adapter event slice.
-  const seenMessages = new Set(candidates.filter((event) => event.type === "message").map((event) => event));
-  for (const event of evidence.events) {
-    if (event.type === "message" && !seenMessages.has(event)) candidates.push(event);
   }
   return { candidates, unassociatedOperation };
 }
 
 function eventLifecycleSafeResult(event: MatchableEvent, result: BooleanMatchEvaluation<unknown>): BooleanMatchEvaluation<unknown> {
-  return "occurrence" in event ? lifecycleSafeResult(event.occurrence, result) : result;
+  const occurrence = assertionEventOccurrence(event);
+  return occurrence === undefined ? result : lifecycleSafeResult(occurrence, result);
 }
 
 async function eventCandidateResults(
@@ -709,13 +761,17 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
     nextSourceOrder,
   });
   const state: ContextState = { collector, manager, late };
+  // Evidence sources are also scoped to this Attempt. Their runtime brand
+  // establishes provenance; this owner keeps the deferred file path private
+  // to the context that created it.
+  const sourceOwner = {};
 
-  const registerTurn = (session: RunSession, turn: Turn): ScopeTurn => {
+  const registerTurn = (session: RunSession, turn: Turn, input: string): ScopeTurn => {
     const item: ScopeTurn = {
       session: `session-${session.index}`,
       turn: `turn-${session.turnCount}`,
       ordinal: occurrenceOrdinal++,
-      events: turn.events.slice(),
+      events: [{ type: "message", role: "user", text: input }, ...turn.events],
       status: turn.status,
       usage: { ...(turn.usage ?? {}) },
       coverage: manager.resolveTurnEvidenceCoverage(turn),
@@ -866,7 +922,10 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
         evaluate: () => eventOrderOutcome(evidence(), ordered),
       });
     },
-    eventsSatisfy: (label: string, predicate: (events: readonly StreamEvent[]) => boolean) => {
+    eventsSatisfy: (
+      label: string,
+      predicate: (events: readonly AssertionEvent[]) => boolean | Promise<boolean>,
+    ) => {
       const name = nonEmptyLabel(label, "eventsSatisfy() label");
       if (typeof predicate !== "function") throw new TypeError("eventsSatisfy() predicate must be a function");
       return collector.createBooleanFact<void, P>({
@@ -878,36 +937,48 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
     },
     maxTokens: (max: number) => {
       const limit = nonNegativeFinite(max, "maxTokens() max");
-      return collector.createBooleanFact<void, P>({
+      return collector.createBooleanFact({
         name: `maxTokens(${limit})`,
         phase,
         value: undefined,
         usageEvidence: true,
         evaluate: () => maxTokensOutcome(evidence(), limit),
-      }) as import("../assertions/types.ts").UsageEvidenceFact<P>;
+      });
     },
     maxCost: (usd: number) => {
       const limit = nonNegativeFinite(usd, "maxCost() usd");
-      return collector.createBooleanFact<void, P>({
+      return collector.createBooleanFact({
         name: `maxCost(${limit})`,
         phase,
         value: undefined,
         usageEvidence: true,
         evaluate: () => maxCostOutcome(evidence(), limit),
-      }) as import("../assertions/types.ts").UsageEvidenceFact<P>;
+      });
     },
   });
 
-  const makeChecked = <T>(value: T | EvidenceSource<T, FactPhase>, match: BooleanMatch<T, T, "value"> | ScoreMatch<T>) => {
-    const source = value instanceof FileRef ? value : undefined;
-    if (match.kind === "score") {
-      if (source !== undefined) {
+  type RuntimeValueMatch = BooleanMatch<unknown, unknown, "value"> | ScoreMatch<unknown>;
+
+  /**
+   * Build only the producer side of a value/source author call. The caller
+   * wraps it with its consumer in `collector.atomically`, passing one source
+   * location so the resulting Fact and use tell the same authoring story.
+   */
+  const makeChecked = (
+    value: unknown,
+    match: RuntimeValueMatch,
+    producerLoc: SourceLoc | undefined,
+  ): BooleanFact<unknown, FactPhase> | ScoreFact<FactPhase> => {
+    if (isManagedEvidenceSource(value)) {
+      const path = deferredFilePath(value, sourceOwner);
+      if (match.kind === "score") {
         return collector.createScoreFact({
           name: match.name,
-          phase: "final",
+          phase: value.phase,
+          producerLoc,
           evaluate: async () => {
-            const resolved = await resolveDeferredFileText(() => deps.sandbox.readBytes(source.path));
-            if (resolved.state === "available") return scoreValueOutcome(match as ScoreMatch<string>, resolved.text);
+            const resolved = await resolveDeferredFileText(() => deps.sandbox.readBytes(path));
+            if (resolved.state === "available") return scoreValueOutcome(match, resolved.text);
             if (resolved.state === "missing" || resolved.state === "invalid-utf8") {
               return { outcome: "scored", normalizedScore: 0 };
             }
@@ -916,36 +987,39 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
           },
         });
       }
-      return collector.createScoreFact({
+      return collector.createBooleanFact({
         name: match.name,
-        phase: "now",
-        evaluate: () => scoreValueOutcome(match as ScoreMatch<T>, value as T),
-      });
-    }
-    if (source !== undefined) {
-      return collector.createBooleanFact<string, "final">({
-        name: match.name,
-        phase: "final",
-        value: undefined as unknown as string,
+        phase: value.phase,
+        value: undefined,
+        producerLoc,
         evaluate: async () => {
-          const resolved = await resolveDeferredFileText(() => deps.sandbox.readBytes(source.path));
-          if (resolved.state === "available") return booleanValueOutcome(match as unknown as BooleanMatch<string, string, "value">, resolved.text);
+          const resolved = await resolveDeferredFileText(() => deps.sandbox.readBytes(path));
+          if (resolved.state === "available") return booleanValueOutcome(match, resolved.text);
           if (resolved.state === "missing") {
-            return { outcome: "failed", expected: match.name, received: `sandbox file ${JSON.stringify(source.path)} is missing` };
+            return { outcome: "failed", expected: match.name, received: `sandbox file ${JSON.stringify(path)} is missing` };
           }
           if (resolved.state === "invalid-utf8") {
-            return { outcome: "failed", expected: match.name, received: `sandbox file ${JSON.stringify(source.path)} is not valid UTF-8` };
+            return { outcome: "failed", expected: match.name, received: `sandbox file ${JSON.stringify(path)} is not valid UTF-8` };
           }
           if (resolved.state === "unavailable") return { outcome: "unavailable", reason: `sandbox-file-unavailable:${resolved.reason}` };
           throw resolved.cause;
         },
       });
     }
-    return collector.createBooleanFact<T, "now">({
+    if (match.kind === "score") {
+      return collector.createScoreFact({
+        name: match.name,
+        phase: "now",
+        producerLoc,
+        evaluate: () => scoreValueOutcome(match, value),
+      });
+    }
+    return collector.createBooleanFact({
       name: match.name,
       phase: "now",
-      value: value as T,
-      evaluate: () => booleanValueOutcome(match as BooleanMatch<T, T, "value">, value as T),
+      value,
+      producerLoc,
+      evaluate: () => booleanValueOutcome(match, value),
     });
   };
 
@@ -970,7 +1044,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
       uploadDirectory: guardAsync("uploadDirectory", (source, target, options) => deps.sandbox.uploadDirectory(resolveEvalLocalPath(deps.evalBaseDir, source), target, options)),
       downloadFile: guardAsync("downloadFile", (source, target) => deps.sandbox.downloadFile(source, resolveEvalLocalPath(deps.evalBaseDir, target))),
       downloadDirectory: guardAsync("downloadDirectory", (source, target, options) => deps.sandbox.downloadDirectory(source, resolveEvalLocalPath(deps.evalBaseDir, target), options)),
-      file: (path) => new FileRef(path) as unknown as EvidenceSource<string, "final">,
+      file: (path) => createDeferredFileSource(sourceOwner, path),
       changedPaths: (paths) => {
         validateExpectedTouchedPaths(paths);
         collector.requireDiffEvidence();
@@ -1054,7 +1128,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
   const sendTurn = async (session: RunSession, text: string, files?: readonly InputFile[], responses?: readonly InputResponse[]): Promise<TurnHandle> => {
     collector.beforeManagedBoundary("send");
     const turn = await manager.send(session, text, files, responses);
-    return makeTurnHandle(turn, registerTurn(session, turn), session, text);
+    return makeTurnHandle(turn, registerTurn(session, turn, text), session, text);
   };
 
   const judgeDeps = {
@@ -1098,7 +1172,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
         collector.beforeManagedBoundary("sendFile");
         const file = await readInputFile(path);
         const turn = await manager.send(session, text ?? "", [file]);
-        return makeTurnHandle(turn, registerTurn(session, turn), session, text ?? "");
+        return makeTurnHandle(turn, registerTurn(session, turn, text ?? ""), session, text ?? "");
       },
       requireInputRequest: (filter) => requireInputRequest(session, filter),
       respond: async (...answers) => {
@@ -1147,14 +1221,231 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
   };
 
   const primary = makeSessionHandle(manager.primary);
-  const finalFacts = makeScopedFacts("final", aggregateScope);
+  const {
+    toolOrder: rootToolOrder,
+    eventOrder: rootEventOrder,
+    eventsSatisfy: rootEventsSatisfy,
+    ...finalFacts
+  } = makeScopedFacts("final", aggregateScope);
+  void rootToolOrder;
+  void rootEventOrder;
+  void rootEventsSatisfy;
   const sandbox = makeSandbox();
-  const require = (valueOrFact: unknown, matchOrOptions?: unknown, options?: unknown): Promise<unknown> => {
-    if (isValueMatch(matchOrOptions)) {
-      const fact = makeChecked(valueOrFact as never, matchOrOptions);
-      return collector.require(fact as BooleanFact<unknown, "now">, options as never);
+
+  const rejectRawAuthoringBoundary = (value: unknown, consumer: string): void => {
+    if (looksLikeFact(value)) {
+      throw new TypeError(`${consumer}() received a Fact-like value that was not created by this Attempt`);
     }
-    return collector.require(valueOrFact as BooleanFact<unknown, "now">, matchOrOptions as never);
+    if (looksLikeEvidenceSource(value)) {
+      throw new TypeError(`${consumer}() received an EvidenceSource-like value that was not created by this Attempt`);
+    }
+    if (isManagedMatch(value) || looksLikeMatch(value)) {
+      throw new TypeError(`${consumer}() cannot treat a Match as an ordinary value`);
+    }
+    if (isManagedThresholdedScoreMatch(value) || looksLikeThresholdedScoreMatch(value)) {
+      throw new TypeError(`${consumer}() cannot treat a thresholded Score Match as an ordinary value`);
+    }
+    if (isManagedThresholdedScoreFact(value) || looksLikeThresholdedScoreFact(value)) {
+      throw new TypeError(`${consumer}() cannot treat a thresholded Score Fact as an ordinary value`);
+    }
+  };
+
+  const rejectFactMatch = (consumer: string): never => {
+    throw new TypeError(`${consumer}(existingFact, match) is not supported; use ${consumer}(existingFact, options)`);
+  };
+
+  const verdictMatchValue = (
+    value: unknown,
+    label: string,
+  ): { readonly match: RuntimeValueMatch; readonly threshold: number | undefined } => {
+    if (isManagedThresholdedScoreMatch(value)) {
+      const thresholded = thresholdedScoreMatchValue(value);
+      return { match: thresholded.match, threshold: thresholded.threshold };
+    }
+    if (looksLikeThresholdedScoreMatch(value)) {
+      throw new TypeError(`${label} must be a threshold view created by ScoreMatch.atLeast()`);
+    }
+    const match = assertManagedValueMatch(value, label);
+    if (match.kind === "score") {
+      throw new TypeError(`${label} requires scoreMatch.atLeast(threshold) for a Score Match`);
+    }
+    return { match, threshold: undefined };
+  };
+
+  const checkFact = (
+    fact: BooleanFact<unknown, FactPhase> | ThresholdedScoreFact<ScoreFact<FactPhase>>,
+    options: unknown,
+    consumerLoc: SourceLoc | undefined,
+  ): BooleanFact<unknown, FactPhase> | ScoreFact<FactPhase> =>
+    collector.check(fact as never, options as FactUseOptions | undefined, consumerLoc);
+
+  const requireFact = (
+    fact: BooleanFact<unknown, FactPhase> | ThresholdedScoreFact<ScoreFact<FactPhase>>,
+    options: unknown,
+    consumerLoc: SourceLoc | undefined,
+  ): Promise<unknown> => {
+    if (isManagedThresholdedScoreFact(fact)) {
+      const score = thresholdedScoreFactValue(fact).fact;
+      if (score.phase !== "now") throw new TypeError("require() accepts only phase: now Facts");
+      return collector.require(fact as ThresholdedScoreFact<ScoreFact<"now">>, options as FactUseOptions | undefined, consumerLoc);
+    }
+    if (fact.phase !== "now") throw new TypeError("require() accepts only phase: now Facts");
+    return collector.require(fact as BooleanFact<unknown, "now">, options as FactUseOptions | undefined, consumerLoc);
+  };
+
+  const scoreFact = (
+    label: string,
+    fact: BooleanFact<unknown, FactPhase> | ScoreFact<FactPhase>,
+    options: unknown,
+    consumerLoc: SourceLoc | undefined,
+  ): BooleanFact<unknown, FactPhase> | ScoreFact<FactPhase> =>
+    fact.kind === "boolean"
+      ? collector.score(label, fact, options as ScoreUseOptions, consumerLoc)
+      : collector.score(label, fact, options as ScoreUseOptions, consumerLoc);
+
+  const check = (
+    valueOrFactOrSource: unknown,
+    matchOrOptions?: unknown,
+    options?: unknown,
+  ): BooleanFact<unknown, FactPhase> | ScoreFact<FactPhase> => {
+    const consumerLoc = captureLoc();
+    if (isManagedThresholdedScoreFact(valueOrFactOrSource)) {
+      if (isManagedMatch(matchOrOptions) || looksLikeMatch(matchOrOptions) || isManagedThresholdedScoreMatch(matchOrOptions)) {
+        return rejectFactMatch("check");
+      }
+      if (options !== undefined) throw new TypeError("check(thresholdedScoreFact, options) accepts exactly two arguments");
+      return checkFact(valueOrFactOrSource, matchOrOptions, consumerLoc);
+    }
+    if (looksLikeThresholdedScoreFact(valueOrFactOrSource)) {
+      throw new TypeError("check() received a threshold-view-like value not created by this Attempt");
+    }
+    if (isManagedFact(valueOrFactOrSource)) {
+      if (isManagedMatch(matchOrOptions) || looksLikeMatch(matchOrOptions)) return rejectFactMatch("check");
+      if (options !== undefined) throw new TypeError("check(existingFact, options) accepts exactly two arguments");
+      if (valueOrFactOrSource.kind === "score") {
+        throw new TypeError("check() requires scoreFact.atLeast(threshold) for a Score Fact");
+      }
+      return checkFact(valueOrFactOrSource, matchOrOptions, consumerLoc);
+    }
+    if (looksLikeFact(valueOrFactOrSource)) {
+      throw new TypeError("check() received a Fact-like value that was not created by this Attempt");
+    }
+    if (isManagedEvidenceSource(valueOrFactOrSource)) {
+      const verdictMatch = verdictMatchValue(matchOrOptions, "check() match");
+      return collector.atomically(() => {
+        const fact = makeChecked(valueOrFactOrSource, verdictMatch.match, consumerLoc);
+        return verdictMatch.threshold === undefined
+          ? checkFact(fact as BooleanFact<unknown, FactPhase>, options, consumerLoc)
+          : checkFact((fact as ScoreFact<FactPhase>).atLeast(verdictMatch.threshold), options, consumerLoc);
+      });
+    }
+    if (looksLikeEvidenceSource(valueOrFactOrSource)) {
+      throw new TypeError("check() received an EvidenceSource-like value that was not created by this Attempt");
+    }
+    rejectRawAuthoringBoundary(valueOrFactOrSource, "check");
+    const verdictMatch = verdictMatchValue(matchOrOptions, "check() match");
+    return collector.atomically(() => {
+      const fact = makeChecked(valueOrFactOrSource, verdictMatch.match, consumerLoc);
+      return verdictMatch.threshold === undefined
+        ? checkFact(fact as BooleanFact<unknown, FactPhase>, options, consumerLoc)
+        : checkFact((fact as ScoreFact<FactPhase>).atLeast(verdictMatch.threshold), options, consumerLoc);
+    });
+  };
+
+  const checkIfCovered = (
+    fact: unknown,
+    options?: unknown,
+  ): import("../assertions/types.ts").UsageEvidenceFact<FactPhase> => {
+    const consumerLoc = captureLoc();
+    if (!isManagedUsageEvidenceFact(fact)) {
+      if (looksLikeFact(fact)) throw new TypeError("checkIfCovered() accepts only a core usage evidence Fact");
+      throw new TypeError("checkIfCovered() accepts only a core usage evidence Fact created by this Attempt");
+    }
+    return collector.checkIfCovered(fact, options as FactUseOptions | undefined, consumerLoc);
+  };
+
+  const require = (valueOrFact: unknown, matchOrOptions?: unknown, options?: unknown): Promise<unknown> => {
+    const consumerLoc = captureLoc();
+    if (isManagedThresholdedScoreFact(valueOrFact)) {
+      if (isManagedMatch(matchOrOptions) || looksLikeMatch(matchOrOptions) || isManagedThresholdedScoreMatch(matchOrOptions)) {
+        return rejectFactMatch("require");
+      }
+      if (options !== undefined) throw new TypeError("require(thresholdedScoreFact, options) accepts exactly two arguments");
+      return requireFact(valueOrFact, matchOrOptions, consumerLoc);
+    }
+    if (looksLikeThresholdedScoreFact(valueOrFact)) {
+      throw new TypeError("require() received a threshold-view-like value not created by this Attempt");
+    }
+    if (isManagedFact(valueOrFact)) {
+      if (isManagedMatch(matchOrOptions) || looksLikeMatch(matchOrOptions)) return rejectFactMatch("require");
+      if (options !== undefined) throw new TypeError("require(existingFact, options) accepts exactly two arguments");
+      if (valueOrFact.kind === "score") {
+        throw new TypeError("require() requires scoreFact.atLeast(threshold) for a Score Fact");
+      }
+      return requireFact(valueOrFact, matchOrOptions, consumerLoc);
+    }
+    if (looksLikeFact(valueOrFact)) {
+      throw new TypeError("require() received a Fact-like value that was not created by this Attempt");
+    }
+    if (isManagedEvidenceSource(valueOrFact) || looksLikeEvidenceSource(valueOrFact)) {
+      throw new TypeError("require() does not accept an EvidenceSource; use check() for deferred evidence");
+    }
+    rejectRawAuthoringBoundary(valueOrFact, "require");
+    const verdictMatch = verdictMatchValue(matchOrOptions, "require() match");
+    return collector.atomically(() => {
+      const fact = makeChecked(valueOrFact, verdictMatch.match, consumerLoc);
+      return verdictMatch.threshold === undefined
+        ? requireFact(fact as BooleanFact<unknown, FactPhase>, options, consumerLoc)
+        : requireFact((fact as ScoreFact<FactPhase>).atLeast(verdictMatch.threshold), options, consumerLoc);
+    });
+  };
+
+  const isDirectScoreInput = (value: unknown): value is { readonly earned: unknown; readonly key?: unknown } =>
+    typeof value === "object" && value !== null && !Array.isArray(value) && "earned" in value;
+
+  const score = (
+    label: string,
+    valueOrFactOrSource: unknown,
+    matchOrOptions?: unknown,
+    options?: unknown,
+  ): BooleanFact<unknown, FactPhase> | ScoreFact<FactPhase> | void => {
+    const consumerLoc = captureLoc();
+    if (isManagedThresholdedScoreFact(valueOrFactOrSource) || looksLikeThresholdedScoreFact(valueOrFactOrSource)) {
+      throw new TypeError("score() does not accept a thresholded Score Fact; pass the underlying Score Fact");
+    }
+    if (isManagedFact(valueOrFactOrSource)) {
+      if (isManagedMatch(matchOrOptions) || looksLikeMatch(matchOrOptions)) return rejectFactMatch("score");
+      if (options !== undefined) throw new TypeError("score(label, existingFact, options) accepts exactly three arguments");
+      return scoreFact(label, valueOrFactOrSource, matchOrOptions, consumerLoc);
+    }
+    if (looksLikeFact(valueOrFactOrSource)) {
+      throw new TypeError("score() received a Fact-like value that was not created by this Attempt");
+    }
+    if (isManagedEvidenceSource(valueOrFactOrSource)) {
+      if (isManagedThresholdedScoreMatch(matchOrOptions) || looksLikeThresholdedScoreMatch(matchOrOptions)) {
+        throw new TypeError("score() does not accept a thresholded Score Match; pass the underlying Score Match");
+      }
+      const match = assertManagedValueMatch(matchOrOptions, "score() match");
+      return collector.atomically(() => {
+        const fact = makeChecked(valueOrFactOrSource, match, consumerLoc);
+        return scoreFact(label, fact, options, consumerLoc);
+      });
+    }
+    if (looksLikeEvidenceSource(valueOrFactOrSource)) {
+      throw new TypeError("score() received an EvidenceSource-like value that was not created by this Attempt");
+    }
+    if (matchOrOptions === undefined && options === undefined && isDirectScoreInput(valueOrFactOrSource)) {
+      return collector.directScore(label, valueOrFactOrSource as import("../assertions/types.ts").DirectScoreOptions, consumerLoc);
+    }
+    rejectRawAuthoringBoundary(valueOrFactOrSource, "score");
+    if (isManagedThresholdedScoreMatch(matchOrOptions) || looksLikeThresholdedScoreMatch(matchOrOptions)) {
+      throw new TypeError("score() does not accept a thresholded Score Match; pass the underlying Score Match");
+    }
+    const match = assertManagedValueMatch(matchOrOptions, "score() match");
+    return collector.atomically(() => {
+      const fact = makeChecked(valueOrFactOrSource, match, consumerLoc);
+      return scoreFact(label, fact, options, consumerLoc);
+    });
   };
 
   const contextObject = {
@@ -1190,9 +1481,8 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
       collector.closeForSkip(reason);
       throw new EvalSkipped(reason);
     },
-    check: makeChecked,
-    assert: (fact: BooleanFact<unknown, FactPhase> | ScoreFact<FactPhase>, options?: unknown) => collector.assert(fact as never, options as never),
-    assertIfCovered: (fact: import("../assertions/types.ts").UsageEvidenceFact<FactPhase>, options?: unknown) => collector.assertIfCovered(fact, options as never),
+    check,
+    checkIfCovered,
     require,
     group: async (title: string, fn: () => Promise<unknown> | unknown) => {
       return collector.withGroup(title, fn);
@@ -1210,7 +1500,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
     ...finalFacts,
     ...(deps.evaluationKind === "score"
       ? {
-          score: (label: string, factOrDirect: unknown, options?: unknown) => collector.score(label, factOrDirect as never, options as never),
+          score,
         }
       : {}),
   };
@@ -1221,11 +1511,6 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
         enumerable: true,
       });
   return { context: context as unknown as TestContext, state };
-}
-
-function isValueMatch(value: unknown): value is BooleanMatch<unknown, unknown, "value"> {
-  return typeof value === "object" && value !== null && (value as { domain?: unknown }).domain === "value" &&
-    (value as { kind?: unknown }).kind === "boolean";
 }
 
 async function readInputFile(path: string): Promise<InputFile> {

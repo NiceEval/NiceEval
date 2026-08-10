@@ -1240,13 +1240,16 @@ async function main(): Promise<void> {
     }
     // 配置只记 cwd:每次 rebuild 由 loadViewScan 重装 niceeval.config.ts,
     // 不把启动时那份 config.report 对象塞进 scan(否则改报告文件只刷新页面、定义仍旧)。
-    const projectMode = !offlineView && existsSync(join(cwd, "niceeval.config.ts"));
+    const hasProjectConfig = existsSync(join(cwd, "niceeval.config.ts"));
     const scan = {
       patterns: viewInput.patterns,
       ...(flags.experiment !== undefined ? { experiment: flags.experiment } : {}),
       ...(flags.report !== undefined ? { report: { path: flags.report, cwd } } : {}),
       ...(flags.theme !== undefined ? { theme: { value: flags.theme, cwd } } : {}),
-      ...(projectMode ? { config: { cwd }, projectCurrent: { cwd, freshImport: true } } : {}),
+      // 显式记录根仍可使用项目默认 report/theme；只有“当前项目结果”过滤需要关闭，
+      // 否则 --record 指向的离线记录会被当前源码定义误删。
+      ...(hasProjectConfig ? { config: { cwd } } : {}),
+      ...(!offlineView && hasProjectConfig ? { projectCurrent: { cwd, freshImport: true } } : {}),
       ...(flags.page !== undefined ? { page: flags.page } : {}),
     };
     if (flags.out) {

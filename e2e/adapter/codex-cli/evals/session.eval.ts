@@ -16,17 +16,15 @@ export default defineEval({
     );
 
     // 首轮结束后,ctx.session.capture() 应该已经把 thread.started 回传的 id 记下来了。
-    t.assert(
-      t.check(
-        t.sessionId,
-        isDefined(
-          "thread.started 的 thread_id 应该已经被 ctx.session.capture() 记下",
-        ),
+    t.check(
+      t.sessionId,
+      isDefined(
+        "thread.started 的 thread_id 应该已经被 ctx.session.capture() 记下",
       ),
     );
 
     const recall = await t.send(`我刚才说我叫什么名字?${suffix}`);
     await t.require(recall.succeeded());
-    t.assert(t.check(recall.message, includes("niceeval-e2e-tester")));
+    t.check(recall.message, includes("niceeval-e2e-tester"));
   },
 });

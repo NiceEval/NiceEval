@@ -87,7 +87,7 @@ Direct 与 Sandbox 不是两个 Eval 函数；同一份 Eval 可以被两类 Age
 `test(t)` 收到的 `t` 对每个 Agent 都暴露同一套宽接口(`TestContext`),但每个方法**实际能不能读到数据**由 Agent 的构造证据决定,不是声明式的能力位——这是唯一的运行时守卫例外:
 
 - 任何 Agent → `t.check` / `t.require`(值断言)、`t.log`、`t.skip`、`t.signal`、`t.judge`,以及 `t.send` / `t.reply` / `t.newSession`(能不能多轮取决于 `send` 有没有接上 `ctx.session` 的续接存取器,不取决于声明)。
-- `send` 吐出 `action.*` 事件 → `t.calledTool` / `t.toolOrder` / `t.usedNoTools` 有数据可断;没吐,正断言自然不命中、负断言按事件出处的完整性证明判断可信度(见[断言证据与完整性](feature/adapters/architecture/evidence.md))。
+- `send` 吐出 `action.*` 事件 → `turn.calledTool` / `turn.toolOrder` / `turn.usedNoTools` 有数据可断；跨 Turn 的顺序断言放在 `session`，`t` 只保留全 Attempt 的出现与计数聚合。没吐事件时，正断言自然不命中，负断言按事件出处的完整性证明判断可信度（见[断言证据与完整性](feature/adapters/architecture/evidence.md)）。
 - `defineSandboxAgent` 构造(`kind: "sandbox"`)→ `t.sandbox`:文件 IO、宿主传输与命令执行。
   `writeText` / `readText` / `writeBytes` / `readBytes`、`upload*` / `download*`、`runCommand` / `runShell` 与结果断言 / diff 都收在这一个命名空间下。
   评 sandbox 输出用 `t.judge.autoevals.closedQA` 配 `{ on: t.sandbox.diff.get(path) }`。

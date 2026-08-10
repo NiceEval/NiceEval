@@ -10,11 +10,11 @@ export default defineEval({
       "我叫 Ada，请记住这个名字。不要运行任何命令，不要读取任何文件，用一句简短的话确认。",
     );
     await t.require(first.succeeded());
-    t.assert(first.maxTokens(200_000));
+    t.check(first.maxTokens(200_000));
 
     const recall = await t.send("我叫什么名字？只回答名字，不要运行任何命令。");
     await t.require(recall.succeeded());
-    t.assert(t.check(recall.message, includes("Ada")));
-    t.assert(recall.maxTokens(200_000));
+    t.check(recall.message, includes("Ada"));
+    t.check(recall.maxTokens(200_000));
   },
 });

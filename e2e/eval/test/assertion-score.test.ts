@@ -41,7 +41,7 @@ test("计分 Eval 正常返回自动封口并把空计分写成零分", async ()
       const scoredAttempt = resolveLocator(record, scoredLocator);
       expect(scoredAttempt.result.verdict).toBe("passed");
       expect(scoredAttempt.result.evaluationKind).toBe("score");
-      expect(scoredAttempt.result.evaluationAlgorithm).toBe("fact-use/v2");
+      expect(scoredAttempt.result.evaluationAlgorithm).toBe("fact-use/v3");
       expect(scoredAttempt.result.factUses).toContainEqual(
         expect.objectContaining({
           useKind: "score",

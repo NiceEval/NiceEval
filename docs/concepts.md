@@ -270,7 +270,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
 | 评估事实 | Evaluation Fact (`BooleanFact` / `ScoreFact`) | 由 matcher、作用域或 Sandbox 创建且在一个 Attempt 内只求值一次的受管节点；自身不决定判定或计分 | [Assertion 作者面](roadmap/assertion-authoring/README.md) |
-| Fact 用途 | Fact use | `assert` / `require` / `assertIfCovered` 的判定用途，或 `score` 的计分用途；按 `factId` 复用同一求值结果 | [Assertion Architecture](roadmap/assertion-authoring/architecture.md#record-形状) |
+| Fact 用途 | Fact use | `check` / `require` / `checkIfCovered` 的判定用途，或 `score` 的计分用途；按 `factId` 复用同一求值结果 | [Assertion Architecture](roadmap/assertion-authoring/architecture.md#record-形状) |
 | 可重评分 Eval | Replayable Eval | 用独立 execution 与 grading definition 保存完整多轮证据，并允许只对 sealed Execution graph 重新评分 | [可重评分 Eval](roadmap/replayable-grading/README.md) |
 | Execution graph | Execution graph | 保存一次 replayable Agent 执行的 Observation、Provenance、Ref manifest 与 ExecutionOutcome 的 sealed graph | [Replayable Architecture](roadmap/replayable-grading/architecture.md#两个-plane) |
 | ExecutionOutcome | ExecutionOutcome | execution plane 的 `completed / errored / skipped` 终态；不回答评测是否通过 | [Replayable Architecture](roadmap/replayable-grading/architecture.md#状态机) |

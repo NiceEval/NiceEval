@@ -20,7 +20,7 @@ export default defineEval({
     await t.require(turn.succeeded());
 
     await t.group("写入 notes.txt,再串行 shell 读回来验证", () => {
-      t.assert(
+      t.check(
         t.calledTool(
           toolMatch("file_write", {
             input: satisfies(
@@ -36,12 +36,12 @@ export default defineEval({
           }),
         ),
       );
-      t.assert(t.calledTool(toolMatch("shell")));
-      t.assert(t.toolOrder([toolMatch("file_write"), toolMatch("shell")]));
-      t.assert(t.noFailedActions());
+      t.check(t.calledTool(toolMatch("shell")));
+      t.check(turn.toolOrder([toolMatch("file_write"), toolMatch("shell")]));
+      t.check(t.noFailedActions());
     });
 
-    t.assert(
+    t.check(
       t.event(
         eventMatch("message", {
           role: "assistant",
@@ -49,7 +49,7 @@ export default defineEval({
         }),
       ),
     );
-    t.assert(turn.maxTokens(50_000));
-    t.assert(turn.maxCost(0.5));
+    t.check(turn.maxTokens(50_000));
+    t.check(turn.maxCost(0.5));
   },
 });

@@ -66,29 +66,27 @@ export default defineEvalGrading({
   refs: gradingRefs,
 
   grade(g, ref) {
-    g.assert(ref.draft.succeeded(), { key: "draft-succeeded" });
-    g.assert(g.check(ref.draft.message, includes("此致")), {
+    g.check(ref.draft.succeeded(), { key: "draft-succeeded" });
+    g.check(ref.draft.message, includes("此致"), {
       key: "draft-signoff",
     });
 
-    g.assert(
+    g.check(
       ref.audit.through(ref.auditTurn).calledTool(toolMatch("mail_log")),
       { key: "audit-session-checked-log" },
     );
 
-    g.assert(g.calledTool(toolMatch("send_email"), { count: 1 }), {
+    g.check(g.calledTool(toolMatch("send_email"), { count: 1 }), {
       key: "attempt-sent-once",
     });
 
-    g.assert(
-      g.check(
-        { draft: ref.draft.message, sent: ref.sent.message },
-        satisfies("发送结果与草稿一致", ({ draft, sent }) => sent.includes(draft)),
-      ),
+    g.check(
+      { draft: ref.draft.message, sent: ref.sent.message },
+      satisfies("发送结果与草稿一致", ({ draft, sent }) => sent.includes(draft)),
       { key: "cross-turn-consistency" },
     );
 
-    g.assert(g.sandbox.during(ref.sent).fileChanged("outbox.json"), {
+    g.check(g.sandbox.during(ref.sent).fileChanged("outbox.json"), {
       key: "sent-turn-wrote-outbox",
     });
   },

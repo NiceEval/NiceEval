@@ -7,5 +7,5 @@ import { equals } from "niceeval/expect";
  */
 export function checkImportedSnapshot(t: TestContext): void {
   const snapshot = "IMPORTED_ASSERTION_SNAPSHOT_BEFORE";
-  t.assert(t.check(snapshot, equals(snapshot)));
+  t.check(snapshot, equals(snapshot));
 }

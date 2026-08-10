@@ -14,13 +14,13 @@ export default defineEval({
         `不要写任何文件。`,
     );
     await t.require(first.succeeded());
-    t.assert(first.maxTokens(50_000));
+    t.check(first.maxTokens(50_000));
 
     const recall = await t.send(
       `${SKIP_BUILD_NOTE}${REPLY_DIRECTIVE}我最喜欢的数字是多少?只回答数字。`,
     );
     await t.require(recall.succeeded());
-    t.assert(t.check(recall.message, includes("47")));
-    t.assert(recall.maxTokens(50_000));
+    t.check(recall.message, includes("47"));
+    t.check(recall.maxTokens(50_000));
   },
 });

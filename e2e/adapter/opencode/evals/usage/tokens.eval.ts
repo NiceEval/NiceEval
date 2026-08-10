@@ -16,26 +16,22 @@ export default defineEval({
         ["first", first],
         ["second", second],
       ] as const) {
-        t.assert(
-          t.check(
-            turn.usage?.inputTokens,
-            satisfies(
-              `${label}.usage.inputTokens > 0`,
-              (value) => typeof value === "number" && value > 0,
-            ),
+        t.check(
+          turn.usage?.inputTokens,
+          satisfies(
+            `${label}.usage.inputTokens > 0`,
+            (value) => typeof value === "number" && value > 0,
           ),
         );
-        t.assert(
-          t.check(
-            turn.usage?.outputTokens,
-            satisfies(
-              `${label}.usage.outputTokens > 0`,
-              (value) => typeof value === "number" && value > 0,
-            ),
+        t.check(
+          turn.usage?.outputTokens,
+          satisfies(
+            `${label}.usage.outputTokens > 0`,
+            (value) => typeof value === "number" && value > 0,
           ),
         );
       }
     });
-    t.assert(t.check(second.message, includes("63")));
+    t.check(second.message, includes("63"));
   },
 });

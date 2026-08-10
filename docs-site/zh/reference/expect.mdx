@@ -4,7 +4,7 @@ sidebarTitle: "断言 Matchers"
 description: "niceeval/expect 的纯 Match factory：组合文字、结构、工具与事件条件，再交给 t.check、turn 或 t.sandbox 生成可复用的 Fact。"
 ---
 
-`niceeval/expect` 只提供纯 Match factory。Match 比较一个候选值，不记录结果，也不决定判定或分数。`t.check(...)`、`turn.*(...)` 与 `t.sandbox.*(...)` 负责生成 Fact；`t.assert(...)`、`t.require(...)` 与计分制的 `t.score(...)` 再消费 Fact。
+`niceeval/expect` 只提供纯 Match factory。Match 比较一个候选值，不记录结果，也不决定判定或分数。Turn、Session 与 Sandbox producer 负责生成 Fact；`t.check(...)`、`t.require(...)` 与计分制的 `t.score(...)` 消费 Fact。值加 Match 的便利写法会原子创建并消费 Fact。
 
 ```ts
 import { and, excludes, includes, pattern } from "niceeval/expect";
@@ -13,15 +13,14 @@ import { and, excludes, includes, pattern } from "niceeval/expect";
 ## 使用方式
 
 ```ts
-t.assert(t.check(t.reply, includes("confirmed")));
-t.assert(t.check(t.reply, and(pattern(/order #\d+/i), excludes("cancelled"))));
-const config = await t.require(t.check(t.sandbox.file("config.json"), pattern(/runtime/)));
+t.check(t.reply, includes("confirmed"));
+t.check(t.reply, and(pattern(/order #\d+/i), excludes("cancelled")));
+const config = await t.require(rawConfig, pattern(/runtime/));
 ```
 
 | 入口 | 作用 |
 |---|---|---|
-| `t.check` | 把立即值或延迟 EvidenceSource 与 Match 组合成 Fact |
-| `t.assert` | 把 Fact 用作通过制要求；失败不会中止后续代码 |
+| `t.check` | 登记判定用途并同步返回已有或新建的 Fact；失败不会中止后续代码 |
 | `t.require` | 立即消费 `phase: "now"` Fact；失败时中止后续代码并保留结果 |
 | `t.score` | 在计分制评估中把 Fact 计入分数 |
 
@@ -105,8 +104,6 @@ export function hasSections(min = 2): BooleanMatch<string, string> { ... }
 export function isDefined<T = unknown>(label?: string): BooleanMatch<T, Exclude<T, null | undefined>> { ... }
 ```
 
-非 null / undefined 的 value matcher；泛型调用可保留原 candidate 的非空收窄。
-
 #### `isTrue`
 
 ```ts
@@ -134,7 +131,7 @@ CommandResult-like candidate 的 exitCode === 0 matcher；不读取 stdout / std
 #### `equals`
 
 ```ts
-export function equals<T>(expected: T): BooleanMatch<T, T> { ... }
+export function equals<const T>(expected: T): BooleanMatch<unknown, T> { ... }
 ```
 
 #### `matches`
@@ -206,7 +203,7 @@ export function commandMatch(executable: string, options?: CommandMatchOptions):
 export function eventMatch<K extends keyof EventOptionsByType>(
   type: K,
   options?: EventOptionsByType[K],
-): EventMatch<Extract<MatchableEvent, { readonly type: K }>> { ... }
+): EventMatch<Extract<AssertionEvent, { readonly type: K }>> { ... }
 ```
 
 {/* GENERATED:END expect-matchers */}
@@ -214,19 +211,19 @@ export function eventMatch<K extends keyof EventOptionsByType>(
 ### 常见用法示例
 
 ```ts
-t.assert(t.check(t.reply, includes("Paris")));
-t.assert(t.check(t.reply, pattern(/order #\d+/i)));
-t.assert(t.check(turn.data, equals({ intent: "refund" })));
-t.assert(t.check(turn.data, matches(OrderSchema)));
-t.assert(t.check(turn.data, satisfies("返回数组", Array.isArray)));
-t.assert(t.check(t.reply, similarity("The answer explains the refund window")), { atLeast: 0.8 });
+t.check(t.reply, includes("Paris"));
+t.check(t.reply, pattern(/order #\d+/i));
+t.check(turn.data, equals({ intent: "refund" }));
+t.check(turn.data, matches(OrderSchema));
+t.check(turn.data, satisfies("返回数组", Array.isArray));
+t.check(t.reply, (similarity("The answer explains the refund window")).atLeast(0.8));
 ```
 
 ## 组合与三态
 
 ```ts
-t.assert(t.check(t.reply, and(includes("required"), excludes("forbidden"))));
-t.assert(t.check(t.reply, or(includes("approved"), includes("accepted"))));
+t.check(t.reply, and(includes("required"), excludes("forbidden")));
+t.check(t.reply, or(includes("approved"), includes("accepted")));
 ```
 
 同一 `and` / `or` 里的 Match 必须属于同一 domain（`value`、`tool` 或 `event`）。布尔 Match 的内部结果是 `matched`、`mismatched` 或 `unavailable`：`or` 只有在没有子项命中且至少一项证据不完整时才返回 `unavailable`，不会把未知当成否定。Match 自身没有 `.gate()`、`.points()` 或 `.atLeast()`；这些策略只属于 Fact 的消费位置。
@@ -273,6 +270,12 @@ readonly [matchRefinementBrand]: () => R;
 readonly kind: "score";
 ```
 
+#### `atLeast`
+
+```ts
+atLeast(threshold: number): ThresholdedScoreMatch<T>;
+```
+
 {/* GENERATED:END value-assertion */}
 
 ## 自定义 matcher
@@ -288,7 +291,7 @@ const validEmail = () =>
     },
   });
 
-t.assert(t.check(t.reply, validEmail()));
+t.check(t.reply, validEmail());
 ```
 
 布尔自定义 Match 用 `defineValueMatch`，连续分数用 `defineScoreMatch`。两者只实现单候选比较；读取文件、扫描事件、决定 coverage 或修改 Verdict 仍由各领域的 Fact producer 与 consumer 负责。

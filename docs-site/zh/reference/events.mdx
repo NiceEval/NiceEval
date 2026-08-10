@@ -4,7 +4,7 @@ sidebarTitle: "事件流"
 description: "StreamEvent 的十种事件：每种的字段、什么时候吐、哪些断言消费它。adapter 的核心工作就是产出这条流。"
 ---
 
-adapter 的 `send` 返回一个 `Turn`，其中 `events: StreamEvent[]` 是事件 Fact 的事实来源。`turn.calledTool(...)`、`turn.toolOrder(...)`、`turn.event(...)` 与 `turn.succeeded()` 都从本轮的标准事件和逻辑工具 occurrence 派生；评估作者再用 `t.assert(...)` 消费这些 Fact。把你的 agent“这一轮做了什么”如实翻成这条流，整套事件断言就都能用。
+adapter 的 `send` 返回一个 `Turn`，其中 `events: StreamEvent[]` 是事件 Fact 的事实来源。`turn.calledTool(...)`、`turn.toolOrder(...)`、`turn.event(...)` 与 `turn.succeeded()` 都从本轮的标准事件和逻辑工具 occurrence 派生；评估作者再用 `t.check(...)` 消费这些 Fact。把你的 agent“这一轮做了什么”如实翻成这条流，整套事件断言就都能用。
 
 ## Turn：send 的返回值
 

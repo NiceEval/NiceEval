@@ -412,7 +412,7 @@ export interface EvalResult {
   scoreResult?: ScoreFactAttemptOutcome;
   /**
    * 题型:`defineEval` → `"pass"`,`defineScoreEval` → `"score"`,定义期事实,与
-   * `EvalDescriptor.evaluationKind` 同源。schema 17 必填。
+   * `EvalDescriptor.evaluationKind` 同源。schema 18 必填。
    */
   evaluationKind: EvaluationKind;
   /** 自动重试吸收的物理 send 失败，按发生顺序完整保留。 */
@@ -519,11 +519,11 @@ export const RECORD_FORMAT = "niceeval.results";
  * 旧版快照按格式规则整份判为不兼容并在扫描时列为占位条目,不迁移不降级。
  * `15` = commands.json 的命令退出事实新增 `checked`，区分公开 checked/unchecked 调用；
  * 旧版 commands.json 不做兼容读取。
- * `17` = Fact/use 原子记录、`evaluationAlgorithm: "fact-use/v2"`；旧格式完全不支持读取。
+ * `18` = Fact/use 原子记录、`evaluationAlgorithm: "fact-use/v3"`；旧格式完全不支持读取。
  * `renamedFrom` 是可选审计字段，删除运行期选题投影也不改变当前 reader 对旧结果的读取；
  * 两者都不是破坏性格式变化，因此不递增版本。
  */
-export const RECORD_SCHEMA_VERSION = 17;
+export const RECORD_SCHEMA_VERSION = 18;
 
 /** 一次 Invocation 的纯运行时内存聚合(reporter 契约用);落盘格式契约在 niceeval/record 的 RunMeta / AttemptRecord,见 docs/feature/record/architecture.md。不携带顶层 `agent`/`model`——一次 Invocation 可能横跨多个 `(agent, model, flags)` 配置,塞一个顶层单值只能代表其中一份配置;需要时从 `results` 里逐条 `EvalResult.agent`/`.model` 去重派生。 */
 export interface InvocationSummary {
@@ -657,7 +657,7 @@ export type ReporterEvent =
  */
 export type EvaluationKind = "pass" | "score";
 
-export const EVALUATION_ALGORITHM = "fact-use/v2" as const;
+export const EVALUATION_ALGORITHM = "fact-use/v3" as const;
 export type EvaluationAlgorithm = typeof EVALUATION_ALGORITHM;
 
 /**

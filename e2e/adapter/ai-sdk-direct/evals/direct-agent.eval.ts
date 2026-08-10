@@ -20,7 +20,7 @@ export default defineEval({
       `请记住哨兵 ${DIRECT_MARKER}，并且必须调用 remember_marker 工具，marker 参数必须逐字等于这个哨兵。`,
     );
     await t.require(first.succeeded());
-    t.assert(
+    t.check(
       first.calledTool(
         toolMatch("remember_marker", {
           input: satisfies(
@@ -36,27 +36,16 @@ export default defineEval({
         { count: 1 },
       ),
     );
-    t.assert(
-      t.check(first.usage?.inputTokens, positive("first.usage.inputTokens")),
-    );
-    t.assert(
-      t.check(first.usage?.outputTokens, positive("first.usage.outputTokens")),
-    );
-    t.assert(t.check(t.sessionId, isDefined("aiSdkAgent 应捕获自己的会话 id")));
+    t.check(first.usage?.inputTokens, positive("first.usage.inputTokens"));
+    t.check(first.usage?.outputTokens, positive("first.usage.outputTokens"));
+    t.check(t.sessionId, isDefined("aiSdkAgent 应捕获自己的会话 id"));
 
     const recall = await t.send(
       "只回复我上一轮要求你记住的哨兵，不要调用任何工具。",
     );
     await t.require(recall.succeeded());
-    t.assert(t.check(recall.message, includes(DIRECT_MARKER)));
-    t.assert(
-      t.check(recall.usage?.inputTokens, positive("recall.usage.inputTokens")),
-    );
-    t.assert(
-      t.check(
-        recall.usage?.outputTokens,
-        positive("recall.usage.outputTokens"),
-      ),
-    );
+    t.check(recall.message, includes(DIRECT_MARKER));
+    t.check(recall.usage?.inputTokens, positive("recall.usage.inputTokens"));
+    t.check(recall.usage?.outputTokens, positive("recall.usage.outputTokens"));
   },
 });

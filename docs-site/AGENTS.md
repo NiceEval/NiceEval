@@ -45,8 +45,8 @@
 - **Sample**：从 Record 选出的可比较读取面。中文正文写 `Sample`，不写 `Scope`；它携带选中的 Attempt、贡献 Run、覆盖、来源与读取期 Issue。
 - **双面组件（dual-render component）**：`defineRenderer({ text, web })` 的产物。英文写 dual-render，不写 dual-face。组件只显示已经计算好的普通值，不取数。
 - **报告模型**：page render 接收 Sample 或 AttemptEvidence，用普通 TypeScript 函数产生可序列化结果，再把结果交给组件。表格使用 `Table rows={...}`；图表按显示形状使用 `Scatter`、`Line`、`Bars` 与 `Area`。Attempt 详情组件是 `AttemptDetails`。
-- **Fact use**：`t.assert`、`t.require` 与 `t.score` 对 Fact 的明确消费。阈值与分值写在 use 的 options 中。
-- **值 Fact**：`expect` 匹配器经 `t.check` 创建的 Fact。不要把 Match 本身写成断言句柄。
+- **Fact use**：`t.check`、`t.require` 与 `t.score` 对 Fact 的明确消费。连续分数先用 `.atLeast()` 绑定判定阈值；计分上限写在 `t.score` 的 options 中。
+- **值 Fact**：`t.check(value, match)` 或 `t.score(label, value, match, options)` 原子创建并消费的 Fact。不要把 Match 本身写成断言句柄。
 
 ## 写作规则
 - **口语测试**：正文每句话要能原样对着同事说出口、对方第一次听就懂。内部设计代号与比喻（「报告槽」「证据室」「出厂填充」「接线」「前门」「收编」这类）不出现在公开站；要么把这个词提进上面的术语表并在页面首次出现处解释，要么用日常语言把条件和结果直说——写「不传 `--report` 时首页是默认报告」，不写「报告槽默认装官方榜单」。

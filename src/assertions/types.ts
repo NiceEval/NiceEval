@@ -3,6 +3,7 @@
 import type { SourceLoc } from "../shared/types.ts";
 import type { DerivedFacts, StreamEvent, Usage } from "../o11y/types.ts";
 import type { ResolvedEvidenceCoverage } from "./coverage.ts";
+import type { Match, MatchDomain } from "./match.ts";
 
 // ── Evaluation facts ──────────────────────────────────────────────────────
 //
@@ -13,9 +14,37 @@ import type { ResolvedEvidenceCoverage } from "./coverage.ts";
 
 export type FactPhase = "now" | "final";
 
-declare const evaluationFactBrand: unique symbol;
-declare const evidenceSourceBrand: unique symbol;
-declare const usageEvidenceFactBrand: unique symbol;
+const evaluationFactBrand: unique symbol = Symbol("niceeval.evaluationFact");
+const evidenceSourceBrand: unique symbol = Symbol("niceeval.evidenceSource");
+const usageEvidenceFactBrand: unique symbol = Symbol("niceeval.usageEvidenceFact");
+const thresholdedScoreFactBrand: unique symbol = Symbol("niceeval.thresholdedScoreFact");
+
+interface RuntimeFactBrand {
+  readonly kind: "boolean" | "score";
+  readonly usageEvidence: boolean;
+}
+
+// Symbols express the public nominal type boundary. The WeakMap/WeakSet are
+// the runtime authority: symbols can be observed through reflection, but an
+// external object can never add itself to these module-private registries.
+const factBrands = new WeakMap<object, RuntimeFactBrand>();
+const evidenceSourceBrands = new WeakSet<object>();
+const thresholdedScoreFacts = new WeakMap<object, {
+  readonly fact: ScoreFact<FactPhase>;
+  readonly threshold: number;
+}>();
+
+function typeWitness<T>(): T {
+  throw new Error("NiceEval runtime brand witnesses are never callable.");
+}
+
+function assertFactPhase(phase: unknown, owner: string): asserts phase is FactPhase {
+  if (phase !== "now" && phase !== "final") throw new TypeError(`${owner} phase must be \"now\" or \"final\"`);
+}
+
+function isObjectRecord(value: unknown): value is globalThis.Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
 
 export interface BooleanFact<out R = unknown, P extends FactPhase = FactPhase> {
   readonly kind: "boolean";
@@ -27,6 +56,13 @@ export interface ScoreFact<P extends FactPhase = FactPhase> {
   readonly kind: "score";
   readonly phase: P;
   readonly [evaluationFactBrand]: () => number;
+  atLeast<F extends ScoreFact<P>>(this: F, threshold: number): ThresholdedScoreFact<F>;
+}
+
+/** Pure threshold view over an existing Score Fact. */
+export interface ThresholdedScoreFact<out F extends ScoreFact<FactPhase>> {
+  readonly kind: "thresholded-score-fact";
+  readonly [thresholdedScoreFactBrand]: () => F;
 }
 
 /** A source whose material is intentionally resolved only when its Fact runs. */
@@ -41,13 +77,155 @@ export interface UsageEvidenceFact<P extends FactPhase = FactPhase> extends Bool
   readonly [usageEvidenceFactBrand]: true;
 }
 
+/** @internal Runtime factory; only the Fact collector may create Facts. */
+export function makeBooleanFact<R, P extends FactPhase>(phase: P): BooleanFact<R, P> {
+  assertFactPhase(phase, "BooleanFact");
+  const fact: BooleanFact<R, P> = {
+    kind: "boolean",
+    phase,
+    [evaluationFactBrand]: () => typeWitness<R>(),
+  };
+  factBrands.set(fact, { kind: "boolean", usageEvidence: false });
+  return Object.freeze(fact);
+}
+
+/** @internal Runtime factory; only the Fact collector may create Facts. */
+export function makeScoreFact<P extends FactPhase>(phase: P): ScoreFact<P> {
+  assertFactPhase(phase, "ScoreFact");
+  let fact: ScoreFact<P>;
+  fact = {
+    kind: "score",
+    phase,
+    [evaluationFactBrand]: () => typeWitness<number>(),
+    atLeast<F extends ScoreFact<P>>(this: F, threshold: number) {
+      return makeThresholdedScoreFact(this, threshold);
+    },
+  };
+  factBrands.set(fact, { kind: "score", usageEvidence: false });
+  return Object.freeze(fact);
+}
+
+/** @internal Create an immutable threshold view without registering a Fact or use. */
+export function makeThresholdedScoreFact<F extends ScoreFact<FactPhase>>(
+  fact: F,
+  threshold: number,
+): ThresholdedScoreFact<F> {
+  if (!isManagedFact(fact) || fact.kind !== "score") {
+    throw new TypeError("ScoreFact.atLeast() must be called on a Score Fact created by NiceEval");
+  }
+  assertUnitThreshold(threshold, "ScoreFact.atLeast() threshold");
+  const view: ThresholdedScoreFact<F> = {
+    kind: "thresholded-score-fact",
+    [thresholdedScoreFactBrand]: () => fact,
+  };
+  thresholdedScoreFacts.set(view, { fact, threshold });
+  return Object.freeze(view);
+}
+
+/** @internal Runtime factory for the narrow usage-coverage capability. */
+export function makeUsageEvidenceFact<P extends FactPhase>(phase: P): UsageEvidenceFact<P> {
+  assertFactPhase(phase, "UsageEvidenceFact");
+  const fact: UsageEvidenceFact<P> = {
+    kind: "boolean",
+    phase,
+    [evaluationFactBrand]: () => typeWitness<unknown>(),
+    [usageEvidenceFactBrand]: true,
+  };
+  factBrands.set(fact, { kind: "boolean", usageEvidence: true });
+  return Object.freeze(fact);
+}
+
+/** @internal Runtime factory for deferred evidence sources. */
+export function makeEvidenceSource<T, P extends FactPhase>(phase: P): EvidenceSource<T, P> {
+  assertFactPhase(phase, "EvidenceSource");
+  const source: EvidenceSource<T, P> = {
+    phase,
+    [evidenceSourceBrand]: () => typeWitness<T>(),
+  };
+  evidenceSourceBrands.add(source);
+  return Object.freeze(source);
+}
+
+/** @internal Runtime guard used before overload dispatch. */
+export function isManagedFact(value: unknown): value is BooleanFact<unknown, FactPhase> | ScoreFact<FactPhase> {
+  return isObjectRecord(value) && factBrands.has(value);
+}
+
+/** @internal Runtime guard for the checkIfCovered capability. */
+export function isManagedUsageEvidenceFact(value: unknown): value is UsageEvidenceFact<FactPhase> {
+  return isObjectRecord(value) && factBrands.get(value)?.usageEvidence === true;
+}
+
+/** @internal Runtime guard used before EvidenceSource overload dispatch. */
+export function isManagedEvidenceSource(value: unknown): value is EvidenceSource<unknown, FactPhase> {
+  return isObjectRecord(value) && evidenceSourceBrands.has(value);
+}
+
+/** @internal Runtime guard for a threshold view created by ScoreFact.atLeast(). */
+export function isManagedThresholdedScoreFact(
+  value: unknown,
+): value is ThresholdedScoreFact<ScoreFact<FactPhase>> {
+  return isObjectRecord(value) && thresholdedScoreFacts.has(value);
+}
+
+/** @internal Resolve a managed threshold view to its underlying Fact and threshold. */
+export function thresholdedScoreFactValue(value: unknown): {
+  readonly fact: ScoreFact<FactPhase>;
+  readonly threshold: number;
+} {
+  const resolved = isObjectRecord(value) ? thresholdedScoreFacts.get(value) : undefined;
+  if (resolved === undefined) {
+    throw new TypeError("value must be a threshold view created by ScoreFact.atLeast()");
+  }
+  return resolved;
+}
+
+/** @internal Reserve Fact-shaped raw inputs instead of silently reinterpreting them as values. */
+export function looksLikeFact(value: unknown): boolean {
+  if (!isObjectRecord(value)) return false;
+  return (value.kind === "boolean" || value.kind === "score") &&
+    (value.phase === "now" || value.phase === "final");
+}
+
+/** @internal Reserve EvidenceSource-shaped raw inputs instead of silently treating them as values. */
+export function looksLikeEvidenceSource(value: unknown): boolean {
+  if (!isObjectRecord(value) || looksLikeFact(value)) return false;
+  return value.phase === "now" || value.phase === "final";
+}
+
+/** @internal Reserve threshold-view-shaped raw inputs at the authoring boundary. */
+export function looksLikeThresholdedScoreFact(value: unknown): boolean {
+  return isObjectRecord(value) && value.kind === "thresholded-score-fact";
+}
+
+type AuthoringBoundary =
+  | BooleanFact<unknown, FactPhase>
+  | ScoreFact<FactPhase>
+  | ThresholdedScoreFact<ScoreFact<FactPhase>>
+  | EvidenceSource<unknown, FactPhase>
+  | Match<never, MatchDomain>;
+
+/** Prevent an owned Fact, EvidenceSource, or Match from becoming a raw subject. */
+export type AuthorValue<T> = [Extract<T, AuthoringBoundary>] extends [never] ? T : never;
+
 export interface FactUseOptions {
   readonly key?: string;
   readonly label?: string;
 }
 
-export interface ScoreThresholdOptions extends FactUseOptions {
-  readonly atLeast: number;
+export interface ScoreUseOptions extends FactUseOptions {
+  readonly max: number;
+}
+
+export interface DirectScoreOptions {
+  readonly key?: string;
+  readonly earned: number;
+}
+
+function assertUnitThreshold(value: unknown, label: string): asserts value is number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) {
+    throw new TypeError(`${label} must be a finite number in [0, 1]`);
+  }
 }
 
 export interface FactResultBase {
@@ -109,7 +287,7 @@ export interface FactUseBase {
 
 export type VerdictFactUseResult = FactUseBase & {
   readonly useKind: "verdict";
-  readonly method: "assert" | "require" | "assertIfCovered";
+  readonly method: "check" | "require" | "checkIfCovered";
   readonly label?: string;
   readonly target:
     | { readonly kind: "boolean"; readonly factId: string }

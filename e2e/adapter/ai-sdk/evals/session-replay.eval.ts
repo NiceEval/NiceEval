@@ -11,7 +11,7 @@ export default defineEval({
     await t.require((await t.send("我叫小明，帮我记住这个名字。")).succeeded());
     const recall = await t.send("我刚才说我叫什么名字？");
     await t.require(recall.succeeded());
-    t.assert(t.check(recall.message, includes("小明")));
+    t.check(recall.message, includes("小明"));
 
     // The reverse half only means something once we've proven this turn actually ran —
     // an errored fresh turn would return an empty reply, against which excludes() is
@@ -19,6 +19,6 @@ export default defineEval({
     const fresh = t.newSession();
     const freshTurn = await fresh.send("我叫什么名字？");
     await t.require(freshTurn.succeeded());
-    t.assert(t.check(fresh.reply, excludes("小明")));
+    t.check(fresh.reply, excludes("小明"));
   },
 });

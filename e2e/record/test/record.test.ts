@@ -35,7 +35,7 @@ it("公开 writer 产生的 Run、Attempt 与 events 可由公开 reader 和 loc
         attempt: 1,
         verdict: "passed",
         durationMs: 42,
-        evaluationAlgorithm: "fact-use/v2",
+        evaluationAlgorithm: "fact-use/v3",
         evaluationKind: "pass",
         factResults: [],
         factUses: [],

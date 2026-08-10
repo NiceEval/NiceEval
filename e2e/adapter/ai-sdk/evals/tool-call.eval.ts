@@ -12,7 +12,7 @@ export default defineEval({
     await t.require(turn.succeeded());
 
     await t.group("裸工具名调用 + 结果配对", () => {
-      t.assert(
+      t.check(
         t.calledTool(
           toolMatch("get_weather", {
             input: satisfies(
@@ -28,7 +28,7 @@ export default defineEval({
           }),
         ),
       );
-      t.assert(
+      t.check(
         t.event(
           eventMatch("message", {
             role: "assistant",
@@ -37,6 +37,6 @@ export default defineEval({
         ),
       );
     });
-    t.assert(t.notCalledTool(toolMatch("calculate")));
+    t.check(t.notCalledTool(toolMatch("calculate")));
   },
 });

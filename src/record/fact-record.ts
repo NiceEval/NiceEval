@@ -1,4 +1,4 @@
-// Native Fact/use result record. Schema 17 stores the graph directly in
+// Native Fact/use result record. Schema 18 stores the graph directly in
 // result.json; no assertion compatibility envelope is read or written.
 
 import type {
@@ -14,7 +14,7 @@ import {
   verdictForTerminal as sharedVerdictForTerminal,
 } from "../shared/verdict.ts";
 
-export const FACT_USE_EVALUATION_ALGORITHM = "fact-use/v2" as const satisfies EvaluationAlgorithm;
+export const FACT_USE_EVALUATION_ALGORITHM = "fact-use/v3" as const satisfies EvaluationAlgorithm;
 
 export type FactUseResult = VerdictFactUseResult | ScoreFactUseResult;
 export type ScoreAttemptStatus = ScoreFactAttemptOutcome["status"];
@@ -114,13 +114,17 @@ function assertFactUse(value: unknown, path: string, factIds: ReadonlySet<string
   const factId = factUseTargetId(value);
   if (factId !== undefined && !factIds.has(factId)) throw new Error(`${path} references unknown Fact ${JSON.stringify(factId)}.`);
   if (value.useKind === "verdict") {
-    if (value.method !== "assert" && value.method !== "require" && value.method !== "assertIfCovered") {
+    if (value.method !== "check" && value.method !== "require" && value.method !== "checkIfCovered") {
       throw new Error(`${path}.method is invalid.`);
     }
     if (!isRecord(value.target) || (value.target.kind !== "boolean" && value.target.kind !== "score")) {
       throw new Error(`${path}.target is invalid.`);
     }
+    assertNonEmptyString(value.target.factId, `${path}.target.factId`);
     if (value.target.kind === "score") assertUnit(value.target.atLeast, `${path}.target.atLeast`);
+    if (value.method === "checkIfCovered" && value.target.kind !== "boolean") {
+      throw new Error(`${path}.method checkIfCovered requires a boolean usage evidence Fact.`);
+    }
     if (!["passed", "failed", "unavailable", "notApplicable", "errored", "notReachedByControl", "notReachedByError"].includes(value.outcome as string)) {
       throw new Error(`${path}.outcome is invalid.`);
     }

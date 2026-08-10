@@ -18,7 +18,7 @@ export default defineEval({
     );
     await t.require(turn.succeeded());
 
-    t.assert(
+    t.check(
       t.calledTool(
         toolMatch("mcp__plugin_context7_context7__resolve-library-id", {
           input: satisfies(
@@ -33,6 +33,6 @@ export default defineEval({
         }),
       ),
     );
-    t.assert(t.check(turn.message, includes("/reactjs/react.dev")));
+    t.check(turn.message, includes("/reactjs/react.dev"));
   },
 });

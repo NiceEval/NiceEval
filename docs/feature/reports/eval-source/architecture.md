@@ -63,7 +63,7 @@ interface SourceCallSummary {
 }
 ```
 
-Fact result、Fact use 与 send 头行都可以成为 `LineAnnotation`。当前 `result.json` 条目按 `sourceOrder` 排列；schema 17 以前的 Run 文件整份不支持读取，因此没有旧 assertion/scores 回退分支。
+Fact result、Fact use 与 send 头行都可以成为 `LineAnnotation`。当前 `result.json` 条目按 `sourceOrder` 排列；schema 18 以前的 Run 文件整份不支持读取，因此没有旧 assertion/scores 回退分支。
 
 ## 装配边界
 

@@ -14,22 +14,18 @@ export default defineEval({
       ["续轮", second],
     ] as const) {
       await t.group(`${label} usage 可读且为正`, () => {
-        t.assert(
-          t.check(
-            turn.usage?.inputTokens,
-            satisfies(
-              "usage.inputTokens > 0",
-              (value) => typeof value === "number" && value > 0,
-            ),
+        t.check(
+          turn.usage?.inputTokens,
+          satisfies(
+            "usage.inputTokens > 0",
+            (value) => typeof value === "number" && value > 0,
           ),
         );
-        t.assert(
-          t.check(
-            turn.usage?.outputTokens,
-            satisfies(
-              "usage.outputTokens > 0",
-              (value) => typeof value === "number" && value > 0,
-            ),
+        t.check(
+          turn.usage?.outputTokens,
+          satisfies(
+            "usage.outputTokens > 0",
+            (value) => typeof value === "number" && value > 0,
           ),
         );
       });

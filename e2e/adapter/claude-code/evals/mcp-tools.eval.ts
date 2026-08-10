@@ -23,7 +23,7 @@ export default defineEval({
     await t.group(
       "两个已挂载的 MCP server 都以精确入参被调用;未挂载的 server 从未被调用",
       () => {
-        t.assert(
+        t.check(
           t.calledTool(
             toolMatch("mcp__e2e-stdio__get-sum", {
               input: satisfies(
@@ -38,7 +38,7 @@ export default defineEval({
             }),
           ),
         );
-        t.assert(
+        t.check(
           t.calledTool(
             toolMatch("mcp__e2e-http__get-sum", {
               input: satisfies(
@@ -53,11 +53,11 @@ export default defineEval({
             }),
           ),
         );
-        t.assert(t.notCalledTool(toolMatch("mcp__e2e-absent__get-diff")));
+        t.check(t.notCalledTool(toolMatch("mcp__e2e-absent__get-diff")));
       },
     );
 
-    t.assert(t.check(turn.message, includes("123")));
-    t.assert(t.check(turn.message, includes("42")));
+    t.check(turn.message, includes("123"));
+    t.check(turn.message, includes("42"));
   },
 });

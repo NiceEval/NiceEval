@@ -36,7 +36,7 @@ export default defineEval({
       ].join("\n"),
     );
     await t.require(first.succeeded());
-    t.assert(
+    t.check(
       first.calledTool(
         toolMatch("shell", {
           input: satisfies(
@@ -52,18 +52,12 @@ export default defineEval({
         { count: 1 },
       ),
     );
-    t.assert(
-      t.check(first.usage?.inputTokens, positive("first.usage.inputTokens")),
-    );
-    t.assert(
-      t.check(first.usage?.outputTokens, positive("first.usage.outputTokens")),
-    );
-    t.assert(
-      t.check(
-        t.sessionId,
-        isDefined(
-          "Claude Agent SDK system/init session_id captured before the first result",
-        ),
+    t.check(first.usage?.inputTokens, positive("first.usage.inputTokens"));
+    t.check(first.usage?.outputTokens, positive("first.usage.outputTokens"));
+    t.check(
+      t.sessionId,
+      isDefined(
+        "Claude Agent SDK system/init session_id captured before the first result",
       ),
     );
 
@@ -71,26 +65,17 @@ export default defineEval({
       `只回复上一轮要求你记住的会话哨兵。不要调用任何工具，不要读取或写入文件。`,
     );
     await t.require(resumed.succeeded());
-    t.assert(t.check(resumed.message, includes(sentinel)));
-    t.assert(resumed.notCalledTool(toolMatch("shell")));
-    t.assert(
-      t.check(
-        resumed.usage?.inputTokens,
-        positive("resumed.usage.inputTokens"),
-      ),
+    t.check(resumed.message, includes(sentinel));
+    t.check(resumed.notCalledTool(toolMatch("shell")));
+    t.check(resumed.usage?.inputTokens, positive("resumed.usage.inputTokens"));
+    t.check(
+      resumed.usage?.outputTokens,
+      positive("resumed.usage.outputTokens"),
     );
-    t.assert(
-      t.check(
-        resumed.usage?.outputTokens,
-        positive("resumed.usage.outputTokens"),
-      ),
-    );
-    t.assert(
-      t.check(
-        t.sessionId,
-        isDefined(
-          "Claude Agent SDK session_id remains captured at the resumed result terminal",
-        ),
+    t.check(
+      t.sessionId,
+      isDefined(
+        "Claude Agent SDK session_id remains captured at the resumed result terminal",
       ),
     );
   },

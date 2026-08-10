@@ -8,7 +8,7 @@ export default defineEval({
   async test(t) {
     const turn = await t.send("ping local-protocol transport");
     await t.require(turn.succeeded());
-    t.assert(
+    t.check(
       t.event(
         eventMatch("message", {
           role: "assistant",

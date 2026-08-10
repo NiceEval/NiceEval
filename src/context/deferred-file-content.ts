@@ -1,21 +1,38 @@
 import { isTransferTimeout } from "../sandbox/transfer-errors.ts";
 import { classifySandboxIoError } from "../sandbox/errors.ts";
+import {
+  isManagedEvidenceSource,
+  makeEvidenceSource,
+  type EvidenceSource,
+} from "../assertions/types.ts";
 
-const DEFERRED_FILE_CONTENT: unique symbol = Symbol("niceeval.deferredFileContent");
-
-/**
- * `t.sandbox.file(path)` 产生的延迟证据引用。它不是字符串；Fact collector
- * 在 finalize 阶段读取 Sandbox 内容后，再把真实文本交给 BooleanMatch。
- */
-export interface DeferredFileContent {
-  readonly [DEFERRED_FILE_CONTENT]: true;
+interface DeferredFileSource {
+  readonly owner: object;
+  readonly path: string;
 }
 
-/** @internal 只由 TestContext 构造；公开作者面只导出 DeferredFileContent 类型。 */
-export class FileRef implements DeferredFileContent {
-  readonly [DEFERRED_FILE_CONTENT] = true as const;
+const deferredFileSources = new WeakMap<object, DeferredFileSource>();
 
-  constructor(readonly path: string) {}
+/** @internal `t.sandbox.file(path)` creates an Attempt-owned deferred source. */
+export function createDeferredFileSource(owner: object, path: string): EvidenceSource<string, "final"> {
+  const source = makeEvidenceSource<string, "final">("final");
+  deferredFileSources.set(source, { owner, path });
+  return source;
+}
+
+/** @internal Resolve the private path only for the owning Attempt context. */
+export function deferredFilePath(source: unknown, owner: object): string {
+  if (!isManagedEvidenceSource(source)) {
+    throw new TypeError("EvidenceSource must be created by this NiceEval runtime");
+  }
+  const deferred = deferredFileSources.get(source);
+  if (deferred === undefined) {
+    throw new TypeError("EvidenceSource is not a deferred Sandbox file source");
+  }
+  if (deferred.owner !== owner) {
+    throw new TypeError("EvidenceSource belongs to a different Attempt");
+  }
+  return deferred.path;
 }
 
 // ── 延迟 file source 的纯证据解析 ──

@@ -19,22 +19,18 @@ export default defineEval({
       ["second", second],
     ] as const) {
       await t.group(`${label} turn 的实际 usage`, () => {
-        t.assert(
-          t.check(
-            turn.usage?.inputTokens,
-            satisfies(
-              "usage.inputTokens > 0",
-              (value) => typeof value === "number" && value > 0,
-            ),
+        t.check(
+          turn.usage?.inputTokens,
+          satisfies(
+            "usage.inputTokens > 0",
+            (value) => typeof value === "number" && value > 0,
           ),
         );
-        t.assert(
-          t.check(
-            turn.usage?.outputTokens,
-            satisfies(
-              "usage.outputTokens > 0",
-              (value) => typeof value === "number" && value > 0,
-            ),
+        t.check(
+          turn.usage?.outputTokens,
+          satisfies(
+            "usage.outputTokens > 0",
+            (value) => typeof value === "number" && value > 0,
           ),
         );
       });

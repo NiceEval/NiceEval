@@ -13,7 +13,7 @@ export default defineEval({
   description: "Brooklyn weather query",
   async test(t) {
     const turn = await t.send("What's the weather like in Brooklyn today?");
-    t.assert(turn.succeeded());
+    t.check(turn.succeeded());
   },
 });
 ```
@@ -106,9 +106,9 @@ test(t: TestContext): Promise<void> | void;
 
 ## Test context: `t`
 
-`t`（`TestContext`）是评估用例作者拿到的高层上下文。`t.check(...)`、`t` / `turn` 的事件方法和 `t.sandbox` 的文件方法只生成 Fact；`t.assert(...)`、`t.assertIfCovered(...)` 与 `t.require(...)` 决定这些事实怎样影响通过制判定。`t.require(...)` 只接受已经可求值的 `phase: "now"` Fact，失败时中止后续代码；`phase: "final"` 的文件与最终 diff Fact 必须交给 `t.assert(...)`，在评估用例收尾时统一求值。
+`t`（`TestContext`）是评估用例作者拿到的高层上下文。`t` / Turn / Session 的事件方法、`t.sandbox` 的文件方法和 Judge recipe 只生成 Fact。`t.check(...)`、`t.checkIfCovered(...)` 与 `t.require(...)` 决定这些事实怎样影响通过制判定；值加 Match 的写法会原子创建并消费 Fact。`t.require(...)` 只接受已经可求值的 `phase: "now"` Fact，失败时中止后续代码；`phase: "final"` 的文件与最终 diff Fact 必须交给 `t.check(...)`，在评估用例收尾时统一求值。
 
-计分制 `defineScoreEval` 使用 `ScoreTestContext`：用 `t.score(label, fact, { max })` 或 `t.score(label, { earned })` 记分，`test` 正常返回时自动收尾。没有 score use 时得到 0 分。Judge recipe 也是 ScoreFact producer，使用同一套 `assert`、`require` 和 `score`。完整规则见[计分制](/zh/tutorials/evaluation-kinds#走完三步也要记三分)。全部成员：
+计分制 `defineScoreEval` 使用 `ScoreTestContext`：用 `t.score(label, fact, { max })` 或 `t.score(label, { earned })` 记分，`test` 正常返回时自动收尾。没有 score use 时得到 0 分。Judge recipe 也是 ScoreFact producer，使用同一套 `check`、`require` 和 `score`。完整规则见[计分制](/zh/tutorials/evaluation-kinds#走完三步也要记三分)。全部成员：
 
 {/* GENERATED:BEGIN test-context */}
 
@@ -138,12 +138,6 @@ calledTool(match: ToolMatch, options?: CollectionMatch): BooleanFact<LogicalTool
 notCalledTool(match: ToolMatch): BooleanFact<void, P>;
 ```
 
-#### `toolOrder`
-
-```ts
-toolOrder(matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]]): BooleanFact<void, P>;
-```
-
 #### `usedNoTools`
 
 ```ts
@@ -171,25 +165,13 @@ noFailedActions(): BooleanFact<void, P>;
 #### `event`
 
 ```ts
-event(match: EventMatch, options?: CollectionMatch): BooleanFact<MatchableEvent, P>;
+event(match: EventMatch, options?: CollectionMatch): BooleanFact<AssertionEvent, P>;
 ```
 
 #### `notEvent`
 
 ```ts
 notEvent(match: EventMatch): BooleanFact<void, P>;
-```
-
-#### `eventOrder`
-
-```ts
-eventOrder(matches: readonly [EventMatch, EventMatch, ...EventMatch[]]): BooleanFact<void, P>;
-```
-
-#### `eventsSatisfy`
-
-```ts
-eventsSatisfy(label: string, predicate: (events: readonly StreamEvent[]) => boolean): BooleanFact<void, P>;
 ```
 
 #### `maxTokens`
@@ -309,46 +291,59 @@ skip(reason: string): never;
 #### `check`
 
 ```ts
-check<T, R extends T>(value: T, match: BooleanMatch<T, R, "value">): BooleanFact<R, "now">;
+check<F extends BooleanFact<unknown, FactPhase>>(fact: F, options?: FactUseOptions): F;
 ```
 
 #### `check`
 
 ```ts
-check<T, R extends T, P extends FactPhase>(
+check<F extends ScoreFact<FactPhase>>(fact: ThresholdedScoreFact<F>, options?: FactUseOptions): F;
+```
+
+#### `check`
+
+```ts
+check<T, I, R extends I, P extends FactPhase>(
+  source: EvidenceSource<T, P> & AcceptsMatchInput<T, NoInfer<I>>,
+  match: BooleanMatch<I, R, "value">,
+  options?: FactUseOptions,
+): BooleanFact<T & R, P>;
+```
+
+#### `check`
+
+```ts
+check<T, P extends FactPhase>(
   source: EvidenceSource<T, P>,
-  match: BooleanMatch<T, R, "value">,
-): BooleanFact<R, P>;
+  match: ThresholdedScoreMatch<NoInfer<T>>,
+  options?: FactUseOptions,
+): ScoreFact<P>;
 ```
 
 #### `check`
 
 ```ts
-check<T>(value: T, match: ScoreMatch<T>): ScoreFact<"now">;
+check<T, I, R extends I>(
+  value: T & AuthorValue<T> & AcceptsMatchInput<T, NoInfer<I>>,
+  match: BooleanMatch<I, R, "value">,
+  options?: FactUseOptions,
+): BooleanFact<T & R, "now">;
 ```
 
 #### `check`
 
 ```ts
-check<T, P extends FactPhase>(source: EvidenceSource<T, P>, match: ScoreMatch<T>): ScoreFact<P>;
+check<T>(
+  value: T & AuthorValue<T>,
+  match: ThresholdedScoreMatch<NoInfer<T>>,
+  options?: FactUseOptions,
+): ScoreFact<"now">;
 ```
 
-#### `assert`
+#### `checkIfCovered`
 
 ```ts
-assert<R, P extends FactPhase>(fact: BooleanFact<R, P>, options?: FactUseOptions): void;
-```
-
-#### `assert`
-
-```ts
-assert<P extends FactPhase>(fact: ScoreFact<P>, options: ScoreThresholdOptions): void;
-```
-
-#### `assertIfCovered`
-
-```ts
-assertIfCovered<P extends FactPhase>(fact: UsageEvidenceFact<P>, options?: FactUseOptions): void;
+checkIfCovered<F extends UsageEvidenceFact<FactPhase>>(fact: F, options?: FactUseOptions): F;
 ```
 
 #### `require`
@@ -360,13 +355,27 @@ require<R>(fact: BooleanFact<R, "now">, options?: FactUseOptions): Promise<R>;
 #### `require`
 
 ```ts
-require(fact: ScoreFact<"now">, options: ScoreThresholdOptions): Promise<number>;
+require<F extends ScoreFact<"now">>(fact: ThresholdedScoreFact<F>, options?: FactUseOptions): Promise<number>;
 ```
 
 #### `require`
 
 ```ts
-require<T, R extends T>(value: T, match: BooleanMatch<T, R, "value">, options?: FactUseOptions): Promise<R>;
+require<T, I, R extends I>(
+  value: T & AuthorValue<T> & AcceptsMatchInput<T, NoInfer<I>>,
+  match: BooleanMatch<I, R, "value">,
+  options?: FactUseOptions,
+): Promise<T & R>;
+```
+
+#### `require`
+
+```ts
+require<T>(
+  value: T & AuthorValue<T>,
+  match: ThresholdedScoreMatch<NoInfer<T>>,
+  options?: FactUseOptions,
+): Promise<number>;
 ```
 
 #### `group`
@@ -411,9 +420,9 @@ const factual = turn.judge.autoevals.factuality(expected);
 const quality = turn.judge.autoevals.closedQA(question);
 const summary = turn.judge.autoevals.summarizes(sourceText);
 
-t.assert(factual, { atLeast: 0.8 });
-t.assert(quality, { atLeast: 0.7 });
-t.assert(summary, { atLeast: 0.75 });
+t.check((factual).atLeast(0.8));
+t.check((quality).atLeast(0.7));
+t.check((summary).atLeast(0.75));
 ```
 
 `t.judge.autoevals` 的根级 recipe 额外接收 `{ input, output }` 字符串材料。`turn.judge` 已绑定 immutable Turn 材料。模型配置按 Eval、Experiment、项目配置解析一次；没有单次模型覆盖或 `{ on }` 选项。
@@ -450,12 +459,6 @@ calledTool(match: ToolMatch, options?: CollectionMatch): BooleanFact<LogicalTool
 notCalledTool(match: ToolMatch): BooleanFact<void, P>;
 ```
 
-#### `toolOrder`
-
-```ts
-toolOrder(matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]]): BooleanFact<void, P>;
-```
-
 #### `usedNoTools`
 
 ```ts
@@ -483,25 +486,13 @@ noFailedActions(): BooleanFact<void, P>;
 #### `event`
 
 ```ts
-event(match: EventMatch, options?: CollectionMatch): BooleanFact<MatchableEvent, P>;
+event(match: EventMatch, options?: CollectionMatch): BooleanFact<AssertionEvent, P>;
 ```
 
 #### `notEvent`
 
 ```ts
 notEvent(match: EventMatch): BooleanFact<void, P>;
-```
-
-#### `eventOrder`
-
-```ts
-eventOrder(matches: readonly [EventMatch, EventMatch, ...EventMatch[]]): BooleanFact<void, P>;
-```
-
-#### `eventsSatisfy`
-
-```ts
-eventsSatisfy(label: string, predicate: (events: readonly StreamEvent[]) => boolean): BooleanFact<void, P>;
 ```
 
 #### `maxTokens`
@@ -514,6 +505,27 @@ maxTokens(max: number): UsageEvidenceFact<P>;
 
 ```ts
 maxCost(usd: number): UsageEvidenceFact<P>;
+```
+
+#### `toolOrder`
+
+```ts
+toolOrder(matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]]): BooleanFact<void, P>;
+```
+
+#### `eventOrder`
+
+```ts
+eventOrder(matches: readonly [EventMatch, EventMatch, ...EventMatch[]]): BooleanFact<void, P>;
+```
+
+#### `eventsSatisfy`
+
+```ts
+eventsSatisfy(
+  label: string,
+  predicate: (events: readonly AssertionEvent[]) => boolean | Promise<boolean>,
+): BooleanFact<void, P>;
 ```
 
 #### `events`

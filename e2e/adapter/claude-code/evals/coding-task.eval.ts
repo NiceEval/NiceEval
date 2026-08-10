@@ -21,12 +21,12 @@ export default defineEval({
         "(3) 用 Bash 工具运行命令 'cat notes.txt',并把它的输出展示给我。",
     );
     await t.require(turn.succeeded());
-    t.assert(t.succeeded());
+    t.check(t.succeeded());
 
     await t.group("file 与 shell 工具事件均已出现且状态为 completed", () => {
-      t.assert(t.calledTool(toolMatch("file_write", { status: "completed" })));
-      t.assert(t.calledTool(toolMatch("file_edit", { status: "completed" })));
-      t.assert(
+      t.check(t.calledTool(toolMatch("file_write", { status: "completed" })));
+      t.check(t.calledTool(toolMatch("file_edit", { status: "completed" })));
+      t.check(
         t.calledTool(
           toolMatch("shell", {
             input: satisfies(
@@ -43,12 +43,12 @@ export default defineEval({
           }),
         ),
       );
-      t.assert(t.noFailedActions());
+      t.check(t.noFailedActions());
     });
 
-    t.assert(t.sandbox.fileChanged("notes.txt"));
-    t.assert(t.check(t.sandbox.file("notes.txt"), includes(MARKER_A)));
-    t.assert(t.check(t.sandbox.file("notes.txt"), includes(MARKER_B)));
-    t.assert(t.check(turn.message, includes(MARKER_A)));
+    t.check(t.sandbox.fileChanged("notes.txt"));
+    t.check(t.sandbox.file("notes.txt"), includes(MARKER_A));
+    t.check(t.sandbox.file("notes.txt"), includes(MARKER_B));
+    t.check(turn.message, includes(MARKER_A));
   },
 });

@@ -18,26 +18,22 @@ export default defineEval({
     await t.require(turn.succeeded());
 
     await t.group("usage 逐轮非空", () => {
-      t.assert(
-        t.check(
-          turn.usage?.inputTokens,
-          satisfies(
-            "usage.inputTokens > 0",
-            (v) => typeof v === "number" && v > 0,
-          ),
+      t.check(
+        turn.usage?.inputTokens,
+        satisfies(
+          "usage.inputTokens > 0",
+          (v) => typeof v === "number" && v > 0,
         ),
       );
-      t.assert(
-        t.check(
-          turn.usage?.outputTokens,
-          satisfies(
-            "usage.outputTokens > 0",
-            (v) => typeof v === "number" && v > 0,
-          ),
+      t.check(
+        turn.usage?.outputTokens,
+        satisfies(
+          "usage.outputTokens > 0",
+          (v) => typeof v === "number" && v > 0,
         ),
       );
     });
-    t.assert(t.check(turn.message, includes("63")));
+    t.check(turn.message, includes("63"));
 
     await t.group(
       "实际模型从 Codex session 侧写核对,不只信请求参数",
@@ -45,8 +41,8 @@ export default defineEval({
         const probe = await t.sandbox.runShell(
           `f=$(find ~/.codex/sessions -name "*${t.sessionId}*.jsonl" | head -1); test -n "$f" && grep -o '"model":"[^"]*"' "$f" | sort -u`,
         );
-        t.assert(t.check(probe.exitCode, equals(0)));
-        t.assert(t.check(probe.stdout, includes(`"model":"${t.model}"`)));
+        t.check(probe.exitCode, equals(0));
+        t.check(probe.stdout, includes(`"model":"${t.model}"`));
       },
     );
   },

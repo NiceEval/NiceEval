@@ -39,7 +39,7 @@ test("值 Match 通过原生 Fact 消费折叠为 passed", async () => {
       const record = await openRecord(join(root, ".niceeval"));
       const attempt = resolveLocator(record, locator);
       expect(attempt.result.verdict).toBe("passed");
-      expect(attempt.result.evaluationAlgorithm).toBe("fact-use/v2");
+      expect(attempt.result.evaluationAlgorithm).toBe("fact-use/v3");
       expect(attempt.result.factResults).toContainEqual(
         expect.objectContaining({ name: "satisfies(two values)", outcome: "passed" }),
       );

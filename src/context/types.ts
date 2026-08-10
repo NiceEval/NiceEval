@@ -1,37 +1,50 @@
-// Eval author context.  Fact producers live on their natural evidence scope;
-// assert/require/score are the only ordinary Fact consumers.
+// Eval author context. Fact producers live on their natural evidence scope;
+// check/require/score are the only ordinary Fact consumers.
 
 import type { AnswerValue } from "../agents/types.ts";
 import type {
   BooleanFact,
+  AuthorValue,
+  DirectScoreOptions,
   EvidenceSource,
   FactPhase,
   FactUseOptions,
   JudgeMaterial,
   ScoreFact,
-  ScoreThresholdOptions,
+  ScoreUseOptions,
+  ThresholdedScoreFact,
   UsageEvidenceFact,
 } from "../assertions/types.ts";
 import type {
   BooleanMatch,
+  AssertionEvent,
   EventMatch,
-  MatchableEvent,
   ScoreMatch,
+  ThresholdedScoreMatch,
   ToolMatch,
 } from "../assertions/match.ts";
 import type { InputRequest, LogicalToolOccurrence, O11ySummary, StreamEvent, Usage } from "../o11y/types.ts";
 import type { DiagnosticInput, JsonMatch, JsonValue, ProgressUpdate } from "../shared/types.ts";
 import type { SandboxOperations, SandboxTransferOperations } from "../sandbox/types.ts";
 
-export type { BooleanMatch, EventMatch, ScoreMatch } from "../assertions/match.ts";
+export type {
+  AssertionEvent,
+  BooleanMatch,
+  EventMatch,
+  ScoreMatch,
+  ThresholdedScoreMatch,
+} from "../assertions/match.ts";
 export type {
   BooleanFact,
+  AuthorValue,
+  DirectScoreOptions,
   EvidenceSource,
   FactPhase,
   FactUseOptions,
   JudgeMaterial,
   ScoreFact,
-  ScoreThresholdOptions,
+  ScoreUseOptions,
+  ThresholdedScoreFact,
   UsageEvidenceFact,
 } from "../assertions/types.ts";
 
@@ -43,26 +56,34 @@ export interface CollectionMatch {
   readonly count?: number;
 }
 
-export interface ScopedFactProducers<P extends FactPhase> {
+type AcceptsMatchInput<T, I> = [T] extends [I] ? unknown : never;
+
+export interface AggregateScopedFactProducers<P extends FactPhase> {
   succeeded(): BooleanFact<void, P>;
   parked(): BooleanFact<void, P>;
   calledTool(match: ToolMatch, options?: CollectionMatch): BooleanFact<LogicalToolOccurrence, P>;
   notCalledTool(match: ToolMatch): BooleanFact<void, P>;
-  toolOrder(matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]]): BooleanFact<void, P>;
   usedNoTools(): BooleanFact<void, P>;
   maxToolCalls(max: number): BooleanFact<void, P>;
   loadedSkill(skill: string): BooleanFact<void, P>;
   noFailedActions(): BooleanFact<void, P>;
-  event(match: EventMatch, options?: CollectionMatch): BooleanFact<MatchableEvent, P>;
+  event(match: EventMatch, options?: CollectionMatch): BooleanFact<AssertionEvent, P>;
   notEvent(match: EventMatch): BooleanFact<void, P>;
-  eventOrder(matches: readonly [EventMatch, EventMatch, ...EventMatch[]]): BooleanFact<void, P>;
-  eventsSatisfy(label: string, predicate: (events: readonly StreamEvent[]) => boolean): BooleanFact<void, P>;
   maxTokens(max: number): UsageEvidenceFact<P>;
   maxCost(usd: number): UsageEvidenceFact<P>;
 }
 
+export interface OrderedScopedFactProducers<P extends FactPhase> extends AggregateScopedFactProducers<P> {
+  toolOrder(matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]]): BooleanFact<void, P>;
+  eventOrder(matches: readonly [EventMatch, EventMatch, ...EventMatch[]]): BooleanFact<void, P>;
+  eventsSatisfy(
+    label: string,
+    predicate: (events: readonly AssertionEvent[]) => boolean | Promise<boolean>,
+  ): BooleanFact<void, P>;
+}
+
 /** A completed Agent turn is immutable, so its facts are usable by `require`. */
-export interface TurnHandle extends ScopedFactProducers<"now"> {
+export interface TurnHandle extends OrderedScopedFactProducers<"now"> {
   readonly events: readonly StreamEvent[];
   readonly toolCalls: readonly import("../o11y/types.ts").ToolCall[];
   readonly status: "completed" | "failed" | "waiting";
@@ -121,7 +142,7 @@ export interface InputRequestFilter {
 export type RespondAnswer = { readonly request: InputRequest } & AnswerValue;
 
 /** A session Fact captures the session prefix at declaration time. */
-export interface SessionHandle extends ScopedFactProducers<"now"> {
+export interface SessionHandle extends OrderedScopedFactProducers<"now"> {
   send(input: SendInput): Promise<TurnHandle>;
   sendFile(path: string, text?: string): Promise<TurnHandle>;
   requireInputRequest(filter?: InputRequestFilter): InputRequest;
@@ -133,7 +154,7 @@ export interface SessionHandle extends ScopedFactProducers<"now"> {
   readonly usage: Usage;
 }
 
-export interface TestContext extends ScopedFactProducers<"final"> {
+export interface TestContext extends AggregateScopedFactProducers<"final"> {
   send(input: SendInput): Promise<TurnHandle>;
   sendFile(path: string, text?: string): Promise<TurnHandle>;
   requireInputRequest(filter?: InputRequestFilter): InputRequest;
@@ -153,21 +174,43 @@ export interface TestContext extends ScopedFactProducers<"final"> {
   log(message: string): void;
   skip(reason: string): never;
 
-  check<T, R extends T>(value: T, match: BooleanMatch<T, R, "value">): BooleanFact<R, "now">;
-  check<T, R extends T, P extends FactPhase>(
+  check<F extends BooleanFact<unknown, FactPhase>>(fact: F, options?: FactUseOptions): F;
+  check<F extends ScoreFact<FactPhase>>(fact: ThresholdedScoreFact<F>, options?: FactUseOptions): F;
+  check<T, I, R extends I, P extends FactPhase>(
+    source: EvidenceSource<T, P> & AcceptsMatchInput<T, NoInfer<I>>,
+    match: BooleanMatch<I, R, "value">,
+    options?: FactUseOptions,
+  ): BooleanFact<T & R, P>;
+  check<T, P extends FactPhase>(
     source: EvidenceSource<T, P>,
-    match: BooleanMatch<T, R, "value">,
-  ): BooleanFact<R, P>;
-  check<T>(value: T, match: ScoreMatch<T>): ScoreFact<"now">;
-  check<T, P extends FactPhase>(source: EvidenceSource<T, P>, match: ScoreMatch<T>): ScoreFact<P>;
+    match: ThresholdedScoreMatch<NoInfer<T>>,
+    options?: FactUseOptions,
+  ): ScoreFact<P>;
+  check<T, I, R extends I>(
+    value: T & AuthorValue<T> & AcceptsMatchInput<T, NoInfer<I>>,
+    match: BooleanMatch<I, R, "value">,
+    options?: FactUseOptions,
+  ): BooleanFact<T & R, "now">;
+  check<T>(
+    value: T & AuthorValue<T>,
+    match: ThresholdedScoreMatch<NoInfer<T>>,
+    options?: FactUseOptions,
+  ): ScoreFact<"now">;
 
-  assert<R, P extends FactPhase>(fact: BooleanFact<R, P>, options?: FactUseOptions): void;
-  assert<P extends FactPhase>(fact: ScoreFact<P>, options: ScoreThresholdOptions): void;
-  assertIfCovered<P extends FactPhase>(fact: UsageEvidenceFact<P>, options?: FactUseOptions): void;
+  checkIfCovered<F extends UsageEvidenceFact<FactPhase>>(fact: F, options?: FactUseOptions): F;
 
   require<R>(fact: BooleanFact<R, "now">, options?: FactUseOptions): Promise<R>;
-  require(fact: ScoreFact<"now">, options: ScoreThresholdOptions): Promise<number>;
-  require<T, R extends T>(value: T, match: BooleanMatch<T, R, "value">, options?: FactUseOptions): Promise<R>;
+  require<F extends ScoreFact<"now">>(fact: ThresholdedScoreFact<F>, options?: FactUseOptions): Promise<number>;
+  require<T, I, R extends I>(
+    value: T & AuthorValue<T> & AcceptsMatchInput<T, NoInfer<I>>,
+    match: BooleanMatch<I, R, "value">,
+    options?: FactUseOptions,
+  ): Promise<T & R>;
+  require<T>(
+    value: T & AuthorValue<T>,
+    match: ThresholdedScoreMatch<NoInfer<T>>,
+    options?: FactUseOptions,
+  ): Promise<number>;
 
   group<T>(title: string, fn: () => Promise<T> | T): Promise<T>;
   readonly sandbox: EvalSandbox;
@@ -176,17 +219,32 @@ export interface TestContext extends ScopedFactProducers<"final"> {
   readonly judge: JudgeNamespace;
 }
 
-export interface ScoreTestContext extends Omit<TestContext, "judge" | "send" | "sendFile" | "respond" | "respondAll" | "newSession"> {
-  send(input: SendInput): Promise<TurnHandle>;
-  sendFile(path: string, text?: string): Promise<TurnHandle>;
-  respond(...responses: (string | RespondAnswer)[]): Promise<TurnHandle>;
-  respondAll(optionId: string): Promise<TurnHandle>;
-  newSession(): SessionHandle;
-  readonly judge: JudgeNamespace;
-  score<P extends FactPhase>(
+export interface ScoreTestContext extends TestContext {
+  score<F extends BooleanFact<unknown, FactPhase>>(label: string, fact: F, options: ScoreUseOptions): F;
+  score<F extends ScoreFact<FactPhase>>(label: string, fact: F, options: ScoreUseOptions): F;
+  score<T, I, R extends I, P extends FactPhase>(
     label: string,
-    fact: BooleanFact<unknown, P> | ScoreFact<P>,
-    options: { readonly key?: string; readonly max: number },
-  ): void;
-  score(label: string, direct: { readonly key?: string; readonly earned: number }): void;
+    source: EvidenceSource<T, P> & AcceptsMatchInput<T, NoInfer<I>>,
+    match: BooleanMatch<I, R, "value">,
+    options: ScoreUseOptions,
+  ): BooleanFact<T & R, P>;
+  score<T, P extends FactPhase>(
+    label: string,
+    source: EvidenceSource<T, P>,
+    match: ScoreMatch<NoInfer<T>>,
+    options: ScoreUseOptions,
+  ): ScoreFact<P>;
+  score<T, I, R extends I>(
+    label: string,
+    value: T & AuthorValue<T> & AcceptsMatchInput<T, NoInfer<I>>,
+    match: BooleanMatch<I, R, "value">,
+    options: ScoreUseOptions,
+  ): BooleanFact<T & R, "now">;
+  score<T>(
+    label: string,
+    value: T & AuthorValue<T>,
+    match: ScoreMatch<NoInfer<T>>,
+    options: ScoreUseOptions,
+  ): ScoreFact<"now">;
+  score(label: string, direct: DirectScoreOptions): void;
 }
