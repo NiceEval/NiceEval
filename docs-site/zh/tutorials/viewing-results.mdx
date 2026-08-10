@@ -66,7 +66,7 @@ Sample 保留 Run 的完整 expected-slot 分母。一个 slot 可能是：
 
 ## 编辑后重新读取
 
-Record 是可编辑的当前数据集。目录停稳后，用户可以修改 Verdict、Usage 或其他通道值。完成修改后，重新运行 `show` 或 `view`；新的 Sample 会使用当前值。
+Record 是可编辑的事实数据集。目录停稳后，用户可以修改 Verdict、Usage 或其他通道值。完成修改后，重新运行 `show` 或 `view`；新的分析投影会读取修改后的值。
 
 不要让 Runner、active reader、导出的 Sample 选择 / ReportInput 构造阶段与人工编辑同时操作同一目录。reader 释放后，Report 执行和写站不再访问 Record，可以继续完成。
 

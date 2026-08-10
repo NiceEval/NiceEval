@@ -1,8 +1,8 @@
-# Reports：把 Sample 变成可交付视图
+# Reports：把 AnalysisSample 变成可交付视图
 
-Reports 把已经选择好的 [Sample](../sample/README.md) 变成终端输出、浏览器页面或可分享的静态报告站。它负责计算和呈现，不拥有评估事实。
+Reports 把已经投影好的 [`AnalysisSample`](../sample/README.md) 变成终端输出、浏览器页面或可分享的静态报告站。它负责计算和呈现，不拥有评估事实。
 
-    RecordReader → core-only Sample → ReportPlan
+    RecordReader → analysis projector → core-only AnalysisSample → ReportPlan
                                       ↓
                                   ReportInput
                                       ↓
@@ -10,24 +10,24 @@ Reports 把已经选择好的 [Sample](../sample/README.md) 变成终端输出�
                                 ↙           ↘
                               view          export
 
-<code>ReportInput</code> 是进程内的普通值。它带着 core-only Sample、完整分母，以及按 ReportPlan 请求的 Run 与 Attempt 通道读取。它不落盘，不是另一种 Record 格式，也不携带打开的 reader。
+<code>ReportInput</code> 是进程内的普通值。它带着 core-only `AnalysisSample`、完整分母，以及按 ReportPlan 请求的 Run 与 Attempt 通道读取。它不落盘，不是另一种 Record 格式，也不携带打开的 reader。
 
 ## 核心心智
 
-Sample 决定比较范围和分母。Reports 不按时间、路径或 Attempt locator 再选成员。一个分母项即使没有 Member、核心引用有误，或被调用方排除，也保留在 ReportInput 中，并以 Sample 的状态呈现。
+analysis projector 决定比较范围和分母。Reports 不按时间、路径或 Attempt locator 再选成员，也不接收 `ExecutionProjection`。一个分母项即使没有 Member、核心引用有误，或被调用方排除，也保留在 ReportInput 中，并以 `AnalysisSample` 的状态呈现。
 
-只有 Record→Reports composition adapter 同时接收 reader、Sample 与 plan。Report 定义、Calculation、页面、本机 runtime 和静态 runtime 只消费 ReportInput 或一次形成的 ReportExecution，不重新打开 Record。
+只有 Record→Reports composition adapter 同时接收 reader、`AnalysisSample` 与 plan。Report 定义、Calculation、页面、本机 runtime 和静态 runtime 只消费 ReportInput 或一次形成的 ReportExecution，不重新打开 Record、重新选择历史或判断复用资格。
 
 每个页面和 Calculation 都声明自己需要的 facts。未被该页面或 Calculation 请求的损坏、未知或退役通道不会阻断它。被请求的 invalid 通道形成该请求的失败；unavailable 与 unsupported 进入明确的呈现状态。
 
-标准 Report 持续提供 Verdict、Assertions、usage/cost、conversation/tool、commands、diff、timing waterfall、diagnostics、actions 与 sources 的内建消费链。Attempt source 通过 origin Run 读取；carried 与 accepted 不复制源码，也不把 origin Run 加进 Sample 分母。
+标准 Report 持续提供 Verdict、Assertions、usage/cost、conversation/tool、commands、diff、timing waterfall、diagnostics、actions 与 sources 的内建消费链。Attempt source 通过 origin Run 读取；carried 与 accepted 不复制源码，也不把 origin Run 加进 `AnalysisSample` 分母。
 
 ## 计算与完整度
 
 Calculation 必须同时声明：
 
 - 所需的 facts；
-- 分母如何采用 Sample 的 slot；
+- 分母如何采用 `AnalysisSample` 的 slot；
 - <code>allowPartial</code> 或 <code>requireComplete</code> 完整度 policy；
 - 可用、部分和不可用状态怎样呈现。
 
@@ -47,7 +47,7 @@ Calculation 必须同时声明：
 
 Reports 包含：
 
-- 从 core-only Sample 与 ReportPlan 形成 ReportInput；
+- 从 core-only `AnalysisSample` 与 ReportPlan 形成 ReportInput；
 - 一次执行 Calculation、Page 与 Download，并由 view/export 共用结果；
 - 声明 facts、Calculation、页面、文本与网页呈现；
 - 对 partial、unavailable、unsupported 和 invalid 的可读反馈；

@@ -1,6 +1,6 @@
 # Reports Calculations
 
-Calculation 把 ReportInput 中已计划并读取的 facts 变成读数。它不拥有事实，不读取 Record，也不改变 Sample 的选择和分母。完整公开形状见 [Library](library.md#calculation)。
+Calculation 把 ReportInput 中已计划并读取的 facts 变成读数。它不拥有事实，不读取 Record，也不改变 `AnalysisSample` 的选择和分母。完整公开形状见 [Library](library.md#calculation)。
 
 ## 每项计算的声明
 
@@ -9,7 +9,7 @@ Calculation 把 ReportInput 中已计划并读取的 facts 变成读数。它不
 1. <code>id</code>；
 2. <code>inputs</code> 中所有 required facts；
 3. <code>completeness</code> policy；
-4. 使用哪些 Sample slot，以及如何形成 observed 与 denominator。
+4. 使用哪些 `AnalysisSample` slot，以及如何形成 observed 与 denominator。
 
 页面直接读取通道时同样列出 <code>inputs</code>。不允许先在 render 中取到一个对象，再按对象字段决定临时读取另一个通道。
 
@@ -48,7 +48,7 @@ const checkedCount = defineCalculation({
 });
 ```
 
-上述值在页面写作 <code>20 / 100 · partial</code>。<code>20</code> 是 observed，<code>100</code> 是 Sample 分母；两者不可互换。
+上述值在页面写作 <code>20 / 100 · partial</code>。<code>20</code> 是 observed，<code>100</code> 是 `AnalysisSample` 分母；两者不可互换。
 
 ## 完整度 policy
 
@@ -63,7 +63,7 @@ invalid 不是可选的不足数据。已请求 invalid 通道使该 Calculation
 
 ## 分母与 slot 状态
 
-Sample 的 <code>slots</code> 是每项 Calculation 的完整候选集合。
+`AnalysisSample.slots` 是每项 Calculation 的完整候选集合。
 
 | slot 状态 | 对 observed 的影响 | 对 denominator 的影响 |
 |---|---|---|

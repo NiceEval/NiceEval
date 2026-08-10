@@ -70,7 +70,7 @@ npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
 npx niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --no-open
 ```
 
-`show` 和 `view` 都先选择 Sample，再形成固定的 `ReportInput`。如果用户修改停稳 Record，结束当前查看命令后再次执行，新的调用会读取修改后的值。
+`show` 和 `view` 都先投影 `AnalysisSample`，再形成固定的 `ReportInput`。如果用户修改停稳 Record，结束查看命令后再次执行，新的调用会读取修改后的值。
 
 ## 结束状态
 

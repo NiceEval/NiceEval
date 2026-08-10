@@ -18,7 +18,7 @@ npx niceeval exp ci --json --junit ./artifacts/niceeval-junit.xml
 - NDJSON：progress 与 diagnostic 描述当前进程；最后一条 receipt 描述 Invocation。
 - JUnit：供 CI 平台读取的临时文件。
 
-JUnit 和外部平台文件不拥有 Record。Verdict、Usage、断言和诊断的长期当前值仍在停稳 Record 的具名通道中。
+JUnit 和外部平台文件不拥有 Record。Verdict、Usage、断言和诊断的持久事实仍在停稳 Record 的具名通道中。
 
 ## GitHub Actions 示例
 

@@ -2,7 +2,7 @@
 
 本页帮助实现工作从已定稿的文档定位到当前源码区域。Feature 文档定义目标契约；源码文件名不证明某个目标模块已经具备该契约。
 
-Record、Sample 和 Reports 正在采用新的边界。本页把它们标为重构边界，而不把历史目录结构误写成新契约的实现 owner。
+Record、analysis projection、execution projection 和 Reports 正在采用新的边界。本页把它们标为重构边界，而不把历史目录结构误写成新契约的实现 owner。
 
 ## 运行与命令
 
@@ -29,14 +29,15 @@ Record、Sample 和 Reports 正在采用新的边界。本页把它们标为重�
 
 目标 owner 分别是 [Assertions](feature/assertions/architecture.md)、[Verdict](feature/verdict/architecture.md) 和 [执行失败分类](feature/error-classification/architecture.md)。上述源码区域需要以 Attempt-local assertion、verdict 与 diagnostic channels 为输入和输出边界。
 
-## Record、Sample 与 Reports
+## Record、投影与 Reports
 
 | 目标契约 owner | 重构边界 |
 |---|---|
 | [Record](feature/record/README.md) | <code>src/record/</code> 需要收敛到 <code>niceeval.record</code> root、OS operation lock、Run、Member、Attempt、Run source blobs、channel descriptor、reader、writer 与受控 maintenance。不要从现有内部布局推导新的公开文件协议。 |
-| [Sample](feature/sample/README.md) | <code>src/sample/index.ts</code> 需要以 RecordReader 形成显式 Run 选择、完整分母和 slot 状态。 |
+| [AnalysisSample](feature/sample/README.md) | <code>src/sample/index.ts</code> 需要以 RecordView 和具名 analysis projector 形成完整分母与四态 slot。 |
+| [Execution projection](feature/experiments/cache.md) | Runner 需要从 ProjectTarget、ExecutionTarget、RecordSession.view 与具名 policy 形成 reuse/gap；planner 只接收 gaps。 |
 | [Reports](feature/reports/README.md) | <code>src/report/</code> 需要只接收 ReportInput；文件读取、origin-run fact 和通道字节规范化留在 composition/reader 边界。 |
-| [Reports CLI](feature/reports/README.md) | <code>src/show/</code> 与 <code>src/view/</code> 需要通过 Sample 和 ReportInput 选择、呈现和 export。 |
+| [Reports CLI](feature/reports/README.md) | <code>src/show/</code> 与 <code>src/view/</code> 需要通过 `AnalysisSample` 和 ReportInput 选择、呈现和 export。 |
 | [静态 export](feature/reports/README.md#自包含静态-export) | <code>src/view/</code> 与 <code>src/report/</code> 需要写出页面、宿主数据、精确 runtime 和资源清单。 |
 
 这里列出的路径是改造入口，不是对新格式模块名称的承诺。实现时以对应 Feature 文档的 owner、输入和不变量为准。

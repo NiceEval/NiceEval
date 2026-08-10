@@ -7,7 +7,8 @@
 //   · 会话:协议是服务端零状态、「客户端带全量历史」——工厂用 typed slot 存整份
 //     UIMessage[],每轮原样重放;ctx.session.id 未记录时开新 chat id 并 capture 回写。
 //   · 事件流:从归约后的 assistant 消息 parts 直构(text → message,tool part 的
-//     output-available / output-error / 审批拒绝 → operation.started + operation.finished),
+//     approval-requested → operation.started,output-available / output-error / 审批拒绝
+//     → operation.finished),
 //     不要求应用接 OTel;跨 resume 轮次按 callId / 已报文本长度去重。
 //   · HITL:v7 tool approval(`needsApproval` 工具)——part 停在 `approval-requested` 时
 //     整轮 `waiting` + `input.requested`;下一轮输入(approve / yes / 同意 / 批准 开头 =
@@ -173,14 +174,15 @@ function approvalDecision(responses: readonly InputResponse[] | undefined, reque
 
 /** 已报告的进度:resume 续跑的是同一条 assistant 消息,跨轮去重靠它。 */
 interface ReportedState {
-  calls: Set<string>;
+  startedCalls: Set<string>;
+  finishedCalls: Set<string>;
   textLen: number;
 }
 
 /**
  * 从归约后的最终消息派生本轮事件。工具事件按 part 顺序;文本合并成一条 message 事件
- * (resume 轮只报新增的后缀)。停在 approval-requested 的调用不报 called —— 它还没执行,
- * 裁决后那一轮才落成 completed(批准)或 rejected(拒绝)。
+ * (resume 轮只报新增的后缀)。停在 approval-requested 的调用先报 started,
+ * 因此它在审批轮是 pending;裁决后的续跑轮只补 finished,落成 completed 或 rejected。
  */
 function deriveTurnEvents(message: UIMessageLike, reported: ReportedState): StreamEvent[] {
   const events: StreamEvent[] = [];
@@ -192,24 +194,31 @@ function deriveTurnEvents(message: UIMessageLike, reported: ReportedState): Stre
     }
     if (!isToolPart(part)) continue;
     const callId = part.toolCallId ?? "";
-    if (!callId || reported.calls.has(callId)) continue;
+    if (!callId || reported.finishedCalls.has(callId)) continue;
     const name = toolNameOf(part);
     const input = (part.input ?? null) as JsonValue;
+    const start = () => {
+      if (reported.startedCalls.has(callId)) return;
+      events.push({ type: "operation.started", operationId: callId, operation: { kind: "tool", name, input } });
+      reported.startedCalls.add(callId);
+    };
     if (part.state === "output-available") {
-      events.push({ type: "operation.started", operationId: callId, operation: { kind: "tool", name, input } });
+      start();
       events.push({ type: "operation.finished", operationId: callId, kind: "tool", output: part.output as JsonValue, status: "completed" });
-      reported.calls.add(callId);
+      reported.finishedCalls.add(callId);
     } else if (part.state === "output-error") {
-      events.push({ type: "operation.started", operationId: callId, operation: { kind: "tool", name, input } });
+      start();
       events.push({ type: "operation.finished", operationId: callId, kind: "tool", output: part.errorText, status: "failed" });
-      reported.calls.add(callId);
+      reported.finishedCalls.add(callId);
     } else if (part.state === "approval-responded" && part.approval?.approved === false) {
       // 拒绝的调用从没真正执行,协议里不会再有它的任何帧 —— 在裁决落地的这一轮合成。
-      events.push({ type: "operation.started", operationId: callId, operation: { kind: "tool", name, input } });
+      start();
       events.push({ type: "operation.finished", operationId: callId, kind: "tool", status: "rejected" });
-      reported.calls.add(callId);
+      reported.finishedCalls.add(callId);
+    } else if (part.state === "approval-requested") {
+      start();
     }
-    // approval-requested(还没裁决)/ input-* 中间态:先不报,等它到终态。
+    // input-* 中间态还没有可信的完整入参,等 approval-requested 或终态再报。
   }
   const newText = fullText.slice(reported.textLen);
   if (newText.trim()) events.push({ type: "message", role: "assistant", text: newText });
@@ -365,7 +374,9 @@ export function uiMessageStreamAgent(options: UiMessageStreamAgentOptions): Agen
         resumeFrom ? [...messagesToSend.slice(0, -1), finalMessage] : [...messagesToSend, finalMessage],
       );
 
-      const reported: ReportedState = resumeFrom && bookkeeping.reported ? bookkeeping.reported : { calls: new Set(), textLen: 0 };
+      const reported: ReportedState = resumeFrom && bookkeeping.reported
+        ? bookkeeping.reported
+        : { startedCalls: new Set(), finishedCalls: new Set(), textLen: 0 };
       bookkeeping.reported = reported;
       const events = deriveTurnEvents(finalMessage, reported);
 

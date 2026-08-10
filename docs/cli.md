@@ -42,16 +42,16 @@ RecordReader
   ↓
 normalizer
   ↓
-Sample
+AnalysisSample
   ↓
 ReportInput
   ↓
 show / view / static export
 ~~~
 
-<code>show</code> 与 <code>view</code> 只面对停稳的 Record root。它们先选择 Run，再由 reader 和 normalizer 形成 Sample 与 ReportInput。Reports 从不打开 Record 路径，也不自行读取目录或通道字节。
+<code>show</code> 与 <code>view</code> 只面对停稳的 Record root。它们先运行具名 analysis projector，再由 reader 和 normalizer 形成 `AnalysisSample` 与 ReportInput。Reports 从不打开 Record 路径，也不自行读取目录或通道字节。
 
-<code>--run</code> 与 <code>--latest</code> 的选择规则由 Sample 定义。CLI 不从目录名、时间或显示文本猜测对象。<code>view --out</code> 写出自包含站点；浏览器只读取站点自己的文件。
+<code>--run</code> 与 <code>--latest</code> 分别映射到 `explicit-runs/v1` 与 `latest/v1` analysis projector。CLI 不从目录名、时间或显示文本猜测对象。<code>view --out</code> 写出自包含站点；浏览器只读取站点自己的文件。
 
 ### 维护
 

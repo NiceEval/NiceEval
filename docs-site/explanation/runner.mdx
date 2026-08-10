@@ -59,7 +59,7 @@ The receipt identifies this Invocation, its Runs, timing, and completion only. T
 
 A Reporter connects only to the current Invocation. It can send information already known to the process to an external system, and `--junit` writes a file for a CI platform to consume.
 
-Neither output owns the Record. The quiescent Record's named channels retain the current Verdict, Usage, assertions, and diagnostics. A later step selects a Sample from the receipt's `runIds`, then uses `show`, `view`, or `view --out` to inspect complete results.
+Neither output owns the Record. The quiescent Record's named channels retain the recorded Verdict, Usage, assertions, and diagnostics. A later step projects an AnalysisSample from the receipt's `runIds`, then uses `show`, `view`, or `view --out` to inspect complete results.
 
 ## Inspect after the run
 
@@ -70,7 +70,7 @@ npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
 npx niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --no-open
 ```
 
-Both `show` and `view` select a Sample before they form one fixed `ReportInput`. If a user edits the quiescent Record, end the current viewer and run it again to read the edited values.
+Both `show` and `view` project an AnalysisSample before they form one fixed `ReportInput`. If a user edits the quiescent Record, end the viewer and run it again to read the edited values.
 
 ## Completion status
 

@@ -1,31 +1,424 @@
 # Experiments 与 Runner 怎么测
 
-契约出处：[Experiments](../../../feature/experiments/README.md)、[Experiments Architecture](../../../feature/experiments/architecture.md)、[Experiments CLI](../../../feature/experiments/cli.md)、[Runner](../../../runner.md) 与 [Record](../../../feature/record/README.md)。
+契约出处：
 
-Runner 单元层关心 Attempt 集合、开始条件、停止派发、资源释放和 Record writer 调用。它不锁定内部循环、Promise 数量或 Effect combinator。真实进程、真实 Sandbox 与最终 Record 由 E2E owner 验收。
+- [Experiments](../../../feature/experiments/README.md)
+- [Experiments Architecture](../../../feature/experiments/architecture.md)
+- [Experiments Library](../../../feature/experiments/library.md)
+- [Experiments CLI](../../../feature/experiments/cli.md)
+- [Sandbox 生命周期](../../../feature/sandbox/lifecycle.md)
+- [Sandbox 复用](../../../feature/sandbox/reuse.md)
+- [Runner](../../../runner.md)
+- [执行错误类型](../../../feature/error-classification/README.md)
+- [错误与警告反馈](../../../error-feedback.md)
+
+Runner 测试关心 Attempt 的集合、开始条件、结束条件、事件与资源释放。
+它不锁定内部循环、Promise 数量或 Effect combinator。
+
+本篇使用 fake Agent、Sandbox、Reporter 与时钟测试调度逻辑。
+真实进程与真实 Attempt 由 [E2E 功能域 · CLI](../e2e/cli.md) 验收。
+Fake 规则见[单元测试边界](README.md#fake-边界mock-什么测哪一层)。
+
+## 观察面与边界
+
+调度契约的正确观察面是**可观察的调度事实**：哪些 attempt 启动了、任意时刻多少在飞、事件流里出现了什么、资源最终是否释放。
+不是内部信号量的调用次数，也不是 Promise 图的形状。
+
+| 契约域                | 观察面                                                                            |
+| --------------------- | --------------------------------------------------------------------------------- |
+| runs 展开与过滤       | 计划中的 attempt 集合（`--dry` 语义层）                                           |
+| 并发上限              | barrier 控制下的在飞计数峰值                                                      |
+| early exit / budget   | 启动过的 attempt 列表 + `invocation:earlyExit` / `invocation:budgetExceeded` 事件 |
+| 缓存与指纹            | 复用 vs 重跑的 attempt 集合                                                       |
+| 退出码折叠            | `InvocationCompletion` 与退出码                                                   |
+| 资源生命周期          | fake Sandbox 的 created/stopped 集合、reporter queue 收尾                         |
+| 实验级 setup/teardown | 生命周期 Hook 调用计数、收尾登记文件、运行级事件                                  |
+| Sandbox 生命周期连续性 | 每个物理 Sandbox 的 setup/teardown 次数、checkpoint 恢复/回存与实例退休顺序       |
 
 ## Fixture 规范
 
-Runner fixture 以声明式场景给出 expected slots、并发上限、Attempt 结果、Verdict/eligibility channel 状态与受控 barrier。fake Agent、Sandbox、Provider 和 writer 只模拟所属边界，不复制规划器、携带判定或通道编码。
+Runner fixture 用声明式场景描述 attempt，而不是为每个测试重新拼完整 `EvalDefinition`、Agent、Sandbox 和 Reporter：
 
-并发用 barrier 观察在飞集合，不用 `setTimeout` 猜时序。重试和 backoff 使用 TestClock。Effect 程序由测试 runtime 持有 Scope；每例需要隔离的 Layer 不跨例共享。
+```ts
+const scenario = runnerFixture({
+  attempts: 3,
+  maxConcurrency: 2,
+  attempts: [
+    { evalId: "a", result: "failed", release: "a0" },
+    { evalId: "a", result: "passed", waitFor: "a0" },
+    { evalId: "b", result: "passed" },
+  ],
+});
+```
 
-## 最小证明面
+`runnerFixture` 提供受控 barrier、采集型 Reporter、fake Agent/Sandbox 和结果读取方法。
+它不自行决定 early exit、budget 或调度顺序；这些必须由生产 Runner 决定。
+fixture 里的 `costUSD` 是输入证据（该 attempt 完成后结算的实测成本），不复制 Runner 的任何计费逻辑。
+所有权与稳定性规则见 [Harness](harness.md)。
 
-- **展开与分母**：选中的 Experiment 先形成 Run 与 expected slots。未派发 slot 不制造 Attempt 或 Verdict，并在 Sample 中成为 `not-recorded`。
-- **并发限制**：全局与 Experiment 上限分别约束在飞 Attempt；等待并发名额不占资源。首过即停、预算、中断和 fatal scope 只停止尚未派发的 slot，不抢占在飞 Attempt。
-- **同根单操作**：Invocation 在规划前独占 Record root；同 root 第二条调用立即得到 `record-root-busy`。不建立逐 Eval 锁、心跳、等待、接管或跨 Invocation 重规划。
-- **不同 root**：不同 Record root 可以并行，各自执行完整既定计划。fixture 断言两边不读取、不携入、不写入对方数据，也不自动合并。
-- **携带与接受**：planner 只使用 `niceeval.verdict`、`niceeval.eligibility`、identity/duration domain 和本次 `--rerun` / `--keep-sandbox` policy。满足条件写 `carried` 或 `accepted` Member；其它状态执行并给具名原因。
-- **发布边界**：fresh Attempt 的核心、channels 与 blobs 先在 writer 临时目录完成，再一次发布；随后写 Member 和 Run-owned channel，最后补 `completedAt`。正式 Attempt 不做原地更新。
-- **generic fact**：Agent 生命周期写 Attempt-owned custom fact，Experiment/Sandbox 生命周期写 Run-owned custom fact。同 owner/name 只允许一次写入；任意 JsonValue 与 65,536-byte 拒绝语义由 Record owner 验收，Runner 只证明路由到正确 owner。
-- **外部状态租约**：相同 `sharedState.key` 串行外部 checkpoint。等待方不创建 Sandbox；释放后继续自己的既定计划，不重读另一 Record 或重做 carry plan。不同 key 可并行。
-- **生命周期**：进入 setup 调用点就尝试对应 teardown。Sandbox、Agent runtime、作者 cleanup 与 Provider finalizer 分别按 owner 收尾；单个收尾失败不跳过后续 finalizer。
-- **receipt 与 live feedback**：InvocationReceipt 只含 invocation identity、Run identities、起止时间与 completion。进程内 progress 不进入 Record；需要长期回顾的 diagnostic 与业务事实写入 owner-local channel。
+时序纪律：并发与调度用 barrier 观察"在飞"状态，不用 `setTimeout` 猜测调度是否已经发生；重试和 backoff 用 `TestClock.adjust` 推进，不做真实等待。
+Effect 程序用 `it.effect` 让测试运行时持有 Scope；保存状态的 Layer 要求每例隔离时用独立 `it.layer(...)`。
+
+```ts
+it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
+  Effect.gen(function* () {
+    const fx = yield* makeRunnerFixture({ maxConcurrency: 2, evals: 5 });
+    const fiber = yield* Effect.forkChild(fx.run);
+
+    yield* fx.started.awaitCount(2);
+    assert.strictEqual(fx.inFlight.current, 2);
+
+    yield* fx.releaseOne;
+    yield* fx.started.awaitCount(3);
+    assert.isAtMost(fx.inFlight.maximum, 2);
+
+    yield* fx.releaseAll;
+    yield* fiber.await;
+  }),
+);
+```
+
+## 证明范围规范
+
+- **实验改名与结果重绑**：一对一改名生成单个新 snapshot。新结果使用目标 experimentId、新 locator 与目标当前 fingerprint。
+  `renamedFrom` 与 `artifactBase` 保留出处身份和证据。
+  旧 fingerprint 与目标当前值不同也迁移，并把旧值留在 `renamedFrom`；目标冲突、不可读出处与 artifact 不可用在整批写入前拒绝。目标未选中的旧 eval 只列为 excluded；`errored` / `skipped` 不迁移。
+  dry 与正式执行共用同一计划，且 dry 零写入。fixture 必须同时证明旧树在成功和失败路径都不被修改。
+
+- **runs 展开与选择**：attempt 总数公式与 runs 的默认值；位置参数前缀 × 实验 `evals` 字段两层交集；谓词的白名单投影、只求值一次、非法返回值的完整报错；experiment 选择器三条规则与零命中反馈。
+  template 配对 link 的同源消费(check / --dry / 正常运行同一 linker),以及 conflict / missing 的全矩阵前置报错。
+  选择类契约的每条规则都要有"命中"与"不误配"两面。
+- **`EvalDescriptor.evaluationKind` 投影与混型保真**：`evalDescriptorOf` 对 `defineEval` 返回的定义值投影 `evaluationKind: "pass"`，对 `defineScoreEval` 返回的定义值投影 `"points"`。
+  未经两个定义函数处理的未包装对象缺少 `evaluationKind` 时，discovery 明确拒绝；不能用默认 `"pass"` 猜它原本想调用哪个 factory。
+  同一 Experiment 选择混合题型时，两类 Eval 全部进入调度、写入与携带，不能在启动期拒绝或静默删掉一类。报告按题型分列通过率与总分，绝不把两种无共同单位的数相加。
+- **计分制 attempt 落盘**：`runAttemptEffect` 对 `evaluationKind: "points"` 的 eval 把 `.points(n)` 的声明值与挣分分别写进 `EvalResult.assertions[].pointsAvailable` / `.points`。`t.score(label, n)` 正确写进 `EvalResult.scoreEntries`（不只是 collector 单元层的孤立证明，这里证明 runner 真的把 collector 的输出接上了落盘字段）。
+- 同一 attempt 内 user send、断言、直接给分的 `sourceOrder` 来自同一条单调序列，跨三个存储分区仍能恢复真实发生顺序。
+- 前置 `.gate()` 中止时 `verdict` 为 `failed` 而非 `errored`（断言已写入，不是执行异常）；中止前已经产生的 `scoreEntries` 照实保留，中止后的 `test()` 代码不再执行（后续 `.points()` / `t.score()` 调用不出现在结果里）。
+- 没有中止、只是丢分的 attempt（含全部得分点挂掉）`verdict` 为 `passed`——计分制的 `failed` 只有中止一个出处。
+- **调度项优先级**：CLI flag → experiment → config → 内置默认的替换链逐层可区分；agent/model/flags 只属 experiment，CLI 替换报用法错误；labels 的值域校验与 Run 投影。
+  **这条链里没有进程变量层**（[边界](../../../architecture.md)）。
+  这一条按**白名单守护**证明而不是逐个变量写负面 fixture：扫 `src/` 下所有非测试源码实际读取的进程变量名，断言它们全部落在「凭据 + 终端运行条件」白名单内。
+  加一条配置类进程变量回来就会红，不需要预先知道它叫什么名字；白名单本身是那份边界表的机器可读副本，改动它等于改契约。
+- **含 eval 层的字段求值链（`timeoutMs`）**：`--timeout` → experiment → eval → config → 无上限，五档逐层可区分。
+  区分力最强的一格必测：**config 有值、experiment 没写、eval 写了自己的值时取 eval 的值**——`??` 链少写一层回落时这一格恰好是唯一会红的，其余四格照常通过。
+  断言面取 attempt 实际生效的 deadline 与超时消息里的出处标注（`from eval` / `from config`…），不是求值函数的中间返回值；同一份求值结果同时喂给 carry 的资格判据（`executionMs` ≤ 当前上限），两处不分叉。
+- **`judge` 的求值链（单条 `{ model }` → experiment → eval → config）**：四档逐层、逐字段可区分。
+
+  没有 CLI judge override。两份只改变 Experiment judge model 的 A/B 必须得到不同配置身份。
+
+  rubric、severity 与 threshold 仍取同一 Eval 定义。
+
+  区分力最强的一格必测——**config 写了 `judge`、eval 也写了自己的 `judge` 时取 eval 的值**。
+  再加一格证明它**逐字段合并而不是整体替换**：eval 只声明 `model` 时 `baseUrl` 仍从 config 来。
+  这条链没有 CLI flag，多出一层就是回归。
+  断言面取 judge 断言实际请求到的 model 与端点。
+  `judge` 的 `model` / `baseUrl` 进 configHash、`apiKeyEnv` 不进，归下面的指纹输入类别。
+- **run.json 落盘的 Run 级 configHash 不逐 eval 分叉**：`run.json` 每个 experiment 只有一槽 `configHash`，不能是逐 eval 分叉的值。
+  - 同一 Experiment 下一个 eval 声明 `judge`、其余不声明时，`runEvals` 写进 `InvocationShape.configHashes`（继而落进 `run.json`）的值必须与其余 eval 相同。它只取 Run 级 `judge`，不叠加 `experiment > eval > config` 的逐字段求值链（`configIdentityForRun` 默认单层）。
+  - 反例：那条 eval 自己的 `result.configHash`（携带判据读 `plannedConfigHashes`）仍按完整求值链算出。它可以与 Run 级值不同——这是刻意的携带正确性（docs/feature/experiments/cache.md「指纹:两个哈希嵌套」），不是要抹平的分叉。
+  - 反面回归：曾直接拿 `plannedConfigHashes` 当 Run 级值汇总。任意 eval 声明自己的 `judge` 就让规划期硬抛错，见 memory/config-hash-forks-per-eval-judge-declaration。
+- **界面语言的取值链**：`config.locale` → 系统 locale（`LC_ALL` → `LC_MESSAGES` → `LANG`）→ `zh-CN`。
+  断言面是 `detectLocale(env)` 的返回值：`config.locale` 在场时压过任何系统变量；未声明或无法归一（`C` / `POSIX` / 空串）时逐级回落而不是报错；niceeval 自己的旧变量（`NICEEVAL_LANG` / `NICEEVAL_LOCALE`）在场也不参与。
+- **并发**：全局与实验级上限、全局上限的三层求值与 Provider 推荐值、exclusive Provider 强制串行。
+  退避睡眠释放全局槽位，实验级并发限制全程持有。
+  `maxConcurrency: 1` 时，前一 Attempt 进入退避区间，下一 Attempt 不得启动。
+  前一 Attempt 的 `sandbox.cleanup` 未完成时，下一 Attempt 也不得创建沙箱或进入 `sandbox.prepare`。
+  用 `TestClock` 与 barrier 观察在飞峰值或分配顺序。
+  完整的用户侧搭配见[并发怎么配](../../../feature/experiments/use-case/并发/)。
+- **发现顺序与串行下的执行顺序**：
+  - 发现结果按项目根相对路径字典序排列。
+    数字前缀补零与不补零各一格（`10-` 排在 `2-` 前），再加跨目录与 `.eval.ts` / `.eval.tsx` 同名两格。
+  - 数组与 keyed record 的文件内展开顺序；位置参数与 `--tag` 过滤后，剩下条目的相对次序不变。
+  - `maxConcurrency: 1` 下 attempt 的实际**开始**顺序等于 `(attempt 序号, eval 发现顺序)`。
+     `attempts > 1` 时按轮次交错：全部 eval 的第 0 次先于任何一条 eval 的第 1 次。
+  - 这一格用 barrier 记下真实开始序列来断言，不读排序函数的返回值。
+  - 并发 > 1 时不断言开始顺序（没有这条契约），只断言结果数组仍按发现顺序。
+    两面合起来才证明排序只承诺到输出层。
+- **反馈协调器的事件队列纪律**：`FeedbackCoordinator` 对每一类 durable 事件都按 clear→append→redraw 的原子顺序转发给当前活跃 renderer（不止某一种事件；renderer 方法即便是异步的也不交错）。
+- 同一去重 key 的诊断在 `RunFeedbackState.diagnostics` 里合并计数，但仍逐次转发给 renderer——是否折叠展示是 renderer 自己的决定，不是 coordinator 的职责。
+- renderer 在某次 durable 事件上抛错不会中断队列，后续事件仍按完整顺序处理；`activity()` 不写入 `diagnostics`/`failures`。
+- tick 定时器按注入 clock 周期触发、`elapsedMs` 相对 `start()` 计算，`stopDynamic()` 之后立即失效；`finish()` 的收尾顺序恒为停 tick → 清 dashboard → summary → saved → close，之后拒绝任何新输出。
+- `start()` 只能调用一次，`stopDynamic()`/`diagnostic()` 在 `start()` 之前调用抛错；`sink.ts` 的 `reportXxx()` 系列只在 coordinator 活跃期间（`start()` 之后、`finish()` 之前）转发给它，之外退回 bootstrap 出口。
+- 观察面是「renderer 的哪个方法按什么顺序、被调用几次」，不是它具体写出的字节。
+- **指纹门的开放诊断与单源差异**：`compareFingerprints` 是比较结果的唯一 owner。
+
+  - 同版本具名变化产出 `changed`；不能证明时产出带开放 `code` 的 `unexplained`。
+  - `observedDeltas` 三态区分不可比较、可比较字段无观察差异与具名观察差异。版本迁移同时保留 algorithm / coverage 事实，空数组不得放宽携带。
+  - `planCarry`、human plan 与 exp plan JSON 消费同一比较对象，不重新相减 manifest。
+  - 未知 code 与递归 cause 由通用 renderer 照实投影。测试须证明新增 producer 不要求 renderer 加分支。
+  - 机器计划文档输出 schema v2；运行事件流与 Record schema 不随之升级。
+  - 接受审计只消费完整 delta / opaque selector，不把 summary、limitation 或 cause 当授权项。
+- **attempt 级诊断的对外词法与阶段标注**（`runner/attempt.ts` 的 `recordDiagnostic` + `runner/feedback/human.ts` 的诊断行）。经 `ScopedFeedback.diagnostic` 报上来的一条诊断进反馈流时，`code` 恒是作者给的干净字面量。作者省略 `dedupeKey` 时，折叠 key 里编进的 attempt 身份不得泄漏成 `code`（`// bug: memory/diagnostic-key-doubles-as-json-warning-code.md`）。
+- `phase` 恒是运行器此刻所处的 `LifecyclePhase`，压过作者 `data` 里的同名字段（作者不能冒充阶段，与 `ScopedFeedback` 不收 phase 参数同一条纪律），`data` 其余字段原样保留。
+- 人读诊断行的标题是「阶段标签 · `code`」，阶段标签复用失败行同一个投影；没有 phase 的运行级诊断（止损机制、锁接管、budget）标题只有 `code`，不留空的分隔符。
+- 区分力要证明有/无 `dedupeKey`、有/无作者 `data`、`data` 里带一个冒充 `phase` 三面。
+- `--json` 侧同一份 `code`/`phase` 的透出归「形态求值与 `--json` 流不变量」类别，字节渲染归 [E2E · CLI](../e2e/cli.md)「反馈输出格式」。
+- **human renderer 的面板接线到 `panel.ts`（`runner/feedback/human.ts`）**：面板几何本身由 [Reports 的「面板几何」类别](reports.md#证明范围规范)证明。这里只证明 `renderDurableLines`/live dashboard 真的把内容交给 `renderPanel`，而不是各自拼框字符。
+- `panelCapabilityOf(io)` 按 `io.stderr.isTTY` 与 `io.env.NO_COLOR` 正确算出 `mode`；`plan`/`summary`/`saved` 三类事件在 `mode: "boxed"` 时产生可识别的框线字符（`╭`/`├`/`╰`）。
+- 面板顺序与分隔（FAILED/PASSED → FAILURES → KEPT SANDBOXES，各自独立成框、之间空行分隔；NEXT 面板内嵌 RESULTS 横隔）符合声明；同一状态在 `mode: "plain"` 或非 TTY 下不产生任何框字符，内容仍完整。
+- 收尾内容证明 `complete` 与带非零 `unstarted` 的 `incomplete` 两面。后者必须把数量投影到收尾行，证明未派发的 Attempt 不会只留一个没有原因或规模的 `INCOMPLETE` 标题（`// bug: memory/incomplete-summary-hides-unstarted.md`）。
+- 不断言具体字节内容或列宽算术——那是 panel.ts 自己的几何测试与 [E2E · CLI](../e2e/cli.md)「反馈输出格式」的职责。
+- **live 面板的宽度与 ACTIVE 列分配（`runner/feedback/human.ts`）**：
+  - 必须包含宽终端场景，例如 fake IO 的 `columns: 200`。
+    历史缺陷只在宽终端出现： `// bug: memory/live-dashboard-active-row-width-clamp-mismatch.md`。
+  - live 面板跟随终端全宽，不受 100 列上限约束。
+    内容与外框使用同一宽度。
+  - scrollback 的 plan、summary 与 failures 面板仍封顶 100 列。
+  - 身份列按实际出现过的最长值定宽。
+    列宽只放宽，不回缩；超宽内容截尾并补 `…`。
+  - detail 使用身份列与 elapsed 之外的剩余宽度，每一帧都必须可见。
+
+断言渲染帧的行数组与列位置，不断言内部计算公式。
+
+- **失败的单行投影与 live `FAILURES` 分节（`runner/feedback/human.ts` + `assertions/display.ts`）**：契约见 [CLI · 框线体裁](../../../feature/experiments/cli.md#框线体裁)与「运行中的 live 面板」。
+  - 一条失败的终端投影恒为单行 `✗ @<locator>  <evalId>  [<who>]  <单行压缩摘要>`；errored 给 `errored · <phase> · <code>`，余量够再带 message 首行。
+  - TTY 帧内出现在 counts 行与 `ACTIVE` 之间的 `FAILURES` 横隔分节：滚动保留最近 5 条，横隔 meta 给累计数，失败不写 scrollback。
+  - 非 TTY 单流逐条追加同一投影，10 条后一次 suppressed 提示。
+  - 摘要行预算由渲染面按内容宽扣掉身份列传入，按显示列量，渲染行恒不超过预算。`--json` 与非 TTY 用固定 100 字符预算（[Assertions · 一条摘要怎样排版](../../../feature/assertions/library/display.md#一条摘要怎样排版)）。
+  - 区分力：`received` 长值单行收口不溢出；CJK 值按显示列不破框；矮终端先减 `ACTIVE` 可见项再减分节条数。
+- **结束反馈的失败形态聚合与 `WARNINGS` 汇总（`runner/feedback/human.ts`）**：契约见 [CLI · 人看的结束反馈](../../../feature/experiments/cli.md#人看的结束反馈)。
+  - 组 key：`failed` 用主失败断言标题 + 检查方式；`errored` 用 `phase · code`；`received` 不进 key。
+  - size > 1 的组一行：右对齐 `×N` + 形态摘要 + 组内首现的代表 locator。size = 1 的组两行：身份行 + 悬挂单行摘要。
+  - 组按条数降序；超过 10 组收进 `+K more kinds — niceeval view` 尾行；总数与形态数嵌上边框 meta。
+  - 人读运行中每个诊断 `code` 至多完整打印一次，同 `code` 后续静默计数；结束时 `WARNINGS` 面板每 code 一行（`! <code> ×N` + 首条 message 截断），无诊断不出面板。
+  - 区分力：205 条同 matcher 失败聚成一行且代表 locator 是首现那条；1 条失败展开成完整身份两行；`--json` 的 `failure`/`warning` 事件仍逐条。
+  - **facts 摘要提示**：失败 attempt 的 `AttemptRecord.facts` 非空时，组行（size > 1）与身份行（size = 1）行尾各追加一次 `facts ×N`（N = 键数）。没有 facts 时不追加，面板密度不变，完整键值表留给 `niceeval show @<locator>`，不在这里展开。`failureDetailFromResult` 是数据源：有 facts 时 `factsCount` 等于键数，facts 缺失或为空对象时该字段整个省略。区分力：同一失败形态两条 attempt，一条有 facts 一条没有，只有前者的行尾出现提示。
+- **live 面板的键盘接管与自愈重绘（`runner/feedback/input-guard.ts` + coordinator 接线）**：契约见 [CLI · 键盘输入与画面自愈](../../../feature/experiments/cli.md#键盘输入与画面自愈)。
+  - stdin 与 stderr 都是 TTY 时，live 期间 stdin 进入 raw mode 且不回显，普通字节不透传。
+  - 收到 `\r` / `\n` 触发 clear → 整帧重绘且绕过「同帧不写」判断。收到 `\x03` 走与 SIGINT 相同的中断路径。
+  - 结束与中断路径都恢复终端模式并释放 stdin，不阻止进程退出。stdin 非 TTY 时一个字节都不读。
+  - 区分力：回车重绘必须在 `lastFrameText` 未变化时也真的写出一帧；恢复终端模式在正常 finish 与中断两条路径都要发生。
+
+- **执行错误 message 的一层摘要投影**（`agents/shared.ts` 的 diagnose 组装 + `runner/feedback/failure.ts` 的失败事实投影）。diagnose 组合消息的首行恒为一层可行动摘要（exit code · transcript 状态 · 最后一条 error 事件的首行），output tail 从第二行起按原始换行保留。被测 CLI 输出里的 traceback 框线不得混进首行（docs/feature/experiments/cli.md「运行反馈」：执行错误即时输出一层摘要）。
+- 失败事实的 reason 对多行 error message 只取首行、剥控制字节并按摘要上限截断收口，后续行（tail）不进 scrollback。
+- 区分力：单行 message 原样保留与多行 message 折首行两面都要有；tail 缺失（stdout/stderr 全空）时消息只有首行、不带空尾巴。
+- **实验级生命周期**：setup 整场至多一次；无派发时不执行。
+  证明 setup 抛错的结构化 `errored` 与实验隔离，以及 teardown 在完成、中断、setup 抛错时都恰好一次。
+  还要证明有界 cleanup 超时、强清登记、启动自愈与 `--teardown`。
+  生命周期 Hook 起止事件归约进 `experimentHooks`：`started` 建行，`done` / `failed` 摘行，`experiment:progress` 只更新对应行。
+  新的 `plan` 清空残留行。
+  用例见[准备与收尾怎么放](../../../feature/experiments/use-case/生命周期/)。
+  字节渲染归 [E2E · CLI](../e2e/cli.md)。
+- **断言求值阶段的 judge 推进 detail（`runner/attempt.ts` 接线）**：进入 `assertions.evaluate` 后，collector 的每次 judge 进度回调把 active 行 detail 更新为 `judge k/n · <检查方式>`。
+  契约见 [CLI · Attempt 阶段](../../../feature/experiments/cli.md#attempt-阶段)。
+  无 judge 断言的 attempt 在断言求值阶段不产生任何 detail 文本——不存在与阶段词重复的静态占位文案。
+  断言面是 feedback 事件流里的 progress 文本，不断言渲染字节。
+- **Judge 预检的运行级行**：`precheck` 起止事件归约进 `RunFeedbackState.activePrecheck`。
+  `started` 建行，`done` / `failed` 清行。
+  预检发生在派发前，因此 Attempt 始终保持 `queued`，不改变计数恒等式。
+  live 面板把它排在实验生命周期 Hook 与 Attempt 行之前。
+  这里断言 reducer 状态与事件序；字节渲染归 [E2E · CLI](../e2e/cli.md)。
+- **Judge 预检失败的降级**（契约见 [Judge · 派发前预检](../../../feature/judge/library.md#派发前预检)）：预检失败时，含 judge 断言的 eval 的全部计划 attempt 不派发、逐条落成 `errored`，并照常落盘。
+  错误形状是 `code: "judge-precheck-failed"` 加 `phase: "judge.precheck"`。
+  不含 judge 断言的 eval 照常派发并产出 verdict；同一批里两类 eval 都要有，才有区分力。
+  还要证明两个不预检的场景：未配置 judge，以及含 judge 的 eval 全部命中携带。
+- **探测预算逐次独立**：每次探测各自拥有完整的 20 秒超时预算。
+  区分力场景：第一次探测超时耗尽后，第二次探测仍以完整预算发出——不是拿着已 abort 的 signal 立即失败。
+  用 fake fetch 断言两次调用的 signal 各自独立、第二次调用真实发生。
+- **PLAN 的实验并发附注**：任一选中实验声明 `maxConcurrency` 时，`start` 事件带 `experimentConcurrency`（仅收声明了的实验）；没有任何实验声明时整个字段省略。
+  human PLAN 行的附注文本（`concurrency 19 (from flag) · mempal ≤1`）断言到格式化输出，字节渲染归 [E2E · CLI](../e2e/cli.md)。
+- **PLAN 的全局并发出处标注**：human PLAN 行的 `concurrency` 值带取胜层。
+   `from flag` / `from config` / `from <provider> default` 三层出处各一条区分力场景，断言到格式化输出。
+  出处不进 `--json` 的 `start` 事件（契约见 [CLI · 运行中的 live 面板](../../../feature/experiments/cli.md#运行中的-live-面板)）。
+- **已了结 attempt 按 verdict 分项**：reducer 不保留笼统的完成数，每一条了结的 attempt 落进 `passed` / `failed` / `errored` / `skipped` 之一（契约见 [CLI · 运行中的 live 面板](../../../feature/experiments/cli.md#运行中的-live-面板)）。
+- 断言面：`attempt:complete` 按事件携带的 `verdict` 落项，四值都要有区分力场景（同一批事件里换 verdict，落项跟着变，不是恒落同一项）。`attempt:early-exit` 与 `budget-exhausted` 落 `skipped` 而非 `passed`／`failed`——未跑出 verdict 的了结不冒充收尾结果。
+- 携入结果的 verdict 留在 `reused`、不摊进四项（`plan` 事件带 `reusedFailures` 时四项仍全为零）；`lock-wait` 等到锁时把 `carried` 迁 `reused`、`dispatched` 迁 `queued`，两者都不直接落结局项。
+- 恒等式 `total = reused + running + elsewhere + queued + passed + failed + errored + skipped` 在每一个事件之后逐步断言，不只在末尾断言一次。
+- 字面渲染（首行九项的顺序、零值不省略、窄终端下按 `skipped` → `errored` → `passed` 丢弃零值项）归 [E2E · CLI](../e2e/cli.md)「反馈输出格式」。
+- **Invocation 公共回调面**：`Reporter.onInvocationStart` 只接收 `(evals, shape?)` 两个参数——类型层用编译 fixture 证明，三参数或裹带 `agent` 的旧签名不能编译。
+- tsx 直接运行一次最小 Invocation 时 `onInvocationStart` 与 `onInvocationComplete` 各真实触发恰好一次，`onEvalComplete` 按 attempt 数触发。
+- `InvocationSummary` / `InvocationShape` 序列化后不出现顶层 `agent` / `model` 字段（结构断言，不是类型断言）。
+- 跨配置（多 agent 或多实验）场景下 `results` 内逐条 `EvalResult.agent` 仍分别正确，顶层摘要不塌缩成一个值。
+- **Experiment 收尾协议**：`experiment:complete` 事件在该 Experiment `teardown`（若声明）完成之后、`invocation:summary` 之前恰好触发一次。携带的 `experimentId` / `completedAt` / `carriedResults` / `diagnostics` 与该 Experiment 实际的收尾结果一致。
+- 多 Experiment 的一次 Invocation 里各自的 `experiment:complete` 独立触发、顺序与各自完成时点一致，不等到全部 Experiment 收尾才批量触发。
+- 实验域诊断（teardown 失败、budget 不可执行等）经 `ExperimentDiagnosticInput` 累积进正确的 experimentId 桶，不同 Experiment 的诊断不串桶，相同 `dedupeKey` 只在同一个 Experiment 内折叠计数。
+- **`ctx.fact()` 的作用域归属**：sandbox hook / agent setup·send·teardown 经 `ctx.fact()` 上报的落进对应 attempt 的 `EvalResult.facts`（不落进任何其它 attempt）。
+- experiment setup/teardown（含收尾自愈路径 `recoverOrphanedTeardownRegistration`）经 `ctx.fact()` 上报的累积进该 Experiment 的 `experiment:complete` 事件 `facts` 字段。按 experimentId 分桶，不同 Experiment 不串桶。
+- 两级互不混淆，runner 按当前回调所处生命周期自动归属，调用方不能指定层级。同一作用域内同 key 后写替换先写（跨 setup/send/teardown 三个不同回调仍是同一 attempt 作用域）。
+- key 不匹配 `[a-z0-9._-]{1,64}` 或 value 非标量（对象/数组/`null`/`undefined`）时抛错，错误信息带上具体 key/value 与修正提示；合法调用不受影响。
+- **用例锁与并发 Invocation**：
+
+  - 派发时刻逐用例非阻塞取锁。排队用例不持锁；全携带用例不取锁；等锁用例不触发实验级 setup。
+  - `--dry` 只读锁目录不取锁，计划行标注 `locked`。锁目录条目数不超过在跑用例数。
+  - 撞新鲜锁的用例挂起，并发位转派给下一条未被锁的用例。挂起用例计入 `elsewhere`，不占全局位，并与 `queued` 互斥。
+  - 两条 runEvals 指向同一 `niceevalRoot`、选择重叠时，各自认领不同用例。两边声明不同 `maxConcurrency` 时各自生效，总在飞峰值可达两边宽度之和。
+  - 取锁后无条件重做携带规划。证明全携入、全自跑与部分补跑三种计数迁移。
+  - 心跳、过期、rename 接管、正常收尾、中断与 setup 抛错的释放路径按用例锁纪律证明。`lock_wait` 起止事件归约进反馈状态。
+
+  **共享状态租约**：
+
+  - 同 key 的两条 runEvals 只有一条能进入 Experiment/Sandbox lifecycle。
+  - 租约在 Experiment setup、Sandbox create 和 lifecycle setup 前取得，在 Sandbox teardown、Provider finalizer 与 Experiment teardown 后释放。
+  - 等待方不占全局位、不创建 Sandbox、不提前持有 Eval 锁。释放后先重做整个 Experiment 的携带规划。
+  - 证明全携带不取新租约，以及仍有工作时取得租约两面。同 Invocation 的两个 Experiment id 共用 key 也串行；不同 key 可并行。
+  - 心跳过期后接管产生 `state-lease-taken-over` diagnostic，但不伪造外部状态已回滚的事实。`--rerun all` 不跳过租约。
+  - `state_lease_wait` 起止事件与 `elsewhere` 计数归约进反馈状态。字节渲染归 [E2E · CLI](../e2e/cli.md)「反馈输出格式」。
+  - 锁文件走隔离 `niceevalRoot` 下的真实文件系统（每例独立临时根，不许写进真实仓库的 `.niceeval/`），时间推进用 `TestClock`，不做真实等待。
+  - 逐条目原子文件原语（命名、tmp→fsync→rename→fsync 目录写、损坏跳过的全目录扫描、rename 墓碑认领互斥）抽在 `src/shared/entry-file-store.ts`（用例锁、收尾登记、留存清单三个消费方共用）。由 `src/shared/entry-file-store.test.ts` 独立证明：写入/读取往返、全目录扫描跳过损坏条目与点文件、缺失目录不抛错、认领在两个并发调用者之间互斥（恰一个拿到 `true`）。
+- **early exit**：只有 `passed` 触发、只作用于同一 eval、省略计入 `earlyExitUnstarted`、事件只在实际省略时发出；确定性错误的 run 级 fail-fast 与瞬态 errored 的区分。
+  只断言最终通过数发现不了白跑了本应取消的 attempt——启动集合必须显式断言。
+- **逐 eval 收尾行的纯派生（`runner/feedback/eval-conclusions.ts` 的 `evalConclusionRows`）**：纯跑满给出 `attempts`/`passed`/`rate`，代表 attempt 取序号最大的一条。
+- 首过即停触发（该 eval 确有省略）给出 `attempts`/`planned`/`unstarted`/`reason=early_exit`，代表 attempt 取命中通过的那一条。并发下已经在飞、passed 触发省略之前就跑完的 attempt 照常计入 `attempts`，不是幽灵 `unstarted`。
+- fail-fast 未派发复用同一个 `attempt:early-exit` 事件类型，函数按 `diagnostics` 里配套的 `fail-fast:` 条目扣除对应份额，扣完为零则按跑满渲染。不得把 fail-fast 或 budget 未派发误标 `reason=early_exit`；按 `results` 中每个 `(experiment, eval)` 首次出现的顺序返回。
+- reducer 侧只断言 `RunFeedbackState.earlyExitByEval` 按 `(experiment, eval)` 累计原始计数（不剔除 fail-fast，剔除是 `evalConclusionRows` 的职责）。
+- 字面渲染（人读收尾行与 `--json` 的 `eval` 事件）归 [E2E · CLI](../e2e/cli.md)「反馈输出格式」在真实进程输出上验收。
+- **budget**：只按已完成实测花费判断（在飞不影响派发是契约不是 bug）、到顶停发在飞跑完、按 experiment 域隔离、未派发导致 incomplete 与退出码 1、成本缺失 warning 的去重与触发前提。
+- **超时、缓存与指纹**：外层超时回退为 errored 且不放弃同 eval 剩余轮次。
+- **超时证据保全**：超时 attempt 的 events/usage 保留截至中断的已收值（fixture 要让中断前确有事件，证明不是空壳重建）、收尾段补折叠 workspace.diff、`error.phase` 是中断时已打开的阶段。
+- `passed` 与 `failed` 都是可复用终态而 `errored`/`skipped` 总是重跑；指纹变化只重跑受影响 eval。
+- **`timeoutMs` 不进指纹哈希、以携带判据参与**：提高上限旧终态全部携带、调低上限使 `executionMs` 超线的旧终态重跑（fixture 两个方向都要有区分力场景）。
+- **资格判据量的是 `executionMs` 不是 `durationMs`**：一条排队远长于执行的历史终态在「排队+执行 > 新上限、执行 < 新上限」这一格必须携带，这一格是拿含排队的量去比时唯一会红的；`executionMs` 缺失的历史条目回落到 `durationMs`（方向是多跑，不误采信）。
+- **指纹输入的进 / 不进两侧都要有区分力场景**：`flags` 整袋进（任一键任一值不同即重跑）；`model` / `reasoningEffort` / agent 名 / sandbox 求值参数 / `strict` / `judge` 的 `model` 与 `baseUrl` 进。`attempts` / `labels` / 调度字段 / 生命周期 Hook 函数体 / `judge.apiKeyEnv` 改动不作废携带。
+- **`niceeval accept @<locator>` 的单条重锚面**（逐条资格与留痕见下面独立条目）。
+- **携带条目合入新 Run 时按本次规划重打 `fingerprint`**，`facts`/`locator`/`artifactBase`/判定原样携带（fixture 断言携带条目的 facts 仍是产出它那一轮的值）；携带以 attempt 为粒度、未收尾 Run 是合法出处。
+- 带 `sandbox.reused` 的历史终态和当前 `sandboxReuse: true` 都按同一判据携带，复用只是实际派发时的 Sandbox 生命周期。
+- 执行模式 flag 的携带豁免：`--keep-sandbox` 下留存档内的历史终态不携带、照常派发（failed 档豁免 `failed`、all 档连 `passed` 一起豁免），档外照常携带。
+- **`--rerun` 三档各自的携带口径**：不带（`passed`+`failed` 都携带）、单独使用与 `failed` 档（只携带 `passed`，历史 `failed` 全部重新派发）、`all` 档（一律不携带），三档在同一份含 `passed`/`failed`/`errored` 的历史 fixture 上产出三种不同的派发集合。
+- `--dry` 语义；计数恒等式 `total = reused + running + elsewhere + queued + passed + failed + errored + skipped`。
+- **证据依赖决定采集失败后果**：没有 diff 断言时，`ledger.exportWindows()` 失败后仍 finalize 已登记的命令结果。
+
+  - 无 diff 消费者：保留 passed / failed Verdict，写 `workspace-diff-unavailable` diagnostic，且不声明 `diff` artifact。
+  - 非 optional diff 断言或直接消费：同一失败产生 unavailable，并使 Attempt `errored`。
+  - 只有 optional diff 断言：保留 unavailable AssertionResult，但不改 Verdict。
+  - telemetry 配置或收集失败：写带正确 phase 的 diagnostic，并继续执行或保留既有 Verdict。
+  - 错误优先级：后发生的采集失败不能替换较早的 AttemptError。
+- **携带规划的 ADT 与不可变性**：携带门分别证明 `Eligible` 和带 gate/reason 的 `Blocked`；正常与反事实指纹分别涵盖 `Current` / `Counterfactual`；配置差异涵盖 `Added` / `Removed` / `Changed` 三种值要求。
+  规划输出的 Map、Set 与数组在交付后不可写，运行期重查使用独立状态。
+  规划 I/O 从 linker 到 manifest 计算保持一条 Effect 链，中途没有 `runPromise`。
+- **未登记 callback 与 provider 声明的默认携带**：prepare callback 与 lifecycle hook 默认允许已有终态携带。
+  pinned / floating Docker image、Dockerfile `FROM`、Compose image / `FROM` 与 opaque custom provider 也默认允许携带。
+  区分力测试同时证明 `passed` 与 `failed`。
+  同一 fixture 改用 `defineSandboxCommand()` 后，revision / inputs 变化必须归入 fingerprint 门并重新派发；同名外部内容暗变由作者 revision、声明变化或 `--rerun all` 表达。
+- **`niceeval accept @<locator>...` 的对象与资格**：只接受显式 locator 指向的历史 `passed` 或 `failed` 结果；当前项目必须仍发现同一 experiment 与 eval,且当前超时上限允许该结果。
+  - 坏 locator、重复 locator、`errored` / `skipped`、留存 Sandbox 的结果各有失败测试；带 `sandbox.reused` 的出处和当前 `sandboxReuse: true` 都有成功测试。
+  - 多 locator 先全量预检，任一失败时 writer 零调用；该原子性同时证明单 experiment 与跨 experiment 两种批形状。
+  - 全部通过后按 locator 读取出的 experiment 分组，每组各自封口一个 snapshot，每条结果保留独立 `acceptedFrom`。
+  - **批量 accept 的快照范围**：prepare 阶段每条 locator 的 `currentExperiment.sandboxPlansByEval` 可以只有自己那一题。
+    封口时，`sandboxPlansByEval`、`knownEvalIds` 与物理 registry 必须涵盖本组全部接受的 eval。
+    fixture 用两条 prepared 写入，断言 Record-relative head selector 看到两条 attempt，不能只剩 groupFirst 单题。
+  - 同一 experiment 内两个 locator 读取到同一个当前 (eval, attempt) 目标仍判重复拒绝；跨 experiment 的同名 eval 不算重复。
+- **eligible opaque:no-manifest accept 回归**：carry eligibility Eligible 的普通历史缺 manifest 场景仍允许 accept，差异保持为 `opaque:no-manifest`。
+- **接受的重锚与留痕**：接受命令新建并封口一个结果快照，复制出处结果为当前 fingerprint/configHash；新条目的 `acceptedFrom` 往返出处 locator、旧/新指纹和 manifest 差异摘要。下一次不带参数的 `exp` 命中这条新结果，证明接受是重锚而不是一次豁免。
+- **manifest 的算出与相减**：每次 Run 按 eval 算一份指纹输入清单，配置面、源码面、数据面与指纹同源。
+
+  algorithm / coverage 版本必须往返。当前版本内 fingerprint 不同而 manifest 相同必须落 `fingerprint-invariant-violation`，不能返回空 deltas。
+
+  新旧相减给出带名字的差异:`config:` 字段的旧值新值、`source:` / `data:` 的内容哈希变化与文件增删。
+
+  历史条目缺清单时算不出的只有源码面与数据面,如实合并成一条 `opaque:no-manifest`,不按「没差异」放过;配置面从 `run.json` 重建,照常给具名差异。
+
+  这一格要两个方向:源码面没变时单独授权那条具名配置差异即可携带(反事实指纹相等就是证明),源码面也变时要连 `opaque:no-manifest` 一起授权才携带。
+- **差异值的完整性边界**：`configDeltas` / `manifestDeltas` 产出完整的 from/to 值，不做长度截断。`acceptedFrom.differences`、`carriedAccepting` 与 `--dry --json` 的 delta 投影落盘/透传时直接复用这份完整值，不做二次截断。
+  截断只发生在人读渲染(`formatDryDelta`)：Changed 双侧对齐到第一处不同字符,公共前缀过长时压缩显示，从差异点起两侧各留一个有界跨度。fixture 要选两个长度相近、差异点落在跨度之外才出现的字符串，证明两侧输出仍然互相区分，不会被压成同一份省略串;Added / Removed 单侧值仍按简单长度上限截断。
+- **fingerprint 版本迁移**：已知等价迁移自动携带并落 `migratedFrom`，不伪装成人工 `acceptedFrom`；具名差异继续走 `changed`；未知迁移走 `unexplained/fingerprint-version-changed`。迁移必须校验 from/to 版本，不能只凭 manifest 相同放行。
+- **`--dry` 的逐条作废原因**：要派发的行各标一个原因,词表是五道门加缺历史门的 `new` / `incompatible`,全部携带的行标 `carried`。
+  九个原因各要一条能把它与相邻原因区分开的 fixture,`previous-result` 行另要断言显示历史 verdict、带方向的差异摘要和对应的 `niceeval accept @<locator>`；legacy locator 必须明确不可接受，不能输出必然失败的 accept 命令。
+- **`--dry` 的 carried Verdict 投影**：Human 计划行要证明携入 Verdict 不被隐藏。
+  单 Attempt 分别显示 `carried (passed)` 与 `carried (failed)`，多 Attempt 按 `passed` / `failed` 汇总。
+- **`--dry` 的部分携入计数**：要保留 `carried N/total (… verdict …)`。
+  还要按 `DispatchGroup.attempts` 给每个其它派发原因显示 `reason N/total`，多个原因的序号不能互相计数。
+- **`--dry` 的双形态边界**：Verdict 与分数是人读 formatter 的内部投影。
+  `--dry --json` 的 `reused` / `dispatch` 结构不因展示需要增加字段。
+- **`incompatible` 与 `new` 的区分**:同一次计划里一条 eval 的历史落在版本不同的快照里、另一条从没跑过,两行的原因词不同。
+  把不兼容历史一并算作「没有任何历史」的实现只在这一格会红。
+  判定链的另一半在读取面:不兼容的快照只按目录名认坐标(它的文件按格式规则不解码)。
+  断言面是 `loadCarryInputs` 的 `incompatibleHistory` 收进了那些坐标,而 `results` 一条都没多。
+- **尾随 eval 前缀逐个必须命中**：每个尾随前缀在选中实验的发现集里匹配 0 条时,按启动期用法错误报出,不静默丢弃。
+  「一个前缀命中、另一个零命中」是唯一会红的那一格——按整体命中数判空的实现会放过它。
+- **超时归属**：超时把 attempt 转成 `errored` 时,`error.timeout` 三样都要断言——触发层、生效的上限值、值来自哪一层。
+  attempt deadline 与命令显式 `timeout` 两条触发路径各要一条;出处层取自 `timeoutMs` 的求值链,fixture 要让两层的值不同才有区分力。
+- **eval 源码闭包的构成与确定性**：闭包含三样东西——eval 文件字节、项目根内导入图的递归展开、 `loadYaml` / `loadJson` / `loadText` 读入的数据文件内容。
+  进 / 不进两侧各要区分力场景：改被引用公共函数的一行使**引用它的那些 eval** 重跑而未引用的照常携带；改测试集一行只作废对应那条 eval；`node_modules` 下的包与动态 `import()` 改动不作废。
+  判据文件经 `loadText` 读入时改一字节即重跑，同一文件换 `fs` 直读不触发。
+- **数据 loader 的调用面**：同一份数据文件用项目根相对字符串与 `URL` 两种入参读入，登记与指纹等价——两种写法算出同一个哈希，这一格在只支持 string 的实现下会红。
+  `loadYaml` / `loadJson` 必须接收 decoder，文件解码出的动态值只有经过完整结构验证后才返回领域类型；缺 decoder 的调用在类型检查期就失败。
+  发现期之外调用 `loadText` / `loadYaml` / `loadJson` 立即报错，错误文案含问题与下一步，不得静默跳过登记。
+- **普通本地上传的 transfer manifest**：改树内一个文件的一字节、增加文件、删除文件，三种改动都使使用上一份 manifest 的 Attempt 重跑；改权限位与修改时间不作废；`ignore` 命中的生成物变化不作废。
+  首次真实执行记下 source tree、内容摘要、目标与 send 区间；源码闭包不变时重算历史 manifest，源码变化时不信任旧依赖集合并重跑。
+  失败面证明 source 不存在、source 落到项目根外、符号链接逃逸与目录展开为空；每一条都在上传调用点报含下一步的错误。
+- **普通上传的相对 source**：项目根相对字符串与 Eval 模块相对 `URL` 展开同一棵树时，transfer manifest 相同。
+  同一模块导出两条 Eval 时，manifest 归当前 Attempt，不形成模块级共享表。
+- **未读取文件不进入身份**：同目录 solution、生成器或参考答案若未被 Eval 读取，内容变化不作废该 Eval。
+  是否进入 image 由 Environment closure 与 `.dockerignore` 证明，不靠 `privateFiles` 登记。
+- **eval 源码闭包的确定性**：同一份源码在两种不同的目录遍历顺序下算出同一个哈希。
+  它靠两件事成立——按项目根相对路径排序、循环导入按求值后绝对路径去重。
+  任缺一条哈希都会随宿主条件漂移，症状是缓存永不命中而不是结果出错，只有这一格会红。
+- **汇总与退出码**：verdict 四值互斥、failed 只统计断言不过；退出码按 `(experiment, eval)` 最终判定折叠、完整退出码矩阵（0/1/130、strict、required reporter）；分组通过率的分母口径。
+- **Session 登记与查询**：每次真实派发在启动期原子创建 Session 文件，按反馈维护 queued/running/elsewhere 计数与状态，收尾后保留完成条目；查询只读投影默认过滤已完成项，并把超过心跳阈值的活动条目放入 `expired`，`--all` 保留完成项。
+- **启动期错误格式**：coordinator 激活前的错误恒为 `error:` + `fix:` 两行、两种输出形态同形；库错误类的下一步原样透传。
+- **用户 `.ts` 装载与宿主模块形态**（`bin/niceeval.js` + 包 `exports` 表）：CLI 装载用户 `.ts` 不受宿主 `package.json` 的 `type` 影响（契约见 [docs/cli.md「装载用户 .ts」](../../../cli.md)）。
+- 单元层以数据面守护两条不变量：exports 每个带 `import` 条件的出口同时带 `require` 条件、且两者指向真实存在的文件。
+- bin 入口同时注册 tsx 的 ESM 与 CJS 两个 hook——两者缺一，CJS 宿主（`npm init -y` 默认）下 `init` 刚生成的 config 就装载不了（`// bug: memory/tsx-dynamic-import-require-cycle.md`）。
+- 真实 CJS 宿主的进程级验收归 [E2E · CLI](../e2e/cli.md)，init 的 ESM 建议提示行同归该处，单元层不起 CLI 进程。
+- **形态求值与 `--json` 流不变量**：`resolveOutputForm` 只有两个结果——`--json` 即机器面，否则人读文本；**不读任何 CI 进程变量**（fixture 要在设置了 `CI=true` 的运行条件下证明结果只由 flag 与 TTY 决定），TTY 只决定人读文本的版式。
+- `--json` 的事件流不变量：单一 stdout 有序流（stderr 只留启动期错误）、每行一个合法 JSON 对象且首行 `start` 事件携带 `format`/`schemaVersion`、字段名复用 Results 词表。
+- 失败不做 suppression 逐事件给出（人读文本才有展开上限 10）；空闲 30 秒 `progress` 心跳且永久事件重置计时。
+- `result` 事件的 `junit` 字段只在传了 `--junit` 时出现；`--dry --json` 是单 JSON 文档不是流。
+- 字节级渲染归 [E2E · CLI](../e2e/cli.md)，这里以 reducer/renderer 的事件序列与状态为断言面。
+- **生命周期与资源**：成功、失败、中断三条路径下 sandbox 全部 stop、reporter queue 收尾；预热池边界；生命周期阶段闭集与主链耗时封口；diagnostic 去重与不改判定；逐轮进度行的提取规则；分类账导出的常数往返。
+  资源泄漏通常出现在失败和中断——三条路径缺一不可。
+- **Sandbox lifecycle 连续性**：每个实际 Sandbox 的 `setup()` / `teardown()` 恰好成对一次。
+  fresh 新建实例会在 `setup()` 恢复 checkpoint，退休时在 `teardown()` 回存。
+  `sandboxReuse: true` 只复用同一个物理实例，`maxConcurrency: 1` 只负责需要固定顺序的场景。
+  Fixture 把 setup、command、ensure、baseline、Agent teardown、cleanup 与 teardown 做成可辨认事件，交换相邻边界会失败。
+- **生命周期失败与收尾**：setup 或 teardown 的 callback、checkpoint 与 transport 失败可区分并关闭受影响实例；同批其它 Experiment 照常完成。
+  断言 teardown 在实例退休、Provider finalizer 前运行，不新增额外的逐 Attempt checkpoint phase 或 Experiment 顶层字段。
+- **止损机制（空间轴消费）**：触发——终局失败携带 `scope: "eval"` 只停本 eval 剩余 attempt、`"experiment"` 停全实验且同批其它实验不连坐；组合——可重试失败被重试吸收不触发、耗尽后的终局失败才读 scope。
+- 幂等与不可逆：并发重复声明按 dedupeKey 折叠成一条 `dispatch-halted` 诊断、触发后在飞 attempt 成功不重开派发；机制只停派发不抢占，在飞 attempt 照常跑完落账，等待集中同机制 attempt 经 interruption 中止。
+- 记账：未派发计 `unstarted`、完成状态 `incomplete`、退出码由观察到失败的 `errored` attempt 判红。
+- teardown 边界：实验级 teardown 抛声明降级普通诊断、per-attempt teardown 抛声明照常触发且不改 verdict。
+- 诊断双通路：反馈流通知与 `run.json` 的 `dispatch-halted`（`data.scope` / `data.evalId`）同源互不派生。
+- **派发前资源获取失败的归一化**：`sandboxReuse` 的实例创建、Case 就绪与寿命确认都在复用池内完成。
+  任一步失败只让这条 attempt 落 `errored`，phase 为 `sandbox.create`、message 保留原始正文。
+  同批其它实验照常跑完，整次运行照常收尾出汇总。
+  Hook 里抛的 `ExperimentFatalError` 走与 attempt 内抛出同一条空间轴回执链，照常触发实验止损机制。
+  区分力在「失败不冒充中断」：这类失败不得产生 `interrupted` 诊断。
+  `// bug: memory/experiment-fatal-presented-as-user-interrupt.md`
+- **沙箱内 OTLP 采集器的启动韧性**：
+  - 远程沙箱在沙箱内启动采集器，并等待端口写回。
+    这条路径没有外层重试，因此启动逻辑自己重试。
+  - 每轮使用不同的脚本、span 和端口路径。
+    开始下一轮前先终止上一轮进程，防止迟到写入和孤儿进程。
+  - 重试耗尽才抛错。
+    错误包含等待预算、轮次和采集器日志。
+    首轮成功时不重试。
+  - 第一层 Fixture 用脚本化 fake Sandbox，观察启动轮数、路径隔离和旧进程终止。
+  - 第二层把 `runShell` 交给真实 `/bin/sh`，并让 `writeText` / `writeBytes` 真实落盘。
+    它证明脚本语法、端口监听和 POST 200，也证明采集器立即退出时不会耗完整轮等待预算。
+
+相关条目：
+[insandbox-otlp-port-wait-3s-no-retry](../../../../memory/insandbox-otlp-port-wait-3s-no-retry.md)。
+
+- **共享 Run activity 不占 attempt 位**（[Run 级共享准备](../../../feature/experiments/architecture.md#run-级共享准备构建协调的预算)）：
+
+  - BuildKey 构建与 `agent.artifact.prepare` 在独立构建并发下推进时，attempt 在飞计数与 `maxConcurrency` 槽位不变。
+  - live 面板把共享准备显示为运行级 active 行，不占 attempt active 位。
+  - 共享构建 duration 只在 `RunMeta.timings` 出现一次，任一 attempt 的 `executionMs` 不含该段。
+  - fixture 要有非零共享构建 + 至少一个依赖 attempt，证明两者可区分。
+  - 依赖某个 BuildKey 的 attempt 等到该 key 登记 locator 才派发；同批不依赖它的 attempt 在构建仍在进行时就已开跑。
+- **build failure 的 Run origin**：
+
+  - 确定性构建失败时，依赖该 BuildKey 的 fresh attempt 全部 `errored`。
+  - 每条 `error.origin` 为 `scope: "run"`，且 `timingNodeId` 指向同一个 `sandbox.build` activity。
+  - 不伪造 `sandbox.create` 或其它 attempt 参照点。
+  - 不依赖该 key 的 attempt 照常派发；carried attempt 不因查看历史结果触发构建。
+- **全 skipped 启动错误**：
+
+  - 平台、能力或 locator 不可用在只读 physical planning 聚合报错,整个 Run 零资源失败,不落 `skipped`。
+  - 此时零 Sandbox 创建，不静默跑完再汇总。
+  - 集合里仍有可派发 eval 时，仅缺能力的那些 skipped、其余照常。
+  - 「全 skipped 才升级」与「部分 skipped 继续」两面都要有区分力。
+- **live feedback 的未知 activity 通用投影**：
+
+  - Run / attempt 的 feedback 与 `--json` 对未登记 activity key 使用 producer 的 `label` 通用投影。
+  - 不需要 switch 穷尽；未知 key 不改变计数恒等式、verdict 折叠或 attempt active 位。
+  - 参照点本地化标签只涵盖 `LifecyclePhase` 闭集。
+  - fixture 塞一个官方未列 key，断言仍可见且不进参照点标签表。
 
 ## 不这样测
 
-- 不恢复 Member、channel entry、channel event、Graph、revision、session index、Eval 锁或 heartbeat fixture。
-- 不用等待真实时间证明并发、重试、租约或 timeout。
-- 不把 runner fake 写成第二个 Record writer；只观察公开 writer 调用顺序和结果。
-- 不新增自动化只为锁定内部函数形状。无法稳定证明公开行为时，按测试总纲做本次 AI 真实验收。
+- 不用 `sleep(100)` 等待调度"应该已经发生"。
+- 不断言内部 `Effect.forEach`、Semaphore 或 AbortController 被调用几次。
+- 不让 fake scheduler 预先算出生产 Runner 应该启动哪些 attempt；fixture 只控制输入和完成时机。
+- 不在 fixture 里复制 budget 的判断公式；`costUSD` 是完成后结算的输入证据，停发与否由生产 Runner 决定。
+- 不把全流程汇总 snapshot 当作唯一 Runner 测试；它难以定位 early exit、budget 或资源泄漏。

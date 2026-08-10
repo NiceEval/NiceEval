@@ -1,27 +1,30 @@
 name: Release
 
-# 发版到 npm只有一条路:打 v* 标签、push 到 origin。标签号就是发布版本号,
-# CI 自己从标签名解析版本号,在 runner 本地写入 package.json(不写回仓库),
-# 然后直接发布。不要求 main 分支上预先提交版本号变更。
+# 发版到 npm 只有一条路：以 v* 标签触发本 workflow。普通发版由 tag push
+# 触发；Canary 用 GITHUB_TOKEN 推 tag 后显式 workflow_dispatch（token push 不会级联
+# 触发 workflow）。CI 从标签名解析版本，在 runner 本地写入 package.json
+# （不写回仓库），只 pack 一次；完整 release lane 对这份 tgz 产生的 receipt
+# 集合通过闸门后，才发布同一份 tgz。不要求 main 预先提交版本号变更。
 #
 # 前置:在仓库 Settings → Secrets → Actions 配好 NPM_TOKEN(npm automation token)。
 # 包大部分发 TypeScript 源码(package.json files: src + bin,消费侧用 tsx 加载,无 build 步骤);
 # 唯一例外是 src/report/**(报告 web 面用到 JSX,tsx 的 JSX 编译按调用进程 cwd 找 tsconfig,
 # niceeval 被 link 消费时会退化成 classic JSX、产物引用未定义的全局 React)—— 这部分改发预编译
 # ESM(`pnpm run build:report` 产出 dist/report/**,tsconfig.report-build.json),不受消费方
-# cwd/tsconfig 影响。`pnpm install`/`pnpm publish` 会经 prepare 生命周期自动触发这一步;下面的
-# Build 仍显式跑一遍,方便 CI 失败时定位,也让 Typecheck 针对真实构建产物跑。
+# cwd/tsconfig 影响。`pnpm install` / `pnpm pack` 会经 prepare 生命周期触发这一步；
+# 下面的 Build 仍显式跑一遍，方便 CI 失败时定位，也让 Typecheck 针对真实构建
+# 产物跑。最后的 `npm publish <tgz>` 不再重建或重新 pack。
 
 on:
   push:
     tags:
       - "v*"
-  # Canary 由 GITHUB_TOKEN 推 tag；GitHub 不会让那次 push 再触发本工作流。
-  # 它会在发布完成后显式 dispatch 到这里，留下可追溯的 Release 日志，而不重复 publish。
+  # Canary 由 GITHUB_TOKEN 推 tag；GitHub 不会让那次 push 再触发本工作流，
+  # 所以 Canary 显式 dispatch 这条唯一发布链。
   workflow_dispatch:
     inputs:
       tag:
-        description: "已发布、需要核验的 vX.Y.Z 标签"
+        description: "要验证并发布的已存在 vX.Y.Z 标签"
         required: true
         type: string
 
@@ -29,19 +32,26 @@ permissions:
   contents: write # 创建 release 需要
   id-token: write # npm provenance 需要
 
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
-  publish:
-    if: github.event_name == 'push'
-    name: Publish to npm
+  prepare-release:
+    name: Prepare exact release candidate
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      candidate_sha256: ${{ steps.pack.outputs.candidate_sha256 }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
-        with:
-          version: 10
 
       - name: Set up Node
         uses: actions/setup-node@v6
@@ -51,9 +61,23 @@ jobs:
           registry-url: "https://registry.npmjs.org"
 
       - name: Apply release version
+        id: version
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          set -euo pipefail
+          if ! [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::release tag 必须是 vX.Y.Z（可带预发布标识），收到: $RELEASE_TAG"
+            exit 1
+          fi
+          if [ "$GITHUB_REF" != "refs/tags/$RELEASE_TAG" ]; then
+            echo "::error::release workflow 必须以同一 tag ref 运行: expected=refs/tags/$RELEASE_TAG actual=$GITHUB_REF"
+            exit 1
+          fi
+          VERSION="${RELEASE_TAG#v}"
           npm version "$VERSION" --no-git-tag-version --allow-same-version
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -70,61 +94,332 @@ jobs:
       - name: Lint docs
         run: pnpm run lint:docs
 
-      - name: Publish
+      - name: Plan the complete release lane
+        id: plan
         run: |
-          VERSION="$(node -p "require('./package.json').version")"
-          # 预发布版(含 - )发到对应 dist-tag(如 alpha/beta/rc),正式版发 latest。
+          set -euo pipefail
+          plan_path="${RUNNER_TEMP}/release-plan.json"
+          pnpm e2e plan --lane release --no-diff --json > "$plan_path"
+          if ! jq -e 'type == "array" and length > 0' "$plan_path" >/dev/null; then
+            echo "::error::release lane 必须产生非空 Repo 计划"
+            cat "$plan_path" || true
+            exit 1
+          fi
+          echo "matrix=$(jq -c '.' "$plan_path")" >> "$GITHUB_OUTPUT"
+          echo "[release] planned $(jq 'length' "$plan_path") blocking Repo(s)"
+
+      - name: Pack exact versioned candidate once
+        id: pack
+        run: |
+          set -euo pipefail
+          bundle="${RUNNER_TEMP}/niceeval-release-candidate"
+          mkdir -p "$bundle"
+          candidate="${bundle}/niceeval-candidate.tgz"
+          pnpm e2e pack --out "$candidate" | tee "${bundle}/candidate-pack.json"
+          candidate_sha256="$(jq -r '.sha256' "${bundle}/candidate-pack.json")"
+          actual="$(sha256sum "$candidate" | awk '{print $1}')"
+          if ! [[ "$candidate_sha256" =~ ^[0-9a-f]{64}$ ]] || [ "$actual" != "$candidate_sha256" ]; then
+            echo "::error::release candidate SHA-256 mismatch: pack=${candidate_sha256:-<empty>} actual=$actual"
+            exit 1
+          fi
+          cp "${RUNNER_TEMP}/release-plan.json" "${bundle}/release-plan.json"
+          printf '%s\n' "$candidate_sha256" > "${candidate}.sha256"
+          echo "candidate_sha256=$candidate_sha256" >> "$GITHUB_OUTPUT"
+          echo "[release] candidate sha256=$candidate_sha256"
+
+      - name: Upload exact release candidate and plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: niceeval-release-candidate
+          path: ${{ runner.temp }}/niceeval-release-candidate
+          if-no-files-found: error
+          retention-days: 14
+
+  release-e2e:
+    name: release e2e (${{ matrix.id }})
+    needs: prepare-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    environment: release
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.prepare-release.outputs.matrix) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install orchestrator dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Set up Python
+        if: contains(toJSON(matrix.requires), 'python')
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Playwright browsers
+        if: contains(toJSON(matrix.requires), 'chromium') || contains(toJSON(matrix.requires), 'firefox') || contains(toJSON(matrix.requires), 'webkit')
+        env:
+          BROWSERS_JSON: ${{ toJSON(matrix.requires.browsers) }}
+        run: |
+          set -euo pipefail
+          mapfile -t browsers < <(jq -r '.[]' <<< "$BROWSERS_JSON")
+          pnpm exec playwright install --with-deps "${browsers[@]}"
+
+      - name: Download exact release candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: niceeval-release-candidate
+          path: ${{ runner.temp }}/niceeval-release-candidate
+
+      - name: Verify release candidate SHA-256
+        id: candidate
+        env:
+          EXPECTED_SHA256: ${{ needs.prepare-release.outputs.candidate_sha256 }}
+        run: |
+          set -euo pipefail
+          candidate="${RUNNER_TEMP}/niceeval-release-candidate/niceeval-candidate.tgz"
+          actual="$(sha256sum "$candidate" | awk '{print $1}')"
+          recorded="$(tr -d '[:space:]' < "${candidate}.sha256")"
+          if [ "$actual" != "$EXPECTED_SHA256" ] || [ "$recorded" != "$actual" ]; then
+            echo "::error::release candidate SHA-256 mismatch: expected=$EXPECTED_SHA256 recorded=$recorded actual=$actual"
+            exit 1
+          fi
+          echo "path=$candidate" >> "$GITHUB_OUTPUT"
+
+      - name: Inject declared release secrets
+        env:
+          MANIFEST: e2e/${{ matrix.dir }}/e2e.json
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+          BUB_API_BASE: ${{ secrets.BUB_API_BASE }}
+          BUB_API_KEY: ${{ secrets.BUB_API_KEY }}
+          CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
+          CODEX_BASE_URL: ${{ secrets.CODEX_BASE_URL }}
+          NICEEVAL_JUDGE_KEY: ${{ secrets.NICEEVAL_JUDGE_KEY }}
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+        run: |
+          set -euo pipefail
+          node <<'NODE_EOF'
+          const fs = require("fs");
+          const allowed = new Set([
+            "ANTHROPIC_API_KEY",
+            "ANTHROPIC_BASE_URL",
+            "BUB_API_BASE",
+            "BUB_API_KEY",
+            "CODEX_API_KEY",
+            "CODEX_BASE_URL",
+            "NICEEVAL_JUDGE_KEY",
+            "OPENCODE_API_KEY",
+            "OPENAI_API_KEY",
+            "OPENAI_BASE_URL",
+          ]);
+          const manifest = JSON.parse(fs.readFileSync(process.env.MANIFEST, "utf8"));
+          const lines = [];
+          for (const name of manifest.secrets) {
+            if (!allowed.has(name)) throw new Error(`${name} is not in the release secret allowlist`);
+            const value = process.env[name];
+            if (typeof value !== "string" || value.length === 0) continue;
+            const marker = `RELEASE_SECRET_${name}_${Math.random().toString(36).slice(2)}`;
+            lines.push(`${name}<<${marker}`, value, marker);
+          }
+          if (lines.length > 0) fs.appendFileSync(process.env.GITHUB_ENV, `${lines.join("\n")}\n`);
+          NODE_EOF
+
+      - name: Derive receipt paths
+        id: paths
+        env:
+          REPO_ID: ${{ matrix.id }}
+        run: |
+          set -euo pipefail
+          safe="$(printf '%s' "$REPO_ID" | sed 's/[^A-Za-z0-9._-]/-/g')"
+          echo "safe=$safe" >> "$GITHUB_OUTPUT"
+          echo "artifact-root=${RUNNER_TEMP}/niceeval-release-e2e/${safe}" >> "$GITHUB_OUTPUT"
+
+      - name: Run blocking release Repo
+        env:
+          ARTIFACT_ROOT: ${{ steps.paths.outputs.artifact-root }}
+          CANDIDATE: ${{ steps.candidate.outputs.path }}
+          REPO_ID: ${{ matrix.id }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$ARTIFACT_ROOT"
+          pnpm e2e run --candidate "$CANDIDATE" --repo "$REPO_ID" --artifact-root "$ARTIFACT_ROOT"
+
+      - name: Redact release secrets in receipts
+        if: always()
+        env:
+          ARTIFACT_ROOT: ${{ steps.paths.outputs.artifact-root }}
+          MANIFEST: e2e/${{ matrix.dir }}/e2e.json
+        run: |
+          set -euo pipefail
+          [ -d "$ARTIFACT_ROOT" ] || exit 0
+          node <<'NODE_EOF'
+          const fs = require("fs");
+          const path = require("path");
+          const root = process.env.ARTIFACT_ROOT;
+          const manifest = JSON.parse(fs.readFileSync(process.env.MANIFEST, "utf8"));
+          const replacements = manifest.secrets
+            .map((name) => ({ name, value: process.env[name] }))
+            .filter(({ value }) => typeof value === "string" && value.length > 0);
+          function walk(dir, files = []) {
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+              const abs = path.join(dir, entry.name);
+              if (entry.isDirectory()) walk(abs, files);
+              else if (entry.isFile()) files.push(abs);
+            }
+            return files;
+          }
+          for (const abs of walk(root)) {
+            let text;
+            try { text = fs.readFileSync(abs, "utf8"); } catch { continue; }
+            let next = text;
+            for (const { name, value } of replacements) next = next.split(value).join(`<redacted:${name}>`);
+            if (next !== text) fs.writeFileSync(abs, next, "utf8");
+          }
+          NODE_EOF
+
+      - name: Upload release Repo receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: niceeval-release-e2e-${{ steps.paths.outputs.safe }}
+          path: ${{ steps.paths.outputs.artifact-root }}
+          if-no-files-found: warn
+          include-hidden-files: true
+          retention-days: 14
+
+  release-barrier:
+    if: always() && needs.prepare-release.result == 'success'
+    name: Verify exact release receipt set
+    needs: [prepare-release, release-e2e]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install verifier dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download exact release candidate and plan
+        uses: actions/download-artifact@v4
+        with:
+          name: niceeval-release-candidate
+          path: ${{ runner.temp }}/niceeval-release-candidate
+
+      - name: Download all release Repo receipts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: niceeval-release-e2e-*
+          path: ${{ runner.temp }}/niceeval-release-receipts
+          merge-multiple: true
+
+      - name: Verify exact release evidence closure
+        run: |
+          set -euo pipefail
+          bundle="${RUNNER_TEMP}/niceeval-release-candidate"
+          pnpm e2e verify-release \
+            --plan "${bundle}/release-plan.json" \
+            --candidate "${bundle}/niceeval-candidate.tgz" \
+            --receipt-root "${RUNNER_TEMP}/niceeval-release-receipts" \
+            --tag "${{ needs.prepare-release.outputs.tag }}"
+
+  publish:
+    name: Publish verified tarball to npm
+    needs: [prepare-release, release-barrier]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Download verified release candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: niceeval-release-candidate
+          path: ${{ runner.temp }}/niceeval-release-candidate
+
+      - name: Publish exact verified tarball
+        env:
+          EXPECTED_SHA256: ${{ needs.prepare-release.outputs.candidate_sha256 }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ needs.prepare-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          bundle="${RUNNER_TEMP}/niceeval-release-candidate"
+          candidate="${bundle}/niceeval-candidate.tgz"
+          actual="$(sha256sum "$candidate" | awk '{print $1}')"
+          if [ "$actual" != "$EXPECTED_SHA256" ]; then
+            echo "::error::publish candidate SHA-256 mismatch: expected=$EXPECTED_SHA256 actual=$actual"
+            exit 1
+          fi
+          expected_integrity="$(jq -r '.sha512' "${bundle}/candidate-pack.json")"
+          if ! [[ "$expected_integrity" =~ ^sha512-[A-Za-z0-9+/=]+$ ]]; then
+            echo "::error::candidate pack metadata has no valid sha512 integrity"
+            exit 1
+          fi
           if [[ "$VERSION" == *-* ]]; then
             DIST_TAG="${VERSION#*-}"
             DIST_TAG="${DIST_TAG%%.*}"
           else
             DIST_TAG="latest"
           fi
-          echo "Publishing niceeval@$VERSION with dist-tag $DIST_TAG"
-          pnpm publish --no-git-checks --provenance --access public --tag "$DIST_TAG"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+          view_json="${RUNNER_TEMP}/published-integrity.json"
+          view_error="${RUNNER_TEMP}/published-integrity.err"
+          published_integrity=
+          if npm view "niceeval@$VERSION" dist.integrity --json > "$view_json" 2> "$view_error"; then
+            published_integrity="$(jq -r 'if type == "string" then . else empty end' "$view_json")"
+            if [ "$published_integrity" != "$expected_integrity" ]; then
+              echo "::error::niceeval@$VERSION already exists with different bytes"
+              exit 1
+            fi
+            echo "niceeval@$VERSION already contains the exact verified tarball; continuing the idempotent release"
+          elif grep -q 'E404' "$view_error"; then
+            echo "Publishing verified niceeval@$VERSION sha256=$actual with dist-tag $DIST_TAG"
+            npm publish "$candidate" --provenance --access public --tag "$DIST_TAG"
+          else
+            echo "::error::could not determine whether niceeval@$VERSION is already published"
+            sed -n '1,80p' "$view_error" >&2
+            exit 1
+          fi
 
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare-release.outputs.tag }}
+          VERSION: ${{ needs.prepare-release.outputs.version }}
         run: |
-          VERSION="$(node -p "require('./package.json').version")"
-          TAG="$GITHUB_REF_NAME"
+          set -euo pipefail
           PRERELEASE_FLAG=""
           if [[ "$VERSION" == *-* ]]; then
             PRERELEASE_FLAG="--prerelease"
           fi
-          gh release create "$TAG" --title "$TAG" --generate-notes $PRERELEASE_FLAG
-
-  verify-existing-release:
-    if: github.event_name == 'workflow_dispatch'
-    name: Verify published tag
-    runs-on: ubuntu-latest
-    env:
-      TAG: ${{ inputs.tag }}
-      GH_TOKEN: ${{ github.token }}
-    steps:
-      - name: Validate tag input
-        run: |
-          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::tag 必须是 vX.Y.Z（可带预发布标识），收到: $TAG"
-            exit 1
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "GitHub Release $TAG already exists; exact npm candidate was verified"
+          else
+            gh release create "$TAG" --title "$TAG" --generate-notes $PRERELEASE_FLAG
           fi
-
-      - name: Verify npm package and GitHub Release
-        run: |
-          VERSION="${TAG#v}"
-          PUBLISHED_VERSION="$(npm view "niceeval@$VERSION" version)"
-          if [ "$PUBLISHED_VERSION" != "$VERSION" ]; then
-            echo "::error::npm 上的 niceeval@$VERSION 未找到或版本不一致（收到: $PUBLISHED_VERSION）"
-            exit 1
-          fi
-          RELEASE_URL="$(gh release view "$TAG" --json url --jq .url)"
-          {
-            echo "## 已发布标签核验"
-            echo
-            echo "- Tag: \`$TAG\`"
-            echo "- npm: \`niceeval@$PUBLISHED_VERSION\`"
-            echo "- GitHub Release: $RELEASE_URL"
-          } >> "$GITHUB_STEP_SUMMARY"

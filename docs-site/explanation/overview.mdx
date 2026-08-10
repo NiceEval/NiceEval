@@ -34,7 +34,7 @@ The Runner creates one Run for every selected Experiment. A Run lists its expect
 
 An Attempt always retains the `origin` where it actually ran. Adoption does not copy business values; a later read sees the Attempt channel's current values.
 
-## Record is current data
+## Record is an editable fact dataset
 
 A Record lives in `.niceeval/record/`. People and tools read or write it only while the directory is quiescent. Business values such as Verdicts, Usage, assertions, and diagnostics live in named owner-local channels. That allows channel-level reading and user edits after the directory settles.
 

@@ -11,7 +11,7 @@ let plan: ReportPlan;
 let input: ReportInput;
 {
   await using record = await openRecordReader({ root });
-  const sample = await selectSample(record, selection);
+  const sample = await projectExplicitRuns(record, { runIds });
   const scope = createReportScope(sample);
   plan = definition.plan(scope);
   input = await buildReportInput({ record, sample, plan });
@@ -26,9 +26,9 @@ Only `buildReportInput()` receives a `RecordReader`. A Report definition, Calcul
 
 ```ts
 interface ReportScope {
-  readonly selection: RunSelection;
-  readonly runs: readonly SampleRun[];
-  readonly slots: readonly SampleSlot[];
+  readonly provenance: AnalysisProjectionProvenance;
+  readonly runs: readonly AnalysisRun[];
+  readonly slots: readonly AnalysisSlot[];
 }
 ```
 
@@ -79,7 +79,7 @@ A plan has no top-level facts or resources. Each consumer declares its own input
 ```ts
 interface ReportInput {
   readonly scope: ReportScope;
-  readonly sample: Sample;
+  readonly sample: AnalysisSample;
   // The internal fact matrix uses an unexported brand and cannot be indexed by user code.
 }
 

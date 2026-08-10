@@ -22,7 +22,7 @@ description: "NiceEval CLI 参考：exp、show、view、init、list 和 clean �
     删除明确 writer 留下的 Record 临时目录，不删除正式 Run 或 Attempt。
   </Card>
   <Card title="npx niceeval show --run | --latest" icon="terminal">
-    在终端执行报告。用明确 Run 或 latest policy 形成 Sample。
+    在终端执行报告。用 `explicit-runs/v1` 或 `latest/v1` 形成 `AnalysisSample`。
   </Card>
   <Card title="npx niceeval view" icon="eye">
     打开固定 ReportExecution 的网页结果。选择与 `show` 相同；要看编辑后的 Record，结束后重新运行。
@@ -179,9 +179,9 @@ npx niceeval view --latest
 npx niceeval view --run 01H...
 ```
 
-打开本地记录查看器。它和 `show` 共用同一份默认 Report 和同一套明确选择：从停稳 Record 按 `--run` 或 `--latest` 形成 core-only Sample，再按 ReportPlan 读取所需通道。
+打开本地记录查看器。它和 `show` 共用同一份默认 Report 和同一套明确选择：从停稳 Record 按 `explicit-runs/v1` 或 `latest/v1` 形成 core-only `AnalysisSample`，再按 ReportPlan 读取所需通道。
 
-局部重跑时，未重跑的 slot 可以通过 `carried` / `accepted` Member 引用已有 Attempt。同一份 Sample 不按可变 head 重选。`--experiment`、`--eval` 和 `--record` 对两种宿主的收窄一致。
+此前的局部执行可能让部分 slot 通过 `carried` / `accepted` Member 引用已有 Attempt。这些是当时的采用事实，不是补跑状态。同一份 `AnalysisSample` 不按可变 head 重选。`--experiment`、`--eval` 和 `--record` 对两种宿主的收窄一致。
 
 ## `show`
 
@@ -193,7 +193,7 @@ npx niceeval show --run 01H... --page attempt-0123456789ABCDEFGHJKMNPQRS
 npx niceeval show --run 01H... --report ./reports/summary.ts --page overview
 ```
 
-`show` 是终端报告入口，适合人直接阅读，也适合 coding agent 在上下文窗口里逐级下钻。它不接受模糊的位置选择：`--run` 与 `--latest` 二选一。单个 Attempt 详情是已选 Sample 中的参数化页面，不是另一条 selector。
+`show` 是终端报告入口，适合人直接阅读，也适合 coding agent 在上下文窗口里逐级下钻。它不接受模糊的位置选择：`--run` 与 `--latest` 二选一。单个 Attempt 详情是 `AnalysisSample` 中的参数化页面，不是另一条 selector。
 
 `--run` 可重复，只读取这些显式 Run；`--latest` 对每个目标 Experiment 按完成时间和 Run identity 的稳定规则各选择一个。`--latest --experiment <id>` 定义目标集合；不带 `--experiment` 时目标来自可读 Run 核心。目标集合为空、任一目标没有完成 Run，或任一候选 Run 的排序核心损坏都明确失败，不缩小比较组去猜“最近一次”。未完成 Run 必须显式 `--run`。
 
@@ -201,7 +201,7 @@ npx niceeval show --run 01H... --report ./reports/summary.ts --page overview
 
 `view --latest --out <目录>`（或显式 `--run`）使用同一份 ReportExecution 预渲染自包含静态站。目标目录必须不存在；全部页面、下载项与静态资产路径先通过校验，完成后才以一次 rename 发布。导出过程不会把 Record 路径或 blob 路径交给用户 Report。
 
-命令持有 reader lease 直到 Sample、ReportPlan 和 ReportInput 形成，随后立即释放。ReportExecution 再从内存输入形成；人工编辑停稳 Record 或修改 Report module 只会影响下一次命令。运行中的 `view` 与静态 export 消费自包含 execution，不再读取或 watch Record。
+命令持有 reader lease 直到 `AnalysisSample`、ReportPlan 和 ReportInput 形成，随后立即释放。ReportExecution 再从内存输入形成；人工编辑停稳 Record 或修改 Report module 只会影响下一次命令。运行中的 `view` 与静态 export 消费自包含 execution，不再读取或 watch Record。
 
 ## `--early-exit` 与 `--strict`
 

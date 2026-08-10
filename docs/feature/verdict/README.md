@@ -4,7 +4,7 @@ Verdict 是 Attempt-owned <code>niceeval.verdict</code> channel 中的终态业�
 
 它把 Assertion 结果、执行错误、strict policy 和显式 skip 归并为一个可读状态。它不替代 Attempt origin、Member 或 Run 的完成时间，也不复制 usage、diff、conversation 或诊断。
 
-<code>niceeval.verdict</code> 是 planner-critical channel，<code>niceeval.eligibility</code> 也是。两者在 <code>niceeval.record</code> 的生命周期内永久支持，精确 payload 永不扩展。
+<code>niceeval.verdict</code> 与 <code>niceeval.eligibility</code> 是 project-target policy v1 所需的永久事实通道。两者在 <code>niceeval.record</code> 的生命周期内永久支持，精确 payload 永不扩展；是否复用由具名 execution projector 决定。
 
 ## 从哪里开始
 

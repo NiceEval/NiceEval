@@ -73,7 +73,7 @@ Sample 保留完整分母。样本状态（Sample slot state）说明每个 slot
 
 ## 编辑与再次查看
 
-Record 是可人工编辑的当前数据集。停止 writer 与 active reader 后，可以修改 Attempt-owned channel 数据；下一次 Sample 和 Report 会读取新值。export 只在 Record 读取/build 阶段持有 reader，释放后的执行和写站不访问 Record。
+Record 是可人工编辑的事实数据集。停止 session 与 active reader 后，可以修改 Attempt-owned channel 数据；下一次 analysis projector 和 Report 会读取新值。export 只在 Record 读取/build 阶段持有 reader，释放后的执行和写站不访问 Record。
 
 不要在 writer 或 reader lease 存续时编辑目录。Record 不保存编辑事务、历史副本或全局格式整数。
 

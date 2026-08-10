@@ -1,8 +1,8 @@
 # Reports CLI
 
-三条查看命令都从停稳的 Record 得到 core-only Sample。它们随后形成 ReportPlan 与 ReportInput，再执行一次 Report。
+三条查看命令都从停稳的 Record 得到 core-only `AnalysisSample`。它们随后形成 ReportPlan 与 ReportInput，再执行一次 Report。
 
-命令从打开 reader 到 Sample、ReportPlan 与 ReportInput 全部形成一直持有 root operation lock，随后立即释放。ReportExecution 在释放后只从内存输入形成。人工编辑 Record 或改动 Report 文件只会影响下一次调用；本机 server 和静态 export 都不再读取 Record。
+命令从打开 reader到 `AnalysisSample`、ReportPlan 与 ReportInput 全部形成一直持有 root operation lock，随后立即释放。ReportExecution 在释放后只从内存输入形成。人工编辑 Record 或改动 Report 文件只会影响下一次调用；本机 server 和静态 export 都不再读取 Record。
 
 ## 共同选择项
 
@@ -16,8 +16,8 @@ niceeval view [selection] [report options] --out <directory>
 |---|---|
 | <code>--record &lt;root&gt;</code> | 选择 Record root；省略时使用项目的默认 root。 |
 | <code>--run &lt;run-id&gt;</code> | 可重复；每次增加一个明确 Run，重复 identity 去重。 |
-| <code>--latest</code> | 对每个目标 Experiment 使用 Sample 定义的 latest policy。 |
-| <code>--experiment &lt;id&gt;</code> | 可重复；与 <code>--latest</code> 合用时定义 latest 目标集合，与 <code>--run</code> 合用时收窄已选 Sample。 |
+| <code>--latest</code> | 使用 `latest/v1` analysis projector。 |
+| <code>--experiment &lt;id&gt;</code> | 可重复；与 <code>--latest</code> 合用时成为 projector 的完整目标集合，与 <code>--run</code> 合用时收窄已投影的 `AnalysisSample`。 |
 | <code>--eval &lt;id&gt;</code> | 在既有选择上收窄 Eval。 |
 | <code>--report &lt;module&gt;</code> | 选择内建 Report 或一个 Report module。 |
 | <code>--page &lt;id&gt;</code> | 选择一个已计划页面；参数化页必须给出完整已计划 route。 |

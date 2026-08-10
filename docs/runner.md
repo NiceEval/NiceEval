@@ -17,7 +17,7 @@ Runner 不为页面准备聚合结果，不向 receipt 复制 Verdict、locator�
 | Member | Runner 行为 |
 |---|---|
 | <code>executed</code> | 本 Run 实际执行并发布 Attempt。 |
-| <code>carried</code> | 规划器采用同一 Record 中满足资格的 Attempt。 |
+| <code>carried</code> | project-target execution projector 当时采用同一 Record 中的 Attempt。 |
 | <code>accepted</code> | 操作者显式采用已有 Attempt。 |
 
 Attempt 的 origin 永远是实际执行它的 Run。采用 Member 只引用 Attempt；它不复制 Assertion、Verdict、usage、conversation、diff 或 artifact。Run 的 <code>niceeval.actions</code> channel 保存 carry、accept 或 rename 的上下文和理由，并以 <code>slotId</code>、<code>attemptId</code> 关联。

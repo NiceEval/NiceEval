@@ -11,7 +11,7 @@ NiceEval 把一个评测过程拆成四段职责:**发现**要跑什么、**驱�
 
 四段职责是**单向数据流**。
 发现产出一批 `Eval`，运行器逐个对 Agent `send` 得到 `Turn`，Assertion collector 形成检查结果。
-判定规则把执行错误与全部断言折叠成一个互斥 Verdict，Record writer 再把这些当前业务事实写入具名通道。
+判定规则把执行错误与全部断言折叠成一个互斥 Verdict，Record writer 再把这些已形成的业务事实写入具名通道。
 Assertion 和 Judge 不知道 transport 是 HTTP 还是沙箱 CLI，只消费 `Turn` 与显式材料。
 
 ## 模块分层
@@ -103,14 +103,14 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 Sandbox diff：
    不支持 Eval 替换的字段按各自专题声明的层级求值；见[配置与凭据的边界](#配置从代码来凭据从进程变量来)。
 2. **发现。
    ** 扫 `evals/`,收集 `*.eval.ts` 与 `*.eval.tsx`;据路径推导 id,排序;按过滤器(id 前缀 / `--tag`)筛。
-3. **identity 与结果沿用。
-   ** 对每个 eval 计算带 domain 的 input/config identity，并先按 <code>(startedAt, runId)</code> 选择唯一历史 Run。只有该 Run 同 ordinal 的 Verdict 与 eligibility 都完整读取和完整解码、domain 与 value 相等、duration 与本次 policy 也通过资格门时，本次 Run 才用 carried Member 引用历史 Attempt。任何失败都真实执行，不回扫更旧 Run；`errored` / `skipped` 永不自动携带。
-   完整判据只见[缓存与携带](feature/experiments/cache.md)。
-4. **建 attempt 列表。
-   ** 每个 eval × `attempts` 次 → 一批 attempt。
-   为每个 eval 建一个 `AbortController`(供首过即停)。
+3. **形成 ProjectTarget 与 ExecutionTarget。
+   ** 对每个 eval 计算带 domain 的 input/config identity，并在单锁 RecordSession 内为每个目标 Run 和 slot 一次分配 opaque ID、绑定 <code>startedAt</code>、形成完整 expected membership。目标 Run 此时尚未发布。
+4. **execution projection。
+   ** 具名 <code>project-target/v1</code> projector 接收当前 ProjectTarget、ExecutionTarget、锁内 RecordView 与本次 policy，把每个 slot 穷尽判为 reuse 或 gap。source barrier、禁止回扫、Verdict、fingerprint、timeout、<code>--rerun</code> 与 <code>--keep-sandbox</code> 的判断都属于该 policy，不属于 Record。完整契约只见 [Execution projection](feature/experiments/cache.md)。
+
+   planner/scheduler 只接收 gaps；invocation coordinator 保留完整 projection。
 5. **有界并发调度。
-   ** 全局至多 `maxConcurrency` 个 attempt 在飞(全局信号量);设了 `maxConcurrency` 的实验另有一道实验级信号量,自己排队、不影响同批其它实验(见 [Runner](runner.md#调度有界并发))。
+   ** 全局至多 `maxConcurrency` 个 gap execution 在飞(全局信号量);设了 `maxConcurrency` 的实验另有一道实验级信号量,自己排队、不影响同批其它实验(见 [Runner](runner.md#调度有界并发))。
    重试不是 attempt 级耗时启发式：turn 重试只包 `agent.send` 且受受理证据门约束，Sandbox provisioning 与幂等文件 IO 各守自己的执行体；完整边界见[执行失败分类](feature/error-classification/architecture.md)与[Sandbox](feature/sandbox/architecture.md#provisioning-失败与重试)。
 6. **准备 Sandbox,交给 `test(t)`。**
    沙箱型按固定顺序完成下面几步:
@@ -128,16 +128,18 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 Sandbox diff：
 8. **断言求值。
    ** `test(t)` 里写入的作用域断言、值断言与 Judge，连同手工校验命令的结果断言，全部形成结构化 assertion 结果。
 9. **判定。
-   ** assertion 结果、执行错误与跳过原因共同形成一个互斥 Verdict（`passed` / `failed` / `errored` / `skipped`，没有中间态），写入 planner-critical 的 `niceeval.verdict` 通道。
+   ** assertion 结果、执行错误与跳过原因共同形成一个互斥 Verdict（`passed` / `failed` / `errored` / `skipped`，没有中间态），写入永久的 `niceeval.verdict` 事实通道。Record 只保存并校验这个事实；未来 execution projector 按自己的具名 policy 决定是否采用。
 10. **首过即停。
    ** 若该 Attempt 形成 `passed` Verdict 且开了 `earlyExit`,`abort()` 掉同一 eval 的其余 Attempt。
 11. **收尾与留存。
     ** finally 里按 `SandboxAgent.teardown` → 两层作者 layer 已登记 cleanup(按全局准备顺序逆序)→ Provider finalizer 的顺序收尾。
     收尾只能追加 diagnostic event，不改已经形成的 Verdict；随后按留存决策销毁或留存沙箱(`--keep-sandbox`,见 [Sandbox · 留存](feature/sandbox/architecture.md#留存keep与注册表))。
 12. **写 Record 与返回 receipt。
-    ** Runner 先在 origin Run 写入 source manifest 与 Run-local digest blobs，再在 Attempt 自己的临时目录完整形成核心文件、通道和 blob。它以目录 rename 原子发布 Attempt，并为 Run slot 写 executed Member，建立 origin 反向锚。每个 Run 在初始 writer 释放所有权时写 `completedAt`；全部结束后返回不聚合宽结果的 `InvocationReceipt`。
+    ** coordinator 把原始 ExecutionTarget、projection reuse intents 与 executed outcomes 交给 writer。project-target reuse 写 carried Member，explicit adoption 写 accepted Member，实际执行写新 Attempt 与 executed Member；没有 outcome 的 gap 不写 Member。writer 只验证事实、引用和 action 关联，不重做资格判断。
 
-    Report 不参与采集或落盘。show/view 先形成 core-only Sample 与 ReportPlan，再由唯一 composition adapter 按需读取 ReportInput；一次 ReportExecution 同时服务终端、本机页面或静态导出。
+    Runner 先在 origin Run 写入 source manifest 与 Run-local digest blobs，再在 Attempt 自己的临时目录完整形成核心文件、通道和 blob。它以目录 rename 原子发布 Attempt，建立 origin 反向锚。每个 Run 在初始 session 释放所有权时写 `completedAt`；全部结束后返回不聚合宽结果的 `InvocationReceipt`。
+
+    Report 不参与采集或落盘。show/view 先由具名 analysis projector 形成 core-only `AnalysisSample` 与 ReportPlan，再由唯一 composition adapter 按需读取 ReportInput；一次 ReportExecution 同时服务终端、本机页面或静态导出。
 13. **退出码。
     ** 有 `failed` Verdict（含 `--strict` 下 soft 未达标而改判的）或 `errored` Verdict → 非零退出；报告里两者分开列，供 CI 判红和诊断。
 
@@ -170,7 +172,7 @@ CLI 启动时仍加载项目根的 `.env`(不改写已有进程变量)——那�
 
 ## 相关阅读
 
-- [Record](feature/record/README.md) ——第 12 步写入的可编辑当前数据集、Sample 选择与 Reports 呈现。
+- [Record](feature/record/README.md) ——第 12 步写入的可编辑事实数据集；分析选择与执行投影由各自 owner 定义。
 - [Runner](runner.md) ——调度、并发、重试、首过即停、缓存的细节。
 - [Agents 与 Adapters](feature/adapters/README.md)、[Sandbox](feature/sandbox/README.md) ——三层的契约。
 - [Assertions](./feature/assertions/README.md) ——检查、作用域与证据。

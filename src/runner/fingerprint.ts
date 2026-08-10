@@ -8,6 +8,10 @@ import { dirname, extname, relative, resolve } from "node:path";
 import { Effect } from "effect";
 import { liveSandboxPlanningServices } from "../sandbox/plan.ts";
 import type { DiscoveredEval, EvalResult, JsonValue } from "../types.ts";
+import type {
+  ProjectCurrentExperimentTarget,
+  ProjectCurrentTarget,
+} from "../record/types.ts";
 import type { AgentRun, FingerprintMigration } from "./types.ts";
 import { resolveJudge } from "./judge-config.ts";
 import {
@@ -269,6 +273,8 @@ export interface DispatchGroup {
 }
 
 export interface CarryPlan {
+  /** 与报告宿主共享的 canonical 项目当前目标；不含任何历史/carry 判定。 */
+  readonly currentTarget: ProjectCurrentTarget;
   /** discovery/selector/link/physical planning 的唯一完成态；run/attempt 不再二次选择或重建。 */
   readonly preparedPairsByKey: ReadonlyMap<string, PreparedRunPair>;
   /** `cacheKey(run, evalId)` → Run 级配置身份。 */
@@ -314,6 +320,17 @@ export interface CarryPlan {
    * 再跑就说这个 selector 空转」。
    */
   readonly availableDeltas: readonly FingerprintDelta[];
+}
+
+/** 无派发项目规划：身份目标与 runner 后续真正消费的 prepared pair 来自同一产物。 */
+export interface ProjectTargetPlan {
+  readonly target: ProjectCurrentTarget;
+  readonly preparedPairsByKey: ReadonlyMap<string, PreparedRunPair>;
+  readonly plannedConfigHashes: ReadonlyMap<string, string>;
+  readonly plannedFingerprints: ReadonlyMap<string, string>;
+  readonly manifestsByKey: ReadonlyMap<string, EvalManifest>;
+  /** 仅供本地 watcher；不会序列化进 Target/report。 */
+  readonly watchInputs: readonly string[];
 }
 
 export type CarryGateDecision =
@@ -450,13 +467,21 @@ export function carriableAttempts(
   options: CarryGateOptions = {},
 ): EvalResult[] {
   if (!priorResults?.length) return [];
-  const out: EvalResult[] = [];
+  // 输入按物理新→旧排列。先在每个 slot 内锁定最新 identity 匹配证据，再过 terminal /
+  // duration / Invocation 门；不能因最新 current 是 errored 就退回更旧 passed。
+  const latestByAttempt = new Map<number, EvalResult>();
   for (const r of priorResults) {
     if (!r.experimentId || runPairKey(r.experimentId, r.id) !== key) continue;
-    if (carryGateFor(r, configHash, fingerprints, timeoutMs, options)._tag === "Blocked") continue;
-    out.push(r);
+    if (latestByAttempt.has(r.attempt)) continue;
+    if (
+      fingerprints === undefined || r.fingerprint === undefined || !fingerprints.has(r.fingerprint) ||
+      (r.configHash !== undefined && r.configHash !== configHash && !options.accept?.length)
+    ) continue;
+    latestByAttempt.set(r.attempt, r);
   }
-  return out;
+  return [...latestByAttempt.values()].filter(
+    (result) => carryGateFor(result, configHash, fingerprints, timeoutMs, options)._tag === "Eligible",
+  );
 }
 
 /** 只认旧版本、等价比较结果与 plan opaque marker 三项同时成立的已知迁移路径。 */
@@ -545,17 +570,114 @@ export function planCarry(
   );
 }
 
+/**
+ * 只做 discovery 之后的 link + physical identity planning 与 fingerprint；不读 Record，
+ * 不调用 setup/create/build/Agent Ensure，也不决定 carry/派发。
+ */
+export function planProjectTarget(
+  evals: readonly DiscoveredEval[],
+  agentRuns: readonly AgentRun[],
+  configTimeoutMs?: number,
+  options: Pick<CarryPlanOptions, "configJudge"> = {},
+): Effect.Effect<ProjectTargetPlan, SandboxRunPlanningError> {
+  return Effect.flatMap(
+    prepareRunSandboxes(evals, agentRuns, liveSandboxPlanningServices(), {
+      ...(configTimeoutMs === undefined ? {} : { configTimeoutMs }),
+    }),
+    (preparedPairs) => Effect.promise(() => planProjectTargetPrepared(preparedPairs, options)),
+  );
+}
+
+async function planProjectTargetPrepared(
+  preparedPairs: readonly PreparedRunPair[],
+  options: Pick<CarryPlanOptions, "configJudge">,
+): Promise<ProjectTargetPlan> {
+  const preparedPairsByKey = indexPreparedPairs(preparedPairs);
+  const sourceCache = new Map<string, Promise<string>>();
+  const plannedFingerprints = new Map<string, string>();
+  const manifestsByKey = new Map<string, EvalManifest>();
+  const plannedConfigHashes = new Map<string, string>();
+  const runConfigHashes = new Map<string, string>();
+  const targetEvals = new Map<string, ProjectCurrentExperimentTarget["evals"][number][]>();
+
+  await Promise.all(preparedPairs.map(async (pair) => {
+    const resolvedJudge = resolveJudge(pair.run.judge, pair.evalDef.judge, options.configJudge);
+    const identity = configIdentityForRun(pair.run, pair.plan, resolvedJudge);
+    const resultConfigHash = hashConfigIdentity(identity);
+    const runConfigHash = computeConfigHash(pair);
+    const existingRunHash = runConfigHashes.get(pair.run.experimentId);
+    if (existingRunHash !== undefined && existingRunHash !== runConfigHash) {
+      throw new Error(`Run config hash differs across evals for ${JSON.stringify(pair.run.experimentId)}.`);
+    }
+    runConfigHashes.set(pair.run.experimentId, runConfigHash);
+    const { fingerprint, manifest } = await fingerprintWithManifest(
+      pair,
+      sourceCache,
+      currentFingerprintProjection(pair, identity),
+    );
+    plannedConfigHashes.set(pair.key, resultConfigHash);
+    plannedFingerprints.set(pair.key, fingerprint);
+    manifestsByKey.set(pair.key, manifest);
+    const bucket = targetEvals.get(pair.run.experimentId) ?? [];
+    bucket.push(Object.freeze({
+      id: pair.evalDef.id,
+      resultConfigHash,
+      fingerprint,
+      evaluationKind: pair.evalDef.evaluationKind ?? "pass",
+    }));
+    targetEvals.set(pair.run.experimentId, bucket);
+  }));
+
+  const seenRuns = new Set<AgentRun>();
+  const experiments: ProjectCurrentExperimentTarget[] = [];
+  for (const pair of preparedPairs) {
+    const run = pair.run;
+    if (seenRuns.has(run)) continue;
+    seenRuns.add(run);
+    const runConfigHash = runConfigHashes.get(run.experimentId);
+    if (runConfigHash === undefined) continue;
+    experiments.push(Object.freeze({
+      id: run.experimentId,
+      runConfigHash,
+      attempts: run.attempts,
+      agent: run.agent.name,
+      ...(run.model !== undefined ? { model: run.model } : {}),
+      ...(run.reasoningEffort !== undefined ? { reasoningEffort: run.reasoningEffort } : {}),
+      flags: Object.freeze({ ...run.flags }),
+      ...(run.labels !== undefined ? { labels: Object.freeze({ ...run.labels }) } : {}),
+      ...(run.description !== undefined ? { description: run.description } : {}),
+      evals: Object.freeze([...(targetEvals.get(run.experimentId) ?? [])].sort((a, b) => a.id.localeCompare(b.id))),
+    }));
+  }
+  const watchInputs = new Set<string>();
+  for (const pair of preparedPairs) {
+    watchInputs.add(resolve(pair.run.experimentSourcePath));
+    watchInputs.add(resolve(pair.evalDef.sourcePath));
+  }
+  for (const manifest of manifestsByKey.values()) {
+    for (const path of [...Object.keys(manifest.source), ...Object.keys(manifest.data)]) {
+      watchInputs.add(resolve(process.cwd(), path));
+    }
+  }
+  return Object.freeze({
+    target: Object.freeze({ plannedAt: new Date().toISOString(), experiments: Object.freeze(experiments) }),
+    preparedPairsByKey: readonlyMapSnapshot(preparedPairsByKey),
+    plannedConfigHashes: readonlyMapSnapshot(plannedConfigHashes),
+    plannedFingerprints: readonlyMapSnapshot(plannedFingerprints),
+    manifestsByKey: readonlyMapSnapshot(manifestsByKey),
+    watchInputs: Object.freeze([...watchInputs].sort()),
+  });
+}
+
 async function planCarryPrepared(
   preparedPairs: readonly PreparedRunPair[],
   priorResults: EvalResult[] | undefined,
   configTimeoutMs: number | undefined,
   options: CarryPlanOptions,
 ): Promise<CarryPlan> {
-  const preparedPairsByKey = indexPreparedPairs(preparedPairs);
+  const targetPlan = await planProjectTargetPrepared(preparedPairs, options);
+  const { target: currentTarget, preparedPairsByKey, plannedFingerprints, manifestsByKey, plannedConfigHashes } = targetPlan;
   const sourceCache = new Map<string, Promise<string>>();
-  const plannedFingerprints = new Map<string, string>();
-  const manifestsByKey = new Map<string, EvalManifest>();
-  const plannedConfigHashes = new Map<string, string>();
   // 与 plannedFingerprints 同一批 (run × evalDef) 循环里顺带算好,供下面按 key 查「这个组合
   // 这次的携带资格线是多少」——同一个 key 在同一次 planCarry 调用里只对应一个 (run, evalDef)
   // 组合,与 plannedFingerprints 的 key 语义一致。
@@ -568,29 +690,15 @@ async function planCarryPrepared(
     pair: PreparedRunPair;
     identity: ConfigIdentity;
   }>();
-  const jobs: Promise<void>[] = [];
   for (const pair of preparedPairs) {
       const { key, run, evalDef } = pair;
       const resolvedJudge = resolveJudge(run.judge, evalDef.judge, options.configJudge);
       const identity = configIdentityForRun(run, pair.plan, resolvedJudge);
       const configHash = hashConfigIdentity(identity);
       entries.set(key, { pair, identity });
-      plannedConfigHashes.set(key, configHash);
       plannedTimeoutMs.set(key, resolvedTimeoutMsForCarry(run, evalDef, configTimeoutMs));
-      jobs.push(
-        (async () => {
-          const { fingerprint: fp, manifest } = await fingerprintWithManifest(
-            pair,
-            sourceCache,
-            currentFingerprintProjection(pair, identity),
-          );
-          plannedFingerprints.set(key, fp);
-          manifestsByKey.set(key, manifest);
-          acceptable.set(key, new Set([fp]));
-        })(),
-      );
+      acceptable.set(key, new Set([plannedFingerprints.get(key)!]));
   }
-  await Promise.all(jobs);
 
   // 本次计划里真实存在的配置面差异:指纹对不上的历史条目逐条相减。与 --accept 给没给无关,
   // 授权成功的差异照样留在表里(校验空转要的是「这条差异存不存在」,不是「它有没有被授权」)。
@@ -742,8 +850,15 @@ async function planCarryPrepared(
   for (const [key, { pair: { run } }] of entries) {
     const carriedIndices = carriedAttemptsByKey.get(key);
     const byAttempt = new Map<number, EvalResult>();
+    const matchingByAttempt = new Map<number, EvalResult>();
     for (const prior of priorsByKey.get(key) ?? []) {
       if (!byAttempt.has(prior.attempt)) byAttempt.set(prior.attempt, prior);
+      if (
+        !matchingByAttempt.has(prior.attempt) &&
+        prior.fingerprint !== undefined &&
+        acceptable.get(key)?.has(prior.fingerprint) &&
+        (prior.configHash === undefined || prior.configHash === plannedConfigHashes.get(key) || options.accept?.length)
+      ) matchingByAttempt.set(prior.attempt, prior);
     }
     type MutableDispatchGroup = {
       gate: CarryGate;
@@ -755,7 +870,7 @@ async function planCarryPrepared(
     const indexOfGroup = new Map<string, MutableDispatchGroup>();
     for (let i = 0; i < run.attempts; i++) {
       if (carriedIndices?.has(i)) continue;
-      const prior = byAttempt.get(i);
+      const prior = matchingByAttempt.get(i) ?? byAttempt.get(i);
       const decision = prior === undefined
         ? missingReason(key, options)
         : carryGateFor(
@@ -797,6 +912,7 @@ async function planCarryPrepared(
   // 按 priorResults 的原始顺序输出(调用方的展示顺序不因分组而抖动)。
   const carriedResults = (priorResults ?? []).filter((r) => hit.has(r));
   return Object.freeze({
+    currentTarget,
     preparedPairsByKey,
     plannedConfigHashes: readonlyMapSnapshot(plannedConfigHashes),
     plannedFingerprints: readonlyMapSnapshot(plannedFingerprints),

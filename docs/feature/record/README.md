@@ -1,8 +1,10 @@
-# Record：可编辑的当前数据集
+# Record：可编辑事实数据集
 
-Record 是 <code>&lt;project&gt;/.niceeval/record/</code> 中的当前数据集。一次评估形成的 Run、成员关系、Attempt 和通道数据都在这里。人和工具只在目录停稳时读取或编辑它。
+Record 是 <code>&lt;project&gt;/.niceeval/record/</code> 中可编辑的事实数据集。一次评估形成的 Run、成员关系、Attempt 和通道数据都在这里。人和工具只在目录停稳时读取或编辑它。
 
 它不是防伪账本，也不保存编辑历史、修订号或 revision。一次读取得到的内容可以在下一次命令前被写入器或人工改变。文件形状、身份、路径和引用校验只用于拒绝自相矛盾的数据。
+
+Record 不判断事实是否“当前”、过期、可复用或需要再次执行。用户指定范围、当前 Project Target、fingerprint 和本次 policy 都是投影输入。它们由 [Sample](../sample/README.md) 的 analysis projector 或 [Experiments](../experiments/cache.md) 的 execution projector 解释，不写进 Record 核心。
 
 ## 核心心智
 
@@ -14,15 +16,15 @@ Invocation 只是 Runner 或 Library 的返回身份。它没有持久化目录�
 
 ```text
 record files
-    ↓
-RecordReader
-    ↓
-core-only Sample → ReportPlan → ReportInput
-    ↓
-ReportExecution → view / export
+    ├─ RecordReader → analysis projector → AnalysisSample → ReportInput → Reports
+    └─ RecordSession.view → execution projector → reuse | gap
+                                                 ├─ gaps → planner / scheduler
+                                                 └─ projection + outcomes → writer
 ```
 
-只有 composition adapter 按 ReportPlan 读取磁盘字段。Report 定义、页面、view 与 export 只消费内存输入或执行结果，因此不会成为另一套文件解释器。
+RecordReader 与 RecordSession.view 只提供经过校验的事实读取。选择范围、复用资格和缺口原因由对应 projector 拥有；writer 只验证并落盘已经决定的 executed、carried 或 accepted 事实。
+
+Reports 的 composition adapter 按 ReportPlan 读取磁盘字段。Report 定义、页面、view 与 export 只消费内存输入或执行结果，因此不会成为另一套文件解释器。
 
 ## 演进方式
 
@@ -34,7 +36,7 @@ ReportExecution → view / export
 
 ## 范围
 
-Record 定义根目录、Run / Member / Attempt 的核心文件、operation lock、通道、原子发布和单通道四态读取。它也定义受控删除与 owner-aware 的临时目录删除。
+Record 定义根目录、Run / Member / Attempt 的核心文件、operation lock、单锁 RecordSession、通道、原子发布和单通道四态读取。它也定义受控删除与 owner-aware 的临时目录删除。
 
 Record-to-Record 的发布、复制、镜像和同步不属于本功能。分享由自包含的静态 Report export 负责。它脱离源 Record 后呈现固定内容，不把 producer 身份认证或可再次查询的承诺交给 Record。
 

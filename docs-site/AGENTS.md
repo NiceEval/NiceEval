@@ -32,7 +32,7 @@
 - **Attempt**：同一个 eval 的第 i 次重复运行。中文直接写 `Attempt`，不写“尝试”。
 - **EarlyExit（`earlyExit`）**：取通过率时先过一次即中止其余 attempt 的策略。中文写“首过即停”，不写“早停”。
 - **接入等级（Integration tier）**：接入方式的三级（Tier 1 / 2 / 3）。中文写“接入等级”，档位照写 Tier 1 / Tier 2 / Tier 3。
-- **Record**：`.niceeval/record/` 中可人工编辑的当前数据集，只在目录停稳时读写。Run 保存 expected slots，Member 引用 Attempt；判定、断言、诊断和事件进入 owner-local 的具名通道。Record 不保存 revision、hash 或防伪证明。
+- **Record**：`.niceeval/record/` 中可人工编辑的事实数据集，只在目录停稳时读写。Run 保存 expected slots，Member 引用 Attempt；判定、断言、诊断和事件进入 owner-local 的具名通道。Record 不保存 revision、hash 或防伪证明，也不判断是否复用或执行。
 - **Report artifact**：报告导出的自包含目录，带精确 runtime、全部页面和资源。它可删除、可重新生成，不是 Record，也不由未来 NiceEval 重新打开。
 - **Turn**：一次 `t.send()` / `t.respond()` 的结果。中文直接写 `Turn`；“多轮对话”这类形容词性用法不受限。
 - **StreamEvent / events**：标准事件流，是断言和报告读取的事实来源。

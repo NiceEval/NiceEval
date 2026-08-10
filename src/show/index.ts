@@ -35,7 +35,7 @@ import {
 // loading/rendering therefore goes through ../report/runtime/host.ts (the shared contact surface).
 import { ReportLoadError } from "../report/runtime/load.ts";
 import { detectLocale, t } from "../i18n/index.ts";
-import { currentSample, filterExperiments } from "../sample/index.ts";
+import { latestRecordSample, projectCurrentSample, filterExperiments } from "../sample/index.ts";
 import { matchExperimentSelector } from "../shared/aggregate.ts";
 import { panelCapabilityOf } from "../report/model/panel.ts";
 import { formatMetricValue, formatUSD, verdictMark } from "../report/model/format.ts";
@@ -81,7 +81,7 @@ import {
   timingText,
   skippedRunsText,
 } from "./render.ts";
-import type { AttemptHandle, Record, Run, Sample } from "../record/index.ts";
+import type { AttemptHandle, ProjectCurrentTarget, Record, Run, Sample } from "../record/index.ts";
 
 export interface ShowFlags {
   /** --source:该 attempt 运行时保存的 Eval 源码,断言标回源码行(证据切面)。 */
@@ -138,6 +138,8 @@ export interface ShowFlags {
    * `--json` 表达「是什么」)、`--expand`(JSON 不截断卡片,没有可展开的东西)互斥。
    */
   json?: boolean;
+  /** plain 项目读取由 CLI 注入；显式 record/locator/history/stats 不构造。 */
+  projectTarget?: ProjectCurrentTarget;
 }
 
 /** 注入 IO 供测试;默认写 stdout/stderr、宽度取终端列数。 */
@@ -426,8 +428,8 @@ async function renderStatsSlice(
     import("../report/slices/content.ts"),
   ]);
   // 只给渲染管线占位用的 Sample——Table 走 data 形态,不重新消费它;单独调用
-  // currentSample 避免借用「现刻水位」口径当稳定性矩阵的真实数据源(上面已用 runs)。
-  const scope = currentSample(results, { experiments: experimentFilter as string[] | undefined });
+  // 当前结果 selector 避免借用「现刻水位」口径当稳定性矩阵的真实数据源(上面已用 runs)。
+  const scope = latestRecordSample(results, { experiments: experimentFilter as string[] | undefined });
   const report = await loadHostReport(cwd, undefined);
   const meta = await buildHostReportMeta(report, scope);
   const page: ReportPage = {
@@ -781,7 +783,7 @@ async function show(
   }
 
   const results = await openRecord(root);
-  if (results.experiments.length === 0) {
+  if (results.experiments.length === 0 && flags.projectTarget === undefined) {
     const unreadable = results.unreadable.length > 0 ? `\n${skippedRunsText(results.unreadable, root, cwd)}\n` : "";
     throw new ShowError(t("cli.show.noResults", { root }) + unreadable);
   }
@@ -808,7 +810,7 @@ async function show(
     }
     // locator 的寻址作用域就是这个记录根扫到的全部 attempt(docs/feature/record/architecture.md
     // 「locator 的唯一性」),不是现刻水位、也不是某个 Run:`--history` 印出的历史 attempt
-    // 必须能被同一个 `@<locator>` 打开。因此这里不再拿 currentSample 的范围做二次筛,读取侧
+    // 必须能被同一个 `@<locator>` 打开。因此这里不再拿当前结果 selector 的范围做二次筛,读取侧
     // 只有 Malformed / NotFound / Ambiguous 三种失败。
     if (flags.usage) {
       if (flags.json) {
@@ -897,7 +899,7 @@ async function show(
       );
     }
     const locale = detectLocale();
-    const selection = currentSample(results);
+    const selection = latestRecordSample(results);
     const meta = await buildHostReportMeta(report, selection);
     const loadCtx = await createHostPageLoadContext(results);
     const text = await renderHostTarget(
@@ -914,9 +916,9 @@ async function show(
 
   // `--exp` 的范围校验(docs/feature/reports/README.md「选择结果范围」):0/1 个沿用前缀收窄
   // (可能匹配多个 experiment);2 个以上进入对照语义,每个必须恰好解析到一个 experiment。
-  const experimentIds = results.experiments.map((e) => e.id);
+  const experimentIds = flags.projectTarget?.experiments.map((entry) => entry.id) ?? results.experiments.map((e) => e.id);
   assertExperimentSelectors(experimentIds, expSelectors);
-  if (expSelectors.length === 1 && filterExperiments(results.experiments, expSelectors).length === 0) {
+  if (expSelectors.length === 1 && matchExperimentSelector(experimentIds, expSelectors[0]!).length === 0) {
     throw new ShowError(t("cli.show.noExperimentMatch", { arg: expSelectors[0], experiments: experimentIds.join(", ") }));
   }
 
@@ -925,7 +927,9 @@ async function show(
   // 视图的 `--json` `scope.experiments` 统一取这份——范围收窄之后、不局限于「有 attempt 命中」
   // 的子集(与 `--stats`/`--usage`/证据切面/`--history`/leaderboard 各自的现有 experiment 过滤
   // 逻辑同源,不重新发明一套)。
-  const resolvedExperimentIds = filterExperiments(results.experiments, experimentFilter).map((e) => e.id);
+  const resolvedExperimentIds = experimentFilter === undefined
+    ? experimentIds
+    : [...new Set(experimentFilter.flatMap((selector) => matchExperimentSelector(experimentIds, selector)))];
 
   // `--stats`:历史全执行的稳定性矩阵(docs/feature/reports/README.md)。证据面与
   // `--history` 相同——不是 `current()` 现刻水位,所以在下面的 `selection`/`matchedEvalIds`
@@ -959,10 +963,12 @@ async function show(
     return;
   }
 
-  const selection = currentSample(results, { experiments: experimentFilter, evals: patterns });
+  const selection = flags.projectTarget === undefined
+    ? latestRecordSample(results, { experiments: experimentFilter, evals: patterns })
+    : projectCurrentSample(results, flags.projectTarget, { experiments: experimentFilter, evals: patterns });
   const matchedEvalIds = [...new Set(selection.attempts.map((a) => a.evalId))].sort();
 
-  if (patterns.length > 0 && matchedEvalIds.length === 0) {
+  if (patterns.length > 0 && selection.coverage.every((entry) => entry.knownEvalIds.length === 0)) {
     const known = [
       ...new Set(filterExperiments(results.experiments, experimentFilter).flatMap((e) => e.knownEvalIds)),
     ].sort();

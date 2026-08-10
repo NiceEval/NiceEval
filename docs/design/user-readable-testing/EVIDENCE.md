@@ -1,6 +1,6 @@
 # 现状与历史证据
 
-**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [PLAN-4](PLAN-4/README.md) · [DECISION](DECISION.md) · [旧问题对账](../../roadmap/testing/history-problems.md)
+**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [PLAN-4](PLAN-4/README.md) · [DECISION](DECISION.md)
 
 本页记载本次决策审阅过的测试结构、代表性实现和历史提交。
 数字用于说明规模与结构，不作为质量分数。

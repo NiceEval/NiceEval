@@ -22,15 +22,15 @@ niceeval exp <experiment-prefix> --dry [--json]
 
 ### `--dry`
 
-`--dry` 在当前停稳 Record 上展示 Experiment、Eval、ordinal 与每个成员的计划：
+`--dry` 在停稳 Record 上运行 `project-target/v1`，展示 policy identity、effective options，以及每个目标成员的 reuse 或 gap：
 
 ```text
 PLAN
-compare/codex  memory/commit0  ordinal 0  carried @01J8ZK3M6P4T7V9X2C5N8QW0RY
-compare/codex  memory/commit0  ordinal 1  execute: input-identity-changed
+compare/codex  memory/commit0  ordinal 0  reuse/carried @01J8ZK3M6P4T7V9X2C5N8QW0RY
+compare/codex  memory/commit0  ordinal 1  gap: identity-mismatch
 ```
 
-规划只比较相同 domain 的 identity，并读取 `niceeval.verdict`、`niceeval.eligibility` 等规划所需通道。缺失、损坏、不支持或 domain 不同都显示具名原因并选择执行；不会猜成“从未运行”。`--dry` 不建立 Invocation 或写 Record。
+projector 只比较相同 domain 的 identity，并读取自己声明的 `niceeval.verdict`、`niceeval.eligibility` 等事实。缺失、损坏、不支持或 domain 不同都形成带真实 issues 的具名 gap；不会猜成“从未运行”。`--dry` 不建立 Invocation 或写 Record。
 
 ## `niceeval accept`
 
@@ -39,7 +39,7 @@ niceeval accept @01J8ZK3M6P4T7V9X2C5N8QW0RY
 niceeval accept @01J8ZK3M6P4T7V9X2C5N8QW0RY @123456789ABCDEFGHJKMNPQRST
 ```
 
-accept 对全部 locator 做预检，通过后为关联 Experiment 建立 Run，并用 `accepted` Member 引用源 Attempt。配置差异和操作者理由进入 Run 的 `niceeval.actions` 通道；执行事实不复制。
+accept 用 `explicit-adoption/v1` 对全部 locator 与当前 target 做完整预检。任一项失败都零业务写入，不能降级成 execution gap。通过后为关联 Experiment 建立 Run，并用 `accepted` Member 引用源 Attempt。配置差异、policy identity 和操作者理由进入 Run 的 `niceeval.actions` 通道；执行事实不复制。
 
 | 错误 | 反馈 |
 |---|---|
@@ -96,7 +96,7 @@ interface InvocationReceipt {
 }
 ```
 
-receipt 不复制 locator、Verdict、usage、cost 或 Attempt 计数。需要这些值时，以 `runIds` 选择 Sample，或调用 `niceeval show --run <runId>`。
+receipt 不复制 locator、Verdict、usage、cost 或 Attempt 计数。需要这些值时，以 `runIds` 运行 `explicit-runs/v1` analysis projector，或调用 `niceeval show --run <runId>`。
 
 ## `--json`
 
@@ -118,9 +118,9 @@ CI 用退出状态判断门禁，使用 `--junit` 输出平台注解。JUnit 由
 |---|---|---|
 | 选择 | 位置参数 | 收窄 Experiment 与 Eval |
 | 调度 | `--attempts`、`--max-concurrency`、`--budget` | 影响本次派发 |
-| timeout | `--timeout` | 改变历史 Attempt 的 carry 资格 |
-| 采用 | `--rerun` | 决定哪些 Verdict 可以自动采用 |
-| Sandbox | `--keep-sandbox` | 要求成员本次真实执行 |
+| timeout | `--timeout` | 进入本次 project-target policy，可能使目标 slot 形成 gap |
+| 采用 | `--rerun` | 进入本次 policy，决定哪些 Verdict 可以形成 reuse |
+| Sandbox | `--keep-sandbox` | 进入本次 policy，让全部目标 slot 形成 gap |
 | 输出 | `--json`、`--junit` | 改变交付形式，不改业务事实 |
 
 argv、配置发现或 selector 无法形成 Invocation 时，命令以非零状态输出 `error:` 与 `fix:`。因为尚未建立 `invocationId`，这类错误没有 receipt。

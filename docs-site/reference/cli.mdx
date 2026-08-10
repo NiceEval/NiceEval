@@ -22,7 +22,7 @@ The [NiceEval](https://niceeval.com/) CLI discovers, runs, and reviews evals. Ru
     Deletes the temporary Record directory left by one named writer. It never deletes a completed Run or Attempt.
   </Card>
   <Card title="npx niceeval show --run | --latest" icon="terminal">
-    Runs a terminal Report. An explicit Run selection or the named latest policy forms the Sample.
+    Runs a terminal Report. `explicit-runs/v1` or `latest/v1` forms the AnalysisSample.
   </Card>
   <Card title="npx niceeval view --run | --latest" icon="eye">
     Opens a web view for one fixed ReportExecution. End and rerun it to read an edited Record.
@@ -173,9 +173,9 @@ npx niceeval view --latest
 npx niceeval view --run 01H...
 ```
 
-This opens the local Record viewer. It shares `show`'s default Report and explicit selection: it creates a core-only Sample from `--run` or `--latest` on a quiescent Record, then reads only the channels requested by the ReportPlan.
+This opens the local Record viewer. It shares `show`'s default Report and explicit selection: it creates a core-only AnalysisSample with `explicit-runs/v1` or `latest/v1` on a quiescent Record, then reads only the channels requested by the ReportPlan.
 
-A partial rerun can use `carried` or `accepted` Members for slots that did not execute again. The same Sample does not reselect a moving head. `--experiment`, `--eval`, and `--record` narrow the same way for both hosts.
+A previous local execution can leave `carried` or `accepted` Members for slots that reused an Attempt. These are adoption facts, not a rerun state. The same AnalysisSample does not reselect a moving head. `--experiment`, `--eval`, and `--record` narrow the same way for both hosts.
 
 ## `show`
 
@@ -187,7 +187,7 @@ npx niceeval show --run 01H... --page attempt-0123456789ABCDEFGHJKMNPQRS
 npx niceeval show --run 01H... --report ./reports/summary.ts --page overview
 ```
 
-`show` is the terminal Report entry point for people and coding agents. It accepts no fuzzy positional selection: choose exactly one of `--run` and `--latest`. An Attempt detail is a parameterized page inside the selected Sample, not another selector.
+`show` is the terminal Report entry point for people and coding agents. It accepts no fuzzy positional selection: choose exactly one of `--run` and `--latest`. An Attempt detail is a parameterized page inside the projected AnalysisSample, not another selector.
 
 Repeat `--run` to read only those explicit Runs. `--latest` picks the final completed Run for each target Experiment using completion time and Run identity. `--latest --experiment <id>` defines the target set; without `--experiment`, the target set comes from readable Run core data. An empty target set, an Experiment without a completed Run, or an unreadable candidate sort key fails explicitly rather than guessing a recent result. Select an unfinished Run explicitly with `--run`.
 
@@ -195,7 +195,7 @@ After selection, `show` freezes a ReportPlan, reads only its declared channels, 
 
 `view --latest --out <directory>` (or an explicit `--run`) prerenders the same ReportExecution as a self-contained static site. The target directory must not exist. NiceEval validates every page, download, and static asset path before publishing the complete directory in one rename. It does not give a user Report a Record or blob path.
 
-The command holds the reader lease only while it forms the Sample, ReportPlan, and ReportInput, then releases it. ReportExecution uses only memory after that point. Editing a quiescent Record or Report module changes a later command, not a running local view or static export.
+The command holds the reader lease only while it forms the AnalysisSample, ReportPlan, and ReportInput, then releases it. ReportExecution uses only memory after that point. Editing a quiescent Record or Report module changes a later command, not a running local view or static export.
 
 ## `--early-exit` and `--strict`
 

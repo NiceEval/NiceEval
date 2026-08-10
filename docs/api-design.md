@@ -13,14 +13,14 @@ API 应让第一次使用它的人在调用处看出“这一步要什么、会�
 ```ts
 const sample = await (async () => {
   await using record = await openRecordReader({ root });
-  return selectSample(record, selection);
+  return projectExplicitRuns(record, { runIds });
 })();
-const trimmed = narrowSample(sample, {
+const trimmed = narrowAnalysisSample(sample, {
   experimentIds: ["compare/baseline"],
 });
 ```
 
-`openRecordReader` 表明它打开一个停稳 Record 的读取面，`selectSample` 表明它从明确选择形成 Sample，`narrowSample` 表明它只收窄既有内存值。名字不需要重复文件扫描或集合遍历步骤。
+`openRecordReader` 表明它打开一个停稳 Record 的读取面，`projectExplicitRuns` 表明它用具名算法形成 `AnalysisSample`，`narrowAnalysisSample` 表明它只收窄既有内存值。名字不需要重复文件扫描或集合遍历步骤。
 
 清晰优先于简短，但长度不是清晰的替代品。
 名字变长若能消除相邻 API 的实质歧义，就保留必要词；模块、参数和返回类型已经表达的信息不重复。
@@ -49,13 +49,13 @@ const trimmed = narrowSample(sample, {
 |---|---|---|
 | 执行动作或产生副作用 | 动词短语 | `exportStaticReport`、`runEvals` |
 | 打开、加载或读取外部资源 | `openX` / `loadX` / `readX` | `openRecordReader`、`loadYaml` |
-| 创建运行时对象 | `createX` | `createAgentSession`、`createRecordWriter` |
+| 创建运行时对象 | `createX` | `createAgentSession`、`createRecordSession` |
 | 声明并校验定义 | `defineX` | `defineEval`、`defineExperiment` |
 | 返回逻辑视图或派生值 | 结果名或准确的计算动词 | `estimateCost` |
 | 判断条件 | `isX` / `hasX` / `canX` | `isDefined`、`hasSections` |
 | 转换表示 | `toX` / `fromX` / `targetFromSource` | 词根写明目标与输入表示 |
 | 收窄不可变集合 | `filterX` / `onlyX` / `dropX` | `filterAttempts`、`dropExperiments` |
-| 类型、组件与值对象 | 名词 | `Record`、`Sample`、`AttemptEvidence` |
+| 类型、组件与值对象 | 名词 | `Record`、`AnalysisSample`、`AttemptEvidence` |
 | 事件回调 | `onX` | `onAttemptReceipt` |
 
 同一个前缀只表达一种稳定动作：
@@ -82,7 +82,7 @@ const trimmed = narrowSample(sample, {
 | 角色 | 命名 | 例子 |
 |---|---|---|
 | 从单条 Attempt 取值并两级聚合 | 名词性 Calculation 值 | `passRate`、`costUSD` |
-| 按 Sample 分组计算 | 准确计算动词 | `aggregate(sample, options)` |
+| 按 AnalysisSample 分组计算 | 准确计算动词 | `aggregate(sample, options)` |
 | 立即投影成显示结果 | `toX` | `toAttemptRows(attempts)` |
 | 复杂算法的结果构造器 | 结果名 | `metricValue(...)`、`evidenceRow(...)` |
 | 通用呈现组件 | PascalCase 形状名 | `Table`、`Scatter`、`Callouts` |
@@ -122,7 +122,7 @@ getSampleSummary(...);      // 差：get 没增加可观察语义
 
 | 指代 | 形式 |
 |---|---|
-| 一个领域实体、定义、句柄或返回对象 | 单数：`Record`、`Sample`、`AttemptEvidence` |
+| 一个领域实体、定义、句柄或返回对象 | 单数：`Record`、`AnalysisSample`、`AttemptEvidence` |
 | 返回或操作的一组同类成员 | 复数：`experiments`、`attempts`、`dropExperiments` |
 | 集合类型自身 | 单数类型名，成员字段用复数 |
 | 复合名词里的类型修饰语 | 通常用单数，如 `attemptHref` |
@@ -143,11 +143,11 @@ getSampleSummary(...);      // 差：get 没增加可观察语义
 | 返回对象 | “得到的是哪一种对象” | 返回对象本身 | 返回对象是稳定领域实体，调用者把它作为整体继续传递 |
 | 被选成员 | “挑出了哪些成员” | 被直接选择的成员 | 成员集合本身就是公开结果，没有更高层领域对象 |
 
-返回 `Sample` 的一组选择器若采用返回对象视角，名字和类型都以单数 Sample 为中心；Run、Attempt 等成员只用于说明选择维度。
-若采用成员视角，就必须整组改用成员的单复数，不能一个名字指 Sample、另一个名字指 Runs，再靠表面对称掩盖差别。
+返回 `AnalysisSample` 的一组 projector 若采用返回对象视角，名字和类型都以单数 AnalysisSample 为中心；Run、Attempt 等成员只用于说明选择维度。
+若采用成员视角，就必须整组改用成员的单复数，不能一个名字指 AnalysisSample、另一个名字指 Runs，再靠表面对称掩盖差别。
 
 名词性纯查询可以采用任一视角，但名词短语必须准确指向所得结果：返回对象视角按单数领域对象命名，成员视角按成员集合命名。
-若去掉参数和返回类型后无法判断它是派生 Sample、成员集合还是布尔状态，名词短语不够清楚，应使用准确的选择动词或调整模块与调用形状。
+若去掉参数和返回类型后无法判断它是投影 AnalysisSample、成员集合还是布尔状态，名词短语不够清楚，应使用准确的投影动词或调整模块与调用形状。
 
 ## 状态、顺序与出处不要混成并列模式
 
@@ -162,7 +162,7 @@ getSampleSummary(...);      // 差：get 没增加可观察语义
 因此 `latest` 不能只靠日常语感表示“最好用的当前结果”，`current` 也不能暗中表示“时间最大的 Run”。
 出处差异若不改变用户决策，就只保留为明细事实；不得因为实现能区分，就增加筛选器、转换或公开状态。
 
-`Record` 本身不是一次隐含的“最新结果”。它是可编辑的当前数据集。需要选择或比较事实时，API 必须显式按 `runIds` 或具名 `latest` policy 产生带 expected-slot 分母的 Sample；unfinished Run 只能显式选择。这种明确成员范围称为有效选择（Effective selection）。
+`Record` 本身不是一次隐含的“最新结果”。它是可编辑事实数据集。分析既有事实时，API 通过具名 analysis projector 产生带 expected-slot 分母的 `AnalysisSample`；unfinished Run 只能由 `explicit-runs/v1` 选择。这种明确成员范围称为有效选择（Effective selection）。当前目标的复用与执行缺口由独立 execution projector 产生，不能从 `AnalysisSample` 推导。
 
 ## Record 与 Report 的调用形状
 
@@ -174,7 +174,7 @@ let plan: ReportPlan;
 let input: ReportInput;
 {
   await using record = await openRecordReader({ root });
-  const sample = await selectSample(record, selection);
+  const sample = await projectExplicitRuns(record, { runIds });
   const scope = createReportScope(sample);
   plan = report.plan(scope);
   input = await buildReportInput({ record, sample, plan });
@@ -211,13 +211,14 @@ Record 不提供 mirror、proof、revision 或防伪 API。需要修改业务数
 | 形状 | 使用条件 |
 |---|---|
 | `record.operation()` | 操作只导航或读取 Record 已有核心与通道 |
-| `operation(record)` 从 `niceeval/sample` 导出 | 操作根据 reader 派生 Sample，并引入选择与分母判断 |
-| `sample.operation()` | 操作依赖既有 Sample 语义，且仍返回或观察同一领域对象 |
-| `sample.pipe(operator())` | 多个不可变转换需要顺序组合，并共享 `Sample → Sample` 形状 |
+| `operation(record)` 从 `niceeval/sample` 导出 | 操作根据 RecordView 派生 `AnalysisSample`，并引入具名 analysis policy 与分母判断 |
+| `sample.operation()` | 操作依赖既有 `AnalysisSample` 语义，且仍返回或观察同一领域对象 |
+| `sample.pipe(operator())` | 多个不可变转换需要顺序组合，并共享 `AnalysisSample → AnalysisSample` 形状 |
 
 “方法更短”或“自由函数更函数式”都不是理由。
 若操作跨越领域层，模块归属应让这个边界在 import 和调用点可见。
-按此规则，从 Record 推导 Sample 的官方选择器属于 `niceeval/sample` 的自由函数；`selectSample(recordReader, selection)` 不长在 Record 上，也不能退化成传 root 字符串的隐式读取。
+按此规则，从 Record 推导 `AnalysisSample` 的官方 projectors 属于 `niceeval/sample` 的自由函数。
+`projectExplicitRuns(recordView, input)` 与 `projectLatestRuns(recordView, input)` 不长在 Record 上，也不能退化成传 root 字符串的隐式读取。
 
 ## 选择函数与判别字段共用语义词根
 
@@ -233,7 +234,7 @@ Record 不提供 mirror、proof、revision 或防伪 API。需要修改业务数
 | 返回对象 | 词根指向哪个领域对象 |
 | 正交选项 | 哪些约束不属于基础方式，不进入判别字段 |
 
-本轮 Sample 的基础选择判别字段是 <code>RunSelection.kind</code>，其值只对应 <code>runs</code> 与 <code>latest</code>。不要在 Sample 上另造第二个判别字段或历史同义词。
+`AnalysisSample.provenance.projector` 使用稳定 `name + version`。内建 identity 是 `explicit-runs/v1` 与 `latest/v1`，输入分别由自己的具名类型承载。不要在 `AnalysisSample` 上另造 currentness 字段，也不要把 execution `reuse | gap` 混进同一个 slot 联合。
 
 正交约束必须写成独立字段，但前提是它对应明确用户旅途。
 adoption、rename 或其它出处事实留在 Run-owned 具名通道，不进入 Member 核心，也不膨胀成组合选择模式。
@@ -264,9 +265,9 @@ adoption、rename 或其它出处事实留在 Run-owned 具名通道，不进入
 评审完整调用，而不是只读导出名：
 
 ```ts
-import { selectSample } from "niceeval/sample";
+import { projectExplicitRuns } from "niceeval/sample";
 
-const sample = await selectSample(record, selection);
+const sample = await projectExplicitRuns(record, { runIds });
 ```
 
 模块说明领域，函数名说明动作，参数名说明边界，类型限制合法组合。
@@ -313,7 +314,7 @@ processArtifacts(input);                      // 差：process 没有用户可�
 ```
 
 函数按用户任务命名，内部机制留在契约与实现。
-Record / Sample / Reports 的职责见 [Record](feature/record/README.md)、[Sample](feature/sample/README.md) 与 [Reports](feature/reports/README.md)。
+Record / AnalysisSample / Reports 的职责见 [Record](feature/record/README.md)、[Sample](feature/sample/README.md) 与 [Reports](feature/reports/README.md)。
 
 ### Matcher 与布尔判断
 
@@ -330,7 +331,7 @@ Matcher 工厂的名字优先让断言句子读起来自然。
 ### 不可变转换
 
 ```ts
-sample.pipe(dropExperiments("broken"));   // 好：返回删减后的新 Sample
+sample.pipe(dropExperiments("broken"));   // 好：返回删减后的新 AnalysisSample
 sample.pipe(removeExperiments("broken")); // 差：remove 容易暗示原地修改
 ```
 

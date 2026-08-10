@@ -23,6 +23,7 @@ const GROUP_NO_SAMPLES = "noSamples";
 const NEVER_RUN = "neverRun";
 /** 覆盖缺口「当前配置下没有结果」占位行的原因码(历史里有结果,但不在当前可比集合)。 */
 const PREVIOUS_RESULT = "previousResult";
+const UNVERIFIABLE_RESULT = "unverifiableResult";
 
 /** 三张实体表共用的列表头。文案单源在 locale 字典,这里只烤成随列走的 LocalizedText。 */
 const HEADER = {
@@ -292,7 +293,9 @@ function placeholderRow(
     entity: textCell(label),
     record: {
       kind: "missing",
-      code: missing.reason === "never-run" ? NEVER_RUN : PREVIOUS_RESULT,
+      code: missing.reason === "never-run"
+        ? NEVER_RUN
+        : missing.reason === "previous-result" ? PREVIOUS_RESULT : UNVERIFIABLE_RESULT,
       detail: `niceeval exp ${experimentId}`,
       ...(missing.previous !== undefined ? { previous: { locator: missing.previous.locator } } : {}),
     },

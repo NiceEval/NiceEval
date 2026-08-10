@@ -34,7 +34,7 @@ Runner 为每个选中的 Experiment 建立一个 Run。Run 列出本次应有�
 
 Attempt 始终保存实际执行它的 `origin`。采用操作不复制业务值；下一次读取会看到该 Attempt 通道中的当前值。
 
-## Record 是当前数据集
+## Record 是可编辑事实数据集
 
 Record 位于 `.niceeval/record/`。人和工具只在目录停稳时读写它。Verdict、Usage、断言与诊断等业务值都在 owner-local 的具名通道中，因此可以按通道读取，也可以在停稳后由用户编辑。
 

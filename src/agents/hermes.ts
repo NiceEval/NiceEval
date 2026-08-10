@@ -23,7 +23,6 @@ import { defineSandboxCommand } from "../sandbox/commands.ts";
 // Docker 沙箱会覆盖 PATH(不含 $HOME/.local/bin),所以安装与调用一律走
 // `$HOME/.local/bin/hermes`(同 bub 裁决),不依赖 command -v。
 
-const SKILL_DIR = ".hermes/skills";
 const UV = "$HOME/.local/bin/uv";
 const HERMES = "$HOME/.local/bin/hermes";
 
@@ -112,6 +111,16 @@ for r in rows:
   return res.stdout;
 }
 
+/** Hermes 只扫描其 profile home 下的 skills，不扫描 attempt 工作目录。 */
+async function hermesSkillDir(sb: Sandbox): Promise<string> {
+  const home = await sb.runShell('test -n "$HOME" && printf "%s" "$HOME"');
+  const path = home.stdout.trim();
+  if (home.exitCode !== 0 || !path.startsWith("/")) {
+    throw new Error("Hermes skill installation requires an absolute sandbox HOME directory");
+  }
+  return `${path}/.hermes/skills`;
+}
+
 /**
  * Hermes Agent 的内置 sandbox Agent 工厂。
  */
@@ -168,10 +177,11 @@ export function hermesAgent(config?: HermesConfig): Agent {
 
       const manifest: AgentSetupManifest = { skills: [] };
       if (config?.skills?.length) {
-        manifest.skills = await installSkills(sb, config.skills, { dir: SKILL_DIR });
+        const skillDir = await hermesSkillDir(sb);
+        manifest.skills = await installSkills(sb, config.skills, { dir: skillDir });
         await appendProjectInstruction(
           sb,
-          skillDiscoveryInstruction(SKILL_DIR, installedSkillNames(manifest.skills)),
+          skillDiscoveryInstruction(skillDir, installedSkillNames(manifest.skills)),
         );
       }
       if (manifest.skills.length) {

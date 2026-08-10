@@ -13,12 +13,14 @@ Invocation
       └─ Run diagnostics
 ```
 
-Runner 在调用开始时取得 `invocationId`。每个选中的 Experiment 恰好建立一个 Run；Run 核心保存 `experimentId` 与 `startedAt`。可选的 Run-owned `niceeval.run-provenance` 可以保存 invocation identity，receipt 也以 `runIds` 关联本次调用；这些 provenance 不参与 membership 或 latest。
+Runner 在调用开始时取得 `invocationId`，再打开单锁 `RecordSession`。它在 session 内为每个选中的 Experiment 形成尚未发布的 `ExecutionTarget` Run，绑定 `runId`、`startedAt` 与完整 expected slots。execution projector 完成后，writer 才原样发布目标 Run；目标不能参与自己的历史投影。
+
+可选的 Run-owned `niceeval.run-provenance` 可以保存 invocation identity，receipt 也以 `runIds` 关联本次调用；这些 provenance 不参与 membership 或任何 analysis/execution projector。
 
 Run 的 expected membership 是本次分母。每个 slot 最多有一个 Member：
 
 - `executed` 表示本 Run 实际创建了该 Attempt；
-- `carried` 表示规划器自动采用已有 Attempt；
+- `carried` 表示 project-target execution projector 当时采用已有 Attempt；
 - `accepted` 表示操作者明确采用已有 Attempt。
 
 Attempt 的 <code>origin.runId</code> 永远指向实际执行它的 Run。carried 与 accepted Member 只保存同一 Record 内的稳定引用，不复制 Verdict、Usage、events 或 artifact。
@@ -73,7 +75,7 @@ Runner 在触发 `setup` 前，把 teardown 所需的稳定输入写入 `.niceev
 
 ## 并发 Invocation
 
-同一 Record root 不支持并发 Invocation。Runner 在规划前取得 Record operation lock，并一直持有到 Invocation 的全部 Run 收尾；无法取得时以 <code>record-root-busy</code> 失败，不等待、不接管，也不重读运行中状态。静态 export 的 Record 读取/build 阶段持有同一把锁；释放后执行与写站阶段不占锁。
+同一 Record root 不支持并发 Invocation。Runner 在 execution projection 前取得 `RecordSession`，并一直持有到 Invocation 的全部 Run 收尾；无法取得时以 <code>record-root-busy</code> 失败，不等待、不接管，也不重读运行中状态。静态 export 的 Record 读取/build 阶段持有同一把锁；释放后执行与写站阶段不占锁。
 
 多个 Invocation 只有在使用不同 Record root 时才可并发。它们不能在完成后自动合并；需要同一分析范围时，调用方应在停稳的一个 Record 中重新运行或显式选择既有 Run。
 
@@ -81,9 +83,11 @@ Runner 在触发 `setup` 前，把 teardown 所需的稳定输入写入 `.niceev
 
 <code>sharedState.key</code> 只协调外部可变状态，不提供 Record revision 或编辑事务。人工编辑 Record 时必须先停止相关 Invocation 和 active reader；已经释放 reader 的 Report execute 或站点写入不访问该 root。
 
-## Carry
+## Execution projection 与 carry
 
-规划器先按 [缓存与携带](cache.md#自动携带资格) 的 <code>(startedAt, runId)</code> 全序选择每个 Experiment/Eval 的唯一 source Run，再只检查该 Run 的同 ordinal slot。该 slot 的终态、fingerprint、timeout 和本次 policy 都满足时，目标 Run 写入 carried Member；任何失败都真实执行，禁止回扫更旧 Run。
+具名 `project-target/v1` execution projector 接收当前 ProjectTarget、尚未发布的 ExecutionTarget、`RecordSession.view` 和本次 policy。它按 [Execution projection](cache.md#project-targetv1-的-source-barrier) 选择 source barrier，并把每个目标 slot 穷尽投影为 `reuse | gap`。
+
+invocation coordinator 持有完整 projection。planner/scheduler 只接收 gap 子序列，不能访问 Record 或重做资格判断。writer 最后接收 target、reuse intents 和 executed outcomes：reuse 固定写 carried，已执行 gap 固定写 executed；没有 outcome 的 gap 不写 Member。
 
 carried Member 的永久核心只保存：
 
@@ -91,7 +95,9 @@ carried Member 的永久核心只保存：
 - 被采用的 `attemptId`；
 - `kind: "carried"`。
 
-建立 Member 时的 input/config identity、资格与理由进入 Run 的 `niceeval.actions` 通道，以 `slotId`、`attemptId` 关联。这些事实解释当时为何采用，不持续认证源 Attempt。源 Attempt 后续被编辑时，Member 仍读取它的当前业务值。
+`niceeval.actions` 为每个 target slot 保存当时的 policy identity、effective options、comparison provenance、reuse/gap 决定和最终 outcome。reuse 以 `slotId`、`attemptId` 关联；没有 outcome 的 gap 仍保存 `not-dispatched` 或 `interrupted` action，但没有 Member。
+
+这些事实解释当时为何采用或执行，不持续认证源 Attempt。源 Attempt 后续被编辑时，Member 仍读取它的当前业务值；新的 execution projector 必须按公开 policy 重新校验。
 
 ## Invocation receipt 与退出
 
@@ -107,7 +113,7 @@ interface InvocationReceipt {
 }
 ```
 
-receipt 不复制 locator、Verdict、Usage、cost、Attempt 计数或 Report 聚合。需要这些结果时，以 `runIds` 打开 Record 并创建 Sample。
+receipt 不复制 locator、Verdict、Usage、cost、Attempt 计数或 Report 聚合。需要这些结果时，以 `runIds` 打开 Record，并用 `explicit-runs/v1` analysis projector 创建 `AnalysisSample`。
 
 进程退出码由本次 Runner 已知的 Verdict、执行错误和 Invocation completion 计算。receipt 只描述调用完成情况，不成为另一份结果摘要。
 

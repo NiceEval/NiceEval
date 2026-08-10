@@ -1,48 +1,46 @@
 ---
 title: "读取 Record 数据"
 sidebarTitle: "结果数据 API"
-description: "从停稳的 Record 选择 core-only Sample，并按 ReportPlan 读取当前数据。"
+description: "从停稳的 Record 投影 core-only AnalysisSample，并按 ReportPlan 读取事实。"
 ---
 
-`Record` 是 `.niceeval/record/` 下可人工编辑的当前数据集。它保存 Run、Member、Attempt 和各自的具名通道。读写都只在目录停稳时进行。
+`Record` 是 `.niceeval/record/` 下可人工编辑的事实数据集。它保存 Run、Member、Attempt 和各自的具名通道。读写都只在目录停稳时进行；是否复用或执行由本次投影决定。
 
 这页说明数据边界。要在终端或浏览器中查看结果，请阅读[查看结果](/zh/tutorials/viewing-results)。要定义页面和计算，请阅读[自定义报告](/zh/tutorials/custom-reports)。
 
 ## 打开停稳的 Record
 
-Library 接收实际的 Record 根目录，不会补接 `.niceeval` 或 `record`。先打开 reader，再用明确的 Run 选择形成 `Sample`。
+Library 接收实际的 Record 根目录，不会补接 `.niceeval` 或 `record`。先打开 reader，再用具名 analysis projector 形成 `AnalysisSample`。
 
 ```ts
 import { openRecordReader } from "niceeval/record";
-import { selectSample } from "niceeval/sample";
+import { projectExplicitRuns, projectLatestRuns } from "niceeval/sample";
 
-let sample: Sample;
+let sample: AnalysisSample;
 {
   await using reader = await openRecordReader({
     root: ".niceeval/record",
   });
 
-  sample = await selectSample(reader, {
-    kind: "runs",
+  sample = await projectExplicitRuns(reader, {
     runIds: ["01J8ZK3M6P4T7V9X2C5N8QW0RY"],
   });
 }
 ```
 
-也可以使用 `latest` policy。它从每个匹配 Experiment 的已完成 Run 中选择最后一个；未完成的 Run 必须以 `runIds` 明确选择。
+也可以使用具名 `latest/v1` analysis projector。它从每个匹配 Experiment 的已完成 Run 中选择最后一个；未完成的 Run 必须按 ID 明确投影。
 
 ```ts
-let latest: Sample;
+let latest: AnalysisSample;
 {
   await using reader = await openRecordReader({ root: ".niceeval/record" });
-  latest = await selectSample(reader, {
-    kind: "latest",
+  latest = await projectLatestRuns(reader, {
     experimentIds: ["checkout"],
   });
 }
 ```
 
-每次读取都使用调用时的文件值。用户在目录停稳后修改 Verdict、Usage 或其他通道，再次构造 ReportInput 时会读取修改后的值；Sample 本身只保存核心和分母。
+每次读取都使用调用时的文件值。用户在目录停稳后修改 Verdict、Usage 或其他通道，再次构造 ReportInput 时会读取修改后的值；`AnalysisSample` 本身只保存核心、分母和 projection provenance。
 
 ## 核心数据关系
 
@@ -74,21 +72,21 @@ Record 的结构、路径、身份和引用校验用于拒绝自相矛盾的数�
 
 未知或退役通道只在该通道显示 `unsupported`。`unavailable`、`unsupported` 与 `invalid` 不能互相替代。未请求的通道不会阻止无关读取。
 
-## 从 Sample 到 ReportInput
+## 从 AnalysisSample 到 ReportInput
 
-`Sample` 是内存中的明确选择，不会写回 Record。它保留每个 expected slot，并用下列状态表达范围：
+`AnalysisSample` 是内存中的明确投影，不会写回 Record。它保留每个 expected slot，并用下列状态表达范围：
 
-| Sample 状态 | 含义 |
+| AnalysisSample 状态 | 含义 |
 | --- | --- |
 | `included` | 有合法 Member，且能读取其采用的 Attempt。 |
 | `not-recorded` | expected slot 没有 Member。 |
 | `invalid` | Member、Attempt 或核心引用存在问题。 |
-| `excluded` | 调用方在既有 Sample 上排除了该项。 |
+| `excluded` | 调用方在既有 AnalysisSample 上排除了该项。 |
 
-Reports 根据所需的 facts 把 Sample 变成 `ReportInput`。`ReportInput` 是进程内普通值，保留分母、成员状态、通道读取状态和问题。Report 只消费它，不读取路径或自行解释文件。
+Reports 根据所需的 facts 把 `AnalysisSample` 变成 `ReportInput`。`ReportInput` 是进程内普通值，保留分母、成员状态、通道读取状态和问题。Report 只消费它，不读取路径或自行解释文件。
 
 ## 相关页面
 
-- [查看结果](/zh/tutorials/viewing-results)：用 `show` 与 `view` 选择 Sample。
+- [查看结果](/zh/tutorials/viewing-results)：用 `show` 与 `view` 投影 `AnalysisSample`。
 - [重跑与沿用](/zh/tutorials/rerun-and-cache)：理解 `carried`、`accepted` 与 `niceeval.actions`。
 - [报告组件参考](/zh/reference/report-components)：查看 Report 的公开能力。

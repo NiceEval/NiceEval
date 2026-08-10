@@ -1,48 +1,46 @@
 ---
 title: "Read Record Data"
 sidebarTitle: "Results Data API"
-description: "Select a core-only Sample from a quiescent Record, then read current data through a ReportPlan."
+description: "Project a core-only AnalysisSample from a quiescent Record, then read facts through a ReportPlan."
 ---
 
-A `Record` is editable current data under `.niceeval/record/`. It stores Runs, Members, Attempts, and their named channels. Read and write it only while the directory is quiescent.
+A `Record` is an editable fact dataset under `.niceeval/record/`. It stores Runs, Members, Attempts, and their named channels. Read and write it only while the directory is quiescent. A separate projector decides analysis scope or execution reuse.
 
 This page explains the data boundary. To inspect results in the terminal or browser, read [Viewing Results](/tutorials/viewing-results). To define pages and calculations, read [Write a Custom Report](/tutorials/custom-reports).
 
 ## Open a quiescent Record
 
-The library receives the actual Record root and does not append `.niceeval` or `record`. Open a reader, then form a Sample with an explicit Run selection.
+The library receives the actual Record root and does not append `.niceeval` or `record`. Open a reader, then form an `AnalysisSample` with a named analysis projector.
 
 ```ts
 import { openRecordReader } from "niceeval/record";
-import { selectSample } from "niceeval/sample";
+import { projectExplicitRuns, projectLatestRuns } from "niceeval/sample";
 
-let sample: Sample;
+let sample: AnalysisSample;
 {
   await using reader = await openRecordReader({
     root: ".niceeval/record",
   });
 
-  sample = await selectSample(reader, {
-    kind: "runs",
+  sample = await projectExplicitRuns(reader, {
     runIds: ["01J8ZK3M6P4T7V9X2C5N8QW0RY"],
   });
 }
 ```
 
-You can also use the `latest` policy. It selects the final completed Run for each matching Experiment; select unfinished Runs explicitly with `runIds`.
+You can also use the named `latest/v1` analysis projector. It selects the final completed Run for each matching Experiment; project unfinished Runs explicitly by ID.
 
 ```ts
-let latest: Sample;
+let latest: AnalysisSample;
 {
   await using reader = await openRecordReader({ root: ".niceeval/record" });
-  latest = await selectSample(reader, {
-    kind: "latest",
+  latest = await projectLatestRuns(reader, {
     experimentIds: ["checkout"],
   });
 }
 ```
 
-Every read uses the files as they exist when it runs. If a user edits a Verdict, Usage, or another channel after the directory is quiescent, a later ReportInput construction reads the edited value. The Sample itself stores core data and its denominator only.
+Every read uses the files as they exist when it runs. If a user edits a Verdict, Usage, or another channel after the directory is quiescent, a later ReportInput construction reads the edited value. `AnalysisSample` stores core data, its denominator, and projection provenance only.
 
 ## Core data relationships
 
@@ -74,18 +72,18 @@ Business values live in named channels, such as Verdict, Eligibility, Usage, and
 
 An unknown or retired channel is `unsupported` at that channel only. `unavailable`, `unsupported`, and `invalid` cannot replace one another. An unrequested channel does not block an unrelated read.
 
-## From Sample to ReportInput
+## From AnalysisSample to ReportInput
 
-A `Sample` is an explicit in-memory selection and does not write back to the Record. It preserves every expected slot and represents scope with these states:
+An `AnalysisSample` is an explicit in-memory projection and does not write back to the Record. It preserves every expected slot and represents scope with these states:
 
-| Sample state | Meaning |
+| AnalysisSample state | Meaning |
 | --- | --- |
 | `included` | It has a valid Member and can read that Member's adopted Attempt. |
 | `not-recorded` | The expected slot has no Member. |
 | `invalid` | The Member, Attempt, or core reference has a problem. |
-| `excluded` | A caller excluded it from an existing Sample. |
+| `excluded` | A caller excluded it from an existing AnalysisSample. |
 
-Reports turn a Sample into `ReportInput` through the facts they require. ReportInput is an ordinary in-process value that retains the denominator, membership states, channel read states, and issues. A Report consumes it; it never reads a path or interprets files itself.
+Reports turn an AnalysisSample into `ReportInput` through the facts they require. ReportInput is an ordinary in-process value that retains the denominator, membership states, channel read states, and issues. A Report consumes it; it never reads a path or interprets files itself.
 
 ## Related pages
 

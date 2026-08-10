@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "adapter/openai-compat",
+  "areas": ["adapter"],
+  "lanes": ["main", "nightly", "release"],
+  "executor": { "kind": "host" },
+  "command": ["pnpm", "run", "e2e"],
+  "timeoutMinutes": 8,
+  "harness": { "testkit": true },
+  "secrets": ["OPENAI_API_KEY", "OPENAI_BASE_URL"],
+  "requires": { "externalNetwork": true, "runtimes": ["node>=22"] },
+  "paths": ["e2e/adapter/openai-compat/**", "src/agents/openai-compat.ts", "package.json", "pnpm-lock.yaml", "e2e/scripts/**"],
+  "artifacts": [".niceeval/**", "junit/**"]
+}

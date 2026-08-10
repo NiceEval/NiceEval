@@ -17,6 +17,15 @@ export interface SampleIssueNotice {
 export const NoticeCatalog = {
   of(issue: SampleIssue, locale: ReportLocale): SampleIssueNotice {
     switch (issue.code) {
+      case "unverifiable-current-result":
+        return {
+          code: issue.code,
+          title: "unverifiable current result",
+          detail: `${issue.experimentId}/${issue.evalId} attempt ${issue.attempt} is missing ${issue.missing.join(", ")}.`,
+          action: null,
+          experimentId: issue.experimentId,
+          issue,
+        };
       case "unfinished-run":
         return {
           code: issue.code,

@@ -37,7 +37,7 @@ niceeval exp local onboarding/tool-first --keep-sandbox=all    # passed 也留,�
   suspend 失败时现场保持运行并写入诊断通道，仍被注册表管理。
   语义见 [Architecture · 各 provider 的留存语义](architecture.md#留存keep与注册表)。
 - 被中断的 Run 不留存:留存授予发生在 Verdict 与 receipt 收敛的收尾点,Ctrl+C 时还没有 Verdict 的 Attempt 走正常销毁;此前已完成并授予留存的 Sandbox 不被中断收回。
-- 留存与[缓存携带](../experiments/cache.md#执行模式划走的两块)不相容：`carried` Member 没有本次 Sandbox，无从留存。
+- 留存与 [project-target policy](../experiments/cache.md#复用资格) 不相容：`carried` Member 没有本次 Sandbox，无从留存。
   因此 `--keep-sandbox` 运行里，满足当前留存档的已有 Attempt 不参与携带，照常派发重跑拿现场。
   `failed` 档下上一轮 `failed` Attempt 重跑；`errored` Attempt 本就不具备携带资格。
   `passed` Attempt 可由 `carried` Member 沿用；`all` 档下全部重跑。

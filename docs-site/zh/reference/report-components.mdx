@@ -10,7 +10,7 @@ let plan: ReportPlan;
 let input: ReportInput;
 {
   await using record = await openRecordReader({ root });
-  const sample = await selectSample(record, selection);
+  const sample = await projectExplicitRuns(record, { runIds });
   const scope = createReportScope(sample);
   plan = definition.plan(scope);
   input = await buildReportInput({ record, sample, plan });
@@ -25,9 +25,9 @@ const execution = executeReport({ definition, plan, input });
 
 ```ts
 interface ReportScope {
-  readonly selection: RunSelection;
-  readonly runs: readonly SampleRun[];
-  readonly slots: readonly SampleSlot[];
+  readonly provenance: AnalysisProjectionProvenance;
+  readonly runs: readonly AnalysisRun[];
+  readonly slots: readonly AnalysisSlot[];
 }
 ```
 
@@ -78,7 +78,7 @@ plan 没有顶层 facts 或 resources。每个 consumer 自己声明 inputs；�
 ```ts
 interface ReportInput {
   readonly scope: ReportScope;
-  readonly sample: Sample;
+  readonly sample: AnalysisSample;
   // 内部 fact matrix 使用未导出的 brand，用户代码不可索引。
 }
 

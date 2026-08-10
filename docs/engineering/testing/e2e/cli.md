@@ -10,10 +10,21 @@
 
 ### 选择
 
+#### cli-positive-selection
+
 - eval id 位置参数按前缀收窄实际运行的 Eval 集合；experiment 选择器按 CLI 契约命中。
-- 未命中任何 Eval / Experiment 的选择器按用法错误退出，错误信息给出下一步。
+
+#### cli-no-eval-feedback
+
+- Experiment 命中但 Eval 前缀零命中时按用法错误退出，错误信息给出下一步。
+
+#### cli-no-experiment-feedback
+
+- 未命中任何 Experiment 的选择器按用法错误退出，错误信息给出下一步。
 
 ### 退出码折叠
+
+#### cli-failure-error-results
 
 仓库包含三个 Experiment，验收脚本把预期非零退出转换为仓库级成功：
 

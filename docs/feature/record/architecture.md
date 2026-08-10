@@ -20,13 +20,13 @@ attempts/<encoded-attemptId>/blobs/**
 
 Invocation 没有目录。它只通过 Runner 或 Library 返回的 <code>InvocationReceipt</code> 表示。
 
-停稳表示该 root 没有 active writer、reader 或受控编辑。所有受支持的 root 操作先取得同一把跨进程 operation lock。Sample 与 ReportInput 的构造发生在 reader 持锁期间；writer 从规划前一直持锁到本次全部 Run 收尾。受控编辑、删除和 clean 也在完整检查与修改期间持锁。
+停稳表示该 root 没有 active session、reader 或受控编辑。所有受支持的 root 操作先取得同一把跨进程 operation lock。AnalysisSample 与 ReportInput 的构造发生在 reader 持锁期间。执行入口使用同时提供只读 view 与 writer 的 RecordSession，从 execution projection 前一直持锁到本次全部 Run 收尾。受控编辑、删除和 clean 也在完整检查与修改期间持锁。
 
 operation lock 由操作系统绑定进程或文件描述符，并在进程退出时释放。它不是带超时的 lease，不允许接管，也不把锁文件内容当作 owner 真源。实现先对最近存在祖先执行 symbolic-link resolution，再把剩余规范路径拼回，以同一个 physical root 作为锁身份；路径别名不能取得第二把锁。
 
 锁锚是 canonical physical root 的 sibling <code>&lt;root-basename&gt;.niceeval-operation-lock</code>，因此 root 不存在时也能先加锁。所有 create/open/maintenance 入口都先锁定锚，再检查或建立 root。锚是保留的普通文件，内容永远无义，受控操作不删除或替换它。平台无法提供进程崩溃释放的跨进程互斥时，入口以 <code>record-operation-lock-unsupported</code> 失败。
 
-同一 root 的 writer、reader 和受控编辑互斥，本格式不支持并发快照或多 writer 合并。直接使用其它编辑器改写文件会绕过 operation lock；这种并发修改不在支持范围内，也没有 revision 或 hash 用来检测。ReportExecution 形成后已经自包含，view 与静态 export 不再持有或读取 Record。运行中的反馈由 Runner 处理。
+同一 root 的 session、reader 和受控编辑互斥，本格式不支持并发快照或多 writer 合并。直接使用其它编辑器改写文件会绕过 operation lock；这种并发修改不在支持范围内，也没有 revision 或 hash 用来检测。ReportExecution 形成后已经自包含，view 与静态 export 不再持有或读取 Record。运行中的反馈由 Runner 处理。
 
 根文件精确为下列对象，不能附加字段。
 
@@ -130,9 +130,7 @@ Attempt locator 是 <code>@</code> 加完整 <code>attemptId</code>。它可逆�
 
 <code>experimentId</code> 和 <code>evalId</code> 是 NFC Unicode、大小写敏感的文本。它们不参与目录路径。
 
-所有时间使用精确的 RFC 3339 UTC 毫秒形式：<code>YYYY-MM-DDTHH:mm:ss.sssZ</code>。<code>startedAt</code> 是 Run 在持锁 writer 内建立的时点；<code>completedAt</code> 是初始 writer 停止拥有该 Run 的时点，不表示内容从此冻结。
-
-latest 对每个目标 Experiment 分别选择一个存在 <code>completedAt</code> 的 Run。目标集合由调用方明确给出，或由所有可读 Run 核心中的 Experiment identity 推导；每组按 <code>completedAt</code> 升序，再按 <code>runId</code> 的 UTF-8 bytes 升序稳定排序，并取最后一项。目标集合为空或任一目标组没有完成 Run 都明确失败。未完成的 Run 只能通过显式选择读取。
+所有时间使用精确的 RFC 3339 UTC 毫秒形式：<code>YYYY-MM-DDTHH:mm:ss.sssZ</code>。执行入口在持锁 session 内、execution projector 读取历史前，为每个尚未发布的 ExecutionTarget 绑定一次 <code>startedAt</code>。projector 不能看到这些目标 Run；writer 原样写入 target 的时间，不能在发布时重新取时。<code>completedAt</code> 是初始 session 停止拥有该 Run 的时点，不表示内容从此冻结。
 
 扫描器按规范 encoded ID 的 UTF-8 bytes 升序处理目录。重复 identity、目录与内容身份不符、或任何 case-fold 冲突都为 invalid。
 
@@ -191,7 +189,7 @@ writer 补齐 <code>observedAt</code> 后，以 ECMAScript <code>JSON.stringify(
 
 新 reader 必须打开每一份核心形状有效的 <code>niceeval.record</code>。未知或已退役 channel 仅使该通道成为 unsupported，不使无关事实或整个 Record 失败。旧 reader 打开带新通道的 Record 时，仍读取核心文件并保留未知 descriptor。
 
-<code>niceeval.verdict</code> 与 <code>niceeval.eligibility</code> 是仅有的 planner-critical channel。两者都是 Attempt-owned <code>application/json</code> document，payload 是精确对象且永久不扩展。
+<code>niceeval.verdict</code> 与 <code>niceeval.eligibility</code> 是 project-target policy v1 所需的永久事实。两者都是 Attempt-owned <code>application/json</code> document，payload 是精确对象且永久不扩展。Record 永久保留其 decoder、兼容读取和标准展示入口，但不从这些事实推出可复用、过期或需要执行等状态。
 
 ```ts
 type VerdictDocument = {
@@ -217,7 +215,7 @@ type EligibilityDocument = {
 
 所有嵌套对象同样精确。未知字段、缺失字段、其它 Verdict 判别值或其它 media type 都使该通道 invalid。<code>domain</code> 和 <code>value</code> 是非空 NFC 文本；<code>milliseconds</code> 是非负安全整数。Assertion、diagnostic 引用和人读摘要属于其它业务通道，不进入 Verdict。
 
-<code>niceeval.assertions</code> 是 Attempt-owned、<code>application/json</code> 的永久 presentation channel。它不进入核心，也不参与 planner 或 carry；其冻结 document、限制与派生规则由 [Assertions Architecture](../assertions/architecture.md#稳定落盘投影) 单点定义。
+<code>niceeval.assertions</code> 是 Attempt-owned、<code>application/json</code> 的永久 presentation channel。它不进入核心，analysis projector 与 execution projector 都不得依赖它；其冻结 document、限制与派生规则由 [Assertions Architecture](../assertions/architecture.md#稳定落盘投影) 单点定义。
 
 永久 presentation 表示 decoder 与标准消费链都不能退役：Attempt → <code>niceeval.assertions</code> → 内建 decoder → 标准 FactRequirement → 标准 Attempt detail。未来的新 Assertions 语义使用新的描述性 channel，但旧通道仍能从显式选择的旧 Run 进入标准详情。
 
@@ -248,28 +246,21 @@ type Sha256Digest = string;
 
 collection complete 要求 <code>limitations</code> 为空。collection partial 要求至少一项 limitation，并逐项说明截断、脱敏或未纳入的路径与原因。collection unavailable 不写 document 或 blob。decoder 只返回结构化源码值和 bytes，不暴露 Record root 或实际路径。
 
-自动 carry 只使用下列输入：
+[project-target policy](../experiments/cache.md) 决定怎样把上述事实与当前 Project Target、timeout 和 Invocation policy 组合成 reuse 或 gap。source barrier、禁止回扫、<code>--rerun</code> 与 <code>--keep-sandbox</code> 都不属于 Record 格式。
 
-- 完整 Verdict；
-- 完整 eligibility 中两项 identity 的同 domain 相等比较；
-- execution duration 的同 domain timeout 比较；
-- 本次 Invocation 的 <code>--rerun</code> 和 <code>--keep-sandbox</code> policy。
+新增持久 gate 时升级 execution projector 的 policy identity。旧 Attempt 缺少所需事实时形成具名 gap；这不会要求更换 <code>niceeval.record</code> 格式，也不会把新 gate 写进核心。
 
-<code>--keep-sandbox</code> 直接关闭本次自动 carry。planner 只有在两个通道均为 <code>read</code>、collection complete、decoding complete 且 payload 通过精确校验时才比较；其它状态一律具名说明并执行。
+[Observability 标准通道表](../../observability.md#内建业务通道闭环)中的 decoder、branded FactRequirement 与标准 presentation 都永久保留。表外没有永久兼容承诺的内建 decoder 可以退役；退役后，只有依赖该通道的 detail、Calculation 或 projector 成为 unsupported。
 
-identity 配方加入输入时必须更换对应 domain，不能在同一 domain 下改变闭包。新持久 gate 若无法归约为现有 identity、duration 或本次 policy，就不能参与本格式的自动 carry，也不能新增 planner-critical channel；产品若必须加入它，必须更换整个格式名，让旧 planner 在根格式处失败。
-
-[Observability 标准通道表](../../observability.md#内建业务通道闭环)中的 decoder、branded FactRequirement 与标准 presentation 都永久保留。表外的非 planner-critical 内建 decoder 可以退役；退役后，只有依赖该通道的 detail 或 Calculation 成为 unsupported。
-
-## Eligibility、duration 与采用
+## Eligibility 与 duration 事实
 
 eligibility 保存 opaque equality token。input 与 config identity 都使用上文冻结的 <code>{ domain, value }</code>。
 
-只有 <code>domain</code> 逐字相同才比较 <code>value</code>。输入配方改变时发布新的 domain，不能猜测两种 domain 兼容。
+<code>domain</code> 与 <code>value</code> 都是 opaque token。Record 只校验其形状；execution projector 只有在 domain 逐字相同时才比较 value。输入配方改变时，生产方发布新的 domain，消费者不能猜测两种 domain 兼容。
 
 duration 保存 <code>{ domain, milliseconds }</code>。<code>milliseconds</code> 是非负安全整数，由该 domain 定义的 timeout 区间以单调时钟向上取整得到。
 
-carry 的 timeout 判断只比较当前认可且 domain 相同的 duration。domain 不同意味着不可采用，不能通过数值比较补猜结果。
+Record 不把 duration 换算成资格。execution projector 只有在当前 policy 认可同一 domain 时才比较 milliseconds；domain 不同形成具名 gap，不能通过数值比较补猜结果。
 
 ## 混合存储与可见性
 
@@ -299,7 +290,7 @@ unanchored Attempt 只允许由显式 orphan clean 删除。clean 在同一把�
 - expected membership 的含义；
 - Member 的三态或引用规则；
 - Attempt origin；
-- Run 的 identity、<code>experimentId</code>、<code>startedAt</code>、<code>completedAt</code> UTC 毫秒语义与 latest 排序；
+- Run 的 identity、<code>experimentId</code>、<code>startedAt</code> 与 <code>completedAt</code> UTC 毫秒语义；
 - Attempt 的 identity 与 <code>eval</code>；
 - channel descriptor、path 或 coverage 协议；
 - root layout 或原子可见性规则。
@@ -313,16 +304,14 @@ unanchored Attempt 只允许由显式 orphan clean 删除。clean 在同一把�
 | 层级 | 例子 | 结果 |
 |---|---|---|
 | root-global | root、权限/I/O、精确根文件或根级保留布局无效 | open reader 失败 |
-| selection-global | 显式 Run 无法形成 expected slots、latest 候选不穷尽、额外 Member | Sample selection 失败 |
-| slot-local | 已声明 slot 的 Member 或 Attempt 核心/引用错误 | 该 slot 为 invalid |
+| run-local | 一个被读取的 Run 无法形成 expected slots，或存在额外 Member | 当前 Run 导航失败 |
+| slot-local | 已声明 slot 的 Member 或 Attempt 核心/引用错误 | reader 返回具名 issue；上层按投影语境解释 |
 | channel-local | descriptor、文件、字节或 semantic conflict 无效 | 对应 ChannelRead invalid |
 | consumer-local | Report-local parser 或已声明输入失败 | 对应 consumer result 失败 |
 
 <code>openRecordReader()</code> 只验证 root、精确 <code>record.json</code> 与根级保留布局，不扫描全部 Run、Member、Attempt 或 descriptor。Record root、保留目录、Run/Attempt 目录和全部核心 JSON 都必须是普通且非 symbolic link 的对应文件类型；每次导航都以 no-follow 操作核对。
 
-显式选择只读取所选 Run 及其引用；未选择 Run 的内容错误不阻断它。导航一个 namespace 时可以扫描同级 entry metadata、规范名字、重复与 case-fold 冲突，但不能跟随 link 或读取未选择实体的内容。root 或根级保留目录是 link 属于 root-global；所选 Run 目录或 <code>run.json</code> 是 link 属于 selection-global；Member、Attempt 目录或它们的核心文件是 link 属于 slot-local。latest 必须读取每个 Run 核心，因此候选中的 link 使选择失败。
-
-latest 必须穷尽所有可能候选；任一 Run 无法可靠提供 <code>runId</code>、<code>experimentId</code> 或 <code>completedAt</code> 时 selection 明确失败，不能静默跳过。已选 Run 下没有对应 expected slot 的额外 Member 同样使该 Run selection 失败。已声明 slot 的 Member 或 Attempt 核心引用错误只进入该 slot 的 invalid 状态。
+上层只读取自己投影需要的 Run 及其引用；其它 Run 的内容错误是否影响结果，由具名 projector 的候选穷尽规则决定。reader 导航一个 namespace 时可以扫描同级 entry metadata、规范名字、重复与 case-fold 冲突，但不能跟随 link。root 或根级保留目录是 link 属于 root-global；被读取的 Run 目录或 <code>run.json</code> 是 link 属于 run-local；Member、Attempt 目录或它们的核心文件是 link 属于 slot-local。
 
 通道按下列顺序读取：
 
@@ -335,6 +324,6 @@ latest 必须穷尽所有可能候选；任一 Run 无法可靠提供 <code>runI
 
 持久化 collection coverage 与 decode coverage 永不折叠。未知 event 可能使一个已知 JSONL 通道的 decoding 成为 partial，但不改变该通道的 durable coverage。
 
-未请求的未知或 invalid 通道不阻止其它通道读取、Sample 形成或静态 export。被请求的 invalid 通道必须失败；被请求的 unavailable 或 unsupported 通道可由页面明确呈现。
+未请求的未知或 invalid 通道不阻止其它通道读取、AnalysisSample 形成或静态 export。被请求的 invalid 通道必须失败；被请求的 unavailable 或 unsupported 通道可由页面或 execution projector 明确呈现。
 
 人工删除通道文件是 <code>channel-file-missing</code> invalid。损坏和越界同样是 invalid。它们都不能伪装成未采集；unsupported 也不等于业务上的 unavailable。目录停稳是调用前置条件；本格式没有 revision/hash，因此不承诺检测读取期间的并发修改。

@@ -190,8 +190,9 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| Record | Record | `.niceeval/record/` 中可人工编辑的当前数据集；只支持停稳时读写 | [Record](feature/record/README.md) |
+| Record | Record | `.niceeval/record/` 中可人工编辑的事实数据集；只保存已经发生的 Run、membership、Attempt 与通道事实 | [Record](feature/record/README.md) |
 | Record operation lock | Record operation lock | 同一 physical root 上由 OS 崩溃释放的跨进程互斥；一次受支持的读、写、编辑或维护全程持有 | [Record](feature/record/architecture.md#根目录与停稳边界) |
+| Record session | `RecordSession` | 执行投影、调度和事实写回共用的单锁作用域；同时提供只读 view 与 writer | [Record library](feature/record/library.md#创建与打开) |
 | Run | Run | 一个已求值 Experiment 的持久化批次；expected slots 定义分母 | [Record](feature/record/architecture.md) |
 | Member | Member | 一个 Run slot 采用 Attempt 的引用；只有 executed、carried、accepted | [Record](feature/record/architecture.md) |
 | Attempt | Attempt | 一次实际执行的稳定身份和自己的通道；永远保留 origin | [Record](feature/record/architecture.md) |
@@ -202,13 +203,16 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Invocation receipt | `InvocationReceipt` | 只含 Invocation 身份、Run IDs、时间和完成状态的返回值；不落成目录 | [Record library](feature/record/library.md#writer) |
 | Attempt 定位符 | AttemptLocator | 完整 128-bit `attemptId` 的 26 字符规范大写 Crockford 编码；CLI 写 `@` 加 26 字符 | [Record](feature/record/architecture.md) |
 
-### 样本选择
+### 分析选择与执行投影
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| Sample(样本) | Sample | 从明确 Run 或 latest policy 形成的内存选择，保留完整 expected-slot 分母 | [Sample](feature/sample/README.md) |
-| 样本状态 | Sample slot state | included、not-recorded、invalid、excluded；四者不能折成空值 | [Sample](feature/sample/library.md#sample-形状) |
-| 收窄 | Narrowing | 在既有 Sample 上显式排除范围，不重新读取 Record | [Sample](feature/sample/library.md#构造入口) |
+| 分析样本 | `AnalysisSample` | analysis projector 从既有 Run 形成的 core-only 内存选择，保留完整 expected-slot 分母 | [Sample](feature/sample/README.md) |
+| 分析样本状态 | Analysis sample slot state | included、not-recorded、invalid、excluded；四者不能折成空值 | [Sample](feature/sample/library.md#analysissample-形状) |
+| 分析投影器 | Analysis projector | 从明确 Run 或具名 latest policy 形成 `AnalysisSample` 的只读算法 | [Sample](feature/sample/library.md#分析投影器) |
+| 执行投影 | `ExecutionProjection` | project-target policy 把当前 `ExecutionTarget` 的每个 slot 穷尽判为 reuse 或可执行 gap | [Cache](feature/experiments/cache.md#公开执行投影) |
+| 执行缺口 | Execution gap | 当前目标中没有可复用 Attempt、必须交给 planner/scheduler 执行的 slot；不是 Record 状态 | [Cache](feature/experiments/cache.md#错误与缺口作用域) |
+| 收窄 | Narrowing | 在既有 `AnalysisSample` 上显式排除范围，不重新读取 Record | [Sample](feature/sample/library.md#构造入口) |
 
 ### 报告
 
@@ -222,7 +226,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 页 | ReportPage | 报告计划中已穷举 route 和输入的呈现单位 | [Reports library](feature/reports/README.md#页面与宿主数据) |
 | 静态资产清单 | StaticAssetManifest | 穷举静态站页面、精确 runtime、脚本、样式、字体、worker、WASM、数据和下载 | [Reports library](feature/reports/README.md#staticassetmanifest-与-export) |
 | 静态报告 | Static report | 无网络、无源 Record、带精确 runtime 的自包含目录 | [Reports architecture](feature/reports/README.md#自包含静态-export) |
-| 有效选择 | Effective selection | 明确 Run 或 latest policy 形成的 Sample，再经 selector 收窄出的成员 | [Sample](feature/sample/README.md) |
+| 有效选择 | Effective selection | 具名 analysis projector 形成的 `AnalysisSample`，再经 selector 收窄出的成员 | [Sample](feature/sample/README.md) |
 
 ### 配置与 CLI
 

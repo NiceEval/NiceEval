@@ -2,22 +2,22 @@
 
 Library 接收的 root 永远是实际 Record root。它不会补接 <code>.niceeval</code>、<code>record</code> 或其它后缀。bundled CLI 才负责把项目 root 映射到默认位置。
 
-Library 只面向单操作 root。reader、writer、受控编辑、删除和 clean 使用同一把跨进程 operation lock；第二项操作以 <code>record-root-busy</code> 失败，不产生快照、合并或 last-write-wins 语义。ReportExecution 形成后的 view/export 不再访问 root，也不持锁。
+Library 只面向单操作 root。reader、session、受控编辑、删除和 clean 使用同一把跨进程 operation lock；第二项操作以 <code>record-root-busy</code> 失败，不产生快照、合并或 last-write-wins 语义。ReportExecution 形成后的 view/export 不再访问 root，也不持锁。
 
 ## 创建与打开
 
 ```ts
 type RecordRoot = string;
 
-function createRecordWriter(input: {
+function createRecordSession(input: {
   root: RecordRoot;
   writerId: string;
-}): Promise<RecordWriter>;
+}): Promise<RecordSession>;
 
-function openRecordWriter(input: {
+function openRecordSession(input: {
   root: RecordRoot;
   writerId: string;
-}): Promise<RecordWriter>;
+}): Promise<RecordSession>;
 
 function openRecordReader(input: {
   root: RecordRoot;
@@ -27,7 +27,14 @@ interface RecordOperation {
   [Symbol.asyncDispose](): Promise<void>;
 }
 
-interface RecordWriter extends RecordOperation {
+interface RecordSession extends RecordOperation {
+  readonly root: RecordRoot;
+  readonly writerId: string;
+  readonly view: RecordView;
+  readonly writer: RecordWriter;
+}
+
+interface RecordWriter {
   readonly root: RecordRoot;
   readonly writerId: string;
 }
@@ -44,19 +51,23 @@ function cleanRecordOrphans(input: {
 }): Promise<void>;
 ```
 
-<code>createRecordWriter()</code> 只认领不存在的精确 root，并写入唯一的 <code>record.json</code>。它不领养已有目录、父目录或 sibling。
+<code>createRecordSession()</code> 只认领不存在的精确 root，并写入唯一的 <code>record.json</code>。它不领养已有目录、父目录或 sibling。新 session 的 view 从空历史开始。
 
 root 的 canonical parent 必须已经存在。create 先取得 sibling lock anchor，再在 <code>&lt;root-basename&gt;.niceeval-create-&lt;writerId&gt;</code> 形成、fsync 并 close <code>record.json</code>。最后一次 rename 建立不存在的 root。崩溃不会留下只有空目录或半写根文件的正式 Record；失败只留下可按 owner 删除的 sibling temp。
 
-<code>openRecordWriter()</code> 与 <code>openRecordReader()</code> 先取得 sibling lock anchor，再验证根目录、精确根文件和根级保留布局。它们不 eager 扫描全部 Run、Member、Attempt 或 descriptor；具体导航入口按 [Architecture](architecture.md#读取不变量) 的错误作用域验证。
+<code>openRecordSession()</code> 与 <code>openRecordReader()</code> 先取得 sibling lock anchor，再验证根目录、精确根文件和根级保留布局。它们不 eager 扫描全部 Run、Member、Attempt 或 descriptor；具体导航入口按 [Architecture](architecture.md#读取不变量) 的错误作用域验证。
 
 <code>writerId</code> 是一个不透明、单段的目录身份。它不能包含分隔符、点段、NUL 或绝对前缀。writer 只可创建和删除自己的 <code>.tmp/&lt;writerId&gt;</code>。
 
-三个 open/create 入口成功时都取得该 root 的 operation lock。推荐用 <code>await using</code> 约束作用域；async dispose 先拒绝新方法调用、等待已经开始的方法结束，再关闭句柄并释放锁。writer dispose 还删除本 owner 已关闭且未发布的临时内容；进程崩溃才会留下 orphan。dispose 完成后，同一 root 的下一个操作才允许成功。
+三个 open/create 入口成功时都取得该 root 的 operation lock。推荐用 <code>await using</code> 约束作用域；RecordSession 或 RecordReader 是唯一 disposable owner。dispose 先拒绝新方法调用、等待已经开始的方法结束，再关闭句柄并释放锁。session dispose 还删除本 owner 已关闭且未发布的临时内容；进程崩溃才会留下 orphan。dispose 完成后，同一 root 的下一个操作才允许成功。
 
-Runner 在开始本次 Record 规划和任何 Run 写入前取得 writer。它持有到所有本次 Run 已写入 <code>completedAt</code>、<code>InvocationReceipt</code> 已形成，随后 dispose。
+RecordView 与 session writer 都不能独立 dispose。调用方可以捕获对象引用，但 session 关闭后的每个方法都必须以 <code>record-session-closed</code> 失败，不能重新打开路径或继续使用旧句柄。
 
-CLI show/view 从选择 Sample 到 <code>buildReportInput()</code> 完成持有 reader，随后在执行 Report、启动 server 或 export 前 dispose。delete 与 clean 在完整反向扫描、预检和删除期间持有同一把锁。
+Runner 在 execution projection 前取得 session。它在锁内形成尚未发布的 ExecutionTarget，并使用 <code>session.view</code> 读取投影历史。
+
+session 一直持有到所有本次 Run 已写入 <code>completedAt</code>、<code>InvocationReceipt</code> 已形成。目标 Run 在 projector 完成前不得发布，因此不会参与自己的 source barrier。
+
+CLI show/view 从 analysis projector 到 <code>buildReportInput()</code> 完成持有 reader，随后在执行 Report、启动 server 或 export 前 dispose。delete 与 clean 在完整反向扫描、预检和删除期间持有同一把锁。
 
 受控编辑工具必须先取得同一把 operation lock，并在编辑 subprocess 退出后才释放。直接用其它工具修改目录会绕过这项保护；调用方只能在确认没有 NiceEval 操作时这样做，并接受并发修改无法检测的限制。
 
@@ -104,7 +115,7 @@ writer 的 async dispose 在正常返回或作用域抛错时都删除自己的�
 ## Reader
 
 ```ts
-interface RecordReader extends RecordOperation {
+interface RecordView {
   readonly root: RecordRoot;
 
   record(): Promise<{ format: "niceeval.record" }>;
@@ -117,17 +128,17 @@ interface RecordReader extends RecordOperation {
   inspectChannel<T>(input: ChannelRequest<T>): Promise<ChannelRead<T>>;
 }
 
+interface RecordReader extends RecordView, RecordOperation {}
+
 type CoreRead<T> =
   | { readonly state: "read"; readonly value: T }
   | { readonly state: "missing" }
   | { readonly state: "invalid"; readonly issues: NonEmptyRecordIssues };
 ```
 
-<code>runs()</code> 按规范 encoded <code>runId</code> 的 UTF-8 bytes 升序返回每个目录的 <code>CoreRead</code>。其中任何 invalid 都让 latest indeterminate；显式选择只处理目标 <code>run()</code>。
+<code>runs()</code> 按规范 encoded <code>runId</code> 的 UTF-8 bytes 升序返回每个目录的 <code>CoreRead</code>。它只穷尽返回读取事实；latest analysis projector 与 project-target execution projector 分别决定候选中的 invalid 怎样影响自己的输出。
 
-latest 在每个目标 Experiment 内只考虑 read 且存在 <code>completedAt</code> 的 Run，再按 <code>completedAt</code>、<code>runId</code> 升序稳定排序后各取最后一项。目标集合为空或任一目标组没有完成 Run，都由 Sample 返回 <code>sample-latest-unavailable</code>。未完成 Run 必须显式选择。
-
-<code>missing</code> 让上层按语境形成 run-not-found、not-recorded 或 invalid reference。核心 JSON、identity、目录匹配或 no-follow 失败都进入当前导航的 <code>CoreRead.invalid</code>，并保留非空具名 issues。Sample 把 Member/Attempt 的 invalid 隔离到 slot；它不依赖异常猜测作用域。
+<code>missing</code> 让上层按语境形成 run-not-found、not-recorded、gap 或 invalid reference。核心 JSON、identity、目录匹配或 no-follow 失败都进入当前导航的 <code>CoreRead.invalid</code>，并保留非空具名 issues。Analysis projector 把 Member/Attempt 的 invalid 隔离到 analysis slot；execution projector 把相关问题保留在 gap。两者都不依赖异常猜测作用域。
 
 <code>attempt()</code> 在返回 read 前验证完整 origin 反向锚。origin Run、expected slot、executed Member 或回指不匹配都返回 invalid；unanchored Attempt 不会因目录和 <code>attempt.json</code> 单独合法而成为可读业务对象。
 
@@ -269,17 +280,17 @@ type ChannelRead<T> =
 
 ## 内建 decoder
 
-<code>niceeval.verdict</code> 和 <code>niceeval.eligibility</code> 的精确永久 payload、media type 与 carry 完整度前置条件只由 [Record Architecture](architecture.md#通道语义与兼容性) 定义。它们不能增加字段；破坏既有解释时更换完整格式名。
+<code>niceeval.verdict</code> 和 <code>niceeval.eligibility</code> 的精确永久 payload 与 media type 只由 [Record Architecture](architecture.md#通道语义与兼容性) 定义。它们不能增加字段；破坏既有解释时发布新的描述性 channel。哪些读取状态能形成 reuse 只由具名 execution projector policy 定义。
 
-<code>niceeval.assertions</code> 与 Run-owned <code>niceeval.sources</code> 的 <code>application/json</code> decoder 也永久保留。它们只服务 presentation，不进入 planner 或核心。精确 <code>AssertionsDocument</code> 由 [Assertions Architecture](../assertions/architecture.md#稳定落盘投影) 定义。sources manifest、digest blob 和值限制由 [Record Architecture](architecture.md#通道语义与兼容性) 定义。
+<code>niceeval.assertions</code> 与 Run-owned <code>niceeval.sources</code> 的 <code>application/json</code> decoder 也永久保留。Assertions 只服务 presentation，不进入 analysis 或 execution projector，也不进入核心。精确 <code>AssertionsDocument</code> 由 [Assertions Architecture](../assertions/architecture.md#稳定落盘投影) 定义。sources manifest、digest blob 和值限制由 [Record Architecture](architecture.md#通道语义与兼容性) 定义。
 
 assertions decoder 对整个 document 执行精确读取。重复 object key、未知字段、非法联合、越界或非法数值都返回同名 <code>ChannelRead.invalid</code>；它不部分解码一个坏 document。
 
 [Observability 标准通道表](../../observability.md#内建业务通道闭环)中的 decoder 与 Report requirement 永久保留。其它内建 decoder 可以退役；退役 reader 仍保留 descriptor，并只将依赖它的 detail 或 Calculation 标为 unsupported。
 
-eligibility decoder 将 fingerprint 与 config identity 读为 <code>{ domain, value }</code>。它只在 domain 逐字相同下比较 value。
+eligibility decoder 将 fingerprint 与 config identity 读为 <code>{ domain, value }</code>。decoder 只建立精确 token，不决定是否比较或采用。
 
-duration decoder 将值读为 <code>{ domain, milliseconds }</code>。它拒绝负数和非安全整数，并只允许 carry timeout 比较当前认可的同 domain 值。
+duration decoder 将值读为 <code>{ domain, milliseconds }</code>。它拒绝负数和非安全整数；timeout 比较只发生在声明该 gate 的 execution projector 中。
 
 ## Typed errors
 
@@ -309,7 +320,7 @@ class RecordOpenError extends Error {
 
 class RecordWriteError extends Error {
   readonly code:
-    | "record-writer-closed"
+    | "record-session-closed"
     | "record-input-invalid"
     | "record-custom-fact-too-large"
     | "record-owner-descriptor-invalid"
@@ -320,6 +331,8 @@ class RecordWriteError extends Error {
 
 class RecordReadError extends Error {
   readonly code:
+    | "record-session-closed"
+    | "record-reader-closed"
     | "record-read-permission-denied"
     | "record-read-io-failure";
 }
@@ -343,4 +356,4 @@ class RecordMaintenanceError extends Error {
 
 Library 不提供跨 Record 复制、发布、同步、共享或历史 revision API。它也不提供页面计算或报告渲染 API。
 
-选择可比较对象属于 [Sample](../sample/README.md)。Record→Reports composition 与静态交付物属于 [Reports](../reports/README.md)；纯 Report runtime 只接收已经形成的内存输入。
+分析范围选择属于 [Sample](../sample/README.md)，执行复用与 gap 属于 [Experiments](../experiments/cache.md)。Record→Reports composition 与静态交付物属于 [Reports](../reports/README.md)；纯 Report runtime 只接收已经形成的内存输入。

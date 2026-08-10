@@ -18,7 +18,7 @@ export default defineExperiment({
 
 - `model` 与 `reasoningEffort` 省略时使用 Agent 原生默认；跨模型比较应建立多个 Experiment。
 - `flags` 是 JSON 参数袋。会改变执行的开关必须在这里声明，不能藏在不可描述的闭包里。
-- 已求值配置形成带 `{ domain, value }` 的不透明 identity。只有相同 domain 的值才可比较；identity 只服务 carry，不认证或锁定 Record。
+- 已求值配置形成带 `{ domain, value }` 的不透明 identity。只有相同 domain 的值才可比较；identity 只是 execution projector 的输入，不认证或锁定 Record。
 
 ## 选择 Eval
 
@@ -34,7 +34,7 @@ export default defineExperiment({
 
 谓词对已发现的 `EvalDescriptor` 求值。`e.id` 是项目内逻辑 ID；简单前缀可写成 `evals: ["memory/"]`，全部运行可以省略或写成 `"*"`。
 
-Runner 把求值结果写成 Run 的 expected slots。Sample 只读取这份分母，不重新执行谓词，也不从当前源码猜历史范围。
+Invocation builder 先把求值结果形成 `ExecutionTarget` 的 expected slots。execution projector 完成后，writer 才原样写入 Run；`AnalysisSample` 以后只读取这份已落盘分母，不重新执行谓词，也不从当前源码猜历史范围。
 
 ## labels 与运行时事实
 

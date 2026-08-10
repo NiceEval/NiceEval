@@ -19,7 +19,7 @@ experiments/  # 怎么跑 —— 运行矩阵:agent × model × attempts over �
 - **experiment 是可签入的运行配置。**
   比一串临时 CLI flag 可复现:`niceeval exp compare` 永远跑同一组对照。
 - **跨 agent / 跨配置对比是一等公民。**
-  每个实验文件声明一个配置；报告只比较 Sample 已经选好的 Run 与 Attempt，不在页面打开时另选结果。
+  每个实验文件声明一个配置；报告只比较 `AnalysisSample` 已经选好的 Run 与 Attempt，不在页面打开时另选结果。
 
 实验文件改名会改变 `experimentId`。需要采用已有 Attempt 时，使用[实验改名与 Run 采用](rename.md)建立 accepted Member，并保存改名上下文。
   目录只组织源码、生成 id 和支持 CLI 前缀选择。
@@ -28,6 +28,8 @@ experiments/  # 怎么跑 —— 运行矩阵:agent × model × attempts over �
 
 `<project>/.niceeval/record/` 是跨 Invocation、Experiment 与 Run 的 [Record](../record/README.md)。
 Experiment 只提供运行配置；Runner 在一次 Invocation 中为每个选中的 Experiment 建立一个 Run。
+
+当前 Project Target 与本次 policy 先进入 [execution projector](cache.md)。projector 从 Record 事实得到 `reuse | gap`；planner/scheduler 只执行 gap。局部执行是本次 projection 的结果，Record 不保存“需要补跑”或“当前可复用”。
 
 Run 的 expected membership 定义本次分母。executed、carried 或 accepted Member 把每个 slot 连接到一个 Attempt；Attempt 永远保留实际执行它的 origin Run。
 因此 locator 始终由同一个完整 `attemptId` 表达，不会因采用动作而改变。

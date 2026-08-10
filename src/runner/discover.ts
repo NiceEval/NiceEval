@@ -16,6 +16,7 @@ import {
 } from "./eval-source.ts";
 import { evalPrefixPredicate } from "../shared/aggregate.ts";
 import { captureLoadedFiles } from "../loaders/index.ts";
+import { freshImportModule } from "../fresh-import.ts";
 import { sandboxLayerStateOf, type SandboxLayer } from "../sandbox/layer.ts";
 import {
   discoverEval,
@@ -118,9 +119,14 @@ function causeMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
-function importModule(file: string, root: string, kind: "eval" | "experiment"): Effect.Effect<unknown, DiscoveryError> {
+function importModule(
+  file: string,
+  root: string,
+  kind: "eval" | "experiment",
+  freshImport = false,
+): Effect.Effect<unknown, DiscoveryError> {
   return Effect.tryPromise({
-    try: () => import(pathToFileURL(file).href),
+    try: () => freshImport ? freshImportModule(file) : import(pathToFileURL(file).href),
     catch: (cause) => issue(
       relative(root, file),
       "discovery.import-failed",
@@ -353,11 +359,12 @@ function runLeakGate(
 function discoverEvalEntry(
   entry: EvalEntry,
   root: string,
+  freshImport = false,
 ): Effect.Effect<readonly DiscoveredEval[], DiscoveryError> {
   const fileLabel = relative(root, entry.file).split(sep).join("/");
   return Effect.gen(function*() {
     const captured = yield* Effect.tryPromise({
-      try: () => captureLoadedFiles(() => import(pathToFileURL(entry.file).href)),
+      try: () => captureLoadedFiles(() => freshImport ? freshImportModule(entry.file) : import(pathToFileURL(entry.file).href)),
       catch: (cause) => issue(
         fileLabel,
         "discovery.import-failed",
@@ -403,25 +410,29 @@ function discoverEvalEntry(
 }
 
 /** Effect-native discovery core; Promise conversion is restricted to discoverEvals(). */
-export function discoverEvalsEffect(root: string): Effect.Effect<readonly DiscoveredEval[], DiscoveryError> {
+export function discoverEvalsEffect(
+  root: string,
+  options: { freshImport?: boolean } = {},
+): Effect.Effect<readonly DiscoveredEval[], DiscoveryError> {
   const dir = join(root, "evals");
   return collectEvalEntries(dir, root).pipe(
-    Effect.flatMap((entries) => collectAll(entries, (entry) => discoverEvalEntry(entry, root))),
+    Effect.flatMap((entries) => collectAll(entries, (entry) => discoverEvalEntry(entry, root, options.freshImport))),
   );
 }
 
-export function discoverEvals(root: string): Promise<readonly DiscoveredEval[]> {
-  return runDiscoveryPromise(discoverEvalsEffect(root));
+export function discoverEvals(root: string, options: { freshImport?: boolean } = {}): Promise<readonly DiscoveredEval[]> {
+  return runDiscoveryPromise(discoverEvalsEffect(root, options));
 }
 
 function discoverExperimentFile(
   file: string,
   root: string,
   experimentsDir: string,
+  freshImport = false,
 ): Effect.Effect<readonly DiscoveredExperiment[], DiscoveryError> {
   const fileLabel = relative(root, file).split(sep).join("/");
   return Effect.gen(function*() {
-    const imported = yield* importModule(file, root, "experiment");
+    const imported = yield* importModule(file, root, "experiment", freshImport);
     const module = yield* decodeExperimentModule(imported, fileLabel);
     if (module.default === undefined) return Object.freeze([]);
     const id = relative(experimentsDir, file)
@@ -439,12 +450,13 @@ function discoverExperimentFile(
 
 export function discoverExperimentsEffect(
   root: string,
+  options: { freshImport?: boolean } = {},
 ): Effect.Effect<readonly DiscoveredExperiment[], DiscoveryError> {
   const dir = join(root, "experiments");
   return walkFiles(dir, root, (name) => name.endsWith(".ts") && !name.endsWith(".d.ts")).pipe(
     Effect.flatMap((files) => Effect.partition(
       files,
-      (file) => discoverExperimentFile(file, root, dir),
+      (file) => discoverExperimentFile(file, root, dir, options.freshImport),
       { concurrency: 1 },
     )),
     Effect.flatMap(([errors, groups]) => errors.length > 0
@@ -453,8 +465,8 @@ export function discoverExperimentsEffect(
   );
 }
 
-export function discoverExperiments(root: string): Promise<readonly DiscoveredExperiment[]> {
-  return runDiscoveryPromise(discoverExperimentsEffect(root));
+export function discoverExperiments(root: string, options: { freshImport?: boolean } = {}): Promise<readonly DiscoveredExperiment[]> {
+  return runDiscoveryPromise(discoverExperimentsEffect(root, options));
 }
 
 function runDiscoveryPromise<A>(effect: Effect.Effect<A, DiscoveryError>): Promise<A> {

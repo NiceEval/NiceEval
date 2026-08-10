@@ -1,152 +1,245 @@
-# 缓存与携带：哪些 Attempt 可以继续使用
+# Execution projection：从历史事实得到复用与缺口
 
-Experiment 缓存不复制结果。Runner 先为每个 Experiment/Eval 选择一个唯一历史 Run，再决定它的对应 slot 能否建立 carried Member。accepted 只来自操作者明确指定的 locator。
-
-Attempt 的执行事实只保存一次。Member 说明本 Run 为什么采用它；后续读取始终取得源 Attempt 的当前业务值。
-
-## 自动携带资格
-
-Runner 在取得 Record operation lock 后冻结规划历史，再创建本次 Run。对每个目标 <code>(experimentId, evalId)</code>，它只从冻结历史中选择一个 source Run：
-
-1. 候选 Run 的 <code>experimentId</code> 相同，且 expected slots 中包含目标 <code>evalId</code>；有没有 <code>completedAt</code> 都参与。
-2. 按 <code>(startedAt, runId)</code> 升序排列，时间相同以规范 <code>runId</code> bytes 打破并列，取最后一项。
-3. source Run 一经选择，就是这个 Eval 全部 ordinal 的历史屏障。每个 ordinal 只检查该 Run 中相同 <code>(evalId, attempt)</code> 的 slot。
-4. source Run 没有该 ordinal、没有 Member、引用 dangling、Attempt 无 origin 锚、核心或通道损坏、Verdict 不合格、identity 或 duration 不匹配时，本次真实执行该 slot。planner 禁止回扫更旧 Run。
-
-历史 Run 的 <code>experimentId</code> 无法读取时，本次全部目标都真实执行。experimentId 可读，但 <code>startedAt</code> 或 expected slots 无法读取时，该 Experiment 的全部目标 Eval 都真实执行。能够确定 source Run 后，单个 Member、Attempt 或 channel 问题只让对应 ordinal 真实执行。三种情况都禁止从更旧 Run 携带。
-
-这个屏障让 A→B 后即使 B 失败，下一次也不会静默复用 A；需要重新采用 A 时使用显式 <code>niceeval accept</code>。
-
-一条 Attempt 必须同时通过以下条件，才能自动 carry：
-
-| 条件 | 判断对象 | 不通过时 |
-|---|---|---|
-| 终态 | Verdict 是 `passed` 或 `failed` | 派发执行 |
-| fingerprint | 执行输入与当前输入相同 | 派发执行 |
-| timeout | <code>executionDuration.milliseconds</code> 不超过当前 <code>timeoutMs</code> | 派发执行 |
-| `--rerun` | 本次档位允许采用该 Verdict | 派发执行 |
-| `--keep-sandbox` | 本次没有要求保留新现场 | 派发执行 |
-
-不存在、无法读取、`errored` 或 `skipped` 的 Attempt 都不能自动 carry。Verdict 与 eligibility 任一不是 read + durable complete + decoding complete，或 payload 不符合精确形状，也必须执行。重复 `attemptId`、dangling Member 或结构错误先由 Record reader 隔离，不能作为候选。
-
-上述列表是本格式自动 carry 的穷尽输入。<code>--rerun</code> 与 <code>--keep-sandbox</code> 是本次 policy；指定 <code>--keep-sandbox</code> 时自动 carry 全部关闭。新配方输入必须通过更换 input/config identity domain 纳入。无法归约到既有 identity、duration 或本次 policy 的新持久 gate 不能新增 planner-critical channel；产品若必须使用它，就更换完整格式名。
-
-规划只支持停稳 Record。同一 root 已有 active reader、writer 或受控编辑时，Runner 以 <code>record-root-busy</code> 失败；它不等待运行中结果，也不重新读取变化中的目录。静态 export 只有 Record 读取/build 阶段持有 operation lock。
-
-## 规划身份不是 Record 版本
+Record 只保存已经发生的事实。是否复用、是否执行，以及局部执行哪些 slot，都由本次 execution projector 根据当前目标和 policy 决定。
 
 ```text
-configIdentity = { domain, value }
-inputIdentity  = { domain, value }
+ProjectTarget + ExecutionTarget + RecordView + policy
+                         ↓ project-target/v1
+                  ExecutionProjection
+                    ├─ reuse ───────────────┐
+                    └─ gaps → planner → outcomes
+                                             ↓
+                              coordinator → RecordWriter
 ```
 
-这两个值都是不透明的相等性 token，只用于规划阶段快速比较输入，不承担 Record 身份、防伪或编辑检测。只有 `domain` 相同的 token 才能比较；算法、输入闭包或配方的语义改变时，生产方必须换一个新的 `domain`，旧值因此自然不匹配。旧 planner 也只会生成旧 domain，因此不会误用新 Attempt。`attemptId` 与 locator 都不从这些 token 派生。
+planner/scheduler 只接收 gaps。它不读取 Record、不重新计算 fingerprint，也不改变 reuse。writer 只验证并写入事实，不重新判断资格。
 
-同一次计算还生成可读 manifest。它列出已求值配置、源码闭包和受管数据文件，让 CLI 能说明哪个输入不同。identity、manifest 与资格判断写入 Attempt 或 Run 的具名通道，不进入永久核心结构。
+## ExecutionTarget 的形成
 
-直接 callback 没有稳定输入描述。需要它参与自动作废时，作者使用 `defineSandboxCommand()` 并维护其声明的 `revision` 与 `inputs`；这里的 `revision` 只是作者给命令配方的业务字段，不是 Record 版本。
-
-凭据不进入 fingerprint 或 manifest。`judge.apiKeyEnv` 只表示读取凭据的位置；Judge model、baseUrl 与 timeout 属于已求值配置。
-
-## timeout 资格
-
-`timeoutMs` 不进入 input identity，因为它不改变已经发生的执行事实。carry 另行要求执行时长不超过当前 `timeoutMs`；未设置 timeout 视为无上限。
-
-提高上限不会让 Attempt 失去资格。降低上限后，超过限制的 Attempt 必须重新执行。
-
-执行时长保存为 `{ domain, milliseconds }`。`milliseconds` 是单调时钟区间向上取整得到的非负 safe integer；只有相同 `domain` 的值才允许比较。它来自 Attempt 的 eligibility 通道，不从目录时间推断。
-
-## 以 slot 为粒度携带
-
-source Run 的 `attempts: 5` 有三个合格 Member、两个缺失 Member 时，新 Run 携带前三个并真实执行后两个。调大 attempts 只增加 expected slot；新增 ordinal 不回扫更旧 Run。调小则让新 Run 使用较小分母，不删除已有 Run 或 Attempt。
-
-每个自动采用的 slot 只写永久核心引用：
+Invocation builder 先取得 `RecordSession`。在锁内、projector 读取历史前，它为每个目标 Run 和 slot 分配一次 opaque identity，绑定 `startedAt`，并形成不可变 `ExecutionTarget`。
 
 ```ts
-interface CarriedMember {
-  readonly kind: "carried";
+interface ExecutionTarget {
+  readonly invocationId: string;
+  readonly runs: readonly TargetRun[];
+}
+
+interface TargetRun {
+  readonly runId: string;
+  readonly experimentId: string;
+  readonly startedAt: UtcMillis;
+  readonly slots: readonly TargetSlot[];
+}
+
+interface TargetSlot {
   readonly runId: string;
   readonly slotId: string;
-  readonly attemptId: string;
+  readonly experimentId: string;
+  readonly evalId: string;
+  readonly attempt: number;
+  readonly inputIdentity: EqualityToken;
+  readonly configIdentity: EqualityToken;
+  readonly timeout?: DurationLimit;
+}
+
+interface DurationLimit {
+  readonly domain: string;
+  readonly milliseconds: number;
+}
+
+interface ComparisonProvenance {
+  readonly fact: string;
+  readonly sourceState: "read" | "missing" | "unavailable" | "unsupported" | "invalid";
+  readonly result: "match" | "mismatch" | "ineligible" | "not-comparable";
+  readonly reason: string;
 }
 ```
 
-建立 Member 时的 input/config identity、资格与理由写入该 Run 的 `niceeval.actions` 通道，并以 `slotId`、`attemptId` 关联。它不冻结 Attempt，也不在用户编辑 Attempt 后把 Member 标成失效。未来需要新增 action 字段时，只演进这个通道，不改 Member 核心。
+target slot identity 不从历史 Attempt、fingerprint 或目录名派生。projector 不分配 identity；writer 必须原样写入 target 的 runId、slotId、startedAt 与 expected membership。
 
-locator 是完整 128-bit `attemptId` 的可逆表示。carry 不生成新的 Attempt identity 或 locator。
+目标 Run 在 projection 完成前不得发布，所以不会成为自己的 source barrier。无法形成完整 target、出现重复 identity，或当前 ProjectTarget 缺少已求值 identity/policy 输入时，projection 整体失败。
 
-## `niceeval accept`
-
-fingerprint 不同时，操作者可以明确接受一个或多个已有 Attempt：
-
-```sh
-niceeval accept @01J8ZK3M6P4T7V9X2C5N8QW0RY
-niceeval accept @01J8ZK3M6P4T7V9X2C5N8QW0RY @123456789ABCDEFGHJKMNPQRST
-```
-
-locator 列表是唯一授权范围。命令不接受动态 query、差异类别或批量表达式。
-
-### 预检与写入
-
-`accept` 在写入前对全部 locator 完成预检：
-
-1. locator 语法合法且能查到唯一 `attemptId`；
-2. Attempt 可读并已有终态；
-3. 当前 Experiment 与 Eval 可以发现；
-4. 当前配置、timeout 和 Sandbox pair 可以求值；
-5. 同一 Run 中没有重复 slot 或重复授权。
-
-任一检查失败时零写入。全部通过后，命令按 Experiment 建立新 Run，并为每个显式成员写 accepted Member：
+## 公开执行投影
 
 ```ts
-interface AcceptedMember {
-  readonly kind: "accepted";
-  readonly runId: string;
-  readonly slotId: string;
-  readonly attemptId: string;
+interface ExecutionPolicyIdentity {
+  readonly name: "project-target";
+  readonly version: 1;
 }
+
+interface ProjectTargetPolicy {
+  readonly identity: ExecutionPolicyIdentity;
+  readonly rerun: "none" | "failed" | "all";
+  readonly keepSandbox: boolean;
+}
+
+interface ExecutionProjection {
+  readonly target: ExecutionTarget;
+  readonly policy: ExecutionPolicyIdentity;
+  readonly effectiveOptions: Readonly<JsonValue>;
+  readonly slots: readonly ExecutionProjectionSlot[];
+  readonly reuse: readonly ReuseProjectionSlot[];
+  readonly gaps: readonly GapProjectionSlot[];
+}
+
+interface ExecutionProjectionSlotBase extends TargetSlot {
+  readonly comparisons: readonly ComparisonProvenance[];
+}
+
+interface ReuseProjectionSlot extends ExecutionProjectionSlotBase {
+  readonly state: "reuse";
+  readonly adoption: "carried";
+  readonly attemptId: string;
+  readonly origin: { readonly runId: string; readonly slotId: string };
+  readonly sourceBarrier: { readonly runId: string; readonly startedAt: UtcMillis };
+}
+
+interface GapProjectionSlot extends ExecutionProjectionSlotBase {
+  readonly state: "gap";
+  readonly reason: ExecutionGapReason;
+  readonly scope: "slot" | "experiment" | "target";
+  readonly issues: readonly RecordIssue[];
+  readonly sourceBarrier?: { readonly runId: string; readonly startedAt?: UtcMillis };
+}
+
+type ExecutionProjectionSlot = ReuseProjectionSlot | GapProjectionSlot;
 ```
 
-accepted Member 不复制 Attempt 数据。操作者接受的 identity、差异与理由写入该 Run 的 `niceeval.actions` 通道；这些值只解释当时接受了什么，不持续认证源值。
+`slots` 与 target slots 一一对应，并保持 target 顺序。`reuse` 与 `gaps` 是互斥、保序子序列。所有 gap 都可执行；`invalid` 只属于 `AnalysisSample`，不进入 execution projection。
 
-accepted 的唯一含义是“明确采用这个 Attempt identity 及其随后可编辑的当前内容”。它不是审批、签名、冻结快照或真实性声明。标准 UI 使用“明确采用”，不能显示为“已批准”或“已验证”。
+`effectiveOptions` 是 policy 实际使用的安全归一化值。它可以包含 rerun、keepSandbox 和 timeout 口径，不得包含 secret、进程变量值、RecordView、文件路径、句柄或任意业务通道集合。
 
-### 输出与错误
+`comparisons` 逐项说明比较的事实名、domain、结果和具名原因。它用于 dry-run、actions 与诊断，不持续认证用户以后编辑的源 Attempt。
 
-成功输出原 locator、Experiment、Run、slot 与 `accepted`。Invocation receipt 只返回本次 `runIds` 和进程完成状态。
+## project-target/v1 的 source barrier
 
-| 错误 | 含义 | 下一步 |
+对每个目标 `(experimentId, evalId)`，projector 只从锁内历史选择一个 source Run：
+
+1. 候选 Run 的 `experimentId` 相同，且 expected slots 中包含目标 `evalId`；有没有 `completedAt` 都参与。
+2. 按 `(startedAt, runId)` 升序排列，时间相同以规范 `runId` bytes 打破并列，取最后一项。
+3. source Run 一经选择，就是这个 Eval 全部 ordinal 的历史屏障。每个 ordinal 只检查该 Run 中相同 `(evalId, attempt)` 的 slot。
+4. source Run 没有该 ordinal、没有 Member、引用失效、Attempt 无 origin 锚、核心或所需事实损坏，都会形成 gap。projector 禁止回扫更旧 Run。
+
+这个 barrier 是 `project-target/v1` policy，不是 Record 格式。它让 A→B 后即使 B 失败，下一次也不会静默复用 A；需要采用 A 时使用显式 locator adoption。
+
+## 复用资格
+
+一条 Attempt 必须同时通过以下条件，才能形成 `reuse/carried`：
+
+| 条件 | 判断对象 | 不通过时的 gap reason |
 |---|---|---|
-| `malformed-locator` | locator 语法不合法 | 复制完整 locator |
-| `locator-not-found` | Record 没有对应 Attempt | 打开正确 Record 或检查输入 |
-| `accept-ineligible` | Attempt、timeout、发现或计划不满足条件 | 阅读差异后重跑或修正配置 |
-| `duplicate-accept-member` | 同一目标 slot 重复授权 | 每个 slot 只给一个 locator |
+| 终态 | Verdict 是 `passed` 或 `failed` | `verdict-ineligible` |
+| fingerprint | input/config identity 与当前 target 同 domain 且 value 相等 | `identity-mismatch` 或 `identity-domain-mismatch` |
+| timeout | execution duration domain 可比且不超过当前 timeout | `duration-domain-mismatch` 或 `timeout-exceeded` |
+| rerun | 本次档位允许采用该 Verdict | `rerun-requested` |
+| keep sandbox | 本次没有要求保留新现场 | `sandbox-retention-requested` |
 
-## origin Run 可以 unfinished
+Verdict 与 eligibility 任一不是 read、durable complete、decoding complete，或 payload 不符合精确形状，也形成 gap，并保留原始 `RecordIssue` 或 `ChannelRead` 原因。`errored`、`skipped`、不存在和无法读取的 Attempt 都不能 reuse。
 
-Attempt 目录已经完整发布、Verdict 已终结、origin 反向锚与引用都有效时，可以成为 carry 或 accept 候选。origin Run 没有 `completedAt` 不会删除这份 Attempt，也不会让它退出 <code>(startedAt, runId)</code> source Run 排序。
+fingerprint/config identity 由上游已求值 ProjectTarget 提供。projector 只比较，不重新发现配置，也不计算另一份 identity。凭据不进入 identity 或 manifest；`judge.apiKeyEnv` 只表示读取凭据的位置。
 
-这条规则不承诺恢复 Agent 已经修改的外部系统、共享数据库或 checkpoint。作者仍需为外部状态提供可恢复边界。
+## 错误与缺口作用域
 
-## 并发 Invocation
+`ExecutionGapReason` 是稳定、可穷尽的 reason code：
 
-同一 Record root 只允许一条 Invocation。另一个进程指向它时立即得到 <code>record-root-busy</code>，不能协作领取 Eval 或读取对方运行中的 Attempt。
+```ts
+type ExecutionGapReason =
+  | "no-source-run"
+  | "source-slot-missing"
+  | "source-member-missing"
+  | "source-core-invalid"
+  | "source-fact-unavailable"
+  | "source-fact-unsupported"
+  | "source-fact-invalid"
+  | "verdict-ineligible"
+  | "identity-mismatch"
+  | "identity-domain-mismatch"
+  | "duration-domain-mismatch"
+  | "timeout-exceeded"
+  | "rerun-requested"
+  | "sandbox-retention-requested";
+```
 
-需要并行两条 Invocation 时必须指定不同 Record root。它们各自规划、写入和形成 Sample，不自动合并；完成后也不能把两个 Record 暗中拼成一个分母。
+作用域按可证明的最小范围确定：
+
+- 单个 Member、Attempt、origin 或所需 channel 问题只让对应 slot gap；
+- source Run 的 expected membership 或排序事实损坏，但仍能归到一个 Experiment 时，该 Experiment 的全部 target slots gap；
+- 历史 Run 连 Experiment 归属都无法读取时，为避免误复用，全部 target slots gap。
+
+历史损坏必须保留真实 reason 与 issues，不能改写成 `no-source-run`。三个作用域都禁止回扫更旧 Run。
+
+Record root 或 operation lock 无法打开时，结果是 projection-global failure。ExecutionTarget 无法验证、target identity 重复、当前 ProjectTarget 缺少已求值输入，或 policy name/version 不受支持时也一样。global failure 不产生可执行计划。
+
+## coordinator、planner 与 writer
+
+invocation coordinator 持有完整、不可变的 `ExecutionProjection`。planner/scheduler 只收到 `projection.gaps`，并为实际开始的 gap 返回 executed outcome。budget、early exit 或 interruption 后没有 outcome 的 gap 不写 Member。
+
+coordinator 最后把 target、reuse intents 与 executed outcomes 一起交给 writer：
+
+- `project-target/v1` 的 reuse 固定写 `carried` Member；
+- 有 executed outcome 的 gap 固定写 `executed` Member 与新 Attempt；
+- 没有 outcome 的 gap 不写 Member，之后的 `AnalysisSample` 将它呈现为事实性的 `not-recorded`。
+
+writer 只验证核心形状、引用、target 关联和 action 关联。它不能重新读取 eligibility、改写 reason 或作第二次资格判断。
+
+`niceeval.actions` 对每个 target slot 写一项最终 action。reuse 写 source barrier、attemptId、policy 与 comparisons；gap 写 reason、scope、issues，以及 `executed | not-dispatched | interrupted` outcome。
+
+executed outcome 关联新 attemptId。这样未执行 slot 仍能解释当时计划，但 Record 不把 action 当成未来资格。
+
+## ExplicitAdoptionProjection
+
+`niceeval accept` 与 rename 使用独立的 explicit adoption projector。locator 列表是唯一授权范围；普通 project-target projector 不能猜出 `accepted`。
+
+```ts
+interface ExplicitAdoptionProjection {
+  readonly intent: "accept" | "rename";
+  readonly target: ExecutionTarget;
+  readonly policy: { readonly name: "explicit-adoption"; readonly version: 1 };
+  readonly members: readonly ExplicitAdoptionMember[];
+}
+
+interface ExplicitAdoptionMember extends TargetSlot {
+  readonly adoption: "accepted";
+  readonly attemptId: string;
+  readonly origin: { readonly runId: string; readonly slotId: string };
+  readonly locator: string;
+  readonly comparisons: readonly ComparisonProvenance[];
+}
+```
+
+projector 在写入前对全部 locator、Attempt、当前 Experiment/Eval、配置、timeout、Sandbox pair 和 target uniqueness 完成预检。任一项失败都让整个 projection 失败并零业务写入，不能降级成 gap。成功后 writer 固定写 accepted Member 和对应 action，不复制 Attempt 数据，也不改变 origin。
+
+accepted 的唯一含义是“操作者当时明确采用这个 Attempt identity 及其随后可编辑的当前内容”。它不是审批、签名、冻结快照或真实性声明。
+
+## policy 演进
+
+policy identity 由稳定 `name + version` 组成。policy schema、source barrier 语义或持久 gate 改变时升级 version；`effectiveOptions` 只表达同一版本的本次参数。
+
+新增 gate 不更换 `niceeval.record` 格式。新 policy 请求新的具名事实；旧 Attempt 缺少该事实时形成 `source-fact-unavailable` gap。Record 继续永久读取旧 Verdict、eligibility 和 Assertions presentation channel。
+
+policy identity、effective options、comparison provenance 与最终 slot action 写入目标 Run 的 `niceeval.actions`。这些值只解释当时为何 carried、accepted、executed 或未派发，不持续认证源 Attempt。
+
+`--dry` 不建立 Invocation 或写 Record。它在只读 operation lock 下运行同一个 projector，并在 CLI 输出中显示相同的 policy identity、effective options、reuse、gap 与 provenance。
 
 ## `--rerun`
 
-| 写法 | 可自动采用 | 本次执行 |
+| 写法 | 可形成 reuse | 形成 gap |
 |---|---|---|
 | 不带 | `passed` 与 `failed` | `errored`、`skipped` 与缺失 ordinal |
 | `--rerun` / `--rerun failed` | `passed` | 上述成员与所有 `failed` |
 | `--rerun all` | 无 | 选中矩阵中的全部成员 |
 
-`--rerun` 只作用于本次 Invocation，不改 fingerprint，也不修改已有 Run。
+`--rerun` 只作用于本次 policy options，不改 fingerprint，也不修改已有 Run。
+
+## 并发 Invocation
+
+同一 Record root 只允许一条 Invocation。另一个进程指向它时立即得到 `record-root-busy`，不能协作领取 Eval 或读取对方运行中的 Attempt。
+
+需要并行两条 Invocation 时必须指定不同 Record root。它们各自投影、执行和写入事实，不自动合并；完成后的分析范围由 analysis projector 另行形成。
 
 ## 相关阅读
 
-- [Architecture](architecture.md#carry) —— carried Member 的实体关系。
-- [实验改名](rename.md) —— 通过 accepted Member 表达 Experiment 改名。
-- [Record Architecture](../record/architecture.md) —— Run、Member 与 Attempt 不变量。
-- [Record CLI](../record/cli.md) —— locator 语法与错误。
+- [Experiments Architecture](architecture.md) —— coordinator、planner 与 writer 的关系。
+- [实验改名](rename.md) —— explicit adoption 怎样表达 Experiment 身份变化。
+- [Record](../record/README.md) —— 可编辑事实、session 与持久引用。
+- [Sample](../sample/README.md) —— 已落盘 Run 怎样形成 `AnalysisSample`。

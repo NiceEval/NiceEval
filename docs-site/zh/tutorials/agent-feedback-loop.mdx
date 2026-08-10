@@ -70,6 +70,6 @@ npx niceeval exp checkout --rerun all --json
 
 ## 编辑 Record 时的边界
 
-Record 是可编辑的当前数据集。Agent 只能在目录停稳后修改业务通道，并在修改后重新运行 `show` 或 `view`。不要让 Runner、active reader、导出的 Sample 选择 / ReportInput 构造阶段与人工编辑同时操作同一目录；后续 Report 执行和写站已经不访问 Record。
+Record 是可编辑的事实数据集。Agent 只能在目录停稳后修改业务通道，并在修改后重新运行 `show` 或 `view`。不要让 Runner、active reader、`AnalysisSample` / ReportInput 构造阶段与人工编辑同时操作同一目录；后续 Report 执行和写站已经不访问 Record。
 
 需要把某次结果交给他人时，使用[发布静态报告](/zh/tutorials/publish-report)，而不是把当前进程反馈当作分享格式。

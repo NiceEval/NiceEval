@@ -1,16 +1,16 @@
 # Reports Library
 
-本页是 Reports 公开类型的唯一 owner。Record 拥有文件与 `ChannelRead`，Sample 拥有 core-only 选择和分母。只有本页的 composition adapter 同时接收 `RecordReader`、`Sample` 与 `ReportPlan`；Report 定义、计算、页面、本机 runtime 和静态 runtime 都不能接收 reader 或路径。
+本页是 Reports 公开类型的唯一 owner。Record 拥有文件与 `ChannelRead`，Sample 拥有 core-only `AnalysisSample` 和分母。只有本页的 composition adapter 同时接收 `RecordReader`、`AnalysisSample` 与 `ReportPlan`；Report 定义、计算、页面、本机 runtime 和静态 runtime 都不能接收 reader 或路径。
 
 ## 唯一调用顺序
 
 ```ts
-let sample: Sample;
+let sample: AnalysisSample;
 let plan: ReportPlan;
 let input: ReportInput;
 {
   await using record = await openRecordReader({ root });
-  sample = await selectSample(record, selection);
+  sample = await projectExplicitRuns(record, { runIds });
   const scope = createReportScope(sample);
   plan = definition.plan(scope);
   input = await buildReportInput({ record, sample, plan });
@@ -22,18 +22,18 @@ await viewReport({ execution });
 await exportStaticReport({ execution, out });
 ```
 
-`selectSample()` 不读取业务通道。`plan()` 不读取 facts。`buildReportInput()` 只读取 plan 已声明的 facts。CLI 从打开 reader 到 `buildReportInput()` 返回一直持有 root operation lock，随后立即释放。`executeReport()` 只消费内存输入并执行一次用户 parser、计算和 render；view 与 export 只消费同一份自包含 `ReportExecution`。
+analysis projector 不读取业务通道。`plan()` 不读取 facts。`buildReportInput()` 只读取 plan 已声明的 facts。CLI 从打开 reader 到 `buildReportInput()` 返回一直持有 root operation lock，随后立即释放。`executeReport()` 只消费内存输入并执行一次用户 parser、计算和 render；view 与 export 只消费同一份自包含 `ReportExecution`。
 
 ## ReportScope 与 ReportInput
 
 ```ts
 interface ReportScope {
-  readonly selection: RunSelection;
-  readonly runs: readonly SampleRun[];
-  readonly slots: readonly SampleSlot[];
+  readonly provenance: AnalysisProjectionProvenance;
+  readonly runs: readonly AnalysisRun[];
+  readonly slots: readonly AnalysisSlot[];
 }
 
-function createReportScope(sample: Sample): ReportScope;
+function createReportScope(sample: AnalysisSample): ReportScope;
 
 declare const reportFactsBrand: unique symbol;
 
@@ -43,7 +43,7 @@ interface ReportFactMatrix {
 
 interface ReportInput {
   readonly scope: ReportScope;
-  readonly sample: Sample;
+  readonly sample: AnalysisSample;
   readonly [reportFactsBrand]: ReportFactMatrix;
 }
 
@@ -51,13 +51,13 @@ declare const reportSampleBrand: unique symbol;
 
 interface ReportSample {
   readonly [reportSampleBrand]: true;
-  readonly selection: RunSelection;
-  readonly runs: readonly SampleRun[];
-  readonly slots: readonly SampleSlot[];
-  readonly included: readonly IncludedSampleSlot[];
-  readonly notRecorded: readonly NotRecordedSampleSlot[];
-  readonly invalid: readonly InvalidSampleSlot[];
-  readonly excluded: readonly ExcludedSampleSlot[];
+  readonly provenance: AnalysisProjectionProvenance;
+  readonly runs: readonly AnalysisRun[];
+  readonly slots: readonly AnalysisSlot[];
+  readonly included: readonly IncludedAnalysisSlot[];
+  readonly notRecorded: readonly NotRecordedAnalysisSlot[];
+  readonly invalid: readonly InvalidAnalysisSlot[];
+  readonly excluded: readonly ExcludedAnalysisSlot[];
 }
 
 interface ReportContext {
@@ -66,9 +66,9 @@ interface ReportContext {
 }
 ```
 
-`scope.runs` 穷尽已选 Run，`scope.slots` 保留 core-only Sample 的完整状态与顺序，因此 plan 可以穷尽 Run、slot 和 Attempt detail route，但看不到业务值。fact matrix 由未导出的 symbol 隔离，Report 作者无法直接索引它。
+`scope.runs` 穷尽已选 Run，`scope.slots` 保留 core-only `AnalysisSample` 的完整状态与顺序，因此 plan 可以穷尽 Run、slot 和 Attempt detail route，但看不到业务值。fact matrix 由未导出的 symbol 隔离，Report 作者无法直接索引它。
 
-consumer 只收到 <code>ReportContext</code> 和宿主提供的受控读取方法。宿主逐字段建立带 private brand 的精确 <code>ReportSample</code>，不把原 <code>Sample</code> 对象传入回调。这个 projection 不含 <code>recordRoot</code>；Calculation、Page 与 Download 的公开字段都无法取得 reader、Record root 或其它磁盘路径。
+consumer 只收到 <code>ReportContext</code> 和宿主提供的受控读取方法。宿主逐字段建立带 private brand 的精确 <code>ReportSample</code>，不把原 <code>AnalysisSample</code> 对象传入回调。这个 projection 不含 Record root；Calculation、Page 与 Download 的公开字段都无法取得 reader、Record root 或其它磁盘路径。
 
 ## ReportDefinition 与 ReportPlan
 
@@ -140,7 +140,7 @@ function defineJsonFact<Value extends ReportJsonValue>(input: {
 
 这项私有 requirement 绑定冻结的业务 fact，不绑定 producer 的 assertion API、matcher 或运行时类型。每个标准 Attempt detail page 都声明它；未来标准 Report 不能通过换用新通道，让旧 assertions 虽然可解码却没有展示入口。
 
-完整永久链是：Attempt → <code>niceeval.assertions</code> → 内建 decoder → 此 FactRequirement → 标准 Attempt detail presentation。它不进入 Sample、planner 或 Record 核心。
+完整永久链是：Attempt → <code>niceeval.assertions</code> → 内建 decoder → 此 FactRequirement → 标准 Attempt detail presentation。它不进入 `AnalysisSample`、execution projector、planner 或 Record 核心。
 
 ### 内建业务 requirements
 
@@ -157,7 +157,7 @@ function defineJsonFact<Value extends ReportJsonValue>(input: {
 | <code>timingFact</code> | Attempt / <code>niceeval.timing</code> | phase duration 与 normalized waterfall |
 | <code>attemptDiagnosticsFact</code> | Attempt / <code>niceeval.diagnostics</code> | Attempt diagnostic list |
 | <code>runDiagnosticsFact</code> | Run / <code>niceeval.diagnostics</code> | Run setup、teardown 与 dispatch diagnostics |
-| <code>actionsFact</code> | Run / <code>niceeval.actions</code> | carried、accepted 与 rename 的当时理由 |
+| <code>actionsFact</code> | Run / <code>niceeval.actions</code> | 每个 target slot 当时的 reuse/gap、policy、comparison 与最终 outcome |
 | <code>sourcesFact</code> | Run / <code>niceeval.sources</code> | origin source viewer 与 Assertion source link |
 
 标准 definition 对相应页面声明这些 requirements。source viewer 必须对 included slot 调用 <code>readOriginRun(slot, sourcesFact)</code>；它不能读取采用 Run 的 sources，也不能回到当前 worktree。被请求的 unavailable、unsupported、partial 或 invalid 必须使用统一状态组件呈现；不能因为某项 decoder 仍存在，却没有标准页面而让能力实质退役。
@@ -194,16 +194,16 @@ decoder 在 composition 阶段验证 manifest、UTF-8、byte length 与 SHA-256�
 ```ts
 function buildReportInput(input: {
   readonly record: RecordReader;
-  readonly sample: Sample;
+  readonly sample: AnalysisSample;
   readonly plan: ReportPlan;
 }): Promise<ReportInput>;
 ```
 
-adapter 先验证 plan 是由该 Sample 的 scope 形成，再合并每个 Page、Calculation 和 Download 的 `inputs`。它只为唯一 owner identity 与 requirement id 组合调用单通道 reader。
+adapter 先验证 plan 是由该 `AnalysisSample` 的 scope 形成，再合并每个 Page、Calculation 和 Download 的 `inputs`。它只为唯一 owner identity 与 requirement id 组合调用单通道 reader。
 
 每个 Run-owned requirement 对 <code>scope.runs</code> 的每个 Run 建立 transport read，包括零 expected slot 或全部 slot 为 not-recorded、invalid、excluded 的 Run。builder 还读取 included Attempt 的 origin Run 与已声明 Run requirement 的组合。
 
-origin Run 只进入内部 fact matrix，不进入 <code>scope.runs</code>、Sample 分母或用户可枚举的路径。每个 Attempt-owned requirement 只对 included slot 引用的唯一 Attempt 建立 transport read。所有读取都使用 core 中已经验证的 identity，不推断、不 fallback。
+origin Run 只进入内部 fact matrix，不进入 <code>scope.runs</code>、`AnalysisSample` 分母或用户可枚举的路径。每个 Attempt-owned requirement 只对 included slot 引用的唯一 Attempt 建立 transport read。所有读取都使用 core 中已经验证的 identity，不推断、不 fallback。
 
 单个 <code>ChannelRead.invalid</code> 保存在内部 matrix；它不让 builder 丢弃其它 read。只有 root/权限/I/O 或 plan、scope、sample 不一致使 builder 整体失败。
 
@@ -226,11 +226,11 @@ interface CalculationInput {
     fact: FactRequirement<Value>,
   ): ChannelRead<Value>;
   readAttempt<Value extends ReportJsonValue>(
-    slot: IncludedSampleSlot,
+    slot: IncludedAnalysisSlot,
     fact: FactRequirement<Value>,
   ): ChannelRead<Value>;
   readOriginRun<Value extends ReportJsonValue>(
-    slot: IncludedSampleSlot,
+    slot: IncludedAnalysisSlot,
     fact: FactRequirement<Value>,
   ): ChannelRead<Value>;
 }
@@ -269,7 +269,7 @@ type CalculationReason =
 - <code>readOriginRun()</code> 只接受 included slot 与 Run-owned requirement，并查找该 slot 的 <code>attemptCore.origin.runId</code>。carried 与 accepted 因而读取源 Run 的当前 fact，不复制到采用 Run。
 - 越界、owner 不符或未声明读取是 plan invalid，不会临时访问 Record。
 - <code>requireComplete</code> 只有在 durable collection 与 decoding 都 complete 时成立。
-- <code>allowPartial</code> 保留完整 Sample 分母、observed 数与 partial 标记。
+- <code>allowPartial</code> 保留完整 `AnalysisSample` 分母、observed 数与 partial 标记。
 
 ## 页面与下载
 
@@ -300,11 +300,11 @@ interface ReportPageInput {
     fact: FactRequirement<Value>,
   ): ChannelRead<Value>;
   readAttempt<Value extends ReportJsonValue>(
-    slot: IncludedSampleSlot,
+    slot: IncludedAnalysisSlot,
     fact: FactRequirement<Value>,
   ): ChannelRead<Value>;
   readOriginRun<Value extends ReportJsonValue>(
-    slot: IncludedSampleSlot,
+    slot: IncludedAnalysisSlot,
     fact: FactRequirement<Value>,
   ): ChannelRead<Value>;
   calculation<Value>(calculation: Calculation<Value>): CalculationResult<Value>;

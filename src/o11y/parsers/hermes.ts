@@ -27,6 +27,15 @@ function str(v: unknown): string | undefined {
   return typeof v === "string" && v ? v : undefined;
 }
 
+/**
+ * Hermes 以 `skill_view({ name })` 表示实际加载了一个已安装 Skill。它不是普通
+ * 文件读取：对应的标准事件是 `skill.loaded`，这样判分和 execution 读面都无需猜工具文本。
+ */
+function skillNameFromToolCall(name: string, input: JsonValue): string | undefined {
+  if (name.toLowerCase() !== "skill_view") return undefined;
+  return str(get(input, "name"));
+}
+
 function num(obj: unknown, ...keys: string[]): number {
   for (const k of keys) {
     const v = get(obj, k);
@@ -69,6 +78,8 @@ export function parseHermesTranscript(raw: string | undefined): ParsedTranscript
   let requests = 0;
   let parseSuccess = true;
   let synth = 0;
+  // `skill_view` 已转成 skill.loaded 后，其 tool result 不再重发成孤立 action 节点。
+  const skillCallIds = new Set<string>();
   const nextSynthId = (): string => `hm_${++synth}`;
 
   if (!raw?.trim()) {
@@ -93,6 +104,7 @@ export function parseHermesTranscript(raw: string | undefined): ParsedTranscript
 
     if (role === "tool" || str(msg.tool_call_id) || str(msg.toolCallId)) {
       const callId = str(msg.tool_call_id) ?? str(msg.toolCallId) ?? nextSynthId();
+      if (skillCallIds.has(callId)) return;
       const success = msg.is_error !== true && msg.isError !== true;
       events.push({
         type: "operation.finished",
@@ -112,6 +124,12 @@ export function parseHermesTranscript(raw: string | undefined): ParsedTranscript
           str(get(fn, "name")) ?? str(get(call, "name")) ?? str(msg.tool_name) ?? "unknown";
         const callId = str(get(call, "id")) ?? nextSynthId();
         const args = coerceArgs(get(fn, "arguments") ?? get(call, "arguments") ?? get(call, "input"));
+        const skill = skillNameFromToolCall(name, args);
+        if (skill !== undefined) {
+          events.push({ type: "skill.loaded", skill, operationId: callId });
+          skillCallIds.add(callId);
+          continue;
+        }
         events.push({
           type: "operation.started",
           operationId: callId,
