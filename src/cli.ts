@@ -33,6 +33,7 @@ import { drainHeldCaseLocks, isCaseLockExpired, readCaseLock } from "./runner/lo
 import { drainHeldGateLeases } from "./runner/gate-lease.ts";
 import { CLEANUP_TIMEOUT_MS, withCleanupTimeout } from "./runner/cleanup-timeout.ts";
 import { resolveRunTimeout } from "./runner/timeout.ts";
+import { loadProjectCurrent } from "./runner/project-current.ts";
 import type { ExperimentHookContext } from "./runner/types.ts";
 import type {
   ExperimentRenameBlocked,
@@ -1180,9 +1181,14 @@ async function packageVersion(): Promise<string> {
 async function main(): Promise<void> {
   const cwd = process.cwd();
   const { command, positionals, flags } = parseArgs(process.argv.slice(2));
+  const offlineShow = command === "show" && (
+    flags.record !== undefined || flags.history || flags.stats ||
+    positionals.some((value) => value.startsWith(ATTEMPT_LOCATOR_PREFIX))
+  );
+  const offlineView = command === "view" && (flags.record !== undefined || flags.run !== undefined);
   // Session / Docker profile 查询必须是纯读取路径：连 dotenv 与界面 locale 也不从项目装载，
   // 否则一个有副作用/损坏的 config 会让 `session list` 违背「不加载配置」契约。
-  if (command !== "session" && command !== "docker") {
+  if (command !== "session" && command !== "docker" && !offlineShow && !offlineView) {
     await loadDotenv(cwd);
     await applyConfiguredLocale(cwd);
   }
@@ -1234,12 +1240,13 @@ async function main(): Promise<void> {
     }
     // 配置只记 cwd:每次 rebuild 由 loadViewScan 重装 niceeval.config.ts,
     // 不把启动时那份 config.report 对象塞进 scan(否则改报告文件只刷新页面、定义仍旧)。
+    const projectMode = !offlineView && existsSync(join(cwd, "niceeval.config.ts"));
     const scan = {
       patterns: viewInput.patterns,
       ...(flags.experiment !== undefined ? { experiment: flags.experiment } : {}),
       ...(flags.report !== undefined ? { report: { path: flags.report, cwd } } : {}),
       ...(flags.theme !== undefined ? { theme: { value: flags.theme, cwd } } : {}),
-      ...(existsSync(join(cwd, "niceeval.config.ts")) ? { config: { cwd } } : {}),
+      ...(projectMode ? { config: { cwd }, projectCurrent: { cwd, freshImport: true } } : {}),
       ...(flags.page !== undefined ? { page: flags.page } : {}),
     };
     if (flags.out) {
@@ -1336,9 +1343,21 @@ async function main(): Promise<void> {
     // config.report。其余报告槽路径才读取 config.report 作为默认报告。
     let configReport: Config["report"] | undefined;
     const hasAttemptLocator = positionals.some((value) => value.startsWith(ATTEMPT_LOCATOR_PREFIX));
-    if (!hasAttemptLocator && flags.report === undefined && existsSync(join(cwd, "niceeval.config.ts"))) {
+    if (!offlineShow && !hasAttemptLocator && flags.report === undefined && existsSync(join(cwd, "niceeval.config.ts"))) {
       try {
         configReport = (await loadConfig(cwd)).report;
+      } catch (e) {
+        process.stderr.write(`${formatThrown(e)}\n`);
+        process.exit(1);
+      }
+    }
+    let projectTarget: import("./record/types.ts").ProjectCurrentTarget | undefined;
+    if (!offlineShow && existsSync(join(cwd, "niceeval.config.ts"))) {
+      try {
+        projectTarget = (await loadProjectCurrent(cwd, {
+          experiments: flags.experiment,
+          evals: positionals,
+        })).target;
       } catch (e) {
         process.stderr.write(`${formatThrown(e)}\n`);
         process.exit(1);
@@ -1361,6 +1380,7 @@ async function main(): Promise<void> {
       configReport,
       page: flags.page,
       json: flags.json,
+      ...(projectTarget !== undefined ? { projectTarget } : {}),
     });
     // show 的 JSON 常被管给 jq/python。直接 process.exit 会丢弃 pipe 中尚未 flush 的
     // stdout（典型截在 128 KiB）；交给事件循环自然收尾。

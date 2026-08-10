@@ -449,6 +449,7 @@ function buildEvalUnits(sample: Sample): EvalUnit[] {
   const byKey = new Map<string, EvalUnit>();
 
   for (const coverage of sample.coverage) {
+    if (coverage.run === undefined) continue;
     for (const evalId of coverage.knownEvalIds) {
       const key = `${coverage.experimentId}\0${evalId}`;
       byKey.set(key, {

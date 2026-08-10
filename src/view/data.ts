@@ -1,6 +1,6 @@
 // view 的数据层:读取经 niceeval/record 的 openRecord(布局/版本知识只住在那)。
-// 这里只做编排:报告槽 Sample 恒经 currentSample(现刻水位;与 show 调同一个函数,
-// 两扇门判定不分叉)、快照明细注入(locator / artifactBase)、unreadable 透传、报告装载与逐页渲染
+// 这里只做编排:默认项目报告槽 Sample 恒经 Project Target 的三层身份选择(与 show 调同一个函数,
+// 判定不分叉)、离线 Record 入口经 Record-relative head 选择、快照明细注入(locator / artifactBase)、unreadable 透传、报告装载与逐页渲染
 // (裸跑填充 niceeval/report/built-in 的默认导出,--report 整槽替换,en / zh-CN 双语各渲染一遍)。
 // --report 只换报告定义,注入的 Sample 与裸跑同一份。统计口径整体住在报告页里
 // (报告组件的官方计算函数),viewData 不再携带 overview / 实验列表这类统计产物,
@@ -12,7 +12,7 @@ import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import { evalDirOf, experimentDirOf } from "../record/format.ts";
 import { MANIFESTS_FILE, parseRunManifests, type EvalManifest, type RunManifests } from "../record/manifest.ts";
 import { dedupeAttempts, loadAttemptEvidence, openRecord, withArtifactBase } from "../record/index.ts";
-import type { AttemptHandle, Record, Sample, Run, UnreadableRun } from "../record/index.ts";
+import type { AttemptHandle, ProjectCurrentTarget, Record, Sample, Run, UnreadableRun } from "../record/index.ts";
 import { resolveLocator } from "../record/open.ts";
 import { buildHostReportMeta,
   hostThemeStylesheet,
@@ -30,7 +30,8 @@ import { buildHostReportMeta,
   type HeadTag,
   type ThemeDefinition,
 } from "../report/runtime/host.ts";
-import { currentSample, filterExperiments, makeSample } from "../sample/index.ts";
+import { latestRecordSample, projectCurrentSample, filterExperiments, makeSample } from "../sample/index.ts";
+import { loadProjectCurrent } from "../runner/project-current.ts";
 import { evalPrefixPredicate } from "../shared/aggregate.ts";
 import type { EvalResult, JsonValue } from "../types.ts";
 import type { SkippedRunNotice, ViewData, ViewReportMeta, ViewReportPageHtml } from "./shared/types.ts";
@@ -88,6 +89,8 @@ export interface ViewScan {
   shellAssets: { styles: string[]; scripts: string[]; head: ResolvedHeadTag[] };
   /** 这次扫描用到的报告与主题定义;下一次记录变更的重建原样传回来沿用。 */
   definitions: LoadedDefinitions;
+  /** 项目 current 身份输入的宿主绝对路径；只留 server 内存，不进页面数据。 */
+  projectWatchInputs: readonly string[];
   /**
    * view 恒有全部参数化页（`attempt`、`experiment`……）：报告显式声明的优先，否则用内建
    * `standard` 同 id 的参数化页补位(architecture.md「参数化页是一张普通 page」);核心
@@ -150,6 +153,8 @@ export interface ViewScanOptions {
    * 及其 import 图与 --report 文件同级失效)。不预烘焙成对象。
    */
   config?: { cwd: string };
+  /** plain 项目读取才启用；显式 --record/--run 不传。 */
+  projectCurrent?: { cwd: string; freshImport?: boolean };
   /** --page:多页报告的初始页 id;未命中任何页按用法错误退出并列出可用页 id。 */
   page?: string;
   /**
@@ -283,31 +288,25 @@ export async function loadCarryInputs(
   }
   const manifestsByEvalKey = new Map<string, EvalManifest>();
   for (const exp of results.experiments) {
-    // exp.runs 已按新→旧排序;同一快照内先收本轮的 eval id,收完再整体入 claimed,
-    // 保证同 (experiment, eval) 的多 attempt 整批取自同一个快照。
-    const claimed = new Set<string>();
+    // exp.runs 已按新→旧排序。carry 需要看完整历史：F1→F2→F1 时不能因最新物理
+    // 快照是 F2 就丢掉仍与当前 canonical F1 相等的证据。每个 slot 的取舍留给 planner。
     for (const run of exp.runs) {
-      const takenThisSnapshot = new Set<string>();
+      let manifests: RunManifests | undefined;
       for (const ev of run.evals) {
-        if (claimed.has(ev.id)) continue;
-        takenThisSnapshot.add(ev.id);
         for (const attempt of ev.attempts) {
           out.push(withArtifactBase(attempt));
-          evidenceStatesByAttempt.set(
-            `${run.experimentId}|${ev.id}|${attempt.result.attempt}`,
-            attempt.evidenceState,
-          );
+          const evidenceKey = `${run.experimentId}|${ev.id}|${attempt.result.attempt}`;
+          if (!evidenceStatesByAttempt.has(evidenceKey)) {
+            evidenceStatesByAttempt.set(evidenceKey, attempt.evidenceState);
+          }
+        }
+        const key = `${run.experimentId}|${ev.id}`;
+        if (!manifestsByEvalKey.has(key)) {
+          manifests ??= await readRunManifests(run.dir);
+          const manifest = manifests[ev.id];
+          if (manifest !== undefined) manifestsByEvalKey.set(key, manifest);
         }
       }
-      // 清单只读这一份 Run 的:结果取自它,解释也必须取自它。有条目被取用才读盘。
-      if (takenThisSnapshot.size > 0) {
-        const manifests = await readRunManifests(run.dir);
-        for (const id of takenThisSnapshot) {
-          const manifest = manifests[id];
-          if (manifest !== undefined) manifestsByEvalKey.set(`${run.experimentId}|${id}`, manifest);
-        }
-      }
-      for (const id of takenThisSnapshot) claimed.add(id);
     }
   }
   return {
@@ -382,8 +381,9 @@ async function readRunManifests(dir: string): Promise<RunManifests> {
 
 /**
  * `niceeval view` 的数据装载入口:server 每次请求现读现算,`--out` 导出用同一份。
- * 报告槽 Selection 恒经 currentSample 合成(现刻水位;与 `niceeval show` 调同一个
- * 函数,裸跑与局部收窄不分叉),位置前缀 / --exp 只作为 scope 传入,不切换选择口径。
+ * 默认项目报告槽 Selection 恒经 Project Target 三层身份选择(与 `niceeval show` 调同一个
+ * 函数,裸跑与局部收窄不分叉);显式离线 Record 入口经 Record-relative head 选择。
+ * 位置前缀 / --exp 只作为 scope 传入,不切换对应入口的选择口径。
  * --report 本身不改挑选——它只换报告槽的填充,注入的 Selection 与裸跑同一份,
  * 「裸跑 ≡ --report <ExperimentComparison>」靠这条成立(docs/feature/reports/architecture.md「Selection 是计算入口」)。
  * 命令行收窄作用在有效根上(docs/feature/reports/view.md 开篇):证据室数据与 artifact 清单
@@ -398,30 +398,42 @@ export async function loadViewScan(input?: string, opts: ViewScanOptions = {}): 
   assertSingleFileReadable(results, target);
 
   const patterns = opts.patterns ?? [];
+  const project = opts.projectCurrent === undefined
+    ? undefined
+    : await loadProjectCurrent(opts.projectCurrent.cwd, {
+        experiments: opts.experiment,
+        evals: patterns,
+        freshImport: opts.projectCurrent.freshImport ?? true,
+      });
 
   // 零可读结果直说,不渲染/导出一张空页面(与 show 的「匹配不到直说」同一原则;
   // CI 静态发布还靠这个非零退出保住上一次部署,空报告不顶上线)。零可读最常见的
   // 根因不是目录空,而是落盘整批 schemaVersion 不兼容被跳过,所以带上 unreadable 摘要。
-  if (results.experiments.length === 0) {
+  if (results.experiments.length === 0 && project === undefined) {
     throw new ViewInputError(noReadableResults(target, results.unreadable));
   }
   if (
     opts.experiment !== undefined &&
-    results.experiments.length > 0 &&
-    filterExperiments(results.experiments, opts.experiment).length === 0
+    (project === undefined
+      ? results.experiments.length > 0 && filterExperiments(results.experiments, opts.experiment).length === 0
+      : project.target.experiments.length === 0)
   ) {
+    const availableExperimentIds = project?.target.experiments.map((entry) => entry.id) ??
+      results.experiments.map((entry) => entry.id);
     throw new ViewInputError(
       t("cli.show.noExperimentMatch", {
         arg: Array.isArray(opts.experiment) ? opts.experiment.join(", ") : opts.experiment,
-        experiments: results.experiments.map((e) => e.id).join(", "),
+        experiments: availableExperimentIds.join(", ") || "(none)",
       }).trimEnd(),
     );
   }
 
   // 报告槽 Selection:恒经现刻水位选择器合成,与 show 裸跑同口径(两扇门判定不分叉)。
-  const selection = currentSample(results, { experiments: opts.experiment, evals: patterns });
+  const selection = project === undefined
+    ? latestRecordSample(results, { experiments: opts.experiment, evals: patterns })
+    : projectCurrentSample(results, project.target, { experiments: opts.experiment, evals: patterns });
 
-  if (patterns.length > 0 && selection.runs.every((s) => s.evals.length === 0)) {
+  if (patterns.length > 0 && selection.coverage.every((entry) => entry.knownEvalIds.length === 0)) {
     const known = [
       ...new Set(filterExperiments(results.experiments, opts.experiment).flatMap((e) => e.knownEvalIds)),
     ].sort();
@@ -525,6 +537,7 @@ export async function loadViewScan(input?: string, opts: ViewScanOptions = {}): 
     reportPages: slot.pages,
     shellAssets: slot.shellAssets,
     definitions: slot.definitions,
+    projectWatchInputs: project?.watchInputs ?? [],
     paramPages,
   };
 }

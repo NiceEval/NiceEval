@@ -19,7 +19,19 @@ export async function freshImportModule(absPath: string): Promise<{ default?: un
     const ns = register({ namespace: `niceeval-fresh-${++generation}` });
     const url = pathToFileURL(absPath).href;
     try {
-      return (await ns.import(url, url)) as { default?: unknown };
+      const imported = (await ns.import(url, url)) as { default?: unknown };
+      // tsx 在 CJS 宿主里装载 ESM 风格的 TypeScript 时会把模块命名空间再包成
+      // `{ default: { __esModule: true, default: ... } }`。普通 dynamic import 没有这一层；
+      // fresh 与普通装载必须交给 discovery / config / report 相同的命名空间形状。
+      const wrapped = imported.default;
+      if (
+        typeof wrapped === "object" && wrapped !== null &&
+        Object.hasOwn(wrapped, "default") &&
+        (wrapped as { __esModule?: unknown }).__esModule === true
+      ) {
+        return wrapped as { default?: unknown };
+      }
+      return imported;
     } finally {
       await ns.unregister();
     }

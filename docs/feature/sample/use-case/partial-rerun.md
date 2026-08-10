@@ -26,14 +26,14 @@ Experiment `baseline` 选择 Eval `a` 和 `b`,先后产生三次 Run:
    它不会从旧 Run 拼入 `b`——这个口径的单位就是 Run。
 
 2. **看当前结果集。**
-   `currentSample(record)`。
+   `projectCurrentSample(record, target)`。
    `a` 来自 `R3`,`b` 来自 `R2`。
    两条 attempt 的 `run.configHash` 与基准(`R3`)一致,因此可以组成当前样本。
    `sample.runs` 保留 `R2`、`R3` 两份真实 Run,不制造一份合成 Run。
 
 3. **拒绝不可比的旧结果。**
    `R1` 里也有 `b`,但配置是 `model: old`,configHash 与基准不等。
-   `currentSample` 不用它填补缺口。
+   `projectCurrentSample` 不用它填补缺口。
    若 `R2` 不存在,`b` 留在 `coverage.missing`，原因为 `previous-result`，可附上 `R1` 的 locator 作为解释与显式 accept 入口——旧判定不计入当前结果。
 
 4. **继续收窄。**
@@ -44,10 +44,10 @@ Experiment `baseline` 选择 Eval `a` 和 `b`,先后产生三次 Run:
 ## 边界
 
 - `latestRunSample` 的单位是 Run,不是逐 Eval 找最新。
-- `currentSample` 可以保留同一 Experiment 的多个贡献 Run。
+- `projectCurrentSample` 可以保留同一 Experiment 的多个贡献 Run。
 - 跨 Run 拼接只在 configHash 相等时发生。
 - 携带条目与本次执行条目同等属于 current；二者差异只留在 Attempt 明细。
 - attempt 始终指向真实的物理副本。
   Sample 不重写 locator,也不制造合成 Run。
-- 要看历史趋势,不要用 `currentSample` 代替时间序列。
+- 要看历史趋势,不要用 `projectCurrentSample` 代替时间序列。
   改用 Reports 的 [Experiment 历史用例](../../reports/use-case/分析/跟踪实验历史.md)。

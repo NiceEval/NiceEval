@@ -295,7 +295,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   - 全部通过后按 locator 读取出的 experiment 分组，每组各自封口一个 snapshot，每条结果保留独立 `acceptedFrom`。
   - **批量 accept 的快照范围**：prepare 阶段每条 locator 的 `currentExperiment.sandboxPlansByEval` 可以只有自己那一题。
     封口时，`sandboxPlansByEval`、`knownEvalIds` 与物理 registry 必须涵盖本组全部接受的 eval。
-    fixture 用两条 prepared 写入，断言 `currentSample` 看到两条 attempt，不能只剩 groupFirst 单题。
+    fixture 用两条 prepared 写入，断言 Record-relative head selector 看到两条 attempt，不能只剩 groupFirst 单题。
   - 同一 experiment 内两个 locator 读取到同一个当前 (eval, attempt) 目标仍判重复拒绝；跨 experiment 的同名 eval 不算重复。
 - **eligible opaque:no-manifest accept 回归**：carry eligibility Eligible 的普通历史缺 manifest 场景仍允许 accept，差异保持为 `opaque:no-manifest`。
 - **接受的重锚与留痕**：接受命令新建并封口一个结果快照，复制出处结果为当前 fingerprint/configHash；新条目的 `acceptedFrom` 往返出处 locator、旧/新指纹和 manifest 差异摘要。下一次不带参数的 `exp` 命中这条新结果，证明接受是重锚而不是一次豁免。

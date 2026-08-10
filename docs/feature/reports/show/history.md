@@ -36,7 +36,7 @@ $ niceeval show memory/swelancer --history
 
 ## 与当前结果集的分工
 
-默认报告的聚合走 `currentSample()` 的[可比性前提](../../sample/library.md#当前选择器)：改过 model、flags 或 sandbox 后，旧配置 Run 命中的题不再拼入当前结果集，只以 coverage 占位行提示补跑。
+默认报告的聚合走 `projectCurrentSample()` 的[身份前提](../../sample/library.md#当前选择器)：Run/Result config hash 或 fingerprint 不匹配时，旧结果不再拼入当前结果集，只以 coverage 占位行提示补跑。
 `--history` 站在这层过滤之外——时间轴不设可比性门槛，旧配置下的执行同样按时间在轴上。
 两个读数配合区分「时好时坏」的两种病因：红绿交替发生在同一套配置内，是 agent 行为不稳定，下钻对比失败与通过的两次执行；红绿分界正对配置改动，是 Run 级趋势，不归 `--history`，用报告库的[历史示例](../library/examples.md#历史一个实验的逐次 Run 走势)。
 

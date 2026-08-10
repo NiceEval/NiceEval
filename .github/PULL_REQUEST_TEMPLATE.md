@@ -9,12 +9,22 @@ an internal mechanism such as its registry, protocol, or storage model. Keep one
 dominant outcome and aim for 72 characters or fewer. Write the PR title and
 description in the language of the user's latest request.
 
-Keep every section below. Write "None" when that surface does not change.
-Repeat the entry block when a section contains multiple changes. Every changed
-entry needs a concrete before example, after example, and user impact. Usage
-examples must include the public owner that consumes the value; do not show an
-isolated factory result when real usage belongs inside `defineEval()`,
+Keep every product-surface section below. Inside each surface, inventory
+Removed, Added, and Changed as separate subsections; write "None" when a
+direction has no entry. Do not put a change classification beneath an
+individual command or symbol. Repeat the entry block as needed. Every entry
+needs a concrete before example, after example, and user impact. Usage examples
+must include the public owner that consumes the value; do not show an isolated
+factory result when real usage belongs inside `defineEval()`,
 `defineExperiment()`, report JSX, CLI invocation, or a package script.
+
+Use Removed when an entry that existed at the PR base no longer exists, Added
+when the final PR introduces a new entry, and Changed when the same entry exists
+before and after but its shape or observable behavior changes. A replacement
+with a new public identity is one Removed entry and one Added entry, not one
+Changed entry. Do not add `breaking`, `additive`, `behavior-change`,
+`internal-only`, or `uncertain` as a second classification model; describe
+compatibility and migration concretely in User impact.
 
 Inventory every environment variable added, removed, renamed, given a new
 default, or used in a new scope. Include user-facing variables, CI secrets,
@@ -34,59 +44,163 @@ a new environment variable.
 
 ## Public API
 
-### `<package entry or symbol>`
+### Removed
 
-- Classification: `additive | breaking | behavior-change | internal-only | uncertain`
-- Before usage: `<copyable TypeScript example or "not available">`
-- After usage: `<copyable TypeScript example or "removed">`
-- User impact: <what users can do now or how they must migrate>
+#### `<package entry or symbol>`
+
+- Before usage or result: <copyable TypeScript example and observed result>
+- After usage or result: `removed`
+- User impact: <what stops working and the concrete migration or replacement>
+
+### Added
+
+#### `<package entry or symbol>`
+
+- Before usage or result: `not available`
+- After usage or result: <copyable TypeScript example and observed result>
+- User impact: <what becomes possible>
+
+### Changed
+
+#### `<package entry or symbol>`
+
+- Before usage or result: <copyable TypeScript example and observed result>
+- After usage or result: <copyable replacement example and observed result>
+- User impact: <compatibility and migration effects>
 
 ## CLI commands
 
-### `<command or flag>`
+### Removed
 
-- Classification: `additive | breaking | behavior-change | internal-only | uncertain`
-- Before usage: `<copyable shell command or "not available">`
-- After usage: `<copyable shell command or "removed">`
+#### `<command or flag>`
+
+- Before usage or result: <copyable shell command and observed result>
+- After usage or result: `removed`
+- User impact: <what stops working and the concrete migration or replacement>
+
+### Added
+
+#### `<command or flag>`
+
+- Before usage or result: `not available`
+- After usage or result: <copyable shell command and observed result>
+- User impact: <stdout, stderr, exit code, JSON schema, default, or workflow effect>
+
+### Changed
+
+#### `<command or flag>`
+
+- Before usage or result: <copyable shell command and observed result>
+- After usage or result: <the same command, or its replacement, and the observed result>
 - User impact: <stdout, stderr, exit code, JSON schema, default, or migration change>
 
 ## Report components
 
-### `<component, prop, or report entry>`
+### Removed
 
-- Classification: `additive | breaking | behavior-change | internal-only | uncertain`
-- Before usage: `<copyable TSX example or "not available">`
-- After usage: `<copyable TSX example or "removed">`
-- User impact: <rendered result, authoring workflow, or migration change>
+#### `<component, prop, or report entry>`
+
+- Before usage or result: <copyable TSX example and rendered result>
+- After usage or result: `removed`
+- User impact: <author migration and reader-visible effect>
+
+### Added
+
+#### `<component, prop, or report entry>`
+
+- Before usage or result: `not available`
+- After usage or result: <copyable TSX example and rendered result>
+- User impact: <authoring and reader-visible capability>
+
+### Changed
+
+#### `<component, prop, or report entry>`
+
+- Before usage or result: <copyable TSX example and rendered result>
+- After usage or result: <copyable replacement TSX and rendered result>
+- User impact: <author migration and reader-visible effect>
 
 ## Observable behavior and data contracts
 
-### `<runtime behavior, record/schema, cache, provider, or output>`
+### Removed
 
-- Classification: `additive | breaking | behavior-change | internal-only | uncertain`
-- Before example: <concrete input and observed result>
-- After example: <the same input, or its replacement, and observed result>
-- User impact: <what changes for users, stored data, or automation>
+#### `<runtime behavior, record/schema, cache, provider, or output>`
+
+- Before usage or result: <concrete input and observed result>
+- After usage or result: `removed`
+- User impact: <effect on users, stored data, or automation and the replacement>
+
+### Added
+
+#### `<runtime behavior, record/schema, cache, provider, or output>`
+
+- Before usage or result: `not available`
+- After usage or result: <concrete input and observed result>
+- User impact: <effect on users, stored data, or automation>
+
+### Changed
+
+#### `<runtime behavior, record/schema, cache, provider, or output>`
+
+- Before usage or result: <concrete input and observed result>
+- After usage or result: <the same input, or its replacement, and the observed result>
+- User impact: <compatibility, migration, stored data, or automation effect>
 
 ## Environment variables
 
-### `<VARIABLE_NAME>`
+### Removed
 
-- Change: `added | removed | renamed | default changed | semantics changed`
-- Scope: `user-facing | CI secret | test-only | container-internal | host service | packaging`
-- Before usage: `<copyable shell/config example or "not available">`
-- After usage: `<copyable shell/config example or "removed">`
-- Producer and consumer: <who sets it, who reads it, and whether child processes inherit it>
+#### `<VARIABLE_NAME>`
+
+- Before usage or result: <copyable shell/config example and observed result>
+- After usage or result: `removed`
+- Environment boundary: <scope, producer, consumer, inheritance, default, precedence, validation, and secret exposure>
+- User and security impact: <migration or "none">
+
+### Added
+
+#### `<VARIABLE_NAME>`
+
+- Before usage or result: `not available`
+- After usage or result: <copyable shell/config example, default, and observed result>
+- Environment boundary: <scope, producer, consumer, inheritance, precedence, validation, and secret exposure>
 - Necessity: <why an explicit API, CLI flag, config file, argument, or constant cannot own this value>
-- User and security impact: <default, validation, precedence, secret exposure, migration, or "none">
+- User and security impact: <workflow, default, migration, or "none">
+
+### Changed
+
+#### `<VARIABLE_NAME>`
+
+- Before usage or result: <copyable shell/config example, default, and observed result>
+- After usage or result: <copyable shell/config example, default, and observed result>
+- Environment boundary: <scope, producer, consumer, inheritance, precedence, validation, and secret exposure>
+- Necessity: <why an explicit API, CLI flag, config file, argument, or constant cannot own this value>
+- User and security impact: <compatibility, migration, or "none">
 
 ## Package scripts
 
-### `<pnpm script>`
+### Removed
 
-- Change: `added | removed | renamed | command changed`
-- Before usage: `<copyable command or "not available">`
-- After usage: `<copyable command or "removed">`
+#### `<pnpm script>`
+
+- Before usage or result: <copyable command and observed result>
+- After usage or result: `removed`
+- User impact: <development, CI, documentation, or release workflow migration>
+
+### Added
+
+#### `<pnpm script>`
+
+- Before usage or result: `not available`
+- After usage or result: <copyable command and observed result>
+- User impact: <development, CI, documentation, or release workflow capability>
+
+### Changed
+
+#### `<pnpm script>`
+
+- Before usage or result: <copyable command and observed result>
+- After usage or result: <copyable command and observed result>
 - User impact: <development, CI, documentation, or release workflow change>
 
 ## Tests

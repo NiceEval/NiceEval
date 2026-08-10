@@ -8,15 +8,17 @@ CI 要一个门禁判断,周报要一个数,别的系统要一份自己的 JSON�
 
 ```typescript
 import { openRecord } from "niceeval/record";
-import { currentSample } from "niceeval/sample";
+import { loadProjectCurrentTarget, projectCurrentSample } from "niceeval/sample";
 
 const record = await openRecord(".niceeval");
-const sample = currentSample(record, { experiments: "compare/" });
+const { target } = await loadProjectCurrentTarget(process.cwd());
+const sample = projectCurrentSample(record, target, { experiments: "compare/" });
 ```
 
 | 你要什么 | 从哪进 |
 |---|---|
-| 官方口径的一批 attempt,连命中范围与警告一起 | `latestRunSample` / `currentSample` |
+| 项目 current 的一批 attempt，连目标分母与警告一起 | `projectCurrentSample` |
+| 离线 Record head | `latestRecordSample` |
 | 官方口径的折叠数字(表格、矩阵、散点) | [Reports 的计算函数](../../reports/library.md) |
 | 连口径都自定义(例如全历史的分布) | 直接遍历 `record.experiments` |
 

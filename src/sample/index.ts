@@ -10,6 +10,7 @@ import type {
   Eval,
   Experiment,
   Record,
+  ProjectCurrentTarget,
   Sample,
   SampleCoverage,
   SampleIssue,
@@ -19,6 +20,8 @@ import type {
 } from "../record/types.ts";
 import type { ExperimentRunInfo, JsonValue } from "../types.ts";
 import { evalPrefixPredicate, matchExperimentSelector } from "../shared/aggregate.ts";
+
+export { loadProjectCurrent as loadProjectCurrentTarget } from "../runner/project-current.ts";
 
 /**
  * Record.latest() 的实现:每个实验取最新一次快照(= exp.runs[0]),生成覆盖事实与
@@ -70,7 +73,7 @@ export function latestRunSample(
   return makeSample("latest-run", runs, selectedAttempts, issues, coverage, historyAttempts);
 }
 
-/** currentSample 的范围输入:experiment id 前缀与 eval id 前缀,都可缺省。 */
+/** Sample selector 的范围输入:experiment id 前缀与 eval id 前缀,都可缺省。 */
 export interface SampleOptions {
   /** experiment id 前缀(--exp),分段匹配语义同 filterExperiments。 */
   experiments?: string | string[];
@@ -145,7 +148,7 @@ export function deepEqualJson(a: unknown, b: unknown): boolean {
  * 同一 eval 的全部 attempts 必须整批取自包含它的最新快照,不把历史快照的 attempts 平铺后
  * 按 eval 聚合——否则会把不同运行的重试混成一次虚构运行。
  */
-export function currentSample(record: Record, scope: SampleOptions = {}): Sample {
+export function latestRecordSample(record: Record, scope: SampleOptions = {}): Sample {
   const match =
     scope.evals !== undefined && (!Array.isArray(scope.evals) || scope.evals.length > 0)
       ? evalPrefixPredicate(Array.isArray(scope.evals) ? scope.evals : [scope.evals])
@@ -228,6 +231,171 @@ export function currentSample(record: Record, scope: SampleOptions = {}): Sample
     ),
   ).attempts;
   return makeSample("current", runs, selectedAttempts, issues, coverage, historyAttempts);
+}
+
+/** 单 Run 审计选择器；不读取项目定义，也不跨 Run 补齐。 */
+export function runSample(run: Run): Sample {
+  const knownEvalIds = run.knownEvalIds ?? run.evals.map((entry) => entry.id);
+  return makeSample(
+    "latest-run",
+    run.attempts.length > 0 ? [run] : [],
+    [...run.attempts],
+    run.completedAt === undefined
+      ? [{ code: "unfinished-run", experimentId: run.experimentId, startedAt: run.startedAt, dir: run.dir }]
+      : [],
+    [{
+      experimentId: run.experimentId,
+      run,
+      knownEvalIds: [...knownEvalIds],
+      missing: missingFor(knownEvalIds, run.attempts, run.attempts),
+    }],
+    [...run.attempts],
+  );
+}
+
+/**
+ * 项目 current：Target 先定义坐标与 canonical 身份，Record 只提供可验证的物理证据。
+ * 旧身份与缺身份结果都留在 historyAttempts；只有三层身份完整匹配的最新 slot 进入 attempts。
+ */
+export function projectCurrentSample(
+  record: Record,
+  target: ProjectCurrentTarget,
+  scope: SampleOptions = {},
+): Sample {
+  const matchEval =
+    scope.evals !== undefined && (!Array.isArray(scope.evals) || scope.evals.length > 0)
+      ? evalPrefixPredicate(Array.isArray(scope.evals) ? scope.evals : [scope.evals])
+      : () => true;
+  const selectedIds = scope.experiments === undefined
+    ? new Set(target.experiments.map((entry) => entry.id))
+    : new Set(
+        (Array.isArray(scope.experiments) ? scope.experiments : [scope.experiments]).flatMap((selector) =>
+          matchExperimentSelector(target.experiments.map((entry) => entry.id), selector)
+        ),
+      );
+  const experiments = target.experiments.filter((entry) => selectedIds.has(entry.id));
+  const recordById = new Map(record.experiments.map((entry) => [entry.id, entry]));
+  const attempts: AttemptHandle[] = [];
+  const historyAttempts: AttemptHandle[] = [];
+  const issues: SampleIssue[] = [];
+  const coverage: SampleCoverage[] = [];
+  const usedRuns = new Set<Run>();
+  const issueKeys = new Set<string>();
+
+  for (const experimentTarget of experiments) {
+    const history = recordById.get(experimentTarget.id)?.runs.flatMap((run) => run.attempts) ?? [];
+    const scopedHistory = history.filter((attempt) => matchEval(attempt.evalId));
+    historyAttempts.push(...scopedHistory);
+    const currentForExperiment: AttemptHandle[] = [];
+
+    for (const evalTarget of experimentTarget.evals.filter((entry) => matchEval(entry.id))) {
+      const evalHistory = scopedHistory.filter((attempt) => attempt.evalId === evalTarget.id);
+      const latestBySlot = new Map<number, AttemptHandle>();
+      for (const attempt of evalHistory) {
+        const missing = currentIdentityMissing(attempt);
+        if (missing.length > 0) {
+          const key = `${attempt.experimentId}\0${attempt.evalId}\0${attempt.result.attempt}\0${missing.join(",")}`;
+          if (!issueKeys.has(key)) {
+            issueKeys.add(key);
+            issues.push({
+              code: "unverifiable-current-result",
+              experimentId: attempt.experimentId,
+              evalId: attempt.evalId,
+              attempt: attempt.result.attempt,
+              ...(attempt.locator !== undefined ? { locator: attempt.locator } : {}),
+              missing,
+            });
+          }
+          continue;
+        }
+        if (
+          attempt.result.attempt >= experimentTarget.attempts ||
+          attempt.run.configHash !== experimentTarget.runConfigHash ||
+          attempt.result.configHash !== evalTarget.resultConfigHash ||
+          attempt.result.fingerprint !== evalTarget.fingerprint
+        ) continue;
+        const previous = latestBySlot.get(attempt.result.attempt);
+        if (previous === undefined || isNewerAttempt(attempt, previous)) {
+          latestBySlot.set(attempt.result.attempt, attempt);
+        }
+      }
+      const picked = [...latestBySlot.values()].sort((a, b) => a.result.attempt - b.result.attempt);
+      currentForExperiment.push(...picked);
+      for (const attempt of picked) usedRuns.add(attempt.run);
+    }
+
+    attempts.push(...currentForExperiment);
+    const knownEvalIds = experimentTarget.evals.filter((entry) => matchEval(entry.id)).map((entry) => entry.id);
+    coverage.push({
+      experimentId: experimentTarget.id,
+      target: experimentTarget,
+      knownEvalIds,
+      missing: missingForProjectTarget(knownEvalIds, currentForExperiment, scopedHistory),
+    });
+  }
+
+  const runs = record.experiments.flatMap((entry) => entry.runs).filter((run) => usedRuns.has(run));
+  for (const run of runs) {
+    if (run.completedAt === undefined) {
+      issues.push({ code: "unfinished-run", experimentId: run.experimentId, startedAt: run.startedAt, dir: run.dir });
+    }
+  }
+  issues.push(...unreadableSnapshotWarnings(record.unreadable, record.root));
+  issues.push(...danglingEvidenceIssues(attempts));
+  return makeSample(
+    "current",
+    runs,
+    dedupeAttempts(attempts).attempts,
+    issues,
+    coverage,
+    dedupeAttempts(historyAttempts).attempts,
+  );
+}
+
+function currentIdentityMissing(
+  attempt: AttemptHandle,
+): ("run-config-hash" | "result-config-hash" | "fingerprint")[] {
+  const missing: ("run-config-hash" | "result-config-hash" | "fingerprint")[] = [];
+  if (attempt.run.configHash === undefined) missing.push("run-config-hash");
+  if (attempt.result.configHash === undefined) missing.push("result-config-hash");
+  if (attempt.result.fingerprint === undefined) missing.push("fingerprint");
+  return missing;
+}
+
+function isNewerAttempt(candidate: AttemptHandle, previous: AttemptHandle): boolean {
+  if (isNewerSnapshot(candidate.run, previous.run)) return true;
+  if (isNewerSnapshot(previous.run, candidate.run)) return false;
+  return (candidate.result.startedAt ?? candidate.run.startedAt) >
+    (previous.result.startedAt ?? previous.run.startedAt);
+}
+
+function missingForProjectTarget(
+  knownEvalIds: readonly string[],
+  currentAttempts: readonly AttemptHandle[],
+  historyAttempts: readonly AttemptHandle[],
+): SampleMissing[] {
+  const covered = new Set(currentAttempts.map((attempt) => attempt.evalId));
+  return knownEvalIds.flatMap((evalId): SampleMissing[] => {
+    if (covered.has(evalId)) return [];
+    const history = historyAttempts.filter((attempt) => attempt.evalId === evalId);
+    if (history.length === 0) return [{ evalId, reason: "never-run" }];
+    const verifiable = history.filter((attempt) => currentIdentityMissing(attempt).length === 0);
+    if (verifiable.length === 0) return [{ evalId, reason: "unverifiable-result" }];
+    const previous = verifiable.reduce((latest, candidate) => isNewerAttempt(candidate, latest) ? candidate : latest);
+    return [{
+      evalId,
+      reason: "previous-result",
+      ...(previous.locator !== undefined
+        ? {
+            previous: {
+              locator: previous.locator,
+              verdict: previous.result.verdict,
+              startedAt: previous.result.startedAt ?? previous.run.startedAt,
+            },
+          }
+        : {}),
+    }];
+  });
 }
 
 function missingFor(
@@ -340,11 +508,17 @@ export function makeSample(
     const nextRuns = runs.filter((run) => runSet.has(run));
     const rebuiltCoverage = nextCoverage.map((item) => ({
       ...item,
-      missing: missingFor(
-        item.knownEvalIds,
-        nextAttempts.filter((attempt) => attempt.experimentId === item.experimentId),
-        nextHistory.filter((attempt) => attempt.experimentId === item.experimentId),
-      ),
+      missing: item.target !== undefined
+        ? missingForProjectTarget(
+            item.knownEvalIds,
+            nextAttempts.filter((attempt) => attempt.experimentId === item.experimentId),
+            nextHistory.filter((attempt) => attempt.experimentId === item.experimentId),
+          )
+        : missingFor(
+            item.knownEvalIds,
+            nextAttempts.filter((attempt) => attempt.experimentId === item.experimentId),
+            nextHistory.filter((attempt) => attempt.experimentId === item.experimentId),
+          ),
     }));
     const scopedIssues = nextIssues.filter((issue) => {
       if (!("experimentId" in issue)) return true;
@@ -373,7 +547,12 @@ export function makeSample(
       const experimentIdUniverse =
         options.experiments === undefined
           ? []
-          : [...new Set([...runs, ...attempts, ...historyAttempts].map((entry) => entry.experimentId))];
+          : [...new Set([
+              ...runs.map((entry) => entry.experimentId),
+              ...attempts.map((entry) => entry.experimentId),
+              ...historyAttempts.map((entry) => entry.experimentId),
+              ...coverage.map((entry) => entry.experimentId),
+            ])];
       const matchedExperimentIds = new Set(
         experimentPrefixes.flatMap((prefix) => matchExperimentSelector(experimentIdUniverse, prefix)),
       );

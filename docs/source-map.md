@@ -188,9 +188,9 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
     src/record/writer.ts    createWriter        ← 第三方 harness 写进来
     src/record/copy.ts      publish             → 发布出去
   │
-  │  currentSample() / latestRunSample()
+  │  projectCurrentSample() / latestRecordSample() / runSample()
   ▼
-②  src/sample/index.ts      latestRunSample / currentSample / Sample.filter
+②  src/sample/index.ts      projectCurrentSample / latestRecordSample / Sample.filter
                             dedupeAttempts / SampleIssue
   │
   │  sample.attempts
@@ -213,7 +213,9 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 |---|---|
 | `openRecord`:实验/Run/eval 分层、版本分流(三种 unreadable 原因)、懒加载(attempt 目录→artifactBase 携带条目回退);`RunMeta.timings` / `sandboxBuilds` 与 attempt activity 子树原样读回 | `src/record/open.ts` |
 | 布局与版本知识(attempt 目录规则、Run 分类、完整 producer) | `src/record/format.ts` |
-| `latestRunSample(record)` / `currentSample(record)`、`Sample.scope` / `.filter`、结构化 coverage missing、`dedupeAttempts` 与 `SampleIssue` | `src/sample/index.ts` |
+| `projectCurrentSample(record, target)` / `latestRecordSample(record)` / `runSample(run)`、`Sample.scope` / `.filter`、结构化 coverage missing、`dedupeAttempts` 与 `SampleIssue` | `src/sample/index.ts` |
+| 项目定义发现、selector 与无派发 Project Target 编排 | `src/runner/project-current.ts` |
+| canonical fingerprint、Run/Result 双 config hash 与 Project Target planning | `src/runner/fingerprint.ts` |
 | `createWriter`(Run 目录独占创建、Run 级元数据落盘含 `timings` / `sandboxBuilds`、attempt 事实与 artifact 增量落盘、`finish()` 补 `completedAt` 并原子封口 Run timings) | `src/record/writer.ts` |
 | `publish`(发布原语:计划 → 预检 → 复制,knownEvalIds 补记;`timings` / `sandboxBuilds` / origin 引用忠实保留) | `src/record/copy.ts` |
 | 发布预算常量(50 MiB 单文件预检上限) | `src/record/publish.ts` |
@@ -238,7 +240,7 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 | `defineReport` / `ReportShell` / `ReportPage` / `buildReportMeta` / `resolveReportTitle`(报告外壳与页列表的规范化,与宿主装载方式无关) | `src/report/definition/report.ts` |
 | text 宿主装载入口 `pickReportPage` / `ReportHostContext` / `renderReportToText`(选页 → `resolveDefinitionPage` → text 投影;宿主不设树外警告通道——挑选警告的唯一呈现件是页内 `Callouts` + `toSampleNotices` / `toRunNotices`,按动作聚合层在 `src/report/components/site-components/scope-warnings.ts`,web/text 两面共用)/ 逐页 text 入口 `renderReportTreeToText`(两宿主共用的联系面调用)/ `ReportPageNotFoundError`(`--page` 未命中)/ `ReportPageNeedsLocatorError`(attempt-input page 缺 locator) | `src/report/runtime/text.ts` |
 | `--report` 装载(两宿主共用:存在性/默认导出判别、dev server 的 mtime cache-busting) | `src/report/runtime/load.ts` |
-| show 宿主接线(无条件调 `currentSample` 产出 Sample；不带 `--report` 的 `@<locator>` 直接装配官方 Attempt 诊断切片，不读取 `config.report`；显式 `@<locator> --report` 与普通 `--report`/`--page` 经 `report/runtime/host.ts` 装载自定义 text 报告；多页时选初始页——`--page` 指定或默认第一页——的逻辑在 `src/show/index.ts`,渲染完初始页后由 `src/show/render.ts` 的 `otherPagesText` 在尾部追加「其余页」索引与可复制命令) | `src/show/index.ts`(当前结果集选择器在中性的 `src/sample/index.ts`;单 Eval、Attempt 详情与证据切面渲染在 `src/show/render.ts`;`src/show/compose.ts` 只留 `--history` 逐 attempt 执行时间轴口径;两宿主共用的报告装载规范化/标题回退在 `src/report/runtime/host.ts`;show 专属的可复制命令拼装 `showCommand` 在 `src/show/command.ts`;测试 `src/show/render.test.ts`、`src/show/command.test.ts`、`src/report/runtime/host.test.ts`;进程级选择收窄与用法错误矩阵归 `docs/engineering/testing/e2e/report.md` 对真实进程验收) |
+| show 宿主接线(plain 项目读取调 `projectCurrentSample`，显式 Record/History 走 Record-relative 选择；不带 `--report` 的 `@<locator>` 直接装配官方 Attempt 诊断切片，不读取 `config.report`；显式 `@<locator> --report` 与普通 `--report`/`--page` 经 `report/runtime/host.ts` 装载自定义 text 报告) | `src/show/index.ts`、`src/runner/project-current.ts` |
 | web 宿主装载入口 `renderReportToStaticHtml`(唯一 import react-dom 的一侧;选页 → `resolveDefinitionPage` → web 投影,不设树外警告前置块)/ 逐页 web 入口 `renderReportTreeToStaticHtml` | `src/report/runtime/web.ts` |
 | 内建报告 `standard` / `failures` / `stability`(每页 `page.render` + 公开 `to*` + 原语 plain props:`Callouts items=`、`Waterfall nodes=`、`CopyBlock content=`、`Table rows=` 等) | `src/report/built-in/{standard,failures,stability}.tsx`、`src/report/built-in/index.tsx` |
 | 跨组件共享辅助与 `Cell` / `MetricValue` 渲染 | `src/report/components/shared.ts` + `shared-compute.ts` + `shared-faces.ts` + `cell.tsx` |
@@ -256,4 +258,4 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 | 双面验收(renderToStaticMarkup + text Run,两面同口径) | `src/report/runtime/dual-render.test.tsx` |
 | view 参数化页深链(`#/<pageId>/<key>`,泛化自 `ReportTarget{page,params}`;路由与拦截按报告清单里的参数化页 id 集合判定,不硬编码 `attempt`) | `src/view/app/lib/target-dialog.ts`(hash ↔ target 互转:`hashForTarget`/`targetFromHash`;`<pageId>/<key>.html` 链接拦截与 dialog 内容抠取,泛化自旧版 `attempt-dialog.ts`)、`src/view/app/App.tsx`(按 `ViewReportMeta.paramPageIds` 判定拦截与嵌套下钻)、`src/view/data.ts`(`ViewScan.paramPages` 按页 id 索引,href 经 `src/report/runtime/target.ts` 的 `targetHref` 单源)、`src/view/shared/types.ts`(`ViewReportMeta.paramPageIds`) |
 | view 数据层(openRecord;`__NICEEVAL_VIEW_DATA__` 只携带证据室数据:Run 明细 + skipped + 壳元信息(含报告外壳/页导航的 `ViewReportMeta`),统计住报告页)。`latestRunSample(record)` 结果(命名为 `latestPerExperiment`)只用于给证据室 Run 打「latest」标记,与报告槽 Sample 是两条独立通道,不参与报告计算;`viewData.snapshots` 是完整 Record root 的全量通道,只服务各参数化页深链(`#/<pageId>/<key>`)的目标判定,不随报告 Sample 收窄 | `src/view/data.ts`(数据契约在 `src/view/shared/types.ts`) |
-| view 报告槽与导航(不带选项运行装载内建报告默认导出、`--report` 整槽替换、`--page` 定初始页;报告槽 Sample 由 view 直接调 `currentSample` 产出;报告装载/规范化/标题回退经两宿主共用的 `src/report/runtime/host.ts`;`renderReportSlot` 逐页静态渲染、en/zh-CN 两遍烘成 `<template id="niceeval-report-<pageId>-<locale>">` 静态块;导航项 = 报告页列表(声明序),路由只有 `#/page/<id>` 与各参数化页深链 `#/<pageId>/<key>`,宿主不追加导航项、不渲染 hero/警告横幅/页脚/页头链接等任何页面内容 chrome(`App.tsx` 的 `BRAND_HREF` 恒渲染的页头 NiceEval 字标除外——那是宿主保留的机器位,与页面内 `PoweredBy` 品牌行分属两处),浏览器 `<title>` 是宿主保留的文档单例;外壳 head 与主题 styles 按声明序注入、renderer assets 按内容哈希复制并随 scope/参数化页注入、增强 runtime 与官方样式内联、输入判定 `resolveViewInput`(`--record`/`--run` 互斥,位置参数只表示 eval id 前缀)) | `src/view/data.ts`、`src/view/server.ts`、`src/view/index.ts`、`src/report/runtime/host.ts`(两宿主共用,不属于 show)、前端摆放 `src/view/app/{main.tsx,App.tsx}`(测试 `src/view/data.test.ts`;渲染出的导航结构与外壳 chrome、`resolveViewInput` 的进程级输入校验归 `docs/engineering/testing/e2e/report.md` 对真实输出验收) |
+| view 报告槽与导航(plain 项目读取先规划 Project Target，再调 `projectCurrentSample`；显式 `--record` / `--run` 保持离线；`--report` 整槽替换、`--page` 定初始页；Target 本地输入进入 watcher，顶层刷新显式 replan) | `src/view/data.ts`、`src/view/server.ts`、`src/view/index.ts`、`src/runner/project-current.ts`、`src/report/runtime/host.ts` |

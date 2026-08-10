@@ -7,25 +7,26 @@
 
 ```typescript
 import { openRecord } from "niceeval/record";
-import { currentSample } from "niceeval/sample";
+import { loadProjectCurrentTarget, projectCurrentSample } from "niceeval/sample";
 
 const record = await openRecord(".niceeval");
-const current = currentSample(record, {
+const { target } = await loadProjectCurrentTarget(process.cwd());
+const current = projectCurrentSample(record, target, {
   experiments: "compare/",
   evals: "algebra/",
 });
 ```
 
-`currentSample()` 对每个 Experiment 执行同一条选择规则：
+`projectCurrentSample()` 对每个 Experiment 执行同一条选择规则：
 
-1. 最新 Run 的 `configHash` 是当前配置身份。
-2. 只有相同 `configHash` 的 Run 可以共同贡献；缺少 `configHash` 的 Run 只与自己可比。
-3. 每个 Eval 按 Run 从新到旧取第一组实际存在的物理 Attempt。
-4. Attempt 来自实际执行、携带合入或可比旧 Run，不改变贡献资格。
-5. 没有当前 Attempt 的 Eval 进入 coverage 缺口。
+1. 无派发 Project Target 从同一次 identity planning 输出取得 Experiment `runConfigHash`、逐 Eval `resultConfigHash` 与 canonical fingerprint。
+2. 每个 attempt slot 先在全历史过滤三层身份完整匹配的物理结果，再取最新一条；最新 current 是 errored/skipped 时照样进入报告，carry 另行决定是否重跑，不回退更旧 passed。
+3. `attempts` 只限制可选 slot 上界；coverage 仍以 Eval 为粒度，一个 Eval 完全没有 current attempt 时才产生一个缺口。
+4. 身份齐全但不匹配是 `previous-result`；缺身份是 `unverifiable-result` 并产生结构化 Issue。
+5. Target 提供零 current 时的实验、Eval、agent/model/flags 与题型，Sample 不伪造 Run。
 
 物理 Attempt 指 Record 已经登记并暴露的 `AttemptHandle`，不是递归扫描任意 `result.json`。
-`selectedEvalIds` 是 Runner 的运行期计划，不属于 Record、Sample 或 Reports 的贡献规则。
+`latestRecordSample(record)` 只重建 Record 自己的最新 head：以最新 Run 配置为版本对照点逐 Eval 向历史补齐；它不承诺与工作树项目定义一致。
 
 ## 单 Run 选择
 
@@ -43,7 +44,7 @@ const snapshot = latestRunSample(record, { experiments: "compare/" });
 ```typescript
 interface SampleMissing {
   evalId: string;
-  reason: "never-run" | "previous-result";
+  reason: "never-run" | "previous-result" | "unverifiable-result";
   previous?: {
     locator: string;
     verdict: "passed" | "failed" | "errored" | "skipped";
@@ -53,7 +54,8 @@ interface SampleMissing {
 
 interface SampleCoverage {
   experimentId: string;
-  run: Run;
+  run?: Run;
+  target?: ProjectCurrentExperimentTarget;
   knownEvalIds: string[];
   missing: SampleMissing[];
 }
@@ -75,11 +77,12 @@ interface Sample {
 
 ## 缺口与分母
 
-`knownEvalIds` 是分母，来自本地历史与各 Run 声明的已知 Eval 并集，再与调用方范围求交。
+项目 current 的 `knownEvalIds` 完全来自 Target；Record head 的分母来自本地历史与各 Run 声明的已知 Eval 并集。两者再与调用方范围求交。
 `missing` 只列当前 `attempts` 里没有对应 Attempt 的 Eval。
 
 `never-run` 表示历史中没有该 Eval 的任何物理 Attempt。
-`previous-result` 表示历史中有物理 Attempt，但它不在当前可比 Run 集合中；`previous` 取最近一条可定位结果作为审计入口。
+`previous-result` 表示历史中有身份完整的物理 Attempt，但它与 Project Target 的三层身份不匹配；`previous` 取最近一条可定位结果作为审计入口。
+`unverifiable-result` 表示只有缺少 run config hash、result config hash 或 fingerprint 的历史结果；它们不能被证明为 current。
 这个引用不参与任何读数，也不保证 `accept` 一定成功；`accept` 仍会按当前项目重新完成全部资格校验。
 
 ## provenance 事实
@@ -93,7 +96,7 @@ interface Sample {
 ## 转换
 
 ```typescript
-const algebra = currentSample(record)
+const algebra = projectCurrentSample(record, target)
   .scope({ experiments: "compare/", evals: "algebra/" })
   .filter((attempt) => attempt.result.verdict !== "skipped");
 ```
@@ -114,11 +117,18 @@ Sample 不提供 `freshOnly()`；需要查看单次执行事实时进入 Run 或
 
 ## Issue code 全集
 
-`issues` 只收不能归到某个 coverage 缺口或某个 Attempt 上的读取问题：
+`issues` 收读取期需要结构化解释的问题；其中 `unverifiable-current-result` 同时解释相应 coverage 缺口为何不能借用历史结果：
 
 ```ts
 type SampleIssue =
   | { code: "unfinished-run"; experimentId: string; startedAt: string; dir: string }
+  | {
+      code: "unverifiable-current-result";
+      experimentId: string;
+      evalId: string;
+      attempt: number;
+      missing: readonly ("run-config-hash" | "result-config-hash" | "fingerprint")[];
+    }
   | {
       code: "dangling-evidence";
       experimentId: string;

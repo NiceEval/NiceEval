@@ -4,7 +4,9 @@
 装载哪一份按 `--report` → 项目配置的 `report` 字段 → 内建 `standard` 的[三档取值链](#自定义报告与外壳)决定；两处都没有时是[内建报告](library/built-in.md)的报告、Attempts、追踪三张导航页，加 `attempt` 与 `experiment` 两张不进导航的参数化页。
 自定义报告没有声明同 id 页时，view 用内建 `standard` 的参数化页按 id 补位，保证官方组件交出的[目标](library.md#目标与下钻)仍可下钻；显式声明则替换它。
 view 只拥有目标寻址、导航与 dialog 摆放，不拥有另一套详情区块。
-它不依赖外部服务。
+
+Record 与内建报告都在本地读取；不带 `--record` / `--run` 时，Project Target planning
+还会使用 Experiment、Eval、Sandbox 与 Agent 已声明的规划边界，因此这些边界本身需要什么外部能力，view 就需要什么能力。
 
 本地模式与静态导出共用**同一条站点管线**：管线的输入是 Record root 加可选收窄（位置参数 / `--exp`）。
 收窄把根滤成只含匹配实验与 attempt 的**有效根**。
@@ -51,10 +53,12 @@ Record root 用 `--record <dir>` 传入，单开一份 Run 用 `--run <file>`—
 本地 server 默认监听全部 IPv4 网卡（等价于 `--host 0.0.0.0`）；启动后会列出本机 `127.0.0.1` 与每个局域网 IPv4 地址，直接点其中符合访问位置的一条即可。`--host [address]` 可改为只监听指定地址；只写 `--host` 不带地址时，与省略该 flag 同样监听全部网卡。
 默认让操作系统随机分配端口；`--port <n>` 指定首选端口，被占用时从 n 起向上顺延最多 20 个，全被占用才报错。
 
-不带选项的 `niceeval view` 默认把 Record root 中的完整 Sample 作为各页 `load` 的 base。
+不带选项的 `niceeval view` 先按当前项目定义完成一次无派发 Target planning，再把 Record 中三层身份匹配的完整 Sample 作为各页 `load` 的 base。Eval 源码已经变化但 Record 仍是旧 fingerprint 时，旧 attempt 只保留在 History/locator，不进入图表、verdict、成本、tokens 或耗时。
 `--exp` 按 experiment id 路径收窄，位置参数按 eval id 前缀收窄；两者可组合取交集。
+
 携带进当前配置的 Attempt 与本次新执行的 Attempt 同等属于当前 Sample；`view` 不提供按携带出处切换当前结果集的开关。
 目标 URL 按 `#/<pageId>/<key>` 选择对应参数化页，`key` 经该页 `params.decode` 还原参数后交给它的 `load` 求输入——attempt 页因此对收窄之内、即使不在当前结果集里的历史 attempt 也能打开；收窄之外的实例不可达。
+
 同一份收窄交给 `--out` 时决定出站内容。
 
 ## 持续重建
@@ -77,15 +81,15 @@ Record root 用 `--record <dir>` 传入，单开一份 Run 用 `--run <file>`—
 | 报告文件与它的整棵 import 图 | 改 `--report` 指向的文件，或改它 import 的**自定义组件**、读数、工具模块；项目配置的 `report` 字段同理 |
 | 主题文件与它的 import 图 | 改 `--theme` 指向的主题或它 import 的令牌模块 |
 | 项目配置 | `niceeval.config.ts` |
+| Project Target 的本地身份输入 | Experiment/Eval 源码闭包、loader/data/criteria/private 文件，以及 planner 登记的本地输入 |
 
 **改组件代码同样重建。**
 报告是一棵组件树，自定义 renderer 或普通报告函数写在哪个文件里都算报告的一部分。
 监听范围包含报告文件的整棵项目内 import 图，不是只看入口文件。
 所以「改一个组件的 web 面 → 存盘 →浏览器里看到新样子」是本地模式的常规写法，与改报告文件本身没有区别。
 
-**闭集之外没有第二条重建理由。**
-打开页面、刷新浏览器、切页与切语言都不是重建理由：盘上没变，输出就还是上一次那份，请求直接命中它。
-所以这张表不只回答「什么会自动刷新」，它同时是「什么改了会生效」的完整答案——手动刷新不构成绕过闭集的旁路。
+本地权威输入由 watcher 自动重建。顶层页面刷新还会显式 replan 一次，使 planner 真正读取并纳入 identity 的远程输入可以更新。
+未声明进 fingerprint/plan projection 的运行期外部状态不属于可证明的 project current；作者要把 revision、digest 或路径显式声明成身份输入。
 
 不盯的有三类：有效根之外的 Record、依赖目录里的包、临时写入文件。
 收窄之外的数据本来就不进站点，为它重建只会让页面无故闪动；`niceeval` 自己的内建组件随包分发，改它属于开发 niceeval，不是用这条命令。
@@ -112,8 +116,8 @@ Record root 用 `--record <dir>` 传入，单开一份 Run 用 `--run <file>`—
 - **事件去抖后合成一次重建。**
   一次运行收尾时多个 artifact 连续落盘，合成一次。
   重建期间又来事件，在本次结束后再建一次，不排队堆积。
-- **失败不拆站。**
-  报告文件写错、配置报错时 server 继续服务上一份可用站点，把结构化错误推给浏览器显示、终端同步打印一次；修好保存后自动恢复。
+- **失败时 current 不降级。**
+  Target、报告或配置重建失败时，last-good 只留在内存等待恢复；新请求返回 503，已打开页面收到 unavailable 错误，不继续把旧站点标成 current。修好保存或刷新后可重新规划恢复。
   `--out` 遇到同样的错误按用法错误非零退出——它没有「上一份」可留。
 - **终端确认成功完成。**
   watch 触发的每次重建在静态报告站构建完成并推给页面后，打印一行本机时间，例如 `10:09:29 [niceeval view] 热重载完成`。
