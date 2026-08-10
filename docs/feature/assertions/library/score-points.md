@@ -46,6 +46,16 @@ eval 得分 = Σ 各给分项的挣分        （纯累加,无分母）
 - **`t.score(label, n)`（直接给分，`n ≥ 0`）**——作者自己算好条件和分数后直接累加，`label` 进报告：行数分档 `t.score("代码精简", tierPoints)`、命中率换算 `t.score("命中率", coverage * 20)`。
   判定条件复杂到断言词汇装不下时的出口。
 
+### 稳定落盘映射
+
+这些是作者 API，不是 Record shape。producer 把 <code>.points(n)</code> 归一成 check entry 的 conditional award，并把 <code>n</code> 保存为 available。
+
+available result 的实得分由 <code>n * score</code> 派生，Record 不重复保存 earned。
+
+<code>t.score(label, n)</code> 归一成独立的 direct score entry，直接保存 points。<code>.gate()</code>、<code>.atLeast()</code> 与 <code>.soft()</code> 归一成 decision；<code>.optional()</code> 归一成 availability。<code>stopOnFailure</code> 只控制 producer，不落入 Assertions document。
+
+精确联合、数值闭包和永久限制见 [Assertions Architecture](../architecture.md#稳定落盘投影)。上层 API 可以改名或重组，只要继续产生同一投影，旧 Record 的分数展示就不变。
+
 一条断言在计分制里的**角色由断言句柄上链的词决定**，四种角色的读数落点两两不相交——同一条证据不会被两个读数读到：
 
 | 链的词 | 角色 | 落到哪个读数 | 失败的后果 |
@@ -67,7 +77,7 @@ eval 得分 = Σ 各给分项的挣分        （纯累加,无分母）
 - **`--strict` 两种题型同义**：带线 soft 升级为 gate；它不添加 `.stopOnFailure()`。
 - **`t.require` 两种题型都有**：它是 `t.check(...).gate().stopOnFailure()` 的值断言简写。
 - **中止挣 0，基础设施得 null，严格分开**：前置失败强制结束，后面的给分代码不执行、那些分自然没挣到——agent 没走到是它的责任，低分成立；Sandbox 炸了、Judge 没 key 会形成 `errored` Verdict，整题分数为 `null`、不折成 0——评不了不是 agent 差。
-  带 `.points` 的断言形成 unavailable Assertion result 时不挣分，并在报告里如实标注；非 optional 情形还会使整题形成 `errored` Verdict。
+  带 `.points` 的断言形成 unavailable result 时不派生实得分，并在报告里如实标注；required 情形还会使 producer 写出 `errored` Verdict。
 - **丢分不是失败**：五步走完三步的 Attempt 可形成 `passed` Verdict 且挣 3 分，「做到几成」由分数面回答，不借判定面表达；Verdict 回答的是「这次的分数完不完整」（[四态与优先级](../../verdict/architecture.md#verdict)）。
    `errored` / `skipped` 与通过制同义，缓存、重试、发现单位照旧。
 - **`attempts > 1`**：eval 得分取各 attempt 的均值（`null` 跳过，全 `null` 为 `null`），与通过制按通过率聚合同构。
@@ -176,6 +186,6 @@ gate 不进质量分：10 条全过的 gate 加一个 0.6 的 judge 会把均值
 - [Eval · defineScoreEval](../../eval/README.md#definescoreeval计分制题型) —— 计分制题型的定义形状。
 - [计分制用例](../../eval/use-case/rubric-points.md) —— 检查点制与 rubric 制的完整写法。
 - [Severity 与 Verdict](../../verdict/architecture.md) —— 四态折叠与 gate / soft 语义，判定面的基础。
-- [Assertions Architecture](../architecture.md) —— `AssertionResult` 的字段（`groupPath` / `score` / `severity`），折叠树的叶子素材。
+- [Assertions Architecture](../architecture.md) —— 作者求值语义与稳定 <code>AssertionsDocument</code> 投影，折叠树的叶子材料。
 - [Reports](../../reports/README.md) —— show / view 共用的 page 声明，读取面的落点。
 - [Observability](../../../observability.md) —— 质量 × 成本对比的现有横截面。

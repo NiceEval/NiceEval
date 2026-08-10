@@ -13,6 +13,8 @@
 
 ## 概要选择
 
+概要只使用稳定落盘投影与独立 Verdict。它不读取 producer 的 matcher、控制流或求值图。
+
 概要按以下顺序选择一条主要说明：
 
 1. 执行错误或 Runner 诊断。
@@ -32,12 +34,14 @@ gate  package manifest has the required entry
 ~~~
 
 - 标题优先使用分组路径；没有分组时使用 <code>name</code>。
-- <code>severity</code>、<code>outcome</code>、matcher 摘要和可用的 expected / received 进入同一条或相邻文本行。
-- <code>unavailable</code> 显示 <code>reason</code> 和证据摘要，不显示零分或失败值。
-- <code>stopOnFailure</code> 只在详情中说明后续测试代码被停止。
-- 计分制同时显示 <code>points</code> 与 <code>pointsAvailable</code>。
+- <code>decision</code>、派生的行状态、<code>detail</code> 和可用的 expected / received 进入同一条或相邻文本行。
+- <code>gate</code> 与 <code>soft</code> 按 <code>score &gt;= threshold</code> 显示 passed 或 failed；<code>observe</code> 只显示 score，不补猜行状态。
+- <code>result.state: "unavailable"</code> 显示 <code>reason</code> 和证据摘要，不显示零分、失败值或实得分。
+- conditional award 显示 available 与由 <code>available * score</code> 派生的实得分；direct score 显示持久化 points。
 
 source 信息存在时，详情页链接到项目相对路径和行列。没有 source 的条目进入 unmapped 区，不猜测源码位置。
+
+<code>stopOnFailure</code> 是 producer 控制流，不进入稳定投影。若停止后续测试本身需要解释，由独立 diagnostic 或 run fact 表达，Assertion 详情不从条目反推。
 
 ## Turn、conversation 与相关通道
 

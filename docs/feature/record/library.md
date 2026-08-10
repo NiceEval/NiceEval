@@ -244,7 +244,11 @@ type ChannelRead<T> =
 
 <code>niceeval.verdict</code> 和 <code>niceeval.eligibility</code> 的精确永久 payload、media type 与 carry 完整度前置条件只由 [Record Architecture](architecture.md#通道语义与兼容性) 定义。它们不能增加字段；破坏既有解释时更换完整格式名。
 
-其它内建 decoder 可以退役。退役 reader 仍保留 descriptor，并只将依赖它的 detail 或 Calculation 标为 unsupported。
+<code>niceeval.assertions</code> 的 <code>application/json</code> decoder 也永久保留，但它只服务 presentation，不进入 planner 或核心。精确 <code>AssertionsDocument</code>、transport 和值限制只由 [Assertions Architecture](../assertions/architecture.md#稳定落盘投影) 定义。
+
+assertions decoder 对整个 document 执行精确读取。重复 object key、未知字段、非法联合、越界或非法数值都返回同名 <code>ChannelRead.invalid</code>；它不部分解码一个坏 document。
+
+其它内建 decoder 可以退役。退役 reader 仍保留 descriptor，并只将依赖它的 detail 或 Calculation 标为 unsupported。永久 assertions decoder 与标准 Attempt detail requirement 不属于这类 decoder。
 
 eligibility decoder 将 fingerprint 与 config identity 读为 <code>{ domain, value }</code>。它只在 domain 逐字相同下比较 value。
 

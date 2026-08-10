@@ -123,7 +123,22 @@ function defineJsonFact<Value extends ReportJsonValue>(input: {
 }): FactRequirement<Value>;
 ```
 
-内建 requirement 由 NiceEval 导出，private brand 阻止用户伪造内建 decoder。`defineJsonFact()` 是自定义事实的唯一入口；name 必须是反向域 namespace，且不能以 `niceeval.` 开头。其 transport、单值 cardinality 和错误规则由 [Record Architecture](../record/architecture.md#通道语义与兼容性) 定义。
+可供用户 Report 声明的内建 requirement 由 NiceEval 导出，private brand 阻止用户伪造内建 decoder。`defineJsonFact()` 是自定义事实的唯一入口；name 必须是反向域 namespace，且不能以 `niceeval.` 开头。其 transport、单值 cardinality 和错误规则由 [Record Architecture](../record/architecture.md#通道语义与兼容性) 定义。
+
+标准 Attempt detail definition 私有持有永久 Assertions requirement；它不新增给 Report 作者的公开导出：
+
+| 属性 | 固定值 |
+|---|---|
+| requirement id | <code>niceeval.assertions</code> |
+| owner | <code>attempt</code> |
+| channel | <code>niceeval.assertions</code> |
+| media type | <code>application/json</code> |
+| decoded type | [<code>AssertionsDocument</code>](../assertions/architecture.md#稳定落盘投影) |
+| source | private built-in decoder |
+
+这项私有 requirement 绑定冻结的业务 fact，不绑定 producer 的 assertion API、matcher 或运行时类型。每个标准 Attempt detail page 都声明它；未来标准 Report 不能通过换用新通道，让旧 assertions 虽然可解码却没有展示入口。
+
+完整永久链是：Attempt → <code>niceeval.assertions</code> → 内建 decoder → 此 FactRequirement → 标准 Attempt detail presentation。它不进入 Sample、planner 或 Record 核心。
 
 局部 parser 只接收已经验证的 `CustomFactDocument`，绝不接收原始 bytes、descriptor、路径或 blob locator。它必须同步返回 <code>ReportJsonValue</code>，不能返回 Promise。
 

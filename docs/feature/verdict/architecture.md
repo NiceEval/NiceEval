@@ -1,6 +1,6 @@
 # Verdict 与 Severity
 
-Verdict 由 Attempt 的 assertion、执行错误和显式 skip 形成，并写入 <code>niceeval.verdict</code> channel。它是业务数据，不是读取器的计算副本。
+Verdict 由 producer 根据 Attempt 的 assertion 求值结果、执行错误和显式 skip 形成，并写入 <code>niceeval.verdict</code> channel。它是独立业务数据，不是读取器的计算副本。
 
 ## Severity
 
@@ -17,7 +17,7 @@ Verdict 由 Attempt 的 assertion、执行错误和显式 skip 形成，并写�
 
 ## 四态折叠
 
-按以下顺序形成一个 Attempt Verdict：
+producer 在发布 Attempt 前按以下顺序形成一个 Attempt Verdict：
 
 1. 存在终局执行错误，或存在非 optional unavailable Assertion，得到 <code>errored</code>。
 2. 存在 gate failed，或 strict policy 下存在 soft failed，得到 <code>failed</code>。
@@ -30,6 +30,8 @@ Verdict 由 Attempt 的 assertion、执行错误和显式 skip 形成，并写�
 
 <code>niceeval.verdict</code> 的精确 payload 只有四态 <code>state</code>。Assertion、diagnostic 引用和人读摘要属于各自业务通道，不进入 Verdict。精确 document 与 media type 由 [Record Architecture](../record/architecture.md#通道语义与兼容性) 单点定义。
 
+producer 可以更换 assertion API、matcher、collector 或 evaluation algorithm，但仍分别写入冻结的 Assertions 投影与本通道。Assertions 的 <code>decision</code> 保存行级分类；strict policy 是否生效不重写它。
+
 channel descriptor 的采集完整度与本次 decoder 状态仍由 Record reader 单独给出。被请求的 Verdict channel 无效时，planner 和需要它的页面失败；<code>unavailable</code> 或 <code>unsupported</code> 不能被替换成 <code>passed</code>。
 
 Verdict 与 eligibility 的 payload 永不扩展。破坏性语义变化需要新的完整格式名；普通业务通道可以通过新名称或局部 unsupported 演进。
@@ -38,7 +40,7 @@ Verdict 与 eligibility 的 payload 永不扩展。破坏性语义变化需要�
 
 carry planner 读取 Verdict 与 eligibility 的当前值。只有两个 ChannelRead 都是 read、durable complete、decoding complete、精确 payload 合法，且 identity/duration 与本次 policy 全部满足时，planner 才可采用 Attempt。
 
-Reports 从 ReportInput 显示 Verdict、相关 Assertion 和诊断。它不打开 Record 文件、不重新折叠状态，也不猜测缺失数据。
+Reports 从 ReportInput 显示 Verdict、相关 Assertion 和诊断。它不打开 Record 文件，不从 Assertions 重新折叠 Verdict，也不猜测 strict policy、控制流或缺失数据。
 
 ## 相关阅读
 

@@ -202,6 +202,10 @@ type EligibilityDocument = {
 
 所有嵌套对象同样精确。未知字段、缺失字段、其它 Verdict 判别值或其它 media type 都使该通道 invalid。<code>domain</code> 和 <code>value</code> 是非空 NFC 文本；<code>milliseconds</code> 是非负安全整数。Assertion、diagnostic 引用和人读摘要属于其它业务通道，不进入 Verdict。
 
+<code>niceeval.assertions</code> 是 Attempt-owned、<code>application/json</code> 的永久 presentation channel。它不进入核心，也不参与 planner 或 carry；其冻结 document、限制与派生规则由 [Assertions Architecture](../assertions/architecture.md#稳定落盘投影) 单点定义。
+
+永久 presentation 表示 decoder 与标准消费链都不能退役：Attempt → <code>niceeval.assertions</code> → 内建 decoder → 标准 FactRequirement → 标准 Attempt detail。未来的新 Assertions 语义使用新的描述性 channel，但旧通道仍能从显式选择的旧 Run 进入标准详情。
+
 自动 carry 只使用下列输入：
 
 - 完整 Verdict；
@@ -213,7 +217,7 @@ type EligibilityDocument = {
 
 identity 配方加入输入时必须更换对应 domain，不能在同一 domain 下改变闭包。新持久 gate 若无法归约为现有 identity、duration 或本次 policy，就不能参与本格式的自动 carry，也不能新增 planner-critical channel；产品若必须加入它，必须更换整个格式名，让旧 planner 在根格式处失败。
 
-其它 decoder 可以退役。退役后，只有依赖该通道的 detail 或 Calculation 成为 unsupported。
+除 assertions 外，其它非 planner-critical decoder 可以退役。退役后，只有依赖该通道的 detail 或 Calculation 成为 unsupported。
 
 ## Eligibility、duration 与采用
 
@@ -252,7 +256,7 @@ writer 必须先在 <code>.tmp/&lt;writerId&gt;/</code> 内完整形成 Attempt 
 - channel descriptor、path 或 coverage 协议；
 - root layout 或原子可见性规则。
 
-新增领域事实、可选字段、可忽略 event variant、未知 channel 或局部 decoder 的退役，都不属于全局格式变化。它们遵守通道名称和局部 unsupported 规则。
+新增领域事实、可选字段、可忽略 event variant、未知 channel 或允许退役的局部 decoder，都不属于全局格式变化。它们遵守通道名称和局部 unsupported 规则；永久 assertions decoder 与标准消费链不在可退役集合内。
 
 ## 读取不变量
 
