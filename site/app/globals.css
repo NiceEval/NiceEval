@@ -58,7 +58,6 @@ html {
 }
 
 body {
-  --frame-bleed: 16px;
   margin: 0;
   min-width: 320px;
   /* eval-deck 的倾斜卡片旋转后会超出版心，裁掉溢出避免出现横向滚动条。 */
@@ -66,30 +65,6 @@ body {
   background: var(--bg);
   color: var(--text);
   letter-spacing: 0;
-}
-
-/* 背景不是另铺一张装饰图，而是一套跟版心对齐的工作台：两条纵向轨道贯穿正文，
-   把大面积纯黑留白收进一个有边界的阅读面。轨道比内容版心各外扩 16px，不挤正文。 */
-main {
-  position: relative;
-  isolation: isolate;
-}
-
-main::before {
-  content: "";
-  position: absolute;
-  z-index: 0;
-  inset-block: 0;
-  left: 50%;
-  width: min(1212px, calc(100% - 16px));
-  border-inline: 1px solid var(--line);
-  transform: translateX(-50%);
-  pointer-events: none;
-}
-
-main > * {
-  position: relative;
-  z-index: 1;
 }
 
 a,
@@ -118,22 +93,10 @@ pre {
 }
 
 .topbar {
-  position: relative;
   height: 76px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-}
-
-/* 顶栏的基线接住正文两条轨道，页面从第一屏起就形成完整框架。 */
-.topbar::after {
-  content: "";
-  position: absolute;
-  right: calc(-1 * var(--frame-bleed));
-  bottom: 0;
-  left: calc(-1 * var(--frame-bleed));
-  border-bottom: 1px solid var(--line);
-  pointer-events: none;
 }
 
 .brand,
@@ -199,27 +162,6 @@ pre {
   align-items: center;
   gap: clamp(36px, 5vw, 72px);
   padding: 80px 0 140px;
-}
-
-/* 文案留在底色上，终端所在的“证据面”降一档明度；面从两栏间隙起步，
-   所以不会在任何正文后面突然换底色。 */
-.hero::before,
-.setup::before,
-.loop::before {
-  content: "";
-  position: absolute;
-  z-index: -1;
-  right: calc(-1 * var(--frame-bleed));
-  border: 1px solid var(--line);
-  background: var(--panel);
-  pointer-events: none;
-}
-
-.hero::before {
-  top: 50%;
-  height: min(704px, calc(100% - 120px));
-  left: 40%;
-  transform: translateY(-50%);
 }
 
 .hero-copy {
@@ -692,12 +634,6 @@ h1 {
   padding: 92px 0 120px;
 }
 
-.setup::before {
-  top: 48px;
-  bottom: 56px;
-  left: 42%;
-}
-
 .setup-intro {
   position: sticky;
   top: 110px;
@@ -760,8 +696,6 @@ h1 {
 
 .deck-tag {
   flex-shrink: 0;
-  padding: 1px 7px;
-  border: 1px solid var(--line);
   color: var(--muted);
   font-size: 10.5px;
   text-transform: uppercase;
@@ -1081,12 +1015,6 @@ h1 {
   gap: 64px;
   padding: 92px 0 120px;
   border-top: 1px solid var(--line);
-}
-
-.loop::before {
-  top: 48px;
-  bottom: 56px;
-  left: 42%;
 }
 
 .loop-intro {
@@ -1588,13 +1516,6 @@ h1 {
     position: static;
   }
 
-  /* 单栏时文案与演示共享整行，不再硬切左右底色；外层轨道仍保留页面结构。 */
-  .hero::before,
-  .setup::before,
-  .loop::before {
-    display: none;
-  }
-
   .deck-switch {
     display: flex;
     flex-wrap: wrap;
@@ -1629,14 +1550,6 @@ h1 {
 }
 
 @media (max-width: 680px) {
-  body {
-    --frame-bleed: 10px;
-  }
-
-  main::before {
-    width: calc(100% - 8px);
-  }
-
   .shell {
     width: min(100% - 28px, 1180px);
   }
