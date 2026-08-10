@@ -32,12 +32,12 @@ diff；`IncrementalReview` 模式审查上次 review 后的新提交及其与当
 
 重点完成以下审计：
 
-1. Public API：检查 `package.json` 的 `exports`、`bin`、`engines`、peer dependencies，以及 `src/index.ts` 和每个公开 subpath 的导出。继续追到导出符号的定义，识别函数、类型、联合成员、字段、参数、返回值、默认值和错误行为的变化。仅改内部实现而公共形状与可观察语义不变时标为 internal-only。
+1. Public API：检查 `package.json` 的 `exports`、`bin`、`engines`、peer dependencies，以及 `src/index.ts` 和每个公开 subpath 的导出。继续追到导出符号的定义，识别函数、类型、联合成员、字段、参数、返回值、默认值和错误行为的变化。仅改内部实现而公共形状与可观察语义不变时，不把它伪装成公共变化项。
 2. CLI：检查 `bin/niceeval.js`、`src/cli.ts`、`src/i18n/en.ts`、`src/i18n/zh-CN.ts` 及相关命令实现。识别 command、位置参数、flag、组合约束、默认值、stdout/stderr、退出码、`--json` schema 和帮助文本的变化，并核对中英文帮助与真实 parser/行为一致。
-3. Report components：检查 `niceeval/report` 的公开入口、组件、props、children、默认组合、转换函数与渲染结果。每项变化都给出可复制的 TSX before/after example，并说明报告作者和最终读者看到的变化；没有 report 变化时明确写“无”。
+3. Report components：检查 `niceeval/report` 的公开入口、组件、props、children、默认组合、转换函数与渲染结果。每项变化都给出可复制的 TSX before/after example，并说明报告作者和最终读者看到的变化；没有 report 变化时不添加虚假的 report 条目。
 4. 可观察契约：检查运行语义、record/schema、缓存身份、provider、report/show/view 输出和错误反馈是否变化。字段丢失、旧记录读取、配置身份或结果 stale 风险不能只按类型检查通过处理。每项变化都给出同一输入在变化前后的具体结果与用户影响。
 5. 同步面：公共 API、CLI、Report component 或可观察行为变化时，核对对应 Feature 契约、`docs-site/` 中英文用户文档、示例和声明过的最小测试是否同步。不要要求无关的全量测试或机械格式修改。
-6. 跨仓影响：若改动会影响 `terminal-bench`、`MemoryBench` 或 `NiceEval-Eval`，只陈述能从当前仓库证据确认的上游契约影响；证据不足时标为 uncertain，不臆测下游状态。
+6. 跨仓影响：若改动会影响 `terminal-bench`、`MemoryBench` 或 `NiceEval-Eval`，只陈述能从当前仓库证据确认的上游契约影响；证据不足时写明缺少的证据，不臆测下游状态或增加一项 `uncertain` 分类。
 7. Package scripts：比较 base 与 PR 最终版本的 `package.json` scripts，列出新增、删除、重命名或命令内容改变的 script。说明每项命令的用途、调用的实际入口，以及 CI、文档或开发流程是否同步；给出变化前后的可复制命令和用户工作流影响，不要把仅有依赖变化误报为 script 变化。
 8. 环境变量：逐项比较 base 与 PR 最终版本中的环境变量。检查 `process.env`、Docker/Compose `Env`、Dockerfile `ENV`、CI `env`/secret、systemd `Environment`/`EnvironmentFile`、shell `${NAME}` 与宿主部署配置。用户变量、CI secret、测试开关、容器内注入、宿主 service和 packaging script都不能遗漏。每项说明 producer、consumer、作用域、继承边界、默认值、优先级、校验、secret风险与迁移，并检查名称是否进入环境变量边界守护。重点判断它是否真的需要 ambient state：固定值优先常量，一次调用的选择优先参数或 CLI flag，项目配置优先 typed config，宿主部署事实优先受管 descriptor或 service config。若已有显式通道足够，却又新增可继承、可覆盖的环境变量，形成 finding；官方上游工具要求的变量也要说明为什么不能避免。
 9. 测试变更与稳定性预算：直接从 base diff 列出所有新增、删除、重命名或实质改写的产品测试、fixture、expected 与 harness，不依赖 PR 描述是否主动列出。先从契约与可观察行为 diff 独立推导受影响 owner，再逐文件核对测试 diff。稳定的含义是“小更改只修改真实受影响的测试”；以下预算是 blocking 规则：
@@ -52,68 +52,56 @@ diff；`IncrementalReview` 模式审查上次 review 后的新提交及其与当
 10. 测试形态与可靠性：从产品契约零基推导用户结果，再按“Journey E2E → 单边界 E2E → 最小 Unit 例外 → 不自动化”检查；现有测试与 owner 没有保留推定。每条新增、保留或实质改写的 Unit 都必须先说明真实 E2E 为何不能直接、稳定地制造输入并观察同一错误结果；与其它 Unit 不重复、算法重要、分支独有或便于定位均不是理由。缺少具体 E2E 不可行证据时要求删除 Unit，必要时由 E2E 接管。核对 `pnpm test` 报告的 Tests 数，超过 200 时形成 finding；Testkit 不设独立 Unit 套件。`test.each` 的展开 case 逐条计数，不接受把独立命题合并进大测试规避上限。新增、接管或实质修改的自动化 owner 必须在同一 candidate digest、checkout、lockfile 与运行条件下完成三份全新副本、同副本连续两次、Repo 默认并行、文件与标题单跑及资源终结收据；测试级 retry 后转绿不算可靠。Snapshot 大面积变化时只接受 owner 已声明的稳定表示发生变化，不接受批量确认。依赖兄弟测试顺序、共享可变结果、`serial` 或“必须最后”才能通过，均视为可靠性失败。若所有自动化都会破坏稳定或可靠性，不要求编写脆弱测试；选择不自动化时不得创建测试文件、空场景 Repo 或伪 owner。Docker-in-Docker 的宿主内核、daemon 权限和嵌套网络无法固定时可采用此处置。安全或发布关键行为既无可靠自动化、又无本次真实验收时形成 finding。
 11. 永久 Test impact 收据：对每个新增、删除、替换、实质修改或不自动化项，检查 PR Tests section 是否保存 candidate Git SHA 与 NiceEval tarball digest、`retain | delete | replace | not automated` 处置、契约与 owner、历史 fix parent / mutation / perturbation 引用、实际验证命令与最早失败阶段、checkout / lockfile / fixture / seed / 时钟策略 / 镜像身份，以及三份新副本、同副本两次、默认并行、文件与标题单跑、资源终结的逐次结果。不自动化项改为保存无法可靠自动化的原因、真实运行条件与版本、生产入口、AI 动作、公开观察和未守护风险。Review 必须从 diff 独立核对这些字段；字段缺失、固定条件不明或只写最终绿色摘要时形成 finding，并把结论设为“需要修改”。
 
-兼容性分类使用以下固定词：
+变化清单只使用三个方向，不再叠加第二套兼容性分类：
 
-- `breaking`：现有有效调用、CLI invocation、落盘数据或自动化会失效或改变含义。
-- `additive`：只新增能力，现有有效用法保持原语义。
-- `behavior-change`：形状不变，但用户可观察语义、输出、默认值、错误或性能边界改变。
-- `internal-only`：公共形状和用户可观察行为均不变。
-- `uncertain`：现有证据不足；明确写出缺少什么证据。
+- `Removed`：PR base 中存在、最终版本中不再存在的入口或行为。
+- `Added`：PR base 中不存在、最终版本中新出现的入口或行为。
+- `Changed`：同一入口在前后都存在，但形状或可观察行为发生变化。
 
-NiceEval 处于 beta，breaking change 不自动构成缺陷。只有 breaking 变化与 PR 意图不符，或契约、实现、文档、测试、迁移说明彼此不一致时才形成 finding。
+公开身份被替换时分别列为一项 Removed 和一项 Added，不合并成 Changed。仅内部实现变化且公共形状与可观察语义不变时，不列入这三个公开变化块。现有证据不足时明确写出缺失证据并据此裁决，不增加 `uncertain` 分类。NiceEval 处于 beta，移除或不兼容变化不自动构成缺陷；只有变化与 PR 意图不符，或契约、实现、文档、测试、迁移说明彼此不一致时才形成 finding。
 
-Review body 必须使用中文并严格采用以下结构；每节即使没有变化也必须保留并写“无”：
+Review body 必须使用中文并严格采用以下结构。Removed、Added、Changed 是变化清单的一级大块，不得先按 CLI、Public API 或其它产品面分组，也不得在命令、符号或行为下面再写 `breaking`、`additive`、`behavior-change`、`internal-only` 或 `uncertain`。每个变化块都必须保留，没有对应变化时写“无”：
 
 ```markdown
 ## 变更概述
 
 用 2–5 条说明 PR 的目的、实现路径和用户最终看到的结果，不逐文件罗列。
 
-## Public API
+## Removed
 
-| 分类 | 入口 / 符号 | 变化前用法 | 变化后用法 | 用户影响与迁移 | 证据 |
-| --- | --- | --- | --- | --- | --- |
+### `<Public API | CLI | Report | 可观察行为与数据 | 环境变量 | Package script>: <入口、符号、命令、行为或名称>`
 
-每项必须给出可复制的 TypeScript before/after example；新增能力的变化前用法写“不可用”，删除能力的变化后用法写“已删除”。
+- 变化前用法或结果：<可复制示例及实际结果>
+- 变化后用法或结果：已删除
+- 用户影响与迁移：<失效内容、替代方案和迁移动作>
+- 环境边界：<仅环境变量填写：作用域、producer、consumer、继承、默认值、优先级、校验、secret 暴露，以及为何显式通道不能承载；其它表面省略>
+- 证据：<base 与 PR 中可核查的文件、符号或 diff>
 
-## CLI usage
+## Added
 
-| 分类 | 命令 / flag | 变化前用法 | 变化后用法 | 用户影响与迁移 | 证据 |
-| --- | --- | --- | --- | --- | --- |
+### `<Public API | CLI | Report | 可观察行为与数据 | 环境变量 | Package script>: <入口、符号、命令、行为或名称>`
 
-命令示例必须可复制；不要编造 diff 和源码无法证明的旧用法或新用法。
+- 变化前用法或结果：不可用
+- 变化后用法或结果：<可复制示例及实际结果>
+- 用户影响：<新增能力以及 stdout、stderr、退出码、JSON schema、渲染、存储、自动化或工作流影响>
+- 环境边界：<仅环境变量填写：作用域、producer、consumer、继承、默认值、优先级、校验、secret 暴露，以及为何显式通道不能承载；其它表面省略>
+- 证据：<PR 中可核查的文件、符号或 diff>
 
-## Report components
+## Changed
 
-| 分类 | 组件 / prop / 转换函数 | 变化前 TSX | 变化后 TSX | 作者与读者影响 | 证据 |
-| --- | --- | --- | --- | --- | --- |
+### `<Public API | CLI | Report | 可观察行为与数据 | 环境变量 | Package script>: <入口、符号、命令、行为或名称>`
 
-每项给出可复制的 TSX before/after example，并说明渲染结果或报告创作流程如何变化；没有变化时写“无”。
+- 变化前用法或结果：<可复制示例及实际结果>
+- 变化后用法或结果：<同一输入或替代用法及实际结果>
+- 用户影响与迁移：<兼容性、迁移、渲染、存储、自动化或工作流影响>
+- 环境边界：<仅环境变量填写：作用域、producer、consumer、继承、默认值、优先级、校验、secret 暴露，以及为何显式通道不能承载；其它表面省略>
+- 证据：<base 与 PR 中可核查的文件、符号或 diff>
 
-## 可观察行为与数据契约
-
-| 分类 | 行为 / 数据面 | 变化前示例与结果 | 变化后示例与结果 | 用户与自动化影响 | 证据 |
-| --- | --- | --- | --- | --- | --- |
-
-列出 runtime、record/schema、缓存身份、provider、report/show/view 或错误反馈变化；同一输入必须给出前后具体结果，并标注兼容性分类。
-
-## 环境变量
-
-| 变化 | 变量 | 作用域与 producer / consumer | 变化前用法 | 变化后用法与默认值 | 为什么不能用显式通道 | 用户与安全影响 | 证据 |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-
-逐项列出新增、删除、重命名、默认值或语义变化。固定常量、单次调用参数、typed config、CLI flag、受管 descriptor或 service配置能够表达时，不接受仅以“方便”为理由新增环境变量。没有变化时写“无”。
+各块按上述 entry 重复，不为每个产品面创建固定空小节。Public API 必须给出可复制的 TypeScript 用法，CLI 必须给出可复制命令，Report 必须给出可复制 TSX，并说明作者与读者看到的结果；可观察行为与数据必须覆盖 runtime、record/schema、缓存身份、provider、report/show/view 或错误反馈的前后结果。环境变量必须逐项说明边界，固定常量、单次调用参数、typed config、CLI flag、受管 descriptor 或 service 配置能够表达时，不接受仅以“方便”为理由新增变量。
 
 ## 文档与验证
 
 说明本 PR 实际同步了哪些契约、公开文档和测试，以及仍缺失的必要验证。只报告与本次变化直接相关的缺口。
-
-## Package scripts
-
-| 变化 | script | 变化前命令 | 变化后命令 | 用户工作流影响 | 证据 |
-| --- | --- | --- | --- | --- | --- |
-
-逐项报告新增、删除、重命名或命令内容改变的 script；命令示例必须可复制，没有变化时写“无”。
 
 ## 测试变更
 

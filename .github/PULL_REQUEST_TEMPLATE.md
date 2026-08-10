@@ -9,12 +9,24 @@ an internal mechanism such as its registry, protocol, or storage model. Keep one
 dominant outcome and aim for 72 characters or fewer. Write the PR title and
 description in the language of the user's latest request.
 
-Keep every section below. Write "None" when that surface does not change.
-Repeat the entry block when a section contains multiple changes. Every changed
+Keep every section below. Write "None" when the PR contains no entry for that
+change direction. Organize the inventory by Removed, Added, and Changed; do not
+organize it by product surface or put a change classification beneath each
+command or symbol. Prefix every entry title with exactly one surface from
+`Public API`, `CLI`, `Report`, `Observable behavior/data`, `Environment
+variable`, or `Package script`, and repeat the entry block as needed. Every
 entry needs a concrete before example, after example, and user impact. Usage
 examples must include the public owner that consumes the value; do not show an
 isolated factory result when real usage belongs inside `defineEval()`,
 `defineExperiment()`, report JSX, CLI invocation, or a package script.
+
+Use Removed when an entry that existed at the PR base no longer exists, Added
+when the final PR introduces a new entry, and Changed when the same entry exists
+before and after but its shape or observable behavior changes. A replacement
+with a new public identity is one Removed entry and one Added entry, not one
+Changed entry. Do not add `breaking`, `additive`, `behavior-change`,
+`internal-only`, or `uncertain` as a second classification model; describe
+compatibility and migration concretely in User impact.
 
 Inventory every environment variable added, removed, renamed, given a new
 default, or used in a new scope. Include user-facing variables, CI secrets,
@@ -32,62 +44,32 @@ a new environment variable.
 - Required capability: <why the supporting API, protocol, or internal mechanism is necessary>
 - User outcome: <what becomes possible after this PR>
 
-## Public API
+## Removed
 
-### `<package entry or symbol>`
+### `<surface>: <entry>`
 
-- Classification: `additive | breaking | behavior-change | internal-only | uncertain`
-- Before usage: `<copyable TypeScript example or "not available">`
-- After usage: `<copyable TypeScript example or "removed">`
-- User impact: <what users can do now or how they must migrate>
+- Before usage or result: <copyable example and observed result>
+- After usage or result: `removed`
+- User impact: <what stops working and the concrete migration or replacement>
+- Environment boundary: <for an environment variable only: scope, producer, consumer, inheritance, default, precedence, validation, secret exposure, and why an explicit channel cannot own it; otherwise omit>
 
-## CLI commands
+## Added
 
-### `<command or flag>`
+### `<surface>: <entry>`
 
-- Classification: `additive | breaking | behavior-change | internal-only | uncertain`
-- Before usage: `<copyable shell command or "not available">`
-- After usage: `<copyable shell command or "removed">`
-- User impact: <stdout, stderr, exit code, JSON schema, default, or migration change>
+- Before usage or result: `not available`
+- After usage or result: <copyable example and observed result>
+- User impact: <what becomes possible, including stdout, stderr, exit code, JSON schema, rendered output, stored data, automation, or workflow effects where relevant>
+- Environment boundary: <for an environment variable only: scope, producer, consumer, inheritance, default, precedence, validation, secret exposure, and why an explicit channel cannot own it; otherwise omit>
 
-## Report components
+## Changed
 
-### `<component, prop, or report entry>`
+### `<surface>: <entry>`
 
-- Classification: `additive | breaking | behavior-change | internal-only | uncertain`
-- Before usage: `<copyable TSX example or "not available">`
-- After usage: `<copyable TSX example or "removed">`
-- User impact: <rendered result, authoring workflow, or migration change>
-
-## Observable behavior and data contracts
-
-### `<runtime behavior, record/schema, cache, provider, or output>`
-
-- Classification: `additive | breaking | behavior-change | internal-only | uncertain`
-- Before example: <concrete input and observed result>
-- After example: <the same input, or its replacement, and observed result>
-- User impact: <what changes for users, stored data, or automation>
-
-## Environment variables
-
-### `<VARIABLE_NAME>`
-
-- Change: `added | removed | renamed | default changed | semantics changed`
-- Scope: `user-facing | CI secret | test-only | container-internal | host service | packaging`
-- Before usage: `<copyable shell/config example or "not available">`
-- After usage: `<copyable shell/config example or "removed">`
-- Producer and consumer: <who sets it, who reads it, and whether child processes inherit it>
-- Necessity: <why an explicit API, CLI flag, config file, argument, or constant cannot own this value>
-- User and security impact: <default, validation, precedence, secret exposure, migration, or "none">
-
-## Package scripts
-
-### `<pnpm script>`
-
-- Change: `added | removed | renamed | command changed`
-- Before usage: `<copyable command or "not available">`
-- After usage: `<copyable command or "removed">`
-- User impact: <development, CI, documentation, or release workflow change>
+- Before usage or result: <copyable example and observed result>
+- After usage or result: <the same input, or its replacement, and the observed result>
+- User impact: <compatibility, migration, rendered output, stored data, automation, or workflow effects>
+- Environment boundary: <for an environment variable only: scope, producer, consumer, inheritance, default, precedence, validation, secret exposure, and why an explicit channel cannot own it; otherwise omit>
 
 ## Tests
 
