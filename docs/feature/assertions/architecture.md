@@ -31,6 +31,7 @@ type EntryContext = {
   detail?: string;
   source?: {
     path: string;
+    digest: string;
     line: number;
     column: number;
   };
@@ -67,6 +68,7 @@ type DirectScoreEntry = {
   groupPath: readonly string[];
   source?: {
     path: string;
+    digest: string;
     line: number;
     column: number;
   };
@@ -107,6 +109,7 @@ producer 必须把 matcher 默认通过线也写成显式 <code>threshold</code>
 | <code>groupPath</code> | 最多 16 个 segment；空数组表示根组。 |
 | <code>expected</code>、<code>received</code>、<code>evidence</code> | 每项最多 4,096 UTF-8 bytes；缺失表示未提供，空串表示提供了空预览；内容原样保留，由 renderer 去除控制字符。 |
 | <code>source.path</code> | 非空项目相对 POSIX 路径，最多 1,024 UTF-8 bytes；拒绝绝对路径、反斜杠、C0、DEL，以及空、<code>.</code> 或 <code>..</code> segment。 |
+| <code>source.digest</code> | 对应 origin Run source snapshot 的 SHA-256；精确为 64 个 lowercase hex 字符。 |
 | <code>source.line</code>、<code>source.column</code> | 正安全整数。 |
 | <code>score</code>、<code>threshold</code> | 有限数且位于 <code>[0, 1]</code>；拒绝 <code>-0</code>。 |
 | conditional <code>available</code> | 有限正数；拒绝 <code>-0</code>。 |
@@ -136,7 +139,7 @@ JSON 空白可能让 raw file 超限，因此只在 <code>TransportValid</code> 
 
 show 与 view 消费同一份 <code>ReportExecution</code>。从旧 Record 重新 export 只承诺当前 exporter 能成功消费，不承诺导出目录逐 byte 相等，也不约束读取时间或随机源的用户自定义 Report。
 
-这项承诺从第一版 <code>niceeval.record</code> writer 开始，不包含 <code>niceeval.results</code>。实现时必须保存第一版 writer 产生的原始 fixture bytes；未来 reader 不能用未来 writer 重新生成 fixture 来替代跨代证明。
+这项承诺从第一版 <code>niceeval.record</code> writer 开始。实现时必须保存第一版 writer 产生的原始 fixture bytes；未来 reader 不能用未来 writer 重新生成 fixture 来替代跨代证明。
 
 未来若需要新字段、新语义或更大限制，新增没有数字版本后缀的描述性 business channel，并永久保留旧 assertions decoder 与标准 Attempt detail 消费入口。
 
@@ -144,7 +147,7 @@ show 与 view 消费同一份 <code>ReportExecution</code>。从旧 Record 重�
 
 Assertion collector 只消费调用方提供的值和已经交付的通道数据。它不打开 Record 路径，不读 ReportInput，也不生成报告页面。
 
-source 位置信息可选。存在时，它只含项目相对路径和行列；第三方包不写入项目源码内容。
+source 位置信息可选。存在时，<code>path</code> 与 <code>digest</code> 必须匹配 Attempt origin Run 的 <code>niceeval.sources</code> entry；Report 经 origin-run fact 读取该快照，不读取当前 worktree。第三方包不写入项目源码内容。
 
 通道文件由 Attempt owner 写入。人工编辑停稳 Record 后，下一次 reader 和请求该事实的 Report 会看到新的 Assertion 数据；Sample 仍不读取业务通道。
 

@@ -1,10 +1,21 @@
 # 缓存与携带：哪些 Attempt 可以继续使用
 
-Experiment 缓存不复制结果。Runner 从当前 Record 找到一个已有 Attempt，并在新 Run 的 slot 中建立 carried 或 accepted Member。
+Experiment 缓存不复制结果。Runner 先为每个 Experiment/Eval 选择一个唯一历史 Run，再决定它的对应 slot 能否建立 carried Member。accepted 只来自操作者明确指定的 locator。
 
 Attempt 的执行事实只保存一次。Member 说明本 Run 为什么采用它；后续读取始终取得源 Attempt 的当前业务值。
 
 ## 自动携带资格
+
+Runner 在取得 Record operation lock 后冻结规划历史，再创建本次 Run。对每个目标 <code>(experimentId, evalId)</code>，它只从冻结历史中选择一个 source Run：
+
+1. 候选 Run 的 <code>experimentId</code> 相同，且 expected slots 中包含目标 <code>evalId</code>；有没有 <code>completedAt</code> 都参与。
+2. 按 <code>(startedAt, runId)</code> 升序排列，时间相同以规范 <code>runId</code> bytes 打破并列，取最后一项。
+3. source Run 一经选择，就是这个 Eval 全部 ordinal 的历史屏障。每个 ordinal 只检查该 Run 中相同 <code>(evalId, attempt)</code> 的 slot。
+4. source Run 没有该 ordinal、没有 Member、引用 dangling、Attempt 无 origin 锚、核心或通道损坏、Verdict 不合格、identity 或 duration 不匹配时，本次真实执行该 slot。planner 禁止回扫更旧 Run。
+
+历史 Run 的 <code>experimentId</code> 无法读取时，本次全部目标都真实执行。experimentId 可读，但 <code>startedAt</code> 或 expected slots 无法读取时，该 Experiment 的全部目标 Eval 都真实执行。能够确定 source Run 后，单个 Member、Attempt 或 channel 问题只让对应 ordinal 真实执行。三种情况都禁止从更旧 Run 携带。
+
+这个屏障让 A→B 后即使 B 失败，下一次也不会静默复用 A；需要重新采用 A 时使用显式 <code>niceeval accept</code>。
 
 一条 Attempt 必须同时通过以下条件，才能自动 carry：
 
@@ -12,7 +23,7 @@ Attempt 的执行事实只保存一次。Member 说明本 Run 为什么采用它
 |---|---|---|
 | 终态 | Verdict 是 `passed` 或 `failed` | 派发执行 |
 | fingerprint | 执行输入与当前输入相同 | 派发执行 |
-| timeout | `executionMs` 不超过当前 `timeoutMs` | 派发执行 |
+| timeout | <code>executionDuration.milliseconds</code> 不超过当前 <code>timeoutMs</code> | 派发执行 |
 | `--rerun` | 本次档位允许采用该 Verdict | 派发执行 |
 | `--keep-sandbox` | 本次没有要求保留新现场 | 派发执行 |
 
@@ -20,7 +31,7 @@ Attempt 的执行事实只保存一次。Member 说明本 Run 为什么采用它
 
 上述列表是本格式自动 carry 的穷尽输入。<code>--rerun</code> 与 <code>--keep-sandbox</code> 是本次 policy；指定 <code>--keep-sandbox</code> 时自动 carry 全部关闭。新配方输入必须通过更换 input/config identity domain 纳入。无法归约到既有 identity、duration 或本次 policy 的新持久 gate 不能新增 planner-critical channel；产品若必须使用它，就更换完整格式名。
 
-规划只支持停稳 Record。同一 root 已有 active reader、writer 或人工编辑时，Runner 以 <code>record-root-busy</code> 失败；它不等待运行中结果，也不重新读取变化中的目录。静态 export 只有 Record 读取/build 阶段占用 reader lease。
+规划只支持停稳 Record。同一 root 已有 active reader、writer 或受控编辑时，Runner 以 <code>record-root-busy</code> 失败；它不等待运行中结果，也不重新读取变化中的目录。静态 export 只有 Record 读取/build 阶段持有 operation lock。
 
 ## 规划身份不是 Record 版本
 
@@ -47,7 +58,7 @@ inputIdentity  = { domain, value }
 
 ## 以 slot 为粒度携带
 
-`attempts: 5` 已有三个合格 Attempt 时，新 Run 只补两个缺失 ordinal。调大 attempts 只增加 expected slot，调小则让新 Run 使用较小分母，不删除已有 Run 或 Attempt。
+source Run 的 `attempts: 5` 有三个合格 Member、两个缺失 Member 时，新 Run 携带前三个并真实执行后两个。调大 attempts 只增加 expected slot；新增 ordinal 不回扫更旧 Run。调小则让新 Run 使用较小分母，不删除已有 Run 或 Attempt。
 
 每个自动采用的 slot 只写永久核心引用：
 
@@ -98,6 +109,8 @@ interface AcceptedMember {
 
 accepted Member 不复制 Attempt 数据。操作者接受的 identity、差异与理由写入该 Run 的 `niceeval.actions` 通道；这些值只解释当时接受了什么，不持续认证源值。
 
+accepted 的唯一含义是“明确采用这个 Attempt identity 及其随后可编辑的当前内容”。它不是审批、签名、冻结快照或真实性声明。标准 UI 使用“明确采用”，不能显示为“已批准”或“已验证”。
+
 ### 输出与错误
 
 成功输出原 locator、Experiment、Run、slot 与 `accepted`。Invocation receipt 只返回本次 `runIds` 和进程完成状态。
@@ -111,7 +124,7 @@ accepted Member 不复制 Attempt 数据。操作者接受的 identity、差异�
 
 ## origin Run 可以 unfinished
 
-Attempt 目录已经完整发布、Verdict 已终结且引用有效时，可以成为 carry 或 accept 候选。origin Run 没有 `completedAt` 不会删除这份 Attempt。
+Attempt 目录已经完整发布、Verdict 已终结、origin 反向锚与引用都有效时，可以成为 carry 或 accept 候选。origin Run 没有 `completedAt` 不会删除这份 Attempt，也不会让它退出 <code>(startedAt, runId)</code> source Run 排序。
 
 这条规则不承诺恢复 Agent 已经修改的外部系统、共享数据库或 checkpoint。作者仍需为外部状态提供可恢复边界。
 

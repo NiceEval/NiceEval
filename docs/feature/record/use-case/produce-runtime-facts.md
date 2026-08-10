@@ -4,9 +4,9 @@
 
 ## 开始一次写入
 
-writer 只在没有 reader 或人工编辑者并发使用目录时开始。新目录使用 <code>await using writer = await createRecordWriter(...)</code>。已有停稳目录使用 <code>await using writer = await openRecordWriter(...)</code>。这个 async-dispose 作用域就是 root 独占写 lease。
+writer 只在没有 reader 或受控编辑者并发使用目录时开始。新目录使用 <code>await using writer = await createRecordWriter(...)</code>。已有停稳目录使用 <code>await using writer = await openRecordWriter(...)</code>。这个 async-dispose 作用域持有 root operation lock。
 
-先建立 Invocation 的内存身份，再写 Run 的 <code>run.json</code>。Run 必须一次声明完整 <code>expectedSlots</code>，包括每个 <code>slotId</code>、<code>evalId</code> 和 attempt 编号。
+先建立 Invocation 的内存身份，再写 Run 的 <code>run.json</code>。Run 必须写入 <code>startedAt</code>，并一次声明完整 <code>expectedSlots</code>。每个 slot 包含 <code>slotId</code>、<code>evalId</code> 和 attempt 编号；<code>slotId</code> 与 <code>(evalId, attempt)</code> 都在 Run 内唯一。
 
 不要从显示名生成 identity。Run、slot、Attempt 和 Invocation 都使用规范的 128-bit opaque ID。Eval 与 experiment 文本只写进核心字段，不进入目录路径。
 
@@ -32,8 +32,9 @@ carry、accept 或 rename 的理由写到 Run 通道，并同时带 <code>slotId
 | 有序、高频、追加量大，且未知 variant 可保留 | JSONL event channel |
 | 单一终态、人工可编辑或随机读取频繁 | document channel |
 | 大文本或二进制内容 | Attempt-owned blob |
+| Eval source snapshot | Run-owned <code>niceeval.sources</code> manifest 与 Run-local digest blob |
 
-conversation、tool、telemetry 和 diagnostics 适合 JSONL。verdict、eligibility、assertions、usage、timing summary、diff、sources 与 commands manifest 适合 document channel。
+包含 message 与 tool event 的 conversation 和 diagnostics 适合 JSONL。verdict、eligibility、assertions、usage、timing summary、diff 与 commands manifest 适合 Attempt document channel。sources 在 Attempt 执行前写入 origin Run；carried 与 accepted Member 不复制它。
 
 内建名称使用 <code>niceeval.&lt;descriptive-concept&gt;</code>。自定义 JSON fact 使用反向域 namespace，精确 document transport 见 [Architecture](../architecture.md#通道语义与兼容性)。两者都不要以数字后缀表示语义演进，也不要复用已经发布的名称。generic <code>fact()</code> 每个 owner/name 只写一次，完整 document 上限为 65,536 UTF-8 bytes，不支持 JSONL、追加或 blob。
 
@@ -62,4 +63,4 @@ Invocation 完成、中断或失败时，Runner 返回 <code>InvocationReceipt</
 | 给已发布通道原地改变含义 | 发布新的描述性通道或 event 名 |
 | 在正式 Attempt 路径逐个写文件 | 先在临时目录完整形成，再一次发布 |
 
-写入完成后离开 <code>await using</code> 作用域。dispose 等待在飞写入，关闭句柄并删除本 writer 未发布的临时内容，然后释放 lease。随后 reader 才在停稳目录上打开 Record。进程崩溃无法执行 dispose 时，现场留给 owner-aware clean。
+写入完成后离开 <code>await using</code> 作用域。dispose 等待在飞写入，关闭句柄并删除本 writer 未发布的临时内容，然后释放 operation lock。随后 reader 才在停稳目录上打开 Record。进程崩溃无法执行 dispose 时，现场留给 owner-aware clean。

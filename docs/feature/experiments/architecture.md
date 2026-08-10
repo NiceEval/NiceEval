@@ -13,7 +13,7 @@ Invocation
       └─ Run diagnostics
 ```
 
-Runner 在调用开始时取得 `invocationId`。每个选中的 Experiment 恰好建立一个 Run；Run 核心保存 `experimentId`。可选的 Run-owned `niceeval.run-provenance` 可以保存 invocation 与 startedAt，receipt 也以 `runIds` 关联本次调用；这些 provenance 不参与 membership 或 latest。
+Runner 在调用开始时取得 `invocationId`。每个选中的 Experiment 恰好建立一个 Run；Run 核心保存 `experimentId` 与 `startedAt`。可选的 Run-owned `niceeval.run-provenance` 可以保存 invocation identity，receipt 也以 `runIds` 关联本次调用；这些 provenance 不参与 membership 或 latest。
 
 Run 的 expected membership 是本次分母。每个 slot 最多有一个 Member：
 
@@ -21,7 +21,7 @@ Run 的 expected membership 是本次分母。每个 slot 最多有一个 Member
 - `carried` 表示规划器自动采用已有 Attempt；
 - `accepted` 表示操作者明确采用已有 Attempt。
 
-Attempt 的 `originRunId` 永远指向实际执行它的 Run。carried 与 accepted Member 只保存同一 Record 内的稳定引用，不复制 Verdict、Usage、events 或 artifact。
+Attempt 的 <code>origin.runId</code> 永远指向实际执行它的 Run。carried 与 accepted Member 只保存同一 Record 内的稳定引用，不复制 Verdict、Usage、events 或 artifact。
 
 源 Attempt 的业务数据允许在 Record 停稳时编辑。后续读取 carried 或 accepted Member 时会看到编辑后的当前值；引用失效时产生 dangling issue。
 
@@ -73,7 +73,7 @@ Runner 在触发 `setup` 前，把 teardown 所需的稳定输入写入 `.niceev
 
 ## 并发 Invocation
 
-同一 Record root 不支持并发 Invocation。Runner 在规划前确认该 root 没有 active reader、writer 或人工编辑，随后独占它直到 Invocation 收尾；无法独占时以 <code>record-root-busy</code> 失败，不等待、不接管，也不重读运行中状态。静态 export 的 Record 读取/build 阶段表现为 active reader；释放后执行与写站阶段不占 root lease。
+同一 Record root 不支持并发 Invocation。Runner 在规划前取得 Record operation lock，并一直持有到 Invocation 的全部 Run 收尾；无法取得时以 <code>record-root-busy</code> 失败，不等待、不接管，也不重读运行中状态。静态 export 的 Record 读取/build 阶段持有同一把锁；释放后执行与写站阶段不占锁。
 
 多个 Invocation 只有在使用不同 Record root 时才可并发。它们不能在完成后自动合并；需要同一分析范围时，调用方应在停稳的一个 Record 中重新运行或显式选择既有 Run。
 
@@ -83,7 +83,7 @@ Runner 在触发 `setup` 前，把 teardown 所需的稳定输入写入 `.niceev
 
 ## Carry
 
-规划器找到终态 Attempt，且 fingerprint、timeout 和 `--rerun` 资格都满足时，不重新执行它。目标 Run 为该 slot 写入 carried Member。
+规划器先按 [缓存与携带](cache.md#自动携带资格) 的 <code>(startedAt, runId)</code> 全序选择每个 Experiment/Eval 的唯一 source Run，再只检查该 Run 的同 ordinal slot。该 slot 的终态、fingerprint、timeout 和本次 policy 都满足时，目标 Run 写入 carried Member；任何失败都真实执行，禁止回扫更旧 Run。
 
 carried Member 的永久核心只保存：
 

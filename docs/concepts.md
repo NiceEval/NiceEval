@@ -191,6 +191,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
 | Record | Record | `.niceeval/record/` 中可人工编辑的当前数据集；只支持停稳时读写 | [Record](feature/record/README.md) |
+| Record operation lock | Record operation lock | 同一 physical root 上由 OS 崩溃释放的跨进程互斥；一次受支持的读、写、编辑或维护全程持有 | [Record](feature/record/architecture.md#根目录与停稳边界) |
 | Run | Run | 一个已求值 Experiment 的持久化批次；expected slots 定义分母 | [Record](feature/record/architecture.md) |
 | Member | Member | 一个 Run slot 采用 Attempt 的引用；只有 executed、carried、accepted | [Record](feature/record/architecture.md) |
 | Attempt | Attempt | 一次实际执行的稳定身份和自己的通道；永远保留 origin | [Record](feature/record/architecture.md) |

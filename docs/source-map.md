@@ -33,9 +33,9 @@ Record、Sample 和 Reports 正在采用新的边界。本页把它们标为重�
 
 | 目标契约 owner | 重构边界 |
 |---|---|
-| [Record](feature/record/README.md) | <code>src/record/</code> 需要收敛到 <code>niceeval.record</code> root、Run、Member、Attempt、channel descriptor、reader 和 writer。不要从现有内部布局推导新的公开文件协议。 |
+| [Record](feature/record/README.md) | <code>src/record/</code> 需要收敛到 <code>niceeval.record</code> root、OS operation lock、Run、Member、Attempt、Run source blobs、channel descriptor、reader、writer 与受控 maintenance。不要从现有内部布局推导新的公开文件协议。 |
 | [Sample](feature/sample/README.md) | <code>src/sample/index.ts</code> 需要以 RecordReader 形成显式 Run 选择、完整分母和 slot 状态。 |
-| [Reports](feature/reports/README.md) | <code>src/report/</code> 需要只接收 ReportInput；文件读取和通道字节规范化留在 reader 边界。 |
+| [Reports](feature/reports/README.md) | <code>src/report/</code> 需要只接收 ReportInput；文件读取、origin-run fact 和通道字节规范化留在 composition/reader 边界。 |
 | [Reports CLI](feature/reports/README.md) | <code>src/show/</code> 与 <code>src/view/</code> 需要通过 Sample 和 ReportInput 选择、呈现和 export。 |
 | [静态 export](feature/reports/README.md#自包含静态-export) | <code>src/view/</code> 与 <code>src/report/</code> 需要写出页面、宿主数据、精确 runtime 和资源清单。 |
 

@@ -24,11 +24,11 @@ Attempt 的 origin 永远是实际执行它的 Run。采用 Member 只引用 Att
 
 ## 运行顺序
 
-1. Runner 独占指定 Record root，并在整条 Invocation 中全程持有；root 忙时以 <code>record-root-busy</code> 失败。
-2. 它读取停稳 Record 和配置，为选中的 Experiment 建立 Run 与 expected slots，并决定每个 slot 是执行、carried 还是等待操作者 accept。
+1. Runner 取得指定 Record root 的 operation lock，并在整条 Invocation 中全程持有；root 忙时以 <code>record-root-busy</code> 失败。
+2. 它冻结既有 Run 集合，按 <code>(startedAt, runId)</code> 为每个 Experiment/Eval 选唯一 carry source，再为选中的 Experiment 建立带 <code>startedAt</code> 的 Run 与 expected slots。
 3. 执行时，Runner 取得 Sandbox，驱动 Agent，收集要求的业务通道，并形成 Assertion 与 Verdict 数据。
-4. writer 在自己的临时目录完成 Attempt、通道与 blob；校验后以一次目录发布使 Attempt 可见。
-5. Runner 写入 Member 和 Run 范围通道。Experiment teardown 后，Run 写入 <code>completedAt</code>。
+4. writer 先写 origin Run 的 source manifest 与 Run-local digest blobs，再在自己的临时目录完成 Attempt、通道与 blob；校验后以一次目录发布使 Attempt 可见。
+5. Runner 写入 executed Member 建立 origin 反向锚，并补齐其它 Member 与 Run 范围通道。Experiment teardown 后，Run 写入 <code>completedAt</code>。
 6. Runner 返回 Invocation receipt。
 
 目录发布之后的人工编辑会成为下一次 reader 的当前值。Runner 不提供编辑事务、版本校验或运行中读取同一目录的承诺。

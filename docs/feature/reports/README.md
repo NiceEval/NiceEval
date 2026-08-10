@@ -20,6 +20,8 @@ Sample 决定比较范围和分母。Reports 不按时间、路径或 Attempt lo
 
 每个页面和 Calculation 都声明自己需要的 facts。未被该页面或 Calculation 请求的损坏、未知或退役通道不会阻断它。被请求的 invalid 通道形成该请求的失败；unavailable 与 unsupported 进入明确的呈现状态。
 
+标准 Report 持续提供 Verdict、Assertions、usage/cost、conversation/tool、commands、diff、timing waterfall、diagnostics、actions 与 sources 的内建消费链。Attempt source 通过 origin Run 读取；carried 与 accepted 不复制源码，也不把 origin Run 加进 Sample 分母。
+
 ## 计算与完整度
 
 Calculation 必须同时声明：

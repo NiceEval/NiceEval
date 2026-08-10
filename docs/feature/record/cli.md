@@ -2,7 +2,7 @@
 
 bundled CLI 的默认 Record root 是 <code>&lt;project&gt;/.niceeval/record/</code>。传入 <code>--record</code> 时，参数就是实际 Record root；CLI 不补接任何子目录。
 
-所有会打开 Record 的命令都要求目录停稳。reader 从选择 Sample 到 <code>buildReportInput()</code> 完成占用独占 lease；它不与 writer 或人工编辑并发。lease 释放后的 Report execute、server 与静态站写入不再访问 Record，也不阻止下一项 root 操作。
+所有会打开 Record 的命令都要求目录停稳。reader 从选择 Sample 到 <code>buildReportInput()</code> 完成持有跨进程 operation lock；它不与 writer 或受控编辑并发。释放后的 Report execute、server 与静态站写入不再访问 Record，也不阻止下一项 root 操作。
 
 ## 选择 Run
 
@@ -55,6 +55,7 @@ CLI 将以下问题分开反馈：
 |---|---|---|
 | <code>record-root-missing</code> | 指定 root 不存在 | 检查项目或 <code>--record</code> |
 | <code>record-root-busy</code> | 同一 root 正被另一项操作使用 | 等它结束，或指定其它 Record root |
+| <code>record-operation-lock-unsupported</code> | 当前平台无法提供所需跨进程互斥 | 换用支持的本地文件系统或平台 |
 | <code>record-format-invalid</code> | 根文件不是 <code>niceeval.record</code> | 指向正确的 Record root |
 | <code>record-core-invalid</code> | 根级 <code>record.json</code> 或保留布局无效 | 修复根文件与具名 issue |
 | <code>sample-latest-indeterminate</code> | 某个 Run 损坏，无法穷尽 latest 候选 | 修复具名 Run 或显式选择 |
@@ -62,19 +63,29 @@ CLI 将以下问题分开反馈：
 | <code>CoreRead.invalid</code> | Run、Member 或 Attempt 核心无效 | 按 Sample/slot 中的具名 issue 修复 |
 | <code>ChannelRead.invalid</code> | 页面需要的通道无效 | 按其中的 issue 修复具名 descriptor 或文件 |
 
-历史 Results 系列的格式不属于 <code>niceeval.record</code>。CLI 只报告格式不符，不显示迁移引导。
+## 受控编辑、删除与 clean
 
-## owner-aware clean
+<code>niceeval record edit</code> 在整个 editor subprocess 生命周期内持有 operation lock。它把精确 Record root 作为工作目录交给编辑器；编辑器退出后不自动修补数据，下一次 reader 仍按 schema、路径和引用规则验证。
+
+```text
+niceeval record edit --record <record-root>
+niceeval record delete --record <record-root> --run <runId>
+```
+
+<code>record delete</code> 先做完整反向引用预检。目标 Run 的 Attempt 仍被其它 Member 引用时，以 <code>record-delete-referenced</code> 失败且零写入。直接绕过命令删除文件可以形成 dangling reference；后续读取会把它报告为 invalid。
+
+owner-aware <code>clean</code> 删除明确指定的临时目录或 unanchored Attempt。
 
 <code>clean</code> 只删除明确指定 writer 的临时目录。
 
 ```text
 niceeval clean --record <record-root> --writer <writerId>
+niceeval clean --record <record-root> --attempt <attemptId> [--attempt <attemptId> ...]
 ```
 
-命令先确认目录已停稳，再只检查和删除 <code>.tmp/&lt;writerId&gt;</code>。它不会扫描并删除其它 writer 的目录，不删除正式 Run 或 Attempt，也不认领 <code>.niceeval</code> 的 sibling。
+命令先取得 operation lock，再穷尽扫描目标。<code>--writer</code> 只检查和删除 <code>.tmp/&lt;writerId&gt;</code> 与同 owner 的 sibling create temp。<code>--attempt</code> 只删除没有 origin 反向锚且没有 Member 引用的具名 Attempt。命令不扫描并删除其它 owner，也不把较旧的正式数据当作缓存回收。
 
-无法确认 owner、目录仍被使用、路径不合法或目标不是 orphan 时，命令失败并保留现场。正常 writer 退出应自行删除其临时目录；clean 只处理崩溃遗留。
+无法确认 owner、路径不合法或目标不是 orphan 时，命令失败并保留现场。active writer 会让命令在加锁阶段以 <code>record-root-busy</code> 失败。正常 writer 退出应自行删除其临时目录；clean 只处理崩溃遗留。
 
 ## Invocation 收尾
 

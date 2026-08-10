@@ -2,7 +2,7 @@
 
 三条查看命令都从停稳的 Record 得到 core-only Sample。它们随后形成 ReportPlan 与 ReportInput，再执行一次 Report。
 
-命令从打开 reader 到 Sample、ReportPlan 与 ReportInput 全部形成一直持有独占 root lease，随后立即释放。ReportExecution 在释放后只从内存输入形成。人工编辑 Record 或改动 Report 文件只会影响下一次调用；本机 server 和静态 export 都不再读取 Record。
+命令从打开 reader 到 Sample、ReportPlan 与 ReportInput 全部形成一直持有 root operation lock，随后立即释放。ReportExecution 在释放后只从内存输入形成。人工编辑 Record 或改动 Report 文件只会影响下一次调用；本机 server 和静态 export 都不再读取 Record。
 
 ## 共同选择项
 

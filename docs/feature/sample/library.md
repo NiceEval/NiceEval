@@ -82,6 +82,7 @@ type SampleSlot =
 interface SampleRun {
   readonly runId: string;
   readonly experimentId: string;
+  readonly startedAt: UtcMillis;
   readonly completedAt?: UtcMillis;
   readonly expectedSlots: readonly ExpectedSlot[];
 }

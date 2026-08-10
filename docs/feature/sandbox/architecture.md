@@ -161,7 +161,7 @@ provider 自身固有的会话上限(如 Vercel Sandbox 的 session 时长)不�
 Verdict 定稿后按档位提交：`failed` 档是不带值的 flag 的默认值，提交 `failed` / `errored` channel entry 对应的现场，包括被硬超时打断后形成的 `errored` channel entry；`all` 档提交全部 Verdict 对应现场。
 此时其余收尾(agent teardown、已登记 cleanup、diff 采集)已经照常完成；若实例实际退休，lifecycle `teardown()` 随后回存其 checkpoint。
 
-attempt 的最终 `locator` 在调度前已经由预分配的 `runId` 与完整 128-bit `attemptId` 派生并完成 CAS reservation。
+attempt 的最终 `locator` 在调度前已经由持有 Record operation lock 的 Runner 分配完整 128-bit `attemptId`，并由该 identity 直接编码。
 因此登记项、run 收尾反馈与提交进 Record 的 Attempt 事实从第一次观察起就使用同一个 locator，没有留事后补写的时段。
 
 沙箱的 Effect Scope 持有一个只在本 attempt 内可变的 release disposition,初始为 `stop`。attempt deadline 只中断 Scope **里面的 verdict-producing 工作 fiber**,把超时转换成执行错误通道事件 与待写的 `errored` Verdict;它不关闭外层 Scope。Runner 随后仍在同一个 Scope 内执行有界 teardown、收敛 lifecycle 与 channel entry,再调用 `commitKeepOrStop()`。

@@ -36,6 +36,8 @@ Report 定义、Calculation、页面、下载、本机 runtime 与静态 runtime
 
 Run requirement 对每个已选 Run 建立 read，即使该 Run 没有 included slot。Attempt requirement 只对 included slot 的 Attempt 建立 read。consumer 的 <code>readRun()</code> 与 <code>readAttempt()</code> 同时核对 inputs、owner 和目标范围，不能借公开 matrix 读取其它 requirement。
 
+Run requirement 还可通过 <code>readOriginRun(includedSlot, requirement)</code> 读取该 Attempt 的 origin Run。builder 在 operation lock 内预取这些 origin facts；origin Run 不进入 Sample 分母，也不能被 Report 枚举。source viewer 固定用这条边读取 <code>niceeval.sources</code>，所以 carried 与 accepted 共享源 Run 的当前源码快照，不复制源码，也不回退读取当前 worktree。
+
 这保证一个未请求的坏通道不会进入本次 ReportInput。一个被请求的坏通道也只进入相应 fact read，不让其它 requirement 消失。
 
 ## 通道与 consumer 状态
@@ -99,6 +101,7 @@ page 与 host-data 路径只由 plan 顺序产生，内建资源只在 <code>run
 
 - Sample core 与 Report facts 不混在一个构造阶段。
 - buildReportInput 是唯一接触 reader 的 Reports composition adapter。
+- Record operation lock 从 selectSample 一直持有到 ReportInput 完整形成；ReportExecution 不再打开 Record。
 - 用户代码只在 plan 与一次 execute 中运行。
 - 页面和 Calculation 只因自己声明的 inputs 受影响。
 - view 可以局部显示失败；export 对同一 execution 全量拒绝失败。

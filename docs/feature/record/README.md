@@ -26,7 +26,7 @@ ReportExecution → view / export
 
 ## 演进方式
 
-根文件的格式名固定为 <code>niceeval.record</code>。本格式拒绝历史 Results 系列的第 1 至第 15 号标记，且不显示迁移提示。
+根文件的格式名固定为 <code>niceeval.record</code>。reader 只解释这个精确格式；其它根文件统一返回 <code>record-format-invalid</code>。
 
 这里没有全局整数格式版本字段。核心协议冻结后，破坏性领域演进使用永不复用的语义身份，并只让相关通道局部失效。新 reader 必须读取所有核心形状有效的 <code>niceeval.record</code>；它可以把未知或已退役通道报告为不支持。
 
@@ -34,7 +34,7 @@ ReportExecution → view / export
 
 ## 范围
 
-Record 定义根目录、Run / Member / Attempt 的核心文件、通道、原子发布和单通道四态读取。它也定义 owner-aware 的临时目录删除。
+Record 定义根目录、Run / Member / Attempt 的核心文件、operation lock、通道、原子发布和单通道四态读取。它也定义受控删除与 owner-aware 的临时目录删除。
 
 Record-to-Record 的发布、复制、镜像和同步不属于本功能。分享由自包含的静态 Report export 负责。它脱离源 Record 后呈现固定内容，不把 producer 身份认证或可再次查询的承诺交给 Record。
 

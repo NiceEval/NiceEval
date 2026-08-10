@@ -5,7 +5,7 @@ Assertion 是一次可留档的检查。
 
 作者 API、matcher、collector 和求值流程可以独立演进。producer 在发布 Attempt 前把它们的内存结果归一成冻结的 <code>niceeval.assertions</code> 展示投影；Record 与标准 Report 只依赖这份投影，不依赖产生它的 API 或运行时类型。
 
-这项兼容承诺从全新的 <code>niceeval.record</code> 首次发布开始，不包含旧 <code>niceeval.results</code>。投影的精确形状与跨代读取条件见 [Architecture](architecture.md#稳定落盘投影)。
+这项稳定承诺从 <code>niceeval.record</code> 首次发布开始。投影的精确形状与跨代读取条件见 [Architecture](architecture.md#稳定落盘投影)。
 
 ## 从哪里开始
 

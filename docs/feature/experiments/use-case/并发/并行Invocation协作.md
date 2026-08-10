@@ -32,7 +32,7 @@ B 不等待、不认领剩余 Eval、不读取 A 尚未停稳的 Attempt，也�
 
 - <code>--max-concurrency</code> 与 Experiment <code>maxConcurrency</code> 都只约束本 Invocation。
 - Sandbox handle 与复用池不跨 Invocation。
-- 同一 root 的 reader、writer 和人工编辑互斥；静态 export 只在 Record 读取/build 阶段占用 reader lease。
+- 同一 root 的 reader、writer 和受控编辑互斥；静态 export 只在 Record 读取/build 阶段持有 operation lock。
 - 要比较两个独立 Record，先把需要的 Run 写进一个停稳 Record；Reports 不提供跨 Record Sample。
 
 ## 相关阅读

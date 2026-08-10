@@ -16,13 +16,13 @@ let input: ReportInput;
   input = await buildReportInput({ record, sample, plan });
 }
 
-// reader lease 已释放；以下操作不再访问 Record。
+// Record operation lock 已释放；以下操作不再访问 Record。
 const execution = executeReport({ definition, plan, input });
 await viewReport({ execution });
 await exportStaticReport({ execution, out });
 ```
 
-`selectSample()` 不读取业务通道。`plan()` 不读取 facts。`buildReportInput()` 只读取 plan 已声明的 facts。CLI 从打开 reader 到 `buildReportInput()` 返回一直持有 root lease，随后立即释放。`executeReport()` 只消费内存输入并执行一次用户 parser、计算和 render；view 与 export 只消费同一份自包含 `ReportExecution`。
+`selectSample()` 不读取业务通道。`plan()` 不读取 facts。`buildReportInput()` 只读取 plan 已声明的 facts。CLI 从打开 reader 到 `buildReportInput()` 返回一直持有 root operation lock，随后立即释放。`executeReport()` 只消费内存输入并执行一次用户 parser、计算和 render；view 与 export 只消费同一份自包含 `ReportExecution`。
 
 ## ReportScope 与 ReportInput
 
@@ -89,6 +89,8 @@ function defineReport(definition: ReportDefinition): ReportDefinition;
 
 `plan()` 是纯函数，只读取 `ReportScope`。同一 plan 内所有 consumer id、route 和 download path 各自唯一；参数化页面必须以具体参数成为独立 `ReportPage`。plan 没有顶层 facts 或 resources，requirements 只在三个 consumer 的 `inputs` 中声明。
 
+CLI 或宿主在调用本页 API 前，把内建名字或用户 module 求值成一个 <code>ReportDefinition</code>。模块 URL、NiceEval 版本和 runtime identity 不进入 Report 类型，也不形成闭合的 resolution 联合。Library 扩展面是 <code>defineReport()</code>、具名内建 FactRequirement 与 <code>defineJsonFact()</code>；静态浏览器 runtime 仍只执行 exporter 内建闭包。
+
 requirement id 在整个 plan 唯一标识一个 requirement 对象。同一个对象可以被多个 consumer 重复引用；不同对象使用相同 id 时是 <code>report-plan-invalid</code>。builder 在任何 Record 通道读取前，跨 Calculation、Page 和 Download 穷尽验证这条规则。
 
 ## FactRequirement
@@ -140,6 +142,49 @@ function defineJsonFact<Value extends ReportJsonValue>(input: {
 
 完整永久链是：Attempt → <code>niceeval.assertions</code> → 内建 decoder → 此 FactRequirement → 标准 Attempt detail presentation。它不进入 Sample、planner 或 Record 核心。
 
+### 内建业务 requirements
+
+下表是标准 Report 必须持续交付的内建消费链。每个 requirement 都有 private built-in brand；用户不能用同名 custom parser 替换 decoder。精确 payload 与 coverage 由所属 Feature 定义，Report 只接收 decoder 的结构化值。
+
+| export | owner / channel | 标准 presentation |
+|---|---|---|
+| <code>verdictFact</code> | Attempt / <code>niceeval.verdict</code> | overview 与 Attempt terminal state |
+| 私有 <code>assertionsFact</code> | Attempt / <code>niceeval.assertions</code> | Attempt checks、score 与证据摘要 |
+| <code>usageFact</code> | Attempt / <code>niceeval.usage</code> | token、请求、provider observed cost 与派生 cost |
+| <code>conversationFact</code> | Attempt / <code>niceeval.conversation</code> | message、tool call 与 tool result timeline |
+| <code>commandsFact</code> | Attempt / <code>niceeval.commands</code> | command manifest、退出状态与 evidence |
+| <code>diffFact</code> | Attempt / <code>niceeval.diff</code> | 文件变更 summary 与按需 detail |
+| <code>timingFact</code> | Attempt / <code>niceeval.timing</code> | phase duration 与 normalized waterfall |
+| <code>attemptDiagnosticsFact</code> | Attempt / <code>niceeval.diagnostics</code> | Attempt diagnostic list |
+| <code>runDiagnosticsFact</code> | Run / <code>niceeval.diagnostics</code> | Run setup、teardown 与 dispatch diagnostics |
+| <code>actionsFact</code> | Run / <code>niceeval.actions</code> | carried、accepted 与 rename 的当时理由 |
+| <code>sourcesFact</code> | Run / <code>niceeval.sources</code> | origin source viewer 与 Assertion source link |
+
+标准 definition 对相应页面声明这些 requirements。source viewer 必须对 included slot 调用 <code>readOriginRun(slot, sourcesFact)</code>；它不能读取采用 Run 的 sources，也不能回到当前 worktree。被请求的 unavailable、unsupported、partial 或 invalid 必须使用统一状态组件呈现；不能因为某项 decoder 仍存在，却没有标准页面而让能力实质退役。
+
+标准 Attempt detail 同时声明 assertions 与 sources。Assertion 没有 source 时不显示链接；sources unavailable 或 partial 时，链接显示相同状态。sources 已读但找不到同一 <code>(path, digest)</code> 时，标准页面显示 <code>assertion-source-reference-invalid</code>，仍呈现不依赖该链接的 Assertion 字段，且绝不读取当前 worktree 补猜内容。
+
+<code>sourcesFact</code> 的 decoder 输出是普通 JSON 值，不暴露 blob ref：
+
+```ts
+type SourcesFact = {
+  files: readonly {
+    path: string;
+    digest: string;
+    content: string;
+  }[];
+  limitations: readonly {
+    kind: "truncated" | "redacted" | "omitted";
+    path: string;
+    reason: string;
+  }[];
+};
+
+declare const sourcesFact: FactRequirement<SourcesFact>;
+```
+
+decoder 在 composition 阶段验证 manifest、UTF-8、byte length 与 SHA-256，再把 content 复制进内存 ReportInput。静态 export 只写入已计划页面和下载实际消费的这份结构化值，不复制整个 Run 目录。
+
 局部 parser 只接收已经验证的 `CustomFactDocument`，绝不接收原始 bytes、descriptor、路径或 blob locator。它必须同步返回 <code>ReportJsonValue</code>，不能返回 Promise。
 
 <code>buildReportInput()</code> 只读取并验证 custom transport，不调用 parser。<code>executeReport()</code> 在执行 consumer 前，对每个 <code>(owner identity, requirement object)</code> 恰好调用一次 parser。throw 或非法 JSON 返回形成该 requirement 的 <code>fact-parse-invalid</code>；声明它的 consumer 为 input-invalid，但同名 transport 的其它 requirement 不受影响。
@@ -156,7 +201,9 @@ function buildReportInput(input: {
 
 adapter 先验证 plan 是由该 Sample 的 scope 形成，再合并每个 Page、Calculation 和 Download 的 `inputs`。它只为唯一 owner identity 与 requirement id 组合调用单通道 reader。
 
-每个 Run-owned requirement 对 <code>scope.runs</code> 的每个 Run 建立 transport read，包括零 expected slot 或全部 slot 为 not-recorded、invalid、excluded 的 Run。每个 Attempt-owned requirement 只对 included slot 引用的唯一 Attempt 建立 transport read。两者不推断、不 fallback。
+每个 Run-owned requirement 对 <code>scope.runs</code> 的每个 Run 建立 transport read，包括零 expected slot 或全部 slot 为 not-recorded、invalid、excluded 的 Run。builder 还读取 included Attempt 的 origin Run 与已声明 Run requirement 的组合。
+
+origin Run 只进入内部 fact matrix，不进入 <code>scope.runs</code>、Sample 分母或用户可枚举的路径。每个 Attempt-owned requirement 只对 included slot 引用的唯一 Attempt 建立 transport read。所有读取都使用 core 中已经验证的 identity，不推断、不 fallback。
 
 单个 <code>ChannelRead.invalid</code> 保存在内部 matrix；它不让 builder 丢弃其它 read。只有 root/权限/I/O 或 plan、scope、sample 不一致使 builder 整体失败。
 
@@ -179,6 +226,10 @@ interface CalculationInput {
     fact: FactRequirement<Value>,
   ): ChannelRead<Value>;
   readAttempt<Value extends ReportJsonValue>(
+    slot: IncludedSampleSlot,
+    fact: FactRequirement<Value>,
+  ): ChannelRead<Value>;
+  readOriginRun<Value extends ReportJsonValue>(
     slot: IncludedSampleSlot,
     fact: FactRequirement<Value>,
   ): ChannelRead<Value>;
@@ -215,6 +266,7 @@ type CalculationReason =
 
 - <code>readRun()</code> 只接受 <code>scope.runs</code> 中的 runId。
 - <code>readAttempt()</code> 只接受 included slot。
+- <code>readOriginRun()</code> 只接受 included slot 与 Run-owned requirement，并查找该 slot 的 <code>attemptCore.origin.runId</code>。carried 与 accepted 因而读取源 Run 的当前 fact，不复制到采用 Run。
 - 越界、owner 不符或未声明读取是 plan invalid，不会临时访问 Record。
 - <code>requireComplete</code> 只有在 durable collection 与 decoding 都 complete 时成立。
 - <code>allowPartial</code> 保留完整 Sample 分母、observed 数与 partial 标记。
@@ -248,6 +300,10 @@ interface ReportPageInput {
     fact: FactRequirement<Value>,
   ): ChannelRead<Value>;
   readAttempt<Value extends ReportJsonValue>(
+    slot: IncludedSampleSlot,
+    fact: FactRequirement<Value>,
+  ): ChannelRead<Value>;
+  readOriginRun<Value extends ReportJsonValue>(
     slot: IncludedSampleSlot,
     fact: FactRequirement<Value>,
   ): ChannelRead<Value>;

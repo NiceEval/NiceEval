@@ -6,7 +6,7 @@
 
 本契约在 <code>niceeval.record</code> 首次发布前定稿，因此没有一个更早、已经合法写出的 assertions shape。Assertions Architecture 定义的 document 就是新格式第一天的冻结契约。
 
-这里的“旧 Record”是第一版 <code>niceeval.record</code> writer 发布后，由较早 producer generation 写出的 Record。它不是 <code>niceeval.results</code>，也不是其它临时写入文件；两种格式之间没有兼容承诺。
+这里的“旧 Record”是由较早 producer generation 写出、但仍使用相同 <code>niceeval.record</code> 核心与稳定通道契约的数据。
 
 ## 业务场景
 

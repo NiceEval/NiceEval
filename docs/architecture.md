@@ -104,7 +104,7 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 Sandbox diff：
 2. **发现。
    ** 扫 `evals/`,收集 `*.eval.ts` 与 `*.eval.tsx`;据路径推导 id,排序;按过滤器(id 前缀 / `--tag`)筛。
 3. **identity 与结果沿用。
-   ** 对每个 eval 计算带 domain 的 input/config identity。只有 Verdict 与 eligibility 都完整读取和完整解码、domain 与 value 相等、duration 与本次 policy 也通过资格门时，本次 Run 才用 carried Member 引用历史 Attempt。`errored` / `skipped` 永不自动携带；历史 Attempt 始终留在 origin Run，既不复制也不重挂。
+   ** 对每个 eval 计算带 domain 的 input/config identity，并先按 <code>(startedAt, runId)</code> 选择唯一历史 Run。只有该 Run 同 ordinal 的 Verdict 与 eligibility 都完整读取和完整解码、domain 与 value 相等、duration 与本次 policy 也通过资格门时，本次 Run 才用 carried Member 引用历史 Attempt。任何失败都真实执行，不回扫更旧 Run；`errored` / `skipped` 永不自动携带。
    完整判据只见[缓存与携带](feature/experiments/cache.md)。
 4. **建 attempt 列表。
    ** 每个 eval × `attempts` 次 → 一批 attempt。
@@ -135,7 +135,8 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 Sandbox diff：
     ** finally 里按 `SandboxAgent.teardown` → 两层作者 layer 已登记 cleanup(按全局准备顺序逆序)→ Provider finalizer 的顺序收尾。
     收尾只能追加 diagnostic event，不改已经形成的 Verdict；随后按留存决策销毁或留存沙箱(`--keep-sandbox`,见 [Sandbox · 留存](feature/sandbox/architecture.md#留存keep与注册表))。
 12. **写 Record 与返回 receipt。
-    ** Runner 在 Attempt 自己的临时目录完整形成核心文件、通道和 blob，再以目录 rename 原子发布，并为 Run slot 写 Member。每个 Run 在初始 writer 释放所有权时写 `completedAt`；全部结束后返回不聚合宽结果的 `InvocationReceipt`。
+    ** Runner 先在 origin Run 写入 source manifest 与 Run-local digest blobs，再在 Attempt 自己的临时目录完整形成核心文件、通道和 blob。它以目录 rename 原子发布 Attempt，并为 Run slot 写 executed Member，建立 origin 反向锚。每个 Run 在初始 writer 释放所有权时写 `completedAt`；全部结束后返回不聚合宽结果的 `InvocationReceipt`。
+
     Report 不参与采集或落盘。show/view 先形成 core-only Sample 与 ReportPlan，再由唯一 composition adapter 按需读取 ReportInput；一次 ReportExecution 同时服务终端、本机页面或静态导出。
 13. **退出码。
     ** 有 `failed` Verdict（含 `--strict` 下 soft 未达标而改判的）或 `errored` Verdict → 非零退出；报告里两者分开列，供 CI 判红和诊断。
