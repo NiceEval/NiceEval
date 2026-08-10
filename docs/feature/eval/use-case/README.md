@@ -25,7 +25,7 @@
 ## 通过制还是计分制
 
 `defineEval` 通过 `t.assert` 与 `await t.require` 的 verdict use 折叠为四态 Verdict。
-`defineScoreEval` 用 `t.score` 叠加得分，并在正常路径返回 `t.finishScore()`；它的终态保留 `scored`、`invalid`、`unavailable`、`errored` 或 `skipped`。
+`defineScoreEval` 用 `t.score` 叠加得分，并在 `test` 正常返回时自动收尾；它的终态保留 `scored`、`invalid`、`unavailable`、`errored` 或 `skipped`。
 
 | 用例 | 推荐形态 |
 |---|---|
@@ -46,7 +46,7 @@
 | `calledTool` / `notCalledTool` / `toolOrder` / `event` | [过程与成本](process-and-cost.md) · [calledTool 匹配](calledtool.md) |
 | `t.check` / `t.assert` / `t.require` / `niceeval/expect` matcher | [单轮](first-single-turn.md) · [沙箱](sandbox-coding.md) |
 | `t.judge` / `turn.judge` / `autoevals.*` | [裁判评质量](judge-quality.md) |
-| `t.score` / `t.finishScore()` | [计分制](rubric-points.md) |
+| `t.score` | [计分制](rubric-points.md) |
 | 数组导出 / keyed record 导出 / `loadYaml` / `loadJson` | [测试集从输入数组生成多条 eval](dataset-fanout.md) |
 | `t.sandbox.*` | [沙箱 coding 任务](sandbox-coding.md) |
 | `sandbox` + `.prepare()` / `t.progress` / `t.diagnostic` / `t.skip` | [Fixture 与反馈](fixtures-lifecycle.md) |

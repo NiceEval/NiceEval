@@ -15,7 +15,7 @@
 | [`#eval-context`](#eval-context) | 多轮、session 与作用域 Context 只看到各自应有的真实事件和 usage | 单边界 E2E | `e2e/eval/test/context.test.ts` | PR |
 | [`#eval-assertion-values`](#eval-assertion-values) | 值 Match 生产的 Fact 经显式 use 在真实 evidence 上给出 passed verdict | 单边界 E2E | `e2e/eval/test/assertion-values.test.ts` | PR |
 | [`#eval-assertion-scopes`](#eval-assertion-scopes) | turn、session 与 attempt scope 在真实工具事件上完成断言 | 单边界 E2E | `e2e/eval/test/assertion-scopes.test.ts` | PR |
-| [`#eval-assertion-score`](#eval-assertion-score) | 计分制 Fact use 与直接给分写入公开 Record | 单边界 E2E | `e2e/eval/test/assertion-score.test.ts` | PR |
+| [`#eval-assertion-score`](#eval-assertion-score) | 计分制正常返回自动封口，Fact use、直接给分与空计分写入公开 Record | 单边界 E2E | `e2e/eval/test/assertion-score.test.ts` | PR |
 | [`#eval-assertion-sandbox`](#eval-assertion-sandbox) | Sandbox 文件与 shell evidence 由公开 assertion 与 Record 判定 | 单边界 E2E | `e2e/eval/test/assertion-sandbox.test.ts` | PR |
 | [`#eval-assertion-judge-unavailable`](#eval-assertion-judge-unavailable) | 未配置 Judge 时硬消费的 Score Fact 以 unavailable 使 Attempt errored，且不进入网络路径 | 单边界 E2E | `e2e/eval/test/assertion-judge-unavailable.test.ts` | PR |
 
@@ -37,7 +37,7 @@ turn、session 与 attempt scope 必须以同一批真实工具事件完成断�
 
 ## eval-assertion-score
 
-计分制 Fact use 与直接给分在公开 Record 中写成 `factResults`、`factUses` 和 `scoreResult`。
+计分制正常返回由 Runner 自动封口。Fact use 与直接给分写入公开 Record；没有 score use 时保留空 Fact/use 图，并写入 `scored / 0 / 0`。
 
 ## eval-assertion-sandbox
 

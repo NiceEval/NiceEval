@@ -46,10 +46,9 @@ export default defineEval({
 const quality = turn.judge.autoevals.closedQA("回答是否清楚？");
 t.score("回答质量", quality, { max: 10, key: "quality" });
 t.score("格式", { earned: 1, key: "format" });
-return t.finishScore();
 ```
 
-`score` 仅存在于 `defineScoreEval`。Fact score use 的 `max` 必须为正有限数；direct score 的 `earned` 必须为非负有限数。正常 Score Eval 必须有至少一个 score use 并返回 `finishScore()`。
+`score` 仅存在于 `defineScoreEval`。Fact score use 的 `max` 必须为正有限数；direct score 的 `earned` 必须为非负有限数。Score Eval 正常返回时自动收尾；没有 score use 时得到 0 分，并保留空 Fact/use 图。
 
 ## 错误时点
 

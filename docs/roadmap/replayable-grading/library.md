@@ -207,7 +207,7 @@ export default defineEval({ execution, grading });
 ```
 
 `defineScoreEval({ execution, grading })` 使用同一连接方式。
-它的 Grading context 额外提供 key 必填的 `score()` 与 `finishScore()`。
+它的 Grading context 额外提供 key 必填的 `score()`；grading 正常返回时自动收尾。
 
 ## Scope 语义
 

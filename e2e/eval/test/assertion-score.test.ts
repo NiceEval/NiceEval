@@ -18,26 +18,31 @@ interface ExpEvent {
 
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
 
-test("Score Fact 消费与直接给分写入公开 Record", async () => {
+test("计分 Eval 正常返回自动封口并把空计分写成零分", async () => {
   await withProjectCopy(
     evalProjectCopy,
     async ({ root }) => {
       const run = await niceeval.run(["exp", "assertion-score", "--rerun", "all", "--json"], { cwd: root });
       expect(run.exitCode, run.diagnostic()).toBe(0);
       const result = only(run.ndjson<ExpEvent>(), (event) => event.event === "result", run.diagnostic());
-      expect(result).toMatchObject({ event: "result", status: "passed", passed: 1, failed: 0 });
-      const locator = only(
+      expect(result).toMatchObject({ event: "result", status: "passed", passed: 2, failed: 0 });
+      const scoredLocator = only(
         run.ndjson<ExpEvent>(),
-        (event) => event.event === "eval" && event.evalId === "assertion-score" && event.locator !== undefined,
+        (event) => event.event === "eval" && event.evalId === "assertion-score/scored" && event.locator !== undefined,
+        run.diagnostic(),
+      ).locator!;
+      const emptyLocator = only(
+        run.ndjson<ExpEvent>(),
+        (event) => event.event === "eval" && event.evalId === "assertion-score/empty" && event.locator !== undefined,
         run.diagnostic(),
       ).locator!;
 
       const record = await openRecord(join(root, ".niceeval"));
-      const attempt = resolveLocator(record, locator);
-      expect(attempt.result.verdict).toBe("passed");
-      expect(attempt.result.evaluationKind).toBe("score");
-      expect(attempt.result.evaluationAlgorithm).toBe("fact-use/v2");
-      expect(attempt.result.factUses).toContainEqual(
+      const scoredAttempt = resolveLocator(record, scoredLocator);
+      expect(scoredAttempt.result.verdict).toBe("passed");
+      expect(scoredAttempt.result.evaluationKind).toBe("score");
+      expect(scoredAttempt.result.evaluationAlgorithm).toBe("fact-use/v2");
+      expect(scoredAttempt.result.factUses).toContainEqual(
         expect.objectContaining({
           useKind: "score",
           label: "deterministic manual points",
@@ -46,10 +51,20 @@ test("Score Fact 消费与直接给分写入公开 Record", async () => {
           earned: 4,
         }),
       );
-      expect(attempt.result.scoreResult).toEqual({
+      expect(scoredAttempt.result.scoreResult).toEqual({
         status: "scored",
         earnedScore: 10,
         creditedScore: 10,
+      });
+
+      const emptyAttempt = resolveLocator(record, emptyLocator);
+      expect(emptyAttempt.result.verdict).toBe("passed");
+      expect(emptyAttempt.result.factResults).toEqual([]);
+      expect(emptyAttempt.result.factUses).toEqual([]);
+      expect(emptyAttempt.result.scoreResult).toEqual({
+        status: "scored",
+        earnedScore: 0,
+        creditedScore: 0,
       });
     },
     evalArtifactStaging("score"),

@@ -1387,8 +1387,8 @@ async function runAttemptBody(
     let errorClass: import("../assertions/types.ts").AttemptFactError["class"] | undefined;
     let skipReason: string | undefined;
     try {
-      const completion = await withSourceRegistry(sourceRegistry, () => evalDef.test(context as never));
-      if (evalDef.evaluationKind === "score") state.collector.completeScore(completion);
+      await withSourceRegistry(sourceRegistry, () => evalDef.test(context as never));
+      if (evalDef.evaluationKind === "score") state.collector.completeScore();
       else state.collector.completePass();
     } catch (e) {
       if (e instanceof EvalSkipped) {

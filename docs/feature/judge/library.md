@@ -90,7 +90,6 @@ await t.require(turn.judge.autoevals.factuality("答案必须是 42。"), { atLe
 const quality = turn.judge.autoevals.summarizes("原始材料");
 t.assert(quality, { atLeast: 0.7 });
 t.score("摘要质量", quality, { max: 20, key: "summary-quality" });
-return t.finishScore();
 ```
 
 一个悬空 Judge Fact 是 author error。检查在受管边界和正常返回时发生，且不会启动 evaluator 请求。Judge evaluator 在一个 Attempt 内按 Fact 声明顺序串行；进度显示 `judge · <check>` 和已耗时，已知批次才显示 `k/n`。

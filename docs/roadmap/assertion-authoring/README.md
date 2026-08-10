@@ -10,7 +10,6 @@ const quality = turn.judge.autoevals.closedQA("回答是否解释了修复？");
 t.assert(changed);
 t.assert(quality, { atLeast: 0.8 });
 t.score("配置修复", changed, { max: 2 });
-return t.finishScore();
 ```
 
 Judge 是 native `ScoreFact<"now">` producer。它和值、scope、Sandbox Fact 共享 collector、可达性、memoization、source、持久化形状和读取面。

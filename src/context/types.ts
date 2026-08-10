@@ -8,7 +8,6 @@ import type {
   FactPhase,
   FactUseOptions,
   JudgeMaterial,
-  ScoreCompletion,
   ScoreFact,
   ScoreThresholdOptions,
   UsageEvidenceFact,
@@ -31,7 +30,6 @@ export type {
   FactPhase,
   FactUseOptions,
   JudgeMaterial,
-  ScoreCompletion,
   ScoreFact,
   ScoreThresholdOptions,
   UsageEvidenceFact,
@@ -191,5 +189,4 @@ export interface ScoreTestContext extends Omit<TestContext, "judge" | "send" | "
     options: { readonly key?: string; readonly max: number },
   ): void;
   score(label: string, direct: { readonly key?: string; readonly earned: number }): void;
-  finishScore(): ScoreCompletion;
 }

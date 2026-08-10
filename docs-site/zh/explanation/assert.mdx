@@ -102,7 +102,6 @@ t.score("配置修复", changed, { max: 2 });
 const quality = t.check(turn.message, similarity(expectedAnswer));
 t.score("回答质量", quality, { max: 20 });
 t.score("代码精简", { earned: tierPoints });
-return t.finishScore();
 ```
 
 成功、已消费且没有 score use 的 ScoreFact 可进入 `examScore`。有 score use 的同一 Fact 只进入 `totalScore`。这个规则也适用于 Judge。

@@ -397,7 +397,8 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - 已被同日裁决替代 [severity-is-single-vs-multi-score-switch](severity-is-single-vs-multi-score-switch.md) — 裁决(2026-07-22 上午):severity 当单分/多分开关;装不下自定分值 rubric 被下条替代,但「gate 不进质量分」「soft 无权均值」「组 gate 读数=失败定位」被继承
 - 给分词汇与 strict 部分被新裁决替代 [pass-vs-score-eval-two-modes](pass-vs-score-eval-two-modes.md) — 裁决(2026-07-22 定稿):两种题型 defineEval/defineScoreEval 与叠加给分无满分继续保留；`.points`、severity 与 strict 由 Evaluation Fact 新模型替代
 - 已被新裁决替代 [score-eval-assertion-roles-not-orthogonal](score-eval-assertion-roles-not-orthogonal.md) — 2026-07-23 用互斥角色修补 points 与 severity；真实下游需要同一 Fact 同时约束和计分，最终改为显式双用途
-- [evaluation-facts-separate-verdict-and-score](evaluation-facts-separate-verdict-and-score.md) — 裁决(2026-08-09):Fact 只求值，`assert`/`require` 只判定，`score` 只计分；普通 Fact 移出 gate/soft/optional/stopOnFailure/points/strict，Score invalid 聚合计 0、unavailable 计 null，Judge 暂留隔离 sidecar
+- 部分被后续裁决替代 [evaluation-facts-separate-verdict-and-score](evaluation-facts-separate-verdict-and-score.md) — 裁决(2026-08-09):Fact 只求值，`assert`/`require` 只判定，`score` 只计分；第 6 条的显式完成令牌与非空计分要求已由下一条替代
+- [score-eval-normal-return-auto-finishes](score-eval-normal-return-auto-finishes.md) — 裁决(2026-08-10):Score Eval 正常返回由 Runner 自动封口；没有 score use 是合法 `scored / 0 / 0`，空图不合成占位 use
 - [judge-serial-timeout-progress-ruling](judge-serial-timeout-progress-ruling.md) — 裁决(2026-07-29):judge 慢的治理=`judge.timeoutMs` 有界(默认 180_000)+ scoring 行 `judge k/n` 逐条推进,否决 attempt 内 judge 并发(无重试下放大 429 致错);顺带废除与阶段词重复的 `runner.scoreJudge` 静态 detail 文案
 - **待裁决** [judge-rationale-has-no-record-field](judge-rationale-has-no-record-field.md) — judge rationale 曾灌进落盘 `detail` 污染判定行标题,现已不落盘;要留它得给 AssertionResult 增字段并同步 architecture/display 契约,独立迭代做
 

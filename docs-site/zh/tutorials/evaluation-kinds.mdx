@@ -1,7 +1,7 @@
 ---
 title: "通过制与计分制评估"
 sidebarTitle: "通过制与计分制"
-description: "用 Fact、t.assert、t.require、t.score 与 t.finishScore 编写通过制和计分制评估。"
+description: "用 Fact、t.assert、t.require 与 t.score 编写通过制和计分制评估。"
 ---
 
 [NiceEval](https://niceeval.com/) 提供两种评估题型。`defineEval` 回答一次运行是否满足要求，默认报告读通过率；`defineScoreEval` 回答完成了多少，默认报告读累计分数。两种题型都先创建 Fact，再明确声明 Fact 用于判定还是计分。
@@ -68,7 +68,6 @@ export default defineScoreEval({
     t.score("说明质量", explanation, { max: 2 });
 
     t.score("代码精简", { earned: health.stdout.length < 1000 ? 1 : 0 });
-    return t.finishScore();
   },
 });
 ```
@@ -80,7 +79,7 @@ export default defineScoreEval({
 
 同一个 Fact 最多登记一个判定用途和一个计分用途。上例的 `reachable` 同时交给 `t.assert` 与 `t.score`，但只求值一次。
 
-正常完成的 `defineScoreEval` 必须 `return t.finishScore()`。它明确关闭计分收集器，也能阻止漏写计分项的空评估悄悄形成有效分数。
+`test` 正常返回时，NiceEval 自动关闭计分收集器。没有调用 `t.score` 也是有效结果，得到 0 分；这表示评估成功形成了零分，不是执行失败或证据不足。
 
 ## 两种题型的结果
 
@@ -104,7 +103,6 @@ export default defineScoreEval({
 
     t.assert(quality, { atLeast: 0.7, label: "最低说明质量" });
     t.score("说明质量", quality, { max: 20 });
-    return t.finishScore();
   },
 });
 ```
@@ -128,5 +126,5 @@ t.assert(tests, { label: "项目测试通过" });
 - 先为每个必须成立的条件创建 Fact，并用 `t.assert` 或 `t.require` 明确登记。
 - 多个独立要求使用 `t.assert`，让一次 Attempt 收集完整失败信息。
 - 后续步骤依赖某个即时 Fact 时使用 `await t.require`。
-- 任务存在有意义的部分完成度时使用 `defineScoreEval`，并在正常路径返回 `t.finishScore()`。
+- 任务存在有意义的部分完成度时使用 `defineScoreEval`；`test` 正常返回时自动收尾。
 - 开放式语义用 Judge；可精确检查的文件、命令与结构化输出优先用确定性 Match。

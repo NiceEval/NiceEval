@@ -1,7 +1,7 @@
 import { defineScoreEval } from "niceeval";
 import { equals, includes } from "niceeval/expect";
 
-export default defineScoreEval({
+const scored = defineScoreEval({
   description: "计分制 Fact 把前置、按事实计分与直接给分写入真实结果",
   async test(t) {
     const turn = await t.send("assertion/score");
@@ -20,7 +20,12 @@ export default defineScoreEval({
       t.score("fixture data", result, { max: 3 });
       t.score("deterministic manual points", { earned: 4 });
     });
-
-    return t.finishScore();
   },
 });
+
+const empty = defineScoreEval({
+  description: "没有 score use 的计分制 Eval 正常得到零分",
+  test() {},
+});
+
+export default { empty, scored };

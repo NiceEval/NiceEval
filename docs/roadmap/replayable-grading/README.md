@@ -31,7 +31,7 @@ defineEval({
 
 `execution + grading` 是 replayable 形状。
 两项必须同时存在，且不能和 `test` 共存。
-`defineScoreEval` 使用同一个联合；它的 grading 负责 `score()` 与 `finishScore()`。
+`defineScoreEval` 使用同一个联合；它的 grading 负责 `score()`，正常返回时自动收尾。
 
 ## 多轮心智
 

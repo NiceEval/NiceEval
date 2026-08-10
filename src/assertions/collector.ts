@@ -11,7 +11,6 @@ import type {
   EvaluationFactResult,
   FactPhase,
   FactUseOptions,
-  ScoreCompletion,
   ScoreFact,
   ScoreFactAttemptOutcome,
   ScoreFactUseResult,
@@ -210,7 +209,6 @@ export class FactCollector {
    */
   private runnerErrorFinalization: FactFinalizeResult | undefined;
   private diffConsumers = 0;
-  private scoreCompletion: ScoreCompletion | undefined;
 
   constructor(options: FactCollectorOptions) {
     this.liveContext = options.liveContext;
@@ -395,18 +393,6 @@ export class FactCollector {
     });
   }
 
-  finishScore(): ScoreCompletion {
-    this.beforeManagedBoundary("finishScore");
-    if (this.evaluationKind !== "score") throw new Error("finishScore() is available only in defineScoreEval");
-    if (!this.uses.some((use) => use.kind === "score")) {
-      throw new Error("finishScore() requires at least one Fact score use");
-    }
-    this.terminal = { kind: "finished" };
-    const completion = Object.freeze({}) as ScoreCompletion;
-    this.scoreCompletion = completion;
-    return completion;
-  }
-
   async withGroup<T>(title: string, fn: () => Promise<T> | T): Promise<T> {
     this.assertCanRegister();
     this.assertLabel(title, "group()");
@@ -425,7 +411,7 @@ export class FactCollector {
       throw new Error(`Cannot enter ${boundary}; the Fact collector is closed`);
     }
     if (this.terminal?.kind === "finished") {
-      throw new Error(`Cannot enter ${boundary}; finishScore() already closed the collector`);
+      throw new Error(`Cannot enter ${boundary}; the test already returned and closed the collector`);
     }
     for (const requirement of this.requirementList) {
       if (requirement.state === "created") {
@@ -439,18 +425,22 @@ export class FactCollector {
   }
 
   completePass(): void {
-    this.beforeManagedBoundary("test return");
-    if (!this.uses.some((use) => use.kind === "verdict")) {
-      throw new Error("A defineEval normal path requires at least one Fact verdict use");
-    }
+    this.completeNormalReturn(() => {
+      if (!this.uses.some((use) => use.kind === "verdict")) {
+        throw new Error("A defineEval normal path requires at least one Fact verdict use");
+      }
+    });
   }
 
   /** Runner-only normal-return boundary for a score Eval. */
-  completeScore(completion: unknown): void {
-    if (this.terminal?.kind === "control" || this.terminal?.kind === "error" || this.terminal?.kind === "skipped") return;
-    if (this.terminal?.kind !== "finished" || completion !== this.scoreCompletion) {
-      throw new Error("A defineScoreEval normal path must return t.finishScore()");
-    }
+  completeScore(): void {
+    this.completeNormalReturn();
+  }
+
+  private completeNormalReturn(validate?: () => void): void {
+    this.beforeManagedBoundary("test return");
+    validate?.();
+    this.terminal = { kind: "finished" };
   }
 
   /**

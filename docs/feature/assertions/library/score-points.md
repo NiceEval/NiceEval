@@ -2,7 +2,7 @@
 
 `defineEval` 是通过制。它的正常路径需要至少一个 verdict use，最终结果是 `passed`、`failed`、`errored` 或 `skipped`。
 
-`defineScoreEval` 用 `t.score` 累加题内得分，并在正常路径返回 `t.finishScore()`：
+`defineScoreEval` 用 `t.score` 累加题内得分。`test` 正常返回时，Runner 自动关闭计分收集器：
 
 ```ts
 export default defineScoreEval({
@@ -14,7 +14,6 @@ export default defineScoreEval({
     t.assert(quality, { atLeast: 0.7, label: "最低质量" });
     t.score("摘要质量", quality, { max: 20 });
     t.score("格式", { earned: 2 });
-    return t.finishScore();
   },
 });
 ```
@@ -32,5 +31,7 @@ score Attempt 的 terminal：
 | 显式 skip | `skipped` | `null` |
 
 `earnedScore` 是诊断值。`totalScore` 只聚合非 null `creditedScore`；invalid 的 0 进入分子和分母，unavailable、errored 与 skipped 不伪装为零分。
+
+正常返回且没有 score use 时，Attempt 仍为 `scored`，`earnedScore` 与 `creditedScore` 都是 0。这个非 null 的零分进入同题平均与跨题求和；Fact/use 图保持为空，不合成占位计分项。
 
 没有 `points` 链式 API、隐式满分、软观察分或运行期 strict 开关。作者把每个 consumer 的阈值、上限和分值直接写在 `assert` 与 `score` 调用处。

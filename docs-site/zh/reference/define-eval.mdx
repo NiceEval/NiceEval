@@ -108,7 +108,7 @@ test(t: TestContext): Promise<void> | void;
 
 `t`（`TestContext`）是评估用例作者拿到的高层上下文。`t.check(...)`、`t` / `turn` 的事件方法和 `t.sandbox` 的文件方法只生成 Fact；`t.assert(...)`、`t.assertIfCovered(...)` 与 `t.require(...)` 决定这些事实怎样影响通过制判定。`t.require(...)` 只接受已经可求值的 `phase: "now"` Fact，失败时中止后续代码；`phase: "final"` 的文件与最终 diff Fact 必须交给 `t.assert(...)`，在评估用例收尾时统一求值。
 
-计分制 `defineScoreEval` 使用 `ScoreTestContext`：用 `t.score(label, fact, { max })` 或 `t.score(label, { earned })` 记分，并在正常返回时 `return t.finishScore()`。Judge recipe 也是 ScoreFact producer，使用同一套 `assert`、`require` 和 `score`。完整规则见[计分制](/zh/tutorials/evaluation-kinds#走完三步也要记三分)。全部成员：
+计分制 `defineScoreEval` 使用 `ScoreTestContext`：用 `t.score(label, fact, { max })` 或 `t.score(label, { earned })` 记分，`test` 正常返回时自动收尾。没有 score use 时得到 0 分。Judge recipe 也是 ScoreFact producer，使用同一套 `assert`、`require` 和 `score`。完整规则见[计分制](/zh/tutorials/evaluation-kinds#走完三步也要记三分)。全部成员：
 
 {/* GENERATED:BEGIN test-context */}
 

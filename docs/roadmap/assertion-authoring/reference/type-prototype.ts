@@ -103,7 +103,6 @@ declare function defineScoreMatch<T>(spec: {
 type FactPhase = "now" | "final";
 declare const factBrand: unique symbol;
 declare const usageCoverageBrand: unique symbol;
-declare const scoreCompletionBrand: unique symbol;
 
 interface BooleanFact<out R = unknown, P extends FactPhase = FactPhase> {
   readonly kind: "boolean";
@@ -119,10 +118,6 @@ interface ScoreFact<P extends FactPhase = FactPhase> {
 
 interface UsageEvidenceFact<P extends FactPhase = FactPhase> extends BooleanFact<unknown, P> {
   readonly [usageCoverageBrand]: true;
-}
-
-interface ScoreCompletion {
-  readonly [scoreCompletionBrand]: true;
 }
 
 interface FactUseOptions {
@@ -158,7 +153,6 @@ interface ScoreTestContext extends TestContext {
     options: { readonly key?: string; readonly max: number },
   ): void;
   score(label: string, direct: { readonly key?: string; readonly earned: number }): void;
-  finishScore(): ScoreCompletion;
 }
 
 interface KeyedFactUseOptions extends FactUseOptions {
@@ -185,7 +179,7 @@ interface ReplayScoreFactUses extends ReplayGradingFactUses {
 }
 
 interface ScoreEvalInput {
-  test(t: ScoreTestContext): ScoreCompletion | Promise<ScoreCompletion>;
+  test(t: ScoreTestContext): void | Promise<void>;
 }
 
 type HasId = { readonly id: string };
@@ -198,6 +192,7 @@ declare const scoreGrading: ReplayScoreFactUses;
 declare const candidate: unknown;
 declare const hasId: BooleanMatch<unknown, HasId>;
 declare const hasTitle: BooleanMatch<unknown, HasTitle>;
+declare const send: () => Promise<{ readonly message: string }>;
 declare const command: ToolMatch<LogicalCommandOccurrence>;
 declare const event: EventMatch;
 declare const score: ScoreMatch<string>;
@@ -294,19 +289,35 @@ t.assert(scoreFact);
 t.score("has id", boolFact, { max: 2 });
 // @ts-expect-error Facts do not expose the retired points() chain.
 boolFact.points(2);
-// @ts-expect-error Score completion has no unverifiable early-exit options.
-scoreT.finishScore({ reason: "early" });
+// @ts-expect-error Score Eval completion is the test callback's normal return.
+scoreT.finishScore();
 
 const validScoreEval: ScoreEvalInput = {
   test(context) {
     context.score("zero is explicit", { earned: 0 });
-    return context.finishScore();
   },
 };
 void validScoreEval;
 
-const invalidScoreEval: ScoreEvalInput = {
-  // @ts-expect-error A normal Score Eval path must return ScoreCompletion.
+const validEmptyScoreEval: ScoreEvalInput = {
   test() {},
 };
-void invalidScoreEval;
+void validEmptyScoreEval;
+
+const invalidNumberReturn: ScoreEvalInput = {
+  // @ts-expect-error Score Eval tests do not return application values.
+  test: () => 1,
+};
+void invalidNumberReturn;
+
+const invalidPromiseReturn: ScoreEvalInput = {
+  // @ts-expect-error Score Eval tests do not return application promises.
+  test: async () => 1,
+};
+void invalidPromiseReturn;
+
+const invalidSendReturn: ScoreEvalInput = {
+  // @ts-expect-error Await managed work instead of returning its value.
+  test: () => send(),
+};
+void invalidSendReturn;

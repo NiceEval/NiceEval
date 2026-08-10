@@ -77,7 +77,6 @@ t.assert(repairedRuntime);
 
 t.score("修改范围", changedOnlyConfig, { max: 3 });
 t.score("runtime 配置修复", repairedRuntime, { max: 2 });
-return t.finishScore();
 ```
 
 四个 Fact 都明确进入判定用途，其中两个 Fact 还各自进入一次计分用途。
@@ -128,7 +127,6 @@ t.assert(stayedPublic);
 t.assert(completed);
 t.assert(unchanged);
 t.score("没有越界修改", unchanged, { max: 2 });
-return t.finishScore();
 ```
 
 本页定义的 B 确定性部分可得 2 分。

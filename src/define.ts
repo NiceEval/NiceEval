@@ -97,8 +97,8 @@ export function defineEval(def: EvalInput): EvalDefinition<"pass", TestContext> 
 }
 
 /**
- * 计分制 eval:Fact verdict uses 与 Fact score uses 可以读取同一份证据；正常路径必须返回
- * `t.finishScore()` 的品牌完成令牌。字段与 `defineEval` 同形，禁止提供 id，由发现期推导。
+ * 计分制 eval:Fact verdict uses 与 Fact score uses 可以读取同一份证据；正常返回由 Runner
+ * 自动关闭计分收集器。字段与 `defineEval` 同形，禁止提供 id，由发现期推导。
  */
 export function defineScoreEval(
   def: ScoreEvalInput,

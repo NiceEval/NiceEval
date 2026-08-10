@@ -69,7 +69,6 @@ export type {
   FactPhase,
   FactUseOptions,
   ScoreThresholdOptions,
-  ScoreCompletion,
   EvaluationFactResult,
   PrimaryFactSummary,
   VerdictFactUseResult,

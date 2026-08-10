@@ -16,7 +16,6 @@ export type FactPhase = "now" | "final";
 declare const evaluationFactBrand: unique symbol;
 declare const evidenceSourceBrand: unique symbol;
 declare const usageEvidenceFactBrand: unique symbol;
-declare const scoreCompletionBrand: unique symbol;
 
 export interface BooleanFact<out R = unknown, P extends FactPhase = FactPhase> {
   readonly kind: "boolean";
@@ -49,11 +48,6 @@ export interface FactUseOptions {
 
 export interface ScoreThresholdOptions extends FactUseOptions {
   readonly atLeast: number;
-}
-
-/** Private completion token returned by `finishScore()` on the normal path. */
-export interface ScoreCompletion {
-  readonly [scoreCompletionBrand]: true;
 }
 
 export interface FactResultBase {

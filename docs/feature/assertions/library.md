@@ -37,12 +37,11 @@ ScoreFact 的 verdict use 必须给出 `{ atLeast }`。阈值必须是有限 `[0
 const quality = turn.judge.autoevals.closedQA("回答是否清楚？");
 t.score("回答质量", quality, { max: 20, key: "answer-quality" });
 t.score("人工规则", { earned: 2, key: "manual-rule" });
-return t.finishScore();
 ```
 
 Boolean Fact 通过得 `max`，失败得 0；ScoreFact 得 `max × normalizedScore`。`max` 必须为正有限数，direct `earned` 必须为非负有限数。每个 Fact 最多有一个 score use。
 
-正常 `defineScoreEval` 路径必须返回 `t.finishScore()`，并至少登记一个 score use。显式零分写 `t.score(label, { earned: 0 })`。
+`defineScoreEval` 在 `test` 正常返回时自动收尾。没有登记 score use 的正常路径也是有效计分结果，得到 0 分且保留空 Fact/use 图；需要说明某项明确得到零分时使用 `t.score(label, { earned: 0 })`。
 
 ## Phase 与 deferred evidence
 

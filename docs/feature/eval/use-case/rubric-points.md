@@ -25,7 +25,6 @@ export default defineScoreEval({
     const health = await t.sandbox.runCommand("curl", ["-s", "localhost:5670/health"]);
     t.score("健康检查可达", t.check(health, commandSucceeded()), { max: 1 });
     t.score("健康检查内容", t.check(health.stdout, includes("ok")), { max: 1 });
-    return t.finishScore();
   },
 });
 ```
@@ -51,7 +50,7 @@ t.score("说明质量", quality, { max: 20, key: "notes-quality" });
 
 ## 终态与聚合
 
-`finishScore()` 封口后，所有 score use 可用时 Attempt 为 `scored`。失败的 verdict use 使它成为 `invalid` 且 `creditedScore` 为 0；不可用与 evaluator/执行错误保持 `null` credit，不能伪装为 0 分。
+`test` 正常返回后，Runner 自动封口。所有 score use 可用时 Attempt 为 `scored`；没有 score use 时也是 `scored`，`creditedScore` 为 0。失败的 verdict use 使它成为 `invalid` 且 `creditedScore` 为 0；不可用与 evaluator/执行错误保持 `null` credit，不能伪装为 0 分。
 
 成功、已消费且没有 score use 的 ScoreFact 才能各计一次 `examScore`。有 score use 的 Fact 只贡献 `totalScore`，因此 Judge 与任意其他 ScoreFact 遵循完全相同的聚合规则。
 

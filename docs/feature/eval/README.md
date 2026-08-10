@@ -102,7 +102,7 @@ solution、生成器与参考答案不得进入任何 build context 或最终镜
 ## defineScoreEval：计分制题型
 
 `defineScoreEval` 定义**计分制**题型:题内用给分词汇叠加挣分(五步走完三步挣 3 分、rubric 大题按分值给分),对比读总分而不是通过率。
-字段与 `defineEval` 完全同形,区别只在 `test(t)` 的 `t` ——它多出 Fact 计分、直接给分和完成令牌。
+字段与 `defineEval` 完全同形,区别只在 `test(t)` 的 `t` ——它多出 Fact 计分和直接给分。
 这些词只存在于 `defineScoreEval`，在 `defineEval` 里写给分是类型错误：
 
 ```typescript
@@ -124,7 +124,6 @@ export default defineScoreEval({
     const config = t.sandbox.fileChanged("db-gpt/.env");
     t.score("配置运行环境", config, { max: 1 });
     t.score("代码精简", { earned: 1 });
-    return t.finishScore();
   },
 });
 ```
@@ -134,8 +133,7 @@ export default defineScoreEval({
 同一个 Fact 可以相邻登记一个判定用途和一个计分用途，evaluator 仍只运行一次。
 后续代码依赖即时 Fact 时使用两种题型共用的 `await t.require(fact)`；多个独立要求使用 `t.assert(fact)` 继续收集。
 
-正常路径必须 `return t.finishScore()`，明确关闭计分收集器。
-`require` 未通过、Judge Fact 不可用或 `t.skip()` 是合法终止路径，不要求执行不可达的完成令牌。
+`test` 正常返回时，Runner 自动关闭计分收集器。没有 score use 的正常路径得到 0 分；`require` 未通过、Judge Fact 不可用或 `t.skip()` 仍按各自终态收尾。
 
 题型是定义期事实，进 `EvalDescriptor.evaluationKind`(`"pass" | "score"`)供报告选择主读数。
 一个 Experiment 可以同时选择两种题型；通过率与总分分别聚合，不互相相加。

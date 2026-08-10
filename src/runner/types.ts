@@ -15,7 +15,6 @@ import type {
   JudgeDeclaration,
   ResolvedJudgeConfig,
   PrimaryFactSummary,
-  ScoreCompletion,
   ScoreFactAttemptOutcome,
   ScoreFactUseResult,
   VerdictFactUseResult,
@@ -727,7 +726,7 @@ export type ScoreEvalInput = EvalAuthorFields & {
   id?: IdComesFromFilePath;
   evaluationKind?: EvaluationKindComesFromFactory;
   configHash?: ConfigHashComesFromPlanning;
-  test(t: ScoreTestContext): ScoreCompletion | Promise<ScoreCompletion>;
+  test(t: ScoreTestContext): Promise<void> | void;
 };
 
 /** Factory 完成默认归一后的 Eval 字段；Definition 不再复用作者输入的 optional 半状态。 */
@@ -750,13 +749,11 @@ export interface EvalDefinitionFields {
 }
 
 /** Factory 产物保留精确 evaluationKind / context，并带模块私有品牌，不能由对象字面量伪造。 */
-type EvalTestReturn<Kind extends EvaluationKind> = Kind extends "score"
-  ? ScoreCompletion | Promise<ScoreCompletion>
-  : void | Promise<void>;
+type EvalTestReturn = void | Promise<void>;
 
 export interface EvalDefinition<Kind extends EvaluationKind, Context> extends EvalDefinitionFields {
   readonly evaluationKind: Kind;
-  test(t: Context): EvalTestReturn<Kind>;
+  test(t: Context): EvalTestReturn;
   readonly [EVAL_DEFINITION]: true;
 }
 
@@ -766,7 +763,7 @@ export type AnyEvalDefinition =
 
 /** @internal 唯一写入 Definition 私有品牌的构造辅助；不从公共入口导出。 */
 export function brandEvalDefinition<Kind extends EvaluationKind, Context>(
-  value: EvalDefinitionFields & { evaluationKind: Kind; test(t: Context): EvalTestReturn<Kind> },
+  value: EvalDefinitionFields & { evaluationKind: Kind; test(t: Context): EvalTestReturn },
 ): EvalDefinition<Kind, Context> {
   Object.defineProperty(value, EVAL_DEFINITION, { value: true });
   return Object.freeze(value) as EvalDefinition<Kind, Context>;

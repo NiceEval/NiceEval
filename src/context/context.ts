@@ -1211,7 +1211,6 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
     ...(deps.evaluationKind === "score"
       ? {
           score: (label: string, factOrDirect: unknown, options?: unknown) => collector.score(label, factOrDirect as never, options as never),
-          finishScore: () => collector.finishScore(),
         }
       : {}),
   };
