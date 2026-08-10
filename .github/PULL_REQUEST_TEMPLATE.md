@@ -9,15 +9,13 @@ an internal mechanism such as its registry, protocol, or storage model. Keep one
 dominant outcome and aim for 72 characters or fewer. Write the PR title and
 description in the language of the user's latest request.
 
-Keep every section below. Write "None" when the PR contains no entry for that
-change direction. Organize the inventory by Removed, Added, and Changed; do not
-organize it by product surface or put a change classification beneath each
-command or symbol. Prefix every entry title with exactly one surface from
-`Public API`, `CLI`, `Report`, `Observable behavior/data`, `Environment
-variable`, or `Package script`, and repeat the entry block as needed. Every
-entry needs a concrete before example, after example, and user impact. Usage
-examples must include the public owner that consumes the value; do not show an
-isolated factory result when real usage belongs inside `defineEval()`,
+Keep every product-surface section below. Inside each surface, inventory
+Removed, Added, and Changed as separate subsections; write "None" when a
+direction has no entry. Do not put a change classification beneath an
+individual command or symbol. Repeat the entry block as needed. Every entry
+needs a concrete before example, after example, and user impact. Usage examples
+must include the public owner that consumes the value; do not show an isolated
+factory result when real usage belongs inside `defineEval()`,
 `defineExperiment()`, report JSX, CLI invocation, or a package script.
 
 Use Removed when an entry that existed at the PR base no longer exists, Added
@@ -44,32 +42,166 @@ a new environment variable.
 - Required capability: <why the supporting API, protocol, or internal mechanism is necessary>
 - User outcome: <what becomes possible after this PR>
 
-## Removed
+## Public API
 
-### `<surface>: <entry>`
+### Removed
 
-- Before usage or result: <copyable example and observed result>
+#### `<package entry or symbol>`
+
+- Before usage or result: <copyable TypeScript example and observed result>
 - After usage or result: `removed`
 - User impact: <what stops working and the concrete migration or replacement>
-- Environment boundary: <for an environment variable only: scope, producer, consumer, inheritance, default, precedence, validation, secret exposure, and why an explicit channel cannot own it; otherwise omit>
 
-## Added
+### Added
 
-### `<surface>: <entry>`
+#### `<package entry or symbol>`
 
 - Before usage or result: `not available`
-- After usage or result: <copyable example and observed result>
-- User impact: <what becomes possible, including stdout, stderr, exit code, JSON schema, rendered output, stored data, automation, or workflow effects where relevant>
-- Environment boundary: <for an environment variable only: scope, producer, consumer, inheritance, default, precedence, validation, secret exposure, and why an explicit channel cannot own it; otherwise omit>
+- After usage or result: <copyable TypeScript example and observed result>
+- User impact: <what becomes possible>
 
-## Changed
+### Changed
 
-### `<surface>: <entry>`
+#### `<package entry or symbol>`
 
-- Before usage or result: <copyable example and observed result>
+- Before usage or result: <copyable TypeScript example and observed result>
+- After usage or result: <copyable replacement example and observed result>
+- User impact: <compatibility and migration effects>
+
+## CLI commands
+
+### Removed
+
+#### `<command or flag>`
+
+- Before usage or result: <copyable shell command and observed result>
+- After usage or result: `removed`
+- User impact: <what stops working and the concrete migration or replacement>
+
+### Added
+
+#### `<command or flag>`
+
+- Before usage or result: `not available`
+- After usage or result: <copyable shell command and observed result>
+- User impact: <stdout, stderr, exit code, JSON schema, default, or workflow effect>
+
+### Changed
+
+#### `<command or flag>`
+
+- Before usage or result: <copyable shell command and observed result>
+- After usage or result: <the same command, or its replacement, and the observed result>
+- User impact: <stdout, stderr, exit code, JSON schema, default, or migration change>
+
+## Report components
+
+### Removed
+
+#### `<component, prop, or report entry>`
+
+- Before usage or result: <copyable TSX example and rendered result>
+- After usage or result: `removed`
+- User impact: <author migration and reader-visible effect>
+
+### Added
+
+#### `<component, prop, or report entry>`
+
+- Before usage or result: `not available`
+- After usage or result: <copyable TSX example and rendered result>
+- User impact: <authoring and reader-visible capability>
+
+### Changed
+
+#### `<component, prop, or report entry>`
+
+- Before usage or result: <copyable TSX example and rendered result>
+- After usage or result: <copyable replacement TSX and rendered result>
+- User impact: <author migration and reader-visible effect>
+
+## Observable behavior and data contracts
+
+### Removed
+
+#### `<runtime behavior, record/schema, cache, provider, or output>`
+
+- Before usage or result: <concrete input and observed result>
+- After usage or result: `removed`
+- User impact: <effect on users, stored data, or automation and the replacement>
+
+### Added
+
+#### `<runtime behavior, record/schema, cache, provider, or output>`
+
+- Before usage or result: `not available`
+- After usage or result: <concrete input and observed result>
+- User impact: <effect on users, stored data, or automation>
+
+### Changed
+
+#### `<runtime behavior, record/schema, cache, provider, or output>`
+
+- Before usage or result: <concrete input and observed result>
 - After usage or result: <the same input, or its replacement, and the observed result>
-- User impact: <compatibility, migration, rendered output, stored data, automation, or workflow effects>
-- Environment boundary: <for an environment variable only: scope, producer, consumer, inheritance, default, precedence, validation, secret exposure, and why an explicit channel cannot own it; otherwise omit>
+- User impact: <compatibility, migration, stored data, or automation effect>
+
+## Environment variables
+
+### Removed
+
+#### `<VARIABLE_NAME>`
+
+- Before usage or result: <copyable shell/config example and observed result>
+- After usage or result: `removed`
+- Environment boundary: <scope, producer, consumer, inheritance, default, precedence, validation, and secret exposure>
+- User and security impact: <migration or "none">
+
+### Added
+
+#### `<VARIABLE_NAME>`
+
+- Before usage or result: `not available`
+- After usage or result: <copyable shell/config example, default, and observed result>
+- Environment boundary: <scope, producer, consumer, inheritance, precedence, validation, and secret exposure>
+- Necessity: <why an explicit API, CLI flag, config file, argument, or constant cannot own this value>
+- User and security impact: <workflow, default, migration, or "none">
+
+### Changed
+
+#### `<VARIABLE_NAME>`
+
+- Before usage or result: <copyable shell/config example, default, and observed result>
+- After usage or result: <copyable shell/config example, default, and observed result>
+- Environment boundary: <scope, producer, consumer, inheritance, precedence, validation, and secret exposure>
+- Necessity: <why an explicit API, CLI flag, config file, argument, or constant cannot own this value>
+- User and security impact: <compatibility, migration, or "none">
+
+## Package scripts
+
+### Removed
+
+#### `<pnpm script>`
+
+- Before usage or result: <copyable command and observed result>
+- After usage or result: `removed`
+- User impact: <development, CI, documentation, or release workflow migration>
+
+### Added
+
+#### `<pnpm script>`
+
+- Before usage or result: `not available`
+- After usage or result: <copyable command and observed result>
+- User impact: <development, CI, documentation, or release workflow capability>
+
+### Changed
+
+#### `<pnpm script>`
+
+- Before usage or result: <copyable command and observed result>
+- After usage or result: <copyable command and observed result>
+- User impact: <development, CI, documentation, or release workflow change>
 
 ## Tests
 

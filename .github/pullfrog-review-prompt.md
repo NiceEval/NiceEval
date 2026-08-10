@@ -58,46 +58,195 @@ diff；`IncrementalReview` 模式审查上次 review 后的新提交及其与当
 - `Added`：PR base 中不存在、最终版本中新出现的入口或行为。
 - `Changed`：同一入口在前后都存在，但形状或可观察行为发生变化。
 
-公开身份被替换时分别列为一项 Removed 和一项 Added，不合并成 Changed。仅内部实现变化且公共形状与可观察语义不变时，不列入这三个公开变化块。现有证据不足时明确写出缺失证据并据此裁决，不增加 `uncertain` 分类。NiceEval 处于 beta，移除或不兼容变化不自动构成缺陷；只有变化与 PR 意图不符，或契约、实现、文档、测试、迁移说明彼此不一致时才形成 finding。
+公开身份被替换时，在对应产品面下分别列为一项 Removed 和一项 Added，不合并成 Changed。仅内部实现变化且公共形状与可观察语义不变时，不列入这些公开变化小节。现有证据不足时明确写出缺失证据并据此裁决，不增加 `uncertain` 分类。NiceEval 处于 beta，移除或不兼容变化不自动构成缺陷；只有变化与 PR 意图不符，或契约、实现、文档、测试、迁移说明彼此不一致时才形成 finding。
 
-Review body 必须使用中文并严格采用以下结构。Removed、Added、Changed 是变化清单的一级大块，不得先按 CLI、Public API 或其它产品面分组，也不得在命令、符号或行为下面再写 `breaking`、`additive`、`behavior-change`、`internal-only` 或 `uncertain`。每个变化块都必须保留，没有对应变化时写“无”：
+Review body 必须使用中文并严格采用以下结构。Public API、CLI、Report、可观察行为与数据、环境变量和 Package scripts 是一级产品面；每个产品面下面都必须依次保留 Removed、Added、Changed 三个小节，没有对应变化时写“无”。不得在命令、符号或行为条目下面再写 `breaking`、`additive`、`behavior-change`、`internal-only` 或 `uncertain`：
 
 ```markdown
 ## 变更概述
 
 用 2–5 条说明 PR 的目的、实现路径和用户最终看到的结果，不逐文件罗列。
 
-## Removed
+## Public API
 
-### `<Public API | CLI | Report | 可观察行为与数据 | 环境变量 | Package script>: <入口、符号、命令、行为或名称>`
+### Removed
 
-- 变化前用法或结果：<可复制示例及实际结果>
+#### `<入口或符号>`
+
+- 变化前用法或结果：<可复制 TypeScript 示例及实际结果>
 - 变化后用法或结果：已删除
 - 用户影响与迁移：<失效内容、替代方案和迁移动作>
-- 环境边界：<仅环境变量填写：作用域、producer、consumer、继承、默认值、优先级、校验、secret 暴露，以及为何显式通道不能承载；其它表面省略>
 - 证据：<base 与 PR 中可核查的文件、符号或 diff>
 
-## Added
+### Added
 
-### `<Public API | CLI | Report | 可观察行为与数据 | 环境变量 | Package script>: <入口、符号、命令、行为或名称>`
+#### `<入口或符号>`
 
 - 变化前用法或结果：不可用
-- 变化后用法或结果：<可复制示例及实际结果>
-- 用户影响：<新增能力以及 stdout、stderr、退出码、JSON schema、渲染、存储、自动化或工作流影响>
-- 环境边界：<仅环境变量填写：作用域、producer、consumer、继承、默认值、优先级、校验、secret 暴露，以及为何显式通道不能承载；其它表面省略>
+- 变化后用法或结果：<可复制 TypeScript 示例及实际结果>
+- 用户影响：<新增能力>
 - 证据：<PR 中可核查的文件、符号或 diff>
 
-## Changed
+### Changed
 
-### `<Public API | CLI | Report | 可观察行为与数据 | 环境变量 | Package script>: <入口、符号、命令、行为或名称>`
+#### `<入口或符号>`
 
-- 变化前用法或结果：<可复制示例及实际结果>
-- 变化后用法或结果：<同一输入或替代用法及实际结果>
-- 用户影响与迁移：<兼容性、迁移、渲染、存储、自动化或工作流影响>
-- 环境边界：<仅环境变量填写：作用域、producer、consumer、继承、默认值、优先级、校验、secret 暴露，以及为何显式通道不能承载；其它表面省略>
+- 变化前用法或结果：<可复制 TypeScript 示例及实际结果>
+- 变化后用法或结果：<可复制替代示例及实际结果>
+- 用户影响与迁移：<兼容性和迁移动作>
 - 证据：<base 与 PR 中可核查的文件、符号或 diff>
 
-各块按上述 entry 重复，不为每个产品面创建固定空小节。Public API 必须给出可复制的 TypeScript 用法，CLI 必须给出可复制命令，Report 必须给出可复制 TSX，并说明作者与读者看到的结果；可观察行为与数据必须覆盖 runtime、record/schema、缓存身份、provider、report/show/view 或错误反馈的前后结果。环境变量必须逐项说明边界，固定常量、单次调用参数、typed config、CLI flag、受管 descriptor 或 service 配置能够表达时，不接受仅以“方便”为理由新增变量。
+## CLI
+
+### Removed
+
+#### `<命令或 flag>`
+
+- 变化前用法或结果：<可复制命令及实际结果>
+- 变化后用法或结果：已删除
+- 用户影响与迁移：<失效内容、替代方案和迁移动作>
+- 证据：<base 与 PR 中可核查的文件、符号或 diff>
+
+### Added
+
+#### `<命令或 flag>`
+
+- 变化前用法或结果：不可用
+- 变化后用法或结果：<可复制命令及实际结果>
+- 用户影响：<stdout、stderr、退出码、JSON schema、默认值或新增工作流>
+- 证据：<PR 中可核查的文件、符号或 diff>
+
+### Changed
+
+#### `<命令或 flag>`
+
+- 变化前用法或结果：<可复制命令及实际结果>
+- 变化后用法或结果：<同一命令或替代命令及实际结果>
+- 用户影响与迁移：<stdout、stderr、退出码、JSON schema、默认值或迁移动作>
+- 证据：<base 与 PR 中可核查的文件、符号或 diff>
+
+## Report
+
+### Removed
+
+#### `<组件、prop 或转换函数>`
+
+- 变化前用法或结果：<可复制 TSX 及渲染结果>
+- 变化后用法或结果：已删除
+- 作者与读者影响：<迁移和最终渲染影响>
+- 证据：<base 与 PR 中可核查的文件、符号或 diff>
+
+### Added
+
+#### `<组件、prop 或转换函数>`
+
+- 变化前用法或结果：不可用
+- 变化后用法或结果：<可复制 TSX 及渲染结果>
+- 作者与读者影响：<新增创作能力和最终渲染结果>
+- 证据：<PR 中可核查的文件、符号或 diff>
+
+### Changed
+
+#### `<组件、prop 或转换函数>`
+
+- 变化前用法或结果：<可复制 TSX 及渲染结果>
+- 变化后用法或结果：<可复制替代 TSX 及渲染结果>
+- 作者与读者影响：<兼容性、迁移和最终渲染影响>
+- 证据：<base 与 PR 中可核查的文件、符号或 diff>
+
+## 可观察行为与数据
+
+### Removed
+
+#### `<runtime、record/schema、缓存、provider 或输出>`
+
+- 变化前用法或结果：<具体输入及实际结果>
+- 变化后用法或结果：已删除
+- 用户与自动化影响：<替代方案、存储数据和自动化影响>
+- 证据：<base 与 PR 中可核查的文件、符号或 diff>
+
+### Added
+
+#### `<runtime、record/schema、缓存、provider 或输出>`
+
+- 变化前用法或结果：不可用
+- 变化后用法或结果：<具体输入及实际结果>
+- 用户与自动化影响：<新增结果、存储数据和自动化影响>
+- 证据：<PR 中可核查的文件、符号或 diff>
+
+### Changed
+
+#### `<runtime、record/schema、缓存、provider 或输出>`
+
+- 变化前用法或结果：<具体输入及实际结果>
+- 变化后用法或结果：<同一输入或替代输入及实际结果>
+- 用户与自动化影响：<兼容性、迁移、存储数据和自动化影响>
+- 证据：<base 与 PR 中可核查的文件、符号或 diff>
+
+## 环境变量
+
+### Removed
+
+#### `<VARIABLE_NAME>`
+
+- 变化前用法或结果：<可复制 shell/config 示例、默认值及实际结果>
+- 变化后用法或结果：已删除
+- 环境边界：<作用域、producer、consumer、继承、优先级、校验和 secret 暴露>
+- 用户与安全影响：<迁移或“无”>
+- 证据：<base 与 PR 中可核查的文件、符号或 diff>
+
+### Added
+
+#### `<VARIABLE_NAME>`
+
+- 变化前用法或结果：不可用
+- 变化后用法或结果：<可复制 shell/config 示例、默认值及实际结果>
+- 环境边界：<作用域、producer、consumer、继承、优先级、校验和 secret 暴露>
+- 显式通道不足：<为何 API、CLI flag、typed config、参数、常量或受管 descriptor 不能承载>
+- 用户与安全影响：<工作流、默认值、迁移或“无”>
+- 证据：<PR 中可核查的文件、符号或 diff>
+
+### Changed
+
+#### `<VARIABLE_NAME>`
+
+- 变化前用法或结果：<可复制 shell/config 示例、默认值及实际结果>
+- 变化后用法或结果：<可复制 shell/config 示例、默认值及实际结果>
+- 环境边界：<作用域、producer、consumer、继承、优先级、校验和 secret 暴露>
+- 显式通道不足：<为何 API、CLI flag、typed config、参数、常量或受管 descriptor 不能承载>
+- 用户与安全影响：<兼容性、迁移或“无”>
+- 证据：<base 与 PR 中可核查的文件、符号或 diff>
+
+## Package scripts
+
+### Removed
+
+#### `<script>`
+
+- 变化前用法或结果：<可复制命令及实际结果>
+- 变化后用法或结果：已删除
+- 用户工作流影响：<开发、CI、文档或发布迁移>
+- 证据：<base 与 PR 中可核查的文件、符号或 diff>
+
+### Added
+
+#### `<script>`
+
+- 变化前用法或结果：不可用
+- 变化后用法或结果：<可复制命令及实际结果>
+- 用户工作流影响：<新增开发、CI、文档或发布能力>
+- 证据：<PR 中可核查的文件、符号或 diff>
+
+### Changed
+
+#### `<script>`
+
+- 变化前用法或结果：<可复制命令及实际结果>
+- 变化后用法或结果：<可复制命令及实际结果>
+- 用户工作流影响：<开发、CI、文档或发布变化>
+- 证据：<base 与 PR 中可核查的文件、符号或 diff>
+
+每个方向有多项时重复对应 entry；没有变化时直接写“无”，不要保留占位符。Public API、CLI 和 Report 的示例必须分别是可复制的 TypeScript、命令和 TSX。可观察行为与数据必须覆盖 runtime、record/schema、缓存身份、provider、report/show/view 或错误反馈的前后结果。固定常量、单次调用参数、typed config、CLI flag、受管 descriptor 或 service 配置能够表达时，不接受仅以“方便”为理由新增环境变量。
 
 ## 文档与验证
 
