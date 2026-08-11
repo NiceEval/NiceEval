@@ -63,7 +63,7 @@ NiceEval 的内部实现只有两类计算。
 边界用 Effect Schema 或等价的品牌守卫立即解码成领域类型；解码失败进入具名的 typed error channel，解码成功后的内部函数不再接收 `unknown`、手写字段探测或双重类型断言。
 
 资源由 `Effect.Scope` 持有，失败、defect 与 interruption 保持三条通道直到单 Attempt 封口。
-Sandbox acquire、Sandbox lifecycle、Agent ensure、作者执行和逆序 finalizer 都在同一条结构化生命周期里组合；只有最外层公共 Promise facade 与结果封口运行 Effect，内部模块不得自行启动第二套 runtime。
+Sandbox acquire、Sandbox lifecycle、Agent ensure、作者执行和逆序 finalizer 都在同一条结构化生命周期里组合。Effect-native Library API 继续返回 Effect；只有 CLI / application 入口或明确的 Promise 兼容 facade 可以运行它，内部模块不得自行启动第二套 runtime。
 
 ## 一个授权面，宽接口与能力守卫
 
@@ -104,9 +104,9 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 Sandbox diff：
 2. **发现。
    ** 扫 `evals/`,收集 `*.eval.ts` 与 `*.eval.tsx`;据路径推导 id,排序;按过滤器(id 前缀 / `--tag`)筛。
 3. **形成 ProjectTarget 与 ExecutionTarget。
-   ** 对每个 eval 计算带 domain 的 input/config identity，并在单锁 RecordSession 内为每个目标 Run 和 slot 一次分配 opaque ID、绑定 <code>startedAt</code>、形成完整 expected membership。目标 Run 此时尚未发布。
+   ** 对每个 eval 计算带 domain 的 input/config identity，并在单 writer `RecordWriteSession` 内为每个目标 Run 和 slot 一次分配 opaque ID、绑定 `startedAt`、形成完整 expected membership。目标 Run 此时只在 local session，尚未发布。
 4. **execution projection。
-   ** 具名 <code>project-target/v1</code> projector 接收当前 ProjectTarget、ExecutionTarget、锁内 RecordView 与本次 policy，把每个 slot 穷尽判为 reuse 或 gap。source barrier、禁止回扫、Verdict、fingerprint、timeout、<code>--rerun</code> 与 <code>--keep-sandbox</code> 的判断都属于该 policy，不属于 Record。完整契约只见 [Execution projection](feature/experiments/cache.md)。
+   ** 具名 `project-target/v1` projector 接收当前 ProjectTarget、ExecutionTarget、frozen `RecordWriteSession.view` 与本次 policy，把每个 slot 穷尽判为 reuse 或 gap。source barrier、禁止回扫、`reuseContract`、Verdict、fingerprint、timeout、`--rerun` 与 `--keep-sandbox` 的判断都属于该 policy，不属于 Record。完整契约只见 [Execution projection](feature/experiments/cache.md)。
 
    planner/scheduler 只接收 gaps；invocation coordinator 保留完整 projection。
 5. **有界并发调度。
@@ -135,9 +135,9 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 Sandbox diff：
     ** finally 里按 `SandboxAgent.teardown` → 两层作者 layer 已登记 cleanup(按全局准备顺序逆序)→ Provider finalizer 的顺序收尾。
     收尾只能追加 diagnostic event，不改已经形成的 Verdict；随后按留存决策销毁或留存沙箱(`--keep-sandbox`,见 [Sandbox · 留存](feature/sandbox/architecture.md#留存keep与注册表))。
 12. **写 Record 与返回 receipt。
-    ** coordinator 把原始 ExecutionTarget、projection reuse intents 与 executed outcomes 交给 writer。project-target reuse 写 carried Member，explicit adoption 写 accepted Member，实际执行写新 Attempt 与 executed Member；没有 outcome 的 gap 不写 Member。writer 只验证事实、引用和 action 关联，不重做资格判断。
+    ** coordinator 把原始 ExecutionTarget、projection reuse intents 与 executed outcomes 交给 write session。project-target reuse 写 carried Member，explicit adoption 写 accepted Member，实际执行写新 Attempt 与 executed Member；没有 outcome 的 gap 不写 Member。writer 只验证事实、引用和 action 关联，不重做资格判断。
 
-    Runner 先在 origin Run 写入 source manifest 与 Run-local digest blobs，再在 Attempt 自己的临时目录完整形成核心文件、通道和 blob。它以目录 rename 原子发布 Attempt，建立 origin 反向锚。每个 Run 在初始 session 释放所有权时写 `completedAt`；全部结束后返回不聚合宽结果的 `InvocationReceipt`。
+    Runner 在 local session 中形成 source manifest、Run-local blobs、executed Attempts、全部 Members 与 channels。Run 写入 `completedAt` 后整体 seal，recovery manifest 落稳，再以一次 no-replace directory rename 原子发布。全部结束后返回不聚合宽结果的 `InvocationReceipt`。
 
     Report 不参与采集或落盘。show/view 先由具名 analysis projector 形成 core-only `AnalysisSample` 与 ReportPlan，再由唯一 composition adapter 按需读取 ReportInput；一次 ReportExecution 同时服务终端、本机页面或静态导出。
 13. **退出码。
@@ -172,7 +172,7 @@ CLI 启动时仍加载项目根的 `.env`(不改写已有进程变量)——那�
 
 ## 相关阅读
 
-- [Record](feature/record/README.md) ——第 12 步写入的可编辑事实数据集；分析选择与执行投影由各自 owner 定义。
+- [Record](feature/record/README.md) ——第 12 步写入的 durable immutable facts；分析选择与执行投影由各自 owner 定义。
 - [Runner](runner.md) ——调度、并发、重试、首过即停、缓存的细节。
 - [Agents 与 Adapters](feature/adapters/README.md)、[Sandbox](feature/sandbox/README.md) ——三层的契约。
 - [Assertions](./feature/assertions/README.md) ——检查、作用域与证据。

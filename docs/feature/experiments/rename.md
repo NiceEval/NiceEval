@@ -30,7 +30,7 @@ rename 在写入前完成整批预检，任一不合格项都会让命令零写�
 
 正式执行建立新的 Invocation，并为 `newId` 建立一个 Run。每个通过预检的成员产生一个 `accepted` Member，引用原 `attemptId`；原 Attempt 的 origin、locator、Verdict 和采集事实都不复制。
 
-oldId、newId、当前 identity、差异摘要与操作者采用理由写入目标 Run 的 `niceeval.actions` 通道，并以 `slotId`、`attemptId` 关联。这个通道解释当时的决定，不认证源 Attempt，也不阻止用户以后编辑它。
+oldId、newId、当前 identity、差异摘要与操作者采用理由写入目标 Run 的 `niceeval.actions/v1` 通道，并以 `slotId`、`attemptId` 关联。这个通道只解释当时的决定，不持续认证源 Attempt；源 Attempt 已随 origin Run immutable，后续事实变化只能发布新 Run。
 
 ## 输出与错误
 

@@ -11,20 +11,20 @@ Record 单元层只证明可稳定隔离的格式算法和 reader/writer 边界�
 
 ## Fixture 规范
 
-每例在独立 `mkdtemp` 目录写出最小 `niceeval.record`。fixture 显式给出 Run、expected slot、Member、Attempt identity 和 channel descriptor；builder 不代替测试生成决定结果的身份或默认状态。
+每例在独立 `mkdtemp` 目录写出最小 `niceeval.record/v1`。fixture 显式给出 Run、expected slot、Member、Attempt identity 和 channel descriptor；builder 不代替测试生成决定结果的身份或默认状态。
 
 大 payload fixture 使用少量真实 bytes 证明 JSONL 与 Attempt-owned blob 边界，不签入巨大黄金目录。目录、JSON 和 JSONL 内容必须从公开形状构造，不能复制 reader 的验证算法作为第二套真相。
 
 ## 最小证明面
 
-- **根与导航**：精确根文件可打开；Results 1–15、额外根字段与保留布局冲突得到 root error。Run、Member、Attempt 分别可达 `CoreRead.read`、`missing`、`invalid`，权限与 I/O 才抛 `RecordReadError`。
+- **根与导航**：精确 `{ format: "niceeval.record/v1", recordId }` 可打开；旧 Results、额外根字段与保留布局冲突得到 root error。Run、Member、Attempt 分别可达 `CoreRead.read`、`missing`、`invalid`，权限与 I/O 才进入 `RecordReadError`。
 - **身份与关系**：Attempt 永属 origin Run；`executed`、`carried`、`accepted` Member 只引用 Attempt。expected slots 之外的 Member 由 Sample 标成 invalid，不改写分母。
 - **descriptor**：ChannelName、ChannelPath、media type 与 AttemptBlobRef 的长度、字符、prefix、ASCII case-fold 冲突和路径逃逸逐边界证明。未知但合法 channel 不阻止核心读取。
 - **transport**：document、JSONL 与 blob 各做一次 round-trip。unknown event 形成 partial decoding；requested invalid 保留 issue；未请求 channel 不被读取。
-- **generic fact**：`{ observedAt, value }` 支持任意 JsonValue，同 owner/name 第二次写入是 typed error。以 `JSON.stringify(document)` 的 UTF-8 bytes 验证 65,536 上限、同步拒绝和零部分写入；直接手改超限读为 `ChannelRead.invalid`。
-- **原子发布**：Attempt 核心、channels 与 blobs 在一次目录发布前不可见，发布后一起可见。Run 与 Member 的可更新核心使用单文件 atomic replace；正式 Attempt 对 writer 只读。
-- **停稳当前值**：目录停稳后人工修改合法 channel，下一次 reader 返回修改后的值。没有 hash、proof、revision、history 或 mirror 行为需要测试。
-- **并发边界**：同一 root 的第二项 reader、writer 或 Invocation 得到 `record-root-busy`。export 的 Record 读取/build 阶段按 reader 验收；释放后 execute 和写站不占 lease。不同 root 不协调、不交换 Member，也不自动合并。
+- **schema 隔离**：同一 ChannelName 的已知 schema、未知 schema 与损坏 payload 分别形成 read、unsupported、invalid；一项变化不让整个 Record 失效。execution-required eligibility 另验 `reuseContract` domain mismatch 必为 gap。
+- **原子发布**：完整 Run 的核心、Members、origin-owned Attempts、channels 与 blobs 在一次目录 publish 前不可见，发布后一起可见且不可修改。source/destination/manifest 的 crash matrix 每个组合都有唯一 fail-closed 结果。
+- **外部损坏**：直接修改已发布 channel 或 core 后，下一次 reader 返回局部 `invalid`；没有自动修复、revision、history、mirror 或局部 delete 行为。
+- **并发边界**：同一 root 的第二个 writer 或 recovery 得到 `record-writer-busy`，任意 reader 仍可并发。weak reader 可以漏掉刚发布 Run，但不能看见部分 Run；不同 root 不协调、不交换 Member，也不自动合并。
 
 ## 不这样测
 

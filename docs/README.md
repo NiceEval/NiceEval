@@ -65,7 +65,7 @@ docs/
 │   ├── assertions/                      检查、作用域、证据与 AssertionResult
 │   ├── judge/                           裁判模型配置、调用与 unavailable
 │   ├── verdict/                         Severity、严格模式与四态折叠
-│   ├── record/                          可编辑事实数据集：核心、通道、读写与身份
+│   ├── record/                          持久事实、本地写状态、缓存、原子发布与通道 schema
 │   ├── sample/                          从 Record 选择 core-only 分母
 │   └── reports/                         计划输入、一次执行、show/view 与静态导出
 │

@@ -20,15 +20,15 @@ import { Picker, Schedule } from '/snippets/widgets.jsx';
       tab: "没改的题在重复执行",
       lead: "先看结果沿用有没有生效",
       why: [
-        <>同一条命令再跑一遍，已判定的评估用例默认不重花钱。每轮都在全量重跑，说明有东西在作废指纹——最常见的是改了被 30 条评估用例共用的辅助函数，或者把每次都变的隧道地址写进了 <code>flags</code>。</>,
+        <>同一条命令再跑一遍，已判定的评估用例默认不重花钱。每轮都在全量重跑，说明有东西在作废指纹——最常见的是改了被 30 条评估用例共用的辅助函数，或者把每次都变的隧道地址写进了 `flags`。</>,
         <>对照见<a href="/zh/tutorials/rerun-and-cache">重跑与沿用</a>。这条不解决，调并发只是把重复劳动跑得更快。</>,
       ],
     },
     {
       tab: "修完只想复验失败项",
-      lead: <>用 <code>--rerun</code> 只重跑失败项</>,
+      lead: <>用 `--rerun` 只重跑失败项</>,
       why: [
-        <>只写的 <code>--rerun</code> 只采信 <code>passed</code>，失败项全部重跑，不必自己去结果树里挖失败的评估用例 ID。</>,
+        <>只写的 `--rerun` 只采信 `passed`，失败项全部重跑，不必自己去结果树里挖失败的评估用例 ID。</>,
         <>用法见<a href="/zh/tutorials/rerun-and-cache">重跑与沿用</a>。</>,
       ],
     },
@@ -36,7 +36,7 @@ import { Picker, Schedule } from '/snippets/widgets.jsx';
       tab: "机器还有余量没吃满",
       lead: "调本页说的两道并发闸",
       why: [
-        <>评估用例之间不共享可变状态时，不要给实验配 <code>maxConcurrency</code>——让调度器按瓶颈优先派发、快慢自然混跑。只在撞上本机资源耗尽或 Provider 限流时收 <code>--max-concurrency</code>。</>,
+        <>评估用例之间不共享可变状态时，不要给实验配 `maxConcurrency`——让调度器按瓶颈优先派发、快慢自然混跑。只在撞上本机资源耗尽或 Provider 限流时收 `--max-concurrency`。</>,
         "不要为了「看起来更确定」默认串行，那是直接放弃吞吐。",
       ],
     },
@@ -44,15 +44,15 @@ import { Picker, Schedule } from '/snippets/widgets.jsx';
       tab: "起沙箱和装环境占大头",
       lead: "让多条 Attempt 共用 Sandbox",
       why: [
-        <>创建 Sandbox 与 Sandbox 级 <code>setup</code> 占了大部分墙钟时，在实验里声明 <code>sandboxReuse: true</code>，这段每个 Sandbox 只付一次。</>,
+        <>创建 Sandbox 与 Sandbox 级 `setup` 占了大部分墙钟时，在实验里声明 `sandboxReuse: true`，这段每个 Sandbox 只付一次。</>,
         <>工作目录之外的状态会留下，见<a href="/zh/tutorials/sandbox-reuse">复用 Sandbox</a>。结果仍按指纹进入缓存。稳定的重依赖应该先烘进镜像或模板，那比什么都省。</>,
       ],
     },
     {
       tab: "只想知道能不能过一次",
-      lead: <>打开 <code>--early-exit</code></>,
+      lead: <>打开 `--early-exit`</>,
       why: [
-        <>默认跑满 <code>attempts</code> 次给出真实通过率。只想知道「这题能不能做到」、不在乎分布时用它，某次通过后剩余 Attempt 不再派发。</>,
+        <>默认跑满 `attempts` 次给出真实通过率。只想知道「这题能不能做到」、不在乎分布时用它，某次通过后剩余 Attempt 不再派发。</>,
         "要它真省钱还得让 Attempt 一个接一个跑，配法见本页「让首过即停真的省钱」。",
       ],
     },

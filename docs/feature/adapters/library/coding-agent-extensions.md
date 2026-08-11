@@ -174,13 +174,13 @@ export default defineExperiment({
 });
 ```
 
-两个文件的路径只形成 experiment id。运行完成后，用 <code>niceeval show --latest --experiment &lt;baseline-id&gt; --experiment &lt;candidate-id&gt; --page comparison</code> 明确选择两组结果。每个文件只默认导出一个 `defineExperiment`；niceeval 不读取 `export const experiments = { ... }` 这种聚合导出。
+两个文件的路径只形成 experiment id。运行完成后，用 `niceeval show --latest --experiment <baseline-id> --experiment <candidate-id> --page comparison` 明确选择两组结果。每个文件只默认导出一个 `defineExperiment`；niceeval 不读取 `export const experiments = { ... }` 这种聚合导出。
 
 model、reasoning effort 和业务 flags 仍由 experiment 配置；扩展内容属于 Agent 变体。`attempts` 默认跑满、给出完整通过率分布,两组 A/B 天然可比。
 
 ## 查看安装结果
 
-Sandbox Agent setup 把安装 manifest 写入具名 Attempt channel。Report 可以读取实际安装的 Skill、出处、ref、插件、版本，以及原生配置文件的项目相对路径与 SHA-256；manifest 不保存配置文件正文。安装失败属于基础设施错误，写执行错误通道与 <code>errored</code> Verdict，不记作 Agent 解题失败。
+Sandbox Agent setup 把安装 manifest 写入具名 Attempt channel。Report 可以读取实际安装的 Skill、出处、ref、插件、版本，以及原生配置文件的项目相对路径与 SHA-256；manifest 不保存配置文件正文。安装失败属于基础设施错误，写执行错误通道与 `errored` Verdict，不记作 Agent 解题失败。
 
 每个 Agent 支持的字段和示例见：
 

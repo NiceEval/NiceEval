@@ -64,7 +64,7 @@ export function writeEnv(): SandboxCommand {
 }
 ```
 
-`fact()` 在当前 context 的 owner 上写一个以反向域名命名的自定义 JSON document。Run hook 写 Run-owned fact，Attempt context 写 Attempt-owned fact；同一 owner/name 第二次写入是 typed error，不替换旧值或追加。Record 为它补充 `observedAt`，精确 transport 由 [Record Architecture](../record/architecture.md#通道语义与兼容性) 单点定义。
+`fact()` 在当前 context 的 owner 上写一个以反向域名命名的自定义 JSON document。Run hook 写 Run-owned fact，Attempt context 写 Attempt-owned fact；同一 owner/name 第二次写入是 typed error，不替换旧值或追加。Record 为它补充 `observedAt`，精确 transport 由 [Record Architecture](../record/architecture.md#channel-identity-与局部演进) 单点定义。
 
 Report 通过 `defineJsonFact()` 提供局部纯 parser。parser 只收到已经验证的 document，不接收 bytes、路径或 blob。generic `fact()` 不支持 JSONL、追加或大 blob；大内容使用具名内建/专用 Attempt channel。
 
@@ -74,7 +74,7 @@ Report 通过 `defineJsonFact()` 提供局部纯 parser。parser 只收到已经
 | 报告归类坐标 | 调用前 | `labels` | Run 配置通道 |
 | 实际发生的事实 | 调用中或调用后 | `fact()` | Run 或 Attempt facts 通道 |
 
-carry、accept 与 rename 引用历史 Attempt 时，不复制其事实。之后读取会看到源 Attempt 的当前值。
+carry、accept 与 rename 引用历史 Attempt 时，不复制其事实。之后读取仍沿引用取得 origin Run 中已经封存的同一份 Attempt。
 
 ## 不同 Eval 自带预制起点
 
@@ -141,7 +141,7 @@ interface ScopedFeedback {
 
 `progress()` 是有界临时反馈，不进入 Record。`diagnostic()` 进入 owner-local 事件通道；`fact()` 写一个 owner-local 自定义 JSON document。两者的 descriptor 都说明采集 coverage。
 
-<code>fact()</code> 补齐 <code>observedAt</code> 后按 Record 契约计量完整 document。超过 65,536 UTF-8 bytes 时同步抛出 code 为 <code>record-custom-fact-too-large</code> 的 typed error，不写入部分文件。调用方应删减 JSON；大文本或二进制内容必须改用具名专用 Attempt channel 与 blob。
+`fact()` 补齐 `observedAt` 后按 Record 契约计量完整 document。超过 65,536 UTF-8 bytes 时同步抛出 code 为 `record-custom-fact-too-large` 的 typed error，不写入部分文件。调用方应删减 JSON；大文本或二进制内容必须改用具名专用 Attempt channel 与 blob。
 
 要让运行失败，应抛出 typed error。要改变 Verdict，应形成 assertion 或 Judge 结果；error diagnostic 本身不改变 Verdict。
 

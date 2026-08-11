@@ -1,6 +1,6 @@
 # Agent Debug Eval：诊断效果评估
 
-[agent-install-eval.md](agent-install-eval.md) 评估 coding agent 能否接入 NiceEval；本篇评估接入后能否只靠随包文档和公开 CLI，从一份停稳 Record 得到正确诊断。
+[agent-install-eval.md](agent-install-eval.md) 评估 coding agent 能否接入 NiceEval；本篇评估接入后能否只靠随包文档和公开 CLI，从一份已发布且不再写入的 Record 得到正确诊断。
 
 ## 要回答的问题
 
@@ -10,7 +10,7 @@
 
 ## Fixture
 
-fixture 是一个最小用户项目加一份真实、停稳的 `niceeval.record` 目录。它可以包含多个 Experiment/Run、carried/accepted Member、failed/errored Attempt，以及有区分度的 usage、timing、conversation、tool 与 diagnostic channel。
+fixture 是一个最小用户项目加一份真实、已发布且不再写入的 `niceeval.record/v1` 目录。它可以包含多个 Experiment/Run、carried/accepted Member、failed/errored Attempt，以及有区分度的 usage、timing、conversation、tool 与 diagnostic channel。
 
 数据按完整 Record root 签入，不再裁剪成旧图模型的引用闭包。为了控制体积，可以只保留题目会显式选择的 Run、这些 Run 的 Member 所引用的 Attempt，以及 owner core 中已声明的 channel/blob；裁剪后必须重新通过 Record reader，并让公开 CLI 的预定页面完整呈现。未知但合法且未请求的 channel 可以保留，用来证明局部读取隔离。
 

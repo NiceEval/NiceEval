@@ -51,7 +51,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Judge 断言 | LLM-judged assertion | 把材料和 rubric 交给裁判模型求分的 Assertion;默认 soft、无阈值 | [LLM-as-a-judge](./feature/judge/library.md) |
 | 判分预检 | Judge precheck | 派发前对判分端点的最小探测;失败只作废含 Judge 断言的 Eval,不拦整次运行 | [派发前预检](./feature/judge/library.md#派发前预检) |
 | 断言范围 | Assertion scope | `t.*` 看 Attempt、`session.*` 看 Agent Session、`turn.*` 看 Turn 已发生的事件 | [Scopes](./feature/assertions/architecture/scopes.md) |
-| 证据完整度 | Channel coverage | 每个通道 descriptor 声明 complete、partial 或 unavailable；reader 另行报告本次 decoding 完整度 | [Record 通道](feature/record/architecture.md#通道目录与文件归属) |
+| 证据完整度 | Channel coverage | 每个通道 descriptor 声明 complete、partial 或 unavailable；reader 另行报告本次 decoding 完整度 | [Record 通道](feature/record/architecture.md#channel-identity-与局部演进) |
 
 ### 计分粒度
 
@@ -190,17 +190,19 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| Record | Record | `.niceeval/record/` 中可人工编辑的事实数据集；只保存已经发生的 Run、membership、Attempt 与通道事实 | [Record](feature/record/README.md) |
-| Record operation lock | Record operation lock | 同一 physical root 上由 OS 崩溃释放的跨进程互斥；一次受支持的读、写、编辑或维护全程持有 | [Record](feature/record/architecture.md#根目录与停稳边界) |
-| Record session | `RecordSession` | 执行投影、调度和事实写回共用的单锁作用域；同时提供只读 view 与 writer | [Record library](feature/record/library.md#创建与打开) |
-| Run | Run | 一个已求值 Experiment 的持久化批次；expected slots 定义分母 | [Record](feature/record/architecture.md) |
+| Record | Record | `.niceeval/record/` 中已提交的持久事实集；portable boundary 是整个 root | [Record](feature/record/README.md) |
+| Record local sidecar | Record local sidecar | canonical Record sibling 中不分享的 session、writer lock、恢复材料与派生 cache | [Record](feature/record/architecture.md#三类状态) |
+| Record reader | `RecordReader` | 不取得 writer lock 的 frozen weak view；一次固定 candidate set 与引用闭包 | [Record library](feature/record/library.md#recordreader) |
+| Record writer lock | Record writer lock | 只在 writer 间互斥、由 OS 崩溃释放的跨进程 lock；reader 可并发 | [Record](feature/record/architecture.md#writer-lock-与-local-session) |
+| Record write session | `RecordWriteSession` | 读取 frozen view、在 local sidecar seal 完整 Run 并原子发布的单 writer 作用域 | [Record library](feature/record/library.md#recordwritesession) |
+| Run | Run | 一个已求值 Experiment 的 immutable 提交单位；expected slots 定义分母 | [Record](feature/record/architecture.md#run-是提交单位) |
 | Member | Member | 一个 Run slot 采用 Attempt 的引用；只有 executed、carried、accepted | [Record](feature/record/architecture.md) |
-| Attempt | Attempt | 一次实际执行的稳定身份和自己的通道；永远保留 origin | [Record](feature/record/architecture.md) |
-| 通道 | Channel | Run 或 Attempt 拥有的一组具名业务数据；领域演进的局部边界 | [Record](feature/record/architecture.md#通道语义与兼容性) |
+| Attempt | Attempt | 一次实际执行的稳定身份与业务通道；只住在 origin Run，采用时不复制 | [Record](feature/record/architecture.md#core-v1-精确形状) |
+| 通道 | Channel | ChannelName 表达稳定语义，ChannelSchemaId 表达精确 bytes shape | [Record](feature/record/architecture.md#channel-identity-与局部演进) |
 | 采集完整度 | Collection coverage | producer 对通道实际采集范围的声明：complete、partial 或 unavailable | [Record](feature/record/architecture.md) |
-| 解码完整度 | Decode coverage | reader 对已采集通道内容的解码状态；与采集完整度分开 | [Record library](feature/record/library.md#channelread) |
-| 通道读取 | `ChannelRead<T>` | read、unavailable、unsupported、invalid 的穷尽联合 | [Record library](feature/record/library.md#channelread) |
-| Invocation receipt | `InvocationReceipt` | 只含 Invocation 身份、Run IDs、时间和完成状态的返回值；不落成目录 | [Record library](feature/record/library.md#writer) |
+| 解码完整度 | Decode coverage | reader 对已采集通道内容的解码状态；与采集完整度分开 | [Record library](feature/record/library.md#channel-registry-与-factrequirement) |
+| 通道读取 | `ChannelRead<T>` | read、unavailable、unsupported、invalid 的穷尽联合 | [Record library](feature/record/library.md#channel-registry-与-factrequirement) |
+| Invocation receipt | `InvocationReceipt` | 只含 Invocation 身份、Run IDs、时间和完成状态的返回值；不落成目录 | [Record library](feature/record/library.md#recordwritesession) |
 | Attempt 定位符 | AttemptLocator | 完整 128-bit `attemptId` 的 26 字符规范大写 Crockford 编码；CLI 写 `@` 加 26 字符 | [Record](feature/record/architecture.md) |
 
 ### 分析选择与执行投影

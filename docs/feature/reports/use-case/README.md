@@ -7,4 +7,4 @@
 - [分享静态报告站](分享静态报告站.md)：导出断网可读的自包含目录。
 - [制作可访问页面](制作可访问页面.md)：让文字、表格和网页具有相同事实与状态。
 
-每个用例都从已经停稳的 Record 开始。先运行 analysis projector，再从 `AnalysisSample` 形成 ReportInput；Report 不反向打开 Record。
+每个用例都从一个 frozen `RecordReader` 开始。先运行 analysis projector，再从 `AnalysisSample` 形成 ReportInput；Report 不反向打开 Record。

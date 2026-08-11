@@ -1,10 +1,10 @@
 # Verdict
 
-Verdict 是 Attempt-owned <code>niceeval.verdict</code> channel 中的终态业务数据。它的值只有 <code>passed</code>、<code>failed</code>、<code>errored</code> 和 <code>skipped</code>。
+Verdict 是 Attempt-owned `niceeval.verdict` channel 中的终态业务数据；首个精确 schema 是 `niceeval.verdict/v1`。它的值只有 `passed`、`failed`、`errored` 和 `skipped`。
 
 它把 Assertion 结果、执行错误、strict policy 和显式 skip 归并为一个可读状态。它不替代 Attempt origin、Member 或 Run 的完成时间，也不复制 usage、diff、conversation 或诊断。
 
-<code>niceeval.verdict</code> 与 <code>niceeval.eligibility</code> 是 project-target policy v1 所需的永久事实通道。两者在 <code>niceeval.record</code> 的生命周期内永久支持，精确 payload 永不扩展；是否复用由具名 execution projector 决定。
+`niceeval.verdict/v1` 与 `niceeval.eligibility/v1` 是 project-target policy v1 所需的永久事实 schema。两者的 decoder 在 `niceeval.record/v1` 生命周期内永久支持，`/v1` payload 永不扩展；是否复用由具名 execution projector 的 schema/domain accept set 决定。
 
 ## 从哪里开始
 

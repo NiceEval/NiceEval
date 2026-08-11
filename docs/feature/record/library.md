@@ -1,359 +1,390 @@
 # Record Library
 
-Library 接收的 root 永远是实际 Record root。它不会补接 <code>.niceeval</code>、<code>record</code> 或其它后缀。bundled CLI 才负责把项目 root 映射到默认位置。
+Library 只暴露两种长期能力：lock-free `RecordReader` 与单 writer `RecordWriteSession`。业务功能通过 channel schema 与 FactRequirement 扩展，不给 storage API 增加 `writeAssertions2()`、`readUsage3()` 一类代际方法。
 
-Library 只面向单操作 root。reader、session、受控编辑、删除和 clean 使用同一把跨进程 operation lock；第二项操作以 <code>record-root-busy</code> 失败，不产生快照、合并或 last-write-wins 语义。ReportExecution 形成后的 view/export 不再访问 root，也不持锁。
+所有文件、句柄和 writer lock 都由 `Effect.Scope` 拥有。native API 保留 `Effect`、typed error 与 interruption，不直接返回 `Promise`，也不自行 `Effect.runPromise`；只有最外层 CLI 或明确的兼容 facade 可以运行一次 Effect。
 
-## 创建与打开
+## 打开形状
 
 ```ts
 type RecordRoot = string;
 
-function createRecordSession(input: {
+declare const openRecordReader: (input: {
   root: RecordRoot;
-  writerId: string;
-}): Promise<RecordSession>;
+  cache?: "allowed" | "disabled";
+}) => Effect.Effect<
+  RecordReader,
+  RecordOpenError,
+  Scope.Scope | RecordFileSystem
+>;
 
-function openRecordSession(input: {
+declare const openRecordWriteSession: (input: {
   root: RecordRoot;
-  writerId: string;
-}): Promise<RecordSession>;
+  mode: "open" | "open-or-create";
+}) => Effect.Effect<
+  RecordWriteSession,
+  RecordOpenError | RecordWriteSessionError,
+  Scope.Scope | RecordFileSystem | RecordWriterLock | RecordEntropy
+>;
+```
 
-function openRecordReader(input: {
-  root: RecordRoot;
-}): Promise<RecordReader>;
+公开 constructor 的 Effect 依赖集合如实保留这些 service：reader 需要 `Scope | RecordFileSystem`，writer、root 初始化与 recovery 还需要 `RecordWriterLock | RecordEntropy`。动态 Record root 是 scoped constructor 的普通输入，不为每个 root 创建 Layer。
 
-interface RecordOperation {
-  [Symbol.asyncDispose](): Promise<void>;
-}
+`root` 永远是实际 Record root。`open-or-create` 只在 root 不存在时初始化精确 `niceeval.record/v1`；已有非 Record 目录不领养、不清空。初始化也先取得 writer lock、完成 storage capability preflight，再在同一 filesystem 的 local staging 中形成完整 root，以 no-replace directory rename 一次建立。
 
-interface RecordSession extends RecordOperation {
+典型读取由一个 Scope 约束：
+
+```ts
+const input = yield* Effect.scoped(
+  Effect.gen(function* () {
+    const reader = yield* openRecordReader({ root, cache: "allowed" });
+    const sample = yield* projectAnalysis({ reader, selection });
+    const plan = report.plan(sample);
+    return yield* buildReportInput({ reader, sample, plan });
+  }),
+);
+
+// input 自包含；以下 ReportExecution 不再访问 Record。
+const execution = executeReport({ definition: report, input });
+```
+
+reader 不取得 writer lock。Scope 只关闭它拥有的目录/file handles 与 cache temp；dispose 后调用方法得到 `record-reader-closed`。
+
+## RecordReader
+
+```ts
+interface RecordReader {
   readonly root: RecordRoot;
-  readonly writerId: string;
-  readonly view: RecordView;
-  readonly writer: RecordWriter;
+  readonly record: RecordDocument;
+
+  candidates(): Effect.Effect<
+    readonly RunCandidate[],
+    RecordReadError
+  >;
+
+  run(runId: RunId): Effect.Effect<
+    CoreRead<RunDocument>,
+    RecordReadError
+  >;
+
+  freezeSelection(runIds: readonly RunId[]): Effect.Effect<
+    RecordSelection,
+    RecordReadError
+  >;
+
+  members(input: {
+    selection: RecordSelection;
+    runId: RunId;
+  }): Effect.Effect<
+    readonly MemberCandidate[],
+    RecordReadError
+  >;
+
+  attempt(input: {
+    selection: RecordSelection;
+    ref: AttemptRef;
+  }): Effect.Effect<
+    CoreRead<AttemptDocument>,
+    RecordReadError
+  >;
+
+  inspectFact<A>(input: {
+    selection: RecordSelection;
+    owner: FactOwner;
+    requirement: FactRequirement<A>;
+  }): Effect.Effect<ChannelRead<A>, RecordReadError>;
 }
 
-interface RecordWriter {
-  readonly root: RecordRoot;
-  readonly writerId: string;
-}
-
-function deleteRecordRun(input: {
-  root: RecordRoot;
-  runId: RunId;
-}): Promise<void>;
-
-function cleanRecordOrphans(input: {
-  root: RecordRoot;
-  writerId?: string;
-  attemptIds?: readonly AttemptId[];
-}): Promise<void>;
-```
-
-<code>createRecordSession()</code> 只认领不存在的精确 root，并写入唯一的 <code>record.json</code>。它不领养已有目录、父目录或 sibling。新 session 的 view 从空历史开始。
-
-root 的 canonical parent 必须已经存在。create 先取得 sibling lock anchor，再在 <code>&lt;root-basename&gt;.niceeval-create-&lt;writerId&gt;</code> 形成、fsync 并 close <code>record.json</code>。最后一次 rename 建立不存在的 root。崩溃不会留下只有空目录或半写根文件的正式 Record；失败只留下可按 owner 删除的 sibling temp。
-
-<code>openRecordSession()</code> 与 <code>openRecordReader()</code> 先取得 sibling lock anchor，再验证根目录、精确根文件和根级保留布局。它们不 eager 扫描全部 Run、Member、Attempt 或 descriptor；具体导航入口按 [Architecture](architecture.md#读取不变量) 的错误作用域验证。
-
-<code>writerId</code> 是一个不透明、单段的目录身份。它不能包含分隔符、点段、NUL 或绝对前缀。writer 只可创建和删除自己的 <code>.tmp/&lt;writerId&gt;</code>。
-
-三个 open/create 入口成功时都取得该 root 的 operation lock。推荐用 <code>await using</code> 约束作用域；RecordSession 或 RecordReader 是唯一 disposable owner。dispose 先拒绝新方法调用、等待已经开始的方法结束，再关闭句柄并释放锁。session dispose 还删除本 owner 已关闭且未发布的临时内容；进程崩溃才会留下 orphan。dispose 完成后，同一 root 的下一个操作才允许成功。
-
-RecordView 与 session writer 都不能独立 dispose。调用方可以捕获对象引用，但 session 关闭后的每个方法都必须以 <code>record-session-closed</code> 失败，不能重新打开路径或继续使用旧句柄。
-
-Runner 在 execution projection 前取得 session。它在锁内形成尚未发布的 ExecutionTarget，并使用 <code>session.view</code> 读取投影历史。
-
-session 一直持有到所有本次 Run 已写入 <code>completedAt</code>、<code>InvocationReceipt</code> 已形成。目标 Run 在 projector 完成前不得发布，因此不会参与自己的 source barrier。
-
-CLI show/view 从 analysis projector 到 <code>buildReportInput()</code> 完成持有 reader，随后在执行 Report、启动 server 或 export 前 dispose。delete 与 clean 在完整反向扫描、预检和删除期间持有同一把锁。
-
-受控编辑工具必须先取得同一把 operation lock，并在编辑 subprocess 退出后才释放。直接用其它工具修改目录会绕过这项保护；调用方只能在确认没有 NiceEval 操作时这样做，并接受并发修改无法检测的限制。
-
-operation lock 的 physical-root identity、崩溃释放与 unsupported 平台规则由 [Architecture](architecture.md#根目录与停稳边界) 定义。它不含续约、过期、接管或 fencing token。
-
-## Writer
-
-writer 将经过验证的 Run、Member、Attempt、通道 descriptor 和通道字节写入 Record。它负责维持 [Architecture](architecture.md) 的精确对象、目录匹配和通道隔离；调用方不能要求它接受额外核心字段。
-
-一次 Attempt 的写入顺序固定如下：
-
-1. 在自己的临时目录形成完整 Attempt 目录、通道和 blobs。
-2. 验证 <code>attempt.json</code>、descriptor、路径、完整度状态和 blob 引用。
-3. 以同一文件系统的一次目录 rename 发布正式 Attempt。
-4. 写入或更新引用该 Attempt 的 Member 与 Run 局部事实。
-
-第 3 步之前的文件不属于正式 Attempt。第 3 步之后、第 4 步之前崩溃会留下 unanchored orphan；它不能读取、定位或携带，只能经显式 clean 删除。正式目录缺少 <code>attempt.json</code> 仍是 invalid，而不是可恢复的半成品。
-
-Run 的 <code>run.json</code>（包括 descriptor、coverage 与 <code>completedAt</code>）、Member 和其它可更新核心 JSON，都先写入本 writer 的同文件系统临时普通文件。Run source blob 在引用它的 descriptor 可见前完成写入与 digest 校验。校验、flush/fsync、close 后再 atomic replace，并 fsync parent directory。writer 不能直接截断正式 JSON；平台没有所需原语时写入失败。
-
-打开本 writer 尚未完成的 Run owner 后，writer 只修改调用方明确交付给它的具名通道。其它合法 descriptor 按原值原序保留，对应文件不删不改，也不做垃圾回收。新增 name/path 与任何既有 descriptor 冲突时失败；现有 descriptor 连 name/path 都无法安全读出时，该 Run owner 只读，写入返回 <code>record-owner-descriptor-invalid</code>。正式 Attempt 发布后不再由 writer 打开或更新，因此它的 <code>attempt.json</code>、channel 文件和 blob 总是一起形成、一起发布。
-
-writer 不把 Invocation 建成目录。它只在 Invocation 开始、完成或中断时维护内存状态，并返回下列窄 receipt。
-
-```ts
-type InvocationReceipt = {
-  invocationId: InvocationId;
-  runIds: readonly RunId[];
-  startedAt: UtcMillis;
-  completedAt?: UtcMillis;
-  completion: "completed" | "interrupted" | "failed";
-};
-```
-
-receipt 不复制 locator、Verdict、usage、cost 或计数。需要这些数据的调用方重新打开 reader，并按明确的 Run、Member 或 Attempt 读取。
-
-writer 的 async dispose 在正常返回或作用域抛错时都删除自己的未发布临时内容。只有进程崩溃、强杀或断电导致 dispose 未完成时才保留现场；目录停稳后，owner-aware clean 才可删除已确认 orphan 的对应目录。
-
-<code>deleteRecordRun()</code> 在持锁状态下穷尽扫描反向引用。目标 Run 若拥有 Attempt，且目标外仍有任何 Member 引用其中一个 Attempt，操作以 <code>record-delete-referenced</code> 零写入失败。通过预检后，它只删除该 Run、以它为 origin 的 Attempt 及其 owner-local 文件；删除过程不承诺多目录 crash atomicity，中断后的残缺引用由 reader 明确诊断。
-
-<code>cleanRecordOrphans()</code> 只处理调用方明确给出的 owner。<code>writerId</code> 对应 root 内的 <code>.tmp/&lt;writerId&gt;</code>，以及 canonical parent 中同 owner 的 create temp；两者都必须精确匹配规范名称。<code>attemptIds</code> 中每项都必须在完整反向扫描后证明 unanchored 且无 Member 引用。任一目标无法证明时零写入失败。正式且有有效 origin 锚的 Attempt 永不因“较旧”或“未被当前 Sample 选择”而被删除。
-
-只给 <code>writerId</code> 时，即使正式 root 尚不存在，maintenance 也可以锁定 sibling anchor 并删除同 owner 的 create temp。给出 <code>attemptIds</code> 时，root、根文件和反向扫描必须有效；否则零写入失败。
-
-## Reader
-
-```ts
-interface RecordView {
-  readonly root: RecordRoot;
-
-  record(): Promise<{ format: "niceeval.record" }>;
-  runs(): Promise<readonly CoreRead<RunDocument>[]>;
-  run(runId: RunId): Promise<CoreRead<RunDocument>>;
-  member(runId: RunId, slotId: SlotId): Promise<CoreRead<MemberDocument>>;
-  attempt(attemptId: AttemptId): Promise<CoreRead<AttemptDocument>>;
-  descriptors(owner: ChannelOwner): Promise<readonly DescriptorRead[]>;
-
-  inspectChannel<T>(input: ChannelRequest<T>): Promise<ChannelRead<T>>;
-}
-
-interface RecordReader extends RecordView, RecordOperation {}
-
-type CoreRead<T> =
-  | { readonly state: "read"; readonly value: T }
-  | { readonly state: "missing" }
-  | { readonly state: "invalid"; readonly issues: NonEmptyRecordIssues };
-```
-
-<code>runs()</code> 按规范 encoded <code>runId</code> 的 UTF-8 bytes 升序返回每个目录的 <code>CoreRead</code>。它只穷尽返回读取事实；latest analysis projector 与 project-target execution projector 分别决定候选中的 invalid 怎样影响自己的输出。
-
-<code>missing</code> 让上层按语境形成 run-not-found、not-recorded、gap 或 invalid reference。核心 JSON、identity、目录匹配或 no-follow 失败都进入当前导航的 <code>CoreRead.invalid</code>，并保留非空具名 issues。Analysis projector 把 Member/Attempt 的 invalid 隔离到 analysis slot；execution projector 把相关问题保留在 gap。两者都不依赖异常猜测作用域。
-
-<code>attempt()</code> 在返回 read 前验证完整 origin 反向锚。origin Run、expected slot、executed Member 或回指不匹配都返回 invalid；unanchored Attempt 不会因目录和 <code>attempt.json</code> 单独合法而成为可读业务对象。
-
-reader 先读取 core-only 对象，再按 entry 或单通道请求解码 descriptor。<code>run()</code>、<code>runs()</code> 与 <code>attempt()</code> 返回的 <code>channels</code> 仍是 raw JSON entries；一个坏 entry 不让核心导航失败。<code>descriptors()</code> 逐项返回有效 descriptor 或局部 issue，因此诊断工具也能看到无法关联名称的坏 entry。
-
-```ts
-type ChannelOwner =
-  | { kind: "run"; runId: RunId }
-  | { kind: "attempt"; attemptId: AttemptId };
-
-type ChannelRequest<T> = {
-  owner: ChannelOwner;
-  name: string;
-  decoder?: ChannelDecoder<T>;
-};
-
-interface ChannelDecoder<T> {
-  readonly mediaTypes: readonly [string, ...string[]];
-  decode(
-    bytes: Uint8Array,
-    descriptor: ChannelDescriptor,
-    context: ChannelDecodeContext,
-  ): Promise<ChannelDecodeResult<T>>;
-}
-
-interface ChannelDecodeContext {
-  readAttemptBlob(ref: AttemptBlobRef): Promise<BlobRead>;
-  readRunSourceBlob(ref: RunSourceBlobRef): Promise<BlobRead>;
-}
-
-type BlobRead =
-  | { readonly state: "read"; readonly bytes: Uint8Array }
-  | { readonly state: "invalid"; readonly issues: NonEmptyIssues };
-
-type ChannelDecodeResult<T> =
-  | { readonly state: "complete"; readonly value: T }
-  | {
-      readonly state: "partial";
-      readonly value: T;
-      readonly decoded: number;
-      readonly total: number;
-      readonly issues: NonEmptyIssues;
-    }
-  | { readonly state: "invalid"; readonly issues: NonEmptyIssues };
-```
-
-<code>inspectChannel()</code> 是单通道四态读取边界。Record→Reports composition adapter 按 ReportPlan 调用它，并把每项结果保存在 ReportInput；单个 invalid 不会让其它 requirement 消失。
-
-没有同名 entry 时返回 unavailable。collected entry 没有 decoder 时返回 unsupported。decoder 不接受 media type、throw、返回 invalid/非法联合或无法建立值时，都返回 <code>ChannelRead.invalid</code>；合法 partial 结果映射为 <code>read</code> 与 decoding partial。
-
-只有 Attempt owner 的 decoder context 可以调用 <code>readAttemptBlob()</code>。只有 Run-owned <code>niceeval.sources</code> decoder 可以调用 <code>readRunSourceBlob()</code>，且 ref 必须由 manifest digest 规范推导。
-
-两者都以 no-follow 方式读取当前 owner 的普通文件。越界、缺失、长度或 digest 不符、symlink 形成具名 invalid；权限与 I/O 仍由 <code>RecordReadError</code> 拒绝整个调用。decoder 只能取得 bytes，不能取得 root 或实际路径。自定义 JSON parser 完全没有 blob context。
-
-## ChannelRead
-
-durable collection coverage 与 decode coverage 是两条独立轴。它们使用以下穷尽联合，不能折叠成空数组、<code>null</code> 或一个宽泛状态。
-
-```ts
-type RecordIssue = {
-  code: string;
-  message: string;
-  path?: string;
-};
-
-type ChannelIssue = RecordIssue & {
-  channelName: string;
-};
-
-type NonEmptyRecordIssues = readonly [RecordIssue, ...RecordIssue[]];
-type NonEmptyIssues = readonly [ChannelIssue, ...ChannelIssue[]];
-
-type DescriptorRead =
-  | {
-      readonly state: "valid";
-      readonly index: number;
-      readonly descriptor: ChannelDescriptor;
-    }
-  | {
-      readonly state: "invalid";
-      readonly index: number;
-      readonly raw: JsonValue;
-      readonly name?: string;
-      readonly path?: string;
-      readonly issues: NonEmptyRecordIssues;
-    };
-
-type ChannelRead<T> =
+type RunCandidate =
   | {
       state: "read";
-      value: T;
-      collection: CollectedCoverage;
-      decoding:
-        | { state: "complete" }
-        | {
-            state: "partial";
-            decoded: number;
-            total: number;
-            issues: NonEmptyIssues;
-          };
-    }
-  | {
-      state: "unavailable";
-      collection: UnavailableCoverage;
-    }
-  | {
-      state: "unsupported";
-      collection: CollectedCoverage;
-      descriptor: ChannelDescriptor;
-      issues: NonEmptyIssues;
+      entry: string;
+      runId: RunId;
+      value: RunDocument;
     }
   | {
       state: "invalid";
-      collection?: Coverage;
-      issues: NonEmptyIssues;
+      entry: string;
+      runId?: RunId;
+      issues: NonEmptyRecordIssues;
+    };
+
+type MemberCandidate =
+  | {
+      state: "read";
+      entry: string;
+      runId: RunId;
+      slotId: SlotId;
+      value: MemberDocument;
+    }
+  | {
+      state: "invalid";
+      entry: string;
+      runId: RunId;
+      slotId?: SlotId;
+      issues: NonEmptyRecordIssues;
+    };
+
+type CoreRead<A> =
+  | { state: "read"; value: A }
+  | { state: "missing" }
+  | { state: "invalid"; issues: NonEmptyRecordIssues };
+```
+
+`candidates()` 总是返回 reader 创建时冻结的同一序列，包括 malformed entry。`run(id)` 只访问 frozen candidateSet；即使之后磁盘出现该 ID，也返回 missing。
+
+`freezeSelection()` 先验证显式 IDs 属于 candidateSet，再冻结这些 Run 的全部 Member entry，并沿每个可读 Member 的精确 Attempt 引用建立 dependency closure。closure 是 opaque、reader-bound 普通值：
+
+```ts
+interface RecordSelection {
+  readonly selectedRunIds: readonly RunId[];
+  readonly attemptRefs: readonly AttemptRef[];
+}
+
+type AttemptRef = {
+  originRunId: RunId;
+  attemptId: AttemptId;
+};
+```
+
+`members()` 只接受 selection 中的 Run，并返回冻结时按 raw entry 排序的完整序列；缺少 Member 的 expected slot 由 projector 从 `RunDocument.expectedSlots` 推出，额外或无法关联 slot 的 entry 仍以 `invalid` 保留。`attempt()` 只接受 `attemptRefs` 中的精确引用。二者让 analysis projector 能从 expected slot 走到 Member、Attempt core 与对应 fact，不暴露任意目录遍历。
+
+Library 内部的 `resolveDependency(ref)` 可以直接打开初次弱扫描漏掉的 origin Run，但只能响应已选 Member 的精确引用。它不是任意寻址接口，不能用于 latest、扩张 `AnalysisSample` 分母或扫描 origin Run。`attemptRefs` 是全部可读 Member 直接采用的 ref 去重排序结果，包括 selected Run 自己的 executed Attempt；它不递归追踪业务通道中的引用。closure 建成后，`attempt()` 与 `inspectFact()` 只读取其中 owner，且不重新读取后来发布的版本。把 selection 传给另一个 reader 返回 `record-selection-invalid`。
+
+每次 `niceeval view` rebuild 都丢弃上一轮 `RecordSelection`、ReportInput、execution 与 reader，再在新 Scope 中打开。不得让旧 selection 跨 reader 复用。
+
+## Channel registry 与 FactRequirement
+
+reader 内置 [Built-in channel registry](architecture.md#built-in-channel-registry)。每个 registry entry 以 `(owner kind, schemaId, mediaType)` 选择唯一 decoder，再归一到稳定 FactRequirement identity。owner kind 是 key 的一部分，因此 Run 与 Attempt 可以合法使用同一个 schema ID；channel name 相同但 schema 不受 requirement 接受时返回 unsupported，不尝试字段探测。
+
+```ts
+interface FactRequirement<A> {
+  readonly id: string;
+  readonly channelName: ChannelName;
+  readonly acceptedSchemas: readonly [
+    ChannelSchemaId,
+    ...ChannelSchemaId[],
+  ];
+}
+
+type FactOwner =
+  | { kind: "run"; runId: RunId }
+  | { kind: "attempt"; ref: AttemptRef };
+
+interface BuiltInChannelDecodeContext {
+  readAttemptBlob(
+    ref: AttemptBlobRef,
+  ): Effect.Effect<BlobRead, RecordReadError>;
+
+  readRunSourceBlob(
+    ref: RunSourceBlobRef,
+  ): Effect.Effect<BlobRead, RecordReadError>;
+}
+
+type BlobRead =
+  | { state: "read"; bytes: Uint8Array }
+  | { state: "invalid"; issues: NonEmptyChannelIssues };
+
+type ChannelRead<A> =
+  | {
+      state: "read";
+      value: A;
+      schemaId: ChannelSchemaId;
+      collection: { state: "complete" } | {
+        state: "partial";
+        reason: string;
+      };
+      decoding: { state: "complete" } | {
+        state: "partial";
+        decoded: number;
+        total: number;
+        issues: NonEmptyChannelIssues;
+      };
+    }
+  | {
+      state: "unavailable";
+      reason: string;
+    }
+  | {
+      state: "unsupported";
+      descriptor: ChannelDescriptor;
+      issues: NonEmptyChannelIssues;
+    }
+  | {
+      state: "invalid";
+      descriptor?: ChannelDescriptor;
+      issues: NonEmptyChannelIssues;
     };
 ```
 
-<code>complete</code> 或 <code>partial</code> 的 collection 来自 descriptor。decoding 只说明这次 decoder 成功处理了多少内容；未知 event 让已知 JSONL channel 的 decoding 成为 partial，而不改变 collection。
+四态不能折成 `null`、空数组或 throw：
 
-下表固定常见情况的解释。
-
-| 情况 | ChannelRead |
+| durable 情况 | ChannelRead |
 |---|---|
-| 已知 requirement 没有同名 descriptor | <code>unavailable</code>，reason 为 <code>not-collected</code> |
-| owner 有无法识别 name 的损坏 entry，且没有有效同名 descriptor | <code>invalid</code>，不能冒充 unavailable |
-| 未采集 | <code>unavailable</code>，reason 为 <code>not-collected</code> |
-| 不适用 | <code>unavailable</code>，reason 为 <code>not-applicable</code> |
-| 用户删除 channel 文件 | <code>invalid</code>，issue 为 <code>channel-file-missing</code> |
-| 损坏、越界或非法路径 | <code>invalid</code> |
-| unavailable descriptor 且文件不存在 | <code>unavailable</code>，不要求 decoder |
-| unavailable descriptor 却存在文件 | <code>invalid</code>，issue 为 <code>channel-unavailable-has-file</code> |
-| collected channel 没有可用 decoder | <code>unsupported</code> |
-| 已知 JSONL 的未知 event | <code>read</code>，decoding 为 <code>partial</code> |
+| 没有同名 descriptor | `unavailable` |
+| descriptor 明确 unavailable | `unavailable`，保留 reason |
+| schemaId 或 media type 不在 registry/requirement | `unsupported` |
+| core、descriptor、路径、payload 或 blob 损坏 | `invalid` |
+| decoder 完整建立 normalized value | `read` |
 
-<code>inspectChannel()</code> 可返回任一 <code>ChannelRead</code>，让诊断页显示事实状态。未请求的 invalid 或 unknown 通道不阻止其它读取；被请求的 invalid 原样进入该 requirement，并只让对应 consumer 失败。
+一个坏 descriptor 只影响能安全关联到的 channel。owner 中存在连 name 都无法安全解码的 raw entry 时，没有匹配到有效 descriptor 的 requirement 必须 invalid，不能假装 unavailable。权限与 I/O 属于 Effect error channel，不伪装成业务四态。
 
-被请求的 <code>unavailable</code> 与 <code>unsupported</code> 可以进入明确的页面状态。unsupported 不表示业务未采集，invalid 也不表示未采集。
+decoder context 只返回 bytes，不返回 Record root 或物理路径。只有 Attempt-owned、registry 明确授权 blob 的 built-in decoder 能调用 `readAttemptBlob()`；只有 Run-owned `niceeval.sources/v1` decoder 能调用 `readRunSourceBlob()`。越界、缺失、长度/digest 不符、link 或特殊文件形成对应 fact 的 `invalid`；权限和真实 I/O 仍进入 `RecordReadError`。
 
-## 内建 decoder
+blob/NDJSON Stream 是 reader Scope 内的内部字节能力，不出现在公开读取面。`inspectFact()` 先消费或 fold 完整条 Stream，再返回稳定的 `ChannelRead`。decoder context 返回的 `Uint8Array` 是消费完成后的自包含结果；它是否带来有界内存由对应 fact 的契约承担，拿到完整 bytes 本身并不保证有界。
 
-<code>niceeval.verdict</code> 和 <code>niceeval.eligibility</code> 的精确永久 payload 与 media type 只由 [Record Architecture](architecture.md#通道语义与兼容性) 定义。它们不能增加字段；破坏既有解释时发布新的描述性 channel。哪些读取状态能形成 reuse 只由具名 execution projector policy 定义。
+custom registry 只能增加调用方 namespace 的 decoder。它不能替换 `niceeval.*` decoder、改变 built-in FactRequirement 的 accepted schemas，也不取得 built-in blob context；需要外部资源的自定义 fact 必须先解码成自包含值。
 
-<code>niceeval.assertions</code> 与 Run-owned <code>niceeval.sources</code> 的 <code>application/json</code> decoder 也永久保留。Assertions 只服务 presentation，不进入 analysis 或 execution projector，也不进入核心。精确 <code>AssertionsDocument</code> 由 [Assertions Architecture](../assertions/architecture.md#稳定落盘投影) 定义。sources manifest、digest blob 和值限制由 [Record Architecture](architecture.md#通道语义与兼容性) 定义。
+## RecordWriteSession
 
-assertions decoder 对整个 document 执行精确读取。重复 object key、未知字段、非法联合、越界或非法数值都返回同名 <code>ChannelRead.invalid</code>；它不部分解码一个坏 document。
+```ts
+interface RecordWriteSession {
+  readonly root: RecordRoot;
+  readonly sessionId: SessionId;
+  readonly view: RecordReader;
 
-[Observability 标准通道表](../../observability.md#内建业务通道闭环)中的 decoder 与 Report requirement 永久保留。其它内建 decoder 可以退役；退役 reader 仍保留 descriptor，并只将依赖它的 detail 或 Calculation 标为 unsupported。
+  stageRun(input: CompleteRunInput): Effect.Effect<
+    SealedRun,
+    RecordWriteError
+  >;
 
-eligibility decoder 将 fingerprint 与 config identity 读为 <code>{ domain, value }</code>。decoder 只建立精确 token，不决定是否比较或采用。
+  publishRun(run: SealedRun): Effect.Effect<
+    PublishReceipt,
+    RecordWriteError
+  >;
+}
 
-duration decoder 将值读为 <code>{ domain, milliseconds }</code>。它拒绝负数和非安全整数；timeout 比较只发生在声明该 gate 的 execution projector 中。
+interface SealedRun {
+  readonly sessionId: SessionId;
+  readonly runId: RunId;
+  readonly _opaque: unique symbol;
+}
+
+type PublishReceipt = {
+  runId: RunId;
+  durable: true;
+  localCleanup: "complete" | "pending";
+};
+```
+
+`CompleteRunInput` 是 core aggregate 加 generic channel payloads 的内部 producer port。新增 Assertions、usage 或其它业务 schema 只增加 registry/descriptor 数据，不增加 write-session 方法。runner 可以在 session-owned `build/` 增量形成 aggregate，但 `stageRun()` 只有在完整校验、close、seal 和 recovery manifest 落稳后才返回 opaque `SealedRun`。
+
+`SealedRun` 绑定 session，调用方不能构造、跨 session 使用或在 publish 后再次使用。`publishRun()` 只做 destination revalidation、no-replace rename 与两端 parent fsync，然后重新校验 destination manifest 并删除 local 现场。它不调用模型、不继续 Sandbox、不重新投影 carry，也不修改 aggregate。
+
+session 的 `view` 在取得 writer lock 后创建并冻结。它看不见本 session 后来发布的 Run，因此 target 不会参与自己的 source barrier。同一 Record 的其它 reader 可以并发看到每个已发布 Run。
+
+Scope 正常结束时，session 拒绝新调用、等待已开始的 local writes，删除本 owner 尚未 seal 的 build temp，然后释放 writer lock。已 seal 但未完成 publish/cleanup 的 recovery 现场不能由 finalizer 静默删除；下一位 writer 必须先恢复或 abandon。
+
+## Recovery API
+
+恢复是独立的显式写操作，不通过普通 `openRecordWriteSession()` 猜测：
+
+```ts
+declare const recoverRecordSession: (input: {
+  root: RecordRoot;
+  sessionId: SessionId;
+  mode: "commit-only";
+}) => Effect.Effect<
+  readonly PublishReceipt[],
+  RecordRecoveryError,
+  Scope.Scope | RecordFileSystem | RecordWriterLock | RecordEntropy
+>;
+
+declare const abandonRecordSession: (input: {
+  root: RecordRoot;
+  sessionId: SessionId;
+}) => Effect.Effect<
+  void,
+  RecordRecoveryError,
+  Scope.Scope | RecordFileSystem | RecordWriterLock | RecordEntropy
+>;
+```
+
+两者先取得同一 writer lock，并绑定 canonical root 与 durable `recordId`。`commit-only` 只处理可解码的 `niceeval.local-session/v1` 与 `niceeval.publish-recovery/v1`。它逐 Run 执行 [crash matrix](architecture.md#recovery-manifest-与-crash-matrix)；building-only session 返回 `record-session-not-committable`。
+
+`abandon` 是未知 future session schema 的唯一受支持处理。它只按调用方给出的 canonical session ID 删除 no-follow local directory，不打开 source/destination、不修改 durable Record，也不扫描删除其它 session。多个遗留 session 必须逐个显式处理。
+
+如果 destination 已 durable 但 local cleanup 失败，recovery 返回 `PublishReceipt.localCleanup = "pending"` 与具名 diagnostic。该现场继续阻止普通 writer，直到再次执行 commit-only cleanup 或 explicit abandon。
+
+## Cache 行为
+
+reader 的 `cache: "allowed"` 只授权 best-effort local 派生写。每次 cache write 使用随机 owner temp、fsync/close 后 atomic replace；竞争、损坏、权限与 I/O 全部在内部退化为 cache miss。
+
+`cache: "allowed"` 只有在 `local.json` 精确匹配时才使用缓存；sidecar 缺失、权限失败、错误类型、未知 schema 或 identity mismatch 都退化为 no-cache，不能阻止 durable Record 打开，也不能改变公开读数。`cache: "disabled"` 不读不写 cache，并必须产生相同 candidates、selection、facts 与 issues。
+
+cache 不持有资源生命周期，不让 reader 变成 writer，也不取得 `write.lock`。实现不能把一个负缓存或 cached latest 当作跳过 durable scan 的依据。
 
 ## Typed errors
 
-错误对象的 <code>code</code> 是机器契约，message 只服务人读反馈。每个异步入口只使用自己的错误类。
+错误类是 Effect error channel 中的 tagged values；`code` 是机器契约，message 只服务反馈。
 
 ```ts
-class RecordCreateError extends Error {
-  readonly code:
-    | "record-root-invalid"
-    | "record-root-exists"
-    | "record-root-busy"
-    | "record-operation-lock-unsupported"
-    | "record-create-permission-denied"
-    | "record-create-io-failure";
-}
-
-class RecordOpenError extends Error {
-  readonly code:
+class RecordOpenError extends Data.TaggedError("RecordOpenError")<{
+  code:
     | "record-root-missing"
-    | "record-format-invalid"
+    | "record-root-exists"
+    | "record-format-unsupported"
     | "record-core-invalid"
-    | "record-root-busy"
-    | "record-operation-lock-unsupported"
+    | "record-local-identity-collision"
+    | "record-storage-capability-unsupported"
     | "record-open-permission-denied"
     | "record-open-io-failure";
-}
+}> {}
 
-class RecordWriteError extends Error {
-  readonly code:
-    | "record-session-closed"
-    | "record-input-invalid"
-    | "record-custom-fact-too-large"
-    | "record-owner-descriptor-invalid"
-    | "record-attempt-publish-failed"
-    | "record-write-permission-denied"
-    | "record-write-io-failure";
-}
+class RecordWriteSessionError extends Data.TaggedError(
+  "RecordWriteSessionError",
+)<{
+  code:
+    | "record-writer-busy"
+    | "record-recovery-required"
+    | "record-local-cleanup-pending"
+    | "record-session-schema-unsupported";
+  sessionIds?: readonly SessionId[];
+}> {}
 
-class RecordReadError extends Error {
-  readonly code:
-    | "record-session-closed"
+class RecordReadError extends Data.TaggedError("RecordReadError")<{
+  code:
     | "record-reader-closed"
+    | "record-selection-invalid"
     | "record-read-permission-denied"
     | "record-read-io-failure";
-}
+}> {}
 
-class RecordMaintenanceError extends Error {
-  readonly code:
-    | "record-root-busy"
-    | "record-operation-lock-unsupported"
-    | "record-delete-referenced"
-    | "record-maintenance-input-invalid"
-    | "record-maintenance-permission-denied"
-    | "record-maintenance-io-failure";
-}
+class RecordWriteError extends Data.TaggedError("RecordWriteError")<{
+  code:
+    | "record-write-session-closed"
+    | "record-input-invalid"
+    | "record-run-seal-failed"
+    | "record-run-destination-exists"
+    | "record-publish-ambiguous"
+    | "record-publish-outcome-unknown"
+    | "record-publish-invalid"
+    | "record-local-cleanup-pending"
+    | "record-write-permission-denied"
+    | "record-write-io-failure";
+}> {}
+
+class RecordRecoveryError extends Data.TaggedError(
+  "RecordRecoveryError",
+)<{
+  code:
+    | "record-writer-busy"
+    | "record-session-missing"
+    | "record-session-schema-unsupported"
+    | "record-session-identity-mismatch"
+    | "record-session-not-committable"
+    | "record-publish-ambiguous"
+    | "record-publish-outcome-unknown"
+    | "record-publish-invalid"
+    | "record-recovery-permission-denied"
+    | "record-recovery-io-failure";
+}> {}
 ```
 
-<code>RecordOpenError.record-core-invalid</code> 只描述 root 级 <code>record.json</code> 或保留布局。Run、Member 与 Attempt 导航问题由 <code>CoreRead.invalid</code> 返回；descriptor 路径和 semantic conflict 由对应 <code>ChannelRead.invalid</code> 保存。
-
-权限和 I/O 不能伪装成 <code>unavailable</code>、<code>unsupported</code> 或 <code>invalid</code>。reader 已经形成的其它结果保持有效。
+malformed Run、Member、Attempt 和 channel bytes 通常属于 `CoreRead.invalid` 或 `ChannelRead.invalid`，让 projector按作用域处理。无法访问 root、权限失败、reader 已关闭和真实 I/O 故障才进入 Effect error channel。
 
 ## 非职责
 
-Library 不提供跨 Record 复制、发布、同步、共享或历史 revision API。它也不提供页面计算或报告渲染 API。
+Library 不提供局部 edit/delete、跨 Record copy/merge、Git、revision、proof、远端同步、页面计算或报告渲染 API。whole-root portable 规则见 [Architecture](architecture.md#portablegit-与外部操作)。
 
-分析范围选择属于 [Sample](../sample/README.md)，执行复用与 gap 属于 [Experiments](../experiments/cache.md)。Record→Reports composition 与静态交付物属于 [Reports](../reports/README.md)；纯 Report runtime 只接收已经形成的内存输入。
+分析范围属于 [Sample](../sample/README.md)，carry/gap 属于 [Experiments](../experiments/cache.md)，Record→Reports composition 与静态 export 属于 [Reports](../reports/README.md)。

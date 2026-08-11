@@ -93,4 +93,4 @@ export const codexProbe = defineEval({
 - timing 是 Attempt-owned named channel，不是 Attempt core、旧图事件模型或固定读取 revision。
 - 未请求 timing 的 Report 不读取它；坏 timing 只影响声明它的 consumer。
 - 大型命令输出如需保留，使用具名 Attempt channel/blob，不写入 generic fact。
-- 用户停稳后可以编辑 timing channel；下次 reader 读取当前值，没有 hash、proof、revision 或 history 检查。
+- timing channel 随 whole Run 发布后 immutable；外部损坏在下一次 reader 中形成局部 invalid，没有受支持的 edit、revision 或 history 行为。

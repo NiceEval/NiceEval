@@ -67,11 +67,11 @@ pnpm exec niceeval show --run <baseline-run> --run <candidate-run> --page compar
 
 ## Record 与 Report 验收点
 
-- CLI 从打开 reader 到 `ReportInput` 形成持有 root lease；另一个同 root 操作得到 `record-root-busy`。释放 reader 后才形成 execution，本机 view/static export 不再访问 Record。
+- CLI 用同一个 lock-free frozen reader Scope 形成 `AnalysisSample` 与 `ReportInput`；同 root writer 可并发发布。Scope 关闭后才形成 execution，本机 view/static export 不再访问 Record。
 - core-only Sample 保留 included、not-recorded、invalid、excluded 的完整分母；被请求的通道四态不折叠成零或空值。
-- Attempt 大内容从 Attempt-owned blob 交付；generic custom fact 是最多 65,536 UTF-8 bytes 的单 document，同 owner/name 第二次写入报错。
+- Attempt 大内容从 Attempt-owned blob 交付；decoder 只能取得当前 owner 的 bytes，不能得到 Record root 或实际路径。
 - 静态 export 的目标必须不存在；任一页面或下载失败时不发布目标。成功目录在断网 Sandbox 实例中只读取 manifest 列出的自有文件。
-- 停稳后人工修改合法 channel，下一次命令读取修改后的当前值；没有 hash、proof、revision、history 或迁移提示需要验证。
+- 已发布 Run immutable；外部损坏 channel 时，下一次命令呈现局部 invalid，不修改其它 fact，也不建立 revision、history 或迁移结果。
 
 ## 缓存与补跑
 

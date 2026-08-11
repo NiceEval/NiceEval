@@ -385,9 +385,9 @@ const layer = e2bSandbox({ template: "niceeval-agents" })
 - `fact` 是中性运行事实，例如本次实际使用的版本、缓存大小和命中状态。它写入 owner-local 自定义 JSON document，不参与 eligibility identity。
 
 反馈通道不能指定 phase——runner 从当前 command 的 owner 自动得出阶段。
-反馈也不替代控制流：上例明确选择降级继续。如果 Sandbox 或当前操作无法继续，应直接抛出原错误，让 Runner 写具名执行错误通道，并据此形成 <code>errored</code> Verdict。Attempt lifecycle 仍只收敛到 <code>completed</code> 或 <code>abandoned</code>。
+反馈也不替代控制流：上例明确选择降级继续。如果 Sandbox 或当前操作无法继续，应直接抛出原错误，让 Runner 写具名执行错误通道，并据此形成 `errored` Verdict。Attempt lifecycle 仍只收敛到 `completed` 或 `abandoned`。
 
-<code>context.fact(name, value)</code> 上报运行时事实。name 使用反向域 namespace；value 与 <code>observedAt</code> 组成单值 JSON document，并受 65,536 UTF-8 bytes 上限约束。
+`context.fact(name, value)` 上报运行时事实。name 使用反向域 namespace；value 与 `observedAt` 组成单值 JSON document，并受 65,536 UTF-8 bytes 上限约束。
 计划内自变量必须同时进入 `flags`、model、agent、sandbox 配置等 fingerprint 输入；无法配置化的外部可变状态变化后用 `--rerun all` 重跑。
 key/value 形状、合并与复用边界见 [Record · Architecture](../record/architecture.md):
 

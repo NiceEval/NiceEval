@@ -1,51 +1,49 @@
-# Record：可编辑事实数据集
+# Record：持久事实与本地运行状态
 
-Record 是 <code>&lt;project&gt;/.niceeval/record/</code> 中可编辑的事实数据集。一次评估形成的 Run、成员关系、Attempt 和通道数据都在这里。人和工具只在目录停稳时读取或编辑它。
+Record 是 `<project>/.niceeval/record/` 中可携带、可复核的持久事实集。它只含完整发布的 Run；session、writer lock、恢复材料和派生 cache 位于 sibling `.niceeval-local/`，不属于 Record，也不进入 Git 或分享边界。
 
-它不是防伪账本，也不保存编辑历史、修订号或 revision。一次读取得到的内容可以在下一次命令前被写入器或人工改变。文件形状、身份、路径和引用校验只用于拒绝自相矛盾的数据。
+一次 Run 同时封存 expected membership、executed Attempt、carried/accepted 引用与业务通道。Run 通过单次目录 rename 原子出现，发布后 immutable。Record 不提供局部 edit、delete、revision、proof 或 merge API；需要分享一个可继续读取的 Record 时复制整个 root，需要选择性分享时导出静态 Report。
 
-Record 不判断事实是否“当前”、过期、可复用或需要再次执行。用户指定范围、当前 Project Target、fingerprint 和本次 policy 都是投影输入。它们由 [Sample](../sample/README.md) 的 analysis projector 或 [Experiments](../experiments/cache.md) 的 execution projector 解释，不写进 Record 核心。
+Record 不判断事实是否“当前”、可复用或需要再次执行。analysis projector 从 reader 的 frozen candidate set 形成 [AnalysisSample](../sample/README.md)；execution projector 把当前 target、eligibility 与 policy 投影成 `reuse | gap`。这两种投影都不写回旧 Run。
 
-## 核心心智
-
-Run 定义本次运行应包含哪些 slot，因此决定分母。Member 将一个 slot 采用到一个 Attempt。Attempt 保存实际执行产生的细节；一个 Attempt 被编辑后，所有采用它的 Member 在下一次读取时都会看到新值。
-
-carry、accept 与 rename 的理由不写入 Member。它们是 Run 的局部通道事实，并以 slotId 和 attemptId 关联。Attempt 始终保有自己的 origin，不会因被采用而改挂到另一个 Run。
-
-Invocation 只是 Runner 或 Library 的返回身份。它没有持久化目录；<code>InvocationReceipt</code> 也不复制 locator、Verdict、用量、费用或计数。
+## 两种访问能力
 
 ```text
-record files
-    ├─ RecordReader → analysis projector → AnalysisSample → ReportInput → Reports
-    └─ RecordSession.view → execution projector → reuse | gap
-                                                 ├─ gaps → planner / scheduler
-                                                 └─ projection + outcomes → writer
+niceeval show / niceeval view / niceeval exp --dry
+    └─ lock-free RecordReader
+       ├─ 一次冻结 candidateSet
+       ├─ 沿已选引用冻结 dependencyClosure
+       └─ 可 best-effort 写 local cache，但绝不写 Record
+
+niceeval exp
+    └─ 单 writer RecordWriteSession
+       ├─ 取得 OS writer lock
+       ├─ 暴露同一时点的 frozen reader view
+       ├─ 在 local session 形成并 seal 完整 Run
+       └─ no-replace atomic rename 发布到 Record
 ```
 
-RecordReader 与 RecordSession.view 只提供经过校验的事实读取。选择范围、复用资格和缺口原因由对应 projector 拥有；writer 只验证并落盘已经决定的 executed、carried 或 accepted 事实。
+reader 与 writer 可以并发；同一 Record 同时最多一个 writer。reader 不是线性化快照，可能漏掉并发刚发布的 Run，但每个已经看见的 Run 都必须完整。`view` 每次 rebuild 都 dispose 旧 reader 后打开新 frozen view。
 
-Reports 的 composition adapter 按 ReportPlan 读取磁盘字段。Report 定义、页面、view 与 export 只消费内存输入或执行结果，因此不会成为另一套文件解释器。
+## 为什么不再出现 schema 1→18 的全局连锁
 
-## 演进方式
+`niceeval.record/v1` 是一条全新的格式线，不是旧 Results `schemaVersion` 1–18 的下一版。legacy bytes 不进入 Record reader；reader 不打开、不猜测，普通 `open` 也不自动迁移。兼容承诺只从首个正式 `niceeval.record/v1` writer 开始，面向它之后的 NiceEval 迭代。
 
-根文件的格式名固定为 <code>niceeval.record</code>。reader 只解释这个精确格式；其它根文件统一返回 <code>record-format-invalid</code>。
+core 使用完整格式身份 `niceeval.record/v1`，只冻结 identity、membership、origin、descriptor 与发布规则。业务事实使用 `ChannelName` 表达稳定语义，再用独立 `ChannelSchemaId` 表达精确 bytes shape，例如 `niceeval.assertions/v1`。
 
-这里没有全局整数格式版本字段。核心协议冻结后，破坏性领域演进使用永不复用的语义身份，并只让相关通道局部失效。新 reader 必须读取所有核心形状有效的 <code>niceeval.record</code>；它可以把未知或已退役通道报告为不支持。
+某个业务 API 或 payload 改变时，只新增该 channel 的 schema 与 decoder；未知 schema 只让相应 fact `unsupported`，不会让整个 Record 失效。正式 built-in schema 的 decoder 与 normalized FactRequirement 在 core v1 生命周期内永久保留。只有 core owner、identity、路径或原子发布边界改变时才需要 `niceeval.record/v2`；发布 v2 不授权删除 v1 reader，也不把 v2 对象混写进 v1 root。
 
-这不是“完全无版本”。格式名、核心身份和目录协议仍是稳定边界。只有它们无法保持解释时才更换整个格式名；普通领域变化不能让所有历史 Record 一起失效。
+每个正式 `FactRequirement<A>` identity 不可变且自带版本；normalized 输出类型升级时发布新 identity，并永久保留旧 identity 与输出类型。调用方按 identity 得到对应代的 normalized 值；新 requirement 只把能完整形成其输出的历史 schema 放入 accepted set。
 
-## 范围
+carry 另有前向栅栏：每个 eligibility 都带 mandatory `reuseContract` equality token。新增或改变 gate 必须切换其 domain；旧 projector 遇到新 schema 或 domain 时得到 gap，不能因为不认识新 gate 而错误 carried。policy identity 只解释当时 action，不代替这道栅栏。
 
-Record 定义根目录、Run / Member / Attempt 的核心文件、operation lock、单锁 RecordSession、通道、原子发布和单通道四态读取。它也定义受控删除与 owner-aware 的临时目录删除。
+旧 Results Format 逐版为何变化、7/10 为什么不是正式版本，以及 main 15 与未合并分支 16–18 的边界，统一见 [schemaVersion 历史存档](../../../memory/results-schema-version-history.md)。该存档只解释为什么另起格式线，不构成旧格式读取承诺。
 
-Record-to-Record 的发布、复制、镜像和同步不属于本功能。分享由自包含的静态 Report export 负责。它脱离源 Record 后呈现固定内容，不把 producer 身份认证或可再次查询的承诺交给 Record。
+## 文档入口
 
-运行中的终端反馈和旁路查看由 Runner 负责。<code>show</code>、<code>view</code>、导出和人工编辑都只面对停稳目录。
-
-## 入口
-
-- [Architecture](architecture.md)：文件布局、核心形状、身份、通道、发布和演进不变量。
-- [Library](library.md)：创建或打开 reader / writer、通道读取和 typed error。
-- [CLI](cli.md)：项目 root、<code>show</code>、<code>view</code> 与临时目录删除。
-- [Use case](use-case/README.md)：Runner 或第三方 harness 写入运行事实的路径。
-- [Reference](reference/README.md)：外部研究索引，不定义产品契约。
+- [Architecture](architecture.md) —— durable/local/cache 边界、core 形状、发布恢复、schema registry 与 portable 规则。
+- [Library](library.md) —— Effect 资源、reader、write session、恢复 API 与 typed errors。
+- [CLI](cli.md) —— show/view/exp 的只读或写入行为、recovery 命令与 Git 边界。
+- [产生运行事实](use-case/produce-runtime-facts.md) —— writer 从 preflight 到发布的完整顺序。
+- [上层 API 改动不影响旧 Record](use-case/上层-API-改动不影响旧-Record.md) —— schema decoder 怎样隔离 API 重构。
+- [未来功能不扩张核心格式](use-case/未来功能不扩张核心格式.md) —— 新事实的放置与 carry fence 决策。

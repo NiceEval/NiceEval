@@ -10,6 +10,6 @@
 
 统计系统需要区分范围外、没有 Member 和输入损坏。`AnalysisSample` 把这些状态保留到每个 expected slot，避免聚合时把不同问题折成零值。execution gap 属于另一条执行投影，不进入这个联合。
 
-## 可编辑数据源
+## Frozen 数据源
 
-`AnalysisSample` 是一次读取产生的普通值，不承担持久化和 producer 认证。需要固定交付时，由 Reports 导出已计划页面及其实际依赖。
+`AnalysisSample` 是一次 frozen reader 投影产生的普通值，不承担持久化和 producer 认证。需要固定交付时，由 Reports 导出已计划页面及其实际依赖。

@@ -1,6 +1,6 @@
 # 功能域 · Record 与 Reports 读面
 
-本域回答一个问题：一次真实运行写出的 `niceeval.record`，能否经具名 analysis projector、冻结 ReportPlan 和一次 ReportExecution，在 `show`、`view` 与静态 export 中给出相同的公开结果。
+本域回答一个问题：一次真实运行写出的 `niceeval.record/v1`，能否经具名 analysis projector、冻结 ReportPlan 和一次 ReportExecution，在 `show`、`view` 与静态 export 中给出相同的公开结果。
 
 它由 `e2e/report/` 仓库承担（group `report`）。适配器仓库不复制格式知识，读取只走公开 `RecordReader` 与 Reports 接线。仓库使用一个最小真实 Experiment；所有验收组复用同一次真实运行，不因断言数量增加模型成本。
 
@@ -10,12 +10,12 @@
 
 真实运行同时形成 `passed`、`failed` 与 `errored` Verdict 的 Attempt，并逐项验证：
 
-- 根文件精确为 `{ "format": "niceeval.record" }`，Results 1–15 一律拒绝且没有迁移路径。
+- 根文件精确为 `{ "format": "niceeval.record/v1", "recordId": <canonical UUID v4> }`，旧 Results 与其它完整格式 ID 一律拒绝且没有迁移路径。
 - Run、Member 与 Attempt 只有稳定核心；Verdict、Assertion、diagnostic、usage、diff、trace 等业务事实只出现在 owner-local channel。
 - document、JSONL 和 Attempt-owned blob 的 descriptor、coverage、media type、路径与大小边界符合 [Record Architecture](../../../feature/record/architecture.md)。
-- Attempt 核心、channels 与 blobs 通过一次目录发布变为可见；Run 与 Member 更新使用单文件原子替换。
-- 停稳后人工修改 channel，下一次 reader 看到修改后的值；没有 hash、proof、revision、历史或防伪错误。
-- 同一 Record root 的第二项操作以 `record-root-busy` 失败；不同 root 独立运行，既不协调也不自动合并。
+- 完整 Run 连同 Member、origin-owned Attempt、channels 与 blobs 通过一次 no-replace directory rename 变为可见；发布前一个字节都不在 durable root，发布后整个 Run immutable。
+- 外部修改已发布 channel 后，下一次 reader 把受影响 fact 报为 `invalid`，不会自动修复、建立 revision 或改写其它 Run。
+- 同一 Record root 的第二个 writer 以 `record-writer-busy` 失败；reader 与 writer 并发，且只可能漏掉刚发布 Run，不能看见半个 Run。不同 root 不协调也不自动合并。
 
 ### 2. 公开读取与 AnalysisSample
 

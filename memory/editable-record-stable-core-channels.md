@@ -1,5 +1,7 @@
 # 可编辑 Record 以稳定核心和局部通道替代全局 schema 升版
 
+> 状态：已被 2026-08-11 的 [`record-durable-local-boundary.md`](record-durable-local-boundary.md) 替代。保留本页只为记录曾选方案；“发布后可编辑”“operation lock 覆盖所有操作”和相关 maintenance 结论不再是目标契约。
+
 日期：2026-08-09
 
 ## 起因

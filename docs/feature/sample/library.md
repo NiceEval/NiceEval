@@ -24,14 +24,20 @@ interface AnalysisProjectionProvenance {
 }
 
 function projectExplicitRuns(
-  record: RecordView,
+  reader: RecordReader,
   input: ExplicitRunsAnalysisInput,
-): Promise<AnalysisSample>;
+): Effect.Effect<
+  AnalysisSample,
+  AnalysisProjectionError | RecordReadError
+>;
 
 function projectLatestRuns(
-  record: RecordView,
+  reader: RecordReader,
   input: LatestAnalysisInput,
-): Promise<AnalysisSample>;
+): Effect.Effect<
+  AnalysisSample,
+  AnalysisProjectionError | RecordReadError
+>;
 ```
 
 内建 projector identity 固定为 `explicit-runs/v1` 与 `latest/v1`。`provenance.input` 是公开输入经过确定性去重和安全归一化后的 JSON 值，不含 Record root、路径、句柄或读取到的业务通道。
@@ -128,7 +134,7 @@ interface AnalysisSample {
 }
 ```
 
-`RecordIssue` 由 [Record Library](../record/library.md) 定义。`AnalysisSample` 是 core-only：它不请求业务通道，也不保存 `ChannelRead`、RecordView、文件路径、句柄或 normalized fact。
+`RecordIssue` 由 [Record Library](../record/library.md) 定义。`AnalysisSample` 是 core-only：它不请求业务通道，也不保存 `ChannelRead`、`RecordReader`、文件路径、句柄或 normalized fact。
 
 `runs` 穷尽本次实际选中的 Run，并按 `runId` 排序。它不因 Run 没有 expected slot，或全部 slot 都是 not-recorded、invalid、excluded 而省略该 Run。`slots` 是完整分母，按 `runId`、`slotId` 排序，每个 `(runId, slotId)` 恰好出现一次。四个状态子序列互斥且保序。
 
@@ -178,6 +184,6 @@ Reports 只能从 `AnalysisSample` 构造 `ReportInput`。报告可以计算聚�
 
 - [README](README.md) —— 分析投影的用户心智和范围。
 - [局部执行后的分析](use-case/partial-rerun.md) —— Run membership 怎样形成分析分母。
-- [Record Library](../record/library.md) —— `RecordView`、`ChannelRead` 与 `RecordIssue`。
+- [Record Library](../record/library.md) —— `RecordReader`、`ChannelRead` 与 `RecordIssue`。
 - [Execution projection](../experiments/cache.md) —— 当前目标的 reuse 与 gap。
 - [Reports](../reports/README.md) —— `AnalysisSample` 到 `ReportInput` 的单向边界。

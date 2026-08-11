@@ -10,7 +10,7 @@ Reports 把已经投影好的 [`AnalysisSample`](../sample/README.md) 变成终�
                                 ↙           ↘
                               view          export
 
-<code>ReportInput</code> 是进程内的普通值。它带着 core-only `AnalysisSample`、完整分母，以及按 ReportPlan 请求的 Run 与 Attempt 通道读取。它不落盘，不是另一种 Record 格式，也不携带打开的 reader。
+`ReportInput` 是进程内的普通值。它带着 core-only `AnalysisSample`、完整分母，以及按 ReportPlan 请求的 Run 与 Attempt 通道读取。它不落盘，不是另一种 Record 格式，也不携带打开的 reader。
 
 ## 核心心智
 
@@ -28,20 +28,20 @@ Calculation 必须同时声明：
 
 - 所需的 facts；
 - 分母如何采用 `AnalysisSample` 的 slot；
-- <code>allowPartial</code> 或 <code>requireComplete</code> 完整度 policy；
+- `allowPartial` 或 `requireComplete` 完整度 policy；
 - 可用、部分和不可用状态怎样呈现。
 
-例如 <code>commands.checked</code> 只在 100 个分母项中的 20 个被采集时，页面写 <code>20 / 100 · partial</code>。它不能把 20 当成 100。选择 <code>requireComplete</code> 的同一读数是 unavailable，不给出假装完整的数值。
+例如 `commands.checked` 只在 100 个分母项中的 20 个被采集时，页面写 `20 / 100 · partial`。它不能把 20 当成 100。选择 `requireComplete` 的同一读数是 unavailable，不给出假装完整的数值。
 
 完整规则在 [Calculations](calculations.md) 定义；公开类型在 [Library](library.md) 定义。
 
 ## 页面与静态分享
 
-一个 Report 先用纯 <code>plan()</code> 枚举所有页面、参数化页面实例、Calculation、Download 和各自 inputs，再形成 ReportInput。<code>executeReport()</code> 让每个 custom parser 和 consumer 各执行至多一次；show、view 与 export 消费同一份既有结果。
+一个 Report 先用纯 `plan()` 枚举所有页面、参数化页面实例、Calculation、Download 和各自 inputs，再形成 ReportInput。`executeReport()` 让每个 custom parser 和 consumer 各执行至多一次；show、view 与 export 消费同一份既有结果。
 
-静态 export 是一个自包含目录。它包括预渲染页面、当前宿主数据、下载项、exporter 内建的精确 runtime，以及穷尽的 <code>StaticAssetManifest</code>。用户 Report 不提供任意浏览器脚本、CSS 或路径 loader。浏览器只从该目录读取 artifact 私有数据；它不访问网络、源 Record 或未来安装的 NiceEval。
+静态 export 是一个自包含目录。它包括预渲染页面、当前宿主数据、下载项、exporter 内建的精确 runtime，以及穷尽的 `StaticAssetManifest`。用户 Report 不提供任意浏览器脚本、CSS 或路径 loader。浏览器只从该目录读取 artifact 私有数据；它不访问网络、源 Record 或未来安装的 NiceEval。
 
-参数化页面必须在 export 前穷尽实例。目标目录必须不存在；成功时同级临时目录以一次 rename 完整出现。固定 <code>manifest.json</code> 不列入自身 entries，除此之外每个文件都必须被 manifest 穷尽。
+参数化页面必须在 export 前穷尽实例。目标目录必须不存在；成功时同级临时目录以一次 rename 完整出现。固定 `manifest.json` 不列入自身 entries，除此之外每个文件都必须被 manifest 穷尽。
 
 ## 范围
 
@@ -66,7 +66,7 @@ Reports 不包含：
 
 - [Architecture](architecture.md)：边界、输入流程、通道隔离、静态 export 与不变量。
 - [Library](library.md)：ReportInput、facts、Calculation、页面和静态 export 的公开形状。
-- [CLI](cli.md)：<code>show</code>、<code>view</code> 和 <code>view --out</code>。
+- [CLI](cli.md)：`show`、`view` 和 `view --out`。
 - [Calculations](calculations.md)：完整度 policy、分母和报告旁算法。
 - [Use case](use-case/README.md)：比较、完整度核对、静态分享和可访问页面。
 - [Reference](reference/README.md)：外部材料的使用边界。

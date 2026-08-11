@@ -48,11 +48,11 @@ eval 得分 = Σ 各给分项的挣分        （纯累加,无分母）
 
 ### 稳定落盘映射
 
-这些是作者 API，不是 Record shape。producer 把 <code>.points(n)</code> 归一成 check entry 的 conditional award，并把 <code>n</code> 保存为 available。
+这些是作者 API，不是 Record shape。producer 把 `.points(n)` 归一成 check entry 的 conditional award，并把 `n` 保存为 available。
 
-available result 的实得分由 <code>n * score</code> 派生，Record 不重复保存 earned。
+available result 的实得分由 `n * score` 派生，Record 不重复保存 earned。
 
-<code>t.score(label, n)</code> 归一成独立的 direct score entry，直接保存 points。<code>.gate()</code>、<code>.atLeast()</code> 与 <code>.soft()</code> 归一成 decision；<code>.optional()</code> 归一成 availability。<code>stopOnFailure</code> 只控制 producer，不落入 Assertions document。
+`t.score(label, n)` 归一成独立的 direct score entry，直接保存 points。`.gate()`、`.atLeast()` 与 `.soft()` 归一成 decision；`.optional()` 归一成 availability。`stopOnFailure` 只控制 producer，不落入 Assertions document。
 
 精确联合、数值闭包和永久限制见 [Assertions Architecture](../architecture.md#稳定落盘投影)。上层 API 可以改名或重组，只要继续产生同一投影，旧 Record 的分数展示就不变。
 
@@ -186,6 +186,6 @@ gate 不进质量分：10 条全过的 gate 加一个 0.6 的 judge 会把均值
 - [Eval · defineScoreEval](../../eval/README.md#definescoreeval计分制题型) —— 计分制题型的定义形状。
 - [计分制用例](../../eval/use-case/rubric-points.md) —— 检查点制与 rubric 制的完整写法。
 - [Severity 与 Verdict](../../verdict/architecture.md) —— 四态折叠与 gate / soft 语义，判定面的基础。
-- [Assertions Architecture](../architecture.md) —— 作者求值语义与稳定 <code>AssertionsDocument</code> 投影，折叠树的叶子材料。
+- [Assertions Architecture](../architecture.md) —— 作者求值语义与稳定 `AssertionsDocument` 投影，折叠树的叶子材料。
 - [Reports](../../reports/README.md) —— show / view 共用的 page 声明，读取面的落点。
 - [Observability](../../../observability.md) —— 质量 × 成本对比的现有横截面。

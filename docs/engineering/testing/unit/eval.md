@@ -45,7 +45,7 @@ function scriptedAgent(turns: readonly Turn[]): ScriptedAgent {
 
 ## Record 与 Reports 的接线
 
-Context 不构造 `RunDocument`、`MemberDocument` 或 `AttemptDocument`。Runner 把生命周期结果交给 `RecordWriter`，由 writer 发布 core 与 owner-local channel；大内容通过 Attempt-owned blob。Sample 之后只读取 core，Reports composition adapter 再按 plan 请求具名 channel。
+Context 不构造 `RunDocument`、`MemberDocument` 或 `AttemptDocument`。Runner 把生命周期结果交给 `RecordWriteSession`，由 session seal 并发布完整 Run aggregate；大内容通过 Attempt-owned blob。Sample 之后只读取 core，Reports composition adapter 再按 plan 请求具名 channel。
 
 安装 manifest、conversation 和 telemetry 都是具名 Attempt channel 的业务数据，不进入 Attempt core，也不依赖旧版 payload、图事件或固定读取 revision。
 

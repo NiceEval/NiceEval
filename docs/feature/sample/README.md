@@ -1,15 +1,15 @@
 # Sample：投影既有事实形成分析范围
 
-[Record](../record/README.md) 保存可编辑事实。Sample 功能提供具名 analysis projector，从已经打开的 Record 中选择既有 Run，形成 Reports 和脚本可以继续组合的 core-only `AnalysisSample`。
+[Record](../record/README.md) 保存 immutable Run 事实。Sample 功能提供具名 analysis projector，从一个 frozen `RecordReader` 中选择既有 Run，形成 Reports 和脚本可以继续组合的 core-only `AnalysisSample`。
 
 `AnalysisSample` 不写回 Record，也不是持久化文件。再次执行 projector 时，它按同一公开契约重新读取 Record 当时的核心身份、membership 和引用。业务通道等 ReportPlan 形成后才按需读取。
 
 ## 分析与执行是两条投影
 
 ```text
-RecordView ── explicit-runs / latest analysis projector ──→ AnalysisSample ──→ Reports
+RecordReader ── explicit-runs / latest analysis projector ──→ AnalysisSample ──→ Reports
 
-RecordSession.view ── project-target execution projector ──→ ExecutionProjection ──→ planner
+RecordWriteSession.view ── project-target execution projector ──→ ExecutionProjection ──→ planner
 ```
 
 `AnalysisSample` 只表达既有 Run 的分析分母。分析样本状态是 `included | not-recorded | invalid | excluded`。`ExecutionProjection` 属于 [Experiments](../experiments/cache.md)，只表达当前 ExecutionTarget 的 `reuse | gap`。
@@ -25,9 +25,11 @@ Sample 提供两种内建 analysis projector：
 
 `latest` 不是 Record 的 currentness，也不是 `AnalysisSample` 自带的隐含语义。它只是可替换、可具名的一种分析算法。调用方还可以实现其它 analysis projector，只要输出同一个公开 `AnalysisSample` 形状和稳定 provenance。
 
-## 编辑后的读取
+## Frozen 读取
 
-carried 与 accepted Member 保留源 Attempt 引用。用户修改源 Verdict、Usage 或 artifact 后，下一次 analysis projection 会读取修改后的值；源 Attempt 缺失时，该 slot 是 `invalid`，不是 `not-recorded`。
+carried 与 accepted Member 保留源 Attempt 引用。reader 沿已选 Member 冻结 dependency closure；origin Run 不进入 latest candidates 或分母。源 Attempt 因外部损坏而缺失时，该 slot 是 `invalid`，不是 `not-recorded`。
+
+一次 projection 不会自动看见并发刚发布的 Run。重新打开 reader 后，新 projection 可以得到新的 candidateSet；已经形成的 `AnalysisSample` 仍是普通内存值。
 
 `AnalysisSample` 不读取业务通道。一个通道 unknown、retired、缺失或损坏，不会让整个 slot 自动变成 `invalid`；slot 的 `invalid` 只描述核心 membership、identity 与引用错误。ReportPlan 形成后，composition adapter 才把被请求通道的 `ChannelRead` 放进 ReportInput。
 

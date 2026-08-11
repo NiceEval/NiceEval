@@ -1,51 +1,110 @@
 # Record 架构
 
-本页是 Record 的唯一落盘契约。核心文件中的对象都是精确对象：未列出的字段不存在，出现未知字段即为 invalid。通道内容可以演进，但不能借核心文件悄悄改变协议。
+本页是 Record 的唯一落盘契约。Record 只保存已经提交的事实；session、锁、恢复材料和派生缓存都在 Record local sidecar。两类目录不能互相替代，也不能一起充当 portable Record。
 
-## 根目录与停稳边界
+`niceeval.record/v1` 是一条全新的格式线，不是旧 Results `schemaVersion` 1–18 的下一版。legacy bytes 不进入本页 reader；本页的兼容承诺只从首个正式 Record v1 writer 开始，面向它之后的 NiceEval 迭代。
 
-bundled CLI 将项目 root 映射到 <code>&lt;project&gt;/.niceeval/record/</code>。该目录的完整布局如下。
+## 三类状态
+
+| 类别 | 默认位置 | 是否属于 Record | 生命周期与分享 |
+|---|---|---|---|
+| durable facts | `<project>/.niceeval/record/` | 是 | Run 发布后不可变；只以整个 root 复制、备份或纳入 Git |
+| local operation state | Record sibling 的 `.niceeval-local/<recordKey>/` | 否 | session、writer lock 与 recovery manifest；不提交、不复制、不分享 |
+| derived cache | local sidecar 的 `cache/` | 否 | 可随时删除；命中、损坏或写失败都不能改变公开读取结果 |
+
+session 不是 cache。它可能是一次已付费执行能否完成提交的唯一恢复材料，未知 session schema 也不能按 cache 自动删除。
+
+bundled CLI 把项目 root 映射到 `<project>/.niceeval/record/`。Library 接收的 `root` 已经是实际 Record root，不再补接路径。
+
+## 实现边界：Effect-native，流式只放在字节边界
+
+Record 的 native Library API 返回 `Effect`，不能在每个文件系统函数内部启动 runtime 再退回 `Promise`。主要消费者本来就在 NiceEval 的 Effect 调用链中；直接保留 Effect 能让 typed error、interruption、trace 与 `Scope` 贯穿 reader、writer 和 recovery。
+
+可选 Promise facade 只能位于最外层兼容入口，并且只运行一次 Effect。Record 内部不得调用 `Effect.runPromise`、`runPromiseExit` 或建立私有 runtime。
+
+下列边界不得混合：
+
+| 责任 | 形态 | 理由 |
+|---|---|---|
+| ID、路径语法、manifest 比对、membership/reference 校验、channel 状态折叠 | 纯函数与完整 ADT | 同一输入必须得到同一结果，不需要 runtime |
+| 文件、canonical physical path、no-follow、`fsync`、atomic rename、OS lock、cache 与并发 | `Effect` | 这些操作会失败、被取消或持有资源 |
+| reader handle、writer lock、session owner temp 与 stream handle | `Effect.Scope` | success、typed failure、defect 与 interruption 都必须运行同一组 finalizer |
+| 单项 core/channel 损坏 | `CoreRead.invalid` / `ChannelRead.invalid` 成功值 | 损坏是要呈现和隔离的 Record 事实，不是整次 I/O 调用失败 |
+| 权限、真实 I/O、lock busy、capability unsupported、closed lifecycle | Effect typed error channel | 调用无法继续，调用方可用 tag/code 精确处理 |
+
+平台依赖只抽象真实外部边界：`RecordFileSystem` 提供 canonical path、no-follow、`fsync` 与 rename，`RecordWriterLock` 提供跨进程互斥，`RecordEntropy` 提供密码学安全 ID。它们由 `Context` service 表达，并在应用组合边缘用一个 live `Layer` 配置。
+
+公开 constructor 的 Effect 依赖集合必须如实保留这些 service：reader 需要 `Scope | RecordFileSystem`，writer、root 初始化与 recovery 还需要 `RecordWriterLock | RecordEntropy`。动态 Record root 是 scoped constructor 的普通输入，不为每个 root 创建 Layer。constructor 取得 service 后可以把能力封装进 reader/session；内部方法不再启动 runtime。
+
+Schema、路径规则、manifest 比对和 channel 状态不能为了“Effect 化”各自变成 service。Effect 本身也不提供跨进程锁、no-replace rename 或 crash-safe `fsync`。live Layer 不得用 PID/TTL lockfile 冒充绑定进程或文件描述符的 OS lock，也不得用 check-then-rename 冒充 no-replace atomic rename；平台缺少能力时必须在昂贵工作前失败。
+
+核心 JSON、descriptor、local session 与 recovery manifest 在不可信 bytes 边界用 Effect Schema 或等价的完整 decoder 一次解码。普通 `Schema.Struct` 的默认多余字段策略不足以兑现精确对象。
+
+所有精确格式都必须统一使用 `{ errors: "all", onExcessProperty: "error" }`。decoder 再把 parse issues 映射到本页规定的 root error、`CoreRead.invalid` 或 `ChannelRead.invalid`；下游不得重新探测字段。
+
+资源取得使用 scoped acquire/release。reader Scope 只关闭它拥有的 handles 和 cache temp，不取得 writer lock。write-session Scope 先停止接受新操作、等待已经开始的 local writes，再删除仍属于自己的 unsealed temp 并释放 lock。
+
+sealed manifest、已经 rename 的 Run 和 outcome-unknown 现场不归 finalizer 删除。耗时的模型执行、JSONL/blob 形成、hash 与 seal 校验保持可中断。
+
+从 no-replace rename 开始，到两端 parent `fsync` 与 durable 状态交接完成的短暂发布区间，使用 `Effect.uninterruptibleMask` 保护。进程崩溃仍由 recovery manifest 与 crash matrix 处理，不能把 uninterruptible 当作 crash safety。
+
+`Stream` 只用于真正有背压或有界内存收益的字节边界：
+
+- `application/x-ndjson` 的逐行编码/解码；单行 schema 问题是带 index 的数据结果，底层权限与 I/O 才是 stream error；
+- 大型 Attempt blob 与 source blob 的 chunk 读写，并在同一遍流中计算 byte length 与 SHA-256；
+- Adapter 与 writer 确实并发生产/消费时，才可在实现内部加 bounded Queue；Record 不提供 PubSub 或 live tail。
+
+blob/NDJSON Stream 是 reader Scope 内的字节能力，不是 `ChannelRead<Stream<A>>`。完整度、digest、byte length 与末行解码状态只有穷尽消费后才能确定；`inspectFact()` 必须先消费或 fold 完整条 Stream，再返回稳定的 `ChannelRead`。单行、digest 或 schema 问题折叠成成功通道里的 `invalid`/partial issues，权限和真实 I/O 才留在 Effect/Stream error channel。
+
+只有下游 fold、hash 或复制也保持流式时，Stream 才带来有界内存。先收成数组或 `Uint8Array`，再调用 `Stream.fromIterable()` 不算流式实现；若 normalized fact 本身要求完整 bytes，最终内存成本仍由该 fact 的契约承担。
+
+Run、Member、Attempt 核心 JSON 不流式；它们小且必须完整精确解码。`candidateSet` 也不以 Stream 暴露，因为 reader 必须先穷尽枚举、按 raw entry 排序并冻结 malformed diagnostics。普通 fact inspection 在 reader Scope 内消费完 JSONL/blob Stream 后，才形成自包含的 `ChannelRead`；`AnalysisSample`、`ReportInput` 和 `ReportExecution` 不携带磁盘 Stream、handle 或延迟读取。`niceeval view` 的更新仍通过 dispose 旧 Scope 后重新打开 reader 完成，不把 Record 变成 watch/tail 系统。
+
+Effect 是公开类型的一部分，因此属于 Library ABI。包边界必须让 NiceEval 与调用方使用同一条受支持的 Effect v3 兼容线，不能把第二份 runtime 藏在 Record 内；升级到 Effect v4 是独立迁移，不随 Record 实现顺手发生。
+
+## Durable Record 布局
+
+portable root 的完整保留布局如下：
 
 ```text
 record.json
-runs/<encoded-runId>/run.json
-runs/<encoded-runId>/members/<encoded-slotId>.json
-runs/<encoded-runId>/channels/**
-runs/<encoded-runId>/blobs/sha256/<digest>
-attempts/<encoded-attemptId>/attempt.json
-attempts/<encoded-attemptId>/channels/**
-attempts/<encoded-attemptId>/blobs/**
-.tmp/<writerId>/**
+runs/<encoded-runId>/
+  run.json
+  members/<encoded-slotId>.json
+  attempts/<encoded-attemptId>/
+    attempt.json
+    channels/**
+    blobs/**
+  channels/**
+  blobs/sha256/<digest>
 ```
 
-Invocation 没有目录。它只通过 Runner 或 Library 返回的 <code>InvocationReceipt</code> 表示。
+Attempt 只住在它的 origin Run 内。carried 或 accepted Member 保存 `{ originRunId, attemptId }` 引用，不复制 Attempt。Record 不支持只复制一个 Run、channel 或 blob；引用闭包的 portable 单位始终是整个 root。
 
-停稳表示该 root 没有 active session、reader 或受控编辑。所有受支持的 root 操作先取得同一把跨进程 operation lock。AnalysisSample 与 ReportInput 的构造发生在 reader 持锁期间。执行入口使用同时提供只读 view 与 writer 的 RecordSession，从 execution projection 前一直持锁到本次全部 Run 收尾。受控编辑、删除和 clean 也在完整检查与修改期间持锁。
+根文件是精确对象：
 
-operation lock 由操作系统绑定进程或文件描述符，并在进程退出时释放。它不是带超时的 lease，不允许接管，也不把锁文件内容当作 owner 真源。实现先对最近存在祖先执行 symbolic-link resolution，再把剩余规范路径拼回，以同一个 physical root 作为锁身份；路径别名不能取得第二把锁。
-
-锁锚是 canonical physical root 的 sibling <code>&lt;root-basename&gt;.niceeval-operation-lock</code>，因此 root 不存在时也能先加锁。所有 create/open/maintenance 入口都先锁定锚，再检查或建立 root。锚是保留的普通文件，内容永远无义，受控操作不删除或替换它。平台无法提供进程崩溃释放的跨进程互斥时，入口以 <code>record-operation-lock-unsupported</code> 失败。
-
-同一 root 的 session、reader 和受控编辑互斥，本格式不支持并发快照或多 writer 合并。直接使用其它编辑器改写文件会绕过 operation lock；这种并发修改不在支持范围内，也没有 revision 或 hash 用来检测。ReportExecution 形成后已经自包含，view 与静态 export 不再持有或读取 Record。运行中的反馈由 Runner 处理。
-
-根文件精确为下列对象，不能附加字段。
-
-```json
-{ "format": "niceeval.record" }
+```ts
+type RecordDocument = {
+  format: "niceeval.record/v1";
+  recordId: RecordId;
+};
 ```
 
-根目录只接受这份核心布局。其它根文件统一是 <code>record-format-invalid</code>，reader 不再细分其成因。
+`recordId` 是小写 canonical UUID v4，必须匹配 `xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx`，其中 `x` 是 lowercase hex，`y` 只能是 `8`、`9`、`a` 或 `b`。初始化时使用密码学安全随机源生成。复制整个 Record 时保留它；它表示 Record lineage，不表示物理路径或内容摘要。
 
-## 核心文件
+根目录只接受 `record.json` 与 `runs/`。其它根级 entry、未知字段、错误类型或 symbolic link 都是 `record-core-invalid`。
 
-下列 TypeScript 形状既定义字段，也定义字段穷尽性。<code>channels</code> 保存尚未解码的 JSON entries，不是通道数据的内联副本。reader 逐项解码，不能因一项损坏而拒绝整个 Run 或 Attempt 核心。
+## Core v1 精确形状
+
+下列对象和所有嵌套对象都是精确对象；未列出的字段不存在。核心只描述 identity、membership、origin、选择排序所需事实与通道入口，业务字段不得回填到核心。
 
 ```ts
 type RunDocument = {
+  schema: "niceeval.run/v1";
   runId: RunId;
   experimentId: ExperimentId;
   startedAt: UtcMillis;
-  completedAt?: UtcMillis;
+  completedAt: UtcMillis;
   expectedSlots: readonly ExpectedSlot[];
   channels: readonly JsonValue[];
 };
@@ -56,27 +115,19 @@ type ExpectedSlot = {
   attempt: number;
 };
 
-type MemberDocument =
-  | {
-      kind: "executed";
-      runId: RunId;
-      slotId: SlotId;
-      attemptId: AttemptId;
-    }
-  | {
-      kind: "carried";
-      runId: RunId;
-      slotId: SlotId;
-      attemptId: AttemptId;
-    }
-  | {
-      kind: "accepted";
-      runId: RunId;
-      slotId: SlotId;
-      attemptId: AttemptId;
-    };
+type MemberDocument = {
+  schema: "niceeval.member/v1";
+  runId: RunId;
+  slotId: SlotId;
+  kind: "executed" | "carried" | "accepted";
+  attempt: {
+    originRunId: RunId;
+    attemptId: AttemptId;
+  };
+};
 
 type AttemptDocument = {
+  schema: "niceeval.attempt/v1";
   attemptId: AttemptId;
   origin: { runId: RunId; slotId: SlotId };
   eval: { evalId: EvalId; attempt: number };
@@ -85,14 +136,12 @@ type AttemptDocument = {
 
 type ChannelDescriptor = {
   name: ChannelName;
+  schemaId: ChannelSchemaId;
   path: ChannelPath;
   mediaType: ChannelMediaType;
   coverage: Coverage;
 };
 
-type ChannelName = string;
-type ChannelPath = string;
-type ChannelMediaType = string;
 type AttemptBlobRef = string;
 type RunSourceBlobRef = string;
 
@@ -100,99 +149,288 @@ type Coverage =
   | { state: "complete" }
   | { state: "partial"; reason: string }
   | { state: "unavailable"; reason: string };
-
-type CollectedCoverage = Exclude<Coverage, { state: "unavailable" }>;
-type UnavailableCoverage = Extract<Coverage, { state: "unavailable" }>;
 ```
 
-<code>ExpectedSlot.attempt</code> 是非负安全整数。每个 Run 的 <code>slotId</code> 唯一，<code>(evalId, attempt)</code> 也必须唯一。一个 Member 文件只对应一个已声明 slot；Member 的目录名、文件内容和 Run 身份必须逐项一致。
+`channels` 刻意保留为逐项 `JsonValue`，不在 core decoder 中一次强制为 `ChannelDescriptor[]`。reader 对每个 raw entry 单独解码和归属；一个 descriptor 损坏只影响能安全关联到的 channel，不把同 owner 的其它 channel 或 core 一起判坏。
 
-Member 指向的 Attempt 必须存在，且它的 <code>eval</code> 与目标 slot 相符。<code>executed</code> 还要求 Attempt 的 <code>origin</code> 是同一个 Run 和 slot。<code>carried</code> 与 <code>accepted</code> 可以采用另一个 origin 的 Attempt。
+`ExpectedSlot.attempt` 是非负安全整数。一个 Run 内的 `slotId` 和 `(evalId, attempt)` 分别唯一。Member 文件名、`runId`、`slotId` 与对应 expected slot 必须逐项一致；没有 outcome 的 slot 可以没有 Member，但不能出现 expected slots 之外的 Member。
 
-每个 Attempt 还必须通过反向 origin 校验：origin Run 存在，origin slot 属于它的 expected slots，且该 slot 的 <code>executed</code> Member 指回同一个 <code>attemptId</code>。缺少任一环都使 Attempt 在当前导航中 invalid。目录已经发布但没有这条反向锚的 Attempt 是 unanchored orphan；它不是业务数据、不能成为 carry 或 accept 候选，也不能经 locator 打开。
+`AttemptId` 在整个 Record 内唯一。每个 origin Run 内的 Attempt 必须恰好被同 Run 的一个 `executed` Member 反向锚定；该 Member 的 `originRunId` 必须是当前 Run，Attempt 的 origin 与 eval 也必须和 slot 一致。未被锚定、被多个 slot 锚定或在其它 Run 重复出现的 Attempt 都是 invalid。
 
-rename 不形成第四种 Member。carry、accept、rename 的上下文、provenance 和 diagnostics 写入 Run 的通道，并以 <code>slotId</code> 和 <code>attemptId</code> 关联。Member 不复制这些事实，也不复制 Attempt 的业务值。
+`carried` 与 `accepted` 必须指向另一个或同一个已发布 origin Run 中、具有有效 executed 反向锚的 Attempt。它们不改变 origin，不复制事实。`rename` 不是第四种 Member；reuse、adoption 与 rename 的理由由 Run-owned `niceeval.actions` 表达。
 
-<code>reason</code> 是非空 NFC 文本，说明该通道的局部原因。内建的未采集和不适用分别使用 <code>not-collected</code> 与 <code>not-applicable</code>。截断、脱敏、采样、过滤和近似的业务影响不进入永久 descriptor；若它们使承诺的持久集合不完整，coverage 是 <code>partial</code>，细节由具名通道自己表达。
+`runId`、`slotId`、`attemptId`、`invocationId` 与 `sessionId` 是 128-bit opaque ID，canonical 字符串为 26 个大写 Crockford Base32 字符。字母表是 `0123456789ABCDEFGHJKMNPQRSTVWXYZ`，首字符只能是 `0` 至 `7`；`I`、`L`、`O`、`U` 与 lowercase 都非法。Attempt locator 是 `@` 加完整 `attemptId`。
 
-<code>invocationId</code> 不属于 Run 核心。需要调用 provenance 的 writer 可以写可选的 Run-owned <code>niceeval.run-provenance</code> document；它缺失时只让请求该事实的消费者得到 unavailable。<code>InvocationReceipt</code> 仍返回本次调用的身份、Run 与起止时间。
+`experimentId` 与 `evalId` 是非空 NFC Unicode、大小写敏感文本，不参与目录编码。时间是精确 RFC 3339 UTC 毫秒文本 `YYYY-MM-DDTHH:mm:ss.sssZ`。已发布 Run 的 `completedAt` 必填；运行中反馈和未封口状态不进入 Record。
 
-## 身份、路径与时间
+## Run 是提交单位
 
-<code>runId</code>、<code>slotId</code>、<code>attemptId</code> 和 <code>invocationId</code> 都是 128-bit opaque ID。它们的规范字符串都是 26 个大写 Crockford Base32 字符。
+writer 在 local session 中形成完整 Run，包括它本次 executed 的 Attempt、全部 Member、Run/Attempt channels 与 blobs。只有以下条件全部满足才可 seal：
 
-- 字母表为 <code>0123456789ABCDEFGHJKMNPQRSTVWXYZ</code>。
-- 首字符只能是 <code>0</code> 到 <code>7</code>。
-- <code>I</code>、<code>L</code>、<code>O</code> 和 <code>U</code> 不合法。
-- 文件路径只使用对应 ID 的规范编码，不使用显示名或摘要。
+1. core、descriptor、payload、blob、coverage 与全部引用有效；
+2. 每个嵌套 Attempt 都有唯一 executed 反向锚；
+3. carried/accepted 的 origin 引用已经按 writer 打开时的 frozen view 验证；
+4. `completedAt` 已形成；全部普通文件已经 `fsync` 并 close，全部 source directory 已按由深到浅顺序 `fsync`，目录内不再有可写句柄；
+5. recovery manifest 已在被移动目录之外持久化。
 
-Attempt locator 是 <code>@</code> 加完整 <code>attemptId</code>。它可逆地表达全部 128 bit，不截短、不散列，因此没有摘要碰撞的寻址歧义。
+publish 不是一个瞬时布尔值，而是从 sealed source 到 durable receipt 的状态转换：
 
-<code>experimentId</code> 和 <code>evalId</code> 是 NFC Unicode、大小写敏感的文本。它们不参与目录路径。
+| 状态 | 位置与可见性 | 允许的下一步 |
+|---|---|---|
+| building | local `build/`；reader 不可见 | 继续形成，或由 owner Scope 删除 |
+| sealed | local `publish/`，且已有外置 manifest；reader 不可见 | 只可 commit-only publish 或 explicit abandon |
+| visible | final Run 名称已由 rename 原子出现；reader 可见完整 immutable Run | 完成两端 parent `fsync` 与 destination 重验 |
+| durable | destination 重验匹配，且两端 parent `fsync` 已完成 | 返回 `PublishReceipt.durable: true` |
+| cleanup-pending | durable Run 已成立，local 现场尚未删完 | 只重做 local 收尾，不倒推 Run 失败 |
 
-所有时间使用精确的 RFC 3339 UTC 毫秒形式：<code>YYYY-MM-DDTHH:mm:ss.sssZ</code>。执行入口在持锁 session 内、execution projector 读取历史前，为每个尚未发布的 ExecutionTarget 绑定一次 <code>startedAt</code>。projector 不能看到这些目标 Run；writer 原样写入 target 的时间，不能在发布时重新取时。<code>completedAt</code> 是初始 session 停止拥有该 Run 的时点，不表示内容从此冻结。
+lock-free reader 可能在 `visible` 到 `durable` 的短暂区间读到完整 Run，因此“reader 看见”不等于 writer 已经返回 durable receipt。reader 永远不能看见半个 Run；跨进程崩溃的持久保证只从 durable receipt 开始。崩溃发生在该区间时，下文 recovery matrix 决定 destination 能否完成提交，不能由先前一次读取反推结果。
 
-扫描器按规范 encoded ID 的 UTF-8 bytes 升序处理目录。重复 identity、目录与内容身份不符、或任何 case-fold 冲突都为 invalid。
+seal 后的 source 不能再修改。writer 以同一文件系统的一次 no-replace atomic directory rename，把 `publish/<runId>` 变为 `R/runs/<runId>`。destination 必须不存在；碰撞不替换、不合并、不比较“谁更新”。
 
-## 通道目录与文件归属
+发布后整个 Run immutable。NiceEval 没有修改 channel、补写 `completedAt`、删除 Run、删除 Attempt 或压缩历史的写 API。外部工具改坏字节不会得到自动修复；reader 按普通 invalid/unsupported 规则反馈。
 
-Run 和 Attempt 各自拥有自己的 <code>channels</code>。同一 owner 内，descriptor 的 <code>name</code> 和 <code>path</code> 各自唯一，且两者都必须在 case-fold 后仍唯一。重复、case-fold 冲突或 path overlap 只使参与冲突的 descriptor 无效，不使无关通道或 Attempt 核心失效。
+一次 Invocation 可以发布多个 Run，但没有 Invocation 级事务。并发 reader 可能只看到其中一部分；每个已经可见的 Run 必须完整。`InvocationReceipt` 只在进程内返回本次 Run identity 与 completion，不是 durable 目录。
 
-<code>ChannelName</code> 是 3 至 253 个 lowercase ASCII 字符组成的反向域名。它至少含两个点分 label；每个 label 长 1 至 63，只含 <code>a-z</code>、<code>0-9</code> 和内部连字符，首尾必须是字母或数字。任何大写、Unicode 或空 label 都非法。
+## Frozen weak read view
 
-<code>ChannelPath</code> 是 lowercase ASCII POSIX 相对路径，总长不超过 240 bytes。它必须以 <code>channels/</code> 开头；之后至少一段，每段长 1 至 80，只含 <code>a-z</code>、<code>0-9</code>、点、下划线和连字符，首尾必须是字母或数字。它拒绝空段、点段、反斜线、NUL、绝对前缀，以及彼此重叠或互为前缀的路径。
+`RecordReader` 不取得 writer lock。打开时枚举一次 `runs/` 并冻结 `candidateSet`；文件系统枚举不是 point-in-time、linearizable 或 Invocation snapshot，因此它可以漏掉并发刚发布的 Run，也可能只看到一次 Invocation 的一部分。
 
-<code>AttemptBlobRef</code> 使用相同的 segment、长度和 canonical ASCII 规则，但必须以 <code>blobs/</code> 开头。它只能出现在 Attempt-owned 专用通道 document 中，不能出现在 Run 通道或 generic custom fact。
+这项弱语义不允许吞掉损坏 entry。初次扫描按目录 entry 的原始 UTF-8 bytes 排序，给每项保留 `read | invalid` 结果；非法编码、非法类型、case-fold 冲突、目录与 identity 不符和无法安全取得 ID 的 entry 都留在 candidate diagnostics。analysis/execution projector 必须显式决定这些 invalid candidates 是否让 latest 或 target selection fail closed，不能先过滤成“合法 ID 列表”。
 
-<code>RunSourceBlobRef</code> 精确为 <code>blobs/sha256/&lt;digest&gt;</code>。digest 是源文件原始 UTF-8 bytes 的 SHA-256 小写十六进制值。它只由 Run-owned <code>niceeval.sources</code> decoder 使用，不是全局内容地址、Record identity 或防伪证明。
+只有 `candidateSet` 能参与：
 
-<code>ChannelMediaType</code> 是不带参数的 lowercase ASCII <code>type/subtype</code>，总长不超过 127 bytes。type 与 subtype 各长 1 至 63，首字符是字母或数字，其余只含字母、数字、<code>!</code>、<code>#</code>、<code>$</code>、<code>&amp;</code>、<code>^</code>、<code>_</code>、点、加号或连字符。
+- `latest` 排序；
+- 显式 `--run` 选择校验；
+- `AnalysisSample` 分母；
+- execution projector 的 source candidate。
 
-所有 descriptor 字符串只接受上述 canonical ASCII，因此 NFC 与 Unicode case-fold 没有多种结果；case-fold 固定为逐 byte 的 ASCII lowercase。输入本来就必须 lowercase，所以 exact uniqueness 同时兑现 case-fold uniqueness。
+普通 `reader.run(id)` 只能访问 candidateSet，不能看到 reader 创建后发布的 Run。选择形成后，reader 有一个不公开的 `resolveDependency({ originRunId, attemptId })` 能力，只能沿已选 Member 的持久引用直接补入 origin。补入集合称为 `dependencyClosure`；它不成为 latest 候选、不扩张分母，也不能作为任意 Run lookup。
 
-每个 raw entry 单独解码为有效 descriptor 或具名 issue。只有 raw 字段本身是 string 且满足对应完整 canonical 语法时，才算安全读出 <code>name</code> 或 <code>path</code>。损坏 entry 若仍能安全读出 name，只让该名称的请求 invalid。owner 中存在无法安全读出 name 的 entry 时，任何没有匹配到有效同名 descriptor 的请求也返回 invalid；reader 不能把未知损坏 entry 冒充成 unavailable。明确匹配到其它有效名称的请求仍可独立读取。writer 遇到无法安全识别 name 或 path 的 entry 时，把该 owner 当作只读，避免误改未知数据。
+dependency closure 完成后同样冻结。`AnalysisSample`、`ReportPlan`、`ReportInput` 与一次 `ReportExecution` 不得重新扫描或寻找“更新版本”。origin 缺失、重复、非法或反向锚不匹配时保留具名 invalid/gap，不回扫其它 Run。
 
-reader 必须先验证完整 descriptor 语法，再以不跟随 symbolic link 的方式读取 path；非法 path 只使该 descriptor 对应的请求 invalid。
+`niceeval view` 每次 rebuild 先完整 dispose 上一轮 execution、input、closure 与 reader，再打开新的 reader。单轮渲染从不刷新；下一轮可以看见后来发布的 Run。
 
-通道文件只能归其 descriptor 的 owner。Run 和 Attempt 不共享文件，也不借 link 指向彼此的目录。Attempt 内的 blob 只能由该 Attempt 的通道引用；blob 不跨 Attempt 去重。Run source blob 只在同一个 Run 内按 digest 去重。reader 通过 decoder context 读取普通、非 symbolic link 文件，不把磁盘路径交给 Report。
+## Local sidecar 映射
 
-descriptor 未引用的 channel 文件和 source manifest 未引用的 Run blob 不参与读取，也不让 owner invalid。它们只能随 owner 删除；没有独立 GC。被 descriptor 或 manifest 引用的文件缺失、越界或内容不符时，对应请求 invalid。
+设实际 Record root 为 `R`。实现先对最近存在祖先求 physical absolute path，再拼回尚不存在的规范段；每个已存在组件都以 no-follow 打开并拒绝 symbolic link。canonical R 的 UTF-8 bytes 计算完整摘要：
 
-<code>mediaType</code> 只描述字节编码，不承载语义版本。每个内建 decoder 按 <code>name</code> 限制可接受的编码；同一编码不能让两个不同名称自动共享语义。
+```text
+recordKey = lowercaseHex(SHA-256(UTF-8(canonical physical absolute R)))
+L = dirname(R)/.niceeval-local/<recordKey>/
+```
 
-Coverage 说明持久化集合的状态。它不说明 reader 是否完全解码，也不能被 decode 结果改写。
-
-## 通道语义与兼容性
-
-内建 channel 和 event 名称都是 <code>niceeval.&lt;descriptive-concept&gt;</code>。名称不得带数字版本后缀，发布后也不得复用含义。
-
-自定义 JSON 事实的 descriptor <code>name</code> 使用用户的反向域 namespace，并永不复用含义；<code>niceeval.*</code> 只保留给内建通道。它的通用 transport 精确为下列 document，media type 只能是 <code>application/json</code>。
+`recordKey` 恰为 64 个 lowercase hex。`L/local.json` 是精确对象：
 
 ```ts
-type CustomFactDocument = {
-  observedAt: UtcMillis;
-  value: JsonValue;
+type LocalDocument = {
+  schema: "niceeval.local/v1";
+  canonicalRoot: string;
+  recordId: RecordId;
+};
+```
+
+R 已存在时，writer/recovery 要求 `local.json.canonicalRoot` 与 canonical R 相同，且 local/durable `recordId` 相同。identity mismatch 时不得把旧 session 归给新 Record，也不得仅凭路径接管。Record 同路径删除重建会得到新 `recordId`；整个 Record 复制到新路径时保留 `recordId`，但 canonical R 不同，所以使用新的 sidecar。
+
+reader 不受这项本地 identity 故障支配。`cache: "disabled"` 完全不打开 L；`cache: "allowed"` 只有在 `local.json` 精确匹配时才使用 cache。sidecar 缺失、权限失败、错误类型、未知 schema 或 identity mismatch 都退化为 no-cache，不能阻止 durable Record 打开，也不能改变任何公开读数。
+
+writer 遇到 recordId mismatch 时先取得旧 `write.lock`。若旧 sidecar 只有 cache，可删除 cache，并 atomic replace `local.json` 绑定当前 Record。若存在任一 session、recovery、root-init、build 或 publish entry，则返回 `record-local-identity-collision` 并保留现场。这样 cache 不会变成权威障碍，旧 write state 也不会穿越 lineage。
+
+`open-or-create` 遇到 R 不存在但同 key sidecar 已存在时，先取得现有 `write.lock`。只要有任一 session、recovery、build 或 publish entry，就返回 `record-recovery-required`，绝不把它归给新 Record；没有这些现场时，允许丢弃旧 cache，并以 atomic replace 写入新 `local.json` 后建立新 root。未知 local schema、无法安全枚举或错误类型仍 fail closed。这样同路径重建有唯一安全出口，而不会让旧 session 穿越 lineage。
+
+root 初始化发生在创建 `RecordWriteSession` 和启动昂贵工作之前。它在 `L/root-init-v1/<ownerId>/record/` 形成只有 `record.json` 与空 `runs/` 的完整 root，逐层 `fsync` 后 no-replace rename 为 R，再 `fsync dirname(R)` 并重开核对 `recordId`。只有核对成功才创建 write session。`ownerId` 是 local-only 128-bit ID，使用与 `sessionId` 相同的 canonical grammar，不进入 Record。
+
+`root-init-v1` 不含 Run 或已付费执行，因此 lock 空闲后可以删除当前版本的遗留 temp 并从头初始化；它仍是 local operation state，不是 cache。R 已存在时，只有 temp 与 R 的 `recordId` 相同才可删除 temp；未知 init 版本、identity mismatch 或错误 entry type 都 fail closed。
+
+sidecar root、record-key directory、`local.json`、lock anchor、session、manifest、cache temp 与 staging 的每一级都 no-follow，并验证期望的 regular file 或 directory。device、socket、FIFO、hard-link 替换、symbolic link 与错误类型都拒绝。
+
+## Writer lock 与 local session
+
+local 布局如下；它不是 portable schema：
+
+```text
+local.json
+write.lock
+root-init-v1/<ownerId>/record/**
+sessions/<sessionId>/
+  session.json
+  build/runs/**
+  publish/<encoded-runId>/**
+  recovery/<encoded-runId>.json
+cache/**
+```
+
+`write.lock` 是稳定的普通文件 anchor。Record writer lock 的互斥所有权由绑定进程或文件描述符的操作系统 lock 决定，文件内容和 session marker 都不是 owner 真源。进程崩溃必须释放 lock。一个 Record 同时最多一个 `RecordWriteSession`，reader 可并发。
+
+`session.json` 是精确 local recovery 对象：
+
+```ts
+type LocalSessionDocument = {
+  schema: "niceeval.local-session/v1";
+  sessionId: SessionId;
+  canonicalRoot: string;
+  recordId: RecordId;
+  state: "building" | "cleanup-pending";
+};
+```
+
+未知或未来 session schema 不能自动删除、接管、resume 或判断为 orphan；CLI 只报告 `record-session-schema-unsupported`。用户仍可在取得 writer lock 后，对精确 session ID 执行显式 abandon；abandon 只删除该 no-follow session directory，不读取其内容或修改 Record。
+
+lock 已空闲但仍存在的 session 称为遗留 session。任意遗留 session 都阻止新 writer。只有不存在遗留 session 时才能创建新 session；存在一个或多个时返回 `record-recovery-required`，并列出全部 session ID，不按时间猜 owner。
+
+处于 building 且没有 sealed recovery manifest 的 session 只能 explicit abandon，不能恢复模型、Sandbox 或外部命令。具有 sealed manifest 的 session 只能 commit-only resume 或 abandon，不能继续执行。
+
+一个 session 可以同时含有已 durable 的 Run、sealed Run 与尚未 seal 的 build。commit-only recovery 只按 manifest 处理 sealed Run；全部 manifest 成功收敛后，尚未 seal 的 build 作为不可恢复执行现场删除。任一 manifest 仍 ambiguous、unknown 或 invalid 时，整个 local session 保留，不得先删其它 build 来伪装恢复完成。
+
+destination 已提交但 local 现场删除失败时，session 进入 `cleanup-pending`。durable publish 仍是成功事实，但后续 writer 继续得到 `record-local-cleanup-pending`，直到显式 commit recovery 重新校验 destination 并删除 local 现场，或用户显式 abandon 该现场。
+
+新 session 以 `building` 开始。commit-only recovery 不需要把“当前进程正在恢复”持久化；互斥由 OS lock 表达，进程崩溃后仍由 manifest 与下述矩阵重算事实。destination 已验证 durable 后，writer/recovery 在删除 local entry 前把状态 atomic replace 为 `cleanup-pending`；状态写失败不推翻 durable commit，遗留 manifest 仍会让下一位 writer进入 recovery。全部 manifest、publish 与 build entry 清完后删除整个 session directory；正常 writer Scope 也只在没有 sealed 现场时这样收尾。
+
+## Recovery manifest 与 crash matrix
+
+每个 sealed Run 在 `sessions/<sessionId>/recovery/<runId>.json` 写一份不会随 source rename 消失的精确 manifest：
+
+```ts
+type RecoveryManifest = {
+  schema: "niceeval.publish-recovery/v1";
+  sessionId: SessionId;
+  recordId: RecordId;
+  runId: RunId;
+  source: `publish/${RunId}`;
+  destination: `runs/${RunId}`;
+  entries: readonly RecoveryEntry[];
 };
 
-const CUSTOM_FACT_MAX_BYTES = 65_536;
+type RecoveryEntry =
+  | { path: string; kind: "directory" }
+  | {
+      path: string;
+      kind: "file";
+      byteLength: number;
+      sha256: Sha256Digest;
+    };
 ```
 
-同一 owner 与 name 只允许一个自定义 document。第二次写入是 typed write error，不替换旧值、不追加；多值由调用方一次写成 JSON array。
+每个 `RecoveryEntry.path` 都相对于这份 manifest 对应的 Run directory root；`.` 精确表示该 root。entries 以 canonical 相对 POSIX path 的 UTF-8 bytes 升序，并穷尽全部目录与普通文件；不允许重复、缺口、额外 entry、link 或特殊文件。SHA-256 是文件原始 bytes 的 64 个字符 lowercase hex 摘要。manifest 只用于 local 恢复，不进入 Run identity、proof 或防伪链。
 
-writer 补齐 <code>observedAt</code> 后，以 ECMAScript <code>JSON.stringify(document)</code> 的紧凑结果计算 UTF-8 byte length。超过 65,536 bytes 时，<code>fact()</code> 以 <code>record-custom-fact-too-large</code> 拒绝，且不建立 descriptor 或文件。
+seal 先 `fsync` 并 close source 的每个普通文件，再由深到浅 `fsync` 每个 source directory。随后枚举并重新读取 source 形成 manifest，在 recovery parent exclusive-create owner temp。
 
-人工编辑得到的超限 document 在读取时是同名 <code>ChannelRead.invalid</code>。未知字段、非法 <code>observedAt</code>、非 JSON value 或无效 UTF-8 同样 invalid。通用自定义事实不支持 JSONL、blob 或任意路径查找。
+owner temp 完整写入并 `fsync` file，close 后 atomic rename 为最终 manifest，再 `fsync` recovery parent。完成前不得 publish。已有同名 manifest 只有 byte-for-byte 解码等价且重新校验 source 匹配才可继续，否则保留现场。
 
-兼容添加只能是可选字段，或旧 decoder 可以忽略的 event variant。删除、改名、改类型、改判别方式或改含义时，必须发布全新的描述性 channel 或 event 名称。
+恢复必须执行下列穷尽矩阵：
 
-若两个互斥的 channel 同时声称表达同一个 normalized fact，只有请求该 normalized fact 的读取成为 <code>channel-semantic-conflict</code> invalid，并列出参与冲突的 descriptor。reader 不猜测优先级，也不让无关通道失效。
+| publish source | destination | 处理 |
+|---|---|---|
+| 存在且匹配 manifest | 不存在 | 重校验后 commit-only rename |
+| 不存在 | 存在且匹配 manifest | 视为已提交；重校验与 fsync 后只清 local |
+| 存在 | 存在 | `record-publish-ambiguous`；禁止认作成功 |
+| 不存在 | 不存在 | `record-publish-outcome-unknown`；禁止认作成功 |
+| 任一存在但不匹配 | 任一 | `record-publish-invalid`；保留全部现场 |
 
-新 reader 必须打开每一份核心形状有效的 <code>niceeval.record</code>。未知或已退役 channel 仅使该通道成为 unsupported，不使无关事实或整个 Record 失败。旧 reader 打开带新通道的 Record 时，仍读取核心文件并保留未知 descriptor。
+rename 成功后必须 fsync source parent 与 destination `runs/` parent，再从 destination 重新计算完整 manifest。只有 destination 匹配且两端 parent fsync 完成，才能记为 committed 并删除 local recovery/staging。local 现场删除被中断时进入 `cleanup-pending`，不能倒推 publish 失败。
 
-<code>niceeval.verdict</code> 与 <code>niceeval.eligibility</code> 是 project-target policy v1 所需的永久事实。两者都是 Attempt-owned <code>application/json</code> document，payload 是精确对象且永久不扩展。Record 永久保留其 decoder、兼容读取和标准展示入口，但不从这些事实推出可复用、过期或需要执行等状态。
+在启动模型、Sandbox、外部命令或其它昂贵工作之前，writer 必须执行 capability preflight。它验证 source 与 destination 位于同一 filesystem，并验证 no-replace atomic directory rename、file fsync、directory fsync、no-follow open 与所需 OS lock 都可用。
+
+缺任一项都以 `record-storage-capability-unsupported` 失败，且零昂贵工作、零 durable Run。
+
+## Cache 不是事实
+
+reader 可以在 `L/cache/` 写派生索引或 decoder 结果，但没有公共 cache 格式。写入只用 owner-specific temp 与 atomic replace；竞争、权限失败、损坏或 replace 失败全部退化为 no-cache。
+
+cache 不能保存权威的“没有这个 Run”、latest、candidateSet、dependency closure、coverage、diagnostic 或 carry 决策。使用 cached decode 前仍须验证对应 durable owner、descriptor 与 payload identity；删除整个 cache 后必须得到逐项相同的公开结果。
+
+因此 `show`、`view` 与 `exp --dry` 对 durable Record 是只读命令。它们可以 best-effort 更新 local cache，但不创建 writer session、不取得 writer lock，cache 无法写时也不能失败。
+
+## Channel identity 与局部演进
+
+`ChannelName` 是稳定的业务语义，例如 `niceeval.verdict`。`ChannelSchemaId` 是精确 bytes shape，格式为 `<channel-name>/v<positive-safe-integer>`，例如 `niceeval.verdict/v1`。`mediaType` 只描述编码，不能代替 schema identity。
+
+同一业务语义的兼容或不兼容 payload 演进都发布新 schema ID；语义真正变化时发布新 channel name。writer 不能让同一 schema ID 接受两种形状，也不能为兼容展示同时写两个会让旧 projector 错误通过的 eligibility descriptor。
+
+同一个 Run 或 Attempt owner 内，`ChannelName` 必须唯一；writer 不同时写同名 v1/v2 descriptor。重复同名 descriptor 是该 channel 的 invalid，不按数组顺序、schema 数字或 reader 偏好选择一个。这样 schema 演进始终是“一项事实选择一个精确版本”，而不是在同一 owner 内维护双写协议。
+
+`ChannelName` 使用 3 至 253 个 lowercase ASCII 字符的反向域名，至少两个点分 label。`ChannelSchemaId` 在其后附加 `/vN`。`ChannelPath` 是不超过 240 bytes 的 lowercase ASCII POSIX 相对路径，以 `channels/` 开头，拒绝空段、点段、反斜线、NUL、绝对前缀、重叠路径与 link。`mediaType` 是无参数 lowercase ASCII `type/subtype`。
+
+`AttemptBlobRef` 使用与 `ChannelPath` 相同的 canonical ASCII segment 与总长度规则，但必须以 `blobs/` 开头。它只出现在 registry 明确授权 blob 的 Attempt-owned built-in payload 中，不能出现在 Run channel 或 generic custom fact。
+
+`RunSourceBlobRef` 精确为 `blobs/sha256/<digest>`，其中 digest 是 blob 原始 bytes 的 64 个字符 lowercase SHA-256；它只由 Run-owned `niceeval.sources/v1` 使用。Attempt blob 不跨 Attempt 去重，source blob 只在同一 Run 内按 digest 去重。
+
+decoder 以 no-follow 方式从当前 owner 读取普通文件，只得到 bytes，不得到 root 或物理路径。descriptor 或 schema payload 引用的 blob 越界、缺失、类型错误、byte length 或 digest 不符时，该 fact 是 invalid。未被 descriptor/schema payload 引用的 blob 不参与读取，也没有独立 GC；它只随 immutable Run 生命周期存在。
+
+coverage 只说明 producer 持久化集合的完整度，不说明当前 reader 是否有 decoder。没有 descriptor 是 unavailable；descriptor 与 payload 存在但 reader 不认识 schema 是 unsupported；schema、路径、bytes 或引用损坏是 invalid。一个通道的问题不让未请求通道或 core 自动失效。
+
+`coverage.unavailable` 的 descriptor 不要求 payload 存在，reader 也不打开其 path；reason 本身就是持久事实。`complete` 与 `partial` 必须各有一个 descriptor 指向的普通 payload。coverage 不能用来掩盖缺文件、坏 JSON、未知 schema 或 decoder 失败。
+
+### Normalized requirement 也不可原地改形状
+
+拆出 channel schema 只能隔离落盘变化，不能单独隔离 TypeScript API 变化。每个正式 `FactRequirement<A>` identity 还必须永久绑定 owner kind、normalized 语义与精确输出类型 `A`；已发布 requirement 不能原地增加必填字段、改变判别联合或复用同一个 identity 返回另一种形状。
+
+normalized API 需要破坏性演进时，新增 requirement identity，并保留旧 identity 与输出类型。一个 schema decoder 可以把同一份 bytes 投影成多个 requirement view；新 requirement 只把能完整形成其输出的历史 schema 放入 accepted set。反过来，新 schema 若能无损形成旧输出，也应继续服务旧 requirement。标准 Report 可以迁移到新 identity，但旧 Report 与第三方调用方仍能请求旧 identity。
+
+因此兼容性有三个独立 ID：core format 决定导航能否打开，channel schema ID 决定 bytes 怎样解码，FactRequirement identity 决定调用方得到哪种 normalized 值。任一层变化都不得偷用另一层的 ID，也不得靠可选字段让一个 identity 同时表示两代 API。
+
+下表的 `verdictFact`、`assertionsFact` 等名称是首代 exported constant label；其内部 `id` 必须带不可变版本。若输出类型升级，发布新的 constant 与 requirement ID，旧 constant 不改指向、不改泛型参数，也不从导出面删除。
+
+### Storage API 保持能力稳定
+
+未来兼容不能靠给 storage facade 反复增加 `readAssertions2()`、`writeUsage3()` 一类代际方法。Record 的长期 API 只保留少量能力动词：
+
+- reader 枚举与冻结 core、沿 frozen selection 导航，并用 generic `inspectFact(requirement)` 读取事实；
+- writer 打开单写 session、stage 完整 Run，再 publish sealed Run；
+- recovery 只处理具名 session。
+
+业务功能通过 registry entry、schema decoder、FactRequirement 与 generic channel payload 扩展，不扩张这组动词。
+
+因此，API 重构是否需要持久格式变化，按变化实际落在哪一层判断：
+
+| 未来变化 | 发布动作 | 旧数据与旧调用方 |
+|---|---|---|
+| 只重构内部模块、Effect 组合或调用语法，持久 bytes 与 normalized 语义不变 | 不改任何持久 identity | 同一个 requirement 继续返回同一个 `A`；这不是格式迁移 |
+| 新增一种业务事实 | 新 `ChannelName`、首个 schema ID、decoder 与 requirement | 旧 reader 忽略未知事实；新 reader 不要求旧 Run 凭空拥有它 |
+| 同一业务语义的 bytes shape 改变 | 新 `ChannelSchemaId`，保留旧 decoder | later reader 可把各代 schema 投影到明确接受它们的 requirement |
+| normalized 输出类型或语义破坏性改变 | 新 FactRequirement identity 与 exported constant，保留旧 identity、类型和投影 | 调用方显式选择所需代；同一 identity 永不返回两种形状 |
+| carry gate 或复用语义改变 | 切换 `reuseContract.domain`；持久形状也变时同时发布新 eligibility schema | 不认识新 gate 的 projector 得到 gap，不能误 carry |
+| core owner、identity、路径或发布原子性改变 | 发布完整 `niceeval.record/v2`，保留 v1 reader；需要迁移时显式离线写入新 root | v1 root 不被原地改写，v1/v2 对象不在同一 root 混用 |
+
+“保留”是发布契约，不是临时过渡：core v1 reader、正式 built-in decoder、已发布 requirement identity 与对应输出类型，在 v1 生命周期内不能因内部 API 再设计而删除。
+
+反过来，兼容也不意味着 later requirement 自动接受全部历史 schema。accepted set 必须逐项声明；不能完整形成目标输出时就返回 `unsupported`，execution-required fact 再由 projector fail closed 为 gap。
+
+### Built-in channel registry
+
+core v1 生命周期内，所有正式发布的 built-in schema decoder、normalized FactRequirement 与标准展示入口永久保留。下表是首批可审计 registry；payload 的精确对象由链接的领域 owner 定义。
+
+兼容级别同时约束 writer seal：
+
+- `execution-required`：每个 origin Attempt 必须恰有一个同名、complete、可解码的 descriptor/payload；缺失、partial 或 unavailable 都拒绝 seal；
+- `provenance`：每个 Run 必须写出 complete fact，解释 membership 与 Invocation；它不参与 carry equality；
+- `presentation`：允许 descriptor 缺席、partial 或 unavailable，但出现时必须满足对应 schema。
+
+reader 仍按 `ChannelRead` 隔离外部损坏或未知 future schema，不能因为 mandatory writer rule 就把整个 core 判坏。execution projector 则把 required fact 的 unavailable、unsupported、partial 或 invalid 全部转成 gap。
+
+| schemaId | owner | media type | FactRequirement identity | 兼容级别 | 永久 decoder | 标准消费者 |
+|---|---|---|---|---|---|---|
+| `niceeval.verdict/v1` | Attempt | `application/json` | `verdictFact` | execution-required | 是 | project-target、overview、Attempt state |
+| `niceeval.eligibility/v1` | Attempt | `application/json` | `eligibilityFact` | execution-required | 是 | project-target |
+| `niceeval.assertions/v1` | Attempt | `application/json` | `assertionsFact` | presentation | 是 | Attempt checks 与 score |
+| `niceeval.usage/v1` | Attempt | `application/json` | `usageFact` | presentation | 是 | usage 与 cost cards |
+| `niceeval.conversation/v1` | Attempt | `application/x-ndjson` | `conversationFact` | presentation | 是 | conversation/tool timeline |
+| `niceeval.commands/v1` | Attempt | `application/json` | `commandsFact` | presentation | 是 | commands 与 evidence |
+| `niceeval.diff/v1` | Attempt | `application/json` | `diffFact` | presentation | 是 | change summary 与 detail |
+| `niceeval.timing/v1` | Attempt | `application/json` | `timingFact` | presentation | 是 | duration 与 waterfall |
+| `niceeval.diagnostics/v1` | Attempt | `application/x-ndjson` | `attemptDiagnosticsFact` | presentation | 是 | Attempt diagnostics |
+| `niceeval.diagnostics/v1` | Run | `application/x-ndjson` | `runDiagnosticsFact` | presentation | 是 | Run diagnostics |
+| `niceeval.actions/v1` | Run | `application/json` | `actionsFact` | provenance | 是 | membership provenance |
+| `niceeval.sources/v1` | Run | `application/json` | `sourcesFact` | presentation | 是 | origin source viewer |
+| `niceeval.run-provenance/v1` | Run | `application/json` | `runProvenanceFact` | provenance | 是 | Invocation detail |
+
+自定义 schema 使用调用方的反向域 namespace，并由调用方注册 decoder。它不获得 built-in 永久兼容承诺，也不能使用 `niceeval.*`。
+
+### Verdict 与 eligibility v1
+
+两份 execution-required document 是精确对象：
 
 ```ts
-type VerdictDocument = {
+type VerdictDocumentV1 = {
   state: "passed" | "failed" | "errored" | "skipped";
 };
 
@@ -206,124 +444,57 @@ type DurationToken = {
   milliseconds: number;
 };
 
-type EligibilityDocument = {
+type EligibilityDocumentV1 = {
+  reuseContract: EqualityToken;
   inputIdentity: EqualityToken;
   configIdentity: EqualityToken;
   executionDuration: DurationToken;
 };
 ```
 
-所有嵌套对象同样精确。未知字段、缺失字段、其它 Verdict 判别值或其它 media type 都使该通道 invalid。<code>domain</code> 和 <code>value</code> 是非空 NFC 文本；<code>milliseconds</code> 是非负安全整数。Assertion、diagnostic 引用和人读摘要属于其它业务通道，不进入 Verdict。
+`domain` 与 `value` 是非空 NFC 文本，`milliseconds` 是非负安全整数。所有嵌套对象精确；未知字段、缺失字段或其它 media type 都 invalid。
 
-<code>niceeval.assertions</code> 是 Attempt-owned、<code>application/json</code> 的永久 presentation channel。它不进入核心，analysis projector 与 execution projector 都不得依赖它；其冻结 document、限制与派生规则由 [Assertions Architecture](../assertions/architecture.md#稳定落盘投影) 单点定义。
+每个 execution projector 必须把 eligibility 列为 required fact，并穷尽列出接受的 `schemaId` 与 `reuseContract.domain`。target 与 Attempt 只有 schema 可解码、domain 被接受且 equality token 完全相等时才能继续其它 gate。missing、unsupported、domain mismatch 或 value mismatch 都是 gap。
 
-永久 presentation 表示 decoder 与标准消费链都不能退役：Attempt → <code>niceeval.assertions</code> → 内建 decoder → 标准 FactRequirement → 标准 Attempt detail。未来的新 Assertions 语义使用新的描述性 channel，但旧通道仍能从显式选择的旧 Run 进入标准详情。
+新增、删除或改变任一 carry gate，至少切换 `reuseContract.domain`；持久形状变化时同时发布新的 eligibility schema。policy identity 只解释一次历史 action，不能充当前向安全栅栏。展示 decoder 可以归一历史 schema，但 carry accept set 必须另行显式声明。
 
-<code>niceeval.sources</code> 是 Run-owned、<code>application/json</code> 的源码快照清单。实际源码只保存在同一 Run 的 digest blob 中；carried 或 accepted Member 不复制它。document 是精确对象：
+## 兼容矩阵
 
-```ts
-type SourcesDocument = {
-  files: readonly SourceSnapshot[];
-  limitations: readonly SourceLimitation[];
-};
+本节的“旧/新”只指 `niceeval.record/v1` 正式发布后的 NiceEval 迭代。旧 `niceeval.results` 全局 schemaVersion 1–18 不属于 Record reader 契约：新 reader 不打开、不猜测，也不在普通 open 中自动迁移。若未来需要导入旧 Results，它是一次显式、离线、写入全新 Record root 的转换工具，不是兼容 decoder。
 
-type SourceSnapshot = {
-  path: string;
-  digest: Sha256Digest;
-  byteLength: number;
-};
-
-type SourceLimitation = {
-  kind: "truncated" | "redacted" | "omitted";
-  path: string;
-  reason: string;
-};
-
-type Sha256Digest = string;
-```
-
-<code>path</code> 使用 Assertions source path 的项目相对 POSIX 规则。<code>digest</code> 精确为 64 个 lowercase hex 字符；<code>byteLength</code> 是非负安全整数。每个 <code>(path, digest)</code> 唯一，同一路径可以有多个内容版本；相同 digest 在 Run 内只保存一份 <code>blobs/sha256/&lt;digest&gt;</code>。blob 必须是合法 UTF-8，实际 byte length 与 SHA-256 必须匹配清单，否则该 fact invalid。
-
-collection complete 要求 <code>limitations</code> 为空。collection partial 要求至少一项 limitation，并逐项说明截断、脱敏或未纳入的路径与原因。collection unavailable 不写 document 或 blob。decoder 只返回结构化源码值和 bytes，不暴露 Record root 或实际路径。
-
-[project-target policy](../experiments/cache.md) 决定怎样把上述事实与当前 Project Target、timeout 和 Invocation policy 组合成 reuse 或 gap。source barrier、禁止回扫、<code>--rerun</code> 与 <code>--keep-sandbox</code> 都不属于 Record 格式。
-
-新增持久 gate 时升级 execution projector 的 policy identity。旧 Attempt 缺少所需事实时形成具名 gap；这不会要求更换 <code>niceeval.record</code> 格式，也不会把新 gate 写进核心。
-
-[Observability 标准通道表](../../observability.md#内建业务通道闭环)中的 decoder、branded FactRequirement 与标准 presentation 都永久保留。表外没有永久兼容承诺的内建 decoder 可以退役；退役后，只有依赖该通道的 detail、Calculation 或 projector 成为 unsupported。
-
-## Eligibility 与 duration 事实
-
-eligibility 保存 opaque equality token。input 与 config identity 都使用上文冻结的 <code>{ domain, value }</code>。
-
-<code>domain</code> 与 <code>value</code> 都是 opaque token。Record 只校验其形状；execution projector 只有在 domain 逐字相同时才比较 value。输入配方改变时，生产方发布新的 domain，消费者不能猜测两种 domain 兼容。
-
-duration 保存 <code>{ domain, milliseconds }</code>。<code>milliseconds</code> 是非负安全整数，由该 domain 定义的 timeout 区间以单调时钟向上取整得到。
-
-Record 不把 duration 换算成资格。execution projector 只有在当前 policy 认可同一 domain 时才比较 milliseconds；domain 不同形成具名 gap，不能通过数值比较补猜结果。
-
-## 混合存储与可见性
-
-按发生顺序、高频、追加量大，且未知 variant 可以安全保留的事实使用 JSONL event channel。例如包含 message 与 tool event 的 conversation，以及 diagnostics。
-
-单一终态值、需要人工直接编辑的值，或需要高频随机读取的值使用 document channel。例如 verdict、eligibility、assertions、usage、timing summary、diff 和 commands manifest。sources 使用 Run-owned document 与 Run-local digest blobs。
-
-大文本或二进制内容使用 Attempt-owned blob。通道 document 保存对本 Attempt blob 的引用，不让 blob 成为跨 owner 的共享对象。
-
-writer 必须先在 <code>.tmp/&lt;writerId&gt;/</code> 内完整形成 Attempt 目录，再以同一文件系统的一次目录 rename 发布到不存在的正式 Attempt 路径。正式 Attempt 缺少 <code>attempt.json</code> 一律为 invalid。发布后的 Attempt 对 writer 是只读整体；后续业务修改只允许用户在 root 停稳时人工完成。
-
-新 <code>run.json</code>、Member、Run descriptor/coverage 更新和最终 <code>completedAt</code> 更新，也必须先在本 writer 的临时目录形成同文件系统普通文件。Run source blob 在 descriptor 可见前完成写入、校验和去重。writer 精确校验、flush/fsync 并 close 后，再用单文件 rename 或 atomic replace 发布；每次 rename 后还 fsync 对应 parent directory。平台无法提供所需原语时写入失败，不能降级为直接截断正式 JSON。
-
-单文件替换和新 Attempt 目录发布具有 crash atomicity。一次受控编辑若跨 descriptor 与 payload、多个通道或多个核心文件，只保证 operation lock 内互斥，不承诺崩溃后的全有或全无。中断后 reader 按普通规则返回 channel-local 或 core invalid；实现不能为此重新引入 journal、revision、Graph 或 Store 事务。
-
-正常退出时，writer 只删除自己的临时目录。崩溃留下的 orphan 只能在目录停稳后由 owner-aware clean 删除；clean 不得删除另一个 writer 的临时目录。
-
-受控删除在 operation lock 内先穷尽反向引用。删除 Run 会同时影响它的 Member、Run-owned facts、source blobs 和以它为 origin 的 Attempt；只要目标外仍有 Member 引用这些 Attempt，普通删除就拒绝且零写入。强制的直接文件修改可以留下 dangling reference，下一次读取必须明确诊断为 invalid。
-
-unanchored Attempt 只允许由显式 orphan clean 删除。clean 在同一把锁内扫描全部 Run、Member 与 Attempt，重新确认目标没有有效 origin 锚且没有 Member 引用，再按明确的 <code>attemptId</code> 删除；它不把正式且可达的历史数据当作可回收缓存。
-
-## 格式演进边界
-
-本格式取消全局整数格式版本，但不允许核心协议漂移。下列变化必须更换整个格式名：
-
-- identity 的 owner、编码或唯一性；
-- expected membership 的含义；
-- Member 的三态或引用规则；
-- Attempt origin；
-- Run 的 identity、<code>experimentId</code>、<code>startedAt</code> 与 <code>completedAt</code> UTC 毫秒语义；
-- Attempt 的 identity 与 <code>eval</code>；
-- channel descriptor、path 或 coverage 协议；
-- root layout 或原子可见性规则。
-
-新增领域事实、可选字段、可忽略 event variant、未知 channel 或允许退役的局部 decoder，都不属于全局格式变化。它们遵守通道名称和局部 unsupported 规则；Observability 标准通道表中的 decoder 与消费链不在可退役集合内。
-
-## 读取不变量
-
-错误作用域固定为五层。
-
-| 层级 | 例子 | 结果 |
+| consumer | durable input | 结果 |
 |---|---|---|
-| root-global | root、权限/I/O、精确根文件或根级保留布局无效 | open reader 失败 |
-| run-local | 一个被读取的 Run 无法形成 expected slots，或存在额外 Member | 当前 Run 导航失败 |
-| slot-local | 已声明 slot 的 Member 或 Attempt 核心/引用错误 | reader 返回具名 issue；上层按投影语境解释 |
-| channel-local | descriptor、文件、字节或 semantic conflict 无效 | 对应 ChannelRead invalid |
-| consumer-local | Report-local parser 或已声明输入失败 | 对应 consumer result 失败 |
+| 后续 reader | 较早的新 Record v1 writer | 永久 registry decoder 读取早期 channel schema；按具名 requirement 归一 |
+| 较早 reader | 后续的新 Record v1 writer | 已知 schema 正常读取；未知 schema 只让对应 fact unsupported |
+| 支持 core-v2 的后续 reader | 既有 core-v1 Record | 保留 v1 core 与已发布 channel decoder，继续按 v1 契约读取 |
+| 任一 core-v1 reader | core-v2 Record | 根格式不支持，不能猜测打开 |
+| 新 requirement | 旧 channel schema | 只有 accepted set 包含该 schema，且 decoder 能完整形成新输出时才 read |
+| 旧 requirement | 新 channel schema | 能无损形成旧输出时继续 read；否则只让旧 requirement unsupported |
+| 新 execution policy | 旧 eligibility | 仅当 policy 显式接受其 schema 与 reuse domain 才可能 carry，否则 gap |
+| 旧 execution policy | 新 eligibility/gate | required schema unsupported 或 reuse domain mismatch，必须 gap |
 
-<code>openRecordReader()</code> 只验证 root、精确 <code>record.json</code> 与根级保留布局，不扫描全部 Run、Member、Attempt 或 descriptor。Record root、保留目录、Run/Attempt 目录和全部核心 JSON 都必须是普通且非 symbolic link 的对应文件类型；每次导航都以 no-follow 操作核对。
+较早的新 Record Attempt“可以展示”不等于“可以 carry”。局部 decoder 累积把 API 与业务事实变化限制在对应 channel；它不承诺所有历史 Attempt 永远满足未来 policy。
 
-上层只读取自己投影需要的 Run 及其引用；其它 Run 的内容错误是否影响结果，由具名 projector 的候选穷尽规则决定。reader 导航一个 namespace 时可以扫描同级 entry metadata、规范名字、重复与 case-fold 冲突，但不能跟随 link。root 或根级保留目录是 link 属于 root-global；被读取的 Run 目录或 <code>run.json</code> 是 link 属于 run-local；Member、Attempt 目录或它们的核心文件是 link 属于 slot-local。
+旧 Results Format 的逐版升版证据、正式与未合并版本边界统一归档在 [schemaVersion 历史存档](../../../memory/results-schema-version-history.md)。该存档只解释为什么另起 Record 格式线，不构成旧格式读取承诺。Record 不再维护一个因任意业务字段变化就整包失效的全局整数 `schemaVersion`。
 
-通道按下列顺序读取：
+## Portable、Git 与外部操作
 
-1. 已知 requirement 没有同名 descriptor 时返回 unavailable，reason 为 <code>not-collected</code>。
-2. 逐项解码 raw descriptor entries，并只关联同名 entry；同名 entry 损坏时该通道 invalid，不能触碰其 path。
-3. coverage unavailable 要求文件不存在；不存在时直接返回 unavailable，即使没有 decoder。文件存在是 <code>channel-unavailable-has-file</code> invalid。
-4. complete 或 partial 要求普通、非 symlink 文件存在；缺失是 <code>channel-file-missing</code> invalid。
-5. collected channel 没有可用 decoder 时返回 unsupported，不猜测字节。自定义 JSON requirement 提供的固定 transport 与局部 parser 是明确 decoder，不把其它未知 channel 自动当成自定义事实。
-6. 已知 decoder 遇 media type 不匹配、文件级非法编码或无法建立值时返回 invalid。只有可隔离的逐 event 问题才返回 read 与 decoding partial。
+portable boundary 是整个 durable root `R`。copy、backup、Git checkout 或 merge 的支持前提是 Record quiescent：没有活跃 writer、reader 或外部编辑；普通文件复制本身不是原子快照。外部操作完成后必须重新打开并验证 root、全部新增 Run identity 与引用。NiceEval 不提供跨 Record merge、局部 cherry-pick 或冲突自动解决。
 
-持久化 collection coverage 与 decode coverage 永不折叠。未知 event 可能使一个已知 JSONL 通道的 decoding 成为 partial，但不改变该通道的 durable coverage。
+把整个 root 纳入 Git 是显式选择，不是默认推荐。conversation、sources、commands、diff 与 blobs 可能含凭据、源码、prompt 或其它敏感信息；大量历史和 binary blobs 也会显著增大仓库。选择性分享使用自包含静态 Report，只带 ReportPlan 实际请求的值与资源。
 
-未请求的未知或 invalid 通道不阻止其它通道读取、AnalysisSample 形成或静态 export。被请求的 invalid 通道必须失败；被请求的 unavailable 或 unsupported 通道可由页面或 execution projector 明确呈现。
+`.niceeval-local/`、session、lock、recovery manifest 与 cache 永远不进 Git、不复制给他人，也不能用于接收方恢复。复制出的 Record 第一次写入时，在新 canonical path 建自己的 local sidecar。
 
-人工删除通道文件是 <code>channel-file-missing</code> invalid。损坏和越界同样是 invalid。它们都不能伪装成未采集；unsupported 也不等于业务上的 unavailable。目录停稳是调用前置条件；本格式没有 revision/hash，因此不承诺检测读取期间的并发修改。
+## Core 格式演进边界
+
+以下任一变化需要新的完整格式名，例如 `niceeval.record/v2`：
+
+- root、Run、Member、Attempt 或 descriptor 的字段、精确性或 owner 改变；
+- identity、路径、origin、membership 或发布原子性改变；
+- Attempt 不再由 origin Run 拥有，或 blob 跨 owner/Record 共享；
+- 已发布 Run 变为可修改；
+- portable boundary 从 whole root 改为局部对象或远端引用。
+
+新增业务事实、增加 channel schema 或增加 decoder 不触发 core 升版。不能为了保住 `v1` 而把业务字段写入核心，也不能用无 schema identity 的自由 JSON 隐藏版本变化。
+
+发布 `niceeval.record/v2` 不授权删除 v1 reader，也不把 v2 对象混写进 v1 root。后续 NiceEval 必须继续打开已发布的 v1 Record；写入已有 v1 root 时只能使用 v1 core 与可局部演进的 channel。只有显式离线转换到新的完整 root，才会把一个 Record 从 v1 迁到 v2。

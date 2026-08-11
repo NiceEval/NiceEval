@@ -31,14 +31,14 @@ const sample = await projectExplicitRuns(record, {
 3. `b` slot 的 accepted Member 读出 `B1`，同时保留 `memberKind: "accepted"` 与 `originRunId`。
 4. expected slot 没有 Member 时，`AnalysisSample` 仍保留该分母项并标为 `not-recorded`。
 
-如果用户在停稳目录中修改 `B1` 的 Verdict 或 Usage，再次投影 `R3` 会读取修改后的值。已经创建的内存 `AnalysisSample` 不会自动变化。
+已经创建的内存 `AnalysisSample` 不会自动变化。重新打开 reader 会重新冻结 candidateSet，但已发布 `B1` 的 bytes 不由 NiceEval 修改。
 
-源 Attempt 被删除、引用身份不匹配或出现重复身份时，`b` slot 是 `invalid`。它不会回扫其它 Run 寻找替代 Attempt，也不会被解释成 `not-recorded`。
+源 Attempt 因外部损坏而缺失、引用身份不匹配或出现重复身份时，`b` slot 是 `invalid`。它不会回扫其它 Run 寻找替代 Attempt，也不会被解释成 `not-recorded`。
 
 ## 边界
 
 - Attempt 的 origin 不因 carried 或 accepted 改变。
 - 每个 expected slot 最多有一个正式 Member。
 - analysis projector 不根据目录名推断 membership。
-- 要分析 unfinished Run，必须显式给出它的 `runId`。
+- reader 只分析完整发布的 Run；运行中 draft 不属于 Record。
 - 是否再次执行任何 slot 由新的 `ExecutionProjection` 决定，不从这份 `AnalysisSample` 推导。

@@ -20,11 +20,11 @@ niceeval 不需要专门的 CI 档——日志页给人看,默认的人读文本
 3. 门禁只认退出码:`0` 全部通过且运行完整完成计划;`1` 有 `failed` / `errored`、budget 未完成计划或 required reporter 写失败;`2` 未捕获崩溃;`130` 中断。
    折叠规则见 [Runner · 退出码](../../../../runner.md#退出码)。
 4. 归档文件：`--junit` 是整次运行的最终聚合，收尾时写临时文件并原子替换目标——CI 归档到的要么是完整文件，要么不存在。
-   每个 Attempt 目录在完整形成后才原子发布；进程中断后，已经发布并被 Member 引用的 Attempt 仍可通过 receipt 的 `runIds` 选择。
+   每个完整 Run 连同 Member、origin-owned Attempt 与 channels 在 seal 后一次原子发布；进程中断后，已经发布的 Run 仍可通过 receipt 的 `runIds` 选择，未发布的局部 Attempt 不会出现在 durable Record。
    需要 JSON 汇总交给自建看板时，归档 receipt，再以明确 Run 建立 Sample 并运行 `show --json`。
 5. JUnit 交给平台做测试注解；完整业务数据以 Record 为准。
 
-退出码与 JUnit 是原 Runner 进程当时形成的交付物。停稳后编辑 Record 会改变下一次 <code>show</code>、<code>view</code> 和 export 的当前结果，但不会追溯改写已经结束进程的退出状态或已归档 JUnit。
+退出码与 JUnit 是原 Runner 进程当时形成的交付物。之后发布的新 Run 可能改变下一次 `--latest` 选择，但不会追溯改写已经结束进程的退出状态或已归档 JUnit；已发布 Run 没有受支持的编辑 API。
 
 ## 边界
 

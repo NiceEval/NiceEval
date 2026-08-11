@@ -1,15 +1,15 @@
 # Assertion 与 Turn 的展示
 
-<code>exp</code>、<code>show</code> 与 <code>view</code> 呈现同一份 assertion、Verdict 和诊断值。终端反馈只服务当前进程；停稳后的 Sample 保留核心和分母，ReportPlan 再声明需要读取的业务通道。
+`exp`、`show` 与 `view` 呈现同一份 assertion、Verdict 和诊断值。终端反馈只服务当前进程；frozen reader 形成的 Sample 保留核心和分母，ReportPlan 再声明需要读取的业务通道。
 
 ## 两种信息密度
 
 | 入口 | 目的 | 显示内容 |
 |---|---|---|
-| <code>exp</code> 的完成反馈和列表页 | 快速定位问题 | Verdict、首个相关错误或 Assertion 摘要，以及其余数量。 |
-| <code>show</code>、<code>view</code> 的 Attempt 详情 | 解释本次 Attempt | 所有 Assertion、分组、材料预览、诊断、usage、timing、conversation 与 diff 的可用部分。 |
+| `exp` 的完成反馈和列表页 | 快速定位问题 | Verdict、首个相关错误或 Assertion 摘要，以及其余数量。 |
+| `show`、`view` 的 Attempt 详情 | 解释本次 Attempt | 所有 Assertion、分组、材料预览、诊断、usage、timing、conversation 与 diff 的可用部分。 |
 
-通过项在概要中不逐条展开。详情页按 <code>groupPath</code> 和声明顺序展示所有条目，并保留 <code>unavailable</code>。
+通过项在概要中不逐条展开。详情页按 `groupPath` 和声明顺序展示所有条目，并保留 `unavailable`。
 
 ## 概要选择
 
@@ -18,11 +18,11 @@
 概要按以下顺序选择一条主要说明：
 
 1. 执行错误或 Runner 诊断。
-2. 使 Verdict 为 <code>errored</code> 的非 optional unavailable Assertion。
-3. 使 Verdict 为 <code>failed</code> 的首个 gate；strict policy 下可选择首个相关 soft。
+2. 使 Verdict 为 `errored` 的非 optional unavailable Assertion。
+3. 使 Verdict 为 `failed` 的首个 gate；strict policy 下可选择首个相关 soft。
 4. 计分制中首个丢分的条目。
 
-其它相关条目显示为数量，例如 <code>+2 more</code>。概要不从 Assertion 名称拼接长列表，也不把未知、未采集或损坏数据隐藏为通过。
+其它相关条目显示为数量，例如 `+2 more`。概要不从 Assertion 名称拼接长列表，也不把未知、未采集或损坏数据隐藏为通过。
 
 ## 单条 Assertion
 
@@ -33,15 +33,15 @@ gate  package manifest has the required entry
       includes("exports") · expected match · received missing
 ~~~
 
-- 标题优先使用分组路径；没有分组时使用 <code>name</code>。
-- <code>decision</code>、派生的行状态、<code>detail</code> 和可用的 expected / received 进入同一条或相邻文本行。
-- <code>gate</code> 与 <code>soft</code> 按 <code>score &gt;= threshold</code> 显示 passed 或 failed；<code>observe</code> 只显示 score，不补猜行状态。
-- <code>result.state: "unavailable"</code> 显示 <code>reason</code> 和证据摘要，不显示零分、失败值或实得分。
-- conditional award 显示 available 与由 <code>available * score</code> 派生的实得分；direct score 显示持久化 points。
+- 标题优先使用分组路径；没有分组时使用 `name`。
+- `decision`、派生的行状态、`detail` 和可用的 expected / received 进入同一条或相邻文本行。
+- `gate` 与 `soft` 按 `score >= threshold` 显示 passed 或 failed；`observe` 只显示 score，不补猜行状态。
+- `result.state: "unavailable"` 显示 `reason` 和证据摘要，不显示零分、失败值或实得分。
+- conditional award 显示 available 与由 `available * score` 派生的实得分；direct score 显示持久化 points。
 
 source 信息存在时，详情页链接到项目相对路径和行列。没有 source 的条目进入 unmapped 区，不猜测源码位置。
 
-<code>stopOnFailure</code> 是 producer 控制流，不进入稳定投影。若停止后续测试本身需要解释，由独立 diagnostic 或 run fact 表达，Assertion 详情不从条目反推。
+`stopOnFailure` 是 producer 控制流，不进入稳定投影。若停止后续测试本身需要解释，由独立 diagnostic 或 run fact 表达，Assertion 详情不从条目反推。
 
 ## Turn、conversation 与相关通道
 

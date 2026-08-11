@@ -59,7 +59,7 @@ Judge 适合语义质量，不适合替代所有确定性断言。能精确检�
 <Verdict
   title="这四条断言折成一个判定"
   hint="勾掉一条看判定怎么变"
-  note={<>严重度只管判定怎么传播，不改变 <code>test()</code> 的控制流。后面的代码依赖这条断言时，链 <code>.stopOnFailure()</code>，或者用值断言的简写 <code>t.require()</code>。</>}
+  note={<>严重度只管判定怎么传播，不改变 `test()` 的控制流。后面的代码依赖这条断言时，链 `.stopOnFailure()`，或者用值断言的简写 `t.require()`。</>}
   rows={[
     { sev: "gate", name: 't.calledTool("get_weather")', note: "作用域断言默认 gate" },
     { sev: "gate", name: 't.check(t.reply, includes("Brooklyn"))', note: "includes 自带的严重度就是 gate" },

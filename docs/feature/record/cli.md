@@ -1,92 +1,105 @@
 # Record CLI
 
-bundled CLI 的默认 Record root 是 <code>&lt;project&gt;/.niceeval/record/</code>。传入 <code>--record</code> 时，参数就是实际 Record root；CLI 不补接任何子目录。
+默认 durable Record root 是 `<project>/.niceeval/record/`。传入 `--record <root>` 时，该参数就是实际 Record root；CLI 不补接子目录。local sidecar 按 canonical root 自动映射到 sibling `.niceeval-local/<recordKey>/`，没有单独的 `--local-root`。
 
-所有会打开 Record 的命令都要求目录停稳。reader 从 analysis projector 开始到 <code>buildReportInput()</code> 完成持有跨进程 operation lock；它不与 session 或受控编辑并发。释放后的 Report execute、server 与静态站写入不再访问 Record，也不阻止下一项 root 操作。
+## 命令访问矩阵
 
-## 选择 Run
+| 命令 | durable Record | local cache | writer session / lock |
+|---|---|---|---|
+| `niceeval show` | 只读 | 可 best-effort 读写 | 不创建 / 不取得 |
+| `niceeval view` | 每轮 rebuild 只读 | 可 best-effort 读写 | 不创建 / 不取得 |
+| `niceeval exp --dry` | 只读 | 可 best-effort 读写 | 不创建 / 不取得 |
+| `niceeval exp` | 读取 frozen view，发布新 Run | 允许 | 创建 / 独占 writer lock |
+| `niceeval record recover` | 仅 commit-only publish 或零修改 | 不依赖 | 独占 writer lock |
+| `niceeval record abandon` | 不修改 | 删除一个具名 session | 独占 writer lock |
 
-<code>show</code> 和 <code>view</code> 只通过具名 analysis projector 形成 `AnalysisSample`。它们不接受独立 Attempt selector。
+“只读”指不写 durable Record，也不创建可恢复 session。cache 写失败、竞争或权限不足不能让前三条命令失败，也不能改变输出。它们可以和 `niceeval exp` 并发。
+
+同一 root 同时最多一条写命令。第二个 `exp`、`recover` 或 `abandon` 以 `record-writer-busy` 失败；它不等待、不接管，也不读取另一个 writer 的 build 目录。
+
+## show 与 view
+
+`show` 和 `view` 只通过具名 analysis projector 形成 `AnalysisSample`，不接受绕开已选 Run 的独立 Attempt selector。
 
 ```text
 niceeval show --run <runId> [--run <runId> ...]
-niceeval show --latest
+niceeval show --latest [--experiment <id> ...]
 niceeval view --run <runId> [--run <runId> ...]
-niceeval view --latest
+niceeval view --latest [--experiment <id> ...]
 ```
 
-<code>--run</code> 可重复，每次增加一个显式 Run；重复 identity 去重。
+`--run` 映射到 `explicit-runs/v1`，`--latest` 映射到 `latest/v1`。完整排序、malformed candidate 与错误规则由 [Sample Library](../sample/library.md#分析投影器) 定义；CLI 不维护第二份选择算法。
 
-<code>--run</code> 映射到 `explicit-runs/v1`，<code>--latest</code> 映射到 `latest/v1`。完整排序、候选穷尽与错误规则只由 [Sample Library](../sample/library.md#分析投影器) 定义；Record CLI 不再维护第二份选择算法。
-
-<code>--latest --experiment &lt;id&gt;</code> 把具名 Experiment 放入 projector 的完整目标集合。显式 <code>--run</code> 不读取未选择 Run 的内容；此时 <code>--experiment</code> 只在形成 `AnalysisSample` 后收窄。
-
-Run identity、slot identity 和路径都先经 reader 验证。Attempt 详情是已选 `AnalysisSample` 中的参数化 Report page，例如 <code>--run &lt;runId&gt; --page attempt-&lt;attemptId&gt;</code>；它不能越过 `AnalysisSample` 直接打开任意 Attempt。CLI 不从目录名称、显示文本或时间猜测目标。
-
-## show 与 view 的接线
-
-<code>show</code> 与 <code>view</code> 共用同一条数据路径。
+一次调用的数据路径固定为：
 
 ```text
-RecordReader
+RecordReader(frozen candidateSet)
     ↓
-core-only AnalysisSample → ReportPlan
+AnalysisSample + frozen dependencyClosure → ReportPlan
     ↓
 composition adapter → ReportInput
-    ↓
-ReportExecution
-    ↓
-terminal output or web page
+    ↓ dispose reader
+ReportExecution → terminal / web
 ```
 
-<code>show</code> 选择适用的 detail，并将 unavailable 与 unsupported 原样展示。<code>view</code> 消费相同的 ReportExecution。只有 composition adapter 接收 reader；Report runtime 从不打开 Record 路径。
+Attempt detail 只能由已选 `AnalysisSample` 的 Member 建立，例如 `--run <runId> --page attempt-<attemptId>`。carried/accepted Attempt 的 origin 由受限 dependency closure 读取；origin 不加入 latest candidates 或 Sample 分母。
 
-页面遇到被请求的 invalid 通道时失败，并显示具名 issue。被请求的 unavailable 或 unsupported 通道保留为可见状态；它们不被渲染成零、空数组或失败 Verdict。
+`show` 一次打开一个 reader。`view` 每次配置或页面数据 rebuild 都先 dispose 上一轮 execution、ReportInput 与 reader，再打开新的 frozen view；单轮渲染不随并发 publish 改变。weak scan 可能漏掉刚发布的 Run，下一轮 rebuild 才可能看见。
 
-未请求的未知或 invalid 通道不会阻止无关 detail、`AnalysisSample` 或静态 Report export。未知 event 造成的 partial decoding 也必须作为局部信息呈现。
+页面请求到 unavailable 或 unsupported fact 时显示对应状态。请求到 invalid 时只让相关页面失败并列出 issue；未请求的未知 schema 不阻止其它页面。Report runtime 不打开 Record 路径。
 
-## root 与格式反馈
+## exp 与 dry run
 
-CLI 将以下问题分开反馈：
+`niceeval exp` 在任何模型、Sandbox、外部命令或付费调用前完成 Record storage capability preflight，并取得 writer lock。随后创建一个 `RecordWriteSession`，以它的 frozen `view` 运行 execution projector，在 local session 形成完整 Run，最后逐 Run seal 和发布。
 
-| code | 含义 | 下一步 |
+一次 Invocation 的多个 Run 分别原子发布，不构成一个事务。读者可以只看见其中一部分，但不会看见半个 Run。命令结束时返回 `InvocationReceipt`；详情仍由 `show` 或 `view` 按 `runIds` 读取。
+
+`niceeval exp --dry` 不建立 Invocation、不创建 Record、不取得 writer lock，也不做昂贵工作。Record 已存在时，它用同一个 projector 的只读路径显示 policy、effective options、reuse 与 gap。Record 不存在时，它把历史视为显式的 empty source，并说明正式 `exp` 将初始化 root；它不能为了预览先创建 `.niceeval/record/` 或 sidecar session。
+
+## Crash recovery
+
+普通 `exp` 发现一个或多个遗留 session 时返回 `record-recovery-required`，逐项列出 session ID 与可安全识别的状态；它不按时间选择“最新”现场。
+
+sealed session 只允许 commit-only recovery：
+
+```text
+niceeval record recover --record <root> --session <sessionId> --commit-only
+```
+
+命令按 [recovery crash matrix](architecture.md#recovery-manifest-与-crash-matrix) 重新校验 source、destination 与完整 manifest。它只完成原先已经 sealed 的 directory rename、fsync、destination revalidation 和 local cleanup，不恢复模型、Sandbox、外部命令或 projector。
+
+building-only、损坏、未知 future schema 或用户不再需要的 session 可以显式 abandon：
+
+```text
+niceeval record abandon --record <root> --session <sessionId>
+```
+
+`abandon` 只删除精确 session ID 的 no-follow local directory，永不修改 durable Record。未知 session schema 不能自动 resume 或 clean，但允许用户在看到诊断后显式 abandon。多个遗留 session 必须逐个处理。
+
+destination 已 durable、local cleanup 未完成时，recover 明确显示 `durable: true` 与 `localCleanup: pending`。后续 writer 继续失败，直到再次 recover 删除 local 现场或用户 abandon 该现场；不能把 cleanup 失败说成 Run 未提交。
+
+Record 没有 `record edit`、`record delete` 或按 orphan 猜测的 `clean` 命令。已发布 Run immutable；local recovery 只使用上面两个具名 session 命令。
+
+## 反馈与下一步
+
+| code / state | 含义 | 下一步 |
 |---|---|---|
-| <code>record-root-missing</code> | 指定 root 不存在 | 检查项目或 <code>--record</code> |
-| <code>record-root-busy</code> | 同一 root 正被另一项操作使用 | 等它结束，或指定其它 Record root |
-| <code>record-operation-lock-unsupported</code> | 当前平台无法提供所需跨进程互斥 | 换用支持的本地文件系统或平台 |
-| <code>record-format-invalid</code> | 根文件不是 <code>niceeval.record</code> | 指向正确的 Record root |
-| <code>record-core-invalid</code> | 根级 <code>record.json</code> 或保留布局无效 | 修复根文件与具名 issue |
-| <code>sample-latest-indeterminate</code> | 某个 Run 损坏，无法穷尽 latest 候选 | 修复具名 Run 或显式选择 |
-| <code>sample-run-membership-invalid</code> | 已选 Run 有 expected slots 之外的 Member | 修复该 Run 的 members 目录 |
-| <code>CoreRead.invalid</code> | Run、Member 或 Attempt 核心无效 | 按 `AnalysisSample` slot 中的具名 issue 修复 |
-| <code>ChannelRead.invalid</code> | 页面需要的通道无效 | 按其中的 issue 修复具名 descriptor 或文件 |
+| `record-root-missing` | `show` / `view` 的 root 不存在 | 检查项目或 `--record` |
+| `record-format-unsupported` | 根文件不是 reader 支持的完整格式 ID | 指向正确 root 或使用支持该格式的 reader |
+| `record-core-invalid` | root、Run 或核心引用无效 | 按具名 path 与 issue 修复外部损坏 |
+| `record-writer-busy` | 同一 root 已有 writer | 等该写命令结束；reader 仍可并发 |
+| `record-recovery-required` | lock 已释放但有遗留 session | 逐个 `recover --commit-only` 或 `abandon` |
+| `record-session-schema-unsupported` | local session 来自未来/未知格式 | 检查后只可显式 `abandon` |
+| `record-storage-capability-unsupported` | 文件系统缺少发布所需原语 | 换用支持 lock、fsync 与 no-replace rename 的本地文件系统 |
+| `record-publish-ambiguous` | source 与 destination 同时存在 | 保留现场，不认作成功 |
+| `record-publish-outcome-unknown` | source 与 destination 都不存在 | 保留诊断，不认作成功 |
+| `record-publish-invalid` | 任一现存目录不匹配 manifest | 保留全部现场，检查损坏或碰撞 |
+| `sample-latest-indeterminate` | malformed candidate 让 latest 无法穷尽 | 修复具名 entry 或显式选择 |
+| `ChannelRead.unsupported` | reader 不认识被请求 schema | 升级 reader；其它 facts 仍可读 |
+| `ChannelRead.invalid` | descriptor/payload/blob 损坏 | 按 channel issue 处理 |
 
-## 受控编辑、删除与 clean
+## Copy、Git 与分享
 
-<code>niceeval record edit</code> 在整个 editor subprocess 生命周期内持有 operation lock。它把精确 Record root 作为工作目录交给编辑器；编辑器退出后不自动修补数据，下一次 reader 仍按 schema、路径和引用规则验证。
+durable portable boundary 是整个 Record root。执行 `cp`、backup、Git checkout 或 merge 前，先停止该 root 的 writer、reader 与外部编辑；普通文件复制不是运行中原子快照。操作后重新运行 `show` 或专用验证入口，不能从 Git 冲突解决结果推断引用仍有效。
 
-```text
-niceeval record edit --record <record-root>
-niceeval record delete --record <record-root> --run <runId>
-```
-
-<code>record delete</code> 先做完整反向引用预检。目标 Run 的 Attempt 仍被其它 Member 引用时，以 <code>record-delete-referenced</code> 失败且零写入。直接绕过命令删除文件可以形成 dangling reference；后续读取会把它报告为 invalid。
-
-owner-aware <code>clean</code> 删除明确指定的临时目录或 unanchored Attempt。
-
-<code>clean</code> 只删除明确指定 writer 的临时目录。
-
-```text
-niceeval clean --record <record-root> --writer <writerId>
-niceeval clean --record <record-root> --attempt <attemptId> [--attempt <attemptId> ...]
-```
-
-命令先取得 operation lock，再穷尽扫描目标。<code>--writer</code> 只检查和删除 <code>.tmp/&lt;writerId&gt;</code> 与同 owner 的 sibling create temp。<code>--attempt</code> 只删除没有 origin 反向锚且没有 Member 引用的具名 Attempt。命令不扫描并删除其它 owner，也不把较旧的正式数据当作缓存回收。
-
-无法确认 owner、路径不合法或目标不是 orphan 时，命令失败并保留现场。active writer 会让命令在加锁阶段以 <code>record-root-busy</code> 失败。正常 writer 退出应自行删除其临时目录；clean 只处理崩溃遗留。
-
-## Invocation 收尾
-
-Runner 建立 Invocation 后，通过 <code>InvocationReceipt</code> 返回 invocation identity、Run identity、起止时间和 completion。CLI 不把 locator、Verdict、usage、cost 或计数复制进 receipt。
-
-用户需要运行细节时，使用 <code>show</code> 或 <code>view</code> 重新读取停稳 Record。静态分享使用 Reports 的自包含 export，而不是从一个 Record 向另一个 Record 传输目录。
+`.niceeval-local/` 必须忽略，不随 root 复制或提交。整个 Record 纳入 Git 时先检查 conversation、sources、commands、diff 与 blobs 是否含敏感信息，并评估历史体积和 binary blobs。只分享选定页面或读数时使用自包含静态 Report，不复制局部 Run/channel 伪装成 Record。

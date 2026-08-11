@@ -8,24 +8,24 @@ Record、analysis projection、execution projection 和 Reports 正在采用新�
 
 | 目标行为 | 当前源码区域 |
 |---|---|
-| argv 读取、命令分派、退出状态与项目初始化 | <code>src/cli.ts</code> |
-| Eval 与 Experiment 发现 | <code>src/runner/discover.ts</code>、<code>src/runner/eval-selection.ts</code> |
-| 调度、并发、锁、budget、carry 与 Attempt 生命周期 | <code>src/runner/{run,attempt,fingerprint,lock,timeout}.ts</code> |
-| Sandbox 选择、准备、复用与收尾 | <code>src/runner/{sandbox-*,build-preparation,teardown-registry}.ts</code> 与 <code>src/sandbox/</code> |
-| 当前进程的 human / JSON 反馈 | <code>src/runner/feedback/</code> |
-| <code>accept</code> 和 Experiment rename 的命令接线 | <code>src/runner/{accept,rename-experiment}.ts</code>、<code>src/cli.ts</code> |
+| argv 读取、命令分派、退出状态与项目初始化 | `src/cli.ts` |
+| Eval 与 Experiment 发现 | `src/runner/discover.ts`、`src/runner/eval-selection.ts` |
+| 调度、并发、锁、budget、carry 与 Attempt 生命周期 | `src/runner/{run,attempt,fingerprint,lock,timeout}.ts` |
+| Sandbox 选择、准备、复用与收尾 | `src/runner/{sandbox-*,build-preparation,teardown-registry}.ts` 与 `src/sandbox/` |
+| 当前进程的 human / JSON 反馈 | `src/runner/feedback/` |
+| `accept` 和 Experiment rename 的命令接线 | `src/runner/{accept,rename-experiment}.ts`、`src/cli.ts` |
 
-这些区域需要把业务事实写到新的 Run / Attempt channel 边界，并只返回 [Invocation receipt](feature/record/library.md#writer) 所需字段。
+这些区域需要把业务事实写到新的 Run / Attempt channel 边界，并只返回 [Invocation receipt](feature/record/library.md#recordwritesession) 所需字段。
 
 ## Assertions、Verdict 与执行失败
 
 | 目标行为 | 当前源码区域 |
 |---|---|
-| 值、作用域、Judge、diff 与证据需求 | <code>src/assertions/</code> |
-| Eval context、send、会话和重试 | <code>src/context/</code> |
-| Adapter 的原始流、usage 与 telemetry 适配 | <code>src/agents/</code> |
-| 四态 Verdict 折叠 | <code>src/shared/verdict.ts</code> |
-| 执行失败分类与停止派发 | <code>src/context/{send-failures,send-retry}.ts</code>、<code>src/runner/</code> |
+| 值、作用域、Judge、diff 与证据需求 | `src/assertions/` |
+| Eval context、send、会话和重试 | `src/context/` |
+| Adapter 的原始流、usage 与 telemetry 适配 | `src/agents/` |
+| 四态 Verdict 折叠 | `src/shared/verdict.ts` |
+| 执行失败分类与停止派发 | `src/context/{send-failures,send-retry}.ts`、`src/runner/` |
 
 目标 owner 分别是 [Assertions](feature/assertions/architecture.md)、[Verdict](feature/verdict/architecture.md) 和 [执行失败分类](feature/error-classification/architecture.md)。上述源码区域需要以 Attempt-local assertion、verdict 与 diagnostic channels 为输入和输出边界。
 
@@ -33,12 +33,12 @@ Record、analysis projection、execution projection 和 Reports 正在采用新�
 
 | 目标契约 owner | 重构边界 |
 |---|---|
-| [Record](feature/record/README.md) | <code>src/record/</code> 需要收敛到 <code>niceeval.record</code> root、OS operation lock、Run、Member、Attempt、Run source blobs、channel descriptor、reader、writer 与受控 maintenance。不要从现有内部布局推导新的公开文件协议。 |
-| [AnalysisSample](feature/sample/README.md) | <code>src/sample/index.ts</code> 需要以 RecordView 和具名 analysis projector 形成完整分母与四态 slot。 |
-| [Execution projection](feature/experiments/cache.md) | Runner 需要从 ProjectTarget、ExecutionTarget、RecordSession.view 与具名 policy 形成 reuse/gap；planner 只接收 gaps。 |
-| [Reports](feature/reports/README.md) | <code>src/report/</code> 需要只接收 ReportInput；文件读取、origin-run fact 和通道字节规范化留在 composition/reader 边界。 |
-| [Reports CLI](feature/reports/README.md) | <code>src/show/</code> 与 <code>src/view/</code> 需要通过 `AnalysisSample` 和 ReportInput 选择、呈现和 export。 |
-| [静态 export](feature/reports/README.md#自包含静态-export) | <code>src/view/</code> 与 <code>src/report/</code> 需要写出页面、宿主数据、精确 runtime 和资源清单。 |
+| [Record](feature/record/README.md) | `src/record/` 需要实现 durable `niceeval.record/v1` root、sibling local sidecar、lock-free `RecordReader`、单 writer `RecordWriteSession`、whole-Run publish/recovery、Run/Member/Attempt、blobs 与 channel registry。不要以旧 Graph/Store/journal 或现有内部布局推导新的公开协议。 |
+| [AnalysisSample](feature/sample/README.md) | `src/sample/index.ts` 需要以 frozen `RecordReader` 和具名 analysis projector 形成完整分母与四态 slot。 |
+| [Execution projection](feature/experiments/cache.md) | Runner 需要从 ProjectTarget、ExecutionTarget、`RecordWriteSession.view` 与具名 policy 形成 reuse/gap；planner 只接收 gaps。 |
+| [Reports](feature/reports/README.md) | `src/report/` 需要只接收 ReportInput；文件读取、origin-run fact 和通道字节规范化留在 composition/reader 边界。 |
+| [Reports CLI](feature/reports/README.md) | `src/show/` 与 `src/view/` 需要通过 `AnalysisSample` 和 ReportInput 选择、呈现和 export。 |
+| [静态 export](feature/reports/README.md#自包含静态-export) | `src/view/` 与 `src/report/` 需要写出页面、宿主数据、精确 runtime 和资源清单。 |
 
 这里列出的路径是改造入口，不是对新格式模块名称的承诺。实现时以对应 Feature 文档的 owner、输入和不变量为准。
 
@@ -46,9 +46,9 @@ Record、analysis projection、execution projection 和 Reports 正在采用新�
 
 | 目标行为 | 当前源码区域 |
 |---|---|
-| Eval 与公开定义类型 | <code>src/{index,types}.ts</code>、<code>src/eval/</code> |
-| Agent 与 Adapter public API | <code>src/agents/</code>、<code>src/adapters/</code> |
-| Sandbox provider 与生命周期 | <code>src/sandbox/</code> |
-| Report text / web 组件与静态资源 | <code>src/report/{definition,components,assets,runtime}.ts</code>、<code>src/view/</code> |
+| Eval 与公开定义类型 | `src/{index,types}.ts`、`src/eval/` |
+| Agent 与 Adapter public API | `src/agents/`、`src/adapters/` |
+| Sandbox provider 与生命周期 | `src/sandbox/` |
+| Report text / web 组件与静态资源 | `src/report/{definition,components,assets,runtime}.ts`、`src/view/` |
 
 修改任一公共行为前，先回到对应 Feature 入口确认契约，再用本页定位影响面。

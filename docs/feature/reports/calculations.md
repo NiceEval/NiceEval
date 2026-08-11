@@ -6,12 +6,12 @@ Calculation 把 ReportInput 中已计划并读取的 facts 变成读数。它不
 
 每个 Calculation 必须给出四项：
 
-1. <code>id</code>；
-2. <code>inputs</code> 中所有 required facts；
-3. <code>completeness</code> policy；
+1. `id`；
+2. `inputs` 中所有 required facts；
+3. `completeness` policy；
 4. 使用哪些 `AnalysisSample` slot，以及如何形成 observed 与 denominator。
 
-页面直接读取通道时同样列出 <code>inputs</code>。不允许先在 render 中取到一个对象，再按对象字段决定临时读取另一个通道。
+页面直接读取通道时同样列出 `inputs`。不允许先在 render 中取到一个对象，再按对象字段决定临时读取另一个通道。
 
 ```ts
 const checked = defineJsonFact({
@@ -48,18 +48,18 @@ const checkedCount = defineCalculation({
 });
 ```
 
-上述值在页面写作 <code>20 / 100 · partial</code>。<code>20</code> 是 observed，<code>100</code> 是 `AnalysisSample` 分母；两者不可互换。
+上述值在页面写作 `20 / 100 · partial`。`20` 是 observed，`100` 是 `AnalysisSample` 分母；两者不可互换。
 
 ## 完整度 policy
 
 | policy | 可计算条件 | 输出要求 |
 |---|---|---|
-| <code>allowPartial</code> | 已成功解码的 facts 足以执行公式。 | 保留 <code>partial</code>、observed、denominator 和 issues。 |
-| <code>requireComplete</code> | 每个 required fact 的持久采集与本次解码均完整。 | 任一输入不完整、unavailable 或 unsupported 时返回 unavailable。 |
+| `allowPartial` | 已成功解码的 facts 足以执行公式。 | 保留 `partial`、observed、denominator 和 issues。 |
+| `requireComplete` | 每个 required fact 的持久采集与本次解码均完整。 | 任一输入不完整、unavailable 或 unsupported 时返回 unavailable。 |
 
 invalid 不是可选的不足数据。已请求 invalid 通道使该 Calculation 的输入失败，并显示 Record 给出的具名 issue。没有请求它的 Calculation 不读取也不受影响。
 
-<code>allowPartial</code> 不允许把已解码子集伪装成完整总体。<code>requireComplete</code> 不允许用零、<code>null</code> 或空数组代替 unavailable。
+`allowPartial` 不允许把已解码子集伪装成完整总体。`requireComplete` 不允许用零、`null` 或空数组代替 unavailable。
 
 ## 分母与 slot 状态
 
@@ -67,22 +67,22 @@ invalid 不是可选的不足数据。已请求 invalid 通道使该 Calculation
 
 | slot 状态 | 对 observed 的影响 | 对 denominator 的影响 |
 |---|---|---|
-| <code>included</code> 且输入可用 | 可按公式计入。 | 计入。 |
-| <code>included</code> 且输入 partial | 仅 <code>allowPartial</code> 可把成功部分计入。 | 计入。 |
-| <code>not-recorded</code> | 不计入 observed。 | 计入。 |
-| <code>invalid</code> | 不计入 observed，并保留 issue。 | 计入。 |
-| <code>excluded</code> | 不计入。 | 不属于收窄后的分母。 |
+| `included` 且输入可用 | 可按公式计入。 | 计入。 |
+| `included` 且输入 partial | 仅 `allowPartial` 可把成功部分计入。 | 计入。 |
+| `not-recorded` | 不计入 observed。 | 计入。 |
+| `invalid` | 不计入 observed，并保留 issue。 | 计入。 |
+| `excluded` | 不计入。 | 不属于收窄后的分母。 |
 
 pairwise Calculation 还要声明配对键与同时可比较的 slot 条件。任一侧缺少 required fact 时，pair 不能被无声丢弃；结果说明未形成 pair 的数量和原因。
 
 ## 采集完整度与解码完整度
 
-<code>ChannelRead</code> 里的两条完整度轴表达不同事实：
+`ChannelRead` 里的两条完整度轴表达不同事实：
 
 - 持久采集完整度说明 Record 写入的集合是 complete、partial 还是 unavailable。
 - 解码完整度说明本次 decoder 成功读取了多少既有内容。
 
-Calculation 不合并这两条状态。任一轴 partial 都要求 <code>allowPartial</code> 的显式标记，或使 <code>requireComplete</code> unavailable。unknown event 造成的解码 partial 不能改写持久采集完整度；未采集也不能伪装成 decoder 错误。
+Calculation 不合并这两条状态。任一轴 partial 都要求 `allowPartial` 的显式标记，或使 `requireComplete` unavailable。unknown event 造成的解码 partial 不能改写持久采集完整度；未采集也不能伪装成 decoder 错误。
 
 ## 报告旁算法
 

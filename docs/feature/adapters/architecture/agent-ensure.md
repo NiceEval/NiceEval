@@ -236,7 +236,7 @@ Agent ensure 静态身份进入 config identity；pair-owned ProviderPlan 进入
 改任务 Dockerfile 只重建 Sandbox、不动 Agent 配置;改 Agent 版本只改变 ensure identity 与 staged payload activity,不重建任务 BuildKey。
 两种变化都触发重跑,但不强制发布二者笛卡尔积的预构建输出——同一份任务构建输出可以被多个 Agent experiment 消费,每个 Agent 在主 Sandbox 内自行 探测 或安装。
 
-探测命中还是本次安装写入 Attempt-owned <code>niceeval.agent-ensure</code> event channel，用于核对声明身份是否兑现；运行事实不能反过来替代 eligibility identity。
+探测命中还是本次安装写入 Attempt-owned `niceeval.agent-ensure` event channel，用于核对声明身份是否兑现；运行事实不能反过来替代 eligibility identity。
 没有精确版本的 `latest` 安装不参与可携带结果:内置安装层不提供这条模式,ensure 声明无法给出稳定 identity 时启动期报错。
 
 ## 构建期与运行时的关系

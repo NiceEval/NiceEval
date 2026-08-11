@@ -11,16 +11,18 @@ CLI 的命令与 flag 另见 [CLI](cli.md)，但沿用同一条调用点清晰�
 API 应让第一次使用它的人在调用处看出“这一步要什么、会发生什么、得到什么”：
 
 ```ts
-const sample = await (async () => {
-  await using record = await openRecordReader({ root });
-  return projectExplicitRuns(record, { runIds });
-})();
+const sample = yield* Effect.scoped(
+  Effect.gen(function* () {
+    const reader = yield* openRecordReader({ root });
+    return yield* projectExplicitRuns(reader, { runIds });
+  }),
+);
 const trimmed = narrowAnalysisSample(sample, {
   experimentIds: ["compare/baseline"],
 });
 ```
 
-`openRecordReader` 表明它打开一个停稳 Record 的读取面，`projectExplicitRuns` 表明它用具名算法形成 `AnalysisSample`，`narrowAnalysisSample` 表明它只收窄既有内存值。名字不需要重复文件扫描或集合遍历步骤。
+`openRecordReader` 表明它在当前 Effect Scope 打开 frozen 读取面，`projectExplicitRuns` 表明它用具名算法形成 `AnalysisSample`，`narrowAnalysisSample` 表明它只收窄既有内存值。名字不需要重复文件扫描或集合遍历步骤。
 
 清晰优先于简短，但长度不是清晰的替代品。
 名字变长若能消除相邻 API 的实质歧义，就保留必要词；模块、参数和返回类型已经表达的信息不重复。
@@ -49,7 +51,7 @@ const trimmed = narrowAnalysisSample(sample, {
 |---|---|---|
 | 执行动作或产生副作用 | 动词短语 | `exportStaticReport`、`runEvals` |
 | 打开、加载或读取外部资源 | `openX` / `loadX` / `readX` | `openRecordReader`、`loadYaml` |
-| 创建运行时对象 | `createX` | `createAgentSession`、`createRecordSession` |
+| 创建普通运行时值 | `createX` | `createAgentSession`、`createReportScope` |
 | 声明并校验定义 | `defineX` | `defineEval`、`defineExperiment` |
 | 返回逻辑视图或派生值 | 结果名或准确的计算动词 | `estimateCost` |
 | 判断条件 | `isX` / `hasX` / `canX` | `isDefined`、`hasSections` |
@@ -162,31 +164,30 @@ getSampleSummary(...);      // 差：get 没增加可观察语义
 因此 `latest` 不能只靠日常语感表示“最好用的当前结果”，`current` 也不能暗中表示“时间最大的 Run”。
 出处差异若不改变用户决策，就只保留为明细事实；不得因为实现能区分，就增加筛选器、转换或公开状态。
 
-`Record` 本身不是一次隐含的“最新结果”。它是可编辑事实数据集。分析既有事实时，API 通过具名 analysis projector 产生带 expected-slot 分母的 `AnalysisSample`；unfinished Run 只能由 `explicit-runs/v1` 选择。这种明确成员范围称为有效选择（Effective selection）。当前目标的复用与执行缺口由独立 execution projector 产生，不能从 `AnalysisSample` 推导。
+`Record` 本身不是一次隐含的“最新结果”。它是由 immutable Run 构成的持久事实集。分析既有事实时，API 通过具名 analysis projector 产生带 expected-slot 分母的 `AnalysisSample`。这种明确成员范围称为有效选择（Effective selection）。当前目标的复用与执行缺口由独立 execution projector 产生，不能从 `AnalysisSample` 推导。
 
 ## Record 与 Report 的调用形状
 
 Record root、选择与静态 Report target 都必须在调用点可见：
 
 ```ts
-const report = await loadReportDefinition(reportModule);
-let plan: ReportPlan;
-let input: ReportInput;
-{
-  await using record = await openRecordReader({ root });
-  const sample = await projectExplicitRuns(record, { runIds });
-  const scope = createReportScope(sample);
-  plan = report.plan(scope);
-  input = await buildReportInput({ record, sample, plan });
-}
+const report = yield* loadReportDefinition(reportModule);
+const input = yield* Effect.scoped(
+  Effect.gen(function* () {
+    const reader = yield* openRecordReader({ root });
+    const sample = yield* projectExplicitRuns(reader, { runIds });
+    const plan = report.plan(createReportScope(sample));
+    return yield* buildReportInput({ reader, sample, plan });
+  }),
+);
 
-const execution = executeReport({ definition: report, plan, input });
-await exportStaticReport({ execution, out: target });
+const execution = executeReport({ definition: report, input });
+yield* exportStaticReport({ execution, out: target });
 ```
 
 `openRecordReader` 接收实际 Record root，不暗中补路径。`buildReportInput` 是唯一 Record→Reports composition boundary；Report 定义、renderer、view 与 export runtime 不接收 reader 或路径。用户代码只在纯 `plan()` 与一次 `executeReport()` 运行；execute 让每个 custom parser 和 consumer 各执行至多一次。静态 export 只写 execution 的既有结果与内建 runtime。
 
-Record 不提供 mirror、proof、revision 或防伪 API。需要修改业务数据时，用户可以在停稳目录中直接编辑；结构和引用校验只拒绝自相矛盾的数据。
+Record 不提供局部 edit/delete、mirror、proof、revision 或防伪 API。业务演进通过新的 channel schema 与 decoder 进入；已发布 Run 不再修改。
 
 ## 可观察的选择差异必须进入公开形状
 
@@ -211,14 +212,14 @@ Record 不提供 mirror、proof、revision 或防伪 API。需要修改业务数
 | 形状 | 使用条件 |
 |---|---|
 | `record.operation()` | 操作只导航或读取 Record 已有核心与通道 |
-| `operation(record)` 从 `niceeval/sample` 导出 | 操作根据 RecordView 派生 `AnalysisSample`，并引入具名 analysis policy 与分母判断 |
+| `operation(reader)` 从 `niceeval/sample` 导出 | 操作根据 frozen `RecordReader` 派生 `AnalysisSample`，并引入具名 analysis policy 与分母判断 |
 | `sample.operation()` | 操作依赖既有 `AnalysisSample` 语义，且仍返回或观察同一领域对象 |
 | `sample.pipe(operator())` | 多个不可变转换需要顺序组合，并共享 `AnalysisSample → AnalysisSample` 形状 |
 
 “方法更短”或“自由函数更函数式”都不是理由。
 若操作跨越领域层，模块归属应让这个边界在 import 和调用点可见。
 按此规则，从 Record 推导 `AnalysisSample` 的官方 projectors 属于 `niceeval/sample` 的自由函数。
-`projectExplicitRuns(recordView, input)` 与 `projectLatestRuns(recordView, input)` 不长在 Record 上，也不能退化成传 root 字符串的隐式读取。
+`projectExplicitRuns(reader, input)` 与 `projectLatestRuns(reader, input)` 不长在 Record 上，也不能退化成传 root 字符串的隐式读取。
 
 ## 选择函数与判别字段共用语义词根
 
@@ -298,9 +299,9 @@ makeEval({ ... });    // 差：make 没说明定义、验证还是执行
 ### 打开事实与读取文件
 
 ```ts
-await using record = await openRecordReader({ root }); // 好：打开停稳 Record 的读取面，并在作用域结束时释放
-getResults(root);                                      // 差：Results 指代不明，get 也没交代资源边界
-loadRecord(root);                                      // 差：若返回 reader，load 会错误暗示已经完整读入
+const reader = yield* openRecordReader({ root }); // 好：打开当前 Scope 拥有的 frozen 读取面
+getResults(root);                                 // 差：Results 指代不明，get 也没交代资源边界
+loadRecord(root);                                 // 差：若返回 reader，load 会错误暗示已经完整读入
 ```
 
 `open` 与 `load` 的差别是可观察契约，不是措辞喜好。

@@ -22,7 +22,7 @@ niceeval exp <experiment-prefix> --dry [--json]
 
 ### `--dry`
 
-`--dry` 在停稳 Record 上运行 `project-target/v1`，展示 policy identity、effective options，以及每个目标成员的 reuse 或 gap：
+`--dry` 用 lock-free frozen reader 运行 `project-target/v1`，展示 policy identity、effective options，以及每个目标成员的 reuse 或 gap：
 
 ```text
 PLAN
@@ -30,7 +30,7 @@ compare/codex  memory/commit0  ordinal 0  reuse/carried @01J8ZK3M6P4T7V9X2C5N8QW
 compare/codex  memory/commit0  ordinal 1  gap: identity-mismatch
 ```
 
-projector 只比较相同 domain 的 identity，并读取自己声明的 `niceeval.verdict`、`niceeval.eligibility` 等事实。缺失、损坏、不支持或 domain 不同都形成带真实 issues 的具名 gap；不会猜成“从未运行”。`--dry` 不建立 Invocation 或写 Record。
+projector 先要求受支持的 eligibility schema 与匹配的 `reuseContract` domain，再比较 input/config identity。缺失、损坏、不支持或 domain 不同都形成带真实 issues 的具名 gap；不会猜成“从未运行”。`--dry` 不建立 Invocation、不写 Record，也不取得 writer lock。
 
 ## `niceeval accept`
 
@@ -80,7 +80,7 @@ Runner 只投影实际生命周期阶段，Adapter、Sandbox provider 与用户 
 | `assertions.evaluate` | evaluating assertions |
 | `sandbox.cleanup` / `sandbox.stop` | releasing sandbox |
 
-Experiment `setup` 与 `teardown` 显示为 Run 范围活动。同一 Record root 已被其它 Invocation 使用时，命令以 <code>record-root-busy</code> 失败；它不等待或重读运行中的 Record。
+Experiment `setup` 与 `teardown` 显示为 Run 范围活动。同一 Record root 已有其它写 Invocation 时，命令以 `record-writer-busy` 失败；它不等待或读取对方 local session。只读命令仍可读取已发布 Run。
 
 ## 结束反馈与 receipt
 
