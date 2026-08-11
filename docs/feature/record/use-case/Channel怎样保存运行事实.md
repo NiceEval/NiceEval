@@ -2,7 +2,7 @@
 
 本用例解释一次运行产生的源码、对话、用量与时间怎样进入 Record。Channel 不是消息队列，也不是运行中的 event bus。
 
-Channel 是挂在一个 Run 或 Attempt owner 下的具名 immutable payload closure。它用 `ChannelSchemaId` 冻结 payload bytes 的 shape 与语义。
+Channel 是挂在一个 Run 或 Attempt owner 下的具名 immutable payload closure。它用 `RecordChannelSchemaId` 冻结 payload bytes 的 shape 与语义。
 
 ## Core 与 Channel 分工
 
@@ -50,7 +50,7 @@ OTLP span 只提供时间轨，不补写行为事件。标准持久输出是归�
 ```text
 RecordReader
   → frozen Run / Attempt owner
-  → ChannelProjector
+  → RecordChannelProjector
   → ChannelProjectionResult<Value>
   → Projection / Report
 ```

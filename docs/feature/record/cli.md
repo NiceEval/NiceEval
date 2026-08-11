@@ -2,7 +2,7 @@
 
 默认 durable root 是 `<project>/.niceeval/record/`。`--record <root>` 直接指定实际 Record root，不再补接子目录。
 
-local sidecar 从 canonical root 自动映射到 sibling `.niceeval-local/<recordKey>/`。sibling 不可写时按 [Architecture 的 Local state 规则](architecture.md#local-state-与只读-root) 落到独立可写位置或只读 lock capability。CLI 不提供 `--local-root`。
+local sidecar 从 canonical root 自动映射到 sibling `.niceeval-local/<recordKey>/`。lock anchor 只有这一个 deterministic 位置，没有按权限动态选择的第二位置；anchor 不可取得时返回 [typed capability failure](architecture.md#local-state-与只读-root)。CLI 不提供 `--local-root`。
 
 ## 命令与锁
 
@@ -119,9 +119,10 @@ niceeval record abandon --record <root> --session <sessionId>
 | `record-recovery-required` | 有遗留 Run publish session | 逐个 recover 或 abandon |
 | `record-sidecar-stale` | root 在同一路径被替换，sidecar lineage 不匹配 | 确认替换原因；显式 abandon 旧现场后重试 |
 | `record-sidecar-recovery-required` | sidecar 有未收敛的 session 现场 | 逐个 recover 或 abandon |
-| `record-sidecar-capability-unsupported` | 无可用 local-state location 且无只读 lock capability | 提供可写 local-state 位置或换平台 |
-| `record-sidecar-permission-denied` | local-state location 权限不足 | 修正目录权限或改用其它位置 |
-| `record-core-invalid` | bootstrap、Core 或引用损坏 | 按具名 path 与 issue 检查外部修改 |
+| `record-sidecar-capability-unsupported` | 唯一 lock anchor 无法创建或无法取得 lease | 提供可写的 anchor 父目录或换平台 |
+| `record-sidecar-permission-denied` | lock anchor 或 manifest 位置权限不足 | 修正目录权限或更换项目位置 |
+| `record-bootstrap-invalid` | `record.json` 探测或完整文档损坏 | 检查外部修改或恢复备份 |
+| `record-core-invalid` | Run、Member 或 Attempt 的核心 identity、目录或引用相互矛盾 | 按具名 path 与 issue 检查外部修改 |
 | `ChannelProjectionResult.unsupported` | 当前 projector 不认识被请求 schema | 升级 consumer；其它 Channel 仍可读 |
 | `ChannelProjectionResult.invalid` | envelope、payload、closure 或 projector contract 无效 | 按该 Channel 的 issues 处理 |
 

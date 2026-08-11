@@ -24,7 +24,7 @@ niceeval.record/vN
   → repeat until current
 ```
 
-Migration capability 只沿相邻 major 转换。每一步先在 local sidecar materialize 完整 target，再用目标版本 exact validator 检查。
+Migration capability 只沿相邻 major 转换。每一步先在 target-volume private sibling 构出完整 target，再用目标版本 exact validator 检查。staging 位于 `.niceeval-staging/<recordKey>/migration-<sessionId>/`，local control sidecar 只放 manifest。
 
 转换可以改变物理目录与 Core 表示，但必须保留：
 
@@ -45,15 +45,19 @@ Migration 取得 exclusive maintenance lease，再取得 source-version writer l
 
 ## 原地 cutover 与恢复
 
-定义 public root 为 `R`，已验证 target 为 `N`，暂存旧 root 为 `O`：
+定义 public root 为 `R`，已验证 target 为 `N`，暂存旧 root 为 `O`。`N` 与 `O` 都在 `.niceeval-staging/<recordKey>/migration-<sessionId>/N|O`：
 
 ```text
-rename R → O
-rename N → R
+phase 1: rename R → O（no-replace，collision → fail closed）
+  manifest phase 1 已 durable 并 fsync
+phase 2: rename N → R（no-replace，collision → fail closed）
+  manifest phase 2 已 durable 并 fsync
 validate R
 fsync R 与 parent
 cleanup O、manifest、intermediate 与 cache
 ```
+
+每次 rename 后按 bottom-up 顺序 fsync：先文件后目录、先叶子后根，再 fsync manifest 所在目录与 source/target parent。
 
 local migration manifest 保存 cutover 现场。进程在任一持久边界中断后，普通 open 返回 `record-migration-recovery-required`。
 

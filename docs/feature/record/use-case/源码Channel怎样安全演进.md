@@ -6,7 +6,7 @@
 
 假设旧 source payload 没有保存一种后来需要的依赖事实。升级后的 NiceEval 不能读取当前 worktree，再把今天的文件写成过去 Run 的事实。
 
-旧 Run、Channel payload 与 blob closure 保持 immutable。新 producer 为未来 Run 发布新的 `ChannelSchemaId`：
+旧 Run、Channel payload 与 blob closure 保持 immutable。新 producer 为未来 Run 发布新的 `RecordChannelSchemaId`：
 
 ```text
 历史 Run → niceeval.sources/vN   保持原样
@@ -32,7 +32,7 @@
 
 | 变化 | 应更新什么 |
 |---|---|
-| source payload bytes 的 shape 或语义 | 新 `ChannelSchemaId` |
+| source payload bytes 的 shape 或语义 | 新 `RecordChannelSchemaId` |
 | typed view 的类型或解释 | 新 projector export / Library API |
 | source discovery 或输入比较语义 | input / behavior identity domain |
 | reuse gate 或接受集合 | reuse identity / policy domain |

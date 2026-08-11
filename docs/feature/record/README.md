@@ -20,8 +20,10 @@ Record Core                    冻结身份、导航、分母、引用和发布�
                                       ▼
 .niceeval/record/              portable、immutable、可进 Git
 
-.niceeval-local/               session、锁、恢复、迁移现场、cache
-                              不属于 Record，不进 Git，不分享
+.niceeval-local/               session manifest、锁、恢复现场（control）
+                               不属于 Record，不进 Git，不分享
+.niceeval-staging/             sealed Run payload、migration N/O
+                               target-volume private sibling，不进 Git
 ```
 
 四层各自拥有版本出口：
@@ -29,7 +31,7 @@ Record Core                    冻结身份、导航、分母、引用和发布�
 | 变化 | 动作 | 不需要变化的层 |
 |---|---|---|
 | 作者 API、matcher 或算法重构，持久语义相同 | 不改磁盘；可观察行为变化时更新 behavior identity | Record Core、Channel schema、Channel projector |
-| 同一事实的 payload shape 或语义改变 | 发布新的 `ChannelSchemaId` | Record Core |
+| 同一事实的 payload shape 或语义改变 | 发布新的 `RecordChannelSchemaId` | Record Core |
 | typed view 的形状或语义改变 | 发布新的 projector export / Library API | 旧 payload 与 Record Core |
 | owner、引用、目录或原子发布公理改变 | 发布新的 `niceeval.record/vN`，再显式迁移 | 旧 Channel payload 的事实内容 |
 
