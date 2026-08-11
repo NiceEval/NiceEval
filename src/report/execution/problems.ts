@@ -1,6 +1,9 @@
 import { Either } from "effect";
 import type { RunId, SlotId } from "../../sample/index.ts";
-import { isComponentId, type ComponentId } from "../author/identity.ts";
+import {
+  isReportComponentId,
+  type ReportComponentId,
+} from "../author/identity.ts";
 
 const reportProblemIdTypeId: unique symbol = Symbol(
   "@niceeval/report/ReportProblemId",
@@ -19,7 +22,7 @@ export interface ReportRecordedDataProblem {
     | "migration-unavailable"
     | "unsupported"
     | "invalid";
-  readonly consumerId: ComponentId;
+  readonly consumerId: ReportComponentId;
   readonly inputKey?: string;
   readonly slotId?: SlotId;
   readonly runId?: RunId;
@@ -37,7 +40,7 @@ export interface ReportExecutionProblem {
     | "download-execution-failed"
     | "semantic-document-invalid"
     | "route-conflict";
-  readonly consumerId: ComponentId;
+  readonly consumerId: ReportComponentId;
   readonly summary: string;
 }
 
@@ -193,8 +196,8 @@ function normalizeDataProblem(record: Record<string, unknown>):
   if (!dataCodes.has(record.code as ReportRecordedDataProblem["code"])) {
     return { _tag: "invalid", error: invalid("a recorded-data problem code is not recognized") };
   }
-  if (!isComponentId(record.consumerId)) {
-    return { _tag: "invalid", error: invalid("a recorded-data problem needs a ComponentId") };
+  if (!isReportComponentId(record.consumerId)) {
+    return { _tag: "invalid", error: invalid("a recorded-data problem needs a ReportComponentId") };
   }
   if (record.inputKey !== undefined && (typeof record.inputKey !== "string" || !inputKeyPattern.test(record.inputKey))) {
     return { _tag: "invalid", error: invalid("a recorded-data input key is invalid") };
@@ -227,8 +230,8 @@ function normalizeExecutionProblem(record: Record<string, unknown>):
   if (!executionCodes.has(record.code as ReportExecutionProblem["code"])) {
     return { _tag: "invalid", error: invalid("an execution problem code is not recognized") };
   }
-  if (!isComponentId(record.consumerId)) {
-    return { _tag: "invalid", error: invalid("an execution problem needs a ComponentId") };
+  if (!isReportComponentId(record.consumerId)) {
+    return { _tag: "invalid", error: invalid("an execution problem needs a ReportComponentId") };
   }
   if (
     typeof record.summary !== "string" ||

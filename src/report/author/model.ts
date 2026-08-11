@@ -7,13 +7,14 @@ import {
 import type { ReportCalculationResult } from "../execution/results.ts";
 import type { ReportDocumentV1 } from "../semantic/document.ts";
 import {
-  isComponentId,
+  isReportComponentId,
   isReportId,
-  isRoute,
-  type ComponentId,
-  type DownloadPath,
+  isReportRoute,
+  type ReportComponentId,
+  type ReportDownloadPath,
   type ReportId,
-  type Route,
+  type ReportInstanceKey,
+  type ReportRoute,
 } from "./identity.ts";
 
 const reportDataPlanTypeId: unique symbol = Symbol(
@@ -37,7 +38,7 @@ const reportTypeId: unique symbol = Symbol("@niceeval/report/Report");
 type DataPlanCardinality = "empty" | "non-empty";
 type AnyRecordProjection = RecordProjection<any, any>;
 
-interface DataPlan<out Shape extends object, out Cardinality extends DataPlanCardinality> {
+interface DataPlan<Shape extends object, Cardinality extends DataPlanCardinality> {
   readonly [reportDataPlanTypeId]: { readonly _Shape: () => Shape };
   readonly [reportDataPlanCardinalityTypeId]: Cardinality;
 }
@@ -80,7 +81,7 @@ type CalculationCompleteness<Inputs extends ReportDataPlan> =
 
 /** One static projection-derived value with no dependency on another Calculation. */
 export type ReportCalculation<Inputs extends ReportDataPlan, Value> = Readonly<{
-  readonly id: ComponentId;
+  readonly id: ReportComponentId;
   readonly inputs: Inputs;
   readonly calculate: (context: {
     readonly sample: AnalysisSample;
@@ -111,26 +112,26 @@ export type ReportComponentContext<
 
 /** An opaque fixed Page. Its callback is retained only in package-private authority. */
 export interface ReportPage {
-  readonly id: ComponentId;
-  readonly route: Route;
+  readonly id: ReportComponentId;
+  readonly route: ReportRoute;
   readonly [reportPageTypeId]: () => void;
 }
 
 /** An opaque PageFamily whose instances are expanded only from already-formed values. */
 export interface ReportPageFamily {
-  readonly id: ComponentId;
+  readonly id: ReportComponentId;
   readonly [reportPageFamilyTypeId]: () => void;
 }
 
 export interface ReportDownloadFile {
-  readonly path: DownloadPath;
+  readonly path: ReportDownloadPath;
   readonly mediaType: string;
   readonly bytes: Uint8Array;
 }
 
 /** An opaque authored Download. */
 export interface ReportDownload {
-  readonly id: ComponentId;
+  readonly id: ReportComponentId;
   readonly [reportDownloadTypeId]: () => void;
 }
 
@@ -151,29 +152,50 @@ interface DataPlanContents {
   readonly cardinality: DataPlanCardinality;
 }
 
+type AuthorCallback = (...arguments_: never[]) => unknown;
+
 interface ComponentContents {
-  readonly calculations: readonly AnyReportCalculation[];
+  readonly calculations: ReportCalculationSet;
+  readonly calculationsById: readonly AnyReportCalculation[];
   readonly inputs?: ReportDataPlan;
   readonly completeness?: ReportCompleteness;
-  readonly calculate?: unknown;
-  readonly render?: unknown;
-  readonly instances?: unknown;
-  readonly key?: unknown;
-  readonly route?: unknown;
-  readonly build?: unknown;
+}
+
+interface CalculationContents {
+  readonly calculations: ReportCalculationSet;
+  readonly calculationsById: readonly AnyReportCalculation[];
+  readonly inputs: ReportDataPlan;
+  readonly completeness?: ReportCompleteness;
+  readonly calculate: AuthorCallback;
+}
+
+interface PageContents extends ComponentContents {
+  readonly render: AuthorCallback;
+}
+
+interface PageFamilyContents extends ComponentContents {
+  readonly instances: AuthorCallback;
+  readonly key: AuthorCallback;
+  readonly route: AuthorCallback;
+  readonly render: AuthorCallback;
+}
+
+interface DownloadContents extends ComponentContents {
+  readonly build: AuthorCallback;
 }
 
 interface ReportContents {
-  readonly calculations: readonly AnyReportCalculation[];
+  readonly calculations: ReportCalculationSet;
+  readonly calculationsById: readonly AnyReportCalculation[];
   readonly pages: readonly (ReportPage | ReportPageFamily)[];
   readonly downloads: readonly ReportDownload[];
 }
 
 const dataPlanContentsByPlan = new WeakMap<object, DataPlanContents>();
-const calculationContentsByCalculation = new WeakMap<object, ComponentContents>();
-const pageContentsByPage = new WeakMap<object, ComponentContents>();
-const familyContentsByFamily = new WeakMap<object, ComponentContents>();
-const downloadContentsByDownload = new WeakMap<object, ComponentContents>();
+const calculationContentsByCalculation = new WeakMap<object, CalculationContents>();
+const pageContentsByPage = new WeakMap<object, PageContents>();
+const familyContentsByFamily = new WeakMap<object, PageFamilyContents>();
+const downloadContentsByDownload = new WeakMap<object, DownloadContents>();
 const reportContentsByReport = new WeakMap<object, ReportContents>();
 
 const INPUT_KEY_PATTERN = /^[a-z][a-z0-9_-]*$/;
@@ -236,7 +258,7 @@ export function reportInputs<const Shape extends object>(
 
 export function defineCalculation<Inputs extends EmptyReportDataPlan, Value>(
   definition: {
-    readonly id: ComponentId;
+    readonly id: ReportComponentId;
     readonly inputs: Inputs;
     readonly completeness?: never;
     readonly calculate: (context: {
@@ -247,7 +269,7 @@ export function defineCalculation<Inputs extends EmptyReportDataPlan, Value>(
 ): ReportCalculation<Inputs, Value>;
 export function defineCalculation<Inputs extends NonEmptyReportDataPlan, Value>(
   definition: {
-    readonly id: ComponentId;
+    readonly id: ReportComponentId;
     readonly inputs: Inputs;
     readonly completeness: ReportCompleteness;
     readonly calculate: (context: {
@@ -264,7 +286,7 @@ export function defineCalculation(
     ["id", "inputs", "completeness", "calculate"],
     "a Calculation",
   );
-  const id = requireComponentId(fields.get("id"));
+  const id = requireReportComponentId(fields.get("id"));
   const inputs = requireDataPlan(fields.get("inputs"));
   const contents = dataPlanContents(inputs);
   const calculate = requireFunction(fields.get("calculate"), "calculate");
@@ -280,7 +302,8 @@ export function defineCalculation(
   calculationContentsByCalculation.set(
     calculation,
     Object.freeze({
-      calculations: Object.freeze([]),
+      calculations: Object.freeze({}),
+      calculationsById: Object.freeze([]),
       inputs,
       ...(completeness === undefined ? {} : { completeness }),
       calculate,
@@ -290,8 +313,8 @@ export function defineCalculation(
 }
 
 export function definePage<Calculations extends object = {}>(definition: {
-  readonly id: ComponentId;
-  readonly route: Route;
+  readonly id: ReportComponentId;
+  readonly route: ReportRoute;
   readonly inputs?: never;
   readonly completeness?: never;
   readonly calculations?: Calculations & CalculationSetCheck<Calculations>;
@@ -303,8 +326,8 @@ export function definePage<
   Inputs extends NonEmptyReportDataPlan,
   Calculations extends object = {},
 >(definition: {
-  readonly id: ComponentId;
-  readonly route: Route;
+  readonly id: ReportComponentId;
+  readonly route: ReportRoute;
   readonly inputs: Inputs;
   readonly completeness: ReportCompleteness;
   readonly calculations?: Calculations & CalculationSetCheck<Calculations>;
@@ -318,34 +341,34 @@ export function definePage(definition: unknown): ReportPage {
     ["id", "route", "inputs", "completeness", "calculations", "render"],
     "a Page",
   );
-  const id = requireComponentId(fields.get("id"));
-  const route = requireRoute(fields.get("route"));
+  const id = requireReportComponentId(fields.get("id"));
+  const reportRouteValue = requireReportRoute(fields.get("route"));
   const component = componentData(fields, "a Page");
-  requireFunction(fields.get("render"), "render");
+  const render = requireFunction(fields.get("render"), "render");
 
   const page = Object.freeze({
     id,
-    route,
+    route: reportRouteValue,
     [reportPageTypeId]: (): void => undefined,
   }) as ReportPage;
   pageContentsByPage.set(
     page,
-    Object.freeze({ ...component, render: fields.get("render") }),
+    Object.freeze({ ...component, render }),
   );
   return page;
 }
 
 export function definePageFamily<Instance, Calculations extends object = {}>(
   definition: {
-    readonly id: ComponentId;
+    readonly id: ReportComponentId;
     readonly inputs?: never;
     readonly completeness?: never;
     readonly calculations?: Calculations & CalculationSetCheck<Calculations>;
     readonly instances: (
       context: ReportComponentContext<undefined, Calculations>,
     ) => Iterable<Instance>;
-    readonly key: (instance: Instance) => import("./identity.ts").InstanceKey;
-    readonly route: (instance: Instance) => Route;
+    readonly key: (instance: Instance) => ReportInstanceKey;
+    readonly route: (instance: Instance) => ReportRoute;
     readonly render: (
       context: ReportComponentContext<undefined, Calculations> & {
         readonly instance: Instance;
@@ -358,15 +381,15 @@ export function definePageFamily<
   Instance,
   Calculations extends object = {},
 >(definition: {
-  readonly id: ComponentId;
+  readonly id: ReportComponentId;
   readonly inputs: Inputs;
   readonly completeness: ReportCompleteness;
   readonly calculations?: Calculations & CalculationSetCheck<Calculations>;
   readonly instances: (
     context: ReportComponentContext<Inputs, Calculations>,
   ) => Iterable<Instance>;
-  readonly key: (instance: Instance) => import("./identity.ts").InstanceKey;
-  readonly route: (instance: Instance) => Route;
+  readonly key: (instance: Instance) => ReportInstanceKey;
+  readonly route: (instance: Instance) => ReportRoute;
   readonly render: (
     context: ReportComponentContext<Inputs, Calculations> & {
       readonly instance: Instance;
@@ -379,12 +402,12 @@ export function definePageFamily(definition: unknown): ReportPageFamily {
     ["id", "inputs", "completeness", "calculations", "instances", "key", "route", "render"],
     "a PageFamily",
   );
-  const id = requireComponentId(fields.get("id"));
+  const id = requireReportComponentId(fields.get("id"));
   const component = componentData(fields, "a PageFamily");
-  requireFunction(fields.get("instances"), "instances");
-  requireFunction(fields.get("key"), "key");
-  requireFunction(fields.get("route"), "route");
-  requireFunction(fields.get("render"), "render");
+  const instances = requireFunction(fields.get("instances"), "instances");
+  const key = requireFunction(fields.get("key"), "key");
+  const route = requireFunction(fields.get("route"), "route");
+  const render = requireFunction(fields.get("render"), "render");
 
   const family = Object.freeze({
     id,
@@ -394,17 +417,17 @@ export function definePageFamily(definition: unknown): ReportPageFamily {
     family,
     Object.freeze({
       ...component,
-      instances: fields.get("instances"),
-      key: fields.get("key"),
-      route: fields.get("route"),
-      render: fields.get("render"),
+      instances,
+      key,
+      route,
+      render,
     }),
   );
   return family;
 }
 
 export function defineDownload<Calculations extends object = {}>(definition: {
-  readonly id: ComponentId;
+  readonly id: ReportComponentId;
   readonly inputs?: never;
   readonly completeness?: never;
   readonly calculations?: Calculations & CalculationSetCheck<Calculations>;
@@ -416,7 +439,7 @@ export function defineDownload<
   Inputs extends NonEmptyReportDataPlan,
   Calculations extends object = {},
 >(definition: {
-  readonly id: ComponentId;
+  readonly id: ReportComponentId;
   readonly inputs: Inputs;
   readonly completeness: ReportCompleteness;
   readonly calculations?: Calculations & CalculationSetCheck<Calculations>;
@@ -430,9 +453,9 @@ export function defineDownload(definition: unknown): ReportDownload {
     ["id", "inputs", "completeness", "calculations", "build"],
     "a Download",
   );
-  const id = requireComponentId(fields.get("id"));
+  const id = requireReportComponentId(fields.get("id"));
   const component = componentData(fields, "a Download");
-  requireFunction(fields.get("build"), "build");
+  const build = requireFunction(fields.get("build"), "build");
 
   const download = Object.freeze({
     id,
@@ -440,7 +463,7 @@ export function defineDownload(definition: unknown): ReportDownload {
   }) as ReportDownload;
   downloadContentsByDownload.set(
     download,
-    Object.freeze({ ...component, build: fields.get("build") }),
+    Object.freeze({ ...component, build }),
   );
   return download;
 }
@@ -497,7 +520,8 @@ export function defineReport<Calculations extends object = {}>(definition: {
   reportContentsByReport.set(
     report,
     Object.freeze({
-      calculations: calculations.values,
+      calculations: calculations.object,
+      calculationsById: calculations.values,
       pages: report.pages,
       downloads: report.downloads,
     }),
@@ -509,6 +533,79 @@ export function isReport(value: unknown): value is Report {
   return typeof value === "object" && value !== null && reportContentsByReport.has(value);
 }
 
+/** @internal Exact-identity bridge used only by author/internal.ts. */
+export function authorInternalReportContents(report: Report): ReportContents {
+  const contents = reportContentsByReport.get(report);
+  if (contents === undefined) {
+    throw new TypeError("a Report must be created by defineReport");
+  }
+  return contents;
+}
+
+/** @internal Exact-identity bridge used only by author/internal.ts. */
+export function authorInternalDataPlanContents(plan: ReportDataPlan): DataPlanContents {
+  return dataPlanContents(plan);
+}
+
+/** @internal Exact-identity bridge used only by author/internal.ts. */
+export function authorInternalCalculationContents(
+  calculation: AnyReportCalculation,
+): CalculationContents {
+  const contents = calculationContentsByCalculation.get(calculation);
+  if (contents === undefined) {
+    throw new TypeError("a Calculation must be created by defineCalculation");
+  }
+  return contents;
+}
+
+/** @internal Exact-identity bridge used only by author/internal.ts. */
+export function authorInternalPageContents(page: ReportPage): PageContents {
+  const contents = pageContentsByPage.get(page);
+  if (contents === undefined) {
+    throw new TypeError("a Page must be created by definePage");
+  }
+  return contents;
+}
+
+/** @internal Exact-identity bridge used only by author/internal.ts. */
+export function authorInternalPageFamilyContents(
+  family: ReportPageFamily,
+): PageFamilyContents {
+  const contents = familyContentsByFamily.get(family);
+  if (contents === undefined) {
+    throw new TypeError("a PageFamily must be created by definePageFamily");
+  }
+  return contents;
+}
+
+/** @internal Exact-identity bridge used only by author/internal.ts. */
+export function authorInternalPageMemberContents(
+  member: ReportPage | ReportPageFamily,
+):
+  | { readonly kind: "page"; readonly contents: PageContents }
+  | { readonly kind: "page-family"; readonly contents: PageFamilyContents } {
+  const page = pageContentsByPage.get(member);
+  if (page !== undefined) {
+    return Object.freeze({ kind: "page" as const, contents: page });
+  }
+  const family = familyContentsByFamily.get(member);
+  if (family !== undefined) {
+    return Object.freeze({ kind: "page-family" as const, contents: family });
+  }
+  throw new TypeError("a Report page must be created by definePage or definePageFamily");
+}
+
+/** @internal Exact-identity bridge used only by author/internal.ts. */
+export function authorInternalDownloadContents(
+  download: ReportDownload,
+): DownloadContents {
+  const contents = downloadContentsByDownload.get(download);
+  if (contents === undefined) {
+    throw new TypeError("a Download must be created by defineDownload");
+  }
+  return contents;
+}
+
 function componentData(
   fields: ReadonlyMap<string, unknown>,
   label: string,
@@ -518,7 +615,11 @@ function componentData(
     if (fields.has("completeness")) {
       throw new TypeError(`${label} without projected inputs must not declare completeness`);
     }
-    return Object.freeze({ calculations: calculationSet(fields.get("calculations")).values });
+    const calculations = calculationSet(fields.get("calculations"));
+    return Object.freeze({
+      calculations: calculations.object,
+      calculationsById: calculations.values,
+    });
   }
 
   const plan = requireDataPlan(fields.get("inputs"));
@@ -526,8 +627,10 @@ function componentData(
     throw new TypeError(`${label} with no projected inputs must omit inputs and completeness`);
   }
   const completeness = validateCompleteness(fields, "non-empty", label);
+  const calculations = calculationSet(fields.get("calculations"));
   return Object.freeze({
-    calculations: calculationSet(fields.get("calculations")).values,
+    calculations: calculations.object,
+    calculationsById: calculations.values,
     inputs: plan,
     ...(completeness === undefined ? {} : { completeness }),
   });
@@ -579,7 +682,9 @@ function calculationSet(value: unknown): {
   }
   return Object.freeze({
     object: Object.freeze(object),
-    values: Object.freeze(entries.map(([, calculation]) => calculation)),
+    values: Object.freeze(
+      entries.map(([, calculation]) => calculation).sort(compareCalculation),
+    ),
   });
 }
 
@@ -623,7 +728,7 @@ function pageCalculations(page: ReportPage): readonly AnyReportCalculation[] {
   if (contents === undefined) {
     throw new TypeError("a Page must be created by definePage");
   }
-  return contents.calculations;
+  return contents.calculationsById;
 }
 
 function familyCalculations(family: ReportPageFamily): readonly AnyReportCalculation[] {
@@ -631,7 +736,7 @@ function familyCalculations(family: ReportPageFamily): readonly AnyReportCalcula
   if (contents === undefined) {
     throw new TypeError("a PageFamily must be created by definePageFamily");
   }
-  return contents.calculations;
+  return contents.calculationsById;
 }
 
 function downloadCalculations(download: ReportDownload): readonly AnyReportCalculation[] {
@@ -639,7 +744,7 @@ function downloadCalculations(download: ReportDownload): readonly AnyReportCalcu
   if (contents === undefined) {
     throw new TypeError("a Download must be created by defineDownload");
   }
-  return contents.calculations;
+  return contents.calculationsById;
 }
 
 function requireCalculation(value: unknown): AnyReportCalculation {
@@ -699,18 +804,20 @@ function requireReportId(value: unknown): ReportId {
   return value as ReportId;
 }
 
-function requireComponentId(value: unknown): ComponentId {
-  if (!isComponentId(value)) {
-    throw new TypeError("a Report component must use a ComponentId created by componentId");
+function requireReportComponentId(value: unknown): ReportComponentId {
+  if (!isReportComponentId(value)) {
+    throw new TypeError(
+      "a Report component must use a ReportComponentId created by reportComponentId",
+    );
   }
-  return value as ComponentId;
+  return value as ReportComponentId;
 }
 
-function requireRoute(value: unknown): Route {
-  if (!isRoute(value)) {
-    throw new TypeError("a Page must use a Route created by route");
+function requireReportRoute(value: unknown): ReportRoute {
+  if (!isReportRoute(value)) {
+    throw new TypeError("a Page must use a ReportRoute created by reportRoute");
   }
-  return value as Route;
+  return value as ReportRoute;
 }
 
 function requireFunction(value: unknown, name: string): (...arguments_: never[]) => unknown {
@@ -760,6 +867,13 @@ function ownFields(value: unknown, label: string): readonly (readonly [string, u
     fields.push(Object.freeze([key, descriptor.value]));
   }
   return Object.freeze(fields);
+}
+
+function compareCalculation(
+  left: AnyReportCalculation,
+  right: AnyReportCalculation,
+): number {
+  return compareText(left.id, right.id);
 }
 
 function compareComponent(

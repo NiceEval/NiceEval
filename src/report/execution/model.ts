@@ -2,17 +2,17 @@ import { Either } from "effect";
 import type { AnalysisSample } from "../../sample/index.ts";
 import type { ProjectionCoverage } from "../../projection/coverage.ts";
 import {
-  isComponentId,
-  isDownloadPath,
+  isReportComponentId,
+  isReportDownloadPath,
   isReportId,
-  isRoute,
-  staticPathConflict,
-  staticPathForDownload,
-  staticPathForRoute,
-  type ComponentId,
-  type DownloadPath,
+  isReportRoute,
+  reportStaticPathConflict,
+  staticPathForReportDownload,
+  staticPathForReportRoute,
+  type ReportComponentId,
+  type ReportDownloadPath,
   type ReportId,
-  type Route,
+  type ReportRoute,
 } from "../author/identity.ts";
 import type { ReportDataState, ReportDownloadFile } from "../author/model.ts";
 import {
@@ -196,8 +196,8 @@ function copyCalculation(
   table: ReportProblemTable,
   path: string,
 ): ReportCalculationExecutionResult {
-  if (typeof value !== "object" || value === null || !isComponentId(value.calculationId)) {
-    throw invalid(path, "a Calculation result must name a ComponentId");
+  if (typeof value !== "object" || value === null || !isReportComponentId(value.calculationId)) {
+    throw invalid(path, "a Calculation result must name a ReportComponentId");
   }
   switch (value.state) {
     case "available":
@@ -232,7 +232,7 @@ function copyFamilies(
     if (
       typeof result !== "object" ||
       result === null ||
-      !isComponentId(result.familyId) ||
+      !isReportComponentId(result.familyId) ||
       !isCount(result.instanceCount)
     ) {
       throw invalid(path, "a PageFamily result is invalid");
@@ -260,17 +260,17 @@ function copyFamilies(
   return Object.freeze(copied);
 }
 
-function routesFromPages(value: readonly ReportPageResult[]): ReadonlySet<Route> {
+function routesFromPages(value: readonly ReportPageResult[]): ReadonlySet<ReportRoute> {
   if (!Array.isArray(value)) {
     throw invalid("pages", "pages must be an array");
   }
-  const routes = new Set<Route>();
+  const routes = new Set<ReportRoute>();
   value.forEach((page, index) => {
-    if (typeof page !== "object" || page === null || !isComponentId(page.pageId)) {
-      throw invalid(`pages.${index}`, "a Page result must name a ComponentId");
+    if (typeof page !== "object" || page === null || !isReportComponentId(page.pageId)) {
+      throw invalid(`pages.${index}`, "a Page result must name a ReportComponentId");
     }
     if (page.route !== undefined) {
-      if (!isRoute(page.route)) {
+      if (!isReportRoute(page.route)) {
         throw invalid(`pages.${index}.route`, "a Page route is invalid");
       }
     }
@@ -290,17 +290,17 @@ function routesFromPages(value: readonly ReportPageResult[]): ReadonlySet<Route>
 function copyPages(
   value: readonly ReportPageResult[],
   table: ReportProblemTable,
-  routes: ReadonlySet<Route>,
-  downloads: ReadonlySet<DownloadPath>,
+  routes: ReadonlySet<ReportRoute>,
+  downloads: ReadonlySet<ReportDownloadPath>,
 ): readonly ReportPageResult[] {
   const copied = value.map((result, index) => {
     const path = `pages.${index}`;
-    if (typeof result !== "object" || result === null || !isComponentId(result.pageId)) {
-      throw invalid(path, "a Page result must name a ComponentId");
+    if (typeof result !== "object" || result === null || !isReportComponentId(result.pageId)) {
+      throw invalid(path, "a Page result must name a ReportComponentId");
     }
     switch (result.state) {
       case "rendered": {
-        if (!isRoute(result.route)) {
+        if (!isReportRoute(result.route)) {
           throw invalid(`${path}.route`, "a rendered Page needs a valid route");
         }
         const validation = validateReportDocument(result.document, { routes, downloads });
@@ -320,7 +320,7 @@ function copyPages(
         return Object.freeze({
           state: result.state,
           pageId: result.pageId,
-          ...(result.route === undefined ? {} : { route: requireRoute(result.route, `${path}.route`) }),
+          ...(result.route === undefined ? {} : { route: requireReportRoute(result.route, `${path}.route`) }),
           problemIds: problemIds(result.problemIds, table, true, `${path}.problemIds`),
         });
       default:
@@ -334,16 +334,16 @@ function copyPages(
 function copyDownloads(
   value: readonly ReportDownloadResult[],
   table: ReportProblemTable,
-): { readonly results: readonly ReportDownloadResult[]; readonly paths: ReadonlySet<DownloadPath> } {
+): { readonly results: readonly ReportDownloadResult[]; readonly paths: ReadonlySet<ReportDownloadPath> } {
   if (!Array.isArray(value)) {
     throw invalid("downloads", "downloads must be an array");
   }
-  const paths = new Set<DownloadPath>();
+  const paths = new Set<ReportDownloadPath>();
   let fileCount = 0;
   const copied = value.map((result, index) => {
     const path = `downloads.${index}`;
-    if (typeof result !== "object" || result === null || !isComponentId(result.downloadId)) {
-      throw invalid(path, "a Download result must name a ComponentId");
+    if (typeof result !== "object" || result === null || !isReportComponentId(result.downloadId)) {
+      throw invalid(path, "a Download result must name a ReportComponentId");
     }
     if (result.state === "built") {
       const inputFiles: readonly ReportDownloadFile[] = result.files;
@@ -385,8 +385,8 @@ function copyDownloads(
 }
 
 function copyDownloadFile(value: ReportDownloadFile, path: string): ReportDownloadFile {
-  if (typeof value !== "object" || value === null || !isDownloadPath(value.path)) {
-    throw invalid(path, "a Download file must use a valid DownloadPath");
+  if (typeof value !== "object" || value === null || !isReportDownloadPath(value.path)) {
+    throw invalid(path, "a Download file must use a valid ReportDownloadPath");
   }
   if (
     typeof value.mediaType !== "string" ||
@@ -409,16 +409,16 @@ function copyDownloadFile(value: ReportDownloadFile, path: string): ReportDownlo
 }
 
 function assertStaticClosure(
-  routes: ReadonlySet<Route>,
-  downloads: ReadonlySet<DownloadPath>,
+  routes: ReadonlySet<ReportRoute>,
+  downloads: ReadonlySet<ReportDownloadPath>,
 ): void {
   const paths = [
-    ...[...routes].map(staticPathForRoute),
-    ...[...downloads].map(staticPathForDownload),
+    ...[...routes].map(staticPathForReportRoute),
+    ...[...downloads].map(staticPathForReportDownload),
   ];
   for (let left = 0; left < paths.length; left += 1) {
     for (let right = left + 1; right < paths.length; right += 1) {
-      if (staticPathConflict(paths[left], paths[right]) !== undefined) {
+      if (reportStaticPathConflict(paths[left], paths[right]) !== undefined) {
         throw invalid("closure", "route and download outputs cannot collide on supported filesystems");
       }
     }
@@ -517,15 +517,15 @@ function problemIds(
   return Object.freeze(copied);
 }
 
-function requireRoute(value: unknown, path: string): Route {
-  if (!isRoute(value)) {
+function requireReportRoute(value: unknown, path: string): ReportRoute {
+  if (!isReportRoute(value)) {
     throw invalid(path, "a route is invalid");
   }
   return value;
 }
 
 function assertDistinctComponents<
-  Value extends Record<Key, ComponentId>,
+  Value extends Record<Key, ReportComponentId>,
   Key extends string,
 >(values: readonly Value[], key: Key, path: string): void {
   const ids = new Set<string>();

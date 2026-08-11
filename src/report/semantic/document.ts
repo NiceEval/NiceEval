@@ -1,8 +1,8 @@
 import {
-  isDownloadPath,
-  isRoute,
-  type DownloadPath,
-  type Route,
+  isReportDownloadPath,
+  isReportRoute,
+  type ReportDownloadPath,
+  type ReportRoute,
 } from "../author/identity.ts";
 
 export type ReportScalarV1 = null | boolean | number | string;
@@ -15,8 +15,8 @@ export type ReportInlineV1 =
       readonly type: "link";
       readonly label: readonly ReportInlineV1[];
       readonly target:
-        | { readonly kind: "route"; readonly route: Route }
-        | { readonly kind: "download"; readonly path: DownloadPath };
+        | { readonly kind: "route"; readonly route: ReportRoute }
+        | { readonly kind: "download"; readonly path: ReportDownloadPath };
     };
 
 export interface ReportDocumentV1 {
@@ -99,8 +99,8 @@ export const REPORT_DOCUMENT_NODES_MAX = 20_000;
 export const REPORT_DOCUMENT_DEPTH_MAX = 32;
 
 export interface ReportDocumentClosure {
-  readonly routes?: ReadonlySet<Route>;
-  readonly downloads?: ReadonlySet<DownloadPath>;
+  readonly routes?: ReadonlySet<ReportRoute>;
+  readonly downloads?: ReadonlySet<ReportDownloadPath>;
 }
 
 export interface ReportDocumentIssue {
@@ -156,8 +156,8 @@ export function reportEmphasis(
 export function reportLink(input: {
   readonly label: readonly ReportInlineV1[];
   readonly target:
-    | { readonly kind: "route"; readonly route: Route }
-    | { readonly kind: "download"; readonly path: DownloadPath };
+    | { readonly kind: "route"; readonly route: ReportRoute }
+    | { readonly kind: "download"; readonly path: ReportDownloadPath };
 }): ReportInlineV1 {
   return Object.freeze({
     type: "link" as const,
@@ -570,8 +570,8 @@ function validateLinkTarget(
   if (kind === "route") {
     exactFields(record, ["kind", "route"], state, path);
     const target = field(record, "route");
-    if (!isRoute(target)) {
-      issue(state, "link", pathFor(path, "route"), "a route link must use a valid Route");
+    if (!isReportRoute(target)) {
+      issue(state, "link", pathFor(path, "route"), "a route link must use a valid ReportRoute");
     } else if (state.closure.routes !== undefined && !state.closure.routes.has(target)) {
       issue(state, "link", pathFor(path, "route"), "the route link is absent from this execution");
     }
@@ -580,8 +580,8 @@ function validateLinkTarget(
   if (kind === "download") {
     exactFields(record, ["kind", "path"], state, path);
     const target = field(record, "path");
-    if (!isDownloadPath(target)) {
-      issue(state, "link", pathFor(path, "path"), "a download link must use a valid DownloadPath");
+    if (!isReportDownloadPath(target)) {
+      issue(state, "link", pathFor(path, "path"), "a download link must use a valid ReportDownloadPath");
     } else if (state.closure.downloads !== undefined && !state.closure.downloads.has(target)) {
       issue(state, "link", pathFor(path, "path"), "the download link is absent from this execution");
     }

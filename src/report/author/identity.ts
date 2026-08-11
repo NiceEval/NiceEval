@@ -2,37 +2,37 @@ import { Either } from "effect";
 import type { AttemptId, RunId, SlotId } from "../../sample/index.ts";
 
 const reportIdTypeId: unique symbol = Symbol("@niceeval/report/ReportId");
-const componentIdTypeId: unique symbol = Symbol(
-  "@niceeval/report/ComponentId",
+const reportComponentIdTypeId: unique symbol = Symbol(
+  "@niceeval/report/ReportComponentId",
 );
-const routeTypeId: unique symbol = Symbol("@niceeval/report/Route");
-const instanceKeyTypeId: unique symbol = Symbol(
-  "@niceeval/report/InstanceKey",
+const reportRouteTypeId: unique symbol = Symbol("@niceeval/report/ReportRoute");
+const reportInstanceKeyTypeId: unique symbol = Symbol(
+  "@niceeval/report/ReportInstanceKey",
 );
-const downloadPathTypeId: unique symbol = Symbol(
-  "@niceeval/report/DownloadPath",
+const reportDownloadPathTypeId: unique symbol = Symbol(
+  "@niceeval/report/ReportDownloadPath",
 );
 
 /** A durable identity for one authored Report. */
 export type ReportId = string & { readonly [reportIdTypeId]: true };
 
 /** A durable identity for a Calculation, Page, PageFamily, or Download. */
-export type ComponentId = string & { readonly [componentIdTypeId]: true };
+export type ReportComponentId = string & {
+  readonly [reportComponentIdTypeId]: true;
+};
 
 /** A semantic page route, deliberately separate from a filesystem path. */
-export type Route = string & { readonly [routeTypeId]: true };
+export type ReportRoute = string & { readonly [reportRouteTypeId]: true };
 
 /** A durable key used to expand one PageFamily instance. */
-export type InstanceKey = string & { readonly [instanceKeyTypeId]: true };
+export type ReportInstanceKey = string & {
+  readonly [reportInstanceKeyTypeId]: true;
+};
 
 /** A relative author-owned download path. */
-export type DownloadPath = string & { readonly [downloadPathTypeId]: true };
-
-/** Library-compatible names remain available without duplicating brands. */
-export type ReportComponentId = ComponentId;
-export type ReportRoute = Route;
-export type ReportInstanceKey = InstanceKey;
-export type ReportDownloadPath = DownloadPath;
+export type ReportDownloadPath = string & {
+  readonly [reportDownloadPathTypeId]: true;
+};
 
 export interface ReportPathIssue {
   readonly code: "report-path-invalid";
@@ -79,32 +79,26 @@ export function reportId(
   return identity(input, "report-id", mintReportId);
 }
 
-export function componentId(
+export function reportComponentId(
   input: string,
-): Either.Either<ComponentId, ReportPathIssue> {
-  return identity(input, "component-id", mintComponentId);
+): Either.Either<ReportComponentId, ReportPathIssue> {
+  return identity(input, "component-id", mintReportComponentId);
 }
 
-export const reportComponentId = componentId;
-
-export function instanceKey(
+export function reportInstanceKey(
   input: string,
-): Either.Either<InstanceKey, ReportPathIssue> {
-  return identity(input, "instance-key", mintInstanceKey);
+): Either.Either<ReportInstanceKey, ReportPathIssue> {
+  return identity(input, "instance-key", mintReportInstanceKey);
 }
 
-export const reportInstanceKey = instanceKey;
-
-export function route(input: string): Either.Either<Route, ReportPathIssue> {
+export function reportRoute(input: string): Either.Either<ReportRoute, ReportPathIssue> {
   const issue = routeIssue(input, "route");
-  return issue === undefined ? Either.right(mintRoute(input)) : Either.left(issue);
+  return issue === undefined ? Either.right(mintReportRoute(input)) : Either.left(issue);
 }
 
-export const reportRoute = route;
-
-export function downloadPath(
+export function reportDownloadPath(
   input: string,
-): Either.Either<DownloadPath, ReportPathIssue> {
+): Either.Either<ReportDownloadPath, ReportPathIssue> {
   const issue = routeIssue(input, "download");
   if (issue !== undefined) {
     return Either.left(issue);
@@ -115,41 +109,31 @@ export function downloadPath(
   if (input.startsWith("/")) {
     return Either.left(pathIssue("download", "a download path must be relative"));
   }
-  return Either.right(mintDownloadPath(input));
+  return Either.right(mintReportDownloadPath(input));
 }
-
-export const reportDownloadPath = downloadPath;
 
 export function isReportId(value: unknown): value is ReportId {
   return identityIssue(value, "report-id") === undefined;
 }
 
-export function isComponentId(value: unknown): value is ComponentId {
+export function isReportComponentId(value: unknown): value is ReportComponentId {
   return identityIssue(value, "component-id") === undefined;
 }
 
-export const isReportComponentId = isComponentId;
-
-export function isRoute(value: unknown): value is Route {
+export function isReportRoute(value: unknown): value is ReportRoute {
   return routeIssue(value, "route") === undefined;
 }
 
-export const isReportRoute = isRoute;
-
-export function isInstanceKey(value: unknown): value is InstanceKey {
+export function isReportInstanceKey(value: unknown): value is ReportInstanceKey {
   return identityIssue(value, "instance-key") === undefined;
 }
 
-export const isReportInstanceKey = isInstanceKey;
-
-export function isDownloadPath(value: unknown): value is DownloadPath {
+export function isReportDownloadPath(value: unknown): value is ReportDownloadPath {
   return typeof value === "string" &&
     routeIssue(value, "download") === undefined &&
     value !== "/" &&
     !value.startsWith("/");
 }
-
-export const isReportDownloadPath = isDownloadPath;
 
 /**
  * Record IDs are portable but not route-safe: this adapter gives them a
@@ -158,7 +142,7 @@ export const isReportDownloadPath = isDownloadPath;
 export function reportInstanceKeyFromRecordId(input: {
   readonly kind: "run" | "attempt" | "slot";
   readonly value: RunId | AttemptId | SlotId;
-}): InstanceKey {
+}): ReportInstanceKey {
   if (
     input === null ||
     typeof input !== "object" ||
@@ -170,7 +154,7 @@ export function reportInstanceKeyFromRecordId(input: {
 
   const encoded = encodeLowercaseCrockford(input.value);
   const candidate = `${input.kind}-${encoded}`;
-  const parsed = instanceKey(candidate);
+  const parsed = reportInstanceKey(candidate);
   if (Either.isLeft(parsed)) {
     throw new RangeError("the Record identity is too long to form a Report instance key");
   }
@@ -179,27 +163,29 @@ export function reportInstanceKeyFromRecordId(input: {
 
 /** The only public adapter that turns durable instance keys into a route. */
 export function reportRouteFromKeys(
-  keys: readonly [InstanceKey, ...InstanceKey[]],
-): Either.Either<Route, ReportPathIssue> {
+  keys: readonly [ReportInstanceKey, ...ReportInstanceKey[]],
+): Either.Either<ReportRoute, ReportPathIssue> {
   if (!Array.isArray(keys) || keys.length === 0) {
     return Either.left(pathIssue("route", "a route needs at least one instance key"));
   }
   for (const key of keys) {
-    if (!isInstanceKey(key)) {
+    if (!isReportInstanceKey(key)) {
       return Either.left(pathIssue("route", "every route key must be a Report instance key"));
     }
   }
-  return route(`/${keys.join("/")}`);
+  return reportRoute(`/${keys.join("/")}`);
 }
 
 /** Central static mapping; callers never hand-compose output paths. */
-export function staticPathForRoute(value: Route): ReportStaticPath {
+export function staticPathForReportRoute(value: ReportRoute): ReportStaticPath {
   const routeSegments = value === "/" ? [] : value.slice(1).split("/");
   return makeStaticPath("route", [...routeSegments, "index.html"]);
 }
 
 /** Central static mapping; callers never hand-compose output paths. */
-export function staticPathForDownload(value: DownloadPath): ReportStaticPath {
+export function staticPathForReportDownload(
+  value: ReportDownloadPath,
+): ReportStaticPath {
   return makeStaticPath("download", ["downloads", ...value.split("/")]);
 }
 
@@ -207,7 +193,7 @@ export function staticPathForDownload(value: DownloadPath): ReportStaticPath {
  * Gives a host all author-side collision facts before it combines these paths
  * with its reserved files. The function is pure and does not touch a root.
  */
-export function staticPathConflict(
+export function reportStaticPathConflict(
   left: ReportStaticPath,
   right: ReportStaticPath,
 ): ReportStaticPathConflict | undefined {
@@ -226,7 +212,9 @@ export function staticPathConflict(
   return undefined;
 }
 
-function identity<Identity extends ReportId | ComponentId | InstanceKey>(
+function identity<
+  Identity extends ReportId | ReportComponentId | ReportInstanceKey,
+>(
   input: string,
   kind: "report-id" | "component-id" | "instance-key",
   mint: (value: string) => Identity,
@@ -382,18 +370,18 @@ function mintReportId(value: string): ReportId {
   return value as ReportId;
 }
 
-function mintComponentId(value: string): ComponentId {
-  return value as ComponentId;
+function mintReportComponentId(value: string): ReportComponentId {
+  return value as ReportComponentId;
 }
 
-function mintRoute(value: string): Route {
-  return value as Route;
+function mintReportRoute(value: string): ReportRoute {
+  return value as ReportRoute;
 }
 
-function mintInstanceKey(value: string): InstanceKey {
-  return value as InstanceKey;
+function mintReportInstanceKey(value: string): ReportInstanceKey {
+  return value as ReportInstanceKey;
 }
 
-function mintDownloadPath(value: string): DownloadPath {
-  return value as DownloadPath;
+function mintReportDownloadPath(value: string): ReportDownloadPath {
+  return value as ReportDownloadPath;
 }

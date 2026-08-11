@@ -1,9 +1,9 @@
 import { Either } from "effect";
 import type { ProjectionCoverage } from "../../projection/coverage.ts";
 import type {
-  ComponentId,
-  DownloadPath,
-  Route,
+  ReportComponentId,
+  ReportDownloadPath,
+  ReportRoute,
 } from "../author/identity.ts";
 import type {
   ReportDataState,
@@ -78,38 +78,38 @@ export interface ReportProjectionSummary {
 export type ReportCalculationExecutionResult =
   | {
       readonly state: "available";
-      readonly calculationId: ComponentId;
+      readonly calculationId: ReportComponentId;
       readonly value: unknown;
       readonly inputState: ReportDataState;
       readonly problemIds: readonly ReportProblemId[];
     }
   | {
       readonly state: "data-unavailable";
-      readonly calculationId: ComponentId;
+      readonly calculationId: ReportComponentId;
       readonly problemIds: readonly [ReportProblemId, ...ReportProblemId[]];
     }
   | {
       readonly state: "execution-failed";
-      readonly calculationId: ComponentId;
+      readonly calculationId: ReportComponentId;
       readonly problemIds: readonly [ReportProblemId, ...ReportProblemId[]];
     };
 
 export type ReportPageFamilyResult =
   | {
       readonly state: "expanded";
-      readonly familyId: ComponentId;
+      readonly familyId: ReportComponentId;
       readonly instanceCount: number;
       readonly problemIds: readonly ReportProblemId[];
     }
   | {
       readonly state: "data-unavailable";
-      readonly familyId: ComponentId;
+      readonly familyId: ReportComponentId;
       readonly instanceCount: number;
       readonly problemIds: readonly [ReportProblemId, ...ReportProblemId[]];
     }
   | {
       readonly state: "execution-failed";
-      readonly familyId: ComponentId;
+      readonly familyId: ReportComponentId;
       readonly instanceCount: number;
       readonly problemIds: readonly [ReportProblemId, ...ReportProblemId[]];
     };
@@ -117,44 +117,44 @@ export type ReportPageFamilyResult =
 export type ReportPageResult =
   | {
       readonly state: "rendered";
-      readonly pageId: ComponentId;
-      readonly route: Route;
+      readonly pageId: ReportComponentId;
+      readonly route: ReportRoute;
       readonly document: ReportDocumentV1;
       readonly problemIds: readonly ReportProblemId[];
     }
   | {
       readonly state: "data-unavailable";
-      readonly pageId: ComponentId;
-      readonly route?: Route;
+      readonly pageId: ReportComponentId;
+      readonly route?: ReportRoute;
       readonly problemIds: readonly [ReportProblemId, ...ReportProblemId[]];
     }
   | {
       readonly state: "execution-failed";
-      readonly pageId: ComponentId;
-      readonly route?: Route;
+      readonly pageId: ReportComponentId;
+      readonly route?: ReportRoute;
       readonly problemIds: readonly [ReportProblemId, ...ReportProblemId[]];
     };
 
 export type ReportDownloadResult =
   | {
       readonly state: "built";
-      readonly downloadId: ComponentId;
+      readonly downloadId: ReportComponentId;
       readonly files: readonly ReportDownloadFile[];
       readonly problemIds: readonly ReportProblemId[];
     }
   | {
       readonly state: "data-unavailable";
-      readonly downloadId: ComponentId;
+      readonly downloadId: ReportComponentId;
       readonly problemIds: readonly [ReportProblemId, ...ReportProblemId[]];
     }
   | {
       readonly state: "execution-failed";
-      readonly downloadId: ComponentId;
+      readonly downloadId: ReportComponentId;
       readonly problemIds: readonly [ReportProblemId, ...ReportProblemId[]];
     };
 
 /** A semantic closure derived from one fixed execution, before output mapping. */
 export interface ReportExecutionLinks {
-  readonly routes: ReadonlySet<Route>;
-  readonly downloads: ReadonlySet<DownloadPath>;
+  readonly routes: ReadonlySet<ReportRoute>;
+  readonly downloads: ReadonlySet<ReportDownloadPath>;
 }
