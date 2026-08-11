@@ -5,7 +5,7 @@
 
 import { resolve as resolvePath } from "node:path";
 import { readFile as readSourceFile } from "node:fs/promises";
-import { Effect, Cause, Duration, Either, Option } from "effect";
+import { Effect, Cause, Duration, Either, Exit, Fiber, Option } from "effect";
 import {
   materializeSandboxRunPlan,
   liveSandboxRuntimeServices,
@@ -27,10 +27,25 @@ import { createInSandboxTraceReceiver } from "../o11y/otlp/sandbox-receiver.ts";
 import { AgentOtelChannel } from "../o11y/otlp/turn-otel.ts";
 import { selectTraceSpans, enrichTraceWithIO } from "../o11y/otlp/select.ts";
 import { mapGenericSpans } from "../o11y/otlp/mappers/index.ts";
-import { createEvalContext } from "../context/context.ts";
-import type { FactFinalizeResult } from "../assertions/collector.ts";
+import {
+  createAssertFirstEvalContext,
+  type AssertFirstContextState,
+} from "../context/assert-first.ts";
+import type {
+  AssertionStopErrorV1,
+  AssertionsRuntimeV1,
+} from "../assertions/api.ts";
+import {
+  sealAttemptAssertionsV1,
+  type SealedAttemptAssertionsV1,
+} from "./assertions.ts";
+import {
+  createAssertFirstAttemptBridgeV1,
+  type AssertFirstAttemptBridgeV1,
+  type AttemptAuthorCompletionV1,
+} from "./assert-first-bridge.ts";
 import { createAgentSession } from "../context/session.ts";
-import { EvalRequirementFailed, EvalSkipped } from "../context/control-flow.ts";
+import { EvalSkipped } from "../context/control-flow.ts";
 import { isSendFailure, sendFailureText } from "../context/send-failures.ts";
 import { deriveRunFacts, buildO11ySummary } from "../o11y/derive.ts";
 import { estimateCost } from "../o11y/cost.ts";
@@ -51,9 +66,8 @@ import type { SandboxCleanupCommand, SandboxCommandContext } from "../sandbox/co
 import { sandboxLayerIdentityFor } from "../sandbox/link.ts";
 import { agentInstallPlansForRun } from "./config-identity.ts";
 import { recordFact, type FactValue } from "../shared/facts.ts";
-import { verdictForTerminal } from "../shared/verdict.ts";
 import { formatTurnLabel } from "../shared/turn-label.ts";
-import { createSourceRegistry, withSourceRegistry, type SourceRegistry } from "../source-loc.ts";
+import { createSourceRegistry, type SourceRegistry } from "../source-loc.ts";
 import {
   attemptFailureInfo,
   resolveAttemptFailureClass,
@@ -74,7 +88,6 @@ import type {
   JsonValue,
   Sandbox,
   ScopedFeedback,
-  AssertionEvaluationContext,
   ScriptResult,
   SourceArtifact,
   StreamEvent,
@@ -154,6 +167,14 @@ export interface RunAttemptEffectOptions {
    * 分类照常决议、只是无人消费。回调必须不抛错:它跑在 attempt 的失败路径上,不得掩盖原始失败。
    */
   onFailureClass?: (declaration: AttemptFailureDeclaration) => void;
+  /**
+   * Invocation coordination may consume the single sealed Assert-first result
+   * here and pass it to EvaluationRecordContractV1. The Attempt never opens a
+   * Record session or owns Record I/O itself.
+   */
+  onSealedEvaluation?: (
+    sealed: SealedAttemptAssertionsV1,
+  ) => Effect.Effect<void, never, never>;
   /** 由复用池独占借出的实例；池负责物理 Sandbox 生命周期与最终 stop。 */
   reusedSandbox?: {
     sandbox: Sandbox;
@@ -166,7 +187,16 @@ export function runAttemptEffect(
   a: Attempt,
   opts: RunOptions,
   sandboxSem: Effect.Semaphore,
-  { buildLocators, runTiming, parentSignal, onPhase, concurrencySlot, onFailureClass, reusedSandbox }: RunAttemptEffectOptions,
+  {
+    buildLocators,
+    runTiming,
+    parentSignal,
+    onPhase,
+    concurrencySlot,
+    onFailureClass,
+    onSealedEvaluation,
+    reusedSandbox,
+  }: RunAttemptEffectOptions,
 ): Effect.Effect<EvalResult> {
   const config = opts.config;
   const { evalDef, run, attempt } = a;
@@ -258,10 +288,12 @@ export function runAttemptEffect(
   let liveUsage: (() => Usage) | undefined;
   let liveRetryAttempts: (() => readonly RetryAttemptRecord[]) | undefined;
   let liveLedger: ChangeLedger | undefined;
-  let finalizeRegisteredFacts:
-    | ((issue: import("../assertions/types.ts").ErrorAttemptIssue) => Promise<FactFinalizeResult>)
-    | undefined;
-  let timeoutFactFinalization: Promise<FactFinalizeResult> | undefined;
+  // Assert-first state becomes visible only after the real TestContext has
+  // been constructed. Scope finalization owns the interruption seal so an
+  // aborted Attempt cannot leave declared entries unsealed.
+  let liveAssertions: AssertionsRuntimeV1<"pass" | "score"> | undefined;
+  let assertionsSealed = false;
+  let timeoutSealedAssertions: SealedAttemptAssertionsV1 | undefined;
   // Effect.timeoutTo 的 onTimeout 是同步回调,在中断真正下发给 body fiber(从而触发下面的
   // finalizer 链)之前就已经跑完并同步置位这个标记——下面新增的 finalizer 靠它判断本次 Sample
   // release 是不是超时触发的,只在超时路径补折叠证据,正常收尾路径不重复做(见文件顶部
@@ -415,15 +447,9 @@ export function runAttemptEffect(
             ...(rest.trim() !== "" ? { stack: rest } : {}),
           };
           recorder.failCurrent();
-          timeoutFactFinalization = finalizeRegisteredFacts?.({
-            kind: "error",
-            error: { class: "execution", code: error.code, message: error.message },
-          });
-          // The settled result is joined after Scope release. Attach an observer
-          // now so a concurrently interrupted body cannot surface an unhandled
-          // rejection while finalizers are still running.
-          void timeoutFactFinalization?.catch(() => {});
-          // `timeoutTo` 已经赢得 deadline：先同步封存 Fact，再标记并 abort 协作式 adapter。
+          // `timeoutTo` 已经赢得 deadline：先标记并 abort 协作式 adapter。
+          // Scope release below seals the Attempt-local Assertions runtime as
+          // producer-interrupted before resources are released.
           // 这个 controller 没有独立 timer；它只把已经裁定的 timeout 传给观察 signal 的
           // adapter。标记必须先于 abort，才能把本 fiber 的 timeout 中断与真正外层取消区分。
           timedOut = true;
@@ -687,7 +713,7 @@ export function runAttemptEffect(
             }
           }
           try {
-            timeoutSources = await withCleanupTimeout(() => collectSources(events, [], [], evalDef.source));
+            timeoutSources = await withCleanupTimeout(() => collectSources(events, evalDef.source));
           } catch {
             // 源码读不到:如实缺失,不阻塞收尾。
           }
@@ -736,49 +762,156 @@ export function runAttemptEffect(
         );
       }
 
-      // body 是 Promise(adapter 边界)。Effect.promise 给的 AbortSignal 在本 fiber 被中断
-      //(用户 Ctrl+C / 下面 timeoutTo 到点)时 abort —— 并进 signal,让真正观察 signal 的
-      // adapter / docker 命令随中断一起停,而不只靠 Sample release 兜底。
-      const bodyResult = yield* Effect.promise((interruptSignal) =>
-        runAttemptBody(a, config, t0, base, {
-          sandbox,
-          receiver,
-          telemetry,
-          otel: otelChannel,
-          signal: AbortSignal.any([signal, interruptSignal]),
-          log,
-          enterPhase,
-          // send 在飞时归因到嵌套的 agent.run(不切换顶层阶段,见 LifecyclePhase 注释)。
-          getPhase: () => (sendActive ? "agent.run" : lastPhase),
-          setSendActive: (active) => {
-            sendActive = active;
-          },
-          recorder,
-          ...(attemptTimeout ? { attemptTimeout } : {}),
-          ...(deadlineAt !== undefined ? { deadlineAt } : {}),
-          feedback: scopedFeedback,
-          diagnostics,
-          facts,
-          commands,
-          sensitiveValues,
-          concurrencySlot,
-          declareFailure,
-          isDeadlineTimedOut: () => timedOut,
-          layerCleanups,
-          registerEvidence: (getEvents, getUsage, getRetryAttempts) => {
-            liveEvents = getEvents;
-            liveUsage = getUsage;
-            liveRetryAttempts = getRetryAttempts;
-          },
-          registerLedger: (ledger) => {
-            liveLedger = ledger;
-          },
-          registerFactFinalizer: (finalize) => {
-            finalizeRegisteredFacts = finalize;
-          },
-          ...(opts.artifactPrepare !== undefined ? { prepareCoordinator: opts.artifactPrepare } : {}),
-        }, parentSignal),
+      const assertFirst = createAssertFirstAttemptBridgeV1<unknown>();
+      // Scope release owns the interruption seal. It runs before resource
+      // release, so entries already declared by the real Context survive a
+      // timeout or external cancellation in declaration order.
+      yield* Effect.addFinalizer((exit) =>
+        Effect.suspend(() => {
+          const interrupted = timedOut || (
+            Exit.isFailure(exit) && Cause.isInterruptedOnly(exit.cause)
+          );
+          if (!interrupted || liveAssertions === undefined || assertionsSealed) {
+            return Effect.void;
+          }
+          return sealAttemptAssertionsV1(liveAssertions, {
+            execution: "errored",
+            interrupted: true,
+          }).pipe(
+            Effect.tap((sealed) =>
+              Effect.sync(() => {
+                assertionsSealed = true;
+                timeoutSealedAssertions = sealed;
+              }),
+            ),
+            Effect.tap((sealed) => onSealedEvaluation?.(sealed) ?? Effect.void),
+            // Release must preserve the original interruption/failure. A
+            // malformed attachment is still reflected by the sealed runtime,
+            // but cannot mask the owning Attempt's terminal cause.
+            Effect.catchAllCause(() => Effect.void),
+          );
+        }),
       );
+
+      // The legacy setup/diff/trace body remains Promise-shaped, while only
+      // author execution and seal run in this Attempt's Effect scope. No
+      // nested runtime is introduced.
+      const bodyFiber = yield* Effect.fork(
+        Effect.promise((interruptSignal) =>
+          runAttemptBody(a, config, t0, base, {
+            sandbox,
+            receiver,
+            telemetry,
+            otel: otelChannel,
+            signal: AbortSignal.any([signal, interruptSignal]),
+            log,
+            enterPhase,
+            // send 在飞时归因到嵌套的 agent.run(不切换顶层阶段,见 LifecyclePhase 注释)。
+            getPhase: () => (sendActive ? "agent.run" : lastPhase),
+            setSendActive: (active) => {
+              sendActive = active;
+            },
+            recorder,
+            ...(attemptTimeout ? { attemptTimeout } : {}),
+            ...(deadlineAt !== undefined ? { deadlineAt } : {}),
+            feedback: scopedFeedback,
+            diagnostics,
+            facts,
+            commands,
+            sensitiveValues,
+            concurrencySlot,
+            declareFailure,
+            isDeadlineTimedOut: () => timedOut,
+            layerCleanups,
+            registerEvidence: (getEvents, getUsage, getRetryAttempts) => {
+              liveEvents = getEvents;
+              liveUsage = getUsage;
+              liveRetryAttempts = getRetryAttempts;
+            },
+            registerLedger: (ledger) => {
+              liveLedger = ledger;
+            },
+            assertFirst,
+            registerAssertions: (runtime) => {
+              if (liveAssertions !== undefined && liveAssertions !== runtime) {
+                throw new Error("Attempt tried to register a second Assertions runtime");
+              }
+              liveAssertions = runtime;
+            },
+            ...(opts.artifactPrepare !== undefined ? { prepareCoordinator: opts.artifactPrepare } : {}),
+          }, parentSignal),
+        ),
+      );
+
+      const contextExit = yield* Effect.exit(Effect.tryPromise({
+        try: () => assertFirst.awaitContext(signal),
+        catch: (error) => error,
+      }));
+      if (Exit.isFailure(contextExit)) {
+        if (Cause.isInterruptedOnly(contextExit.cause)) return yield* Effect.interrupt;
+        return yield* Fiber.join(bodyFiber);
+      }
+
+      const author = Effect.suspend(() => {
+        const returned = evalDef.test(contextExit.value as never) as unknown;
+        if (Effect.isEffect(returned)) {
+          return returned as Effect.Effect<void, unknown, never>;
+        }
+        return Effect.tryPromise({
+          try: () => Promise.resolve(returned),
+          catch: (error) => error,
+        });
+      });
+      const authorExit = yield* Effect.exit(author);
+      if (Exit.isSuccess(authorExit)) {
+        yield* Effect.sync(() => assertFirst.completeAuthor({ _tag: "succeeded" }));
+      } else {
+        if (Cause.isInterruptedOnly(authorExit.cause)) return yield* Effect.interrupt;
+        const failure = Cause.failureOption(authorExit.cause);
+        const defect = Cause.dieOption(authorExit.cause);
+        const completion: AttemptAuthorCompletionV1 = Option.isSome(failure)
+          ? isAssertionStopErrorV1(failure.value)
+            ? { _tag: "stopped" }
+            : { _tag: "failed", error: failure.value }
+          : { _tag: "defect", cause: Option.isSome(defect) ? defect.value : authorExit.cause };
+        yield* Effect.sync(() => assertFirst.completeAuthor(completion));
+      }
+
+      const sealRequestExit = yield* Effect.exit(Effect.tryPromise({
+        try: () => assertFirst.awaitSealRequest(signal),
+        catch: (error) => error,
+      }));
+      if (Exit.isFailure(sealRequestExit)) {
+        if (Cause.isInterruptedOnly(sealRequestExit.cause)) return yield* Effect.interrupt;
+        return yield* Fiber.join(bodyFiber);
+      }
+
+      const sealExit = yield* Effect.exit(
+        sealAttemptAssertionsV1(
+          sealRequestExit.value.runtime,
+          sealRequestExit.value.options,
+        ).pipe(
+          Effect.tap(() => Effect.sync(() => {
+            assertionsSealed = true;
+          })),
+          Effect.tap((sealed) => onSealedEvaluation?.(sealed) ?? Effect.void),
+        ),
+      );
+      if (Exit.isSuccess(sealExit)) {
+        yield* Effect.sync(() => assertFirst.completeSeal(sealExit.value));
+      } else {
+        if (Cause.isInterruptedOnly(sealExit.cause)) return yield* Effect.interrupt;
+        const failure = Cause.failureOption(sealExit.cause);
+        const defect = Cause.dieOption(sealExit.cause);
+        yield* Effect.sync(() => assertFirst.failSeal(
+          Option.isSome(failure)
+            ? failure.value
+            : Option.isSome(defect)
+              ? defect.value
+              : Cause.squash(sealExit.cause),
+        ));
+      }
+      const bodyResult = yield* Fiber.join(bodyFiber);
 
       // 留存提交:verdict 定稿、其余收尾(teardown 链、diff 采集)已在 body 内完成后,按档位
       // 提交——failed 档留 failed/errored,all 档全部;顺序不可调换:先原子写登记项,写入成功
@@ -863,22 +996,24 @@ export function runAttemptEffect(
               ...(evalDef.evaluationKind === "score" ? { scoreResult: scoreFactOutcomeForAttemptError(error) } : {}),
               ...(commands.length > 0 ? { commands: [...commands] } : {}),
             };
-            if (finalizeRegisteredFacts === undefined) return Effect.succeed(fallback);
-            return Effect.promise(async () => {
-              const finalized = await finalizeRegisteredFacts!({
-                kind: "error",
-                error: { class: "execution", code: error.code, message: error.message },
-              });
-              return withFinalizedFacts(fallback, finalized, evalDef.evaluationKind ?? "pass");
-            });
+            if (liveAssertions === undefined) return Effect.succeed(fallback);
+            return sealAttemptAssertionsV1(liveAssertions, {
+              execution: "errored",
+            }).pipe(
+              Effect.tap(() => Effect.sync(() => {
+                assertionsSealed = true;
+              })),
+              Effect.tap((sealed) => onSealedEvaluation?.(sealed) ?? Effect.void),
+              Effect.map((sealed) => withSealedAssertions(fallback, sealed)),
+              Effect.catchAll(() => Effect.succeed(fallback)),
+            );
           }),
     ),
-    Effect.flatMap((result) => {
-      if (!timedOut || timeoutFactFinalization === undefined) return Effect.succeed(result);
-      return Effect.promise(async () =>
-        withFinalizedFacts(result, await timeoutFactFinalization!, evalDef.evaluationKind ?? "pass")
-      );
-    }),
+    Effect.map((result) =>
+      !timedOut || timeoutSealedAssertions === undefined
+        ? result
+        : withSealedAssertions(result, timeoutSealedAssertions),
+    ),
     // 结果封口在 Sample release 完成之后:sandbox.stop 已由 finalizer 写进 recorder,
     // 这里把完整的阶段计时挂到即将交还的结果上(timeout / scope 兜底分支同样带上)。超时路径
     // 额外把上面那个 finalizer 折叠出的 workspace.diff / sources 并进来——它俩是异步产出,
@@ -915,18 +1050,106 @@ export function runAttemptEffect(
   );
 }
 
-function withFinalizedFacts(
+/**
+ * `EvalResult` still has historical renderer fields while its replacement
+ * invocation coordinator is being completed. This is the only Runner-side
+ * compatibility projection: it derives empty legacy graph arrays and a score
+ * terminal view from the one sealed Assert-first result. No Fact collector or
+ * Fact/use graph participates in authoring, evaluation, or sealing.
+ */
+function legacyResultProjectionFromSealedAssertions(
+  sealed: SealedAttemptAssertionsV1,
+  error?: AttemptError,
+  skipReason?: string,
+): Pick<EvalResult, "factResults" | "factUses" | "scoreResult"> {
+  const empty = Object.freeze({
+    factResults: Object.freeze([]),
+    factUses: Object.freeze([]),
+  });
+  if (sealed.score === undefined) return empty;
+  if (skipReason !== undefined) {
+    return Object.freeze({
+      ...empty,
+      scoreResult: Object.freeze({
+        status: "skipped" as const,
+        earnedScore: 0,
+        creditedScore: null,
+        reason: skipReason,
+      }),
+    });
+  }
+  const score = sealed.score;
+  const earned = score.state === "unavailable" ? 0 : score.earned;
+  if (sealed.evaluation.execution === "errored") {
+    const reasons = score.state === "complete" ? [] : score.reasons;
+    const errors = [Object.freeze({
+      kind: "error" as const,
+      error: Object.freeze({
+        class: "execution" as const,
+        code: error?.code ?? "assertion-execution-errored",
+        message: error?.message ?? "Assert-first Attempt sealed after an execution error",
+      }),
+    })] as const;
+    const scoreResult: Extract<NonNullable<EvalResult["scoreResult"]>, { readonly status: "errored" }> = {
+      status: "errored",
+      earnedScore: earned,
+      creditedScore: null,
+      errors,
+      issues: reasons.map((reason) => Object.freeze({
+        kind: "unavailable" as const,
+        reason,
+      })),
+    };
+    return Object.freeze({
+      ...empty,
+      scoreResult,
+    });
+  }
+  if (score.state === "complete") {
+    return Object.freeze({
+      ...empty,
+      scoreResult: Object.freeze({
+        status: "scored" as const,
+        earnedScore: score.earned,
+        creditedScore: score.earned,
+      }),
+    });
+  }
+  const [firstReason, ...laterReasons] = score.reasons;
+  const issues = [
+    Object.freeze({ kind: "unavailable" as const, reason: firstReason }),
+    ...laterReasons.map((reason) => Object.freeze({
+      kind: "unavailable" as const,
+      reason,
+    })),
+  ] as const;
+  const scoreResult: Extract<NonNullable<EvalResult["scoreResult"]>, { readonly status: "unavailable" }> = {
+    status: "unavailable",
+    earnedScore: earned,
+    creditedScore: null,
+    issues,
+  };
+  return Object.freeze({
+    ...empty,
+    scoreResult,
+  });
+}
+
+function withSealedAssertions(
   result: EvalResult,
-  finalized: FactFinalizeResult,
-  kind: "pass" | "score",
+  sealed: SealedAttemptAssertionsV1,
 ): EvalResult {
   return {
     ...result,
-    verdict: kind === "score" ? verdictForTerminal(finalized.score.status) : finalized.pass.verdict,
-    factResults: finalized.factResults,
-    factUses: finalized.factUses,
-    ...(kind === "score" ? { scoreResult: finalized.score } : {}),
+    verdict: sealed.verdict.state,
+    ...legacyResultProjectionFromSealedAssertions(sealed, result.error, result.skipReason),
   };
+}
+
+function isAssertionStopErrorV1(value: unknown): value is AssertionStopErrorV1 {
+  return typeof value === "object"
+    && value !== null
+    && (value as { readonly _tag?: unknown })._tag === "AssertionStopErrorV1";
 }
 
 /** Runner-originated failures before Fact folding still produce a closed Score terminal outcome. */
@@ -1072,7 +1295,7 @@ interface AttemptResources {
   commands: CommandExitEvidence[];
   /** `CommandOptions.sensitiveValues` 的 Attempt 级内存集合；只由命令包装写、结果封口读。 */
   sensitiveValues: Set<string>;
-  /** turn 级重试退避期间释放/收回的全局并发槽位;透传给 createEvalContext。 */
+  /** turn 级重试退避期间释放/收回的全局并发槽位;透传给 Assert-first Context。 */
   concurrencySlot?: ConcurrencySlot;
   /** 终局失败的空间轴回执(runAttemptEffect 持有的同一个闭包):body 的失败路径与 finally 里的
    *  per-attempt teardown 失败都经它上报,止损闸据此落闸(见 runAttemptEffect 的 declareFailure)。 */
@@ -1090,14 +1313,10 @@ interface AttemptResources {
   ) => void;
   /** 变更分类账一建好(workspace.baseline 阶段)就登记回外层(超时收尾段折叠 workspace.diff 用)。 */
   registerLedger: (ledger: ChangeLedger) => void;
-  /**
-   * Context creation registers a close-and-finalize callback with the outer
-   * Effect scope. Attempt timeout/resource failures can then preserve every
-   * Fact already declared instead of falling back to an empty trace.
-   */
-  registerFactFinalizer: (
-    finalize: (issue: import("../assertions/types.ts").ErrorAttemptIssue) => Promise<FactFinalizeResult>,
-  ) => void;
+  /** The outer Effect boundary owns author execution and the one seal. */
+  assertFirst: AssertFirstAttemptBridgeV1<unknown>;
+  /** Registers the Attempt-local runtime for interruption-safe scope sealing. */
+  registerAssertions: (runtime: AssertionsRuntimeV1<"pass" | "score">) => void;
   /** Run 级 Agent artifact prepare 协调器；仅 Runner 的 agent.ensure 使用。 */
   prepareCoordinator?: import("../agents/provisioner.ts").ArtifactPrepareCoordinator;
 }
@@ -1141,7 +1360,8 @@ async function runAttemptBody(
     layerCleanups,
     registerEvidence,
     registerLedger,
-    registerFactFinalizer,
+    assertFirst,
+    registerAssertions,
     prepareCoordinator,
   } = res;
   // ctx.fact() 闭包:校验后写进 res.facts(与 runAttemptEffect 共享的同一个 Record 引用),
@@ -1174,11 +1394,9 @@ async function runAttemptBody(
   const commandTarget = createSandboxCommandTarget(sandbox);
   /** agent.setup 时点已走到(未声明 setup 也置位)——agent.teardown 的触发条件(成对触发规则)。 */
   let agentSetupReached = false;
-  // Context 建成后留一条仅 Runner 使用的同步封存入口。它让 body 的最外层异常出口也遵守
-  // 与 timeout / Sample 层失败相同的 Fact 生命周期，而不是遗失已登记的 trace。
-  let finalizeFacts:
-    | ((issue: import("../assertions/types.ts").ErrorAttemptIssue) => FactFinalizeResult)
-    | undefined;
+  // Only the Assert-first runtime is registered with the outer Scope. The
+  // body requests its single seal after gathering non-authoring evidence.
+  let assertionState: AssertFirstContextState | undefined;
   /** adapter 在 agent.setup 里经 `ctx.reportSetup()` 交回的安装清单(宿主侧内存对象,不经沙箱磁盘;
    *  装了 Skill / plugin / MCP 的沙箱型 adapter 才有)。运行器只把它抬成 attempt artifact,
    *  不解释内容、不按 agent 名字分支;什么都没装的 adapter 不调用 → undefined,不生成空 artifact。 */
@@ -1315,7 +1533,7 @@ async function runAttemptBody(
     // 构造 t,跑 test
     enterPhase("eval.run");
     log(t("runner.driveAgent"));
-    const { context, state } = createEvalContext({
+    const { context, state } = createAssertFirstEvalContext({
       agent: run.agent,
       sandbox,
       evalId: evalDef.id,
@@ -1326,10 +1544,8 @@ async function runAttemptBody(
       experimentId: run.experimentId,
       signal,
       log,
-      judge: a.judge,
       telemetry,
       otel,
-      evalBaseDir: evalDef.baseDir,
       feedback,
       fact,
       concurrencySlot,
@@ -1337,10 +1553,9 @@ async function runAttemptBody(
       // docs/feature/error-classification/architecture.md「分类链」)。与本文件 declareFailure
       // 走的生命周期链是同一个函数,两条链的决议序各自单源在 send-failures.ts / failure-class.ts。
       experimentClassifier: run.classifyFailure,
-      // 题型决定 Fact use 的折叠；`require` 是唯一的立即控制流消费者。
+      // Pass / Score share the same Assert-first entry runtime. Their
+      // independent folds are both derived only after this Attempt seals.
       evaluationKind: evalDef.evaluationKind ?? "pass",
-      // 前置断言就地求值要看当前已提交窗口的 agent diff(非沙箱型没有分类账,省略)。
-      ...(ledger ? { liveDiff: async () => deriveDiffData(await ledger!.exportWindows()) } : {}),
       // send 窗口钩子:进入前落 eval 归因、返回后落 agent 归因(见 ledger.ts)。
       ledgerHooks: ledger
         ? {
@@ -1375,39 +1590,25 @@ async function runAttemptBody(
       () => state.manager.usage,
       () => state.manager.retryAttempts,
     );
-    finalizeFacts = (issue) => state.collector.finalizeForRunnerError(issue);
-    registerFactFinalizer((issue) => {
-      // `timeoutTo.onTimeout` invokes this before it interrupts the body. The
-      // collector synchronously freezes the terminal trace; this Promise only
-      // preserves the existing outer join shape.
-      return Promise.resolve(finalizeFacts!(issue));
-    });
+    assertionState = state;
+    registerAssertions(state.assertions);
 
     let error: AttemptError | undefined;
-    let errorClass: import("../assertions/types.ts").AttemptFactError["class"] | undefined;
     let skipReason: string | undefined;
     try {
-      await withSourceRegistry(sourceRegistry, () => evalDef.test(context as never));
-      if (evalDef.evaluationKind === "score") state.collector.completeScore();
-      else state.collector.completePass();
+      assertFirst.offerContext(context);
+      const author = await assertFirst.awaitAuthor(signal);
+      if (author._tag === "failed") throw author.error;
+      if (author._tag === "defect") throw author.cause;
     } catch (e) {
       if (e instanceof EvalSkipped) {
         skipReason = e.reason;
-        state.collector.closeForSkip(e.reason);
-      }
-      else if (e instanceof EvalRequirementFailed) {
-        /* 断言已记录,非执行错误 */
       } else {
         // eval 脚本(比如引用了已改名/删掉的 API)抛出的 TypeError:message 是一层原因,完整 stack
         // 单独进 `error.stack`,niceeval show 展开时才看得到 eval 文件的 file:line。
         // 作者从 test(t) 体内抛的 ExperimentFatalError / EvalFatalError 也走这条分支。
         declareFailure(getPhase() ?? "eval.run", e);
         error = errorFromThrown(e, getPhase(), res.attemptTimeout);
-        errorClass = isSendFailure(e) ? "agent" : "author";
-        state.collector.finalizeForRunnerError({
-          kind: "error",
-          error: { class: errorClass, code: error.code, message: error.message },
-        });
       }
     }
 
@@ -1418,10 +1619,6 @@ async function runAttemptBody(
     let diffWindows: DiffArtifact = [];
     let diffArtifactAvailable = true;
     if (!skipReason && usesSandbox && ledger) {
-      // 快照必须在导出前读取：导出失败时是否致命只由已登记消费者决定，
-      // 不能按“发生在评分前”一刀切。optional 断言仍需要 unavailable 记录，
-      // 因此所有失败都会先冻结 collector 的通道状态。
-      const diffRequirements = state.collector.evidenceRequirementSnapshot();
       const startedAt = recorder.offsetNow();
       const operation = recorder.child(workspaceDiffExportActivity({
         label: "export workspace diff",
@@ -1439,27 +1636,16 @@ async function runAttemptBody(
         if (operation) operation.failed = true;
         if (isBodyInterrupted(signal, parentSignal, isDeadlineTimedOut())) throw diffError;
         diffArtifactAvailable = false;
-        const reason = `workspace diff export unavailable: ${firstLine(formatThrown(diffError))}`;
-        state.collector.markEvidenceUnavailable("diff", reason);
-        if (diffRequirements.diff.required) {
-          // 显式 diff 断言会在 finalize 中得到 unavailable；若只是无法绑定到某条
-          // Spec 的直接读取，则补一条 AttemptError，至少不能把空 diff 当成 passed/failed。
-          if (diffRequirements.diff.requiredConsumers === 0 && error === undefined) {
-            error = errorFromThrown(diffError, "workspace.diff", res.attemptTimeout);
-            errorClass = "execution";
-          }
-        } else {
-          feedback.diagnostic({
-            code: "workspace-diff-unavailable",
-            level: "warning",
-            message: `workspace diff export failed; continuing with command/event evidence: ${firstLine(formatThrown(diffError))}`,
-            data: evidenceDiagnosticData(
-              "exportWindows",
-              diffError,
-              a.plan._tag === "Sandbox" ? a.plan.providerPlan.provider : undefined,
-            ),
-          });
-        }
+        feedback.diagnostic({
+          code: "workspace-diff-unavailable",
+          level: "warning",
+          message: `workspace diff export failed; continuing with command/event evidence: ${firstLine(formatThrown(diffError))}`,
+          data: evidenceDiagnosticData(
+            "exportWindows",
+            diffError,
+            a.plan._tag === "Sandbox" ? a.plan.providerPlan.provider : undefined,
+          ),
+        });
       } finally {
         if (operation) {
           operation.durationMs = Math.max(0, recorder.offsetNow() - startedAt);
@@ -1480,43 +1666,20 @@ async function runAttemptBody(
     const scripts: globalThis.Record<string, ScriptResult> = {};
     state.late.scripts = scripts;
 
-    // 评分
+    // Runtime observations remain available to trace/cost projection. Assertion
+    // authoring itself has already been captured as sealed-entry registrations.
     const events = state.manager.allEvents;
     const usage = state.manager.usage;
     const facts = deriveRunFacts(events);
-    const assertionEvaluationContext: AssertionEvaluationContext = {
-      events,
-      facts,
-      diff,
-      scripts,
-      usage,
-      status: state.manager.lastStatus,
-      // attempt 级聚合覆盖(各轮最差值);t.* 作用域断言按它折叠,turn/session 作用域在
-      // record 时已换成各自的覆盖(见 context.ts 的 recordScoped / makeTurnHandle)。
-      evidenceCoverage: state.manager.evidenceCoverage,
-      readFile: async (path) => {
-        try {
-          return await sandbox!.readText(path);
-        } catch {
-          return undefined;
-        }
-      },
-    };
     if (!skipReason) enterPhase("assertions.evaluate");
-    const judgeFinalizationStartedAt = Date.now();
-    const finalizedFacts = await state.collector.finalize(assertionEvaluationContext, {
-      onJudgeProgress: ({ index, total, check }) =>
-        log(`judge · ${check} (${index}/${total}) · ${Date.now() - judgeFinalizationStartedAt}ms`),
-      ...(error === undefined || errorClass === undefined
-        ? {}
-        : {
-            externalErrors: [{
-              kind: "error" as const,
-              error: { class: errorClass, code: error.code, message: error.message },
-            }],
-          }),
-    });
-    const verdict = factVerdict(finalizedFacts, evalDef.evaluationKind ?? "pass");
+    const sealedAssertions = await assertFirst.requestSeal({
+      runtime: state.assertions,
+      options: {
+        execution: error === undefined ? "completed" : "errored",
+        explicitlySkipped: skipReason !== undefined,
+      },
+    }, signal);
+    const verdict = sealedAssertions.verdict.state;
 
     // 收 OTLP trace:给最后一批导出留点落地时间,再 collect(空则不挂)。
     // codex 的 OTLP 把内部 Rust tracing 全导出来(handle_responses / append_items … 上万条);
@@ -1588,8 +1751,14 @@ async function runAttemptBody(
     // 权威唯一在 result.json 的 estimatedCostUSD;o11y.json 只留行为计数(见 docs/feature/record/architecture.md「o11y.json」)。
     const cost = usage.costUSD ?? estimateCost(run.model, usage, config.pricing);
 
-    // 收 test 引用到的 eval 源码(按 send / 断言的 loc 去重),供 view 渲染代码视图。
-    const sources = await collectSources(events, finalizedFacts.factResults, finalizedFacts.factUses, evalDef.source, sourceRegistry);
+    // Assert-first entries carry no legacy source graph. Session events and the
+    // captured entry module still provide the stable source artifact surface.
+    const sources = await collectSources(events, evalDef.source, sourceRegistry);
+    const legacyProjection = legacyResultProjectionFromSealedAssertions(
+      sealedAssertions,
+      error,
+      skipReason,
+    );
 
     const value: EvalResult = {
       id: evalDef.id,
@@ -1605,10 +1774,8 @@ async function runAttemptBody(
       attempt,
       startedAt: new Date(t0).toISOString(),
       durationMs,
-      factResults: finalizedFacts.factResults,
-      factUses: finalizedFacts.factUses,
+      ...legacyProjection,
       evaluationKind: evalDef.evaluationKind ?? "pass",
-      ...(evalDef.evaluationKind === "score" ? { scoreResult: finalizedFacts.score } : {}),
       ...(state.manager.retryAttempts.length > 0 ? { retryAttempts: state.manager.retryAttempts } : {}),
       usage,
       estimatedCostUSD: cost,
@@ -1634,18 +1801,31 @@ async function runAttemptBody(
     // 再折成纯数据 AttemptError(顺序不可换,见 declareFailure)。
     declareFailure(getPhase() ?? "eval.run", e);
     const error = errorFromThrown(e, getPhase(), res.attemptTimeout);
-    const finalized = finalizeFacts?.({
-      kind: "error",
-      error: { class: "execution", code: error.code, message: error.message },
-    });
+    // If setup failed before Context construction, release the outer Effect
+    // boundary instead of leaving it waiting for a Context that cannot exist.
+    assertFirst.failBeforeContext(e);
+    let sealed: SealedAttemptAssertionsV1 | undefined;
+    if (assertionState !== undefined) {
+      try {
+        sealed = await assertFirst.requestSeal({
+          runtime: assertionState.assertions,
+          options: { execution: "errored" },
+        }, signal);
+      } catch {
+        // The outer Effect branch owns attachment/seal failures. Keep this
+        // fallback as an execution error without inventing another runtime.
+      }
+    }
     const value: EvalResult = {
       ...base,
       durationMs: recorder.offsetNow(),
       error,
-      ...(evalDef.evaluationKind === "score" ? { scoreResult: scoreFactOutcomeForAttemptError(error) } : {}),
+      ...(sealed === undefined
+        ? (evalDef.evaluationKind === "score" ? { scoreResult: scoreFactOutcomeForAttemptError(error) } : {})
+        : legacyResultProjectionFromSealedAssertions(sealed, error)),
       ...(agentSetup !== undefined ? { agentSetup } : {}),
     };
-    return finalized === undefined ? value : withFinalizedFacts(value, finalized, evalDef.evaluationKind ?? "pass");
+    return value;
   } finally {
     // 收尾段一律在 finally 跑(主链成败都执行),不改判定,各自兜错(diagnostic)、各自计时
     // (不计入 durationMs 口径,见 docs/feature/record/architecture.md)。执行序与 LifecyclePhase
@@ -1962,21 +2142,8 @@ function withCommandTiming(
   return timed;
 }
 
-/**
- * 收集 test 引用到的 eval 源码:从 send(user message)与断言的 loc 去重出文件集。
- * 命中 eval 自己的定义文件(绝大多数情况——send / 断言几乎总在 eval 主体里直接调用)时,
- * 直接用 discovery 时已经读好、归一化、算过哈希的 `evalSource`,不重新读盘;loc 指向
- * 其它文件(包括 callers 链中的 helper)在首次引用后由 registry 冻结；这里仅把已知路径
- * 补成 artifact。读取失败不能删掉 loc，投影会将该路径表示为 unavailable。
- */
-function factVerdict(finalized: FactFinalizeResult, kind: "pass" | "score"): import("../types.ts").Verdict {
-  return kind === "score" ? verdictForTerminal(finalized.score.status) : finalized.pass.verdict;
-}
-
 async function collectSources(
   events: readonly StreamEvent[],
-  factResults: readonly import("../assertions/types.ts").EvaluationFactResult[],
-  factUses: readonly (import("../assertions/types.ts").VerdictFactUseResult | import("../assertions/types.ts").ScoreFactUseResult)[],
   evalSource: CapturedEvalSource,
   registry?: SourceRegistry,
 ): Promise<SourceArtifact[]> {
@@ -1988,8 +2155,6 @@ async function collectSources(
     for (const frame of loc.callers ?? []) if (frame.kind === "project") paths.add(frame.file);
   };
   for (const e of events) if (e.type === "message") add(e.loc);
-  for (const fact of factResults) add(fact.producerLoc);
-  for (const use of factUses) add(use.consumerLoc);
   const out: SourceArtifact[] = [{ path: evalSource.path, content: evalSource.content, role: "entry" }];
   for (const path of paths) {
     if (path === evalSource.path) {

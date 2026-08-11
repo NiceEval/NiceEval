@@ -1,6 +1,7 @@
 // runner 域类型:结果 / 汇总 / reporter 契约,eval / experiment / config 定义,
 // 以及调度器的编排类型(AgentRun / RunOptions / Attempt)。
 
+import type { Effect } from "effect";
 import type { JsonValue, LocalizedText, ScopedFeedback, SourceArtifact, Verdict } from "../shared/types.ts";
 import type { AttemptFailureClassifier } from "../shared/failure-class.ts";
 import type { O11ySummary, StreamEvent, TraceSpan, Truncation, Usage } from "../o11y/types.ts";
@@ -657,8 +658,10 @@ export type ReporterEvent =
  */
 export type EvaluationKind = "pass" | "score";
 
-export const EVALUATION_ALGORITHM = "fact-use/v3" as const;
-export type EvaluationAlgorithm = typeof EVALUATION_ALGORITHM;
+/** The live Runner derives Pass and Score from one sealed Assert-first entry sequence. */
+export const EVALUATION_ALGORITHM = "assert-first/v1" as const;
+/** `fact-use/v3` remains only as the historical Record reader/writer bridge. */
+export type EvaluationAlgorithm = typeof EVALUATION_ALGORITHM | "fact-use/v3";
 
 /**
  * 作者输入里的派生字段用模块私有诊断类型，而不是 `never`：错误会说明字段属于哪个阶段。
@@ -713,12 +716,15 @@ export interface EvalAuthorFields {
   diff?: { include?: string[]; ignore?: string[] };
 }
 
+/** Authors may return an Effect; Runner executes it in the Attempt's owning fiber. */
+type EvalTestReturn = void | Promise<void> | Effect.Effect<void, unknown, never>;
+
 /** 作者输入：id 归 discovery、evaluationKind 归 factory、configHash 归 planning，作者都不能填写。 */
 export type EvalInput = EvalAuthorFields & {
   id?: IdComesFromFilePath;
   evaluationKind?: EvaluationKindComesFromFactory;
   configHash?: ConfigHashComesFromPlanning;
-  test(t: TestContext): Promise<void> | void;
+  test(t: TestContext): EvalTestReturn;
 };
 
 /** 计分制作者输入，只有 test 的上下文不同。 */
@@ -726,7 +732,7 @@ export type ScoreEvalInput = EvalAuthorFields & {
   id?: IdComesFromFilePath;
   evaluationKind?: EvaluationKindComesFromFactory;
   configHash?: ConfigHashComesFromPlanning;
-  test(t: ScoreTestContext): Promise<void> | void;
+  test(t: ScoreTestContext): EvalTestReturn;
 };
 
 /** Factory 完成默认归一后的 Eval 字段；Definition 不再复用作者输入的 optional 半状态。 */
@@ -749,7 +755,6 @@ export interface EvalDefinitionFields {
 }
 
 /** Factory 产物保留精确 evaluationKind / context，并带模块私有品牌，不能由对象字面量伪造。 */
-type EvalTestReturn = void | Promise<void>;
 
 export interface EvalDefinition<Kind extends EvaluationKind, Context> extends EvalDefinitionFields {
   readonly evaluationKind: Kind;

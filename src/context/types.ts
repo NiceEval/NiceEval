@@ -26,6 +26,7 @@ import type {
 import type { InputRequest, LogicalToolOccurrence, O11ySummary, StreamEvent, Usage } from "../o11y/types.ts";
 import type { DiagnosticInput, JsonMatch, JsonValue, ProgressUpdate } from "../shared/types.ts";
 import type { SandboxOperations, SandboxTransferOperations } from "../sandbox/types.ts";
+import type { AssertFirstTestContextV1 } from "./assert-first.ts";
 
 export type {
   AssertionEvent,
@@ -154,7 +155,8 @@ export interface SessionHandle extends OrderedScopedFactProducers<"now"> {
   readonly usage: Usage;
 }
 
-export interface TestContext extends AggregateScopedFactProducers<"final"> {
+/** @internal Historical Fact authoring surface retained only for legacy Context code. */
+export interface LegacyTestContext extends AggregateScopedFactProducers<"final"> {
   send(input: SendInput): Promise<TurnHandle>;
   sendFile(path: string, text?: string): Promise<TurnHandle>;
   requireInputRequest(filter?: InputRequestFilter): InputRequest;
@@ -221,7 +223,8 @@ export interface TestContext extends AggregateScopedFactProducers<"final"> {
   readonly judge: JudgeNamespace;
 }
 
-export interface ScoreTestContext extends TestContext {
+/** @internal Historical Fact authoring surface retained only for legacy Context code. */
+export interface LegacyScoreTestContext extends LegacyTestContext {
   score<F extends BooleanFact<unknown, FactPhase>>(label: string, fact: F, options: ScoreUseOptions): F;
   score<F extends ScoreFact<FactPhase>>(label: string, fact: F, options: ScoreUseOptions): F;
   score<T, I, R extends I, P extends FactPhase>(
@@ -250,3 +253,9 @@ export interface ScoreTestContext extends TestContext {
   ): ScoreFact<"now">;
   score(label: string, direct: DirectScoreOptions): void;
 }
+
+/** The public Eval Context is the Assert-first runtime handed to Runner. */
+export type TestContext = AssertFirstTestContextV1<"pass">;
+
+/** Score Eval extends the same sealed entry runtime with direct point entries. */
+export type ScoreTestContext = AssertFirstTestContextV1<"score">;

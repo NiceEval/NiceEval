@@ -13,7 +13,6 @@ import type {
   AssertionMaterialV1,
   WritableCriterionEnvelopeV1,
 } from "./record/model.ts";
-import type { EvaluationAttemptFactsV1 } from "../eval/record/sealed-assertion.ts";
 
 /** The two Evaluation kinds deliberately share one Assertion entry model. */
 export type AssertionEvaluationKindV1 = "pass" | "score";
@@ -218,6 +217,12 @@ export type MeasurementAssertionHandleV1<
 export interface AssertionSealOptionsV1 {
   readonly execution?: "completed" | "errored";
   readonly explicitlySkipped?: boolean;
+  /**
+   * The owning Attempt was interrupted before ordinary evaluation could
+   * finish. Unsettled entries are sealed as producer-interrupted instead of
+   * being silently omitted or evaluated on a detached runtime.
+   */
+  readonly interrupted?: boolean;
 }
 
 export interface AssertionSealErrorV1 {
@@ -227,14 +232,30 @@ export interface AssertionSealErrorV1 {
 }
 
 /**
+ * The sealed evaluation data owned by Assertions. It is deliberately named
+ * for its role, rather than for the historical Record fold input it can be
+ * adapted into at the single Record boundary.
+ */
+export interface SealedAssertionEvaluationEntryV1 {
+  readonly required: boolean;
+  readonly result: AssertionsAttachmentEntryInputV1<never, never>["result"];
+}
+
+export interface SealedAssertionEvaluationV1 {
+  readonly execution: "completed" | "errored";
+  readonly explicitlySkipped: boolean;
+  readonly assertions: readonly SealedAssertionEvaluationEntryV1[];
+}
+
+/**
  * One immutable result feeds both independent consumers. `entries` preserve
- * declaration order and may be appended directly to the Assertions producer;
- * `facts` feed the existing Verdict and Score folds without reinterpreting
- * authoring control flow.
+ * declaration order and may be appended directly to the Assertions producer.
+ * `evaluation` is the sealed, attempt-local input shared by the Verdict and
+ * Score folds; it does not expose a Fact authoring or Runner model.
  */
 export interface SealedAssertionsRuntimeV1 {
   readonly entries: readonly AssertionsAttachmentEntryInputV1<never, never>[];
-  readonly facts: EvaluationAttemptFactsV1;
+  readonly evaluation: SealedAssertionEvaluationV1;
 }
 
 export interface AssertionsRuntimeV1<

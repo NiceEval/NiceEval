@@ -13,6 +13,7 @@ import {
   type BooleanAssertionRegistrationV1,
   type MeasurementAssertionEvaluationV1,
   type MeasurementAssertionRegistrationV1,
+  type SealedAssertionEvaluationV1,
   type SealedAssertionsRuntimeV1,
 } from "./api.ts";
 import {
@@ -46,7 +47,6 @@ import type {
   UnavailableScoreContributionV1,
   WritableCriterionEnvelopeV1,
 } from "./record/model.ts";
-import type { EvaluationAttemptFactsV1 } from "../eval/record/sealed-assertion.ts";
 
 const UTF8 = new TextEncoder();
 
@@ -69,7 +69,8 @@ type EntrySettlement =
         | "redacted";
     }
   | { readonly state: "not-applicable" }
-  | { readonly state: "errored" };
+  | { readonly state: "errored" }
+  | { readonly state: "interrupted" };
 
 interface AssertionEntry {
   readonly index: number;
@@ -695,6 +696,18 @@ class AssertionsRuntimeImplementation {
   ): Effect.Effect<SealedAssertionsRuntimeV1, AssertionSealErrorV1, never> {
     return Effect.suspend(() => {
       if (this.sealed !== undefined) return Effect.succeed(this.sealed);
+      if (options.interrupted) {
+        this.closing = true;
+        for (const entry of this.entries) {
+          if (entry.settled === undefined) {
+            entry.settled = Object.freeze({ state: "interrupted" as const });
+          }
+        }
+        return Effect.sync(() => this.finishSeal({
+          ...options,
+          execution: "errored",
+        }));
+      }
       const missingThreshold = this.entries.find(
         (entry) => this.evaluationKind === "pass" && entry.kind === "measurement" && entry.threshold === undefined,
       );
@@ -867,9 +880,14 @@ class AssertionsRuntimeImplementation {
               ),
             ),
           );
-          entry.settled = settled;
-          yield* Deferred.succeed(deferred, settled);
-          return settled;
+          // An enclosing Attempt interruption may have synchronously sealed
+          // this entry while its evaluator was unwinding. Preserve that
+          // producer-interrupted terminal fact rather than resurrecting a
+          // late evaluator result.
+          const terminal = entry.settled ?? settled;
+          entry.settled = terminal;
+          yield* Deferred.succeed(deferred, terminal);
+          return terminal;
         }),
       );
     });
@@ -898,7 +916,7 @@ class AssertionsRuntimeImplementation {
   private finishSeal(options: AssertionSealOptionsV1): SealedAssertionsRuntimeV1 {
     if (this.sealed !== undefined) return this.sealed;
     const entries: AssertionsAttachmentEntryInputV1<never, never>[] = [];
-    const assertions: EvaluationAttemptFactsV1["assertions"][number][] = [];
+    const assertions: SealedAssertionEvaluationV1["assertions"][number][] = [];
     for (const entry of this.entries) {
       const sealedEntry = this.toAttachmentEntry(entry);
       entries.push(sealedEntry);
@@ -907,12 +925,15 @@ class AssertionsRuntimeImplementation {
         result: sealedEntry.result,
       }));
     }
-    const facts: EvaluationAttemptFactsV1 = Object.freeze({
+    const evaluation: SealedAssertionEvaluationV1 = Object.freeze({
       execution: options.execution ?? "completed",
       explicitlySkipped: options.explicitlySkipped ?? false,
       assertions: Object.freeze(assertions),
     });
-    this.sealed = Object.freeze({ entries: Object.freeze(entries), facts });
+    this.sealed = Object.freeze({
+      entries: Object.freeze(entries),
+      evaluation,
+    });
     return this.sealed;
   }
 
@@ -1008,6 +1029,13 @@ class AssertionsRuntimeImplementation {
         return Object.freeze({
           state: "errored" as const,
           reason: "evaluator-failed" as const,
+          gate: this.gateForUnavailable(entry),
+          score: this.incompleteScoreFor(entry, "evaluation-errored"),
+        });
+      case "interrupted":
+        return Object.freeze({
+          state: "errored" as const,
+          reason: "producer-interrupted" as const,
           gate: this.gateForUnavailable(entry),
           score: this.incompleteScoreFor(entry, "evaluation-errored"),
         });

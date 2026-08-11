@@ -83,7 +83,7 @@ import type {
   SessionHandle,
   SourceLoc,
   StreamEvent,
-  TestContext,
+  LegacyTestContext,
   Turn,
   TurnHandle,
   Usage,
@@ -696,7 +696,7 @@ async function fileChangedOutcome(
 }
 
 /** Build one context and its single-owner Fact collector. */
-export function createEvalContext(deps: ContextDeps): { context: TestContext; state: ContextState } {
+export function createEvalContext(deps: ContextDeps): { context: LegacyTestContext; state: ContextState } {
   let sourceOrder = 0;
   const nextSourceOrder = (): number => ++sourceOrder;
   const manager = new SessionManager({
@@ -1510,7 +1510,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
         get: capabilityGuard(deps.agent.name, "sandbox", "t.sandbox"),
         enumerable: true,
       });
-  return { context: context as unknown as TestContext, state };
+  return { context: context as unknown as LegacyTestContext, state };
 }
 
 async function readInputFile(path: string): Promise<InputFile> {
