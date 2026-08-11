@@ -324,11 +324,9 @@ Scope release finalizer 只释放锁和 handle。它的失败不能返回为 typ
 `record-migration-required`；future 或 foreign major 返回 `record-format-unsupported`。
 open 从不自动改写磁盘，也不提供 compat reader。
 
-Core migration 只注册相邻 converter：
-
-```text
-niceeval.record/v1 → niceeval.record/v2 → niceeval.record/v3
-```
+Core migration 只注册相邻 converter：未来从 `niceeval.record/vN`
+演进到 `niceeval.record/vN+1` 时，每条边单独定义并串行组合。当前只有
+`niceeval.record/v1`，因此没有伪造的 v2 / v3 Core converter。
 
 每个 Attachment family 也只登记相邻关系，并且每条边恰有一个 converter 或
 `not-losslessly-migratable` 声明。converter 接收完整 `RecordAttachmentValue<From>`；其

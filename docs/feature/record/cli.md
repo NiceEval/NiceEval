@@ -21,14 +21,10 @@ reader 可以和 writer 并发。writer 尚未创建完成标识的 directory �
 
 ## 普通命令只认 current Core major
 
-已知旧 Core major：
-
-```text
-record-migration-required
-Record format: niceeval.record/v1
-Current format: niceeval.record/v3
-Run: niceeval migrate --record <root>
-```
+已知旧 Core major 返回 `record-migration-required`，并携带读到的
+`sourceFormat`、当前 `targetFormat` 与精确命令
+`niceeval migrate --record <root>`。当前只有 `niceeval.record/v1`；未来发布新
+major 后才会出现这个分支。
 
 future 或 foreign format 返回 `record-format-unsupported`。root 不存在与旧格式不是同一种
 状态；`exp --dry` 只能把真正不存在的 root 当成 empty history。

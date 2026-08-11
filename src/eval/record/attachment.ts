@@ -10,7 +10,7 @@ import type { RecordAttachmentOwner } from "../../record/model/core.ts";
 
 /**
  * Every RecordAttachment payload is decoded as an exact JSON object. Keep this
- * option next to the producer-owned payload schemas so their direct probes use
+ * option next to the producer-owned payload schemas so their direct checks use
  * the same boundary as the future RecordAttachment definition.
  */
 export const ExactRecordAttachmentParseOptions = Object.freeze({
