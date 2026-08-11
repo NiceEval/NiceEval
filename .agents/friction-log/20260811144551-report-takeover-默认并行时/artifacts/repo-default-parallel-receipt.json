@@ -1,0 +1,188 @@
+{
+  "repoId": "report",
+  "invocationIds": [
+    "ae9d50a8-f448-41b0-ad02-4be5786cd69e",
+    "005849a8-e0b2-43d0-b730-47c5b89ec128"
+  ],
+  "testInvocations": 1,
+  "copyId": "repo-default-parallel",
+  "runLabel": "takeover/repo-default-parallel",
+  "sourceSnapshotDigest": "b62ded1e1a6f5254bc995d08dbfcca345d4465bd81a7e68a4a18a10edc3be63a",
+  "artifactDir": "/tmp/niceeval-e2e-takeover-artifacts-C7UIWO/takeover/repo-default-parallel/report",
+  "receiptPath": "/tmp/niceeval-e2e-takeover-artifacts-C7UIWO/takeover/repo-default-parallel/report/receipt.json",
+  "stages": [
+    {
+      "stage": "preflight",
+      "ok": true,
+      "invocationId": "ae9d50a8-f448-41b0-ad02-4be5786cd69e",
+      "checks": [
+        {
+          "kind": "runtime",
+          "subject": "node>=22",
+          "ok": true,
+          "detail": "node>=22 available",
+          "command": [
+            "node",
+            "--version"
+          ],
+          "capture": {
+            "exitCode": 0,
+            "signal": null,
+            "timedOut": false,
+            "cancelled": false,
+            "stdout": "v24.18.0\n",
+            "stderr": "",
+            "processGroupOwned": true,
+            "groupCleanup": {
+              "owned": true,
+              "checked": true,
+              "aliveAfterLeaderClose": false,
+              "groupId": 1477424,
+              "signalsSent": [],
+              "gone": true,
+              "detail": "owned process group 1477424 was absent after command leader close"
+            }
+          }
+        }
+      ],
+      "detail": "declared host capabilities available"
+    },
+    {
+      "stage": "prepare",
+      "ok": true,
+      "detail": "source clean; harness.testkit declared"
+    },
+    {
+      "stage": "install",
+      "ok": true,
+      "invocationId": "ae9d50a8-f448-41b0-ad02-4be5786cd69e",
+      "command": [
+        "pnpm",
+        "install",
+        "--no-frozen-lockfile"
+      ],
+      "capture": {
+        "exitCode": 0,
+        "signal": null,
+        "timedOut": false,
+        "cancelled": false,
+        "stdout": "✓ Lockfile passes supply-chain policies (verified 2d ago)\nProgress: resolved 1, reused 0, downloaded 0, added 0\nProgress: resolved 337, reused 287, downloaded 0, added 0\nPackages: +294\n++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\nPackages are hard linked from the content-addressable store to the virtual store.\n  Content-addressable store is at: /home/ctrdh/.local/share/pnpm/store/v11\n  Virtual store is at:             node_modules/.pnpm\nProgress: resolved 344, reused 294, downloaded 0, added 294, done\n. postinstall$ playwright install chromium\n. postinstall: BEWARE: your OS is not officially supported by Playwright; downloading fallback build for ubuntu24.04-x64.\n. postinstall: BEWARE: your OS is not officially supported by Playwright; downloading fallback build for ubuntu24.04-x64.\n. postinstall: BEWARE: your OS is not officially supported by Playwright; downloading fallback build for ubuntu24.04-x64.\n. postinstall: Done\n\ndependencies:\n+ niceeval 0.4.6\n+ react 19.2.7 (19.2.8 is available)\n+ react-dom 19.2.7 (19.2.8 is available)\n\ndevDependencies:\n+ @niceeval/testkit 0.1.0\n+ @playwright/test 1.61.1 (1.62.1 is available)\n+ @types/node 22.20.1 (26.2.0 is available)\n+ @types/react 19.2.18\n+ typescript 5.9.3 (7.0.2 is available)\n+ vitest 4.1.10\n\nDone in 2.5s using pnpm v11.18.0\n",
+        "stderr": "",
+        "processGroupOwned": true,
+        "groupCleanup": {
+          "owned": true,
+          "checked": true,
+          "aliveAfterLeaderClose": false,
+          "groupId": 1477559,
+          "signalsSent": [],
+          "gone": true,
+          "detail": "owned process group 1477559 was absent after command leader close"
+        }
+      },
+      "detail": "pnpm install ok"
+    },
+    {
+      "stage": "injection",
+      "ok": true,
+      "invocationId": "ae9d50a8-f448-41b0-ad02-4be5786cd69e",
+      "detail": "candidate integrity matches lockfile; Testkit snapshot (@niceeval/testkit@0.1.0) has one directory resolution; isolated realpath verified at /tmp/niceeval-e2e-takeover-scratch-FlAjpG/runs/takeover/repo-default-parallel/report/node_modules/.pnpm/@niceeval+testkit@file+..+..+..+..+testkit+package/node_modules/@niceeval/testkit"
+    },
+    {
+      "stage": "browser",
+      "ok": true,
+      "invocationId": "ae9d50a8-f448-41b0-ad02-4be5786cd69e",
+      "checks": [
+        {
+          "kind": "browser",
+          "subject": "chromium",
+          "ok": true,
+          "detail": "Playwright browser chromium available",
+          "command": [
+            "/nix/store/p8hbhn8hdqz5p3a7y6dvi1y1x8nriybl-nodejs-slim-24.18.0/bin/node",
+            "-e",
+            "\nconst fs = require(\"node:fs\");\nconst browsers = JSON.parse(process.argv[1]);\nlet playwright;\ntry {\n  playwright = require(\"playwright\");\n} catch (error) {\n  console.error(\"Playwright is not installed for this browser requirement:\", error instanceof Error ? error.message : String(error));\n  process.exit(1);\n}\nfor (const browser of browsers) {\n  const launcher = playwright[browser];\n  if (!launcher || typeof launcher.executablePath !== \"function\") {\n    console.error(\"Unsupported Playwright browser:\", browser);\n    process.exit(1);\n  }\n  const override = process.env[browser.toUpperCase() + \"_EXECUTABLE_PATH\"];\n  const executable = override || launcher.executablePath();\n  if (!executable || !fs.existsSync(executable)) {\n    console.error(\"Browser \" + browser + \" is unavailable at \" + (executable || \"(no executable path)\"));\n    process.exit(1);\n  }\n}\n",
+            "[\"chromium\"]"
+          ],
+          "capture": {
+            "exitCode": 0,
+            "signal": null,
+            "timedOut": false,
+            "cancelled": false,
+            "stdout": "",
+            "stderr": "",
+            "processGroupOwned": true,
+            "groupCleanup": {
+              "owned": true,
+              "checked": true,
+              "aliveAfterLeaderClose": false,
+              "groupId": 1483602,
+              "signalsSent": [],
+              "gone": true,
+              "detail": "owned process group 1483602 was absent after command leader close"
+            }
+          }
+        }
+      ],
+      "detail": "declared browser capabilities available"
+    },
+    {
+      "stage": "test",
+      "attempt": 1,
+      "invocationId": "005849a8-e0b2-43d0-b730-47c5b89ec128",
+      "ok": false,
+      "command": [
+        "node",
+        "scripts/run-native.mjs"
+      ],
+      "capture": {
+        "exitCode": 1,
+        "signal": null,
+        "timedOut": false,
+        "cancelled": false,
+        "stdout": "\n RUN  v4.1.10 /tmp/niceeval-e2e-takeover-scratch-FlAjpG/runs/takeover/repo-default-parallel/report\n\n ❯ test/report-config-reload.test.ts (1 test | 1 failed) 16666ms\n   × view 持续重建项目模块、配置、Record，并在修复报告后恢复 16664ms\n\n Test Files  1 failed | 5 passed (6)\n      Tests  1 failed | 5 passed (6)\n   Start at  14:44:24\n   Duration  16.85s (transform 101ms, setup 0ms, import 289ms, tests 31.88s, environment 1ms)\n\n",
+        "stderr": "\n⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯\n\n FAIL  test/report-config-reload.test.ts > view 持续重建项目模块、配置、Record，并在修复报告后恢复\nError: initial custom report readiness: timed out after 15000ms\n ❯ pollUntil node_modules/.pnpm/@niceeval+testkit@file+..+..+..+..+testkit+package/node_modules/@niceeval/testkit/dist/esm/primitives.js:60:11\n ❯ test/report-config-reload.test.ts:89:25\n     87|           );\n     88|\n     89|           const first = await pollUntil(\n       |                         ^\n     90|             () => htmlWithMarkers(origin!, \"REPORT_FIRST\", \"INDIRECT_F…\n     91|             { timeoutMs: 15_000, intervalMs: 100, label: \"initial cust…\n ❯ withProcess node_modules/.pnpm/@niceeval+testkit@file+..+..+..+..+testkit+package/node_modules/@niceeval/testkit/dist/esm/process-lifecycle.js:285:21\n ❯ test/report-config-reload.test.ts:57:7\n ❯ withProjectCopy node_modules/.pnpm/@niceeval+testkit@file+..+..+..+..+testkit+package/node_modules/@niceeval/testkit/dist/esm/project-copy.js:73:18\n ❯ test/report-config-reload.test.ts:36:3\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯\n\n",
+        "processGroupOwned": true,
+        "groupCleanup": {
+          "owned": true,
+          "checked": true,
+          "aliveAfterLeaderClose": false,
+          "groupId": 1484108,
+          "signalsSent": [],
+          "gone": true,
+          "detail": "owned process group 1484108 was absent after command leader close"
+        }
+      },
+      "detail": "test invocation 1 failed (exit 1)"
+    },
+    {
+      "stage": "collect",
+      "ok": true,
+      "collected": [
+        "evidence"
+      ],
+      "detail": "wrote 1 artifact path(s) under /tmp/niceeval-e2e-takeover-artifacts-C7UIWO/takeover/repo-default-parallel/report"
+    },
+    {
+      "stage": "cleanup",
+      "ok": true,
+      "path": "/tmp/niceeval-e2e-takeover-scratch-FlAjpG/runs/takeover/repo-default-parallel/report",
+      "detail": "removed /tmp/niceeval-e2e-takeover-scratch-FlAjpG/runs/takeover/repo-default-parallel/report; Testkit snapshot sha256:f59b62fd7af40931a837d530b11b5de6efb3812d408ec8b6ef2fe1124a6615f7 unchanged"
+    }
+  ],
+  "exitCode": 1,
+  "category": "regression",
+  "detail": "test invocation 1 failed (exit 1)",
+  "candidate": {
+    "sha256": "30d4f7b51b791b00126008f741afac699120c2ac5af3c6c4a81799414ed2ea39",
+    "integrity": "sha512-p9zP1TjXmMINVDVqnsPXmEDZvMHhmbKzl+WO0+Lj1rZQnjbjjRS0RdcKsOzR+atYoG1AAm4lkjscgB0obOaIYQ==",
+    "artifactPath": "candidate/niceeval-candidate-30d4f7b51b791b00126008f741afac699120c2ac5af3c6c4a81799414ed2ea39.tgz",
+    "reproduce": "pnpm e2e run --candidate /tmp/niceeval-e2e-takeover-artifacts-C7UIWO/candidate/niceeval-candidate-30d4f7b51b791b00126008f741afac699120c2ac5af3c6c4a81799414ed2ea39.tgz --repo report",
+    "exactReplay": true
+  },
+  "testkit": {
+    "version": "0.1.0",
+    "sourcePath": "packages/testkit",
+    "resolvedPath": "node_modules/@niceeval/testkit",
+    "digest": "f59b62fd7af40931a837d530b11b5de6efb3812d408ec8b6ef2fe1124a6615f7"
+  }
+}

@@ -116,6 +116,12 @@ class/tag selector 只是找到元素的手段，除非公开文档把它声明�
 
 运行中的 `view` 持续重建项目模块、配置与 Record，报告短暂失效后可在同一 server 上恢复。
 
+### report-project-current
+
+一次真实运行产生 current 结果后，项目身份不变时下一次 `exp` 复用该结果，plain `show` 与 plain `view` 同时展示它。
+Eval 源码变化但尚未重跑时，两条读面都排除旧 attempt；下一次 `exp` 不复用旧结果，新结果完成后重新进入两条读面。
+这条 Journey 回归 `052b13bb`，以 Eval fingerprint 变化代表三层 project-current 身份门；Run config hash 与逐 Eval result config hash 的算法矩阵仍由 Sample / Runner 的最小 Unit 例外拥有。
+
 ### report-browser-journey
 
 自定义报告在静态导出与真实 `view` server 中都能完成导航、证据下钻和无 JavaScript 可读终态。
