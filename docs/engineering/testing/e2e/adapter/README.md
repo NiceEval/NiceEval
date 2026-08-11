@@ -39,7 +39,7 @@
 2. **断言调用存在且入参正确**：Eval 内的判分断言只读标准事件流（`Turn.events`）——工具调用以该协议的真实名字出现（MCP 命名、不带命名空间的工具名）、调用与结果按 call ID 配对、HITL 产生 `input.requested`、usage 逐轮到位。
    - 工具断言**连名带参**：`t.calledTool("mcp__demo-tools__get_weather", { input: { city: "Brooklyn" } })`。名字对但参数被丢弃或改写，同样是归一 bug，入参保真是协议路径的一部分（`ToolMatch` 的深度部分匹配见[Assertions · 作用域断言](../../../../feature/assertions/library/scoped-assertions.md#匹配条件的字段全集)）。
    - 支持负断言的协议同时验证反例（`notCalledTool`）；证据不完整的协议在文档里写明负断言边界，不从最终文本猜测过程。
-3. **读取精确终态，不重复判分**：原生测试从 Testkit 的 `ProcessReceipt.expResult()` 读取原始 `ExpResultEvent`，精确断言 `status`、`passed`、`failed`、`errored` 与 `completion`。它不手写 start/result 类型、不从 NDJSON 尾行强转 result，也不以 JUnit、ANSI、duration 或默认 `show` 文本重复判断结果。需要 locator 时可只读原始公共 `ExpEvent`，但不得据此重新给工具、usage、session 或 approval 判分。
+3. **读取精确终态，不重复判分**：原生测试在调用点直接断言 `receipt.exitCode`，再从 Testkit 的 `ProcessReceipt.expResult()` 读取原始 `ExpResultEvent`。测试精确断言 `status`、`passed`、`failed`、`errored` 与 `completion`。退出码不藏进 `expectSuccessfulCli()` 一类包装；测试也不手写 start/result 类型、不从 NDJSON 尾行强转 result，或以 JUnit、ANSI、duration、默认 `show` 文本重复判断结果。需要 locator 时可只读原始公共 `ExpEvent`，但不得据此重新给工具、usage、session 或 approval 判分。
 4. **经专属公开读回核验接收完整性**：只对该 Adapter 独有的事实运行 `show @locator --execution`（以及声明 tracing 时的 `--timing`）。执行树是「适配器收到了什么」的用户可见投影；第 2 步已经断言过的调用、入参或 session 证据在适用时应以结构化 readback 可见。通用默认报告、CLI 格式和 Report 矩阵不在这里复制。
    断言边界见[总则 · 公开读回](../README.md#公开读回)。
 5. **核验 OTel 写入**：调用是否写入 OTel 同样以 CLI 展示断言。`show --execution` 的时间注释回答「有没有写入」（声明 tracing 面的适配器节点带 span 时间，未声明的显示 timing unavailable）；`show --timing` 的 OTel 子树回答「写成了什么」（model / tool span 与层级）。

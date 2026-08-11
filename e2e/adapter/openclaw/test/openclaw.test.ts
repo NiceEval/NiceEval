@@ -4,7 +4,7 @@
 // 再从公开 CLI 读回 Eval、attempt、execution 与 timing。
 // 只从 @niceeval/testkit 根导入；不读 .niceeval 私有布局、不 import 候选源码/类型。
 
-import { command, type ExpResultEvent, type ProcessReceipt } from "@niceeval/testkit";
+import { command, type ExpResultEvent } from "@niceeval/testkit";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
@@ -40,13 +40,9 @@ async function requireDocker(): Promise<void> {
   }
 }
 
-function expectSuccessfulCli(receipt: ProcessReceipt): void {
-  expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
-}
-
 async function attemptLines(evalId: string): Promise<string[]> {
   const history = await niceeval.run(["show", evalId, "--history"]);
-  expectSuccessfulCli(history);
+  expect(history.exitCode, history.diagnostic()).toBe(0);
   return history.stdout.split("\n").filter((line) => line.includes("@"));
 }
 
@@ -70,7 +66,7 @@ it("真实 OpenClaw CLI adapter 在 Docker sandbox 中的运行结果经过公�
   const run = await niceeval.run(["exp", "--rerun", "all", "--json"], {
     timeoutMs: 46 * 60_000,
   });
-  expectSuccessfulCli(run);
+  expect(run.exitCode, run.diagnostic()).toBe(0);
   const result: ExpResultEvent = run.expResult();
   expect(result).toMatchObject({
     event: "result",
@@ -88,14 +84,14 @@ it("真实 OpenClaw CLI adapter 在 Docker sandbox 中的运行结果经过公�
   }
 
   const execution = await niceeval.run(["show", codingTaskLocator, "--execution"]);
-  expectSuccessfulCli(execution);
+  expect(execution.exitCode, execution.diagnostic()).toBe(0);
   expect(execution.stdout, "execution tree missing file_write input path").toContain("notes.txt");
   expect(execution.stdout, "execution tree missing file_write input content").toContain("niceeval e2e ok");
   expect(execution.stdout, "execution tree missing shell input command").toMatch(/cat\s+notes\.txt/);
 
   const skillLocator = await latestAttemptLocator("skills/status-report");
   const skillExecution = await niceeval.run(["show", skillLocator, "--execution"]);
-  expectSuccessfulCli(skillExecution);
+  expect(skillExecution.exitCode, skillExecution.diagnostic()).toBe(0);
   expect(skillExecution.stdout, "execution tree missing selected Skill read input").toContain(
     ".agents/skills/niceeval-status-report/SKILL.md",
   );
@@ -103,7 +99,7 @@ it("真实 OpenClaw CLI adapter 在 Docker sandbox 中的运行结果经过公�
   // 本身点名了 decoy 路径，命中它只说明 CLI 如实显示了 USER 卡片，不能说明 Agent 读取过它。
 
   const timing = await niceeval.run(["show", codingTaskLocator, "--timing"]);
-  expectSuccessfulCli(timing);
+  expect(timing.exitCode, timing.diagnostic()).toBe(0);
   expect(timing.stdout).toContain("eval.run");
   expect(timing.stdout).toContain("agent.setup");
   expect(timing.stdout).toMatch(/turn\s+turn1\b/);

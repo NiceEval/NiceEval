@@ -4,7 +4,7 @@
 // 再从公开 CLI 读回 Eval、attempt、execution 与 timing。
 // 只从 @niceeval/testkit 根导入；不读 .niceeval 私有布局、不 import 候选源码/类型。
 
-import { command, type ExpResultEvent, type ProcessReceipt } from "@niceeval/testkit";
+import { command, type ExpResultEvent } from "@niceeval/testkit";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
@@ -40,13 +40,9 @@ async function requireDocker(): Promise<void> {
   }
 }
 
-function expectSuccessfulCli(receipt: ProcessReceipt): void {
-  expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
-}
-
 async function attemptLines(evalId: string): Promise<string[]> {
   const history = await niceeval.run(["show", evalId, "--history"]);
-  expectSuccessfulCli(history);
+  expect(history.exitCode, history.diagnostic()).toBe(0);
   return history.stdout.split("\n").filter((line) => line.includes("@"));
 }
 
@@ -72,7 +68,7 @@ it("真实 bub adapter 在 Docker sandbox 中的运行结果经过公开 CLI 读
     ["exp", "ci", "--rerun", "all", "--json"],
     { timeoutMs: 32 * 60_000 },
   );
-  expectSuccessfulCli(run);
+  expect(run.exitCode, run.diagnostic()).toBe(0);
   const result: ExpResultEvent = run.expResult();
   expect(result).toMatchObject({
     event: "result",
@@ -96,12 +92,12 @@ it("真实 bub adapter 在 Docker sandbox 中的运行结果经过公开 CLI 读
     locators["coding-task/write-and-verify"]!,
     "--execution",
   ]);
-  expectSuccessfulCli(coding);
+  expect(coding.exitCode, coding.diagnostic()).toBe(0);
   expect(coding.stdout).toContain("notes.txt");
   expect(coding.stdout).not.toContain("timing unavailable");
 
   const skills = await niceeval.run(["show", locators["skills/discovery"]!, "--execution"]);
-  expectSuccessfulCli(skills);
+  expect(skills.exitCode, skills.diagnostic()).toBe(0);
   expect(skills.stdout.toLowerCase()).toContain("skill");
   expect(skills.stdout).toContain("pineapple-37");
 
@@ -110,7 +106,7 @@ it("真实 bub adapter 在 Docker sandbox 中的运行结果经过公开 CLI 读
     locators["extensions/plugin-postsetup"]!,
     "--execution",
   ]);
-  expectSuccessfulCli(ext);
+  expect(ext.exitCode, ext.diagnostic()).toBe(0);
   expect(ext.stdout).toContain("PLUGIN_OK");
 
   // timing：runner 分阶段耗时树；bub 不要求字面 OTel 子树（per-turn traceId 归属未落地）。
@@ -119,7 +115,7 @@ it("真实 bub adapter 在 Docker sandbox 中的运行结果经过公开 CLI 读
     locators["coding-task/write-and-verify"]!,
     "--timing",
   ]);
-  expectSuccessfulCli(timing);
+  expect(timing.exitCode, timing.diagnostic()).toBe(0);
   expect(timing.stdout).toContain("eval.run");
   expect(timing.stdout).toContain("agent.setup");
   expect(timing.stdout).toMatch(/turn\s+turn1\b/);
@@ -136,7 +132,7 @@ it("真实 bub adapter 在 Docker sandbox 中的运行结果经过公开 CLI 读
     ],
     { timeoutMs: 20 * 60_000 },
   );
-  expectSuccessfulCli(legacy);
+  expect(legacy.exitCode, legacy.diagnostic()).toBe(0);
   const legacyResult: ExpResultEvent = legacy.expResult();
   expect(legacyResult).toMatchObject({
     event: "result",
@@ -149,6 +145,6 @@ it("真实 bub adapter 在 Docker sandbox 中的运行结果经过公开 CLI 读
 
   const legacyLocator = await latestAttemptLocator("coding-task/write-and-verify");
   const legacyExecution = await niceeval.run(["show", legacyLocator, "--execution"]);
-  expectSuccessfulCli(legacyExecution);
+  expect(legacyExecution.exitCode, legacyExecution.diagnostic()).toBe(0);
   expect(legacyExecution.stdout).not.toContain("timing unavailable");
 }, 36 * 60_000);

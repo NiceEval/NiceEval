@@ -6,7 +6,6 @@ import {
   type ExpEvalEvent,
   type ExpEvent,
   type ExpResultEvent,
-  type ProcessReceipt,
   waitForOutput,
   withProcess,
   withProjectCopy,
@@ -19,10 +18,6 @@ type OwnerKind = "transport" | "approval" | "disconnect" | "timeout" | "http-err
 interface FixtureReady {
   baseUrl: string;
   port: number;
-}
-
-function expectCliShape(receipt: ProcessReceipt): ExpEvent[] {
-  return receipt.ndjson<ExpEvent>();
 }
 
 function parseReady(output: string): FixtureReady {
@@ -108,7 +103,7 @@ export async function proveLocalProtocolOwner(kind: OwnerKind): Promise<void> {
                 timeoutMs: kind === "timeout" ? 30_000 : 60_000,
               },
             );
-            const events = expectCliShape(receipt);
+            const events = receipt.ndjson<ExpEvent>();
             const result: ExpResultEvent = receipt.expResult();
             if (kind === "transport" || kind === "approval") {
               expect(receipt.exitCode, receipt.diagnostic()).toBe(0);

@@ -5,7 +5,6 @@
 
 import {
   command,
-  type ExpResultEvent,
   type ProcessReceipt,
   withProcess,
   withTempDir,
@@ -30,27 +29,9 @@ function requireLiveSecrets(): void {
   }
 }
 
-function expectSuccessfulCli(receipt: ProcessReceipt): void {
-  expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
-}
-
-function expectPassedExperiment(receipt: ProcessReceipt): ExpResultEvent {
-  expectSuccessfulCli(receipt);
-  const result = receipt.expResult();
-  expect(result).toMatchObject({
-    event: "result",
-    status: "passed",
-    passed: 1,
-    failed: 0,
-    errored: 0,
-    completion: "complete",
-  });
-  return result;
-}
-
 async function latestAttemptLocator(): Promise<string> {
   const history = await niceeval.run(["show", EVAL_ID, "--history"]);
-  expectSuccessfulCli(history);
+  expect(history.exitCode, history.diagnostic()).toBe(0);
   const latest = history.stdout.split("\n").filter((line) => line.includes("@")).at(-1);
   expect(latest, `${EVAL_ID} has no public history row`).toBeDefined();
   expect(latest).toContain("passed");
@@ -77,7 +58,15 @@ it("真实 aiSdkAgent 结果经过公开 CLI 完整读回", async () => {
       },
       async (running) => {
         runReceipt = await running.done;
-        expectPassedExperiment(runReceipt);
+        expect(runReceipt.exitCode, runReceipt.diagnostic()).toBe(0);
+        expect(runReceipt.expResult()).toMatchObject({
+          event: "result",
+          status: "passed",
+          passed: 1,
+          failed: 0,
+          errored: 0,
+          completion: "complete",
+        });
       },
     );
     expect(runReceipt).toBeDefined();
@@ -85,7 +74,7 @@ it("真实 aiSdkAgent 结果经过公开 CLI 完整读回", async () => {
 
   const locator = await latestAttemptLocator();
   const execution = await niceeval.run(["show", locator, "--execution"]);
-  expectSuccessfulCli(execution);
+  expect(execution.exitCode, execution.diagnostic()).toBe(0);
   expect(execution.stdout).toContain("remember_marker");
   expect(execution.stdout).toContain(DIRECT_MARKER);
 }, 14 * 60_000);

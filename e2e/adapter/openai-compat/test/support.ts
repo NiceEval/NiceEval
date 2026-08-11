@@ -5,7 +5,6 @@ import {
   type ExpEvalEvent,
   type ExpEvent,
   type ExpResultEvent,
-  type ProcessReceipt,
   withProjectCopy,
 } from "@niceeval/testkit";
 import { expect } from "vitest";
@@ -18,10 +17,6 @@ function requireLiveSecrets(): void {
   if (missing.length > 0) {
     throw new Error(`[configuration] OpenAI converter live E2E requires ${missing.join(", ")}`);
   }
-}
-
-function expectSuccess(receipt: ProcessReceipt): void {
-  expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
 }
 
 export async function proveOpenAiLiveOwner(options: {
@@ -43,7 +38,7 @@ export async function proveOpenAiLiveOwner(options: {
         ["exp", options.experimentId, "--rerun", "all", "--json"],
         { cwd: root, timeoutMs: 4 * 60_000 },
       );
-      expectSuccess(run);
+      expect(run.exitCode, run.diagnostic()).toBe(0);
       const events = run.ndjson<ExpEvent>();
       const result: ExpResultEvent = run.expResult();
       expect(result).toMatchObject({
@@ -62,12 +57,12 @@ export async function proveOpenAiLiveOwner(options: {
       const history = await niceeval.run(["show", options.evalId, "--exp", options.experimentId, "--history"], {
         cwd: root,
       });
-      expectSuccess(history);
+      expect(history.exitCode, history.diagnostic()).toBe(0);
       expect(history.stdout).toContain("passed");
       expect(history.stdout).toContain("@");
 
       const execution = await niceeval.run(["show", evalEvent!.locator!, "--execution"], { cwd: root });
-      expectSuccess(execution);
+      expect(execution.exitCode, execution.diagnostic()).toBe(0);
       for (const marker of options.executionMarkers) expect(execution.stdout).toContain(marker);
     },
     {

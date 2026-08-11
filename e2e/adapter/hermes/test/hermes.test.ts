@@ -4,7 +4,7 @@
 // 再从公开 CLI 读回 Eval、attempt、execution 与 timing。
 // 只从 @niceeval/testkit 根导入；不读 .niceeval 私有布局、不 import 候选源码/类型。
 
-import { command, type ExpResultEvent, type ProcessReceipt } from "@niceeval/testkit";
+import { command, type ExpResultEvent } from "@niceeval/testkit";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
@@ -46,13 +46,9 @@ async function requireDocker(): Promise<void> {
   }
 }
 
-function expectSuccessfulCli(receipt: ProcessReceipt): void {
-  expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
-}
-
 async function attemptLines(evalId: string): Promise<string[]> {
   const history = await niceeval.run(["show", evalId, "--history"]);
-  expectSuccessfulCli(history);
+  expect(history.exitCode, history.diagnostic()).toBe(0);
   return history.stdout.split("\n").filter((line) => line.includes("@"));
 }
 
@@ -78,7 +74,7 @@ it("真实 Hermes CLI adapter 在 Docker sandbox 中的运行结果经过公开 
   const run = await niceeval.run(["exp", "--rerun", "all", "--json"], {
     timeoutMs: 36 * 60_000,
   });
-  expectSuccessfulCli(run);
+  expect(run.exitCode, run.diagnostic()).toBe(0);
   const result: ExpResultEvent = run.expResult();
   expect(result).toMatchObject({
     event: "result",
@@ -101,19 +97,19 @@ it("真实 Hermes CLI adapter 在 Docker sandbox 中的运行结果经过公开 
     locators["coding-task/write-and-verify"]!,
     "--execution",
   ]);
-  expectSuccessfulCli(codingExecution);
+  expect(codingExecution.exitCode, codingExecution.diagnostic()).toBe(0);
   expect(codingExecution.stdout).toContain("notes.txt");
   expect(codingExecution.stdout).toContain(WRITE_MARKER);
   expect(codingExecution.stdout).toMatch(/cat\s+notes\.txt/);
 
   const skillExecution = await niceeval.run(["show", locators["skills/selected"]!, "--execution"]);
-  expectSuccessfulCli(skillExecution);
+  expect(skillExecution.exitCode, skillExecution.diagnostic()).toBe(0);
   expect(skillExecution.stdout).toContain(SKILL_NAME);
 
   // timing：仓库验收明确「无原生 OTel 时执行树显示 timing unavailable；
   // 事件流断言照常通过」，因此只断言阶段树本身，不要求字面 OTel 子树。
   const timing = await niceeval.run(["show", locators["coding-task/write-and-verify"]!, "--timing"]);
-  expectSuccessfulCli(timing);
+  expect(timing.exitCode, timing.diagnostic()).toBe(0);
   expect(timing.stdout).toContain("eval.run");
   expect(timing.stdout).toContain("agent.setup");
   expect(timing.stdout).toMatch(/turn\s+turn1\b/);

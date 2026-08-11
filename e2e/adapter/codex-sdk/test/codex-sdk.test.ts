@@ -4,7 +4,7 @@
 // candidate as an owned process, then proves the same result through public
 // show commands only; it never reads the private .niceeval layout.
 
-import { command, type ExpResultEvent, type ProcessReceipt, withProcess, withTempDir } from "@niceeval/testkit";
+import { command, withProcess, withTempDir } from "@niceeval/testkit";
 import { randomUUID } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -25,27 +25,9 @@ function requireLiveSecrets(): void {
   }
 }
 
-function expectSuccessfulReceipt(receipt: ProcessReceipt): void {
-  expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
-}
-
-function expectSuccessfulExperiment(receipt: ProcessReceipt): ExpResultEvent {
-  expectSuccessfulReceipt(receipt);
-  const result = receipt.expResult();
-  expect(result).toMatchObject({
-    event: "result",
-    status: "passed",
-    passed: 1,
-    failed: 0,
-    errored: 0,
-    completion: "complete",
-  });
-  return result;
-}
-
 async function latestPassedLocator(env: NodeJS.ProcessEnv): Promise<string> {
   const history = await niceeval.run(["show", EVAL_ID, "--history"], { env });
-  expectSuccessfulReceipt(history);
+  expect(history.exitCode, history.diagnostic()).toBe(0);
   const line = history.stdout.split("\n").filter((candidate) => candidate.includes("@")).at(-1);
   expect(line, history.diagnostic()).toBeDefined();
   expect(line).toContain("passed");
@@ -85,16 +67,22 @@ it("真实 Codex SDK converter 兼容性从 Experiment 到公开 CLI 读回", as
         timeoutMs: 12 * 60_000,
       },
       async (handle) => {
-        const completed = await handle.done;
-        expectSuccessfulExperiment(completed);
-        return completed;
+        return await handle.done;
       },
     );
-    expectSuccessfulExperiment(receipt);
+    expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
+    expect(receipt.expResult()).toMatchObject({
+      event: "result",
+      status: "passed",
+      passed: 1,
+      failed: 0,
+      errored: 0,
+      completion: "complete",
+    });
 
     const locator = await latestPassedLocator(env);
     const execution = await niceeval.run(["show", locator, "--execution"], { env });
-    expectSuccessfulReceipt(execution);
+    expect(execution.exitCode, execution.diagnostic()).toBe(0);
     // The public execution projection contains the original command marker, its
     // converted tool card/result, and the second turn that resumed the thread.
     expect(execution.stdout).toContain(marker);

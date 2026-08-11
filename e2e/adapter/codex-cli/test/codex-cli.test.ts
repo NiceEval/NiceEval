@@ -4,7 +4,7 @@
 // 再从公开 CLI 读回 Eval、attempt、execution 与 timing。
 // 只从 @niceeval/testkit 根导入；不读 .niceeval 私有布局、不 import 候选源码/类型。
 
-import { command, type ExpResultEvent, type ProcessReceipt } from "@niceeval/testkit";
+import { command, type ExpResultEvent } from "@niceeval/testkit";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
@@ -50,13 +50,9 @@ async function requireDocker(): Promise<void> {
   }
 }
 
-function expectSuccessfulCli(receipt: ProcessReceipt): void {
-  expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
-}
-
 async function attemptLines(evalId: string): Promise<string[]> {
   const history = await niceeval.run(["show", evalId, "--history"]);
-  expectSuccessfulCli(history);
+  expect(history.exitCode, history.diagnostic()).toBe(0);
   return history.stdout.split("\n").filter((line) => line.includes("@"));
 }
 
@@ -82,7 +78,7 @@ it("真实 Codex CLI adapter 在 Docker sandbox 中的运行结果经过公开 C
   const run = await niceeval.run(["exp", "--rerun", "all", "--json"], {
     timeoutMs: 44 * 60_000,
   });
-  expectSuccessfulCli(run);
+  expect(run.exitCode, run.diagnostic()).toBe(0);
   const result: ExpResultEvent = run.expResult();
   expect(result).toMatchObject({
     event: "result",
@@ -109,7 +105,7 @@ it("真实 Codex CLI adapter 在 Docker sandbox 中的运行结果经过公开 C
   //（command_execution / file_change），canonical 名 shell / file_edit 也可能出现；
   // 入参与 OTel 时间注释必须穿过归一化、落盘与 CLI 展示。
   const execution = await niceeval.run(["show", codingTaskLocator, "--execution"]);
-  expectSuccessfulCli(execution);
+  expect(execution.exitCode, execution.diagnostic()).toBe(0);
   expect(
     execution.stdout.includes("file_edit") || execution.stdout.includes("file_change"),
     "execution tree missing file_edit/file_change",
@@ -122,13 +118,13 @@ it("真实 Codex CLI adapter 在 Docker sandbox 中的运行结果经过公开 C
   expect(execution.stdout).not.toContain("timing unavailable");
 
   const timing = await niceeval.run(["show", codingTaskLocator, "--timing"]);
-  expectSuccessfulCli(timing);
+  expect(timing.exitCode, timing.diagnostic()).toBe(0);
   expect(timing.stdout).toMatch(/shell|file_edit/i);
 
   // MCP 反例也要穿透到 CLI 读回：stdio 与远程 HTTP 调用存在，未挂载的 weather 不出现。
   const mcpLocator = await latestAttemptLocator("mcp");
   const mcpExecution = await niceeval.run(["show", mcpLocator, "--execution"]);
-  expectSuccessfulCli(mcpExecution);
+  expect(mcpExecution.exitCode, mcpExecution.diagnostic()).toBe(0);
   expect(
     mcpExecution.stdout.includes("e2e.get-sum") || mcpExecution.stdout.includes("get-sum"),
     "execution tree missing stdio MCP call (e2e.get-sum)",
@@ -142,7 +138,7 @@ it("真实 Codex CLI adapter 在 Docker sandbox 中的运行结果经过公开 C
 
   const repoSkillLocator = await latestAttemptLocator("repo-skill");
   const repoSkillExecution = await niceeval.run(["show", repoSkillLocator, "--execution"]);
-  expectSuccessfulCli(repoSkillExecution);
+  expect(repoSkillExecution.exitCode, repoSkillExecution.diagnostic()).toBe(0);
   expect(repoSkillExecution.stdout).toContain(".agents/skills/calibre/SKILL.md");
   expect(repoSkillExecution.stdout).toContain("ebook-convert novel.epub novel.azw3");
 }, 46 * 60_000);

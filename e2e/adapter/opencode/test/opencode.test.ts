@@ -4,7 +4,7 @@
 // 再从公开 CLI 读回 Eval、attempt、execution 与 timing。
 // 只从 @niceeval/testkit 根导入；不读 .niceeval 私有布局、不 import 候选源码/类型。
 
-import { command, type ExpResultEvent, type ProcessReceipt } from "@niceeval/testkit";
+import { command, type ExpResultEvent } from "@niceeval/testkit";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
@@ -50,10 +50,6 @@ async function requireDocker(): Promise<void> {
   }
 }
 
-function expectSuccessfulCli(receipt: ProcessReceipt): void {
-  expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
-}
-
 async function attemptLines(evalId: string, experimentId?: string): Promise<string[]> {
   const history = await niceeval.run([
     "show",
@@ -61,7 +57,7 @@ async function attemptLines(evalId: string, experimentId?: string): Promise<stri
     ...(experimentId === undefined ? [] : ["--exp", experimentId]),
     "--history",
   ]);
-  expectSuccessfulCli(history);
+  expect(history.exitCode, history.diagnostic()).toBe(0);
   return history.stdout.split("\n").filter((line) => line.includes("@"));
 }
 
@@ -104,7 +100,7 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
     ["exp", "ci", "--rerun", "all", "--json"],
     { timeoutMs: 36 * 60_000 },
   );
-  expectSuccessfulCli(run);
+  expect(run.exitCode, run.diagnostic()).toBe(0);
   const result: ExpResultEvent = run.expResult();
   expect(result).toMatchObject({
     event: "result",
@@ -124,7 +120,7 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   //（opencode 的 write / bash），canonical 名 file_write / shell 也可能出现；
   // 入参与 OTel 时间注释必须穿过归一化、落盘与 CLI 展示。
   const execution = await niceeval.run(["show", locators["coding-task/write-and-verify"]!, "--execution"]);
-  expectSuccessfulCli(execution);
+  expect(execution.exitCode, execution.diagnostic()).toBe(0);
   expect(
     execution.stdout.includes("notes.txt") ||
       execution.stdout.includes("file_write") ||
@@ -136,7 +132,7 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
 
   // usage Eval 的两个 t.send() 都有独立的正 token 数；execution 的两个 turn 头必须各自可读。
   const usageExecution = await niceeval.run(["show", locators["usage/tokens"]!, "--execution"]);
-  expectSuccessfulCli(usageExecution);
+  expect(usageExecution.exitCode, usageExecution.diagnostic()).toBe(0);
   expect(usageExecution.stdout).toMatch(/turn1\s+·\s+completed[^\n]*\btok\b/);
   expect(usageExecution.stdout).toMatch(/turn2\s+·\s+completed[^\n]*\btok\b/);
   expect(
@@ -150,7 +146,7 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   // mapper，但仓库验收明确「时间轨缺失只影响 timing 注释，不影响事件流断言」，
   // 因此不把字面 OTel 子树当作硬前提，只断言阶段树本身。
   const timing = await niceeval.run(["show", locators["coding-task/write-and-verify"]!, "--timing"]);
-  expectSuccessfulCli(timing);
+  expect(timing.exitCode, timing.diagnostic()).toBe(0);
   expect(timing.stdout).toContain("eval.run");
   expect(timing.stdout).toContain("agent.setup");
   expect(timing.stdout).toMatch(/turn\s+turn1\b/);
@@ -160,7 +156,7 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
     ["exp", "skill", SKILL_EVAL, "--rerun", "all", "--json"],
     { timeoutMs: 10 * 60_000 },
   );
-  expectSuccessfulCli(skillRun);
+  expect(skillRun.exitCode, skillRun.diagnostic()).toBe(0);
   const skillResult: ExpResultEvent = skillRun.expResult();
   expect(skillResult).toMatchObject({
     event: "result",
@@ -173,7 +169,7 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
 
   const skillLocator = await latestAttemptLocator(SKILL_EVAL, "skill");
   const skillExecution = await niceeval.run(["show", skillLocator, "--execution"]);
-  expectSuccessfulCli(skillExecution);
+  expect(skillExecution.exitCode, skillExecution.diagnostic()).toBe(0);
   expectToolInputReadback(skillExecution.stdout, STATUS_MARKER, 1);
   expect(skillExecution.stdout).not.toContain(DECOY_MARKER);
 
@@ -190,7 +186,7 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
     ],
     { timeoutMs: 12 * 60_000 },
   );
-  expectSuccessfulCli(goRun);
+  expect(goRun.exitCode, goRun.diagnostic()).toBe(0);
   const goResult: ExpResultEvent = goRun.expResult();
   expect(goResult).toMatchObject({
     event: "result",
@@ -203,7 +199,7 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
 
   const goLocator = await latestAttemptLocator(GO_EVAL, "go");
   const goExecution = await niceeval.run(["show", goLocator, "--execution"]);
-  expectSuccessfulCli(goExecution);
+  expect(goExecution.exitCode, goExecution.diagnostic()).toBe(0);
   expect(goExecution.stdout).toContain("opencode export");
   expect(goExecution.stdout).toContain("deepseek-v4-flash");
   expect(goExecution.stdout).toContain(GO_LIVE_MARKER);

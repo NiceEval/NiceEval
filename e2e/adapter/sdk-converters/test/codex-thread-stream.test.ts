@@ -1,17 +1,13 @@
 // owner: docs/engineering/testing/e2e/adapter/sdk-converters.md#codex-thread-stream-deterministic
 
 import { join } from "node:path";
-import { command, type ExpEvalEvent, type ExpEvent, type ExpResultEvent, type ProcessReceipt, withProjectCopy } from "@niceeval/testkit";
+import { command, type ExpEvalEvent, type ExpEvent, type ExpResultEvent, withProjectCopy } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { sdkConverterArtifactStaging, sdkConverterProjectCopy } from "./support.ts";
 
 const EXPERIMENT_ID = "codex-thread-stream";
 const EVAL_ID = "codex-thread-stream";
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
-
-function expectCliSuccess(receipt: ProcessReceipt): void {
-  expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
-}
 
 test("createCodexThreadEventStream 的锁定 ThreadEvent 经 Experiment 和公开 CLI 确定性读回", async () => {
   await withProjectCopy(
@@ -21,7 +17,7 @@ test("createCodexThreadEventStream 的锁定 ThreadEvent 经 Experiment 和公�
         ["exp", EXPERIMENT_ID, "--rerun", "all", "--json"],
         { cwd: root },
       );
-      expectCliSuccess(run);
+      expect(run.exitCode, run.diagnostic()).toBe(0);
       const events = run.ndjson<ExpEvent>();
       const result: ExpResultEvent = run.expResult();
       expect(result).toMatchObject({
@@ -38,12 +34,12 @@ test("createCodexThreadEventStream 的锁定 ThreadEvent 经 Experiment 和公�
       expect(evalEvent, run.diagnostic()).toBeDefined();
 
       const history = await niceeval.run(["show", EVAL_ID, "--exp", EXPERIMENT_ID, "--history"], { cwd: root });
-      expectCliSuccess(history);
+      expect(history.exitCode, history.diagnostic()).toBe(0);
       expect(history.stdout).toContain("passed");
       expect(history.stdout).toContain("@");
 
       const execution = await niceeval.run(["show", evalEvent!.locator!, "--execution"], { cwd: root });
-      expectCliSuccess(execution);
+      expect(execution.exitCode, execution.diagnostic()).toBe(0);
       expect(execution.stdout).toContain("codex-sdk-command-marker");
       expect(execution.stdout).toContain("file_change");
       expect(execution.stdout).toContain("codex-sdk-terminal-failure-marker");

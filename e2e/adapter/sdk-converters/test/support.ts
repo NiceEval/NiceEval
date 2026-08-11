@@ -5,7 +5,6 @@ import {
   type ExpEvalEvent,
   type ExpEvent,
   type ExpResultEvent,
-  type ProcessReceipt,
   type ProjectCopyStagingOptions,
   withProjectCopy,
 } from "@niceeval/testkit";
@@ -67,10 +66,6 @@ export function sdkConverterArtifactStaging(caseName: string): ProjectCopyStagin
   };
 }
 
-function expectCliSuccess(receipt: ProcessReceipt): void {
-  expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
-}
-
 /**
  * Common public readback shell for one converter owner. Domain expectations
  * stay in each Eval; this helper only proves the owner was run, persisted and
@@ -90,7 +85,7 @@ export async function proveSdkConverterOwner(options: {
         ["exp", options.experimentId, "--rerun", "all", "--json"],
         { cwd: root },
       );
-      expectCliSuccess(run);
+      expect(run.exitCode, run.diagnostic()).toBe(0);
       const events = run.ndjson<ExpEvent>();
       const result: ExpResultEvent = run.expResult();
       expect(result).toMatchObject({
@@ -110,12 +105,12 @@ export async function proveSdkConverterOwner(options: {
         ["show", options.evalId, "--exp", options.experimentId, "--history"],
         { cwd: root },
       );
-      expectCliSuccess(history);
+      expect(history.exitCode, history.diagnostic()).toBe(0);
       expect(history.stdout).toContain("passed");
       expect(history.stdout).toContain("@");
 
       const execution = await niceeval.run(["show", evalEvent!.locator!, "--execution"], { cwd: root });
-      expectCliSuccess(execution);
+      expect(execution.exitCode, execution.diagnostic()).toBe(0);
       for (const marker of options.executionMarkers) expect(execution.stdout).toContain(marker);
     },
     sdkConverterArtifactStaging(options.caseName),

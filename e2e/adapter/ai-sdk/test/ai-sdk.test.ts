@@ -50,13 +50,9 @@ async function waitForHealth(url: string, timeoutMs: number): Promise<void> {
   }
 }
 
-function expectSuccessfulCli(receipt: ProcessReceipt): void {
-  expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
-}
-
 async function latestAttemptLocator(evalId: string): Promise<string> {
   const history = await niceeval.run(["show", evalId, "--history"]);
-  expectSuccessfulCli(history);
+  expect(history.exitCode, history.diagnostic()).toBe(0);
   const lines = history.stdout.split("\n").filter((line) => line.includes("@"));
   expect(lines.length, `${evalId} has no public attempt in show --history`).toBeGreaterThan(0);
 
@@ -94,7 +90,7 @@ it("真实 AI SDK adapter 运行结果经过公开 CLI 读回", async () => {
           run = await running.done;
         },
       );
-      expectSuccessfulCli(run);
+      expect(run.exitCode, run.diagnostic()).toBe(0);
       const result: ExpResultEvent = run.expResult();
       expect(result).toMatchObject({
         event: "result",
@@ -114,7 +110,7 @@ it("真实 AI SDK adapter 运行结果经过公开 CLI 读回", async () => {
       // 时间注释都必须穿过归一化、落盘与 CLI 展示。
       const toolLocator = locators.get("tool-call")!;
       const execution = await niceeval.run(["show", toolLocator, "--execution"]);
-      expectSuccessfulCli(execution);
+      expect(execution.exitCode, execution.diagnostic()).toBe(0);
       expect(execution.stdout).toContain("get_weather");
       expect(execution.stdout).toMatch(/北京/);
       expect(execution.stdout).not.toContain("timing unavailable");
@@ -122,7 +118,7 @@ it("真实 AI SDK adapter 运行结果经过公开 CLI 读回", async () => {
       // timing 公开命令必须成功，并且必须把同一真实工具调用挂到 per-turn
       // OTel 子树；ai-sdk.md 将 correlation 断裂定义为协议回归，不能降级成 warning。
       const timing = await niceeval.run(["show", toolLocator, "--timing"]);
-      expectSuccessfulCli(timing);
+      expect(timing.exitCode, timing.diagnostic()).toBe(0);
       expect(timing.stdout).toContain("get_weather");
     },
   );

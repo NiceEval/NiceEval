@@ -4,7 +4,7 @@
 // 具体 Skill、MCP、Plugin 与配置行为由各自 Eval 断言；owner 只守住发现完整性与全绿结果。
 // 只从 @niceeval/testkit 根导入；不读 .niceeval 私有布局、不 import 候选源码/类型。
 
-import { command, type ExpEvent, type ExpResultEvent, type ProcessReceipt } from "@niceeval/testkit";
+import { command, type ExpEvent, type ExpResultEvent } from "@niceeval/testkit";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
@@ -58,10 +58,6 @@ async function requireDocker(): Promise<void> {
   }
 }
 
-function expectSuccessfulCli(receipt: ProcessReceipt): void {
-  expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
-}
-
 it("真实 Claude Code adapter 的全部专用 Eval 通过", async () => {
   requireLiveSecrets();
   await requireDocker();
@@ -72,7 +68,7 @@ it("真实 Claude Code adapter 的全部专用 Eval 通过", async () => {
     ["exp", "--rerun", "all", "--json"],
     { timeoutMs: 50 * 60_000 },
   );
-  expectSuccessfulCli(run);
+  expect(run.exitCode, run.diagnostic()).toBe(0);
   const events = run.ndjson<ExpEvent>();
   const result: ExpResultEvent = run.expResult();
   expect(result).toMatchObject({
