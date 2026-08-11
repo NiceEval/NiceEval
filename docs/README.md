@@ -74,7 +74,7 @@ docs/
 │   ├── multi-agent/                     多 Agent Eval 场景
 │   ├── ordered-sequences/               现有 Eval 的有序执行、完整重放与 lineage
 │   ├── sandbox-retention/                失败类 Sandbox 的有界停驻、明确销毁与安全 GC
-│   ├── materialization-cache/            宿主供给、Git repository 投影、库存与安全回收
+│   ├── materialization-cache/            Provider cache 的需求、库存、归因与安全回收
 │   ├── sandbox-reuse-groups/            Eval 侧强制复用组与组外并行
 │   └── prepare-transient-retry/         prepare 网络瞬时失败的 attempt 内自愈候选
 │
@@ -83,7 +83,6 @@ docs/
 │   ├── environment-model/               环境模型：Sandbox 起点与三方准备顺序
 │   ├── eval-suite-sharing/              原生 NiceEval 题集跨项目零发布改造复用
 │   ├── experiment-speed/                实验加速:默认路径与 Sandbox 复用
-│   ├── git-source-materialization/      Git 获取复用与每 commit 对象隔离
 │   ├── multi-container-environments/    多容器环境:拓扑声明形态与 provider 构建、启动职责
 │   ├── prepare-commands/                内置 prepare 命令:固定生命周期下的具体化声明与复用成本
 │   ├── report-authoring/                报告作者面:组件粒度与取数形态

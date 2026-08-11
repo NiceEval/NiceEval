@@ -15,13 +15,13 @@ Domain 是一个 cache backend 的独立所有权和回收边界：
 ```ts
 interface DomainIdentity {
   ownerId: string;
-  backendKind: "host-materialization" | "docker-images" | "buildkit";
+  backendKind: "host-cas" | "docker-images" | "buildkit";
   backendIdentity: string;
   cacheProtocolVersion: number;
 }
 ```
 
-宿主供给存储、Docker image store 和 BuildKit 是三个 Domain，不能用 Docker daemon id 代替其它 backend identity。
+host CAS、Docker image store 和 BuildKit 是三个 Domain，不能用 Docker daemon id 代替其它 backend identity。
 `cache status` 可以聚合多个 Domain 的需求，库存明细、GcPlan 和 apply 始终只属于一个 Domain。
 
 `ownerId` 是当前 OS 用户保存在 `~/.local/state/niceeval/` 的随机 UUID。
@@ -31,7 +31,7 @@ owner state 丢失会产生新 owner；旧 owner 的资源不会被新 owner 自
 
 | backend | identity |
 |---|---|
-| host materialization | registry/CAS format version、root 内持久随机 UUID、可验证 filesystem 或 volume identity 的摘要 |
+| host CAS | CAS format version、CAS root 内持久随机 UUID、可验证 filesystem 或 volume identity 的摘要 |
 | Docker image store | daemon id、storage driver、NiceEval sentinel volume 内持久随机 UUID 的摘要 |
 | BuildKit | 专属 builder 与 node identity、worker identity、受管 storage epoch 的摘要 |
 
@@ -75,7 +75,7 @@ base image、用户拉取的 task image、共享 parent 和 layer 都不是删�
 ```ts
 interface CacheManifest {
   schemaVersion: number;
-  kind: "agent-artifact" | "task-build" | "git-source-projection";
+  kind: "agent-artifact" | "task-build";
   provider: {
     family: string;
     backendIdentity: string;
@@ -95,52 +95,6 @@ interface CacheManifest {
   intentProjection?: { version: number; value: unknown };
 }
 ```
-
-Git repository 不用一个可变 entry 同时充当获取状态和交付物：
-
-```ts
-interface GitSourceProjectionDemand {
-  kind: "git-source-projection";
-  repository: string;
-  commit: string;
-  materializerRevision: string;
-  projectionProtocolVersion: number;
-}
-
-interface GitSourceProjectionIdentity {
-  commit: string;
-  ancestorClosureDigest: string;
-  objectSetDigest: string;
-  objectCount: number;
-  payloadSha256: string;
-  payloadBytes: number;
-}
-```
-
-DemandKey 是 canonical demand 的摘要，在 planning 时即可计算；Resource Identity 是发布后验证得到的内容事实。
-相同 Demand single-flight，不同 Demand 可以共享同一 SourcePool 的 origin coverage，但不能共享 Sandbox 可读对象库。
-
-## SourcePool 与 SourceProjection
-
-SourcePool 是 Domain 内按规范化 repository locator 分区的可增长 acquisition 资源。
-它拥有自己的 generation、write lease、coverage、last successful fetch 与错误状态，不作为 `CacheManifest` 命中项，也永不建立 Sandbox root。
-V1 只允许 NiceEval host materializer 进程访问其路径；Sandbox Provider 不得 mount、copy 或返回该路径。
-
-SourceProjection 是 `git-source-projection` manifest 对应的不可变 entry。
-它必须是 self-contained、non-thin 的交付物，恰好包含目标 commit、全部祖先及其 tree/blob 闭包。
-发布验证在全新对象库中完成，并同时验证：
-
-- 目标 OID 是 commit，且所有对象结构完整；
-- 实际对象集合与预期祖先闭包逐项相等；
-- 不含额外 ref、reflog、alternate、promisor 或外部对象依赖；
-- payload size、SHA-256、object count 与 object-set digest 写入 immutable identity。
-
-Projection 发布后不依赖 SourcePool 存活。
-删除 pool 只牺牲后续增量获取能力；删除 projection 只牺牲该 commit 的零 origin 交付能力。
-两者分别取得 lease、计量和进入 GcPlan。
-
-每条 Attempt 的 consumer 必须先删除整个旧 `.git` 和旧 worktree 内容，再从 projection 建立全新 repository。
-禁止 local clone、alternate、hardlink、mount、promisor 和共享 object database；它们会把投影以外的对象变成 Agent 可读取状态。
 
 缺少必需兼容轴或遇到未知 schema 时，entry 为 `unverified`。
 `intentProjection` 只解释同一意图的旧配方，不授予命中、迁移或删除资格。
@@ -268,8 +222,6 @@ interface DomainGcPolicyV1 {
   maxAgeByKindMs: {
     "agent-artifact": number | null;
     "task-build": number | null;
-    "git-source-pool": number | null;
-    "git-source-projection": number | null;
   };
   pressure: { highUsedPercent: number; lowUsedPercent: number };
   execution: "explicit-only" | "controller-automatic";
@@ -283,8 +235,6 @@ V1 默认值如下：
 | minimum age | 24 小时 |
 | agent-artifact max age | 90 天 |
 | task-build max age | 30 天 |
-| git-source-pool max age | 30 天 |
-| git-source-projection max age | 90 天 |
 | pressure high / low | 85% / 75% |
 | 普通本地 backend execution | `explicit-only` |
 | managed controller execution | `controller-automatic` |
