@@ -1,4 +1,4 @@
-# 用 Experiment Plugin 声明 Remem 条件
+# 用 Plugin 声明 Remem 条件
 
 ## 当前接线
 
@@ -8,8 +8,9 @@ MemoryBench 当前需要作者同时知道四个落点:
 export default defineExperiment({
   agent: codexAgent(rememCodexConfig(MODEL)),
   flags: rememFlags(MODEL),
-  sandbox: dockerImageSandbox({
-    image: REMEM_DOCKER_IMAGE,
+  sandbox: dockerImage({
+    context: REMEM_DOCKER_CONTEXT,
+    dockerfile: "remem.Dockerfile",
     lifetimeMs: 5 * 60 * 60_000,
   }).prepare(rememPrepare()),
   maxConcurrency: 4,
@@ -27,8 +28,9 @@ const memoryExperimentBase = {
   evals: ["toggl-cli/"],
   agent: codexAgent(),
   model: MODEL,
-  sandbox: dockerImageSandbox({
-    image: REMEM_DOCKER_IMAGE,
+  sandbox: dockerImage({
+    context: REMEM_DOCKER_CONTEXT,
+    dockerfile: "remem.Dockerfile",
     lifetimeMs: 5 * 60 * 60_000,
   }),
   timeoutMs: 1_800_000,
@@ -52,7 +54,10 @@ export default defineExperiment({
 | extraction drain 与数据库检查 | Codex `preTeardown` 有序槽位 |
 | Codex endpoint / API key | receiver 的 effective runtime auth/provider binding |
 | 5 小时寿命 | Experiment 仍显式声明;planning requirement 只验证 requested value |
+| Remem Dockerfile | package 静态资产，由调用点的 `dockerImage()` 显式选择 |
 | Remem 二进制与版本 | `sandbox.prepare.experiment` 实机探测 |
+
+`@memorybench/remem-niceeval` 把 Dockerfile 随包发布，并导出普通 `REMEM_DOCKER_CONTEXT` URL。它不再导出预制镜像常量，也不要求用户先跑手工 build 脚本。同一 BuildKey 首次 cache miss 时构建，后续只在同一 cache domain 精确命中时复用；详见 [Docker Image](../../docker-image/README.md)。
 
 ## Accumulated 模式
 

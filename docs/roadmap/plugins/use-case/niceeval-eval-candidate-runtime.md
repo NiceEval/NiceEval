@@ -14,7 +14,7 @@ NiceEval-Eval 用同一套题比较多个候选 NiceEval 版本。一个 harness
 
 ## 适合插件化的部分
 
-在精确版本与兼容 template 已经选定后,候选 Runtime 可以成为 Experiment Plugin:
+在精确版本与兼容 template 已经选定后,候选 Runtime 可以成为 Experiment attachment:
 
 ```ts
 const candidate = { version: "0.12.0" } as const;
@@ -48,9 +48,9 @@ export default defineExperiment({
 
 示例中的 `candidate` 是前置工作流已经锁定的精确身份,不是在 Experiment 模块 import 时查询出来的值。插件不解决移动 dist-tag 的网络查找。当前 `ensureCandidate("canary")` 会访问 npm registry、下载 tarball、读取随包文档清单并探活 GitHub INIT;这些动作发生在模块 import 期,还会让未选中的 Experiment 因公网抖动一起加载失败。
 
-`defineExperimentPlugin()` 不能把这段 I/O 伪装成纯 activation。理想入口需要另一个显式的候选下载 / 锁定步骤,先把移动 tag 查成可签入或可缓存的精确 candidate identity;插件只消费完成态精确值。
+`definePlugin()` 不能把这段 I/O 伪装成纯 activation。理想入口需要另一个显式的候选下载 / 锁定步骤,先把移动 tag 查成可签入或可缓存的精确 candidate identity;插件只消费完成态精确值。
 
-插件也不能提供 `dockerfileSandbox()`、修改 build args / target、选择 raw-privileged 或 managed-rootless DinD、设置 tmpfs 与 read-only rootfs。这些字段共同定义 template 与物理资源身份,仍由 `candidateHarnessSandbox()` 一类显式 template factory 拥有。
+插件也不能提供 `dockerImage()`、修改 build args / target、选择 raw-privileged 或 managed-rootless DinD、设置 tmpfs 与 read-only rootfs。这些字段共同定义 template 与物理资源身份,仍由调用点的显式 template 声明拥有。
 
 因此这条用例的职责线是:
 

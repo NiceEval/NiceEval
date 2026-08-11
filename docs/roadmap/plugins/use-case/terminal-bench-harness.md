@@ -4,7 +4,7 @@
 
 terminal-bench 的 Experiment 不拥有 Sandbox template。238 道 Eval 各自声明 folder-local 起点:226 道是 Dockerfile,12 道是 Docker Compose。同一个 Codex Experiment 因此会 link 出大量 provider / template 不同的 Eval × Experiment pair。
 
-这证明 Experiment Plugin 不能在 Run 级只为 Sandbox contribution 或 requirement 求值一次。一个公共 harness 条件必须逐 pair 接入:
+这证明 Plugin 不能在 Run 级只为 Sandbox contribution 或 requirement 求值一次。一个公共 harness 条件必须逐 pair 接入:
 
 ```ts
 export default defineExperiment({
@@ -45,13 +45,13 @@ export default defineExperiment({
 
 `harborComposeEnv(taskId)` 由具体 Eval 的 task id 决定,并参与该题 `dockerComposeSandbox()` 的 template 插值与宿主目录。它属于 folder-local Eval 起点,不属于跨题公共 Experiment 条件。
 
-把它搬进 Experiment Plugin 会产生三个问题:
+把它搬进 Plugin 会产生三个问题:
 
 - 插件必须猜当前 Eval task id 与 template family;
 - command-only contribution 越权修改 template env;
 - Run 级插件身份掩盖每题不同的宿主路径与 Compose build identity。
 
-因此每条 Compose Eval 继续在自己的 template factory 中调用它。Experiment Plugin 只消费 link 后的 provider-neutral pair facts,不读取 Compose 私有 identity。
+因此每条 Compose Eval 继续在自己的 template factory 中调用它。Plugin 只消费 link 后的 provider-neutral pair facts,不读取 Compose 私有 identity。
 
 ## 适合共用的调用形状
 
