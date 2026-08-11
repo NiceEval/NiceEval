@@ -1,80 +1,85 @@
 ---
 title: "编写自定义报告"
-description: "先声明页面所需 facts，再用一次内存执行生成终端、网页与静态导出共用的结果。"
+description: "声明 RecordProjection，把投影结果组织成 Calculation、页面和一次固定的 ReportExecution。"
 ---
 
-自定义 Report 不接收 Record 路径，也不在页面 render 时临时查数据。固定流程是：
+自定义 Report 不接收 Record 路径，也不在页面 render 时临时查数据。先声明所需的 `RecordProjection`，再定义 Calculation、Page、PageFamily 或 Download：
 
 ```text
-core-only Sample → ReportScope → ReportPlan
-                                  ↓
-                              ReportInput
-                                  ↓
-                         ReportExecution（一次）
-                           ↙       ↓       ↘
-                         show     view    export
+AnalysisSampleHandle
+        ↓
+RecordAttachment projector → ProjectedSample
+        ↓
+Report → immutable ReportExecution
+          ↙       ↓       ↘
+        show     view    export
 ```
 
-## 定义所需 fact
+## 先准备 Attachment projector
 
-优先使用 NiceEval 导出的内建 requirement。自定义 JSON fact 使用 `defineJsonFact()`，并明确 owner：
+运行方负责把运行事实写成 typed `RecordAttachment`。Report 只消费已经定义好的 Attachment family，并用 `RecordAttachment projector` 把 payload 变成报告需要的 view。
 
 ```ts
-import { defineJsonFact } from "niceeval/report";
+const verdicts = attemptSlotProjection(verdictProjector);
+const assertions = attemptSlotProjection(assertionsProjector);
 
-const attemptEnergy = defineJsonFact({
-  id: "attempt-energy",
-  owner: "attempt",
-  name: "com.example.energy",
-  parse(document) {
-    if (typeof document.value !== "number") {
-      throw new Error("energy must be a number");
-    }
-    return document.value;
-  },
+const inputs = reportInputs({ verdicts, assertions });
+```
+
+每个 projection 都有明确 owner 和访问方式。`attemptSlotProjection` 保留 Sample 的每个 slot；`selectedRunProjection` 只对 selected Run 读取；`attemptOriginRunProjection` 为每个 slot 读取其 Attempt 的 origin Run。
+
+Report 不在 callback 中打开 Record，也不能通过 pure `AnalysisSample` 恢复 I/O。
+
+## 定义计算
+
+Calculation 使用静态声明的 inputs。它返回领域值，而不是让 host 推导通过率或分母。
+
+```ts
+const passRate = defineCalculation({
+  id: Either.getOrThrow(reportComponentId("pass-rate")),
+  inputs,
+  completeness: "allow-partial",
+  calculate: ({ sample, inputs }) =>
+    calculatePassRate(sample, inputs.verdicts, inputs.assertions),
 });
 ```
 
-自定义 name 使用反向域 namespace，不能以 `niceeval.` 开头。parser 只接收已验证的 `{ observedAt, value }`，不会收到 bytes、descriptor、路径或 blob。它在 execute 阶段对每个 owner 与 requirement 组合执行一次，必须同步返回 JSON 值。
+选择 `allow-partial` 时，callback 能看到 `ProjectedSample`、coverage 和 issues。结果必须保留自己的业务分母与完整度。选择 `require-complete` 时，只要必需数据不完整，callback 不会执行。
 
-## 先计划页面
-
-`plan(scope)` 只看 core-only slots。它可以按 Run、slot、Attempt ID 和 locator 穷尽详情 route，但不能读取 Verdict、Usage 或其它业务值。
+## 定义页面和 Report
 
 ```ts
-import {
-  defineReport,
-  verdict,
-} from "niceeval/report";
+const overview = definePage({
+  id: Either.getOrThrow(reportComponentId("overview")),
+  route: Either.getOrThrow(reportRoute("/")),
+  calculations: { passRate },
+  render: ({ calculations }) =>
+    reportDocument({
+      title: "Summary",
+      children: [
+        reportMetric({
+          label: "Pass rate",
+          value:
+            calculations.passRate.state === "available"
+              ? calculations.passRate.value.rate
+              : null,
+        }),
+      ],
+    }),
+});
 
 export default defineReport({
-  id: "quality",
-  plan(scope) {
-    return {
-      calculations: [qualitySummary],
-      pages: [
-        {
-          id: "overview",
-          route: { pathname: "/", parameters: {} },
-          title: "Overview",
-          inputs: [verdict, attemptEnergy],
-          calculations: [qualitySummary],
-          render(input) {
-            return overviewPage(input);
-          },
-        },
-      ],
-      downloads: [],
-    };
-  },
+  id: Either.getOrThrow(reportId("quality")),
+  calculations: { passRate },
+  pages: [overview],
 });
 ```
 
-页面、Calculation 和 Download 各自声明 `inputs`。未声明的 fact 不能在执行时补读；宿主会把这种调用报告为 plan invalid。
+Page 返回闭合的语义 document，而不是 React、HTML 或文件路径。要为每个 Assertion、Turn 或 diagnostics category 增加详情页时，使用 `definePageFamily`。实例、route 和 document 只能从已经投影或计算出的内存值展开。
 
 ## 设成项目默认
 
-在 `niceeval.config.ts` 中直接导入定义：
+在 `niceeval.config.ts` 中导入 Report。以后不带 `--report` 的 `show` 与 `view` 使用它：
 
 ```ts
 import { defineConfig } from "niceeval";
@@ -85,72 +90,19 @@ export default defineConfig({
 });
 ```
 
-以后不带 `--report` 的 `show` 与 `view` 使用它。按次切回内建报告时使用 `--report standard`。
+## 处理不完整与失败
 
-## 定义 Calculation
+recorded-data problem 不会改变 Sample 分母：
 
-```ts
-const qualitySummary = defineCalculation({
-  id: "quality-summary",
-  inputs: [verdict, attemptEnergy],
-  completeness: "allowPartial",
-  evaluate(input) {
-    return calculateQuality(input);
-  },
-});
-```
+- `unavailable` 表示 owner 没有请求的 Attachment；
+- `migration-required`、`migration-unavailable` 与 `unsupported` 表示历史 schema 不能按当前需要读取；
+- `invalid` 或 partial collection 表示记录的数据不完整。
 
-`allowPartial` 可以使用成功读到的部分，但结果必须保留完整 Sample 分母、observed 数与 partial 标记。`requireComplete` 只有 durable collection 与 decoding 都 complete 时才可用。
+这些问题由内建 problems surface 显示。`allow-partial` consumer 可以展示可用值；`require-complete` consumer 形成 `data-unavailable`。
 
-## 页面怎样读取
+projector、Calculation 或页面 callback 抛错，以及非法 document 或 route conflict，属于 execution problem。`show` 与 `view` 显示问题并保留其它页面；静态导出不会发布这一份 execution。
 
-页面只能读取自己的 inputs 和 calculations：
-
-```ts
-render(input) {
-  const rows = input.report.sample.included.map((slot) => ({
-    locator: slot.locator,
-    verdict: input.readAttempt(slot, verdict),
-    energy: input.readAttempt(slot, attemptEnergy),
-  }));
-
-  return {
-    title: "Overview",
-    body: { rows },
-    textAlternative: renderRowsAsText(rows),
-  };
-}
-```
-
-页面返回结构化 JSON 与文字等价内容，不返回 React 组件、脚本、CSS 或文件路径。浏览器宿主由 NiceEval 内建 runtime 提供。
-
-## 失败隔离
-
-如果页面 A 只请求合法 Verdict，而页面 B 请求损坏的 Usage：
-
-- A 正常 render；
-- B 形成带 channel 与 issues 的 `input-invalid`，本机 view 显示具名错误页；
-- 其它页面不会重新读取 Record；
-- 静态 export 因计划内存在失败 consumer 而整体不发布。
-
-用户 render、Calculation 或 Download 抛错时状态是 `execution-failed`，不会冒充输入无效。
-
-## 下载项
-
-Download 也是具名 consumer。它声明 inputs 和 calculations，以 `defineReportDownloadPath("downloads/...")` 取得受约束路径，并在唯一执行阶段返回完整 `Uint8Array`。静态 export 只写已经生成的 bytes，不再次运行用户代码。
-
-## 能力边界
-
-自定义 Report 不提供：
-
-- 任意浏览器 script、style、font、worker 或 WASM；
-- 运行时网络请求；
-- 从 Report 读取文件路径或 blob；
-- generic `ctx.fact()` 的 JSONL、追加或超过 65,536 UTF-8 bytes 的 document。
-
-大文本和二进制运行事实使用 NiceEval 认可的具名专用 Attempt channel 与 blob，由内建 decoder 交付普通值。
-
-## 运行与发布
+## 运行和发布
 
 ```sh
 npx niceeval show --run <run-id> --report ./reports/quality.ts
@@ -158,4 +110,6 @@ npx niceeval view --run <run-id> --report ./reports/quality.ts --no-open
 npx niceeval view --run <run-id> --report ./reports/quality.ts --out ./quality-site
 ```
 
-`--out` 必须指向不存在的目录。详情见[发布静态报告](/zh/tutorials/publish-report)和[报告组件 API](/zh/reference/report-components)。
+`show`、`view` 与 `--out` 都选择 Sample、执行同一个 Report，并得到固定 `ReportExecution`。`view` 后续的成功 rebuild 会产生下一份 execution；失败时保留 last-good execution。
+
+`--out` 必须指向不存在的目录。详情见[发布静态报告](/zh/tutorials/publish-report)和[报告 API](/zh/reference/report-components)。

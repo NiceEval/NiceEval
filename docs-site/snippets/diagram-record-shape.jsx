@@ -1,99 +1,105 @@
 /*
- * 图：同一份固定 Record，两个用户旅途——默认首页的 current Contribution 视图与单 Run 审计视图。
- * 一图一个组件，内容写死在组件里。切面板的机制与 Picker 共用（styles/tabs.css），
- * 这张图自己的样式在 styles/diagram-record-shape.css。
+ * 图：Record 的磁盘分层。portable Record 内只有 Core、owner-local
+ * RecordAttachment 与最后建立的 complete；未完成目录和 local operation state
+ * 在图上明确放到它的边界之外。
+ * 一图一个组件，内容写死在组件里；样式在 styles/diagram-record-shape.css。
  *
- * 写法约束同 snippets/widgets.jsx：只写箭头函数、不写 import、模块作用域里不放未导出的
- * 变量。两个旅途各画一份固定 Graph 上的成员选择，选哪个就显示哪一份。
+ * 写法约束同 snippets/widgets.jsx：只写箭头函数、不写 import、模块作用域里
+ * 不放未导出的变量。动画只靠 CSS，悬停暂停，reduced motion 时停止。
  */
 export const RecordShape = () => (
   <div className="ne-w ne-rec">
     <div className="ne-hd">
-      同一份固定 Record：默认首页与单 Run 审计
-      <span className="ne-hd-hint">周一跑了整组，周二只重跑了 q/sum</span>
+      Record 的磁盘分层
+      <span className="ne-hd-hint">完整 Run 才是可携带的事实</span>
     </div>
 
-    <input className="ne-pick-in" type="radio" name="ne-rec-sample" id="ne-rec-0" defaultChecked />
-    <input className="ne-pick-in" type="radio" name="ne-rec-sample" id="ne-rec-1" />
+    <div className="ne-rec-layout">
+      <section className="ne-rec-portable">
+        <div className="ne-rec-boundary ne-lit" style={{ animationDelay: "0s" }}>
+          <span>portable Record</span>
+          <span className="ne-rec-boundary-note">可复制 · 可进 Git</span>
+        </div>
 
-    <div className="ne-tabs">
-      <label className="ne-tab" htmlFor="ne-rec-0">
-        默认首页
-      </label>
-      <label className="ne-tab" htmlFor="ne-rec-1">
-        单 Run 审计
-      </label>
-    </div>
+        <div className="ne-rec-root ne-lit" style={{ animationDelay: "0.15s" }}>
+          <code>record.json</code>
+          <span>format · recordId</span>
+        </div>
 
-    <div className="ne-panels">
-      <div className="ne-panel ne-rec-panel">
-        <div className="ne-rec-exp">compare/bub</div>
         <div className="ne-rec-run">
-          <span className="ne-rec-when">Run · r16（周一）</span>
-          <span className="ne-rec-cell">q/sum</span>
-          <span className="ne-rec-cell ne-rec-on">✓ q/area</span>
-          <span className="ne-rec-cell ne-rec-on">✓ q/limit</span>
-        </div>
-        <div className="ne-rec-run">
-          <span className="ne-rec-when">Run · r17（周二）</span>
-          <span className="ne-rec-cell ne-rec-on">✓ q/sum</span>
-        </div>
+          <div className="ne-rec-run-head ne-lit" style={{ animationDelay: "0.3s" }}>
+            <code>runs/&lt;RunId&gt;/</code>
+            <span>一个已发布的 Run</span>
+          </div>
 
-        <div className="ne-rec-exp">compare/codex</div>
-        <div className="ne-rec-run">
-          <span className="ne-rec-when">Run · r16（周一）</span>
-          <span className="ne-rec-cell ne-rec-on">✓ q/sum</span>
-          <span className="ne-rec-cell ne-rec-on">✓ q/area</span>
-          <span className="ne-rec-cell ne-rec-on">✓ q/limit</span>
-        </div>
+          <div className="ne-rec-core">
+            <div className="ne-rec-group-head">Record Core 骨架</div>
+            <div className="ne-rec-row ne-lit" style={{ animationDelay: "0.45s" }}>
+              <code>run.json</code>
+              <span>expectedSlots · completedAt</span>
+            </div>
+            <div className="ne-rec-row ne-lit" style={{ animationDelay: "0.6s" }}>
+              <code>members/&lt;SlotId&gt;.json</code>
+              <span>精确指向一个 Attempt</span>
+            </div>
+            <div className="ne-rec-row ne-lit" style={{ animationDelay: "0.75s" }}>
+              <code>attempts/&lt;AttemptId&gt;/attempt.json</code>
+              <span>origin Run</span>
+            </div>
+          </div>
 
-        <p className="ne-why">
-          固定 Graph 上每个 membership slot 的 current Contribution：q/sum 由 r17 的
-          <code>executed</code> 贡献，q/area 与 q/limit 由 r16 的 <code>carried</code> 贡献。
-          六道题都有结果，<code>coverage</code> 没有缺口。<code>niceeval show</code> / <code>view</code>
-          的默认首页消费这份固定 Sample 的 coverage 与 MetricValue，不按时间重选。
-        </p>
-      </div>
+          <div className="ne-rec-attachments">
+            <div className="ne-rec-attachment ne-lit" style={{ animationDelay: "1.1s" }}>
+              <div className="ne-rec-group-head">Run-owned RecordAttachment</div>
+              <code>attachments/&lt;name&gt;/</code>
+              <span>attachment.json · payload.json · blobs/**</span>
+              <small>例如 Evaluations、Membership provenance、Sources</small>
+            </div>
+            <div className="ne-rec-attachment ne-lit" style={{ animationDelay: "1.35s" }}>
+              <div className="ne-rec-group-head">Attempt-owned RecordAttachment</div>
+              <code>attempts/&lt;AttemptId&gt;/attachments/&lt;name&gt;/</code>
+              <span>attachment.json · payload.json · blobs/**</span>
+              <small>例如 Assertions、Verdict、Score、Eligibility</small>
+            </div>
+          </div>
 
-      <div className="ne-panel ne-rec-panel">
-        <div className="ne-rec-exp">compare/bub</div>
-        <div className="ne-rec-run">
-          <span className="ne-rec-when">Run · r16（周一）</span>
-          <span className="ne-rec-cell ne-rec-on">✓ q/sum</span>
-          <span className="ne-rec-cell ne-rec-on">✓ q/area</span>
-          <span className="ne-rec-cell ne-rec-on">✓ q/limit</span>
+          <div className="ne-rec-last ne-lit" style={{ animationDelay: "1.65s" }}>
+            <span className="ne-rec-last-arrow">所有 Core 与 Attachment 写完</span>
+            <code>complete</code>
+            <span>最后创建的零字节发布标识</span>
+          </div>
         </div>
-        <div className="ne-rec-run">
-          <span className="ne-rec-when">Run · r17（周二）</span>
-          <span className="ne-rec-cell ne-rec-on">✓ q/sum</span>
-        </div>
-        <div className="ne-rec-gap">
-          <span className="ne-rec-when" />
-          <span className="ne-warn">
-            <span className="ne-mono">!</span> 收窄到 r16：q/area、q/limit 在该 revision 的 slot 中 unavailable
-          </span>
-        </div>
+      </section>
 
-        <div className="ne-rec-exp">compare/codex</div>
-        <div className="ne-rec-run">
-          <span className="ne-rec-when">Run · r16（周一）</span>
-          <span className="ne-rec-cell ne-rec-on">✓ q/sum</span>
-          <span className="ne-rec-cell ne-rec-on">✓ q/area</span>
-          <span className="ne-rec-cell ne-rec-on">✓ q/limit</span>
-        </div>
+      <aside className="ne-rec-aside">
+        <section className="ne-rec-incomplete">
+          <div className="ne-rec-aside-head ne-lit" style={{ animationDelay: "2.1s" }}>
+            写入中的 Run 目录
+          </div>
+          <code>runs/&lt;RunId&gt;/</code>
+          <strong>没有 <code>complete</code></strong>
+          <p className="ne-why">
+            它可能留在磁盘上，但还不是 Record 事实。reader 忽略它并给出
+            <code>incomplete-run</code> warning。
+          </p>
+        </section>
 
-        <p className="ne-why">
-          单 Run 审计是显式 Run selection 生成的另一份固定 Sample（<code>--run</code> 或
-          <code>materializeSample</code> 的 runs 选择）：只显示该 revision 的 membership。
-          与默认首页不同的成员集合来自不同的固定选择，不是同一份 Sample 漂移。
-        </p>
-      </div>
+        <section className="ne-rec-local">
+          <div className="ne-rec-aside-head ne-lit" style={{ animationDelay: "2.4s" }}>
+            local operation state
+          </div>
+          <code>.niceeval-local/</code>
+          <span>session · maintenance / writer lock · cache</span>
+          <p className="ne-why">
+            它在 portable Record 外。复制或分享 Record 时不带上这些状态。
+          </p>
+        </section>
+      </aside>
     </div>
 
     <div className="ne-ft">
-      Run 是一次提交的持久化执行批次，没有更低一层；
-      默认报告消费固定 Sample 的 current Contribution；单 Run 审计是另一份固定 Sample 的显式选择。
-      两者都让 Attempt、贡献 Run、<code>coverage</code> 与 <code>provenance</code> 绑在一起走。
+      <code>complete</code> 出现后，writer 不再修改这个 Run；没有它的目录可由
+      <code>niceeval clean</code> 清理。
     </div>
   </div>
 );

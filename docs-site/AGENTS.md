@@ -32,7 +32,8 @@
 - **Attempt**：同一个 eval 的第 i 次重复运行。中文直接写 `Attempt`，不写“尝试”。
 - **EarlyExit（`earlyExit`）**：取通过率时先过一次即中止其余 attempt 的策略。中文写“首过即停”，不写“早停”。
 - **接入等级（Integration tier）**：接入方式的三级（Tier 1 / 2 / 3）。中文写“接入等级”，档位照写 Tier 1 / Tier 2 / Tier 3。
-- **Record**：`.niceeval/record/` 中可人工编辑的事实数据集，只在目录停稳时读写。Run 保存 expected slots，Member 引用 Attempt；判定、断言、诊断和事件进入 owner-local 的具名通道。Record 不保存 revision、hash 或防伪证明，也不判断是否复用或执行。
+- **Record**：`.niceeval/record/` 中的持久事实集，只包含完整发布的 Run，发布后不可修改。Run 保存 expected slots，Member 保存占位并沿 Attempt 推导 origin/reference；业务事实属于 owner-local 的具名 `RecordAttachment`。Record 不保存 revision、hash 或防伪证明，也不判断是否复用或执行。
+- **RecordAttachment**：挂在一个 Run 或 Attempt 上的具名、版本化事实。它有明确 owner、schema identity 与 owner-local blob closure；它不是通信通道。
 - **Report artifact**：报告导出的自包含目录，带精确 runtime、全部页面和资源。它可删除、可重新生成，不是 Record，也不由未来 NiceEval 重新打开。
 - **Turn**：一次 `t.send()` / `t.respond()` 的结果。中文直接写 `Turn`；“多轮对话”这类形容词性用法不受限。
 - **StreamEvent / events**：标准事件流，是断言和报告读取的事实来源。
@@ -41,13 +42,15 @@
 - **Flags**：experiment 传入的 feature flags，经 `ctx.flags` 到 Adapter，经 `t.flags` 到 eval。不要写成 CLI flags，除非指命令行参数。
 - **Runner**：运行器。面向用户文档里避免写 “NiceEval core”；需要表达执行主体时写 NiceEval 或 runner。
 - **生命周期 Hook**：四层（实验级 / Sandbox 级 / eval 级 / agent 级）共用同一形态的成对 `setup` / `teardown` 回调。中文写”生命周期”（泛指机制）或”生命周期 Hook”（指具体回调），不写”钩子”。
-- **默认报告（内建报告）**：`niceeval show` / `view` 在没有 `--report`、配置里也没写 `report` 时装载的官方 Report。它和自定义 Report 一样只消费 `ReportInput`，不读取 Record 路径或磁盘字段。
-- **Sample**：从明确 Run 或具名 latest policy 形成的内存选择。中文正文写 `Sample`，不写 `Scope`；它保留 expected-slot 分母，以及 included / not-recorded / invalid / excluded 状态。
-- **ReportInput**：Record→Reports composition adapter 按 ReportPlan 准备的进程内普通值。它保留 Sample 分母和内部通道读取状态，不落盘、不含 reader；consumer 只能通过受控 accessor 读取自己声明的输入。
-- **报告模型**：Report 先用纯 `plan()` 穷举 facts、calculations、页面和下载，再通过受控 accessor 计算宿主数据。静态 export 写出精确 runtime 与穷尽的 `StaticAssetManifest`。
-- **值断言**：`expect` 匹配器经 `t.check(value, match)` 直接登记的断言。不写“值级断言”。
-- **Assertion**：作者调用 `t.check(value, match)`、scoped 方法或 Judge recipe 时直接登记的评估陈述。中文写“断言”或保留 `Assertion`；不存在先创建中间对象、再由另一条 API 消费它的流程。
-- **Match**：可复用、不可变、确定性且无副作用的值比较规则。中文写“匹配器”或保留 `Match`；它没有 identity、调用位置、阈值、分值或控制流。不要把 Match 本身写成断言句柄。
+- **默认报告（内建报告）**：`niceeval show` / `view` 在没有 `--report`、配置里也没写 `report` 时装载的官方 Report。它和自定义 Report 一样经由 Sample、Projection 与一次固定的 `ReportExecution` 呈现，不读取 Record 路径或磁盘字段。
+- **Analysis selection**：`AnalysisSelectionRequest` 从 frozen `RecordReader` 选择 Run，并形成 scope-bound `AnalysisSampleHandle`。它的 `.sample` 是关闭 reader 后仍可显示的纯 `AnalysisSample`。
+- **Sample**：从明确 Run 或具名 latest policy 形成的内存选择。中文正文写 `Sample`，不写 `Scope`；它保留 expected-slot 分母，以及 included / not-recorded / core-invalid / excluded 状态。
+- **RecordAttachment projector**：把一个明确 owner 的一个 Attachment payload 解释成 typed view。它不选择 Run、不计算通过率，也不决定沿用。
+- **ProjectedSample**：Sample 与一次 Attachment projection 对齐后的穷尽结果。它不保存 reader、路径或 callback。
+- **ReportExecution**：一次 Report 执行形成的不可变、自包含内存值。它保存 Sample、投影摘要、计算、页面、下载项与 problems；`show`、`view` 和静态导出只消费它。
+- **Severity**：断言的 gate / soft 两档。中文写“严重度”，不写“严重级”；能直接写 gate / soft 的句子不要提“严重度”这个上位词。
+- **报告模型**：Report 声明 RecordProjection、Calculation、Page、PageFamily 与 Download。host 在读取前闭合投影依赖，再形成一次 `ReportExecution`；静态 export 写出精确 runtime、页面、资源与 manifest。
+- **值断言**：`expect` 匹配器经 `t.check` / `t.require` 的即时断言。不写“值级断言”。
 
 ## 写作规则
 - **口语测试**：正文每句话要能原样对着同事说出口、对方第一次听就懂。内部设计代号与比喻（「报告槽」「证据室」「出厂填充」「接线」「前门」「收编」这类）不出现在公开站；要么把这个词提进上面的术语表并在页面首次出现处解释，要么用日常语言把条件和结果直说——写「不传 `--report` 时首页是默认报告」，不写「报告槽默认装官方榜单」。

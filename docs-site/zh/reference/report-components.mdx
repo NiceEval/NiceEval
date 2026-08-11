@@ -1,177 +1,124 @@
 ---
 title: "报告 API"
-description: "ReportScope、FactRequirement、ReportPlan、ReportInput、一次执行与静态导出的公开边界。"
+description: "RecordProjection、Calculation、Page、ReportExecution 与静态导出的公开边界。"
 ---
 
-## 固定调用链
+Report 作者声明需要哪些 `RecordProjection`，再把投影结果和计算结果包装成页面或下载。作者不接收 `RecordReader`、路径或磁盘字段。
 
-```ts
-let plan: ReportPlan;
-let input: ReportInput;
-{
-  await using record = await openRecordReader({ root });
-  const sample = await projectExplicitRuns(record, { runIds });
-  const scope = createReportScope(sample);
-  plan = definition.plan(scope);
-  input = await buildReportInput({ record, sample, plan });
-}
-
-const execution = executeReport({ definition, plan, input });
+```text
+AnalysisSampleHandle
+        ↓  RecordProjection declarations
+ProjectedSample
+        ↓  Calculation / Page / PageFamily / Download
+immutable ReportExecution
+        ├─ show
+        ├─ view revision
+        └─ static export
 ```
 
-只有 `buildReportInput()` 接收 `RecordReader`。Report 定义、Calculation、Page、Download、view 和静态 runtime 都不接收 reader 或路径。
+## 声明 RecordProjection
 
-## ReportScope
+`RecordAttachment projector` 固定解释一个明确 owner 的一个 Attachment family。Report 用三个 constructor 声明逻辑访问：
+
+| constructor | 对齐方式 |
+| --- | --- |
+| `attemptSlotProjection(projector)` | 对 Sample 的每个 slot 形成 entry，并读取它精确引用的 Attempt Attachment。 |
+| `attemptOriginRunProjection(projector)` | 对每个 slot 形成 entry，并读取该 Attempt 的 origin Run Attachment。 |
+| `selectedRunProjection(projector)` | 对每个 selected Run 形成 entry，并读取该 Run Attachment。 |
+
+前两种访问不会丢掉 `excluded`、`not-recorded` 或 `core-invalid` slot。相同 Attempt 被多个 slot 引用时，公开结果仍按 slot 对齐。
 
 ```ts
-interface ReportScope {
-  readonly provenance: AnalysisProjectionProvenance;
-  readonly runs: readonly AnalysisRun[];
-  readonly slots: readonly AnalysisSlot[];
-}
+const verdicts = attemptSlotProjection(verdictProjector);
+const evaluations = selectedRunProjection(evaluationsProjector);
+
+const inputs = reportInputs({ verdicts, evaluations });
 ```
 
-`runs` 穷尽全部已选 Run，`slots` 是完整 core-only 分母，保留 `included`、`not-recorded`、`invalid` 和 `excluded`。included slot 带 Attempt ID、origin、locator 和 Member kind，但没有业务 facts。
+`reportInputs` 固定输入 key 与其 projection 的类型。host 在执行任何 Record I/O 前闭合这组依赖，并让每个 projection 至多执行一次。
 
-## FactRequirement
+## 定义 Calculation 和页面
 
-```ts
-type FactOwner = "run" | "attempt";
-
-interface FactRequirement<Value> {
-  readonly id: string;
-  readonly owner: FactOwner;
-  readonly name: string;
-  readonly source: BuiltInFactSource | CustomJsonFactSource<Value>;
-}
-```
-
-内建 source 只能由 NiceEval 导出。自定义事实使用：
+Calculation 只从静态声明的 projection 派生业务值。它自己返回业务 `observed` 与 `denominator`；host 不会从 coverage 或 entry 数量猜测统计口径。
 
 ```ts
-defineJsonFact({
-  id,
-  owner,
-  name,
-  parse(document) {
-    return value;
-  },
+const passRate = defineCalculation({
+  id: Either.getOrThrow(reportComponentId("pass-rate")),
+  inputs,
+  completeness: "allow-partial",
+  calculate: ({ sample, inputs }) =>
+    calculatePassRate(sample, inputs.verdicts, inputs.evaluations),
 });
 ```
 
-自定义 document 精确为 `{ observedAt, value }`，media type 为 `application/json`。同一 owner/name 只有一个值；parser 不接收 bytes、路径或 blob。build 只验证 transport，execute 才对每个 owner 与 requirement 组合调用一次同步 parser。
+直接消费 projection 的 Calculation、Page、PageFamily 和 Download 必须选择完整度：
 
-## ReportPlan
+| 选择 | 行为 |
+| --- | --- |
+| `allow-partial` | callback 收到完整的 `ProjectedSample`、coverage 与 issues，可以显示部分结果。 |
+| `require-complete` | 必需数据不完整时不调用 callback，result 是 `data-unavailable`。 |
 
-```ts
-interface ReportPlan {
-  readonly calculations: readonly Calculation<unknown>[];
-  readonly pages: readonly ReportPage[];
-  readonly downloads: readonly ReportDownload[];
-}
-```
+`unavailable`、`migration-required`、`migration-unavailable`、`unsupported`、`invalid` 与 partial collection 都是 recorded-data problem。callback 的意外 throw 属于 execution problem，两者不能互相替代。
 
-plan 没有顶层 facts 或 resources。每个 consumer 自己声明 inputs；参数化页面必须在 plan 中列出每个具体 route。
+Page 返回闭合的 `ReportDocumentV1` 语义树。它不是 HTML、React element 或另一套文本输出。PageFamily 只能根据已投影或已计算的内存值展开 route，不能在展开时追加 Attachment I/O。
 
-## ReportInput
+## 组合一个 Report
 
 ```ts
-interface ReportInput {
-  readonly scope: ReportScope;
-  readonly sample: AnalysisSample;
-  // 内部 fact matrix 使用未导出的 brand，用户代码不可索引。
-}
+const overview = definePage({
+  id: Either.getOrThrow(reportComponentId("overview")),
+  route: Either.getOrThrow(reportRoute("/")),
+  calculations: { passRate },
+  render: ({ calculations }) =>
+    reportDocument({
+      title: "Summary",
+      children: [
+        reportMetric({
+          label: "Pass rate",
+          value:
+            calculations.passRate.state === "available"
+              ? calculations.passRate.value.rate
+              : null,
+        }),
+      ],
+    }),
+});
 
-interface ReportContext {
-  readonly scope: ReportScope;
-  readonly sample: ReportSample; // 明确不含 recordRoot
-}
+export default defineReport({
+  id: Either.getOrThrow(reportId("summary")),
+  calculations: { passRate },
+  pages: [overview],
+});
 ```
 
-每项内部读取保留 `ChannelRead` 的 `read | unavailable | unsupported | invalid` 与完整度。consumer 只拿到 fact-free context，以及验证自己 `inputs` 的 `readRun(runId, fact)` 和 `readAttempt(includedSlot, fact)`；不同 requirement 对象不能复用 id。
+`defineReport` 验证 ID 与组件引用。Page、PageFamily 和 Download 只能引用同一个 Report 已注册的 Calculation。页面 route 与下载路径必须通过对应 constructor 创建，避免输出冲突。
 
-context 中的 `sample` 是不含 `recordRoot` 的 `ReportSample` projection。Calculation、Page 和 Download 都无法从公开字段取得 Record 路径。
-
-## Calculation
+## 执行一次 Report
 
 ```ts
-interface Calculation<Value> {
-  readonly id: string;
-  readonly inputs: readonly FactRequirement<ReportJsonValue>[];
-  readonly completeness: "allowPartial" | "requireComplete";
-  evaluate(input: CalculationInput): CalculationValue<Value>;
-}
+const execution = yield* executeReport({
+  sampleHandle,
+  report,
+});
 ```
 
-Calculation 只能读取自己的 inputs。`allowPartial` 保留完整 denominator 与实际 observed；`requireComplete` 要求 durable collection 与 decoding 均 complete。
+`ReportExecution` 是不可变、自包含的进程内值。它包含 Sample、projection 摘要、Calculation、family、页面、下载项与 problem table，但不包含 reader、路径、Scope、callback 或 projector token。
 
-## Page
+每个 projection、Calculation、PageFamily、页面实例与 Download 在同一 execution 中最多执行一次。`show`、`view` 与 `exportStaticReport` 只消费完成后的 execution。
 
-```ts
-interface ReportPage {
-  readonly id: string;
-  readonly route: ReportRoute;
-  readonly title: string;
-  readonly inputs: readonly FactRequirement<ReportJsonValue>[];
-  readonly calculations: readonly Calculation<unknown>[];
-  render(input: ReportPageInput): ReportPageModel;
-}
+| 情况 | `show` / `view` | 静态导出 |
+| --- | --- | --- |
+| recorded-data problem | 显示问题，并保留其它成功内容。 | 可以导出，问题必须可见。 |
+| execution problem | 保留其它成功页面，并显示问题。 | 不导出。 |
 
-interface ReportPageModel {
-  readonly title: string;
-  readonly body: ReportJsonValue;
-  readonly textAlternative: string;
-}
-```
+## view 与静态导出
 
-PageModel 是普通可序列化数据。颜色、图形或交互不能替代文字、表格与状态说明。
+`view` 每次 rebuild 构造新的固定 `ReportExecution`。完整成功后才替换当前 revision；失败保留 last-good execution，并显示 bounded rebuild problem。
 
-## Download
+静态导出只写一份已经完成的 execution。它先验证 semantic tree、route、下载项与 execution problems，再写出页面、host-data、downloads、manifest 和内建 runtime。所有内容写完后，最后写入 `complete` marker。
 
-```ts
-interface ReportDownload {
-  readonly id: string;
-  readonly path: ReportDownloadPath;
-  readonly mediaType: string;
-  readonly inputs: readonly FactRequirement<ReportJsonValue>[];
-  readonly calculations: readonly Calculation<unknown>[];
-  build(input: ReportDownloadInput): Uint8Array;
-}
-```
+## 相关页面
 
-Download 通过 `defineReportDownloadPath("downloads/...")` 创建路径，并在唯一执行阶段完整生成 bytes，不在 export 时重新运行。
-
-## ReportExecution
-
-```ts
-interface ReportExecution {
-  readonly plan: ReportPlan;
-  readonly input: ReportInput;
-  readonly calculations: readonly CalculationResult<unknown>[];
-  readonly pages: readonly PageResult[];
-  readonly downloads: readonly DownloadResult[];
-}
-```
-
-每种 result 都区分成功、`input-invalid` 与 `execution-failed`。`executeReport()` 对每个 consumer 最多执行一次。view 局部显示失败，export 对同一 execution 全量 preflight。
-
-Calculation result 携带原 Calculation 引用，并与 plan 中的顺序一一对应。
-
-## StaticAssetManifest
-
-```ts
-interface StaticAssetManifest {
-  readonly routes: readonly {
-    readonly route: ReportRoute;
-    readonly pagePath: StaticOutputPath;
-    readonly hostDataPath: StaticOutputPath;
-  }[];
-  readonly entries: readonly StaticAsset[];
-}
-```
-
-manifest 固定为 `manifest.json`，并且不把自身列入 entries；除此之外每个文件都必须恰好有一个 entry。静态目录只含已经生成的页面、host-data、downloads 与 exporter 内建 runtime、基础样式和字体。
-
-page 与 host-data 文件名按 plan 顺序产生；内建资源只在 `runtime/`，用户下载只在 `downloads/`。route 与输出 path 都使用最长 240 bytes 的 canonical ASCII 段；比较 key 固定为逐 byte ASCII lowercase，并在创建临时目录前统一检查 exact/key 重复和目录前缀冲突。
-
-`exportStaticReport({ execution, out })` 要求 out 不存在。它不会替换已有目录，也不会执行 Report 代码、读取 Record、访问网络或查找任意用户路径。
+- [读取 Record 数据](/zh/reference/results-data)：选择 Sample 并形成 `ProjectedSample`。
+- [编写自定义报告](/zh/tutorials/custom-reports)：从投影写出一个实际 Report。
+- [发布静态报告](/zh/tutorials/publish-report)：导出并分享固定 execution。

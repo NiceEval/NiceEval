@@ -4,7 +4,7 @@ sidebarTitle: "发布静态报告"
 description: "用 view --out 导出一个可离线打开、与源 Record 脱离的自包含报告站。"
 ---
 
-`niceeval view --latest --out <目录>` 或显式 `niceeval view --run <id> --out <目录>` 从停稳的 Record 选择 core-only Sample，按计划形成 `ReportInput` 并执行一次 Report，再写出自包含静态站。它是分享结果的唯一导出路径。
+`niceeval view --latest --out <目录>` 或显式 `niceeval view --run <id> --out <目录>` 选择已发布的 Run，形成 `AnalysisSampleHandle`，投影 Report 所需的 Attachment，并导出一次完成的 `ReportExecution`。它是分享结果的导出路径。
 
 ```sh
 npx niceeval view --latest --experiment checkout \
@@ -22,19 +22,25 @@ npx niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY \
 
 ## 导出前选择范围
 
-`--run` 与 `--latest` 先形成 Sample。Sample 保留完整 expected-slot 分母，以及 `included`、`not-recorded`、`invalid` 和 `excluded` 状态。
+`--run` 与 `--latest` 先形成 Sample。Sample 保留完整 expected-slot 分母，以及 `included`、`not-recorded`、`core-invalid` 和 `excluded` 状态。
 
-Report 根据计划请求所需的 facts，并用这些值构造固定的 `ReportInput`。未请求的通道不会影响导出；被请求的无效通道会显示具名问题并使这次导出失败。
+Report 只读取它声明的 `RecordProjection`。未请求的坏 Attachment 不影响导出。请求到的 recorded-data problem 会写进内建 problems surface，而不是悄悄从分母中删除。
+
+## 什么会阻止导出
+
+`unavailable`、`migration-required`、`migration-unavailable`、`unsupported`、`invalid` 与 partial collection 都是 recorded-data problem。它们可以被导出，但页面必须显示问题。
+
+projector 或作者 callback defect、非法 semantic document、route conflict 等是 execution problem。只要存在 execution problem，静态导出就停止，不发布半份成功报告。
 
 ## 导出目录包含什么
 
 成功的目录包括：
 
-- 全部已计划页面和参数化页面；
-- 页面所需的当前宿主数据；
-- exporter 内建的精确 runtime、基础样式和字体；
+- 全部 fixed 和 PageFamily 展开的页面；
+- 页面所需的 host-data；
 - 已经生成的下载项；
-- 穷尽列出这些文件的 `StaticAssetManifest`。
+- manifest 与 exporter 内建 runtime；
+- 最后写入的 `complete` marker。
 
 浏览器只读取导出目录。它不访问网络、不读取源 Record，也不需要之后安装 NiceEval。把目录交给同事或静态托管服务前，可以在断网浏览器中打开它确认页面与下载项可用。
 
@@ -53,6 +59,6 @@ npx niceeval view --latest --experiment ci --out ./report-site --no-open
 
 ## 发布目录
 
-将 `./report-site` 作为静态站点目录交给你的托管平台。不要把平台构建步骤指向源 Record；平台只需要部署已经生成的目录。
+将 `./report-site` 作为静态站点目录交给托管平台。不要把平台构建步骤指向源 Record；平台只需要部署已经生成的目录。
 
 部署方式见[部署报告站](/zh/tutorials/deploy-report-site)。

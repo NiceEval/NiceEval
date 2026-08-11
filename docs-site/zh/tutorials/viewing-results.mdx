@@ -1,16 +1,25 @@
 ---
 title: "查看 NiceEval 结果"
 sidebarTitle: "查看结果"
-description: "用 show 或 view 从停稳的 Record 选择 Sample，并查看固定的 ReportInput。"
+description: "用 show 或 view 从已发布的 Record 选择 Sample，并查看固定的 ReportExecution。"
 ---
 
-运行结束后，先从停稳的 Record 选择要看的 Run。`show` 在终端显示结果，`view` 在本机显示网页。两条命令使用同一条数据路径：
+运行结束后，从已发布的 Record 选择要看的 Run。`show` 在终端显示结果，`view` 在本机显示网页。两条命令使用同一条数据路径：
 
 ```text
-Record reader → Sample → ReportInput → show 或 view
+RecordReader + AnalysisSelectionRequest
+                  ↓
+          AnalysisSampleHandle
+             ├─ .sample → AnalysisSample
+             ↓
+       RecordAttachment projector
+                  ↓
+           ProjectedSample → ReportExecution
+                            ↙         ↘
+                          show        view
 ```
 
-Sample 决定比较范围和分母；ReportInput 带着 Sample 的状态、已请求通道和完整度进入 Report。Report 不直接读取文件。
+Sample 决定比较范围和分母。projector 只解释一个明确 owner 的一个 RecordAttachment。Report 将投影结果组织成一次不可变的 `ReportExecution`，不直接读取文件。
 
 ## 选择要看的 Run
 
@@ -26,22 +35,18 @@ npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
 npx niceeval show --latest --experiment checkout
 ```
 
-`latest` 只考虑已完成的 Run。需要查看未完成 Run 时，使用完整 `--run` ID。
+`--run` 使用 `explicit-runs/v1`。`--latest` 使用 `latest-runs/v1`，只考虑已发布的 Run。需要查看特定 Run 时，使用完整 `--run` ID。
 
 ## 在终端查看
 
-`show` 呈现默认 Report 的文字内容。指定页面或 Report 时，命令仍从同一份 Sample 建立 `ReportInput`。
+`show` 呈现默认 Report 的文字内容。指定页面或自定义 Report 时，命令仍从同一份 selection 建立一次 execution。
 
 ```sh
-npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --page overview
+npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --page /
 npx niceeval show --latest --experiment checkout --json
 ```
 
-`--json` 输出已计算的页面数据与状态，不会建立另一套取数路径。需要查看某个 Attempt 时，使用完整 locator：
-
-```sh
-npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --page attempt-01J8ZK3M6P4T7V9X2C5N8QW0RY
-```
+`--json` 输出同一份 execution 的页面、计算、投影摘要和问题。它不建立另一条取数路径。
 
 ## 在浏览器查看
 
@@ -49,9 +54,11 @@ npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --page attempt-01J8ZK3M6P4T7V
 npx niceeval view --latest --experiment checkout --no-open
 ```
 
-本机页面服务一次固定的 `ReportInput`。页面不会因后续文件编辑自行改变。修改 Record 或 Report 后，结束这次命令并重新执行 `view`。
+`view` 的每次成功 rebuild 都构造一份新的固定 `ReportExecution`，再替换正在显示的 revision。Report、配置、主题或 Record 的变化触发下一次 rebuild；失败时保留 last-good execution，并显示这次 rebuild 的问题。
 
-## 读懂分母与通道状态
+页面打开、导航和刷新不会让已经固定的 execution 偷偷重读 Record。需要看到新发布的 Run 时，让 `view` 完成下一次 rebuild，或重新运行命令。
+
+## 读懂分母与 Attachment 状态
 
 Sample 保留 Run 的完整 expected-slot 分母。一个 slot 可能是：
 
@@ -59,16 +66,18 @@ Sample 保留 Run 的完整 expected-slot 分母。一个 slot 可能是：
 | --- | --- |
 | `included` | 有合法 Member 与可读取的 Attempt。 |
 | `not-recorded` | 计划中的 slot 没有 Member。 |
-| `invalid` | Member、Attempt 或核心引用有问题。 |
+| `core-invalid` | Member、Attempt 或核心引用不能可靠读取。 |
 | `excluded` | 本次选择排除了该项。 |
 
-页面与 Calculation 还会显示所请求通道的状态。`unavailable` 表示未采集或不适用；`unsupported` 表示 reader 不支持该通道；`invalid` 会显示具名问题并使依赖它的请求失败。partial 读数必须带实际观察数量、分母和 partial 标记。
+页面和 Calculation 还会显示请求的 Attachment 状态。`unavailable` 表示没有该 Attachment；`migration-required` 或 `migration-unavailable` 表示需要处理历史 schema；`unsupported` 表示当前功能不认识它；`invalid` 表示 envelope、payload 或 blob 无效。
 
-## 编辑后重新读取
+这些是数据状态，不会缩小 Sample 分母。未请求的坏 Attachment 不影响无关页面。每个 Calculation 自己定义业务 `observed` 与 `denominator`，不能从读到多少个 Attachment 推测。
 
-Record 是可编辑的事实数据集。目录停稳后，用户可以修改 Verdict、Usage 或其他通道值。完成修改后，重新运行 `show` 或 `view`；新的分析投影会读取修改后的值。
+## Record 的发布边界
 
-不要让 Runner、active reader、导出的 Sample 选择 / ReportInput 构造阶段与人工编辑同时操作同一目录。reader 释放后，Report 执行和写站不再访问 Record，可以继续完成。
+Record 只保存已发布的事实。已发布的 Run 不可修改；需要不同结果时，运行新的 Invocation，生成新的 Run。
+
+没有 `complete` 的目录不属于 Sample。reader 冻结一次可见的已发布 Run 集合；之后完成的新 Run 需要重新打开 reader 才会出现。
 
 ## 下一步
 

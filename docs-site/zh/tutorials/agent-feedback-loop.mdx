@@ -1,7 +1,7 @@
 ---
 title: "让 Coding Agent 根据结果迭代"
 sidebarTitle: "Coding Agent 反馈闭环"
-description: "让 Coding Agent 读取 receipt 的 runIds，再用 show 或 view 查看停稳 Record 中的结果。"
+description: "让 Coding Agent 读取 receipt 的 runIds，再用 show 或 view 查看已发布 Record 中的结果。"
 ---
 
 Coding Agent 可以用命令行完成一次清楚的反馈闭环：阅读安装版本的文档，运行 Experiment，读取最后的 receipt，用 receipt 的 `runIds` 查看结果，再修改程序或评估用例并重新运行。
@@ -30,7 +30,7 @@ NiceEval 把中文文档发布在 npm 包的 `docs-site/zh/` 目录，并在包�
 npx niceeval exp checkout --json | tee .niceeval-invocation.ndjson
 ```
 
-`--json` 的每一行都是当前进程反馈。progress 与 diagnostic 只说明这次运行正在发生什么。最后恰好一条 `receipt` 包含：
+`--json` 的每一行都是当前进程反馈。progress 与 diagnostic 只说明这次运行正在发生什么。最后恰好一条 receipt 包含：
 
 ```json
 {
@@ -42,7 +42,7 @@ npx niceeval exp checkout --json | tee .niceeval-invocation.ndjson
 }
 ```
 
-Agent 应把最后一条 receipt 当作本次调用的交接信息。它不是持久化的结果协议；业务事实仍要通过 `runIds` 从停稳 Record 读取。
+Agent 应把最后一条 receipt 当作本次调用的交接信息。它不是持久化的结果协议；业务事实仍要通过 `runIds` 从已发布的 Record 读取。
 
 ## 用 Run ID 查看结果
 
@@ -53,16 +53,17 @@ npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
 npx niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --no-open
 ```
 
-`show` 与 `view` 先选择 Sample，再形成固定的 `ReportInput`。Agent 应区分以下状态：
+`show` 与 `view` 选择 Sample，投影需要的 `RecordAttachment`，并形成固定的 `ReportExecution`。Agent 应区分以下状态：
 
 | 看到的状态 | 下一步 |
 | --- | --- |
 | `failed` | 检查任务结果与断言，修正被测程序或评估逻辑。 |
 | `errored` | 检查诊断、Adapter、Sandbox 或凭据。 |
 | `not-recorded` | 检查该 expected slot 为什么没有 Member。 |
-| `unavailable` | 检查该通道是否未采集或不适用。 |
-| `unsupported` | 只处理依赖该通道的查看内容。 |
-| `invalid` | 修复具名文件或引用问题后再读取。 |
+| `core-invalid` | 阅读具名 Core issue，不要把它当成未采集。 |
+| `unavailable` | 确认 owner 是否应当有这个 Attachment。 |
+| `migration-required` | 运行 `niceeval migrate`。 |
+| `unsupported` 或 `invalid` | 只处理依赖该 Attachment 的查看内容，并阅读具名 issue。 |
 
 ## 修改后再次运行
 
@@ -72,12 +73,10 @@ npx niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --no-open
 npx niceeval exp checkout --rerun all --json
 ```
 
-Coding Agent 应从 `failure` / `error` 事件里取出 `locator`，再逐个运行 `niceeval show @<id>` 或按需加证据 flag。事件按发生顺序追加，不用等到 `result` 才开始处理已经拿到的 locator。不要用 `progress` 心跳判断结果，它只说明进程还活着。`--json` 不做数量截断——每条失败都是独立事件，量大时用 `niceeval view`。Coding Agent 的运行诊断只消费公开 `show` 切片；不要扫描下面的结果快照目录，也不要用当前 `evals/` 或 `agents/` 源码替代某次运行的证据。需要程序化批量集成时使用公开 Record API。底层持久化布局是：
+自动采用已有 Attempt 时，`--dry` 会说明原因。carry 与 accept 的理由位于目标 Run 的 `niceeval.membership-provenance/v1` RecordAttachment；详情见[重跑与沿用](/zh/tutorials/rerun-and-cache)。
 
-自动采用已有 Attempt 时，`--dry` 会说明原因。carry 与 accept 的理由位于目标 Run 的 `niceeval.actions` 通道；详情见[重跑与沿用](/zh/tutorials/rerun-and-cache)。
+## Record 的边界
 
-## 编辑 Record 时的边界
-
-Record 是可编辑的事实数据集。Agent 只能在目录停稳后修改业务通道，并在修改后重新运行 `show` 或 `view`。不要让 Runner、active reader、`AnalysisSample` / ReportInput 构造阶段与人工编辑同时操作同一目录；后续 Report 执行和写站已经不访问 Record。
+Record 只保存已发布的事实，发布后不可修改。Agent 需要不同结果时修改程序或评估用例，运行新的 Invocation，再用新 receipt 的 `runIds` 查看。
 
 需要把某次结果交给他人时，使用[发布静态报告](/zh/tutorials/publish-report)，而不是把当前进程反馈当作分享格式。

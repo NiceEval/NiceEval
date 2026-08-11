@@ -1,92 +1,92 @@
 ---
 title: "读取 Record 数据"
 sidebarTitle: "结果数据 API"
-description: "从停稳的 Record 投影 core-only AnalysisSample，并按 ReportPlan 读取事实。"
+description: "从 frozen RecordReader 选择 AnalysisSample，并用 RecordAttachment projector 形成 ProjectedSample。"
 ---
 
-`Record` 是 `.niceeval/record/` 下可人工编辑的事实数据集。它保存 Run、Member、Attempt 和各自的具名通道。读写都只在目录停稳时进行；是否复用或执行由本次投影决定。
+`Record` 是 `.niceeval/record/` 下的持久事实集，只包含完整发布的 Run。Core 保存 Run、Member 与 Attempt 的关系；业务事实保存为 owner-local 的 `RecordAttachment`。
 
-这页说明数据边界。要在终端或浏览器中查看结果，请阅读[查看结果](/zh/tutorials/viewing-results)。要定义页面和计算，请阅读[自定义报告](/zh/tutorials/custom-reports)。
+这页说明数据边界。要在终端或浏览器中查看结果，请阅读[查看结果](/zh/tutorials/viewing-results)。要定义页面和计算，请阅读[报告 API](/zh/reference/report-components)。
 
-## 打开停稳的 Record
+## 用 AnalysisSelectionRequest 选择 Run
 
-Library 接收实际的 Record 根目录，不会补接 `.niceeval` 或 `record`。先打开 reader，再用具名 analysis projector 形成 `AnalysisSample`。
+打开 reader 后，把纯 `AnalysisSelectionRequest` 单独传给 `selectAnalysisSample`。请求不携带路径、callback 或 I/O capability。
 
 ```ts
-import { openRecordReader } from "niceeval/record";
-import { projectExplicitRuns, projectLatestRuns } from "niceeval/sample";
+const sampleHandle = yield* selectAnalysisSample(reader, {
+  policy: "explicit-runs/v1",
+  input: {
+    runIds: [runId],
+  },
+});
 
-let sample: AnalysisSample;
-{
-  await using reader = await openRecordReader({
-    root: ".niceeval/record",
-  });
-
-  sample = await projectExplicitRuns(reader, {
-    runIds: ["01J8ZK3M6P4T7V9X2C5N8QW0RY"],
-  });
-}
+const sample = sampleHandle.sample;
 ```
 
-也可以使用具名 `latest/v1` analysis projector。它从每个匹配 Experiment 的已完成 Run 中选择最后一个；未完成的 Run 必须按 ID 明确投影。
+`explicit-runs/v1` 选择精确 Run。`latest-runs/v1` 使用 Run-owned Evaluations Attachment，为目标 Experiment 选择最后完成的 Run：
 
 ```ts
-let latest: AnalysisSample;
-{
-  await using reader = await openRecordReader({ root: ".niceeval/record" });
-  latest = await projectLatestRuns(reader, {
+const sampleHandle = yield* selectAnalysisSample(reader, {
+  policy: "latest-runs/v1",
+  input: {
     experimentIds: ["checkout"],
-  });
-}
+  },
+});
 ```
 
-每次读取都使用调用时的文件值。用户在目录停稳后修改 Verdict、Usage 或其他通道，再次构造 ReportInput 时会读取修改后的值；`AnalysisSample` 本身只保存核心、分母和 projection provenance。
+两种选择都只使用传入 reader 的 frozen 视图。之后完成的 Run 不会混进既有 Sample。未完成的 Run 也不会进入候选集合。
 
-## 核心数据关系
+## AnalysisSampleHandle 与 AnalysisSample
+
+`AnalysisSampleHandle` 是 live capability，绑定创建它的 reader。它的 `.sample` 是纯 `AnalysisSample`；reader 关闭后仍可显示或收窄它，但不能从 pure Sample 恢复 Attachment I/O。
 
 ```text
-Run 的 expected slots
-        ↓
-Member: executed | carried | accepted
-        ↓
-Attempt 与它的具名 channels
+AnalysisSampleHandle
+  ├─ .sample → AnalysisSample（纯值）
+  └─ projectAnalysisSample(...) → ProjectedSample（reader 存活时）
 ```
 
-- Run 的 `expectedSlots` 决定分母。
-- 一个 slot 最多有一个 Member。`executed` 表示本 Run 执行了 Attempt；`carried` 与 `accepted` 表示采用已有 Attempt。
-- Attempt 保留实际执行它的 `origin`。采用 Attempt 不复制 Verdict、Usage 或诊断。
-- carry 与 accept 的理由属于 Run 的 `niceeval.actions` 通道，并以 slot 与 Attempt 关联。
+Sample 保存每个 expected slot，并保留完整分母：
 
-Record 的结构、路径、身份和引用校验用于拒绝自相矛盾的数据。它不保存编辑历史。
-
-## 通道读取状态
-
-业务值保存在具名通道，例如 Verdict、Eligibility、Usage 与诊断。通道的持久采集完整度和这次解码完整度是两条独立信息。
-
-| 状态 | 含义 | 调用方处理 |
-| --- | --- | --- |
-| `read` | 已读到值；采集或解码仍可能是 partial。 | 保留完整度与问题说明。 |
-| `unavailable` | 已声明但未采集，或此处不适用。 | 显示原因。 |
-| `unsupported` | 当前 reader 不支持这个通道。 | 只让依赖该通道的内容受影响。 |
-| `invalid` | 被请求的通道文件或内容无效。 | 以具名问题失败。 |
-
-未知或退役通道只在该通道显示 `unsupported`。`unavailable`、`unsupported` 与 `invalid` 不能互相替代。未请求的通道不会阻止无关读取。
-
-## 从 AnalysisSample 到 ReportInput
-
-`AnalysisSample` 是内存中的明确投影，不会写回 Record。它保留每个 expected slot，并用下列状态表达范围：
-
-| AnalysisSample 状态 | 含义 |
+| 状态 | 含义 |
 | --- | --- |
-| `included` | 有合法 Member，且能读取其采用的 Attempt。 |
+| `included` | 有合法 Member，且能读取它精确引用的 Attempt。 |
 | `not-recorded` | expected slot 没有 Member。 |
-| `invalid` | Member、Attempt 或核心引用存在问题。 |
-| `excluded` | 调用方在既有 AnalysisSample 上排除了该项。 |
+| `core-invalid` | Member、Attempt 或核心引用不能可靠读取。 |
+| `excluded` | 调用方在既有 Sample 上排除了该项。 |
 
-Reports 根据所需的 facts 把 `AnalysisSample` 变成 `ReportInput`。`ReportInput` 是进程内普通值，保留分母、成员状态、通道读取状态和问题。Report 只消费它，不读取路径或自行解释文件。
+## 用 projector 读取 Attachment
+
+`RecordAttachment projector` 固定解释一个 owner 类型和一个 Attachment family。Projection 把这个 typed view 与 Sample 对齐：
+
+```ts
+const projected = yield* projectAnalysisSample({
+  sampleHandle,
+  projection: attemptSlotProjection(verdictProjector),
+});
+```
+
+`attemptSlotProjection` 对每个 slot 形成 entry。`attemptOriginRunProjection` 仍对每个 slot 形成 entry，但读取其 Attempt 的 origin Run Attachment。`selectedRunProjection` 对每个 selected Run 形成 entry。
+
+前两种 entry 保留 `excluded`、`not-recorded`、`core-invalid` 与 `attachment-result`。因此十个 slot 引用同一个 Attempt 时，结果仍有十条按 slot 对齐的 entry。
+
+## Attachment 读取状态
+
+Attachment 读取状态是成功数据，不会改变 Sample 的 Core 状态：
+
+| 状态 | 含义 |
+| --- | --- |
+| `available` | payload 已由 family 解码，并可被 projector 解释。 |
+| `unavailable` | owner 没有这个 Attachment。 |
+| `migration-required` | 已知旧 schema 有完整相邻 converter 链。 |
+| `migration-unavailable` | 已知 schema 不能无损形成当前值。 |
+| `unsupported` | family 或 schema 不被当前功能认识。 |
+| `invalid` | envelope、payload、blob 或 schema decode 无效。 |
+
+真实 I/O、权限和关闭的 reader 仍是 Effect failure。projector callback 的意外 throw 是 defect，不会伪装成 `invalid`。
 
 ## 相关页面
 
-- [查看结果](/zh/tutorials/viewing-results)：用 `show` 与 `view` 投影 `AnalysisSample`。
-- [重跑与沿用](/zh/tutorials/rerun-and-cache)：理解 `carried`、`accepted` 与 `niceeval.actions`。
-- [报告组件参考](/zh/reference/report-components)：查看 Report 的公开能力。
+- [Record](/zh/explanation/record)：理解 Core、Attachment 与演进边界。
+- [查看结果](/zh/tutorials/viewing-results)：用 `show` 与 `view` 选择并查看 Sample。
+- [报告 API](/zh/reference/report-components)：消费 `ProjectedSample` 并生成 Report。

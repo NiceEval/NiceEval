@@ -1,0 +1,105 @@
+/* Record 的演进边界：snippets/diagram-record-evolution.jsx 独有的样式。
+   共用底座在 styles/base.css（ne-w / ne-hd / ne-ft / ne-why / ne-lit 引擎）。 */
+
+.ne-ev { --ne-cycle: 5.8s; }
+
+.ne-ev-cases {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.ne-ev-case { border: 1px solid var(--ne-border); }
+
+.ne-ev-case-head {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--ne-border);
+  background: var(--ne-subtle);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ne-ev-case-head.ne-lit,
+.ne-ev-node.ne-lit,
+.ne-ev-arrow.ne-lit,
+.ne-ev-version.ne-lit,
+.ne-ev-step.ne-lit {
+  animation-name: ne-lit-edge;
+}
+
+.ne-ev-flow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(88px, 0.7fr) minmax(0, 1fr);
+  align-items: stretch;
+  padding: 10px;
+}
+
+.ne-ev-node,
+.ne-ev-version {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 7px;
+  border: 1px solid var(--ne-border);
+  font-family: var(--ne-mono);
+  font-size: 11px;
+  text-align: center;
+}
+
+.ne-ev-stays {
+  border-color: var(--ne-border-strong);
+  color: var(--ne-text);
+  font-family: inherit;
+  font-weight: 600;
+}
+
+.ne-ev-arrow,
+.ne-ev-step {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  color: var(--ne-text-3);
+  font-size: 11px;
+  text-align: center;
+}
+
+.ne-ev-arrow::after,
+.ne-ev-step::after {
+  content: "→";
+  color: var(--ne-text-2);
+  font-family: var(--ne-mono);
+  font-size: 14px;
+}
+
+.ne-ev-steps {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(74px, 0.6fr) minmax(0, 1fr) minmax(74px, 0.6fr) minmax(0, 1fr);
+  align-items: stretch;
+  padding: 10px;
+}
+
+.ne-ev-case .ne-why {
+  padding: 0 10px 10px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+@media (max-width: 600px) {
+  .ne-ev-flow,
+  .ne-ev-steps {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+
+  .ne-ev-arrow,
+  .ne-ev-step {
+    min-height: 20px;
+  }
+
+  .ne-ev-arrow::after,
+  .ne-ev-step::after {
+    content: "↓";
+  }
+}

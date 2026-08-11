@@ -1,52 +1,206 @@
-/* 同一份 Record，两个口径：snippets/diagram-record-shape.jsx 独有的样式。
-   切面板的机制与 Picker 共用，在 styles/tabs.css；共用底座在 styles/base.css。 */
+/* Record 的磁盘分层：snippets/diagram-record-shape.jsx 独有的样式。
+   共用底座在 styles/base.css（ne-w / ne-hd / ne-ft / ne-why / ne-lit 引擎）。 */
 
-.ne-rec-panel { padding: 10px 12px 12px; }
+.ne-rec { --ne-cycle: 5.8s; }
 
-.ne-rec-exp {
-  margin: 8px 0 4px;
-  font-family: var(--ne-mono);
-  font-size: 12px;
+.ne-rec-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.75fr) minmax(220px, 0.85fr);
+  gap: 12px;
+  padding: 12px;
+}
+
+.ne-rec-portable,
+.ne-rec-aside > section {
+  min-width: 0;
+  border: 1px solid var(--ne-border);
+}
+
+.ne-rec-boundary,
+.ne-rec-run-head,
+.ne-rec-aside-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--ne-border);
+  background: var(--ne-subtle);
   font-weight: 600;
 }
 
-.ne-rec-panel > .ne-rec-exp:first-child { margin-top: 0; }
+.ne-rec-boundary.ne-lit,
+.ne-rec-run-head.ne-lit,
+.ne-rec-aside-head.ne-lit,
+.ne-rec-root.ne-lit,
+.ne-rec-row.ne-lit,
+.ne-rec-attachment.ne-lit,
+.ne-rec-last.ne-lit {
+  animation-name: ne-lit-edge;
+}
 
-.ne-rec-run,
-.ne-rec-gap {
+.ne-rec-boundary-note {
+  color: var(--ne-text-3);
+  font-size: 11px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.ne-rec-root {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 0 3px 10px;
-  border-left: 1px solid var(--ne-border);
+  align-items: baseline;
+  gap: 10px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--ne-border);
+  color: var(--ne-text-2);
 }
 
-.ne-rec-when {
-  flex: none;
-  width: 74px;
-  font-size: 11px;
+.ne-rec-run { padding: 10px; }
+
+.ne-rec-run-head {
+  margin-bottom: 10px;
+  border: 1px solid var(--ne-border);
+}
+
+.ne-rec-run-head > span {
   color: var(--ne-text-3);
-}
-
-.ne-rec-cell {
-  padding: 1px 7px;
-  border: 1px dashed var(--ne-border);
-  font-family: var(--ne-mono);
   font-size: 11px;
-  color: var(--ne-text-3);
+  font-weight: 400;
 }
 
-/* 被这个口径选中的格子：实线加提亮，符号与文字同场 */
-.ne-rec-on {
-  border-style: solid;
-  border-color: var(--ne-border-strong);
+.ne-rec-core,
+.ne-rec-attachment {
+  border: 1px solid var(--ne-border);
+}
+
+.ne-rec-group-head {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--ne-border);
   background: var(--ne-subtle);
+  color: var(--ne-text-2);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ne-rec-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.7fr);
+  gap: 8px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--ne-border);
+  color: var(--ne-text-2);
+  font-size: 11px;
+}
+
+.ne-rec-row:last-child { border-bottom: 0; }
+
+.ne-rec-attachments {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.ne-rec-attachment {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 0 0 7px;
+  color: var(--ne-text-2);
+  font-size: 11px;
+}
+
+.ne-rec-attachment > code,
+.ne-rec-attachment > span,
+.ne-rec-attachment > small {
+  padding: 0 8px;
+}
+
+.ne-rec-attachment > code { margin-top: 4px; color: var(--ne-text); }
+
+.ne-rec-attachment > small {
+  color: var(--ne-text-3);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.ne-rec-last {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.25fr);
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 7px 8px;
+  border: 1px solid var(--ne-border-strong);
+  background: var(--ne-subtle);
+  color: var(--ne-text-2);
+  font-size: 11px;
+}
+
+.ne-rec-last code {
+  padding: 1px 6px;
+  border: 1px solid var(--ne-border-strong);
+  color: var(--ne-text);
+  font-weight: 600;
+}
+
+.ne-rec-last-arrow::after {
+  margin-left: 6px;
+  content: "→";
+  color: var(--ne-text-3);
+}
+
+.ne-rec-aside {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.ne-rec-aside > section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 10px 10px;
+  color: var(--ne-text-2);
+  font-size: 12px;
+}
+
+.ne-rec-aside-head {
+  margin: 0 -10px 2px;
   color: var(--ne-text);
 }
 
-.ne-rec-gap { font-size: 12px; }
+.ne-rec-incomplete { border-style: dashed !important; }
 
-.ne-rec-gap .ne-mono { margin-right: 4px; }
+.ne-rec-incomplete strong {
+  color: var(--ne-warning);
+  font-size: 12px;
+}
 
-.ne-rec-panel .ne-why { margin-top: 10px; }
+.ne-rec-local {
+  border-style: dashed !important;
+  color: var(--ne-text-3) !important;
+}
+
+.ne-rec-local .ne-rec-aside-head { color: var(--ne-text-2); }
+
+.ne-rec-aside .ne-why { font-size: 11px; line-height: 1.55; }
+
+@media (max-width: 760px) {
+  .ne-rec-layout { grid-template-columns: 1fr; }
+
+  .ne-rec-aside { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 520px) {
+  .ne-rec-attachments,
+  .ne-rec-aside { grid-template-columns: 1fr; }
+
+  .ne-rec-row,
+  .ne-rec-last {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+
+  .ne-rec-last-arrow::after { display: none; }
+}

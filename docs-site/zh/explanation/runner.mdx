@@ -10,23 +10,19 @@ Runner 把选中的 Experiment 和 Eval 排成一次 Invocation。它在当前�
 
 一次 Invocation 有一个 `invocationId`。每个选中的 Experiment 建立一个 Run；Run 的 expected slots 决定本次分母。
 
-每个 slot 最多有一个 Member：
+每个 slot 最多有一个 Member。Member 表示这个 slot 被哪个 Attempt 占据：Attempt 的 `origin` 与当前 slot 一致时是 `origin`，采用其它 Run 的 Attempt 时是 `reference`。
 
-- `executed`：Runner 实际执行了 Attempt。
-- `carried`：规划器采用了已有 Attempt。
-- `accepted`：操作者显式采用了已有 Attempt。
-
-Attempt 保留自己的 `origin`，即实际执行它的 Run 与 slot。`carried` 和 `accepted` 只引用 Attempt，不复制它的 Verdict、Usage、事件或其他业务值。
+占位怎样形成属于 Run-owned 的 `niceeval.membership-provenance/v1` RecordAttachment。Attempt 始终保存实际执行它的 origin；采用不复制 Verdict、Usage、事件或其他业务事实。
 
 ## 执行前的规划
 
-`niceeval exp --dry` 在停稳的 Record 上列出每个 slot 的计划。它会读取规划所需的 Verdict 与 Eligibility，决定是执行还是采用已有 Attempt。
+`niceeval exp --dry` 在停稳的 Record 上列出每个 slot 的计划。它读取规划需要的 Verdict 与 Eligibility RecordAttachment，再决定执行还是采用已有 Attempt。
 
 ```sh
 npx niceeval exp checkout --dry
 ```
 
-carry 只在终态、输入身份、超时和 `--rerun` 条件都合适时发生。身份是带 domain 的不透明值，只有 domain 相同的值才比较。理由、资格和当时的输入信息写入目标 Run 的 `niceeval.actions` 通道。
+carry 只在终态、输入身份、超时和 `--rerun` 条件都合适时发生。资格、身份和采用理由作为事实写入目标 Run 的 Membership provenance Attachment。分析选择与 reuse planning 是两件事：前者建立查看分母，后者决定本次要执行哪些 slot。
 
 规划完成后，Runner 才启动需要执行的 Attempt。详情见[重跑与沿用](/zh/tutorials/rerun-and-cache)。
 
@@ -53,13 +49,17 @@ npx niceeval exp checkout --json
 }
 ```
 
-receipt 只说明本次调用的身份、Run、时间与完成状态。需要 Verdict、Usage、诊断或报告聚合时，用其中的 `runIds` 重新读取停稳的 Record。
+receipt 只说明本次调用的身份、Run、时间与完成状态。需要 Verdict、Usage、诊断或报告聚合时，用其中的 `runIds` 重新读取已发布的 Record。
+
+## Run 如何发布
+
+Runner 先写 Run Core、Member、Attempt 和它们的 RecordAttachment。所有 durable 内容写完后，最后创建零字节 `complete`。在此之前退出、I/O 失败或中断会留下未完成目录；它不进入 reader、Sample 或 reuse，可用 `niceeval clean` 清理。
 
 ## Reporter
 
 Reporter 只接入当前 Invocation。它可以把当前进程已知的结果交给外部系统；`--junit` 也会写出供 CI 平台读取的文件。
 
-这些输出不拥有 Record。Verdict、Usage、断言与诊断仍由停稳 Record 的具名通道保存。需要在后续步骤查看完整结果时，使用 receipt 的 `runIds` 选择 Sample，再运行 `show`、`view` 或 `view --out`。
+这些输出不拥有 Record。Verdict、Usage、断言与诊断仍属于停稳 Record 的 Attachment。需要在后续步骤查看完整结果时，使用 receipt 的 `runIds` 选择 Sample，再运行 `show`、`view` 或 `view --out`。
 
 ## 停稳后查看
 
@@ -70,7 +70,7 @@ npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
 npx niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --no-open
 ```
 
-`show` 和 `view` 都先投影 `AnalysisSample`，再形成固定的 `ReportInput`。如果用户修改停稳 Record，结束查看命令后再次执行，新的调用会读取修改后的值。
+`show` 和 `view` 以 `AnalysisSelectionRequest` 选择 Run，形成 `AnalysisSampleHandle`，投影所需 Attachment，并生成固定的 `ReportExecution`。已发布的 Run 不可修改；再次查看会形成新的选择与 execution。
 
 ## 结束状态
 

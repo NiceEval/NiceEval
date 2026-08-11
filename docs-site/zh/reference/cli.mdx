@@ -178,9 +178,9 @@ npx niceeval view --latest
 npx niceeval view --run 01H...
 ```
 
-打开本地记录查看器。它和 `show` 共用同一份默认 Report 和同一套明确选择：从停稳 Record 按 `explicit-runs/v1` 或 `latest/v1` 形成 core-only `AnalysisSample`，再按 ReportPlan 读取所需通道。
+打开本地记录查看器。它和 `show` 共用同一份默认 Report 和同一套明确选择：从已发布的 Record 按 `explicit-runs/v1` 或 `latest-runs/v1` 形成 `AnalysisSampleHandle`，投影所需 RecordAttachment，并执行一次 Report。
 
-此前的局部执行可能让部分 slot 通过 `carried` / `accepted` Member 引用已有 Attempt。这些是当时的采用事实，不是补跑状态。同一份 `AnalysisSample` 不按可变 head 重选。`--experiment`、`--eval` 和 `--record` 对两种宿主的收窄一致。
+此前的局部执行可能让部分 slot 以 `reference` 采用已有 Attempt。这些是当时的采用事实，不是补跑状态。同一份 `AnalysisSample` 不按可变 head 重选。`--experiment`、`--eval` 和 `--record` 对两种宿主的收窄一致。
 
 ## `show`
 
@@ -194,13 +194,13 @@ npx niceeval show --run 01H... --report ./reports/summary.ts --page overview
 
 `show` 是终端报告入口，适合人直接阅读，也适合 coding agent 在上下文窗口里逐级下钻。它不接受模糊的位置选择：`--run` 与 `--latest` 二选一。单个 Attempt 详情是 `AnalysisSample` 中的参数化页面，不是另一条 selector。
 
-`--run` 可重复，只读取这些显式 Run；`--latest` 对每个目标 Experiment 按完成时间和 Run identity 的稳定规则各选择一个。`--latest --experiment <id>` 定义目标集合；不带 `--experiment` 时目标来自可读 Run 核心。目标集合为空、任一目标没有完成 Run，或任一候选 Run 的排序核心损坏都明确失败，不缩小比较组去猜“最近一次”。未完成 Run 必须显式 `--run`。
+`--run` 可重复，只读取这些显式 Run；`--latest` 对每个目标 Experiment 按完成时间和 Run identity 的稳定规则各选择一个。`--latest --experiment <id>` 定义目标集合；不带 `--experiment` 时目标来自可读 Run 核心。目标集合为空、任一目标没有已发布 Run，或任一候选 Run 的排序核心损坏都明确失败，不缩小比较组去猜“最近一次”。Record 只包含完整发布的 Run。
 
-选择完成后，`show` 先冻结 ReportPlan，只读取其中声明的通道，再执行一次 Report。requested channel 的 unavailable、unsupported、partial 或 invalid 会原样显示；未请求的未知或损坏通道不影响当前页面。完整契约见[查看结果](/zh/tutorials/viewing-results)。
+选择完成后，`show` 用已选 handle 读取 Report 声明的 Projection，并形成一次 `ReportExecution`。请求的 Attachment 为 unavailable、migration-required、unsupported、partial 或 invalid 时，命令会原样显示状态；未请求的未知或损坏 Attachment 不影响当前页面。完整契约见[查看结果](/zh/tutorials/viewing-results)。
 
-`view --latest --out <目录>`（或显式 `--run`）使用同一份 ReportExecution 预渲染自包含静态站。目标目录必须不存在；全部页面、下载项与静态资产路径先通过校验，完成后才以一次 rename 发布。导出过程不会把 Record 路径或 blob 路径交给用户 Report。
+`view --latest --out <目录>`（或显式 `--run`）使用同一份 ReportExecution 预渲染自包含静态站。目标目录必须不存在；全部页面、下载项与静态资产路径先通过校验。写完全部文件后，exporter 最后创建 `complete` marker。导出过程不会把 Record 路径或 blob 路径交给用户 Report。
 
-命令持有 reader lease 直到 `AnalysisSample`、ReportPlan 和 ReportInput 形成，随后立即释放。ReportExecution 再从内存输入形成；人工编辑停稳 Record 或修改 Report module 只会影响下一次命令。运行中的 `view` 与静态 export 消费自包含 execution，不再读取或 watch Record。
+命令在持有 sample handle 时完成所需 Projection 和 Report execution。返回的 ReportExecution 不再访问 Record。运行中的 `view` 对变化构造新的固定 execution；成功后替换当前 revision，失败保留 last-good execution。静态 export 只消费已经完成的 execution。
 
 ## `--early-exit`
 

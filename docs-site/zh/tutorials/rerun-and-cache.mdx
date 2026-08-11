@@ -4,19 +4,18 @@ sidebarTitle: "重跑与沿用"
 description: "查看每个 slot 会执行、自动采用还是由操作者接受，并理解这些关系怎样进入 Record。"
 ---
 
-每次 Invocation 都建立新的 Run。Run 的 expected slots 定义本次分母；每个 slot 最多有一个 Member。Member 只有三种形态：
+每次 Invocation 都建立新的 Run。Run 的 expected slots 定义本次分母；每个 slot 最多有一个 Member。Member 表示 slot 被哪个 Attempt 完整占据：
 
-| Member | 何时出现 |
+| 关系 | 含义 |
 | --- | --- |
-| `executed` | Runner 执行了这个 slot。 |
-| `carried` | 规划器自动采用已有 Attempt。 |
-| `accepted` | 操作者明确采用已有 Attempt。 |
+| `origin` | Attempt 的实际执行 slot 就是当前 slot。 |
+| `reference` | 采用了其它 Run 中已发布的 Attempt。 |
 
-三个 Member 都引用一个 Attempt。Attempt 的 `origin` 保持不变，因此采用后的 Slot 读取的是该 Attempt 当前的 Verdict、Usage 和其他通道值。
+占位怎样形成（执行、自动沿用或操作者接受）由目标 Run 的 `niceeval.membership-provenance/v1` RecordAttachment 记录，不进入 Core。Attempt 始终保存实际执行它的 `origin`；采用不复制 Verdict、Usage 或其他业务值。
 
 ## 先查看计划
 
-在运行前使用 `--dry`。它读取停稳 Record 中规划所需的通道，并逐个列出执行或采用的原因。
+在运行前使用 `--dry`。它读取停稳 Record 中规划所需的 RecordAttachment，并逐个列出执行或采用的原因。
 
 ```sh
 npx niceeval exp checkout --dry
@@ -26,7 +25,7 @@ npx niceeval exp checkout --dry
 
 ```text
 PLAN
-checkout  cart/add-item  ordinal 0  carried @01J8ZK3M6P4T7V9X2C5N8QW0RY
+checkout  cart/add-item  ordinal 0  reuse @01J8ZK3M6P4T7V9X2C5N8QW0RY
 checkout  cart/add-item  ordinal 1  execute: input-identity-changed
 ```
 
@@ -34,7 +33,7 @@ checkout  cart/add-item  ordinal 1  execute: input-identity-changed
 
 ## 自动采用的条件
 
-一个 Attempt 要自动成为 `carried` Member，需要同时满足：
+一个 Attempt 要能被自动采用，需要同时满足：
 
 - Verdict 是可采用的终态；
 - 输入身份与当前输入相同；
@@ -42,9 +41,9 @@ checkout  cart/add-item  ordinal 1  execute: input-identity-changed
 - 本次 `--rerun` 允许采用该 Verdict；
 - 本次没有通过 `--keep-sandbox` 要求真实执行。
 
-输入身份和配置身份都是带 domain 的不透明值。只有 domain 逐字相同才比较 value。Verdict 与 Eligibility 是规划所需的长期支持通道。
+输入身份和配置身份都是带 domain 的不透明值。只有 domain 逐字相同才比较 value。Verdict 与 Eligibility 是规划所需的长期支持 Attachment。
 
-建立 `carried` Member 时，资格、身份和理由写入目标 Run 的 `niceeval.actions` 通道。Member 本身不复制这些说明，也不复制 Attempt 的业务值。
+自动采用时，资格、身份和理由写入目标 Run 的 `niceeval.membership-provenance/v1` RecordAttachment。Member 本身只保存引用，不复制这些说明，也不复制 Attempt 的业务值。
 
 ## 控制重跑范围
 
@@ -69,10 +68,10 @@ npx niceeval exp checkout --rerun all
 npx niceeval accept @01J8ZK3M6P4T7V9X2C5N8QW0RY
 ```
 
-`accept` 先检查所有输入，再建立带 `accepted` Member 的 Run。操作者理由、差异和资格写入该 Run 的 `niceeval.actions` 通道。它不会修改源 Attempt，也不会复制源 Attempt 的通道值。
+`accept` 先检查所有输入，再发布一个以 `reference` 采用该 Attempt 的新 Run。操作者理由、差异和资格写入该 Run 的 `niceeval.membership-provenance/v1` RecordAttachment。它不会修改源 Attempt，也不会复制源 Attempt 的 Attachment 值。
 
-## 编辑会影响下一次读取
+## 发布后不可修改
 
-停稳后修改某个 Attempt 的 Verdict、Usage 或其他通道，下一次查看 `carried` 或 `accepted` Member 时会看到修改后的当前值。若 Attempt 或引用无效，Sample 将该 slot 标为 `invalid`，而不是 `not-recorded`。
+Attempt 发布后不可修改。每一次查看都读取当时 Record 中已发布的值；新 Run 或新事实只会以新的发布出现。若 Attempt 或引用无效，Sample 将该 slot 标为 `core-invalid`，而不是 `not-recorded`。
 
 完成运行后，用 receipt 的 `runIds` 选择结果。查看步骤见[查看结果](/zh/tutorials/viewing-results)。
