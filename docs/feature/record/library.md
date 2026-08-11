@@ -71,6 +71,27 @@ type RecordAttachmentSchemaId = string & Brand.Brand<"RecordAttachmentSchemaId">
 type RecordFormatId = string & Brand.Brand<"RecordFormatId">;
 type RecordAttachmentOwner = "run" | "attempt";
 
+declare const recordRootTypeId: unique symbol;
+
+interface RecordRoot {
+  readonly [recordRootTypeId]: typeof recordRootTypeId;
+}
+
+type RecordRootInput = string | URL;
+
+type RecordRootConstructionError =
+  | { readonly code: "record-root-empty" }
+  | { readonly code: "record-root-relative" }
+  | {
+      readonly code: "record-root-non-file-url";
+      readonly protocol: string;
+    }
+  | { readonly code: "record-root-file-url-invalid" };
+
+declare const makeRecordRoot: (
+  input: RecordRootInput,
+) => Either.Either<RecordRoot, RecordRootConstructionError>;
+
 declare const recordBlobRefTypeId: unique symbol;
 
 interface RecordBlobRef {
@@ -79,8 +100,19 @@ interface RecordBlobRef {
 ```
 
 ID、时间、Attachment name 与 schema ID 都由 exact Schema constructor 创建。
-`RecordBlobRef` 也只能由包创建：它没有可拼接的 path、可编辑 key 或公开 constructor。
+
+`RecordBlobRef` 也只能由包创建。它没有可拼接的 path、可编辑 key 或公开 constructor。
 持久化 codec 只在所属 Attachment 内解释它的 opaque key。
+
+`RecordRoot` 同样只能由 package constructor 创建。`makeRecordRoot` 接受非空的 host
+absolute-path string，或 protocol 为 `file:` 的 `URL`。
+
+它只做 host path 的 lexical normalization，不检查存在性、不做 I/O，也不 realpath。
+relative string、非-file URL 与无法表示为 host absolute path 的 file URL 分别返回上述
+稳定 code。它不承诺 hostile symlink defense。
+
+portable Record 只持久化 root-relative portable segments。host absolute path 与
+`RecordRoot` 的输入形式都不进入 `record.json`、Attachment、blob ref 或任何磁盘 identity。
 
 `RecordAttachmentName` 使用 reverse-domain lowercase ASCII namespace。
 `RecordAttachmentSchemaId` 是 `<name>/vN`。`niceeval.*` 只由包内 built-in constructor
@@ -239,26 +271,64 @@ generic writer 用 family 的 `blobRefs` 与 builder 捕获的 drafts 做双向�
 该 Attachment 成为 `invalid`；reader 不返回一个不完整的 `available` value。
 
 ```ts
+type RecordBlobHandleInvalid = {
+  readonly code: "record-blob-handle-invalid";
+};
+
+type RecordAttachmentPayloadSnapshot<Payload> =
+  Payload extends readonly (infer Item)[]
+    ? readonly RecordAttachmentPayloadSnapshot<Item>[]
+    : Payload extends object
+      ? {
+          readonly [Key in keyof Payload]: RecordAttachmentPayloadSnapshot<
+            Payload[Key]
+          >;
+        }
+      : Payload;
+
 interface RecordAttachmentBlobs {
-  readonly refs: readonly RecordBlobRef[];
-  readonly open: (
+  readonly refs: () => readonly RecordBlobRef[];
+  readonly bytes: (
     ref: RecordBlobRef,
-  ) => Stream.Stream<Uint8Array, RecordReadError>;
+  ) => Either.Either<Uint8Array, RecordBlobHandleInvalid>;
 }
 
 interface RecordAttachmentValue<Payload> {
-  readonly payload: Payload;
+  readonly payload: RecordAttachmentPayloadSnapshot<Payload>;
   readonly blobs: RecordAttachmentBlobs;
 }
 ```
 
-`RecordAttachmentBlobs` 是只读 capability。`refs` 恰好是 payload 的完整 closure；
-`open` 只读取该 closure 中的 ref，不能写入、列出 filesystem path 或借用另一个
-Attachment 的 ref。错误 ref handle 是 typed `RecordReadError`。
+`RecordAttachmentBlobs` 是同步、只读的内存 snapshot capability。`refs()` 返回 payload
+完整 closure 的 frozen defensive list。
 
-permission 与 EIO 发生在读取 Attachment 或消费 blob Stream 时，都留在
-`RecordReadError`。它们不降格为 `invalid`。fiber interruption 也不变成 data state；
-它继续以 Effect Cause 传播。
+`bytes(ref)` 只从该 snapshot 取值。它不读取磁盘、不创建 Stream，也不能借用另一个
+Attachment 的 ref。
+
+成功时每次返回 exact-length `Uint8Array` defensive copy。调用方 mutation 不影响
+package-owned snapshot。
+
+错误或伪造 ref 返回 `Either.left(record-blob-handle-invalid)`。这只是一项同步 capability
+结果；`RecordBlobHandleInvalid` 不属于 `RecordReadError`。
+
+`readRunAttachment` 与 `readAttemptAttachment` 在返回 `available` 前，读取、exact
+decode、验证并 materialize 整个 blob closure 到内存。permission、EIO 或 materialization
+failure 是它们的 `RecordReadError`；它们不降格为 `invalid`。fiber interruption 也不变成
+data state；它继续以 Effect Cause 传播。
+
+`RecordAttachmentValue` 是 package-created、完整且自包含的值。
+
+package 在 decode 时把 payload 的 JSON object 与 array 递归 deep-freeze 成
+`RecordAttachmentPayloadSnapshot`。
+
+JSON boundary 不接纳 native bytes，所有 binary 只由 `blobs.bytes(ref)` 提供。调用方不能
+通过 mutation 改变另一个 projector 或 consumer 所见的 payload。
+
+reader Scope 关闭后，`payload`、`refs()` 与 `bytes()` 仍可同步消费。它们不再依赖
+filesystem、lock、reader registry 或 Effect environment。
+
+每个 `available` value 只在 read Effect 内构成一次；projector 只同步读取这个固定
+snapshot，既不触发第二次 blob I/O，也不获得 Stream。
 
 ## RecordAttachment family 与读取状态
 
@@ -303,8 +373,9 @@ type RecordAttachmentRead<Payload> =
     };
 ```
 
-`available` 同时表示 exact decoded payload 与完整 blob closure 已验证。missing
-directory 是 `unavailable`。known old schema 在完整 converter 链上是
+`available` 同时表示 exact decoded、deep-frozen payload 与完整 blob closure 已验证并
+materialize。
+missing directory 是 `unavailable`。known old schema 在完整 converter 链上是
 `migration-required`。known path 命中不可无损边时是 `migration-unavailable`；
 它是已知的终态，不含 migration command，也不提示再次运行 migrate。
 
@@ -385,10 +456,16 @@ declare const openRecordReader: (input: {
 接口。open 一次冻结已完成 Run 集合与 warning；以后完成的新 Run 不进入这个 view。
 
 `FrozenRecordView`、`FrozenRecordRun`、`FrozenRecordAttempt` 与下文的 drafts 都是
-package-branded nominal handles。每次调用还用 package registry 检查 exact object identity、
-所属 snapshot 或 session、owner 与 Scope 状态。伪造、复制、来自另一个 reader 的 handle
-或已关闭的 handle 分别得到稳定的 typed handle、read 或 state error。registry 自己出现
-矛盾才是 defect。
+package-branded nominal handles。
+
+每次调用还用 package registry 检查 exact object identity、所属 snapshot 或 session、owner
+与 Scope 状态。
+
+伪造、复制、来自另一个 reader 的 handle 或已关闭的 handle 分别得到稳定的 typed handle、
+read 或 state error。registry 自己出现矛盾才是 defect。
+
+`RecordAttachmentValue` 不是这种 live handle；它是 reader 返回的 package-owned
+self-contained snapshot。
 
 `Scope.Scope` 可以让正常调用留在 `Effect.scoped` 内，但 TypeScript 不能静态证明一个
 generative handle 永远不会逃出 Scope。runtime identity 与 closed-state 检查因此不可省略。
@@ -596,11 +673,20 @@ declare const defineRecordAttachmentFamily: <
 >;
 ```
 
-converter 的 `source` 是完整、已验证的 `RecordAttachmentValue<From>`，不是单独
-payload。它只能通过 `source.blobs.open` 消费 old bytes。`target.create` 为每个目标 blob
-mint 新 ref，并捕获 target bytes。converter 可以不创建某个 old blob、为新 payload
-改名、原样流式保留，或转换 bytes；它不能把 old ref 或手写 path 放进 target payload
-冒充新 ref。
+converter 的 `source` 是完整、已验证并 materialize 的 `RecordAttachmentValue<From>`，
+不是单独 payload。
+
+source payload 是 package-owned deep-frozen JSON snapshot。converter 不能靠 mutation
+改写其它 consumer。
+
+它只能通过 `source.blobs.bytes(ref)` 同步取得 old bytes。错误或伪造 ref 返回
+`Either.left(record-blob-handle-invalid)`；converter 必须映射它到自己的 explicit `E`。
+
+随后可用新的 `RecordBlobSource` 组成 target 写入 Stream。`target.create` 为每个目标 blob
+mint 新 ref，并捕获 target bytes。
+
+converter 可以不创建某个 old blob、为新 payload 改名、原样保留或转换 bytes。它不能把
+old ref 或手写 path 放进 target payload 冒充新 ref。
 
 converter callback 意外 throw 是 defect。`Effect.fail(e)` 保留 explicit `E`；interruption
 仍以 Cause 传播。`R = never` 只说明 Effect 类型不要求 NiceEval Layer。它不能证明
@@ -689,8 +775,7 @@ type RecordReadError =
   | RecordIoError
   | RecordPermissionError
   | RecordReaderClosed
-  | RecordHandleInvalid
-  | RecordBlobHandleInvalid;
+  | RecordHandleInvalid;
 
 type RecordWriteError =
   | RecordIoError
@@ -720,8 +805,9 @@ tree、stack 与任意第三方 message 不进入 portable data 或默认 CLI JS
 interruption 不在这些联合中。Effect finalizer 释放资源后继续传播原 Cause。内部不变量、
 registry 矛盾与 callback throw 是 defect，不能被转换成 data state 或 typed I/O error。
 
-Library 不公开用于 Attachment payload 的 Stream。内部 Stream 只服务 Run 扫描与 blob I/O；
-Core、`RecordAttachmentValue`、Sample、Projection 与 Report 仍是有界、自包含值。
+Library 不公开用于 Attachment value 的 Stream。内部 Stream 只服务 Run 扫描、写入、
+migration 与形成读取 snapshot 的 blob I/O；`RecordAttachmentValue`、Sample、Projection
+与 Report 仍是有界、自包含值。
 
 ## 最小调用形状
 

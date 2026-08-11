@@ -64,9 +64,17 @@ Inspect and remove them with: niceeval clean
 warning 不阻塞有效 Run，也不把未完成 Run 加入列表或分析分母。
 
 一个 Attachment `unavailable`、`migration-required`、`migration-unavailable`、
-`unsupported` 或 `invalid` 只影响请求它的 Report component。`available` payload 的
-blob closure 已完整验证；blob I/O、permission 与 handle failure 按 Effect Cause 到达
-命令边界，而不改写为 data state。
+`unsupported` 或 `invalid` 只影响请求它的 Report component。
+
+`available` payload 的 blob closure 已完整验证并 materialize 为自包含内存 snapshot。
+decoded JSON payload 也是 package-owned deep-frozen snapshot。调用方 mutation 不会影响
+另一个 projector 或 consumer。
+
+在形成 `available` 前的 blob I/O 或 permission failure 是 `RecordReadError`。在命令边界，
+它仍与 defect、interruption Cause 分离，而不改写为 data state。
+
+返回后，伪造或不属于 closure 的 ref 只使 `value.blobs.bytes(ref)` 同步返回
+`Either.left(record-blob-handle-invalid)`。它不触发 I/O，也不是新的读取 Effect failure。
 
 CLI 的内建 problems surface 始终显示这些状态。`migration-unavailable` 给出 owner 的
 reason、保留 bytes 的事实与发布新 Run 的建议，不要求用户重跑 migrate。

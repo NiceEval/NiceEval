@@ -37,7 +37,15 @@ v2 definition 必须声明 `v1 → v2`：
 
 ## 何时才是 Record major
 
-保持 Run-owned Sources 与 RecordAttachment-local blobs 时，增加 schema version 不改变 Core。converter 从完整 source value 读取旧 blobs，再为 target payload mint 新 refs。
+保持 Run-owned Sources 与 RecordAttachment-local blobs 时，增加 schema version 不改变 Core。
+
+converter 从完整、自包含的 in-memory source value 以 `bytes(ref)` 读取旧 blobs。它不
+重新打开 storage 或消费读取 Stream。
+
+source payload 是 package-owned deep-frozen JSON snapshot，不能以 mutation 改写其它
+consumer 所见的事实。
+
+converter 再为 target payload mint 新 refs，并以写侧 Stream 提供 target bytes。
 
 改成跨 Run 全局 blob pool、允许 RecordAttachment 引用 root 外文件，或者改变 Sources owner 时，所有 reader 都必须理解的新公理已经出现。此时发布新的 Record major，并提供相邻 Core converter。
 

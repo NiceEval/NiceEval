@@ -25,7 +25,16 @@ Run R2 / Member
 
 R2 采用 A1 时只保存精确 Attempt reference，不复制 A1 或 R1 的 RecordAttachment。source viewer 沿 A1 的 origin Run 读取，不能改读 R2 或当前 worktree。
 
-origin Run 只进入 reader 的 dependency closure，不因此进入 Sample 分母。十个 slot 指向同一个 origin Run 时仍是十条逻辑访问，宿主可以按 owner 与 projector token 去重一次物理 projection。
+origin Run 只进入 reader 的 dependency closure，不因此进入 Sample 分母。
+
+十个 slot 指向同一个 origin Run 时仍是十条逻辑访问。宿主可以按 owner 与 projector token
+去重一次物理 projection。
+
+读取 sources Attachment 时，read Effect 会先 materialize 它的完整 blob closure，并
+deep-freeze decoded JSON payload。
+
+projector 随后只同步消费自包含内存 value。即使 reader Scope 已关闭，展示源码也不会再次
+触发磁盘 I/O，亦不能以 mutation 改写其它 consumer 的 payload 视图。
 
 ## SHA-256 不替代源码 bytes
 

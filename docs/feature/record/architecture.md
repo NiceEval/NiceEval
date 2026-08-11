@@ -14,8 +14,15 @@ Calculation 与页面可以演进，不因此扩张 Record Core。
 | local operation state | session、maintenance lock、writer lock 与 cache | 不属于 Record；不复制、不分享、不进 Git |
 
 默认 portable root 是 `<project>/.niceeval/record/`。Library 的 `root` 参数表示实际
-Record root。锁由平台为同一个 canonical root 协调；它们只协调善意的 NiceEval 进程，
-不构成 hostile filesystem 的安全边界。
+Record root。
+
+锁由平台为同一个 canonical root 协调。它们只协调善意的 NiceEval 进程，不构成 hostile
+filesystem 的安全边界。
+
+`RecordRoot` 是 host-local operation parameter。constructor 只接受 lexical-normalized
+absolute path 或 file URL，且不 realpath 或承诺 hostile symlink defense。
+
+portable layout 只编码 root-relative segments；host absolute root 不进入磁盘 identity。
 
 未完成 Run 的目录可能短暂出现在 portable root，但它不是 portable Record 的逻辑成员。
 复制或 Git 操作遇到它时，目标 reader 同样忽略它并给出 `incomplete-run` warning。
@@ -187,7 +194,8 @@ type RecordAttachmentEnvelopeV1 = {
 
 缺 key、多 key、重复 key、非法 ref 或任意 closure mismatch 都使该 Attachment 为
 `invalid`。它们不会产生一个可用但少 blob 的 value。EIO 或 permission 则是
-`RecordReadError`，因为 reader 无法取得足以判断该 durable value 的 bytes。
+`RecordReadError`，因为 read Effect 无法取得并 materialize 足以形成该 durable value 的
+bytes。
 
 ### 内建 RecordAttachment
 
@@ -212,10 +220,23 @@ owner + RecordAttachmentProjector
   → RecordAttachmentRead<Payload>
 ```
 
-`available` 包含 exact payload 与只读、完整的 `RecordAttachmentBlobs`。missing directory
-是 `unavailable`。known old schema 到 current 的每条相邻边都有 converter 时是
+`readRunAttachment` 与 `readAttemptAttachment` 在返回 `available` 前读取、验证并
+materialize 全部 blob bytes。
+
+它们也把 decoded JSON payload 递归 deep-freeze 为 package-owned snapshot。JSON boundary
+没有 native bytes。
+
+`available` 包含该 payload 与同步、只读、完整的 `RecordAttachmentBlobs`。`bytes(ref)`
+从内存 snapshot 返回 defensive copy，不触发 I/O 或 Stream。
+
+错误或伪造 ref 同步返回 `Either.left(record-blob-handle-invalid)`，不属于
+`RecordReadError`。missing directory 是 `unavailable`。
+
+known old schema 到 current 的每条相邻边都有 converter 时是
 `migration-required`。known path 命中 `not-losslessly-migratable` 边时是
 `migration-unavailable`。
+
+projector 只同步消费这个一次构成的 snapshot。它不重新打开 storage，也不获得 Stream。
 
 unknown family 或 schema 一律是 `unsupported`。envelope、payload、ref、blob 或 schema
 decode 失败是 `invalid`。验证先于 migration state，因此一个有坏 closure 的旧
@@ -237,7 +258,9 @@ registry。来自另一个 snapshot 或 session 的 handle、伪造对象与 clo
 
 `Effect.Scope` 能约束正常调用的 composition，却不能静态证明 capability 的 generative
 lifetime。每次使用都在 runtime 检查 Scope 与 exact identity，因此逃出 Scope 的 JavaScript
-value 不会变成有效 handle。
+value 不会变成有效 handle。`RecordAttachmentValue` 是例外：它已在 read Effect 内完整
+materialize，decoded JSON payload 已由 package deep-freeze，reader Scope 关闭后仍是可同步
+消费、不可借 mutation 改写的自包含内存值。
 
 锁只协调善意的 NiceEval 进程：
 
@@ -255,7 +278,8 @@ reader 与 writer 可以并发。writer lock 保证只有一个进程创建 Run�
 |---|---|
 | Core、Attachment 或引用损坏 | 成功 ADT |
 | incomplete Run | reader warning |
-| I/O、permission、busy、closed Scope、错误 handle、旧 Core major | Effect typed error |
+| 形成 available 前的 I/O、permission、busy、closed Scope、错误 frozen handle、旧 Core major | Effect typed error |
+| `available` 后的错误或伪造 blob ref | `bytes(ref)` 的同步 `Either.left(record-blob-handle-invalid)`，不触发 I/O |
 | Library 不变量、registry 矛盾或 callback throw | defect |
 | fiber 取消 | interruption，保留 Cause |
 
@@ -307,8 +331,10 @@ niceeval.record/v1 → niceeval.record/v2 → niceeval.record/v3
 ```
 
 每个 Attachment family 也只登记相邻关系，并且每条边恰有一个 converter 或
-`not-losslessly-migratable` 声明。converter 接收完整 `RecordAttachmentValue<From>`，
-从它的只读 blobs 取得 source bytes，再通过 target builder mint 新 refs 与 target bytes。
+`not-losslessly-migratable` 声明。converter 接收完整 `RecordAttachmentValue<From>`；其
+source payload 是 package-owned、deep-frozen JSON snapshot，converter 不能靠 mutation
+影响其它 consumer。它从只读 `bytes(ref)` 取得 source bytes，再通过新的
+`RecordBlobSource` 与 target builder mint 新 refs、target Stream 和 target bytes。
 
 converter 可以保留、删除、改名或转换 blob。old ref 与手写 path 不属于 target builder，
 不能冒充 target ref。callback throw 是 defect；`Effect.fail(e)` 保留 explicit `E`；
@@ -354,8 +380,10 @@ owner 时，preflight 拒绝整次 migration。`migration-unavailable` 与 `unsu
 
 Record v1 面向受信任用户的普通有界项目。它不定义极端规模或恶意 filesystem 协议。
 
-JSON Attachment 是有界、自包含值。内部 `Stream` 只用于 Run 目录扫描和 blob I/O；它不
-构成 Attachment payload API，也不进入 Sample、Projection 或 Report 的值。
+JSON Attachment 是有界、自包含值。reader 在形成 value 时把 JSON payload deep-freeze，
+并 materialize 完整 binary closure；内部 `Stream` 只用于 Run 目录扫描、写入、migration
+与形成读取 snapshot 的 blob I/O。它不构成 Attachment value API，也不进入 Sample、
+Projection 或 Report 的值。
 
 ID 与 Attachment name 经过 portable segment codec。停稳 root 可以跨机器复制并由 current
 reader 解释。
@@ -364,7 +392,7 @@ reader 解释。
 
 | 变化 | 归属 | 是否改变 Record Core |
 |---|---|---|
-| Fact-first → Assert-first | producer/API | 否 |
+| Assert-first 作者 API 或 matcher 重构，但规范持久语义不变 | producer/API | 否 |
 | matcher、early stop、score 算法改变 | behavior identity | 否 |
 | 新增 Diagnostics 或 Plugin 数据 | 新 Attachment | 否 |
 | Attachment payload、blob ref 或 closure shape 改变 | 新相邻 Attachment schema | 否 |

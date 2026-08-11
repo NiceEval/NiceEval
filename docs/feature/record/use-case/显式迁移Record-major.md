@@ -64,9 +64,17 @@ preflight 失败不修改任何文件。明确不可无损迁移不是失败：p
 
 ## Closure-aware converter 边界
 
-converter 接收完整 `RecordAttachmentValue<From>`，而不是独立 payload。它从
-`source.blobs.open(ref)` 消费已经验证的 old bytes，并由 `target.create` 的 builder mint
-每个 target ref 与 target bytes。
+converter 接收完整 `RecordAttachmentValue<From>`，而不是独立 payload。
+
+source payload 是 package-owned deep-frozen JSON snapshot。converter 不得靠 mutation
+改写它来影响别的 consumer。
+
+它从同步的 `source.blobs.bytes(ref)` 取得已经验证、materialize 的 old bytes。
+错误或伪造 ref 只返回 `Either.left(record-blob-handle-invalid)`。converter 必须把它映射到
+自己的 explicit `E`。
+
+`target.create` 的 builder mint 每个 target ref 与 target bytes。target bytes 仍以写侧
+`RecordBlobSource<E, R>` Stream 提供。
 
 converter 可以：
 

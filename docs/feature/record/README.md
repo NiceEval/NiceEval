@@ -86,7 +86,18 @@ exact identity 检查 Scope、snapshot 与 session。
 interruption 不发布；之后即使 receipt 尚未被观察到，Run 已经发布。
 
 Record v1 只定义 exact JSON Attachment 与 owner-local blob closure。`available` 意味着
-payload 与全部 blobs 都已验证。内部 Stream 只扫描 Run 或处理 blob I/O，不进入
+payload 与全部 blobs 已验证并已 materialize 到内存。
+
+decoded JSON payload 是 package-owned deep-frozen snapshot。JSON boundary 不含 native
+bytes；调用方 mutation 不会影响另一个 projector 或 consumer。
+
+blobs 的 `refs()` 与 `bytes(ref)` 是同步、只读的 snapshot capability。后者每次给出
+defensive copy。
+
+读 Effect 在形成 `available` 前完成 blob I/O 与 permission 检查；failure 仍是
+`RecordReadError`。value 在 reader Scope 关闭后仍可作为自包含内存值消费。
+
+内部 Stream 只扫描 Run、写入或 migration、以及形成读取 snapshot 的 blob I/O。它不进入
 Attachment、Sample 或 Report 的公开值。
 
 `EvaluationRecordContract` 在调用 generic writer 前验证 Evaluation 领域事实。generic

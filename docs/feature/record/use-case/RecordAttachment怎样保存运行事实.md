@@ -93,9 +93,22 @@ RecordReader / RecordWriteSession.view
   → ProjectedSample / Report
 ```
 
-`available` 只在 exact payload 与全部 blobs 已验证时出现。`value.blobs` 是只读
-capability；它只能打开 closure 中的 `RecordBlobRef`。permission 与 EIO 是
-`RecordReadError`，interruption 保留 Effect Cause，不会被伪装为 `invalid`。
+`available` 只在 exact payload 与全部 blobs 已验证并 materialize 到内存时出现。
+
+decoded JSON payload 是 package-owned、递归 deep-frozen snapshot。JSON boundary 没有
+native bytes；调用方 mutation 不会改变另一个 projector 或 consumer 所见的事实。
+
+`value.blobs` 是同步、只读的 snapshot capability。`refs()` 返回 closure refs 的
+defensive list。
+
+`bytes(ref)` 为 closure 中的 ref 返回 exact-length defensive copy。伪造或不属于 closure
+的 ref 返回 `Either.left(record-blob-handle-invalid)`，不触发 I/O。
+
+permission、EIO 与 materialization failure 都发生在 read Effect 形成 `available` 之前。
+因此它们是 `RecordReadError`；interruption 保留 Effect Cause，不会被伪装为 `invalid`。
+
+value 在 reader Scope 关闭后仍是可同步消费的自包含内存值。projector 只同步消费这一份
+已构成的 snapshot，不重新打开 storage 或消费 Stream。
 
 RecordAttachment 读取只解释一个 owner 的一份具名数据。选择哪些 Run 属于 Sample、怎样
 计算通过率以及怎样渲染页面，都留在 Record 之上。
