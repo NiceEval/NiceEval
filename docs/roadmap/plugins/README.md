@@ -61,18 +61,18 @@ export default defineEval({
 |---|---:|---:|---:|---|
 | behavior identity | ✓ | ✓ | ✓ | 让影响执行的选项进入所属 owner 的 hash |
 | typed requirements | ✓ | ✓ | ✓ | 在创建资源前验证 platform、lifetime、Sequence 或 reuse group |
-| command-only Sandbox contribution | ✓ | ✓ | — | 安装或探测 pnpm、Yarn、Remem 等工具，不替换 template |
-| physical Sandbox resource demand | ✓ | ✓ | — | 按 selected cohort 聚合，在每台实际实例 materialize 一次 |
-| Eval around | ✓ | — | — | 成对包围每条 Attempt 的 Eval test body |
+| command-only `SandboxLayer` | ✓ | ✓ | — | 直接复用现有 layer 安装或探测工具，不替换 template |
+| 官方 cohort resource | Git | — | — | 官方 Git Eval Plugin 私有能力，不开放第二套 resource DSL |
+| Eval `before` / `after` | ✓ | — | — | 直接使用 Eval hook 包围每条 Attempt 的 test body |
 | flags / labels | — | ✓ | — | 声明实验条件身份与报告分组 |
 | AgentExtension | — | ✓ | — | 接入 Adapter 已有配置、安装、postSetup / preTeardown 槽位 |
 | Experiment setup / teardown | — | ✓ | — | 管理整场一次的宿主资源 |
 
-框架还会自动把规范化 contribution、attachment owner 与 provenance 写入 manifest。运行时观测继续使用既有 `ctx.fact()` / `ctx.facts()`，不是 Plugin 自创一份 facts 存储。
+框架还会自动把规范化原生片段、attachment owner 与 provenance 写入 manifest。运行时观测继续使用既有 `ctx.fact()` / `ctx.facts()`，不是 Plugin 自创一份 facts 存储。
 
 ## 框架保证
 
-- `definePlugin()` 直接使用 `eval(options)`、`experiment(options)` 与 `group(options)`；作者不接触内部 attachment 路由树。
+- `definePlugin()` 的 `eval(options)`、`experiment(options)` 与 `group(options)` 直接返回对应 owner 的现有字段；作者不接触 attachment 路由树或 contribution constructor。
 - 同一 `(name, instanceKey)` 在整个 pair 内只能出现一次；Eval 与 Experiment 两侧重复也会在创建资源前报错。
 - 每个 owner 内先接作者贡献，再按 `plugins[]` 顺序接插件；跨 owner 顺序由 template owner 决定。
 - 独占与 keyed 槽位不做 last-wins；冲突保留 attachment scope、owner、源码与数组位置。
@@ -102,5 +102,5 @@ Plugin 不提供任意字符串 capability registry、返回 secret 的通用函
 - [Remem 用例](use-case/remem.md)
 - [NiceEval-Eval 候选 Runtime](use-case/niceeval-eval-candidate-runtime.md)
 - [Terminal-Bench Harness](use-case/terminal-bench-harness.md)
-- [Git checkout](use-case/git-checkout.md) —— 用通用 physical Sandbox resource demand 聚合同仓库 commits
+- [Git checkout](use-case/git-checkout.md) —— 官方 Git Plugin 私下聚合同仓库 commits
 - [Docker Image](../docker-image/README.md) —— `dockerImage()` 与构建缓存的 Sandbox 单源

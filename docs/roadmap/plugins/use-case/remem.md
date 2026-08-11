@@ -48,7 +48,7 @@ export default defineExperiment({
 
 | 现有手工 fragment | Plugin 归属 |
 |---|---|
-| `rememFlags(MODEL)` | keyed flags / labels contribution |
+| `rememFlags(MODEL)` | 原生 `flags` / `labels` 字段 |
 | `.prepare(rememPrepare())` | command-only Sandbox layer |
 | Codex config 与安装后 hook | Codex AgentExtension receiver 的既有具名槽位 |
 | extraction drain 与数据库检查 | Codex `preTeardown` 有序槽位 |

@@ -99,9 +99,9 @@ function defineEval<
 ): EvalDefinition<"pass", TestContext, OwnershipOf<Sandbox, Plugins>>;
 ```
 
-Plugin family 的返回类型携带其 contribution scope；`sandbox.setup()` 或 `sandbox.teardown()` 会把 `ExtractPluginSandboxScope` 提升为 `"instance-lifecycle"`。`defineScoreEval()` 使用同一份 `OwnershipOf`，只把 evaluation kind 与 test context 换成计分制。
+Plugin family 的返回类型携带原生 `SandboxLayer` scope；layer 调用 `.setup()` 或 `.teardown()` 会把 `ExtractPluginSandboxScope` 提升为 `"instance-lifecycle"`。`defineScoreEval()` 使用同一份 `OwnershipOf`，只把 evaluation kind 与 test context 换成计分制。
 
-动态 JS 边界执行同一规则：link 后若任一 Eval Plugin 含 instance-lifecycle contribution，group definition 在创建 Sandbox 前失败，并报告 Plugin 与 Eval provenance。
+动态 JS 边界执行同一规则：link 后若任一 Eval Plugin 的 layer 含 instance-lifecycle hook，group definition 在创建 Sandbox 前失败，并报告 Plugin 与 Eval provenance。
 因此跨文件 default import 不会把精确状态扩大成普通 `SandboxLayer`。
 
 作者可见的结果是：

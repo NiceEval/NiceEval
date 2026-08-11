@@ -15,7 +15,7 @@ Plugin factory 调用产生不可变 blueprint。link 为每个 attachment occur
 
 ## Template owner 决定 Sandbox 顺序
 
-每个 owner 内始终是 author contribution 后接该 owner 的 `plugins[]`。跨 owner 顺序由 template owner 决定：
+每个 owner 内始终是 author 原生片段后接该 owner 的 `plugins[]` 原生片段。跨 owner 顺序由 template owner 决定：
 
 ```text
 Eval owns template:
@@ -25,7 +25,7 @@ Experiment owns template:
 Experiment author → Experiment plugins → Eval author → Eval plugins → Agent
 ```
 
-Plugin 只能贡献 Sandbox contribution，不能改变 template owner 或提供 template。所有冲突在创建外部资源前聚合；相同 keyed 值可去重但保留两份 provenance，不同值报错。
+Plugin 只能返回 command-only `SandboxLayer`，不能改变 template owner 或提供 template。所有冲突在创建外部资源前聚合；相同 keyed 值可去重但保留两份 provenance，不同值报错。
 
 ## Core 与 Agent receiver
 
@@ -44,15 +44,15 @@ interface LinkedPluginInfo {
   readonly behaviorRevision: string;
   readonly attachment: "eval" | "experiment" | "group";
   readonly owner: { readonly id: string; readonly source: string; readonly position: number };
-  readonly contributions: JsonValue;
+  readonly fragment: JsonValue;
 }
 ```
 
-- `behavior` 只保存没有被其它 canonical contribution 表达的执行输入。
+- `identity` 只保存没有被其它 canonical 原生字段表达的执行输入。
 - Agent 行为只由 receiver behavior projection 表达。
 - flags 进入 Experiment 行为；labels 不进入 hash。
 - requirements 本身进入 manifest；它验证的完成态 plan 按所属契约进入 hash。
-- framework 自动写入规范化 contribution 与 provenance；Plugin 不提供任意静态 facts。
+- framework 自动写入规范化原生片段与 provenance；Plugin 不提供任意静态 facts。
 - runtime facts 只能经既有 `ctx.fact()` / `ctx.facts()` 通道产生。
 - credential value 和默认 selector 不进 hash；显式 credential revision 才表达行为代次。
 

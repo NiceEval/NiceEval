@@ -32,7 +32,7 @@ template-owner author layer
 
 Eval hook 使用既有 `EvalHookContext`。它提供本 Attempt 的 `agent`、`sandbox`、`AbortSignal`、`progress()`、`diagnostic()` 与 `fact()`，不提供跨 Attempt mutable store。
 
-`eval.around({ before, after })` 是一个成对 contribution。before 在 Agent 已 ready、进入 Eval test 前按 Plugin 声明顺序运行；成功进入 before 后立即登记同一 contribution 的 after。省略 before 时，进入该节点即登记 after。after 在 test 成功、抛错或中断后按登记逆序运行，再进入 Agent 与 Sandbox 收尾。
+Plugin 直接返回 `before` 与 `after`。before 在 Agent 已 ready、进入 Eval test 前按 Plugin 声明顺序运行；进入该 Plugin 节点后立即登记它的 after。省略 before 时仍登记 after。after 在 test 成功、抛错或中断后按登记逆序运行，再进入 Agent 与 Sandbox 收尾。
 
 before 失败时不运行尚未进入的 hook；已登记 after 仍运行。多个失败沿用 Scope 的主错误加 teardown errors 判定，不用 after 替换 test / before 主错误。它们仍归既有 `eval.run`，不新增 phase。
 
@@ -49,11 +49,11 @@ selection / pair link / group compatibility
   → 若存在真实派发：
       physical Sandbox create
       → existing sandbox.setup
-      → resource materialize / verify（按首次 contribution 的确定顺序）
+      → 官方 resource materialize / verify（按首次 Plugin 出现的确定顺序）
       → reset anchor
       → 每条 Attempt：
           workdir reset
-          → prepare contribution chain（resource consume 保留自己的声明位置）
+          → 原生 SandboxLayer prepare chain（Git checkout 保留 Plugin 位置）
           → agent.ensure / Agent / Eval / cleanup
       → resource teardown（按已 materialize 顺序逆序）
       → existing sandbox.teardown
@@ -78,7 +78,7 @@ existing `sandbox.setup` 单独不足以承担 resource：它没有 fingerprint 
 - attachment 不支持：TypeScript 拒绝；动态 JS 在 definition 阶段报错。
 - 两侧 identity 重复或槽位冲突：pure link 失败。
 - Experiment lifecycle 失败：沿用 `experiment.setup` / teardown 语义。
-- Sandbox contribution 失败：沿用其实际 `sandbox.prepare.*` 或 physical phase。
+- SandboxLayer 失败：沿用其实际 `sandbox.prepare.*` 或 physical phase。
 - Agent extension 失败：沿用 receiver 对应的 `agent.setup` / teardown 语义。
 - 用户中断与强清：复用现有 Scope / teardown registry；Plugin 不启动 detached cleanup runtime。
 - resource `demand-invalid`：零资源 planning failure，不重试。
