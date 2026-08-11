@@ -1,16 +1,18 @@
 /**
  * The Promise-shaped parts of the existing Attempt body (agent setup, sandbox
  * work, trace collection) need a narrow hand-off to the Effect-owned authoring
- * runtime. This bridge only coordinates ownership; it never runs an Effect.
+ * runtime. The bridge is a scoped Effect resource: the Queue worker is the
+ * only executor, and public Promise values are only facade adapters.
  */
 
-import type { Effect } from "effect";
+import { Cause, Deferred, Effect, Exit, Queue } from "effect";
 
 import type {
   AssertionStopErrorV1,
   AssertionSealOptionsV1,
   AssertionsRuntimeV1,
 } from "../assertions/api.ts";
+import { AssertionAuthoringClosedErrorV1 } from "../assertions/api.ts";
 import type { SealedAttemptAssertionsV1 } from "./assertions.ts";
 
 export type AttemptAuthorCompletionV1 =
@@ -24,30 +26,47 @@ export interface AssertionSealRequestV1 {
   readonly options: AssertionSealOptionsV1;
 }
 
-/** A request from the Promise-shaped Attempt body into its owning Effect Scope. */
-export interface AttemptEffectRequestV1 {
-  readonly kind: "assertion" | "operation";
+type AttemptEffectRequestKindV1 = "assertion" | "operation";
+
+/**
+ * A request from the Promise-shaped Attempt body into its owning Effect Scope.
+ * The resolver pair is deliberately the sole native-Promise state: it adapts
+ * the public callback facade after the owner fiber has classified an Exit.
+ */
+interface AttemptEffectRequestV1 {
+  readonly kind: AttemptEffectRequestKindV1;
   readonly effect: Effect.Effect<unknown, unknown, never>;
+  readonly resolve: (value: unknown) => void;
+  readonly reject: (error: unknown) => void;
 }
 
-/** One `orStop()` barrier handed from ordinary author Promise code to the Attempt Effect. */
-export interface AssertionExecutionRequestV1 extends AttemptEffectRequestV1 {
-  readonly kind: "assertion";
-  readonly effect: Effect.Effect<unknown, AssertionStopErrorV1, never>;
+interface PromiseFacade<Value> {
+  readonly promise: Promise<Value>;
+  readonly resolve: (value: Value) => void;
+  readonly reject: (error: unknown) => void;
 }
 
-export type AttemptEffectCompletionV1 =
-  | { readonly _tag: "succeeded"; readonly value: unknown }
-  | { readonly _tag: "failed"; readonly error: unknown };
-
-export type AssertionExecutionCompletionV1 = AttemptEffectCompletionV1;
+/** This is a facade adapter, not a bridge lifecycle primitive. */
+function promiseFacade<Value>(): PromiseFacade<Value> {
+  let resolve!: (value: Value) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<Value>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  // A detached author continuation may intentionally observe its failure
+  // later. Keep Node from treating the named lifecycle rejection as unhandled.
+  void promise.catch(() => undefined);
+  return { promise, resolve, reject };
+}
 
 export interface AssertFirstAttemptBridgeV1<Context> {
-  offerContext(context: Context): void;
-  failBeforeContext(error: unknown): void;
-  awaitContext(signal: AbortSignal): Promise<Context>;
-  completeAuthor(completion: AttemptAuthorCompletionV1): void;
-  awaitAuthor(signal: AbortSignal): Promise<AttemptAuthorCompletionV1>;
+  /** The Promise body submits Context completion through the owner Queue. */
+  offerContext(context: Context): Effect.Effect<void>;
+  failBeforeContext(error: unknown): Effect.Effect<void>;
+  awaitContext(): Effect.Effect<Context, unknown>;
+  completeAuthor(completion: AttemptAuthorCompletionV1): Effect.Effect<void>;
+  awaitAuthor(): Effect.Effect<AttemptAuthorCompletionV1, unknown>;
   requestAssertion<Value>(
     effect: Effect.Effect<Value, AssertionStopErrorV1, never>,
   ): Promise<Value>;
@@ -55,222 +74,245 @@ export interface AssertFirstAttemptBridgeV1<Context> {
   requestEffect<Value, Error>(
     effect: Effect.Effect<Value, Error, never>,
   ): Promise<Value>;
-  awaitEffectRequest(signal: AbortSignal): Promise<AttemptEffectRequestV1>;
-  completeEffectRequest(
-    request: AttemptEffectRequestV1,
-    completion: AttemptEffectCompletionV1,
-  ): void;
   /** Rejects only `orStop()` barriers after authoring has closed. */
-  closeAssertionRequests(error: unknown): void;
+  closeAssertionRequests(error: unknown): Effect.Effect<void>;
   /** Rejects every queued / in-flight bridge request during Scope release. */
-  closeEffectRequests(error: unknown): void;
-  requestSeal(
-    request: AssertionSealRequestV1,
-    signal: AbortSignal,
-  ): Promise<SealedAttemptAssertionsV1>;
-  awaitSealRequest(signal: AbortSignal): Promise<AssertionSealRequestV1>;
-  completeSeal(sealed: SealedAttemptAssertionsV1): void;
-  failSeal(error: unknown): void;
+  closeEffectRequests(error: unknown): Effect.Effect<void>;
+  requestSeal(request: AssertionSealRequestV1): Effect.Effect<SealedAttemptAssertionsV1, unknown>;
+  awaitSealRequest(): Effect.Effect<AssertionSealRequestV1, unknown>;
+  completeSeal(sealed: SealedAttemptAssertionsV1): Effect.Effect<void>;
+  failSeal(error: unknown): Effect.Effect<void>;
 }
 
-interface Deferred<Value> {
-  readonly promise: Promise<Value>;
-  resolve(value: Value): void;
-  reject(error: unknown): void;
-}
-
-function deferred<Value>(): Deferred<Value> {
-  let resolve!: (value: Value) => void;
-  let reject!: (error: unknown) => void;
-  const promise = new Promise<Value>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
-  });
-  // A body can fail before its peer begins waiting. Mark the deferred as
-  // observed here; callers still receive the original rejection when awaited.
-  void promise.catch(() => undefined);
-  return { promise, resolve, reject };
-}
-
-function awaitWithAbort<Value>(
-  promise: Promise<Value>,
-  signal: AbortSignal,
-): Promise<Value> {
-  if (signal.aborted) {
-    return Promise.reject(signal.reason ?? new Error("Attempt interrupted"));
-  }
-  return new Promise<Value>((resolve, reject) => {
-    const onAbort = () => {
-      signal.removeEventListener("abort", onAbort);
-      reject(signal.reason ?? new Error("Attempt interrupted"));
-    };
-    signal.addEventListener("abort", onAbort, { once: true });
-    promise.then(
-      (value) => {
-        signal.removeEventListener("abort", onAbort);
-        resolve(value);
-      },
-      (error: unknown) => {
-        signal.removeEventListener("abort", onAbort);
-        reject(error);
-      },
-    );
+function completeRequest(
+  request: AttemptEffectRequestV1,
+  exit: Exit.Exit<unknown, unknown>,
+  failureOverride?: unknown,
+): Effect.Effect<void> {
+  return Effect.sync(() => {
+    if (failureOverride !== undefined) {
+      request.reject(failureOverride);
+    } else if (Exit.isSuccess(exit)) {
+      request.resolve(exit.value);
+    } else {
+      // This is the sole Effect → Promise conversion. Until this boundary the
+      // full Cause remains in the owner Effect tree.
+      request.reject(failureOverride ?? Cause.squash(exit.cause));
+    }
   });
 }
 
-function rejected<Value>(error: unknown): Promise<Value> {
-  const promise = Promise.reject(error) as Promise<Value>;
-  void promise.catch(() => undefined);
-  return promise;
+function exactlyOnce(
+  completed: Effect.Effect<boolean>,
+  message: string,
+): Effect.Effect<void> {
+  return completed.pipe(
+    Effect.flatMap((accepted) =>
+      accepted ? Effect.void : Effect.die(new Error(message))),
+    Effect.asVoid,
+  );
 }
 
 /**
- * One bridge exists for exactly one Attempt. Its one-shot checks make an
- * accidental second author runtime or second seal an explicit invariant
- * violation instead of silently changing declaration order.
+ * Creates exactly one scoped bridge for one Attempt. No method starts a
+ * runtime: public Promise methods only offer work, and the scoped worker
+ * performs every Effect, response, interruption and finalization transition.
  */
-export function createAssertFirstAttemptBridgeV1<Context>():
-  AssertFirstAttemptBridgeV1<Context> {
-  const context = deferred<Context>();
-  const author = deferred<AttemptAuthorCompletionV1>();
-  const sealRequest = deferred<AssertionSealRequestV1>();
-  const sealed = deferred<SealedAttemptAssertionsV1>();
-  const effectRequests: AttemptEffectRequestV1[] = [];
-  const effectResponses = new Map<AttemptEffectRequestV1, Deferred<unknown>>();
-  let effectWaiter: Deferred<void> | undefined;
-  let assertionRequestsClosed: unknown | undefined;
-  let effectRequestsClosed: unknown | undefined;
-  let contextOffered = false;
-  let authorCompleted = false;
-  let requestedSeal: AssertionSealRequestV1 | undefined;
-  let sealCompleted = false;
+export function makeAssertFirstAttemptBridgeV1<Context>():
+  Effect.Effect<AssertFirstAttemptBridgeV1<Context>, never, import("effect").Scope.Scope> {
+  return Effect.gen(function* () {
+    const context = yield* Deferred.make<Context, unknown>();
+    const author = yield* Deferred.make<AttemptAuthorCompletionV1, unknown>();
+    const sealRequest = yield* Deferred.make<AssertionSealRequestV1, unknown>();
+    const sealed = yield* Deferred.make<SealedAttemptAssertionsV1, unknown>();
+    const assertionRequestsClosed = yield* Deferred.make<never, unknown>();
+    const effectRequestsClosed = yield* Deferred.make<never, unknown>();
+    const requests = yield* Queue.unbounded<AttemptEffectRequestV1>();
+    let terminalError: unknown | undefined;
+    let assertionCloseError: unknown | undefined;
 
-  const enqueueEffect = <Value, Error>(
-    effect: Effect.Effect<Value, Error, never>,
-    kind: AttemptEffectRequestV1["kind"],
-  ): Promise<Value> => {
-    if (effectRequestsClosed !== undefined) {
-      return rejected<Value>(effectRequestsClosed);
-    }
-    const response = deferred<unknown>();
-    const request: AttemptEffectRequestV1 = Object.freeze({ kind, effect });
-    effectResponses.set(request, response);
-    effectRequests.push(request);
-    const waiter = effectWaiter;
-    effectWaiter = undefined;
-    waiter?.resolve();
-    return response.promise as Promise<Value>;
-  };
+    const closeReason = (): unknown =>
+      terminalError ?? new AssertionAuthoringClosedErrorV1("attempt-sealed");
 
-  const bridge: AssertFirstAttemptBridgeV1<Context> = {
-    offerContext(value: Context) {
-      if (contextOffered) throw new Error("Assert-first Context was offered twice");
-      contextOffered = true;
-      context.resolve(value);
-    },
-    failBeforeContext(error: unknown) {
-      if (contextOffered) return;
-      contextOffered = true;
-      context.reject(error);
-    },
-    awaitContext(signal: AbortSignal) {
-      return awaitWithAbort(context.promise, signal);
-    },
-    completeAuthor(completion: AttemptAuthorCompletionV1) {
-      if (authorCompleted) throw new Error("Assert-first author completion was delivered twice");
-      authorCompleted = true;
-      author.resolve(completion);
-    },
-    awaitAuthor(signal: AbortSignal) {
-      return awaitWithAbort(author.promise, signal);
-    },
-    requestAssertion<Value>(effect: Effect.Effect<Value, AssertionStopErrorV1, never>) {
-      if (assertionRequestsClosed !== undefined) {
-        return rejected<Value>(assertionRequestsClosed);
+    const closeEffectRequests = (error: unknown): Effect.Effect<void> =>
+      Effect.suspend(() => {
+        // This synchronous guard is intentionally the first close transition.
+        // Promise callers can run between later queue operations, so they must
+        // see a terminal outcome before any draining or shutdown can yield.
+        if (terminalError !== undefined) return Effect.void;
+        terminalError = error;
+        return Deferred.fail(effectRequestsClosed, error).pipe(
+          Effect.flatMap((firstClose) => {
+            if (!firstClose) return Effect.void;
+            return Effect.gen(function* () {
+              // Wake every owner-side Deferred before removing pending work. The
+              // worker races in-flight requests against this same close signal.
+              yield* Deferred.fail(context, error);
+              yield* Deferred.fail(author, error);
+              yield* Deferred.fail(sealRequest, error);
+              yield* Deferred.fail(sealed, error);
+              yield* Deferred.fail(assertionRequestsClosed, error);
+              const pending = yield* Queue.takeAll(requests);
+              yield* Effect.forEach(
+                pending,
+                (request) => completeRequest(request, Exit.fail(error)),
+                { discard: true },
+              );
+              yield* Queue.shutdown(requests);
+            });
+          }),
+        );
+      });
+
+    const awaitClose = (kind: AttemptEffectRequestKindV1) =>
+      Effect.raceFirst(
+        Deferred.await(effectRequestsClosed),
+        kind === "assertion" ? Deferred.await(assertionRequestsClosed) : Effect.never,
+      ).pipe(Effect.exit);
+
+    const runRequest = (request: AttemptEffectRequestV1): Effect.Effect<void> => {
+      const closureError = (): unknown | undefined =>
+        terminalError ?? (request.kind === "assertion" ? assertionCloseError : undefined);
+      return Effect.raceFirst(
+        request.effect.pipe(Effect.exit),
+        awaitClose(request.kind),
+      ).pipe(
+        Effect.flatMap((exit) => completeRequest(request, exit, closureError())),
+        // Scope interruption can arrive while the Queue worker is running the
+        // race. This finalizer is the in-flight counterpart to Queue.takeAll:
+        // it settles the sole Promise facade even when the worker itself is
+        // interrupted before its normal response continuation runs.
+        Effect.onExit((workerExit) =>
+          Exit.isFailure(workerExit)
+            ? completeRequest(request, Exit.failCause(workerExit.cause), closureError())
+            : Effect.void),
+      );
+    };
+
+    const worker = Effect.forever(
+      Queue.take(requests).pipe(Effect.flatMap(runRequest)),
+    ).pipe(
+      Effect.catchAllCause((cause) =>
+        Cause.isInterruptedOnly(cause)
+          ? Effect.void
+          : closeEffectRequests(Cause.squash(cause))),
+    );
+    yield* Effect.forkScoped(worker);
+
+    const enqueue = <Value, Error>(
+      effect: Effect.Effect<Value, Error, never>,
+      kind: AttemptEffectRequestKindV1,
+    ): Promise<Value> => {
+      const facade = promiseFacade<Value>();
+      if (terminalError !== undefined) {
+        facade.reject(terminalError);
+        return facade.promise;
       }
-      return enqueueEffect(effect, "assertion");
-    },
-    requestEffect<Value, Error>(effect: Effect.Effect<Value, Error, never>) {
-      return enqueueEffect(effect, "operation");
-    },
-    async awaitEffectRequest(signal: AbortSignal) {
-      if (effectRequests.length > 0) return effectRequests.shift()!;
-      if (effectRequestsClosed !== undefined) {
-        throw effectRequestsClosed;
+      if (kind === "assertion" && assertionCloseError !== undefined) {
+        facade.reject(assertionCloseError);
+        return facade.promise;
       }
-      if (effectWaiter !== undefined) {
-        throw new Error("Assert-first Attempt has more than one Effect request waiter");
+      const request: AttemptEffectRequestV1 = {
+        kind,
+        effect,
+        resolve: facade.resolve as (value: unknown) => void,
+        reject: facade.reject,
+      };
+      if (!Queue.unsafeOffer(requests, request)) {
+        // Once the Queue is shut down there is no owner fiber left to consume
+        // this facade. Return its named terminal outcome without a second
+        // lifecycle implementation.
+        facade.reject(closeReason());
       }
-      const waiter = deferred<void>();
-      effectWaiter = waiter;
-      try {
-        await awaitWithAbort(waiter.promise, signal);
-      } finally {
-        if (effectWaiter === waiter) effectWaiter = undefined;
-      }
-      if (effectRequests.length > 0) return effectRequests.shift()!;
-      if (effectRequestsClosed !== undefined) throw effectRequestsClosed;
-      throw new Error("Assert-first Effect request wakeup had no request");
-    },
-    completeEffectRequest(request, completion) {
-      const response = effectResponses.get(request);
-      if (response === undefined) return;
-      effectResponses.delete(request);
-      if (completion._tag === "succeeded") {
-        response.resolve(completion.value);
-      } else {
-        response.reject(completion.error);
-      }
-    },
-    closeAssertionRequests(error) {
-      if (assertionRequestsClosed !== undefined) return;
-      assertionRequestsClosed = error;
-      const pending = effectRequests.filter((request) => request.kind === "assertion");
-      for (const request of pending) {
-        const index = effectRequests.indexOf(request);
-        if (index >= 0) effectRequests.splice(index, 1);
-        const response = effectResponses.get(request);
-        effectResponses.delete(request);
-        response?.reject(error);
-      }
-      for (const [request, response] of effectResponses) {
-        if (request.kind !== "assertion") continue;
-        effectResponses.delete(request);
-        response.reject(error);
-      }
-    },
-    closeEffectRequests(error) {
-      if (effectRequestsClosed !== undefined) return;
-      effectRequestsClosed = error;
-      effectRequests.length = 0;
-      const waiter = effectWaiter;
-      effectWaiter = undefined;
-      waiter?.reject(error);
-      for (const response of effectResponses.values()) response.reject(error);
-      effectResponses.clear();
-    },
-    requestSeal(request: AssertionSealRequestV1, signal: AbortSignal) {
-      if (requestedSeal === undefined) {
-        requestedSeal = request;
-        sealRequest.resolve(request);
-      } else if (requestedSeal.runtime !== request.runtime) {
-        return Promise.reject(new Error("Assert-first Attempt requested a second runtime seal"));
-      }
-      return awaitWithAbort(sealed.promise, signal);
-    },
-    awaitSealRequest(signal: AbortSignal) {
-      return awaitWithAbort(sealRequest.promise, signal);
-    },
-    completeSeal(value: SealedAttemptAssertionsV1) {
-      if (sealCompleted) throw new Error("Assert-first Attempt seal was completed twice");
-      sealCompleted = true;
-      sealed.resolve(value);
-    },
-    failSeal(error: unknown) {
-      if (sealCompleted) return;
-      sealCompleted = true;
-      sealed.reject(error);
-    },
-  };
-  return Object.freeze(bridge);
+      return facade.promise;
+    };
+
+    const bridge: AssertFirstAttemptBridgeV1<Context> = {
+      offerContext(value) {
+        return exactlyOnce(
+          Deferred.succeed(context, value),
+          "Assert-first Context was offered twice",
+        );
+      },
+      failBeforeContext(error) {
+        return Deferred.fail(context, error).pipe(Effect.asVoid);
+      },
+      awaitContext() {
+        return Deferred.await(context);
+      },
+      completeAuthor(completion) {
+        return exactlyOnce(
+          Deferred.succeed(author, completion),
+          "Assert-first author completion was delivered twice",
+        );
+      },
+      awaitAuthor() {
+        return Deferred.await(author);
+      },
+      requestAssertion(effect) {
+        return enqueue(effect, "assertion");
+      },
+      requestEffect(effect) {
+        return enqueue(effect, "operation");
+      },
+      closeAssertionRequests(error) {
+        return Effect.suspend(() => {
+          if (assertionCloseError !== undefined) return Effect.void;
+          assertionCloseError = error;
+          return Deferred.fail(assertionRequestsClosed, error).pipe(
+            Effect.flatMap((firstClose) => {
+              if (!firstClose) return Effect.void;
+              return Effect.gen(function* () {
+                const pending = yield* Queue.takeAll(requests);
+                yield* Effect.forEach(
+                  pending,
+                  (request) =>
+                    request.kind === "assertion"
+                      ? completeRequest(request, Exit.fail(error))
+                      : Queue.offer(requests, request).pipe(Effect.asVoid),
+                  { discard: true },
+                );
+              });
+            }),
+          );
+        });
+      },
+      closeEffectRequests,
+      requestSeal(request) {
+        return Effect.gen(function* () {
+          const firstRequest = yield* Deferred.succeed(sealRequest, request);
+          if (!firstRequest) {
+            const prior = yield* Deferred.await(sealRequest);
+            if (prior.runtime !== request.runtime) {
+              return yield* Effect.die(new Error("Assert-first Attempt requested a second runtime seal"));
+            }
+          }
+          return yield* Deferred.await(sealed);
+        });
+      },
+      awaitSealRequest() {
+        return Deferred.await(sealRequest);
+      },
+      completeSeal(value) {
+        return exactlyOnce(
+          Deferred.succeed(sealed, value),
+          "Assert-first Attempt seal was completed twice",
+        );
+      },
+      failSeal(error) {
+        return Deferred.fail(sealed, error).pipe(Effect.asVoid);
+      },
+    };
+
+    // This fallback is intentionally after the worker is scoped. Attempt's
+    // more specific finalizer runs first and supplies timeout/interruption
+    // detail; this one closes any exceptional construction path.
+    yield* Effect.addFinalizer((exit) =>
+      closeEffectRequests(
+        Exit.isFailure(exit) && Cause.isInterruptedOnly(exit.cause)
+          ? new AssertionAuthoringClosedErrorV1("attempt-interrupted")
+          : closeReason(),
+      ));
+    return Object.freeze(bridge);
+  });
 }

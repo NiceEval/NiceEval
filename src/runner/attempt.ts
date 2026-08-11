@@ -43,7 +43,7 @@ import {
   type SealedAttemptAssertionsV1,
 } from "./assertions.ts";
 import {
-  createAssertFirstAttemptBridgeV1,
+  makeAssertFirstAttemptBridgeV1,
   type AssertFirstAttemptBridgeV1,
   type AttemptAuthorCompletionV1,
 } from "./assert-first-bridge.ts";
@@ -499,31 +499,9 @@ export function runAttemptEffect<
       // (Ctrl+C 中断外层 Sample 时仍是 stop,照常清理)。是否可留存只读 physical plan
       // 的中性 retention 能力；不在 runner 里按 provider 名或旧声明结构分支。
       let disposition: "stop" | "keep" = "stop";
-      const assertFirst = createAssertFirstAttemptBridgeV1<unknown>();
-      // The bridge is the only Promise → Effect hand-off in this Attempt.
-      // It is forked into this Scope, so every requested evaluator or runner
-      // operation shares the Attempt cancellation and cannot outlive it.
-      yield* Effect.forkScoped(
-        Effect.forever(
-          Effect.tryPromise((requestSignal) => assertFirst.awaitEffectRequest(requestSignal)).pipe(
-            Effect.flatMap((request) => request.effect.pipe(
-              Effect.exit,
-              Effect.tap((completion) => Effect.sync(() => {
-                assertFirst.completeEffectRequest(
-                  request,
-                  Exit.isSuccess(completion)
-                    ? { _tag: "succeeded", value: completion.value }
-                    : { _tag: "failed", error: Cause.squash(completion.cause) },
-                );
-              })),
-            )),
-          ),
-        ).pipe(
-          Effect.catchAllCause((cause) =>
-            Cause.isInterruptedOnly(cause) ? Effect.interrupt : Effect.void,
-          ),
-        ),
-      );
+      // The bridge owns its Queue worker inside this Attempt Scope. Promise
+      // code only offers work; no internal module starts a second runtime.
+      const assertFirst = yield* makeAssertFirstAttemptBridgeV1<unknown>();
       // 退避重试(runtime.ts → retry.ts)期间临时归还这个名额:被限流的 provider 只是在
       // setTimeout 里睡觉,不该攥着 sandboxSem 的槽位陪跑,不然一批 429 能把整体并发拖成个位数。
       const provisionSlot = {
@@ -827,11 +805,11 @@ export function runAttemptEffect<
       // makes a detached author continuation fail by name while preserving the
       // already declared entries for the finalizer's declaration-order seal.
       yield* Effect.addFinalizer((exit) =>
-        Effect.sync(() => {
+        Effect.suspend(() => {
           const interrupted = timedOut || (
             Exit.isFailure(exit) && Cause.isInterruptedOnly(exit.cause)
           );
-          assertFirst.closeEffectRequests(
+          return assertFirst.closeEffectRequests(
             new AssertionAuthoringClosedErrorV1(
               interrupted ? "attempt-interrupted" : "attempt-sealed",
             ),
@@ -889,10 +867,7 @@ export function runAttemptEffect<
         ),
       );
 
-      const contextExit = yield* Effect.exit(Effect.tryPromise({
-        try: () => assertFirst.awaitContext(signal),
-        catch: (error) => error,
-      }));
+      const contextExit = yield* Effect.exit(assertFirst.awaitContext());
       if (Exit.isFailure(contextExit)) {
         if (Cause.isInterruptedOnly(contextExit.cause)) return yield* Effect.interrupt;
         return yield* Fiber.join(bodyFiber);
@@ -910,7 +885,7 @@ export function runAttemptEffect<
       });
       const authorExit = yield* Effect.exit(author);
       if (Exit.isSuccess(authorExit)) {
-        yield* Effect.sync(() => assertFirst.completeAuthor({ _tag: "succeeded" }));
+        yield* assertFirst.completeAuthor({ _tag: "succeeded" });
       } else {
         if (Cause.isInterruptedOnly(authorExit.cause)) return yield* Effect.interrupt;
         const failure = Cause.failureOption(authorExit.cause);
@@ -920,22 +895,17 @@ export function runAttemptEffect<
             ? { _tag: "stopped" }
             : { _tag: "failed", error: failure.value }
           : { _tag: "defect", cause: Option.isSome(defect) ? defect.value : authorExit.cause };
-        yield* Effect.sync(() => assertFirst.completeAuthor(completion));
+        yield* assertFirst.completeAuthor(completion);
       }
 
       // The declared author callback has returned. A detached continuation may
       // still hold a handle, but it cannot enqueue a new control barrier while
       // this Attempt moves to its single ordered seal.
-      yield* Effect.sync(() => {
-        assertFirst.closeAssertionRequests(
-          new AssertionAuthoringClosedErrorV1("attempt-sealing"),
-        );
-      });
+      yield* assertFirst.closeAssertionRequests(
+        new AssertionAuthoringClosedErrorV1("attempt-sealing"),
+      );
 
-      const sealRequestExit = yield* Effect.exit(Effect.tryPromise({
-        try: () => assertFirst.awaitSealRequest(signal),
-        catch: (error) => error,
-      }));
+      const sealRequestExit = yield* Effect.exit(assertFirst.awaitSealRequest());
       if (Exit.isFailure(sealRequestExit)) {
         if (Cause.isInterruptedOnly(sealRequestExit.cause)) return yield* Effect.interrupt;
         return yield* Fiber.join(bodyFiber);
@@ -953,18 +923,18 @@ export function runAttemptEffect<
         ),
       );
       if (Exit.isSuccess(sealExit)) {
-        yield* Effect.sync(() => assertFirst.completeSeal(sealExit.value));
+        yield* assertFirst.completeSeal(sealExit.value);
       } else {
         if (Cause.isInterruptedOnly(sealExit.cause)) return yield* Effect.interrupt;
         const failure = Cause.failureOption(sealExit.cause);
         const defect = Cause.dieOption(sealExit.cause);
-        yield* Effect.sync(() => assertFirst.failSeal(
+        yield* assertFirst.failSeal(
           Option.isSome(failure)
             ? failure.value
             : Option.isSome(defect)
               ? defect.value
               : Cause.squash(sealExit.cause),
-        ));
+        );
       }
       const bodyResult = yield* Fiber.join(bodyFiber);
 
@@ -1653,8 +1623,8 @@ async function runAttemptBody(
     let error: AttemptError | undefined;
     let skipReason: string | undefined;
     try {
-      assertFirst.offerContext(context);
-      const author = await assertFirst.awaitAuthor(signal);
+      await assertFirst.requestEffect(assertFirst.offerContext(context));
+      const author = await assertFirst.requestEffect(assertFirst.awaitAuthor());
       if (author._tag === "failed") throw author.error;
       if (author._tag === "defect") throw author.cause;
     } catch (e) {
@@ -1729,13 +1699,13 @@ async function runAttemptBody(
     const usage = state.manager.usage;
     const facts = deriveRunFacts(events);
     if (!skipReason) enterPhase("assertions.evaluate");
-    const sealedAssertions = await assertFirst.requestSeal({
+    const sealedAssertions = await assertFirst.requestEffect(assertFirst.requestSeal({
       runtime: state.assertions,
       options: {
         execution: error === undefined ? "completed" : "errored",
         explicitlySkipped: skipReason !== undefined,
       },
-    }, signal);
+    }));
     const verdict = sealedAssertions.verdict.state;
 
     // 收 OTLP trace:给最后一批导出留点落地时间,再 collect(空则不挂)。
@@ -1860,14 +1830,14 @@ async function runAttemptBody(
     const error = errorFromThrown(e, getPhase(), res.attemptTimeout);
     // If setup failed before Context construction, release the outer Effect
     // boundary instead of leaving it waiting for a Context that cannot exist.
-    assertFirst.failBeforeContext(e);
+    await assertFirst.requestEffect(assertFirst.failBeforeContext(e));
     let sealed: SealedAttemptAssertionsV1 | undefined;
     if (assertionState !== undefined) {
       try {
-        sealed = await assertFirst.requestSeal({
+        sealed = await assertFirst.requestEffect(assertFirst.requestSeal({
           runtime: assertionState.assertions,
           options: { execution: "errored" },
-        }, signal);
+        }));
       } catch {
         // The outer Effect branch owns attachment/seal failures. Keep this
         // fallback as an execution error without inventing another runtime.
