@@ -104,10 +104,14 @@ export 只写这个 execution 的既有结果、当前 host-data、downloads、m
 |---|---|---|---|
 | 未请求的坏 Attachment | 不读取、不影响。 | 不读取、不影响。 | 不读取、不影响。 |
 | requested `unavailable` | 显示不可用。 | 对应 consumer + problems surface 显示。 | 成功导出并显式显示。 |
+| requested `migration-required` | 提示运行 `niceeval migrate`。 | 对应 consumer + problems surface 显示迁移提示。 | 成功导出并显式显示迁移提示。 |
+| requested `migration-unavailable` | 只显示原因，不提示迁移命令。 | 对应 consumer + problems surface 显示原因。 | 成功导出并显式显示原因。 |
 | requested `unsupported` | 显示 schema/media type issue。 | 对应 consumer + problems surface 显示。 | 成功导出并显式显示。 |
 | requested `invalid` / partial | 按 completeness 形成 data-unavailable 或局部结果。 | 发布新 revision并显示问题。 | 成功导出并显式显示。 |
 | consumer/projector defect | 显示 execution-failed。 | 发布新 revision、局部显示并保留其它页面。 | 整体不发布。 |
 | rebuild failure | 不适用。 | 保留最后一个成功 revision。 | 不适用。 |
+
+`migration-required` 与 `migration-unavailable` 在呈现中不能混淆：只有前者提示运行 `niceeval migrate`；后者表示明确没有无损 converter，只呈现 reason，不能反复提示迁移命令。
 
 命令只把当前 Report definition 声明的 inputs 视为依赖。动态 PageFamily 可以按这些已经形成的 typed values 展开 routes，但不能追加 I/O。
 

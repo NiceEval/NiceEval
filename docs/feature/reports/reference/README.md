@@ -5,7 +5,7 @@
 Reports 的定稿契约由以下页面拥有：
 
 - [README](../README.md)：功能范围与心智模型。
-- [Architecture](../architecture.md)：输入方向、通道状态和静态站规则。
+- [Architecture](../architecture.md)：输入方向、Attachment 状态和静态站规则。
 - [Library](../library.md)：公开类型。
 - [CLI](../cli.md)：用户命令。
 

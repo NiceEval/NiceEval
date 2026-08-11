@@ -74,4 +74,4 @@ Page、Chart、terminal text 与 Download 消费同一个 `ReportCalculationResu
 - [Library](library.md#calculation)：作者 API 与结果类型。
 - [Architecture](architecture.md#completeness-与局部隔离)：局部状态。
 - [比较质量与成本](use-case/比较质量与成本.md)：比较 Report。
-- [核对通道完整度](use-case/核对通道完整度.md)：partial 的完整路径。
+- [核对 RecordAttachment 完整度](use-case/核对RecordAttachment完整度.md)：partial 的完整路径。

@@ -1,4 +1,4 @@
-# 核对通道完整度
+# 核对 RecordAttachment 完整度
 
 团队要知道一个 Report 是否基于完整的命令检查数据，而不是把有值的 Attempt 当成全部 Attempt。
 
@@ -8,7 +8,7 @@
 
 `--latest` 选择每个 Experiment 的最新 published Run。`AnalysisSample` 随后保留每个 expected slot，因此这张页的分母在 Calculation 开始前已经固定为 100。该分母只是 Sample-wide 的 slot denominator；页面上显示的 `observed` / `denominator` 由 Calculation value 返回。
 
-## 声明 `commands.checked`
+## 声明 `commands.checked` projection
 
 Report 通过 `attemptSlotProjection(commandsCheckedProjector)` 声明每个 Sample slot 的 logical access，并把它放进 Calculation 的 `inputs`。宿主保留 excluded、not-recorded 与 core-invalid entries；included slot 定位为 Attempt owner 和 `ProjectedRecordAttachmentResult`，持久采集完整度与解码完整度分别保留。
 
@@ -30,7 +30,7 @@ const commandChecks = defineCalculation({
     {
       state: "available",
       value: { count: 20, observed: 20, denominator: 100 },
-      inputState: { state: "partial" },
+      dataState: { state: "partial" },
     }
 
 页面写 `20 / 100 · partial`。它不把 20 显示成完整数量，也不把 20 当成新的分母。
@@ -58,6 +58,7 @@ const releaseGate = defineCalculation({
 |---|---|
 | `unavailable` | 写明未采集或不适用。 |
 | `migration-required` | 写明需要 `niceeval migrate`。 |
+| `migration-unavailable` | 写明没有无损 converter，Attachment 不能迁移到当前格式；不提示再次运行 `niceeval migrate`。 |
 | `unsupported` | 写明当前 reader 不支持 `commands.checked`。 |
 | `invalid` | 显示该 Attachment 的具名 issue。 |
 

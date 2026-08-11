@@ -46,7 +46,9 @@ PageFamily 只能从已声明的 projected / calculated 内存值展开 route，
 
 每个直接消费 projection 的 Calculation、Page、PageFamily 或 Download 声明 `allow-partial` 或 `require-complete`。未请求的坏 Attachment 不读取也不影响 execution。
 
-Recorded-data problem（unavailable、migration-required、unsupported、invalid、partial collection）允许成功呈现，并进入不可关闭的 problems surface。projector / 作者 callback defect 是该 consumer 的 execution problem，其它页面继续；static export 对任一 execution problem fail closed。
+Recorded-data problem 允许成功呈现，并进入不可关闭的 problems surface。它包括 unavailable、migration-required、migration-unavailable、unsupported、invalid 与 partial collection。projector / 作者 callback defect 是该 consumer 的 execution problem，其它页面继续；static export 对任一 execution problem fail closed。
+
+只有 `migration-required` 提示运行 `niceeval migrate`；`migration-unavailable` 只呈现原因，不提示迁移命令。
 
 ## 一次 execution、热重载与静态分享
 
