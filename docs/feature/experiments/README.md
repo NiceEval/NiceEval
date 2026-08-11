@@ -21,7 +21,7 @@ experiments/  # 怎么跑 —— 运行矩阵:agent × model × attempts over �
 - **跨 agent / 跨配置对比是一等公民。**
   每个实验文件声明一个配置；报告只比较 `AnalysisSample` 已经选好的 Run 与 Attempt，不在页面打开时另选结果。
 
-实验文件改名会改变 `experimentId`。需要采用已有 Attempt 时，使用[实验改名与 Run 采用](rename.md)建立 accepted Member，并保存改名上下文。
+实验文件改名会改变 `experimentId`。需要采用已有 Attempt 时，使用[实验改名与 Run 采用](rename.md)建立 reference Member，并在 membership-provenance 保存 accepted 上下文。
   目录只组织源码、生成 id 和支持 CLI 前缀选择。
 
 ## 与 Record 的边界
@@ -29,12 +29,12 @@ experiments/  # 怎么跑 —— 运行矩阵:agent × model × attempts over �
 `<project>/.niceeval/record/` 是跨 Invocation、Experiment 与 Run 的 [Record](../record/README.md)。
 Experiment 只提供运行配置；Runner 在一次 Invocation 中为每个选中的 Experiment 建立一个 Run。
 
-当前 Project Target 与本次 policy 先进入 [execution projector](cache.md)。projector 从 Record 事实得到 `reuse | gap`；planner/scheduler 只执行 gap。局部执行是本次 projection 的结果，Record 不保存“需要补跑”或“当前可复用”。
+当前 Project Target 与本次 policy 先进入 [reuse planning](cache.md)。reuse planning 从 Record 事实得到 `reuse | gap`；planner/scheduler 只执行 gap。局部执行是本次 reuse planning 的结果，Record 不保存“需要补跑”或“当前可复用”。
 
-Run 的 expected membership 定义本次分母。executed、carried 或 accepted Member 把每个 slot 连接到一个 Attempt；Attempt 永远保留实际执行它的 origin Run。
+Run 的 expected membership 定义本次分母。Member 把每个 slot 连接到一个精确 Attempt；`origin | reference` 由关系派生，executed/carried/accepted 等原因属于 actions provenance。Attempt 永远保留实际执行它的 origin Run。
 因此 locator 始终由同一个完整 `attemptId` 表达，不会因采用动作而改变。
 
-Invocation 有 `invocationId`，用于关联瞬时进度与最终 receipt。Run 关系由 receipt 的 `runIds` 表达；需要落盘 provenance 时使用可选 Run-owned 通道，不扩张 Run 核心。
+Invocation 有 `invocationId`，用于关联瞬时进度与最终 receipt。Run 关系由 receipt 的 `runIds` 表达；mandatory Run-owned `niceeval.run-provenance/v1` 保存可离线读取的 invocation provenance，但不扩张 Run 核心。
 一次 Invocation 可以产生零到多个 Run，每个 Run 恰好属于一个 Experiment。
 
 ## `defineExperiment` 的形状
@@ -47,7 +47,7 @@ interface EvalDescriptor {
   id: string;
   description?: string;
   tags: readonly string[];
-  evaluationKind: "pass" | "points";   // 题型:defineEval → "pass",defineScoreEval → "points"
+  evaluationKind: "pass" | "score";   // 题型:defineEval → "pass",defineScoreEval → "score"
   metadata?: Readonly<Record<string, JsonValue>>;
 }
 
@@ -88,11 +88,12 @@ export default defineExperiment({
 
 只给报告归类的值，例如「这格用的记忆机制是 mempal」，写入 `labels`。
 Agent 与 Eval 看不见它，改它不让已有 Attempt 失去采用资格。
-再次运行会以当前 labels 建立新 Run，并通过 carried Member 采用已有 Attempt。
+再次运行会以当前 labels 建立新 Run，并通过 reference Member 采用已有 Attempt；形成原因写入 membership provenance。
 
 两者都是实验作者写下的**声明**。
-运行后才存在的值，例如 `setup` 起出的隧道 URL 或服务端报回的版本，两个袋子都不进；使用 `ctx.fact()` 上报为运行观测。
-三个家的判据按场景查[用例手册 · flags / labels / facts 放哪个](use-case/实验值归属/);声明与消费见 [Library · labels](library.md#labels声明归类坐标不进运行时)与[运行时坐标不进配置](library.md#运行时坐标不进配置三个家)。
+运行后才存在的值，例如 `setup` 起出的隧道 URL 或服务端报回的版本，两个袋子都不进。它们通过 producer-owned typed Channel 保存为运行观测。
+
+三个家的判据按场景查[用例手册 · 实验值归属](use-case/实验值归属/)。声明与消费见 [Library · labels 与运行时观测](library.md#labels-与运行时观测)。
 
 `maxConcurrency` 是本 Invocation 内的**实验并发限制**:只让该实验的 Attempt 排队,同批其它实验照常按全局并发跑。
 它可以表达一次运行内严格串行、严格重试或只维护 N 个可复用 Sandbox，但不会因为另一个终端也选了同一 Experiment 而共享名额。

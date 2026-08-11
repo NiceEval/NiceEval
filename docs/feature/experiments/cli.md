@@ -22,7 +22,7 @@ niceeval exp <experiment-prefix> --dry [--json]
 
 ### `--dry`
 
-`--dry` 用 lock-free frozen reader 运行 `project-target/v1`，展示 policy identity、effective options，以及每个目标成员的 reuse 或 gap：
+`--dry` 用取得 shared maintenance lease 的 frozen reader 运行 `project-target/v1`，展示 policy identity、effective options，以及每个目标成员的 reuse 或 gap：
 
 ```text
 PLAN
@@ -30,7 +30,7 @@ compare/codex  memory/commit0  ordinal 0  reuse/carried @01J8ZK3M6P4T7V9X2C5N8QW
 compare/codex  memory/commit0  ordinal 1  gap: identity-mismatch
 ```
 
-projector 先要求受支持的 eligibility schema 与匹配的 `reuseContract` domain，再比较 input/config identity。缺失、损坏、不支持或 domain 不同都形成带真实 issues 的具名 gap；不会猜成“从未运行”。`--dry` 不建立 Invocation、不写 Record，也不取得 writer lock。
+reuse planning 先要求受支持的 eligibility schema 与匹配的 `reuseContract` domain，再比较 input/config identity。缺失、损坏、不支持或 domain 不同都形成带真实 issues 的具名 gap；不会猜成“从未运行”。`--dry` 不建立 Invocation、不写 Record，也不取得 writer lock。
 
 ## `niceeval accept`
 
@@ -39,7 +39,7 @@ niceeval accept @01J8ZK3M6P4T7V9X2C5N8QW0RY
 niceeval accept @01J8ZK3M6P4T7V9X2C5N8QW0RY @123456789ABCDEFGHJKMNPQRST
 ```
 
-accept 用 `explicit-adoption/v1` 对全部 locator 与当前 target 做完整预检。任一项失败都零业务写入，不能降级成 execution gap。通过后为关联 Experiment 建立 Run，并用 `accepted` Member 引用源 Attempt。配置差异、policy identity 和操作者理由进入 Run 的 `niceeval.actions` 通道；执行事实不复制。
+accept 用 `explicit-adoption/v1` 对全部 locator 与当前 target 做完整预检。任一项失败都零业务写入，不能降级成 execution gap。通过后为关联 Experiment 建立 Run，用 reference Member 引用源 Attempt，并在 `niceeval.membership-provenance` 保存 accepted、配置差异、policy identity 与操作者理由；执行事实不复制。
 
 | 错误 | 反馈 |
 |---|---|
@@ -58,7 +58,7 @@ Runner 从当前进程内的事件流维护 TTY 面板：progress 可以替换�
 |---|---|---|
 | counters、active Attempt、短 detail | 更新 | 不单独保存 |
 | `progress()` | 合并或丢弃 | 不保存 |
-| diagnostic、fact、phase event | 显示 | 写入相应事件通道 |
+| diagnostic、运行时观测、phase event | 显示 | 写入相应事件通道 |
 | assertion、Verdict、usage | 显示摘要 | 写入具名 Attempt 通道 |
 | Invocation 结束 | 显示终态 | API 返回 receipt |
 
@@ -96,7 +96,7 @@ interface InvocationReceipt {
 }
 ```
 
-receipt 不复制 locator、Verdict、usage、cost 或 Attempt 计数。需要这些值时，以 `runIds` 运行 `explicit-runs/v1` analysis projector，或调用 `niceeval show --run <runId>`。
+receipt 不复制 locator、Verdict、usage、cost 或 Attempt 计数。需要这些值时，以 `runIds` 运行 `explicit-runs/v1` analysis selection，或调用 `niceeval show --run <runId>`。
 
 ## `--json`
 

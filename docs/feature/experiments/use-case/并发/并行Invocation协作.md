@@ -22,7 +22,7 @@ error: Record writer is busy: .niceeval/record
 fix: wait for the active writer, or choose another --record root
 ```
 
-B 不等待、不认领剩余 Eval、不读取 A 的 local build，也不在 A 完成后自动重试。`show`、`view` 或 `exp --dry` 可以同时打开 lock-free reader；它们只看到 A 已经原子发布的完整 Run。
+B 不等待、不认领剩余 Eval、不读取 A 的 local build，也不在 A 完成后自动重试。`show`、`view` 或 `exp --dry` 可以同时打开取得 shared maintenance lease 的 reader；它们只看到 A 已经原子发布的完整 Run。
 
 ## 外部共享状态
 

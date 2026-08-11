@@ -2,7 +2,7 @@
 
 Experiment ID 由 `experiments/` 下的路径决定。改名会产生新的 `experimentId`；旧 Run 与 Attempt 保持原身份，不会被路径改写、移动或删除。
 
-`niceeval exp rename` 让操作者明确采用旧 Experiment 的已有 Attempt。它不复制执行事实，也不把 Attempt 改挂到新 Experiment；它为新 Experiment 建立 Run，并用 `accepted` Member 引用原 Attempt。改名理由进入 Run 的 `niceeval.actions` 通道。
+`niceeval exp rename` 让操作者明确采用旧 Experiment 的已有 Attempt。它不复制执行事实，也不把 Attempt 改挂到新 Experiment；它为新 Experiment 建立 Run，用 reference Member 引用原 Attempt，并在 Run 的 `niceeval.membership-provenance` 通道保存 `accepted` 与改名理由。
 
 ## 命令
 
@@ -28,9 +28,9 @@ rename 在写入前完成整批预检，任一不合格项都会让命令零写�
 
 ## 写入语义
 
-正式执行建立新的 Invocation，并为 `newId` 建立一个 Run。每个通过预检的成员产生一个 `accepted` Member，引用原 `attemptId`；原 Attempt 的 origin、locator、Verdict 和采集事实都不复制。
+正式执行建立新的 Invocation，并为 `newId` 建立一个 Run。每个通过预检的成员产生一个 reference Member，引用原 `{ originRunId, attemptId }`；对应 action 为 `accepted`。原 Attempt 的 origin、locator、Verdict 和采集事实都不复制。
 
-oldId、newId、当前 identity、差异摘要与操作者采用理由写入目标 Run 的 `niceeval.actions/v1` 通道，并以 `slotId`、`attemptId` 关联。这个通道只解释当时的决定，不持续认证源 Attempt；源 Attempt 已随 origin Run immutable，后续事实变化只能发布新 Run。
+oldId、newId、当前 identity、差异摘要与操作者采用理由写入目标 Run 的 `niceeval.membership-provenance/v1` 通道，并以 `slotId`、`attemptId` 关联。这个通道只解释当时的决定，不持续认证源 Attempt；源 Attempt 已随 origin Run immutable，后续事实变化只能发布新 Run。
 
 ## 输出与错误
 
@@ -51,10 +51,10 @@ oldId、newId、当前 identity、差异摘要与操作者采用理由写入目�
 
 ## 与 carry 和 accept 的边界
 
-| 动作 | Experiment identity | 采用条件 | Member |
+| 动作 | Experiment identity | 采用条件 | Core relation / action |
 |---|---|---|---|
-| carry | 不变 | identity 与资格自动满足 | `carried` |
-| accept | 不变 | 人明确接受具体 Attempt | `accepted` |
-| rename | 改变 | 人明确采用旧 Experiment 的具体 Attempt | `accepted` |
+| carry | 不变 | identity 与资格自动满足 | `reference / carried` |
+| accept | 不变 | 人明确接受具体 Attempt | `reference / accepted` |
+| rename | 改变 | 人明确采用旧 Experiment 的具体 Attempt | `reference / accepted` |
 
-三种动作都建立新的 Run membership，并保留同一个 Attempt identity。采用原因都进入 `niceeval.actions` 通道，而不是扩张 Member 核心。
+三种动作都建立新的 Run membership，并保留同一个 Attempt identity。采用原因都进入 `niceeval.membership-provenance` 通道，而不是扩张 Member 核心。

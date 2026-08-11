@@ -91,14 +91,47 @@ Issue，正式 score 仍有效。execution 或 transport error 使 Score grading
 
 ## Eval projection
 
-每次 Eval 结算都保留 execution outcome、按 Eval 类型计算的最终 projection，以及完整的
-`AssertionResult` 集合。Pass projection 有 Verdict 而没有 score；Score projection 有 `ScoreGrading`
-而没有 Verdict。结果如何落盘、传输或跨版本读取不属于 Assertion 架构。
+writer 对 ECMAScript `JSON.stringify(document)` 的紧凑 UTF-8 结果执行同一个 4 MiB 限制。越界时在 whole Run seal 前以 `record-input-invalid` 拒绝；外部损坏造成的越界或非法值成为同名 `ChannelProjectionResult.invalid`。
 
 ## 封口与 replay
 
 `.orStop()` 封口它的 entry。test settle 封口其余 entry。连续 measurement 在 Pass Eval 封口时若没有
 `atLeast`，就是作者错误；Score Eval 的 measurement 可以直接封口。
 
-任何读取面只解释 sealed projection。可重评分从 sealed Observation/ref graph 产生新的 immutable claim，
-绝不改写旧 claim；旧 AssertionResult 不能让任意 inline JavaScript value 自动重评。
+作者 API、matcher 名称、collector、memoization、channel 需求图、evaluation algorithm 和 `stopOnFailure` 都不进入这份 document。上层可以替换这些实现，只要 producer 继续写出同一冻结投影，Record reader 与标准 Report 就无需改变。
+
+`ReadPreserved(oldChannelFile, newReader)` 适用于任何历史 writer 产生、同时满足 FileValid、TransportValid 与 ContractValid 的 `niceeval.assertions/v1` channel file。外部编辑不是受支持的写入协议。
+
+新 reader 必须把它解码成 JSON 深等价的值。数组顺序有义，对象 key 顺序与 JSON 空白无义。
+
+`DisplayEquivalent(leftDecoded, rightDecoded, definition, runtime)` 只约束确定性的标准 Assertions projection。固定 fixture 使两份 decoded value 逐字段相等时，同一标准 requirement、Report definition 与 runtime 必须形成相等的 `PageModel` 和 `textAlternative`。
+
+show 与 view 消费同一份 `ReportExecution`。从旧 Record 重新 export 只承诺当前 exporter 能成功消费，不承诺导出目录逐 byte 相等，也不约束读取时间或随机源的用户自定义 Report。
+
+这项承诺从第一版 `niceeval.record/v1` writer 开始。实现时必须保存第一版 writer 产生的原始 fixture bytes；未来 reader 不能用未来 writer 重新生成 fixture 来替代跨代证明。
+
+未来若只是 payload 字段或限制变化，发布 `niceeval.assertions/v2` 并永久保留 `/v1` decoder 与标准 Attempt detail 消费入口；只有业务语义真正改变才换新的描述性 ChannelName。不能在同一个 schema ID 下接受两种 shape。
+
+## 数据归属
+
+Assertion collector 只消费调用方提供的值和已经交付的通道数据。它不打开 Record 路径，不读 ReportInput，也不生成报告页面。
+
+source 位置信息可选。存在时，`path` 与 `digest` 必须匹配 Attempt origin Run 的 `niceeval.sources/v1` entry；Report 经 origin Run 的该 Channel 读取快照，不读取当前 worktree。第三方包不写入项目源码内容。
+
+通道文件由 Attempt owner 在 whole Run 发布前写入，发布后属于 immutable Run。Sample 始终不读取业务通道；外部改动 bytes 不会得到 Record 的编辑、revision 或修复语义。
+
+## 与 Verdict 和 Reports 的关系
+
+producer 在内存中根据 assertion 求值结果、执行错误和 strict policy 形成 `niceeval.verdict/v1`，再分别写入两个独立通道。Verdict 规则由 [Verdict](../verdict/architecture.md) 单点定义。
+
+Sample 只保留 Attempt 核心和分母，不读取 assertion。标准 Attempt detail 的永久内建 requirement 让 composition adapter 把 Assertions `ChannelProjectionResult` 放进内部 ReportInput。
+
+Report 不能自行读取文件或重新计算 Attempt 业务状态。
+
+## 相关阅读
+
+- [Assertion 证据与完整性](architecture/evidence.md)
+- [Assertion 展示](library/display.md)
+- [Assertion Library](library.md)
+- [Verdict](../verdict/README.md)
+- [Record 通道](../record/architecture.md#channel-identity-与局部演进)

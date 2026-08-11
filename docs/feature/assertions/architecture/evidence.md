@@ -3,15 +3,17 @@
 完整的 Assertion 与不可用语义见 [Assertions](../README.md)。本页只规定 evidence 如何进入同一条
 `AssertionResult`。
 
-## evidence 不是默认值
+## 三个不同问题
 
-Assertion 读取的 snapshot、Judge material 和 evaluator 说明都属于 evidence。读取失败、传输失败或
-资料不完整时，结果是 `unavailable` 或 `errored`，不能合成为普通 `mismatched`、`score: 0` 或空 evidence。
+channel descriptor 的 `collection` 先说明 payload 是 `present` 还是 `absent`；present 再说明采集集合是 complete 还是带 reason 的 partial。reader 的 `ChannelProjectionResult` 另行说明本次解码是 complete、partial、unsupported 还是 invalid。payload 自己还可以声明 sampled、redacted、truncated 等语义 limitation。
 
-Usage Assertion 是唯一例外。只有 Agent 创建时已经声明 usage 不可用，`.ifCovered()` 才投影为
-`notApplicable`。一旦开始采集，采集失败仍是 `unavailable`。
+三者不能合并：
 
-## 脱敏与引用
+- 已采集的 JSONL 可能因未知 event 只得到 partial 解码。
+- 未采集和不适用由 descriptor `absent(reason)` 形成 `unavailable`，不是空数组。
+- 读取到损坏或缺失 channel 文件是 `invalid`。
+- 旧 reader 不支持某个 channel 是 `unsupported`。
+- collection/decoding complete 不能抹掉 payload 的 sampled/redacted limitation。
 
 `AssertionResult` 保留足够解释 evaluation 的脱敏 evidence、evaluator explanation 与 Judge rationale，
 并使用稳定引用，而不是携带 secret、原始凭据或不安全配置。
@@ -49,26 +51,7 @@ stdout / stderr 即使被截断，也不能让这些字段消失。未来读取�
 
 ## Scoped occurrence context
 
-`calledTool(...)`、`loadedSkill(...)` 等 scoped Assertion 是 `check(a, b)` 的特例：方法从 scope 取得
-normalized occurrences 作为 subject `a`，再用方法参数构造 evaluator `b`。它们必须保存 occurrence 的
-安全结构化 context，不能只保存 true / false 或匹配数量。
-
-| 数据 | 最小内容 |
-|---|---|
-| scope | Attempt、Session、Turn 或 vector-cut snapshot ref。 |
-| occurrence identity | operation / event id 与对应 event refs。 |
-| tool / skill context | name、脱敏 input、status、output 或 error refs、开始与结束事件。 |
-| matching summary | observed count、matched count 与 matched occurrence refs。 |
-| coverage | evaluator 检查的 evidence 通道是否完整。 |
-| limitations | input、output 或事件证据的 redacted、truncated 或 unavailable 状态。 |
-
-没有命中时仍保存 scope、coverage、observed count 与候选 occurrence refs。只有 evidence coverage 完整时，
-“没有调用”才是 `mismatched`；evidence coverage 不完整时必须是 `unavailable`。
-
-这些字段描述 NiceEval 归一化后的稳定 context，不要求保留 provider 私有对象或 secret。完整大型 output 可以
-由 evidence ref 表达；Assertion 侧只规定必须保留什么信息。
-
-## 读取面
-
-`show`、`view`、JSON、export 与 source 从同一份 evidence projection 解释结果。它们不重新读取 Sandbox、
-调用 Judge 或重新执行 Match。
+- [Assertions 架构](../architecture.md)
+- [Record Library · ChannelProjectionResult](../../record/library.md#channelprojectionresult)
+- [Verdict 规则](../../verdict/architecture.md)
+- [Adapter 证据](../../adapters/architecture/evidence.md)
