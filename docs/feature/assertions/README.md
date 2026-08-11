@@ -1,12 +1,13 @@
 # Assertions
 
-Assertion 是 NiceEval 的唯一评估单位。作者调用作者 API 时，NiceEval 立即登记一条
-Assertion；不会先创建中间评估对象，再由另一条 API 消费它。
+Assertion 是 Attempt 内规范化、可留档的检查事实。
+值 matcher、作用域检查、Sandbox 验证、资源上限和 Judge 都形成同一种 Assertion result。producer 在 whole Run 发布前把它写入 Attempt-owned `RecordAttachment`：名称为 `niceeval.assertions`，payload schema 为 `niceeval.assertions/v1`。这一层负责检查什么、证据是否完整以及当时的判断怎样落盘，不决定 Attempt 的 lifecycle 或最终 Verdict。
 
-这一页是 Assertion 语义的唯一完整规范入口。值比较、scope、Judge、两种 Eval、控制流、
-持久化与读取面都服从这里的定义。其它页面只补充专门用法并链接回本页。
+作者仍通过 assert-first API 登记检查。作者 API、matcher、collector 和求值顺序都不落盘。producer 把它们的内存结果归一成 `niceeval.assertions/v1` payload；Record 与标准 Report 只依赖该 `RecordAttachment` 的 owner、schema 和 payload，不依赖产生它的 API 或运行时类型。
 
-## 共同模型
+Assertions schema 独立于 Record Core 演进。发布相邻 payload schema 时，Attachment family 必须提供精确 converter，或明确声明 `not-losslessly-migratable`；详情见 [Architecture](architecture.md#attachment-schema-演进)。assert-first 作者模型的变化不要求修改 Record Core。
+
+这项稳定承诺从 `niceeval.assertions/v1` 首次发布开始。payload 的精确形状与跨代读取条件见 [Architecture](architecture.md#稳定-recordattachment-payload)。
 
 | 名称 | 含义 |
 |---|---|

@@ -32,8 +32,17 @@ turn.judge.autoevals.closedQA("说明是否清晰？")
   .label("说明质量");
 ```
 
-同一 Assertion 可同时配置 `.atLeast(n)` 与 `.score(n)`，evaluator 仍只运行一次。
-顺序可互换，两种配置都只更新同一 entry。
+   ```bash
+   npx niceeval exp compare --strict
+   ```
+
+5. `--strict` 下红掉的题就是质量退化清单,照常拿 locator 下钻;确认阈值和断言都可信后,把该断言改成 `.gate(x)`,从此不依赖 flag、任何模式都执法。
+
+## 边界
+
+- Gate 断言不受 `--strict` 影响,任何模式下不通过都 failed——`--strict` 只对带通过线的 soft 生效:打分断言的 `.atLeast(0.7)` 与 0/1 断言的 `.atLeast(1)` 都在此列。
+- 无参 `.soft()` 的纯留档断言在 `--strict` 下也只留档:没有线就没有「低于线」。
+- 断言评不了(judge 缺 key、证据 Attachment 不完整)是 `unavailable` 走 errored,不是 failed——`--strict` 不改变这条(见 [CLI](../cli.md))。
 
 ## 相关阅读
 

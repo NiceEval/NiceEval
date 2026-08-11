@@ -1,22 +1,82 @@
 # Assertions —— 架构
 
-完整语义在 [Assertions](README.md)。本页规定 entry、结果与两种 grading 的内部不变量。
+Assertion 是一次 Attempt 内规范化的检查事实。值 matcher、作用域检查、Sandbox 检查、资源限制和 Judge 都先形成 producer 内存结果，再由 producer 写入 Attempt-owned `RecordAttachment`。Attachment 名称是 `niceeval.assertions`，首个精确 payload schema 是 `niceeval.assertions/v1`。
 
 ## 一个 entry，一次 evaluation
 
-每次作者入口调用向 Attempt collector 登记一个 entry。entry 在调用时冻结 identity、subject snapshot、
-evaluator、callsite、source order 与 groupPath。handle 只能写尚未封口的 policy 槽。
-
 ```text
-explicit value + Match ──┐
-scope receiver ──────────┼─► registered Assertion entry ─► raw evaluation
-Judge recipe ────────────┤                 │                     │
-direct t.score ──────────┘                 ▼                     ▼
-                                   AssertionHandle         AssertionResult
+assert-first author API / matcher / collector / evaluation order
+                      ↓
+        producer 内存求值与 Verdict 折叠
+               ↙                 ↘
+niceeval.assertions Attachment  niceeval.verdict Attachment
+               ↓
+      标准 Attempt detail Report
 ```
 
-raw evaluation 可以在登记后启动，并只运行一次。`score`、`atLeast` 与 `orStop` 都复用这一次结果；
-它们不读取新 subject，也不重启 evaluator。
+## 稳定 RecordAttachment payload
+
+`niceeval.assertions/v1` 是 Attempt-owned `RecordAttachment` 的独立 `RecordAttachmentSchemaId`。它的 `application/json` payload 从 `niceeval.record/v1` 的第一次发布起冻结为以下 document：
+
+```ts
+type AssertionsDocument = {
+  entries: readonly AssertionEntry[];
+};
+
+type AssertionEntry = CheckEntry | DirectScoreEntry;
+
+type EntryContext = {
+  name: string;
+  groupPath: readonly string[];
+  detail?: string;
+  source?: {
+    path: string;
+    digest: string;
+    line: number;
+    column: number;
+  };
+};
+
+type CheckEntry = EntryContext & {
+  kind: "check";
+  decision:
+    | { kind: "gate"; threshold: number }
+    | { kind: "soft"; threshold: number }
+    | { kind: "observe" };
+  availability: "required" | "optional";
+  result:
+    | {
+        state: "available";
+        score: number;
+        expected?: string;
+        received?: string;
+        evidence?: string;
+      }
+    | {
+        state: "unavailable";
+        reason: string;
+        evidence?: string;
+      };
+  award:
+    | { kind: "none" }
+    | { kind: "conditional"; available: number };
+};
+
+type DirectScoreEntry = {
+  kind: "score";
+  name: string;
+  groupPath: readonly string[];
+  source?: {
+    path: string;
+    digest: string;
+    line: number;
+    column: number;
+  };
+  points: number;
+};
+```
+
+对象是精确对象，任何未知字段、缺失字段、错误联合或重复 object key 都使此 `RecordAttachment` invalid。条目按声明顺序保存；同名条目合法，由数组位置区分。对象 key 顺序在成功 JSON parse 后无义。
 
 ## 统一保存模型
 
@@ -45,14 +105,12 @@ recipe 是它的特殊化入口：receiver 和方法替作者取得 `a`，方法
 
 | 字段组 | 内容 |
 |---|---|
-| entry | 稳定 entry id、key、label、groupPath、source order。 |
-| subject | `a` 的安全结构化 snapshot 或能取得该内容的稳定 ref；包含实际输出或 occurrence context。 |
-| location | callsite 与 policy locations。 |
-| evaluator | `b` 的 identity、version 与完整安全 config。 |
-| evaluation | Boolean `matched`、有限 `[0,1]` measurement、finite `>=0` direct score、`unavailable` 或 `errored`。 |
-| evidence | subject 的 coverage、补充说明、共享 evidence refs 与 redacted / truncated / unavailable limitations。 |
-| policy | `score?`、`atLeast?` 与 `orStop?`。 |
-| projection | pass 或 score projection，以及 `scoreContribution?`、`condition?`、`stopTriggered?`。 |
+| gate 与最终通过线 | `decision.kind: "gate"` 与显式 threshold |
+| 带通过线的 soft | `decision.kind: "soft"` 与显式 threshold |
+| 不设通过线的纯观测 | `decision.kind: "observe"` |
+| required / optional | 对应的 `availability` |
+| 条件给分 / 直接给分 | conditional award / direct score entry |
+| `stopOnFailure` 与其它控制流 | 不写入此 Attachment |
 
 例如 `t.check(await runCommand(...), commandSucceeded())` 保存已求值 `CommandResult` 的安全内容或引用、
 `commandSucceeded` 的 evaluator config，以及 evaluation。`await` 只负责先取得 `a`，不形成第四种数据。
@@ -68,21 +126,11 @@ subject 字段与 limitations。secret 不进入任一字段。
 Pass projection 把 Boolean result 或 thresholded measurement 映射为 matched / mismatched，并由
 execution outcome 共同折叠 Attempt Verdict：
 
-| 优先级 | 条件 | Verdict |
-|---|---|---|
-| 1 | execution error，或参与 Pass grading 的 unavailable / errored | `errored` |
-| 2 | 任一 Boolean condition mismatched | `failed` |
-| 3 | 显式 skip，且没有更高优先级条件 | `skipped` |
-| 4 | 其余情形 | `passed` |
+所有限制都是 `niceeval.assertions/v1` 的 schema 契约，不能在同一个 schema decoder 中放宽。
 
 Score projection 只累计 contribution。正常 measurement 或 Boolean mismatch 不会使 score 失效。
 
-```ts
-type ScoreGrading =
-  | { readonly status: "scored"; readonly score: number; readonly stop?: StopCause }
-  | { readonly status: "unavailable" | "errored"; readonly partialScore: number; readonly issues: readonly Issue[] }
-  | { readonly status: "skipped" };
-```
+按 entries 声明顺序，以 ECMAScript Number 累加所有 direct points 与 conditional available，结果也必须有限。这条上限保证单个 Attempt 的标准 Assertions 分数聚合闭合；它不限制完整 Report semantic document 的总内存。
 
 只有已配置 `.score()` 的 Assertion、直接 `t.score()`，或调用 `.orStop()` 的 control Assertion
 出现 `unavailable` / `errored` 时，Score grading 才不可排名。不参与 score 的 Assertion 的同类问题只保留
@@ -91,40 +139,46 @@ Issue，正式 score 仍有效。execution 或 transport error 使 Score grading
 
 ## Eval projection
 
-writer 对 ECMAScript `JSON.stringify(document)` 的紧凑 UTF-8 结果执行同一个 4 MiB 限制。越界时在 whole Run seal 前以 `record-input-invalid` 拒绝；外部损坏造成的越界或非法值成为同名 `ChannelProjectionResult.invalid`。
+writer 对 ECMAScript `JSON.stringify(document)` 的紧凑 UTF-8 结果执行同一个 4 MiB 限制。越界时在 whole Run seal 前以 `record-input-invalid` 拒绝；外部损坏造成的越界或非法值成为此 Attachment 的 `RecordAttachmentRead.invalid`。
 
 ## 封口与 replay
 
 `.orStop()` 封口它的 entry。test settle 封口其余 entry。连续 measurement 在 Pass Eval 封口时若没有
 `atLeast`，就是作者错误；Score Eval 的 measurement 可以直接封口。
 
-作者 API、matcher 名称、collector、memoization、channel 需求图、evaluation algorithm 和 `stopOnFailure` 都不进入这份 document。上层可以替换这些实现，只要 producer 继续写出同一冻结投影，Record reader 与标准 Report 就无需改变。
+作者 API、matcher 名称、collector、memoization、证据依赖图、evaluation algorithm 和 `stopOnFailure` 都不进入这份 document。上层可以替换这些实现，只要 producer 继续写出同一冻结 payload，Record reader 与标准 Report 就无需改变。
 
-`ReadPreserved(oldChannelFile, newReader)` 适用于任何历史 writer 产生、同时满足 FileValid、TransportValid 与 ContractValid 的 `niceeval.assertions/v1` channel file。外部编辑不是受支持的写入协议。
+`niceeval.assertions/v1` 的读取只接受同时满足 FileValid、TransportValid 与 ContractValid 的历史 Attachment payload。外部编辑不是受支持的写入协议。
 
-新 reader 必须把它解码成 JSON 深等价的值。数组顺序有义，对象 key 顺序与 JSON 空白无义。
+支持该 schema 的 reader 必须把它解码成 JSON 深等价的值。数组顺序有义，对象 key 顺序与 JSON 空白无义。
 
-`DisplayEquivalent(leftDecoded, rightDecoded, definition, runtime)` 只约束确定性的标准 Assertions projection。固定 fixture 使两份 decoded value 逐字段相等时，同一标准 requirement、Report definition 与 runtime 必须形成相等的 `PageModel` 和 `textAlternative`。
+确定性的标准 Assertions projection 只读取已解码的 payload。固定 fixture 使两份 decoded value 逐字段相等时，同一标准 requirement、Report definition 与 runtime 必须形成相等的 `niceeval.report-document/v1` semantic document。
 
-show 与 view 消费同一份 `ReportExecution`。从旧 Record 重新 export 只承诺当前 exporter 能成功消费，不承诺导出目录逐 byte 相等，也不约束读取时间或随机源的用户自定义 Report。
+show、view 与 static export 都从同一份 semantic document 派生。它们消费同一份 `ReportExecution`；从旧 Record 重新 export 只承诺当前 exporter 能成功消费，不承诺导出目录逐 byte 相等，也不约束读取时间或随机源的用户自定义 Report。
 
-这项承诺从第一版 `niceeval.record/v1` writer 开始。实现时必须保存第一版 writer 产生的原始 fixture bytes；未来 reader 不能用未来 writer 重新生成 fixture 来替代跨代证明。
+这项承诺从 `niceeval.assertions/v1` writer 开始。实现时必须保存该版本 writer 产生的原始 fixture bytes；未来 reader 不能用未来 writer 重新生成 fixture 来替代跨代证明。
 
-未来若只是 payload 字段或限制变化，发布 `niceeval.assertions/v2` 并永久保留 `/v1` decoder 与标准 Attempt detail 消费入口；只有业务语义真正改变才换新的描述性 ChannelName。不能在同一个 schema ID 下接受两种 shape。
+## Attachment schema 演进
+
+`niceeval.assertions/v1` 是独立的 Attempt `RecordAttachment` schema，不继承 Record Core 的版本或 decoder 承诺。assert-first 作者模型、matcher 和求值顺序变化时，只要这份 payload 的事实含义不变，就不改 Attachment schema，也不改 Record Core。
+
+payload shape、media type、closedness 或解释变化时，发布同名的相邻 schema，例如 `niceeval.assertions/v2`。family 必须为 `v1 → v2` 二选一：提供只读取精确旧 payload 的无损 converter，或声明 `not-losslessly-migratable`。converter 不读取当前 Eval、源码、网络、进程变量或新的求值结果。
+
+普通 reader 不自动迁移。不可无损迁移时，`niceeval migrate` 保留旧 Attachment bytes 并报告 warning，不补默认值、不删除历史事实。业务 family 本身改变时才发布新的 Attachment name；同一个 schema ID 绝不接受两种 shape。
 
 ## 数据归属
 
-Assertion collector 只消费调用方提供的值和已经交付的通道数据。它不打开 Record 路径，不读 ReportInput，也不生成报告页面。
+Assertion collector 只消费调用方提供的值和 producer 已归一的运行数据。它不打开 Record 路径，不读取 Report 的 projection 或 Calculation，也不生成报告页面。
 
-source 位置信息可选。存在时，`path` 与 `digest` 必须匹配 Attempt origin Run 的 `niceeval.sources/v1` entry；Report 经 origin Run 的该 Channel 读取快照，不读取当前 worktree。第三方包不写入项目源码内容。
+source 位置信息可选。存在时，`path` 与 `digest` 必须匹配 Attempt origin Run 的 `niceeval.sources/v1` Attachment entry；Report 经声明的 origin-Run projection 读取快照，不读取当前 worktree。第三方包不写入项目源码内容。
 
-通道文件由 Attempt owner 在 whole Run 发布前写入，发布后属于 immutable Run。Sample 始终不读取业务通道；外部改动 bytes 不会得到 Record 的编辑、revision 或修复语义。
+Attachment payload 由 Attempt owner 在 whole Run 发布前写入，发布后属于 immutable Run。Sample 始终不读取业务 Attachment；外部改动 bytes 不会得到 Record 的编辑、revision 或修复语义。
 
 ## 与 Verdict 和 Reports 的关系
 
-producer 在内存中根据 assertion 求值结果、执行错误和 strict policy 形成 `niceeval.verdict/v1`，再分别写入两个独立通道。Verdict 规则由 [Verdict](../verdict/architecture.md) 单点定义。
+producer 在内存中根据 assertion 求值结果、执行错误和 strict policy 形成 `niceeval.verdict/v1`，再分别写入两个独立 Attempt Attachment。Pass Eval 与 Score Eval 的每个 Attempt 都写入四态 Verdict；Score Eval 另外写入独立的 `niceeval.score/v1` Attachment。Assertions 的 `points` 只是题内挣分，绝不形成第三种 `evaluationKind`。Verdict 规则由 [Verdict](../verdict/architecture.md) 单点定义。
 
-Sample 只保留 Attempt 核心和分母，不读取 assertion。标准 Attempt detail 的永久内建 requirement 让 composition adapter 把 Assertions `ChannelProjectionResult` 放进内部 ReportInput。
+Sample 只保留 Attempt 核心和分母，不读取 assertion。标准 Attempt detail 通过 `RecordProjection` 声明它需要的 Assertions Attachment，并把投影值包装进闭合的 Report semantic document。
 
 Report 不能自行读取文件或重新计算 Attempt 业务状态。
 
@@ -134,4 +188,4 @@ Report 不能自行读取文件或重新计算 Attempt 业务状态。
 - [Assertion 展示](library/display.md)
 - [Assertion Library](library.md)
 - [Verdict](../verdict/README.md)
-- [Record 通道](../record/architecture.md#channel-identity-与局部演进)
+- [RecordAttachment](../record/architecture.md#recordattachment)

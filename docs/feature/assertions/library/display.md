@@ -1,7 +1,6 @@
 # Assertions —— display
 
-读取语义以 [Assertions](../README.md) 与 [Architecture](../architecture.md) 为准。本页规定同一 projection
-在用户界面的名称与最小信息。
+`exp`、`show` 与 `view` 呈现同一份 assertion、Verdict 和诊断值。终端反馈只服务当前进程；frozen reader 形成的 Sample 保留核心和分母，Report 的 `RecordProjection` 再声明需要读取的业务 Attachment。
 
 ## Pass Eval
 
@@ -44,11 +43,11 @@ source 信息存在时，详情页链接到项目相对路径和行列。没有 
 
 `stopOnFailure` 是 producer 控制流，不进入稳定投影。若停止后续测试本身需要解释，由独立 diagnostic 或 Run 级观测表达，Assertion 详情不从条目反推。
 
-## Turn、conversation 与相关通道
+## Turn、conversation 与相关 Attachment
 
-Turn 详情来自 conversation channel。它显示用户输入、Agent 文本、tool、阶段和可用的 usage；每项都保留自己的采集与解码状态。
+Turn 详情来自 conversation Attachment。它显示用户输入、Agent 文本、tool、阶段和可用的 usage；每项都保留自己的采集与解码状态。
 
-diff、telemetry、timing 和 diagnostic 使用各自 channel 的数据。页面只能呈现 ReportInput 已交付的事实，不能为展开详情重新读取 Record 或请求网络。
+diff、telemetry、timing 和 diagnostic 使用各自 Attachment 的数据。页面只能呈现声明的 projected values 与 Calculation results，并把它们包装成闭合的 `niceeval.report-document/v1` semantic document；展开详情不能重新读取 Record 或请求网络。
 
 ## 状态文字
 
@@ -56,7 +55,7 @@ diff、telemetry、timing 和 diagnostic 使用各自 channel 的数据。页面
 |---|---|
 | partial | 显示 observed、denominator 和 partial。 |
 | unavailable | 说明未采集或不适用的原因。 |
-| unsupported | 说明当前 reader 不支持对应 channel。 |
+| unsupported | 说明当前 reader 不支持对应 Attachment schema。 |
 | invalid | 显示具名 issue，并让需要它的详情失败。 |
 
 颜色、图标或悬停提示不能是这些状态的唯一表达。图表必须提供相同读数的文字或表格。
