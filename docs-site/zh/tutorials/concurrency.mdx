@@ -44,7 +44,7 @@ import { Picker, Schedule } from '/snippets/widgets.jsx';
       tab: "起沙箱和装环境占大头",
       lead: "让多条 Attempt 共用 Sandbox",
       why: [
-        <>创建 Sandbox 与 Sandbox 级 <code>setup</code> 占了大部分墙钟、且整批评估都能互换顺序时，在 Experiment 里声明 <code>sandboxReuse: true</code>。只有几组兼容任务需要固定顺序时，改用<a href="/zh/tutorials/eval-groups">评估组</a>，避免把其它任务一起降成串行。</>,
+        <>创建 Sandbox 与 Sandbox 级 <code>setup</code> 占了大部分墙钟、且整批评估都能互换顺序时，在 Experiment 里声明 <code>sandboxReuse: true</code>。只有几组兼容任务需要各自复用时，改用<a href="/zh/tutorials/eval-groups">评估组</a>，避免把其它任务一起降成串行。</>,
         <>工作目录之外的状态会留下，见<a href="/zh/tutorials/sandbox-reuse">复用 Sandbox</a>；结果仍按指纹沿用。稳定的重依赖应该先烘进镜像或模板。</>,
       ],
     },
@@ -164,15 +164,15 @@ const fixtures = new WeakMap<Sandbox, { repoUrl: string; destroy(): Promise<void
 
 如果这些 Attempt 本来就必须按顺序读写同一份业务状态，不要用 `WeakMap` 掩盖语义，直接把实验降到 `maxConcurrency: 1`。
 
-## 让相关评估按声明顺序复用 Sandbox
+## 让相关评估按组复用 Sandbox
 
-只有几组评估需要固定顺序时，用 `defineEvalGroup()` 显式列出成员。每个组同时只派发一条
+只有几组评估需要共享环境时，用 `defineEvalGroup()` 显式列出兼容成员。每个组同时只派发一条
 Attempt，并复用至多一台 Sandbox；不同组和未分组评估用例继续竞争剩余并发位。你不需要把
 整个 Experiment 设成 `maxConcurrency: 1`。
 
-`evals` 数组就是组内顺序。`attempts > 1` 时，NiceEval 先跑完第一个成员需要真实派发的
-各次 Attempt，再进入第二个成员。完整目录、Experiment 写法和 `--dry` 输出见
-[用评估组按顺序复用 Sandbox](/zh/tutorials/eval-groups)。
+`evals` 数组只声明成员，不声明业务顺序。Runner 按规范化 Eval ID 稳定串行；
+`attempts > 1` 时，同一成员需要真实派发的各次 Attempt 连续进入组内泳道。完整目录、
+Experiment 写法和 `--dry` 输出见[用评估组复用 Sandbox](/zh/tutorials/eval-groups)。
 
 评估组不是任务依赖图。结果沿用和 CLI 过滤可能让前一项不执行，题间重置也会撤销前一项对
 `workdir` 的修改。后一步必须读取前一步文件时，把它们写进同一条评估用例；不要把正确性押在
@@ -219,7 +219,7 @@ niceeval exp compare --record .niceeval/record-b --max-concurrency 2
 - `local` 这类声明独占串行的 Provider 有一道 Provider 级串行限制，`--max-concurrency` 不解除它——那是正确性约束，不是调度参数。
 - 按「同时在跑的 run 数」计费或限额的 Agent 服务，贴着限额值配全局上限压不稳：退避让出的位立刻被新 Attempt 顶上，服务侧并发恒在上限。单个终端可以用实验级 `maxConcurrency` 留余量。多开时各边的值会相加，账户级配额仍要分别调低或交给外部编排。
 - 声明 `sandboxReuse: true` 的实验，每个 Sandbox 内部串行、Sandbox 之间并行，见[复用 Sandbox](/zh/tutorials/sandbox-reuse)。
-- 评估组内部固定串行，不同组仍可并行，见[评估组](/zh/tutorials/eval-groups)。
+- 评估组内部稳定串行，不同组仍可并行，见[评估组](/zh/tutorials/eval-groups)。
 
 ## 接着看
 
@@ -231,7 +231,7 @@ niceeval exp compare --record .niceeval/record-b --max-concurrency 2
     公共准备只付一次的另一条提速路径。
   </Card>
   <Card title="评估组" icon="layer-group" href="/zh/tutorials/eval-groups">
-    同组固定顺序复用 Sandbox，不同组继续并行。
+    同组稳定串行复用 Sandbox，不同组继续并行。
   </Card>
   <Card title="写实验" icon="flask" href="/zh/tutorials/write-experiment">
     `maxConcurrency` 和实验级生命周期写在哪。

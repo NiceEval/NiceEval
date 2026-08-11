@@ -12,7 +12,7 @@ import { SandboxLanes } from '/snippets/diagram-sandbox-lanes.jsx';
 每道题之间 NiceEval 自动把工作目录 `git reset` 回公共准备完成时的状态。
 
 <Note>
-  本页讲 Experiment 级的 `sandboxReuse`。只有几组兼容的评估需要固定顺序时，使用
+  本页讲 Experiment 级的 `sandboxReuse`。只有几组兼容的评估需要各自的复用边界时，使用
   [评估组](/zh/tutorials/eval-groups)：同组串行复用，不同组继续并行。选中评估组的
   Experiment 不能再声明 `sandboxReuse: true`。
 </Note>
