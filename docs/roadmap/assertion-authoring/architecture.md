@@ -26,6 +26,10 @@ last status。Session 在第一次交互开始时加入根；空 handle 不加�
 
 ## Result 协议
 
-`AssertionResult` 是 entry 的唯一持久化结果。它保存 stable id、定位、snapshot ref、evaluator identity /
-version、安全 config digest、evaluation union、policy 及 pass 或 score projection。Record 以 schema 19 的
-`assertionResults` 保存它，并拒绝 schema 18。
+`AssertionResult` 是 entry 的唯一持久化结果。它保存 stable id、定位、typed snapshot ref、evaluator
+identity / version 与完整安全 structured config。它还保存 evaluation union、versioned evidence envelope、
+policy 及 pass 或 score projection。
+
+evidence envelope 必须带最小判定见证、coverage、payload、refs 与 limitations。它不能退化成成功 / 失败
+或预制展示字符串。完整边界见
+[Assertion 可解释闭包](../../feature/assertions/architecture.md#assertion-可解释闭包)。

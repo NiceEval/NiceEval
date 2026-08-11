@@ -82,7 +82,13 @@ Judge recipe 调用时直接登记 measurement Assertion。Pass Eval 对同一 h
 
 ## 不可用与读取
 
-缺少 evidence 不能伪装成普通 mismatch。`unavailable` 与 `errored` 保留原因与脱敏 evidence。`show`、`view`、JSON、export 与 source 都从同一 projection 离线解释，不重新运行 Match 或调用 Judge。
+缺少 evidence 不能伪装成普通 mismatch。`unavailable` 与 `errored` 保留原因与脱敏 evidence。
+
+AssertionResult 也不是只保存成功或失败。每条结果都保存 Assertion identity、subject 或 scope snapshot ref、明确版本的 evaluator、完整安全 config、evaluation、policy 和 projection。它还保存 versioned evidence，其中包含最小判定见证、coverage、结构化 payload、refs，以及 redacted / truncated / unavailable limitations。
+
+这组数据称为 **Assertion 可解释闭包**。它让 `show`、`view`、JSON、export 与 source 可以离线重新组织文案和界面，不必重新运行 Match 或调用 Judge。`expected` / `received` 是读取面从结构化数据生成的文案，不是 Record 中仅存的两个字符串。
+
+可解释闭包不要求把完整 stdout、events 或源码全部内联进 AssertionResult。Assertion 只规定自己必须产出什么结构化数据和证据引用；Record 决定这些数据怎样落盘。判定依赖的最小结构化依据称为**判定见证**。如果安全持久化后连这份最小依据都无法保留，结果必须是 `unavailable`，不能只留下 `matched` 或 `mismatched`。
 
 ## 相关阅读
 

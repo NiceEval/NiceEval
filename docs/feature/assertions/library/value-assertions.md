@@ -13,6 +13,9 @@ const parsed = t.check(rawConfig, matches(ConfigSchema))
 `check` 没有一参数、三参数或 handle 重用形状。`Match` 只比较 value；它没有 callsite、subject identity、
 groupPath、score、threshold 或控制流。
 
+`check` 保存已求值 value 的安全 snapshot 或 ref，而不是只保存 Match 的成功 / 失败。命令结果等大型 subject
+的字段要求见 [Evidence · 显式 value snapshot](../architecture/evidence.md#显式-value-snapshot)。
+
 ## refinement
 
 Boolean Match 可以 refinement 原 subject。需要中止当前 continuation 时，在同一 handle 上 await
