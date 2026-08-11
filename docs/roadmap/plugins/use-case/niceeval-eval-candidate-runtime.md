@@ -10,7 +10,7 @@ NiceEval-Eval 用同一套题比较多个候选 NiceEval 版本。一个 harness
 - physical Sandbox setup 中由 entrypoint 写入候选工作区;
 - Node、pnpm、Docker / Compose、执行身份、候选 CLI 版本与“尚未混入 case 源码”的就绪验证。
 
-当前每份 Experiment 先在模块顶层 `await ensureCandidate(target)`,再把查得的精确版本同时传给 flags 与 `sandboxWith(profile, version)`。这保证了几项值相同,但只有候选查找函数与 Sandbox factory 的调用惯例在维持一致,Record 看不出它们共同属于一个 candidate-runtime 条件。
+当前每份 Experiment 先在模块顶层 `await ensureCandidate(target)`,再把查得的精确版本同时传给 flags 与 `sandboxWith(profile, version)`。这保证了几项值相同,但只有候选查找函数与 Sandbox factory 的调用惯例在维持一致。候选 Runtime Plugin 则把安全的行为 identity、source 与贡献写进 Plugin provenance Attachment。
 
 ## 适合插件化的部分
 
@@ -38,11 +38,11 @@ export default defineExperiment({
 
 - `candidateVersion` flag 与报告 label;
 - physical Sandbox setup 写入候选工作区并执行就绪检查;
-- Node / pnpm / Docker / Compose 版本 facts;
+- Node / pnpm / Docker / Compose 版本的已声明 typed Run Attachment；
 - 对 requested Docker access、资源与 runtime profile 的 typed planning requirements;
-- 静态 candidate identity 与 setup provenance。
+- 静态 candidate identity、setup provenance 与 contribution refs。
 
-这样同一个插件可用于 stable、previous 与 canary 三格;每个 Experiment link 出独立 instance,不会共享 setup 状态。
+这样同一个插件可用于 stable、previous 与 canary 三格;每个 Experiment link 出独立 instance,不会共享 setup 状态或 Record write capability。
 
 ## 不能收进插件的部分
 

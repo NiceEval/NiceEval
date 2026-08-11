@@ -1,181 +1,70 @@
 # Assertions —— Score Eval
 
-Score Eval 的完整 dual-mode 边界在 [Assertions](../README.md#score-eval)。本页只定义 score 如何由
-已登记 entry 累加。
+Score Eval 用 `defineScoreEval` 表达同一次 Attempt 内“做到几成”的读数。`evaluationKind` 只取 `pass` 或 `score`；`points` 是 Assertion 的分值和 score 计算单位，绝不是另一种 Eval kind。
 
-## 默认仅保存 evaluation
+每个 Score Attempt 同时保存四态 [Verdict](../../verdict/architecture.md) 与独立的 `niceeval.score/v1` Attachment。Verdict 回答 Attempt 的 execution、gate 和 skip 终态；Score Attachment 回答已挣到多少分以及该数是否完整。两者不能互相推导。
 
-`evaluationKind` 只出现在 Run-owned `niceeval.evaluations` Attachment 的 `niceeval.evaluations/v1` payload，取值只有 `pass` 或 `score`。Assertion 的 `.points(n)` 与 `t.score(...)` 只是在 Score Eval 内挣分，不是第三种题型，也不能把 Pass Eval 变成 Score Eval。
+## points 与贡献
 
-## 通过制（`defineEval`，默认）：一个 eval 一分
+Assertion 默认 record-only。`handle.score(points)` 让一条已登记 Assertion 按其 sealed evaluation 贡献分值；`points` 必须 finite 且非负。Boolean matched 贡献全部 points，mismatched 贡献 `0`；measurement `m` 贡献 `m × points`。
 
-- 一条 eval 的一次 Attempt 在 `niceeval.verdict/v1` Attempt Attachment 形成四态 [Verdict](../../verdict/architecture.md)，`passed` 记 1、其余值记 0； `attempts > 1` 时按通过率。它不占用 Attempt lifecycle state。
-  这个数可由 Report 的 pass-rate Calculation 计算，通过制的对比主读数读的是它（见 [Calculations](../../reports/calculations.md)）。
-- Assertion result 只是 Verdict 的**内部构成**：一条 eval 写 3 条还是 20 条 gate，对比里都是一分。
-  这与 eve 的模型一致：一个 eval 就是一分，soft 分数 tracked-only。
+`t.score(points)` 也登记一个 Assertion entry，使用内建 direct-score criterion。它保存声明的 points 与 display，不绕开 Assertions Attachment。没有 score contribution 的正常 Score Eval 仍可形成 `earned: 0`。
 
-通过制是**对的默认**，三个理由：
+Score 不声明 max、百分比或隐式每项 `+1`。同一评测的比较单位是相同的 score 规则，而不是一个虚构分母。
 
-1. **不被断言数量加权。**
-    写了 20 条断言的 eval 不该比写 3 条的权重大——断言多少反映作者的检查习惯，不反映题目的重要性。
-   题目分量的差异要靠**显式给分**（计分制）表达，不靠断言数量隐式发生。
-2. **单位对齐。**
-    发现、缓存指纹、重试、首过即停的单位都是 eval；计分单位一致，「跑了 40 道题、过了 31 道」的心智直接成立。
-3. **判定可信。**
-    四态互斥、优先级固定（errored > failed > skipped > passed），不需要回答「部分可信的分数怎么折叠」这类没有好答案的问题。
+## gate 与四态 Verdict
 
-## 计分制：叠加给分，没有上限声明
+Score Eval 的 entry 可以既有 points 又是 gate。points 决定 earned score；gate 决定其 result 是否参与 Verdict fold。这两个事实正交：
 
-`defineScoreEval` 与 `defineEval` 字段完全同形。
-唯一区别是 `test(t)` 的 `t` 额外提供给分词汇。
-给分词汇**只**存在于计分制的 `t` 上，在通过制 eval 里写给分是类型错误，不需要运行时守护（形状声明见 [Eval · defineScoreEval](../../eval/README.md#definescoreeval计分制题型)）。
+| 已封口事实 | Verdict | Score Attachment |
+|---|---|---|
+| gate failed，所有贡献可算 | `failed` | `complete`，保留全部 earned score。 |
+| 没有 gate failed，所有贡献可算 | `passed`，除非更高优先级条件 | `complete`。 |
+| 显式 skip，没有更高优先级条件 | `skipped` | 已封口贡献照实保存；未求值部分按 partial 或 unavailable 标示。 |
+| execution error，或 required Assertion unavailable / errored | `errored` | 已有分数不会删除；状态是 partial 或 unavailable。 |
 
-计分是**叠加制不是扣分制**：分从 0 往上挣、分值非负、给一次加一次，**不声明满分**。
-对比是相对的——同一条 eval 的代码对每个 experiment 是同一把尺子，模型 A 挣 3 分、模型 B 挣 1 分，对比不需要分母；不存在「满分声明」，也就不需要守护声明与实际给分是否一致。
-「做了坏事」不用负分表达。
-要表达「到这一步不成立就别往下跑了」，写 `.gate().stopOnFailure()` 或值断言的 `t.require()`；要给「没做坏事」计分，就写成正向检查点。
+`.gate()` 只声明 Verdict 条件，不清空 points。`.orStop()` 只停止当前作者 continuation；此前已封口的 contribution 仍保留，未执行代码不补零。
 
-```
-eval 得分 = Σ 各给分项的挣分        （纯累加,无分母）
-```
+## complete、partial 与 unavailable
 
-以上两条都是合法的 record-only Assertion。
+`niceeval.score/v1` 用 `state` 描述分数的完整度：
 
-## 显式贡献
+| state | 条件 | `earned` |
+|---|---|---|
+| `complete` | 所有声明的 contribution 都有可计算的 sealed evaluation。gate failed 不影响此状态。 | 一个正式有限数值。 |
+| `partial` | execution 或一个 required score source 使部分贡献不能确定，但至少一项贡献已可审计。 | 已知下界，不可当完整排名值。 |
+| `unavailable` | 无法形成任何可审计的 earned 数值。 | 缺失，并保存具名原因。 |
 
-`handle.score(n)` 让已有 Assertion 贡献 score。`n` 必须 finite 且大于零，并且同一 handle 最多配置一次。
+非贡献 Assertion 的 unavailable 仍由 Verdict 规则处理；它不会把已经完整计算的 score 伪装成 partial。相反，缺少一个声明过 points 的 required source 绝不折成零。
 
-这些是作者 API，不是 Record shape。producer 把 `.points(n)` 归一成 check entry 的 conditional award，并把 `n` 保存为 available。
+Report 同时显示 Verdict、earned score 和 score state。`partial` 与 `unavailable` 不与 `0` 混写；gate-failed 的 complete score 也不能被显示成“没有分数”。
 
-available result 的实得分由 `n * score` 派生，Record 不重复保存 earned。
-
-`t.score(label, n)` 归一成独立的 direct score entry，直接保存 points。`.gate()`、`.atLeast()` 与 `.soft()` 归一成 decision；`.optional()` 归一成 availability。`stopOnFailure` 只控制 producer，不落入 Assertions document。
-
-精确联合、数值闭包和永久限制见 [Assertions Architecture](../architecture.md#稳定落盘投影)。上层 API 可以改名或重组，只要继续产生同一投影，旧 Record 的分数展示就不变。
-
-一条断言在计分制里的**角色由断言句柄上链的词决定**，四种角色的读数落点两两不相交——同一条证据不会被两个读数读到：
-
-| 链的词 | 角色 | 落到哪个读数 | 失败的后果 |
-|---|---|---|---|
-| `.points(n)` | 得分点 | 分数面：挣 `n × score` | 丢这 n 分，继续往下跑 |
-| `.points(n).gate(x?)` | 得分点兼硬要求 | 分数面 + 判定面 | 丢这 n 分，形成 `failed` Verdict，继续执行 |
-| `.gate(x?)` | 硬要求 | 判定面 | 形成 `failed` Verdict，继续执行 |
-| `.gate(x?).stopOnFailure()` | 硬前置 | 判定面 | 形成 `failed` Verdict，并就地结束 `test()` |
-| 不链 | 观测 | 质量分（soft 均值） | 照记 failed（用 matcher 自带的线），不影响判定 |
-| `.atLeast(x)` | 观测（带通过线） | 质量分（soft 均值） | 低于 `x` 记 failed，不影响判定 |
-| `.soft()` | 观测（纯留档） | 质量分（soft 均值） | 无（不设线，永不 failed） |
-
-表里「失败的后果」这一列怎样落到代码的每一行，逐行标注在 [Severity 与 Verdict · 控制流与严重度正交](../../verdict/architecture.md#控制流与严重度正交)。
-分数面这边配套的语义：
-
-- **分数与严重度正交**：`.points(n)` 决定挣分，`.gate()` / `.atLeast()` / `.soft()` 决定判定面。
-  每个 Attempt 都有四态 Verdict，Score Eval 另有独立 `niceeval.score/v1` Attachment；Verdict 与 score 并存，互不推导（[Verdict Attachment 数据](../../verdict/architecture.md#recordattachment-数据)）。
-  带 points 的断言不进入质量分，避免同一证据重复计入两个连续读数。
-- **观测的通过线只改那一行的显示**：judge 这类默认没有线的打分断言靠 `.atLeast(x)` 把「装好了但质量差」显示成失败行；0/1 断言不需要它——matcher 自带的线在计分制照常生效，没做到的检查点如实记 `failed` 挣 0 分。
-- **`--strict` 两种题型同义**：带线 soft 升级为 gate；它不添加 `.stopOnFailure()`。
-- **`t.require` 两种题型都有**：它是 `t.check(...).gate().stopOnFailure()` 的值断言简写。
-- **中止挣 0，基础设施得 null，严格分开**：前置失败强制结束，后面的给分代码不执行、那些分自然没挣到——agent 没走到是它的责任，低分成立。
-  Sandbox 炸了、Judge 没 key 时材料 unavailable：required 情形使 producer 写出 `errored` Verdict；分数面同时没有可派生的实得分、显示 `null`、不折成 0——评不了不是 agent 差。
-  带 `.points` 的断言形成 unavailable result 时不派生实得分，并在报告里如实标注；required 情形还会使 producer 写出 `errored` Verdict。
-- **丢分不是失败**：五步走完三步的 Attempt 可形成 `passed` Verdict 且挣 3 分，「做到几成」由分数面回答，不借判定面表达；Verdict 回答的是 Attempt 的终态检查结果，不按分数重新折叠（[四态与优先级](../../verdict/architecture.md#四态折叠)）。
-   `errored` / `skipped` 与通过制同义，缓存、重试、发现单位照旧。
-- **`attempts > 1`**：eval 得分取各 attempt 的均值（`null` 跳过，全 `null` 为 `null`），与通过制按通过率聚合同构。
-
-两种题内写法（完整用例见[计分制用例](../../eval/use-case/rubric-points.md)）：
-
-```typescript
-// 检查点制:每步 1 分,走完三步挣 3 分,挂一步不连坐后面
-export default defineScoreEval({
-  description: "安装并启动 DB-GPT",
-  async test(t) {
-    await t.send("把 DB-GPT 装起来并通过健康检查。");
-    // 纯前置:失败就地结束,后面自然 0 分——存在性检查用 pathExists(布尔) + isTrue
-    await t.require(await t.sandbox.pathExists("db-gpt/README.md"), isTrue("db-gpt cloned"));
-    t.sandbox.fileChanged("db-gpt/.env").points(1);
-    // 值 1 分,且没装依赖后面全白跑——得分点兼前置
-    await t.calledTool("shell", { input: { command: /pip install/ } })
-      .points(1).gate().stopOnFailure();
-    // ……每个检查点 1 分,互相独立
-  },
-});
-
-// rubric 制:正确性 60 / 精简 20 / 说明 20,分值作者自定
-export default defineScoreEval({
-  description: "回调改写 async/await,按 rubric 给分",
-  async test(t) {
-    await t.send("把 src/legacy.js 的回调改写成 async/await,并写重构说明。");
-    const test = await t.sandbox.runCommand("npm", ["test"]);
-    t.check(test, commandSucceeded()).points(60);                    // 纯得分点,丢分不中止
-    t.score("代码精简", tierPoints(lines, [50, 80, 120], 20));       // 自算分档,直接给分
-    t.judge.autoevals.closedQA("说明是否讲清动机与风险?").points(20); // judge 按连续分比例挣
-  },
-});
-```
-
-Boolean matched 贡献 `n`，mismatched 贡献 `0`。measurement 为 `m` 时贡献 `m * n`。因此 measurement
-为 `.8` 且 `.score(5)` 时，贡献是 `+4`。
-
-`t.score(n)` 只属于 `ScoreTestContext`。它直接登记 contribution，`n` 必须 finite 且不小于零：
+## 作者写法
 
 ```ts
-t.score(5).label("人工评分");
+export default defineScoreEval({
+  async test(t) {
+    await t.send("把 DB-GPT 装起来并通过健康检查。");
+
+    t.sandbox.fileChanged("db-gpt/.env")
+      .score(1)
+      .label("配置运行环境");
+
+    t.check(await t.sandbox.runCommand("pnpm", ["test"]), commandSucceeded())
+      .score(2)
+      .gate()
+      .label("测试通过");
+
+    t.score(1).label("代码精简");
+  },
+});
 ```
 
-返回的 `DirectScoreHandle` 只允许 `key` 与 `label`，不能再加 score、threshold 或 control。
-
-## threshold 与 stop
-
-Score measurement 可以没有 threshold 直接封口。`.atLeast(n)` 只增加局部 `met` / `below` condition，
-不改变 contribution；`.score(n).atLeast(x)` 与 `.atLeast(x).score(n)` 同义。
-
-Boolean handle 可以直接 `await .orStop()`。measurement 必须先 `.atLeast(n)` 才能使用 `.orStop()`。
-正常 below stop 仍产出 `scored` grading，并保留 stop cause。
-
-## 可排名性
-
-## 得分点 = 组：对比读取的下钻粒度
-
-一分/一个总分在模型对比里太粗的三个场景，各有一个树上的读法：
-
-- **同 fail，不同深度**（都失败，一个死在路由层、一个死在命令调用链）→ **组级判定读数**：哪个组的 gate 失败就是死在哪层。
-  它是失败定位，不是分。
-- **部分完成没有部分分**（五步走完三步）→ **计分制**：步骤各 `.points(1)`，挣 3 分。
-- **质量分差异被判定吞掉**（都通过，judge 一个 0.9 一个 0.6）→ **质量分列**：judge 默认 `.soft()`，读 eval 质量分。
-
-得分点的粒度选组而不是别的：
-
-| 得分点 = | 否决理由 |
-|---|---|
-| 单条断言 | 太细：断言数量差异直接污染权重，回到一分制要解决的问题 |
-| 显式新 API（`t.scorePoint(...)`） | 给分词汇 + `t.group` 已完整表达「哪些检查是分、值多少、叫什么名字」，新词汇纯冗余 |
-| **`t.group` 组** | 组是作者已经在用的语义分块（「路由层」「正确性」），零新概念 |
-
-组名即维度值，报告按 **`groupPath` 字面相等**聚合，不做归一化、不做模糊匹配：「路由层」和「路由」是两个维度。
-对齐靠 authoring 侧约定——同类检查抽成共享函数（如 `evals/*/share/`），组名在函数里写一次，跨 eval 天然一致；没对齐的组名不是错误，只是各自形成稀疏行。
-
-## 报告读取面：show 与 view 怎么读
-
-`show` 与 `view` 共用同一份 page 声明（[Reports](../../reports/README.md)），读取面在内建 `standard` 报告一处声明、两个宿主同时生效：
-
-- **实验列表按题型选主列**：通过制实验出通过率列，计分制实验出总分列，两型并存时两列都出、不适用的格显示 `—`。
-  判据由对应 Report 的 Calculation 声明，完整度和分母契约见 [Reports Library](../../reports/library.md#calculation)。
-- **组级读数在 Attempt 详情下钻**：非 passed Assertion result 按 `entries` 展示顺序平铺、标题即分组路径，passed Assertion result 按组折成计数行， `t.score` 给分条目单独成区块并按 `groupPath` 分组（[断言与 Turn 的展示](./display.md)）。每个详情入口用持久 `entryId` 定位，不用条目名或 `entries` 位置。
-  「哪层死的」「哪个组挣了多少分」的逐条证据在那里读——组是折叠树的层级，不是跨 experiment 聚合的报告行维度。
-
-## 怎么选题型
-
-1. 这些检查点是**独立可跑的题目**还是**同一次运行内的检查**？
-   独立可跑 → 拆成多个 eval（[测试集为各计分项生成条目](../../eval/use-case/dataset-fanout.md)），粒度来自更多的题、不是更细的分。
-2. 同一道题内，「做对」是二值的 → `defineEval`：一票否决写 gate，观测指标写 soft。
-3. 同一道题内，「做到几成」有意义（长链条、rubric 大题）→ `defineScoreEval`：检查点 `.points(n)`，自算分数 `t.score`，硬要求 `.gate()`，需要中止时再链 `.stopOnFailure()`。
-
-各用例的题型对照见[用例目录](../../eval/use-case/README.md#通过制还是计分制)。
+若“测试通过”失败，Attempt 是 `failed`，但其它已封口 entry 仍组成 earned score。若命令本身无法取得可信结果，Attempt 是 `errored`，Score Attachment 依上表保留 partial 或 unavailable。
 
 ## 相关阅读
 
-- [Eval · defineScoreEval](../../eval/README.md#definescoreeval计分制题型) —— 计分制题型的定义形状。
-- [计分制用例](../../eval/use-case/rubric-points.md) —— 检查点制与 rubric 制的完整写法。
-- [Severity 与 Verdict](../../verdict/architecture.md) —— 四态折叠与 gate / soft 语义，判定面的基础。
-- [Assertions Architecture](../architecture.md) —— 作者求值语义与稳定 `AssertionsDocument` 投影，折叠树的叶子材料。
-- [Reports](../../reports/README.md) —— show / view 共用的 page 声明，读取面的落点。
-- [Observability](../../../observability.md) —— 质量 × 成本对比的现有横截面。
+- [Assertions](../README.md) —— persisted Assertion entry。
+- [Verdict](../../verdict/architecture.md) —— 四态优先级。
+- [Score Eval 用例](../../eval/use-case/rubric-points.md) —— 完整 authoring 场景。
+- [Display](display.md) —— 稳定读取面。

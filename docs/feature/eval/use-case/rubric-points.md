@@ -1,6 +1,6 @@
 # 计分制：检查点和质量分
 
-通过制回答“是否满足要求”。需要表达“做到几成”时，使用 `defineScoreEval`，用 `.score(n)` 让已登记
+通过制回答“是否满足要求”。需要表达“做到几成”时，使用 `defineScoreEval`，用 `.score(points)` 让已登记
 Assertion 贡献分数。分数从 0 累加，作者为每个计分项写出分值；没有隐式满分或运行时
 严格模式。
 
@@ -33,8 +33,8 @@ export default defineScoreEval({
 });
 ```
 
-每条 Assertion 默认只保存 evaluation、evidence 和 diagnostic。`.score(n)` 使 Boolean matched 贡献
-`n`，mismatched 贡献 `0`；measurement `m` 贡献 `m * n`。
+每条 Assertion 默认只保存 evaluation、evidence 和 diagnostic。`.score(points)` 使 Boolean matched
+贡献 `points`，mismatched 贡献 `0`；measurement `m` 贡献 `m * points`。
 
 ## 用 Judge 给连续分
 
@@ -49,17 +49,18 @@ t.judge.autoevals.closedQA("说明是否讲清动机和风险？", {
 ```
 
 measurement 为 `.8` 且 `.score(20)` 时贡献 `+16`。同一个 Judge evaluator 只运行一次，写一条
-AssertionResult。分数无效、不可用或 evaluator error 都保留为 `unavailable` / `errored` 结果；
-只有配置 score 的 Assertion 才使 grading 不可排名。
+AssertionResult。分数无效、不可用或 evaluator error 都保留为 `unavailable` / `errored` 结果；缺少 points
+source 使 Score Attachment 成为 partial 或 unavailable，而非伪造零分。
 
 ## 终态
 
-`test` 正常返回后，Runner 自动封口。所有 Assertion 可用时 Attempt 为 `scored`；没有计分项时也是
-`scored`，正式 score 为 `0`。measurement 无需 threshold 就能封口；`.atLeast(n)` 只增加局部
-`met` / `below` condition，不改变 contribution。
+`test` 正常返回后，Runner 自动封口。每个 Attempt 都写四态 Verdict；所有 contribution 可算时 Score
+Attachment 为 `complete`，没有计分项时 earned score 为 `0`。measurement 无需 threshold 就能封口；
+`.atLeast(n)` 只增加局部 condition，不改变 contribution。gate failed 仍保留 earned score；execution
+error 或 unavailable score source 依序形成 partial 或 unavailable。
 
 ## 相关阅读
 
-- [Score Eval](../../assertions/library/score-points.md) —— contribution 与可排名性。
+- [Score Eval](../../assertions/library/score-points.md) —— contribution、Verdict 与 score state。
 - [Judge](../../judge/library.md) —— Judge evaluator 与配置。
-- [Verdict 与 AssertionResult](../../verdict/architecture.md) —— Score Eval 不进入 Pass fold。
+- [Verdict 与 AssertionResult](../../verdict/architecture.md) —— Score Eval 的 Verdict 与 score 分工。

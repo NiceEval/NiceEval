@@ -49,5 +49,5 @@ turn.usage.maxTokens(4_000)
   .label("token 使用量可读取");
 ```
 
-普通 scoped Assertion 在 Pass Eval 默认投影为 Verdict condition。在 Score Eval 它默认只保存 evaluation；需要贡献
-score 时调用 `.score(n)`。Boolean scoped handle 可 `await .orStop()`。
+普通 scoped Assertion 在 Pass Eval 默认参与 Verdict fold。在 Score Eval 它默认只保存 evaluation；需要贡献
+score 时调用 `.score(points)`，需要改变 Verdict 时显式调用 `.gate()`。Boolean scoped handle 可 `await .orStop()`。

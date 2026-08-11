@@ -18,7 +18,7 @@ Invocation
 
 Runner 在调用开始时取得 `invocationId`，再打开单 writer `RecordWriteSession`。它在 session 内为每个选中的 Experiment 形成尚未发布的 `ExecutionTarget` Run，绑定 `runId`、`startedAt` 与完整 expected slots。reuse planning 使用 frozen `session.view`；目标 Run 尚未发布，不会成为自己的 source barrier。
 
-mandatory Run-owned `niceeval.run-provenance` 保存 invocation identity，receipt 也以 `runIds` 关联本次调用。这些 provenance 不参与 membership、analysis selection 或 reuse planning。mandatory `niceeval.evaluations/v1` 保存每个 distinct Eval 的 `pass | score`，供离线 Report 分类，包括没有 Member 的 slot。
+mandatory Run-owned `niceeval.run-provenance` 保存 invocation identity，receipt 也以 `runIds` 关联本次调用。这些 provenance 不参与 membership、analysis selection 或 reuse planning。mandatory `niceeval.evaluations/v1` 保存每个 distinct Eval 的 `pass | score`，供离线 Report 分类，包括没有 Member 的 slot。`points` 只在 Score Eval 的 Assertions 与 Score Attachment 中出现。
 
 Run 的 expected membership 是本次分母。每个 slot 最多有一个 Member；任何 Member 都无条件表示该 slot 由一个精确 Attempt 完整占据。Member 不保存会持续扩张的业务 kind。
 

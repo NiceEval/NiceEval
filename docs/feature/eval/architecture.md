@@ -18,8 +18,9 @@ subject、callsite、source order 与 groupPath；后续配置只作用于同一
 
 ## 两种 grading
 
-Pass Eval 折叠 Attempt Verdict。Score Eval 累计显式 score contribution，并单独保存 execution outcome。
-两者共享 AssertionResult、evidence、snapshot 与读取协议；不同之处只在 projection。
+Pass Eval 与 Score Eval 都折叠 Attempt Verdict。Score Eval 另行累计显式 score contribution，并写独立
+Score Attachment；Verdict 不从分数推导，分数也不从 Verdict 推导。两者共享 AssertionResult、evidence、
+snapshot 与读取协议；不同之处只在主读数和 score projection。
 
 ## 文件传输与生命周期
 

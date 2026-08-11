@@ -30,11 +30,21 @@ template-owner author layer
 
 `template-owner` 是 Eval 时，先走 Eval author/plugins；是 Experiment 时，先走 Experiment author/plugins。Plugin 不新增 `plugin.*` phase。Agent receiver 把 extension 编入 Adapter 已有槽位，不产生统一的 “plugin agent setup”。
 
-Eval hook 使用既有 `EvalHookContext`。它提供本 Attempt 的 `agent`、`sandbox`、`AbortSignal`、`progress()`、`diagnostic()` 与 `fact()`，不提供跨 Attempt mutable store。
+Eval hook 使用既有 `EvalHookContext`。它提供本 Attempt 的 `agent`、`sandbox`、`AbortSignal`、`progress()`、
+`diagnostic()` 与声明受限的 `record()`，不提供跨 Attempt mutable store 或开放持久化存储。
 
 Plugin 直接返回 `before` 与 `after`。before 在 Agent 已 ready、进入 Eval test 前按 Plugin 声明顺序运行；进入该 Plugin 节点后立即登记它的 after。省略 before 时仍登记 after。after 在 test 成功、抛错或中断后按登记逆序运行，再进入 Agent 与 Sandbox 收尾。
 
 before 失败时不运行尚未进入的 hook；已登记 after 仍运行。多个失败沿用 Scope 的主错误加 teardown errors 判定，不用 after 替换 test / before 主错误。它们仍归既有 `eval.run`，不新增 phase。
+
+## Record write 时点
+
+Plugin 只能经 blueprint 已声明的 typed attachment capability 写入。Eval hook 只写当前 Attempt，Experiment
+hook 只写当前 Run；两者都必须发生在对应 Record draft 封口前。Group 没有 runtime write context。
+
+同一 owner + attachment family 的第二次写入立即返回 `plugin-record-attachment-duplicate`。已封口、错误 owner
+或未声明 capability 分别返回 `plugin-record-closed`、`plugin-record-wrong-owner` 或
+`plugin-record-attachment-undeclared`。这些 failure 不降级为 diagnostic，更不会改写已有 Attachment。
 
 ## Sandbox resource 时序
 
@@ -77,6 +87,7 @@ existing `sandbox.setup` 单独不足以承担 resource：它没有 fingerprint 
 - selection / link / planning requirement 失败：创建资源前聚合，列出 Plugin identity、attachment、owner 与 pair。
 - attachment 不支持：TypeScript 拒绝；动态 JS 在 definition 阶段报错。
 - 两侧 identity 重复或槽位冲突：pure link 失败。
+- attachment family 重复、owner 不匹配或未声明：typed capability failure。
 - Experiment lifecycle 失败：沿用 `experiment.setup` / teardown 语义。
 - SandboxLayer 失败：沿用其实际 `sandbox.prepare.*` 或 physical phase。
 - Agent extension 失败：沿用 receiver 对应的 `agent.setup` / teardown 语义。

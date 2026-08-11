@@ -22,15 +22,16 @@
 `defineEval` 使用 Pass Eval。Boolean mismatch 使最终 Verdict failed，但其它 Assertion 继续结算。
 measurement 必须设 `.atLeast(n)`。
 
-`defineScoreEval` 使用 Score Eval。每条 Assertion 默认只保存 evaluation；`.score(n)` 和 `t.score(n)` 才贡献
-score。它没有 Verdict、总分或百分比。正常没有贡献项时，score 仍为 `0`。
+`defineScoreEval` 使用 Score Eval。每条 Assertion 默认只保存 evaluation；`.score(points)` 和
+`t.score(points)` 才贡献 score。每个 Attempt 仍有 Verdict；Score Attachment 另存 earned score 与
+complete、partial 或 unavailable 状态。正常没有贡献项时，earned score 仍为 `0`。
 
 | 用例 | 推荐形态 |
 |---|---|
 | 所有条件必须满足 | `defineEval` + Boolean condition |
 | 部分完成仍可比较 | `defineScoreEval` + score contribution |
 | 开放式质量作为通过条件 | Judge measurement + `.atLeast(n)` |
-| 开放式质量贡献分数 | Judge measurement + `.score(n)` |
+| 开放式质量贡献分数 | Judge measurement + `.score(points)` |
 
 ## API → 篇目对照
 
@@ -41,6 +42,6 @@ score。它没有 Verdict、总分或百分比。正常没有贡献项时，scor
 | `calledTool` / `notCalledTool` / `toolOrder` / `event` | [过程与成本](process-and-cost.md) · [calledTool 匹配](calledtool.md) |
 | `t.check(value, match)` / `.orStop()` / `niceeval/expect` matcher | [单轮](first-single-turn.md) · [沙箱](sandbox-coding.md) |
 | `t.judge` / `turn.judge` / `autoevals.*` | [裁判评质量](judge-quality.md) |
-| `.score(n)` / `t.score(n)` | [Score Eval](rubric-points.md) |
+| `.score(points)` / `t.score(points)` | [Score Eval](rubric-points.md) |
 | 数组导出 / keyed record 导出 / `loadYaml` / `loadJson` | [测试集](dataset-fanout.md) |
 | `t.sandbox.*` | [沙箱 coding 任务](sandbox-coding.md) |

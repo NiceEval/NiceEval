@@ -1,8 +1,8 @@
 # Plugins —— Library
 
-## 作者 API：直接返回现有 owner 片段
+## 作者 API：返回既有 owner 片段
 
-Plugin family 声明允许挂载的 owner。callback 直接返回 NiceEval 已有的公开类型，不使用 `attachments` 路由树，也不再发明 `sandbox.prepare()`、`experiment.flag()` 一类 contribution constructor：
+Plugin family 声明允许挂载的 owner。callback 返回 NiceEval 已有公开类型；它不构造 raw Attachment 路由，也不发明第二套 Sandbox 或 lifecycle DSL。
 
 ```ts
 interface EvalPluginFragment {
@@ -29,45 +29,86 @@ interface GroupPluginFragment {
   readonly requirements?: readonly GroupRequirement[];
   readonly manifest?: JsonValue;
 }
-
-interface PluginDefinition<Options> {
-  readonly name: string;
-  readonly behaviorRevision: string;
-  readonly instanceKey?: (options: Options) => string;
-  readonly eval?: (options: Options) => EvalPluginFragment;
-  readonly experiment?: (options: Options) => ExperimentPluginFragment;
-  readonly group?: (options: Options) => GroupPluginFragment;
-}
-
-type AtLeastOneOwner<Options> =
-  | { readonly eval: (options: Options) => EvalPluginFragment }
-  | { readonly experiment: (options: Options) => ExperimentPluginFragment }
-  | { readonly group: (options: Options) => GroupPluginFragment };
-
-declare function definePlugin<
-  Options,
-  const Definition extends PluginDefinition<Options> & AtLeastOneOwner<Options>,
->(
-  definition: Definition & PluginDefinition<Options> & AtLeastOneOwner<Options>,
-): PluginFamily<
-  Options,
-  SupportedOwners<Definition>,
-  FragmentScopes<Definition>
->;
 ```
 
-`definePlugin()` 保留 callback 的 literal keys 与 fragment type-state。至少要声明一个 owner；callback 是否存在决定 family 可以放进 `defineEval()`、`defineScoreEval()`、`defineExperiment()` 或 `defineSandboxGroup()`。错误挂载既是 TypeScript 错误，动态 JS 边界也会报 definition error。
+`definePlugin()` 保留 callback 的 literal keys 与 fragment type-state。至少声明一个 owner；缺少相应 callback 的 family 不能挂到 `defineEval()`、`defineScoreEval()`、`defineExperiment()` 或 `defineSandboxGroup()`。动态 JavaScript 在 definition 边界收到同样的具名错误。
 
-调用 family 时，NiceEval 立即执行纯 callback，规范化并深冻结 Plugin instance。link 不重新调用作者 callback。Plugin 只组合现有执行对象；它不是另一套 lifecycle DSL。
+调用 family 时，NiceEval 立即执行纯 callback，规范化并深冻结 Plugin instance。link 不重新调用 callback。Group 是选择与调度 owner，不是运行资源，所以没有 setup、teardown、Sandbox layer、Agent extension 或 runtime Record write。
 
-Group 是选择与调度 owner，不是运行资源。`group()` 没有 setup / teardown、Sandbox layer 或 Agent extension。
+## 声明 typed RecordAttachment capability
+
+每个 Plugin 要写 Record 时，先在 blueprint 中列出 capability。它引用已定义的 family，而不是携带 name、schemaId 或文件路径字符串：
+
+```ts
+import { Effect, Schema } from "effect";
+
+interface PluginAttachmentCapability<
+  Owner extends "run" | "attempt",
+  Payload,
+> {
+  readonly owner: Owner;
+  readonly family: RecordAttachmentFamily<Owner, Payload>;
+}
+
+declare function declarePluginAttachment<
+  const Owner extends "run" | "attempt",
+  S extends Schema.Schema.AnyNoContext,
+>(input: {
+  readonly family: RecordAttachmentFamily<Owner, Schema.Schema.Type<S>>;
+}): PluginAttachmentCapability<Owner, Schema.Schema.Type<S>>;
+```
+
+`Schema.Schema.AnyNoContext` 与 `Schema.Schema.Type<S>` 是 Effect 3.22.1 的实际类型名。family 已经拥有 exact JSON encoder、decoder、owner 与相邻 migration policy；Plugin 不重复定义它们。
+
+```ts
+const candidateRuntimeObservation = declarePluginAttachment({
+  family: CandidateRuntimeObservationFamily,
+});
+
+export const candidateRuntime = definePlugin({
+  name: "candidate-runtime",
+  behaviorRevision: "1",
+  recordAttachments: [candidateRuntimeObservation],
+  experiment(options: CandidateRuntimeOptions) {
+    return { identity: { version: options.version } };
+  },
+});
+```
+
+blueprint 的 `recordAttachments` 是 allowlist，不是自动写入。一个 owner 的同一 family 只能声明一次；link 对重复 capability identity 返回 typed conflict，即使两个 declaration 的内容相同。
+
+## runtime write context
+
+已 link 的 lifecycle context 提供窄 `record()` 能力：
+
+```ts
+interface PluginRecordContext<Owner extends "run" | "attempt"> {
+  readonly record: <Payload, E, R>(
+    capability: PluginAttachmentCapability<Owner, Payload>,
+    write: RecordAttachmentWrite<Owner, E, R>,
+  ) => Effect.Effect<void, PluginRecordAttachmentWriteError | E, R>;
+}
+
+type PluginRecordAttachmentWriteError =
+  | { readonly code: "plugin-record-closed" }
+  | { readonly code: "plugin-record-wrong-owner" }
+  | { readonly code: "plugin-record-attachment-undeclared" }
+  | { readonly code: "plugin-record-attachment-duplicate" };
+```
+
+`write` 只能由 capability family 的 typed attachment builder 产生，payload 与 `Schema.Schema.Type<S>` 同源。`record()` 以 builder 捕获的 family 与 capability 的 family 做 exact-identity 比较；`RecordAttachmentWrite` 的泛型保留 blob stream 的 `E` / `R`，并原样传出。`record()` 没有 raw name、path、schemaId 或 `unknown` / JSON 参数；它自己的 failure 也只暴露 opaque capability 与 owner 语义，不泄露 payload 或路径。
+
+| mount | 可写 owner | 封口边界 |
+|---|---|---|
+| Eval `before` / `after` | 当前 Attempt | Attempt 的 Record draft 封口前。 |
+| Experiment `setup` / `teardown` | 当前 Run | Run 的 Record draft 封口前。 |
+| Group | 无 | Group 没有 runtime context。 |
+
+wrong-owner、undeclared、duplicate 与 closed 在 TypeScript 入口尽量不可表达；JavaScript、类型断言或错误时序仍得到上表的 typed failure。没有开放 JSON 回退入口。
 
 ## pnpm 与 Yarn
 
 ```ts
-import { definePlugin } from "niceeval/plugin";
-import { command, sandboxLayer } from "niceeval/sandbox";
-
 export const pnpm = definePlugin({
   name: "pnpm",
   behaviorRevision: "1",
@@ -82,22 +123,13 @@ export const pnpm = definePlugin({
     };
   },
 });
-
-export default defineEval({
-  plugins: [pnpm({ version: "10.15.0" })],
-  async test(t) {
-    await t.agent("Implement the requested change");
-  },
-});
 ```
 
-这里的 `.prepare()` 是现有 `SandboxLayer` API，不是 Plugin wrapper。`yarn({ version })` 是另一个具名 Plugin，拥有自己的安装、探测与版本规则；公共 API 不暴露 `packageManager({ kind })`。
+这里的 `.prepare()` 是既有 `SandboxLayer` API，不是 Plugin wrapper。`yarn({ version })` 是另一个具名 Plugin，拥有自己的安装、探测与版本规则；公共 API 不用 `packageManager({ kind })` 抹平它们。
 
-## Remem
+## Remem 与 receiver
 
 ```ts
-export const REMEM_DOCKER_CONTEXT = new URL("./docker/", import.meta.url);
-
 export const remem = definePlugin({
   name: "remem",
   behaviorRevision: "1",
@@ -119,58 +151,42 @@ export const remem = definePlugin({
 });
 ```
 
-`rememPrepare()` 本身就是 `SandboxCommand`，直接进入现有 layer。`memoryModel` 只由 Codex receiver 的 canonical behavior projection 进入 hash。调用点继续显式声明 `dockerImage({ context: REMEM_DOCKER_CONTEXT, ... })`；Plugin 不取得 Sandbox template 所有权。
-
-## 真实生命周期字段
-
-- Eval `before` / `after`：直接使用 `EvalHook`，每条 Attempt 包围 test body。
-- Experiment `setup` / `teardown`：直接使用 `ExperimentHook`，每场至多一次。
-- Sandbox `prepare` / `setup` / `teardown`：直接构造现有 command-only `SandboxLayer`。
-- `agentExtensions`：直接放 receiver-branded `AgentExtension`。
-
-作者不返回 phase 名、hook 注册表或任意字符串 capability。既有 hook context 继续提供 `AbortSignal`、`progress()`、`diagnostic()` 与 `fact()`。
-
-## Git repository Plugin
-
-Git 产品 API 把 repository identity 与每题 checkout 分开：
-
-```ts
-const upstream = gitRepository({
-  repo: "https://github.com/downshift-js/downshift.git",
-  into: ".",
-  instanceKey: "upstream",
-});
-
-export default defineEval({
-  plugins: [upstream.checkout({ commit: BASE_COMMIT })],
-  async test(t) {
-    await t.agent("修复当前问题");
-  },
-});
-```
-
-fresh Sandbox 的 cohort 只有当前 pair；reuse 时 Runner 自动聚合同一实例将服务的 selected pair demands。`defineSandboxGroup()` 不重复声明 repositories。
-
-Git 是 V1 唯一需要 cohort aggregate 的官方 Plugin。`gitRepository().checkout()` 返回带私有 nominal brand 的 Eval Plugin instance；通用 Plugin 作者看不到 `sandbox.resource()` 或 receiver factory。core 只保存不透明 demand、聚合投影与 provenance，不读取 repo、commit 或路径。
-
-官方 Git receiver 在 fingerprint 前聚合 demands，在 physical Sandbox 创建后 materialize seed，并把当前 checkout 作为原生 prepare command 放在该 Plugin 的 SandboxLayer 位置。它拥有四类错误：`demand-invalid`、`demand-unsatisfied`、`instance-unavailable` 与 `attempt-consume-failed`。
+`memoryModel` 只由 Codex receiver 的 canonical behavior projection 进入 hash。有效 provider、model 与鉴权复用 Adapter 已求值 runtime binding；Plugin callback 不取得 secret 明文。需要保留运行观测时，Remem 必须声明对应 typed Attachment family。
 
 ## Requirements、identity 与冲突
 
-Requirement 是封闭 typed union，表达以下计划约束：
+Requirement 是封闭 typed union。它可表达：
 
 - reuse group、stop-group 与 complete-prefix；
 - platform、requested lifetime 与 resources；
 - runtime profile、Docker access 与 ordered sequence。
 
-Plugin 只把 union 值直接放进 `requirements` 数组。
+Plugin 只把 union 值放进 `requirements`，不能暗改对应计划。
 
-默认 `instanceKey` 是 `"default"`。`(name, instanceKey)` 在一个 attachment owner 内唯一；同一 Eval × Experiment pair 两侧出现同 identity 是 link error。provenance 保存 owner、源码与数组位置。
+默认 `instance` 是 `"default"`。`(name, instance)` 在 pair 内唯一，且同一 owner + attachment family 至多一次。每个 owner 先接作者原生片段，再按 Plugin 顺序接贡献：exclusive 冲突，keyed 同值去重并保留 provenance，keyed 异值冲突，ordered 确定追加。
 
-每个 owner 内先接作者原生片段，再按 `plugins[]` 顺序接 Plugin 原生片段。exclusive 多声明方冲突；keyed 同 key 同规范化值去重并保留 provenance，不同值冲突；ordered 按确定顺序追加。没有 last-wins。
+framework 自动写入 provenance entry，其中有 name、instance、revision、mount、source、规范化行为 identity 与 contribution refs。
+identity 只登记不能由 flags、requirements、Sandbox command 或 receiver projection 表达的行为输入；同一输入不重复登记。
 
-## Hash、manifest 与 secret
+## migration registry / Layer
 
-framework 自动写入 `name`、`behaviorRevision`、`instanceKey`、owner 与 provenance。`identity` 只登记没有被 flags、requirements、Sandbox command 或 receiver projection 表达的行为输入；同一输入不重复登记。
+应用通过显式 `PluginAttachmentMigrationRegistry` Layer 提供它信任的 families。每个 family 必须登记 current definition 和每条相邻 edge：converter 或 `not-losslessly-migratable`。registry 拒绝同一 owner/name/schema identity 或 edge 的 duplicate registration。
 
-`AgentExtension` 继续由 Adapter receiver 规范化，core 不读取 payload。有效 provider、model 与鉴权复用 Adapter 已求值的 runtime binding；Plugin callback 不取得 secret 明文。
+converter 的形状是：
+
+```ts
+type PluginAttachmentConverter<
+  Owner extends "run" | "attempt",
+  From,
+  To,
+> = (
+  source: RecordAttachmentValue<From>,
+  target: RecordAttachmentMigrationTarget<Owner, To>,
+) => Effect.Effect<
+  RecordAttachmentWrite<Owner, PluginAttachmentMigrationFailure, never>,
+  PluginAttachmentMigrationFailure,
+  never
+>;
+```
+
+converter 通过 `target` builder mint target refs 和 bytes，不能交回 raw JSON、旧 ref 或路径。`R = never` 不允许依赖 NiceEval service；它不是第三方 JavaScript 的安全隔离。`niceeval migrate` 只消费显式 Layer，绝不根据保存数据 import package，也绝不运行 factory、hook、lifecycle 或 receiver。

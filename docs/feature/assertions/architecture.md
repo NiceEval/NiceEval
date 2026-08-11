@@ -1,212 +1,103 @@
 # Assertions —— 架构
 
-Assertion 是一次 Attempt 内规范化的检查事实。值 matcher、作用域检查、Sandbox 检查、资源限制和 Judge 都先形成 producer 内存结果，再由 producer 写入 Attempt-owned `RecordAttachment`。Attachment 名称是 `niceeval.assertions`，首个精确 payload schema 是 `niceeval.assertions/v1`。
-
-## 一个 entry，一次 evaluation
+`niceeval.assertions/v1` 是一个 Attempt-owned、auditable、non-executable 的 `RecordAttachment`。它只保存已经结束的检查事实；Record、Projection 和 Report 不需要作者 API、matcher 或 collector 才能解释它。
 
 ```text
-assert-first author API / matcher / collector / evaluation order
-                      ↓
-        producer 内存求值与 Verdict 折叠
-               ↙                 ↘
-niceeval.assertions Attachment  niceeval.verdict Attachment
-               ↓
-      标准 Attempt detail Report
+author API / matcher / collector / control flow
+                    ↓
+          producer evaluates and seals
+             ↙                    ↘
+niceeval.assertions/v1    niceeval.verdict/v1 (+ score for Score Eval)
+             ↓
+  declared RecordProjection → closed report document
 ```
 
-## 稳定 RecordAttachment payload
+## 稳定 payload
 
-`niceeval.assertions/v1` 是 Attempt-owned `RecordAttachment` 的独立 `RecordAttachmentSchemaId`。它的 `application/json` payload 从 `niceeval.record/v1` 的第一次发布起冻结为以下 document：
+`niceeval.assertions/v1` 的 payload 是 exact JSON。它的外层 framing、entry order 和每个 entry 的稳定字段由本 schema 解码；criterion 本身依其判别成员解码。
 
 ```ts
-type AssertionsDocument = {
-  entries: readonly AssertionEntry[];
+type AssertionsDocumentV1 = {
+  readonly entries: readonly AssertionEntryV1[];
 };
 
-type AssertionEntry = CheckEntry | DirectScoreEntry;
-
-type AssertionEntryId = string;
-
-type EntryContext = {
-  entryId: AssertionEntryId;
-  name: string;
-  groupPath: readonly string[];
-  detail?: string;
-  source?: {
-    path: string;
-    digest: string;
-    line: number;
-    column: number;
-  };
+type AssertionEntryV1 = {
+  readonly entryId: AssertionEntryId;
+  readonly display: AssertionDisplayV1;
+  readonly criterion: BuiltInCriterionV1 | ThirdPartyCriterionV1;
+  readonly subject: CapturedMaterialV1;
+  readonly evidence: readonly CapturedMaterialV1[];
+  readonly coverage: AssertionCoverageV1;
+  readonly result: SealedAssertionResultV1;
+  readonly points?: number;
 };
 
-type CheckEntry = EntryContext & {
-  kind: "check";
-  decision:
-    | { kind: "gate"; threshold: number }
-    | { kind: "soft"; threshold: number }
-    | { kind: "observe" };
-  availability: "required" | "optional";
-  result:
-    | {
-        state: "available";
-        score: number;
-        expected?: string;
-        received?: string;
-        evidence?: string;
-      }
-    | {
-        state: "unavailable";
-        reason: string;
-        evidence?: string;
-      };
-  award:
-    | { kind: "none" }
-    | { kind: "conditional"; available: number };
-};
-
-type DirectScoreEntry = {
-  entryId: AssertionEntryId;
-  kind: "score";
-  name: string;
-  groupPath: readonly string[];
-  source?: {
-    path: string;
-    digest: string;
-    line: number;
-    column: number;
-  };
-  points: number;
+type ThirdPartyCriterionV1 = {
+  readonly kind: "third-party";
+  readonly name: string;
+  readonly schemaId: string;
+  readonly data: JsonValue;
 };
 ```
 
-`AssertionEntryId` 精确匹配 ASCII grammar `ae_[a-z0-9]{20}`，固定为 23 UTF-8 bytes。对象是精确对象，任何未知字段、缺失字段、错误联合或重复 object key 都使此 `RecordAttachment` invalid。所有 `entries` 的 `entryId` 必须两两不同；重复值使整个 Attachment invalid。同名条目合法。
+`BuiltInCriterionV1` 是封闭的 discriminated union。成员包括 value match、scope status、event occurrence、Judge measurement、Sandbox result 与 direct score；每个成员都有包拥有的 exact shape。它不保存函数、class、matcher object、collector object 或可执行 expression。
 
-producer 在 normalize / collect 每个内存结果时分配尚未出现在该 Attachment 的不透明 `entryId` 并写入该 entry；它不能从 `entries` 的位置、`name`、`groupPath` 或 Report route 推导。`entryId` 只在其 Attempt-owned Assertions Attachment 内稳定，不承诺两个 Attempt 中同一作者断言有相同值。它不进入 Record Core，也不需要全局 registry。
+第三方 criterion 的精确边界只有 `{ name, schemaId, data }`。`name` 表示产品身份，`schemaId` 表示解释版本，`data` 是该 schema 的 exact JSON payload。未知字段、替代的 raw matcher 或没有 schema identity 的第三方数据都不属于 v1。
 
-`entries` 数组顺序保存声明／展示顺序，并保持既有的分数累加顺序；它不表示条目 identity。`groupPath` 的 segment 顺序仍表示分组层级。对象 key 顺序在成功 JSON parse 后无义。
+`AssertionEntryId` 精确匹配 `ae_[a-z0-9]{20}`。它只在这份 Attachment 内唯一，且不会从 display、source、criterion 或材料派生。两个 entry 同名合法；重复 `entryId` 使 Attachment invalid。
 
-`entryId` 是详情页、route 和导航项的条目 identity。`name` 与 `groupPath` 只组织页面，`detail` 是稳定的人读检查摘要，不是 public API 或 matcher identity。作者语义按下表归一：
+## 材料、coverage 与限制
 
-所有 Assertion 都是同一个模型：
+`CapturedMaterialV1` 只有两种形态：有界的安全 snapshot，或指向本 Attempt 已封口 Attachment／owner-local blob 的稳定 ref。ref 不跨 Record root、owner 或 Attachment closure；snapshot 不保存 secret、函数、native bytes 或可变“最新状态”。
 
-```text
-subject (a) + evaluator / Match (b) ──► evaluation
-```
+每个 entry 必须保存下列 completeness 事实：
 
-`t.check(a, b)` 由作者显式给出 `a` 和 `b`。`loadedSkill(...)`、`calledTool(...)`、`succeeded()` 与 Judge
-recipe 是它的特殊化入口：receiver 和方法替作者取得 `a`，方法参数构造 `b`，随后登记同一种 Assertion。
-
-| 作者写法 | subject `a` | evaluator / Match `b` |
-|---|---|---|
-| `t.check(value, match)` | 已求值的 `value` snapshot。 | `match` identity、version 与 config。 |
-| `turn.calledTool("search")` | Turn scope 中的 normalized tool occurrences。 | tool name、input、count 与 status expectation。 |
-| `turn.loadedSkill("browser")` | Turn scope 中的 normalized skill occurrences。 | skill name 与其它 expectation。 |
-| `turn.succeeded()` | Turn 的可信终态 snapshot。 | succeeded evaluator。 |
-| Judge recipe | Judge material 与 subject snapshot。 | recipe、rubric、model-facing config 与 evaluator version。 |
-
-因此 scoped 方法不能只保存 true / false。它们必须像 `t.check(a, b)` 一样保存 `a`、`b` 和 evaluation。
-
-## AssertionResult
-
-每条 `AssertionResult` 至少包含：
-
-| 字段组 | 内容 |
+| 字段 | 含义 |
 |---|---|
-| gate 与最终通过线 | `decision.kind: "gate"` 与显式 threshold |
-| 带通过线的 soft | `decision.kind: "soft"` 与显式 threshold |
-| 不设通过线的纯观测 | `decision.kind: "observe"` |
-| required / optional | 对应的 `availability` |
-| 条件给分 / 直接给分 | conditional award / direct score entry |
-| `stopOnFailure` 与其它控制流 | 不写入此 Attachment |
+| coverage | `complete`、`partial`、`unavailable` 或 `not-applicable`，以及具名原因。 |
+| limitations | `redacted`、`sampled`、`truncated` 或 criterion 定义的其它可解释限制。 |
+| subject | criterion 读取的快照或 ref；scope subject 保存 call-time cut。 |
+| evidence | 支持 evaluation 的 refs 或预览，不以“没有读到”替代“没有发生”。 |
 
-例如 `t.check(await runCommand(...), commandSucceeded())` 保存已求值 `CommandResult` 的安全内容或引用、
-`commandSucceeded` 的 evaluator config，以及 evaluation。`await` 只负责先取得 `a`，不形成第四种数据。
+document 最多 4,096 个 entries。每个 entry 的字符串、snapshot、preview、ref 数与 limitation 数都有固定解码上限；整个紧凑 JSON payload 最多 4 MiB。上限、Unicode、ref closure 或 entry framing 不合法时，该 Attachment 是 invalid。
 
-`subjectSnapshotRef` 不能指向可变的“最后状态”。大型内容可以使用 ref，但 Assertion 仍必须声明要保留的
-subject 字段与 limitations。secret 不进入任一字段。
+`entries` 数组顺序就是原始声明／展示顺序。Projection 可按这个顺序显示，但详情 route 只使用 `entryId`，不使用数组位置、label、key、groupPath 或 source。
 
-`expected: calledTool("search")` 与 `received: 0 matching calls` 只是 reader 从 `a`、`b` 和 evaluation
-生成的文案，不是唯一保存内容。未来 renderer 可以改变文字与布局，但不能改变 sealed evaluation。
+## sealed evaluation 与局部 criterion 失败
 
-## Pass 与 Score projection
+`SealedAssertionResultV1` 保存 producer 已经结束的 evaluation 与 result：matched、mismatched、unavailable、errored 或 not-applicable，以及可审计的原因与必要材料。reader 不重新运行 criterion，也不从当前源码、最后一个 Turn 或新的 Judge 调用推断结果。
 
-Pass projection 把 Boolean result 或 thresholded measurement 映射为 matched / mismatched，并由
-execution outcome 共同折叠 Attempt Verdict：
+reader 先验证 entry framing，再分别解码 criterion。未知内建 discriminator、未知第三方 `schemaId` 或第三方 `data` 的 decode failure 只产生该 entry 的 `unsupported` 或 `invalid` criterion read。其 `entryId`、display、materials、coverage 与 sealed result 仍可供诊断；同一 Attachment 的其它 entry 不受影响。
 
-所有限制都是 `niceeval.assertions/v1` 的 schema 契约，不能在同一个 schema decoder 中放宽。
+只有无法安全定位 entry、重复 identity、超出全局界限、envelope 损坏或 payload 不是 JSON 时，reader 才返回 `RecordAttachmentRead.invalid`。这一区分让一个插件或自定义 criterion 的问题不能使整个 Attempt detail 不可读。
 
-| 范围 | 约束 |
-|---|---|
-| document | 最多 4,096 个 entries。 |
-| 通用字符串 | 必须是合法 Unicode scalar sequence；lone surrogate 非法。 |
-| `entryId` | 精确为 ASCII `ae_[a-z0-9]{20}`，固定 23 UTF-8 bytes；同一 document 内两两不同，重复值 invalid。 |
-| `name`、`groupPath` segment、`detail`、`reason` | 非空 NFC，拒绝 C0 与 DEL；每项按解码后字符串计算，最多 512 UTF-8 bytes。 |
-| `groupPath` | 最多 16 个 segment；空数组表示根组。 |
-| `expected`、`received`、`evidence` | 每项最多 4,096 UTF-8 bytes；缺失表示未提供，空串表示提供了空预览；内容原样保留，由 renderer 去除控制字符。 |
-| `source.path` | 非空项目相对 POSIX 路径，最多 1,024 UTF-8 bytes；拒绝绝对路径、反斜杠、C0、DEL，以及空、`.` 或 `..` segment。 |
-| `source.digest` | 对应 origin Run source snapshot 的 SHA-256；精确为 64 个 lowercase hex 字符。 |
-| `source.line`、`source.column` | 正安全整数。 |
-| `score`、`threshold` | 有限数且位于 `[0, 1]`；拒绝 `-0`。 |
-| conditional `available` | 有限正数；拒绝 `-0`。 |
-| direct `points` | 有限非负数；允许 `0`，拒绝 `-0`。 |
+## 分值、Verdict 与 Score
 
-按 `entries` 的声明／展示顺序，以 ECMAScript Number 累加所有 direct points 与 conditional available，结果也必须有限。`entryId` 不参与这项聚合。这条上限保证单个 Attempt 的标准 Assertions 分数聚合闭合；它不限制完整 Report semantic document 的总内存。
+`points` 是 finite、非负的 Assertion 分值。它只在 Score Eval 中参与 earned score 计算；`evaluationKind` 永远不是 `points`，只可能是 `pass` 或 `score`。
 
-只有已配置 `.score()` 的 Assertion、直接 `t.score()`，或调用 `.orStop()` 的 control Assertion
-出现 `unavailable` / `errored` 时，Score grading 才不可排名。不参与 score 的 Assertion 的同类问题只保留
-Issue，正式 score 仍有效。execution 或 transport error 使 Score grading 为 `errored`，已有数值只作为
-`partialScore`。普通 cleanup diagnostic 不会自动作废 score。
+每个 Attempt 都由独立的 `niceeval.verdict/v1` Attachment 保存四态 Verdict。Score Eval 还写 `niceeval.score/v1`：gate failed 会形成 `failed` Verdict，但所有已封口的 points 仍构成 earned score。execution error 或不可用 score source 不会伪造零分；它们使 Score Attachment 成为 partial 或 unavailable，具体矩阵由 [Score Eval](library/score-points.md) 与 [Verdict](../verdict/architecture.md) 单点定义。
 
-## Eval projection
+`points`、gate disposition、availability 与 sealed result 都是事实。作者 API 的对象与调用顺序不序列化；`.score()`、`.gate()`、`.atLeast()` 只产生闭合 criterion 或 result，不能留下可再次执行的调用痕迹。`.orStop()`、`stopOnFailure` 与 memoization 是 producer 控制流，不进入稳定 payload。
 
-writer 对 ECMAScript `JSON.stringify(document)` 的紧凑 UTF-8 结果执行同一个 4 MiB 限制。越界时在 whole Run seal 前以 `record-input-invalid` 拒绝；外部损坏造成的越界或非法值成为此 Attachment 的 `RecordAttachmentRead.invalid`。
+## 归属与 Projection
 
-JSON 空白可能让 raw file 超限，因此只在 `TransportValid` 成立并成功 JSON parse 后才忽略空白与 object key 顺序。`entries` 的顺序保存声明／展示与分数累加顺序；`groupPath` 的顺序表示分组层级。
+collector 在归一每个已求值 entry 时分配 `entryId`，再在 whole Run 发布前写入这份 Attachment。它不打开 Record 路径，不读取 Report 的 Projection，不生成页面，也不把 Fact/use graph 序列化进 payload。
 
-`.orStop()` 封口它的 entry。test settle 封口其余 entry。连续 measurement 在 Pass Eval 封口时若没有
-`atLeast`，就是作者错误；Score Eval 的 measurement 可以直接封口。
+source 信息存在时，只能引用 Attempt origin Run 的 source snapshot。第三方 criterion 不把当前项目源码、token 或本机路径塞入 entry。
 
-作者 API、matcher 名称、collector、memoization、证据依赖图、evaluation algorithm 和 `stopOnFailure` 都不进入这份 document。上层可以替换这些实现，只要 producer 继续写出同一冻结 payload，Record reader 与标准 Report 就无需改变。
+Sample 只保留 Core 与分母。标准 detail Report 通过 `RecordProjection` 声明 Assertions Attachment，形成自包含的 `niceeval.report-document/v1`。
+static export、show 与 view 共享该 document，不能重新读取 Record 或重新执行 criterion。
 
-`niceeval.assertions/v1` 的读取只接受同时满足 FileValid、TransportValid 与 ContractValid 的历史 Attachment payload。外部编辑不是受支持的写入协议。
+## schema 演进
 
-支持该 schema 的 reader 必须把它解码成 JSON 深等价的值。`entries` 的顺序保存声明／展示与分数累加顺序，`groupPath` 的顺序表示分组层级；对象 key 顺序与 JSON 空白无义。
+payload shape、media type、closedness 或解释改变时，发布同 name 的相邻 `RecordAttachmentSchemaId`。family 为相邻版本显式提供无损 converter，或显式声明 `not-losslessly-migratable`；普通 reader 不自动迁移。
 
-确定性的标准 Assertions projection 只读取已解码的 payload。每个 Assertion 详情实例与 route 都以其 `entryId` 识别；Report 不得从 `entries` 的展示位置、`name` 或临时 route 反推 identity。固定 fixture 使两份 decoded value 逐字段相等时，同一标准 requirement、Report definition 与 runtime 必须形成相等的 `niceeval.report-document/v1` semantic document。
-
-show、view 与 static export 都从同一份 semantic document 派生。它们消费同一份 `ReportExecution`；从旧 Record 重新 export 只承诺当前 exporter 能成功消费，不承诺导出目录逐 byte 相等，也不约束读取时间或随机源的用户自定义 Report。
-
-这项承诺从 `niceeval.assertions/v1` writer 开始。实现时必须保存该版本 writer 产生的原始 fixture bytes；未来 reader 不能用未来 writer 重新生成 fixture 来替代跨代证明。
-
-## Attachment schema 演进
-
-`niceeval.assertions/v1` 是独立的 Attempt `RecordAttachment` schema，不继承 Record Core 的版本或 decoder 承诺。assert-first 作者模型、matcher 和求值顺序变化时，只要这份 payload 的事实含义不变，就不改 Attachment schema，也不改 Record Core。
-
-payload shape、media type、closedness 或解释变化时，发布同名的相邻 schema，例如 `niceeval.assertions/v2`。family 必须为 `v1 → v2` 二选一：提供只读取精确旧 payload 的无损 converter，或声明 `not-losslessly-migratable`。converter 不读取当前 Eval、源码、网络、进程变量或新的求值结果。
-
-普通 reader 不自动迁移。不可无损迁移时，`niceeval migrate` 保留旧 Attachment bytes 并报告 warning，不补默认值、不删除历史事实。业务 family 本身改变时才发布新的 Attachment name；同一个 schema ID 绝不接受两种 shape。
-
-## 数据归属
-
-Assertion collector 只消费调用方提供的值和 producer 已归一的运行数据。它在 normalize / collect 时为每个 entry 分配并保存 attachment-local `entryId`，再以该 entryId 集合检查重复；它不打开 Record 路径，不读取 Report 的 projection 或 Calculation，也不生成报告页面。
-
-source 位置信息可选。存在时，`path` 与 `digest` 必须匹配 Attempt origin Run 的 `niceeval.sources/v1` Attachment entry；Report 经声明的 origin-Run projection 读取快照，不读取当前 worktree。第三方包不写入项目源码内容。
-
-Attachment payload 由 Attempt owner 在 whole Run 发布前写入，发布后属于 immutable Run。Sample 始终不读取业务 Attachment；外部改动 bytes 不会得到 Record 的编辑、revision 或修复语义。
-
-## 与 Verdict 和 Reports 的关系
-
-producer 在内存中根据 assertion 求值结果、执行错误和 strict policy 形成 `niceeval.verdict/v1`，再分别写入两个独立 Attempt Attachment。Pass Eval 与 Score Eval 的每个 Attempt 都写入四态 Verdict；Score Eval 另外写入独立的 `niceeval.score/v1` Attachment。Assertions 的 `points` 只是题内挣分，绝不形成第三种 `evaluationKind`。Verdict 规则由 [Verdict](../verdict/architecture.md) 单点定义。
-
-Sample 只保留 Attempt 核心和分母，不读取 assertion。标准 Attempt detail 通过 `RecordProjection` 声明它需要的 Assertions Attachment，并把投影值包装进闭合的 Report semantic document。
-
-Report 不能自行读取文件或重新计算 Attempt 业务状态。
+converter 只读取精确旧 payload，不读取当前 Eval、源码、网络、进程变量或新的 evaluation。不可无损时，`niceeval migrate` 保留旧 bytes 并返回 `migration-unavailable`，不补默认值或重算 Assertions。
 
 ## 相关阅读
 
-- [Assertion 证据与完整性](architecture/evidence.md)
-- [Assertion 展示](library/display.md)
-- [Assertion Library](library.md)
-- [Verdict](../verdict/README.md)
-- [RecordAttachment](../record/architecture.md#recordattachment)
+- [Assertions](README.md) —— 作者面与范围。
+- [Evidence](architecture/evidence.md) —— material 的采集边界。
+- [Score Eval](library/score-points.md) —— score state 与 points。
+- [Verdict](../verdict/architecture.md) —— 四态折叠。
+- [RecordAttachment](../record/architecture.md#recordattachment) —— owner、读取与发布。

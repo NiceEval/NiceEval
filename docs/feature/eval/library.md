@@ -24,7 +24,7 @@ export default defineEval({
 | `succeeded` / `calledTool` / `toolOrder` / `event` / `maxTokens` | scope Assertion | [Scoped assertions](../assertions/library/scoped-assertions.md) |
 | `t.check(value, match)` | 直接登记值 Assertion | [Value assertions](../assertions/library/value-assertions.md) |
 | `.atLeast(n)` / `.orStop()` | threshold condition 与 async barrier | [Assertions](../assertions/README.md) |
-| `.score(n)` / `t.score(n)` | Score Eval 的显式 contribution | [Score Eval](../assertions/library/score-points.md) |
+| `.score(points)` / `t.score(points)` | Score Eval 的显式 contribution | [Score Eval](../assertions/library/score-points.md) |
 | `t.judge` / `turn.judge` | 直接登记 Judge measurement Assertion | [Judge](../judge/library.md) |
 | `t.sandbox.*` | 文件 IO、命令执行与 diff Assertion | [Sandbox operations](../sandbox/library/operations.md) |
 
@@ -35,7 +35,8 @@ export default defineEval({
 `defineEval` 创建 Pass Eval。它用 Boolean condition 得到 Attempt Verdict；continuous measurement 必须
 `.atLeast(n)`，context 没有 `t.score` 或 handle `.score`。
 
-`defineScoreEval` 创建 Score Eval。Assertion 默认 record-only；用 `.score(n)` 或 `t.score(n)` 显式贡献
-score。它没有 Attempt Verdict、总分或百分比。
+`defineScoreEval` 创建 Score Eval。Assertion 默认 record-only；用 `.score(points)` 或 `t.score(points)`
+显式贡献 score。每个 Attempt 仍有四态 Verdict，并另写 Score Attachment；gate failed 不清空 earned score。
+Score 不声明 max 或百分比。
 
 详细 API 与完整场景见 [Use cases](use-case/README.md)。

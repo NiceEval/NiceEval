@@ -93,5 +93,5 @@ export default defineExperiment({
 3. 错误镜像在 `sandbox.prepare.experiment` 报 Remem 版本探测失败并点名 plugin source;
 4. 同一 Sequence 的后一步看到前一步留下的 `$HOME/.remem` 状态,且没有 carried 前序;
 5. Stop hook 后 extraction queue 在 `preTeardown` 排空,失败只归现有 lifecycle phase;
-6. 同一插件 blueprint 被两个 Experiment 并发使用时,运行时状态与事实互不改写;
+6. 同一插件 blueprint 被两个 Experiment 并发使用时,运行时状态与 typed Attachment write 互不改写;
 7. 强杀恢复只在 linked plugin identities 完全匹配时运行当前 teardown。

@@ -78,7 +78,9 @@ export default defineExperiment({
 ```
 
 `evals` 可以同时选择通过制与计分制 eval。
-题型由 `EvalDescriptor.evaluationKind` 给报告：通过制只进入通过率，计分制只进入总分；两者分别聚合、并排展示，不相加。
+题型由 `EvalDescriptor.evaluationKind` 给报告：通过制读 Verdict 的通过率，计分制读 Score Attachment 的
+earned score；两者分别聚合、并排展示，不相加。两种 Eval 的每个 Attempt 都有四态 Verdict，Score Eval
+另有 complete、partial 或 unavailable 的 score state。`points` 只是 Assertion 分值，不是第三种题型。
 计分语义见[计分粒度](../assertions/library/score-points.md)。
 
 `judge` 属于运行配置：同一批 eval 可以在两个 Experiment 中只改变裁判模型或端点，得到可签入、可复现、会进入指纹的 judge A/B。它只规定**怎样执行裁判**（model / baseUrl / apiKeyEnv / timeoutMs），不允许 Experiment 定义题目的 rubric、评分材料、severity 或 threshold；这些仍只写在 Eval 的 judge assertion 上。求值链见 [Architecture · 配置求值](architecture.md#配置求值链一次求值处处同源)，完整场景见 [Judge A/B 用例](../judge/use-case/experiment-ab.md)。
@@ -163,7 +165,7 @@ id 只从**路径**推导:`experiments/agents/codex/gpt-5.4.ts` → `agents/code
 - [Library](library.md) —— model/flags 怎么透传、怎样选择 eval、路径怎样形成 id、与 config 的关系。
 - [缓存与携带](cache.md) —— 上一轮的结果哪些还算数:指纹算什么、携带要过哪几道门、`--rerun` 三档。
 - [Sandbox 生命周期](../sandbox/lifecycle.md) —— 记忆库与 checkpoint 怎样在物理 Sandbox 边界恢复与回存。
-- [计分粒度](../assertions/library/score-points.md) —— 对比里一个 eval 记几分:通过制(`defineEval`,一题一分,读通过率)与计分制(`defineScoreEval`,题内叠加挣分,读总分)；混合时两种读数各算各的。
+- [计分粒度](../assertions/library/score-points.md) —— 对比里一个 eval 记几分:通过制(`defineEval`,一题一分,读通过率)与计分制(`defineScoreEval`,题内叠加挣分,读 earned score)；混合时两种读数各算各的。
 - [计分粒度的 Experiments 边界](score-points.md) —— Experiment 不复制评分语义，只保留选择与运行边界。
 - [Architecture](architecture.md) —— 实体、配置求值、生命周期、跨 Invocation 协调与完成状态。
 - [设计参照](reference/README.md) —— agent-eval 等外部方案带来了什么、哪些边界没有跟随。

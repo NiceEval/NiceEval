@@ -35,6 +35,7 @@
 
 ## 对比怎么计分
 
-一个实验可以同时选择两种题型:通过制 eval(`defineEval`)读通过率,一题一分、`attempts > 1` 按通过率折叠;计分制 eval(`defineScoreEval`)读总分,题内叠加挣分。
-混型时两种读数分列、不相加。
+一个实验可以同时选择两种题型:通过制 eval(`defineEval`)读 Verdict 的通过率;计分制 eval(`defineScoreEval`)读
+Score Attachment 的 earned score。两种题型的每个 Attempt 都有四态 Verdict；计分制还显示 complete、partial
+或 unavailable。混型时两种主读数分列、不相加。
 「死在哪层」「部分完成」「质量差」各有下钻读法,契约见[计分粒度](../../assertions/library/score-points.md)。

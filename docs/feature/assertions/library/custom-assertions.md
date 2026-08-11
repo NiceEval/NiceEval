@@ -22,7 +22,7 @@ Assertion；handle 再配置同一 entry。
 ## 连续 evaluator
 
 连续 Match 返回 finite `[0,1]` measurement。Pass Eval 必须把它 `.atLeast(n)`；Score Eval 可以直接
-`.score(n)`，也可以同时添加局部 threshold。
+`.score(points)`，也可以同时添加局部 threshold。
 
 ```ts
 const similarity = defineScoreMatch((actual: string) => compare(actual, expected));
@@ -31,4 +31,10 @@ pass.check(reply, similarity).atLeast(0.8);
 score.check(reply, similarity).score(5).atLeast(0.8);
 ```
 
-`atLeast`、`score` 和 `orStop` 都不属于 Match。它们是登记后的 AssertionHandle 配置。
+`atLeast`、`gate`、`score` 和 `orStop` 都不属于 Match。它们是登记后的 AssertionHandle 配置。
+
+## 第三方 criterion
+
+第三方 evaluator 可以有自己的 criterion schema，但 Assertions v1 只保存精确的 `{ name, schemaId, data }`。
+它不保存 evaluator 函数、模块对象、闭包或运行时 dependency graph。`schemaId` 未安装或 `data` 无法解码时，
+reader 只把该 entry 标为 `unsupported` 或 `invalid`；同一 Attachment 的其它 entry 继续可读。

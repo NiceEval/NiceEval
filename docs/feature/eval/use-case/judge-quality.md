@@ -29,7 +29,7 @@ LLM-as-judge 的三个 recipe 都直接登记 measurement Assertion：封闭式�
    }).atLeast(0.7).label("重构说明");
    ```
 
-3. 在同一 handle 上配置用途。Pass Eval 必须 `.atLeast(n)`；Score Eval 用 `.score(n)` 贡献分数，也可同时配置 `.atLeast(n)` 作为局部 condition：
+3. 在同一 handle 上配置用途。Pass Eval 必须 `.atLeast(n)`；Score Eval 用 `.score(points)` 贡献分数，也可同时配置 `.atLeast(n)`。若该 condition 必须改变 Verdict，再调用 `.gate()`：
 
    ```typescript
    const quality = turn.judge.autoevals.closedQA("回答是否切题且完整？")

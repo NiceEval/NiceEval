@@ -36,7 +36,7 @@ export default defineEval({
 项目级配置是没写时的默认出处，压不掉 eval 写下的值。
 `timeoutMs` 可由 experiment 或 `--timeout` 设置替换。`judge: true` 从 Experiment 与项目 Config 继承；`judge: { ... }` 声明 capability 并按字段替换它们。没有在 eval 上声明 `judge` 时，创建 Judge Assertion 是同步作者错误。
 
-Runner 将求值后的 Judge 配置冻结一次，用同一份值做 fingerprint、预检与 evaluator 执行。Judge recipe 直接登记 measurement Assertion。Pass Eval 在同一 handle 调用 `.atLeast(n)`；Score Eval 在同一 handle 调用 `.score(n)`。见 [Judge](../judge/library.md)。
+Runner 将求值后的 Judge 配置冻结一次，用同一份值做 fingerprint、预检与 evaluator 执行。Judge recipe 直接登记 measurement Assertion。Pass Eval 在同一 handle 调用 `.atLeast(n)`；Score Eval 在同一 handle 调用 `.score(points)`。见 [Judge](../judge/library.md)。
 完整求值链见 [Experiments · 配置求值链](../experiments/architecture.md#配置求值链一次求值处处同源)。
 
 `sandbox` 放一个 `SandboxLayer`，两种形态（类型与 factory 契约单源在 [Sandbox Layer](../sandbox/layers.md)）：
@@ -102,7 +102,7 @@ solution、生成器与参考答案不得进入任何 build context 或最终镜
 ## defineScoreEval：Score Eval
 
 `defineScoreEval` 定义以累计 `score` 排名的题型。它与 `defineEval` 字段形状相同，差别只在 `test(t)`：
-ScoreTestContext 提供 handle `.score(n)` 与直接 `t.score(n)`。这两个入口只属于 Score Eval。
+ScoreTestContext 提供 handle `.score(points)` 与直接 `t.score(points)`。这两个入口只属于 Score Eval。
 
 ```typescript
 import { defineScoreEval } from "niceeval";
@@ -126,15 +126,18 @@ export default defineScoreEval({
 });
 ```
 
-Assertion 默认只保存 evaluation、evidence 与 diagnostic。`.score(n)` 使 Boolean matched 贡献 `n`、
-mismatched 贡献 `0`；measurement `m` 贡献 `m * n`。`t.score(n)` 直接登记 non-negative contribution，
-返回的 handle 只能配置 key 与 label。
+Assertion 默认只保存 evaluation、evidence 与 diagnostic。`.score(points)` 使 Boolean matched 贡献
+`points`、mismatched 贡献 `0`；measurement `m` 贡献 `m * points`。`t.score(points)` 直接登记
+direct-score Assertion entry，返回的 handle 只能配置 key 与 label。
 
-Score Eval 没有 Attempt Verdict、总分、百分比或隐式每项 `+1`。正常没有 contribution 时得到正式
-`score: 0`。measurement 可直接封口，`.atLeast(n)` 只增加局部 condition。
+Score Eval 的每个 Attempt 也有四态 Verdict，另有独立 Score Attachment。gate failed 会形成
+`failed` Verdict，但不会抹掉已 earned 的 score；execution error 或 unavailable score source 使 Score
+Attachment 成为 partial 或 unavailable，而不是伪造 `0`。没有 contribution 的正常 Attempt 得到
+`earned: 0`。Score 不声明 max、百分比或隐式每项 `+1`。
 
 题型是定义期事实，进入 `EvalDescriptor.evaluationKind`（`"pass" | "score"`）供报告选择主读数。
-一个 Experiment 可以同时选择两种题型，但每条 Attempt 按自己的 evaluationKind 解释。
+`points` 只在 Score Eval 内表示 Assertion 分值。一个 Experiment 可以同时选择两种题型，但每条 Attempt
+按自己的 evaluationKind 解释。
 
 完整 score 语义见 [Assertions · Score Eval](../assertions/library/score-points.md)，完整场景见
 [Score Eval 用例](use-case/rubric-points.md)。
