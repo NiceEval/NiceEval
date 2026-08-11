@@ -684,6 +684,7 @@
                 "pages": [
                   "zh/tutorials/authoring",
                   "zh/tutorials/eval-groups",
+                  "zh/tutorials/plugins",
                   "zh/tutorials/write-experiment",
                   "zh/tutorials/experiments",
                   "zh/tutorials/fixtures",
