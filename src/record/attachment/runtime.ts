@@ -105,6 +105,7 @@ interface WriteRuntime {
 }
 
 interface MigrationEdgeRuntime {
+  readonly edge: RecordAttachmentMigrationEdge<RecordAttachmentOwner>;
   readonly from: DefinitionRuntime | undefined;
   readonly to: DefinitionRuntime | undefined;
   readonly kind: "converter" | "unavailable";
@@ -904,7 +905,10 @@ export function recordAttachmentWriteContents<
   }
   return Either.right(
     Object.freeze({
-      definition: runtime.definition as unknown as JsonRecordAttachmentDefinition<Owner, Payload>,
+      definition: runtime.definition.definition as unknown as JsonRecordAttachmentDefinition<
+        Owner,
+        Payload
+      >,
       payload: runtime.build.payload as Payload,
       blobs: freezeArray(captured),
     }),
@@ -1071,16 +1075,185 @@ export function recordAttachmentValueDefinition<Payload>(
   if (runtime === undefined) {
     return undefined;
   }
-  return runtime.definition as unknown as JsonRecordAttachmentDefinition<
+  return runtime.definition.definition as unknown as JsonRecordAttachmentDefinition<
     RecordAttachmentOwner,
     Payload
   >;
 }
 
+function migrationPairIssues(
+  from: DefinitionRuntime | undefined,
+  to: DefinitionRuntime | undefined,
+): RecordAttachmentIssue[] {
+  const issues: RecordAttachmentIssue[] = [];
+  if (from === undefined) {
+    issues.push(recordAttachmentIssue("record-attachment-migration-edge-invalid", ["from"]));
+  }
+  if (to === undefined) {
+    issues.push(recordAttachmentIssue("record-attachment-migration-edge-invalid", ["to"]));
+  }
+  if (from === undefined || to === undefined) {
+    return issues;
+  }
+  if (from.owner !== to.owner) {
+    issues.push(recordAttachmentIssue("record-attachment-migration-edge-invalid", ["owner"]));
+  }
+  if (from.name !== to.name) {
+    issues.push(recordAttachmentIssue("record-attachment-migration-edge-invalid", ["name"]));
+  }
+  const fromVersion = schemaVersion(from.schemaId);
+  const toVersion = schemaVersion(to.schemaId);
+  if (
+    fromVersion === undefined ||
+    toVersion === undefined ||
+    incrementDecimal(fromVersion) !== toVersion
+  ) {
+    issues.push(recordAttachmentIssue("record-attachment-migration-edge-invalid", ["schemaId"]));
+  }
+  return issues;
+}
+
+function migrationInputDefinitions(input: unknown): {
+  readonly from: DefinitionRuntime | undefined;
+  readonly to: DefinitionRuntime | undefined;
+} {
+  const fromValue = readOwn(input, "from");
+  const toValue = readOwn(input, "to");
+  return Object.freeze({
+    from: isObject(fromValue) ? definitions.get(fromValue) : undefined,
+    to: isObject(toValue) ? definitions.get(toValue) : undefined,
+  });
+}
+
+function migrationTarget<Owner extends RecordAttachmentOwner, To>(
+  definition: JsonRecordAttachmentDefinition<Owner, To>,
+): RecordAttachmentMigrationTarget<Owner, To> {
+  const target: RecordAttachmentMigrationTarget<Owner, To> = {
+    create<const Blobs extends RecordBlobDrafts>(
+      build: (
+        blobs: RecordAttachmentBlobBuilder,
+      ) => RecordAttachmentBlobBuild<To, Blobs>,
+    ): RecordAttachmentWrite<
+      Owner,
+      RecordBlobErrors<Blobs>,
+      RecordBlobRequirements<Blobs>
+    > {
+      return makeRecordAttachmentWriteForDefinition(definition, build);
+    },
+  };
+  return Object.freeze(target);
+}
+
+/** Define one lossless adjacent edge. The converter is stored but never run here. */
+export function defineRecordAttachmentMigration<
+  Owner extends RecordAttachmentOwner,
+  From,
+  To,
+  E,
+  R,
+>(
+  input: DefineRecordAttachmentMigrationInput<Owner, From, To, E, R>,
+): Either.Either<
+  RecordAttachmentMigration<Owner, E, R>,
+  RecordAttachmentMigrationDefinitionError
+> {
+  const pair = migrationInputDefinitions(input);
+  const convert = readOwn(input, "convert");
+  const issues = migrationPairIssues(pair.from, pair.to);
+  if (typeof convert !== "function") {
+    issues.push(recordAttachmentIssue("record-attachment-migration-edge-invalid", ["convert"]));
+  }
+  if (issues.length > 0 || pair.from === undefined || pair.to === undefined || typeof convert !== "function") {
+    return Either.left(recordAttachmentMigrationDefinitionInvalid(issues));
+  }
+  const migration = {
+    [recordAttachmentMigrationEdgeBrand]: () => recordAttachmentTypeWitness<Owner>(),
+    [recordAttachmentMigrationBrand]: () =>
+      recordAttachmentTypeWitness<{ readonly error: E; readonly requirements: R }>(),
+  } as unknown as RecordAttachmentMigration<Owner, E, R>;
+  migrationEdges.set(
+    migration,
+    Object.freeze({
+      edge: migration as unknown as RecordAttachmentMigrationEdge<RecordAttachmentOwner>,
+      from: pair.from,
+      to: pair.to,
+      kind: "converter" as const,
+      convert: convert as unknown as MigrationEdgeRuntime["convert"],
+      reason: undefined,
+      valid: true,
+    }),
+  );
+  return Either.right(Object.freeze(migration));
+}
+
+/** Declare a settled, adjacent non-lossless edge. Family construction validates it. */
+export function declareRecordAttachmentMigrationUnavailable<
+  Owner extends RecordAttachmentOwner,
+  From,
+  To,
+>(
+  input: DeclareRecordAttachmentMigrationUnavailableInput<Owner, From, To>,
+): RecordAttachmentMigrationEdge<Owner> {
+  const pair = migrationInputDefinitions(input);
+  const rawReason = readOwn(input, "reason");
+  const reason = typeof rawReason === "string" ? rawReason : undefined;
+  const issues = migrationPairIssues(pair.from, pair.to);
+  if (reason === undefined || reason.trim().length === 0) {
+    issues.push(recordAttachmentIssue("record-attachment-migration-edge-invalid", ["reason"]));
+  }
+  const edge = {
+    [recordAttachmentMigrationEdgeBrand]: () => recordAttachmentTypeWitness<Owner>(),
+  } as unknown as RecordAttachmentMigrationEdge<Owner>;
+  migrationEdges.set(
+    edge,
+    Object.freeze({
+      edge: edge as unknown as RecordAttachmentMigrationEdge<RecordAttachmentOwner>,
+      from: pair.from,
+      to: pair.to,
+      kind: "unavailable" as const,
+      convert: undefined,
+      reason,
+      valid: issues.length === 0,
+    }),
+  );
+  return Object.freeze(edge);
+}
+
+function familyEdgeIssues(
+  current: DefinitionRuntime,
+  edge: MigrationEdgeRuntime,
+  path: readonly string[],
+): RecordAttachmentIssue[] {
+  const issues: RecordAttachmentIssue[] = [];
+  if (!edge.valid || edge.from === undefined || edge.to === undefined) {
+    issues.push(recordAttachmentIssue("record-attachment-migration-edge-invalid", path));
+    return issues;
+  }
+  if (edge.from.owner !== current.owner || edge.to.owner !== current.owner) {
+    issues.push(recordAttachmentIssue("record-attachment-migration-edge-invalid", [...path, "owner"]));
+  }
+  if (edge.from.name !== current.name || edge.to.name !== current.name) {
+    issues.push(recordAttachmentIssue("record-attachment-migration-edge-invalid", [...path, "name"]));
+  }
+  const fromVersion = schemaVersion(edge.from.schemaId);
+  const toVersion = schemaVersion(edge.to.schemaId);
+  const currentVersion = schemaVersion(current.schemaId);
+  if (
+    fromVersion === undefined ||
+    toVersion === undefined ||
+    currentVersion === undefined ||
+    incrementDecimal(fromVersion) !== toVersion ||
+    decimalCompare(toVersion, currentVersion) > 0
+  ) {
+    issues.push(recordAttachmentIssue("record-attachment-migration-edge-invalid", [...path, "schemaId"]));
+  }
+  return issues;
+}
+
 /**
- * Core family construction is intentionally useful before migration registration:
- * v1 current definitions have no historic edges. Later family validation expands
- * this exact registry entry without changing the writer or snapshot contracts.
+ * Define one complete family. Every historic version to the current definition
+ * must be linked by exactly one adjacent edge; disconnected, duplicate, forked,
+ * skipped, reverse, and future edges are all rejected before storage observes it.
  */
 export function defineRecordAttachmentFamily<
   Owner extends RecordAttachmentOwner,
@@ -1088,32 +1261,279 @@ export function defineRecordAttachmentFamily<
 >(
   input: DefineRecordAttachmentFamilyInput<Owner, Current>,
 ): Either.Either<RecordAttachmentFamily<Owner, Current>, RecordAttachmentFamilyError> {
-  const current = isObject(input) ? definitionRuntime(input.current) : undefined;
+  const currentValue = readOwn(input, "current");
+  const current = isObject(currentValue) ? definitions.get(currentValue) : undefined;
+  const migrationsValue = readOwn(input, "migrations");
   const issues: RecordAttachmentIssue[] = [];
   if (current === undefined) {
     issues.push(recordAttachmentIssue("record-attachment-family-invalid", ["current"]));
   }
-  const migrations = isObject(input) ? readOwn(input, "migrations") : undefined;
-  if (!Array.isArray(migrations)) {
+  if (!Array.isArray(migrationsValue)) {
     issues.push(recordAttachmentIssue("record-attachment-family-invalid", ["migrations"]));
-  } else if (migrations.length > 0) {
-    issues.push(recordAttachmentIssue("record-attachment-migration-edge-missing", ["migrations"]));
   }
-  if (current !== undefined && schemaVersion(current.schemaId) !== "1") {
-    issues.push(recordAttachmentIssue("record-attachment-migration-edge-missing", ["migrations"]));
+  if (current === undefined || !Array.isArray(migrationsValue)) {
+    return Either.left(recordAttachmentFamilyInvalid(issues));
   }
-  if (issues.length > 0 || current === undefined) {
+
+  const byFrom = new Map<string, MigrationEdgeRuntime>();
+  const bySchemaId = new Map<string, DefinitionRuntime>();
+  bySchemaId.set(current.schemaId, current);
+  for (const [index, candidate] of migrationsValue.entries()) {
+    const edge = isObject(candidate) ? migrationEdges.get(candidate) : undefined;
+    const path = ["migrations", String(index)];
+    if (edge === undefined) {
+      issues.push(recordAttachmentIssue("record-attachment-migration-edge-invalid", path));
+      continue;
+    }
+    appendIssues(issues, familyEdgeIssues(current, edge, path));
+    if (!edge.valid || edge.from === undefined || edge.to === undefined) {
+      continue;
+    }
+    const fromVersion = schemaVersion(edge.from.schemaId);
+    if (fromVersion === undefined) {
+      continue;
+    }
+    const prior = byFrom.get(fromVersion);
+    if (prior !== undefined) {
+      const code = prior.to?.definition === edge.to.definition
+        ? "record-attachment-migration-edge-duplicate"
+        : "record-attachment-migration-edge-fork";
+      issues.push(recordAttachmentIssue(code, path));
+      continue;
+    }
+    byFrom.set(fromVersion, edge);
+    for (const definition of [edge.from, edge.to]) {
+      const priorDefinition = bySchemaId.get(definition.schemaId);
+      if (priorDefinition !== undefined && priorDefinition.definition !== definition.definition) {
+        issues.push(recordAttachmentIssue("record-attachment-migration-edge-fork", path));
+      } else {
+        bySchemaId.set(definition.schemaId, definition);
+      }
+    }
+  }
+
+  const currentVersion = schemaVersion(current.schemaId);
+  if (currentVersion === undefined) {
+    issues.push(recordAttachmentIssue("record-attachment-family-invalid", ["current", "schemaId"]));
+  } else {
+    let version = "1";
+    let traversed = 0;
+    let lastEdge: MigrationEdgeRuntime | undefined;
+    while (version !== currentVersion) {
+      const edge = byFrom.get(version);
+      if (edge === undefined) {
+        issues.push(recordAttachmentIssue("record-attachment-migration-edge-missing", ["migrations", version]));
+        break;
+      }
+      const next = edge.to === undefined ? undefined : schemaVersion(edge.to.schemaId);
+      if (next === undefined || decimalCompare(next, version) <= 0) {
+        issues.push(recordAttachmentIssue("record-attachment-migration-edge-invalid", ["migrations", version]));
+        break;
+      }
+      traversed += 1;
+      lastEdge = edge;
+      version = next;
+    }
+    if (traversed !== byFrom.size) {
+      issues.push(recordAttachmentIssue("record-attachment-family-invalid", ["migrations"]));
+    }
+    if (
+      currentVersion !== "1" &&
+      (lastEdge?.to === undefined || lastEdge.to.definition !== current.definition)
+    ) {
+      issues.push(recordAttachmentIssue("record-attachment-migration-edge-invalid", ["migrations", "current"]));
+    }
+  }
+
+  if (issues.length > 0) {
     return Either.left(recordAttachmentFamilyInvalid(issues));
   }
   const family = {
     [recordAttachmentFamilyBrand]: () =>
       recordAttachmentTypeWitness<{ readonly owner: Owner; readonly payload: Current }>(),
   } as unknown as RecordAttachmentFamily<Owner, Current>;
-  const bySchemaId = new Map<string, DefinitionRuntime>();
-  bySchemaId.set(current.schemaId, current);
   families.set(
     family,
-    Object.freeze({ current, bySchemaId, edgesFrom: new Map() }),
+    Object.freeze({ current, bySchemaId, edgesFrom: byFrom }),
   );
   return Either.right(Object.freeze(family));
+}
+
+/** Resolve a known historical schema against a genuine current family. */
+export function resolveRecordAttachmentMigration<
+  Owner extends RecordAttachmentOwner,
+  Payload,
+>(
+  family: RecordAttachmentFamily<Owner, Payload>,
+  sourceSchemaId: RecordAttachmentSchemaId,
+): RecordAttachmentMigrationResolution | undefined {
+  const runtime = familyRuntime(family);
+  if (runtime === undefined) {
+    return undefined;
+  }
+  if (sourceSchemaId === runtime.current.schemaId) {
+    return Object.freeze({ state: "current" as const });
+  }
+  const source = runtime.bySchemaId.get(sourceSchemaId);
+  if (source === undefined || source.name !== runtime.current.name) {
+    return Object.freeze({ state: "unsupported" as const });
+  }
+  const edges: RecordAttachmentMigrationEdge<RecordAttachmentOwner>[] = [];
+  let schemaId = source.schemaId;
+  while (schemaId !== runtime.current.schemaId) {
+    const version = schemaVersion(schemaId);
+    const edge = version === undefined ? undefined : runtime.edgesFrom.get(version);
+    if (edge === undefined || edge.to === undefined) {
+      throw new Error("RecordAttachment family registry lost a validated migration edge");
+    }
+    if (edge.kind === "unavailable") {
+      return Object.freeze({
+        state: "migration-unavailable" as const,
+        from: sourceSchemaId,
+        to: runtime.current.schemaId,
+        reason: edge.reason ?? "migration unavailable",
+      });
+    }
+    edges.push(edge.edge);
+    schemaId = edge.to.schemaId;
+  }
+  return Object.freeze({
+    state: "migration-required" as const,
+    from: sourceSchemaId,
+    to: runtime.current.schemaId,
+    edges: freezeArray(edges),
+  });
+}
+
+/**
+ * @internal Run one trusted converter at the integration boundary. `suspend`
+ * turns a callback throw into an Effect defect while preserving its explicit E
+ * failures and any fiber interruption without catch/recovery.
+ */
+export function runRecordAttachmentMigration<
+  Owner extends RecordAttachmentOwner,
+  From,
+  E,
+  R,
+>(
+  migration: RecordAttachmentMigration<Owner, E, R>,
+  source: RecordAttachmentValue<From>,
+): Effect.Effect<RecordAttachmentWrite<Owner, E, R>, E, R> {
+  return Effect.suspend(() => {
+    const runtime = isObject(migration) ? migrationEdges.get(migration) : undefined;
+    if (
+      runtime === undefined ||
+      !runtime.valid ||
+      runtime.kind !== "converter" ||
+      runtime.to === undefined ||
+      runtime.convert === undefined ||
+      !isRecordAttachmentValue(source)
+    ) {
+      return Effect.die(new Error("RecordAttachment migration capability is invalid"));
+    }
+    const target = migrationTarget(
+      runtime.to.definition as unknown as JsonRecordAttachmentDefinition<Owner, unknown>,
+    );
+    return runtime.convert(
+      source as unknown as RecordAttachmentValue<unknown>,
+      target as unknown as RecordAttachmentMigrationTarget<RecordAttachmentOwner, unknown>,
+    ) as Effect.Effect<RecordAttachmentWrite<Owner, E, R>, E, R>;
+  });
+}
+
+function registryKey(owner: RecordAttachmentOwner, name: RecordAttachmentName): string {
+  return `${owner}\u0000${name}`;
+}
+
+/** Define a pure installed-family registry without touching storage or services. */
+export function defineRecordAttachmentRegistry(
+  input:
+    | readonly AnyRecordAttachmentFamily[]
+    | { readonly families: readonly AnyRecordAttachmentFamily[] },
+): Either.Either<RecordAttachmentRegistry, RecordAttachmentRegistryError> {
+  const candidates = Array.isArray(input) ? input : readOwn(input, "families");
+  const issues: RecordAttachmentIssue[] = [];
+  if (!Array.isArray(candidates)) {
+    return Either.left(
+      recordAttachmentRegistryInvalid([
+        recordAttachmentIssue("record-attachment-family-invalid", ["families"]),
+      ]),
+    );
+  }
+  const registered = new Map<string, AnyRecordAttachmentFamily>();
+  for (const [index, candidate] of candidates.entries()) {
+    const runtime = isObject(candidate) ? families.get(candidate) : undefined;
+    if (runtime === undefined) {
+      issues.push(recordAttachmentIssue("record-attachment-family-invalid", ["families", String(index)]));
+      continue;
+    }
+    const key = registryKey(runtime.current.owner, runtime.current.name);
+    if (registered.has(key)) {
+      issues.push(recordAttachmentIssue("record-attachment-registry-family-duplicate", ["families", String(index)]));
+      continue;
+    }
+    registered.set(key, candidate as AnyRecordAttachmentFamily);
+  }
+  if (issues.length > 0) {
+    return Either.left(recordAttachmentRegistryInvalid(issues));
+  }
+  const registry = {
+    [recordAttachmentRegistryBrand]: () => recordAttachmentTypeWitness<void>(),
+  } as unknown as RecordAttachmentRegistry;
+  registries.set(registry, Object.freeze({ families: registered }));
+  return Either.right(Object.freeze(registry));
+}
+
+/** @internal Exact lookup used by reader/migration integration. */
+export function recordAttachmentRegistryFamily(
+  registry: RecordAttachmentRegistry,
+  owner: RecordAttachmentOwner,
+  name: RecordAttachmentName,
+): AnyRecordAttachmentFamily | undefined {
+  const runtime = isObject(registry) ? registries.get(registry) : undefined;
+  return runtime?.families.get(registryKey(owner, name));
+}
+
+/** @internal Runtime guard for package-private integration boundaries. */
+export function isJsonRecordAttachmentDefinition(
+  value: unknown,
+): value is JsonRecordAttachmentDefinition<RecordAttachmentOwner, unknown> {
+  return isObject(value) && definitions.has(value);
+}
+
+/** @internal Runtime guard for genuine family capabilities. */
+export function isRecordAttachmentFamily(
+  value: unknown,
+): value is RecordAttachmentFamily<RecordAttachmentOwner, unknown> {
+  return isObject(value) && families.has(value);
+}
+
+/** @internal Returns the exact registered current definition, never a field copy. */
+export function recordAttachmentFamilyCurrentDefinition<
+  Owner extends RecordAttachmentOwner,
+  Payload,
+>(
+  family: RecordAttachmentFamily<Owner, Payload>,
+): JsonRecordAttachmentDefinition<Owner, Payload> | undefined {
+  const runtime = familyRuntime(family);
+  return runtime?.current.definition as unknown as
+    | JsonRecordAttachmentDefinition<Owner, Payload>
+    | undefined;
+}
+
+/** @internal Reads owner only from a genuine family registry record. */
+export function recordAttachmentFamilyOwner<
+  Owner extends RecordAttachmentOwner,
+  Payload,
+>(
+  family: RecordAttachmentFamily<Owner, Payload>,
+): Owner | undefined {
+  return familyRuntime(family)?.current.owner as Owner | undefined;
+}
+
+/** @internal Runtime guard for a genuine installed registry. */
+export function isRecordAttachmentRegistry(
+  value: unknown,
+): value is RecordAttachmentRegistry {
+  return isObject(value) && registries.has(value);
 }

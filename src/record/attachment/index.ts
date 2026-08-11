@@ -1,6 +1,8 @@
 export {
   decodeJsonRecordAttachmentPayload,
+  declareRecordAttachmentMigrationUnavailable,
   defineJsonRecordAttachment,
+  defineRecordAttachmentMigration,
   defineRecordAttachmentFamily,
   encodeJsonRecordAttachmentPayload,
   makeRecordAttachmentWrite,

@@ -160,15 +160,22 @@ export interface RecordAttachmentWrite<
 
 /** The deep-frozen, self-contained part of an available Attachment read. */
 export type RecordAttachmentPayloadSnapshot<Payload> =
-  Payload extends readonly (infer Item)[]
-    ? readonly RecordAttachmentPayloadSnapshot<Item>[]
-    : Payload extends object
-      ? {
-          readonly [Key in keyof Payload]: RecordAttachmentPayloadSnapshot<
-            Payload[Key]
-          >;
-        }
-      : Payload;
+  // Keep primitive brands intact before the object branch. In particular,
+  // Effect/Brand strings must remain their original branded string types.
+  Payload extends null | undefined | string | number | boolean | bigint | symbol
+    ? Payload
+    : // Blob refs are opaque capabilities, not structural payload objects.
+      Payload extends RecordBlobRef
+      ? Payload
+      : Payload extends readonly (infer Item)[]
+        ? readonly RecordAttachmentPayloadSnapshot<Item>[]
+        : Payload extends object
+          ? {
+              readonly [Key in keyof Payload]: RecordAttachmentPayloadSnapshot<
+                Payload[Key]
+              >;
+            }
+          : Payload;
 
 export interface RecordBlobHandleInvalid {
   readonly code: "record-blob-handle-invalid";
@@ -250,6 +257,15 @@ export type RecordAttachmentJson =
   | readonly RecordAttachmentJson[]
   | { readonly [key: string]: RecordAttachmentJson };
 
+/**
+ * Definition callbacks only observe a package-owned payload. Bivariance keeps
+ * ordinary named interfaces ergonomic when Effect's Struct type is readonly;
+ * the definition still stores Schema.Type<S> as its exact public payload type.
+ */
+export type RecordAttachmentBlobRefs<Payload> = {
+  bivarianceHack(payload: Payload): readonly RecordBlobRef[];
+}["bivarianceHack"];
+
 export type DefineJsonRecordAttachmentInput<
   Owner extends RecordAttachmentOwner,
   S extends Schema.Schema.AnyNoContext,
@@ -258,9 +274,7 @@ export type DefineJsonRecordAttachmentInput<
   readonly name: string;
   readonly schemaId: string;
   readonly schema: S;
-  readonly blobRefs: (
-    payload: Schema.Schema.Type<S>,
-  ) => readonly RecordBlobRef[];
+  readonly blobRefs: RecordAttachmentBlobRefs<Schema.Schema.Type<S>>;
 };
 
 export type DefineRecordAttachmentMigrationInput<
@@ -300,10 +314,14 @@ export type RecordAttachmentMigrationResolution =
   | { readonly state: "current" }
   | {
       readonly state: "migration-required";
+      readonly from: RecordAttachmentSchemaId;
+      readonly to: RecordAttachmentSchemaId;
       readonly edges: readonly RecordAttachmentMigrationEdge<RecordAttachmentOwner>[];
     }
   | {
       readonly state: "migration-unavailable";
+      readonly from: RecordAttachmentSchemaId;
+      readonly to: RecordAttachmentSchemaId;
       readonly reason: string;
     }
   | { readonly state: "unsupported" };

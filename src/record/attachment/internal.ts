@@ -4,11 +4,20 @@
  */
 export {
   defineBuiltinJsonRecordAttachment,
+  defineRecordAttachmentRegistry,
+  isJsonRecordAttachmentDefinition,
+  isRecordAttachmentFamily,
+  isRecordAttachmentRegistry,
   isRecordAttachmentValue,
   makeRecordAttachmentValue,
   makeRecordBlobRef,
+  recordAttachmentFamilyCurrentDefinition,
+  recordAttachmentFamilyOwner,
+  recordAttachmentRegistryFamily,
   recordAttachmentValueDefinition,
   recordAttachmentWriteContents,
+  resolveRecordAttachmentMigration,
+  runRecordAttachmentMigration,
 } from "./runtime.ts";
 
 export type {
