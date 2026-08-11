@@ -13,7 +13,7 @@ export default defineEval({
   description: "Brooklyn weather query",
   async test(t) {
     const turn = await t.send("What's the weather like in Brooklyn today?");
-    t.check(turn.succeeded());
+    turn.succeeded().label("Turn 完成");
   },
 });
 ```
@@ -106,9 +106,9 @@ test(t: TestContext): Promise<void> | void;
 
 ## Test context: `t`
 
-`t`（`TestContext`）是评估用例作者拿到的高层上下文。`t` / Turn / Session 的事件方法、`t.sandbox` 的文件方法和 Judge recipe 只生成 Fact。`t.check(...)`、`t.checkIfCovered(...)` 与 `t.require(...)` 决定这些事实怎样影响通过制判定；值加 Match 的写法会原子创建并消费 Fact。`t.require(...)` 只接受已经可求值的 `phase: "now"` Fact，失败时中止后续代码；`phase: "final"` 的文件与最终 diff Fact 必须交给 `t.check(...)`，在评估用例收尾时统一求值。
+`t`（`TestContext`）是评估用例作者拿到的高层上下文。每一次作者入口调用都直接登记一条 Assertion：`t.check(value, match)` 严格接收两个参数；`t.succeeded()`、`session.succeeded()`、`turn.succeeded()`、`calledTool(name, options?)` 等 scoped 方法与 Judge recipe 也直接登记 Assertion。handle 只配置同一条 entry 的 `key`、`label`、`.atLeast(n)`、`.score(n)` 与 `.orStop()`，绝不登记第二条 Assertion。
 
-计分制 `defineScoreEval` 使用 `ScoreTestContext`：用 `t.score(label, fact, { max })` 或 `t.score(label, { earned })` 记分，`test` 正常返回时自动收尾。没有 score use 时得到 0 分。Judge recipe 也是 ScoreFact producer，使用同一套 `check`、`require` 和 `score`。完整规则见[计分制](/zh/tutorials/evaluation-kinds#走完三步也要记三分)。全部成员：
+Pass Eval 用 Boolean condition 折叠 Attempt Verdict。measurement 必须 `.atLeast(n)`；`await handle.orStop()` 在 mismatch 或 below 时停止当前 continuation。`defineScoreEval` 的 `ScoreTestContext` 额外提供 `t.score(n)` 直接登记 contribution，`n` 必须 finite 且不小于零；已有 Assertion 用 `.score(n)` 贡献分数，`n` 必须 finite 且大于零。完整规则见[通过制与计分制](/zh/tutorials/evaluation-kinds)。全部成员：
 
 {/* GENERATED:BEGIN test-context */}
 
@@ -410,22 +410,18 @@ readonly judge: JudgeNamespace;
 
 {/* GENERATED:END test-context */}
 
-## Judge ScoreFact
+## Judge measurement
 
-先在 `defineEval` 或 `defineScoreEval` 声明 `judge: true`，再创建并消费 Judge Fact：
+先在 `defineEval` 或 `defineScoreEval` 声明 `judge: true`，再直接登记 Judge Assertion：
 
 ```ts
 const turn = await t.send("总结需求。");
-const factual = turn.judge.autoevals.factuality(expected);
-const quality = turn.judge.autoevals.closedQA(question);
-const summary = turn.judge.autoevals.summarizes(sourceText);
-
-t.check((factual).atLeast(0.8));
-t.check((quality).atLeast(0.7));
-t.check((summary).atLeast(0.75));
+turn.judge.autoevals.factuality(expected).atLeast(0.8).label("事实一致");
+turn.judge.autoevals.closedQA(question).atLeast(0.7).label("回答质量");
+turn.judge.autoevals.summarizes(sourceText).score(20).label("摘要质量");
 ```
 
-`t.judge.autoevals` 的根级 recipe 额外接收 `{ input, output }` 字符串材料。`turn.judge` 已绑定 immutable Turn 材料。模型配置按 Eval、Experiment、项目配置解析一次；没有单次模型覆盖或 `{ on }` 选项。
+`t.judge.autoevals` 的根级 recipe 额外接收 `{ input, output }` 字符串材料。`turn.judge` 已绑定 immutable Turn 材料。模型配置按 Eval、Experiment、项目配置解析一次；没有单次模型覆盖或 `{ on }` 选项。Pass Eval 必须 `.atLeast(n)`；Score Eval 直接 `.score(n)`。
 
 ## `Turn` 返回类型
 

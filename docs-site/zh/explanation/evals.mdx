@@ -60,11 +60,11 @@ npx niceeval exp local weather/brooklyn
   <Step title="agent.send">
     `t.send()` 调用被选中的 Adapter，并得到标准 `Turn`。
   </Step>
-  <Step title="Assertions 与 Verdict">
-    [NiceEval](https://niceeval.com/) 收集值断言、作用域断言、judge 分数和测试结果。
+  <Step title="Assertions 与判定">
+    [NiceEval](https://niceeval.com/) 收集值断言、作用域断言与 Judge measurement，并登记 score contribution。
   </Step>
-  <Step title="Verdict">
-    所有断言结果折叠成一个最终 verdict。
+  <Step title="终态">
+    Pass Eval 把断言结果折叠成最终 Verdict；Score Eval 累计正式 score。
   </Step>
   <Step title="Report">
     控制台和 reporters 输出结果，同时写入 `.niceeval/` artifacts。
@@ -73,12 +73,14 @@ npx niceeval exp local weather/brooklyn
 
 ## Verdict 类型
 
+Pass Eval 的 Attempt 终态只有四种：
+
 <CardGroup cols={2}>
   <Card title="passed" icon="circle-check" color="#22c55e">
-    所有 `t.check(...)` / `t.require(...)` 要求与 Judge gate 都通过，并且没有执行错误。
+    所有 Boolean Assertion 都 matched，所有 measurement 都达到 `atLeast` 阈值，并且没有执行错误。
   </Card>
   <Card title="failed" icon="circle-xmark" color="#ef4444">
-    至少一个明确登记的 Fact 要求或 Judge gate 失败。
+    至少一个 Boolean condition mismatched，或 measurement 低于阈值。
   </Card>
   <Card title="errored" icon="triangle-exclamation" color="#f59e0b">
     执行异常、超时或作者错误，本次执行无法形成可信结论。
@@ -88,9 +90,11 @@ npx niceeval exp local weather/brooklyn
   </Card>
 </CardGroup>
 
-## gate 与 soft
+Score Eval 没有 Verdict；它只有累计 `score`，分数越高越好。正常没有计分项时 score 为 `0`。
 
-`gate` 是硬门槛，失败会让 eval 失败。`soft` 参与打分，但不一定让 eval 失败。完整规则见 [Assert](/zh/explanation/assert)。
+## 判定与测量值
+
+Boolean `matched` 默认进入 Verdict。连续测量值与 Judge 输出是 `[0, 1]` 的 measurement；Pass Eval 必须用 `.atLeast(n)` 把它封口成 Boolean condition。完整规则见 [Assert](/zh/explanation/assert)。
 
 ## `*.eval.ts` 约定
 
@@ -123,4 +127,4 @@ export default rows.map((row) =>
 ## 相关阅读
 
 - [实验](/zh/explanation/experiment) — 另一半：评谁、怎么跑。为什么和评估用例分开（晚绑定）。
-- [Assert](/zh/explanation/assert) — gate 与 soft 的完整判定规则。
+- [Assert](/zh/explanation/assert) — Assertion 与判定规则。

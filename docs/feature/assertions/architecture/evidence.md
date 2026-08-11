@@ -1,11 +1,25 @@
-# Assertions —— 证据与完整性
+# Assertions —— evidence
 
-Fact producer 负责说明自己需要的证据。scope Fact 读取 Turn status、标准 events、派生事实和 usage；Sandbox Fact 读取最终 diff 或文件；值 Fact 读取显式值；Judge Fact 读取作者给出的文本材料。
+完整的 Assertion 与不可用语义见 [Assertions](../README.md)。本页只规定 evidence 如何进入同一条
+`AssertionResult`。
 
-完整证据可以产生 `passed` 或 `failed`。partial 或 unavailable 证据仍可证明已经出现的正向事实，但不能把缺少的事件、工具调用或 usage 当成不存在。无法完成判分时，Fact 产出 `unavailable` 和结构化 reason。
+## evidence 不是默认值
 
-`unavailable` 是否影响 Attempt 由 use 决定。普通 verdict use 和 score use 都如实消费它；只有核心 `checkIfCovered` 能在 Agent 创建时已声明 usage 不可用的狭窄场景产生 `notApplicable`。
+Assertion 读取的 snapshot、Judge material 和 evaluator 说明都属于 evidence。读取失败、传输失败或
+资料不完整时，结果是 `unavailable` 或 `errored`，不能合成为普通 `mismatched`、`score: 0` 或空 evidence。
 
-没有 Fact use 的 artifact、trace 或报告材料是补充证据。采集失败只写入 diagnostic，不能回填假的 Fact、分数或 verdict。
+Usage Assertion 是唯一例外。只有 Agent 创建时已经声明 usage 不可用，`.ifCovered()` 才投影为
+`notApplicable`。一旦开始采集，采集失败仍是 `unavailable`。
 
-Sandbox 文件 Fact 在被消费时读取。`require` 只能消费即时 Fact；它不会把最终 diff 或文件读取提前到不稳定的中间状态。
+## 脱敏与引用
+
+Record 保存足够解释 evaluation 的脱敏 evidence、evaluator explanation 与 Judge rationale。它保存
+稳定引用，而不是把 secret、原始凭据或不安全配置写入 `AssertionResult`。
+
+每个 `subjectSnapshotRef` 都能追到读取时的 sealed Observation。根 `t` scope 的引用必须表达 vector cut，
+让离线读取面能说明它读到了哪些 Session 前缀。
+
+## 读取面
+
+`show`、`view`、JSON、export 与 source 从同一份 evidence projection 解释结果。它们不重新读取 Sandbox、
+调用 Judge 或重新执行 Match。

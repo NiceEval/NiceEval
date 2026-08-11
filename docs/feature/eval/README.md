@@ -13,7 +13,7 @@ export default defineEval({
   tags?: string[];        // 供 --tag 与 ExperimentInput.evals 谓词过滤
 
   judge?: true | JudgeConfig;
-  // 声明这道题可创建 Judge Fact；true 继承配置，对象同时按字段覆盖配置
+  // 声明这道题可创建 Judge Assertion；true 继承配置，对象按字段替换外层配置
   timeoutMs?: number;     // 这道题跑得完要多久
   //  ↑ 这两个排在 niceeval.config.ts 之前:题目写了 35 分钟,项目 config 写 20 分钟,仍按 35 分钟跑
   //    timeout 要按次压过时用 --timeout 或 experiment 字段；Judge 配置只在声明层解析一次
@@ -34,9 +34,9 @@ export default defineEval({
 
 `timeoutMs` 与 `judge` 是这条 eval 自己对运行条件的声明：装一套工具链的题需要 35 分钟、评开放式行文的题需要 Judge capability，这是题目本身的属性，不是这次跑法的偏好。
 项目级配置是没写时的默认出处，压不掉 eval 写下的值。
-`timeoutMs` 可由 experiment 或 `--timeout` 设置替换。`judge: true` 从 Experiment 与项目 Config 继承；`judge: { ... }` 声明 capability 并按字段替换它们。没有在 eval 上声明 `judge` 时，创建 Judge Fact 是同步作者错误。
+`timeoutMs` 可由 experiment 或 `--timeout` 设置替换。`judge: true` 从 Experiment 与项目 Config 继承；`judge: { ... }` 声明 capability 并按字段替换它们。没有在 eval 上声明 `judge` 时，创建 Judge Assertion 是同步作者错误。
 
-Runner 将求值后的 Judge 配置冻结一次，用同一份值做 fingerprint、预检与 evaluator 执行。Fact recipe 没有 `{ model }` 替换层。阈值由 `ScoreFact.atLeast(n)` 绑定，再交给 `t.check` 或 `await t.require`；计分属于 `t.score`。见 [LLM-as-judge](../judge/library.md#capability-与配置)。
+Runner 将求值后的 Judge 配置冻结一次，用同一份值做 fingerprint、预检与 evaluator 执行。Judge recipe 直接登记 measurement Assertion。Pass Eval 在同一 handle 调用 `.atLeast(n)`；Score Eval 在同一 handle 调用 `.score(n)`。见 [Judge](../judge/library.md)。
 完整求值链见 [Experiments · 配置求值链](../experiments/architecture.md#配置求值链一次求值处处同源)。
 
 `sandbox` 放一个 `SandboxLayer`，两种形态（类型与 factory 契约单源在 [Sandbox Layer](../sandbox/layers.md)）：
@@ -99,11 +99,10 @@ evals/foo/eval.ts       → eval id "foo"
 solution、生成器与参考答案不得进入任何 build context 或最终镜像。
 它们若从未被 Eval 读取，就不需要为了 Runner 再声明一次；template 一侧的隔离规则见 [Sandbox 实例与伴随资源 · 动态泄漏检查](../sandbox/case.md#动态泄漏检查本地上传与-agent-可见-closure)。
 
-## defineScoreEval：计分制题型
+## defineScoreEval：Score Eval
 
-`defineScoreEval` 定义**计分制**题型:题内用给分词汇叠加挣分(五步走完三步挣 3 分、rubric 大题按分值给分),对比读总分而不是通过率。
-字段与 `defineEval` 完全同形,区别只在 `test(t)` 的 `t` ——它多出 Fact 计分和直接给分。
-这些词只存在于 `defineScoreEval`，在 `defineEval` 里写给分是类型错误：
+`defineScoreEval` 定义以累计 `score` 排名的题型。它与 `defineEval` 字段形状相同，差别只在 `test(t)`：
+ScoreTestContext 提供 handle `.score(n)` 与直接 `t.score(n)`。这两个入口只属于 Score Eval。
 
 ```typescript
 import { defineScoreEval } from "niceeval";
@@ -114,33 +113,31 @@ export default defineScoreEval({
   async test(t) {
     await t.send("把 DB-GPT 装起来并通过健康检查。");
 
-    const tests = t.check(
+    t.check(
       await t.sandbox.runCommand("pnpm", ["test"]),
       commandSucceeded(),
-    );
-    t.check(tests, { label: "测试通过" });
-    t.score("测试通过", tests, { max: 2 });
+    ).score(2).label("测试通过");
 
-    const config = t.sandbox.fileChanged("db-gpt/.env");
-    t.score("配置运行环境", config, { max: 1 });
-    t.score("代码精简", { earned: 1 });
+    t.sandbox.fileChanged("db-gpt/.env")
+      .score(1)
+      .label("配置运行环境");
+    t.score(1).label("代码精简");
   },
 });
 ```
 
-`t.score(label, fact, { max })` 让 Boolean Fact 通过挣满 `max`、失败挣 0，让 Score Fact 按归一化分数比例挣分。
-`t.score(label, { earned })` 写入作者已算好的非负分数。
-同一个 Fact 可以相邻登记一个判定用途和一个计分用途，evaluator 仍只运行一次。
-后续代码依赖即时 Fact 时使用两种题型共用的 `await t.require(fact)`；多个独立要求使用 `t.check(fact)` 继续收集。
+Assertion 默认只保存 evaluation、evidence 与 diagnostic。`.score(n)` 使 Boolean matched 贡献 `n`、
+mismatched 贡献 `0`；measurement `m` 贡献 `m * n`。`t.score(n)` 直接登记 non-negative contribution，
+返回的 handle 只能配置 key 与 label。
 
-`test` 正常返回时，Runner 自动关闭计分收集器。没有 score use 的正常路径得到 0 分；`require` 未通过、Judge Fact 不可用或 `t.skip()` 仍按各自终态收尾。
+Score Eval 没有 Attempt Verdict、总分、百分比或隐式每项 `+1`。正常没有 contribution 时得到正式
+`score: 0`。measurement 可直接封口，`.atLeast(n)` 只增加局部 condition。
 
-题型是定义期事实，进 `EvalDescriptor.evaluationKind`(`"pass" | "score"`)供报告选择主读数。
-一个 Experiment 可以同时选择两种题型；通过率与总分分别聚合，不互相相加。
-计分语义的单源契约见[计分粒度](../assertions/library/score-points.md#计分制叠加给分没有上限声明)，完整写法见[计分制用例](use-case/rubric-points.md)。
+题型是定义期事实，进入 `EvalDescriptor.evaluationKind`（`"pass" | "score"`）供报告选择主读数。
+一个 Experiment 可以同时选择两种题型，但每条 Attempt 按自己的 evaluationKind 解释。
 
-API 全景与组织约定见 [Library](library.md);单轮、多轮、HITL、测试集从输入数组生成多条 eval、沙箱型等真实场景一篇一个用例,见 [use-case/](use-case/README.md);API 取舍背后的设计依据见 [Architecture](architecture.md)。
-评分手段（Judge、匹配器与 Fact use）单独成篇，见 [Assertions](../assertions/README.md)。
+完整 score 语义见 [Assertions · Score Eval](../assertions/library/score-points.md)，完整场景见
+[Score Eval 用例](use-case/rubric-points.md)。
 
 ## 相关阅读
 

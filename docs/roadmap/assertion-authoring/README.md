@@ -1,40 +1,42 @@
 # Assertion 作者面
 
-Eval 作者用明确的 consumer 声明 Fact 的 use。scope、Sandbox 与 Judge 先创建 Fact；value 或 EvidenceSource 加 Match 的便利调用原子地创建 Fact 并登记 use。producer、verdict、控制流和计分不混在链式 handle 中。
+Assertion-first 把“作者写下一条评估陈述”作为唯一入口语义。`t.check(value, match)`、scope 方法、
+Judge recipe 与 Score Eval 的直接 `t.score(n)` 都在调用时登记 entry；没有先生产中间结果、再登记消费的两步模型。
+
+完整领域定义由 [Assertions](../../feature/assertions/README.md) 单独维护。本 Roadmap 说明作者面、
+Record 协议和 runner 如何落实这份目标契约。
 
 ```ts
 const turn = await t.send("修复 runtime 配置。");
-const changed = t.sandbox.fileChanged("experiments/local.ts");
-const quality = turn.judge.autoevals.closedQA("回答是否解释了修复？");
 
-t.check(changed);
-t.check(quality.atLeast(0.8));
-t.score("配置修复", changed, { max: 2 });
+t.check(turn.message, includes("已修复"))
+  .key("repair-explained")
+  .label("说明修复");
+
+turn.succeeded().label("Turn 完成");
+turn.judge.autoevals.closedQA("回答是否解释了修复？")
+  .atLeast(0.8)
+  .label("修复质量");
 ```
 
-Judge 是 native `ScoreFact<"now">` producer。它和值、scope、Sandbox Fact 共享 collector、可达性、memoization、source、持久化形状和读取面。
+每个返回值都是同一条已登记 entry 的 AssertionHandle。`key`、`label`、`atLeast`、`score`、
+`ifCovered` 与 `orStop` 只配置该 entry。
 
-## 词汇
+## 已定边界
 
-- scope producer、Sandbox producer 与 Judge recipe 创建 BooleanFact 或 ScoreFact。
-- `t.check` 是同步 verdict consumer。已有 Fact 返回同一 Fact；value 或 source 加 Match 创建 Fact 并登记 verdict use。
-- `await t.require` 是立即 verdict consumer，返回 Promise 并表达后续代码依赖。
-- `t.score` 只在 `defineScoreEval` 创建 score use。
-
-每个 Fact 最多有一个 verdict use 和一个 score use。没有 use 的 Fact 是 author error，且不请求 Judge evaluator。
-
-不存在 `.gate()`、`.soft()`、`.optional()`、`.observe()`、`.points()`、`.stopOnFailure()`、`t.assert`、`t.assertIfCovered`、`t.fact` 或运行期 `--strict`。`ScoreMatch.atLeast(n)` 与 `ScoreFact.atLeast(n)` 只创建 threshold view；`check` 或 `require` 才登记 verdict use。
-
-## Judge capability
-
-`defineEval` 和 `defineScoreEval` 的 `judge?: true | JudgeConfig` 是 capability 声明。`true` 继承 Experiment/Config；对象声明并按字段替换。未声明 capability 的 Judge recipe 是同步 author error。
-
-根级 `t.judge` 显式接收 `{ input, output }`。`turn.judge` 冻结该 Turn 的原始 user input 和 assistant output。没有 `session.judge`、`{ on }`、路径猜测、隐式 last input 或单个 Fact model override。
+- `t.check` 严格只有 `(value, match)` 两个参数。
+- Pass Eval 用 Boolean Assertion 与 thresholded measurement 得到 Verdict。
+- Score Eval 默认只保存 Assertion evaluation；`.score(n)` 与 `t.score(n)` 显式贡献 score。
+- Judge recipe 直接登记 measurement Assertion。
+- Usage Assertion 才有 `ifCovered()`。
+- `.orStop()` 是同一 handle 的 async barrier，不是另一条 Assertion。
+- schema 19 的 `assertionResults` 是结果协议的单一真相。
 
 ## 入口
 
-- [Library](library.md) —— API、phase、use 与计分。
-- [Matching](matching.md) —— Match 的纯比较语义。
-- [Architecture](architecture.md) —— config、图、状态、record、progress 和读取边界。
-- [CLI](cli.md) —— terminal、退出码、摘要和 JSON。
-- [类型原型](reference/README.md) —— 作者面类型约束。
+- [Library](library.md) — API、两种 Eval 与控制流。
+- [Matching](matching.md) — Match 的纯比较边界。
+- [Architecture](architecture.md) — entry、snapshot、封口与 Record。
+- [CLI](cli.md) — progress、show、JSON 与读取面。
+- [类型原型](reference/README.md) — 正反向 TypeScript 契约。
+- [Harness 诊断](use-case/harness-diagnostics.md) — 用公开结果完成诊断闭环。

@@ -1,10 +1,10 @@
 ---
 title: "niceeval/expect Match 参考"
 sidebarTitle: "断言 Matchers"
-description: "niceeval/expect 的纯 Match factory：组合文字、结构、工具与事件条件，再交给 t.check、turn 或 t.sandbox 生成可复用的 Fact。"
+description: "niceeval/expect 的纯 Match factory：组合文字、结构、条件，再交给 t.check 登记 Assertion。"
 ---
 
-`niceeval/expect` 只提供纯 Match factory。Match 比较一个候选值，不记录结果，也不决定判定或分数。Turn、Session 与 Sandbox producer 负责生成 Fact；`t.check(...)`、`t.require(...)` 与计分制的 `t.score(...)` 消费 Fact。值加 Match 的便利写法会原子创建并消费 Fact。
+`niceeval/expect` 只提供纯 Match factory。Match 比较一个候选值，不记录结果，也不决定判定或分数。`t.check(value, match)` 在调用时读取 `value` 并直接登记 Assertion；返回的 handle 只配置同一条 entry。
 
 ```ts
 import { and, excludes, includes, pattern } from "niceeval/expect";
@@ -15,14 +15,14 @@ import { and, excludes, includes, pattern } from "niceeval/expect";
 ```ts
 t.check(t.reply, includes("confirmed"));
 t.check(t.reply, and(pattern(/order #\d+/i), excludes("cancelled")));
-const config = await t.require(rawConfig, pattern(/runtime/));
+const config = await t.check(rawConfig, pattern(/runtime/)).orStop();
 ```
 
 | 入口 | 作用 |
-|---|---|---|
-| `t.check` | 登记判定用途并同步返回已有或新建的 Fact；失败不会中止后续代码 |
-| `t.require` | 立即消费 `phase: "now"` Fact；失败时中止后续代码并保留结果 |
-| `t.score` | 在计分制评估中把 Fact 计入分数 |
+|---|---|
+| `t.check(value, match)` | 严格两个参数，调用时登记 Assertion；失败不中止后续代码 |
+| `await handle.orStop()` | 同一 handle 的 async barrier；mismatch 或 below 时停止当前 continuation |
+| `handle.score(n)` / `t.score(n)` | 在计分制评估中让该项贡献分数，或直接登记 contribution |
 
 ## Matchers
 
@@ -208,44 +208,22 @@ export function eventMatch<K extends keyof EventOptionsByType>(
 
 {/* GENERATED:END expect-matchers */}
 
-### 匹配工具名称、参数与命令
+### 匹配工具调用
 
-`toolMatch("get_weather")` 只检查工具名称。第二个参数可以继续约束同一次调用的完整 JSON 输入和生命周期状态；`input` 接受 value Match，而不是直接接受一份参数对象：
-
-```ts
-import type { JsonValue } from "niceeval";
-import { equals, satisfies, toolMatch } from "niceeval/expect";
-
-const exactWeatherCall = toolMatch("get_weather", {
-  input: equals<JsonValue>({ city: "Taipei", unit: "celsius" }),
-  status: "completed",
-});
-
-const installCall = toolMatch("shell", {
-  input: satisfies<JsonValue>("运行 pnpm install", (input) =>
-    typeof input === "object" &&
-    input !== null &&
-    !Array.isArray(input) &&
-    typeof input.command === "string" &&
-    input.command.includes("pnpm install")
-  ),
-});
-```
-
-`equals(...)` 比较完整输入；`matches(...)`、`satisfies(...)` 与其它 value Match 可以表达结构或谓词条件。具体字段由 Agent 的工具协议决定，例如 shell 工具可能把命令文本放在 `command` 字段。只关心参数、不限制工具名称时，使用 `toolMatch({ input })`。
-
-`toolMatch("shell")` 回答“调用的是哪类工具”，`commandMatch("niceeval", { argsStart: ["show"] })` 回答“这次调用运行了哪个程序和哪些参数”。如果 NiceEval 没有取得准确的程序与参数，这项检查会是 `unavailable`。需要两项同时成立时，把它们组合在同一次调用上：
+`calledTool(name, options)` 直接登记 Boolean Assertion。`name` 是工具名；`input` 约束同一次调用的完整 JSON 输入，`count` 约束匹配次数，`status` 约束工具生命周期状态：
 
 ```ts
-import { and, commandMatch, toolMatch } from "niceeval/expect";
+t.calledTool("get_weather", {
+  input: { city: "Taipei", unit: "celsius" },
+  count: 1,
+}).label("精确查询天气");
 
-t.check(turn.calledTool(
-  and(
-    toolMatch("shell", { status: "completed" }),
-    commandMatch("niceeval", { argsStart: ["show"] }),
-  ),
-));
+t.calledTool("shell", {
+  input: { command: /pnpm install/ },
+}).label("运行安装命令");
 ```
+
+`input` 使用递归 JSON 匹配：对象部分匹配、数组逐项匹配，任意层可用 `RegExp` 或动态谓词。省略 `count` 表示至少一次。若 NiceEval 没有取得准确的输入或状态证据，这项检查会是 `unavailable`，不会被当成否定。
 
 ### 常见用法示例
 
@@ -255,7 +233,7 @@ t.check(t.reply, pattern(/order #\d+/i));
 t.check(turn.data, equals({ intent: "refund" }));
 t.check(turn.data, matches(OrderSchema));
 t.check(turn.data, satisfies("返回数组", Array.isArray));
-t.check(t.reply, (similarity("The answer explains the refund window")).atLeast(0.8));
+t.check(t.reply, similarity("The answer explains the refund window")).atLeast(0.8);
 ```
 
 ## 组合与三态
@@ -265,7 +243,7 @@ t.check(t.reply, and(includes("required"), excludes("forbidden")));
 t.check(t.reply, or(includes("approved"), includes("accepted")));
 ```
 
-同一 `and` / `or` 里的 Match 必须属于同一 domain（`value`、`tool` 或 `event`）。布尔 Match 的内部结果是 `matched`、`mismatched` 或 `unavailable`：`or` 只有在没有子项命中且至少一项证据不完整时才返回 `unavailable`，不会把未知当成否定。Match 自身没有 `.gate()`、`.points()` 或 `.atLeast()`；这些策略只属于 Fact 的消费位置。
+同一 `and` / `or` 里的 Match 必须属于同一 domain。布尔 Match 的内部结果是 `matched`、`mismatched` 或 `unavailable`：`or` 只有在没有子项命中且至少一项证据不完整时才返回 `unavailable`，不会把未知当成否定。Match 自身没有 `.gate()`、`.points()` 或控制流；`.atLeast(n)`、`.score(n)` 与 `.orStop()` 属于登记后的 AssertionHandle。
 
 下面列出 Match 值本身的稳定字段。品牌和 evaluator 是模块私有实现，不属于作者 API。
 
@@ -333,4 +311,4 @@ const validEmail = () =>
 t.check(t.reply, validEmail());
 ```
 
-布尔自定义 Match 用 `defineValueMatch`，连续分数用 `defineScoreMatch`。两者只实现单候选比较；读取文件、扫描事件、决定 coverage 或修改 Verdict 仍由各领域的 Fact producer 与 consumer 负责。
+布尔自定义 Match 用 `defineValueMatch`，连续分数用 `defineScoreMatch`。两者只实现单候选比较；读取文件、扫描事件、决定 coverage 或修改判定仍由 Assertion 登记入口与 Runner 负责。

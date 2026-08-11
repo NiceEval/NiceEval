@@ -120,15 +120,15 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 
 | 行为 | 文件 |
 |---|---|
-| 值断言匹配器(includes / equals / matches / similarity / satisfies / makeAssertion) | `src/expect/index.ts` |
-| 作用域 Fact(succeeded / calledTool / toolOrder / event …) | `src/context/context.ts` 的 `makeScopedFacts()` 与 `src/assertions/match.ts` |
+| 值断言匹配器(includes / equals / matches / similarity / satisfies / defineValueMatch / defineScoreMatch) | `src/expect/index.ts` |
+| 作用域 Assertion(succeeded / calledTool / toolOrder / event …) | `src/context/context.ts` 的 scope entry factory 与 `src/assertions/match.ts` |
 | Sandbox 断言(changedPaths / noChanges / fileChanged …) | `src/context/context.ts`、`src/assertions/diff.ts` |
-| Fact/use collector（惰性可达性、每 Fact memoization、一个 verdict use 加一个 score use、Score `[0,1]` 校验） | `src/assertions/collector.ts` |
+| Assertion collector（调用时登记、raw outcome memoization、handle policy、Score `[0,1]` 校验） | `src/assertions/collector.ts` |
 | 计分制题型(`defineEval`/`defineScoreEval` 分别定死 `EvalDefinition.evaluationKind` 为 `"pass"`/`"score"`，`ScoreEvalInput` 使用 `ScoreTestContext`) | `src/define.ts`、`src/runner/types.ts`、`src/context/types.ts` |
-| `t.require` 的立即求值与中止语义（登记 verdict use、评估 now Fact、未满足时抛 `EvalRequirementFailed`） | `src/assertions/collector.ts`、`src/context/context.ts`、`src/context/control-flow.ts`、`src/runner/attempt.ts` |
+| `.orStop()` 的 async barrier 与 authoring latch（同一 entry 的 control、未满足时拒绝私有控制信号） | `src/assertions/collector.ts`、`src/context/context.ts`、`src/context/control-flow.ts`、`src/runner/attempt.ts` |
 | 题型发现投影与混型保真(`evalDescriptorOf` 把定义期 `evaluationKind` 投影进 `EvalDescriptor`；同一 Experiment 的两类 Eval 都进入调度与落盘) | `src/runner/eval-selection.ts`、`src/runner/run.ts` |
-| LLM-as-Judge（capability、冻结配置、显式材料、原生 ScoreFact、串行 evaluator） | `src/assertions/judge.ts`、`src/runner/judge-config.ts`、`src/runner/fingerprint.ts`、`src/runner/run.ts` |
-| Fact/use 判定规则与计分 terminal | `src/assertions/collector.ts`、`src/shared/verdict.ts` |
+| LLM-as-Judge（capability、冻结配置、显式材料、原生 Score Assertion、串行 evaluator） | `src/assertions/judge.ts`、`src/runner/judge-config.ts`、`src/runner/fingerprint.ts`、`src/runner/run.ts` |
+| AssertionResult 的 Verdict fold 与计分 terminal | `src/assertions/collector.ts`、`src/shared/verdict.ts` |
 | 证据完整性（Agent 六通道、降档、Attempt 必填 `evidenceCoverage`） | `src/assertions/coverage.ts`、`src/agents/types.ts`、`src/context/context.ts` |
 | diff 数据派生(`DiffArtifact = DiffWindow[]` → 文件汇总 / 匹配谓词) | `src/assertions/diff.ts` |
 
@@ -163,7 +163,7 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 | eval 级折叠 / 计票口径(CLI 退出码与 view 共用) | `src/shared/verdict.ts` |
 | 本地结果保存格式(Run 目录 `.niceeval/<experiment>/<run>/run.json` + attempt 级 `result.json` / JSON artifact;runner 调度前预分配 `runId`,按 `{runId,evalId,attempt}` 生成并登记 fresh `locator`,Artifacts writer 原样写入同一 `runId` 与 `locatorRunId`;carry 保留出处身份;reader 折叠同出处副本、保留不同出处多候选并区分 malformed / not-found / ambiguous) | `src/runner/run.ts`(Run 身份分配、locator 生成与 Record root 碰撞预检)、`src/runner/reporters/artifacts.ts`(reporter 薄壳,转交预分配 Run 身份并按 experimentId 路由)、`src/record/locator.ts`(60-bit Crockford 编码、多候选索引与写入登记检查)、`src/record/open.ts`(`locatorRunId` / `artifactBase` 出处回溯与 `resolveLocator` 三类失败)、`src/record/writer.ts`(`createWriter`;写入面收窄类型 `AttemptEntry = Omit<EvalResult, …>`)、`src/record/types.ts`(`RunMeta` / `AttemptHandle.locatorIdentity`)、`src/runner/types.ts`(`EvalResult`——architecture.md `result.json` 一节里的 `AttemptRecord` 是该持久化形状的文档概念名,对应的运行时类型就是它;同文件的 `RECORD_SCHEMA_VERSION` / `RECORD_FORMAT` 常量随 `EvalResult` 同址声明,经 `src/types.ts` facade 转出给 `src/record/` 域 import,不在 `src/record/types.ts` 里重新声明) |
 | 实验改名与结果重绑(`exp rename`:同 fingerprint 的跨 experimentId 审计迁移、整批预检与单 snapshot 写入) | `src/runner/rename-experiment.ts`(资格门、计划与写入)、`src/cli.ts`(命令拆解与人读/JSON 反馈)、`src/runner/types.ts`(`RenamedResult` / `EvalResult.renamedFrom`) |
-| `EvalResult.evaluationKind`、schema 18 的 `factResults` / `factUses` 与 score `scoreResult` | `src/runner/attempt.ts`、`src/runner/types.ts`、`src/record/fact-record.ts` |
+| `EvalResult.evaluationKind`、schema 19 的 `assertionResults` 与 score `scoreResult` | `src/runner/attempt.ts`、`src/runner/types.ts`、`src/record/assertion-record.ts` |
 | CLI(exp / show / list / view / clean / init,--help,parseArgs 表驱动,.env 加载,输出形态判定;调度项没有进程变量层,见[Architecture · 配置与凭据边界](architecture.md)) | `src/cli.ts` |
 | `niceeval show` 终端宿主(Sample 合成当前结果集、--history 逐 experimentId+evalId 分节的 attempt 执行时间轴、--report/--page 经 report/runtime/host.ts 装载 + 组合语义矩阵、证据切面 --source/--execution/--timing/--diff;Run 级与 attempt 级 timing 树、未知 activity key 通用 label 投影、sandboxBuild 专用卡读 provenance) | `src/show/{index,compose,render,command}.ts` + `src/report/runtime/host.ts`(两宿主共用) |
 | 测试集与判据文件加载器(loadJson / loadYaml / loadText) | `src/loaders/index.ts` |

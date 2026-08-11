@@ -1,63 +1,76 @@
-# Assertions —— 库用法
+# Assertions —— Library
 
-常见 verdict 在一个调用中完成：
+完整语义在 [Assertions](README.md)。所有作者入口都遵守“调用即登记；handle 只配置同一 entry”。
 
-```ts
-const turn = await t.send("解释变更。");
-
-t.check(turn.message, includes("变更"), { label: "说明变更" });
-t.check(turn.succeeded());
-```
-
-`check` 是同步 verdict consumer。它接收 BooleanFact 时返回同一 Fact；接收 value 或 EvidenceSource 加 BooleanMatch 时返回 BooleanFact。连续分数先用 `ScoreMatch.atLeast(n)` 或 `ScoreFact.atLeast(n)` 绑定阈值，`check` 再登记 verdict 并返回底层 ScoreFact。scope、Sandbox 与 Judge 仍是惰性 producer，不会仅因创建而改变 verdict、得分或调用外部 evaluator。
-
-## 判定 use
+## 显式值
 
 ```ts
-const booleanFact = turn.succeeded();
-const scoreFact = turn.judge.autoevals.closedQA("回答是否清楚？");
+const config = t.check(rawConfig, matches(ConfigSchema))
+  .key("config-valid")
+  .label("配置有效");
 
-t.check(booleanFact, { key: "answer-present", label: "回答存在" });
-t.check(scoreFact.atLeast(0.8), { label: "质量" });
-
-const config = await t.require(rawConfig, matches(ConfigSchema));
-const normalized = await t.require(
-  turn.judge.autoevals.closedQA("回答是否给出下一步？").atLeast(0.9),
-);
+t.check(turn.message, includes("完成"))
+  .label("说明完成");
 ```
 
-`check` 在 Attempt 收尾时求值，并允许后续独立代码继续执行。`require` 是立即 verdict consumer，所有 overload 都返回 Promise。它接收 `phase: "now"` Fact 或 value 加 Match，并在不满足时停止依赖路径；BooleanMatch 返回原 candidate 的 refinement，ScoreMatch 返回归一化分数。最终 Fact 与 EvidenceSource 不能传给 `require`。`key` 在一个 Eval 内唯一，匹配 `[a-z0-9][a-z0-9._/-]{0,127}`；`label` 只用于人读展示。
+`t.check(value, match)` 只接收两个参数。它不接收 options、已有 handle、已有 Assertion 或省略 Match 的
+一参数形式。
 
-`atLeast()` 接受有限 `[0,1]` 数字。它只创建一个不可变 threshold view，不创建 Fact、不登记 use，也不启动 matcher 或 Judge。`check` 与 `require` 消费这个 view；同一底层 Fact 仍最多只有一个 verdict use。
-
-`key` 与 `label` 仍是 consumer metadata，放在 `check` 或 `require` 的 options 中。阈值不属于 options，因为它决定连续分数怎样成为判定条件。
-
-`check` 返回 Fact 是为了把同一证据再交给一次 `score`，不是为了再次 `check`。例如先用 thresholded ScoreMatch 创建并判定 ScoreFact，再把返回值传给 `score`；对返回 Fact 再登记 verdict use 是 author error。
-
-`checkIfCovered` 只接受核心 usage evidence Fact，并同步返回同一 Fact。它把 Agent 创建时已声明为不可用的 usage 证据记为 `notApplicable`；不适用于 Judge、Sandbox、普通 matcher 或自定义 evaluator。
-
-## 计分 use
-
-`t.score` 只存在于 `defineScoreEval`：
+## scope 与 Judge
 
 ```ts
-const quality = turn.judge.autoevals.closedQA("回答是否清楚？");
-t.score("回答质量", quality, { max: 20, key: "answer-quality" });
-t.score("回复长度", turn.message, similarity("简洁回答"), { max: 4, key: "reply-length" });
-t.score("人工规则", { earned: 2, key: "manual-rule" });
+const turn = await t.send("总结需求。");
+
+turn.succeeded().label("Turn 完成");
+turn.calledTool("search", { count: { atLeast: 1 } }).label("搜索资料");
+turn.judge.autoevals.summarizes(source).label("摘要质量");
 ```
 
-Boolean Fact 通过得 `max`，失败得 0；ScoreFact 得 `max × normalizedScore`。`max` 必须为正有限数，direct `earned` 必须为非负有限数。每个 Fact 最多有一个 score use。
+scope 方法与 Judge recipe 已经登记 Assertion，不能再交给 `check`。它们和显式值比较共享 key、label、
+snapshot、结果与读取协议。
 
-`defineScoreEval` 在 `test` 正常返回时自动收尾。没有登记 score use 的正常路径也是有效计分结果，得到 0 分且保留空 Fact/use 图；需要说明某项明确得到零分时使用 `t.score(label, { earned: 0 })`。
+## handle 配置
 
-## Phase 与 deferred evidence
+| 方法 | 适用范围 | 效果 |
+|---|---|---|
+| `.key(value)` | 所有 Assertion | 设置稳定 entry key。 |
+| `.label(value)` | 所有 Assertion | 设置人读标签。 |
+| `.atLeast(n)` | measurement | 设置有限 `[0,1]` threshold。 |
+| `.score(n)` | Score Eval 的已有 Assertion | 让该 entry 贡献 score。 |
+| `.ifCovered()` | Usage Assertion | 声明时 usage 不可用投影为 `notApplicable`。 |
+| `.orStop()` | Boolean 或已 threshold 的 measurement | 结算同一 entry，并作为 async barrier。 |
 
-`now` Fact 可以用于 `require`。Turn 的事件与输出在 Turn 完成后不可变，因此是 `now`。根 `t` 聚合、最终 diff 和 `t.sandbox.file(path)` 是 `final`，只能由 `check` 或 `score` 在收尾时消费。
+同一字段重复配置、非法数值、封口后配置与 detached async 配置都是作者错误。
+
+## 两种 Eval
+
+Pass Eval 用 Boolean condition。measurement 必须 `.atLeast(n)`，且 Pass context 不提供 `t.score` 或
+handle `.score`。
 
 ```ts
-const readme = t.sandbox.file("README.md");
-t.check(readme, includes("Install"));
+turn.judge.autoevals.closedQA("回答是否可执行？")
+  .atLeast(0.8)
+  .label("可执行性");
 ```
 
-文件内容只在 Fact 求值时经公开 Sandbox API 读取一次。缺失文件不是空字符串；读取失败按证据状态进入该 Fact。
+Score Eval 默认保存 Assertion evaluation。`.score(n)` 才贡献数值；`t.score(n)` 直接登记 contribution。
+
+```ts
+turn.calledTool("search").score(2).label("检索");
+t.score(1).label("人工加分");
+```
+
+## 组
+
+`t.group(title, fn)` 只写 `groupPath` 与 source organization。它不改变 subject、evaluator、policy 或
+Eval 类型。
+
+```ts
+await t.group("输出", () => {
+  t.check(turn.message, includes("下一步")).label("给出下一步");
+  turn.judge.autoevals.closedQA("是否容易执行？").label("可执行性");
+});
+```
+
+值比较见 [Value assertions](library/value-assertions.md)，scope 见
+[Scoped assertions](library/scoped-assertions.md)，Score Eval 见 [Score Eval](library/score-points.md)。

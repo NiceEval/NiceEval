@@ -5,11 +5,11 @@
 
 ## 默认顺序
 
-1. locator、Experiment、Eval、Attempt 与 verdict。
-2. 开始时间、耗时、成本、得分与 usage。
+1. locator、Experiment、Eval、Attempt 与题型主结果：Pass 显示 Verdict，Score 显示 score 或不可排名原因。
+2. 开始时间、耗时、成本与 usage。
 3. facts：`ctx.fact()` 上报的运行事实完整键值表，有才显示。
 4. 结构化 error 与 persisted diagnostics。
-5. 标注 Eval 源码；源码不可用时显示 Fact result/use 表。
+5. 标注 Eval 源码；源码不可用时显示 AssertionResult 表。
 6. 生命周期 timing。
 7. 对话、trace 与 diff 的紧凑摘要。
 
@@ -48,11 +48,11 @@ facts:
 按落盘 key 的插入顺序显示，不重新排序。
 组装口径单源见 [Attempt Facts](../components/attempt-detail/attempt-facts.md)。
 
-## Fact/use 与源码
+## AssertionResult 与源码
 
-有 Eval 源码时，`toAttemptSource(attempt)` 返回标注源码；否则详情返回 Fact result/use rows。两条路径使用同一份 producer/consumer 源码锚。
+有 Eval 源码时，`toAttemptSource(attempt)` 返回标注源码；否则详情直接返回 AssertionResult rows。两条路径使用同一份 Assertion callsite 与 policy locations。
 
-失败或不可用 use 按 `sourceOrder` 显示，并保留 label、Fact 名、expected、received、reason 与位置。成功 ScoreFact 显示归一化分数；score use 显示实际 earned 分。Judge 只作为一个 ScoreFact producer 出现在该通用表中。
+Assertion 按 `sourceOrder` 显示，并保留 label、evaluator、evaluation、condition、score contribution、reason 与位置。Pass 页突出 mismatched / unavailable condition；Score 页突出每条已配置 contribution 与累计 score。Judge 与值比较、scope 方法一样，只占一条 AssertionResult，不另造 producer/use 行。
 
 ## 错误与 diagnostics
 

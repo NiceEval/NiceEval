@@ -1,7 +1,7 @@
 # 源码树的装配与投影
 
 完整源码证据先经过归属和建树，成为面无关的 `AnnotatedEvalSource`；终端与 web 再各自投影要显示的行和默认展开态。
-两个阶段都不改变断言、给分条目或 send 的原始顺序。
+两个阶段都不改变 Assertion、direct score 或 send 的原始顺序。
 
 ## 归属
 
@@ -12,7 +12,7 @@
 2. 路径不经过主干时，按最外层项目帧进入 `detached`。
 3. `callers` 为空且声明位置在主干时，直接挂到主干声明行。
 4. `callers` 为空且声明位置在其它已捕获文件时，按该文件进入 `detached`。
-5. 没有 `loc` 的断言与给分条目进入 `unmapped`。
+5. 没有 `loc` 的 Assertion 与 direct score 进入 `unmapped`。
 
 越界行和缺失正文不能被当作没有 `loc`。
 它们保留原路径，成为对应节点上的 `unavailable` 缺口。
@@ -62,17 +62,17 @@ projectSourceView(
 
 默认终端模式只展开满足任一条件的调用路径：
 
-- 有未通过或 unavailable 断言；
-- 计分制下有丢分；
-- 有前置中止。
+- 有 mismatched 或 unavailable Assertion；
+- 已配置计分的 Assertion 没有取得其完整 contribution；
+- 有 `.orStop()` 触发的 authoring stop。
 
 默认预算是 400 个投影源码行。
-超过预算时，先收起更深的路径；同深度先收只有 soft 失败的路径，再收 gate 失败路径。
+超过预算时，先收起更深的路径；同深度先收只有 record-only mismatch 的路径，再收影响 Pass Verdict、score 可排名性或触发 stop 的路径。
 主干投影行与调用汇总行不丢弃；收起路径里的标注仍留在完整证据树中。
 当前投影只显示汇总，并提示 `--source=full`。
 
 web 模式保留全部路径，用原生 `<details>` 表达展开。
-含未通过、unavailable、丢分或中止的路径默认 `open`，其它路径默认收起。
+含 mismatched、unavailable、计分项未取得完整 contribution 或触发 stop 的路径默认 `open`，其它路径默认收起。
 单文件模式不应用调用树预算。
 
 ## 路径不完整时的结果
@@ -83,7 +83,7 @@ web 模式保留全部路径，用原生 `<details>` 表达展开。
 | 只有其它文件的声明位置 | 进入该文件的 detached 片段 |
 | 中间项目文件没有正文 | 保留 unavailable 段，更深节点继续挂在其下 |
 | 经过第三方包 | 保留不可展开的 package 段，更深节点继续挂在其下 |
-| 没有声明位置 | 断言与给分条目进入 unmapped |
+| 没有声明位置 | Assertion 与 direct score 进入 unmapped |
 | 没有任何源码 | `evalSource` 为 `null`，源码切片报告 unavailable |
 
 归属与建树只依赖已有事实，不根据函数名、断言数量或文件名猜调用关系。

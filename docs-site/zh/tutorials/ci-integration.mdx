@@ -8,7 +8,7 @@ description: "把 NiceEval 接入 GitHub Actions 或任意 CI。评估用例失�
 
 ## 退出码
 
-只要存在失败的 `t.check(...)` / `t.require(...)` 要求、Judge gate 或执行错误，[NiceEval](https://niceeval.com/) 就以非零状态码退出。需要阻止合并的要求直接写在评估用例源码中，CI 与本地运行读取同一套判定用途。
+只要存在 mismatched 的 Boolean condition、低于阈值的 measurement 或执行错误，[NiceEval](https://niceeval.com/) 就以非零状态码退出。需要阻止合并的要求直接写在评估用例源码中，CI 与本地运行读取同一套判定。
 
 ```bash
 npx niceeval exp ci \

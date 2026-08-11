@@ -6,20 +6,20 @@
 展示从入口文件开始：
 
 - **主干**是整个 eval 入口文件。
-  默认视图可以折叠连续的无关行，但文件顶部的 import、事实常量和 `defineEval` / `defineScoreEval` 外的声明都属于主干。
+  默认视图可以折叠连续的无关行，但文件顶部的 import、Match 常量和 `defineEval` / `defineScoreEval` 外的声明都属于主干。
 - **调用片段**挂在发起调用的源码行下。
-  片段只显示断言、给分条目、`t.send`、下一层调用和少量上下文。
-- **汇总行**先说明被调文件、检查计票和挣分。
-  默认只展开未通过、丢分或前置中止的路径。
+  片段只显示 Assertion、direct score、`t.send`、下一层调用和少量上下文。
+- **汇总行**先说明被调文件、Assertion evaluation 和 score contribution。
+  默认只展开 mismatched、unavailable、计分项未取得完整 contribution 或触发 `.orStop()` 的路径。
 
 例如入口文件第 98 行调用共享安装检查时，读者先看到这一步的汇总，再在同一位置展开失败证据：
 
 ```text
  98      await evalInstall(t, { version, standaloneWorkspace: true });
-       ↳ evals/install/share/eval-install.ts · 11 checks · 9 ✓ 2 ✗ · 7/11 pts
+       ↳ evals/install/share/eval-install.ts · 11 assertions · 9 matched · 2 mismatched · score +7
        │ 245✓     t.check(root !== null, isTrue("niceeval.config.ts 存在"));
        │ 246✗     t.check(
-       │        gate · 评估安装 · satisfies(依赖解析到候选包 niceeval@0.11.0)
+       │        mismatched · 评估安装 · satisfies(依赖解析到候选包 niceeval@0.11.0)
        │        expected 依赖解析到候选包 niceeval@0.11.0 · received "0.10.3"
 ```
 

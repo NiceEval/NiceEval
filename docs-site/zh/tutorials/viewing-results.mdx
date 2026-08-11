@@ -38,7 +38,7 @@ description: "用 niceeval show 在终端按 @<locator> 查看 Attempt 的评估
    └─ 2026-07-09T10-00-00-000Z-x1f2/      # 快照目录:时间戳 + 随机后缀
       ├─ snapshot.json                    # 快照元数据(开始时写,收尾补 completedAt)
       └─ weather-tool/a0/                 # 单个 eval attempt 的目录
-         ├─ result.json                   # 判定、Fact 结果/use、结构化错误/diagnostics、用量
+         ├─ result.json                   # 判定、AssertionResult、结构化错误/diagnostics、用量
          ├─ events.json
          ├─ sources.json
          ├─ trace.json
@@ -129,12 +129,12 @@ Status     Eval / Attempt     Results   Duration        Cost
 codex-gpt-5.4
 Status     Eval / Attempt     Results                                  Duration        Cost
 ✗ failed   weather/brooklyn                                           40.2s avg   $0.04 avg
-  ✗        ├─ @14m0duci       gate: calls the weather tool ·              39.4s       $0.04
-                              calledTool("get_weather") · expected…
-  ✗        ├─ @1rxhuidh       gate: calls the weather tool ·              40.1s       $0.04
-                              calledTool("get_weather") · expected…
-  ✗        └─ @1jwsgp2j       gate: calls the weather tool ·              41.2s       $0.04
-                              calledTool("get_weather") · expected…
+  ✗        ├─ @14m0duci       mismatched: 调用天气工具 ·                 39.4s       $0.04
+                              calledTool("get_weather") · received 0 tool calls
+  ✗        ├─ @1rxhuidh       mismatched: 调用天气工具 ·                 40.1s       $0.04
+                              calledTool("get_weather") · received 0 tool calls
+  ✗        └─ @1jwsgp2j       mismatched: 调用天气工具 ·                 41.2s       $0.04
+                              calledTool("get_weather") · received 0 tool calls
 
 Other pages:
   attempts   Attempts   niceeval show weather/brooklyn --page attempts
@@ -154,13 +154,13 @@ $ niceeval show @1k2m9qrs
 @1k2m9qrs · weather/brooklyn · compare/codex-gpt-5.4 · failed
 snapshot 2026-07-09T10:00:00.000Z · attempt 3 · 41.2s · 12.3k tokens · $0.04
 
-assertions: 1 passed · 1 gate failed · 1 soft below target
+assertions: 1 passed · 1 failed · 1 below threshold
 eval source: evals/weather/brooklyn.eval.ts · sha256:a3fa4555…
 
-✗ gate · calledTool("get_weather")
+✗ calledTool("get_weather") · mismatched
     received: 0 tool calls
     source: evals/weather/brooklyn.eval.ts:12:7
-✗ soft · judge("回答基于实时数据")   0.2 / 1
+✗ 回答基于实时数据 · 0.2, required >= 0.8, mismatched
     source: evals/weather/brooklyn.eval.ts:14:7
 
 execution: 2 events · 0 skill loads · 0 tool calls · 1 AI messages
@@ -192,18 +192,17 @@ $ niceeval show @1k2m9qrs --source
 eval source: evals/weather/brooklyn.eval.ts · sha256:a3fa4555…
 
 1  export default defineEval({
-2    id: "weather/brooklyn",
-3    async test(t) {
-4      const turn = await t.send("布鲁克林今天天气怎么样?");
-5✗     turn.calledTool("get_weather");
-   calledTool("get_weather") · received 0 tool calls
+2    async test(t) {
+3      const turn = await t.send("布鲁克林今天天气怎么样?");
+4✗     turn.calledTool("get_weather");
+5      calledTool("get_weather") · received 0 tool calls
 6✓     turn.succeeded();
-7✗     t.check(turn.message, judge("回答基于实时数据"));
-   judge("回答基于实时数据") · 0.2 / 1 · reply invents a temperature without any tool call
-8    },
-9  });
+7✗     turn.judge.autoevals.closedQA("回答基于实时数据").atLeast(0.8);
+8      closedQA("回答基于实时数据") · 0.2, required >= 0.8, mismatched
+9    },
+10  });
 
-assertions: 1 passed · 1 gate failed · 1 soft below target
+assertions: 1 passed · 1 failed · 1 below threshold
 
 full eval source: .niceeval/compare_codex-gpt-5.4/2026-07-09T10-00-00-000Z-x1f2/weather/brooklyn/a2/sources.json
 ```
@@ -233,7 +232,7 @@ full events: .niceeval/compare_codex-gpt-5.4/2026-07-09T10-00-00-000Z-x1f2/weath
 full OTel trace: .niceeval/compare_codex-gpt-5.4/2026-07-09T10-00-00-000Z-x1f2/weather/brooklyn/a2/trace.json
 ```
 
-这次 Attempt 只有两条消息、没有任何工具调用节点——这正是上面 `calledTool("get_weather")` 这条 gate 断言失败的原因，`--execution` 在这里直接印证了 `--source` 那份断言标注。有 Skill 加载和工具调用时,`--execution` 把它们按发生顺序一起排进同一棵树,工具调用拆成「调用」与「结果」两行读:
+这次 Attempt 只有两条消息、没有任何工具调用节点——这正是上面 `calledTool("get_weather")` 这条断言失败的原因，`--execution` 在这里直接印证了 `--source` 那份断言标注。有 Skill 加载和工具调用时,`--execution` 把它们按发生顺序一起排进同一棵树,工具调用拆成「调用」与「结果」两行读:
 
 ```text
 $ niceeval show @1c3h6twx --execution
@@ -709,13 +708,13 @@ OTLP trace 或标准化后的 span 数据。它是可选的执行关系和耗时
 ## Verdict 含义
 
 <Tabs>
-  <Tab title="passed">所有已消费的 Fact use 都通过。</Tab>
-  <Tab title="failed">至少一个 verdict use 失败。</Tab>
-  <Tab title="errored">环境、超时、evaluator 错误或已消费 Fact 不可用。</Tab>
+  <Tab title="passed">所有 Boolean Assertion 都 matched，所有 measurement 都达到阈值。</Tab>
+  <Tab title="failed">至少一个 Boolean condition mismatched，或 measurement 低于阈值。</Tab>
+  <Tab title="errored">环境、超时、evaluator 错误或参与判定的 Assertion 不可用。</Tab>
   <Tab title="skipped">评估用例被主动跳过。</Tab>
 </Tabs>
 
-Fact 是否影响判定由源码里的 `t.check(...)` / `t.require(...)` use 决定。Judge 是普通 ScoreFact；show、view 与报告从 `factResults` / `factUses` 生成相同的失败、不可用和分数摘要。
+Pass Eval 的 Verdict 从 execution outcome 与已封口的 `AssertionResult` projection 折叠。Score Eval 没有 Verdict，只有累计 score。show、view 与报告从 `assertionResults` 生成相同的失败、不可用和分数摘要。
 
 ## 调试建议
 

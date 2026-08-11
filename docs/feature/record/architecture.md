@@ -59,7 +59,7 @@
 ```json
 {
   "format": "niceeval.results",
-  "schemaVersion": 18,
+  "schemaVersion": 19,
   "producer": {
     "name": "niceeval",
     "version": "0.12.0"
@@ -71,7 +71,7 @@
 }
 ```
 
-当前 `schemaVersion` 是 `18`。Attempt 的判定图固定为 `evaluationAlgorithm: "fact-use/v3"`、`factResults` 与 `factUses`；含旧 verdict method 或 Judge sidecar 的 Run 文件整份不支持读取。
+当前 `schemaVersion` 是 `19`。Attempt 的判定协议固定为 `evaluationAlgorithm: "assertion/v1"` 与 `assertionResults`；schema 18 及其它旧形状的 Run 文件整份不支持读取。
 历史各版本的字段差异与升版原因不在正文维护，记在 memory 的 results-schema-version-history 条目。
 读取器不需要这份历史；版本不同一律按下节的不兼容路径处理。
 
@@ -433,15 +433,16 @@ interface SandboxBuildRecord {
 
 ## `result.json`
 
-单个 attempt 的**权威事实**：Fact 结果、Fact use、终态、结构化执行错误与 diagnostics 只住在这里。
+单个 attempt 的**权威事实**：AssertionResult、终态、结构化执行错误与 diagnostics 只住在这里。
 attempt 的 teardown 链与 Scope release 完成后一次写成，之后没有任何环节会改写它。
 
 ```typescript
-interface AttemptRecord {
+interface AttemptRecordBase {
   /** eval id(attempt 目录路径是它的清洗投影;权威在字段)。 */
   id: string;
   description?: string;
-  verdict: "passed" | "failed" | "skipped" | "errored";
+  /** Agent 与 Runner 的执行终态，不替代评测结果。 */
+  executionOutcome: "completed" | "errored" | "skipped";
   attempt: number;
   fingerprint?: string;
   /** Attempt 工作链耗时:从 sandbox.queue 到 telemetry.collect,不含收尾段(show 以 `teardown +N` 单列)。 */
@@ -456,23 +457,19 @@ interface AttemptRecord {
   executionMs?: number;
   /** Runner 阶段计时，按执行顺序；只记录实际发生的阶段。 */
   phases?: PhaseTiming[];
-  /** 原子 Fact/use 算法标识；schema 18 必为 `"fact-use/v3"`。 */
-  evaluationAlgorithm: "fact-use/v3";
-  /** 题型:`defineEval` → `"pass"`,`defineScoreEval` → `"score"`，定义期事实，与 `EvalDescriptor.evaluationKind` 同源。 */
+  /** 原子 Assertion 算法标识；schema 19 必为 `"assertion/v1"`。 */
+  evaluationAlgorithm: "assertion/v1";
+  /** 题型判别字段:`"pass"` 保存 Verdict,`"score"` 保存 grading；定义期事实，与 `EvalDescriptor.evaluationKind` 同源。 */
   evaluationKind: "pass" | "score";
-  /** 每个 producer 的一次求值结果；`explanation` 是 evaluator 理由，`evidence` 只保存裁剪、脱敏的判分材料。 */
-  factResults: EvaluationFactResult[];
-  /** 每个显式 verdict 或 score consumer 的结果。 */
-  factUses: (VerdictFactUseResult | ScoreFactUseResult)[];
-  /** 仅计分题型存在的 score terminal 与 credit。 */
-  scoreResult?: ScoreFactAttemptOutcome;
+  /** 每条已封口 Assertion 的 raw evaluation、定位、evidence、解释和 policy 投影。 */
+  assertionResults: AssertionResult[];
   /** 证据覆盖聚合:必填；Agent 六通道声明经各 turn 降级后的最差值。字段契约见 [Adapters · 证据与完整性](../adapters/architecture/evidence.md)。 */
   evidenceCoverage: EvidenceCoverage;
   /** 自动重试吸收的物理 send 失败,按发生顺序完整保留；最终一次逻辑 Turn 不重复放这里。 */
   retryAttempts?: RetryAttemptRecord[];
   /** 全部物理 send（含 retryAttempts）与其它模型调用的聚合用量。 */
   usage?: Usage;
-  /** attempt 作用域生命周期代码经 `ctx.fact()` 上报的运行事实;字段契约见下方 facts 小节。 */
+  /** attempt 作用域生命周期代码经 `ctx.fact()` 上报的运行观测;字段契约见下方 facts 小节。 */
   facts?: Record<string, string | number | boolean>;
   estimatedCostUSD?: number;
   /** 使 attempt 无法正常完成的唯一致命执行错误。 */
@@ -535,6 +532,66 @@ interface AttemptRecord {
    */
   artifacts?: string[];
 }
+
+/** Pass Eval 的 attempt:保存四态 Verdict,没有任何 score projection。 */
+interface PassAttemptRecord extends AttemptRecordBase {
+  readonly evaluationKind: "pass";
+  readonly verdict: "passed" | "failed" | "skipped" | "errored";
+}
+
+/** Score Eval 的 attempt:保存 grading,没有 Verdict。 */
+interface ScoreAttemptRecord extends AttemptRecordBase {
+  readonly evaluationKind: "score";
+  readonly grading: ScoreGrading;
+}
+
+/** `evaluationKind` 判别两种互斥的 attempt 记录形态;读取器按该字段解释。 */
+type AttemptRecord = PassAttemptRecord | ScoreAttemptRecord;
+
+interface AssertionResult {
+  readonly entry: {
+    readonly id: string;
+    readonly key?: string;
+    readonly label?: string;
+    readonly groupPath: readonly string[];
+    readonly sourceOrder: number;
+  };
+  readonly subjectSnapshotRef: JsonValue;
+  readonly callsite: SourceLocation;
+  readonly policyLocations?: readonly SourceLocation[];
+  readonly evaluator: { readonly id: string; readonly version?: string };
+  /** 安全 projection 或 digest，绝不含凭据值。 */
+  readonly config: JsonValue;
+  /** raw evaluation 的终态。measurement 是有限 `[0,1]` 数值；direct score 是有限非负数值。 */
+  readonly evaluation:
+    | { readonly kind: "matched" }
+    | { readonly kind: "mismatched" }
+    | { readonly kind: "measurement"; readonly value: number }
+    | { readonly kind: "directScore"; readonly score: number }
+    | { readonly kind: "unavailable"; readonly reason: string }
+    | { readonly kind: "errored"; readonly reason: string }
+    | { readonly kind: "notApplicable" };
+  readonly evidence?: JsonValue;
+  readonly explanation?: string;
+  readonly judgeRationale?: string;
+  /** 作者配置的 policy 槽,与 raw evaluation 一起封口；封口后不再变化。 */
+  readonly policy: {
+    readonly score?: number;
+    readonly atLeast?: number;
+    readonly orStop?: boolean;
+  };
+  /** 按 Eval 类型计算的投影:Pass 只有 condition,Score 只有 contribution。 */
+  readonly projection: {
+    readonly scoreContribution?: number;
+    readonly condition?: "matched" | "mismatched" | "met" | "below";
+    readonly stopTriggered?: boolean;
+  };
+}
+
+type ScoreGrading =
+  | { readonly status: "scored"; readonly score: number; readonly stop?: StopCause }
+  | { readonly status: "unavailable" | "errored"; readonly partialScore: number; readonly issues: readonly Issue[] }
+  | { readonly status: "skipped" };
 
 /** `niceeval accept @<locator>...` 的逐条审计记录,写进新建的已接受条目。 */
 interface AcceptedResult {
@@ -704,9 +761,9 @@ Agent CLI 内部执行的 shell 工具同样不经过 Sandbox 包装，它们来
 两者的区别是结果语义:`error` 是让 attempt 进入 `errored` 的致命原因,至多一个;`diagnostics` 是运行仍可继续或收尾时发现的问题,可以与 passed/failed/errored 任一 verdict 共存。
 `diagnostic.level` 表达写入方观察到的运行影响,不是 verdict 的别名,也不决定报告 Notice 的严重度。
 
-同一个 phase 可以产生两种后果：`workspace.diff` 被 Fact consumer 使用时，采集失败形成 consumed Fact unavailable；它只为 artifact 服务时，失败形成 diagnostic。
+同一个 phase 可以产生两种后果：`workspace.diff` 被 Assertion 读取时，采集失败形成该 Assertion 的 unavailable；它只为 artifact 服务时，失败形成 diagnostic。
 `telemetry.configure` 与 `telemetry.collect` 只产时间轨，按 Observability 契约始终是 supplemental。
-后发生的 supplemental 失败不得替换先前的 `AttemptError`，也不得把已经可计算的 Fact result/use 丢弃。
+后发生的 supplemental 失败不得替换先前的 `AttemptError`，也不得把已经可计算的 AssertionResult 丢弃。
 
 `DiagnosticRecord` 是持久化 observation:只保存 code、origin、level、去重次数与当时观察到的 `detail` / `context`。
 它不存本地化文案、修复建议或命令。

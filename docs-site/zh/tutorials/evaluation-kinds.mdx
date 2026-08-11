@@ -1,10 +1,10 @@
 ---
 title: "通过制与计分制评估"
 sidebarTitle: "通过制与计分制"
-description: "用 Fact、t.check、t.require 与 t.score 编写通过制和计分制评估。"
+description: "用 defineEval 与 defineScoreEval 编写通过制和计分制评估，调用即登记 Assertion。"
 ---
 
-[NiceEval](https://niceeval.com/) 提供两种评估题型。`defineEval` 回答一次运行是否满足要求，默认报告读通过率；`defineScoreEval` 回答完成了多少，默认报告读累计分数。两种题型都先创建 Fact，再明确声明 Fact 用于判定还是计分。
+[NiceEval](https://niceeval.com/) 提供两种评估题型。`defineEval` 回答一次运行是否满足要求，默认报告读通过率；`defineScoreEval` 回答完成了多少，默认报告读累计分数。两种题型都调用即登记 Assertion，handle 只配置同一条 entry。
 
 ## 必须做到的事用 `defineEval`
 
@@ -16,33 +16,31 @@ export default defineEval({
   async test(t) {
     const turn = await t.send("修复测试并说明原因。");
 
-    t.check(turn.message, includes("原因"), { label: "说明失败原因" });
+    t.check(turn.message, includes("原因")).label("说明失败原因");
 
     const tests = await t.sandbox.runCommand("pnpm", ["test"]);
-    await t.require(tests, commandSucceeded(), { label: "测试通过" });
+    await t.check(tests, commandSucceeded()).label("测试通过").orStop();
   },
 });
 ```
 
-`t.check(...)` 同步登记硬要求，并返回已有或新建的 Fact，让后续独立检查继续执行。`await t.require(...)` 同样登记硬要求；未通过或无法求值时，它结束依赖该结果的后续代码。
-
-Boolean Fact 不需要 `.gate()`。需要阻止合并的条件直接交给 `t.check(...)` 或 `t.require(...)`，本地、CI 与重跑因此使用同一套要求。
+Boolean `matched` 进入 Verdict；`mismatched` 使最终 Verdict 为 `failed`，但不会阻止其它 Assertion 继续登记和结算。需要让后续代码依赖这条结果时，`await handle.orStop()`。
 
 ## 连续质量线
 
-`similarity(...)` 这类 Match 产生 `[0, 1]` 的 Score Fact。通过制评估必须在消费位置给出阈值：
+`similarity(...)` 这类 Match 产生 `[0, 1]` 的 measurement。通过制评估必须用 `.atLeast(n)` 给它阈值：
 
 ```ts
-const quality = t.check(turn.message, similarity(expected).atLeast(0.8), {
-  label: "回答接近期望内容",
-});
+t.check(turn.message, similarity(expected))
+  .atLeast(0.8)
+  .label("回答接近期望内容");
 ```
 
-低于 `atLeast` 时，这项明确登记的要求失败。只想留下不影响判定的说明时用 `t.diagnostic(...)`，不要创建无人消费的 Fact。
+低于 `atLeast` 时，这项要求失败。只想留下不影响判定的说明时用 `t.diagnostic(...)`，不要登记无消费的测量值。
 
 ## 走完三步也要记三分
 
-分步骤任务适合 `defineScoreEval`。Boolean Fact 通过挣满 `max`，失败挣 0；Score Fact 按归一化分数乘以 `max`。
+分步骤任务适合 `defineScoreEval`。Assertion 默认只保存 evaluation，不计分；`.score(n)` 才让该项贡献分数。Boolean matched 贡献 `n`，mismatched 贡献 `0`；measurement `m` 贡献 `m * n`。
 
 ```ts
 import { defineScoreEval } from "niceeval";
@@ -53,75 +51,65 @@ export default defineScoreEval({
   async test(t) {
     const turn = await t.send("把 DB-GPT 装起来并通过健康检查。");
 
-    const config = t.sandbox.fileChanged("db-gpt/.env");
-    t.score("配置运行环境", config, { max: 1 });
+    t.sandbox.fileChanged("db-gpt/.env").score(1).label("配置运行环境");
 
     const health = await t.sandbox.runCommand("curl", ["-s", "localhost:5670/health"]);
-    const reachable = t.check(health, commandSucceeded(), { label: "健康检查可达" });
-    t.score("健康检查可达", reachable, { max: 1 });
+    t.check(health, commandSucceeded()).score(1).label("健康检查可达");
+    t.check(health.stdout, includes("ok")).score(1).label("健康检查内容正确");
 
-    t.score("健康检查内容正确", health.stdout, includes("ok"), { max: 1 });
+    t.check(turn.message, similarity("说明安装步骤和验证结果")).score(2).label("说明质量");
 
-    t.score("说明质量", turn.message, similarity("说明安装步骤和验证结果"), { max: 2 });
-
-    t.score("代码精简", { earned: health.stdout.length < 1000 ? 1 : 0 });
+    t.score(1).label("代码精简");
   },
 });
 ```
 
-`t.score` 有两种不相交的形状：
+`t.score(n)` 直接登记 contribution，`n` 必须 finite 且不小于零，返回的 handle 只能配置 `key` 与 `label`。同一个 Assertion 可以同时配置 `.score(n)` 与 `.atLeast(n)`，evaluator 只求值一次，顺序可互换。
 
-- `t.score(label, fact, { max })` 按 Fact 结果计分。
-- `t.score(label, { earned })` 记录作者已经算好的非负分数。
-
-同一个 Fact 最多登记一个判定用途和一个计分用途。上例的 `reachable` 同时交给 `t.check` 与 `t.score`，但只求值一次。
-
-`test` 正常返回时，NiceEval 自动关闭计分收集器。没有调用 `t.score` 也是有效结果，得到 0 分；这表示评估成功形成了零分，不是执行失败或证据不足。
+`test` 正常返回时，NiceEval 自动封口。没有计分项也是有效结果，得到正式 `score: 0`；这表示评估成功形成了零分，不是执行失败或证据不足。
 
 ## 两种题型的结果
 
 | 题型 | 成功状态 | 明确要求失败 | 证据无法取得 | 执行或 evaluator 出错 |
 |---|---|---|---|---|
 | `defineEval` | `passed` | `failed` | `errored` | `errored` |
-| `defineScoreEval` | `scored` | `invalid`，credited score 为 0 | `unavailable` | `errored` |
+| `defineScoreEval` | `scored`，可排名的 score | 正常不失效；score 照常累计 | 已配置 score 或 control 的项不可用时不可排名 | `errored`，只保留 `partialScore` |
 
-计分制的 `scored` 可以是 0 分。零分说明评估成功形成了分数，不等于执行失败或证据不足。
+计分制的 `scored` 可以是 0 分。零分说明评估成功形成了分数，不等于执行失败或证据不足。计分制没有 Attempt Verdict。
 
-## Judge 也是 ScoreFact
+## Judge 也是 measurement
 
-Judge recipe 与 `similarity(...)` 一样返回 ScoreFact。先声明 `judge` capability，再将它交给明确的 consumer：
+Judge recipe 直接登记 measurement Assertion。先声明 `judge` capability，再在同一 handle 上配置阈值或分数：
 
 ```ts
 export default defineScoreEval({
   judge: true,
   async test(t) {
     const turn = await t.send("说明这项变更的动机和风险。");
-    const quality = turn.judge.autoevals.closedQA("说明是否具体、准确？");
-
-    t.check((quality).atLeast(0.7), { label: "最低说明质量" });
-    t.score("说明质量", quality, { max: 20 });
+    turn.judge.autoevals.closedQA("说明是否具体、准确？")
+      .score(20)
+      .atLeast(0.7)
+      .label("说明质量");
   },
 });
 ```
 
-同一个 Fact 可以有一个 verdict use 与一个 score use，evaluator 只运行一次。Judge 没有链式阈值或计分 API。
+同一条 Judge Assertion 可以同时配置 `.score(n)` 与 `.atLeast(n)`，evaluator 只运行一次。Judge 没有单独的消费 API。
 
 ## 代码任务用真实命令验收
 
 ```ts
-const tests = t.check(
+await t.check(
   await t.sandbox.runCommand("pnpm", ["test"]),
   commandSucceeded(),
-  { label: "项目测试通过" },
-);
+).label("项目测试通过");
 ```
 
 判分标准本身是一份文件时，用 `loadText` 读取隐藏测试、参考实现或跑测脚本。文件改动会触发对应评估重跑，详见[隐藏测试判分](/zh/tutorials/criteria-files)。
 
 ## 实用建议
 
-- 把每个必须成立的条件交给 `t.check` 或 `t.require` 明确登记。
-- 多个独立要求使用 `t.check`，让一次 Attempt 收集完整失败信息。
-- 后续步骤依赖某个即时 Fact 时使用 `await t.require`。
+- 把每个必须成立的条件登记为 Boolean Assertion，让一次 Attempt 收集完整失败信息。
+- 后续步骤依赖某条结果时，`await handle.orStop()`。
 - 任务存在有意义的部分完成度时使用 `defineScoreEval`；`test` 正常返回时自动收尾。
 - 开放式语义用 Judge；可精确检查的文件、命令与结构化输出优先用确定性 Match。

@@ -5,48 +5,47 @@
     "docs-site/zh"
   ],
   "publicApiExamples": {
-    "$why": "公开示例必须与可运行的 consumer-first Fact/Match 作者面和 CLI 同步。scope、Sandbox 与 Judge 是 Fact producer；value 或 EvidenceSource 加 Match 的便利调用会原子地创建 Fact 并登记 use。常见 verdict 直接写 t.check(...)，控制流依赖写 await t.require(...)，计分制写 t.score(...)。",
-    "consumerFirstContract": {
-      "$why": "常见意图不应要求作者先保存 producer Fact 再调用第二个 verdict API。显式 Fact 只用于同一证据同时需要 verdict 与 score，或需要复用 producer Fact 的情形。",
-      "verdictConsumers": {
-        "check": "所有 overload 同步返回同一个或新建的 Fact。BooleanMatch 直接参与判定；连续分数先用 scoreMatch.atLeast(n) 或 scoreFact.atLeast(n) 绑定阈值。",
-        "require": "所有 overload 返回 Promise。Boolean 路径返回原 candidate 或 refinement；阈值化分数路径返回 normalized number；final Fact 与 EvidenceSource 不能 require。",
-        "checkIfCovered": "只消费 UsageEvidenceFact，返回同一 Fact。它不是普通 Fact 的 optional verdict API。"
+    "$why": "公开示例必须与 Assertion-first 双模式作者面同步。每个入口调用时直接登记一条 Assertion；handle 只配置该 entry，绝不产生第二条。",
+    "assertionFirstContract": {
+      "domainModel": {
+        "subject": "subject 是 Assertion 调用时读取的显式 value，或 receiver 选择的 scope snapshot。",
+        "match": "Match 是可复用、不可变、确定性且无副作用的值比较规则；它没有 identity、callsite 或 policy。",
+        "assertion": "Assertion 绑定 subject、evaluator、callsite、source order 与 groupPath；调用时冻结这些值。",
+        "handle": "AssertionHandle 配置同一 entry 的 key、label、score、atLeast、ifCovered 或 orStop，不登记第二条 Assertion。",
+        "result": "AssertionResult 保存一次 raw evaluation、policy 与 pass 或 score 投影。",
+        "pass": "Pass Eval 的 Attempt Verdict 是 passed、failed、errored 或 skipped。",
+        "score": "Score Eval 只有累计 score；没有 Attempt Verdict、总分、百分比或另一种数值单位。"
       },
-      "scoreThreshold": {
-        "$why": "atLeast 是连续分数成为判定条件的核心语义，不是 key、label 一类 use metadata。链式绑定让值 matcher 与已有 Judge ScoreFact 使用同一种读法，同时保持 check 同步返回 Fact、require 始终返回 Promise。",
-        "match": "t.check(value, scoreMatch.atLeast(0.8), metadata?)",
-        "fact": "t.check(scoreFact.atLeast(0.8), metadata?)",
-        "require": "await t.require(value, scoreMatch.atLeast(0.8), metadata?) 或 await t.require(scoreFact.atLeast(0.8), metadata?)",
-        "constraint": "atLeast() 只创建不可变 threshold view，不创建 Fact、不登记 use、不求值；t.score 只接受未阈值化的 ScoreMatch 或 ScoreFact。"
+      "authoring": {
+        "check": "t.check(value, match) 严格只有两个参数，并返回同一条已登记 Assertion 的 handle。",
+        "scopes": "t.succeeded()、session.succeeded()、turn.succeeded() 与 calledTool 等 scoped 方法直接登记 Boolean Assertion。",
+        "judge": "Judge recipe 直接登记 measurement Assertion。Pass Eval 必须用 atLeast(n) 将它封口为 Boolean condition。",
+        "score": "Score Eval 用 handle.score(n) 让已有 Assertion 贡献 score，或用 t.score(n) 直接登记 score contribution。",
+        "usage": "只有 Usage Assertion 提供 ifCovered()；它只处理 Agent 创建时已声明的 usage 不可用。",
+        "stop": "orStop() 是同一 Assertion handle 的 async barrier；Boolean 或已经 atLeast 的 measurement 才能使用它。"
       },
-      "score": "只由 ScoreTestContext 提供。existing Fact 或 value/EvidenceSource 加 Match 返回同一或新 Fact；direct earned score 返回 void。",
       "examples": [
         {
-          "bad": "const reply = t.check(turn.message, includes(\"done\")); t.assert(reply);",
-          "good": "t.check(turn.message, includes(\"done\"));"
+          "bad": "t.check(turn.message, includes(\"done\"), { label: \"完成\" });",
+          "good": "t.check(turn.message, includes(\"done\")).label(\"完成\");"
         },
         {
-          "bad": "const parsed = t.check(raw, matches(Schema)); await t.require(parsed);",
-          "good": "const parsed = await t.require(raw, matches(Schema));"
+          "bad": "const done = turn.succeeded(); t.check(done);",
+          "good": "turn.succeeded().label(\"Turn 完成\");"
         },
         {
-          "bad": "t.check(value, scoreMatch, { atLeast: 0.8 });",
-          "good": "t.check(value, scoreMatch.atLeast(0.8));"
+          "bad": "t.score(\"质量\", quality, { max: 10 });",
+          "good": "turn.judge.autoevals.closedQA(\"质量\").score(10);"
         },
         {
-          "bad": "t.check(scoreFact, { atLeast: 0.8 });",
-          "good": "t.check(scoreFact.atLeast(0.8));"
+          "bad": "await check.stopOnFailure();",
+          "good": "await check.orStop();"
         }
       ],
       "recordProtocol": {
-        "schemaVersion": 18,
-        "evaluationAlgorithm": "fact-use/v3",
-        "verdictMethods": [
-          "check",
-          "require",
-          "checkIfCovered"
-        ]
+        "schemaVersion": 19,
+        "evaluationAlgorithm": "assertion/v1",
+        "resultCollection": "assertionResults"
       }
     },
     "rejectedCliFlags": [
@@ -55,7 +54,7 @@
         "roots": [
           "docs-site/zh"
         ],
-        "use": "在 Eval 源码中用 t.check(...) 或 await t.require(...) 明确登记硬要求",
+        "use": "在 Pass Eval 中写 Boolean Assertion，或为 measurement 配置 atLeast(n)",
         "why": "CLI 已把 --strict 当未知选项拒绝，公开站继续展示会让用户复制出启动前即失败的命令"
       }
     ],
@@ -63,10 +62,11 @@
       {
         "name": "makeAssertion",
         "roots": [
-          "docs-site/zh",
+          "docs-site/zh/explanation",
+          "docs-site/zh/tutorials",
           "docs/feature/eval/README.md"
         ],
-        "use": "布尔 matcher 用 defineValueMatch，连续分数 matcher 用 defineScoreMatch",
+        "use": "值比较用 Match；Judge recipe 或连续 evaluator 直接登记 measurement Assertion",
         "why": "niceeval/expect 不再导出 makeAssertion，继续展示会产生导入或类型错误"
       }
     ],
@@ -74,70 +74,172 @@
       {
         "method": "assert",
         "roots": [
-          "docs/feature",
+          "docs/feature/assertions",
+          "docs/feature/eval",
+          "docs/feature/judge",
+          "docs/feature/verdict",
           "docs/roadmap/assertion-authoring",
-          "docs-site/zh"
+          "docs-site/zh/explanation",
+          "docs-site/zh/tutorials"
         ],
-        "use": "常见 Boolean verdict 写 t.check(valueOrSource, match)；已有 Fact 写 t.check(fact)，控制流依赖写 await t.require(...)",
-        "why": "t.assert 已从公开作者面删除。把常见 verdict 合并进 check，避免 producer 加第二个 consumer 的两步调用"
+        "use": "写 t.check(value, match)，或直接调用 scoped Boolean Assertion 方法",
+        "why": "t.assert 不属于作者面；每个入口在调用时直接登记 Assertion"
       },
       {
-        "method": "assertIfCovered",
+        "method": "checkIfCovered",
         "roots": [
-          "docs/feature",
+          "docs/feature/assertions",
+          "docs/feature/eval",
+          "docs/feature/judge",
+          "docs/feature/verdict",
           "docs/roadmap/assertion-authoring",
-          "docs-site/zh"
+          "docs-site/zh/explanation",
+          "docs-site/zh/tutorials"
         ],
-        "use": "只对 UsageEvidenceFact 写 t.checkIfCovered(fact)",
-        "why": "t.assertIfCovered 已从公开作者面删除；coverage 例外仍是窄的 usage Fact consumer"
+        "use": "只对 Usage Assertion handle 调用 .ifCovered()",
+        "why": "coverage 例外仍只属于 usage；调用时已经登记 Assertion"
       },
       {
         "method": "fact",
         "roots": [
-          "docs/feature",
+          "docs/feature/assertions",
+          "docs/feature/eval",
+          "docs/feature/judge",
+          "docs/feature/verdict",
           "docs/roadmap/assertion-authoring",
-          "docs-site/zh"
+          "docs-site/zh/explanation",
+          "docs-site/zh/tutorials"
         ],
-        "use": "值或 EvidenceSource 加 Match 时直接写 t.check、await t.require 或 t.score",
-        "why": "t.fact 已从公开作者面删除；便利 overload 会原子创建 Fact 并登记相应 use"
+        "use": "值比较写 t.check(value, match)，scope 与 Judge 使用各自的 Assertion 入口",
+        "why": "t.fact 不属于作者面；调用入口会直接登记 Assertion"
       },
       {
         "method": "gate",
         "roots": [
-          "docs-site/zh",
-          "docs/feature/eval/README.md"
+          "docs/feature/assertions",
+          "docs/feature/eval",
+          "docs/feature/judge",
+          "docs/feature/verdict",
+          "docs/roadmap/assertion-authoring",
+          "docs-site/zh/explanation",
+          "docs-site/zh/tutorials"
         ],
-        "use": "Boolean Fact 用 t.check(fact)，需要立即停止依赖路径时用 await t.require(fact)",
-        "why": "Fact 没有 gate 句柄；用 t.check(fact) 或 await t.require(fact) 显式登记 verdict use"
+        "use": "在 Pass Eval 中使用 Boolean Assertion，或对 measurement 调用 .atLeast(n)",
+        "why": "gate 不是 AssertionHandle API；condition 来自 Boolean evaluation 或 threshold"
+      },
+      {
+        "method": "require",
+        "roots": [
+          "docs/feature/assertions",
+          "docs/feature/eval",
+          "docs/feature/judge",
+          "docs/roadmap/assertion-authoring",
+          "docs-site/zh/explanation",
+          "docs-site/zh/tutorials"
+        ],
+        "use": "在同一 handle 上 await .orStop()",
+        "why": "t.require 不属于作者面；orStop 是同一 Assertion 的 async barrier"
+      },
+      {
+        "method": "requireToolCall",
+        "roots": [
+          "docs/feature/assertions",
+          "docs/feature/eval",
+          "docs/feature/judge",
+          "docs/feature/verdict",
+          "docs/roadmap/assertion-authoring",
+          "docs-site/zh/explanation",
+          "docs-site/zh/tutorials"
+        ],
+        "use": "调用 scoped calledTool(...).orStop()，并 await 它",
+        "why": "requireToolCall 不属于作者面；控制仍属于同一 Assertion handle"
+      },
+      {
+        "method": "stopOnFailure",
+        "roots": [
+          "docs/feature/assertions",
+          "docs/feature/eval",
+          "docs/feature/judge",
+          "docs/roadmap/assertion-authoring",
+          "docs-site/zh/explanation",
+          "docs-site/zh/tutorials"
+        ],
+        "use": "await handle.orStop()",
+        "why": "控制 API 的名字固定为 orStop；它是同一 Assertion 的 async barrier"
+      },
+      {
+        "method": "onFailureStop",
+        "roots": [
+          "docs/feature/assertions",
+          "docs/feature/eval",
+          "docs/feature/judge",
+          "docs/roadmap/assertion-authoring",
+          "docs-site/zh/explanation",
+          "docs-site/zh/tutorials"
+        ],
+        "use": "await handle.orStop()",
+        "why": "控制 API 的名字固定为 orStop；它是同一 Assertion 的 async barrier"
       },
       {
         "method": "points",
         "roots": [
-          "docs-site/zh",
-          "docs/feature/eval/README.md"
+          "docs/feature/assertions",
+          "docs/feature/eval",
+          "docs/feature/judge",
+          "docs/roadmap/assertion-authoring",
+          "docs-site/zh/explanation",
+          "docs-site/zh/tutorials"
         ],
-        "use": "在 defineScoreEval 中用 t.score(label, fact, { max })",
-        "why": "Fact 不使用 points 句柄计分；在 defineScoreEval 中用 t.score(label, fact, { max })"
+        "use": "在 Score Eval 中写 handle.score(n)，或直接写 t.score(n)",
+        "why": "score 是唯一的数值单位；不存在 points policy"
+      },
+      {
+        "method": "pointsOnly",
+        "roots": [
+          "docs/feature/assertions",
+          "docs/feature/eval",
+          "docs/feature/judge",
+          "docs/roadmap/assertion-authoring",
+          "docs-site/zh/explanation",
+          "docs-site/zh/tutorials"
+        ],
+        "use": "只登记 Assertion，或在 Score Eval 中写 handle.score(n)",
+        "why": "每条 Assertion 默认只记录 evaluation；没有隐式数值贡献"
+      },
+      {
+        "method": "weight",
+        "roots": [
+          "docs/feature/assertions",
+          "docs/feature/eval",
+          "docs/feature/judge",
+          "docs/roadmap/assertion-authoring",
+          "docs-site/zh/explanation",
+          "docs-site/zh/tutorials"
+        ],
+        "use": "在 Score Eval 中写 handle.score(n)",
+        "why": "score 是唯一的数值单位；不存在 weight"
       }
     ],
     "removedScoreOverloads": [
       {
         "callee": "t.score",
         "roots": [
-          "docs-site/zh",
+          "docs-site/zh/explanation",
+          "docs-site/zh/tutorials",
           "docs/feature/eval/README.md",
           "docs/feature/assertions",
           "docs/roadmap/assertion-authoring"
         ],
-        "use": "事实计分写 t.score(label, fact, { max })；常见值或 source 计分写 t.score(label, valueOrSource, match, { max })；直接给分写 t.score(label, { earned })",
-        "why": "t.score(label, number) 已从 ScoreTestContext 删除；score 只在 ScoreTestContext 上存在"
+        "use": "Score Eval 的已有 Assertion 写 handle.score(n)，直接贡献写 t.score(n)",
+        "why": "t.score 严格接收一个 finite 且不小于零的数值，不接 label、value 或 handle"
       }
     ],
     "removedEvaluationKinds": [
       {
         "value": "points",
         "roots": [
-          "docs-site/zh",
+          "docs-site/zh/explanation",
+          "docs-site/zh/tutorials",
           "docs/feature/eval/README.md"
         ],
         "use": "evaluationKind: \"score\"",

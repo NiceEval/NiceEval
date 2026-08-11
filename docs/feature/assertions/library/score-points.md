@@ -1,37 +1,49 @@
-# Assertions —— 计分
+# Assertions —— Score Eval
 
-`defineEval` 是通过制。它的正常路径需要至少一个 verdict use，最终结果是 `passed`、`failed`、`errored` 或 `skipped`。
+Score Eval 的完整 dual-mode 边界在 [Assertions](../README.md#score-eval)。本页只定义 score 如何由
+已登记 entry 累加。
 
-`defineScoreEval` 用 `t.score` 累加题内得分。`test` 正常返回时，Runner 自动关闭计分收集器：
+## 默认仅保存 evaluation
+
+每条 Assertion 默认保存 evaluation、evidence 和 diagnostic，不自动贡献数值。这个规则对 Boolean、
+measurement、scope 与 Judge 一致。
 
 ```ts
-export default defineScoreEval({
-  judge: true,
-  async test(t) {
-    const turn = await t.send("总结需求。");
-    const quality = turn.judge.autoevals.summarizes("原始需求");
-
-    t.check(quality.atLeast(0.7), { label: "最低质量" });
-    t.score("摘要质量", quality, { max: 20 });
-    t.score("格式", { earned: 2 });
-  },
-});
+turn.calledTool("search");
+turn.judge.autoevals.closedQA("回答完整");
 ```
 
-一个 ScoreFact 可以同时有一个 verdict use 和一个 score use。它只求值一次。Boolean Fact 也可用于 score：通过获得 `max`，失败获得 0。
+以上两条都是合法的 record-only Assertion。
 
-score Attempt 的 terminal：
+## 显式贡献
 
-| 条件 | terminal | `creditedScore` |
-|---|---|---|
-| 所有 Fact/use 可用 | `scored` | `earnedScore` |
-| 任一 verdict use failed | `invalid` | 0 |
-| 被消费 Fact unavailable | `unavailable` | `null` |
-| evaluator 或执行 error | `errored` | `null` |
-| 显式 skip | `skipped` | `null` |
+`handle.score(n)` 让已有 Assertion 贡献 score。`n` 必须 finite 且大于零，并且同一 handle 最多配置一次。
 
-`earnedScore` 是诊断值。`totalScore` 只聚合非 null `creditedScore`；invalid 的 0 进入分子和分母，unavailable、errored 与 skipped 不伪装为零分。
+```ts
+turn.calledTool("search").score(2);
+turn.judge.autoevals.closedQA("回答完整").score(5);
+```
 
-正常返回且没有 score use 时，Attempt 仍为 `scored`，`earnedScore` 与 `creditedScore` 都是 0。这个非 null 的零分进入同题平均与跨题求和；Fact/use 图保持为空，不合成占位计分项。
+Boolean matched 贡献 `n`，mismatched 贡献 `0`。measurement 为 `m` 时贡献 `m * n`。因此 measurement
+为 `.8` 且 `.score(5)` 时，贡献是 `+4`。
 
-没有 `points` 链式 API、隐式满分、软观察分或运行期 strict 开关。`.atLeast(n)` 只绑定连续分数的 verdict 阈值；`max` 与 direct `earned` 仍写在 `score` 调用处。
+`t.score(n)` 只属于 `ScoreTestContext`。它直接登记 contribution，`n` 必须 finite 且不小于零：
+
+```ts
+t.score(5).label("人工评分");
+```
+
+返回的 `DirectScoreHandle` 只允许 `key` 与 `label`，不能再加 score、threshold 或 control。
+
+## threshold 与 stop
+
+Score measurement 可以没有 threshold 直接封口。`.atLeast(n)` 只增加局部 `met` / `below` condition，
+不改变 contribution；`.score(n).atLeast(x)` 与 `.atLeast(x).score(n)` 同义。
+
+Boolean handle 可以直接 `await .orStop()`。measurement 必须先 `.atLeast(n)` 才能使用 `.orStop()`。
+正常 below stop 仍产出 `scored` grading，并保留 stop cause。
+
+## 可排名性
+
+正常没有贡献项的 Score Eval 得到正式 `score: 0`。只有配置 score 的 Assertion、direct score 或 control
+Assertion 的 `unavailable` / `errored` 才使 grading 不可排名。record-only Assertion 的 Issue 不作废正式 score。

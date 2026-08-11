@@ -1,40 +1,12 @@
 # Assertion 作者面 —— CLI
 
-`niceeval exp`、show、view、JUnit 和 JSON 都从同一份 Fact/use 结果读取。CLI 不提供会改写作者 use 的 `--strict`。
+CLI 和报告从 sealed `AssertionResult` projection 读取，不再运行 evaluator。
 
-```text
-Unknown option: --strict
-Express required facts with t.check(...) or await t.require(...) in the Eval source.
-```
+Pass Attempt 显示 Execution、Verdict、检查项。thresholded measurement 显示实际值、required threshold 与
+matched / mismatched，而不是数值成绩。
 
-## Attempt terminal 与退出码
+Score Attempt 显示 Execution、Score、评分项。每项显示 `recorded`、贡献分数、局部 condition 和 stop
+cause。没有 `.score()` 的项绝不显示 `+0`。没有 contribution 时，显示正式 `0` 和“没有贡献分数的评分项”。
 
-| Eval kind | terminal | CLI/JUnit |
-|---|---|---|
-| pass | `passed` | success |
-| pass | `failed` | failure |
-| pass | `errored` | error |
-| pass | `skipped` | skipped |
-| score | `scored` | success |
-| score | `invalid` | failure |
-| score | `unavailable` | error |
-| score | `errored` | error |
-| score | `skipped` | skipped |
-
-一次完整 invocation 中，只要折叠后的 Eval 有 `failed`、`invalid`、`errored` 或 `unavailable`，退出码为 1。全为 `passed`、`scored` 或 `skipped` 时为 0。
-
-## 摘要
-
-CLI history、任务列表和 report entity list 使用同一份 Fact/use 摘要。它先显示非成功 score terminal，再显示失败或不可用的 use。
-随后它显示已消费 Fact 的 unavailable/error，最后显示成功 ScoreFact 或成功 score terminal。
-
-```text
-unavailable · earned 0 · credited unavailable · judge-model-unresolved
-Judge clarity · unavailable · judge-model-unresolved
-```
-
-没有可归因 Fact/use 时，才显示结构化 execution error 或 skip reason。Judge 不拥有另一套摘要规则。
-
-## JSON 与 Record
-
-schema 18 的 JSON 直接公开 `evaluationAlgorithm: "fact-use/v3"`、`factResults`、`factUses` 和计分 Eval 的 `scoreResult`。旧 schema 是 unsupported，CLI 不转换、拼接或部分读取它。
+Score grading 不可排名时，显示 `partial score not ranked`、partial score 和 Issue。它不显示 Verdict、
+Pass / Fail、总分、百分比、points 或 weight。

@@ -1,125 +1,92 @@
 ---
-title: "NiceEval Fact、Match 与用途"
-sidebarTitle: "Fact 与断言"
-description: "用 Match 和作用域 producer 创建 Fact，再用 t.check、t.require 与 t.score 明确登记判定和分数。"
+title: "NiceEval Assertion 与 Match"
+sidebarTitle: "Assertion 与 Match"
+description: "用 Match 描述值比较，调用即登记 Assertion；handle 只配置同一条 Assertion。"
 ---
 
-NiceEval 把“观察到什么”和“如何使用观察”分开。Match 只比较一个候选值；Turn、Session、Sandbox 和 Judge producer 创建 Fact。`t.check(...)`、`t.require(...)` 与 `t.score(...)` 让 Fact 影响结果；值加 Match 的便利写法会在同一次调用中创建并消费 Fact。
+NiceEval 的评估单位是 Assertion。作者调用 `t.check(value, match)`、`turn.succeeded()`、`calledTool(...)` 或 Judge recipe 时，NiceEval 立即登记一条 Assertion；不存在先创建中间对象、再由另一条 API 消费它的流程。返回的 handle 只配置这一条 entry。
 
 ```ts
-import { includes, similarity } from "niceeval/expect";
+import { includes } from "niceeval/expect";
 
-const containsResult = t.check(turn.message, includes("完成"), {
-  label: "回复说明完成",
-});
-const answerQuality = t.check(turn.message, similarity(expected).atLeast(0.8), {
-  label: "回复质量",
-});
+t.check(turn.message, includes("完成")).label("回复说明完成");
+turn.succeeded().label("Turn 完成");
+turn.calledTool("get_weather", { count: 1 }).label("查询天气");
+turn.judge.autoevals.closedQA("回答是否具体且礼貌？").atLeast(0.8).label("回答质量");
 ```
 
-创建 Fact 不会隐式改变 Attempt。每条需要检查的规则都在消费位置明确登记，因此本地、CI 和重跑使用同一套判定。
+每条 Assertion 的 `key` 与 `label` 最多各配置一次。重复配置即使写入同一个值也是作者错误。
 
-## 三种 Fact use
+## Match 只比较值
 
-| 入口 | 用途 | 控制流 |
-|---|---|---|
-| `t.check(fact)` | Boolean Fact 的 verdict use | 继续执行，收集独立结果 |
-| `t.check(scoreFact.atLeast(n))` | ScoreFact 的阈值 verdict use | 继续执行 |
-| `await t.require(fact, options)` | 即时 Fact 的 verdict use，并取得通过结果 | 未通过或不可用时停止依赖路径 |
-
-`defineScoreEval` 还提供 `t.score(label, fact, { max })`。它登记 score use：Boolean Fact 通过获得 `max`，ScoreFact 按归一化分数比例获得分数。
-
-一个 Fact 最多有一个 verdict use 和一个 score use。两种用途共享一次 evaluator 求值。无人消费的 Fact 是作者错误；它不会在后台自行运行。
-
-## 通过制与计分制终态
-
-通过制按已消费 Fact/use 折叠：
-
-```text
-任一已消费 Fact 或 verdict use unavailable / errored  → errored
-任一 verdict use failed                               → failed
-显式 t.skip(reason)                                   → skipped
-否则                                                   → passed
-```
-
-计分制保留更细的 score terminal。成功为 `scored`，失败的 verdict use 为 `invalid`，不可用为 `unavailable`，evaluator 或执行错误为 `errored`。只有 `scored` 才有可计入的 credit；不可用和错误不伪装为 0 分。
-
-## 值 Fact
-
-`niceeval/expect` 导出纯 Match factory。Boolean Match 产生通过、失败或证据不可用；Score Match 产生 `[0, 1]` 内的连续分数。
+`niceeval/expect` 导出纯 Match factory。Match 是可复用、不可变、确定性且无副作用的比较规则；它没有身份、调用位置、阈值、分值或控制流。`t.check(value, match)` 严格接收两个参数，在调用时读取 `value` 并登记 Assertion。
 
 ```ts
-import { equals, includes, matches, satisfies, similarity } from "niceeval/expect";
+import { equals, includes, matches, satisfies } from "niceeval/expect";
 
 t.check(turn.message, includes("订单已确认"));
 t.check(turn.data, equals({ status: "refund", amount: 42 }));
 t.check(turn.data, matches(OrderSchema));
 t.check(turn.message.length, satisfies("回复不是空文本", (length) => length > 0));
-
-const quality = t.check(turn.message, similarity("期望答案").atLeast(0.8));
 ```
 
-Match 不携带阈值、分值、可选性或控制流。Score Match 返回无效结构、非有限数或区间外数值时，Fact 为 evaluator error，不会被裁剪。
+## 作用域 Assertion
 
-## 作用域 Fact
-
-接收者决定证据范围。`turn.*` 只看该 Turn，`session.*` 看那条 session 的前缀，根 `t.*` 在 `test(t)` 返回后看整个 Attempt。
+作用域方法在调用时直接登记 Boolean Assertion。接收者决定证据范围：`turn.*` 只看该不可变 Turn，`session.*` 看该 Session 调用点之前的前缀，根 `t.*` 看调用点时所有已启动 Session 的 vector cut。
 
 ```ts
-import { toolMatch } from "niceeval/expect";
-
 const turn = await t.send("运行检查并修复问题。");
-t.check(turn.succeeded(), { label: "Turn 成功" });
-t.check(turn.calledTool(toolMatch("shell")), { label: "使用 shell" });
-t.check(turn.calledTool(toolMatch("read_file"), { count: 2 }), { label: "读取两次" });
+turn.succeeded().label("Turn 成功");
+turn.calledTool("shell").label("使用 shell");
+turn.calledTool("read_file", { count: 2 }).label("读取两次");
 ```
 
-否定检查和精确次数依赖完整证据。证据不足时，Fact 为 `unavailable`；普通消费会让 Attempt `errored`，而不是把空事件当作通过。
+`calledTool(name, options)` 的选项包括 `input` 与 `count`。输入使用递归 JSON 匹配：对象部分匹配、数组逐项匹配，任意层可用 `RegExp` 或动态谓词。
 
-## Sandbox Fact 与真实命令
+## 两种 Eval
 
-最终文件变化是 `phase: "final"` Fact。Sandbox 命令先返回普通结果，再用 `t.check` 生成即时 Fact：
+`defineEval` 创建 Pass Eval。Boolean `matched` 进入 Attempt Verdict；`mismatched` 使最终 Verdict 为 `failed`，但不会阻止后续检查继续登记。连续 evaluator 与 Judge recipe 给出 `[0,1]` measurement；Pass Eval 必须用 `.atLeast(n)` 把它封口成 Boolean condition，未设 threshold 的 measurement 是作者错误。
 
 ```ts
-import { commandSucceeded, includes } from "niceeval/expect";
-
-t.check(t.sandbox.fileChanged("src/Button.tsx"), { label: "修改 Button" });
-t.check(t.sandbox.file("src/Button.tsx"), includes("export function Button"));
-
-const testResult = await t.sandbox.runCommand("pnpm", ["test"]);
-t.check(testResult, commandSucceeded(), { label: "项目测试通过" });
+turn.judge.autoevals.closedQA("回答是否给出可执行步骤？")
+  .atLeast(0.8)
+  .label("步骤可执行");
 ```
 
-文件缺失是确定失败；权限、传输或超时导致的证据问题是 `unavailable`，不会把空字符串当内容继续匹配。
-
-## 计分 Fact
+`defineScoreEval` 创建 Score Eval。它只有累计 `score`，没有 Attempt Verdict、总分、百分比或另一种数值单位。Assertion 默认只保存 evaluation，不计分；用 `.score(n)` 才让已有 Assertion 贡献 score。Boolean matched 贡献 `n`，mismatched 贡献 `0`；measurement `m` 贡献 `m * n`。`t.score(n)` 直接登记 contribution，返回的 handle 只能配置 `key` 与 `label`。
 
 ```ts
-const changed = t.sandbox.fileChanged("experiments/local.ts");
-t.check(changed, { label: "配置有效" });
-t.score("配置修复", changed, { max: 2 });
-
-const quality = t.check(turn.message, similarity(expectedAnswer).atLeast(0.8));
-t.score("回答质量", quality, { max: 20 });
-t.score("代码精简", { earned: tierPoints });
+turn.calledTool("search");                       // 只保存 evaluation
+turn.calledTool("search").score(2);              // matched 时 +2
+turn.judge.autoevals.closedQA("回答完整").score(5); // measurement 0.8 时 +4
+t.score(5);                                      // 直接 +5
 ```
 
-成功、已消费且没有 score use 的 ScoreFact 可进入 `examScore`。有 score use 的同一 Fact 只进入 `totalScore`。这个规则也适用于 Judge。
+Score Eval 的 measurement 不必 threshold 就能封口。`.atLeast(n)` 只增加局部 `met` / `below` condition，不改变 contribution。没有 `.score()` 的 Assertion 不显示 `+0`；正常没有计分项的 Score Eval 得到正式且可排名的 `score: 0`。
 
-## Judge 是普通 ScoreFact
+## 控制流
 
-Judge recipe 返回 ScoreFact，因此使用方式与其他连续 Fact 相同：
+`.orStop()` 是同一 Assertion handle 的 async barrier，必须 `await`。Boolean mismatch，或 thresholded measurement below 时，它设置 authoring stop latch 并拒绝私有控制信号。它只停止当前被 await 的 continuation，不撤销普通 JavaScript 副作用，也不取消此前启动的并发任务；尚未执行的源码不生成结果。
 
 ```ts
-const quality = turn.judge.autoevals.closedQA("回答是否具体且礼貌？");
-t.check((quality).atLeast(0.7), { label: "回答质量" });
+const turn = await t.send("搜索资料并说明结论。");
+await turn.succeeded().orStop();
+const search = await t.check(turn.message, includes("结论")).orStop();
 ```
 
-`.atLeast()` 只创建不可变阈值 view，不会求值或登记用途。Judge 没有可选消费、观察消费或 Fact 自带的计分 API。材料、配置和失败语义见 [Judge](/zh/explanation/judge)。
+正常 stop 后，Pass Eval 仍按触发 Assertion 得到 `failed` Verdict；Score Eval 仍是 `scored`，保留正式 score 和 stop cause，因此可以排名。
+
+## Judge
+
+Judge recipe 调用时直接登记 measurement Assertion。Pass Eval 对同一 handle 用 `.atLeast(n)`，Score Eval 用 `.score(n)`；两种配置都只运行一次 Judge evaluator。材料、配置和失败语义见 [Judge](/zh/explanation/judge)。
+
+## 不可用与读取
+
+缺少 evidence 不能伪装成普通 mismatch。`unavailable` 与 `errored` 保留原因与脱敏 evidence。`show`、`view`、JSON、export 与 source 都从同一 projection 离线解释，不重新运行 Match 或调用 Judge。
 
 ## 相关阅读
 
 - [Match 参考](/zh/reference/expect) — 内置 Match、组合与自定义 Match。
-- [评估 API](/zh/reference/define-eval) — Fact producer 与 consumer 的字段全集。
+- [评估 API](/zh/reference/define-eval) — `t`、Session、Turn 与 handle 的字段全集。
 - [通过制与计分制](/zh/tutorials/evaluation-kinds) — 两种题型的完整写法。
-- [Judge](/zh/explanation/judge) — Judge ScoreFact 与模型配置。
+- [Judge](/zh/explanation/judge) — Judge 与模型配置。

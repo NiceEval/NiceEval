@@ -1,4 +1,4 @@
-# Judge：接上兼容网关并确认真实判分
+# Judge：接上兼容网关并确认真实评估
 
 把 endpoint、model 和 credential selector 写进可签入配置。key 只来自进程变量：
 
@@ -12,23 +12,25 @@ export default defineConfig({
 });
 ```
 
-写一个显式声明 capability 的 Eval，并硬消费 Judge ScoreFact：
+写一个声明 capability 的 Pass Eval，并在同一 handle 上设 threshold：
 
 ```ts
 export default defineEval({
   judge: true,
   async test(t) {
-    const fact = t.judge.autoevals.closedQA("文本是否表达成功？", {
+    t.judge.autoevals.closedQA("文本是否表达成功？", {
       input: "operation completed successfully",
       output: "operation completed successfully",
-    });
-    t.check(fact.atLeast(0.8));
+    }).atLeast(0.8).label("成功表达");
   },
 });
 ```
 
-运行 `niceeval exp judge-smoke`。配置了 model 与 key 时，Runner 会先预检 endpoint。预检失败使受影响 Attempt 成为 setup error；它不会生成伪造的 Judge Fact。
+运行 `niceeval exp judge-smoke`。完整配置会先预检 endpoint；预检失败是 setup error，不会生成伪造的
+Judge 结果。
 
-预检通过后，show 中应出现一个 ScoreFact 和它的 verdict use。分数是 `[0,1]`；rationale 在 `explanation`，判分材料在 `evidence`。网络调用失败记为 Fact `unavailable`，因此这个硬 use 让 Attempt `errored`；无效模型响应记 evaluator error。
+预检通过后，show 显示一条 Judge AssertionResult，其中含 `[0,1]` measurement、threshold、理由和
+裁剪后的材料。网络调用失败为 `unavailable`，无效响应为 evaluator `errored`；二者都不会显示为 `0`。
 
-开发机没有 model 或 key 时，不产生预检网络请求。消费 Judge Fact 后，结果显示 `judge-model-unresolved` 或 `judge-key-unresolved (...)`，Attempt 仍为 `errored`。用普通 Fact/use 处理这个结果，不提供允许 Judge 缺席的链式 API。
+开发机没有 model 或 key 时不会发出预检网络请求。结果保留 `judge-model-unresolved` 或
+`judge-key-unresolved`，让读者区分配置缺失与被测对象质量。
