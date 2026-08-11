@@ -234,7 +234,7 @@ const installCall = toolMatch("shell", {
 
 `equals(...)` 比较完整输入；`matches(...)`、`satisfies(...)` 与其它 value Match 可以表达结构或谓词条件。具体字段由 Agent 的工具协议决定，例如 shell 工具可能把命令文本放在 `command` 字段。只关心参数、不限制工具名称时，使用 `toolMatch({ input })`。
 
-`toolMatch("shell")` 回答“调用的是哪类工具”，`commandMatch("niceeval", { argsStart: ["show"] })` 回答“这次调用运行了哪个可执行文件和哪些 argv token”。后者依赖 Adapter 提供的结构化 command projection；只有 shell source、截断文本或脱敏文本时，不会猜测 argv，结果会是 `unavailable`。需要两项同时成立时，把它们组合在同一笔调用上：
+`toolMatch("shell")` 回答“调用的是哪类工具”，`commandMatch("niceeval", { argsStart: ["show"] })` 回答“这次调用运行了哪个程序和哪些参数”。如果 NiceEval 没有取得准确的程序与参数，这项检查会是 `unavailable`。需要两项同时成立时，把它们组合在同一次调用上：
 
 ```ts
 import { and, commandMatch, toolMatch } from "niceeval/expect";
