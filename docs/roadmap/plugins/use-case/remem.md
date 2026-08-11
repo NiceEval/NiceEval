@@ -65,15 +65,11 @@ Remem 自带的 Skill、Codex Plugin 与脚本使用 `pluginAsset(new URL(..., i
 
 ## Accumulated 模式
 
-默认模式要证明“本轮前一题留下的状态被后一题消费”,因此 Experiment 还必须选择一条 complete-prefix Sequence,且成员属于同一个 stop-group 物理 Sandbox。插件 requirements 只验证这些事实,不替作者创建它们。
+默认模式让同一 Eval Group 的真实 Attempt 共享物理 Sandbox。Group 使用 `stop-group`，避免基础设施失效后继续在错误的替代 Sandbox 实例中运行。
 
-```bash
-pnpm exec niceeval exp compare/codex-remem --sequence toggl-cli
-```
-
-Sequence 每一步真实派发,不由 carried 结果替代。`passed` / `failed` 封口后才进入下一步;errored、中断或不完整前缀不会被描述成有效记忆历史。
-
-当前一条命令只能选择一条 Sequence。六个独立 group 因此运行六次 Invocation;本主题不把它包装成一个看似等价的单命令。
+当前 Group 只保证按规范化 Eval ID 串行，不提供业务 Sequence。作者数组位置也不表示先后关系。
+因此当前验收可以证明 Remem 状态、安装和物理 Sandbox 被共享，但不能声明某道题必然消费另一道具名题留下的状态。
+需要这种因果顺序的实验，要等独立的显式排序契约落地后再自动化；Plugin 不会从 Group 数组位置推断顺序。
 
 ## Isolated 模式
 
@@ -92,11 +88,10 @@ export default defineExperiment({
 
 实现后的真实验收至少检查:
 
-1. dry plan 展示 `dev.remem.agent-extension` identity、AgentExtension → receiver 与 asset digest；
-2. dry plan 区分 Hosted／native Hook，展示 prepare／lifecycle 顺序与 requirements，不出现 credential selector／value 或宿主绝对路径；
-3. 缺 Sequence、stop-group 或 5 小时 requested lifetime 时在创建 Sandbox 前失败;
-4. 错误镜像在 `sandbox.prepare.experiment` 报 Remem 版本探测失败并点名 plugin source;
-5. 同一 Sequence 的后一步看到前一步留下的 `$HOME/.remem` 状态,且没有 carried 前序;
-6. `beforeAgentTeardown` 在 Agent teardown 前排空 extraction queue，receiver overlay 只在 Agent teardown 后 dispose；失败只归既有 lifecycle／teardown aggregation;
-7. 同一插件 blueprint 被两个 Experiment 并发使用时,运行时状态与 typed Attachment write 互不改写;
-8. 强杀恢复只在 linked Plugin identities 完全匹配时运行当前 teardown；下一条复用 Attempt 的完整 desired state 不继承上一条的 Remem Skill、MCP、native Hook 或 credential materialization。
+1. dry plan 展示 Remem identity、receiver、prepare / hook 顺序与 requirements,不出现凭据值;
+2. 缺 stop-group 或 5 小时 requested lifetime 时在创建 Sandbox 前失败;
+3. 错误镜像在 `sandbox.prepare.experiment` 报 Remem 版本探测失败并点名 plugin source;
+4. 同一 Group 的真实 Attempt 使用同一物理 Sandbox，且没有 carried slot 被误报为记忆历史;
+5. Stop hook 后 extraction queue 在 `preTeardown` 排空,失败只归现有 lifecycle phase;
+6. 同一插件 blueprint 被两个 Experiment 并发使用时,运行时状态与事实互不改写;
+7. 强杀恢复只在 linked plugin identities 完全匹配时运行当前 teardown。

@@ -163,7 +163,7 @@ reset 语义、寿命确认与污染诊断见 [Sandbox 复用](reuse.md)。
 
 `niceeval exp <选择> --dry --commands` 直接消费 link、physical planning 与 carry 的完成态，把本页时序投影为 Experiment → lane → slot。装配器拥有生命周期语义；human 的 `COMMAND PLAN` 框和 JSON 的 `commandPlan` 只投影同一棵树，不能各自重排节点。
 
-它只声明运行器能保证的偏序：不同 Eval lane 可以并发，不生成全局序号；`sandboxReuse` lane 按 Attempt 串行；Eval Group lane 按 group member 声明序、再按 Attempt index 串行。Group 过滤与 carry 只移除对应 slot，不改变剩余 member-major 顺序。
+它只声明运行器能保证的偏序：不同 Eval lane 可以并发，不生成全局序号；`sandboxReuse` lane 按 Attempt 串行；Eval Group lane 按规范化 Eval ID、再按 Attempt index 串行。Group 过滤与 carry 只移除对应 slot；作者数组位置没有业务顺序语义。
 
 fresh slot 把 Case materialize / lifecycle setup、逐 Attempt body、lifecycle teardown / Provider finalizer 放在自己的 steps 内。reuse 与 Group lane 把共享 physical lifecycle 放在 slots 外；但 reset 失败、寿命不足或故障退休会换实例并重跑 physical lifecycle，所以面板将其标成可重复条件，不声称“整场恰好一次”。
 
