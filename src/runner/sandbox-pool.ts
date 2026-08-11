@@ -12,6 +12,12 @@ import {
 import type { JsonValue, Sandbox, SandboxAgent, SandboxHookContext, SandboxReuseCapability, ScopedFeedback } from "../types.ts";
 import { CLEANUP_TIMEOUT_MS } from "./cleanup-timeout.ts";
 import { createChangeLedger, type ChangeLedger } from "./ledger.ts";
+import {
+  materializeSelectedPluginResources,
+  type MaterializedPluginResources,
+  type SelectedResourceEnvelope,
+} from "../plugin/resource-runtime.ts";
+import type { SandboxResourceTiming } from "../plugin/contracts.ts";
 import { firstLine, formatThrown } from "../util.ts";
 import { Effect, Either, Exit, Scope } from "effect";
 
@@ -19,6 +25,8 @@ export interface ReusableSandboxLease {
   readonly sandbox: Sandbox;
   readonly reuseSandbox: number;
   readonly reuseOrdinal: number;
+  /** Physical resource handles live with the pool entry, not this lease Scope. */
+  readonly resources?: MaterializedPluginResources;
   /** 提交本次 Attempt 的归还决策；Scope 退出负责实际 reset/retire，漏提交默认 Retire。 */
   commit(disposition: ReusableLeaseRelease): Effect.Effect<void>;
 }
@@ -26,6 +34,12 @@ export interface ReusableSandboxLease {
 export type ReusableLeaseRelease =
   | { readonly _tag: "Reset" }
   | { readonly _tag: "Retire" };
+
+/** A post-attempt physical lifecycle failure observed after its result sealed. */
+export interface ReusableSandboxPoolRuntimeFailure {
+  readonly stage: "sandbox.reset";
+  readonly error: Error;
+}
 
 type EntryLifecycle =
   | { readonly _tag: "Idle" }
@@ -38,6 +52,7 @@ interface Entry {
   /** provider 自己实现的寿命确认;没有这条能力的实例根本进不来(见 create)。 */
   lifetime: SandboxReuseCapability;
   ledger: ChangeLedger;
+  resources?: MaterializedPluginResources;
   reuseSandbox: number;
   ordinal: number;
   lifecycle: EntryLifecycle;
@@ -62,6 +77,7 @@ export class ReusableSandboxPool {
   private readonly waiters: Array<() => void> = [];
   private creating = 0;
   private stopped = false;
+  private readonly runtimeFailures: ReusableSandboxPoolRuntimeFailure[] = [];
   /** Provider 可观察的物理 owner；Group 池不能随首个未携入成员改用另一个 Eval ID。 */
   private readonly materializationOwnerId: string;
   /** 本次 Run 内的 Sandbox 编号计数器;淘汰的实例不让号,编号在结果里永远指向同一个实例。 */
@@ -76,6 +92,8 @@ export class ReusableSandboxPool {
     private readonly agent?: SandboxAgent,
     private readonly runTiming?: import("./timing.ts").RunTimingRecorder,
     materializationOwnerId?: string,
+    private readonly resourceEnvelope?: SelectedResourceEnvelope,
+    private readonly nextReuseSandboxNumber?: () => number,
   ) {
     this.materializationOwnerId = materializationOwnerId ?? plan.pair.evalId;
   }
@@ -166,6 +184,11 @@ export class ReusableSandboxPool {
     });
   }
 
+  /** Drained by the scheduler after the lease Scope sealed the prior result. */
+  drainRuntimeFailures(): readonly ReusableSandboxPoolRuntimeFailure[] {
+    return Object.freeze(this.runtimeFailures.splice(0));
+  }
+
   private create(
     minRemainingMs: number,
     deadlineAt: number | undefined,
@@ -199,6 +222,32 @@ export class ReusableSandboxPool {
         Effect.onError((cause) => Scope.close(entryScope, Exit.failCause(cause))),
       );
       const sandbox = materialized.sandbox;
+    // SandboxLayer setup has completed at this point. Plugin resources now
+    // materialize into the same entry Scope, before the ledger establishes the
+    // reset anchor. Scope LIFO releases resources before provider teardown.
+      const resources = this.resourceEnvelope === undefined
+      ? undefined
+      : yield* Scope.extend(materializeSelectedPluginResources({
+        envelope: this.resourceEnvelope,
+        sandbox,
+        signal: this.setupContext.signal,
+        feedback: this.feedback,
+        progress: this.setupContext.progress,
+        fact: this.setupContext.fact,
+        timing: (input: SandboxResourceTiming) => {
+          if (this.runTiming === undefined) return;
+          const durationMs = Math.max(0, input.durationMs);
+          this.runTiming.child({
+            key: input.key,
+            label: input.label,
+            startOffsetMs: Math.max(0, this.runTiming.offsetNow() - durationMs),
+            durationMs,
+            ...(input.failed ? { failed: true as const } : {}),
+          });
+        },
+      }), entryScope).pipe(
+        Effect.onError((cause) => Scope.close(entryScope, Exit.failCause(cause))),
+      );
     // 能力只能来自 provider 实现:探不到就硬失败,没有通用记账兜底(见
     // docs/feature/sandbox/reuse.md「派发前确认」)。
     const lifetime = sandboxReuseCapability(sandbox);
@@ -238,13 +287,16 @@ export class ReusableSandboxPool {
           `sandboxReuse cannot use the "${capabilities.provider}" sandbox after baseline setup: ${afterSetup.reason}`,
         ));
       }
-      this.created += 1;
+      const reuseSandbox = this.nextReuseSandboxNumber === undefined
+        ? ++this.created
+        : this.nextReuseSandboxNumber();
       return {
         sandbox,
         scope: entryScope,
         lifetime,
         ledger,
-        reuseSandbox: this.created,
+        ...(resources === undefined ? {} : { resources }),
+        reuseSandbox,
         ordinal: 0,
         lifecycle: { _tag: "Idle" } satisfies EntryLifecycle,
       };
@@ -268,6 +320,7 @@ export class ReusableSandboxPool {
       sandbox: entry.sandbox,
       reuseSandbox: entry.reuseSandbox,
       reuseOrdinal: entry.ordinal,
+      ...(entry.resources === undefined ? {} : { resources: entry.resources }),
       commit: (release) => Effect.sync(() => {
         if (lifecycle._tag !== "Open") return;
         lifecycle = { ...lifecycle, release: { _tag: "Committed", release } };
@@ -285,6 +338,7 @@ export class ReusableSandboxPool {
         } else if (entry.lifecycle._tag !== "Retired") {
           const reset = yield* Effect.either(externalPromise(() => entry.ledger.resetToAnchor()));
           if (Either.isLeft(reset)) {
+            this.runtimeFailures.push(Object.freeze({ stage: "sandbox.reset", error: reset.left }));
             this.feedback.diagnostic({
               code: "sandbox-reset-failed",
               level: "warning",

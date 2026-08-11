@@ -33,12 +33,13 @@ import {
 } from "./sandbox/layer.ts";
 import { Either, Schema } from "effect";
 import { assertEvidenceCoverage } from "./assertions/coverage.ts";
+import { isPluginInstance, pluginInstanceDataOf, type PluginInstance, type PluginOwner } from "./plugin/contracts.ts";
 
 // 发现期必须区分 defineScoreEval 的真正产物与运行时手写 `{ evaluationKind: "score" }` 的裸对象。
 // WeakSet 是模块私有来源证明；Definition 本身另有 types.ts 的私有 symbol 品牌供类型层使用。
 const definedScoreEvals = new WeakSet<object>();
 
-/** Define an ordered queue of real Eval definitions. Group identity comes from its discovery path. */
+/** Define a closed set of real Eval definitions sharing one physical Sandbox. */
 export function defineEvalGroup<const Sandbox extends SandboxLayer | undefined>(
   input: EvalGroupInput<Sandbox>,
 ): EvalGroupDefinition {
@@ -53,8 +54,16 @@ export function defineEvalGroup<const Sandbox extends SandboxLayer | undefined>(
     }
   });
   assertSandboxLayer(input.sandbox, "defineEvalGroup");
+  if (input.onUnavailable !== "stop-group" && input.onUnavailable !== "replace-sandbox") {
+    throw new TypeError("defineEvalGroup onUnavailable must be \"stop-group\" or \"replace-sandbox\".");
+  }
   const [first, ...rest] = input.evals;
-  return brandEvalGroupDefinition({ evals: Object.freeze([first, ...rest]), ...(input.sandbox ? { sandbox: input.sandbox } : {}) });
+  return brandEvalGroupDefinition({
+    evals: Object.freeze([first, ...rest]),
+    onUnavailable: input.onUnavailable,
+    ...(input.sandbox ? { sandbox: input.sandbox } : {}),
+    ...(input.plugins === undefined ? {} : { plugins: normalizePlugins(input.plugins, "defineEvalGroup plugins", "group") }),
+  });
 }
 
 /** @internal 仅供 discoverEvals 验证 score 题型来源。 */
@@ -80,6 +89,7 @@ export function defineSandboxAgent(def: SandboxAgentDef): SandboxAgent {
     spanMapper: def.spanMapper,
     send: def.send,
     classifySendFailure: def.classifySendFailure,
+    pluginReceiver: def.pluginReceiver,
     teardown: def.teardown,
   };
 }
@@ -178,6 +188,7 @@ export function defineExperiment(def: ExperimentInput): ExperimentDefinition {
     earlyExit: def.earlyExit ?? false,
     evals: Array.isArray(def.evals) ? Object.freeze([...def.evals]) : (def.evals ?? "*"),
     sandboxReuse: def.sandboxReuse === true,
+    plugins: normalizePlugins(def.plugins ?? [], "defineExperiment plugins", "experiment"),
   });
 }
 
@@ -186,6 +197,7 @@ function normalizeEvalFields(def: EvalInput | ScoreEvalInput) {
     ...(def.description !== undefined ? { description: def.description } : {}),
     tags: Object.freeze([...(def.tags ?? [])]),
     ...(def.sandbox !== undefined ? { sandbox: def.sandbox } : {}),
+    plugins: normalizePlugins(def.plugins ?? [], "defineEval plugins", "eval"),
     ...(def.judge !== undefined ? { judge: def.judge } : {}),
     reporters: Object.freeze([...(def.reporters ?? [])]),
     ...(def.timeoutMs !== undefined ? { timeoutMs: def.timeoutMs } : {}),
@@ -195,6 +207,21 @@ function normalizeEvalFields(def: EvalInput | ScoreEvalInput) {
       ignore: Object.freeze([...(def.diff?.ignore ?? [])]),
     }),
   };
+}
+
+function normalizePlugins<Owner extends PluginOwner>(
+  value: readonly PluginInstance<Owner>[],
+  label: string,
+  owner: Owner,
+): readonly PluginInstance<Owner>[] {
+  if (!Array.isArray(value)) throw new TypeError(`${label} must be an array.`);
+  return Object.freeze(value.map((plugin, index) => {
+    if (!isPluginInstance(plugin)) throw new TypeError(`${label}[${index}] must be created by definePlugin().`);
+    if (pluginInstanceDataOf(plugin)[owner] === undefined) {
+      throw new TypeError(`${label}[${index}] does not support ${owner} attachment.`);
+    }
+    return plugin;
+  }));
 }
 
 function isJsonValue(value: unknown): value is JsonValue {

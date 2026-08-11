@@ -79,6 +79,14 @@ baseUrl?: string;
 自定义 API base URL(代理 / 内网端点)。省略时读 ANTHROPIC_BASE_URL env;
 两者都没有则用 Anthropic 官方端点(claude CLI 默认行为)。
 
+#### `env`
+
+```ts
+env?: Readonly<globalThis.Record<string, string>>;
+```
+
+Extra process environment for Claude Code. Values stay private runtime data.
+
 #### `maxTurns`
 
 ```ts
@@ -91,7 +99,7 @@ maxTurns?: number;
 #### `mcpServers`
 
 ```ts
-mcpServers?: McpServer[];
+mcpServers?: readonly McpServer[];
 ```
 
 额外 MCP server(每个 Sandbox setup 时写进用户级 ~/.claude.json)。
@@ -101,7 +109,7 @@ stdio 形态写 command(可带 args / env);Streamable HTTP 形态写 url(可带 
 #### `skills`
 
 ```ts
-skills?: SkillSpec[];
+skills?: readonly SkillSpec[];
 ```
 
 装进 Sandbox 的 Skill(本地目录/文件,或 repo + 可钉 ref + 可选启用集)。
@@ -110,7 +118,7 @@ skills?: SkillSpec[];
 #### `plugins`
 
 ```ts
-plugins?: ClaudeCodePluginSpec[];
+plugins?: readonly ClaudeCodePluginSpec[];
 ```
 
 Claude Code 原生 Plugin(先连 Marketplace,再从中装指定 Plugin)。
@@ -131,7 +139,7 @@ setup 报错。manifest 只记项目相对路径与字节 SHA-256,不落正文�
 #### `postSetup`
 
 ```ts
-postSetup?: SandboxCommand[];
+postSetup?: readonly SandboxCommand[];
 ```
 
 安装后按数组顺序运行的用户 Hook(复用 SandboxCommand 的窄上下文):在写 settings、挂 MCP、
@@ -142,7 +150,7 @@ postSetup?: SandboxCommand[];
 #### `preTeardown`
 
 ```ts
-preTeardown?: SandboxCommand[];
+preTeardown?: readonly SandboxCommand[];
 ```
 
 与 `postSetup` 成对的收尾 Hook:按 `postSetup` 的逆序语义,在 agent 自己的 teardown 步骤
@@ -186,7 +194,7 @@ Sandbox factory 的 `pathPrepend`（见 docs/feature/sandbox/library.md）。
 #### `mcpServers`
 
 ```ts
-mcpServers?: McpServer[];
+mcpServers?: readonly McpServer[];
 ```
 
 额外 MCP server(每个 Sandbox setup 时追加进 ~/.codex/config.toml)。
@@ -196,7 +204,7 @@ Streamable HTTP 形态(url/headers)写 url 行,headers 进 [mcp_servers.&lt;name
 #### `skills`
 
 ```ts
-skills?: SkillSpec[];
+skills?: readonly SkillSpec[];
 ```
 
 装进 Sandbox 的 Skill(本地目录/文件,或 repo + 可钉 ref + 可选启用集)。
@@ -206,7 +214,7 @@ skills?: SkillSpec[];
 #### `plugins`
 
 ```ts
-plugins?: CodexPluginSpec[];
+plugins?: readonly CodexPluginSpec[];
 ```
 
 Codex 原生 Plugin(先连 Marketplace,再从中装指定 Plugin)。
@@ -228,7 +236,7 @@ niceeval 的项目根(含 `niceeval.config.ts` 的目录)解析,不是 Sandbox �
 #### `postSetup`
 
 ```ts
-postSetup?: SandboxCommand[];
+postSetup?: readonly SandboxCommand[];
 ```
 
 安装后按数组顺序运行的用户 Hook(复用 SandboxCommand 的窄上下文):在写主配置、挂 MCP、
@@ -239,7 +247,7 @@ postSetup?: SandboxCommand[];
 #### `preTeardown`
 
 ```ts
-preTeardown?: SandboxCommand[];
+preTeardown?: readonly SandboxCommand[];
 ```
 
 与 `postSetup` 成对的收尾 Hook:按 `postSetup` 的逆序语义,在 agent 自己的 teardown 步骤

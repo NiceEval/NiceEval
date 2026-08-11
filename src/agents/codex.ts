@@ -38,6 +38,13 @@ import {
 } from "../context/send-failures.ts";
 import { normalizeExternalCause } from "../shared/external-cause.ts";
 import type { FailureClass } from "../shared/failure-class.ts";
+import {
+  agentExtensionsProjection,
+  receiverExtensionsFor,
+  type AgentExtension,
+  type PluginAgentReceiver,
+} from "../plugin/contracts.ts";
+import { codexExtensionPayload } from "../plugin/agent-extensions.ts";
 
 // ───────────────────────────────────────────────────────────────────────────
 // OpenAI Codex CLI 的 agent adapter(沙箱型)。
@@ -82,7 +89,7 @@ export interface CodexPluginSpec {
      * (codex 的 `--sparse` 必须带路径参数、可重复):大仓库只取插件所需路径,省略或空数组即全量 clone。
      * 只影响拉取速度,不影响装出来的内容;manifest 不记录它。
      */
-    sparse?: string[];
+    sparse?: readonly string[];
   };
   /** Marketplace 中的 Plugin 名。 */
   name: string;
@@ -108,15 +115,15 @@ export interface CodexConfig {
    * stdio 形态(command/args/env)写 [mcp_servers.<name>] 的 command 行;
    * Streamable HTTP 形态(url/headers)写 url 行,headers 进 [mcp_servers.<name>.http_headers] 子表。
    */
-  mcpServers?: McpServer[];
+  mcpServers?: readonly McpServer[];
   /**
    * 装进 Sandbox 的 Skill(本地目录/文件,或 repo + 可钉 ref + 可选启用集)。
    * 落在 `.agents/skills/<name>/`,并写一段发现指引进 AGENTS.md —— codex 没有 Claude Code 那种
    * 原生 Skill 工具,只把文件装进去它不会自己去读(见 memory/codex-no-native-skill-tool.md)。
    */
-  skills?: SkillSpec[];
+  skills?: readonly SkillSpec[];
   /** Codex 原生 Plugin(先连 Marketplace,再从中装指定 Plugin)。 */
-  plugins?: CodexPluginSpec[];
+  plugins?: readonly CodexPluginSpec[];
   /**
    * 一份完整的 Codex `config.toml`(官方 TOML 格式)在本地项目里的路径 —— 相对运行
    * niceeval 的项目根(含 `niceeval.config.ts` 的目录)解析,不是 Sandbox 内路径;只接受
@@ -133,7 +140,7 @@ export interface CodexConfig {
    * 「安装产物就位后才能跑」的过程动作。抛错按基础设施错误计(attempt errored)。
    * 见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」。
    */
-  postSetup?: SandboxCommand[];
+  postSetup?: readonly SandboxCommand[];
   /**
    * 与 `postSetup` 成对的收尾 Hook:按 `postSetup` 的逆序语义,在 agent 自己的 teardown 步骤
    * 之前执行(LIFO 镜像 —— `postSetup` 跑在 agent 安装之后,`preTeardown` 就跑在 agent 收尾
@@ -141,7 +148,7 @@ export interface CodexConfig {
    * 按 teardown-failed 诊断收束。
    * 见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」。
    */
-  preTeardown?: SandboxCommand[];
+  preTeardown?: readonly SandboxCommand[];
 }
 
 const CODEX_CAPACITY_CODES = new Set([
@@ -263,6 +270,14 @@ function codexPlatformPackage(
 }
 
 export function codexAgent(config?: CodexConfig): Agent {
+  return codexAgentWithExtensions(config, Object.freeze([]));
+}
+
+function codexAgentWithExtensions(
+  baseConfig: CodexConfig | undefined,
+  extensions: readonly AgentExtension<"codex">[],
+): Agent {
+  const config = mergeCodexPluginExtensions(baseConfig, extensions);
   const getApiKey = () => config?.apiKey ?? requireEnv("CODEX_API_KEY");
   const getBaseUrl = () => config?.baseUrl ?? getEnv("CODEX_BASE_URL");
   // PATH 是 Sandbox 受管变量,在 factory 构造时(link/配置校验期)同步拒绝,不留到 setup()
@@ -291,12 +306,25 @@ export function codexAgent(config?: CodexConfig): Agent {
       },
   });
 
+  const receiver: PluginAgentReceiver = Object.freeze({
+    id: "codex",
+    compose: (_agent: Agent, next: readonly AgentExtension<any>[]) => {
+      const accepted = receiverExtensionsFor(receiver, next) as readonly AgentExtension<"codex">[];
+      return codexAgentWithExtensions(baseConfig, Object.freeze([...extensions, ...accepted]));
+    },
+    projection: (next: readonly AgentExtension<any>[]) => {
+      const accepted = receiverExtensionsFor(receiver, next) as readonly AgentExtension<"codex">[];
+      return agentExtensionsProjection(Object.freeze([...extensions, ...accepted]));
+    },
+  });
+
   return registerAgentLifecycleHookCommands(defineSandboxAgent({
     name: "codex",
     // 官方 adapter:transcript 经生命周期 fixture 验证,全通道 complete。
     evidenceCoverage: completeEvidenceCoverage,
     spanMapper: mapCodexSpans,
     classifySendFailure: classifyCodexSendFailure,
+    pluginReceiver: receiver,
     ensure,
     installers: [installer],
 
@@ -540,6 +568,52 @@ export function codexAgent(config?: CodexConfig): Agent {
       };
     },
   }), config?.postSetup, config?.preTeardown);
+}
+
+/** Adapter-local composition: config values stay native, core only sees receiver projection. */
+function mergeCodexPluginExtensions(
+  base: CodexConfig | undefined,
+  extensions: readonly AgentExtension<"codex">[],
+): CodexConfig | undefined {
+  if (extensions.length === 0) return base;
+  const skills = [...(base?.skills ?? [])];
+  const plugins = [...(base?.plugins ?? [])];
+  const mcpServers = [...(base?.mcpServers ?? [])];
+  const postSetup = [...(base?.postSetup ?? [])];
+  const preTeardown = [...(base?.preTeardown ?? [])];
+  const env: globalThis.Record<string, string> = { ...(base?.env ?? {}) };
+  let configFile = base?.configFile;
+  for (const extension of extensions) {
+    const fragment = codexExtensionPayload(extension);
+    skills.push(...(fragment.skills ?? []));
+    plugins.push(...(fragment.plugins ?? []));
+    mcpServers.push(...(fragment.mcpServers ?? []));
+    postSetup.push(...(fragment.postSetup ?? []));
+    preTeardown.push(...(fragment.preTeardown ?? []));
+    for (const [key, value] of Object.entries(fragment.env ?? {})) {
+      const existing = env[key];
+      if (existing !== undefined && existing !== value) {
+        throw new TypeError(`Codex AgentExtension conflicts on env ${JSON.stringify(key)}.`);
+      }
+      env[key] = value;
+    }
+    if (fragment.configFile !== undefined) {
+      if (configFile !== undefined && configFile !== fragment.configFile) {
+        throw new TypeError("Codex AgentExtensions cannot declare different configFile values.");
+      }
+      configFile = fragment.configFile;
+    }
+  }
+  return Object.freeze({
+    ...(base ?? {}),
+    ...(skills.length === 0 ? {} : { skills: Object.freeze(skills) }),
+    ...(plugins.length === 0 ? {} : { plugins: Object.freeze(plugins) }),
+    ...(mcpServers.length === 0 ? {} : { mcpServers: Object.freeze(mcpServers) }),
+    ...(postSetup.length === 0 ? {} : { postSetup: Object.freeze(postSetup) }),
+    ...(preTeardown.length === 0 ? {} : { preTeardown: Object.freeze(preTeardown) }),
+    ...(Object.keys(env).length === 0 ? {} : { env: Object.freeze(env) }),
+    ...(configFile === undefined ? {} : { configFile }),
+  });
 }
 
 /** 把 Codex JSONL 的高频原始帧收敛成 dashboard 当前行的一条短 detail。 */

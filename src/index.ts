@@ -58,6 +58,7 @@ export type {
   ExperimentAuthorFields,
   ExperimentInput,
   ExperimentDefinition,
+  ExperimentHook,
   ExperimentHookContext,
   Config,
   LocalizedText,

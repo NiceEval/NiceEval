@@ -25,6 +25,13 @@ import { createNpmCliInstaller, resolveAgentBinEffect } from "./npm-staged.ts";
 import type { Agent, AgentSetupManifest, McpServer, Sandbox, SkillSpec, TurnEvidenceCoverage } from "../types.ts";
 import type { SandboxCommand } from "../sandbox/commands.ts";
 import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
+import {
+  agentExtensionsProjection,
+  receiverExtensionsFor,
+  type AgentExtension,
+  type PluginAgentReceiver,
+} from "../plugin/contracts.ts";
+import { claudeCodeExtensionPayload } from "../plugin/agent-extensions.ts";
 
 // ───────────────────────────────────────────────────────────────────────────
 // Claude Code 的 agent adapter(沙箱型)。
@@ -72,6 +79,8 @@ export interface ClaudeCodeConfig {
    * 两者都没有则用 Anthropic 官方端点(claude CLI 默认行为)。
    */
   baseUrl?: string;
+  /** Extra process environment for Claude Code. Values stay private runtime data. */
+  env?: Readonly<globalThis.Record<string, string>>;
   /**
    * 最多跑几个 tool-use 轮次(→ `--max-turns`)。
    * 控制评估用例成本上限;省略时用 CLI 原生默认(无限制)。
@@ -82,14 +91,14 @@ export interface ClaudeCodeConfig {
    * stdio 形态写 command(可带 args / env);Streamable HTTP 形态写 url(可带 headers,
    * 逐字进请求头),落成 { "type": "http", "url": …, "headers": … } 条目。
    */
-  mcpServers?: McpServer[];
+  mcpServers?: readonly McpServer[];
   /**
    * 装进 Sandbox 的 Skill(本地目录/文件,或 repo + 可钉 ref + 可选启用集)。
    * 落在 project 级 `.claude/skills/<name>/`,claude CLI 原生发现。
    */
-  skills?: SkillSpec[];
+  skills?: readonly SkillSpec[];
   /** Claude Code 原生 Plugin(先连 Marketplace,再从中装指定 Plugin)。 */
-  plugins?: ClaudeCodePluginSpec[];
+  plugins?: readonly ClaudeCodePluginSpec[];
   /**
    * 一份完整的 Claude Code `settings.json`(官方格式)在本地项目里的路径 —— 相对运行
    * niceeval 的项目根(含 `niceeval.config.ts` 的目录)解析,不是 Sandbox 内路径;只接受
@@ -105,7 +114,7 @@ export interface ClaudeCodeConfig {
    * 「安装产物就位后才能跑」的过程动作。抛错按基础设施错误计(attempt errored)。
    * 见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」。
    */
-  postSetup?: SandboxCommand[];
+  postSetup?: readonly SandboxCommand[];
   /**
    * 与 `postSetup` 成对的收尾 Hook:按 `postSetup` 的逆序语义,在 agent 自己的 teardown 步骤
    * 之前执行(LIFO 镜像 —— `postSetup` 跑在 agent 安装之后,`preTeardown` 就跑在 agent 收尾
@@ -113,12 +122,22 @@ export interface ClaudeCodeConfig {
    * 按 teardown-failed 诊断收束。
    * 见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」。
    */
-  preTeardown?: SandboxCommand[];
+  preTeardown?: readonly SandboxCommand[];
 }
 
 export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
+  return claudeCodeAgentWithExtensions(config, Object.freeze([]));
+}
+
+function claudeCodeAgentWithExtensions(
+  baseConfig: ClaudeCodeConfig | undefined,
+  extensions: readonly AgentExtension<"claude-code">[],
+): Agent {
+  const config = mergeClaudeCodePluginExtensions(baseConfig, extensions);
   const getApiKey = () => config?.apiKey ?? requireEnv("ANTHROPIC_API_KEY");
   const getBaseUrl = () => config?.baseUrl ?? getEnv("ANTHROPIC_BASE_URL");
+  const agentEnv = Object.freeze({ ...(config?.env ?? {}) });
+  const agentEnvSensitiveValues = Object.freeze(Object.values(agentEnv));
   const { ensure, installer } = createNpmCliInstaller({
       identity: {
         agent: "claude-code",
@@ -129,11 +148,24 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
       bin: "claude",
   });
 
+  const receiver: PluginAgentReceiver = Object.freeze({
+    id: "claude-code",
+    compose: (_agent: Agent, next: readonly AgentExtension<any>[]) => {
+      const accepted = receiverExtensionsFor(receiver, next) as readonly AgentExtension<"claude-code">[];
+      return claudeCodeAgentWithExtensions(baseConfig, Object.freeze([...extensions, ...accepted]));
+    },
+    projection: (next: readonly AgentExtension<any>[]) => {
+      const accepted = receiverExtensionsFor(receiver, next) as readonly AgentExtension<"claude-code">[];
+      return agentExtensionsProjection(Object.freeze([...extensions, ...accepted]));
+    },
+  });
+
   return registerAgentLifecycleHookCommands(defineSandboxAgent({
     name: "claude-code",
     // 官方 adapter:transcript 经生命周期 fixture 验证,全通道 complete。
     evidenceCoverage: completeEvidenceCoverage,
     spanMapper: mapClaudeCodeSpans,
+    pluginReceiver: receiver,
     ensure,
     installers: [installer],
 
@@ -262,6 +294,7 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
 
       const apiKey = getApiKey();
       const env: globalThis.Record<string, string> = {
+        ...agentEnv,
         ANTHROPIC_API_KEY: apiKey,
         // Eval runs must not silently change CLI version after the sandbox artifact was built.
         DISABLE_AUTOUPDATER: "1",
@@ -272,7 +305,7 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
 
       const res = await sb.runCommand(claudeBin, args, {
         env,
-        sensitiveValues: [apiKey],
+        sensitiveValues: [apiKey, ...agentEnvSensitiveValues],
         stream: true,
         signal,
       });
@@ -320,6 +353,52 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
       });
     })), { signal: ctx.signal }),
   }), config?.postSetup, config?.preTeardown);
+}
+
+/** Adapter-local composition: core never parses Claude Code native config. */
+function mergeClaudeCodePluginExtensions(
+  base: ClaudeCodeConfig | undefined,
+  extensions: readonly AgentExtension<"claude-code">[],
+): ClaudeCodeConfig | undefined {
+  if (extensions.length === 0) return base;
+  const skills = [...(base?.skills ?? [])];
+  const plugins = [...(base?.plugins ?? [])];
+  const mcpServers = [...(base?.mcpServers ?? [])];
+  const postSetup = [...(base?.postSetup ?? [])];
+  const preTeardown = [...(base?.preTeardown ?? [])];
+  const env: globalThis.Record<string, string> = { ...(base?.env ?? {}) };
+  let settingsFile = base?.settingsFile;
+  for (const extension of extensions) {
+    const fragment = claudeCodeExtensionPayload(extension);
+    skills.push(...(fragment.skills ?? []));
+    plugins.push(...(fragment.plugins ?? []));
+    mcpServers.push(...(fragment.mcpServers ?? []));
+    postSetup.push(...(fragment.postSetup ?? []));
+    preTeardown.push(...(fragment.preTeardown ?? []));
+    for (const [key, value] of Object.entries(fragment.env ?? {})) {
+      const existing = env[key];
+      if (existing !== undefined && existing !== value) {
+        throw new TypeError(`Claude Code AgentExtension conflicts on env ${JSON.stringify(key)}.`);
+      }
+      env[key] = value;
+    }
+    if (fragment.settingsFile !== undefined) {
+      if (settingsFile !== undefined && settingsFile !== fragment.settingsFile) {
+        throw new TypeError("Claude Code AgentExtensions cannot declare different settingsFile values.");
+      }
+      settingsFile = fragment.settingsFile;
+    }
+  }
+  return Object.freeze({
+    ...(base ?? {}),
+    ...(skills.length === 0 ? {} : { skills: Object.freeze(skills) }),
+    ...(plugins.length === 0 ? {} : { plugins: Object.freeze(plugins) }),
+    ...(mcpServers.length === 0 ? {} : { mcpServers: Object.freeze(mcpServers) }),
+    ...(postSetup.length === 0 ? {} : { postSetup: Object.freeze(postSetup) }),
+    ...(preTeardown.length === 0 ? {} : { preTeardown: Object.freeze(preTeardown) }),
+    ...(Object.keys(env).length === 0 ? {} : { env: Object.freeze(env) }),
+    ...(settingsFile === undefined ? {} : { settingsFile }),
+  });
 }
 
 /**

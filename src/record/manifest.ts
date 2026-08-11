@@ -12,8 +12,8 @@ export const MANIFESTS_FILE = "manifests.json";
 
 /** 指纹算法与清单覆盖面的持久化版本；旧清单缺字段时按 legacy 0 读取。 */
 export const LEGACY_FINGERPRINT_VERSION = 0;
-export const FINGERPRINT_ALGORITHM_VERSION = 2;
-export const FINGERPRINT_COVERAGE_VERSION = 1;
+export const FINGERPRINT_ALGORITHM_VERSION = 3;
+export const FINGERPRINT_COVERAGE_VERSION = 2;
 
 /**
  * 一条 eval 的指纹输入清单。三块与指纹输入一一对应:
@@ -35,6 +35,10 @@ export interface EvalManifest {
    * 可选只为读取升级前的 manifests.json：缺失必须在比较时保守地产生 plan 差异。
    */
   plan?: JsonValue;
+  /** Pair-owned Eval/Group/Experiment Plugin occurrence and provenance surface. */
+  plugins?: globalThis.Record<string, JsonValue>;
+  /** Selected physical resource envelope surface, frozen before carry planning. */
+  resources?: globalThis.Record<string, JsonValue>;
   source: globalThis.Record<string, string>;
   data: globalThis.Record<string, string>;
 }
@@ -58,6 +62,12 @@ export function parseRunManifests(raw: unknown): RunManifests {
       coverageVersion: manifestVersion(entry.coverageVersion),
       config: entry.config as globalThis.Record<string, JsonValue>,
       ...(entry.plan === undefined ? {} : { plan: entry.plan }),
+      ...(typeof entry.plugins === "object" && entry.plugins !== null && !Array.isArray(entry.plugins)
+        ? { plugins: entry.plugins as globalThis.Record<string, JsonValue> }
+        : {}),
+      ...(typeof entry.resources === "object" && entry.resources !== null && !Array.isArray(entry.resources)
+        ? { resources: entry.resources as globalThis.Record<string, JsonValue> }
+        : {}),
       source: (typeof entry.source === "object" && entry.source !== null ? entry.source : {}) as globalThis.Record<string, string>,
       data: (typeof entry.data === "object" && entry.data !== null ? entry.data : {}) as globalThis.Record<string, string>,
     };

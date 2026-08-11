@@ -11,6 +11,7 @@ import type { AttemptRef, MaybePromise, SandboxCommandTarget, StableSandboxComma
 import type { RegisteredSandboxContent } from "../sandbox/content.ts";
 import type { SendFailureClassifier } from "../context/send-failures.ts";
 import type { SessionSlot } from "./session-slot.ts";
+import type { PluginAgentReceiver } from "../plugin/contracts.ts";
 
 export type { SessionSlot } from "./session-slot.ts";
 
@@ -24,9 +25,9 @@ export interface McpStdioServer {
   /** 启动命令(如 "npx"、"node"、"uvx")。 */
   command: string;
   /** 传给命令的参数。 */
-  args?: string[];
+  args?: readonly string[];
   /** 注入服务器进程的环境变量(可能含 secret,不进 manifest)。 */
-  env?: globalThis.Record<string, string>;
+  env?: Readonly<globalThis.Record<string, string>>;
   /** stdio 与 HTTP 是互斥完成态，不能把另一分支的字段混进来。 */
   url?: never;
   headers?: never;
@@ -42,7 +43,7 @@ export interface McpHttpServer {
   /** Streamable HTTP 端点(如 https://mem.example.com/mcp/)。 */
   url: string;
   /** 逐字写进每个请求的 HTTP 头(常用于 Authorization;可能含 secret,不进 manifest)。 */
-  headers?: globalThis.Record<string, string>;
+  headers?: Readonly<globalThis.Record<string, string>>;
   /** HTTP 与 stdio 是互斥完成态，不能把另一分支的字段混进来。 */
   command?: never;
   args?: never;
@@ -76,7 +77,7 @@ export type SkillSpec =
       /** GitHub `owner/repo` 或 Git URL。 */
       source: string;
       /** 多 Skill Repo 中要启用的 Skill;repo 只有一个 Skill 时可省略,多个时省略即 setup 失败。 */
-      skills?: string[];
+      skills?: readonly string[];
       /** Tag、Commit 或 Branch;省略表示 repo 默认 ref。 */
       ref?: string;
     };
@@ -410,6 +411,12 @@ interface AgentBase {
    * 执行体时序见 docs/feature/error-classification/architecture.md。
    */
   classifySendFailure?: SendFailureClassifier;
+  /**
+   * Adapter-owned composition boundary for receiver-branded Plugin extensions.
+   * It is deliberately opaque to the runner: core checks the receiver id and
+   * asks this object to compose a new Agent without parsing native config.
+   */
+  readonly pluginReceiver?: PluginAgentReceiver;
 }
 
 // ───────────────────────── Agent Ensure / Installer ─────────────────────────
@@ -589,6 +596,8 @@ export interface SandboxAgentDef {
   send(input: TurnInput, ctx: SandboxAgentContext): Promise<Turn>;
   /** 可选 send 执行失败分类器:见 `Agent.classifySendFailure`。 */
   classifySendFailure?: SendFailureClassifier;
+  /** Adapter-private receiver used by `niceeval/plugin` extensions. */
+  pluginReceiver?: PluginAgentReceiver;
   /** Sandbox 销毁前的清理,当且仅当本 attempt 走到过 `setup` 时点才执行(`setup` 抛错不豁免),
    * 在 finally 里跑一次。 */
   teardown?: AgentTeardown;

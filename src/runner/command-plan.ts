@@ -50,7 +50,7 @@ export interface CommandPlanSlot {
 export interface CommandPlanLane {
   readonly kind: "eval" | "eval-group";
   readonly id: string;
-  readonly ordering: "independent" | "serial-attempt" | "serial-member-major";
+  readonly ordering: "independent" | "serial-attempt" | "serial-normalized-eval-id";
   /** 复用物理实例的生命周期入口；fresh lane 省略，入口在每个 slot.steps 内。 */
   readonly sharedBefore?: readonly CommandPlanStep[];
   readonly slots: readonly CommandPlanSlot[];
@@ -78,7 +78,6 @@ export interface CommandPlanRowInput {
   readonly experimentId: string;
   readonly evalId: string;
   readonly evalGroupId?: string;
-  readonly evalGroupIndex?: number;
   readonly attempts: number;
   /** 不在任何 dispatch group 的坐标就是 carry；这与 dry matrix 的唯一 carry 计划同源。 */
   readonly dispatch: readonly { readonly attempts: readonly number[] }[];
@@ -511,9 +510,7 @@ function laneFor(rows: readonly RowWithPair[]): CommandPlanLane {
   const first = rows[0]!;
   const isGroup = first.evalGroupId !== undefined;
   const shared = isGroup || first.pair.run.sandboxReuse === true;
-  const sortedRows = isGroup
-    ? [...rows].sort((a, b) => (a.evalGroupIndex ?? 0) - (b.evalGroupIndex ?? 0))
-    : rows;
+  const sortedRows = isGroup ? [...rows].sort((a, b) => a.evalId.localeCompare(b.evalId)) : rows;
   const slots: CommandPlanSlot[] = [];
   for (const row of sortedRows) {
     const dispatch = dispatchAttempts(row);
@@ -532,7 +529,7 @@ function laneFor(rows: readonly RowWithPair[]): CommandPlanLane {
   return {
     kind: isGroup ? "eval-group" : "eval",
     id: first.evalGroupId ?? first.evalId,
-    ordering: isGroup ? "serial-member-major" : shared ? "serial-attempt" : "independent",
+    ordering: isGroup ? "serial-normalized-eval-id" : shared ? "serial-attempt" : "independent",
     ...(shared && hasDispatch ? { sharedBefore: physicalBefore(first.pair, true) } : {}),
     slots,
     ...(shared && hasDispatch ? { sharedAfter: physicalAfter(first.pair, true) } : {}),
@@ -578,7 +575,7 @@ function countEvidence(steps: readonly CommandPlanStep[]): { opaque: number; red
 
 /**
  * 组装按 Experiment → lane → slot 的保证顺序。不同 lane 可能并发，因此这里有意不产生一条
- * 虚假的全局序号；Group lane 则明确保持 member-major、再 attempt index 的串行顺序。
+ * 虚假的全局序号；Group lane 只按规范化 Eval ID、再 attempt index 稳定串行。
  */
 export function assembleCommandPlan(input: AssembleCommandPlanInput): CommandPlan {
   const rows: RowWithPair[] = input.rows.map((row) => {

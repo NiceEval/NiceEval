@@ -14,6 +14,13 @@ import type { ConcurrencySlot } from "../context/send-retry.ts";
 import { unregisterSandbox } from "../sandbox/registry.ts";
 import { CLEANUP_TIMEOUT_MS, cleanupCallback } from "./cleanup-timeout.ts";
 import { resolveAttemptTimeout, type TimeoutSource } from "./timeout.ts";
+import {
+  materializeSelectedPluginResources,
+  PluginResourcePrepareError,
+  type MaterializedPluginResources,
+  type SelectedResourceEnvelope,
+} from "../plugin/resource-runtime.ts";
+import type { SandboxResourceTiming } from "../plugin/contracts.ts";
 import { SandboxCommandTimeoutError } from "../sandbox/deadline.ts";
 import { ExperimentFatalError } from "../shared/failure-class.ts";
 import type { ExternalCause } from "../shared/external-cause.ts";
@@ -204,7 +211,10 @@ export interface RunAttemptEffectOptions<SealRequirements = never> {
     sandbox: Sandbox;
     reuseSandbox: number;
     reuseOrdinal: number;
+    resources?: MaterializedPluginResources;
   };
+  /** Selected before carry; fresh physical Sandbox materializes this once. */
+  resourceEnvelope?: SelectedResourceEnvelope;
 }
 
 export function runAttemptEffect<
@@ -224,6 +234,7 @@ export function runAttemptEffect<
     onFailureClass,
     onSealedEvaluation,
     reusedSandbox,
+    resourceEnvelope,
   }: RunAttemptEffectOptions<SealRequirements>,
 ) {
   const config = opts.config;
@@ -450,6 +461,19 @@ export function runAttemptEffect<
     // 是否消费这条 detail（human 展示，JSON 不消费 lifecycle detail）。
     reportAttemptLifecycle({ type: "attempt:progress", at: Date.now(), identity, detail });
   };
+  const recordResourceTiming = (input: SandboxResourceTiming): void => {
+    if (input.key.trim() === "" || input.label.trim() === "" || !Number.isFinite(input.durationMs) || input.durationMs < 0) {
+      throw new Error("Sandbox resource timing requires non-empty key/label and a finite non-negative durationMs.");
+    }
+    const durationMs = Math.max(0, input.durationMs);
+    recorder.child({
+      key: input.key,
+      label: redactSensitiveText(input.label, sensitiveValues),
+      startOffsetMs: Math.max(0, recorder.offsetNow() - durationMs),
+      durationMs,
+      ...(input.failed ? { failed: true as const } : {}),
+    });
+  };
 
   /**
    * ── attempt 总超时的硬边界(P1)──
@@ -649,6 +673,36 @@ export function runAttemptEffect<
       if (run.agent.kind !== "sandbox") log(t("runner.useDirectAgent"));
 
       const commandTarget = createSandboxCommandTarget(sandbox);
+      // The selected resource envelope is frozen before carry planning. A
+      // reused physical Sandbox owns its handles in the pool entry; a fresh
+      // one acquires them in this Attempt Scope. In both cases only an actual
+      // dispatched Attempt prepares its own demand(s), before commands/Agent.
+      const resources = reusedSandbox?.resources ?? (resourceEnvelope === undefined
+        ? undefined
+        : yield* materializeSelectedPluginResources({
+          envelope: resourceEnvelope,
+          sandbox,
+          signal,
+          feedback: { diagnostic: scopedFeedback.diagnostic },
+          progress: scopedFeedback.progress,
+          fact: (key, value) => recordFact(facts, key, value),
+          timing: recordResourceTiming,
+        }));
+      if (resources !== undefined) {
+        enterPhase("sandbox.prepare");
+        yield* resources.prepare({
+          sandbox,
+          signal,
+          physicalId: sandbox.sandboxId,
+          evalId: evalDef.id,
+          experimentId: run.experimentId,
+          attempt,
+          progress: scopedFeedback.progress,
+          diagnostic: scopedFeedback.diagnostic,
+          fact: (key, value) => recordFact(facts, key, value),
+          timing: recordResourceTiming,
+        });
+      }
 
       // ── tracing ──────────────────────────────────────────────────────────────────
       // sandbox.otlpHost:
@@ -1261,6 +1315,21 @@ export function errorFromThrown(
   phase: LifecyclePhase | undefined,
   deadline?: { timeoutMs: number; source: TimeoutSource },
 ): AttemptError {
+  if (e instanceof PluginResourcePrepareError) {
+    return {
+      code: "plugin-resource-prepare-failed",
+      message: e.message,
+      // Resource prepare always runs at the resource-before-command boundary.
+      // Do not inherit a later author command phase when this typed failure is
+      // caught through an enclosing Scope.
+      origin: attemptOrigin("sandbox.prepare"),
+      ...(e.cause.stack ? { stack: e.cause.stack } : {}),
+      cause: {
+        name: e.cause.name,
+        message: e.cause.message,
+      },
+    };
+  }
   if (isSendFailure(e)) {
     const detail = e.cause === undefined ? undefined : describeExternalCause(e.cause);
     return {
@@ -2448,6 +2517,7 @@ export function experimentRunInfo(
     ...(run.reasoningEffort !== undefined ? { reasoningEffort: run.reasoningEffort } : {}),
     ...(Object.keys(run.flags).length > 0 ? { flags: run.flags } : {}),
     ...(run.labels !== undefined && Object.keys(run.labels).length > 0 ? { labels: run.labels } : {}),
+    ...(run.pluginBehavior === undefined ? {} : { plugins: run.pluginBehavior }),
     attempts: run.attempts,
     earlyExit: run.earlyExit,
     ...(runLevelTimeoutMs !== undefined ? { timeoutMs: runLevelTimeoutMs } : {}),

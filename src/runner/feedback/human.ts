@@ -1152,7 +1152,6 @@ export interface HumanDryPlanRow {
   experimentId: string;
   evalId: string;
   evalGroupId?: string;
-  evalGroupIndex?: number;
   /** 本行计划内的 attempt 总数；混合 `attempts` 的多个 Experiment 不共用 input 的最大值。 */
   attempts?: number;
   /** 该用例正被另一条并行 Invocation 持锁运行(见 docs/feature/experiments/architecture.md
@@ -1225,7 +1224,7 @@ export function renderHumanDryPlan(input: HumanDryPlanInput): string {
   const idWidth = Math.max(0, ...input.rows.map((row) => stringWidth(row.experimentId)));
   const evalLabel = (row: HumanDryPlanRow): string => row.evalGroupId === undefined
     ? row.evalId
-    : `${row.evalId} [group ${row.evalGroupId} #${row.evalGroupIndex}]`;
+    : `${row.evalId} [group ${row.evalGroupId}]`;
   const evalWidth = Math.max(0, ...input.rows.map((row) => stringWidth(evalLabel(row))));
   for (const row of input.rows) {
     const label = evalLabel(row);
@@ -1331,8 +1330,8 @@ function renderCommandPlanSteps(
 }
 
 function commandPlanLaneLabel(lane: CommandPlanLane): string {
-  const ordering = lane.ordering === "serial-member-major"
-    ? "serial · member-major"
+  const ordering = lane.ordering === "serial-normalized-eval-id"
+    ? "serial · normalized Eval ID"
     : lane.ordering === "serial-attempt"
       ? "serial · attempt order"
       : "independent slots";

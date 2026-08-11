@@ -129,6 +129,7 @@ function attemptGroupKey(run: AgentRun, evalId: string): string {
 function reuseResultRequiresRetirement(result: EvalResult): boolean {
   return result.error?.code === "timeout" ||
     result.error?.code === "agent-send-failed" ||
+    result.error?.code === "plugin-resource-prepare-failed" ||
     result.diagnostics?.some((diagnostic) => diagnostic.code === "teardown-failed") === true;
 }
 
@@ -274,6 +275,20 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     plannedFingerprints,
   } = targetPlan;
 
+  // Plugin link produces one effective immutable AgentRun per source Run. All
+  // runtime work after physical planning must consume that same linked value.
+  const effectiveRunBySource = new Map<AgentRun, AgentRun>();
+  for (const prepared of preparedPairsByKey.values()) {
+    const prior = effectiveRunBySource.get(prepared.sourceRun);
+    if (prior !== undefined && prior !== prepared.run) {
+      throw new Error(`Plugin link produced inconsistent effective runs for Experiment ${JSON.stringify(prepared.sourceRun.experimentId)}.`);
+    }
+    effectiveRunBySource.set(prepared.sourceRun, prepared.run);
+  }
+  const effectiveAgentRuns = Object.freeze(opts.agentRuns.map((sourceRun) =>
+    effectiveRunBySource.get(sourceRun) ?? sourceRun));
+  opts = { ...opts, agentRuns: effectiveAgentRuns };
+
   const reuse = yield* prepareRunnerRecordReuse({
     evals: opts.evals,
     runs: opts.agentRuns,
@@ -345,7 +360,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     preparedPlansByRun.set(prepared.run, plans);
   }
 
-  // 展开 attempts。每个 Eval Group 是一条 member-major lane；每个未分组 Eval 是一条
+  // 展开 attempts。每个 Eval Group 是一条按规范化 Eval ID 稳定串行的 lane；每个未分组 Eval 是一条
   // attempt-major lane。先按 lane 深度铺成全 Invocation 的 wave，保证任一 lane 的下一槽位
   // 都不会排到其它 lane 的首槽位之前。carried 槽位先从 lane 删除，不占 wave 也不触发 Sandbox。
   const attempts: Attempt[] = [];
@@ -359,11 +374,12 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     readonly evalDef: ReturnType<typeof selectedEvalsForRun>[number];
   };
   const lanes: SchedulingSlot[][] = [];
-  for (const run of opts.agentRuns) {
+  for (const sourceRun of opts.agentRuns) {
+    const run = effectiveRunBySource.get(sourceRun) ?? sourceRun;
     // selectedEvalIds 已由 CLI 在构造 AgentRun 时对候选 eval 各求值一次算好(见
     // eval-selection.ts 的 resolveExperimentEvals());这里只按 resolved id 取 eval,
     // 不重新调用用户谓词(见 docs/feature/record/architecture.md「selectedEvalIds」)。
-    const evals = selectedEvalsForRun(opts.evals, run);
+    const evals = selectedEvalsForRun(opts.evals, sourceRun);
     const grouped = new Map<string, Array<(typeof evals)[number]>>();
     for (const evalDef of evals) {
       if (evalDef.evalGroup === undefined) continue;
@@ -377,10 +393,10 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       }
       if (addedGroups.has(evalDef.evalGroup.id)) continue;
       addedGroups.add(evalDef.evalGroup.id);
-      const members = grouped.get(evalDef.evalGroup.id) ?? [];
-      lanes.push(members
-        .toSorted((left, right) => left.evalGroup!.index - right.evalGroup!.index)
-        .flatMap((member) => [...Array(run.attempts).keys()].map((i) => ({ run, i, evalDef: member }))));
+      const groupEvals = grouped.get(evalDef.evalGroup.id) ?? [];
+      lanes.push(groupEvals
+        .toSorted((left, right) => left.id.localeCompare(right.id))
+        .flatMap((groupEval) => [...Array(run.attempts).keys()].map((i) => ({ run, i, evalDef: groupEval }))));
     }
   }
   const runnableLanes = lanes
@@ -447,6 +463,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           judge: resolvedJudgesByKey.get(carryKey),
           plan: prepared.plan,
           sandboxPlansByEval,
+          ...(prepared.resourceEnvelope === undefined ? {} : { resourceEnvelope: prepared.resourceEnvelope }),
         };
         attempts.push(attempt);
         dispatchWaveNumbers.set(attempt, wave);
@@ -636,7 +653,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   const runningEvals = [...runningIds].map((id) => ({ id }));
   const shape: InvocationShape = {
     evals: runningEvals.length,
-    configs: opts.agentRuns.length,
+    configs: effectiveAgentRuns.length,
     totalAttempts: attempts.length,
     maxConcurrency: opts.maxConcurrency,
     runIds,
@@ -665,7 +682,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     reporters.push({
       reporter: scopeReporter(r, ids, {
         evals: [...ids].filter((id) => runningIds.has(id)).length,
-        configs: opts.agentRuns.length,
+        configs: effectiveAgentRuns.length,
         totalAttempts: scopedRuns,
         maxConcurrency: opts.maxConcurrency,
         runIds,
@@ -745,6 +762,15 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   const sandboxSem = yield* Effect.makeSemaphore(opts.maxConcurrency);
   // 相同 provider physical identity 共享一个按需池；不从 AgentRun 重选 template。
   const reusePools = new Map<AgentRun, Map<string, ReusableSandboxPool>>();
+  // A physical Sandbox number is Run-wide, not pool-local: distinct Eval
+  // Groups may materialize identical provider plans concurrently and must not
+  // both report `reuseSandbox: 1` for different instances.
+  const reuseSandboxNumbers = new Map<AgentRun, number>();
+  const nextReuseSandboxNumber = (run: AgentRun): number => {
+    const next = (reuseSandboxNumbers.get(run) ?? 0) + 1;
+    reuseSandboxNumbers.set(run, next);
+    return next;
+  };
   type ReusePoolSelection =
     | { readonly _tag: "Fresh" }
     | { readonly _tag: "Reuse"; readonly pool: ReusableSandboxPool };
@@ -804,7 +830,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       pool = new ReusableSandboxPool(a.plan, capacity, {
         progress: setupContext.progress,
         diagnostic: setupContext.diagnostic,
-      }, setupContext, liveSandboxRuntimeServices, a.run.agent.kind === "sandbox" ? a.run.agent : undefined, runTiming, materializationOwnerId);
+      }, setupContext, liveSandboxRuntimeServices, a.run.agent.kind === "sandbox" ? a.run.agent : undefined, runTiming, materializationOwnerId, a.resourceEnvelope, () => nextReuseSandboxNumber(a.run));
       bySpec.set(key, pool);
       return pool.managed().pipe(Effect.map((managed) => ({ _tag: "Reuse", pool: managed }) as const));
     }
@@ -826,7 +852,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   //    租约(跨 Invocation 共用、min-N 收紧)。裸 run(没有 experimentId、没有可共享的名额域)
   //    就只有这一层,不产生任何跨进程协调。
   const gateLocalSems = new Map<AgentRun, Effect.Semaphore>();
-  for (const run of opts.agentRuns) {
+  for (const run of effectiveAgentRuns) {
     if (run.maxConcurrency !== undefined) {
       gateLocalSems.set(
         run,
@@ -978,6 +1004,14 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       const existing = dedupeIndex.get(input.dedupeKey);
       if (existing) {
         existing.count = (existing.count ?? 1) + 1;
+        // 同一运行级事实会随着未派发槽位增加而得到更精确的上下文。反馈 reducer
+        // 已经采用最新 data；持久 Run 诊断也必须同样更新，不能把最初的 0 永久写死。
+        if (input.data !== undefined || input.command !== undefined) {
+          existing.context = {
+            ...(input.data ?? {}),
+            ...(input.command !== undefined ? { command: input.command } : {}),
+          };
+        }
         return;
       }
     }
@@ -1369,7 +1403,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // 自愈是「选中实验」的启动期职责，不是首个派发 attempt 的副作用：全携带使 attempts 为空时，
   // 仍必须补上上一进程强杀遗留的收尾。无 teardown 的新定义无法安全补执行，交由 CLI 提醒。
   const recoveredExperimentIds = new Set<string>();
-  for (const run of opts.agentRuns) {
+  for (const run of effectiveAgentRuns) {
     if (!run.experimentId || !run.teardown || recoveredExperimentIds.has(run.experimentId)) continue;
     recoveredExperimentIds.add(run.experimentId);
     yield* recoverOrphanedTeardownRegistration(run, run.experimentId);
@@ -1577,6 +1611,125 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       who: feedbackWho(a),
     });
     reportHaltNotice(gate);
+  };
+
+  /**
+   * Eval Group 的不可用策略只约束同一台物理 Sandbox 的后续槽位；它不复用通用
+   * dispatch-halted 语义，也绝不把「本来没开始」的槽位伪造成 EvalResult。Group lane
+   * 已按规范化 Eval ID 串行，所以 gate 只需同步镜像：前一槽位释放 predecessor 后，下一
+   * 槽位在任何 Build / Sandbox 动作前就能看见它。其它 Group 和其它 Experiment 没有共享它。
+   */
+  interface EvalGroupUnavailableGate {
+    readonly experimentId: string | undefined;
+    readonly displayExperimentId: string;
+    readonly groupId: string;
+    readonly onUnavailable: "stop-group" | "replace-sandbox";
+    readonly dedupeKey: string;
+    readonly failuresByPhase: Map<"sandbox.create" | "sandbox.prepare" | "sandbox.reset", number>;
+    stopped: boolean;
+    unstarted: number;
+    /** Physical stage is more precise than the closed public LifecyclePhase vocabulary. */
+    stage: "sandbox.create" | "sandbox.prepare" | "sandbox.reset";
+    /** Durable diagnostic origin stays within the public lifecycle vocabulary. */
+    phase: LifecyclePhase;
+    message: string;
+  }
+  const evalGroupUnavailableGates = new Map<string, EvalGroupUnavailableGate>();
+  const evalGroupUnavailableGateOf = (a: Attempt): EvalGroupUnavailableGate | undefined => {
+    const group = a.evalDef.evalGroup;
+    if (group === undefined) return undefined;
+    const key = JSON.stringify([a.run.experimentId ?? a.run.agent.name, a.run.agent.name, group.id]);
+    let gate = evalGroupUnavailableGates.get(key);
+    if (gate === undefined) {
+      gate = {
+        experimentId: a.run.experimentId,
+        displayExperimentId: a.run.experimentId ?? a.run.agent.name,
+        groupId: group.id,
+        onUnavailable: group.onUnavailable,
+        dedupeKey: `eval-group-unavailable:${a.run.experimentId ?? a.run.agent.name}|${group.id}`,
+        failuresByPhase: new Map(),
+        stopped: false,
+        unstarted: 0,
+        stage: "sandbox.create",
+        phase: "sandbox.create",
+        message: "",
+      };
+      evalGroupUnavailableGates.set(key, gate);
+    }
+    return gate;
+  };
+  // 预建 gate 和 stop-halt 一样避免「上一槽位刚刚失败、下一槽位已开始等」的换对象竞态。
+  for (const a of attempts) evalGroupUnavailableGateOf(a);
+  const reportEvalGroupUnavailable = (gate: EvalGroupUnavailableGate): void => {
+    const message = `Eval Group ${JSON.stringify(gate.groupId)} is unavailable at ${gate.stage}: ${gate.message}`;
+    const data = {
+      experimentId: gate.displayExperimentId,
+      evalGroupId: gate.groupId,
+      onUnavailable: gate.onUnavailable,
+      phase: gate.stage,
+      unstarted: gate.unstarted,
+    } as const;
+    reportDiagnostic({
+      key: gate.dedupeKey,
+      code: "eval-group-unavailable",
+      severity: "error",
+      message,
+      data,
+    });
+    recordExperimentDiagnostic({
+      experimentId: gate.experimentId,
+      code: "eval-group-unavailable",
+      level: "error",
+      message,
+      phase: gate.phase,
+      data,
+      dedupeKey: gate.dedupeKey,
+    });
+  };
+  /**
+   * stop-group 首次物理失败即封住后续 slot。replace-sandbox 留一次机会给**下一** slot；
+   * 池的 retire/create 路径完成替换，绝不回跑已经付出成本的 Attempt。同一 lifecycle
+   * 阶段第二次失败说明替换也不可用，此时收束该 Group。
+   */
+  const recordEvalGroupPhysicalFailure = (
+    a: Attempt,
+    phase: "sandbox.create" | "sandbox.prepare" | "sandbox.reset",
+    error: unknown,
+  ): void => {
+    const gate = evalGroupUnavailableGateOf(a);
+    if (gate === undefined || gate.stopped) return;
+    const failures = (gate.failuresByPhase.get(phase) ?? 0) + 1;
+    gate.failuresByPhase.set(phase, failures);
+    const mustStop = gate.onUnavailable === "stop-group" || failures >= 2;
+    if (!mustStop) {
+      reportDiagnostic({
+        key: `eval-group-replacing-sandbox:${gate.displayExperimentId}|${gate.groupId}|${phase}`,
+        code: "eval-group-replacing-sandbox",
+        severity: "warning",
+        message:
+          `Eval Group ${JSON.stringify(gate.groupId)} will replace its physical Sandbox before a later slot ` +
+          `after ${phase} failed: ${firstLine(error instanceof Error ? error.message : String(error))}`,
+        data: { experimentId: gate.displayExperimentId, evalGroupId: gate.groupId, phase, onUnavailable: gate.onUnavailable },
+      });
+      return;
+    }
+    gate.stopped = true;
+    gate.stage = phase;
+    gate.phase = phase === "sandbox.reset" ? "sandbox.cleanup" : phase;
+    gate.message = firstLine(error instanceof Error ? error.message : String(error));
+    reportEvalGroupUnavailable(gate);
+  };
+  const accountEvalGroupUnavailable = (a: Attempt, gate: EvalGroupUnavailableGate): void => {
+    gate.unstarted += 1;
+    cancelReuseAttempt(a);
+    // No result, no replacement: this slot never crossed the dispatch boundary.
+    reportAttemptLifecycle({
+      type: "attempt:early-exit",
+      at: Date.now(),
+      identity: feedbackIdentity(a),
+      who: feedbackWho(a),
+    });
+    reportEvalGroupUnavailable(gate);
   };
 
   const lockIdentity = { pid: process.pid, host: currentHost };
@@ -2192,6 +2345,9 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               cancelReuseAttempt(a, true);
               const declaration = attemptFailureDeclaration(a.run.classifyFailure, "sandbox.create", leased.error);
               if (declaration) closeHaltGate(a, declaration);
+              // This Attempt did start its physical acquisition and is therefore recorded below
+              // as an errored result. The Group policy only decides what a later slot may do.
+              recordEvalGroupPhysicalFailure(a, "sandbox.create", leased.error);
             }
             const failedBeforeDispatch = blockedError ?? leaseError;
             // A Record Attempt is allocated only after runAttemptEffect has
@@ -2241,9 +2397,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                             sandbox: lease.sandbox,
                             reuseSandbox: lease.reuseSandbox,
                             reuseOrdinal: lease.reuseOrdinal,
+                            ...(lease.resources === undefined ? {} : { resources: lease.resources }),
                           },
                         }
                       : {}),
+                    ...(a.resourceEnvelope === undefined ? {} : { resourceEnvelope: a.resourceEnvelope }),
                     // 止损闸的消费点:attempt 封口读终局失败的空间轴。scope 经这条**封口回执**
                     // 到达调度器,不走错误通道向上传播——attempt fiber 的 E 保持 never,`errored`
                     // 仍是 eval runner 的合法结果而不是调度失败(architecture.md「Effect 边界」)。
@@ -2258,6 +2416,12 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             if (lease) {
               // Attempt 的 Eval/Agent 收尾已在 runAttemptEffect 内完成；reset 失败会淘汰实例，
               // 本条结果如实保留，后续派发创建替代实例。
+              // Only the typed plugin resource prepare code carries physical-resource
+              // unavailability. An author SandboxLayer prepare command can also fail at
+              // `sandbox.prepare`, but it must not retire a pool or trip this Group gate.
+              if (evaluated.error?.code === "plugin-resource-prepare-failed") {
+                recordEvalGroupPhysicalFailure(a, "sandbox.prepare", new Error(evaluated.error.message));
+              }
               const mustRetire = reuseResultRequiresRetirement(evaluated);
               yield* lease.commit(mustRetire ? { _tag: "Retire" } : { _tag: "Reset" });
             }
@@ -2266,6 +2430,13 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               executed: failedBeforeDispatch === undefined,
             });
             }));
+            // Reset/finalizer failures belong to the physical Group instance and
+            // only affect later slots; they never rewrite the sealed Attempt.
+            if (poolSelection._tag === "Reuse") {
+              for (const failure of poolSelection.pool.drainRuntimeFailures()) {
+                recordEvalGroupPhysicalFailure(a, failure.stage, failure.error);
+              }
+            }
             const { result, executed } = completed;
             // A blocked Slot has no origin Attempt and remains an explicit
             // Record gap. A completed execution writes its exact origin plus
@@ -2414,6 +2585,14 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         // 许可链的循环外壳:撞锁挂起的用例解决后从 ① 重新走一遍(实验闸名额与全局位都要
         // 重新取,不能拿着别人在等的名额干等)。
         const pipeline = Effect.gen(function* () {
+          // Group predecessor has settled before this pipeline begins. A physical failure in
+          // that predecessor therefore gates this still-queued slot before build, a provider
+          // acquire, resource materialization, or a global dispatch permit.
+          const unavailable = evalGroupUnavailableGateOf(a);
+          if (unavailable?.stopped) {
+            accountEvalGroupUnavailable(a, unavailable);
+            return;
+          }
           // ⓪ 逐 BuildKey 放行:只等本 eval 引用的那几个 key,不引用任何 key 的 attempt
           // 立刻进入许可链。等在这里不占全局并发位,慢构建因此不挡住同批别的 eval。
           const pairKey = cacheKey(a.run, a.evalDef.id);
@@ -2620,7 +2799,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // Experiment 此刻都已经收尾(sweepExperimentTeardowns 已经等过),严格早于下面的
   // invocation:summary——Record 已在上面封口；这个事件只给非持久化的 reporter 消费。
   const invocationExperimentIds = new Set(
-    opts.agentRuns.map((r) => r.experimentId).filter((id): id is string => id !== undefined),
+    effectiveAgentRuns.map((r) => r.experimentId).filter((id): id is string => id !== undefined),
   );
   const runTimings = runTiming.finalize();
   for (const experimentId of invocationExperimentIds) {

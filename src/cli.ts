@@ -1873,7 +1873,10 @@ function runEvaluationCommand(
         ),
       ), { concurrency: "unbounded" });
       const evalGroupsByEvalId = new Map(evals.flatMap((evalDef) =>
-        evalDef.evalGroup === undefined ? [] : [[evalDef.id, evalDef.evalGroup] as const]
+        evalDef.evalGroup === undefined ? [] : [[evalDef.id, {
+          ...evalDef.evalGroup,
+          index: evalDef.evalGroup.evalIds.indexOf(evalDef.id),
+        }] as const]
       ));
       const rowsWithLocks = Object.freeze(rows.map((row, index) => {
         const evalGroup = evalGroupsByEvalId.get(row.evalId);

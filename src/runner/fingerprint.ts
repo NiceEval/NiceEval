@@ -166,8 +166,14 @@ function fingerprintPreparedPair(
         Effect.map(cachedContentHash(path, sourceCache), (digest) => [relative(process.cwd(), path), digest] as const),
       { concurrency: "unbounded" },
     );
+    const plugins = Object.freeze({ pair: pair.plugin.pairProjection });
+    const resources = Object.freeze({
+      selectedEnvelope: pair.resourceEnvelope?.projection ?? Object.freeze({ _tag: "NoPhysicalSandbox" }),
+    });
     const payload = {
       evaluationAlgorithm: EVALUATION_ALGORITHM,
+      plugins,
+      resources,
       configHash,
       pairPlan: pair.identity,
       source,
@@ -177,9 +183,9 @@ function fingerprintPreparedPair(
         metadata: evalDef.metadata ?? {},
         ...(evalDef.evalGroup === undefined ? {} : { group: {
           id: evalDef.evalGroup.id,
-          index: evalDef.evalGroup.index,
           evalIds: [...evalDef.evalGroup.evalIds],
           definitionHash: evalDef.evalGroup.definitionHash,
+          onUnavailable: evalDef.evalGroup.onUnavailable,
         } }),
       },
       loaderData,
@@ -199,6 +205,8 @@ function fingerprintPreparedPair(
         coverageVersion: FINGERPRINT_COVERAGE_VERSION,
         config: Object.freeze(Object.fromEntries(configIdentityPaths(identity))),
         plan: pair.identity,
+        plugins,
+        resources,
         source: Object.freeze(Object.fromEntries(source.map(([path, content]) => [path, hashText(content)]))),
         data: Object.freeze(Object.fromEntries([
           ...loaderData.map(([path, content]) => [path, hashText(content)]),

@@ -21,6 +21,7 @@ const PUBLIC_ENTRIES = [
   ["./sandbox/e2b-template", "sandbox/e2b-agent-template.ts"],
   ["./adapter", "agents/index.ts"],
   ["./adapter/otel", "agents/ai-sdk-otel.ts"],
+  ["./plugin", "plugin/index.ts"],
   ["./expect", "expect/index.ts"],
   ["./reporters", "runner/reporters/index.ts"],
   ["./loaders", "loaders/index.ts"],

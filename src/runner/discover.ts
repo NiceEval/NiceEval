@@ -15,8 +15,12 @@ import {
   type LeakGateHints,
 } from "./eval-source.ts";
 import { evalPrefixPredicate } from "../shared/aggregate.ts";
-import { captureLoadedFiles } from "../loaders/index.ts";
-import { freshImportModule } from "../fresh-import.ts";
+import {
+  captureLoadedFiles,
+  type LoaderCaptureOrigin,
+  type LoaderCapturePaths,
+} from "../loaders/index.ts";
+import { createFreshImportGeneration, type FreshImportGeneration } from "../fresh-import.ts";
 import { sandboxLayerStateOf, type SandboxLayer } from "../sandbox/layer.ts";
 import { sandboxLayerDefinitionIdentity } from "../sandbox/link.ts";
 import {
@@ -132,14 +136,18 @@ function causeMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
+type DiscoveryModuleLoader = (file: string) => Promise<unknown>;
+
+const cachedModuleLoader: DiscoveryModuleLoader = (file) => import(pathToFileURL(file).href);
+
 function importModule(
   file: string,
   root: string,
   kind: "eval" | "experiment",
-  freshImport = false,
+  load: DiscoveryModuleLoader = cachedModuleLoader,
 ): Effect.Effect<unknown, DiscoveryError> {
   return Effect.tryPromise({
-    try: () => freshImport ? freshImportModule(file) : import(pathToFileURL(file).href),
+    try: () => load(file),
     catch: (cause) => issue(
       relative(root, file),
       "discovery.import-failed",
@@ -179,14 +187,14 @@ function decodeEvalGroupModule(value: unknown, file: string): Effect.Effect<Eval
   );
 }
 
-function collectAll<A>(
+function collectAll<A, B>(
   values: readonly A[],
-  f: (value: A) => Effect.Effect<readonly DiscoveredEval[], DiscoveryError>,
-): Effect.Effect<readonly DiscoveredEval[], DiscoveryError> {
+  f: (value: A) => Effect.Effect<B, DiscoveryError>,
+): Effect.Effect<readonly B[], DiscoveryError> {
   return Effect.partition(values, f, { concurrency: 1 }).pipe(
     Effect.flatMap(([errors, groups]) => errors.length > 0
       ? Effect.fail(discoveryError(errors.flatMap((error) => error.issues)))
-      : Effect.succeed(Object.freeze(groups.flat()))),
+      : Effect.succeed(Object.freeze(groups))),
   );
 }
 
@@ -400,15 +408,22 @@ function runLeakGate(
   );
 }
 
+interface DiscoveredEvalEntry {
+  readonly sourcePath: string;
+  readonly evals: readonly DiscoveredEval[];
+  readonly origins: readonly LoaderCaptureOrigin[];
+  readonly unattributed: LoaderCapturePaths;
+}
+
 function discoverEvalEntry(
   entry: EvalEntry,
   root: string,
-  freshImport = false,
-): Effect.Effect<readonly DiscoveredEval[], DiscoveryError> {
+  load: DiscoveryModuleLoader = cachedModuleLoader,
+): Effect.Effect<DiscoveredEvalEntry, DiscoveryError> {
   const fileLabel = relative(root, entry.file).split(sep).join("/");
   return Effect.gen(function*() {
     const captured = yield* Effect.tryPromise({
-      try: () => captureLoadedFiles(() => freshImport ? freshImportModule(entry.file) : import(pathToFileURL(entry.file).href)),
+      try: () => captureLoadedFiles(() => load(entry.file)),
       catch: (cause) => issue(
         fileLabel,
         "discovery.import-failed",
@@ -431,17 +446,9 @@ function discoverEvalEntry(
     const criteriaPaths = Object.freeze([...captured.criteriaPaths]);
     const privatePaths = Object.freeze([...captured.privatePaths]);
     const baseDir = dirname(entry.file);
-    const [leakErrors] = yield* Effect.partition(expanded, ({ id, definition }) => runLeakGate(definition, {
-      evalId: id,
-      file: fileLabel,
-      baseDir,
-      criteriaPaths,
-      privatePaths,
-    }), { concurrency: 1 });
-    if (leakErrors.length > 0) {
-      return yield* Effect.fail(discoveryError(leakErrors.flatMap((error) => error.issues)));
-    }
-    return Object.freeze(expanded.map(({ id, definition }) => discoverEval(definition, {
+    return Object.freeze({
+      sourcePath: entry.file,
+      evals: Object.freeze(expanded.map(({ id, definition }) => discoverEval(definition, {
       id,
       baseDir,
       sourcePath: entry.file,
@@ -450,8 +457,205 @@ function discoverEvalEntry(
       criteriaPaths,
       privatePaths,
       definition,
-    })));
+      }))),
+      origins: captured.origins,
+      unattributed: captured.unattributed,
+    });
   });
+}
+
+interface LoaderPathBuckets {
+  readonly data: Set<string>;
+  readonly criteria: Set<string>;
+  readonly private: Set<string>;
+}
+
+function emptyLoaderPathBuckets(): LoaderPathBuckets {
+  return { data: new Set<string>(), criteria: new Set<string>(), private: new Set<string>() };
+}
+
+function addLoaderPaths(
+  target: LoaderPathBuckets,
+  source: LoaderCapturePaths,
+): void {
+  source.paths.forEach((path) => target.data.add(path));
+  source.criteriaPaths.forEach((path) => target.criteria.add(path));
+  source.privatePaths.forEach((path) => target.private.add(path));
+}
+
+function directLoaderPaths(evalDef: DiscoveredEval): LoaderCaptureOrigin {
+  return {
+    sourcePath: evalDef.sourcePath,
+    paths: evalDef.loaderDataPaths,
+    criteriaPaths: evalDef.criteriaPaths,
+    privatePaths: evalDef.privatePaths,
+  };
+}
+
+function withLoaderProvenance(
+  evalDef: DiscoveredEval,
+  paths: LoaderPathBuckets,
+): DiscoveredEval {
+  return discoverEval(evalDef.definition, {
+    id: evalDef.id,
+    baseDir: evalDef.baseDir,
+    sourcePath: evalDef.sourcePath,
+    source: evalDef.source,
+    loaderDataPaths: Object.freeze([...paths.data].sort()),
+    criteriaPaths: Object.freeze([...paths.criteria].sort()),
+    privatePaths: Object.freeze([...paths.private].sort()),
+    definition: evalDef.definition,
+  });
+}
+
+/**
+ * A namespaced fresh graph evaluates a shared helper just once. Attribute the
+ * helper's loader registrations to every entry whose static closure contains
+ * that helper, so later entries retain the same data/criteria/private surface
+ * without evaluating the module again.
+ */
+function propagateLoaderProvenance(
+  entries: readonly DiscoveredEvalEntry[],
+  root: string,
+): Effect.Effect<readonly DiscoveredEval[], DiscoveryError> {
+  return Effect.tryPromise({
+    try: async () => {
+      const originPaths = new Map<string, LoaderPathBuckets>();
+      const conservative = emptyLoaderPathBuckets();
+      for (const entry of entries) {
+        addLoaderPaths(conservative, entry.unattributed);
+        for (const origin of entry.origins) {
+          const buckets = originPaths.get(resolve(origin.sourcePath)) ?? emptyLoaderPathBuckets();
+          originPaths.set(resolve(origin.sourcePath), buckets);
+          addLoaderPaths(buckets, origin);
+        }
+      }
+      const evals: DiscoveredEval[] = [];
+      for (const entry of entries) {
+        const buckets = emptyLoaderPathBuckets();
+        // A host may omit user frames from Error.stack. Conservative union is
+        // deliberate: extra invalidation/leak checks are safe; lost provenance
+        // is not.
+        addLoaderPaths(buckets, {
+          paths: [...conservative.data],
+          criteriaPaths: [...conservative.criteria],
+          privatePaths: [...conservative.private],
+        });
+        // Keep the old direct capture as a conservative fallback when a host
+        // omits call-site frames from Error.stack.
+        for (const evalDef of entry.evals) addLoaderPaths(buckets, directLoaderPaths(evalDef));
+        const closure = await captureSourceClosure(entry.sourcePath, { root });
+        const modules = new Set(closure.map(([path]) => resolve(root, path)));
+        for (const [modulePath, registered] of originPaths) {
+          if (modules.has(modulePath)) addLoaderPaths(buckets, {
+            paths: [...registered.data],
+            criteriaPaths: [...registered.criteria],
+            privatePaths: [...registered.private],
+          });
+        }
+        evals.push(...entry.evals.map((evalDef) => withLoaderProvenance(evalDef, buckets)));
+      }
+      return Object.freeze(evals);
+    },
+    catch: (cause) => issue(
+      relative(root, join(root, "evals")) || "evals",
+      "discovery.source-capture-failed",
+      causeMessage(cause),
+      ["Make every Eval entry and its static project-local imports readable."],
+    ),
+  });
+}
+
+function matchingArrayClose(source: string, start: number): number | undefined {
+  let depth = 0;
+  let quote: "'" | '"' | "`" | undefined;
+  let escaped = false;
+  let lineComment = false;
+  let blockComment = false;
+  for (let index = start; index < source.length; index++) {
+    const char = source[index]!;
+    const next = source[index + 1];
+    if (lineComment) {
+      if (char === "\n") lineComment = false;
+      continue;
+    }
+    if (blockComment) {
+      if (char === "*" && next === "/") { blockComment = false; index++; }
+      continue;
+    }
+    if (quote !== undefined) {
+      if (!escaped && char === quote) quote = undefined;
+      escaped = !escaped && char === "\\";
+      continue;
+    }
+    if (char === "/" && next === "/") { lineComment = true; index++; continue; }
+    if (char === "/" && next === "*") { blockComment = true; index++; continue; }
+    if (char === "'" || char === '"' || char === "`") { quote = char; escaped = false; continue; }
+    if (char === "[") depth++;
+    if (char === "]") {
+      depth--;
+      if (depth === 0) return index;
+    }
+  }
+  return undefined;
+}
+
+function splitArrayElements(source: string): readonly string[] | undefined {
+  const parts: string[] = [];
+  let start = 0;
+  let depth = 0;
+  let quote: "'" | '"' | "`" | undefined;
+  let escaped = false;
+  let lineComment = false;
+  let blockComment = false;
+  for (let index = 0; index < source.length; index++) {
+    const char = source[index]!;
+    const next = source[index + 1];
+    if (lineComment) { if (char === "\n") lineComment = false; continue; }
+    if (blockComment) { if (char === "*" && next === "/") { blockComment = false; index++; } continue; }
+    if (quote !== undefined) {
+      if (!escaped && char === quote) quote = undefined;
+      escaped = !escaped && char === "\\";
+      continue;
+    }
+    if (char === "/" && next === "/") { lineComment = true; index++; continue; }
+    if (char === "/" && next === "*") { blockComment = true; index++; continue; }
+    if (char === "'" || char === '"' || char === "`") { quote = char; escaped = false; continue; }
+    if (char === "(" || char === "{" || char === "[") depth++;
+    if (char === ")" || char === "}" || char === "]") depth--;
+    if (char === "," && depth === 0) {
+      const part = source.slice(start, index).trim();
+      if (part === "") return undefined;
+      parts.push(part);
+      start = index + 1;
+    }
+  }
+  const last = source.slice(start).trim();
+  if (last !== "") parts.push(last);
+  return parts;
+}
+
+/**
+ * `evals` is a closed set. Normalize only inline array spelling in the Group
+ * entry before its source participates in the definition hash; all other
+ * source remains byte-sensitive, including opaque commands and hooks.
+ */
+function normalizeEvalGroupSource(content: string): string {
+  let output = "";
+  let cursor = 0;
+  const property = /\bevals\s*:\s*\[/g;
+  for (let found = property.exec(content); found !== null; found = property.exec(content)) {
+    const bracket = found.index + found[0].lastIndexOf("[");
+    const close = matchingArrayClose(content, bracket);
+    if (close === undefined) return content;
+    const elements = splitArrayElements(content.slice(bracket + 1, close));
+    if (elements === undefined) return content;
+    output += content.slice(cursor, bracket + 1);
+    output += elements.toSorted((left, right) => left.localeCompare(right)).join(",");
+    cursor = close;
+    property.lastIndex = close + 1;
+  }
+  return output === "" ? content : output + content.slice(cursor);
 }
 
 /** Discovery remains in Effect through selection/planning; an application host closes it. */
@@ -460,9 +664,18 @@ export function discoverEvals(
   options: { freshImport?: boolean } = {},
 ): Effect.Effect<readonly DiscoveredEval[], DiscoveryError> {
   const dir = join(root, "evals");
-  return Effect.gen(function*() {
+  const discoverWith = (load: DiscoveryModuleLoader): Effect.Effect<readonly DiscoveredEval[], DiscoveryError> => Effect.gen(function*() {
     const entries = yield* collectEvalEntries(dir, root);
-    const evals = yield* collectAll(entries, (entry) => discoverEvalEntry(entry, root, options.freshImport));
+    const discoveredEntries = yield* collectAll(entries, (entry) => discoverEvalEntry(entry, root, load));
+    const evals = yield* propagateLoaderProvenance(discoveredEntries, root);
+    const [leakErrors] = yield* Effect.partition(evals, (evalDef) => runLeakGate(evalDef.definition, {
+      evalId: evalDef.id,
+      file: relative(root, evalDef.sourcePath).split(sep).join("/"),
+      baseDir: evalDef.baseDir,
+      criteriaPaths: evalDef.criteriaPaths,
+      privatePaths: evalDef.privatePaths,
+    }), { concurrency: 1 });
+    if (leakErrors.length > 0) return yield* Effect.fail(discoveryError(leakErrors.flatMap((error) => error.issues)));
     const files = yield* walkFiles(dir, root, (name) => name === "eval-group.ts");
     const groupEntries = files.map((file) => {
       const id = relative(dir, dirname(file)).split(sep).join("/");
@@ -485,17 +698,35 @@ export function discoverEvals(
     const memberSourcePaths = new Set(evals.map((item) => item.sourcePath));
     for (const { file, id } of groupEntries) {
       const label = relative(root, file).split(sep).join("/");
-      const imported = yield* importModule(file, root, "eval", options.freshImport);
+      const imported = yield* importModule(file, root, "eval", load);
       const module = yield* decodeEvalGroupModule(imported, label);
       const resolved = module.default.evals.map((definition) => evals.filter((item) => item.definition === definition));
-      const evalIds = resolved.flatMap((matches) => matches.map((item) => item.id));
-      const groupSources = yield* Effect.promise(() => captureSourceClosure(file, { root, stopPaths: memberSourcePaths }));
+      // `evals` is a closed set, not an author-defined business sequence. The
+      // scheduler and fingerprint use the normalized Eval ID order everywhere.
+      const evalIds = resolved.flatMap((matches) => matches.map((item) => item.id)).toSorted();
+      const groupSources = yield* Effect.tryPromise({
+        try: async () => (await captureSourceClosure(file, { root, stopPaths: memberSourcePaths })).map(([path, content]) => [
+          path,
+          path === label ? normalizeEvalGroupSource(content) : content,
+        ] as const),
+        catch: (cause) => issue(
+          label,
+          "discovery.source-capture-failed",
+          causeMessage(cause),
+          ["Make the Eval Group entry and its project-local helper modules readable."],
+        ),
+      });
       const definitionHash = digestOf({
-        version: 1,
+        // Group declaration order is deliberately not an input. The group file
+        // may reorder its closed `evals` set without changing behavior. Other
+        // Group source stays in the hash, so opaque command/hook behavior and
+        // helper code still invalidate fingerprints when it changes.
+        version: 5,
         id,
         evalIds,
         layer: sandboxLayerDefinitionIdentity(module.default.sandbox),
-        sources: groupSources,
+        onUnavailable: module.default.onUnavailable,
+        sources: groupSources.map(([path, content]) => ({ path, content })),
       });
       module.default.evals.forEach((definition, index) => {
         const matches = resolved[index]!;
@@ -515,23 +746,50 @@ export function discoverEvals(
           return;
         }
         claimed.set(definition, id);
-        annotated.set(definition, discoverEval(definition, { ...member, evalGroup: Object.freeze({ id, index, evalIds: Object.freeze(evalIds), definitionHash, sandbox: module.default.sandbox, sourcePath: file, baseDir: dirname(file) }) }));
+        annotated.set(definition, discoverEval(definition, {
+          ...member,
+          evalGroup: Object.freeze({
+            id,
+            evalIds: Object.freeze(evalIds),
+            definitionHash,
+            sandbox: module.default.sandbox,
+            onUnavailable: module.default.onUnavailable,
+            plugins: Object.freeze([...(module.default.plugins ?? [])]),
+            sourcePath: file,
+            baseDir: dirname(file),
+          }),
+        }));
       });
     }
     if (issues.length > 0) return yield* Effect.fail(discoveryError(issues));
     return Object.freeze(evals.map((item) => annotated.get(item.definition) ?? item));
   });
+  if (!options.freshImport) return discoverWith(cachedModuleLoader);
+  const acquire = Effect.tryPromise({
+    try: () => createFreshImportGeneration(),
+    catch: (cause) => issue(
+      relative(root, dir) || "evals",
+      "discovery.import-failed",
+      `Could not create fresh import generation: ${causeMessage(cause)}`,
+      ["Fix the loader setup or retry discovery."],
+    ),
+  });
+  return Effect.acquireUseRelease(
+    acquire,
+    (fresh) => discoverWith((file) => fresh.import(file)),
+    (fresh: FreshImportGeneration) => Effect.promise(() => fresh.close()).pipe(Effect.catchAllCause(() => Effect.void)),
+  );
 }
 
 function discoverExperimentFile(
   file: string,
   root: string,
   experimentsDir: string,
-  freshImport = false,
+  load: DiscoveryModuleLoader = cachedModuleLoader,
 ): Effect.Effect<readonly DiscoveredExperiment[], DiscoveryError> {
   const fileLabel = relative(root, file).split(sep).join("/");
   return Effect.gen(function*() {
-    const imported = yield* importModule(file, root, "experiment", freshImport);
+    const imported = yield* importModule(file, root, "experiment", load);
     const module = yield* decodeExperimentModule(imported, fileLabel);
     if (module.default === undefined) return Object.freeze([]);
     const id = relative(experimentsDir, file)
@@ -553,15 +811,31 @@ export function discoverExperiments(
   options: { freshImport?: boolean } = {},
 ): Effect.Effect<readonly DiscoveredExperiment[], DiscoveryError> {
   const dir = join(root, "experiments");
-  return walkFiles(dir, root, (name) => name.endsWith(".ts") && !name.endsWith(".d.ts")).pipe(
+  const discoverWith = (load: DiscoveryModuleLoader): Effect.Effect<readonly DiscoveredExperiment[], DiscoveryError> =>
+    walkFiles(dir, root, (name) => name.endsWith(".ts") && !name.endsWith(".d.ts")).pipe(
     Effect.flatMap((files) => Effect.partition(
       files,
-      (file) => discoverExperimentFile(file, root, dir, options.freshImport),
+      (file) => discoverExperimentFile(file, root, dir, load),
       { concurrency: 1 },
     )),
     Effect.flatMap(([errors, groups]) => errors.length > 0
       ? Effect.fail(discoveryError(errors.flatMap((error) => error.issues)))
       : Effect.succeed(Object.freeze(groups.flat()))),
+  );
+  if (!options.freshImport) return discoverWith(cachedModuleLoader);
+  const acquire = Effect.tryPromise({
+    try: () => createFreshImportGeneration(),
+    catch: (cause) => issue(
+      relative(root, dir) || "experiments",
+      "discovery.import-failed",
+      `Could not create fresh import generation: ${causeMessage(cause)}`,
+      ["Fix the loader setup or retry discovery."],
+    ),
+  });
+  return Effect.acquireUseRelease(
+    acquire,
+    (fresh) => discoverWith((file) => fresh.import(file)),
+    (fresh: FreshImportGeneration) => Effect.promise(() => fresh.close()).pipe(Effect.catchAllCause(() => Effect.void)),
   );
 }
 

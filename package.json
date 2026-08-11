@@ -66,6 +66,16 @@
         "default": "./dist/agents/ai-sdk-otel.cjs"
       }
     },
+    "./plugin": {
+      "import": {
+        "types": "./dist/plugin/index.d.mts",
+        "default": "./dist/plugin/index.mjs"
+      },
+      "require": {
+        "types": "./dist/plugin/index.d.cts",
+        "default": "./dist/plugin/index.cjs"
+      }
+    },
     "./expect": {
       "import": {
         "types": "./dist/expect/index.d.mts",
