@@ -21,7 +21,7 @@ describe("产品站英文 URL 迁移", () => {
     expect(copy.en.titleHome.length).toBeLessThanOrEqual(60);
   });
 
-  it("旧英文 URL 返回 308 并保留查询参数,无前缀根路径只 rewrite 到内部英文路由", () => {
+  it("旧英文 URL 返回 308 并保留查询参数,无前缀根路径不再由 proxy 接管", () => {
     const legacyResponse = proxy(
       new NextRequest("https://niceeval.com/en/blog/post?utm_source=legacy"),
     );
@@ -30,14 +30,20 @@ describe("产品站英文 URL 迁移", () => {
       "https://niceeval.com/blog/post?utm_source=legacy",
     );
 
+    // 根路径映射在 next.config rewrites(route-level rewrite 不会再次进入 proxy,
+    // 避免 / → /en → / 无限重定向),proxy 对根路径直接放行。
     const rootResponse = proxy(
       new NextRequest("https://niceeval.com/", {
         headers: { "accept-language": "zh-CN,zh;q=0.9" },
       }),
     );
-    expect(rootResponse?.status).toBe(200);
-    expect(rootResponse?.headers.get("location")).toBeNull();
-    expect(rootResponse?.headers.get("x-middleware-rewrite")).toBe("https://niceeval.com/en");
+    expect(rootResponse).toBeUndefined();
+  });
+
+  it("next.config 把无前缀根路径 rewrite 到 /en 渲染源,并排除 zh 与静态/外部接管路径", () => {
+    const nextConfig = readFileSync(join(ROOT, "site/next.config.mjs"), "utf8");
+    expect(nextConfig).toContain('source: "/:path((?!_next|docs|showcase|zh|.*\\..*).*)"');
+    expect(nextConfig).toContain('destination: "/en/:path"');
   });
 
   it("sitemap 与 llms.txt 只发布正式英文地址并声明 x-default", () => {

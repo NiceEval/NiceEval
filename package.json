@@ -191,7 +191,7 @@
     "@vercel/analytics": "^2.0.1",
     "@vercel/speed-insights": "^2.0.0",
     "autoevals": "0.0.132",
-    "effect": "^3.21.4",
+    "effect": "^3.22.1",
     "mermaid": "^11.16.0",
     "openai": "^6.49.0",
     "react": "^19.0.0",
