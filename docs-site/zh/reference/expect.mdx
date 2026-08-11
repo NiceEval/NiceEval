@@ -208,6 +208,45 @@ export function eventMatch<K extends keyof EventOptionsByType>(
 
 {/* GENERATED:END expect-matchers */}
 
+### 匹配工具名称、参数与命令
+
+`toolMatch("get_weather")` 只检查工具名称。第二个参数可以继续约束同一次调用的完整 JSON 输入和生命周期状态；`input` 接受 value Match，而不是直接接受一份参数对象：
+
+```ts
+import type { JsonValue } from "niceeval";
+import { equals, satisfies, toolMatch } from "niceeval/expect";
+
+const exactWeatherCall = toolMatch("get_weather", {
+  input: equals<JsonValue>({ city: "Taipei", unit: "celsius" }),
+  status: "completed",
+});
+
+const installCall = toolMatch("shell", {
+  input: satisfies<JsonValue>("运行 pnpm install", (input) =>
+    typeof input === "object" &&
+    input !== null &&
+    !Array.isArray(input) &&
+    typeof input.command === "string" &&
+    input.command.includes("pnpm install")
+  ),
+});
+```
+
+`equals(...)` 比较完整输入；`matches(...)`、`satisfies(...)` 与其它 value Match 可以表达结构或谓词条件。具体字段由 Agent 的工具协议决定，例如 shell 工具可能把命令文本放在 `command` 字段。只关心参数、不限制工具名称时，使用 `toolMatch({ input })`。
+
+`toolMatch("shell")` 回答“调用的是哪类工具”，`commandMatch("niceeval", { argsStart: ["show"] })` 回答“这次调用运行了哪个可执行文件和哪些 argv token”。后者依赖 Adapter 提供的结构化 command projection；只有 shell source、截断文本或脱敏文本时，不会猜测 argv，结果会是 `unavailable`。需要两项同时成立时，把它们组合在同一笔调用上：
+
+```ts
+import { and, commandMatch, toolMatch } from "niceeval/expect";
+
+t.check(turn.calledTool(
+  and(
+    toolMatch("shell", { status: "completed" }),
+    commandMatch("niceeval", { argsStart: ["show"] }),
+  ),
+));
+```
+
 ### 常见用法示例
 
 ```ts

@@ -230,7 +230,11 @@ token 用量或 OTel span 反推得到)。与顶层 `estimatedCostUSD`(价目表
 - `status` 如实填：工具执行失败是 `"failed"`；**人否决是 `"rejected"`**。评估作者用带状态的 `toolMatch(...)` 或 `commandMatch(...)` 精确区分，两回事不要混。
 - `name` 用工具的原始名字。
 
-#### 让 `commandMatch()` 取得正向证据
+#### 为 `commandMatch()` 提供结构化命令证据
+
+`shell` 是规范工具名称，评估作者用 `toolMatch("shell")` 检查 Agent 是否调用这类工具。`commandProjection()` 不是另一种工具，也不是评估侧的 matcher；它是 Adapter 在单次工具调用上附加的结构化命令证据，让 `commandMatch()` 能按 executable 和 argv token 匹配。
+
+例如，同一个 `shell` 工具可以先后运行 `git status` 和 `pnpm test`。两次调用的工具名称都是 `shell`，command projection 却分别记录两组 argv。评估作者因此可以用 `toolMatch("shell")` 检查工具类别，或用 `commandMatch("pnpm", { argsStart: ["test"] })` 检查具体命令。
 
 原生协议直接给出单一 invocation 的 structured argv 时，从 `niceeval/adapter` 调用公开构造器：
 
