@@ -24,7 +24,11 @@ import {
   type DockerfileAgentDerivedImageBuildInput,
 } from "./dockerfile-agent-cache.ts";
 import type { SandboxBuildProvider, SandboxBuildWork } from "./build-coordinator.ts";
-import { customSandboxBackend, type SandboxProviderBackend } from "./backend.ts";
+import {
+  customSandboxBackend,
+  providerBoundaryEffect,
+  type SandboxProviderBackend,
+} from "./backend.ts";
 import { normalizeSandboxPaths } from "./paths.ts";
 import { registerSandbox, unregisterSandbox } from "./registry.ts";
 import { currentRunIdentity } from "./run-identity.ts";
@@ -290,7 +294,9 @@ function wrapSingleSandbox(
       if (stopped) return;
       if (stopping !== undefined) return stopping;
       const pending = (async () => {
-        await sandbox.stop();
+        // runtime 的 finalizer 通过 providerBoundaryEffect(group.stop) 执行这条 Promise；
+        // 不要从内部反向调用公开 Sandbox Promise facade。
+        await backend.stop();
         stopped = true;
         unregisterSandbox(sandbox);
       })();
@@ -404,83 +410,91 @@ export function materializeDockerfileProviderPlan(
           "sandbox.materialization-failed",
           new TypeError(`Dockerfile build locator for ${plan.buildKey} must be a string.`),
         ))
-      : materializationEffect(context, async () => {
-      const resolved = await resolveDockerfileAgentImage(plan, context, locator);
-      context.hookContext.fact("agent.image.cache", resolved.status);
-      const { DockerSandbox, classifyProvisionError, reconcileProvision } = await import("./docker.ts");
-      const managed = plan.profileBinding === undefined
-        ? undefined
-        : await managedContainerSession(plan.profileBinding, plan.resources);
-      const provisionToken = managed?.reservation.provisionToken ?? randomUUID();
-      let backend: DockerSandbox;
-      try {
-        backend = await withProvisionRetry(
-          () => DockerSandbox.create({
-          ...deadlineOptions(context.deadline),
-          runtime: "node24",
-          image: resolved.locator,
-          ...(plan.user._tag === "Configured" ? { user: plan.user.value } : {}),
-          privileged: plan.privileged,
-          ...(plan.dockerAccess === undefined ? {} : { dockerAccess: plan.dockerAccess }),
-          resources: plan.resources,
-          ...(plan.readiness === undefined ? {} : { readiness: plan.readiness }),
-          lifetimeMs: configuredLifetime(plan.lifetime),
-          pathPrepend: plan.pathPrepend,
-          feedback: context.feedback,
-          provisionToken,
-          runIdentity: currentRunIdentity(),
-          ...(plan.profileBinding === undefined ? {} : {
-            dockerSocketPath: plan.profileBinding.dockerSocketPath,
-            dns: plan.profileBinding.profile.policy.network.dns.servers,
-            managedLabels: managed?.labels,
-            rootlessAttestation: {
-              daemonId: plan.profileBinding.daemonId,
-              dataRoot: plan.profileBinding.profile.backend.filesystem.dockerRootDir,
-            },
-            afterStop: managed?.finish,
+      : Effect.flatMap(
+        resolveDockerfileAgentImage(plan, context, locator).pipe(
+          Effect.mapError((cause) => runtimeFailure(context, "sandbox.materialization-failed", cause)),
+        ),
+        (resolved) => Effect.flatMap(
+          Effect.try({
+            try: () => context.hookContext.fact("agent.image.cache", resolved.status),
+            catch: (cause) => runtimeFailure(context, "sandbox.materialization-failed", cause),
           }),
-        }),
-        classifyProvisionError,
-        boundProvisionSlot(context),
-        context.feedback,
-          () => reconcileProvision(provisionToken, plan.profileBinding?.dockerSocketPath),
-        );
-        if (managed !== undefined) {
-          await commitDockerProfileReservation(managed.lease, managed.reservation.reservationId, {
-            containerId: backend.sandboxId,
-            ...(backend.managedNetworkId === undefined ? {} : { networkId: backend.managedNetworkId }),
-            attemptId: context.evalId,
-          });
-        }
-      } catch (error) {
-        await managed?.finish().catch(() => undefined);
-        throw error;
-      }
-      return wrapSingleSandbox(backend, context, { image: resolved.locator });
-    }),
+          () => materializationEffect(context, async () => {
+            const { DockerSandbox, classifyProvisionError, reconcileProvision } = await import("./docker.ts");
+            const managed = plan.profileBinding === undefined
+              ? undefined
+              : await managedContainerSession(plan.profileBinding, plan.resources);
+            const provisionToken = managed?.reservation.provisionToken ?? randomUUID();
+            let backend: DockerSandbox;
+            try {
+              backend = await withProvisionRetry(
+                () => DockerSandbox.create({
+                  ...deadlineOptions(context.deadline),
+                  runtime: "node24",
+                  image: resolved.locator,
+                  ...(plan.user._tag === "Configured" ? { user: plan.user.value } : {}),
+                  privileged: plan.privileged,
+                  ...(plan.dockerAccess === undefined ? {} : { dockerAccess: plan.dockerAccess }),
+                  resources: plan.resources,
+                  ...(plan.readiness === undefined ? {} : { readiness: plan.readiness }),
+                  lifetimeMs: configuredLifetime(plan.lifetime),
+                  pathPrepend: plan.pathPrepend,
+                  feedback: context.feedback,
+                  provisionToken,
+                  runIdentity: currentRunIdentity(),
+                  ...(plan.profileBinding === undefined ? {} : {
+                    dockerSocketPath: plan.profileBinding.dockerSocketPath,
+                    dns: plan.profileBinding.profile.policy.network.dns.servers,
+                    managedLabels: managed?.labels,
+                    rootlessAttestation: {
+                      daemonId: plan.profileBinding.daemonId,
+                      dataRoot: plan.profileBinding.profile.backend.filesystem.dockerRootDir,
+                    },
+                    afterStop: managed?.finish,
+                  }),
+                }),
+                classifyProvisionError,
+                boundProvisionSlot(context),
+                context.feedback,
+                () => reconcileProvision(provisionToken, plan.profileBinding?.dockerSocketPath),
+              );
+              if (managed !== undefined) {
+                await commitDockerProfileReservation(managed.lease, managed.reservation.reservationId, {
+                  containerId: backend.sandboxId,
+                  ...(backend.managedNetworkId === undefined ? {} : { networkId: backend.managedNetworkId }),
+                  attemptId: context.evalId,
+                });
+              }
+            } catch (error) {
+              await managed?.finish().catch(() => undefined);
+              throw error;
+            }
+            return wrapSingleSandbox(backend, context, { image: resolved.locator });
+          }),
+        ),
+      ),
   });
 }
 
-async function defaultDockerImageExists(locator: string): Promise<boolean> {
-  try {
-    // dockerode 是 optional peer；只在 Dockerfile Agent 缓存路径真查镜像时加载。
+function defaultDockerImageExists(locator: string): Effect.Effect<boolean> {
+  // dockerode 是 optional peer；只在 Dockerfile Agent 缓存路径真查镜像时加载。
+  // 缺少 peer、daemon 不可用和镜像不存在在此 lookup 的语义里都只是 cache miss。
+  return providerBoundaryEffect(async () => {
     const { default: Docker } = await import("dockerode");
     await new Docker().getImage(locator).inspect();
     return true;
-  } catch {
-    return false;
-  }
+  }).pipe(Effect.catchAll(() => Effect.succeed(false)));
 }
 
-async function resolveDockerfileAgentImage(
+function resolveDockerfileAgentImage(
   plan: DockerfileProviderPlan,
   context: SandboxRuntimeMaterializeContext,
   taskLocator: string,
-): Promise<{ readonly status: "hit" | "built" | "unsupported"; readonly locator: string }> {
+): Effect.Effect<{ readonly status: "hit" | "built" | "unsupported"; readonly locator: string }, Error> {
   // Derived Agent image coordination is still bound to the default Docker endpoint.
   // A profile Dockerfile must never cross daemons, so consume the task image directly.
   if (plan.profileBinding !== undefined || plan.dockerAccess !== undefined) {
-    return { status: "unsupported", locator: taskLocator };
+    return Effect.succeed({ status: "unsupported", locator: taskLocator });
   }
   const request = dockerfileAgentCacheRequest(
     plan,
@@ -488,7 +502,7 @@ async function resolveDockerfileAgentImage(
     taskLocator,
     context.plan.providerPlan.target.platform,
   );
-  if (request === undefined) return { status: "unsupported", locator: taskLocator };
+  if (request === undefined) return Effect.succeed({ status: "unsupported", locator: taskLocator });
   return dockerfileAgentImageCoordinator.resolve(
     request,
     context.signal,
@@ -529,12 +543,12 @@ function sameAgentIdentity(a: AgentIdentity, b: AgentIdentity): boolean {
   return a.agent === b.agent && a.version === b.version && a.revision === b.revision;
 }
 
-async function buildDockerfileAgentImage(
+function buildDockerfileAgentImage(
   input: DockerfileAgentDerivedImageBuildInput,
   request: DockerfileAgentCacheRequest,
   targetPlatform: import("../agents/types.ts").AgentArtifactPlatform,
   signal: AbortSignal,
-): Promise<void> {
+): Effect.Effect<void, Error> {
   return buildDockerfileAgentImageWithServices(input, request, targetPlatform, signal);
 }
 
@@ -545,21 +559,21 @@ export interface DockerfileAgentImageProvisionSandbox {
 }
 
 export interface DockerfileAgentImageProvisionServices {
-  readonly create: (taskLocator: string) => Promise<DockerfileAgentImageProvisionSandbox>;
-  readonly commit: (sandboxId: string, derivedLocator: string) => Promise<void>;
+  readonly create: (taskLocator: string) => Effect.Effect<DockerfileAgentImageProvisionSandbox, Error>;
+  readonly commit: (sandboxId: string, derivedLocator: string) => Effect.Effect<void, Error>;
 }
 
 const liveDockerfileAgentImageProvisionServices: DockerfileAgentImageProvisionServices = Object.freeze({
-  create: async (taskLocator: string) => {
+  create: (taskLocator: string) => providerBoundaryEffect(async () => {
     const { DockerSandbox } = await import("./docker.ts");
     const sandbox = await DockerSandbox.create({ image: taskLocator, runtime: "node24" });
     return { operations: sandbox, sandboxId: sandbox.sandboxId, stop: () => sandbox.stop() };
-  },
-  commit: async (sandboxId: string, derivedLocator: string) => {
+  }),
+  commit: (sandboxId: string, derivedLocator: string) => providerBoundaryEffect(async () => {
     // dockerode 是 optional peer；commit 派生镜像时才加载（与 keep/orphans 同模式）。
     const { default: Docker } = await import("dockerode");
     await new Docker().getContainer(sandboxId).commit(dockerCommitReference(derivedLocator));
-  },
+  }),
 });
 
 /** Dockerode 的 commit 参数把仓库与 tag 分开；不能把 `repo:tag` 整串塞进 repo。 */
@@ -572,18 +586,23 @@ export function dockerCommitReference(locator: string): { readonly repo: string;
   return { repo: locator };
 }
 
-export async function buildDockerfileAgentImageWithServices(
+export function buildDockerfileAgentImageWithServices(
   input: DockerfileAgentDerivedImageBuildInput,
   request: DockerfileAgentCacheRequest,
   targetPlatform: import("../agents/types.ts").AgentArtifactPlatform,
   signal: AbortSignal,
   services: DockerfileAgentImageProvisionServices = liveDockerfileAgentImageProvisionServices,
-): Promise<void> {
-  if (signal.aborted) throw signal.reason instanceof Error ? signal.reason : new Error("Dockerfile Agent image build aborted");
-  let provisioned: DockerfileAgentImageProvisionSandbox | undefined;
-  try {
-    provisioned = await services.create(input.taskLocator);
-    const ensured = await Effect.runPromise(Effect.either(runAgentEnsure(
+): Effect.Effect<void, Error> {
+  return Effect.scoped(Effect.gen(function* () {
+    // AbortSignal 属于外层 invocation 的中断语义；绝不伪造为一个 typed provisioning error。
+    if (signal.aborted) return yield* Effect.interrupt;
+    const provisioned = yield* Effect.acquireRelease(
+      services.create(input.taskLocator),
+      // acquireRelease finalizer 必须是 never-fail。这里仍尝试真实 stop；它失败时保留原有
+      // build cause，而不是在 cleanup 路径把 interruption/defect 改写成 typed failure。
+      (sandbox) => providerBoundaryEffect(() => sandbox.stop()).pipe(Effect.catchAll(() => Effect.void)),
+    );
+    yield* runAgentEnsure(
       [request.ensure],
       [request.installer],
       provisioned.operations,
@@ -594,12 +613,9 @@ export async function buildDockerfileAgentImageWithServices(
         signal,
         progress: () => {},
       },
-    )));
-    if (ensured._tag === "Left") throw ensured.left;
-    await services.commit(provisioned.sandboxId, input.derivedLocator);
-  } finally {
-    await provisioned?.stop();
-  }
+    );
+    yield* services.commit(provisioned.sandboxId, input.derivedLocator);
+  }));
 }
 
 export function materializeDockerImageProviderPlan(
@@ -1035,64 +1051,91 @@ function assertSameBuildKeys(planned: readonly string[], collected: readonly str
   );
 }
 
-async function runHooks(
+/** Public hook callbacks are an outer Promise boundary; runtime composition stays Effect-native. */
+function runSetupHooks(
   hooks: readonly SandboxHook[],
   sandbox: Sandbox,
   context: SandboxHookContext,
-  reverse: boolean,
-): Promise<void> {
-  for (const hook of reverse ? [...hooks].reverse() : hooks) {
-    try {
-      if (reverse) {
-        const cleanupContext = { ...context, signal: AbortSignal.timeout(CLEANUP_TIMEOUT_MS) };
-        await withCleanupTimeout(() => hook(sandbox, cleanupContext));
-      } else {
-        await hook(sandbox, context);
-      }
-    } catch (cause) {
-      if (!reverse) throw cause;
-      context.diagnostic({
-        code: "sandbox-teardown-failed",
-        level: "warning",
-        message: cause instanceof Error ? cause.message : String(cause),
-      });
-    }
-  }
+): Effect.Effect<void, unknown> {
+  return Effect.forEach(
+    hooks,
+    (hook) => Effect.tryPromise({
+      try: () => Promise.resolve(hook(sandbox, context)),
+      catch: (cause) => cause,
+    }),
+    { discard: true },
+  );
+}
+
+/** Teardown remains LIFO and diagnostic-only, but a teardown defect cannot skip the case finalizer. */
+function runTeardownHooks(
+  hooks: readonly SandboxHook[],
+  sandbox: Sandbox,
+  context: SandboxHookContext,
+): Effect.Effect<void> {
+  return Effect.forEach(
+    [...hooks].reverse(),
+    (hook) => {
+      const cleanupContext = { ...context, signal: AbortSignal.timeout(CLEANUP_TIMEOUT_MS) };
+      return Effect.tryPromise({
+        try: () => withCleanupTimeout(() => hook(sandbox, cleanupContext)),
+        catch: (cause) => cause,
+      }).pipe(Effect.catchAll((cause) => Effect.sync(() => {
+        context.diagnostic({
+          code: "sandbox-teardown-failed",
+          level: "warning",
+          message: cause instanceof Error ? cause.message : String(cause),
+        });
+      })));
+    },
+    { discard: true },
+  );
+}
+
+function reportReleaseFailure(
+  input: SandboxRuntimeMaterializeInput,
+  owned: MaterializedSandboxCase,
+  cause: Error,
+): Effect.Effect<void> {
+  return Effect.sync(() => {
+    const resources = owned.group.resources;
+    const projectName =
+      resources !== null && typeof resources === "object" && !Array.isArray(resources) &&
+        typeof (resources as globalThis.Record<string, JsonValue>).projectName === "string"
+        ? (resources as globalThis.Record<string, JsonValue>).projectName as string
+        : undefined;
+    input.feedback.diagnostic({
+      code: "sandbox-stop-failed",
+      level: "warning",
+      message:
+        `Sandbox ${owned.sandbox.sandboxId} provider cleanup failed: ${cause.message}.` +
+        (projectName === undefined
+          ? ""
+          : ` Compose project ${projectName} remains recoverable with \`niceeval sandbox list --orphans\` / \`niceeval sandbox prune\`.`),
+      data: {
+        provider: input.plan.providerPlan.provider,
+        sandboxId: owned.sandbox.sandboxId,
+        ...(projectName !== undefined ? { projectName } : {}),
+      },
+      dedupeKey: projectName === undefined
+        ? `sandbox-stop-failed:${owned.sandbox.sandboxId}`
+        : `sandbox-stop-failed:${projectName}`,
+    });
+  });
 }
 
 function releaseOwned(input: SandboxRuntimeMaterializeInput, owned: MaterializedSandboxCase): Effect.Effect<void> {
-  return Effect.promise(async () => {
-    await runHooks(input.plan.pair.teardownHooks, owned.sandbox, input.hookContext, true);
-    try {
-      if (input.release._tag === "Stop") await owned.group.stop();
-      else await Effect.runPromise(input.release.run(owned));
-    } catch (cause) {
-      const resources = owned.group.resources;
-      const projectName =
-        resources !== null && typeof resources === "object" && !Array.isArray(resources) &&
-          typeof (resources as globalThis.Record<string, JsonValue>).projectName === "string"
-          ? (resources as globalThis.Record<string, JsonValue>).projectName as string
-          : undefined;
-      const message = cause instanceof Error ? cause.message : String(cause);
-      input.feedback.diagnostic({
-        code: "sandbox-stop-failed",
-        level: "warning",
-        message:
-          `Sandbox ${owned.sandbox.sandboxId} provider cleanup failed: ${message}.` +
-          (projectName === undefined
-            ? ""
-            : ` Compose project ${projectName} remains recoverable with \`niceeval sandbox list --orphans\` / \`niceeval sandbox prune\`.`),
-        data: {
-          provider: input.plan.providerPlan.provider,
-          sandboxId: owned.sandbox.sandboxId,
-          ...(projectName !== undefined ? { projectName } : {}),
-        },
-        dedupeKey: projectName === undefined
-          ? `sandbox-stop-failed:${owned.sandbox.sandboxId}`
-          : `sandbox-stop-failed:${projectName}`,
-      });
-    }
-  });
+  const release = input.release._tag === "Stop"
+    ? providerBoundaryEffect(() => owned.group.stop())
+    : input.release.run(owned);
+  // catchAll only handles the provider's typed failure. Defects and interruption remain in their
+  // original Cause, while ensuring guarantees the resource group release even if a hook defects.
+  const releaseWithDiagnostic = release.pipe(
+    Effect.catchAll((cause) => reportReleaseFailure(input, owned, cause)),
+  );
+  return runTeardownHooks(input.plan.pair.teardownHooks, owned.sandbox, input.hookContext).pipe(
+    Effect.ensuring(releaseWithDiagnostic),
+  );
 }
 
 function sortedBuildKeys(keys: Iterable<BuildKey>): readonly BuildKey[] {
@@ -1169,10 +1212,11 @@ export function materializeSandboxRunPlan(
       (owned) => releaseOwned(input, owned),
     ).pipe(
       Effect.tap((owned) => verifyMaterializedIdentity(context, owned)),
-      Effect.tap((owned) => Effect.tryPromise({
-        try: () => runHooks(input.plan.pair.setupHooks, owned.sandbox, input.hookContext, false),
-        catch: (cause) => runtimeFailure(context, "sandbox.materialization-failed", cause),
-      })),
+      Effect.tap((owned) => runSetupHooks(
+        input.plan.pair.setupHooks,
+        owned.sandbox,
+        input.hookContext,
+      ).pipe(Effect.mapError((cause) => runtimeFailure(context, "sandbox.materialization-failed", cause)))),
     ),
   );
 }
