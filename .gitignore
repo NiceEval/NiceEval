@@ -3,7 +3,6 @@ node_modules/
 .niceeval/
 .fasteval/
 .pnpm-store/
-.repos/effect
 *.log
 .DS_Store
 dist/
