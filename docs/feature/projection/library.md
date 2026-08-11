@@ -112,6 +112,12 @@ type ProjectedRecordAttachmentResult<Value> =
       readonly command: "niceeval migrate";
     }
   | {
+      readonly state: "migration-unavailable";
+      readonly from: RecordAttachmentSchemaId;
+      readonly to: RecordAttachmentSchemaId;
+      readonly reason: string;
+    }
+  | {
       readonly state: "unsupported";
       readonly schemaId: RecordAttachmentSchemaId;
     }
@@ -170,7 +176,7 @@ interface SelectedRunProjectedEntry<Value> {
 
 前两种 projection 的 entry 必须穷尽 `excluded`、`not-recorded`、`core-invalid` 与 `attachment-result`。前三种状态不触发 Attachment I/O；第四种状态保留 `RecordAttachmentRead` 的完整数据状态，并在 available 时保存 callback value。
 
-`collection: { state: "partial" }` 仍是 available Attachment 的事实，不降低成读取失败。unavailable、migration-required、unsupported 与 invalid 同样是 `attachment-result` 内的成功值。只有文件、permission、closed reader 或错误的 reader-owned capability 才进入 `Effect` error channel。
+`collection: { state: "partial" }` 仍是 available Attachment 的事实，不降低成读取失败。unavailable、migration-required、migration-unavailable、unsupported 与 invalid 同样是 `attachment-result` 内的成功值。只有文件、permission、closed reader 或错误的 reader-owned capability 才进入 `Effect` error channel。
 
 ## ProjectedSample 与 coverage
 
@@ -203,6 +209,7 @@ interface ProjectionCoverage {
     readonly availablePartial: number;
     readonly unavailable: number;
     readonly migrationRequired: number;
+    readonly migrationUnavailable: number;
     readonly unsupported: number;
     readonly invalid: number;
   };
