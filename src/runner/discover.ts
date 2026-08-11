@@ -2,10 +2,9 @@
 // Dynamic imports are decoded immediately; every later stage receives branded, immutable definitions.
 
 import { readdir } from "node:fs/promises";
-import { existsSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { Data, Effect, Either, Option, Schema } from "effect";
+import { Data, Effect, Option, Schema } from "effect";
 import { pad4 } from "../util.ts";
 import {
   assertNoHiddenInputLeaks,
@@ -174,31 +173,51 @@ function walkFiles(
   root: string,
   match: (name: string) => boolean,
 ): Effect.Effect<readonly string[], DiscoveryError> {
-  if (!existsSync(dir)) return Effect.succeed(Object.freeze([]));
-  return Effect.tryPromise({
+  const readDirectory = (current: string, allowAbsent: boolean) => Effect.tryPromise({
     try: async () => {
-      const out: string[] = [];
-      const walk = async (current: string): Promise<void> => {
-        const entries = await readdir(current, { withFileTypes: true });
-        for (const entry of entries) {
-          const full = join(current, entry.name);
-          if (entry.isDirectory()) {
-            if (!SKIP_DIRS.has(entry.name)) await walk(full);
-          } else if (entry.isFile() && match(entry.name)) {
-            out.push(full);
-          }
-        }
-      };
-      await walk(dir);
-      return Object.freeze(out.sort());
+      try {
+        return await readdir(current, { withFileTypes: true });
+      } catch (cause) {
+        if (allowAbsent && isMissingPath(cause)) return undefined;
+        throw cause;
+      }
     },
     catch: (cause) => issue(
-      relative(root, dir) || ".",
+      relative(root, current) || ".",
       "discovery.filesystem",
       causeMessage(cause),
       ["Check that the discovery directory is readable."],
     ),
   });
+
+  const walk = (current: string, allowAbsent: boolean): Effect.Effect<readonly string[], DiscoveryError> =>
+    Effect.suspend(() => readDirectory(current, allowAbsent).pipe(
+      Effect.flatMap((entries) => {
+        if (entries === undefined) return Effect.succeed(Object.freeze([]));
+        return Effect.forEach(entries, (entry) => {
+          const full = join(current, entry.name);
+          if (entry.isDirectory()) {
+            return SKIP_DIRS.has(entry.name)
+              ? Effect.succeed([])
+              : walk(full, false);
+          }
+          return entry.isFile() && match(entry.name)
+            ? Effect.succeed([full])
+            : Effect.succeed([]);
+        }, { concurrency: 1 }).pipe(
+          Effect.map((groups) => Object.freeze(groups.flat())),
+        );
+      }),
+    ));
+
+  return walk(dir, true).pipe(
+    Effect.map((files) => Object.freeze([...files].sort())),
+  );
+}
+
+function isMissingPath(cause: unknown): boolean {
+  return typeof cause === "object" && cause !== null && "code" in cause &&
+    (cause as { readonly code?: unknown }).code === "ENOENT";
 }
 
 function isFolderEntryName(name: string): boolean {
@@ -303,21 +322,28 @@ function leakGateHintsForLayer(
   }
   const composeFile = leakGate.file._tag === "Url" ? new URL(leakGate.file.value) : leakGate.file.value;
   return Effect.tryPromise({
-    try: async () => {
-      const { leakGateHintsFromComposeFile } = await import("../sandbox/compose.ts");
-      const { hints } = await leakGateHintsFromComposeFile(composeFile, {
-        mainService: leakGate.workspaceService,
-        baseDir,
-      });
-      return Option.some(hints);
-    },
+    try: () => import("../sandbox/compose.ts"),
     catch: (cause) => issue(
       file,
       "discovery.leak-gate-failed",
       causeMessage(cause),
       ["Fix the Docker Compose declaration used by this eval SandboxLayer."],
     ),
-  });
+  }).pipe(
+    Effect.flatMap(({ leakGateHintsFromComposeFile }) => Effect.tryPromise({
+      try: () => leakGateHintsFromComposeFile(composeFile, {
+        mainService: leakGate.workspaceService,
+        baseDir,
+      }),
+      catch: (cause) => issue(
+        file,
+        "discovery.leak-gate-failed",
+        causeMessage(cause),
+        ["Fix the Docker Compose declaration used by this eval SandboxLayer."],
+      ),
+    })),
+    Effect.map(({ hints }) => Option.some(hints)),
+  );
 }
 
 function runLeakGate(
@@ -409,8 +435,8 @@ function discoverEvalEntry(
   });
 }
 
-/** Effect-native discovery core; Promise conversion is restricted to discoverEvals(). */
-export function discoverEvalsEffect(
+/** Discovery remains in Effect through selection/planning; an application host closes it. */
+export function discoverEvals(
   root: string,
   options: { freshImport?: boolean } = {},
 ): Effect.Effect<readonly DiscoveredEval[], DiscoveryError> {
@@ -420,9 +446,8 @@ export function discoverEvalsEffect(
   );
 }
 
-export function discoverEvals(root: string, options: { freshImport?: boolean } = {}): Promise<readonly DiscoveredEval[]> {
-  return runDiscoveryPromise(discoverEvalsEffect(root, options));
-}
+/** @deprecated Use discoverEvals; kept as a no-runtime alias for internal migration. */
+export const discoverEvalsEffect = discoverEvals;
 
 function discoverExperimentFile(
   file: string,
@@ -448,7 +473,8 @@ function discoverExperimentFile(
   });
 }
 
-export function discoverExperimentsEffect(
+/** Discovery remains in Effect through selection/planning; an application host closes it. */
+export function discoverExperiments(
   root: string,
   options: { freshImport?: boolean } = {},
 ): Effect.Effect<readonly DiscoveredExperiment[], DiscoveryError> {
@@ -465,15 +491,8 @@ export function discoverExperimentsEffect(
   );
 }
 
-export function discoverExperiments(root: string, options: { freshImport?: boolean } = {}): Promise<readonly DiscoveredExperiment[]> {
-  return runDiscoveryPromise(discoverExperimentsEffect(root, options));
-}
-
-function runDiscoveryPromise<A>(effect: Effect.Effect<A, DiscoveryError>): Promise<A> {
-  return Effect.runPromise(Effect.either(effect)).then((result) =>
-    Either.isLeft(result) ? Promise.reject(result.left) : result.right
-  );
-}
+/** @deprecated Use discoverExperiments; kept as a no-runtime alias for internal migration. */
+export const discoverExperimentsEffect = discoverExperiments;
 
 /** eval id 的裸字面前缀过滤；exp / show / view 共用 shared helper。 */
 export function makeFilter(patterns: string[]): (id: string) => boolean {

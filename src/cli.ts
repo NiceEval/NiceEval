@@ -14,7 +14,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve as resolvePath, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs as nodeParseArgs } from "node:util";
-import { Effect } from "effect";
+import { Effect, Either } from "effect";
 import { discoverEvals, discoverExperiments } from "./runner/discover.ts";
 import { browsableExperimentPaths, evalPrefixPredicate, matchExperimentSelector } from "./shared/aggregate.ts";
 import { runEvals, type AgentRun } from "./runner/run.ts";
@@ -93,6 +93,16 @@ import type {
   RunFeedbackState,
   Verdict,
 } from "./types.ts";
+
+/**
+ * CLI is a Promise-facing application host. Typed Effect failures cross this
+ * boundary as their original values; defects and interruption remain Causes.
+ */
+async function runCliEffect<A, E>(effect: Effect.Effect<A, E>): Promise<A> {
+  const result = await Effect.runPromise(Effect.either(effect));
+  if (Either.isLeft(result)) throw result.left;
+  return result.right;
+}
 
 export interface Flags {
   agent?: string;
@@ -727,14 +737,17 @@ interface AcceptLocatorResult {
 
 /** 调用 acceptance core；CLI 只负责 cwd/记录根边界、输出与退出码，不重建结果或启动 runner。 */
 async function runAcceptCommand(cwd: string, locators: readonly string[], recordRoot: string | undefined): Promise<void> {
-  const mod = await import("./runner/accept.ts") as {
-    acceptLocators(input: { cwd: string; locators: readonly string[]; recordRoot?: string }): Promise<readonly AcceptLocatorResult[]>;
+  const mod = await import("./runner/accept.ts") as unknown as {
+    acceptLocators(input: { cwd: string; locators: readonly string[]; recordRoot?: string }): Effect.Effect<
+      readonly AcceptLocatorResult[],
+      unknown
+    >;
   };
-  const results = await mod.acceptLocators({
+  const results = await runCliEffect(mod.acceptLocators({
     cwd,
     locators,
     ...(recordRoot !== undefined ? { recordRoot } : {}),
-  });
+  }));
   for (const result of results) {
     process.stdout.write(t("cli.accept.done", {
       sourceLocator: result.sourceLocator,
@@ -960,17 +973,17 @@ async function runExperimentRenameCommand(cwd: string, args: readonly string[], 
   }
   const { oldId, newId } = parsed;
   const mod = await import("./runner/rename-experiment.ts") as unknown as {
-    planExperimentRename(options: { cwd: string; oldId: string; newId: string }): Promise<ExperimentRenamePlan>;
-    renameExperiment(options: { cwd: string; oldId: string; newId: string }): Promise<RenamedExperiment>;
+    planExperimentRename(options: { cwd: string; oldId: string; newId: string }): Effect.Effect<ExperimentRenamePlan, unknown>;
+    renameExperiment(options: { cwd: string; oldId: string; newId: string }): Effect.Effect<RenamedExperiment, unknown>;
   };
   if (flags.dry) {
-    const plan = await mod.planExperimentRename({ cwd, oldId, newId });
+    const plan = await runCliEffect(mod.planExperimentRename({ cwd, oldId, newId }));
     if (flags.json) process.stdout.write(renderExperimentRenameJson(plan));
     else process.stdout.write(renderExperimentRenamePlanHuman(plan));
     return experimentRenameExitCode(plan);
   }
   try {
-    const renamed = await mod.renameExperiment({ cwd, oldId, newId });
+    const renamed = await runCliEffect(mod.renameExperiment({ cwd, oldId, newId }));
     if (flags.json) process.stdout.write(renderExperimentRenameJson(renamed));
     else process.stdout.write(renderExperimentRenameDoneHuman(renamed));
     return 0;
@@ -1412,10 +1425,10 @@ async function main(): Promise<void> {
     let projectTarget: import("./record/types.ts").ProjectCurrentTarget | undefined;
     if (!offlineShow && existsSync(join(cwd, "niceeval.config.ts"))) {
       try {
-        projectTarget = (await loadProjectCurrent(cwd, {
+        projectTarget = (await runCliEffect(loadProjectCurrent(cwd, {
           experiments: flags.experiment,
           evals: positionals,
-        })).target;
+        }))).target;
       } catch (e) {
         process.stderr.write(`${formatThrown(e)}\n`);
         process.exit(1);
@@ -1493,7 +1506,7 @@ async function main(): Promise<void> {
     process.stderr.write(`maxBuildConcurrency must be a positive integer, got ${maxBuildConcurrency}.\n`);
     process.exit(1);
   }
-  const allEvals = await discoverEvals(cwd);
+  const allEvals = await runCliEffect(discoverEvals(cwd));
   const evals = flags.tag ? allEvals.filter((e) => e.tags?.includes(flags.tag as string)) : allEvals;
 
   if (command === "list") {
@@ -1520,7 +1533,7 @@ async function main(): Promise<void> {
       process.stderr.write(t("cli.exp.viewerFlagUnsupported", { flag: viewerFlag.flag, command: viewerFlag.command }));
       process.exit(1);
     }
-    const experiments = await discoverExperiments(cwd);
+    const experiments = await runCliEffect(discoverExperiments(cwd));
     // `list` 是 exp 的保留子命令：它只做发现与选择，不进入 link、carry、lock 或
     // runner，因此绝不会创建 Session。实验 id 含有 `list` 时需给更长的 selector。
     if (command === "exp" && positionals[0] === "list") {
@@ -1731,7 +1744,7 @@ async function main(): Promise<void> {
   } else {
     // 裸 run / `niceeval <eval>` 不再执行。运行配置必须来自 experiments/,
     // 这样 agent/model/flags/attempts/budget 与结果聚合都有可签入的身份。
-    const experiments = await discoverExperiments(cwd);
+    const experiments = await runCliEffect(discoverExperiments(cwd));
     const ids = experiments.map((e) => e.id);
     const matchedIds = new Set(positionals.flatMap((p) => matchExperimentSelector(ids, p)));
     const asExp = experiments.filter((e) => matchedIds.has(e.id));
