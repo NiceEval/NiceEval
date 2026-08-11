@@ -4,11 +4,12 @@
 //   niceeval accept @<locator>...       接受多条历史结果并重锚到当前配置
 //   niceeval show [pattern]          终端读结果:默认报告 / 单 eval / 证据切面 / 时间轴 / --report
 //   niceeval list                    只列出发现到的 eval
-//   niceeval clean                   删除 .niceeval/ 历史运行 artifact
+//   niceeval clean [--record <root>] [--yes]    删除未完成 Run
+//   niceeval migrate [--record <root>] [--yes]  显式迁移 Record
 
 import { spawn } from "node:child_process";
 import { hostname } from "node:os";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve as resolvePath, sep } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -20,6 +21,7 @@ import { runEvals, type AgentRun } from "./runner/run.ts";
 import { cacheKey, missingReason, planCarry, type CarryPlan, type DispatchGroup } from "./runner/fingerprint.ts";
 import type { FingerprintComparison, FingerprintDelta, FingerprintDiagnostic } from "./runner/manifest.ts";
 import { ATTEMPT_LOCATOR_PREFIX, decodeAttemptLocator } from "./record/locator.ts";
+import { runRecordCliCommand } from "./cli/record.ts";
 import { resolveExperimentEvals, selectedEvalsForRun } from "./runner/eval-selection.ts";
 import { failureDetailFromResult } from "./runner/feedback/failure.ts";
 import { stopAllSandboxes, liveSandboxCount } from "./sandbox/registry.ts";
@@ -69,20 +71,6 @@ import {
   type JsonPlanDiagnosticFact,
   type JsonPlanFingerprintComparison,
 } from "./runner/feedback/index.ts";
-import {
-  buildView,
-  startViewServer,
-  incompatibleHistoryKey,
-  loadCarryInputs,
-  resolveViewInput,
-  IncompatibleResultsError,
-  ViewInputError,
-} from "./view/index.ts";
-// load.ts 本身没有 JSX,但它的 ReportDefinition/ReportLoadError 要和 view 报告槽实际装载
-// --report 与 CLI 同属一个 canonical runtime graph。`unique symbol` 品牌与 class 的
-// instanceof 必须从同一份模块实例读取，不能再混用源码与另一份预编译图。
-import { ReportLoadError } from "./report/runtime/load.ts";
-import { runShow } from "./show/index.ts";
 import { setConfiguredLocale, t } from "./i18n/index.ts";
 import type { MessageKey } from "./i18n/zh-CN.ts";
 import { formatThrown, upsertManagedBlock } from "./util.ts";
@@ -105,18 +93,6 @@ import type {
   RunFeedbackState,
   Verdict,
 } from "./types.ts";
-
-/**
- * view 的可预期用户错误:版本不同的报告(npx 提示)、位置参数/组合语义错误、
- * --report 装载失败。打一句直说问题与下一步后退出,不抛堆栈。
- */
-function exitOnViewUserError(e: unknown): never {
-  if (e instanceof IncompatibleResultsError || e instanceof ViewInputError || e instanceof ReportLoadError) {
-    process.stderr.write(e.message.endsWith("\n") ? e.message : `${e.message}\n`);
-    process.exit(1);
-  }
-  throw e;
-}
 
 export interface Flags {
   agent?: string;
@@ -142,6 +118,8 @@ export interface Flags {
   host?: string;
   help: boolean;
   version: boolean;
+  /** `clean` / `migrate` 专用：确认删除未完成 Run 或没有 Git restore point 的 migration。 */
+  yes: boolean;
   // ── show 专属(位置参数仍是 eval id 前缀 / `@<locator>`;这些 flag 选「怎么看」)──
   source?: true | string;
   execution: boolean;
@@ -271,6 +249,8 @@ const FLAG_OPTIONS = {
   /** `view` 命令专用:启动后自动打开浏览器(默认行为)。 */
   open: { type: "boolean" },
   "no-open": { type: "boolean" },
+  /** `clean` / `migrate` 专用：确认不可逆 maintenance 动作或没有 Git restore point 的 migration。 */
+  yes: { type: "boolean" },
   /** 打印用法说明并退出。 */
   help: { type: "boolean", short: "h" },
   /** 打印 niceeval 的版本号并退出。 */
@@ -287,7 +267,7 @@ function numberFlag(name: string, raw: string | undefined): number | undefined {
   return n;
 }
 
-const CLI_COMMANDS = ["check", "exp", "accept", "show", "list", "view", "clean", "init", "run", "sandbox", "session", "docker"] as const;
+const CLI_COMMANDS = ["check", "exp", "accept", "show", "list", "view", "clean", "migrate", "init", "run", "sandbox", "session", "docker"] as const;
 type CliCommand = (typeof CLI_COMMANDS)[number];
 
 function isCliCommand(candidate: string): candidate is CliCommand {
@@ -437,6 +417,7 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
     open: values["no-open"] === true ? false : values.open === true ? true : undefined,
     help: values.help === true,
     version: values.version === true,
+    yes: values.yes === true,
     source: values.source === true ? (sourceValue ?? true) : undefined,
     execution: values.execution === true,
     diff: values.diff === true && diffPath === undefined,
@@ -616,6 +597,59 @@ function firstViewerOnlyFlag(flags: Flags): { flag: string; command: string } | 
   if (flags.port !== undefined) return { flag: "--port", command: VIEW };
   if (flags.open !== undefined) return { flag: "--open", command: VIEW };
   return undefined;
+}
+
+/** `clean` and `migrate` operate on a current Record root with explicit confirmation. */
+function firstRecordMaintenanceUnsupportedFlag(flags: Flags): string | undefined {
+  const unsupported: Array<[string, unknown]> = [
+    ["--agent", flags.agent],
+    ["--model", flags.model],
+    ["--attempts", flags.attempts],
+    ["--max-concurrency", flags.maxConcurrency],
+    ["--max-build-concurrency", flags.maxBuildConcurrency],
+    ["--timeout", flags.timeout],
+    ["--budget", flags.budget],
+    ["--tag", flags.tag],
+    ["--junit", flags.junit],
+    ["--json", flags.json],
+    ["--smoke", flags.smoke],
+    ["--dry", flags.dry],
+    ["--force", flags.force],
+    ["--rerun", flags.rerun],
+    ["--early-exit/--no-early-exit", flags.earlyExit],
+    ["--open/--no-open", flags.open],
+    ["--out", flags.out],
+    ["--port", flags.port],
+    ["--host", flags.host],
+    ["--source", flags.source],
+    ["--execution", flags.execution],
+    ["--diff", flags.diff || flags.diffPath !== undefined],
+    ["--grep", flags.grep],
+    ["--expand", flags.expand],
+    ["--timing", flags.timing],
+    ["--keep-sandbox", flags.keepSandbox],
+    ["--all", flags.all],
+    ["--window", flags.window],
+    ["--path", flags.sandboxPath],
+    ["--leave-running", flags.leaveRunning],
+    ["--history", flags.history],
+    ["--usage", flags.usage],
+    ["--stats", flags.stats],
+    ["--exp", flags.experiment],
+    ["--run", flags.run],
+    ["--report", flags.report],
+    ["--page", flags.page],
+    ["--theme", flags.theme],
+    ["--orphans", flags.orphans],
+    ["--teardown", flags.teardown],
+  ];
+  const bad = unsupported.find(([flag, value]) => {
+    if (flag === "--open/--no-open" || flag === "--early-exit/--no-early-exit") {
+      return value !== undefined;
+    }
+    return value !== undefined && value !== false && (!Array.isArray(value) || value.length > 0);
+  });
+  return bad?.[0];
 }
 
 /**
@@ -1223,6 +1257,28 @@ async function main(): Promise<void> {
   }
 
   if (command === "view") {
+    // The legacy viewer still consumes its pre-v1 Record graph. Keep that
+    // optional graph out of maintenance startup so `clean` and `migrate` can
+    // run against the current Record facade without loading it first.
+    const {
+      buildView,
+      startViewServer,
+      resolveViewInput,
+      IncompatibleResultsError,
+      ViewInputError,
+    } = await import("./view/index.ts");
+    const { ReportLoadError } = await import("./report/runtime/load.ts");
+    function exitOnViewUserError(error: unknown): never {
+      if (
+        error instanceof IncompatibleResultsError ||
+        error instanceof ViewInputError ||
+        error instanceof ReportLoadError
+      ) {
+        process.stderr.write(error.message.endsWith("\n") ? error.message : `${error.message}\n`);
+        process.exit(1);
+      }
+      throw error;
+    }
     // 位置参数只有一种含义:eval id 前缀(收窄有效根)。记录根经 --record 递入,
     // 单开一份快照经 --run 递入;--report 整槽替换报告槽(与 show --report 吃同一个文件),
     // --page 定初始页。文件与目录都不进位置参数(docs/feature/reports/README.md「打开与收窄」)。
@@ -1336,6 +1392,7 @@ async function main(): Promise<void> {
   }
 
   if (command === "show") {
+    const { runShow } = await import("./show/index.ts");
     if (flags.theme !== undefined) {
       process.stderr.write("--theme only affects the web view. Use `niceeval view --theme …` instead.\n");
       process.exit(1);
@@ -1389,10 +1446,31 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (command === "clean") {
-    await rm(join(cwd, ".niceeval"), { recursive: true, force: true });
-    process.stdout.write(t("cli.clean.done"));
-    process.exit(0);
+  if (command === "clean" || command === "migrate") {
+    if (positionals.length > 0) {
+      process.stderr.write(`niceeval ${command} does not accept positional arguments.\n`);
+      process.exit(1);
+    }
+    const unsupported = firstRecordMaintenanceUnsupportedFlag(flags);
+    if (unsupported !== undefined) {
+      process.stderr.write(`niceeval ${command} does not accept ${unsupported}.\n`);
+      process.exit(1);
+    }
+
+    // The Record command handler remains Effect-native through planning,
+    // confirmation, locking, and mutation. This legacy process shell is the
+    // one application boundary that adapts its receipt to a Promise.
+    const result = await Effect.runPromise(
+      runRecordCliCommand({
+        command,
+        cwd,
+        ...(flags.record === undefined ? {} : { record: flags.record }),
+        yes: flags.yes,
+      }),
+    );
+    if (result.stdout !== "") process.stdout.write(result.stdout);
+    if (result.stderr !== "") process.stderr.write(result.stderr);
+    process.exit(result.exitCode);
   }
 
   if (command === "init") {
@@ -1704,6 +1782,7 @@ async function main(): Promise<void> {
   // `--dry`(两种形态)都需要这份计算:`--dry --json` 的 `ExpPlanDocument.matrix[].reused`,
   // 人读 `--dry` 首行的携入摘要(见 docs/feature/experiments/cli.md 开头示例与「事件与计划
   // 文档的 TypeScript 形状」),口径必须与真正开跑时一致。
+  const { incompatibleHistoryKey, loadCarryInputs } = await import("./view/data.ts");
   const carryInputs = await loadCarryInputs(join(cwd, ".niceeval"));
   const priorResults = carryInputs?.results;
   // 本次计划里哪些坐标「有历史但那份落盘读不动」:不标出来,它们会跟从没跑过的坐标一样落在
