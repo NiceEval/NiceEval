@@ -6,10 +6,7 @@ import {
   UtcMillisSchema,
 } from "../record/codec/identifiers.ts";
 import { RecordExactParseOptions } from "../record/codec/core.ts";
-import type {
-  MemberDocumentV1,
-  RecordAttemptRef,
-} from "../record/model/core.ts";
+import type { RecordAttemptRef } from "../record/model/core.ts";
 import {
   compareCanonicalIdentity,
   isPortableSegment,
@@ -27,12 +24,19 @@ import {
 } from "../record/errors/record-errors.ts";
 import { RecordHandleInvalid } from "../record/reader/errors.ts";
 import type { RecordReaderReadError } from "../record/reader/errors.ts";
+import {
+  resolveFrozenRecordReaderPort,
+  type FrozenRecordReaderPort,
+} from "../record/reader/internal.ts";
 import type {
-  FrozenRecordAttempt,
   FrozenRecordRun,
   RecordReader,
 } from "../record/reader/types.ts";
 import { EvaluationRecordIdentitySchema } from "../eval/record/attachment.ts";
+import {
+  EVALUATIONS_ATTACHMENT_NAME_V1,
+  evaluationsAttachmentFamilyV1,
+} from "../eval/record/evaluation.ts";
 import type { ExperimentIdV1 as ExperimentId } from "../eval/record/evaluation.ts";
 
 export type { RecordAttemptRef } from "../record/model/core.ts";
@@ -200,43 +204,9 @@ export interface AnalysisSampleCodecError {
 const MAX_SELECTED_RUNS = 4_096;
 const MAX_SLOTS = 250_000;
 
-/**
- * This port is package-private. A Record adapter registers one genuine frozen
- * view once; public API accepts RecordReader but never copies or recreates
- * it. Candidates are lazy and bounded through Stream, never a Record-wide
- * materialized Run array.
- */
-export type AnalysisLatestExperimentRead =
-  | { readonly state: "available"; readonly experimentId: ExperimentId }
-  | { readonly state: "indeterminate"; readonly issues: NonEmptyRecordIssues };
-
-export interface AnalysisRecordPort {
-  readonly assertOpen: (reader: object) => Effect.Effect<void, RecordReaderReadError>;
-  readonly candidates: (
-    reader: object,
-  ) => Stream.Stream<RecordCoreRead<FrozenRecordRun>, RecordReaderReadError>;
-  readonly run: (
-    reader: object,
-    runId: RunId,
-  ) => Effect.Effect<RecordCoreRead<FrozenRecordRun>, RecordReaderReadError>;
-  readonly member: (
-    reader: object,
-    run: FrozenRecordRun,
-    slotId: SlotId,
-  ) => Effect.Effect<RecordCoreRead<MemberDocumentV1>, RecordReaderReadError>;
-  readonly attempt: (
-    reader: object,
-    ref: RecordAttemptRef,
-  ) => Effect.Effect<RecordCoreRead<FrozenRecordAttempt>, RecordReaderReadError>;
-  readonly latestExperiment: (
-    reader: object,
-    run: FrozenRecordRun,
-  ) => Effect.Effect<AnalysisLatestExperimentRead, RecordReaderReadError>;
-}
-
 interface AnalysisHandleBinding {
-  readonly reader: object;
-  readonly port: AnalysisRecordPort;
+  readonly reader: RecordReader<RecordReaderReadError>;
+  readonly port: FrozenRecordReaderPort;
   readonly sample: AnalysisSample;
 }
 
@@ -259,55 +229,7 @@ type NormalizedSelection =
   | NormalizedExplicitSelection
   | NormalizedLatestSelection;
 
-const recordPorts = new WeakMap<object, AnalysisRecordPort>();
 const handleBindings = new WeakMap<AnalysisSampleHandle, AnalysisHandleBinding>();
-
-/**
- * @internal Record registers a genuine frozen view exactly once. Rebinding is
- * a package-invariant defect, rather than an untrusted input failure.
- */
-export function bindAnalysisRecordView(
-  reader: object,
-  port: AnalysisRecordPort,
-): AnalysisRecordPort {
-  if (recordPorts.has(reader)) {
-    throw new Error("Analysis Record view is already bound to a capability port.");
-  }
-  const fixedPort: AnalysisRecordPort = {
-    assertOpen: port.assertOpen,
-    candidates: port.candidates,
-    run: port.run,
-    member: port.member,
-    attempt: port.attempt,
-    latestExperiment: port.latestExperiment,
-  };
-  const boundPort = Object.freeze(fixedPort);
-  recordPorts.set(reader, boundPort);
-  return boundPort;
-}
-
-/**
- * @internal This is the only way selection mints a live Sample capability.
- * An unregistered object, including a copied reader-shaped object, cannot
- * receive a handle.
- */
-export function makeAnalysisSampleHandle(
-  reader: object,
-  sample: AnalysisSample,
-): AnalysisSampleHandle {
-  const port = recordPorts.get(reader);
-  if (port === undefined) {
-    throw new Error("Analysis Sample handle requires the bound frozen Record view.");
-  }
-  return makeHandle(reader, port, sample);
-}
-
-/** @internal Returns the fixed capability that was bound to this exact reader. */
-export function resolveAnalysisRecordPort(
-  reader: object,
-): AnalysisRecordPort | undefined {
-  return recordPorts.get(reader);
-}
 
 /** Exact, portable decode. The result is deeply frozen and canonically ordered. */
 export function decodeAnalysisSample(
@@ -442,10 +364,11 @@ export function narrowAnalysisSampleHandle(
 ): Effect.Effect<AnalysisSampleHandle, AnalysisSelectionError | RecordReaderReadError> {
   return Effect.suspend(() => {
     const binding = handleBindings.get(handle);
-    if (binding === undefined || handle.sample !== binding.sample) {
-      return Effect.fail(recordHandleInvalid());
-    }
-    if (recordPorts.get(binding.reader) !== binding.port) {
+    if (
+      binding === undefined
+      || handle.sample !== binding.sample
+      || resolveFrozenRecordReaderPort(binding.reader) !== binding.port
+    ) {
       return Effect.fail(recordHandleInvalid());
     }
     return Effect.gen(function* () {
@@ -458,36 +381,39 @@ export function narrowAnalysisSampleHandle(
 }
 
 /**
- * @internal Projection calls this before Attachment I/O. It rejects a forged
- * handle and a genuine handle paired with the wrong frozen view.
+ * @internal Projection consumes the exact frozen reader capability bound when
+ * selection minted this handle. This is intentionally not a public Sample
+ * export: a pure AnalysisSample can never recover Record I/O.
  */
-export function resolveAnalysisSampleHandleForView(
-  reader: object,
+export function resolveAnalysisSampleHandle(
   handle: AnalysisSampleHandle,
-): Effect.Effect<AnalysisSample, RecordReaderReadError> {
+): Effect.Effect<
+  {
+    readonly reader: RecordReader<RecordReaderReadError>;
+    readonly sample: AnalysisSample;
+  },
+  RecordReaderReadError
+> {
   return Effect.suspend(() => {
     const binding = handleBindings.get(handle);
     if (
-      binding === undefined ||
-      handle.sample !== binding.sample ||
-      binding.reader !== reader ||
-      recordPorts.get(reader) !== binding.port
+      binding === undefined
+      || handle.sample !== binding.sample
+      || resolveFrozenRecordReaderPort(binding.reader) !== binding.port
     ) {
       return Effect.fail(recordHandleInvalid());
     }
-    return Effect.map(binding.port.assertOpen(reader), () => binding.sample);
+    return Effect.map(binding.port.assertOpen(binding.reader), () =>
+      Object.freeze({ reader: binding.reader, sample: binding.sample }));
   });
 }
-
-/** @internal Backwards-compatible assertion name for internal consumers. */
-export const assertAnalysisSampleHandleForView = resolveAnalysisSampleHandleForView;
 
 function selectNormalizedAnalysisSample(
   reader: RecordReader<RecordReaderReadError>,
   selection: NormalizedSelection,
 ): Effect.Effect<AnalysisSampleHandle, AnalysisSelectionError | RecordReaderReadError> {
   return Effect.suspend(() => {
-    const port = recordPorts.get(reader);
+    const port = resolveFrozenRecordReaderPort(reader);
     if (port === undefined) return Effect.fail(recordHandleInvalid());
     return Effect.gen(function* () {
       yield* port.assertOpen(reader);
@@ -498,7 +424,7 @@ function selectNormalizedAnalysisSample(
           runIds: selection.runIds,
         });
         const sample = yield* materializeAnalysisSample(reader, port, summary, runs);
-        return makeAnalysisSampleHandle(reader, sample);
+        return makeHandle(reader, port, sample);
       }
       const runs = yield* selectLatestRunsFromPort(reader, port, selection.experimentIds);
       const summary: AnalysisSelectionSummary = Object.freeze({
@@ -507,14 +433,14 @@ function selectNormalizedAnalysisSample(
         selectedRunIds: Object.freeze(runs.map((run) => run.runId)),
       });
       const sample = yield* materializeAnalysisSample(reader, port, summary, runs);
-      return makeAnalysisSampleHandle(reader, sample);
+      return makeHandle(reader, port, sample);
     });
   });
 }
 
 function selectExplicitRunsFromPort(
   reader: object,
-  port: AnalysisRecordPort,
+  port: FrozenRecordReaderPort,
   runIds: readonly RunId[],
 ): Effect.Effect<readonly FrozenRecordRun[], AnalysisSelectionError | RecordReaderReadError> {
   return Effect.gen(function* () {
@@ -535,7 +461,7 @@ function selectExplicitRunsFromPort(
 
 function selectLatestRunsFromPort(
   reader: object,
-  port: AnalysisRecordPort,
+  port: FrozenRecordReaderPort,
   experimentIds: readonly ExperimentId[] | "all",
 ): Effect.Effect<readonly FrozenRecordRun[], AnalysisSelectionError | RecordReaderReadError> {
   const requestedExperimentIds = experimentIds === "all"
@@ -564,7 +490,7 @@ function selectLatestRunsFromPort(
 
 function collectLatestCandidate(
   reader: object,
-  port: AnalysisRecordPort,
+  port: FrozenRecordReaderPort,
   requestedExperimentIds: ReadonlySet<ExperimentId> | undefined,
   latestByExperiment: Map<ExperimentId, FrozenRecordRun>,
   candidate: RecordCoreRead<FrozenRecordRun>,
@@ -581,28 +507,40 @@ function collectLatestCandidate(
     if (candidate.state === "core-invalid") {
       return yield* Effect.fail(latestIndeterminate(candidate.issues));
     }
-    const experiment = yield* port.latestExperiment(reader, candidate.value);
-    if (experiment.state === "indeterminate") {
-      return yield* Effect.fail(latestIndeterminate(experiment.issues));
+    const attachment = yield* port.readRunAttachment(
+      reader,
+      candidate.value,
+      evaluationsAttachmentFamilyV1,
+    );
+    if (attachment.state !== "available") {
+      return yield* Effect.fail(
+        latestIndeterminate(
+          singleRecordIssue(
+            "record-schema-invalid",
+            ["attachments", EVALUATIONS_ATTACHMENT_NAME_V1, attachment.state],
+          ),
+        ),
+      );
     }
+    const experimentId = attachment.value.payload.experimentId;
     if (
       requestedExperimentIds !== undefined
-      && !requestedExperimentIds.has(experiment.experimentId)
+      && !requestedExperimentIds.has(experimentId)
     ) {
       return latestByExperiment;
     }
-    const previous = latestByExperiment.get(experiment.experimentId);
+    const previous = latestByExperiment.get(experimentId);
     if (previous === undefined) {
       if (latestByExperiment.size >= MAX_SELECTED_RUNS) {
         return yield* Effect.fail(
           selectionLimit("selected-runs", latestByExperiment.size + 1),
         );
       }
-      latestByExperiment.set(experiment.experimentId, candidate.value);
+      latestByExperiment.set(experimentId, candidate.value);
       return latestByExperiment;
     }
     if (isLaterRun(candidate.value, previous)) {
-      latestByExperiment.set(experiment.experimentId, candidate.value);
+      latestByExperiment.set(experimentId, candidate.value);
     }
     return latestByExperiment;
   });
@@ -610,7 +548,7 @@ function collectLatestCandidate(
 
 function materializeAnalysisSample(
   reader: object,
-  port: AnalysisRecordPort,
+  port: FrozenRecordReaderPort,
   selection: AnalysisSelectionSummary,
   selectedRuns: readonly FrozenRecordRun[],
 ): Effect.Effect<AnalysisSample, AnalysisSelectionError | RecordReaderReadError> {
@@ -653,7 +591,7 @@ function materializeAnalysisSample(
 
 function materializeAnalysisSlot(
   reader: object,
-  port: AnalysisRecordPort,
+  port: FrozenRecordReaderPort,
   run: FrozenRecordRun,
   slotId: SlotId,
 ): Effect.Effect<AnalysisBaseSlot, RecordReaderReadError> {
@@ -1244,8 +1182,8 @@ function selectorIdentitySet<Identity extends string>(
 }
 
 function makeHandle(
-  reader: object,
-  port: AnalysisRecordPort,
+  reader: RecordReader<RecordReaderReadError>,
+  port: FrozenRecordReaderPort,
   sample: AnalysisSample,
 ): AnalysisSampleHandle {
   const handle: AnalysisSampleHandle = {
