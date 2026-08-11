@@ -6,6 +6,11 @@ export type {
   ReportDefinitionInvalid,
   ReportExecutionError,
 } from "./execute.ts";
+export { executeReportFromRecord } from "./from-record.ts";
+export type {
+  ExecuteReportFromRecordError,
+  ExecuteReportFromRecordRequirements,
+} from "./from-record.ts";
 export type { ReportExecution } from "../execution/model.ts";
 export {
   ReportConsole,

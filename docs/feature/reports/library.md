@@ -609,6 +609,32 @@ yield* showReport({ execution });
 yield* exportStaticReport({ execution, out });
 ```
 
+### 从 current Record 直接执行
+
+需要默认产品路径时，host 还提供一次性组合入口。它在内部打开 current reader、形成
+`AnalysisSampleHandle` 并完成 execution。
+
+`Effect.scoped` 在返回前释放 reader 与其 maintenance lease。返回的 `ReportExecution`
+可以在 Scope 外继续交给 show、view 或 static export。
+
+```ts
+declare const executeReportFromRecord: (input: {
+  readonly root: RecordRoot;
+  readonly selection: AnalysisSelectionRequest;
+  readonly report?: Report;
+}) => Effect.Effect<
+  ReportExecution,
+  RecordReaderOpenError | AnalysisSelectionError | ReportExecutionError,
+  RecordFileSystem | RecordMaintenanceLock
+>;
+```
+
+这个入口不自行安装 `NodeRecordLive`，也不提供 Promise facade；应用边界负责为精确的
+`RecordFileSystem | RecordMaintenanceLock` 需求提供自己的 Layer。默认概览 Report 可从
+`niceeval/report/built-in` 的 default export 取得；省略 `report` 时这个组合入口也使用它。它
+显示 selected runs、slot denominator、四种 slot state 与 bounded slot problem list，且只返回
+closed semantic document。
+
 ## show
 
 ```ts

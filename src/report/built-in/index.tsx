@@ -1,66 +1,9 @@
-// niceeval/report/built-in —— 内建视图的家:每个内建视图是一份普通 defineReport 成品,
-// 有自己的名字、一个源文件,按名字具名导出;默认导出恒等于 standard——裸宿主装载的那份
-// (docs/feature/reports/README.md)。新增内建视图 = 新文件 + 新具名导出,
-// 不需要注册表,也不改变装载管线。
-
-import {
-  standard,
-  standardAttemptPage,
-  standardAttemptsPage,
-  standardExperimentPage,
-  standardOverviewPage,
-  standardTracesPage,
-} from "./standard.tsx";
-
+// Public built-ins are ordinary new author-API Reports. Legacy JSX report
+// definitions stay behind the package-private legacy loader and are not
+// re-exported from this package entry.
 export {
-  standard,
-  standardAttemptPage,
-  standardAttemptsPage,
-  standardExperimentPage,
-  standardOverviewPage,
-  standardTracesPage,
-  standardOverviewRender,
-  standardAttemptsRender,
-  standardTracesRender,
-  standardAttemptRender,
-  standardExperimentRender,
-} from "./standard.tsx";
-export { failures } from "./failures.tsx";
-export { stability } from "./stability.tsx";
-
-// 内建 page 与零配置 show 切片共用的公开任务结果。
-export {
-  annotatedSourceResult,
-  attemptDetailsResult,
-  comparisonResult,
-  conversationResult,
-  diffResult,
-  historyResult,
-  stabilityResult,
-  standardOverviewResult,
-  timingResult,
-  usageResult,
-} from "../tasks.ts";
-export type {
-  AnnotatedSourceOptions,
-  AnnotatedSourceResult,
-  AttemptDetailsResult,
-  AttemptTimingResult,
-  ComparisonOptions,
-  ComparisonResult,
-  ConversationResult,
-  DiffResult,
-  HistoryOptions,
-  HistoryResult,
-  RunTimingResult,
-  StabilityOptions,
-  StabilityResult,
-  StandardOverviewResult,
-  TimingResult,
-  UsageResult,
-} from "../tasks.ts";
-
-// 内建主题与内建视图同一个入口(docs/feature/reports/README.md):名字即 CLI 取值。
-export { basalt, chalk } from "../theme.ts";
-
-export default standard;
+  default,
+  defaultOverviewReport,
+  overview,
+  overviewPage,
+} from "./overview.ts";
