@@ -42,7 +42,7 @@ describe("产品站英文 URL 迁移", () => {
 
   it("next.config 把无前缀根路径 rewrite 到 /en 渲染源,并排除 zh 与静态/外部接管路径", () => {
     const nextConfig = readFileSync(join(ROOT, "site/next.config.mjs"), "utf8");
-    expect(nextConfig).toContain('source: "/:path((?!_next|docs|showcase|zh|.*\\..*).*)"');
+    expect(nextConfig).toContain('source: "/:path((?!_next|docs|showcase|zh|.*\\\\..*).*)"');
     expect(nextConfig).toContain('destination: "/en/:path"');
   });
 
