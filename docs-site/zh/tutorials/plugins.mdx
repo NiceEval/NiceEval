@@ -135,10 +135,17 @@ export const projectMemory = definePlugin<ToolOptions>({
 - Eval 或 Experiment Plugin 的 resource 在物理 Sandbox 中 materialize 一次，并为每条真实
   Attempt 执行 prepare。
 - Group Plugin 只贡献 identity 与 requirements，不拥有 runtime resource。
-- Plugin 不会把评估组的数组位置解释成业务依赖；需要固定派发顺序时仍由
-  `defineEvalGroup({ evals: [...] })` 明确排列。
+- Plugin 不会把评估组的数组位置解释成业务依赖。当前组内按规范化 Eval ID 稳定派发，
+  `evals` 数组只声明成员；业务顺序仍未提供，不能靠调整数组位置表达前后依赖。
 
-完整的分组方式见[用评估组按顺序复用 Sandbox](/zh/tutorials/eval-groups)。
+`SandboxResource` 的一次 materialize 只覆盖它自己的下载。Agent Extension 中的远端
+Skill 或 Agent 原生 Plugin 仍可能按 Attempt 安装；它们不会因为使用同一台 Docker Sandbox
+就自动变成共享资源。固定版本的文档型 Skill 可以随项目 vendored，并用 `kind: "local"`
+上传，避免每题重复 clone；同时把上游 commit 写进 Plugin identity，更新内容时再提高
+`behaviorRevision`。真正必须在 Sandbox 内联网获取的文件或安装包，应建模成对应 receiver 的
+`SandboxResource`，由 Group 的物理生命周期持有。
+
+完整的分组方式见[用评估组复用 Sandbox](/zh/tutorials/eval-groups)。
 
 ## 先看计划，再运行最小切片
 

@@ -43,9 +43,10 @@ export async function loadConfigFile(
       // config 图可能进入 CJS package，tsx 在 Node builtin URL 上传播 namespace query
       // 会把 node:util 误当文件读取。query 只击穿上一次失败的入口 cache。
       mod = (await import(`${url}?niceeval-config=${Date.now()}`)) as { default?: Config };
-    // vitest 的 vite-node 等环境可能不认 namespaced register;退化普通 import
-    // (失去变更重载,不失去功能)。仍失败才是真错误。
-    } else if (options?.freshImport) {
+    // 部分宿主不让 namespaced loader 接管 TypeScript 扩展名；只有这一类装载能力错误
+    // 才能退化普通 import。用户配置或它的 import 图自己抛错时必须保留原错误，不能用
+    // ESM cache 里的上一代成功模块把当前损坏悄悄吞掉。
+    } else if (options?.freshImport && needsAdditionalTsxLoader(e)) {
       try {
         mod = (await import(pathToFileURL(path).href)) as { default?: Config };
       } catch {

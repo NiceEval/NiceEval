@@ -1,18 +1,18 @@
 ---
-title: "用评估组按顺序复用 Sandbox"
+title: "用评估组复用 Sandbox"
 sidebarTitle: "评估组"
-description: "用 defineEvalGroup 显式排列成员：同组 Attempt 串行复用一台 Sandbox，不同组继续并行，并把公共准备放到正确的 Sandbox Layer。"
+description: "用 defineEvalGroup 显式声明兼容成员：同组按稳定 ID 串行复用一台 Sandbox，不同组继续并行，并把公共准备放到正确的 Sandbox Layer。"
 ---
 
 一批评估用例共用同一套重工具链时，你通常同时需要两件事：不要为每道题重复创建
 Sandbox，也不要为了复用而把整批任务都降成串行。`defineEvalGroup()` 把兼容的评估用例
-排成一个明确的队列。同组真实派发的 Attempt 依次复用一台 Sandbox；不同组和未分组的
-评估用例仍可使用其它并发位。
+划入同一个物理复用边界。同组真实派发的 Attempt 稳定串行并复用一台 Sandbox；不同组和
+未分组的评估用例仍可使用其它并发位。
 
 | 你会得到什么 | 运行行为 |
 | --- | --- |
 | 公共准备少付几次 | Sandbox 创建和组级 `setup()` 每个组内实例只执行一次 |
-| 组内顺序固定 | `evals` 数组同时声明成员和顺序，同组同时只派发一条 Attempt |
+| 组内稳定串行 | Runner 按规范化 Eval ID 排序，同组同时只派发一条 Attempt |
 | 组间保留吞吐 | 不同组和未分组评估用例可以并行 |
 | 结果仍能单独比较 | 每条 Attempt 继续拥有自己的断言、判定、用量和文件改动 |
 
@@ -23,7 +23,7 @@ Sandbox，也不要为了复用而把整批任务都降成串行。`defineEvalGr
 
 | 任务 | 使用方式 |
 | --- | --- |
-| 一组或几组兼容的评估需要固定顺序，并希望其它组并行 | `defineEvalGroup()` |
+| 一组或几组兼容的评估需要复用同一台 Sandbox，并希望其它组并行 | `defineEvalGroup()` |
 | Experiment 选中的普通评估都能互换顺序，只想开几条复用泳道 | `sandboxReuse: true` |
 | 每条 Attempt 都需要全新的 `$HOME`、`/tmp` 和后台进程 | 不复用 Sandbox，只调并发 |
 
@@ -48,10 +48,10 @@ evals/
 NiceEval 只发现 `evals/**/eval-group.ts`。不要把文件写成 `*.eval-group.ts`，也不要放在
 `evals/eval-group.ts`；后者没有可用的组 ID。
 
-## 第 2 步：用工厂返回对象声明成员和顺序
+## 第 2 步：用工厂返回对象声明成员
 
 每个成员照常默认导出 `defineEval()` 或 `defineScoreEval()` 的返回值。组文件导入这些返回值，
-再按需要的派发顺序排列：
+再把兼容成员列入同一个闭合集合：
 
 ```ts
 // evals/workflow/eval-group.ts
@@ -67,6 +67,10 @@ export default defineEvalGroup({
 `evals` 必须非空。它只接受工厂实际返回的对象，不接受评估用例 ID、目录前缀、`glob`、
 `tag` 或 `selector`。NiceEval 也不会自动收集同目录文件；成员增删和顺序变化都会明确出现在
 `eval-group.ts` 的 diff 中。
+
+`evals` 数组只声明成员，不声明业务顺序。Runner 始终按规范化 Eval ID 稳定排序；只调整
+数组位置不会改变调度行为或组指纹。需要“先构建、后查询”这类结果依赖时，把两个步骤放进
+同一条 Eval。Eval Group 的业务排序 API 还没有实现。
 
 一条评估用例最多属于一个组，同一组也不能重复列出同一条。Experiment 与 CLI 仍负责筛选
 评估用例；选中 `workflow/02-query` 不会自动把 `workflow/01-index` 拉进本轮运行。
@@ -98,7 +102,7 @@ export default defineExperiment({
 评估组只支持 Sandbox 型 Agent 和支持复用的 Provider。Direct Agent 与 `localSandbox()`
 不能运行评估组。
 
-## 第 4 步：先检查组 ID 和顺序
+## 第 4 步：先检查组 ID 和选择结果
 
 先用 `--dry` 确认选择结果，不会创建 Sandbox：
 
@@ -110,17 +114,18 @@ npx niceeval exp codex --dry
 
 ```text
 plan: 2 个 attempt · 2 个 eval × 1 个运行配置 · attempts 1
-codex  workflow/01-index [group workflow #0]   new
-codex  workflow/02-query [group workflow #1]   new
+codex  workflow/01-index [group workflow]   new
+codex  workflow/02-query [group workflow]   new
 ```
 
-`#0`、`#1` 是成员在 `evals` 数组中的位置。顺序正确后再运行：
+确认两条选中 Eval 都显示相同的组 ID 后再运行：
 
 ```bash
 npx niceeval exp codex
 ```
 
-`attempts` 大于 1 时，NiceEval 先依次跑完第一个成员的各次 Attempt，再进入第二个成员。
+当前调度器按规范化 Eval ID 排列成员；`attempts` 大于 1 时，同一成员的各次 Attempt 连续
+进入组内泳道，再进入下一个成员。这只是稳定的调度规则，不是跨 Eval 的数据依赖契约。
 首过即停或结果沿用没有实际派发的槽位会直接跳过。
 
 ## 把公共准备放到评估组
@@ -169,7 +174,7 @@ export default defineEvalGroup({
 
 评估组也不会保证前一道题一定执行。结果沿用、CLI 过滤、预算耗尽和中断都可能让成员不进入
 本轮 Sandbox。后一项必须读取前一项文件时，把两个步骤写进同一条评估用例；只有共享状态本来
-就在 `workdir` 外，而且缺少前一项也能得到有效判定时，才让多条评估用例顺序使用它。
+就在 `workdir` 外，而且每条评估用例都能独立得到有效判定时，才把它们放进同一组复用。
 
 ## 常见错误
 
