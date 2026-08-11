@@ -1,48 +1,87 @@
-import { Effect, Either, Schema } from "effect";
 import { resolve as resolvePath } from "node:path";
+import { Effect, Either, Schema } from "effect";
 
 import {
   EvaluationRecordContractV1,
+  buildEligibilityAttachmentWriteV1,
+  buildMembershipProvenanceAttachmentWriteV1,
+  type AttemptEligibilityPayloadBuildErrorV1,
+  type DurationLimitV1,
+  type EqualityTokenV1,
   type EvaluationRecordContractInvalidV1,
   type EvaluationRecordOriginDraftMissingV1,
   type EvaluationRecordPlanInvalidV1,
   type EvaluationSlotV1,
   type EvaluationsPayloadV1,
+  type MembershipActionV1,
+  type MembershipGapV1,
+  type MembershipProvenancePayloadBuildErrorV1,
+  EXECUTION_DURATION_DOMAIN_V1,
 } from "../eval/record/index.ts";
-import {
-  evaluationRecordOriginInputFromAssertionsV1,
-  type SealedAttemptAssertionsV1,
-} from "./assertions.ts";
 import { SlotIdSchema, UtcMillisSchema } from "../record/codec/identifiers.ts";
-import type { AttemptId, SlotId, UtcMillis } from "../record/model/identifiers.ts";
-import type { AttemptLocator } from "../record/locator.ts";
+import {
+  compareCanonicalIdentity,
+  type AttemptId,
+  type SlotId,
+  type UtcMillis,
+} from "../record/model/identifiers.ts";
+import {
+  RecordEntropy,
+  type RecordEntropyService,
+} from "../record/platform/services.ts";
 import { makeRecordRoot, type RecordRootConstructionError } from "../record/platform/root.ts";
 import type { RecordReaderReadError } from "../record/reader/errors.ts";
-import type { FrozenRecordAttempt } from "../record/reader/types.ts";
 import { openRecordWriteSession } from "../record/writer/runtime.ts";
 import type {
   OpenRecordWriteSessionError,
   OpenRecordWriteSessionRequirements,
-  RecordAttemptDraft,
   RecordPublishReceipt,
   RecordRunDraft,
   RecordWriteError,
 } from "../record/writer/types.ts";
-import { digestOf } from "../sandbox/identity.ts";
 import { cacheKey } from "./fingerprint.ts";
 import { selectedEvalsForRun } from "./eval-selection.ts";
+import {
+  planProjectTargetReuseV1,
+  type ExecutionGapSlotV1,
+  type ExecutionReusePlanSlotV1,
+  type ExecutionReusePlanV1,
+  type ExecutionTargetV1,
+  type ProjectTargetPolicyV1,
+  type ProjectTargetReusePlanInvalidV1,
+  type TargetRunV1,
+  type TargetSlotV1,
+} from "./reuse-plan.ts";
+import {
+  evaluationRecordOriginInputFromAssertionsV1,
+  type SealedAttemptAssertionsV1,
+} from "./assertions.ts";
 import type {
   AgentRun,
   Attempt,
   DiscoveredEval,
+  EvalResult,
   RunnerRecordAttachmentProducers,
-  RunnerRecordCarryReferences,
 } from "./types.ts";
+
+/** Current, fully evaluated facts consumed by the Record-backed reuse policy. */
+export interface RunnerRecordReuseSlotInputV1 {
+  readonly inputIdentity: EqualityTokenV1;
+  readonly configIdentity: EqualityTokenV1;
+  readonly timeout?: DurationLimitV1;
+}
+
+/** The Runner supplies current identities; this coordinator never infers them from history. */
+export interface RunnerRecordReuseInputV1 {
+  readonly policy: ProjectTargetPolicyV1;
+  readonly slotsByKey: ReadonlyMap<string, RunnerRecordReuseSlotInputV1>;
+}
 
 interface PlannedRunnerRecordSlot {
   readonly evalDef: DiscoveredEval;
   readonly attempt: number;
   readonly slotId: SlotId;
+  readonly reuse: RunnerRecordReuseSlotInputV1;
 }
 
 interface PlannedRunnerRecordRun {
@@ -53,30 +92,40 @@ interface PlannedRunnerRecordRun {
   readonly slotEntries: readonly PlannedRunnerRecordSlot[];
 }
 
+type GapActionState = "pending" | "sealed" | "executed" | "not-dispatched" | "interrupted";
+
 interface ActiveRunnerRecordAttempt {
-  readonly public: RunnerRecordAttempt;
-  readonly draft: RecordAttemptDraft;
-  sealed: boolean;
+  /** Exact logical handle passed through seal and completion for this target Slot. */
+  readonly attempt: Attempt;
+  readonly sealed: SealedAttemptAssertionsV1;
+  public?: RunnerRecordAttempt;
+  completed: boolean;
 }
 
 interface RunnerRecordRun extends PlannedRunnerRecordRun {
   readonly draft: RecordRunDraft;
+  readonly target: TargetRunV1;
   readonly attempts: Map<SlotId, ActiveRunnerRecordAttempt>;
+  readonly planSlots: Map<SlotId, ExecutionReusePlanSlotV1>;
+  readonly gapActions: Map<SlotId, GapActionState>;
 }
 
 export interface RunnerRecordAttempt {
   readonly slotId: SlotId;
   readonly attemptId: AttemptId;
-  readonly locator: AttemptLocator;
+  readonly locator: RecordAttemptLocatorV1;
 }
 
-export interface RunnerRecordCarryGap {
-  readonly run: AgentRun;
-  readonly evalDef: DiscoveredEval;
-  readonly attempt: number;
-  readonly slotId: SlotId;
-  readonly reason: "carry-source-unavailable";
-}
+declare const recordAttemptLocatorV1Brand: unique symbol;
+
+/**
+ * Record v1's public locator is the complete exact durable AttemptId. It is
+ * intentionally separate from the historical short-hash `AttemptLocator`
+ * brand, whose encoder/decoder must not participate in this path.
+ */
+export type RecordAttemptLocatorV1 = string & {
+  readonly [recordAttemptLocatorV1Brand]: "RecordAttemptLocatorV1";
+};
 
 export interface RunnerRecordAttemptInvalid {
   readonly code: "runner-record-attempt-invalid";
@@ -84,6 +133,27 @@ export interface RunnerRecordAttemptInvalid {
 
 export interface RunnerRecordUnsealedAttempt {
   readonly code: "runner-record-attempt-unsealed";
+  readonly slotId: SlotId;
+}
+
+export interface RunnerRecordExecutionDurationInvalid {
+  readonly code: "runner-record-execution-duration-invalid";
+  readonly slotId: SlotId;
+}
+
+export interface RunnerRecordTargetInputMissing {
+  readonly code: "runner-record-target-input-missing";
+  readonly key: string;
+}
+
+export interface RunnerRecordTargetIdentityInvalid {
+  readonly code: "runner-record-target-identity-invalid";
+  readonly kind: "invocation" | "slot";
+  readonly value: string;
+}
+
+export interface RunnerRecordMembershipStateInvalid {
+  readonly code: "runner-record-membership-state-invalid";
   readonly slotId: SlotId;
 }
 
@@ -95,42 +165,49 @@ export type RunnerRecordWriteError<AttachmentError> =
   | RecordWriteError
   | RunnerRecordAttemptInvalid
   | RunnerRecordUnsealedAttempt
+  | RunnerRecordExecutionDurationInvalid
+  | RunnerRecordMembershipStateInvalid
+  | AttemptEligibilityPayloadBuildErrorV1
+  | MembershipProvenancePayloadBuildErrorV1
   | AttachmentError;
 
 export type RunnerRecordOpenError<AttachmentError> =
   | RecordRootConstructionError
   | OpenRecordWriteSessionError
   | RecordReaderReadError
+  | ProjectTargetReusePlanInvalidV1
+  | RunnerRecordTargetInputMissing
+  | RunnerRecordTargetIdentityInvalid
+  | RunnerRecordMembershipStateInvalid
   | EvaluationRecordContractInvalidV1
   | EvaluationRecordPlanInvalidV1
   | RecordWriteError
   | AttachmentError;
 
 export interface RunnerRecordCoordinator<AttachmentError, AttachmentRequirements> {
-  /** Allocate the one durable Attempt identity immediately before execution. */
-  readonly startAttempt: (
-    attempt: Attempt,
-  ) => Effect.Effect<
-    RunnerRecordAttempt,
-    RecordWriteError | RunnerRecordAttemptInvalid
-  >;
-  /** Write one sealed Assert-first origin to that pre-created Attempt. */
-  readonly captureSealed: (
-    recordAttempt: RunnerRecordAttempt,
-    attempt: Attempt,
-    sealed: SealedAttemptAssertionsV1,
-  ) => Effect.Effect<void, RunnerRecordWriteError<AttachmentError>, AttachmentRequirements>;
-  /**
-   * Adapter for runAttemptEffect's seal callback. It preserves typed write
-   * failures until publish, while allowing its Assert-first finalizer to finish
-   * the original interruption path without masking it.
-   */
-  readonly captureSealedOrMarkIncomplete: (
-    recordAttempt: RunnerRecordAttempt,
+  /** The complete policy result remains with the invocation coordinator. */
+  readonly reusePlan: ExecutionReusePlanV1;
+  /** Actual draft identities, one durable Record Run for each Experiment. */
+  readonly runIdsByExperiment: ReadonlyMap<string, string>;
+  /** Scheduler authority: only these Record-planned slots bypass fresh execution. */
+  readonly carriedAttemptsByKey: ReadonlyMap<string, ReadonlySet<number>>;
+  /** A legacy result may be displayed only when it names this exact reused Attempt. */
+  readonly carriedAttemptIdsBySlotKey: ReadonlyMap<string, AttemptId>;
+  /** Keeps the exact sealed Assert-first result until its real duration is known. */
+  readonly noteSealedOrMarkIncomplete: (
     attempt: Attempt,
     sealed: SealedAttemptAssertionsV1,
-  ) => Effect.Effect<void, never, AttachmentRequirements>;
-  /** Publish only after ordinary invocation completion and all started origins sealed. */
+  ) => Effect.Effect<void, never>;
+  /** Allocates and writes a fresh origin only after its execution result is complete. */
+  readonly completeAttemptOrMarkIncomplete: (
+    attempt: Attempt,
+    result: EvalResult,
+  ) => Effect.Effect<RunnerRecordAttempt | undefined, never, AttachmentRequirements>;
+  /** A gap that did not start has no Member, but remains explainable at publication. */
+  readonly markNotDispatched: (attempt: Attempt) => void;
+  /** Interruption never invents a Member for a gap that did not complete. */
+  readonly markInterrupted: () => void;
+  /** Writes one membership-provenance Attachment per target Run, then seals it. */
   readonly publish: (
     completedAt: number,
   ) => Effect.Effect<
@@ -138,22 +215,25 @@ export interface RunnerRecordCoordinator<AttachmentError, AttachmentRequirements
     RunnerRecordWriteError<AttachmentError>,
     AttachmentRequirements
   >;
-  /** Only exact frozen sources are admitted as carried Slots. */
-  readonly acceptedCarriedAttemptsByKey: ReadonlyMap<string, ReadonlySet<number>>;
-  /** Legacy carry candidates without an exact source are returned to dispatch. */
-  readonly carryGaps: readonly RunnerRecordCarryGap[];
 }
 
 function slotKey(evalId: string, attempt: number): string {
   return `${evalId}\u0000${attempt}`;
 }
 
-function asSlotId(value: string): SlotId {
+function slotAttemptKey(run: AgentRun, evalId: string, attempt: number): string {
+  return `${cacheKey(run, evalId)}\u0000${attempt}`;
+}
+
+function asSlotId(value: string): Either.Either<SlotId, RunnerRecordTargetIdentityInvalid> {
   const decoded = Schema.decodeUnknownEither(SlotIdSchema)(value);
-  if (Either.isLeft(decoded)) {
-    throw new Error(`Runner produced an invalid Record SlotId: ${value}`);
-  }
-  return decoded.right;
+  return Either.isLeft(decoded)
+    ? Either.left(Object.freeze({
+        code: "runner-record-target-identity-invalid" as const,
+        kind: "slot" as const,
+        value,
+      }))
+    : Either.right(decoded.right);
 }
 
 function asUtcMillis(value: number): UtcMillis {
@@ -164,12 +244,38 @@ function asUtcMillis(value: number): UtcMillis {
   return decoded.right;
 }
 
-function slotIdFor(input: {
-  readonly experimentId: string;
-  readonly evalId: string;
-  readonly attempt: number;
-}): SlotId {
-  return asSlotId(`slot-${digestOf(input)}`);
+/** Target Slot identity is invocation-local opaque data, minted through RecordEntropy. */
+function mintTargetSlotId(
+  entropy: RecordEntropyService,
+  used: ReadonlySet<string>,
+): Effect.Effect<SlotId, RunnerRecordTargetIdentityInvalid> {
+  return Effect.gen(function* () {
+    for (let attempts = 0; attempts < 16; attempts += 1) {
+      const uuid = yield* entropy.uuid;
+      const slotId = asSlotId(`slot-${uuid}`);
+      if (Either.isLeft(slotId)) return yield* Effect.fail(slotId.left);
+      if (!used.has(slotId.right)) return slotId.right;
+    }
+    return yield* Effect.fail(Object.freeze({
+      code: "runner-record-target-identity-invalid" as const,
+      kind: "slot" as const,
+      value: "RecordEntropy produced duplicate Slot identities",
+    }));
+  });
+}
+
+function mintInvocationId(
+  entropy: RecordEntropyService,
+): Effect.Effect<string, RunnerRecordTargetIdentityInvalid> {
+  return Effect.flatMap(entropy.uuid, (uuid) =>
+    uuid.length > 0 && uuid.length <= 255
+      ? Effect.succeed(uuid)
+      : Effect.fail(Object.freeze({
+          code: "runner-record-target-identity-invalid" as const,
+          kind: "invocation" as const,
+          value: uuid,
+        })),
+  );
 }
 
 function nonEmptySlots(
@@ -183,48 +289,70 @@ function nonEmptySlots(
 }
 
 /** The current Record locator is the exact durable AttemptId, not a hash alias. */
-function locatorForAttemptId(attemptId: AttemptId): AttemptLocator {
-  return `@${attemptId}` as AttemptLocator;
+function locatorForAttemptId(attemptId: AttemptId): RecordAttemptLocatorV1 {
+  return `@${attemptId}` as RecordAttemptLocatorV1;
 }
 
 function planRun(input: {
   readonly run: AgentRun;
   readonly evals: readonly DiscoveredEval[];
-}): PlannedRunnerRecordRun {
-  const slots = new Map<string, SlotId>();
-  const slotEntries: PlannedRunnerRecordSlot[] = [];
-  const definitions = selectedEvalsForRun(input.evals, input.run).map((evalDef) => {
-    const evaluationSlots: EvaluationSlotV1[] = [];
-    for (let attempt = 0; attempt < input.run.attempts; attempt += 1) {
-      const key = slotKey(evalDef.id, attempt);
-      const slotId = slotIdFor({
-        experimentId: input.run.experimentId,
-        evalId: evalDef.id,
-        attempt,
-      });
-      if (slots.has(key)) {
-        throw new Error(`Runner planned a duplicate Record Slot for ${evalDef.id}`);
+  readonly reuse: RunnerRecordReuseInputV1;
+  readonly usedSlotIds: Set<string>;
+  readonly entropy: RecordEntropyService;
+}): Effect.Effect<
+  PlannedRunnerRecordRun,
+  RunnerRecordTargetInputMissing | RunnerRecordTargetIdentityInvalid
+> {
+  return Effect.gen(function* () {
+    const slots = new Map<string, SlotId>();
+    const slotEntries: PlannedRunnerRecordSlot[] = [];
+    const definitions: EvaluationsPayloadV1["evaluations"][number][] = [];
+    for (const evalDef of selectedEvalsForRun(input.evals, input.run)) {
+      const slotInput = input.reuse.slotsByKey.get(cacheKey(input.run, evalDef.id));
+      if (slotInput === undefined) {
+        return yield* Effect.fail<RunnerRecordTargetInputMissing>({
+          code: "runner-record-target-input-missing",
+          key: cacheKey(input.run, evalDef.id),
+        });
       }
-      slots.set(key, slotId);
-      slotEntries.push(Object.freeze({ evalDef, attempt, slotId }));
-      evaluationSlots.push(Object.freeze({ slotId, attempt }));
+      const evaluationSlots: EvaluationSlotV1[] = [];
+      for (let attempt = 0; attempt < input.run.attempts; attempt += 1) {
+        const key = slotKey(evalDef.id, attempt);
+        const slotId = yield* mintTargetSlotId(input.entropy, input.usedSlotIds);
+        input.usedSlotIds.add(slotId);
+        if (slots.has(key)) {
+          return yield* Effect.fail<RunnerRecordTargetIdentityInvalid>({
+            code: "runner-record-target-identity-invalid",
+            kind: "slot",
+            value: `duplicate ${key}`,
+          });
+        }
+        slots.set(key, slotId);
+        slotEntries.push(Object.freeze({ evalDef, attempt, slotId, reuse: slotInput }));
+        evaluationSlots.push(Object.freeze({ slotId, attempt }));
+      }
+      definitions.push(Object.freeze({
+        evalId: evalDef.id,
+        evaluationKind: evalDef.evaluationKind,
+        slots: nonEmptySlots(evaluationSlots),
+      }));
     }
-    return Object.freeze({
-      evalId: evalDef.id,
-      evaluationKind: evalDef.evaluationKind,
-      slots: nonEmptySlots(evaluationSlots),
-    });
-  });
 
-  return Object.freeze({
-    run: input.run,
-    expectedSlots: Object.freeze([...slots.values()].sort()),
-    evaluations: Object.freeze({
-      experimentId: input.run.experimentId,
-      evaluations: Object.freeze(definitions),
-    }),
-    slots,
-    slotEntries: Object.freeze(slotEntries),
+    return Object.freeze({
+      run: input.run,
+      // Record Core stores the Run denominator in canonical identity order;
+      // target slot IDs are entropy-backed and therefore cannot rely on
+      // execution/ordinal construction order for that invariant.
+      expectedSlots: Object.freeze(
+        slotEntries.map((entry) => entry.slotId).sort(compareCanonicalIdentity),
+      ),
+      evaluations: Object.freeze({
+        experimentId: input.run.experimentId,
+        evaluations: Object.freeze(definitions),
+      }),
+      slots,
+      slotEntries: Object.freeze(slotEntries),
+    });
   });
 }
 
@@ -239,18 +367,55 @@ function unsealedAttempt(slotId: SlotId): RunnerRecordUnsealedAttempt {
   });
 }
 
+function executionDurationInvalid(slotId: SlotId): RunnerRecordExecutionDurationInvalid {
+  return Object.freeze({
+    code: "runner-record-execution-duration-invalid" as const,
+    slotId,
+  });
+}
+
+function membershipStateInvalid(slotId: SlotId): RunnerRecordMembershipStateInvalid {
+  return Object.freeze({
+    code: "runner-record-membership-state-invalid" as const,
+    slotId,
+  });
+}
+
+function gapFromPlan(slot: ExecutionGapSlotV1): MembershipGapV1 {
+  return Object.freeze({
+    reason: slot.reason,
+    scope: slot.scope,
+    issues: Object.freeze([...slot.issues]),
+    ...(slot.sourceBarrier === undefined ? {} : { sourceBarrier: slot.sourceBarrier }),
+  });
+}
+
+function executionDuration(result: EvalResult): number | undefined {
+  // runAttemptEffect's final map guarantees executionMs for executed attempts.
+  const duration = result.executionMs;
+  return typeof duration === "number" && Number.isFinite(duration) && duration >= 0
+    ? duration
+    : undefined;
+}
+
+function resultMatchesAttempt(result: EvalResult, attempt: Attempt): boolean {
+  return result.id === attempt.evalDef.id
+    && result.attempt === attempt.attempt
+    && result.experimentId === attempt.run.experimentId
+    && result.fingerprint === attempt.fingerprint
+    && result.configHash === attempt.configHash;
+}
+
 /**
- * Opens one scoped Record writer before expensive work. It intentionally never
- * searches historic Runs: references are accepted only when the carry planner
- * supplies an exact FrozenRecordAttempt from this session's frozen view.
+ * Opens one scoped Record writer before expensive work, allocates all target
+ * identities, and uses only its frozen view to decide exact references.
  */
 export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequirements>(input: {
   readonly niceevalRoot: string;
   readonly startedAt: number;
   readonly evals: readonly DiscoveredEval[];
   readonly runs: readonly AgentRun[];
-  readonly carriedAttemptsByKey: ReadonlyMap<string, ReadonlySet<number>>;
-  readonly carryReferences?: RunnerRecordCarryReferences;
+  readonly reuse: RunnerRecordReuseInputV1;
   readonly attachments?: RunnerRecordAttachmentProducers<
     AttachmentError,
     AttachmentRequirements
@@ -261,183 +426,364 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
   OpenRecordWriteSessionRequirements | AttachmentRequirements
 > {
   return Effect.gen(function* () {
+    // Product scope is one selected Experiment to one durable Run. Reject this
+    // before opening a writer so a duplicate input cannot leave partial drafts
+    // or silently overwrite the public run-id mapping.
+    const experimentIds = new Set<string>();
+    for (const run of input.runs) {
+      if (experimentIds.has(run.experimentId)) {
+        return yield* Effect.fail<RunnerRecordTargetIdentityInvalid>({
+          code: "runner-record-target-identity-invalid",
+          kind: "invocation",
+          value: `duplicate experimentId ${JSON.stringify(run.experimentId)}`,
+        });
+      }
+      experimentIds.add(run.experimentId);
+    }
     const rootResult = makeRecordRoot(resolvePath(input.niceevalRoot, "record"));
     if (Either.isLeft(rootResult)) {
       return yield* Effect.fail(rootResult.left);
     }
 
     const session = yield* openRecordWriteSession({ root: rootResult.right });
-    const byRun = new Map<AgentRun, RunnerRecordRun>();
-    const carryGaps: RunnerRecordCarryGap[] = [];
-    const acceptedCarriedAttemptsByKey = new Map<string, Set<number>>();
+    const entropy = yield* RecordEntropy;
+    const plannedRuns: PlannedRunnerRecordRun[] = [];
+    const usedSlotIds = new Set<string>();
+    for (const run of input.runs) {
+      const planned = yield* planRun({
+        run,
+        evals: input.evals,
+        reuse: input.reuse,
+        usedSlotIds,
+        entropy,
+      });
+      plannedRuns.push(planned);
+    }
 
-    for (const planned of input.runs.map((run) => planRun({ run, evals: input.evals }))) {
+    const byRun = new Map<AgentRun, RunnerRecordRun>();
+    const byRecordRunId = new Map<string, RunnerRecordRun>();
+    const runIdsByExperiment = new Map<string, string>();
+    const targetRuns: TargetRunV1[] = [];
+    for (const planned of plannedRuns) {
       const draft = yield* session.createRun({
         startedAt: asUtcMillis(input.startedAt),
         expectedSlots: planned.expectedSlots,
       });
+      const target: TargetRunV1 = Object.freeze({
+        runId: draft.runId,
+        experimentId: planned.run.experimentId,
+        startedAt: asUtcMillis(input.startedAt),
+        slots: Object.freeze(planned.slotEntries.map((entry) => Object.freeze({
+          runId: draft.runId,
+          slotId: entry.slotId,
+          experimentId: planned.run.experimentId,
+          evalId: entry.evalDef.id,
+          attempt: entry.attempt,
+          inputIdentity: entry.reuse.inputIdentity,
+          configIdentity: entry.reuse.configIdentity,
+          ...(entry.reuse.timeout === undefined ? {} : { timeout: entry.reuse.timeout }),
+        } satisfies TargetSlotV1))),
+      });
       const recordRun: RunnerRecordRun = {
         ...planned,
         draft,
+        target,
         attempts: new Map(),
+        planSlots: new Map(),
+        gapActions: new Map(),
       };
+      byRun.set(planned.run, recordRun);
+      byRecordRunId.set(draft.runId, recordRun);
+      runIdsByExperiment.set(planned.run.experimentId, draft.runId);
+      targetRuns.push(target);
+    }
 
-      const references: Array<{ readonly slotId: SlotId; readonly attempt: FrozenRecordAttempt }> = [];
-      for (const entry of planned.slotEntries) {
-        const carried = input.carriedAttemptsByKey.get(cacheKey(planned.run, entry.evalDef.id));
-        if (!carried?.has(entry.attempt)) continue;
-        const source = input.carryReferences === undefined
-          ? undefined
-          : yield* input.carryReferences.sourceForCarriedSlot({
-              run: planned.run,
-              evalDef: entry.evalDef,
-              attempt: entry.attempt,
-              slotId: entry.slotId,
-              view: session.view,
-            });
-        if (source === undefined) {
-          carryGaps.push(Object.freeze({
-            run: planned.run,
-            evalDef: entry.evalDef,
-            attempt: entry.attempt,
-            slotId: entry.slotId,
-            reason: "carry-source-unavailable" as const,
-          }));
-        } else {
-          references.push(Object.freeze({ slotId: entry.slotId, attempt: source }));
-          const key = cacheKey(planned.run, entry.evalDef.id);
-          const accepted = acceptedCarriedAttemptsByKey.get(key) ?? new Set<number>();
-          accepted.add(entry.attempt);
-          acceptedCarriedAttemptsByKey.set(key, accepted);
-        }
+    const target: ExecutionTargetV1 = Object.freeze({
+      invocationId: yield* mintInvocationId(entropy),
+      runs: Object.freeze(targetRuns),
+    });
+    const reusePlan = yield* planProjectTargetReuseV1({
+      view: session.view,
+      target,
+      policy: input.reuse.policy,
+    });
+
+    const carriedAttemptsByKey = new Map<string, Set<number>>();
+    const carriedAttemptIdsBySlotKey = new Map<string, AttemptId>();
+    for (const slot of reusePlan.slots) {
+      const recordRun = byRecordRunId.get(slot.runId);
+      if (recordRun === undefined) {
+        return yield* Effect.fail(membershipStateInvalid(slot.slotId));
       }
+      recordRun.planSlots.set(slot.slotId, slot);
+      if (slot.state === "gap") {
+        recordRun.gapActions.set(slot.slotId, "pending");
+        continue;
+      }
+      const entry = recordRun.slotEntries.find((candidate) => candidate.slotId === slot.slotId);
+      if (entry === undefined) return yield* Effect.fail(membershipStateInvalid(slot.slotId));
+      const key = cacheKey(recordRun.run, entry.evalDef.id);
+      const carried = carriedAttemptsByKey.get(key) ?? new Set<number>();
+      carried.add(entry.attempt);
+      carriedAttemptsByKey.set(key, carried);
+      carriedAttemptIdsBySlotKey.set(
+        slotAttemptKey(recordRun.run, entry.evalDef.id, entry.attempt),
+        slot.attemptId,
+      );
+    }
 
+    for (const recordRun of byRun.values()) {
+      const references = recordRun.target.slots.flatMap((targetSlot) => {
+        const slot = recordRun.planSlots.get(targetSlot.slotId);
+        return slot?.state === "reuse"
+          ? [Object.freeze({ slotId: targetSlot.slotId, attempt: slot.sourceAttempt })]
+          : [];
+      });
       const runWrites = yield* Effect.sync(() =>
-        input.attachments?.runWrites?.({ run: planned.run, evals: input.evals }) ?? [],
+        input.attachments?.runWrites?.({ run: recordRun.run, evals: input.evals }) ?? [],
       );
       const plan = yield* EvaluationRecordContractV1.preparePlan({
         startedAt: asUtcMillis(input.startedAt),
         completedAt: asUtcMillis(input.startedAt),
-        expectedSlots: planned.expectedSlots,
-        evaluations: planned.evaluations,
+        expectedSlots: recordRun.expectedSlots,
+        evaluations: recordRun.evaluations,
         originAttempts: [],
         references,
         runWrites,
       });
-      yield* EvaluationRecordContractV1.writePlanRunToDraft(draft, plan);
-      yield* EvaluationRecordContractV1.writePlanReferencesToDraft(draft, plan);
-      byRun.set(planned.run, recordRun);
+      yield* EvaluationRecordContractV1.writePlanRunToDraft(recordRun.draft, plan);
+      yield* EvaluationRecordContractV1.writePlanReferencesToDraft(recordRun.draft, plan);
     }
 
     let writeFailure: { readonly error: RunnerRecordWriteError<AttachmentError> } | undefined;
+    const noteWriteFailure = (error: RunnerRecordWriteError<AttachmentError>): void => {
+      if (writeFailure === undefined) writeFailure = Object.freeze({ error });
+    };
 
-    const startAttempt = (
-      attempt: Attempt,
-    ): Effect.Effect<RunnerRecordAttempt, RecordWriteError | RunnerRecordAttemptInvalid> =>
-      Effect.suspend<
-        RunnerRecordAttempt,
-        RecordWriteError | RunnerRecordAttemptInvalid,
-        never
-      >(() => {
-        const recordRun = byRun.get(attempt.run);
-        const slotId = recordRun?.slots.get(slotKey(attempt.evalDef.id, attempt.attempt));
-        if (recordRun === undefined || slotId === undefined) {
-          return Effect.fail(attemptInvalid());
-        }
-        const active = recordRun.attempts.get(slotId);
-        if (active !== undefined) return Effect.succeed(active.public);
-        return Effect.map(recordRun.draft.createAttempt({ slotId }), (draftAttempt) => {
-          const issued: RunnerRecordAttempt = Object.freeze({
-            slotId,
-            attemptId: draftAttempt.attemptId,
-            locator: locatorForAttemptId(draftAttempt.attemptId),
-          });
-          recordRun.attempts.set(slotId, {
-            public: issued,
-            draft: draftAttempt,
-            sealed: false,
-          });
-          return issued;
-        });
-      });
+    const recordRunForAttempt = (attempt: Attempt): RunnerRecordRun | undefined =>
+      byRun.get(attempt.run);
+    const targetSlotForAttempt = (attempt: Attempt): {
+      readonly recordRun: RunnerRecordRun;
+      readonly slotId: SlotId;
+      readonly plan: ExecutionReusePlanSlotV1;
+    } | undefined => {
+      const recordRun = recordRunForAttempt(attempt);
+      if (recordRun === undefined) return undefined;
+      const slotId = recordRun.slots.get(slotKey(attempt.evalDef.id, attempt.attempt));
+      if (slotId === undefined) return undefined;
+      const plan = recordRun.planSlots.get(slotId);
+      return plan === undefined ? undefined : { recordRun, slotId, plan };
+    };
 
-    const captureSealed = (
-      recordAttempt: RunnerRecordAttempt,
+    const noteSealedOrMarkIncomplete = (
       attempt: Attempt,
       sealed: SealedAttemptAssertionsV1,
+    ): Effect.Effect<void, never> => Effect.sync(() => {
+      const targetSlot = targetSlotForAttempt(attempt);
+      if (
+        targetSlot === undefined
+        || targetSlot.plan.state !== "gap"
+        || targetSlot.recordRun.gapActions.get(targetSlot.slotId) !== "pending"
+        || targetSlot.recordRun.attempts.has(targetSlot.slotId)
+      ) {
+        noteWriteFailure(attemptInvalid());
+        return;
+      }
+      targetSlot.recordRun.attempts.set(targetSlot.slotId, {
+        attempt,
+        sealed,
+        completed: false,
+      });
+      targetSlot.recordRun.gapActions.set(targetSlot.slotId, "sealed");
+    });
+
+    const completeAttempt = (
+      attempt: Attempt,
+      result: EvalResult,
     ): Effect.Effect<
-      void,
+      RunnerRecordAttempt,
       RunnerRecordWriteError<AttachmentError>,
       AttachmentRequirements
     > => Effect.suspend<
-      void,
+      RunnerRecordAttempt,
       RunnerRecordWriteError<AttachmentError>,
       AttachmentRequirements
     >(() => {
-      const recordRun = byRun.get(attempt.run);
-      const active = recordRun?.attempts.get(recordAttempt.slotId);
+      const targetSlot = targetSlotForAttempt(attempt);
+      if (targetSlot === undefined) return Effect.fail(attemptInvalid());
+      const active = targetSlot.recordRun.attempts.get(targetSlot.slotId);
       if (
-        recordRun === undefined ||
-        active === undefined ||
-        active.public !== recordAttempt ||
-        active.public.attemptId !== recordAttempt.attemptId
+        targetSlot.plan.state !== "gap"
+        || active === undefined
+        || targetSlot.recordRun.gapActions.get(targetSlot.slotId) !== "sealed"
+        || active.attempt !== attempt
+        || active.completed
+        || !resultMatchesAttempt(result, attempt)
       ) {
         return Effect.fail(attemptInvalid());
       }
-      if (active.sealed) return Effect.fail(attemptInvalid());
-      active.sealed = true;
+      const duration = executionDuration(result);
+      if (duration === undefined) return Effect.fail(executionDurationInvalid(targetSlot.slotId));
+
+      const eligibility = buildEligibilityAttachmentWriteV1({
+        reuseContract: input.reuse.policy.reuseContract,
+        inputIdentity: targetSlot.plan.inputIdentity,
+        configIdentity: targetSlot.plan.configIdentity,
+        executionDuration: Object.freeze({
+          domain: EXECUTION_DURATION_DOMAIN_V1,
+          milliseconds: duration,
+        }),
+      });
+      if (Either.isLeft(eligibility)) return Effect.fail(eligibility.left);
 
       return Effect.gen(function* () {
         const writes = yield* Effect.sync(() =>
-          input.attachments?.attemptWrites?.({ attempt, sealed }) ?? [],
+          input.attachments?.attemptWrites?.({ attempt, sealed: active.sealed }) ?? [],
         );
         const origin = evaluationRecordOriginInputFromAssertionsV1(
-          recordAttempt.slotId,
-          sealed,
+          targetSlot.slotId,
+          active.sealed,
         );
         const plan = yield* EvaluationRecordContractV1.preparePlan({
           startedAt: asUtcMillis(input.startedAt),
           completedAt: asUtcMillis(Date.now()),
-          expectedSlots: recordRun.expectedSlots,
-          evaluations: recordRun.evaluations,
-          originAttempts: [
-            Object.freeze({
-              ...origin,
-              ...(writes.length === 0 ? {} : { writes }),
-            }),
-          ],
+          expectedSlots: targetSlot.recordRun.expectedSlots,
+          evaluations: targetSlot.recordRun.evaluations,
+          originAttempts: [Object.freeze({
+            ...origin,
+            writes: Object.freeze([eligibility.right, ...writes]),
+          })],
         });
-        yield* EvaluationRecordContractV1.writePlanOriginsToAttempts(
-          new Map([[recordAttempt.slotId, active.draft]]),
-          plan,
+        return yield* Effect.uninterruptible(
+          Effect.gen(function* () {
+            const draft = yield* targetSlot.recordRun.draft.createAttempt({
+              slotId: targetSlot.slotId,
+            });
+            const issued: RunnerRecordAttempt = Object.freeze({
+              slotId: targetSlot.slotId,
+              attemptId: draft.attemptId,
+              locator: locatorForAttemptId(draft.attemptId),
+            });
+            yield* EvaluationRecordContractV1.writePlanOriginsToAttempts(
+              new Map([[targetSlot.slotId, draft]]),
+              plan,
+            );
+            active.public = issued;
+            active.completed = true;
+            targetSlot.recordRun.gapActions.set(targetSlot.slotId, "executed");
+            return issued;
+          }),
         );
       });
     });
 
-    const captureSealedOrMarkIncomplete = (
-      recordAttempt: RunnerRecordAttempt,
+    const completeAttemptOrMarkIncomplete = (
       attempt: Attempt,
-      sealed: SealedAttemptAssertionsV1,
-    ): Effect.Effect<void, never, AttachmentRequirements> =>
-      captureSealed(recordAttempt, attempt, sealed).pipe(
+      result: EvalResult,
+    ): Effect.Effect<RunnerRecordAttempt | undefined, never, AttachmentRequirements> =>
+      completeAttempt(attempt, result).pipe(
         Effect.catchAll((error) =>
           Effect.sync(() => {
-            if (writeFailure === undefined) writeFailure = Object.freeze({ error });
+            noteWriteFailure(error);
+            return undefined;
           }),
         ),
       );
 
+    const markNotDispatched = (attempt: Attempt): void => {
+      const targetSlot = targetSlotForAttempt(attempt);
+      if (targetSlot === undefined || targetSlot.plan.state !== "gap") return;
+      if (targetSlot.recordRun.gapActions.get(targetSlot.slotId) === "pending") {
+        targetSlot.recordRun.gapActions.set(targetSlot.slotId, "not-dispatched");
+      }
+    };
+
+    const markInterrupted = (): void => {
+      for (const recordRun of byRun.values()) {
+        for (const [slotId, state] of recordRun.gapActions) {
+          if (state === "pending" || state === "sealed") {
+            recordRun.gapActions.set(slotId, "interrupted");
+          }
+        }
+      }
+    };
+
+    const membershipActionsFor = (
+      recordRun: RunnerRecordRun,
+    ): Either.Either<readonly MembershipActionV1[], RunnerRecordWriteError<AttachmentError>> => {
+      const actions: MembershipActionV1[] = [];
+      for (const targetSlot of recordRun.target.slots) {
+        const slot = recordRun.planSlots.get(targetSlot.slotId);
+        if (slot === undefined) return Either.left(membershipStateInvalid(targetSlot.slotId));
+        if (slot.state === "reuse") {
+          actions.push(Object.freeze({
+            action: "carried" as const,
+            slotId: slot.slotId,
+            attemptId: slot.attemptId,
+            origin: slot.origin,
+            sourceBarrier: slot.sourceBarrier,
+            comparisons: Object.freeze([...slot.comparisons]),
+          }));
+          continue;
+        }
+
+        const state = recordRun.gapActions.get(slot.slotId) ?? "pending";
+        const gap = gapFromPlan(slot);
+        if (state === "sealed") return Either.left(unsealedAttempt(slot.slotId));
+        if (state === "executed") {
+          const active = recordRun.attempts.get(slot.slotId);
+          if (active === undefined || active.public === undefined || !active.completed) {
+            return Either.left(membershipStateInvalid(slot.slotId));
+          }
+          actions.push(Object.freeze({
+            action: "executed" as const,
+            slotId: slot.slotId,
+            attemptId: active.public.attemptId,
+            gap,
+            comparisons: Object.freeze([...slot.comparisons]),
+          }));
+          continue;
+        }
+        actions.push(Object.freeze({
+          action: state === "interrupted" ? "interrupted" as const : "not-dispatched" as const,
+          slotId: slot.slotId,
+          gap,
+          comparisons: Object.freeze([...slot.comparisons]),
+        }));
+      }
+      return Either.right(Object.freeze(actions));
+    };
+
     return Object.freeze({
-      startAttempt,
-      captureSealed,
-      captureSealedOrMarkIncomplete,
-      publish: (completedAt: number) =>
+      reusePlan,
+      runIdsByExperiment: new Map(runIdsByExperiment),
+      carriedAttemptsByKey: new Map(
+        [...carriedAttemptsByKey].map(([key, attempts]) =>
+          [key, new Set(attempts)] as const,
+        ),
+      ),
+      carriedAttemptIdsBySlotKey: new Map(carriedAttemptIdsBySlotKey),
+      noteSealedOrMarkIncomplete,
+      completeAttemptOrMarkIncomplete,
+      markNotDispatched,
+      markInterrupted,
+      publish: (completedAt: number): Effect.Effect<
+        readonly RecordPublishReceipt[],
+        RunnerRecordWriteError<AttachmentError>,
+        AttachmentRequirements
+      > =>
         Effect.gen(function* () {
           if (writeFailure !== undefined) return yield* Effect.fail(writeFailure.error);
           for (const recordRun of byRun.values()) {
-            for (const [slotId, active] of recordRun.attempts) {
-              if (!active.sealed) return yield* Effect.fail(unsealedAttempt(slotId));
-            }
+            const actions = membershipActionsFor(recordRun);
+            if (Either.isLeft(actions)) return yield* Effect.fail(actions.left);
+            const provenance = buildMembershipProvenanceAttachmentWriteV1({
+              policy: reusePlan.policy,
+              effectiveOptions: reusePlan.effectiveOptions,
+              actions: actions.right,
+            });
+            if (Either.isLeft(provenance)) return yield* Effect.fail(provenance.left);
+            yield* recordRun.draft.record(provenance.right);
           }
           return yield* Effect.forEach(
             [...byRun.values()],
@@ -445,12 +791,6 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
             { concurrency: 1 },
           );
         }),
-      acceptedCarriedAttemptsByKey: new Map(
-        [...acceptedCarriedAttemptsByKey].map(([key, attempts]) =>
-          [key, new Set(attempts)] as const,
-        ),
-      ),
-      carryGaps: Object.freeze(carryGaps),
     });
   });
 }

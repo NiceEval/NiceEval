@@ -582,10 +582,11 @@ export function planProjectTarget(
   evals: readonly DiscoveredEval[],
   agentRuns: readonly AgentRun[],
   configTimeoutMs?: number,
-  options: Pick<CarryPlanOptions, "configJudge"> = {},
+  options: Pick<CarryPlanOptions, "configJudge" | "keepSandbox"> = {},
 ): Effect.Effect<ProjectTargetPlan, SandboxRunPlanningError> {
   return Effect.flatMap(
     prepareRunSandboxes(evals, agentRuns, liveSandboxPlanningServices(), {
+      ...(options.keepSandbox === undefined ? {} : { keepSandbox: options.keepSandbox }),
       ...(configTimeoutMs === undefined ? {} : { configTimeoutMs }),
     }),
     (preparedPairs) => Effect.promise(() => planProjectTargetPrepared(preparedPairs, options)),
@@ -594,7 +595,7 @@ export function planProjectTarget(
 
 async function planProjectTargetPrepared(
   preparedPairs: readonly PreparedRunPair[],
-  options: Pick<CarryPlanOptions, "configJudge">,
+  options: Pick<CarryPlanOptions, "configJudge" | "keepSandbox">,
 ): Promise<ProjectTargetPlan> {
   const preparedPairsByKey = indexPreparedPairs(preparedPairs);
   const sourceCache = new Map<string, Promise<string>>();

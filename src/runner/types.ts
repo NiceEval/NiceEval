@@ -1216,7 +1216,11 @@ export interface RunOptions<RecordError = never, RecordRequirements = never> {
   niceevalRoot?: string;
   /** CLI 为 `niceeval exp` 提供的持久 Session 索引；只观察调度事件，不参与锁/闸判定。 */
   session?: import("./session.ts").SessionTracker;
-  /** @internal 测试/嵌入式编排可预分配 Run 身份；CLI 省略时 runner 为每个 Experiment 生成 UUID。 */
+  /**
+   * @deprecated Record v1 drafts are the only Run-identity authority. This
+   * legacy injection is ignored by `runEvals`; callers must observe
+   * `InvocationShape.runIds` instead.
+   */
   runIds?: ReadonlyMap<string, string>;
   /**
    * 已注册的 reporter,携带 name/required 元数据(见 `ReporterRegistration`)。这是内部编排
@@ -1230,19 +1234,23 @@ export interface RunOptions<RecordError = never, RecordRequirements = never> {
   /** Run 级 Sandbox 镜像 lookup/build 并发；省略时安全默认 2。 */
   maxBuildConcurrency?: number;
   signal?: AbortSignal;
-  /** 上次运行的结果。verdict 为 passed/failed 的 (experimentId, evalId) 组合跳过重跑,结果直接合入本次汇总。 */
+  /**
+   * Legacy summary/display input. Record v1 reuse never derives dispatch or
+   * Members from these objects; a result is displayed only after the Runner
+   * has selected the same exact frozen Attempt through project-target/v1.
+   */
   priorResults?: EvalResult[];
   /**
-   * 预算好的携入计划(见 fingerprint.ts 的 planCarry)。cli.ts 为了让 live 表格提前知道
-   * 哪些行会被携入,必须在构建 liveRows 之前算一次;传进来后 runEvals 直接复用,不重算
-   * 一遍(否则两处各自算一次,不仅重复 I/O,还留下"两边判断可能不一致"的隐患)。
-   * 省略时 runEvals 自己算(测试直调等场景)。
+   * Compatibility input retained for callers that still prepare legacy live
+   * display. `runEvals` does not use it for reuse or Record references; its
+   * physical Sandbox plan comes from planProjectTarget and reuse authority
+   * comes solely from the frozen Record view.
    */
   carryPlan?: import("./fingerprint.ts").CarryPlan;
   /**
-   * Exact carry/adoption sources from the planning boundary. If this is absent
-   * or declines a carried Slot, the Runner records a named carry gap and
-   * dispatches that Slot fresh rather than guessing a historical Attempt.
+   * @deprecated Record v1 resolves exact frozen sources itself from
+   * RecordWriteSession.view. Retained only for source compatibility with
+   * callers compiled against the former boundary.
    */
   recordCarryReferences?: RunnerRecordCarryReferences;
   /** Linked plugin RecordAttachment producers for this invocation. */

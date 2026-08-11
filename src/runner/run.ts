@@ -2,11 +2,10 @@
 // 职责只有编排:指纹缓存在 fingerprint.ts,单 attempt 生命周期在 attempt.ts,
 // reporter 编排 / 汇总在 report.ts，Direct Agent 的 Sandbox 占位适配器在 direct-agent-sandbox.ts。
 
-import { randomUUID } from "node:crypto";
 import { Effect, Cause, Data, Either, Exit, Option } from "effect";
 import { probeJudge } from "../assertions/judge.ts";
 import { t } from "../i18n/index.ts";
-import { cacheKey, computeConfigHash, planCarry } from "./fingerprint.ts";
+import { cacheKey, computeConfigHash, planProjectTarget } from "./fingerprint.ts";
 import { agentInstallPlansForRun } from "./config-identity.ts";
 import { OtelReceiverPool } from "../o11y/otlp/turn-otel.ts";
 import {
@@ -35,7 +34,6 @@ import type {
   Attempt,
   AttemptError,
   ExperimentHookContext,
-  FingerprintMigration,
   LifecyclePhase,
   AttemptRef,
   RunOptions,
@@ -71,6 +69,11 @@ import { selectedEvalsForRun } from "./eval-selection.ts";
 import { registerExperimentTeardown, unregisterExperimentTeardown } from "./experiment-cleanup-registry.ts";
 import { withCleanupTimeout } from "./cleanup-timeout.ts";
 import { resolveAttemptTimeout } from "./timeout.ts";
+import { EXECUTION_DURATION_DOMAIN_V1 } from "../eval/record/eligibility.ts";
+import {
+  projectTargetPolicyIdentityV1,
+  type ProjectTargetPolicyV1,
+} from "./reuse-plan.ts";
 import { hostname } from "node:os";
 import {
   isOrphanedTeardownRegistration,
@@ -89,7 +92,11 @@ import {
 } from "./lock.ts";
 import { acquireGateSlot, type GateLeaseClaim, type GateLeaseRecord } from "./gate-lease.ts";
 import type { RunManifests } from "../record/manifest.ts";
-import { openRunnerRecordCoordinator } from "./record.ts";
+import {
+  openRunnerRecordCoordinator,
+  type RecordAttemptLocatorV1,
+  type RunnerRecordReuseSlotInputV1,
+} from "./record.ts";
 
 export class RunModeConflictError extends Data.TaggedError("RunModeConflictError")<{
   readonly keepSandbox: NonNullable<RunOptions["keepSandbox"]>;
@@ -104,6 +111,15 @@ function feedbackIdentity(a: Attempt): AttemptRef {
 }
 function feedbackWho(a: Attempt): string {
   return runWho({ agentName: a.run.agent.name, model: a.run.model, experimentId: a.run.experimentId });
+}
+
+/**
+ * Feedback still exposes the historical branded locator type. This is a
+ * temporary brand-only bridge for the exact Record v1 `@AttemptId` string;
+ * it does not invoke the old locator encoder or decoder.
+ */
+function feedbackLocatorFromRecordV1(locator: RecordAttemptLocatorV1): AttemptLocator {
+  return String(locator) as AttemptLocator;
 }
 
 function attemptIdentityKey(
@@ -206,10 +222,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   const snapshotStartedAt = startedAt;
   const t0 = Date.now();
   const niceevalRoot = opts.niceevalRoot ?? `${process.cwd()}/.niceeval`;
-  const runIds = new Map(opts.runIds ?? []);
-  for (const run of opts.agentRuns) {
-    if (!runIds.has(run.experimentId)) runIds.set(run.experimentId, randomUUID());
-  }
 
   // `--keep-sandbox` 要把单条 Attempt 的最终现场转交给用户，
   // `sandboxReuse` 则让整个 Invocation 的 pool 继续拥有并在收尾时销毁同一个 Case。
@@ -233,67 +245,94 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     }
   }
 
-  // 跨实验结果复用:上次 passed 或 failed 且 fingerprint 匹配的 (experimentId, evalId) 组合
-  // 直接携入 —— 两者都是"跑完了、判定确定"的终态,没有理由重花一次 agent/sandbox 成本去
-  // 复现同一个已知结果。errored 是框架/环境层面的不确定失败(超时、沙箱挂了、judge 探测失败
-  // 等),判定本身不可信,必须重跑。跳过/fingerprint 不匹配同样重跑。--force 跳过此逻辑
-  // (cli.ts 在 --force 时不传 priorResults,也不算 carryPlan)。
-  // carryPlan 优先用调用方(cli.ts,为了 live 表格)已经算好的那份,不重算一遍。
-  const carryPlan = opts.carryPlan ?? (yield* planCarry(
+  // Physical Sandbox planning remains separate from durable reuse. `priorResults`
+  // and an optional legacy carryPlan may still reach this API for display
+  // compatibility, but neither decides whether a Slot is reused or referenced.
+  const targetPlan = yield* planProjectTarget(
     opts.evals,
     opts.agentRuns,
-    opts.priorResults,
     opts.config.timeoutMs,
     {
-      rerun: opts.rerun,
       configJudge: opts.config.judge,
-      ...(opts.priorManifests ? { priorManifests: opts.priorManifests } : {}),
-      keepSandbox: opts.keepSandbox,
-      accept: opts.accept,
+      ...(opts.keepSandbox === undefined ? {} : { keepSandbox: opts.keepSandbox }),
     },
-  ));
+  );
   const {
     preparedPairsByKey,
     plannedConfigHashes,
     resolvedJudgesByKey,
     plannedFingerprints,
-    acceptableFingerprints,
-    carriedAttemptsByKey: plannedCarriedAttemptsByKey,
-    carriedResults: planCarriedResults,
-    carriedAcceptingByResult,
-    migratedFromByResult: plannedMigratedFromByResult,
     manifestsByKey,
-  } = carryPlan;
-  if (preparedPairsByKey === undefined) {
-    throw new Error("CarryPlan is incomplete: preparedPairsByKey must come from physical Sandbox planning.");
+  } = targetPlan;
+
+  const reusePolicy = Object.freeze({
+    identity: projectTargetPolicyIdentityV1,
+    reuseContract: Object.freeze({
+      domain: "niceeval.reuse/base-v1",
+      value: "project-target/v1",
+    }),
+    rerun: opts.rerun ?? "none",
+    keepSandbox: opts.keepSandbox !== undefined,
+  } satisfies ProjectTargetPolicyV1);
+  const reuseSlotsByKey = new Map<string, RunnerRecordReuseSlotInputV1>();
+  for (const run of opts.agentRuns) {
+    for (const evalDef of selectedEvalsForRun(opts.evals, run)) {
+      const key = cacheKey(run, evalDef.id);
+      const fingerprint = plannedFingerprints.get(key);
+      const configHash = plannedConfigHashes.get(key);
+      if (fingerprint === undefined || configHash === undefined) {
+        throw new Error(`ProjectTarget planning omitted identity for ${JSON.stringify(key)}.`);
+      }
+      const timeout = resolveAttemptTimeout(run, evalDef, opts.config);
+      reuseSlotsByKey.set(key, Object.freeze({
+        inputIdentity: Object.freeze({
+          domain: "niceeval.input/fingerprint-v1",
+          value: fingerprint,
+        }),
+        configIdentity: Object.freeze({
+          domain: "niceeval.config/identity-v1",
+          value: configHash,
+        }),
+        ...(timeout === undefined
+          ? {}
+          : {
+              timeout: Object.freeze({
+                domain: EXECUTION_DURATION_DOMAIN_V1,
+                milliseconds: timeout.timeoutMs,
+              }),
+            }),
+      }));
+    }
   }
-  // Record v1 resolves the carry plan before any consumer treats a legacy
-  // result as reusable. A candidate without the exact FrozenRecordAttempt is
-  // deliberately returned to fresh dispatch rather than becoming a dangling
-  // no-member Slot.
+
+  // Coordinator creates draft Runs first, then uses their real `draft.runId`
+  // values and the frozen Record view to partition every Slot into reuse/gap.
   const recordCoordinator = yield* openRunnerRecordCoordinator({
     niceevalRoot,
     startedAt: t0,
     evals: opts.evals,
     runs: opts.agentRuns,
-    carriedAttemptsByKey: plannedCarriedAttemptsByKey,
-    ...(opts.recordCarryReferences === undefined
-      ? {}
-      : { carryReferences: opts.recordCarryReferences }),
+    reuse: Object.freeze({ policy: reusePolicy, slotsByKey: reuseSlotsByKey }),
     ...(opts.recordAttachments === undefined
       ? {}
       : { attachments: opts.recordAttachments }),
   });
-  const carriedAttemptsByKey = recordCoordinator.acceptedCarriedAttemptsByKey;
-  const isAcceptedCarriedResult = (result: EvalResult): boolean =>
-    result.experimentId !== undefined &&
-    (carriedAttemptsByKey.get(runPairKey(result.experimentId, result.id))?.has(result.attempt) ?? false);
-  const migratedFromByResult = plannedMigratedFromByResult ?? new Map<EvalResult, FingerprintMigration>();
-  // CarryPlan is immutable. Keep acceptance provenance only for carried
-  // results whose exact Record source was admitted above.
-  const runtimeCarriedAcceptingByResult = new Map(
-    [...carriedAcceptingByResult].filter(([result]) => isAcceptedCarriedResult(result)),
-  );
+  // The draft is the only authority for a Run identity. Session, shape and
+  // reporters all observe this same mapping; deprecated `opts.runIds` cannot
+  // replace it with a synthetic legacy value.
+  const runIds = recordCoordinator.runIdsByExperiment;
+  const carriedAttemptsByKey = recordCoordinator.carriedAttemptsByKey;
+
+  // Legacy result objects never supply Record authority. They are retained for
+  // summary/report compatibility only when they explicitly name the exact
+  // FrozenRecordAttempt selected by project-target/v1.
+  const carriedResults = Object.freeze((opts.priorResults ?? []).filter((result) => {
+    if (result.experimentId === undefined) return false;
+    const sourceAttemptId = recordCoordinator.carriedAttemptIdsBySlotKey.get(
+      `${runPairKey(result.experimentId, result.id)}\u0000${result.attempt}`,
+    );
+    return sourceAttemptId !== undefined && result.locator === `@${sourceAttemptId}`;
+  }));
   // Session 文件在首次派发前创建；它只记录 Run 身份与轻量计数，锁和实验闸仍各自维护。
   if (opts.session !== undefined) {
     yield* Effect.tryPromise({
@@ -306,46 +345,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       catch: (error) => error,
     });
   }
-
-  /**
-   * 携带条目合入本次快照时,指纹按**本次**口径重新打戳。携带的含义就是「这条已落盘的结果对
-   * 本次规划的输入依然成立」,那它在新快照里就该带本次的指纹——否则携带条目会一直背着产出
-   * 它那一轮的指纹漂下去,而新快照记的是本轮的 `ExperimentRunInfo.flags`,两者对不上,
-   * 下一轮的反事实重算(见 fingerprint.ts 的 `acceptableFingerprints`)就得靠翻更早的快照
-   * 才能对上号。判定面不受影响:能走到这里,说明这条已经过了携带资格判据。
-   */
-  const restampCarried = (r: EvalResult): EvalResult => {
-    if (r.experimentId === undefined) return r;
-    const key = runPairKey(r.experimentId, r.id);
-    const fp = plannedFingerprints.get(key);
-    const configHash = plannedConfigHashes.get(key);
-    const migration = migratedFromByResult.get(r);
-    if (fp === undefined) return r;
-    if (migration !== undefined) {
-      const { acceptedFrom: _acceptedFrom, ...withoutAcceptedFrom } = r;
-      void _acceptedFrom;
-      return {
-        ...withoutAcceptedFrom,
-        fingerprint: fp,
-        configHash,
-        migratedFrom: migration,
-        ...(runtimeCarriedAcceptingByResult.has(r)
-          ? { carriedAccepting: [...(runtimeCarriedAcceptingByResult.get(r) ?? [])] }
-          : {}),
-      };
-    }
-    return {
-      ...r,
-      fingerprint: fp,
-      configHash,
-      ...(runtimeCarriedAcceptingByResult.has(r)
-        ? { carriedAccepting: [...(runtimeCarriedAcceptingByResult.get(r) ?? [])] }
-        : {}),
-    };
-  };
-  const carriedResults = planCarriedResults
-    .filter(isAcceptedCarriedResult)
-    .map(restampCarried);
 
   const preparedPlansByRun = new Map<AgentRun, globalThis.Record<string, JsonValue>>();
   for (const prepared of preparedPairsByKey.values()) {
@@ -687,28 +686,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     }),
     catch: (error) => error,
   });
-  for (const gap of recordCoordinator.carryGaps) {
-    reportDiagnostic({
-      key: `record-carry-source-unavailable:${gap.run.experimentId}:${gap.evalDef.id}:${gap.attempt}`,
-      code: "record-carry-source-unavailable",
-      severity: "warning",
-      message:
-        `Carried ${gap.run.experimentId}/${gap.evalDef.id} attempt ${gap.attempt} ` +
-        "has no exact Record source; it will be dispatched as a fresh Record v1 Attempt.",
-      identity: {
-        experimentId: gap.run.experimentId,
-        evalId: gap.evalDef.id,
-        attempt: gap.attempt,
-      },
-      data: {
-        experimentId: gap.run.experimentId,
-        evalId: gap.evalDef.id,
-        attempt: gap.attempt,
-        slotId: gap.slotId,
-      },
-    });
-  }
-
   const results: EvalResult[] = [];
   const passedKeys = new Set<string>();
   // errored = 框架/环境层面的意外(超时、adapter 崩、eval 脚本抛异常……),不是 agent 表现的信号。
@@ -1006,22 +983,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     list.push(record);
     experimentDiagnostics.set(input.experimentId, list);
   };
-  // 授权携入在 Run 侧也留一条痕:条目自己带的 `carriedAccepting` 跟着结果走,这一条回答
-  // 「本次调用采信了哪些差异」。同一批 selector 折叠成一条,不逐条目刷屏。
-  if (carriedAcceptingByResult !== undefined) {
-    for (const [result, deltas] of carriedAcceptingByResult) {
-      const selectors = deltas.map((delta) => delta.selector);
-      recordExperimentDiagnostic({
-        experimentId: result.experimentId,
-        code: "accept",
-        level: "warning",
-        message: `Carried prior results across accepted differences: ${selectors.join(", ")}.`,
-        phase: "experiment.setup",
-        data: { selectors: [...selectors] },
-        dedupeKey: `accept:${selectors.join(",")}`,
-      });
-    }
-  }
   // 强杀后的收尾兜底(docs/feature/experiments/architecture.md「强杀后的收尾兜底」)的磁盘登记
   // 挂在结果根下,与留存注册表 `.niceeval/sandboxes/` 同一个根(省略时退回 cwd/.niceeval,
   // 与 attempt.ts 的 niceevalRoot 兜底同一口径)。
@@ -1527,6 +1488,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
    * 「记账」);退出码由观察到失败的那条 `errored` attempt 判红。
    */
   const accountDispatchHalted = (a: Attempt, gate: HaltGate): void => {
+    recordCoordinator.markNotDispatched(a);
     gate.unstarted += 1;
     reportAttemptLifecycle({
       type: "attempt:early-exit",
@@ -1978,6 +1940,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             // architecture.md「调度接口」)。
             if (a.run.earlyExit && passedKeys.has(a.key)) {
               cancelReuseAttempt(a);
+              recordCoordinator.markNotDispatched(a);
               yield* reportMutex.withPermits(1)(
                 Effect.tryPromise({
                   try: () => emitReporterEvent(reporters, {
@@ -2002,6 +1965,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             const failFast = failFastKeys.get(a.key);
             if (failFast !== undefined) {
               cancelReuseAttempt(a);
+              recordCoordinator.markNotDispatched(a);
               failFast.skipped += 1;
               reportAttemptLifecycle({
                 type: "attempt:early-exit",
@@ -2027,6 +1991,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               const s = budgetState(budgetKey);
               if (s.spent >= budget) {
                 cancelReuseAttempt(a);
+                recordCoordinator.markNotDispatched(a);
                 if (!budgetReported.has(budgetKey)) {
                   budgetReported.add(budgetKey);
                   yield* reportMutex.withPermits(1)(
@@ -2093,15 +2058,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                   ? buildFailure
                   : undefined;
             if (blockedError !== undefined) cancelReuseAttempt(a, true);
-            // Allocate exactly once at actual dispatch, before any observer or Sandbox can
-            // see the attempt. The same @AttemptId then reaches feedback, keep registration,
-            // result materialization, and the sealed attachment writes.
-            const recordAttempt = blockedError === undefined
-              ? yield* recordCoordinator.startAttempt(a)
-              : undefined;
-            const dispatchedAttempt: Attempt = recordAttempt === undefined
-              ? a
-              : Object.freeze({ ...a, locator: recordAttempt.locator });
 
             yield* reportMutex.withPermits(1)(
               Effect.tryPromise({
@@ -2127,12 +2083,12 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             reportAttemptLifecycle({
               type: "attempt:start",
               at: Date.now(),
-              identity: feedbackIdentity(dispatchedAttempt),
-              who: feedbackWho(dispatchedAttempt),
+              identity: feedbackIdentity(a),
+              who: feedbackWho(a),
               phase: initialPhase,
             });
             const poolSelection: ReusePoolSelection = blockedError === undefined
-              ? yield* reusePoolFor(dispatchedAttempt)
+              ? yield* reusePoolFor(a)
               : { _tag: "Fresh" };
             // 复用池的租借失败(实例创建、SandboxLayer setup 钩子、寿命确认都在池内)是**这条
             // attempt 的终局失败**,不是调度缺陷:失败原样交回这里,先读空间轴回执(作者在
@@ -2142,7 +2098,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             // 且混进兄弟 fiber 的 interrupt 后被当成用户中断吞掉正文(见
             // docs/feature/error-classification/architecture.md「Effect 边界」:attempt fiber 的
             // E 恒为 never;memory/experiment-fatal-presented-as-user-interrupt.md)。
-            const result = yield* Effect.scoped(Effect.gen(function* () {
+            const completed = yield* Effect.scoped(Effect.gen(function* () {
               const leased = poolSelection._tag === "Reuse"
               ? Either.match(yield* Effect.either(poolSelection.pool.acquire(
                   resolveAttemptTimeout(a.run, a.evalDef, opts.config)?.timeoutMs,
@@ -2166,6 +2122,10 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               if (declaration) closeHaltGate(a, declaration);
             }
             const failedBeforeDispatch = blockedError ?? leaseError;
+            // A Record Attempt is allocated only after runAttemptEffect has
+            // returned its sealed facts and final executionMs. Thus an
+            // interrupted or blocked Slot cannot leave a fabricated Member.
+            const recordedAttempt = a;
             const evaluated = failedBeforeDispatch
               ? ({
                   id: a.evalDef.id,
@@ -2196,7 +2156,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                   error: failedBeforeDispatch,
                 } satisfies EvalResult)
               : yield* runAttemptEffect(
-                  dispatchedAttempt,
+                  recordedAttempt,
                   attemptOptions,
                   sandboxSem,
                   {
@@ -2216,16 +2176,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                     // 到达调度器,不走错误通道向上传播——attempt fiber 的 E 保持 never,`errored`
                     // 仍是 eval runner 的合法结果而不是调度失败(architecture.md「Effect 边界」)。
                     onFailureClass: (declaration) => closeHaltGate(a, declaration),
-                    ...(recordAttempt === undefined
-                      ? {}
-                      : {
-                          onSealedEvaluation: (sealed) =>
-                            recordCoordinator.captureSealedOrMarkIncomplete(
-                              recordAttempt,
-                              dispatchedAttempt,
-                              sealed,
-                            ),
-                        }),
+                    onSealedEvaluation: (sealed) =>
+                      recordCoordinator.noteSealedOrMarkIncomplete(
+                        recordedAttempt,
+                        sealed,
+                      ),
                   },
                 );
             if (lease) {
@@ -2234,13 +2189,25 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               const mustRetire = reuseResultRequiresRetirement(evaluated);
               yield* lease.commit(mustRetire ? { _tag: "Retire" } : { _tag: "Reset" });
             }
-            return evaluated;
+            return Object.freeze({
+              result: evaluated,
+              executed: failedBeforeDispatch === undefined,
+            });
             }));
+            const { result, executed } = completed;
             // A blocked Slot has no origin Attempt and remains an explicit
-            // Record gap. Every actual execution receives its locator from the
-            // pre-created RecordAttemptDraft rather than a derived hash.
-            const locator: AttemptLocator | undefined = recordAttempt?.locator;
-            if (locator) result.locator = locator;
+            // Record gap. A completed execution writes its exact origin plus
+            // Eligibility from final `executionMs`, then exposes @AttemptId.
+            let locator: AttemptLocator | undefined;
+            if (!executed) {
+              recordCoordinator.markNotDispatched(a);
+            } else {
+              const recordAttempt = yield* recordCoordinator.completeAttemptOrMarkIncomplete(a, result);
+              if (recordAttempt !== undefined) {
+                locator = feedbackLocatorFromRecordV1(recordAttempt.locator);
+                result.locator = locator;
+              }
+            }
             // attempt:complete 与上面的 attempt:start 严格一一配对(同一个 body Effect,唯一
             // 出口),覆盖每一个真正跑过 runAttemptEffect 的 attempt(包括之后被下面的并发去重
             // 分支丢弃、不计入 results 的那些)——reducer 的 attempt:complete 无条件
@@ -2248,8 +2215,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             reportAttemptLifecycle({
               type: "attempt:complete",
               at: Date.now(),
-              identity: feedbackIdentity(dispatchedAttempt),
-              who: feedbackWho(dispatchedAttempt),
+              identity: feedbackIdentity(a),
+              who: feedbackWho(a),
               verdict: result.verdict,
               tokenCount: result.usage
                 ? (result.usage.inputTokens ?? 0) + (result.usage.outputTokens ?? 0)
@@ -2572,12 +2539,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     catch: (error) => error,
   });
 
-  // The Record completion marker is the only publication point. Interrupted
-  // or failed dispatch deliberately leaves its already-created draft(s)
-  // incomplete for `niceeval clean` rather than publishing a partial Run.
-  if (!interrupted) {
-    yield* recordCoordinator.publish(Date.now());
-  }
+  // Record can publish a factual partial Run: missing Members remain missing,
+  // while membership-provenance records why each pending gap was interrupted.
+  // This never manufactures an Attempt for budget/early-exit/unstarted Slots.
+  if (interrupted) recordCoordinator.markInterrupted();
+  yield* recordCoordinator.publish(Date.now());
 
   // Experiment 收尾协议(docs/runner.md):每个真正出现在这次 Invocation 里的 experimentId
   // 各发一次 experiment:complete,携带它自己的 completedAt(真实 teardown 完成时刻,没有
