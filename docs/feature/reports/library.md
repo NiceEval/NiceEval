@@ -684,9 +684,11 @@ declare const exportStaticReport: (input: {
 Static exporter 只消费一个已完成 execution：
 
 1. preflight execution problems、semantic tree、route、download、limits 与 closure；任一 execution problem 整体不发布；
-2. 向 `out` 写出 HTML、host-data、downloads、manifest 与 built-in runtime，host files 落在保留 namespace `_niceeval`；
-3. 全部文件写出后，最后写入零字节 `complete` marker；
-4. sync 目录后返回 receipt。
+2. 对这一次 invocation 唯一地 prepare `out`：不存在时创建空目录；
+3. 已存在（包括前次失败留下、没有 `complete` 的目录）在写出首字节前返回 `target-exists`；
+4. 向 `out` 写出 HTML、host-data、downloads、manifest 与 built-in runtime，host files 落在保留 namespace `_niceeval`；
+5. 全部文件写出后，最后写入零字节 `complete` marker；
+6. sync 目录后返回 receipt。
 
 Recorded-data problems 可以导出，并由所有页面不可关闭的 built-in problems surface 显示。目标已存在返回 `target-exists`，不删除或替换既有内容。
 
@@ -694,23 +696,32 @@ Recorded-data problems 可以导出，并由所有页面不可关闭的 built-in
 
 ```ts
 interface ReportFileSystemService {
+  readonly prepareOutput: (
+    out: AbsoluteDirectoryPath,
+  ) => Effect.Effect<void, ReportFileSystemFailure>;
   readonly writeFile: (input: {
     readonly out: AbsoluteDirectoryPath;
     readonly path: ReportHostOutputPath;
     readonly bytes: Uint8Array;
-  }) => Effect.Effect<void, ReportFileSystemError>;
+  }) => Effect.Effect<void, ReportFileSystemFailure>;
   readonly writeCompleteMarker: (
     out: AbsoluteDirectoryPath,
-  ) => Effect.Effect<void, ReportFileSystemError>;
-  readonly syncDirectory: (
-    out: AbsoluteDirectoryPath,
-  ) => Effect.Effect<void, ReportFileSystemError>;
+  ) => Effect.Effect<void, ReportFileSystemFailure>;
+  readonly syncDirectory: (out: AbsoluteDirectoryPath) => Effect.Effect<void, ReportFileSystemFailure>;
 }
 
 class ReportFileSystem extends Context.Tag(
   "@niceeval/report/ReportFileSystem",
 )<ReportFileSystem, ReportFileSystemService>() {}
 ```
+
+`ReportFileSystemFailure` 是 `{ readonly code: "report-export-target-exists" }` 与
+`ReportFileSystemError` 的联合。
+
+`prepareOutput` 是 export invocation 的唯一 target-create/check 操作；exporter 在所有 preflight
+通过后、首个 `writeFile` 前恰好调用一次。实现不得缓存一次成功的 prepare 结果：同一个
+`ReportFileSystemService` 的下一次 export 仍须检查目录；前次失败留下的无 `complete` 目录也返回
+`target-exists`，用户删除后才可重试。
 
 `ReportHostOutputPath` 是 `niceeval/report/host` 平台边界类型，不从 author package 导出 constructor。host 用同一 codec 把 route HTML、Download、host-data 与 runtime 变成 canonical segments；Author `ReportDownloadPath` 只是其中一种输入。
 

@@ -25,6 +25,12 @@ export interface ReportExportTargetExists {
 export type ReportFileSystemFailure = ReportFileSystemError | ReportExportTargetExists;
 
 export interface ReportFileSystemService {
+  /**
+   * Begins exactly one export invocation. It exclusively creates the empty
+   * target directory, or reports target-exists before any output byte is
+   * written. Callers must not reuse a successful preparation across exports.
+   */
+  readonly prepareOutput: (out: string) => Effect.Effect<void, ReportFileSystemFailure>;
   readonly writeFile: (input: {
     readonly out: string;
     readonly path: ReportHostOutputPath;
@@ -58,7 +64,7 @@ export type ReportExportError =
 /**
  * Exports exactly one completed execution. This never invokes author code or
  * reads Record data; any execution problem fails closed before the first write.
- * The concrete Node filesystem service owns target creation/existence policy.
+ * Each invocation prepares its target once before writing any output byte.
  */
 export function exportStaticReport(input: {
   readonly execution: ReportExecution;
@@ -82,6 +88,7 @@ export function exportStaticReport(input: {
         operation: error.operation,
       })),
     );
+    yield* fileSystem.prepareOutput(input.out);
     for (const file of files) {
       yield* fileSystem.writeFile({
         out: input.out,

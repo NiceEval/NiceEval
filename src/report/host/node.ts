@@ -1,4 +1,4 @@
-import { mkdir, open as openFile, writeFile } from "node:fs/promises";
+import { mkdir, open as openFile, stat, writeFile } from "node:fs/promises";
 import { dirname, relative, resolve, sep } from "node:path";
 import { Context, Effect } from "effect";
 import type * as Scope from "effect/Scope";
@@ -80,32 +80,30 @@ export function openNodeReportViewServer(
  * remains platform-neutral and sees only this Effect service.
  */
 export function makeNodeReportFileSystem(): ReportFileSystemService {
-  const prepared = new Map<string, Promise<void>>();
-  const ensureOutput = (out: string): Promise<void> => {
-    const root = resolve(out);
-    let preparation = prepared.get(root);
-    if (preparation === undefined) {
-      preparation = mkdir(dirname(root), { recursive: true }).then(async () => {
+  return Object.freeze({
+    // This deliberately has no success cache. Every export invocation must
+    // re-check its target so a completed or incomplete prior directory is
+    // consistently reported as target-exists before its first file write.
+    prepareOutput: (out: string) => Effect.tryPromise({
+      try: async () => {
+        const root = resolve(out);
+        await mkdir(dirname(root), { recursive: true });
         try {
           await mkdir(root);
         } catch (error) {
-          if (isAlreadyExists(error)) throw new OutputTargetExistsError(root);
+          if (isAlreadyExists(error)) throw new OutputTargetExistsError();
           throw error;
         }
-      });
-      prepared.set(root, preparation);
-    }
-    return preparation;
-  };
-  return Object.freeze({
+      },
+      catch: (error): ReportFileSystemFailure => fileSystemFailure("prepare-output", error),
+    }),
     writeFile: (input: {
       readonly out: string;
       readonly path: ReportHostOutputPath;
       readonly bytes: Uint8Array;
     }) => Effect.tryPromise({
       try: async () => {
-        const root = resolve(input.out);
-        await ensureOutput(root);
+        const root = await preparedOutputRoot(input.out);
         const target = resolve(root, input.path.value);
         if (!isOutputChild(root, target)) {
           throw new Error(`Report host output escapes its root: ${input.path.value}`);
@@ -117,8 +115,7 @@ export function makeNodeReportFileSystem(): ReportFileSystemService {
     }),
     writeCompleteMarker: (out: string) => Effect.tryPromise({
       try: async () => {
-        const root = resolve(out);
-        await ensureOutput(root);
+        const root = await preparedOutputRoot(out);
         const marker = resolve(root, "_niceeval/complete");
         await mkdir(dirname(marker), { recursive: true });
         await writeFile(marker, new Uint8Array(), { flag: "wx" });
@@ -152,6 +149,20 @@ export function makeNodeReportFileSystem(): ReportFileSystemService {
 }
 
 export const NodeReportFileSystemLive: ReportFileSystemService = makeNodeReportFileSystem();
+
+/**
+ * `writeFile` and the completion marker are valid only after the exporter has
+ * prepared this invocation's root. They may make nested directories, but can
+ * never recreate a missing root and silently bypass `prepareOutput`.
+ */
+async function preparedOutputRoot(out: string): Promise<string> {
+  const root = resolve(out);
+  const metadata = await stat(root);
+  if (!metadata.isDirectory()) {
+    throw new Error("the prepared report output root is not a directory");
+  }
+  return root;
+}
 
 function isOutputChild(root: string, target: string): boolean {
   const path = relative(root, target);
