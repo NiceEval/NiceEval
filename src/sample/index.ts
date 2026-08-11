@@ -21,6 +21,53 @@ import type {
 import type { ExperimentRunInfo, JsonValue } from "../types.ts";
 import { evalPrefixPredicate, matchExperimentSelector } from "../shared/aggregate.ts";
 
+export {
+  decodeAnalysisSample,
+  encodeAnalysisSample,
+  narrowAnalysisSample,
+  narrowAnalysisSampleHandle,
+  selectAnalysisSample,
+  selectExplicitRuns,
+  selectLatestRuns,
+} from "./analysis.ts";
+export type {
+  AnalysisBaseSlot,
+  AnalysisSampleCodecError,
+  AnalysisLimitExceededError,
+  AnalysisLatestIndeterminateError,
+  AnalysisRun,
+  AnalysisRunInvalidError,
+  AnalysisRunNotFoundError,
+  AnalysisSample,
+  AnalysisSampleHandle,
+  AnalysisSampleSelector,
+  AnalysisSelectionError,
+  AnalysisSelectionInvalidError,
+  AnalysisSelectionRequest,
+  AnalysisSelectionSummary,
+  AnalysisSlot,
+  AnalysisSlotRef,
+  AttemptId,
+  CoreInvalidAnalysisSlot,
+  ExcludedAnalysisSlot,
+  ExperimentId,
+  ExplicitRunsAnalysisInput,
+  IncludedAnalysisSlot,
+  LatestRunsAnalysisInput,
+  NonEmptyRecordIssues,
+  NotRecordedAnalysisSlot,
+  RecordAttemptRef,
+  RecordHandleInvalid,
+  RecordIoError,
+  RecordIssue,
+  RecordPermissionError,
+  RecordReadError,
+  RecordReaderClosed,
+  RunId,
+  SlotId,
+  UtcMillis,
+} from "./analysis.ts";
+
 export { loadProjectCurrent as loadProjectCurrentTarget } from "../runner/project-current.ts";
 
 /**
