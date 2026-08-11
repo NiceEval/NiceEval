@@ -29,7 +29,7 @@ export interface RecordRootPaths {
 }
 
 const recordRootTypeId: unique symbol = Symbol("@niceeval/record/RecordRoot");
-const roots = new WeakMap<RecordRoot, RecordRootPaths>();
+const roots = new WeakMap<object, RecordRootPaths>();
 
 function localStateRootFor(portableRoot: string): string {
   const parent = dirname(portableRoot);
@@ -111,6 +111,10 @@ export function makeRecordRoot(
 }
 
 /** Internal Node-platform access; callers cannot manufacture an issued root. */
-export function recordRootPaths(root: RecordRoot): RecordRootPaths | undefined {
+export function recordRootPaths(root: unknown): RecordRootPaths | undefined {
+  if (typeof root !== "object" || root === null) {
+    return undefined;
+  }
+
   return roots.get(root);
 }

@@ -163,9 +163,6 @@ export type RecordMaintenanceLockError =
   | RecordFileSystemError
   | RecordMaintenanceBusy;
 
-/** @deprecated Internal transition alias while adjacent reader work converges. */
-export type RecordMaintenanceLeaseError = RecordMaintenanceLockError;
-
 export type RecordWriterLockError = RecordFileSystemError | RecordWriterBusy;
 
 export type RecordGitError =
