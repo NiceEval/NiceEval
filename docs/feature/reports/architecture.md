@@ -68,7 +68,7 @@ Host 按 projection declaration identity 执行并缓存至多一次。Projector
 
 ## Completeness 与局部隔离
 
-not-recorded、core-invalid、excluded 是 slot states。unavailable、migration-required、migration-unavailable、unsupported、invalid 与 collection partial 是 Attachment data states。projector / Calculation / 组件 callback throw 是 execution problem。interruption 是 Effect Cause。四者不能互相改名。
+not-recorded、core-invalid、excluded 是 slot states。unavailable、migration-required、migration-unavailable、unsupported、invalid 是 Attachment data states。projector / Calculation / 组件 callback throw 是 execution problem。interruption 是 Effect Cause。四者不能互相改名。
 
 直接消费 projection 的组件显式选择：
 

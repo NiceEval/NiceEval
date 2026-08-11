@@ -42,7 +42,7 @@ reference Member 保留源 Attempt 引用。origin Run 进入 dependency closure
 
 一次 selection 不会自动看见并发刚完成的 Run。重新打开 reader 后才能得到新 snapshot。未完成 Run 从未进入 reader candidates，因此不会出现在 Sample。
 
-RecordAttachment missing、migration-required、unsupported、invalid 或 partial 不自动改变 Slot 的 Core state。Projection 使用仍存活的 `AnalysisSampleHandle` 按需读取 Attachment；pure `.sample` 不能重新打开 I/O。
+RecordAttachment 的 unavailable、migration-required、migration-unavailable、unsupported 或 invalid 不自动改变 Slot 的 Core state。Projection 使用仍存活的 `AnalysisSampleHandle` 按需读取 Attachment；pure `.sample` 不能重新打开 I/O。
 
 ## 范围
 

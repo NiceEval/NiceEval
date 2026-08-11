@@ -39,7 +39,7 @@ callback 只能读取已经形成的 projected inputs。它不能按某个 paylo
 | policy | 可计算条件 | 输出要求 |
 |---|---|---|
 | `allow-partial` | Host 已形成穷尽 `ProjectedSample`；Attachment data problems 可以存在。 | 调用公式，并保留 partial、observed、denominator 与 issues。 |
-| `require-complete` | 每个 required logical entry 的 Core、collection、decoding 与 value limitations 都完整。 | 任一条件不满足时不调用作者公式，形成 `data-unavailable`。 |
+| `require-complete` | 每个 required logical entry 的 Core、decoding 与 value limitations 都完整。 | 任一条件不满足时不调用作者公式，形成 `data-unavailable`。 |
 
 `invalid` 是 Attachment data problem，不是 callback defect。`allow-partial` 可以用同一 ProjectedSample 中其它成功 entries 继续公式；`require-complete` 不调用。没有请求它的 Calculation 不读取也不受影响。
 

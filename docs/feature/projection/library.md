@@ -19,22 +19,26 @@ interface RecordAttachmentProjector<
   readonly [recordAttachmentProjectorTypeId]: (value: Value) => Value;
 }
 
+interface RecordAttachmentValue<Payload> {
+  readonly payload: Payload;
+  readonly blobs: Readonly<Record<string, Uint8Array>>;
+}
+
 declare const defineRecordAttachmentProjector: <
   Owner extends RecordAttachmentOwner,
   Payload,
   Value,
 >(input: {
   readonly attachment: RecordAttachmentFamily<Owner, Payload>;
-  readonly project: (input: {
-    readonly payload: Payload;
-    readonly collection: RecordAttachmentCollection;
-  }) => Value;
+  readonly project: (value: RecordAttachmentValue<Payload>) => Value;
 }) => RecordAttachmentProjector<Owner, Value>;
 ```
 
+available Attachment 是完整的 `RecordAttachmentValue<Payload>`。`payload` 是 exact decode 的 payload；`blobs` 是该 Attachment 目录内 package-owned、只读且完整的 blob，按 payload 中的 blob 引用读取。值在读取完成时一次性形成，不存在部分读取形态；projector 同步消费它。
+
 一个 projector 固定解释一个 owner 类型和一个 `RecordAttachmentFamily`。它没有 durable identity，也不能改换 family、owner 或 payload decoder。Library 以 definition 的 exact identity 取得 family，读取并 decode Attachment 后才调用 `project`。
 
-callback 只在 Attachment `available` 时执行，并同步返回 view value。它不能执行额外 Record I/O；需要另一份 Attachment 时，作者声明另一条 projection。callback 的意外 throw 是 defect，不能被改写成 `invalid` 或 `Effect` 的 typed error。
+callback 只在 Attachment `available` 时执行，接收完整 `RecordAttachmentValue`，并同步返回 view value。它不能执行额外 Record I/O；需要另一份 Attachment 时，作者声明另一条 projection。callback 的意外 throw 是 defect，不能被改写成 `invalid` 或 `Effect` 的 typed error。
 
 `Value` 没有 JSON、index signature 或 `as` 的类型约束。普通 named interface 可以直接作为 view：
 
@@ -102,7 +106,6 @@ type ProjectedRecordAttachmentResult<Value> =
   | {
       readonly state: "available";
       readonly value: Value;
-      readonly collection: RecordAttachmentCollection;
     }
   | { readonly state: "unavailable" }
   | {
@@ -176,7 +179,7 @@ interface SelectedRunProjectedEntry<Value> {
 
 前两种 projection 的 entry 必须穷尽 `excluded`、`not-recorded`、`core-invalid` 与 `attachment-result`。前三种状态不触发 Attachment I/O；第四种状态保留 `RecordAttachmentRead` 的完整数据状态，并在 available 时保存 callback value。
 
-`collection: { state: "partial" }` 仍是 available Attachment 的事实，不降低成读取失败。unavailable、migration-required、migration-unavailable、unsupported 与 invalid 同样是 `attachment-result` 内的成功值。只有文件、permission、closed reader 或错误的 reader-owned capability 才进入 `Effect` error channel。
+`available` 状态保存 projector 从完整 `RecordAttachmentValue` 同步返回的 view value。unavailable、migration-required、migration-unavailable、unsupported 与 invalid 同样是 `attachment-result` 内的成功值。只有文件、permission、closed reader 或错误的 reader-owned capability 才进入 `Effect` error channel。
 
 ## ProjectedSample 与 coverage
 
@@ -205,8 +208,7 @@ interface ProjectionCoverage {
     readonly excluded: number;
   };
   readonly attachments: {
-    readonly availableComplete: number;
-    readonly availablePartial: number;
+    readonly available: number;
     readonly unavailable: number;
     readonly migrationRequired: number;
     readonly migrationUnavailable: number;

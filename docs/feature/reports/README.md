@@ -46,7 +46,7 @@ PageFamily 只能从已声明的 projected / calculated 内存值展开 route，
 
 每个直接消费 projection 的 Calculation、Page、PageFamily 或 Download 声明 `allow-partial` 或 `require-complete`。未请求的坏 Attachment 不读取也不影响 execution。
 
-Recorded-data problem 允许成功呈现，并进入不可关闭的 problems surface。它包括 unavailable、migration-required、migration-unavailable、unsupported、invalid 与 partial collection。projector / 作者 callback defect 是该 consumer 的 execution problem，其它页面继续；static export 对任一 execution problem fail closed。
+Recorded-data problem 允许成功呈现，并进入不可关闭的 problems surface。它包括 unavailable、migration-required、migration-unavailable、unsupported 与 invalid。projector / 作者 callback defect 是该 consumer 的 execution problem，其它页面继续；static export 对任一 execution problem fail closed。
 
 只有 `migration-required` 提示运行 `niceeval migrate`；`migration-unavailable` 只呈现原因，不提示迁移命令。
 
@@ -66,7 +66,7 @@ Reports 包含：
 - Calculation、fixed Page、value-dependent PageFamily 与 Download；
 - closed semantic report tree；
 - terminal show、热重载 view 与 self-contained static export；
-- partial、unavailable、unsupported、invalid 与 execution-failed 的一致反馈。
+- unavailable、unsupported、invalid 等数据问题与 data-unavailable、execution-failed 的一致反馈。
 
 Reports 不包含：
 

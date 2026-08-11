@@ -10,7 +10,7 @@
 
 ## 声明 `commands.checked` projection
 
-Report 通过 `attemptSlotProjection(commandsCheckedProjector)` 声明每个 Sample slot 的 logical access，并把它放进 Calculation 的 `inputs`。宿主保留 excluded、not-recorded 与 core-invalid entries；included slot 定位为 Attempt owner 和 `ProjectedRecordAttachmentResult`，持久采集完整度与解码完整度分别保留。
+Report 通过 `attemptSlotProjection(commandsCheckedProjector)` 声明每个 Sample slot 的 logical access，并把它放进 Calculation 的 `inputs`。宿主保留 excluded、not-recorded 与 core-invalid entries；included slot 定位为 Attempt owner 与 `ProjectedRecordAttachmentResult`。Attachment 要么是完整 available 值，要么是 unavailable、migration-required、migration-unavailable、unsupported 或 invalid 数据状态。
 
 ```ts
 const commandsChecked = attemptSlotProjection(commandsCheckedProjector);
@@ -30,7 +30,7 @@ const commandChecks = defineCalculation({
     {
       state: "available",
       value: { count: 20, observed: 20, denominator: 100 },
-      dataState: { state: "partial" },
+      inputState: { state: "partial" },
     }
 
 页面写 `20 / 100 · partial`。它不把 20 显示成完整数量，也不把 20 当成新的分母。

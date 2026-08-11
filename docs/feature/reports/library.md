@@ -107,9 +107,11 @@ type ReportProjectedValues<Plan extends ReportDataPlan> = {
 
 excluded、not-recorded 与 core-invalid 不会从 projected sample 消失。十个 slot 指向同一 origin Run 时仍有十条公开 logical entries；物理去重只属于 host telemetry。
 
-每个 `RecordAttachmentProjector` 解释一个 owner 类型与一个 `RecordAttachmentFamily`。Projector callback 只在 Attachment `available` 时执行，同步返回 view value，不能执行额外 Record I/O。callback throw 在 direct API 是 defect。Report host 在消费边界把它记为引用该 projection 的 consumer 的 execution problem，其它页面继续。
+每个 `RecordAttachmentProjector` 解释一个 owner 类型与一个 `RecordAttachmentFamily`。Projector callback 只在 Attachment `available` 时执行，同步消费完整 `RecordAttachmentValue` 并返回 view value，不能执行额外 Record I/O。callback throw 在 direct API 是 defect。Report host 在消费边界把它记为引用该 projection 的 consumer 的 execution problem，其它页面继续。
 
-`ProjectedSample<Access, Value>` 只有两个 generic 参数：`sample`、`access`、`entries` 与 `coverage`。Attachment result 使用 `ProjectedRecordAttachmentResult<Value>` 的六态 union。六态是 available、unavailable、migration-required、migration-unavailable、unsupported 与 invalid。collection partial 是 available 内的事实。host 不引入第三个 failure generic、output codec 或 portable envelope。
+`ProjectedSample<Access, Value>` 只有两个 generic 参数：`sample`、`access`、`entries` 与 `coverage`。Attachment result 使用 `ProjectedRecordAttachmentResult<Value>` 的六态 union。
+
+六态是 available、unavailable、migration-required、migration-unavailable、unsupported 与 invalid；available 保存 projector 从完整 Attachment 值返回的 view value。host 不引入第三个 failure generic、output codec 或 portable envelope。
 
 `migration-required` 只表示存在相邻 converter 的完整迁移链，command 提示运行 `niceeval migrate`。`migration-unavailable` 表示旧 schema 的已知路径碰到 `not-losslessly-migratable`，明确没有无损 converter。因此它不提示再次运行 `niceeval migrate`，只呈现 reason；二者不能混淆。
 
@@ -141,7 +143,7 @@ type ReportCompleteness = "allow-partial" | "require-complete";
 
 任何直接消费 `RecordProjection` 的 Calculation、Page、PageFamily 或 Download 都必须显式声明 completeness：
 
-- `require-complete`：任一 required projected input 不完整时不调用作者 callback，形成 `data-unavailable` result。不完整包括 not-recorded、core-invalid、unavailable、migration-required、migration-unavailable、unsupported、invalid 与任一 collection partial；
+- `require-complete`：任一 required projected input 不完整时不调用作者 callback，形成 `data-unavailable` result。不完整包括 not-recorded、core-invalid、unavailable、migration-required、migration-unavailable、unsupported 与 invalid；
 - `allow-partial`：调用 callback，交付穷尽 `ProjectedSample`、coverage 与 issues；host-owned problems surface 仍保留全部问题；
 - projection callback throw 不是 partial data。Calculation、fixed Page 与 Download 不执行。`allow-partial` PageFamily 仍可收到穷尽 entries，只从成功的 `attachment-result` 展开实例，但 family/execution problem 不可隐藏，零实例也必须可见。static export 对任一 execution problem fail closed；
 - 只消费 `ReportCalculationResult` 的组件总是收到 result union，可以呈现 unavailable，不把它改名为 execution failure。
@@ -185,7 +187,7 @@ declare const defineCalculation: <
 }) => ReportCalculation<Inputs, Value>;
 ```
 
-`Value` 没有 JSON、codec 或 portability 约束。普通 named interface 可以直接作为结果；execution 在进程内保存原值，host 不重新编码。Callback throw 形成 `calculation-callback-defect`，不是 unavailable、partial 或 Record invalid；interruption 保持 Cause。
+`Value` 没有 JSON、codec 或 portability 约束。普通 named interface 可以直接作为结果；execution 在进程内保存原值，host 不重新编码。Callback throw 形成 `calculation-callback-defect`，不是 unavailable、invalid 或 data-unavailable；interruption 保持 Cause。
 
 ```ts
 interface ReportDataState {
@@ -469,8 +471,7 @@ interface ReportRecordedDataProblem {
     | "migration-required"
     | "migration-unavailable"
     | "unsupported"
-    | "invalid"
-    | "collection-partial";
+    | "invalid";
   readonly consumerId: ReportComponentId;
   readonly inputKey?: string;
   readonly slotId?: SlotId;
@@ -597,7 +598,7 @@ declare const executeReport: (input: {
 }) => Effect.Effect<ReportExecution, ReportExecutionError, never>;
 ```
 
-`executeReport` 只能在创建 `AnalysisSampleHandle` 的原 reader Scope 仍存活时调用。capability 已在 handle 的 package-private WeakMap binding 内，不额外写一个 `Scope.Scope` R；R 是 `never`。Pure `AnalysisSample` 不能传入这个入口。reader 关闭后返回 typed `RecordReadError`；WeakMap 缺项或内部错配是 defect。
+`executeReport` 只能在创建 `AnalysisSampleHandle` 的原 reader Scope 仍存活时调用。capability 已在 handle 的 package-private WeakMap binding 内，不额外写一个 `Scope.Scope` R；R 是 `never`。Pure `AnalysisSample` 不能传入这个入口。reader 关闭、伪造 handle 或另一 reader 的 handle 返回 typed `RecordReadError`；WeakMap 内部错配是 defect。
 
 Library 不调用 `Effect.runPromise`，也不建立私有 runtime。CLI / application main provide Layers 后只在外层调用一次 `Effect.runPromiseExit`；内部不存在 nested `runPromise`。
 
