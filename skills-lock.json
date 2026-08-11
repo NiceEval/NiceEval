@@ -1,12 +1,6 @@
 {
   "version": 1,
   "skills": {
-    "effect-ts": {
-      "source": "Effect-TS/skills",
-      "sourceType": "github",
-      "skillPath": "skills/effect-ts/SKILL.md",
-      "computedHash": "301521e167410dd42d834dd0e7cedbe9cfffa519f630a12241dbea7b1d932324"
-    },
     "grill-me": {
       "source": "mattpocock/skills",
       "sourceType": "github",

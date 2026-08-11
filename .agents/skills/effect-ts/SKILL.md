@@ -1,193 +1,64 @@
 ---
 name: effect-ts
-description: Use this skill when the current task touches Effect code, reviews behavior implemented with Effect, or depends on Effect patterns, services, layers, schemas, streams, runtimes, resource management, retries, observability, testing, or typed error handling. Do not trigger it merely because the repository contains Effect if the task is unrelated documentation, site copy, README text, or non-Effect code.
+description: Use when work in NiceEval touches Effect v3 code, including runtime boundaries, typed errors, Schema, Scope, concurrency, retries, services, layers, observability, or Effect-backed tests. Keep the repository on Effect v3 unless the user explicitly authorizes a v4 migration, and verify exact APIs against the installed v3 source.
 ---
 
-# Effect Expert
+# Effect v3 workflow
 
-Expert guidance for programming with the Effect library, covering error handling, dependency injection, composability, and testing patterns.
+Treat this repository as an Effect v3 codebase. Do not install `effect@beta`, use v4-only `effect/unstable/*` imports, or apply v4 package-alignment rules.
 
-## Prerequisite
+## Establish the version and source
 
-Before doing Effect-specific implementation, review, or API research, check that `./.repos/effect` exists at the root of the repository where the skill is being used.
+1. Read `package.json` and the lockfile before changing Effect code.
+2. Read `node_modules/effect/package.json` to confirm the installed version and require major version 3.
+3. Use `node_modules/effect/src/` as the first source for exact signatures and behavior. It matches the installed package exactly.
+4. Use the canonical `Effect-TS/effect` repository only when package source is insufficient. Prefer the exact `effect@<installed-version>` tag; use the `v3` branch only for unreleased v3 context.
+5. Never use the archived `Effect-TS/effect-smol` repository for v3 validation.
 
-If it does not exist and the task requires source-level Effect validation, stop and prompt the user with the setup task documented in `./references/setup.md`.
+If `node_modules/effect/src/` is missing, install the locked dependencies with the repository package manager before making source-level claims. Do not create a second Effect checkout merely for routine API research.
 
-If the task only needs repository-local patterns, docs/copy edits, or non-Effect work, do not block on a missing `./.repos/effect`. Continue with codebase inspection and the local guides as needed, and only state the missing checkout as a limitation when making Effect API or source-level claims.
+## Preserve the repository boundary
 
-## Research Strategy
+Read `docs/architecture.md` before changing a runtime boundary, then preserve these rules:
 
-Effect has many ways to accomplish the same task. Proactively research best practices when working with Effect patterns, especially for moderate to high complexity tasks.
+- Keep identity, selection, planning, fingerprints, and result folding pure when they do not read the outside world.
+- Put file, network, process, dynamic-import, concurrency, cancellation, and resource-lifecycle work in `Effect`.
+- Adapt public callbacks and Provider SDK Promises once with `Effect.tryPromise` or `Effect.promise` at their boundary.
+- Run Effect only at the outer public Promise facade or result-closing boundary. Do not introduce nested `Effect.runPromise`, `runPromiseExit`, or `runSync` calls in internal modules.
+- Hold acquired resources in `Effect.Scope`; use `Effect.acquireRelease`, `Effect.addFinalizer`, or an equivalent scoped primitive so failure and interruption release them.
+- Preserve typed failure, defect, and interruption as separate channels until the owning result boundary closes them.
 
-Use the local guides in `./references/` first. They are the preferred source for best practices, conventions, and common implementation patterns.
+## Research in this order
 
-Only go directly to the vendored Effect repo when:
+1. Inspect nearby NiceEval Effect patterns and the feature contract owning the behavior.
+2. Search `node_modules/effect/src/` for the exact v3 API and its types.
+3. Inspect the exact-version upstream tag when tests, history, or implementation context are required.
+4. Prefer the simplest v3 primitive that satisfies the contract; do not introduce an abstraction only because Effect provides one.
 
-- the guides do not cover the question
-- you need exact API details or signatures
-- you need deeper implementation details
-- you need to verify a behavior against the source
+Always research source details for resource lifecycles, interruption, concurrency, retry timing, complex typed-error hierarchies, services/layers, and unfamiliar Schema transformations.
 
-### Research Sources
+## Implementation rules
 
-1. Local skill guides first. Start with the relevant files in `./references/` before doing deeper research.
-2. Codebase patterns second. Examine similar patterns in the current project before implementing. If Effect patterns already exist, follow them for consistency. If no patterns exist, skip this step.
-3. Effect source code last. For gaps in the guides, complex type errors, unclear behavior, or implementation details, examine the vendored Effect source at `./.repos/effect/packages/effect/src/`.
+- Use `Effect.tryPromise` when a Promise can reject and map the rejection to a domain error.
+- Use `Effect.promise` only when rejection is impossible or the boundary intentionally treats rejection as a defect.
+- Model expected failures in the typed error channel; reserve defects for broken invariants and truly unexpected failures.
+- Decode `unknown` at JavaScript, JSON, dynamic-import, SDK, and file-format boundaries with Schema or a complete domain guard.
+- Use `Effect.gen` for readable sequential workflows. Use `Effect.fn` for reusable Effect-returning business operations when its tracing/function boundary is useful.
+- Introduce `Context.Tag`, services, and `Layer` only when dependency provisioning or resource lifetime benefits from them; do not wrap trivial parameter passing.
+- Provide services at an outer composition edge instead of repeatedly providing them inside business logic.
+- Avoid `any`, unsafe assertions, and casts that bypass boundary decoding.
 
-### When To Research
+## Effect v3 ecosystem packages
 
-- Always research for services, layers, or complex dependency injection.
-- Always research for error handling with multiple error types or complex error hierarchies.
-- Always research for stream-based operations and reactive patterns.
-- Always research for resource management with scoped effects and cleanup.
-- Always research for concurrent or performance-critical code.
-- Always research for unfamiliar testing patterns.
-- Research when needed for complex refactors from promises or try/catch into Effect.
-- Research when needed for new service dependencies or layer restructuring.
-- Research when needed for custom error types or extensions of existing error hierarchies.
-- Research when needed for integrations with external systems such as databases, APIs, or third-party services.
+Keep `effect` on the latest validated v3 release declared by this repository. Treat v4 as a separate migration.
 
-### Research Approach
+Effect v3 `@effect/*` packages use independent version numbers. Before adding or upgrading one, inspect its peer dependencies and select a release compatible with the installed `effect` v3 version. Do not force all `@effect/*` packages to the same numeric version.
 
-- Focus on canonical, readable, and maintainable solutions rather than clever optimizations.
-- Verify suggested approaches against existing codebase patterns when those patterns exist.
-- When multiple approaches are possible, prefer the most idiomatic Effect solution supported by the codebase and the vendored source.
+Install only packages required by the concrete runtime or feature. Do not add `@effect/platform-node`, `@effect/vitest`, or `@effect/opentelemetry` merely to make the dependency list look more Effect-native.
 
-### Codebase Pattern Discovery
+## Validation
 
-When working in a project that uses Effect, check for existing patterns before implementing new code:
-
-1. Search for Effect imports and existing module usage to understand current conventions.
-2. Identify how services and layers are structured in the project.
-3. Note how errors are defined and propagated.
-4. Examine how Effect code is tested in the project.
-
-If no Effect patterns exist in the codebase, proceed using canonical patterns from the vendored Effect source and examples. Do not block on missing codebase patterns.
-
-### Feature Discovery
-
-When you need to discover available Effect modules, packages, or capabilities, search `./references/features.md` first.
-
-- Use it to identify the right package or module for a task.
-- Use the listed repo paths to jump directly into the vendored source under `./.repos/effect`.
-- Use it before inventing custom abstractions when Effect may already provide the functionality.
-
-### Guide Discovery
-
-When the task touches one of these areas, consult the matching guide before implementing:
-
-- `./references/guide-effect.md` for core `Effect` usage patterns, common constructors, composition, provisioning, and runtime boundaries
-- `./references/guide-error-handling.md` for defining errors, schema-based errors, failure handling, defects, and interrupts
-- `./references/guide-layers.md` for services, layer construction, composition, and provisioning patterns
-- `./references/guide-observability.md` for `Effect.fn`, spans, logging, metrics, and telemetry wiring
-- `./references/guide-retries.md` for retry policies, retry conditions, fallback strategies, and `ExecutionPlan`
-- `./references/guide-schedule.md` for retries, repeats, backoff, polling, cron, and schedule composition
-- `./references/guide-schema.md` for schema design, transformations, unions, recursion, opaque/branded types, and schema best practices
-- `./references/guide-sql.md` for Effect SQL usage, transactions, resolvers, schema-aware SQL, and migrations
-- `./references/guide-testing.md` for detailed `@effect/vitest` usage, layered test setup, property tests, and test services
-
-These guides should be treated as the default implementation guidance. Do not skip them and jump straight to `./.repos/effect` unless you need source-level confirmation or the guides do not answer the question.
-
-## Effect Principles
-
-Apply these core principles when writing Effect code.
-
-## Installation
-
-When installing Effect packages in a user repository:
-
-- use `effect@beta`
-- keep all `@effect/*` packages on aligned versions
-- install only the packages needed for the user's runtime and actual task
-
-### Version Rules
-
-- `effect` should be installed as `effect@beta`
-- if you install any `@effect/*` package, make sure all `@effect/*` packages use matching versions
-- do not mix unrelated `@effect/*` versions in the same project
-
-### Package Selection
-
-Choose packages based on the runtime and the work being done.
-
-- core library: `effect@beta`
-- Node.js runtime needs: install the matching `@effect/platform-node`
-- browser runtime needs: install the matching `@effect/platform-browser`
-- Bun runtime needs: install the matching `@effect/platform-bun`
-- Vitest integration needs: install the matching `@effect/vitest`
-- OpenTelemetry integration needs: install the matching `@effect/opentelemetry`
-
-Install additional `@effect/*` packages only when the user task actually needs them.
-
-### Practical Rule
-
-- start with `effect@beta`
-- add `@effect/*` packages as needed by runtime and features
-- keep the full installed Effect package set version-aligned
-
-### Error Handling
-
-- Use Effect's typed error system instead of throwing exceptions.
-- Define descriptive error types with proper error propagation.
-- Prefer `Schema.TaggedErrorClass` when the error can be schema-defined.
-- Use `Effect.fail`, `Effect.catchTag`, and `Effect.catch` for error control flow.
-
-### Dependency Injection
-
-- Implement dependency injection using services and layers.
-- Define services with `Context.Tag`.
-- Compose layers with `Layer.merge` and `Layer.provide`.
-- Use `Effect.provide` to inject dependencies at the edge, avoid providing locally.
-- Keep services encapsulated; avoid exporting trivial accessor wrappers that only forward to one service method.
-
-### Composability
-
-- Leverage Effect composability for complex operations.
-- Use appropriate constructors such as `Effect.succeed`, `Effect.fail`, `Effect.tryPromise`, `Effect.try`, and `Effect.sync`.
-- Apply proper resource management with scoped effects.
-- Chain operations with `Effect.flatMap`, `Effect.map`, and `Effect.tap`.
-
-### Business Logic Functions
-
-- Prefer `Effect.fn` for reusable business-logic functions that return `Effect`.
-- Prefer `Effect.fn` over raw `Effect.gen` definitions even when the function takes no arguments.
-- If you do not want an explicit named span, use `Effect.fn` without a span name.
-- Do not use `Effect.fnUntraced` as the default.
-- Use `Effect.fnUntraced` only for edge cases with a concrete low-level reason, such as measured hot-path overhead.
-
-### TypeScript Preferences
-
-- Never use `any`.
-- Never use `as` casts.
-- Never use unsafe type assertions or escape hatches.
-- Never use `namespace`.
-- Prefer correct typing, schema-driven decoding, narrowing, and proper generic constraints instead of forcing types.
-- If a value comes from an external boundary, validate or decode it instead of asserting its type.
-- If a type is hard to express, simplify the design or introduce a properly typed helper instead of using unsafe TypeScript.
-- For layers, do not hide them inside `namespace` blocks. Prefer either `static` members on the service class or plain exported layer constants.
-
-### Code Quality
-
-- Write type-safe code that leverages Effect's type system.
-- Use `Effect.gen` for readable sequential code.
-- Implement proper testing patterns using Effect testing utilities.
-- Prefer existing Effect primitives before introducing custom helpers.
-- Prefer `Schema.Class` / `Schema.TaggedClass` variants over plain `Schema.Struct` for named reusable schemas when possible.
-
-### Explaining Solutions
-
-When providing solutions, explain the Effect concepts being used and why they fit the specific use case. If you encounter patterns not covered in local references, prefer consistency with the codebase when possible and otherwise rely on the vendored Effect source.
-
-## References
-
-- `./references/features.md`
-- `./references/guide-effect.md`
-- `./references/guide-error-handling.md`
-- `./references/guide-layers.md`
-- `./references/guide-observability.md`
-- `./references/guide-retries.md`
-- `./references/guide-schedule.md`
-- `./references/guide-schema.md`
-- `./references/guide-sql.md`
-- `./references/guide-testing.md`
-- `./references/setup.md`
+- Run `pnpm typecheck` after Effect dependency or source changes.
+- Follow `docs/engineering/testing/README.md` and the repository test-reset rules before changing tests.
+- Do not add `@effect/vitest` automatically. Use it only when an authorized Effect test owner needs its clock, layer, or scoped-test facilities and its v3 peer dependencies are compatible.
+- Run the smallest real runtime path that exercises changed interruption, finalizer, or Promise-adaptation behavior when implementation changes go beyond a dependency-only upgrade.
