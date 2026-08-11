@@ -111,7 +111,7 @@ export default defineExperiment({
       agent: codexAgent({ apiKeyEnv: "REVIEWER_OPENAI_KEY" }),
       model: "gpt-5.4",
       reasoningEffort: "high",
-      sandbox: dockerImageSandbox({ image: "niceeval-agents:node24" }),
+      sandbox: dockerSandbox({ source: { type: "image", image: "niceeval-agents:node24" } }),
       timeoutMs: 15 * 60_000,
     },
   },

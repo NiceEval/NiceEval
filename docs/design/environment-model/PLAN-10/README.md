@@ -14,7 +14,7 @@ Eval 与 Experiment 使用完全相同的公开 `sandbox` 字段和 `SandboxLaye
 对每个实际选中的 `Eval × Experiment` 配对：
 
 - 恰好一个 Eval / Experiment layer 是 root layer；
-- root layer 由 `dockerComposeSandbox()`、`dockerfileSandbox()`、`dockerImageSandbox()`、`e2bSandbox()`、`vercelSandbox()` 或自定义 root factory 构造；
+- root layer 由 `dockerComposeSandbox()`、`dockerSandbox()`、`e2bSandbox()`、`vercelSandbox()` 或自定义 root factory 构造；
 - 另一方是 extension layer，只能在已经启动的主 Sandbox 中执行命令；
 - Agent layer 始终是 extension，并且始终排在两方作者 layer 之后；
 - root layer 总是先执行，另一方随后，Agent 最后；作者不能配置 priority、`dependsOn` 或另一套顺序。

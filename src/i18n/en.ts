@@ -533,7 +533,7 @@ export const en = {
     "  fix: lower timeoutMs below {{limitMs}}ms, or declare a longer lifetimeMs on the sandbox spec if your plan allows it.\n",
   "sandbox.providerNotImplemented": "{{provider}} sandbox provider is not implemented; use docker, vercel, e2b, or local",
   "sandbox.missingSpec":
-    "sandbox agent needs a template-bearing SandboxLayer, but neither the Eval nor Experiment declared one — use dockerImageSandbox({ image }), dockerComposeSandbox({ file, workspaceService }), dockerfileSandbox({ context }), vercelSandbox({ snapshotId }), e2bSandbox({ template }), or localSandbox() from \"niceeval/sandbox\".\n" +
+    "sandbox agent needs a template-bearing SandboxLayer, but neither the Eval nor Experiment declared one — use dockerSandbox({ source: { type: \"image\", image } }), dockerSandbox({ source: { type: \"dockerfile\", context } }), dockerComposeSandbox({ file, workspaceService }), vercelSandbox({ snapshotId }), e2bSandbox({ template }), or localSandbox() from \"niceeval/sandbox\".\n" +
     "  Docs: node_modules/niceeval/docs-site/zh/tutorials/sandbox-providers.mdx",
   "sandbox.dependencyMissing.docker": "Docker sandbox requires 'dockerode'. Install it with: pnpm add dockerode @types/dockerode",
   "sandbox.dependencyMissing.e2b": "E2B sandbox requires 'e2b'. Install it with: pnpm add e2b",

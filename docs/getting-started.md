@@ -174,7 +174,13 @@ export default defineEval({
 });
 ```
 
-`experiments/local.ts` 里给这个沙箱型 agent 加一个 `sandbox: dockerImageSandbox({ image: NICEEVAL_CLAUDE_CODE_DOCKER_IMAGE })`(都从 `niceeval/sandbox` 导入)。
+在 `experiments/local.ts` 里给这个沙箱型 agent 声明 `sandbox`：
+
+```typescript
+sandbox: dockerSandbox({ source: { type: "image", image: NICEEVAL_CLAUDE_CODE_DOCKER_IMAGE } })
+```
+
+`dockerSandbox` 和镜像常量都从 `niceeval/sandbox` 导入。
 没有游离的 Provider 配置,也没有 `--sandbox` 这种 CLI 替换:起点由 template-bearing factory 声明并同时带出 Provider,写在 Experiment 或 Eval 的 `sandbox` 字段上(配对规则见 [Sandbox Layer](feature/sandbox/layers.md))。
 
 **跑起来:**

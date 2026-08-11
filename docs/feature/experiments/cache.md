@@ -197,7 +197,7 @@ export default defineEval({
   //  ↑ 不是笔误:eval 文件进指纹的是**整份字节**,不是解析出来的字段
 
   tags: ["memory"],                 // 加一个 tag → 这一条重跑
-  sandbox: dockerImageSandbox({ image: "ghcr.io/acme/py39-astropy:r1" }),
+  sandbox: dockerSandbox({ source: { type: "image", image: "ghcr.io/acme/py39-astropy:r1" } }),
   //  换 image、换 factory → 这一条重跑,同实验其余 35 条照常携带:起点身份进它自己的指纹
   //  同名 image 被原地重建 → 一条不动,指纹看不见镜像内容
   metadata: { source: "swe" },      // 改 → 这一条重跑

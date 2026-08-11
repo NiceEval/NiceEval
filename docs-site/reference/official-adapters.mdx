@@ -34,7 +34,7 @@ For example, disable built-in web search with `configs/claude-code/no-web.json`:
 ```ts
 import { defineExperiment } from "niceeval";
 import { claudeCodeAgent } from "niceeval/adapter";
-import { dockerImageSandbox } from "niceeval/sandbox";
+import { dockerSandbox } from "niceeval/sandbox";
 
 export default defineExperiment({
   agent: claudeCodeAgent({
@@ -54,7 +54,7 @@ export default defineExperiment({
     settingsFile: "configs/claude-code/no-web.json",
   }),
   model: "claude-sonnet-4-6",
-  sandbox: dockerImageSandbox({ image: "node:24-slim" }),
+  sandbox: dockerSandbox({ source: { type: "image", image: "node:24-slim" } }),
 });
 ```
 
@@ -83,7 +83,7 @@ web_search = "disabled"
 ```ts
 import { defineExperiment } from "niceeval";
 import { codexAgent } from "niceeval/adapter";
-import { dockerImageSandbox } from "niceeval/sandbox";
+import { dockerSandbox } from "niceeval/sandbox";
 
 export default defineExperiment({
   agent: codexAgent({
@@ -101,7 +101,7 @@ export default defineExperiment({
     configFile: "configs/codex/no-web.toml",
   }),
   model: "gpt-5.4",
-  sandbox: dockerImageSandbox({ image: "node:24-slim" }),
+  sandbox: dockerSandbox({ source: { type: "image", image: "node:24-slim" } }),
 });
 ```
 
@@ -119,7 +119,7 @@ export default defineExperiment({
 ```ts
 import { defineExperiment } from "niceeval";
 import { bubAgent } from "niceeval/adapter";
-import { dockerImageSandbox } from "niceeval/sandbox";
+import { dockerSandbox } from "niceeval/sandbox";
 
 export default defineExperiment({
   agent: bubAgent({
@@ -127,7 +127,7 @@ export default defineExperiment({
     pythonPlugins: [{ package: "bub-plugin-memory==1.3.0" }],
   }),
   model: "gpt-5.4",
-  sandbox: dockerImageSandbox({ image: "node:24-slim" }),
+  sandbox: dockerSandbox({ source: { type: "image", image: "node:24-slim" } }),
 });
 ```
 

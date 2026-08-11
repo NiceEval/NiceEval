@@ -681,7 +681,7 @@ defineTheme colors.accent must be an opaque six-digit sRGB hex (#RRGGBB), got "t
 
 SandboxLayer 同样使用模块私有 kind 品牌。
 `sandboxLayer()` 只能产生 command-only layer。
-`dockerComposeSandbox()`、`dockerImageSandbox()`、`e2bSandbox()` 等具体 factory 原子地产生 template-bearing layer，并同时带出 Provider。`prepare()` 链保留原 kind，公共调用面不提供 `.template()`、`.provider()` 或 layer concat。
+`dockerComposeSandbox()`、`dockerSandbox()`、`e2bSandbox()` 等具体 factory 原子地产生 template-bearing layer，并同时带出 Provider。`prepare()` 链保留原 kind，公共调用面不提供 `.template()`、`.provider()` 或 layer concat。
 
 这让 TypeScript 能在单个声明内证明：作者不能用对象字面量伪造 layer，command 链不能突然增加 template，template factory 的原生起点参数必填。
 

@@ -17,7 +17,7 @@ arm64 变体,即使 `node:*-slim` 官方镜像其实是多架构的。这不是 
 **修法**(环境认知,非代码修复):
 - 本地在 Apple Silicon 上验证沙箱型 eval,`timeoutMs` 要比"预估的真实模型调用时间"多留
   数倍余量(e2e claude-code / codex 项目定的 600_000ms,大半是给这层模拟开销)。
-- 若长期需要在 Apple Silicon 本机高频跑沙箱 eval,可以考虑给 `dockerSandbox({ image })`
+- 若长期需要在 Apple Silicon 本机高频跑沙箱 eval,可以考虑给 `dockerSandbox({ source: { type: "image", image } })`
   传一个显式声明 `--platform linux/arm64` 拉取的自定义镜像/预制模板,避免每次都在模拟层跑;
   这次没有做(超出本任务范围),只是记录下来供以后决定要不要做。
 - 排查沙箱型 eval "本地慢、CI 应该会快"或反过来的性能差异时,先用

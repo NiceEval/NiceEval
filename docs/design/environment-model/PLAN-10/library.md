@@ -11,8 +11,8 @@ import {
   command,
   defineSandboxCommand,
   dockerComposeSandbox,
-  dockerfileSandbox,
-  dockerImageSandbox,
+  dockerSandbox,
+  dockerSandbox,
   e2bSandbox,
   registerSandboxContent,
   sandboxLayer,
@@ -132,14 +132,15 @@ interface DockerComposeSandboxOptions {
   readonly env?: Readonly<Record<string, string>>;
 }
 
-interface DockerfileSandboxOptions {
-  readonly context: string | URL;
-  readonly dockerfile?: string;
-  readonly buildArgs?: Readonly<Record<string, string>>;
-}
-
-interface DockerImageSandboxOptions {
-  readonly image: string;
+interface DockerSandboxOptions {
+  readonly source:
+    | { readonly type: "image"; readonly image: string }
+    | {
+        readonly type: "dockerfile";
+        readonly context: string | URL;
+        readonly file?: string;
+        readonly buildArgs?: Readonly<Record<string, string>>;
+      };
 }
 
 interface E2BSandboxOptions {
@@ -154,11 +155,8 @@ interface VercelSandboxOptions {
 declare function dockerComposeSandbox(
   options: DockerComposeSandboxOptions,
 ): SandboxLayer<"root">;
-declare function dockerfileSandbox(
-  options: DockerfileSandboxOptions,
-): SandboxLayer<"root">;
-declare function dockerImageSandbox(
-  options: DockerImageSandboxOptions,
+declare function dockerSandbox(
+  options: DockerSandboxOptions,
 ): SandboxLayer<"root">;
 declare function e2bSandbox(
   options: E2BSandboxOptions,

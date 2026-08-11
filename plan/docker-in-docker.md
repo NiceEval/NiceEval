@@ -5,7 +5,7 @@
 
 ## 已核对的起点
 
-- 当前公开面仍是 `dockerfileSandbox()` / `dockerImageSandbox()`，尚无统一的 `dockerSandbox({ source })`。
+- 公开面使用统一的 `dockerSandbox({ source })`，`source` 区分 image 与 Dockerfile。
 - `src/sandbox/docker.ts` 已有 `privileged: "rootless"`、容器资源映射和基于环境变量的临时校验，但尚无 profile registry、control protocol、持久 watchdog、跨进程 admission 或 daemon generation 绑定。
 - CLI 尚无 `niceeval docker profile list|doctor`；仓库也没有 NixOS module、通用 systemd host package 或 macOS 专用 VM package。
 - `docs/feature/sandbox/` 已描述一部分 privileged/resources 行为，并仍声明“没有 profile registry”。实现完成时必须按 Roadmap 重写该处，不能保留两份冲突契约。

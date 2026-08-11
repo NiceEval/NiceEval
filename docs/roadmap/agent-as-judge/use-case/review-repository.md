@@ -13,17 +13,17 @@ Experiment 使用一个 Sandbox Agent 完成任务，并为 Agent Judge 声明�
 // experiments/coding.ts
 import { defineExperiment } from "niceeval";
 import { codexAgent } from "niceeval/adapter";
-import { dockerImageSandbox } from "niceeval/sandbox";
+import { dockerSandbox } from "niceeval/sandbox";
 
 export default defineExperiment({
   agent: codexAgent({ apiKeyEnv: "SUBJECT_OPENAI_KEY" }),
-  sandbox: dockerImageSandbox({ image: "niceeval-agents:node24" }),
+  sandbox: dockerSandbox({ source: { type: "image", image: "niceeval-agents:node24" } }),
   judge: {
     agent: {
       agent: codexAgent({ apiKeyEnv: "REVIEWER_OPENAI_KEY" }),
       model: "gpt-5.4",
       reasoningEffort: "high",
-      sandbox: dockerImageSandbox({ image: "niceeval-agents:node24" }),
+      sandbox: dockerSandbox({ source: { type: "image", image: "niceeval-agents:node24" } }),
       timeoutMs: 15 * 60_000,
     },
   },

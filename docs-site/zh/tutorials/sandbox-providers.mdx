@@ -33,12 +33,12 @@ Adapter 常用操作包括：
 ```ts
 // experiments/local.ts
 import { defineExperiment } from "niceeval";
-import { dockerImageSandbox } from "niceeval/sandbox";
+import { dockerSandbox } from "niceeval/sandbox";
 
 export default defineExperiment({
   agent: myCodingAgent,
   model: "claude-sonnet-4-6",
-  sandbox: dockerImageSandbox({ image: "node:24-slim" }), // 或 vercelSandbox({ snapshotId }) / e2bSandbox({ template })
+  sandbox: dockerSandbox({ source: { type: "image", image: "node:24-slim" } }), // 或 vercelSandbox({ snapshotId }) / e2bSandbox({ template })
 });
 ```
 
@@ -48,7 +48,7 @@ Eval 与 Experiment 都没声明 template-bearing layer 时，link planning 会�
 
 | provider | 安装命令 |
 |---|---|
-| `dockerImageSandbox({ image: "node:24-slim" })` | `pnpm add dockerode @types/dockerode` |
+| `dockerSandbox({ source: { type: "image", image: "node:24-slim" } })` | `pnpm add dockerode @types/dockerode` |
 | `vercelSandbox({ snapshotId })` | `pnpm add @vercel/sandbox` |
 | `e2bSandbox({ template })` | `pnpm add e2b` |
 | `localSandbox()` | 无需额外安装 |
@@ -78,7 +78,9 @@ sandbox: dockerComposeSandbox({
 
 ## 生命周期
 
-`dockerImageSandbox({ image })` / `vercelSandbox({ snapshotId })` / `e2bSandbox({ template })` 返回的 `SandboxLayer` 有 `.prepare(command)`、`.setup(fn)` 和 `.teardown(fn)` 方法。它们处理只有运行时才知道的环境内容，例如按实验写小配置、检查预制工具是否可用、安装 hook，或在多次 Attempt 之间载入和回存状态。
+`dockerSandbox({ source: { type: "image", image } })`、`vercelSandbox({ snapshotId })` 和 `e2bSandbox({ template })` 都返回 `SandboxLayer`。返回值有 `.prepare(command)`、`.setup(fn)` 和 `.teardown(fn)` 方法。
+
+这些方法处理只有运行时才知道的环境内容。例如按实验写配置、检查预制工具、安装 hook，或在多次 Attempt 之间载入和回存状态。
 
 共享辅助函数需要显式标注回调类型时，从公开入口导入，不要从某个 provider 的 spec 反推：
 
@@ -169,7 +171,7 @@ const sandbox = e2bSandbox({ template: "niceeval-agents" })
 NiceEval 用 typed spec 统一引用预制环境，但不提供一个假的通用构建命令：
 
 ```ts
-dockerImageSandbox({ image: "my-evals:node24" })
+dockerSandbox({ source: { type: "image", image: "my-evals:node24" } })
 vercelSandbox({ snapshotId: "snap_abc123" })
 e2bSandbox({ template: "my-evals" })
 ```
@@ -274,9 +276,9 @@ e2bCodingAgentTemplate("bub", {
 Agent 的版本。稳定 CI 用具名常量或 digest，不要依赖会移动的 `latest`：
 
 ```ts
-import { NICEEVAL_CODEX_DOCKER_IMAGE, dockerImageSandbox } from "niceeval/sandbox";
+import { NICEEVAL_CODEX_DOCKER_IMAGE, dockerSandbox } from "niceeval/sandbox";
 
-sandbox: dockerImageSandbox({ image: NICEEVAL_CODEX_DOCKER_IMAGE })
+sandbox: dockerSandbox({ source: { type: "image", image: NICEEVAL_CODEX_DOCKER_IMAGE } })
 ```
 
 这个镜像是 NiceEval 维护的公开镜像，不是 Docker 的 `library/*` Official Image。它在 Agent 版本或
@@ -302,14 +304,14 @@ docker build -t acme-codex-evals:0.144.1-r1 .
 然后在 Experiment 里只引用构建结果：
 
 ```ts
-import { dockerImageSandbox } from "niceeval/sandbox";
+import { dockerSandbox } from "niceeval/sandbox";
 
-sandbox: dockerImageSandbox({ image: "acme-codex-evals:0.144.1-r1" })
+sandbox: dockerSandbox({ source: { type: "image", image: "acme-codex-evals:0.144.1-r1" } })
 ```
 
-Docker Sandbox 沿用镜像自己声明的执行身份：上面这份 Dockerfile 没写 `USER`，容器就默认以 root 跑命令，`/usr/local/bin` 已经在 root 的 PATH 上，`npm install -g` 装的全局二进制天然可见。需要非 root 身份时（比如 Claude Code 在 root 下会拒绝 `--dangerously-skip-permissions`），在 Dockerfile 里加一行 `USER node`（`node:24-slim` 镜像自带这个用户）。也可以用 `dockerImageSandbox({ image, user: "node" })` 显式覆盖。
+Docker Sandbox 沿用镜像自己声明的执行身份：上面这份 Dockerfile 没写 `USER`，容器就默认以 root 跑命令，`/usr/local/bin` 已经在 root 的 PATH 上，`npm install -g` 装的全局二进制天然可见。需要非 root 身份时（比如 Claude Code 在 root 下会拒绝 `--dangerously-skip-permissions`），在 Dockerfile 里加一行 `USER node`（`node:24-slim` 镜像自带这个用户）。也可以用 `dockerSandbox({ source: { type: "image", image }, user: "node" })` 显式覆盖。
 
-要装到别处的 Agent（如落在 `~/.local/bin`）记得让它进 PATH。`dockerImageSandbox` 要求显式 image。稳定 CI 引用不可变 tag。
+要装到别处的 Agent（如落在 `~/.local/bin`）记得让它进 PATH。`dockerSandbox` 要求显式 image。稳定 CI 引用不可变 tag。
 
 #### Vercel：从官方 runtime 拍快照
 

@@ -183,7 +183,7 @@ npx tsx bench/run.ts e2b               # 需 E2B_API_KEY
 npx tsx bench/run.ts docker --attempts 10  # 默认也是 10(见下)
 ```
 
-对给定 provider 下的每个 adapter，`run.ts` 直接 `for` 循环调用 `runAttemptBody`。sandbox 由该 provider 的 `dockerImageSandbox({ image })` / `e2bSandbox({ template })` / `vercelSandbox({ snapshotId })` 构造。
+对给定 provider 下的每个 adapter，`run.ts` 直接 `for` 循环调用 `runAttemptBody`。sandbox 由该 provider 的 `dockerSandbox({ source: { type: "image", image } })` / `e2bSandbox({ template })` / `vercelSandbox({ snapshotId })` 构造。
 
 串行执行、不并发，让排队等待恒近 0，attempt 序号与冷 / 热次序一一对应。
 

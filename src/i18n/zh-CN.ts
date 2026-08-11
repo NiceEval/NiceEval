@@ -525,7 +525,7 @@ export const zhCN = {
     "  fix: 把 timeoutMs 调到 {{limitMs}}ms 以内,或在 sandbox spec 上声明更长的 lifetimeMs(账号档位允许的话)。\n",
   "sandbox.providerNotImplemented": "{{provider}} sandbox provider not implemented; use docker, vercel, e2b, or local",
   "sandbox.missingSpec":
-    "沙箱型 agent 需要一条带 template 的 SandboxLayer，但 Eval 与 Experiment 都没有声明——请从 \"niceeval/sandbox\" 使用 dockerImageSandbox({ image })、dockerComposeSandbox({ file, workspaceService })、dockerfileSandbox({ context })、vercelSandbox({ snapshotId })、e2bSandbox({ template }) 或 localSandbox()。\n" +
+    "沙箱型 agent 需要一条带 template 的 SandboxLayer，但 Eval 与 Experiment 都没有声明——请从 \"niceeval/sandbox\" 使用 dockerSandbox({ source: { type: \"image\", image } })、dockerSandbox({ source: { type: \"dockerfile\", context } })、dockerComposeSandbox({ file, workspaceService })、vercelSandbox({ snapshotId })、e2bSandbox({ template }) 或 localSandbox()。\n" +
     "  文档:node_modules/niceeval/docs-site/zh/tutorials/sandbox-providers.mdx",
   "sandbox.dependencyMissing.docker": "Docker sandbox requires 'dockerode'. Install it with: pnpm add dockerode @types/dockerode",
   "sandbox.dependencyMissing.e2b": "E2B sandbox requires 'e2b'. Install it with: pnpm add e2b",

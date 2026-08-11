@@ -1,5 +1,5 @@
 import { completeEvidenceCoverage, defineSandboxAgent } from "niceeval/adapter";
-import { dockerImageSandbox, shell } from "niceeval/sandbox";
+import { dockerSandbox, shell } from "niceeval/sandbox";
 
 const evidenceCoverage = {
   ...completeEvidenceCoverage,
@@ -11,8 +11,8 @@ const FIRST_REUSE_MARKER = "/tmp/niceeval-lifecycle-first-attempt";
 const SECOND_READY_MARKER = "/tmp/niceeval-lifecycle-second-attempt-ready";
 const WORKDIR_MARKER = "niceeval-lifecycle-workdir-marker";
 
-export const lifecycleSandbox = dockerImageSandbox({
-  image: NODE_IMAGE,
+export const lifecycleSandbox = dockerSandbox({
+  source: { type: "image", image: NODE_IMAGE },
   user: "node",
   lifetimeMs: 5 * 60_000,
   resources: {
