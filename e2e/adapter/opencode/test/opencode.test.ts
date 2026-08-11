@@ -4,8 +4,8 @@
 // 再从公开 CLI 读回 Eval、attempt、execution 与 timing。
 // 只从 @niceeval/testkit 根导入；不读 .niceeval 私有布局、不 import 候选源码/类型。
 
-import { command, type ProcessReceipt } from "@niceeval/testkit";
-import { readFileSync, rmSync } from "node:fs";
+import { command, type ExpResultEvent } from "@niceeval/testkit";
+import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 
@@ -30,30 +30,6 @@ const REQUIRED_LIVE_SECRETS = [
 
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
 
-interface ExpStartEvent {
-  event: "start";
-  format: string;
-  schemaVersion: number;
-  total: number;
-  configs: number;
-  concurrency: number;
-  reused: number;
-}
-
-interface ExpResultEvent {
-  event: "result";
-  status: "passed" | "failed" | "incomplete" | "interrupted";
-  passed: number;
-  failed: number;
-  errored: number;
-  reused?: number;
-  completion: "complete" | "incomplete" | "interrupted";
-  snapshots: string[];
-  junit?: string;
-}
-
-type ExpEvent = ExpStartEvent | ExpResultEvent | { event: string };
-
 function requireLiveSecrets(): void {
   const missing = REQUIRED_LIVE_SECRETS.filter((name) => !process.env[name]);
   if (missing.length > 0) {
@@ -74,33 +50,6 @@ async function requireDocker(): Promise<void> {
   }
 }
 
-function expectSuccessfulCli(receipt: ProcessReceipt): void {
-  expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
-  expect(receipt.signal, receipt.diagnostic()).toBeNull();
-  expect(receipt.timedOut, receipt.diagnostic()).toBe(false);
-  expect(receipt.stderr).toBe("");
-  expect(receipt.stdout).not.toMatch(/[\x1b\x08]/);
-}
-
-function expectExpStream(receipt: ProcessReceipt, expectedTotal: number): ExpEvent[] {
-  expectSuccessfulCli(receipt);
-  expect(receipt.durationMs).toBeGreaterThan(0);
-  expect(receipt.stdout).not.toBe("");
-
-  const events = receipt.ndjson<ExpEvent>();
-  expect(events.length).toBeGreaterThan(0);
-  expect(events[0]).toMatchObject({ event: "start", format: "niceeval.exp" });
-  expect((events[0] as ExpStartEvent).total).toBeGreaterThanOrEqual(expectedTotal);
-  expect(events.at(-1)).toMatchObject({
-    event: "result",
-    status: "passed",
-    failed: 0,
-    errored: 0,
-    completion: "complete",
-  });
-  return events;
-}
-
 async function attemptLines(evalId: string, experimentId?: string): Promise<string[]> {
   const history = await niceeval.run([
     "show",
@@ -108,7 +57,7 @@ async function attemptLines(evalId: string, experimentId?: string): Promise<stri
     ...(experimentId === undefined ? [] : ["--exp", experimentId]),
     "--history",
   ]);
-  expectSuccessfulCli(history);
+  expect(history.exitCode, history.diagnostic()).toBe(0);
   return history.stdout.split("\n").filter((line) => line.includes("@"));
 }
 
@@ -131,12 +80,12 @@ function toolInputOccurrences(execution: string, marker: string): number {
   ).length;
 }
 
-function expectToolInputReadback(execution: string, marker: string, minimum: number): void {
+function expectToolInputReadback(execution: string, marker: string, expected: number): void {
   expect(execution).toContain("TOOL");
   expect(
     toolInputOccurrences(execution, marker),
-    `show --execution should expose ${minimum} TOOL input block(s) containing ${marker}`,
-  ).toBeGreaterThanOrEqual(minimum);
+    `show --execution should expose ${expected} TOOL input block(s) containing ${marker}`,
+  ).toBe(expected);
 }
 
 it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公开 CLI 读回", async () => {
@@ -144,24 +93,23 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   await requireDocker();
 
   rmSync(".niceeval", { recursive: true, force: true });
-  rmSync("junit.xml", { force: true });
-  rmSync("junit-skill.xml", { force: true });
-  rmSync("junit-go.xml", { force: true });
 
   // invoke：先跑 compat 基线协议矩阵。完整 argv 走安装后的 candidate binary；
   // 真实 OpenCode CLI、Docker sandbox 与 live provider 由 experiments/ci.ts + evals/ 驱动。
   const run = await niceeval.run(
-    ["exp", "ci", "--rerun", "all", "--json", "--junit", "junit.xml"],
+    ["exp", "ci", "--rerun", "all", "--json"],
     { timeoutMs: 36 * 60_000 },
   );
-  const events = expectExpStream(run, BASELINE_EVALS.length);
-  const result = events.at(-1) as ExpResultEvent;
-  expect(result.passed).toBeGreaterThanOrEqual(BASELINE_EVALS.length);
-
-  const junit = readFileSync("junit.xml", "utf8");
-  expect(junit).toContain("<testsuite");
-  expect(junit).not.toContain("<failure");
-  expect(junit).not.toContain("<error");
+  expect(run.exitCode, run.diagnostic()).toBe(0);
+  const result: ExpResultEvent = run.expResult();
+  expect(result).toMatchObject({
+    event: "result",
+    status: "passed",
+    passed: BASELINE_EVALS.length,
+    failed: 0,
+    errored: 0,
+    completion: "complete",
+  });
 
   const locators: Record<string, string> = {};
   for (const evalId of BASELINE_EVALS) {
@@ -172,7 +120,7 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   //（opencode 的 write / bash），canonical 名 file_write / shell 也可能出现；
   // 入参与 OTel 时间注释必须穿过归一化、落盘与 CLI 展示。
   const execution = await niceeval.run(["show", locators["coding-task/write-and-verify"]!, "--execution"]);
-  expectSuccessfulCli(execution);
+  expect(execution.exitCode, execution.diagnostic()).toBe(0);
   expect(
     execution.stdout.includes("notes.txt") ||
       execution.stdout.includes("file_write") ||
@@ -184,7 +132,7 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
 
   // usage Eval 的两个 t.send() 都有独立的正 token 数；execution 的两个 turn 头必须各自可读。
   const usageExecution = await niceeval.run(["show", locators["usage/tokens"]!, "--execution"]);
-  expectSuccessfulCli(usageExecution);
+  expect(usageExecution.exitCode, usageExecution.diagnostic()).toBe(0);
   expect(usageExecution.stdout).toMatch(/turn1\s+·\s+completed[^\n]*\btok\b/);
   expect(usageExecution.stdout).toMatch(/turn2\s+·\s+completed[^\n]*\btok\b/);
   expect(
@@ -198,32 +146,30 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   // mapper，但仓库验收明确「时间轨缺失只影响 timing 注释，不影响事件流断言」，
   // 因此不把字面 OTel 子树当作硬前提，只断言阶段树本身。
   const timing = await niceeval.run(["show", locators["coding-task/write-and-verify"]!, "--timing"]);
-  expectSuccessfulCli(timing);
+  expect(timing.exitCode, timing.diagnostic()).toBe(0);
   expect(timing.stdout).toContain("eval.run");
   expect(timing.stdout).toContain("agent.setup");
   expect(timing.stdout).toMatch(/turn\s+turn1\b/);
 
   // Skill 配置独立成线：安装、原生 skill 工具选择与 decoy 反选由专用 Eval 证明。
   const skillRun = await niceeval.run(
-    ["exp", "skill", SKILL_EVAL, "--rerun", "all", "--json", "--junit", "junit-skill.xml"],
+    ["exp", "skill", SKILL_EVAL, "--rerun", "all", "--json"],
     { timeoutMs: 10 * 60_000 },
   );
-  const skillEvents = expectExpStream(skillRun, 1);
-  const skillResult = skillEvents.at(-1) as ExpResultEvent;
-  expect(skillResult.passed).toBeGreaterThanOrEqual(1);
-
-  const skillJunit = readFileSync("junit-skill.xml", "utf8");
-  expect(skillJunit).toContain("<testsuite");
-  expect(skillJunit).not.toContain("<failure");
-  expect(skillJunit).not.toContain("<error");
-
-  const skillBoard = await niceeval.run(["show", "--exp", "skill", "--json"]);
-  expectSuccessfulCli(skillBoard);
-  expect(skillBoard.stdout).toContain(SKILL_EVAL);
+  expect(skillRun.exitCode, skillRun.diagnostic()).toBe(0);
+  const skillResult: ExpResultEvent = skillRun.expResult();
+  expect(skillResult).toMatchObject({
+    event: "result",
+    status: "passed",
+    passed: 1,
+    failed: 0,
+    errored: 0,
+    completion: "complete",
+  });
 
   const skillLocator = await latestAttemptLocator(SKILL_EVAL, "skill");
   const skillExecution = await niceeval.run(["show", skillLocator, "--execution"]);
-  expectSuccessfulCli(skillExecution);
+  expect(skillExecution.exitCode, skillExecution.diagnostic()).toBe(0);
   expectToolInputReadback(skillExecution.stdout, STATUS_MARKER, 1);
   expect(skillExecution.stdout).not.toContain(DECOY_MARKER);
 
@@ -237,28 +183,23 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
       "--rerun",
       "all",
       "--json",
-      "--junit",
-      "junit-go.xml",
     ],
     { timeoutMs: 12 * 60_000 },
   );
-  const goEvents = expectExpStream(goRun, 1);
-  const goResult = goEvents.at(-1) as ExpResultEvent;
-  expect(goResult.passed).toBeGreaterThanOrEqual(1);
-
-  const goJunit = readFileSync("junit-go.xml", "utf8");
-  expect(goJunit).toContain("<testsuite");
-  expect(goJunit).not.toContain("<failure");
-  expect(goJunit).not.toContain("<error");
-
-  const goBoard = await niceeval.run(["show", "--exp", "go", "--json"]);
-  expectSuccessfulCli(goBoard);
-  expect(goBoard.stdout).toContain(GO_EVAL);
-  expect(goBoard.stdout).toContain("opencode-go/deepseek-v4-flash");
+  expect(goRun.exitCode, goRun.diagnostic()).toBe(0);
+  const goResult: ExpResultEvent = goRun.expResult();
+  expect(goResult).toMatchObject({
+    event: "result",
+    status: "passed",
+    passed: 1,
+    failed: 0,
+    errored: 0,
+    completion: "complete",
+  });
 
   const goLocator = await latestAttemptLocator(GO_EVAL, "go");
   const goExecution = await niceeval.run(["show", goLocator, "--execution"]);
-  expectSuccessfulCli(goExecution);
+  expect(goExecution.exitCode, goExecution.diagnostic()).toBe(0);
   expect(goExecution.stdout).toContain("opencode export");
   expect(goExecution.stdout).toContain("deepseek-v4-flash");
   expect(goExecution.stdout).toContain(GO_LIVE_MARKER);

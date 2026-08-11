@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import {
   command,
-  type ProcessReceipt,
+  type ExpEvalEvent,
+  type ExpEvent,
+  type ExpResultEvent,
   type ProjectCopyStagingOptions,
   withProjectCopy,
 } from "@niceeval/testkit";
@@ -59,33 +60,10 @@ export function sdkConverterArtifactStaging(caseName: string): ProjectCopyStagin
           target: join(".niceeval", "e2e-artifacts", invocationId, safeCaseName),
           optional: true,
         },
-        {
-          source: "junit",
-          target: join("junit", "e2e-artifacts", invocationId, safeCaseName),
-          optional: true,
-        },
       ],
       collision: "error",
     },
   };
-}
-
-interface ExpEvent {
-  event: string;
-  evalId?: string;
-  locator?: string;
-  status?: string;
-  passed?: number;
-  failed?: number;
-  errored?: number;
-  completion?: string;
-}
-
-function expectCliSuccess(receipt: ProcessReceipt): void {
-  expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
-  expect(receipt.signal, receipt.diagnostic()).toBeNull();
-  expect(receipt.timedOut, receipt.diagnostic()).toBe(false);
-  expect(receipt.stdout, receipt.diagnostic()).not.toMatch(/[\x1b\x08]/);
 }
 
 /**
@@ -103,15 +81,14 @@ export async function proveSdkConverterOwner(options: {
   await withProjectCopy(
     sdkConverterProjectCopy,
     async ({ root }) => {
-      await mkdir(join(root, "junit"), { recursive: true });
-      const junitPath = `junit/${options.caseName}.xml`;
       const run = await niceeval.run(
-        ["exp", options.experimentId, "--rerun", "all", "--json", "--junit", junitPath],
+        ["exp", options.experimentId, "--rerun", "all", "--json"],
         { cwd: root },
       );
-      expectCliSuccess(run);
+      expect(run.exitCode, run.diagnostic()).toBe(0);
       const events = run.ndjson<ExpEvent>();
-      expect(events.at(-1)).toMatchObject({
+      const result: ExpResultEvent = run.expResult();
+      expect(result).toMatchObject({
         event: "result",
         status: "passed",
         passed: 1,
@@ -120,29 +97,20 @@ export async function proveSdkConverterOwner(options: {
         completion: "complete",
       });
       const evalEvent = events.find(
-        (event) => event.event === "eval" && event.evalId === options.evalId && event.locator !== undefined,
+        (event): event is ExpEvalEvent => event.event === "eval" && event.evalId === options.evalId,
       );
       expect(evalEvent, run.diagnostic()).toBeDefined();
-
-      const junit = await readFile(join(root, junitPath), "utf8");
-      expect(junit).toContain("<testsuite");
-      expect(junit).not.toContain("<failure");
-      expect(junit).not.toContain("<error");
-
-      const board = await niceeval.run(["show", "--exp", options.experimentId, "--json"], { cwd: root });
-      expectCliSuccess(board);
-      expect(board.stdout).toContain(options.evalId);
 
       const history = await niceeval.run(
         ["show", options.evalId, "--exp", options.experimentId, "--history"],
         { cwd: root },
       );
-      expectCliSuccess(history);
+      expect(history.exitCode, history.diagnostic()).toBe(0);
       expect(history.stdout).toContain("passed");
       expect(history.stdout).toContain("@");
 
       const execution = await niceeval.run(["show", evalEvent!.locator!, "--execution"], { cwd: root });
-      expectCliSuccess(execution);
+      expect(execution.exitCode, execution.diagnostic()).toBe(0);
       for (const marker of options.executionMarkers) expect(execution.stdout).toContain(marker);
     },
     sdkConverterArtifactStaging(options.caseName),

@@ -39,14 +39,14 @@
 2. **断言调用存在且入参正确**：Eval 内的判分断言只读标准事件流（`Turn.events`）——工具调用以该协议的真实名字出现（MCP 命名、不带命名空间的工具名）、调用与结果按 call ID 配对、HITL 产生 `input.requested`、usage 逐轮到位。
    - 工具断言**连名带参**：`t.calledTool("mcp__demo-tools__get_weather", { input: { city: "Brooklyn" } })`。名字对但参数被丢弃或改写，同样是归一 bug，入参保真是协议路径的一部分（`ToolMatch` 的深度部分匹配见[Assertions · 作用域断言](../../../../feature/assertions/library/scoped-assertions.md#匹配条件的字段全集)）。
    - 支持负断言的协议同时验证反例（`notCalledTool`）；证据不完整的协议在文档里写明负断言边界，不从最终文本猜测过程。
-3. **经 CLI 展示核验接收完整性**：仓库验收脚本把同一份新结果交给读面 CLI——`niceeval show` 退出 0、默认报告列出本仓库每条 Eval 的 id 与 verdict、与 `--json` 口径一致。对一个通过的 attempt 跑 `show --execution`：执行树就是「适配器收到了什么」的用户可见投影，第 2 步断言过的那批调用应全部以节点出现，TOOL 卡片的 `input` 块含断言过的入参值——入参保真同样要穿到展示面。
-   适配器有没有正常接收到各种信息，以 CLI 展示为断言面——这一条断言穿透整条链（归一 → 落盘 → 读取面 → 渲染），一次真实运行同时验收协议路径和 CLI 读面。
+3. **读取精确终态，不重复判分**：原生测试在调用点直接断言 `receipt.exitCode`，再从 Testkit 的 `ProcessReceipt.expResult()` 读取原始 `ExpResultEvent`。测试精确断言 `status`、`passed`、`failed`、`errored` 与 `completion`。退出码不藏进 `expectSuccessfulCli()` 一类包装；测试也不手写 start/result 类型、不从 NDJSON 尾行强转 result，或以 JUnit、ANSI、duration、默认 `show` 文本重复判断结果。需要 locator 时可只读原始公共 `ExpEvent`，但不得据此重新给工具、usage、session 或 approval 判分。
+4. **经专属公开读回核验接收完整性**：只对该 Adapter 独有的事实运行 `show @locator --execution`（以及声明 tracing 时的 `--timing`）。执行树是「适配器收到了什么」的用户可见投影；第 2 步已经断言过的调用、入参或 session 证据在适用时应以结构化 readback 可见。通用默认报告、CLI 格式和 Report 矩阵不在这里复制。
    断言边界见[总则 · 公开读回](../README.md#公开读回)。
-4. **核验 OTel 写入**：调用是否写入 OTel 同样以 CLI 展示断言。`show --execution` 的时间注释回答「有没有写入」（声明 tracing 面的适配器节点带 span 时间，未声明的显示 timing unavailable）；`show --timing` 的 OTel 子树回答「写成了什么」（model / tool span 与层级）。
+5. **核验 OTel 写入**：调用是否写入 OTel 同样以 CLI 展示断言。`show --execution` 的时间注释回答「有没有写入」（声明 tracing 面的适配器节点带 span 时间，未声明的显示 timing unavailable）；`show --timing` 的 OTel 子树回答「写成了什么」（model / tool span 与层级）。
    span 与事件的对应靠显式 correlation（`gen_ai.tool.call.id` 这类 GenAI 语义约定属性）成立、不靠名字猜——correlation 断裂的可见症状就是节点退回 timing unavailable。
    trace 只作时间与结构证据，从不参与判分——判分断言永远只读事件流（见[Observability](../../../../observability.md)）。
 
-第 2 步是 Eval 的判分断言，第 3、4 步是原生测试文件的机制断言，两者都在该 Repo 的所有权边界内。
+第 2 步是唯一的 Eval 判分断言：只读 `Turn.events`。第 3 至 5 步是原生测试文件的终态、readback 与资源/遥测机制断言，绝不反过来给事件流评分；两者都在该 Repo 的所有权边界内。
 测试正文遵守 [E2E 总纲](../README.md#单边界-e2e)与[测试 Architecture](../../architecture.md#单文件可读性契约)。
 
 ## Live 官方 Adapter 兼容性

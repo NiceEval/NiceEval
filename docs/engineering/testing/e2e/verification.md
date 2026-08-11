@@ -15,6 +15,38 @@
 约定：脚本是 `.ts`、由 tsx 执行；断言用 `node:assert/strict`，不引入测试框架——验收脚本只有一条线性流程，失败即抛错、`e2e.ts` 捕获后决定退出码。
 每条断言消息都要说清**哪条契约断了、下一步看哪里**。
 
+## Adapter E2E：判分与结果消费分界
+
+Adapter Repo 的 Eval 是唯一判分处：工具、入参、usage、session、HITL 与负断言只读取 `Turn.events`。
+外层原生测试不再从 `exp --json` 的中间事件重做这些判定；它只用 Testkit 的 `ProcessReceipt.expResult()`
+取得末尾原始 `ExpResultEvent`，精确比较终态计数，再读该 Adapter 独有的 execution、timing 或资源终结证据：
+
+```ts
+const result = receipt.expResult();
+assert.deepEqual(
+  {
+    event: result.event,
+    status: result.status,
+    passed: result.passed,
+    failed: result.failed,
+    errored: result.errored,
+    completion: result.completion,
+  },
+  {
+    event: "result",
+    status: "passed",
+    passed: 3,
+    failed: 0,
+    errored: 0,
+    completion: "complete",
+  },
+);
+```
+
+需要 locator 时可把 `receipt.ndjson<ExpEvent>()` 当作原始公开 transport receipt；不得手写 Exp 事件模型或把
+`events.at(-1)` 强转成 result。Adapter 不复制 CLI owner 的默认 `show` 文本、ANSI、duration 或 JUnit 格式断言。
+下文的默认 `show` 与 JUnit 示例属于各自 CLI owner；只有拥有那些输出契约的 Repo 才采用它们。
+
 ## 执行 niceeval 命令
 
 命令以 **shell 原文**出现在脚本里——和开发者在终端里敲的一模一样，可以直接复制出去手动复现。

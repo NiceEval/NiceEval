@@ -58,8 +58,6 @@ test("view 持续重建项目模块、配置、Record，并在修复报告后恢
         [
           binary,
           "view",
-          "--record",
-          ".niceeval",
           "--host",
           "127.0.0.1",
           "--port",
@@ -139,14 +137,9 @@ test("view 持续重建项目模块、配置、Record，并在修复报告后恢
             timeoutMs: 15_000,
             label: "broken report rebuild",
           });
-          const retained = await htmlWithMarkers(
-            origin!,
-            "REPORT_FIRST",
-            "INDIRECT_SECOND",
-            "ATTEMPTS_4",
-            "#654321",
-          );
-          expect(retained).toBeDefined();
+          const unavailable = await fetch(origin!);
+          expect(unavailable.status).toBe(503);
+          expect(await unavailable.text()).toContain("current target unavailable");
 
           await writeFile(reportPath, report.replace("REPORT_FIRST", "REPORT_RECOVERED"), "utf8");
           const recovered = await pollUntil(
