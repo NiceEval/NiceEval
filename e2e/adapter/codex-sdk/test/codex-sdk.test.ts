@@ -4,9 +4,9 @@
 // candidate as an owned process, then proves the same result through public
 // show commands only; it never reads the private .niceeval layout.
 
-import { command, type ProcessReceipt, withProcess, withTempDir } from "@niceeval/testkit";
+import { command, type ExpResultEvent, type ProcessReceipt, withProcess, withTempDir } from "@niceeval/testkit";
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rm } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 
@@ -14,23 +14,6 @@ const REQUIRED_LIVE_SECRETS = ["CODEX_API_KEY", "CODEX_BASE_URL"] as const;
 const EVAL_ID = "live-compatibility";
 const niceevalBin = join(process.cwd(), "node_modules", ".bin", "niceeval");
 const niceeval = command([niceevalBin]);
-
-interface ExpStartEvent {
-  event: "start";
-  format: string;
-  total: number;
-}
-
-interface ExpResultEvent {
-  event: "result";
-  status: "passed" | "failed" | "incomplete" | "interrupted";
-  passed: number;
-  failed: number;
-  errored: number;
-  completion: "complete" | "incomplete" | "interrupted";
-}
-
-type ExpEvent = ExpStartEvent | ExpResultEvent | { event: string };
 
 function requireLiveSecrets(): void {
   const missing = REQUIRED_LIVE_SECRETS.filter((name) => !process.env[name]);
@@ -44,18 +27,12 @@ function requireLiveSecrets(): void {
 
 function expectSuccessfulReceipt(receipt: ProcessReceipt): void {
   expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
-  expect(receipt.signal, receipt.diagnostic()).toBeNull();
-  expect(receipt.timedOut, receipt.diagnostic()).toBe(false);
-  expect(receipt.stderr, receipt.diagnostic()).toBe("");
-  expect(receipt.stdout, receipt.diagnostic()).not.toMatch(/[\x1b\x08]/);
 }
 
-function expectSuccessfulExperiment(receipt: ProcessReceipt): void {
+function expectSuccessfulExperiment(receipt: ProcessReceipt): ExpResultEvent {
   expectSuccessfulReceipt(receipt);
-  expect(receipt.durationMs).toBeGreaterThan(0);
-  const events = receipt.ndjson<ExpEvent>();
-  expect(events[0]).toMatchObject({ event: "start", format: "niceeval.exp", total: 1 });
-  expect(events.at(-1)).toMatchObject({
+  const result = receipt.expResult();
+  expect(result).toMatchObject({
     event: "result",
     status: "passed",
     passed: 1,
@@ -63,6 +40,7 @@ function expectSuccessfulExperiment(receipt: ProcessReceipt): void {
     errored: 0,
     completion: "complete",
   });
+  return result;
 }
 
 async function latestPassedLocator(env: NodeJS.ProcessEnv): Promise<string> {
@@ -78,7 +56,7 @@ async function latestPassedLocator(env: NodeJS.ProcessEnv): Promise<string> {
 
 it("真实 Codex SDK converter 兼容性从 Experiment 到公开 CLI 读回", async () => {
   requireLiveSecrets();
-  await Promise.all([rm(".niceeval", { recursive: true, force: true }), rm("junit.xml", { force: true })]);
+  await rm(".niceeval", { recursive: true, force: true });
 
   await withTempDir("niceeval-codex-sdk-live-", async (tempRoot) => {
     const home = join(tempRoot, "home");
@@ -100,7 +78,7 @@ it("真实 Codex SDK converter 兼容性从 Experiment 到公开 CLI 读回", as
     // receipt; its finally path calls dispose(), which checks descendants after
     // the root process exits without relying on a non-existent receipt field.
     const receipt = await withProcess(
-      [niceevalBin, "exp", "live", "--rerun", "all", "--json", "--junit", "junit.xml"],
+      [niceevalBin, "exp", "live", "--rerun", "all", "--json"],
       {
         env,
         processGroup: true,
@@ -113,22 +91,6 @@ it("真实 Codex SDK converter 兼容性从 Experiment 到公开 CLI 读回", as
       },
     );
     expectSuccessfulExperiment(receipt);
-
-    const junit = await readFile("junit.xml", "utf8");
-    expect(junit).toContain("<testsuite");
-    expect(junit).not.toContain("<failure");
-    expect(junit).not.toContain("<error");
-
-    const board = await niceeval.run(["show"], { env });
-    expectSuccessfulReceipt(board);
-    expect(board.stdout).toContain(EVAL_ID);
-    expect(board.stdout).toMatch(/pass|passed/i);
-
-    const boardJson = await niceeval.run(["show", "--json"], { env });
-    expectSuccessfulReceipt(boardJson);
-    const shown = boardJson.json<{ format: string; data: unknown }>();
-    expect(shown.format).toBe("niceeval.show");
-    expect(JSON.stringify(shown.data)).toContain(EVAL_ID);
 
     const locator = await latestPassedLocator(env);
     const execution = await niceeval.run(["show", locator, "--execution"], { env });

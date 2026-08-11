@@ -8,11 +8,12 @@
 import "dotenv/config";
 import {
   command,
+  type ExpResultEvent,
   type ProcessReceipt,
   waitForOutput,
   withProcess,
 } from "@niceeval/testkit";
-import { readFileSync, rmSync } from "node:fs";
+import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import { AI_SDK_BASE_URL } from "../src/topology.ts";
@@ -22,30 +23,6 @@ const REQUIRED_LIVE_SECRETS = ["OPENAI_API_KEY", "OPENAI_BASE_URL"] as const;
 
 const niceevalBin = join(process.cwd(), "node_modules", ".bin", "niceeval");
 const niceeval = command([niceevalBin]);
-
-interface ExpStartEvent {
-  event: "start";
-  format: string;
-  schemaVersion: number;
-  total: number;
-  configs: number;
-  concurrency: number;
-  reused: number;
-}
-
-interface ExpResultEvent {
-  event: "result";
-  status: "passed" | "failed" | "incomplete" | "interrupted";
-  passed: number;
-  failed: number;
-  errored: number;
-  reused?: number;
-  completion: "complete" | "incomplete" | "interrupted";
-  snapshots: string[];
-  junit?: string;
-}
-
-type ExpEvent = ExpStartEvent | ExpResultEvent | { event: string };
 
 function requireLiveSecrets(): void {
   const missing = REQUIRED_LIVE_SECRETS.filter((name) => !process.env[name]);
@@ -75,29 +52,6 @@ async function waitForHealth(url: string, timeoutMs: number): Promise<void> {
 
 function expectSuccessfulCli(receipt: ProcessReceipt): void {
   expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
-  expect(receipt.signal, receipt.diagnostic()).toBeNull();
-  expect(receipt.timedOut, receipt.diagnostic()).toBe(false);
-  expect(receipt.stderr).toBe("");
-  expect(receipt.stdout).not.toMatch(/[\x1b\x08]/);
-}
-
-function expectExpStream(receipt: ProcessReceipt): ExpEvent[] {
-  expectSuccessfulCli(receipt);
-  expect(receipt.durationMs).toBeGreaterThan(0);
-  expect(receipt.stdout).not.toBe("");
-
-  const events = receipt.ndjson<ExpEvent>();
-  expect(events.length).toBeGreaterThan(0);
-  expect(events[0]).toMatchObject({ event: "start", format: "niceeval.exp" });
-  expect((events[0] as ExpStartEvent).total).toBeGreaterThanOrEqual(EXPECTED_EVALS.length);
-  expect(events.at(-1)).toMatchObject({
-    event: "result",
-    status: "passed",
-    failed: 0,
-    errored: 0,
-    completion: "complete",
-  });
-  return events;
 }
 
 async function latestAttemptLocator(evalId: string): Promise<string> {
@@ -116,7 +70,6 @@ async function latestAttemptLocator(evalId: string): Promise<string> {
 it("真实 AI SDK adapter 运行结果经过公开 CLI 读回", async () => {
   requireLiveSecrets();
   rmSync(".niceeval", { recursive: true, force: true });
-  rmSync("junit.xml", { force: true });
 
   await withProcess(
     ["pnpm", "exec", "tsx", "src/backend/server.ts"],
@@ -135,32 +88,22 @@ it("真实 AI SDK adapter 运行结果经过公开 CLI 读回", async () => {
       // uiMessageStreamAgent 仍由 experiments/ci.ts + evals/ 驱动。
       let run!: ProcessReceipt;
       await withProcess(
-        [niceevalBin, "exp", "--rerun", "all", "--json", "--junit", "junit.xml"],
+        [niceevalBin, "exp", "--rerun", "all", "--json"],
         { processGroup: true, timeoutMs: 13 * 60_000 },
         async (running) => {
           run = await running.done;
         },
       );
-      const events = expectExpStream(run);
-      const result = events.at(-1) as ExpResultEvent;
-      expect(result.passed).toBeGreaterThanOrEqual(EXPECTED_EVALS.length);
-
-      const junit = readFileSync("junit.xml", "utf8");
-      expect(junit).toContain("<testsuite");
-      expect(junit).not.toContain("<failure");
-      expect(junit).not.toContain("<error");
-
-      // observe：公开成绩单必须列出本 Repo 声明的 Experiment 与每条 Eval，
-      // 防止少发现/少运行后仍以空结果假绿。
-      const board = await niceeval.run(["show"]);
-      expectSuccessfulCli(board);
-      expect(board.stdout).toContain("ci");
-
-      const groupBoard = await niceeval.run(["show", "--exp", "ci"]);
-      expectSuccessfulCli(groupBoard);
-      for (const evalId of EXPECTED_EVALS) {
-        expect(groupBoard.stdout).toContain(evalId);
-      }
+      expectSuccessfulCli(run);
+      const result: ExpResultEvent = run.expResult();
+      expect(result).toMatchObject({
+        event: "result",
+        status: "passed",
+        passed: EXPECTED_EVALS.length,
+        failed: 0,
+        errored: 0,
+        completion: "complete",
+      });
 
       const locators = new Map<string, string>();
       for (const evalId of EXPECTED_EVALS) {

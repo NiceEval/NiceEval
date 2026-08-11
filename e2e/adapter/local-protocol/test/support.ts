@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
-import { mkdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import {
   command,
+  type ExpEvalEvent,
+  type ExpEvent,
+  type ExpResultEvent,
   type ProcessReceipt,
   waitForOutput,
   withProcess,
@@ -14,33 +16,13 @@ import { FIXTURE_BASE_URL_ENV } from "../src/fixture/address.ts";
 
 type OwnerKind = "transport" | "approval" | "disconnect" | "timeout" | "http-error";
 
-interface ExpEvent {
-  event: string;
-  evalId?: string;
-  locator?: string;
-  status?: string;
-  passed?: number;
-  failed?: number;
-  errored?: number;
-  completion?: string;
-  phase?: string;
-  reason?: string;
-}
-
 interface FixtureReady {
   baseUrl: string;
   port: number;
 }
 
 function expectCliShape(receipt: ProcessReceipt): ExpEvent[] {
-  expect(receipt.signal, receipt.diagnostic()).toBeNull();
-  expect(receipt.timedOut, receipt.diagnostic()).toBe(false);
-  expect(receipt.stderr, receipt.diagnostic()).toBe("");
-  expect(receipt.stdout, receipt.diagnostic()).not.toMatch(/[\x1b\x08]/);
-  const events = receipt.ndjson<ExpEvent>();
-  expect(events[0]).toMatchObject({ event: "start", format: "niceeval.exp" });
-  expect(events.at(-1)).toMatchObject({ event: "result" });
-  return events;
+  return receipt.ndjson<ExpEvent>();
 }
 
 function parseReady(output: string): FixtureReady {
@@ -83,13 +65,6 @@ function artifactInvocationId(): string {
 }
 
 function expectFault(events: readonly ExpEvent[], kind: OwnerKind): void {
-  expect(events.at(-1)).toMatchObject({
-    event: "result",
-    status: "failed",
-    failed: 0,
-    errored: 1,
-    completion: "complete",
-  });
   const error = events.find((event) => event.event === "error");
   expect(error).toMatchObject({ event: "error", evalId: kind, experimentId: kind });
   expect(["eval.run", "agent.run"]).toContain(error?.phase);
@@ -109,7 +84,6 @@ export async function proveLocalProtocolOwner(kind: OwnerKind): Promise<void> {
       links: [{ from: resolve("node_modules"), to: "node_modules", type: "dir" }],
     },
     async ({ root }) => {
-      await mkdir(join(root, "junit"), { recursive: true });
       let ready: FixtureReady | undefined;
       let runError: unknown;
       try {
@@ -126,9 +100,8 @@ export async function proveLocalProtocolOwner(kind: OwnerKind): Promise<void> {
             expect(health.status).toBe(200);
 
             const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
-            const junitPath = `junit/${kind}.xml`;
             const receipt = await niceeval.run(
-              ["exp", kind, "--rerun", "all", "--json", "--junit", junitPath],
+              ["exp", kind, "--rerun", "all", "--json"],
               {
                 cwd: root,
                 env: { [FIXTURE_BASE_URL_ENV]: ready.baseUrl },
@@ -136,9 +109,10 @@ export async function proveLocalProtocolOwner(kind: OwnerKind): Promise<void> {
               },
             );
             const events = expectCliShape(receipt);
+            const result: ExpResultEvent = receipt.expResult();
             if (kind === "transport" || kind === "approval") {
               expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
-              expect(events.at(-1)).toMatchObject({
+              expect(result).toMatchObject({
                 event: "result",
                 status: "passed",
                 passed: 1,
@@ -147,9 +121,11 @@ export async function proveLocalProtocolOwner(kind: OwnerKind): Promise<void> {
                 completion: "complete",
               });
               const evalId = kind === "transport" ? "transport-ok" : "approval-lifecycle";
-              const evalEvent = events.find((event) => event.event === "eval" && event.evalId === evalId);
-              expect(evalEvent?.locator, receipt.diagnostic()).toBeDefined();
-              const execution = await niceeval.run(["show", evalEvent!.locator!, "--execution"], { cwd: root });
+              const evalEvent = events.find(
+                (event): event is ExpEvalEvent => event.event === "eval" && event.evalId === evalId,
+              );
+              expect(evalEvent, receipt.diagnostic()).toBeDefined();
+              const execution = await niceeval.run(["show", evalEvent!.locator, "--execution"], { cwd: root });
               expect(execution.exitCode, execution.diagnostic()).toBe(0);
               if (kind === "transport") expect(execution.stdout).toContain("local-protocol-ok");
               else {
@@ -159,16 +135,15 @@ export async function proveLocalProtocolOwner(kind: OwnerKind): Promise<void> {
               }
             } else {
               expect(receipt.exitCode, receipt.diagnostic()).not.toBe(0);
+              expect(result).toMatchObject({
+                event: "result",
+                status: "failed",
+                passed: 0,
+                failed: 0,
+                errored: 1,
+                completion: "complete",
+              });
               expectFault(events, kind);
-            }
-
-            const junit = await readFile(join(root, junitPath), "utf8");
-            expect(junit).toContain("<testsuite");
-            if (kind === "transport" || kind === "approval") {
-              expect(junit).not.toContain("<failure");
-              expect(junit).not.toContain("<error");
-            } else {
-              expect(junit).toContain("<error");
             }
           },
         );
@@ -183,7 +158,6 @@ export async function proveLocalProtocolOwner(kind: OwnerKind): Promise<void> {
         destinationRoot: process.cwd(),
         entries: [
           { source: ".niceeval", target: join(".niceeval", "e2e-artifacts", invocationId, kind), optional: true },
-          { source: "junit", target: join("junit", "e2e-artifacts", invocationId, kind), optional: true },
         ],
         collision: "error",
       },

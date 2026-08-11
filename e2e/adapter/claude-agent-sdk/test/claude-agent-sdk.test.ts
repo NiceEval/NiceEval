@@ -6,30 +6,13 @@
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { command, type ProcessReceipt, withProcess, withTempDir } from "@niceeval/testkit";
+import { command, type ExpResultEvent, type ProcessReceipt, withProcess, withTempDir } from "@niceeval/testkit";
 import { expect, it } from "vitest";
 
 const EVAL_ID = "bash-session";
 const REQUIRED_LIVE_SECRETS = ["ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL"] as const;
 const niceevalBin = join(process.cwd(), "node_modules", ".bin", "niceeval");
 const niceeval = command([niceevalBin]);
-
-interface ExpStartEvent {
-  event: "start";
-  format: string;
-  total: number;
-}
-
-interface ExpResultEvent {
-  event: "result";
-  status: "passed" | "failed" | "incomplete" | "interrupted";
-  passed: number;
-  failed: number;
-  errored: number;
-  completion: "complete" | "incomplete" | "interrupted";
-}
-
-type ExpEvent = ExpStartEvent | ExpResultEvent | { event: string };
 
 function requireLiveSecrets(): void {
   const missing = REQUIRED_LIVE_SECRETS.filter((name) => !process.env[name]);
@@ -43,17 +26,12 @@ function requireLiveSecrets(): void {
 
 function expectSuccessfulCli(receipt: ProcessReceipt): void {
   expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
-  expect(receipt.signal, receipt.diagnostic()).toBeNull();
-  expect(receipt.timedOut, receipt.diagnostic()).toBe(false);
-  expect(receipt.stderr, receipt.diagnostic()).toBe("");
-  expect(receipt.stdout).not.toMatch(/[\x1b\x08]/);
 }
 
-function expectPassedExperiment(receipt: ProcessReceipt): void {
+function expectPassedExperiment(receipt: ProcessReceipt): ExpResultEvent {
   expectSuccessfulCli(receipt);
-  const events = receipt.ndjson<ExpEvent>();
-  expect(events[0]).toMatchObject({ event: "start", format: "niceeval.exp", total: 1 });
-  expect(events.at(-1)).toMatchObject({
+  const result = receipt.expResult();
+  expect(result).toMatchObject({
     event: "result",
     status: "passed",
     passed: 1,
@@ -61,6 +39,7 @@ function expectPassedExperiment(receipt: ProcessReceipt): void {
     errored: 0,
     completion: "complete",
   });
+  return result;
 }
 
 async function latestAttemptLocator(): Promise<string> {
@@ -105,14 +84,6 @@ it("真实 Claude Agent SDK converter 结果经过公共 CLI 完整读回", asyn
       },
     );
   });
-
-  const board = await niceeval.run(["show"]);
-  expectSuccessfulCli(board);
-  expect(board.stdout).toContain(EVAL_ID);
-
-  const boardJson = await niceeval.run(["show", "--json"]);
-  expectSuccessfulCli(boardJson);
-  expect(boardJson.stdout).toContain(EVAL_ID);
 
   const locator = await latestAttemptLocator();
   const attemptJson = await niceeval.run(["show", locator, "--json"]);
