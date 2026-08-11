@@ -21,6 +21,14 @@ export const ELIGIBILITY_ATTACHMENT_NAME_V1 = "niceeval.eligibility" as const;
 export const ELIGIBILITY_ATTACHMENT_SCHEMA_ID_V1 =
   "niceeval.eligibility/v1" as const;
 
+/**
+ * The one clock domain used by ProjectTarget targets and persisted Eligibility
+ * facts. A source duration is comparable only when both sides name this exact
+ * domain.
+ */
+export const EXECUTION_DURATION_DOMAIN_V1 =
+  "niceeval.execution-duration/v1" as const;
+
 /** Durable token text is bounded before it reaches an opaque Record payload. */
 export const EQUALITY_TOKEN_DOMAIN_MAXIMUM_LENGTH_V1 = 255 as const;
 export const EQUALITY_TOKEN_VALUE_MAXIMUM_LENGTH_V1 = 4096 as const;
