@@ -18,6 +18,8 @@ import type { SlotId, UtcMillis } from "../../record/model/identifiers.ts";
 import type { FrozenRecordAttempt } from "../../record/reader/types.ts";
 import type {
   RecordPublishReceipt,
+  RecordAttemptDraft,
+  RecordRunDraft,
   RecordWriteError,
   RecordWriteSession,
 } from "../../record/writer/types.ts";
@@ -158,6 +160,12 @@ export interface EvaluationRecordContractInvalidV1 {
 /** A copied object cannot be used in place of a package-created plan. */
 export interface EvaluationRecordPlanInvalidV1 {
   readonly code: "evaluation-record-plan-invalid";
+}
+
+/** A pre-created origin draft did not match the plan's exact Slot. */
+export interface EvaluationRecordOriginDraftMissingV1 {
+  readonly code: "evaluation-record-origin-draft-missing";
+  readonly slotId: SlotId;
 }
 
 const evaluationRecordPlanBrand: unique symbol = Symbol(
@@ -542,12 +550,18 @@ export function writeEvaluationRecordPlanV1<Error, Requirements>(
   plan: EvaluationRecordPlanV1<Error, Requirements>,
 ): Effect.Effect<
   RecordPublishReceipt,
-  EvaluationRecordPlanInvalidV1 | RecordWriteError | Error,
+  | EvaluationRecordPlanInvalidV1
+  | EvaluationRecordOriginDraftMissingV1
+  | RecordWriteError
+  | Error,
   Requirements
 > {
   return Effect.suspend<
     RecordPublishReceipt,
-    EvaluationRecordPlanInvalidV1 | RecordWriteError | Error,
+    | EvaluationRecordPlanInvalidV1
+    | EvaluationRecordOriginDraftMissingV1
+    | RecordWriteError
+    | Error,
     Requirements
   >(() => {
     const runtime = planRuntime(plan);
@@ -557,20 +571,148 @@ export function writeEvaluationRecordPlanV1<Error, Requirements>(
         startedAt: runtime.startedAt,
         expectedSlots: runtime.expectedSlots,
       });
-      for (const write of runtime.runWrites) {
-        yield* draft.record(write);
-      }
+      return yield* writeEvaluationRecordPlanToDraftV1(draft, plan);
+    });
+  });
+}
+
+/**
+ * Applies an already-validated Evaluation plan to a draft created before
+ * expensive execution begins. The Runner uses this to leave an incomplete
+ * directory behind on interruption while keeping the Evaluation contract as
+ * the only path that turns sealed facts into generic Record mutations.
+ */
+export function writeEvaluationRecordPlanToDraftV1<Error, Requirements>(
+  draft: RecordRunDraft,
+  plan: EvaluationRecordPlanV1<Error, Requirements>,
+): Effect.Effect<
+  RecordPublishReceipt,
+  | EvaluationRecordPlanInvalidV1
+  | EvaluationRecordOriginDraftMissingV1
+  | RecordWriteError
+  | Error,
+  Requirements
+> {
+  return Effect.suspend<
+    RecordPublishReceipt,
+    | EvaluationRecordPlanInvalidV1
+    | EvaluationRecordOriginDraftMissingV1
+    | RecordWriteError
+    | Error,
+    Requirements
+  >(() => {
+    const runtime = planRuntime(plan);
+    if (runtime === undefined) return Effect.fail(planInvalid());
+    return Effect.gen(function* () {
+      yield* writeEvaluationRecordPlanRunToDraftV1(draft, plan);
+      const attempts = new Map<SlotId, RecordAttemptDraft>();
       for (const origin of runtime.originAttempts) {
         const attempt = yield* draft.createAttempt({ slotId: origin.slotId });
+        attempts.set(origin.slotId, attempt);
+      }
+      yield* writeEvaluationRecordPlanOriginsToAttemptsV1(attempts, plan);
+      yield* writeEvaluationRecordPlanReferencesToDraftV1(draft, plan);
+      return yield* draft.publish({ completedAt: runtime.completedAt });
+    });
+  });
+}
+
+/**
+ * Writes only the Run-owned portion of a validated Evaluation plan. This is
+ * intentionally narrow: a Runner can establish the denominator and linked
+ * Run attachments before dispatch without creating an Attempt for an
+ * unstarted Slot.
+ */
+export function writeEvaluationRecordPlanRunToDraftV1<Error, Requirements>(
+  draft: RecordRunDraft,
+  plan: EvaluationRecordPlanV1<Error, Requirements>,
+): Effect.Effect<
+  void,
+  EvaluationRecordPlanInvalidV1 | RecordWriteError | Error,
+  Requirements
+> {
+  return Effect.suspend<
+    void,
+    EvaluationRecordPlanInvalidV1 | RecordWriteError | Error,
+    Requirements
+  >(() => {
+    const runtime = planRuntime(plan);
+    if (runtime === undefined) return Effect.fail(planInvalid());
+    return Effect.forEach(runtime.runWrites, (write) => draft.record(write), {
+      discard: true,
+    });
+  });
+}
+
+/**
+ * Writes sealed origin facts into Attempts that were allocated at dispatch.
+ * It never calls `createAttempt`: the caller must present the exact draft for
+ * each Slot, which keeps the AttemptId used during execution identical to the
+ * Member published later.
+ */
+export function writeEvaluationRecordPlanOriginsToAttemptsV1<
+  Error,
+  Requirements,
+>(
+  attempts: ReadonlyMap<SlotId, RecordAttemptDraft>,
+  plan: EvaluationRecordPlanV1<Error, Requirements>,
+): Effect.Effect<
+  void,
+  | EvaluationRecordPlanInvalidV1
+  | EvaluationRecordOriginDraftMissingV1
+  | RecordWriteError
+  | Error,
+  Requirements
+> {
+  return Effect.suspend<
+    void,
+    | EvaluationRecordPlanInvalidV1
+    | EvaluationRecordOriginDraftMissingV1
+    | RecordWriteError
+    | Error,
+    Requirements
+  >(() => {
+    const runtime = planRuntime(plan);
+    if (runtime === undefined) return Effect.fail(planInvalid());
+    return Effect.gen(function* () {
+      for (const origin of runtime.originAttempts) {
+        const attempt = attempts.get(origin.slotId);
+        if (attempt === undefined) {
+          return yield* Effect.fail<EvaluationRecordOriginDraftMissingV1>({
+            code: "evaluation-record-origin-draft-missing",
+            slotId: origin.slotId,
+          });
+        }
         yield* attempt.record(origin.assertions);
         yield* attempt.record(origin.verdict);
         if (origin.score !== undefined) yield* attempt.record(origin.score);
         for (const write of origin.additionalWrites) yield* attempt.record(write);
       }
-      for (const reference of runtime.references) {
-        yield* draft.reference(reference);
-      }
-      return yield* draft.publish({ completedAt: runtime.completedAt });
+    });
+  });
+}
+
+/** Writes only exact reference Members already validated by the opaque plan. */
+export function writeEvaluationRecordPlanReferencesToDraftV1<
+  Error,
+  Requirements,
+>(
+  draft: RecordRunDraft,
+  plan: EvaluationRecordPlanV1<Error, Requirements>,
+): Effect.Effect<
+  void,
+  EvaluationRecordPlanInvalidV1 | RecordWriteError,
+  never
+> {
+  return Effect.suspend<
+    void,
+    EvaluationRecordPlanInvalidV1 | RecordWriteError,
+    never
+  >(() => {
+    const runtime = planRuntime(plan);
+    if (runtime === undefined) return Effect.fail(planInvalid());
+    return Effect.forEach(runtime.references, (reference) => draft.reference(reference), {
+      discard: true,
     });
   });
 }
@@ -580,4 +722,8 @@ export const EvaluationRecordContractV1 = Object.freeze({
   createPlan: createEvaluationRecordPlanV1,
   preparePlan: prepareEvaluationRecordPlanV1,
   writePlan: writeEvaluationRecordPlanV1,
+  writePlanToDraft: writeEvaluationRecordPlanToDraftV1,
+  writePlanRunToDraft: writeEvaluationRecordPlanRunToDraftV1,
+  writePlanOriginsToAttempts: writeEvaluationRecordPlanOriginsToAttemptsV1,
+  writePlanReferencesToDraft: writeEvaluationRecordPlanReferencesToDraftV1,
 });

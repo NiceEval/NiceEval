@@ -6,13 +6,8 @@ import { randomUUID } from "node:crypto";
 import { Effect, Cause, Data, Either, Exit, Option } from "effect";
 import { probeJudge } from "../assertions/judge.ts";
 import { t } from "../i18n/index.ts";
-import { cacheKey, carriableAttempts, computeConfigHash, planCarry, resolvedTimeoutMsForCarry } from "./fingerprint.ts";
-import {
-  agentInstallPlansForRun,
-  configDeltas,
-  configIdentityForRun,
-  configIdentityFromResult,
-} from "./config-identity.ts";
+import { cacheKey, computeConfigHash, planCarry } from "./fingerprint.ts";
+import { agentInstallPlansForRun } from "./config-identity.ts";
 import { OtelReceiverPool } from "../o11y/otlp/turn-otel.ts";
 import {
   errorFromThrown,
@@ -52,7 +47,6 @@ import { collectBuildPreparation, toBuildPreparation } from "./build-preparation
 import { digestOf, type BuildKey } from "../sandbox/identity.ts";
 import { firstLine, getEnv } from "../util.ts";
 import { recordFact, type FactValue } from "../shared/facts.ts";
-import type { ConcurrencySlot } from "../context/send-retry.ts";
 import { runReporter, emitReporterEvent, scopeReporter, summarize } from "./report.ts";
 import {
   reportAttemptLifecycle,
@@ -67,7 +61,7 @@ import {
   reportRunActivity,
 } from "./feedback/sink.ts";
 import { failureDetailFromResult } from "./feedback/failure.ts";
-import { encodeAttemptLocator, type AttemptLocator, type AttemptLocatorRegistration } from "../record/locator.ts";
+import type { AttemptLocator } from "../record/locator.ts";
 import { EVALUATION_ALGORITHM, runWho, HALT_DIAGNOSTIC_CODE } from "./types.ts";
 import { runPairKey, type PreparedRunPair } from "./sandbox-selection.ts";
 import { ReusableSandboxPool } from "./sandbox-pool.ts";
@@ -94,8 +88,8 @@ import {
   type CaseLockRecord,
 } from "./lock.ts";
 import { acquireGateSlot, type GateLeaseClaim, type GateLeaseRecord } from "./gate-lease.ts";
-import { assertFreshAttemptLocatorRegistrations, loadLatestResultsForCase, openRecord } from "../record/open.ts";
 import type { RunManifests } from "../record/manifest.ts";
+import { openRunnerRecordCoordinator } from "./record.ts";
 
 export class RunModeConflictError extends Data.TaggedError("RunModeConflictError")<{
   readonly keepSandbox: NonNullable<RunOptions["keepSandbox"]>;
@@ -184,14 +178,31 @@ export function judgeProbePlan(
   return { targets, evalKeys };
 }
 
-export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
+/** Connect an application-owned AbortSignal to the current Effect Scope. */
+function interruptOnAbort(signal: AbortSignal): Effect.Effect<never> {
+  return Effect.async((resume) => {
+    const abort = () => resume(Effect.interrupt);
+    if (signal.aborted) {
+      abort();
+      return;
+    }
+    signal.addEventListener("abort", abort, { once: true });
+    return Effect.sync(() => signal.removeEventListener("abort", abort));
+  });
+}
+
+/**
+ * The Runner is Effect-native from writer acquisition through dispatch and
+ * publication. NodeRuntime is deliberately owned by the CLI/application edge.
+ */
+export function runEvals<AttachmentError, AttachmentRequirements>(
+  opts: RunOptions<AttachmentError, AttachmentRequirements>,
+) {
+  return Effect.scoped(Effect.gen(function* () {
   const startedAt = new Date().toISOString();
-  // 本次 invocation 的快照身份锚点:在展开/调度任何 attempt 之前确定一次,不同 experiment
-  // 共享它(locator 身份还含 experimentId,不会碰撞)。fresh EvalResult 的 locator(见下方
-  // attempt 完成处)与 Artifacts writer 写进 run.json 的 startedAt 必须用同一个值——
-  // 复用刚建立的 startedAt,不是另起一次 new Date(),避免两者出现毫秒级漂移
-  // (docs/feature/experiments/cli.md「Locator 必须在 result 发布前确定」)。经 InvocationShape
-  // 传给 reporter(见下方 shape 构造),run.ts 之外没有第二个入口能改这份身份。
+  // This invocation has one snapshot timestamp for reporter/artifact metadata.
+  // Record Attempt locators are deliberately separate: their exact AttemptId is
+  // minted only when a fresh Slot is actually dispatched.
   const snapshotStartedAt = startedAt;
   const t0 = Date.now();
   const niceevalRoot = opts.niceevalRoot ?? `${process.cwd()}/.niceeval`;
@@ -228,7 +239,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   // 等),判定本身不可信,必须重跑。跳过/fingerprint 不匹配同样重跑。--force 跳过此逻辑
   // (cli.ts 在 --force 时不传 priorResults,也不算 carryPlan)。
   // carryPlan 优先用调用方(cli.ts,为了 live 表格)已经算好的那份,不重算一遍。
-  const carryPlan = opts.carryPlan ?? (await Effect.runPromise(planCarry(
+  const carryPlan = opts.carryPlan ?? (yield* planCarry(
     opts.evals,
     opts.agentRuns,
     opts.priorResults,
@@ -240,32 +251,61 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
       keepSandbox: opts.keepSandbox,
       accept: opts.accept,
     },
-  )));
+  ));
   const {
     preparedPairsByKey,
     plannedConfigHashes,
     resolvedJudgesByKey,
     plannedFingerprints,
     acceptableFingerprints,
-    carriedAttemptsByKey,
+    carriedAttemptsByKey: plannedCarriedAttemptsByKey,
     carriedResults: planCarriedResults,
     carriedAcceptingByResult,
     migratedFromByResult: plannedMigratedFromByResult,
     manifestsByKey,
   } = carryPlan;
-  const migratedFromByResult = plannedMigratedFromByResult ?? new Map<EvalResult, FingerprintMigration>();
-  // CarryPlan 是冻结快照；派发重查期间新发现的 accept 留痕进入独立运行状态，绝不回写计划。
-  const runtimeCarriedAcceptingByResult = new Map(carriedAcceptingByResult);
   if (preparedPairsByKey === undefined) {
     throw new Error("CarryPlan is incomplete: preparedPairsByKey must come from physical Sandbox planning.");
   }
-  // Session 文件在首次派发前创建；它只记录 Run 身份与轻量计数，锁和实验闸仍各自维护。
-  await opts.session?.start({
-    runIds,
-    agentRuns: opts.agentRuns,
-    carriedAttemptsByKey,
-    startedAt,
+  // Record v1 resolves the carry plan before any consumer treats a legacy
+  // result as reusable. A candidate without the exact FrozenRecordAttempt is
+  // deliberately returned to fresh dispatch rather than becoming a dangling
+  // no-member Slot.
+  const recordCoordinator = yield* openRunnerRecordCoordinator({
+    niceevalRoot,
+    startedAt: t0,
+    evals: opts.evals,
+    runs: opts.agentRuns,
+    carriedAttemptsByKey: plannedCarriedAttemptsByKey,
+    ...(opts.recordCarryReferences === undefined
+      ? {}
+      : { carryReferences: opts.recordCarryReferences }),
+    ...(opts.recordAttachments === undefined
+      ? {}
+      : { attachments: opts.recordAttachments }),
   });
+  const carriedAttemptsByKey = recordCoordinator.acceptedCarriedAttemptsByKey;
+  const isAcceptedCarriedResult = (result: EvalResult): boolean =>
+    result.experimentId !== undefined &&
+    (carriedAttemptsByKey.get(runPairKey(result.experimentId, result.id))?.has(result.attempt) ?? false);
+  const migratedFromByResult = plannedMigratedFromByResult ?? new Map<EvalResult, FingerprintMigration>();
+  // CarryPlan is immutable. Keep acceptance provenance only for carried
+  // results whose exact Record source was admitted above.
+  const runtimeCarriedAcceptingByResult = new Map(
+    [...carriedAcceptingByResult].filter(([result]) => isAcceptedCarriedResult(result)),
+  );
+  // Session 文件在首次派发前创建；它只记录 Run 身份与轻量计数，锁和实验闸仍各自维护。
+  if (opts.session !== undefined) {
+    yield* Effect.tryPromise({
+      try: () => opts.session!.start({
+        runIds,
+        agentRuns: opts.agentRuns,
+        carriedAttemptsByKey,
+        startedAt,
+      }),
+      catch: (error) => error,
+    });
+  }
 
   /**
    * 携带条目合入本次快照时,指纹按**本次**口径重新打戳。携带的含义就是「这条已落盘的结果对
@@ -303,7 +343,9 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         : {}),
     };
   };
-  const carriedResults = planCarriedResults.map(restampCarried);
+  const carriedResults = planCarriedResults
+    .filter(isAcceptedCarriedResult)
+    .map(restampCarried);
 
   const preparedPlansByRun = new Map<AgentRun, globalThis.Record<string, JsonValue>>();
   for (const prepared of preparedPairsByKey.values()) {
@@ -364,29 +406,9 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
           judge: resolvedJudgesByKey.get(carryKey),
           plan: prepared.plan,
           sandboxPlansByEval,
-          // locator 在构造 fresh attempt plan 时即算好并作为身份贯穿执行、留存登记与落盘
-          // (不是完成后写回,见 docs/cli.md);裸 run(无 experimentId)不产出。
-          locator: encodeAttemptLocator({
-            runId: runIds.get(run.experimentId)!,
-            evalId: evalDef.id,
-            attempt: i,
-          }),
         });
       }
     }
-  }
-
-  if (attempts.length > 0) {
-    const registrations: AttemptLocatorRegistration[] = attempts.map((attempt) => ({
-      identity: {
-        runId: runIds.get(attempt.run.experimentId)!,
-        evalId: attempt.evalDef.id,
-        attempt: attempt.attempt,
-      },
-      locator: attempt.locator,
-    }));
-    const existingRecord = await openRecord(niceevalRoot);
-    assertFreshAttemptLocatorRegistrations(existingRecord, registrations);
   }
 
   // 派发顺序:瓶颈优先(docs/runner.md「派发顺序:瓶颈优先,追求最小总墙钟时间」)。
@@ -439,7 +461,13 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
       // 而落进 attempt 的 error.message 也必须是它自己那个端点的失败原因。
       const failedByKey = new Map<string, string>();
       for (const target of targets) {
-        const err = await probeJudge(target.judge, opts.signal);
+        const err = yield* Effect.tryPromise({
+          try: (signal) => probeJudge(
+            target.judge,
+            opts.signal === undefined ? signal : AbortSignal.any([opts.signal, signal]),
+          ),
+          catch: (error) => error,
+        });
         if (err) failedByKey.set(target.key, err);
       }
       for (const [pairKey, key] of evalKeys) {
@@ -463,10 +491,10 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
 
   const collected =
     opts.buildPreparation === undefined
-      ? await Effect.runPromise(collectBuildPreparation({
+      ? yield* collectBuildPreparation({
           preparedPairs: [...preparedPairsByKey.values()],
           carriedAttemptsByKey,
-        }))
+        })
       : Option.none();
   const buildPreparation = opts.buildPreparation === undefined
     ? Option.flatMap(collected, toBuildPreparation)
@@ -534,16 +562,24 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     opts.artifactPrepare ??
     new ArtifactPrepareCoordinator(artifactPrepareTimingHook(runTiming));
 
-  // 非沙箱 tracing agent 的共享 OTLP 接收池必须先进入 attempt options 快照。被测应用是
-  // 长驻进程，端点不能随 attempt 换；若在快照之后才补 pool，attempt 会退回随机端口。
-  if (!opts.otelPool) {
-    opts = { ...opts, otelPool: new OtelReceiverPool(opts.config.telemetry?.port) };
-  }
+  // The shared receiver belongs to this invocation Scope. Closing through its
+  // finalizer covers ordinary completion, Record write failure, and interrupt
+  // uniformly; attempts receive the same immutable pool snapshot.
+  const otelPool = yield* Effect.acquireRelease(
+    Effect.sync(() => opts.otelPool ?? new OtelReceiverPool(opts.config.telemetry?.port)),
+    (pool) => Effect.tryPromise({
+      try: () => pool.close(),
+      catch: () => undefined,
+    }).pipe(Effect.ignore),
+  );
 
-  // 运行期依赖用新快照扩展，不回写调用方交进来的 RunOptions 计划对象。
-  const attemptOptions: RunOptions = opts.artifactPrepare === undefined
-    ? { ...opts, artifactPrepare }
-    : opts;
+  // Runtime dependencies are added to a fresh snapshot; caller-owned planning
+  // inputs remain immutable for the duration of this invocation.
+  const attemptOptions: RunOptions<AttachmentError, AttachmentRequirements> = {
+    ...opts,
+    artifactPrepare,
+    otelPool,
+  };
 
   // 缓存携入只在 plan 的 Reuse 行给数量,不逐条铺 eval id 清单(见 cli.md「人在终端里怎么用」:
   // 哪些 eval 复用、哪些重跑属于 --dry 与 niceeval view,不占 human 的 scrollback)。
@@ -638,20 +674,42 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   for (const reg of reporters) {
     // reporter 只是结果消费方:单个 reporter 抛错记 diagnostic,不能让整次调度崩,也不阻断
     // 其它 reporter 的必要收尾(required/best-effort 的判定权重在 runReporter 内部处理)。
-    await runReporter(reg, "onInvocationStart", () => reg.reporter.onInvocationStart?.(runningEvals, shape));
+    yield* Effect.tryPromise({
+      try: () => runReporter(reg, "onInvocationStart", () => reg.reporter.onInvocationStart?.(runningEvals, shape)),
+      catch: (error) => error,
+    });
   }
-  await emitReporterEvent(reporters, {
-    type: "invocation:start",
-    evals: runningEvals,
-    shape,
+  yield* Effect.tryPromise({
+    try: () => emitReporterEvent(reporters, {
+      type: "invocation:start",
+      evals: runningEvals,
+      shape,
+    }),
+    catch: (error) => error,
   });
+  for (const gap of recordCoordinator.carryGaps) {
+    reportDiagnostic({
+      key: `record-carry-source-unavailable:${gap.run.experimentId}:${gap.evalDef.id}:${gap.attempt}`,
+      code: "record-carry-source-unavailable",
+      severity: "warning",
+      message:
+        `Carried ${gap.run.experimentId}/${gap.evalDef.id} attempt ${gap.attempt} ` +
+        "has no exact Record source; it will be dispatched as a fresh Record v1 Attempt.",
+      identity: {
+        experimentId: gap.run.experimentId,
+        evalId: gap.evalDef.id,
+        attempt: gap.attempt,
+      },
+      data: {
+        experimentId: gap.run.experimentId,
+        evalId: gap.evalDef.id,
+        attempt: gap.attempt,
+        slotId: gap.slotId,
+      },
+    });
+  }
 
   const results: EvalResult[] = [];
-  // 用例锁释放/接管后重查携带命中的结果(见下方「用例锁」分组与 resolveCaseLockGate)。与
-  // 静态 carriedResults 同一种身份:不触发 onEvalComplete / eval:complete(它们已经在另一次
-  // Invocation 里被报告过一次),只随 allResults 一起进入本次快照与 experiment:complete 的
-  // carriedResults 字段——见 docs/runner.md「并发 Invocation 靠用例锁把续跑扩展到多开」。
-  const lateCarriedResults: EvalResult[] = [];
   const passedKeys = new Set<string>();
   // errored = 框架/环境层面的意外(超时、adapter 崩、eval 脚本抛异常……),不是 agent 表现的信号。
   // 同 key 一旦 errored 就会确定性地重复 error,再跑 runs 里剩下的次数纯烧钱;只有 failed(断言
@@ -705,10 +763,10 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
 
   // reporter 的 onEvalComplete 要「每个 attempt 完成即时触发」(保流式输出),又不能让
   // 并发 worker 交错写 → 用一个 permit=1 的信号量串起来(替代原先手搓的 reportQueue 链)。
-  const reportMutex = Effect.runSync(Effect.makeSemaphore(1));
+  const reportMutex = yield* Effect.makeSemaphore(1);
   // 沙箱启动单独限流:与 agent 并发(maxConcurrency)解耦,防高并发下 daemon/API 过载。
   // 未显式指定时跟 maxConcurrency 走——各 provider 的推荐值已在 cli 层写进 maxConcurrency 默认值。
-  const sandboxSem = Effect.runSync(Effect.makeSemaphore(opts.maxConcurrency));
+  const sandboxSem = yield* Effect.makeSemaphore(opts.maxConcurrency);
   // 相同 provider physical identity 共享一个按需池；不从 AgentRun 重选 template。
   const reusePools = new Map<AgentRun, Map<string, ReusableSandboxPool>>();
   type ReusePoolSelection =
@@ -769,7 +827,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   // docs/feature/experiments/architecture.md「并发 Invocation:用例锁」末条),所以名额不是
   // 进程内信号量而是磁盘上的逐槽租约——多开不叠加 N,`maxConcurrency: 1` 的临界区声明在
   // 多开下同样成立。全局位反过来是每条 Invocation 私有的吞吐旋钮,仍是进程内信号量。
-  const globalSem = Effect.runSync(Effect.makeSemaphore(opts.maxConcurrency));
+  const globalSem = yield* Effect.makeSemaphore(opts.maxConcurrency);
   // 实验闸在进程内先垫一层同名额的信号量,再去取租约。两个原因:
   // ① 名额在本进程内部交接是即时的(Effect 信号量把 permit 直接递给排队的下一个 attempt),
   //    不必等租约轮询的下一个周期——单开是绝大多数场景,不该为跨进程协调付整整一个轮询周期
@@ -780,7 +838,10 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   const gateLocalSems = new Map<AgentRun, Effect.Semaphore>();
   for (const run of opts.agentRuns) {
     if (run.maxConcurrency !== undefined) {
-      gateLocalSems.set(run, Effect.runSync(Effect.makeSemaphore(Math.max(1, run.maxConcurrency))));
+      gateLocalSems.set(
+        run,
+        yield* Effect.makeSemaphore(Math.max(1, run.maxConcurrency)),
+      );
     }
   }
 
@@ -790,14 +851,25 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   // physical plan 的中性 admission/lane 字段；相同 lane 共用一把锁，表示它们竞争同一份
   // 不可并发底层资源，不是 `provider === "local"` 的行为分支。
   const providerExclusiveSems = new Map<string, Effect.Semaphore>();
+  for (const attempt of attempts) {
+    if (
+      attempt.plan._tag === "Direct" ||
+      attempt.plan.providerPlan.scheduling.admission._tag !== "Exclusive"
+    ) {
+      continue;
+    }
+    const laneKey = attempt.plan.providerPlan.scheduling.lane.key;
+    if (!providerExclusiveSems.has(laneKey)) {
+      providerExclusiveSems.set(laneKey, yield* Effect.makeSemaphore(1));
+    }
+  }
   let exclusiveConcurrencyWarned = false;
   const exclusiveSemFor = (plan: Attempt["plan"]): Effect.Semaphore | undefined => {
     if (plan._tag === "Direct" || plan.providerPlan.scheduling.admission._tag !== "Exclusive") return undefined;
     const laneKey = plan.providerPlan.scheduling.lane.key;
-    let sem = providerExclusiveSems.get(laneKey);
-    if (!sem) {
-      sem = Effect.runSync(Effect.makeSemaphore(1));
-      providerExclusiveSems.set(laneKey, sem);
+    const sem = providerExclusiveSems.get(laneKey);
+    if (sem === undefined) {
+      throw new Error(`Missing provider-exclusive semaphore for ${laneKey}`);
     }
     // 如实标注串行事实(一次性,不管命中多少条 attempt):全局上限比 1 高时,这个 provider 的
     // attempt 实际仍然一个一个跑——不管 --max-concurrency 写了多少,这是正确性约束不是调度旋钮。
@@ -1268,7 +1340,10 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   for (const run of opts.agentRuns) {
     if (!run.experimentId || !run.teardown || recoveredExperimentIds.has(run.experimentId)) continue;
     recoveredExperimentIds.add(run.experimentId);
-    await recoverOrphanedTeardownRegistration(run, run.experimentId);
+    yield* Effect.tryPromise({
+      try: () => recoverOrphanedTeardownRegistration(run, run.experimentId),
+      catch: (error) => error,
+    });
   }
 
   // ─────────────────────── 派发许可链(docs/runner.md「调度:有界并发」) ───────────────────────
@@ -1500,10 +1575,8 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     evalId: string;
     /** 本用例这次计划的全部 attempt;持有者一次认领它们全部,不按 attempt 拆锁。 */
     group: Attempt[];
-    /** 还没收尾、也还没被重查携带命中的 attempt 序号——`lock_wait` 的计数与「锁还留不留」都读它。 */
+    /** 还没收尾的 attempt 序号——`lock_wait` 的计数与「锁还留不留」都读它。 */
     pending: Set<number>;
-    /** 重查携带命中的 attempt 序号(elsewhere → reused,不再派发)。 */
-    carried: Set<number>;
     /** 本进程此刻持有的锁;undefined = 没持有(还没试 / 撞锁挂起中)。 */
     claim?: CaseLockClaim;
     /** 在飞的一次非阻塞试锁:同组兄弟共享同一次尝试的结论,不各自拍一遍磁盘。 */
@@ -1527,7 +1600,6 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         evalId: a.evalDef.id,
         group: [],
         pending: new Set<number>(),
-        carried: new Set<number>(),
         inElsewhere: 0,
       };
       caseLocks.set(key, st);
@@ -1538,133 +1610,31 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   const caseStateOf = (a: Attempt): CaseLockState | undefined =>
     a.run.experimentId ? caseLocks.get(cacheKey(a.run, a.evalDef.id)) : undefined;
 
-  /** 取锁之后值不值得重新读盘查携带。`--force` 下 opts.priorResults 恒为 undefined——
-   *  force 关掉的是缓存,等完同样全部自跑;中断路径同样不再读盘。注意这只关掉「重查」,
-   *  不关掉挂起窗口的 `resolved` 事件:少发一次 resolved,elsewhere 就永远挂着,五项恒等式
-   *  当场破(旧实现在 `--force` + 真实撞锁等待这条组合上就是这么漏的)。 */
-  const carryRecheckEnabled = (): boolean => opts.priorResults !== undefined && !opts.signal?.aborted;
-
   /**
-   * 对这个用例**重新做一次携带规划**:别的 Invocation 落盘的终态此刻已可读。判定逐 attempt
-   * 进行(见 memory 的 carry-must-be-per-attempt-not-whole-eval-key —— 按整段 key 判定会让同
-   * eval 里一个 attempt 的终态连带携入其它序号):命中的序号 elsewhere → reused 不再派发,
-   * 仍缺的序号 elsewhere → queued 自跑。
-   *
-   * `waitStartedAt` 有值 = 这次重查在关闭一个真实的挂起窗口,`resolved` 必须发(哪怕一条都
-   * 没携入,不然 elsewhere 永远挂着);省略 = 没有窗口要关(全新取锁 / 接管),只有真的携入了
-   * 才补一对瞬时的 started/resolved 把这些 attempt 从 queued 迁进 reused。
-   *
-   * 读盘走**收窄读**(`loadLatestResultsForCase`):这次 I/O 是在握着全局并发位 + 实验闸名额
-   * + 用例锁的状态下做的,per-case 的问题("这条用例现在还缺哪些 attempt")不能用全根扫描去
-   * 回答——实测 110 ms/条 vs 0.3 ms/条,后者才付得起「每次取锁都重查」。
-   *
-   * 判据不重跑 `planCarry`:本次 Invocation 的 `acceptableFingerprints` 整场是常量,重查只需要
-   * 逐条 attempt 过 `carriableAttempts`(终态 + 指纹在可携带集合里 + durationMs ≤ resolved
-   * timeoutMs),与静态规划共用同一个函数。
+   * A late on-disk result cannot become a V1 carried Member in this invocation:
+   * the writer's frozen view did not receive an exact source capability during
+   * planning. Keep the lock protocol's `resolved` accounting, but dispatch all
+   * still-pending Slots normally instead of guessing from legacy result files.
    */
-  const recheckCarry = async (
+  const resolveCaseWaitWithoutCarry = (
     st: CaseLockState,
     waitStartedAt: number | undefined,
-    holder: CaseLockRecord | undefined,
-  ): Promise<void> => {
+  ): void => {
     const { experimentId, evalId } = st;
     // 这个窗口当初报进 elsewhere 的条数,收尾必须原数报回来(见 CaseLockState.inElsewhere)。
     const inElsewhere = st.inElsewhere;
     st.inElsewhere = 0;
-    const newlyCarried: number[] = [];
-    if (carryRecheckEnabled()) {
-      const a0 = st.group[0]!;
-      const key = cacheKey(a0.run, evalId);
-      const freshPrior = await loadLatestResultsForCase(niceevalRoot, experimentId, evalId).catch(
-        (): EvalResult[] => [],
-      );
-      const carried = carriableAttempts(
-        freshPrior,
-        key,
-        plannedConfigHashes?.get(key),
-        acceptableFingerprints.get(key),
-        resolvedTimeoutMsForCarry(a0.run, a0.evalDef, opts.config.timeoutMs),
-        {
-          rerun: opts.rerun,
-          keepSandbox: opts.keepSandbox,
-          accept: opts.accept,
-        },
-      );
-      for (const r of carried) {
-        if (!st.pending.has(r.attempt)) continue; // 已经跑过 / 上一轮已经携入过的序号不重复计
-        st.pending.delete(r.attempt);
-        st.carried.add(r.attempt);
-        newlyCarried.push(r.attempt);
-        // 迟到携带同样可能是被授权跨过差异才进来的(它的指纹不是本次规划那个)。留痕在这里
-        // 补齐:静态规划算好的那份映射只认规划时刻见过的条目,别的 Invocation 刚落盘的这条
-        // 不在里面,漏掉就成了「授权携入却没有任何账」。
-        if (opts.accept?.length && r.fingerprint !== plannedFingerprints.get(key)) {
-          const historical = configIdentityFromResult(r);
-          const crossed = historical === undefined
-            ? []
-            : configDeltas(
-                historical,
-                configIdentityForRun(
-                  a0.run,
-                  a0.plan,
-                  a0.judge,
-                ),
-              )
-                .filter((delta) => opts.accept!.includes(delta.selector));
-          if (crossed.length > 0) {
-            runtimeCarriedAcceptingByResult.set(r, crossed);
-            recordExperimentDiagnostic({
-              experimentId,
-              code: "accept",
-              level: "warning",
-              message: `Carried prior results across accepted differences: ${crossed.map((d) => d.selector).join(", ")}.`,
-              phase: "experiment.setup",
-              data: { selectors: crossed.map((d) => d.selector) },
-              dedupeKey: `accept:${crossed.map((d) => d.selector).join(",")}`,
-            });
-          }
-        }
-        lateCarriedResults.push(restampCarried(r));
-        if (r.verdict === "passed") {
-          passedKeys.add(attemptGroupKey(a0.run, evalId));
-        }
-      }
-    }
     if (waitStartedAt === undefined) {
-      if (newlyCarried.length === 0) return; // 没有窗口要关、也没有迁移要报:一个事件都不发
-      // 没有等待窗口要关(接管 / 多开下的全新取锁)。真正携入的那几条此刻仍停在 queued
-      // (从没被标记过 elsewhere),必须先补一个瞬时的 "started",下面的 "resolved" 才能把
-      // 它们正确迁进 reused,否则会打破五项恒等式。**只报这几条**:没携入的兄弟从没离开
-      // queued,把它们也报一遍会在两条事件之间露出一帧「queued 被扣穿」的中间态——极端时序
-      // 下兄弟 attempt 可能已经在这次 await 期间进了 running,那一扣就是负数。
-      const startedAt = Date.now();
-      reportLockWait({
-        experimentId,
-        evalId,
-        status: "started",
-        ...(holder?.pid !== undefined ? { holderPid: holder.pid } : {}),
-        ...(holder?.host !== undefined ? { holderHost: holder.host } : {}),
-        attempts: newlyCarried.length,
-      });
-      reportLockWait({
-        experimentId,
-        evalId,
-        status: "resolved",
-        carried: newlyCarried.length,
-        dispatched: 0,
-        waitedMs: Date.now() - startedAt,
-      });
       return;
     }
     // 真实挂起窗口收尾:carried + dispatched 恒等于 "started" 报进去的 attempts,这条
     // 恒等式是 elsewhere 不挂账的唯一保证(reducer 只按事件携带的数字增减,不自己推)。
-    const carried = Math.min(newlyCarried.length, inElsewhere);
     reportLockWait({
       experimentId,
       evalId,
       status: "resolved",
-      carried,
-      dispatched: inElsewhere - carried,
+      carried: 0,
+      dispatched: inElsewhere,
       waitedMs: Date.now() - waitStartedAt,
     });
   };
@@ -1730,8 +1700,9 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         // 低概率时序(见 memory 的 multi-open-residual-window-closed-by-narrow-read)。
         // 闭合性来自这条 happens-before 链:对方 result.json 落盘 → 对方
         // 释放锁 → 我们取到锁 → 我们读盘,所以重查必须在取锁**之后**,顺序反了什么都不保证。
-        // 收窄读把这次重查压到 ~0.3 ms,单开也付得起。
-        await recheckCarry(st, undefined, priorHolder);
+        // V1 does not convert late legacy rows into carried Members. The
+        // already-pending slots remain fresh and continue through dispatch.
+        resolveCaseWaitWithoutCarry(st, undefined);
         return { kind: "acquired" };
       } catch (e) {
         // 撞新鲜锁:就地开(或加入)挂起窗口,窗口对象随结论一起交给调用方。
@@ -1755,7 +1726,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     if (st.suspension) return st.suspension;
     const startedAt = Date.now();
     // 等待期间本 eval / 本实验的止损闸落下 → 这一轮等待到头(对方可能还要跑很久,没必要陪着)。
-    // 窗口照常走完 recheckCarry 并发出 `lock_wait resolved`:少发一次 resolved,这批 attempt 就
+    // 窗口照常走完 resolveCaseWaitWithoutCarry 并发出 `lock_wait resolved`:少发一次 resolved,这批 attempt 就
     // 永远挂在 elsewhere 上,五项恒等式当场破。
     const waitSignal = haltAbortSignal(st.group[0]!);
     // 窗口打开这一刻本组还没派发的 attempt 全在 queued(本进程没持锁 = 没有一条开跑),
@@ -1776,7 +1747,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         const record = await readCaseLock(niceevalRoot, st.experimentId, st.evalId).catch(() => undefined);
         if (record === undefined || isCaseLockExpired(record, Date.now())) break;
       }
-      await recheckCarry(st, startedAt, holder);
+      resolveCaseWaitWithoutCarry(st, startedAt);
     })();
     st.suspension = window.finally(() => {
       st.suspension = undefined;
@@ -1880,17 +1851,17 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     | { kind: "recheck" };
 
   /** 全局并发位的显式持有句柄:`withPermits` 的作用域语义没法表达「中途让位、回来再拿」,
-   *  而实验级 setup 与 turn 退避都要求让位(docs/runner.md「调度:有界并发」)。两个成员都
+   *  而实验级 setup 要求让位(docs/runner.md「调度:有界并发」)。两个成员都
    *  幂等——让位后收尾 finalizer 不会重复归还,回来之后中断也只归还一次。 */
   interface GlobalSlotHold {
     readonly release: Effect.Effect<void>;
     readonly reacquire: Effect.Effect<void>;
   }
 
-  const withGlobalSlot = <R>(
+  const withGlobalSlot = <E, R>(
     haltSignal: Effect.Effect<void>,
-    use: (slot: GlobalSlotHold) => Effect.Effect<DispatchOutcome, never, R>,
-  ): Effect.Effect<DispatchOutcome, never, R> =>
+    use: (slot: GlobalSlotHold) => Effect.Effect<DispatchOutcome, E, R>,
+  ): Effect.Effect<DispatchOutcome, E, R> =>
     Effect.uninterruptibleMask((restore) => {
       const state = { held: false };
       const release = Effect.suspend(() =>
@@ -1937,17 +1908,20 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
    * 正常返回,作用域退出、名额归还,挂起结束后重新取——挂起的用例不占名额,否则同实验的
    * 持锁方(可能就在另一条 Invocation 里)会被自己的等待方饿死。
    */
-  const withExperimentGate = <R>(
+  const withExperimentGate = <E, R>(
     a: Attempt,
-    use: Effect.Effect<DispatchOutcome, never, R>,
-  ): Effect.Effect<DispatchOutcome, never, R> => {
+    use: Effect.Effect<DispatchOutcome, E, R>,
+  ): Effect.Effect<DispatchOutcome, E | unknown, R> => {
     const { maxConcurrency, experimentId } = a.run;
     const localSem = gateLocalSems.get(a.run);
     if (maxConcurrency === undefined || localSem === undefined) return use;
     if (experimentId === undefined) return localSem.withPermits(1)(use);
     const haltSignal = haltAbortSignal(a);
     const leased = Effect.uninterruptibleMask((restore) =>
-      restore(Effect.promise((sig) => acquireGateLease(experimentId, maxConcurrency, sig, haltSignal))).pipe(
+      restore(Effect.tryPromise({
+        try: (signal) => acquireGateLease(experimentId, maxConcurrency, signal, haltSignal),
+        catch: (error) => error,
+      })).pipe(
         Effect.flatMap((claim) =>
           claim === undefined
             ? // 没取到名额有两种成因:用户中断(就此了结)与止损闸落下(回到许可链 ① 记账)。
@@ -1955,7 +1929,12 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
                 checkDispatchHalt(a).halted ? { kind: "recheck" } : { kind: "done" },
               )
             : restore(use).pipe(
-                Effect.ensuring(Effect.promise(() => claim.release().catch(() => {}))),
+                Effect.ensuring(
+                  Effect.tryPromise({
+                    try: () => claim.release(),
+                    catch: () => undefined,
+                  }).pipe(Effect.ignore),
+                ),
               ),
         ),
       ),
@@ -1972,11 +1951,9 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     }
   }
 
-  // 有界并发调度:forEach 本身 unbounded(每个 attempt 立刻有自己的 fiber),真正的
-  // 并发上限由上面那条许可链把守——执行体依次过止损闸、实验闸(若有)、全局 permit、
-  // 派发时刻试锁才开跑。获取定序恒为 实验闸 → globalSem → 用例锁,无环等待;实验闸的
-  // 持有者在等全局 permit 时不占别的实验的并发位(并发位就是 globalSem 的 permit,
-  // 不再是 forEach 的 fiber 槽)。
+  // 有界派发:forEach 的 worker 数就是 maxConcurrency，不先给全部 Slot 建 fiber。
+  // worker 内仍按止损闸、实验闸、全局 permit、用例锁的顺序取得资源；退避可以占住
+  // 这个有界 worker，避免为了补位再造一层无界 scheduler。
   // runAttemptEffect 只把「执行错误」收进 EvalResult.error(不 fail),
   // 但中断(Ctrl+C / kill)照常向上传播 —— 所以一条挂掉不会中断其它 attempt,而中断能停掉全部。
   //
@@ -1984,13 +1961,10 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   //         → 每个 attempt 的 Sample 跑 release(sb.stop)→ 容器全部停掉(治孤儿)。Effect 保证
   //         所有 finalizer 跑完后才结算,所以下面 summarize 时容器已清理干净。
   //
-  // 用 runPromiseExit 而非 runPromise:{ signal } 触发的中断会让整个 Exit 标记为 interrupted,
-  // 即便内层 catchAllCause 已把中断咽下 —— runPromise 这种情况下会直接 reject,把 Ctrl+C 变成
-  // 一条「niceeval 出错」崩溃栈、并跳过下面的部分汇总。runPromiseExit 返回 Exit 不抛,我们据此
-  // 把「中断/signal 已 abort」当正常的部分结果收尾,只有真·非中断缺陷才上抛。
+  // 外部 AbortSignal 以一个 Effect interrupt race 接入本 Scope。中断仍返回 Exit，
+  // 于是可以保留部分汇总；非中断缺陷照常向上交给 application edge。
   let interrupted = false;
-  const exit = await Effect.runPromiseExit(
-    Effect.scoped(Effect.forEach(
+  const dispatchEffect = Effect.forEach(
       attempts,
       (a) => {
         const budgetKey = a.run.experimentId ?? a.run.agent.name;
@@ -2005,13 +1979,14 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             if (a.run.earlyExit && passedKeys.has(a.key)) {
               cancelReuseAttempt(a);
               yield* reportMutex.withPermits(1)(
-                Effect.promise(() =>
-                  emitReporterEvent(reporters, {
+                Effect.tryPromise({
+                  try: () => emitReporterEvent(reporters, {
                     type: "invocation:earlyExit",
                     evalId: a.evalDef.id,
                     experimentId: a.run.experimentId,
                   }),
-                ),
+                  catch: (error) => error,
+                }),
               );
               reportAttemptLifecycle({
                 type: "attempt:early-exit",
@@ -2055,9 +2030,13 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
                 if (!budgetReported.has(budgetKey)) {
                   budgetReported.add(budgetKey);
                   yield* reportMutex.withPermits(1)(
-                    Effect.promise(() =>
-                      emitReporterEvent(reporters, { type: "invocation:budgetExceeded", budget, spent: s.spent }),
-                    ),
+                    Effect.tryPromise({
+                      try: () => emitReporterEvent(
+                        reporters,
+                        { type: "invocation:budgetExceeded", budget, spent: s.spent },
+                      ),
+                      catch: (error) => error,
+                    }),
                   );
                 }
                 // 反馈层:对每一个因预算到顶而不派发的 attempt 各发一次(与上面的
@@ -2082,7 +2061,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
           });
 
         // body:许可链全部通过之后才跑,真正的执行段。
-        const body = (slot: GlobalSlotHold) =>
+        const body = (_slot: GlobalSlotHold) =>
           Effect.gen(function* () {
             // 合并全局信号与本 eval 的首过即停信号:任一 abort → 本 attempt 的信号 abort。
             const evalAc = evalAbortControllers.get(a.key);
@@ -2094,57 +2073,9 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             // 这里只把协调器执行结果作为必填运行输入传给 materializer，不回写 Attempt。
             const buildLocators = buildLocatorsByPair.get(cacheKey(a.run, a.evalDef.id)) ?? new Map<BuildKey, JsonValue>();
 
-            // turn 级重试退避期间释放/收回的并发槽位——两级闸按持有期分工的单点契约见
-            // docs/runner.md「调度:有界并发」与 docs/feature/error-classification/
-            // architecture.md「退避与槽位」:这里只释放/收回全局并发位(globalSem),它管
-            // 吞吐,内部等待一律让位。实验闸管正确性,名额与 attempt 同生命周期、退避这类
-            // 内部等待不释放——继续由外层的租约(或裸 run 的回退信号量)全程持有,这个槽位
-            // 对象因此不接触实验闸,否则同实验的下一个 attempt 会趁退避窗口提前进场,击穿
-            // maxConcurrency: 1 的串行契约(bug 台账见
-            // memory/turn-retry-backoff-releases-experiment-serial-lock.md)。
-            // 走 slot 的显式持有对象(而不是直接 take/release 信号量):让「谁此刻还握着位子」
-            // 只有一份真相,退避期间被中断时收尾 finalizer 才不会重复归还一个已经让出的位。
-            const concurrencySlot: ConcurrencySlot = {
-              release: async () => {
-                await Effect.runPromise(slot.release);
-              },
-              reacquire: async () => {
-                await Effect.runPromise(slot.reacquire);
-              },
-            };
-
-            yield* reportMutex.withPermits(1)(
-              Effect.promise(() =>
-                emitReporterEvent(reporters, {
-                  type: "eval:start",
-                  eval: { id: a.evalDef.id },
-                  agent: a.run.agent,
-                  model: a.run.model,
-                  attempt: a.attempt,
-                  experimentId: a.run.experimentId,
-                }),
-              ),
-            );
-            // attempt:start 是这个 attempt 从 queued 移进 running 的唯一时刻(见
-            // src/runner/feedback/reducer.ts 的 attempt:start 分支),必须与 eval:start 同一
-            // 调用点、恰好发生一次 —— 否则 RunFeedbackState 的守恒计数会被破坏。phase 只是粗粒度
-            // 占位(sandbox 型 attempt 恒为 sandbox.queue,一定正确;非 sandbox 型给
-            // eval.run,attempt.ts 内部一旦跑到第一个真实边界会用 attempt:phase 立即纠正,见
-            // attempt.ts 的 enterPhase)——attempt.ts 自己不再发 attempt:start,只发
-            // attempt:phase,避免两处各发一次导致计数翻倍。
-            const initialPhase: LifecyclePhase = a.run.agent.kind === "sandbox" ? "sandbox.queue" : "eval.run";
-            reportAttemptLifecycle({
-              type: "attempt:start",
-              at: Date.now(),
-              identity: feedbackIdentity(a),
-              who: feedbackWho(a),
-              phase: initialPhase,
-            });
-            // 派发前的确定性失败(实验级 setup 失败 / 判分预检失败):不派发 agent、不建沙箱,
-            // 为这条 attempt 合成结构化 errored 结果,走与真实结果完全相同的下游路径
-            // (locator / 反馈事件 / reporter / 落盘)——环境起不来、判分端点不通都是每条 eval
-            // 都没跑成的事实,要逐条进报告,不是一条一次性日志(见 docs/feature/experiments/
-            // architecture.md「实验级生命周期」、docs/feature/judge/library.md「派发前预检」)。
+            // 派发前的确定性失败(实验级 setup 失败 / 判分预检失败):不派发 agent、不建沙箱。
+            // 这类 Slot 没有 origin Attempt，因而会使 V1 draft 保持 incomplete；不能为它
+            // 伪造一个没有 sealed Assertions 的 Member。
             const expLc = expLifecycles.get(a.run);
             const setupFailure = expLc === undefined
               ? Option.none<AttemptError>()
@@ -2162,14 +2093,52 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
                   ? buildFailure
                   : undefined;
             if (blockedError !== undefined) cancelReuseAttempt(a, true);
+            // Allocate exactly once at actual dispatch, before any observer or Sandbox can
+            // see the attempt. The same @AttemptId then reaches feedback, keep registration,
+            // result materialization, and the sealed attachment writes.
+            const recordAttempt = blockedError === undefined
+              ? yield* recordCoordinator.startAttempt(a)
+              : undefined;
+            const dispatchedAttempt: Attempt = recordAttempt === undefined
+              ? a
+              : Object.freeze({ ...a, locator: recordAttempt.locator });
+
+            yield* reportMutex.withPermits(1)(
+              Effect.tryPromise({
+                try: () => emitReporterEvent(reporters, {
+                  type: "eval:start",
+                  eval: { id: a.evalDef.id },
+                  agent: a.run.agent,
+                  model: a.run.model,
+                  attempt: a.attempt,
+                  experimentId: a.run.experimentId,
+                }),
+                catch: (error) => error,
+              }),
+            );
+            // attempt:start 是这个 attempt 从 queued 移进 running 的唯一时刻(见
+            // src/runner/feedback/reducer.ts 的 attempt:start 分支),必须与 eval:start 同一
+            // 调用点、恰好发生一次 —— 否则 RunFeedbackState 的守恒计数会被破坏。phase 只是粗粒度
+            // 占位(sandbox 型 attempt 恒为 sandbox.queue,一定正确;非 sandbox 型给
+            // eval.run,attempt.ts 内部一旦跑到第一个真实边界会用 attempt:phase 立即纠正,见
+            // attempt.ts 的 enterPhase)——attempt.ts 自己不再发 attempt:start,只发
+            // attempt:phase,避免两处各发一次导致计数翻倍。
+            const initialPhase: LifecyclePhase = a.run.agent.kind === "sandbox" ? "sandbox.queue" : "eval.run";
+            reportAttemptLifecycle({
+              type: "attempt:start",
+              at: Date.now(),
+              identity: feedbackIdentity(dispatchedAttempt),
+              who: feedbackWho(dispatchedAttempt),
+              phase: initialPhase,
+            });
             const poolSelection: ReusePoolSelection = blockedError === undefined
-              ? yield* reusePoolFor(a)
+              ? yield* reusePoolFor(dispatchedAttempt)
               : { _tag: "Fresh" };
             // 复用池的租借失败(实例创建、SandboxLayer setup 钩子、寿命确认都在池内)是**这条
             // attempt 的终局失败**,不是调度缺陷:失败原样交回这里,先读空间轴回执(作者在
             // setup 钩子里抛的 ExperimentFatalError 由此落闸),再折成 errored 结果走与
             // blockedError 完全相同的下游路径。
-            // 拒绝不能直接穿过 Effect.promise:那会变成 defect 打断 forEach,连坐同批其它实验,
+            // 拒绝必须经过具名 Effect 边界:否则会变成 defect 打断 forEach,连坐同批其它实验,
             // 且混进兄弟 fiber 的 interrupt 后被当成用户中断吞掉正文(见
             // docs/feature/error-classification/architecture.md「Effect 边界」:attempt fiber 的
             // E 恒为 never;memory/experiment-fatal-presented-as-user-interrupt.md)。
@@ -2227,14 +2196,13 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
                   error: failedBeforeDispatch,
                 } satisfies EvalResult)
               : yield* runAttemptEffect(
-                  a,
+                  dispatchedAttempt,
                   attemptOptions,
                   sandboxSem,
                   {
                     buildLocators,
                     runTiming,
                     parentSignal: attemptSignal,
-                    concurrencySlot,
                     ...(lease
                       ? {
                           reusedSandbox: {
@@ -2248,6 +2216,16 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
                     // 到达调度器,不走错误通道向上传播——attempt fiber 的 E 保持 never,`errored`
                     // 仍是 eval runner 的合法结果而不是调度失败(architecture.md「Effect 边界」)。
                     onFailureClass: (declaration) => closeHaltGate(a, declaration),
+                    ...(recordAttempt === undefined
+                      ? {}
+                      : {
+                          onSealedEvaluation: (sealed) =>
+                            recordCoordinator.captureSealedOrMarkIncomplete(
+                              recordAttempt,
+                              dispatchedAttempt,
+                              sealed,
+                            ),
+                        }),
                   },
                 );
             if (lease) {
@@ -2258,19 +2236,10 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             }
             return evaluated;
             }));
-            // locator 在这里确定 —— 早于本 attempt 触发的任何 reporter 回调 / 事件
-            // (onEvalComplete、eval:complete),所以每一个观察者看到的都已经是最终值,
-            // 和落盘 result.json 完全一致(writer.ts 的 entry.locator ?? 兜底分支因此
-            // 对 niceeval 自己的运行永不触发,只服务第三方直调 RunWriter 的场景)。
-            // 没有 experimentId 的裸 run(非 exp 命令)不产出 locator,与
-            // writer.writeAttemptFor() 要求 experimentId 的既有约束一致 ——
-            // encodeAttemptLocator 本身也会在 experimentId 为空时直接抛错。
-            // 单独存一份本地变量(而不是只写 result.locator 再读回来):下面报 "failure" 永久
-            // 事件时需要一个已知是 AttemptLocator 品牌类型的值,result.locator 字段本身是
-            // 落盘/reporter 契约用的裸 string(见 EvalResult.locator 的类型注释)。
-            // locator 在 attempt plan 构造时已算好(见 attempts 构建处);这里只把同一个值写进
-            // 结果,早于本 attempt 触发的任何 reporter 回调 / 事件。
-            const locator: AttemptLocator | undefined = a.locator;
+            // A blocked Slot has no origin Attempt and remains an explicit
+            // Record gap. Every actual execution receives its locator from the
+            // pre-created RecordAttemptDraft rather than a derived hash.
+            const locator: AttemptLocator | undefined = recordAttempt?.locator;
             if (locator) result.locator = locator;
             // attempt:complete 与上面的 attempt:start 严格一一配对(同一个 body Effect,唯一
             // 出口),覆盖每一个真正跑过 runAttemptEffect 的 attempt(包括之后被下面的并发去重
@@ -2279,8 +2248,8 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             reportAttemptLifecycle({
               type: "attempt:complete",
               at: Date.now(),
-              identity: feedbackIdentity(a),
-              who: feedbackWho(a),
+              identity: feedbackIdentity(dispatchedAttempt),
+              who: feedbackWho(dispatchedAttempt),
               verdict: result.verdict,
               tokenCount: result.usage
                 ? (result.usage.inputTokens ?? 0) + (result.usage.outputTokens ?? 0)
@@ -2353,21 +2322,25 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             }
             yield* reportMutex.withPermits(1)(
               // 每个 reporter 单独兜错:一个写文件失败 / 自定义 reporter 抛错只记 diagnostic,
-              // 不让 Promise.all 整体 reject —— 否则 Effect.promise 把它当 defect,fail 掉 forEach、
+              // 不让 Promise.all 整体 reject —— named boundary 把拒绝保留为 Effect failure,
               // 停掉后续 attempt(P2)。
-              Effect.promise(() =>
-                Promise.all(
+              Effect.tryPromise({
+                try: () => Promise.all(
                   reporters.map((reg) =>
                     runReporter(reg, "onEvalComplete", () => reg.reporter.onEvalComplete?.(result)),
                   ),
                 ),
-              ),
+                catch: (error) => error,
+              }),
             );
             // 和上面的 onEvalComplete 同一把 reportMutex:两条回调路径都要串行化,否则并发
             // attempt 各自触发的 eval:complete 会绕开 permit=1 直接并发跑,和文档承诺的
             // 「报告回调串行化」不一致。
             yield* reportMutex.withPermits(1)(
-              Effect.promise(() => emitReporterEvent(reporters, { type: "eval:complete", result })),
+              Effect.tryPromise({
+                try: () => emitReporterEvent(reporters, { type: "eval:complete", result }),
+                catch: (error) => error,
+              }),
             );
           });
         // ③ 全局并发位 → ④ 派发时刻试锁 → preflight → 实验级 setup → body。
@@ -2383,11 +2356,12 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             // 名额一起还回去(返回 "suspend"),由外层转入 elsewhere 挂起;位子当场空出来,
             // 排队中的下一条没被锁的用例接手。
             if (caseState) {
-              const outcome = yield* Effect.promise(() => tryAcquireCase(caseState));
+              const outcome = yield* Effect.tryPromise({
+                try: () => tryAcquireCase(caseState),
+                catch: (error) => error,
+              });
               if (outcome.kind === "aborted") return { kind: "done" } as const;
               if (outcome.kind === "busy") return { kind: "suspend", window: outcome.window } as const;
-              // 取锁时顺带重查过携带(接管 / 多开)且这个序号已经被对方跑完:不重复派发。
-              if (caseState.carried.has(a.attempt)) return { kind: "done" } as const;
             }
             const proceed = yield* preflight;
             if (!proceed) return { kind: "done" } as const;
@@ -2398,7 +2372,10 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
               // 等它的时候让出全局并发位(docs/runner.md「调度:有界并发」——内部等待一律让位,
               // 慢启动的 setup 不许饿死同批其它实验),回来再重新拿位。实验闸名额不让。
               yield* slot.release;
-              yield* Effect.promise(() => ensureExperimentSetup(a));
+              yield* Effect.tryPromise({
+                try: () => ensureExperimentSetup(a),
+                catch: (error) => error,
+              });
               yield* slot.reacquire;
             }
             yield* body(slot);
@@ -2408,12 +2385,15 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         const guarded = exclusiveSem ? exclusiveSem.withPermits(1)(dispatch) : dispatch;
 
         // 许可链的循环外壳:撞锁挂起的用例解决后从 ① 重新走一遍(实验闸名额与全局位都要
-        // 重新取,不能拿着别人在等的名额干等),携入的直接收工。
+        // 重新取,不能拿着别人在等的名额干等)。
         const pipeline = Effect.gen(function* () {
           // ⓪ 逐 BuildKey 放行:只等本 eval 引用的那几个 key,不引用任何 key 的 attempt
           // 立刻进入许可链。等在这里不占全局并发位,慢构建因此不挡住同批别的 eval。
           const pairKey = cacheKey(a.run, a.evalDef.id);
-          yield* Effect.promise(() => awaitBuildsFor(pairKey));
+          yield* Effect.tryPromise({
+            try: () => awaitBuildsFor(pairKey),
+            catch: (error) => error,
+          });
           for (;;) {
             // ① 止损闸:落闸 → 本 attempt 不派发,计 unstarted(完成状态因此落 incomplete)。
             const halt = checkDispatchHalt(a);
@@ -2427,13 +2407,12 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             if (outcome.kind === "done") return;
             // 许可获取被落下的闸打断:许可已随作用域归还,回到 ① 让上面的检查点记账。
             if (outcome.kind === "recheck") continue;
-            // ② ③ 已随作用域归还。挂起等锁:不占并发位、计入 elsewhere;锁释放或过期后重查
-            // 携带——携入的收工,仍要自跑的按原优先级回到派发队列(下一轮循环)。
-            yield* Effect.promise(() => outcome.window);
-            if (caseState!.carried.has(a.attempt)) {
-              cancelReuseAttempt(a);
-              return;
-            }
+            // ② ③ 已随作用域归还。挂起等锁:不占并发位、计入 elsewhere;锁释放或过期后
+            // 按原优先级回到派发队列(下一轮循环)。
+            yield* Effect.tryPromise({
+              try: () => outcome.window,
+              catch: (error) => error,
+            });
             if (opts.signal?.aborted) {
               cancelReuseAttempt(a);
               return;
@@ -2441,14 +2420,15 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
           }
         });
         // 实验级 teardown 结算:每个 attempt 收尾(含被 preflight 跳过、被中断的、被用例锁
-        // late-carry 跳过的)都从身份集合移除；最后一个触发 ExperimentDef.teardown。ensuring
+        // 被 preflight 跳过、被中断的)都从身份集合移除；最后一个触发 ExperimentDef.teardown。ensuring
         // 在中断路径同样执行，重复 finalizer 也不会让状态下溢。
         const withExpLifecycle =
           !a.run.setup && !a.run.teardown
             ? pipeline
             : pipeline.pipe(
                 Effect.ensuring(
-                  Effect.promise(async () => {
+                  Effect.tryPromise({
+                    try: async () => {
                     const cell = expLifecycles.get(a.run)!;
                     const state = cell.state;
                     if (state._tag === "UntriggeredComplete") return;
@@ -2466,7 +2446,9 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
                       return;
                     }
                     cell.state = { ...state, pendingAttempts };
-                  }),
+                    },
+                    catch: (error) => error,
+                  }).pipe(Effect.catchAll(() => Effect.void)),
                 ),
               );
         if (!caseState) return withExpLifecycle;
@@ -2475,10 +2457,13 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         // 挂在最外层确保晚于实验级 teardown 计数结算(docs「用例全部 attempt 收尾(含沙箱销毁)
         // 后删除自己的锁」)。
         return withExpLifecycle.pipe(
-          Effect.ensuring(Effect.promise(() => releaseCaseLockIfDone(caseState, a.attempt))),
+          Effect.ensuring(Effect.tryPromise({
+            try: () => releaseCaseLockIfDone(caseState, a.attempt),
+            catch: (error) => error,
+          }).pipe(Effect.catchAll(() => Effect.void))),
         );
       },
-      { concurrency: "unbounded", discard: true },
+      { concurrency: opts.maxConcurrency, discard: true },
     ).pipe(
       // 中断(用户 Ctrl+C):finalizer 已在中断过程中跑完(容器已停),这里只是把它咽下,
       // 好让流程走到 summarize / onInvocationComplete,用已完成的 results 出一份部分汇总,而不是抛栈。
@@ -2493,18 +2478,23 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         }
         return Effect.failCause(cause); // 非中断的意外缺陷:照常抛出
       }),
-    )),
-    { signal: opts.signal },
+    );
+  const exit = yield* Effect.exit(
+    opts.signal === undefined
+      ? dispatchEffect
+      : Effect.raceFirst(dispatchEffect, interruptOnAbort(opts.signal)),
   );
   // 调度已经结算:任何被中断路径抛下的挂起轮询到下一个心跳周期自行收束,不无主空转。
   dispatchClosed = true;
   // provenance 在这里齐全:没有任何 attempt 依赖的 key 也照样跑完并留下自己那条记录,
   // 中断路径下同批构建随 signal 收束成 cancelled,不把 run.json 的 sandboxBuilds 落空。
   if (runningBuilds !== undefined) {
-    sandboxBuildRecords = [...(await runningBuilds.done).records];
+    const completedBuilds = yield* Effect.tryPromise({
+      try: () => runningBuilds.done,
+      catch: (error) => error,
+    });
+    sandboxBuildRecords = [...completedBuilds.records];
   }
-  await opts.otelPool?.close();
-
   // 复用污染线索:按实例 × 承接序号聚合本次 Run 真实跑出的结果(携带条目不参与——复用实验
   // 不消费也不产出结果沿用)。只指路,不改判定(见 reuse-diagnostics.ts)。
   for (const notice of detectReuseContamination(results)) {
@@ -2569,12 +2559,25 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     if (opts.signal?.aborted || Cause.isInterruptedOnly(exit.cause)) {
       interrupted = true;
     } else {
-      await sweepExperimentTeardowns();
+      yield* Effect.tryPromise({
+        try: () => sweepExperimentTeardowns(),
+        catch: (error) => error,
+      });
       throw Cause.squash(exit.cause);
     }
   }
   if (interrupted) reportInterrupted();
-  await sweepExperimentTeardowns();
+  yield* Effect.tryPromise({
+    try: () => sweepExperimentTeardowns(),
+    catch: (error) => error,
+  });
+
+  // The Record completion marker is the only publication point. Interrupted
+  // or failed dispatch deliberately leaves its already-created draft(s)
+  // incomplete for `niceeval clean` rather than publishing a partial Run.
+  if (!interrupted) {
+    yield* recordCoordinator.publish(Date.now());
+  }
 
   // Experiment 收尾协议(docs/runner.md):每个真正出现在这次 Invocation 里的 experimentId
   // 各发一次 experiment:complete,携带它自己的 completedAt(真实 teardown 完成时刻,没有
@@ -2588,26 +2591,28 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   );
   const runTimings = runTiming.finalize();
   for (const experimentId of invocationExperimentIds) {
-    await emitReporterEvent(reporters, {
-      type: "experiment:complete",
-      experimentId,
-      completedAt: experimentCompletedAt.get(experimentId) ?? new Date().toISOString(),
-      // 静态携带(启动时已知)与用例锁释放/接管后重查携带命中的迟到携带(lateCarriedResults)
-      // 对 Artifacts 封口而言是同一种东西——都是"这个 Experiment 本次没有真实执行、但要计入
-      // 快照的终态结果",合并后一起按 experimentId 过滤。
-      carriedResults: [...carriedResults, ...lateCarriedResults].filter((r) => r.experimentId === experimentId),
+    yield* Effect.tryPromise({
+      try: () => emitReporterEvent(reporters, {
+        type: "experiment:complete",
+        experimentId,
+        completedAt: experimentCompletedAt.get(experimentId) ?? new Date().toISOString(),
+      // Only planning-time carries backed by exact frozen Record capabilities
+      // are included in the invocation snapshot.
+      carriedResults: carriedResults.filter((r) => r.experimentId === experimentId),
       diagnostics: experimentDiagnostics.get(experimentId) ?? [],
       ...(experimentFacts.has(experimentId) ? { facts: experimentFacts.get(experimentId) } : {}),
       // Run 级共享构建时间与 provenance:属于产出它们的 Run;携带条目不继承。
       ...(runTimings !== undefined ? { timings: runTimings } : {}),
       ...(sandboxBuildRecords.length > 0 ? { sandboxBuilds: sandboxBuildRecords } : {}),
-      name: opts.config.name,
+        name: opts.config.name,
+      }),
+      catch: (error) => error,
     });
   }
 
-  // 稳定排序:按发现顺序 + attempt;携带结果(静态 + 用例锁迟到携带)并入后一起排
+  // 稳定排序:按发现顺序 + attempt;exact carried results and fresh results一起排
   const order = new Map(opts.evals.map((e, i) => [e.id, i]));
-  const allResults = [...carriedResults, ...lateCarriedResults, ...results];
+  const allResults = [...carriedResults, ...results];
   allResults.sort(
     (a, b) =>
       (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0) ||
@@ -2616,15 +2621,25 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   );
 
   const summary = summarize(allResults, startedAt, Date.now() - t0, opts.config.name);
-  await emitReporterEvent(reporters, { type: "invocation:summary", summary });
+  yield* Effect.tryPromise({
+    try: () => emitReporterEvent(reporters, { type: "invocation:summary", summary }),
+    catch: (error) => error,
+  });
   for (const reg of reporters) {
     // required reporter(默认 artifacts、显式 --json/--junit)在这一步失败,不能中断其它
     // reporter 的收尾——继续跑完剩下的循环,让每个 reporter 都拿到 onInvocationComplete 的机会;
     // 失败本身经 runReporter → reportReporterError 折成诊断,由调用方(cli.ts)读取
     // RunFeedbackState 组装成 InvocationCompletion,让最终 completion/退出码判红(见
     // docs/feature/experiments/cli.md「运行完成状态不只看 verdict 计数」)。
-    await runReporter(reg, "onInvocationComplete", () => reg.reporter.onInvocationComplete?.(summary));
+    yield* Effect.tryPromise({
+      try: () => runReporter(reg, "onInvocationComplete", () => reg.reporter.onInvocationComplete?.(summary)),
+      catch: (error) => error,
+    });
   }
-  await emitReporterEvent(reporters, { type: "invocation:saved", summary });
+  yield* Effect.tryPromise({
+    try: () => emitReporterEvent(reporters, { type: "invocation:saved", summary }),
+    catch: (error) => error,
+  });
   return summary;
+  }));
 }

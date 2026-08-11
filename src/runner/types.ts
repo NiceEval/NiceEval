@@ -24,6 +24,10 @@ import type { ScoreTestContext, TestContext } from "../context/types.ts";
 import type { CapturedEvalSource } from "./eval-source.ts";
 import type { AttemptLocator } from "../record/locator.ts";
 import type { EvalManifest, RunManifests } from "../record/manifest.ts";
+import type { RecordAttachmentWrite } from "../record/attachment/index.ts";
+import type { FrozenRecordAttempt, FrozenRecordView } from "../record/reader/types.ts";
+import type { RecordReaderReadError } from "../record/reader/errors.ts";
+import type { SealedAttemptAssertionsV1 } from "./assertions.ts";
 // report 公共子路径是独立预编译单元；两种 Definition 使用不可构造的结构品牌，因此这里可以
 // 对源码类型编程，同时与下游从 "niceeval/report" 取得的 dist 声明兼容，也不会形成干净构建的
 // source → host → dist 自举环。
@@ -1156,7 +1160,39 @@ export interface AgentRun {
   readonly classifyFailure?: AttemptFailureClassifier;
 }
 
-export interface RunOptions {
+/**
+ * Linked plugin writes enter the Evaluation Record contract as opaque typed
+ * producer values. The Runner never sees attachment names, payloads, or blob
+ * paths; the generic writer retains that authority.
+ */
+export interface RunnerRecordAttachmentProducers<Error = never, Requirements = never> {
+  readonly runWrites?: (input: {
+    readonly run: AgentRun;
+    readonly evals: readonly DiscoveredEval[];
+  }) => readonly RecordAttachmentWrite<"run", Error, Requirements>[];
+  readonly attemptWrites?: (input: {
+    readonly attempt: Attempt;
+    readonly sealed: SealedAttemptAssertionsV1;
+  }) => readonly RecordAttachmentWrite<"attempt", Error, Requirements>[];
+}
+
+/**
+ * Carry planning may provide only the exact frozen source selected for a
+ * target Slot. The Runner deliberately does not infer a source from historic
+ * experiment/eval/ordinal fields: an absent source is a named carry gap and
+ * returns that Slot to fresh execution.
+ */
+export interface RunnerRecordCarryReferences {
+  readonly sourceForCarriedSlot: (input: {
+    readonly run: AgentRun;
+    readonly evalDef: DiscoveredEval;
+    readonly attempt: number;
+    readonly slotId: import("../record/model/identifiers.ts").SlotId;
+    readonly view: FrozenRecordView<RecordReaderReadError>;
+  }) => Effect.Effect<FrozenRecordAttempt | undefined, RecordReaderReadError>;
+}
+
+export interface RunOptions<RecordError = never, RecordRequirements = never> {
   config: Config;
   evals: readonly DiscoveredEval[];
   agentRuns: readonly AgentRun[];
@@ -1204,6 +1240,14 @@ export interface RunOptions {
    */
   carryPlan?: import("./fingerprint.ts").CarryPlan;
   /**
+   * Exact carry/adoption sources from the planning boundary. If this is absent
+   * or declines a carried Slot, the Runner records a named carry gap and
+   * dispatches that Slot fresh rather than guessing a historical Attempt.
+   */
+  recordCarryReferences?: RunnerRecordCarryReferences;
+  /** Linked plugin RecordAttachment producers for this invocation. */
+  recordAttachments?: RunnerRecordAttachmentProducers<RecordError, RecordRequirements>;
+  /**
    * 非沙箱 tracing agent 的 run 级共享 OTLP 接收池(runEvals 创建并回收;
    * 每个 agent 一个 receiver,attempt 之间共享 —— 被测应用是长驻进程,端点不能随 attempt 换)。
    */
@@ -1250,7 +1294,7 @@ export interface Attempt {
    * 预分配 runId 与 attempt 身份派生,贯穿执行、留存登记与落盘——登记项、run 收尾反馈与
    * result.json 从第一次写入起就用同一个值。裸 run(无 experimentId)不产出。
    */
-  readonly locator: AttemptLocator;
+  readonly locator?: AttemptLocator;
 }
 
 // ───────────────────────── 反馈 profile / 事件 / reducer 状态 ─────────────────────────

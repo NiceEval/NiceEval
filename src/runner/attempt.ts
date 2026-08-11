@@ -147,7 +147,7 @@ export function attemptFailureDeclaration(
   return { class: cls, phase, text: info.text };
 }
 
-export interface RunAttemptEffectOptions {
+export interface RunAttemptEffectOptions<SealRequirements = never> {
   /** Run 级构建执行产出的 locator；key 集合必须与 Attempt.plan 的完成态物理计划完全一致。 */
   readonly buildLocators: ReadonlyMap<string, JsonValue>;
   /** Invocation 级 Run timing，供 Dockerfile Agent 派生镜像 lookup/build 观测。 */
@@ -177,7 +177,7 @@ export interface RunAttemptEffectOptions {
    */
   onSealedEvaluation?: (
     sealed: SealedAttemptAssertionsV1,
-  ) => Effect.Effect<void, never, never>;
+  ) => Effect.Effect<void, never, SealRequirements>;
   /** 由复用池独占借出的实例；池负责物理 Sandbox 生命周期与最终 stop。 */
   reusedSandbox?: {
     sandbox: Sandbox;
@@ -186,9 +186,13 @@ export interface RunAttemptEffectOptions {
   };
 }
 
-export function runAttemptEffect(
+export function runAttemptEffect<
+  SealRequirements,
+  AttachmentError,
+  AttachmentRequirements,
+>(
   a: Attempt,
-  opts: RunOptions,
+  opts: RunOptions<AttachmentError, AttachmentRequirements>,
   sandboxSem: Effect.Semaphore,
   {
     buildLocators,
@@ -199,8 +203,8 @@ export function runAttemptEffect(
     onFailureClass,
     onSealedEvaluation,
     reusedSandbox,
-  }: RunAttemptEffectOptions,
-): Effect.Effect<EvalResult> {
+  }: RunAttemptEffectOptions<SealRequirements>,
+) {
   const config = opts.config;
   const { evalDef, run, attempt } = a;
   const niceevalRoot = opts.niceevalRoot ?? `${process.cwd()}/.niceeval`;
@@ -587,7 +591,7 @@ export function runAttemptEffect(
                     // Managed disposition，避免外层再包一层 acquireRelease 造成 double-stop。
                     release: {
                       _tag: "Managed",
-                      run: (owned) => Effect.promise(async () => {
+                      run: (owned) => tryPromiseAsDefect(async () => {
                         const sb = owned.sandbox;
                         if (disposition !== "keep") {
                           await owned.group.stop();
@@ -646,7 +650,7 @@ export function runAttemptEffect(
       if (run.agent.kind !== "sandbox" && wantsSharedOtel && opts.otelPool) {
         enterPhase("telemetry.configure");
         try {
-          otelChannel = yield* Effect.promise(() => opts.otelPool!.channel(run.agent.name));
+          otelChannel = yield* tryPromiseAsDefect(() => opts.otelPool!.channel(run.agent.name));
           const endpoint = otelChannel.receiver.endpoint(config.telemetry?.host ?? "127.0.0.1");
           const env = run.agent.tracing?.env?.(endpoint);
           telemetry = env ? { endpoint, env } : { endpoint };
@@ -727,7 +731,7 @@ export function runAttemptEffect(
       // 到点如实缺失。计时单独记一条 phases 条目,不入 durationMs(durationMs 已在 onTimeout
       // 按中断时刻定格)。sources 折叠是本地文件读取,与沙箱是否存活无关,一并在这里补。
       yield* Effect.addFinalizer(() =>
-        Effect.promise(async () => {
+        tryPromiseAsDefect(async () => {
           if (!timedOut) return;
           const events = liveEvents?.() ?? [];
           if (run.agent.kind === "sandbox" && liveLedger) {
@@ -752,7 +756,7 @@ export function runAttemptEffect(
       // cleanup 使用新的有界 signal，不复用已经超时/取消的 Attempt signal。
       if (run.agent.kind === "sandbox") {
         yield* Effect.addFinalizer(() =>
-          Effect.promise(async () => {
+          tryPromiseAsDefect(async () => {
             if (layerCleanups.length === 0) return;
             enterPhase("sandbox.cleanup");
             await recorder
@@ -839,7 +843,7 @@ export function runAttemptEffect(
       // author execution and seal run in this Attempt's Effect scope. No
       // nested runtime is introduced.
       const bodyFiber = yield* Effect.fork(
-        Effect.promise((interruptSignal) =>
+        tryPromiseAsDefect((interruptSignal) =>
           runAttemptBody(a, config, t0, base, {
             sandbox,
             receiver,
@@ -980,7 +984,7 @@ export function runAttemptEffect(
             const enter = nativeEnterCommand(providerName, sandbox.sandboxId);
             const keptAt = new Date().toISOString();
             const expiresAt = computeExpiresAt(providerName, keptAt);
-            yield* Effect.promise(() =>
+            yield* tryPromiseAsDefect(() =>
               writeKeptEntry(niceevalRoot, {
                 sandboxId: sandbox.sandboxId,
                 provider: providerName,
@@ -1930,9 +1934,25 @@ function isAttemptAborted(signal: AbortSignal | undefined): boolean {
 }
 
 /**
- * `Effect.promise` aborts its callback signal for every fiber interruption.
- * A timeout uses that same path only after `timeoutTo` has synchronously set
- * its winner bit, so only the unmarked case is an external fiber cancellation.
+ * The legacy body treated rejected author and SDK promises as defects. Keep
+ * that result channel while giving every Promise a named Effect v3 boundary
+ * and its cancellation signal.
+ */
+function tryPromiseAsDefect<Value>(
+  run: (signal: AbortSignal) => PromiseLike<Value>,
+): Effect.Effect<Value> {
+  return Effect.tryPromise({
+    try: run,
+    catch: (error) => error,
+  }).pipe(Effect.orDie);
+}
+
+/**
+ * This named `Effect.tryPromise` bridge aborts its callback signal for every
+ * fiber interruption while preserving the legacy defect channel for rejected
+ * setup/body promises. A timeout uses that same path only after `timeoutTo`
+ * has synchronously set its winner bit, so only the unmarked case is an
+ * external fiber cancellation.
  */
 function isBodyInterrupted(
   signal: AbortSignal,
