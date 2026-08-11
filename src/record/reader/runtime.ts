@@ -77,6 +77,10 @@ import {
 } from "./identity.ts";
 import { readCurrentRecordFormat } from "./format.ts";
 import {
+  registerFrozenRecordReaderPort,
+  type FrozenRecordReaderPort,
+} from "./internal.ts";
+import {
   frozenRecordAttemptBrand,
   frozenRecordRunBrand,
   frozenRecordViewBrand,
@@ -84,15 +88,6 @@ import {
   type FrozenRecordRun,
   type RecordReader,
 } from "./types.ts";
-import {
-  bindAnalysisRecordView,
-  type AnalysisLatestExperimentRead,
-  type AnalysisRecordPort,
-} from "../../sample/analysis.ts";
-import {
-  EVALUATIONS_ATTACHMENT_NAME_V1,
-  evaluationsAttachmentFamilyV1,
-} from "../../eval/record/evaluation.ts";
 
 /** A root entry is deliberately small, while Core and Attachment documents get their own caps. */
 export const RECORD_READER_MAXIMUM_RUN_ENTRIES = 100_000;
@@ -933,15 +928,6 @@ function mapMemberRead(
   }
 }
 
-function latestExperimentIndeterminate(
-  path: readonly string[],
-): AnalysisLatestExperimentRead {
-  return Object.freeze({
-    state: "indeterminate" as const,
-    issues: nonEmptyRecordIssues([schemaIssue(path)])!,
-  });
-}
-
 /**
  * Open the current Record major under the shared maintenance lock. Discovery
  * keeps only the bounded candidate RunId index; Core work is deferred to the
@@ -1205,7 +1191,7 @@ export function openRecordReader(input: {
     });
 
     viewHandles.register(reader, undefined);
-    const analysisPort: AnalysisRecordPort = {
+    const frozenPort: FrozenRecordReaderPort = {
       assertOpen: (view) => assertView(view),
       candidates: (view) =>
         Stream.unwrap(assertView(view).pipe(Effect.map(() => runs))),
@@ -1214,26 +1200,18 @@ export function openRecordReader(input: {
         Effect.zipRight(assertView(view), readFrozenMember(owner, slotId)),
       attempt: (view, ref) =>
         Effect.zipRight(assertView(view), readFrozenAttempt(ref)),
-      latestExperiment: (view, owner) =>
-        Effect.gen(function* () {
-          yield* assertView(view);
-          const attachment = yield* readRunAttachmentForOwner(
-            owner,
-            evaluationsAttachmentFamilyV1,
-          );
-          if (attachment.state !== "available") {
-            return latestExperimentIndeterminate([
-              "attachments",
-              EVALUATIONS_ATTACHMENT_NAME_V1,
-            ]);
-          }
-          return Object.freeze({
-            state: "available" as const,
-            experimentId: attachment.value.payload.experimentId,
-          });
-        }),
+      readRunAttachment: (view, owner, family) =>
+        Effect.zipRight(
+          assertView(view),
+          readRunAttachmentForOwner(owner, family),
+        ),
+      readAttemptAttachment: (view, owner, family) =>
+        Effect.zipRight(
+          assertView(view),
+          readAttemptAttachmentForOwner(owner, family),
+        ),
     };
-    bindAnalysisRecordView(reader, analysisPort);
+    registerFrozenRecordReaderPort(reader, frozenPort);
 
     return reader;
   });
