@@ -218,7 +218,9 @@ interface ProjectedSample<Access extends ProjectionAccess, Value> {
 
 `ProjectedSample` 只保存 pure `sample`、entry、Attachment result 与派生 coverage；它不保存 reader、handle、path 或 callback。结果形成后可以显示或交给 Report，但不能用它再次读取 Attachment。
 
-`coverage.sample.denominator` 来自 Sample，不因 Attachment 状态改变。`coverage.entries` 只统计本次逻辑访问；`coverage.attachments` 只统计 `attachment-result` 中的 Attachment 数据状态。`selected-run` 没有 slot entry，因此它的 entry slot-state 计数全为零。
+`coverage.sample.denominator` 是 Sample-wide 的 slot denominator，不因 Attachment 状态改变。`coverage.entries` 只统计本次逻辑访问；`coverage.attachments` 只统计 `attachment-result` 中的 Attachment 数据状态。它们都不是 Calculation denominator。
+
+Calculation 的 `observed` 与 `denominator` 由作者返回 domain value，host 不从 transport coverage、entry 数或 access count 推导。`selected-run` 没有 slot entry，因此它的 entry slot-state 计数全为零。
 
 ## Direct Effect 入口
 

@@ -38,7 +38,7 @@ RecordAttachment 的 unavailable、migration-required、unsupported、invalid �
 
 ## Coverage 不冒充分母
 
-`ProjectedSample.coverage` 分开报告 Sample 的 slot 状态、逻辑 entry 数与 Attachment result 状态。Sample 的 `denominator` 仍是所有 Calculation 的分母；entry 数只说明本次选择的访问范围，不能代替分母。
+`ProjectedSample.coverage` 分开报告 Sample 的 slot 状态、逻辑 entry 数与 Attachment result 状态。Sample 的 `denominator` 只表示 Sample-wide 的 slot denominator。每个 Calculation 的 `observed` 与 `denominator` 都是作者返回的 domain value；host 不得从 transport coverage、entry 数或 access count 推导它们。
 
 ## 范围
 
