@@ -1,48 +1,54 @@
-# Observability —— 通道数据、反馈与 Reports
+# Observability —— 事实数据、反馈与 Reports
 
-可观测数据分成两条边界：运行中的反馈服务当前进程；停稳后的业务事实写入 Record 的 owner-local channels。Reader 和 normalizer 把后者交给 Sample 与 ReportInput。
+可观测数据分成两条边界：运行中的反馈服务当前进程；停稳后的业务事实写入 Record 的 owner-local RecordAttachment。Reader 和 analysis selection 把后者交给 Sample 与 Reports。
 
 ## 数据路径
 
-Agent、Sandbox 和 Runner 同时产生当前进程反馈以及 Run、Attempt channel 数据。前者进入 TTY 或 NDJSON；后者经 RecordReader、normalizer、Sample 和 ReportInput 进入 Reports。
+Agent、Sandbox 和 Runner 同时产生当前进程反馈以及 Run/Attempt RecordAttachment 数据。前者进入 TTY 或机器可读的进程反馈；后者经 RecordReader、analysis selection 与 Reports 呈现。
 
-终端进度、心跳、活动行和临时计数不进入 Record。进程退出后，只有已写入 channel 的业务数据可以由 `show`、`view` 或静态报告站读取。
+终端进度、心跳、活动行和临时计数不进入 Record。进程退出后，只有已写入 RecordAttachment 的业务数据可以由 `show`、`view` 或静态报告站读取。
 
-## 内建业务通道闭环
+## 内建业务 Attachment 闭环
 
-下表冻结标准能力的 owner、精确 schema、transport 和消费入口。JSON document 使用 `application/json`；event stream 使用 `application/x-ndjson`。decoder registry key 是 `(owner kind, schemaId, mediaType)`，并通过具名内建 FactRequirement 交给 projector 或标准 Report。
+下表冻结标准能力的 owner、精确 JSON payload 形状和消费入口。每个 Attachment 都由固定 envelope、exact JSON payload 与 owner-local blob closure 组成。
 
-| producer / 事实 | owner 与 channel | codec 与 coverage 细节 | 标准消费 |
+reader 先解码固定 `RecordAttachmentEnvelopeV1`，再按 `(owner, name, schemaId)` 选择 payload decoder。具名 RecordAttachment projector 把自包含 payload 形成 typed view。
+
+| producer / 事实 | owner 与 RecordAttachment | payload、collection 与 limitation 细节 | 标准消费 |
 |---|---|---|---|
-| Assertion producer / checks | Attempt / `niceeval.assertions/v1` | 精确 JSON document；限制见 Assertions | `assertionsFact` → Attempt checks 与 score |
-| Verdict fold / terminal state | Attempt / `niceeval.verdict/v1` | 精确 JSON document | `verdictFact` → overview、Attempt state 与 project-target |
-| Execution eligibility | Attempt / `niceeval.eligibility/v1` | 精确 JSON document；含 mandatory `reuseContract` | `eligibilityFact` → project-target |
-| Adapter / usage 与 provider 计费观测 | Attempt / `niceeval.usage/v1` | JSON document；token、request 与 provider-observed cost 分开标记 | `usageFact` → usage 与 cost cards |
-| Adapter / message、tool call、tool result | Attempt / `niceeval.conversation/v1` | NDJSON；未知 event 只让 decoding partial | `conversationFact` → conversation/tool timeline |
-| Sandbox / command manifest 与结果 | Attempt / `niceeval.commands/v1` | JSON document；大 stdout/stderr 可引用 Attempt blob | `commandsFact` → commands 与 evidence |
-| Sandbox ledger / 文件变化 | Attempt / `niceeval.diff/v1` | JSON document；大 patch 可引用 Attempt blob | `diffFact` → change summary 与 detail |
-| Runner、Adapter、Sandbox / 时间区间 | Attempt / `niceeval.timing/v1` | JSON document；规范 phase interval 与 parent 关系 | `timingFact` → duration 与 waterfall |
-| Attempt lifecycle / diagnostics | Attempt / `niceeval.diagnostics/v1` | NDJSON；code、phase、detail 与 context | `attemptDiagnosticsFact` → Attempt diagnostics |
-| Run lifecycle / diagnostics | Run / `niceeval.diagnostics/v1` | NDJSON；setup、teardown、dispatch 与 stop reason | `runDiagnosticsFact` → Run diagnostics |
-| Planner 与 operator / adoption action | Run / `niceeval.actions/v1` | JSON document；关联 slotId、attemptId 与当时理由 | `actionsFact` → membership provenance |
-| Eval discovery / source snapshot | Run / `niceeval.sources/v1` | JSON manifest + Run-local SHA-256 blobs | `sourcesFact` → origin source viewer |
-| Runner / invocation provenance | Run / `niceeval.run-provenance/v1` | JSON document | `runProvenanceFact` → Invocation detail |
+| Assertion collector | Attempt / `niceeval.assertions/v1` | exact JSON；subject、evaluator、evaluation、evidence、policy 与 projection | Attempt checks 与 score detail |
+| 四态判定 | Attempt / `niceeval.verdict/v1` | exact JSON；所有 Pass/Score Attempt 的四态 Verdict | overview、Attempt state 与 reuse planning |
+| Score Eval 得分 | Attempt / `niceeval.score/v1` | exact JSON；Score Eval 的独立得分、可排名性、stop cause 与 issues | overview 与排行 |
+| Execution eligibility | Attempt / `niceeval.eligibility/v1` | exact JSON；含 mandatory `reuseContract` | reuse planning |
+| Adapter / usage 与 provider 计费观测 | Attempt / `niceeval.usage/v1` | exact JSON；token、request 与 provider-observed cost 分开标记 | usage 与 cost cards |
+| Adapter / message、tool call、tool result | Attempt / `niceeval.conversation/v1` | exact JSON；未知 event variant 形成 collection partial | conversation/tool timeline |
+| Sandbox / command manifest 与结果 | Attempt / `niceeval.commands/v1` | exact JSON；大 stdout/stderr 可引用 owner-local blob | commands 与 evidence |
+| Sandbox ledger / 文件变化 | Attempt / `niceeval.diff/v1` | exact JSON；大 patch 可引用 owner-local blob | change summary 与 detail |
+| Runner、Adapter、Sandbox / 时间区间 | Attempt / `niceeval.timing/v1` | exact JSON；规范 phase interval 与 parent 关系 | duration 与 waterfall |
+| Attempt lifecycle / diagnostics | Attempt / `niceeval.diagnostics/v1` | exact JSON；code、phase、detail 与 context | Attempt diagnostics |
+| Eval discovery / definition | Run / `niceeval.evaluations/v1` | exact JSON；distinct evalId → `pass | score` | 离线分母分类 |
+| Run lifecycle / diagnostics | Run / `niceeval.diagnostics/v1` | exact JSON；setup、teardown、dispatch 与 stop reason | Run diagnostics |
+| Planner 与 operator / 采用原因 | Run / `niceeval.membership-provenance/v1` | exact JSON；关联 slotId、attemptId 与当时理由 | membership provenance |
+| Eval discovery / source snapshot | Run / `niceeval.sources/v1` | exact JSON manifest 与 owner-local SHA-256 blobs | origin source viewer |
+| Runner / invocation provenance | Run / `niceeval.run-provenance/v1` | exact JSON | Invocation detail |
 
-这些链路都包含 producer → descriptor coverage → 内建 decoder → branded FactRequirement → 标准 presentation。未知或退役自定义通道可以 unsupported；表中标准能力的 decoder 与页面入口不能单独退役。Verdict 是 terminal state 的唯一权威，Report 不从 Assertions 重算它。
+这些链路都经过 producer → fixed envelope → payload decoder → RecordAttachment projector → 标准呈现。未受 projector 支持的自定义 schema 可以 `unsupported`。
 
-descriptor 的 `coverage` 只表达持久采集的 `complete | partial | unavailable`。截断、脱敏、采样、过滤或采集失败由所属 payload 用结构化 limitation 说明；它们不能折叠成 `null`。reader 的 decoding coverage 另行说明已有 bytes 是否全部理解。
+Pass 与 Score 都保存四态 Verdict，Score 另有独立得分。两者都是所属评估类型的权威结果，Report 不从 Assertions 重新折叠。
 
-## Run 通道
+Attachment 的 `collection` 只表达 complete 或带 reason 的 partial。没有同名 Attachment 时，读取是 `unavailable`。截断、脱敏、采样或过滤由 payload 用结构化 limitation 说明；`unsupported`、`invalid` 等读取状态另由 `RecordAttachmentRead` 表达。
 
-Run 保存不能归属单个 Attempt 的事实，例如 Experiment setup 或 teardown 诊断、共享准备计时、carry 与 accept 理由、源码快照，以及停止派发的原因。它们使用 Run-owned channel，并以 slot 或 Attempt identity 关联需要的上下文。
+## Run-owned Attachment
 
-Run 通道不能复制 Attempt 的业务值。采用已有 Attempt 的 Member 仍读取该 Attempt 的当前 channel 数据。
+Run 保存不能归属单个 Attempt 的事实，例如题型、Experiment setup 或 teardown 诊断、共享准备计时、采用理由、源码快照，以及停止派发的原因。它们使用 Run-owned RecordAttachment，并以 eval、slot 或 Attempt identity 关联需要的上下文。
+
+Run-owned RecordAttachment 不复制 Attempt 的业务值。采用已有 Attempt 的 reference Member 仍读取该 immutable Attempt 的 Attachment 数据。
 
 ## 事件与归一化
 
-Adapter 把 SDK 或 CLI 的原始流转换为稳定的 conversation、usage 与 timing 事实。未知 event variant 不会使核心 Record 无效；请求它的 decoder 可以给出 partial 或 unsupported，未请求它的页面继续工作。
+Adapter 把 SDK 或 CLI 的原始流转换为稳定的 conversation、usage 与 timing payload。不受当前 decoder 支持的 event variant 不会使 Core 无效；请求它的 projection 可以 partial 或 unsupported。
 
-Adapter 可以把可识别的 GenAI 语义归一为 conversation、usage 与 timing facts。Reports 只消费 normalizer 明确交付的稳定结构，不能直接读取 provider 输出或 Record 文件。
+Adapter 可以把可识别的 GenAI 语义归一为 conversation、usage 与 timing RecordAttachment。Reports 只消费 projector 明确交付的 typed view，不能直接读取 provider 输出或 Record 文件。
 
 raw OTLP 是否默认持久化不由本轮 Record 契约决定。无论该策略怎样选择，`niceeval.timing/v1` 都必须保留可画 waterfall 的 normalized phase intervals；关闭 raw trace 不能删除标准时间事实。
 
@@ -50,27 +56,31 @@ raw OTLP 是否默认持久化不由本轮 Record 契约决定。无论该策略
 
 ## 用量、成本与时间
 
-usage channel 保存 provider 报告的 token、请求和计费观测，以及足以说明读数状态的采集完整度。provider-observed cost 必须带 provider identity 与币种，不能冒充 NiceEval 计算值。价格表换算、汇总和图表属于 Calculation；派生 cost 同时保存 price table identity，并声明所需 facts、完整度 policy、observed 与 Sample denominator。
+`niceeval.usage/v1` 保存 provider 报告的 token、请求和计费观测，以及足以说明读数状态的 collection。provider-observed cost 必须带 provider identity 与币种，不能冒充 NiceEval 计算值。
 
-timing channel 保存明确命名的区间和计时 domain。timeout、执行耗时和共享准备耗时使用各自的区间；Reports 不从目录时间或终端文本推断它们。
+价格表换算、汇总和图表属于 Calculation。派生 cost 保存 price table identity，并声明所需数据、完整度 policy、observed 与 Sample denominator。
+
+timing RecordAttachment 保存明确命名的区间和计时 domain。timeout、执行耗时和共享准备耗时使用各自的区间；Reports 不从目录时间或终端文本推断它们。
 
 每个 timing interval 具有稳定 id、phase、start、duration 和可选 parent interval id。decoder 必须拒绝负 duration、重复 id、缺失 parent 或 parent cycle；标准 Report 用这些 normalized intervals 形成文字 phase 表与 waterfall。
 
 partial 用量或计时读数必须显示 observed、denominator 与 partial。未采集、当前 reader 不支持和损坏输入分别保留自己的状态，不能合并为零。
 
-`o11y summary` 是 Report Calculation 从已规范化 conversation、usage 和 timing facts 得到的读数集合。它不拥有原始 channel 数据，也不改变 Sample 分母。
+`o11y summary` 是 Report Calculation 从 conversation、usage 和 timing projections 得到的读数集合。它不拥有原始 RecordAttachment，也不改变 Sample 分母。
 
 ## 断言证据
 
-行为、usage、diff 和 Sandbox 断言只消费已声明的 channel。采集不足时，Assertion 根据自己的需求形成 `unavailable`；它不会把缺席解释为“没有发生”。
+行为、usage、diff 和 Sandbox 断言只消费已声明的 RecordAttachment。采集不足时，Assertion 根据自己的需求形成 `unavailable`；它不会把缺席解释为“没有发生”。
 
 完整规则见 [Assertions 证据](feature/assertions/architecture/evidence.md)。Verdict 的四态折叠见 [Verdict](feature/verdict/architecture.md)。
 
 ## Reports 与静态分享
 
-Reports 接收 ReportInput，不打开磁盘，也不再次读取 channel。每页和 Calculation 只会受到自己声明的 facts 影响。
+Reports runtime 只消费 `ReportExecution`，不打开磁盘，也不再次读取 Attachment。每页和 Calculation 只受自己声明的数据影响。
 
-Attempt-owned fact 通过 included slot 读取。Run-owned adoption 与 diagnostic fact 可以从已选 Run 读取；source fact 固定通过 included Attempt 的 origin Run 读取。origin Run 只提供受限 fact，不进入 Sample 分母，也不把 Record root、路径或 reader 暴露给 Report。
+Attempt-owned projection 通过 included slot 读取。Run-owned provenance 与 diagnostics 从 selected Run 读取；sources 固定通过 included Attempt 的 origin Run 读取。
+
+origin Run 不进入 Sample 分母，也不把 Record root、path 或 reader 暴露给 Report。
 
 静态 export 将预渲染页面、组件宿主数据、精确 runtime、资源和 `StaticAssetManifest` 写入一个目录。浏览器离线读取该目录；它不访问源 Record、网络或之后安装的 NiceEval。
 
@@ -78,6 +88,5 @@ Attempt-owned fact 通过 included slot 读取。Run-owned adoption 与 diagnost
 
 - [Record 架构](feature/record/architecture.md)
 - [Record Library](feature/record/library.md)
-- [Reports 架构](feature/reports/README.md)
-- [Reports Calculations](feature/reports/README.md)
+- [Reports 架构](feature/reports/architecture.md)
 - [Adapter 证据](feature/adapters/architecture/evidence.md)

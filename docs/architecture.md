@@ -11,7 +11,7 @@ NiceEval 把一个评测过程拆成四段职责:**发现**要跑什么、**驱�
 
 四段职责是**单向数据流**。
 发现产出一批 `Eval`，运行器逐个对 Agent `send` 得到 `Turn`，Assertion collector 形成检查结果。
-判定规则把执行错误与全部断言折叠成一个互斥 Verdict，Record writer 再把这些已形成的业务事实写入具名通道。
+判定规则把执行错误与全部断言折叠成一个互斥 Verdict，Record writer 再把这些已形成的业务事实写入具名 RecordAttachment。
 Assertion 和 Judge 不知道 transport 是 HTTP 还是沙箱 CLI，只消费 `Turn` 与显式材料。
 
 ## 模块分层
@@ -60,10 +60,27 @@ NiceEval 的内部实现只有两类计算。
 阶段推进只创建新值，不回写前一阶段，也不在下游重新选择、重新链接或猜默认值。
 
 `unknown` 只允许出现在 JavaScript、动态 import、JSON、文件格式、SDK 返回和第三方 throw 这些真实的不可信边界。
-边界用 Effect Schema 或等价的品牌守卫立即解码成领域类型；解码失败进入具名的 typed error channel，解码成功后的内部函数不再接收 `unknown`、手写字段探测或双重类型断言。
+边界用 Effect Schema 或等价的品牌守卫立即解码成领域类型；解码失败进入具名的 tagged error，解码成功后的内部函数不再接收 `unknown`、手写字段探测或双重类型断言。
 
-资源由 `Effect.Scope` 持有，失败、defect 与 interruption 保持三条通道直到单 Attempt 封口。
+资源由 `Effect.Scope` 持有，失败、defect 与 interruption 在单 Attempt 封口前保持分离。
 Sandbox acquire、Sandbox lifecycle、Agent ensure、作者执行和逆序 finalizer 都在同一条结构化生命周期里组合。Effect-native Library API 继续返回 Effect；只有 CLI / application 入口或明确的 Promise 兼容 facade 可以运行它，内部模块不得自行启动第二套 runtime。
+
+## 哪些层稳定，哪些层允许变化
+
+稳定不是靠“业务最近没变”，而是靠每层只承诺自己的最小 identity，并让变化停在真正的 owner：
+
+| 层 | 长期承诺 | 允许怎样变化 | Effect 的角色 |
+|---|---|---|---|
+| Record capability | 打开 current Core、冻结已完成 Run、读写 Attachment、clean 与 migrate | 不随 Assertions、Plugin 或 Report 增加业务方法 | 组合文件、maintenance lock、writer lock、Scope 与 typed I/O failure |
+| Record Core | Record identity、Run/Slot 分母、Attempt origin/reference 与完成标识 | owner、reference、path、完成判断或 Core shape 改变时发布新 major | `RecordCoreRead.core-invalid` 是成功 ADT，不伪装成 I/O error |
+| RecordAttachment schema | 一个 owner-local payload 的精确 shape 与语义 | 发布相邻 schema 与 migration policy | 在不可信边界精确解码，Stream 不逃出 Scope |
+| RecordAttachment projection | 一个 owner 的一份 Attachment 到 typed view | typed view 改变时发布新 projector/API | unavailable、migration-required、migration-unavailable、unsupported 与 invalid 保持成功 ADT |
+| Producer / behavior | 产生所属领域的 Attachment，并维护 input/config/reuse identity | Assert-first evaluator、Plugin、matcher 与 Sandbox chain 可以独立变化 | 承接执行、并发与 interruption |
+| Analysis selection / reuse planning / Report | 分别选择分析分母、规划 reuse/gap、计算与展示 | 各自独立迭代 | reader Scope 内完成按需读取，Scope 外只消费自包含值 |
+
+Record Core 只证明磁盘导航与引用成立，不证明 Attempt 适合当前算法。RecordAttachment schema 只证明 payload 可解释，也不能替代 behavior identity。
+
+完整分层见 [Record · 三个演进边界](feature/record/architecture.md#三个演进边界)。
 
 ## 一个授权面，宽接口与能力守卫
 
@@ -103,10 +120,10 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 Sandbox diff：
    不支持 Eval 替换的字段按各自专题声明的层级求值；见[配置与凭据的边界](#配置从代码来凭据从进程变量来)。
 2. **发现。
    ** 扫 `evals/`,收集 `*.eval.ts` 与 `*.eval.tsx`;据路径推导 id,排序;按过滤器(id 前缀 / `--tag`)筛。
-3. **形成 ProjectTarget 与 ExecutionTarget。
-   ** 对每个 eval 计算带 domain 的 input/config identity，并在单 writer `RecordWriteSession` 内为每个目标 Run 和 slot 一次分配 opaque ID、绑定 `startedAt`、形成完整 expected membership。目标 Run 此时只在 local session，尚未发布。
-4. **execution projection。
-   ** 具名 `project-target/v1` projector 接收当前 ProjectTarget、ExecutionTarget、frozen `RecordWriteSession.view` 与本次 policy，把每个 slot 穷尽判为 reuse 或 gap。source barrier、禁止回扫、`reuseContract`、Verdict、fingerprint、timeout、`--rerun` 与 `--keep-sandbox` 的判断都属于该 policy，不属于 Record。完整契约只见 [Execution projection](feature/experiments/cache.md)。
+3. **形成 ProjectTarget、ExecutionTarget 与 Run draft。
+   ** 对每个 Eval 计算带 domain 的 input/config identity，并在单 writer `RecordWriteSession` 内创建目标 Run draft、绑定 `startedAt` 与完整 expected SlotId。draft 没有完成标识，因此不是已发布 Run。
+4. **reuse planning。
+   ** 具名 policy 接收当前 ProjectTarget、ExecutionTarget 与 frozen `RecordWriteSession.view`，把每个 Slot 穷尽判为 reuse 或 gap。source barrier、禁止回扫、`reuseContract`、Verdict、fingerprint、timeout、`--rerun` 与 `--keep-sandbox` 都属于该 policy，不属于 Record。完整契约见 [Execution reuse planning](feature/experiments/cache.md)。
 
    planner/scheduler 只接收 gaps；invocation coordinator 保留完整 projection。
 5. **有界并发调度。
@@ -124,22 +141,22 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 Sandbox diff：
    `t.send()` 驱动 agent——adapter 在沙箱里跑 CLI、抓 transcript、归一化成标准事件流。
    顺序、次数、要不要对 agent 隐藏某些文件,全部是 `test(t)` 里的普通代码决定;核心不插手,也不预设"先上传什么、后上传什么"这种固定编排。
 7. **折叠 agent 归因增量。
-   ** `test(t)` 跑完后从分类账取得各 send 区间的变更事实，折叠其并集，供 `t.sandbox.diff` / `t.sandbox.fileChanged` 的 finalize 与 Record diff 通道使用。fixture 写入和 agent 跑完后手工写入的校验材料都不在其中。
+   ** `test(t)` 跑完后从分类账取得各 send 区间的变更事实，折叠其并集，供 `t.sandbox.diff` / `t.sandbox.fileChanged` 的 finalize 与 Record diff Attachment 使用。fixture 写入和 agent 跑完后手工写入的校验材料都不在其中。
 8. **断言求值。
    ** `test(t)` 里写入的作用域断言、值断言与 Judge，连同手工校验命令的结果断言，全部形成结构化 assertion 结果。
 9. **判定。
-   ** assertion 结果、执行错误与跳过原因共同形成一个互斥 Verdict（`passed` / `failed` / `errored` / `skipped`，没有中间态），写入永久的 `niceeval.verdict` 事实通道。Record 只保存并校验这个事实；未来 execution projector 按自己的具名 policy 决定是否采用。
+   ** assertion 结果、执行错误与跳过原因共同形成一个互斥 Verdict（`passed` / `failed` / `errored` / `skipped`，没有中间态），写入 Attempt-owned `niceeval.verdict` Attachment。Record 只保存并校验这个事实；未来 reuse planning 按自己的 policy 决定是否采用。
 10. **首过即停。
    ** 若该 Attempt 形成 `passed` Verdict 且开了 `earlyExit`,`abort()` 掉同一 eval 的其余 Attempt。
 11. **收尾与留存。
     ** finally 里按 `SandboxAgent.teardown` → 两层作者 layer 已登记 cleanup(按全局准备顺序逆序)→ Provider finalizer 的顺序收尾。
     收尾只能追加 diagnostic event，不改已经形成的 Verdict；随后按留存决策销毁或留存沙箱(`--keep-sandbox`,见 [Sandbox · 留存](feature/sandbox/architecture.md#留存keep与注册表))。
 12. **写 Record 与返回 receipt。
-    ** coordinator 把原始 ExecutionTarget、projection reuse intents 与 executed outcomes 交给 write session。project-target reuse 写 carried Member，explicit adoption 写 accepted Member，实际执行写新 Attempt 与 executed Member；没有 outcome 的 gap 不写 Member。writer 只验证事实、引用和 action 关联，不重做资格判断。
+    ** coordinator 把 ExecutionTarget、reuse intents 与 executed outcomes 交给内部 `EvaluationRecordContract`。reuse 与 explicit adoption 形成 reference Member，实际执行形成新 Attempt 及唯一 origin anchor；形成原因写入 Membership Provenance Attachment。
 
-    Runner 在 local session 中形成 source manifest、Run-local blobs、executed Attempts、全部 Members 与 channels。Run 写入 `completedAt` 后整体 seal，recovery manifest 落稳，再以一次 no-replace directory rename 原子发布。全部结束后返回不聚合宽结果的 `InvocationReceipt`。
+    领域 contract 验证 Assertions、Score、Evaluation 与 provenance aggregate。generic writer 只验证 Core、Attachment closure 和引用，最后创建 Run 完成标识。全部结束后返回窄 `InvocationReceipt`。
 
-    Report 不参与采集或落盘。show/view 先由具名 analysis projector 形成 core-only `AnalysisSample` 与 ReportPlan，再由唯一 composition adapter 按需读取 ReportInput；一次 ReportExecution 同时服务终端、本机页面或静态导出。
+    Report 不参与采集或落盘。show/view 先形成 `AnalysisSampleHandle`，再按 Report 声明读取 Attachment 并产生 typed projection；Calculation 和 Page 只消费这些自包含值。一次 `ReportExecution` 同时服务终端、本机页面或静态导出。
 13. **退出码。
     ** 有 `failed` Verdict 或 `errored` Verdict → 非零退出；报告里两者分开列，供 CI 判红和诊断。
 
@@ -172,7 +189,7 @@ CLI 启动时仍加载项目根的 `.env`(不改写已有进程变量)——那�
 
 ## 相关阅读
 
-- [Record](feature/record/README.md) ——第 12 步写入的 durable immutable facts；分析选择与执行投影由各自 owner 定义。
+- [Record](feature/record/README.md) ——第 12 步写入的 durable immutable facts；分析选择与 reuse planning 由各自 owner 定义。
 - [Runner](runner.md) ——调度、并发、重试、首过即停、缓存的细节。
 - [Agents 与 Adapters](feature/adapters/README.md)、[Sandbox](feature/sandbox/README.md) ——三层的契约。
 - [Assertions](./feature/assertions/README.md) ——检查、作用域与证据。

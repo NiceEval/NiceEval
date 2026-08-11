@@ -2,7 +2,7 @@
 
 本页帮助实现工作从已定稿的文档定位到当前源码区域。Feature 文档定义目标契约；源码文件名不证明某个目标模块已经具备该契约。
 
-Record、analysis projection、execution projection 和 Reports 正在采用新的边界。本页把它们标为重构边界，而不把历史目录结构误写成新契约的实现 owner。
+Record、analysis selection、reuse planning 和 Reports 正在采用新的边界。本页把它们标为重构边界，而不把历史目录结构误写成新契约的实现 owner。
 
 ## 运行与命令
 
@@ -15,7 +15,7 @@ Record、analysis projection、execution projection 和 Reports 正在采用新�
 | 当前进程的 human / JSON 反馈 | `src/runner/feedback/` |
 | `accept` 和 Experiment rename 的命令接线 | `src/runner/{accept,rename-experiment}.ts`、`src/cli.ts` |
 
-这些区域需要把业务事实写到新的 Run / Attempt channel 边界，并只返回 [Invocation receipt](feature/record/library.md#recordwritesession) 所需字段。
+这些区域需要把业务事实写到新的 Run / Attempt RecordAttachment 边界，并只返回 [Invocation receipt](feature/record/library.md#recordwritesession) 所需字段。
 
 ## Assertions、Verdict 与执行失败
 
@@ -27,17 +27,17 @@ Record、analysis projection、execution projection 和 Reports 正在采用新�
 | 四态 Verdict 折叠 | `src/shared/verdict.ts` |
 | 执行失败分类与停止派发 | `src/context/{send-failures,send-retry}.ts`、`src/runner/` |
 
-目标 owner 分别是 [Assertions](feature/assertions/architecture.md)、[Verdict](feature/verdict/architecture.md) 和 [执行失败分类](feature/error-classification/architecture.md)。上述源码区域需要以 Attempt-local assertion、verdict 与 diagnostic channels 为输入和输出边界。
+目标 owner 分别是 [Assertions](feature/assertions/architecture.md)、[Verdict](feature/verdict/architecture.md) 和 [执行失败分类](feature/error-classification/architecture.md)。上述源码区域需要以 Attempt-local assertion、verdict 与 diagnostic RecordAttachment 为输入和输出边界。
 
-## Record、投影与 Reports
+## Record、选择与 Reports
 
 | 目标契约 owner | 重构边界 |
 |---|---|
-| [Record](feature/record/README.md) | `src/record/` 需要实现 durable `niceeval.record/v1` root、sibling local sidecar、lock-free `RecordReader`、单 writer `RecordWriteSession`、whole-Run publish/recovery、Run/Member/Attempt、blobs 与 channel registry。不要以旧 Graph/Store/journal 或现有内部布局推导新的公开协议。 |
-| [AnalysisSample](feature/sample/README.md) | `src/sample/index.ts` 需要以 frozen `RecordReader` 和具名 analysis projector 形成完整分母与四态 slot。 |
-| [Execution projection](feature/experiments/cache.md) | Runner 需要从 ProjectTarget、ExecutionTarget、`RecordWriteSession.view` 与具名 policy 形成 reuse/gap；planner 只接收 gaps。 |
-| [Reports](feature/reports/README.md) | `src/report/` 需要只接收 ReportInput；文件读取、origin-run fact 和通道字节规范化留在 composition/reader 边界。 |
-| [Reports CLI](feature/reports/README.md) | `src/show/` 与 `src/view/` 需要通过 `AnalysisSample` 和 ReportInput 选择、呈现和 export。 |
+| [Record](feature/record/README.md) | `src/record/` 需要实现 current-format reader、maintenance/writer locks、fixed RecordAttachment envelope、RecordAttachment projector、完成标识发布与 explicit migration。不要以旧 Graph/Store/journal 或现有内部布局推导公开协议。 |
+| [AnalysisSample](feature/sample/README.md) | `src/sample/index.ts` 需要以 frozen `RecordReader` 和 analysis selection 形成完整分母与四态 slot。 |
+| [Reuse planning](feature/experiments/cache.md) | Runner 需要从 ProjectTarget、ExecutionTarget、`RecordWriteSession.view` 与具名 policy 形成 reuse/gap；planner 只接收 gaps。 |
+| [Reports](feature/reports/README.md) | `src/report/` 需要只消费自包含 `ReportExecution`；owner access、Attachment projection 与 bytes 读取留在 reader / Projection 边界。 |
+| [Reports CLI](feature/reports/README.md) | `src/show/` 与 `src/view/` 需要通过 `AnalysisSampleHandle` 和 `ReportExecution` 选择、呈现和 export。 |
 | [静态 export](feature/reports/README.md#自包含静态-export) | `src/view/` 与 `src/report/` 需要写出页面、宿主数据、精确 runtime 和资源清单。 |
 
 这里列出的路径是改造入口，不是对新格式模块名称的承诺。实现时以对应 Feature 文档的 owner、输入和不变量为准。

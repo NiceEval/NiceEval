@@ -22,7 +22,7 @@ Design 保存多方案比较与裁决存档，Research 只提供决策输入而�
 |---|---|
 | 建立产品心智 | [Concepts](concepts.md) → [Architecture](architecture.md) |
 | 从用户价值审视完整产品范围 | [用户故事地图](user-story.md) |
-| 理解当前数据怎样落盘、编辑并交给 Sample/Reports | [Record](feature/record/README.md) |
+| 理解当前数据怎样落盘、只读导航并交给 Sample/Reports | [Record](feature/record/README.md) |
 | 查什么改动会重跑，或两个 Run 凭什么可比 | [缓存与携带](feature/experiments/cache.md)（eligibility identity 与 domain） |
 | 让记忆库或累积笔记跨 Attempt 延续 | [Sandbox 复用](feature/sandbox/reuse.md) 与 [Sandbox 生命周期](feature/sandbox/lifecycle.md) |
 | 从零理解使用路径 | [Getting Started](getting-started.md) |
@@ -64,10 +64,10 @@ docs/
 │   ├── state/                           跨 Attempt checkpoint:固定 revision 与滚动序列
 │   ├── assertions/                      检查、作用域、证据与 AssertionResult
 │   ├── judge/                           裁判模型配置、调用与 unavailable
-│   ├── verdict/                         Pass Eval 的四态 Verdict 折叠
-│   ├── record/                          持久事实、本地写状态、缓存、原子发布与通道 schema
+│   ├── verdict/                         Severity、严格模式与四态折叠
+│   ├── record/                          已完成 Run、精确引用与具名 RecordAttachment
 │   ├── sample/                          从 Record 选择 core-only 分母
-│   └── reports/                         计划输入、一次执行、show/view 与静态导出
+│   └── reports/                         一次 execution、show/view 与静态导出
 │
 ├── roadmap/                             已定稿、尚未采用为当前契约的方向
 │   ├── agent-as-judge/                  用独立 Agent 调查证据并执行 Judge Assertion

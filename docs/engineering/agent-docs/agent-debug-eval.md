@@ -10,9 +10,11 @@
 
 ## Fixture
 
-fixture 是一个最小用户项目加一份真实、已发布且不再写入的 `niceeval.record/v1` 目录。它可以包含多个 Experiment/Run、carried/accepted Member、failed/errored Attempt，以及有区分度的 usage、timing、conversation、tool 与 diagnostic channel。
+fixture 是一个最小用户项目加一份真实、已发布且不再写入的 `niceeval.record/v1` 目录。它可以包含多个 Experiment/Run、带 carried/accepted action 的 reference Member 和 failed/errored Attempt。
 
-数据按完整 Record root 签入，不再裁剪成旧图模型的引用闭包。为了控制体积，可以只保留题目会显式选择的 Run、这些 Run 的 Member 所引用的 Attempt，以及 owner core 中已声明的 channel/blob；裁剪后必须重新通过 Record reader，并让公开 CLI 的预定页面完整呈现。未知但合法且未请求的 channel 可以保留，用来证明局部读取隔离。
+fixture 还应含有有区分度的 usage、timing、conversation、tool 与 diagnostic RecordAttachment。
+
+数据按完整 Record root 签入，不再裁剪成旧图模型的引用闭包。为了控制体积，可以只保留题目会显式选择的 Run、这些 Run 的 Member 所引用的 Attempt，以及已声明的 RecordAttachment/blob；裁剪后必须重新通过 Record reader，并让公开 CLI 的预定页面完整呈现。未知但合法且未请求的 RecordAttachment 可以保留，用来证明局部读取隔离。
 
 每次评估把 fixture 复制到隔离 workspace，并注入候选 NiceEval package。被测 agent 只能读，不能运行 Experiment、修复数据或绕过 CLI。标准答案从固定 fixture 人工核对后签入。
 

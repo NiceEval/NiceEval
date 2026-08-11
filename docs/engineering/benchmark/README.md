@@ -1,10 +1,10 @@
 # Phase Timings 与安装基准
 
-本机制回答两个工程问题：一次 Attempt 慢在哪个阶段，以及不同 Sandbox provider / Agent adapter 的安装速度和成功率怎样比较。持久事实使用 owner-local named channel；`bench/` 是不写 Record 的本地工程工具。
+本机制回答两个工程问题：一次 Attempt 慢在哪个阶段，以及不同 Sandbox provider / Agent adapter 的安装速度和成功率怎样比较。持久事实使用 owner-local named RecordAttachment；`bench/` 是不写 Record 的本地工程工具。
 
 ## 持久 timing 契约
 
-Runner 把有序阶段边界写入 Attempt-owned `niceeval.timing` channel。该 channel 的 descriptor、document/JSONL transport、coverage 与 decoder 服从 [Record Architecture](../../feature/record/architecture.md)；它不向 Attempt core 增加字段，也不需要 schema number、projector revision 或图引用。
+Runner 把有序阶段边界写入 Attempt-owned `niceeval.timing` RecordAttachment。该 Attachment 的 payload 形状、collection 与读取状态服从 [Record Architecture](../../feature/record/architecture.md)；它不向 Attempt core 增加字段，也不需要 schema number、projector revision 或图引用。
 
 阶段事实至少能表达：
 
@@ -13,7 +13,7 @@ Runner 把有序阶段边界写入 Attempt-owned `niceeval.timing` channel。该
 - turn 与 telemetry 的可选 correlation identity；
 - collection/decoding partial，而不是把缺失内容补成零。
 
-阶段使用有序、可扩展的 variant。decoder 遇到未知 variant 时保留已知条目并返回 partial；改变既有 variant 的含义时发布新 channel name，不在原名上加数字版本。
+阶段使用有序、可扩展的 variant。decoder 遇到未知 variant 时保留已知条目并返回 partial；改变既有 variant 的含义时发布新的相邻 schema 版本，并声明 converter 或不可无损迁移。
 
 ## 时间口径
 
@@ -28,7 +28,7 @@ Attempt 总超时或取消时，当前打开阶段在中断时刻封口为 faile
 
 ## 消费边界
 
-默认 Report 通过内建 timing requirement 请求通道。Attempt timing 详情是已选 Sample 中的参数化页面，例如：
+默认 Report 通过内建 timing projection 请求数据。Attempt timing 详情是已选 Sample 中的参数化页面，例如：
 
 ```sh
 niceeval show --run <runId> --page attempt-<attemptId>
@@ -43,7 +43,7 @@ niceeval show \
   --report ./reports/timing-comparison.ts
 ```
 
-Report consumer 只得到 `ChannelRead` 和 Sample 分母。它看不到 RecordReader、文件路径或 blob 路径，也不能在页面执行时重新读取通道。OTel span 仍由 telemetry channel 拥有；页面可以按 correlation identity 组合两项已请求的事实，但不把其中一项改成另一项的持久真源。
+Report consumer 只得到 projected values 和 Sample 分母。它看不到 RecordReader、文件路径或 blob 路径，也不能在页面执行时重新读取 Attachment。OTel span 仍由 telemetry RecordAttachment 拥有；页面可以按 correlation identity 组合两项已请求的事实，但不把其中一项改成另一项的持久真源。
 
 ## `bench/` 本地工具
 
@@ -90,7 +90,7 @@ export const codexProbe = defineEval({
 
 ## 不变量
 
-- timing 是 Attempt-owned named channel，不是 Attempt core、旧图事件模型或固定读取 revision。
+- timing 是 Attempt-owned named RecordAttachment，不是 Attempt core、旧图事件模型或固定读取 revision。
 - 未请求 timing 的 Report 不读取它；坏 timing 只影响声明它的 consumer。
-- 大型命令输出如需保留，使用具名 Attempt channel/blob，不写入 generic fact。
-- timing channel 随 whole Run 发布后 immutable；外部损坏在下一次 reader 中形成局部 invalid，没有受支持的 edit、revision 或 history 行为。
+- 大型命令输出如需保留，使用具名 Attempt RecordAttachment/blob，不写入 generic fact。
+- timing RecordAttachment 随 whole Run 发布后 immutable；外部损坏在下一次 reader 中形成局部 invalid，没有受支持的 edit、revision 或 history 行为。

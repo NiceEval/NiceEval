@@ -1,9 +1,9 @@
 # 执行失败分类:时间轴与空间轴
 
 一套统一的失败分类词表,回答两个正交的决策问题:**换个时机重做,能不能过**(时间轴 `retryable`,驱动 attempt 内的有界重试),以及**这个死因波及多远**(空间轴 `scope`,驱动 eval / experiment 粒度的止损机制)。
-turn 失败、生命周期各阶段的失败、[sandbox 层的 provisioning 失败](../sandbox/architecture.md#provisioning-失败与重试)说同一种语言;声明通道随知识所在地分布,消费策略单点在框架。
+turn 失败、生命周期各阶段的失败、[sandbox 层的 provisioning 失败](../sandbox/architecture.md#provisioning-失败与重试)说同一种语言;声明点随知识所在地分布,消费策略单点在框架。
 
-本文的 `passed` / `failed` / `errored` / `skipped` 始终指 `niceeval.verdict` 通道中的 Verdict 值，不是 Attempt state。Attempt lifecycle 只有 `active` / `completed` / `abandoned`；执行错误、重试证据、分类和断言分别进入自己的 owner-local 通道。
+本文的 `passed` / `failed` / `errored` / `skipped` 始终指 `niceeval.verdict` RecordAttachment 中的 Verdict 值，不是 Attempt state。Attempt lifecycle 只有 `active` / `completed` / `abandoned`；执行错误、重试证据、分类和断言分别进入自己的 owner-local RecordAttachment。
 
 ![失败分类的两轴与两个执行体](assets/two-axes-executors.svg)
 
@@ -61,15 +61,15 @@ export type FailureClass =
 - `"experiment"`:全实验的兄弟 attempt 同因必死——实验共享服务死亡、共享凭据失效、实验级配置错误。
   命中即停止派发同 experiment 的全部剩余 attempt。
 
-两轴的误判代价不对称方向不同，把关手段也不同。时间轴误重试赔判定正确性，由 `SendFailure.acceptance` 的[受理证据门](architecture.md#分类链)机器检查。空间轴误扩 scope 赔整批命中范围数据，没有机器门可查，靠判据从严——**唯一有权扩 scope 的是携带作者知识的通道**（抛出点声明、adapter / 实验分类器），保守回退分类器永不扩 scope，「看起来像基建问题」不构成证明。
+两轴的误判代价不对称方向不同，把关手段也不同。时间轴误重试赔判定正确性，由 `SendFailure.acceptance` 的[受理证据门](architecture.md#分类链)机器检查。空间轴误扩 scope 赔整批命中范围数据，没有机器门可查，靠判据从严——**唯一有权扩 scope 的是携带作者知识的声明点**（抛出点声明、adapter / 实验分类器），保守回退分类器永不扩 scope，「看起来像基建问题」不构成证明。
 
 **组合规则:时间轴先走,空间轴只对终局失败生效。**
  可重试的失败先被重试执行体吸收,只有重试耗尽或不可重试的失败,才携带 scope 抵达止损机制。
 限流这类「全实验共享但自愈」的死因因此永远到不了止损机制——不需要特判。
 
-## 声明通道:知识在哪,声明就在哪
+## 声明点:知识在哪,声明就在哪
 
-分类的附着点跟着知识走,所有通道产出同一份 `FailureClass`:
+分类的附着点跟着知识走,所有声明点产出同一份 `FailureClass`:
 
 - **抛出点声明**(作者拥有的错误):包根导出空间轴 fatal 错误类 `ExperimentFatalError` / `EvalFatalError`——作者写下 探测、fixture 校验时就知道失败的波及范围,直接 throw,任何 per-attempt 阶段可抛。
   fatal 错误类只开空间轴,不提供「可重试」的对应类:时间轴的消费点只有 send 与 provisioning 两处(见下节),作者代码不在任何重试执行体的包裹范围内,可重试声明是一张永远无法兑现的支票。
@@ -93,7 +93,7 @@ export type FailureClass =
 重试只包 send 一次调用，不重算会话记账；变更归因的 send 区间横跨全部尝试。
 重试预算分两层：单 send 封顶 4 次尝试，attempt 加总封顶 8 次重试。
 执行体的精确契约见 [Architecture · 重试执行体](architecture.md#重试执行体)。
-重试封顶或受理状态不安全时，`send()` 在执行错误通道形成 `agent-send-failed` 事件。
+重试封顶或受理状态不安全时，`send()` 在 Attempt diagnostic RecordAttachment 形成 `agent-send-failed` 事件。
 收尾时它成为 `errored` Verdict 的依据，Attempt 仍按 lifecycle 收敛到 `completed` 或 `abandoned`。
 合法 `Turn{status: "failed"}` 仍交给断言评分，两类失败不互相转换。
 
@@ -113,7 +113,7 @@ export type FailureClass =
 1. **eval 级止损**（`scope: "eval"`）：一次命中即停止派发同 eval 剩余 attempt。
 2. **experiment 级止损**（`scope: "experiment"`）：一次命中即停止派发同实验全部剩余 attempt。
 3. **run 级 fail-fast**(推断回退,见 [Runner · 首过即停](../../runner.md#首过即停earlyexit)):没有任何声明时,同一 eval 内同 code 连续复现的 streak 推断确定性错误、停止派发。
-   声明通道是作者背书下的一次命中,fail-fast 是无声明时的保守推断,二者并存、互不替代;send 层瞬时故障在进入 streak 判定前已被重试吸收,streak 看到的 `agent-send-failed` 一定是重试耗尽或不满足安全重试门后的最终结果。
+   声明点是作者背书下的一次命中,fail-fast 是无声明时的保守推断,二者并存、互不替代;send 层瞬时故障在进入 streak 判定前已被重试吸收,streak 看到的 `agent-send-failed` 一定是重试耗尽或不满足安全重试门后的最终结果。
 
 ## 止损语义
 
@@ -124,7 +124,7 @@ export type FailureClass =
 - **触发幂等、invocation 内不可逆、不跨 invocation 持久**：并发 attempt 同时声明同一死因是常态，重复触发只折叠诊断计数；触发后在飞 attempt 侥幸成功也不重开——作者背书的判定不被单次成功推翻,抖动的服务不该让调度来回摆。
   死因与修复都活在框架外(隧道、`.env`),框架无法验证「修好了没有」,不留跨次运行的止损状态、不需要解除命令;唯一持久痕迹是诊断条目，它是历史陈述,不是未来指令。
 - **message 是作者的修复提示,走完全程**:运行期反馈流即时通知 + Record 实验域诊断(`dispatch-halted`),双通路同源、互不派生。
-- **恢复即重跑**:`errored` Verdict 与 `unstarted` 都不具备携带资格；已 `passed` Attempt 可由 `carried` Member 沿用——修复后用 `--rerun failed` 只补跑失败样本，或按计划默认选择可携带成员。
+- **恢复即重跑**:`errored` Verdict 与 `unstarted` 都不具备携带资格；已 `passed` Attempt 可由 reference Member 沿用并写出 carried action——修复后用 `--rerun failed` 只补跑失败样本，或按计划默认选择可携带成员。
   止损做得激进(一次命中即停),正因为恢复路径免费。
 
 ## 非目标

@@ -37,7 +37,7 @@ Experiment 选择 Eval、Agent 和本次调度条件。把配置放在 `experime
 pnpm exec niceeval exp
 ~~~
 
-每个选中的 Experiment 建立一个 Run。Run 的 expected slots 是本次分母；每个 slot 最终采用 executed、carried 或 accepted Attempt。
+每个选中的 Experiment 建立一个 Run。Run 的 expected slots 是本次分母；每个 slot 最终连接到精确 Attempt：实际执行形成 origin，沿用或显式采用形成 reference。
 
 命令结束时显示 Invocation receipt，其中包含 `runIds`。receipt 很小：详细的 Verdict、用量、计时、conversation 和 diff 都在停稳 Record 中。
 
@@ -48,7 +48,7 @@ pnpm exec niceeval show --run <run-id>
 pnpm exec niceeval view --run <run-id>
 ~~~
 
-默认 Record root 为 `<project>/.niceeval/record/`。`show` 和 `view` 通过 Record reader、normalizer、Sample 和 ReportInput 读取它。它们不从目录时间猜测“最近结果”，也不在浏览器内读取 Record 文件。
+默认 Record root 为 `<project>/.niceeval/record/`。`show` 和 `view` 通过 Record reader、analysis selection 和 Report 宿主读取它。它们不从目录时间猜测“最近结果”，也不在浏览器内读取 Record 文件。
 
 若要选择每个 Experiment 最后完成的 Run，使用：
 
@@ -69,11 +69,13 @@ Sample 保留完整分母。样本状态（Sample slot state）说明每个 slot
 | `invalid` | Member、Attempt 或引用违反核心规则。 |
 | `excluded` | 选择器在既有 Sample 上排除了该 slot。 |
 
-通道状态与 slot 状态分开。页面需要的 channel 若未采集，会显示 `unavailable`；当前 reader 不支持时显示 `unsupported`；损坏时显示具名 issue。
+Attachment 状态与 slot 状态分开。页面需要的 Attachment 若未采集，会显示 `unavailable`；当前 reader 不支持时显示 `unsupported`；损坏时显示具名 issue。
 
 ## 编辑与再次查看
 
-Record 是 immutable whole-Run 的持久事实集。`show`、`view` 与 export 使用 lock-free frozen reader，可以和 writer 并发；ReportInput 形成并关闭 reader Scope 后，Report execution 与静态站不再访问 Record。需要改变事实时发布新 Run，不在旧 Attempt 上局部编辑。
+Record 是 immutable whole-Run 的持久事实集。`show`、`view` 与 export 使用持有 shared maintenance lease 的 frozen reader，可以和 writer 并发。
+
+宿主形成 `ReportExecution` 并关闭 reader Scope 后，Report execution 与静态站不再访问 Record。需要不同事实时发布新 Run，不局部编辑已发布 Attempt。
 
 不要在 writer 或 reader lease 存续时编辑目录。Record 不保存编辑事务、历史副本或全局格式整数。
 

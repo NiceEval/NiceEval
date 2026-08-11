@@ -260,6 +260,23 @@
   },
   "siteBannedTerms": [
     "<code>",
+    "FactRequirement",
+    "inspectFact",
+    "defineJsonFact",
+    "ctx.fact",
+    "RecordChannel",
+    "ChannelProjectorId",
+    "ChannelDescriptorSchemaId",
+    "descriptorSchemaId",
+    "ProjectionRead",
+    "ReportPlan",
+    "ReportInput",
+    "ProjectionMatrix",
+    "analysis projector",
+    "execution projector",
+    "producer profile",
+    "owner temp",
+    "无 writer-lock",
     "↩",
     "s1/t1",
     "钩子",
@@ -377,6 +394,91 @@
       "term": "<code>",
       "use": "Markdown 行内代码使用反引号；路径中的尖括号直接写在反引号内",
       "why": "HTML code tag 让简单标识多一层转义，并与仓库已经采用的 Markdown 行内代码写法混用"
+    },
+    {
+      "term": "FactRequirement",
+      "use": "RecordAttachment definition 与 RecordProjection",
+      "why": "Record 没有 Fact 领域模型；持久 payload、typed projection 与 Report 计算由不同层拥有"
+    },
+    {
+      "term": "inspectFact",
+      "use": "RecordReader.readRunAttachment / readAttemptAttachment",
+      "why": "读取必须绑定明确 owner 与 typed RecordAttachment family"
+    },
+    {
+      "term": "defineJsonFact",
+      "use": "producer 用 defineJsonRecordAttachment 定义 payload；Projection 定义 typed view",
+      "why": "持久 schema 与内存 projection 是两个边界，不能由一个 Fact helper 混成同一契约"
+    },
+    {
+      "term": "ctx.fact",
+      "use": "使用 producer-owned typed RecordAttachment capability",
+      "why": "运行时记录必须经过 owner 与精确 schema，不能由通用上下文写入无类型 JSON"
+    },
+    {
+      "term": "RecordChannel",
+      "use": "RecordAttachment",
+      "why": "落盘数据不是 FIFO、Stream 或通信通道；Attachment 直接表达它附着于 Run 或 Attempt"
+    },
+    {
+      "term": "ChannelProjectorId",
+      "use": "RecordAttachmentSchemaId 是 durable identity；projector 使用 package-private definition identity",
+      "why": "projector 是代码中的 typed adapter，不需要第二个持久公共版本号"
+    },
+    {
+      "term": "ChannelDescriptorSchemaId",
+      "use": "固定 RecordAttachmentEnvelopeV1；payload 使用 RecordAttachmentSchemaId",
+      "why": "Record v1 的 Attachment envelope 已闭合，不维护独立 descriptor schema 代际"
+    },
+    {
+      "term": "descriptorSchemaId",
+      "use": "RecordAttachmentEnvelopeV1 的 name 与 schemaId；collection 留在 payload",
+      "why": "descriptor registry 会把一个 owner-local Attachment 拆成多余版本层"
+    },
+    {
+      "term": "ProjectionRead",
+      "use": "RecordAttachmentRead 或 ProjectedSample",
+      "why": "一个名字不能同时表达磁盘 Attachment 状态与 Sample-aligned projection 结果"
+    },
+    {
+      "term": "ReportPlan",
+      "use": "作者只公开 Report；宿主编译计划保持内部",
+      "why": "plan 是 host mechanical，不是作者需要理解的领域对象"
+    },
+    {
+      "term": "ReportInput",
+      "use": "作者 callback 接收具名 projected values 与 Calculation results",
+      "why": "宽泛输入容器会把依赖闭包和 host compilation 重新暴露给作者"
+    },
+    {
+      "term": "ProjectionMatrix",
+      "use": "ProjectedSample",
+      "why": "结果不是二维矩阵，公开名字应表达它与 AnalysisSample 的对齐关系"
+    },
+    {
+      "term": "analysis projector",
+      "use": "analysis selection",
+      "why": "该过程选择 Run 并建立分母，不是单个 payload 到 typed view 的 projector"
+    },
+    {
+      "term": "execution projector",
+      "use": "reuse planning / ExecutionReusePlan",
+      "why": "该过程规划 reuse 与 gap，不与 RecordAttachment projector 共享同一语义"
+    },
+    {
+      "term": "producer profile",
+      "use": "具名领域 aggregate contract，例如 EvaluationRecordContract",
+      "why": "profile 没有说明它验证哪一组持久事实"
+    },
+    {
+      "term": "owner temp",
+      "use": "incomplete Run directory 或 scoped temporary directory",
+      "why": "写出实际生命周期与删除条件，不使用未定义的临时术语"
+    },
+    {
+      "term": "无 writer-lock",
+      "use": "reader 不取得 writer lock，但取得 shared maintenance lock",
+      "why": "Record migration 需要跨 major 的 exclusive maintenance window，因此 reader 并非无锁"
     },
     {
       "term": "↩",

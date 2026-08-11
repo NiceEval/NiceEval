@@ -1,15 +1,15 @@
 # Sandbox —— CLI:留存现场与销毁
 
-跑完的 Sandbox 默认销毁，debug 证据写入 Attempt-owned command 与 timing 通道。
+跑完的 Sandbox 默认销毁，debug 证据写入 Attempt-owned command 与 timing RecordAttachment。
 受管命令（两层 prepare、lifecycle 命令、`ensure` / `install`）经四个公开 `Sandbox.run*()` 方法发出的每一次调用，无论成功还是非零退出，都写成 command 事件。
-`niceeval show --run <runId> --page attempt-<attemptId>` 只读取该页面声明的通道，并按 timing 顺序呈现。
+`niceeval show --run <runId> --page attempt-<attemptId>` 只读取该页面声明的 RecordAttachment，并按 timing 顺序呈现。
 因此「准备链装了什么、成功命令实际输出了什么」不再要求留住活现场。
 但仍有两类问题 artifact 结构性地回答不了,只能靠留住活现场:
 
 - **agent diff 之外是盲区**——artifact 采的是 workdir 内按 send 区间归因的变更;全局装了什么、`$HOME` 下写了什么配置、PATH 实际长什么样,采不到。
 - **复现成本是分钟级**——冷启动 + 安装每轮几分钟,每验证一个假设(如换一条命令参数重试)重跑一轮太慢;留下的现场把这个循环压到秒级。
 
-真正没有留下命令证据的宿主运行条件类 `errored` Verdict，仍只有结构化执行错误事件与 timing 通道。
+真正没有留下命令证据的宿主运行条件类 `errored` Verdict，仍只有结构化执行错误事件与 timing RecordAttachment。
 例如 Agent CLI 进程本身没起来、SDK / 网络传输失败，而不是某条受管命令非零退出。
 这类场景仍最需要进现场里手动重跑一遍命令。
 
@@ -37,10 +37,10 @@ niceeval exp local onboarding/tool-first --keep-sandbox=all    # passed 也留,�
   suspend 失败时现场保持运行并写入诊断通道，仍被注册表管理。
   语义见 [Architecture · 各 provider 的留存语义](architecture.md#留存keep与注册表)。
 - 被中断的 Run 不留存:留存授予发生在 Verdict 与 receipt 收敛的收尾点,Ctrl+C 时还没有 Verdict 的 Attempt 走正常销毁;此前已完成并授予留存的 Sandbox 不被中断收回。
-- 留存与 [project-target policy](../experiments/cache.md#复用资格) 不相容：`carried` Member 没有本次 Sandbox，无从留存。
+- 留存与 [project-target policy](../experiments/cache.md#复用资格) 不相容：带 carried action 的 reference Member 没有本次 Sandbox，无从留存。
   因此 `--keep-sandbox` 运行里，满足当前留存档的已有 Attempt 不参与携带，照常派发重跑拿现场。
   `failed` 档下上一轮 `failed` Attempt 重跑；`errored` Attempt 本就不具备携带资格。
-  `passed` Attempt 可由 `carried` Member 沿用；`all` 档下全部重跑。
+  `passed` Attempt 可由 reference Member 沿用并写出 carried action；`all` 档下全部重跑。
   要现场就给一次真实执行，不需要为此再配一次 [`--rerun`](../experiments/use-case/重新运行/)。
   两个 flag 的档位词表同构，`--keep-sandbox` 各档自带对应口径的重跑。
 - `--keep-sandbox` 与 Experiment 的 [`sandboxReuse: true`](reuse.md) 互斥。
