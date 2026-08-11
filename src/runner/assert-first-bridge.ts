@@ -5,7 +5,7 @@
  * only executor, and public Promise values are only facade adapters.
  */
 
-import { Cause, Deferred, Effect, Exit, Queue } from "effect";
+import { Cause, Deferred, Effect, Exit, Queue, Scope } from "effect";
 
 import type {
   AssertionStopErrorV1,
@@ -128,6 +128,10 @@ export function makeAssertFirstAttemptBridgeV1<Context>():
     const assertionRequestsClosed = yield* Deferred.make<never, unknown>();
     const effectRequestsClosed = yield* Deferred.make<never, unknown>();
     const requests = yield* Queue.unbounded<AttemptEffectRequestV1>();
+    // Each taken request runs independently in this child Scope. The dispatcher
+    // must never await a control barrier such as awaitAuthor(), otherwise an
+    // author assertion queued behind it cannot make the barrier complete.
+    const requestScope = yield* Scope.make();
     let terminalError: unknown | undefined;
     let assertionCloseError: unknown | undefined;
 
@@ -152,6 +156,10 @@ export function makeAssertFirstAttemptBridgeV1<Context>():
               yield* Deferred.fail(sealRequest, error);
               yield* Deferred.fail(sealed, error);
               yield* Deferred.fail(assertionRequestsClosed, error);
+              // `terminalError` is already visible before this close. Every
+              // in-flight child therefore settles its Promise facade by the
+              // onExit path with the named terminal reason.
+              yield* Scope.close(requestScope, Exit.fail(error));
               const pending = yield* Queue.takeAll(requests);
               yield* Effect.forEach(
                 pending,
@@ -190,7 +198,10 @@ export function makeAssertFirstAttemptBridgeV1<Context>():
     };
 
     const worker = Effect.forever(
-      Queue.take(requests).pipe(Effect.flatMap(runRequest)),
+      Queue.take(requests).pipe(
+        Effect.flatMap((request) =>
+          Effect.forkIn(runRequest(request), requestScope).pipe(Effect.asVoid)),
+      ),
     ).pipe(
       Effect.catchAllCause((cause) =>
         Cause.isInterruptedOnly(cause)
