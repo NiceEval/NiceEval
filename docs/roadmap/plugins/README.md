@@ -45,12 +45,27 @@ Eval 也能挂 Plugin：
 ```ts
 export default defineEval({
   sandbox: dockerImage({ context: new URL("./sandbox/", import.meta.url) }),
-  plugins: [workspaceContract({ packageManager: "pnpm" })],
+  plugins: [pnpm({ version: "10.15.0" })],
   async test(t) {
     await t.agent("Implement the requested change");
   },
 });
 ```
+
+需要 Yarn 的 Eval 直接声明 `plugins: [yarn({ version: "4.9.2" })]`。`pnpm()` 与 `yarn()` 是不同产品 Plugin，不用一个 `packageManager({ kind })` 抹平各自的安装、探测与版本语义。
+
+## Plugin 能贡献什么
+
+| 能力 | Eval attachment | Experiment attachment | 效果 |
+|---|---:|---:|---|
+| behavior identity | ✓ | ✓ | 让影响执行的选项进入所属 owner 的 hash |
+| typed requirements | ✓ | ✓ | 在创建资源前验证 platform、lifetime、Sequence 等完成态计划 |
+| command-only Sandbox layer | ✓ | ✓ | 安装或探测 pnpm、Yarn、Remem 等工具，不替换 template |
+| flags / labels | — | ✓ | 声明实验条件身份与报告分组 |
+| AgentExtension | — | ✓ | 接入 Adapter 已有配置、安装、postSetup / preTeardown 槽位 |
+| Experiment lifecycle | — | ✓ | 管理整场一次的宿主资源，并与 teardown 成对 |
+
+框架还会自动把规范化 contribution、attachment owner 与 provenance 写入 manifest。运行时观测继续使用既有 `ctx.fact()` / `ctx.facts()`，不是 Plugin 自创一份 facts 存储。
 
 ## 框架保证
 

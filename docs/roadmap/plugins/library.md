@@ -88,26 +88,30 @@ export const remem = definePlugin({
 
 `memoryModel` 只由 Codex receiver 的 canonical behavior projection 进入 hash；Plugin 不在 `behavior` 或 flag 中重复登记。receiver manifest projection 可以保留可读模型值。`REMEM_DOCKER_CONTEXT` 是 package 静态资产定位，不是 Plugin contribution；发布包必须包含 `docker/remem.Dockerfile`。
 
-## 完整 Eval-safe Plugin
+## 完整 pnpm Plugin
 
 ```ts
 import { definePlugin } from "niceeval";
 import { command, sandboxLayer } from "niceeval/sandbox";
 
-interface WorkspaceContractOptions {
-  readonly packageManager: "npm" | "pnpm" | "yarn";
+interface PnpmOptions {
+  readonly version: string;
 }
 
-export const workspaceContract = definePlugin({
-  name: "workspace-contract",
+export const pnpm = definePlugin({
+  name: "pnpm",
   behaviorRevision: "1",
-  define(options: WorkspaceContractOptions) {
+  define(options: PnpmOptions) {
     return {
       attachments: {
         eval: {
-          behavior: { packageManager: options.packageManager },
+          behavior: { version: options.version },
           sandbox: sandboxLayer().prepare(
-            command(options.packageManager, ["--version"]),
+            command("corepack", [
+              "prepare",
+              `pnpm@${options.version}`,
+              "--activate",
+            ]),
           ),
           requirements: [
             { stage: "planning", kind: "sandbox-platform", os: "linux" },
@@ -125,10 +129,41 @@ export const workspaceContract = definePlugin({
 import { defineEval } from "niceeval";
 
 export default defineEval({
-  plugins: [workspaceContract({ packageManager: "pnpm" })],
+  plugins: [pnpm({ version: "10.15.0" })],
   async test(t) {
     await t.agent("Implement the requested change");
   },
+});
+```
+
+`yarn({ version })` 是另一个具名 Plugin，拥有自己的版本、安装命令与验收逻辑。两者可以复用 package 内部的私有构造函数，但公共调用面不暴露 `packageManager({ kind })` 这种抹平产品差异的开关。
+
+## 产品调用矩阵
+
+```ts
+// MemoryBench：实验条件、Codex extension、Sandbox 探测与整场语义
+defineExperiment({
+  agent: codexAgent(),
+  plugins: [remem({ memoryModel: "gpt-5.6-luna" })],
+});
+
+// NiceEval-Eval：候选版本身份与就绪验收
+defineExperiment({
+  agent: codexAgent(),
+  plugins: [candidateRuntime({ version: "0.12.0", runtime: "node" })],
+});
+
+// Terminal-Bench：逐 Eval × Experiment pair 的公共 harness 约束
+defineExperiment({
+  agent: codexAgent(),
+  evals: ["terminal-bench/"],
+  plugins: [terminalBenchHarness()],
+});
+
+// 单题工具链：Eval 自己声明 pnpm
+defineEval({
+  plugins: [pnpm({ version: "10.15.0" })],
+  async test(t) { await t.agent("Implement the requested change"); },
 });
 ```
 
