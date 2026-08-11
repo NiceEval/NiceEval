@@ -5,6 +5,76 @@
 
 ## `defineSandboxGroup()`
 
+### 同一 repository 的不同 base commit
+
+```ts
+// evals/project/repository.ts
+import { defineGitRepository } from "niceeval/sandbox";
+
+export const project = defineGitRepository({
+  repo: "https://github.com/acme/project.git",
+  into: ".",
+});
+```
+
+```ts
+// evals/project/issue-101/eval.ts
+import { checkout } from "niceeval/sandbox";
+import { project } from "../repository.ts";
+
+const BASE_COMMIT = "1111111111111111111111111111111111111111";
+
+export default defineEval({
+  sandbox: sandboxLayer().prepare(checkout({
+    repository: project,
+    commit: BASE_COMMIT,
+  })),
+  async test(t) {
+    await t.send("修复 issue 101。");
+  },
+});
+```
+
+```ts
+// evals/project/sandbox-group.ts
+import issue101 from "./issue-101/eval.ts";
+import issue205 from "./issue-205/eval.ts";
+import { project } from "./repository.ts";
+
+export default defineSandboxGroup({
+  evals: [issue101, issue205],
+  repositories: [project],
+  onUnavailable: "replace-sandbox",
+});
+```
+
+`defineGitRepository()` 只声明 repository identity 与目标目录，不执行网络或 Git 命令。
+组成员的 `checkout()` 必须引用 `repositories` 中同一个 definition，并使用完整 commit OID。
+Runner 在首条真实 Attempt 前收集本次选择涉及的 commits；未选中的组成员不会扩大下载需求。
+
+```ts
+declare const GIT_REPOSITORY_DEFINITION: unique symbol;
+
+interface GitRepositoryDefinition {
+  readonly repo: string;
+  readonly into: string;
+  readonly [GIT_REPOSITORY_DEFINITION]: true;
+}
+
+function defineGitRepository(input: {
+  readonly repo: string;
+  readonly into?: string;
+}): GitRepositoryDefinition;
+
+function checkout(input: {
+  readonly repository: GitRepositoryDefinition;
+  readonly commit: string;
+}): StableSandboxCommand;
+```
+
+这套 overload 只服务 Sandbox Group。
+普通 fresh Eval 继续使用既有 `checkout({ repo, ref, into? })`，不会创建跨 Sandbox 状态。
+
 ```ts
 import { defineSandboxGroup } from "niceeval";
 import capacityPolicy from "./01-capacity-policy/eval.ts";
@@ -39,6 +109,7 @@ type SandboxGroupMember = AnyEvalDefinition<
 
 interface SandboxGroupInput {
   readonly evals: readonly [SandboxGroupMember, ...SandboxGroupMember[]];
+  readonly repositories?: readonly GitRepositoryDefinition[];
   readonly onUnavailable: "stop-group" | "replace-sandbox";
 }
 
@@ -160,6 +231,8 @@ TypeScript 先拒绝不合类型的成员；发现期再为 JavaScript、类型�
 - 成员没有 template-bearing Layer；
 - 成员的 command-only Layer 没有 `setup()` 或 `teardown()`；
 - 组定义不包含 template、Provider、prepare、Agent 或 Experiment 配置。
+- `repositories` 不重复，目标目录不重叠；成员引用的组级 repository 都已列入当前组；
+- commit 是完整 OID，同一 repository 的全部所选 commits 能在首题派发前取得并验证。
 
 运行规划要求配对 Experiment 使用 Sandbox Agent，并提供 template-bearing Layer。
 同一 Experiment 的 template、Agent ensure identity 与 lifecycle owner 对组内成员天然相同；Runner 仍保留物理 plan identity 断言，防守自定义 Provider 的不透明规划。

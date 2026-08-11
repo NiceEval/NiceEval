@@ -269,6 +269,8 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Agent Judge | Agent Judge | 作为 Assertion evaluator 运行的独立 Agent；调查证据后返回分数、理由与引用，不拥有 Verdict | [Agent-as-Judge](roadmap/agent-as-judge/README.md) |
 | Eval 序列 | Sequence (`defineSequence`) | 引用现有 Eval ID，并要求从第一步开始按声明顺序真实执行的文件派生定义 | [有序 Eval 序列](roadmap/ordered-sequences/README.md) |
 | Sandbox 复用组 | Sandbox reuse group | `evals/` 中显式声明必须共用一台活跃 Sandbox 的 Eval 集合；选中即生效，组外 Attempt 保持 fresh | [分组 Sandbox 复用](roadmap/sandbox-reuse-groups/README.md) |
+| Git repository definition | `GitRepositoryDefinition` | 复用组内多道 Eval 共同引用的 repository 与目标目录声明；每题另行选择 commit | [分组 Sandbox 复用](roadmap/sandbox-reuse-groups/library.md#同一-repository-的不同-base-commit) |
+| repository seed | repository seed | 一台复用 Sandbox 在首题前取得、供后续 Attempt 本地重建工作树的只读 Git 数据 | [分组 Sandbox 复用](roadmap/sandbox-reuse-groups/lifecycle.md#git-commit-切换) |
 | Observation | Observation | 运行后无法重新取得、只陈述实际发生了什么的不可变事实 | [运行观测协议](roadmap/observation-protocol/README.md) |
 | Claim | Claim | evaluator 根据明确依据在当时作出的判断 | [运行观测协议](roadmap/observation-protocol/architecture.md#provenance-与-claim) |
 | Reducer | Reducer | 按事件顺序把 Observation 归约成运行状态的纯函数 | [运行观测协议](roadmap/observation-protocol/architecture.md#reducer-与-snapshot) |

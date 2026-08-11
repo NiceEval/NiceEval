@@ -6,3 +6,4 @@
 - [MemoryBench](MemoryBench.md) —— 在纵向记忆题目录定义强制共享边界，各 Experiment 使用独立实例。
 - [Terminal-Bench](Terminal-Bench.md) —— 不声明运行 Sandbox 复用，BuildKey 仍可共享构建输出。
 - [NiceEval-Eval](NiceEval-Eval.md) —— 在 `experiment/` 中定义两道当前项目题的具名组，迁移题保持 fresh。
+- [同仓库切换 commit](同仓库切换commit.md) —— 首题取得一次 repository，后续题目只做本地 checkout。

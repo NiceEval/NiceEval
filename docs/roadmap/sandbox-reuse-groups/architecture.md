@@ -34,6 +34,7 @@ interface DiscoveredSandboxGroup {
   readonly definitionHash: string;
   readonly evalIds: readonly string[];
   readonly onUnavailable: "stop-group" | "replace-sandbox";
+  readonly repositoryIds: readonly string[];
 }
 
 type SandboxAssignment =
@@ -64,6 +65,13 @@ assignment 只由发现结果与当前 Eval id 确定，不读取 Experiment 配
 3. Runner reset workdir，并重新执行两层 prepare 与 agent.ensure；
 4. Attempt 封口和 cleanup 完成后，实例回到该组；
 5. 组结束后执行 lifecycle teardown，再按 physical release policy 停驻或销毁。
+
+组级 Git repository 属于 `(invocationId, experimentId, groupId, sandboxNumber)` 实例资源。
+它不进入宿主 Materialization Cache，不跨 Sandbox、Invocation 或 Experiment 分享，也没有 CLI inventory 或 GC 面。
+
+Runner 在 link 后得到每个 repository 的所选 commit 集合。
+实例进入 ready 前必须证明集合中的每个 OID 都是完整 commit；ready 后官方 checkout 路径禁止 fetch。
+seed 缺对象、校验失败或权限漂移都会让实例不可用，不能在同一实例中边修复边继续派发。
 
 公平调度仍使用全局调度波次。
 一个组不能因为持有 Sandbox 就连续抢占全部并发位；其它组、其它 Experiment 与 fresh Attempt 仍有机会运行。
@@ -122,6 +130,9 @@ fresh Attempt 省略 `groupId`，并使用自己的 `sandboxNumber`。
 | `sandbox-reuse-group-direct-agent` | 计划期：配对 Experiment 使用 Direct Agent，没有可复用 Sandbox |
 | `sandbox-reuse-group-template-missing` | 计划期：Sandbox Agent Experiment 没有提供 template-bearing Layer |
 | `sandbox-reuse-group-incompatible` | 计划期：组中本次选中成员的 Layer link 或物理复用身份不同 |
+| `sandbox-reuse-group-repository` | link：repository 未列入组、目标目录冲突或 commit 不是完整 OID |
+| `sandbox-reuse-group-repository-prepare` | 首题派发前：origin 获取、commit 验证或只读 seed 权限失败 |
+| `sandbox-reuse-group-repository-switch` | Attempt prepare：本地 metadata 重建、checkout 或终态验证失败；实例立即退休 |
 
 错误消息必须列出 group id、相关 Eval id 与修正方向。
 配置错误不降级成 fresh，也不自动拆组。

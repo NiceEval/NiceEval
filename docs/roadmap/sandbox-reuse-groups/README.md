@@ -8,6 +8,9 @@
 全实验复用把所有 Eval 放进一个隐式池，也让每个 Experiment 重复维护同一份成员边界。
 作者无法直接写出“这几道评估属于同一套 Sandbox，其它评估保持隔离并行”这条题集契约。
 
+同组 Eval 还可能来自同一个 GitHub repository，只是 base commit 不同。
+组级 Git repository 声明让一台 Sandbox 在首题前取得一次完整组需求，后续题目只在本地切换 commit，不再重新 clone 或 fetch。
+
 三个 dogfooding 场给出三类约束：
 
 | 项目 | 真实边界 | 配置判断 |
@@ -55,6 +58,8 @@ Experiment 只照常选择 Eval，不能追加、删除、覆写或关闭成员�
 6. 每个组必须明确声明实例不可用时停止还是替换。
 7. 组成员的所有真实 Attempt 都进入所属组的同一串行队列；要得到彼此隔离的重复轨迹，使用独立 Experiment 与独立状态身份。
 8. 组定义与完整成员关系只进入成员 pair 的指纹；未分组 Eval 不因无关组变化而失效。
+9. 组可以声明 `repositories`；每个 repository 每台物理 Sandbox 只访问一次 origin，每题 `checkout()` 只选择 commit。
+10. Git 加速只隔离题间写污染，不承诺同组 commits 对 Agent 互相不可见。
 
 ## 范围
 
@@ -82,3 +87,5 @@ Experiment 只照常选择 Eval，不能追加、删除、覆写或关闭成员�
 - [Architecture](architecture.md) —— Layer 边界、规划实体、调度、指纹与数据形状。
 - [Lifecycle](lifecycle.md) —— fresh、组内复用、停止与替换的完整时序。
 - [Use Cases](use-case/README.md) —— MemoryBench、Terminal-Bench 与 NiceEval-Eval 的完整写法。
+
+Git repository 复用的选型依据见[复用 Sandbox 内切换 Git commit](../../design/git-repository-reuse/README.md)。

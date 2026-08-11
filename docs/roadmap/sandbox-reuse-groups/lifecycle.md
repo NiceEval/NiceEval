@@ -8,6 +8,7 @@
 |---|---:|---:|
 | Provider Case create / physical release | 每 Attempt | 每台实际实例；同一时刻至多一台 |
 | Sandbox lifecycle setup / teardown | 每 Attempt | 每台实际实例一次 |
+| 组级 repository origin 获取 | 不适用 | 每台实际实例、每个声明 repository 一次 |
 | 题间 reset | 无题间复用 | 每条组内 Attempt 进入前 |
 | 两层 prepare 与 agent.ensure | 每 Attempt | 每 Attempt |
 | Agent runtime 与 Eval test | 每 Attempt | 每 Attempt |
@@ -20,7 +21,9 @@
 
 ```text
 首条真实派发
-  -> create -> lifecycle setup -> reset point
+  -> create -> lifecycle setup
+  -> 一次性取得并验证组内所选 commits -> 建立只读 repository seed
+  -> reset point
   -> reset -> prepare -> agent.ensure -> Agent -> test -> cleanup
   -> 实例安全：归还本组
      实例不可用：stop-group 或 replace-sandbox
@@ -30,6 +33,22 @@
 
 Sandbox 在两个 Attempt 之间可以空闲。
 空闲不占 Attempt 并发位，但仍占 Provider 资源并计入该组的 active 数。
+
+## Git commit 切换
+
+实例准备阶段对每个组级 repository 执行一次网络获取。
+它先 clone repository，再补齐本次选择声明但 clone 后仍缺失的完整 commit OID；全部 commit 验证成功后才允许派发首题。
+
+每条 Attempt 的 `checkout()` 执行以下本地步骤：
+
+1. 删除目标目录中上一题的工作树和可写 Git metadata；
+2. 从 workdir 外 seed 建立新的 Git metadata；
+3. detached checkout 到本题 commit；
+4. 验证 HEAD、clean worktree 与 origin 未被访问；
+5. 再进入后续 prepare 命令。
+
+seed 必须对 Agent 运行身份只读；Provider 无法提供该权限边界时，组在首题派发前失败。
+同组 commits 位于同一个 seed，因此该模式不提供未来对象保密。
 
 ## `stop-group`
 
@@ -43,6 +62,7 @@ Runner 追加 `sandbox-reuse-group-stopped` diagnostic。
 
 实例不可用后，Runner 先完成旧实例仍可执行的 teardown 与 physical release，再创建新实例。
 新实例重新执行 lifecycle setup、建立 reset point，并从该组下一条尚未派发的 Attempt 继续。
+新实例也重新执行组级 repository origin 获取；下载不跨 Sandbox 保留。
 
 替换不重跑已经产生模型成本的 Attempt。
 运行数据递增 `sandboxNumber` 与 replacements，让读取面明确知道同组结果来自多台先后使用的 Sandbox。
