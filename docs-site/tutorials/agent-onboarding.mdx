@@ -1,112 +1,121 @@
 ---
-title: "Coding Agent Onboarding, Start to Finish"
+title: "Bring a Coding Agent into a Project"
 sidebarTitle: "Coding Agent Onboarding"
-description: "The full onboarding procedure for a coding agent: explore the project, confirm the path with the user, configure the Judge, write the Adapter / Experiment / eval trio, and get the first experiment running."
+description: "A complete onboarding path for Coding Agents: explore the project, confirm the path with the user, configure a Judge, write an Adapter, Experiment, and evals, then run the first experiment."
 ---
 
-This page is the execution procedure a coding agent follows to connect NiceEval to a project. Prerequisites: the `niceeval` dependency is already installed in the project, `niceeval init` has already run, and you arrived here from the bundled `INDEX.md`. Talk to the user in their language; treat the bundled docs, not training memory, as the source of truth for every API, field, and CLI behavior.
+This page is the execution path for a Coding Agent that brings NiceEval into a project. It assumes the project already has the `niceeval` dependency, `niceeval init` has run, and you reached this page from the packaged `INDEX.md`. Speak with the user in their language. Treat the packaged documentation as the authority for every API, field, and CLI behavior; do not invent details from training memory.
 
-## Step 1: Explore the project, then confirm with the user
+## Step 1: Explore the project, then confirm the path with the user
 
-This step decides the whole path that follows. **Read the code yourself first, list what you found for the user to confirm, and only ask about what you couldn't find** — don't open with a barrage of questions, and don't assume without exploring. What to find out:
+This step determines the rest of the workflow. **Inspect the code first, present the findings for the user to confirm, and ask only about facts you could not discover.** Do not open with a long questionnaire or make an unexamined assumption. Discover:
 
-1. **What kind of agent this is**: read the README, `package.json` dependencies, routes, and the agent-loop code to work out what it's built with (AI SDK, LangGraph, OpenAI Agents SDK, Claude Agent SDK, a hand-rolled loop…) and what its core use case is (customer support? SQL? coding tasks?).
-2. **How the frontend talks to the agent**: HTTP or gRPC / WebSocket? A standard protocol or a homegrown one — AI SDK UI Message Stream, OpenAI Responses / Chat Completions, and similar standard protocols, versus a raw passthrough of the SDK's native event stream, versus the user's own custom JSON/SSE frames? This directly decides whether the Adapter can be a built-in one (zero mapping) or needs a hand-written `send` (you write the event mapping yourself).
-3. **Whether the backend already has OTel wired up**: search for OTel SDK initialization, AI SDK telemetry, or instrumentation like LangSmith / OpenLLMetry / OpenInference. If it's already there, Tier 2 is nearly free.
-4. **Whether the user already has A/B testing or feature flags**: if the app already has a variant switch, an Experiment's `flags` can pass straight through to it — a ready-made entry point for Tier 3.
-5. **What to use for the Judge**: semantic judgment (`t.judge.autoevals.*`) needs a **Judge model kept separate from the agent under test**, speaking the OpenAI-compatible `/chat/completions` protocol — the official OpenAI API, DeepSeek, or any gateway compatible with that protocol all work. Ask the user which service's key they have and which Judge model they want (there is no built-in default model; it must be specified explicitly). A missing key does not silently pass: the Judge assertion becomes `unavailable`, and a non-optional assertion makes the Attempt `errored`. Use exact assertions first only when the Judge assertion is deliberately omitted or explicitly marked `.optional()`.
-6. **Whether the agent itself needs to run in a Sandbox**: if the subject under test is a coding-agent CLI, or a Skill/Plugin/Hook/MCP server written for a coding agent (something that edits files or runs commands in an isolated workspace), it must go through a Sandbox — it can't `send` directly the way an HTTP service can. The default suggestion is `dockerImageSandbox({ image: "node:24-slim" })`, but **confirm with the user first** — whether Docker is available locally/in CI, and whether they'd rather use Vercel Sandbox or another remote Provider; default to Docker if the user has no objection. The Provider is declared on the Eval or Experiment — there is no CLI flag, project-level fallback, or auto-detection. See [Choose a Sandbox Provider](/tutorials/sandbox-providers).
+1. **What kind of Agent this is.** Read the README, `package.json` dependencies, routes, and Agent-loop code. Identify the stack—AI SDK, LangGraph, OpenAI Agents SDK, Claude Agent SDK, or a custom loop—and the core use case, such as support, SQL, or coding work.
+2. **How the frontend and Agent communicate.** Is it HTTP, gRPC, or WebSocket? Is the protocol standard or custom: AI SDK UI Message Stream, OpenAI Responses or Chat Completions, an SDK event stream, or custom JSON/SSE frames? This decides whether a built-in Adapter needs no mapping or a custom `send` must map events.
+3. **Whether the backend already has OTel.** Look for OTel SDK initialization, AI SDK telemetry, LangSmith, OpenLLMetry, OpenInference, or related instrumentation. An existing setup makes Tier 2 nearly free.
+4. **Whether the user already has A/B tests or feature flags.** Existing variation switches are an immediate Tier 3 entry point because an Experiment can pass them through as `flags`.
+5. **Which Judge to use.** Semantic scoring with `t.judge.autoevals.*` needs a Judge model separate from the Agent under test and an OpenAI-compatible `/chat/completions` endpoint. Ask which key and Judge model the user wants. There is no built-in default. A missing key does not silently pass: a Judge assertion becomes `unavailable`, and a non-optional assertion makes the Attempt `errored`. Use precise assertions only when the user deliberately omits a Judge or explicitly chains `.optional()`.
+6. **Whether the Agent itself needs a Sandbox.** A coding-agent CLI, or a Skill, Plugin, Hook, or MCP server written for one, must modify files and run commands in an isolated workspace. It cannot use an HTTP-service-style `send` path.
 
-Once you've explored, **introduce the integration tiers** to the user and give a recommendation (details in [Integration tiers](/explanation/tier)):
+   Recommend `dockerImageSandbox({ image: "node:24-slim" })` by default, but confirm whether the local machine or CI has Docker and whether the user needs Vercel Sandbox or another remote provider. Use Docker when the user has no objection. The provider is declared on the Eval or Experiment; there is no CLI flag, project-wide default, or auto-detection. See [Choose a Sandbox Provider](/tutorials/sandbox-providers).
 
-- **Tier 1 (send only)**: zero changes to the app; the full assertion set (text, Judge, multi-turn, tools, HITL) is available at this tier.
-- **Tier 2 (send + OTel)**: the app also sends its OTel spans to NiceEval, in exchange for the call waterfall in `niceeval view`; if instrumentation already exists (found in point 3), this is a zero-change upgrade.
-- **Tier 3 (application changes + flags)**: the app's internal variants are exposed as `flags` for feature A/B comparison; an existing A/B switch (found in point 4) is a ready-made entry point.
+After exploring, introduce the [integration tiers](/explanation/tier) and give a recommendation:
 
-**Default to getting Tier 1 running first, then upgrading to Tier 2** — especially when point 3 found that the app already has OTel, tell the user explicitly that "upgrading to Tier 2 is just sending one more copy of the spans, at close to zero cost." Only bring up Tier 3 when the user explicitly wants to compare variants.
+- **Tier 1 (send only):** No application change. The full assertion set—text, Judge, multi-turn, tool, and HITL—already works here.
+- **Tier 2 (send + OTel):** The application sends spans to NiceEval as well, which enables the call waterfall in `niceeval view`. Existing instrumentation makes this nearly free.
+- **Tier 3 (application changes + flags):** Expose internal variations as `flags` for feature A/B testing. Existing A/B switches are ready-made entry points.
 
-Pick the matching doc based on what you found — don't start writing the Adapter without having read it:
+**Recommend Tier 1 first, then Tier 2 by default.** If the exploration found existing OTel, say explicitly that Tier 2 only sends one more copy of the spans and costs almost nothing. Recommend Tier 3 only when the user wants a variation comparison.
 
-| Subject under test | Read |
-|---|---|
-| An app built with the Vercel AI SDK (a `useChat` backend) | [Built-in agent reference](/reference/builtin-agents): the built-in `uiMessageStreamAgent` connects non-intrusively, no hand-written event mapping needed |
-| A coding-agent CLI (claude-code / codex / bub, etc. doing file-editing tasks) | [Eval an agent in a Sandbox](/tutorials/sandbox-agent): needs a `sandbox` configured, default `dockerImageSandbox({ image: "node:24-slim" })`, confirm the Provider with the user first |
-| A Skill, Plugin, Hook, or MCP server written for Claude Code / Codex | [Eval coding-agent extensions](/examples/coding-agent-extensions): also runs in a Sandbox, confirm the Provider the same way |
-| Some other hand-rolled agent loop, LangGraph, OpenAI Agents SDK, or an already-deployed agent | Start with [Connect your agent](/tutorials/connect-your-agent); the full hand-written `send` tutorial is [Write send](/tutorials/write-send) |
-| A pure function with no standalone service | Read the "why not call directly" section in [Connect your agent](/tutorials/connect-your-agent) first, confirm with the user that this really is the edge case they want, then continue |
+Choose the right documentation for the discovered shape. Do not start writing an Adapter before reading it.
 
-## Step 2: Configure the Judge
+| System under test | Read |
+| --- | --- |
+| An app built with Vercel AI SDK and a `useChat` backend | [Built-in Agent Reference](/reference/builtin-agents): use `uiMessageStreamAgent` without writing event mapping. |
+| A coding-agent CLI such as claude-code, codex, or bub that edits files | [Evaluate Agents in a Sandbox](/tutorials/sandbox-agent): configure `sandbox`; recommend `dockerImageSandbox({ image: "node:24-slim" })` after confirming the provider. |
+| A Skill, Plugin, Hook, or MCP server for Claude Code or Codex | [Evaluate Coding Agent Extensions](/examples/coding-agent-extensions): it also runs in a Sandbox and needs the same provider confirmation. |
+| A custom Agent loop, LangGraph, OpenAI Agents SDK, or deployed Agent | Start with [Connect Your Agent](/tutorials/connect-your-agent), then read [Write send](/tutorials/write-send) for the full custom `send` workflow. |
+| A pure function with no independent service | First read [Connect Your Agent](/tutorials/connect-your-agent) on why not to call it directly. Confirm this is genuinely the desired edge case before continuing. |
 
-Set up the Judge service the user named in step 1. The Judge speaks the **OpenAI-compatible `/chat/completions`** protocol, configured in `niceeval.config.ts`:
+## Step 2: Configure a Judge
+
+Configure the Judge service identified in Step 1. Judges use an **OpenAI-compatible `/chat/completions`** endpoint in `niceeval.config.ts`:
 
 ```ts
 import { defineConfig } from "niceeval";
 
 export default defineConfig({
   judge: {
-    model: "gpt-5.4-mini",                // required: there is no built-in default model
-    // Add these two only when using an OpenAI-compatible service other than the official API (DeepSeek, a gateway, etc.):
+    model: "gpt-5.4-mini",                // Required: there is no built-in default model
+    // Add these only for a non-OpenAI compatible service, such as DeepSeek or a gateway:
     // baseUrl: "https://api.deepseek.com/v1",
-    // apiKeyEnv: "DEEPSEEK_API_KEY",     // the key is read from this env var; without it, NICEEVAL_JUDGE_KEY is read by default
+    // apiKeyEnv: "DEEPSEEK_API_KEY",     // Reads the key from this variable; otherwise NICEEVAL_JUDGE_KEY
   },
 });
 ```
 
-Three things to tell the user:
+**A compatible gateway needs an explicit `baseUrl`.** Supplying only a key sends the request to the official endpoint; the gateway credential then looks expired even though the endpoint was wrong.
 
-- **Misconfiguration never pretends to pass.** If the model or key cannot be resolved, the gateway rejects authentication, or the Judge request times out, the Judge assertion is recorded as `unavailable` with a reason. A non-optional unavailable assertion makes the Attempt `errored`; it neither passes nor says the agent answered incorrectly. Only add `.optional()` to an assertion whose absence is intentionally acceptable; its unavailable result remains visible but does not affect the Verdict.
-- **When no user is present (autonomous onboarding), don't just skip the Judge**: first probe the environment for a usable Judge key (`NICEEVAL_JUDGE_KEY`, or a service-specific variable such as `DEEPSEEK_API_KEY` selected with `apiKeyEnv`); if one exists, configure it and verify as above. Only when there truly is none, fall back to exact assertions plus shape assertions (`includesUrl()` / `hasSections()`, see [Evaluation kinds](/tutorials/evaluation-kinds)) — and state clearly in the wrap-up that the Judge was not configured, and why.
-- The Judge model must be **kept separate from the agent under test**, to avoid self-evaluation. Model-resolution priority (per-call → per-eval → global config) and the three judgment modes are in [Judge](/explanation/judge); the full `judge` field set is in the [defineConfig reference](/reference/define-config).
+Remember these points:
 
-## Step 3: Write the trio
+- **Misconfiguration cannot pretend to pass.** An unresolved model or key, rejected gateway authentication, or Judge timeout records the assertion as `unavailable` with a reason and makes the Attempt `errored`. A result that could not be judged is neither a pass nor the Agent's failure. Use `.optional()` only when one assertion may deliberately be absent, such as an experimental assertion on a development machine without a key.
+- **Verify the setup once.** Run a lightweight eval against fixed text before calling the Agent: `t.judge.autoevals.closedQA("Does this text express success?", { on: "operation completed successfully" }).gate(0.8)`. Then use the receipt's Run ID with `niceeval show --run <runId> --page attempt-<attemptId>` and confirm that each assertion has a score.
+- **Do not silently skip a Judge during autonomous onboarding.** First look for an available key, such as `NICEEVAL_JUDGE_KEY` or `DEEPSEEK_API_KEY`. If one exists, point `apiKeyEnv` at it and verify as above. Only when no key exists should the workflow use precise and shape assertions, and the final handoff must say that a Judge was not configured and why.
+- The Judge model must be **separate from the Agent under test** so a model does not score itself. See [Judge](/explanation/judge) for precedence and scoring shapes, and [defineConfig Reference](/reference/define-config) for the complete `judge` fields.
 
-After reading the doc matching the direction chosen in step 1, write these in order:
+## Step 3: Write the three pieces
 
-1. **Adapter** (`agents/*.ts`, or whatever directory the project convention uses) — fill in only the `send` of `defineAgent`; configuration comes through factory parameters, never hardcoded and never read from `process.env`. The contract is in [Adapter](/explanation/adapter), the API signature is in the [defineAgent reference](/reference/define-agent), and event mapping is in the [event reference](/reference/events). Two easy traps: **pick the endpoint/mode that exercises the system's core capability, not the one that is easiest to get running** — if the platform has both a "plain LLM chat" mode and a "connected-to-the-database execution" mode, wiring up the former means you evaluated a model proxy, not the product; and **declare `evidenceCoverage` honestly, matching what you actually mapped** — if only the final text is mapped, don't use `completeEvidenceCoverage`; reports trust the declaration, and overstating is worse than being conservative.
-2. **Experiment** (`experiments/*.ts`) — reference the Adapter above and declare `model`, `flags`, `runs`, and similar; if the subject under test is an agent, also declare `sandbox` (the Provider already confirmed with the user in step 1, default `dockerImageSandbox({ image: "node:24-slim" })`, imported from `niceeval/sandbox`). **Default to building a comparison-group folder for a model comparison**: put two files under `experiments/compare-models/`, same Adapter, everything else pinned, differing only in `model` (for example `compare-models/gpt-5.4.ts` and `compare-models/deepseek-v4-pro.ts`; `model` is a single string, not an array). Running `niceeval exp compare-models` once produces a side-by-side report across the models in the group — this is NiceEval's most immediate demonstration of value. Confirm which two models to use with the user (what the app supports, which keys are available); if the app's interface doesn't accept a model parameter, fall back to a single Experiment file and tell the user honestly why. Fields are in [Write an experiment](/tutorials/write-experiment); how to organize a comparison group is in [Organize experiments](/tutorials/experiments).
-3. **Eval** (`evals/*.eval.ts`) — **find out what the app actually does first, then write one eval that hugs its real functionality**: read its README, routes, tool definitions, or system prompt to find its core use case (a real support question for a customer-support bot, a real query task for a SQL agent), and use that use case as the input and assertions for the first eval. Two kinds of input both fail the bar: placeholder inputs like "hello" that have nothing to do with the app, and **meta-questions asking the system under test about itself** ("what are you / what can you do") — that is not what users hire it for. In form, still start minimal: one input, `t.succeeded()` plus one content assertion against the expected answer — but the minimal form is scaffolding for getting connected, not the deliverable. Before wrapping up, two more bars must be met:
-   - **Assertions must turn red when the system under test makes things up.** Never assert words that already appear in the input (asking "what is X" and asserting the reply contains "X" passes on a pure echo); assert substance unique to the expected answer — concrete facts, structure (`hasSections()`), real links (`includesUrl()`), or a semantic check with `t.judge`.
-   - **At least one negative case.** Send an input the system should not be able to answer (a nonexistent table, a topic with no retrievable sources) and assert it clearly says so instead of fabricating a plausible-looking result — for agents wired to real data or retrieval sources, this is the failure mode most worth testing first.
-   How to write it is in [Write evals](/tutorials/authoring), assertion and evaluation-kind choices are in [Evaluation kinds](/tutorials/evaluation-kinds), and the signature is in the [defineEval reference](/reference/define-eval).
+After reading the documentation selected in Step 1, write these in order:
 
-How parameters flow from the Experiment to the Adapter, and how static configuration is split from per-turn dynamic values (factory parameters vs. `ctx`), is in [Connect your agent](/tutorials/connect-your-agent).
+1. **Adapter** (`agents/*.ts` or the user's established directory). Use `defineAgent` to implement `send`; put static configuration in factory arguments rather than hard-coding it or reading `process.env`. See [Adapter](/explanation/adapter), [defineAgent Reference](/reference/define-agent), and [Event Reference](/reference/events). Two common mistakes matter: connect the endpoint or mode that exercises the system's core capability, not merely the easiest endpoint; and declare `evidenceCoverage` truthfully. Mapping only final text does not justify `completeEvidenceCoverage`; a false claim is worse than a conservative one.
+2. **Experiment** (`experiments/*.ts`). Reference the Adapter and declare `model`, `flags`, `attempts`, and related settings. Put model comparisons in separate experiment files, each with one pinned `model`. `evals: (eval) => boolean` decides which evals each Experiment runs. Paths provide IDs and batch execution; reports consume physical results and coverage facts from the current Sample.
+3. **Eval** (`evals/*.eval.ts`). **Understand the application first, then write an eval around its real core use case.** Read its README, routes, tool definitions, or system prompt. For a support Agent, ask a real support question; for a SQL Agent, use a real query task. Avoid a generic “hello” and a meta-question such as “what can you do?” Both fail to exercise the system's work.
 
-Two hard architectural rules apply when writing the Adapter — don't violate them:
+   Start with one input, `t.succeeded()`, and one assertion about the expected answer, but treat that shape as a connectivity scaffold rather than the delivery standard. Before you finish, meet both requirements:
 
-- **No in-process direct calls.** Even when the agent runtime and the evals live in the same codebase, the Adapter still goes through HTTP (or the corresponding transport layer) — don't replace `fetch` with a direct `import` of the function under test. The reasoning is in the "why not call directly" section of [Connect your agent](/tutorials/connect-your-agent).
-- **The eval side does not manage the process under test.** It doesn't spawn the app and doesn't open another port; the user starts the app themselves the way they normally would (`pnpm dev` or similar). If the Adapter can't connect, it should report a clear error like "start the app first" — it should not start the service itself.
+   - **An assertion must fail when the system hallucinates.** Do not assert a word already present in the input. Asking “What is X?” then asserting that the answer contains “X” lets the Agent pass by repeating the prompt. Assert real expected facts, structure through `hasSections()`, a real URL through `includesUrl()`, or semantic correctness through `t.judge`.
+   - **Add at least one negative case.** Give the system input it should not be able to answer, such as a nonexistent table or unavailable topic. Assert that it clearly says it cannot find or perform the task rather than inventing a plausible result. This is often the most valuable early failure shape for an Agent connected to real data or retrieval.
 
-## Step 4: Get it running and verify
+   See [Write Evals](/tutorials/authoring) for authoring, [Evaluation Kinds](/tutorials/evaluation-kinds) for assertions and question forms, and [defineEval Reference](/reference/define-eval) for the signature.
+
+Do not break these architectural rules while writing an Adapter:
+
+- **Do not call the system directly in-process.** Even when the Agent runtime and eval share a codebase, the Adapter should use HTTP or the appropriate transport. Do not replace `fetch` with an import of the system under test. See [Connect Your Agent](/tutorials/connect-your-agent) for the reason.
+- **Do not manage the system-under-test process from the eval.** Do not spawn the application or open another port. The user starts it the normal way, such as `pnpm dev`. When the Adapter cannot connect, report a clear “start the application first” error instead of launching it.
+
+## Step 4: Run and verify
 
 ```sh
-<package manager> exec niceeval exp compare-models   # run the comparison group; produces a side-by-side report across the models in it
-<package manager> exec niceeval view                 # browse the comparison in the viewer
+<package-manager> exec niceeval exp models
+<package-manager> exec niceeval view --latest --experiment models
 ```
 
-Follow [Coding agent feedback loop](/tutorials/agent-feedback-loop) to use `niceeval show`, `--transcript`, `--trace`, and `--diff` to run, observe, fix, and rerun; viewer usage is in [Viewing results](/tutorials/viewing-results). If it doesn't run, triage into three categories: `fetch` throws directly → the app isn't running or the URL is wrong; `t.succeeded()` fails → the app returned a non-success status; only content assertions fail → the integration is already working, tune the assertions or the app.
+Use [Coding Agent Feedback Loop](/tutorials/agent-feedback-loop) to read the receipt and obtain Run IDs. Then inspect source, execution, timing, or diff pages with `niceeval show --run <runId> --page <planned-route>` as you observe, edit, and rerun. See [Viewing Results](/tutorials/viewing-results) for the viewer workflow.
 
-## Step 5: Wrap up, tell the user what was done
+Diagnose an initial failure by its shape: a thrown `fetch` error means the application is not running or the URL is wrong. A failed `t.succeeded()` means the application returned a non-success status. If only a content assertion fails, the integration works; adjust the assertion or the application.
 
-Run through the wrap-up checklist before summarizing — **if any item fails, go back to Step 3 and fix it; don't paper over it in the summary**:
+## Step 5: Finish by telling the user what changed
 
-- [ ] The eval input is the system under test's core use case — not a meta-question about itself, not placeholder chit-chat
-- [ ] Every content assertion turns red if the system under test echoes the question or makes things up (the asserted words are not already in the input)
-- [ ] There is at least one negative case (an input it should not be able to answer, asserting it clearly says so)
-- [ ] The Judge is configured when a key exists, and a Judge score has actually shown up in `niceeval view`; if there is no key, the summary says so
-- [ ] The `model` / `flags` declared in the Experiment are actually consumed by the Adapter (no dead config nobody reads, no fabricated model values the system under test doesn't have)
+Before summarizing, run this finish check. **If any item fails, return to Step 3 and complete it; do not hide it in the final summary.**
 
-Once it's running, summarize before talking about next steps. The summary should cover: what subject under test was connected, which files were generated (where the Adapter / Experiment / eval each live), how to run `niceeval exp compare-models` and `niceeval view`, and what the first run's results looked like. Don't refactor the user's existing code unless asked, and don't add abstractions beyond these files.
+- [ ] Eval inputs exercise the system's core use case, not a meta-question or placeholder greeting.
+- [ ] Every content assertion fails when the system repeats the input or hallucinates; its asserted terms are not already in the input.
+- [ ] At least one negative case makes an unsupported request and asserts an explicit inability to complete it.
+- [ ] When a key is available, the Judge is configured and a Judge score has appeared in `niceeval view`. If no key exists, the summary explains that.
+- [ ] The Experiment's declared `model` and `flags` are actually consumed by the Adapter. There is no dead configuration or invented model value.
 
-## Step 6: Ask the user whether to go deeper
+After the first run works, summarize before proposing more work. State the connected system under test, the files created for the Adapter, Experiment, and evals, the `niceeval exp <experiment-path>` and explicitly selected `niceeval view` commands, and what the first run showed. Do not refactor existing user code or add unrelated abstractions unless asked.
 
-After summarizing, list the options for going deeper — for each one, spell out **what it enables, roughly how much code it takes, and what it buys** — and let the user choose; don't take the initiative to do more on your own:
+## Step 6: Ask whether the user wants a deeper integration
 
-| What it enables | How much change | What it buys | Docs |
-|---|---|---|---|
-| Tool-call assertions (`t.calledTool()`, etc.) | Adapter only: map the app's response into the standard event stream, roughly 10–30 lines of mapping code | Evals can assert "did the agent call the right tool with the right arguments," not just look at the final reply | [Write send](/tutorials/write-send), [event reference](/reference/events) |
-| Multi-turn conversations, session isolation | Adapter only: wire up `ctx.session` (a typed slot or `id` + `capture()`), a few to a dozen lines | Evals can write multi-turn scenarios; `t.newSession()` verifies sessions don't bleed into each other | [Drive multi-turn interactions](/explanation/drive), [Write send](/tutorials/write-send) |
-| Human-in-the-loop approval flow (HITL) | Adapter only: pause a turn by returning `waiting` + `input.requested`, resume on the answering turn, roughly 10–20 lines | Evals can cover approval scenarios like "does the agent behave correctly after an approve/reject" | [HITL](/explanation/hitl) |
-| Call waterfall (upgrade to Tier 2) | If the app already has OTel instrumentation (checked in step 1): just send one more copy of the spans to NiceEval, a few lines of config; if not: add a short block of generic OTel initialization | `niceeval view` shows a timeline of every model call and tool execution inside the app, with duration and token counts; doesn't affect any assertions | [Configure OTel](/tutorials/connect-otel) |
-| Feature A/B comparison (upgrade to Tier 3) | App change: expose the variant as a `flags`-switchable configuration; how much change depends on the app; an existing A/B switch (checked in step 1) is a ready-made entry point | Compare "which prompt / which toolset / which feature setting is better" directly at the Experiment level | [Organize experiments](/tutorials/experiments), [Integration tiers](/explanation/tier) |
+After the summary, present optional next steps. For each one, explain what it enables, roughly how much code it changes, and what it buys. Let the user choose; do not continue on your own.
 
-Also tell the user what these have in common: they're all incremental additions to the Adapter or the app — **the evals already written don't need a single line changed**. What each of the three investment tiers buys, and when it's worth upgrading, is in [Integration tiers](/explanation/tier). If step 1 found the app already has OTel instrumentation, proactively recommend the waterfall option — it costs close to nothing.
+| Capability | Change size | Benefit | Documentation |
+| --- | --- | --- | --- |
+| Tool-call assertions such as `t.calledTool()` | Adapter only: map application responses to the standard event stream, usually 10–30 lines | Evals can verify that the Agent chose the right tool and arguments instead of only judging final text | [Write send](/tutorials/write-send), [Event Reference](/reference/events) |
+| Multi-turn conversations and session isolation | Adapter only: connect `ctx.session` with a typed slot or `id` plus `capture()`, from a few to tens of lines | Evals can cover multi-turn workflows and use `t.newSession()` to verify that sessions do not leak | [Drive a Conversation](/explanation/drive), [Write send](/tutorials/write-send) |
+| Human approval flows (HITL) | Adapter only: return `waiting` with `input.requested`, then continue after the answer, roughly 10–20 lines | Evals can cover approval and rejection behavior | [HITL](/explanation/hitl) |
+| Call waterfall (Tier 2) | With existing OTel, send one more copy of spans through a few configuration lines; otherwise add standard OTel initialization | `niceeval view` shows the timing and token timeline for each model and tool call in the application without changing assertions | [Configure OTel](/tutorials/connect-otel) |
+| Feature A/B comparison (Tier 3) | Change the application to expose variations as `flags`; the size depends on the app | Compare prompt changes, tool sets, or feature switches from an Experiment | [Organize Experiments](/tutorials/experiments), [Integration Tiers](/explanation/tier) |
+
+All of these are incremental Adapter or application changes. Existing evals do not need to change. See [Integration Tiers](/explanation/tier) for what each investment buys and when it is worthwhile. If Step 1 found existing OTel, proactively recommend the waterfall option because it costs almost nothing.

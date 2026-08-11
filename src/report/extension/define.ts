@@ -1,4 +1,4 @@
-// defineRenderer —— 普通值双面 renderer 协议(docs/feature/reports/library/layout.md)。
+// defineRenderer —— 普通值双面 renderer 协议(docs/feature/reports/README.md)。
 
 import type { ReactNode } from "react";
 

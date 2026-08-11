@@ -145,7 +145,7 @@ Score Eval 没有 Attempt Verdict、总分、百分比或隐式每项 `+1`。正
 - [用例目录](use-case/README.md) —— 单轮、多轮、HITL、过程断言、judge、测试集、沙箱、 Fixture,一篇一个场景。
 - [Eval Context](library/context.md) —— `t`、`session`、`turn` 怎样驱动会话和读取结果。
 - [Architecture](architecture.md) —— 为什么作用域断言按接收者(`t` / `session` / `turn`)分层,对齐 eve 的设计依据。
-- [Assertions](../assertions/README.md) —— 值断言、作用域断言、judge、严重度与判定规则。
+- [Assertions](../assertions/README.md) —— 值断言、作用域断言、Judge、计分与判定规则。
 - [Agents 与 Adapters](../adapters/README.md) —— agent 三类 transport 与 agent 适配。
 - [Experiments](../experiments/README.md) —— eval 由谁跑、跑几次、对着哪个 agent。
 - [Sandbox Layer](../sandbox/layers.md) —— `sandbox` 字段的类型、factory 与配对规则。

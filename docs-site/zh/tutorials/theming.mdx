@@ -1,171 +1,36 @@
 ---
-title: "给报告换一套主题"
-sidebarTitle: "报告主题"
-description: "用 --theme 换报告外观，用 defineTheme 写一份自己的主题，并把它设成项目默认或发成 npm 包。"
+title: "报告外观与安全边界"
+sidebarTitle: "报告外观"
+description: "理解当前报告宿主的固定样式，以及为什么 Report 不能注入主题文件、CSS 或浏览器代码。"
 ---
 
-报告说这份结果给谁看什么，主题说它长什么样。两者是分开的：一份主题可以套在任何报告上，一份报告也可以换任何主题。所以给结果站换品牌色不必复制报告文件，团队的配色也只写一次。
+当前 Record/Reports 契约不提供 `--theme`，也不装载任意主题文件。`show`、本机 `view` 与静态 export 消费同一份 `ReportExecution`；网页外壳由当前 NiceEval exporter 的内建 runtime、基础样式和字体完整提供。
 
-主题只作用于网页：`niceeval view` 的页面外壳和页内组件读同一份主题，本地查看和 `--out` 导出的静态站是同一套。`niceeval show` 是终端输出，没有主题这一层。
-
-## 换一次外观
-
-不改任何文件，对着同一份报告试装：
-
-```bash
-niceeval view --theme ./themes/acme.ts
-niceeval view --report reports/site.tsx --theme ./themes/acme.ts
-niceeval view --theme basalt                 # 官方暗色主题（默认）：黑面、直角
-niceeval view --theme chalk                  # 官方浅色主题：白面、圆角
+```sh
+niceeval view --latest
+niceeval view --latest --report ./reports/site.ts --out ./report-site
 ```
 
-`--theme` 的不带路径值查内置主题名（`basalt` 与 `chalk`），带路径的值按文件装载。两套官方主题一暗一浅、一直角一圆角，对着同一份报告各跑一次，就能看到外观完整住在主题里。
+## Report 可以控制什么
 
-每次运行只有一份主题生效，四档，前面没有才用后面：
+Report 通过结构化 `ReportPageModel` 决定标题、内容、表格、图表数据、状态提示与文字替代。它可以组织信息和选择合适的内建组件，但不能返回 script、CSS、font、worker、WASM、网络 URL 或本地文件路径。
 
-| 档 | 取值 |
-|---|---|
-| 1 | `--theme <名字\|文件>` |
-| 2 | 报告自己的 `theme` 字段 |
-| 3 | `niceeval.config.ts` 的 `theme` 字段 |
-| 4 | 内置 `basalt` |
+颜色和交互只能增强已有语义。partial、unavailable、unsupported 与 invalid 必须同时有文字或表格表达，不能只靠颜色区分。
 
-生效的那一份里没写的东西取官方值，不会跟下一档拼起来。
+## 为什么不纳入任意主题注入
 
-## 写一份自己的主题
+静态报告的核心承诺是自包含、可预检和断网可用。如果 Report 或 CLI 能临时装载任意 CSS/脚本/字体，export 就必须重新处理代码执行、资源闭包、网络 URL、路径逃逸和版本漂移；这会把“分享一份固定结果”变成另一套插件与构建系统。
 
-只换品牌色时，一个字段就是一份完整主题：
+固定宿主让导出器可以在写文件前穷尽全部资产，保证 manifest 与普通文件一一对应，也保证本机页面和静态站不会因外部主题包变化而产生不同解释。
 
-```tsx
-// themes/acme.ts
-import { defineTheme } from "niceeval/report";
+## 需要品牌化怎么办
 
-export default defineTheme({ accent: { light: "#6D28D9", dark: "#C4B5FD" } });
-```
+当前选择是先把品牌化作为未来宿主能力设计，而不是让用户注入任意资源。新增能力必须仍满足：
 
-写一个颜色表示浅色深色都用它。品牌色只在某种背景下好看时，两支分别给出——NiceEval 不替你猜另一支长什么样。
+- 只改变外观，不改变 Calculation、分母或状态；
+- 资源集合能在 export 前穷尽验证；
+- 不读取网络或任意用户路径；
+- 同一 `ReportExecution` 的终端文字与网页语义一致；
+- 不破坏静态站的断网与内容安全边界。
 
-做一份认得出来的主题，动的是色板、底色、字体和圆角：
-
-```tsx
-// themes/acme.ts
-import { defineTheme } from "niceeval/report";
-
-export default defineTheme({
-  appearance: "system",
-  accent: { light: "#6D28D9", dark: "#C4B5FD" },
-  positive: { light: "#047857", dark: "#6EE7B7" },
-  negative: { light: "#BE123C", dark: "#FDA4AF" },
-  warning: { light: "#A16207", dark: "#FDE047" },
-  series: [
-    { light: "#2563EB", dark: "#60A5FA" },
-    { light: "#059669", dark: "#34D399" },
-    { light: "#D97706", dark: "#FBBF24" },
-    { light: "#7C3AED", dark: "#C4B5FD" },
-    { light: "#DB2777", dark: "#F472B6" },
-    { light: "#0891B2", dark: "#22D3EE" },
-  ],
-  page: { light: "#FFFBF5", dark: "#120F0C" },
-  surface: { light: "#FFFFFF", dark: "#1C1713" },
-  font: { sans: '"IBM Plex Sans", ui-sans-serif, sans-serif' },
-  radius: "2px",
-  styles: [{ src: "./acme.css" }],
-});
-```
-
-`./acme.css` 按主题文件的位置解析，不是报告文件——把主题连同它的 CSS 搬到别的项目，路径照旧成立。
-
-每个字段说的是含义，不是某个颜色：
-
-| 字段 | 用来表达 |
-|---|---|
-| `accent` | 站点身份、当前导航、链接与 Attempt 定位符 |
-| `positive` / `negative` / `warning` | passed / failed / errored 与截断、覆盖不全 |
-| `series` | 实验、Agent、标签这些分类身份，六个槽 |
-| `page` / `surface` / `border` / `text` 等 | 底色、卡片、分隔线与三级文字 |
-| `font` / `fontSize` / `radius` | 字体栈、正文基准字号、圆角 |
-
-颜色只收 `#RRGGBB`。字体、字号、圆角的值本来就是 CSS，原样写进去。令牌表达不了的效果写在 `styles` 里，那是完整的 CSS 出口。
-
-## 浅色与深色
-
-`appearance` 一个字段同时决定默认哪一支、读者能不能换：
-
-- `system`（默认）：初始跟随浏览器和系统，页头带一个浅 / 深切换，读者选过之后这个站记住。
-- `light` / `dark`：锁定整站，不出现切换控件。主题的 CSS 只为一种背景写过时用这一档。
-
-关掉 JavaScript 打开静态站，看到的就是声明的那一支，所有数值照常可读。
-
-## 设成项目默认
-
-团队里没人应该每次都敲 `--theme`：
-
-```ts
-// niceeval.config.ts
-import { defineConfig } from "niceeval";
-import acme from "./themes/acme";
-import site from "./reports/site";
-
-export default defineConfig({
-  report: site,
-  theme: acme,
-});
-```
-
-之后不带参数运行 `niceeval view` 就是自己的报告加自己的外观。要给某一份报告固定外观、不受项目配置影响（例如对外发布的那份必须是品牌色），写进那份报告：
-
-```tsx
-export default defineReport({
-  pages: [...standard.pages],
-  title: "Acme Evals",
-  theme: acme,
-});
-```
-
-## 发成包，或在别人的主题上改
-
-主题是普通值，发布不需要额外机制：一个 npm 包，默认导出 `defineTheme` 的产物，CSS 和字体随包走。
-
-```tsx
-import acme from "@acme/niceeval-theme";
-
-export default defineConfig({ theme: acme });
-```
-
-在一份主题上改两项，用普通的对象展开。`styles` 是数组，拼接就是数组拼接：
-
-```tsx
-export default defineTheme({
-  ...acme,
-  accent: { light: "#0F766E", dark: "#5EEAD4" },
-  styles: [...(acme.styles ?? []), { inline: ".niceeval-report .niceeval-hero { padding-block: 48px; }" }],
-});
-```
-
-## 发布与嵌入
-
-导出的静态站带着同一份主题，本地看到什么发出去就是什么：
-
-```bash
-niceeval view --report reports/site.tsx --theme ./themes/acme.ts --out site
-```
-
-把报告组件嵌进自己的 React 页面时，同一份主题也能直接用：
-
-```tsx
-import { themeStylesheet } from "niceeval/report";
-import acme from "@acme/niceeval-theme";
-
-<style dangerouslySetInnerHTML={{ __html: themeStylesheet(acme) }} />;
-```
-
-反过来也行：不注入主题，在包住 `.niceeval-report` 的容器上声明自己产品的
-`--niceeval-*` 令牌，报告组件就长成产品的样子。
-
-## 边界
-
-- 主题只影响网页。`niceeval show --theme …` 会报错并告诉你改用 `view`。
-- 换主题不改数字：主题不参与取数和计算，改颜色不需要重跑评估。
-- 哪个维度值恒用哪个视觉槽写在报告的 `dimensionPins` 里，不写在主题里——换配色不该让基线和候选方案对调身份（见[自定义报告](/zh/tutorials/custom-reports#固定某个值的颜色)）。
-- 自己写的组件要按取色纪律写才跟得上主题，写死的颜色值在深色分支会失灵（见[让自己的组件跟随任何主题](/zh/tutorials/custom-reports#让自己的组件跟随任何主题)）。
-- 页头的 NiceEval 标识和品牌行不从 `accent` 取色，主题不是隐藏它们的开关。
+在这套契约落地前，需要完全自定义品牌页面的产品可以消费 Report 的结构化结果，在自己的应用边界内实现宿主；NiceEval 的静态 export 仍保持固定、安全的内建外壳。

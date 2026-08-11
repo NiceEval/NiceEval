@@ -189,22 +189,23 @@ export default defineSandboxAgent({
 
 `setup`、每次 `send` 和 `teardown` 都拿到各自作用域的反馈方法：
 
-- `ctx.progress({ message, current?, total? })` 更新当前短期状态，适合写运行配置、运行 Turn 和读取 transcript。不要逐 token 或逐 JSONL frame 调用。
-- `ctx.diagnostic({ code, level, message, data?, dedupeKey? })` 保存协议退化、transcript 缺失和清理问题。它会进入终端永久事件和 `result.json`。
-- 无法继续运行时抛出异常，runner 会把 Attempt 标为 `errored`，并保存发生阶段、错误码、message、cause 和 stack。
+- `ctx.progress({ message, current?, total? })` 更新当前短期状态，适合安装 CLI、运行 Turn、读取 transcript。不要逐 token 或逐 JSONL frame 调用。
+- `ctx.diagnostic({ code, level, message, data?, dedupeKey? })` 保存协议退化、transcript 缺失和清理问题。它会进入终端永久事件，并作为 channel event 随 Attempt 提交进 Record。
+- 无法继续运行时抛出异常。runner 会把发生阶段、错误码、message、cause 和 stack 写入诊断通道，并在 `niceeval.verdict` 通道形成 `errored` Verdict。
 
 不要从 Adapter 直接调用 `console.log/error` 或写 `process.stdout/stderr`。它们会打散 Human dashboard，也会破坏 CI 日志顺序。
 
 运行中看到 Sandbox 或 Adapter 错误时，终端会给出 Attempt locator：
 
 ```text
-✗ @12h8m4k1 fixtures/button [local] errored · agent ensure
-    Inspect: niceeval show @12h8m4k1
+✗ @5TB8167MXJ30SYZCNAVRHPQ4D2 fixtures/button [local] errored · agent setup
+    agent-install-failed: npm install my-agent exited with code 1
+    Inspect: niceeval show --run <runId> --page attempt-5TB8167MXJ30SYZCNAVRHPQ4D2
 ```
 
-运行 `niceeval show @12h8m4k1` 可查看结构化错误、diagnostics 和已完成的生命周期阶段。`--timing` 给有界诊断时间树（排队、Sandbox 启动、setup/teardown hook 里的 shell、Agent CLI 安装与启动命令、每轮 send、可关联的 OTel model/tool、收尾），可直接看出错误或超时发生在哪一层、之前的时间花在哪里。
+运行 `niceeval show --run <runId> --page attempt-5TB8167MXJ30SYZCNAVRHPQ4D2` 可查看结构化错误、diagnostics 和已完成的生命周期阶段。该页面读取 timing 通道，包含排队、Sandbox 启动、setup/teardown hook 里的 shell、Agent CLI 安装与启动命令、每轮 send、可关联的 OTel model/tool 与收尾。它可直接看出错误或超时发生在哪一层，以及之前的时间花在哪里。
 
-树超过 80 个细节节点时会保留失败、慢点和首尾样本并提示省略数量。需要逐节点审计时使用 `--timing=full`。`--execution` 则以事件为骨架查看 agent 做了什么，有 OTel 时只把时间贴到能唯一关联的事件旁。Sandbox 创建失败可能发生在 telemetry 建立前，所以错误回顾不依赖 trace。
+树超过 80 个细节节点时会保留失败、慢点和首尾样本，并提示省略数量。需要逐节点审计时，从同一 Sample 的页面索引选择完整 timing route；execution route 以事件为骨架查看 agent 做了什么，有 OTel 时只把时间贴到能唯一关联的事件旁。Sandbox 创建失败可能发生在 telemetry 建立前，所以错误回顾不依赖 trace。
 
 ## `ctx.model` 与 `ctx.flags`
 

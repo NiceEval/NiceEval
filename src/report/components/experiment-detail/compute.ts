@@ -1,4 +1,4 @@
-// Experiment 详情组合件的计算函数(docs/feature/reports/components/experiment-detail/README.md)。
+// Experiment 详情组合件的计算函数(docs/feature/reports/README.md)。
 // experimentDetailsData(sample) 把收窄到单个 experiment 的 Sample 折成六区块共享的一份普通值;
 // 六区块只投影这份结果,不各自取数(与 attempt-detail/compute.ts 同一条纪律)。
 

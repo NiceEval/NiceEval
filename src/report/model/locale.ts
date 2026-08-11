@@ -21,7 +21,7 @@ export const DISPLAY_LOCALES: readonly ReportLocale[] = ["en", "zh-CN"];
 /**
  * LocalizedText 的确定回退:取当前 locale;缺失时取 en;仍缺失时取按 locale 键字典序的
  * 第一个非空值。对象没有任何非空值时报错,不渲染空文案
- * (docs/feature/reports/library/shell.md「行为约束」)。
+ * (docs/feature/reports/README.md「行为约束」)。
  */
 export function resolveLocalizedText(text: LocalizedText, locale: ReportLocale): string {
   if (typeof text === "string") return text;
@@ -444,7 +444,7 @@ export function localeText(
 /**
  * 内置消息键 → 覆盖 `DISPLAY_LOCALES` 的 `LocalizedText`。
  * 列声明的 `header` 这类「值本身要随身携带两种语言」的字段用它烤一份,
- * 渲染面再按当前 locale 解析(docs/feature/reports/components/primitives/table.md)。
+ * 渲染面再按当前 locale 解析(docs/feature/reports/README.md)。
  */
 export function localizedMessage(key: ReportMessageKey): LocalizedText {
   const text: globalThis.Record<string, string> = {};

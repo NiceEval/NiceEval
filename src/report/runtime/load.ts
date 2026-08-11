@@ -1,7 +1,7 @@
 // --report / --theme 的装载:两个宿主(show / view)共用的中性入口。复用跑用户 .ts 配置的
 // 同一 tsx 加载机制(bin 里已 register)。show 一进程一次装载;view 的 dev server
 // 每次重建用 tsx namespaced register 装载入口及其整棵 import 子图
-// (docs/feature/reports/view.md「持续重建」——改组件与改报告文件同级)。
+// (docs/feature/reports/README.md「持续重建」——改组件与改报告文件同级)。
 // 装载环境坑见 memory/tsx-dynamic-import-require-cycle.md、
 // memory/view-hot-reload-needs-namespace-import.md。
 

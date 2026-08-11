@@ -1,284 +1,92 @@
 ---
-title: "Read and write record data directly with niceeval/record"
+title: "Read Record Data"
 sidebarTitle: "Results Data API"
-description: "The data layer under reports: openRecord parses on-disk artifacts into a typed experiment → Run → eval → Attempt hierarchy, createWriter writes other harnesses' records into NiceEval's format, and publish prepares a publication root."
+description: "Project a core-only AnalysisSample from a quiescent Record, then read facts through a ReportPlan."
 ---
 
-Under the conversion functions, components, and dual-render renderers used by [Custom Reports](/tutorials/custom-reports) sits one more layer: `niceeval/record`, the reader for on-disk artifacts. Both official doors and every report read from this layer, with no private data channel; when an analysis cannot even be expressed in a report, drop to this layer and grab the data directly.
+A `Record` is an editable fact dataset under `.niceeval/record/`. It stores Runs, Members, Attempts, and their named channels. Read and write it only while the directory is quiescent. A separate projector decides analysis scope or execution reuse.
 
-When to drop to this layer:
+This page explains the data boundary. To inspect results in the terminal or browser, read [Viewing Results](/tutorials/viewing-results). To define pages and calculations, read [Write a Custom Report](/tutorials/custom-reports).
 
-- **The analysis cannot be folded with `aggregate()` / `rollup()`.** Tables, matrices, scorecards, and scatter plots are all "folding"; distribution-style views (histograms, per-event analysis) are not folding — you have to traverse attempts yourself.
-- **Feeding results into your own system.** A data warehouse, alerting, an internal platform — they consume typed data, not a disk layout.
-- **Converting results from another platform into NiceEval's format.** The write side guarantees "what is written back is exactly what is read back" — once converted, `niceeval show` / `view` / custom reports all work on it directly.
+## Open a quiescent Record
 
-This layer only handles reading and writing data; it holds no opinion of its own: no merging, no aggregating, no deduplicating — it faithfully reflects the disk. "How to view it" belongs to the reports above it.
+The library receives the actual Record root and does not append `.niceeval` or `record`. Open a reader, then form an `AnalysisSample` with a named analysis projector.
 
-## Reading: `openRecord`
+```ts
+import { openRecordReader } from "niceeval/record";
+import { projectExplicitRuns, projectLatestRuns } from "niceeval/sample";
 
-The input is a `.niceeval/` directory (or a record root produced by `publish`, the same layout); the output is four layers of data: **experiment → Run (one run of an experiment) → eval → Attempt**. From here on you never touch a path, never check file existence, never parse JSON:
+let sample: AnalysisSample;
+{
+  await using reader = await openRecordReader({
+    root: ".niceeval/record",
+  });
 
-```typescript
-import { openRecord } from "niceeval/record";
-
-const record = await openRecord(".niceeval");
-
-record.experiments;            // Experiment[]: one entry per experiment, carrying its full history
-record.unreadable;             // unreadable stores: { dir, reason, schemaVersion?, producer? }[]
-```
-
-**Layer one, experiment** — every past run of the same experiment id lives together:
-
-```typescript
-const exp = record.experiments.find((e) => e.id === "compare/bub-gpt-5.4")!;
-
-exp.runs;                      // Run[]: past runs, newest first
-exp.knownEvalIds;              // known eval union, the basis for gap detection
-```
-
-**Layer two, Run** — one run of an experiment. Who it is, when it ran, and **what wrote it** all live here:
-
-```typescript
-const run = exp.runs[0];
-
-run.agent;                     // this Run's own agent
-run.model;
-run.startedAt;                 // when this experiment ran
-run.completedAt;               // written at wrap-up; missing = interrupted process; already-persisted attempts still read normally
-run.diagnostics;               // also written at wrap-up: problems from this run that cannot pin to one eval
-run.dir;                       // absolute path of the Run directory — the physical store is the Run itself; there is no lower layer
-run.producer;                  // { name: "niceeval", version: "0.4.6" } — who wrote this result
-run.schemaVersion;             // result format version
-```
-
-**Layer three, eval** — every question in this experiment, with attempts (retry history) hanging under each question:
-
-```typescript
-for (const ev of run.evals) {
-  ev.id;                       // "algebra/quadratic"
-  ev.attempts;                 // AttemptHandle[]: every attempt for that eval
-}
-run.attempts;                  // all attempts flattened when you do not care about question boundaries
-```
-
-**Layer four, attempt** — a slim entry is already in hand; heavy artifacts are all lazy-loaded. This is the only type with a `Handle` suffix: the three layers above are pure data; methods on this layer touch the disk:
-
-```typescript
-const attempt = run.evals[0].attempts[0];
-
-attempt.evalId;                // "algebra/quadratic" — which eval it belongs to, without going through result
-attempt.experimentId;          // which experiment it belongs to
-attempt.result;                // EvalResult: verdict, assertions, structured error/diagnostics, usage, cost
-attempt.ref;                   // { run, attempt }: evidence reference, same identity as view deep links and report cell refs
-await attempt.events();        // StreamEvent[] | null
-await attempt.trace();         // TraceSpan[] | null
-await attempt.o11y();          // O11ySummary | null
-await attempt.diff();          // DiffData | null (can reach hundreds of MB, so it must be lazy)
-await attempt.sources();       // SourceArtifact[] | null
-```
-
-Three points:
-
-- **Lazy loading is existence checking.** A missing artifact returns `null` and does not throw — when a Direct Agent has no `diff.json`, `await attempt.diff()` is `null`, and you decide whether to skip or report the gap.
-- **Unreadable stores are never silent.** Version-incompatible or corrupt Runs go into `unreadable` with a reason; whether you display them is up to you, but the gap is always computed.
-- **Memoized per handle in-process.** Two readers of the same `diff()` do not read hundreds of MB twice.
-
-`attempt.result.error` is the sole fatal execution error that puts an Attempt into `errored`. It carries a stable `code`, a human-readable `message`, the lifecycle operation where it happened, and an optional bounded cause/stack. `attempt.result.diagnostics` can coexist with any verdict and holds problems found while the run could still continue or at wrap-up. Transient `progress` is not persisted; an OTel trace is not a prerequisite for error storage either.
-
-## Oversized output is truncated
-
-An Agent can produce enormous output from a single command — a recursive `grep` through `node_modules` that hits minified JS can put several MB into one line. That output lands in both `events.json` and `trace.json`; left alone, one attempt can occupy hundreds of MB.
-
-So NiceEval truncates on disk: any string over 256 KiB in `events.json` or `trace.json` keeps only the first 256 KiB, with a trailing note:
-
-```text
-[niceeval] truncated 51467156 → 262144 bytes
-```
-
-**This does not affect the verdict.** Assertions read the full in-memory output; truncation happens only at write time — the on-disk artifact is evidence, not the scorer's input. A pass stays a pass; a fail stays a fail.
-
-To mark "something is missing here" honestly in your own report, do not match the marker text. Read the structured field: truncated events and spans carry `truncated` with the cut position and original byte count.
-
-```typescript
-const events = await attempt.events();
-for (const e of events ?? []) {
-  for (const t of e.truncated ?? []) {
-    console.log(`${t.path} was ${t.originalBytes} bytes, truncated`);
-  }
-}
-```
-
-This cap is per **string value**, not per JSON file. A file can hold many normal values; `diff.json` and source files are not truncated, because they must keep full semantics. So `.niceeval/` is a good local source of truth and is not, by default, something to commit to Git. Before publishing, use `publish` below for artifact selection and whole-file size checks.
-
-Truncation happens at the persistence boundary and cannot limit tool output the agent runtime sends to the model. If the runtime first stuffs a full 50 MB tool result into a model request and gets a 413, NiceEval still records the Attempt as `errored`; this only keeps the failed events / trace from ballooning on the same output afterward.
-
-## Version: who wrote it, and can it be read
-
-Every Run carries its origin: `producer` is the tool and version that wrote the result (niceeval itself, or a third-party harness via the write side), and `schemaVersion` is the on-disk format version. The format only bumps on breaking changes, and the reader only accepts the same version — **incompatible stores are not parsed, migrated, or guessed**; the whole Run goes into `unreadable`:
-
-```typescript
-for (const s of record.unreadable) {
-  s.reason;                    // "incompatible" | "malformed" | "incomplete"
-  s.schemaVersion;             // the format version that result declared
-  s.producer;                  // { name, version }: who wrote it
-}
-```
-
-`"incomplete"` is a rare case: attempts are on disk but there is no `run.json` — it can only happen in the tiny window after the Run directory is created and before metadata is written, or when someone deletes the file. That is not the normal "interrupted process" case: the normal case is an **unfinished Run** (`run.json` exists, only `completedAt` is missing). Such a Run still reads normally, every persisted attempt stays visible, and the selector only attaches an unfinished Issue when it picks that Run (see below) — it is not classified as `unreadable`.
-
-Old results are never lost: they remain on disk as-is and are viewable with the tool that wrote them — when `producer.name` is `"niceeval"`, tell the user `npx niceeval@<producer.version> view`; for a third-party harness, report its name and version faithfully instead of composing a wrong npx command. `unreadable` gives you exactly enough information to get this branch right.
-
-## A Run is the directory itself
-
-**A Run = one run of an experiment**, and physically it is exactly one Run directory (`.niceeval/<experiment>/<run>/`) — there is no lower layer. A single `niceeval exp compare` invocation opens one independent Run directory per experiment involved; they are never merged, and nothing is aggregated across experiments on disk. "The latest per experiment" is therefore naturally Run-grained: if the whole `compare` group ran on Monday and only `compare/bub-gpt-5.4` was rerun on Tuesday, bub's latest Run lands on Tuesday while codex's stays on Monday, and `exp.runs[0]` reflects each experiment's own history.
-
-## Selecting a Sample: `latestRunSample` / `currentSample`
-
-Most scenarios first answer "what is the current level". There are two official selectors, both exported from `niceeval/sample`:
-
-```typescript
-import { openRecord } from "niceeval/record";
-import { currentSample, latestRunSample } from "niceeval/sample";
-
-const record = await openRecord(".niceeval");
-
-const executed = latestRunSample(record, {
-  experiments: "compare/",     // optional: experiment id prefix filter (string | string[]), same prefix semantics as the CLI
-});
-const current = currentSample(record, {
-  experiments: "compare/",
-});
-```
-
-| Selector | Answers |
-|---|---|
-| `latestRunSample` | What each experiment's latest Run actually produced |
-| `currentSample` | The current usable verdict per eval, possibly from a comparable older Run |
-
-The default home page of `niceeval show` / `view` uses `currentSample`. Both return a **Sample**: Attempts, contributing Runs, coverage facts, and Issues travel together.
-
-```typescript
-current.attempts;              // AttemptHandle[]: the full set selected by the policy
-current.runs;                  // Run[]: real Runs that contributed at least one attempt
-current.coverage;              // per-experiment coverage facts
-current.issues;                // structured issues, not pre-rendered text
-```
-
-The current state can be incomplete: rerunning just one question is a normal debugging move. The selector composes compatible physical Attempts and compares them with that experiment's known union (`exp.knownEvalIds`), then records any remaining gap on `coverage`:
-
-```typescript
-current.coverage[0];
-// {
-//   experimentId: "midterm/bub-gpt-5.4",
-//   knownEvalIds: ["algebra/quadratic", …],   // denominator: every eval this experiment has ever seen
-//   missing: [
-//     { evalId: "geometry/area", reason: "never-run" },
-//     { evalId: "proof/lemma", reason: "previous-result", previous: { locator: "@abc…", … } },
-//   ],
-// }
-```
-
-The gap is a per-eval fact, so `niceeval show` / `view` render it at the eval's own row. `never-run` means no physical Attempt has ever existed; `previous-result` means an older, incompatible result exists but does not count. Programmatic checks test `coverage.some((c) => c.missing.length > 0)`, with no text parsing.
-
-`issues` holds completeness problems that cannot pin to a single eval: a selected Run that never wrapped up (interrupted process), or an unreadable store. Each carries judgable structured fields and a pre-rendered English `message` — print it as-is if you want to display it.
-
-`run.diagnostics` and `issues` answer different questions: issues describe how this batch of data got picked, while `diagnostics` describes what went wrong during one particular experiment run. Experiment-level teardown failures and unenforceable budgets are written with the Run they belong to. Reports use `toRunDiagnostics(sample)` to produce Notice items, then hand them to `Callouts`.
-
-Every Attempt keeps its provenance: a cache hit has `attempt.carried === true`. This can explain artifact origin in Attempt details, but it does not create another report state, change counting, or desaturate current results. To inspect one physical Run or the cross-run timeline, use the explicit Run and History journeys.
-
-Sample is the common input for both [Custom Reports](/tutorials/custom-reports) and `publish` below. Coverage and issues ride along; `toExperimentRows(sample)` produces coverage-gap placeholder rows, and `toSampleNotices(sample)` explains read-time Issues. A filtered Sample trims Attempts, Runs, coverage, and issues together and keeps provenance. `filter` only ever trims down; **replacing** a pick means selecting a Sample again.
-
-## A real script: distributions aren't folding
-
-"The distribution of shell-command counts per agent" cannot be drawn as a table — that is a distribution, not a folding. Traverse directly:
-
-```typescript
-import { openRecord } from "niceeval/record";
-import { latestRunSample } from "niceeval/sample";
-
-const record = await openRecord(".niceeval");
-const sample = latestRunSample(record);
-const points = [];
-for (const attempt of sample.attempts) {
-  const o11y = await attempt.o11y();
-  points.push({
-    agent: attempt.run.agent,
-    eval: attempt.evalId,
-    passed: attempt.result.verdict === "passed",
-    shellCommands: o11y?.shellCommands.length ?? 0,
+  sample = await projectExplicitRuns(reader, {
+    runIds: ["01J8ZK3M6P4T7V9X2C5N8QW0RY"],
   });
 }
 ```
 
-Even on this deepest path, the disk layout is never touched: path joining, existence checks, version filtering, and Run splitting are all absorbed by the library. To lay this distribution into a report page, compute a plain value in the page render, then wrap a dual-render display shape with [`defineRenderer`](/tutorials/custom-reports#author-a-new-display-shape).
+You can also use the named `latest/v1` analysis projector. It selects the final completed Run for each matching Experiment; project unfinished Runs explicitly by ID.
 
-One obligation when accumulating across Runs: by default, NiceEval carries results from the previous round that already have a determined verdict (passed / failed) and whose eval code and config are unchanged forward into the new Run (`--force` reruns everything), so the same attempt can end up existing in more than one store. A carried-over entry is not a hollow shell: it carries the original execution's `startedAt` (its identity anchor) and evidence-borrowing information, and lazy loading falls back through a candidate order. All four fields of the identity key `(experimentId, evalId, attempt, startedAt)` are present in the data. The reader faithfully reflects this duplication; before aggregating across history, deduplicate with `dedupeAttempts` by identity key, keeping the copy in the newest Run — the report aggregation path already does this internally, so remember to do the same pass in your own scripts:
-
-```typescript
-import { dedupeAttempts } from "niceeval/record";
-
-const all = exp.runs.flatMap((r) => r.attempts);   // accumulate across Runs: the full history
-const { attempts, warnings } = dedupeAttempts(all); // duplicates merged in by resume are folded away
-```
-
-## Writing: `createWriter`
-
-The write side and the read side are two halves of the same set of types: the reader's `attempt.result` is assembled from two parts — Run-level fields (experimentId / agent / model / startedAt / producer) come from one declaration in `writer.run()`, and everything else comes from `writeAttempt`'s first argument; the second argument is the artifacts lazy loading can retrieve. Use it to convert results from another platform or a home-grown harness into NiceEval's format:
-
-```typescript
-import { createWriter } from "niceeval/record";
-
-const writer = createWriter(".niceeval", {
-  producer: { name: "my-harness", version: "1.0.0" },
-});
-
-const run = await writer.run({         // create the Run directory (exclusive create, retries on a name clash) + write run.json
-  experimentId: "compare/my-agent",
-  agent: "my-agent",
-  model: "gpt-5.4",
-  startedAt: sourceRun.startedAt,      // required: the dedup identity key is anchored on it
-});
-
-for (const r of convertedResults) {
-  await run.writeAttempt(r.result, {   // write result.json (the verdict authority, written once) + split artifact files
-    events: r.events,                  // second arg = artifacts, all optional; missing ones lazy-load as null on the read side
-    diff: r.diff,
-  });                                  // splitting artifacts, computing directories, and backfilling refs all happen inside the library
+```ts
+let latest: AnalysisSample;
+{
+  await using reader = await openRecordReader({ root: ".niceeval/record" });
+  latest = await projectLatestRuns(reader, {
+    experimentIds: ["checkout"],
+  });
 }
-
-await run.finish();                    // write completedAt for this Run; no cross-experiment aggregation
 ```
 
-`writer.run()` is the mirror of the reading side's "experiment → Run" layering: converting multiple experiments means opening multiple Runs, with Run-level metadata like experimentId / agent / model / startedAt declared once here rather than stuffed into every Attempt; the optional `knownEvalIds` is the denominator for coverage gaps and is backfilled automatically when publishing. The converted directory is a standard record directory: `niceeval show` / `niceeval view` can view it directly, and custom reports can compute on it directly. Every file is written exactly once: `run.json` is written when the run opens and only gains `completedAt` at wrap-up; `result.json` and artifacts land as each Attempt completes.
+Every read uses the files as they exist when it runs. If a user edits a Verdict, Usage, or another channel after the directory is quiescent, a later ReportInput construction reads the edited value. `AnalysisSample` stores core data, its denominator, and projection provenance only.
 
-## Publishing: `publish`
+## Core data relationships
 
-Copy the selected Sample into a publication directory in a format-aware way — only the requested artifacts, only the selected attempts:
-
-```typescript
-import { openRecord, publish } from "niceeval/record";
-import { latestRunSample } from "niceeval/sample";
-
-const record = await openRecord(".niceeval");
-await publish(latestRunSample(record), "site-data/run", {
-  artifacts: ["sources", "events", "trace", "o11y"],   // diff is not truncated and is omitted by default;
-});                                                     // every file about to be published also passes a 50 MiB precheck;
-                                                        // o11y is only a few KB — include it when the report needs
-                                                        // o11y-backed metrics such as turns, or they render as "—"
+```text
+Run expected slots
+        ↓
+Member: executed | carried | accepted
+        ↓
+Attempt and its named channels
 ```
 
-The first argument accepts a `Sample` or hand-picked `Run[]` — the same input convention as custom reports. The legal values for `artifacts` are `"events" | "trace" | "o11y" | "agentSetup" | "diff" | "sources"`; by default it carries the five kinds other than `diff`. It errors rather than silently overwriting when the target directory already exists and is non-empty — if a publish script needs to be idempotent, clear the target directory first yourself.
+- A Run's `expectedSlots` define the denominator.
+- A slot has at most one Member. `executed` means this Run ran the Attempt; `carried` and `accepted` adopt an existing Attempt.
+- An Attempt retains the `origin` where it actually ran. Adoption does not copy Verdict, Usage, or diagnostics.
+- Reasons for carrying and accepting belong to the Run's `niceeval.actions` channel and link the slot and Attempt.
 
-Before copying starts, NiceEval plans every target file and checks serialized size. If any file exceeds the fixed 50 MiB budget, the whole copy fails before creating the target directory, and the error lists the path, actual size, and what to do. You can drop that class of evidence from `artifacts`; if oversized events / trace came from an older version, rerun with the current version and publish again. The check covers both untruncated source / diff files and JSON whose individual values are fine but whose total size is too large, so you do not hit a Git host's per-file limit only at `git push`.
+Record validation of structure, paths, identities, and references rejects contradictory data. It does not retain edit history.
 
-The size precheck only decides whether the whole copy succeeds or fails; it never deletes content from the middle of an oversized file. The copy is faithful to the source: artifacts are copied byte-for-byte, not re-serialized or rewritten. The only accompanying annotation is the **coverage fact** from selection: the denominator for coverage gaps is the experiment's historical union, and a publication directory has no history — so every copied Run carries `knownEvalIds` (the union of evals known for that experiment at copy time), and the reader merges it into `exp.knownEvalIds` (the union of local history and Run-carried values). After `openRecord()` on the publication directory, the same selector recomputes coverage gaps without relying on publisher narration. The copied directory is a standard record directory; `niceeval view --record <dir>` can open it directly. To refresh a report site on every push, see [Publish a report](/tutorials/publish-report).
+## Channel read states
 
-## Layer overview
+Business values live in named channels, such as Verdict, Eligibility, Usage, and diagnostics. A channel's durable collection completeness and its current decoding completeness are separate facts.
 
-| Layer | Entry | Answers |
+| State | Meaning | Caller behavior |
 | --- | --- | --- |
-| The two official doors | `niceeval show` / `niceeval view` | View the official layout, zero code |
-| Custom reports | [Custom Reports](/tutorials/custom-reports), [Report Components](/reference/report-components) | Your own metrics and layout |
-| Record data API (this page) | `niceeval/record` | Algorithms folding cannot express, wiring into your own systems, the format itself |
+| `read` | A value was read; collection or decoding can still be partial. | Preserve completeness and issue information. |
+| `unavailable` | It was declared but not collected, or it does not apply. | Show the reason. |
+| `unsupported` | The current reader does not support the channel. | Affect only content that depends on it. |
+| `invalid` | A requested channel file or value is invalid. | Fail with its named issues. |
 
-Each layer builds on the one below it. The same on-disk artifacts are the sole source of truth — anything derived above can be recomputed at any time.
+An unknown or retired channel is `unsupported` at that channel only. `unavailable`, `unsupported`, and `invalid` cannot replace one another. An unrequested channel does not block an unrelated read.
+
+## From AnalysisSample to ReportInput
+
+An `AnalysisSample` is an explicit in-memory projection and does not write back to the Record. It preserves every expected slot and represents scope with these states:
+
+| AnalysisSample state | Meaning |
+| --- | --- |
+| `included` | It has a valid Member and can read that Member's adopted Attempt. |
+| `not-recorded` | The expected slot has no Member. |
+| `invalid` | The Member, Attempt, or core reference has a problem. |
+| `excluded` | A caller excluded it from an existing AnalysisSample. |
+
+Reports turn an AnalysisSample into `ReportInput` through the facts they require. ReportInput is an ordinary in-process value that retains the denominator, membership states, channel read states, and issues. A Report consumes it; it never reads a path or interprets files itself.
+
+## Related pages
+
+- [Viewing Results](/tutorials/viewing-results): Select Samples with `show` and `view`.
+- [Rerun and Carry Results](/tutorials/rerun-and-cache): Understand `carried`, `accepted`, and `niceeval.actions`.
+- [Report Components API](/reference/report-components): Review public Report capabilities.

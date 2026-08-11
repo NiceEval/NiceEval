@@ -171,7 +171,9 @@ export interface TestContext extends AggregateScopedFactProducers<"final"> {
   readonly flags: Readonly<globalThis.Record<string, JsonValue>>;
   progress(update: ProgressUpdate): void;
   diagnostic(input: DiagnosticInput): void;
+  /** `progress({ message: msg })` 的别名(调试日志),不出现在最终结果里。 */
   log(message: string): void;
+  /** 立即中止本评估用例,在 `niceeval.verdict` 通道形成 `skipped` Verdict;`reason` 不能为空。 */
   skip(reason: string): never;
 
   check<F extends BooleanFact<unknown, FactPhase>>(fact: F, options?: FactUseOptions): F;

@@ -1,5 +1,5 @@
 // 实体 / 提示 / 瀑布等公开转换：Sample 或 AttemptEvidence → 组件所需普通值。
-// 契约见 docs/feature/reports/library.md「实体转换」。
+// 契约见 docs/feature/reports/README.md「实体转换」。
 
 import type { AttemptEvidence } from "../../record/attempt-evidence.ts";
 import type { AttemptHandle, Sample } from "../../record/types.ts";
@@ -93,7 +93,7 @@ export function toExperimentRows(sample: Sample): Promise<readonly ExperimentLis
 
 /**
  * `ExperimentDetails` 的六区块共享转换:`sample` 必须收窄到恰好一个 experiment,否则按
- * 完整用户反馈报错(docs/feature/reports/components/experiment-detail/README.md)。
+ * 完整用户反馈报错(docs/feature/reports/README.md)。
  */
 export function toExperimentDetails(sample: Sample): Promise<ExperimentDetailsData> {
   return experimentDetailsData(sample);

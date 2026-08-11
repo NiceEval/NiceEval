@@ -1,4 +1,4 @@
-// Callouts:分级提示区,按上层给定的分组渲染 Notice(docs/feature/reports/components/primitives/callouts.md)。
+// Callouts:分级提示区,按上层给定的分组渲染 Notice(docs/feature/reports/README.md)。
 
 import type { ReactElement, ReactNode } from "react";
 import {

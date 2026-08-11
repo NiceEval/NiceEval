@@ -25,7 +25,7 @@ Fake 规则见[单元测试边界](README.md#fake-边界mock-什么测哪一层)
 | 契约域             | 观察面                                        | 边界                                         |
 | ------------------ | --------------------------------------------- | -------------------------------------------- |
 | matcher 评分语义   | `score(value)` 的返回值与默认 severity        | 领域规则，直接测 matcher                     |
-| collector 生命周期 | `finalize()` 产出的 AssertionResult 数组      | 组件协作                                     |
+| collector 生命周期 | `finalize()` 形成的 Assertion result 集      | 组件协作                                     |
 | scope 数据范围     | 同一证据图下三个接收者的判定差异              | 组件协作                                     |
 | 证据完整性         | 负断言/上限断言在三种完整性状态下的结果       | 领域规则 + 组件协作                          |
 | Verdict 优先级     | `computeVerdict` 决策表                       | 领域规则                                     |
@@ -82,20 +82,20 @@ Scope fixture 必须让三个接收者得到**不同答案**，才能发现 sele
 - **Collector 生命周期**：
   - 链式句柄只修改 Severity 与 threshold，evaluate 恰好执行一次。
   - 延迟断言在 finalize 时求值；即时断言立即求值。
-    两者产生同构的 `AssertionResult`。
+    两者形成同构的 Assertion result。
   - 五种评分输入进入同一个 Collector。
     判定只消费已声明字段。
-  - `AssertionResult` 判别联合提供有界预览；值为 `undefined` 时也不能崩溃。
+  - Assertion result 的判别联合提供有界预览；值为 `undefined` 时也不能崩溃。
   - 无参 `.soft()` 把断言降为纯写入，并清除已有 threshold。
   - `.soft()`、`.gate()` 与 `.atLeast()` 共用一份 `RecordHandle` 契约测试，不按 matcher 重复。
   - `.stopOnFailure()` 在链的位置立即结算且只对 failed 中止；通过返回原句柄，失败结果带 `stopOnFailure: true` 并以 `EvalRequirementFailed` 退出。值、t、session 与 turn 句柄在两种题型共用这套语义；无线 soft 单独链时报清晰作者错误。
-- **`.soft()` 对判定的影响**：分数照实落盘（`AssertionResult.score` 保留原始分，不因降级为 soft 被抹掉）；`outcome` 恒为 `passed`（`computePassed` 对 threshold undefined 的 soft 恒返回 true）。`computeVerdict` 无论 `strict` 是否为真都不会因这条断言判 `failed`。`--strict` 只翻转「有阈值的 soft」；无阈值的 soft 没有阈值可比较，不受这个旋钮影响。
-- **计分制给分链路（`.points(n)` / `t.score(label, n)`）**：`RecordHandle.points(n)` 把权重挂上 spec。`finalize` 把声明值 `n` 独立写进 `AssertionResult.pointsAvailable`，并按 `n × score` 写进 `AssertionResult.points`。
+- **`.soft()` 对判定的影响**：分数照实形成 Assertion result（`score` 保留原始分，不因降级为 soft 被抹掉）；`outcome` 恒为 `passed`（`computePassed` 对 threshold undefined 的 soft 恒返回 true）。`computeVerdict` 无论 `strict` 是否为真都不会因这条断言形成 `failed` Verdict。`--strict` 只翻转「有阈值的 soft」；无阈值的 soft 没有阈值可比较，不受这个旋钮影响。
+- **计分制给分链路（`.points(n)` / `t.score(label, n)`）**：`RecordHandle.points(n)` 把权重挂上 spec。`finalize` 把声明值 `n` 独立写进 Assertion result 的 `pointsAvailable`，并按 `n × score` 写进其 `points`。
   - 0/1 断言通过挣 `n`、不过挣 0；连续打分断言按比例。failed 与 unavailable 都保留 `pointsAvailable`，unavailable 没有实得 `points`；`n <= 0` 或非有限数立即抛错（不是记一条失败断言）。
-  - `AssertionCollector.score(label, n)` 立即写入一条 `ScoreEntry`（不像断言那样等 finalize 求值），`n < 0` 或非有限数立即抛错；`groupPath` 跟随当前 `t.group` 栈，与断言同一份分组约定。
-  - 未链 `.points()` 的断言 `AssertionResult.points` 省略（不是 `0`）——省略与 0 分是两个读数，省略表示这条断言不参与计分。
+  - `AssertionCollector.score(label, n)` 立即形成一条 score channel entry（不像断言那样等 finalize 求值），`n < 0` 或非有限数立即抛错；`groupPath` 跟随当前 `t.group` 栈，与断言同一份分组约定。
+  - 未链 `.points()` 的 Assertion result `points` 省略（不是 `0`）——省略与 0 分是两个读数，省略表示这条断言不参与计分。
   - 得分点落盘为 `severity: "soft"` + 有 `points`，丢分不改 verdict。`.points()` 之后不暴露 `.soft()` / `.atLeast()`，但可链 `.gate().stopOnFailure()`；给分、严重度和控制流三个字段互不替换（类型层证明，见 typecheck fixture）。
-- **控制流与严重度正交**：`.gate()` 在两种题型都只把断言放进硬判定面、不中止后续；`.atLeast(x)` 保持 soft。只有显式 `.stopOnFailure()` 才在该位置用实时 AssertionEvaluationContext 求值；failed 时截断其后断言与 `ScoreEntry`，已产生的条目照实保留，finalize 复用该快照，不因后续事件或文件变化重算。
+- **控制流与严重度正交**：`.gate()` 在两种题型都只把断言放进硬判定面、不中止后续；`.atLeast(x)` 保持 soft。只有显式 `.stopOnFailure()` 才在该位置用实时 AssertionEvaluationContext 求值；failed 时截断其后断言与 score channel entry，已产生的 channel entry 照实保留，finalize 复用该快照，不因后续事件或文件变化重算。
   - `.gate().stopOnFailure()` 是硬前置，`.atLeast(x).stopOnFailure()` 会中止但仍是 soft；matcher 默认通过线也允许直接 stop。未 await 的调用由下一个异步 `t.*` 入口与 runner 收尾补做结算。
   - 计分制 matcher 自带的默认 gate 仍只贡献观测通过线；句柄显式 `.gate()` 才变成硬要求，但无论哪种 severity 都不会隐式改变控制流。
 - **证据完整性**：负断言与上限断言在「完整且找到 / 完整且确认无 / 不完整」三态矩阵下的结果——不完整时绝不给出可信 passed。正断言缺数据时失败不猜；不用 OTel span 补写行为事件。
@@ -106,17 +106,17 @@ Scope fixture 必须让三个接收者得到**不同答案**，才能发现 sele
   - `computePassed` 在 gate 省略阈值时的默认通过线是满分（`score >= 1`）：0/1 matcher（如 `equals`/`includes`，命中即 1、不命中即 0）不受这条默认线影响；连续打分的 gate 断言（省略阈值的 judge 类）未达满分即 fail、恰好满分才 pass。
 - **摘要投影（display）**：控制字节剥离的保留/去除边界、单值收口的折行与上限、宽度预算下的让位优先级。`+N more failures` 的独立尾行不变量、作用域前缀规则。
   全部是纯函数字符串语义，输入输出直接断言。
-- **judge**：缺模型/缺 key 记 `unavailable`（`judge-model-unresolved`），非 optional 使 attempt errored、绝不静默消失；默认 soft 与链式提级。
+- **judge**：缺模型/缺 key 形成 `unavailable` Assertion result（`judge-model-unresolved`），非 optional 使 Attempt 形成 `errored` Verdict、绝不静默消失；默认 soft 与链式提级。
   - model 按单条 → Experiment → Eval → config、其余键按 Experiment → Eval → config 逐字段求值，并落在捕获请求的 URL 与头上；Experiment 不能改变 rubric / severity / threshold。
   - 判卷材料随接收者分层、`{ on }` 替换；入口封闭。
   真实裁判模型的端到端行为归 E2E。
 - **judge 调用失败不落成 0 分**：判分请求非 2xx、连接中途断开、调用超时，以及 2xx 但响应取不出分数（不合协议、分数字段缺失）——四种形态各一条。
   - 断言记的是 `outcome: "unavailable"` + `reason: "judge-call-failed"` + `evidence` 带状态码/异常摘要，**不是 `outcome: "passed"` + `score: 0`**。
   区分力场景：同一条 rubric 在「网关回 400」与「agent 答得完全跑题」两份 fixture 下，落盘条目必须不同——这正是分数面上分不出「裁判失败」和「答错了」的那一格。
-  非 optional 时同样使 attempt errored。
+  非 optional 时同样形成 `errored` Verdict。
 - **Judge 静态配置校验与调用期 unavailable**：非法 `baseUrl` / `apiKeyEnv` 在配置求值期失败，且仅配置 Judge 不发请求。
   - 缺 model / 缺 key 分别写入 `judge-model-unresolved` / `judge-key-unresolved`；鉴权、连接、超时和响应解码失败写入 `judge-call-failed`。
-  每类都涵盖 optional 与非 optional，证明前者保留 unavailable 但不改 verdict，后者使 attempt errored。
+  每类都涵盖 optional 与非 optional，证明前者保留 unavailable Assertion result 但不改 Verdict，后者形成 `errored` Verdict。
   真实网关行为归 E2E。
 - **judge 调用超时预算（`judge.timeoutMs`）**：契约见[Judge · 调用预算与执行顺序](../../../feature/judge/library.md#调用预算与执行顺序)。
   fake 时钟 +截获 fetch，不真等。
@@ -125,7 +125,7 @@ Scope fixture 必须让三个接收者得到**不同答案**，才能发现 sele
   - 逐字段求值走单条断言 `{ model }` → experiment → eval → config，与 [experiments-runner 同名类别](experiments-runner.md#证明范围规范)是同一契约。
     「config 写 `timeoutMs`、Eval 写 `baseUrl`、Experiment 只写 `model`」这一格必须三层各取一个值而不是整对象替换——这是逐字段合并与整体替换结果不同的一格。
 - **finalize 的 judge 推进回调**：逐条 judge 求值开始前回调一次进度（第几条 / judge 总数 /检查方式摘要，摘要与落盘 `detail` 同源）。
-  非 judge 断言不回调，无 judge 断言时零次回调；回调不进 `AssertionResult` 也不落盘。
+  非 Judge 断言不回调，无 Judge 断言时零次回调；回调不进 Assertion result，也不落盘。
   runner 侧把回调接到 active 行 detail 的接线归 [Experiments Runner](experiments-runner.md#证明范围规范)。
 
 ## 不这样测

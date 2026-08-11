@@ -1,5 +1,5 @@
 // Waterfall 原语:时间树与瀑布,runner 阶段树 / 原始 span 树 / 范围级 attempt 瀑布共用
-// 这一形状(docs/feature/reports/components/primitives/waterfall.md)。通用呈现从
+// 这一形状(docs/feature/reports/README.md)。通用呈现从
 // TraceWaterfall、AttemptTrace、AttemptTimeline 抽出;专用件在 1.7 前保留。
 
 import type { ReactElement, ReactNode } from "react";
@@ -61,7 +61,7 @@ function countNodes(nodes: readonly WaterfallNode[]): number {
 }
 
 /** 分解条画的那一批:树里没有 children 的节点,递归取
- *  (docs/feature/reports/components/primitives/waterfall.md「分解条画哪些节点」)。
+ *  (docs/feature/reports/README.md「分解条画哪些节点」)。
  *  父节点在时间上包住子节点,一起画只会盖住子段。 */
 function leafNodes(nodes: readonly WaterfallNode[], out: WaterfallNode[] = []): WaterfallNode[] {
   for (const node of nodes) {
@@ -73,7 +73,7 @@ function leafNodes(nodes: readonly WaterfallNode[], out: WaterfallNode[] = []): 
 }
 
 /** 条上分类色的槽数:分类色板六槽里避开与 negative 最近的那一槽,失败段才分得出来
- *  (docs/feature/reports/components/primitives/waterfall.md「类别与着色」)。 */
+ *  (docs/feature/reports/README.md「类别与着色」)。 */
 const KIND_SLOTS = 5;
 
 /** kind 字面稳定散列到分类色槽:原语不认词表,新词也有槽,同一个词恒同槽。 */
@@ -88,7 +88,7 @@ function countFailed(nodes: readonly WaterfallNode[]): number {
 }
 
 /** 显著性折叠的占比阈值:低于行总时长 1% 且不失败、时长可测的节点折成摘要
- *  (docs/feature/reports/components/primitives/waterfall.md「显著性折叠」)。 */
+ *  (docs/feature/reports/README.md「显著性折叠」)。 */
 const FOLD_SHARE = 0.01;
 
 /** 重复摘要的起折条数:两条相邻的同名节点摊开读得动,摘要行反而多要一次展开。 */

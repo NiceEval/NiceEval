@@ -1,147 +1,58 @@
 ---
-title: "通过 CI 发布报告"
-sidebarTitle: "CI 发布报告"
-description: "把经过 publish 大小预检的记录目录提交进仓库,CI 用一行 view --record 导出报告站;超大文件在 commit 前就会得到可执行错误。"
+title: "发布静态报告"
+sidebarTitle: "发布静态报告"
+description: "用 view --out 导出一个可离线打开、与源 Record 脱离的自包含报告站。"
 ---
 
-`niceeval view --out <目录>` 把查看器导出成一个纯静态目录:报告、Run 列表、transcript、trace 瀑布,和本地 `niceeval view` 看到的完全一样(导出行为见[查看结果 · 导出与静态托管](/zh/tutorials/viewing-results#导出与静态托管))。CI 发布只需要让记录数据到构建机手里，但不要直接提交本地事实根 `.niceeval/`：逐字符串截断能防一条失控输出膨胀，不能保证整个文件小于 Git host 的限制。先用 `publish` 生成经过 50 MiB 单文件预检的发布记录根，再提交这个目录。不需要这层预检、想直接提交 `.niceeval` 本身的，见[把报告站发布上线](/zh/tutorials/deploy-report-site)。
+`niceeval view --latest --out <目录>` 或显式 `niceeval view --run <id> --out <目录>` 从停稳的 Record 选择 core-only Sample，按计划形成 `ReportInput` 并执行一次 Report，再写出自包含静态站。它是分享结果的唯一导出路径。
 
-## 生成可提交的结果目录
-
-新建 `scripts/publish-results.ts`（项目里评估用例和配置本来就是 TypeScript，脚本也用 `.ts`，由 `tsx` 直接运行）：
-
-```javascript
-import { rm } from "node:fs/promises";
-import { openRecord, publish } from "niceeval/record";
-import { latestRunSample } from "niceeval/sample";
-
-const output = "report-data";
-const record = await openRecord(".niceeval");
-
-await rm(output, { recursive: true, force: true });
-await publish(latestRunSample(record), output, {
-  artifacts: ["sources", "events", "trace", "o11y", "agentSetup"],
-});
+```sh
+npx niceeval view --latest --experiment checkout \
+  --out ./report-site \
+  --no-open
 ```
 
-运行 `npx tsx scripts/publish-results.ts`，然后提交 `report-data/`。`publish` 在创建目录前检查所有待发布文件。任何文件超过 50 MiB 时整体失败并列出路径、大小和处理建议，不会留下半份目录。`diff` 默认不发布。需要 diff 时显式加进 `artifacts`，它也受同一个预算约束。历史版本留下的超大 events / trace 不会被悄悄改写，预检会要求你排除这类证据或用当前版本重跑。
+也可以导出明确 Run：
 
-## 构建命令就是导出命令
-
-```bash
-npx niceeval view --record report-data --out site
+```sh
+npx niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY \
+  --out ./report-site \
+  --no-open
 ```
 
-只发布一部分实验时,把收窄直接交给导出命令,页面和证据都只含收窄后的范围(见[查看结果 · 导出与静态托管](/zh/tutorials/viewing-results#导出与静态托管)):
+## 导出前选择范围
 
-```bash
-npx niceeval view --record report-data --exp compare --out site
+`--run` 与 `--latest` 先形成 Sample。Sample 保留完整 expected-slot 分母，以及 `included`、`not-recorded`、`invalid` 和 `excluded` 状态。
+
+Report 根据计划请求所需的 facts，并用这些值构造固定的 `ReportInput`。未请求的通道不会影响导出；被请求的无效通道会显示具名问题并使这次导出失败。
+
+## 导出目录包含什么
+
+成功的目录包括：
+
+- 全部已计划页面和参数化页面；
+- 页面所需的当前宿主数据；
+- exporter 内建的精确 runtime、基础样式和字体；
+- 已经生成的下载项；
+- 穷尽列出这些文件的 `StaticAssetManifest`。
+
+浏览器只读取导出目录。它不访问网络、不读取源 Record，也不需要之后安装 NiceEval。把目录交给同事或静态托管服务前，可以在断网浏览器中打开它确认页面与下载项可用。
+
+目标目录必须不存在。命令不会替换或删除已有目录；需要更新时请导出到一个新目录，再让部署平台切换版本。
+
+## 在 CI 中生成
+
+先运行评估，再在同一任务中导出：
+
+```sh
+npx niceeval exp ci --json
+npx niceeval view --latest --experiment ci --out ./report-site --no-open
 ```
 
-`view` 对零可读结果直接报错、非零退出,不会导出一张空报告——`report-data/` checkout 坏掉,或所有落盘与当前 niceeval 的 schemaVersion 不兼容被整批跳过时,构建失败,Vercel / GitHub Pages 保留上一次部署。错误逐条列出被跳过的快照目录与原因,schemaVersion 场景还给出能直接查看旧落盘的 `npx niceeval@<版本> view` 命令。
+第一条命令的最后一条 JSON 是 receipt。需要固定到本次运行时，读取 receipt 的 `runIds`，并改用 `view --run <runId>`。
 
-## 发布自定义报告
+## 发布目录
 
-不传 `--report` 时,发布出来的站点就是默认报告的三个页面(报告、Attempts、追踪)。想换成自己的页面,把 [`defineReport` 报告文件](/zh/tutorials/custom-reports)传给 `--report` 就行——attempt 详情(transcript、trace、代码视图)仍在同一个站里,报告里的每个数字点进去就是对应证据,和本地 `view --report` 看到的一模一样:
+将 `./report-site` 作为静态站点目录交给你的托管平台。不要把平台构建步骤指向源 Record；平台只需要部署已经生成的目录。
 
-```bash
-npx niceeval view --record report-data --report reports/exam.tsx --out site
-```
-
-报告文件和 `report-data/` 一样提交在仓库里,改完版面 push,线上就跟着更新。用下面的 `vercel.json` / workflow 时,把构建命令换成这一行即可,其余配置不用动。
-
-## 接站点分析与第三方脚本
-
-发布出去的站想挂 Google Analytics、埋点或评论组件,在报告文件的 `head` 字段里声明标签。厂商文档里的 snippet 逐字段照抄成对象就行——以 GA4 为例,官方给的两段 `<script>` 写成两个条目。页面内容不用重写:默认报告以 `standard` 为名从 `niceeval/report/built-in` 导出,把它的页展开进自己的 `pages` 就是原样的默认站点加上你的标题和脚本:
-
-```tsx
-import { defineReport } from "niceeval/report";
-import { standard } from "niceeval/report/built-in";
-
-export default defineReport({
-  pages: [...standard.pages],
-  title: "Memory Evals",
-  head: [
-    { tag: "script", attrs: { async: true, src: "https://www.googletagmanager.com/gtag/js?id=G-XXXX" } },
-    {
-      tag: "script",
-      children: `
-        window.dataLayer = window.dataLayer || [];
-        function gtag(){dataLayer.push(arguments);}
-        gtag('js', new Date());
-        gtag('config', 'G-XXXX');
-      `,
-    },
-  ],
-});
-```
-
-规则只有几条:
-
-- `tag` 支持 `meta`、`link`、`script`、`style` 四种,按声明顺序渲染进每一页的 `<head>`。SEO meta、favicon、字体、JSON-LD 都走这里。
-- `attrs` 的值写 `true` 输出无值属性(`async`、`defer`),写字符串输出 `key="value"`。靠 `data-*` 属性配置的第三方脚本(评论、埋点)直接把属性抄进来。
-- `src` / `href` 写 `https://` 外链时原样保留;写 `./favicon.svg` 这类相对路径时,文件会自动复制进导出站的 `assets/` 并改好引用。
-- 脚本会原样发布并在读者浏览器里执行,别在里面嵌密钥。
-
-```tsx
-// 靠 data-* 配置的埋点脚本:属性照抄
-{ tag: "script", attrs: { async: true, src: "https://tracker.example/t.js", "data-project": "memory-evals" } }
-```
-
-## 接托管平台
-
-**Vercel**:仓库根放一个 `vercel.json`,导入项目后 push 即部署。
-
-```json
-{
-  "installCommand": "pnpm install --frozen-lockfile",
-  "buildCommand": "npx niceeval view --record report-data --out site",
-  "outputDirectory": "site"
-}
-```
-
-**GitHub Pages**:仓库 Settings → Pages 把 Source 设为 GitHub Actions,再加 workflow:
-
-```yaml
-# .github/workflows/report.yml
-name: report
-on:
-  push:
-    branches: [main]
-
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: npx niceeval view --record report-data --out site
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: site
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
-```
-
-日常循环是:本地跑评估用例，运行 `npx tsx scripts/publish-results.ts`，提交更新后的 `report-data/` 并 push。发布目录只保留每个实验的最新 Run。要发布其它选择策略，在脚本里替换 `latestRunSample(record)`。本地 `.niceeval/` 可以保留完整历史和 diff，不需要为了 Git 限制削掉调试证据。
-
-## 发布的是选中的证据
-
-整站导出会带上发布记录根里选中的 transcript、源码和 trace。新写入的超大 events / trace 字符串可能带结构化截断标记。`publish` 只做选择和整文件大小预检，不改写任何内容。发布的站点谁都能翻到 prompt 和工具输出，发布到公网前确认结果内容适合公开——NiceEval 在记录时就不把环境变量值和命令输出写进记录文件，transcript 里是 Agent 自己的输入输出和你的评估用例任务本身。
+部署方式见[部署报告站](/zh/tutorials/deploy-report-site)。

@@ -1,7 +1,7 @@
 // 内置读数（AttemptMetric 字面量）。
 //
 // null ≠ 0:null = 此 attempt 测不了这个指标(不进聚合);0 = 测了,结果是零(照常进)。
-// 哪个 verdict 落哪边必须显式表态,内置指标按 docs/feature/reports/library.md「内置指标」的表格。
+// 哪个 verdict 落哪边必须显式表态,内置指标按 docs/feature/reports/README.md「内置指标」的表格。
 // 三个通过率指标把「Agent 答错」与「基建没跑起来」拆开,不互相伪装:
 //
 //   指标(name)                                    skipped  errored          failed  passed        better
@@ -16,11 +16,11 @@
 //   assistantTurns(assistant-turns)                null     实测;o11y 缺失→null 同左  同左          lower
 //   repeatedFailedCommands(repeated-failed-commands) null   实测;o11y 缺失→null 同左  同左          lower
 //
-// bounds(自然边界,驱动图轴呼吸边距的钳制,见 docs/feature/reports/components/charts/README.md
+// bounds(自然边界,驱动图轴呼吸边距的钳制,见 docs/feature/reports/README.md
 // 「值域」):三个通过率指标与 examScore 是 { min: 0, max: 1 };其余七个(totalScore、
 // durationMs、tokens、costUSD、assistantTurns、repeatedFailedCommands)是 { min: 0 }。
 //
-// 两档指标(docs/feature/reports/library/measures.md「内置指标」):以上除 assistantTurns 与
+// 两档指标(docs/feature/reports/README.md「内置指标」):以上除 assistantTurns 与
 // repeatedFailedCommands 外全部只读 attempt.result 的瘦身字段——任何 producer、任何
 // publish artifacts 选择都算得出,内置 SampleOverview 只用这一档。
 // 后两个读 attempt.o11y()(懒加载 artifact),发布时若 o11y 没随行就诚实渲染缺数据「—」,
@@ -49,7 +49,7 @@ export function attemptCostUSD(result: EvalResult): number | null {
 /**
  * 条件答题质量:passed = 1,failed = 0,errored 记 null 不进分母。
  * 这是「已形成可信判定」条件下的诊断指标,不能简称默认通过率
- * (docs/feature/reports/library.md「内置指标」)。
+ * (docs/feature/reports/README.md「内置指标」)。
  */
 export const taskPassRate = attemptMetric({
   name: "task-pass-rate",
@@ -164,7 +164,7 @@ export const durationMs = attemptMetric({
     if (verdictForTerminal(a.result) === "skipped") return null;
     // 超时删失:线值不是「跑了这么久」,是「被砍在这里」——计入聚合会把截断当实测,
     // 排除又制造幸存者偏差(慢条件因为被截断反而显得快)。唯一诚实做法是 null,
-    // 让 MetricValue 的 samples < total 把删失显式呈现出来(docs/feature/reports/library/measures.md「内置指标」)。
+    // 让 MetricValue 的 samples < total 把删失显式呈现出来(docs/feature/reports/README.md「内置指标」)。
     if (verdictForTerminal(a.result) === "errored" && a.result.error?.code === "timeout") return null;
     return a.result.durationMs;
   },
@@ -227,7 +227,7 @@ export const assistantTurns = attemptMetric({
 /**
  * 同一 attempt 内同一条 shell 命令的重复失败数:每条命令失败 n 次(n > 1)记 n − 1,求和。
  * 成功执行与只失败一次的命令不计。回答 agent 是否在反复撞同一个已知失败的命令。
- * 读 o11y.json;skipped 与缺 o11y 返回 null(docs/feature/reports/library/measures.md「内置指标」)。
+ * 读 o11y.json;skipped 与缺 o11y 返回 null(docs/feature/reports/README.md「内置指标」)。
  */
 export const repeatedFailedCommands = attemptMetric({
   name: "repeated-failed-commands",

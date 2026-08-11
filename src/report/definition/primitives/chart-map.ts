@@ -1,4 +1,4 @@
-// Chart 映射:Dataset + Series 声明 → 可绘制点集(docs/feature/reports/components/charts/README.md)。
+// Chart 映射:Dataset + Series 声明 → 可绘制点集(docs/feature/reports/README.md)。
 
 import type { LocalizedText } from "../../model/locale.ts";
 import type { Dataset, DatasetField, MetricValue } from "../../model/types.ts";

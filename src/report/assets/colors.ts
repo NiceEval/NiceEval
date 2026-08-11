@@ -1,4 +1,4 @@
-// 跨块配色一致(docs/feature/reports/architecture.md「静态网页」):
+// 跨块配色一致(docs/feature/reports/README.md「静态网页」):
 // 系列/维度键 → 固定调色板下标,用稳定散列而不是「按出现顺序分配」。
 // 这样同一个 agent 在 scatter 的线、比较表的行、matrix 的列头永远同色,
 // 不需要 Provider、不需要手工配置,甚至不需要两个组件见过同一份数据。
@@ -32,7 +32,7 @@ export function colorIndexForKey(key: string): number {
  * 同一张图内 series 键集合的配色:每个键仍以稳定散列为起点(无冲突时与跨图配色一致),
  * 图内撞色时按传入顺序(图例顺序)线性探测下一个空色格——跨图稳定让位给图内可辨;
  * 键数超过色板后无空格可探,回落散列格(复用不可避免)。返回键 → 色板下标。
- * 契约见 docs/feature/reports/components/README.md「系列色:分配单位是页」;
+ * 契约见 docs/feature/reports/README.md「系列色:分配单位是页」;
  * 修法台账见 memory/scatter-series-color-collision.md。
  */
 export function colorIndicesForKeys(keys: readonly string[]): Map<string, number> {

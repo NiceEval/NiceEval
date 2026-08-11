@@ -1,4 +1,4 @@
-// show 专属的执行时间轴口径(--history;契约:docs/feature/reports/show.md「--history:一个 eval
+// show 专属的执行时间轴口径(--history;契约:docs/feature/reports/README.md「--history:一个 eval
 // 的执行时间轴」)。逐 attempt 而非逐快照:对 Sample 中匹配的每个 experimentId + evalId 分节,
 // 节内按 startedAt 升序列出跨快照按 attempt 身份键去重后的历次 attempt——时间、verdict、
 // 单行结果摘要(Fact/use display 契约)、耗时、成本与 locator。resume 携带的复印件不占行。

@@ -1,4 +1,4 @@
-// SourceView:GitHub diff 式带标注源码(docs/feature/reports/components/primitives/source-view.md)。
+// SourceView:GitHub diff 式带标注源码(docs/feature/reports/README.md)。
 // 只消费已投影的 SourceContent；不读磁盘、不分桶。视觉规范与 AttemptSource 同语言、实现独立。
 
 import { createElement, Fragment, type ReactElement, type ReactNode } from "react";

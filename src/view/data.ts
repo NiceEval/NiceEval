@@ -4,7 +4,7 @@
 // (裸跑填充 niceeval/report/built-in 的默认导出,--report 整槽替换,en / zh-CN 双语各渲染一遍)。
 // --report 只换报告定义,注入的 Sample 与裸跑同一份。统计口径整体住在报告页里
 // (报告组件的官方计算函数),viewData 不再携带 overview / 实验列表这类统计产物,
-// 见 docs/feature/reports/view.md「打开与收窄」。
+// 见 docs/feature/reports/README.md「打开与收窄」。
 
 import { readFileSync, statSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
@@ -43,7 +43,7 @@ export type { ViewReportMeta, ViewReportPageHtml } from "./shared/types.ts";
 
 /**
  * 一次装载出的报告与主题定义。记录变更的重建沿用上一次装载出的这一份,只有闭集里的模块
- * 文件变过才重新装载(docs/feature/reports/view.md「变更分两类,失效到不同深度」)——
+ * 文件变过才重新装载(docs/feature/reports/README.md「变更分两类,失效到不同深度」)——
  * 模块图没变时重新装载得到的是同一份定义,代价却是把整棵图连同 niceeval 自身重新求值一遍。
  */
 export interface LoadedDefinitions {
@@ -82,7 +82,7 @@ export interface ViewScan {
    * 形态都规范化成页列表)。渲染出的块作为 <template id="niceeval-report-<pageId>-<locale>">
    * 烘进页面(与 __NICEEVAL_VIEW_DATA__ 相邻),HTML 本体不进 viewData —— 前端只负责把当前页 /
    * 当前界面语言对应的块摆进报告槽位置,不解析。渲染哪些块由宿主决定
-   * (docs/feature/reports/view.md「只渲染看得见的那一块」):`--out` 全渲,本地模式只渲订阅中那块。
+   * (docs/feature/reports/README.md「只渲染看得见的那一块」):`--out` 全渲,本地模式只渲订阅中那块。
    */
   reportPages: ReportPageRenderer;
   /** 外壳注入资产(styles / scripts;{src} 已按路径纪律解析成 inline 内容),只进 web 面。 */
@@ -135,7 +135,7 @@ function nestedTargetHref(
   };
 }
 
-/** view 宿主输入的组合语义(与 show 对齐,docs/feature/reports/architecture.md「Sample 是计算入口」)。 */
+/** view 宿主输入的组合语义(与 show 对齐,docs/feature/reports/README.md「Sample 是计算入口」)。 */
 export interface ViewScanOptions {
   /** eval id 前缀(位置参数):把根滤成有效根,页面 Sample 与证据(快照明细、artifact 清单)一致收窄。 */
   patterns?: string[];
@@ -149,7 +149,7 @@ export interface ViewScanOptions {
   theme?: { value: string; cwd: string };
   /**
    * 项目配置目录:每次 scan 用 namespaced import 重装 niceeval.config.ts,
-   * 取 `report` / `theme`(docs/feature/reports/view.md「持续重建」——config.report
+   * 取 `report` / `theme`(docs/feature/reports/README.md「持续重建」——config.report
    * 及其 import 图与 --report 文件同级失效)。不预烘焙成对象。
    */
   config?: { cwd: string };
@@ -158,14 +158,14 @@ export interface ViewScanOptions {
   /** --page:多页报告的初始页 id;未命中任何页按用法错误退出并列出可用页 id。 */
   page?: string;
   /**
-   * 单页渲染失败的处置(docs/feature/reports/architecture.md「管线以页为单位执行」):
+   * 单页渲染失败的处置(docs/feature/reports/README.md「管线以页为单位执行」):
    * 本地 server 传 "embed"(该页显示完整错误反馈,其它页照常可读);静态导出与启动前预检
    * 缺省 "throw"(任一页失败整体失败,不产出半套站点)。
    */
   pageFailure?: "throw" | "embed";
   /**
    * 沿用上一次装载出的报告与主题定义,跳过这一次的模块装载。只有记录变更触发的重建传它
-   * (docs/feature/reports/view.md「变更分两类,失效到不同深度」);闭集里的模块文件变过时
+   * (docs/feature/reports/README.md「变更分两类,失效到不同深度」);闭集里的模块文件变过时
    * 不传,让整棵 import 图重新装载。
    */
   definitions?: LoadedDefinitions;
@@ -385,8 +385,8 @@ async function readRunManifests(dir: string): Promise<RunManifests> {
  * 函数,裸跑与局部收窄不分叉);显式离线 Record 入口经 Record-relative head 选择。
  * 位置前缀 / --exp 只作为 scope 传入,不切换对应入口的选择口径。
  * --report 本身不改挑选——它只换报告槽的填充,注入的 Selection 与裸跑同一份,
- * 「裸跑 ≡ --report <ExperimentComparison>」靠这条成立(docs/feature/reports/architecture.md「Selection 是计算入口」)。
- * 命令行收窄作用在有效根上(docs/feature/reports/view.md 开篇):证据室数据与 artifact 清单
+ * 「裸跑 ≡ --report <ExperimentComparison>」靠这条成立(docs/feature/reports/README.md「Selection 是计算入口」)。
+ * 命令行收窄作用在有效根上(docs/feature/reports/README.md 开篇):证据室数据与 artifact 清单
  * 与页面一致地只含收窄后的范围,本地与导出无分叉——收窄导出的站点(烘进 HTML 的数据、
  * 证据文件)只含收窄到的内容。收窄之内、不在现刻水位里的历史 attempt 仍在有效根里,深链可达。
  * 零可读结果一律抛 ViewInputError,不渲染/导出空页面(server 起不来,--out 非零退出)。
@@ -443,11 +443,11 @@ export async function loadViewScan(input?: string, opts: ViewScanOptions = {}): 
   }
 
   // 报告槽:裸跑装载内建报告默认导出,--report 整槽替换——同一条「装载 → 规范化 → 逐页渲染」
-  // 管线(docs/feature/reports/library/shell.md)。报告吃同一份注入 Sample,web 面在计算侧
+  // 管线(docs/feature/reports/README.md)。报告吃同一份注入 Sample,web 面在计算侧
   // 静态渲染成 HTML(en / zh-CN 各一遍,切界面语言不重算数据)。
   const slot = await renderReportSlot(opts.report, opts.theme, opts.config, opts.page, results, selection, opts.pageFailure ?? "throw", opts.definitions);
 
-  // 有效根:命令行收窄把根滤成只含匹配实验与 attempt(docs/feature/reports/view.md 开篇)。
+  // 有效根:命令行收窄把根滤成只含匹配实验与 attempt(docs/feature/reports/README.md 开篇)。
   // 证据室数据与 artifact 清单从这里取数,与页面 Sample 一致收窄——本地与导出无分叉,
   // 收窄导出的站点(烘进 HTML 的数据、证据文件)只含收窄后的范围。
   const scopedExperiments = filterExperiments(results.experiments, opts.experiment);
@@ -644,7 +644,7 @@ function resolveThemeStyles(theme: ThemeDefinition, baseDir: string | undefined)
 
 /**
  * 报告装载与逐页渲染:装载报告文件(--report)或项目配置的 report 字段;dev server 语义
- * 经 tsx namespaced import 让入口及其整棵项目内 import 图失效(docs/feature/reports/view.md
+ * 经 tsx namespaced import 让入口及其整棵项目内 import 图失效(docs/feature/reports/README.md
  * 「持续重建」),缺省装载内建报告默认导出 → 规范化成「外壳 + 非空页列表」→
  * 注入 Sample → 每页 web 面渲染成静态 HTML,en / zh-CN 各渲染一遍(chrome 文案按 locale)。
  * 本地 server 下单页渲染失败折成该页的完整错误反馈块,其它页照常可读(静态导出的
@@ -714,7 +714,7 @@ async function renderReportSlot(
   const { targetHref } = await import("../report/runtime/target.ts");
 
   // 自定义报告替换的是可见页面，不该顺手切断官方组件的下钻目标。核心不区分实体种类
-  // (docs/feature/reports/library.md「参数化页:attempt 与 experiment 详情」)：内建 `standard`
+  // (docs/feature/reports/README.md「参数化页:attempt 与 experiment 详情」)：内建 `standard`
   // 的每一张参数化页(attempt、experiment……)按 id 补位，报告显式声明同 id 页时覆盖它，
   // 且不把补位页塞进导航或报告元数据。
   const { standard } = await import("../report/built-in/index.tsx");
@@ -728,7 +728,7 @@ async function renderReportSlot(
 
   // 非参数化页(没有 `params` 声明)才参与本函数的「全部烘进 index.html」渲染;参数化页(如果
   // 报告声明了)没有 params 就不能 resolve,它的每实例静态文档是独立机制,不在这里渲染
-  // (docs/feature/reports/library.md「参数化页」)。
+  // (docs/feature/reports/README.md「参数化页」)。
   const scopePages = hostReport.pages.filter((p) => p.params === undefined);
   const navigablePages = scopePages.filter((p) => p.navigation !== false);
   // 目标可能指向导航页也可能指向参数化页(声明或补位后的最终形态);href 解析要认得两者。
@@ -822,7 +822,7 @@ async function renderReportSlot(
     title: hostMeta.title,
     // 每一张要烘进 index.html 的 scope-input page 都在列(这份列表同时是 <template> 静态块与
     // `#/page/<id>` 路由的键),声明了 `navigation: false` 的带标记出场——导航列不列由外壳按标记
-    // 决定,不靠从列表里删页实现(docs/feature/reports/view.md「导航机器与品牌位」)。
+    // 决定,不靠从列表里删页实现(docs/feature/reports/README.md「导航机器与品牌位」)。
     pages: scopePages.map((p) => ({ id: p.id, title: p.title, ...(p.navigation === false ? { navigation: false as const } : {}) })),
     initialPageId,
     // 外壳按这份清单判定 `<pageId>/<key>.html` 链接与 `#/<pageId>/<key>` hash 是不是参数化页

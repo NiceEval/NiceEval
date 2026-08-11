@@ -1,60 +1,61 @@
-# Sample —— 当前结果集
+# Sample：投影既有事实形成分析范围
 
-[Record](../record/README.md) 回答「盘上有什么」。
-Sample 回答「当前配置下，每道题现在有什么有效结果」。
+[Record](../record/README.md) 保存 immutable Run 事实。Sample 功能提供具名 analysis projector，从一个 frozen `RecordReader` 中选择既有 Run，形成 Reports 和脚本可以继续组合的 core-only `AnalysisSample`。
 
-```typescript
-import { openRecord } from "niceeval/record";
-import { loadProjectCurrentTarget, projectCurrentSample } from "niceeval/sample";
+`AnalysisSample` 不写回 Record，也不是持久化文件。再次执行 projector 时，它按同一公开契约重新读取 Record 当时的核心身份、membership 和引用。业务通道等 ReportPlan 形成后才按需读取。
 
-const record = await openRecord(".niceeval");
-const { target } = await loadProjectCurrentTarget(process.cwd());
-const sample = projectCurrentSample(record, target, { experiments: "compare/" });
+## 分析与执行是两条投影
 
-sample.attempts; // 当前配置下每道题选出的 Attempt
-sample.coverage; // 完整分母与结构化缺口原因
-sample.issues;   // 无法落到单题缺口上的读取问题
+```text
+RecordReader ── explicit-runs / latest analysis projector ──→ AnalysisSample ──→ Reports
+
+RecordWriteSession.view ── project-target execution projector ──→ ExecutionProjection ──→ planner
 ```
 
-## 唯一心智
+`AnalysisSample` 只表达既有 Run 的分析分母。分析样本状态是 `included | not-recorded | invalid | excluded`。`ExecutionProjection` 属于 [Experiments](../experiments/cache.md)，只表达当前 ExecutionTarget 的 `reuse | gap`。
 
-主报告只有一份 current 结果集。
-每个 Experiment × Eval 的 Run 级 `configHash`、逐 Eval `configHash` 与 canonical fingerprint 都匹配项目 Target，且 attempt 序号没有超过当前 `attempts`，才进入 `sample.attempts`；否则进入 coverage 缺口。
+两者可以在实现内部复用 Attempt 读取，但不共享一个公开 slot 联合。Reports 不能接收 execution gap，planner 也不能把历史 Run 的 `not-recorded` 当作待执行任务。
 
-Attempt 是实际执行、携带合入还是从可比旧 Run 补入，只属于 provenance 事实，不改变它是不是 current，也不改变计票。
-身份不匹配的旧结果只用于解释缺口和进入 History，不混进当前报告。Eval 源码、loader/data、判据或 physical plan 变化都会改变 fingerprint；只比较 Run `configHash` 不足以证明 current。
+## 具名 analysis projector
 
-## 缺口不是第二套结果
+Sample 提供两种内建 analysis projector：
 
-缺口统一表示「当前配置下没有结果」，并带下一步所需的原因：
+- `explicit-runs/v1`：按调用方给出的 `runIds` 精确选择历史 Run；
+- `latest/v1`：按具名 latest policy 为每个目标 Experiment 选择最后完成的 Run。
 
-- `never-run`：Record 历史里从未出现这道题的物理 Attempt。
-- `previous-result`（旧结果缺口）：历史里有结果，但没有一条能代表当前配置；缺口可带最近旧 locator，供用户重跑或显式 `niceeval accept`。
-- `unverifiable-result`：只有缺 fingerprint 或 config hash 的历史结果；它们不能被证明为 current，也不冒充从未运行。
+`latest` 不是 Record 的 currentness，也不是 `AnalysisSample` 自带的隐含语义。它只是可替换、可具名的一种分析算法。调用方还可以实现其它 analysis projector，只要输出同一个公开 `AnalysisSample` 形状和稳定 provenance。
 
-三种原因都不进入通过率、得分、成本或样本命中范围的分子。
-原因只帮助用户决定下一步，不把旧 verdict 变成半有效结果。
+## Frozen 读取
 
-## 常见用途
+carried 与 accepted Member 保留源 Attempt 引用。reader 沿已选 Member 冻结 dependency closure；origin Run 不进入 latest candidates 或分母。源 Attempt 因外部损坏而缺失时，该 slot 是 `invalid`，不是 `not-recorded`。
 
-| 用户目标 | 入口 |
-|---|---|
-| 看当前项目定义下的完整水平 | `projectCurrentSample(record, target)` |
-| 收窄实验或题目 | `projectCurrentSample(record, target, { experiments, evals })` 或 `sample.scope()` |
-| 离线查看 Record 最新 head | `latestRecordSample(record)` |
-| 按数据质量删减当前观测 | `sample.filter()` |
-| 查看一次 Run 的事实 | Record 中的 `Run` 与 `niceeval show --run` |
-| 查看历次执行 | `niceeval show --history` 或 History 页面 |
-| 人工确认旧结果仍适用 | `niceeval accept @<locator>` |
-| 发布一份自包含 Run | `latestRunSample(record)` 后交给 `publish()` |
+一次 projection 不会自动看见并发刚发布的 Run。重新打开 reader 后，新 projection 可以得到新的 candidateSet；已经形成的 `AnalysisSample` 仍是普通内存值。
 
-`latestRunSample()` 服务发布和单 Run 审计，不定义另一种结果状态。
-plain show、view 与静态导出都从项目 Target 的 `projectCurrentSample()` 出发；显式 `--record` / `--run` 与 History 旅途不拿当前 cwd 的项目定义解释外来 Record。
+`AnalysisSample` 不读取业务通道。一个通道 unknown、retired、缺失或损坏，不会让整个 slot 自动变成 `invalid`；slot 的 `invalid` 只描述核心 membership、identity 与引用错误。ReportPlan 形成后，composition adapter 才把被请求通道的 `ChannelRead` 放进 ReportInput。
 
-## 相关阅读
+## 范围
 
-- [Library](library.md) —— current 选择、缺口原因与转换形状。
-- [参考方案](reference/README.md) —— 显式选择与转换从哪里学。
-- [用例手册](use-case/README.md) —— 局部补跑与人工接受的完整路径。
-- [Record](../record/README.md) —— 被选择的物理事实。
-- [Reports](../reports/README.md) —— 只消费一份 Sample 的呈现层。
+Sample 包含：
+
+- analysis projector 的公开输入、输出和错误；
+- expected-slot 完整分母；
+- included、not-recorded、invalid、excluded 四态；
+- 对既有 `AnalysisSample` 的纯内存收窄；
+- projector identity 与安全归一化输入形成的 projection provenance。
+
+Sample 不包含：
+
+- 当前 Project Target 的复用资格或 execution gap；
+- planner、scheduler、writer 或补执行策略；
+- 可持久化的 Sample 包；
+- 业务通道读取或 Report 计算；
+- 跨 Record 隐含合并；
+- reader、文件句柄、路径或延迟查询。
+
+## 入口
+
+- [Library](library.md) —— analysis projector、`AnalysisSample` 形状和构造入口。
+- [局部执行后的分析](use-case/partial-rerun.md) —— executed、carried 与 accepted 怎样作为既有事实进入同一分母。
+- [收窄样本](use-case/收窄样本.md) —— 怎样从既有 `AnalysisSample` 排除不需要的成员。
+- [Experiments execution projection](../experiments/cache.md) —— 当前目标怎样形成 reuse 与 gap。
+- [Reports](../reports/README.md) —— 怎样呈现和导出 `AnalysisSample`。

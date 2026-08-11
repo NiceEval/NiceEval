@@ -1,6 +1,6 @@
 // 两级聚合引擎:去重 → 按维度分组 → 组内按 (experiment × eval) 折叠(perEval)→ 跨题折叠
-// (acrossEvals)→ MetricValue(docs/feature/reports/architecture.md「指标聚合不变量」、
-// docs/feature/reports/library/measures.md「公开计算模型」)。
+// (acrossEvals)→ MetricValue(docs/feature/reports/README.md「指标聚合不变量」、
+// docs/feature/reports/README.md「公开计算模型」)。
 //
 // 为什么是两级:earlyExit 默认开,失败的题天然比通过的题样本多;平铺求均值会把分数
 // 和重试策略纠缠在一起(eval A=[1]、eval B=[0,0,0] 平铺 = 0.25,两级宏平均 = 0.5)。
@@ -63,7 +63,7 @@ export function resolveInput(input: ReportInput): {
  * refs/locator 都读它);`watermark` 是该 attempt 所属 experiment 在这份输入里的水位基准
  * Run(贡献来源中 startedAt 最新者,latest() 口径下与 `run` 是同一个对象)——读取
  * 「这一行该显示哪个 agent/model/flags」等整组代表性字段时读它
- * (docs/feature/reports/architecture.md「Sample 是计算入口」)。
+ * (docs/feature/reports/README.md「Sample 是计算入口」)。
  */
 export interface Item {
   run: Run;

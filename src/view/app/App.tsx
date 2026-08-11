@@ -14,12 +14,12 @@ import {
 import { Dialog, DialogClose, DialogContent, DialogTitle } from "./components/ui/dialog.tsx";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs.tsx";
 
-// 导航组成只有一条规则(docs/feature/reports/view.md「页面构成」):导航项 = 报告定义声明的页,
+// 导航组成只有一条规则(docs/feature/reports/README.md「页面构成」):导航项 = 报告定义声明的页,
 // 按声明顺序排列(路由 `#/page/<id>`,`--page <id>` 定初始页)。宿主不追加、不保留任何导航项——
 // 裸 view 的「报告 / Attempts / 追踪」三个 tab 就是内建报告的三页。页面里的 hero、Sample 警告
 // 都不是宿主渲染的:它们是页内的站点组件(Hero / ScopeWarnings)。宿主保留的是机器
 // 加一个恒定的品牌位:管线与路由、attempt 详情路由、文档单例(<title>)、语言切换,以及
-// 页头左端的 NiceEval 字标(docs/feature/reports/architecture.md「宿主保留的只有机器」)。
+// 页头左端的 NiceEval 字标(docs/feature/reports/README.md「宿主保留的只有机器」)。
 
 // niceeval 官网。页头品牌字标与 hero 下的 `Powered by NiceEval` 行都外链到它,
 // utm_medium 区分点击来自哪个品牌位(shell.md「行为约束」)。
@@ -40,7 +40,7 @@ const VISUALLY_HIDDEN: CSSProperties = {
 };
 
 /**
- * LocalizedText 的确定回退(docs/feature/reports/library/shell.md):当前 locale → en →
+ * LocalizedText 的确定回退(docs/feature/reports/README.md):当前 locale → en →
  * 按 locale 键字典序的第一个非空值。字符串原样返回。
  */
 export function localizedText(text: LocalizedText | undefined, locale: Locale): string | undefined {
@@ -110,7 +110,7 @@ export function App({
   reportPages: globalThis.Record<string, ReportSlotHtml>;
   /**
    * 当前在看哪一页、哪种语言。本地模式据此按需取块并订阅重建事件
-   * (docs/feature/reports/view.md「只渲染看得见的那一块」);静态产物不传这个回调。
+   * (docs/feature/reports/README.md「只渲染看得见的那一块」);静态产物不传这个回调。
    */
   onActiveView?: (view: { page: string; locale: Locale }) => void;
   /** 本地重建版本；静态导出不传，因此不会重复获取参数化页。 */
@@ -124,7 +124,7 @@ export function App({
     ? data.report.pages
     : [{ id: "report", title: { en: "Report", "zh-CN": "报告" } }];
   // 导航只列 `navigation !== false` 的页,按声明序,宿主不追加任何项
-  // (docs/feature/reports/view.md「导航机器与品牌位」/ library/shell.md「导航的组成只有一条规则」)。
+  // (docs/feature/reports/README.md「导航机器与品牌位」/ library/shell.md「导航的组成只有一条规则」)。
   // 退出导航不等于退出站点:内容块与 `#/page/<id>` 深链仍走完整的 pages。
   const navPages = pages.filter((page) => page.navigation !== false);
   const initialPageId = data.report?.initialPageId ?? pages[0]!.id;
@@ -136,7 +136,7 @@ export function App({
   const paramPageIds = data.report?.paramPageIds ?? [];
 
   // 参数化页详情弹窗:内容是独立文档(`<pageId>/<key>.html`)fetch 回来的同一份 server-rendered
-  // 片段,不维护第二份客户端渲染(docs/feature/reports/view.md「静态导出」)。dialogTarget 为
+  // 片段,不维护第二份客户端渲染(docs/feature/reports/README.md「静态导出」)。dialogTarget 为
   // null 即关闭;同一套状态服务任意参数化页,dialog 内的目标链接命中同一个点击拦截器,
   // 状态替换即完成「嵌套下钻」(实验详情里点 attempt 即此路径)。
   const [dialogTarget, setDialogTarget] = useState<PageTarget | null>(null);

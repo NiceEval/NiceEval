@@ -235,7 +235,7 @@ Adapter 自己确保 Agent CLI 就位,但这不作为 Agent Provision 暴露给 
 Direct Agent 没有 Sandbox。
 Direct Agent 与非空 `provisions` 组合在启动期报配置错误,不静默忽略。
 
-Provision 的有序 `{ name, identity }` 列表进入 `configHash` 和 `run.json`。
+Provision 的有序 `{ name, identity }` 列表进入 `configHash` 和 Run payload。
 name 重复在启动期一次穷举报错;name 限 `[a-z0-9-]+`。
 
 ## Sandbox Hook 与 Provision 的边界

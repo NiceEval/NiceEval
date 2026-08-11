@@ -1,67 +1,77 @@
 ---
-title: "Write a custom report"
+title: "Write a Custom Report"
 sidebarTitle: "Custom Reports"
-description: "Compute results with plain TypeScript functions and serve both terminal and web reports."
+description: "Declare the facts each page needs, then execute once in memory to produce terminal, web, and static-export results."
 ---
 
-A custom report receives the Sample the host selected and returns a component tree:
+A custom Report never receives a Record path or looks up data while a page renders. Its fixed flow is:
 
 ```text
-Sample
-  → plain TypeScript functions
-  → serializable result values
-  → components
-  → text / web
+core-only Sample → ReportScope → ReportPlan
+                                  ↓
+                              ReportInput
+                                  ↓
+                         ReportExecution (once)
+                           ↙       ↓       ↘
+                         show     view    export
 ```
 
-Computation happens in the page render.
-Components only display concrete values such as `rows`, `points`, `items`, `nodes`, or `attempt`.
+## Define required facts
 
-## Create your first report
+Prefer the built-in requirements NiceEval exports. Define a custom JSON fact with `defineJsonFact()` and an explicit owner:
 
-Create `reports/quality.tsx`:
+```ts
+import { defineJsonFact } from "niceeval/report";
 
-```tsx
-import {
-  Page,
-  Scatter,
-  Table,
-  agent,
-  aggregate,
-  costUSD,
-  defineReport,
-  passRate,
-} from "niceeval/report";
-
-export default defineReport(async (sample) => {
-  const performance = await aggregate(sample, {
-    by: { agent },
-    values: { passRate, costUSD },
-  });
-
-  return (
-    <Col>
-      <Scatter
-        points={performance}
-        x="costUSD"
-        y="passRate"
-        point="agent"
-      />
-      <Table rows={performance} />
-    </Col>
-  );
+const attemptEnergy = defineJsonFact({
+  id: "attempt-energy",
+  owner: "attempt",
+  name: "com.example.energy",
+  parse(document) {
+    if (typeof document.value !== "number") {
+      throw new Error("energy must be a number");
+    }
+    return document.value;
+  },
 });
 ```
 
-Run:
+A custom name uses a reverse-domain namespace and cannot start with `niceeval.`. Its parser receives only a validated `{ observedAt, value }` document, never bytes, descriptors, paths, or blobs. It runs once for each owner and requirement combination during execution and must return a JSON value synchronously.
 
-```bash
-niceeval show --report ./reports/quality.tsx
-niceeval view --report ./reports/quality.tsx
+## Plan pages first
+
+`plan(scope)` reads core-only slots only. It can enumerate detail routes by Run, slot, Attempt ID, and locator, but cannot read a Verdict, Usage, or another business value.
+
+```ts
+import {
+  defineReport,
+  verdict,
+} from "niceeval/report";
+
+export default defineReport({
+  id: "quality",
+  plan(scope) {
+    return {
+      calculations: [qualitySummary],
+      pages: [
+        {
+          id: "overview",
+          route: { pathname: "/", parameters: {} },
+          title: "Overview",
+          inputs: [verdict, attemptEnergy],
+          calculations: [qualitySummary],
+          render(input) {
+            return overviewPage(input);
+          },
+        },
+      ],
+      downloads: [],
+    };
+  },
+});
 ```
 
-Both hosts run the same page render.
-The same result tree is handed to the text and web renderers.
+Each Page, Calculation, and Download declares its own `inputs`. Execution cannot read an undeclared fact later; the host reports that call as a plan-invalid error.
 
 ## Set it as the project default
 
@@ -76,318 +86,77 @@ export default defineConfig({
 });
 ```
 
-After that, run `niceeval show` or `niceeval view` directly.
-Pass `--report standard` to switch back to the built-in report for one run.
+Afterward, `show` and `view` use it when `--report` is absent. Pass `--report standard` for one invocation to use the built-in Report again.
 
-## Narrow the Sample
-
-The host applies `--record`, `--exp`, and eval positional arguments first,
-then hands the Sample to the report.
-Carried and newly executed Attempts are equal members of that one current Sample.
-
-Keep using Sample methods inside the report:
+## Define a Calculation
 
 ```ts
-const security = sample.scope({ evals: "security/" });
-
-const reliable = security.filter((attempt) =>
-  attempt.result.verdict !== "errored"
-);
-```
-
-`scope()` changes the comparison population and coverage denominator.
-`filter()` removes untrusted or inapplicable observations.
-
-When a set of charts shares a scope, create one named Sample first:
-
-```ts
-const production = sample
-  .scope({ experiments: "production/" })
-  .filter(isReliableAttempt);
-```
-
-Then pass the same `production` into every computation.
-
-## Use `aggregate()`
-
-`aggregate()` takes grouping functions and Calculations:
-
-```tsx
-const rows = await aggregate(sample, {
-  by: {
-    experiment,
-    agent,
-  },
-  values: {
-    passRate,
-    costUSD,
+const qualitySummary = defineCalculation({
+  id: "quality-summary",
+  inputs: [verdict, attemptEnergy],
+  completeness: "allowPartial",
+  evaluate(input) {
+    return calculateQuality(input);
   },
 });
 ```
 
-Object keys become result field names.
-Each metric field is a `MetricValue` with `value`, `unit`, `samples`, `total`, `basis`, and `refs`.
+`allowPartial` can use successfully read values, but the result must retain the full Sample denominator, observed count, and a partial marker. `requireComplete` can be available only when durable collection and decoding are complete.
 
-The result is a plain array you can keep using in JavaScript:
+## Read data from a page
 
-```ts
-const ranked = rows
-  .toSorted((a, b) =>
-    (b.passRate.value ?? -Infinity) -
-    (a.passRate.value ?? -Infinity)
-  )
-  .slice(0, 10);
-```
-
-Do not pass an aggregated result back into `aggregate()`.
-To add metrics, go back to the same Sample and add Calculations to the original `values`.
-
-## Define your own Calculation
-
-`rollup()` turns a per-Attempt value function into a Calculation:
+A page can read only its inputs and Calculations:
 
 ```ts
-import {
-  mean,
-  min,
-  rollup,
-} from "niceeval/report";
+render(input) {
+  const rows = input.report.sample.included.map((slot) => ({
+    locator: slot.locator,
+    verdict: input.readAttempt(slot, verdict),
+    energy: input.readAttempt(slot, attemptEnergy),
+  }));
 
-export const changedLines = rollup(
-  async (attempt) => {
-    if (attempt.result.verdict !== "passed") {
-      return null;
-    }
-
-    const diff = await attempt.diff();
-    return diff ? countChangedLines(diff) : null;
-  },
-  {
-    withinEval: min,
-    acrossEvals: mean,
-    unit: "lines",
-    better: "lower",
-  },
-);
-```
-
-Built-in and user Calculations both use `rollup()`.
-Empty sets stay `null` and are never disguised as zero.
-
-## Show entity lists
-
-The Sample already exposes materialized `attempts`:
-
-```tsx
-export default defineReport((sample) => {
-  const failures = sample
-    .filter((attempt) =>
-      attempt.result.verdict === "failed" ||
-      attempt.result.verdict === "errored"
-    )
-    .attempts
-    .toSorted((a, b) =>
-      (attemptCostUSD(b.result) ?? 0) -
-      (attemptCostUSD(a.result) ?? 0)
-    )
-    .slice(0, 50);
-
-  return <AttemptList attempts={failures} />;
-});
-```
-
-For a generic table, convert first:
-
-```tsx
-const rows = toAttemptRows(failures);
-return <Table rows={rows} />;
-```
-
-## Reuse dynamic blocks
-
-Reuse is ordinary functions:
-
-```tsx
-export async function overview(sample: Sample) {
-  const performance = await aggregate(sample, {
-    by: { agent },
-    values: { passRate, costUSD },
-  });
-
-  return (
-    <>
-      <Scatter
-        points={performance}
-        x="costUSD"
-        y="passRate"
-        point="agent"
-      />
-      <Table rows={performance} />
-    </>
-  );
+  return {
+    title: "Overview",
+    body: { rows },
+    textAlternative: renderRowsAsText(rows),
+  };
 }
 ```
 
-Call it directly in the page render:
+A page returns structured JSON and a text equivalent, not a React component, script, CSS, or file path. NiceEval's built-in runtime provides the browser host.
 
-```tsx
-render: async (sample) => (
-  <Col>
-    {await overview(sample)}
-  </Col>
-)
+## Isolate failures
+
+If page A requests a valid Verdict but page B requests damaged Usage:
+
+- A renders normally.
+- B becomes `input-invalid` with its channel and issues, and local view shows a named error page.
+- Other pages do not reread the Record.
+- Static export does not publish because a planned consumer failed.
+
+When user rendering, a Calculation, or a Download throws, its state is `execution-failed`. It does not pretend to be invalid input.
+
+## Downloads
+
+A Download is also a named consumer. It declares inputs and Calculations, obtains a constrained path through `defineReportDownloadPath("downloads/...")`, and returns a complete `Uint8Array` in the single execution phase. Static export writes those already-produced bytes; it does not run user code again.
+
+## Capability boundaries
+
+A custom Report does not provide:
+
+- Arbitrary browser scripts, styles, fonts, workers, or WASM.
+- Runtime network requests.
+- File-path or blob access from a Report.
+- JSONL, append, or documents larger than 65,536 UTF-8 bytes through generic `ctx.fact()`.
+
+Large text and binary runtime facts use a NiceEval-approved, named Attempt channel and blob. A built-in decoder delivers an ordinary value.
+
+## Run and publish
+
+```sh
+npx niceeval show --run <run-id> --report ./reports/quality.ts
+npx niceeval view --run <run-id> --report ./reports/quality.ts --no-open
+npx niceeval view --run <run-id> --report ./reports/quality.ts --out ./quality-site
 ```
 
-Use ordinary `Promise.all()` for independent computations.
-
-## Create a multi-page report
-
-```tsx
-export default defineReport({
-  title: "Team evals",
-  pages: [
-    {
-      id: "overview",
-      title: "Overview",
-      render: async (sample) => (
-        <Col>
-          {await overview(sample)}
-        </Col>
-      ),
-    },
-    {
-      id: "failures",
-      title: "Failures",
-      render: failuresPage,
-    },
-    standardAttemptPage,
-  ],
-});
-```
-
-Array order in `pages` is navigation order.
-The host runs only the requested page render.
-`standardAttemptPage` provides the official Attempt detail page and locator drill-down.
-
-## Custom Attempt detail
-
-```tsx
-{
-  id: "attempt",
-  title: "Attempt",
-  input: "attempt",
-  navigation: false,
-  render: async (attempt) => {
-    const [turns, files] = await Promise.all([
-      toConversationTurns(attempt),
-      toDiffFiles(attempt),
-    ]);
-
-    return (
-      <Col>
-        <Conversation turns={turns} />
-        <DiffView files={files} />
-      </Col>
-    );
-  },
-}
-```
-
-A report has at most one Attempt page.
-Without it, locators render as plain text only.
-
-## Connect external business snapshots
-
-Write external data as a frozen snapshot module first:
-
-```tsx
-// budget-snapshot.ts — generated by a script before the run, versioned with the report
-export const budgets = {
-  checkout: { monthlyUSD: 40 },
-  search: { monthlyUSD: 25 },
-};
-```
-
-Import it directly in the report file:
-
-```tsx
-import { budgets } from "./budget-snapshot";
-
-export default defineReport(async (sample) => {
-  const performance = await aggregate(sample, {
-    by: { experiment },
-    values: { passRate, costUSD },
-  });
-
-  return <Table rows={joinBudgets(performance, budgets)} />;
-});
-```
-
-The page render does not call the network and does not read environment variables, clocks, or randomness. Regenerate the snapshot module to refresh data.
-Snapshots belong to the report import graph; the dev server rebuilds the report when they change.
-
-## Author a new display shape
-
-When existing components cannot compose the target display, use the extension entry:
-
-```tsx
-import { defineRenderer } from "niceeval/report/extension";
-
-const ConfusionMatrix = defineRenderer({
-  text(value, options, context) {
-    return renderTextMatrix(value, options, context);
-  },
-  web(value, options, context) {
-    return <WebMatrix value={value} options={options} />;
-  },
-});
-```
-
-Both renderers only accept already-computed plain values.
-Custom computation stays in ordinary functions; no registration protocol is required.
-
-## Pin a value to a color
-
-In the report shell's `dimensionPins`, fix visual identity by grouping field and full value.
-For example, the same Agent can keep the same colors, line styles, and markers on every page.
-
-Display labels are not identity keys. Do not truncate Experiment path suffixes or assign colors by array index.
-See [Report theming](/tutorials/theming) for full theme fields.
-
-## Make your components follow any theme
-
-Custom renderers use `--niceeval-*` theme tokens.
-Do not copy Basalt or Chalk hex values into components.
-Use semantic tokens such as positive, negative, and warning for state,
-and runtime-assigned visual identity for nominal series.
-
-## Embed in your own React page
-
-Compute on the server or during the build:
-
-```ts
-const points = await aggregate(sample, {
-  by: { agent },
-  values: { passRate, costUSD },
-});
-```
-
-Use `niceeval/report/react` in the browser:
-
-```tsx
-<Scatter
-  points={points}
-  x="costUSD"
-  y="passRate"
-  point="agent"
-/>
-```
-
-The React entry does not read Record, Sample, or artifacts.
-When the record root is not in the product runtime, write the Result as JSON at build time.
-
-## Next steps
-
-- Full shapes: [Report components API](/reference/report-components)
-- Publish a static site: [Publish a report](/tutorials/publish-report)
-- Custom appearance: [Report theming](/tutorials/theming)
+`--out` must point to a directory that does not exist. See [Publish a Static Report](/tutorials/publish-report) and [Report Components API](/reference/report-components) for details.

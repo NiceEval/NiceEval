@@ -11,12 +11,18 @@ CLI 的命令与 flag 另见 [CLI](cli.md)，但沿用同一条调用点清晰�
 API 应让第一次使用它的人在调用处看出“这一步要什么、会发生什么、得到什么”：
 
 ```ts
-const record = await openRecord(".niceeval");
-const trimmed = sample.pipe(dropExperiments("compare/broken"));
+const sample = yield* Effect.scoped(
+  Effect.gen(function* () {
+    const reader = yield* openRecordReader({ root });
+    return yield* projectExplicitRuns(reader, { runIds });
+  }),
+);
+const trimmed = narrowAnalysisSample(sample, {
+  experimentIds: ["compare/baseline"],
+});
 ```
 
-`openRecord` 表明它会打开外部资源，`dropExperiments` 表明它从 Sample 剔除哪些成员。
-两者不需要把 reader、文件扫描或集合遍历步骤写进名字。
+`openRecordReader` 表明它在当前 Effect Scope 打开 frozen 读取面，`projectExplicitRuns` 表明它用具名算法形成 `AnalysisSample`，`narrowAnalysisSample` 表明它只收窄既有内存值。名字不需要重复文件扫描或集合遍历步骤。
 
 清晰优先于简短，但长度不是清晰的替代品。
 名字变长若能消除相邻 API 的实质歧义，就保留必要词；模块、参数和返回类型已经表达的信息不重复。
@@ -43,16 +49,16 @@ const trimmed = sample.pipe(dropExperiments("compare/broken"));
 
 | 角色 | 命名形态 | 例子 |
 |---|---|---|
-| 执行动作或产生副作用 | 动词短语 | `publish`、`runEvals` |
-| 打开、加载或读取外部资源 | `openX` / `loadX` / `readX` | `openRecord`、`loadYaml` |
-| 创建运行时对象 | `createX` | `createAgentSession` |
+| 执行动作或产生副作用 | 动词短语 | `exportStaticReport`、`runEvals` |
+| 打开、加载或读取外部资源 | `openX` / `loadX` / `readX` | `openRecordReader`、`loadYaml` |
+| 创建普通运行时值 | `createX` | `createAgentSession`、`createReportScope` |
 | 声明并校验定义 | `defineX` | `defineEval`、`defineExperiment` |
 | 返回逻辑视图或派生值 | 结果名或准确的计算动词 | `estimateCost` |
 | 判断条件 | `isX` / `hasX` / `canX` | `isDefined`、`hasSections` |
 | 转换表示 | `toX` / `fromX` / `targetFromSource` | 词根写明目标与输入表示 |
 | 收窄不可变集合 | `filterX` / `onlyX` / `dropX` | `filterAttempts`、`dropExperiments` |
-| 类型、组件与值对象 | 名词 | `Record`、`Sample`、`AttemptEvidence` |
-| 事件回调 | `onX` | `onEvalComplete` |
+| 类型、组件与值对象 | 名词 | `Record`、`AnalysisSample`、`AttemptEvidence` |
+| 事件回调 | `onX` | `onAttemptReceipt` |
 
 同一个前缀只表达一种稳定动作：
 
@@ -60,7 +66,7 @@ const trimmed = sample.pipe(dropExperiments("compare/broken"));
 - `createX` 创建运行时实例，不冒充纯定义。
 - `openX` 建立到外部资源的读取面，错误必须能定位该资源。
 - `loadX` 把外部内容完整读入值，不暗示持续句柄。
-- `publish` 跨可信边界构造自包含发布包，不只是文件复制。
+- `exportStaticReport` 构造完整的静态交付目录，不只是复制 HTML。
 
 纯查询可以使用名词性结果名，但“纯”不自动推出“名词性”。
 结果名必须准确指向返回对象，并足以区分相邻查询；否则使用能说明计算或选择语义的准确动词。
@@ -78,7 +84,7 @@ const trimmed = sample.pipe(dropExperiments("compare/broken"));
 | 角色 | 命名 | 例子 |
 |---|---|---|
 | 从单条 Attempt 取值并两级聚合 | 名词性 Calculation 值 | `passRate`、`costUSD` |
-| 按 Sample 分组计算 | 准确计算动词 | `aggregate(sample, options)` |
+| 按 AnalysisSample 分组计算 | 准确计算动词 | `aggregate(sample, options)` |
 | 立即投影成显示结果 | `toX` | `toAttemptRows(attempts)` |
 | 复杂算法的结果构造器 | 结果名 | `metricValue(...)`、`evidenceRow(...)` |
 | 通用呈现组件 | PascalCase 形状名 | `Table`、`Scatter`、`Callouts` |
@@ -118,7 +124,7 @@ getSampleSummary(...);      // 差：get 没增加可观察语义
 
 | 指代 | 形式 |
 |---|---|
-| 一个领域实体、定义、句柄或返回对象 | 单数：`Record`、`Sample`、`AttemptEvidence` |
+| 一个领域实体、定义、句柄或返回对象 | 单数：`Record`、`AnalysisSample`、`AttemptEvidence` |
 | 返回或操作的一组同类成员 | 复数：`experiments`、`attempts`、`dropExperiments` |
 | 集合类型自身 | 单数类型名，成员字段用复数 |
 | 复合名词里的类型修饰语 | 通常用单数，如 `attemptHref` |
@@ -127,7 +133,7 @@ getSampleSummary(...);      // 差：get 没增加可观察语义
 不能一边按返回对象命名，另一边按内部遍历成员命名，再用单复数制造表面对称。
 
 返回集合不表示函数名必然复数。
-`openRecord()` 返回一个带集合导航能力的 `Record`，所以是单数；`dropExperiments()` 的动作直接作用于多个 Experiment，所以是复数。
+`openRecordReader({ root })` 返回一个 Record 读取面，所以是单数；`experimentIds` 指一组筛选成员，所以是复数。
 
 ## 选择 API 先固定命名视角
 
@@ -139,11 +145,11 @@ getSampleSummary(...);      // 差：get 没增加可观察语义
 | 返回对象 | “得到的是哪一种对象” | 返回对象本身 | 返回对象是稳定领域实体，调用者把它作为整体继续传递 |
 | 被选成员 | “挑出了哪些成员” | 被直接选择的成员 | 成员集合本身就是公开结果，没有更高层领域对象 |
 
-返回 `Sample` 的一组选择器若采用返回对象视角，名字和类型都以单数 Sample 为中心；Run、Attempt 等成员只用于说明选择维度。
-若采用成员视角，就必须整组改用成员的单复数，不能一个名字指 Sample、另一个名字指 Runs，再靠表面对称掩盖差别。
+返回 `AnalysisSample` 的一组 projector 若采用返回对象视角，名字和类型都以单数 AnalysisSample 为中心；Run、Attempt 等成员只用于说明选择维度。
+若采用成员视角，就必须整组改用成员的单复数，不能一个名字指 AnalysisSample、另一个名字指 Runs，再靠表面对称掩盖差别。
 
 名词性纯查询可以采用任一视角，但名词短语必须准确指向所得结果：返回对象视角按单数领域对象命名，成员视角按成员集合命名。
-若去掉参数和返回类型后无法判断它是派生 Sample、成员集合还是布尔状态，名词短语不够清楚，应使用准确的选择动词或调整模块与调用形状。
+若去掉参数和返回类型后无法判断它是投影 AnalysisSample、成员集合还是布尔状态，名词短语不够清楚，应使用准确的投影动词或调整模块与调用形状。
 
 ## 状态、顺序与出处不要混成并列模式
 
@@ -157,6 +163,31 @@ getSampleSummary(...);      // 差：get 没增加可观察语义
 
 因此 `latest` 不能只靠日常语感表示“最好用的当前结果”，`current` 也不能暗中表示“时间最大的 Run”。
 出处差异若不改变用户决策，就只保留为明细事实；不得因为实现能区分，就增加筛选器、转换或公开状态。
+
+`Record` 本身不是一次隐含的“最新结果”。它是由 immutable Run 构成的持久事实集。分析既有事实时，API 通过具名 analysis projector 产生带 expected-slot 分母的 `AnalysisSample`。这种明确成员范围称为有效选择（Effective selection）。当前目标的复用与执行缺口由独立 execution projector 产生，不能从 `AnalysisSample` 推导。
+
+## Record 与 Report 的调用形状
+
+Record root、选择与静态 Report target 都必须在调用点可见：
+
+```ts
+const report = yield* loadReportDefinition(reportModule);
+const input = yield* Effect.scoped(
+  Effect.gen(function* () {
+    const reader = yield* openRecordReader({ root });
+    const sample = yield* projectExplicitRuns(reader, { runIds });
+    const plan = report.plan(createReportScope(sample));
+    return yield* buildReportInput({ reader, sample, plan });
+  }),
+);
+
+const execution = executeReport({ definition: report, input });
+yield* exportStaticReport({ execution, out: target });
+```
+
+`openRecordReader` 接收实际 Record root，不暗中补路径。`buildReportInput` 是唯一 Record→Reports composition boundary；Report 定义、renderer、view 与 export runtime 不接收 reader 或路径。用户代码只在纯 `plan()` 与一次 `executeReport()` 运行；execute 让每个 custom parser 和 consumer 各执行至多一次。静态 export 只写 execution 的既有结果与内建 runtime。
+
+Record 不提供局部 edit/delete、mirror、proof、revision 或防伪 API。业务演进通过新的 channel schema 与 decoder 进入；已发布 Run 不再修改。
 
 ## 可观察的选择差异必须进入公开形状
 
@@ -180,14 +211,15 @@ getSampleSummary(...);      // 差：get 没增加可观察语义
 
 | 形状 | 使用条件 |
 |---|---|
-| `record.operation()` | 操作只导航或读取 Record 已有事实，不引入新的判断层 |
-| `operation(record)` 从 `niceeval/sample` 导出 | 操作根据 Record 派生 Sample，并引入选择、涵盖或可靠性判断 |
-| `sample.operation()` | 操作依赖既有 Sample 语义，且仍返回或观察同一领域对象 |
-| `sample.pipe(operator())` | 多个不可变转换需要顺序组合，并共享 `Sample → Sample` 形状 |
+| `record.operation()` | 操作只导航或读取 Record 已有核心与通道 |
+| `operation(reader)` 从 `niceeval/sample` 导出 | 操作根据 frozen `RecordReader` 派生 `AnalysisSample`，并引入具名 analysis policy 与分母判断 |
+| `sample.operation()` | 操作依赖既有 `AnalysisSample` 语义，且仍返回或观察同一领域对象 |
+| `sample.pipe(operator())` | 多个不可变转换需要顺序组合，并共享 `AnalysisSample → AnalysisSample` 形状 |
 
 “方法更短”或“自由函数更函数式”都不是理由。
 若操作跨越领域层，模块归属应让这个边界在 import 和调用点可见。
-按此规则，从 Record 推导 Sample 的官方选择器属于 `niceeval/sample` 的自由函数；它们不长在 Record 上，也不因最终命名采用名词短语而变成静态值。
+按此规则，从 Record 推导 `AnalysisSample` 的官方 projectors 属于 `niceeval/sample` 的自由函数。
+`projectExplicitRuns(reader, input)` 与 `projectLatestRuns(reader, input)` 不长在 Record 上，也不能退化成传 root 字符串的隐式读取。
 
 ## 选择函数与判别字段共用语义词根
 
@@ -203,11 +235,10 @@ getSampleSummary(...);      // 差：get 没增加可观察语义
 | 返回对象 | 词根指向哪个领域对象 |
 | 正交选项 | 哪些约束不属于基础方式，不进入判别字段 |
 
-`mode` 不得使用函数名里没有的近义词，也不得沿用已删除的历史名字。
-函数若为了语法带有领域对象后缀，`mode` 可以省略该后缀；除此之外不另造缩写或同义词。
+`AnalysisSample.provenance.projector` 使用稳定 `name + version`。内建 identity 是 `explicit-runs/v1` 与 `latest/v1`，输入分别由自己的具名类型承载。不要在 `AnalysisSample` 上另造 currentness 字段，也不要把 execution `reuse | gap` 混进同一个 slot 联合。
 
 正交约束必须写成独立字段，但前提是它对应明确用户旅途。
-仅供审计的出处事实应留在成员 provenance 上，不进入 `Sample.mode`，也不膨胀成组合模式。
+adoption、rename 或其它出处事实留在 Run-owned 具名通道，不进入 Member 核心，也不膨胀成组合选择模式。
 
 ## 相邻 API 按选择维度成组设计
 
@@ -235,15 +266,13 @@ getSampleSummary(...);      // 差：get 没增加可观察语义
 评审完整调用，而不是只读导出名：
 
 ```ts
-import { publish } from "niceeval/record";
+import { projectExplicitRuns } from "niceeval/sample";
 
-await publish(sample, outputDir, {
-  artifacts: ["events", "trace"],
-});
+const sample = await projectExplicitRuns(record, { runIds });
 ```
 
 模块说明领域，函数名说明动作，参数名说明边界，类型限制合法组合。
-函数名不必重复成 `publishRecordSampleToDirectory`。
+函数名不必重复成 `exportSelfContainedReportToDirectory`。
 
 参数遵守三条规则：
 
@@ -270,23 +299,23 @@ makeEval({ ... });    // 差：make 没说明定义、验证还是执行
 ### 打开事实与读取文件
 
 ```ts
-openRecord(".niceeval");  // 好：打开记录根，返回可导航的事实句柄
-getResults(".niceeval");  // 差：Results 指代不明，get 也没交代资源边界
-loadRecord(".niceeval");  // 差：若返回懒读取句柄，load 会错误暗示已经完整读入
+const reader = yield* openRecordReader({ root }); // 好：打开当前 Scope 拥有的 frozen 读取面
+getResults(root);                                 // 差：Results 指代不明，get 也没交代资源边界
+loadRecord(root);                                 // 差：若返回 reader，load 会错误暗示已经完整读入
 ```
 
 `open` 与 `load` 的差别是可观察契约，不是措辞喜好。
 
-### 发布与复制
+### 导出与复制
 
 ```ts
-publish(sample, dir);       // 好：按发布边界构造自包含产物
-copyRuns(sample, dir);      // 差：把解引用、覆盖补记与预检讲成文件复制
-processArtifacts(sample);   // 差：process 没有用户可判断的结果
+exportStaticReport({ execution, out: dir });  // 好：交付已经执行的自包含静态报告
+copyHtml(report, dir);                        // 差：遗漏 runtime、页面和依赖资产
+processArtifacts(input);                      // 差：process 没有用户可判断的结果
 ```
 
 函数按用户任务命名，内部机制留在契约与实现。
-`publish` 的改名理由见[Record / Sample / Reports 分层裁决](../memory/record-sample-report-three-layer-split.md)。
+Record / AnalysisSample / Reports 的职责见 [Record](feature/record/README.md)、[Sample](feature/sample/README.md) 与 [Reports](feature/reports/README.md)。
 
 ### Matcher 与布尔判断
 
@@ -303,7 +332,7 @@ Matcher 工厂的名字优先让断言句子读起来自然。
 ### 不可变转换
 
 ```ts
-sample.pipe(dropExperiments("broken"));   // 好：返回删减后的新 Sample
+sample.pipe(dropExperiments("broken"));   // 好：返回删减后的新 AnalysisSample
 sample.pipe(removeExperiments("broken")); // 差：remove 容易暗示原地修改
 ```
 

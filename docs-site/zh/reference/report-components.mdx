@@ -1,405 +1,177 @@
 ---
-title: "报告组件 API"
-description: "niceeval/report 的 page、计算函数、结果值与双面组件参考。"
+title: "报告 API"
+description: "ReportScope、FactRequirement、ReportPlan、ReportInput、一次执行与静态导出的公开边界。"
 ---
 
-报告作者使用一条普通 TypeScript 数据流：
-
-```text
-Sample 或 AttemptEvidence
-  → 普通函数
-  → 可序列化结果值
-  → 组件
-  → text / web
-```
-
-公开 API 没有统一的惰性查询对象。
-异步读取和计算在 page render 中完成，组件只显示已经算好的值。
-
-## 定义报告
-
-单页报告直接传 render 函数：
-
-```tsx
-export default defineReport(async (sample) => {
-  const rows = toExperimentRows(sample);
-
-  return (
-    <Col>
-      <Table rows={rows} />
-    </Col>
-  );
-});
-```
-
-多页报告静态声明 `pages`：
+## 固定调用链
 
 ```ts
-interface PageDefinition<P = void, I = Sample> {
-  id: string;
-  title: LocalizedText;
-  navigation?: boolean;
-  params?: PageParams<P>;
-  load?: (
-    base: Sample,
-    params: P,
-    ctx: PageLoadContext,
-  ) => I | Promise<I>;
-  render: PageRender<I>;
+let plan: ReportPlan;
+let input: ReportInput;
+{
+  await using record = await openRecordReader({ root });
+  const sample = await projectExplicitRuns(record, { runIds });
+  const scope = createReportScope(sample);
+  plan = definition.plan(scope);
+  input = await buildReportInput({ record, sample, plan });
+}
+
+const execution = executeReport({ definition, plan, input });
+```
+
+只有 `buildReportInput()` 接收 `RecordReader`。Report 定义、Calculation、Page、Download、view 和静态 runtime 都不接收 reader 或路径。
+
+## ReportScope
+
+```ts
+interface ReportScope {
+  readonly provenance: AnalysisProjectionProvenance;
+  readonly runs: readonly AnalysisRun[];
+  readonly slots: readonly AnalysisSlot[];
 }
 ```
 
-`pages` 是非空有序数组。`id` 必须唯一。
-`load` 决定这页的输入从哪来，省略时输入就是当前 Sample。
-声明 `params` 的页按参数产生多个实例（Attempt 详情、Experiment 详情都是这种页），必须同时声明 `load` 并写 `navigation: false`。
-宿主只执行当前请求的 page render。
+`runs` 穷尽全部已选 Run，`slots` 是完整 core-only 分母，保留 `included`、`not-recorded`、`invalid` 和 `excluded`。included slot 带 Attempt ID、origin、locator 和 Member kind，但没有业务 facts。
 
-外壳字段只有 `title`、`theme`、`dimensionPins`、`head` 与 `pages`。
-页脚和页头链接用普通组件组合。组件脚本样式随自定义 renderer 声明。
+## FactRequirement
+
+```ts
+type FactOwner = "run" | "attempt";
+
+interface FactRequirement<Value> {
+  readonly id: string;
+  readonly owner: FactOwner;
+  readonly name: string;
+  readonly source: BuiltInFactSource | CustomJsonFactSource<Value>;
+}
+```
+
+内建 source 只能由 NiceEval 导出。自定义事实使用：
+
+```ts
+defineJsonFact({
+  id,
+  owner,
+  name,
+  parse(document) {
+    return value;
+  },
+});
+```
+
+自定义 document 精确为 `{ observedAt, value }`，media type 为 `application/json`。同一 owner/name 只有一个值；parser 不接收 bytes、路径或 blob。build 只验证 transport，execute 才对每个 owner 与 requirement 组合调用一次同步 parser。
+
+## ReportPlan
+
+```ts
+interface ReportPlan {
+  readonly calculations: readonly Calculation<unknown>[];
+  readonly pages: readonly ReportPage[];
+  readonly downloads: readonly ReportDownload[];
+}
+```
+
+plan 没有顶层 facts 或 resources。每个 consumer 自己声明 inputs；参数化页面必须在 plan 中列出每个具体 route。
+
+## ReportInput
+
+```ts
+interface ReportInput {
+  readonly scope: ReportScope;
+  readonly sample: AnalysisSample;
+  // 内部 fact matrix 使用未导出的 brand，用户代码不可索引。
+}
+
+interface ReportContext {
+  readonly scope: ReportScope;
+  readonly sample: ReportSample; // 明确不含 recordRoot
+}
+```
+
+每项内部读取保留 `ChannelRead` 的 `read | unavailable | unsupported | invalid` 与完整度。consumer 只拿到 fact-free context，以及验证自己 `inputs` 的 `readRun(runId, fact)` 和 `readAttempt(includedSlot, fact)`；不同 requirement 对象不能复用 id。
+
+context 中的 `sample` 是不含 `recordRoot` 的 `ReportSample` projection。Calculation、Page 和 Download 都无法从公开字段取得 Record 路径。
 
 ## Calculation
 
-Calculation 由 `rollup()` 产生：
-
 ```ts
-const changedLines = rollup(
-  async (attempt) => {
-    const diff = await attempt.diff();
-    return diff ? countChangedLines(diff) : null;
-  },
-  {
-    withinEval: min,
-    acrossEvals: mean,
-    unit: "lines",
-    better: "lower",
-  },
-);
-```
-
-Reducer 是函数值。内建入口提供：
-
-```ts
-mean;
-sum;
-min;
-max;
-percentile(0.95);
-```
-
-省略题内或跨题 reducer 时使用 `mean`。
-`null` 不参与 reducer。空集合保持 `null`。
-
-官方 Calculation 和用户 Calculation 使用相同的 `rollup()`。
-常用官方值包括 `passRate`、`costUSD` 与 `durationMs`。
-
-## `aggregate()`
-
-`aggregate()` 按分组函数执行多个 Calculation：
-
-```tsx
-const performance = await aggregate(sample, {
-  by: {
-    agent,
-    experiment,
-  },
-  values: {
-    passRate,
-    costUSD,
-  },
-});
-```
-
-结果是普通只读数组：
-
-```ts
-readonly {
-  agent: string;
-  experiment: string;
-  passRate: MetricValue;
-  costUSD: MetricValue;
-  refs: readonly AttemptLocator[];
-}[];
-```
-
-`by` 和 `values` 的键不能重名，也不能使用保留键 `refs`。
-自定义分组可以是返回字符串的普通同步函数。
-
-## `MetricValue`
-
-```ts
-interface MetricValue {
-  value: number | null;
-  unit?: string;
-  format?: MetricFormat;
-  better?: "higher" | "lower";
-  bounds?: {
-    min?: number;
-    max?: number;
-  };
-  samples: number;
-  total: number;
-  basis: "attempt" | "eval" | "run" | "pair";
-  refs: readonly AttemptLocator[];
+interface Calculation<Value> {
+  readonly id: string;
+  readonly inputs: readonly FactRequirement<ReportJsonValue>[];
+  readonly completeness: "allowPartial" | "requireComplete";
+  evaluate(input: CalculationInput): CalculationValue<Value>;
 }
 ```
 
-`value: null` 表示缺数据或不适用，不等于零。
-`samples`、`total` 与 `basis` 解释分母。
-`refs` 让表格、图表和 Agent 下钻到原始 Attempt。
+Calculation 只能读取自己的 inputs。`allowPartial` 保留完整 denominator 与实际 observed；`requireComplete` 要求 durable collection 与 decoding 均 complete。
 
-复杂算法使用 `metricValue()` 和 `evidenceRow()` 构造带证据结果：
+## Page
 
 ```ts
-const point = evidenceRow({
-  eval: evalId,
-  delta: metricValue({
-    value,
-    samples,
-    total,
-    basis: "pair",
-    evidence,
-    unit: "%",
-  }),
-});
-```
+interface ReportPage {
+  readonly id: string;
+  readonly route: ReportRoute;
+  readonly title: string;
+  readonly inputs: readonly FactRequirement<ReportJsonValue>[];
+  readonly calculations: readonly Calculation<unknown>[];
+  render(input: ReportPageInput): ReportPageModel;
+}
 
-成对差异、稳定性、固定题集成绩单和历史趋势保留在对应报告旁。
-它们不共享一个没有稳定公式的公共函数。
-
-## 实体转换
-
-实体投影立即执行：
-
-```ts
-toAttemptRows(attempts);
-toExperimentRows(sample);
-toEvalRows(sample);
-await toTraceNodes(sample);
-toSampleNotices(sample);
-```
-
-函数返回精确结果形状，不返回统一包装。
-普通数组可以继续 `filter()`、`toSorted()`、`slice()` 或 join。
-
-高频实体提供薄组件：
-
-```tsx
-<AttemptList attempts={attempts} />
-<ExperimentTable input={sample} />
-```
-
-`ExperimentTable` 按 Experiment → Eval → Attempt 展开。
-网页面点击 Attempt 会打开现有详情 modal。
-
-默认实验比较直接使用：
-
-```tsx
-<ExperimentScatter input={sample} />
-```
-
-它画成本与主读数的散点：通过制使用通过率，计分制使用总分。
-
-## 组件属性
-
-| 组件 | 主要属性 |
-|---|---|
-| `Table` | `rows` |
-| `Scatter` | `points`、`x`、`y`、`point` |
-| `Line`、`Bars`、`Area` | `points`、`x`、`y` |
-| `Stat` | `value` |
-| `Grid` | `items` |
-| `Callouts` | `items` |
-| `Conversation` | `turns` |
-| `Waterfall` | `nodes` |
-| `SourceView` | `source` |
-| `DiffView` | `files` |
-| `AttemptDetails` | `attempt` |
-| `ExperimentDetails` | `input` |
-| `Hero` | `logo`、`description`、`links` |
-| `ExperimentScatter` | `input`、`series`、`connect`、`pointTarget` |
-| `ExperimentTable` | `input`、`sort`、`searchable` |
-
-`SourceView` 的 `source` 表示待显示的源码值。
-它不是惰性查询对象。
-
-## 品牌标题区
-
-`Hero` 可以直接显示产品 Logo、介绍和主要外链。
-间距、响应式布局、链接体裁与深浅色适配由 NiceEval 提供：
-
-```tsx
-<Hero
-  logo={{ src: memoryBenchLogo, alt: "MemoryBench" }}
-  description={{
-    en: "Does memory help coding agents ship better code?",
-    "zh-CN": "记忆能否帮助 coding agent 交付更好的代码？",
-  }}
-  links={[
-    {
-      label: "GitHub",
-      href: "https://github.com/acme/memorybench",
-    },
-  ]}
-/>
-```
-
-`logo.src` 使用浏览器可读取的图片 URL。
-`description` 与 `links[].label` 支持 `LocalizedText`。
-`show` 输出介绍与链接文字，但省略纯视觉 Logo。`view` 显示完整品牌标题区。
-
-## 表格
-
-```tsx
-<Table
-  rows={performance}
-  columns={[
-    "agent",
-    { field: "costUSD", label: "Spend" },
-    "passRate",
-  ]}
-/>
-```
-
-省略 `columns` 时按稳定字段顺序推导。
-排序、过滤和 limit 只改变显示行，不重新聚合。
-
-## 图表
-
-```tsx
-<Scatter
-  points={performance}
-  x="costUSD"
-  y="passRate"
-  point="agent"
-/>
-```
-
-从 Sample 派生的 points 必须带行级 `refs`，
-读数字段必须是 MetricValue。
-纯外部数值序列要显式声明 `external`，并且不提供 Attempt 下钻。
-
-一个点点开去哪由 `pointTarget` 决定，返回值是「页 id + 参数」：
-
-```tsx
-<Scatter
-  points={performance}
-  x="costUSD"
-  y="passRate"
-  point="experiment"
-  pointTarget={(row) => ({
-    page: "experiment",
-    params: { experiment: row.experiment },
-  })}
-/>
-```
-
-省略 `pointTarget` 时，行级 `refs` 恰好一个的点链到该 Attempt 详情。多个 `refs` 的点不带链接。
-报告里没有目标页时点也不带链接，不会出现假链接。
-
-`Line` 用于时间或有序数值，`Bars` 用于排行和堆叠，
-`Area` 用于累计量或区间。
-需要混合 mark 时使用 `ComposedChart`，每条 series 显式绑定字段和轴。
-
-横向排行图直接使用官方 `Bars`：
-
-```tsx
-<Bars
-  points={ranking}
-  x="agent"
-  y="passRate"
-  sort={{ field: "passRate", direction: "desc" }}
-  limit={10}
-  layout="horizontal"
-/>
-```
-
-`sort` 与 `limit` 只改变显示顺序和可见行，不重新聚合。
-`layout="horizontal"` 在网页面使用横向排行条。
-text 面恒用横向条，保留分类标签、格式化终值与覆盖率。
-
-## Attempt 与 Experiment 详情
-
-两种详情都是参数化 page。
-官方导出 `standardAttemptPage` 与 `standardExperimentPage`，放进自己的 `pages` 数组即可复用完整详情：
-
-```tsx
-import {
-  standardAttemptPage,
-  standardExperimentPage,
-} from "niceeval/report/built-in";
-
-export default defineReport({
-  pages: [
-    { id: "overview", title: "Overview", render: overview },
-    standardAttemptPage,
-    standardExperimentPage,
-  ],
-});
-```
-
-自定义 Attempt 详情时复用官方页的 `params` 与 `load`，只换 `render`：
-
-```tsx
-{
-  ...standardAttemptPage,
-  render: (attempt) => (
-    <AttemptDetails attempt={attempt} />
-  ),
+interface ReportPageModel {
+  readonly title: string;
+  readonly body: ReportJsonValue;
+  readonly textAlternative: string;
 }
 ```
 
-`render` 里可以显式调用：
+PageModel 是普通可序列化数据。颜色、图形或交互不能替代文字、表格与状态说明。
+
+## Download
 
 ```ts
-toConversationTurns(attempt);
-toDiffFiles(attempt);
-toTimelineNodes(attempt);
-toAttemptSource(attempt);
+interface ReportDownload {
+  readonly id: string;
+  readonly path: ReportDownloadPath;
+  readonly mediaType: string;
+  readonly inputs: readonly FactRequirement<ReportJsonValue>[];
+  readonly calculations: readonly Calculation<unknown>[];
+  build(input: ReportDownloadInput): Uint8Array;
+}
 ```
 
-`ExperimentDetails` 显示单个实验的完整读面：身份、读数摘要、判定构成、题目清单、覆盖缺口与实验级提示。
-默认散点的实验点点开就是这一页。
+Download 通过 `defineReportDownloadPath("downloads/...")` 创建路径，并在唯一执行阶段完整生成 bytes，不在 export 时重新运行。
 
-## 自定义 renderer
+## ReportExecution
 
-只有新增显示形状时才使用扩展入口：
-
-```tsx
-import { defineRenderer } from "niceeval/report/extension";
-
-const ConfusionMatrix = defineRenderer({
-  text(value, options, context) {
-    return renderTextMatrix(value, options, context);
-  },
-  web(value, options, context) {
-    return <WebMatrix value={value} options={options} />;
-  },
-});
+```ts
+interface ReportExecution {
+  readonly plan: ReportPlan;
+  readonly input: ReportInput;
+  readonly calculations: readonly CalculationResult<unknown>[];
+  readonly pages: readonly PageResult[];
+  readonly downloads: readonly DownloadResult[];
+}
 ```
 
-`text` 与 `web` 都是必填项。
-renderer 只接已经计算好的普通值，不读取 Sample、Record、artifact 或网络。
+每种 result 都区分成功、`input-invalid` 与 `execution-failed`。`executeReport()` 对每个 consumer 最多执行一次。view 局部显示失败，export 对同一 execution 全量 preflight。
 
-脚本和样式放在 `assets`。
-初始 HTML 在没有 JavaScript 时仍必须完整可读。
+Calculation result 携带原 Calculation 引用，并与 plan 中的顺序一一对应。
 
-## React 入口
+## StaticAssetManifest
 
-`niceeval/report/react` 只导出纯 Web 组件与结果类型：
-
-```tsx
-const points = await aggregate(sample, {
-  by: { agent },
-  values: { passRate, costUSD },
-});
-
-<Scatter
-  points={points}
-  x="costUSD"
-  y="passRate"
-  point="agent"
-/>
+```ts
+interface StaticAssetManifest {
+  readonly routes: readonly {
+    readonly route: ReportRoute;
+    readonly pagePath: StaticOutputPath;
+    readonly hostDataPath: StaticOutputPath;
+  }[];
+  readonly entries: readonly StaticAsset[];
+}
 ```
 
-服务端或构建进程负责打开 Record、选择 Sample 和计算结果。
-浏览器只接收序列化后的值。
+manifest 固定为 `manifest.json`，并且不把自身列入 entries；除此之外每个文件都必须恰好有一个 entry。静态目录只含已经生成的页面、host-data、downloads 与 exporter 内建 runtime、基础样式和字体。
+
+page 与 host-data 文件名按 plan 顺序产生；内建资源只在 `runtime/`，用户下载只在 `downloads/`。route 与输出 path 都使用最长 240 bytes 的 canonical ASCII 段；比较 key 固定为逐 byte ASCII lowercase，并在创建临时目录前统一检查 exact/key 重复和目录前缀冲突。
+
+`exportStaticReport({ execution, out })` 要求 out 不存在。它不会替换已有目录，也不会执行 Report 代码、读取 Record、访问网络或查找任意用户路径。

@@ -73,7 +73,7 @@ if (!res.requestId) {
 }
 ```
 
-`progress` 不落盘。diagnostic 会随 Attempt 保存并可通过 locator 回顾。HTTP 连接失败或响应无法解析时直接抛错，runner 会记录错误发生在 `agent.run`，并把 Attempt 标为 `errored`。
+`progress` 不落盘。diagnostic 会写入 Attempt-owned 通道，并从已选 Run 的详情页面回顾。HTTP 连接失败或响应无法解析时直接抛错；runner 会记录错误发生在 `agent.run`，并在 `niceeval.verdict` 通道形成 `errored` Verdict。
 
 **这一步支持**：`t.reply`、`t.messageIncludes()`、Judge 的全部对话材料，以及 Experiment 侧的**模型对比**。`ctx.model` 来自 Experiment 的 `model`。运行器原样传递，Adapter 只负责转发。接入等级见 [Tier](/zh/explanation/tier)。
 

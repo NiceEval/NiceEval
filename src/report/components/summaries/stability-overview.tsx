@@ -1,6 +1,6 @@
 // StabilityOverview:stability 视图的主体——读数格 + 稳定性散点 + 判定构成堆叠柱 + 矩阵。
 // 全部区块来自 stabilityMatrix 一次计算与字面投影,不新增聚合口径
-// (docs/feature/reports/components/summaries/stability-overview.md)。
+// (docs/feature/reports/README.md)。
 
 import { defineComponent } from "../../definition/tree.ts";
 import { Chart, Col, Grid, Series, Stat, TableContentView } from "../../definition/primitives.tsx";

@@ -1,6 +1,6 @@
 // 24 视觉身份 = 六色 × 四变体的可直接使用 SVG/CSS 值。
-// 契约:docs/feature/reports/library/presentation.md「实验颜色与维度呈现」、
-// docs/feature/reports/components/README.md「视觉编码容量（24 个身份）」。
+// 契约:docs/feature/reports/README.md「实验颜色与维度呈现」、
+// docs/feature/reports/README.md「视觉编码容量（24 个身份）」。
 // pattern id 全局唯一、颜色走主题令牌 --niceeval-color-series-N,换 basalt/chalk 自动换色。
 
 import type { ReactNode } from "react";

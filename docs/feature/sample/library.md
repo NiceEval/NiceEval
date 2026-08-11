@@ -1,155 +1,189 @@
-# Sample —— 库用法
+# Sample Library
 
-`niceeval/sample` 把一份 [Record](../record/README.md) 选成当前配置下唯一的结果集。
-判断全部写在返回值上，Reports 不再从 Run 或规划字段重建贡献集合。
+本页是 `AnalysisSample` 公开形状的唯一 owner。Record 拥有 Run、Member、Attempt 与读取 issue；Experiments 拥有 `ExecutionProjection`。Sample 只定义怎样把既有 Record 事实投影成分析范围。
 
-## 当前选择器
-
-```typescript
-import { openRecord } from "niceeval/record";
-import { loadProjectCurrentTarget, projectCurrentSample } from "niceeval/sample";
-
-const record = await openRecord(".niceeval");
-const { target } = await loadProjectCurrentTarget(process.cwd());
-const current = projectCurrentSample(record, target, {
-  experiments: "compare/",
-  evals: "algebra/",
-});
-```
-
-`projectCurrentSample()` 对每个 Experiment 执行同一条选择规则：
-
-1. 无派发 Project Target 从同一次 identity planning 输出取得 Experiment `runConfigHash`、逐 Eval `resultConfigHash` 与 canonical fingerprint。
-2. 每个 attempt slot 先在全历史过滤三层身份完整匹配的物理结果，再取最新一条；最新 current 是 errored/skipped 时照样进入报告，carry 另行决定是否重跑，不回退更旧 passed。
-3. `attempts` 只限制可选 slot 上界；coverage 仍以 Eval 为粒度，一个 Eval 完全没有 current attempt 时才产生一个缺口。
-4. 身份齐全但不匹配是 `previous-result`；缺身份是 `unverifiable-result` 并产生结构化 Issue。
-5. Target 提供零 current 时的实验、Eval、agent/model/flags 与题型，Sample 不伪造 Run。
-
-物理 Attempt 指 Record 已经登记并暴露的 `AttemptHandle`，不是递归扫描任意 `result.json`。
-`latestRecordSample(record)` 只重建 Record 自己的最新 head：以最新 Run 配置为版本对照点逐 Eval 向历史补齐；它不承诺与工作树项目定义一致。
-
-## 单 Run 选择
-
-```typescript
-import { latestRunSample } from "niceeval/sample";
-
-const snapshot = latestRunSample(record, { experiments: "compare/" });
-```
-
-`latestRunSample()` 只服务需要一份自包含 Run 的发布与审计旅途。
-它收最新 Run 里实际登记的全部 Attempt，不跨 Run 补题，也不产生另一种 current 状态。
-
-## Sample 形状
-
-```typescript
-interface SampleMissing {
-  evalId: string;
-  reason: "never-run" | "previous-result" | "unverifiable-result";
-  previous?: {
-    locator: string;
-    verdict: "passed" | "failed" | "errored" | "skipped";
-    startedAt: string;
-  };
-}
-
-interface SampleCoverage {
-  experimentId: string;
-  run?: Run;
-  target?: ProjectCurrentExperimentTarget;
-  knownEvalIds: string[];
-  missing: SampleMissing[];
-}
-
-interface Sample {
-  attempts: AttemptHandle[];
-  runs: Run[];
-  historyAttempts: AttemptHandle[];
-  coverage: SampleCoverage[];
-  issues: SampleIssue[];
-  scope(options: { experiments?: string | string[]; evals?: string | string[] }): Sample;
-  filter(predicate: (attempt: AttemptHandle) => boolean): Sample;
-}
-```
-
-`attempts` 是当前贡献全集，官方计算函数只消费它。
-`runs` 只保存真正贡献过 Attempt 的 Run；同一个 Experiment 可以有多个贡献 Run，但它们共享当前 `configHash`。
-`historyAttempts` 服务明确的 History、趋势和稳定性旅途，不参与当前报告计票。
-
-## 缺口与分母
-
-项目 current 的 `knownEvalIds` 完全来自 Target；Record head 的分母来自本地历史与各 Run 声明的已知 Eval 并集。两者再与调用方范围求交。
-`missing` 只列当前 `attempts` 里没有对应 Attempt 的 Eval。
-
-`never-run` 表示历史中没有该 Eval 的任何物理 Attempt。
-`previous-result` 表示历史中有身份完整的物理 Attempt，但它与 Project Target 的三层身份不匹配；`previous` 取最近一条可定位结果作为审计入口。
-`unverifiable-result` 表示只有缺少 run config hash、result config hash 或 fingerprint 的历史结果；它们不能被证明为 current。
-这个引用不参与任何读数，也不保证 `accept` 一定成功；`accept` 仍会按当前项目重新完成全部资格校验。
-
-## provenance 事实
-
-`AttemptHandle.carried` 保留为 provenance 事实。
-它用于 Attempt 详情解释证据从哪里来，不用于过滤、分段、降饱和或改变统计。
-
-如果产品要求结果必须在一定时间内重新执行，这项要求进入携带资格或 fingerprint 输入。
-过期结果不能被携带时，自然形成 current 缺口；Reports 不提供时间过滤器修正当前结果集。
-
-## 转换
-
-```typescript
-const algebra = projectCurrentSample(record, target)
-  .scope({ experiments: "compare/", evals: "algebra/" })
-  .filter((attempt) => attempt.result.verdict !== "skipped");
-```
-
-| 方法 | 含义 | coverage 分母 |
-|---|---|---|
-| `scope()` | 重新定义当前总体 | 与范围求交 |
-| `filter()` | 删除不可信或不适用的当前观测 | 保持不变，删出的 Eval 进入缺口 |
-
-转换同步更新 `attempts`、`runs`、`historyAttempts`、`coverage` 与 `issues`(带 experiment 归属的随所属实验存活)。
-Sample 不提供 `freshOnly()`；需要查看单次执行事实时进入 Run 或 History 旅途。
-
-## 去重
-
-携带会让同一 Attempt 出现在多份 Run 中。
-选择器按稳定 locator 身份去重，重复时保留最新 Run 中的物理副本，证据入口因此落在最新副本上。
-缺少稳定身份时宁可保留，不靠近似字段误删。
-
-## Issue code 全集
-
-`issues` 收读取期需要结构化解释的问题；其中 `unverifiable-current-result` 同时解释相应 coverage 缺口为何不能借用历史结果：
+## 分析投影器
 
 ```ts
-type SampleIssue =
-  | { code: "unfinished-run"; experimentId: string; startedAt: string; dir: string }
-  | {
-      code: "unverifiable-current-result";
-      experimentId: string;
-      evalId: string;
-      attempt: number;
-      missing: readonly ("run-config-hash" | "result-config-hash" | "fingerprint")[];
-    }
-  | {
-      code: "dangling-evidence";
-      experimentId: string;
-      evalId: string;
-      attempt: number;
-      artifactBase: string;
-      artifacts: readonly string[];
-    }
-  | {
-      code: "unreadable-run";
-      dir: string;
-      reason: "incompatible" | "malformed" | "incomplete";
-      producer?: { name: string; version?: string };
-    };
+interface AnalysisProjectorIdentity {
+  readonly name: string;
+  readonly version: number;
+}
+
+interface ExplicitRunsAnalysisInput {
+  readonly runIds: readonly [string, ...string[]];
+}
+
+interface LatestAnalysisInput {
+  readonly experimentIds?: readonly string[];
+}
+
+interface AnalysisProjectionProvenance {
+  readonly projector: AnalysisProjectorIdentity;
+  readonly input: Readonly<JsonValue>;
+}
+
+function projectExplicitRuns(
+  reader: RecordReader,
+  input: ExplicitRunsAnalysisInput,
+): Effect.Effect<
+  AnalysisSample,
+  AnalysisProjectionError | RecordReadError
+>;
+
+function projectLatestRuns(
+  reader: RecordReader,
+  input: LatestAnalysisInput,
+): Effect.Effect<
+  AnalysisSample,
+  AnalysisProjectionError | RecordReadError
+>;
 ```
 
-Issue 不携带文案、严重度或修复命令；Reports 的 Notice policy 决定如何解释。
+内建 projector identity 固定为 `explicit-runs/v1` 与 `latest/v1`。`provenance.input` 是公开输入经过确定性去重和安全归一化后的 JSON 值，不含 Record root、路径、句柄或读取到的业务通道。
+
+`explicit-runs/v1` 按 `runId` 精确匹配。重复值被删除，任一 `runId` 不存在或对应 Run 无法读取时，projection 失败。
+
+`latest/v1` 只考虑完成的 Run，并且每个目标 Experiment 恰好选择一个。若 `experimentIds` 已给出，去重后的非空列表就是目标集合；若省略，则所有可读 Run 核心中出现过的 Experiment 都是目标。
+
+每个目标 Experiment 内按 `completedAt` 升序排列，同一时间使用 `runId` 升序打破并列，最后一项被选中。目标集合为空，或任一目标 Experiment 没有完成 Run，都返回 `sample-latest-unavailable`；它不会悄悄缩小比较组。
+
+latest 必须穷尽候选 Run。任一 Run 无法可靠读取排序所需的 runId、experimentId 或 completedAt 时，返回 `sample-latest-indeterminate`，不能静默跳过。未完成 Run 只能通过 `explicit-runs/v1` 选择。
+
+自定义 analysis projector 可以采用其它用户指定范围或排序，但必须使用独立的稳定 identity，并产出本页定义的完整 `AnalysisSample`。它不能声明当前目标是否需要执行。
+
+## 收窄输入
+
+```ts
+interface AnalysisSampleSelector {
+  readonly runIds?: readonly string[];
+  readonly experimentIds?: readonly string[];
+  readonly evalIds?: readonly string[];
+  readonly slotIds?: readonly string[];
+}
+```
+
+每个字段按字符串精确匹配。单字段内是 OR，不同字段间是 AND；省略字段表示不限制该维度。selector 不接受 glob、前缀匹配或任意回调。
+
+## AnalysisSample 形状
+
+```ts
+interface AnalysisSlotBase {
+  readonly runId: string;
+  readonly slotId: string;
+  readonly experimentId: string;
+  readonly evalId: string;
+  readonly attempt: number;
+}
+
+interface IncludedAnalysisSlot extends AnalysisSlotBase {
+  readonly state: "included";
+  readonly memberKind: "executed" | "carried" | "accepted";
+  readonly attemptId: string;
+  readonly locator: string;
+  readonly originRunId: string;
+  readonly attemptCore: AnalysisAttempt;
+}
+
+interface AnalysisAttempt {
+  readonly attemptId: string;
+  readonly origin: { readonly runId: string; readonly slotId: string };
+  readonly eval: { readonly evalId: string; readonly attempt: number };
+}
+
+interface NotRecordedAnalysisSlot extends AnalysisSlotBase {
+  readonly state: "not-recorded";
+}
+
+interface InvalidAnalysisSlot extends AnalysisSlotBase {
+  readonly state: "invalid";
+  readonly issues: readonly [RecordIssue, ...RecordIssue[]];
+}
+
+interface ExcludedAnalysisSlot extends AnalysisSlotBase {
+  readonly state: "excluded";
+  readonly previous:
+    | IncludedAnalysisSlot
+    | NotRecordedAnalysisSlot
+    | InvalidAnalysisSlot;
+  readonly selector: AnalysisSampleSelector;
+}
+
+type AnalysisSlot =
+  | IncludedAnalysisSlot
+  | NotRecordedAnalysisSlot
+  | InvalidAnalysisSlot
+  | ExcludedAnalysisSlot;
+
+interface AnalysisRun {
+  readonly runId: string;
+  readonly experimentId: string;
+  readonly startedAt: UtcMillis;
+  readonly completedAt?: UtcMillis;
+  readonly expectedSlots: readonly ExpectedSlot[];
+}
+
+interface AnalysisSample {
+  readonly provenance: AnalysisProjectionProvenance;
+  readonly runs: readonly AnalysisRun[];
+  readonly slots: readonly AnalysisSlot[];
+  readonly included: readonly IncludedAnalysisSlot[];
+  readonly notRecorded: readonly NotRecordedAnalysisSlot[];
+  readonly invalid: readonly InvalidAnalysisSlot[];
+  readonly excluded: readonly ExcludedAnalysisSlot[];
+}
+```
+
+`RecordIssue` 由 [Record Library](../record/library.md) 定义。`AnalysisSample` 是 core-only：它不请求业务通道，也不保存 `ChannelRead`、`RecordReader`、文件路径、句柄或 normalized fact。
+
+`runs` 穷尽本次实际选中的 Run，并按 `runId` 排序。它不因 Run 没有 expected slot，或全部 slot 都是 not-recorded、invalid、excluded 而省略该 Run。`slots` 是完整分母，按 `runId`、`slotId` 排序，每个 `(runId, slotId)` 恰好出现一次。四个状态子序列互斥且保序。
+
+included 项读取 Member 采用的 Attempt。基类的 `attempt` 是 expected slot 的非负序号；`attemptCore` 才是所引用 Attempt 的核心投影。executed 的 `originRunId` 等于当前 `runId`；carried 与 accepted 保留源 Attempt 的 origin。`locator` 必须由完整 `attemptId` 双向转换得到。
+
+invalid 项保存 reader 对 membership、identity 或引用产生的全部相关 issues。analysis projector 不把它们改写成空值或 not-recorded。通道状态不会自动把 slot 核心改成 invalid。
+
+## 构造入口
+
+两个内建 projector 都按以下顺序形成 `AnalysisSample`：
+
+1. 按自己的具名 policy 选出 Run。
+2. 按每个 Run 的 expected membership 形成分母。
+3. 读取每个正式 Member 及其 Attempt。
+4. 把缺少 Member 的 expected slot 标为 `not-recorded`。
+5. 把隔离在 Run 之下的 Member、Attempt 核心或引用错误标为 `invalid`。
+
+显式 projector 只读取所选 Run；未选择 Run 的损坏内容不阻断。若所选 Run 自身无法形成 expected slots，或其 members 目录存在没有对应 expected slot 的额外文件，projection 整体失败。对已声明 slot 的 Member、Attempt 核心或引用错误进入对应 slot。
+
+```ts
+function narrowAnalysisSample(
+  sample: AnalysisSample,
+  selector: AnalysisSampleSelector,
+): AnalysisSample;
+```
+
+`narrowAnalysisSample()` 不重新读取 Record。匹配项保留原状态；未匹配项改成 `excluded`，并在 `previous` 中保留收窄前状态。对同一输入重复调用得到相同结果。
+
+## 错误
+
+```ts
+type AnalysisProjectionError =
+  | { readonly code: "sample-run-not-found"; readonly runId: string }
+  | { readonly code: "sample-latest-unavailable"; readonly experimentId?: string }
+  | { readonly code: "sample-latest-indeterminate"; readonly issues: NonEmptyRecordIssues }
+  | { readonly code: "sample-selection-invalid"; readonly field: string; readonly reason: string }
+  | { readonly code: "sample-run-invalid"; readonly runId: string; readonly issues: NonEmptyRecordIssues };
+```
+
+错误只描述 analysis projector 的调用输入与 Run 选择。Record 结构、文件和引用错误继续使用 Record owner 的 typed issue，不在 Sample 重新命名。
+
+## 与 Reports 的边界
+
+Reports 只能从 `AnalysisSample` 构造 `ReportInput`。报告可以计算聚合、呈现 coverage 和 issues，也可以把已计划页面导出成静态目录。Reports 不接收 `ExecutionProjection`，不重新选择历史，也不判断是否需要执行。
 
 ## 相关阅读
 
-- [README](README.md) —— 当前结果集的唯一心智。
-- [局部补跑](use-case/partial-rerun.md) —— 多 Run 如何形成 current。
-- [Record](../record/library.md) —— 物理事实、身份与发布。
-- [Reports](../reports/library.md) —— 消费 Sample 的计算与组件。
+- [README](README.md) —— 分析投影的用户心智和范围。
+- [局部执行后的分析](use-case/partial-rerun.md) —— Run membership 怎样形成分析分母。
+- [Record Library](../record/library.md) —— `RecordReader`、`ChannelRead` 与 `RecordIssue`。
+- [Execution projection](../experiments/cache.md) —— 当前目标的 reuse 与 gap。
+- [Reports](../reports/README.md) —— `AnalysisSample` 到 `ReportInput` 的单向边界。

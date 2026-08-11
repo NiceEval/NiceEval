@@ -231,7 +231,7 @@ interface AgentSession {
 }
 ```
 
-Runner 为 Agent 的 `setup`、每次 `send` 和 `teardown` 分别绑定 lifecycle scope。Adapter 只报告当前回调内部的 progress/diagnostic，不能传 phase、颜色或输出流。`progress` 不落盘。diagnostic 会进入 Attempt 的 `result.json`。无法继续时抛错，由 runner 保存结构化 error 并把 Attempt 标为 `errored`。
+Runner 为 Agent 的 `setup`、每次 `send` 和 `teardown` 分别绑定 lifecycle scope。Adapter 只报告当前回调内部的 progress/diagnostic，不能传 phase、颜色或输出流。`progress` 不落盘。`diagnostic` 作为 Attempt-owned 诊断通道事件提交进 Record。无法继续时抛错；runner 会保存结构化 error，并在 `niceeval.verdict` 通道形成 `errored` Verdict。Attempt lifecycle state 只有 `active` / `completed` / `abandoned`，verdict token 不是 Attempt state。
 
 `ctx` 里没有要你检查的标志位。三个档位字段都是"透传"语义：`model`、`flags` 由 experiment 声明、运行器原样递过来，Adapter 只负责随请求转发给应用，不解释它们的含义。`telemetry` 仅在配置了 OTel 接入时出现，`send` 里只需要把 `headers` spread 进请求头——接收端点在 `defineConfig` 里固定、由应用启动时指向，不从这里传，见[OTel 接入](/zh/tutorials/connect-otel)。`experimentId` 是路径推导出的稳定标识，典型用途是在 Sandbox 的生命周期里按实验隔离跨 attempt 的状态（缓存目录名、Sandbox 快照 tag 按它分区），见 [Sandbox provider · 生命周期](/zh/tutorials/sandbox-providers#生命周期)。
 
@@ -302,7 +302,7 @@ Sandbox Agent，只有它的回调拿到带真实 `sandbox` 的 `SandboxAgentCon
 | `turn.calledTool()` / `turn.toolOrder()` 等正断言 | events 里有配对的 `operation.started` / `operation.finished` | 无——有事件就能断 |
 | `t.notCalledTool()` / `t.usedNoTools()` 等负断言**可信** | 事件来自带完整性证明的官方转换器 | 无——证明随转换器返回值走 |
 | `t.sandbox`、`t.sandbox.fileChanged()` 等 | `defineSandboxAgent` 构造 | 无 |
-| `EvalResult.trace`、`niceeval view` 瀑布图 | `tracing` 块存在（span 只进瀑布图，不喂断言） | 无——块本来就要写 |
+| trace 通道与 `niceeval view` 瀑布图 | `tracing` 块存在（span 只进瀑布图，不喂断言） | 无——块本来就要写 |
 
 负断言那行是唯一分档次的：`notCalledTool` 断的是"没发生"，前提是"事件全量"——这只有来源本身有完整性契约时才成立（SDK 原生事件流透传、AI SDK 的 `result.steps`、Responses 的 `output`）。手写映射没有证明，负断言会在运行时提示不可信，而不是静默假通过。所以也不存在"声明了做不到"的失真：可信度跟着事件的来源走，不跟作者的自觉走。逐能力的精确义务见[能力参考](/zh/reference/capabilities)。
 

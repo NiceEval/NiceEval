@@ -213,7 +213,7 @@ NiceEval 的静态 HTML 比普通应用 SSR 更严格：它不依赖 hydration�
 
 ### 已经做对的部分
 
-NiceEval 的[报告组件分层](../feature/reports/components/README.md)已经区分显示原语、领域组合组件和共用函数。
+NiceEval 的[报告组件分层](../feature/reports/README.md)已经区分显示原语、领域组合组件和共用函数。
 报告作者先用普通函数完成聚合和转换，再把 `rows`、`points`、`items` 或 `value` 交给组件。
 
 Table 与 Chart 都不读取 Sample，也不执行 Calculation。

@@ -1,4 +1,4 @@
-// 站点管线:本地 server 与 `--out` 的唯一联系面(docs/feature/reports/view.md 开篇)。
+// 站点管线:本地 server 与 `--out` 的唯一联系面(docs/feature/reports/README.md 开篇)。
 // planSite 把结果根物化成一份站点产物清单(index.html + artifact 证据树),writeSite 把清单
 // 写盘,server 按路径服务同一份清单——布局与取数知识(artifact 相对路径、sources.json 解引用)
 // 只住在这里,两个宿主都是哑消费者,同一路径两边逐字节一致(site-parity 测试守护)。
@@ -34,7 +34,7 @@ export interface SitePlan {
   scan: ViewScan;
   /**
    * 外壳(styles / scripts / head 资产)的内容指纹。本地模式据此决定重建后是就地换报告块还是
-   * 整页重载(docs/feature/reports/view.md「页面就地换内容」)——外壳住在 `<head>` 里,
+   * 整页重载(docs/feature/reports/README.md「页面就地换内容」)——外壳住在 `<head>` 里,
    * 就地替换要重放整套加载顺序,比重载一次更难解释。
    */
   shellFingerprint: string;
@@ -53,7 +53,7 @@ export function reportBlockPath(pageId: string, locale: ReportLocale): string {
 
 export interface SitePlanOptions {
   /**
-   * `index.html` 预烘哪些报告块(docs/feature/reports/view.md「本地看到的就是发出去的」)。
+   * `index.html` 预烘哪些报告块(docs/feature/reports/README.md「本地看到的就是发出去的」)。
    *
    * - `"all"`(缺省):全部页 × 全部语言在建清单时就渲染并烘进 `index.html`。导出产物脱离
    *   server 也能读,`file://` 直接打开同样不缺块。
@@ -64,7 +64,7 @@ export interface SitePlanOptions {
   prebake?: "all" | "on-demand";
 }
 
-// 前端会 fetch 的原字节证据文件(docs/feature/reports/view.md「静态导出」:有就带,缺时前端
+// 前端会 fetch 的原字节证据文件(docs/feature/reports/README.md「静态导出」:有就带,缺时前端
 // 在证据位置如实显示缺失;o11y.json 永不进产物——报告数字已烘进 HTML,浏览器不读它)。
 const RAW_COPY_ARTIFACTS = ["commands.json", "events.json", "trace.json", "diff.json"];
 
@@ -363,7 +363,7 @@ const VIEW_LIVE_FLAG_SCRIPT = `<script>window.__NICEEVAL_VIEW_LIVE__=true;</scri
  * 内联 <script>:排序 / 过滤 / tooltip,document 级事件委托,报告块被前端搬进槽位也无需重绑;
  * 无 JS 时报告内容依旧完整);外壳声明的 styles 注入在官方样式之后、head 标签(headHtml,
  * 由站点管线物化本地资产后渲染)在外壳 styles 之后、scripts 注入在官方增强脚本之后
- * </body> 前,均按声明顺序(docs/feature/reports/library/shell.md)。
+ * </body> 前,均按声明顺序(docs/feature/reports/README.md)。
  * 前端只把当前页 / 当前界面语言对应的块摆进报告槽位置,不解析。
  */
 export async function renderHtml(
@@ -431,7 +431,7 @@ const ATTEMPT_LOCALE_SWAP_SCRIPT = `(function(){try{var s=localStorage.getItem("
  * 一个参数化页实例(attempt、experiment……核心不区分)的独立文档:与 index.html 是「文档」
  * 而非「App」——en 内容直接可见(无 JavaScript 时浏览器正常渲染这个 div),zh-CN 变体带
  * `hidden` 属性(同样不需要 JS 就能被浏览器正确隐藏,只是不显示,不是不存在),一段极小内联
- * 脚本按检测到的界面语言在两者间切换(docs/feature/reports/view.md「静态导出」:基线链接
+ * 脚本按检测到的界面语言在两者间切换(docs/feature/reports/README.md「静态导出」:基线链接
  * 直接指向这份文档,保证无 JavaScript 也能读完整详情)。不复用 renderHtml/template.html 的
  * SPA 外壳——那条路径的 #root 要等 React 挂载才有内容,不满足这里「无 JS 仍完整可读」的要求。
  * 增强脚本(index.html 里的渐进增强,拦截目标链接后 fetch 这份文档、按同一

@@ -1,5 +1,5 @@
 // 普通值计算内核：Reducer / MetricValue / rollup / aggregate / 官方分组。
-// 契约见 docs/feature/reports/library.md 与 calculations.md。
+// 契约见 docs/feature/reports/README.md 与 calculations.md。
 
 import type { AttemptHandle, Sample, SampleCoverage, Run } from "../../record/types.ts";
 import type { AttemptLocator } from "../../record/locator.ts";

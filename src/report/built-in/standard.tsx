@@ -77,7 +77,7 @@ export const standardTracesPage = {
 };
 
 /**
- * attempt 详情:标准库导出的参数化页(docs/feature/reports/library.md「参数化页:attempt
+ * attempt 详情:标准库导出的参数化页(docs/feature/reports/README.md「参数化页:attempt
  * 与 experiment 详情」)。`params.encode` 是恒等函数——locator 本身就是 URL-safe 的不透明
  * 字符串,不需要额外编码;`load` 经 `ctx.evidence()` 装载证据,不重新实现任何一条聚合规则。
  */
@@ -96,7 +96,7 @@ export const standardAttemptPage: ParameterizedPageDefinition<{ locator: Attempt
 };
 
 /**
- * experiment 详情:标准库导出的参数化页(docs/feature/reports/library.md「参数化页:attempt
+ * experiment 详情:标准库导出的参数化页(docs/feature/reports/README.md「参数化页:attempt
  * 与 experiment 详情」)。`params.encode` 同样是恒等函数——experiment id 本身就是
  * URL-safe 的不透明字符串;`enumerate` 直接读 `base.runs` / `base.coverage` 的 experiment id
  * 并集(与 `experimentListData` 归组的口径一致),不经 `toExperimentRows`——`PageParams.enumerate`

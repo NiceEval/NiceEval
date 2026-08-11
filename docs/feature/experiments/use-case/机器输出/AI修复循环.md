@@ -1,51 +1,46 @@
-# `--json`(AI 循环):让 coding agent 驱动「跑→读失败→改→重跑」
+# `--json`：让 coding agent 跑、查、改、复验
 
-## 解决什么问题
+coding agent 不需要解读 TTY 重绘。
+它需要稳定的 Invocation identity、完整 Attempt locator、按需读取证据的入口，以及最终 receipt。
 
-让 Claude Code / Codex 这类 coding agent 替你修 eval 失败:它自己跑 niceeval、读失败证据、改代码、再跑。human live 面板对它全是噪音——原地重绘、spinner、框线和 ANSI 都要浪费上下文去解读,整份 transcript 放入去更是灾难。它真正需要三样:退出码、失败的稳定身份(locator)、按需下钻的证据入口。运行流加 `--json` 得到可直接解读的 NDJSON 事件;深读证据一律交给 [`niceeval show`](../../../reports/show.md)(要结构化就同样加 [`--json`](../../../reports/show/json.md))。
+`exp --json` 输出当前进程的 NDJSON 反馈，末尾恰好一条 `InvocationReceipt`。
+完整词表见 [CLI · 机器怎么读](../../cli.md#机器怎么读--json)。
 
 ## 全流程
 
-1. agent 先 `--dry --json` 看将运行什么,确认选择没扩大(单 JSON 文档,不是流):
+1. 先检查计划，确认选择没有扩大：
 
    ```sh
    niceeval exp compare memory/commit0 --dry --json
    ```
 
-2. 实跑。`stdout` 只追加低频事件:`start` 一行;失败、错误立即一条;连续 30 秒没有永久事件才补一条 `progress` 心跳。普通状态变化不触发输出(事件词表单源见 [CLI · 机器怎么读](../../cli.md#机器怎么读--json)):
+2. 执行并读取进度反馈与末尾 receipt：
 
    ```sh
    niceeval exp compare memory/commit0 --json
    ```
 
-   ```json
-   {"format":"niceeval.exp","schemaVersion":1,"event":"start","total":5,"configs":5,"concurrency":4,"reused":1}
-   {"event":"failure","locator":"@17m2k9pq","evalId":"memory/commit0-cachetool","experimentId":"compare/bub-e2b","severity":"gate","assertion":"cache tool is invoked","matcher":"calledTool(\"cache\")","received":"0 tool calls"}
-   {"event":"result","status":"failed","passed":4,"failed":1,"errored":0,"reused":1,"completion":"complete","snapshots":[".niceeval/compare/bub-e2b/<run>"]}
-   ```
+   `progress` 与 `diagnostic` 服务当前进程；最后一条 `receipt` 是完整 `InvocationReceipt`。
 
-3. 用 locator 只展开所需证据,不整段拉 transcript:
+3. 只用完整 locator 展开必要证据：
 
    ```sh
-   niceeval show @17m2k9pq
-   niceeval show @17m2k9pq --execution
+   niceeval show --run <runId> --page attempt-01J8ZK3M6P4T7V9X2C5N8QW0RY
    ```
 
-4. 修复后只重跑受影响项;正常依赖指纹缓存,通过项不重付(怀疑缓存口径时才配 [`--rerun all`](../重新运行/)):
+4. 修改后重新运行受影响选择。
+   指纹变化时默认计划会执行受影响成员；仅外部条件变化时选择 `--rerun` 或 `--rerun all`。
 
-   ```sh
-   niceeval exp compare/bub-e2b memory/commit0-cachetool --json
-   ```
-
-5. 收工前全量验证,退出码 `0` 才算完成——agent 不靠自然语言猜成败。
+5. 以退出状态和 `InvocationReceipt` 判断完成。
+   一条进度计数、Human 文案或单个 passed Verdict 都不能替代完整 receipt。
 
 ## 边界
 
-- 事件流不是另一份结果 schema;权威数据是 Run 与 attempt artifacts,批量分析走 [`show --json`](../../../reports/show/json.md) 或 [Results](../../../record/README.md) 读取面。
-- 不读运行流也完全可行:跑默认人读文本、只看退出码,失败后直接 `niceeval show`。`--json` 是需要程序化消费运行事件(计数、看板、并行编排)时的入口。
-- `failure` 事件只带主失败断言的有界字段;完整 assertions、源码、execution、diff 按需 `show` 下钻。
+- 运行流不是第二套结果格式。业务事实从 receipt 的 `runIds` 选择 Sample，再由 `show` 或 Report 读取。
+- progress 只是当前进程状态，不能当作 Record 事实。
+- failure 的完整 assertion、conversation、diff 与 usage 按需经 Record reader 读取，不把整段执行内容塞回 NDJSON。
 
 ## 相关阅读
 
-- [CLI · 机器怎么读](../../cli.md#机器怎么读--json) —— 事件词表、心跳节奏与 `result` 事件的单源。
-- [`--json`(CI 门禁)](CI门禁.md) —— 同一形态的另一类消费者。
+- [Experiments CLI · `--json`](../../cli.md#--json) —— 当前进程反馈与 receipt 的形状。
+- [`--json`（CI 门禁）](CI门禁.md) —— 退出码与 JUnit 的消费方式。

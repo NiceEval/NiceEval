@@ -16,7 +16,7 @@ measurement 只作诊断显示：`0.73, required >= 0.8, mismatched`。它不是
 Score 的 Attempt 区块顺序为 Execution、Score、评分项。每条评分项显示 `recorded`、实际贡献，例如
 `+2` 或 `+4`，以及 threshold condition 或 stop cause。
 
-Score 页面不显示 Verdict、Pass / Fail、总分、max、百分比、points 或 weight。未配置 `.score()` 的
+Score 页面不显示 Verdict、Pass / Fail、总分、max、百分比或其它旧式数值单位。未配置 `.score()` 的
 Assertion 显示 `recorded`，不显示 `+0`。没有 contribution 时，正式 score 为 `0`，并提示
 “没有贡献分数的评分项”。
 
@@ -27,5 +27,5 @@ Assertion 显示 `recorded`，不显示 `+0`。没有 contribution 时，正式 
 
 `show`、`view`、JSON、export 与 source 都离线读取同一份结构化 AssertionResult。界面可以根据 subject
 `a`、evaluator / Match `b` 的 config、evidence refs 与 limitations 重新组织文案和布局，但不能重跑 Match、
-调用 Judge、改变 evaluation 或补另一套判定。`expected` / `received` 是读取投影，不是 Record 中仅存的
+调用 Judge、改变 evaluation 或补另一套判定。`expected` / `received` 是读取投影，不是结果中仅存的
 两个字符串。

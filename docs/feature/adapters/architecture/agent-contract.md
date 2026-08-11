@@ -56,7 +56,7 @@ interface Turn {
 进程内函数和远程 HTTP 服务都属于 Direct Agent，不形成第三种运行器分支。
 
 `usage` 的 token 桶按恒互斥口径落值:`inputTokens` 是未缓存输入。
-OpenAI 系协议报的「含缓存输入总量」要先扣掉缓存命中子集再落桶(契约与理由见 [Record · Usage](../../record/architecture.md#usage))。
+OpenAI 系协议报的「含缓存输入总量」要先扣掉缓存命中子集再落桶(契约与理由见 [Record · Architecture](../../record/architecture.md))。
 各协议的原生口径与扣减明细见各 adapter 的 cost 文档。
 网关实测成本只经 `usage.costUSD` 显式带回,core 从不从 token 反推。
 
@@ -85,7 +85,7 @@ interface AgentContext {
   readonly experimentId?: string;
   progress(update: { message: string; current?: number; total?: number }): void;
   diagnostic(input: DiagnosticInput): void;
-  fact(key: string, value: string | number | boolean): void;
+  fact(name: string, value: JsonValue): void;
   log(msg: string): void;
 }
 
@@ -94,8 +94,9 @@ interface SandboxAgentContext extends AgentContext {
 }
 ```
 
-`fact(key, value)` 是与 `progress` / `diagnostic` 并列的第三条反馈通道:上报本次运行的中性运行观测(如实际生效的 agent 配置、缓存命中状态),落进 `AttemptRecord.facts` 成为一等观测量。
-它不影响 Turn status 或 verdict,形状与覆写语义见 [Record · facts](../../record/architecture.md#facts运行事实)。
+`fact(name, value)` 是与 `progress` / `diagnostic` 并列的第三条反馈入口：它以反向域 name 写入本 Attempt 的中性 JSON document，完整 document 上限为 65,536 UTF-8 bytes。
+同一 owner/name 只允许写一次；第二次写入是 typed error，不替换也不追加。它作为 Attempt-owned custom channel 保存，成为一等观测量。
+它不影响 Turn status 或 verdict，精确形状与写入语义见 [Record · Architecture](../../record/architecture.md)。
 
 `ctx` 是驱动 Agent 的低层上下文,eval 的 `t` 是运行器构造的断言视图。
 二者共享 experiment 输入、signal 与作用域反馈能力,但只有 `ctx` 暴露 Agent 会话状态,只有 `t` 暴露断言和 judge。

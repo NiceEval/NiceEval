@@ -97,7 +97,7 @@ Provider 仍收到原始 script、argv 与 env，运行时 stdout/stderr 也原�
 变化只发生在 Runner 的落盘边界：命令摘要先精确替换再截断，失败输出与最终执行证据中的同一已知值也替换成 `<redacted>`。
 敏感值集合只活在当前 Attempt 内存里，不进入 timing、artifact、指纹或 Sandbox identity。
 
-这不是按字段名猜测的 secret scanner。NiceEval 不会因为文本出现 `token=`、`api_key` 或 `Authorization` 就擅自隐藏后面的任意内容；未登记的自由文本、调用方先行编码/拆分后未一并登记的形态、Provider 自己的原生日志，以及已有旧 artifact 都无法由读取端可靠恢复 provenance。`--timing=full`、`--execution --expand` 与 `--json` 只展开已经脱敏的落盘值，不会还原原文。
+这不是按字段名猜测的 secret scanner。NiceEval 不会因为文本出现 `token=`、`api_key` 或 `Authorization` 就擅自隐藏后面的任意内容。未登记的自由文本、调用方先行编码或拆分后未一并登记的形态、Provider 原生日志，以及已有旧 artifact，都无法由读取端可靠恢复 provenance。Report 的 timing、execution 与 JSON 页面只展开已经脱敏的落盘值，不会还原原文。
 
 ### 命令 timeout 与取消
 

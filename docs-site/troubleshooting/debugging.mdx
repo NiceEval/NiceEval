@@ -1,235 +1,80 @@
 ---
-title: "Troubleshooting failures and reviewing past runs"
-sidebarTitle: "Debugging guide"
-description: "A scenario-organized troubleshooting guide: how to pinpoint a failed assertion, how to get into the Sandbox after an environment error, how to see what the agent changed, and how to dig up and review a past run — each step comes with a command sequence and sample output."
+title: "Debug Record and Report Problems"
+sidebarTitle: "Debugging"
+description: "Use visible errors, Sample states, and channel states to diagnose viewing, rerun, and export problems."
 ---
 
-After a `niceeval exp` run, every failed Attempt carries an `@`-prefixed locator (like `@1qrdcfq8`). It shows up in the run summary, CI logs, and reports. The locator itself never expires — as long as the corresponding result snapshot under `.niceeval/` still exists, today's locator opens the same Attempt with the same command next week too. Every troubleshooting session starts from it.
+Let the Runner, active reader, and manual editor stop before inspecting a quiescent Record. Sample selection and ReportInput construction for an export must also have finished; later Report execution and site writing do not access the Record. Then query an explicit Run instead of guessing from a directory name or time.
 
-One general rule first: NiceEval's own errors and warnings state the next step right at the end of the message. When one command fixes it, the message already contains the complete command with your experiment name filled in — copy and run it (the web page even has a one-click copy button). A warning you can safely ignore spells out exactly when it's safe to ignore. So when you see an error, read its last sentence first. This guide covers the scenarios that need human judgment beyond the message itself — how to pinpoint a failed verdict, how to get into the environment after an error.
-
-## The first step is always `niceeval show @<locator>`
-
-Opening an Attempt with no flags shows a page designed for troubleshooting: the verdict, the failed assertions, the timing breakdown, a summary of changes, and the commands available next.
-
-```text
-$ niceeval show @1qrdcfq8
-@1qrdcfq8 · memory/swelancer-manager-proposals · dev-e2b/codex-e2b · failed
-snapshot 2026-07-12T10:08:29.361Z · attempt 1 · 50.0s · 58.5k tokens · $0.05
-
-assertions: 3 passed · 1 gate failed
-eval source: evals/memory/swelancer-manager-proposals.eval.ts · sha256:ee33b9c4…
-
-✗ gate · Issue 15193: selected proposal matches the one maintainers accepted
-    assertion: equals(4)
-    expected: 4
-    received: 1
-    source: evals/memory/swelancer-manager-proposals.eval.ts:40:11
-
-execution: 12 events · 0 skill loads · 7 tool calls · 4 AI messages
-timing: sandbox.queue 0.2s · sandbox.create 5.6s · sandbox.setup 3.5s · agent.setup 12.1s ·
-        eval.run 26.3s · workspace.diff 0.3s · assertions.evaluate 1.4s · teardown +0.8s
-
-changes: 2 files changed by agent · M manager_decisions.json · A notes/decision-log.md
-
-available:
-  niceeval show @1qrdcfq8 --source
-  niceeval show @1qrdcfq8 --execution
-  niceeval show @1qrdcfq8 --timing
-  niceeval show @1qrdcfq8 --diff
+```sh
+npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
+npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY \
+  --page attempt-01J8ZK3M6P4T7V9X2C5N8QW0RY
 ```
 
-This page answers one question first: **did the agent get it wrong (`failed`), or did the environment never run at all (`errored`)?** The two cases call for completely different troubleshooting paths.
+## The Record cannot be found or opened
 
-## Scenario 1: a failed assertion (failed) — the agent ran to completion, but the result is wrong
+| Visible error | Meaning | Next step |
+| --- | --- | --- |
+| `record-root-missing` | The selected Record root does not exist. | Check the project directory or `--record`. |
+| `record-format-invalid` | The root is not in the `niceeval.record` format. | Point to the correct `.niceeval/record/` directory. |
+| `record-core-invalid` | The root `record.json` or reserved layout is invalid. | Repair the named root file and issue. |
+| `CoreRead.invalid` | The selected Run, Member, or Attempt core is invalid. | Repair the named issue in the Sample or slot. |
 
-The troubleshooting order is "which assertion failed → what the agent actually did → what it actually changed."
+Do not replace these errors with an empty result. Repair the named path or file, then read again.
 
-**1. Put the assertion back next to its source.** `--source` shows the Eval source saved at run time (not whatever version you may have since edited in your workspace), with the failed assertion marked right on its line. The `t.send(...)` call line is marked with the turn it produced — the turn label (`turn1`, the same scheme `--execution` / `--timing` use), whether that turn completed, and how long it took:
+## An expected result is missing from the Sample
 
-```text
-$ niceeval show @1qrdcfq8 --source
-21✓     await t.send("Review the proposals and record your decision…");
-    turn1 · completed · 22.4s
-38      for (const [issue, label] of Object.entries(expected)) {
-39        await t.group(`Issue ${issue}: selected proposal matches…`, async () => {
-40✗         t.check(Number(decisions[issue]?.selected_proposal_id), equals(label.selected_proposal_id));
-    gate · Issue 15193 · equals(4) · expected 4 · received 1
-41        });
-42      }
+A Sample preserves the expected-slot denominator for its Run. Check each slot's state on the page:
+
+| State | Meaning | Next step |
+| --- | --- | --- |
+| `included` | The Member and Attempt are readable. | Check the required business channel. |
+| `not-recorded` | An expected slot has no Member. | Check whether the Invocation completed, or rerun that scope. |
+| `invalid` | The Member, Attempt, or reference has a problem. | Repair the named issue; do not treat it as uncollected. |
+| `excluded` | This selection excluded the item. | Check `--experiment`, `--eval`, or another selection condition. |
+
+To see what the next run will do, first run:
+
+```sh
+npx niceeval exp checkout --dry
 ```
 
-**2. See what the agent actually did.** `--execution` unrolls this Attempt's conversation as a timeline — user messages, assistant replies, and each tool call's input and result:
+The output identifies whether each slot executes, is `carried`, or waits for an explicit `accepted` Member. It also explains why adoption conditions are not met.
 
-```text
-$ niceeval show @1qrdcfq8 --execution
-turn1 · completed · 22.4s · 12.4k tok · $0.02
-  USER
-    Review the proposals and record your decision for each issue…
+## A channel is unavailable or fails
 
-  ASSISTANT
-    I'll inspect the task layout and the decision format first…
+A channel state affects only the page or Calculation that requested it:
 
-  TOOL · command_execution  +12.8s · 1.3s
-    input
-      /bin/bash -lc 'cat tasks/15193/proposals.md'
-    result · completed · exit 0
-      Proposal 1: …
+| State | Meaning | Next step |
+| --- | --- | --- |
+| `unavailable` | It was not collected or does not apply. | Check whether that run should collect the channel. |
+| `unsupported` | The current reader does not support the channel. | Use a page that does not need it, or a reader that does. |
+| `invalid` | The requested channel file or content is invalid. | Repair the named descriptor, file, or content. |
+| `partial` | Collection or decoding is incomplete. | Read the observed count, denominator, and issue; do not treat the value as complete. |
+
+`unavailable` does not mean `unsupported`, and `unsupported` does not mean `invalid`. A requested invalid channel fails that request. An unrequested channel does not block an unrelated page or export.
+
+## An edit is not visible
+
+`show` and `view` create one fixed ReportInput for a command. If you edit a Verdict, Usage, or another channel after the Record becomes quiescent, end the current viewer and run it again:
+
+```sh
+npx niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --no-open
 ```
 
-The conversation is segmented by turn; each turn's header line gives its number (`turn1`), status, duration, and usage — this same numbering is used in `--diff` and `--timing`, so you can cross-reference them.
+Do not run a Runner or active reader while editing. An export holds its reader only while it selects the Sample and creates ReportInput; Report execution and site writing no longer access the Record afterward.
 
-When you don't want to read the whole thing, pipe it into `grep` for a targeted search. List which tools this Attempt used and how many times each:
+## JSON has no receipt
 
-```text
-$ niceeval show @1qrdcfq8 --execution | grep "TOOL ·" | sort | uniq -c
-   5   TOOL · command_execution
-   2   TOOL · file_change
-```
+`npx niceeval exp <experiment> --json` writes its final receipt only after it successfully creates an Invocation. If input validation fails first, there are no `runIds` to inspect.
 
-To confirm whether it ran a particular command or mentioned a particular file, just search for the keyword:
+Correct the Experiment, Eval selection, or command argument and run it again. When it succeeds, use the receipt's `runIds` with `show`, `view`, or `view --out`.
 
-```bash
-niceeval show @1qrdcfq8 --execution | grep proposals
-```
+## A static report site cannot export
 
-**3. See what it actually changed.** `--diff` shows only **files the agent itself changed** — the starting files you uploaded and any verification material written after the run are never mixed in, so every line in the list is genuinely the agent's own work:
+`view --out` can export only planned pages, downloads, and assets. A requested invalid channel, missing asset, network URL, bad path, or symbolic link makes the export fail.
 
-```text
-$ niceeval show @1qrdcfq8 --diff
-2 files changed by agent
-  M manager_decisions.json   +6 -2    turn1, turn2
-  A notes/decision-log.md    +18      turn2
+Correct the error and export again. A successful static directory includes a `StaticAssetManifest` and opens in an offline browser; it does not read the source Record.
 
-single file: niceeval show @1qrdcfq8 --diff=manager_decisions.json
-```
-
-The `turn1` at the end of a line shows which turn changed that file, matching up with the turn numbers in `--execution`. To see one file's line-by-line changes, join the file path with `=`:
-
-```text
-$ niceeval show @1qrdcfq8 --diff=manager_decisions.json
-M manager_decisions.json · changed in turn1, turn2
-@@ -1,5 +1,7 @@
- {
--  "15193": { "selected_proposal_id": 1 },
-+  "15193": { "selected_proposal_id": 4 },
-```
-
-At this point you can usually draw a conclusion: was the task description ambiguous and the agent misread it, or was the assertion itself written too rigidly?
-
-**Need to see the files themselves, not just the changes?** The on-disk evidence deliberately doesn't save the whole workspace — `--diff` only has the files the agent changed; files the agent should have written but didn't, the starting material you uploaded, and whatever setup produced are all absent from it. To see their actual content, go into the live environment: rerun this Eval with `--keep-sandbox` (a `failed` Attempt gets kept too, not only environment errors), enter the Sandbox the way Scenario 2 below describes, and the workdir holds the complete file tree as it stood when the run finished.
-
-## Scenario 2: an environment error (errored) — the agent never ran at all
-
-An `errored` Attempt's first page doesn't list assertions — it lists which phase the error happened in and why:
-
-```text
-$ niceeval show @12h8m4k1
-@12h8m4k1 · memory/agent-029-use-cache · compare/claude-e2b · errored
-
-error:
-  phase: sandbox.create
-  code: sandbox-rate-limit
-  message: E2B sandbox allocation failed after 5 attempts
-  cause: RateLimitError · too many concurrent sandboxes
-
-execution: unavailable (attempt failed before telemetry was configured)
-timing: sandbox.queue 1.2s · sandbox.create 2m 6s ✗ failed here
-```
-
-`phase` tells you directly which step it died at, and it decides which path you take next:
-
-**`sandbox.create` failed — the Sandbox was never created, so there's no environment to keep around.** These errors (quota, rate limits, credentials, a missing image / template) get troubleshot on your own machine and account: check your API key and quota, lower `--max-concurrency`, confirm the image / template name. The rate-limit example above is this kind — rerunning with `--keep-sandbox` will just die the same way again.
-
-**`sandbox.setup` / `agent.setup` / `eval.run` failed — the Sandbox came alive, so it's worth keeping around.** A dependency install failing, the agent CLI not starting, timing out partway through — for these, the event stream is often empty and the on-disk evidence can't help. The fastest path is to keep the environment and go in to manually rerun the failing command yourself:
-
-```bash
-# Rerun just this one eval, keeping the sandbox if it fails
-npx niceeval exp compare memory/agent-029 --keep-sandbox
-```
-
-```text
-Kept sandboxes (1)
-  @18c1m2qx  memory/agent-029-use-cache #1  errored  docker · a3f9c2d1
-             enter: niceeval sandbox enter a3f9c2d1
-Stop them with: niceeval sandbox stop --all
-```
-
-`niceeval sandbox enter a3f9c2d1` wakes the environment and opens a shell in the workdir — run the install command by hand to see the real error, look through the config under `$HOME`, check `PATH`. None of that is in the artifact; only the live environment can answer it. Exit the shell and the environment goes back to sleep automatically, so it doesn't burn resources for nothing. For the retention policy and how it differs by provider, see [Keep a Sandbox alive to debug it](/troubleshooting/debug-sandbox).
-
-## Viewing and cleaning up kept Sandboxes
-
-A kept Sandbox doesn't keep burning resources: Docker containers sit parked on disk, E2B microVMs pause billing, and both wake automatically when you enter them. Manage them with `niceeval sandbox`:
-
-```text
-$ niceeval sandbox list
-ID        PROVIDER  STATE            FROM
-a3f9c2d1  docker    dormant          memory/agent-029-use-cache #1 · errored · @18c1m2qx · 2026-07-14 15:02
-            enter: niceeval sandbox enter a3f9c2d1
-9f21c07b  vercel    expired          onboarding/tool-first #2 · failed  · @1x7f3q8a · 2026-07-14 14:31
-            expired 2026-07-14 14:36 — remove with: niceeval sandbox stop 9f21c07b
-```
-
-`dormant` means "asleep but ready to enter any time"; `expired` means "the environment is gone, only the record remains." Remember to clean up once you're done troubleshooting:
-
-```bash
-niceeval sandbox stop a3f9c2d1     # the id can be just a unique prefix
-niceeval sandbox stop --all
-```
-
-## Scenario 3: reviewing a past run
-
-Every run leaves a complete result snapshot under `.niceeval/<experiment>/<timestamp>/` — the verdict, assertions, event stream, and diff are all in there, and **it's never overwritten by the next run**. There are three ways in to review it:
-
-**Open it directly with the old locator.** Copy the `@` locator from last week's terminal history, CI logs, or a report; `niceeval show @<locator>` works exactly the same, and `--source` / `--execution` / `--diff` above all still work — including the Eval source captured at run time, even if you've since edited the Eval.
-
-**Look back at an experiment's current state.** When you don't remember the locator, start from the experiment:
-
-```bash
-niceeval show --exp compare/bub        # this experiment's current verdict for every eval
-niceeval show memory/swelancer --exp compare/bub   # narrow down to one eval
-```
-
-Every eval and every Attempt in the list carries a locator; drilling deeper from there takes you back to Scenario 1 / Scenario 2 above.
-
-**Run the same check across a batch of Attempts.** Copy locators from the experiment list and wrap them in a loop. For example, check which of these Attempts called `file_change`:
-
-```bash
-for loc in @1qrdcfq8 @1x7f3q8a @18c1m2qx; do
-  echo "== $loc"
-  niceeval show $loc --execution | grep "TOOL · file_change"
-done
-```
-
-**Browse it in the browser.** When you're reviewing a batch of failures or comparing multiple Attempts, the web page is handier than the terminal:
-
-```bash
-niceeval view
-```
-
-The home page is a cost × pass-rate overview and an experiment comparison table; each Attempt's detail page has the verdict, assertions, the full timing tree, the conversation, the trace, and the diff, plus a "Copy fix prompt" button that packages the failure into a fix prompt you can hand straight to a coding agent. Deep links to an Attempt in the report use the same locator as `show`.
-
-**Open an archived result, or one someone sent you.** A results directory is self-contained — one downloaded from CI, copied over by a coworker, or generated before publishing to a static site — you can point straight at it:
-
-```bash
-niceeval show --record tmp/ci-artifacts/record
-niceeval view --record site-data/run
-```
-
-One caveat: if you've cleaned up an old snapshot directory locally, any later run's "carried over from a previous result" entries will find no original evidence (shown as missing). To archive a run for the long term, copy it out first with [`publish`](/reference/results-data), then delete.
-
-## Quick reference: symptom → command
-
-| Symptom | Command sequence |
-|---|---|
-| An assertion failed and you don't know why | `show @loc` → `show @loc --source` |
-| Want to know what the agent actually did | `show @loc --execution` |
-| Want to confirm whether a tool was called / search the conversation for a keyword | `show @loc --execution \| grep "TOOL ·" \| sort \| uniq -c` / `\| grep <keyword>` |
-| Want to confirm which files the agent changed | `show @loc --diff` → `--diff=<path>` |
-| Which step is slow / where a timeout died | `show @loc` (check the `timing:` line) → `show @loc --timing` |
-| Sandbox failed right at creation (quota / credentials / image) | `show @loc`, check the error's `code` and `cause` → check account quota, verify credentials, lower `--max-concurrency` (no environment to keep) |
-| A dependency install failed, the CLI won't start, or it timed out partway through | rerun that Eval with `--keep-sandbox` → `niceeval sandbox enter <id>` |
-| Want to see a file's actual content (one the agent didn't change, starting material, `$HOME`) | rerun with `--keep-sandbox` (kept for `failed` too) → `sandbox enter` and look in the workdir |
-| Which Sandboxes are kept, and cleaning them up | `sandbox list` → `sandbox stop <id>` / `--all` |
-| Reviewing last week's failure | dig up the old locator → `show @loc`; if you don't remember it, `show --exp <experiment>` |
-| Looking at a batch of failures together | `niceeval view` → Attempt detail → Copy fix prompt |
+See [Viewing Results](/tutorials/viewing-results) and [Publish a Static Report](/tutorials/publish-report) for the full workflows.

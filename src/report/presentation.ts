@@ -43,7 +43,7 @@ export function seriesChannelsOf(slot: number): { colorIndex: number; variant: S
   };
 }
 
-// ─── docs/feature/reports/library/presentation.md 的呈现家族 ───
+// ─── docs/feature/reports/README.md 的呈现家族 ───
 
 export interface PresentationIdentity {
   /** 完整维度值，作为排序、筛选、React key 与证据身份。 */

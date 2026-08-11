@@ -1,4 +1,4 @@
-// 题型构成的单点判据(docs/feature/reports/library/measures.md「题型构成与主读数」):一个
+// 题型构成的单点判据(docs/feature/reports/README.md「题型构成与主读数」):一个
 // 范围的对比主读数由其中出现的题型决定——通过制读通过率,计分制读总分,混型两者并排、
 // 各读各的。题型是定义期事实(EvalDescriptor.evaluationKind,同一个 experiment 也可以选择混型 Eval),
 // 所以这个判断不依赖任何 attempt 执行结果。官方消费者(SampleSummary 的渲染面、

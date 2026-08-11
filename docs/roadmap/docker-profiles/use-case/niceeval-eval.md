@@ -158,7 +158,7 @@ Ubuntu/Debian的 systemd host package与 macOS专用 VM package同样登记 `def
 
 更换本地 profile名字、socket路径或 daemon generation不会让旧结果失去携带资格。profile的
 semantic policy revision、Sandbox image digest或 per-container资源声明改变才影响 fingerprint。已有付费结果
-先用 `--dry`检查携带状态；需要保留时按既有 `niceeval accept`流程重锚，不自动全量重跑。
+先用 `--dry`检查携带状态；需要保留时按既有 `niceeval accept @<完整 locator>` 流程重锚，不自动全量重跑。
 
 ## 验收
 

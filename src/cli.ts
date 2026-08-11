@@ -213,7 +213,7 @@ const FLAG_OPTIONS = {
   tag: { type: "string" },
   /** 额外写一份 JUnit XML 报告到指定路径,供 CI 消费。 */
   junit: { type: "string" },
-  /** `exp` 命令专用:机器面——stdout 上单一有序的 NDJSON 事件流(一行一个 JSON 对象),供 coding agent、CI annotation adapter 或脚本消费;`--dry --json` 输出单个 JSON 计划文档而不是流。省略即人读文本(TTY live 面板 / 非 TTY 追加流)。`show` 命令专用:任何切片的结构化形态——同一范围、同一切片选出的同一批实体,输出成一个 JSON 文档到 stdout;与 `--report`、`--expand` 互斥,多个证据 flag(`--source`/`--execution`/`--timing`/`--diff`)只能选一个。 */
+  /** `exp` 命令专用:stdout 上单一有序的 NDJSON 事件流；`--dry --json` 输出单个 JSON 计划文档。`show` 命令专用:输出同一 ReportExecution 的宿主数据与状态，不打开第二条取数路径。 */
   json: { type: "boolean" },
   /** `docker profile doctor` 专用：启动受限 DinD 容器并运行内层容器。 */
   smoke: { type: "boolean" },
@@ -223,38 +223,36 @@ const FLAG_OPTIONS = {
   port: { type: "string" },
   /** `view` 命令专用:指定监听地址；可裸写，此时监听全部网络地址并打印可打开的本机与局域网 URL。省略时同样监听全部网络地址。 */
   host: { type: "string" },
-  // show 的证据切面 / 时间轴 / 报告装载(docs-site/zh/tutorials/viewing-results.mdx)。
-  // 证据切面只认 `@<locator>`(或收窄到单个 eval 的前缀)选出的那一个 attempt——不再有
-  // 数字 `--attempt`,选哪个 attempt 由 locator 精确指名,不是「先选 eval 再挑第几次」。
-  /** `show` 命令专用:该 attempt 运行时保存的 Eval 源码调用树。裸写为有界默认投影；`--source=full` 展开全部调用路径；`--source=<path>` 按捕获路径后缀唯一匹配并显示该文件全文。 */
+  // 以下旧 show 切片只为实现收敛期间保留解析位置，不属于目标公开 CLI，也不进入参考页。
+  /** 实现收敛占位；目标公开 CLI 通过 Report page 读取源码通道。 */
   source: { type: "boolean" },
-  /** `show` 命令专用:该 attempt 的标准执行事件流(消息、thinking、Skill load、工具调用/结果);有 OTel 时同一节点补时间(证据切面)。每个内容段最多预览前 3 行,截断尾巴自带 `--expand` 展开句柄。 */
+  /** 实现收敛占位；目标公开 CLI 通过 Report page 读取事件通道。 */
   execution: { type: "boolean" },
-  /** `show` 命令专用:整个 Attempt 的统一时间树;裸 `--timing` 给有界诊断投影,`--timing=full` 逐节点展开全部 runner/已关联 OTel 节点。 */
+  /** 实现收敛占位；目标公开 CLI 通过 Report page 读取 timing 通道。 */
   timing: { type: "boolean" },
-  /** `show` 命令专用:只与 `--execution` 组合;JS 正则,只输出命中的执行卡片(角色文本、工具名、input、result,失败命令再加 display/stdout/stderr),末尾报跨 attempt 汇总 `N matches in M attempts`。与 `--expand` 互斥。 */
+  /** 实现收敛占位；不属于目标公开 CLI。 */
   grep: { type: "string" },
-  /** `show` 命令专用:只与 `--execution` 组合,要求范围恰好命中一个 attempt;展开一张卡片的完整落盘内容(不截断)。句柄语法 `t<轮次>.c<卡片>`(agent 事件)或 `cmd<n>`(失败 Sandbox 命令),来自截断卡片自带的提示。与 `--grep` 互斥。 */
+  /** 实现收敛占位；不属于目标公开 CLI。 */
   expand: { type: "string" },
   // --diff 是布尔;--diff=<路径> 在 parseArgs 前预扫成 diffPath(路径必须 = 连写,
   // 空格形式的下一个 token 仍是位置参数 = eval id 前缀,与文档一致)。
-  /** `show` 命令专用:sandbox 里的文件改动摘要;`--diff=<文件路径>` 看单个文件的完整改动(路径必须 `=` 连写)。 */
+  /** 实现收敛占位；目标公开 CLI 通过 Report page 读取 diff 通道。 */
   diff: { type: "boolean" },
-  /** `show` 命令专用:执行时间轴——对匹配的每个 experiment × eval 分节,逐 attempt 列时间 / verdict / 摘要 / 耗时 / 成本 / locator;与 `--report` 互斥。 */
+  /** 实现收敛占位；目标公开 CLI 不提供跨 Run history。 */
   history: { type: "boolean" },
-  /** `show` 命令专用:范围内逐 attempt 的用量表(`UsageTable` 装配)——判定、轮数、工具调用数、token 拆分与成本;多个 experiment 时逐 experiment 分节、节尾各自合计,缺失字段显示 `—` 且不计入合计。`@<locator>` 范围下退化成该 attempt 的单行表。 */
+  /** 实现收敛占位；目标公开 CLI 通过 Report Calculation 呈现用量。 */
   usage: { type: "boolean" },
-  /** `show` 命令专用:eval × experiment 的稳定性矩阵(`StabilityMatrix` 装配)——每格是该组合全部历史执行(跨快照去重、不设可比性门槛)的判定计数,回答「哪些题从来没通过过」;与 `@<locator>`、`--report` 互斥。 */
+  /** 实现收敛占位；目标公开 CLI 不提供隐式跨 Run 统计。 */
   stats: { type: "boolean" },
-  /** `show` / `view` 命令专用:按路径段前缀收窄 experiment(与 `niceeval exp` 位置参数同一套匹配);目录路径会选中其下全部配置。可重复;出现两次以上进入对照语义——每次出现必须恰好解析到一个 experiment,顺序即对照条件顺序、首个是基准,`@<locator>` 与重复 `--exp` 互斥。`view --out` 时同一收窄决定出站内容。 */
+  /** 实现收敛占位；目标公开 CLI 使用完整 `--experiment` identity。 */
   exp: { type: "string", multiple: true },
-  /** `show` / `view` / `accept` / `sandbox enter|list|stop` 共用:记录根目录(`.niceeval` 之外的另一个根,如 `publish` 产出的发布根)。 */
+  /** `show` / `view` / `accept` / `sandbox enter|list|stop` 共用:指定实际 Record root;CLI 不补接 `.niceeval/record` 或其它后缀。 */
   record: { type: "string" },
-  /** `view` 命令专用:只打开这一份快照文件(`run.json`);文件不可读时命令失败(扫描模式只跳过)。 */
+  /** `show` / `view` 可重复传入 `--run`;每次按完整 `runId` 增加一个显式 Run,重复 identity 去重。 */
   run: { type: "string" },
   /** `show` / `view` 命令专用:用文件默认导出的 `defineReport(...)` 替换两者共用的默认报告。 */
   report: { type: "string" },
-  /** `view` 命令专用:内建主题名或显式主题文件路径。 */
+  /** 实现收敛占位；目标静态 runtime 不接受任意主题文件路径。 */
   theme: { type: "string" },
   /** `show` / `view` 命令专用:选择报告的初始页;`show` 渲染该页并在尾部附其余页索引,`view` 以它作初始路由。未命中的页 id 按用法错误退出并列出可用页 id。 */
   page: { type: "string" },
@@ -262,7 +260,7 @@ const FLAG_OPTIONS = {
   teardown: { type: "boolean" },
   /** 只打印本次会匹配到的 eval × 运行配置,不实际执行(人读文本或 `--json` 单文档,见「机器怎么读:--json」)。 */
   dry: { type: "boolean" },
-  /** 忽略上次运行结果,不跳过已通过的 (experiment, eval) 组合,强制全部重跑。 */
+  /** `sandbox prune` 专用:除 orphan 外也销毁 unverified 实例;`exp` 明确拒绝此 flag,重跑失败项或全部项请用 `--rerun` / `--rerun all`。 */
   force: { type: "boolean" },
   /** `exp` 命令专用:重新运行失败项(裸写/failed)或全部项(all),不改变长期指纹。 */
   rerun: { type: "boolean" },
@@ -1227,8 +1225,8 @@ async function main(): Promise<void> {
   if (command === "view") {
     // 位置参数只有一种含义:eval id 前缀(收窄有效根)。记录根经 --record 递入,
     // 单开一份快照经 --run 递入;--report 整槽替换报告槽(与 show --report 吃同一个文件),
-    // --page 定初始页。文件与目录都不进位置参数(docs/feature/reports/view.md「打开与收窄」)。
-    // --out 接受同一收窄:出站内容即收窄后的有效根(docs/feature/reports/view.md「静态导出」)。
+    // --page 定初始页。文件与目录都不进位置参数(docs/feature/reports/README.md「打开与收窄」)。
+    // --out 接受同一收窄:出站内容即收窄后的有效根(docs/feature/reports/README.md「静态导出」)。
     let viewInput: { input?: string; patterns: string[] };
     try {
       viewInput = resolveViewInput(cwd, positionals, {

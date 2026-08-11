@@ -1,4 +1,4 @@
-// Attempt 详情组件族的计算函数(docs/feature/reports/components/attempt-detail/README.md)。每个
+// Attempt 详情组件族的计算函数(docs/feature/reports/README.md)。每个
 // `attempt*Data(evidence)` 都是纯同步派生:evidence 已经由 loadAttemptEvidence 一次性
 // 装配好全部证据,这里只做适合展示与序列化的取舍,不读文件、不 fetch、不重复调用
 // attempt.events() / trace() / diff()。
@@ -98,7 +98,7 @@ export function attemptAssertionsData(evidence: AttemptEvidence): AttemptAsserti
 
 /**
  * 单条 attempt 版的批量修复 prompt(与 CopyFixPrompt 的多条版本同一份步骤文案)。三态
- * (docs/feature/reports/components/attempt-detail/README.md「`AttemptFixPrompt`」):计分制丢分或中止 →
+ * (docs/feature/reports/README.md「`AttemptFixPrompt`」):计分制丢分或中止 →
  * 非 null(围绕丢分检查点组装);计分制挣满且未中止、或通过制 passed → null;skipped 恒 null。
  */
 export function attemptFixPromptData(evidence: AttemptEvidence): AttemptFixPromptData | null {
@@ -190,7 +190,7 @@ function sortCommandExits(
 }
 
 /**
- * 标准事件流按 `loc` 分轮(docs/feature/reports/components/attempt-detail/README.md「Attempt 详情组件」):
+ * 标准事件流按 `loc` 分轮(docs/feature/reports/README.md「Attempt 详情组件」):
  * 带 loc 的 user 消息开一轮;无 loc 的 user 消息不开新轮——与当前轮 sent 同文本的回显直接
  * 吃掉,其它(stop-hook 反馈、skill 注入等轮内注入)作为回复条目留在当前轮。流首出现无 loc
  * 的 user 消息(没有当前轮可归入)时退化开一条 loc 缺省的兜底轮,不丢弃。未识别的事件类型
@@ -333,7 +333,7 @@ export function attemptDiagnosticsData(evidence: AttemptEvidence): AttemptDiagno
 // ───────────────────────── UsageTable ─────────────────────────
 
 /**
- * 组装口径单源:docs/feature/reports/components/attempt-detail/attempt-usage.md#组装口径单源。
+ * 当前目标契约见 docs/feature/reports/README.md。
  * identity 字段(locator/experimentId/evalId/attempt/verdict)恒有;turns/toolCalls 是 events
  * 派生(与 o11y.json 行为摘要同源,buildO11ySummary 与 o11y.json 落盘走同一份纯函数),没有
  * events 就整对省略——不因为其中一个恰好是 0 就当作"缺失"处理,0 是观测到的事实。
@@ -407,7 +407,7 @@ const MAX_HUNK_LINES = 200;
 /**
  * 一个窗口内单文件的最小 unified hunk:公共前后缀修剪出的编辑区,一段 `@@` 展示。
  * 逐窗口生成、不跨窗口合成——窗口之间可能夹着 eval 侧写入,合成会把它算进 agent 的账
- * (docs/feature/reports/components/primitives/diff-view.md「值形状」)。
+ * (docs/feature/reports/README.md「值形状」)。
  */
 function windowHunk(change: WindowChange): string {
   const a = change.before === undefined ? [] : change.before.replace(/\n$/, "").split("\n");
@@ -434,7 +434,7 @@ function windowHunk(change: WindowChange): string {
 /**
  * `null` 与空清单是两件事:`null` = 这次 attempt 没有 diff 证据(direct agent、发布未带 diff),
  * 空清单 = 有证据但 agent 一个文件都没净改动(契约见
- * docs/feature/reports/components/attempt-detail/attempt-diff.md「可用性」)。
+ * docs/feature/reports/README.md「可用性」)。
  */
 export function attemptDiffData(evidence: AttemptEvidence): AttemptDiffData | null {
   // 只看 artifact 在不在:`capabilities.diff` 额外要求「有文件被改过」,拿它当门会把

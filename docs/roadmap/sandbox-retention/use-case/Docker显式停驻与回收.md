@@ -11,7 +11,7 @@ export default defineConfig({
     retain: "failed",
     idleTtlMs: 24 * 60 * 60_000,
     maxActiveMs: 60 * 60_000,
-    maxStoppedPerRecordRoot: 20,
+    maxStoppedPerRecordStore: 20,
   },
 });
 ```
@@ -47,14 +47,14 @@ niceeval sandbox suspend rtn_91c2
 niceeval sandbox delete rtn_91c2
 ```
 
-按 TTL 与单 record root 数量上限回收时，先预览：
+按 TTL 与单 RecordStore 数量上限回收时，先预览：
 
 ```bash
 niceeval sandbox prune --dry
 niceeval sandbox prune
 ```
 
-`maxStoppedPerRecordRoot` 不约束其它 checkout 或 registry，也不在没有 NiceEval 进程时按墙钟执行。
+`maxStoppedPerRecordStore` 不约束其它 checkout 或 registry，也不在没有 NiceEval 进程时按墙钟执行。
 定期回收需要由用户或计划任务调用 `prune`；文档不能把机会式 GC 描述成 Docker TTL。
 
 unverified resource 不被 prune。

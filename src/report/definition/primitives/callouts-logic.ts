@@ -1,4 +1,4 @@
-// Callouts 的共享渲染逻辑:web / text 两面共用(docs/feature/reports/components/primitives/callouts.md)。
+// Callouts 的共享渲染逻辑:web / text 两面共用(docs/feature/reports/README.md)。
 
 import { resolveLocalizedText, type LocalizedText, type ReportLocale } from "../../model/locale.ts";
 

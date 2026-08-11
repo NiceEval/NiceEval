@@ -1,4 +1,4 @@
-// 报告装载与逐页渲染的中性宿主 facade:show 与 view 共用(docs/feature/reports/architecture.md
+// 报告装载与逐页渲染的中性宿主 facade:show 与 view 共用(docs/feature/reports/README.md
 // 「共享内核与两个宿主的代码边界」「单一 report runtime 身份」)。ReportDefinition / ReportPage /
 // ReportMeta 的类型体系,以及装载规范化、resolve、text/web render 全部住在 niceeval/report 的
 // 本文件与报告定义、show、view 一起编进同一个 canonical runtime graph。它只做两个宿主都需要、
@@ -171,7 +171,7 @@ export function localizeText(text: LocalizedText | undefined, locale: string): s
 // ───────────────────────── 索引命令上下文 ─────────────────────────
 
 /**
- * 宿主索引命令的完整上下文(docs/feature/reports/show/reports.md「索引命令携带完整上下文」)。
+ * 宿主索引命令的完整上下文(docs/feature/reports/README.md「索引命令携带完整上下文」)。
  * 只是数据形状;拼出实际可复制的 `niceeval show ...` 命令字符串是 show 自己的事
  * (`src/show/command.ts` 的 `showCommand`)——view 走网页路由,不生成终端命令。
  */
@@ -199,9 +199,9 @@ export interface HostRenderContext {
 export interface HostTextRenderOptions {
   width?: number;
   locale?: string;
-  /** 索引命令的完整上下文(docs/feature/reports/show/reports.md);逐页渲染时透传。 */
+  /** 索引命令的完整上下文(docs/feature/reports/README.md);逐页渲染时透传。 */
   commandContext?: HostCommandContext;
-  /** `Section` 的框线传输能力(docs/feature/reports/library/layout.md「区域框」);宿主按真实
+  /** `Section` 的框线传输能力(docs/feature/reports/README.md「区域框」);宿主按真实
    *  TTY / NO_COLOR 探测结果注入,省略时降级为无框文本(`createTextContext` 的默认值)。 */
   panelMode?: "boxed" | "plain";
 }

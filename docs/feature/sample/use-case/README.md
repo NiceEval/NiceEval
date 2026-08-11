@@ -1,8 +1,6 @@
-# Sample ——用例手册
+# Sample 用例
 
-本目录把选择 API 放回实际任务中。
-契约单源仍在 [Library](../library.md);用例只解释怎样选 API, 不复制字段全集或选择算法。
+本目录说明怎样把选择 API 用于具体任务。契约单源始终在 [Library](../library.md)。
 
-## 选择结果范围
-
-- [局部补跑之后，当前结果怎样形成](partial-rerun.md) —— 用三次 Run 理解 `latestRecordSample`、`projectCurrentSample`、兼容携带与结构化缺口。
+- [局部执行之后投影完整分析分母](partial-rerun.md) —— execution gap 怎样产生局部执行，executed、carried 与 accepted 又怎样作为事实进入 `AnalysisSample`。
+- [收窄一份 AnalysisSample](收窄样本.md) —— 保留分母状态，同时排除不需要的范围。

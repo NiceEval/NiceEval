@@ -1,6 +1,6 @@
 # Assertions —— 架构
 
-完整语义在 [Assertions](README.md)。本页规定 entry、结果、Record 和两种 grading 的内部不变量。
+完整语义在 [Assertions](README.md)。本页规定 entry、结果与两种 grading 的内部不变量。
 
 ## 一个 entry，一次 evaluation
 
@@ -58,7 +58,7 @@ recipe 是它的特殊化入口：receiver 和方法替作者取得 `a`，方法
 `commandSucceeded` 的 evaluator config，以及 evaluation。`await` 只负责先取得 `a`，不形成第四种数据。
 
 `subjectSnapshotRef` 不能指向可变的“最后状态”。大型内容可以使用 ref，但 Assertion 仍必须声明要保留的
-subject 字段与 limitations。Record 决定这些数据怎样落盘；Assertion 不规定文件布局。secret 不进入任一字段。
+subject 字段与 limitations。secret 不进入任一字段。
 
 `expected: calledTool("search")` 与 `received: 0 matching calls` 只是 reader 从 `a`、`b` 和 evaluation
 生成的文案，不是唯一保存内容。未来 renderer 可以改变文字与布局，但不能改变 sealed evaluation。
@@ -85,38 +85,20 @@ type ScoreGrading =
 ```
 
 只有已配置 `.score()` 的 Assertion、直接 `t.score()`，或调用 `.orStop()` 的 control Assertion
-出现 `unavailable` / `errored` 时，Score grading 才不可排名。record-only Assertion 的同类问题只保留
+出现 `unavailable` / `errored` 时，Score grading 才不可排名。不参与 score 的 Assertion 的同类问题只保留
 Issue，正式 score 仍有效。execution 或 transport error 使 Score grading 为 `errored`，已有数值只作为
 `partialScore`。普通 cleanup diagnostic 不会自动作废 score。
 
-## AttemptRecord
+## Eval projection
 
-`AttemptRecord` 以 `evaluationKind` 为互斥 union，execution outcome 独立保存：
-
-```ts
-type AttemptRecord =
-  | {
-      readonly evaluationKind: "pass";
-      readonly executionOutcome: ExecutionOutcome;
-      readonly verdict: "passed" | "failed" | "errored" | "skipped";
-      readonly assertionResults: readonly AssertionResult[];
-    }
-  | {
-      readonly evaluationKind: "score";
-      readonly executionOutcome: ExecutionOutcome;
-      readonly grading: ScoreGrading;
-      readonly assertionResults: readonly AssertionResult[];
-    };
-```
-
-Score Attempt 没有 `verdict` 字段。Pass Attempt 没有 score projection。`schemaVersion: 19` 与
-`evaluationAlgorithm: "assertion/v1"` 原子启用；读取器只接受该协议。
+每次 Eval 结算都保留 execution outcome、按 Eval 类型计算的最终 projection，以及完整的
+`AssertionResult` 集合。Pass projection 有 Verdict 而没有 score；Score projection 有 `ScoreGrading`
+而没有 Verdict。结果如何落盘、传输或跨版本读取不属于 Assertion 架构。
 
 ## 封口与 replay
 
 `.orStop()` 封口它的 entry。test settle 封口其余 entry。连续 measurement 在 Pass Eval 封口时若没有
 `atLeast`，就是作者错误；Score Eval 的 measurement 可以直接封口。
 
-`show`、`view`、JSON、export 与 source 标注只读取 sealed projection。可重评分从 sealed
-Observation/ref graph 产生新的 immutable claim，绝不改写旧 claim；旧 AssertionResult 不能让任意 inline
-JavaScript value 自动重评。
+任何读取面只解释 sealed projection。可重评分从 sealed Observation/ref graph 产生新的 immutable claim，
+绝不改写旧 claim；旧 AssertionResult 不能让任意 inline JavaScript value 自动重评。

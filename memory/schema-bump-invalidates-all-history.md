@@ -1,5 +1,7 @@
 # 升 schemaVersion 会把存量语料整批打成不可携带
 
+> 状态（2026-08-11）：本页描述旧 Results Format，已被新 Record 裁决替代。新格式从 `niceeval.record/v1` 首次正式发布后才承担未来兼容，并把 core、channel schema、FactRequirement 与 carry fence 分开；见 [兼容矩阵](../docs/feature/record/architecture.md#兼容矩阵) 与 [schemaVersion 历史存档](results-schema-version-history.md)。
+
 ## 现象
 
 `RECORD_SCHEMA_VERSION` 一动,`.niceeval/` 里所有旧版本快照整份读不进来:
@@ -11,8 +13,8 @@
 
 ## 根因
 
-Record 契约明确**不做兼容机制**:没有迁移函数,没有多版本 normalize loader,
-版本不同就是不兼容([字段规则与版本不匹配时的读取行为](../docs/feature/record/architecture.md#版本不匹配时的读取行为))。
+旧 Record 契约明确**不做兼容机制**:没有迁移函数,没有多版本 normalize loader,
+版本不同就是不兼容([旧 Results 格式历史](results-schema-version-history.md))。
 这条设计的代价全部压在「什么时候允许递增」上,所以同一段契约把判据写死了:
 
 > `schemaVersion` 用整数,只在**破坏兼容读取**时递增。

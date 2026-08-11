@@ -23,7 +23,7 @@
 
 **事实。** Command E2E 把仓库中的 `testdata` 复制进 `t.TempDir()`，再从复制后的真实配置目录运行 init、plan、apply、show、state 与 destroy。原始 fixture 保持只读，状态文件和下载内容落在每例临时目录。
 
-**推断。** “复制模板后执行”比在共享 fixture 上运行安全，也让失败现场可以按目录保存。NiceEval 的 scenario repo 应采用同一所有权模型，并把 HOME、cache、record root 与 adapter state 一起迁入该目录。
+**推断。** “复制模板后执行”比在共享 fixture 上运行安全，也让失败现场可以按目录保存。NiceEval 的 scenario repo 应采用同一所有权模型，并把 HOME、cache、`.niceeval` RecordStore 与 adapter state 一起迁入该目录。
 
 ## 3. stdout、stderr、exit、JSON 与 golden 如何断言
 

@@ -1,110 +1,67 @@
 ---
-title: "NiceEval 架构：评估用例、agents 与 sandboxes"
+title: "NiceEval 的评估与报告路径"
 sidebarTitle: "概览"
-description: "理解 NiceEval、Adapter 和 Sandbox Provider 如何配合，用统一 API 评估任意 AI Agent。"
+description: "理解 Experiment、Record、Sample 和 Report 如何组成一次可查看、可分享的评估。"
 ---
 
-[NiceEval](https://niceeval.com/) 的核心设计是把“评测逻辑”与“如何连接被测对象”分开。[NiceEval](https://niceeval.com/) 负责发现、调度、评分和报告。Adapter 负责调用被测系统。Sandbox Provider 负责隔离文件系统。
-
-## 四层架构
+NiceEval 把评估定义、运行、当前结果和报告分成清楚的职责。你定义评估用例与 Experiment，Runner 执行它们；停稳后的结果进入可编辑的 Record；查看和分享从 Record 选择 Sample，再形成 ReportInput。
 
 ```text
-Eval files / fixtures
+Eval 与 Experiment
         ↓
-NiceEval
+Runner
         ↓
-Adapter
+Record
         ↓
-Subject under test / Sandbox Provider
+Sample
+        ↓
+ReportInput
+        ↓
+show、view 或静态报告站
 ```
 
-## NiceEval 负责什么
+## 评估如何运行
 
-<CardGroup cols={2}>
-  <Card title="评估用例发现" icon="magnifying-glass">
-    发现 `*.eval.ts` 文件和 fixture 目录，并从路径推导稳定 ID。
-  </Card>
-  <Card title="并发调度" icon="timeline">
-    控制运行池大小、重试、attempt 和 early-exit。
-  </Card>
-  <Card title="断言与评分" icon="chart-bar">
-    收集 `t.check`、作用域断言、judge 分数和测试结果。
-  </Card>
-  <Card title="缓存" icon="database">
-    用 fingerprint 跳过已通过且输入未变的 case。
-  </Card>
-  <Card title="报告" icon="file-lines">
-    输出控制台、JSON、JUnit 等报告。
-  </Card>
-  <Card title="Artifacts" icon="folder-open">
-    保存 summary、event stream、transcript、diff 和测试输出。
-  </Card>
-</CardGroup>
+Eval 定义任务、断言和需要的 Fixture。Experiment 选择 Eval，并声明 Agent、模型、并发、预算与其他运行条件。Adapter 连接被测系统；Sandbox 提供隔离的执行位置。
 
-## Adapter
+Runner 为每个选中的 Experiment 建立一个 Run。Run 列出本次应有的 slots，因此它定义结果计算的分母。每个 slot 最多采用一个 Attempt。
 
-<Note>
-  `Agent` 是 [NiceEval](https://niceeval.com/) 看到的抽象。`Adapter` 是你写的具体实现。[NiceEval](https://niceeval.com/) 不知道你的 agent 私有协议、CLI 参数或鉴权方式。
-</Note>
+| Member | 含义 |
+| --- | --- |
+| `executed` | 本 Run 实际执行了这个 Attempt。 |
+| `carried` | 规划器采用了符合条件的已有 Attempt。 |
+| `accepted` | 操作者明确采用了已有 Attempt。 |
 
-这条边界让 [NiceEval](https://niceeval.com/) 保持通用。评估自己的 AI Agent、Claude Code、Codex
-或自定义 Agent 时，Runner、Assertion、Judge 与 Verdict 规则都不需要改变。
+Attempt 始终保存实际执行它的 `origin`。采用操作不复制业务值；下一次读取会看到该 Attempt 通道中的当前值。
 
-## Sandbox
+## Record 是可编辑事实数据集
 
-<Tabs>
-  <Tab title="Docker">
-    本地容器 Provider，适合开发和 CI 中的 coding-agent 评估用例。
-  </Tab>
-  <Tab title="Vercel Sandbox">
-    云端 Sandbox Provider，适合更强隔离或更大的运行资源。
-  </Tab>
-  <Tab title="第三方 Provider">
-    只要实现 `Sandbox` 接口，就可以接入其他 Sandbox 服务。
-  </Tab>
-</Tabs>
+Record 位于 `.niceeval/record/`。人和工具只在目录停稳时读写它。Verdict、Usage、断言与诊断等业务值都在 owner-local 的具名通道中，因此可以按通道读取，也可以在停稳后由用户编辑。
 
-## 关键术语
+Record 不保存编辑历史。结构、路径、身份和引用校验只用于发现相互矛盾的数据。
 
-<AccordionGroup>
-  <Accordion title="评估用例">
-    一个测试用例：描述和 `test(t)` 函数，agent-neutral——用哪个 Agent 由 experiment 决定。
-  </Accordion>
-  <Accordion title="Agent">
-    [NiceEval](https://niceeval.com/) 通过名字调用的一条连接，负责返回标准 `Turn`。
-  </Accordion>
-  <Accordion title="Adapter">
-    `Agent` 的具体实现，知道如何调用你的 runtime 或 CLI。
-  </Accordion>
-  <Accordion title="Sandbox">
-    给 coding agent 使用的隔离运行环境。
-  </Accordion>
-  <Accordion title="Turn">
-    一次 `t.send()` 的不可变结果快照。
-  </Accordion>
-  <Accordion title="Artifact">
-    运行后落盘的结构化结果文件。
-  </Accordion>
-  <Accordion title="Experiment">
-    用矩阵方式比较多个 agent、model 或 flags 的运行配置。
-  </Accordion>
-</AccordionGroup>
+读取时，未知或退役通道只局部成为 `unsupported`。被请求的无效通道会失败；未采集的 `unavailable` 不是 `unsupported` 或 `invalid`。采集完整度与本次解码完整度分别保留。
 
-## 端到端流程
+## Sample 决定比较范围
 
-<Steps>
-  <Step title="Discovery">发现评估用例文件和 fixture。</Step>
-  <Step title="Scheduling">根据并发、缓存和 attempt 计划运行。</Step>
-  <Step title="Agent send">调用 adapter，让被测对象产出 `Turn`。</Step>
-  <Step title="Assertions 与 Verdict">执行断言和 Judge，再折叠最终 Verdict。</Step>
-  <Step title="Verdict">把所有结果折叠为 `passed`、`failed`、`errored` 或 `skipped`。</Step>
-  <Step title="Reporting & artifacts">输出报告并保存结构化文件。</Step>
-</Steps>
+查看者必须明确选择 Run，或使用具名 `latest` policy。Sample 从 Run 的 expected slots 建立分母，并把每项标为 `included`、`not-recorded`、`invalid` 或 `excluded`。
 
-## 相关阅读
+这让报告能够诚实显示缺少成员、核心问题和被排除项目，而不是只统计有值的部分。更多选择规则见[查看结果](/zh/tutorials/viewing-results)。
 
-- [评估](/zh/explanation/evals) — 评估用例是什么，以及生命周期细节。
-- [Adapter](/zh/explanation/adapter) — 如何写 adapter，并在 experiment 中引用它。
-- [Drive](/zh/explanation/drive) — `t.send()`、session 与 HITL：如何产出断言要读的 `Turn` 数据。
-- [Assert](/zh/explanation/assert) — 断言词汇和判定规则。
-- [Judge](/zh/explanation/judge) — LLM-as-judge，评开放式质量。
+## Report 只接收 ReportInput
+
+Reports runtime 不读取磁盘。Sample 先只选择核心与分母，ReportPlan 再列出 facts；唯一 composition adapter 按计划形成 `ReportInput`，Report 随后只执行一次计算和页面生成。
+
+每个页面和 Calculation 都声明自己需要的 facts 与完整度要求。partial 值显示实际观察到的数量和完整分母；`unavailable`、`unsupported` 与 `invalid` 也保持可见。
+
+## 交付报告
+
+`niceeval show --latest` 在终端显示一份 `ReportExecution`。`niceeval view --latest` 在本机显示同一数据流的网页。`niceeval view --latest --out <目录>` 生成自包含的静态报告站，其中包括精确内建 runtime、全部页面、宿主数据、下载项和 manifest；也可以把 `--latest` 换成一个或多个明确 `--run`。
+
+静态报告站可离线打开。浏览器只读取导出目录，不访问网络或源 Record。发布步骤见[发布静态报告](/zh/tutorials/publish-report)。
+
+## 继续阅读
+
+- [运行器](/zh/explanation/runner)：理解 Invocation、Run 与当前进程反馈。
+- [查看结果](/zh/tutorials/viewing-results)：选择 Sample 并查看报告。
+- [重跑与沿用](/zh/tutorials/rerun-and-cache)：理解 carry 与 accept。

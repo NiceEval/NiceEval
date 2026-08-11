@@ -1,5 +1,5 @@
-// Grid 的语义层与面内布局(docs/feature/reports/architecture.md「排版原语的语义层与面内布局」、
-// docs/feature/reports/library/layout.md「换列规则」)。只放同步纯函数与中间类型:
+// Grid 的语义层与面内布局(docs/feature/reports/README.md「排版原语的语义层与面内布局」、
+// docs/feature/reports/README.md「换列规则」)。只放同步纯函数与中间类型:
 // normalizeGrid 把 resolved ReportNode children 展平成有序 cell 列表;balanceColumns /
 // planGridColumns / planTextGrid 是两面同源的列数算术,几何常量只在这里出现一次
 // ——Grid 不收列数、边框或体量参数,这些全从格数与可用宽度算。不 import show / view、

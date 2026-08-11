@@ -1,4 +1,4 @@
-// renderer 资产收集与按内容哈希物化(docs/feature/reports/architecture.md「组件自带资产」)。
+// renderer 资产收集与按内容哈希物化(docs/feature/reports/README.md「组件自带资产」)。
 
 import { createHash } from "node:crypto";
 import { dirname, extname, resolve } from "node:path";

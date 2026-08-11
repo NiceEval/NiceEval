@@ -90,7 +90,7 @@ export const OtelCollect = () => (
         <div className="ne-trk-stage">
           <span className="ne-trk-step ne-lit" style={{ animationDelay: "4.7s" }}>▸</span>
           <div className="ne-trk-box ne-lit" style={{ animationDelay: "5s" }}>
-            <div className="ne-trk-text">EvalResult.trace</div>
+            <div className="ne-trk-text">trace Projection</div>
             <div className="ne-trk-sub">niceeval view 的调用瀑布图</div>
           </div>
         </div>

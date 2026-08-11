@@ -1,113 +1,63 @@
 ---
-title: "把结果上报到 Braintrust 与其它目的地"
+title: "将当前运行接入外部系统"
 sidebarTitle: "Reporter 上报"
-description: "用内置 reporters 把评估用例结果送到 Braintrust 实验、JUnit XML 或自定义目的地。"
+description: "使用 Reporter、JUnit 和 receipt 把当前 Invocation 的信息交给外部系统，同时保持 Record 的所有权边界。"
 ---
 
-[NiceEval](https://niceeval.com/) 自己跑、自己判分。Reporter 负责把完成结果送到其它目的地。运行中的反馈（人读文本或 `--json`）由 `niceeval exp` 自己决定，不是用户配置的 Reporter。`.niceeval/` results artifacts 始终开启。其余 Reporter 从 `niceeval/reporters` 导入，按需挂载。
+Reporter 面向当前 Invocation。它可以把当前运行的结果发送到外部观察或分析系统，但它不拥有 Record，也不能替代 Record 的 reader、writer 或通道。
 
-挂载位置有两个：
+```text
+当前 Invocation
+    ├─ 终端与 --json 反馈
+    ├─ Reporter → 外部系统
+    ├─ --junit → CI 平台文件
+    └─ receipt → invocationId 与 runIds
 
-- `niceeval.config.ts` 的 `reporters`：观测整次运行的每个评估用例。共享目的地（比如一个 Braintrust 实验）通常写在这里。
-- 单个评估用例的 `reporters`：实例只观测引用它的评估用例。多个评估用例引用同一个实例时合并观测，结果落进同一个目的地。已经写在 config 里的实例在评估用例上再列一遍也不会重复上报。
-
-## Braintrust
-
-`Braintrust(...)` 把一次运行作为一个 Braintrust experiment 上传，每个 attempt 一行。放在 config 里覆盖整次运行：
-
-```ts niceeval.config.ts
-import { defineConfig } from "niceeval";
-import { Braintrust } from "niceeval/reporters";
-
-export default defineConfig({
-  reporters: [Braintrust({ project: "weather-agent" })],
-});
+停稳 Record
+    └─ Run、Member、Attempt 与业务通道
 ```
 
-只想上报部分评估用例时，挂在评估用例上：
+## Reporter 适合什么
 
-```ts evals/forecast.eval.ts
-import { defineEval } from "niceeval";
-import { Braintrust } from "niceeval/reporters";
+把 Reporter 配在需要观察的运行范围，让它处理当前进程可见的结果。外部系统可以接收运行摘要、Attempt 结果或链接，但要读取完整业务事实时，应使用 receipt 的 `runIds` 重新打开停稳 Record。
 
-export default defineEval({
-  reporters: [Braintrust({ project: "weather-agent" })],
-  async test(t) {
-    await t.send("北京今天适合骑车吗?");
-    t.succeeded();
-  },
-});
+Reporter 不能：
+
+- 把外部系统的数据当作 Record 的业务值；
+- 用外部上报替代 Verdict、Usage、断言或诊断通道；
+- 让后续 `show`、`view` 或静态报告从外部系统取数；
+- 代替 Record 的人工编辑规则。
+
+## 在 CI 中使用 JUnit
+
+JUnit 是最直接的外部集成方式：
+
+```sh
+npx niceeval exp ci --junit ./artifacts/niceeval-junit.xml
 ```
 
-前置条件：安装 `braintrust` 包（`npm install braintrust`，它是可选依赖，不装不影响其它功能），并设置 `BRAINTRUST_API_KEY`。需要在代码里显式传 key 时用 `apiKey` 参数。运行结束后终端会打印 experiment URL。
+NiceEval 以原子方式写出该文件，CI 平台读取它来显示注解和测试结果。它只描述这次调用的交付格式，不会成为 Record 的事实 owner。
 
-### 上报口径
+## 使用 JSON 与 receipt
 
-- 每个 attempt 是 Braintrust 里的一行。`attempts: 3` 会产生三行，靠 metadata 里的 `attempt` 区分。
-- soft 断言按名字记为 score。gate 断言记在 `gate:` 前缀下。这样在 Braintrust 的实验对比里，gate 回归和 soft 分数回归用同一套 diff 看。
-- metrics 带开始/结束时间、token 用量和估算成本。缺的数据不写，不补零。
-- metadata 带 `agent`、`model`、`experiment`、`flags`、`verdict` 和失败断言明细，方便在 Braintrust 里按维度过滤。
-
-### 配置项
-
-<ParamField body="project" type="string">
-  Braintrust 项目名。省略时用 `niceeval`。
-</ParamField>
-
-<ParamField body="projectId" type="string">
-  Braintrust 项目 id。与 `project` 给一个即可。
-</ParamField>
-
-<ParamField body="experiment" type="string">
-  实验名。省略时由 Braintrust 自动命名。
-</ParamField>
-
-<ParamField body="baseExperiment" type="string">
-  作为对比基线（diff base）的既有实验名。
-</ParamField>
-
-<ParamField body="baseExperimentId" type="string">
-  作为对比基线的既有实验 id。
-</ParamField>
-
-<ParamField body="update" type="boolean">
-  为 `true` 时更新同名既有实验，而不是新建一个。
-</ParamField>
-
-<ParamField body="metadata" type="Record<string, JsonValue>">
-  实验级附加 metadata，与 NiceEval 自动写入的字段合并，同名以这里为准。
-</ParamField>
-
-<ParamField body="apiKey" type="string">
-  Braintrust API key。省略时 SDK 读 `BRAINTRUST_API_KEY`。
-</ParamField>
-
-## JUnit 与 Json
-
-`JUnit(path)` 输出 JUnit XML，让失败出现在 CI 的测试报告 UI 里。临时生成可以直接用 CLI 的 `--junit <path>`，不用改配置。`Json(path)` 把完整 `InvocationSummary` 落成一个 JSON 文件，喂下游脚本或 dashboard。CI 场景的完整接法见[CI 集成](./ci-integration)。
-
-## 自定义 reporter
-
-reporter 是实现若干可选回调的对象，拿到的是和内置 reporter 相同的结构化结果：
-
-```ts
-import type { Reporter } from "niceeval";
-
-const notify: Reporter = {
-  async onEvalComplete(result) {
-    if (result.verdict === "failed") {
-      await fetch("http://localhost:3000/notify", {
-        method: "POST",
-        body: JSON.stringify({ eval: result.id, agent: result.agent }),
-      });
-    }
-  },
-};
+```sh
+npx niceeval exp checkout --json
 ```
 
-- `onInvocationStart(evals, shape)`：运行开始，收到本次实际要跑的评估用例列表和运行规模。
-- `onEvalComplete(result)`：每个 attempt 完成即时触发，回调串行化，不会交错。
-- `onInvocationComplete(summary)`：运行结束，收到聚合汇总。
-- `onEvent(event)`：更细粒度的事件流（`eval:start`、`invocation:budgetExceeded` 等）。
+`--json` 输出当前进程的 NDJSON。最后一条 receipt 包含 `invocationId`、`runIds`、开始时间、结束时间和 completion。外部自动化可以保留 receipt，再根据 `runIds` 选择要查看的 Report。
 
-用户在 config/评估用例中挂载的 Reporter 默认是 best-effort：抛错会形成永久 diagnostic，但不会中断在飞 Attempt。CLI 显式要求的 `--json` / `--junit` 与默认 results artifacts 是 required 输出，写失败会让最终运行判红。只有目的地没被内置覆盖时才需要自定义——`.niceeval/` 的 artifacts 已经记录了完整结果，事后分析直接读它（见[查看结果](./viewing-results)）。
+```sh
+npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
+```
+
+不要把 progress 或 diagnostic 行当作长期结果格式。它们服务当前 Invocation，完整业务事实属于停稳 Record。
+
+## 接入外部系统时的原则
+
+1. 让外部上报只消费当前 Invocation 已知的信息。
+2. 将凭据保留在运行变量中，不写入输出内容。
+3. 用退出状态处理 CI 门禁。
+4. 用 receipt 的 `runIds` 把外部工作流关联到可查看的结果。
+5. 需要分享页面时，使用 `view --out` 导出静态报告站。
+
+有关 CI 命令与 JUnit，请阅读[CI 集成](/zh/tutorials/ci-integration)。

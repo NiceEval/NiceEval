@@ -1,7 +1,7 @@
-// niceeval show —— 终端宿主(行为规范:docs/feature/reports/show.md 与分篇;
-// 宿主组合语义:docs/feature/reports/architecture.md「Sample 是计算入口」)。
+// niceeval show —— 终端宿主(行为规范:docs/feature/reports/README.md 与分篇;
+// 宿主组合语义:docs/feature/reports/README.md「Sample 是计算入口」)。
 //
-// 一次调用 = 范围 × 切片 × 形态(docs/feature/reports/show.md)。范围:eval id 前缀位置参数、
+// 一次调用 = 范围 × 切片 × 形态(docs/feature/reports/README.md)。范围:eval id 前缀位置参数、
 // `@<locator>`(单元素范围)、`--exp`(可重复,>=2 进入对照语义)与 `--record`。
 // 切片(每个切片解析成一次报告组件装配,见 architecture.md「show 的切片是组件选择」):
 //   无证据 flag 且 --exp < 2   默认报告(内建报告的 text 面;裸 show / eval 前缀 / 单个 --exp 都落在这里)
@@ -95,7 +95,7 @@ export interface ShowFlags {
   /** --diff=<路径>(单个文件的完整改动;路径必须 = 连写,位置参数永远留给 eval id 前缀)。 */
   diffPath?: string;
   /**
-   * --grep:只与 --execution 组合(docs/feature/reports/show/execution.md「范围化:跨 attempt
+   * --grep:只与 --execution 组合(docs/feature/reports/README.md「范围化:跨 attempt
    * 扫描与 --grep」);JS 正则字符串,收窄 --execution text 渲染面的注意力范围,不是事实过滤器。
    * 与 --expand 互斥。
    */
@@ -103,14 +103,14 @@ export interface ShowFlags {
   /**
    * --expand:只与 --execution 组合,要求范围恰好命中一个 attempt;句柄语法 `t<turn>.c<card>`
    * 或 `cmd<n>`,输出该卡片完整落盘内容(不截断)。与 --grep 互斥
-   * (docs/feature/reports/show/execution.md「卡片预览预算与 --expand」)。
+   * (docs/feature/reports/README.md「卡片预览预算与 --expand」)。
    */
   expand?: string;
   history?: boolean;
   /**
    * --exp(可重复):0/1 个沿用前缀收窄语义(可能匹配多个 experiment);2 个以上进入对照语义——
    * 每个必须恰好解析到一个 experiment,顺序即对照条件顺序、首个是基准
-   * (docs/feature/reports/show.md「选择结果范围」)。
+   * (docs/feature/reports/README.md「选择结果范围」)。
    */
   experiment?: string[];
   /** --record:记录根目录(某次 Run 根或 `publish` 产物)。 */
@@ -122,17 +122,17 @@ export interface ShowFlags {
   page?: string;
   /**
    * --usage:`UsageTable` 在 show 上的零配置装配——范围内逐 attempt 摊成一行,逐 experiment
-   * 分节各自合计(docs/feature/reports/show/usage.md)。`@<locator>` 范围下退化成该 attempt
-   * 的单行表,不经 --report 传入的 page 声明(docs/feature/reports/show.md「选择结果范围」)。
+   * 分节各自合计(docs/feature/reports/README.md)。`@<locator>` 范围下退化成该 attempt
+   * 的单行表,不经 --report 传入的 page 声明(docs/feature/reports/README.md「选择结果范围」)。
    */
   usage?: boolean;
   /**
    * --stats:`StabilityMatrix` 在 show 上的零配置装配——eval × experiment 的历史全执行判定
-   * 计数矩阵(docs/feature/reports/show/stats.md)。与 `@<locator>`、`--report` 互斥。
+   * 计数矩阵(docs/feature/reports/README.md)。与 `@<locator>`、`--report` 互斥。
    */
   stats?: boolean;
   /**
-   * --json:任何切片的结构化形态(docs/feature/reports/show/json.md)——同一范围、同一切片
+   * --json:任何切片的结构化形态(docs/feature/reports/README.md)——同一范围、同一切片
    * 选出的同一批实体,输出成一个 `ShowJson` 文档到 stdout。text 面消费什么组件产物,`data`
    * 字段就原样携带那份产物,两面同值由构造保证。与 `--report`(报告树表达「怎么看」,
    * `--json` 表达「是什么」)、`--expand`(JSON 不截断卡片,没有可展开的东西)互斥。
@@ -148,7 +148,7 @@ export interface ShowIO {
   err?: (text: string) => void;
   width?: number;
   now?: number;
-  /** `Section` 的框线传输能力(docs/feature/reports/library/layout.md「区域框」);省略时按
+  /** `Section` 的框线传输能力(docs/feature/reports/README.md「区域框」);省略时按
    *  `process.stdout.isTTY` 与 `NO_COLOR` 探测——测试注入固定值,不依赖真实终端设备。 */
   panelMode?: "boxed" | "plain";
 }
@@ -179,7 +179,7 @@ export { loadHostReport, localizeText } from "../report/runtime/host.ts";
 
 /**
  * 证据切面(--source/--execution/--timing/--diff)的范围排序:按 experimentId、evalId、
- * attempt 序(docs/feature/reports/show/execution.md「--execution 接受任意范围」)。单元素
+ * attempt 序(docs/feature/reports/README.md「--execution 接受任意范围」)。单元素
  * 范围(`@<locator>`)排序是恒等操作——locator 与范围通用实现走同一条代码路径,不另立
  * 「locator 专属」分支。
  */
@@ -198,7 +198,7 @@ function attemptCountLabel(n: number): string {
 }
 
 /**
- * `--grep` 的跨 attempt 汇总行(docs/feature/reports/show/execution.md「范围化:跨 attempt
+ * `--grep` 的跨 attempt 汇总行(docs/feature/reports/README.md「范围化:跨 attempt
  * 扫描与 --grep」):0 命中时明确输出 `0 matches in N attempts`,不带「N attempts with 0
  * matches」括注(该括注在全 0 时是重言,反而稀释「一个词都没匹配到」这件事本身)。
  */
@@ -235,7 +235,7 @@ function sourceOptions(
 /**
  * 证据切面的范围通用渲染:对排序后的每个 attempt 装配 flags 选中的区块并拼成一节;范围含
  * 多个 attempt 时天然分节(节头是每节 block 自带的 `attemptEvidenceHeader` 定位行),单
- * attempt 范围只是省掉了分节——两种输入量走同一份实现(docs/feature/reports/show.md
+ * attempt 范围只是省掉了分节——两种输入量走同一份实现(docs/feature/reports/README.md
  * 「一次调用 = 范围 × 切片 × 形态」)。
  *
  * `--grep`/`--expand` 只影响 `--execution` 这一块(两者的组合校验在 show() 顶层先于任何 IO
@@ -243,7 +243,7 @@ function sourceOptions(
  * (grepSummaryText);`expand` 要求恰好一个 attempt——校验放在这里而不是 show() 顶层,因为
  * 「范围有几个 attempt」只有拿到 `attempts` 之后才知道,`@<locator>` 与范围收窄两条调用路径
  * 因此天然共享同一次校验,不重复。`executionText` 对未命中的展开句柄抛裸 `Error`
- * (docs/feature/reports/show/execution.md「句柄未命中……按用法错误退出」),这里捕获后套成
+ * (docs/feature/reports/README.md「句柄未命中……按用法错误退出」),这里捕获后套成
  * `error:`/`fix:` 三段式,不让一条裸堆栈冒到用户面前。
  */
 async function renderEvidenceSections(
@@ -314,9 +314,9 @@ async function renderEvidenceSections(
 /**
  * 证据切面(--source/--execution/--timing/--diff)的 `--json` `data`:排序与 text 面分节同序
  * (`sortAttemptsForSections`)。范围恰好一个 attempt 时 `data` 是该组件 `*Data` 产物本身;
- * 多个 attempt 时是产物数组(docs/feature/reports/show/json.md「输出是一个顶层 JSON 文档」)——
+ * 多个 attempt 时是产物数组(docs/feature/reports/README.md「输出是一个顶层 JSON 文档」)——
  * `--grep`/`--expand` 是 text 渲染面的注意力预算选项,不影响这份完整 resolve 产物
- * (docs/feature/reports/architecture.md「show 的切片是组件选择」)。
+ * (docs/feature/reports/README.md「show 的切片是组件选择」)。
  */
 async function evidenceJsonOf(
   view: "source" | "execution" | "diff",
@@ -359,7 +359,7 @@ async function renderRunTimingSections(
 /**
  * `--exp` 出现两次以上的对照覆盖行:每个条件在 `data.rows` 里是否有格子。共同 = 全部条件都
  * 有格子;某条件独占 = 只有它自己有格子,其余条件都缺
- * (docs/feature/reports/show/compare.md「头两行报条件数、配对身份、基准与配对覆盖」)。这行
+ * (docs/feature/reports/README.md「头两行报条件数、配对身份、基准与配对覆盖」)。这行
  * 不是 `DeltaTable` 自己的文案——组件的 text 面(deltaText)只产出表格与共同题 footnote,
  * 不产出这行覆盖统计,所以由 show 自己按 `DeltaData.rows[].cells` 算。
  */
@@ -370,7 +370,7 @@ function compareCoverageText(data: ComparisonResult): string {
 
 /**
  * 缺省切片选择表第二行(`--exp` 出现两次以上 → 对照矩阵):`DeltaTable` 在 show 上的零配置
- * 装配(docs/feature/reports/show/compare.md)。`--exp` 出现顺序即 `conditions`(首个是
+ * 装配(docs/feature/reports/README.md)。`--exp` 出现顺序即 `conditions`(首个是
  * 基准),已解析成实际 experiment id;数据源是调用方已经按 `selection`(现刻水位 Sample)
  * narrow 好的范围,不重复传 `evals`(eval id 前缀已经收进 `selection` 里)。
  *
@@ -408,7 +408,7 @@ async function renderCompareSlice(
 }
 
 /**
- * `--stats`:`StabilityMatrix` 在 show 上的零配置装配(docs/feature/reports/show/stats.md)。
+ * `--stats`:`StabilityMatrix` 在 show 上的零配置装配(docs/feature/reports/README.md)。
  * 证据面与 `--history` 相同——全部历史执行,不设可比性门槛,所以传原始 `Run[]`(不是
  * `current()` 现刻水位 Sample);渲染管线要求的 `ctx.scope`/`ctx.report` 只是占位上下文,
  * 实际矩阵数据已经由 `data` 形态算好,不再消费它们(与 compare 分支同一条纪律)。
@@ -470,7 +470,7 @@ function summarizeUsageColumn(values: readonly (number | undefined)[], format: (
   return defined.length < values.length ? `${format(sum)}*` : format(sum);
 }
 
-/** 一个 experiment 分节的用量表:一行一个 attempt,尾行合计(docs/feature/reports/show/usage.md)。 */
+/** 一个 experiment 分节的用量表:一行一个 attempt,尾行合计(docs/feature/reports/README.md)。 */
 function usageSectionText(experimentId: string, rows: readonly UsageResult[]): string {
   const head = `usage · ${experimentId} · ${rows.length} ${rows.length === 1 ? "attempt" : "attempts"}`;
   const body = rows.map((r) => [
@@ -503,7 +503,7 @@ function usageSectionText(experimentId: string, rows: readonly UsageResult[]): s
 }
 
 /**
- * `--usage`:`UsageTable` 逐 attempt 装配的表(docs/feature/reports/show/usage.md)。行按
+ * `--usage`:`UsageTable` 逐 attempt 装配的表(docs/feature/reports/README.md)。行按
  * experimentId、evalId、attempt 序排列(与证据切面共用的 `sortAttemptsForSections`),范围
  * 含多个 experiment 时逐 experiment 分节、节尾各自合计;单 attempt 范围(`@<locator>
  * --usage`)只是退化成一节一行的表,与这里共用同一份实现。`usageTableData` 全部三项
@@ -534,7 +534,7 @@ async function renderUsageSlice(attempts: readonly AttemptHandle[]): Promise<str
 }
 
 /** `--usage` 对照矩阵每条件一组的用量列:usage.md 单条件表 `USAGE_COLUMNS` 去掉 locator/eval/
- *  result 后剩下的 7 项(docs/feature/reports/show/usage.md「范围化的用量表」)。 */
+ *  result 后剩下的 7 项(docs/feature/reports/README.md「范围化的用量表」)。 */
 const USAGE_MATRIX_METRIC_COLUMNS = USAGE_COLUMNS.slice(3);
 const USAGE_MATRIX_METRIC_ALIGN: readonly ColumnAlign[] = USAGE_ALIGN.slice(3);
 
@@ -586,7 +586,7 @@ function usageMatrixCellText(cell: UsageMatrixCell): string[] {
 
 /**
  * `--usage` 在对照范围(`--exp` 出现两次以上)下的逐 eval 用量矩阵
- * (docs/feature/reports/show/usage.md「范围化的用量表」)。配对身份、缺席占位、跨快照携带的
+ * (docs/feature/reports/README.md「范围化的用量表」)。配对身份、缺席占位、跨快照携带的
  * 相对时距标注,复用 `deltaTableData` 已经算好的这份判定——与 `renderCompareSlice` 消费同一次
  * 计算(条件解析、eval id 配对、物理 attempt 派生),不重新实现一遍;这个
  * pivot 只在它之上叠一层用量字段的逐条件合计,数据源是 `usageRowsOf` 已有的逐 attempt 行,按
@@ -627,7 +627,7 @@ async function renderUsageCompareSlice(
 }
 
 /**
- * `--exp` 的范围校验(docs/feature/reports/show.md「选择结果范围」):0/1 个沿用前缀收窄
+ * `--exp` 的范围校验(docs/feature/reports/README.md「选择结果范围」):0/1 个沿用前缀收窄
  * (可能匹配多个 experiment,如目录前缀);2 个以上进入对照语义,每个必须恰好解析到一个
  * experiment——零命中按现有的 noExperimentMatch 报,命中多个列出全部候选 id,不猜测意图。
  */
@@ -700,7 +700,7 @@ async function show(
     flags.diff === true ||
     flags.diffPath !== undefined;
 
-  // 组合语义矩阵(docs/feature/reports/show.md「选择结果范围」):--history 与 --report 互斥,先于任何 IO 报出来。
+  // 组合语义矩阵(docs/feature/reports/README.md「选择结果范围」):--history 与 --report 互斥,先于任何 IO 报出来。
   if (flags.history && flags.report !== undefined) {
     throw new ShowError(t("cli.show.historyReportConflict"));
   }
@@ -714,7 +714,7 @@ async function show(
   }
 
   // `@<locator>` 与重复 `--exp` 互斥:locator 已经唯一确定了 experiment,再给对照条件没有
-  // 可执行的语义(docs/feature/reports/show.md「选择结果范围」),先于任何 IO 报出来。
+  // 可执行的语义(docs/feature/reports/README.md「选择结果范围」),先于任何 IO 报出来。
   const expSelectors = flags.experiment ?? [];
   const locatorArgForMutex = patterns.find((p) => p.startsWith(ATTEMPT_LOCATOR_PREFIX));
   if (locatorArgForMutex !== undefined && expSelectors.length >= 2) {
@@ -723,7 +723,7 @@ async function show(
     );
   }
 
-  // `--stats` 与 `@<locator>`、`--report` 互斥(docs/feature/reports/show/stats.md「边界」):
+  // `--stats` 与 `@<locator>`、`--report` 互斥(docs/feature/reports/README.md「边界」):
   // 单 attempt 没有稳定性可言;零配置装配不经用户显式报告树。先于任何 IO 报出来。
   if (locatorArgForMutex !== undefined && flags.stats) {
     throw new ShowError(t("cli.show.statsLocatorConflict", { locator: locatorArgForMutex }));
@@ -755,7 +755,7 @@ async function show(
     }
   }
 
-  // `--json` 的用法冲突(docs/feature/reports/show/json.md「边界」):与 `--report` 互斥(报告树
+  // `--json` 的用法冲突(docs/feature/reports/README.md「边界」):与 `--report` 互斥(报告树
   // 表达「怎么看」,`--json` 表达「是什么」);与 `--expand` 互斥(JSON 不截断卡片,没有可展开的
   // 东西)。先于任何 IO 报出来。
   if (flags.json && flags.report !== undefined) {
@@ -764,7 +764,7 @@ async function show(
   if (flags.json && flags.expand !== undefined) {
     throw new ShowError(t("cli.show.jsonExpandConflict"));
   }
-  // 信封的 `view` 是单一枚举值(docs/feature/reports/show/json.md「信封」);证据切面在 text 面
+  // 信封的 `view` 是单一枚举值(docs/feature/reports/README.md「信封」);证据切面在 text 面
   // 允许同时点多个 flag(逐 attempt 拼成一个块),但 `--json` 一次调用只能落在一个 view 上——
   // 同时点多个证据 flag 时没有「合并成一个 view」的字段形状,按用法错误退出,不猜合并成哪种。
   const evidenceFlagCount = [
@@ -860,7 +860,7 @@ async function show(
     const attemptEvidence = await loadAttemptEvidence(attempt);
     if (flags.json) {
       // 默认 attempt 首页(view "attempt"):`AttemptDetail` 装配的区块 `*Data` 全集
-      // (docs/feature/reports/show/json.md「data:按 view 找组件声明」)——JSON 面恒为完整
+      // (docs/feature/reports/README.md「data:按 view 找组件声明」)——JSON 面恒为完整
       // resolve 产物,因此全部 11 个叶子区块都计算,不因 text 面「有 source 时不重复
       // AttemptConversation」这条渲染面去重规则而省略 conversation。`--report` 已经与
       // `--json` 互斥(见 show() 顶层),这里不需要装载报告就能直接算数据。
@@ -878,15 +878,15 @@ async function show(
     }
     // 无证据 flag:选中当前 report definition 里 id 为 "attempt" 的参数化页,经它自己声明的
     // `load` 装载这个 locator 对应的证据,走与其它 page 完全相同的 resolve → validate → render
-    // 管线(docs/feature/reports/show.md「无证据 flag 的 `show @<locator> --report <file>`
-    // 选择其中 id 为 attempt 的参数化页」;docs/feature/reports/components/attempt-detail/README.md
+    // 管线(docs/feature/reports/README.md「无证据 flag 的 `show @<locator> --report <file>`
+    // 选择其中 id 为 attempt 的参数化页」;docs/feature/reports/README.md
     // 「在 show 与 view 怎样渲染」)。不带 --report 时装载内建 standard,其中就带这张页;--report
     // 指向的自定义报告没有声明 id 为 "attempt" 的页时报完整用户反馈,不回退到内建详情
     // (三条解决路径都在错误文案里给出)。
     // 不带 --report 的 locator 是稳定的官方诊断入口,不受项目默认报告影响;只有显式 --report 才进入
     // 用户报告声明的 attempt page。显式传入 undefined 也避免 config.report 在这一分支被品牌校验。
     const report = await loadHostReport(cwd, flags.report ?? "standard", undefined);
-    // "attempt" 是标准库参数化页的 id 约定(docs/feature/reports/library.md「参数化页」)。
+    // "attempt" 是标准库参数化页的 id 约定(docs/feature/reports/README.md「参数化页」)。
     const attemptPage = report.pages.find((p) => p.id === "attempt");
     if (attemptPage === undefined) {
       const sourceLabel = describeReportSource(flags.report, flags.configReport);
@@ -914,7 +914,7 @@ async function show(
     return;
   }
 
-  // `--exp` 的范围校验(docs/feature/reports/show.md「选择结果范围」):0/1 个沿用前缀收窄
+  // `--exp` 的范围校验(docs/feature/reports/README.md「选择结果范围」):0/1 个沿用前缀收窄
   // (可能匹配多个 experiment);2 个以上进入对照语义,每个必须恰好解析到一个 experiment。
   const experimentIds = flags.projectTarget?.experiments.map((entry) => entry.id) ?? results.experiments.map((e) => e.id);
   assertExperimentSelectors(experimentIds, expSelectors);
@@ -923,7 +923,7 @@ async function show(
   }
 
   const experimentFilter = expSelectors.length > 0 ? expSelectors : undefined;
-  // 「本次调用解析后的 experiment id 全集」(docs/feature/reports/show/json.md「信封」):非对照
+  // 「本次调用解析后的 experiment id 全集」(docs/feature/reports/README.md「信封」):非对照
   // 视图的 `--json` `scope.experiments` 统一取这份——范围收窄之后、不局限于「有 attempt 命中」
   // 的子集(与 `--stats`/`--usage`/证据切面/`--history`/leaderboard 各自的现有 experiment 过滤
   // 逻辑同源,不重新发明一套)。
@@ -931,7 +931,7 @@ async function show(
     ? experimentIds
     : [...new Set(experimentFilter.flatMap((selector) => matchExperimentSelector(experimentIds, selector)))];
 
-  // `--stats`:历史全执行的稳定性矩阵(docs/feature/reports/show/stats.md)。证据面与
+  // `--stats`:历史全执行的稳定性矩阵(docs/feature/reports/README.md)。证据面与
   // `--history` 相同——不是 `current()` 现刻水位,所以在下面的 `selection`/`matchedEvalIds`
   // (现刻水位专属)计算与 noEvalMatch 校验之前分流掉,不借用那份口径。
   if (flags.stats) {
@@ -977,9 +977,9 @@ async function show(
     );
   }
 
-  // `--usage`:UsageTable 逐 attempt 装配的表(docs/feature/reports/show/usage.md)。`--json`
+  // `--usage`:UsageTable 逐 attempt 装配的表(docs/feature/reports/README.md)。`--json`
   // 恒是 usageTableData 行数组——pivot 只是 text 渲染面的排布,不造第二种 data 形状
-  // (docs/feature/reports/show/json.md「data:按 view 找组件声明」)。text 面:对照范围(`--exp`
+  // (docs/feature/reports/README.md「data:按 view 找组件声明」)。text 面:对照范围(`--exp`
   // 出现两次以上)下是逐 eval 的用量矩阵(renderUsageCompareSlice,配对/占位/时效复用
   // `deltaTableData`);否则是逐 attempt、逐 experiment 分节的通用表(renderUsageSlice)。
   if (flags.usage) {
@@ -1018,7 +1018,7 @@ async function show(
   // 证据切面是宿主本体:出现即走证据室,不渲染报告槽(与默认报告同规则)。每个切片接受任意
   // 范围——范围含多个 attempt 时按 experimentId、evalId、attempt 序逐 attempt 分节
   // (renderEvidenceSections,与上面 `@<locator>` 单元素范围共用同一份实现)。
-  // `--timing` 不带 attempt locator 时改读 Run 级 activity 树(docs/feature/reports/show/timing.md
+  // `--timing` 不带 attempt locator 时改读 Run 级 activity 树(docs/feature/reports/README.md
   // 「Run 级 activity 的读取」),与 attempt 生命周期树分流。
   if (evidence) {
     const timingMode =
@@ -1083,7 +1083,7 @@ async function show(
     return;
   }
 
-  // --history:执行时间轴(docs/feature/reports/show.md「--history:一个 eval 的执行时间轴」)。
+  // --history:执行时间轴(docs/feature/reports/README.md「--history:一个 eval 的执行时间轴」)。
   // 对 Sample 中匹配的每个 experimentId + evalId 分节,逐 attempt 而非逐快照;时间轴只列
   // 真实执行 —— resume 携带的复印件按 attempt 身份键去重后不占行。与重复 `--exp` 正交且不
   // 变形:时间轴本来就按 experimentId 分节,条件只是收窄节集合。
@@ -1092,7 +1092,7 @@ async function show(
     const attempts = experiments.flatMap((exp) => exp.runs.flatMap((run) => run.attempts));
     const data = await historyResult(attempts, { ...(patterns.length > 0 ? { evals: patterns } : {}) });
     if (flags.json) {
-      // `history` 不进组件模型,直接投影 Record evidence(docs/feature/reports/show/json.md
+      // `history` 不进组件模型,直接投影 Record evidence(docs/feature/reports/README.md
       // 「data:按 view 找组件声明」)——每节携带 `AttemptJson`(完整落盘字段 + 归属身份),
       // 不是 text 面的单行摘要。
       io.out(
@@ -1115,7 +1115,7 @@ async function show(
     return;
   }
 
-  // 缺省切片选择表(docs/feature/reports/show.md「缺省切片的选择规则」):`--exp` 出现两次以上
+  // 缺省切片选择表(docs/feature/reports/README.md「缺省切片的选择规则」):`--exp` 出现两次以上
   // 且没有被 `--report` 接管时是对照矩阵,不是报告槽的裸默认报告——与 `--report` 互斥(缺省切片被
   // 报告树替换时对照矩阵不再适用)。
   if (flags.report === undefined && expSelectors.length >= 2) {
@@ -1145,7 +1145,7 @@ async function show(
 
   if (flags.json) {
     // 缺省切片(leaderboard):内建报告首页的 `ExperimentComparison`/`ExperimentList` 对应的两个
-    // 计算函数(docs/feature/reports/show/json.md「data:按 view 找组件声明」)。`--report` 已经
+    // 计算函数(docs/feature/reports/README.md「data:按 view 找组件声明」)。`--report` 已经
     // 与 `--json` 互斥,不需要装载报告就能直接算数据。
     const data = await standardOverviewResult(selection);
     io.out(
@@ -1162,7 +1162,7 @@ async function show(
 
   // 报告槽:裸 show / eval id 前缀 / 单个 `--exp` 都落在这里,装载 `niceeval/report/built-in`
   // 的默认导出,--report 整槽替换——同一条
-  // 「装载 → 规范化(外壳 + 非空页列表)→ 逐页渲染」管线(docs/feature/reports/library/shell.md)。
+  // 「装载 → 规范化(外壳 + 非空页列表)→ 逐页渲染」管线(docs/feature/reports/README.md)。
   // locale = CLI 界面语言(config.locale,回落到 LC_* / LANG):报告 chrome 文案跟随它。
   const report = await loadHostReport(cwd, flags.report, flags.configReport);
   const locale = detectLocale();
@@ -1174,7 +1174,7 @@ async function show(
   };
   const sourceLabel = flags.report ?? "the built-in report";
 
-  // 初始页 = --page 指定的页,缺省第一张可导航页(docs/feature/reports/show/reports.md
+  // 初始页 = --page 指定的页,缺省第一张可导航页(docs/feature/reports/README.md
   // Case 2);本地宿主只 resolve 被打开的这一页——其余页只留 id / title,不触发取数(见
   // shell.md「行为约束」「本地宿主只 resolve 被打开的页」)。navigation:false 的页(参数化
   // attempt 详情)不参与缺省选择,也不能被 --page 直接打开——没有 locator 不能拿 Sample 强行
@@ -1183,7 +1183,7 @@ async function show(
   if (flags.page !== undefined) {
     const hit = report.pages.find((p) => p.id === flags.page);
     if (!hit) {
-      // 用法错误:列出可用页 id(docs/feature/reports/show/reports.md Case 1/2 的报错样例)。
+      // 用法错误:列出可用页 id(docs/feature/reports/README.md Case 1/2 的报错样例)。
       throw new ShowError(
         `error: page "${flags.page}" not found in ${sourceLabel}. Available pages: ${report.pages.filter((p) => p.navigation !== false).map((p) => p.id).join(", ")}\n`,
       );

@@ -1,220 +1,72 @@
-# Reports —— 查看与呈现结果
+# Reports：把 AnalysisSample 变成可交付视图
 
-Reports 把宿主选好的 Sample 或 Attempt Evidence 转成一棵报告组件树，再由 `show` 与 `view` 分别渲染成 text 与 web。
-报告作者只选择官方数据、显示形状与页面，不接触内部取数和双面渲染管线。
+Reports 把已经投影好的 [`AnalysisSample`](../sample/README.md) 变成终端输出、浏览器页面或可分享的静态报告站。它负责计算和呈现，不拥有评估事实。
 
-作者模型只有一条主线：
+    RecordReader → analysis projector → core-only AnalysisSample → ReportPlan
+                                      ↓
+                                  ReportInput
+                                      ↓
+                              ReportExecution
+                                ↙           ↘
+                              view          export
 
-```text
-静态 ReportDefinition / page 清单
-  → 一个 page 的 Sample / Attempt Evidence 输入
-  → 普通 TypeScript 函数
-  → 可序列化结果值
-  → 报告组件
-  → text / web
-```
+`ReportInput` 是进程内的普通值。它带着 core-only `AnalysisSample`、完整分母，以及按 ReportPlan 请求的 Run 与 Attempt 通道读取。它不落盘，不是另一种 Record 格式，也不携带打开的 reader。
 
-单页报告是一个接收 Sample、返回报告树的惰性 page 函数；多页报告静态声明 pages，每页各有自己的惰性 render。
-官方读数与实体投影是普通转换函数。
-组件接收 `rows`、`points`、`value`、`items`、`attempt` 等具体属性。
+## 核心心智
 
-公开作者面不出现惰性查询对象或组件级 `data` 绑定；组件按角色接收 `rows`、`points`、`value`、`items` 等具体属性。
+analysis projector 决定比较范围和分母。Reports 不按时间、路径或 Attempt locator 再选成员，也不接收 `ExecutionProjection`。一个分母项即使没有 Member、核心引用有误，或被调用方排除，也保留在 ReportInput 中，并以 `AnalysisSample` 的状态呈现。
 
-完整 API 见 [Library](library.md)，计算准入见 [Calculations](calculations.md)，内部边界见 [Architecture](architecture.md)，外部产品对照见[References](reference/authoring.md)。
+只有 Record→Reports composition adapter 同时接收 reader、`AnalysisSample` 与 plan。Report 定义、Calculation、页面、本机 runtime 和静态 runtime 只消费 ReportInput 或一次形成的 ReportExecution，不重新打开 Record、重新选择历史或判断复用资格。
 
-## 基本写法
+每个页面和 Calculation 都声明自己需要的 facts。未被该页面或 Calculation 请求的损坏、未知或退役通道不会阻断它。被请求的 invalid 通道形成该请求的失败；unavailable 与 unsupported 进入明确的呈现状态。
 
-同一个问题改写为普通函数：
+标准 Report 持续提供 Verdict、Assertions、usage/cost、conversation/tool、commands、diff、timing waterfall、diagnostics、actions 与 sources 的内建消费链。Attempt source 通过 origin Run 读取；carried 与 accepted 不复制源码，也不把 origin Run 加进 `AnalysisSample` 分母。
 
-```tsx
-import {
-  Page,
-  Scatter,
-  Table,
-  agent,
-  aggregate,
-  costUSD,
-  defineReport,
-  passRate,
-} from "niceeval/report";
+## 计算与完整度
 
-export default defineReport(async (sample) => {
-  const performance = await aggregate(sample, {
-    by: { agent },
-    values: { passRate, costUSD },
-  });
+Calculation 必须同时声明：
 
-  return (
-    <Col>
-      <Scatter
-        points={performance}
-        x="costUSD"
-        y="passRate"
-        point="agent"
-      />
-      <Table rows={performance} />
-    </Col>
-  );
-});
-```
+- 所需的 facts；
+- 分母如何采用 `AnalysisSample` 的 slot；
+- `allowPartial` 或 `requireComplete` 完整度 policy；
+- 可用、部分和不可用状态怎样呈现。
 
-作者只需要理解：
+例如 `commands.checked` 只在 100 个分母项中的 20 个被采集时，页面写 `20 / 100 · partial`。它不能把 20 当成 100。选择 `requireComplete` 的同一读数是 unavailable，不给出假装完整的数值。
 
-1. `sample` 是宿主选好的普通 Sample。
-2. `aggregate()` 把 Sample 转成结果行。
-3. `Scatter` 显示 points，`Table` 显示 rows。
+完整规则在 [Calculations](calculations.md) 定义；公开类型在 [Library](library.md) 定义。
 
-`passRate`、`costUSD` 与 `agent` 由 NiceEval 官方提供。
-它们与用户函数使用相同的公开组合器和调用路径，没有官方专用计算协议。
+## 页面与静态分享
 
-## 实体列表也是普通值
+一个 Report 先用纯 `plan()` 枚举所有页面、参数化页面实例、Calculation、Download 和各自 inputs，再形成 ReportInput。`executeReport()` 让每个 custom parser 和 consumer 各执行至多一次；show、view 与 export 消费同一份既有结果。
 
-Sample 已经公开按口径筛选并去重后的 `attempts`。
-筛选、排序和截断使用现有 Sample 方法与普通数组方法：
+静态 export 是一个自包含目录。它包括预渲染页面、当前宿主数据、下载项、exporter 内建的精确 runtime，以及穷尽的 `StaticAssetManifest`。用户 Report 不提供任意浏览器脚本、CSS 或路径 loader。浏览器只从该目录读取 artifact 私有数据；它不访问网络、源 Record 或未来安装的 NiceEval。
 
-```tsx
-export default defineReport((sample) => {
-  const security = sample
-    .scope({ evals: "security/" })
-    .filter((attempt) =>
-      attempt.result.verdict === "failed" ||
-      attempt.result.verdict === "errored"
-    );
+参数化页面必须在 export 前穷尽实例。目标目录必须不存在；成功时同级临时目录以一次 rename 完整出现。固定 `manifest.json` 不列入自身 entries，除此之外每个文件都必须被 manifest 穷尽。
 
-  const attempts = security.attempts
-    .toSorted((a, b) =>
-      (attemptCostUSD(b.result) ?? 0) -
-      (attemptCostUSD(a.result) ?? 0)
-    )
-    .slice(0, 50);
+## 范围
 
-  return (
-    <Col>
-      <AttemptList attempts={attempts} />
-    </Col>
-  );
-});
-```
+Reports 包含：
 
-这里没有一个伪装成数据的查询声明。
-`security` 是 Sample，`attempts` 是 `AttemptHandle[]`，组件接收的也是 `attempts`。
+- 从 core-only `AnalysisSample` 与 ReportPlan 形成 ReportInput；
+- 一次执行 Calculation、Page 与 Download，并由 view/export 共用结果；
+- 声明 facts、Calculation、页面、文本与网页呈现；
+- 对 partial、unavailable、unsupported 和 invalid 的可读反馈；
+- 终端查看、本地浏览和自包含静态分享；
+- 可访问的页面结构与文字等价内容。
 
-如果作者要使用通用表格，先显式转换成行：
+Reports 不包含：
 
-```tsx
-const rows = toAttemptRows(attempts);
+- Record 文件读取、写入、格式定义或通道 decoder；
+- 事实 owner、proof、snapshot、revision 或任何 Record 引用；
+- Record-to-Record 复制、镜像、同步或观察文件变化；
+- 全局 custom fact registry 或 capability negotiation。
+- 任意浏览器资源 provider 或用户路径读取。
 
-return <Table rows={rows} />;
-```
+## 入口
 
-`toAttemptRows()` 是立即执行的普通转换。
-它不注册数据源，不读取 page context，也不等待渲染器调用。
-
-## 设计原则
-
-- **值先于协议。**
-  能用 Sample、AttemptHandle、数组和对象表达的能力不包装成查询对象。
-- **转换就是函数。**
-  官方计算只有 `Input → Output | Promise<Output>` 一种形态。
-- **组件属性说出角色。**
-  表格接 `rows`，散点图接 `points`，摘要格接 `value`，Attempt 详情接 `attempt`。
-- **page render 拥有异步。**
-  需要读取 artifact 时直接 `await`。
-- **page 是必要的声明边界。**
-  page 清单静态可见，内容逐页惰性求值和失败隔离；普通值模型不等于把整份报告变成一个不透明函数。
-- **正确性留在组合器。**
-  两级聚合、coverage 与 refs 由 `rollup()` 和 `aggregate()` 保证，官方函数与用户函数走同一条路。
-- **复杂读数仍欠证据。**
-  非 rollup 算法通过 `metricValue()` 和 `evidenceRow()` 声明分母、basis 与 refs。
-- **范围必须可见。**
-  共享过滤先产生一个具名 Sample；内建报告和组件不能藏只对自己生效的过滤。
-- **普通 JavaScript 是组合语言。**
-  过滤、排序、截断、join 与并行使用语言已有能力。
-- **组件按形状准入。**
-  组件目录按渲染形状增长；领域名词只能命名函数或内建报告，不能命名组件。
-- **壳只装宿主必需品。**
-  外壳保留宿主机器在 page render 之外必须消费的字段；跨页内容用普通组合，组件资产随组件声明。
-- **参数没有新协议。**
-  组件收 props，报告收工厂闭包参数，外部业务数据走 import 的冻结快照模块；CLI 不开报告参数。
-- **结果一次生成、双面消费。**
-  一个 page 实例只执行一次，text 与 web renderer 读取同一棵结果树。
-- **高级扩展也是函数。**
-  自定义转换不注册；自定义显示形状才需要双面 renderer 协议。
-
-## 公开概念
-
-普通报告作者只需要六类概念；单页报告可以忽略 page 配置：
-
-| 概念 | 例子 |
-|---|---|
-| 静态 page 定义 | `{ id, title, input, navigation, render }` |
-| 输入值 | `Sample`、`AttemptEvidence` |
-| Reducer、分组与计算函数 | `mean`、`percentile(0.95)`、`agent`、`passRate` |
-| 普通转换 | `aggregate()`、`pairedDelta()`、`toAttemptRows()` |
-| 结果值 | rows、EvidenceRow / ExternalPoint、items、MetricValue |
-| 组件 | `Table`、`Scatter`、`Callouts`、`AttemptDetails` |
-
-“结果值”不是一个需要 import 的总协议名。
-每个函数返回精确的 TypeScript 类型，每个组件声明自己接受什么。
-
-## 边界
-
-- 不建立 `data.*`、`views.*` 或字符串查询目录。
-- 不让同一个组件支持 `source` / `data` / `view` 多种绑定。
-- 不引入 SQL、模板变量或另一门表达式语言。
-- 不把数组的 `filter`、`sort`、`map` 重新包装成框架 DSL。
-- 不让报告作者实现新的查询协议；标量计算使用 `rollup()`，复杂计算使用统一证据结果构造器。
-- 不让 Web renderer 重新取数或聚合。
-- 不要求组件作者以外的人理解 text / web renderer 协议。
-
-## 宿主边界
-
-1. **页粒度。**
-   多页定义必须用非空有序数组静态列出 page；宿主逐页执行 render。
-   首屏不计算其它 page，失败隔离和缓存以 page 实例为单位。
-2. **非 rollup 证据。**
-   Sample 派生图表只接受 EvidenceRow；复杂算法通过 MetricValue 构造器强制提交 samples、total、basis 与 refs。
-3. **show / JSON。**
-   `ShowJson` 信封继续存在；每个内建切片由一个公开任务函数产出普通 Result，text 组件和 JSON 序列化消费同一次结果，不从报告树切数据。
-   `show @<locator>` 是内建 Attempt 诊断切片，不受项目默认报告影响；显式 `--report` 才把同一 locator 交给报告的参数化页。
-4. **壳收缩到宿主必需品。**
-   外壳只保留 `title`、`theme`、`dimensionPins` 与 `head`；页脚与页头链接是普通内容，组件脚本样式随组件资产声明，站点级注入走 `head`。
-
-## 契约场景
-
-实现与测试至少涉及这些完整报告：
-
-1. 按 Agent 比较通过率与成本，并同时显示散点和表格。
-2. 收窄 `security/` Eval 后列出失败 Attempt。
-3. 用 `sample.historyAttempts` 计算按 Run 展示的历史趋势。
-4. 用报告旁的普通函数计算成对差异与稳定性。
-5. 组合 Sample Issue、Run diagnostics 与摘要读数。
-6. 从聚合 MetricValue 下钻到 Attempt 详情。
-7. 写一个接收 Sample 的普通异步函数，在两张 page 复用。
-8. 把转换结果传给自有 React 页面。
-9. 组件库作者定义一个新的双面显示形状。
-10. 多页报告只执行被请求 page；其中一页失败时其它 page 仍可用。
-11. attempt 与 experiment 详情作为标准库参数化 page 静态导出和深链。
-12. 每个内建 show 切片的 text 与 ShowJson 共用同一任务结果。
-13. 切换 locale 只重新格式化 MetricValue，不重新运行 page 计算。
-14. EvidenceRow 经 JSON fixture 和 React props 往返后无需水化即可渲染。
-15. page id 即使是 `"1"` 或 `"2024"`，导航仍严格服从 pages 数组顺序。
-16. 纯外部预算时间序列经显式 `external` 声明绘图，且不出现 Attempt 下钻。
-17. 自定义报告直接复用官方导出的 `standardAttemptPage`。
-18. 按固定题集 rubric 手写成绩单：缺题保持固定分母，总分 evidence 复用各题格 MetricValue 的 refs。
-19. 业务目标线作为显式 `external` series 叠加在 Sample 派生图上。
-20. 未声明 `external` 的图表拒绝无 refs 的 points，错误指向组件与字段。
-21. `by` 与 `values` 键冲突或占用保留键 `refs` 时，编译期与执行期都拒绝并指出冲突键。
-22. 页脚与页头链接作为普通内容包进每页 render，宿主没有对应槽位。
-23. 自定义显示形状随组件声明 assets，页面只注入实际出现组件的资产。
-24. 工厂函数产出带参数的 ReportDefinition，使用方传 opts 后默认导出。
-
-普通场景 1–8 只用公开转换函数与具体 props；不出现待求值的查询对象或组件级 `data` 绑定。
-
-## 相关阅读
-
-- [Library](library.md) —— page render、`aggregate()`、结果值、组件与完整示例。
-- [Calculations](calculations.md) —— 为什么没有 Sample map，以及哪些领域算法不进核心 API。
-- [Architecture](architecture.md) —— 执行时机、缓存、双面边界与 React 嵌入。
-- [References](reference/authoring.md) —— 外部产品中可借与不可借的部分。
-- [Sample](../sample/README.md) —— sample page 接收的已筛选 `attempts` 与口径字段。
+- [Architecture](architecture.md)：边界、输入流程、通道隔离、静态 export 与不变量。
+- [Library](library.md)：ReportInput、facts、Calculation、页面和静态 export 的公开形状。
+- [CLI](cli.md)：`show`、`view` 和 `view --out`。
+- [Calculations](calculations.md)：完整度 policy、分母和报告旁算法。
+- [Use case](use-case/README.md)：比较、完整度核对、静态分享和可访问页面。
+- [Reference](reference/README.md)：外部材料的使用边界。

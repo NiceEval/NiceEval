@@ -32,11 +32,10 @@ export interface SandboxHookContext extends ScopedFeedback {
   /** 当前 Invocation 的中止信号；物理 Sandbox 生命周期不从某条 Attempt 借用信号。 */
   readonly signal: AbortSignal;
   /**
-   * 第三条反馈通道:上报物理 Sandbox 生命周期的中性环境观测,落进所属 Experiment 的
-   * `Run.facts`。这类事实不归属于某一条 Attempt。key 匹配
-   * `[a-z0-9._-]{1,64}`,value 是标量;同 key 后写覆盖先写,非法 key 或非标量 value 抛错。
-   * 不影响判定,不参与 verdict / 评分 / 指纹。形状与归属语义见
-   * docs/feature/record/architecture.md#facts运行事实。
+   * 写入所属 Run 的 generic custom fact document；这类事实不归属于某一条 Attempt。
+   * name 使用反向域格式且不能以 `niceeval.` 开头，同一 owner/name 只允许写一次。value 可以是任意
+   * JsonValue。完整 document 经 JSON.stringify 后最多 65,536 UTF-8 bytes；超限同步抛出
+   * `record-custom-fact-too-large`，且不留下部分文件。不影响判定、评分或指纹。
    */
   fact(key: string, value: string | number | boolean): void;
 }

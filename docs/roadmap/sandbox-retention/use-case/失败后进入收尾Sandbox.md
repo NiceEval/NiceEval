@@ -28,7 +28,7 @@ niceeval sandbox list
 ```
 
 ```text
-rtn_8f3a  vercel  dormant  fresh post-teardown · cleanup complete · @1x7f  in 23h
+rtn_8f3a  vercel  dormant  fresh post-teardown · cleanup complete · @1efw5…  in 23h
 ```
 
 再进入 Sandbox：
@@ -40,7 +40,7 @@ niceeval sandbox enter rtn_8f3a
 CLI 在 shell 前再次说明它不是 Verdict 瞬间快照：
 
 ```text
-checkpoint: fresh post-teardown · @1x7f · cleanup complete
+checkpoint: fresh post-teardown · @1efw5… · cleanup complete
 guarantee: filesystem only · active until 2026-08-08T10:00:00Z
 ```
 
@@ -50,8 +50,8 @@ shell 退出后 Sandbox 重新停驻，Provider 到期时间从本次使用刷�
 Verdict 时的 Agent 行为、归因 diff 与命令证据仍从 Record 读取：
 
 ```bash
-niceeval show @1x7f --execution
-niceeval show @1x7f --diff
+niceeval show @1efw5… --execution
+niceeval show @1efw5… --diff
 ```
 
 如果 cleanup 已删除目标状态，retained environment 不补造它。

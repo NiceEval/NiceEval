@@ -25,25 +25,25 @@
   → 已登记 cleanup(全局逆序)               # context.onCleanup() 登记的清理:第二作者 layer 先清,template owner 后清,层内命令逆序
   → commitKeepOrStop()                      # 决定 Scope release 时 stop 还是 suspend
   → Sandbox lifecycle teardown              # 每个实际 Sandbox 一次，setup 的全局逆序
-  → Scope release                           # Provider Case finalizer;释放或留存完成后才能封口 result.json
+  → Scope release                           # Provider Case finalizer;释放或留存完成后才能提交 Record 事实
 ```
 
 这条链的阶段词表以 [Record 的 `LifecyclePhase` 闭集](../record/architecture.md)为唯一权威。
 收尾是全局 LIFO:Agent runtime teardown 先行,已登记 cleanup 按全局准备顺序逆序执行；实际 Sandbox 退休时再跑 lifecycle teardown（可回存目录或 checkpoint），Provider Case finalizer 最后整组关闭。
 收尾发生在 Verdict 语义确定之后，只能追加 diagnostic，不能反改 Verdict。
-`result.json` 的物理封口则必须等 Scope release 完成；两者不是同一个“定稿”时点。
+Record 事实的提交则必须等 Scope release 完成；两者不是同一个“定稿”时点。
 
 ### 中断与留存矩阵
 
-| 路径 | Attempt 收尾 | keep 决策 | Scope release | `result.json` | Experiment teardown |
+| 路径 | Attempt 收尾 | keep 决策 | Scope release | Record 提交 | Experiment teardown |
 |---|---|---|---|---|---|
-| 正常完成 | Agent teardown → cleanup 逆序 | 按 `--keep-sandbox` 提交 | stop 或 suspend | release 后封口 | 全部 Attempt 收尾后执行 |
-| Attempt timeout | 同上，逐段有界 | `errored` 可命中 keep 档位 | stop 或 suspend | release 后封口为 `errored` | 全部 Attempt 收尾后执行 |
-| Ctrl+C | 已进入的收尾与 finalizer 有界执行 | 不新提交 keep | disposition 保持 stop | 仅已走到封口点的 Attempt 存在 | 执行有界 teardown |
+| 正常完成 | Agent teardown → cleanup 逆序 | 按 `--keep-sandbox` 提交 | stop 或 suspend | release 后提交 | 全部 Attempt 收尾后执行 |
+| Attempt timeout | 同上，逐段有界 | `errored` Verdict 可命中 keep 档位 | stop 或 suspend | release 后提交执行错误通道事件、Verdict 与 receipt | 全部 Attempt 收尾后执行 |
+| Ctrl+C | 已进入的收尾与 finalizer 有界执行 | 不新提交 keep | disposition 保持 stop | 仅已走到提交点的 Attempt 存在 | 执行有界 teardown |
 | SIGKILL / 断电 | 无法执行 | 无法提交 | 无法执行 | 在飞 Attempt 不封口 | 无法执行；由 orphan 对账事后回收 |
 
 Ctrl+C 是可处理的中断，SIGKILL 不是。
-已封口 Attempt 在两种路径下都保持可读；reader 不为在飞 Attempt 伪造 `errored`。
+已封口 Attempt 在两种路径下都保持可读；reader 不为在飞 Attempt 伪造 `errored` Verdict 或终态 lifecycle。
 强杀遗留实例只通过创建期标识与 orphan 对账处理。
 
 ## 变更归因:send 区间与分类账
@@ -90,24 +90,24 @@ export default defineEval({
 - **归因排除清单,runner 私有、baseline 时冻结。** 默认在任意目录深度排除 `.git`、`node_modules`、`__pycache__`、Python venv(`*venv*/`)、常见构建输出与包管理器缓存。不排除的话,prepare 命令里一次 `npm install` 或 agent 自建一次 venv 就会让分类账哈希成千上万个依赖文件,后续区间的二进制与缓存变化持续放大 object 库。
 - `diff.ignore` / `diff.include` 使用 workdir 根的 gitignore 风格 glob：无 `/` 的 pattern 匹配任意深度的同名项，含 `/` 的 pattern 从 workdir 根匹配，尾 `/` 表示目录。项目自己的 ignore 规则**不**参与归因判断——被项目 ignore 的文件照常入账。
 - **nested Git repository 不得变成证据盲区。** 私有 ledger 发现索引 mode `160000`（submodule / nested repo 的 gitlink）立即让当前阶段报执行错误，并列出路径与修法：被测 checkout 应直接位于 `workdir` 根；确实不参与评分的 nested repo 应由 `diff.ignore` 整体排除。只打印 Git warning 后继续会让 repo 内普通文件修改从 agent diff 静默消失，禁止这种降级。
-- **agent 归因增量 = 逐区间 delta 序列,不做跨区间压缩。** `workspace.diff` 阶段从分类账导出每个 send 区间自己的 before/after,按时序落盘为 `diff.json`(形状见 [Results · diff.json](../record/architecture.md#diffjson))。不压成单一 before/after 是硬约束:区间之间可能夹着 eval 写入,压缩会把 eval 的修改夹带进 agent 的账;「创建又删除」「改完又改回」也会被压没。文件级摘要(`net` / 触及区间)与 `diff.get(path)`(最后触及区间的终态)都是读取面从区间序列派生的视图,agent 区间内发生过的改动不因 eval 事后重写同一路径而被抹掉。
+- **agent 归因增量 = 逐区间 delta 序列,不做跨区间压缩。** `workspace.diff` 阶段从分类账导出每个 send 区间自己的 before/after,按时序作为 workspace change 事实提交(契约见 [Record · Architecture](../record/architecture.md))。不压成单一 before/after 是硬约束:区间之间可能夹着 eval 写入,压缩会把 eval 的修改夹带进 agent 的账;「创建又删除」「改完又改回」也会被压没。文件级摘要(`net` / 触及区间)与 `diff.get(path)`(最后触及区间的终态)都是读取面从区间序列派生的视图,agent 区间内发生过的改动不因 eval 事后重写同一路径而被抹掉。
 - **导出往返是常数次。** `workspace.diff` 用一条沙箱内命令完成**全部** agent 区间的路径枚举、文本 blob 读取与二进制尺寸统计,结果写进沙箱内的导出文件,宿主经文件通道一次下载并在宿主侧校验。provider 往返数与区间数、文件数都无关,不能退化成逐文件或逐区间的远端调用,也不把大证据灌进命令 stdout 通道。
 - 导出对 Sandbox 侧的全部要求是 git 与 POSIX shell 工具(分类账本身已要求 git),不要求 node、python 等运行时。
 - 单区间上限:最多导出 10,000 个路径、64 MiB 文本 blob 证据,预算只数真正要传输的字节(文本 before/after 实际字节)。
-- 二进制不内联内容、只记字节数,不占预算;超过单文件阈值(1 MiB)的文本按二进制同款处理——记 `status` 与字节数、内容显式省略(`elided`,形状见 [Results · diff.json](../record/architecture.md#diffjson)),同样不占预算。
+- 二进制不内联内容、只记字节数,不占预算;超过单文件阈值(1 MiB)的文本按二进制同款处理——记 `status` 与字节数、内容显式省略(`elided`,契约见 [Record · Architecture](../record/architecture.md)),同样不占预算。
 - 尺寸核算先于内容传输。
 - 内容被省略的条目,存在性与 `status` 断言照常成立;内容断言在读取那一刻如实报证据不可用,不静默判过或判败。
 
 导出命令、下载或内容校验失败时不得伪造空区间。
-非 optional 的 diff 消费者存在时，失败使对应断言 `unavailable`，并令 Attempt `errored`。
-没有 required 消费者时，失败只记 `workspace-diff-unavailable` diagnostic，并省略 `diff.json`。
+非 optional 的 diff 消费者存在时，失败使对应断言 channel entry `unavailable`，并据此形成 `errored` Verdict。
+没有 required 消费者时，失败只记 `workspace-diff-unavailable` diagnostic channel event，并令 diff decoder 如实 unavailable；不维护私有 `diff.json`。
 Runner 继续用已经取得的命令结果、事件与其它证据完成判定。
 这条 required / supplemental 分界的单源在 [Assertion 证据与完整性](../assertions/architecture/evidence.md#判定依赖与补充证据)。
 - **作用域就是 workdir,刻意不扩大。** 全文件系统 diff 只有 Docker 有原生通道(容器层 diff),且只有路径没有内容、噪声大、做不了 send 区间归因,按 provider 分支还破坏[核心中立](../../architecture.md);workdir 之外的世界($HOME、全局安装、PATH)不靠更大的 diff 回答,靠留存现场(见下节)。git 是唯一便携、增量、带内容存储、能支撑逐区间归因的引擎,这是选它的理由,不是历史惯性。
 
 agent 归因之外,最终工作区仍完整可读:`t.sandbox.readText` / `runCommand` 看到的就是最终状态;留存现场(`--keep-sandbox`)保有含分类账的完整沙箱。逐区间回放变更历史有公开入口——[`niceeval sandbox history` / `sandbox diff`](cli.md#回放留存现场的变更历史sandbox-history-diff),不需要摸 ledger 的内部路径。
 
-这条链上每个实际执行的环节都被计时并落进 `result.json` 的 `phases`——排队与创建分列、两层 prepare 命令逐条形成时间树、收尾段(agent 收尾 / cleanup / `stop`)在判定口径之外单独计时。
+这条链上每个实际执行的环节都被计时并作为耗时事实提交——排队与创建分列、两层 prepare 命令逐条形成时间树、收尾段(agent 收尾 / cleanup / `stop`)在判定口径之外单独计时。
 
 Sandbox 创建成功后,core 只包装一次返回的中性 `Sandbox`:所有经四个公开 `run*()` 方法发出的调用自动挂到当时的 phase/command/turn 下。`sandbox.prepare.<owner>` 的依赖安装、`agent.ensure` 的 CLI 安装、adapter 启动 Agent CLI、workspace baseline/diff 与 lifecycle hook 的回存命令,因此都能继续展开到真实 shell。provider 内部用 `runCommand` 转调 `runShell` 只算最外层公开调用一次,不重复计时。
 
@@ -127,7 +127,7 @@ operation 的 label 同样有界、脱敏,由拥有该逻辑工作的 producer �
 
 这样「沙箱起了多久、prepare 哪条命令慢、Agent CLI 启动多久、超时死在哪一层、收尾卡没卡」都有数据可查。
 
-阶段与时间树口径见 [Phase Timings](../../engineering/benchmark/README.md),终端的有界/full 两档入口是 [`niceeval show --timing`](../reports/show/timing.md),网页入口是 `niceeval view` 的 Attempt 详情。
+阶段与时间树口径见 [Phase Timings](../../engineering/benchmark/README.md)。终端与网页都通过 [Reports](../reports/README.md) 请求 timing fact。
 
 核心固定的是这条调用链本身:Case 就绪后先按 owner 顺序执行两层 prepare 命令与 agent.ensure 循环,再打分类账 baseline；`test(t)` 中的普通上传、turn 和判分命令按源码顺序执行。agent diff 只折叠 `send` 区间，区间外写入属于 eval 归因。完整路径见 [Eval 用例 · 沙箱 coding 任务](../eval/use-case/sandbox-coding.md)。
 
@@ -148,23 +148,23 @@ Sandbox 是主实例及伴随资源共有的生命周期边界，但不是每个
 
 异常路径相反：命令 timeout、取消、Attempt interruption 或 Agent runtime cancellation 时，Provider 必须在 Promise settle 前确认本次**受管命令树**已经终止。能按进程组 / job / cgroup 精确终止就只终止该树；无法证明时必须退休并停止整个 Sandbox。只关闭输出流、让孙进程继续运行，是取消失败而不是成功。
 
-一次逻辑 send（含全部物理重试）只有在 Agent driver 与可能写 workdir 的命令树已终止或进入可证明静止态，且 ledger / retryAttempts 已记账后才能 settle。正常 keep 可保留任务服务，但 Agent teardown 必须保证 driver 不能继续发模型请求；异常路径无法证明静止时，不能把 Case 标成可安全复用。
+一次逻辑 send（含全部物理重试）只有在 Agent driver 与可能写 workdir 的命令树已终止或进入可证明静止态，且 ledger 与逐次 retry channel event 已提交后才能 settle。正常 keep 可保留任务服务，但 Agent teardown 必须保证 driver 不能继续发模型请求；异常路径无法证明静止时，不能把 Case 标成可安全复用。
 
-超时把 attempt 转成 `errored` 时,归属必须可见。
-`result.json` 落盘三样:触发的是哪层时限(attempt deadline / 命令显式 `timeout`)、值多少、值取自四层中的哪一层。
-报错行与 [`niceeval show --timing`](../reports/show/timing.md) 照实印这三样,不打一个没有归属说明的 ✗。
+超时时,它所形成的执行错误通道事件 与 `errored` Verdict 的归属必须可见。
+Record channel event 写明三样：触发的是哪层时限（attempt deadline / 命令显式 `timeout`）、值多少、值取自四层中的哪一层。
+报错行与请求 timing fact 的 Report 照实印这三样，不打一个没有归属说明的 ✗。
 provider 自身固有的会话上限(如 Vercel Sandbox 的 session 时长)不能静默充当默认值:deadline 超出它时在派发前就报告该约束,点名 provider 与上限值,不让 attempt 跑到一半被截。
 
 ## 留存(keep)与注册表
 
 [`--keep-sandbox`](cli.md) 的留存决策发生在 attempt 收尾链的最后一步。
-verdict 定稿后按档位提交：`failed` 档是不带值的 flag 的默认值，提交 `failed` / `errored`，包括被硬超时打断的 `errored`；`all` 档提交全部 verdict。
+Verdict 定稿后按档位提交：`failed` 档是不带值的 flag 的默认值，提交 `failed` / `errored` channel entry 对应的现场，包括被硬超时打断后形成的 `errored` channel entry；`all` 档提交全部 Verdict 对应现场。
 此时其余收尾(agent teardown、已登记 cleanup、diff 采集)已经照常完成；若实例实际退休，lifecycle `teardown()` 随后回存其 checkpoint。
 
-attempt 的最终 `locator` 在调度前已经由预分配的 `runId` 与 `{evalId, attempt}` 算好并通过 Record 根碰撞登记。
-因此登记项、run 收尾反馈与 `result.json` 从第一次写入起就使用同一个 locator，没有留事后补写的时段。
+attempt 的最终 `locator` 在调度前已经由当前 `RecordWriteSession` 分配完整 128-bit `attemptId`，并由该 identity 直接编码；session 的 writer lock 只与其它 writer 互斥，不阻塞 reader。
+因此登记项、run 收尾反馈与提交进 Record 的 Attempt 事实从第一次观察起就使用同一个 locator，没有留事后补写的时段。
 
-沙箱的 Effect Scope 持有一个只在本 attempt 内可变的 release disposition,初始为 `stop`。attempt deadline 只中断 Scope **里面的 verdict-producing 工作 fiber**,把超时转换成 `errored` draft;它不关闭外层 Scope。runner 随后仍在同一个 Scope 内执行有界 teardown、定稿 verdict,再调用 `commitKeepOrStop()`。
+沙箱的 Effect Scope 持有一个只在本 attempt 内可变的 release disposition,初始为 `stop`。attempt deadline 只中断 Scope **里面的 verdict-producing 工作 fiber**,把超时转换成执行错误通道事件 与待写的 `errored` Verdict;它不关闭外层 Scope。Runner 随后仍在同一个 Scope 内执行有界 teardown、收敛 lifecycle 与 channel entry,再调用 `commitKeepOrStop()`。
 
 这样硬超时现场尚未被 finalizer 销毁,而 Ctrl+C 中断外层 Scope 时 disposition 仍是 `stop`,照常销毁。Scope release 最后按 disposition 执行:只有留存提交成功才跳过 `sandbox.stop()`。
 
@@ -173,7 +173,7 @@ attempt 的最终 `locator` 在调度前已经由预分配的 `runId` 与 `{eval
 1. 把完整登记项原子写入持久注册表。一条 = `{ sandboxId, provider, evalId, attempt, experimentId?, locator, verdict, keptAt, workdir, enter?, expiresAt?, state, lease? }`,`state` 初值 `"alive"`(实例此刻还在跑);`lease` 是事后命令的互斥凭据(语义见 [CLI · 条目级 lease](cli.md#niceeval-sandbox查看与销毁留存的沙箱))。
 2. 写入成功后,才把 disposition 改成 `keep` 并从本次 run 的内存收尾集合移除。
 3. 写入失败时保持 `stop`,写入 diagnostic,让 Scope finalizer 正常销毁;该 attempt 的 `sandbox.kept` 不得写成 `true`。
-4. disposition 为 `keep` 时,Scope release 阶段执行 provider **suspend**(`sandbox.suspend` phase,有界计时——e2b pause 的耗时随内存增长,不许藏在计时外)。成功后把登记项 `state` 更新为 `"dormant"`;失败时保持 `"alive"` 并追加 diagnostic。现场仍被注册表管理、仍可 enter,只是没省下资源,**不销毁、不冒充 dormant**。suspend 与任何收尾步骤一样不反改 verdict。
+4. disposition 为 `keep` 时,Scope release 阶段执行 provider **suspend**(`sandbox.suspend` phase,由 timing decoder 读取其边界 channel event——e2b pause 的耗时随内存增长,不许藏在计时外)。成功后把登记项 `state` 更新为 `"dormant"`;失败时保持 `"alive"` 并追加 diagnostic channel event。现场仍被注册表管理、仍可 enter,只是没省下资源,**不销毁、不冒充 dormant**。suspend 与任何收尾步骤一样不反改 Verdict。
 
 持久注册表是 `.niceeval/sandboxes/` 下的**逐条目文件**,不是多个 attempt 竞争改写的一份 JSON。
 
@@ -198,7 +198,7 @@ entry id 由 `provider + sandboxId` 做稳定散列;每条先写同目录临时�
 - **Local** —— 不参与留存,`--keep-sandbox` 组合在创建前报错:本地档从不销毁,现场天然留在用户的工作树里,无需注册表纳管(见[本地执行](local.md))。
 - **`defineSandbox` 自定义 provider** —— 不参与留存。`niceeval sandbox` 刻意不加载 config / eval 模块,新进程只有序列化登记项,无法安全找回用户对象上的任意 `stopDetached` 函数;只删登记项又会违反「stop = 销毁」。因此 `--keep-sandbox` 与自定义 provider 组合在创建前报清晰错误。需要统一留存生命周期的 provider 应贡献为内置 provider;未来若引入可序列化、可审计的 detached cleanup 协议,再扩这条边界。
 
-`Sandbox` 接口不因留存扩大:没有 pause / detach / keep 方法——「留下」不是沙箱的能力,是 runner 的一次调度决定。留存的 attempt 在 `result.json` 落 `sandbox: { provider, sandboxId, kept: true }`(字段契约见 [Results](../record/architecture.md#resultjson)),`phases` 无 `sandbox.stop` 条目。
+`Sandbox` 接口不因留存扩大:没有 pause / detach / keep 方法——「留下」不是沙箱的能力,是 runner 的一次调度决定。留存的 attempt 在 Record 提交 `sandbox: { provider, sandboxId, kept: true }`(字段契约见 [Record · Architecture](../record/architecture.md)),`phases` 无 `sandbox.stop` 条目。
 
 ## 孤儿核对:强杀路径的实例面回退
 
@@ -294,7 +294,7 @@ provider 没认出的错误再过一遍与文件 IO 重试共用的保守瞬时�
 - up 的 projectName 与 overlay 在整个重试闭包内固定，每次重试前先对同一 project 执行独立于 Attempt signal 的有界 `compose down --volumes --remove-orphans`，清掉半启动服务后再 up。
 - 附着主服务后由 Docker provider 探测分类账所需的 git；题目镜像没带时以 root 通过已有的 apt/apk/dnf/yum 补齐，而不是要求每条 Eval 修改 Dockerfile。
 - 整个 case 最终仍由主实例及伴随资源的 finalizer 回收；即使前向工作已经 timeout/cancel，finalizer 也拿新的 8s cleanup signal。
-- 只有真实回收成功才解除 registry 所有权；失败追加 `sandbox-stop-failed` diagnostic、保留 project labels 供同轮强清重试或 `sandbox prune` 事后认领，不改写原 Attempt verdict。
+- 只有真实回收成功才解除 registry 所有权；失败追加 `sandbox-stop-failed` diagnostic channel event、保留 project labels 供同轮强清重试或 `sandbox prune` 事后认领，不改写原 Attempt 的 Verdict。
 - **E2B** —— create 经 `metadata` 打 provision token,对账走 SDK 实例列表的 metadata 过滤,查到即 kill(实例已不存在视作对账完成)。创建成功后的工作区准备命令失败由 kill-on-failure 先 kill 再抛。真实跑分中两类都出现过:`Sandbox.create` 阶段的 `fetch failed · other side closed`(歧义类),与创建成功之后初始化请求撞 429 被归入拒绝类(反例见 memory 的 e2b-provision-429-duplicate-sandbox 条目)。都由重试前对账兜住。
 - **Vercel Sandbox** —— create 是单个 SDK 调用、没有初始化尾巴。SDK 对 429 已内建多次退避重试(读 `Retry-After`),外层对拒绝类的封顶次数相应收窄,避免「外层次数 × 内层次数」在请求量和退避时长两个维度同时放大;SDK 没有按元数据检索实例的通道,歧义类第一次抛出。
 
@@ -302,7 +302,7 @@ provider 没认出的错误再过一遍与文件 IO 重试共用的保守瞬时�
 `runtime.ts` 只调用 plan 私绑的闭包，不维护 adapter registry:
 
 - 退避睡眠期间临时归还并发槽位(`retry.ts` 的 `ProvisionSlot`),睡醒后再排队要回来。在退避的 attempt 只是在等,不该攥着 `sandboxSem` 的名额陪跑 `setTimeout`,不然一批 429 会把整批实际并发拖成远低于 `--max-concurrency` 声明值的个位数。
-- 重试全部耗尽后仍按原语义走:`verdict: "errored"`(基建问题,不是 agent 表现);对账中销毁的实例不额外报错,只留 diagnostic。
+- 重试全部耗尽后仍按原语义形成 `errored` Verdict(基建问题,不是 agent 表现);对账中销毁的实例不额外报错,只留 diagnostic channel event。
 
 **对外的空间轴映射**:内部的两维分类不外泄,但确定性配置死因向 attempt 层浮出时附带[执行失败分类](../error-classification/README.md)的 `scope`,由失败熔断消费。判据仍是可证明性,按死因的配置声明位置定档。凭据缺失、权限不足来自实验级配置,附带 `scope: "experiment"`。模板不存在按 template owner 定档。Experiment 是 template owner 时,同一模板由它选中的全部 Eval 共享,附带 `scope: "experiment"`。Eval 是 template owner 时,同因必死只能证明到共享同一模板的范围,词表里可证明的档是 `scope: "eval"`——错杀健康模板的 eval 比多撞几次死模板更贵。
 

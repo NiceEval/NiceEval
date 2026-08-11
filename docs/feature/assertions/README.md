@@ -135,20 +135,16 @@ Session 在第一次交互开始时才算已启动；空 handle 不算。因此�
 matched 而后者 mismatched；协议终态为 failed 时 `succeeded` mismatched。只有文本出现“502”但协议为
 completed 时不猜测失败。没有 snapshot 的 transport 是 execution error。Judge 失败与 `succeeded` 无关。
 
-## 不可用、Record 与读取
+## 不可用与结果信息
 
 缺少 evidence 不能伪装成普通 mismatch。`unavailable` 与 `errored` 保留原因、脱敏 evidence、
 explanation 和 Judge rationale。每条 AssertionResult 都按同一个 `check(a, b)` 模型保存 subject `a` 的
 安全结构化内容或稳定引用、evaluator / Match `b` 的 identity 与完整安全 config，以及 evaluation；不能只保存
 成功或失败。`calledTool`、`loadedSkill`、`succeeded` 与 Judge recipe 只是替作者取得 `a` 并构造 `b` 的特例，
-保存规则不变。secret 绝不写入 Record。
+保存规则不变。secret 绝不属于 AssertionResult。
 
-Record 只使用 `schemaVersion: 19`、`evaluationAlgorithm: "assertion/v1"` 与 `assertionResults`。
-schema 18 整份 unsupported，不跨 schema carry。`show`、`view`、JSON、export 与 source 都从同一
-projection 离线解释，不重新运行 evaluator。
-
-Assertion 只规定必须保留哪些 subject、evaluator 与 evaluation 数据；Record 自己决定这些数据怎样落盘、
-去重或携带。
+Assertion 只规定结果必须保留哪些 subject、evaluator、evaluation、evidence、policy 与 projection；
+它不在这里规定任何持久化布局或跨版本读取规则。
 
 完整字段、不可排名规则与 display contract 见 [Architecture](architecture.md)。
 
@@ -158,5 +154,5 @@ Assertion 只规定必须保留哪些 subject、evaluator 与 evaluation 数据�
 - [Value assertions](library/value-assertions.md) —— Match 与 refinement。
 - [Scoped assertions](library/scoped-assertions.md) —— scope snapshot 与 `succeeded`。
 - [Score Eval](library/score-points.md) —— 累计 score 的局部贡献。
-- [Architecture](architecture.md) —— AssertionResult、Record 与两种 grading。
+- [Architecture](architecture.md) —— AssertionResult 与两种 grading。
 - [Judge](../judge/README.md) —— Judge evaluator 的配置与材料。

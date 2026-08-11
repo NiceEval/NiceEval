@@ -1,202 +1,96 @@
 # 验收脚本写法
 
-这篇给出测试仓库 `scripts/e2e.ts` / `verify.ts` 的参考写法。
-它只从 CLI 的公开使用面进入：运行 `pnpm exec niceeval ...`，断言退出码与输出（stdout、`--json` / `--junit` 文件）。
+本页给场景仓库的 `scripts/e2e.ts` / `verify.ts` 一条最小参考链。脚本只运行公开 CLI、断言退出码和公开输出；不 import NiceEval 内部代码，不递归扫描 `.niceeval/`，也不读取 Record 私有文件。
 
-仓库自治，各仓库可以偏离这里的组织方式。
-但断言面必须一致：
+自动化产品测试当前处于重置期。需要真实验收时沿本页手动执行最小切片；恢复自动化前仍须遵守测试总纲的 owner 与预算规则。
 
-- 不 import niceeval 库代码；
-- 不递归扫描 `.niceeval/`；
-- 不依赖未公开的结果文件布局。
+## 命令执行边界
 
-结果读取边界见[总则](README.md#42-results-读取边界)，CLI 读回约定见[总则](README.md#43-cli-读回)。
-
-约定：脚本是 `.ts`、由 tsx 执行；断言用 `node:assert/strict`，不引入测试框架——验收脚本只有一条线性流程，失败即抛错、`e2e.ts` 捕获后决定退出码。
-每条断言消息都要说清**哪条契约断了、下一步看哪里**。
-
-## 执行 niceeval 命令
-
-命令以 **shell 原文**出现在脚本里——和开发者在终端里敲的一模一样，可以直接复制出去手动复现。
-唯一的命令执行器只做一件事：跑命令、拿 stdout 与退出码；预期非零退出（deliberate-fail 这类）是一等场景，不是异常：
+命令以用户可复制的原文出现。唯一命令执行器只负责运行进程、收集 stdout/stderr 和核对预期退出码，不解码领域输出：
 
 ```ts
-// scripts/verify.ts
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 
-function sh(cmd: string, expect: number | "nonzero" = 0): string {
-  const res = spawnSync(cmd, { shell: true, encoding: "utf8" });
-  const exit = res.status ?? -1;
-  const ok = expect === "nonzero" ? exit !== 0 : exit === expect;
-  assert.ok(ok, `${cmd}\n退出 ${exit}，预期 ${expect}。stderr 尾部：\n${res.stderr.slice(-2000)}`);
-  return res.stdout;
+function sh(cmd: string, expected: number | "nonzero" = 0): string {
+  const result = spawnSync(cmd, { shell: true, encoding: "utf8" });
+  const actual = result.status ?? -1;
+  const ok = expected === "nonzero" ? actual !== 0 : actual === expected;
+  assert.ok(ok, `${cmd}\nexit ${actual}; expected ${expected}\n${result.stderr.slice(-2000)}`);
+  return result.stdout;
 }
 ```
 
-## 用例一：跑实验，断言退出码
+预期失败是一等场景，不应由命令执行器吞掉。每条 assertion message 都要写明断掉的用户契约和下一条诊断命令。
 
-`--rerun all` 保证真实新跑，`--json` 保证可解码的稳定事件流，`--junit` 落 CI 出口：
+## 最小 Journey
 
-```ts
-const EXPECTED_EVALS = ["weather/brooklyn", "weather/hitl-reject"];
-
-sh("pnpm exec niceeval exp weather --rerun all --json --junit junit.xml");
+```text
+exp --dry
+  → exp
+  → show --run <runId> --json
+  → show --run <runId> --page <attempt-route>
+  → view --run <runId> --out <new-directory>
+  → 断网浏览静态站
 ```
 
-## 用例二：`show` 默认报告——应发现的 Eval 都实际运行了
-
-少排用例不能全绿。
-默认报告断言停在自有事实的子串级出现，不断言布局：
+`runId` 来自本次 Invocation receipt 的公开输出。`show --json` 返回同一 `ReportExecution` 的页面索引；脚本先用签入的 Eval identity、Verdict 和 sentinel 验证这份输出，再取其中已经计划的完整 Attempt route。它不能从路径规则猜 route，也不能用 route 越过已选 Sample 打开任意 Attempt。
 
 ```ts
-const board = sh("pnpm exec niceeval show");
-for (const id of EXPECTED_EVALS) {
-  assert.ok(
-    board.includes(id),
-    `show 默认报告缺少 ${id}——发现或选择器行为变了，先跑 pnpm exec niceeval exp weather --dry 看计划`,
-  );
-}
+sh("pnpm exec niceeval exp weather --dry --json");
+const events = sh("pnpm exec niceeval exp weather --rerun all --json");
+const runId = parseCompletedRunId(events);
+
+const report = parseShowDocument(
+  sh(`pnpm exec niceeval show --run ${runId} --json`),
+);
+assertExpectedEvals(report, ["weather/brooklyn", "weather/hitl-reject"]);
+
+const attemptRoute = onlyPlannedAttemptRoute(report, "weather/brooklyn");
+const detail = sh(
+  `pnpm exec niceeval show --run ${runId} --page ${attemptRoute}`,
+);
+assert.ok(detail.includes("mcp__demo-tools__get_weather"));
+assert.ok(detail.includes("Brooklyn"));
+
+sh(`pnpm exec niceeval view --run ${runId} --out ./report-site`);
+await assertStaticSiteWorksOffline("./report-site", attemptRoute);
 ```
 
-## 用例三：`show --history`——逐 attempt 断言 verdict，并拿到 locator
+显式比较多个 Run 时重复 flag：
 
-history 每行给出时间、verdict、结果摘要、耗时、成本与 locator。
-它是 CLI 验收的主入口：从这里断言 verdict，也从这里提取后续证据切面命令所需的 locator。
-
-```ts
-function latestAttemptLine(evalId: string): string {
-  const lines = sh(`pnpm exec niceeval show ${evalId} --history`)
-    .split("\n")
-    .filter((l) => l.includes("@"));
-  assert.ok(
-    lines.length > 0,
-    `show --history 里 ${evalId} 没有任何 attempt 行——实验没跑到这条 Eval`,
-  );
-  return lines.at(-1)!;
-}
-
-for (const id of EXPECTED_EVALS) {
-  const line = latestAttemptLine(id);
-  assert.ok(
-    line.includes("passed"),
-    `${id} 最新 attempt 不是 passed：${line}\n用行尾 locator 执行 pnpm exec niceeval show @<locator> 看主失败断言`,
-  );
-}
-
-const locator = latestAttemptLine("weather/brooklyn").match(/@\S+/)![0];
+```sh
+pnpm exec niceeval show --run <baseline-run> --run <candidate-run> --page comparison
 ```
 
-## 用例四：`show --execution`——调用与入参都存在，OTel 数据可见
+`--latest` 的验收按 Experiment 分组：每个目标 Experiment 恰好得到最后完成的一个 Run。目标组没有完成 Run 必须返回 `sample-latest-unavailable`；任一候选排序核心无效必须返回 `sample-latest-indeterminate`，不能跳过坏数据。
 
-执行树是「适配器收到了什么」的用户可见投影：判分断言过的调用应全部以节点出现，TOOL 卡片的 `input` 块含断言过的入参值——名字和参数都要穿到展示面；OTel 期望以时间注释的展示形态核验。
-（入参的判分断言在 Eval 里连名带参写：`t.calledTool("mcp__demo-tools__get_weather", { input: { city: "Brooklyn" } })`，见[适配器域](adapter/README.md)。）
+## Record 与 Report 验收点
 
-```ts
-const execution = sh(`pnpm exec niceeval show ${locator} --execution`);
-assert.ok(
-  execution.includes("mcp__demo-tools__get_weather"),
-  "执行树缺少 MCP 调用节点——调用没被归一进事件流，或 show 执行树读不回",
-);
-assert.ok(
-  execution.includes("Brooklyn"),
-  "TOOL 卡片的 input 里没有出现入参 Brooklyn——入参在归一或展示链路上被丢弃/改写",
-);
+- CLI 用同一个 lock-free frozen reader Scope 形成 `AnalysisSample` 与 `ReportInput`；同 root writer 可并发发布。Scope 关闭后才形成 execution，本机 view/static export 不再访问 Record。
+- core-only Sample 保留 included、not-recorded、invalid、excluded 的完整分母；被请求的通道四态不折叠成零或空值。
+- Attempt 大内容从 Attempt-owned blob 交付；decoder 只能取得当前 owner 的 bytes，不能得到 Record root 或实际路径。
+- 静态 export 的目标必须不存在；任一页面或下载失败时不发布目标。成功目录在断网 Sandbox 实例中只读取 manifest 列出的自有文件。
+- 已发布 Run immutable；外部损坏 channel 时，下一次命令呈现局部 invalid，不修改其它 fact，也不建立 revision、history 或迁移结果。
 
-// 声明 tracing 面的仓库：调用数据写进了 OTel，展示上就是节点带时间注释
-assert.ok(
-  !execution.includes("timing unavailable"),
-  "执行树节点缺 span 时间注释——OTel 没接上或 correlation 断裂，用 show --timing 看 OTel 子树挂上没有",
-);
+## 缓存与补跑
 
-// 未声明 tracing 面的仓库反向断言：
-// assert.ok(execution.includes("timing unavailable"), "不该有 trace 的适配器出现了时间注释");
+缓存是否沿用由新 Run 的 core membership 和 Run-owned adoption channel 观察，不通过跨 Run history 命令推断。真实补跑后显式读取新 Run；carried/accepted Member 引用旧 Attempt 时，详情仍显示 Attempt 的原始 origin。
+
+强制补跑的最小链是：
+
+```sh
+pnpm exec niceeval exp cached --rerun all --json
+pnpm exec niceeval show --run <new-run-id> --page adoption
 ```
 
-## 用例五：`show --timing`——OTel 写成了什么
+## 失败分类
 
-`--execution` 回答「有没有写入」，`--timing` 回答「写成了什么」：runner 时间树下按 traceId 挂出 OTel model / tool 子树：
+场景能确证 provider 429、5xx、连接失败或 readiness 超时，才可归外部基础设施；其余失败一律视为产品回归。归类依据必须来自自己的 preflight 或公开 NDJSON error event，不得读取 Record 私有文件反推。
 
-```ts
-const timing = sh(`pnpm exec niceeval show ${locator} --timing`);
-// 声明 tracing 面的仓库：OTel 子树里出现工具 span（此处以工具名为证）
-assert.ok(
-  timing.includes("get_weather"),
-  "--timing 的 OTel 子树没有工具 span——mapper 没归一出 tool 角色，或 span 没关联到本轮",
-);
+## 不这样验收
 
-// 未声明 tracing 面的仓库反向断言：--timing 只有 runner 时间树，不挂 OTel 子树
-```
-
-## 用例六：预期失败——deliberate-fail / deliberate-error（`cli`）
-
-预期非零退出转换为仓库级验收成功；`failed` 与 `errored` 的区分从 `--junit` 出口断言——JUnit 按 verdict 折叠为 `<failure>` 与 `<error>`：
-
-```ts
-sh("pnpm exec niceeval exp deliberate-fail --rerun all --json --junit fail.xml", "nonzero");
-const failXml = readFileSync("fail.xml", "utf8");
-assert.ok(
-  failXml.includes("<failure"),
-  "deliberate-fail 的 JUnit 里没有 <failure>——断言不通过没折叠成 failed",
-);
-assert.ok(
-  !failXml.includes("<error"),
-  "deliberate-fail 混进了 <error>——failed 与 errored 的互斥判定破了",
-);
-
-sh("pnpm exec niceeval exp deliberate-error --rerun all --json --junit error.xml", "nonzero");
-const errorXml = readFileSync("error.xml", "utf8");
-assert.ok(
-  errorXml.includes("<error"),
-  "deliberate-error 的 JUnit 里没有 <error>——执行错误被误折叠成断言失败",
-);
-```
-
-## 用例七：缓存三步（`cli`）
-
-复用与新跑的区别从 `show --history` 的 attempt 行数断言——history 跨 Run 按 attempt 身份去重，复用不产生新行，`--rerun all` 产生新行：
-
-```ts
-function attemptCount(evalId: string): number {
-  return sh(`pnpm exec niceeval show ${evalId} --history`)
-    .split("\n")
-    .filter((l) => l.includes("@")).length;
-}
-
-sh("pnpm exec niceeval exp cached --rerun all --json");
-const baseline = attemptCount("cached/echo");
-
-const second = sh("pnpm exec niceeval exp cached --json"); // 不带 --rerun all：复用
-assert.ok(second.includes("reused"), "第二次运行的摘要没有报告复用——缓存没生效");
-assert.equal(
-  attemptCount("cached/echo"),
-  baseline,
-  "不带 --rerun all 产生了新 attempt——缓存复用没有生效",
-);
-
-sh("pnpm exec niceeval exp cached --rerun all --json"); // 再带 --rerun all：真实新 attempt
-assert.equal(attemptCount("cached/echo"), baseline + 1, "--rerun all 没有产生新 attempt——强制重跑失效");
-```
-
-## 失败分类：回归还是基础设施
-
-`e2e.ts` 捕获 verify 抛错后按[总则的退出码契约](README.md#31-唯一命令)折叠：能确证的外部故障退 `75`，其余一律按回归退非零。
-确证的依据是结构化证据——自己的 preflight / readiness 超时，或 `--json` 事件流中 `error` 事件明确指向 provider（429 / 5xx / 网络错误）：
-
-```ts
-// scripts/e2e.ts
-try {
-  await runVerify();
-  process.exit(0);
-} catch (err) {
-  const ciLog = readFileSync("logs/exp-ci.log", "utf8");
-  const infra =
-    err instanceof InfraError || // 自己的 preflight / readiness 超时
-    /"event":"error".*(429|5\d\d|ECONNREFUSED|ETIMEDOUT)/.test(ciLog); // provider 侧可确证的外部故障
-  console.error(err);
-  process.exit(infra ? 75 : 1);
-}
-```
-
-判不准就按回归退出——宁可误报回归，不可把回归漏报成运行条件问题。
+- 不使用已删除的历史、位置 locator、独立 Attempt 或固定切片 flag；详情与切面都是 Report page。
+- 不用后台监看或 session 查询恢复已退出 Invocation；长期事实必须已经进入 Run/Attempt channel。
+- 不让 fixture 重写 core validator、channel decoder 或 Report planner，形成第二套真相依据。
+- 不把多个可独立失败的产品结果放入同一个 Journey；跨域身份接线留在 Journey，单一错误矩阵回到对应 owner。

@@ -1,4 +1,4 @@
-// Experiment 详情组合件:六区块用原语 + 公开 to* 装配(docs/feature/reports/components/experiment-detail/README.md)。
+// Experiment 详情组合件:六区块用原语 + 公开 to* 装配(docs/feature/reports/README.md)。
 // text/web 两面消费同一份 `toExperimentDetails` 转换结果,不各自取数。
 
 import type { Sample } from "../../../record/types.ts";

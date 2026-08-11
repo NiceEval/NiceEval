@@ -1,37 +1,37 @@
 ---
-title: "NiceEval CLI: commands, flags, and exit codes reference"
+title: "NiceEval CLI: Commands, Flags, and Exit Codes"
 sidebarTitle: "CLI"
-description: "NiceEval CLI reference: the exp, show, view, init, list, and clean commands, plus result drill-down, experiment and eval filtering, concurrency, budget, and CI output."
+description: "Reference for NiceEval commands, flags, and exit codes, including explicit Record and Run selection for reports."
 ---
 
-The [NiceEval](https://niceeval.com/) CLI is the entry point for discovering, running, and viewing evals. Actual eval execution follows an experiment-first model: **`exp` selects a commit-ready run configuration**, and only the positional arguments after the experiment filter eval IDs by prefix. Agent, model, and flags live in `experiments/`, not in ad hoc CLI arguments.
+The [NiceEval](https://niceeval.com/) CLI discovers, runs, and reviews evals. Running evals follows an experiment-first model: **`exp` selects a checked-in run configuration**. Positional arguments after the experiment narrow by eval ID prefix. Put agents, models, and flags in `experiments/`, not in temporary CLI arguments.
 
 ## Commands
 
 <CardGroup cols={2}>
-  <Card title="npx niceeval exp &lt;group&gt; [id-prefix]" icon="flask">
-    Run a named experiment group or config. Optional trailing positional args filter by eval ID prefix.
+  <Card title="npx niceeval exp [path] [id-prefix]" icon="flask">
+    Runs the experiment configuration selected by its ID path. Each configuration's `evals` determines which evals it covers.
   </Card>
   <Card title="npx niceeval init" icon="wand-magic-sparkles">
-    Create an empty `evals/` directory and a minimal `niceeval.config.ts`; no sample eval file is generated. Also writes/refreshes a niceeval guidance block — into `AGENTS.md` if the project already has one, into `CLAUDE.md` if only that exists, or creates a new `AGENTS.md` if neither exists (see [Agent Feedback Loop](/tutorials/agent-feedback-loop)).
+    Creates an empty `evals/` directory and a minimal `niceeval.config.ts`. It also writes or refreshes the NiceEval guidance block in the project's agent instructions.
   </Card>
   <Card title="npx niceeval list" icon="list">
-    Discover and print all evals without running them.
+    Discovers and prints every eval without running one.
   </Card>
   <Card title="npx niceeval clean" icon="trash">
-    Remove historical snapshot artifacts under `.niceeval/`.
+    Deletes the temporary Record directory left by one named writer. It never deletes a completed Run or Attempt.
   </Card>
-  <Card title="npx niceeval show [id-prefix | @locator]" icon="terminal">
-    Read results in the terminal; use `@<locator>` or an eval ID prefix to drill into assertions, Eval source, the execution event stream, diffs, and history.
+  <Card title="npx niceeval show --run | --latest" icon="terminal">
+    Runs a terminal Report. `explicit-runs/v1` or `latest/v1` forms the AnalysisSample.
   </Card>
-  <Card title="npx niceeval view" icon="eye">
-    Open the web result viewer: it reads the default report and lets you browse Eval source, the execution event stream, and diffs interactively; its default scope is the same as `show`. The cross-run timeline (`--history`) is a terminal-only capability of `show`.
+  <Card title="npx niceeval view --run | --latest" icon="eye">
+    Opens a web view for one fixed ReportExecution. End and rerun it to read an edited Record.
   </Card>
 </CardGroup>
 
 ## Output language
 
-The [NiceEval](https://niceeval.com/) CLI and runtime copy support localization. To fix the output language (CI logs especially), set it in `niceeval.config.ts`:
+NiceEval localizes its CLI and runtime copy. Set a stable language in `niceeval.config.ts`, which is especially useful for CI logs:
 
 ```ts
 import { defineConfig } from "niceeval";
@@ -41,84 +41,94 @@ export default defineConfig({
 });
 ```
 
-Without `locale`, the language follows the system locale, checked in the order `LC_ALL`, `LC_MESSAGES`, then `LANG`. Values starting with `zh` use `zh-CN`; everything else uses `en`. If none are set, the default is `zh-CN`. This only affects terminal/runtime copy — it does not change the machine-readable fields in result JSON, and it does not translate LLM judge prompts.
+When `locale` is absent, NiceEval checks `LC_ALL`, `LC_MESSAGES`, and then `LANG`. A value beginning with `zh` selects `zh-CN`; every other value selects `en`; no value defaults to `zh-CN`. This changes terminal and runtime copy only. It does not change machine fields in results JSON or translate LLM Judge prompts.
 
-## `npx niceeval exp [group|config] [id-prefix...]`
+## `npx niceeval exp [path|config] [id-prefix...]`
 
 ```bash
 # Run every experiment under experiments/
 npx niceeval exp
 
-# Run one experiment group
-npx niceeval exp compare-models
+# Run a group of experiments in a nested directory
+npx niceeval exp models
 
-# Run only one configuration in that group (id = group/filename, no extension)
-npx niceeval exp compare-models/gpt-5.4
+# Run one configuration
+npx niceeval exp models/openai/gpt-5.4
 
-# Run every configuration in that group whose filename starts with gpt (e.g. gpt-5.4.ts, gpt-5.4-mini.ts)
-npx niceeval exp compare-models/gpt
+# Run every configuration in a nested directory
+npx niceeval exp models/openai
 
-# Inside that group, only run evals whose ID starts with weather
-npx niceeval exp compare-models weather
+# Within that group, run only evals whose IDs begin with weather
+npx niceeval exp models weather
 ```
 
 <Note>
-  Eval-filter arguments only appear after the experiment selector. Bare `npx niceeval weather` does not run; use `npx niceeval exp local weather` or `npx niceeval exp compare weather` instead.
+  An eval filter appears only after an experiment selection. `npx niceeval weather` does not run an eval. Use `npx niceeval exp local weather` or `npx niceeval exp compare weather`.
 </Note>
 
-The first positional argument accepts an experiment group name, a single configuration's full id, or a `group/filename-prefix`. An exact match on `group/filename` runs only that one configuration in the group — useful for verifying one configuration at a time or troubleshooting one cell of a comparison. When the filename part doesn't exactly match a full id, it's matched as a prefix instead, running every configuration in the group whose filename starts with it.
+The first positional argument is an experiment ID, directory path, or filename prefix. Remaining positional arguments narrow by eval ID prefix.
+
+### `npx niceeval exp list [experiment-prefix]`
+
+This command only discovers runnable Experiment configurations. It does not create an Invocation, acquire a lease, or start an Agent or Sandbox.
+
+```bash
+npx niceeval exp list
+npx niceeval exp list compare/codex
+npx niceeval exp list --json
+```
+
+The default output includes each configuration's `experimentId`, description, agent, model, attempts, selected eval count, and labels. `--json` emits one `niceeval.experiments` document with each item's complete `selectedEvalIds`.
 
 ## Common flags
 
-The table below is generated from the CLI's flag-parsing table; any flag outside it fails as an unknown flag with a non-zero exit status. **There is no CLI flag or project-level fallback for selecting a Sandbox provider**: declare a template-bearing `SandboxLayer` on the Eval or Experiment with `dockerImageSandbox({ image })`, `dockerComposeSandbox({ file, workspaceService })`, `dockerfileSandbox({ context })`, `vercelSandbox({ snapshotId })`, `e2bSandbox({ template })`, or `localSandbox()` from `niceeval/sandbox`.
+The CLI accepts only the flags below. Any other flag is an error and exits nonzero. There is no CLI flag or project-wide default for choosing a Sandbox provider. Declare a template-bearing `SandboxLayer` on an Eval or Experiment with one of these factories from `niceeval/sandbox`:
 
-{/* GENERATED:BEGIN cli-flags */}
+- `dockerImageSandbox({ image })`
+- `dockerComposeSandbox({ file, workspaceService })`
+- `dockerfileSandbox({ context })`
+- `vercelSandbox({ snapshotId })`
+- `e2bSandbox({ template })`
+- `localSandbox()`
 
-{/* This block is generated by pnpm docs:reference from source comments; do not hand-edit. To change the copy, edit the corresponding source TSDoc/JSDoc (mapping in scripts/generate-reference.ts) */}
-
-| Flag | Type | Description |
-|---|---|---|
-| `--agent` | string | Experiment runs do not support this flag. To switch agents, add or duplicate a config file under `experiments/`. |
-| `--model` | string | Experiment runs do not support this flag. To switch models, add or duplicate an experiment file and change `model`. |
-| `--attempts` | number | How many attempts to run for each eval, commonly used for pass@N. |
-| `--max-concurrency` | number | Set how many evals run at the same time. |
-| `--timeout` | number | Timeout for a single attempt, in milliseconds. |
-| `--budget` | number | Budget limit for the whole run, in dollars. |
-| `--keep-sandbox` | boolean | `exp` command only: after the run, keep the Sandbox of failed/errored attempts alive (`= --keep-sandbox=failed`); `--keep-sandbox=all` also keeps passed attempts. Inspect and destroy them afterward with `niceeval sandbox list/enter/stop`. |
-| `--all` | boolean | `sandbox stop` only: destroy every kept Sandbox. |
-| `--window` | string | `sandbox diff` only: look at one send window only (e.g. `--window s1/t2`); omit it to get a concatenated view of every window. |
-| `--path` | string | `sandbox diff` only: look at one file's patch only; omit it to get every file in that window. |
-| `--leave-running` | boolean | `sandbox enter` only: keep the environment running after the shell exits, instead of sending it back to sleep. |
-| `--tag` | string | Only run evals that carry this tag (see `tags` on `defineEval`). |
-| `--junit` | string | Additionally write a JUnit XML report to the given path, for CI consumption. |
-| `--out` | string | `view` command only: statically export the result viewer to the given directory. |
-| `--port` | number | `view` command only: set the port the local server listens on. |
-| `--source` | boolean | `show` command only: the Eval source captured when this attempt ran, with gate/soft assertions mapped back to source lines (an evidence facet). |
-| `--execution` | boolean | `show` command only: this attempt's standard execution event stream (messages, thinking, Skill loads, tool calls/results); when OTel is present, the same node also gets timing (an evidence facet). |
-| `--timing` | boolean | `show` command only: the whole attempt's unified timing tree; bare `--timing` gives a bounded diagnostic projection, `--timing=full` expands every runner/correlated OTel node, node by node. |
-| `--diff` | boolean | `show` command only: a summary of file changes in the sandbox; `--diff=<file-path>` shows the full diff for one file (the path must be joined with `=`). |
-| `--history` | boolean | `show` command only: an execution timeline — for every matched experiment × eval, it sections off and lists each attempt's time / verdict / summary / duration / cost / locator; mutually exclusive with `--report`. |
-| `--grep` | string | `show` command only: combines with `--execution` only; a JS regex — emits only matching execution cards (role text, tool names, input, result; plus display/stdout/stderr for failed commands), with a cross-attempt summary `N matches in M attempts` at the end. Mutually exclusive with `--expand`. |
-| `--expand` | string | `show` command only: combines with `--execution` only and requires the range to hit exactly one attempt; expands one card's complete stored content (untruncated). Handle syntax `t<turn>.c<card>` (agent events) or `cmd<n>` (failed Sandbox commands), taken from the hint a truncated card carries. Mutually exclusive with `--grep`. |
-| `--usage` | boolean | `show` command only: a per-attempt usage table for the range (`UsageTable` assembly) — verdict, turns, tool calls, token breakdown, and cost; with multiple experiments it sections per experiment with per-section totals, missing fields render `—` and stay out of the sums. Under an `@<locator>` range it degrades to that attempt's single-row table. |
-| `--stats` | boolean | `show` command only: the eval × experiment stability matrix (`StabilityMatrix` assembly) — each cell counts verdicts across that combination's complete execution history (deduped across snapshots, no comparability gate), answering "which evals have never passed"; mutually exclusive with `@<locator>` and `--report`. |
-| `--exp` | string | `show` / `view` command only: narrow to an experiment by path-segment prefix (the same matching as the `niceeval exp` positional argument); a group name selects every configuration in the group. Repeatable; appearing two or more times enters compare semantics — each occurrence must resolve to exactly one experiment, in the order given (the first is the baseline), and `@<locator>` conflicts with a repeated `--exp`. With `view --out`, the same narrowing decides what gets exported. |
-| `--record` | string | Shared by `show` / `view` / `sandbox enter\|list\|stop`: the record root directory (a root other than `.niceeval`, such as a publish root produced by `publish`). |
-| `--run` | string | `view` command only: open only this one Run file (`run.json`); the command fails if the file can't be read (scan mode just skips it). |
-| `--report` | string | `show` / `view` command only: replace the default report shared by both with the `defineReport(...)` a file default-exports. |
-| `--page` | string | `show` / `view` command only: pick the report's initial page; `show` renders that page and appends an index of the remaining pages, `view` uses it as the initial route. An unmatched page id exits as a usage error and lists the available page ids. |
-| `--dry` | boolean | Only print which evals × run configs would match, without actually running them (human text, or a single JSON plan document with `--json`). |
-| `--json` | boolean | `exp` command only: the machine face — a single ordered NDJSON event stream on stdout (one JSON object per line) for coding agents, CI annotation adapters, and scripts; `--dry --json` emits a single JSON plan document instead of a stream. Omit it for human text (TTY live panel / non-TTY append stream). |
-| `--force` | boolean | Ignore the previous run's results — do not skip (experiment, eval) pairs that already passed, forcing a full rerun. |
-| `--rerun` | boolean | `exp` command only: re-run the failures (bare, or `failed`) or everything (`all`), without changing the long-term fingerprint. |
-| `--accept` | string | `exp` command only: authorize carrying results forward across one named fingerprint difference; repeatable. The selector points at one difference obtained by subtracting the manifests (`config:<field path>` such as `config:judge.model`, `source:<path>`, `data:<path>`; `opaque:no-manifest` when the earlier side has no manifest), spelled exactly as `--dry` prints that reason. With no value: when stderr is a TTY, NiceEval prints the plan and then asks "reuse or re-run" for each difference group, prints the equivalent command with values, and runs your choices; with no value off a TTY it is a usage error. An entry carried in this way is re-fingerprinted under this run's terms, so the next run of the same command matches on its own and does not need the flag again; the differences crossed are recorded on that entry's `carriedAccepting`. Combining it with `--rerun all` is a usage error. |
-| `--strict` | boolean | Recommended in CI: make soft-threshold (`soft`) failures also count toward the whole eval's verdict. |
-| `--early-exit` / `--no-early-exit` | boolean | Stop an eval's remaining attempts once one attempt passes. |
-| `--open` / `--no-open` | boolean | `view` command only: automatically open a browser after startup (default behavior). |
-| `--help` | boolean | Print usage and exit. |
-| `--version` | boolean | Print the niceeval version number and exit. |
-
-{/* GENERATED:END cli-flags */}
+| Flag | Type | Meaning |
+| --- | --- | --- |
+| `--agent` | string | Not supported for experiment runs. Create or copy an `experiments/` file to change the agent. |
+| `--model` | string | Not supported for experiment runs. Create or copy an experiment file to change the model. |
+| `--attempts` | number | Number of attempts for each eval, commonly for pass@N. |
+| `--max-concurrency` | number | Maximum number of evals to run at once. |
+| `--max-build-concurrency` | number | Maximum simultaneous Sandbox image lookups or builds. This is independent of eval concurrency and defaults to 2. |
+| `--timeout` | number | Per-attempt timeout in milliseconds. Precedence is `--timeout` → experiment → Eval (`defineEval({ timeoutMs })`) → `niceeval.config.ts`; absent values leave the attempt without a deadline. |
+| `--budget` | number | Budget limit for the complete run in US dollars. |
+| `--keep-sandbox` | boolean | `exp` only. Keeps the Sandbox for failed or errored attempts; `--keep-sandbox=all` also keeps passed attempts. Review or destroy it later with `niceeval sandbox` commands. |
+| `--all` | boolean | `sandbox stop` only. Destroys all retained Sandboxes. |
+| `--window` | string | `sandbox diff` only. Shows one send window, such as `--window turn2`; omit it for all windows. |
+| `--path` | string | `sandbox diff` only. Shows one file patch; omit it for all files in the selected window. |
+| `--leave-running` | boolean | `sandbox enter` only. Leaves the retained Sandbox running after the shell exits. |
+| `--orphans` | boolean | `sandbox list` only. Reads unowned Sandboxes left by a hard stop; it does not clean them. |
+| `--tag` | string | Runs only evals with the tag declared by `defineEval`. |
+| `--junit` | string | Writes an additional JUnit XML file for CI. |
+| `--json` | boolean | For `exp`, writes one ordered NDJSON stream to stdout; for `show`, writes the already computed ReportExecution host data and status. |
+| `--smoke` | boolean | `docker profile doctor` only. Starts a constrained DinD container and runs an inner container. |
+| `--out` | string | `view` only. Exports a static report site to this directory. |
+| `--port` | number | `view` only. Chooses the local server port. |
+| `--host` | string | `view` only. Chooses the listening address. Omit it to listen on all addresses and print local and LAN URLs. |
+| `--record` | string | For `show`, `view`, `accept`, and `sandbox enter`, `list`, or `stop`: selects the actual Record root. The CLI does not append `.niceeval/record` or another suffix. |
+| `--run` | string | Repeat for `show` or `view` to add one explicit complete Run ID. Duplicate identities are removed. |
+| `--report` | string | `show` and `view` only. Replaces their shared default Report with the file's default `defineReport(...)` export. |
+| `--page` | string | `show` and `view` only. Selects a planned page. An unknown page ID is a usage error and lists available page IDs. |
+| `--teardown` | boolean | `exp` only. Completes interrupted experiment-level teardown for each selected Experiment without running setup or attempts. |
+| `--dry` | boolean | Prints the eval × run-configuration plan without running it. With `--json`, it emits one JSON plan document. |
+| `--force` | boolean | `sandbox prune` only. Also destroys unverified instances. `exp` rejects it; use `--rerun` or `--rerun all` to run failed or all slots again. |
+| `--rerun` | boolean | `exp` only. Reruns failed slots when bare or `failed`, or all slots with `all`, without changing the long-lived fingerprint. |
+| `--strict` | boolean | Counts a failed soft threshold as a failed eval. Recommended for CI. |
+| `--early-exit` / `--no-early-exit` | boolean | Stops remaining attempts for an eval after its first pass. It is off by default. |
+| `--open` / `--no-open` | boolean | `view` only. Opens a browser automatically after startup by default. |
+| `--help` | boolean | Prints help and exits. |
+| `--version` | boolean | Prints the installed NiceEval version and exits. |
+| `--latest` | boolean | `show` and `view` only. Selects one completed Run per target Experiment using the stable Sample latest policy. It conflicts with `--run`. |
+| `--experiment` | string | Repeat for `show` and `view`. With `--latest`, it defines target Experiments; with `--run`, it narrows the selected Sample by complete identity. |
+| `--eval` | string | `show` and `view` only. Narrows an already selected Sample by complete eval identity. |
 
 ## `list`
 
@@ -126,7 +136,7 @@ The table below is generated from the CLI's flag-parsing table; any flag outside
 npx niceeval list
 ```
 
-Use this to check that eval discovery, IDs, and config loading are working correctly.
+Use this command to verify eval discovery, IDs, and configuration loading.
 
 ## `exp`
 
@@ -135,70 +145,77 @@ npx niceeval exp compare-models
 npx niceeval exp compare-models weather-tool
 ```
 
-Run a named experiment, comparing agents, models, or flags in a matrix. Arguments from the second position onward filter eval IDs by prefix.
+Run a named experiment to compare agents, models, or flags. The second positional argument and later arguments filter eval IDs by prefix.
 
-`show` and `view` are top-level commands — write them as `npx niceeval show` and `npx niceeval view`. If you mistype them as `npx niceeval exp show` / `exp view` and no experiment shares that name, the CLI adds a hint for the correct command after the "no such experiment" error; if the repository does have an experiment with that same name, it still runs as that valid id.
+`show` and `view` are top-level commands. If `exp show` or `exp view` does not match an experiment, the CLI suggests the top-level command. A repository can still intentionally run an experiment with either valid ID.
 
-## Two output forms: human text and `--json`
+## Two outputs: human-readable text and `--json`
 
-`exp` has exactly two output forms. They only change what gets displayed — never selection, scheduling, verdicts, artifacts, or the exit code:
+`exp` has two output forms. They change presentation, not selection, scheduling, Verdicts, Record commits, or exit codes:
 
 ```bash
-# No flag = human text: a dynamic dashboard on a TTY, auto-degrading to an append-only plain stream in pipes/CI logs
+# Human-readable output: a dynamic dashboard in a TTY, or an append-only text stream in CI
 npx niceeval exp compare
 
-# --json = the machine face: a single ordered NDJSON event stream on stdout, shared by coding agents, CI adapters, and scripts
+# Machine output: one ordered NDJSON stream on stdout
 npx niceeval exp compare --json
 
-# CI gate: exit code + JUnit; for a JSON summary, redirect `show --json` after the run
-npx niceeval exp compare --strict --junit .niceeval/junit.xml
+# CI gate: exit status plus JUnit. For a JSON summary, run show after the Invocation with an explicit selection.
+npx niceeval exp compare --strict --junit ./artifacts/niceeval-junit.xml
 ```
 
-See [Runner · Reporter](/explanation/runner#reporter) for how the two forms compare; see [Agent Feedback Loop](/tutorials/agent-feedback-loop) for the full agent loop (reading the event stream, drilling into a locator, targeted reruns); see [CI Integration](/tutorials/ci-integration) for GitHub Actions setup, exit codes, and JUnit.
+See [Runner · Reporter](/explanation/runner#reporter) for choosing an output. See [Coding Agent Feedback Loop](/tutorials/agent-feedback-loop) for the full AI workflow, and [CI Integration](/tutorials/ci-integration) for GitHub Actions, exit codes, and JUnit.
 
 ## `view`
 
 ```bash
-npx niceeval view
+npx niceeval view --latest
+npx niceeval view --run 01H...
 ```
 
-Open the local record viewer. It shares the same default report and the same default selection as `show`: for each experiment and each eval, it takes the latest verdict across runs; when you rerun only some evals, the rest are filled in from earlier runs. `show` prints terminal text, `view` renders a web page with interactive evidence browsing; eval ID prefixes, `--exp`, and `--record` narrow both the same way. See [Viewing results](/tutorials/viewing-results) for the full story.
+This opens the local Record viewer. It shares `show`'s default Report and explicit selection: it creates a core-only AnalysisSample with `explicit-runs/v1` or `latest/v1` on a quiescent Record, then reads only the channels requested by the ReportPlan.
 
-## `show [id-prefix...]`
+A previous local execution can leave `carried` or `accepted` Members for slots that reused an Attempt. These are adoption facts, not a rerun state. The same AnalysisSample does not reselect a moving head. `--experiment`, `--eval`, and `--record` narrow the same way for both hosts.
+
+## `show`
 
 ```bash
-npx niceeval show
-npx niceeval show weather/brooklyn
-npx niceeval show @1k2m9qrs
-npx niceeval show @1k2m9qrs --source
-npx niceeval show @1k2m9qrs --execution
-npx niceeval show fixtures/button --diff
-npx niceeval show weather/brooklyn --history
+npx niceeval show --latest
+npx niceeval show --run 01H...
+npx niceeval show --run 01H... --run 01J...
+npx niceeval show --run 01H... --page attempt-0123456789ABCDEFGHJKMNPQRS
+npx niceeval show --run 01H... --report ./reports/summary.ts --page overview
 ```
 
-`show` is the terminal entry point for results — suited both to a person reading directly and to a coding agent drilling down level by level inside its context window. The positional argument picks which evals to look at (an ID prefix), or picks exactly one attempt with `@<locator>`. With no positional argument, it shows the default comparison report partitioned by experiment group; giving an eval ID prefix only narrows the evals the report covers, it does not change the group boundaries.
+`show` is the terminal Report entry point for people and coding agents. It accepts no fuzzy positional selection: choose exactly one of `--run` and `--latest`. An Attempt detail is a parameterized page inside the projected AnalysisSample, not another selector.
 
-`@<locator>` with no evidence flag gives that attempt's compact overview (assertion summary, execution summary, optional OTel timing, diff summary). `--source`, `--execution`, `--timing`, and `--diff` are evidence facets: each one accepts any range, not just a single `@<locator>` — a range covering more than one attempt renders one section per attempt, sorted by experiment id, eval id, then attempt order. `--record <dir>` sets the record root, and `--history` shows the cross-run trend. `--exp` is repeatable: one occurrence narrows the sample, two or more enters compare semantics (each `--exp` must resolve to exactly one experiment, in the order given). See [Viewing results](/tutorials/viewing-results) for the full reading order, output examples, and artifact details.
+Repeat `--run` to read only those explicit Runs. `--latest` picks the final completed Run for each target Experiment using completion time and Run identity. `--latest --experiment <id>` defines the target set; without `--experiment`, the target set comes from readable Run core data. An empty target set, an Experiment without a completed Run, or an unreadable candidate sort key fails explicitly rather than guessing a recent result. Select an unfinished Run explicitly with `--run`.
+
+After selection, `show` freezes a ReportPlan, reads only its declared channels, and runs the Report once. Requested `unavailable`, `unsupported`, `partial`, or `invalid` channel states remain visible. Unknown or damaged channels that the current page did not request do not affect it. See [Viewing Results](/tutorials/viewing-results) for the full contract.
+
+`view --latest --out <directory>` (or an explicit `--run`) prerenders the same ReportExecution as a self-contained static site. The target directory must not exist. NiceEval validates every page, download, and static asset path before publishing the complete directory in one rename. It does not give a user Report a Record or blob path.
+
+The command holds the reader lease only while it forms the AnalysisSample, ReportPlan, and ReportInput, then releases it. ReportExecution uses only memory after that point. Editing a quiescent Record or Report module changes a later command, not a running local view or static export.
 
 ## `--early-exit` and `--strict`
 
-`--early-exit` defaults to `false`, so `--attempts` runs every configured Attempt and measures the full pass-rate distribution. Turn `--early-exit` on when you want to save cost by stopping an eval's remaining Attempts after the first pass; `--no-early-exit` explicitly keeps the default full distribution when another configuration layer enabled early exit.
+`--early-exit` is off by default. With `--attempts` greater than one, NiceEval runs every attempt and reports the real pass rate. Add `--early-exit` only when you need to know whether an eval can pass and do not need its full distribution. If an experiment sets `earlyExit: true`, `--no-early-exit` turns it off.
 
-`--strict` does not mean "report errors more strictly" — it changes how soft-threshold assertions are judged. A soft threshold like `.atLeast(n)` (`soft` severity) failing normally does not mark the whole eval as `failed` (it just records an assertion that fell short); with `--strict`, a soft threshold falling short also makes the eval's overall verdict count as `failed`. This is recommended in CI, to avoid the case where "the assertion score is short but the eval shows as passed" slips through.
+`--strict` changes the Verdict for soft-threshold assertions. A failed soft threshold such as `.atLeast(n)` is recorded but does not ordinarily fail the eval. With `--strict`, it counts as failed. Use it in CI so an under-target assertion score cannot pass unnoticed.
 
 ## Environment variables hold credentials only
 
-Runs, timeout, concurrency, budget, judge model and endpoint, interface language — all of these are configuration, read only from CLI flags, the experiment files under `experiments/`, and `niceeval.config.ts`. Priority from highest to lowest: CLI flag > experiment > `niceeval.config.ts` > built-in default. There is no environment variable counterpart, so a value never has a third source.
+Attempt count, timeout, concurrency, budget, Judge model and endpoint, and interface language are configuration. NiceEval reads them only from CLI flags, files under `experiments/`, and `niceeval.config.ts`, in that precedence order. They do not have an environment-variable route.
 
-Environment variables are for credentials (API keys, provider tokens) and terminal facts (`NO_COLOR`, the system locale). Each agent / sandbox / judge recognizes exactly one variable name and never hunts for another key in the environment; `.env` in the cwd is loaded at startup (without overwriting variables that already exist). The full list, and what to replace older variables with, is in [Config & environment](/tutorials/configuration).
+Use environment variables for credentials, such as API keys and provider tokens, and terminal behavior such as `NO_COLOR` and the system locale. Each Agent, Sandbox, or Judge reads only its named variable. NiceEval loads `.env` from the current working directory without overriding an already present environment variable. See [Configuration and Environment Variables](/tutorials/configuration) for the full list.
 
 ## Exit codes
 
 | Exit code | Meaning |
-|---|---|
-| `0` | Every eval passed (or a command like `list`, `init`, `clean` completed normally). |
-| `1` | Some eval is `failed` / `errored`; or a command usage error (such as `exp` matching no experiment, or an unsupported flag combination). |
-| `2` | A runtime crash (uncaught exception), caught by the CLI's top-level fallback before exiting. |
-| `130` | Exit after receiving an interrupt signal (Ctrl-C / SIGTERM). |
+| --- | --- |
+| `0` | Every eval passed, or a command such as `list`, `init`, or `clean` completed normally. |
+| `1` | At least one eval failed or errored, or command usage was invalid. |
+| `2` | The runtime crashed with an uncaught exception caught by the CLI boundary. |
+| `130` | The process received an interrupt signal such as Ctrl-C or SIGTERM. |
 
-If CI needs soft-threshold failures to also count as failures, combine this with `--strict` (see above).
+Use `--strict` in CI when soft-threshold failures must also fail the gate.

@@ -1,4 +1,4 @@
-// Conversation:分轮事件流(docs/feature/reports/components/primitives/conversation.md)。
+// Conversation:分轮事件流(docs/feature/reports/README.md)。
 // SourceView 展开区与兜底区复用 ConversationEntries。
 
 import { createElement, Fragment, type ReactElement, type ReactNode } from "react";

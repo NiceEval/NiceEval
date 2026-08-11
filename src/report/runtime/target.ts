@@ -1,4 +1,4 @@
-// ReportTarget 的唯一 paramsKey 派生(docs/feature/reports/library.md「目标与下钻」)。
+// ReportTarget 的唯一 paramsKey 派生(docs/feature/reports/README.md「目标与下钻」)。
 // 页实例的 (page, params) → key 只在这里算一次;render Promise 缓存、`WebContext.href`
 // 默认实现与静态导出文件名三处全部导入这一份,不各自重新拼字符串——这样三处对同一个目标
 // 永远得到同一个 key。独立成文件是为了打破 page-render.ts(渲染内核)与 resolved-page.ts

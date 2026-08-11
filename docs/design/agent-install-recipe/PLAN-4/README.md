@@ -123,7 +123,7 @@ codexAgent({ provisioner: internalCodex });
 ### 身份、指纹与可比性
 
 `AgentProvisioner.identity` 是纯数据,至少含 Agent、精确版本
-与配方修订,进入 configHash 与 `run.json`。起点构建输出仍以
+与配方修订,进入 configHash 与 Run payload。起点构建输出仍以
 对应 provider 的主 Sandbox 实例及伴随资源身份进入指纹;两者正交组合:
 
 ```text
@@ -242,7 +242,7 @@ Runner 仍按现有契约每 attempt 调 Agent `setup`;Ensure 自身
    状态机;先让一个内置 Agent 贯通预装命中与运行时安装。
 2. Adapter 现有安装逻辑迁入 provisioner;官方 template
    收为同样先检查,删除按 template 出处假定已安装的分支。
-3. 安装身份进入 configHash / `run.json`,实际检查事实写入
+3. 安装身份进入 configHash / Run payload,实际检查事实写入
    attempt Record;补 `agent.setup` 的结构化错误。
 4. Codex、Claude Code 等内置 Sandbox Agent 逐个迁移;
    每家保留自己的依赖探测与用户目录策略。

@@ -136,7 +136,7 @@ export default defineEval({
 });
 ```
 
-`progress` only updates short-lived status while the run is in flight; it never enters the result. `diagnostic` is written into the current Attempt's `result.json`, but it does not replace an assertion or change the verdict on its own: business conclusions still come from `t.check` / `t.require` / gates, and you throw when the infrastructure cannot continue.
+`progress` only updates short-lived status while the run is in flight; it never enters the result. `diagnostic` is committed with the current Attempt into the Record, but it does not replace an assertion or change the verdict on its own: business conclusions still come from `t.check` / `t.require` / gates, and you throw when the infrastructure cannot continue.
 
 ## Eval lifecycle
 

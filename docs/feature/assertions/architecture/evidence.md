@@ -13,8 +13,8 @@ Usage Assertion 是唯一例外。只有 Agent 创建时已经声明 usage 不�
 
 ## 脱敏与引用
 
-Record 保存足够解释 evaluation 的脱敏 evidence、evaluator explanation 与 Judge rationale。它保存
-稳定引用，而不是把 secret、原始凭据或不安全配置写入 `AssertionResult`。
+`AssertionResult` 保留足够解释 evaluation 的脱敏 evidence、evaluator explanation 与 Judge rationale，
+并使用稳定引用，而不是携带 secret、原始凭据或不安全配置。
 
 每个 `subjectSnapshotRef` 都能追到读取时的 sealed Observation。根 `t` scope 的引用必须表达 vector cut，
 让离线读取面能说明它读到了哪些 Session 前缀。
@@ -65,8 +65,8 @@ normalized occurrences 作为 subject `a`，再用方法参数构造 evaluator `
 没有命中时仍保存 scope、coverage、observed count 与候选 occurrence refs。只有 evidence coverage 完整时，
 “没有调用”才是 `mismatched`；evidence coverage 不完整时必须是 `unavailable`。
 
-这些字段描述 NiceEval 归一化后的稳定 context，不要求保存 provider 私有对象或 secret。完整大型 output 可以
-由 evidence ref 表达；Assertion 侧只规定必须保留什么信息，不规定 Record 怎样布置文件。
+这些字段描述 NiceEval 归一化后的稳定 context，不要求保留 provider 私有对象或 secret。完整大型 output 可以
+由 evidence ref 表达；Assertion 侧只规定必须保留什么信息。
 
 ## 读取面
 

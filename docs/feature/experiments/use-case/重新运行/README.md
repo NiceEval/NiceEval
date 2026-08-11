@@ -5,9 +5,9 @@
 | 目标 | 用例 |
 |---|---|
 | 修复了被测对象，只重新验证旧失败 | [复验失败项](复验失败项.md) |
-| 外部依赖变化，旧的通过结果也不可信 | [全量重验](全量重验.md) |
+| 外部依赖变化，旧的 passed Attempt 也不可信 | [全量重验](全量重验.md) |
 | 声明式 callback 的实现变化，但 identity 没有同步变化 | [全量重验](全量重验.md#声明式-callback-漏改-identity) |
 
-`--rerun` 是 `--rerun failed` 的简写；`--rerun all` 不沿用任何结果。
+`--rerun` 是 `--rerun failed` 的简写；`--rerun all` 不自动采用任何历史 Attempt。
 两档都是一次性运行口径，不改变指纹定义。
-完整契约见[缓存与结果沿用](../../cache.md)。
+完整契约见[缓存与 Attempt 采用](../../cache.md)。

@@ -1,7 +1,7 @@
 // 唯一 page 执行入口:按目标选一个 page 实例、求它的输入(load 或宿主 Sample)、执行并
 // await render、再走 resolve → validate。render Promise 按 page 实例 + 参数身份缓存;
 // text / web / locale 投影不重复执行 render。契约见
-// docs/feature/reports/architecture.md「执行模型」「多页逐页惰性求值」。
+// docs/feature/reports/README.md「执行模型」「多页逐页惰性求值」。
 //
 // `renderTarget` 是唯一分派路径:attempt、experiment 这些词只出现在标准库的页定义里,不出现
 // 在这里——核心只认 `page.id`、`page.params`、`page.load`。旧宿主(show/view 里已经自己算好
@@ -91,7 +91,7 @@ export async function resolveDefinitionPage(
 
 /**
  * 参数化页的 `load` 唯一的懒加载来源:按 locator 装配一份完整的 AttemptEvidence
- * (docs/feature/reports/library.md「参数化页:attempt 与 experiment 详情」)。复用既有的
+ * (docs/feature/reports/README.md「参数化页:attempt 与 experiment 详情」)。复用既有的
  * locator → AttemptHandle 索引(`resolveLocator`)与 `loadAttemptEvidence` 装配管线,不重新
  * 实现证据聚合的任何一条规则。
  */

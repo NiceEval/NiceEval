@@ -243,7 +243,7 @@ t.check(t.reply, and(includes("required"), excludes("forbidden")));
 t.check(t.reply, or(includes("approved"), includes("accepted")));
 ```
 
-同一 `and` / `or` 里的 Match 必须属于同一 domain。布尔 Match 的内部结果是 `matched`、`mismatched` 或 `unavailable`：`or` 只有在没有子项命中且至少一项证据不完整时才返回 `unavailable`，不会把未知当成否定。Match 自身没有 `.gate()`、`.points()` 或控制流；`.atLeast(n)`、`.score(n)` 与 `.orStop()` 属于登记后的 AssertionHandle。
+同一 `and` / `or` 里的 Match 必须属于同一 domain。布尔 Match 的内部结果是 `matched`、`mismatched` 或 `unavailable`：`or` 只有在没有子项命中且至少一项证据不完整时才返回 `unavailable`，不会把未知当成否定。Match 自身不持有判定、计分或控制流；`.atLeast(n)`、`.score(n)` 与 `.orStop()` 属于登记后的 AssertionHandle。
 
 下面列出 Match 值本身的稳定字段。品牌和 evaluator 是模块私有实现，不属于作者 API。
 

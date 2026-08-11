@@ -1,5 +1,5 @@
 // 页级 resolve 制品:一次 resolve 产出可复用的 ResolvedPage,text / web / 多 locale 纯同步投影。
-// 契约见 plan/report-single-resolve-migration.md 第 1 步与 docs/feature/reports/architecture.md
+// 契约见 plan/report-single-resolve-migration.md 第 1 步与 docs/feature/reports/README.md
 // 「报告树与两个宿主」——ResolvedPage 不存 locale、终端宽度、主题色或 HTML;collect dimensions
 // 在各自 render 前按 face 完成(label keyset 共用逻辑在 allocatePageDimensions,web 才算 visual)。
 
@@ -43,7 +43,7 @@ function attemptLocatorOf(target: ReportTarget): string | undefined {
  * 默认下钻命令(与 text.ts 同形,供 renderResolvedPageText 缺省注入):只对标准库 attempt 目标
  * 给出真实可跑的 `niceeval show @<locator>`,其它目标返回 `undefined`——CLI 目前只有这一条
  * 位置参数快捷语法,没有通用的“按参数化页 + key 打开”命令,不发明假语法
- * (docs/feature/reports/library.md「目标与下钻」:“text 宿主没有链接，把可服务的目标格式化成
+ * (docs/feature/reports/README.md「目标与下钻」:“text 宿主没有链接，把可服务的目标格式化成
  * 下钻命令”,服务不了就是 undefined)。这是继 `targetOfRefs` 之后第二处允许知道 attempt 这个
  * id 的地方(常量单源见 `components/shared.ts` 的 `ATTEMPT_PAGE_ID` 注释)。
  */

@@ -1,5 +1,5 @@
-// 报告的元素树、组件模型与 resolve 管线(docs/feature/reports/architecture.md「组件模型」
-// 「报告树与两个宿主」、docs/feature/reports/library/layout.md)。
+// 报告的元素树、组件模型与 resolve 管线(docs/feature/reports/README.md「组件模型」
+// 「报告树与两个宿主」、docs/feature/reports/README.md)。
 //
 // 报告函数返回的树不是「React 树」,只是 { type, props } 节点 —— 标准 react
 // jsx-runtime 产的元素恰好就是这个形状。本文件是基础实现:零 react 运行时依赖
@@ -28,8 +28,8 @@ import {
 // ───────────────────────── 当前页判别(PageContext) ─────────────────────────
 
 /**
- * 当前渲染中的页上下文(docs/feature/reports/library/shell.md「行为约束」、
- * docs/feature/reports/library.md「defineReport() 保留静态 page 边界」):结构化,不是按实体
+ * 当前渲染中的页上下文(docs/feature/reports/README.md「行为约束」、
+ * docs/feature/reports/README.md「defineReport() 保留静态 page 边界」):结构化,不是按实体
  * 种类判别的联合——`input` 是该页 `load`(或省略 load 时宿主选择的 Sample)产出的值,类型随
  * 页而变。经 ComposeContext.page 与 ResolveContext.page 双双可见:组合组件靠它读当前页 id;
  * 消费 attempt 证据的叶子组件对 `input` 做结构校验(参见 `isAttemptEvidence`),不查一个
@@ -50,7 +50,7 @@ export interface ReportElement {
 }
 
 /**
- * 报告树节点,形状穷尽(docs/feature/reports/library/layout.md「树的节点」):
+ * 报告树节点,形状穷尽(docs/feature/reports/README.md「树的节点」):
  * 元素、数组 / Fragment(展平保序),或条件渲染的空分支(渲染为空)。
  * 裸字符串与数字**不是**节点——自由文本必须经 <Text> 携带,树校验遇到时按完整用户反馈拒绝。
  */
@@ -107,7 +107,7 @@ export interface TextContext {
    */
   experimentCommand(experimentIdPrefix: string): string;
   /**
-   * `Section` text 面的框线传输能力(docs/feature/reports/library/layout.md「区域框」):
+   * `Section` text 面的框线传输能力(docs/feature/reports/README.md「区域框」):
    * `"boxed"` 时画区域框,`"plain"` 时降级为无框文本。宿主按真实 TTY / NO_COLOR 探测结果
    * 注入;省略时默认 `"plain"`——不假设有终端,保证现有(未显式声明能力的)调用方行为不变。
    * 是否真的画框还要再叠加宽度下限,那份判断只在 `panel.ts` 里做一次。
@@ -156,7 +156,7 @@ export interface ComposeContext {
   scope: Sample;
   /** 结果根完整读取面;历史视图从这里自行挑 Run[]。 */
   results: Record;
-  /** 规范化后的报告声明,只读(docs/feature/reports/library/layout.md「自定义组件」)。 */
+  /** 规范化后的报告声明,只读(docs/feature/reports/README.md「自定义组件」)。 */
   report: ReportMeta;
   /** 当前页判别:scope 分支只有 id;attempt 分支带 locator + evidence。 */
   page: PageContext;

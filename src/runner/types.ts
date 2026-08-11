@@ -702,7 +702,7 @@ export interface EvalAuthorFields {
   reporters?: Reporter[];
   /** 覆盖项目级 / CLI 的单次 attempt 超时(毫秒),只对这一条评估用例生效。 */
   timeoutMs?: number;
-  /** 任意附加元数据,原样透传进 EvalResult,不参与调度或打分;供自定义 reporter 消费。 */
+  /** 任意附加元数据,作为 Attempt Provenance 保存,不参与调度或打分;供自定义 reporter 消费。 */
   metadata?: globalThis.Record<string, JsonValue>;
   /**
    * 调整 agent diff 的归因排除清单(仅 Sandbox 型;见 docs/feature/eval/README.md):两个数组都是
@@ -830,14 +830,11 @@ export interface ExperimentHookContext extends ScopedFeedback {
   /** 用户中断(Ctrl+C / kill)时 abort;长启动的 setup 应观察它提前退出。 */
   readonly signal: AbortSignal;
   /**
-   * 第三条反馈通道:上报整场实验的环境观测,与 `completedAt` 同批在快照封口补写进
-   * `RunMeta.facts`。key 匹配 `[a-z0-9._-]{1,64}`,value 是标量;同 key 后写覆盖先写,
-   * 非法 key 或非标量 value 抛错。不影响判定,不参与 verdict / 评分 / 指纹。形状与归属语义见
-   * docs/feature/record/architecture.md#facts运行事实。`niceeval exp --teardown` 的独立收尾
-   * 路径不派发 attempt、不落任何 Run,没有 `RunMeta.facts` 可写——该路径下这个方法仍然
-   * 校验入参(非法 key / 非标量 value 照样抛错),校验通过后丢弃写入(no-op:诚实优于
-   * 静默——非法调用照样报错、不被这条路径悄悄吞掉,但也不假装有地方落盘),见 cli.ts 的
-   * `--teardown` 构造点。
+   * 写入本 Run 的 generic custom fact document。name 使用反向域格式且不能以 `niceeval.` 开头；
+   * 同一 owner/name 只允许写一次，第二次写入是 typed error。value 可以是任意 JsonValue；`{ observedAt, value }` 经
+   * JSON.stringify 后最多 65,536 UTF-8 bytes；超限同步抛出 `record-custom-fact-too-large`，
+   * 且不留下部分文件。不影响判定、评分或指纹。形状与归属语义见
+   * docs/feature/record/architecture.md#通用自定义事实。
    */
   fact(key: string, value: string | number | boolean): void;
 }
@@ -924,9 +921,9 @@ export interface ExperimentAuthorFields {
    * 共享」的宿主机资源(隧道、mock server、license 租约)。本实验第一个通过派发许可的
    * attempt 触发(memoized,并发 attempt 等同一个结果;全部结果被 carry 携入时不执行)。
    * setup 不返回值;产物写模块级变量,`teardown` 与同文件 agent / sandbox 钩子从闭包读,
-   * runner 不做值的中介。setup 抛错 → 本实验所有 attempt 记 `errored`
+   * runner 不做值的中介。setup 抛错 → 本实验所有 Attempt 形成 `errored` Verdict
    * (code `"experiment-setup-failed"`、phase `"experiment.setup"`),同批其它实验不受影响。
-   * 函数体不进 fingerprint,改了钩子逻辑用 `--force` 强制重跑。
+   * 函数体不进 fingerprint,改了钩子逻辑用 `--rerun all` 明确全部重跑。
    * 见 docs/feature/experiments/architecture.md「实验级生命周期」。
    */
   setup?: (ctx: ExperimentHookContext) => void | Promise<void>;

@@ -1,4 +1,4 @@
-// 面板渲染件:全仓终端框线的单一物理实现(docs/feature/reports/library/layout.md「区域框:
+// 面板渲染件:全仓终端框线的单一物理实现(docs/feature/reports/README.md「区域框:
 // text 面的框线体裁」定几何契约,docs/cli.md「终端框线:一个渲染件,全仓消费」定这个模块的
 // 落点与依赖方向)。同步纯函数,消费 text-layout.ts 的显示宽度量测,零 IO——不读 process、
 // 不知道 stdout/stderr、不管重画。三处消费方(`Section` 的 text 面、`runner/feedback/human.ts`
@@ -50,7 +50,7 @@ export interface PanelInput {
   readonly mode: PanelMode;
   /** 声明豁免 100 列上限:`false` 时框宽跟随 `width` 全宽,不夹紧;省略或 `true` 时沿用上限
    *  (默认行为不变)。只有原地重绘、从不进入 scrollback 的动态面板可以声明豁免——豁免声明见
-   *  docs/feature/reports/library/layout.md「区域框:text 面的框线体裁」几何段。 */
+   *  docs/feature/reports/README.md「区域框:text 面的框线体裁」几何段。 */
   readonly capWidth?: boolean;
 }
 
@@ -228,7 +228,7 @@ function renderPlain(input: PanelInput): string[] {
 }
 
 // ───────────────────────── 数据格框 ─────────────────────────
-// 表与 Grid 的格线(docs/feature/reports/library/layout.md「数据格框(Table 与 Grid)」)。
+// 表与 Grid 的格线(docs/feature/reports/README.md「数据格框(Table 与 Grid)」)。
 // 与区域框同一张宽度表、同一条 60 列下限,但语义不同:区域框说「这一块是一份证据」,
 // 数据格框说「这些格子构成一张表」。所以它不嵌标题 / 下钻命令,也不夹紧到 100 列。
 
@@ -302,7 +302,7 @@ export interface RuleInput {
 /**
  * 隔条渲染件:一条贯穿可用宽度、上下不封口的横线,左侧嵌名称与位次。用于若干平行块顺序铺开
  * 且正文各自要全宽的场合——`Tabs` 的每个 tab、`--diff` 的每个窗口。体裁资格与几何见
- * docs/feature/reports/library/layout.md「区域框:text 面的框线体裁」的「画框资格」段:
+ * docs/feature/reports/README.md「区域框:text 面的框线体裁」的「画框资格」段:
  * 面板画框、同级重复块用隔条、逐条流事件无标注。
  *
  * 与 `renderPanel` 共用同一份嵌字截断优先级、同一张宽度表与同一条降级下限,所以隔条与面板的

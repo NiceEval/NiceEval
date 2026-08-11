@@ -357,10 +357,10 @@ verdict — throw an exception when you cannot continue.
 #### `fact`
 
 ```ts
-fact(key: string, value: string | number | boolean): void;
+fact(name: string, value: JsonValue): void;
 ```
 
-Records a neutral runtime observation on the current attempt. Facts do not change the Turn status, verdict, score, or fingerprint.
+Writes a generic custom-fact document for this Attempt. The name uses a reverse-domain format and cannot begin with `niceeval.`. One owner/name can be written once; a second write is a typed error and never replaces or appends. The value can be any JsonValue. The JSON-stringified `{ observedAt, value }` document is limited to 65,536 UTF-8 bytes; exceeding it throws `record-custom-fact-too-large` synchronously and leaves no partial file. A fact does not change Turn status, Verdict, score, or fingerprint.
 
 #### `log`
 

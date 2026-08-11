@@ -1,91 +1,79 @@
 ---
-title: "How the NiceEval runner schedules and executes evals"
+title: "How the Runner Executes Evals"
 sidebarTitle: "Runner"
-description: "The NiceEval runner discovers evals, schedules them with bounded concurrency, caches results, retries flaky infrastructure, and enforces budget guards."
+description: "Learn how the Runner creates Runs, chooses executed or adopted Attempts, and returns a receipt for later reading."
 ---
 
-The runner is the execution engine that turns eval files into an actual run. It handles discovery, filtering, scheduling, caching, attempts, reporters, and artifact output.
+The Runner schedules selected Experiments and Evals as one Invocation. It executes work in the current process, shows progress, and writes business facts to the Record when the directory becomes quiescent.
 
-## Discovery
+## Invocation, Run, and Attempt
 
-The runner reads from `evals/`:
+An Invocation has one `invocationId`. Each selected Experiment creates a Run, whose expected slots define the denominator for that run.
 
-- `*.eval.ts` files
-- dataset files that export eval arrays
+Each slot has at most one Member:
 
-```bash
-npx niceeval list
+- `executed`: The Runner executed this slot's Attempt.
+- `carried`: The planner automatically adopted an existing Attempt.
+- `accepted`: An operator explicitly adopted an existing Attempt.
+
+Every Member refers to an Attempt. An Attempt keeps its own `origin`, the Run and slot that actually executed it. A `carried` or `accepted` Member does not copy its Verdict, Usage, events, or other business values.
+
+## Plan before execution
+
+Use `niceeval exp --dry` before a run. It reads the channels needed for planning from a quiescent Record and lists why each slot will execute or be adopted.
+
+```sh
+npx niceeval exp checkout --dry
 ```
 
-`list` only discovers and prints IDs. It does not execute evals.
+Carry happens only when the terminal Verdict, input identity, timeout, and `--rerun` conditions all allow it. Identity is an opaque value with a domain; values compare only when the domains match. The target Run's `niceeval.actions` channel records the reason, eligibility, and input information.
 
-## Filtering
+The Runner starts the Attempts that need execution only after planning. See [Rerun and Carry Results](/tutorials/rerun-and-cache) for details.
 
-In the `exp` command, positional arguments after the experiment name are eval ID prefixes:
+## Feedback from the current process
 
-```bash
-npx niceeval exp local
-npx niceeval exp local weather
-npx niceeval exp local fixtures/button
+Progress, active Attempts, and short diagnostics exist only for the current process. The terminal can render them, and `--json` writes the same machine-readable feedback.
+
+```sh
+npx niceeval exp checkout --json
 ```
 
-Do not put the agent name into positional arguments. agent, model, and flags belong in the experiment.
+`exp --json` emits NDJSON. Progress and diagnostic records describe the current Invocation; they are not a Record decoding format. Exactly one final record is a lightweight `InvocationReceipt`:
 
-## Concurrency
-
-```bash
-npx niceeval exp local --max-concurrency 8
+```json
+{
+  "type": "receipt",
+  "receipt": {
+    "invocationId": "01J8ZK3M6P4T7V9X2C5N8QW0RY",
+    "runIds": ["01J9ZK3M6P4T7V9X2C5N8QW0RY"],
+    "startedAt": "2026-08-09T10:00:00.000Z",
+    "completedAt": "2026-08-09T10:01:00.000Z",
+    "completion": "completed"
+  }
+}
 ```
 
-Remote HTTP agents can usually handle higher concurrency; local Docker Sandbox runs usually need lower concurrency to avoid CPU, memory, and disk contention.
-
-## attempts and early-exit
-
-```bash
-npx niceeval exp local fixtures/button --attempts 5
-npx niceeval exp local fixtures/button --attempts 5 --early-exit
-```
-
-`attempts` is for measuring pass rate. By default, every configured Attempt runs. Opt in to `--early-exit` to stop an eval's remaining Attempts once one passes; use `--no-early-exit` to explicitly keep the default full distribution when another configuration layer enabled early exit.
-
-## Cache
-
-[NiceEval](https://niceeval.com/) can skip results already judged `passed` or `failed`, based on a fingerprint of inputs, configuration, and relevant files — both are settled verdicts. `errored` (timeouts, Sandbox crashes, and other framework/environment-level, non-deterministic failures) always retries. Cache is useful for iteration speed, but turn it off explicitly (`--force`) or clear the relevant cache when you are debugging non-deterministic behavior.
-
-## Timeout and budget
-
-```bash
-npx niceeval exp local --timeout 300000 --budget 5
-```
-
-Timeout protects a single eval; budget protects the cost of the entire run. NiceEval only warns that the budget cannot be enforced when an Attempt has already issued an Agent Turn but repeatedly fails to get cost data back. If an Attempt fails during `sandbox.create` or setup, the Agent never ran, so the CLI shows only the corresponding structured execution error, without an added budget warning that would point debugging in the wrong direction.
+The receipt identifies this Invocation, its Runs, timing, and completion only. To inspect Verdicts, Usage, diagnostics, or report aggregates, reread the quiescent Record using its `runIds`.
 
 ## Reporter
 
-Feedback while a run is in flight only comes in two forms; reporters are a different layer that write completed results elsewhere:
+A Reporter connects only to the current Invocation. It can send information already known to the process to an external system, and `--junit` writes a file for a CI platform to consume.
 
-```bash
-npx niceeval exp local          # human text: a live-refreshing TTY panel, or an append-only text stream on non-TTY (pipes, CI logs)
-npx niceeval exp local --json   # machine face: one JSON object per line on stdout, starting with `start` and ending with `result`
+Neither output owns the Record. The quiescent Record's named channels retain the recorded Verdict, Usage, assertions, and diagnostics. A later step projects an AnalysisSample from the receipt's `runIds`, then uses `show`, `view`, or `view --out` to inspect complete results.
+
+## Inspect after the run
+
+After the Runner ends, inspect the result with an explicit Run selection:
+
+```sh
+npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
+npx niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --no-open
 ```
 
-`--json` does not print every state change: only failures, errors, and deduplicated warnings append a line immediately, and a `progress` heartbeat only appears after a stretch with none of those events. Both forms read the same facts — scheduling, verdicts, and artifacts stay identical, only the presentation changes.
+Both `show` and `view` project an AnalysisSample before they form one fixed `ReportInput`. If a user edits the quiescent Record, end the viewer and run it again to read the edited values.
 
-After each eval finishes, the runner hands the result to reporters:
+## Completion status
 
-- JSON artifacts support later analysis.
-- the JUnit reporter fits CI.
-- the Braintrust reporter reports a run as an experiment for comparison across commits.
+The process exit status reflects the Verdicts, execution errors, and Invocation completion known to the Runner. CI can use that status as its gate. A machine caller can read the final receipt, then use `runIds` to select what to show or export.
 
-See [Reporter integrations](/tutorials/reporters) for how to wire reporters in and configure Braintrust.
-
-## Output directory
-
-Each run writes to that experiment's results snapshot directory, `.niceeval/<experiment>/<snapshot>/`, including snapshot-level `snapshot.json`, plus, per Attempt, `result.json` (verdict, assertions, structured errors, diagnostics) and artifacts generated as needed such as `events.json`, `sources.json`, `trace.json`, `o11y.json`, and `diff.json`. Transient progress is never persisted.
-
-## Recommended debugging flow
-
-1. Run `npx niceeval list` first to confirm discovery.
-2. Narrow to one eval with `npx niceeval exp <experiment> <id-prefix>`.
-3. After a failure, copy the locator from the terminal and run `npx niceeval show @<locator>` to see the error or assertion summary. Add `--execution` when you need the agent's behavior, and `--diff` when you need the file changes.
-4. Then widen back out to the full suite or experiment.
+Input errors that prevent an Invocation from being created have no receipt. Correct the command, Experiment, or selection condition before trying again.

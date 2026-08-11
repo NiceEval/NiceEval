@@ -1,6 +1,6 @@
 /*
  * niceeval/report/react/styles.css —— 随包发布的默认样式。
- * 契约(docs/feature/reports/library/theme.md):
+ * 契约(docs/feature/reports/README.md):
  *   - 所有节点都有稳定的 niceeval-* 类名;这份 CSS + 类名 = 静态页零依赖成立;
  *   - 外观全部经公开令牌进来:每个用点读 var(--niceeval-*, <兜底>),本文件不声明
  *     任何 --niceeval-* 变量,主题/宿主的令牌块因此直接生效;
@@ -53,7 +53,7 @@
 .niceeval-report .niceeval-locator { display:inline-flex; align-items:center; gap:4px; color:var(--accent); font-variant-numeric:tabular-nums; text-decoration:none; white-space:nowrap; }
 .niceeval-report .niceeval-locator:hover { text-decoration:underline; }
 /* attempt 行的判定长在 locator 上:判定符与语义色同场,不靠颜色单独表意
-   (docs/feature/reports/components/summaries/experiment-table.md) */
+   (docs/feature/reports/README.md) */
 .niceeval-report .niceeval-locator.niceeval-verdict-passed { color: var(--good); }
 .niceeval-report .niceeval-locator.niceeval-verdict-failed { color: var(--bad); }
 .niceeval-report .niceeval-locator.niceeval-verdict-errored { color: var(--warn); }
@@ -661,7 +661,7 @@ table.niceeval-report,
   overflow: hidden;
 }
 /* 条上的类别着色:kind 稳定散列到分类色槽,原语不认词表
-   (docs/feature/reports/components/primitives/waterfall.md「类别与着色」)。
+   (docs/feature/reports/README.md「类别与着色」)。
    五槽跳过 --c4:它离 --bad 太近,失败段就分不出来了。失败规则在后位覆盖分类色。
    分类色按整段面积铺,兑进面色收一档:色板是给线和点定的,原样铺满整条会盖过页面。 */
 .niceeval-waterfall .niceeval-waterfall-bar {
@@ -1271,7 +1271,7 @@ table.niceeval-report,
 .niceeval-report .niceeval-tone-na { color: var(--soft); }
 
 /* SourceView 原语:GitHub diff 式带标注源码。整行浅染 + 2px 左缘 + 行号位标记,整块统一横向
-   滚动;视觉规范单源见 docs/feature/reports/components/primitives/source-view.md
+   滚动;视觉规范单源见 docs/feature/reports/README.md
    「web 面视觉规范」,DOM 骨架见同目录 presentation.md「SourceView 的 DOM 骨架」。
    普通行是 div,带证据的行是可点击 details;展开区钉在可视左缘,不跟代码横滚。 */
 .niceeval-source-view {
@@ -1540,7 +1540,7 @@ table.niceeval-report,
 }
 
 /* ---- Section header:标题行右侧短元信息(meta),同一行右对齐,空间不足自动换行
-        (docs/feature/reports/library/layout.md「Grid 与 Stat」)。省略 meta 时 Section
+        (docs/feature/reports/README.md「Grid 与 Stat」)。省略 meta 时 Section
         渲染的是裸 <h2>(既有结构),不套这层 header——旧行为逐字节不变。 ---- */
 .niceeval-section-header {
   display: flex;
@@ -1558,7 +1558,7 @@ table.niceeval-report,
   white-space: nowrap;
 }
 
-/* ---- Grid:自由摘要面板的格子容器(docs/feature/reports/architecture.md「排版原语的语义层
+/* ---- Grid:自由摘要面板的格子容器(docs/feature/reports/README.md「排版原语的语义层
         与面内布局」、library/layout.md「换列规则」「体裁与体量」)。外层 .niceeval-grid-fit
         是具名 inline-size 容器——容器查询查的是祖先,Grid 自己声明 container-type 查不到
         自己。基线一列;≥2 列的断点由每个 Grid 随身的 @container 规则写出(格数的纯函数,

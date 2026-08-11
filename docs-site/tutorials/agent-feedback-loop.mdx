@@ -1,325 +1,75 @@
 ---
-title: "Write evals and iterate on your program with a coding agent"
+title: "Let a Coding Agent Iterate from Results"
 sidebarTitle: "Coding Agent Feedback Loop"
-description: "Let a coding agent read the bundled docs, use bash to run experiments, view results, and locate failures — keep iterating, then confirm with one full rerun at the end."
+description: "Let a Coding Agent read receipt run IDs, then use show or view to inspect results from a quiescent Record."
 ---
 
-A coding agent can write NiceEval configuration and evals from a spec, and can also keep improving the system under test based on run results. The whole process only needs repo files and bash — no browser, and no extra skill to install.
+A Coding Agent can complete a clear feedback loop from the command line: read the installed documentation, run an Experiment, read the final receipt, use its `runIds` to inspect results, update the program or evals, and run again.
 
-## Point the agent at the installed docs first
+## Start with the installed documentation
 
-NiceEval ships its Chinese docs under the npm package's `docs-site/zh/` directory, and publishes an `INDEX.md` at the package root for a coding agent to use. The agent should read `node_modules/niceeval/INDEX.md` first, then follow the index into whichever page the current task needs — not rely on training data or some other version of the examples found online. That keeps the API and CLI pinned to the installed version.
-
-`npx niceeval init` scaffolds the config and writes a managed block of guidance into the project's `AGENTS.md`. If the project only has a `CLAUDE.md`, it writes there instead; when neither file exists, it creates a new `AGENTS.md`. Running `init` again after upgrading NiceEval refreshes the managed block.
-
-A starting task for the agent can be written directly as:
+Tell the Agent to start with the documentation installed in the project instead of guessing an API:
 
 ```text
-Start by reading node_modules/niceeval/INDEX.md, then follow the index to read
-whatever docs the current task needs, then write niceeval.config.ts, the
-experiment, and the eval to match the spec.
-Don't guess NiceEval's API from training data.
+Read node_modules/niceeval/INDEX.md first.
+Then read the pages relevant to the current task from that index.
+Run Experiments with commands, and use the final receipt to select the Runs to inspect.
 ```
 
-An agent typically picks these entry points by task:
+That keeps the Agent's instructions aligned with the version installed in the project.
 
-| Task | Bundled doc |
+## Run and retain the receipt
+
+```sh
+npx niceeval exp checkout --json | tee .niceeval-invocation.ndjson
+```
+
+Every `--json` line is feedback from the current process. Progress and diagnostics describe what is happening in this run. Exactly one final `receipt` contains:
+
+```json
+{
+  "invocationId": "01J8ZK3M6P4T7V9X2C5N8QW0RY",
+  "runIds": ["01J9ZK3M6P4T7V9X2C5N8QW0RY"],
+  "startedAt": "2026-08-09T10:00:00.000Z",
+  "completedAt": "2026-08-09T10:01:00.000Z",
+  "completion": "completed"
+}
+```
+
+The Agent should treat the final receipt as the handoff for this Invocation. It is not a persisted results protocol. Read business facts from the quiescent Record through its `runIds`.
+
+## Inspect results with Run IDs
+
+After the run ends, inspect the Run's Report:
+
+```sh
+npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
+npx niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --no-open
+```
+
+`show` and `view` select a Sample before they form one fixed `ReportInput`. The Agent should distinguish these states:
+
+| Visible state | Next step |
 | --- | --- |
-| Initialize a project | `docs-site/zh/tutorials/quickstart.mdx` |
-| Write an eval | `docs-site/zh/explanation/evals.mdx` |
-| Define an experiment | `docs-site/zh/tutorials/write-experiment.mdx` |
-| Connect the agent under test | `docs-site/zh/explanation/adapter.mdx` |
-| Configure a Sandbox | `docs-site/zh/tutorials/sandbox-agent.mdx` |
-| Interpret run results | `docs-site/zh/tutorials/viewing-results.mdx` |
+| `failed` | Inspect the task result and assertions, then correct the system under test or eval logic. |
+| `errored` | Inspect diagnostics, the Adapter, Sandbox, or credentials. |
+| `not-recorded` | Find why that expected slot has no Member. |
+| `unavailable` | Check whether the channel was not collected or does not apply. |
+| `unsupported` | Address only the viewing work that depends on the channel. |
+| `invalid` | Repair the named file or reference before reading again. |
 
-## Closing one feedback loop with bash
+## Run again after an edit
 
-The goal of the loop isn't to make a command exit green — it's to form and verify a hypothesis about where the failure comes from: the system under test, the eval itself, or the runtime environment. Iterate in the order below.
+Have the Agent test one verifiable hypothesis at a time: change the program or eval, run the same scope, then read the new receipt and Run. To confirm that every slot executes again:
 
-<Steps>
-  <Step title="Run the experiment">
-    ```bash
-    npx niceeval exp local --json
-    ```
-
-    <Tip>
-      If the repo uses pnpm, swap in `pnpm --silent exec niceeval exp local --json`. `pnpm exec` prints a startup banner to stdout by default, which lands right in the middle of the NDJSON stream you're about to parse; `--silent` turns that banner off. `npx` doesn't have this problem.
-    </Tip>
-
-    Read the exit code first: `0` means every eval passed; `1` means at least one eval failed or errored; `2` means NiceEval itself failed to complete the run. The exit code decides whether to keep going; the `--json` event stream gives you a stable locator for each failure to drill into next.
-  </Step>
-  <Step title="Read the failures">
-    ```bash
-    npx niceeval show
-    npx niceeval show @1k2m9qtr
-    ```
-
-    The first command shows each experiment's current pass rate, cost, and duration, plus a compact attempt locator for every eval — the locator itself is the entry point to the evidence, so the list does not encode which evidence is available. The second command opens the selected attempt directly; the `available:` block at the end of that page lists only the evidence commands this attempt actually has.
-  </Step>
-  <Step title="Read evidence for your question">
-    ```bash
-    npx niceeval show @1k2m9qtr --execution
-    npx niceeval show @1c3h6tbn --diff
-    ```
-
-    `--execution` merges the agent's output with the trace: the standard event stream supplies messages, thinking, tool call/result, and skill loads; OTel, when it can be correlated, adds start time, duration, parent/child relationships, and error status onto those same nodes. Without OTel the steps are still complete — they just carry no timing.
-
-    With no evidence flag, `show @<id>` is the failure diagnosis front page. It first lists each failed assertion's group, matcher, expected value, received value, reason, and source location, then a summary of execution, lifecycle-stage timing, and file changes. The agent should read this page first, and only open the matching evidence when it needs to answer "why was this value produced".
-
-    ```text
-    $ niceeval show @1k2m9qtr
-    @1k2m9qtr · weather/brooklyn · compare/codex-gpt-5.4 · failed
-    snapshot 2026-07-09T10-00-00-000Z-x1f2 · attempt 2 · 41.2s · 12.3k tokens · $0.04
-    eval source: evals/weather/brooklyn.eval.ts · sha256:8d47…
-
-     8  export default defineEval({
-     9    description: "Brooklyn weather query",
-    10    async test(t) {
-    11      const turn = await t.send("What's the weather in Brooklyn today?");
-    12 ✗    turn.calledTool("get_weather");
-           calledTool("get_weather") · received 0 tool calls
-    13 ✓    turn.succeeded();
-    14 ✗    t.check(turn.message, judge("reply is based on real-time data"));
-           judge("the answer is based on real-time data") · 0.2 / 1 · reply invents a temperature without any tool call
-    15    },
-    16  });
-
-    assertions: 1 passed · 1 gate failed · 1 soft below target
-
-    execution: 3 events · 0 skill loads · 0 tool calls · 1 AI messages
-    timing: eval.run 40.4s · assertions.evaluate 0.5s · teardown +0.2s
-
-    changes · diff unavailable
-    reason: this attempt did not produce workspace file changes
-
-    full eval source: …/weather/brooklyn/a2/sources.json
-    available:
-      niceeval show @1k2m9qtr --source
-      niceeval show @1k2m9qtr --execution
-      niceeval show @1k2m9qtr --timing
-    ```
-
-    `--execution` lays out AI messages, skill loads, tool calls, and tool results as one execution tree. It only shows events an agent can make sense of; SDK / runtime spans that correlate to none of those events are not printed line by line — only their omitted count is reported, and the `trace.json` path is kept. The attempt below has OTel, so the nodes that could be correlated carry both relative time and duration:
-
-    ```text
-    $ niceeval show @1k2m9qtr --execution
-    @1k2m9qtr · weather/brooklyn · compare/codex-gpt-5.4 · failed · OTel timing
-
-    USER
-      What's the weather in Brooklyn today?
-
-    ASSISTANT
-      Let me check the weather tool's usage notes first.
-
-    TOOL · get_weather  0.8s · 1.8s
-      input
-        {"location":"Brooklyn"}
-      result · completed
-        {"temperatureC":18,"condition":"rain"}
-
-    ASSISTANT  2.8s · 1.2s
-      Brooklyn is currently about 18°C with rain.
-
-    total 4.0s · 1 skill load · 1 tool call · 2 AI messages
-    full events: …/weather/brooklyn/a2/events.json
-    69 unlinked telemetry spans omitted; inspect the OTel trace for framework timing.
-    full OTel trace: …/weather/brooklyn/a2/trace.json
-    ```
-
-    Without OTel, the same steps still render from the standard event stream — only the time column and the waterfall relationship are gone; a missing timing column is never mistaken for "nothing executed":
-
-    ```text
-    $ niceeval show @1nx4dpwq --execution
-    @1nx4dpwq · weather/brooklyn · compare/bub-gpt-5.4 · failed
-
-    USER
-      What's the weather in Brooklyn today?
-
-    ASSISTANT
-      Let me check the weather tool's usage notes first.
-
-    TOOL · get_weather
-      input
-        {"location":"Brooklyn"}
-      result · completed
-        {"temperatureC":18,"condition":"rain"}
-
-    ASSISTANT
-      Brooklyn is currently about 18°C with rain.
-
-    timing unavailable · OTel trace was not collected
-    full events: …/weather/brooklyn/a2/events.json
-    ```
-
-    A diff is the file changes the tested agent made in the Sandbox workspace, not a diff of the eval source itself. Only Sandbox evals collect a diff — for a non-Sandbox eval, or when the agent genuinely touched no files, the attempt page's `available:` list omits `--diff`. It defaults to a file-level summary, so a large patch doesn't get dumped straight into the agent's context; `--diff=<file>` expands a single file, and the raw artifact path is always kept alongside it:
-
-    ```text
-    $ niceeval show @1c3h6tbn --diff
-    @1c3h6tbn · fixtures/button · compare/bub-gpt-5.4 · errored
-
-    M src/components/Button.tsx   +42 −3
-    A src/components/Button.css   +18
-
-    2 files changed · +60 −3
-    full diff: …/fixtures/button/a1/diff.json
-    next: niceeval show @1c3h6tbn --diff=src/components/Button.tsx
-    ```
-
-    Use this set of outputs to check whether you have enough information:
-
-    | Question you're trying to answer | Entry point | Output must include |
-    | --- | --- | --- |
-    | Quickly tell what happened in one attempt | `niceeval show @<id>` | Eval assertions, execution steps, a lifecycle-stage timing summary, a diff summary, and which blocks are available |
-    | What the eval actually checked, and why a given gate/soft passed or failed | `niceeval show @<id> --source` | The eval source at run time, its source hash, the line each assertion sits on, severity, score, and reason |
-    | What the agent did, what it called, where the time went | `niceeval show @<id> --execution` | Messages, thinking, skill loads, tool calls and results; with OTel, timing, parent/child relationships, and error status on the same nodes |
-    | How an attempt's time breaks down phase by phase | `niceeval show @<id> --timing` | A unified time tree from lifecycle → hook/turn → shell → OTel; an errored attempt marks the deepest known failing node |
-    | What the Sandbox workspace's files turned into | `niceeval show @<id> --diff` | A file summary, added/removed line counts, the actual patch, and the original diff path; explicitly unavailable when there's no file workspace |
-  </Step>
-  <Step title="Hand structured evidence to a script or the next agent">
-    Add `--json` to any `show` command above, and it prints the same range, sliced the same way, as one structured JSON document on stdout instead of formatted text. Field names match the stored types, so a coding agent doesn't need to parse the human-readable format:
-
-    ```bash
-    npx niceeval show @1puv8ydu --json
-    ```
-
-    ```json
-    {
-      "format": "niceeval.show",
-      "schemaVersion": 1,
-      "view": "attempt",
-      "sample": { "resultsRoot": "…", "experiments": ["compare/claude-mempal"], "fresh": false },
-      "data": {
-        "summary": {
-          "locator": "@1puv8ydu",
-          "identity": { "experimentId": "compare/claude-mempal", "evalId": "react-datepicker/pr-6058", "attempt": 0 },
-          "verdict": "failed",
-          "durationMs": 29800,
-          "costUSD": 0.07,
-          "capabilities": { "source": false, "execution": true, "timing": false, "diff": false }
-        },
-        "assertions": {
-          "attention": [
-            {
-              "name": "fixes month navigation year sync",
-              "detail": "judge(\"month navigation year sync\")",
-              "severity": "gate",
-              "outcome": "failed",
-              "score": 0,
-              "expected": ">= 0.7",
-              "received": "0.4 / 1 · fix still off by one month at year boundary"
-            }
-          ],
-          "passedGroups": []
-        },
-        "fixPrompt": { "prompt": "Fix the failing eval from this niceeval run.\n\n## Failure\n…" }
-      }
-    }
-    ```
-
-    `--json` is a data superset: fields the text form trims or truncates for the attention budget (full strings, full trees) stay complete here. `--source`, `--execution`, `--timing`, `--diff`, `--usage`, `--stats`, and the comparison matrix all accept `--json` the same way — it's the same rule, not a special case for the attempt view. When you need to hand a failure's structured facts to another agent, wire them into your own analysis script, or feed a CI check, read from here — don't re-scan the raw `.niceeval/` files, which would just reinvent a second, inconsistent selection and dedup convention.
-  </Step>
-  <Step title="Form a hypothesis, then fix">
-    Based on the evidence, change only the side that's most likely at fault:
-
-    | What you see | Check first |
-    | --- | --- |
-    | The reply or tool call doesn't match the spec | The system under test, its prompt, its tool definitions |
-    | The `diff` doesn't match what the task asked for | The tested agent's implementation strategy, or its runtime environment |
-    | Correct behavior gets rejected by a gate | The eval's assertions, Fixtures, setup |
-    | Timeout, auth, or Sandbox errors | Experiment configuration, the Adapter, the Sandbox |
-    | The same eval passes sometimes and fails other times | `--history`, `attempts`, and stability issues |
-
-    Don't loosen a correct assertion just to turn it green. Write down which evidence supports which conclusion before touching the code.
-  </Step>
-  <Step title="Rerun locally, verify the hypothesis">
-    ```bash
-    npx niceeval exp local weather/brooklyn --json --force
-    npx niceeval show weather/brooklyn
-    ```
-
-    The positional argument narrows the experiment by eval id prefix. While debugging the same failure, add `--force` to make sure the fix you just made actually triggers a new run instead of replaying a cached one. Then use `show` to verify the verdict, assertions, and evidence changed the way you expected.
-  </Step>
-  <Step title="Full rerun to confirm no regression">
-    ```bash
-    npx niceeval exp local --json --force
-    npx niceeval show
-    ```
-
-    A local pass only confirms the current hypothesis. Before calling it done, force a full rerun — only when the command exits `0`, and `show` shows no new failures or errors, is the loop actually complete.
-  </Step>
-</Steps>
-
-## What the agent should read from the output
-
-`--json` writes one JSON object per line to stdout — that NDJSON stream is what the agent should parse. The first line is a `start` event that carries the stream's identity; after that, only failures, errors, and deduplicated warnings append a line immediately, and a `progress` heartbeat (a liveness signal, not a results source) only shows up after a stretch with none of those events. The last event is always `result`, with the verdict, counts, and snapshot paths:
-
-```text
-{"format":"niceeval.exp","schemaVersion":1,"event":"start","total":15,"configs":1,"concurrency":8,"reused":0}
-{"event":"failure","locator":"@1k2m9qtr","evalId":"weather/brooklyn","experimentId":"local","severity":"gate","assertion":"calledTool(\"get_weather\")","received":"0 tool calls"}
-{"event":"result","status":"failed","passed":14,"failed":1,"errored":0,"reused":0,"completion":"complete","snapshots":[".niceeval/local/2026-07-09T10-00-00-000Z-x1f2/"]}
+```sh
+npx niceeval exp checkout --rerun all --json
 ```
 
-The agent should pull `locator` out of each `failure` / `error` event, then run `niceeval show @<id>` (or the matching evidence flag) for each one — events append in the order they happen, so it can start acting on a locator before `result` shows up. Don't use the `progress` heartbeat to judge the outcome; it only signals that the process is still alive. `--json` never truncates — every failure is its own event; for large batches, use `niceeval view` or the results snapshot for bulk analysis. The results snapshot is the source of truth for programmatic reading:
+When an existing Attempt is adopted automatically, `--dry` explains why. Reasons for carrying and accepting are in the target Run's `niceeval.actions` channel. See [Rerun and Carry Results](/tutorials/rerun-and-cache).
 
-```text
-.niceeval/<experiment>/<snapshot>/
-├── snapshot.json
-└── <eval-id>/a<attempt>/
-    ├── result.json
-    ├── events.json
-    ├── trace.json
-    └── diff.json
-```
+## Boundaries for Record edits
 
-- `snapshot.json` records the experiment's identity, run configuration, format version, and timestamp.
-- `result.json` records that attempt's verdict, assertions, structured errors, diagnostics, and usage. Transient progress is never persisted.
-- `events.json` holds the conversation and tool-call events, `trace.json` holds the call chain, and `diff.json` holds Sandbox file changes.
-- When a kind of evidence doesn't exist, the corresponding file simply isn't generated. Trust what `show` reports as available rather than assuming every directory has every file.
+A Record is an editable fact dataset. An Agent may edit business channels only after the directory is quiescent, then run `show` or `view` again. Do not let a Runner, active reader, or AnalysisSample/ReportInput-construction phase operate on the same directory as a manual edit. Later Report execution and site writing do not access the Record.
 
-`show`'s default view can be composed from multiple runs: it picks the latest verdict per experiment × eval, so after a local rerun you'll still see other evals' older results sitting alongside it. This view is for checking each eval's latest known verdict; confirming the overall result for one exact version of the code always requires a `--force` full run.
-
-## When results get reused
-
-Without `--force`, NiceEval compares the current fingerprint against the most recent result. The fingerprint is made of the eval's source and the run configuration — experiment id, agent, model, flags, Sandbox, timeout, strict, and similar settings.
-
-| Most recent result vs. current input | This run's behavior |
-| --- | --- |
-| Same fingerprint, verdict `passed` or `failed` | Carries the old result forward, does not re-execute |
-| Different fingerprint | Re-executes |
-| Most recent result was `errored` or `skipped` | Re-executes |
-| `--force` used | Ignores the old result, re-executes |
-
-The system under test's source is not part of the fingerprint. After changing the implementation, even though behavior has changed, an old `passed` or `failed` can still get reused. So choose based on what you actually changed:
-
-- Just want to look at existing results again: run `niceeval show` — no new cost.
-- Changed the eval or the experiment configuration: rerun directly; the fingerprint change triggers the affected task on its own.
-- Changed the system under test: use `--force` on the affected evals.
-- Wrapping up this round of work: use `--force` on the whole experiment, to rule out regressions in other evals.
-
-## Letting the agent converge on its own
-
-This protocol can go straight into a task description. It works equally well for improving the system under test and for debugging the eval itself:
-
-```text
-Read node_modules/niceeval/INDEX.md, then follow the index to read whatever
-docs relate to the task.
-Run npx niceeval exp local --json, and decide the next step from the exit
-code and the locators in the failure/error events. For every failing eval,
-pick an attempt locator from an event; then run niceeval show @<id> and
-choose --source, --execution, --timing, or --diff depending on the question
-you're asking; --timing expands the lifecycle into setup/teardown hooks,
-shell commands, each turn's send, and correlated OTel model/tool spans, to
-answer where an attempt's time went.
-Write down a hypothesis for the failure, and decide whether to fix
-the system under test, the eval, or the experiment environment. After fixing,
-rerun the affected eval with --force and compare the new verdict and evidence.
-If the same problem produces no new evidence or improvement for three rounds
-in a row, stop and report back — don't reach for a green result by loosening
-an assertion.
-Once every local failure is cleared, do a full verification with
-npx niceeval exp local --json --force; only exit code 0 counts as done.
-```
-
-Running a real agent can cost money. During experimentation, add `--budget <dollars>` to cap this round's cumulative spend; a budget only bounds a single command — it's not a substitute for the stop condition above.
-
-A person and an agent can hand off the same round of work to each other at any point. The results an agent reads with `niceeval show`, a person can open in the browser with `npx niceeval view` — both read the same batch of artifacts. The full output formats, history selection, and web UI walkthrough are in [Viewing Results](/tutorials/viewing-results).
+To share a result with someone else, use [Publish a Static Report](/tutorials/publish-report), not feedback from the current process.

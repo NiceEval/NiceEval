@@ -126,7 +126,7 @@ NICEEVAL_JUDGE_KEY=sk-...
 `.env` is how secrets get delivered, not a second config file — putting something like `NICEEVAL_TIMEOUT` in it has no effect. In CI, pass only secrets the same way:
 
 ```yaml
-- run: npx niceeval exp ci --strict --junit .niceeval/junit.xml
+- run: npx niceeval exp ci --strict --junit ./artifacts/niceeval-junit.xml
   env:
     ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```

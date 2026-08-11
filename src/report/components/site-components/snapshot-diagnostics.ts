@@ -1,5 +1,5 @@
 // SnapshotDiagnostics 的聚合层:把 snapshotDiagnosticsData 的产物按来源 experiment 分组,
-// web / text 两面共用(docs/feature/reports/library.md)。
+// web / text 两面共用(docs/feature/reports/README.md)。
 // 输入已经由 snapshotDiagnosticsData 按 experiment id 字典序、组内 startedAt 新到旧排好序,
 // 这里只按 experimentId 分桶,不重新排序、不跨来源合并 DiagnosticRecord。
 

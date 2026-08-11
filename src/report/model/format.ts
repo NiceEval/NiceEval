@@ -1,4 +1,4 @@
-// unit 驱动的内置格式化(docs/feature/reports/library/presentation.md):
+// unit 驱动的内置格式化(docs/feature/reports/README.md):
 //   "%" → 87%    "ms" → 1.2s    "$" → $0.31    其余 → 1.2k 缩写(带 unit 后缀)
 // MetricValue.format 可覆盖；公开入口是 formatMetricValue / formatAxisTick。
 
@@ -84,7 +84,7 @@ function formatDollars(abs: number): string {
 
 /**
  * 按 unit 折一个终值。unit 是量纲声明,也是格式化的唯一开关
- * (docs/feature/reports/library/presentation.md「unit 决定格式」)。
+ * (docs/feature/reports/README.md「unit 决定格式」)。
  */
 function formatNumberWithUnit(value: number, unit?: string): string {
   const sign = value < 0 ? "-" : "";
@@ -165,7 +165,7 @@ const MISSING_CODE_KEYS = {
 
 /**
  * `missing` 格的本地化原因。code 是结构化代码,不是显示文本
- * (docs/feature/reports/library/presentation.md「缺数据、不适用与占位」)。
+ * (docs/feature/reports/README.md「缺数据、不适用与占位」)。
  */
 export function missingText(code: string, locale: ReportLocale = DEFAULT_REPORT_LOCALE): string {
   const key = MISSING_CODE_KEYS[code as keyof typeof MISSING_CODE_KEYS];
@@ -199,7 +199,7 @@ export function formatPointsSuffix(points: number): string {
 /**
  * attempt 头行总分位的绝对值展示("1 pt" / "4 pts",不带 `+`)——这是这一轮挣到的总分本身,
  * 不是某条检查的增量(那个用 `formatPointsSuffix` 的 "+N pts"),见
- * docs/feature/reports/show/attempt.md 计分制示例头行。
+ * docs/feature/reports/README.md 计分制示例头行。
  */
 export function formatPoints(points: number): string {
   return `${formatPlainNumber(points)} ${points === 1 ? "pt" : "pts"}`;
@@ -254,7 +254,7 @@ const FULL_REPORT_DATE_TIME: ReportDateTimeOptions = {
  * ISO 时刻 → 当前 locale 的人读时间(到分钟);不可解析时原样返回。
  *
  * 时刻不是 `MetricValue`——没有量纲、不参与聚合、不上轴——所以它不走 `unit` 那条开关,
- * 这里是它唯一的入口(docs/feature/reports/library/presentation.md「时刻不走 unit」)。
+ * 这里是它唯一的入口(docs/feature/reports/README.md「时刻不走 unit」)。
  */
 export function formatInstant(iso: string, locale: ReportLocale = DEFAULT_REPORT_LOCALE): string {
   const date = new Date(iso);
@@ -308,7 +308,7 @@ const MS_PER_MONTH = MS_PER_DAY * 30;
 
 /**
  * 一段时长(毫秒) → 当前 locale 的紧凑相对时距("12d" / "12 天")。按区间选粒度最大的单位
- * 取整,结果恒不小于一个单位(docs/feature/reports/library/presentation.md「相对时距是数据,
+ * 取整,结果恒不小于一个单位(docs/feature/reports/README.md「相对时距是数据,
  * 不是文案」):不足 1 小时→分钟,不足 1 天→小时,不足 30 天→天,30 天及以上→月。
  * 这是 History 旅途里相对时距的单一入口;不加箭头、回环之类的装饰记号——记号不携带时长,
  * 读者还要先学会它。
@@ -355,7 +355,7 @@ export function fitFailureSummary(summary: string, maxChars: number): string {
 
 /**
  * 一份 `ExperimentList` data 的题型构成:主读数列该显示 Pass rate、Total score,还是两者
- * 并存(docs/feature/reports/library.md 主读数列)。与
+ * 并存(docs/feature/reports/README.md 主读数列)。与
  * `entity-lists/compute.ts` 里 `experimentListData` 默认排序专用的 `listEvaluationKindComposition`
  * 同一套判据——跳过 `attempts === 0` 的行(coverage-only 占位,`evaluationKind` 是占位默认值不是
  * 读到的事实,一屏占位行不该把纯计分制列表误判成 mixed)。web 面与 text 面在这里读同一份

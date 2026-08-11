@@ -87,7 +87,7 @@ export function isThemeDefinition(value: unknown): value is ThemeDefinition {
 }
 
 /**
- * basalt —— 官方暗色主题,也是不装任何主题时的默认观感(docs/feature/reports/themes/basalt.md)。
+ * basalt —— 官方暗色主题,也是不装任何主题时的默认观感(docs/feature/reports/README.md)。
  * 与 docs/SVG-DESIGN.md 的图示令牌同一份:近黑面、发丝线、零圆角、颜色只在有语义时出现。
  * 官方 stylesheet 每个 var(--niceeval-*, <兜底>) 用点的兜底值抄的就是这里,
  * test/unit/report-theme-tokens.test.ts 守护逐项相等,所以 basalt 不需要自带 styles。
@@ -104,7 +104,7 @@ export const basalt = defineTheme({
 });
 
 /**
- * chalk —— 官方浅色主题(docs/feature/reports/themes/chalk.md)。白面、圆角、蓝 accent:
+ * chalk —— 官方浅色主题(docs/feature/reports/README.md)。白面、圆角、蓝 accent:
  * 与 basalt 处处相反,同时证明官方样式没写死任何观感——差异完整住在主题令牌里。
  */
 export const chalk = defineTheme({

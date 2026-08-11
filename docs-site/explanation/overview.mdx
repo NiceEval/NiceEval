@@ -1,109 +1,67 @@
 ---
-title: "NiceEval architecture: evals, agents, and sandboxes"
+title: "NiceEval's Evaluation and Reporting Path"
 sidebarTitle: "Overview"
-description: "Understand how NiceEval, Adapters, and Sandbox Providers work together to evaluate any AI agent through one API."
+description: "Learn how an Experiment, Record, Sample, and Report compose an eval that can be viewed and shared."
 ---
 
-NiceEval's core design separates "the evaluation logic" from "how the subject under test is connected". NiceEval owns discovery, scheduling, assertion evaluation, and reporting. Adapters call the system under test. Sandbox Providers isolate the filesystem.
-
-## Four layers
+NiceEval gives clear ownership to evaluation definitions, execution, current data, and reports. You define evals and Experiments, then the Runner executes them. Once the directory is quiescent, the current data lives in an editable Record. Viewing and sharing select a Sample from the Record, then form ReportInput.
 
 ```text
-Eval files / fixtures
+Eval and Experiment
         ↓
-NiceEval
+Runner
         ↓
-Adapter
+Record
         ↓
-Subject under test / Sandbox Provider
+Sample
+        ↓
+ReportInput
+        ↓
+show, view, or a static report site
 ```
 
-## What NiceEval owns
+## How an eval runs
 
-<CardGroup cols={2}>
-  <Card title="Eval discovery" icon="magnifying-glass">
-    Finds `*.eval.ts` files and fixture directories, then derives stable IDs from paths.
-  </Card>
-  <Card title="Scheduling" icon="timeline">
-    Controls the run pool size, retries, attempts, and early exit.
-  </Card>
-  <Card title="Assertions and verdicts" icon="chart-bar">
-    Collects `t.check`, scoped assertions, judge scores, and test results.
-  </Card>
-  <Card title="Cache" icon="database">
-    Skips cases that already passed when the fingerprint of their inputs is unchanged.
-  </Card>
-  <Card title="Reports" icon="file-lines">
-    Writes console, JSON, JUnit, and other reports.
-  </Card>
-  <Card title="Artifacts" icon="folder-open">
-    Saves summaries, event streams, transcripts, diffs, and test output.
-  </Card>
-</CardGroup>
+An Eval defines a task, assertions, and needed Fixtures. An Experiment selects Evals and declares the Agent, model, concurrency, budget, and other run conditions. An Adapter connects the system under test; a Sandbox provides an isolated place to execute work.
 
-## Adapter
+The Runner creates one Run for every selected Experiment. A Run lists its expected slots, which define the denominator for that run. Each slot adopts at most one Attempt.
 
-<Note>
-  `Agent` is the abstraction NiceEval sees. `Adapter` is the concrete implementation you write. NiceEval does not know your agent's private protocol, CLI arguments, or auth rules.
-</Note>
+| Member | Meaning |
+| --- | --- |
+| `executed` | This Run actually executed the Attempt. |
+| `carried` | The planner adopted an eligible existing Attempt. |
+| `accepted` | An operator explicitly adopted an existing Attempt. |
 
-That boundary keeps NiceEval generic. Evaluating your own AI agent, Claude Code, Codex, or a custom agent does not change the logic of the runner or the scorers.
+An Attempt always retains the `origin` where it actually ran. Adoption does not copy business values; a later read sees the Attempt channel's current values.
 
-## Sandbox
+## Record is an editable fact dataset
 
-<Tabs>
-  <Tab title="Docker">
-    Local container Provider, for coding-agent evals in development and CI.
-  </Tab>
-  <Tab title="Vercel Sandbox">
-    Cloud Sandbox Provider, for stronger isolation or larger run resources.
-  </Tab>
-  <Tab title="Third-party Provider">
-    Any other sandbox service can be integrated by implementing the `Sandbox` interface.
-  </Tab>
-</Tabs>
+A Record lives in `.niceeval/record/`. People and tools read or write it only while the directory is quiescent. Business values such as Verdicts, Usage, assertions, and diagnostics live in named owner-local channels. That allows channel-level reading and user edits after the directory settles.
 
-## Key terms
+A Record does not retain an edit history. Validation of structure, paths, identities, and references exists only to detect contradictory data.
 
-<AccordionGroup>
-  <Accordion title="Eval">
-    A test case: a description and a `test(t)` function, agent-neutral — which Agent it runs against is decided by the experiment.
-  </Accordion>
-  <Accordion title="Agent">
-    A connection NiceEval calls by name, responsible for returning a standard `Turn`.
-  </Accordion>
-  <Accordion title="Adapter">
-    The concrete implementation of an `Agent`, which knows how to call your runtime or CLI.
-  </Accordion>
-  <Accordion title="Sandbox">
-    The isolated runtime environment used by coding agents.
-  </Accordion>
-  <Accordion title="Turn">
-    The immutable result snapshot of one `t.send()`.
-  </Accordion>
-  <Accordion title="Artifact">
-    A structured result file written to disk after a run.
-  </Accordion>
-  <Accordion title="Experiment">
-    A run configuration that compares multiple agents, models, or flags as a matrix.
-  </Accordion>
-</AccordionGroup>
+On read, an unknown or retired channel becomes `unsupported` only at that channel. A requested invalid channel fails; an uncollected `unavailable` channel is neither `unsupported` nor `invalid`. Durable collection completeness and current decoding completeness remain separate.
 
-## End-to-end flow
+## Sample determines comparison scope
 
-<Steps>
-  <Step title="Discovery">Find eval files and fixtures.</Step>
-  <Step title="Scheduling">Plan the run from concurrency, cache, and attempts.</Step>
-  <Step title="Agent send">Call the adapter so the subject under test produces a `Turn`.</Step>
-  <Step title="Evaluate assertions">Run assertions, Judge checks, and tests.</Step>
-  <Step title="Verdict">Fold every result into `passed`, `failed`, `errored`, or `skipped`.</Step>
-  <Step title="Reporting & artifacts">Write reports and save structured files.</Step>
-</Steps>
+A viewer must select explicit Runs or use the named `latest` policy. A Sample builds its denominator from a Run's expected slots and marks each item `included`, `not-recorded`, `invalid`, or `excluded`.
 
-## Related reading
+That lets a Report honestly show missing members, core problems, and excluded items instead of counting only the slots that have values. See [Viewing Results](/tutorials/viewing-results) for selection rules.
 
-- [Evals](/explanation/evals) — what an eval is, and the details of its lifecycle.
-- [Adapter](/explanation/adapter) — how to write an adapter and reference it in an experiment.
-- [Drive](/explanation/drive) — `t.send()`, sessions, and HITL: how to produce the `Turn` data that assertions read.
-- [Assert](/explanation/assert) — assertion vocabulary and verdict rules.
-- [Judge](/explanation/judge) — LLM-as-judge, for evaluating open-ended quality.
+## A Report receives ReportInput only
+
+A Report runtime does not read disk. First, a Sample selects core data and its denominator. Then a ReportPlan lists facts, and the one composition adapter builds ReportInput. The Report computes and generates pages once from that input.
+
+Every Page and Calculation declares its facts and completeness requirement. Partial values show their observed count and full denominator. `unavailable`, `unsupported`, and `invalid` remain visible.
+
+## Deliver a Report
+
+`niceeval show --latest` presents one `ReportExecution` in the terminal. `niceeval view --latest` presents the same data path locally in a browser. `niceeval view --latest --out <directory>` produces a self-contained static report site with the exact built-in runtime, every page, host data, downloads, and manifest. Replace `--latest` with one or more explicit `--run` values when needed.
+
+A static report site opens offline. Its browser reads only the export directory, never the network or source Record. See [Publish a Static Report](/tutorials/publish-report) for publishing steps.
+
+## Continue reading
+
+- [Runner](/explanation/runner): Understand Invocations, Runs, and current-process feedback.
+- [Viewing Results](/tutorials/viewing-results): Select a Sample and inspect a Report.
+- [Rerun and Carry Results](/tutorials/rerun-and-cache): Understand carrying and accepting Attempts.

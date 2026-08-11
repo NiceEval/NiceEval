@@ -119,7 +119,7 @@ export function skippedRunsText(unreadable: readonly UnreadableRun[], root: stri
 // 同一份 AttemptEvidence,不各自读 artifact 或重新判定 capability(loadAttemptEvidence 已经
 // 算好);多 attempt 范围的分节由 show/index.ts 的 renderEvidenceSections 逐 attempt 复用这些
 // renderer,不在这里重复。无证据 flag 的默认页改由 niceeval/report 的 attempt-input page 管线
-// 渲染(docs/feature/reports/show/attempt.md),不在这里。
+// 渲染(docs/feature/reports/README.md),不在这里。
 
 /** 证据切面的头行:`@<locator> · <evalId> · <experimentId> · <verdict>`。 */
 export function attemptEvidenceHeader(evidence: AttemptEvidence): string {
@@ -154,7 +154,7 @@ export function verdictReasonLine(result: EvalResult): string | undefined {
 // ───────────────────────── --history ─────────────────────────
 
 /**
- * 一个 experimentId + evalId 的执行时间轴分节(docs/feature/reports/show.md「--history」):
+ * 一个 experimentId + evalId 的执行时间轴分节(docs/feature/reports/README.md「--history」):
  * 节头 `<evalId> · <experimentId> · N attempts · passed x/N`,节内每行
  * 时间 / verdict / 单行摘要 / 耗时 / 成本 / locator,startedAt 升序(compose 已排好)。
  */
@@ -188,7 +188,7 @@ export function attemptHistoryText(opts: {
 // ───────────────────────── --report 其余页索引 ─────────────────────────
 
 /**
- * 渲染初始页之后追加的「其余页」索引(docs/feature/reports/show/reports.md Case 2):
+ * 渲染初始页之后追加的「其余页」索引(docs/feature/reports/README.md Case 2):
  * 只列未渲染的页 —— 每行 id / 本 locale 页名 / 可复制的 `--page` 命令,索引命令携带完整上下文
  * (--record / --report / 位置参数),复制即可精确复现下一层视图。调用方只在页数大于一时
  * 拼接这段(单页定义没有「其余页」段);`otherPages` 不含被渲染的那一页。
@@ -458,7 +458,7 @@ function relSeconds(ms: number, originMs: number): string {
   return `${((ms - originMs) / 1000).toFixed(1)}s`;
 }
 
-/** 卡片正文的有界预览预算(docs/feature/reports/show/execution.md「卡片预览预算与 --expand」):
+/** 卡片正文的有界预览预算(docs/feature/reports/README.md「卡片预览预算与 --expand」):
  *  主尺度是行——每个内容段最多显示前 3 行(保留原始换行);每段另有 1 KiB(UTF-8 字节)兜底,
  *  防单行超长的 JSON blob 击穿行预算。 */
 const CARD_SEGMENT_MAX_LINES = 3;
@@ -492,7 +492,7 @@ interface SegmentTruncation {
 }
 
 /**
- * 单段的行 + 字节双重预算截断(docs/feature/reports/show/execution.md「卡片预览预算与
+ * 单段的行 + 字节双重预算截断(docs/feature/reports/README.md「卡片预览预算与
  * --expand」):先按 3 行裁剪(保留原始换行),再对裁剪结果套 1 KiB 字节兜底(按字符边界回退,
  * 不切分代理对),防单行超长的 JSON blob 击穿行预算。两次裁剪都只从末尾裁,`shown` 因此恒是
  * 原文的一个前缀,折字符数可以直接用两侧 codepoint 数之差倒推。
@@ -513,7 +513,7 @@ function truncateSegment(text: string): SegmentTruncation {
 }
 
 /**
- * 卡尾截断提示的聚合(docs/feature/reports/show/execution.md「卡片预览预算与 --expand」):
+ * 卡尾截断提示的聚合(docs/feature/reports/README.md「卡片预览预算与 --expand」):
  * N 是全卡各段被整行折掉的行数之和,再加上「同一张卡里确实有整行被折」时,每个被字节兜底截到
  * 一半的段各计 1 行——这条规则只在 N 本来就 > 0 时生效;如果全卡没有任何一段整行被折、只是
  * 某段字节兜底切了字符(单段本身没超 3 行,但这一两行太长),N 退化为 0,尾巴退化成
@@ -558,7 +558,7 @@ function testGrep(grep: RegExp, text: string): boolean {
 // ───────────────────────── 卡片模型:句柄、分组、内容 ─────────────────────────
 
 /** Agent 事件卡:句柄 `t<轮序>.c<轮内卡序>`,两个序号从 1 起、由 events.json 的事件序确定性派生
- *  (docs/feature/reports/show/execution.md「卡片预览预算与 --expand」)。 */
+ *  (docs/feature/reports/README.md「卡片预览预算与 --expand」)。 */
 interface AgentCard {
   handle: string;
   turnNumber: number;
@@ -617,7 +617,7 @@ function buildCommandCards(evidence: ConversationResult): CommandCard[] {
 }
 
 /**
- * 按轮分段(docs/feature/reports/show.md「--execution」):边界按用户消息切(t.send 恒以用户消息
+ * 按轮分段(docs/feature/reports/README.md「--execution」):边界按用户消息切(t.send 恒以用户消息
  * 开轮)。事件流不以用户消息开头的极端情形(如首个事件是前置注入)仍归入轮 1——句柄两个序号从 1
  * 起是契约,不发明 0 号轮。
  */
@@ -642,7 +642,7 @@ function nodeMeta(node: ExecutionNode, originMs: number): string {
   return `${relSeconds(span.startMs, originMs)} · ${formatDurationMs(span.endMs - span.startMs)}`;
 }
 
-/** 卡片正文的一个内容段(docs/feature/reports/show/execution.md「卡片预览预算与 --expand」):
+/** 卡片正文的一个内容段(docs/feature/reports/README.md「卡片预览预算与 --expand」):
  *  预览预算(3 行 + 1 KiB 兜底)按段独立截断,不是对整卡正文一次性截断。 */
 interface CardSegment {
   /** 段的骨架行(如 `input` / `result · completed`);不计入预算、不截断。undefined 表示这段
@@ -658,7 +658,7 @@ interface CardParts {
   /** 卡片正文按结构划分的段落;角色文本/thinking 这类单段卡只有 1 段,TOOL 卡 input/result
    *  各一段,失败命令卡命令行/stdout/stderr 各一段。 */
   segments: CardSegment[];
-  /** --grep 的匹配面:角色文本、工具名、input、result(docs/feature/reports/show/execution.md
+  /** --grep 的匹配面:角色文本、工具名、input、result(docs/feature/reports/README.md
    *  「范围化:跨 attempt 扫描与 --grep」);未经截断,grep 命中不受预览预算影响。 */
   matchText: string;
   /** 截断尾巴相对卡片正文的额外缩进——多段结构(如 TOOL 的 input/result)的正文本身已经带
@@ -773,7 +773,7 @@ function turnUsageText(turn: TimingActivity | undefined): string | undefined {
 
 /**
  * 一张卡片的完整渲染:`full` 时逐段输出未截断的落盘内容(--expand);否则每段独立按 3 行 + 1 KiB
- * 预算截断(docs/feature/reports/show/execution.md「卡片预览预算与 --expand」),卡尾追加一条
+ * 预算截断(docs/feature/reports/README.md「卡片预览预算与 --expand」),卡尾追加一条
  * 聚合尾巴。带 `label` 的段(TOOL 的 input/result、失败命令的 stdout/stderr)先输出骨架行,
  * 段正文本身再多缩进一层;没有 label 的段(单段卡的正文,命令行本身)正文与骨架行同一层。
  * 两种形态都只做逐行前缀(indentLines),不做 wrapDisplay 折行——保留原始换行是这个区块 text
@@ -942,7 +942,7 @@ function renderGrep(
 /**
  * `--expand <handle>`:句柄未命中(轮/卡序号或命令序号超界,或语法不认识)按用法错误抛出,报该
  * attempt 实际的 turn 数与该 turn 的卡片数(或命令数)——不猜相邻卡片
- * (docs/feature/reports/show/execution.md「卡片预览预算与 --expand」)。
+ * (docs/feature/reports/README.md「卡片预览预算与 --expand」)。
  */
 function renderExpand(
   evidence: ConversationResult,
@@ -984,7 +984,7 @@ function renderExpand(
   throw new Error(`invalid handle "${handle}": expected "t<turn>.c<card>" or "cmd<n>".`);
 }
 
-/** `--execution` 的渲染选项(docs/feature/reports/show/execution.md):两者互斥,`expand` 优先——
+/** `--execution` 的渲染选项(docs/feature/reports/README.md):两者互斥,`expand` 优先——
  *  校验层面的「--expand 与 --grep 不能组合」不是这里的职责,这里按存在性直接分支。 */
 export interface ExecutionRenderOptions {
   /** JS 正则;有值时只输出命中的卡片,每卡带定位行。 */
@@ -1038,7 +1038,7 @@ export function executionText(
   const agentNodes = tree ? tree.nodes.filter((node) => node.kind !== "telemetry") : [];
   const telemetryCount = tree ? tree.nodes.length - agentNodes.length : 0;
 
-  // 按轮分段(见 docs/feature/reports/show.md「--execution」):边界按用户消息切
+  // 按轮分段(见 docs/feature/reports/README.md「--execution」):边界按用户消息切
   // (t.send 恒以用户消息开轮),turn 身份取自 result.json.phases 的 turn 时间树。
   const turnNodes = evidence.phases
     .flatMap((p) => p.children ?? [])
@@ -1068,7 +1068,7 @@ export function executionText(
 
 /**
  * `--diff` 摘要与 `--diff=<path>` 的逐窗口 patch 都读 attemptDiffData 这一份投影
- * (docs/feature/reports/show/diff.md),渲染函数与 DiffView 的 text 面同一个,不另算一遍。
+ * (docs/feature/reports/README.md),渲染函数与 DiffView 的 text 面同一个,不另算一遍。
  */
 export function diffText(opts: {
   header: string;
@@ -1344,7 +1344,7 @@ function diagnosticTimingLines(
 }
 
 /**
- * `--timing`:整个 attempt 的统一时间树(见 docs/feature/reports/show.md)。先按
+ * `--timing`:整个 attempt 的统一时间树(见 docs/feature/reports/README.md)。先按
  * `result.json.phases` 输出 runner 生命周期,再展开 hook / 命令 / turn;turn 带 traceId 时
  * 从 trace.json 挂接 agent/model/tool spans。缩进表达包含关系,子项不能求和后与父项比较。
  */
@@ -1407,7 +1407,7 @@ export function timingText(
 }
 
 /**
- * `--timing` 不带 attempt locator 时的 Run 级 activity 树(docs/feature/reports/show/timing.md
+ * `--timing` 不带 attempt locator 时的 Run 级 activity 树(docs/feature/reports/README.md
  * 「Run 级 activity 的读取」)。与 attempt 树共用预算 / 失败 / 时序投影;`sandboxBuilds`
  * 专用卡从 provenance 读 locator/inputs/依赖 attempt,不解析 timing label。
  */

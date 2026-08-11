@@ -1,161 +1,79 @@
 ---
-title: "NiceEval runner 如何调度和执行评估用例"
+title: "Runner 如何执行评估"
 sidebarTitle: "运行器"
-description: "NiceEval runner 发现评估用例，用有界并发调度，缓存结果，重试脆弱基础设施，并执行预算保护。"
+description: "了解 Runner 怎样建立 Run、选择执行或采用 Attempt，并返回可供后续读取的 receipt。"
 ---
 
-Runner 是把评估用例文件变成一次实际运行的执行引擎。它负责发现、过滤、调度、缓存、attempt、reporters 和 artifact 输出。
+Runner 把选中的 Experiment 和 Eval 排成一次 Invocation。它在当前进程中安排执行、显示进度，并把停稳后的业务事实写入 Record。
 
-## 发现
+## Invocation、Run 与 Attempt
 
-runner 会读取 `evals/` 下的：
+一次 Invocation 有一个 `invocationId`。每个选中的 Experiment 建立一个 Run；Run 的 expected slots 决定本次分母。
 
-- `*.eval.ts` 文件
-- 导出评估用例数组的测试集文件
+每个 slot 最多有一个 Member：
 
-```bash
-npx niceeval list
+- `executed`：Runner 实际执行了 Attempt。
+- `carried`：规划器采用了已有 Attempt。
+- `accepted`：操作者显式采用了已有 Attempt。
+
+Attempt 保留自己的 `origin`，即实际执行它的 Run 与 slot。`carried` 和 `accepted` 只引用 Attempt，不复制它的 Verdict、Usage、事件或其他业务值。
+
+## 执行前的规划
+
+`niceeval exp --dry` 在停稳的 Record 上列出每个 slot 的计划。它会读取规划所需的 Verdict 与 Eligibility，决定是执行还是采用已有 Attempt。
+
+```sh
+npx niceeval exp checkout --dry
 ```
 
-`list` 只发现和打印 ID，不执行评估用例。
+carry 只在终态、输入身份、超时和 `--rerun` 条件都合适时发生。身份是带 domain 的不透明值，只有 domain 相同的值才比较。理由、资格和当时的输入信息写入目标 Run 的 `niceeval.actions` 通道。
 
-发现按文件路径的字典序排，所以文件名前缀就能定顺序：`01-`、`02-` 这样命名的文件，发现顺序就是 01、02。数字前缀要补齐位数——字典序不识别数字大小，`10-` 会排在 `2-` 前面。
+规划完成后，Runner 才启动需要执行的 Attempt。详情见[重跑与沿用](/zh/tutorials/rerun-and-cache)。
 
-## 过滤
+## 当前进程反馈
 
-`exp` 命令中,实验名之后的位置参数是评估用例 ID 前缀：
+运行时的进度、活动 Attempt 和短诊断只服务当前进程。终端可以显示它们，`--json` 也会输出相同的机器可读反馈。
 
-```bash
-npx niceeval exp local
-npx niceeval exp local weather
-npx niceeval exp local fixtures/button
+```sh
+npx niceeval exp checkout --json
 ```
 
-不要把 agent 名放进位置参数。agent/model/flags 写进 experiment。
+`exp --json` 输出 NDJSON。progress 与 diagnostic 行描述当前 Invocation；它们不是 Record 的解码格式。最后恰好一行是轻量 `InvocationReceipt`：
 
-## 并发
-
-```bash
-npx niceeval exp local --max-concurrency 8
+```json
+{
+  "type": "receipt",
+  "receipt": {
+    "invocationId": "01J8ZK3M6P4T7V9X2C5N8QW0RY",
+    "runIds": ["01J9ZK3M6P4T7V9X2C5N8QW0RY"],
+    "startedAt": "2026-08-09T10:00:00.000Z",
+    "completedAt": "2026-08-09T10:01:00.000Z",
+    "completion": "completed"
+  }
+}
 ```
 
-远程 HTTP agent 可以用更高并发。本地 Docker Sandbox 通常需要更低并发，避免 CPU、内存和磁盘竞争。
-
-把跑得慢的实验和跑得快的实验混在一次命令里跑是安全的：并发名额优先给「要跑最多轮才能跑完」的实验（比如 `maxConcurrency: 1` 又有几十个 Attempt 的那个），快的实验见缝插针补空位。慢实验有一段 `setup`（起隧道、起共享服务）时也一样——它等 `setup` 的这段时间不占名额，别的实验照常跑，`setup` 一好它就拿下一个空出来的名额，不用为它单开一次命令。
-
-两级并发限制怎么配、共享状态怎么串行、执行顺序怎么固定，见[并发与执行顺序](/zh/tutorials/concurrency)。
-
-### 执行顺序
-
-结果永远按发现顺序输出，跟这次开了多大并发无关，所以终端里的行序和报告里的行序是稳定的、可以直接 diff。只希望读起来有序的话到这里就够了，不用动并发。
-
-实际的执行顺序是另一回事：并发大于 1 时，谁先开跑不做承诺。名额优先给要跑最多轮才能跑完的实验，拿到名额之后创建 Sandbox、跑各层 `setup` 的快慢也各不相同。
-
-需要「前一条评估用例跑完再跑下一条」——比如后一条要用到前一条写进记忆库的内容——把该实验的 `maxConcurrency` 设成 1，并且同一个实验只开一个终端跑。这时执行顺序就是发现顺序。`attempts` 大于 1 时按轮次跑：这批评估用例各跑一遍算一轮，跑完再开下一轮，同一条评估用例的多次 Attempt 不连在一起。多开终端时两边各有一条串行队列，合起来的先后就不按命名了。
-
-还要注意结果沿用：上一次已经判定的评估用例这次直接复用、不再执行，它写进去的状态也就不会重新产生。顺序依赖这份状态时，用 `--rerun all` 从头跑。
-
-## attempts 与首过即停
-
-```bash
-npx niceeval exp local fixtures/button --attempts 5
-npx niceeval exp local fixtures/button --attempts 5 --early-exit
-```
-
-`attempts` 用于测 pass rate，默认跑满 `attempts` 次，给出完整的通过率分布。首过即停默认关闭。只想知道"这题能不能过"、不在乎完整分布时，用 `--early-exit` 打开——某个 Attempt 通过后，同一 eval 的剩余 Attempt 会被停止。
-
-`attempts` 的多次 Attempt 默认并发派发，并发上限由 `--max-concurrency`（或该实验的 `maxConcurrency`）决定——不会等上一次的结果出来再决定要不要派发下一次。首过即停能省下的，只是还没抢到并发名额、原本要排队的那些 Attempt。已经在跑的不受影响。想要"跑一次，过了就停、没过才跑下一次"这种一个接一个的效果，把该实验的 `maxConcurrency` 设成 1 并开启 `earlyExit`：并发名额只有一个时，同一个 eval 的 Attempt 只能排队依次跑，首过即停自然就能在下一次派发前生效。
-
-## 缓存
-
-[NiceEval](https://niceeval.com/) 按 fingerprint 跳过已判定为 `passed` 或 `failed` 的结果——两者都是判定确定的终态。`errored`（超时、Sandbox 异常等框架/环境层面的不确定失败）永远重试。
-
-fingerprint 由两部分组成：
-
-- **评估用例的源码**：`.eval.ts` 文件本身，加上它 import 的项目内模块，以及用 `loadYaml` / `loadJson` / `loadText` 读进来的数据文件。隐藏测试脚本、参考实现这类判据文件用 `loadText` 读入，改动同样触发重跑。用 `fs` 自己读的文件不在 fingerprint 里。loader 要写在模块顶层——缓存判断发生在运行之前，写进 `test(t)` 里会直接报错。断言抽在公共辅助函数里时，改那个辅助函数会让引用它的评估用例全部重跑。
-- **运行配置**：实验 ID、Agent、model、flags、Sandbox，以及 `Judge` 的模型与端点。超时上限不在里面——它决定等不等得到，不决定跑出来的结果是什么。
-
-被测程序自己的源码、Agent CLI 的版本、Sandbox 镜像的内容都不在 fingerprint 里。改了这些要复验，用 `--rerun`（只重跑失败项）或 `--rerun all`（全部重跑）。调试非确定性行为时同样用 `--rerun all`。
-
-哪一处改动作废哪些结果、`--rerun` 三档各采信什么，逐场景的对照见[重跑与沿用](/zh/tutorials/rerun-and-cache)。
-
-## 并行开多个终端
-
-想同时跑几个 Experiment，直接开几个终端各跑各的。一场大实验嫌慢，就再开一个终端跑同一条命令，两边会自动分工：
-
-```bash
-# 各跑各的：两个实验并行
-npx niceeval exp compare/codex     # 终端 1
-npx niceeval exp compare/claude    # 终端 2
-
-# 给同一场实验加速：同一条命令再跑一遍
-npx niceeval exp compare/bub       # 终端 1
-npx niceeval exp compare/bub       # 终端 2
-```
-
-每次运行写自己的结果快照目录，互不覆盖。就算两条命令选中了同一批评估用例，NiceEval 也不会把任何一条跑两遍：每条评估用例开跑前会在 `.niceeval/locks/` 下拿一把带心跳的锁，锁是跑到哪条拿哪条，不会一口气把整批占住。
-
-另一次运行撞到锁，就先去跑还没人认领的评估用例——所以同一条命令开两个终端就是加速：两边自动认领不同的评估用例，各按自己的 `--max-concurrency` 推进，总吞吐接近两边之和。撞锁的评估用例在 live 面板上单独计成 `elsewhere`（别人在运行），并显示一行 `waiting on another run` 说明在等谁。
-
-对方跑完、锁一放开，等待方接着往下走。每条评估用例拿到锁的那一刻，都会按缓存规则再看一眼它当前的结果：另一次运行已经跑完落盘的直接复用，还缺的 Attempt 才自己跑。所以不管两个终端的快慢怎么错开，两边最后都拿到完整结果，每条评估用例只花一份钱。
-
-锁不会合并两边的并发名额：两个终端各有自己的 `--max-concurrency` 和实验 `maxConcurrency`，Sandbox Provider 和模型接口承受的是两边之和，配额紧张时把两边都调低一点。需要保护同一 checkpoint 时，用实验的 `sharedState.key` 串行完整恢复和回存窗口。
-
-某次运行被 `kill -9` 或断电杀掉时，它留下的锁不会卡住后来者：心跳停止 30 秒后，下一次运行会自动接管这把锁照常跑。`.niceeval/locks/` 不需要手工清理。
-
-## Turn 瞬时错误重试
-
-限流、连接建立失败这类瞬时错误，NiceEval 会在同一个 Turn 里自动做有限次数的指数退避重试，不需要你重跑整个实验。等待重试的 Attempt 会把全局并发名额让给别的 Attempt，但实验自己的 `maxConcurrency` 名额不让——声明了 `maxConcurrency: 1` 的串行实验在退避期间也不会有第二个 Attempt 提前进场。只有能确认 Agent 还没开始处理这次输入的错误才会重试——请求已经开始、中途断流的情况不重试，直接记为 `errored`，避免 Agent 把已经做过的操作再做一遍。重试用尽仍失败时，该 Attempt 记为 `errored`，下次运行照常重试（见上面的缓存规则）。
-
-## 声明失败的波及范围
-
-有些失败你第一次看到就知道不止这一次：整个 Experiment 共享的服务死了，每条评估用例都会同样死。某条评估用例的 fixture 文件缺失，`attempts: 5` 五次都会同样死。不声明的话，NiceEval 只能一条条撞——每个 Attempt 各自创建 Sandbox、各自失败，同一个死因烧几十遍。把你知道的告诉它，第一次撞上就停：
-
-```ts
-import { ExperimentFatalError } from "niceeval";
-
-// 在 setup 或校验代码里抛出:这个 Experiment 还没跑的 Attempt 全部停止派发
-throw new ExperimentFatalError("记忆服务探活失败——修好隧道、更新 .env 后重跑");
-```
-
-只影响一条评估用例的死因（fixture 缺失）抛 `EvalFatalError`，只停这一条的剩余 Attempt，别的评估用例照常跑。错误 message 会原样出现在终端通知和结果快照里，写成「现象 + 下一步」，就是留给修的人的字条。服务在 run 中途死掉、失败以连接错误的形态冒出来时，给 Experiment 配 `classifyFailure`，只认自己共享服务的 host 来识别它。
-
-停下来的 Attempt 计入 `unstarted`，这次运行的结论是 `incomplete`，不会伪装成全绿。同批其它 Experiment 不受影响。修好环境后重跑同一条命令就是续跑：已通过的照常复用，只补跑死掉与没跑的部分，没有任何标记要解除。只声明你能确定的死因——「看起来像基建问题」不算确定。拿不准就让它落成单条 Attempt 的失败，多烧的是一个 Sandbox 的钱，错停的是整批数据。
-
-## 超时和预算
-
-```bash
-npx niceeval exp local --timeout 300000 --budget 5
-```
-
-超时保护单个评估用例，预算保护整次运行成本。NiceEval 只有在 Attempt 已经发起 Agent Turn、却连续拿不到成本数据时，才提示预算无法执行。如果 Attempt 在 `sandbox.create` 或 setup 阶段就失败，Agent 尚未运行，CLI 只显示对应的结构化执行错误，不再追加容易误导排查方向的预算警告。
+receipt 只说明本次调用的身份、Run、时间与完成状态。需要 Verdict、Usage、诊断或报告聚合时，用其中的 `runIds` 重新读取停稳的 Record。
 
 ## Reporter
 
-运行中的反馈只有两种形态，Reporter 是另一层，负责把运行结束后的结果写到其它目的地：
+Reporter 只接入当前 Invocation。它可以把当前进程已知的结果交给外部系统；`--junit` 也会写出供 CI 平台读取的文件。
 
-```bash
-npx niceeval exp local          # 人读文本：TTY 下原地刷新 live 面板，非 TTY（管道、CI 日志）自动降级成只追加的文本流
-npx niceeval exp local --json   # 机器面：stdout 一行一个 JSON 对象，start 打头、result 收尾
+这些输出不拥有 Record。Verdict、Usage、断言与诊断仍由停稳 Record 的具名通道保存。需要在后续步骤查看完整结果时，使用 receipt 的 `runIds` 选择 Sample，再运行 `show`、`view` 或 `view --out`。
+
+## 停稳后查看
+
+Runner 结束后，用明确 Run 选择查看结果：
+
+```sh
+npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
+npx niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --no-open
 ```
 
-`--json` 不逐条打印每次状态变化：只有失败、错误和去重后的 warning 立即追加一行，长时间没有这些事件才补一条 `progress` 心跳。两种形态读取同一套事实，调度、判定和 artifact 完全一致，只是呈现不同。
+`show` 和 `view` 都先投影 `AnalysisSample`，再形成固定的 `ReportInput`。如果用户修改停稳 Record，结束查看命令后再次执行，新的调用会读取修改后的值。
 
-Runner 在评估用例完成后把结果交给 Reporters：
+## 结束状态
 
-- JSON artifacts 用于后续分析。
-- JUnit reporter 适合 CI。
-- Braintrust reporter 把一次运行作为实验上报，跨提交比较。
+进程退出状态反映这次 Runner 已知的 Verdict、执行错误和 Invocation completion。CI 可以用退出状态决定是否通过；机器调用方可以读取最后的 receipt，再用 `runIds` 选择要显示或导出的结果。
 
-挂载方式和 Braintrust 配置见 [Reporter 上报](/zh/tutorials/reporters)。
-
-## 输出目录
-
-每次运行会写入该实验的结果快照目录 `.niceeval/<experiment>/<快照>/`。目录包含快照级 `snapshot.json`。每个 Attempt 的 `result.json`（判定、断言、结构化错误、diagnostics）和按需生成的 `events.json`、`sources.json`、`trace.json`、`o11y.json`、`diff.json` 等拆分 artifact。瞬时 progress 不落盘。
-
-## 推荐调试流程
-
-1. 先跑 `npx niceeval list` 确认发现结果。
-2. 用 `npx niceeval exp <实验> <ID 前缀>` 缩小到一个 eval。
-3. 失败后复制终端里的 locator，先运行 `npx niceeval show @<locator>` 看错误或断言摘要。需要 Agent 行为时再加 `--execution`，需要文件变化时加 `--diff`。
-4. 再扩大到完整 suite 或 experiment。
+没有建立 Invocation 的输入错误没有 receipt。此时先修正命令、Experiment 或选择条件，再重新运行。
