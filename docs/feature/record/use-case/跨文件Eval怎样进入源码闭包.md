@@ -15,7 +15,7 @@ export default defineEval({
 
 这条 Eval 的源码闭包同时包含 `evals/login.eval.ts` 与 `helpers/grade-login.ts`。共享评分函数改变时，所有静态依赖它的 Eval 都形成新的源码闭包 identity。
 
-Run 发布 `niceeval.sources/v1` 时保存闭包内源码的 manifest、digest 与 Channel-local bytes。Report 从 Attempt 的 origin Run 查看当时内容，不读取后来修改过的评分函数。
+Run 发布 `niceeval.sources/v1` 时保存闭包内源码的 manifest、digest 与 RecordAttachment-local bytes。Report 从 Attempt 的 origin Run 查看当时内容，不读取后来修改过的评分函数。
 
 ## 通过 loader 读取的数据
 
@@ -33,7 +33,7 @@ computed `import()`、直接 `fs.readFile()` 和运行时拼出的路径不由�
 
 需要发现期数据时使用 NiceEval loaders。Sandbox 运行中实际上传的本地文件写入 transfer manifest，并遵守自己的动态 identity 契约。
 
-外部 package 的安装与 resolution identity 不由 sources Channel 自行猜测。它属于 input、behavior 与 reuse identity 边界；版本文本不能由本用例提升为源码 bytes 证明。
+外部 package 的安装与 resolution identity 不由 Sources RecordAttachment 自行猜测。它属于 input、behavior 与 reuse identity 边界；版本文本不能由本用例提升为源码 bytes 证明。
 
 ## 两个用途保持分层
 

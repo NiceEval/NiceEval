@@ -23,26 +23,26 @@ Run R2 / Member
   → R1 / niceeval.sources/v1
 ```
 
-R2 采用 A1 时只保存精确 Attempt reference，不复制 A1 或 R1 的 Channel。source viewer 沿 A1 的 origin Run 读取，不能改读 R2 或当前 worktree。
+R2 采用 A1 时只保存精确 Attempt reference，不复制 A1 或 R1 的 RecordAttachment。source viewer 沿 A1 的 origin Run 读取，不能改读 R2 或当前 worktree。
 
 origin Run 只进入 reader 的 dependency closure，不因此进入 Sample 分母。十个 slot 指向同一个 origin Run 时仍是十条逻辑访问，宿主可以按 owner 与 projector token 去重一次物理 projection。
 
 ## SHA-256 不替代源码 bytes
 
-sources Channel 使用 manifest 与 Run-local SHA-256 blobs。digest 用于确认内容身份、验证 closure，并把 Assertion source location 连接到当时的源码。
+Sources RecordAttachment 使用 manifest 与 Run-local SHA-256 blobs。digest 属于 Sources 领域契约，用于确认内容身份并把 Assertion source location 连接到当时的源码；Run 完成标识本身不保存 hash。
 
 Record 仍保存实际 source bytes。只保存 hash 会让离线 Report 无法展示源码，也无法证明一个外部同名文件就是当时内容。
 
 ## 跨 Run 不建立 blob 引用
 
-两个 Run 各自产生新的 Attempt 时，即使源码 bytes 和 digest 相同，每个 sources Channel 仍拥有自己的 closure。
+两个 Run 各自产生新的 Attempt 时，即使源码 bytes 和 digest 相同，每个 Sources RecordAttachment 仍拥有自己的 closure。
 
-Channel blob ref 只能指向同一 Channel directory 的 `blobs/**`。跨 Run 或跨 Channel 的全局 blob pool 会改变 owner、portable closure 与路径公理，不能作为 sources payload 的普通 schema 演进。
+RecordAttachment blob ref 只能指向同一 RecordAttachment directory 的 `blobs/**`。跨 Run 或跨 RecordAttachment 的全局 blob pool 会改变 owner、portable closure 与路径公理，不能作为 Sources payload 的普通 schema 演进。
 
 本用例不声明 sources entries 与 expected Eval 的集合等式，也不推断一个全-reference Run 必须保存哪些当前源码。可依赖的读取规则只有一条：Attempt 的历史源码始终由它的 origin Run 拥有。
 
 ## 相关阅读
 
-- [Attempt origin 与 reference](../architecture.md#core-v1-精确形状)
-- [Run Channel](../../../observability.md#run-通道)
+- [Attempt origin 与 reference](../architecture.md#core-v1)
+- [Run RecordAttachment](../../../observability.md)
 - [Attempt source location](../../assertions/architecture.md#source-位置)

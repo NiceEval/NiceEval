@@ -4,10 +4,9 @@
 
 | 主题 | 一手资料 |
 |---|---|
-| JSONL 的逐行数据约定 | [JSON Lines](https://jsonlines.org/) |
 | UTC 时间文本 | [RFC 3339](https://www.rfc-editor.org/rfc/rfc3339) |
 | Crockford Base32 | [Crockford Base32](https://www.crockford.com/base32.html) |
-| 同文件系统目录改名 | [POSIX rename](https://pubs.opengroup.org/onlinepubs/9699919799/functions/rename.html) |
+| Git 工作树状态 | [git status](https://git-scm.com/docs/git-status) |
 | 文件系统路径安全 | [OWASP Path Traversal](https://owasp.org/www-community/attacks/Path_Traversal) |
 
 这些资料不替代本功能的字段、错误或兼容性定义。
