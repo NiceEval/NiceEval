@@ -1,61 +1,65 @@
-# Sample：投影既有事实形成分析范围
+# Sample：从已发布 Run 形成分析分母
 
-[Record](../record/README.md) 保存 immutable Run 事实。Sample 功能提供具名 analysis projector，从一个 frozen `RecordReader` 中选择既有 Run，形成 Reports 和脚本可以继续组合的 core-only `AnalysisSample`。
-
-`AnalysisSample` 不写回 Record，也不是持久化文件。再次执行 projector 时，它按同一公开契约重新读取 Record 当时的核心身份、membership 和引用。业务通道等 ReportPlan 形成后才按需读取。
-
-## 分析与执行是两条投影
+[Record](../record/README.md) 保存 immutable Run。Analysis selection 从 frozen `RecordReader` 选择 Run，形成 Scope-bound `AnalysisSampleHandle`；其中的 `.sample` 是可以离线消费的纯 `AnalysisSample`。
 
 ```text
-RecordReader ── explicit-runs / latest analysis projector ──→ AnalysisSample ──→ Reports
-
-RecordWriteSession.view ── project-target execution projector ──→ ExecutionProjection ──→ planner
+AnalysisSelectionRequest + RecordReader
+                  │
+                  ▼
+           AnalysisSampleHandle
+             │             │
+             │ live        └─ .sample：关闭 reader 后仍可显示的纯值
+             ▼
+       Record Projection
 ```
 
-`AnalysisSample` 只表达既有 Run 的分析分母。分析样本状态是 `included | not-recorded | invalid | excluded`。`ExecutionProjection` 属于 [Experiments](../experiments/cache.md)，只表达当前 ExecutionTarget 的 `reuse | gap`。
+`AnalysisSample` 不写回 Record。它保存 selected Run、完整 expected SlotId 分母、Member/Attempt 精确引用及 included、not-recorded、core-invalid、excluded 四态。
 
-两者可以在实现内部复用 Attempt 读取，但不共享一个公开 slot 联合。Reports 不能接收 execution gap，planner 也不能把历史 Run 的 `not-recorded` 当作待执行任务。
+## Selection 与 reuse planning 分开
 
-## 具名 analysis projector
+Analysis selection 回答“分析哪些已发布 Run”。reuse planning 回答“当前 ExecutionTarget 的哪些 Slot 可以沿用，哪些是 gap”。
 
-Sample 提供两种内建 analysis projector：
+```text
+RecordReader ── analysis selection ──→ AnalysisSampleHandle
 
-- `explicit-runs/v1`：按调用方给出的 `runIds` 精确选择历史 Run；
-- `latest/v1`：按具名 latest policy 为每个目标 Experiment 选择最后完成的 Run。
+RecordWriteSession.view ── reuse planning ──→ ExecutionReusePlan
+```
 
-`latest` 不是 Record 的 currentness，也不是 `AnalysisSample` 自带的隐含语义。它只是可替换、可具名的一种分析算法。调用方还可以实现其它 analysis projector，只要输出同一个公开 `AnalysisSample` 形状和稳定 provenance。
+Report 不接收 execution gap，planner 也不把历史 Sample 的 not-recorded 当成待执行任务。
+
+## 内建 selection
+
+- `explicit-runs/v1`：精确选择调用方给出的 RunId；
+- `latest-runs/v1`：使用 Run-owned Evaluation/Provenance Attachment，为目标 Experiment 选择最后完成的 Run。
+
+Core 不保存 ExperimentId，因此 latest 所需业务分组来自 typed Attachment，而不是偷偷扩张 RunDocument。旧 Attachment 需要 migration 时，latest 返回具名 selection error；explicit selection 和其它 Core 读取仍可运行。
+
+复杂自定义策略可以用 Record/Projection API 计算 RunId，再调用 explicit selection。v1 不公开一个可以绕过 Library 分母构造规则的 Sample builder。
 
 ## Frozen 读取
 
-carried 与 accepted Member 保留源 Attempt 引用。reader 沿已选 Member 冻结 dependency closure；origin Run 不进入 latest candidates 或分母。源 Attempt 因外部损坏而缺失时，该 slot 是 `invalid`，不是 `not-recorded`。
+reference Member 保留源 Attempt 引用。origin Run 进入 dependency closure，但不因此进入 selected Runs 或分析分母。
 
-一次 projection 不会自动看见并发刚发布的 Run。重新打开 reader 后，新 projection 可以得到新的 candidateSet；已经形成的 `AnalysisSample` 仍是普通内存值。
+一次 selection 不会自动看见并发刚完成的 Run。重新打开 reader 后才能得到新 snapshot。未完成 Run 从未进入 reader candidates，因此不会出现在 Sample。
 
-`AnalysisSample` 不读取业务通道。一个通道 unknown、retired、缺失或损坏，不会让整个 slot 自动变成 `invalid`；slot 的 `invalid` 只描述核心 membership、identity 与引用错误。ReportPlan 形成后，composition adapter 才把被请求通道的 `ChannelRead` 放进 ReportInput。
+RecordAttachment missing、migration-required、unsupported、invalid 或 partial 不自动改变 Slot 的 Core state。Projection 使用仍存活的 `AnalysisSampleHandle` 按需读取 Attachment；pure `.sample` 不能重新打开 I/O。
 
 ## 范围
 
 Sample 包含：
 
-- analysis projector 的公开输入、输出和错误；
-- expected-slot 完整分母；
-- included、not-recorded、invalid、excluded 四态；
-- 对既有 `AnalysisSample` 的纯内存收窄；
-- projector identity 与安全归一化输入形成的 projection provenance。
+- explicit/latest selection；
+- expected SlotId 完整分母；
+- included、not-recorded、core-invalid、excluded 四态；
+- pure narrowing；
+- pure `AnalysisSample` 与 live `AnalysisSampleHandle` 的能力边界。
 
-Sample 不包含：
-
-- 当前 Project Target 的复用资格或 execution gap；
-- planner、scheduler、writer 或补执行策略；
-- 可持久化的 Sample 包；
-- 业务通道读取或 Report 计算；
-- 跨 Record 隐含合并；
-- reader、文件句柄、路径或延迟查询。
+Sample 不包含 reuse planning、writer、业务 Calculation、Report 页面或可持久化 Sample 文件。
 
 ## 入口
 
-- [Library](library.md) —— analysis projector、`AnalysisSample` 形状和构造入口。
-- [局部执行后的分析](use-case/partial-rerun.md) —— executed、carried 与 accepted 怎样作为既有事实进入同一分母。
-- [收窄样本](use-case/收窄样本.md) —— 怎样从既有 `AnalysisSample` 排除不需要的成员。
-- [Experiments execution projection](../experiments/cache.md) —— 当前目标怎样形成 reuse 与 gap。
-- [Reports](../reports/README.md) —— 怎样呈现和导出 `AnalysisSample`。
+- [Library](library.md) —— selection、handle、Sample shape 与 narrowing。
+- [局部执行后的分析](use-case/partial-rerun.md) —— origin/reference 怎样进入同一分母。
+- [收窄样本](use-case/收窄样本.md) —— 怎样显式排除成员。
+- [Projection](../projection/README.md) —— 怎样读取 selected owner 的 RecordAttachment。
+- [Reuse planning](../experiments/cache.md) —— 当前目标怎样形成 reuse 与 gap。
