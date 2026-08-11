@@ -41,7 +41,7 @@ const browser = {
   name: "browser",
   command: "npx",
   args: ["-y", "@modelcontextprotocol/server-browser"],
-  env: { BROWSER_MODE: "headless" },
+  env: { BROWSER_AUTH_TOKEN: process.env.BROWSER_AUTH_TOKEN! },
 };
 
 const memory = {

@@ -34,8 +34,9 @@ export async function loadConfigFile(
   } catch (e) {
     // 全局 tsx hook 能装载 config.ts，但 Node ESM 在某些项目形态下会让它的静态
     // import 回落原生 loader；config 一旦 import 了 Report .tsx 就报
-    // ERR_UNKNOWN_FILE_EXTENSION。只对这个装载能力错误补一层 tsx hook
-    // 重试，用户模块自己抛错时不重放副作用。
+    // ERR_UNKNOWN_FILE_EXTENSION。只对普通一次性装载的能力错误补一层 tsx hook
+    // 重试，用户模块自己抛错时不重放副作用。fresh 装载不能退回 canonical URL：
+    // 它可能已被 view 启动时缓存，从而用上一代成功配置掩盖当前损坏。
     if (!options?.freshImport && needsAdditionalTsxLoader(e)) {
       const url = pathToFileURL(path).href;
       register();
@@ -43,15 +44,6 @@ export async function loadConfigFile(
       // config 图可能进入 CJS package，tsx 在 Node builtin URL 上传播 namespace query
       // 会把 node:util 误当文件读取。query 只击穿上一次失败的入口 cache。
       mod = (await import(`${url}?niceeval-config=${Date.now()}`)) as { default?: Config };
-    // 部分宿主不让 namespaced loader 接管 TypeScript 扩展名；只有这一类装载能力错误
-    // 才能退化普通 import。用户配置或它的 import 图自己抛错时必须保留原错误，不能用
-    // ESM cache 里的上一代成功模块把当前损坏悄悄吞掉。
-    } else if (options?.freshImport && needsAdditionalTsxLoader(e)) {
-      try {
-        mod = (await import(pathToFileURL(path).href)) as { default?: Config };
-      } catch {
-        throw e instanceof Error ? e : new Error(String(e));
-      }
     } else {
       throw e;
     }
