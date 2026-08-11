@@ -31,6 +31,9 @@ import {
   createAssertFirstEvalContext,
   type AssertFirstContextState,
 } from "../context/assert-first.ts";
+import {
+  AssertionAuthoringClosedErrorV1,
+} from "../assertions/api.ts";
 import type {
   AssertionStopErrorV1,
   AssertionsRuntimeV1,
@@ -492,11 +495,36 @@ export function runAttemptEffect(
       // (Ctrl+C 中断外层 Sample 时仍是 stop,照常清理)。是否可留存只读 physical plan
       // 的中性 retention 能力；不在 runner 里按 provider 名或旧声明结构分支。
       let disposition: "stop" | "keep" = "stop";
+      const assertFirst = createAssertFirstAttemptBridgeV1<unknown>();
+      // The bridge is the only Promise → Effect hand-off in this Attempt.
+      // It is forked into this Scope, so every requested evaluator or runner
+      // operation shares the Attempt cancellation and cannot outlive it.
+      yield* Effect.forkScoped(
+        Effect.forever(
+          Effect.tryPromise((requestSignal) => assertFirst.awaitEffectRequest(requestSignal)).pipe(
+            Effect.flatMap((request) => request.effect.pipe(
+              Effect.exit,
+              Effect.tap((completion) => Effect.sync(() => {
+                assertFirst.completeEffectRequest(
+                  request,
+                  Exit.isSuccess(completion)
+                    ? { _tag: "succeeded", value: completion.value }
+                    : { _tag: "failed", error: Cause.squash(completion.cause) },
+                );
+              })),
+            )),
+          ),
+        ).pipe(
+          Effect.catchAllCause((cause) =>
+            Cause.isInterruptedOnly(cause) ? Effect.interrupt : Effect.void,
+          ),
+        ),
+      );
       // 退避重试(runtime.ts → retry.ts)期间临时归还这个名额:被限流的 provider 只是在
       // setTimeout 里睡觉,不该攥着 sandboxSem 的槽位陪跑,不然一批 429 能把整体并发拖成个位数。
       const provisionSlot = {
-        release: () => Effect.runPromise(sandboxSem.release(1)).then(() => {}),
-        reacquire: () => Effect.runPromise(sandboxSem.take(1)).then(() => {}),
+        release: () => assertFirst.requestEffect(sandboxSem.release(1)).then(() => {}),
+        reacquire: () => assertFirst.requestEffect(sandboxSem.take(1)).then(() => {}),
       };
       // Sample release(receiver close + provider stop)整段计成 sandbox.stop:先加的 finalizer
       // 后跑(LIFO),所以「先加的」在 release 链末尾打终点戳、「后加的」在 release 开始前打起点戳;
@@ -762,7 +790,6 @@ export function runAttemptEffect(
         );
       }
 
-      const assertFirst = createAssertFirstAttemptBridgeV1<unknown>();
       // Scope release owns the interruption seal. It runs before resource
       // release, so entries already declared by the real Context survive a
       // timeout or external cancellation in declaration order.
@@ -789,6 +816,21 @@ export function runAttemptEffect(
             // malformed attachment is still reflected by the sealed runtime,
             // but cannot mask the owning Attempt's terminal cause.
             Effect.catchAllCause(() => Effect.void),
+          );
+        }),
+      );
+      // Close outstanding bridge promises before the interruption seal.  This
+      // makes a detached author continuation fail by name while preserving the
+      // already declared entries for the finalizer's declaration-order seal.
+      yield* Effect.addFinalizer((exit) =>
+        Effect.sync(() => {
+          const interrupted = timedOut || (
+            Exit.isFailure(exit) && Cause.isInterruptedOnly(exit.cause)
+          );
+          assertFirst.closeEffectRequests(
+            new AssertionAuthoringClosedErrorV1(
+              interrupted ? "attempt-interrupted" : "attempt-sealed",
+            ),
           );
         }),
       );
@@ -876,6 +918,15 @@ export function runAttemptEffect(
           : { _tag: "defect", cause: Option.isSome(defect) ? defect.value : authorExit.cause };
         yield* Effect.sync(() => assertFirst.completeAuthor(completion));
       }
+
+      // The declared author callback has returned. A detached continuation may
+      // still hold a handle, but it cannot enqueue a new control barrier while
+      // this Attempt moves to its single ordered seal.
+      yield* Effect.sync(() => {
+        assertFirst.closeAssertionRequests(
+          new AssertionAuthoringClosedErrorV1("attempt-sealing"),
+        );
+      });
 
       const sealRequestExit = yield* Effect.exit(Effect.tryPromise({
         try: () => assertFirst.awaitSealRequest(signal),
@@ -1462,7 +1513,7 @@ async function runAttemptBody(
         }
         enterPhase("agent.ensure");
         log(t("runner.startAgentEnsure"));
-        const verified = await Effect.runPromise(Effect.either(
+        const verified = await assertFirst.requestEffect(Effect.either(
           verifySandboxTargetPlatform(sandbox, a.plan.providerPlan.target.platform),
         ));
         if (Either.isLeft(verified)) throw verified.left;
@@ -1473,7 +1524,7 @@ async function runAttemptBody(
           signal,
           progress: feedback.progress,
         });
-        const ensured = await Effect.runPromise(Effect.either(ensureEffect));
+        const ensured = await assertFirst.requestEffect(Effect.either(ensureEffect));
         if (Either.isLeft(ensured)) throw ensured.left;
       }
 
@@ -1542,6 +1593,8 @@ async function runAttemptBody(
       reasoningEffort: run.reasoningEffort,
       flags: run.flags,
       experimentId: run.experimentId,
+      judge: a.judge,
+      executeStop: assertFirst.requestAssertion,
       signal,
       log,
       telemetry,

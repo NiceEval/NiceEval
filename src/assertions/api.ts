@@ -49,6 +49,36 @@ export interface AssertionStopErrorV1 {
     | "not-applicable";
 }
 
+/**
+ * A public authoring call reached an Attempt boundary which is no longer able
+ * to accept it.  Keeping this distinct from an evaluator failure lets a
+ * detached Promise diagnose its own lifecycle error instead of looking like a
+ * failed assertion.
+ */
+export class AssertionAuthoringClosedErrorV1 extends Error {
+  readonly _tag = "AssertionAuthoringClosedErrorV1";
+
+  constructor(
+    readonly reason:
+      | "stop-latched"
+      | "attempt-sealing"
+      | "attempt-sealed"
+      | "attempt-interrupted"
+      | "runtime-unattached",
+  ) {
+    super(`Cannot use an Assertion authoring handle after ${reason}`);
+    this.name = "AssertionAuthoringClosedErrorV1";
+  }
+}
+
+/**
+ * The owning Attempt executes a requested stop barrier in its existing Effect
+ * scope. Handles only enqueue this request; they never create a runtime.
+ */
+export type AssertionStopExecutorV1 = <Value>(
+  effect: Effect.Effect<Value, AssertionStopErrorV1, never>,
+) => Promise<Value>;
+
 /** A Boolean entry is evaluated once and may retain a refinement witness. */
 export type BooleanAssertionEvaluationV1<Refined> =
   | { readonly state: "matched"; readonly value: Refined }
@@ -72,7 +102,8 @@ export type MeasurementAssertionEvaluationV1 =
         | "source-unavailable"
         | "redacted";
     }
-  | { readonly state: "not-applicable" };
+  | { readonly state: "not-applicable" }
+  | { readonly state: "errored" };
 
 /** Snapshot-only material keeps this authoring runtime independent of Record blob authority. */
 export type AssertionSnapshotMaterialV1 = Extract<
@@ -117,7 +148,7 @@ export interface PassBooleanAssertionHandleV1<out Refined>
   /** An unavailable/errored optional entry does not independently error Verdict. */
   optional(): this;
   gate(): this;
-  orStop(): Effect.Effect<Refined, AssertionStopErrorV1>;
+  orStop(): Promise<Refined>;
 }
 
 export interface ScoreBooleanAssertionHandleV1<out Refined>
@@ -127,7 +158,7 @@ export interface ScoreBooleanAssertionHandleV1<out Refined>
   optional(): this;
   gate(): this;
   score(points: number): this;
-  orStop(): Effect.Effect<Refined, AssertionStopErrorV1>;
+  orStop(): Promise<Refined>;
 }
 
 export interface PassMeasurementAssertionHandleV1<
@@ -140,7 +171,7 @@ export interface PassMeasurementAssertionHandleV1<
   gate(this: PassMeasurementAssertionHandleV1<true>): this;
   orStop(
     this: PassMeasurementAssertionHandleV1<true>,
-  ): Effect.Effect<number, AssertionStopErrorV1>;
+  ): Promise<number>;
 }
 
 export interface ScoreMeasurementAssertionHandleV1<
@@ -154,7 +185,7 @@ export interface ScoreMeasurementAssertionHandleV1<
   score(points: number): this;
   orStop(
     this: ScoreMeasurementAssertionHandleV1<true>,
-  ): Effect.Effect<number, AssertionStopErrorV1>;
+  ): Promise<number>;
 }
 
 /** Direct score is an Assertion entry, but has no condition or stop barrier. */
@@ -164,13 +195,14 @@ export interface DirectScoreAssertionHandleV1 extends AssertionHandleBaseV1 {
 
 export interface AssertionGroupContextV1 {
   /**
-   * Runs the body with one display-only group segment. It is Effect-native so
-   * interruption always unwinds the group stack before later registrations.
+   * Runs an ordinary author callback with one display-only group segment. The
+   * callback remains inside the Attempt's outer Promise boundary; this facade
+   * does not evaluate an Effect or create an independent runtime.
    */
-  group<Value, Error>(
+  group<Value>(
     title: string,
-    body: () => Effect.Effect<Value, Error, never>,
-  ): Effect.Effect<Value, Error, never>;
+    body: () => Value | PromiseLike<Value>,
+  ): Promise<Awaited<Value>>;
 }
 
 export interface PassAssertionsContextV1 extends AssertionGroupContextV1 {

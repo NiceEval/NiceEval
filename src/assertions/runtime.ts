@@ -2,11 +2,13 @@ import { Cause, Deferred, Effect } from "effect";
 
 import {
   assertionHandleBrand,
+  AssertionAuthoringClosedErrorV1,
   type AssertionEvaluationKindV1,
   type AssertionSealErrorV1,
   type AssertionSealOptionsV1,
   type AssertionSnapshotMaterialV1,
   type AssertionStopErrorV1,
+  type AssertionStopExecutorV1,
   type AssertionsContextV1,
   type AssertionsRuntimeV1,
   type BooleanAssertionEvaluationV1,
@@ -95,7 +97,7 @@ interface AssertionEntry {
   pending: Deferred.Deferred<EntrySettlement> | undefined;
 }
 
-interface CapturedSnapshot {
+export interface CapturedAssertionSnapshotV1 {
   readonly material: AssertionSnapshotMaterialV1;
   readonly coverage: RecordAssertionCoverageV1;
   readonly limitations: readonly AssertionLimitationV1[];
@@ -304,7 +306,7 @@ function boundedSnapshotValue(
   return Object.freeze(Object.fromEntries(entries));
 }
 
-function captureSnapshot(value: unknown): CapturedSnapshot {
+export function captureAssertionSnapshotV1(value: unknown): CapturedAssertionSnapshotV1 {
   const state: SnapshotState = {
     truncated: false,
     omittedBytes: 0,
@@ -409,8 +411,8 @@ class BooleanHandle extends HandleBase {
     return this;
   }
 
-  orStop(): Effect.Effect<unknown, AssertionStopErrorV1> {
-    return this.runtime.stopBoolean(this.entry);
+  orStop(): Promise<unknown> {
+    return this.runtime.requestStopBoolean(this.entry);
   }
 }
 
@@ -437,8 +439,8 @@ class MeasurementHandle extends HandleBase {
     return this;
   }
 
-  orStop(): Effect.Effect<number, AssertionStopErrorV1> {
-    return this.runtime.stopMeasurement(this.entry);
+  orStop(): Promise<number> {
+    return this.runtime.requestStopMeasurement(this.entry);
   }
 }
 
@@ -454,7 +456,10 @@ class AssertionsRuntimeImplementation {
   private closing = false;
   private sealed: SealedAssertionsRuntimeV1 | undefined;
 
-  constructor(readonly evaluationKind: AssertionEvaluationKindV1) {
+  constructor(
+    readonly evaluationKind: AssertionEvaluationKindV1,
+    private readonly executeStop: AssertionStopExecutorV1,
+  ) {
     const base = {
       evaluationKind,
       check: this.check.bind(this),
@@ -481,7 +486,7 @@ class AssertionsRuntimeImplementation {
       throw new TypeError("t.check() cannot use an AssertionHandle as a subject");
     }
     const managed = assertManagedValueMatch(match, "t.check() match");
-    const captured = captureSnapshot(value);
+    const captured = captureAssertionSnapshotV1(value);
     if (managed.kind === "boolean") {
       const entry = this.createEntry({
         kind: "boolean",
@@ -560,7 +565,7 @@ class AssertionsRuntimeImplementation {
       throw new TypeError("t.score() is available only in a Score Eval");
     }
     assertFiniteNonNegative(points, "t.score() points");
-    const captured = captureSnapshot(points);
+    const captured = captureAssertionSnapshotV1(points);
     const entry = this.createEntry({
       kind: "direct-score",
       criterion: Object.freeze({
@@ -578,30 +583,26 @@ class AssertionsRuntimeImplementation {
     return new DirectScoreHandle(this, entry);
   }
 
-  withGroup<Value, Error>(
+  async withGroup<Value>(
     title: string,
-    body: () => Effect.Effect<Value, Error, never>,
-  ): Effect.Effect<Value, Error, never> {
-    return Effect.suspend(() => {
-      this.assertCanRegister();
-      assertDisplayText(title, "t.group() title");
-      if (this.groupStack.length >= MAX_ASSERTION_GROUP_DEPTH_V1) {
-        throw new Error(
-          `Assertion group depth cannot exceed ${MAX_ASSERTION_GROUP_DEPTH_V1}`,
-        );
-      }
-      return Effect.sync(() => {
-        this.groupStack.push(title);
-      }).pipe(
-        Effect.zipRight(Effect.suspend(body)),
-        Effect.ensuring(Effect.sync(() => {
-          const popped = this.groupStack.pop();
-          if (popped !== title) {
-            throw new Error("Assertion group stack lost nesting order");
-          }
-        })),
+    body: () => Value | PromiseLike<Value>,
+  ): Promise<Awaited<Value>> {
+    this.assertCanRegister();
+    assertDisplayText(title, "t.group() title");
+    if (this.groupStack.length >= MAX_ASSERTION_GROUP_DEPTH_V1) {
+      throw new Error(
+        `Assertion group depth cannot exceed ${MAX_ASSERTION_GROUP_DEPTH_V1}`,
       );
-    });
+    }
+    this.groupStack.push(title);
+    try {
+      return await body() as Awaited<Value>;
+    } finally {
+      const popped = this.groupStack.pop();
+      if (popped !== title) {
+        throw new Error("Assertion group stack lost nesting order");
+      }
+    }
   }
 
   configureKey(entry: AssertionEntry, value: string): void {
@@ -667,8 +668,33 @@ class AssertionsRuntimeImplementation {
     entry.scorePoints = points;
   }
 
-  stopBoolean(entry: AssertionEntry): Effect.Effect<unknown, AssertionStopErrorV1> {
-    return this.settle(entry).pipe(
+  requestStopBoolean(entry: AssertionEntry): Promise<unknown> {
+    return this.requestStop(this.stopBoolean(entry));
+  }
+
+  requestStopMeasurement(entry: AssertionEntry): Promise<number> {
+    return this.requestStop(this.stopMeasurement(entry));
+  }
+
+  private requestStop<Value>(
+    effect: Effect.Effect<Value, AssertionStopErrorV1, never>,
+  ): Promise<Value> {
+    if (this.stopped !== undefined) return Promise.reject(this.stopped);
+    if (this.sealed !== undefined) {
+      return Promise.reject(new AssertionAuthoringClosedErrorV1("attempt-sealed"));
+    }
+    if (this.closing) {
+      return Promise.reject(new AssertionAuthoringClosedErrorV1("attempt-sealing"));
+    }
+    try {
+      return this.executeStop(effect);
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  }
+
+  private stopBoolean(entry: AssertionEntry): Effect.Effect<unknown, AssertionStopErrorV1> {
+    return this.settleThrough(entry).pipe(
       Effect.flatMap((settlement) => {
         if (settlement.state === "matched") return Effect.succeed(settlement.value);
         return Effect.fail(this.latchStop(entry, settlement));
@@ -676,8 +702,8 @@ class AssertionsRuntimeImplementation {
     );
   }
 
-  stopMeasurement(entry: AssertionEntry): Effect.Effect<number, AssertionStopErrorV1> {
-    return this.settle(entry).pipe(
+  private stopMeasurement(entry: AssertionEntry): Effect.Effect<number, AssertionStopErrorV1> {
+    return this.settleThrough(entry).pipe(
       Effect.flatMap((settlement) => {
         if (
           settlement.state === "measured"
@@ -849,6 +875,8 @@ class AssertionsRuntimeImplementation {
         return Object.freeze({ state: "unavailable" as const, reason: evaluation.reason });
       case "not-applicable":
         return Object.freeze({ state: "not-applicable" as const });
+      case "errored":
+        return Object.freeze({ state: "errored" as const });
     }
   }
 
@@ -891,6 +919,24 @@ class AssertionsRuntimeImplementation {
         }),
       );
     });
+  }
+
+  /**
+   * A control barrier may force evaluation early, but it must not let a later
+   * Judge entry leapfrog an earlier declaration. `settle()` still memoizes the
+   * individual work, so the normal seal only observes these same results.
+   */
+  private settleThrough(entry: AssertionEntry): Effect.Effect<EntrySettlement> {
+    return Effect.forEach(
+      this.entries.slice(0, entry.index + 1),
+      (candidate) => this.settle(candidate),
+    ).pipe(
+      Effect.map((settlements) => {
+        const settlement = settlements.at(-1);
+        if (settlement === undefined) throw new Error("Assertion stop entry was not registered");
+        return settlement;
+      }),
+    );
   }
 
   private latchStop(
@@ -1083,10 +1129,13 @@ class AssertionsRuntimeImplementation {
 
   private assertCanRegister(): void {
     if (this.stopped !== undefined) {
-      throw new Error("Cannot register an Assertion after orStop() set the authoring stop latch");
+      throw new AssertionAuthoringClosedErrorV1("stop-latched");
     }
-    if (this.closing || this.sealed !== undefined) {
-      throw new Error("Cannot register an Assertion after the Attempt has sealed");
+    if (this.sealed !== undefined) {
+      throw new AssertionAuthoringClosedErrorV1("attempt-sealed");
+    }
+    if (this.closing) {
+      throw new AssertionAuthoringClosedErrorV1("attempt-sealing");
     }
   }
 
@@ -1101,16 +1150,22 @@ class AssertionsRuntimeImplementation {
 /** Creates one Attempt-local assert-first authoring runtime. */
 export function createAssertionsRuntimeV1(input: {
   readonly evaluationKind: "pass";
+  readonly executeStop?: AssertionStopExecutorV1;
 }): AssertionsRuntimeV1<"pass">;
 export function createAssertionsRuntimeV1(input: {
   readonly evaluationKind: "score";
+  readonly executeStop?: AssertionStopExecutorV1;
 }): AssertionsRuntimeV1<"score">;
 export function createAssertionsRuntimeV1(input: {
   readonly evaluationKind: AssertionEvaluationKindV1;
+  readonly executeStop?: AssertionStopExecutorV1;
 }): AssertionsRuntimeV1<AssertionEvaluationKindV1> {
   if (input.evaluationKind !== "pass" && input.evaluationKind !== "score") {
     throw new TypeError("Assertions runtime evaluationKind must be \"pass\" or \"score\"");
   }
-  const runtime = new AssertionsRuntimeImplementation(input.evaluationKind);
+  const executeStop = input.executeStop ?? (() =>
+    Promise.reject(new AssertionAuthoringClosedErrorV1("runtime-unattached"))
+  );
+  const runtime = new AssertionsRuntimeImplementation(input.evaluationKind, executeStop);
   return runtime as AssertionsRuntimeV1<AssertionEvaluationKindV1>;
 }

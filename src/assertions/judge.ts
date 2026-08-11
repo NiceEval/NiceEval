@@ -2,6 +2,7 @@
 // ScoreFact; assert/require/score decide how that Fact is consumed.
 
 import { ClosedQA, Factuality, Summary } from "autoevals";
+import { Effect } from "effect";
 import OpenAI from "openai";
 
 import {
@@ -9,6 +10,7 @@ import {
   type ScoreFactEvaluation,
 } from "./collector.ts";
 import { summaryText } from "./display.ts";
+import type { MeasurementAssertionEvaluationV1 } from "./api.ts";
 import type { JudgeMaterial, ResolvedJudgeConfig, ScoreFact } from "./types.ts";
 import type { JudgeNamespace, TurnJudgeNamespace } from "../context/types.ts";
 import { getEnv } from "../util.ts";
@@ -27,7 +29,7 @@ export interface JudgeDeps {
   readonly random?: () => number;
 }
 
-type Recipe = "closedQA" | "factuality" | "summarizes";
+export type JudgeRecipeV1 = "closedQA" | "factuality" | "summarizes";
 type AutoevalResult = { score?: number | null; metadata?: Record<string, unknown> };
 
 function errorSummary(error: unknown): string {
@@ -138,7 +140,7 @@ function formatSeconds(ms: number): string {
   return `${Number.isInteger(seconds) ? seconds : seconds.toFixed(1)}s`;
 }
 
-function checkSummary(kind: Recipe, reference: string): string {
+function checkSummary(kind: JudgeRecipeV1, reference: string): string {
   const flat = reference.replace(/\s+/g, " ").trim();
   const short = flat.length > 80 ? `${flat.slice(0, 80)}…` : flat;
   return `${kind}(${JSON.stringify(short)})`;
@@ -177,7 +179,7 @@ function bridgeAutoevalClient(client: OpenAI): { readonly client: AutoevalOpenAI
   return { client };
 }
 
-function assertMaterial(material: JudgeMaterial): JudgeMaterial {
+export function freezeJudgeMaterialV1(material: JudgeMaterial): JudgeMaterial {
   if (typeof material !== "object" || material === null || typeof material.input !== "string" || typeof material.output !== "string") {
     throw new TypeError("t.judge requires material { input: string, output: string }");
   }
@@ -249,86 +251,151 @@ function evaluatorError(code: string, message: string): ScoreFactEvaluation {
   return { outcome: "errored", error: { class: "evaluator", code, message } };
 }
 
-function createRecipe(deps: JudgeDeps, recipe: Recipe, reference: string, material: JudgeMaterial): ScoreFact<"now"> {
-  const resolved = deps.judge;
-  if (resolved === undefined) {
-    throw new Error("Judge Fact requires defineEval({ judge: true }) or defineScoreEval({ judge: true })");
+/** Throws synchronously at the author callsite when the Eval did not opt in. */
+export function assertJudgeCapabilityV1(
+  judge: ResolvedJudgeConfig | undefined,
+): asserts judge is ResolvedJudgeConfig {
+  if (judge === undefined) {
+    throw new Error("Judge Assertion requires defineEval({ judge: true }) or defineScoreEval({ judge: true })");
   }
+}
+
+export interface JudgeRecipeExecutionV1 {
+  readonly judge: ResolvedJudgeConfig;
+  readonly recipe: JudgeRecipeV1;
+  readonly reference: string;
+  readonly material: JudgeMaterial;
+  readonly signal?: AbortSignal;
+  readonly sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
+  readonly random?: () => number;
+}
+
+/**
+ * The real Judge invocation shared by the legacy Fact adapter and the
+ * Assert-first runtime. It remains Promise-shaped only at the provider SDK
+ * boundary; the Assert-first entry below lifts it into the owning Effect.
+ */
+export async function evaluateJudgeRecipeV1(
+  input: JudgeRecipeExecutionV1,
+): Promise<ScoreFactEvaluation> {
+  const { judge: resolved, recipe, reference } = input;
+  const frozenMaterial = freezeJudgeMaterialV1(input.material);
+  const missing = missingConfiguration(resolved);
+  if (missing !== undefined) return missing;
+  const model = resolved.model!;
+  const apiKey = getEnv(resolved.apiKeyEnv)!;
+  const budget = new AbortController();
+  const deadlineAt = Date.now() + resolved.timeoutMs;
+  let timedOut = false;
+  let attempts = 0;
+  let retried = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    budget.abort();
+  }, resolved.timeoutMs);
+  const callSignal = input.signal ? AbortSignal.any([input.signal, budget.signal]) : budget.signal;
+  try {
+    for (let attempt = 0; attempt < JUDGE_MAX_ATTEMPTS; attempt++) {
+      if (Date.now() >= deadlineAt || budget.signal.aborted) {
+        return unavailableForCall(model, resolved.timeoutMs, attempts, retried);
+      }
+      attempts = attempt + 1;
+      try {
+        const client = bridgeAutoevalClient(judgeClient(apiKey, resolved.baseUrl, callSignal));
+        const call = Promise.resolve(
+          recipe === "closedQA"
+            ? ClosedQA({ input: frozenMaterial.input, output: frozenMaterial.output, criteria: reference, model, ...client })
+            : recipe === "factuality"
+              ? Factuality({ input: frozenMaterial.input, output: frozenMaterial.output, expected: reference, model, ...client })
+              : Summary({ input: frozenMaterial.input, output: frozenMaterial.output, expected: reference, model, ...client }),
+        );
+        call.catch(() => {});
+        const result = await Promise.race([
+          call,
+          new Promise<never>((_, reject) => budget.signal.addEventListener("abort", () => reject(new Error("judge call exceeded its budget")), { once: true })),
+        ]) as AutoevalResult;
+        if (typeof result?.score !== "number" || !Number.isFinite(result.score) || result.score < 0 || result.score > 1) {
+          return evaluatorError("judge-invalid-response", "Judge returned no finite score in [0, 1]");
+        }
+        const rationale = result.metadata?.rationale;
+        return {
+          outcome: "scored",
+          normalizedScore: result.score,
+          evidence: evidenceFor(frozenMaterial),
+          ...(typeof rationale === "string" && rationale.trim() !== "" ? { explanation: summaryText(rationale) } : {}),
+        };
+      } catch (error) {
+        if (timedOut || input.signal?.aborted) {
+          return unavailableForCall(model, resolved.timeoutMs, attempts, retried, !timedOut);
+        }
+        if (!isTransportFailure(error)) return evaluatorError("judge-evaluator-error", errorSummary(error));
+        if (!isTransientJudgeFailure(error) || attempt + 1 >= JUDGE_MAX_ATTEMPTS) {
+          return unavailable("judge-call-failed", judgeFailureEvidence(error, model, attempts, retried));
+        }
+        const remaining = deadlineAt - Date.now();
+        if (remaining <= 0) return unavailableForCall(model, resolved.timeoutMs, attempts, retried);
+        const retryAfter = retryAfterMs(objectField(error, "headers"));
+        const delay = Math.min(retryAfter ?? (input.random ?? Math.random)() * JUDGE_RETRY_BASE_DELAY_MS * 2 ** attempt, remaining);
+        retried = true;
+        try {
+          await (input.sleep ?? defaultJudgeSleep)(delay, budget.signal);
+        } catch {
+          return unavailableForCall(model, resolved.timeoutMs, attempts, true, !budget.signal.aborted);
+        }
+      }
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+  return evaluatorError("judge-evaluator-error", "Judge evaluator ended without a result");
+}
+
+function measurementFromJudgeEvaluation(
+  evaluation: ScoreFactEvaluation,
+): MeasurementAssertionEvaluationV1 {
+  switch (evaluation.outcome) {
+    case "scored":
+      return Object.freeze({ state: "measured" as const, value: evaluation.normalizedScore });
+    case "unavailable":
+      return Object.freeze({ state: "unavailable" as const, reason: "source-unavailable" as const });
+    case "errored":
+      return Object.freeze({ state: "errored" as const });
+  }
+}
+
+/** Assert-first bridge: one provider Promise adaptation in the Attempt Effect. */
+export function evaluateJudgeMeasurementV1(
+  input: JudgeRecipeExecutionV1,
+): Effect.Effect<MeasurementAssertionEvaluationV1, never, never> {
+  return Effect.tryPromise((signal) =>
+    evaluateJudgeRecipeV1({ ...input, signal: input.signal === undefined ? signal : AbortSignal.any([input.signal, signal]) })
+  ).pipe(
+    Effect.map(measurementFromJudgeEvaluation),
+    Effect.catchAll(() => Effect.succeed(Object.freeze({ state: "errored" as const }))),
+  );
+}
+
+function createRecipe(deps: JudgeDeps, recipe: JudgeRecipeV1, reference: string, material: JudgeMaterial): ScoreFact<"now"> {
+  const resolved = deps.judge;
+  assertJudgeCapabilityV1(resolved);
   if (typeof reference !== "string" || reference.trim() === "") {
     throw new TypeError("Judge recipe reference must be a non-empty string");
   }
-  const frozenMaterial = assertMaterial(material);
+  const frozenMaterial = freezeJudgeMaterialV1(material);
   const check = checkSummary(recipe, reference);
   return deps.createScoreFact({
     name: `judge:${check}`,
     phase: "now",
     judge: { check },
-    evaluate: async (): Promise<ScoreFactEvaluation> => {
-      const missing = missingConfiguration(resolved);
-      if (missing !== undefined) return missing;
-      const model = resolved.model!;
-      const apiKey = getEnv(resolved.apiKeyEnv)!;
-      const budget = new AbortController();
-      const deadlineAt = Date.now() + resolved.timeoutMs;
-      let timedOut = false;
-      let attempts = 0;
-      let retried = false;
-      const timer = setTimeout(() => {
-        timedOut = true;
-        budget.abort();
-      }, resolved.timeoutMs);
-      const callSignal = deps.signal ? AbortSignal.any([deps.signal, budget.signal]) : budget.signal;
-      try {
-        for (let attempt = 0; attempt < JUDGE_MAX_ATTEMPTS; attempt++) {
-          if (Date.now() >= deadlineAt || budget.signal.aborted) return unavailableForCall(model, resolved.timeoutMs, attempts, retried);
-          attempts = attempt + 1;
-          try {
-            const client = bridgeAutoevalClient(judgeClient(apiKey, resolved.baseUrl, callSignal));
-            const call = Promise.resolve(
-              recipe === "closedQA"
-                ? ClosedQA({ input: frozenMaterial.input, output: frozenMaterial.output, criteria: reference, model, ...client })
-                : recipe === "factuality"
-                  ? Factuality({ input: frozenMaterial.input, output: frozenMaterial.output, expected: reference, model, ...client })
-                  : Summary({ input: frozenMaterial.input, output: frozenMaterial.output, expected: reference, model, ...client }),
-            );
-            call.catch(() => {});
-            const result = await Promise.race([
-              call,
-              new Promise<never>((_, reject) => budget.signal.addEventListener("abort", () => reject(new Error("judge call exceeded its budget")), { once: true })),
-            ]) as AutoevalResult;
-            if (typeof result?.score !== "number" || !Number.isFinite(result.score) || result.score < 0 || result.score > 1) {
-              return evaluatorError("judge-invalid-response", "Judge returned no finite score in [0, 1]");
-            }
-            const rationale = result.metadata?.rationale;
-            return {
-              outcome: "scored",
-              normalizedScore: result.score,
-              evidence: evidenceFor(frozenMaterial),
-              ...(typeof rationale === "string" && rationale.trim() !== "" ? { explanation: summaryText(rationale) } : {}),
-            };
-          } catch (error) {
-            if (timedOut || deps.signal?.aborted) return unavailableForCall(model, resolved.timeoutMs, attempts, retried, !timedOut);
-            if (!isTransportFailure(error)) return evaluatorError("judge-evaluator-error", errorSummary(error));
-            if (!isTransientJudgeFailure(error) || attempt + 1 >= JUDGE_MAX_ATTEMPTS) {
-              return unavailable("judge-call-failed", judgeFailureEvidence(error, model, attempts, retried));
-            }
-            const remaining = deadlineAt - Date.now();
-            if (remaining <= 0) return unavailableForCall(model, resolved.timeoutMs, attempts, retried);
-            const retryAfter = retryAfterMs(objectField(error, "headers"));
-            const delay = Math.min(retryAfter ?? (deps.random ?? Math.random)() * JUDGE_RETRY_BASE_DELAY_MS * 2 ** attempt, remaining);
-            retried = true;
-            try {
-              await (deps.sleep ?? defaultJudgeSleep)(delay, budget.signal);
-            } catch {
-              return unavailableForCall(model, resolved.timeoutMs, attempts, true, !budget.signal.aborted);
-            }
-          }
-        }
-      } finally {
-        clearTimeout(timer);
-      }
-      return evaluatorError("judge-evaluator-error", "Judge evaluator ended without a result");
-    },
+    evaluate: () => evaluateJudgeRecipeV1({
+      judge: resolved,
+      recipe,
+      reference,
+      material: frozenMaterial,
+      ...(deps.signal === undefined ? {} : { signal: deps.signal }),
+      ...(deps.sleep === undefined ? {} : { sleep: deps.sleep }),
+      ...(deps.random === undefined ? {} : { random: deps.random }),
+    }),
   });
 }
 
@@ -343,7 +410,7 @@ export function buildJudge(deps: JudgeDeps): JudgeNamespace {
 }
 
 export function buildTurnJudge(deps: JudgeDeps, material: JudgeMaterial): TurnJudgeNamespace {
-  const frozenMaterial = assertMaterial(material);
+  const frozenMaterial = freezeJudgeMaterialV1(material);
   return {
     autoevals: {
       closedQA: (question) => createRecipe(deps, "closedQA", question, frozenMaterial),
