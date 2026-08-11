@@ -127,7 +127,7 @@ Core entry 损坏是可隔离的读取结果。权限、真实 I/O 与 closed Sc
 ```ts
 declare const defineJsonChannel: <
   Owner extends "run" | "attempt",
-  Payload extends PortableJsonValue,
+  Payload,
 >(input: {
   owner: Owner;
   name: ChannelName;
@@ -136,9 +136,11 @@ declare const defineJsonChannel: <
 }) => JsonChannelDefinition<Owner, Payload>;
 ```
 
+`Payload` 不声明递归 JSON 上限（如 `PortableJsonValue` 一类 union）。精确性、闭合性与可序列化性由 `ClosedPortableJsonSchema<Payload>` 在定义时证明；类型系统不靠递归 union 约束 payload，因此也不存在伪造或退化的大 union。
+
 `defineJsonChannel` 同时拥有写入 encoder 与精确 decoder。它拒绝 excess property，也不自动注入 `observedAt` 或其它业务字段。
 
-第三方 name 必须使用自己的 reverse-domain namespace。`niceeval.*` 只能由官方 feature owner 定义。
+公开 `defineJsonChannel` 在调用时检查 name：以 `niceeval.` 开头的 name 抛 `ChannelDefinitionError`（code `niceeval-namespace-reserved`）。代理、断言或类型转换都不能绕过这次运行时检查。官方 built-in 由包内私有 constructor 构造，不经过公开 `defineJsonChannel`；TS 层面也没有第二条构造途径（见 [Architecture](architecture.md#channel-definition-与-projector) 的私有 TypeId）。
 
 Library 不提供 raw `name + JsonValue`、`defineOpaqueJsonChannel` 或普遍的 `ctx.writeChannel`。producer 只能通过自己持有的 typed definition 写入。
 
@@ -162,7 +164,7 @@ interface JsonProjectionCase<Owner, Payload, Value> {
   readonly schema: JsonChannelDefinition<Owner, Payload>;
   readonly project: (
     payload: Payload,
-  ) => Result<Value, NonEmptyProjectionIssues>;
+  ) => Either.Either<Value, NonEmptyProjectionIssues>;
 }
 ```
 
@@ -182,7 +184,7 @@ const endpointProjector = defineJsonChannelProjector({
   cases: [
     {
       schema: endpointV1,
-      project: (payload) => Result.succeed({ url: payload.url }),
+      project: (payload) => Either.right({ url: payload.url }),
     },
   ],
 });
@@ -194,6 +196,8 @@ projector 是带 private token 的 branded definition。一个进程内只按该
 
 case 返回的 issues 形成该 `ChannelProjectionResult.invalid`。callback 意外 throw 是 defect；Report host 可以把第三方 defect 隔离成 `execution-failed`，但不能把它标为 Record input invalid，interruption 也不能被捕获成普通 failure。
 
+Library 不导出自定义 `Result` 类型。成功值内的失败分支一律使用 Effect v3 的 `Either.Either`；I/O、权限与生命周期失败保持 typed Effect error。
+
 ## ChannelProjectionResult
 
 `projectRun` 与 `projectAttempt` 返回 [Architecture](architecture.md#channelprojectionresult) 定义的 `ChannelProjectionResult<Value>`。
@@ -201,7 +205,7 @@ case 返回的 issues 形成该 `ChannelProjectionResult.invalid`。callback 意
 ```ts
 declare const requireComplete: <Value>(
   read: ChannelProjectionResult<Value>,
-) => Result<Value, NonEmptyProjectionIssues>;
+) => Either.Either<Value, NonEmptyProjectionIssues>;
 ```
 
 `requireComplete` 只检查 collection 与 decoding。`Value` 若含 sampled、redacted 或 truncated limitation，consumer 还必须按自己的领域要求检查。
@@ -209,6 +213,7 @@ declare const requireComplete: <Value>(
 ## Identity 与路径类型
 
 ```ts
+type RecordRoot = AbsoluteDirectoryPath & Brand<"RecordRoot">;
 type RecordId = string & Brand<"RecordId">;
 type RunId = string & Brand<"RunId">;
 type SlotId = string & Brand<"SlotId">;
@@ -217,6 +222,8 @@ type ChannelName = string & Brand<"ChannelName">;
 type ChannelSchemaId = string & Brand<"ChannelSchemaId">;
 type UtcMillis = string & Brand<"UtcMillis">;
 ```
+
+`RecordRoot` 是 canonical absolute directory path 的 brand。constructor 按 [Architecture](architecture.md#recordkey) 的 canonical 规则把输入规范化成绝对路径，不自动补接子目录。同一个 root 参数在规范化后始终映射到同一个 local sidecar。
 
 `RecordId` 是 canonical lowercase UUID v4。复制与无损 migration 保留它。
 
@@ -251,7 +258,7 @@ interface RecordWriteSession {
 
   readonly publishRun: (
     run: SealedRun,
-  ) => Effect.Effect<PublishReceipt, RecordWriteError>;
+  ) => Effect.Effect<RecordPublishReceipt, RecordWriteError>;
 }
 ```
 
@@ -263,6 +270,64 @@ write session 取得 shared maintenance lease，再取得 exclusive writer lock�
 
 Scope 关闭时先拒绝新操作，再等待 in-flight local write。它只删除仍由本 session 拥有的 unsealed staging directory，不删除 sealed source、已发布 Run 或 outcome-unknown 现场。
 
+## StagedRunInput 与 frozen view
+
+```ts
+type StagedRunInput = {
+  readonly runId: RunId;
+  readonly experimentId: ExperimentId;
+  readonly startedAt: UtcMillis;
+  readonly completedAt: UtcMillis;
+  readonly expectedSlots: readonly ExpectedSlotV1[];
+  readonly runChannels: readonly ChannelPayloadWrite[];
+  readonly attempts: readonly StagedAttemptInput[];
+};
+
+type StagedAttemptInput = {
+  readonly attemptId: AttemptId;
+  readonly originSlotId: SlotId;
+  readonly channels: readonly ChannelPayloadWrite[];
+};
+
+type ChannelPayloadWrite = {
+  readonly definition: JsonChannelDefinition<"run" | "attempt", unknown>;
+  readonly payload: unknown;
+};
+```
+
+`ChannelPayloadWrite` 是存在量化的 typed write。payload 的类型由所属 definition 的 `Payload` 决定，调用点由 `(definition, payload)` 构造并检查；raw JSON 与任意 path 不能通过类型边界。`completedAt` 必填：`stageRun` 拒绝缺少 `completedAt` 的输入，portable Record 中不存在未完成的 Run。
+
+```ts
+type FrozenRecordView = {
+  readonly candidates: readonly CoreRead<RunSummary>[];
+  readonly attempt: (
+    originRunId: RunId,
+    attemptId: AttemptId,
+  ) => FrozenAttempt | undefined;
+};
+```
+
+`FrozenRecordView` 是 session 取得锁时冻结的候选集合与 Attempt 查找表。reuse planning 与 reference validation 共用它；它不含 Channel 内容，也不提供 projector 能力。`attempt` 只返回 view 内已发布的 origin Attempt，未发布或不可见的 Attempt 返回 `undefined`。
+
+## StagedRun、SealedRun 与 receipt
+
+```ts
+declare const stagedRunTypeId: unique symbol;
+type StagedRun = { readonly [stagedRunTypeId]: true };
+
+declare const sealedRunTypeId: unique symbol;
+type SealedRun = { readonly [sealedRunTypeId]: true };
+
+type RecordPublishReceipt = {
+  readonly runId: RunId;
+  readonly publishedAt: UtcMillis;
+};
+```
+
+`StagedRun` 是 `stageRun` 的 opaque 句柄，只能由创建它的 session 消费一次。`SealedRun` 只能由同一 session 的 `publishRun` 发布一次；两个句柄都不能被复制、持久化或跨 session 传递。
+
+`RecordPublishReceipt` 只证明该 Run 已以 no-replace rename 在 durable root 可见，且 parent `fsync` 完成。它不复制 Channel payload、Verdict、score 或聚合读数。
+
 ## Evaluation aggregate validation
 
 Generic Record Library 不拥有 Assertions、Verdict 或 Evaluation 的 required 集合。官方 Evaluation producer 在自己的边界使用内部 contract：
@@ -271,7 +336,7 @@ Generic Record Library 不拥有 Assertions、Verdict 或 Evaluation 的 require
 interface EvaluationRecordContract {
   readonly validate: (
     aggregate: EvaluationRunAggregate,
-  ) => Result<ValidatedEvaluationRun, NonEmptyEvaluationRecordIssues>;
+  ) => Either.Either<ValidatedEvaluationRun, NonEmptyEvaluationRecordIssues>;
 }
 ```
 
@@ -348,12 +413,18 @@ type RecordOpenError =
   | { code: "record-maintenance-busy" }
   | { code: "record-io-failed"; operation: string; cause: unknown };
 
+type RecordReadError =
+  | { code: "record-reader-closed" }
+  | { code: "record-selection-invalid"; issues: NonEmptyRecordIssues }
+  | { code: "record-io-failed"; operation: string; cause: unknown };
+
 type RecordWriteError =
   | { code: "record-writer-busy" }
   | { code: "record-session-closed" }
   | { code: "record-publish-target-exists"; runId: RunId }
   | { code: "record-atomic-publish-cross-device" }
   | { code: "record-atomic-publish-unsupported"; platform: string }
+  | { code: "record-limit-exceeded"; kind: "document" | "payload" | "blob" | "closure" | "count"; name?: string; limit: number; actual: number }
   | { code: "record-publish-invalid"; issues: NonEmptyRecordIssues }
   | { code: "record-publish-outcome-unknown" };
 
@@ -364,5 +435,9 @@ type RecordMigrationError =
   | { code: "record-migration-not-lossless"; issues: NonEmptyMigrationIssues }
   | { code: "record-migration-scene-invalid"; issues: NonEmptyMigrationIssues };
 ```
+
+`RecordReadError` 只表示 closed Scope、伪造 handle 与真实 I/O。Core entry 或 Channel 的局部损坏留在 `CoreRead` / `ChannelProjectionResult` 的成功值里，不进 error channel。
+
+`record-limit-exceeded` 在 seal 前失败，staging 现场由 session 删除，不产生部分发布。限制值与读写超限语义见 [Architecture](architecture.md#record-v1-限制)。
 
 每个 CLI error 都包含安全的下一步。path、OS cause 与可能含敏感内容的 payload 不直接进入公开 message。

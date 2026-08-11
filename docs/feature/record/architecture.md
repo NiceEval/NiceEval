@@ -16,7 +16,19 @@ session 不是 cache。它可能是一次已经付费执行能否完成发布的
 
 默认 portable root 是 `<project>/.niceeval/record/`。Library 的 `root` 参数已经是实际 Record root，不再自动补接子目录。
 
-local sidecar 位于 sibling `.niceeval-local/<recordKey>/`。`recordKey` 从 canonical root 稳定派生，不随 Record major 改变。
+local sidecar 位于 sibling `.niceeval-local/<recordKey>/`。`recordKey` 由 canonical root 用固定算法派生，不随 Record major、文件内容或机器身份改变。
+
+### recordKey
+
+canonical root 是 `root` 参数按固定规则规范化得到的绝对路径：相对路径先相对当前工作目录合成绝对路径，再去掉尾部分隔符、折叠 `.` 与 `..` 片段、不跟随 symlink、大小写敏感、路径分隔符统一为 `/`。
+
+```text
+recordKey = hex(SHA-256(UTF-8(canonical root)))[0..16]
+```
+
+`recordKey` 是 SHA-256 摘要的小写 hex 前 16 个字符。算法在 Record v1 定稿，后续 major 只使用同一结果，不重新定义。
+
+同路径重建与 whole-root 复制不改变 `recordKey`。sidecar 内仍以 durable `recordId` 校验 lineage，防止复制或路径重建后的 session 串线。
 
 ## 什么叫“Record 只保存事实”
 
@@ -117,7 +129,7 @@ type RecordFormatProbe = {
 };
 ```
 
-探测器只在固定 byte limit 内取得 `format` 与 `recordId`。它拒绝 duplicate JSON key，也要求这两个字段各出现一次并满足字符串与 canonical identity 规则。
+探测器只在固定 byte limit 内取得 `format` 与 `recordId`（见 [Record v1 限制](#record-v1-限制)）。它拒绝 duplicate JSON key，也要求这两个字段各出现一次并满足字符串与 canonical identity 规则。
 
 探测器不信任其它字段，不枚举 Run，不读 Channel，不构造 Sample，也不写 cache。探测为 current 后，current exact decoder 再验证整个 `record.json`，包括 excess property。
 
@@ -214,7 +226,9 @@ Record 不保存 descriptor schema、descriptor registry 或 durable `absent`。
 
 同一 owner 内 `ChannelName` 由目录身份保证唯一，不按枚举顺序或版本号选择。目录名与 envelope 的 `name` 必须精确相等。
 
-`ChannelName` 使用 reverse-domain lowercase ASCII namespace，满足 `^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$`，且 UTF-8 长度不超过 120 bytes。它本身就是一个 canonical path segment；`niceeval.*` 只归 NiceEval 官方领域 owner，第三方使用自己的域名。
+`ChannelName` 使用 reverse-domain lowercase ASCII namespace，满足 `^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$`，且 UTF-8 长度不超过 120 bytes。它本身就是一个 canonical path segment。
+
+`niceeval.*` 只归 NiceEval 官方领域 owner，第三方使用自己的域名。公开 `defineJsonChannel` 对 `niceeval.` 前缀在调用时抛 `ChannelDefinitionError`。官方 built-in 由包内私有 constructor 定义，私有 TypeId 使 TS 无法伪造 definition 对象（见 [Channel definition 与 projector](#channel-definition-与-projector)）。
 
 `ChannelSchemaId` 使用 `<channel-name>/vN`。同一 schema identity 永远保持相同的 bytes shape、media type、closedness 与语义。
 
@@ -225,6 +239,30 @@ Record 不保存 descriptor schema、descriptor registry 或 durable `absent`。
 storage closure codec 不是 Channel projector。它只证明哪些 bytes 属于这份持久事实，不形成业务 typed view。
 
 不受当前 consumer 支持的 schema 也可以由 migration 连同整个已验证 Channel closure 逐 byte 复制。无法穷尽 closure 的 payload 必须让 migration 在 cutover 前失败。
+
+## Record v1 限制
+
+Record v1 对文档大小、条目数量与 closure 字节设固定上限。上限随 `niceeval.record/v1` 冻结，不随 Channel schema 演进改变；收紧或放宽都需要新的 Record major。
+
+| 对象 | 上限 |
+|---|---|
+| `record.json` 探测读取 | 64 KiB |
+| `record.json` 完整文档 | 64 KiB |
+| `run.json`、`member.json`、`attempt.json`、`channel.json` | 1 MiB |
+| 单个 `payload` | 16 MiB |
+| 单个 blob | 64 MiB |
+| 单个 Channel closure（payload 与全部 blob） | 256 MiB |
+| 一个 Run 的 Member / Attempt 数量 | 4096 |
+| 一个 owner 的 Channel 数量 | 256 |
+| `ChannelName` | 120 bytes（UTF-8） |
+
+读取超限按可隔离损坏处理，只影响该 entry 或该 Channel：
+
+- `record.json` 超过探测上限时无法建立可信 bootstrap，返回 `record-core-invalid`；
+- Core 文档超限让该 entry 变成 `CoreRead.invalid`；
+- envelope、payload 或 blob 超限让该 Channel 变成 `ChannelProjectionResult.invalid`，issues 具名 `limit-exceeded`。
+
+写入超限在 seal 前失败。`stageRun` / `sealRun` 检查上述所有上限，命中时返回 `record-limit-exceeded`，携带 kind、具名对象、limit 与 actual；staging 现场由 session 删除，不产生部分发布。
 
 ## Channel definition 与 projector
 
@@ -237,8 +275,16 @@ interface JsonChannelDefinition<Owner extends "run" | "attempt", Payload> {
   readonly schemaId: ChannelSchemaId;
   readonly mediaType: "application/json";
   readonly codec: PortableExactJsonCodec<Payload>;
-  readonly _brand: unique symbol;
+  readonly _typeId: JsonChannelDefinitionTypeId<Owner, Payload>;
 }
+
+declare const jsonChannelDefinitionTypeId: unique symbol;
+type JsonChannelDefinitionTypeId<Owner, Payload> = {
+  readonly [jsonChannelDefinitionTypeId]: {
+    readonly owner: Owner;
+    readonly payload: Payload;
+  };
+};
 ```
 
 consumer 通过 Channel projector 形成 typed view：
@@ -247,9 +293,19 @@ consumer 通过 Channel projector 形成 typed view：
 interface ChannelProjector<Owner extends "run" | "attempt", Value> {
   readonly owner: Owner;
   readonly name: ChannelName;
-  readonly _brand: unique symbol;
+  readonly _typeId: ChannelProjectorTypeId<Owner, Value>;
 }
+
+declare const channelProjectorTypeId: unique symbol;
+type ChannelProjectorTypeId<Owner, Value> = {
+  readonly [channelProjectorTypeId]: {
+    readonly owner: Owner;
+    readonly value: Value;
+  };
+};
 ```
+
+`_typeId` 使用不导出的 `unique symbol` 私有键，外部代码无法构造。类型参数真实进入 TypeId 的结构位置，`Owner`、`Payload` 与 `Value` 的失配都是类型错误；TS 因此不能冒充官方 definition 或 projector，构造途径只有公开 constructor 与包内私有 capability。
 
 definition 的 `ChannelSchemaId` 是 durable identity；projector 是当前程序中的 branded typed adapter。Record 不保存 projector identity。
 
@@ -350,9 +406,9 @@ generic writer 不评估 Assertions、Verdict、Eligibility、Evaluation 或 mem
 
 这张 catalog 不是 Core enum。新增业务事实只增加所属领域的 Channel definition 与 projector，不修改 Record capability。
 
-`niceeval.evaluations/v1` 对每个 distinct `evalId` 保存一次 `pass | score`。集合与 expected slots 中的 eval 精确相等，离线 Report 不回读当前源码。
+`niceeval.evaluations/v1` 对每个 distinct `evalId` 保存一次 `evaluationKind: "pass" | "score"`。集合与 expected slots 中的 eval 精确相等，离线 Report 不回读当前源码。
 
-`EvaluationRecordContract` 要求 Pass Eval origin Attempt 写完整 Verdict，Score Eval origin Attempt 写完整 score grading。两种 grading 不能同时出现，也不能互相推导。
+`EvaluationRecordContract` 要求每个 origin Attempt（Pass 或 Score）都写完整四态 Verdict（`passed | failed | errored | skipped`）。Score Eval 的 origin Attempt 另外写完整 score grading。Verdict 与 score 不互斥：Score Eval 两者都写；也不可互推：Report 只能分别读取 `niceeval.verdict/v1` 与 `niceeval.score/v1`，不能从其中一个推导另一个。
 
 `niceeval.membership-provenance/v1` 解释每个 expected slot 怎样形成 Member 或为什么没有 Member。Core 只保留可验证的占位关系。
 
@@ -400,6 +456,8 @@ writer 在 local session 形成完整 Run。只有 storage contract 与调用方
 | visible | final Run name 已出现 | 完成 parent `fsync` 与 destination revalidation |
 | durable | destination 已验证且 parent `fsync` 完成 | 返回 durable receipt |
 | cleanup-pending | durable Run 已成立，local cleanup 未完成 | 只重做 local cleanup |
+
+portable Record 只包含 complete 且 durable 的 Run。每个 portable Run 的 `completedAt` 必填；draft、building 与 sealed 未发布的 Run 只存在于 local session 与 staging directory，永远不进入 portable root。
 
 seal 后的 source 不可修改。writer 通过 `atomicPublishDirectoryNoReplace` 把一个完整 Run 发布到 `runs/<runId>`。
 

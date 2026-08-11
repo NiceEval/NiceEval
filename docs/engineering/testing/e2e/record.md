@@ -11,7 +11,10 @@
 
 - 从候选 tarball 的公开 `niceeval/record` export 进入，不 import 根 `src/` 或内部子路径；
 - `openRecordWriteSession` 只接收 typed Core 与 typed Channel writes，不接受 raw JSON envelope 或任意物理 path；
-- 完整 Run 经 `stageRun`、`sealRun` 与 `publishRun` 发布后，`openRecordReader` 能在同一 root 读回同一批 Run、Attempt 与 Channel identity；
+- 完整 Run 经 `stageRun`、`sealRun` 与 `publishRun` 发布后，`openRecordReader` 能在同一 root 读回同一批 Run、Attempt 与 Channel identity；读回的每个 Run 都带 `completedAt`；
+- `stageRun` 拒绝缺少 `completedAt` 的输入；缺少 required Channel 的官方 producer aggregate 在 stage 前失败；
+- 公开 `defineJsonChannel` 对 `niceeval.` 前缀 name 抛 `ChannelDefinitionError`，官方 built-in 无法通过公开 API 重复定义；
+- 超过 v1 限制的写入在 seal 前以 `record-limit-exceeded` 失败，不产生部分发布；读取超限的文档或 Channel 只变成对应 `invalid`，不影响其它 entry；
 - 公开格式 fixture 的 schema version、字段与 expected 是签入字面量，不从候选常量生成；
 - 未逐项声明的 `.niceeval-local` 位置、staging directory、分片与索引布局属于私有实现；
 - 私有布局可以作为 diagnostic artifact 收集，但不决定 verdict。

@@ -1,6 +1,6 @@
 # Record：只保存已经发布的事实
 
-Record 是 `<project>/.niceeval/record/` 中可携带的持久事实集。它只包含完整发布的 Run、这些 Run 的导航关系，以及 producer 写入的具名 Channel。
+Record 是 `<project>/.niceeval/record/` 中可携带的持久事实集。它只包含 complete 且已原子发布的 Run（`completedAt` 必填）、这些 Run 的导航关系，以及 producer 写入的具名 Channel。
 
 Record 不保存 session、锁、迁移现场或 cache。它也不保存作者 API、matcher、执行顺序、沿用算法、分析算法或页面模型。
 
