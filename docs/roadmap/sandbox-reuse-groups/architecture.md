@@ -70,7 +70,7 @@ assignment 只由发现结果与当前 Eval id 确定，不读取 Experiment 配
 
 ## 指纹与结果携带
 
-`definitionHash` 哈希组 id、按 Eval id 排序的完整成员集合与 `onUnavailable`。
+`definitionHash` 哈希组 id、按 Eval id 排序的完整成员集合、`onUnavailable` 与规范化 Group Plugin behavior。
 组上下文进入每个成员 pair 的指纹；组成员或策略变化会让这些结果重新判定携带资格。
 
 未分组 pair 不包含任何组定义，因此无关组变化不会作废它的结果。
