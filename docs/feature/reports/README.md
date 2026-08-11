@@ -1,72 +1,89 @@
 # Reports：把 AnalysisSample 变成可交付视图
 
-Reports 把已经投影好的 [`AnalysisSample`](../sample/README.md) 变成终端输出、浏览器页面或可分享的静态报告站。它负责计算和呈现，不拥有评估事实。
+Reports 把 [`AnalysisSample`](../sample/README.md) 和按需读取的 Record Channels 变成终端输出、持续热重载的本机页面或可分享的静态站。它负责 typed projection 之后的计算与呈现，不拥有评估事实。
 
-    RecordReader → analysis projector → core-only AnalysisSample → ReportPlan
-                                      ↓
-                                  ReportInput
-                                      ↓
-                              ReportExecution
-                                ↙           ↘
-                              view          export
-
-`ReportInput` 是进程内的普通值。它带着 core-only `AnalysisSample`、完整分母，以及按 ReportPlan 请求的 Run 与 Attempt 通道读取。它不落盘，不是另一种 Record 格式，也不携带打开的 reader。
+```text
+RecordReader
+    │ analysis selection（Core only）
+    ▼
+AnalysisSampleHandle
+    │ RecordProjection declarations
+    ▼
+ProjectedSample
+    │ Calculation + PageFamily
+    ▼
+immutable ReportExecution
+    ├─ show
+    ├─ view revision
+    └─ static export
+```
 
 ## 核心心智
 
-analysis projector 决定比较范围和分母。Reports 不按时间、路径或 Attempt locator 再选成员，也不接收 `ExecutionProjection`。一个分母项即使没有 Member、核心引用有误，或被调用方排除，也保留在 ReportInput 中，并以 `AnalysisSample` 的状态呈现。
+- analysis selection 决定成员范围与 expected-slot 分母；
+- Channel projector 把一个 owner 的一个 recorded payload 形成 typed view；
+- Calculation 跨 owner 聚合，例如通过率、成本或诊断分布；
+- Page 与 PageFamily 把这些结果包装成闭合语义树；
+- host 把同一棵树渲染成 text、web 或 static HTML。
 
-只有 Record→Reports composition adapter 同时接收 reader、`AnalysisSample` 与 plan。Report 定义、Calculation、页面、本机 runtime 和静态 runtime 只消费 ReportInput 或一次形成的 ReportExecution，不重新打开 Record、重新选择历史或判断复用资格。
+通过率不是 Record 字段，也不是 Channel projector。它由 Report Calculation 从完整分母与 Verdict projections 计算。
 
-每个页面和 Calculation 都声明自己需要的 facts。未被该页面或 Calculation 请求的损坏、未知或退役通道不会阻断它。被请求的 invalid 通道形成该请求的失败；unavailable 与 unsupported 进入明确的呈现状态。
+Report 不重新选择历史、不判断 reuse，也不读取当前源码。source viewer 沿 Sample 中已冻结的 exact origin reference 读取 `niceeval.sources`；origin Run 不会因此加入分析分母。
 
-标准 Report 持续提供 Verdict、Assertions、usage/cost、conversation/tool、commands、diff、timing waterfall、diagnostics、actions 与 sources 的内建消费链。Attempt source 通过 origin Run 读取；carried 与 accepted 不复制源码，也不把 origin Run 加进 `AnalysisSample` 分母。
+## 作者只声明数据与包装结果
 
-## 计算与完整度
+Report 作者用 `attemptSlotProjection(projector)`、`selectedRunProjection(projector)` 或 `attemptOriginRunProjection(projector)` 声明数据。然后用 `defineCalculation`、`definePage`、`definePageFamily` 和 `defineDownload` 包装结果。
 
-Calculation 必须同时声明：
+作者不会看到 Record path、reader、底层 owner request、宿主去重表、compiled plan 或 route-expansion phase。宿主从 definition 与 Sample 穷尽全部 I/O，按 owner + private projector token 去重，并在 reader Scope 内一次形成自包含输入。
 
-- 所需的 facts；
-- 分母如何采用 `AnalysisSample` 的 slot；
-- `allowPartial` 或 `requireComplete` 完整度 policy；
-- 可用、部分和不可用状态怎样呈现。
+projected values 可以展开动态页面：
 
-例如 `commands.checked` 只在 100 个分母项中的 20 个被采集时，页面写 `20 / 100 · partial`。它不能把 20 当成 100。选择 `requireComplete` 的同一读数是 unavailable，不给出假装完整的数值。
+- 每个 Assertion 一页；
+- 每个 conversation turn 或 tool call 一页；
+- 每个 diagnostics category 一页。
 
-完整规则在 [Calculations](calculations.md) 定义；公开类型在 [Library](library.md) 定义。
+它们不能追加新的 Channel I/O。这样 route 可以动态，数据依赖仍然静态闭合。
 
-## 页面与静态分享
+## 完整度与局部失败
 
-一个 Report 先用纯 `plan()` 枚举所有页面、参数化页面实例、Calculation、Download 和各自 inputs，再形成 ReportInput。`executeReport()` 让每个 custom parser 和 consumer 各执行至多一次；show、view 与 export 消费同一份既有结果。
+每个 Calculation 声明 `allow-partial` 或 `require-complete`。例如 100 个分母项只有 20 个成功采集 commands 时，页面写 `20 / 100 · partial`，不能把 20 当成完整分母。
 
-静态 export 是一个自包含目录。它包括预渲染页面、当前宿主数据、下载项、exporter 内建的精确 runtime，以及穷尽的 `StaticAssetManifest`。用户 Report 不提供任意浏览器脚本、CSS 或路径 loader。浏览器只从该目录读取 artifact 私有数据；它不访问网络、源 Record 或未来安装的 NiceEval。
+未请求的坏 Channel 不读取也不影响 execution。被请求的 unavailable、unsupported、invalid、collection partial 与 decoding partial 保留为不同状态。一个输入只影响声明它的 consumer。
 
-参数化页面必须在 export 前穷尽实例。目标目录必须不存在；成功时同级临时目录以一次 rename 完整出现。固定 `manifest.json` 不列入自身 entries，除此之外每个文件都必须被 manifest 穷尽。
+作者 callback 的 throw 是 `execution-failed`，不是 Record input invalid。参数面不提供平台 capability，但 JavaScript module 仍是受信任代码，不是沙箱。
+
+## 页面、view 与静态分享
+
+Page 返回 `niceeval.report-document/v1` 闭合语义树，不返回任意 JSON、HTML 或 DOM。Web、terminal text 与 static HTML 都从同一棵树派生，不维护独立的页面文字副本。
+
+一个 `ReportExecution` 永远 immutable，并且每个 projection、Calculation、Page 与 Download 最多执行一次。
+
+`niceeval view` 保留热重载：长期 `ReportViewSession` 在 watched input 改变时构造新的 immutable revision，成功后原子切换；失败时继续服务最后一个成功 revision 并显示 rebuild error。它不会修改旧 execution。
+
+static export 只消费一个 execution。它在同级 staging directory 写完整 closure，以平台 atomic no-replace directory publish 让目标一次出现。目标已存在或平台不能证明该能力时 fail closed。
 
 ## 范围
 
 Reports 包含：
 
-- 从 core-only `AnalysisSample` 与 ReportPlan 形成 ReportInput；
-- 一次执行 Calculation、Page 与 Download，并由 view/export 共用结果；
-- 声明 facts、Calculation、页面、文本与网页呈现；
-- 对 partial、unavailable、unsupported 和 invalid 的可读反馈；
-- 终端查看、本地浏览和自包含静态分享；
-- 可访问的页面结构与文字等价内容。
+- typed `RecordProjection` declarations、穷尽 logical entries 与一次 unique-owner projection；
+- Calculation、fixed Page、value-dependent PageFamily 与 Download；
+- closed semantic report tree；
+- terminal show、本机热重载 view 与自包含 static export；
+- partial、unavailable、unsupported、invalid 与 execution-failed 的一致反馈。
 
 Reports 不包含：
 
-- Record 文件读取、写入、格式定义或通道 decoder；
-- 事实 owner、proof、snapshot、revision 或任何 Record 引用；
-- Record-to-Record 复制、镜像、同步或观察文件变化；
-- 全局 custom fact registry 或 capability negotiation。
-- 任意浏览器资源 provider 或用户路径读取。
+- Record 格式、写入、migration、reuse planning 或 analysis selection 算法；
+- 浏览器端任意 script、style、font、worker、WASM、网络 URL 或路径 loader；
+- 不受信任 JavaScript module 的安全沙箱；
+- durable Report result、snapshot、revision 或第二种 Record。
 
 ## 入口
 
-- [Architecture](architecture.md)：边界、输入流程、通道隔离、静态 export 与不变量。
-- [Library](library.md)：ReportInput、facts、Calculation、页面和静态 export 的公开形状。
-- [CLI](cli.md)：`show`、`view` 和 `view --out`。
-- [Calculations](calculations.md)：完整度 policy、分母和报告旁算法。
-- [Use case](use-case/README.md)：比较、完整度核对、静态分享和可访问页面。
+- [Architecture](architecture.md)：分层、静态数据依赖、动态页面、热重载与不变量。
+- [Library](library.md)：作者 DSL、Effect host、semantic tree 与 typed errors。
+- [CLI](cli.md)：`show`、`view` 与 `view --out`。
+- [Calculations](calculations.md)：完整度、分母和聚合算法。
+- [Use case](use-case/README.md)：常见报告任务。
 - [Reference](reference/README.md)：外部材料的使用边界。
