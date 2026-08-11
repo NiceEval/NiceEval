@@ -222,6 +222,11 @@ function rootLocalStatePath(root: unknown): Effect.Effect<string, RecordRootInva
     : Effect.succeed(paths.localStateRoot);
 }
 
+/**
+ * Record must classify a symlink as `other` without following it. The platform
+ * FileSystem service exposes following `stat` and names-only directory reads,
+ * so this intentionally stays the narrow native no-follow adapter.
+ */
 async function nodePathKind(path: string): Promise<RecordPathKind> {
   try {
     const state = await lstat(path);
@@ -278,6 +283,8 @@ function syncHandle(
 }
 
 function syncDirectoryAt(path: string): Effect.Effect<void, RecordIoError | RecordPermissionError> {
+  // Durable publication requires an explicit directory fsync. High-level
+  // platform write helpers do not include this parent-directory commit step.
   const acquire = Effect.tryPromise({
     try: () => open(path, "r"),
     catch: (cause) => fileSystemError("sync-directory", path, cause),
@@ -320,6 +327,8 @@ function openForWrite(
   path: string,
   mode: "exclusive" | "replace",
 ): Effect.Effect<FileHandle, RecordFileSystemError> {
+  // `wx` + 0600 + fsync is Record's create-exclusive publication primitive;
+  // do not replace it with a high-level write that weakens those guarantees.
   return Effect.tryPromise({
     try: () => open(path, mode === "exclusive" ? "wx" : "w", 0o600),
     catch: (cause) =>
@@ -390,32 +399,28 @@ function writeChunk(
 }
 
 async function* readChunks(
+  handle: FileHandle,
   path: string,
   maximumBytes: number,
   chunkBytes: number,
 ): AsyncGenerator<Uint8Array, void, undefined> {
-  const handle = await open(path, "r");
   let observed = 0;
 
-  try {
-    for (;;) {
-      // A one-byte probe after the cap distinguishes exact-size data from an
-      // over-limit file without materializing its remainder.
-      const capacity = observed < maximumBytes
-        ? Math.min(chunkBytes, maximumBytes - observed + 1)
-        : 1;
-      const chunk = new Uint8Array(capacity);
-      const result = await handle.read(chunk, 0, chunk.byteLength, null);
-      if (result.bytesRead === 0) return;
+  for (;;) {
+    // A one-byte probe after the cap distinguishes exact-size data from an
+    // over-limit file without materializing its remainder.
+    const capacity = observed < maximumBytes
+      ? Math.min(chunkBytes, maximumBytes - observed + 1)
+      : 1;
+    const chunk = new Uint8Array(capacity);
+    const result = await handle.read(chunk, 0, chunk.byteLength, null);
+    if (result.bytesRead === 0) return;
 
-      observed += result.bytesRead;
-      if (observed > maximumBytes) {
-        throw limitExceeded("file-bytes", maximumBytes, observed, path);
-      }
-      yield chunk.slice(0, result.bytesRead);
+    observed += result.bytesRead;
+    if (observed > maximumBytes) {
+      throw limitExceeded("file-bytes", maximumBytes, observed, path);
     }
-  } finally {
-    await handle.close();
+    yield chunk.slice(0, result.bytesRead);
   }
 }
 
@@ -424,12 +429,25 @@ function readStreamAt(
   maximumBytes: number,
   chunkBytes: number,
 ): Stream.Stream<Uint8Array, RecordFileSystemError> {
-  return Stream.fromAsyncIterable(
-    readChunks(path, maximumBytes, chunkBytes),
-    (cause) =>
-      isFileSystemError(cause)
-        ? cause
-        : fileSystemError("read-file", path, cause),
+  const acquire = Effect.tryPromise({
+    try: () => open(path, "r"),
+    catch: (cause) => fileSystemError("read-file", path, cause),
+  });
+
+  return Stream.unwrapScoped(
+    Effect.map(
+      Effect.acquireRelease(acquire, (handle) =>
+        closeHandle(handle, "read-file", path),
+      ),
+      (handle) =>
+        Stream.fromAsyncIterable(
+          readChunks(handle, path, maximumBytes, chunkBytes),
+          (cause) =>
+            isFileSystemError(cause)
+              ? cause
+              : fileSystemError("read-file", path, cause),
+        ),
+    ),
   );
 }
 
@@ -460,6 +478,8 @@ async function readDirectoryBounded(
   maximumEntries: number,
   path: string,
 ): Promise<readonly RecordDirectoryEntry[]> {
+  // Dirent classification preserves the same no-follow policy as lstat above;
+  // the platform names-only directory API cannot supply these entry kinds.
   const entries: RecordDirectoryEntry[] = [];
   for (;;) {
     const entry = await directory.read();
@@ -785,6 +805,8 @@ function lockPayload(): Uint8Array {
 function createCooperativeLock(
   path: string,
 ): Effect.Effect<"created" | "exists", RecordFileSystemError> {
+  // Lock ownership is an exclusive-create file plus fsync, not an advisory
+  // in-process mutex. It therefore remains on Record's durable file path.
   return writeBytesAt({
     path,
     bytes: lockPayload(),
@@ -966,6 +988,9 @@ function executeGit(
   cwd: string,
   signal: AbortSignal,
 ): Promise<GitOutput> {
+  // Keep the native adapter: Record requires one bounded collection covering
+  // stdout and stderr, exact argv execution, and AbortSignal cancellation.
+  // CommandExecutor has no single primitive with all of those guarantees.
   return new Promise((resolve, reject) => {
     execFile(
       "git",
