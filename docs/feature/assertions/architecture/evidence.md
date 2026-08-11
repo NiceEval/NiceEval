@@ -41,7 +41,9 @@ t.check(
 
 Runner 在收尾前读取 collector 的需求清单。采集失败只影响登记了该 Attachment 的消费者；producer 在 whole Run seal 前一次形成稳定 Assertions Attachment 与独立 Verdict Attachment，不让 Report 事后重算。
 
-## Scoped occurrence context
+collector 在把已求值的检查归一为 entry 时立即分配并保存 attachment-local `entryId`，例如 `ae_k7m2q4v9x6c8d1n5r3s0`。它在 seal 前拒绝同一 Assertions Attachment 中的重复 ID；缺少或重复 ID 是 Assertions Attachment invalid，不是 evidence unavailable。ID 不从证据内容、条目名、`entries` 位置或详情 route 得到。
+
+## 相关阅读
 
 - [Assertions 架构](../architecture.md)
 - [RecordAttachment 读取状态](../../record/library.md#attachment-写入与读取)

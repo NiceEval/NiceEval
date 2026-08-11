@@ -133,5 +133,49 @@ Boolean handle 可以直接 `await .orStop()`。measurement 必须先 `.atLeast(
 
 ## 可排名性
 
-正常没有贡献项的 Score Eval 得到正式 `score: 0`。只有配置 score 的 Assertion、direct score 或 control
-Assertion 的 `unavailable` / `errored` 才使 grading 不可排名。record-only Assertion 的 Issue 不作废正式 score。
+## 得分点 = 组：对比读取的下钻粒度
+
+一分/一个总分在模型对比里太粗的三个场景，各有一个树上的读法：
+
+- **同 fail，不同深度**（都失败，一个死在路由层、一个死在命令调用链）→ **组级判定读数**：哪个组的 gate 失败就是死在哪层。
+  它是失败定位，不是分。
+- **部分完成没有部分分**（五步走完三步）→ **计分制**：步骤各 `.points(1)`，挣 3 分。
+- **质量分差异被判定吞掉**（都通过，judge 一个 0.9 一个 0.6）→ **质量分列**：judge 默认 `.soft()`，读 eval 质量分。
+
+得分点的粒度选组而不是别的：
+
+| 得分点 = | 否决理由 |
+|---|---|
+| 单条断言 | 太细：断言数量差异直接污染权重，回到一分制要解决的问题 |
+| 显式新 API（`t.scorePoint(...)`） | 给分词汇 + `t.group` 已完整表达「哪些检查是分、值多少、叫什么名字」，新词汇纯冗余 |
+| **`t.group` 组** | 组是作者已经在用的语义分块（「路由层」「正确性」），零新概念 |
+
+组名即维度值，报告按 **`groupPath` 字面相等**聚合，不做归一化、不做模糊匹配：「路由层」和「路由」是两个维度。
+对齐靠 authoring 侧约定——同类检查抽成共享函数（如 `evals/*/share/`），组名在函数里写一次，跨 eval 天然一致；没对齐的组名不是错误，只是各自形成稀疏行。
+
+## 报告读取面：show 与 view 怎么读
+
+`show` 与 `view` 共用同一份 page 声明（[Reports](../../reports/README.md)），读取面在内建 `standard` 报告一处声明、两个宿主同时生效：
+
+- **实验列表按题型选主列**：通过制实验出通过率列，计分制实验出总分列，两型并存时两列都出、不适用的格显示 `—`。
+  判据由对应 Report 的 Calculation 声明，完整度和分母契约见 [Reports Library](../../reports/library.md#calculation)。
+- **组级读数在 Attempt 详情下钻**：非 passed Assertion result 按 `entries` 展示顺序平铺、标题即分组路径，passed Assertion result 按组折成计数行， `t.score` 给分条目单独成区块并按 `groupPath` 分组（[断言与 Turn 的展示](./display.md)）。每个详情入口用持久 `entryId` 定位，不用条目名或 `entries` 位置。
+  「哪层死的」「哪个组挣了多少分」的逐条证据在那里读——组是折叠树的层级，不是跨 experiment 聚合的报告行维度。
+
+## 怎么选题型
+
+1. 这些检查点是**独立可跑的题目**还是**同一次运行内的检查**？
+   独立可跑 → 拆成多个 eval（[测试集为各计分项生成条目](../../eval/use-case/dataset-fanout.md)），粒度来自更多的题、不是更细的分。
+2. 同一道题内，「做对」是二值的 → `defineEval`：一票否决写 gate，观测指标写 soft。
+3. 同一道题内，「做到几成」有意义（长链条、rubric 大题）→ `defineScoreEval`：检查点 `.points(n)`，自算分数 `t.score`，硬要求 `.gate()`，需要中止时再链 `.stopOnFailure()`。
+
+各用例的题型对照见[用例目录](../../eval/use-case/README.md#通过制还是计分制)。
+
+## 相关阅读
+
+- [Eval · defineScoreEval](../../eval/README.md#definescoreeval计分制题型) —— 计分制题型的定义形状。
+- [计分制用例](../../eval/use-case/rubric-points.md) —— 检查点制与 rubric 制的完整写法。
+- [Severity 与 Verdict](../../verdict/architecture.md) —— 四态折叠与 gate / soft 语义，判定面的基础。
+- [Assertions Architecture](../architecture.md) —— 作者求值语义与稳定 `AssertionsDocument` 投影，折叠树的叶子材料。
+- [Reports](../../reports/README.md) —— show / view 共用的 page 声明，读取面的落点。
+- [Observability](../../../observability.md) —— 质量 × 成本对比的现有横截面。

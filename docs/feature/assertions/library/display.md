@@ -7,8 +7,7 @@
 Pass 的 Attempt 区块顺序为 Execution、Verdict、检查项。每条检查项显示 label 或 key、evaluation、
 evidence、必要的 threshold 与 Issue。
 
-measurement 只作诊断显示：`0.73, required >= 0.8, mismatched`。它不是 score，Pass 页面不显示
-累计 score、百分比或贡献项。
+通过项在概要中不逐条展开。详情页按 `groupPath` 和 `entries` 的展示顺序展示所有条目，并保留 `unavailable`。
 
 ## Score Eval
 
@@ -42,6 +41,10 @@ gate  package manifest has the required entry
 source 信息存在时，详情页链接到项目相对路径和行列。没有 source 的条目进入 unmapped 区，不猜测源码位置。
 
 `stopOnFailure` 是 producer 控制流，不进入稳定投影。若停止后续测试本身需要解释，由独立 diagnostic 或 Run 级观测表达，Assertion 详情不从条目反推。
+
+## 详情 identity 与 route
+
+每个 Assertion 详情实例、链接与 route 都使用持久 `entryId`。Attempt key 与 entryId key 经 Report route adapter 构造同一条 route；entryId key 只来自该 entry 的 `entryId`，不直接拼 raw `AttemptId`。同名条目仍是不同详情项。`name`、`groupPath` 与 `entries` 位置不能作为 route 或页面 identity；它们分别保留人读标题、分组和展示顺序。
 
 ## Turn、conversation 与相关 Attachment
 

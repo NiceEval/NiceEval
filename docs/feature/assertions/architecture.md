@@ -25,7 +25,10 @@ type AssertionsDocument = {
 
 type AssertionEntry = CheckEntry | DirectScoreEntry;
 
+type AssertionEntryId = string;
+
 type EntryContext = {
+  entryId: AssertionEntryId;
   name: string;
   groupPath: readonly string[];
   detail?: string;
@@ -63,6 +66,7 @@ type CheckEntry = EntryContext & {
 };
 
 type DirectScoreEntry = {
+  entryId: AssertionEntryId;
   kind: "score";
   name: string;
   groupPath: readonly string[];
@@ -76,9 +80,13 @@ type DirectScoreEntry = {
 };
 ```
 
-对象是精确对象，任何未知字段、缺失字段、错误联合或重复 object key 都使此 `RecordAttachment` invalid。条目按声明顺序保存；同名条目合法，由数组位置区分。对象 key 顺序在成功 JSON parse 后无义。
+`AssertionEntryId` 精确匹配 ASCII grammar `ae_[a-z0-9]{20}`，固定为 23 UTF-8 bytes。对象是精确对象，任何未知字段、缺失字段、错误联合或重复 object key 都使此 `RecordAttachment` invalid。所有 `entries` 的 `entryId` 必须两两不同；重复值使整个 Attachment invalid。同名条目合法。
 
-## 统一保存模型
+producer 在 normalize / collect 每个内存结果时分配尚未出现在该 Attachment 的不透明 `entryId` 并写入该 entry；它不能从 `entries` 的位置、`name`、`groupPath` 或 Report route 推导。`entryId` 只在其 Attempt-owned Assertions Attachment 内稳定，不承诺两个 Attempt 中同一作者断言有相同值。它不进入 Record Core，也不需要全局 registry。
+
+`entries` 数组顺序保存声明／展示顺序，并保持既有的分数累加顺序；它不表示条目 identity。`groupPath` 的 segment 顺序仍表示分组层级。对象 key 顺序在成功 JSON parse 后无义。
+
+`entryId` 是详情页、route 和导航项的条目 identity。`name` 与 `groupPath` 只组织页面，`detail` 是稳定的人读检查摘要，不是 public API 或 matcher identity。作者语义按下表归一：
 
 所有 Assertion 都是同一个模型：
 
@@ -128,9 +136,22 @@ execution outcome 共同折叠 Attempt Verdict：
 
 所有限制都是 `niceeval.assertions/v1` 的 schema 契约，不能在同一个 schema decoder 中放宽。
 
-Score projection 只累计 contribution。正常 measurement 或 Boolean mismatch 不会使 score 失效。
+| 范围 | 约束 |
+|---|---|
+| document | 最多 4,096 个 entries。 |
+| 通用字符串 | 必须是合法 Unicode scalar sequence；lone surrogate 非法。 |
+| `entryId` | 精确为 ASCII `ae_[a-z0-9]{20}`，固定 23 UTF-8 bytes；同一 document 内两两不同，重复值 invalid。 |
+| `name`、`groupPath` segment、`detail`、`reason` | 非空 NFC，拒绝 C0 与 DEL；每项按解码后字符串计算，最多 512 UTF-8 bytes。 |
+| `groupPath` | 最多 16 个 segment；空数组表示根组。 |
+| `expected`、`received`、`evidence` | 每项最多 4,096 UTF-8 bytes；缺失表示未提供，空串表示提供了空预览；内容原样保留，由 renderer 去除控制字符。 |
+| `source.path` | 非空项目相对 POSIX 路径，最多 1,024 UTF-8 bytes；拒绝绝对路径、反斜杠、C0、DEL，以及空、`.` 或 `..` segment。 |
+| `source.digest` | 对应 origin Run source snapshot 的 SHA-256；精确为 64 个 lowercase hex 字符。 |
+| `source.line`、`source.column` | 正安全整数。 |
+| `score`、`threshold` | 有限数且位于 `[0, 1]`；拒绝 `-0`。 |
+| conditional `available` | 有限正数；拒绝 `-0`。 |
+| direct `points` | 有限非负数；允许 `0`，拒绝 `-0`。 |
 
-按 entries 声明顺序，以 ECMAScript Number 累加所有 direct points 与 conditional available，结果也必须有限。这条上限保证单个 Attempt 的标准 Assertions 分数聚合闭合；它不限制完整 Report semantic document 的总内存。
+按 `entries` 的声明／展示顺序，以 ECMAScript Number 累加所有 direct points 与 conditional available，结果也必须有限。`entryId` 不参与这项聚合。这条上限保证单个 Attempt 的标准 Assertions 分数聚合闭合；它不限制完整 Report semantic document 的总内存。
 
 只有已配置 `.score()` 的 Assertion、直接 `t.score()`，或调用 `.orStop()` 的 control Assertion
 出现 `unavailable` / `errored` 时，Score grading 才不可排名。不参与 score 的 Assertion 的同类问题只保留
@@ -141,7 +162,7 @@ Issue，正式 score 仍有效。execution 或 transport error 使 Score grading
 
 writer 对 ECMAScript `JSON.stringify(document)` 的紧凑 UTF-8 结果执行同一个 4 MiB 限制。越界时在 whole Run seal 前以 `record-input-invalid` 拒绝；外部损坏造成的越界或非法值成为此 Attachment 的 `RecordAttachmentRead.invalid`。
 
-## 封口与 replay
+JSON 空白可能让 raw file 超限，因此只在 `TransportValid` 成立并成功 JSON parse 后才忽略空白与 object key 顺序。`entries` 的顺序保存声明／展示与分数累加顺序；`groupPath` 的顺序表示分组层级。
 
 `.orStop()` 封口它的 entry。test settle 封口其余 entry。连续 measurement 在 Pass Eval 封口时若没有
 `atLeast`，就是作者错误；Score Eval 的 measurement 可以直接封口。
@@ -150,9 +171,9 @@ writer 对 ECMAScript `JSON.stringify(document)` 的紧凑 UTF-8 结果执行同
 
 `niceeval.assertions/v1` 的读取只接受同时满足 FileValid、TransportValid 与 ContractValid 的历史 Attachment payload。外部编辑不是受支持的写入协议。
 
-支持该 schema 的 reader 必须把它解码成 JSON 深等价的值。数组顺序有义，对象 key 顺序与 JSON 空白无义。
+支持该 schema 的 reader 必须把它解码成 JSON 深等价的值。`entries` 的顺序保存声明／展示与分数累加顺序，`groupPath` 的顺序表示分组层级；对象 key 顺序与 JSON 空白无义。
 
-确定性的标准 Assertions projection 只读取已解码的 payload。固定 fixture 使两份 decoded value 逐字段相等时，同一标准 requirement、Report definition 与 runtime 必须形成相等的 `niceeval.report-document/v1` semantic document。
+确定性的标准 Assertions projection 只读取已解码的 payload。每个 Assertion 详情实例与 route 都以其 `entryId` 识别；Report 不得从 `entries` 的展示位置、`name` 或临时 route 反推 identity。固定 fixture 使两份 decoded value 逐字段相等时，同一标准 requirement、Report definition 与 runtime 必须形成相等的 `niceeval.report-document/v1` semantic document。
 
 show、view 与 static export 都从同一份 semantic document 派生。它们消费同一份 `ReportExecution`；从旧 Record 重新 export 只承诺当前 exporter 能成功消费，不承诺导出目录逐 byte 相等，也不约束读取时间或随机源的用户自定义 Report。
 
@@ -168,7 +189,7 @@ payload shape、media type、closedness 或解释变化时，发布同名的相�
 
 ## 数据归属
 
-Assertion collector 只消费调用方提供的值和 producer 已归一的运行数据。它不打开 Record 路径，不读取 Report 的 projection 或 Calculation，也不生成报告页面。
+Assertion collector 只消费调用方提供的值和 producer 已归一的运行数据。它在 normalize / collect 时为每个 entry 分配并保存 attachment-local `entryId`，再以该 entryId 集合检查重复；它不打开 Record 路径，不读取 Report 的 projection 或 Calculation，也不生成报告页面。
 
 source 位置信息可选。存在时，`path` 与 `digest` 必须匹配 Attempt origin Run 的 `niceeval.sources/v1` Attachment entry；Report 经声明的 origin-Run projection 读取快照，不读取当前 worktree。第三方包不写入项目源码内容。
 
