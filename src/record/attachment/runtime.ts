@@ -319,7 +319,7 @@ function isJsonArrayIndex(key: string): boolean {
  * native bytes, sparse arrays, or accessor properties. Package refs are the
  * intentional in-memory exception until storage assigns owner-local keys.
  */
-function isAttachmentJson(value: unknown, seen = new WeakSet<object>()): boolean {
+function isAttachmentJson(value: unknown, active = new WeakSet<object>()): boolean {
   if (isRecordBlobRef(value)) {
     return true;
   }
@@ -334,10 +334,13 @@ function isAttachmentJson(value: unknown, seen = new WeakSet<object>()): boolean
     default:
       return false;
   }
-  if (value === null || !isObject(value) || seen.has(value)) {
+  if (value === null || !isObject(value)) {
     return value === null;
   }
-  seen.add(value);
+  if (active.has(value)) {
+    return false;
+  }
+  active.add(value);
   try {
     if (Array.isArray(value)) {
       if (Object.getPrototypeOf(value) !== Array.prototype) {
@@ -356,7 +359,7 @@ function isAttachmentJson(value: unknown, seen = new WeakSet<object>()): boolean
         }
       }
       for (let index = 0; index < value.length; index += 1) {
-        if (!Object.prototype.hasOwnProperty.call(value, index) || !isAttachmentJson(value[index], seen)) {
+        if (!Object.prototype.hasOwnProperty.call(value, index) || !isAttachmentJson(value[index], active)) {
           return false;
         }
       }
@@ -373,13 +376,15 @@ function isAttachmentJson(value: unknown, seen = new WeakSet<object>()): boolean
       if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
         return false;
       }
-      if (!isAttachmentJson(descriptor.value, seen)) {
+      if (!isAttachmentJson(descriptor.value, active)) {
         return false;
       }
     }
     return true;
   } catch {
     return false;
+  } finally {
+    active.delete(value);
   }
 }
 
