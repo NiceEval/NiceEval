@@ -18,17 +18,39 @@ session 不是 cache。它可能是一次已经付费执行能否完成发布的
 
 local sidecar 位于 sibling `.niceeval-local/<recordKey>/`。`recordKey` 由 canonical root 用固定算法派生，不随 Record major、文件内容或机器身份改变。
 
-### recordKey
+### Local state 与只读 root
 
-canonical root 是 `root` 参数按固定规则规范化得到的绝对路径：相对路径先相对当前工作目录合成绝对路径，再去掉尾部分隔符、折叠 `.` 与 `..` 片段、不跟随 symlink、大小写敏感、路径分隔符统一为 `/`。
+lease 与 lock 全部落在 local state，portable root 及其 parent 不因 reader 或 writer 变可写。默认 local-state location 是 sibling `.niceeval-local/<recordKey>/`。
+
+sibling 不可写时（只读 checkout、只读 volume），Node 层改用独立可写的 local-state location。该位置按平台 state 目录选择，以 `recordKey` 命名空间隔离，manifest 与 lease 语义与 sibling 相同。两者都不可写时，reader 退化为可验证的只读 lock capability：读取并验证 lock 现场，不写入任何 lease 状态；writer 与 migrate 仍要求可写位置。
+
+reader 的 shared maintenance lease 因此不要求 portable root 可写。只读 root 可以正常打开、导航与投影；只有发布、迁移与 recovery 要求可写 local state。
+
+### recordKey 与 root 定位
+
+`root` 参数只接受 absolute string path 或 absolute `file://` URL。相对路径、relative URL 与含变量的写法一律拒绝，不相对当前工作目录猜测。
+
+打开按段进行，每段用 handle-relative open（POSIX `openat`、Windows handle-relative）并拒绝 symlink 与 reparse point。existing root 以 opened parent 和真实落盘 case 打开；Windows 按 volume 与 UNC server/share 归一，drive letter 统一大写。root 缺失时先 canonicalize 最深的已存在 parent，再逐段 safe create；`createIfMissing: false` 时不创建任何段。
+
+canonical locator input 由三部分组成：opened parent 的 canonical locator identity、canonical leaf segment、platform case semantics。case-insensitive 平台把 leaf 折叠为 lowercase，并在输入中编码折叠模式。输入不包含 root 自身的 inode 或 file-id。
 
 ```text
-recordKey = hex(SHA-256(UTF-8(canonical root)))[0..16]
+recordKey = hex(SHA-256(domain-separated(
+  canonical opened parent locator identity,
+  canonical leaf segment,
+  platform case semantics,
+)))
 ```
 
-`recordKey` 是 SHA-256 摘要的小写 hex 前 16 个字符。算法在 Record v1 定稿，后续 major 只使用同一结果，不重新定义。
+`recordKey` 是 SHA-256 的完整 64 字符小写 hex。算法在 Record v1 定稿，后续 major 只使用同一结果，不重新定义。
 
-同路径重建与 whole-root 复制不改变 `recordKey`。sidecar 内仍以 durable `recordId` 校验 lineage，防止复制或路径重建后的 session 串线。
+canonical locator input 只依赖路径文本与平台语义，不依赖 root 是否存在。portable root 缺失时仍能定位并检查 sibling sidecar 的 migration 与 session 现场。
+
+local manifest 保存 root file identity（POSIX dev+inode、Windows volume+file ID）与 durable `recordId`，只用于 lineage 校验，不进入 `recordKey`。同一路径被删除后重建、或从备份原样恢复时，`recordKey` 不变，但 lineage 不匹配，open 返回 `record-sidecar-stale`。
+
+父目录被移动或改名时 canonical locator input 改变，`recordKey` 改变，旧 sidecar 不再被找到。NiceEval 不承诺自动恢复：parent move/replace 后旧 session 视为失效，用户显式处理现场后重新建立。
+
+migration 的 `N`、`O` 与 staging sibling 名从 `recordKey` 与 `sessionId` 派生，no-replace 创建；它们与 portable root 的布局互不重叠。
 
 ## 什么叫“Record 只保存事实”
 
@@ -84,7 +106,7 @@ Record 的 native Library API 返回 Effect。内部模块不得在文件系统�
 | ID、路径语法、版本路由、引用验证、preservation inventory | 纯函数与完整 ADT |
 | 文件、no-follow、锁、Stream、`fsync`、rename 与 cleanup | Effect |
 | lease、handle、writer session、migration staging | `Effect.Scope` |
-| missing、unknown schema、局部损坏 | `ChannelProjectionResult` 或 `CoreRead` 成功值 |
+| missing、unknown schema、局部损坏 | `ChannelProjectionResult` 或 `RecordCoreRead` 成功值 |
 | 权限、I/O、busy、closed lifecycle、capability unsupported | Effect typed error |
 
 平台服务只包含真实外部边界：`RecordFileSystem`、`RecordMaintenanceLock`、`RecordWriterLock` 与 `RecordEntropy`。它们组成由 `Context.Tag` 标识、由 `Layer` 提供的 `RecordPlatform` service；普通 TypeScript interface 不能直接充当 Effect environment。Schema、路径和引用算法保持纯函数。
@@ -118,6 +140,30 @@ Attempt 只住在 origin Run。其它 Run 的 Member 保存精确 `{ originRunId
 
 portable unit 是整个 Record root。局部 Run、Channel 或 blob 不能被复制后冒充独立 Record。
 
+## 路径段编解码与碰撞规则
+
+Record 内每个落盘名都经过 canonical segment codec。`runs/` 的 Run 目录、`members/` 与 `attempts/` 的文件、`channels/` 的 Channel 目录、blob ref 与 migration/staging sibling 一律以 codec 输出的 segment 落盘。
+
+公开 `ChannelName` 是逻辑名；落盘使用它的 canonical segment 形式 `RecordChannelName`。两者双向可转换，Record 只接受 codec 输出，不信任调用方拼出的任意文件名。
+
+codec 在 lowercase ASCII 基础上拒绝以下名字，全部返回 `record-path-invalid`：
+
+| 拒绝规则 | 例子 |
+|---|---|
+| Windows device basename，带 extension 也拒绝 | `con.example`、`aux`、`lpt1.json` |
+| 尾随空格或点 | `name.`、`name ` |
+| ADS colon | `name:stream` |
+| 路径 separator | `/`、`\` |
+| `.` 与 `..` 段 | `a/../b` |
+
+同目录内还要检查三种碰撞，命中即 `record-path-invalid`：
+
+- exact：两个名字字节相同；
+- ASCII casefold：忽略大小写后相同；
+- file-directory-prefix：一个名字是另一个名字加 `.` 后缀的前缀，例如 `a` 与 `a.txt`。
+
+blob closure 的每个 ref 与文件都用同一 codec。migration 的 `N`、`O` 与 staging sibling 名由 `recordKey` 与 `sessionId` 派生后同样经过 codec，且 no-replace 创建，不允许占用既有名字。
+
 ## 固定 bootstrap 与打开边界
 
 每个 Record major 都把格式入口放在 root 的 `record.json`。这个路径和最小探测语法跨 major 固定。
@@ -138,6 +184,10 @@ type RecordFormatProbe = {
 | 现场 | 结果 |
 |---|---|
 | local migration state 存在 | `record-migration-recovery-required` |
+| sidecar lineage 与 root file identity 不匹配 | `record-sidecar-stale` |
+| sidecar 存在未收敛的 session 或 recovery 现场 | `record-sidecar-recovery-required` |
+| 无可写 local-state location 且无只读 lock capability | `record-sidecar-capability-unsupported` |
+| local-state location 权限不足 | `record-sidecar-permission-denied` |
 | `format` 是 current major | 用 current exact reader 打开 |
 | `format` 是已知旧 major，且 converter chain 完整 | `record-migration-required` |
 | future 或 foreign format | `record-format-unsupported` |
@@ -226,9 +276,9 @@ Record 不保存 descriptor schema、descriptor registry 或 durable `absent`。
 
 同一 owner 内 `ChannelName` 由目录身份保证唯一，不按枚举顺序或版本号选择。目录名与 envelope 的 `name` 必须精确相等。
 
-`ChannelName` 使用 reverse-domain lowercase ASCII namespace，满足 `^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$`，且 UTF-8 长度不超过 120 bytes。它本身就是一个 canonical path segment。
+`ChannelName` 使用 reverse-domain lowercase ASCII namespace，满足 `^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$`，且 UTF-8 长度不超过 120 bytes。它是逻辑名，落盘 segment `RecordChannelName` 由它经 [canonical segment codec](#路径段编解码与碰撞规则) 派生。
 
-`niceeval.*` 只归 NiceEval 官方领域 owner，第三方使用自己的域名。公开 `defineJsonChannel` 对 `niceeval.` 前缀在调用时抛 `ChannelDefinitionError`。官方 built-in 由包内私有 constructor 定义，私有 TypeId 使 TS 无法伪造 definition 对象（见 [Channel definition 与 projector](#channel-definition-与-projector)）。
+`niceeval.*` 只归 NiceEval 官方领域 owner，第三方使用自己的域名。公开 `defineJsonChannel` 对 `niceeval.` 前缀在调用时返回 `niceeval-namespace-reserved`（见 [Library](library.md#channel-definition)）。官方 built-in 由包内私有 constructor 定义，私有 TypeId 使 TS 无法伪造 definition 对象（见 [Channel definition 与 projector](#channel-definition-与-projector)）。
 
 `ChannelSchemaId` 使用 `<channel-name>/vN`。同一 schema identity 永远保持相同的 bytes shape、media type、closedness 与语义。
 
@@ -242,7 +292,7 @@ storage closure codec 不是 Channel projector。它只证明哪些 bytes 属于
 
 ## Record v1 限制
 
-Record v1 对文档大小、条目数量与 closure 字节设固定上限。上限随 `niceeval.record/v1` 冻结，不随 Channel schema 演进改变；收紧或放宽都需要新的 Record major。
+Record v1 对文档大小、条目数量、路径与 closure 字节设固定上限。上限随 `niceeval.record/v1` 冻结，不随 Channel schema 演进改变；收紧或放宽都需要新的 Record major。
 
 | 对象 | 上限 |
 |---|---|
@@ -252,17 +302,34 @@ Record v1 对文档大小、条目数量与 closure 字节设固定上限。上�
 | 单个 `payload` | 16 MiB |
 | 单个 blob | 64 MiB |
 | 单个 Channel closure（payload 与全部 blob） | 256 MiB |
-| 一个 Run 的 Member / Attempt 数量 | 4096 |
+| 一个 Run 的 closure 总量（全部文档、payload 与 blob） | 1 GiB |
+| root 的 Run 数量 | 1,048,576 |
+| 一个 Run 的 expectedSlots 数量 | 4096 |
+| 一个 Run 的 Member 数量 | 4096 |
+| 一个 Run 的 origin Attempt 数量 | 4096 |
 | 一个 owner 的 Channel 数量 | 256 |
-| `ChannelName` | 120 bytes（UTF-8） |
+| 一个 owner 目录的 entries 数量 | 4096 |
+| 一个 Channel 的 blob refs 数量 | 65,536 |
+| 一个 Channel 的 blob 数量 | 65,536 |
+| NDJSON 单行 | 64 KiB |
+| NDJSON 单文件 | 256 MiB |
+| 路径深度 | 16 层 |
+| 路径 segment | 120 bytes（UTF-8） |
+| 完整路径 | 1024 bytes（UTF-8） |
+| JSON 嵌套深度 | 64 层 |
+| `ChannelName` / `RecordChannelName` | 120 bytes（UTF-8） |
+
+组合受单 Run 总量约束：一个 Run 的全部 Channel closure、文档与 blob 之和不能超过 1 GiB。256 个 Channel 各取 256 MiB 的组合在 seal 前被拒绝，不允许组合出 64 GiB 的 Run。
+
+已知计数在分配前检查：expectedSlots、Member、origin Attempt、Channel 与 blob refs 的数量先于任何内存分配验证。Stream 累计（NDJSON 行数、blob bytes）边读边比对上限，命中即中止，不读完整文件。
 
 读取超限按可隔离损坏处理，只影响该 entry 或该 Channel：
 
 - `record.json` 超过探测上限时无法建立可信 bootstrap，返回 `record-core-invalid`；
-- Core 文档超限让该 entry 变成 `CoreRead.invalid`；
+- Core 文档超限让该 entry 变成 `RecordCoreRead.core-invalid`；
 - envelope、payload 或 blob 超限让该 Channel 变成 `ChannelProjectionResult.invalid`，issues 具名 `limit-exceeded`。
 
-写入超限在 seal 前失败。`stageRun` / `sealRun` 检查上述所有上限，命中时返回 `record-limit-exceeded`，携带 kind、具名对象、limit 与 actual；staging 现场由 session 删除，不产生部分发布。
+写入超限在 seal 前失败。`stageRun` / `sealRun` 检查上述所有上限，命中时返回 `record-limit-exceeded`，携带 kind、具名对象、`maximum` 与 `observedAtLeast`；staging 现场由 session 删除，不产生部分发布。错误不携带精确观测值：Stream 可能在上限前已中止，`observedAtLeast` 只是下界。
 
 ## Channel definition 与 projector
 
@@ -306,6 +373,23 @@ type ChannelProjectorTypeId<Owner, Value> = {
 ```
 
 `_typeId` 使用不导出的 `unique symbol` 私有键，外部代码无法构造。类型参数真实进入 TypeId 的结构位置，`Owner`、`Payload` 与 `Value` 的失配都是类型错误；TS 因此不能冒充官方 definition 或 projector，构造途径只有公开 constructor 与包内私有 capability。
+
+typed write 同样带 package-private TypeId：
+
+```ts
+declare const recordChannelWriteTypeId: unique symbol;
+type RecordChannelWriteTypeId<Owner> = {
+  readonly [recordChannelWriteTypeId]: { readonly owner: Owner };
+};
+
+type RecordChannelWrite<Owner extends "run" | "attempt"> = {
+  readonly definition: JsonChannelDefinition<Owner, unknown>;
+  readonly payload: unknown;
+  readonly _typeId: RecordChannelWriteTypeId<Owner>;
+};
+```
+
+`RecordChannelWriteTypeId` 的 symbol 只存在于包内模块作用域，不导出。数组擦除 `Payload` 后仍保留 `Owner`，外部代码没有 symbol 就无法构造 write。`RecordChannelWrite<"run">[]` 与 `RecordChannelWrite<"attempt">[]` 不能互相冒充；owner 混用在类型层即被拒绝，运行时 owner 检查作为最终防线。
 
 definition 的 `ChannelSchemaId` 是 durable identity；projector 是当前程序中的 branded typed adapter。Record 不保存 projector identity。
 
@@ -471,11 +555,15 @@ reader 取得 shared maintenance lease，但不取得 writer lock，因此可以
 
 `RecordReader` 打开时取得 shared maintenance lease，并枚举一次 `runs/`。它冻结 `candidateSet`，不是 linearizable Invocation snapshot。
 
-初次扫描按 raw entry bytes 排序，并保留每项 `read | invalid`。projector 不能先过滤损坏 entry，再把剩余集合伪装成完整 latest candidates。
+初次扫描按 raw entry bytes 排序，并保留每项 `read | core-invalid`。projector 不能先过滤损坏 entry，再把剩余集合伪装成完整 latest candidates。
+
+按 identity 查找（Run、Attempt）返回 `RecordCoreRead` 三态 ADT：`read`、`core-invalid` 与 `missing`。枚举只产生前两态；`missing` 只出现在按 id 查找时。
 
 只有 candidate set 可以参与 latest、显式 Run 选择、Sample 分母与 execution source。reader 创建后发布的 Run 不会进入这次 view。
 
 选择形成后，reader 可以沿已选 Member 的精确 AttemptRef 补入 origin Run。这个 `dependencyClosure` 不成为 latest candidate，也不扩张 Sample 分母。
+
+reader 与 write session 的 frozen view 都提供受控 project capability：以 FrozenRun / FrozenAttempt handle 与 typed projector 为参数，返回 `ChannelProjectionResult`。reuse planning 用它读取 Verdict、score、eligibility 与 evaluations 等具名 Channel，并形成有界的 analysis selection。capability 只输出已解码的 typed 值，不暴露 path、raw bytes 或 reader handle。
 
 closure 完成后同样冻结。ReportInput 形成前必须消费完所需 Channel；关闭 Scope 后，Sample、ReportInput 与 ReportExecution 都不再访问 Record。
 
@@ -492,6 +580,8 @@ migrate           exclusive maintenance lease → source-version writer lock
 ```
 
 锁顺序固定，不能反向取得。正常 reader 与 writer 可以并发；同一 root 同时最多一个 writer。
+
+reader 的 shared maintenance lease 只落在 local state，不要求 portable root 或 parent 可写。sibling 不可写时按 [Local state 与只读 root](#local-state-与只读-root) 落到独立位置或只读 lock capability。
 
 migration 是独占 maintenance window。存在 reader、writer 或 recovery 时，`niceeval migrate` fail fast；它不等待，也不接管其它进程。
 

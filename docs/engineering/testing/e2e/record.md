@@ -13,11 +13,30 @@
 - `openRecordWriteSession` 只接收 typed Core 与 typed Channel writes，不接受 raw JSON envelope 或任意物理 path；
 - 完整 Run 经 `stageRun`、`sealRun` 与 `publishRun` 发布后，`openRecordReader` 能在同一 root 读回同一批 Run、Attempt 与 Channel identity；读回的每个 Run 都带 `completedAt`；
 - `stageRun` 拒绝缺少 `completedAt` 的输入；缺少 required Channel 的官方 producer aggregate 在 stage 前失败；
-- 公开 `defineJsonChannel` 对 `niceeval.` 前缀 name 抛 `ChannelDefinitionError`，官方 built-in 无法通过公开 API 重复定义；
-- 超过 v1 限制的写入在 seal 前以 `record-limit-exceeded` 失败，不产生部分发布；读取超限的文档或 Channel 只变成对应 `invalid`，不影响其它 entry；
+- 公开 `defineJsonChannel` 对 `niceeval.` 前缀 name 返回 `Either.left`（code `niceeval-namespace-reserved`），没有异常出口，官方 built-in 无法通过公开 API 重复定义；
+- `makeRecordChannelWrite(definition, payload)` 立即 codec 验证 payload；Run 槽位只接受 `RecordChannelWrite<"run">`，Attempt 槽位只接受 `RecordChannelWrite<"attempt">`；
+- owner 混用是类型错误；数组擦除 `Payload` 后仍不可伪造；`StagedRunInput` 用 `originAttempts` 与 `referenceMembers` 表达完整 membership，每个 origin Attempt 恰有一个 origin Member；
+- reference 的 handle 必须来自同一 session 的 frozen view，跨 session 使用返回 `record-session-mismatch`；
+- handle 阶段错误返回 `record-handle-already-consumed` 与 `record-wrong-state`；`RecordPublishReceipt` 只携带 `recordId` 与 `runId`；
+- `FrozenRecordView.attempt` 返回 `RecordCoreRead` 三态（`read`、`core-invalid`、`missing`）；受控 project capability 只输出已解码 typed 值，不暴露 path 或 raw bytes；
+- 超过 v1 限制的写入在 seal 前以 `record-limit-exceeded` 失败，不产生部分发布；错误只携带 `maximum` 与 `observedAtLeast`；
+- 读取超限的文档或 Channel 只变成对应 `invalid`，不影响其它 entry；
 - 公开格式 fixture 的 schema version、字段与 expected 是签入字面量，不从候选常量生成；
 - 未逐项声明的 `.niceeval-local` 位置、staging directory、分片与索引布局属于私有实现；
 - 私有布局可以作为 diagnostic artifact 收集，但不决定 verdict。
+
+## record-locator-and-path
+
+`root` 定位与路径编解码是跨平台契约。验收：
+
+- `root` 只接受 absolute string path 或 absolute `file://` URL，相对路径被拒绝；
+- 逐段 handle-relative open，任何一段是 symlink 或 reparse point 都被拒绝；root 缺失时先 canonicalize 已存在 parent 再逐段 safe create；
+- `recordKey` 是 domain-separated 输入的完整 SHA-256，不是截断摘要；输入不包含 root 自身 inode 或 file-id，同一路径重建后 `recordKey` 不变；
+- 同一路径被替换后 open 返回 `record-sidecar-stale`；父目录移动或改名后旧 sidecar 不被自动恢复；
+- portable root 缺失时仍能按 canonical locator 定位 sidecar 的 migration 与 session 现场；
+- on-disk 名字全部经过 canonical segment codec：Windows device basename（`con.example`）、尾随空格或点、ADS colon、separator 与 `.`/`..` 段被拒；
+- 同目录内 exact、ASCII casefold 与 file-directory-prefix（`a` 与 `a.txt`）碰撞被拒；
+- migration 的 `N`、`O` 与 staging sibling 从 `recordKey` 与 `sessionId` 派生且 no-replace。
 
 ## record-open-current-only
 
@@ -27,6 +46,8 @@
 - 已知旧 major 返回 `record-migration-required`，错误携带 sourceFormat、targetFormat 与 `niceeval migrate` 命令；
 - future 或 foreign format 返回 `record-format-unsupported`；
 - local migration state 未收敛时返回 `record-migration-recovery-required`，优先于格式判断；
+- root 或 parent 只读时 reader 仍可打开：shared maintenance lease 落在独立 local-state location 或只读 lock capability，不要求 portable root 可写；
+- 同一路径被替换后返回 `record-sidecar-stale`；sidecar 有未收敛 session 时返回 `record-sidecar-recovery-required`；
 - 执行 `niceeval migrate` 后同一 root 可由普通命令打开，`recordId`、RunId、SlotId 与 AttemptId 保持不变。
 
 ## record-channel-isolation
@@ -54,7 +75,7 @@ Record API 的资源生命周期由 Effect Scope 承担。验收：
 
 维护与写入并发只由 maintenance lease 与 writer lock 协调。验收：
 
-- reader 只取得 shared maintenance lease，不取得 writer lock，可以和正常 writer 并发；
+- reader 只取得 shared maintenance lease，不取得 writer lock，可以和正常 writer 并发；lease 不要求 portable root 或 parent 可写；
 - 同一 root 的第二个 writer 以 `record-writer-busy` 失败；不同 root 不协调也不自动合并；
 - `niceeval migrate` 与所有 reader、writer 和 recovery 互斥；busy 时 fail fast，不等待也不接管；
 - 锁顺序固定：先 shared maintenance lease，再 exclusive writer lock；migrate 先取 exclusive maintenance lease，再按 source version 取 writer lock；

@@ -62,7 +62,7 @@ declare const openRecordReader: (input: {
 >;
 ```
 
-constructor 先检查 local migration state，再读取固定 bootstrap。只有 current major 能返回 `RecordReader`。
+constructor 先定位 local sidecar（canonical locator 派生，root 缺失也能定位），检查 lineage 与 migration state，再读取固定 bootstrap。只有 current major 能返回 `RecordReader`。
 
 已知旧 major 返回 `record-migration-required`：
 
@@ -82,13 +82,13 @@ future 与 foreign format 返回 `record-format-unsupported`。Library 不提供
 ```ts
 interface RecordReader {
   readonly candidates: Effect.Effect<
-    readonly CoreRead<RunSummary>[],
+    readonly RecordCoreRead<RunSummary>[],
     RecordReadError
   >;
 
   readonly run: (
     runId: RunId,
-  ) => Effect.Effect<CoreRead<FrozenRun>, RecordReadError>;
+  ) => Effect.Effect<RecordCoreRead<FrozenRun>, RecordReadError>;
 
   readonly freezeSelection: (
     runIds: readonly RunId[],
@@ -106,21 +106,24 @@ interface RecordReader {
 }
 ```
 
-`FrozenRun` 与 `FrozenAttempt` 是 reader 创建的 branded handle。来自另一 reader 或调用方伪造的 handle 返回 `record-selection-invalid`。
+`FrozenRun` 与 `FrozenAttempt` 是 reader 创建的 branded handle。来自另一 reader 或调用方伪造的 handle 返回 `record-selection-invalid`；来自其它 session 的 handle 返回 `record-session-mismatch`。
 
 `freezeSelection` 只能从 candidate set 选择 Run。它可以沿 Member 的精确引用形成 dependency closure，但不能把 origin Run 加进 Sample 分母。
 
 reader 的 Scope 持有 shared maintenance lease 与文件 handle。Scope 关闭后全部方法返回 `record-reader-closed`。
 
-## CoreRead
+## RecordCoreRead
 
 ```ts
-type CoreRead<Value> =
+type RecordCoreRead<Value> =
   | { state: "read"; value: Value }
-  | { state: "invalid"; issues: NonEmptyRecordIssues };
+  | { state: "core-invalid"; issues: NonEmptyRecordIssues }
+  | { state: "missing" };
 ```
 
 Core entry 损坏是可隔离的读取结果。权限、真实 I/O 与 closed Scope 是 Effect error。
+
+枚举（`candidates`）只产生 `read | core-invalid`；`missing` 只出现在按 identity 查找时。查找返回 `read` 表示该 entry 存在且可读，`core-invalid` 表示存在但损坏，`missing` 表示不存在。
 
 ## Channel definition
 
@@ -133,16 +136,59 @@ declare const defineJsonChannel: <
   name: ChannelName;
   schemaId: ChannelSchemaId;
   schema: ClosedPortableJsonSchema<Payload>;
-}) => JsonChannelDefinition<Owner, Payload>;
+}) => Either.Either<
+  JsonChannelDefinition<Owner, Payload>,
+  RecordChannelDefinitionError
+>;
 ```
 
 `Payload` 不声明递归 JSON 上限（如 `PortableJsonValue` 一类 union）。精确性、闭合性与可序列化性由 `ClosedPortableJsonSchema<Payload>` 在定义时证明；类型系统不靠递归 union 约束 payload，因此也不存在伪造或退化的大 union。
 
 `defineJsonChannel` 同时拥有写入 encoder 与精确 decoder。它拒绝 excess property，也不自动注入 `observedAt` 或其它业务字段。
 
-公开 `defineJsonChannel` 在调用时检查 name：以 `niceeval.` 开头的 name 抛 `ChannelDefinitionError`（code `niceeval-namespace-reserved`）。代理、断言或类型转换都不能绕过这次运行时检查。官方 built-in 由包内私有 constructor 构造，不经过公开 `defineJsonChannel`；TS 层面也没有第二条构造途径（见 [Architecture](architecture.md#channel-definition-与-projector) 的私有 TypeId）。
+定义没有异常出口，失败一律通过返回的 Either 表达。调用时完成 name、schemaId 与 schema 检查：
+
+```ts
+type RecordChannelDefinitionError =
+  | { code: "niceeval-namespace-reserved"; name: ChannelName }
+  | { code: "channel-name-invalid"; name: string }
+  | { code: "channel-schema-id-invalid"; schemaId: string }
+  | { code: "channel-schema-invalid"; issues: NonEmptyRecordIssues };
+```
+
+以 `niceeval.` 开头的 name 返回 `niceeval-namespace-reserved`。代理、断言或类型转换都不能绕过这次检查。官方 built-in 由包内私有 constructor 构造，不经过公开 `defineJsonChannel`；TS 层面也没有第二条构造途径（见 [Architecture](architecture.md#channel-definition-与-projector) 的私有 TypeId）。
 
 Library 不提供 raw `name + JsonValue`、`defineOpaqueJsonChannel` 或普遍的 `ctx.writeChannel`。producer 只能通过自己持有的 typed definition 写入。
+
+## Typed Channel write
+
+```ts
+type RecordChannelWrite<Owner extends "run" | "attempt"> = {
+  readonly definition: JsonChannelDefinition<Owner, unknown>;
+  readonly payload: unknown;
+  readonly _typeId: RecordChannelWriteTypeId<Owner>;
+};
+
+declare const makeRecordChannelWrite: <
+  Owner extends "run" | "attempt",
+  Payload,
+>(
+  definition: JsonChannelDefinition<Owner, Payload>,
+  payload: Payload,
+) => Either.Either<RecordChannelWrite<Owner>, RecordChannelWriteError>;
+```
+
+`makeRecordChannelWrite` 捕获 `(definition, payload)` typed pair，并立即用 definition 的 codec 验证 payload；验证失败返回 `record-channel-write-invalid`，没有异常出口。
+
+```ts
+type RecordChannelWriteError = {
+  code: "record-channel-write-invalid";
+  schemaId: ChannelSchemaId;
+  issues: NonEmptyRecordIssues;
+};
+```
+
+`RecordChannelWriteTypeId` 的 unique symbol 是 package-private，不导出。数组擦除 `Payload` 后仍保留 `Owner`，外部代码无法构造 write：`RecordChannelWrite<"run">[]` 不能出现在 attempt 槽位，反之亦然；owner 混用在类型层即被拒绝，运行时 owner 检查作为最终防线。
 
 ## Channel projector
 
@@ -171,22 +217,24 @@ interface JsonProjectionCase<Owner, Payload, Value> {
 projector 不收到 bytes、path、reader、其它 Channel 或外部 service。这个参数边界减少意外 capability，但不隔离 JavaScript 闭包；内建 callback 遵守纯函数约定，第三方 callback 属受信任代码。
 
 ```ts
-const endpointV1 = defineJsonChannel({
-  owner: "run",
-  name: "com.example.nowledge.endpoint",
-  schemaId: "com.example.nowledge.endpoint/v1",
-  schema: EndpointV1Schema,
-});
+Effect.gen(function* () {
+  const endpointV1 = yield* defineJsonChannel({
+    owner: "run",
+    name: "com.example.nowledge.endpoint",
+    schemaId: "com.example.nowledge.endpoint/v1",
+    schema: EndpointV1Schema,
+  });
 
-const endpointProjector = defineJsonChannelProjector({
-  owner: "run",
-  channel: endpointV1.name,
-  cases: [
-    {
-      schema: endpointV1,
-      project: (payload) => Either.right({ url: payload.url }),
-    },
-  ],
+  const endpointProjector = defineJsonChannelProjector({
+    owner: "run",
+    channel: endpointV1.name,
+    cases: [
+      {
+        schema: endpointV1,
+        project: (payload) => Either.right({ url: payload.url }),
+      },
+    ],
+  });
 });
 ```
 
@@ -223,7 +271,7 @@ type ChannelSchemaId = string & Brand<"ChannelSchemaId">;
 type UtcMillis = string & Brand<"UtcMillis">;
 ```
 
-`RecordRoot` 是 canonical absolute directory path 的 brand。constructor 按 [Architecture](architecture.md#recordkey) 的 canonical 规则把输入规范化成绝对路径，不自动补接子目录。同一个 root 参数在规范化后始终映射到同一个 local sidecar。
+`RecordRoot` 是 canonical absolute directory path 的 brand。constructor 按 [Architecture](architecture.md#recordkey-与-root-定位) 的 locator 规则打开或创建 root：逐段 handle-relative open、拒绝 symlink 与 reparse point，并派生 `recordKey` 映射 local sidecar。`root` 只接受 absolute path 或 absolute `file://` URL。
 
 `RecordId` 是 canonical lowercase UUID v4。复制与无损 migration 保留它。
 
@@ -264,7 +312,7 @@ interface RecordWriteSession {
 
 write session 取得 shared maintenance lease，再取得 exclusive writer lock。它打开一次 frozen view，reuse planning 与 reference validation 共用这份视图。
 
-`stageRun` 只接收 typed Core 与 typed Channel writes。它不接受 raw JSON envelope 或任意物理 path。
+`stageRun` 只接收 typed Core 与 typed Channel writes。Run 级槽位是 `RecordChannelWrite<"run">`，Attempt 级槽位是 `RecordChannelWrite<"attempt">`，reference Member 用 `FrozenAttempt` handle 表达。它不接受 raw JSON envelope 或任意物理 path。
 
 `sealRun` 验证 Core、独立 Channel closure、references、sync 与 manifest。官方 producer 在调用 `stageRun` 前用内部 `EvaluationRecordContract` 验证领域 aggregate。
 
@@ -279,54 +327,82 @@ type StagedRunInput = {
   readonly startedAt: UtcMillis;
   readonly completedAt: UtcMillis;
   readonly expectedSlots: readonly ExpectedSlotV1[];
-  readonly runChannels: readonly ChannelPayloadWrite[];
-  readonly attempts: readonly StagedAttemptInput[];
+  readonly originAttempts: readonly StagedOriginAttempt[];
+  readonly referenceMembers: readonly StagedReferenceMember[];
+  readonly runChannels: readonly RecordChannelWrite<"run">[];
 };
 
-type StagedAttemptInput = {
+type StagedOriginAttempt = {
   readonly attemptId: AttemptId;
   readonly originSlotId: SlotId;
-  readonly channels: readonly ChannelPayloadWrite[];
+  readonly channels: readonly RecordChannelWrite<"attempt">[];
 };
 
-type ChannelPayloadWrite = {
-  readonly definition: JsonChannelDefinition<"run" | "attempt", unknown>;
-  readonly payload: unknown;
+type StagedReferenceMember = {
+  readonly slotId: SlotId;
+  readonly attempt: FrozenAttempt;
 };
 ```
 
-`ChannelPayloadWrite` 是存在量化的 typed write。payload 的类型由所属 definition 的 `Payload` 决定，调用点由 `(definition, payload)` 构造并检查；raw JSON 与任意 path 不能通过类型边界。`completedAt` 必填：`stageRun` 拒绝缺少 `completedAt` 的输入，portable Record 中不存在未完成的 Run。
+`StagedRunInput` 穷尽表达一次发布需要的 Core 事实：expected slots 分母、新 origin Attempt、reference Member 与 Run 级 Channel。`completedAt` 必填：`stageRun` 拒绝缺少 `completedAt` 的输入，portable Record 中不存在未完成的 Run。
+
+每个 origin Attempt 恰有一个 origin Member：`originSlotId` 必须属于 `expectedSlots`，且该 slot 的 Member 由 `stageRun` 锚定到本 Run 的 `attemptId`。两个 origin Attempt 不能共享同一 `originSlotId`，同一 `attemptId` 也不能出现两次。
+
+reference Member 的 `attempt` 必须来自同一 session `view.attempt(...)` 返回的 `FrozenAttempt` handle。伪造 handle 返回 `record-selection-invalid`，来自其它 session 的 handle 返回 `record-session-mismatch`；reference 因此只能指向 frozen view 中已发布的精确 Attempt。
 
 ```ts
 type FrozenRecordView = {
-  readonly candidates: readonly CoreRead<RunSummary>[];
+  readonly candidates: readonly RecordCoreRead<RunSummary>[];
   readonly attempt: (
     originRunId: RunId,
     attemptId: AttemptId,
-  ) => FrozenAttempt | undefined;
+  ) => RecordCoreRead<FrozenAttempt>;
+  readonly projectAttempt: <Value>(
+    attempt: FrozenAttempt,
+    projector: ChannelProjector<"attempt", Value>,
+  ) => ChannelProjectionResult<Value>;
+  readonly projectRun: <Value>(
+    run: FrozenRun,
+    projector: ChannelProjector<"run", Value>,
+  ) => ChannelProjectionResult<Value>;
 };
 ```
 
-`FrozenRecordView` 是 session 取得锁时冻结的候选集合与 Attempt 查找表。reuse planning 与 reference validation 共用它；它不含 Channel 内容，也不提供 projector 能力。`attempt` 只返回 view 内已发布的 origin Attempt，未发布或不可见的 Attempt 返回 `undefined`。
+`FrozenRecordView` 是 session 取得锁时冻结的候选集合与 Attempt 查找表。reuse planning 与 reference validation 共用它。`attempt` 返回三态 `RecordCoreRead`：`read`、`core-invalid` 或 `missing`。
+
+受控 project capability 只接受 handle 与 typed projector，返回已解码的 `ChannelProjectionResult`。reuse planning 用它读取 Verdict、score、eligibility 与 evaluations，并形成有界的 analysis selection；它不暴露 path、raw bytes 或 reader handle。
 
 ## StagedRun、SealedRun 与 receipt
 
 ```ts
 declare const stagedRunTypeId: unique symbol;
-type StagedRun = { readonly [stagedRunTypeId]: true };
-
 declare const sealedRunTypeId: unique symbol;
-type SealedRun = { readonly [sealedRunTypeId]: true };
+
+type StagedRun = {
+  readonly [stagedRunTypeId]: {
+    readonly session: RecordWriteSession;
+    readonly state: "staged";
+  };
+};
+
+type SealedRun = {
+  readonly [sealedRunTypeId]: {
+    readonly session: RecordWriteSession;
+    readonly state: "sealed";
+  };
+};
 
 type RecordPublishReceipt = {
+  readonly recordId: RecordId;
   readonly runId: RunId;
-  readonly publishedAt: UtcMillis;
 };
 ```
 
-`StagedRun` 是 `stageRun` 的 opaque 句柄，只能由创建它的 session 消费一次。`SealedRun` 只能由同一 session 的 `publishRun` 发布一次；两个句柄都不能被复制、持久化或跨 session 传递。
+handle 的 TypeId 编码创建它的 session 与阶段。`StagedRun` 只能由创建它的 session 消费一次；`SealedRun` 只能由同一 session 的 `publishRun` 发布一次。
 
-`RecordPublishReceipt` 只证明该 Run 已以 no-replace rename 在 durable root 可见，且 parent `fsync` 完成。它不复制 Channel payload、Verdict、score 或聚合读数。
+跨 session 使用 handle 返回 `record-session-mismatch`，重复消费返回 `record-handle-already-consumed`。阶段错误返回 `record-wrong-state`，例如对 `StagedRun` 调 `publishRun`，或对 `SealedRun` 再 stage。两个句柄都不能被复制、持久化或跨 session 传递。
+
+`RecordPublishReceipt` 只证明该 Run 已以 no-replace rename 在 durable root 可见，且 parent `fsync` 完成。它只携带 `recordId` 与 `runId`，不携带时间戳：时间由 Run 文档的 `startedAt` 与 `completedAt` 承载。它也不复制 Channel payload、Verdict、score 或聚合读数。
 
 ## Evaluation aggregate validation
 
@@ -410,21 +486,30 @@ type RecordOpenError =
   | { code: "record-migration-recovery-required"; command: "niceeval migrate" }
   | { code: "record-format-unsupported"; format?: string }
   | { code: "record-core-invalid"; issues: NonEmptyRecordIssues }
+  | { code: "record-sidecar-stale" }
+  | { code: "record-sidecar-recovery-required" }
+  | { code: "record-sidecar-capability-unsupported" }
+  | { code: "record-sidecar-permission-denied" }
   | { code: "record-maintenance-busy" }
   | { code: "record-io-failed"; operation: string; cause: unknown };
 
 type RecordReadError =
   | { code: "record-reader-closed" }
   | { code: "record-selection-invalid"; issues: NonEmptyRecordIssues }
+  | { code: "record-session-mismatch" }
+  | { code: "record-handle-already-consumed" }
   | { code: "record-io-failed"; operation: string; cause: unknown };
 
 type RecordWriteError =
   | { code: "record-writer-busy" }
   | { code: "record-session-closed" }
+  | { code: "record-session-mismatch" }
+  | { code: "record-handle-already-consumed" }
+  | { code: "record-wrong-state" }
   | { code: "record-publish-target-exists"; runId: RunId }
   | { code: "record-atomic-publish-cross-device" }
   | { code: "record-atomic-publish-unsupported"; platform: string }
-  | { code: "record-limit-exceeded"; kind: "document" | "payload" | "blob" | "closure" | "count"; name?: string; limit: number; actual: number }
+  | { code: "record-limit-exceeded"; kind: "document" | "payload" | "blob" | "closure" | "count" | "ndjson" | "path" | "json-depth"; name?: string; maximum: number; observedAtLeast: number }
   | { code: "record-publish-invalid"; issues: NonEmptyRecordIssues }
   | { code: "record-publish-outcome-unknown" };
 
@@ -436,8 +521,10 @@ type RecordMigrationError =
   | { code: "record-migration-scene-invalid"; issues: NonEmptyMigrationIssues };
 ```
 
-`RecordReadError` 只表示 closed Scope、伪造 handle 与真实 I/O。Core entry 或 Channel 的局部损坏留在 `CoreRead` / `ChannelProjectionResult` 的成功值里，不进 error channel。
+`RecordReadError` 只表示 closed Scope、伪造或跨 session handle 与真实 I/O。Core entry 或 Channel 的局部损坏留在 `RecordCoreRead` / `ChannelProjectionResult` 的成功值里，不进 error channel。
 
-`record-limit-exceeded` 在 seal 前失败，staging 现场由 session 删除，不产生部分发布。限制值与读写超限语义见 [Architecture](architecture.md#record-v1-限制)。
+`record-sidecar-stale` 表示 local manifest 的 lineage 与当前 root file identity 不匹配。`record-sidecar-recovery-required` 表示 sidecar 有未收敛的 session 现场。`record-sidecar-capability-unsupported` 表示没有可写 local-state location 且平台不提供只读 lock capability。`record-sidecar-permission-denied` 表示 local-state location 权限不足。定位与选择规则见 [Architecture](architecture.md#local-state-与只读-root)。
+
+`record-limit-exceeded` 在 seal 前失败，staging 现场由 session 删除，不产生部分发布。错误携带 `maximum` 与 `observedAtLeast`，不携带精确观测值。限制值与读写超限语义见 [Architecture](architecture.md#record-v1-限制)。
 
 每个 CLI error 都包含安全的下一步。path、OS cause 与可能含敏感内容的 payload 不直接进入公开 message。
