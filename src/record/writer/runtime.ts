@@ -19,9 +19,12 @@ import {
   encodeAttemptDocumentV1,
   encodeMemberDocumentV1,
   encodeRecordAttachmentEnvelopeV1,
+  encodeRecordDocumentV1,
   encodeRunDocumentV1,
   RecordExactParseOptions,
   AttemptIdSchema,
+  RecordFormatV1Schema,
+  RecordIdSchema,
   RunIdSchema,
 } from "../codec/index.ts";
 import {
@@ -37,10 +40,12 @@ import type {
   RecordAttemptRef,
   RecordAttachmentEnvelopeV1,
   RecordAttachmentOwner,
+  RecordDocumentV1,
   RunDocumentV1,
 } from "../model/core.ts";
 import {
   isPortableSegment,
+  RECORD_FORMAT_V1,
   type AttemptId,
   type RunId,
   type SlotId,
@@ -64,9 +69,11 @@ import {
 } from "../platform/services.ts";
 import {
   RecordHandleInvalid,
+  RecordBootstrapInvalid,
   RecordReaderClosed,
   type RecordReaderReadError,
 } from "../reader/errors.ts";
+import { RECORD_FORMAT_DOCUMENT_MAXIMUM_BYTES } from "../reader/format.ts";
 import { openRecordReader } from "../reader/runtime.ts";
 import type {
   FrozenRecordAttempt,
@@ -101,6 +108,8 @@ import {
 const JSON_MAXIMUM_BYTES = 4 * 1024 * 1024;
 const BLOB_MAXIMUM_BYTES = 64 * 1024 * 1024;
 const ENTROPY_RETRY_LIMIT = 16;
+const ROOT_EMPTY_CHECK_MAXIMUM_ENTRIES = 1;
+const ROOT_INITIALIZATION_CHECK_MAXIMUM_ENTRIES = 2;
 
 interface SessionRuntime {
   readonly root: RecordRoot;
@@ -176,6 +185,139 @@ function bytesFromCodec<Value>(
   return Either.isLeft(encoded)
     ? Effect.fail(coreInvalidFromCodec(encoded.left))
     : Effect.succeed(jsonBytes(encoded.right));
+}
+
+function bootstrapInvalid(): RecordBootstrapInvalid {
+  return new RecordBootstrapInvalid({
+    code: "record-bootstrap-invalid",
+    reason: "record-document-invalid",
+  });
+}
+
+function recordRootPath(root: RecordRoot): RecordPortablePath {
+  return recordPortablePath(root);
+}
+
+function recordDocumentPath(root: RecordRoot): RecordPortablePath {
+  return recordPortablePath(root, "record.json");
+}
+
+function recordRunsPath(root: RecordRoot): RecordPortablePath {
+  return recordPortablePath(root, "runs");
+}
+
+function recordRootIsEmpty(
+  fileSystem: RecordFileSystemService,
+  root: RecordRoot,
+): Effect.Effect<boolean, RecordFileSystemError> {
+  return Effect.map(
+    fileSystem.listDirectory({
+      directory: recordRootPath(root),
+      maximumEntries: ROOT_EMPTY_CHECK_MAXIMUM_ENTRIES,
+    }),
+    (entries) => entries.length === 0,
+  );
+}
+
+function assertEmptyRecordRoot(
+  fileSystem: RecordFileSystemService,
+  root: RecordRoot,
+): Effect.Effect<void, RecordFileSystemError | RecordBootstrapInvalid> {
+  return Effect.flatMap(recordRootIsEmpty(fileSystem, root), (empty) =>
+    empty ? Effect.void : Effect.fail(bootstrapInvalid()),
+  );
+}
+
+function assertRecordRootContainsOnlyRuns(
+  fileSystem: RecordFileSystemService,
+  root: RecordRoot,
+): Effect.Effect<void, RecordFileSystemError | RecordBootstrapInvalid> {
+  return Effect.flatMap(
+    fileSystem.listDirectory({
+      directory: recordRootPath(root),
+      maximumEntries: ROOT_INITIALIZATION_CHECK_MAXIMUM_ENTRIES,
+    }),
+    (entries) =>
+      entries.length === 1 &&
+      entries[0]?.name === "runs" &&
+      entries[0].kind === "directory"
+        ? Effect.void
+        : Effect.fail(bootstrapInvalid()),
+  );
+}
+
+function mintRecordDocument(
+  entropy: RecordEntropyService,
+): Effect.Effect<RecordDocumentV1, RecordCoreInvalid> {
+  const format = Schema.decodeUnknownEither(
+    RecordFormatV1Schema,
+    RecordExactParseOptions,
+  )(RECORD_FORMAT_V1);
+  if (Either.isLeft(format)) {
+    return Effect.fail(
+      coreInvalidFromIssues([recordIssue("record-schema-invalid", ["format"])]),
+    );
+  }
+
+  return Effect.flatMap(entropy.uuid, (raw) => {
+    const recordId = Schema.decodeUnknownEither(
+      RecordIdSchema,
+      RecordExactParseOptions,
+    )(raw);
+    return Either.isLeft(recordId)
+      ? Effect.fail(
+          coreInvalidFromIssues([
+            recordIssue("record-schema-invalid", ["recordId"]),
+          ]),
+        )
+      : Effect.succeed({ format: format.right, recordId: recordId.right });
+  });
+}
+
+/**
+ * Creates the current root identity only when no durable Record state exists.
+ * An existing root is deliberately delegated unchanged to the reader, which
+ * preserves format and migration diagnostics for partial or foreign state.
+ */
+function initializeRecordIfNeeded(input: {
+  readonly root: RecordRoot;
+  readonly fileSystem: RecordFileSystemService;
+  readonly entropy: RecordEntropyService;
+}): Effect.Effect<
+  void,
+  RecordFileSystemError | RecordBootstrapInvalid | RecordCoreInvalid
+> {
+  return Effect.gen(function* () {
+    const rootKind = yield* input.fileSystem.pathKind(recordRootPath(input.root));
+    if (rootKind === "directory") {
+      const documentKind = yield* input.fileSystem.pathKind(
+        recordDocumentPath(input.root),
+      );
+      if (documentKind !== "missing") {
+        return;
+      }
+      if ((yield* recordRootIsEmpty(input.fileSystem, input.root)) === false) {
+        return;
+      }
+    } else if (rootKind !== "missing") {
+      return;
+    }
+
+    const document = yield* mintRecordDocument(input.entropy);
+    const bytes = yield* bytesFromCodec(encodeRecordDocumentV1(document));
+
+    yield* input.fileSystem.ensureDirectory(recordRootPath(input.root));
+    yield* assertEmptyRecordRoot(input.fileSystem, input.root);
+    yield* input.fileSystem.createDirectory(recordRunsPath(input.root));
+    yield* assertRecordRootContainsOnlyRuns(input.fileSystem, input.root);
+    yield* input.fileSystem.writeFile({
+      file: recordDocumentPath(input.root),
+      bytes,
+      maximumBytes: RECORD_FORMAT_DOCUMENT_MAXIMUM_BYTES,
+      mode: "exclusive",
+    });
+    yield* input.fileSystem.syncDirectory(recordRootPath(input.root));
+  });
 }
 
 function assertSessionLive(
@@ -999,9 +1141,14 @@ export const openRecordWriteSession: OpenRecordWriteSession = (input) =>
     yield* maintenance.acquireShared(input.root);
     const writerLock = yield* RecordWriterLock;
     yield* writerLock.acquire(input.root);
-    const view = yield* openRecordReader({ root: input.root });
     const fileSystem = yield* RecordFileSystem;
     const entropy = yield* RecordEntropy;
+    yield* initializeRecordIfNeeded({
+      root: input.root,
+      fileSystem,
+      entropy,
+    });
+    const view = yield* openRecordReader({ root: input.root });
     return yield* makeRecordWriteSession({
       root: input.root,
       view,
