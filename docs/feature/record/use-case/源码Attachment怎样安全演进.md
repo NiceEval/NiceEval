@@ -17,11 +17,11 @@ Sources 仍由 Run owner 持有，因此 Record Core 不变。
 
 v2 definition 必须声明 `v1 → v2`：
 
-- 旧数据足以形成 v2 时，提供纯 converter；
+- 旧数据足以形成 v2 时，提供 closure-aware converter；
 - v2 能如实表达 legacy unavailable 时，converter 保存该状态；
 - 无法无损表达时，声明不可迁移。
 
-不可无损迁移的 v1 bytes 保留。请求 v2 的功能得到 `migration-unavailable`，而不是从当前 worktree、网络或其它 RecordAttachment 补值。unknown schema 才是 unsupported。
+不可无损迁移的 v1 bytes 保留。请求 v2 的功能得到 `migration-unavailable`，而不是从当前 worktree、网络或其它 RecordAttachment 补值。它不提示重跑 migrate。unknown schema 才是 unsupported。
 
 ## typed view 与 behavior identity
 
@@ -37,7 +37,7 @@ v2 definition 必须声明 `v1 → v2`：
 
 ## 何时才是 Record major
 
-保持 Run-owned Sources 与 RecordAttachment-local blobs 时，增加 schema version 不改变 Core。
+保持 Run-owned Sources 与 RecordAttachment-local blobs 时，增加 schema version 不改变 Core。converter 从完整 source value 读取旧 blobs，再为 target payload mint 新 refs。
 
 改成跨 Run 全局 blob pool、允许 RecordAttachment 引用 root 外文件，或者改变 Sources owner 时，所有 reader 都必须理解的新公理已经出现。此时发布新的 Record major，并提供相邻 Core converter。
 
