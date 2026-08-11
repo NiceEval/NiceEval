@@ -6,3 +6,4 @@ export type {
   ReportDefinitionInvalid,
   ReportExecutionError,
 } from "./execute.ts";
+export type { ReportExecution } from "../execution/model.ts";

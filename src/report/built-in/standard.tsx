@@ -4,14 +4,10 @@ import type { AttemptEvidence } from "../../record/attempt-evidence.ts";
 import type { AttemptLocator } from "../../record/locator.ts";
 import type { Sample } from "../../record/types.ts";
 import type { ParameterizedPageDefinition } from "../definition/report.ts";
-import {
-  Callouts,
-  Col,
-  ExperimentDetails,
-  Hero,
-  Waterfall,
-  defineReport,
-} from "../index.ts";
+import { defineReport } from "../definition/report.ts";
+import { Callouts, Col, Waterfall } from "../definition/primitives.tsx";
+import { ExperimentDetails } from "../components/experiment-detail/index.tsx";
+import { Hero } from "../components/site-components/index.tsx";
 import {
   toRunNotices,
   toSampleNotices,

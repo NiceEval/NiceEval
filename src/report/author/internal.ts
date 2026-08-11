@@ -1,4 +1,4 @@
-import type { AnalysisSample } from "../../sample/index.ts";
+import type { AnalysisSample } from "../../analysis/index.ts";
 import type { ProjectedSample, ProjectionAccess } from "../../projection/model.ts";
 import type { RecordProjection } from "../../projection/projector.ts";
 import type { ReportCalculationResult } from "../execution/results.ts";

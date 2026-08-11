@@ -1,6 +1,9 @@
 // failures —— 内建任务视图:失败处理台。
 
-import { Col, FailureList, Hero, RunNotices, SampleFixPrompt, SampleNotices, defineReport } from "../index.ts";
+import { defineReport } from "../definition/report.ts";
+import { Col } from "../definition/primitives.tsx";
+import { FailureList } from "../components/entity-lists/index.tsx";
+import { Hero, RunNotices, SampleFixPrompt, SampleNotices } from "../components/site-components/index.tsx";
 import { standardAttemptPage } from "./standard.tsx";
 import type { Sample } from "../../record/types.ts";
 

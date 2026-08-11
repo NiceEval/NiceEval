@@ -14,7 +14,7 @@ import type {
   AnalysisSampleHandle,
   RunId,
   SlotId,
-} from "../../sample/index.ts";
+} from "../../analysis/index.ts";
 import {
   reportCalculationDescriptor,
   reportDataPlanDescriptor,

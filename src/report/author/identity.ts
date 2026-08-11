@@ -1,5 +1,5 @@
 import { Either } from "effect";
-import type { AttemptId, RunId, SlotId } from "../../sample/index.ts";
+import type { AttemptId, RunId, SlotId } from "../../analysis/index.ts";
 
 const reportIdTypeId: unique symbol = Symbol("@niceeval/report/ReportId");
 const reportComponentIdTypeId: unique symbol = Symbol(

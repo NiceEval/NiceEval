@@ -1,6 +1,8 @@
 // stability —— 内建任务视图:稳定性。
 
-import { Col, Hero, RunNotices, SampleNotices, defineReport } from "../index.ts";
+import { defineReport } from "../definition/report.ts";
+import { Col } from "../definition/primitives.tsx";
+import { Hero, RunNotices, SampleNotices } from "../components/site-components/index.tsx";
 import { standardAttemptPage } from "./standard.tsx";
 import type { Sample } from "../../record/types.ts";
 import { stabilityResult } from "../tasks.ts";

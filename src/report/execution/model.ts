@@ -1,5 +1,5 @@
 import { Either } from "effect";
-import type { AnalysisSample } from "../../sample/index.ts";
+import type { AnalysisSample } from "../../analysis/index.ts";
 import type { ProjectionCoverage } from "../../projection/coverage.ts";
 import {
   isReportComponentId,

@@ -1,5 +1,5 @@
 import { Either } from "effect";
-import type { RunId, SlotId } from "../../sample/index.ts";
+import type { RunId, SlotId } from "../../analysis/index.ts";
 import {
   isReportComponentId,
   type ReportComponentId,

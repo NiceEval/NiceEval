@@ -106,14 +106,24 @@
         "default": "./dist/record/index.cjs"
       }
     },
-    "./sample": {
+    "./analysis": {
       "import": {
-        "types": "./dist/sample/index.d.mts",
-        "default": "./dist/sample/index.mjs"
+        "types": "./dist/analysis/index.d.mts",
+        "default": "./dist/analysis/index.mjs"
       },
       "require": {
-        "types": "./dist/sample/index.d.cts",
-        "default": "./dist/sample/index.cjs"
+        "types": "./dist/analysis/index.d.cts",
+        "default": "./dist/analysis/index.cjs"
+      }
+    },
+    "./projection": {
+      "import": {
+        "types": "./dist/projection/index.d.mts",
+        "default": "./dist/projection/index.mjs"
+      },
+      "require": {
+        "types": "./dist/projection/index.d.cts",
+        "default": "./dist/projection/index.cjs"
       }
     },
     "./report": {
@@ -124,6 +134,16 @@
       "require": {
         "types": "./dist/report/index.d.cts",
         "default": "./dist/report/index.cjs"
+      }
+    },
+    "./report/host": {
+      "import": {
+        "types": "./dist/report/host/index.d.mts",
+        "default": "./dist/report/host/index.mjs"
+      },
+      "require": {
+        "types": "./dist/report/host/index.d.cts",
+        "default": "./dist/report/host/index.cjs"
       }
     },
     "./report/react": {
