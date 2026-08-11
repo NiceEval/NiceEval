@@ -4,7 +4,7 @@ import type { RecordFormatId } from "../model/identifiers.ts";
 /**
  * A trusted Core converter changes one in-memory Core snapshot between adjacent
  * majors. It is intentionally generic: the current v1 registry needs zero
- * edges, while a later v2/v3 release can add only v1→v2 and v2→v3 steps.
+ * edges, while a later release can add only adjacent steps it actually owns.
  */
 export interface RecordCoreMigrationEdge<CoreValue> {
   readonly from: RecordFormatId;

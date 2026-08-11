@@ -8,6 +8,7 @@ import type {
   RecordAttachmentMigrationResolution,
   RecordAttachmentRegistry,
 } from "../attachment/types.ts";
+import type { RecordCoreV1 } from "../model/core.ts";
 import type { RecordFormatId } from "../model/identifiers.ts";
 import type {
   RecordGitError,
@@ -42,7 +43,11 @@ import {
   type RecordCoreMigrationPlan,
   type RecordCoreMigrationPlanSummary,
 } from "./plan.ts";
-import type { RecordCoreMigrationRegistry } from "./registry.ts";
+import {
+  RecordMigrationRegistry,
+  type RecordCoreMigrationRegistry,
+  type RecordMigrationRegistryService,
+} from "./registry.ts";
 
 export type RecordMigrationAuthorization =
   | { readonly state: "git-restore-point" }
@@ -85,6 +90,10 @@ interface RecordMigrationPlanState<CoreValue> {
 
 /** Exact plan identity prevents a copied public summary from becoming executable. */
 const migrationPlanStates = new WeakMap<object, unknown>();
+const migrationPlanRegistries = new WeakMap<
+  object,
+  RecordMigrationRegistryService
+>();
 
 function snapshotBackupState(backup: RecordBackupState): RecordBackupState {
   switch (backup.state) {
@@ -128,7 +137,7 @@ function snapshotMigrationSource<CoreValue>(
  * Package-created plan bound to the source snapshot and Git observation. It
  * contains no CLI confirmation and cannot be reconstructed from its summary.
  */
-export class RecordMigrationPlan<CoreValue> {
+export class RecordMigrationPlan<CoreValue = RecordCoreV1> {
   private constructor(readonly summary: RecordMigrationPlanSummary) {
     Object.freeze(this);
   }
@@ -279,34 +288,61 @@ function withExclusiveMaintenance<A, Error, R>(input: {
   );
 }
 
-function resolveAttachmentPlanEntries(
-  source: readonly RecordMigrationAttachmentSource[],
-  registry: RecordAttachmentRegistry,
-): readonly RecordMigrationAttachmentPlanEntry[] {
-  return Object.freeze(
-    source.map((attachment) => {
-      const family = recordAttachmentRegistryFamily(
-        registry,
-        attachment.owner,
-        attachment.name,
-      );
-      if (family === undefined) {
-        return Object.freeze({
+function resolveAttachmentPlanEntries<CoreValue>(input: {
+  readonly source: readonly RecordMigrationAttachmentSource[];
+  readonly registry: RecordAttachmentRegistry;
+  readonly storage: RecordMigrationStorage<CoreValue>;
+}): Effect.Effect<
+  readonly RecordMigrationAttachmentPlanEntry[],
+  RecordMigrationStorageError,
+  RecordFileSystem
+> {
+  return Effect.forEach(input.source, (attachment) => {
+    const family = recordAttachmentRegistryFamily(
+      input.registry,
+      attachment.owner,
+      attachment.name,
+    );
+    if (family === undefined) {
+      return Effect.succeed(
+        Object.freeze({
           source: attachment,
           family: undefined,
           resolution: undefined,
-        });
-      }
-      const resolution = resolveRecordAttachmentMigration(
-        family,
-        attachment.schemaId,
+        }),
       );
-      if (resolution === undefined) {
-        throw new Error("RecordAttachment registry returned a forged family");
-      }
-      return Object.freeze({ source: attachment, family, resolution });
-    }),
-  );
+    }
+    const resolution = resolveRecordAttachmentMigration(
+      family,
+      attachment.schemaId,
+    );
+    if (resolution === undefined) {
+      throw new Error("RecordAttachment registry returned a forged family");
+    }
+    if (resolution.state !== "migration-required") {
+      return Effect.succeed(Object.freeze({ source: attachment, family, resolution }));
+    }
+    const readiness = input.storage.preflightAttachmentMigration;
+    if (readiness === undefined) {
+      return Effect.succeed(Object.freeze({ source: attachment, family, resolution }));
+    }
+    return Effect.map(
+      readiness({ source: attachment, family, resolution }),
+      (state): RecordMigrationAttachmentPlanEntry =>
+        state.state === "ready"
+          ? Object.freeze({ source: attachment, family, resolution })
+          : Object.freeze({
+              source: attachment,
+              family,
+              resolution: Object.freeze({
+                state: "migration-unavailable" as const,
+                from: resolution.from,
+                to: resolution.to,
+                reason: state.reason,
+              }),
+            }),
+    );
+  }).pipe(Effect.map((entries) => Object.freeze(entries)));
 }
 
 /**
@@ -314,7 +350,8 @@ function resolveAttachmentPlanEntries(
  * the sentinel before opening the source, delegates exact decode/closure/path
  * validation to storage, and records the platform Git backup state.
  */
-export function planRecordMigration<CoreValue>(input: {
+/** @internal Generic seam for layout adapters and synthetic migration tests. */
+export function planRecordMigrationWithStorage<CoreValue>(input: {
   readonly root: RecordRoot;
   readonly core: RecordCoreMigrationRegistry<CoreValue>;
   readonly attachments: RecordAttachmentRegistry;
@@ -340,10 +377,15 @@ export function planRecordMigration<CoreValue>(input: {
       if (Either.isLeft(core)) {
         return yield* Effect.fail(core.left);
       }
+      const attachments = yield* resolveAttachmentPlanEntries({
+        source: source.attachments,
+        registry: input.attachments,
+        storage: input.storage,
+      });
       return RecordMigrationPlan.make({
         source,
         core: core.right,
-        attachments: resolveAttachmentPlanEntries(source.attachments, input.attachments),
+        attachments,
         backup,
         storage: input.storage,
       });
@@ -370,7 +412,8 @@ function currentAttachmentFamily(
  * defects, and no failure path removes the sentinel. Thus converter, I/O, and
  * cancellation failure leave the root fail-closed for Git/backup recovery.
  */
-export function migrateRecord<CoreValue>(input: {
+/** @internal Executes a plan issued by `planRecordMigrationWithStorage`. */
+export function migrateRecordWithStorage<CoreValue>(input: {
   readonly plan: RecordMigrationPlan<CoreValue>;
   readonly authorization: RecordMigrationAuthorization;
 }) {
@@ -487,6 +530,44 @@ export function migrateRecord<CoreValue>(input: {
         });
       }),
     });
+  });
+}
+
+/**
+ * Public migration preflight. Applications install the current Core registry,
+ * selected Attachment families, and layout adapter once through
+ * `RecordMigrationRegistry`; callers only supply the durable Record root.
+ */
+export function planRecordMigration(input: { readonly root: RecordRoot }) {
+  return Effect.gen(function* () {
+    const registry = yield* RecordMigrationRegistry;
+    const plan = yield* planRecordMigrationWithStorage({
+      root: input.root,
+      core: registry.core,
+      attachments: registry.attachments,
+      storage: registry.storage,
+    });
+    yield* Effect.sync(() => {
+      migrationPlanRegistries.set(plan, registry);
+    });
+    return plan;
+  });
+}
+
+/**
+ * Public in-place execution remains bound to the exact installed registry
+ * observed during preflight. Re-providing a different registry makes the plan
+ * stale instead of allowing a copied summary to select different converters.
+ */
+export function migrateRecord(input: {
+  readonly plan: RecordMigrationPlan;
+  readonly authorization: RecordMigrationAuthorization;
+}) {
+  return Effect.flatMap(RecordMigrationRegistry, (registry) => {
+    const plannedRegistry = migrationPlanRegistries.get(input.plan);
+    return plannedRegistry === registry
+      ? migrateRecordWithStorage(input)
+      : Effect.fail(recordMigrationPlanStale());
   });
 }
 

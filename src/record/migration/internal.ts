@@ -10,6 +10,7 @@ import type { Effect } from "effect";
 import type {
   RecordAttachmentFamily,
   RecordAttachmentMigrationEdge,
+  RecordAttachmentMigrationResolution,
   RecordAttachmentValue,
   RecordAttachmentWrite,
 } from "../attachment/types.ts";
@@ -57,6 +58,16 @@ export type RecordMigrationStorageError =
   | RecordAttachmentClosureInvalid;
 
 /**
+ * A current-layout adapter can decline a declared edge before sentinel
+ * creation when the installed storage cannot materialize its historical
+ * definition without inventing data. The generic seam remains available to a
+ * future layout adapter that does have that exact historic decoder.
+ */
+export type RecordMigrationAttachmentReadiness =
+  | { readonly state: "ready" }
+  | { readonly state: "migration-unavailable"; readonly reason: string };
+
+/**
  * The adapter owns exact source decode, closure materialization, owner/path
  * preservation and target file layout. Migration owns only ordering: every
  * target byte is synced before root `record.json`, which is written last.
@@ -74,6 +85,24 @@ export interface RecordMigrationStorage<CoreValue> {
   readonly isSourceCurrent: (
     source: RecordMigrationSource<CoreValue>,
   ) => Effect.Effect<boolean, RecordMigrationStorageError, RecordFileSystem>;
+
+  /**
+   * Optional because package-private synthetic adapters can already supply a
+   * fully materialized historical value through `readAttachment`. Real layout
+   * adapters use this preflight to refuse a path they cannot safely realize.
+   */
+  readonly preflightAttachmentMigration?: (input: {
+    readonly source: RecordMigrationAttachmentSource;
+    readonly family: RecordAttachmentFamily<RecordAttachmentOwner, unknown>;
+    readonly resolution: Extract<
+      RecordAttachmentMigrationResolution,
+      { readonly state: "migration-required" }
+    >;
+  }) => Effect.Effect<
+    RecordMigrationAttachmentReadiness,
+    RecordMigrationStorageError,
+    RecordFileSystem
+  >;
 
   /** Writes/syncs converted Core documents, excluding root `record.json`. */
   readonly stageCore: (input: {

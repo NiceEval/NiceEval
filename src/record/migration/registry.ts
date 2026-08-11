@@ -1,4 +1,5 @@
-import { Either, Schema } from "effect";
+import { Context, Either, Schema } from "effect";
+import type { RecordAttachmentRegistry } from "../attachment/types.ts";
 import { RecordExactParseOptions } from "../codec/core.ts";
 import { RecordFormatIdSchema } from "../codec/identifiers.ts";
 import type { RecordCoreV1 } from "../model/core.ts";
@@ -18,6 +19,8 @@ import type {
   RecordCoreMigrationEdge,
   RecordCoreMigrationRegistryInput,
 } from "./types.ts";
+import type { RecordMigrationStorage } from "./internal.ts";
+import { CurrentRecordMigrationStorage } from "./storage.ts";
 
 export type RecordCoreMigrationResolution<CoreValue> =
   | { readonly state: "current" }
@@ -173,8 +176,8 @@ export function makeRecordCoreMigrationRegistry<CoreValue>(
 
 /**
  * Today's installed Core is v1. Its registry deliberately has no imaginary
- * v2/v3 converters; future releases add adjacent edges when their formats are
- * actually introduced.
+ * future converters; later releases add adjacent edges only when their formats
+ * are actually introduced.
  */
 export const CurrentRecordCoreMigrationRegistry: RecordCoreMigrationRegistry<RecordCoreV1> =
   (() => {
@@ -194,3 +197,34 @@ export const CurrentRecordCoreMigrationRegistry: RecordCoreMigrationRegistry<Rec
     }
     return built.right;
   })();
+
+/**
+ * Installed migration capabilities live at the application composition edge.
+ * Public plan/run calls only name a Record root; the current Core registry,
+ * selected Attachment families, and current-layout storage stay behind this
+ * Effect service.
+ */
+export interface RecordMigrationRegistryService {
+  readonly core: RecordCoreMigrationRegistry<RecordCoreV1>;
+  readonly attachments: RecordAttachmentRegistry;
+  readonly storage: RecordMigrationStorage<RecordCoreV1>;
+}
+
+export class RecordMigrationRegistry extends Context.Tag(
+  "@niceeval/record/RecordMigrationRegistry",
+)<RecordMigrationRegistry, RecordMigrationRegistryService>() {}
+
+/**
+ * Compose today's concrete v1 storage with the Attachment families selected
+ * by the application. The public plan/run API never asks callers to pass the
+ * three internals individually.
+ */
+export function makeCurrentRecordMigrationRegistry(input: {
+  readonly attachments: RecordAttachmentRegistry;
+}): RecordMigrationRegistryService {
+  return Object.freeze({
+    core: CurrentRecordCoreMigrationRegistry,
+    attachments: input.attachments,
+    storage: CurrentRecordMigrationStorage,
+  });
+}
