@@ -77,6 +77,8 @@ export const remem = definePlugin({
             rememCodexExtension({
               memoryModel: options.memoryModel,
               auth: "effective-agent-runtime",
+              postSetup: rememInstallAndVerify(),
+              preTeardown: rememDrainAndVerify(),
             }),
           ],
         },
@@ -189,3 +191,75 @@ Requirement 只读取该阶段已定型的 provider-neutral typed plan。失败�
 `AgentExtension` 是 receiver-branded opaque value。core 只读取 receiver identity；Adapter receiver 一次规范化作者配置和按顺序排列的 extensions，产生唯一 `behaviorProjection` 与 `manifestProjection`。有效模型、provider 与鉴权复用 Adapter 已求值的同一 runtime binding，Plugin callback 不取得明文。
 
 槽位 owner 统一执行：exclusive 多声明方冲突；keyed 同 key 同规范化值去重并保留 provenance、不同值冲突；ordered 按确定顺序追加；set-like 是否去重由该槽位 owner 决定。没有 last-wins。
+
+## Hook Reference
+
+Plugin 不发明 `beforeAll`、`beforeEach` 一类平行时间轴。它把行为接入下面三组既有 hook：
+
+### Experiment host hooks
+
+```ts
+interface PluginExperimentLifecycle {
+  readonly setup?: (context: ExperimentHookContext) => void | Promise<void>;
+  readonly teardown?: (context: ExperimentHookContext) => void | Promise<void>;
+}
+
+interface ExperimentHookContext {
+  readonly experimentId: string;
+  readonly selectedEvalIds: readonly string[];
+  readonly signal: AbortSignal;
+  progress(update: ProgressUpdate): void;
+  diagnostic(input: DiagnosticInput): void;
+  fact(key: string, value: string | number | boolean): void;
+}
+```
+
+`setup` 在该 Experiment 第一个真实 Attempt 起飞前整场至多一次；全部结果 carry 时不执行。`teardown` 在该 Experiment 的 Attempt 和 Sandbox 全部收口后逆序执行，中断和 setup 部分失败也会尽力调用。适合隧道、mock server、license lease 或整场一次的候选资源，不适合逐题安装工具。
+
+### Physical Sandbox hooks 与 Attempt prepare
+
+```ts
+const layer = sandboxLayer()
+  .setup(async (sandbox, context) => {
+    context.fact("tool.cache", "ready");
+  })
+  .prepare(command("pnpm", ["--version"]))
+  .teardown(async (sandbox, context) => {
+    await stopSandboxService(sandbox, context.signal);
+  });
+```
+
+- `sandbox.setup`：每个实际 physical Sandbox ready 后一次。
+- `sandbox.prepare`：每条 Attempt reset 后执行；应先探测，缺失时安装并复检。
+- `sandbox.teardown`：physical Sandbox 最后一条 Attempt 收尾后、Provider finalizer 前一次。
+
+Sandbox hook 得到 `Sandbox`、`experimentId`、`signal`、`progress()`、`diagnostic()` 与 `fact()`，拿不到模型、session 或复用池句柄。Plugin 只能贡献 command-only layer，不能借 hook 替换 template。
+
+### Agent receiver hooks
+
+Agent hook 不是 core 的通用字符串槽位，而是具体 Adapter receiver 的 typed API。Remem 的 Codex extension 明确占用：
+
+```ts
+rememCodexExtension({
+  memoryModel: "gpt-5.6-luna",
+  auth: "effective-agent-runtime",
+  postSetup: rememInstallAndVerify(),
+  preTeardown: rememDrainAndVerify(),
+});
+```
+
+- `postSetup`：Agent ensure 与 Adapter setup 后、首次 send 前，每条 Attempt 一次。
+- `preTeardown`：最后一次 send 后、Agent teardown 前，每条 Attempt一次。
+
+其它 Adapter 可以公开不同的 typed extension，但必须映射到它已经拥有的配置、安装、setup 或 teardown 槽位。core 不提供任意 hook 名注册，也不把有效鉴权明文交给 callback。
+
+## 除了 hook 还能贡献什么
+
+| Contribution | 是否是 hook | 作用 |
+|---|---:|---|
+| `behavior` | 否 | 声明尚未由其它 owner 表达的行为身份，进入对应 hash |
+| `requirements` | 否 | 在 selection、link 或 planning 拒绝不合法完成态计划 |
+| `sandbox.prepare(command)` | 否 | 声明可展示、可排序、可指纹化的安装或探测命令 |
+| `flags` / `labels` | 否 | Experiment 条件身份与报告分组 |
+| `agentExtensions` | 部分 | 同时可贡献 Adapter 配置、安装项、MCP/native plugin 与具名 hook |
+| framework manifest | 否 | 自动保存 Plugin identity、attachment、owner、贡献摘要与 provenance |
