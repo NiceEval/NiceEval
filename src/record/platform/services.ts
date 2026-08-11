@@ -2,13 +2,16 @@ import { Context, Effect, Stream } from "effect";
 import type {
   RecordFileSystemError,
   RecordGitError,
-  RecordMaintenanceLeaseError,
+  RecordMaintenanceLockError,
   RecordPathKind,
   RecordWriterLockError,
 } from "./errors.ts";
 import type { RecordRoot } from "./root.ts";
 
-/** A portable root-relative path. Its segments never carry a host absolute path. */
+/**
+ * A portable root-relative path request. It is not a capability: every live
+ * platform operation validates these data again, including forged JS objects.
+ */
 export interface RecordPortablePath {
   readonly root: RecordRoot;
   readonly segments: readonly string[];
@@ -127,34 +130,34 @@ export class RecordFileSystem extends Context.Tag(
   "@niceeval/record/RecordFileSystem",
 )<RecordFileSystem, RecordFileSystemService>() {}
 
-export type RecordMaintenanceLeaseMode = "shared" | "exclusive";
+export type RecordMaintenanceLockMode = "shared" | "exclusive";
 
 /** Opaque, Scope-owned proof that the maintenance lock remains held. */
-export interface RecordMaintenanceLeaseHandle {
-  readonly mode: RecordMaintenanceLeaseMode;
+export interface RecordMaintenanceLockHandle {
+  readonly mode: RecordMaintenanceLockMode;
 }
 
 /** Shared readers/writers versus exclusive migration coordination. */
-export interface RecordMaintenanceLeaseService {
+export interface RecordMaintenanceLockService {
   readonly acquireShared: (
     root: RecordRoot,
   ) => Effect.Effect<
-    RecordMaintenanceLeaseHandle,
-    RecordMaintenanceLeaseError,
+    RecordMaintenanceLockHandle,
+    RecordMaintenanceLockError,
     import("effect").Scope.Scope
   >;
   readonly acquireExclusive: (
     root: RecordRoot,
   ) => Effect.Effect<
-    RecordMaintenanceLeaseHandle,
-    RecordMaintenanceLeaseError,
+    RecordMaintenanceLockHandle,
+    RecordMaintenanceLockError,
     import("effect").Scope.Scope
   >;
 }
 
-export class RecordMaintenanceLease extends Context.Tag(
-  "@niceeval/record/RecordMaintenanceLease",
-)<RecordMaintenanceLease, RecordMaintenanceLeaseService>() {}
+export class RecordMaintenanceLock extends Context.Tag(
+  "@niceeval/record/RecordMaintenanceLock",
+)<RecordMaintenanceLock, RecordMaintenanceLockService>() {}
 
 /** Opaque, Scope-owned proof that this process is the sole Run publisher/cleaner. */
 export interface RecordWriterLease {

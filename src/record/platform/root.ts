@@ -45,9 +45,10 @@ function localStateRootFor(portableRoot: string): string {
 }
 
 function makeRoot(portableRoot: string): RecordRoot {
-  const root = Object.freeze({
+  const issued: RecordRoot = {
     [recordRootTypeId]: recordRootTypeId,
-  }) as RecordRoot;
+  };
+  const root = Object.freeze(issued);
 
   roots.set(
     root,

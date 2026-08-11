@@ -39,6 +39,26 @@ export type RecordPlatformResource = Schema.Schema.Type<
   typeof RecordPlatformResourceSchema
 >;
 
+const FiniteNonNegativeIntegerSchema = Schema.Number.pipe(
+  Schema.filter(
+    (value) =>
+      Number.isFinite(value) && Number.isInteger(value) && value >= 0,
+    {
+      identifier: "FiniteNonNegativeInteger",
+      description: "a finite non-negative integer",
+    },
+  ),
+);
+
+/** A caller supplied an invalid bound before any filesystem work began. */
+export class RecordResourceLimitInvalid extends Schema.TaggedError<RecordResourceLimitInvalid>(
+  "@niceeval/record/RecordResourceLimitInvalid",
+)("RecordResourceLimitInvalid", {
+  code: Schema.Literal("record-resource-limit-invalid"),
+  resource: RecordPlatformResourceSchema,
+  maximum: Schema.Number,
+}) {}
+
 /** A forged or malformed host-local root never reaches Node filesystem calls. */
 export class RecordRootInvalid extends Schema.TaggedError<RecordRootInvalid>(
   "@niceeval/record/RecordRootInvalid",
@@ -79,8 +99,9 @@ export class RecordResourceLimitExceeded extends Schema.TaggedError<RecordResour
 )("RecordResourceLimitExceeded", {
   code: Schema.Literal("record-resource-limit-exceeded"),
   resource: RecordPlatformResourceSchema,
-  maximum: Schema.Number,
-  observed: Schema.Number,
+  maximum: FiniteNonNegativeIntegerSchema,
+  /** May be the first value beyond the cap; callers need not scan to an exact total. */
+  observedAtLeast: FiniteNonNegativeIntegerSchema,
   path: Schema.String,
 }) {}
 
@@ -133,17 +154,22 @@ export type RecordFileSystemError =
   | RecordPathInvalid
   | RecordPathTypeInvalid
   | RecordPathAlreadyExists
+  | RecordResourceLimitInvalid
   | RecordResourceLimitExceeded
   | RecordIoError
   | RecordPermissionError;
 
-export type RecordMaintenanceLeaseError =
+export type RecordMaintenanceLockError =
   | RecordFileSystemError
   | RecordMaintenanceBusy;
+
+/** @deprecated Internal transition alias while adjacent reader work converges. */
+export type RecordMaintenanceLeaseError = RecordMaintenanceLockError;
 
 export type RecordWriterLockError = RecordFileSystemError | RecordWriterBusy;
 
 export type RecordGitError =
   | RecordRootInvalid
+  | RecordResourceLimitInvalid
   | RecordResourceLimitExceeded
   | RecordGitCommandError;
