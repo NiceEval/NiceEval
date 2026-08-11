@@ -138,15 +138,17 @@ completed 时不猜测失败。没有 snapshot 的 transport 是 execution error
 ## 不可用、Record 与读取
 
 缺少 evidence 不能伪装成普通 mismatch。`unavailable` 与 `errored` 保留原因、脱敏 evidence、
-explanation 和 Judge rationale。每条 AssertionResult 还必须保存 versioned evidence、最小判定见证、
-coverage、refs 与 limitations，不能只保存成功或失败。secret 绝不写入 Record。
+explanation 和 Judge rationale。每条 AssertionResult 都按同一个 `check(a, b)` 模型保存 subject `a` 的
+安全结构化内容或稳定引用、evaluator / Match `b` 的 identity 与完整安全 config，以及 evaluation；不能只保存
+成功或失败。`calledTool`、`loadedSkill`、`succeeded` 与 Judge recipe 只是替作者取得 `a` 并构造 `b` 的特例，
+保存规则不变。secret 绝不写入 Record。
 
 Record 只使用 `schemaVersion: 19`、`evaluationAlgorithm: "assertion/v1"` 与 `assertionResults`。
 schema 18 整份 unsupported，不跨 schema carry。`show`、`view`、JSON、export 与 source 都从同一
 projection 离线解释，不重新运行 evaluator。
 
-这组 AssertionResult 与引用证据称为 [Assertion 可解释闭包](architecture.md#assertion-可解释闭包)。
-Assertion 只规定必须产生哪些结构化数据；Record 自己决定这些数据怎样落盘、去重或携带。
+Assertion 只规定必须保留哪些 subject、evaluator 与 evaluation 数据；Record 自己决定这些数据怎样落盘、
+去重或携带。
 
 完整字段、不可排名规则与 display contract 见 [Architecture](architecture.md)。
 

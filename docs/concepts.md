@@ -47,10 +47,8 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 |---|---|---|---|
 | 断言 | Assertion | 作者 API 调用时登记的评估陈述；冻结 subject、evaluator、定位与 source order，并留出 policy 槽 | [Assertions](./feature/assertions/README.md) |
 | 断言句柄 | AssertionHandle | 同一条已登记 Assertion 的配置引用；配置不会创建第二条 Assertion | [Assertions](./feature/assertions/library.md) |
-| 断言结果 | AssertionResult | entry 封口后的完整结构化结果；包含 identity、subject ref、evaluator/config、evaluation、evidence、policy 与 pass 或 score projection | [Assertion architecture](./feature/assertions/architecture.md) |
-| Assertion 可解释闭包 | Assertion explainability closure | 一条 AssertionResult 与它引用的、离线解释该次 evaluation 所必需的结构化证据；不等于内联全部原始字节，也不规定 Record 怎样落盘 | [Assertion architecture](./feature/assertions/architecture.md#assertion-可解释闭包) |
-| 判定见证 | decision witness | evaluator 求值时产生的有界结构化依据；让 reader 能解释已封口 evaluation，不是预制展示字符串或 replay 输入 | [Assertion architecture](./feature/assertions/architecture.md#判定见证与-evidence) |
-| subject | subject | Assertion 在调用时读取的对象：显式 value 或 receiver 选择的 scope snapshot | [Assertions](./feature/assertions/README.md#领域模型) |
+| 断言结果 | AssertionResult | entry 封口后的完整结构化结果；统一保存 subject `a`、evaluator / Match `b`、evaluation、evidence、policy 与 pass 或 score projection | [Assertion architecture](./feature/assertions/architecture.md) |
+| subject | subject | Assertion 在调用时读取并保存的对象：显式 value，或 receiver 选择的 scope snapshot 与 normalized occurrence context | [Assertions](./feature/assertions/README.md#共同模型) |
 | 判定 | Verdict | Pass Eval 从 execution outcome 与 AssertionResult 折叠出的 Attempt 四态：`passed`、`failed`、`errored` 或 `skipped` | [Verdict](./feature/verdict/architecture.md) |
 | Judge | Judge | 异步 Assertion evaluator；它给出有限 `[0,1]` measurement、理由与 evidence，不拥有 Verdict 或 score policy | [Judge](./feature/judge/library.md) |
 | 判分预检 | Judge precheck | 派发前对 Judge 端点的最小探测；真实失败是 setup error，不伪造 AssertionResult | [Judge](./feature/judge/library.md#无配置预检与-evaluator-失败) |

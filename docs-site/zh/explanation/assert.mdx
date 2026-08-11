@@ -84,11 +84,11 @@ Judge recipe 调用时直接登记 measurement Assertion。Pass Eval 对同一 h
 
 缺少 evidence 不能伪装成普通 mismatch。`unavailable` 与 `errored` 保留原因与脱敏 evidence。
 
-AssertionResult 也不是只保存成功或失败。每条结果都保存 Assertion identity、subject 或 scope snapshot ref、明确版本的 evaluator、完整安全 config、evaluation、policy 和 projection。它还保存 versioned evidence，其中包含最小判定见证、coverage、结构化 payload、refs，以及 redacted / truncated / unavailable limitations。
+AssertionResult 也不是只保存成功或失败。所有入口都遵循同一个 `check(a, b)` 模型：每条结果保存 subject `a` 的安全结构化内容或稳定引用、evaluator / Match `b` 的 identity 与完整安全 config，以及 evaluation、policy 和 projection。显式 `t.check(a, b)` 由作者提供两者；`loadedSkill`、`calledTool`、`succeeded` 与 Judge recipe 只是替作者取得 `a` 并构造 `b` 的特例，保存规则不变。
 
-这组数据称为 **Assertion 可解释闭包**。它让 `show`、`view`、JSON、export 与 source 可以离线重新组织文案和界面，不必重新运行 Match 或调用 Judge。`expected` / `received` 是读取面从结构化数据生成的文案，不是 Record 中仅存的两个字符串。
+例如 `t.check(await t.sandbox.runCommand(...), commandSucceeded())` 会保留已求值 `CommandResult` 的命令、参数、退出状态、运行时间以及脱敏 stdout / stderr 内容或引用。`calledTool(...)` 会保留其 scope 中归一化的 tool occurrence context。context 包括 operation / event identity、脱敏 input、status、output / error refs、coverage 与匹配 event refs。没有命中时也保留观察范围与候选 occurrence refs，而不是只存 `false`。
 
-可解释闭包不要求把完整 stdout、events 或源码全部内联进 AssertionResult。Assertion 只规定自己必须产出什么结构化数据和证据引用；Record 决定这些数据怎样落盘。判定依赖的最小结构化依据称为**判定见证**。如果安全持久化后连这份最小依据都无法保留，结果必须是 `unavailable`，不能只留下 `matched` 或 `mismatched`。
+`show`、`view`、JSON、export 与 source 因此可以从同一份结构化 AssertionResult 离线组织文案和界面，不必重新运行 Match 或调用 Judge。`expected` / `received` 是读取面根据 `a`、`b` 与 evaluation 生成的文案，不是仅存的两个字符串。Assertion 只规定必须保留什么；Record 决定怎样落盘。无法安全保留 evaluator 判定所需的 subject 数据时，结果必须是 `unavailable`，不能只留下 `matched` 或 `mismatched`。
 
 ## 相关阅读
 

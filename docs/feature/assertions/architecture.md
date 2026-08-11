@@ -18,6 +18,27 @@ direct t.score ──────────┘                 ▼            
 raw evaluation 可以在登记后启动，并只运行一次。`score`、`atLeast` 与 `orStop` 都复用这一次结果；
 它们不读取新 subject，也不重启 evaluator。
 
+## 统一保存模型
+
+所有 Assertion 都是同一个模型：
+
+```text
+subject (a) + evaluator / Match (b) ──► evaluation
+```
+
+`t.check(a, b)` 由作者显式给出 `a` 和 `b`。`loadedSkill(...)`、`calledTool(...)`、`succeeded()` 与 Judge
+recipe 是它的特殊化入口：receiver 和方法替作者取得 `a`，方法参数构造 `b`，随后登记同一种 Assertion。
+
+| 作者写法 | subject `a` | evaluator / Match `b` |
+|---|---|---|
+| `t.check(value, match)` | 已求值的 `value` snapshot。 | `match` identity、version 与 config。 |
+| `turn.calledTool("search")` | Turn scope 中的 normalized tool occurrences。 | tool name、input、count 与 status expectation。 |
+| `turn.loadedSkill("browser")` | Turn scope 中的 normalized skill occurrences。 | skill name 与其它 expectation。 |
+| `turn.succeeded()` | Turn 的可信终态 snapshot。 | succeeded evaluator。 |
+| Judge recipe | Judge material 与 subject snapshot。 | recipe、rubric、model-facing config 与 evaluator version。 |
+
+因此 scoped 方法不能只保存 true / false。它们必须像 `t.check(a, b)` 一样保存 `a`、`b` 和 evaluation。
+
 ## AssertionResult
 
 每条 `AssertionResult` 至少包含：
@@ -25,79 +46,22 @@ raw evaluation 可以在登记后启动，并只运行一次。`score`、`atLeas
 | 字段组 | 内容 |
 |---|---|
 | entry | 稳定 entry id、key、label、groupPath、source order。 |
-| subject | 带 kind、schema 与 identity 的 `subjectSnapshotRef`；根并发 scope 使用 vector cut 或等价 snapshot ref。 |
+| subject | `a` 的安全结构化 snapshot 或能取得该内容的稳定 ref；包含实际输出或 occurrence context。 |
 | location | callsite 与 policy locations。 |
-| evaluator | identity、必填 version、完整安全 structured config；digest 只补充身份，不能代替 config。 |
+| evaluator | `b` 的 identity、version 与完整安全 config。 |
 | evaluation | Boolean `matched`、有限 `[0,1]` measurement、finite `>=0` direct score、`unavailable` 或 `errored`。 |
-| evidence | versioned evidence envelope：判定见证、coverage、evaluator-specific payload、evidence refs 与 limitations。 |
+| evidence | subject 的 coverage、补充说明、共享 evidence refs 与 redacted / truncated / unavailable limitations。 |
 | policy | `score?`、`atLeast?` 与 `orStop?`。 |
 | projection | pass 或 score projection，以及 `scoreContribution?`、`condition?`、`stopTriggered?`。 |
 
-`subjectSnapshotRef` 指向 sealed Observation 或稳定引用，不能指向可变的“最后状态”。secret 不进入任一字段。
+例如 `t.check(await runCommand(...), commandSucceeded())` 保存已求值 `CommandResult` 的安全内容或引用、
+`commandSucceeded` 的 evaluator config，以及 evaluation。`await` 只负责先取得 `a`，不形成第四种数据。
 
-## Assertion 可解释闭包
+`subjectSnapshotRef` 不能指向可变的“最后状态”。大型内容可以使用 ref，但 Assertion 仍必须声明要保留的
+subject 字段与 limitations。Record 决定这些数据怎样落盘；Assertion 不规定文件布局。secret 不进入任一字段。
 
-AssertionResult 不是只保存 `matched` / `mismatched` 或最终成功 / 失败。它必须与引用的证据一起形成
-**Assertion 可解释闭包**：reader 不重新运行 evaluator，也能说明作者检查了什么、实际观察到什么、为何得到
-该 evaluation，以及它如何影响当前 Eval。
-
-这个闭包是 Assertion 侧的数据要求，不是新的单一 JSON 容器，也不要求内联 evaluator 读过的全部原始字节。
-Assertion collector 只声明 structured payload、证据引用和哪些依据是必需的；Record 决定文件布局、去重、
-携带与发布方式。
-
-同一闭包至少回答：
-
-- 哪条作者调用登记了 Assertion，调用时的 subject 或 scope snapshot 是什么；
-- 哪个明确版本的 evaluator 以什么完整安全 config 求值；
-- evaluator 得到的 raw evaluation、判定见证与 evidence coverage；
-- 哪些大型或共享证据由 ref 指向，以及哪些内容经过 redaction、truncation 或不可用；
-- 作者配置的 policy，以及 Pass 或 Score projection。
-
-`expected: calledTool("search")`、`received: 0 matching calls` 只是 reader 从这些结构化字段产生的文案，
-不作为 AssertionResult 的唯一事实保存。未来 renderer 可以改变文字与布局，但不能改变 sealed evaluation。
-
-## 判定见证与 evidence
-
-`evidence` 不能是无版本、可选的任意 JSON 袋。每个 evaluator identity / version 都在 evaluator registry
-中声明 config schema、evidence schema、每种 evaluation 必需的判定见证、coverage 要求与安全限制。
-
-```ts
-interface EvaluatorEvidenceEnvelope {
-  readonly schema: {
-    readonly id: string;
-    readonly version: number;
-  };
-  readonly decisionWitness: JsonValue;
-  readonly coverage: JsonValue;
-  readonly payload: JsonValue;
-  readonly refs: readonly EvidenceRef[];
-  readonly limitations: readonly EvidenceLimitation[];
-}
-
-interface EvidenceLimitation {
-  readonly kind: "redacted" | "truncated" | "unavailable";
-  readonly path: string;
-  readonly reason: string;
-  readonly originalBytes?: number;
-}
-```
-
-payload 仍是 JSON 数据，但其形状由 `schema.id` / `schema.version` 对应的 registry schema 校验；它不是未包装的
-`JsonValue` 契约。未知 evaluator 或 evidence version 只能安全地展示通用结构，不能用当前版本规则重解释。
-
-判定见证是 evaluator 求值时产生的有界结构化依据，不是密码学证明、预制展示字符串或 replay 输入。`matched`
-可以与 redacted / truncated 共存，因为 evaluation 可能基于运行时完整 subject；此时 limitations 必须如实
-展示。若安全持久化后连 registry 要求的最小判定见证都无法保留，entry 必须封口为 `unavailable`，不能只写
-`matched` 或 `mismatched`。
-
-例如：
-
-- `commandSucceeded()` 的见证至少包含 command observation identity、exit code、signal、duration 与
-  coverage；stdout / stderr 可以只保存 evidence ref。输出截断不改变基于 exit code 已封口的 evaluation。
-- `calledTool("search")` 与 `loadedSkill("browser")` 的见证至少包含 scope snapshot ref、coverage 和
-  observed / matched count。它还包含匹配 event refs 与 evaluator config，不能退化成源码、期望、结果三段字符串。
-- 依赖文本内容的 evaluator 保存安全的匹配范围、excerpt 或 subject ref。无法安全保存最小依据时得到
-  `unavailable`。
+`expected: calledTool("search")` 与 `received: 0 matching calls` 只是 reader 从 `a`、`b` 和 evaluation
+生成的文案，不是唯一保存内容。未来 renderer 可以改变文字与布局，但不能改变 sealed evaluation。
 
 ## Pass 与 Score projection
 

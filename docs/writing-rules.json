@@ -12,9 +12,8 @@
         "match": "Match 是可复用、不可变、确定性且无副作用的值比较规则；它没有 identity、callsite 或 policy。",
         "assertion": "Assertion 绑定 subject、evaluator、callsite、source order 与 groupPath；调用时冻结这些值。",
         "handle": "AssertionHandle 配置同一 entry 的 key、label、score、atLeast、ifCovered 或 orStop，不登记第二条 Assertion。",
-        "result": "AssertionResult 保存 assertion identity、typed subject ref、完整安全 evaluator config、evaluation、versioned evidence、policy 与 pass 或 score 投影，不退化成成功或失败字符串。",
-        "explainabilityClosure": "Assertion 可解释闭包是 AssertionResult 与它引用的、离线解释该次 evaluation 所必需的证据；它是逻辑数据要求，不规定 Record 的物理文件布局。",
-        "decisionWitness": "判定见证是 evaluator 求值时产生的有界结构化依据；它不是展示字符串，也不是 replay 输入。",
+        "result": "AssertionResult 统一保存 subject a、evaluator 或 Match b、evaluation、evidence、policy 与 pass 或 score 投影，不退化成成功或失败字符串。",
+        "specializedCheck": "succeeded、calledTool、loadedSkill 与 Judge recipe 是 check(a,b) 的特殊化入口；方法替作者取得 subject a 并构造 evaluator b，保存规则不变。",
         "pass": "Pass Eval 的 Attempt Verdict 是 passed、failed、errored 或 skipped。",
         "score": "Score Eval 只有累计 score；没有 Attempt Verdict、总分、百分比或另一种数值单位。"
       },
@@ -49,7 +48,7 @@
         "evaluationAlgorithm": "assertion/v1",
         "resultCollection": "assertionResults",
         "evaluatorVersionRequired": true,
-        "evidence": "每条 AssertionResult 使用 evaluator registry 校验的 versioned evidence envelope，并保存必需判定见证、coverage、结构化 payload、refs 与 limitations。"
+        "subject": "保存实际 value 输出或 normalized scope context 的安全结构化 snapshot/ref，不只保存 evaluation。"
       }
     },
     "rejectedCliFlags": [

@@ -13,7 +13,8 @@ turn.calledTool("search", { count: { atLeast: 1 } }).label("至少一次搜索")
 每一次调用都直接登记 Boolean Assertion。receiver 决定 snapshot，不能通过随后发生的 Session 或 Turn
 改写。`t` 读取已启动 Session 的 vector cut；Session 读取自己的前缀；Turn 读取不可变 Turn。
 
-`calledTool(...)` 与 `loadedSkill(...)` 保存匹配 occurrence 的 normalized context。它包括 scope、
+`calledTool(...)` 与 `loadedSkill(...)` 是 `check(a, b)` 的特例：它们从 receiver scope 取得 normalized
+occurrences 作为 subject `a`，用方法参数构造 evaluator `b`，并登记 evaluation。保存的 `a` 包括 scope、
 operation / event identity、input、status、output / error refs、coverage 与匹配 event refs。
 
 未命中时也保留观察范围与候选 occurrence refs，不把 context 压成一个 boolean。完整字段见

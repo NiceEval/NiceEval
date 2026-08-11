@@ -25,6 +25,7 @@ Assertion 显示 `recorded`，不显示 `+0`。没有 contribution 时，正式 
 
 ## 同一投影
 
-`show`、`view`、JSON、export 与 source 都离线读取同一 Assertion 可解释闭包。界面可以根据 structured
-config、判定见证、evidence refs 与 limitations 重新组织文案和布局，但不能重跑 Match、调用 Judge、改变
-evaluation 或补另一套判定。`expected` / `received` 是读取投影，不是 Record 中仅存的两个字符串。
+`show`、`view`、JSON、export 与 source 都离线读取同一份结构化 AssertionResult。界面可以根据 subject
+`a`、evaluator / Match `b` 的 config、evidence refs 与 limitations 重新组织文案和布局，但不能重跑 Match、
+调用 Judge、改变 evaluation 或补另一套判定。`expected` / `received` 是读取投影，不是 Record 中仅存的
+两个字符串。

@@ -31,8 +31,8 @@ t.check(
 );
 ```
 
-`await` 先取得 `CommandResult`，随后 `t.check` 把它作为 subject snapshot 登记。这个 Assertion 的可解释
-闭包至少保留：
+`await` 先取得 `CommandResult`，随后 `t.check` 把它作为 subject `a` 登记。这个 subject snapshot
+至少保留：
 
 | 数据 | 最小内容 |
 |---|---|
@@ -43,14 +43,15 @@ t.check(
 | evaluation | matched、mismatched、unavailable 或 errored。 |
 | limitations | stdout / stderr 的 redacted、truncated 或 unavailable 状态。 |
 
-`commandSucceeded()` 的最小判定见证是 command identity、exit code、signal、duration 与 coverage。
+`commandSucceeded()` 评估时使用的 command identity、exit code、signal、duration 与 coverage 必须保留。
 stdout / stderr 即使被截断，也不能让这些字段消失。未来读取面因此可以显示命令、退出状态与运行时间，
 而不只显示“断言通过”。
 
 ## Scoped occurrence context
 
-`calledTool(...)`、`loadedSkill(...)` 等 scoped Assertion 必须保存匹配 occurrence 的安全结构化 context，
-不能只保存 true / false 或匹配数量。
+`calledTool(...)`、`loadedSkill(...)` 等 scoped Assertion 是 `check(a, b)` 的特例：方法从 scope 取得
+normalized occurrences 作为 subject `a`，再用方法参数构造 evaluator `b`。它们必须保存 occurrence 的
+安全结构化 context，不能只保存 true / false 或匹配数量。
 
 | 数据 | 最小内容 |
 |---|---|

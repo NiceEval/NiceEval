@@ -46,8 +46,6 @@
 - **双面组件（dual-render component）**：`defineRenderer({ text, web })` 的产物。英文写 dual-render，不写 dual-face。组件只显示已经计算好的普通值，不取数。
 - **报告模型**：page render 接收 Sample 或 AttemptEvidence，用普通 TypeScript 函数产生可序列化结果，再把结果交给组件。表格使用 `Table rows={...}`；图表按显示形状使用 `Scatter`、`Line`、`Bars` 与 `Area`。Attempt 详情组件是 `AttemptDetails`。
 - **Assertion**：作者调用 `t.check(value, match)`、scoped 方法或 Judge recipe 时直接登记的评估陈述。中文写“断言”或保留 `Assertion`；不存在先创建中间对象、再由另一条 API 消费它的流程。
-- **Assertion 可解释闭包**：一条 AssertionResult 与它引用的、离线解释该次 evaluation 所必需的结构化证据。它不等于内联全部原始字节，也不规定 Record 的物理布局。
-- **判定见证（decision witness）**：evaluator 求值时产生的有界结构化依据。它不是预制展示字符串，也不是 replay 输入。
 - **Match**：可复用、不可变、确定性且无副作用的值比较规则。中文写“匹配器”或保留 `Match`；它没有 identity、调用位置、阈值、分值或控制流。不要把 Match 本身写成断言句柄。
 
 ## 写作规则
