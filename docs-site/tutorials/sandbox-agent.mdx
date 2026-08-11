@@ -28,12 +28,12 @@ Set `sandbox` on an Eval or Experiment to choose where [NiceEval](https://niceev
 // experiments/local.ts
 import { defineExperiment } from "niceeval";
 import { claudeCodeAgent } from "niceeval/adapter";
-import { dockerImageSandbox } from "niceeval/sandbox";
+import { dockerSandbox } from "niceeval/sandbox";
 
 export default defineExperiment({
   agent: claudeCodeAgent(),
   model: "claude-sonnet-4-6",
-  sandbox: dockerImageSandbox({ image: "node:24-slim" }),
+  sandbox: dockerSandbox({ source: { type: "image", image: "node:24-slim" } }),
 });
 ```
 
@@ -69,7 +69,7 @@ Built-in Agents exported from `niceeval/adapter` are factories. Put authenticati
 ```ts
 import { defineExperiment } from "niceeval";
 import { claudeCodeAgent } from "niceeval/adapter";
-import { dockerImageSandbox } from "niceeval/sandbox";
+import { dockerSandbox } from "niceeval/sandbox";
 
 export default defineExperiment({
   agent: claudeCodeAgent({
@@ -86,7 +86,7 @@ export default defineExperiment({
     skills: [{ kind: "repo", source: "Effect-TS/skills", ref: "8f3c1a2" }],
   }),
   model: "claude-sonnet-4-6",
-  sandbox: dockerImageSandbox({ image: "node:24-slim" }),
+  sandbox: dockerSandbox({ source: { type: "image", image: "node:24-slim" } }),
 });
 ```
 
@@ -215,13 +215,13 @@ The model and flags declared by an Experiment appear in the Adapter context. An 
 
 ```ts
 import { defineExperiment } from "niceeval";
-import { dockerImageSandbox } from "niceeval/sandbox";
+import { dockerSandbox } from "niceeval/sandbox";
 import myAgent from "./agents/my-agent";
 
 export default defineExperiment({
   agent: myAgent,
   model: "claude-sonnet-4-6",
-  sandbox: dockerImageSandbox({ image: "node:24-slim" }),
+  sandbox: dockerSandbox({ source: { type: "image", image: "node:24-slim" } }),
   attempts: 3,
 });
 ```

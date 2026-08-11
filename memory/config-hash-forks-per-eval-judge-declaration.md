@@ -14,7 +14,7 @@ configHash is a Run-level value and must be identical for every eval scheduled u
 
 ## 排查弯路
 
-最初怀疑是同日刚落地的 `pathPrepend`(commit `226303f2`,给全部 sandbox provider 加了这个可选字段并序列化进 sandboxLayer/物理计划身份)在不同 eval 的 plan 构造点序列化不一致——04-billing-doc 确实是这条链里唯一不声明 `sandbox` 字段的题(工作区故意留空,纯靠记忆回答,见 `experiments/shared/remem.ts` 文件头)。实测证伪:`sandboxLayerIdentityFor(plan.pair, "experiment")` 只投影 `owner.kind === "experiment"` 的贡献,04-billing-doc 与其余 5 条 toggl-cli 题的 Eval 层贡献虽然形状不同(有没有声明 `sandbox: sandboxLayer().prepare(...)`),但 Experiment 层的 `dockerImageSandbox({...})` 模板对全部 36 条 eval 是同一个模块级常量,过滤后的身份逐字节相同。
+最初怀疑是同日刚落地的 `pathPrepend`(commit `226303f2`,给全部 sandbox provider 加了这个可选字段并序列化进 sandboxLayer/物理计划身份)在不同 eval 的 plan 构造点序列化不一致——04-billing-doc 确实是这条链里唯一不声明 `sandbox` 字段的题(工作区故意留空,纯靠记忆回答,见 `experiments/shared/remem.ts` 文件头)。实测证伪:`sandboxLayerIdentityFor(plan.pair, "experiment")` 只投影 `owner.kind === "experiment"` 的贡献,04-billing-doc 与其余 5 条 toggl-cli 题的 Eval 层贡献虽然形状不同(有没有声明 `sandbox: sandboxLayer().prepare(...)`),但 Experiment 层的 `dockerSandbox({...})` 模板对全部 36 条 eval 是同一个模块级常量,过滤后的身份逐字节相同。
 
 ## 根因
 

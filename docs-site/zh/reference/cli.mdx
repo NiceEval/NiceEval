@@ -84,9 +84,9 @@ npx niceeval exp list --json
 
 下表由 CLI 的 flag 解析表生成，表外的 flag 一律按未知 flag 报错并以非零状态退出。**没有**用于选择 Sandbox provider 的 CLI flag，也没有项目级默认 provider。请在 Eval 或 Experiment 上声明 template-bearing `SandboxLayer`，并从 `niceeval/sandbox` 导入下列工厂之一：
 
-- `dockerImageSandbox({ image })`
+- `dockerSandbox({ source: { type: "image", image } })`
 - `dockerComposeSandbox({ file, workspaceService })`
-- `dockerfileSandbox({ context })`
+- `dockerSandbox({ source: { type: "dockerfile", context } })`
 - `vercelSandbox({ snapshotId })`
 - `e2bSandbox({ template })`
 - `localSandbox()`

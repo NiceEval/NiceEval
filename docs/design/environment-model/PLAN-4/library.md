@@ -195,7 +195,7 @@ export default defineExperiment({
 });
 ```
 
-本方案还把 `e2bSandbox({ template })`、`dockerSandbox({ image })` 与 `vercelSandbox({ snapshotId })`
+本方案还把 `e2bSandbox({ template })`、`dockerSandbox({ source: { type: "image", image } })` 与 `vercelSandbox({ snapshotId })`
 这类 SandboxSpec 显式起点归一成 Experiment Base。
 SandboxSpec 起点与 `environment.base` 同时出现时是重复 Base 声明,启动期报配置错误。
 

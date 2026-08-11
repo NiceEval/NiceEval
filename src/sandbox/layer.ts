@@ -87,7 +87,7 @@ export interface DockerComposeSandboxOptions {
   readonly pathPrepend?: readonly string[];
 }
 
-export interface DockerfileSandboxOptions {
+interface DockerfileSourceOptions {
   readonly context: string | URL;
   readonly dockerfile?: string;
   readonly buildArgs?: Readonly<globalThis.Record<string, string>>;
@@ -109,7 +109,7 @@ export interface DockerfileSandboxOptions {
   readonly pathPrepend?: readonly string[];
 }
 
-export interface DockerImageSandboxOptions {
+interface DockerImageSourceOptions {
   readonly image: string;
   /** Docker profile v1 的宿主 alias；只保存为私有 runtime binding，不进入可分享 identity。 */
   readonly profile?: string;
@@ -480,11 +480,11 @@ export interface BuiltinSandboxFactories {
   readonly dockerComposeSandbox: (
     options: DockerComposeSandboxOptions,
   ) => SandboxLayer<"template-bearing">;
-  readonly dockerfileSandbox: (
-    options: DockerfileSandboxOptions,
+  readonly dockerfileSourceLayer: (
+    options: DockerfileSourceOptions,
   ) => SandboxLayer<"template-bearing">;
-  readonly dockerImageSandbox: (
-    options: DockerImageSandboxOptions,
+  readonly dockerImageSourceLayer: (
+    options: DockerImageSourceOptions,
   ) => SandboxLayer<"template-bearing">;
   readonly e2bSandbox: (options: E2BSandboxOptions) => SandboxLayer<"template-bearing">;
   readonly vercelSandbox: (options: VercelSandboxOptions) => SandboxLayer<"template-bearing">;
@@ -1604,35 +1604,35 @@ export function createBuiltinSandboxFactories(
       });
     },
 
-    dockerfileSandbox(options: DockerfileSandboxOptions) {
-      assertRecord(options, "dockerfileSandbox options");
+    dockerfileSourceLayer(options: DockerfileSourceOptions) {
+      assertRecord(options, "dockerSandbox options");
       assertOnlyKeys(
         options,
         ["context", "dockerfile", "buildArgs", "profile", "target", "user", "privileged", "dockerAccess", "resources", "readiness", "lifetimeMs", "pathPrepend"],
-        "dockerfileSandbox options",
+        "dockerSandbox options",
       );
-      const context = location(options.context, "dockerfileSandbox options.context");
+      const context = location(options.context, "dockerSandbox options.source.context");
       const dockerfile = options.dockerfile === undefined
         ? "Dockerfile"
-        : nonEmptyString(options.dockerfile, "dockerfileSandbox options.dockerfile");
-      const buildArgs = stringRecord(options.buildArgs, "dockerfileSandbox options.buildArgs");
+        : nonEmptyString(options.dockerfile, "dockerSandbox options.source.file");
+      const buildArgs = stringRecord(options.buildArgs, "dockerSandbox options.source.buildArgs");
       const accessConfig = dockerAccessConfiguration(
         options.dockerAccess,
         options.profile,
         options.privileged,
-        "dockerfileSandbox options.dockerAccess",
+        "dockerSandbox options.dockerAccess",
       );
       const { access, profile, privileged } = accessConfig;
       const targetStage = options.target === undefined
         ? undefined
-        : nonEmptyString(options.target, "dockerfileSandbox options.target");
+        : nonEmptyString(options.target, "dockerSandbox options.source.target");
       const user: SandboxExecutionUser = options.user === undefined
         ? { _tag: "EnvironmentDefault" }
-        : { _tag: "Configured", value: nonEmptyString(options.user, "dockerfileSandbox options.user") };
-      const resources = dockerResourcesForProfile(profile, privileged, options.resources, "dockerfileSandbox options.resources");
-      const readiness = dockerReadinessForAccess(access, options.readiness, "dockerfileSandbox options.readiness");
-      const plannedLifetime = lifetime(options.lifetimeMs, "dockerfileSandbox options.lifetimeMs");
-      const pathPrepend = pathPrependList(options.pathPrepend, "dockerfileSandbox options.pathPrepend");
+        : { _tag: "Configured", value: nonEmptyString(options.user, "dockerSandbox options.user") };
+      const resources = dockerResourcesForProfile(profile, privileged, options.resources, "dockerSandbox options.resources");
+      const readiness = dockerReadinessForAccess(access, options.readiness, "dockerSandbox options.readiness");
+      const plannedLifetime = lifetime(options.lifetimeMs, "dockerSandbox options.lifetimeMs");
+      const pathPrepend = pathPrependList(options.pathPrepend, "dockerSandbox options.pathPrepend");
       const identity: JsonValue = {
         provider: "docker",
         kind: "dockerfile",
@@ -1772,28 +1772,28 @@ export function createBuiltinSandboxFactories(
       });
     },
 
-    dockerImageSandbox(options: DockerImageSandboxOptions) {
-      assertRecord(options, "dockerImageSandbox options");
+    dockerImageSourceLayer(options: DockerImageSourceOptions) {
+      assertRecord(options, "dockerSandbox options");
       assertOnlyKeys(
         options,
         ["image", "profile", "user", "privileged", "dockerAccess", "resources", "readiness", "lifetimeMs", "pathPrepend"],
-        "dockerImageSandbox options",
+        "dockerSandbox options",
       );
-      const image = nonEmptyString(options.image, "dockerImageSandbox options.image");
+      const image = nonEmptyString(options.image, "dockerSandbox options.source.image");
       const accessConfig = dockerAccessConfiguration(
         options.dockerAccess,
         options.profile,
         options.privileged,
-        "dockerImageSandbox options.dockerAccess",
+        "dockerSandbox options.dockerAccess",
       );
       const { access, profile, privileged } = accessConfig;
       const user: SandboxExecutionUser = options.user === undefined
         ? { _tag: "EnvironmentDefault" }
-        : { _tag: "Configured", value: nonEmptyString(options.user, "dockerImageSandbox options.user") };
-      const resources = dockerResourcesForProfile(profile, privileged, options.resources, "dockerImageSandbox options.resources");
-      const readiness = dockerReadinessForAccess(access, options.readiness, "dockerImageSandbox options.readiness");
-      const plannedLifetime = lifetime(options.lifetimeMs, "dockerImageSandbox options.lifetimeMs");
-      const pathPrepend = pathPrependList(options.pathPrepend, "dockerImageSandbox options.pathPrepend");
+        : { _tag: "Configured", value: nonEmptyString(options.user, "dockerSandbox options.user") };
+      const resources = dockerResourcesForProfile(profile, privileged, options.resources, "dockerSandbox options.resources");
+      const readiness = dockerReadinessForAccess(access, options.readiness, "dockerSandbox options.readiness");
+      const plannedLifetime = lifetime(options.lifetimeMs, "dockerSandbox options.lifetimeMs");
+      const pathPrepend = pathPrependList(options.pathPrepend, "dockerSandbox options.pathPrepend");
       const identity: JsonValue = {
         provider: "docker",
         kind: "image",
@@ -2039,8 +2039,8 @@ const LIVE_FACTORIES = createBuiltinSandboxFactories({
 });
 
 export const dockerComposeSandbox = LIVE_FACTORIES.dockerComposeSandbox;
-export const dockerfileSandbox = LIVE_FACTORIES.dockerfileSandbox;
-export const dockerImageSandbox = LIVE_FACTORIES.dockerImageSandbox;
+const dockerfileSourceLayer = LIVE_FACTORIES.dockerfileSourceLayer;
+const dockerImageSourceLayer = LIVE_FACTORIES.dockerImageSourceLayer;
 export const e2bSandbox = LIVE_FACTORIES.e2bSandbox;
 export const vercelSandbox = LIVE_FACTORIES.vercelSandbox;
 export const localSandbox = LIVE_FACTORIES.localSandbox;
@@ -2064,7 +2064,7 @@ export function dockerSandbox(options: DockerSandboxOptions): SandboxLayer<"temp
     const resources = access?.mode === "dind" && access.isolation === "managed-rootless"
       ? managedDockerResources(options.resources, "dockerSandbox options.resources")
       : options.resources;
-    return dockerImageSandbox({
+    return dockerImageSourceLayer({
       image: nonEmptyString(source.image, "dockerSandbox options.source.image"),
       ...(options.user === undefined ? {} : { user: options.user }),
       ...(access === undefined ? {} : { dockerAccess: access }),
@@ -2080,7 +2080,7 @@ export function dockerSandbox(options: DockerSandboxOptions): SandboxLayer<"temp
     const resources = access?.mode === "dind" && access.isolation === "managed-rootless"
       ? managedDockerResources(options.resources, "dockerSandbox options.resources")
       : options.resources;
-    return dockerfileSandbox({
+    return dockerfileSourceLayer({
       context: source.context,
       ...(source.file === undefined ? {} : { dockerfile: source.file }),
       ...(source.buildArgs === undefined ? {} : { buildArgs: source.buildArgs }),

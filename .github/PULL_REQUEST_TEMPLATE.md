@@ -18,6 +18,10 @@ must include the public owner that consumes the value; do not show an isolated
 factory result when real usage belongs inside `defineEval()`,
 `defineExperiment()`, report JSX, CLI invocation, or a package script.
 
+The product-surface inventory does not replace Use cases. Surface entries show
+what changed; Use cases show how a user completes a task across the affected
+owners and where the workflow fails or stops being supported.
+
 Use Removed when an entry that existed at the PR base no longer exists, Added
 when the final PR introduces a new entry, and Changed when the same entry exists
 before and after but its shape or observable behavior changes. A replacement
@@ -41,6 +45,36 @@ a new environment variable.
 - Current limitation: <why the existing API or behavior cannot accomplish it safely or correctly>
 - Required capability: <why the supporting API, protocol, or internal mechanism is necessary>
 - User outcome: <what becomes possible after this PR>
+
+## Use cases
+
+<!--
+Describe complete user workflows, not API symbols. Repeat the block below for
+every materially distinct user goal. Link every added or changed
+`docs/**/use-case/**` leaf. Keep the canonical long example in the contract
+document; the PR body must still show the smallest copyable public entry and
+its observable result or diagnostic.
+
+Across the repeated blocks, explicitly account for every applicable path:
+- the minimum happy path;
+- a multi-owner or multi-capability composition path;
+- setup, reuse, teardown, or another lifecycle path when lifecycle changes;
+- a named failure path;
+- an explicitly unsupported boundary.
+
+Write `None — <reason>` for a path that does not apply. Do not invent scenarios
+to satisfy a fixed count. If one workflow covers the entire change, explain why
+it also covers the relevant composition, lifecycle, failure, and unsupported
+boundaries.
+-->
+
+### `<user goal>`
+
+- Coverage: `happy path | composition | lifecycle | failure | unsupported`
+- Starting point: <what the user already has>
+- Copyable usage or trigger: <the smallest complete usage beginning at a public owner>
+- Observable result or diagnostic: <what the user sees>
+- Contract: `<docs path to the complete use case, or "no separate use-case document">`
 
 ## Public API
 

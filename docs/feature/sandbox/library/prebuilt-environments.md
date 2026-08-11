@@ -6,7 +6,7 @@
 
 | provider | 构建结果 | experiment 消费 | 共享边界 | 过期 |
 |---|---|---|---|---|
-| Docker | OCI image | `dockerImageSandbox({ image })` | 本地或任意 registry | 自管 |
+| Docker | OCI image | `dockerSandbox({ source: { type: "image", image } })` | 本地或任意 registry | 自管 |
 | E2B | template | `e2bSandbox({ template })` | team 私有,可公开发布 | 随 E2B 模板生命周期 |
 | Vercel Sandbox | sandbox snapshot | `vercelSandbox({ snapshotId })` | 仅 Team/Project 内 | Run 有效期由 Vercel 定 |
 
@@ -57,7 +57,7 @@ RUN npm install -g @openai/codex@0.144.1
 
 ```typescript
 // docker build -t acme-codex-evals:0.144.1-r1 . 之后
-sandbox: dockerImageSandbox({ image: "acme-codex-evals:0.144.1-r1" })
+sandbox: dockerSandbox({ source: { type: "image", image: "acme-codex-evals:0.144.1-r1" } })
 ```
 
 镜像只在构建机上时是单机可用;要在 CI 或多机消费,push 到项目自己的 registry,`image` 字段写完整引用。
@@ -177,8 +177,8 @@ import {
 } from "niceeval/sandbox";
 
 e2bSandbox({ template: NICEEVAL_CODEX_E2B_TEMPLATE })          // 跨 Team namespace + 锁定版本
-dockerImageSandbox({ image: NICEEVAL_CODEX_DOCKER_IMAGE })     // repository + 同一个版本
-dockerImageSandbox({ image: NICEEVAL_OPENCODE_DOCKER_IMAGE })
+dockerSandbox({ source: { type: "image", image: NICEEVAL_CODEX_DOCKER_IMAGE } })     // repository + 同一个版本
+dockerSandbox({ source: { type: "image", image: NICEEVAL_OPENCODE_DOCKER_IMAGE } })
 ```
 
 每个常量都是完整、版本锁定的引用,值只在 NiceEval 发布新起点时变化。下游不复制这些字符串,也不维护第二份版本常量;派生 image / template 要把起点身份写进名字或 provenance 时,直接用常量的值。公开起点是 convenience baseline,不是 Adapter 的隐式默认值。

@@ -41,7 +41,7 @@ Runner 将求值后的 Judge 配置冻结一次，用同一份值做 fingerprint
 
 `sandbox` 放一个 `SandboxLayer`，两种形态（类型与 factory 契约单源在 [Sandbox Layer](../sandbox/layers.md)）：
 
-- **template-bearing**：由 `dockerComposeSandbox` / `dockerImageSandbox` / `e2bSandbox` 等具体 Provider factory 构造，携带完整起点并同时选定 Provider。
+- **template-bearing**：由 `dockerComposeSandbox` / `dockerSandbox` / `e2bSandbox` 等具体 Provider factory 构造，携带完整起点并同时选定 Provider。
 - **command-only**：`sandboxLayer()` 的 `.prepare()` 命令链，只在已经启动的主 Sandbox 中执行题目准备。
 
 每个实际选中的 `Eval × Experiment` 配对恰好一方 template-bearing：两方都带报 `sandbox.template-conflict`，两方都不带报 `sandbox.template-missing`，link 阶段全矩阵聚合、零 Provider I/O、零资源创建。

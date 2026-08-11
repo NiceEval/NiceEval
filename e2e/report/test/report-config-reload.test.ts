@@ -58,8 +58,6 @@ test("view 持续重建项目模块、配置、Record，并在修复报告后恢
         [
           binary,
           "view",
-          "--record",
-          ".niceeval",
           "--host",
           "127.0.0.1",
           "--port",

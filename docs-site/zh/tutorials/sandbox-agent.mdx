@@ -28,12 +28,12 @@ Sandbox agent 会在隔离环境中启动 coding-agent CLI，给它 workspace �
 // experiments/local.ts
 import { defineExperiment } from "niceeval";
 import { claudeCodeAgent } from "niceeval/adapter";
-import { dockerImageSandbox } from "niceeval/sandbox";
+import { dockerSandbox } from "niceeval/sandbox";
 
 export default defineExperiment({
   agent: claudeCodeAgent(),
   model: "claude-sonnet-4-6",
-  sandbox: dockerImageSandbox({ image: "node:24-slim" }),
+  sandbox: dockerSandbox({ source: { type: "image", image: "node:24-slim" } }),
 });
 ```
 
@@ -69,7 +69,7 @@ Claude Code 用 `NICEEVAL_CLAUDE_CODE_E2B_TEMPLATE`，Bub 用 `NICEEVAL_BUB_E2B_
 ```ts
 import { defineExperiment } from "niceeval";
 import { claudeCodeAgent } from "niceeval/adapter";
-import { dockerImageSandbox } from "niceeval/sandbox";
+import { dockerSandbox } from "niceeval/sandbox";
 
 export default defineExperiment({
   agent: claudeCodeAgent({
@@ -86,7 +86,7 @@ export default defineExperiment({
     skills: [{ kind: "repo", source: "Effect-TS/skills", ref: "8f3c1a2" }],
   }),
   model: "claude-sonnet-4-6",
-  sandbox: dockerImageSandbox({ image: "node:24-slim" }),
+  sandbox: dockerSandbox({ source: { type: "image", image: "node:24-slim" } }),
 });
 ```
 
@@ -215,13 +215,13 @@ Experiment 声明的 model 和 flags 会出现在 Adapter context 中。Adapter 
 
 ```ts
 import { defineExperiment } from "niceeval";
-import { dockerImageSandbox } from "niceeval/sandbox";
+import { dockerSandbox } from "niceeval/sandbox";
 import myAgent from "./agents/my-agent";
 
 export default defineExperiment({
   agent: myAgent,
   model: "claude-sonnet-4-6",
-  sandbox: dockerImageSandbox({ image: "node:24-slim" }),
+  sandbox: dockerSandbox({ source: { type: "image", image: "node:24-slim" } }),
   attempts: 3,
 });
 ```

@@ -14,6 +14,158 @@ export interface DiagnosticTruncation {
   stderr: boolean;
 }
 
+/** `niceeval exp --json` 最后一行的公开原始事件。 */
+export interface ExpResultEvent {
+  event: "result";
+  status: "passed" | "failed" | "incomplete" | "interrupted";
+  passed: number;
+  failed: number;
+  errored: number;
+  reused?: number;
+  unstarted?: number;
+  completion: "complete" | "incomplete" | "interrupted";
+  snapshots: string[];
+  junit?: string;
+}
+
+interface ExpStartEvent {
+  format: "niceeval.exp";
+  schemaVersion: number;
+  event: "start";
+  total: number;
+  configs: number;
+  concurrency: number;
+  experimentConcurrency?: Readonly<Record<string, number>>;
+  reused: number;
+}
+
+interface ExpProgressEvent {
+  event: "progress";
+  elapsedMs: number;
+  total: number;
+  reused: number;
+  running: number;
+  elsewhere: number;
+  queued: number;
+  passed: number;
+  failed: number;
+  errored: number;
+  skipped: number;
+}
+
+interface ExpFailureEvent {
+  event: "failure";
+  locator: string;
+  evalId: string;
+  experimentId: string;
+  severity: "gate" | "soft";
+  assertion: string;
+  matcher?: string;
+  expected?: unknown;
+  received?: unknown;
+}
+
+interface ExpErrorEvent {
+  event: "error";
+  locator: string;
+  evalId: string;
+  experimentId: string;
+  phase: string;
+  reason: string;
+}
+
+export type ExpEvalEvent = {
+  event: "eval";
+  locator: string;
+  evalId: string;
+  experimentId: string;
+  verdict: "passed" | "failed" | "errored" | "skipped";
+  attempts: number;
+} & (
+  | { passed: number; planned?: never; unstarted?: never; reason?: never }
+  | { passed?: never; planned: number; unstarted: number; reason: "early_exit" }
+);
+
+interface ExpKeptEvent {
+  event: "kept";
+  locator: string;
+  evalId: string;
+  attempt: number;
+  verdict: "passed" | "failed" | "errored";
+  provider: string;
+  sandboxId: string;
+  enter: string;
+}
+
+interface ExpWarningEvent {
+  event: "warning";
+  code: string;
+  level: "warning" | "error";
+  message: string;
+  phase?: string;
+  experimentId?: string;
+  evalId?: string;
+}
+
+interface ExpBudgetExhaustedEvent {
+  event: "budget_exhausted";
+  experimentId: string;
+  spent: number;
+  unstarted: number;
+}
+
+interface ExpReporterErrorEvent {
+  event: "reporter_error";
+  reporter: string;
+  required: boolean;
+  message: string;
+}
+
+interface ExpInterruptedEvent {
+  event: "interrupted";
+}
+
+interface ExpJudgePrecheckEvent {
+  event: "judge_precheck";
+  status: "started" | "done" | "failed";
+  durationMs?: number;
+}
+
+interface ExpExperimentHookEvent {
+  event: "experiment_setup" | "experiment_teardown";
+  experimentId: string;
+  status: "started" | "done" | "failed";
+  durationMs?: number;
+}
+
+interface ExpLockWaitEvent {
+  event: "lock_wait";
+  experimentId: string;
+  evalId: string;
+  status: "started" | "resolved";
+  holderPid?: number;
+  holderHost?: string;
+  resolution?: "carried" | "dispatched";
+  waitedMs?: number;
+}
+
+/** `niceeval exp --json` 的公开原始事件联合；Testkit 不改变字段或判定。 */
+export type ExpEvent =
+  | ExpStartEvent
+  | ExpProgressEvent
+  | ExpFailureEvent
+  | ExpErrorEvent
+  | ExpEvalEvent
+  | ExpKeptEvent
+  | ExpWarningEvent
+  | ExpBudgetExhaustedEvent
+  | ExpReporterErrorEvent
+  | ExpInterruptedEvent
+  | ExpJudgePrecheckEvent
+  | ExpExperimentHookEvent
+  | ExpLockWaitEvent
+  | ExpResultEvent;
+
 export const DIAGNOSTIC_LIMIT = 4096;
 
 const TERM_GRACE_MS = 2000;
@@ -125,6 +277,53 @@ export class ProcessReceipt {
     }
     return out;
   }
+
+  /** 严格读取 `niceeval exp --json`，原样返回末尾的公开 `result` 事件。 */
+  expResult(): ExpResultEvent {
+    const events = this.ndjson<unknown>();
+    const first = events[0];
+    if (
+      !isRecord(first) ||
+      first.event !== "start" ||
+      first.format !== "niceeval.exp" ||
+      !isNonNegativeInteger(first.schemaVersion)
+    ) {
+      throw new Error(
+        `expResult(): stdout does not start with a niceeval.exp start event\n\n${this.diagnostic()}`,
+      );
+    }
+
+    const result = events.at(-1);
+    if (!isExpResultEvent(result)) {
+      throw new Error(
+        `expResult(): stdout does not end with a valid niceeval.exp result event\n\n${this.diagnostic()}`,
+      );
+    }
+    return result;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+function isExpResultEvent(value: unknown): value is ExpResultEvent {
+  if (!isRecord(value)) return false;
+  if (value.event !== "result") return false;
+  if (!(["passed", "failed", "incomplete", "interrupted"] as const).includes(value.status as never)) return false;
+  if (!isNonNegativeInteger(value.passed)) return false;
+  if (!isNonNegativeInteger(value.failed)) return false;
+  if (!isNonNegativeInteger(value.errored)) return false;
+  if (value.reused !== undefined && !isNonNegativeInteger(value.reused)) return false;
+  if (value.unstarted !== undefined && !isNonNegativeInteger(value.unstarted)) return false;
+  if (!(["complete", "incomplete", "interrupted"] as const).includes(value.completion as never)) return false;
+  if (!Array.isArray(value.snapshots) || !value.snapshots.every((item) => typeof item === "string")) return false;
+  if (value.junit !== undefined && typeof value.junit !== "string") return false;
+  return true;
 }
 
 function truncateForDisplay(text: string, stream: "stdout" | "stderr"): string {

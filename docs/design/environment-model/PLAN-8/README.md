@@ -79,7 +79,7 @@ Docker Provider 对 Compose Environment 的支持属于 Provider 自己，支持
 PLAN-8 保留 PLAN-7 的唯一 Case、三层 setup、普通文件传输与动态依赖内核，只重做公开语义边界：
 
 - `composeSandbox()` 政名为 `composeEnvironment()`。
-- `dockerfileSandbox()` 政名为 `dockerfileEnvironment()`。
+- `dockerSandbox()` 政名为 `dockerfileEnvironment()`。
 - `SandboxSource` 政名为 `EnvironmentSource`。
 - `SandboxSpec` 作为公开配置类型改名为 `SandboxConfig`；运行中的 `Sandbox` 名字不变。
 - Docker Provider 内建 Compose Environment 支持，普通调用面没有 `dockerComposeMaterializer()`。

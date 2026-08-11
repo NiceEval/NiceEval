@@ -45,8 +45,8 @@ import {
   command,
   defineSandboxCommand,
   dockerComposeSandbox,
-  dockerfileSandbox,
-  dockerImageSandbox,
+  dockerSandbox,
+  dockerSandbox,
   e2bSandbox,
   localSandbox,
   registerSandboxContent,
@@ -121,18 +121,16 @@ interface DockerComposeSandboxOptions {
   }>>;
 }
 
-interface DockerfileSandboxOptions {
-  readonly context: string | URL;
-  readonly dockerfile?: string;
-  readonly buildArgs?: Readonly<Record<string, string>>;
-  readonly user?: string;
-  readonly dockerAccess?: DockerSandboxAccess;
-  readonly resources?: DockerSandboxResources;
-  readonly lifetimeMs?: number;
-}
-
-interface DockerImageSandboxOptions {
-  readonly image: string;
+interface DockerSandboxOptions {
+  readonly source:
+    | { readonly type: "image"; readonly image: string }
+    | {
+        readonly type: "dockerfile";
+        readonly context: string | URL;
+        readonly file?: string;
+        readonly buildArgs?: Readonly<Record<string, string>>;
+        readonly target?: string;
+      };
   readonly user?: string;
   readonly dockerAccess?: DockerSandboxAccess;
   readonly resources?: DockerSandboxResources;
@@ -175,11 +173,8 @@ interface VercelSandboxOptions {
 declare function dockerComposeSandbox(
   options: DockerComposeSandboxOptions,
 ): SandboxLayer<"template-bearing">;
-declare function dockerfileSandbox(
-  options: DockerfileSandboxOptions,
-): SandboxLayer<"template-bearing">;
-declare function dockerImageSandbox(
-  options: DockerImageSandboxOptions,
+declare function dockerSandbox(
+  options: DockerSandboxOptions,
 ): SandboxLayer<"template-bearing">;
 declare function e2bSandbox(
   options: E2BSandboxOptions,
@@ -205,14 +200,14 @@ managed rootless DinD是不可互相降级的判别分支；完整边界见 [Lib
 
 ```text
 dockerComposeSandbox({ file, workspaceService }) -> Compose template + Docker Compose Provider
-dockerfileSandbox({ context, ... })              -> Dockerfile template + Docker Provider
-dockerImageSandbox({ image })                    -> image template + Docker Provider
+dockerSandbox({ source: { type: "dockerfile", context, ... } }) -> Dockerfile template + Docker Provider
+dockerSandbox({ source: { type: "image", image } })              -> image template + Docker Provider
 e2bSandbox({ template })                         -> E2B template + E2B Provider
 vercelSandbox({ snapshotId })                    -> snapshot template + Vercel Provider
 localSandbox()                                   -> 宿主目录 template + Local Provider
 ```
 
-原生起点字段必填:`dockerImageSandbox` 必须给 `image`,`e2bSandbox` 必须给 `template`。
+原生起点字段必填：`dockerSandbox` 必须给出带 `type` 的 `source`，`e2bSandbox` 必须给 `template`。
 没有 provider-only factory、implicit default 或 profile registry;共享起点直接抽成返回 factory 定义值的普通 TypeScript 函数。
 `e2bSandbox({ template })` 中的 `template` 只是该 factory 的 provider-native option,不同 factory 之间不共享字段类型。
 
@@ -369,7 +364,7 @@ missing 的配对必须补 template 或修改 selector,不能借相邻配对的 
 
 ```ts
 // evals/shared/node24.ts
-export const node24 = () => dockerImageSandbox({ image: "node:24@sha256:…" });
+export const node24 = () => dockerSandbox({ source: { type: "image", image: "node:24@sha256:…" } });
 
 // 通用 Eval
 export default defineEval({ sandbox: node24(), async test(t) { /* ... */ } });

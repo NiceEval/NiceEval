@@ -86,7 +86,7 @@ Window context 没有 `attempt` 字段，Attempt context 的 `attempt` 必填。
 
 共享协议只统一 command stack，不公开一个同形的 `template` 属性。
 template 由具体 factory 的 options 声明。
-`composeSandbox()` / `dockerfileSandbox()` / `dockerImageSandbox()` / `e2bSandbox()` / `vercelSandbox()` 都声明完整起点并同时选定 Provider。它们可以出现在 Eval 或 Experiment；所在字段决定 template owner。`defineSandboxRecipe()` 只声明 command stack，不声明起点。
+`composeSandbox()` / `dockerSandbox()` / `e2bSandbox()` / `vercelSandbox()` 都声明完整起点并同时选定 Provider。它们可以出现在 Eval 或 Experiment；所在字段决定 template owner。`defineSandboxRecipe()` 只声明 command stack，不声明起点。
 
 这避免要求 `e2bSandbox({ template: string })` 的原生参数符合 `SandboxRecipe.template?: SandboxTemplate`，也避免作者绕过 factory 手写一个看似通用、实际缺少 Provider 语义的 template 对象。
 Agent 的 stack contribution 由 Adapter 内部提供，不进入普通作者配置，也不伪装成 SandboxRecipe。Adapter 不能暗中提供 template 或 Provider；Agent 若要求特殊起点，必须由 Eval 或 Experiment 显式拥有并在 link 阶段校验兼容性。

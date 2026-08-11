@@ -12,8 +12,8 @@ import {
   composeSandbox,
   defineSandboxCommand,
   defineSandboxRecipe,
-  dockerfileSandbox,
-  dockerImageSandbox,
+  dockerSandbox,
+  dockerSandbox,
   e2bSandbox,
   registerSandboxContent,
   shell,
@@ -220,14 +220,15 @@ declare function registerSandboxContent(
   source: string | URL,
 ): RegisteredSandboxContent;
 
-interface DockerfileSandboxOptions {
-  readonly context: string | URL;
-  readonly dockerfile?: string;
-  readonly buildArgs?: Readonly<Record<string, string>>;
-}
-
-interface DockerImageSandboxOptions {
-  readonly image: string;
+interface DockerSandboxOptions {
+  readonly source:
+    | { readonly type: "image"; readonly image: string }
+    | {
+        readonly type: "dockerfile";
+        readonly context: string | URL;
+        readonly file?: string;
+        readonly buildArgs?: Readonly<Record<string, string>>;
+      };
 }
 
 interface E2BSandboxOptions {
@@ -243,11 +244,8 @@ declare function defineSandboxRecipe(): SandboxRecipe<"command-only">;
 declare function composeSandbox(
   options: ComposeSandboxOptions,
 ): SandboxRecipe<"template-bearing">;
-declare function dockerfileSandbox(
-  options: DockerfileSandboxOptions,
-): SandboxRecipe<"template-bearing">;
-declare function dockerImageSandbox(
-  options: DockerImageSandboxOptions,
+declare function dockerSandbox(
+  options: DockerSandboxOptions,
 ): SandboxRecipe<"template-bearing">;
 declare function e2bSandbox(
   options: E2BSandboxOptions,
@@ -275,14 +273,14 @@ Recipe 是不可变声明。
 
 ```text
 composeSandbox({ file, workspaceService }) -> ComposeSandboxTemplate + Docker Compose Provider
-dockerfileSandbox({ context, ... })        -> DockerfileSandboxTemplate + Docker Provider
-dockerImageSandbox({ image })              -> DockerImageSandboxTemplate + Docker Provider
+dockerSandbox({ source: { type: "dockerfile", context, ... } })        -> DockerfileSandboxTemplate + Docker Provider
+dockerSandbox({ source: { type: "image", image } })              -> DockerImageSandboxTemplate + Docker Provider
 e2bSandbox({ template })                   -> E2BSandboxTemplate + E2B Provider
 vercelSandbox({ snapshotId })              -> VercelSnapshotSandboxTemplate + Vercel Provider
 ```
 
 因此 `e2bSandbox({ template: "mempal-codex-v3" })` 中的 `template` 只是该 factory 的 provider-native option，不要求与其它 factory 共享字段类型。普通作者不能通过 `recipe.template = ...` 或直接构造对象替换 factory 的归一规则。
-每次调用 template-bearing factory 都算一份 template contribution。`dockerImageSandbox()` 的名字和必填 `image` 明确表达完整起点；不存在 provider-only factory 或隐式 default。
+每次调用 template-bearing factory 都算一份 template contribution。`dockerSandbox()` 的必填 `source` 明确表达完整起点；不存在 provider-only factory 或隐式 default。
 
 `SandboxCommandContext` 携带 owner、精确 phase、scope、signal、progress、diagnostic 与 facts。Attempt phase 的 `attempt` 必填，Window phase 根本没有该字段；依赖 Attempt 的命令不能误传给 `.setup()` 后才在运行时拿到 `undefined`。inline callback 由调用点推导 phase，不增加标注负担。`AttemptRef` 的完整值进入当前 Attempt fingerprint；callback 不能读取 index 后仍复用另一条 Attempt 的 identity。
 
@@ -384,14 +382,17 @@ interface ComposeSandboxOptions {
 `composeSandbox()` 接受 Compose 起点参数并返回 SandboxRecipe；它同时选择 Docker Compose Provider。Compose SandboxTemplate 由 factory 的返回定义值在内部携带，不作为共享 Recipe 属性暴露。
 `workspaceService` 对应 Agent、Eval、文件 API、workdir 与 diff 共同使用的主 Sandbox。
 
-### `dockerfileSandbox()`
+### `dockerSandbox()`
 
 ```typescript
 export default defineEval({
-  sandbox: dockerfileSandbox({
-    context: new URL(".", import.meta.url),
-    dockerfile: "Dockerfile",
-    buildArgs: { PROFILE: "judge" },
+  sandbox: dockerSandbox({
+    source: {
+      type: "dockerfile",
+      context: new URL(".", import.meta.url),
+      file: "Dockerfile",
+      buildArgs: { PROFILE: "judge" },
+    },
   }),
 });
 ```
@@ -419,13 +420,13 @@ export default defineEval({
 
 Terminal-Bench 的多容器 Eval 可以用 `composeSandbox(...)`，单机 Eval 可以用 `e2bSandbox(...)`；同一 Experiment 无需按 Provider 分叉。
 
-`dockerImageSandbox({ image })`、`e2bSandbox({ template })` 与 `vercelSandbox({ snapshotId })` 的原生起点字段必填。PLAN-9 第一阶段不提供 profile registry、provider-only factory、implicit default 或“第二份 template 的物理替换”。共享起点直接抽成普通 TypeScript 工厂函数，返回对应 factory 的定义值。
+`dockerSandbox({ source: { type: "image", image } })`、`e2bSandbox({ template })` 与 `vercelSandbox({ snapshotId })` 的原生起点字段必填。PLAN-9 第一阶段不提供 profile registry、provider-only factory、implicit default 或“第二份 template 的物理替换”。共享起点直接抽成普通 TypeScript 工厂函数，返回对应 factory 的定义值。
 
 若 Experiment command 无法在 Eval template 上执行，该 pair 就不兼容；作者必须让恰好一侧改用已经融合条件的完整 template，不能让 Runner 合并两个起点。
 
 ## Provider 与 template factory
 
-`composeSandbox()` 与 `dockerfileSandbox()` 由 Docker Provider 包提供；`e2bSandbox()` 由 E2B Provider 包提供。普通 Experiment 不注册 materializer，也不选择另一份 Provider。
+`composeSandbox()` 与 `dockerSandbox()` 由 Docker Provider 包提供；`e2bSandbox()` 由 E2B Provider 包提供。普通 Experiment 不注册 materializer，也不选择另一份 Provider。
 
 自定义 Provider 必须连同自己的 template factory 与 planner 一起导出。支持能力与实现不能由每个 Experiment 临时拼成注册表。
 

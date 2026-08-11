@@ -15,7 +15,7 @@
 - 作者声明类型是 `SandboxLayer`,分 template-bearing 与 command-only 两种形态,不使用 PLAN-10 文中的 root layer / extension layer。
 - 弃用 root 的理由:`SerializableCommandOptions.root` 在同一作者面表示以 root 用户执行,一词两义;`sandbox.root-conflict` 读起来像权限错误。GOALS、LIMITS 与 CASES 通篇使用 template、command-only 与 template owner,错误码沿用 `sandbox.template-conflict` / `sandbox.template-missing`。
 - 保留 layer 一词:它准确表达「向同一 Sandbox 叠一层准备、有起点的那层在最下面」的次序心智;它不是 Docker image layer,契约页写明这一句即可。
-- 具体 factory 命名沿用 PLAN-10:`dockerComposeSandbox()`、`dockerfileSandbox()`、`dockerImageSandbox()`、`e2bSandbox()` 与 `vercelSandbox()` 产出 template-bearing layer。
+- 具体 factory 为 `dockerComposeSandbox()`、`dockerSandbox()`、`e2bSandbox()` 与 `vercelSandbox()`，它们产出 template-bearing layer。
 - factory 名字同时点出 Provider;`sandboxLayer()` 产出 command-only layer,`localSandbox()` 同样是 template-bearing factory。
 - 方法名沿用 `.prepare(command)` 与 `context.onCleanup()`;`workspaceService`、`SandboxCommand`、`SandboxCommandTarget`、`AgentProvisioner`、`agentSandboxLayer()` 不变。
 

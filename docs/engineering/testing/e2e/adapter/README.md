@@ -46,7 +46,7 @@
    span 与事件的对应靠显式 correlation（`gen_ai.tool.call.id` 这类 GenAI 语义约定属性）成立、不靠名字猜——correlation 断裂的可见症状就是节点退回 timing unavailable。
    trace 只作时间与结构证据，从不参与判分——判分断言永远只读事件流（见[Observability](../../../../observability.md)）。
 
-第 2 步是 Eval 的判分断言，第 3、4 步是原生测试文件的机制断言，两者都在该 Repo 的所有权边界内。
+第 2 步是唯一的 Eval 判分断言：只读 `Turn.events`。第 3 至 5 步是原生测试文件的终态、readback 与资源/遥测机制断言，绝不反过来给事件流评分；两者都在该 Repo 的所有权边界内。
 测试正文遵守 [E2E 总纲](../README.md#单边界-e2e)与[测试 Architecture](../../architecture.md#单文件可读性契约)。
 
 ## Live 官方 Adapter 兼容性

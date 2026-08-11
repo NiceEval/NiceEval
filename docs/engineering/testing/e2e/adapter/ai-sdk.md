@@ -27,8 +27,9 @@ Repo ID 是 `adapter/ai-sdk`；manifest 声明 `areas: ["adapter"]`、live lanes
 - usage 非空这条机制事实由其它 transcript 类 Repo 承担。
 - `ci` Experiment 选中本仓库的工具、HITL 与会话 Eval；原生验收脚本列全这些协议 Eval ID，防止少发现/少运行后假绿。
 - `attempts: 1` 且没有测试级 retry；只声明实际使用的 `OPENAI_API_KEY` / `OPENAI_BASE_URL`，不要求 Judge secret。
+- 外层只从 Testkit `expResult()` 读取精确终态：`passed: 3`、`failed: 0`、`errored: 0`、`completion: "complete"`。工具、approval、会话与 usage 的判分只在各 Eval 的 `Turn.events` 中完成。
 - HTTP backend 与 `niceeval exp` 分别由 Testkit 独立进程组拥有，Journey 结束时都完成最终无 orphan cleanup。
-- **CLI 读回**：`show` 默认报告列出本仓库 Eval 与 verdict；对通过 attempt 的 `show --execution` 执行树出现不带命名空间的工具名调用节点与入参，节点带 span 时间注释。
+- **CLI 读回**：对通过 attempt 的 `show --execution` 执行树出现不带命名空间的工具名调用节点与入参，节点带 span 时间注释；通用默认报告与 JUnit 格式不由本 Repo 重复验收。
 - **OTel 写入**：被测应用接入官方 `@ai-sdk/otel` 集成（`src/backend/otel.ts`）。span 按 `src/topology.ts` 的固定 endpoint 发到 `niceeval.config.ts` 的 `telemetry.port`。
 - **OTel 生命周期**：UI stream 关闭 HTTP response 前显式 `forceFlush()`，进程终结时 `shutdown()` provider。验收不用固定延时竞速 BatchSpanProcessor。
 - **OTel 读回**：执行树的时间注释证明写入成立。`show --timing` 的 per-turn 子树必须与事件调用靠显式 correlation 对齐；断裂按协议回归判红。

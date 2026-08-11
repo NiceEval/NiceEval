@@ -164,7 +164,7 @@ PLAN-10 不用优先级把 conflict / missing 变成隐式选择。
 一个 root factory 可以在 physical planning 时根据显式目标平台选用不同 digest：
 
 ```text
-dockerImageSandbox({ image: "acme/tool:v3" })
+dockerSandbox({ source: { type: "image", image: "acme/tool:v3" } })
   -> linux/amd64 digest A
   -> linux/arm64 digest B
 ```

@@ -49,7 +49,7 @@ export default defineEval({
 有坐标系后,同一条 eval:
 
 ```typescript
-// ✅ after:全程零绝对路径,换 dockerImageSandbox() / e2bSandbox() / vercelSandbox() 零改动切换
+// ✅ after:全程零绝对路径,换 dockerSandbox() / e2bSandbox() / vercelSandbox() 零改动切换
 export default defineEval({
   description: "实现 Button 组件",
   async test(t) {
@@ -98,7 +98,7 @@ runner 静默换用户不产生任何报错,只表现为一片 `Permission denie
 
 ```typescript
 // 起点:镜像未声明 USER(默认 root),显式让 agent 以非 root 跑
-sandbox: dockerImageSandbox({ image: "node:24-slim", user: "node" }),
+sandbox: dockerSandbox({ source: { type: "image", image: "node:24-slim" }, user: "node" }),
 
 // 命令:只有装系统依赖这步提 root;其余(含 agent、验证)保持 Sandbox 默认身份
 await sandbox.runCommand("apt-get", ["install", "-y", "openjdk-17-jdk"], { user: "root" });
@@ -142,8 +142,7 @@ Adapter 声明的进程变量(如 [Codex CLI 的 `env`](../adapters/sdk/codex-cl
 需要扩展 PATH(装了私有工具链、要把它排在 agent 找到的可执行文件前面),用 Sandbox factory 的 `pathPrepend`:
 
 ```typescript
-sandbox: dockerImageSandbox({
-  image: "niceeval-agents:node24",
+sandbox: dockerSandbox({ source: { type: "image", image: "niceeval-agents:node24" },
   pathPrepend: ["/opt/toolchain/bin"], // 排在受管 PATH 最前面
 }),
 ```
@@ -192,15 +191,14 @@ provider 名只是个字符串,带不了参数,也没法表达"哪个是镜像�
 ```typescript
 import {
   dockerComposeSandbox,
-  dockerfileSandbox,
-  dockerImageSandbox,
+  dockerSandbox,
   e2bSandbox,
   localSandbox,
   vercelSandbox,
 } from "niceeval/sandbox";
 
-dockerImageSandbox({ image: "niceeval-agents:node24" })  // Docker:从 image 起
-dockerfileSandbox({ context: new URL(".", import.meta.url) })  // Docker:按 Dockerfile 构建
+dockerSandbox({ source: { type: "image", image: "niceeval-agents:node24" } })
+dockerSandbox({ source: { type: "dockerfile", context: new URL(".", import.meta.url) } })
 dockerComposeSandbox({                                   // Docker Compose:完整资源组
   file: new URL("docker-compose.yaml", import.meta.url),
   workspaceService: "client",

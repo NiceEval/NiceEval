@@ -138,7 +138,7 @@ reset 失败后,该 Sandbox 立即停止承接 Attempt,并追加一条运行级 
 内置 Provider 的 `lifetimeMs` 使用同一个名字：
 
 ```ts
-dockerImageSandbox({ image: "acme/evals:latest", lifetimeMs: 4 * 60 * 60_000 })
+dockerSandbox({ source: { type: "image", image: "acme/evals:latest" }, lifetimeMs: 4 * 60 * 60_000 })
 e2bSandbox({ template: "acme-evals", lifetimeMs: 60 * 60_000 })
 vercelSandbox({ snapshotId: "snap_123", lifetimeMs: 4 * 60 * 60_000 })
 ```

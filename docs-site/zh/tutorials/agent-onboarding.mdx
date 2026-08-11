@@ -17,7 +17,7 @@ description: "给 Coding Agent 的完整接入流程：探索项目、与用户�
 5. **Judge 用什么**：语义评估（`t.judge.autoevals.*`）要一个**与被测 Agent 分离的 Judge 模型**，走 OpenAI 兼容的 `/chat/completions` 协议。问用户手上有哪个服务的 key、想用什么 Judge 模型。缺 key 不会静默通过：Judge Assertion 会记为 `unavailable`；它参与 Pass grading，或在 Score Eval 中配置了 `.score()` / `.orStop()` 时，Attempt 的 grading 不可用。没有 Judge 配置时，先只写精确 Match。
 6. **是不是 Agent 本体要进 Sandbox**：被测对象是 coding agent CLI、或给 coding agent 写的 Skill/Plugin/Hook/MCP server（要在隔离 workspace 里改文件/跑命令）的话，必须走 Sandbox，不能像 HTTP 服务那样直接 `send`。
 
-   默认建议 `dockerImageSandbox({ image: "node:24-slim" })`，但**要先跟用户确认**——本机/CI 有没有 Docker、要不要 Vercel Sandbox 或其它远程 Provider。用户没有异议就默认走 Docker。Provider 声明在 Eval 或 Experiment 上，没有 CLI flag、项目级默认值或自动探测——见[选择 Sandbox Provider](/zh/tutorials/sandbox-providers)。
+   默认建议 `dockerSandbox({ source: { type: "image", image: "node:24-slim" } })`，但**要先跟用户确认**——本机/CI 有没有 Docker、要不要 Vercel Sandbox 或其它远程 Provider。用户没有异议就默认走 Docker。Provider 声明在 Eval 或 Experiment 上，没有 CLI flag、项目级默认值或自动探测——见[选择 Sandbox Provider](/zh/tutorials/sandbox-providers)。
 
 探完之后，向用户**介绍接入等级**并给出推荐（详见[接入等级](/zh/explanation/tier)）：
 
@@ -32,7 +32,7 @@ description: "给 Coding Agent 的完整接入流程：探索项目、与用户�
 | 被测对象 | 去读 |
 |---|---|
 | 用 Vercel AI SDK（`useChat` 后端）写的应用 | [内置 Agent 参考](/zh/reference/builtin-agents)：内置 `uiMessageStreamAgent` 无侵入接入，不用手写事件映射 |
-| coding agent CLI（claude-code / codex / bub 等改文件的任务） | [在 Sandbox 中评测 Agent](/zh/tutorials/sandbox-agent)：要配 `sandbox`，默认 `dockerImageSandbox({ image: "node:24-slim" })`，先跟用户确认 Provider |
+| coding agent CLI（claude-code / codex / bub 等改文件的任务） | [在 Sandbox 中评测 Agent](/zh/tutorials/sandbox-agent)：要配 `sandbox`，默认 `dockerSandbox({ source: { type: "image", image: "node:24-slim" } })`，先跟用户确认 Provider |
 | 给 Claude Code / Codex 写的 Skill、Plugin、Hook 或 MCP server | [评测 Coding Agent 扩展](/zh/examples/coding-agent-extensions)：同样跑在 Sandbox 里，Provider 确认方式同上 |
 | 其它自研 agent loop、LangGraph、OpenAI Agents SDK、已部署 Agent | [接入自己的 Agent](/zh/tutorials/connect-your-agent) 起步，手写 `send` 的完整教程在[编写 send](/zh/tutorials/write-send) |
 | 纯函数、没有独立服务的场景 | 先读[接入自己的 Agent](/zh/tutorials/connect-your-agent) 里「为什么不直调」那段，跟用户确认这确实是他们要的边缘用法，再继续 |
