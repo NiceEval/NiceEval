@@ -90,6 +90,10 @@ niceeval view --run <runId> --out <new-directory>
 
 ## E2E owner anchors
 
+### report-project-current
+
+`report-project-current.test.ts` 验证项目输入未变时复用 current Record；Eval source 改变后，`show` 排除旧结果，并由下一次 `exp` 重建结果。
+
 ### report-config-reload
 
 `report-config-reload.test.ts` 验证运行中的 view 重新加载 Report 静态 import closure、Theme、Config 与 Record。成功 rebuild 原子替换 current revision；失败保留 last-good 并显示 bounded rebuild problem。

@@ -89,7 +89,7 @@ Feature 文档是语义的唯一出处。
 | [adapters.md](adapters.md)                     | Agent ensure 循环、身份 / staged payload digest、断网义务、复用与 environment 隔离 | 脚本化安装层 + recording Sandbox（自有接口）                   | [e2e/adapter](../e2e/adapter/README.md)：真实 Agent CLI 安装与探测           |
 | [record.md](record.md)                         | core、descriptor、channel/blob 读取、frozen reader、single-writer publish/recovery | 不 fake：构造数据 + 每例独立的真实临时目录                           | [e2e/report](../e2e/report.md)：真实运行的 whole-Run 提交与读回               |
 
-| [reports.md](reports.md)                       | Sample、ReportPlan、transport matrix、Calculation 与页面的一次执行        | core-only Sample 与按 requirement 返回 transport 的 fixture           | [e2e/report](../e2e/report.md)：真实输出上的出口与渲染                       |
+| [reports.md](reports.md)                       | Sample、Report 的宿主内部计划、transport matrix、Calculation 与页面的一次执行 | core-only Sample 与按 requirement 返回 transport 的 fixture           | [e2e/report](../e2e/report.md)：真实输出上的出口与渲染                       |
 
 ## Feature 测试文档
 

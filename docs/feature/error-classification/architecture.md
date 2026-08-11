@@ -60,7 +60,7 @@ Attempt teardown 的失败保留为该 Attempt 的诊断；若分类带有可证
 
 当前进程显示重试进度、退避等待和首次 `dispatch-halted` 通知。最终 Record 数据只保存需要事后解释的 diagnostic、Assertion、Verdict 和计时事实。
 
-Reports 只消费 ReportInput 已交付的数据。它们不由当前进程反馈补齐缺失的失败信息。
+Reports 只消费已交付的具名 projected values 与 Calculation results。它们不由当前进程反馈补齐缺失的失败信息。
 
 ## 不变量
 
