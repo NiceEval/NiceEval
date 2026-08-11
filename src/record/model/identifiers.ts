@@ -34,7 +34,7 @@ export type RecordFormatV1 =
 const PORTABLE_SEGMENT_PATTERN =
   /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,253}[A-Za-z0-9])?$/;
 const WINDOWS_RESERVED_SEGMENT_PATTERN =
-  /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+  /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
 const RECORD_ATTACHMENT_LABEL =
   "[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?";
 const RECORD_ATTACHMENT_NAME_PATTERN = new RegExp(

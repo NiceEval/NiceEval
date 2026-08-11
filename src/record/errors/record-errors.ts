@@ -48,7 +48,11 @@ export function nonEmptyRecordIssues(
   issues: readonly RecordIssue[],
 ): NonEmptyRecordIssues | undefined {
   const [first, ...rest] = issues;
-  return first === undefined ? undefined : [first, ...rest];
+  if (first === undefined) {
+    return undefined;
+  }
+  const tuple: [RecordIssue, ...RecordIssue[]] = [first, ...rest];
+  return Object.freeze(tuple);
 }
 
 export const RecordCodecDocumentSchema = Schema.Literal(
