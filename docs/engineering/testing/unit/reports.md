@@ -6,7 +6,7 @@
 
 ## Fixture 规范
 
-fixture 直接构造 core-only `AnalysisSample`、ReportScope、transport reads 和 Report 的宿主内部计划。它不构造 Record root、reader、revision、proof 或旧图模型，也不复制 decoder、parser 或 reuse planning 的生产实现。
+fixture 直接构造 core-only `AnalysisSample`、作者声明的 `RecordProjection` 依赖、transport reads 和 Report 的宿主内部计划。它不构造 Record root、reader、revision、proof 或旧图模型，也不复制 decoder、parser 或 reuse planning 的生产实现。
 
 通过率等 Calculation fixture 必须让常见错误算法得到不同答案。例如 included、not-recorded、invalid、excluded 和 `errored` 不能恰好给出相同分母。partial 值同时带 observed 与 denominator；零、缺失和不可用保持三种不同输入。
 
