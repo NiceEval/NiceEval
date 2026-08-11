@@ -7,7 +7,7 @@ niceeval cache status <experiment-prefix> [eval-prefix...] [--json]
 ```
 
 该命令复用 `exp --dry` 的发现、选择、link 和 physical planning，只读取冻结选择的精确需求。
-它可以聚合 host CAS、Docker image store 与 BuildKit Domain，但不会把不同 Domain 的库存或回收权限合并。
+它可以聚合 host materialization、Docker image store 与 BuildKit Domain，但不会把不同 Domain 的库存或回收权限合并。
 
 人类输出逐类显示 `required-present`、`required-missing`、`superseded-for-selection` 和 `unverified`。
 增长估算必须带样本数、时间范围和 estimate 标记；没有数据时显示 unknown。
@@ -16,13 +16,24 @@ niceeval cache status <experiment-prefix> [eval-prefix...] [--json]
 JSON stdout 只有一个文档：
 
 ```ts
+type CacheDemandItem =
+  | {
+      kind: "git-source-projection";
+      demandKey: string;
+      repository: string;
+      commit: string;
+      state: "required-present" | "required-missing" | "superseded-for-selection";
+    }
+  | AgentArtifactDemandItem
+  | TaskBuildDemandItem;
+
 interface CacheStatusDocumentV1 {
   format: "niceeval.cache-status";
   schemaVersion: 1;
   selection: { experimentId: string; evalIds: string[] };
   domains: Array<{
     domainId: string;
-    backendKind: "host-cas" | "docker-images" | "buildkit";
+    backendKind: "host-materialization" | "docker-images" | "buildkit";
     state: "managed" | "read-only" | "unverified";
     requiredPresent: CacheDemandItem[];
     requiredMissing: CacheDemandItem[];
@@ -33,6 +44,15 @@ interface CacheStatusDocumentV1 {
 
 status 不会产生删除候选，也不会刷新 last successful use。
 “当前没有选择”与“可以删除”是两个不同事实。
+
+选择同一 repository 的两道题时，人类输出明确区分需求，不把 repository 合并成一个含糊命中：
+
+```text
+HOST MATERIALIZATION
+  required-present  git-source-projection  acme/project  111111111111…
+  required-missing  git-source-projection  acme/project  222222222222…
+  origin requests if run: 1 acquisition
+```
 
 ## Domain 库存
 
@@ -54,6 +74,28 @@ legacy、foreign 和 unverified 不会显示为 evictable。
 JSON stdout 使用以下顶层：
 
 ```ts
+type CacheInventoryEntry =
+  | {
+      kind: "git-source-pool";
+      repository: string;
+      coverageGeneration: number;
+      state: "active-leased" | "cold-reusable" | "evictable" | "unverified";
+      logicalBytes: number;
+      lastSuccessfulFetchAt: string | null;
+    }
+  | {
+      kind: "git-source-projection";
+      repository: string;
+      commit: string;
+      objectSetDigest: string;
+      payloadSha256: string;
+      state: "active-leased" | "cold-reusable" | "evictable" | "unverified";
+      logicalBytes: number;
+      lastSuccessfulUseAt: string | null;
+    }
+  | AgentArtifactInventoryEntry
+  | TaskBuildInventoryEntry;
+
 interface CacheInventoryDocumentV1 {
   format: "niceeval.cache-inventory";
   schemaVersion: 1;
