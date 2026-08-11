@@ -2,7 +2,7 @@
 // already closed RecordReader -> AnalysisSampleHandle -> executeReport into a
 // fixed execution rebuild; this module never reopens a retired Record graph.
 
-import { statSync, watch, type FSWatcher } from "node:fs";
+import { readdirSync, statSync, watch, type FSWatcher } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { Socket } from "node:net";
 import { basename, dirname, resolve } from "node:path";
@@ -31,7 +31,7 @@ export interface NodeViewServerError {
   readonly reason: string;
 }
 
-export interface ViewOptions {
+export interface ViewOptions<Requirements = never> {
   readonly input?: string;
   readonly out?: string;
   readonly port?: number;
@@ -47,9 +47,9 @@ export interface ViewOptions {
   /** Static export consumes this exact fixed execution. */
   readonly reportExecution?: ReportExecution;
   /** An already-open scoped session owned by the caller. */
-  readonly session?: ReportViewSession;
+  readonly session?: ReportViewSession<Requirements>;
   /** Or let this scope open a session from a caller-supplied current rebuild. */
-  readonly request?: OpenReportViewSessionInput;
+  readonly request?: OpenReportViewSessionInput<Requirements>;
 }
 
 /** The native Effect-facing server handle. Its resources are also Scope-owned. */
@@ -178,7 +178,7 @@ interface ServerResources {
 }
 
 interface WatchResources {
-  readonly watchers: readonly FSWatcher[];
+  readonly watchers: Map<string, FSWatcher>;
   closed: boolean;
 }
 
@@ -187,9 +187,9 @@ interface WatchResources {
  * `session.refresh`; the session serializes rebuild and close, preserves the
  * last good immutable execution, and publishes a new revision only on success.
  */
-export function openViewServer(
-  options: ViewOptions = {},
-): Effect.Effect<ReportViewServer, NodeViewServerError | ReportViewOpenError, Scope.Scope> {
+export function openViewServer<Requirements>(
+  options: ViewOptions<Requirements> = {},
+): Effect.Effect<ReportViewServer, NodeViewServerError | ReportViewOpenError, Scope.Scope | Requirements> {
   return Effect.gen(function* () {
     if (options.session !== undefined && options.request !== undefined) {
       return yield* Effect.fail(serverError("open", "provide either session or request, not both"));
@@ -213,10 +213,7 @@ export function openViewServer(
     );
     const address = yield* listen(resources.server, host, port);
     const watches = yield* Effect.acquireRelease(
-      Effect.map(
-        openWatchers(watchInputs(options), () => resources.refreshes.request()),
-        (watchers): WatchResources => ({ watchers, closed: false }),
-      ),
+      openWatchers(watchInputs(options), () => resources.refreshes.request()),
       (value) => closeWatchers(value),
     );
 
@@ -287,7 +284,10 @@ function listen(
   });
 }
 
-function serveRequest(session: ReportViewSession, request: HttpRequest): Effect.Effect<void> {
+function serveRequest<Requirements>(
+  session: ReportViewSession<Requirements>,
+  request: HttpRequest,
+): Effect.Effect<void> {
   const url = requestUrl(request.request);
   if (url === undefined) {
     return Effect.sync(() => sendText(request.response, 400, "bad request"));
@@ -337,10 +337,10 @@ function serveRequest(session: ReportViewSession, request: HttpRequest): Effect.
   );
 }
 
-function refreshSession(
-  session: ReportViewSession,
+function refreshSession<Requirements>(
+  session: ReportViewSession<Requirements>,
   onRebuild: ViewOptions["onRebuild"],
-): Effect.Effect<void, ReportViewSessionClosed> {
+): Effect.Effect<void, ReportViewSessionClosed, Requirements> {
   return Effect.gen(function* () {
     const before = yield* session.snapshot;
     yield* session.refresh;
@@ -354,7 +354,7 @@ function refreshSession(
   });
 }
 
-function watchInputs(options: ViewOptions): readonly string[] {
+function watchInputs<Requirements>(options: ViewOptions<Requirements>): readonly string[] {
   const values = [
     ...(options.watchInputs ?? []),
     ...(options.watchRoot === undefined ? [] : [options.watchRoot]),
@@ -365,29 +365,101 @@ function watchInputs(options: ViewOptions): readonly string[] {
 function openWatchers(
   inputs: readonly string[],
   onChange: () => void,
-): Effect.Effect<readonly FSWatcher[], NodeViewServerError> {
+): Effect.Effect<WatchResources, NodeViewServerError> {
   return Effect.try({
     try: () => {
-      const watchers: FSWatcher[] = [];
-      for (const input of inputs) {
-        let directory = dirname(input);
-        let name: string | undefined = basename(input);
+      const resources: WatchResources = { watchers: new Map(), closed: false };
+      const notify = (): void => {
+        if (resources.closed) return;
+        // A new Run gets its own directory before its completion marker. Rescan
+        // immediately after the parent event so the marker change is observed
+        // as well as the first incomplete rebuild.
         try {
-          if (statSync(input).isDirectory()) {
-            directory = input;
-            name = undefined;
-          }
+          synchronizeWatchers(resources, inputs, notify);
         } catch {
-          // A not-yet-created config/module is watched through its parent.
+          // A transient directory race must not escape a Node callback. The
+          // existing watcher still requests this rebuild and the next event
+          // will retry the watch-set synchronization.
         }
-        watchers.push(watch(directory, (_event, filename) => {
-          if (name === undefined || filename === null || filename.toString() === name) onChange();
-        }));
+        onChange();
+      };
+      try {
+        synchronizeWatchers(resources, inputs, notify);
+        return resources;
+      } catch (error) {
+        for (const watcher of resources.watchers.values()) watcher.close();
+        throw error;
       }
-      return Object.freeze(watchers);
     },
     catch: (error): NodeViewServerError => serverError("watch", asError(error).message),
   });
+}
+
+/** Watch the Record root and its current Run directories without a polling loop. */
+function synchronizeWatchers(
+  resources: WatchResources,
+  inputs: readonly string[],
+  onChange: () => void,
+): void {
+  for (const input of inputs) {
+    try {
+      if (statSync(input).isDirectory()) {
+        watchDirectoryTree(resources, input, onChange, 0);
+      } else {
+        watchNamedInput(resources, dirname(input), basename(input), onChange);
+      }
+    } catch {
+      // A missing config / module / Record root remains observable through its
+      // parent directory. It can appear later without restarting the host.
+      watchNamedInput(resources, dirname(input), basename(input), onChange);
+    }
+  }
+}
+
+const WATCH_DIRECTORY_DEPTH_MAX = 4;
+
+function watchDirectoryTree(
+  resources: WatchResources,
+  directory: string,
+  onChange: () => void,
+  depth: number,
+): void {
+  watchDirectory(resources, directory, onChange);
+  if (depth >= WATCH_DIRECTORY_DEPTH_MAX) return;
+  let entries: readonly { readonly name: string; isDirectory(): boolean }[];
+  try {
+    entries = readdirSync(directory, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      watchDirectoryTree(resources, resolve(directory, entry.name), onChange, depth + 1);
+    }
+  }
+}
+
+function watchDirectory(
+  resources: WatchResources,
+  directory: string,
+  onChange: () => void,
+): void {
+  const key = `directory:${directory}`;
+  if (resources.watchers.has(key)) return;
+  resources.watchers.set(key, watch(directory, () => onChange()));
+}
+
+function watchNamedInput(
+  resources: WatchResources,
+  directory: string,
+  name: string,
+  onChange: () => void,
+): void {
+  const key = `named:${directory}:${name}`;
+  if (resources.watchers.has(key)) return;
+  resources.watchers.set(key, watch(directory, (_event, filename) => {
+    if (filename === null || filename.toString() === name) onChange();
+  }));
 }
 
 function closeResources(resources: ServerResources): Effect.Effect<void> {
@@ -410,7 +482,7 @@ function closeWatchers(resources: WatchResources): Effect.Effect<void> {
     if (resources.closed) return Effect.void;
     resources.closed = true;
     return Effect.sync(() => {
-      for (const watcher of resources.watchers) {
+      for (const watcher of resources.watchers.values()) {
         try {
           watcher.close();
         } catch {

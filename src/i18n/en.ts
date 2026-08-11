@@ -214,42 +214,20 @@ export const en = {
     "      --teardown   recover a killed run: run only the selected experiments'\n" +
     "        teardown (no attempts, no setup); combining it with eval id prefixes is an error\n" +
     "  niceeval accept @<locator>...                      accept explicit historical results\n" +
-    "  niceeval show [eval-id-prefix… | @<locator>]        read results in the terminal\n" +
-    "      no evidence flag: leaderboard scoped to the matched evals (bare show, an\n" +
-    "        eval id prefix, or a single --exp all land here); two or more --exp\n" +
-    "        compares those conditions eval by eval instead\n" +
-    "      @<locator>  exactly one attempt: no flag -> compact overview;\n" +
-    "        with a flag -> that evidence slice\n" +
-    "      --source      the Eval source captured when this attempt ran,\n" +
-    "        assertions mapped back to source lines\n" +
-    "      --execution   this attempt's execution event stream (messages/thinking/\n" +
-    "        Skill loads/tool calls); OTel adds timing to the same node when present\n" +
-    "      --execution --grep <pattern>   only matching cards, plus a cross-attempt\n" +
-    "        match summary; --execution --expand <t<n>.c<n>|cmd<n>>   one full card\n" +
-    "        (mutually exclusive with each other; range must be one attempt for --expand)\n" +
-    "      --timing      unified timing tree for the attempt (phases + hooks/commands/turns + per-turn OTel)\n" +
-    "      --diff[=file] sandbox workspace file-change summary; =file expands one file\n" +
-    "      evidence flags accept any range: a range with more than one attempt\n" +
-    "        renders one section per attempt (experimentId, evalId, attempt order)\n" +
-    "      --history   per experiment × eval execution timeline (mutually exclusive with --report)\n" +
-    "      --usage     UsageTable per attempt in range, sectioned by experiment with totals\n" +
-    "      --stats     eval x experiment stability matrix over all historical executions\n" +
-    "        (mutually exclusive with @<locator> and --report)\n" +
-    "      --json      structured form of any slice: one JSON document on stdout, same\n" +
-    "        selection as the text form (mutually exclusive with --report and --expand)\n" +
-    "      --record <dir>    pin a record root     --exp <id>   repeatable; 2+ compares conditions\n" +
-    "      --report <file>   custom report    --page <id>   pick the initial page (multi-page\n" +
-    "        reports render it, then list the rest as a page index with copyable commands)\n" +
+    "  niceeval show (--latest | --run <run-id>...)          render a Report in the terminal\n" +
+    "      --run <run-id> is repeatable and deduplicated; use complete ids only\n" +
+    "      --latest chooses one published Run per target Experiment; --experiment <id>\n" +
+    "        is repeatable and only valid with --latest\n" +
+    "      --record <root> selects the actual Record root (default: .niceeval/record)\n" +
+    "      --report overview (or omit it) uses the built-in overview; --page <route>\n" +
+    "        selects an exact Report route; --json emits one Report show document\n" +
     "  niceeval list                                       list discovered evals\n" +
     "  niceeval session list [--all] [experiment-prefix]    query Sessions (read-only)\n" +
     "  niceeval session show <sessionId>                   show one Session (read-only)\n" +
-    "  niceeval view [eval-id-prefix…] [--out dir] [--port n] [--no-open]\n" +
-    "      report pages + evidence rooms; --report <file> swaps in your report\n" +
-    "      (same file as show); --page <id> picks the initial page;\n" +
-    "      --record <dir> pins a record root; --run <file> opens exactly\n" +
-    "      one run; --exp <id> (repeatable) narrows to those experiments;\n" +
-    "      --out <dir> exports a static site: index.html plus the viewer\n" +
-    "      artifacts, ready for any static host\n" +
+    "  niceeval view (--latest | --run <run-id>...) [--out dir] [--port n] [--no-open]\n" +
+    "      uses the same Record selection and built-in overview as show; live mode\n" +
+    "      binds loopback only and rebuilds fixed ReportExecutions on Record changes\n" +
+    "      --out <dir> exports one completed static site and starts no server\n" +
     "  niceeval sandbox list|enter|history|diff|stop  inspect & destroy sandboxes kept by --keep-sandbox\n" +
     "  niceeval sandbox list --orphans / prune         reclaim instances orphaned by a killed run\n" +
     "  niceeval clean                                      delete .niceeval/ artifacts\n" +

@@ -254,6 +254,7 @@ export function extractUnionVariants(sourceText: string, fileName: string, typeN
 interface FlagEntry {
   key: string; // FLAG_OPTIONS 里的原始 key,如 "max-concurrency"
   type: "string" | "boolean";
+  multiple: boolean;
   short?: string;
   /** 紧邻该 flag 属性的 JSDoc,即文档 flag 表里的中文说明。 */
   doc?: string;
@@ -285,6 +286,7 @@ function extractFlagOptions(sourceText: string, fileName: string): FlagEntry[] {
     const key = ts.isStringLiteral(prop.name) ? prop.name.text : prop.name.getText();
     if (!ts.isObjectLiteralExpression(prop.initializer)) continue;
     let type: "string" | "boolean" | undefined;
+    let multiple = false;
     let short: string | undefined;
     for (const p of prop.initializer.properties) {
       if (!ts.isPropertyAssignment(p)) continue;
@@ -292,11 +294,14 @@ function extractFlagOptions(sourceText: string, fileName: string): FlagEntry[] {
       if (pname === "type" && ts.isStringLiteral(p.initializer)) {
         type = p.initializer.text as "string" | "boolean";
       }
+      if (pname === "multiple" && p.initializer.kind === ts.SyntaxKind.TrueKeyword) {
+        multiple = true;
+      }
       if (pname === "short" && ts.isStringLiteral(p.initializer)) {
         short = p.initializer.text;
       }
     }
-    if (type) entries.push({ key, type, short, doc: extractDoc(sourceFile, prop) });
+    if (type) entries.push({ key, type, multiple, short, doc: extractDoc(sourceFile, prop) });
   }
   return entries;
 }
@@ -327,7 +332,7 @@ function extractNumberFlagKeys(sourceText: string, fileName: string): Set<string
 
 interface CliFlagRow {
   flags: string[]; // 一或两个 `--x` 形式,负向 flag 配对显示在同一行
-  type: "string" | "number" | "boolean";
+  type: "string" | "string[]" | "number" | "boolean";
   description: string;
 }
 
@@ -346,7 +351,6 @@ function buildCliFlagRows(sourceText: string, fileName: string): CliFlagRow[] {
     "history",
     "usage",
     "stats",
-    "exp",
     "theme",
   ]);
 
@@ -369,26 +373,15 @@ function buildCliFlagRows(sourceText: string, fileName: string): CliFlagRow[] {
     const flags = [`--${e.key}`];
     const negKey = `no-${e.key}`;
     if (entries.some((x) => x.key === negKey)) flags.push(`--${negKey}`);
-    const type: CliFlagRow["type"] = numberKeys.has(e.key) ? "number" : e.type === "boolean" ? "boolean" : "string";
+    const type: CliFlagRow["type"] = numberKeys.has(e.key)
+      ? "number"
+      : e.type === "boolean"
+      ? "boolean"
+      : e.multiple
+      ? "string[]"
+      : "string";
     rows.push({ flags, type, description: desc });
   }
-  rows.push(
-    {
-      flags: ["--latest"],
-      type: "boolean",
-      description: "`show` / `view` 命令专用:按 Sample 的稳定 latest policy 为每个目标 Experiment 各选择一个已完成 Run;与 `--run` 互斥。",
-    },
-    {
-      flags: ["--experiment"],
-      type: "string",
-      description: "`show` / `view` 可重复使用。与 `--latest` 合用时定义目标 Experiment 集合;与 `--run` 合用时按完整 identity 收窄 Sample。",
-    },
-    {
-      flags: ["--eval"],
-      type: "string",
-      description: "`show` / `view` 命令专用:在已经形成的 Sample 上按完整 eval identity 收窄。",
-    },
-  );
   return rows;
 }
 

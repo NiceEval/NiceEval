@@ -30,18 +30,18 @@ export interface ReportViewRebuildFailure {
   readonly summary: string;
 }
 
-export interface ReportViewSession {
+export interface ReportViewSession<Requirements = never> {
   readonly url: string;
   readonly snapshot: Effect.Effect<ReportViewState, ReportViewSessionClosed>;
-  readonly refresh: Effect.Effect<void, ReportViewSessionClosed>;
+  readonly refresh: Effect.Effect<void, ReportViewSessionClosed, Requirements>;
 }
 
-export interface OpenReportViewSessionInput {
+export interface OpenReportViewSessionInput<Requirements = never> {
   readonly url: string;
   /** The opening execution must be complete; no last-good revision exists yet. */
-  readonly initial: Effect.Effect<ReportExecution, ReportViewOpenError>;
+  readonly initial: Effect.Effect<ReportExecution, ReportViewOpenError, Requirements>;
   /** Each invocation performs exactly one next execution attempt. */
-  readonly rebuild: () => Effect.Effect<ReportExecution, ReportViewRebuildFailure>;
+  readonly rebuild: () => Effect.Effect<ReportExecution, ReportViewRebuildFailure, Requirements>;
 }
 
 type SessionCell =
@@ -59,9 +59,9 @@ const closedError: ReportViewSessionClosed = Object.freeze({
  * interruption intentionally remain in the Effect cause and do not masquerade
  * as a recoverable rebuild result.
  */
-export function openReportViewSession(
-  input: OpenReportViewSessionInput,
-): Effect.Effect<ReportViewSession, ReportViewOpenError, Scope.Scope> {
+export function openReportViewSession<Requirements>(
+  input: OpenReportViewSessionInput<Requirements>,
+): Effect.Effect<ReportViewSession<Requirements>, ReportViewOpenError, Scope.Scope | Requirements> {
   return Effect.gen(function* () {
     const initial = yield* input.initial;
     const initialState: ReportViewState = Object.freeze({
@@ -77,7 +77,7 @@ export function openReportViewSession(
         : Effect.fail(closedError),
     );
 
-    const refresh: Effect.Effect<void, ReportViewSessionClosed> = mutex.withPermits(1)(
+    const refresh: Effect.Effect<void, ReportViewSessionClosed, Requirements> = mutex.withPermits(1)(
       Effect.flatMap(Ref.get(cell), (before) => {
         if (before.state === "closed") return Effect.fail(closedError);
         return input.rebuild().pipe(
@@ -101,7 +101,7 @@ export function openReportViewSession(
       }),
     );
 
-    const session: ReportViewSession = Object.freeze({ url: input.url, snapshot, refresh });
+    const session: ReportViewSession<Requirements> = Object.freeze({ url: input.url, snapshot, refresh });
     return yield* Effect.acquireRelease(
       Effect.succeed(session),
       // Closing participates in the same critical section as refresh. Without

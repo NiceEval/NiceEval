@@ -14,11 +14,10 @@ niceeval view [selection] [report options] --out <directory>
 
 | 选项 | 含义 |
 |---|---|
-| `--record <root>` | 选择 Record root；省略时使用项目默认 root。 |
+| `--record <root>` | 选择实际 Record root；省略时使用 `<cwd>/.niceeval/record`。 |
 | `--run <run-id>` | 可重复；使用 explicit analysis selection。 |
 | `--latest` | 使用 latest analysis selection。 |
-| `--experiment <id>` | 与 `--latest` 合用时给出完整目标集合；与 `--run` 合用时收窄已有 Sample。 |
-| `--eval <id>` | 在既有 Sample 上收窄 Eval。 |
+| `--experiment <id>` | 仅与 `--latest` 合用时给出完整目标集合。 |
 | `--report <module>` | 选择内建 Report 或受信任的 Report module。 |
 | `--page <route>` | 选择一个已经展开的 exact route。 |
 | `--port <port>` | `view` 监听端口；默认 4173，只绑定 loopback。 |

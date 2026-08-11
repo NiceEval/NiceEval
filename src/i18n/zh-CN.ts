@@ -210,37 +210,20 @@ export const zhCN = {
     "      --teardown   强杀后补收尾:只对选中的实验各执行一次 teardown(不派发\n" +
     "        attempt、不跑 setup);与 eval id 前缀组合是用法错误\n" +
     "  niceeval accept @<locator>...           接受明确列出的历史结果\n" +
-    "  niceeval show [eval-id 前缀… | @<locator>]   终端读结果\n" +
-    "      不带证据 flag:命中范围的默认报告(裸跑、eval id 前缀、单个 --exp 都落在这里);\n" +
-    "        两个以上 --exp 改为逐条件对照\n" +
-    "      @<locator>  精确一个 attempt:无 flag → 紧凑全景;带 flag → 对应证据切面\n" +
-    "      --source      该 attempt 运行时保存的 Eval 源码,断言标回源码行\n" +
-    "      --execution   该 attempt 的执行事件流(消息/thinking/Skill/工具调用),\n" +
-    "        有 OTel 时同一节点补时间\n" +
-    "      --execution --grep <pattern>   只输出命中卡片,末尾附跨 attempt 汇总;\n" +
-    "        --execution --expand <t<n>.c<n>|cmd<n>>   展开一张卡片完整内容\n" +
-    "        (两者互斥;--expand 要求范围恰好一个 attempt)\n" +
-    "      --timing      整个 attempt 的统一时间树(阶段 + hook/命令/turn + 轮内 OTel)\n" +
-    "      --diff[=文件] agent 归因的文件改动摘要;=文件 按窗口展开单个文件\n" +
-    "      证据 flag 接受任意范围:范围含多个 attempt 时逐 attempt 分节\n" +
-    "        (按 experimentId、evalId、attempt 序)\n" +
-    "      --history   逐 experiment × eval 的执行时间轴(与 --report 互斥)\n" +
-    "      --usage     范围内逐 attempt 的用量表,按 experiment 分节各自合计\n" +
-    "      --stats     eval × experiment 的历史全执行稳定性矩阵\n" +
-    "        (与 @<locator>、--report 互斥)\n" +
-    "      --json      任何切片的结构化形态:一个 JSON 文档到 stdout,选择与 text 面同一批\n" +
-    "        (与 --report、--expand 互斥)\n" +
-    "      --record <目录>  钉死记录根   --exp <id> 可重复,两个以上进入对照\n" +
-    "      --report <文件> 自定义报告   --page <id> 定初始页(多页报告渲染该页,\n" +
-    "        尾部再附其余页索引)\n" +
+    "  niceeval show (--latest | --run <run-id>...)       在终端渲染 Report\n" +
+    "      --run <run-id> 可重复且按完整 id 去重;不接受前缀或猜测\n" +
+    "      --latest 为每个目标 Experiment 选一个已发布 Run;--experiment <id>\n" +
+    "        可重复且只能与 --latest 合用\n" +
+    "      --record <root> 指定实际 Record root(默认 .niceeval/record)\n" +
+    "      --report overview(或省略)使用内建 overview;--page <route> 选择精确\n" +
+    "        Report route;--json 输出单份 Report show 文档\n" +
     "  niceeval list                            列出发现到的 eval\n" +
     "  niceeval session list [--all] [实验前缀]  查询 Session(只读)\n" +
     "  niceeval session show <sessionId>         查看一个 Session(只读)\n" +
-    "  niceeval view [eval-id 前缀…] [--out 目录] [--port n] [--no-open]\n" +
-    "      报告页 + 证据室;--report <文件> 整槽换成自定义报告(与 show 同一文件)\n" +
-    "      --page <id> 定初始页   --record <目录> 钉死记录根\n" +
-    "      --run <文件> 只打开这一份快照   --exp <id>(可重复)收窄到这些实验;\n" +
-    "      --out <目录> 静态导出:index.html 连同查看器 artifact,可直接静态托管\n" +
+    "  niceeval view (--latest | --run <run-id>...) [--out 目录] [--port n] [--no-open]\n" +
+    "      与 show 共用 Record 选择和内建 overview;live 模式只绑定 loopback,\n" +
+    "      Record 变化时重新形成固定 ReportExecution\n" +
+    "      --out <目录> 只导出一份完整静态站,不启动 server\n" +
     "  niceeval sandbox list|enter|history|diff|stop  查看与销毁 --keep-sandbox 留下的现场\n" +
     "  niceeval sandbox list --orphans / prune         核对并收回被强杀留下的无主实例\n" +
     "  niceeval clean                           删除 .niceeval/ 历史 artifact\n" +
