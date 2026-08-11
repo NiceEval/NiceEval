@@ -47,13 +47,40 @@ interface DurationLimit {
   readonly milliseconds: number;
 }
 
+interface AttemptEligibilityPayloadV1 {
+  readonly reuseContract: EqualityToken;
+  readonly inputIdentity: EqualityToken;
+  readonly configIdentity: EqualityToken;
+  readonly executionDuration: DurationLimit;
+}
+
+type ComparisonSourceState =
+  | "available"
+  | "unavailable"
+  | "migration-required"
+  | "migration-unavailable"
+  | "unsupported"
+  | "invalid";
+
+type RecordedAttemptClaim =
+  | "reuse-contract"
+  | "verdict-state"
+  | "input-identity"
+  | "config-identity"
+  | "execution-duration";
+
 interface ComparisonProvenance {
-  readonly factName: string;
-  readonly sourceState: "read" | "missing" | "unavailable" | "unsupported" | "invalid";
+  readonly attachment: "niceeval.eligibility/v1" | "niceeval.verdict/v1";
+  readonly recordedClaim: RecordedAttemptClaim;
+  readonly sourceState: ComparisonSourceState;
   readonly result: "match" | "mismatch" | "ineligible" | "not-comparable";
   readonly reason: string;
 }
 ```
+
+`niceeval.eligibility/v1` 是 Attempt-owned 的 `AttemptEligibilityPayloadV1`。它是 reuse 所需 recorded claim
+的唯一 owner：所有字段 exact decode，未知字段即 invalid；它没有通用状态字段。`RecordAttachmentRead` 的 state
+描述 bytes／schema 是否可用，payload 内的 `reuseContract`、identity 与 duration 则是进入复用资格后才比较的领域值。
 
 target slot identity 不从历史 Attempt、fingerprint 或目录名派生。reuse planning 不分配 identity；writer 必须原样写入 target 的 runId、slotId、startedAt 与 expected membership。
 
@@ -107,9 +134,9 @@ type ExecutionReusePlanSlot = ReusePlanSlot | ExecutionGapSlot;
 
 `slots` 与 target slots 一一对应，并保持 target 顺序。`reuse` 与 `gaps` 是互斥、保序子序列。所有 gap 都可执行；`invalid` 只属于 `AnalysisSample`，不进入 reuse planning。
 
-`effectiveOptions` 是 policy 实际使用的安全归一化值。它可以包含 rerun、keepSandbox 和 timeout 口径，不得包含 secret、进程变量值、`RecordReader`、文件路径、句柄或任意业务通道集合。
+`effectiveOptions` 是 policy 实际使用的安全归一化值。它可以包含 rerun、keepSandbox 和 timeout 口径，不得包含 secret、进程变量值、`RecordReader`、文件路径、句柄或任意业务 Attachment 集合。
 
-`comparisons` 逐项说明比较的事实名、domain、结果和具名原因。它用于 dry-run、membership-provenance 与诊断，只解释当时形成的 plan，不持续认证未来新发布的 Run 或 policy。
+`comparisons` 逐项说明 source Attachment、被比较的 recorded claim、domain、结果和具名原因。它用于 dry-run、membership-provenance 与诊断，只解释当时形成的 plan，不持续认证未来新发布的 Run 或 policy。
 
 ## project-target/v1 的 source barrier
 
@@ -128,14 +155,19 @@ type ExecutionReusePlanSlot = ReusePlanSlot | ExecutionGapSlot;
 
 | 条件 | 判断对象 | 不通过时的 gap reason |
 |---|---|---|
-| forward fence | eligibility schema 受支持，`reuseContract` domain 被 policy 接受且 token 相等 | `source-fact-unsupported`、`reuse-contract-domain-mismatch` 或 `reuse-contract-mismatch` |
+| forward fence | eligibility schema 受支持，`reuseContract` domain 被 policy 接受且 token 相等 | `source-attachment-unsupported`、`reuse-contract-domain-mismatch` 或 `reuse-contract-mismatch` |
 | 终态 | Verdict 是 `passed` 或 `failed` | `verdict-ineligible` |
 | fingerprint | input/config identity 与当前 target 同 domain 且 value 相等 | `identity-mismatch` 或 `identity-domain-mismatch` |
 | timeout | execution duration domain 可比且不超过当前 timeout | `duration-domain-mismatch` 或 `timeout-exceeded` |
 | rerun | 本次档位允许采用该 Verdict | `rerun-requested` |
 | keep sandbox | 本次没有要求保留新现场 | `sandbox-retention-requested` |
 
-Verdict 与 eligibility 任一不是 read、durable complete、decoding complete，或 payload 不符合精确形状，也形成 gap，并保留原始 `RecordIssue` 或 `ChannelProjectionResult` 原因。`errored`、`skipped`、不存在和无法读取的 Attempt 都不能 reuse。
+Verdict 与 eligibility 都必须以 `RecordAttachmentRead.available` 取得 exact decoded payload 与完整 own blob closure，才进入
+领域比较。其余 read state（`unavailable`、`migration-required`、`migration-unavailable`、`unsupported`、`invalid`）
+都形成 gap，并保留原始 `RecordIssue` 或 read state。
+
+随后 Verdict 只能是 `passed` 或 `failed`。eligibility 的 `reuseContract`、identity 与 execution duration 也必须满足
+本次 policy。`errored`、`skipped`、不存在和无法读取的 Attempt 都不能 reuse。
 
 fingerprint/config identity 由上游已求值 ProjectTarget 提供。reuse planning 只比较，不重新发现配置，也不计算另一份 identity。凭据不进入 identity 或 manifest；`judge.apiKeyEnv` 只表示读取凭据的位置。
 
@@ -149,9 +181,11 @@ type ExecutionGapReason =
   | "source-slot-missing"
   | "source-member-missing"
   | "source-core-invalid"
-  | "source-fact-unavailable"
-  | "source-fact-unsupported"
-  | "source-fact-invalid"
+  | "source-attachment-unavailable"
+  | "source-attachment-migration-required"
+  | "source-attachment-migration-unavailable"
+  | "source-attachment-unsupported"
+  | "source-attachment-invalid"
   | "reuse-contract-domain-mismatch"
   | "reuse-contract-mismatch"
   | "verdict-ineligible"
@@ -165,7 +199,7 @@ type ExecutionGapReason =
 
 作用域按可证明的最小范围确定：
 
-- 单个 Member、Attempt、origin 或所需 channel 问题只让对应 slot gap；
+- 单个 Member、Attempt、origin 或所需 Attachment 问题只让对应 slot gap；
 - source Run 的 expected membership 或排序事实损坏，但仍能归到一个 Experiment 时，该 Experiment 的全部 target slots gap；
 - 历史 Run 连 Experiment 归属都无法读取时，为避免误复用，全部 target slots gap。
 

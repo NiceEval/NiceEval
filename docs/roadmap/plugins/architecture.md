@@ -31,28 +31,141 @@ Agent 特殊性留在 Adapter receiver。core 只收 receiver-branded opaque `Ag
 
 ## Plugin provenance Attachment
 
-框架写版本化 `niceeval.plugin-provenance/v1`，而不是修改 Record Core：
+框架写版本化 `niceeval.plugin-provenance/v1`，而不是修改 Record Core。Run 与 Attempt 各有一个
+owner-specific exact document；它们不是同一份 payload 在 reader 时按字段猜 owner：
 
 ```ts
-type PluginProvenanceEntryV1 = {
-  readonly name: string;
-  readonly instance: string;
-  readonly revision: string;
-  readonly mount: "eval" | "experiment" | "group";
-  readonly source: { readonly id: string; readonly position: number };
-  readonly effectiveBehaviorIdentity: JsonValue;
-  readonly contributionRefs: readonly PluginContributionRefV1[];
+type PluginProvenanceTextV1 = string;
+
+type PluginProvenanceSourceV1 = {
+  readonly kind: "plugins-array";
+  readonly position: number;
+};
+
+type PluginBehaviorIdentityValueV1 = string | number | boolean | null;
+
+type PluginBehaviorIdentityItemV1 = {
+  readonly key: PluginProvenanceTextV1;
+  readonly value: PluginBehaviorIdentityValueV1;
+};
+
+type TypedAttachmentContributionRefV1 = {
+  readonly kind: "typed-attachment";
+  readonly owner: "run" | "attempt";
+  readonly family: {
+    readonly name: PluginProvenanceTextV1;
+    readonly schemaId: PluginProvenanceTextV1;
+  };
+};
+
+type EvalOwnerFragmentContributionRefV1 = {
+  readonly kind: "owner-fragment";
+  readonly owner: "eval";
+  readonly field:
+    | "requirements"
+    | "sandbox-layer"
+    | "flags"
+    | "labels"
+    | "eval-hook";
+};
+
+type ExperimentOwnerFragmentContributionRefV1 = {
+  readonly kind: "owner-fragment";
+  readonly owner: "experiment";
+  readonly field:
+    | "requirements"
+    | "sandbox-layer"
+    | "flags"
+    | "labels"
+    | "experiment-hook";
+};
+
+type OwnerFragmentContributionRefV1 =
+  | EvalOwnerFragmentContributionRefV1
+  | ExperimentOwnerFragmentContributionRefV1;
+
+type ReceiverProjectionContributionRefV1 = {
+  readonly kind: "receiver-projection";
+  readonly scope: "run" | "attempt";
+  readonly receiver: PluginProvenanceTextV1;
+  readonly projection: PluginProvenanceTextV1;
+};
+
+type PluginContributionRefV1 =
+  | TypedAttachmentContributionRefV1
+  | OwnerFragmentContributionRefV1
+  | ReceiverProjectionContributionRefV1;
+
+type RunPluginContributionRefV1 =
+  | (TypedAttachmentContributionRefV1 & { readonly owner: "run" })
+  | ExperimentOwnerFragmentContributionRefV1
+  | (ReceiverProjectionContributionRefV1 & { readonly scope: "run" });
+
+type EvalAttemptPluginContributionRefV1 =
+  | (TypedAttachmentContributionRefV1 & { readonly owner: "attempt" })
+  | EvalOwnerFragmentContributionRefV1
+  | (ReceiverProjectionContributionRefV1 & { readonly scope: "attempt" });
+
+type ExperimentPairPluginContributionRefV1 =
+  | (TypedAttachmentContributionRefV1 & { readonly owner: "attempt" })
+  | ExperimentOwnerFragmentContributionRefV1
+  | (ReceiverProjectionContributionRefV1 & { readonly scope: "attempt" });
+
+type PluginProvenanceBaseV1<ContributionRef extends PluginContributionRefV1> = {
+  readonly name: PluginProvenanceTextV1;
+  readonly instance: PluginProvenanceTextV1;
+  readonly revision: PluginProvenanceTextV1;
+  readonly source: PluginProvenanceSourceV1;
+  readonly effectiveBehaviorIdentity: readonly PluginBehaviorIdentityItemV1[];
+  readonly contributionRefs: readonly ContributionRef[];
   readonly credential?: {
     readonly kind: "redacted";
-    readonly domain: string;
-    readonly revision: string;
+    readonly domain: PluginProvenanceTextV1;
+    readonly revision: PluginProvenanceTextV1;
   };
+};
+
+type RunPluginProvenanceEntryV1 =
+  PluginProvenanceBaseV1<RunPluginContributionRefV1> & {
+    readonly mount: "experiment";
+  };
+
+type AttemptPluginProvenanceEntryV1 =
+  | (PluginProvenanceBaseV1<EvalAttemptPluginContributionRefV1> & {
+      readonly mount: "eval";
+      readonly subject: "eval" | "pair";
+    })
+  | (PluginProvenanceBaseV1<ExperimentPairPluginContributionRefV1> & {
+      readonly mount: "experiment";
+      readonly subject: "pair";
+    });
+
+type RunPluginProvenanceV1 = {
+  readonly scope: "run";
+  readonly entries: readonly RunPluginProvenanceEntryV1[];
+};
+
+type AttemptPluginProvenanceV1 = {
+  readonly scope: "attempt";
+  readonly entries: readonly AttemptPluginProvenanceEntryV1[];
 };
 ```
 
-`effectiveBehaviorIdentity` 是安全、规范化后确实影响行为的值。secret、private config、credential value、default selector 与 receiver opaque payload 不进入它；需要表示 credential 行为代次时，只保存 redacted `{ domain, revision }` token。
+所有以上 object 都 exact decode，未列字段即 invalid。Record owner 选择 exact document：Run definition 只解码
+`RunPluginProvenanceV1`，Attempt definition 只解码 `AttemptPluginProvenanceV1`；`scope` 与实际 owner 不一致即 invalid。
 
-Run-owned provenance 只包含整份 Run 共享的 Experiment mount。Eval mount、group selection、provider、template、slot、pair 或 cohort 的事实写入正确的 Attempt Attachment 或 pair plan manifest。它们不能仅因同一个 Plugin 名字就被提升成 Run-wide facts。
+编码边界如下：
+
+- 所有 text 都是 1–128 code points、NFC、无控制字符的 normalized identifier；`name` 另须是 reverse-domain lowercase ASCII namespace。
+- `position` 是 non-negative integer；entries 按 `position` 严格递增，`(name, instance)` 不重复。
+- 每个 entry 最多有 64 个 identity items 和 64 个 contribution refs；identity items 按 key 规范排序且不重复。
+- `effectiveBehaviorIdentity` 只包含安全、规范化后确实影响行为的 scalar 值；secret、private config、credential value、default selector 与 receiver opaque payload 不进入它。
+- 需要表示 credential 行为代次时，只保存 redacted `{ domain, revision }` token。
+
+Run-owned document 只允许真正被整份 Run 共享的 Experiment mount。Attempt-owned document 保存对应 Eval 或 pair
+事实；Experiment mount 只有在事实依 pair 而变时才可出现在它的 `subject: "pair"` entry。Group 不写
+`niceeval.plugin-provenance/v1`：它只参与 selected demand cohort 与 plan manifest，不能借一个 group row 把 slot、
+pair、provider、template 或 cohort 提升成 Run-wide 事实。
 
 每个 owner 的一个 attachment family 至多出现一次。`niceeval.plugin-provenance/v1` 是框架拥有的 family；Plugin 自己声明的 family 也遵守同一限制。duplicate family identity 或 duplicate owner write 是 typed conflict，即使 payload 字节相同。
 
@@ -66,7 +179,15 @@ Eval lifecycle 只能在其 Attempt 尚未封口时写 Attempt owner；Experimen
 
 Experiment attachment 的行为进入 Run `configHash`；Eval attachment 的行为只进入对应 Eval fingerprint / manifest，不令同一 Experiment 的 configHash 随 Eval 分叉。每个 hash 输入有同源 manifest 投影；同一个值不以 options、Plugin identity、flag 或 receiver projection 多次登记。
 
-Plugin provenance 的 `contributionRefs` 只引用已被 generic writer 接受的 typed attachment、原生 contribution 或 receiver projection。它不是第二份 payload，也不变成能绕过 owner-local closure 的引用表。
+Plugin provenance 的 `contributionRefs` 只由框架在 generic writer 接受 typed attachment write、owner fragment 或
+receiver projection 后 mint。它的上下文不可混用：
+
+- Run entry 只能引用 Run attachment、Experiment fragment 或 Run receiver projection。
+- Eval Attempt entry 只能引用 Attempt attachment、Eval fragment 或 Attempt receiver projection。
+- Experiment pair entry 只能引用 Attempt attachment、Experiment fragment 或 Attempt receiver projection。
+
+它没有 raw path、blob ref、payload 或任意 JSON 形态，也不能作为未声明 capability 的写入凭据。它只是对已接受
+contribution 的有界审计索引，不是第二份 payload 或绕过 owner-local closure 的引用表。
 
 requirements 本身进入 manifest；它验证的 completed plan 依所属 owner 进入 identity。credential value 与默认 selector 不进 hash；显式 credential revision 才表达行为代次。
 

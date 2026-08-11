@@ -15,16 +15,16 @@ Assertion 是一次 Attempt 内已经完成、可离线复核的检查事实。�
 | material | 有界的 subject snapshot 或稳定 ref，以及有界 evidence refs 或预览。 |
 | completeness | coverage、redaction、sampling、truncation 等 limitations。 |
 | outcome | 已封口的 evaluation、result、可用性和具名原因。 |
-| display | 作者给出的 key、label、groupPath 与可用 source snapshot。 |
-| score unit | Score Eval 中此 entry 的 `points`；它是分值单位，不是题型。 |
+| display | 作者给出的 key、label 与 groupPath。 |
+| score unit | sealed score contribution 中的 `points` 与 earned 值；它是分值单位，不是题型。 |
 
 内建 criterion 是包定义的封闭判别联合，例如值比较、scope 状态、事件 occurrence、Judge measurement 和 Sandbox result。第三方 criterion 只能以自己的 `name`、版本化 `schemaId` 与 exact JSON `data` 表示；它不能冒充内建成员。
 
-`subject` 与 `evidence` 可以保留安全快照，也可以引用同一 Attempt 的已封口 Attachment 或其 owner-local blob。二者都受条目数、ref 数、预览大小和 document 大小的固定上限约束。coverage 与 limitations 必须随材料保存，不能由 reader 事后猜测。
+`subject` 与 `evidence` 只保存安全快照，或本 Assertions Attachment 自己 closure 中的 blob ref。v1 不携带另一个 Attachment 的 `RecordBlobRef`、path 或“最新状态”引用。二者都受条目数、ref 数、预览大小和 document 大小的固定上限约束。coverage 与 limitations 必须随材料保存，不能由 reader 事后猜测。
 
 ## 不写入的运行时细节
 
-作者 API、Fact/use graph、matcher 或 collector 实现、memoization、求值控制流、未执行的源码和当前 worktree 都不属于 `niceeval.assertions/v1`。它们可以变化；只要已保存 criterion、材料、coverage 与 sealed result 的含义不变，Assertions Attachment 不变。
+作者调用图、evaluator 内部实现、memoization、求值控制流、未执行的源码和当前 worktree 都不属于 `niceeval.assertions/v1`。它们可以变化；只要已保存 criterion、材料、coverage 与 sealed result 的含义不变，Assertions Attachment 不变。
 
 `.orStop()`、`stopOnFailure` 和 detached async 都只影响 producer 执行。它们不是 entry 事实，也不会凭空产生 `notReached` 条目或补零。
 

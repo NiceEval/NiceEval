@@ -17,13 +17,16 @@ turn.calledTool("search", { count: { atLeast: 1 } }).label("至少一次搜索")
 occurrences 作为 subject `a`，用方法参数构造 evaluator `b`，并登记 evaluation。保存的 `a` 包括 scope、
 operation / event identity、input、status、output / error refs、coverage 与匹配 event refs。
 
-负断言和上限断言依赖完整证据。
-所需证据 Attachment 的 collection 非 complete 时，这些断言形成 `unavailable` Assertion result，不会按空证据静默通过；非 `.optional()` 断言评不了会形成 Attempt 的 `errored` Verdict，而非 lifecycle state。
-正断言在非 complete Attachment 上没找到匹配时，同样记 `unavailable` 而不是 failed。
+负断言和上限断言依赖这条 entry 的完整材料。
+producer 不能完整取得所需 material 时，entry 写入 `coverage: partial` 或 `unavailable`。这类断言形成
+`unavailable` Assertion result，不会按空证据静默通过。
+
+非 `.optional()` 断言评不了会形成 Attempt 的 `errored` Verdict，而非 lifecycle state。正断言在 material
+coverage 不是 `complete` 时没找到匹配，同样记 `unavailable` 而不是 failed。
 
 `count` 为精确数字且实测已超出时是确凿失败。
-partial Attachment 只会少采，超出不可能由采集造成。
- `count` 为谓词且不满足时，非 complete Attachment 上一律记 `unavailable`。
+partial material 只会少采，超出不可能由采集造成。
+`count` 为谓词且不满足时，coverage 不是 `complete` 的 entry 一律记 `unavailable`。
 缺证据的计数没有可信判定。
 完整度声明与消费规则见 [证据与完整性](../architecture/evidence.md)。
 Sandbox 专属结果断言见 [断言 Sandbox 结果](../../sandbox/library/asserting-results.md)。

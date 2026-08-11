@@ -20,14 +20,17 @@ NiceEval 在每个 Eval × Experiment pair 的 link 阶段组合两侧贡献。P
 
 ## Plugin 不扩张 Record Core
 
-Plugin 不直接修改 Record Core。框架写入版本化 `niceeval.plugin-provenance/v1` RecordAttachment，保存每个已挂载 Plugin 的：
+Plugin 不直接修改 Record Core。框架只为需要落 Record 的 Eval／Experiment Plugin 写入版本化
+`niceeval.plugin-provenance/v1` RecordAttachment，保存：
 
 - `name`、`instance`、`revision`、mount 与 source；
 - 安全规范化后的 effective behavior identity；
 - 已接受 contribution 的 typed refs；
 - 仅含 domain 与 version 的 redacted credential token（如有）。
 
-credential value、私有 config、raw token、未规范化 options 与任意 JSON 不进入 provenance。Experiment 的 Run-wide provenance 只包含该 Run 真正共享的 mount；Eval、group、provider、slot 或 pair 的事实留在正确的 Attempt Attachment 或 plan manifest，不能提升成“整个 Run 都如此”的假事实。
+credential value、私有 config、raw token、未规范化 options 与任意 JSON 不进入 provenance。Run-owned document 只包含
+整份 Run 真正共享的 Experiment mount；Attempt-owned document 保存对应 Eval／pair 事实。Group 不写 provenance，它只
+留在 demand cohort 的 plan manifest。provider、slot、pair 或 cohort 不能提升成“整个 Run 都如此”的假事实。
 
 ## 声明式 RecordAttachment capability
 
