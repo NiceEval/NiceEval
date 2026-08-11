@@ -407,3 +407,16 @@ export type {
 
 // 数据层输入的类型(家在 niceeval/record,这里 re-export 方便写指标 / 报告)
 export type { AttemptHandle, Record, Sample, Run } from "../record/types.ts";
+
+// Effect-native Report execution is deliberately separate from the legacy
+// renderer above: it consumes a live AnalysisSampleHandle once, then exposes a
+// self-contained execution to later show/view/static hosts.
+export { executeReport } from "./host/index.ts";
+export type {
+  ReportDefinitionInvalid,
+  ReportExecutionError,
+} from "./host/index.ts";
+export type {
+  ReportExecution,
+  ReportLimitExceeded,
+} from "./execution/model.ts";
