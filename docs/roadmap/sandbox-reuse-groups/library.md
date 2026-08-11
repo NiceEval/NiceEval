@@ -40,6 +40,7 @@ type SandboxGroupMember = AnyEvalDefinition<
 interface SandboxGroupInput {
   readonly evals: readonly [SandboxGroupMember, ...SandboxGroupMember[]];
   readonly onUnavailable: "stop-group" | "replace-sandbox";
+  readonly plugins?: readonly GroupPluginInstance[];
 }
 
 declare const SANDBOX_GROUP_DEFINITION: unique symbol;
@@ -51,7 +52,7 @@ interface SandboxGroupDefinition extends SandboxGroupInput {
 function defineSandboxGroup(input: SandboxGroupInput): SandboxGroupDefinition;
 ```
 
-没有字段拥有隐式默认值。
+`plugins` 省略时等价于空数组；其 owner 是 Group，只能贡献 behavior、requirement 与 manifest，不能贡献 runtime hook 或 resource demand。规范化 Group Plugin behavior 进入 group definition hash，并投影进每个成员的 fingerprint / manifest；因此改变组级调度条件会使成员 carry 失效。除 `plugins` 外，没有字段拥有隐式默认值。
 `evals` 非空，不接受字符串、前缀、glob、函数、tag 或 metadata 选择器。
 导入语句同时让成员出处和目录关系对用户可见；数组顺序不参与调度，发现后按 Eval id 排序成成员集合。
 
@@ -75,19 +76,32 @@ interface SandboxLayer<
 `defineEval()` 与 `defineScoreEval()` 用条件类型把作者输入保留到输出：
 
 ```ts
-type OwnershipOf<Sandbox> =
-  Sandbox extends undefined
+type PluginOwnership<Plugins extends readonly EvalPluginInstance[]> =
+  Extract<
+    ExtractPluginSandboxScope<Plugins>,
+    "instance-lifecycle"
+  > extends never ? "none" : "instance";
+
+type OwnershipOf<Sandbox, Plugins extends readonly EvalPluginInstance[]> =
+  PluginOwnership<Plugins> extends "instance"
+    ? "instance"
+    : Sandbox extends undefined
     ? "none"
     : Sandbox extends SandboxLayer<"command-only", "attempt-only">
       ? "prepare-only"
       : "instance";
 
-function defineEval<const Sandbox extends SandboxLayer | undefined>(
-  input: EvalInput<Sandbox>,
-): EvalDefinition<"pass", TestContext, OwnershipOf<Sandbox>>;
+function defineEval<
+  const Sandbox extends SandboxLayer | undefined = undefined,
+  const Plugins extends readonly EvalPluginInstance[] = readonly [],
+>(
+  input: EvalInput<Sandbox> & { readonly plugins?: Plugins },
+): EvalDefinition<"pass", TestContext, OwnershipOf<Sandbox, Plugins>>;
 ```
 
-`defineScoreEval()` 使用同一份 `OwnershipOf`，只把 evaluation kind 与 test context 换成计分制。
+Plugin family 的返回类型携带其 contribution scope；`sandbox.setup()` 或 `sandbox.teardown()` 会把 `ExtractPluginSandboxScope` 提升为 `"instance-lifecycle"`。`defineScoreEval()` 使用同一份 `OwnershipOf`，只把 evaluation kind 与 test context 换成计分制。
+
+动态 JS 边界执行同一规则：link 后若任一 Eval Plugin 含 instance-lifecycle contribution，group definition 在创建 Sandbox 前失败，并报告 Plugin 与 Eval provenance。
 因此跨文件 default import 不会把精确状态扩大成普通 `SandboxLayer`。
 
 作者可见的结果是：

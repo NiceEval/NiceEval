@@ -6,9 +6,9 @@ Experiment host lifecycle 是独立 Run scope：
 
 ```text
 Experiment author setup
-  → Experiment plugins[].lifecycle.setup
+  → Experiment plugins[] 的 experiment.setup
   → all selected Eval pairs
-  → Experiment plugins[].lifecycle.teardown (reverse)
+  → Experiment plugins[] 的 experiment.teardown (reverse)
   → Experiment author teardown
 ```
 
@@ -30,6 +30,38 @@ template-owner author layer
 
 `template-owner` 是 Eval 时，先走 Eval author/plugins；是 Experiment 时，先走 Experiment author/plugins。Plugin 不新增 `plugin.*` phase。Agent receiver 把 extension 编入 Adapter 已有槽位，不产生统一的 “plugin agent setup”。
 
+Eval hook 使用既有 `EvalHookContext`。它提供本 Attempt 的 `agent`、`sandbox`、`AbortSignal`、`progress()`、`diagnostic()` 与 `fact()`，不提供跨 Attempt mutable store。
+
+`eval.around({ before, after })` 是一个成对 contribution。before 在 Agent 已 ready、进入 Eval test 前按 Plugin 声明顺序运行；成功进入 before 后立即登记同一 contribution 的 after。省略 before 时，进入该节点即登记 after。after 在 test 成功、抛错或中断后按登记逆序运行，再进入 Agent 与 Sandbox 收尾。
+
+before 失败时不运行尚未进入的 hook；已登记 after 仍运行。多个失败沿用 Scope 的主错误加 teardown errors 判定，不用 after 替换 test / before 主错误。它们仍归既有 `eval.run`，不新增 phase。
+
+## Sandbox resource 时序
+
+需要跨 pair 聚合的 resource 先于 physical create 完成纯规划：
+
+```text
+selection / pair link / group compatibility
+  → selected demand cohort
+  → receiver aggregate + validate
+  → aggregate projection 写入每个 pair fingerprint / manifest
+  → carry planning
+  → 若存在真实派发：
+      physical Sandbox create
+      → existing sandbox.setup
+      → resource materialize / verify（按首次 contribution 的确定顺序）
+      → reset anchor
+      → 每条 Attempt：
+          workdir reset
+          → prepare contribution chain（resource consume 保留自己的声明位置）
+          → agent.ensure / Agent / Eval / cleanup
+      → resource teardown（按已 materialize 顺序逆序）
+      → existing sandbox.teardown
+      → Provider finalizer
+```
+
+existing `sandbox.setup` 单独不足以承担 resource：它没有 fingerprint 前的 cohort aggregate，也不能为全部成员写入同一投影。resource materialize 仍绑定 physical instance，不建立 group scope。
+
 ## 资源作用域
 
 | Scope | 状态粒度 | setup 次数 | teardown 次数 |
@@ -49,6 +81,12 @@ template-owner author layer
 - Sandbox contribution 失败：沿用其实际 `sandbox.prepare.*` 或 physical phase。
 - Agent extension 失败：沿用 receiver 对应的 `agent.setup` / teardown 语义。
 - 用户中断与强清：复用现有 Scope / teardown registry；Plugin 不启动 detached cleanup runtime。
+- resource `demand-invalid`：零资源 planning failure，不重试。
+- resource `demand-unsatisfied`：静态需求在 materialize 后仍不可满足，停止 cohort，不以 replacement 重试同一错误。
+- resource `instance-unavailable`：实例退休，按 group 的 stop / replace policy；fresh Attempt 直接失败。
+- resource `attempt-consume-failed`：当前 Attempt errored 且实例退休，尚未派发项按 group policy。
+
+`sandboxReuse: true` 没有 group 的 `onUnavailable` 替换开关。`instance-unavailable` 或 `attempt-consume-failed` 会退休当前实例；失败 Attempt 保持 errored，尚未派发项沿用既有 Experiment reuse policy，在新实例重新 materialize 后继续。静态 `demand-unsatisfied` 仍停止整个 cohort。
 
 ## Dry plan
 

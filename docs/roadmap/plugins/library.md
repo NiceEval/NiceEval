@@ -1,135 +1,145 @@
 # Plugins —— Library
 
-## 完整作者 API
+## 作者 API：按 owner 写，不写路由树
 
-`definePlugin()` 定义一个可复用 family。`define(options)` 在调用 factory 时只执行一次，返回值立即完成 JSON 校验、品牌校验、深冻结；link 不重新调用作者 callback。
+Plugin family 直接声明允许挂载的 owner。作者不接触 `attachments.eval.sandbox` 一类内部路由对象：
 
 ```ts
-interface PluginDefinition<Options, Attachments extends PluginAttachments> {
+interface PluginDefinition<Options> {
   readonly name: string;
   readonly behaviorRevision: string;
-  readonly define: (options: Options) => {
-    readonly instanceKey?: string;
-    readonly attachments: Attachments;
-  };
+  readonly instanceKey?: (options: Options) => string;
+  readonly eval?: (options: Options) => readonly EvalContribution[];
+  readonly experiment?: (options: Options) => readonly ExperimentContribution[];
+  readonly group?: (options: Options) => readonly GroupContribution[];
 }
 
-interface PluginAttachments {
-  readonly eval?: EvalPluginContributions;
-  readonly experiment?: PluginExperimentContributions;
-}
+type AtLeastOneOwner<Options> =
+  | { readonly eval: (options: Options) => readonly EvalContribution[] }
+  | { readonly experiment: (options: Options) => readonly ExperimentContribution[] }
+  | { readonly group: (options: Options) => readonly GroupContribution[] };
 
-interface EvalPluginContributions {
-  readonly behavior?: Readonly<Record<string, JsonValue>>;
-  readonly requirements?: readonly PluginRequirement[];
-  readonly sandbox?: SandboxLayer<"command-only">;
-}
-
-interface PluginExperimentContributions extends EvalPluginContributions {
-  readonly flags?: Readonly<Record<string, JsonValue>>;
-  readonly labels?: Readonly<Record<string, string | number>>;
-  readonly lifecycle?: PluginExperimentLifecycle;
-  readonly agentExtensions?: readonly AgentExtension[];
-}
-
-interface PluginFamily<Options, Attachments extends PluginAttachments> {
-  (options: Options): Plugin<Attachments>;
-}
-
-declare function definePlugin<Options, Attachments extends PluginAttachments>(
-  definition: PluginDefinition<Options, Attachments>,
-): PluginFamily<Options, Attachments>;
+declare function definePlugin<
+  Options,
+  const Definition extends PluginDefinition<Options> & AtLeastOneOwner<Options>,
+>(
+  definition: Definition & PluginDefinition<Options> & AtLeastOneOwner<Options>,
+): PluginFamily<Options, SupportedOwners<Definition>>;
 ```
 
-`defineEval()` 与 `defineScoreEval()` 只接受带 `attachments.eval` 的 Plugin；`defineExperiment()` 只接受带 `attachments.experiment` 的 Plugin。错误挂载既是 TypeScript 错误，动态 JS 边界也会报 definition error。一个 family 可以同时提供两个 attachment，但每侧贡献仍分别受上面的窄类型约束。
+调用 family 时，NiceEval 立即执行这些纯 callback，校验 contribution 品牌与 JSON 投影并深冻结 Plugin instance。link 不重新调用作者 callback。callback 是否存在同时决定类型能力：
 
-Eval attachment 不能贡献 flags、labels、Eval metadata、静态 facts、AgentExtension 或 host lifecycle。Experiment attachment 才能额外贡献 Experiment 级条件身份、生命周期与 Agent 扩展。
+- 只有 `eval()`：可放进 `defineEval()` / `defineScoreEval()`；
+- 只有 `experiment()`：可放进 `defineExperiment()`；
+- 只有 `group()`：可放进 `defineSandboxGroup()`；
+- 同时声明多个 callback：同一 family 可以在对应 owner 使用，但一次 Plugin occurrence 仍只属于调用点 owner。
 
-## 完整 Remem 定义
+错误挂载既是 TypeScript 错误，动态 JS 边界也会报 definition error。
+
+## Contribution constructors
+
+callback 返回带品牌的 contribution 列表。namespace 表达实际 owner 或资源作用域，不是可拼写的字符串 phase：
 
 ```ts
-import { definePlugin } from "niceeval";
-import { sandboxLayer } from "niceeval/sandbox";
-import { rememCodexExtension } from "./remem-codex-extension.ts";
+declare const CONTRIBUTION: unique symbol;
+type Contribution<Kind extends string, Value> = Readonly<{
+  [CONTRIBUTION]: Kind;
+  value: Value;
+}>;
+type BehaviorValue = Readonly<Record<string, JsonValue>>;
+type PluginRequirement =
+  | { readonly stage: "selection"; readonly kind: "sandbox-reuse-group" }
+  | { readonly stage: "selection"; readonly kind: "stop-group" }
+  | { readonly stage: "selection"; readonly kind: "complete-prefix" }
+  | { readonly stage: "planning"; readonly kind: "sandbox-platform"; readonly platform: "linux/amd64" | "linux/arm64" }
+  | { readonly stage: "planning"; readonly kind: "sandbox-lifetime"; readonly minimumMs: number }
+  | { readonly stage: "planning"; readonly kind: "sandbox-resources"; readonly minimum: { readonly cpu: number; readonly memoryMiB: number } }
+  | { readonly stage: "planning"; readonly kind: "runtime-profile"; readonly profile: "node" | "python" | "system" }
+  | { readonly stage: "planning"; readonly kind: "docker-access"; readonly access: "daemon" | "rootless" }
+  | { readonly stage: "planning"; readonly kind: "ordered-sequence" };
+type GroupRequirement = Extract<
+  PluginRequirement,
+  { readonly stage: "selection" | "planning" }
+>;
+type EvalAroundHook = Readonly<{
+  before?: EvalHook;
+  after?: EvalHook;
+}>;
 
-interface RememOptions {
-  readonly memoryModel: string;
-  readonly mode?: "accumulated" | "isolated";
-  readonly instanceKey?: string;
-}
+type EvalContribution =
+  | Contribution<"plugin.behavior", BehaviorValue>
+  | Contribution<"plugin.require", PluginRequirement>
+  | Contribution<"eval.around", EvalAroundHook>
+  | Contribution<"sandbox.prepare", SandboxCommand>
+  | Contribution<"sandbox.setup", SandboxHook>
+  | Contribution<"sandbox.teardown", SandboxHook>
+  | Contribution<"sandbox.resource", SandboxResourceDemand>;
 
-export const REMEM_DOCKER_CONTEXT = new URL("./docker/", import.meta.url);
+type ExperimentContribution =
+  | Exclude<EvalContribution, Contribution<"eval.around", EvalAroundHook>>
+  | Contribution<"experiment.flag", readonly [string, JsonValue]>
+  | Contribution<"experiment.label", readonly [string, string | number]>
+  | Contribution<"experiment.setup", ExperimentHook>
+  | Contribution<"experiment.teardown", ExperimentHook>
+  | Contribution<"agent.extend", AgentExtension>;
 
-export const remem = definePlugin({
-  name: "remem",
-  behaviorRevision: "1",
-  define(options: RememOptions) {
-    const mode = options.mode ?? "accumulated";
-    return {
-      instanceKey: options.instanceKey,
-      attachments: {
-        experiment: {
-          behavior: { mode },
-          flags: { memory: "remem" },
-          requirements: rememRequirements(mode),
-          sandbox: sandboxLayer().prepare(rememPrepare()),
-          agentExtensions: [
-            rememCodexExtension({
-              memoryModel: options.memoryModel,
-              auth: "effective-agent-runtime",
-              postSetup: rememInstallAndVerify(),
-              preTeardown: rememDrainAndVerify(),
-            }),
-          ],
-        },
-      },
-    };
-  },
-});
+type GroupContribution =
+  | Contribution<"plugin.behavior", BehaviorValue>
+  | Contribution<"group.require", GroupRequirement>
+  | Contribution<"group.manifest", JsonValue>;
+
+plugin.behavior(value: BehaviorValue);
+plugin.require(requirement);
+
+eval.around(hooks: EvalAroundHook);
+
+experiment.flag(key, value);
+experiment.label(key, value: string | number);
+experiment.setup(hook);
+experiment.teardown(hook);
+
+sandbox.prepare(command);
+sandbox.setup(hook);
+sandbox.teardown(hook);
+sandbox.resource(demand);
+
+agent.extend(extension);
+
+group.require(requirement);
+group.manifest(value);
 ```
 
-`memoryModel` 只由 Codex receiver 的 canonical behavior projection 进入 hash；Plugin 不在 `behavior` 或 flag 中重复登记。receiver manifest projection 可以保留可读模型值。`REMEM_DOCKER_CONTEXT` 是 package 静态资产定位，不是 Plugin contribution；发布包必须包含 `docker/remem.Dockerfile`。
+这些调用均是前述 union 的穷尽 constructor 签名；参数与返回的 `kind`、`value` 一一对应。`sandbox.*` 可以从 Eval 或 Experiment callback 返回；实际 layer owner 就是挂载 Plugin 的 definition。`agent.extend()`、`experiment.*` 只能从 `experiment()` 返回。`eval.around()` 只能从 `eval()` 返回。
 
-## 完整 pnpm Plugin
+每个具名 constructor 都有精确的 `Contribution<kind, value>` 返回类型；它们不是可伪造的 `{ kind, value }` 对象。
+
+Group 是选择与调度 owner，不是能跨 Sandbox replacement 存活的运行资源。因此 V1 没有 `group.setup()` / `group.teardown()`。`group()` 只能贡献静态 behavior、typed requirement 与 manifest。resource demand 来自组内 Eval / Experiment pair；运行资源必须使用 `sandbox.resource()`，其 lifetime 是 physical Sandbox instance。
+
+## pnpm 与 Yarn
 
 ```ts
-import { definePlugin } from "niceeval";
-import { command, sandboxLayer } from "niceeval/sandbox";
-
-interface PnpmOptions {
-  readonly version: string;
-}
+import { definePlugin, plugin, sandbox } from "niceeval/plugin";
+import { command } from "niceeval/sandbox";
 
 export const pnpm = definePlugin({
   name: "pnpm",
   behaviorRevision: "1",
-  define(options: PnpmOptions) {
-    return {
-      attachments: {
-        eval: {
-          behavior: { version: options.version },
-          sandbox: sandboxLayer().prepare(
-            command("corepack", [
-              "prepare",
-              `pnpm@${options.version}`,
-              "--activate",
-            ]),
-          ),
-          requirements: [
-            { stage: "planning", kind: "sandbox-platform", os: "linux" },
-          ],
-        },
-      },
-    };
+  eval(options: { version: string }) {
+    return [
+      plugin.behavior({ version: options.version }),
+      sandbox.prepare(command("corepack", [
+        "prepare",
+        `pnpm@${options.version}`,
+        "--activate",
+      ])),
+    ];
   },
 });
 ```
 
-真实挂载点必须包含消费 owner：
+消费方只有产品调用：
 
 ```ts
-import { defineEval } from "niceeval";
-
 export default defineEval({
   plugins: [pnpm({ version: "10.15.0" })],
   async test(t) {
@@ -138,128 +148,163 @@ export default defineEval({
 });
 ```
 
-`yarn({ version })` 是另一个具名 Plugin，拥有自己的版本、安装命令与验收逻辑。两者可以复用 package 内部的私有构造函数，但公共调用面不暴露 `packageManager({ kind })` 这种抹平产品差异的开关。
+`yarn({ version })` 是另一个具名 Plugin，拥有自己的安装、探测与版本规则。两者可以复用 package 私有构造函数，但公共 API 不暴露 `packageManager({ kind })`。
 
-## 产品调用矩阵
+## Remem
 
 ```ts
-// MemoryBench：实验条件、Codex extension、Sandbox 探测与整场语义
-defineExperiment({
-  agent: codexAgent(),
-  plugins: [remem({ memoryModel: "gpt-5.6-luna" })],
-});
+export const REMEM_DOCKER_CONTEXT = new URL("./docker/", import.meta.url);
 
-// NiceEval-Eval：候选版本身份与就绪验收
-defineExperiment({
-  agent: codexAgent(),
-  plugins: [candidateRuntime({ version: "0.12.0", runtime: "node" })],
-});
-
-// Terminal-Bench：逐 Eval × Experiment pair 的公共 harness 约束
-defineExperiment({
-  agent: codexAgent(),
-  evals: ["terminal-bench/"],
-  plugins: [terminalBenchHarness()],
-});
-
-// 单题工具链：Eval 自己声明 pnpm
-defineEval({
-  plugins: [pnpm({ version: "10.15.0" })],
-  async test(t) { await t.agent("Implement the requested change"); },
+export const remem = definePlugin({
+  name: "remem",
+  behaviorRevision: "1",
+  experiment(options: RememOptions) {
+    const mode = options.mode ?? "accumulated";
+    return [
+      plugin.behavior({ mode }),
+      experiment.flag("memory", "remem"),
+      ...rememRequirements(mode).map(plugin.require),
+      sandbox.prepare(rememPrepare()),
+      agent.extend(rememCodexExtension({
+        memoryModel: options.memoryModel,
+        auth: "effective-agent-runtime",
+        postSetup: rememInstallAndVerify(),
+        preTeardown: rememDrainAndVerify(),
+      })),
+    ];
+  },
 });
 ```
 
-## 身份与 requirements
+`memoryModel` 只由 Codex receiver 的 canonical behavior projection 进入 hash。`REMEM_DOCKER_CONTEXT` 是 package 静态资产定位，不是 Plugin contribution；调用点继续显式声明 `dockerImage({ context: REMEM_DOCKER_CONTEXT, ... })`。
 
-默认 `instanceKey` 是 `"default"`。允许多实例的 family 必须要求作者给出不同 key；`(name, instanceKey)` 在整个 Eval × Experiment pair 内唯一，attachment scope 不进入键。
+## Git repository Plugin
 
-`behavior` 只放改变行为且没有由其它 canonical contribution 表达的 JSON 输入。原 options 和函数体不直接哈希；行为实现变化时提升 `behaviorRevision`。
+Git 产品 API 把 seed identity 与每题 demand 分开：
 
 ```ts
-type PluginRequirement =
-  | { readonly stage: "selection"; readonly kind: "complete-prefix-sequence" }
-  | { readonly stage: "selection"; readonly kind: "sandbox-stop-group" }
-  | { readonly stage: "link"; readonly kind: "agent-extension-receiver"; readonly receiver: string }
-  | { readonly stage: "planning"; readonly kind: "requested-lifetime-at-least"; readonly milliseconds: number }
-  | { readonly stage: "planning"; readonly kind: "sandbox-platform"; readonly os: "linux" | "darwin" };
+const upstream = gitRepository({
+  repo: "https://github.com/downshift-js/downshift.git",
+  into: ".",
+  instanceKey: "upstream",
+});
+
+export default defineEval({
+  plugins: [
+    upstream.checkout({
+      commit: "1111111111111111111111111111111111111111",
+    }),
+  ],
+  async test(t) {
+    await t.agent("修复当前问题");
+  },
+});
 ```
 
-Requirement 只读取该阶段已定型的 provider-neutral typed plan。失败在创建资源前聚合，并列出 Plugin identity、attachment owner、pair、所需与实得事实及修正方向。不存在任意 capability string。
+不复用 factory 时可以内联：
 
-## Agent Extension 与槽位冲突
+```ts
+plugins: [gitRepository({ repo, into: "." }).checkout({ commit })]
+```
 
-`AgentExtension` 是 receiver-branded opaque value。core 只读取 receiver identity；Adapter receiver 一次规范化作者配置和按顺序排列的 extensions，产生唯一 `behaviorProjection` 与 `manifestProjection`。有效模型、provider 与鉴权复用 Adapter 已求值的同一 runtime binding，Plugin callback 不取得明文。
+`checkout()` 返回 Eval-attachable Plugin。fresh Sandbox 的 cohort 只有当前 pair，因此正常 clone；Eval 加入 reuse group 后，Runner 自动聚合同一实例将服务的 selected pair demands。`defineSandboxGroup()` 不重复声明 repositories。
+
+其内部定义仍使用相同作者 API：
+
+```ts
+const gitCheckoutPlugin = definePlugin({
+  name: "git-repository",
+  behaviorRevision: "1",
+  instanceKey: (options: GitCheckoutOptions) => options.instanceKey,
+  eval(options: GitCheckoutOptions) {
+    const demand = gitReceiver.demand(options);
+    return [
+      sandbox.resource(demand),
+      sandbox.prepare(gitReceiver.prepare(demand)),
+    ];
+  },
+});
+```
+
+## Sandbox resource protocol
+
+Sandbox resource receiver 拥有一类资源协议。它产生的 `SandboxResourceDemand` 是 receiver-branded opaque value；core 只按 receiver identity 分桶并传递 provenance，不读取 Git、commit、路径或其它 payload：
+
+```ts
+declare const SANDBOX_RESOURCE_DEMAND: unique symbol;
+interface SandboxResourceDemand<Protocol extends symbol = symbol> {
+  readonly [SANDBOX_RESOURCE_DEMAND]: Protocol;
+}
+
+interface DemandWithProvenance<Protocol extends symbol, Demand> {
+  readonly demand: Demand & SandboxResourceDemand<Protocol>;
+  readonly owner: LinkedPluginOwner;
+}
+
+interface SandboxResourceReceiverDefinition<Options, Protocol extends symbol, Demand, Aggregate, Handle> {
+  readonly name: string;
+  readonly revision: string;
+  createDemand(options: Options): Demand;
+  aggregate(input: readonly DemandWithProvenance<Protocol, Demand>[]): Aggregate;
+  projection(aggregate: Aggregate): JsonValue;
+  materialize(
+    sandbox: Sandbox,
+    aggregate: Aggregate,
+    context: SandboxHookContext,
+  ): Promise<Handle>;
+  consume(
+    sandbox: Sandbox,
+    handle: Handle,
+    demand: Demand,
+    context: SandboxCommandContext,
+  ): Promise<void>;
+  teardown?(sandbox: Sandbox, handle: Handle): Promise<void>;
+  classifyFailure(error: unknown): SandboxResourceFailure;
+}
+
+interface SandboxResourceReceiver<Options, Protocol extends symbol, Demand> {
+  demand(options: Options): Demand & SandboxResourceDemand<Protocol>;
+  prepare(demand: Demand & SandboxResourceDemand<Protocol>): SandboxCommand;
+}
+
+declare function defineSandboxResourceReceiver<Options, const Protocol extends symbol, Demand, Aggregate, Handle>(
+  protocol: Protocol,
+  definition: SandboxResourceReceiverDefinition<Options, Protocol, Demand, Aggregate, Handle>,
+): SandboxResourceReceiver<Options, Protocol, Demand>;
+
+type SandboxResourceFailure =
+  | { readonly kind: "demand-invalid" }
+  | { readonly kind: "demand-unsatisfied" }
+  | { readonly kind: "instance-unavailable" }
+  | { readonly kind: "attempt-consume-failed" };
+```
+
+每个 receiver package 持有一个不导出的 `unique symbol` protocol token，并把它作为 factory 第一参数。结构相同的 receiver 也不能交换 demand；带 provenance 的 aggregate 输入保留同一 `Protocol` 参数。
+
+receiver 自己拥有三层 identity：protocol/receiver identity、可合并的 seed key、per-consumer demand。Git receiver 因此能让同 repo 不同 `into` 共用 seed，同时在零资源阶段拒绝不同 repo 抢同一 `into`。core 不猜不同 protocol 之间的文件副作用冲突。
+
+factory 调用 definition 的 `createDemand()`，再添加只属于返回 receiver 的品牌；作者不能从 definition 伪造 receiver-bound demand。`demand()` 只创建声明值；`prepare()` 把同 receiver 的 demand 变成每 Attempt consumer command。
+
+Runner 才调用 definition 的 runtime `consume(sandbox, handle, demand, context)`。receiver 的唯一 canonical hash 输入是 `projection(aggregate)`：它同时表达 cohort 可见对象与当前 consumer demand，不再另登记 `plugin.behavior()` 或 consumer projection。
+
+## Requirements、identity 与冲突
+
+默认 `instanceKey` 是 `"default"`。`(name, instanceKey)` 在一个 attachment owner 内唯一；同一 Eval × Experiment pair 两侧出现同 identity 仍是 link error。provenance 保存 owner、源码与数组位置。
+
+Requirement 是封闭 typed union，可在 selection、link 或 planning 读取已定型事实。需要 reuse group 的 Plugin 声明 `{ stage: "selection", kind: "sandbox-reuse-group" }`；它不会得到虚构的 group runtime handle。
 
 槽位 owner 统一执行：exclusive 多声明方冲突；keyed 同 key 同规范化值去重并保留 provenance、不同值冲突；ordered 按确定顺序追加；set-like 是否去重由该槽位 owner 决定。没有 last-wins。
 
+## Agent Extension 与 secret
+
+`AgentExtension` 是 receiver-branded opaque value。Adapter receiver 规范化作者配置和 extensions，产生唯一 `behaviorProjection` 与 `manifestProjection`。有效模型、provider 与鉴权复用 Adapter 已求值的同一 runtime binding；Plugin callback 不取得明文。
+
 ## Hook Reference
 
-Plugin 不发明 `beforeAll`、`beforeEach` 一类平行时间轴。它把行为接入下面三组既有 hook：
+- `experiment.setup/teardown`：每个 Experiment 整场至多一次，管理宿主共享服务。
+- `sandbox.setup/teardown`：每个 physical Sandbox instance 一次。
+- `sandbox.prepare`：每条 Attempt reset 后执行。
+- `eval.around({ before, after })`：每条 Attempt 一次，包围 Eval test body；`after` 在 test 抛错或中断时仍按 finalizer 规则执行。
+- Adapter extension hook：例如 Codex `postSetup/preTeardown`，每条 Attempt 一次。
 
-### Experiment host hooks
-
-```ts
-interface PluginExperimentLifecycle {
-  readonly setup?: (context: ExperimentHookContext) => void | Promise<void>;
-  readonly teardown?: (context: ExperimentHookContext) => void | Promise<void>;
-}
-
-interface ExperimentHookContext {
-  readonly experimentId: string;
-  readonly selectedEvalIds: readonly string[];
-  readonly signal: AbortSignal;
-  progress(update: ProgressUpdate): void;
-  diagnostic(input: DiagnosticInput): void;
-  fact(key: string, value: string | number | boolean): void;
-}
-```
-
-`setup` 在该 Experiment 第一个真实 Attempt 起飞前整场至多一次；全部结果 carry 时不执行。`teardown` 在该 Experiment 的 Attempt 和 Sandbox 全部收口后逆序执行，中断和 setup 部分失败也会尽力调用。适合隧道、mock server、license lease 或整场一次的候选资源，不适合逐题安装工具。
-
-### Physical Sandbox hooks 与 Attempt prepare
-
-```ts
-const layer = sandboxLayer()
-  .setup(async (sandbox, context) => {
-    context.fact("tool.cache", "ready");
-  })
-  .prepare(command("pnpm", ["--version"]))
-  .teardown(async (sandbox, context) => {
-    await stopSandboxService(sandbox, context.signal);
-  });
-```
-
-- `sandbox.setup`：每个实际 physical Sandbox ready 后一次。
-- `sandbox.prepare`：每条 Attempt reset 后执行；应先探测，缺失时安装并复检。
-- `sandbox.teardown`：physical Sandbox 最后一条 Attempt 收尾后、Provider finalizer 前一次。
-
-Sandbox hook 得到 `Sandbox`、`experimentId`、`signal`、`progress()`、`diagnostic()` 与 `fact()`，拿不到模型、session 或复用池句柄。Plugin 只能贡献 command-only layer，不能借 hook 替换 template。
-
-### Agent receiver hooks
-
-Agent hook 不是 core 的通用字符串槽位，而是具体 Adapter receiver 的 typed API。Remem 的 Codex extension 明确占用：
-
-```ts
-rememCodexExtension({
-  memoryModel: "gpt-5.6-luna",
-  auth: "effective-agent-runtime",
-  postSetup: rememInstallAndVerify(),
-  preTeardown: rememDrainAndVerify(),
-});
-```
-
-- `postSetup`：Agent ensure 与 Adapter setup 后、首次 send 前，每条 Attempt 一次。
-- `preTeardown`：最后一次 send 后、Agent teardown 前，每条 Attempt一次。
-
-其它 Adapter 可以公开不同的 typed extension，但必须映射到它已经拥有的配置、安装、setup 或 teardown 槽位。core 不提供任意 hook 名注册，也不把有效鉴权明文交给 callback。
-
-## 除了 hook 还能贡献什么
-
-| Contribution | 是否是 hook | 作用 |
-|---|---:|---|
-| `behavior` | 否 | 声明尚未由其它 owner 表达的行为身份，进入对应 hash |
-| `requirements` | 否 | 在 selection、link 或 planning 拒绝不合法完成态计划 |
-| `sandbox.prepare(command)` | 否 | 声明可展示、可排序、可指纹化的安装或探测命令 |
-| `flags` / `labels` | 否 | Experiment 条件身份与报告分组 |
-| `agentExtensions` | 部分 | 同时可贡献 Adapter 配置、安装项、MCP/native plugin 与具名 hook |
-| framework manifest | 否 | 自动保存 Plugin identity、attachment、owner、贡献摘要与 provenance |
+所有 hook 只接入既有正式 phase；Plugin 不注册任意字符串 phase。`progress()`、`diagnostic()`、`fact()` 与 `AbortSignal` 继续由对应既有上下文提供。
