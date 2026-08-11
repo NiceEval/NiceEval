@@ -6,18 +6,17 @@
 // 统计口径(KPI / 实验列表 / 挑选警告)整体住在报告槽的静态 HTML 里(ExperimentComparison 或
 // --report 的报告自己算),壳与报告之间没有第二条数据通道。
 
-import type { LocalizedText } from "../../types.ts";
-import type { ReportLocale } from "../../report/model/locale.ts";
-import type { AttemptLocator } from "../../record/locator.ts";
-
-export type { AttemptLocator };
+export type LocalizedText = string | Readonly<Record<string, string>>;
+export type ReportLocale = "en" | "zh-CN";
+/** A view never dereferences this legacy-shaped string as a Record handle. */
+export type AttemptLocator = string;
 
 /**
  * 一页报告的双语静态 HTML:同一棵页树按 locale 渲染两遍(en / zh-CN),server 烘成
  * <template id="niceeval-report-<pageId>-<locale>"> 静态块,前端按当前页与界面语言摆放
  * 对应块,切语言 / 切页不重算数据。
  */
-export type ReportSlotHtml = globalThis.Record<ReportLocale, string>;
+export type ReportSlotHtml = Partial<globalThis.Record<ReportLocale, string>>;
 
 /** 服务端渲染好的一页报告(HTML 本体不进 viewData,烘成 <template> 静态块)。 */
 export interface ViewReportPageHtml {

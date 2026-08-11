@@ -1,505 +1,493 @@
-// HTTP server:把站点管线(site.ts 的 planSite)产出的同一份产物挂在指定地址上按路径服务。
-// 这里不携带任何取数或布局知识——查不到清单条目就是 404,同一页同一语言的报告块与 `--out`
-// 逐字节一致(docs/feature/reports/README.md 开篇)。宿主语义全部作用在管线之外:
-//
-// - 重建理由只有 watch 闭集。请求不触发重建——打开或刷新页面时盘上没变,产物就是上一次那份。
-// - 变更按理由分流:记录变更沿用上一次装载出的定义,模块文件变更才重装整棵 import 图。
-// - 产物按订阅渲染:清单是 prebake: "on-demand",重建本身一块都不渲染,块在被要到时才算。
-// - 重建结果推给已打开的页面,外壳指纹变了整页重载,否则就地换报告块。
-// - 单页渲染失败折成页内错误块(pageFailure: "embed")。
-//
-// 位置参数 / --exp 收窄是管线输入,不是宿主语义——两宿主同义。
+// The Node view host owns transport and watch lifetime only. Its caller has
+// already closed RecordReader -> AnalysisSampleHandle -> executeReport into a
+// fixed execution rebuild; this module never reopens a retired Record graph.
 
-import { createServer, type Server } from "node:http";
-import { watch, type FSWatcher } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
-import { networkInterfaces } from "node:os";
-import { dirname, extname, join, resolve, sep } from "node:path";
-import { type LoadedDefinitions, type ViewScanOptions } from "./data.ts";
+import { statSync, watch, type FSWatcher } from "node:fs";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import type { Socket } from "node:net";
+import { basename, dirname, resolve } from "node:path";
+import { Effect, Either } from "effect";
+import type * as Scope from "effect/Scope";
+import { reportRoute, type ReportRoute } from "../report/author/identity.ts";
+import type { ReportExecution } from "../report/execution/model.ts";
 import {
-  planSite,
-  readSiteFile,
-  renderSiteReportBlock,
-  reportBlockPath,
-  SITE_LOCALES,
-  type SitePlan,
-} from "./site.ts";
-import type { ReportLocale } from "../report/model/locale.ts";
-import { isHostModulePath } from "../report/runtime/host.ts";
-import { formatThrown } from "../util.ts";
+  renderReportExecutionJson,
+  renderReportExecutionProblemsText,
+  renderReportExecutionText,
+} from "../report/host/presentation.ts";
+import {
+  openReportViewSession,
+  type OpenReportViewSessionInput,
+  type ReportViewOpenError,
+  type ReportViewSessionClosed,
+  type ReportViewSession,
+} from "../report/host/view-session.ts";
+import type { ViewScanOptions } from "./data.ts";
+import { renderHtml } from "./site.ts";
+
+export interface NodeViewServerError {
+  readonly code: "report-view-server-failed";
+  readonly operation: "open" | "listen" | "watch";
+  readonly reason: string;
+}
 
 export interface ViewOptions {
-  input?: string;
-  out?: string;
-  port?: number;
-  /** 监听地址；缺省与 CLI 裸写 --host 都监听全部 IPv4 网卡。 */
-  host?: string;
-  /** 站点管线的组合语义(位置前缀 / --exp 收窄有效根,--report 换报告槽),透传给管线。 */
-  scan?: ViewScanOptions;
-  /** 本地模式观察的项目根；静态导出忽略。 */
-  watchRoot?: string;
-  /** watch 触发的新产物已经构建并发布；初始构建与请求期补建不调用。 */
-  onRebuild?: (completedAt: Date) => void;
+  readonly input?: string;
+  readonly out?: string;
+  readonly port?: number;
+  /** Loopback only. A public listener is not a Report host capability. */
+  readonly host?: string;
+  /** Retained for the CLI-shaped facade; it is never interpreted as Record data. */
+  readonly scan?: ViewScanOptions;
+  /** A legacy alias for one caller-supplied watch input. */
+  readonly watchRoot?: string;
+  /** Exact files or directories whose changes should request one rebuild. */
+  readonly watchInputs?: readonly string[];
+  readonly onRebuild?: (completedAt: Date) => void;
+  /** Static export consumes this exact fixed execution. */
+  readonly reportExecution?: ReportExecution;
+  /** An already-open scoped session owned by the caller. */
+  readonly session?: ReportViewSession;
+  /** Or let this scope open a session from a caller-supplied current rebuild. */
+  readonly request?: OpenReportViewSessionInput;
 }
 
-export interface ViewServer {
-  /** 首选的本机 URL，供 `--open` 直接打开。 */
-  url: string;
-  /** 可在浏览器打开的本机与局域网 URL。 */
-  urls: string[];
-  close(): Promise<void>;
+/** The native Effect-facing server handle. Its resources are also Scope-owned. */
+export interface ReportViewServer {
+  readonly url: string;
+  readonly urls: readonly string[];
+  readonly close: Effect.Effect<void>;
 }
 
-/**
- * 重建理由(docs/feature/reports/README.md「变更分两类,失效到不同深度」)。合成一次重建时
- * `modules` 吸收 `records`：模块图重装本来就带着整条管线重跑,反过来不成立。
- */
 export type RebuildReason = "records" | "modules";
 
-/** 去抖且单飞：构建期间的任意事件只请求结束后再跑一次。 */
-export class ViewRebuildScheduler {
-  private timer: NodeJS.Timeout | undefined;
-  private running = false;
-  private queued: RebuildReason | undefined;
-  private pending: RebuildReason | undefined;
-  constructor(private readonly rebuild: (reason: RebuildReason) => Promise<void>, private readonly delayMs = 80) {}
-  notify(reason: RebuildReason = "records"): void {
-    if (this.running) { this.pending = merge(this.pending, reason); return; }
-    this.queued = merge(this.queued, reason);
-    clearTimeout(this.timer);
-    this.timer = setTimeout(() => void this.run(), this.delayMs);
-  }
-  private async run(): Promise<void> {
-    if (this.running) return;
-    const reason = this.queued ?? "records";
-    this.queued = undefined;
-    this.running = true;
-    try { await this.rebuild(reason); } finally {
-      this.running = false;
-      const next = this.pending;
-      if (next !== undefined) { this.pending = undefined; this.notify(next); }
-    }
-  }
-  close(): void { clearTimeout(this.timer); }
+interface InboxClosed {
+  readonly code: "report-view-inbox-closed";
 }
 
-function merge(a: RebuildReason | undefined, b: RebuildReason): RebuildReason {
-  return a === "modules" || b === "modules" ? "modules" : "records";
+const inboxClosed: InboxClosed = Object.freeze({ code: "report-view-inbox-closed" });
+
+interface HttpRequest {
+  readonly request: IncomingMessage;
+  readonly response: ServerResponse;
 }
 
-function isWatchedChange(root: string, filename: string | null): boolean {
-  if (!filename) return true;
-  const path = filename.toString();
-  return !path.includes(`${sep}node_modules${sep}`) && !/(?:~$|\.swp$|\.tmp$|\.temp$|^\.#)/.test(path);
-}
+const HTTP_REQUEST_QUEUE_MAX = 128;
 
 /**
- * 项目侧 watch 的入口(docs/feature/reports/README.md「持续重建」的闭集第 2–4 行):
- * 项目配置,加 --report / --theme 指到的**文件**。裸词(`standard` / `basalt`)是内建名,
- * 随包分发没有项目文件可盯,按装载同一条形态判别排除。配置文件此刻不存在也在列——
- * 它所在目录照样挂 watcher,建出来那一下就是一次重建理由。
+ * A small callback-to-Effect bridge. Node callbacks only enqueue a value; the
+ * long-lived scoped Effect performs every session operation, so callbacks do
+ * not create private runtimes or invoke `runPromise`/`runSync`.
  */
-export async function projectWatchEntries(scan: ViewScanOptions, projectRoot: string): Promise<string[]> {
-  const entries = [join(projectRoot, "niceeval.config.ts")];
-  if (scan.report !== undefined && (await isHostModulePath(scan.report.path))) {
-    entries.push(resolve(scan.report.cwd, scan.report.path));
-  }
-  if (scan.theme !== undefined && (await isHostModulePath(scan.theme.value))) {
-    entries.push(resolve(scan.theme.cwd, scan.theme.value));
-  }
-  return entries;
-}
+class Inbox<Value> {
+  private readonly values: Value[] = [];
+  private resume: ((effect: Effect.Effect<Value, InboxClosed>) => void) | undefined;
+  private closed = false;
 
-/**
- * 入口文件加它们的**项目内静态 import 图**:改一个自定义组件、读数或工具模块与改报告文件
- * 本身没有区别(view.md「改组件代码同样重建」)。裸 specifier 与 node_modules 下的文件不进闭集
- * ——依赖目录里的包改了不是这条命令的事;动态 import 也不跟,与指纹的源码闭包同一条口径。
- */
-export async function projectWatchTargets(entries: readonly string[]): Promise<Set<string>> {
-  const targets = new Set(entries.map((entry) => resolve(entry)));
-  const visited = new Set<string>();
-  const visit = async (path: string): Promise<void> => {
-    const absolute = resolve(path);
-    if (visited.has(absolute)) return;
-    visited.add(absolute);
-    let content: string;
-    try {
-      content = await readFile(absolute, "utf8");
-    } catch {
-      return; // 还没建出来的入口(如 niceeval.config.ts)照样在列,只是没有下游可走。
-    }
-    targets.add(absolute);
-    const specs = [...content.matchAll(/\b(?:import|export)\s+(?:[^"'()]*?\s+from\s+)?["']([^"']+)["']/g)].map((m) => m[1]!);
-    for (const spec of specs) {
-      if (!spec.startsWith(".") && !spec.startsWith("/")) continue;
-      const resolved = await resolveModuleFile(dirname(absolute), spec);
-      if (resolved !== undefined && !resolved.split(sep).includes("node_modules")) await visit(resolved);
-    }
-  };
-  for (const entry of entries) await visit(entry);
-  return targets;
-}
+  constructor(private readonly capacity: number) {}
 
-async function resolveModuleFile(from: string, specifier: string): Promise<string | undefined> {
-  const raw = resolve(from, specifier);
-  const candidates = extname(raw)
-    ? // `./x.js` 形态的 specifier 在 TS 项目里指的是 `./x.ts`(NodeNext 的写法)。
-      [raw, ...(/\.[cm]?jsx?$/i.test(raw) ? [".ts", ".tsx"].map((ext) => raw.replace(/\.[cm]?jsx?$/i, ext)) : [])]
-    : [
-        raw,
-        ...[".ts", ".tsx", ".mts", ".cts", ".js", ".jsx"].map((ext) => `${raw}${ext}`),
-        ...["index.ts", "index.tsx", "index.js"].map((name) => resolve(raw, name)),
-      ];
-  for (const candidate of candidates) {
-    try {
-      if ((await stat(candidate)).isFile()) return candidate;
-    } catch {
-      // 换下一个扩展名。
-    }
-  }
-  return undefined;
-}
-
-/**
- * 项目侧监听:按闭集里文件**所在的目录**挂 watcher,再按绝对路径过滤事件——目录级监听会把
- * 记录落盘、依赖目录和临时文件都当成重建理由,而直接 watch 文件本体在编辑器"写临时文件再
- * rename"的保存方式下第一次保存后就哑了。闭集随每次重建重算,报告新 import 一个组件文件
- * 由此接上。
- */
-export class ProjectFileWatcher {
-  private readonly dirs = new Map<string, FSWatcher>();
-  private files = new Set<string>();
-  /** 闭集里每个文件上一次看到的 mtime + 大小;文件不存在记 null。 */
-  private stamps = new Map<string, string | null>();
-  private checking: Promise<void> | undefined;
-  constructor(private readonly onChange: () => void) {}
-
-  /** 当前盯着的文件绝对路径全集。 */
-  get watched(): ReadonlySet<string> {
-    return this.files;
-  }
-
-  async sync(entries: readonly string[]): Promise<void> {
-    this.files = await projectWatchTargets(entries);
-    await this.stamp();
-    const dirs = new Set([...this.files].map((file) => dirname(file)));
-    for (const [dir, watcher] of this.dirs) {
-      if (dirs.has(dir)) continue;
-      watcher.close();
-      this.dirs.delete(dir);
-    }
-    for (const dir of dirs) {
-      if (this.dirs.has(dir)) continue;
-      try {
-        this.dirs.set(dir, watch(dir, (_event, filename) => this.handle(dir, filename)));
-      } catch {
-        // 目录不存在(如报告文件指向还没建出来的目录):下一次 sync 再试。
+  take(): Effect.Effect<Value, InboxClosed> {
+    return Effect.async((resume) => {
+      if (this.values.length > 0) {
+        resume(Effect.succeed(this.values.shift()!));
+        return Effect.void;
       }
-    }
-  }
-
-  /**
-   * 目录事件 → 闭集里真有文件变了才通知。
-   *
-   * 事件名不足以判定:macOS 的 `fs.watch` 会为同一目录下**没被碰过**的兄弟文件也报一次事件
-   * (`.niceeval/` 落一份 result.json,同目录的 report 文件跟着报 rename),`filename` 还可能
-   * 是被监听目录自己的名字或 null。只按名字判定的话,记录一落盘就被当成模块变更,
-   * 「记录变更不重装模块图」这条分流在默认的 `.niceeval` 布局下等于没有。所以事件只当作
-   * 「去核对一下」的信号,变没变由 mtime + 大小说了算。
-   */
-  handle(_dir: string, _filename: string | Buffer | null): void {
-    if (this.checking) return; // 核对本身是异步的,同一批事件合成一次。
-    this.checking = this.stamp()
-      .then((changed) => {
-        if (changed) this.onChange();
-      })
-      .catch(() => {})
-      .finally(() => {
-        this.checking = undefined;
+      if (this.closed) {
+        resume(Effect.fail(inboxClosed));
+        return Effect.void;
+      }
+      this.resume = resume;
+      return Effect.sync(() => {
+        if (this.resume === resume) this.resume = undefined;
       });
+    });
   }
 
-  /** 重新采样闭集的 mtime + 大小;返回是否与上一次不同。首次采样(sync)不算变更。 */
-  private async stamp(): Promise<boolean> {
-    const previous = this.stamps;
-    const next = new Map<string, string | null>();
-    await Promise.all(
-      [...this.files].map(async (file) => {
-        try {
-          const info = await stat(file);
-          next.set(file, `${info.mtimeMs}:${info.size}`);
-        } catch {
-          next.set(file, null);
-        }
-      }),
-    );
-    this.stamps = next;
-    if (previous.size === 0) return false;
-    for (const [file, stamp] of next) {
-      if (!previous.has(file) || previous.get(file) !== stamp) return true;
+  offer(value: Value): boolean {
+    if (this.closed) return false;
+    const resume = this.resume;
+    if (resume === undefined) {
+      if (this.values.length >= this.capacity) return false;
+      this.values.push(value);
+      return true;
     }
-    return [...previous.keys()].some((file) => !next.has(file));
+    this.resume = undefined;
+    resume(Effect.succeed(value));
+    return true;
   }
 
   close(): void {
-    for (const watcher of this.dirs.values()) watcher.close();
-    this.dirs.clear();
+    if (this.closed) return;
+    this.closed = true;
+    const resume = this.resume;
+    this.resume = undefined;
+    resume?.(Effect.fail(inboxClosed));
   }
 }
 
-export async function startViewServer(opts: ViewOptions = {}): Promise<ViewServer> {
-  const input = opts.input;
-  // 本地 server 的单页失败折成该页的错误块,其它页照常可读(静态导出仍整体失败)。
-  const scanOptions = { ...opts.scan, pageFailure: "embed" as const };
+/** Coalesces a burst of filesystem events into sequential refresh requests. */
+class RefreshInbox {
+  private pending = false;
+  private resume: ((effect: Effect.Effect<void, InboxClosed>) => void) | undefined;
+  private closed = false;
 
-  // 产物重建的单飞通道:同时到达的重建请求共享同一次构建,不并行跑两份 planSite
-  // (namespaced import 并发会卡住)。进行中的调用方都 await 同一份 Promise。
-  let current: Promise<SitePlan>;
-  let inFlight: Promise<SitePlan> | undefined;
-  /**
-   * 一个订阅中的浏览器:它在看哪一页、哪种语言(docs/feature/reports/README.md
-   * 「只渲染看得见的那一块」)。重建后只为这些订阅渲染块,没人看的页不渲染。
-   */
-  const reloadClients = new Set<{ res: import("node:http").ServerResponse; page?: string; locale: ReportLocale }>();
-  let lastError: string | undefined;
-  // 上一次装载出的报告 / 主题定义:记录变更的重建沿用它,不重走 namespaced import。
-  let definitions: LoadedDefinitions | undefined;
-  let shellFingerprint: string | undefined;
+  take(): Effect.Effect<void, InboxClosed> {
+    return Effect.async((resume) => {
+      if (this.pending) {
+        this.pending = false;
+        resume(Effect.void);
+        return Effect.void;
+      }
+      if (this.closed) {
+        resume(Effect.fail(inboxClosed));
+        return Effect.void;
+      }
+      this.resume = resume;
+      return Effect.sync(() => {
+        if (this.resume === resume) this.resume = undefined;
+      });
+    });
+  }
 
-  const push = (client: { res: import("node:http").ServerResponse }, event: string, data: unknown): void => {
-    client.res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-  };
-
-  /**
-   * 重建完成后把结果送到已经打开的页面。外壳指纹变了整页重载(样式表 / 脚本 / head 标签住在
-   * `<head>` 里,就地替换要重放整套加载顺序);否则给每个订阅渲染它那一块就地换掉。
-   */
-  const publish = async (plan: SitePlan): Promise<void> => {
-    const shellChanged = shellFingerprint !== undefined && shellFingerprint !== plan.shellFingerprint;
-    shellFingerprint = plan.shellFingerprint;
-    if (shellChanged) {
-      for (const client of reloadClients) push(client, "reload", "shell");
+  request(): void {
+    if (this.closed) return;
+    const resume = this.resume;
+    if (resume === undefined) {
+      this.pending = true;
       return;
     }
-    for (const client of reloadClients) {
-      const page = client.page ?? plan.scan.viewData.report?.initialPageId;
-      if (page === undefined || !plan.scan.reportPages.ids.includes(page)) {
-        push(client, "reload", "page-gone");
-        continue;
-      }
-      try {
-        const html = await renderSiteReportBlock(plan, page, client.locale);
-        push(client, "patch", { viewData: plan.scan.viewData, page, locale: client.locale, html });
-      } catch (e) {
-        push(client, "error", formatThrown(e));
-      }
-    }
-  };
+    this.resume = undefined;
+    resume(Effect.void);
+  }
 
-  const rebuild = (reason: RebuildReason = "modules"): Promise<SitePlan> => {
-    // 同步挂上 inFlight,避免「两个调用都看到 undefined」并行跑两份 namespaced import。
-    if (!inFlight) {
-      inFlight = (async () => {
+  close(): void {
+    if (this.closed) return;
+    this.closed = true;
+    const resume = this.resume;
+    this.resume = undefined;
+    resume?.(Effect.fail(inboxClosed));
+  }
+}
+
+interface ServerResources {
+  readonly server: Server;
+  readonly sockets: Set<Socket>;
+  readonly requests: Inbox<HttpRequest>;
+  readonly refreshes: RefreshInbox;
+  closed: boolean;
+}
+
+interface WatchResources {
+  readonly watchers: readonly FSWatcher[];
+  closed: boolean;
+}
+
+/**
+ * Opens a real loopback HTTP server. A watcher event only requests
+ * `session.refresh`; the session serializes rebuild and close, preserves the
+ * last good immutable execution, and publishes a new revision only on success.
+ */
+export function openViewServer(
+  options: ViewOptions = {},
+): Effect.Effect<ReportViewServer, NodeViewServerError | ReportViewOpenError, Scope.Scope> {
+  return Effect.gen(function* () {
+    if (options.session !== undefined && options.request !== undefined) {
+      return yield* Effect.fail(serverError("open", "provide either session or request, not both"));
+    }
+    const host = options.host ?? "127.0.0.1";
+    if (!isLoopbackHost(host)) {
+      return yield* Effect.fail(serverError("open", `view host must be loopback, got ${host}`));
+    }
+    const port = options.port ?? 0;
+    if (!Number.isInteger(port) || port < 0 || port > 65_535) {
+      return yield* Effect.fail(serverError("open", `view port must be an integer from 0 through 65535, got ${port}`));
+    }
+
+    const session = options.session ?? (options.request === undefined
+      ? yield* Effect.fail(serverError("open", "view needs a scoped ReportViewSession or current rebuild request"))
+      : yield* openReportViewSession(options.request));
+
+    const resources = yield* Effect.acquireRelease(
+      Effect.sync(() => makeResources()),
+      (value) => closeResources(value),
+    );
+    const address = yield* listen(resources.server, host, port);
+    const watches = yield* Effect.acquireRelease(
+      Effect.map(
+        openWatchers(watchInputs(options), () => resources.refreshes.request()),
+        (watchers): WatchResources => ({ watchers, closed: false }),
+      ),
+      (value) => closeWatchers(value),
+    );
+
+    yield* Effect.forkScoped(
+      Effect.forever(
+        Effect.flatMap(resources.requests.take(), (request) => serveRequest(session, request)),
+      ).pipe(Effect.catchAll(() => Effect.void)),
+    );
+    yield* Effect.forkScoped(
+      Effect.forever(
+        Effect.flatMap(resources.refreshes.take(), () => refreshSession(session, options.onRebuild)),
+      ).pipe(Effect.catchAll(() => Effect.void)),
+    );
+
+    const close = Effect.zipRight(closeWatchers(watches), closeResources(resources));
+    const url = `http://${formatHost(address.host)}:${address.port}/`;
+    return Object.freeze({ url, urls: Object.freeze([url]), close });
+  });
+}
+
+function makeResources(): ServerResources {
+  const requests = new Inbox<HttpRequest>(HTTP_REQUEST_QUEUE_MAX);
+  const refreshes = new RefreshInbox();
+  const sockets = new Set<Socket>();
+  const server = createServer((request, response) => {
+    if (!requests.offer(Object.freeze({ request, response }))) {
+      sendText(response, 503, "report view is busy; retry shortly");
+    }
+  });
+  server.on("connection", (socket) => {
+    sockets.add(socket);
+    socket.once("close", () => sockets.delete(socket));
+  });
+  return { server, sockets, requests, refreshes, closed: false };
+}
+
+function listen(
+  server: Server,
+  host: string,
+  port: number,
+): Effect.Effect<{ readonly host: string; readonly port: number }, NodeViewServerError> {
+  return Effect.async((resume) => {
+    const cleanup = (): void => {
+      server.off("error", onError);
+      server.off("listening", onListening);
+    };
+    const onError = (error: Error): void => {
+      cleanup();
+      resume(Effect.fail(serverError("listen", error.message)));
+    };
+    const onListening = (): void => {
+      cleanup();
+      const address = server.address();
+      if (address === null || typeof address === "string") {
+        resume(Effect.fail(serverError("listen", "server did not expose a TCP address")));
+        return;
+      }
+      resume(Effect.succeed(Object.freeze({ host: address.address, port: address.port })));
+    };
+    server.once("error", onError);
+    server.once("listening", onListening);
+    try {
+      server.listen({ host, port });
+    } catch (error) {
+      onError(asError(error));
+    }
+    return Effect.sync(() => cleanup());
+  });
+}
+
+function serveRequest(session: ReportViewSession, request: HttpRequest): Effect.Effect<void> {
+  const url = requestUrl(request.request);
+  if (url === undefined) {
+    return Effect.sync(() => sendText(request.response, 400, "bad request"));
+  }
+  if (url.pathname === "/healthz") {
+    return Effect.sync(() => sendText(request.response, 200, "ok"));
+  }
+  return session.snapshot.pipe(
+    Effect.flatMap((state) => {
+      const headers = Object.freeze({
+        "cache-control": "no-store",
+        "x-niceeval-report-revision": String(state.current.revision),
+        ...(state.lastProblem === undefined ? {} : { "x-niceeval-last-rebuild-problem": "1" }),
+      });
+      if (url.pathname === "/_niceeval/execution.json") {
+        return Effect.flatMap(
+          renderReportExecutionJson({ execution: state.current.execution }),
+          (body) => Effect.sync(() => send(request.response, 200, body, "application/json; charset=utf-8", headers)),
+        );
+      }
+      if (url.pathname === "/_niceeval/problems" || url.pathname === "/_niceeval/problems/") {
+        const prefix = state.lastProblem === undefined
+          ? `Revision ${state.current.revision}\n\n`
+          : `Revision ${state.current.revision}\nLast rebuild failed: ${state.lastProblem.summary}\n\n`;
+        return Effect.sync(() => send(
+          request.response,
+          200,
+          renderHtml(`${prefix}${renderReportExecutionProblemsText(state.current.execution)}`),
+          "text/html; charset=utf-8",
+          headers,
+        ));
+      }
+      const page = pageForPath(url.pathname, state.current.execution);
+      if (page === "missing") {
+        return Effect.sync(() => sendText(request.response, 404, "page not found", headers));
+      }
+      const rendered = renderReportExecutionText({
+        execution: state.current.execution,
+        ...(page === undefined ? {} : { page }),
+      });
+      const prefix = state.lastProblem === undefined
+        ? `Revision ${state.current.revision}\n\n`
+        : `Revision ${state.current.revision}\nLast rebuild failed: ${state.lastProblem.summary}\n\n`;
+      return Effect.sync(() => send(request.response, 200, renderHtml(`${prefix}${rendered}`), "text/html; charset=utf-8", headers));
+    }),
+    Effect.catchAll(() => Effect.sync(() => sendText(request.response, 503, "report view session is closed"))),
+  );
+}
+
+function refreshSession(
+  session: ReportViewSession,
+  onRebuild: ViewOptions["onRebuild"],
+): Effect.Effect<void, ReportViewSessionClosed> {
+  return Effect.gen(function* () {
+    const before = yield* session.snapshot;
+    yield* session.refresh;
+    const after = yield* session.snapshot;
+    if (after.current.revision > before.current.revision && onRebuild !== undefined) {
+      yield* Effect.try({
+        try: () => onRebuild(new Date()),
+        catch: () => undefined,
+      }).pipe(Effect.ignore);
+    }
+  });
+}
+
+function watchInputs(options: ViewOptions): readonly string[] {
+  const values = [
+    ...(options.watchInputs ?? []),
+    ...(options.watchRoot === undefined ? [] : [options.watchRoot]),
+  ];
+  return Object.freeze([...new Set(values.map((value) => resolve(value)))]);
+}
+
+function openWatchers(
+  inputs: readonly string[],
+  onChange: () => void,
+): Effect.Effect<readonly FSWatcher[], NodeViewServerError> {
+  return Effect.try({
+    try: () => {
+      const watchers: FSWatcher[] = [];
+      for (const input of inputs) {
+        let directory = dirname(input);
+        let name: string | undefined = basename(input);
         try {
-          const next = await planSite(
-            input,
-            // 记录变更沿用上一次的定义;模块文件变了就不传,让整棵 import 图重新装载。
-            reason === "records" && definitions !== undefined ? { ...scanOptions, definitions } : scanOptions,
-            { prebake: "on-demand" },
-          );
-          current = Promise.resolve(next);
-          definitions = next.scan.definitions;
-          lastError = undefined;
-          await publish(next);
-          return next;
-        } catch (error) {
-          lastError = formatThrown(error);
-          process.stderr.write(`view rebuild failed: ${lastError}\n`);
-          for (const client of reloadClients) push(client, "error", lastError);
-          throw error;
-        } finally {
-          inFlight = undefined;
-        }
-      })();
-    }
-    return inFlight;
-  };
-
-  // 启动前先构建一遍:--run 指向读不了的快照、--report 装载失败、前缀匹配不到,
-  // 都要在起 server 前就失败并给出提示。
-  try { await rebuild(); } catch (error) { throw error; }
-
-  const scheduler = new ViewRebuildScheduler(async (reason) => {
-    let succeeded = false;
-    try {
-      await rebuild(reason);
-      succeeded = true;
-    } catch { /* keep serving the preceding SitePlan */ }
-    // 改动可能新增/删除 import:重算闭集,新引入的组件文件从下一次变更起就被盯着。
-    await syncProjectWatch();
-    if (succeeded) opts.onRebuild?.(new Date());
-  });
-  // 记录侧仍是整根递归监听:新 Run 目录、result.json 与证据文件都要接住。
-  const recordRoot = resolve(input ?? ".niceeval");
-  const onRecordEvent = (_event: string, filename: string | Buffer | null): void => {
-    if (isWatchedChange(recordRoot, filename === null ? null : filename.toString())) scheduler.notify("records");
-  };
-  let recordWatcher: FSWatcher;
-  try {
-    recordWatcher = watch(recordRoot, { recursive: true }, onRecordEvent);
-  } catch {
-    recordWatcher = watch(recordRoot, onRecordEvent);
-  }
-  // 项目侧收窄到闭集,不再整根递归:项目根下的记录、依赖目录与无关文件都不是重建理由。
-  const projectEntries = await projectWatchEntries(scanOptions, resolve(opts.watchRoot ?? process.cwd()));
-  const projectWatcher = new ProjectFileWatcher(() => scheduler.notify("modules"));
-  const syncProjectWatch = async (): Promise<void> => {
-    const plan = await current;
-    await projectWatcher.sync([...projectEntries, ...plan.scan.projectWatchInputs]).catch(() => {});
-  };
-  await syncProjectWatch();
-
-  const server = createServer(async (req, res) => {
-    try {
-      const url = new URL(req.url ?? "/", "http://127.0.0.1");
-      if (url.pathname === "/healthz") {
-        res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
-        res.end("ok");
-        return;
-      }
-      if (url.pathname === "/__niceeval_reload") {
-        // 订阅带上「在看哪一页、哪种语言」:重建只为这些订阅渲染块。切页 / 切语言时前端
-        // 重连一次,不需要另一条上行通道。
-        res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store", connection: "keep-alive" });
-        const rawLocale = url.searchParams.get("locale");
-        const client = {
-          res,
-          ...(url.searchParams.get("page") ? { page: url.searchParams.get("page")! } : {}),
-          locale: SITE_LOCALES.includes(rawLocale ?? "") ? (rawLocale as ReportLocale) : "en",
-        };
-        res.write(lastError ? `event: error\ndata: ${JSON.stringify(lastError)}\n\n` : "event: ready\ndata: \"ok\"\n\n");
-        reloadClients.add(client);
-        req.on("close", () => reloadClients.delete(client));
-        return;
-      }
-
-      // 站点相对路径:`/` 即 index.html；artifact 使用静态站点同形的 `/artifact/<path>`。
-      // 打开或刷新页面不是重建理由(view.md「重建理由是一个闭集」)：盘上没变时直接命中
-      // 上一次产物。数据是否最新由 watch 保证，不靠每次请求重跑管线。
-      // plan 的参数化页键本身就是 URL 路径（`<pageId>/<encodeURIComponent(key)>.html`），
-      // 因此先按浏览器请求里的编码路径精确查表。artifact 等历史清单键仍可能保存未编码的
-      // 文件名；只有精确未命中时才回退到解码路径，不能在查表前无条件把 `%40` 变回 `@`。
-      const requestPath = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
-      // 顶层刷新是远程/不可监听 planning 输入的显式 replan 边界。本地权威输入仍由 watcher
-      // 主动触发；刷新失败后绝不把 last-good 继续冒充 current。
-      if (requestPath === "index.html" && scanOptions.projectCurrent !== undefined) {
-        await rebuild("modules").catch(() => undefined);
-        await syncProjectWatch();
-      }
-      if (lastError !== undefined) {
-        res.writeHead(503, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" });
-        res.end(`current target unavailable: ${lastError}`);
-        return;
-      }
-      const lookup = (candidate: SitePlan) => {
-        let path = requestPath;
-        let result = candidate.files.get(path);
-        if (!result) {
-          try {
-            path = decodeURIComponent(requestPath);
-            result = candidate.files.get(path);
-          } catch {
-            // 非法 percent encoding 按原路径查不到处理，由下面统一返回 404。
+          if (statSync(input).isDirectory()) {
+            directory = input;
+            name = undefined;
           }
+        } catch {
+          // A not-yet-created config/module is watched through its parent.
         }
-        return { path, result };
-      };
-      let plan = await current;
-      let { path: sitePath, result: file } = lookup(plan);
-      if (!file && sitePath.startsWith("artifact/")) {
-        // 未命中最近一次构建的产物清单:管线重建一次再查——server 运行期间
-        // 新落盘的证据(新快照、补跑)不需要重启。
-        plan = await rebuild("records").catch(() => current);
-        ({ path: sitePath, result: file } = lookup(plan));
+        watchers.push(watch(directory, (_event, filename) => {
+          if (name === undefined || filename === null || filename.toString() === name) onChange();
+        }));
       }
-      if (!file) {
-        res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
-        res.end("not found");
-        return;
-      }
-      const body = await readSiteFile(file);
-      if (body === undefined) {
-        res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
-        res.end("not found");
-        return;
-      }
-      // 同一路径同一 plan 生命周期内不重复求值(architecture.md「管线以 page 实例为单位执行」):
-      // lazy 产出器求值一次后把结果写回清单,下一次同路径请求(未触发 rebuild 之前)直接命中。
-      if (file.source.kind === "lazy") {
-        plan.files.set(sitePath, { ...file, source: { kind: "content", body: body as string } });
-      }
-      res.writeHead(200, { "content-type": file.contentType, "cache-control": "no-store" });
-      res.end(body);
-    } catch (e) {
-      res.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
-      res.end(formatThrown(e));
-    }
+      return Object.freeze(watchers);
+    },
+    catch: (error): NodeViewServerError => serverError("watch", asError(error).message),
   });
+}
 
-  const host = opts.host ?? "0.0.0.0";
-  const port = await listen(server, opts.port ?? 0, host);
-  const urls = viewUrls(host, port);
-  return {
-    url: urls[0]!,
-    urls,
-    close: () =>
-      new Promise((resolveClose, reject) => {
-        scheduler.close();
-        recordWatcher.close();
-        projectWatcher.close();
-        reloadClients.forEach((client) => client.res.end());
-        server.close((err) => (err ? reject(err) : resolveClose()));
+function closeResources(resources: ServerResources): Effect.Effect<void> {
+  return Effect.suspend(() => {
+    if (resources.closed) return Effect.void;
+    resources.closed = true;
+    return Effect.zipRight(
+      Effect.sync(() => {
+        resources.requests.close();
+        resources.refreshes.close();
+        for (const socket of resources.sockets) socket.destroy();
       }),
-  };
+      closeServer(resources.server),
+    );
+  });
 }
 
-async function listen(server: Server, preferredPort: number, host: string): Promise<number> {
-  const tryListen = (port: number): Promise<number> =>
-    new Promise((resolveListen, reject) => {
-      const onError = (err: NodeJS.ErrnoException) => {
-        server.off("listening", onListening);
-        reject(err);
-      };
-      const onListening = () => {
-        server.off("error", onError);
-        const address = server.address();
-        resolveListen(typeof address === "object" && address ? address.port : port);
-      };
-      server.once("error", onError);
-      server.once("listening", onListening);
-      server.listen(port, host);
+function closeWatchers(resources: WatchResources): Effect.Effect<void> {
+  return Effect.suspend(() => {
+    if (resources.closed) return Effect.void;
+    resources.closed = true;
+    return Effect.sync(() => {
+      for (const watcher of resources.watchers) {
+        try {
+          watcher.close();
+        } catch {
+          // Closing is best-effort and idempotent at the Node boundary. The
+          // owning Scope still proceeds to close the listener and sockets.
+        }
+      }
     });
-
-  if (preferredPort === 0) return tryListen(0);
-  for (let port = preferredPort; port < preferredPort + 20; port++) {
-    try {
-      return await tryListen(port);
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== "EADDRINUSE") throw e;
-    }
-  }
-  throw new Error(`No available port near ${preferredPort}`);
+  });
 }
 
-/** `0.0.0.0` 不是浏览器实际访问的地址；把本机和每个 IPv4 局域网地址都明确列出来。 */
-function viewUrls(host: string, port: number): string[] {
-  const urlFor = (address: string) => `http://${address.includes(":") ? `[${address}]` : address}:${port}/`;
-  if (host !== "0.0.0.0") return [urlFor(host)];
-  const addresses = ["127.0.0.1"];
-  for (const entries of Object.values(networkInterfaces())) {
-    for (const entry of entries ?? []) {
-      if (entry.family === "IPv4" && !entry.internal) addresses.push(entry.address);
+function closeServer(server: Server): Effect.Effect<void> {
+  return Effect.async((resume) => {
+    if (!server.listening) {
+      resume(Effect.void);
+      return Effect.void;
     }
+    try {
+      server.close(() => resume(Effect.void));
+    } catch {
+      resume(Effect.void);
+    }
+    return Effect.void;
+  });
+}
+
+function pageForPath(
+  pathname: string,
+  execution: ReportExecution,
+): ReportRoute | "missing" | undefined {
+  if (pathname === "/") return undefined;
+  const parsed = reportRoute(pathname);
+  if (Either.isLeft(parsed) || !execution.pages.some((page) => page.route === parsed.right)) return "missing";
+  return parsed.right;
+}
+
+function requestUrl(request: IncomingMessage): URL | undefined {
+  try {
+    return new URL(request.url ?? "/", "http://127.0.0.1");
+  } catch {
+    return undefined;
   }
-  return [...new Set(addresses)].map(urlFor);
+}
+
+function sendText(
+  response: ServerResponse,
+  status: number,
+  body: string,
+  headers: Readonly<Record<string, string>> = {},
+): void {
+  send(response, status, body, "text/plain; charset=utf-8", headers);
+}
+
+function send(
+  response: ServerResponse,
+  status: number,
+  body: string,
+  contentType: string,
+  headers: Readonly<Record<string, string>>,
+): void {
+  if (response.destroyed) return;
+  response.writeHead(status, { "content-type": contentType, ...headers });
+  response.end(body);
+}
+
+function isLoopbackHost(host: string): boolean {
+  return host === "127.0.0.1" || host === "::1" || host === "localhost";
+}
+
+function formatHost(host: string): string {
+  return host.includes(":") ? `[${host}]` : host;
+}
+
+function serverError(operation: NodeViewServerError["operation"], reason: string): NodeViewServerError {
+  return Object.freeze({ code: "report-view-server-failed", operation, reason });
+}
+
+function asError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
 }

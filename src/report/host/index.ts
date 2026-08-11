@@ -7,3 +7,55 @@ export type {
   ReportExecutionError,
 } from "./execute.ts";
 export type { ReportExecution } from "../execution/model.ts";
+export {
+  ReportConsole,
+  renderReportExecutionJson,
+  renderReportExecutionProblemsText,
+  renderReportExecutionText,
+  reportExecutionShowDocument,
+  showReport,
+} from "./presentation.ts";
+export type {
+  ReportConsoleError,
+  ReportConsoleService,
+  ReportShowError,
+  ReportShowRenderError,
+  ShowReportInput,
+} from "./presentation.ts";
+export { openReportViewSession } from "./view-session.ts";
+export type {
+  OpenReportViewSessionInput,
+  ReportViewOpenError,
+  ReportViewProblem,
+  ReportViewRebuildFailure,
+  ReportViewRevision,
+  ReportViewSession,
+  ReportViewSessionClosed,
+  ReportViewState,
+} from "./view-session.ts";
+export {
+  NodeReportViewHost,
+  NodeReportFileSystemLive,
+  NodeReportViewHostLive,
+  makeNodeReportFileSystem,
+  openNodeReportView,
+  openNodeReportViewServer,
+} from "./node.ts";
+export type {
+  NodeReportViewHostService,
+  NodeViewServerError,
+  ReportViewRequest,
+  ReportViewServer,
+  ViewOptions,
+} from "./node.ts";
+export { exportStaticReport, ReportFileSystem } from "./static.ts";
+export type {
+  ReportExportError,
+  ReportExportExecutionProblem,
+  ReportExportTargetExists,
+  ReportFileSystemError,
+  ReportFileSystemFailure,
+  ReportFileSystemService,
+  ReportHostOutputPath,
+  ReportStaticExportReceipt,
+} from "./static.ts";
