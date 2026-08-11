@@ -126,13 +126,18 @@ export const projectMemory = definePlugin<ToolOptions>({
 自定义命令的实现语义变化时提高 `revision`，动态输入写进 `inputs`。Plugin callback 在
 配置构造时执行，只返回声明；不要在 callback 里联网、读取凭证或启动进程。
 
+Agent Extension 的 `env` 是私有运行时通道，行为投影只保留变量名，不保存变量值。API key、
+token 或私有代理凭据可以放在这里；单独轮换凭据不会让旧结果失效。功能开关、记忆模型和工具
+版本等会改变被测行为的值，必须同时写入 Plugin `identity` 或 `instanceKey`，也可以在变化时
+提高 `behaviorRevision`。不要只把这类值藏进 `env`，否则 carry 身份无法知道行为已经变化。
+
 ## 与评估组一起复用 Docker Sandbox
 
 评估组负责同组串行和物理 Sandbox 复用，Plugin 负责条件组合。两者可以同时使用：
 
 - Experiment 继续用 `dockerSandbox(...)` 选择 image。
 - 同组真实运行的 Attempt 依次使用同一台 Docker Sandbox，不同组仍可并行。
-- Eval 或 Experiment Plugin 的 resource 在物理 Sandbox 中 materialize 一次，并为每条真实
+- Eval Plugin 的 resource 在物理 Sandbox 中 materialize 一次，并为每条真实
   Attempt 执行 prepare。
 - Group Plugin 只贡献 identity 与 requirements，不拥有 runtime resource。
 - Plugin 不会把评估组的数组位置解释成业务依赖。当前组内按规范化 Eval ID 稳定派发，

@@ -15,6 +15,10 @@ import {
   type SandboxCommandPlanRedaction,
 } from "../sandbox/commands.ts";
 import { runPairKey, type PreparedRunPair } from "./sandbox-selection.ts";
+import {
+  sandboxReusePoolDescriptor,
+  type SandboxReusePoolDescriptor,
+} from "./sandbox-reuse.ts";
 
 export interface CommandPlanOwner {
   readonly kind: "eval" | "eval-group" | "experiment" | "agent" | "provider";
@@ -47,16 +51,40 @@ export interface CommandPlanSlot {
   readonly steps: readonly CommandPlanStep[];
 }
 
-export interface CommandPlanLane {
-  readonly kind: "eval" | "eval-group";
-  readonly id: string;
-  readonly ordering: "independent" | "serial-attempt" | "serial-normalized-eval-id";
-  /** 复用物理实例的生命周期入口；fresh lane 省略，入口在每个 slot.steps 内。 */
-  readonly sharedBefore?: readonly CommandPlanStep[];
-  readonly slots: readonly CommandPlanSlot[];
-  /** 复用物理实例的生命周期出口；fresh lane 省略，出口在每个 slot.steps 内。 */
-  readonly sharedAfter?: readonly CommandPlanStep[];
+export interface CommandPlanPhysicalLifecycleTemplate {
+  readonly appliesTo: "each-physical-instance";
+  readonly enter: readonly CommandPlanStep[];
+  readonly exit: readonly CommandPlanStep[];
 }
+
+interface CommandPlanLaneBase {
+  readonly id: string;
+  readonly slots: readonly CommandPlanSlot[];
+}
+
+export type CommandPlanLane =
+  | (CommandPlanLaneBase & {
+      readonly kind: "eval";
+      readonly ordering: "independent";
+      readonly scope?: never;
+      readonly physicalLifecycleTemplate?: never;
+    })
+  | (CommandPlanLaneBase & {
+      readonly kind: "sandbox-reuse";
+      readonly ordering: "independent";
+      readonly scope:
+        | { readonly kind: "shared" }
+        | { readonly kind: "eval"; readonly evalId: string };
+      /** Applied independently to every physical instance; it creates no lane-wide before/after edge. */
+      readonly physicalLifecycleTemplate?: CommandPlanPhysicalLifecycleTemplate;
+    })
+  | (CommandPlanLaneBase & {
+      readonly kind: "eval-group";
+      readonly ordering: "serial-normalized-eval-id";
+      readonly scope?: never;
+      /** Applied independently to every replacement instance used by this capacity-one lane. */
+      readonly physicalLifecycleTemplate?: CommandPlanPhysicalLifecycleTemplate;
+    });
 
 export interface CommandPlanExperiment {
   readonly experimentId: string;
@@ -502,15 +530,72 @@ interface RowWithPair extends CommandPlanRowInput {
   readonly pair: PreparedRunPair;
 }
 
+type CommandPlanLaneSpec =
+  | { readonly kind: "eval"; readonly key: string; readonly id: string }
+  | { readonly kind: "eval-group"; readonly key: string; readonly id: string }
+  | {
+      readonly kind: "sandbox-reuse";
+      readonly key: string;
+      readonly id: string;
+      readonly scope:
+        | { readonly kind: "shared" }
+        | { readonly kind: "eval"; readonly evalId: string };
+    };
+
 function dispatchAttempts(row: CommandPlanRowInput): ReadonlySet<number> {
   return new Set(row.dispatch.flatMap((group) => group.attempts));
 }
 
-function laneFor(rows: readonly RowWithPair[]): CommandPlanLane {
+function reuseDescriptorFor(row: RowWithPair): SandboxReusePoolDescriptor | undefined {
+  return sandboxReusePoolDescriptor({
+    run: row.pair.run,
+    evalId: row.evalId,
+    ...(row.evalGroupId === undefined ? {} : { evalGroupId: row.evalGroupId }),
+    plan: row.pair.plan,
+  });
+}
+
+function laneSpecFor(row: RowWithPair): CommandPlanLaneSpec {
+  const descriptor = reuseDescriptorFor(row);
+  if (row.evalGroupId !== undefined) {
+    if (
+      descriptor?.scope.kind !== "eval-group" ||
+      descriptor.scope.evalGroupId !== row.evalGroupId
+    ) {
+      throw new Error(
+        `Command plan invariant failed: Eval Group ${row.evalGroupId} has no matching reuse-pool descriptor.`,
+      );
+    }
+    return { kind: "eval-group", key: descriptor.key, id: row.evalGroupId };
+  }
+  if (descriptor !== undefined) {
+    if (descriptor.scope.kind === "eval-group") {
+      throw new Error(`Command plan invariant failed: ungrouped Eval ${row.evalId} received a Group pool scope.`);
+    }
+    return {
+      kind: "sandbox-reuse",
+      key: descriptor.key,
+      id: descriptor.key,
+      scope: descriptor.scope,
+    };
+  }
+  return { kind: "eval", key: `eval:${row.evalId}`, id: row.evalId };
+}
+
+function physicalLifecycleTemplate(pair: PreparedRunPair): CommandPlanPhysicalLifecycleTemplate {
+  return Object.freeze({
+    appliesTo: "each-physical-instance" as const,
+    enter: physicalBefore(pair, true),
+    exit: physicalAfter(pair, true),
+  });
+}
+
+function laneFor(rows: readonly RowWithPair[], spec: CommandPlanLaneSpec): CommandPlanLane {
   const first = rows[0]!;
-  const isGroup = first.evalGroupId !== undefined;
-  const shared = isGroup || first.pair.run.sandboxReuse === true;
-  const sortedRows = isGroup ? [...rows].sort((a, b) => a.evalId.localeCompare(b.evalId)) : rows;
+  const shared = spec.kind !== "eval";
+  const sortedRows = spec.kind === "eval-group"
+    ? [...rows].sort((a, b) => a.evalId.localeCompare(b.evalId))
+    : rows;
   const slots: CommandPlanSlot[] = [];
   for (const row of sortedRows) {
     const dispatch = dispatchAttempts(row);
@@ -526,13 +611,25 @@ function laneFor(rows: readonly RowWithPair[]): CommandPlanLane {
     }
   }
   const hasDispatch = slots.some((slot) => slot.action === "dispatch");
+  if (spec.kind === "eval") {
+    return { kind: "eval", id: spec.id, ordering: "independent", slots };
+  }
+  if (spec.kind === "sandbox-reuse") {
+    return {
+      kind: "sandbox-reuse",
+      id: spec.id,
+      ordering: "independent",
+      scope: spec.scope,
+      ...(hasDispatch ? { physicalLifecycleTemplate: physicalLifecycleTemplate(first.pair) } : {}),
+      slots,
+    };
+  }
   return {
-    kind: isGroup ? "eval-group" : "eval",
-    id: first.evalGroupId ?? first.evalId,
-    ordering: isGroup ? "serial-normalized-eval-id" : shared ? "serial-attempt" : "independent",
-    ...(shared && hasDispatch ? { sharedBefore: physicalBefore(first.pair, true) } : {}),
+    kind: "eval-group",
+    id: spec.id,
+    ordering: "serial-normalized-eval-id",
+    ...(hasDispatch ? { physicalLifecycleTemplate: physicalLifecycleTemplate(first.pair) } : {}),
     slots,
-    ...(shared && hasDispatch ? { sharedAfter: physicalAfter(first.pair, true) } : {}),
   };
 }
 
@@ -594,14 +691,17 @@ export function assembleCommandPlan(input: AssembleCommandPlanInput): CommandPla
 
   const experiments: CommandPlanExperiment[] = [];
   for (const [experimentId, experimentRows] of byExperiment) {
-    const byLane = new Map<string, RowWithPair[]>();
+    const byLane = new Map<string, { readonly spec: CommandPlanLaneSpec; readonly rows: RowWithPair[] }>();
     for (const row of experimentRows) {
-      const key = row.evalGroupId === undefined ? `eval:${row.evalId}` : `group:${row.evalGroupId}`;
-      const current = byLane.get(key) ?? [];
-      current.push(row);
-      byLane.set(key, current);
+      const spec = laneSpecFor(row);
+      const current = byLane.get(spec.key);
+      if (current === undefined) {
+        byLane.set(spec.key, { spec, rows: [row] });
+      } else {
+        current.rows.push(row);
+      }
     }
-    const lanes = [...byLane.values()].map(laneFor);
+    const lanes = [...byLane.values()].map(({ rows: laneRows, spec }) => laneFor(laneRows, spec));
     const hasDispatch = lanes.some((lane) => lane.slots.some((slot) => slot.action === "dispatch"));
     const representative = experimentRows[0]!.pair;
     experiments.push({
@@ -618,7 +718,11 @@ export function assembleCommandPlan(input: AssembleCommandPlanInput): CommandPla
   for (const experiment of experiments) {
     const groups = [
       experiment.beforeLanes,
-      ...experiment.lanes.flatMap((lane) => [lane.sharedBefore ?? [], ...lane.slots.map((slot) => slot.steps), lane.sharedAfter ?? []]),
+      ...experiment.lanes.flatMap((lane) => [
+        lane.physicalLifecycleTemplate?.enter ?? [],
+        ...lane.slots.map((slot) => slot.steps),
+        lane.physicalLifecycleTemplate?.exit ?? [],
+      ]),
       experiment.afterLanes,
     ];
     for (const steps of groups) {

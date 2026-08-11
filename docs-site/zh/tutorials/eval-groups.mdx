@@ -61,6 +61,7 @@ import queryIndex from "./02-query/eval.ts";
 
 export default defineEvalGroup({
   evals: [buildIndex, queryIndex],
+  onUnavailable: "stop-group",
 });
 ```
 
@@ -71,6 +72,10 @@ export default defineEvalGroup({
 `evals` 数组只声明成员，不声明业务顺序。Runner 始终按规范化 Eval ID 稳定排序；只调整
 数组位置不会改变调度行为或组指纹。需要“先构建、后查询”这类结果依赖时，把两个步骤放进
 同一条 Eval。Eval Group 的业务排序 API 还没有实现。
+
+`onUnavailable` 是必填策略。`"stop-group"` 在物理 Sandbox 无法创建、重置或准备时停止
+该组后续派发；`"replace-sandbox"` 会先退休当前实例，并让下一条 slot 尝试建立替代实例。
+省略策略会在加载 `eval-group.ts` 时直接报错，避免运行器替作者猜测失败后的成本与副作用。
 
 一条评估用例最多属于一个组，同一组也不能重复列出同一条。Experiment 与 CLI 仍负责筛选
 评估用例；选中 `workflow/02-query` 不会自动把 `workflow/01-index` 拉进本轮运行。
@@ -154,6 +159,7 @@ export default defineEvalGroup({
     ctx.progress({ message: "准备组内公共工具链" });
     await sandbox.runCommandOrThrow("npm", ["install", "--global", "tsx@4.22.4"]);
   }),
+  onUnavailable: "stop-group",
 });
 ```
 
@@ -183,6 +189,7 @@ export default defineEvalGroup({
 | `eval-group-member-unresolved` | 从评估入口导入工厂原本返回的默认对象，不要重建对象或写字符串 ID |
 | `eval-group-member-overlap` | 每条评估用例只放进一个组，并且只列一次 |
 | `eval-group-member-layer` | 把成员的 `template`、`.setup()` 和 `.teardown()` 移到评估组或 Experiment |
+| 加载时提示缺少 `onUnavailable` | 显式选择 `"stop-group"` 或 `"replace-sandbox"`，不要省略失败策略 |
 | `eval-group-sandbox-reuse-conflict` | 从 Experiment 删除 `sandboxReuse: true` |
 | `eval-group-direct-agent` | 改用 Sandbox 型 Agent，或让这个 Experiment 不再选择分组评估 |
 | `sandbox.reuse-unavailable` | 换成支持 Sandbox 复用的 Provider |

@@ -79,7 +79,10 @@ export interface ClaudeCodeConfig {
    * 两者都没有则用 Anthropic 官方端点(claude CLI 默认行为)。
    */
   baseUrl?: string;
-  /** Extra process environment for Claude Code. Values stay private runtime data. */
+  /**
+   * Extra process environment for Claude Code. Values stay private runtime data and do not enter carry identity.
+   * Mirror behavior-changing non-secret values into Experiment flags or the owning Plugin identity.
+   */
   env?: Readonly<globalThis.Record<string, string>>;
   /**
    * 最多跑几个 tool-use 轮次(→ `--max-turns`)。

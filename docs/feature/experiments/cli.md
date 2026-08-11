@@ -131,3 +131,4 @@ argv、配置发现或 selector 无法形成 Invocation 时，命令以非零状
 - [缓存与携带](cache.md) —— carried / accepted 的资格和写入。
 - [Record CLI](../record/cli.md) —— `show`、locator 与 Record 维护命令。
 - [Record Library](../record/library.md) —— receipt、reader、writer 与通道。
+

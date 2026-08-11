@@ -101,6 +101,7 @@ export {
   type CommandPlanExperiment,
   type CommandPlanLane,
   type CommandPlanOwner,
+  type CommandPlanPhysicalLifecycleTemplate,
   type CommandPlanRowInput,
   type CommandPlanSlot,
   type CommandPlanStep,

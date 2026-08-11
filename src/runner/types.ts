@@ -713,7 +713,10 @@ export interface EvalAuthorFields {
 type EvalTestReturn = void | Promise<void> | Effect.Effect<void, unknown, never>;
 
 /** 作者输入：id 归 discovery、evaluationKind 归 factory、configHash 归 planning，作者都不能填写。 */
-export type EvalInput = EvalAuthorFields & {
+export type EvalInput<
+  Sandbox extends SandboxLayer | undefined = SandboxLayer | undefined,
+> = Omit<EvalAuthorFields, "sandbox"> & {
+  sandbox?: Sandbox;
   id?: IdComesFromFilePath;
   evaluationKind?: EvaluationKindComesFromFactory;
   configHash?: ConfigHashComesFromPlanning;
@@ -721,7 +724,10 @@ export type EvalInput = EvalAuthorFields & {
 };
 
 /** 计分制作者输入，只有 test 的上下文不同。 */
-export type ScoreEvalInput = EvalAuthorFields & {
+export type ScoreEvalInput<
+  Sandbox extends SandboxLayer | undefined = SandboxLayer | undefined,
+> = Omit<EvalAuthorFields, "sandbox"> & {
+  sandbox?: Sandbox;
   id?: IdComesFromFilePath;
   evaluationKind?: EvaluationKindComesFromFactory;
   configHash?: ConfigHashComesFromPlanning;
@@ -729,14 +735,16 @@ export type ScoreEvalInput = EvalAuthorFields & {
 };
 
 /** Factory 完成默认归一后的 Eval 字段；Definition 不再复用作者输入的 optional 半状态。 */
-export interface EvalDefinitionFields {
+export interface EvalDefinitionFields<
+  Sandbox extends SandboxLayer | undefined = SandboxLayer | undefined,
+> {
   readonly description?: string;
   readonly tags: readonly string[];
   /**
    * 保留“作者省略”和“作者显式声明空 layer”的来源差异：Direct Agent 只允许前者，
    * Sandbox link 则把省略侧视为 command-only。不能在 factory 阶段补成 sandboxLayer()。
    */
-  readonly sandbox?: SandboxLayer;
+  readonly sandbox?: Sandbox;
   readonly plugins: readonly PluginInstance<"eval">[];
   readonly judge?: JudgeDeclaration;
   readonly reporters: readonly Reporter[];
@@ -749,21 +757,27 @@ export interface EvalDefinitionFields {
 }
 
 /** Factory 产物保留精确 evaluationKind / context，并带模块私有品牌，不能由对象字面量伪造。 */
-
-export interface EvalDefinition<Kind extends EvaluationKind, Context> extends EvalDefinitionFields {
+export interface EvalDefinition<
+  Kind extends EvaluationKind,
+  Context,
+  Sandbox extends SandboxLayer | undefined = SandboxLayer | undefined,
+> extends EvalDefinitionFields<Sandbox> {
   readonly evaluationKind: Kind;
   test(t: Context): EvalTestReturn;
   readonly [EVAL_DEFINITION]: true;
 }
 
 export type AnyEvalDefinition =
-  | EvalDefinition<"pass", TestContext>
-  | EvalDefinition<"score", ScoreTestContext>;
+  | EvalDefinition<"pass", TestContext, SandboxLayer | undefined>
+  | EvalDefinition<"score", ScoreTestContext, SandboxLayer | undefined>;
 
 const EVAL_GROUP_DEFINITION: unique symbol = Symbol("niceeval.evalGroupDefinition");
 
 /** A group member must not own a Sandbox template or instance lifecycle. Runtime discovery revalidates this. */
-export type EvalGroupMember = AnyEvalDefinition;
+export type EvalGroupMemberSandbox = SandboxLayer<"command-only", "prepare-only"> | undefined;
+export type EvalGroupMember =
+  | EvalDefinition<"pass", TestContext, EvalGroupMemberSandbox>
+  | EvalDefinition<"score", ScoreTestContext, EvalGroupMemberSandbox>;
 export interface EvalGroupInput<Sandbox extends SandboxLayer | undefined = SandboxLayer | undefined> {
   readonly evals: readonly [EvalGroupMember, ...EvalGroupMember[]];
   readonly sandbox?: Sandbox;
@@ -784,11 +798,15 @@ export function isEvalGroupDefinition(value: unknown): value is EvalGroupDefinit
 }
 
 /** @internal 唯一写入 Definition 私有品牌的构造辅助；不从公共入口导出。 */
-export function brandEvalDefinition<Kind extends EvaluationKind, Context>(
-  value: EvalDefinitionFields & { evaluationKind: Kind; test(t: Context): EvalTestReturn },
-): EvalDefinition<Kind, Context> {
+export function brandEvalDefinition<
+  Kind extends EvaluationKind,
+  Context,
+  Sandbox extends SandboxLayer | undefined,
+>(
+  value: EvalDefinitionFields<Sandbox> & { evaluationKind: Kind; test(t: Context): EvalTestReturn },
+): EvalDefinition<Kind, Context, Sandbox> {
   Object.defineProperty(value, EVAL_DEFINITION, { value: true });
-  return Object.freeze(value) as EvalDefinition<Kind, Context>;
+  return Object.freeze(value) as EvalDefinition<Kind, Context, Sandbox>;
 }
 
 /** Definition 之后由 discovery 一次性补齐的不可变事实。 */

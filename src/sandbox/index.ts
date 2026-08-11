@@ -60,6 +60,7 @@ export {
 export type {
   SandboxLayer,
   SandboxLayerKind,
+  SandboxLayerLifecycle,
   DockerImageSource,
   DockerfileSource,
   DockerSandboxSource,

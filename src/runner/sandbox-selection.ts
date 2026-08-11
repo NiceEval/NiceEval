@@ -35,6 +35,7 @@ import {
   type SelectedResourceDemand,
   type SelectedResourceEnvelope,
 } from "../plugin/resource-runtime.ts";
+import { sandboxReusePoolDescriptor } from "./sandbox-reuse.ts";
 
 export interface LinkedRunPair {
   readonly key: string;
@@ -137,21 +138,23 @@ function resourceCohortFor(entry: Omit<PreparedRunPair, "resourceEnvelope">): Re
   if (entry.plan._tag === "Direct") return undefined;
   const physical = digestOf(entry.plan.providerPlan.identity);
   const experimentId = entry.run.experimentId;
-  const group = entry.evalDef.evalGroup;
-  if (group !== undefined) {
+  const descriptor = sandboxReusePoolDescriptor({
+    run: entry.run,
+    evalId: entry.evalDef.id,
+    ...(entry.evalDef.evalGroup === undefined ? {} : { evalGroupId: entry.evalDef.evalGroup.id }),
+    plan: entry.plan,
+  });
+  if (descriptor?.scope.kind === "eval-group") {
     return Object.freeze({
       kind: "eval-group" as const,
-      id: JSON.stringify(["eval-group", experimentId, group.id, physical]),
+      id: JSON.stringify(["eval-group", experimentId, descriptor.key]),
       physical,
     });
   }
-  if (entry.run.sandboxReuse === true) {
-    const scope = entry.plan.pair.hasEvalLifecycleHooks
-      ? ["eval", entry.evalDef.id]
-      : ["shared"];
+  if (descriptor !== undefined) {
     return Object.freeze({
       kind: "sandbox-reuse" as const,
-      id: JSON.stringify(["sandbox-reuse", experimentId, physical, scope]),
+      id: JSON.stringify(["sandbox-reuse", experimentId, descriptor.key]),
       physical,
     });
   }

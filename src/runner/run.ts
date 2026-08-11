@@ -6,7 +6,6 @@ import { Effect, Cause, Data, Deferred, Either, Exit, Option } from "effect";
 import { probeJudgeEffect } from "../assertions/judge.ts";
 import { t } from "../i18n/index.ts";
 import { cacheKey, planProjectTarget } from "./fingerprint.ts";
-import { agentInstallPlansForRun } from "./config-identity.ts";
 import { OtelReceiverPool } from "../o11y/otlp/turn-otel.ts";
 import {
   errorFromThrown,
@@ -43,7 +42,7 @@ import { attemptOrigin, artifactPrepareTimingHook, createRunTimingRecorder, runO
 import { buildFailureOrigin, startSandboxBuilds } from "../sandbox/build-coordinator.ts";
 import { ArtifactPrepareCoordinator } from "../agents/provisioner.ts";
 import { collectBuildPreparation, toBuildPreparation } from "./build-preparation.ts";
-import { digestOf, type BuildKey } from "../sandbox/identity.ts";
+import type { BuildKey } from "../sandbox/identity.ts";
 import { firstLine, getEnv } from "../util.ts";
 import { recordFact, type FactValue } from "../shared/facts.ts";
 import { runReporter, emitReporterEvent, scopeReporter, summarize } from "./report.ts";
@@ -94,6 +93,7 @@ import {
   prepareRunnerRecordReuse,
 } from "./record.ts";
 import { bindRunnerRunObservabilityDiagnosticsV1 } from "../o11y/record/runner-producer.ts";
+import { sandboxReusePoolDescriptor } from "./sandbox-reuse.ts";
 
 export class RunModeConflictError extends Data.TaggedError("RunModeConflictError")<{
   readonly keepSandbox: NonNullable<RunOptions["keepSandbox"]>;
@@ -134,25 +134,6 @@ function reuseResultRequiresRetirement(result: EvalResult): boolean {
 }
 
 export type { AgentRun, RunOptions } from "./types.ts";
-
-type SandboxReusePoolScope =
-  | { readonly _tag: "Shared" }
-  | { readonly _tag: "Eval"; readonly evalId: string }
-  | { readonly _tag: "EvalGroup"; readonly evalGroupId: string };
-
-/** 复用池只按物理 Sandbox 与物理 lifecycle 分组；prepare commands 在每次 lease 后重放。 */
-export function sandboxReusePoolKey(input: {
-  readonly providerPlan: JsonValue;
-  readonly agentInstalls: readonly JsonValue[];
-  readonly scope: SandboxReusePoolScope;
-}): string {
-  return digestOf({
-    version: 1,
-    providerPlan: input.providerPlan,
-    agentInstalls: [...input.agentInstalls],
-    scope: input.scope,
-  });
-}
 
 /** Only declared, configured capabilities are prechecked. A missing model or
  * key is an ordinary consumed-Fact unavailable outcome and does no network I/O. */
@@ -775,16 +756,12 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     | { readonly _tag: "Fresh" }
     | { readonly _tag: "Reuse"; readonly pool: ReusableSandboxPool };
   const reusePoolKeyOf = (a: Attempt): string | undefined => {
-    if ((!a.run.sandboxReuse && a.evalDef.evalGroup === undefined) || a.run.agent.kind !== "sandbox" || a.plan._tag !== "Sandbox") return undefined;
-    return sandboxReusePoolKey({
-      providerPlan: a.plan.providerPlan.identity,
-      agentInstalls: [...agentInstallPlansForRun(a.run)],
-      scope: a.evalDef.evalGroup !== undefined
-        ? { _tag: "EvalGroup", evalGroupId: a.evalDef.evalGroup.id }
-        : a.plan.pair.hasEvalLifecycleHooks
-          ? { _tag: "Eval", evalId: a.evalDef.id }
-          : { _tag: "Shared" },
-    });
+    return sandboxReusePoolDescriptor({
+      run: a.run,
+      evalId: a.evalDef.id,
+      ...(a.evalDef.evalGroup === undefined ? {} : { evalGroupId: a.evalDef.evalGroup.id }),
+      plan: a.plan,
+    })?.key;
   };
   const acquiredReuseAttempts = new WeakSet<Attempt>();
   const authorizedReuseAttempts = new WeakSet<Attempt>();

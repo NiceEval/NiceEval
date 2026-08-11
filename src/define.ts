@@ -9,6 +9,7 @@ import type {
   EvalGroupDefinition,
   EvalGroupInput,
   EvalDefinition,
+  EvalDefinitionFields,
   ExperimentDefinition,
   ExperimentInput,
   SandboxAgent,
@@ -112,7 +113,9 @@ export function defineAgent(def: DirectAgentDef): DirectAgent {
 }
 
 /** 会话型 eval(通过制:一个 eval 折叠成一分)。禁止提供 id —— 从路径推导。 */
-export function defineEval(def: EvalInput): EvalDefinition<"pass", TestContext> {
+export function defineEval<
+  const Sandbox extends SandboxLayer | undefined = undefined,
+>(def: EvalInput<Sandbox>): EvalDefinition<"pass", TestContext, Sandbox> {
   if (Object.hasOwn(def, "id")) {
     throw new Error(t("define.evalIdRejected"));
   }
@@ -133,9 +136,11 @@ export function defineEval(def: EvalInput): EvalDefinition<"pass", TestContext> 
  * 计分制 eval:Fact verdict uses 与 Fact score uses 可以读取同一份证据；正常返回由 Runner
  * 自动关闭计分收集器。字段与 `defineEval` 同形，禁止提供 id，由发现期推导。
  */
-export function defineScoreEval(
-  def: ScoreEvalInput,
-): EvalDefinition<"score", ScoreTestContext> {
+export function defineScoreEval<
+  const Sandbox extends SandboxLayer | undefined = undefined,
+>(
+  def: ScoreEvalInput<Sandbox>,
+): EvalDefinition<"score", ScoreTestContext, Sandbox> {
   if (Object.hasOwn(def, "id")) {
     throw new Error(t("define.scoreEvalIdRejected"));
   }
@@ -192,7 +197,9 @@ export function defineExperiment(def: ExperimentInput): ExperimentDefinition {
   });
 }
 
-function normalizeEvalFields(def: EvalInput | ScoreEvalInput) {
+function normalizeEvalFields<
+  const Sandbox extends SandboxLayer | undefined,
+>(def: EvalInput<Sandbox> | ScoreEvalInput<Sandbox>): EvalDefinitionFields<Sandbox> {
   return {
     ...(def.description !== undefined ? { description: def.description } : {}),
     tags: Object.freeze([...(def.tags ?? [])]),
@@ -285,6 +292,6 @@ export function defineConfig(config: Config): Config {
  */
 export function defineSandbox(
   def: CustomProviderSandboxOptions,
-): SandboxLayer<"template-bearing"> {
+): SandboxLayer<"template-bearing", "prepare-only"> {
   return customProviderSandbox(def);
 }

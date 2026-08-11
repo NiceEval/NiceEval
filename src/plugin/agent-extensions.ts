@@ -21,6 +21,7 @@ export interface CodexAgentExtensionInput {
   readonly skills?: readonly SkillSpec[];
   readonly plugins?: readonly CodexPluginSpec[];
   readonly configFile?: string;
+  /** Private runtime values; behavior-changing values also belong in the owning Plugin identity. */
   readonly env?: Readonly<globalThis.Record<string, string>>;
   readonly postSetup?: readonly SandboxCommand[];
   readonly preTeardown?: readonly SandboxCommand[];
@@ -31,6 +32,7 @@ export interface ClaudeCodeAgentExtensionInput {
   readonly skills?: readonly SkillSpec[];
   readonly plugins?: readonly ClaudeCodePluginSpec[];
   readonly settingsFile?: string;
+  /** Private runtime values; behavior-changing values also belong in the owning Plugin identity. */
   readonly env?: Readonly<globalThis.Record<string, string>>;
   readonly postSetup?: readonly SandboxCommand[];
   readonly preTeardown?: readonly SandboxCommand[];

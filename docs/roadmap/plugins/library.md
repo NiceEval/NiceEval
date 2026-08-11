@@ -322,3 +322,4 @@ export const pnpm = definePlugin({
 
 Plugin 不能安装 Record migration registry 或 converter。`niceeval migrate` 只使用 NiceEval
 内部已知的格式与官方事实迁移，不按 Record 内容动态 import Plugin。
+

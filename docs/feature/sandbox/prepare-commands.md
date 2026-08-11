@@ -107,7 +107,7 @@ template 预装只是让 `probe` 首测即命中的一种手段。
 
 ## `--dry --commands` 的可证明边界
 
-`niceeval exp <选择> --dry --commands` 仍按每条 Attempt 展示 prepare，不把 reuse 误写成“命令只执行一次”。复用只把 physical lifecycle 提到 lane 外；每个 dispatch slot 仍列出自己的 prepare 与 agent.ensure，carry slot 则明确是 `carried · no commands`。
+`niceeval exp <选择> --dry --commands` 仍按每条 Attempt 展示 prepare，不把 reuse 误写成“命令只执行一次”。复用 lane 另带每台实际实例各自套用的 physical lifecycle template；每个 dispatch slot 仍列出自己的 prepare 与 agent.ensure，carry slot 则明确是 `carried · no commands`。
 
 命令工厂把执行闭包已经消费的同一份规范化数据私绑到计划：
 

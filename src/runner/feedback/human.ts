@@ -1331,11 +1331,11 @@ function renderCommandPlanSteps(
 
 function commandPlanLaneLabel(lane: CommandPlanLane): string {
   const ordering = lane.ordering === "serial-normalized-eval-id"
-    ? "serial · normalized Eval ID"
-    : lane.ordering === "serial-attempt"
-      ? "serial · attempt order"
-      : "independent slots";
-  return `lane ${lane.kind}:${lane.id} · ${ordering}`;
+    ? "serial · normalized Eval ID, then attempt"
+    : "no guaranteed slot order";
+  if (lane.kind !== "sandbox-reuse") return `lane ${lane.kind}:${lane.id} · ${ordering}`;
+  const scope = lane.scope.kind === "shared" ? "shared" : `eval:${lane.scope.evalId}`;
+  return `lane sandbox-reuse:${scope}@${lane.id.slice(-12)} · ${ordering}`;
 }
 
 /**
@@ -1360,9 +1360,13 @@ export function renderHumanCommandPlan(plan: CommandPlan, options: HumanCommandP
     renderCommandPlanSteps(rows, experiment.beforeLanes, contentWidth, "");
     for (const lane of experiment.lanes) {
       pushCommandPlanLine(rows, commandPlanLaneLabel(lane), contentWidth);
-      if ((lane.sharedBefore?.length ?? 0) > 0) {
-        pushCommandPlanLine(rows, "  shared physical lifecycle · enter", contentWidth, "    ");
-        renderCommandPlanSteps(rows, lane.sharedBefore!, contentWidth, "    ");
+      const physical = lane.physicalLifecycleTemplate;
+      if (physical !== undefined) {
+        pushCommandPlanLine(rows, "  physical lifecycle template · each physical instance", contentWidth, "    ");
+        pushCommandPlanLine(rows, "    enter", contentWidth, "      ");
+        renderCommandPlanSteps(rows, physical.enter, contentWidth, "      ");
+        pushCommandPlanLine(rows, "    exit", contentWidth, "      ");
+        renderCommandPlanSteps(rows, physical.exit, contentWidth, "      ");
       }
       for (const slot of lane.slots) {
         if (slot.action === "carried") {
@@ -1381,10 +1385,6 @@ export function renderHumanCommandPlan(plan: CommandPlan, options: HumanCommandP
           "    ",
         );
         renderCommandPlanSteps(rows, slot.steps, contentWidth, "    ");
-      }
-      if ((lane.sharedAfter?.length ?? 0) > 0) {
-        pushCommandPlanLine(rows, "  shared physical lifecycle · exit", contentWidth, "    ");
-        renderCommandPlanSteps(rows, lane.sharedAfter!, contentWidth, "    ");
       }
     }
     renderCommandPlanSteps(rows, experiment.afterLanes, contentWidth, "");
