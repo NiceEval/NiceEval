@@ -197,6 +197,13 @@ Lifecycle Repo 保留原生测试 runner 的默认并行。每条 case 按场景
 - 下一次独立消费者可以正常启动；
 - cleanup 失败不会遮蔽原始失败。
 
+### Eval Group shared Sandbox
+
+`e2e/lifecycle/test/eval-group-shared-sandbox.test.ts` 是 Eval Group 物理生命周期的单边界 owner。
+它用两个同时进入调度的 Group 证明：不同 Group 可以并行；同一 Group 的成员按规范化 Eval ID 串行；成员之间复用同一台
+Docker Sandbox，`$HOME` 中的 Group 状态得以保留而工作目录会重置；运行结束后两台 owned Sandbox 都已释放。
+测试只通过安装后 CLI 的 result 事件与 `show --history --json` 读回公开结果，不读取 `.niceeval/` 私有布局。
+
 ## 单项重跑
 
 任何 E2E 必须能按 Repo、文件和标题重跑：
