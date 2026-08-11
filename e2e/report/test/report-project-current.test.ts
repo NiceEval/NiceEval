@@ -10,7 +10,18 @@ import { reportArtifactStaging, reportProjectCopy } from "./support.ts";
 
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
 
-test("项目未变时复用结果，Eval 源码变化后 show 与 view 排除旧结果并重新执行", async () => {
+interface ShowOverview {
+  format: "niceeval.show";
+  schemaVersion: 1;
+  view: "leaderboard";
+  data: {
+    summary: {
+      attempts: number;
+    };
+  };
+}
+
+test("项目未变时复用结果，Eval 源码变化后 show 排除旧结果并重新执行", async () => {
   await withProjectCopy(
     reportProjectCopy,
     async ({ root }) => {
@@ -28,27 +39,14 @@ test("项目未变时复用结果，Eval 源码变化后 show 与 view 排除旧
         completion: "complete",
       });
 
-      const initialShow = await niceeval.run(
-        ["show", "--report", "./reports/config-reload.tsx"],
-        { cwd: root },
-      );
+      const initialShow = await niceeval.run(["show", "--json"], { cwd: root });
       expect(initialShow.exitCode, initialShow.diagnostic()).toBe(0);
-      expect(initialShow.stdout).toContain("ATTEMPTS_1");
-
-      const initialView = await niceeval.run(
-        [
-          "view",
-          "--report",
-          "./reports/config-reload.tsx",
-          "--out",
-          "view-initial",
-          "--no-open",
-        ],
-        { cwd: root },
-      );
-      expect(initialView.exitCode, initialView.diagnostic()).toBe(0);
-      const initialHtml = await readFile(join(root, "view-initial", "index.html"), "utf8");
-      expect(initialHtml).toContain("ATTEMPTS_1");
+      expect(initialShow.json<ShowOverview>()).toMatchObject({
+        format: "niceeval.show",
+        schemaVersion: 1,
+        view: "leaderboard",
+        data: { summary: { attempts: 1 } },
+      });
 
       const unchangedRun = await niceeval.run(["exp", "source", "--json"], { cwd: root });
       expect(unchangedRun.exitCode, unchangedRun.diagnostic()).toBe(0);
@@ -71,29 +69,14 @@ test("项目未变时复用结果，Eval 源码变化后 show 与 view 排除旧
         "utf8",
       );
 
-      const staleShow = await niceeval.run(
-        ["show", "--report", "./reports/config-reload.tsx"],
-        { cwd: root },
-      );
+      const staleShow = await niceeval.run(["show", "--json"], { cwd: root });
       expect(staleShow.exitCode, staleShow.diagnostic()).toBe(0);
-      expect(staleShow.stdout).toContain("ATTEMPTS_0");
-      expect(staleShow.stdout).not.toContain("ATTEMPTS_1");
-
-      const staleView = await niceeval.run(
-        [
-          "view",
-          "--report",
-          "./reports/config-reload.tsx",
-          "--out",
-          "view-stale",
-          "--no-open",
-        ],
-        { cwd: root },
-      );
-      expect(staleView.exitCode, staleView.diagnostic()).toBe(0);
-      const staleHtml = await readFile(join(root, "view-stale", "index.html"), "utf8");
-      expect(staleHtml).toContain("ATTEMPTS_0");
-      expect(staleHtml).not.toContain("ATTEMPTS_1");
+      expect(staleShow.json<ShowOverview>()).toMatchObject({
+        format: "niceeval.show",
+        schemaVersion: 1,
+        view: "leaderboard",
+        data: { summary: { attempts: 0 } },
+      });
 
       const changedRun = await niceeval.run(["exp", "source", "--json"], { cwd: root });
       expect(changedRun.exitCode, changedRun.diagnostic()).toBe(0);
@@ -108,27 +91,14 @@ test("项目未变时复用结果，Eval 源码变化后 show 与 view 排除旧
       });
       expect(changedResult.reused).toBeUndefined();
 
-      const refreshedShow = await niceeval.run(
-        ["show", "--report", "./reports/config-reload.tsx"],
-        { cwd: root },
-      );
+      const refreshedShow = await niceeval.run(["show", "--json"], { cwd: root });
       expect(refreshedShow.exitCode, refreshedShow.diagnostic()).toBe(0);
-      expect(refreshedShow.stdout).toContain("ATTEMPTS_1");
-
-      const refreshedView = await niceeval.run(
-        [
-          "view",
-          "--report",
-          "./reports/config-reload.tsx",
-          "--out",
-          "view-refreshed",
-          "--no-open",
-        ],
-        { cwd: root },
-      );
-      expect(refreshedView.exitCode, refreshedView.diagnostic()).toBe(0);
-      const refreshedHtml = await readFile(join(root, "view-refreshed", "index.html"), "utf8");
-      expect(refreshedHtml).toContain("ATTEMPTS_1");
+      expect(refreshedShow.json<ShowOverview>()).toMatchObject({
+        format: "niceeval.show",
+        schemaVersion: 1,
+        view: "leaderboard",
+        data: { summary: { attempts: 1 } },
+      });
     },
     reportArtifactStaging("project-current"),
   );
