@@ -4,7 +4,7 @@ sidebarTitle: "发布静态报告"
 description: "用 view --out 导出一个可离线打开、与源 Record 脱离的自包含报告站。"
 ---
 
-`niceeval view --latest --out <目录>` 或显式 `niceeval view --run <id> --out <目录>` 选择已发布的 Run，形成 `AnalysisSampleHandle`，投影 Report 所需的 Attachment，并导出一次完成的 `ReportExecution`。它是分享结果的导出路径。
+`niceeval view --latest --out <目录>` 或显式 `niceeval view --run <id> --out <目录>` 选择已发布的 Run，并形成 `AnalysisSampleHandle`。它投影 Report 所需的 Attachment，并导出一次完成的 `ReportExecution`。这是分享结果的导出路径。
 
 ```sh
 npx niceeval view --latest --experiment checkout \
