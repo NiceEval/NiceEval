@@ -381,7 +381,13 @@ export async function renameExperiment(options: ExperimentRenameOptions): Promis
   const firstDef = targetDefs.find((evalDef) => evalDef.id === first.evalId) ?? targetDefs[0];
   const experimentInfo = firstDef === undefined
     ? undefined
-    : experimentRunInfo(internal.targetRun, firstPair.plan, plansByEval, internal.config, firstDef.judge);
+    : experimentRunInfo(
+        internal.targetRun,
+        firstPair.plan,
+        plansByEval,
+        internal.config,
+        resolveJudge(internal.targetRun.judge, firstDef.judge, internal.config.judge),
+      );
   const snapshot = await writer.run({
     experimentId: internal.targetExperiment.id,
     agent: internal.targetRun.agent.name,
@@ -480,7 +486,6 @@ function agentRunOf(experiment: DiscoveredExperiment, selectedEvalIds: readonly 
     ...(experiment.description === undefined ? {} : { description: experiment.description }),
     ...(Object.keys(experiment.labels).length === 0 ? {} : { labels: experiment.labels }),
     selectedEvalIds,
-    strict: false,
     ...(experiment.maxConcurrency === undefined ? {} : { maxConcurrency: experiment.maxConcurrency }),
     ...(experiment.setup === undefined ? {} : { setup: experiment.setup }),
     ...(experiment.teardown === undefined ? {} : { teardown: experiment.teardown }),

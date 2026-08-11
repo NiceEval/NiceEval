@@ -37,10 +37,10 @@ test("改变一个 Eval 后只重新派发该 identity，未改变的 Eval 继�
 
     const alphaPath = join(root, "evals", "simple", "alpha.eval.ts");
     const alphaSource = readFileSync(alphaPath, "utf8");
-    expect(alphaSource).toContain('t.messageIncludes("runner-fixture-ok")');
+    expect(alphaSource).toContain('description: "runner carry alpha"');
     writeFileSync(
       alphaPath,
-      alphaSource.replace('t.messageIncludes("runner-fixture-ok")', "t.messageIncludes(/runner-fixture-ok/)"),
+      alphaSource.replace('description: "runner carry alpha"', 'description: "runner carry alpha changed"'),
       "utf8",
     );
 

@@ -18,7 +18,7 @@ interface ExpEvent {
 
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
 
-test("值 matcher 与通过制 handle modifiers 在本轮确定性回复上折叠为 passed", async () => {
+test("值 Match 通过原生 Fact 消费折叠为 passed", async () => {
   await withProjectCopy(
     evalProjectCopy,
     async ({ root }) => {
@@ -39,7 +39,10 @@ test("值 matcher 与通过制 handle modifiers 在本轮确定性回复上折�
       const record = await openRecord(join(root, ".niceeval"));
       const attempt = resolveLocator(record, locator);
       expect(attempt.result.verdict).toBe("passed");
-      expect(JSON.stringify(attempt.result.assertions)).toContain("two values");
+      expect(attempt.result.evaluationAlgorithm).toBe("fact-use/v3");
+      expect(attempt.result.factResults).toContainEqual(
+        expect.objectContaining({ name: "satisfies(two values)", outcome: "passed" }),
+      );
     },
     evalArtifactStaging("values"),
   );

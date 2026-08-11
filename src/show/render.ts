@@ -5,7 +5,8 @@
 // 盘上。全部纯函数(时间经 now 显式传入),证据数据由调用方 await 好了递进来。
 
 import { join, relative } from "node:path";
-import type { AssertionResult, CommandExitEvidence, CommandLimitAttribution, EvalResult, LocalizedText, SandboxBuildRecord, TimingActivity, TraceSpan, Verdict } from "../types.ts";
+import type { CommandExitEvidence, CommandLimitAttribution, EvalResult, LocalizedText, SandboxBuildRecord, TimingActivity, TraceSpan, Verdict } from "../types.ts";
+import type { EvaluationFactResult, ScoreFactUseResult, VerdictFactUseResult } from "../assertions/types.ts";
 import type { AttemptEvidence, AttemptHandle, Run } from "../record/index.ts";
 import type {
   LineAnnotation,
@@ -16,9 +17,10 @@ import type {
   SourceContentNode,
 } from "../record/index.ts";
 import { groupIncompatibleVersionSkips } from "../record/index.ts";
+import { attemptTerminalOf, factRecordOf, scoreOutcomeOf } from "../record/fact-record.ts";
 import type { UnreadableRun } from "../record/index.ts";
 import type { ExecutionNode, ExecutionTree } from "../o11y/execution-tree.ts";
-import { stripControl, summaryText } from "../assertions/display.ts";
+import { factDisplaySummary, stripControl, summaryText } from "../assertions/display.ts";
 import { firstLine } from "../util.ts";
 import { formatDurationMs, formatMetricValue, formatPlainNumber, formatUSD } from "../report/model/format.ts";
 import { formatTurnLabel, normalizeTurnLabel } from "../shared/turn-label.ts";
@@ -111,40 +113,6 @@ export function skippedRunsText(unreadable: readonly UnreadableRun[], root: stri
   return lines.join("\n");
 }
 
-// ───────────────────────── 断言行 ─────────────────────────
-
-function scoreText(score: number): string {
-  return formatPlainNumber(Math.round(score * 100) / 100);
-}
-
-/** 分组路径标题(嵌套用 " > " 拼接);无分组返回 undefined。 */
-function groupTitle(a: AssertionResult): string | undefined {
-  return a.groupPath && a.groupPath.length > 0 ? a.groupPath.join(" > ") : undefined;
-}
-
-/** 断言行:✓/✗/◌ + severity + 标题;unavailable 带 reason,soft 恒带 score/1(失败再补 detail)。 */
-export function assertionLine(a: AssertionResult): string {
-  const group = groupTitle(a);
-  const scope = group ? `${group} · ` : "";
-  const optional = a.optional ? "optional · " : "";
-  if (a.outcome === "unavailable") {
-    return `◌ ${a.severity} · ${optional}${scope}${a.name} — unavailable: ${a.reason}`;
-  }
-  const head = `${a.outcome === "passed" ? "✓" : "✗"} ${a.severity} ${optional}${scope}${a.name}`;
-  if (a.severity === "soft") {
-    const detail = a.outcome === "failed" && a.detail ? `: ${a.detail}` : "";
-    const threshold = a.threshold !== undefined ? ` / ${scoreText(a.threshold)}` : "/1";
-    return `${head} — ${scoreText(a.score)}${threshold}${detail}`;
-  }
-  if (a.outcome === "failed") {
-    const reason = a.detail ?? `score ${scoreText(a.score)}`;
-    const received = a.received ?? a.evidence;
-    // 单行面只放摘要收口后的预览;多行值(如 output tail)的完整版在 attempt 首页展开。
-    return received !== undefined ? `${head} — ${reason} · received: ${summaryText(received)}` : `${head} — ${reason}`;
-  }
-  return head;
-}
-
 // ───────────────────────── AttemptEvidence 共用 ─────────────────────────
 // evalSourceText / executionText / timingText / diffText(--source / --execution / --timing / --diff
 // 四个证据切面)共用的小件:locator 头、失败原因、断言计票摘要。四个证据 renderer 都只消费
@@ -155,47 +123,32 @@ export function assertionLine(a: AssertionResult): string {
 
 /** 证据切面的头行:`@<locator> · <evalId> · <experimentId> · <verdict>`。 */
 export function attemptEvidenceHeader(evidence: AttemptEvidence): string {
-  return [evidence.locator, evidence.identity.evalId, evidence.experimentId, evidence.result.verdict].join(" · ");
+  return [evidence.locator, evidence.identity.evalId, evidence.experimentId, attemptTerminalText(evidence.result)].join(" · ");
+}
+
+/** Exact Fact terminal text; score diagnostics are never collapsed into a generic verdict. */
+export function attemptTerminalText(result: EvalResult): string {
+  const terminal = attemptTerminalOf(result);
+  const score = scoreOutcomeOf(result);
+  if (score === undefined) return terminal;
+  return `${terminal} · earned ${formatPlainNumber(score.earnedScore)} · credited ${score.creditedScore === null ? "null" : formatPlainNumber(score.creditedScore)}`;
 }
 
 /**
  * 一次 attempt 未通过的判定原因,单行、不含 detail——供紧凑索引行使用。precedence 与
- * `report/compute.ts::reasonFor` 同一条规则(error → skipReason → 未通过的 gate 断言,
- * soft 永不进入),但格式更短(`gate <name>`,不带 `: <detail>`——detail 留给
- * `--eval`/单 eval 详情块的完整断言明细),这里独立实现而不是导入 report/ 的函数:
+ * `Fact/use` 图决定摘要；结构化执行 error 与 skip 理由才是图外回退。这里独立实现而不是导入
+ * report/ 的函数:
  * report 包正被并行重写(见 plan/attempt-evidence-feedback-loop.md),show 的紧凑索引不应
  * 依赖它的内部实现细节。
  */
 export function verdictReasonLine(result: EvalResult): string | undefined {
+  const fact = factDisplaySummary(result);
+  if (fact !== undefined) return fact.text;
   // 单行面只要 error 的一层摘要:message 取首行(diagnose 的 output tail 等后续行归
   // attempt 详情块展开),再经 summaryText 剥控制字节 + 收口。
   if (result.error !== undefined) return summaryText(firstLine(result.error.message));
   if (result.skipReason !== undefined) return result.skipReason;
-  const gates = result.assertions.filter((a) => a.outcome === "failed" && a.severity === "gate");
-  if (gates.length === 0) {
-    const gap = result.assertions.find((a) => a.outcome === "unavailable" && !a.optional);
-    return gap && gap.outcome === "unavailable" ? `unavailable ${gap.name} (${gap.reason})` : undefined;
-  }
-  return gates.map((a) => `gate ${a.name}`).join(", ");
-}
-
-/**
- * 断言计票摘要,`--eval` 与全景面共用:`assertions: 1 passed · 1 gate failed · 1 soft below
- * target`。直接读 `EvalResult.assertions`(恒可用的瘦身字段)而不是
- * 完整源码树的 summary 与这批断言计票恒等，但源码证据可能不可用；直接读
- * `result.assertions` 让这条摘要不因缺源码而跟着消失。
- */
-export function assertionSummaryLine(assertions: AssertionResult[]): string {
-  const passed = assertions.filter((a) => a.outcome === "passed").length;
-  const gateFailed = assertions.filter((a) => a.outcome === "failed" && a.severity === "gate").length;
-  const softBelow = assertions.filter((a) => a.outcome === "failed" && a.severity === "soft").length;
-  const unavailableCount = assertions.filter((a) => a.outcome === "unavailable").length;
-  const parts: string[] = [];
-  if (passed > 0) parts.push(`${passed} passed`);
-  if (gateFailed > 0) parts.push(`${gateFailed} gate failed`);
-  if (softBelow > 0) parts.push(`${softBelow} soft below target`);
-  if (unavailableCount > 0) parts.push(`${unavailableCount} unavailable`);
-  return `assertions: ${parts.length > 0 ? parts.join(" · ") : "(none)"}`;
+  return undefined;
 }
 
 // ───────────────────────── --history ─────────────────────────
@@ -222,7 +175,7 @@ export function attemptHistoryText(opts: {
   const table = renderAlignedRows(
     rows.map((r) => [
       r.startedAt !== undefined ? timelineStamp(r.startedAt) : MISSING,
-      `${verdictMark(r.verdict)} ${r.verdict}`,
+      `${verdictMark(r.verdict)} ${r.terminal}`,
       r.summary ?? MISSING,
       formatDurationMs(r.durationMs),
       r.costUSD === null ? MISSING : formatUSD(r.costUSD),
@@ -291,33 +244,6 @@ function indentedText(text: string, width: number, indent = 4, maxLines = 18): s
 
 // ───────────────────────── 证据切面:--eval(Eval 源码标注) ─────────────────────────
 
-/** gate 失败 / soft 恒带分 / unavailable 带 reason——与 assertionLine 的口径一致,但不带断言
- *  name(源码行本身就是名字)。 */
-function evalAssertionDetailLine(a: AssertionResult): string | undefined {
-  if (a.outcome === "unavailable") {
-    return `${a.severity} · unavailable · ${a.reason}${a.evidence ? ` · ${summaryText(a.evidence)}` : ""}`;
-  }
-  if (a.severity === "soft") {
-    const detail = a.outcome === "failed" && a.detail ? ` · ${a.detail}` : "";
-    const threshold = a.threshold !== undefined ? ` / ${scoreText(a.threshold)}` : "/1";
-    return `soft · ${scoreText(a.score)}${threshold}${detail}`;
-  }
-  if (a.outcome === "failed") {
-    // 标注行是源码页里的一行事实,不是证据面:expected / received 过摘要收口
-    // (折单行 + 上限),完整值在 attempt 首页与 events.json / diff.json。
-    const parts = ["gate"];
-    const group = groupTitle(a);
-    if (group) parts.push(group);
-    parts.push(a.name);
-    if (a.expected !== undefined) parts.push(`expected ${summaryText(a.expected)}`);
-    const received = a.received ?? a.evidence;
-    if (received !== undefined) parts.push(`received ${summaryText(received)}`);
-    if (a.detail) parts.push(summaryText(a.detail));
-    return parts.join(" · ");
-  }
-  return undefined;
-}
-
 /** send 行摘要只显示 status · 墙钟(有记录才出现),不透传内部轮 label。 */
 function sendAnnotationLine(send: SendAnnotation): string {
   const parts: string[] = [send.status];
@@ -325,14 +251,56 @@ function sendAnnotationLine(send: SendAnnotation): string {
   return parts.join(" · ");
 }
 
+function sourceLocText(loc: { file: string; line: number } | undefined): string | undefined {
+  return loc === undefined ? undefined : `${loc.file}:${loc.line}`;
+}
+
+function factResultLine(fact: EvaluationFactResult): string {
+  const details = [
+    `fact: ${fact.name}`,
+    fact.outcome,
+    ...(fact.expected !== undefined ? [`expected ${summaryText(fact.expected)}`] : []),
+    ...(fact.received !== undefined ? [`received ${summaryText(fact.received)}`] : []),
+    ...(fact.explanation !== undefined ? [`explanation ${summaryText(fact.explanation)}`] : []),
+    ...(fact.outcome === "unavailable" || fact.outcome.startsWith("notReached") ? [`reason ${(fact as { reason: string }).reason}`] : []),
+    ...(fact.outcome === "errored" ? [`error ${fact.error.message}`] : []),
+    ...(sourceLocText(fact.producerLoc) ? [`producer: ${sourceLocText(fact.producerLoc)!}`] : []),
+  ];
+  return details.join(" · ");
+}
+
+function factUseLine(use: VerdictFactUseResult | ScoreFactUseResult): string {
+  const title = use.useKind === "score" ? use.label : use.label ?? use.key ?? use.method;
+  const useKind = use.useKind === "verdict" && use.outcome === "failed" ? "gate" : use.useKind;
+  const details = [
+    `${use.outcome === "passed" || use.outcome === "scored" ? "✓" : use.outcome === "failed" || use.outcome === "errored" ? "✗" : "◌"} ${useKind}`,
+    title,
+    ...(use.key !== undefined && use.label !== undefined ? [`key: ${use.key}`] : []),
+  ];
+  if (use.useKind === "score" && use.outcome === "scored") {
+    details.push(use.input.kind === "fact" ? `${formatPlainNumber(use.earned)} / ${formatPlainNumber(use.input.max)}` : formatPlainNumber(use.earned));
+  }
+  if (use.outcome === "unavailable" || use.outcome.startsWith("notReached") || use.outcome === "notApplicable") {
+    details.push(`reason ${summaryText((use as { reason: string }).reason)}`);
+  }
+  if (use.outcome === "errored") details.push(`error ${summaryText(use.error.message)}`);
+  const consumer = sourceLocText(use.consumerLoc);
+  if (consumer) details.push(`consumer: ${consumer}`);
+  return details.join(" · ");
+}
+
 function lineGlyph(annotations: readonly LineAnnotation[]): string {
-  const assertions = annotations.flatMap((annotation) =>
-    annotation.kind === "assertion" ? [annotation.assertion] : []
-  );
   const sends = annotations.flatMap((annotation) => annotation.kind === "send" ? [annotation.send] : []);
-  const anyFailed = assertions.some((assertion) => assertion.outcome === "failed") ||
-    sends.some((send) => send.status === "failed");
-  const anyUnavailable = assertions.some((assertion) => assertion.outcome === "unavailable");
+  const anyFailed = annotations.some((annotation) =>
+    (annotation.kind === "fact" && (annotation.fact.outcome === "failed" || annotation.fact.outcome === "errored")) ||
+    (annotation.kind === "factUse" && (annotation.use.outcome === "failed" || annotation.use.outcome === "errored"))
+  ) || sends.some((send) => send.status === "failed");
+  const anyUnavailable = annotations.some((annotation) =>
+    (annotation.kind === "fact" && (annotation.fact.outcome === "unavailable" || annotation.fact.outcome.startsWith("notReached"))) ||
+    (annotation.kind === "factUse" && (
+      annotation.use.outcome === "unavailable" || annotation.use.outcome === "notApplicable" || annotation.use.outcome.startsWith("notReached")
+    ))
+  );
   return annotations.length === 0
     ? " "
     : anyFailed
@@ -343,10 +311,10 @@ function lineGlyph(annotations: readonly LineAnnotation[]): string {
 }
 
 function annotationDetailLine(annotation: LineAnnotation): string | undefined {
-  if (annotation.kind === "assertion") return evalAssertionDetailLine(annotation.assertion);
   if (annotation.kind === "send") return sendAnnotationLine(annotation.send);
-  const group = annotation.score.groupPath?.join(" · ");
-  return [group, annotation.score.label, `${annotation.score.points} pts`].filter(Boolean).join(" · ");
+  if (annotation.kind === "fact") return factResultLine(annotation.fact);
+  if (annotation.kind === "factUse") return factUseLine(annotation.use);
+  return undefined;
 }
 
 function evalSourceLineText(line: ProjectedSourceLine, gutterWidth: number, width: number, indent: string): string[] {
@@ -438,8 +406,8 @@ function hasClosedCalls(node: SourceContentNode): boolean {
 }
 
 /**
- * `--eval`:运行时保存的 Eval 源码,gate/soft 断言标回源码行,外加 unmapped 断言(永不丢弃)
- * 与断言计票摘要。`evidence.evalSource === null` 时如实说明源码未捕获,不伪造空文档。
+ * `--eval`:运行时保存的 Eval 源码,Fact producer / consumer 标回源码行；
+ * 无位置事实也必须保留，`evidence.evalSource === null` 时如实说明源码未捕获。
  */
 export function evalSourceText(
   result: AnnotatedSourceResult,
@@ -457,10 +425,10 @@ export function evalSourceText(
     blocks.push(`outside the eval entry · ${renderSourceNode(detached, "", width).join("\n")}`);
   }
 
-  if (source.unmapped.assertions.length > 0 || source.unmapped.scores.length > 0) {
+  if (source.unmapped.facts.length > 0 || source.unmapped.uses.length > 0) {
     const unmappedLines = [
-      ...source.unmapped.assertions.map((assertion) => assertionLine(assertion)),
-      ...source.unmapped.scores.map((score) => `${score.groupPath?.join(" · ") ?? "score"} · ${score.label} · ${score.points} pts`),
+      ...source.unmapped.facts.map(factResultLine),
+      ...source.unmapped.uses.map(factUseLine),
     ].map((line) => indentBlock(wrapDisplay(line, width - 2).join("\n"), "  "));
     blocks.push(
       [`unmapped evidence (${unmappedLines.length}, no source location):`, ...unmappedLines].join("\n"),

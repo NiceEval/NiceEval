@@ -139,7 +139,7 @@ function attemptCells(item: AttemptListItem): CellBag {
     durationMs: attemptMetricValue(item.durationMs, "ms", item.locator),
     tokens: measureCell(item.tokens),
     costUSD: attemptMetricValue(item.costUSD, "$", item.locator),
-    ...(item.evaluationKind === "points" ? { score: { kind: "metric" as const, metric: item.totalScore } } : {}),
+    ...(item.evaluationKind === "score" ? { score: { kind: "metric" as const, metric: item.totalScore } } : {}),
   };
 }
 
@@ -220,7 +220,7 @@ function groupPassRate(evalRows: readonly ExperimentListEvalRow[]): MetricValue 
   let total = 0;
   const refs: AttemptLocator[] = [];
   for (const row of evalRows) {
-    if (row.evaluationKind === "points") continue;
+    if (row.evaluationKind === "score") continue;
     total += row.endToEndPassRate.total;
     samples += row.endToEndPassRate.samples;
     refs.push(...row.endToEndPassRate.refs);
@@ -326,16 +326,16 @@ function groupPrimaryValue(
 ): number | null {
   const evaluationKind = evalRowsEvaluationKindComposition(evalRows);
   if (evaluationKind === "mixed") return null;
-  if (evaluationKind === "points") {
+  if (evaluationKind === "score") {
     return sumCells(evalRows.map((row) => row.totalScore)).value;
   }
   return groupPassRate(evalRows).value;
 }
 
 function evalRowsEvaluationKindComposition(evalRows: readonly ExperimentListEvalRow[]): EvaluationKindComposition {
-  const hasPass = evalRows.some((row) => row.evaluationKind !== "points");
+  const hasPass = evalRows.some((row) => row.evaluationKind !== "score");
   const hasPoints = evalRows.some((row) => row.evaluationKind !== "pass");
-  return hasPass && hasPoints ? "mixed" : hasPoints ? "points" : "pass";
+  return hasPass && hasPoints ? "mixed" : hasPoints ? "score" : "pass";
 }
 
 function leafTableRow(
@@ -505,7 +505,7 @@ function experimentColumns(composition: EvaluationKindComposition): ColumnSpec[]
     { key: "model", header: HEADER.model },
     { key: "agent", header: HEADER.agent },
     { key: "durationMs", better: "lower", header: HEADER.durationMs },
-    ...(composition !== "points" ? [{ key: "passRate", better: "higher" as const, header: HEADER.passRate }] : []),
+    ...(composition !== "score" ? [{ key: "passRate", better: "higher" as const, header: HEADER.passRate }] : []),
     ...(composition !== "pass" ? [{ key: "totalScore", better: "higher" as const, header: HEADER.totalScore }] : []),
     { key: "tokens", better: "lower", header: HEADER.tokens },
     { key: "costUSD", better: "lower", header: HEADER.avgCost },

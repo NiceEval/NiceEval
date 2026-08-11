@@ -4,6 +4,7 @@
 
 import type { AttemptHandle, Run } from "../../record/types.ts";
 import { evalLevelStats } from "../../shared/verdict.ts";
+import { verdictForTerminal } from "../../record/fact-record.ts";
 import { experimentIdOf, fullEvalKey, type Item } from "../model/aggregate.ts";
 import type { VerdictTally } from "../model/types.ts";
 
@@ -22,7 +23,7 @@ export function summarizeItems(items: Item[]): {
   const experimentIds = new Set<string>();
   for (const item of items) experimentIds.add(experimentIdOf(item));
   const stats = evalLevelStats(
-    items.map((item) => ({ verdict: item.attempt.result.verdict, key: fullEvalKey(item) })),
+    items.map((item) => ({ verdict: verdictForTerminal(item.attempt.result), key: fullEvalKey(item) })),
     (r) => r.key,
   );
   let lastRunAt: string | undefined;

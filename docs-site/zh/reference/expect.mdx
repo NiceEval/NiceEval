@@ -1,27 +1,28 @@
 ---
-title: "niceeval/expect matchers 与自定义断言参考"
+title: "niceeval/expect Match 参考"
 sidebarTitle: "断言 Matchers"
-description: "niceeval/expect 参考：includes、equals、matches、similarity、satisfies，以及形状断言 includesUrl、hasSections。可链式调用 .gate() 或 .atLeast(0.7)，也可以用 makeAssertion 构建自定义 matcher。"
+description: "niceeval/expect 的纯 Match factory：组合文字、结构、条件，再交给 t.check 登记 Assertion。"
 ---
 
-`niceeval/expect` 提供一组可组合 matcher，传给 `t.check()` 或 `t.require()`。matcher 会返回一个 `Assertion`，并带有默认严重性：`gate` 或 `soft`。
+`niceeval/expect` 只提供纯 Match factory。Match 比较一个候选值，不记录结果，也不决定判定或分数。`t.check(value, match)` 在调用时读取 `value` 并直接登记 Assertion；返回的 handle 只配置同一条 entry。
 
 ```ts
-import { includes, equals, matches, similarity, satisfies } from "niceeval/expect";
+import { and, excludes, includes, pattern } from "niceeval/expect";
 ```
 
 ## 使用方式
 
 ```ts
 t.check(t.reply, includes("confirmed"));
-t.check(turn.data, equals({ intent: "refund" }));
-t.require(turn.status, equals("completed"));
+t.check(t.reply, and(pattern(/order #\d+/i), excludes("cancelled")));
+const config = await t.check(rawConfig, pattern(/runtime/)).orStop();
 ```
 
-| 方法 | 失败时 | 适合 |
-|---|---|---|
-| `t.check` | 记录结果，继续执行 | 大多数断言 |
-| `t.require` | 立即抛出，中断 test | 后续执行没有意义的前置条件 |
+| 入口 | 作用 |
+|---|---|
+| `t.check(value, match)` | 严格两个参数，调用时登记 Assertion；失败不中止后续代码 |
+| `await handle.orStop()` | 同一 handle 的 async barrier；mismatch 或 below 时停止当前 continuation |
+| `handle.score(n)` / `t.score(n)` | 在计分制评估中让该项贡献分数，或直接登记 contribution |
 
 ## Matchers
 
@@ -31,148 +32,232 @@ t.require(turn.status, equals("completed"));
 
 {/* 本区块由 pnpm docs:reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 scripts/generate-reference.ts) */}
 
+#### `and`
+
+```ts
+export function and(
+  first: BooleanMatch<unknown, unknown, MatchDomain>,
+  ...rest: readonly BooleanMatch<unknown, unknown, MatchDomain>[]
+): BooleanMatch<unknown, unknown, MatchDomain> { ... }
+```
+
+#### `or`
+
+```ts
+export function or(
+  first: BooleanMatch<unknown, unknown, MatchDomain>,
+  ...rest: readonly BooleanMatch<unknown, unknown, MatchDomain>[]
+): BooleanMatch<unknown, unknown, MatchDomain> { ... }
+```
+
+#### `not`
+
+```ts
+export function not<T>(match: BooleanMatch<T, T, "value">): BooleanMatch<T, T, "value"> { ... }
+```
+
 #### `includes`
 
 ```ts
-export function includes(needle: string | RegExp, opts?: MatchOptions): ValueAssertion { ... }
+export function includes(text: string, options?: TextMatchOptions): BooleanMatch<string, string> { ... }
 ```
-
-String(value) 含子串 / 命中正则则 1,否则 0。默认硬门槛。opts.stripComments 时只看真实代码。
 
 #### `excludes`
 
 ```ts
-export function excludes(needle: string | RegExp, opts?: MatchOptions): ValueAssertion { ... }
+export function excludes(text: string, options?: TextMatchOptions): BooleanMatch<string, string> { ... }
 ```
 
-includes 的取反:不含子串 / 不命中正则则 1,否则 0。默认硬门槛。opts.stripComments 时只看真实代码。
-
-#### `equals`
+#### `pattern`
 
 ```ts
-export function equals(expected: unknown): ValueAssertion { ... }
+export function pattern(expression: RegExp, options?: TextMatchOptions): BooleanMatch<string, string> { ... }
 ```
-
-深相等则 1,否则 0。默认硬门槛。
-
-#### `matches`
-
-```ts
-export function matches(schema: unknown): ValueAssertion { ... }
-```
-
-用 schema 校验 value——不是正则匹配,是 Standard Schema / zod 风格的结构校验。
-优先 Standard Schema(schema['~standard'].validate),否则退化到 zod 风格的
-.safeParse / .parse。校验通过 1,否则 0;任何异常 → 0。默认硬门槛。
 
 #### `similarity`
 
 ```ts
-export function similarity(expected: string): ValueAssertion { ... }
+export function similarity(expected: string): ScoreMatch<string> { ... }
 ```
 
-纯字符串编辑距离,不是语义相似度——归一化 Levenshtein 距离 [0,1](1 - 编辑距离 / 较长串长度),
-不理解含义,同义改写 / 语序调整会被判低分。默认软分,阈值 0.6。
+归一化 Levenshtein similarity；它是连续分数，不携带默认阈值或 verdict 策略。
 
 #### `includesUrl`
 
 ```ts
-export function includesUrl(min = 1): ValueAssertion { ... }
+export function includesUrl(min = 1): BooleanMatch<string, string> { ... }
 ```
 
-文本含至少 min 条(默认 1)去重后的 http(s) 链接则 1,否则 0。默认硬门槛。
-「回答有没有引用真实来源」的形状断言:没有 Judge key 时,它是「至少引用一条来源链接」
-的最低成本兜底——被测方复读题目糊弄不过去,编造的链接则留给负例或 Judge 去抓。
+至少含 min 个去重 http(s) URL 的纯文本 matcher。
 
 #### `hasSections`
 
 ```ts
-export function hasSections(min = 2): ValueAssertion { ... }
+export function hasSections(min = 2): BooleanMatch<string, string> { ... }
 ```
 
-文本含至少 min 个(默认 2)Markdown 标题(行首 # 到 ######)则 1,否则 0。默认硬门槛。
-「回答是不是一份有结构的文档」的形状断言,适合研究报告、方案文档这类产出型回答——
-一段没有任何小标题的流水文本过不了。
-
-#### `satisfies`
-
-```ts
-export function satisfies(predicate: (v: unknown) => boolean, label?: string): ValueAssertion { ... }
-```
-
-谓词为真则 1,否则 0。默认硬门槛;name 带上 label 便于报告辨认。
+至少含 min 个 Markdown heading 的纯文本 matcher。
 
 #### `isDefined`
 
 ```ts
-export function isDefined(label?: string): ValueAssertion { ... }
+export function isDefined<T = unknown>(label?: string): BooleanMatch<T, Exclude<T, null | undefined>> { ... }
 ```
-
-value 非 null / 非 undefined 则 1,否则 0。省掉 `x !== undefined` + isTrue 的样板。默认硬门槛。
 
 #### `isTrue`
 
 ```ts
-export function isTrue(label?: string): ValueAssertion { ... }
+export function isTrue<T = unknown>(label?: string): BooleanMatch<T, T & true> { ... }
 ```
 
-value === true 则 1,否则 0。带 label 的布尔断言(fileExists 等检查用)。默认硬门槛。
-
-#### `commandSucceeded`
-
-```ts
-export function commandSucceeded(): ValueAssertion { ... }
-```
-
-CommandResult.exitCode === 0 则 1,否则 0。默认硬门槛。
+value === true 的 refinement matcher。
 
 #### `isFalse`
 
 ```ts
-export function isFalse(label?: string): ValueAssertion { ... }
+export function isFalse<T = unknown>(label?: string): BooleanMatch<T, T & false> { ... }
 ```
 
-value === false 则 1,否则 0。带 label 的布尔断言。默认硬门槛。
+value === false 的 refinement matcher。
 
-#### `makeAssertion`
+#### `commandSucceeded`
 
 ```ts
-export function makeAssertion(spec: {
-  name: string;
-  severity?: Severity;
-  threshold?: number;
-  score: (value: unknown) => number | Promise<number>;
-}): ValueAssertion { ... }
+export function commandSucceeded<T = unknown>(): BooleanMatch<T, T & { readonly exitCode: 0 }> { ... }
 ```
 
-自定义断言工厂:直接给名字 / 严重度 / 阈值 / score,一次调用即返回可用的 ValueAssertion——
-不像 gate()/atLeast() 那样需要二段链式调用来定级。severity 省略默认 gate。
+CommandResult-like candidate 的 exitCode === 0 matcher；不读取 stdout / stderr。
+
+#### `equals`
+
+```ts
+export function equals<const T>(expected: T): BooleanMatch<unknown, T> { ... }
+```
+
+#### `matches`
+
+```ts
+export function matches<S extends StandardSchemaV1>(
+  schema: S,
+): BooleanMatch<unknown, StandardSchemaV1.InferInput<S>, "value"> { ... }
+```
+
+#### `satisfies`
+
+```ts
+export function satisfies<T, R extends T = T>(
+  label: string,
+  predicate: (value: T) => boolean | Promise<boolean>,
+): BooleanMatch<T, R> | BooleanMatch<T, T> { ... }
+```
+
+#### `defineValueMatch`
+
+```ts
+export function defineValueMatch<T, R extends T = T>(spec: {
+  readonly name: string;
+  readonly evaluate: (value: T) => boolean | Promise<boolean>;
+}): BooleanMatch<T, R> | BooleanMatch<T, T> { ... }
+```
+
+#### `defineScoreMatch`
+
+```ts
+export function defineScoreMatch<T>(spec: {
+  readonly name: string;
+  readonly score: (value: T) => number | Promise<number>;
+}): ScoreMatch<T> { ... }
+```
+
+#### `referencesAnyPath`
+
+```ts
+export function referencesAnyPath(
+  paths: readonly [string, ...string[]],
+): BooleanMatch<JsonValue, JsonValue, "value"> { ... }
+```
+
+#### `toolMatch`
+
+```ts
+export function toolMatch(
+  nameOrOptions:
+    | string
+    | {
+        readonly input: BooleanMatch<JsonValue, JsonValue, "value">;
+        readonly status?: ToolStatus;
+      },
+  options?: ToolMatchOptions,
+): ToolMatch { ... }
+```
+
+#### `commandMatch`
+
+```ts
+export function commandMatch(executable: string, options?: CommandMatchOptions): ToolMatch<LogicalCommandOccurrence> { ... }
+```
+
+#### `eventMatch`
+
+```ts
+export function eventMatch<K extends keyof EventOptionsByType>(
+  type: K,
+  options?: EventOptionsByType[K],
+): EventMatch<Extract<AssertionEvent, { readonly type: K }>> { ... }
+```
 
 {/* GENERATED:END expect-matchers */}
+
+### 匹配工具调用
+
+`calledTool(name, options)` 直接登记 Boolean Assertion。`name` 是工具名；`input` 约束同一次调用的完整 JSON 输入，`count` 约束匹配次数，`status` 约束工具生命周期状态：
+
+```ts
+t.calledTool("get_weather", {
+  input: { city: "Taipei", unit: "celsius" },
+  count: 1,
+}).label("精确查询天气");
+
+t.calledTool("shell", {
+  input: { command: /pnpm install/ },
+}).label("运行安装命令");
+```
+
+`input` 使用递归 JSON 匹配：对象部分匹配、数组逐项匹配，任意层可用 `RegExp` 或动态谓词。省略 `count` 表示至少一次。若 NiceEval 没有取得准确的输入或状态证据，这项检查会是 `unavailable`，不会被当成否定。
 
 ### 常见用法示例
 
 ```ts
 t.check(t.reply, includes("Paris"));
-t.check(t.reply, includes(/order #\d+/i));
+t.check(t.reply, pattern(/order #\d+/i));
 t.check(turn.data, equals({ intent: "refund" }));
-t.check(turn.data, matches(OrderSchema)); // Standard Schema / Zod 结构校验;正则匹配用 includes
-t.check(t.reply, similarity("The answer explains the refund window").atLeast(0.8));
-t.check(turn.data, satisfies((value) => Array.isArray(value)));
+t.check(turn.data, matches(OrderSchema));
+t.check(turn.data, satisfies("返回数组", Array.isArray));
+t.check(t.reply, similarity("The answer explains the refund window")).atLeast(0.8);
 ```
 
-## gate 和 soft
+## 组合与三态
 
 ```ts
-t.check(t.reply, includes("required").gate());
-t.check(t.reply, includes("nice to have").atLeast(0.7));
+t.check(t.reply, and(includes("required"), excludes("forbidden")));
+t.check(t.reply, or(includes("approved"), includes("accepted")));
 ```
 
-每个 matcher 返回的 `Assertion`（即 `ValueAssertion`）都带有这些成员。`.gate()` 把它变成硬门槛，`.atLeast()` 变成软阈值：
+同一 `and` / `or` 里的 Match 必须属于同一 domain。布尔 Match 的内部结果是 `matched`、`mismatched` 或 `unavailable`：`or` 只有在没有子项命中且至少一项证据不完整时才返回 `unavailable`，不会把未知当成否定。Match 自身不持有判定、计分或控制流；`.atLeast(n)`、`.score(n)` 与 `.orStop()` 属于登记后的 AssertionHandle。
+
+下面列出 Match 值本身的稳定字段。品牌和 evaluator 是模块私有实现，不属于作者 API。
 
 {/* GENERATED:BEGIN value-assertion */}
 
 {/* 本区块由 pnpm docs:reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 scripts/generate-reference.ts) */}
+
+### `Match`
+
+#### `domain`
+
+```ts
+readonly domain: D;
+```
 
 #### `name`
 
@@ -180,92 +265,50 @@ t.check(t.reply, includes("nice to have").atLeast(0.7));
 readonly name: string;
 ```
 
-#### `severity`
+### `BooleanMatch`
+
+#### `kind`
 
 ```ts
-readonly severity: Severity;
+readonly kind: "boolean";
 ```
 
-#### `threshold`
+#### `[matchRefinementBrand]`
 
 ```ts
-readonly threshold?: number;
+readonly [matchRefinementBrand]: () => R;
 ```
 
-#### `isOptional`
+### `ScoreMatch`
+
+#### `kind`
 
 ```ts
-readonly isOptional?: boolean;
+readonly kind: "score";
 ```
-
-`.optional()` 链过的标记:评不了只记 unavailable,不把 attempt 拖成 errored。
-
-#### `expected`
-
-```ts
-readonly expected?: string;
-```
-
-期望条件的有界文本描述(如 `contains "Brooklyn"`),失败时进 AssertionResult.expected。
-
-#### `score`
-
-```ts
-score(value: unknown): number | Promise<number>;
-```
-
-#### `gate`
-
-```ts
-gate(threshold?: number): ValueAssertion;
-```
-
-转成硬门槛断言:未达阈值(省略 threshold 则按 score &gt;= 1,即满分判定)整条评估用例判为 failed。返回新实例,不改原对象。
 
 #### `atLeast`
 
 ```ts
-atLeast(threshold: number): ValueAssertion;
+atLeast(threshold: number): ThresholdedScoreMatch<T>;
 ```
-
-转成软阈值断言:未达 threshold 时该条记为 failed,但默认不拖累整条评估用例的 verdict;
-`--strict` 运行下,软阈值失败也会把整条评估用例的 verdict 计为 failed。返回新实例,不改原对象。
-
-#### `soft`
-
-```ts
-soft(): ValueAssertion;
-```
-
-转成纯记录的软断言:不设通过线,分数照实落盘、永不使该条 failed(judge 的默认严重度就是它)。
-无参数——要设线用 `.atLeast(threshold)`,不提供同义的 `soft(threshold)`。返回新实例,不改原对象。
-
-#### `optional`
-
-```ts
-optional(): ValueAssertion;
-```
-
-允许这条断言证据缺席:评不了时只记录 `outcome: "unavailable"`,不影响判定。
-与 severity 正交(severity 说影不影响质量判定,optional 说证据允不允许缺席)。返回新实例,不改原对象。
 
 {/* GENERATED:END value-assertion */}
 
 ## 自定义 matcher
 
 ```ts
-import { makeAssertion, type Assertion } from "niceeval/expect";
+import { defineValueMatch } from "niceeval/expect";
 
-function validEmail(): Assertion {
-  return makeAssertion({
+const validEmail = () =>
+  defineValueMatch<string>({
     name: "valid email",
-    score(value) {
-      return typeof value === "string" && value.includes("@") ? 1 : 0;
+    evaluate(value) {
+      return value.includes("@");
     },
   });
-}
 
 t.check(t.reply, validEmail());
 ```
 
-`makeAssertion` 接受单个 spec 对象（`name`、可选 `severity`/`threshold`、`score`），直接返回一个 `Assertion`。按惯例用一个同名函数包一层再调用，而不是把 `makeAssertion` 本身当工厂调用。
+布尔自定义 Match 用 `defineValueMatch`，连续分数用 `defineScoreMatch`。两者只实现单候选比较；读取文件、扫描事件、决定 coverage 或修改判定仍由 Assertion 登记入口与 Runner 负责。

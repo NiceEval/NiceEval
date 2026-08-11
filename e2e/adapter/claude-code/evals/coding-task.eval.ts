@@ -4,13 +4,14 @@
 // 三者的 completed 状态本身就是 tool_use.id / tool_result.tool_use_id 配对成立的证据
 // (配对失败会体现为 status 卡在别的值或 noFailedActions() 不通过)。
 import { defineEval } from "niceeval";
-import { includes } from "niceeval/expect";
+import { includes, satisfies, toolMatch } from "niceeval/expect";
 
 const MARKER_A = "niceeval-e2e-marker-alpha-926";
 const MARKER_B = "niceeval-e2e-marker-beta-926";
 
 export default defineEval({
-  description: "coding-task 工具轨:file_write + file_edit + shell 事件,调用与结果通过 completed 状态配对成立",
+  description:
+    "coding-task 工具轨:file_write + file_edit + shell 事件,调用与结果通过 completed 状态配对成立",
   async test(t) {
     const turn = await t.send(
       "在当前目录下按顺序完成以下三步；这是工具协议兼容性检查，必须使用我指定的 Claude Code 原生工具:" +
@@ -19,19 +20,35 @@ export default defineEval({
         "前两步禁止用 Bash、Python、sed 或重定向写文件。" +
         "(3) 用 Bash 工具运行命令 'cat notes.txt',并把它的输出展示给我。",
     );
-    await turn.succeeded().stopOnFailure();
-    t.succeeded();
+    await t.require(turn.succeeded());
+    t.check(t.succeeded());
 
     await t.group("file 与 shell 工具事件均已出现且状态为 completed", () => {
-      t.calledTool("file_write", { status: "completed" });
-      t.calledTool("file_edit", { status: "completed" });
-      t.calledTool("shell", { status: "completed", input: { command: /notes\.txt/ } });
-      t.noFailedActions();
+      t.check(t.calledTool(toolMatch("file_write", { status: "completed" })));
+      t.check(t.calledTool(toolMatch("file_edit", { status: "completed" })));
+      t.check(
+        t.calledTool(
+          toolMatch("shell", {
+            input: satisfies(
+              '"shell" input',
+              (input) =>
+                typeof input === "object" &&
+                input !== null &&
+                !Array.isArray(input) &&
+                (typeof input["command"] === "string"
+                  ? /notes\.txt/.test(input["command"])
+                  : /notes\.txt/.test(JSON.stringify(input) ?? "")),
+            ),
+            status: "completed",
+          }),
+        ),
+      );
+      t.check(t.noFailedActions());
     });
 
-    t.sandbox.fileChanged("notes.txt");
+    t.check(t.sandbox.fileChanged("notes.txt"));
     t.check(t.sandbox.file("notes.txt"), includes(MARKER_A));
     t.check(t.sandbox.file("notes.txt"), includes(MARKER_B));
-    turn.messageIncludes(MARKER_A);
+    t.check(turn.message, includes(MARKER_A));
   },
 });

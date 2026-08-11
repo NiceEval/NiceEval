@@ -1,13 +1,17 @@
 import { defineEval } from "niceeval";
-import { equals, excludes, includes } from "niceeval/expect";
-
+import {
+  equals,
+  excludes,
+  includes,
+  satisfies,
+  toolMatch,
+} from "niceeval/expect";
 const SKILL_DIR = ".agents/skills";
 const STATUS_SKILL = "niceeval-opencode-status-report";
 const DECOY_SKILL = "niceeval-opencode-decoy";
 const STATUS_MARKER = "OPENCODE-STATUS-REPORT-NICEEVAL-E2E-914";
 const DECOY_MARKER = "OPENCODE-DECOY-AUDIT-NICEEVAL-E2E-518";
 const reportPath = "status-report.txt";
-
 export default defineEval({
   description: "status-report skill 已安装、被选择，且不会误用 decoy",
   async test(t) {
@@ -17,30 +21,58 @@ export default defineEval({
       );
       t.check(installed.exitCode, equals(0));
     });
-
     const turn = await t.send(
       `Before writing a status report, inspect only the applicable Skill under ${SKILL_DIR}/; ` +
         "do not inspect another Skill. " +
         `Create ${reportPath} saying "all systems nominal" and follow the selected Skill exactly.`,
     );
-    await turn.succeeded().stopOnFailure();
-    t.noFailedActions();
-
+    await t.require(turn.succeeded());
+    t.check(t.noFailedActions());
     await t.group("OpenCode 原生 skill 工具选择目标，且没有选择 decoy", () => {
-      turn.calledTool("skill", { input: { name: STATUS_SKILL } });
-      turn.notCalledTool("skill", { input: { name: DECOY_SKILL } });
-      turn.eventsSatisfy("任何工具的 input 均未引用 decoy Skill", (events) =>
-        events.every(
-          (event) =>
-            event.type !== "operation.started" ||
-            event.operation.kind !== "tool" ||
-            !JSON.stringify(event.operation.input).includes(DECOY_SKILL),
+      t.check(
+        turn.calledTool(
+          toolMatch("skill", {
+            input: satisfies(
+              '"skill" input',
+              (input) =>
+                typeof input === "object" &&
+                input !== null &&
+                !Array.isArray(input) &&
+                Object.is(input["name"], STATUS_SKILL),
+            ),
+          }),
+        ),
+      );
+      t.check(
+        turn.notCalledTool(
+          toolMatch("skill", {
+            input: satisfies(
+              '"skill" input',
+              (input) =>
+                typeof input === "object" &&
+                input !== null &&
+                !Array.isArray(input) &&
+                Object.is(input["name"], DECOY_SKILL),
+            ),
+          }),
+        ),
+      );
+      t.check(
+        turn.events,
+        satisfies<typeof turn.events>(
+          "任何工具的 input 均未引用 decoy Skill",
+          (events) =>
+            events.every(
+              (event) =>
+                event.type !== "operation.started" ||
+                event.operation.kind !== "tool" ||
+                !JSON.stringify(event.operation.input).includes(DECOY_SKILL),
+            ),
         ),
       );
     });
-
     await t.group("选中的 Skill 约定进入实际产物，decoy 约定未进入", () => {
-      t.sandbox.fileChanged(reportPath);
+      t.check(t.sandbox.fileChanged(reportPath));
       t.check(t.sandbox.file(reportPath), includes(STATUS_MARKER));
       t.check(t.sandbox.file(reportPath), excludes(DECOY_MARKER));
     });

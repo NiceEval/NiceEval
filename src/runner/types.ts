@@ -9,11 +9,15 @@ import type { SandboxLayer } from "../sandbox/layer.ts";
 import type { LinkedRunPlan } from "../sandbox/plan.ts";
 import type { BuildKey } from "../sandbox/identity.ts";
 import type {
-  AssertionResult,
+  EvaluationFactResult,
   DiffArtifact,
   JudgeConfig,
-  PrimaryAssertionSummary,
-  ScoreEntry,
+  JudgeDeclaration,
+  ResolvedJudgeConfig,
+  PrimaryFactSummary,
+  ScoreFactAttemptOutcome,
+  ScoreFactUseResult,
+  VerdictFactUseResult,
 } from "../assertions/types.ts";
 import type { ScoreTestContext, TestContext } from "../context/types.ts";
 import type { CapturedEvalSource } from "./eval-source.ts";
@@ -49,10 +53,8 @@ export interface ExperimentRunInfo {
   sandboxPlansByEval: globalThis.Record<string, JsonValue>;
   /** Sandbox 是否在同一次 Run 内复用。 */
   sandboxReuse?: boolean;
-  /** strict 与 judge 是配置身份的一部分，供历史结果重算 configHash。 */
-  strict?: boolean;
-  /** 解析后的 Judge 执行身份；apiKeyEnv 是凭据选择器，不落盘。 */
-  judge?: Pick<JudgeConfig, "model" | "baseUrl" | "timeoutMs">;
+  /** 解析后的 Judge 执行身份；只记录凭据选择器名，不记录凭据。 */
+  judge?: Pick<JudgeConfig, "model" | "baseUrl" | "apiKeyEnv" | "timeoutMs">;
   /**
    * Agent Ensure 与精确配对 installer 的静态身份投影；按声明顺序完整落盘。
    * 实际 artifact digest/platform 属运行 provenance，不进入这里。
@@ -381,6 +383,8 @@ export interface EvalResult {
   model?: string;
   verdict: Verdict;
   fingerprint?: string;
+  /** 产生本 Attempt 判定与计分结果的固定求值算法。 */
+  evaluationAlgorithm: EvaluationAlgorithm;
   /** 产出该结果时的 Run 级配置身份。 */
   configHash?: string;
   attempt: number;
@@ -401,18 +405,16 @@ export interface EvalResult {
   durationMs: number;
   /** 自 sandbox.create 起、排除并发排队和收尾的执行耗时；旧记录缺失时携带保守回退 durationMs。 */
   executionMs?: number;
-  assertions: AssertionResult[];
+  /** The complete native Fact graph, persisted directly in result.json. */
+  factResults: readonly EvaluationFactResult[];
+  factUses: readonly (VerdictFactUseResult | ScoreFactUseResult)[];
+  /** Structured Score Fact outcome for score Eval terminal semantics. */
+  scoreResult?: ScoreFactAttemptOutcome;
   /**
-   * 题型:`defineEval` → `"pass"`,`defineScoreEval` → `"points"`,定义期事实,与
-   * `EvalDescriptor.evaluationKind` 同源。省略等价于 `"pass"`——兼容此字段引入前写入的落盘与未声明它的
-   * 第三方 harness(见 docs/feature/record/architecture.md「result.json」)。
+   * 题型:`defineEval` → `"pass"`,`defineScoreEval` → `"score"`,定义期事实,与
+   * `EvalDescriptor.evaluationKind` 同源。schema 18 必填。
    */
-  evaluationKind?: EvaluationKind;
-  /**
-   * `t.score(label, n)` 的直接给分记录,只在 `evaluationKind: "points"` 时出现;省略等价于空数组。
-   * 与 `assertions[].points` 共同构成分数面(见 docs/feature/experiments/score-points.md)。
-   */
-  scoreEntries?: ScoreEntry[];
+  evaluationKind: EvaluationKind;
   /** 自动重试吸收的物理 send 失败，按发生顺序完整保留。 */
   retryAttempts?: RetryAttemptRecord[];
   usage?: Usage;
@@ -517,10 +519,11 @@ export const RECORD_FORMAT = "niceeval.results";
  * 旧版快照按格式规则整份判为不兼容并在扫描时列为占位条目,不迁移不降级。
  * `15` = commands.json 的命令退出事实新增 `checked`，区分公开 checked/unchecked 调用；
  * 旧版 commands.json 不做兼容读取。
+ * `18` = Fact/use 原子记录、`evaluationAlgorithm: "fact-use/v3"`；旧格式完全不支持读取。
  * `renamedFrom` 是可选审计字段，删除运行期选题投影也不改变当前 reader 对旧结果的读取；
  * 两者都不是破坏性格式变化，因此不递增版本。
  */
-export const RECORD_SCHEMA_VERSION = 15;
+export const RECORD_SCHEMA_VERSION = 18;
 
 /** 一次 Invocation 的纯运行时内存聚合(reporter 契约用);落盘格式契约在 niceeval/record 的 RunMeta / AttemptRecord,见 docs/feature/record/architecture.md。不携带顶层 `agent`/`model`——一次 Invocation 可能横跨多个 `(agent, model, flags)` 配置,塞一个顶层单值只能代表其中一份配置;需要时从 `results` 里逐条 `EvalResult.agent`/`.model` 去重派生。 */
 export interface InvocationSummary {
@@ -649,10 +652,13 @@ export type ReporterEvent =
 
 /**
  * 计分粒度题型:`defineEval` 恒 `"pass"`(通过制,一题一分,读通过率),`defineScoreEval` 恒
- * `"points"`(计分制,题内叠加挣分,读总分)。定义期事实,发现期从 `EvalDefinition.evaluationKind` 直接读取,
+ * `"score"`(计分制,题内叠加挣分,读总分)。定义期事实,发现期从 `EvalDefinition.evaluationKind` 直接读取,
  * 不靠执行 `test()` 推断(见 docs/feature/experiments/score-points.md)。
  */
-export type EvaluationKind = "pass" | "points";
+export type EvaluationKind = "pass" | "score";
+
+export const EVALUATION_ALGORITHM = "fact-use/v3" as const;
+export type EvaluationAlgorithm = typeof EVALUATION_ALGORITHM;
 
 /**
  * 作者输入里的派生字段用模块私有诊断类型，而不是 `never`：错误会说明字段属于哪个阶段。
@@ -690,8 +696,8 @@ export interface EvalAuthorFields {
    * 每个实际 Eval x Experiment 配对必须恰好一方提供 template-bearing layer。
    */
   sandbox?: SandboxLayer;
-  /** 覆盖项目级 Config.judge,只对这一条评估用例生效(如换个更贵的评审模型)。 */
-  judge?: JudgeConfig;
+  /** 声明 Judge capability；true 继承 Experiment/Config，对象同时声明并覆盖它们。 */
+  judge?: JudgeDeclaration;
   /** 覆盖 / 追加项目级 Config.reporters,只对这一条评估用例生效。 */
   reporters?: Reporter[];
   /** 覆盖项目级 / CLI 的单次 attempt 超时(毫秒),只对这一条评估用例生效。 */
@@ -732,7 +738,7 @@ export interface EvalDefinitionFields {
    * Sandbox link 则把省略侧视为 command-only。不能在 factory 阶段补成 sandboxLayer()。
    */
   readonly sandbox?: SandboxLayer;
-  readonly judge?: JudgeConfig;
+  readonly judge?: JudgeDeclaration;
   readonly reporters: readonly Reporter[];
   readonly timeoutMs?: number;
   readonly metadata: Readonly<globalThis.Record<string, JsonValue>>;
@@ -743,19 +749,21 @@ export interface EvalDefinitionFields {
 }
 
 /** Factory 产物保留精确 evaluationKind / context，并带模块私有品牌，不能由对象字面量伪造。 */
+type EvalTestReturn = void | Promise<void>;
+
 export interface EvalDefinition<Kind extends EvaluationKind, Context> extends EvalDefinitionFields {
   readonly evaluationKind: Kind;
-  test(t: Context): Promise<void> | void;
+  test(t: Context): EvalTestReturn;
   readonly [EVAL_DEFINITION]: true;
 }
 
 export type AnyEvalDefinition =
   | EvalDefinition<"pass", TestContext>
-  | EvalDefinition<"points", ScoreTestContext>;
+  | EvalDefinition<"score", ScoreTestContext>;
 
 /** @internal 唯一写入 Definition 私有品牌的构造辅助；不从公共入口导出。 */
 export function brandEvalDefinition<Kind extends EvaluationKind, Context>(
-  value: EvalDefinitionFields & { evaluationKind: Kind; test(t: Context): Promise<void> | void },
+  value: EvalDefinitionFields & { evaluationKind: Kind; test(t: Context): EvalTestReturn },
 ): EvalDefinition<Kind, Context> {
   Object.defineProperty(value, EVAL_DEFINITION, { value: true });
   return Object.freeze(value) as EvalDefinition<Kind, Context>;
@@ -790,7 +798,7 @@ export interface DiscoveredEvalFacts {
 /** discovery 保留 factory 的 evaluationKind 判别、私有品牌与对应 test context。 */
 export type DiscoveredEval =
   | (EvalDefinition<"pass", TestContext> & DiscoveredEvalFacts)
-  | (EvalDefinition<"points", ScoreTestContext> & DiscoveredEvalFacts);
+  | (EvalDefinition<"score", ScoreTestContext> & DiscoveredEvalFacts);
 
 /** @internal discovery 动态边界的品牌守卫；普通对象即使字段同形也不通过。 */
 export function isEvalDefinition(value: unknown): value is AnyEvalDefinition {
@@ -846,7 +854,7 @@ export interface ExperimentAuthorFields {
   reasoningEffort?: string;
   /**
    * 本实验的 Judge 执行配置。只覆盖 model / endpoint / credential selector / 调用预算，
-   * rubric、材料、severity 与 threshold 仍由 Eval assertion 拥有。各字段按
+   * rubric、材料与消费阈值仍由 Eval 的 Fact/use 声明拥有。各字段按
    * Experiment → Eval → Config 解析。
    */
   judge?: JudgeConfig;
@@ -1004,7 +1012,7 @@ export interface EvalDescriptor {
   readonly description?: string;
   readonly tags: readonly string[];
   /**
-   * 计分粒度题型,`defineEval` → `"pass"`,`defineScoreEval` → `"points"`。定义期事实,
+   * 计分粒度题型,`defineEval` → `"pass"`,`defineScoreEval` → `"score"`。定义期事实,
    * 每条发现出的 eval 上都有确定值。供 `ExperimentDefinition.evals` 谓词按题型过滤(见
    * docs/feature/experiments/score-points.md「横截面聚合:同型实验,各读各的」)。
    */
@@ -1130,7 +1138,6 @@ export interface AgentRun {
    * 保持顺序 = discovery 稳定顺序,去重。
    */
   readonly selectedEvalIds: readonly string[];
-  readonly strict?: boolean;
   /** 本配置自己的并发上限(来自 ExperimentDef.maxConcurrency):调度器为它单建信号量,
    *  attempt 先过这道闸再占全局并发位;省略则只受全局并发约束。 */
   readonly maxConcurrency?: number;
@@ -1227,6 +1234,8 @@ export interface Attempt {
   readonly key: string;
   readonly fingerprint: string;
   readonly configHash: string;
+  /** Planning 时唯一解析并冻结的 Judge capability/config。 */
+  readonly judge: ResolvedJudgeConfig | undefined;
   /** 该 pair 的唯一、不可变规划产物；fingerprint / create / reuse 全部消费同一份值。 */
   readonly plan: LinkedRunPlan;
   /** 同一 Experiment 本次选中 Eval 的完整 plan 映射；run.json 不从当前 pair 猜全局默认值。 */
@@ -1378,8 +1387,8 @@ export interface FailureDetail {
   verdict: "failed" | "errored";
   /** 一层可行动摘要(gate 断言名、error 消息……),不是完整 stack/transcript;详情走 `niceeval show`。 */
   reason: string;
-  /** failed / assertion-unavailable 时的结构化主断言摘要；机器 renderer 直接读字段。 */
-  assertion?: PrimaryAssertionSummary;
+  /** failed / unavailable 时的结构化主 Fact/use 摘要。 */
+  fact?: PrimaryFactSummary;
   /** 仅 errored 使用：结构化执行错误发生时所在的阶段。failed 是断言 outcome，不带 phase。 */
   phase?: LifecyclePhase;
   /** 仅 errored 且没有结构化主断言摘要（真正的执行错误，而非 assertion-unavailable）时携带：
@@ -1601,7 +1610,7 @@ export type DurableFeedbackEvent =
       who: string;
       verdict: "failed" | "errored";
       reason: string;
-      assertion?: PrimaryAssertionSummary;
+      fact?: PrimaryFactSummary;
       phase?: LifecyclePhase;
       code?: string;
       origin?: TimingOrigin;

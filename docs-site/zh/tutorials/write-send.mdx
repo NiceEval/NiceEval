@@ -161,10 +161,13 @@ export default defineAgent({
 应用的返回里不只有回复文本——Chat Completions 形返回的 `tool_calls` 记录了这轮调过什么工具。Adapter 最重要的工作就是**把接口的返回归一成标准事件流**：本轮发生的每件事一个对象，按真实发生顺序排进 `Turn.events`，对象是下面十种类型之一（各字段的实际值，[契约页有一轮的完整示例](/zh/explanation/adapter)）：
 
 ```ts
+import type { CommandProjection } from "niceeval/adapter";
+
 type StreamEvent =
   | { type: "message"; role: "assistant" | "user"; text: string }
   | { type: "operation.started"; operationId: string; operation:
-      | { kind: "tool"; name: string; input: JsonValue; tool?: ToolName }
+      | { kind: "tool"; name: string; input: JsonValue;
+          tool?: ToolName; command?: CommandProjection }
       | { kind: "subagent"; name: string; remoteUrl?: string } }
   | { type: "operation.finished"; operationId: string; kind: "tool";
       output?: JsonValue; status: "completed" | "failed" | "rejected" }
@@ -226,13 +229,13 @@ type StreamEvent =
 | 你吐的事件 | 解锁的断言 |
 |---|---|
 | `message` | `t.reply`、`t.messageIncludes()`、judge 的对话材料 |
-| tool `operation.started` / `operation.finished`（靠 `operationId` 配对） | `t.calledTool()` / `t.toolOrder()` / `t.maxToolCalls()` / `t.noFailedActions()`… |
+| tool `operation.started` / `operation.finished`（靠 `operationId` 配对） | `turn.calledTool()` / `turn.toolOrder()` / `turn.maxToolCalls()` / `turn.noFailedActions()`… |
 | `input.requested`（配合 status `"waiting"`） | `t.parked()`、`t.requireInputRequest()`、`t.respond()`（第五步） |
 | `thinking` / `compaction` / `error` | 对应断言与 o11y 计数 |
 
 Chat Completions 响应**不保证包含完整过程记录**。应用可能在服务端完成工具循环，只返回最终答案。因此，`turnFromChatCompletion` 的返回不带完整性证明：`calledTool` 等正断言可用，`notCalledTool` 等负断言会提示证据不完整。Responses 协议要求 `output` 数组记录完整过程，`turnFromResponses` 的返回带完整性证明，负断言可信。两者的可信度差异来自接口契约。
 
-**这一步支持**：`t.calledTool()`、`t.toolOrder()`、`t.maxToolCalls()`、`t.noFailedActions()` 等工具断言。
+**这一步支持**：`turn.calledTool()`、`turn.toolOrder()`、`turn.maxToolCalls()`、`turn.noFailedActions()` 等工具断言。需要跨 Turn 排序时，把接收者换成 `session`。
 
 ## 第五步：HITL
 

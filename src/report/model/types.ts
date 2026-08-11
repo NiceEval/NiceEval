@@ -7,7 +7,6 @@ import type { AttemptHandle, Sample, SampleCoverage, SampleIssue, SampleMissing,
 import type { AttemptIdentity, AttemptLocator } from "../../record/locator.ts";
 import type { AttemptEvidenceCapabilities } from "../../record/attempt-evidence.ts";
 import type {
-  AssertionResult,
   AttemptError,
   DiagnosticRecord,
   ExperimentRunInfo,
@@ -15,13 +14,14 @@ import type {
   InputRequest,
   JsonValue,
   PhaseTiming,
-  ScoreEntry,
   SourceLoc,
   ToolName,
   TraceSpan,
   Usage,
   Verdict,
 } from "../../types.ts";
+import type { EvaluationFactResult } from "../../assertions/types.ts";
+import type { FactUseResult, AttemptTerminal } from "../../record/fact-record.ts";
 import type { DiffFile } from "../definition/primitives/diff-lines.ts";
 import type { CalloutGroup } from "../definition/primitives/callouts-logic.ts";
 import type { LocalizedText, ReportLocale } from "./locale.ts";
@@ -265,7 +265,7 @@ export interface ScoreboardData {
  * 不是均值。
  */
 export interface DeltaCell {
-  evaluationKind: "pass" | "points";
+  evaluationKind: "pass" | "score";
   /** 复用 Record 的判定枚举,不为组件发明第二套。 */
   verdict: Verdict;
   /** 计分制的题目级挣分;通过制省略——计分制没有满分分母。 */
@@ -295,7 +295,7 @@ export interface DeltaData {
   totals: globalThis.Record<
     string,
     {
-      evaluationKindComposition: "pass" | "points" | "mixed";
+      evaluationKindComposition: "pass" | "score" | "mixed";
       passed?: number;
       denominator?: number; // pass / mixed
       totalScore?: number; // points / mixed
@@ -368,12 +368,12 @@ export interface VerdictTally {
 }
 
 /**
- * 一个范围内出现的题型构成:`"pass"` 全部通过制、`"points"` 全部计分制、`"mixed"` 两者都有
+ * 一个范围内出现的题型构成:`"pass"` 全部通过制、`"score"` 全部计分制、`"mixed"` 两者都有
  * (同一个 experiment 或多个 experiment 并排都可能形成 mixed)。是定义期事实
  * (`EvalDescriptor.evaluationKind`),不依赖 attempt 执行结果(docs/feature/reports/README.md
  * 「题型构成与主读数」)。
  */
-export type EvaluationKindComposition = "pass" | "points" | "mixed";
+export type EvaluationKindComposition = "pass" | "score" | "mixed";
 
 /**
  * 一个范围的摘要:快照时间窗、experiment / eval / attempt 数、两级判定计票、端到端通过率
@@ -394,14 +394,14 @@ export interface SampleSummaryContent {
   /** 官方两级 endToEndPassRate,不从任一计票重算。 */
   endToEndPassRate: MetricValue;
   /**
-   * 该 Sample 内出现的题型:`"pass"` 全部通过制(默认,与此字段引入前行为一致)、`"points"`
+   * 该 Sample 内出现的题型:`"pass"` 全部通过制(默认,与此字段引入前行为一致)、`"score"`
    * 全部计分制、`"mixed"` 两者都有(同一个 experiment 也可以选择两种题型,
    * 见 docs/feature/experiments/score-points.md)。
-   * 渲染面据此决定主 KPI:`"points"` 隐藏通过率只显示 `totalScore`;`"mixed"` 两者都显示;
+   * 渲染面据此决定主 KPI:`"score"` 隐藏通过率只显示 `totalScore`;`"mixed"` 两者都显示;
    * `"pass"` 只显示通过率、`totalScore` 省略——不摆空列。
    */
   evaluationKindComposition: EvaluationKindComposition;
-  /** 计分制总分(totalScore 指标)。仅 `evaluationKindComposition` 为 `"points"` 或 `"mixed"` 时出现。 */
+  /** 计分制总分(totalScore 指标)。仅 `evaluationKindComposition` 为 `"score"` 或 `"mixed"` 时出现。 */
   totalScore?: MetricValue;
   /** costUSD 按 attempt 求和;缺失成本不伪造为 0。 */
   totalCostUSD: MetricValue;
@@ -492,7 +492,9 @@ export interface AttemptListItem {
   attempt: number;
   agent: string;
   /** 该 Attempt 所属 Eval 的定义期题型；渲染面据此区分不适用读数与缺失读数。 */
-  evaluationKind: "pass" | "points";
+  evaluationKind: "pass" | "score";
+  /** Fact score attempts retain their exact terminal state for renderers/JSON. */
+  terminal: AttemptTerminal;
   verdict: Verdict;
   /**
    * 该轮的单行结果摘要,已按断言摘要契约折好:failed 取主失败断言摘要,
@@ -621,18 +623,17 @@ export interface AttemptSummaryData {
   /** 展示归属；不参与 locator 的 `{ runId, evalId, attempt }` 哈希。 */
   experimentId: string;
   identity: AttemptIdentity;
+  /** Exact Fact score terminal; `verdict` is only the four-way compatibility projection. */
+  terminal: AttemptTerminal;
   verdict: Verdict;
   startedAt?: string;
   durationMs: number;
   costUSD: number | null;
   capabilities: AttemptEvidenceCapabilities;
-  /**
-   * 计分制(`evaluationKind: "points"`)attempt 本轮挣分:`assertions[].points` 之和(排除 unavailable)
-   * 加 `scoreEntries[].points` 之和;详情页总分位的唯一出现处,其它区块不重复这个总数
-   * (docs/feature/assertions/library/display.md「计分制」)。通过制 eval 恒省略,不是 0——
-   * 题型判定读定义期 `result.evaluationKind`,不从结果推断。
-   */
-  totalScore?: number;
+  /** Score outcome's diagnostic raw total; never used for aggregation. */
+  earnedScore?: number;
+  /** Score outcome's aggregation value: invalid is 0, unavailable/errored/skipped are null. */
+  creditedScore?: number | null;
 }
 
 /**
@@ -649,38 +650,11 @@ export interface AttemptErrorData extends AttemptError {
 }
 
 /**
- * `AttemptAssertions` 的 data:非 passed 条目默认展开,passed 按 group 折叠计数;没有 assertion
- * 且没有给分记录时 null。计分制(`evaluationKind: "points"`)eval 的 `.points` 挣分随所在
- * `AssertionResult` 一起出现在 `attention` / `passedGroups` 里(字段本就在 `AssertionResult` 上,
- * 不需要额外投影);`t.score(label, n)` 的直接给分记录另成一个分组数组,见 `scoreEntries`
- * (docs/feature/assertions/library/display.md「计分制:.points 与给分记录」)。
+ * `AttemptAssertions` 保留组件名，但数据只包含 Fact producer 与 Fact use consumer。
  */
 export interface AttemptAssertionsData {
-  /**
-   * failed / unavailable / soft 全部非 passed 条目,按原始声明顺序;计分制的得分点(带
-   * `.points`)豁免 passed 收纳——即使 outcome 是 passed 也进这个平铺列表,不折进
-   * `passedGroups`(docs/feature/assertions/library/display.md「得分点不参与 passed 收纳」)。
-   * 计分制前置中止时,中止断言(记录顺序最后一条,必为 failed gate)带 `aborted: true`——
-   * 其后不再有任何断言或给分记录,展示时紧跟一个中止标注(`⤓`,见「计分制」)。
-   */
-  attention: (AssertionResult & { aborted?: true })[];
-  /**
-   * passed 条目按 groupPath.join(" > ") 分组(无分组键为 ""),组内保持原始顺序;只包含不带
-   * `.points` 的观测断言——收纳规则不吞掉分数面的明细。
-   */
-  passedGroups: { group: string; items: AssertionResult[] }[];
-  /**
-   * `t.score(label, n)` 记录,按 groupPath.join(" > ") 分组(无分组键为 "",同 passedGroups
-   * 同一套分组算法),组内保持记录顺序。只在存在给分记录时出现;省略表示没有给分记录
-   * (通过制 eval 的 attempt 恒省略)。
-   */
-  scoreEntries?: { group: string; items: ScoreEntry[] }[];
-  /**
-   * 得分点挣满计数("2/5 得分点挣满"):分母是全部带 `.points` 的断言(unavailable 结构上不
-   * 携带 `points`,不计入分母);挣满 = `score === 1`(连续打分断言不足 `n × 1.0` 不算挣满)。
-   * 只在存在至少一个得分点时出现(通过制 eval 恒省略)。
-   */
-  scorePointsEarned?: { earned: number; total: number };
+  factResults: readonly EvaluationFactResult[];
+  factUses: readonly FactUseResult[];
 }
 
 /** `AttemptFixPrompt` 的 data:单条 attempt 的复制修复 prompt;passed/skipped 或无可操作失败时 null。 */
@@ -763,6 +737,8 @@ export interface UsageTableData {
   experimentId: string;
   evalId: string;
   attempt: number;
+  /** Exact score terminal; verdict remains the compatibility projection for tallies. */
+  terminal: AttemptTerminal;
   verdict: Verdict;
   turns?: number;
   toolCalls?: number;

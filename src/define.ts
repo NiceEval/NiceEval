@@ -27,11 +27,11 @@ import {
 import { Either, Schema } from "effect";
 import { assertEvidenceCoverage } from "./assertions/coverage.ts";
 
-// 发现期必须区分 defineScoreEval 的真正产物与运行时手写 `{ evaluationKind: "points" }` 的裸对象。
+// 发现期必须区分 defineScoreEval 的真正产物与运行时手写 `{ evaluationKind: "score" }` 的裸对象。
 // WeakSet 是模块私有来源证明；Definition 本身另有 types.ts 的私有 symbol 品牌供类型层使用。
 const definedScoreEvals = new WeakSet<object>();
 
-/** @internal 仅供 discoverEvals 验证 points 题型来源。 */
+/** @internal 仅供 discoverEvals 验证 score 题型来源。 */
 export function isDefinedScoreEval(value: object): boolean {
   return definedScoreEvals.has(value);
 }
@@ -97,13 +97,12 @@ export function defineEval(def: EvalInput): EvalDefinition<"pass", TestContext> 
 }
 
 /**
- * 计分制 eval:题内用给分词汇(`.points(n)` / `t.score(label, n)`)叠加挣分,对比读总分而不是
- * 通过率。字段与 `defineEval` 完全同形,唯一区别是 `test(t)` 的 `t` 额外提供给分词汇——禁止
- * 提供 id,从路径推导(见 docs/feature/eval/README.md「defineScoreEval:计分制题型」)。
+ * 计分制 eval:Fact verdict uses 与 Fact score uses 可以读取同一份证据；正常返回由 Runner
+ * 自动关闭计分收集器。字段与 `defineEval` 同形，禁止提供 id，由发现期推导。
  */
 export function defineScoreEval(
   def: ScoreEvalInput,
-): EvalDefinition<"points", ScoreTestContext> {
+): EvalDefinition<"score", ScoreTestContext> {
   if (Object.hasOwn(def, "id")) {
     throw new Error(t("define.scoreEvalIdRejected"));
   }
@@ -117,7 +116,7 @@ export function defineScoreEval(
     throw new Error(t("define.scoreEvalTestRequired"));
   }
   assertSandboxLayer(def.sandbox, "defineScoreEval");
-  const result = brandEvalDefinition({ ...normalizeEvalFields(def), evaluationKind: "points", test: def.test });
+  const result = brandEvalDefinition({ ...normalizeEvalFields(def), evaluationKind: "score", test: def.test });
   definedScoreEvals.add(result);
   return result;
 }

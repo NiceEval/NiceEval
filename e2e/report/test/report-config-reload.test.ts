@@ -139,14 +139,18 @@ test("view 持续重建项目模块、配置、Record，并在修复报告后恢
             timeoutMs: 15_000,
             label: "broken report rebuild",
           });
-          const retained = await htmlWithMarkers(
-            origin!,
-            "REPORT_FIRST",
-            "INDIRECT_SECOND",
-            "ATTEMPTS_4",
-            "#654321",
+          const unavailable = await pollUntil(
+            async () => {
+              const response = await fetch(origin!);
+              if (response.status !== 503) return undefined;
+              const body = await response.text();
+              return body.includes("current target unavailable") && body.includes("BROKEN_REPORT")
+                ? body
+                : undefined;
+            },
+            { timeoutMs: 15_000, intervalMs: 100, label: "broken report unavailable" },
           );
-          expect(retained).toBeDefined();
+          expect(unavailable).toContain("BROKEN_REPORT");
 
           await writeFile(reportPath, report.replace("REPORT_FIRST", "REPORT_RECOVERED"), "utf8");
           const recovered = await pollUntil(

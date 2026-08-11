@@ -3,9 +3,11 @@
 // 一部分)。反例 notCalledTool 的目标 server(e2e-absent)从未挂载过,负断言在结构上
 // 必然成立,不依赖模型这一次具体怎么回答。
 import { defineEval } from "niceeval";
+import { includes, satisfies, toolMatch } from "niceeval/expect";
 
 export default defineEval({
-  description: "MCP:stdio 与 Streamable HTTP 两种 server 形态都能被真实调用且入参正确;未挂载的 server 从未被调用",
+  description:
+    "MCP:stdio 与 Streamable HTTP 两种 server 形态都能被真实调用且入参正确;未挂载的 server 从未被调用",
   async test(t) {
     const turn = await t.send(
       "调用名字严格为 mcp__e2e-stdio__get-sum 的 MCP 工具,参数 a=100、b=23。" +
@@ -16,15 +18,46 @@ export default defineEval({
         "然后重试同一个工具调用;持续重试直到两次调用都成功,不要放弃。" +
         "把两个结果按调用顺序报告为用空格分隔的两个数字。",
     );
-    await turn.succeeded().stopOnFailure();
+    await t.require(turn.succeeded());
 
-    await t.group("两个已挂载的 MCP server 都以精确入参被调用;未挂载的 server 从未被调用", () => {
-      t.calledTool("mcp__e2e-stdio__get-sum", { input: { a: 100, b: 23 } });
-      t.calledTool("mcp__e2e-http__get-sum", { input: { a: 6, b: 36 } });
-      t.notCalledTool("mcp__e2e-absent__get-diff");
-    });
+    await t.group(
+      "两个已挂载的 MCP server 都以精确入参被调用;未挂载的 server 从未被调用",
+      () => {
+        t.check(
+          t.calledTool(
+            toolMatch("mcp__e2e-stdio__get-sum", {
+              input: satisfies(
+                '"mcp__e2e-stdio__get-sum" input',
+                (input) =>
+                  typeof input === "object" &&
+                  input !== null &&
+                  !Array.isArray(input) &&
+                  Object.is(input["a"], 100) &&
+                  Object.is(input["b"], 23),
+              ),
+            }),
+          ),
+        );
+        t.check(
+          t.calledTool(
+            toolMatch("mcp__e2e-http__get-sum", {
+              input: satisfies(
+                '"mcp__e2e-http__get-sum" input',
+                (input) =>
+                  typeof input === "object" &&
+                  input !== null &&
+                  !Array.isArray(input) &&
+                  Object.is(input["a"], 6) &&
+                  Object.is(input["b"], 36),
+              ),
+            }),
+          ),
+        );
+        t.check(t.notCalledTool(toolMatch("mcp__e2e-absent__get-diff")));
+      },
+    );
 
-    turn.messageIncludes("123");
-    turn.messageIncludes("42");
+    t.check(turn.message, includes("123"));
+    t.check(turn.message, includes("42"));
   },
 });

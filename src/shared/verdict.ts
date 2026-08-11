@@ -2,45 +2,66 @@
 // 必须保持环境无关且只依赖 type import,vite 前端会直接打包它。
 // 单独成模块的原因:折叠/计票口径两边必须逐字一致,否则折叠行状态会和 KPI / 成功率对不上。
 
-import type { Severity, Verdict } from "./types.ts";
+import type { Verdict } from "./types.ts";
 
-/** Verdict 折叠所需的最小断言投影，避免 shared 反向依赖 assertions 域。 */
-export interface VerdictAssertion {
-  readonly outcome: "passed" | "failed" | "unavailable";
-  readonly severity: Severity;
-  readonly optional?: boolean;
+/** 折叠/计票只需要 verdict 字段;server 传 EvalResult,前端传 ViewResult 都满足。 */
+export type ScoreAttemptTerminal = "scored" | "invalid" | "unavailable";
+export type AttemptTerminal = Verdict | ScoreAttemptTerminal;
+
+/**
+ * The small score-outcome projection shared by runner/report consumers. It is
+ * structural on purpose: shared remains environment-neutral and does not pull
+ * the assertions domain into browser bundles.
+ */
+export interface ScoreOutcomeLike {
+  readonly status: "scored" | "invalid" | "unavailable" | "errored" | "skipped";
 }
 
-/** 折叠单个 Attempt Verdict 所需的最小执行投影。 */
-export interface VerdictInput {
-  readonly error?: { readonly code: string };
-  readonly assertions: readonly VerdictAssertion[];
-  readonly skipReason?: string;
-  readonly strict?: boolean;
+export interface VerdictLike {
+  verdict: Verdict;
+  evaluationKind?: "pass" | "score";
+  scoreResult?: ScoreOutcomeLike;
+}
+
+/** Exact terminal state for a Fact score attempt; pass evaluations retain Verdict. */
+export function attemptTerminalOf(attempt: VerdictLike): AttemptTerminal {
+  if (attempt.evaluationKind === "score" && attempt.scoreResult !== undefined) {
+    return attempt.scoreResult.status;
+  }
+  return attempt.verdict;
+}
+
+/** Converts score terminals to the four-way tally/JUnit shape. */
+export function verdictForTerminal(terminal: AttemptTerminal): Verdict {
+  switch (terminal) {
+    case "scored": return "passed";
+    case "invalid": return "failed";
+    case "unavailable": return "errored";
+    case "passed":
+    case "failed":
+    case "errored":
+    case "skipped": return terminal;
+  }
 }
 
 /**
- * 把执行结果、断言与显式 skip 折叠成一个 Attempt Verdict。固定优先级是
- * errored > failed > skipped > passed。
+ * Eval-level fold keeps the score terminal distinction until the consumer asks
+ * for a four-way Verdict: scored > invalid > errored > unavailable > skipped.
  */
-export function computeVerdict(input: VerdictInput): Verdict {
-  if (input.error !== undefined) return "errored";
-
-  for (const assertion of input.assertions) {
-    if (assertion.outcome === "unavailable" && !assertion.optional) return "errored";
+export function foldEvalTerminal(attempts: VerdictLike[]): AttemptTerminal {
+  const terminals = attempts.map(attemptTerminalOf);
+  const scoreAttempt = attempts.some((attempt) => attempt.evaluationKind === "score" && attempt.scoreResult !== undefined);
+  if (scoreAttempt) {
+    if (terminals.some((terminal) => terminal === "scored")) return "scored";
+    if (terminals.some((terminal) => terminal === "invalid")) return "invalid";
+    if (terminals.some((terminal) => terminal === "errored")) return "errored";
+    if (terminals.some((terminal) => terminal === "unavailable")) return "unavailable";
+    return "skipped";
   }
-
-  for (const assertion of input.assertions) {
-    if (assertion.outcome === "failed" && (assertion.severity === "gate" || input.strict)) return "failed";
-  }
-
-  if (input.skipReason !== undefined) return "skipped";
-  return "passed";
-}
-
-/** 折叠/计票只需要 verdict 字段;server 传 EvalResult,前端传 ViewResult 都满足。 */
-export interface VerdictLike {
-  verdict: Verdict;
+  if (terminals.some((terminal) => terminal === "passed")) return "passed";
+  if (terminals.some((terminal) => terminal === "failed")) return "failed";
+  if (terminals.some((terminal) => terminal === "errored")) return "errored";
+  return "skipped";
 }
 
 /**
@@ -48,11 +69,7 @@ export interface VerdictLike {
  * 「先过一次即停」语义),否则按 failed > errored > skipped 取最严重的一个。
  */
 export function foldEvalVerdict(attempts: VerdictLike[]): Verdict {
-  const verdicts = attempts.map((a) => a.verdict);
-  if (verdicts.some((o) => o === "passed")) return "passed";
-  if (verdicts.some((o) => o === "failed")) return "failed";
-  if (verdicts.some((o) => o === "errored")) return "errored";
-  return "skipped";
+  return verdictForTerminal(foldEvalTerminal(attempts));
 }
 
 export interface EvalLevelStats {

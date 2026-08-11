@@ -1,5 +1,5 @@
 # Verdict 用例
 
-## `--strict`
+用显式 Boolean condition 与 threshold 守住质量：
 
-- [质量分毕业成门禁](strict-quality-gate.md)
+- [用明确阈值守住质量](strict-quality-gate.md)

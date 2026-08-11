@@ -4,6 +4,7 @@
 // (reporter 错误按框架约定只记 diagnostic,不会让运行崩)。
 
 import type { EvalResult, JsonValue, Reporter } from "../../types.ts";
+import { attemptTerminalOf, factRecordOf, scoreOutcomeOf, verdictForTerminal } from "../../record/fact-record.ts";
 import { reportActivity } from "../feedback/sink.ts";
 
 export interface BraintrustConfig {
@@ -115,21 +116,39 @@ export function Braintrust(config: BraintrustConfig = {}): Reporter {
 
 /**
  * EvalResult → Braintrust 一行。导出仅为单测;映射口径:
- * - scores:soft 断言按名字记分,gate 断言记在 `gate:` 前缀下 —— 实验 diff 里
- *   gate 回归和 soft 分数回归用同一套机制看。重名断言追加 `#n` 消歧,不静默覆盖。
+ * - scores:每个已消费且成功的 Score Fact 记归一化分；阈值 verdict use 另记 0/1。
  * - metrics:start/end(Braintrust 由此算时长)+ token 用量 + 估算成本;缺就不写,不编 0。
  * - metadata:身份维度(agent / model / experiment / attempt / flags)+ 失败断言明细。
  */
 export function toBraintrustEvent(result: EvalResult): BraintrustLogEvent {
   const scores: globalThis.Record<string, number> = {};
-  for (const a of result.assertions) {
-    // unavailable 是没有分数的独立态:不写 0 分(评不了 ≠ 0 分),缺口进 metadata。
-    if (a.outcome === "unavailable") continue;
-    const base = a.severity === "gate" ? `gate:${a.name}` : a.name;
-    let key = base;
-    for (let n = 2; key in scores; n++) key = `${base}#${n}`;
-    // Braintrust 要求 0..1
-    scores[key] = Math.min(1, Math.max(0, a.score));
+  const fact = factRecordOf(result);
+  const terminal = attemptTerminalOf(result);
+  const verdict = verdictForTerminal(result);
+  if (fact !== undefined) {
+    const consumedFactIds = new Set<string>();
+    for (const use of fact.factUses) {
+      if (use.useKind === "verdict") consumedFactIds.add(use.target.factId);
+      else if (use.input.kind === "fact") consumedFactIds.add(use.input.factId);
+    }
+    const byId = new Map(fact.factResults.map((item) => [item.factId, item]));
+    for (const item of fact.factResults) {
+      if (item.factKind !== "score" || item.outcome !== "scored" || !consumedFactIds.has(item.factId)) continue;
+      addScore(scores, `fact:${item.factId}`, item.normalizedScore);
+    }
+    for (const use of fact.factUses) {
+      if (use.useKind !== "verdict" || use.target.kind !== "score") continue;
+      const target = byId.get(use.target.factId);
+      if (target?.factKind !== "score" || target.outcome !== "scored") continue;
+      if (use.outcome !== "passed" && use.outcome !== "failed") continue;
+      const stableUseKey = use.key ?? use.label ?? target.name;
+      addScore(scores, `use:${stableUseKey}`, use.outcome === "passed" ? 1 : 0);
+    }
+    // A scored zero is a successful terminal, whereas invalid is the only
+    // observed zero for terminal validity. Unavailable/errored intentionally
+    // omit this score rather than masquerading as ordinary 0.
+    if (terminal === "scored") addScore(scores, "niceeval:terminal", 1);
+    if (terminal === "invalid") addScore(scores, "niceeval:terminal", 0);
   }
 
   const metrics: globalThis.Record<string, number> = {};
@@ -156,7 +175,8 @@ export function toBraintrustEvent(result: EvalResult): BraintrustLogEvent {
     eval: result.id,
     agent: result.agent,
     attempt: result.attempt,
-    verdict: result.verdict,
+    verdict,
+    terminal,
   };
   if (result.model !== undefined) metadata.model = result.model;
   if (result.experimentId !== undefined) metadata.experiment = result.experimentId;
@@ -164,14 +184,14 @@ export function toBraintrustEvent(result: EvalResult): BraintrustLogEvent {
     metadata.flags = result.experiment.flags;
   }
   if (result.skipReason !== undefined) metadata.skipReason = result.skipReason;
-  const failed = result.assertions
-    .filter((a) => a.outcome === "failed")
-    .map((a) => ({ name: a.name, ...(a.detail === undefined ? {} : { detail: a.detail }) }));
-  if (failed.length > 0) metadata.failedAssertions = failed;
-  const unavailable = result.assertions
-    .filter((a) => a.outcome === "unavailable")
-    .map((a) => ({ name: a.name, reason: a.outcome === "unavailable" ? a.reason : "" }));
-  if (unavailable.length > 0) metadata.unavailableAssertions = unavailable;
+  if (fact !== undefined) {
+    metadata.evaluationAlgorithm = fact.evaluationAlgorithm;
+    metadata.evaluationKind = fact.evaluationKind;
+    metadata.factResults = fact.factResults as unknown as JsonValue;
+    metadata.factUses = fact.factUses as unknown as JsonValue;
+    const score = scoreOutcomeOf(result);
+    if (score !== undefined) metadata.scoreResult = score as unknown as JsonValue;
+  }
 
   // 一次运行内 (experiment, eval, agent, model, attempt) 唯一;Braintrust 按 id 合并重复行。
   const id = [result.experimentId ?? "", result.id, result.agent, result.model ?? "", `a${result.attempt}`].join("|");
@@ -185,6 +205,12 @@ export function toBraintrustEvent(result: EvalResult): BraintrustLogEvent {
     metadata,
     metrics,
   };
+}
+
+function addScore(scores: globalThis.Record<string, number>, base: string, value: number): void {
+  let key = base;
+  for (let n = 2; key in scores; n++) key = `${base}#${n}`;
+  scores[key] = value;
 }
 
 /** agent 的最终回复文本(事件流里最后一条 assistant message);没有就不填。 */

@@ -3,6 +3,7 @@
 
 import type { SourceLoc } from "../types.ts";
 import type { AttemptHandle } from "./types.ts";
+import { materializeFactRecord } from "./fact-record.ts";
 import {
   assembleSourceTree,
   type AnnotatedSourceTree,
@@ -18,20 +19,26 @@ export async function loadAttemptSourceTree(
   if (!sources?.length) return null;
   const entry = sources.find((source) => source.role === "entry");
   if (!entry) return null;
+  const result = materializeFactRecord(attempt.result);
   return assembleSourceTree({
     entry,
     sources,
-    assertions: attempt.result.assertions,
-    scoreEntries: attempt.result.scoreEntries ?? [],
+    factResults: result.factResults,
+    factUses: result.factUses,
     sends,
-    abort: firstFailedStopOnFailureLoc(attempt.result.assertions),
+    abort: firstControlFailureLoc(result),
   });
 }
 
-/** 只取首条真正触发前置中止的断言；后续已记录的断言不能把中止锚点推到最后一条。 */
-function firstFailedStopOnFailureLoc(assertions: Readonly<AttemptHandle["result"]["assertions"]>): SourceLoc | undefined {
-  for (const assertion of assertions) {
-    if (assertion.outcome === "failed" && assertion.stopOnFailure === true) return assertion.loc;
-  }
-  return undefined;
+/** `require` 是唯一的 Fact 控制流边界；取最早声明处标记后续源码不可达。 */
+function firstControlFailureLoc(result: ReturnType<typeof materializeFactRecord>): SourceLoc | undefined {
+  const candidates = [
+    ...result.factUses.flatMap((use) =>
+      use.useKind === "verdict" && use.method === "require" && use.outcome !== "passed" && use.consumerLoc
+        ? [{ order: use.sourceOrder, loc: use.consumerLoc }]
+        : []
+    ),
+  ];
+  candidates.sort((left, right) => left.order - right.order);
+  return candidates[0]?.loc;
 }

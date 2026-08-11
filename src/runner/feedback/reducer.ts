@@ -290,7 +290,7 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
           who: event.who,
           verdict: event.verdict,
           reason: event.reason,
-          ...(event.assertion !== undefined ? { assertion: event.assertion } : {}),
+          ...(event.fact !== undefined ? { fact: event.fact } : {}),
           ...(event.phase !== undefined ? { phase: event.phase } : {}),
           ...(event.code !== undefined ? { code: event.code } : {}),
           ...(event.origin !== undefined ? { origin: event.origin } : {}),

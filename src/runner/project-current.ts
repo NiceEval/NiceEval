@@ -68,7 +68,6 @@ export async function loadProjectCurrent(
       description: experiment.description,
       labels: experiment.labels,
       maxConcurrency: experiment.maxConcurrency,
-      strict: undefined,
       setup: experiment.setup,
       teardown: experiment.teardown,
       classifyFailure: experiment.classifyFailure,

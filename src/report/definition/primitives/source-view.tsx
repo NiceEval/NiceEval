@@ -307,17 +307,29 @@ function SourceBlock({
 
 export function sourceViewText(data: SourceContent, ctx: TextContext, locale: ReportLocale): string {
   const lines: string[] = [];
+  const appendDetails = (details: readonly ReportNode[]) => {
+    for (const detail of details) {
+      const rendered = ctx.render(detail, Math.max(1, ctx.width - 2));
+      if (rendered.length === 0) continue;
+      for (const renderedLine of rendered.split("\n")) lines.push(`  ${renderedLine}`);
+    }
+  };
   const collect = (block: SourceBlockContent) => {
     for (const line of block.lines) {
-      if (!line.tone && !line.aborted) continue;
+      const tone = lineTone(line);
+      if (tone === undefined) continue;
       const pill = line.pill !== undefined ? ` ${resolveLocalizedText(line.pill, locale)}` : "";
-      lines.push(`${block.path}:${line.number} [${line.tone ?? "aborted"}]${pill}`);
+      lines.push(`${block.path}:${line.number} [${tone}]${pill}`);
+      if ((tone === "gate-fail" || tone === "soft-fail" || tone === "unavailable") && line.details && line.details.length > 0) {
+        appendDetails(line.details);
+      }
     }
   };
   collect(data.spine);
   for (const block of data.detached) collect(block);
   if (data.unmapped && data.unmapped.length > 0) {
     lines.push(`unmapped: ${data.unmapped.length}`);
+    appendDetails(data.unmapped);
   }
   const command = data.locator !== undefined ? ctx.command({ page: ATTEMPT_PAGE_ID, params: { locator: data.locator } }) : undefined;
   if (command !== undefined) {

@@ -69,7 +69,7 @@ function summaryView(result: StandardOverviewResult, locale: ReportLocale) {
   return (
     <Col className="niceeval-sample-summary">
       <Grid>
-        {snapshot.evaluationKindComposition !== "points" ? (
+        {snapshot.evaluationKindComposition !== "score" ? (
           <Stat
             label={localeText(locale, "scopeSummary.passRate")}
             value={{ kind: "metric", metric: snapshot.endToEndPassRate }}

@@ -9,8 +9,9 @@ import {
   skillDiscoveryInstruction,
 } from "./skills.ts";
 import { mapBubSpans } from "../o11y/otlp/mappers/bub.ts";
+import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
 import { runPostSetupHooks, runPreTeardownHooks } from "./post-setup.ts";
-import type { Agent, AgentSetupManifest, SkillSpec } from "../types.ts";
+import type { Agent, AgentSetupManifest, SkillSpec, TurnEvidenceCoverage } from "../types.ts";
 import type { SandboxCommand } from "../sandbox/commands.ts";
 import { createHash, randomUUID } from "node:crypto";
 import { t } from "../i18n/index.ts";
@@ -276,6 +277,23 @@ export function bubAgent(config?: BubConfig): Agent {
       const raw = await sb.readText(tapePath(workspace, sessionId, bubHome)).catch(() => undefined);
       const parsed = shared.parseBub(raw);
       const events = [...parsed.events];
+      let turnEvidenceCoverage: TurnEvidenceCoverage | undefined;
+      if (!raw?.trim()) {
+        const reason = "Bub tape was unavailable; tool trajectory was not observed.";
+        turnEvidenceCoverage = {
+          events: { status: "unavailable", reason },
+          actions: { status: "unavailable", reason },
+          usage: { status: "unavailable", reason },
+        };
+      } else if (!parsed.parseSuccess) {
+        const reason = "Some Bub tape lines could not be parsed.";
+        turnEvidenceCoverage = {
+          events: { status: "partial", reason },
+          actions: { status: "partial", reason },
+        };
+      } else {
+        turnEvidenceCoverage = unclassifiedToolActionsCoverage(events);
+      }
       if (res.exitCode !== 0) {
         throw makeSendFailure({
           acceptance: sendAcceptanceFromEvents(events),
@@ -285,7 +303,12 @@ export function bubAgent(config?: BubConfig): Agent {
           process: res,
         });
       }
-      return { events, usage: parsed.usage, status: "completed" };
+      return {
+        events,
+        usage: parsed.usage,
+        status: "completed",
+        ...(turnEvidenceCoverage === undefined ? {} : { evidenceCoverage: turnEvidenceCoverage }),
+      };
     },
   });
 }

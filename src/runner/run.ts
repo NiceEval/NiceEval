@@ -2,7 +2,6 @@
 // 职责只有编排:指纹缓存在 fingerprint.ts,单 attempt 生命周期在 attempt.ts,
 // reporter 编排 / 汇总在 report.ts，Direct Agent 的 Sandbox 占位适配器在 direct-agent-sandbox.ts。
 
-import { readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { Effect, Cause, Data, Either, Exit, Option } from "effect";
 import { probeJudge } from "../assertions/judge.ts";
@@ -22,16 +21,16 @@ import {
   attemptFailureDeclaration,
   experimentRunInfo,
   runAttemptEffect,
+  scoreFactOutcomeForAttemptError,
   type AttemptFailureDeclaration,
 } from "./attempt.ts";
-import { resolveJudge } from "./judge-config.ts";
 import type {
   DiagnosticRecord,
   EvalResult,
   InvocationShape,
   InvocationSummary,
   JsonValue,
-  JudgeConfig,
+  ResolvedJudgeConfig,
   Reporter,
   ReporterRegistration,
   SandboxBuildRecord,
@@ -51,7 +50,7 @@ import { buildFailureOrigin, startSandboxBuilds } from "../sandbox/build-coordin
 import { ArtifactPrepareCoordinator } from "../agents/provisioner.ts";
 import { collectBuildPreparation, toBuildPreparation } from "./build-preparation.ts";
 import { digestOf, type BuildKey } from "../sandbox/identity.ts";
-import { firstLine } from "../util.ts";
+import { firstLine, getEnv } from "../util.ts";
 import { recordFact, type FactValue } from "../shared/facts.ts";
 import type { ConcurrencySlot } from "../context/send-retry.ts";
 import { runReporter, emitReporterEvent, scopeReporter, summarize } from "./report.ts";
@@ -69,7 +68,7 @@ import {
 } from "./feedback/sink.ts";
 import { failureDetailFromResult } from "./feedback/failure.ts";
 import { encodeAttemptLocator, type AttemptLocator, type AttemptLocatorRegistration } from "../record/locator.ts";
-import { runWho, HALT_DIAGNOSTIC_CODE } from "./types.ts";
+import { EVALUATION_ALGORITHM, runWho, HALT_DIAGNOSTIC_CODE } from "./types.ts";
 import { runPairKey, type PreparedRunPair } from "./sandbox-selection.ts";
 import { ReusableSandboxPool } from "./sandbox-pool.ts";
 import { liveSandboxRuntimeServices } from "../sandbox/runtime.ts";
@@ -152,51 +151,30 @@ export function sandboxReusePoolKey(input: {
   });
 }
 
-/** 收集本次要探测的 judge 配置:只看「实际要跑、且源码里出现 judge 字样」的 pair 的生效
- *  配置(Experiment / Eval / Config 逐字段合并,与 attempt.ts 的 resolveJudge 同一份),按
- *  model|baseUrl|apiKeyEnv 去重。要跑的 eval 都不用 judge 时返回空 —— 全局配了 judge
- *  也不探测,纯确定性断言的运行不再被 judge key / 端点问题拦下。
- *  源码扫描是启发式:judge 调用藏在 import 的 helper 里时会漏判,漏判只是退回旧行为
- *  (评分时才报 judge 错误,损失 fail fast),不影响正确性。 */
-export function judgeProbeTargets(
-  evals: Array<{ source: string; judge: JudgeConfig | undefined; experimentJudge?: JudgeConfig }>,
-  configJudge: JudgeConfig | undefined,
-): JudgeConfig[] {
-  return judgeProbePlan(
-    evals.map((e, i) => ({
-      id: `#${i}`,
-      source: e.source,
-      judge: e.judge,
-      experimentJudge: e.experimentJudge,
-    })),
-    configJudge,
-  ).targets.map((target) => target.judge);
+/** Only declared, configured capabilities are prechecked. A missing model or
+ * key is an ordinary consumed-Fact unavailable outcome and does no network I/O. */
+export function judgeProbeTargets(evals: readonly (ResolvedJudgeConfig | undefined)[]): ResolvedJudgeConfig[] {
+  return judgeProbePlan(evals.map((judge, index) => ({ id: `#${index}`, judge }))).targets.map((target) => target.judge);
 }
 
 /** 一份探测目标的去重键:同一个 (model, baseUrl, apiKeyEnv) 只探一次,也用来把探测结局
  *  归回「哪些 Experiment × Eval pair 依赖这个端点」。 */
-function judgeTargetKey(jc: JudgeConfig): string {
-  return `${jc.model ?? ""}|${jc.baseUrl ?? ""}|${jc.apiKeyEnv ?? ""}`;
+function judgeTargetKey(jc: ResolvedJudgeConfig): string {
+  return `${jc.model ?? ""}|${jc.baseUrl}|${jc.apiKeyEnv}`;
 }
 
 /** `judgeProbeTargets` 的完整形态:除了去重后的探测目标,还给出「哪个 pair 依赖哪个目标」——
  *  预检失败只作废需要 judge 的那些 pair(见 docs/feature/judge/library.md「派发前预检」),
  *  所以必须能把探测结局按 pair 归因,不能只知道有几个端点要探。 */
 export function judgeProbePlan(
-  evals: Array<{
-    id: string;
-    source: string;
-    judge: JudgeConfig | undefined;
-    experimentJudge?: JudgeConfig;
-  }>,
-  configJudge: JudgeConfig | undefined,
-): { targets: Array<{ key: string; judge: JudgeConfig }>; evalKeys: Map<string, string> } {
-  const targets: Array<{ key: string; judge: JudgeConfig }> = [];
+  evals: ReadonlyArray<{ id: string; judge: ResolvedJudgeConfig | undefined }>,
+): { targets: Array<{ key: string; judge: ResolvedJudgeConfig }>; evalKeys: Map<string, string> } {
+  const targets: Array<{ key: string; judge: ResolvedJudgeConfig }> = [];
   const evalKeys = new Map<string, string>();
   const seen = new Set<string>();
   for (const e of evals) {
-    const jc = resolveJudge(e.experimentJudge, e.judge, configJudge);
-    if (!jc || !/\bjudge\b/.test(e.source)) continue;
+    const jc = e.judge;
+    if (jc === undefined || jc.model === undefined || !getEnv(jc.apiKeyEnv)) continue;
     const key = judgeTargetKey(jc);
     evalKeys.set(e.id, key);
     if (seen.has(key)) continue;
@@ -244,18 +222,6 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     }
   }
 
-  // 按 sourcePath 缓存文件内容,fingerprint 与 judge 预检共用:
-  // 矩阵大时(实验 × eval)规划阶段不做串行重复文件读。
-  const sourceCache = new Map<string, Promise<string>>();
-  const readSource = (path: string): Promise<string> => {
-    let p = sourceCache.get(path);
-    if (!p) {
-      p = readFile(path, "utf-8");
-      sourceCache.set(path, p);
-    }
-    return p;
-  };
-
   // 跨实验结果复用:上次 passed 或 failed 且 fingerprint 匹配的 (experimentId, evalId) 组合
   // 直接携入 —— 两者都是"跑完了、判定确定"的终态,没有理由重花一次 agent/sandbox 成本去
   // 复现同一个已知结果。errored 是框架/环境层面的不确定失败(超时、沙箱挂了、judge 探测失败
@@ -278,6 +244,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   const {
     preparedPairsByKey,
     plannedConfigHashes,
+    resolvedJudgesByKey,
     plannedFingerprints,
     acceptableFingerprints,
     carriedAttemptsByKey,
@@ -380,6 +347,9 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         if (fingerprint === undefined) {
           throw new Error(`Missing planned fingerprint for ${JSON.stringify(cacheKey(run, evalDef.id))}.`);
         }
+        if (!resolvedJudgesByKey.has(carryKey)) {
+          throw new Error(`Missing planned Judge resolution for ${JSON.stringify(carryKey)}.`);
+        }
         const sandboxPlansByEval = preparedPlansByRun.get(run);
         if (sandboxPlansByEval === undefined) {
           throw new Error(`Missing Experiment plan map for ${JSON.stringify(run.experimentId)}.`);
@@ -391,6 +361,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
           key,
           fingerprint,
           configHash,
+          judge: resolvedJudgesByKey.get(carryKey),
           plan: prepared.plan,
           sandboxPlansByEval,
           // locator 在构造 fresh attempt plan 时即算好并作为身份贯穿执行、留存登记与落盘
@@ -452,15 +423,11 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   const judgePrecheckFailures = new Map<string, string>();
   {
     const uniquePairs = [...new Map(attempts.map((a) => [cacheKey(a.run, a.evalDef.id), a])).entries()];
-    const sources = await Promise.all(uniquePairs.map(([, a]) => readSource(a.evalDef.sourcePath)));
     const { targets, evalKeys } = judgeProbePlan(
-      uniquePairs.map(([id, a], i) => ({
+      uniquePairs.map(([id, a]) => ({
         id,
-        source: sources[i] ?? "",
-        judge: a.evalDef.judge,
-        experimentJudge: a.run.judge,
+        judge: a.judge,
       })),
-      opts.config.judge,
     );
     if (targets.length > 0) {
       // judge 预检是一次真实网络往返,可能慢甚至长时间不返回:发运行级行(started/done/failed),
@@ -1640,7 +1607,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
                 configIdentityForRun(
                   a0.run,
                   a0.plan,
-                  resolveJudge(a0.run.judge, a0.evalDef.judge, opts.config.judge),
+                  a0.judge,
                 ),
               )
                 .filter((delta) => opts.accept!.includes(delta.selector));
@@ -2240,16 +2207,22 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
                     a.plan,
                     a.sandboxPlansByEval,
                     opts.config,
-                    a.evalDef.judge,
+                    a.judge,
                   ),
                   agent: a.run.agent.name,
                   model: a.run.model,
                   verdict: "errored",
                   fingerprint: a.fingerprint,
+                  evaluationAlgorithm: EVALUATION_ALGORITHM,
                   attempt: a.attempt,
                   startedAt: new Date().toISOString(),
                   durationMs: 0,
-                  assertions: [],
+                  factResults: [],
+                  factUses: [],
+                  evaluationKind: a.evalDef.evaluationKind,
+                  ...(a.evalDef.evaluationKind === "score"
+                    ? { scoreResult: scoreFactOutcomeForAttemptError(failedBeforeDispatch) }
+                    : {}),
                   evidenceCoverage: a.run.agent.evidenceCoverage,
                   error: failedBeforeDispatch,
                 } satisfies EvalResult)

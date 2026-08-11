@@ -1,41 +1,74 @@
-# Assertion 证据与完整性
+# Assertions —— evidence
 
-每条 Assertion 在采集前声明需要哪些 Attempt channel。collector 使用这些声明决定缺少数据时形成 available score 还是 unavailable result；它从不把“没有读到”解释为“没有发生”。
+完整的 Assertion 与不可用语义见 [Assertions](../README.md)。本页只规定 evidence 如何进入同一条
+`AssertionResult`。
 
-## 两条完整度轴
+## evidence 不是默认值
 
-channel descriptor 的 `coverage` 说明持久采集的数据集合是 complete、partial 还是 unavailable。reader 的 `ChannelRead` 另行说明本次解码是 complete、partial、unsupported 还是 invalid。
+Assertion 读取的 snapshot、Judge material 和 evaluator 说明都属于 evidence。读取失败、传输失败或
+资料不完整时，结果是 `unavailable` 或 `errored`，不能合成为普通 `mismatched`、`score: 0` 或空 evidence。
 
-两条轴不能合并：
+Usage Assertion 是唯一例外。只有 Agent 创建时已经声明 usage 不可用，`.ifCovered()` 才投影为
+`notApplicable`。一旦开始采集，采集失败仍是 `unavailable`。
 
-- 已采集的 JSONL 可能因未知 event 只得到 partial 解码。
-- 未采集和不适用是 `unavailable`，不是空数组。
-- 读取到损坏或缺失 channel 文件是 `invalid`。
-- 旧 reader 不支持某个 channel 是 `unsupported`。
+## 脱敏与引用
 
-被请求的 invalid channel 使该读取失败。未请求的 channel 不影响其它 Assertion、Sample 或 Report。
+`AssertionResult` 保留足够解释 evaluation 的脱敏 evidence、evaluator explanation 与 Judge rationale，
+并使用稳定引用，而不是携带 secret、原始凭据或不安全配置。
 
-## 需求类型
+每个 `subjectSnapshotRef` 都能追到读取时的 sealed Observation。根 `t` scope 的引用必须表达 vector cut，
+让离线读取面能说明它读到了哪些 Session 前缀。
 
-| 需求 | 使用者 | 通道不能交付时 |
-|---|---|---|
-| required | 非 optional Assertion | 写 `availability: "required"` 与 `result.state: "unavailable"`；producer 按规则形成 Verdict。 |
-| optional | 带 `.optional()` 的 Assertion | 写 `availability: "optional"` 与 `result.state: "unavailable"`；不单独改变 Verdict。 |
-| supplemental | 只供详情或 Report 使用的数据 | 写具名 diagnostic；不伪造 Assertion 数据。 |
+## 显式 value snapshot
 
-同一通道同时被 required 与 optional 使用时，按 required 处理。一次采集成功后，所有消费者读取同一份 Attempt-owned 数据。
+`t.check(value, match)` 必须冻结已求值的 `value` 或它的安全结构化引用，不能只保存 Match 的
+`matched` / `mismatched`。例如：
 
-## 判定规则
+```ts
+t.check(
+  await t.sandbox.runCommand("bash", ["tests/run-tests.sh"]),
+  commandSucceeded(),
+);
+```
 
-正向检查在 partial 数据中找到明确匹配时可以形成 available result，因为已读到的材料足以证明该事实。负向检查、上限检查和“没有发生”类检查需要完整材料；材料不完整时写 unavailable result。
+`await` 先取得 `CommandResult`，随后 `t.check` 把它作为 subject `a` 登记。这个 subject snapshot
+至少保留：
 
-值 matcher 消费显式传入的值。Sandbox、usage、diff、conversation、tool 和 telemetry 断言消费已经规范化的 channel 数据。Judge 消费默认材料或 `{ on }` 指定的材料。
+| 数据 | 最小内容 |
+|---|---|
+| command identity | observation id、executable、args 与 cwd。 |
+| execution result | exit code、signal 与 duration。 |
+| streams | 脱敏 stdout / stderr，或指向它们的 evidence refs。 |
+| evaluator | `commandSucceeded` identity、version 与完整安全 config。 |
+| evaluation | matched、mismatched、unavailable 或 errored。 |
+| limitations | stdout / stderr 的 redacted、truncated 或 unavailable 状态。 |
 
-Runner 在收尾前读取 collector 的需求清单。采集失败只影响登记了该 channel 的消费者；producer 在 whole Run seal 前一次形成稳定 Assertions 投影与独立 Verdict，不让 Report 事后重算。
+`commandSucceeded()` 评估时使用的 command identity、exit code、signal、duration 与 coverage 必须保留。
+stdout / stderr 即使被截断，也不能让这些字段消失。未来读取面因此可以显示命令、退出状态与运行时间，
+而不只显示“断言通过”。
 
-## 相关阅读
+## Scoped occurrence context
 
-- [Assertions 架构](../architecture.md)
-- [Record Library · ChannelRead](../../record/library.md#channel-registry-与-factrequirement)
-- [Verdict 规则](../../verdict/architecture.md)
-- [Adapter 证据](../../adapters/architecture/evidence.md)
+`calledTool(...)`、`loadedSkill(...)` 等 scoped Assertion 是 `check(a, b)` 的特例：方法从 scope 取得
+normalized occurrences 作为 subject `a`，再用方法参数构造 evaluator `b`。它们必须保存 occurrence 的
+安全结构化 context，不能只保存 true / false 或匹配数量。
+
+| 数据 | 最小内容 |
+|---|---|
+| scope | Attempt、Session、Turn 或 vector-cut snapshot ref。 |
+| occurrence identity | operation / event id 与对应 event refs。 |
+| tool / skill context | name、脱敏 input、status、output 或 error refs、开始与结束事件。 |
+| matching summary | observed count、matched count 与 matched occurrence refs。 |
+| coverage | evaluator 检查的 evidence 通道是否完整。 |
+| limitations | input、output 或事件证据的 redacted、truncated 或 unavailable 状态。 |
+
+没有命中时仍保存 scope、coverage、observed count 与候选 occurrence refs。只有 evidence coverage 完整时，
+“没有调用”才是 `mismatched`；evidence coverage 不完整时必须是 `unavailable`。
+
+这些字段描述 NiceEval 归一化后的稳定 context，不要求保留 provider 私有对象或 secret。完整大型 output 可以
+由 evidence ref 表达；Assertion 侧只规定必须保留什么信息。
+
+## 读取面
+
+`show`、`view`、JSON、export 与 source 从同一份 evidence projection 解释结果。它们不重新读取 Sandbox、
+调用 Judge 或重新执行 Match。

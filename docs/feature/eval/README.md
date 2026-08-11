@@ -12,10 +12,11 @@ export default defineEval({
   description?: string;   // 人读的描述,出现在报告里;不参与任何判定
   tags?: string[];        // 供 --tag 与 ExperimentInput.evals 谓词过滤
 
-  judge?: JudgeConfig;    // 这道题要多强的裁判
+  judge?: true | JudgeConfig;
+  // 声明这道题可创建 Judge Assertion；true 继承配置，对象按字段替换外层配置
   timeoutMs?: number;     // 这道题跑得完要多久
   //  ↑ 这两个排在 niceeval.config.ts 之前:题目写了 35 分钟,项目 config 写 20 分钟,仍按 35 分钟跑
-  //    timeout 要按次压过时用 --timeout 或 experiment 字段;judge 单条换模型用断言的 { model }
+  //    timeout 要按次压过时用 --timeout 或 experiment 字段；Judge 配置只在声明层解析一次
 
   sandbox?: SandboxLayer;   // 这道题的起点或准备:具体 Provider factory 的产物,或 sandboxLayer() 的命令链
   //  与 Experiment 的同名字段配对:每个实际配对恰好一方带 template
@@ -31,11 +32,11 @@ export default defineEval({
 });
 ```
 
-`timeoutMs` 与 `judge` 是这条 eval 自己对运行条件的声明：装一套工具链的题需要 35 分钟、评开放式行文的题需要更强的裁判模型，这是题目本身的属性，不是这次跑法的偏好。
+`timeoutMs` 与 `judge` 是这条 eval 自己对运行条件的声明：装一套工具链的题需要 35 分钟、评开放式行文的题需要 Judge capability，这是题目本身的属性，不是这次跑法的偏好。
 项目级配置是没写时的默认出处，压不掉 eval 写下的值。
-`timeoutMs` 可由 experiment 或 `--timeout` 替换。`judge` 按单条断言 `{ model }` → experiment → eval → config 逐字段求值，没有 CLI 替换层。
+`timeoutMs` 可由 experiment 或 `--timeout` 设置替换。`judge: true` 从 Experiment 与项目 Config 继承；`judge: { ... }` 声明 capability 并按字段替换它们。没有在 eval 上声明 `judge` 时，创建 Judge Assertion 是同步作者错误。
 
-Eval 的 `judge` 是这道题对裁判能力的默认要求。Experiment 可以签入另一组执行配置做 A/B；rubric、severity 与 threshold 仍只属于 Eval。见 [LLM-as-judge](../judge/library.md#模型与鉴权)。
+Runner 将求值后的 Judge 配置冻结一次，用同一份值做 fingerprint、预检与 evaluator 执行。Judge recipe 直接登记 measurement Assertion。Pass Eval 在同一 handle 调用 `.atLeast(n)`；Score Eval 在同一 handle 调用 `.score(n)`。见 [Judge](../judge/library.md)。
 完整求值链见 [Experiments · 配置求值链](../experiments/architecture.md#配置求值链一次求值处处同源)。
 
 `sandbox` 放一个 `SandboxLayer`，两种形态（类型与 factory 契约单源在 [Sandbox Layer](../sandbox/layers.md)）：
@@ -98,37 +99,45 @@ evals/foo/eval.ts       → eval id "foo"
 solution、生成器与参考答案不得进入任何 build context 或最终镜像。
 它们若从未被 Eval 读取，就不需要为了 Runner 再声明一次；template 一侧的隔离规则见 [Sandbox 实例与伴随资源 · 动态泄漏检查](../sandbox/case.md#动态泄漏检查本地上传与-agent-可见-closure)。
 
-## defineScoreEval：计分制题型
+## defineScoreEval：Score Eval
 
-`defineScoreEval` 定义**计分制**题型:题内用给分词汇叠加挣分(五步走完三步挣 3 分、rubric 大题按分值给分),对比读总分而不是通过率。
-字段与 `defineEval` 完全同形,区别只在 `test(t)` 的 `t` ——它是另一套类型,给分词汇 `.points(n)` / `t.score(label, n)` **只**存在于这里(在 `defineEval` 里写给分是类型错误):
+`defineScoreEval` 定义以累计 `score` 排名的题型。它与 `defineEval` 字段形状相同，差别只在 `test(t)`：
+ScoreTestContext 提供 handle `.score(n)` 与直接 `t.score(n)`。这两个入口只属于 Score Eval。
 
 ```typescript
 import { defineScoreEval } from "niceeval";
-import { isTrue } from "niceeval/expect";
+import { commandSucceeded } from "niceeval/expect";
 
 export default defineScoreEval({
   description: "安装并启动 DB-GPT",
   async test(t) {
     await t.send("把 DB-GPT 装起来并通过健康检查。");
-    // 前置:失败就地结束,后面的分自然挣不到
-    await t.require(await t.sandbox.pathExists("db-gpt/README.md"), isTrue("cloned"));
-    t.sandbox.fileChanged("db-gpt/.env").points(1);   // 检查点通过挣 1 分
-    t.score("代码精简", 15);                           // 自己算好条件后直接累加
+
+    t.check(
+      await t.sandbox.runCommand("pnpm", ["test"]),
+      commandSucceeded(),
+    ).score(2).label("测试通过");
+
+    t.sandbox.fileChanged("db-gpt/.env")
+      .score(1)
+      .label("配置运行环境");
+    t.score(1).label("代码精简");
   },
 });
 ```
 
-计分制只多出分数面：`.points(n)` 是得分点，`t.score(label, n)` 直接给分。
-严重度与通过制完全相同：`.gate()` 是硬判定，`.atLeast(x)` 是带线 soft，`.soft()` 只写入。
-需要停止依赖失败结果的后续代码时链 `.stopOnFailure()`；值断言可直接用两种题型共用的 `t.require()`。
+Assertion 默认只保存 evaluation、evidence 与 diagnostic。`.score(n)` 使 Boolean matched 贡献 `n`、
+mismatched 贡献 `0`；measurement `m` 贡献 `m * n`。`t.score(n)` 直接登记 non-negative contribution，
+返回的 handle 只能配置 key 与 label。
 
-题型是定义期事实，进 `EvalDescriptor.evaluationKind`(`"pass" | "points"`)供报告选择主读数。
-一个 Experiment 可以同时选择两种题型；通过率与总分分别聚合，不互相相加。
-计分语义的单源契约见[计分粒度](../assertions/library/score-points.md#计分制叠加给分没有上限声明)，完整写法见[计分制用例](use-case/rubric-points.md)。
+Score Eval 没有 Attempt Verdict、总分、百分比或隐式每项 `+1`。正常没有 contribution 时得到正式
+`score: 0`。measurement 可直接封口，`.atLeast(n)` 只增加局部 condition。
 
-API 全景与组织约定见 [Library](library.md);单轮、多轮、HITL、测试集从输入数组生成多条 eval、沙箱型等真实场景一篇一个用例,见 [use-case/](use-case/README.md);API 取舍背后的设计依据见 [Architecture](architecture.md)。
-评分手段(judge、匹配器、gate/soft)单独成篇,见 [Assertions](../assertions/README.md)。
+题型是定义期事实，进入 `EvalDescriptor.evaluationKind`（`"pass" | "score"`）供报告选择主读数。
+一个 Experiment 可以同时选择两种题型，但每条 Attempt 按自己的 evaluationKind 解释。
+
+完整 score 语义见 [Assertions · Score Eval](../assertions/library/score-points.md)，完整场景见
+[Score Eval 用例](use-case/rubric-points.md)。
 
 ## 相关阅读
 
@@ -136,7 +145,7 @@ API 全景与组织约定见 [Library](library.md);单轮、多轮、HITL、测�
 - [用例目录](use-case/README.md) —— 单轮、多轮、HITL、过程断言、judge、测试集、沙箱、 Fixture,一篇一个场景。
 - [Eval Context](library/context.md) —— `t`、`session`、`turn` 怎样驱动会话和读取结果。
 - [Architecture](architecture.md) —— 为什么作用域断言按接收者(`t` / `session` / `turn`)分层,对齐 eve 的设计依据。
-- [Assertions](../assertions/README.md) —— 值断言、作用域断言、judge、严重度与判定规则。
+- [Assertions](../assertions/README.md) —— 值断言、作用域断言、Judge、计分与判定规则。
 - [Agents 与 Adapters](../adapters/README.md) —— agent 三类 transport 与 agent 适配。
 - [Experiments](../experiments/README.md) —— eval 由谁跑、跑几次、对着哪个 agent。
 - [Sandbox Layer](../sandbox/layers.md) —— `sandbox` 字段的类型、factory 与配对规则。

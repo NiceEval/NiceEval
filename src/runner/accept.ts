@@ -249,7 +249,7 @@ async function prepareAcceptTarget(
     pair.plan,
     sandboxPlansByEval,
     ctx.config,
-    targetEval.judge,
+    resolvedJudge,
   );
   return prepareAcceptedAttempt({
     recordRoot: ctx.recordRoot,
@@ -672,7 +672,6 @@ function agentRunOf(experiment: DiscoveredExperiment, selectedEvalIds: readonly 
     ...(experiment.description !== undefined ? { description: experiment.description } : {}),
     ...(Object.keys(experiment.labels).length > 0 ? { labels: experiment.labels } : {}),
     selectedEvalIds,
-    strict: false,
     ...(experiment.maxConcurrency !== undefined ? { maxConcurrency: experiment.maxConcurrency } : {}),
     ...(experiment.setup !== undefined ? { setup: experiment.setup } : {}),
     ...(experiment.teardown !== undefined ? { teardown: experiment.teardown } : {}),

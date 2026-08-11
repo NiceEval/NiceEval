@@ -133,7 +133,7 @@ NICEEVAL_JUDGE_KEY=sk-...
 `.env` 是投递密钥的地方，不是第二个配置文件——往里写 `NICEEVAL_TIMEOUT` 这种东西不会有任何效果。CI 里同样只传密钥：
 
 ```yaml
-- run: npx niceeval exp ci --strict --junit ./artifacts/niceeval-junit.xml
+- run: npx niceeval exp ci --junit .niceeval/junit.xml
   env:
     ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```

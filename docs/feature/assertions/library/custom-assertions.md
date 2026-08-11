@@ -1,55 +1,34 @@
-# 自定义 Assertion
+# Assertions —— 自定义 Match
 
-内置 matcher 无法表达规则时，用 `makeAssertion` 创建同步或异步 matcher。
+完整模型见 [Assertions](../README.md)。自定义 Match 只描述“这个 value 怎样比较”，不描述作者位置、
+scope、policy 或运行控制。
 
-```ts
-import { makeAssertion, type Assertion } from "niceeval/expect";
+## Match 的边界
 
-function jsonValid(): Assertion {
-  return makeAssertion({
-    name: "jsonValid",
-    severity: "gate",
-    score(value) {
-      try {
-        JSON.parse(String(value));
-        return 1;
-      } catch {
-        return 0;
-      }
-    },
-  });
-}
-
-t.check(t.reply, jsonValid());
-```
-
-spec 的字段全集：
-
-| 字段 | 语义 |
-|---|---|
-| `name: string` | 报告里显示的断言名——谓词不可展示，名字是失败的全部解释，展示形态见 [断言与 Turn 的展示](display.md#值断言) |
-| `severity?: "gate" \| "soft"` | 省略默认 `gate` |
-| `threshold?: number` | 及格线：分数 ≥ 阈值通过；省略时 gate 用默认通过线 1（打分制的 `score` 应显式给阈值），soft 只记分不判定 |
-| `score: (value) => number \| Promise<number>` | 返回 `[0,1]` 分数，可以是异步函数 |
-
-`score` 是异步时，评分在 finalize 阶段 await，eval 代码不需要额外等待。
-典型场景是把值交给外部工具或服务打分：
+一个 Match 必须可复用、不可变、确定性且无副作用。它可以返回 Boolean result，或 finite `[0,1]`
+measurement。它不能保存 subject identity、callsite、groupPath、`key`、`label`、score 或 threshold。
 
 ```ts
-function passesTypecheck(): Assertion {
-  return makeAssertion({
-    name: "passesTypecheck",
-    async score(value) {
-      const result = await runTsc(String(value));
-      return result.errorCount === 0 ? 1 : 0;
-    },
-  });
-}
+const hasRequiredFields = defineValueMatch((value: unknown) =>
+  isRecord(value) && typeof value.id === "string" && typeof value.title === "string",
+);
+
+t.check(payload, hasRequiredFields).label("返回必填字段");
 ```
 
-产出的 matcher 与内置 matcher 一样可以链 `.gate(threshold?)` / `.atLeast(threshold)` / `.soft()` 调级（见 [值断言 · 改严重度与阈值](value-assertions.md#改严重度与阈值)）。
+Match 与 Assertion 分工明确：Match 比较 value；`t.check(value, match)` 读取调用时 value 并登记
+Assertion；handle 再配置同一 entry。
 
-Assertion 适合评价一个值或一个 scope。
-跨 attempts 的 pass@k、均值和趋势属于 reporter metric，不应在单 attempt Assertion 中自行读取历史结果。
+## 连续 evaluator
 
-优先组合已有 matcher；只有新的评分语义才创建新 Assertion，不为业务字段包装一层只转发参数的别名。
+连续 Match 返回 finite `[0,1]` measurement。Pass Eval 必须把它 `.atLeast(n)`；Score Eval 可以直接
+`.score(n)`，也可以同时添加局部 threshold。
+
+```ts
+const similarity = defineScoreMatch((actual: string) => compare(actual, expected));
+
+pass.check(reply, similarity).atLeast(0.8);
+score.check(reply, similarity).score(5).atLeast(0.8);
+```
+
+`atLeast`、`score` 和 `orStop` 都不属于 Match。它们是登记后的 AssertionHandle 配置。

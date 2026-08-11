@@ -1,151 +1,115 @@
 ---
-title: "题型、断言、Judge 和成本限制"
-sidebarTitle: "题型与断言"
-description: "值断言、作用域断言、LLM-as-judge、严重度怎么折成一个判定、计分制怎么给部分分，以及成本上限怎么写。"
+title: "通过制与计分制评估"
+sidebarTitle: "通过制与计分制"
+description: "用 defineEval 与 defineScoreEval 编写通过制和计分制评估，调用即登记 Assertion。"
 ---
 
-import { Verdict } from '/snippets/widgets.jsx';
+[NiceEval](https://niceeval.com/) 提供两种评估题型。`defineEval` 回答一次运行是否满足要求，默认报告读通过率；`defineScoreEval` 回答完成了多少，默认报告读累计分数。两种题型都调用即登记 Assertion，handle 只配置同一条 entry。
 
-好的评估用例把「是否成功」拆成可解释的信号。[NiceEval](https://niceeval.com/) 允许你混合精确断言、语义 Judge、事件流检查和真实测试。
-
-## 选择断言类型
-
-| 目标 | 推荐机制 |
-|---|---|
-| 回复包含固定子串或命中正则 | `includes` |
-| 结构化 JSON 完全匹配 | `equals` |
-| 工具调用是否发生 | `t.calledTool` / `t.notCalledTool` |
-| 输出是否语义正确 | `t.judge.*` |
-| 代码是否工作 | `t.check(await t.sandbox.runCommand("npm", ["test"]), commandSucceeded())` |
-| 成本是否可控 | `t.maxTokens` / `t.maxCost` |
-
-## 值断言
+## 必须做到的事用 `defineEval`
 
 ```ts
-import { includes, equals } from "niceeval/expect";
+import { defineEval } from "niceeval";
+import { commandSucceeded, includes } from "niceeval/expect";
 
-t.check(t.reply, includes("refund"));
-t.check(turn.data, equals({ intent: "refund" }));
-t.check(t.reply, includes(/order #\d+/));
-```
-
-`includes` 同时接受子串和正则。`matches` 只接受 Standard Schema / Zod schema，用于结构校验，不做正则匹配。值断言适合精确、稳定、低歧义的结果。
-
-## 作用域断言
-
-```ts
-t.succeeded();
-t.calledTool("search");
-t.usedNoTools();
-t.sandbox.fileChanged("src/app.ts");
-t.check(await t.sandbox.runCommand("npm", ["test"]), commandSucceeded());
-```
-
-它们检查整次运行的事实，通常来自标准事件流或 Sandbox artifact。
-
-## LLM-as-judge
-
-```ts
-t.judge.autoevals.factuality("Refunds are available within 30 days.", { on: t.reply }).atLeast(0.8);
-t.judge.autoevals.closedQA("回答具体、礼貌，并且没有编造政策。", { on: t.reply }).atLeast(0.75);
-```
-
-Judge 适合语义质量，不适合替代所有确定性断言。能精确检查的地方优先精确检查。
-
-## 一条断言不通过会怎样
-
-链在断言上的词决定它的失败怎么向上传播。不链词就用 matcher 自带的严重度——`includes`、`calledTool` 这些默认是 gate，`t.judge.*` 默认是无线的 soft。
-
-<Verdict
-  title="这四条断言折成一个判定"
-  hint="勾掉一条看判定怎么变"
-  note={<>严重度只管判定怎么传播，不改变 `test()` 的控制流。后面的代码依赖这条断言时，链 `.stopOnFailure()`，或者用值断言的简写 `t.require()`。</>}
-  rows={[
-    { sev: "gate", name: 't.calledTool("get_weather")', note: "作用域断言默认 gate" },
-    { sev: "gate", name: 't.check(t.reply, includes("Brooklyn"))', note: "includes 自带的严重度就是 gate" },
-    {
-      sev: "soft",
-      name: 't.judge.autoevals.closedQA("…").atLeast(0.7)',
-      note: "低于 0.7 如实记 failed，判定不动",
-      strictNote: "--strict 把这条线翻成 gate",
-    },
-    { sev: "soft", name: 't.judge.autoevals.factuality("…")', note: "没有线，只记分数，永不 failed", fixed: true },
-  ]}
-/>
-
-三个词的分工：
-
-- `.gate(x)`：硬要求，分数低于 `x` 就 failed。省略 `x` 用 matcher 自身的及格线。
-- `.atLeast(x)`：带通过线的 soft，低于线如实记 failed、判定不动，`--strict` 下升级成 gate。
-- `.soft()`：不设线，纯记录一个分数，永不 failed。要设线用 `.atLeast(x)`。
-
-`.atLeast` 的参数是分数线，不是调用次数。「至少调用两次」是匹配条件，写在 `t.calledTool("shell", { count: 2 })` 里。
-
-## 走完三步也要记三分
-
-`defineEval` 把一次运行折成一个「过」或「不过」。有些任务分步骤，走完三步比一步没走强得多——这类任务用 `defineScoreEval`，题内用给分 API 累加挣分，`niceeval show` / `view` 的默认报告读总分而不是通过率：
-
-```ts
-import { defineScoreEval } from "niceeval";
-import { commandSucceeded, isTrue } from "niceeval/expect";
-
-export default defineScoreEval({
-  description: "安装并启动 DB-GPT",
+export default defineEval({
   async test(t) {
-    await t.send("把 DB-GPT 装起来并通过健康检查。");
+    const turn = await t.send("修复测试并说明原因。");
 
-    // 前置条件没过，后面步骤没意义：t.require 记硬失败并就地结束 test()
-    await t.require(await t.sandbox.pathExists("db-gpt/README.md"), isTrue());
+    t.check(turn.message, includes("原因")).label("说明失败原因");
 
-    t.sandbox.fileChanged("db-gpt/.env").points(1);
-    // 值 1 分，而且没装依赖后面全白跑——挣分和硬前置可以是同一条
-    await t.calledTool("shell", { input: { command: /pip install/ } })
-      .points(1).gate().stopOnFailure();
-
-    const health = await t.sandbox.runShell("curl -s localhost:5670/health");
-    t.check(health, commandSucceeded()).points(1);
+    const tests = await t.sandbox.runCommand("pnpm", ["test"]);
+    await t.check(tests, commandSucceeded()).label("测试通过").orStop();
   },
 });
 ```
 
-- `.points(n)` 挂在任意断言后面：通过挣 `n` 分，不过挣 0。`t.judge.*` 这类连续打分断言按比例挣 `n × score`。
-- 失败一个检查点只是少挣分，后面照跑。要「这步不成立就别往下跑了」，链 `.stopOnFailure()`。
-- `t.score(label, n)` 用于自己算好条件和分数后直接累加，比如按代码行数分档给分。
-- 计分是叠加制，从 0 往上挣，不声明满分：同一条评估用例的代码对每个实验是同一把尺子，模型 A 挣 3 分、模型 B 挣 1 分，结论不需要分母。
-- 丢分不是失败：五步走完三步的 Attempt 是 `passed` 且挣 3 分。「做到几成」由分数回答，不借判定表达。
-- `.points()` 与 `t.score` 只存在于 `defineScoreEval` 的 `t` 上。在 `defineEval` 里写是类型错误。
-- 一个实验可以同时选中两种题型，报告分别给通过率和总分，两个读数不相加。
+Boolean `matched` 进入 Verdict；`mismatched` 使最终 Verdict 为 `failed`，但不会阻止其它 Assertion 继续登记和结算。需要让后续代码依赖这条结果时，`await handle.orStop()`。
 
-## 代码任务用测试评分
+## 连续质量线
 
-在 `.eval.ts` 里运行项目测试或临时探针：
+`similarity(...)` 这类 Match 产生 `[0, 1]` 的 measurement。通过制评估必须用 `.atLeast(n)` 给它阈值：
 
 ```ts
-import { commandSucceeded, includes } from "niceeval/expect";
-
-const testResult = await t.sandbox.runCommand("npm", ["test"]);
-t.check(testResult, commandSucceeded());
-
-const src = await t.sandbox.runShell("find . -name '*.ts' -exec cat {} +");
-t.check(src.stdout, includes(/z\.object\s*\(/));
+t.check(turn.message, similarity(expected))
+  .atLeast(0.8)
+  .label("回答接近期望内容");
 ```
 
-判分标准本身是一份文件（隐藏测试、参考实现、跑测脚本）时，用 `loadText` 读它，改一字节就自动重跑这条评估用例，见[隐藏测试判分](/zh/tutorials/criteria-files)。
+低于 `atLeast` 时，这项要求失败。只想留下不影响判定的说明时用 `t.diagnostic(...)`，不要登记无消费的测量值。
 
-## 成本和效率
+## 走完三步也要记三分
+
+分步骤任务适合 `defineScoreEval`。Assertion 默认只保存 evaluation，不计分；`.score(n)` 才让该项贡献分数。Boolean matched 贡献 `n`，mismatched 贡献 `0`；measurement `m` 贡献 `m * n`。
 
 ```ts
-t.maxTokens(25_000);
-t.maxCost(0.1);
+import { defineScoreEval } from "niceeval";
+import { commandSucceeded, includes, similarity } from "niceeval/expect";
+
+export default defineScoreEval({
+  description: "安装并启动 DB-GPT",
+  async test(t) {
+    const turn = await t.send("把 DB-GPT 装起来并通过健康检查。");
+
+    t.sandbox.fileChanged("db-gpt/.env").score(1).label("配置运行环境");
+
+    const health = await t.sandbox.runCommand("curl", ["-s", "localhost:5670/health"]);
+    t.check(health, commandSucceeded()).score(1).label("健康检查可达");
+    t.check(health.stdout, includes("ok")).score(1).label("健康检查内容正确");
+
+    t.check(turn.message, similarity("说明安装步骤和验证结果")).score(2).label("说明质量");
+
+    t.score(1).label("代码精简");
+  },
+});
 ```
 
-对 coding agent 和长链路 agent 尤其有用，可以防止用大量重试或工具调用掩盖质量问题。
+`t.score(n)` 直接登记 contribution，`n` 必须 finite 且不小于零，返回的 handle 只能配置 `key` 与 `label`。同一个 Assertion 可以同时配置 `.score(n)` 与 `.atLeast(n)`，evaluator 只求值一次，顺序可互换。
+
+`test` 正常返回时，NiceEval 自动封口。没有计分项也是有效结果，得到正式 `score: 0`；这表示评估成功形成了零分，不是执行失败或证据不足。
+
+## 两种题型的结果
+
+| 题型 | 成功状态 | 明确要求失败 | 证据无法取得 | 执行或 evaluator 出错 |
+|---|---|---|---|---|
+| `defineEval` | `passed` | `failed` | `errored` | `errored` |
+| `defineScoreEval` | `scored`，可排名的 score | 正常不失效；score 照常累计 | 已配置 score 或 control 的项不可用时不可排名 | `errored`，只保留 `partialScore` |
+
+计分制的 `scored` 可以是 0 分。零分说明评估成功形成了分数，不等于执行失败或证据不足。计分制没有 Attempt Verdict。
+
+## Judge 也是 measurement
+
+Judge recipe 直接登记 measurement Assertion。先声明 `judge` capability，再在同一 handle 上配置阈值或分数：
+
+```ts
+export default defineScoreEval({
+  judge: true,
+  async test(t) {
+    const turn = await t.send("说明这项变更的动机和风险。");
+    turn.judge.autoevals.closedQA("说明是否具体、准确？")
+      .score(20)
+      .atLeast(0.7)
+      .label("说明质量");
+  },
+});
+```
+
+同一条 Judge Assertion 可以同时配置 `.score(n)` 与 `.atLeast(n)`，evaluator 只运行一次。Judge 没有单独的消费 API。
+
+## 代码任务用真实命令验收
+
+```ts
+await t.check(
+  await t.sandbox.runCommand("pnpm", ["test"]),
+  commandSucceeded(),
+).label("项目测试通过");
+```
+
+判分标准本身是一份文件时，用 `loadText` 读取隐藏测试、参考实现或跑测脚本。文件改动会触发对应评估重跑，详见[隐藏测试判分](/zh/tutorials/criteria-files)。
 
 ## 实用建议
 
-- 先写 1–2 条 gate，保证任务底线。
-- 再加 soft 分数比较质量。
-- 复杂语义用 Judge，并给 Judge 明确的评分标准。
-- coding-agent 结果尽量用真实测试验证。
-- 把失败消息写清楚，方便从报告直接定位问题。
-- CI 里加 `--strict`，让不达标的 soft 也拦住合并，见 [CI 集成](/zh/tutorials/ci-integration)。
+- 把每个必须成立的条件登记为 Boolean Assertion，让一次 Attempt 收集完整失败信息。
+- 后续步骤依赖某条结果时，`await handle.orStop()`。
+- 任务存在有意义的部分完成度时使用 `defineScoreEval`；`test` 正常返回时自动收尾。
+- 开放式语义用 Judge；可精确检查的文件、命令与结构化输出优先用确定性 Match。

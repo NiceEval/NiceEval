@@ -11,12 +11,13 @@ import {
   type LoadedNativeConfig,
 } from "./native-config.ts";
 import { mapClaudeCodeSpans } from "../o11y/otlp/mappers/claude-code.ts";
+import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
 import { t } from "../i18n/index.ts";
 import { DEFAULT_CLAUDE_CODE_CLI_VERSION, AGENT_BASELINE_RECIPE_REVISION } from "./coding-cli-versions.ts";
 import { assertMcpServers, isHttpMcp, mcpManifestEntries } from "./mcp.ts";
 import { runPostSetupHooks, runPreTeardownHooks } from "./post-setup.ts";
 import { createNpmCliInstaller } from "./npm-staged.ts";
-import type { Agent, AgentSetupManifest, McpServer, Sandbox, SkillSpec } from "../types.ts";
+import type { Agent, AgentSetupManifest, McpServer, Sandbox, SkillSpec, TurnEvidenceCoverage } from "../types.ts";
 import type { SandboxCommand } from "../sandbox/commands.ts";
 import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
 
@@ -265,6 +266,23 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
       ctx.session.capture(shared.sessionIdFromClaudeTranscript(raw));
       const parsed = shared.parseClaudeCode(raw);
       const events = [...parsed.events];
+      let turnEvidenceCoverage: TurnEvidenceCoverage | undefined;
+      if (!raw?.trim()) {
+        const reason = "Claude Code transcript was unavailable; tool trajectory was not observed.";
+        turnEvidenceCoverage = {
+          events: { status: "unavailable", reason },
+          actions: { status: "unavailable", reason },
+          usage: { status: "unavailable", reason },
+        };
+      } else if (!parsed.parseSuccess) {
+        const reason = "Some Claude Code transcript lines could not be parsed.";
+        turnEvidenceCoverage = {
+          events: { status: "partial", reason },
+          actions: { status: "partial", reason },
+        };
+      } else {
+        turnEvidenceCoverage = unclassifiedToolActionsCoverage(events);
+      }
       if (res.exitCode !== 0) {
         throw makeSendFailure({
           acceptance: sendAcceptanceFromEvents(events),
@@ -274,7 +292,12 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
           process: res,
         });
       }
-      return { events, usage: parsed.usage, status: "completed" };
+      return {
+        events,
+        usage: parsed.usage,
+        status: "completed",
+        ...(turnEvidenceCoverage === undefined ? {} : { evidenceCoverage: turnEvidenceCoverage }),
+      };
     },
   });
 }

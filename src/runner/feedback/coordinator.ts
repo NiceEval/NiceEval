@@ -250,7 +250,7 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
       who: input.who,
       verdict: input.verdict,
       reason: input.reason,
-      ...(input.assertion !== undefined ? { assertion: input.assertion } : {}),
+      ...(input.fact !== undefined ? { fact: input.fact } : {}),
       ...(input.phase !== undefined ? { phase: input.phase } : {}),
       ...(input.code !== undefined ? { code: input.code } : {}),
       ...(input.origin !== undefined ? { origin: input.origin } : {}),

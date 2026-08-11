@@ -1,114 +1,73 @@
-# Judge —— 库用法
+# Judge —— Library
 
-Judge 用独立裁判模型评价规则难以表达的开放式结果。
+`closedQA`、`factuality` 与 `summarizes` 都直接登记 measurement Assertion。它们返回同一 entry 的
+AssertionHandle；没有需要交给另一条 `check`、require 或 score API 的中间对象。
 
 ```ts
-t.judge.autoevals.factuality(expected).atLeast(0.8);
-t.judge.autoevals.closedQA("是否适合 10 岁小孩理解");
-t.judge.autoevals.summarizes(source);
+const correctness = turn.judge.autoevals.factuality("Brooklyn 的天气是晴朗。")
+  .atLeast(0.9)
+  .label("天气事实");
 
-turn.judge.autoevals.closedQA("这一轮是否回答问题?").gate();
+const summary = t.judge.autoevals.summarizes("原始需求", {
+  input: "请总结需求。",
+  output: t.reply,
+}).score(10).label("摘要质量");
 ```
 
-只有三个固定入口，不提供平铺别名；第二参数统一是 `{ on?: string; model?: string }`：
+上例的第一条属于 Pass Eval，第二条属于 Score Eval。Pass measurement 必须 threshold；Score measurement
+可以贡献 score，threshold 只增加局部 condition。
 
-- `closedQA(question, opts?)` —— `question` 是让裁判回答的封闭式问题。
-- `factuality(expected, opts?)` —— `expected` 是对照用的事实参考答案。
-- `summarizes(source, opts?)` —— `source` 是被总结的原始材料。
+## Capability 与配置
 
-## 默认材料
-
-- `t.judge` 默认评主 session 对话。
-- `session.judge` 默认评该 session 对话。
-- `turn.judge` 默认评 `turn.message`。
-- `{ on }` 显式指定 diff、文件内容或任意其它材料。
+Eval 的 `judge` 字段声明 Judge capability：
 
 ```ts
-t.judge.autoevals.closedQA("diff 是否只修改目标逻辑?", {
-  on: t.sandbox.diff.get("src/weather.ts"),
-}).atLeast(0.7);
-```
+defineEval({ judge: true, test });
 
-## 模型与鉴权
-
-模型优先级：单次 `{ model }` → Experiment judge config → Eval judge config → 项目 judge config。没有内置默认模型，也没有进程变量层。
-模型和端点是配置，只从代码来（[边界](../../architecture.md)）。
-
-```ts
-// 单条断言换更强的裁判,不动全局配置
-t.judge.autoevals.factuality("布鲁克林今天是晴天", { model: "gpt-4o" }).atLeast(0.8);
-```
-
-端点默认是官方的 `https://api.openai.com/v1`。接 OpenAI 兼容代理时在 `judge.baseUrl` 里显式写出来，niceeval 不靠进程变量找代理地址。
-
-API key 是凭据，只从进程变量读。`judge.apiKeyEnv` 指定读哪个变量，不指定时读 `NICEEVAL_JUDGE_KEY`。Judge 不借用被测应用的 `OPENAI_API_KEY` 或某个 Agent 的 key。
-
-```ts
-// niceeval.config.ts —— 走自己的网关,凭据放 .env 里的 MY_GATEWAY_KEY
-export default defineConfig({
-  judge: { model: "gpt-5.4-mini", baseUrl: "https://gateway.example.com/v1", apiKeyEnv: "MY_GATEWAY_KEY" },
+defineEval({
+  judge: { model: "judge-model", timeoutMs: 120_000 },
+  test,
 });
 ```
 
-Judge 评不出可信分数时，该条断言条目为 `outcome: "unavailable"`，并带机器可读 `reason` 与一层人读 `evidence`。它绝不静默消失，也绝不落成 0 分的通过条目。
+- `true` 从 Experiment 和项目 `defineConfig` 继承配置字段。
+- 对象声明 capability，并按字段替换外层配置。
+- 未声明时创建 Judge Assertion 是同步作者错误。
 
-运行期没有找到模型时，reason 是 `judge-model-unresolved`；key 变量缺失时是 `judge-key-unresolved`。请求失败或响应中取不出分数时，reason 是 `judge-call-failed`，状态码与异常摘要进入 `evidence`。请求失败包括 HTTP 非 2xx、连接中断与调用超时；响应失败包括协议不符与分数缺失。
+Runner 在规划时冻结一次求值后的配置。同一不可变值进入 fingerprint、预检与 evaluator；Record 只保存
+credential selector，不保存 key。
 
-写下的 rubric 默认要求可评估。无论 soft 还是 gate，unavailable 都使该 Attempt 形成 `errored` Verdict；Attempt lifecycle 仍只收束为 `completed` 或 `abandoned`。
-`.optional()` 只允许这条运行期判分证据缺席；此时 unavailable Assertion result 保留在条目里，但不影响 Verdict。
-折叠规则见 [Severity 与 Verdict](../verdict/architecture.md)。
+## 材料边界
 
-## 调用预算与执行顺序
-
-每次判分调用有界：`judge.timeoutMs` 毫秒内拿不到响应就中断这次调用，按 `judge-call-failed` 记 unavailable，`evidence` 写明超时秒数。默认 180_000：判分材料可以是整段长会话，更短的上限会把慢而能用的网关判成评不了，三分钟足以把「慢」与「挂死」分开。`timeoutMs` 与 `model` / `baseUrl` / `apiKeyEnv` 同链逐字段求值：Experiment 写了哪个字段就替换本次运行，没写的字段继续从 Eval、项目 config 取，都没写才落默认值；只有 model 允许单条断言再替换。
-
-```ts
-// niceeval.config.ts —— 网关慢但确实能用,给它更长预算
-export default defineConfig({
-  judge: { model: "gpt-5.4-mini", baseUrl: "https://gateway.example.com/v1", timeoutMs: 300_000 },
-});
-```
-
-判分调用由 Judge 自己显式管理传输重试，最多 3 次物理调用（首次加 2 次重试）。429（含 capacity）、408、连接类错误与 5xx 可重试；400、401、403（包括 `SUBSCRIPTION_NOT_FOUND`）、404、422、无有效 score 与用户中断立即结束。SDK 隐式 retry 关闭，每次尝试都属于同一条 Judge 诊断。
-
-`judge.timeoutMs` 是整条调用（请求与退避）的总预算，不会在重试时重置。退避优先遵守响应的 `Retry-After`，否则使用指数全抖动。耗尽后的 unavailable evidence 至少包含模型、HTTP status（若有）、服务端 code/摘要、是否重试和物理尝试次数；key 不进入 evidence。
-
-一个 attempt 内的断言按声明顺序逐条求值，judge 也不例外。attempt 之间已经并发，attempt 内再并发 judge 只会放大网关限流；每条 Judge 自己在总预算内显式处理瞬时 transport retry，重试耗尽或永久错误仍按 unavailable 条目。正在评哪条 judge，live 面板的断言求值行以 `judge k/n` 推进显示，契约见 [CLI · Attempt 阶段](../experiments/cli.md#attempt-阶段)。
-
-Judge 默认 soft、无阈值，只写入分数；`.atLeast(x)` 添加 soft 阈值，`.gate(x?)` 变成硬要求；`.optional()` 声明允许缺席。severity（影不影响判定）与 optional（证据允许不允许缺席）是两个正交维度：
+根级 `t.judge` 必须显式提供结构化材料：
 
 ```ts
-t.judge.autoevals.closedQA("回答是否切题?");                    // soft:记分;评不了 → errored
-t.judge.autoevals.closedQA("是否遵守安全规范?").gate(0.8);      // gate:硬要求;评不了 → errored
-t.judge.autoevals.closedQA("文风是否友好?").optional();          // 允许缺席:评不了只记录
+const source = await t.sandbox.readText("README.md");
+
+t.judge.autoevals.closedQA("文档是否说明安装步骤？", {
+  input: source,
+  output: t.reply,
+}).atLeast(0.8).label("安装说明");
 ```
 
-分数、阈值、评分材料与 unavailable 在 show / view 里各显示成什么，见 [断言与 Turn 的展示](../assertions/library/display.md#judge)。
+`turn.judge` 在调用时冻结该 Turn 的原始 input 与 output。没有 `session.judge`、路径猜测、隐式 last
+input 或单项 model override。
 
-## 校验时点
+## 求值、控制与错误
 
-配置求值只做无副作用的静态校验，例如 `baseUrl` 是否是合法 URL、`apiKeyEnv` 是否是合法进程变量名；**仅仅配置 Judge 不发网络请求**。此后的验证分两个时点：派发前的判分预检验证端点连通与鉴权（见下节），分数是否真的评得出来（协议相符、响应里取得出分数）在某条 judge assertion 首次执行时才知道，并按上面的 unavailable 契约写入该条断言。
+Judge evaluation 对同一 entry memoize 一次。handle 可以跨 `await` 配置，但不重读材料或重启模型。
+同一 Attempt 的 Judge evaluator 按 source order 进入受管 serial lane；Attempt 之间仍可并发。
 
-运行期时点让 `.optional()` 有完整含义：响应不可解码、单次调用失败都可以由作者逐条决定是否允许缺席。
-未执行 judge assertion 的 eval 不受 Judge 配置影响；全部结果携带时也不会产生额外网络请求。
+thresholded measurement 可以 `await .orStop()`。below 触发 authoring stop latch；捕获 reject 不会恢复
+后续 NiceEval API 的登记能力。未 threshold 的 measurement 不能 `.orStop()`。
 
-从配置到确认分数真的评出来的完整走法，见用例[接上一个兼容网关，并确认它真的在打分](use-case/verify-judge.md)。
+没有 model、key 或 provider 时不发网络预检，Assertion 为 `unavailable` 并保留机器可读 reason。完整配置
+的 endpoint 预检失败是 setup error，受影响 Attempt 不执行 Agent，也不伪造 AssertionResult。
 
-## 派发前预检
+模型请求后的传输失败是 `unavailable`。无效响应、非有限数值和区间外数值是 `errored`。理由写入
+explanation 或 Judge rationale，evidence 只保存裁剪与脱敏后的材料。
 
-一次 `exp` 运行的计划里存在**要真派发、且会执行 judge 断言**的 eval 时，运行器在派发任何 attempt 之前对判分端点做一次最小探测请求，验证连通与鉴权。探测不判分、不产生模型费用。目的只有一个：判分端点不可用要在烧 agent 成本**之前**知道，而不是每条 attempt 跑完十分钟 agent 工作后才在 `assertions.evaluate` 阶段撞出一堆 unavailable。
+## 读取
 
-两种情况不预检：Experiment、Eval 与项目都没配置 judge（运行期按 `judge-model-unresolved` 写入）；计划里含 judge 的 eval 全部命中携带、没有要派发的 attempt。
-
-**探测预算**：每次探测 20 秒超时；传输失败或 429、408、5xx 后重试一次，**每次探测各自拥有完整的 20 秒预算**，两次都失败才判预检失败。400、401、403、404、422 等永久 HTTP 错误立即失败。探测请求没有判分语义、成本可忽略，重试只为把瞬时网络抖动与真不可用分开。
-
-**预检失败只阻止需要 judge 的 eval 派发，不拦整次运行**：
-
-- 这些 eval 的全部计划 Attempt 不派发、不创建沙箱，保持 `unstarted`；不伪造 Attempt、locator 或 `errored` Verdict。
-  失败本身是 Run-scoped `judge-precheck-failed` 执行错误通道事件（phase: `judge.precheck`），并由 `RunReceipt` 表示不完整；它与其它派发前确定性失败（如 `experiment-setup-failed`）同构。
-- 不含 judge 断言的 eval 照常派发，一条 judge 配置问题不没收整批与它无关的结果。
-- `error.message` 带实际探测的端点与失败原因（超时秒数或状态码）。超时的 `fix:` 首选提示是「端点接受连接但不回，先查同一账号的其它流量是否占满了网关并发」，其次才是核对 `baseUrl`——这两种错的症状一样，前者更常见也更难想到。
-
-`.optional()` 不豁免预检：它允许的是运行期单条证据缺席、其余照评；预检失败意味着端点整体不可用，继续派发只会烧掉 agent 成本再产出同样的缺席条目。要在没有判分端点的运行条件下跑这些 eval，在那个运行条件的配置里不写 judge——运行期逐条落 unavailable，`.optional()` 照常放行。
-
-预检期间与失败后的终端反馈见 [CLI · 判分预检的显示](../experiments/cli.md#判分预检的显示)。
+schema 19 的 `result.json` 以 `assertionResults` 保存 Judge evaluation 与 policy projection。show、view、
+failure feedback 和 reporter 使用同一投影；Judge 没有专用展示分支。

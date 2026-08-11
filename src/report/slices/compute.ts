@@ -33,6 +33,7 @@ import type { AttemptLocator } from "../../record/locator.ts";
 import type { AttemptHandle, Run } from "../../record/types.ts";
 import { comparabilityConfigOf, deepEqualJson } from "../../sample/index.ts";
 import { foldEvalVerdict } from "../../shared/verdict.ts";
+import { verdictForTerminal } from "../../record/fact-record.ts";
 import {
   assertUniqueMetricNames,
   axisValueOf,
@@ -559,8 +560,8 @@ function deriveConditionsByFlag(
 
 /** 单格折叠:同一条件值 × eval 的全部 attempt 折成一个 DeltaCell。 */
 async function buildDeltaCell(items: readonly Item[]): Promise<DeltaCell> {
-  const evaluationKind: "pass" | "points" = items[0]!.attempt.result.evaluationKind === "points" ? "points" : "pass";
-  const verdict: Verdict = foldEvalVerdict(items.map((item) => ({ verdict: item.attempt.result.verdict })));
+  const evaluationKind: "pass" | "score" = items[0]!.attempt.result.evaluationKind === "score" ? "score" : "pass";
+  const verdict: Verdict = foldEvalVerdict(items.map((item) => item.attempt.result));
   const refs = new Set<AttemptLocator>();
   let scoreSum = 0;
   let scoreCount = 0;
@@ -570,7 +571,7 @@ async function buildDeltaCell(items: readonly Item[]): Promise<DeltaCell> {
   let costCount = 0;
   for (const item of items) {
     refs.add(locatorOf(item));
-    if (evaluationKind === "points") {
+    if (evaluationKind === "score") {
       const value = await evaluateMetric(totalScoreMetric, item.attempt);
       if (value !== null) {
         scoreSum += value;
@@ -705,9 +706,9 @@ export async function deltaTableData(input: ReportInput, options: DeltaTableOpti
   for (const condition of conditions) {
     const coveredRows = rows.filter((r) => r.cells[condition] !== undefined);
     const passRows = coveredRows.filter((r) => r.cells[condition]!.evaluationKind === "pass");
-    const pointsRows = coveredRows.filter((r) => r.cells[condition]!.evaluationKind === "points");
-    const evaluationKindComposition: "pass" | "points" | "mixed" =
-      passRows.length > 0 && pointsRows.length > 0 ? "mixed" : pointsRows.length > 0 ? "points" : "pass";
+    const pointsRows = coveredRows.filter((r) => r.cells[condition]!.evaluationKind === "score");
+    const evaluationKindComposition: "pass" | "score" | "mixed" =
+      passRows.length > 0 && pointsRows.length > 0 ? "mixed" : pointsRows.length > 0 ? "score" : "pass";
     const entry: DeltaData["totals"][string] = { evaluationKindComposition };
     if (passRows.length > 0) {
       entry.passed = passRows.filter((r) => r.cells[condition]!.verdict === "passed").length;
@@ -765,7 +766,7 @@ export async function deltaTableData(input: ReportInput, options: DeltaTableOpti
 
       const pointsRows = commonRows.filter(
         (r) =>
-          r.cells[baseline]!.evaluationKind === "points" &&
+          r.cells[baseline]!.evaluationKind === "score" &&
           r.cells[baseline]!.totalScore !== undefined &&
           r.cells[condition]!.totalScore !== undefined,
       );
@@ -850,7 +851,7 @@ export async function stabilityMatrixData(
     const key = JSON.stringify([evalId, column]);
     let cell = cellsByKey.get(key);
     if (!cell) cellsByKey.set(key, (cell = { row: evalId, column, passed: 0, failed: 0, errored: 0, refs: new Set() }));
-    const verdict = item.attempt.result.verdict;
+    const verdict = verdictForTerminal(item.attempt.result);
     if (verdict === "passed") cell.passed += 1;
     else if (verdict === "failed") cell.failed += 1;
     else if (verdict === "errored") cell.errored += 1;

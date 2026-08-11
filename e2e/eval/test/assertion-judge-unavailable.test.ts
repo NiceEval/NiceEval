@@ -14,18 +14,19 @@ interface ExpEvent {
   status?: string;
   passed?: number;
   failed?: number;
+  errored?: number;
 }
 
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
 
-test("未配置 Judge 时 optional assertion 保留 unavailable 而不发起付费模型调用", async () => {
+test("未配置 Judge 时硬消费的 Judge Fact 以 unavailable errored，且不发起网络请求", async () => {
   await withProjectCopy(
     evalProjectCopy,
     async ({ root }) => {
       const run = await niceeval.run(["exp", "assertion-judge", "--rerun", "all", "--json"], { cwd: root });
-      expect(run.exitCode, run.diagnostic()).toBe(0);
+      expect(run.exitCode, run.diagnostic()).toBe(1);
       const result = only(run.ndjson<ExpEvent>(), (event) => event.event === "result", run.diagnostic());
-      expect(result).toMatchObject({ event: "result", status: "passed", passed: 1, failed: 0 });
+      expect(result).toMatchObject({ event: "result", status: "failed", passed: 0, failed: 0, errored: 1 });
       const locator = only(
         run.ndjson<ExpEvent>(),
         (event) =>
@@ -35,10 +36,18 @@ test("未配置 Judge 时 optional assertion 保留 unavailable 而不发起付�
 
       const record = await openRecord(join(root, ".niceeval"));
       const attempt = resolveLocator(record, locator);
-      expect(attempt.result.verdict).toBe("passed");
-      const assertions = JSON.stringify(attempt.result.assertions);
-      expect(assertions.match(/\"outcome\":\"unavailable\"/g)).toHaveLength(3);
-      expect(assertions).toContain("judge-model-unresolved");
+      expect(attempt.result.verdict).toBe("errored");
+      expect(attempt.result.factResults).toEqual(expect.arrayContaining([
+        expect.objectContaining({ factKind: "score", outcome: "unavailable", reason: "judge-model-unresolved" }),
+      ]));
+      expect(attempt.result.factUses).toEqual(expect.arrayContaining([
+        expect.objectContaining({ useKind: "verdict", label: "Judge marker", outcome: "unavailable", reason: "judge-model-unresolved" }),
+      ]));
+      // The only public model boundary is the result record. A missing model
+      // yields this exact reason before precheck or evaluator transport, so no
+      // network-capable Judge path was entered.
+      expect(JSON.stringify(attempt.result)).not.toContain("judge-precheck-failed");
+      expect(JSON.stringify(attempt.result)).not.toContain("judge-call-failed");
     },
     evalArtifactStaging("judge-unavailable"),
   );

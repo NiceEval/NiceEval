@@ -1,5 +1,7 @@
 // 从归一化的 StreamEvent[] 折叠出结构化事实。
-//   - deriveRunFacts:断言层吃的 DerivedFacts(按 operationId 把 started+finished 折成 ToolCall);
+//   - deriveRunFacts:既有断言面消费的 legacy DerivedFacts(按 operationId 把 started+finished 折成 ToolCall);
+//     它不承载新的 logical occurrence / lifecycle 契约；新的 Fact 路径必须调用
+//     deriveLogicalToolOccurrences。
 //   - buildO11ySummary:给人看的 o11y 摘要,同时是宿主侧 `t.o11y` 与落盘 o11y.json 的同一份算法。
 // 一旦事件流归一好了,这两个折叠对所有 agent 通用。
 
@@ -14,6 +16,12 @@ import type {
   Usage,
   ToolName,
   JsonValue,
+  EventPosition,
+  LogicalToolLifecycle,
+  LogicalToolOccurrence,
+  LogicalToolOccurrenceDerivation,
+  LogicalToolOccurrenceDeriveOptions,
+  OrphanToolOperationFinish,
 } from "../types.ts";
 
 // ───────────────────────── 小工具 ─────────────────────────
@@ -170,6 +178,143 @@ export function deriveRunFacts(events: readonly StreamEvent[]): DerivedFacts {
     compactions,
     contextInjections,
   };
+}
+
+// ───────────────────────── logical tool occurrences ─────────────────────────
+
+interface PendingLogicalToolOccurrence {
+  readonly occurrence: Omit<LogicalToolOccurrence, "lifecycle">;
+  finished?: ToolOperationFinish;
+  /** 同一 operationId 在前一笔未结束时再次 started，无法可靠把后续 finish 交给任一笔。 */
+  ambiguous?: boolean;
+}
+
+interface ToolOperationFinish {
+  readonly status: "completed" | "failed" | "rejected";
+  readonly position: EventPosition;
+}
+
+/**
+ * 从一条 Turn 的有序事件流关联 logical tool occurrence。
+ *
+ * occurrence identity 锚定在 started 的 session/turn/event position；operationId 只在一笔
+ * 未结束 operation 的 started → finished 配对期间使用。orphan finished 因而只作为协议诊断
+ * 返回，不能伪造 input、command 或可匹配的 occurrence。
+ */
+export function deriveLogicalToolOccurrences(
+  events: readonly StreamEvent[],
+  options: LogicalToolOccurrenceDeriveOptions,
+): LogicalToolOccurrenceDerivation {
+  assertOccurrenceScope(options);
+
+  const firstEventOrdinal = options.firstEventOrdinal ?? 0;
+  assertNonNegativeSafeInteger(firstEventOrdinal, "firstEventOrdinal");
+
+  const pending: PendingLogicalToolOccurrence[] = [];
+  const openByOperationId = new Map<string, PendingLogicalToolOccurrence>();
+  const ambiguousOperationIds = new Set<string>();
+  const orphanFinishes: OrphanToolOperationFinish[] = [];
+
+  for (let eventIndex = 0; eventIndex < events.length; eventIndex += 1) {
+    const event = events[eventIndex]!;
+    const position = eventPosition(options.turnOrdinal, firstEventOrdinal + eventIndex);
+
+    if (event.type === "operation.started" && event.operation.kind === "tool") {
+      const occurrence: PendingLogicalToolOccurrence = {
+        occurrence: {
+          id: logicalOccurrenceId(options, position),
+          session: options.session,
+          turn: options.turn,
+          name: event.operation.tool === undefined
+            ? { original: event.operation.name }
+            : { original: event.operation.name, canonical: event.operation.tool },
+          input: { state: "complete", value: event.operation.input },
+          ...(event.operation.command === undefined ? {} : { command: event.operation.command }),
+          start: position,
+        },
+      };
+
+      const alreadyOpen = openByOperationId.get(event.operationId);
+      if (ambiguousOperationIds.has(event.operationId)) {
+        occurrence.ambiguous = true;
+      } else if (alreadyOpen !== undefined) {
+        // operationId 只允许在前一笔结束后复用。重叠复用时不能可靠配对，宁可让 lifecycle
+        // unavailable，也不把一个 finish 错写给另一笔 occurrence。
+        alreadyOpen.ambiguous = true;
+        occurrence.ambiguous = true;
+        openByOperationId.delete(event.operationId);
+        ambiguousOperationIds.add(event.operationId);
+      } else {
+        openByOperationId.set(event.operationId, occurrence);
+      }
+      pending.push(occurrence);
+      continue;
+    }
+
+    if (event.type === "operation.finished" && event.kind === "tool") {
+      const finished: ToolOperationFinish = {
+        status: event.status,
+        position,
+      };
+      const started = openByOperationId.get(event.operationId);
+      if (started === undefined || ambiguousOperationIds.has(event.operationId)) {
+        orphanFinishes.push({ ...finished, operationId: event.operationId });
+      } else {
+        started.finished = finished;
+        openByOperationId.delete(event.operationId);
+      }
+    }
+  }
+
+  return {
+    occurrences: pending.map((item) => ({
+      ...item.occurrence,
+      lifecycle: lifecycleFor(item, options.outcome),
+    })),
+    orphanFinishes,
+  };
+}
+
+function lifecycleFor(
+  occurrence: PendingLogicalToolOccurrence,
+  outcome: LogicalToolOccurrenceDeriveOptions["outcome"],
+): LogicalToolLifecycle {
+  if (occurrence.finished !== undefined && !occurrence.ambiguous) {
+    return {
+      state: "available",
+      status: occurrence.finished.status,
+      finish: occurrence.finished.position,
+    };
+  }
+  return {
+    state: "opaque",
+    reason: outcome === undefined ? "partial-stream" : "missing-lifecycle-evidence",
+  };
+}
+
+function assertOccurrenceScope(options: LogicalToolOccurrenceDeriveOptions): void {
+  if (options.session.length === 0) throw new Error("Logical tool occurrence session must not be empty.");
+  if (options.turn.length === 0) throw new Error("Logical tool occurrence turn must not be empty.");
+  assertNonNegativeSafeInteger(options.turnOrdinal, "turnOrdinal");
+}
+
+function assertNonNegativeSafeInteger(value: number, name: string): void {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`Logical tool occurrence ${name} must be a non-negative safe integer.`);
+  }
+}
+
+function eventPosition(turnOrdinal: number, eventOrdinal: number): EventPosition {
+  assertNonNegativeSafeInteger(eventOrdinal, "eventOrdinal");
+  return { turnOrdinal, eventOrdinal };
+}
+
+function logicalOccurrenceId(
+  options: LogicalToolOccurrenceDeriveOptions,
+  start: EventPosition,
+): string {
+  // JSON array encoding avoids delimiter collision when adapter-provided session / turn IDs contain punctuation.
+  return JSON.stringify(["niceeval.logical-tool-occurrence/1", options.session, options.turn, start.turnOrdinal, start.eventOrdinal]);
 }
 
 // ───────────────────────── extractUsageFromSpans ─────────────────────────

@@ -1,7 +1,6 @@
-# Agent-as-Judge —— Use Case
+# Agent-as-Judge 用例
 
-契约单源始终在 [README](../README.md)、[Library](../library.md)、[Architecture](../architecture.md) 与 [Lifecycle](../lifecycle.md)，用例只做搭配与叙事。
+- [审查多轮对话](review-conversation.md) —— 将确定范围的对话材料交给独立裁判 Agent。
+- [审查仓库](review-repository.md) —— 显式授权 workspace snapshot，让裁判 Agent 调查代码与测试。
 
-- [评价 Direct Agent 的多轮回答](review-conversation.md) —— 裁判只需对对话材料调查与求分，不创建 Sandbox。
-- [在独立 Sandbox 审查最终仓库](review-repository.md) —— 裁判读取 workdir 副本、运行测试并给出证据引用。
-
+两个场景都直接登记一条 Agent Judge Assertion。Pass Eval 加 `.atLeast(n)`；Score Eval 加 `.score(n)`。完整 API 只在 [Library](../library.md) 定义。

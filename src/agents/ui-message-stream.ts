@@ -31,6 +31,7 @@ import { normalizeExternalCause } from "../shared/external-cause.ts";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import type { Agent, AgentContext, AgentTracing, EvidenceCoverage, InputResponse, JsonValue, SpanMapper, StreamEvent, TurnInput } from "../types.ts";
 import { createSessionSlot } from "./session-slot.ts";
+import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
 
 // UI Message Stream 帧里没有 usage(协议本身不带 token 计数,见 docs/engineering/testing/e2e/README.md
 // 第 2 节);events/actions/messages/status 都直接来自完整归约的协议帧,和 turnFromAiSdk/aiSdkAgent
@@ -382,27 +383,33 @@ export function uiMessageStreamAgent(options: UiMessageStreamAgentOptions): Agen
 
       const request = finalMessage.parts.find(isApprovalRequested);
       if (request) {
+        const waitingEvents = [
+          ...events,
+          {
+            type: "input.requested" as const,
+            request: {
+              id: request.approval?.id ?? request.toolCallId,
+              action: toolNameOf(request),
+              input: (request.input ?? null) as JsonValue,
+              options: [{ id: "approve" }, { id: "deny" }],
+            },
+          },
+        ];
+        const evidenceCoverage = unclassifiedToolActionsCoverage(waitingEvents);
         return {
           status: "waiting" as const,
-          events: [
-            ...events,
-            {
-              type: "input.requested" as const,
-              request: {
-                id: request.approval?.id ?? request.toolCallId,
-                action: toolNameOf(request),
-                input: (request.input ?? null) as JsonValue,
-                options: [{ id: "approve" }, { id: "deny" }],
-              },
-            },
-          ],
+          events: waitingEvents,
+          ...(evidenceCoverage === undefined ? {} : { evidenceCoverage }),
         };
       }
 
       if (options.settleMs) await new Promise((resolve) => setTimeout(resolve, options.settleMs));
+      const finalEvents = [...events, ...(sawError ? [{ type: "error" as const, message: sawError }] : [])];
+      const evidenceCoverage = unclassifiedToolActionsCoverage(finalEvents);
       return {
         status: sawError ? ("failed" as const) : ("completed" as const),
-        events: [...events, ...(sawError ? [{ type: "error" as const, message: sawError }] : [])],
+        events: finalEvents,
+        ...(evidenceCoverage === undefined ? {} : { evidenceCoverage }),
       };
     },
   });

@@ -1,74 +1,31 @@
-# Assertion 与 Turn 的展示
+# Assertions —— display
 
-`exp`、`show` 与 `view` 呈现同一份 assertion、Verdict 和诊断值。终端反馈只服务当前进程；frozen reader 形成的 Sample 保留核心和分母，ReportPlan 再声明需要读取的业务通道。
+读取语义以 [Assertions](../README.md) 与 [Architecture](../architecture.md) 为准。本页规定同一 projection
+在用户界面的名称与最小信息。
 
-## 两种信息密度
+## Pass Eval
 
-| 入口 | 目的 | 显示内容 |
-|---|---|---|
-| `exp` 的完成反馈和列表页 | 快速定位问题 | Verdict、首个相关错误或 Assertion 摘要，以及其余数量。 |
-| `show`、`view` 的 Attempt 详情 | 解释本次 Attempt | 所有 Assertion、分组、材料预览、诊断、usage、timing、conversation 与 diff 的可用部分。 |
+Pass 的 Attempt 区块顺序为 Execution、Verdict、检查项。每条检查项显示 label 或 key、evaluation、
+evidence、必要的 threshold 与 Issue。
 
-通过项在概要中不逐条展开。详情页按 `groupPath` 和声明顺序展示所有条目，并保留 `unavailable`。
+measurement 只作诊断显示：`0.73, required >= 0.8, mismatched`。它不是 score，Pass 页面不显示
+累计 score、百分比或贡献项。
 
-## 概要选择
+## Score Eval
 
-概要只使用稳定落盘投影与独立 Verdict。它不读取 producer 的 matcher、控制流或求值图。
+Score 的 Attempt 区块顺序为 Execution、Score、评分项。每条评分项显示 `recorded`、实际贡献，例如
+`+2` 或 `+4`，以及 threshold condition 或 stop cause。
 
-概要按以下顺序选择一条主要说明：
+Score 页面不显示 Verdict、Pass / Fail、总分、max、百分比或其它旧式数值单位。未配置 `.score()` 的
+Assertion 显示 `recorded`，不显示 `+0`。没有 contribution 时，正式 score 为 `0`，并提示
+“没有贡献分数的评分项”。
 
-1. 执行错误或 Runner 诊断。
-2. 使 Verdict 为 `errored` 的非 optional unavailable Assertion。
-3. 使 Verdict 为 `failed` 的首个 gate；strict policy 下可选择首个相关 soft。
-4. 计分制中首个丢分的条目。
+不可排名的 Score grading 显示 `partial score not ranked`、partial score 与 Issue。正常 `.orStop()`
+显示 stop cause，但仍显示可排名的正式 score。
 
-其它相关条目显示为数量，例如 `+2 more`。概要不从 Assertion 名称拼接长列表，也不把未知、未采集或损坏数据隐藏为通过。
+## 同一投影
 
-## 单条 Assertion
-
-每条显示以下稳定信息：
-
-~~~text
-gate  package manifest has the required entry
-      includes("exports") · expected match · received missing
-~~~
-
-- 标题优先使用分组路径；没有分组时使用 `name`。
-- `decision`、派生的行状态、`detail` 和可用的 expected / received 进入同一条或相邻文本行。
-- `gate` 与 `soft` 按 `score >= threshold` 显示 passed 或 failed；`observe` 只显示 score，不补猜行状态。
-- `result.state: "unavailable"` 显示 `reason` 和证据摘要，不显示零分、失败值或实得分。
-- conditional award 显示 available 与由 `available * score` 派生的实得分；direct score 显示持久化 points。
-
-source 信息存在时，详情页链接到项目相对路径和行列。没有 source 的条目进入 unmapped 区，不猜测源码位置。
-
-`stopOnFailure` 是 producer 控制流，不进入稳定投影。若停止后续测试本身需要解释，由独立 diagnostic 或 run fact 表达，Assertion 详情不从条目反推。
-
-## Turn、conversation 与相关通道
-
-Turn 详情来自 conversation channel。它显示用户输入、Agent 文本、tool、阶段和可用的 usage；每项都保留自己的采集与解码状态。
-
-diff、telemetry、timing 和 diagnostic 使用各自 channel 的数据。页面只能呈现 ReportInput 已交付的事实，不能为展开详情重新读取 Record 或请求网络。
-
-## 状态文字
-
-| 状态 | 文字要求 |
-|---|---|
-| partial | 显示 observed、denominator 和 partial。 |
-| unavailable | 说明未采集或不适用的原因。 |
-| unsupported | 说明当前 reader 不支持对应 channel。 |
-| invalid | 显示具名 issue，并让需要它的详情失败。 |
-
-颜色、图标或悬停提示不能是这些状态的唯一表达。图表必须提供相同读数的文字或表格。
-
-## 文本安全与长度
-
-展示前剥除 ANSI 控制序列与不可打印控制字节，再把换行、回车和制表整理为可读文本。截断按显示宽度完成，并显式标记省略；不能让控制序列或超长原始值破坏终端布局。
-
-原始大文本留在 Attempt-owned blob。详情页使用有界预览和明确的下载或定位入口，不将完整文件放入摘要行。
-
-## 相关阅读
-
-- [Assertions 架构](../architecture.md)
-- [Assertion 证据](../architecture/evidence.md)
-- [Reports 架构](../../reports/architecture.md)
-- [Reports CLI](../../reports/cli.md)
+`show`、`view`、JSON、export 与 source 都离线读取同一份结构化 AssertionResult。界面可以根据 subject
+`a`、evaluator / Match `b` 的 config、evidence refs 与 limitations 重新组织文案和布局，但不能重跑 Match、
+调用 Judge、改变 evaluation 或补另一套判定。`expected` / `received` 是读取投影，不是结果中仅存的
+两个字符串。

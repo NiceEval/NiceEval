@@ -64,13 +64,18 @@ docs/
 │   ├── state/                           跨 Attempt checkpoint:固定 revision 与滚动序列
 │   ├── assertions/                      检查、作用域、证据与 AssertionResult
 │   ├── judge/                           裁判模型配置、调用与 unavailable
-│   ├── verdict/                         Severity、严格模式与四态折叠
+│   ├── verdict/                         Pass Eval 的四态 Verdict 折叠
 │   ├── record/                          持久事实、本地写状态、缓存、原子发布与通道 schema
 │   ├── sample/                          从 Record 选择 core-only 分母
 │   └── reports/                         计划输入、一次执行、show/view 与静态导出
 │
 ├── roadmap/                             已定稿、尚未采用为当前契约的方向
 │   ├── agent-as-judge/                  用独立 Agent 调查证据并执行 Judge Assertion
+│   ├── assertion-authoring/             Assertion-first 作者面、Verdict 与 score、统一 Match
+│   ├── replayable-grading/              多轮 Execution 与 Grading 分离、Record 重评分
+│   ├── experiment-pilot-sampling/       共同题集、固定 seed 与 non-final Pilot
+│   ├── experiment-families/             keyed record 展开稳定 Experiment ID
+│   ├── sandbox-fixture-content/         identity-aware Fixture 内容 prepare 命令
 │   ├── llm-judge-runtime/               原生 LLM Judge 配方、材料、Provider 与判分图
 │   ├── multi-agent/                     多 Agent Eval 场景
 │   ├── ordered-sequences/               现有 Eval 的有序执行、完整重放与 lineage
@@ -89,7 +94,9 @@ docs/
 │   ├── report-authoring/                报告作者面:组件粒度与取数形态
 │
 ├── research/                            带观察日期的外部产品研究，不构成目标契约
-│   └── ori-eval.md                      Ori Eval、spawn-ori-eval 与 NiceEval 的关系
+│   ├── ori-eval.md                      Ori Eval、spawn-ori-eval 与 NiceEval 的关系
+│   ├── eve-assertion-dx.md              Eve 断言 DX 与真实回归题的逐项能力审视
+│   └── assertion-api-dx/                评估断言 API、语法与作者 DX 横向研究
 │
 ├── engineering/                         仓库自身的工程机制
 │   ├── _template/                       新工程主题模板

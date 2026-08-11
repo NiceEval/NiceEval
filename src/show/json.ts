@@ -4,7 +4,7 @@
 // 通用 attempt 投影与 stdout 单文档序列化,不重复声明任何组件的字段形状。
 
 import type { AttemptHandle } from "../record/index.ts";
-import type { EvalResult } from "../types.ts";
+import { materializeFactRecord, type FactRecordResult } from "../record/index.ts";
 import type {
   AnnotatedSourceResult,
   AttemptDetailsResult,
@@ -71,13 +71,13 @@ export type ShowJson =
  * 那些声明各自已经携带自己需要的身份子集(如 `UsageTableData.experimentId`/`.evalId`/`.attempt`),
  * 不重复套这层通用投影。
  */
-export type AttemptJson = EvalResult & {
+export type AttemptJson = FactRecordResult & {
   experimentId: string;
   runStartedAt: string;
 };
 
 export function attemptJsonOf(attempt: AttemptHandle): AttemptJson {
-  return { ...attempt.result, experimentId: attempt.experimentId, runStartedAt: attempt.run.startedAt };
+  return { ...materializeFactRecord(attempt.result), experimentId: attempt.experimentId, runStartedAt: attempt.run.startedAt };
 }
 
 /** 信封的 `sample` 字段;`patterns` 为空时省略 `evalPrefix`。 */

@@ -12,8 +12,8 @@ import { defineEval } from "niceeval";
 export default defineEval({
   description: "Brooklyn weather query",
   async test(t) {
-    await t.send("What's the weather like in Brooklyn today?");
-    t.succeeded();
+    const turn = await t.send("What's the weather like in Brooklyn today?");
+    turn.succeeded().label("Turn 完成");
   },
 });
 ```
@@ -56,10 +56,10 @@ sandbox?: SandboxLayer;
 #### `judge`
 
 ```ts
-judge?: JudgeConfig;
+judge?: JudgeDeclaration;
 ```
 
-覆盖项目级 Config.judge,只对这一条评估用例生效(如换个更贵的评审模型)。
+声明 Judge capability；true 继承 Experiment/Config，对象同时声明并覆盖它们。
 
 #### `reporters`
 
@@ -106,29 +106,97 @@ test(t: TestContext): Promise<void> | void;
 
 ## Test context: `t`
 
-`t`（`TestContext`）是评估用例作者拿到的高层上下文。运行器按 agent 的实际能力组装它——`t.sandbox` 这类字段只在 `defineSandboxAgent` 构造的 agent 上才有意义，完整规则见[能力位参考](/zh/reference/capabilities)。
+`t`（`TestContext`）是评估用例作者拿到的高层上下文。每一次作者入口调用都直接登记一条 Assertion：`t.check(value, match)` 严格接收两个参数；`t.succeeded()`、`session.succeeded()`、`turn.succeeded()`、`calledTool(name, options?)` 等 scoped 方法与 Judge recipe 也直接登记 Assertion。handle 只配置同一条 entry 的 `key`、`label`、`.atLeast(n)`、`.score(n)` 与 `.orStop()`，绝不登记第二条 Assertion。
 
-下面签名里的 `H` 是断言句柄类型：`defineEval` 的 `t` 上 `H` 恒为 `AssertionHandle`。计分制 `defineScoreEval` 的 `t`（`ScoreTestContext`）换成 `ScoreAssertionHandle`——多出 `.points(n)` 这一个给分词。严重度三个词在两种题型里含义相同：`.gate()` 只声明「不过就 failed」，不改变 `test()` 的控制流。要「这步不成立就别往下跑了」再链 `.stopOnFailure()`，或者用值断言的简写 `t.require()`（两种题型都有）。跨两种题型复用的辅助函数把参数标注成 `BaseTestContext<H>`，两种 `t` 都能传进去。详见[计分制](/zh/tutorials/evaluation-kinds#走完三步也要记三分)。全部成员：
+Pass Eval 用 Boolean condition 折叠 Attempt Verdict。measurement 必须 `.atLeast(n)`；`await handle.orStop()` 在 mismatch 或 below 时停止当前 continuation。`defineScoreEval` 的 `ScoreTestContext` 额外提供 `t.score(n)` 直接登记 contribution，`n` 必须 finite 且不小于零；已有 Assertion 用 `.score(n)` 贡献分数，`n` 必须 finite 且大于零。完整规则见[通过制与计分制](/zh/tutorials/evaluation-kinds)。全部成员：
 
 {/* GENERATED:BEGIN test-context */}
 
 {/* 本区块由 pnpm docs:reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 scripts/generate-reference.ts) */}
 
+#### `succeeded`
+
+```ts
+succeeded(): BooleanFact<void, P>;
+```
+
+#### `parked`
+
+```ts
+parked(): BooleanFact<void, P>;
+```
+
+#### `calledTool`
+
+```ts
+calledTool(match: ToolMatch, options?: CollectionMatch): BooleanFact<LogicalToolOccurrence, P>;
+```
+
+#### `notCalledTool`
+
+```ts
+notCalledTool(match: ToolMatch): BooleanFact<void, P>;
+```
+
+#### `usedNoTools`
+
+```ts
+usedNoTools(): BooleanFact<void, P>;
+```
+
+#### `maxToolCalls`
+
+```ts
+maxToolCalls(max: number): BooleanFact<void, P>;
+```
+
+#### `loadedSkill`
+
+```ts
+loadedSkill(skill: string): BooleanFact<void, P>;
+```
+
+#### `noFailedActions`
+
+```ts
+noFailedActions(): BooleanFact<void, P>;
+```
+
+#### `event`
+
+```ts
+event(match: EventMatch, options?: CollectionMatch): BooleanFact<AssertionEvent, P>;
+```
+
+#### `notEvent`
+
+```ts
+notEvent(match: EventMatch): BooleanFact<void, P>;
+```
+
+#### `maxTokens`
+
+```ts
+maxTokens(max: number): UsageEvidenceFact<P>;
+```
+
+#### `maxCost`
+
+```ts
+maxCost(usd: number): UsageEvidenceFact<P>;
+```
+
 #### `send`
 
 ```ts
-send(input: SendInput): Promise<TurnHandle<H>>;
+send(input: SendInput): Promise<TurnHandle>;
 ```
-
-向默认会话发一条消息(字符串或结构化消息),返回该轮的 TurnHandle。事件同时累加进默认会话的累计事件流,供下面的作用域断言使用。
 
 #### `sendFile`
 
 ```ts
-sendFile(path: string, text?: string): Promise<TurnHandle<H>>;
+sendFile(path: string, text?: string): Promise<TurnHandle>;
 ```
-
-发一条带文件(图片等多模态输入)的消息。`path` 相对项目根;读出后 base64 随 TurnInput.files 交给 adapter。
 
 #### `requireInputRequest`
 
@@ -136,26 +204,17 @@ sendFile(path: string, text?: string): Promise<TurnHandle<H>>;
 requireInputRequest(filter?: InputRequestFilter): InputRequest;
 ```
 
-取默认会话里等待中的 HITL 输入请求;不传 filter 要求恰好一条,拿不到就抛。
-
 #### `respond`
 
 ```ts
-respond(...responses: (string | RespondAnswer)[]): Promise<TurnHandle<H>>;
+respond(...responses: (string | RespondAnswer)[]): Promise<TurnHandle>;
 ```
-
-回答默认会话里等待中的输入请求,返回续接的 TurnHandle。字符串形式只在恰好一条待处理请求时
-才能自动对位——命中该请求 `options` 里的某个 id 就是 `optionId`,否则整句落自由文本;
-多个请求并停时字符串形式无法消歧,直接抛 `hitl.stringAmbiguous`,要求改用
-`{ request, optionId }` / `{ request, text }` 对象形式(RespondAnswer,见其类型注释)显式指名。
 
 #### `respondAll`
 
 ```ts
-respondAll(optionId: string): Promise<TurnHandle<H>>;
+respondAll(optionId: string): Promise<TurnHandle>;
 ```
-
-用同一个 optionId 批量回答默认会话里全部等待中的输入请求。
 
 #### `reply`
 
@@ -163,15 +222,11 @@ respondAll(optionId: string): Promise<TurnHandle<H>>;
 readonly reply: string;
 ```
 
-默认会话最近一轮的助手回复文本。
-
 #### `sessionId`
 
 ```ts
 readonly sessionId: string | undefined;
 ```
-
-adapter 侧的默认会话 id(有会话概念的 agent 才有)。
 
 #### `events`
 
@@ -179,17 +234,11 @@ adapter 侧的默认会话 id(有会话概念的 agent 才有)。
 readonly events: readonly StreamEvent[];
 ```
 
-默认会话累计的事件流(跨该会话所有轮次)。
-
 #### `newSession`
 
 ```ts
-newSession(): SessionHandle<H>;
+newSession(): SessionHandle;
 ```
-
-另开一路独立会话,返回它的 SessionHandle——不是 void。多会话隔离的关键入口:
-新会话的发送与断言都与默认会话及其它 newSession() 会话相互隔离,常用于「多用户
-并行对话」「一条主线 + 一条旁支」这类场景。
 
 #### `signal`
 
@@ -197,15 +246,11 @@ newSession(): SessionHandle<H>;
 readonly signal: AbortSignal;
 ```
 
-本次 attempt 的中止信号;超时 / 首过即停 / 用户 Ctrl-C 时触发,传给 adapter 的长耗时调用做取消。
-
 #### `model`
 
 ```ts
 readonly model?: string;
 ```
-
-本次 attempt 使用的模型名(由 experiment/CLI flag 决定);省略即 agent 原生默认,不代表「无模型」。
 
 #### `reasoningEffort`
 
@@ -213,15 +258,11 @@ readonly model?: string;
 readonly reasoningEffort?: string;
 ```
 
-本次 attempt 的推理努力程度(如 "low"/"medium"/"high",取值由 adapter/模型决定)。
-
 #### `flags`
 
 ```ts
 readonly flags: Readonly<globalThis.Record<string, JsonValue>>;
 ```
-
-本次 attempt 生效的实验 flags(experiment.flags 的只读视图;实验条件,非命令行开关)。
 
 #### `progress`
 
@@ -229,22 +270,16 @@ readonly flags: Readonly<globalThis.Record<string, JsonValue>>;
 progress(update: ProgressUpdate): void;
 ```
 
-作用域反馈:报告评估用例自己执行的长步骤(上传 Fixture、跑构建……)。短命状态,scope 固定
-为 `eval.run`;只报告不断言(见 docs/feature/eval/library/context.md「向运行反馈长步骤」)。
-
 #### `diagnostic`
 
 ```ts
 diagnostic(input: DiagnosticInput): void;
 ```
 
-作用域反馈:报告运行结束后仍需保留的问题(永久事件,落 attempt diagnostics)。
-即使 level 为 "error" 也不自动改变 verdict——测试结论仍由断言决定。
-
 #### `log`
 
 ```ts
-log(msg: string): void;
+log(message: string): void;
 ```
 
 `progress({ message: msg })` 的别名(调试日志),不出现在最终结果里。
@@ -260,21 +295,92 @@ skip(reason: string): never;
 #### `check`
 
 ```ts
-check(value: unknown, assertion: ValueAssertion): H;
+check<F extends BooleanFact<unknown, FactPhase>>(fact: F, options?: FactUseOptions): F;
 ```
 
-对任意值跑一个 ValueAssertion,返回可链 `.gate()` / `.atLeast()` 的 AssertionHandle。
-打分延迟到评估用例结束后统一 finalize,调用本身同步、不抛错——不通过只是记一条失败断言,
-不会中止后续代码。要「不满足就立即中止评估用例」用 require。
+#### `check`
+
+```ts
+check<F extends ScoreFact<FactPhase>>(fact: ThresholdedScoreFact<F>, options?: FactUseOptions): F;
+```
+
+#### `check`
+
+```ts
+check<T, I, R extends I, P extends FactPhase>(
+  source: EvidenceSource<T, P> & AcceptsMatchInput<T, NoInfer<I>>,
+  match: BooleanMatch<I, R, "value">,
+  options?: FactUseOptions,
+): BooleanFact<T & R, P>;
+```
+
+#### `check`
+
+```ts
+check<T, P extends FactPhase>(
+  source: EvidenceSource<T, P>,
+  match: ThresholdedScoreMatch<NoInfer<T>>,
+  options?: FactUseOptions,
+): ScoreFact<P>;
+```
+
+#### `check`
+
+```ts
+check<T, I, R extends I>(
+  value: T & AuthorValue<T> & AcceptsMatchInput<T, NoInfer<I>>,
+  match: BooleanMatch<I, R, "value">,
+  options?: FactUseOptions,
+): BooleanFact<T & R, "now">;
+```
+
+#### `check`
+
+```ts
+check<T>(
+  value: T & AuthorValue<T>,
+  match: ThresholdedScoreMatch<NoInfer<T>>,
+  options?: FactUseOptions,
+): ScoreFact<"now">;
+```
+
+#### `checkIfCovered`
+
+```ts
+checkIfCovered<F extends UsageEvidenceFact<FactPhase>>(fact: F, options?: FactUseOptions): F;
+```
 
 #### `require`
 
 ```ts
-require<T>(value: T, assertion: ValueAssertion): Promise<T>;
+require<R>(fact: BooleanFact<R, "now">, options?: FactUseOptions): Promise<R>;
 ```
 
-`t.check(value, assertion).gate().stopOnFailure()` 的值断言简写。立即求值；失败时保留
-AssertionResult 并中止后续 test，成功时透传原 value。两种题型语义相同。
+#### `require`
+
+```ts
+require<F extends ScoreFact<"now">>(fact: ThresholdedScoreFact<F>, options?: FactUseOptions): Promise<number>;
+```
+
+#### `require`
+
+```ts
+require<T, I, R extends I>(
+  value: T & AuthorValue<T> & AcceptsMatchInput<T, NoInfer<I>>,
+  match: BooleanMatch<I, R, "value">,
+  options?: FactUseOptions,
+): Promise<T & R>;
+```
+
+#### `require`
+
+```ts
+require<T>(
+  value: T & AuthorValue<T>,
+  match: ThresholdedScoreMatch<NoInfer<T>>,
+  options?: FactUseOptions,
+): Promise<number>;
+```
 
 #### `group`
 
@@ -282,136 +388,11 @@ AssertionResult 并中止后续 test，成功时透传原 value。两种题型�
 group<T>(title: string, fn: () => Promise<T> | T): Promise<T>;
 ```
 
-把一组断言归到一个有标题的分组下(对照 vitest 的 test('title', ...))。纯组织/报告用,
-不改打分:组里每条断言仍独立计分。可嵌套(标题用 › 连接)。
-
-#### `succeeded`
-
-```ts
-succeeded(): H;
-```
-
-断言默认会话累计状态为 "completed"(跨该会话所有轮次,不止最后一轮)。
-
-#### `parked`
-
-```ts
-parked(): H;
-```
-
-断言默认会话当前卡在 HITL 输入请求上。
-
-#### `messageIncludes`
-
-```ts
-messageIncludes(token: string | RegExp): H;
-```
-
-断言默认会话累计的助手回复包含 token(跨该会话所有轮次,不止最后一轮)。
-
-#### `calledTool`
-
-```ts
-calledTool(name: string, match?: ToolMatch): H;
-```
-
-断言默认会话累计调用过指定名字的工具;match 可约束入参 / 次数 / 状态。
-
-#### `notCalledTool`
-
-```ts
-notCalledTool(name: string, match?: Omit<ToolMatch, "count">): H;
-```
-
-断言默认会话累计未调用指定工具(或未按 match 条件调用)。
-
-#### `toolOrder`
-
-```ts
-toolOrder(names: string[]): H;
-```
-
-断言默认会话累计工具调用按给定顺序出现(允许中间夹杂其它调用)。
-
-#### `usedNoTools`
-
-```ts
-usedNoTools(): H;
-```
-
-断言默认会话至今未调用任何工具。
-
-#### `maxToolCalls`
-
-```ts
-maxToolCalls(max: number): H;
-```
-
-断言默认会话累计工具调用总数不超过 max。
-
-#### `loadedSkill`
-
-```ts
-loadedSkill(skill: string): H;
-```
-
-断言默认会话累计加载过指定 skill。
-
-#### `noFailedActions`
-
-```ts
-noFailedActions(): H;
-```
-
-断言默认会话累计没有失败的工具调用 / 命令。
-
-#### `event`
-
-```ts
-event(type: StreamEvent["type"], opts?: { count?: number | ((n: number) => boolean) }): H;
-```
-
-断言默认会话累计出现过指定类型的事件;opts.count 可约束出现次数。
-
-#### `notEvent`
-
-```ts
-notEvent(type: StreamEvent["type"]): H;
-```
-
-断言默认会话累计未出现指定类型的事件。
-
-#### `calledSubagent`
-
-```ts
-calledSubagent(name: string, match?: SubagentMatch): H;
-```
-
-断言默认会话累计调用过指定名字的子 agent;match 可约束次数 / 状态 / remoteUrl。
-
-#### `eventOrder`
-
-```ts
-eventOrder(types: StreamEvent["type"][]): H;
-```
-
-断言默认会话累计事件按给定类型顺序出现(允许中间夹杂其它事件)。
-
-#### `eventsSatisfy`
-
-```ts
-eventsSatisfy(label: string, predicate: (events: readonly StreamEvent[]) => boolean): H;
-```
-
-用自定义谓词对默认会话累计的整段事件流断言;label 必填、进断言标题。
-
 #### `sandbox`
 
 ```ts
-readonly sandbox: EvalSandbox<H>;
+readonly sandbox: EvalSandbox;
 ```
-
-受限 Sandbox 视图:能执行命令 / 读写文件 / 看最终 diff,不能 stop Sandbox 本身(见 EvalSandbox)。
 
 #### `o11y`
 
@@ -419,64 +400,32 @@ readonly sandbox: EvalSandbox<H>;
 readonly o11y: O11ySummary;
 ```
 
-本 attempt 至今的行为摘要:工具调用计数、读/改的文件、shell 命令、web 请求、思考块数等。
-每次读取都从已累积的标准事件流现算,多轮之间读到的是截至最近一次已返回 `send()` 的行为;
-direct 与 sandbox Agent 同一行为。摘要住在宿主侧——沙箱里没有任何框架文件、也没有任何框架
-环境变量,行为证据因此在被测 agent 够不着的地方。用它把「过程正确性」写进断言:
-
-```ts
-await t.send("用脚手架初始化项目");
-t.check(t.o11y.shellCommands.map((c) => c.command).join("\n"), includes("create-next-app"));
-t.check(t.o11y.filesRead.join("\n"), excludes(".env"));
-```
-
-token 用量、估算成本与耗时不在其中:那三样分别以结果的 `usage`、`estimatedCostUSD`、
-`durationMs` 为准,同一事实不落第二份。
-
 #### `usage`
 
 ```ts
 readonly usage: Usage;
 ```
 
-默认会话累计的 token 用量与估算成本。
-
-#### `maxTokens`
-
-```ts
-maxTokens(max: number): H;
-```
-
-断言默认会话累计 token 用量不超过 max。
-
-#### `maxCost`
-
-```ts
-maxCost(usd: number): H;
-```
-
-断言默认会话累计花费(USD)不超过 usd。
-
 #### `judge`
 
 ```ts
-readonly judge: JudgeNamespace<H>;
+readonly judge: JudgeNamespace;
 ```
-
-可用的 judge 命名空间(t.judge.autoevals.*)。
 
 {/* GENERATED:END test-context */}
 
-## Judge 断言
+## Judge measurement
+
+先在 `defineEval` 或 `defineScoreEval` 声明 `judge: true`，再直接登记 Judge Assertion：
 
 ```ts
-t.judge.autoevals.factuality(expected, { on: t.reply }).atLeast(0.8);
-t.judge.autoevals.closedQA(question, { on: t.reply }).atLeast(0.7);
-t.judge.autoevals.closedQA(rubric, { on: t.reply }).atLeast(0.75);
-t.judge.autoevals.summarizes(sourceText, { on: t.reply }).atLeast(0.7);
+const turn = await t.send("总结需求。");
+turn.judge.autoevals.factuality(expected).atLeast(0.8).label("事实一致");
+turn.judge.autoevals.closedQA(question).atLeast(0.7).label("回答质量");
+turn.judge.autoevals.summarizes(sourceText).score(20).label("摘要质量");
 ```
 
-`t.judge.autoevals` 有三个方法：`factuality`（回复与 `expected` 事实是否一致）、`closedQA`（回复是否满足给定问题或 rubric）、`summarizes`（回复是否是给定原文 `source` 的合格摘要）。三者都直接用 [autoevals](https://github.com/braintrustdata/autoevals)（braintrust）库的评分器，`{ on: t.reply }` 指定被评的文本。
+`t.judge.autoevals` 的根级 recipe 额外接收 `{ input, output }` 字符串材料。`turn.judge` 已绑定 immutable Turn 材料。模型配置按 Eval、Experiment、项目配置解析一次；没有单次模型覆盖或 `{ on }` 选项。Pass Eval 必须 `.atLeast(n)`；Score Eval 直接 `.score(n)`。
 
 ## `Turn` 返回类型
 
@@ -486,21 +435,110 @@ t.judge.autoevals.summarizes(sourceText, { on: t.reply }).atLeast(0.7);
 
 {/* 本区块由 pnpm docs:reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 scripts/generate-reference.ts) */}
 
+#### `succeeded`
+
+```ts
+succeeded(): BooleanFact<void, P>;
+```
+
+#### `parked`
+
+```ts
+parked(): BooleanFact<void, P>;
+```
+
+#### `calledTool`
+
+```ts
+calledTool(match: ToolMatch, options?: CollectionMatch): BooleanFact<LogicalToolOccurrence, P>;
+```
+
+#### `notCalledTool`
+
+```ts
+notCalledTool(match: ToolMatch): BooleanFact<void, P>;
+```
+
+#### `usedNoTools`
+
+```ts
+usedNoTools(): BooleanFact<void, P>;
+```
+
+#### `maxToolCalls`
+
+```ts
+maxToolCalls(max: number): BooleanFact<void, P>;
+```
+
+#### `loadedSkill`
+
+```ts
+loadedSkill(skill: string): BooleanFact<void, P>;
+```
+
+#### `noFailedActions`
+
+```ts
+noFailedActions(): BooleanFact<void, P>;
+```
+
+#### `event`
+
+```ts
+event(match: EventMatch, options?: CollectionMatch): BooleanFact<AssertionEvent, P>;
+```
+
+#### `notEvent`
+
+```ts
+notEvent(match: EventMatch): BooleanFact<void, P>;
+```
+
+#### `maxTokens`
+
+```ts
+maxTokens(max: number): UsageEvidenceFact<P>;
+```
+
+#### `maxCost`
+
+```ts
+maxCost(usd: number): UsageEvidenceFact<P>;
+```
+
+#### `toolOrder`
+
+```ts
+toolOrder(matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]]): BooleanFact<void, P>;
+```
+
+#### `eventOrder`
+
+```ts
+eventOrder(matches: readonly [EventMatch, EventMatch, ...EventMatch[]]): BooleanFact<void, P>;
+```
+
+#### `eventsSatisfy`
+
+```ts
+eventsSatisfy(
+  label: string,
+  predicate: (events: readonly AssertionEvent[]) => boolean | Promise<boolean>,
+): BooleanFact<void, P>;
+```
+
 #### `events`
 
 ```ts
-readonly events: StreamEvent[];
+readonly events: readonly StreamEvent[];
 ```
-
-本轮的原始事件流(工具调用、消息增量等);下面的派生字段都算自它。
 
 #### `toolCalls`
 
 ```ts
-readonly toolCalls: readonly ToolCall[];
+readonly toolCalls: readonly import("../o11y/types.ts").ToolCall[];
 ```
-
-本轮内被调用的工具列表,从 events 派生。
 
 #### `status`
 
@@ -508,15 +546,11 @@ readonly toolCalls: readonly ToolCall[];
 readonly status: "completed" | "failed" | "waiting";
 ```
 
-本轮结束状态:"completed" 正常结束、"failed" 出错、"waiting" 卡在 HITL 输入请求上。
-
 #### `message`
 
 ```ts
 readonly message: string;
 ```
-
-本轮助手最终文本回复(events 里的消息增量拼接结果)。
 
 #### `data`
 
@@ -524,175 +558,19 @@ readonly message: string;
 readonly data?: JsonValue;
 ```
 
-adapter 附带的结构化输出(如有),供 outputEquals / outputMatches 比对。
-
 #### `usage`
 
 ```ts
 readonly usage?: Usage;
 ```
 
-本轮 token 用量与估算成本(仅上报了 usage 的 agent 才有)。
-
-#### `outputEquals`
-
-```ts
-outputEquals(value: unknown): H;
-```
-
-断言 data 与给定值深度相等。
-
-#### `outputMatches`
-
-```ts
-outputMatches(schema: unknown): H;
-```
-
-断言 data 满足给定 schema(如 zod schema)。
-
-#### `messageIncludes`
-
-```ts
-messageIncludes(token: string | RegExp): H;
-```
-
-断言本轮助手回复包含 token(仅限本轮事件流,不跨轮)。
-
-#### `succeeded`
-
-```ts
-succeeded(): H;
-```
-
-断言本轮 status 为 "completed"。
-
-#### `parked`
-
-```ts
-parked(): H;
-```
-
-断言本轮卡在 HITL 输入请求上(status 为 "waiting")。
-
-#### `calledTool`
-
-```ts
-calledTool(name: string, match?: ToolMatch): H;
-```
-
-断言本轮调用过指定名字的工具;`match` 可进一步约束入参 / 次数 / 状态。
-
-#### `notCalledTool`
-
-```ts
-notCalledTool(name: string, match?: Omit<ToolMatch, "count">): H;
-```
-
-断言本轮未调用指定工具(或未按 match 条件调用)。
-
-#### `toolOrder`
-
-```ts
-toolOrder(names: string[]): H;
-```
-
-断言本轮工具调用按给定顺序出现(允许中间夹杂其它调用)。
-
-#### `usedNoTools`
-
-```ts
-usedNoTools(): H;
-```
-
-断言本轮未调用任何工具。
-
-#### `maxToolCalls`
-
-```ts
-maxToolCalls(max: number): H;
-```
-
-断言本轮工具调用总数不超过 max。
-
-#### `loadedSkill`
-
-```ts
-loadedSkill(skill: string): H;
-```
-
-断言本轮加载过指定 skill。
-
-#### `noFailedActions`
-
-```ts
-noFailedActions(): H;
-```
-
-断言本轮没有失败的工具调用 / 命令。
-
-#### `event`
-
-```ts
-event(type: StreamEvent["type"], opts?: { count?: number | ((n: number) => boolean) }): H;
-```
-
-断言本轮出现过指定类型的事件;`opts.count` 可约束出现次数。
-
-#### `notEvent`
-
-```ts
-notEvent(type: StreamEvent["type"]): H;
-```
-
-断言本轮未出现指定类型的事件。
-
-#### `calledSubagent`
-
-```ts
-calledSubagent(name: string, match?: SubagentMatch): H;
-```
-
-断言本轮调用过指定名字的子 agent;`match` 可约束次数 / 状态 / remoteUrl。
-
-#### `eventOrder`
-
-```ts
-eventOrder(types: StreamEvent["type"][]): H;
-```
-
-断言本轮事件按给定类型顺序出现(允许中间夹杂其它事件)。
-
-#### `eventsSatisfy`
-
-```ts
-eventsSatisfy(label: string, predicate: (events: readonly StreamEvent[]) => boolean): H;
-```
-
-用自定义谓词对本轮整段事件流断言;label 必填、进断言标题(谓词不透明,解释责任在 label)。
-
-#### `maxTokens`
-
-```ts
-maxTokens(max: number): H;
-```
-
-断言本轮 token 用量不超过 max。
-
-#### `maxCost`
-
-```ts
-maxCost(usd: number): H;
-```
-
-断言本轮花费(USD)不超过 usd。
-
 #### `judge`
 
 ```ts
-readonly judge: JudgeNamespace<H>;
+readonly judge: TurnJudgeNamespace;
 ```
 
-本轮可用的 judge 命名空间(t.judge.autoevals.*)。
+Judge facts are bound to this immutable turn's original input and output.
 
 {/* GENERATED:END turn-handle */}
 

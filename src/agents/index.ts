@@ -18,6 +18,24 @@ export type {
   TurnEvidenceCoverage,
 } from "../types.ts";
 
+// tool operation 的 command 分类只能由 Adapter 根据原生协议事实产生。
+// structured argv 走 commandProjection() 与同一 logical-command/v1 normalizer；
+// 无法安全取得 argv 时显式 opaque，确认不是 command 时显式 not-command。
+export {
+  LOGICAL_COMMAND_NORMALIZER,
+  commandProjection,
+  normalizeLogicalCommand,
+  notCommandProjection,
+  opaqueCommandProjection,
+} from "../o11y/command-projection.ts";
+export type {
+  CommandProjection,
+  LogicalCommandInvocation,
+  LogicalCommandNormalizer,
+  OriginalCommandInvocation,
+  OriginalCommandOpaqueReason,
+} from "../o11y/types.ts";
+
 // 执行失败分类:`Agent.classifySendFailure` 认的结构化 envelope 与同源摘要。两轴词表
 // (FailureClass / FailureScope)与包根导出的是同一个形状——adapter
 // 作者与 eval 作者各自的入口拿到同一份类型。判据、分类链与重试执行体见

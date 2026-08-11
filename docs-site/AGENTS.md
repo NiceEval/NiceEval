@@ -43,10 +43,11 @@
 - **生命周期 Hook**：四层（实验级 / Sandbox 级 / eval 级 / agent 级）共用同一形态的成对 `setup` / `teardown` 回调。中文写”生命周期”（泛指机制）或”生命周期 Hook”（指具体回调），不写”钩子”。
 - **默认报告（内建报告）**：`niceeval show` / `view` 在没有 `--report`、配置里也没写 `report` 时装载的官方 Report。它和自定义 Report 一样只消费 `ReportInput`，不读取 Record 路径或磁盘字段。
 - **Sample**：从明确 Run 或具名 latest policy 形成的内存选择。中文正文写 `Sample`，不写 `Scope`；它保留 expected-slot 分母，以及 included / not-recorded / invalid / excluded 状态。
-- **Severity**：断言的 gate / soft 两档。中文写“严重度”，不写“严重级”；能直接写 gate / soft 的句子不要提“严重度”这个上位词。
 - **ReportInput**：Record→Reports composition adapter 按 ReportPlan 准备的进程内普通值。它保留 Sample 分母和内部通道读取状态，不落盘、不含 reader；consumer 只能通过受控 accessor 读取自己声明的输入。
 - **报告模型**：Report 先用纯 `plan()` 穷举 facts、calculations、页面和下载，再通过受控 accessor 计算宿主数据。静态 export 写出精确 runtime 与穷尽的 `StaticAssetManifest`。
-- **值断言**：`expect` 匹配器经 `t.check` / `t.require` 的即时断言。不写“值级断言”。
+- **值断言**：`expect` 匹配器经 `t.check(value, match)` 直接登记的断言。不写“值级断言”。
+- **Assertion**：作者调用 `t.check(value, match)`、scoped 方法或 Judge recipe 时直接登记的评估陈述。中文写“断言”或保留 `Assertion`；不存在先创建中间对象、再由另一条 API 消费它的流程。
+- **Match**：可复用、不可变、确定性且无副作用的值比较规则。中文写“匹配器”或保留 `Match`；它没有 identity、调用位置、阈值、分值或控制流。不要把 Match 本身写成断言句柄。
 
 ## 写作规则
 - **口语测试**：正文每句话要能原样对着同事说出口、对方第一次听就懂。内部设计代号与比喻（「报告槽」「证据室」「出厂填充」「接线」「前门」「收编」这类）不出现在公开站；要么把这个词提进上面的术语表并在页面首次出现处解释，要么用日常语言把条件和结果直说——写「不传 `--report` 时首页是默认报告」，不写「报告槽默认装官方榜单」。

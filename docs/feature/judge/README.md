@@ -1,14 +1,20 @@
 # Judge
 
-Judge 是由裁判模型执行的 Assertion。
-它拥有模型、端点、凭据、传输重试、响应解码和 `unavailable` 原因；Assertion collector 只接收 Judge 产出的 `AssertionResult`，不理解模型协议。
+Judge 是异步 Assertion evaluator。它给出有限 `[0,1]` measurement、理由与 evidence；它不是 Match，
+也不自行决定 Verdict 或 score。
 
-## 从哪里开始
+Judge recipe 调用时直接登记一条 Assertion，并返回同一 entry 的 handle。
+
+```ts
+const quality = turn.judge.autoevals.closedQA("回答是否解释了风险？")
+  .label("风险说明质量");
+```
+
+Pass Eval 必须为 Judge measurement 调用 `.atLeast(n)`。Score Eval 可直接 `.score(n)`，也可添加
+`.atLeast(n)` 作为局部 condition。两种配置都只执行一次 Judge evaluator，写一条 AssertionResult。
 
 | 目的 | 入口 |
 |---|---|
-| 配置并调用 Judge | [Library](library.md) |
-| 验证兼容网关确实完成判分 | [用例](use-case/README.md) |
-| 理解 unavailable 怎样影响 Attempt | [Verdict](../verdict/architecture.md#证据不可用unavailable不折叠成通过) |
-
-Judge 默认产生 soft Assertion；`.atLeast()`、`.gate()` 与 `.optional()` 的传播语义属于 Verdict。
+| recipe、材料、配置与失败 | [Library](library.md) |
+| Assertion、两种 Eval 与结果 | [Assertions](../assertions/README.md) |
+| 配置变化怎样影响缓存 | [Experiments · Cache](../experiments/cache.md) |

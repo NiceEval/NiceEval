@@ -129,7 +129,6 @@ export interface Flags {
   dry: boolean;
   force: boolean;
   rerun?: "failed" | "all";
-  strict: boolean;
   budget?: number;
   tag?: string;
   junit?: string;
@@ -176,8 +175,9 @@ export interface Flags {
   teardown: boolean;
 }
 
-// 表驱动的 flag 定义(node:util parseArgs)。--no-x 显式声明，不启用全局 allowNegative，
-// 避免每个 boolean flag 都隐式获得未设计的负向别名。未知 flag 由 strict 模式报清晰错误。
+// 表驱动的 flag 定义(node:util parseArgs)。--no-x 显式声明，不依赖 Node 20.14+
+// 才支持的 allowNegative，也避免每个 boolean flag 都隐式获得未设计的负向别名。
+// 未知 flag 由 strict 模式报清晰错误，不会静默吞掉后面的位置参数。
 //
 // 每个 flag 的 JSDoc 就是它在 docs-site/zh/reference/cli.mdx flag 表里的说明,由
 // scripts/generate-reference.ts 提取渲染——改 flag 语义时改这里的注释即可,不用碰生成脚本。
@@ -264,8 +264,6 @@ const FLAG_OPTIONS = {
   force: { type: "boolean" },
   /** `exp` 命令专用:重新运行失败项(裸写/failed)或全部项(all),不改变长期指纹。 */
   rerun: { type: "boolean" },
-  /** CI 中推荐使用:让软阈值(`soft`)失败也计入整条 eval 的 verdict。 */
-  strict: { type: "boolean" },
   /** 某个 eval 的一次 attempt 通过后,停止该 eval 剩余的 attempts;省略默认关(`attempts` 默认跑满、测完整通过率)。 */
   "early-exit": { type: "boolean" },
   /** 强制关闭首过即停,即使实验文件里写了 `earlyExit: true`。 */
@@ -298,6 +296,10 @@ function isCliCommand(candidate: string): candidate is CliCommand {
 
 function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]; flags: Flags } {
   if (argv[0] === "--") argv = argv.slice(1);
+  if (argv.some((arg) => arg === "--strict" || arg.startsWith("--strict="))) {
+    process.stderr.write(t("cli.flag.strictRemoved"));
+    process.exit(1);
+  }
 
   // --diff=<路径> 预扫:diff 本体是布尔(裸 --diff = 文件级摘要),路径只接受 = 连写。
   let diffPath: string | undefined;
@@ -431,7 +433,6 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
     dry: values.dry === true,
     force: values.force === true,
     rerun: values.rerun === true ? (rerunMode ?? "failed") : undefined,
-    strict: values.strict === true,
     earlyExit: values["no-early-exit"] === true ? false : values["early-exit"] === true ? true : undefined,
     open: values["no-open"] === true ? false : values.open === true ? true : undefined,
     help: values.help === true,
@@ -647,7 +648,6 @@ function parseAcceptLocators(positionals: string[], flags: Flags): string[] {
     ["--dry", flags.dry],
     ["--force", flags.force],
     ["--rerun", flags.rerun],
-    ["--strict", flags.strict],
     ["--early-exit/--no-early-exit", flags.earlyExit],
     ["--open/--no-open", flags.open],
     ["--source", flags.source],
@@ -767,7 +767,6 @@ export function firstExperimentRenameUnsupportedFlag(flags: Flags): string | und
     ["--junit", flags.junit],
     ["--force", flags.force],
     ["--rerun", flags.rerun],
-    ["--strict", flags.strict],
     ["--early-exit/--no-early-exit", flags.earlyExit],
     ["--open/--no-open", flags.open],
     ["--source", flags.source],
@@ -996,7 +995,7 @@ async function loadConfig(cwd: string): Promise<Config> {
 }
 
 // AGENTS.md/CLAUDE.md 托管区块:告诉在这个项目里干活的 coding agent「niceeval 不在你的训练数据里,
-// 先读随包文档,跑完读结构化结果」。随包只发中文准绳版文档(英文站是手工同步、可能滞后,
+// 先读随包文档,跑完只经公开 show 面诊断」。随包只发中文准绳版文档(英文站是手工同步、可能滞后,
 // 不进包,见 package.json 的 files);init 时写入/刷新;标记之外的用户内容永不触碰。
 const AGENT_RULES_BEGIN = "<!-- BEGIN:niceeval-agent-rules -->";
 const AGENT_RULES_END = "<!-- END:niceeval-agent-rules -->";
@@ -1007,12 +1006,14 @@ const AGENT_RULES_CONTENT = [
   "`node_modules/niceeval/INDEX.md`, then read the task-specific bundled guides it points",
   "to before writing any eval, experiment, adapter, or niceeval config. That index and",
   "the bundled Chinese docs are the authoritative version matching this installation.",
-  "After a run, drill into failures with `niceeval show` — pick an `@<locator>` from the",
-  "compact index it prints, then `niceeval show @<locator>` for a compact overview, or add",
-  "`--source` / `--execution` / `--diff` for evidence; the run directories the CLI prints",
-  "are the structured source of truth: `run.json` holds the run's metadata and each",
-  "`<evalId>/a<attempt>/result.json` holds that attempt's verdict and assertions, next to",
-  "its artifact files (`events.json` / `trace.json` / `diff.json`).",
+  "After a run, use this repository's package-manager invocation of `niceeval show` for",
+  "diagnosis (`pnpm --silent exec niceeval show` in a pnpm project). Pick an `@<locator>`",
+  "from the compact index, then show that locator for an overview, or add",
+  "`--source` / `--execution` / `--timing` / `--diff` / `--expand` / `--json` for evidence.",
+  "When diagnosing an existing run, do not inspect raw `.niceeval` files or treat the current",
+  "`evals/` or `agents/` source as evidence of what happened in that run. If `niceeval show`",
+  "cannot expose the evidence you need, report that product gap. Reading source remains",
+  "appropriate when the task is to author or modify that source.",
 ].join("\n");
 
 // 优先复用已有的 AGENTS.md;项目只有 CLAUDE.md(没有 AGENTS.md)时改写 CLAUDE.md 本身,
@@ -1062,10 +1063,10 @@ async function initProject(cwd: string): Promise<void> {
         "export default defineConfig({",
         "  // Add experiments/ with defineExperiment(...) to run evals.",
         "  //",
-        "  // IMPORTANT(judge): semantic assertions (t.judge.*) are unavailable until a judge",
-        "  // model is configured. A required unavailable assertion errors the attempt; only",
-        "  // .optional() leaves its Verdict unchanged. Any OpenAI-compatible /chat/completions",
-        "  // service works; the key is read from NICEEVAL_JUDGE_KEY unless apiKeyEnv says otherwise.",
+        "  // Judge Facts require an Eval declaration: judge: true. Configure the model here or",
+        "  // on an Experiment. A consumed Fact without a model or key becomes unavailable and",
+        "  // makes that Attempt errored. Any OpenAI-compatible /chat/completions service works;",
+        "  // the key is read from OPENAI_API_KEY unless apiKeyEnv says otherwise.",
         '  // judge: { model: "gpt-5.4-mini" },',
         "});",
         "",
@@ -1237,13 +1238,16 @@ async function main(): Promise<void> {
     }
     // 配置只记 cwd:每次 rebuild 由 loadViewScan 重装 niceeval.config.ts,
     // 不把启动时那份 config.report 对象塞进 scan(否则改报告文件只刷新页面、定义仍旧)。
-    const projectMode = !offlineView && existsSync(join(cwd, "niceeval.config.ts"));
+    const hasProjectConfig = existsSync(join(cwd, "niceeval.config.ts"));
     const scan = {
       patterns: viewInput.patterns,
       ...(flags.experiment !== undefined ? { experiment: flags.experiment } : {}),
       ...(flags.report !== undefined ? { report: { path: flags.report, cwd } } : {}),
       ...(flags.theme !== undefined ? { theme: { value: flags.theme, cwd } } : {}),
-      ...(projectMode ? { config: { cwd }, projectCurrent: { cwd, freshImport: true } } : {}),
+      // 显式记录根仍可使用项目默认 report/theme；只有“当前项目结果”过滤需要关闭，
+      // 否则 --record 指向的离线记录会被当前源码定义误删。
+      ...(hasProjectConfig ? { config: { cwd } } : {}),
+      ...(!offlineView && hasProjectConfig ? { projectCurrent: { cwd, freshImport: true } } : {}),
       ...(flags.page !== undefined ? { page: flags.page } : {}),
     };
     if (flags.out) {
@@ -1625,7 +1629,6 @@ async function main(): Promise<void> {
         experimentSourcePath: exp.sourcePath,
         description: exp.description,
         labels: exp.labels,
-        strict: flags.strict,
         // 实验级并发上限:随 AgentRun 进调度器按实验单独限流(runner 两级信号量),
         // 不再取所有选中实验的最小值钳全局——那会让一个串行实验拖慢整批基线。
         maxConcurrency: exp.maxConcurrency,
@@ -2006,8 +2009,8 @@ async function main(): Promise<void> {
   const junitPath =
     flags.junit && !completion.reporterErrors.some((e) => e.reporter === "junit") ? flags.junit : undefined;
 
-  // 机器反馈闭环的入口:跑完直接给出每个已创建快照的目录,agent/CI 读 run.json 与各
-  // attempt 的 result.json / artifact(events/trace/diff),不必解析人类向的流式输出。相对 cwd
+  // 跑完给出每个已创建快照的持久化位置，供 CI 保存 artifact 或 Record API 消费；coding
+  // agent 的诊断闭环走 `niceeval show` / `niceeval show --json`，不自行扫描这些目录。相对 cwd
   // 的路径更友好;结果落在 cwd 外时(relative 路径以 .. 开头)原样打印绝对路径。打印本身由
   // renderer 的 "saved" 处理完成,这里只负责把路径交给 coordinator。
   const paths = artifacts.outputDirs().map(({ dir }) => {

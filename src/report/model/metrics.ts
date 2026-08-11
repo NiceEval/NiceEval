@@ -8,7 +8,7 @@
 //   taskPassRate(task-pass-rate)                   null     null             0       1             higher
 //   executionReliability(execution-reliability)    null     0                1       1             higher
 //   passRate(pass-rate)                            null     0                0       1             higher
-//   examScore(exam-score)                          null     0                0       soft 均分      higher
+//   examScore(exam-score)                          null     有分数则均分，否则 null            higher
 //   totalScore(total-score)                        null     null             Σpoints Σpoints       higher(通过制 eval 恒 null,不参与聚合)
 //   durationMs(duration)                           null     实测;timeout→null 同左   实测     实测          lower
 //   tokens(tokens)                                 null     实测;无 usage→null 同左   同左          lower
@@ -27,6 +27,7 @@
 // 不算 0——报告作者自己摆时心里要有这根弦,内置报告不用它们。
 
 import type { EvalResult } from "../../types.ts";
+import { factRecordOf, scoreOutcomeOf, verdictForTerminal } from "../../record/fact-record.ts";
 import type { AttemptMetric } from "./types.ts";
 
 /** 内部：校验 AttemptMetric 字面量；不对外导出。 */
@@ -58,7 +59,7 @@ export const taskPassRate = attemptMetric({
   unit: "%",
   bounds: { min: 0, max: 1 },
   value(a) {
-    switch (a.result.verdict) {
+    switch (verdictForTerminal(a.result)) {
       case "passed":
         return 1;
       case "failed":
@@ -79,7 +80,7 @@ export const executionReliability = attemptMetric({
   unit: "%",
   bounds: { min: 0, max: 1 },
   value(a) {
-    switch (a.result.verdict) {
+    switch (verdictForTerminal(a.result)) {
       case "passed":
       case "failed":
         return 1;
@@ -102,60 +103,51 @@ export const passRate = attemptMetric({
   better: "higher",
   unit: "%",
   bounds: { min: 0, max: 1 },
-  value: (a) =>
-    a.result.verdict === "skipped" ? null : a.result.verdict === "passed" ? 1 : 0,
+  value: (a) => {
+    const verdict = verdictForTerminal(a.result);
+    return verdict === "skipped" ? null : verdict === "passed" ? 1 : 0;
+  },
 });
 
 export const examScore = attemptMetric({
   name: "exam-score",
   label: { en: "Exam score", "zh-CN": "考试得分" },
-  description: "Per-eval score: gates decide pass, soft assertions grade quality.",
+  description: "Per-eval score: consumed successful Score Facts without score uses are averaged once each.",
   better: "higher",
   unit: "%",
   bounds: { min: 0, max: 1 },
   value(a) {
-    const { verdict, assertions } = a.result;
-    if (verdict === "skipped") return null;
-    // 先按 verdict 分派,再看断言:errored 的断言是空数组,「gate 全过才得分」的
-    // 字面实现会让条件空真成立、崩溃反而得满分 —— 交白卷是 0 分,不是缺数据,更不是满分。
-    // failed 同理得 0:--strict 下被翻成 failed 的哪怕 soft 分不低也是 0(报告不重新判卷)。
-    if (verdict !== "passed") return 0;
-    // unavailable 没有分数:不计入均分分母(评不了 ≠ 0 分;非 optional 的 unavailable
-    // 早已把 verdict 拖成 errored,走不到这个分支)。带 points 的也排除:计分制的得分点
-    // 已经在分数面被读过一次,再进质量分就是同一条证据被读两遍(docs/feature/experiments/
-    // score-points.md「折叠树」——质量分按「soft 且无 points」取子集)。
-    const soft = assertions.filter(
-      (x) => x.severity === "soft" && x.outcome !== "unavailable" && x.points === undefined,
+    const fact = factRecordOf(a.result);
+    if (fact === undefined) return null;
+    const scoreUseFactIds = new Set(
+      fact.factUses.flatMap((use) => use.useKind === "score" && use.input.kind === "fact" ? [use.input.factId] : []),
     );
-    if (soft.length === 0) return 1;
-    return soft.reduce((sum, x) => sum + (x.outcome === "unavailable" ? 0 : x.score), 0) / soft.length;
+    const consumedFactIds = new Set(
+      fact.factUses.flatMap((use) => use.useKind === "verdict" ? [use.target.factId] : use.input.kind === "fact" ? [use.input.factId] : []),
+    );
+    const scores = fact.factResults.flatMap((item) =>
+      item.factKind === "score" && item.outcome === "scored" && consumedFactIds.has(item.factId) && !scoreUseFactIds.has(item.factId)
+        ? [item.normalizedScore]
+        : [],
+    );
+    if (scores.length === 0) return null;
+    return scores.reduce((sum, score) => sum + score, 0) / scores.length;
   },
 });
 
 /**
- * 计分制(`defineScoreEval`)eval 的挣分:`assertions[].points` 之和加 `scoreEntries[].points`
- * 之和——纯累加,不声明满分(docs/feature/experiments/score-points.md「计分制:叠加给分,
- * 没有上限声明」)。errored 记 null(基础设施得 null,不折成 0);skipped 同为 null。通过制
- * (`evaluationKind !== "points"`,含省略即 "pass")eval 没有分数面,同样返回 null——这样跨题型的
- * Sample 里对 totalScore 求 acrossEvals 和时,通过制 eval 天然不贡献、也不拉低分母(它们不落
- * 进这个指标的样本)。`runs > 1` 时同一 eval 的多个 attempt 取均值(perEval mean,与文档「eval
- * 得分取各 attempt 的均值」一致);跨 eval 用 sum(acrossEvals sum,对应「总分 = Σ 各 eval 挣分」)。
+ * 计分制 Attempt 只读 Fact score outcome 的 `creditedScore`：invalid 的 0 正常进入均值，
+ * unavailable / errored / skipped 的 null 不进分母；earnedScore 永远只是诊断。通过制同样
+ * 返回 null。每题对所有非 null Attempt 取均值，再跨题求和，因此不会产生 survivor bias。
  */
 export const totalScore = attemptMetric({
   name: "total-score",
   label: { en: "Total score", "zh-CN": "总分" },
-  description: "Points eval's earned points: sum of assertions[].points + scoreEntries[].points. Not applicable (null) to pass evals.",
+  description: "Score eval creditedScore: invalid contributes 0, unavailable/errored/skipped contribute null; pass evals are null.",
   better: "higher",
   bounds: { min: 0 },
   value(a) {
-    if (a.result.evaluationKind !== "points") return null;
-    if (a.result.verdict === "errored" || a.result.verdict === "skipped") return null;
-    let total = 0;
-    for (const assertion of a.result.assertions) {
-      if (assertion.outcome !== "unavailable" && typeof assertion.points === "number") total += assertion.points;
-    }
-    for (const entry of a.result.scoreEntries ?? []) total += entry.points;
-    return total;
+    return scoreOutcomeOf(a.result)?.creditedScore ?? null;
   },
   perEval: "mean",
   acrossEvals: "sum",
@@ -169,11 +161,11 @@ export const durationMs = attemptMetric({
   unit: "ms",
   bounds: { min: 0 },
   value(a) {
-    if (a.result.verdict === "skipped") return null;
+    if (verdictForTerminal(a.result) === "skipped") return null;
     // 超时删失:线值不是「跑了这么久」,是「被砍在这里」——计入聚合会把截断当实测,
     // 排除又制造幸存者偏差(慢条件因为被截断反而显得快)。唯一诚实做法是 null,
     // 让 MetricValue 的 samples < total 把删失显式呈现出来(docs/feature/reports/README.md「内置指标」)。
-    if (a.result.verdict === "errored" && a.result.error?.code === "timeout") return null;
+    if (verdictForTerminal(a.result) === "errored" && a.result.error?.code === "timeout") return null;
     return a.result.durationMs;
   },
 });
@@ -186,7 +178,7 @@ export const tokens = attemptMetric({
   unit: "tokens",
   bounds: { min: 0 },
   value(a) {
-    if (a.result.verdict === "skipped") return null;
+    if (verdictForTerminal(a.result) === "skipped") return null;
     const usage = a.result.usage;
     // input/output 缺失(协议没提供)→ null:缺了主干桶,剩下缓存明细只是局部数据,
     // 拿它冒充完整流量比编 0 更误导(docs/feature/record/architecture.md#usage)。
@@ -209,7 +201,7 @@ export const costUSD = attemptMetric({
   better: "lower",
   unit: "$",
   bounds: { min: 0 },
-  value: (a) => (a.result.verdict === "skipped" ? null : attemptCostUSD(a.result)),
+  value: (a) => (verdictForTerminal(a.result) === "skipped" ? null : attemptCostUSD(a.result)),
 });
 
 /**
@@ -226,7 +218,7 @@ export const assistantTurns = attemptMetric({
   unit: "turns",
   bounds: { min: 0 },
   async value(a) {
-    if (a.result.verdict === "skipped") return null;
+    if (verdictForTerminal(a.result) === "skipped") return null;
     const o11y = await a.o11y();
     return o11y?.totalTurns ?? null;
   },
@@ -245,7 +237,7 @@ export const repeatedFailedCommands = attemptMetric({
   unit: "cmds",
   bounds: { min: 0 },
   async value(a) {
-    if (a.result.verdict === "skipped") return null;
+    if (verdictForTerminal(a.result) === "skipped") return null;
     const o11y = await a.o11y();
     if (!o11y) return null;
     const failures = new Map<string, number>();

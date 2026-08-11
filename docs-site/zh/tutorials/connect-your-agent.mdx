@@ -81,12 +81,15 @@ import { defineEval } from "niceeval";
 import { includes } from "niceeval/expect";
 
 export default defineEval({
+  judge: true,
   description: "退款政策问答",
   async test(t) {
-    await t.send("你们的退款政策是什么?");
-    t.succeeded();
-    t.check(t.reply, includes(/30\s*天|一个月|30[- ]?days?/i));  // ← 多措辞等价的正则，不是单一精确短语
-    t.judge.autoevals.closedQA("回答是否说明了退款期限?").atLeast(0.7);
+    const turn = await t.send("你们的退款政策是什么?");
+    turn.succeeded().label("请求成功");
+    t.check(turn.message, includes("30")).label("说明退款期限");
+    turn.judge.autoevals.closedQA("回答是否说明了退款期限？")
+      .atLeast(0.7)
+      .label("退款政策质量");
   },
 });
 ```

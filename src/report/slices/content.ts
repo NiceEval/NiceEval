@@ -33,7 +33,7 @@ function conditionVerdictCell(
   locale: ReportLocale,
 ): Cell {
   if (!cell) return { kind: "notApplicable" };
-  if (cell.evaluationKind === "points") {
+  if (cell.evaluationKind === "score") {
     return { kind: "text", text: cell.totalScore !== undefined ? formatPoints(cell.totalScore) : "—" };
   }
   return {

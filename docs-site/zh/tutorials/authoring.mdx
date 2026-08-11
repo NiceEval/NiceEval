@@ -161,7 +161,7 @@ export default defineEval({
 });
 ```
 
-`progress` 只更新运行中的短期状态，不进入结果。`diagnostic` 会随当前 Attempt 提交进 Record，但不会代替断言或自动改变判定。业务结论仍用 `t.check` / `t.require` / gate；基础设施无法继续时抛出异常。
+`progress` 只更新运行中的短期状态，不进入结果。`diagnostic` 会写进当前 Attempt 的 `result.json`，但不会代替断言或自动改变判定：业务结论仍写 `t.check(value, match)`、作用域 Assertion 或 Judge measurement。基础设施无法继续时抛出异常。
 
 ## 评估的生命周期
 
@@ -170,7 +170,7 @@ export default defineEval({
 <Lifecycle
   title="一条 Attempt 从排队到收尾"
   hint="悬停暂停"
-  note={<>收尾段不计入这条 Attempt 的耗时口径。`niceeval show --run &lt;runId&gt; --page attempt-&lt;attemptId&gt;` 的 timing 区块显示这棵树的实测版本。</>}
+  note={<>收尾段不计入这条 Attempt 的耗时口径。<code>niceeval show</code> 加 <code>--timing</code> 打印的就是这棵树的实测版本。</>}
   phases={[
     { name: "experiment.setup", what: "起隧道、起共享服务", times: "整场一次" },
     { name: "sandbox.queue", what: "等一个并发位", times: "每 Attempt" },

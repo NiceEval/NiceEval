@@ -47,6 +47,125 @@ export type ToolName =
   | "agent_task"
   | "unknown";
 
+/** Adapter 确认原始 command 不能安全还原为 argv 的原因。 */
+export type OriginalCommandOpaqueReason =
+  | "redacted"
+  | "truncated"
+  | "compound-shell"
+  | "dynamic-shell"
+  | "unsupported-protocol";
+
+/** Adapter 已确认的原始 command invocation；token 保留原生执行边界的形状。 */
+export type OriginalCommandInvocation =
+  | {
+      readonly state: "available";
+      readonly executable: string;
+      readonly args: readonly string[];
+    }
+  | {
+      readonly state: "opaque";
+      readonly reason: OriginalCommandOpaqueReason;
+    };
+
+/** Observation Protocol 唯一的 logical-command normalizer profile。 */
+export type LogicalCommandNormalizer = "logical-command/v1";
+
+/** 可供 command matcher 消费的、已经归一的逻辑 invocation。 */
+export type LogicalCommandInvocation =
+  | {
+      readonly state: "available";
+      readonly executable: string;
+      readonly args: readonly string[];
+      readonly normalizer: LogicalCommandNormalizer;
+      readonly normalization: "identity" | "pnpm-exec" | "npx";
+    }
+  | {
+      readonly state: "opaque";
+      readonly normalizer: LogicalCommandNormalizer;
+      readonly reason: "original-opaque";
+      readonly originalReason: OriginalCommandOpaqueReason;
+    }
+  | {
+      readonly state: "opaque";
+      readonly normalizer: LogicalCommandNormalizer;
+      readonly reason: "unsupported-wrapper-form" | "ambiguous-wrapper-target" | "multiple-executions";
+    };
+
+/** 一笔 tool operation 的穷尽 command 分类；不从 tool name 或 input 推导。 */
+export type CommandProjection =
+  | { readonly kind: "not-command" }
+  | {
+      readonly kind: "command";
+      readonly original: OriginalCommandInvocation;
+      readonly logical: LogicalCommandInvocation;
+    };
+
+/** 一条 Agent session 内的稳定事件位置。 */
+export interface EventPosition {
+  readonly turnOrdinal: number;
+  readonly eventOrdinal: number;
+}
+
+/** 单笔 tool occurrence 的可用 lifecycle 证据。 */
+export type LogicalToolLifecycle =
+  | { readonly state: "available"; readonly status: "pending" }
+  | {
+      readonly state: "available";
+      readonly status: "completed" | "failed" | "rejected";
+      readonly finish: EventPosition;
+    }
+  | {
+      readonly state: "opaque";
+      readonly reason: "partial-stream" | "missing-lifecycle-evidence";
+    };
+
+/** Fact matcher 消费的一笔、按 started/finished 关联后的 tool operation。 */
+export interface LogicalToolOccurrence {
+  /** 由 session、turn 与 started event position 组成的 occurrence identity；不是 operationId。 */
+  readonly id: string;
+  readonly session: string;
+  readonly turn: string;
+  readonly name: {
+    readonly original: string;
+    readonly canonical?: ToolName;
+  };
+  readonly input:
+    | { readonly state: "complete"; readonly value: JsonValue }
+    | { readonly state: "partial"; readonly value: JsonValue; readonly opaquePointers: readonly string[]; readonly reason: string }
+    | { readonly state: "unavailable"; readonly reason: string };
+  /**
+   * 旧 Adapter 尚未升级时允许缺失，调用方必须把它视作 command evidence unavailable，
+   * 不能回退为 not-command。新 Adapter 对每笔 tool operation 都必须提供分类。
+   */
+  readonly command?: CommandProjection;
+  readonly start: EventPosition;
+  readonly lifecycle: LogicalToolLifecycle;
+}
+
+/** `operation.finished` 找不到可信 started 时留下的协议诊断输入，不构造 occurrence。 */
+export interface OrphanToolOperationFinish {
+  readonly operationId: string;
+  readonly status: "completed" | "failed" | "rejected";
+  readonly position: EventPosition;
+}
+
+/** `deriveLogicalToolOccurrences` 的 scope 与可信 Turn outcome。 */
+export interface LogicalToolOccurrenceDeriveOptions {
+  readonly session: string;
+  readonly turn: string;
+  readonly turnOrdinal: number;
+  /** events[0] 对应的 event ordinal；完整 Turn.events 默认从 core user message 的 0 开始。 */
+  readonly firstEventOrdinal?: number;
+  /** 没有可信 Outcome 时保持省略，未关闭 operation 因而只能是 partial-stream。 */
+  readonly outcome?: "completed" | "failed" | "waiting";
+}
+
+/** occurrence 投影与其不能成为匹配候选的 orphan finished。 */
+export interface LogicalToolOccurrenceDerivation {
+  readonly occurrences: readonly LogicalToolOccurrence[];
+  readonly orphanFinishes: readonly OrphanToolOperationFinish[];
+}
+
 /** HITL 停轮请求的结构化描述,供 `t.requireInputRequest(filter)` / `t.respondAll` 按条件匹配。 */
 export interface InputRequest {
   /** 请求的唯一标识;多个请求并停时,`InputResponse.requestId` 靠它对位。 */
@@ -91,7 +210,17 @@ export type StreamEvent = { truncated?: Truncation[] } & (
       type: "operation.started";
       operationId: string;
       operation:
-        | { kind: "tool"; name: string; input: JsonValue; tool?: ToolName }
+        | {
+            kind: "tool";
+            name: string;
+            input: JsonValue;
+            tool?: ToolName;
+            /**
+             * Adapter 对 command / not-command 的协议级分类。暂时可选以兼容尚未迁移的
+             * 第三方 Adapter；缺失不得在 core 侧由 name、input 或 shell text 补造。
+             */
+            command?: CommandProjection;
+          }
         | { kind: "subagent"; name: string; remoteUrl?: string };
     }
   /** 工具操作完成；人工拒绝只属于工具操作。 */

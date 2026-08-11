@@ -68,7 +68,7 @@ Adapter 只负责把行为落进 `events` 单源，`send` 返回的 `Turn` 不�
 - `completed` / `waiting` 是正常终态；
 - `failed` 是协议已经给出完整、可信、可评分的任务失败，例如 Agent 明确结束并报告无法完成；它不是 transport error，也不自动触发重试；
 - CLI 非零退出、signal、transport 中断、无法辨认终态，或协议没有给出可信终态时，`send()` 必须 reject `SendFailure`，不能伪造 `failed` Turn；
-- Eval 若要求任务必须完成，显式写 `await turn.succeeded().stopOnFailure()`；框架不提供把执行错误和领域失败混在一起的 `expectOk()`。
+- Eval 若要求任务必须完成，显式写 `await turn.succeeded().orStop()`；框架不提供把执行错误和领域失败混在一起的 `expectOk()`。
 
 `SendFailure` 必须携带受理事实 `acceptance: "rejected" | "started" | "unknown"`，并尽可能保存 events、usage、进程状态与正规化后的 `ExternalCause`。只有协议能证明输入未被受理时才写 `rejected`；空事件、非零退出或一句 “retry later” 都不能独自证明未受理。完整分类与重试门见[执行失败分类](../../error-classification/architecture.md)。
 

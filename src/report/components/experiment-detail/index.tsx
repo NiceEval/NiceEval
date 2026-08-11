@@ -53,7 +53,7 @@ export const ExperimentDetails = defineComponent<ExperimentDetailsProps>(async (
       </Grid>
       {/* 读数摘要:主读数(随题型选)、成本、tokens、耗时,以及 evals × attempts 覆盖。 */}
       <Grid className="niceeval-experiment-summary">
-        {exp.evaluationKind !== "points" ? (
+        {exp.evaluationKind !== "score" ? (
           <Stat label={LABEL.passRate!} value={{ kind: "metric", metric: exp.endToEndPassRate }} />
         ) : null}
         {exp.evaluationKind !== "pass" ? (

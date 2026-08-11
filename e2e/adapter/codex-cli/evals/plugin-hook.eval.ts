@@ -21,31 +21,42 @@ const PLUGIN_VERSION = "0.1.0";
 const HOOK_SENTINEL = "NICEEVAL_HOOK_SENTINEL_926";
 
 export default defineEval({
-  description: "Plugin 安装 + hook 信任 bypass:磁盘安装痕迹俱全,SessionStart hook 真实执行留下证据",
+  description:
+    "Plugin 安装 + hook 信任 bypass:磁盘安装痕迹俱全,SessionStart hook 真实执行留下证据",
   async test(t) {
     // 安装痕迹从 codex 自己的 plugin cache 目录读:安装清单只在宿主侧(attempt artifact
     // agent-setup.json),沙箱里没有任何框架文件,eval 也不该从沙箱里去读它。
-    await t.group("安装痕迹:codex 自己的 plugin cache 里装到了指定版本", async () => {
-      const cacheDir = `~/.codex/plugins/cache/${MARKETPLACE_NAME}/${PLUGIN_NAME}`;
-      const versions = await t.sandbox.runShell(`ls ${cacheDir}`);
-      t.check(versions.stdout, includes(PLUGIN_VERSION));
+    await t.group(
+      "安装痕迹:codex 自己的 plugin cache 里装到了指定版本",
+      async () => {
+        const cacheDir = `~/.codex/plugins/cache/${MARKETPLACE_NAME}/${PLUGIN_NAME}`;
+        const versions = await t.sandbox.runShell(`ls ${cacheDir}`);
+        t.check(versions.stdout, includes(PLUGIN_VERSION));
 
-      const check = await t.sandbox.runShell(`test -f ${cacheDir}/${PLUGIN_VERSION}/hooks.json`);
-      t.check(check.exitCode, equals(0));
-    });
+        const check = await t.sandbox.runShell(
+          `test -f ${cacheDir}/${PLUGIN_VERSION}/hooks.json`,
+        );
+        t.check(check.exitCode, equals(0));
+      },
+    );
 
     // 便宜的收尾轮:证明 attempt 真的跑通了 agent,同时是 hook 在真实 session 里执行的载体
     // ——SessionStart 钩子在这轮的第一条消息之前就已经跑过。
-    const turn = await t.send('Say "ok" and nothing else. Do not run any commands or read any files.');
-    await turn.succeeded().stopOnFailure();
-    t.succeeded();
+    const turn = await t.send(
+      'Say "ok" and nothing else. Do not run any commands or read any files.',
+    );
+    await t.require(turn.succeeded());
+    t.check(t.succeeded());
 
-    await t.group("hook 证据:SessionStart 钩子的输出真的落进了 Codex 自己的 session 记录", async () => {
-      const probe = await t.sandbox.runShell(
-        `f=$(find ~/.codex/sessions -name "*${t.sessionId}*.jsonl" | head -1); test -n "$f" && cat "$f"`,
-      );
-      t.check(probe.exitCode, equals(0));
-      t.check(probe.stdout, includes(HOOK_SENTINEL));
-    });
+    await t.group(
+      "hook 证据:SessionStart 钩子的输出真的落进了 Codex 自己的 session 记录",
+      async () => {
+        const probe = await t.sandbox.runShell(
+          `f=$(find ~/.codex/sessions -name "*${t.sessionId}*.jsonl" | head -1); test -n "$f" && cat "$f"`,
+        );
+        t.check(probe.exitCode, equals(0));
+        t.check(probe.stdout, includes(HOOK_SENTINEL));
+      },
+    );
   },
 });

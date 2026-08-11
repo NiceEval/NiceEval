@@ -7,12 +7,10 @@ niceeval 不需要专门的 CI 档——日志页给人看,默认的人读文本
 
 ## 全流程
 
-1. 门禁命令钉严格判定和报告路径;日志语言在 `niceeval.config.ts` 里用 `locale: "en"` 锁定,不在命令行传 env 变量:
+1. 门禁命令钉报告路径；日志语言在 `niceeval.config.ts` 里用 `locale: "en"` 锁定,不在命令行传 env 变量:
 
    ```sh
-   niceeval exp ci \
-     --strict \
-     --junit ./niceeval-junit.xml
+   niceeval exp ci --junit ./niceeval-junit.xml
    ```
 
 2. 日志是人读追加流,整流走单一 `stdout`——CI runner 分开缓冲两个 OS stream 也不会把失败行和结束摘要打乱序([流边界](../../cli.md#输出流和落盘节奏))。

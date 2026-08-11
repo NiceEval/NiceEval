@@ -4,6 +4,7 @@
 import type { AttemptHandle, Sample, SampleCoverage, Run } from "../../record/types.ts";
 import type { AttemptLocator } from "../../record/locator.ts";
 import { encodeAttemptLocator } from "../../record/locator.ts";
+import { scoreOutcomeOf, verdictForTerminal } from "../../record/fact-record.ts";
 import type { EvalResult } from "../../types.ts";
 
 // ── AggregationSubject ──────────────────────────────────────────────
@@ -352,7 +353,7 @@ export function attemptCostUSD(result: EvalResult): number | null {
 
 export const passRate = rollup(
   (attempt) => {
-    switch (attempt.result.verdict) {
+    switch (verdictForTerminal(attempt.result)) {
       case "passed":
         return 1;
       case "failed":
@@ -375,8 +376,9 @@ export const passRate = rollup(
 
 export const durationMs = rollup(
   (attempt) => {
-    if (attempt.result.verdict === "skipped") return null;
-    if (attempt.result.verdict === "errored" && attempt.result.error?.code === "timeout") return null;
+    const verdict = verdictForTerminal(attempt.result);
+    if (verdict === "skipped") return null;
+    if (verdict === "errored" && attempt.result.error?.code === "timeout") return null;
     return attempt.result.durationMs ?? null;
   },
   {
@@ -390,7 +392,7 @@ export const durationMs = rollup(
 
 export const tokens = rollup(
   (attempt) => {
-    if (attempt.result.verdict === "skipped") return null;
+    if (verdictForTerminal(attempt.result) === "skipped") return null;
     const usage = attempt.result.usage;
     if (!usage || usage.inputTokens === undefined || usage.outputTokens === undefined) return null;
     // 四个桶恒互斥:求和即完整模型流量;缓存桶是独立计价桶,缺失按 0。
@@ -412,14 +414,10 @@ export const tokens = rollup(
 
 export const totalScore = rollup(
   (attempt) => {
-    if (attempt.result.evaluationKind !== "points") return null;
-    if (attempt.result.verdict === "errored" || attempt.result.verdict === "skipped") return null;
-    let points = 0;
-    for (const assertion of attempt.result.assertions) {
-      if (assertion.outcome !== "unavailable" && typeof assertion.points === "number") points += assertion.points;
-    }
-    for (const entry of attempt.result.scoreEntries ?? []) points += entry.points;
-    return points;
+    // `creditedScore` is the only aggregable score. In particular, invalid is
+    // an observed zero while unavailable/errored/skipped are null and never
+    // enter the per-eval mean.
+    return scoreOutcomeOf(attempt.result)?.creditedScore ?? null;
   },
   {
     withinEval: mean,
@@ -430,7 +428,7 @@ export const totalScore = rollup(
 );
 
 export const costUSD = rollup(
-  (attempt) => (attempt.result.verdict === "skipped" ? null : attemptCostUSD(attempt.result)),
+  (attempt) => (verdictForTerminal(attempt.result) === "skipped" ? null : attemptCostUSD(attempt.result)),
   {
     withinEval: mean,
     acrossEvals: mean,

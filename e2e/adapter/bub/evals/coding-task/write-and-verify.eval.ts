@@ -1,4 +1,6 @@
 import { defineEval } from "niceeval";
+import { eventMatch, pattern, satisfies, toolMatch } from "niceeval/expect";
+
 import { REPLY_DIRECTIVE, SKIP_BUILD_NOTE } from "../shared.ts";
 
 // coding 任务工具轨:真实任务下 bub tape JSONL 归一出工具事件并完成配对。这是一个严格
@@ -15,17 +17,39 @@ export default defineEval({
         `第二步:作为单独一步,用 shell 命令(例如 \`cat notes.txt\`)把 notes.txt 读回来,` +
         `并把它打印的内容原样告诉我。`,
     );
-    await turn.succeeded().stopOnFailure();
+    await t.require(turn.succeeded());
 
     await t.group("写入 notes.txt,再串行 shell 读回来验证", () => {
-      t.calledTool("file_write", { input: { path: /notes\.txt/ } });
-      t.calledTool("shell");
-      t.toolOrder(["file_write", "shell"]);
-      t.noFailedActions();
+      t.check(
+        t.calledTool(
+          toolMatch("file_write", {
+            input: satisfies(
+              '"file_write" input',
+              (input) =>
+                typeof input === "object" &&
+                input !== null &&
+                !Array.isArray(input) &&
+                (typeof input["path"] === "string"
+                  ? /notes\.txt/.test(input["path"])
+                  : /notes\.txt/.test(JSON.stringify(input) ?? "")),
+            ),
+          }),
+        ),
+      );
+      t.check(t.calledTool(toolMatch("shell")));
+      t.check(turn.toolOrder([toolMatch("file_write"), toolMatch("shell")]));
+      t.check(t.noFailedActions());
     });
 
-    t.messageIncludes(/bub e2e ok/);
-    turn.maxTokens(50_000);
-    turn.maxCost(0.5);
+    t.check(
+      t.event(
+        eventMatch("message", {
+          role: "assistant",
+          text: pattern(/bub e2e ok/),
+        }),
+      ),
+    );
+    t.check(turn.maxTokens(50_000));
+    t.check(turn.maxCost(0.5));
   },
 });

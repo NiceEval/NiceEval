@@ -1,64 +1,16 @@
-# 评估多模态输出
+# 用 Judge 检查多模态输出
 
-这个 Eval 要求 Agent 生成一张图表，并判断图表是否表达参考数据。
-Eval 在定义期声明 `vision` profile 需要文本和图片，规划器因此能在派发 Agent 前完成能力预检。
+先用普通 Assertion 检查文件存在，再把文件和上下文作为显式 Judge Material：
 
 ```ts
-import { defineEval } from "niceeval";
-import { material } from "niceeval/judge";
+await t.sandbox.fileChanged("output/sales.png").orStop();
 
-export default defineEval({
-  judge: {
-    llm: {
-      uses: {
-        vision: { media: ["text", "image"] },
-      },
-    },
-  },
-  async test(t) {
-    await t.send("根据 fixtures/sales.csv 生成 output/sales.png，并解释主要趋势。");
-    await t.sandbox.fileChanged("output/sales.png").gate().stopOnFailure();
-
-    t.judge.llm({
-      name: "图表与解释一致",
-      profile: "vision",
-      rubric: [
-        "图表正确表达 reference-data 中的月份与销售额。",
-        "文字解释与图表趋势一致。",
-        "坐标轴和图例足以让读者理解图表。",
-      ].join("\n"),
-      on: [
-        material.current({ id: "conversation", role: "candidate" }),
-        material.file("output/sales.png", {
-          id: "chart",
-          role: "candidate",
-          from: "sandbox",
-          retention: "full",
-        }),
-        material.file("fixtures/sales.csv", {
-          id: "reference-data",
-          role: "reference",
-          from: "project",
-          mediaType: "text/csv",
-        }),
-      ],
-    }).gate(0.8);
-  },
-});
+t.judge.llm({
+  recipe: imageQualityRecipe,
+  material: { image: t.sandbox.file("output/sales.png"), brief },
+}).atLeast(0.8).label("图表可读");
 ```
 
-材料读取器读取两个文件，并为本次 Judge evaluation 形成有内容摘要的 typed evidence refs。
-图片作为 image part 进入 Provider，CSV 作为带 `reference` role 的文本 part 进入同一规范请求。
+图片不存在、过大或 MIME 不匹配时，Judge Assertion 为 `unavailable`。Pass 或 Score 的投影按参与方式解释它，不会显示为普通 mismatch 或 `0`。
 
-Provider 不支持 image 时，这个 Eval × Experiment pair 在预检阶段得到 `judge-capability-unavailable`。
-图片不存在、过大或 MIME 不匹配时，先形成 `judge-material-unavailable` 的结构化执行错误 Observation，再得到
-`outcome: "unavailable"` 的 Assertion Claim，并按既有 Verdict Claim 规则折叠。
-
-结果详情用下面的入口复核：
-
-```sh
-pnpm exec niceeval show @<locator> --judge
-```
-
-输出先展示最终 score、理由和引用，再展示实际 profile、材料 hash、模型节点用量和重试。
-图片引用可以定位到 `chart` 的归一化 region；报告不把模型理由冒充像素事实。
+读取面显示 measurement、rationale、引用和材料 digest。secret 与 credential 不写入 Record。

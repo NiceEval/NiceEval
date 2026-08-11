@@ -1,73 +1,98 @@
 // owner: docs/engineering/testing/e2e/adapter/ui-message-stream.md#adapter-local-protocol
-
 import { defineEval } from "niceeval";
-import { equals } from "niceeval/expect";
-
+import { equals, includes, satisfies } from "niceeval/expect";
 const CALL_ID = "local-approval-call";
-
 export default defineEval({
-  description: "approval-requested 先产生 pending operation，approve / deny 再结束同一 call id",
+  description:
+    "approval-requested 先产生 pending operation，approve / deny 再结束同一 call id",
   async test(t) {
     const draft = await t.send("request the deterministic approval fixture");
     t.check(draft.status, equals("waiting"));
-    draft.parked();
-    draft.calledTool("calculate", {
-      status: "pending",
-      input: { expression: "(23+19)*3" },
-      count: 1,
-    });
+    t.check(draft.parked());
     t.requireInputRequest({ action: "calculate" });
-    draft.eventsSatisfy(
-      "approval request exposes its native call as pending before a decision",
-      (events) =>
-        events.filter(
-          (event) =>
-            event.type === "operation.started" &&
-            event.operationId === CALL_ID &&
-            event.operation.name === "calculate",
-        ).length === 1 && !events.some((event) => event.type === "operation.finished" && event.operationId === CALL_ID),
+    t.check(
+      draft.events,
+      satisfies<typeof draft.events>(
+        "approval request exposes its native call as pending before a decision",
+        (events) =>
+          events.filter(
+            (event) =>
+              event.type === "operation.started" &&
+              event.operationId === CALL_ID &&
+              event.operation.kind === "tool" &&
+              event.operation.name === "calculate" &&
+              typeof event.operation.input === "object" &&
+              event.operation.input !== null &&
+              !Array.isArray(event.operation.input) &&
+              event.operation.input["expression"] === "(23+19)*3",
+          ).length === 1 &&
+          !events.some(
+            (event) =>
+              event.type === "operation.finished" &&
+              event.operationId === CALL_ID,
+          ),
+      ),
     );
-
     const approved = await t.respond("approve");
-    await approved.succeeded().stopOnFailure();
-    approved.messageIncludes("local-approval-approved");
-    t.calledTool("calculate", {
-      status: "completed",
-      output: { value: 126, marker: "local-approval-output" },
-      count: 1,
-    });
-    approved.notEvent("operation.started");
-    approved.eventsSatisfy(
-      "approval resume only finishes the pending native call",
-      (events) =>
-        events.filter(
-          (event) =>
-            event.type === "operation.finished" &&
-            event.operationId === CALL_ID &&
-            event.status === "completed",
-        ).length === 1,
+    await t.require(approved.succeeded());
+    t.check(approved.message, includes("local-approval-approved"));
+    t.check(
+      approved.events,
+      satisfies<typeof approved.events>(
+        "approval resume only finishes the pending native call",
+        (events) =>
+          events.filter(
+            (event) =>
+              event.type === "operation.finished" &&
+              event.operationId === CALL_ID &&
+              event.status === "completed" &&
+              typeof event.output === "object" &&
+              event.output !== null &&
+              !Array.isArray(event.output) &&
+              event.output["value"] === 126 &&
+              event.output["marker"] === "local-approval-output",
+          ).length === 1 &&
+          !events.some((event) => event.type === "operation.started"),
+      ),
     );
-
     const denied = t.newSession();
-    const deniedDraft = await denied.send("request the deterministic approval fixture");
-    deniedDraft.parked();
-    deniedDraft.calledTool("calculate", { status: "pending", count: 1 });
+    const deniedDraft = await denied.send(
+      "request the deterministic approval fixture",
+    );
+    t.check(deniedDraft.parked());
     denied.requireInputRequest({ action: "calculate" });
     const rejected = await denied.respond("deny");
-    await rejected.succeeded().stopOnFailure();
-    rejected.messageIncludes("local-approval-denied");
-    denied.calledTool("calculate", { status: "rejected", count: 1 });
-    denied.notCalledTool("calculate", { status: "completed" });
-    denied.eventsSatisfy(
-      "denial finishes the pending call as rejected without duplicating its start",
-      (events) =>
-        events.filter((event) => event.type === "operation.started" && event.operationId === CALL_ID).length === 1 &&
-        events.filter(
-          (event) =>
-            event.type === "operation.finished" &&
-            event.operationId === CALL_ID &&
-            event.status === "rejected",
-        ).length === 1,
+    await t.require(rejected.succeeded());
+    t.check(rejected.message, includes("local-approval-denied"));
+    t.check(
+      denied.events,
+      satisfies<typeof denied.events>(
+        "denial finishes the pending call as rejected without duplicating its start",
+        (events) =>
+          events.filter(
+            (event) =>
+              event.type === "operation.started" &&
+              event.operationId === CALL_ID &&
+              event.operation.kind === "tool" &&
+              event.operation.name === "calculate" &&
+              typeof event.operation.input === "object" &&
+              event.operation.input !== null &&
+              !Array.isArray(event.operation.input) &&
+              event.operation.input["expression"] === "(23+19)*3",
+          ).length === 1 &&
+          events.filter(
+            (event) =>
+              event.type === "operation.finished" &&
+              event.operationId === CALL_ID &&
+              event.status === "rejected",
+          ).length === 1 &&
+          !events.some(
+            (event) =>
+              event.type === "operation.finished" &&
+              event.operationId === CALL_ID &&
+              event.status === "completed",
+          ),
+      ),
     );
   },
 });

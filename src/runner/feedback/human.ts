@@ -24,7 +24,7 @@
 
 import { t } from "../../i18n/index.ts";
 import { formatCost } from "../../shared/format.ts";
-import { compactAssertionSummary, fitCompactAssertionSummary } from "../../assertions/display.ts";
+import { compactFactSummary, fitCompactFactSummary } from "../../assertions/display.ts";
 import { encodeAttemptKey, HALT_DIAGNOSTIC_CODE } from "../types.ts";
 import {
   panelCapabilityOf as panelCapability,
@@ -53,7 +53,7 @@ import type {
 import type { FeedbackRenderer } from "./renderer.ts";
 import type { FeedbackIO } from "./io.ts";
 import type { JsonValue } from "../../shared/types.ts";
-import type { PrimaryAssertionSummary } from "../../assertions/types.ts";
+import type { PrimaryFactSummary } from "../../assertions/types.ts";
 
 interface HumanFingerprintDelta {
   selector: string;
@@ -321,7 +321,7 @@ interface FailureFact {
   readonly who: string;
   readonly verdict: "failed" | "errored";
   readonly reason: string;
-  readonly assertion?: PrimaryAssertionSummary;
+  readonly fact?: PrimaryFactSummary;
   readonly phase?: LifecyclePhase;
   readonly code?: string;
 }
@@ -340,14 +340,14 @@ const FAILURE_SYMBOL = "✗";
 function buildFailureFactLine(failure: FailureFact, maxWidth: number): string {
   const prefix = `${FAILURE_SYMBOL} ${failure.locator}  ${failure.identity.evalId}  [${failure.who}]  `;
   const budget = Math.max(0, maxWidth - stringWidth(prefix));
-  const info = failure.assertion
-    ? fitCompactAssertionSummary(failure.assertion, budget)
+  const info = failure.fact
+    ? fitCompactFactSummary(failure.fact, budget)
     : buildErroredInfo(failure.phase, failure.code, failure.reason);
   return prefix + clipDisplayWidth(info, budget);
 }
 
 /**
- * errored 且没有主断言摘要(真正的结构化执行错误,不是 assertion-unavailable)时的信息段:
+ * errored 且没有主 Fact 摘要（真正的结构化执行错误）时的信息段:
  * `errored · <phase> · <code>`,余量够再接 `: <message>`。`phase`/`code` 用未翻译的原始字面量
  * (`LifecyclePhase` 枚举值 / `AttemptError.code`),不走 `phaseLabel()` 的人读短语 —— 这一段
  * 是给读者对照 `--json` `error` 事件、`result.json` 与 `show` 里同一个字面量用的,不是散文。
@@ -358,7 +358,7 @@ function buildErroredInfo(phase: LifecyclePhase | undefined, code: string | unde
   return reason ? `${base}: ${reason}` : base;
 }
 
-/** 按显示列硬夹紧,超宽尾部截断补 `…`。`fitCompactAssertionSummary` 的截断口径是字符数,不是
+/** 按显示列硬夹紧,超宽尾部截断补 `…`。`fitCompactFactSummary` 的截断口径是字符数,不是
  *  显示列(见该函数注释「显示宽度的精确裁剪仍归渲染面」);这里补上那道显示宽度的硬夹紧,
  *  堵住 CJK 内容"按字符数收口仍超显示列"的缝,保证渲染行恒不超过预算。 */
 function clipDisplayWidth(text: string, maxWidth: number): string {
@@ -556,12 +556,12 @@ function groupFailuresByShape(failures: readonly FailureNotice[]): FailureShapeG
 }
 
 /** 组 key 与形态摘要文本共用同一个"剥掉 received 的断言摘要"投影(有主断言摘要时,`failed`
- *  与 assertion-unavailable 造成的 `errored` 都走这条);没有主断言摘要的 `errored`(真正的
+ *  与 Fact unavailable 造成的 `errored` 都走这条);没有主 Fact 摘要的 `errored`（真正的
  *  结构化执行错误)按 `phase · code` 分组,摘要文本复用 `buildErroredInfo`(不带 message)。 */
 function failureShapeOf(failure: FailureNotice): { key: string; shapeText: string } {
-  if (failure.assertion) {
-    const shapeText = compactAssertionSummary({ ...failure.assertion, received: undefined, additionalFailures: 0 });
-    return { key: `assertion\u0000${failure.assertion.assertion}\u0000${failure.assertion.matcher ?? ""}`, shapeText };
+  if (failure.fact) {
+    const shapeText = compactFactSummary({ ...failure.fact, received: undefined, additionalFailures: 0 });
+    return { key: `fact\u0000${failure.fact.title}\u0000${failure.fact.matcher ?? ""}`, shapeText };
   }
   return {
     key: `errored\u0000${failure.phase ?? "?"}\u0000${failure.code ?? "?"}`,
@@ -590,8 +590,8 @@ function buildSingleFailureGroupRows(failure: FailureNotice, contentWidth: numbe
   const identityLine = `${FAILURE_SYMBOL} ${failure.locator}  ${failure.identity.evalId}  [${failure.who}]${factsHint(failure.factsCount)}`;
   const indent = stringWidth(`${FAILURE_SYMBOL} `);
   const budget = Math.max(0, contentWidth - indent);
-  const info = failure.assertion
-    ? fitCompactAssertionSummary(failure.assertion, budget)
+  const info = failure.fact
+    ? fitCompactFactSummary(failure.fact, budget)
     : buildErroredInfo(failure.phase, failure.code, failure.reason);
   return [
     { kind: "line", text: identityLine },

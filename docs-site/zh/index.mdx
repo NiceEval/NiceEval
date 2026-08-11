@@ -72,22 +72,24 @@ import { DirectMode } from '/snippets/diagram-direct-mode.jsx';
 ```ts
 // evals/weather-tool.eval.ts
 import { defineEval } from "niceeval";
+import { includes } from "niceeval/expect";
 
 export default defineEval({
+  judge: true,
   description: "测试 agent 在实时天气问题中正确调用工具并基于结果作答的能力",
 
   async test(t) {
     const turn = await t.send("北京今天天气怎么样？");
-    turn.succeeded();
+    turn.succeeded().label("Turn 成功");
 
-    await t.group("调用 get_weather 且城市正确", () => {
-      t.calledTool("get_weather", { input: { city: "北京" } });
-      t.messageIncludes(/°C|气温|天气|晴|多云|雨/);
+    await t.group("调用 get_weather 且回答天气", () => {
+      t.calledTool("get_weather").label("调用天气工具");
+      t.check(turn.message, includes("天气")).label("说明天气");
     });
 
-    t.judge.autoevals
-      .closedQA("助手是否基于工具返回的天气数据作答，而不是凭空编造温度？")
-      .atLeast(0.7);
+    turn.judge.autoevals.closedQA("助手是否基于工具返回的天气数据作答？")
+      .atLeast(0.7)
+      .label("回答有依据");
   },
 });
 ```
@@ -109,7 +111,7 @@ npx niceeval show --latest       # 终端读取结果，失败项可继续下钻
 npx niceeval view --latest       # 网页交互浏览
 ```
 
-如果被测对象是需要隔离工作区的 coding agent（Codex、Claude Code 插件/Skill），评估用例里改用 `t.sandbox.uploadDirectory()` 铺工作区、`t.sandbox.fileChanged()` / `t.sandbox.file()` 检查文件变化。`t.sandbox.runCommand()` 跑测试。参考独立仓库 [coding-agent-skill](https://github.com/CorrectRoadH/coding-agent-skill)。
+如果被测对象是需要隔离工作区的 coding agent（Codex、Claude Code 插件/Skill），评估用例里改用 `t.sandbox.uploadDirectory()` 铺工作区。检查文件变化用 `t.sandbox.fileChanged()` / `t.sandbox.diff.get()`。`t.sandbox.runCommand()` 跑测试。参考独立仓库 [coding-agent-skill](https://github.com/CorrectRoadH/coding-agent-skill)。
 
 ## 快速开始
 

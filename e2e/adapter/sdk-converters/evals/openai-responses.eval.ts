@@ -1,29 +1,41 @@
 // owner: docs/engineering/testing/e2e/adapter/sdk-converters.md#openai-responses-deterministic
-
 import { defineEval } from "niceeval";
-import { equals } from "niceeval/expect";
-
+import { includes, satisfies } from "niceeval/expect";
 export default defineEval({
-  description: "openai@6.49 Responses raw response 保留 message/function_call 与互斥 usage",
+  description:
+    "openai@6.49 Responses raw response 保留 message/function_call 与互斥 usage",
   async test(t) {
     const turn = await t.send("openai responses fixture");
-    await turn.succeeded().stopOnFailure();
-    turn.messageIncludes("openai-responses-message-marker");
-    turn.calledTool("calendar_lookup", {
-      status: "pending",
-      input: { date: "2026-08-09" },
-      count: 1,
-    });
-    turn.eventsSatisfy(
-      "Responses function_call retains the official call_id",
-      (events) =>
-        events.some(
-          (event) => event.type === "operation.started" && event.operationId === "openai-responses-function-call",
-        ),
+    await t.require(turn.succeeded());
+    t.check(turn.message, includes("openai-responses-message-marker"));
+    t.check(
+      turn.events,
+      satisfies<typeof turn.events>(
+        "Responses function_call retains the official call_id",
+        (events) =>
+          events.some(
+            (event) =>
+              event.type === "operation.started" &&
+              event.operationId === "openai-responses-function-call" &&
+              event.operation.kind === "tool" &&
+              event.operation.name === "calendar_lookup" &&
+              typeof event.operation.input === "object" &&
+              event.operation.input !== null &&
+              !Array.isArray(event.operation.input) &&
+              event.operation.input["date"] === "2026-08-09",
+          ) && !events.some((event) => event.type === "operation.finished"),
+      ),
     );
-    t.check(turn.usage?.inputTokens, equals(12));
-    t.check(turn.usage?.cacheReadTokens, equals(5));
-    t.check(turn.usage?.outputTokens, equals(8));
-    t.check(turn.usage?.reasoningTokens, equals(3));
+    t.check(
+      turn.usage,
+      satisfies<typeof turn.usage>(
+        "OpenAI Responses usage",
+        (usage) =>
+          usage?.inputTokens === 12 &&
+          usage.cacheReadTokens === 5 &&
+          usage.outputTokens === 8 &&
+          usage.reasoningTokens === 3,
+      ),
+    );
   },
 });

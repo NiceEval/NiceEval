@@ -166,6 +166,8 @@ export const en = {
   "cli.flag.invalidNumber": "Flag --{{flag}} expects a number, got \"{{value}}\".\n",
   "cli.flag.outputRemoved":
     "error: unknown option '--output'\n  fix: run without a flag for human text; use --json for the machine feed\n",
+  "cli.flag.strictRemoved":
+    "Unknown option: --strict\nExpress required facts with t.check(...) or await t.require(...) in the Eval source.\n",
   "runner.budgetUnenforceable":
     "budget for {{budgetKey}}: several attempts completed without any cost data (agent reports no usage and the model is not in the price table) — the budget cannot be enforced for this agent; continuing without the guard.\n",
   "runner.experimentTeardownFailed":
@@ -255,7 +257,7 @@ export const en = {
     "Flags:\n" +
     "  --attempts n  --max-concurrency n  --max-build-concurrency n  --timeout ms\n" +
     "  --budget usd  --tag t\n" +
-    "  --early-exit / --no-early-exit  --strict  --rerun[=failed|all]  --dry\n" +
+    "  --early-exit / --no-early-exit  --rerun[=failed|all]  --dry\n" +
     "  --json  (machine feed: NDJSON on stdout; default is human text)\n" +
     "  --junit path  --out dir  --port n  --open / --no-open  -h, --help  -v, --version\n\n" +
     "Positional args only select which evals to run (id prefixes); which agent and\n" +
@@ -318,10 +320,6 @@ export const en = {
   "cli.experiment.noEvalsSelected":
     "No evals selected: {{selection}} matched 0 evals. Available eval prefixes: {{experiments}}.\n" +
     "Run `niceeval exp {{selection}} --dry` to see what it covers, or drop the eval filter to run every eval selected by those experiments.\n",
-  "cli.experiment.strictOnPoints":
-    "All {{count}} evals selected by experiment \"{{experimentId}}\" are points-based (defineScoreEval), and `--strict` does nothing for them:\n" +
-    "the flag only promotes soft assertions that carry a threshold into gates, while a points eval's verdict comes solely from a `.gate()` prerequisite abort — losing points never changes it.\n" +
-    "Drop `--strict` and re-run; to tighten a points eval, write the must-hold checks as `.gate()` prerequisites.\n",
   "cli.experimentGroup": " path",
   "cli.fallbackCleanupTimeout": "\ngraceful cleanup timed out; force-cleaning sandboxes...\n",
   "cli.forceCleanupExit": "\nForce-cleaning sandboxes and exiting...\n",
@@ -356,12 +354,12 @@ export const en = {
   "define.evalIdRejected": "defineEval does not accept id; ids are derived from file paths.",
   "define.evalEnvironmentEmpty": "defineEval environment must be a non-empty profile id when provided.",
   "define.evalTestRequired": "defineEval requires an async test(t) function.",
-  "define.evalEvaluationKindRejected": "defineEval does not accept evaluationKind; it is always set to \"pass\" (pass eval kind). Use defineScoreEval for the points kind.",
+  "define.evalEvaluationKindRejected": "defineEval does not accept evaluationKind; it is always set to \"pass\" (pass eval kind). Use defineScoreEval for the score kind.",
   "define.evalConfigHashRejected": "defineEval does not accept configHash; configHash is computed during run planning.",
   "define.scoreEvalIdRejected": "defineScoreEval does not accept id; ids are derived from file paths.",
   "define.scoreEvalEnvironmentEmpty": "defineScoreEval environment must be a non-empty profile id when provided.",
   "define.scoreEvalTestRequired": "defineScoreEval requires an async test(t) function.",
-  "define.scoreEvalEvaluationKindRejected": "defineScoreEval does not accept evaluationKind; it is always set to \"points\" (points eval kind). Use defineEval for the pass kind.",
+  "define.scoreEvalEvaluationKindRejected": "defineScoreEval does not accept evaluationKind; it is always set to \"score\" (score eval kind). Use defineEval for the pass kind.",
   "define.scoreEvalConfigHashRejected": "defineScoreEval does not accept configHash; configHash is computed during run planning.",
   "define.experimentAgentRequired": "defineExperiment requires agent.",
   "define.experimentFlagNotJson": "experiment.flags.{{key}} is not JSON-serializable (functions / undefined / cycles / bigint are not allowed); flags are persisted verbatim into result runs and must be plain JSON.",
@@ -551,7 +549,6 @@ export const en = {
     "a provider's writability guarantee must cover more than workdir, since the runner puts the collector and the change ledger outside it. " +
     "fix: make /tmp writable for the run user (`chmod 1777 /tmp` in the image, or pick an image/user that does not mount /tmp read-only), then rerun — finished attempts carry over.",
   "assertions.evaluationError": "assertion evaluation error: {{error}}",
-  "assertions.pointsInvalid": ".points({{n}}) is invalid; points must be a positive finite number (n > 0).",
   "assertions.scoreInvalid": "t.score({{label}}, {{n}}) is invalid; points must be a non-negative finite number (n >= 0).",
   "session.fileFallback": "[file]",
   "session.tools": "{{count}} tools",

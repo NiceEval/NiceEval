@@ -16,12 +16,13 @@ import {
   type LoadedNativeConfig,
 } from "./native-config.ts";
 import { mapCodexSpans } from "../o11y/otlp/mappers/codex.ts";
+import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
 import { t } from "../i18n/index.ts";
 import { DEFAULT_CODEX_CLI_VERSION, AGENT_BASELINE_RECIPE_REVISION } from "./coding-cli-versions.ts";
 import { assertMcpServers, isHttpMcp, mcpManifestEntries } from "./mcp.ts";
 import { runPostSetupHooks, runPreTeardownHooks } from "./post-setup.ts";
 import { createNpmCliInstaller } from "./npm-staged.ts";
-import type { Agent, AgentSetupManifest, McpServer, Sandbox, SkillSpec } from "../types.ts";
+import type { Agent, AgentSetupManifest, McpServer, Sandbox, SkillSpec, TurnEvidenceCoverage } from "../types.ts";
 import type { SandboxCommand } from "../sandbox/commands.ts";
 import type { AgentArtifactPlatform } from "./types.ts";
 import {
@@ -468,6 +469,23 @@ export function codexAgent(config?: CodexConfig): Agent {
       ctx.session.capture(shared.codexThreadId(res.stdout));
       const parsed = shared.parseCodex(raw);
       const events = [...parsed.events];
+      let turnEvidenceCoverage: TurnEvidenceCoverage | undefined;
+      if (!raw?.trim()) {
+        const reason = "Codex JSONL transcript was unavailable; tool trajectory was not observed.";
+        turnEvidenceCoverage = {
+          events: { status: "unavailable", reason },
+          actions: { status: "unavailable", reason },
+          usage: { status: "unavailable", reason },
+        };
+      } else if (!parsed.parseSuccess) {
+        const reason = "Some Codex JSONL transcript lines could not be parsed.";
+        turnEvidenceCoverage = {
+          events: { status: "partial", reason },
+          actions: { status: "partial", reason },
+        };
+      } else {
+        turnEvidenceCoverage = unclassifiedToolActionsCoverage(events);
+      }
       if (res.exitCode !== 0) {
         throw makeSendFailure({
           acceptance: codexAcceptance(raw, events, res.stderr),
@@ -480,7 +498,12 @@ export function codexAgent(config?: CodexConfig): Agent {
           process: res,
         });
       }
-      return { events, usage: parsed.usage, status: "completed" };
+      return {
+        events,
+        usage: parsed.usage,
+        status: "completed",
+        ...(turnEvidenceCoverage === undefined ? {} : { evidenceCoverage: turnEvidenceCoverage }),
+      };
     },
   });
 }

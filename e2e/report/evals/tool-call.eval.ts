@@ -8,8 +8,8 @@ export default defineEval({
 
   async test(t) {
     const turn = await t.send("report fixture");
-    await turn.succeeded().stopOnFailure();
-    turn.noFailedActions();
+    await t.require(turn.succeeded());
+    t.check(turn.noFailedActions());
     t.check("fixture", equals("fixture"));
   },
 });

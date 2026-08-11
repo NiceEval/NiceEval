@@ -125,7 +125,6 @@ npx niceeval exp list --json
 | `--dry` | boolean | 只打印本次会匹配到的 eval × 运行配置,不实际执行(人读文本或 `--json` 单文档,见「机器怎么读:--json」)。 |
 | `--force` | boolean | `sandbox prune` 专用:除 orphan 外也销毁 unverified 实例;`exp` 明确拒绝此 flag,重跑失败项或全部项请用 `--rerun` / `--rerun all`。 |
 | `--rerun` | boolean | `exp` 命令专用:重新运行失败项(裸写/failed)或全部项(all),不改变长期指纹。 |
-| `--strict` | boolean | CI 中推荐使用:让软阈值(`soft`)失败也计入整条 eval 的 verdict。 |
 | `--early-exit` / `--no-early-exit` | boolean | 某个 eval 的一次 attempt 通过后,停止该 eval 剩余的 attempts;省略默认关(`attempts` 默认跑满、测完整通过率)。 |
 | `--open` / `--no-open` | boolean | `view` 命令专用:启动后自动打开浏览器(默认行为)。 |
 | `--help` | boolean | 打印用法说明并退出。 |
@@ -167,7 +166,7 @@ npx niceeval exp compare
 npx niceeval exp compare --json
 
 # CI 门禁:退出码 + JUnit；需要 JSON 汇总时运行后用 show --json 重定向
-npx niceeval exp compare --strict --junit ./artifacts/niceeval-junit.xml
+npx niceeval exp compare --junit ./artifacts/niceeval-junit.xml
 ```
 
 两种形态怎么选见[运行器 · Reporter](/zh/explanation/runner#reporter)。AI 反馈闭环的完整用法见 [AI 反馈闭环](/zh/tutorials/agent-feedback-loop)。CI 集成（GitHub Actions、退出码、JUnit）见 [CI 集成](/zh/tutorials/ci-integration)。进程结束后没有 `watch` 或 session 查询；长期数据从停稳 Record 生成报告。
@@ -203,11 +202,9 @@ npx niceeval show --run 01H... --report ./reports/summary.ts --page overview
 
 命令持有 reader lease 直到 `AnalysisSample`、ReportPlan 和 ReportInput 形成，随后立即释放。ReportExecution 再从内存输入形成；人工编辑停稳 Record 或修改 Report module 只会影响下一次命令。运行中的 `view` 与静态 export 消费自包含 execution，不再读取或 watch Record。
 
-## `--early-exit` 与 `--strict`
+## `--early-exit`
 
 `--early-exit` 默认关闭：`--attempts` > 1 时默认把每次 attempt 都跑完，给出真实通过率——这是 NiceEval 衡量 agent 稳不稳的核心指标，默认不该被无声截断。只想知道"这题能不能过"、不在乎完整分布时，显式加 `--early-exit`：某个评估用例的一次 attempt 通过后，自动停止该评估用例剩余的 attempts（省钱）。实验文件里写了 `earlyExit: true` 时，用 `--no-early-exit` 强制关掉它。
-
-`--strict` 不是"更严格地报错"，而是改变软阈值断言的判定。`.atLeast(n)` 这类软阈值（`soft` severity）平时失败不会把整条评估用例判为 `failed`（只是记一条不达标的断言），加了 `--strict` 之后，软阈值没达标也会让整条评估用例的 verdict 计为 `failed`。CI 中推荐加上，避免"断言分数不够但评估用例显示通过"的情况被放过。
 
 ## 环境变量只放凭据
 
@@ -224,4 +221,4 @@ npx niceeval show --run 01H... --report ./reports/summary.ts --page overview
 | `2` | 运行时崩溃（未捕获异常），CLI 顶层捕获后退出。 |
 | `130` | 收到中断信号（Ctrl-C / SIGTERM）后退出。 |
 
-需要 CI 把软阈值失败也当失败处理时，同时使用 `--strict`（见上）。
+CI 的退出码直接来自 Pass Eval 的 Boolean conditions 与最终 Verdict；JUnit 使用同一份 sealed projection。

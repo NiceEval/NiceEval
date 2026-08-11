@@ -4,20 +4,20 @@ sidebarTitle: "事件流"
 description: "StreamEvent 的十种事件：每种的字段、什么时候吐、哪些断言消费它。adapter 的核心工作就是产出这条流。"
 ---
 
-adapter 的 `send` 返回一个 `Turn`，其中 `events: StreamEvent[]` 是**断言的唯一数据源**：`t.calledTool()`、`t.reply`、`toolOrder`、`noFailedActions`……全部从这条流上读。把你的 agent"这一轮做了什么"翻成这条流，整套断言就都能用。
+adapter 的 `send` 返回一个 `Turn`，其中 `events: StreamEvent[]` 是事件断言的事实来源。`turn.calledTool(...)`、`turn.toolOrder(...)`、`turn.event(...)` 与 `turn.succeeded()` 都从本轮的标准事件和逻辑工具 occurrence 派生，调用时直接登记 Boolean Assertion。把你的 agent“这一轮做了什么”如实翻成这条流，整套事件断言就都能用。
 
 ## Turn：send 的返回值
 
 ```ts
 interface Turn {
   events: StreamEvent[];                          // 本轮事件,按真实发生顺序
-  data?: JsonValue;                               // 结构化输出 → outputEquals / outputMatches
+  data?: JsonValue;                               // 结构化输出，可交给 t.check(...)
   status: "completed" | "failed" | "waiting";     // waiting = 停下等人(HITL)
   usage?: Usage;                                  // → maxTokens / maxCost / 成本报表,完整字段见下方
 }
 ```
 
-`data` 的语义是"本轮的结构化产物"：**应用的回答本身是结构化对象**（抽取、分类、表单填充）时才填，`outputEquals` / `outputMatches` 读它。只回文本的应用不填——不要把原始响应 body 或 `message` 文本复制进去凑数，也不要反过来把结构化输出序列化写入 `events`。`usage` 拿得到就带，拿不到就不填——**别编数字**。
+`data` 的语义是“本轮的结构化产物”：**应用的回答本身是结构化对象**（抽取、分类、表单填充）时才填，评估作者可以用 `t.check(turn.data, ...)` 比较它。只回文本的应用不填——不要把原始响应 body 或 `message` 文本复制进去凑数，也不要反过来把结构化输出序列化后写进 `events`。`usage` 拿得到就带，拿不到就不填——**别编数字**。
 
 `usage` 的完整字段（`Usage` 类型）：
 
@@ -113,7 +113,17 @@ token 用量或 OTel span 反推得到)。与顶层 `estimatedCostUSD`(价目表
   type: "operation.started";
   operationId: string;
   operation:
-    | { kind: "tool"; name: string; input: JsonValue; tool?: ToolName }
+    | {
+        kind: "tool";
+        name: string;
+        input: JsonValue;
+        tool?: ToolName;
+        /**
+         * Adapter 对 command / not-command 的协议级分类。暂时可选以兼容尚未迁移的
+         * 第三方 Adapter；缺失不得在 core 侧由 name、input 或 shell text 补造。
+         */
+        command?: CommandProjection;
+      }
     | { kind: "subagent"; name: string; remoteUrl?: string };
 }
 ```
@@ -184,17 +194,17 @@ token 用量或 OTel span 反推得到)。与顶层 `estimatedCostUSD`(价目表
 
 | 事件 | 说什么 | 消费它的断言 / API |
 |---|---|---|
-| `message` | agent（或用户）说了一段话 | `t.reply`、`messageIncludes`、judge 的材料 |
-| `operation.started`（`kind: "tool"`） | 发起一次工具调用 | `calledTool`、`toolOrder`、`maxToolCalls`、`notCalledTool` |
-| `operation.finished`（`kind: "tool"`） | 该次工具调用的结果 | `calledTool` 的 `status` 匹配、`noFailedActions` |
-| `operation.started`（`kind: "subagent"`） | 委派一个子 agent | `calledSubagent` |
-| `operation.finished`（`kind: "subagent"`） | 子 agent 返回 | `calledSubagent` 的 `status`、`noFailedActions` |
-| `input.requested` | 停下来等人输入（HITL） | `t.parked()`、`t.requireInputRequest()` |
-| `thinking` | 思考文本 | `event("thinking")`、view 展示 |
-| `compaction` | 上下文被压缩 | `event("compaction")`（adapter 的 parser 吐出这条事件即可断言,不需要任何声明） |
-| `error` | 本轮出错 | `event("error")`、view 展示 |
+| `message` | agent（或用户）说了一段话 | `turn.message`、`turn.event(eventMatch("message", ...))`、Judge 的材料 |
+| `operation.started`（`kind: "tool"`） | 发起一次工具调用 | `turn.calledTool(...)`、`turn.toolOrder(...)`、`turn.event(...)` |
+| `operation.finished`（`kind: "tool"`） | 该次工具调用的结果 | 带 `status` 的 `turn.calledTool(...)` |
+| `operation.started`（`kind: "subagent"`） | 委派一个子 agent | `turn.event(eventMatch("operation.started", ...))` |
+| `operation.finished`（`kind: "subagent"`） | 子 agent 返回 | `turn.event(eventMatch("operation.finished", ...))` |
+| `input.requested` | 停下来等人输入（HITL） | `t.requireInputRequest()`、`turn.event(...)` |
+| `thinking` | 思考文本 | `turn.event(eventMatch("thinking", ...))`、view 展示 |
+| `compaction` | 上下文被压缩 | `turn.event(eventMatch("compaction"))` |
+| `error` | 本轮出错 | `turn.event(eventMatch("error", ...))`、view 展示 |
 
-任何事件都能被通用断言消费：`event(type)` / `notEvent(type)` / `eventOrder(types)` / `eventsSatisfy(label, predicate)`。
+事件断言共用三个入口：`event(match)`、`notEvent(match)` 与 `eventOrder(matches)`；它们都接收 `eventMatch(...)`，不另造 selector object 或匿名事件 predicate。
 
 ## 逐事件说明
 
@@ -210,14 +220,46 @@ token 用量或 OTel span 反推得到)。与顶层 `estimatedCostUSD`(价目表
 
 ```ts
 { type: "operation.started", operationId: string,
-  operation: { kind: "tool", name: string, input: JsonValue, tool?: ToolName } }
+  operation: { kind: "tool", name: string, input: JsonValue,
+    tool?: ToolName, command?: CommandProjection } }
 { type: "operation.finished", operationId: string, kind: "tool",
   output?: JsonValue, status: "completed" | "failed" | "rejected" }
 ```
 
-- 每个 tool `operation.started` 配一个**同 `operationId`** 的 tool `operation.finished`——并发调用靠它不错配。你的 agent 返回里有显式 id（AI SDK 的 `toolCallId`、Anthropic 的 `tool_use.id`）就直接用。实在没有再按顺序合成。
-- `status` 如实填：工具执行失败是 `"failed"`（`noFailedActions()` 会响）。**人否决是 `"rejected"`**（`noFailedActions()` 依然通过，`calledTool(..., { status: "rejected" })` 可精确断言）。两回事，别混。
+- 每个 tool `operation.started` 配一个**同 `operationId`** 的 tool `operation.finished`——并发调用靠它不错配。你的 agent 返回里有显式 id（AI SDK 的 `toolCallId`、Anthropic 的 `tool_use.id`）就直接用；实在没有再按顺序合成。
+- `status` 如实填：工具执行失败是 `"failed"`；**人否决是 `"rejected"`**。评估作者用带 `status` 选项的 `calledTool(...)` 精确区分，两回事不要混。
 - `name` 用工具的原始名字。
+
+#### `calledTool` 的 input 与 status 匹配
+
+`calledTool(name, options)` 直接登记 Boolean Assertion。`options` 的 `input` 使用递归 JSON 匹配：对象部分匹配、数组逐项匹配，任意层可用 `RegExp` 或动态谓词；`status` 精确匹配工具生命周期状态；`count` 约束匹配次数。
+
+例如，同一个 `shell` 工具可以先后运行 `git status` 和 `pnpm test`。两次调用的工具名称都是 `shell`，但 `input.command` 分别记录两组命令。评估作者因此可以用 `calledTool("shell")` 检查工具类别，或用 `calledTool("shell", { input: { command: /pnpm test/ } })` 检查具体命令。
+
+原生协议直接给出单一 invocation 的 structured argv 时，从 `niceeval/adapter` 调用公开构造器：
+
+```ts
+import { commandProjection } from "niceeval/adapter";
+
+events.push({
+  type: "operation.started",
+  operationId: call.id,
+  operation: {
+    kind: "tool",
+    name: call.name,
+    input: call.input,
+    command: commandProjection({
+      state: "available",
+      executable: call.executable,
+      args: call.args,
+    }),
+  },
+});
+```
+
+`commandProjection()` 保留 Adapter 已确认的 original tokens，并调用同一份 `normalizeLogicalCommand()` 生成 `logical-command/v1` 投影。`pnpm exec niceeval show` 和 `npx niceeval show` 因此都能由 `commandMatch("niceeval", { argsStart: ["show"] })` 精确匹配。
+
+只有原生协议已经给出 argv，或协议 grammar 能无歧义地产生单一 invocation，才能把 original 标为 available。协议只给 shell source、内容已截断或脱敏时使用 `opaqueCommandProjection(reason)`；能确认不是 command 时使用 `notCommandProjection()`。无法确认 command / not-command 时降低 actions coverage，不能从 tool name、input 或 shell 文本猜测。
 
 ### 子 agent `operation.started` / `operation.finished` —— 委派了谁
 
@@ -228,7 +270,7 @@ token 用量或 OTel span 反推得到)。与顶层 `estimatedCostUSD`(价目表
   output?: JsonValue, status: "completed" | "failed" }
 ```
 
-被测系统把任务委派给子 agent（等它返回）时吐这一对，`operationId` 配对规则同上。喂 `calledSubagent("researcher")` 这类断言。
+被测系统把任务委派给子 agent（等它返回）时吐这一对，`operationId` 配对规则同上。评估作者用 `eventMatch("operation.started", ...)` / `eventMatch("operation.finished", ...)` 比较对应事件。
 
 ### `input.requested` —— 停下等人（HITL）
 
@@ -256,9 +298,9 @@ agent 停轮等人时，每个待回答的问题吐一条，同时该 Turn 的 `
 
 ## 映射的三条纪律
 
-1. **时序即事实**：事件按真实发生顺序排。`toolOrder` / `eventOrder` 靠子序匹配，顺序错了断言就失真。
-2. **`operationId` 配对**：每个 started operation 都要有同 `kind`、同 id 的 finished operation，缺一半会让 `calledTool(..., { status })` 匹配不上。
-3. **完整性没有声明层，由来源证明**：用官方转换器（`createClaudeSdkEventStream`、`turnFromAiSdk` 等）时，返回值本身保证**所有**工具调用都在流里。手工映射时完整与否完全取决于你的映射代码写没写全。只吐一部分时，`notCalledTool` / `maxToolCalls` 这类负断言会静默通过——没有报错，比失败更难发现。手工映射前确认自己的代码覆盖了全部工具调用，见[能力位参考](/zh/reference/capabilities)。
+1. **时序即事实**：事件按真实发生顺序排。`toolOrder` / `eventOrder` 用单调 cursor 匹配不同 occurrence 的子序列，顺序错了断言就失真。
+2. **`operationId` 配对**：每个 started operation 都要有同 `kind`、同 id 的 finished operation。只有配对完成，框架才能把状态与 input 归到同一个逻辑工具 occurrence。
+3. **完整性必须显式**：官方转换器按实际 adapter 能力声明 evidence coverage。负向断言在相关输入或 action coverage 不完整时是 `unavailable`，不会把“没观察到”冒充“没有发生”。手工映射同样要如实声明覆盖范围，见[能力位参考](/zh/reference/capabilities)。
 
 ## 一个完整的映射示例
 

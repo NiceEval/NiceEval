@@ -7,12 +7,12 @@ import { readFile, stat } from "node:fs/promises";
 import { dirname, extname, relative, resolve } from "node:path";
 import { Effect } from "effect";
 import { liveSandboxPlanningServices } from "../sandbox/plan.ts";
-import type { DiscoveredEval, EvalResult, JsonValue } from "../types.ts";
+import type { DiscoveredEval, EvalResult, JsonValue, ResolvedJudgeConfig } from "../types.ts";
 import type {
   ProjectCurrentExperimentTarget,
   ProjectCurrentTarget,
 } from "../record/types.ts";
-import type { AgentRun, FingerprintMigration } from "./types.ts";
+import { EVALUATION_ALGORITHM, type AgentRun, type FingerprintMigration } from "./types.ts";
 import { resolveJudge } from "./judge-config.ts";
 import {
   prepareRunSandboxes,
@@ -141,6 +141,7 @@ async function fingerprintPreparedPair(
     ),
   );
   const payload = {
+    evaluationAlgorithm: EVALUATION_ALGORITHM,
     configHash,
     pairPlan: pair.identity,
     source,
@@ -279,6 +280,8 @@ export interface CarryPlan {
   readonly preparedPairsByKey: ReadonlyMap<string, PreparedRunPair>;
   /** `cacheKey(run, evalId)` → Run 级配置身份。 */
   readonly plannedConfigHashes: ReadonlyMap<string, string>;
+  /** `cacheKey(run, evalId)` → the one frozen Judge resolution for this pair. */
+  readonly resolvedJudgesByKey: ReadonlyMap<string, ResolvedJudgeConfig | undefined>;
   /** `cacheKey(run, evalId)` → 本次规划出的指纹,供调用方按同一口径判断"这条要不要携入"。 */
   readonly plannedFingerprints: ReadonlyMap<string, string>;
   /**
@@ -327,6 +330,7 @@ export interface ProjectTargetPlan {
   readonly target: ProjectCurrentTarget;
   readonly preparedPairsByKey: ReadonlyMap<string, PreparedRunPair>;
   readonly plannedConfigHashes: ReadonlyMap<string, string>;
+  readonly resolvedJudgesByKey: ReadonlyMap<string, ResolvedJudgeConfig | undefined>;
   readonly plannedFingerprints: ReadonlyMap<string, string>;
   readonly manifestsByKey: ReadonlyMap<string, EvalManifest>;
   /** 仅供本地 watcher；不会序列化进 Target/report。 */
@@ -597,11 +601,13 @@ async function planProjectTargetPrepared(
   const plannedFingerprints = new Map<string, string>();
   const manifestsByKey = new Map<string, EvalManifest>();
   const plannedConfigHashes = new Map<string, string>();
+  const resolvedJudgesByKey = new Map<string, ResolvedJudgeConfig | undefined>();
   const runConfigHashes = new Map<string, string>();
   const targetEvals = new Map<string, ProjectCurrentExperimentTarget["evals"][number][]>();
 
   await Promise.all(preparedPairs.map(async (pair) => {
     const resolvedJudge = resolveJudge(pair.run.judge, pair.evalDef.judge, options.configJudge);
+    resolvedJudgesByKey.set(pair.key, resolvedJudge);
     const identity = configIdentityForRun(pair.run, pair.plan, resolvedJudge);
     const resultConfigHash = hashConfigIdentity(identity);
     const runConfigHash = computeConfigHash(pair);
@@ -663,6 +669,7 @@ async function planProjectTargetPrepared(
     target: Object.freeze({ plannedAt: new Date().toISOString(), experiments: Object.freeze(experiments) }),
     preparedPairsByKey: readonlyMapSnapshot(preparedPairsByKey),
     plannedConfigHashes: readonlyMapSnapshot(plannedConfigHashes),
+    resolvedJudgesByKey: readonlyMapSnapshot(resolvedJudgesByKey),
     plannedFingerprints: readonlyMapSnapshot(plannedFingerprints),
     manifestsByKey: readonlyMapSnapshot(manifestsByKey),
     watchInputs: Object.freeze([...watchInputs].sort()),
@@ -676,7 +683,14 @@ async function planCarryPrepared(
   options: CarryPlanOptions,
 ): Promise<CarryPlan> {
   const targetPlan = await planProjectTargetPrepared(preparedPairs, options);
-  const { target: currentTarget, preparedPairsByKey, plannedFingerprints, manifestsByKey, plannedConfigHashes } = targetPlan;
+  const {
+    target: currentTarget,
+    preparedPairsByKey,
+    plannedFingerprints,
+    manifestsByKey,
+    plannedConfigHashes,
+    resolvedJudgesByKey,
+  } = targetPlan;
   const sourceCache = new Map<string, Promise<string>>();
   // 与 plannedFingerprints 同一批 (run × evalDef) 循环里顺带算好,供下面按 key 查「这个组合
   // 这次的携带资格线是多少」——同一个 key 在同一次 planCarry 调用里只对应一个 (run, evalDef)
@@ -691,13 +705,15 @@ async function planCarryPrepared(
     identity: ConfigIdentity;
   }>();
   for (const pair of preparedPairs) {
-      const { key, run, evalDef } = pair;
-      const resolvedJudge = resolveJudge(run.judge, evalDef.judge, options.configJudge);
-      const identity = configIdentityForRun(run, pair.plan, resolvedJudge);
-      const configHash = hashConfigIdentity(identity);
-      entries.set(key, { pair, identity });
-      plannedTimeoutMs.set(key, resolvedTimeoutMsForCarry(run, evalDef, configTimeoutMs));
-      acceptable.set(key, new Set([plannedFingerprints.get(key)!]));
+    const { key, run, evalDef } = pair;
+    if (!resolvedJudgesByKey.has(key)) {
+      throw new Error(`Missing planned Judge resolution for ${JSON.stringify(key)}.`);
+    }
+    const resolvedJudge = resolvedJudgesByKey.get(key);
+    const identity = configIdentityForRun(run, pair.plan, resolvedJudge);
+    entries.set(key, { pair, identity });
+    plannedTimeoutMs.set(key, resolvedTimeoutMsForCarry(run, evalDef, configTimeoutMs));
+    acceptable.set(key, new Set([plannedFingerprints.get(key)!]));
   }
 
   // 本次计划里真实存在的配置面差异:指纹对不上的历史条目逐条相减。与 --accept 给没给无关,
@@ -915,6 +931,7 @@ async function planCarryPrepared(
     currentTarget,
     preparedPairsByKey,
     plannedConfigHashes: readonlyMapSnapshot(plannedConfigHashes),
+    resolvedJudgesByKey: readonlyMapSnapshot(resolvedJudgesByKey),
     plannedFingerprints: readonlyMapSnapshot(plannedFingerprints),
     acceptableFingerprints: readonlyMapSnapshot(
       [...acceptable].map(([key, values]) => [key, readonlySetSnapshot(values)] as const),

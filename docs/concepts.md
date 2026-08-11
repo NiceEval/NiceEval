@@ -30,35 +30,42 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| 评测用例 | Eval | 一个 Task 跑在一个 Agent 上,由若干 Assertion 评判;id 从文件路径推导 | [Eval](feature/eval/README.md) |
+| 评测用例 | Eval | 一个 Task 跑在一个 Agent 上，由已登记的 Assertion 评判；id 从文件路径推导 | [Eval](feature/eval/README.md) |
 | 任务 | Task | 要让被测对象完成的"那件事",写成一串 `t.send(...)`;只描述意图,不描述判分 | [Eval](feature/eval/README.md) |
 | Fixture | Fixture | 第一次 `send` 前通过普通 Sandbox API 写入的起始素材,加 Eval layer `prepare()` 准备的内容;算 eval 归因,不进 agent diff | [Eval](feature/eval/README.md#defineeval-的形状) |
 | 本地传输清单 | transfer manifest | 普通本地上传实际读取的 source tree、内容摘要、Sandbox 目标与 send 区间;由 Runner 自动写入 | [本地测试文件](feature/eval/use-case/criteria-files.md) |
 | send 区间 | send window | 一次逻辑 `t.send()` 从发出到最终 settle 的区间,包含全部物理重试与静止确认;Sandbox diff 只反映各 send 区间内改动的并集 | [Agent contract](feature/adapters/architecture/agent-contract.md) |
 | 测试集 | Dataset | 共享同一 `test` 逻辑、只有输入不同的一组 case,`.map` 从输入数组生成多条 eval,id 零填充编号 | [Dataset fan-out](feature/eval/use-case/dataset-fanout.md) |
 | 发现 | Discovery | 扫 `evals/` 找 `*.eval.ts` / `*.eval.tsx` 与目录入口 `eval.ts`,按路径推导 id;同 id 双入口报重名 | [Eval](feature/eval/README.md) |
-| Attempt | Attempt | 一个 Run 中某个 Eval 的一次独立执行;拥有自己的生命周期、Assertion 与 Verdict,重复序号为 i | [Eval context](feature/eval/library/context.md) |
+| Attempt | Attempt | 一个 Run 中某个 Eval 的一次独立执行；拥有生命周期、Assertion 与按 Eval 类型产生的 Verdict 或 score，重复序号为 i | [Eval context](feature/eval/library/context.md) |
 | Agent Session | Agent Session(`Session`) | Attempt 内的一条对话线;`t.newSession()` 创建独立 Agent Session | [Eval context](feature/eval/library/context.md) |
 | Turn | Turn | `t.send()` 取得可信协议终态时的返回值；`failed` 是可评分领域失败，不表示进程异常 | [Eval context](feature/eval/library/context.md) |
 
-### Assertions、Judge 与 Verdict
+### Assertion、Judge 与 Verdict
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| 断言 | Assertion | 对结果、行为、证据或资源使用提出的一项可写入的检查;产出 0–1 分数或 `unavailable` | [Assertions](./feature/assertions/README.md) |
-| 判定 | Verdict | Attempt-owned `niceeval.verdict` 文档中的四态值：`passed` / `failed` / `errored` / `skipped`；不是 Attempt lifecycle state | [Severity 与 Verdict](./feature/verdict/architecture.md) |
-| 严重度 | Severity | gate 不过即 `failed`;soft 默认不改判定,`--strict` 下才计入 | [Severity 与 Verdict](./feature/verdict/architecture.md) |
-| Judge 断言 | LLM-judged assertion | 把材料和 rubric 交给裁判模型求分的 Assertion;默认 soft、无阈值 | [LLM-as-a-judge](./feature/judge/library.md) |
-| 判分预检 | Judge precheck | 派发前对判分端点的最小探测;失败只作废含 Judge 断言的 Eval,不拦整次运行 | [派发前预检](./feature/judge/library.md#派发前预检) |
-| 断言范围 | Assertion scope | `t.*` 看 Attempt、`session.*` 看 Agent Session、`turn.*` 看 Turn 已发生的事件 | [Scopes](./feature/assertions/architecture/scopes.md) |
-| 证据完整度 | Channel coverage | 每个通道 descriptor 声明 complete、partial 或 unavailable；reader 另行报告本次 decoding 完整度 | [Record 通道](feature/record/architecture.md#channel-identity-与局部演进) |
+| 断言 | Assertion | 作者 API 调用时登记的评估陈述；冻结 subject、evaluator、定位与 source order，并留出 policy 槽 | [Assertions](./feature/assertions/README.md) |
+| 断言句柄 | AssertionHandle | 同一条已登记 Assertion 的配置引用；配置不会创建第二条 Assertion | [Assertions](./feature/assertions/library.md) |
+| 断言结果 | AssertionResult | entry 封口后的完整结构化结果；统一保存 subject `a`、evaluator / Match `b`、evaluation、evidence、policy 与 pass 或 score projection | [Assertion architecture](./feature/assertions/architecture.md) |
+| subject | subject | Assertion 在调用时读取并保存的对象：显式 value，或 receiver 选择的 scope snapshot 与 normalized occurrence context | [Assertions](./feature/assertions/README.md#共同模型) |
+| 判定 | Verdict | Attempt 的四态：`passed`、`failed`、`errored` 或 `skipped`；不是 Attempt lifecycle state | [Verdict](./feature/verdict/architecture.md) |
+| Judge | Judge | 异步 Assertion evaluator；它给出有限 `[0,1]` measurement、理由与 evidence，不拥有 Verdict 或 score policy | [Judge](./feature/judge/library.md) |
+| 断言范围 | Assertion scope | `t.*`、`session.*` 与 `turn.*` 都在调用时固定各自的 snapshot | [Scopes](./feature/assertions/architecture/scopes.md) |
+| 证据完整度 | Evidence coverage (`evidenceCoverage`) | Adapter 对事件、action、message、usage、status 与 data 是否采集完整的必填逐通道声明；Record reader 另行报告 channel decoding 完整度 | [证据与完整性](feature/adapters/architecture/evidence.md) |
+| 匹配器 | Match | 对显式值做可复用、不可变、确定性且无副作用的比较；不携带 scope、callsite 或 policy | [Assertion Match](feature/assertions/library/value-assertions.md) |
+| Command projection | Command projection | Adapter 对一笔 tool operation 作出的穷尽分类：not-command，或 command 的结构化 invocation / opaque reason | [Command projection](feature/adapters/architecture/evidence.md#command-projection) |
+| Usage Assertion | Usage Assertion | 读取 usage snapshot 的 Assertion；只有它能用 `.ifCovered()` 把声明时 coverage 缺席投影为 `notApplicable` | [Assertions](feature/assertions/README.md#usage-与-evidence) |
 
-### 计分粒度
+### Eval grading
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| 计分方式 | Evaluation mode | `defineEval` 把整题折叠成一分;`defineScoreEval` 在题内叠加计分项、不声明满分 | [计分粒度](./feature/assertions/library/score-points.md) |
-| 计分项 | — | `.points(n)` 让断言贡献分数;`t.score(label, n)` 是直接计分出口 | [计分粒度](./feature/assertions/library/score-points.md) |
+| Pass Eval | Pass Eval (`defineEval`) | 以 Boolean condition 折叠 Attempt Verdict 的评测类型；measurement 必须有 `atLeast(n)` | [Assertions](./feature/assertions/README.md#pass-eval) |
+| Score Eval | Score Eval (`defineScoreEval`) | 以显式 score contribution 累计正式 score 的评测类型；没有 Attempt Verdict 或总分 | [Score Eval](./feature/assertions/library/score-points.md) |
+| 单项贡献分数 | score contribution (`scoreContribution`) | 一个已登记 Assertion 或直接 `t.score(n)` 对 Score Eval 累计 score 的数值贡献 | [Score Eval](./feature/assertions/library/score-points.md#显式贡献) |
+| threshold | threshold (`atLeast`) | 把 measurement 与有限 `[0,1]` 下限比较得到局部 Boolean condition；Pass Eval 必须配置它 | [Assertions](./feature/assertions/README.md#pass-eval) |
+| authoring stop latch | authoring stop latch | `.orStop()` 触发后拒绝后续 NiceEval 作者 API 登记的 Attempt 内控制状态 | [Assertions](./feature/assertions/README.md#orstop) |
 
 ### Agent 与 Adapter
 
@@ -124,7 +131,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
 | 实验 | Experiment | 可签入的运行配置:Agent、model、judge 执行配置、flags、运行次数与预算；不定义 rubric、阈值或其它评分规则 | [Experiments](feature/experiments/README.md) |
-| 裁判执行配置 | JudgeConfig | 裁判 model、端点、凭据变量名与超时；可由 Experiment 做 A/B，不包含 rubric 或 severity | [Judge](feature/judge/library.md#模型与鉴权) |
+| 裁判执行配置 | JudgeConfig | 裁判 model、端点、凭据变量名与超时；可由 Experiment 做 A/B，不包含 rubric、threshold 或 score policy | [Judge](feature/judge/library.md#模型与鉴权) |
 | 实验 flags | Flags | A/B 条件键,经 `ctx.flags` 给 Adapter、`t.flags` 给 eval | [Flags、labels 与 facts](feature/experiments/use-case/实验值归属/) |
 | 运行时事实 | Runtime fact | 运行时才知道、由 `ctx.fact()` 写入 owner-local 自定义 JSON document 的值；不进入 eligibility identity 或 Attempt 核心 | [Flags、labels 与 facts](feature/experiments/use-case/实验值归属/) |
 | 模型(`model` 字段) | Model | Experiment 为 agent 指定的模型标识;省略则用 agent 原生默认 | [Experiments](feature/experiments/library.md) |
@@ -234,9 +241,8 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| 严格模式 | Strict mode | `--strict` 下 soft 断言低于阈值改判 `failed`,用于 CI 把质量回归当红灯 | [Verdict CLI](./feature/verdict/cli.md) |
 | 预置准备 | —(用普通代码表达) | 跑 agent 前的准备逻辑,按职责分层:layer 的 `prepare()`、Agent Ensure、`test(t)` 普通代码与外部编排；`SandboxAgent.setup` 只连 runtime / 鉴权 | [Sandbox library](feature/sandbox/library.md) |
-| CLI flag | CLI flag | 命令行开关(`--strict`、`--report`…);写作时一律带「CLI」限定或写字面 `--xxx`,不与实验 flags 混用 | [CLI](cli.md) |
+| CLI flag | CLI flag | 命令行开关（如 `--report`）；写作时一律带「CLI」限定或写字面 `--xxx`，不与实验 flags 混用 | [CLI](cli.md) |
 
 ## 候选术语
 
@@ -244,7 +250,16 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| Agent Judge | Agent Judge | 作为 Assertion evaluator 运行的独立 Agent；调查证据后返回分数、理由与引用，不拥有 Verdict | [Agent-as-Judge](roadmap/agent-as-judge/README.md) |
+| 可重评分 Eval | Replayable Eval | 用独立 execution 与 grading definition 保存完整多轮证据，并允许只对 sealed Execution graph 重新评分 | [可重评分 Eval](roadmap/replayable-grading/README.md) |
+| Execution graph | Execution graph | 保存一次 replayable Agent 执行的 Observation、Provenance、Ref manifest 与 ExecutionOutcome 的 sealed graph | [Replayable Architecture](roadmap/replayable-grading/architecture.md#两个-plane) |
+| Grading | Grading | 一个 GradingDefinition 对一份 sealed Execution graph 产生新的不可变 grading claim 与结果 graph | [Replayable Architecture](roadmap/replayable-grading/architecture.md#gradingrun-与-gradedsample) |
+| GradingRun | GradingRun | 对一个 Experiment Run 已写入 Record 的 SampleManifest 执行或复用全部 Grading 的持久批次 | [Replayable Architecture](roadmap/replayable-grading/architecture.md#gradingrun-与-gradedsample) |
+| GradingResult | GradingResult | 单项 Grading 按 pass 或 score evaluation kind 判别的终态，与 ExecutionOutcome 分开保存 | [Replayable Architecture](roadmap/replayable-grading/architecture.md#gradingresult) |
+| SampleManifest | SampleManifest | 一个 Experiment Run 写入 Record 的候选分母、ExecutionGraph 引用、carry provenance 与 coverage | [Replayable Architecture](roadmap/replayable-grading/architecture.md#samplemanifest-与-current) |
+| Pilot 选择 | Pilot selection | 在 attempts 展开前按共同 Eval ID 总体执行 first 或固定 seed sample，并保留 non-final coverage | [Experiment Pilot 抽样](roadmap/experiment-pilot-sampling/README.md) |
+| 具名 Experiment 族 | Experiment family (`defineExperiments`) | 用一个 keyed record 展开多个普通 Experiment；文件路径与 key 共同形成稳定 ID | [具名 Experiment 族](roadmap/experiment-families/README.md) |
+| Fixture 内容命令 | Fixture content command (`putFixture`) | 把本地内容登记、digest-backed identity 与 `putContent` 组成一个普通 prepare command | [Fixture 内容命令](roadmap/sandbox-fixture-content/README.md) |
+| Agent Judge | Agent Judge | 作为 Assertion evaluator 运行的独立 Agent；调查证据后返回 measurement、理由与引用，不拥有 Verdict 或 score policy | [Agent-as-Judge](roadmap/agent-as-judge/README.md) |
 | Eval 序列 | Sequence (`defineSequence`) | 引用现有 Eval ID，并要求从第一步开始按声明顺序真实执行的文件派生定义 | [有序 Eval 序列](roadmap/ordered-sequences/README.md) |
 | Sandbox 复用组 | Sandbox reuse group | `evals/` 中显式声明必须共用一台活跃 Sandbox 的 Eval 集合；选中即生效，组外 Attempt 保持 fresh | [分组 Sandbox 复用](roadmap/sandbox-reuse-groups/README.md) |
 
@@ -259,6 +274,6 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 - [Architecture](architecture.md) —— 这些名词在模块图里各自的位置。
 - [Authoring](feature/eval/README.md) —— Eval / Task / Dataset 怎么写。
-- [Assertions](./feature/assertions/README.md) —— 检查、作用域与证据。
+- [Assertions](./feature/assertions/README.md) —— Assertion、scope、计分与证据。
 - [Judge](./feature/judge/README.md) —— 裁判模型调用与不可用语义。
-- [Verdict](./feature/verdict/README.md) —— Severity、严格模式与四态折叠。
+- [Verdict](./feature/verdict/README.md) —— AssertionResult 与执行终态怎样折叠成四态。

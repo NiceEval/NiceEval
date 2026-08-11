@@ -2,9 +2,11 @@
 // Context7 Plugin。它自带匿名可用的远程 MCP；调用 Plugin 命名空间内的工具就是
 // "native plugin 安装真的把内容接线进了运行中的 agent"的行为证据，不只检查安装清单。
 import { defineEval } from "niceeval";
+import { includes, satisfies, toolMatch } from "niceeval/expect";
 
 export default defineEval({
-  description: "Plugins:官方 Context7 Plugin 自带的远程 MCP 已接线且能以正确入参被调用",
+  description:
+    "Plugins:官方 Context7 Plugin 自带的远程 MCP 已接线且能以正确入参被调用",
   async test(t) {
     const turn = await t.send(
       "调用 Context7 Plugin 的 resolve-library-id MCP 工具查找 React。" +
@@ -14,11 +16,23 @@ export default defineEval({
         "然后重试同一个工具调用;持续重试直到成功,不要放弃。" +
         "最后只报告工具返回的第一个 library ID。",
     );
-    await turn.succeeded().stopOnFailure();
+    await t.require(turn.succeeded());
 
-    t.calledTool("mcp__plugin_context7_context7__resolve-library-id", {
-      input: { libraryName: "react", query: "React useState documentation" },
-    });
-    turn.messageIncludes("/reactjs/react.dev");
+    t.check(
+      t.calledTool(
+        toolMatch("mcp__plugin_context7_context7__resolve-library-id", {
+          input: satisfies(
+            '"mcp__plugin_context7_context7__resolve-library-id" input',
+            (input) =>
+              typeof input === "object" &&
+              input !== null &&
+              !Array.isArray(input) &&
+              Object.is(input["libraryName"], "react") &&
+              Object.is(input["query"], "React useState documentation"),
+          ),
+        }),
+      ),
+    );
+    t.check(turn.message, includes("/reactjs/react.dev"));
   },
 });

@@ -31,18 +31,21 @@ import {
   type Item,
 } from "../../model/aggregate.ts";
 import { attemptCostUSD, costUSD, durationMs, examScore, passRate, tokens, totalScore } from "../../model/metrics.ts";
-import { compactAssertionSummary, primaryAssertionSummary, summaryText } from "../../../assertions/display.ts";
+import { factDisplaySummary, summaryText } from "../../../assertions/display.ts";
 import { firstLine } from "../../../util.ts";
 import { summarizeItems } from "../shared-compute.ts";
+import { attemptTerminalOf, verdictForTerminal } from "../../../record/fact-record.ts";
 
 /**
  * 一次 attempt 的单行结果摘要(断言摘要契约):failed 取主失败断言摘要(不含
  * "+N more",N 单独进 moreFailures),errored 取结构化 error 的一层摘要
- * (phase · code · message);计分制(`evaluationKind: "points"`)passed 存在丢分得分点时取首条丢分
- * 摘要(规则 6,含 points 挣分尾缀);其余 passed / skipped 为 null。
+ * (phase · code · message)。Fact Record 直接显示 Fact use 或 score terminal。
  */
 export function failureSummaryOf(result: EvalResult): { summary: string | null; more: number } {
-  if (result.verdict === "errored" && result.error !== undefined) {
+  const fact = factDisplaySummary(result);
+  if (fact !== undefined) return { summary: fact.text, more: fact.more };
+  const verdict = verdictForTerminal(result);
+  if (verdict === "errored" && result.error !== undefined) {
     // message 取首行:多行 message 的后续行(diagnose 的 output tail)是下钻证据,折进
     // 单行摘要会把 traceback 碎片挤满 Result 单元格;summaryText 只管折行与截断,分层归这里。
     const parts = [(result.error.origin?.scope === "attempt" ? result.error.origin.phase : undefined), result.error.code, firstLine(result.error.message)].filter(
@@ -50,21 +53,7 @@ export function failureSummaryOf(result: EvalResult): { summary: string | null; 
     );
     return { summary: summaryText(parts.join(" · ")), more: 0 };
   }
-  const evaluationKind = result.evaluationKind === "points" ? "points" : "pass";
-  const scorablePassed = result.verdict === "passed" && evaluationKind === "points";
-  if (result.verdict === "failed" || result.verdict === "errored" || scorablePassed) {
-    const primary = primaryAssertionSummary(result.assertions, result.verdict, evaluationKind);
-    if (primary !== undefined) {
-      return {
-        summary: compactAssertionSummary({ ...primary, additionalFailures: 0 }),
-        more: primary.additionalFailures,
-      };
-    }
-    if (result.verdict === "errored" && result.skipReason !== undefined) {
-      return { summary: summaryText(result.skipReason), more: 0 };
-    }
-    return { summary: null, more: 0 };
-  }
+  if (verdict === "errored" && result.skipReason !== undefined) return { summary: summaryText(result.skipReason), more: 0 };
   return { summary: null, more: 0 };
 }
 
@@ -77,8 +66,9 @@ async function attemptListItemOf(item: Item): Promise<AttemptListItem> {
     evalId: evalIdOf(item),
     attempt: result.attempt,
     agent: result.agent,
-    evaluationKind: result.evaluationKind === "points" ? "points" : "pass",
-    verdict: result.verdict,
+    evaluationKind: result.evaluationKind === "score" ? "score" : "pass",
+    terminal: attemptTerminalOf(result),
+    verdict: verdictForTerminal(result),
     failureSummary: summary,
     moreFailures: more,
     examScore: await computeCell(examScore, [item]),
@@ -151,20 +141,20 @@ function listEvaluationKindComposition(items: readonly ExperimentListItem[]): Ev
   for (const item of items) {
     if (item.attempts === 0) continue;
     if (item.evaluationKind !== "pass") hasPoints = true;
-    if (item.evaluationKind !== "points") hasPass = true;
+    if (item.evaluationKind !== "score") hasPass = true;
   }
   if (hasPass && hasPoints) return "mixed";
-  return hasPoints ? "points" : "pass";
+  return hasPoints ? "score" : "pass";
 }
 
 function itemEvaluationKindComposition(items: readonly Item[]): EvaluationKindComposition {
-  const hasPoints = items.some((item) => item.attempt.result.evaluationKind === "points");
-  const hasPass = items.some((item) => item.attempt.result.evaluationKind !== "points");
-  return hasPass && hasPoints ? "mixed" : hasPoints ? "points" : "pass";
+  const hasPoints = items.some((item) => item.attempt.result.evaluationKind === "score");
+  const hasPass = items.some((item) => item.attempt.result.evaluationKind !== "score");
+  return hasPass && hasPoints ? "mixed" : hasPoints ? "score" : "pass";
 }
 
 function passEvaluationItems(items: readonly Item[]): Item[] {
-  return items.filter((item) => item.attempt.result.evaluationKind !== "points");
+  return items.filter((item) => item.attempt.result.evaluationKind !== "score");
 }
 
 /**
@@ -253,7 +243,7 @@ export async function experimentListData(input: ReportInput): Promise<Experiment
       ? undefined
       : targetKinds.size > 1
         ? "mixed"
-        : targetKinds.has("points") ? "points" : "pass";
+        : targetKinds.has("score") ? "score" : "pass";
     out.push({
       experimentId,
       agent: target?.agent ?? (newest.run.agent || newest.attempt.result.agent),
@@ -286,7 +276,7 @@ export async function experimentListData(input: ReportInput): Promise<Experiment
     const kinds = new Set(target?.evals.map((entry) => entry.evaluationKind) ?? []);
     const composition: EvaluationKindComposition = kinds.size > 1
       ? "mixed"
-      : kinds.has("points") ? "points" : "pass";
+      : kinds.has("score") ? "score" : "pass";
     out.push({
       experimentId: coverageEntry.experimentId,
       // 锚点 Run 给出 agent / model / flags：零 attempt 的 Experiment 仍能按配置归组。
@@ -316,7 +306,7 @@ export async function experimentListData(input: ReportInput): Promise<Experiment
   // 悄悄按错误指标排序,这正是本节点要修的 bug。两型并存时两种读数不能互相排名,
   // 退回 experiment id 字典序。
   const composition = listEvaluationKindComposition(out);
-  if (composition === "points") {
+  if (composition === "score") {
     out.sort(byMetricDescThenId((item) => item.totalScore.value));
   } else if (composition === "mixed") {
     out.sort((a, b) => a.experimentId.localeCompare(b.experimentId));

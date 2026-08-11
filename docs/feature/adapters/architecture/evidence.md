@@ -73,6 +73,28 @@ type TurnEvidenceCoverage = Partial<EvidenceCoverage>;
 
 CI 因此拿到「证据链断了」和「agent 答错了」两个不同信号。
 
+## Command projection
+
+每笔 tool `operation.started` 都由 Adapter 在协议边界分类为 command 或 not-command。
+原生协议直接提供单一 invocation 的 structured argv 时，Adapter 从 `niceeval/adapter` 调用同一个构造器：
+
+```ts
+import { commandProjection } from "niceeval/adapter";
+
+const command = commandProjection({
+  state: "available",
+  executable: "pnpm",
+  args: ["exec", "niceeval", "show", "weather"],
+});
+```
+
+`commandProjection()` 保留 original tokens，并调用公开的 `normalizeLogicalCommand()` 生成 `logical-command/v1` 投影。
+上例的 logical executable 是 `niceeval`，args 是 `["show", "weather"]`，因此能给 `commandMatch("niceeval", { argsStart: ["show"] })` 提供 definite-positive 证据。
+
+协议只给 shell source、内容已截断或脱敏时，Adapter 使用 `opaqueCommandProjection(reason)`。
+能确认这笔 tool operation 不是 command 时使用 `notCommandProjection()`。
+不能确认分类时必须降低 actions coverage；core 不从 tool name、input 或 shell text 补造 command。
+
 ## 状态不变量
 
 Turn completed 表示一轮正常结束，不表示每个工具成功；Turn failed 表示协议已经完整结束并给出可信、可评分的任务失败；waiting 表示停在结构化输入请求。进程异常、transport 中断与无法确认终态属于 `SendFailure`，不伪造成 Turn。

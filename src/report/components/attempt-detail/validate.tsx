@@ -11,22 +11,6 @@ function sourceLocProblem(value: unknown, path: string): string | null {
   return null;
 }
 
-/** AssertionResult(src/assertions/types.ts):按 outcome 判别的联合,passed/failed 要 score,unavailable 要 reason。 */
-function assertionResultProblem(value: unknown, path: string): string | null {
-  if (!isObject(value)) return `"${path}" must be an AssertionResult object`;
-  if (typeof value.name !== "string") return `"${path}.name" must be a string`;
-  if (value.severity !== "gate" && value.severity !== "soft") return `"${path}.severity" must be "gate" or "soft"`;
-  if (value.outcome === "passed" || value.outcome === "failed") {
-    if (typeof value.score !== "number") return `"${path}.score" must be a number`;
-    return null;
-  }
-  if (value.outcome === "unavailable") {
-    if (typeof value.reason !== "string") return `"${path}.reason" must be a string`;
-    return null;
-  }
-  return `"${path}.outcome" must be "passed" | "failed" | "unavailable"`;
-}
-
 /** TraceSpan(src/o11y/types.ts):AttemptTimeline 的 trace 与 AttemptTrace 的 spans 共用。 */
 function traceSpanProblem(value: unknown, path: string): string | null {
   if (!isObject(value)) return `"${path}" must be a TraceSpan { traceId, spanId, name, startMs, endMs }`;
@@ -67,9 +51,13 @@ export function validateSummaryData(data: unknown): string | null {
   const identityProblem = attemptIdentityProblem(data.identity, "identity");
   if (identityProblem !== null) return identityProblem;
   if (typeof data.verdict !== "string") return 'missing "verdict" (string)';
+  if (typeof data.terminal !== "string") return 'missing "terminal" (string)';
   if (typeof data.durationMs !== "number") return '"durationMs" must be a number';
   if (!(data.costUSD === null || typeof data.costUSD === "number")) return '"costUSD" must be a number or null';
-  if (data.totalScore !== undefined && typeof data.totalScore !== "number") return '"totalScore" must be a number';
+  if (data.earnedScore !== undefined && typeof data.earnedScore !== "number") return '"earnedScore" must be a number';
+  if (!(data.creditedScore === undefined || data.creditedScore === null || typeof data.creditedScore === "number")) {
+    return '"creditedScore" must be a number, null, or omitted';
+  }
   return capabilitiesProblem(data.capabilities, "capabilities");
 }
 
@@ -91,54 +79,27 @@ export function validateErrorData(data: unknown): string | null {
 
 // ───────────────────────── AttemptAssertions ─────────────────────────
 
-/** ScoreEntry(src/assertions/types.ts):t.score(label, n) 的直接给分记录。 */
-function scoreEntryProblem(value: unknown, path: string): string | null {
-  if (!isObject(value)) return `"${path}" must be a ScoreEntry { label, points }`;
-  if (typeof value.label !== "string") return `"${path}.label" must be a string`;
-  if (typeof value.points !== "number") return `"${path}.points" must be a number`;
+function factResultProblem(value: unknown, path: string): string | null {
+  if (!isObject(value)) return `"${path}" must be an EvaluationFactResult object`;
+  if (typeof value.factId !== "string") return `"${path}.factId" must be a string`;
+  if (typeof value.name !== "string") return `"${path}.name" must be a string`;
+  if (typeof value.outcome !== "string") return `"${path}.outcome" must be a string`;
+  if (!Array.isArray(value.dependencyFactIds)) return `"${path}.dependencyFactIds" must be an array`;
   return null;
 }
 
-/** `{ group, items: ScoreEntry[] }[]` 分组结构；用于 AttemptAssertionsData.scoreEntries。 */
-function scoreEntryGroupsProblem(value: unknown, path: string): string | null {
-  return arrayProblem(value, path, (group, groupPath) => {
-    if (!isObject(group) || typeof group.group !== "string") {
-      return `"${groupPath}" must be an object with a string "group"`;
-    }
-    return arrayProblem(group.items, `${groupPath}.items`, scoreEntryProblem);
-  });
-}
-
-/** `{ group, items: AssertionResult[] }[]` 分组结构；用于 AttemptAssertionsData.passedGroups。 */
-function assertionGroupsProblem(value: unknown, path: string): string | null {
-  return arrayProblem(value, path, (group, groupPath) => {
-    if (!isObject(group) || typeof group.group !== "string") {
-      return `"${groupPath}" must be an object with a string "group"`;
-    }
-    return arrayProblem(group.items, `${groupPath}.items`, assertionResultProblem);
-  });
-}
-
-/** AttemptAssertionsData 的得分点挣满计数。 */
-function scorePointsEarnedProblem(value: unknown, path: string): string | null {
-  if (!isObject(value)) return `"${path}" must be an object { earned, total }`;
-  if (typeof value.earned !== "number") return `"${path}.earned" must be a number`;
-  if (typeof value.total !== "number") return `"${path}.total" must be a number`;
+function factUseProblem(value: unknown, path: string): string | null {
+  if (!isObject(value)) return `"${path}" must be a FactUseResult object`;
+  if (value.useKind !== "verdict" && value.useKind !== "score") return `"${path}.useKind" must be "verdict" or "score"`;
+  if (typeof value.outcome !== "string") return `"${path}.outcome" must be a string`;
   return null;
 }
 
 export function validateAssertionsData(data: unknown): string | null {
   if (!isObject(data)) return "expected an object";
-  const attentionProblem = arrayProblem(data.attention, "attention", assertionResultProblem);
-  if (attentionProblem !== null) return attentionProblem;
-  const passedGroupsProblem = assertionGroupsProblem(data.passedGroups, "passedGroups");
-  if (passedGroupsProblem !== null) return passedGroupsProblem;
-  if (data.scoreEntries !== undefined) {
-    const scoreEntriesProblem = scoreEntryGroupsProblem(data.scoreEntries, "scoreEntries");
-    if (scoreEntriesProblem !== null) return scoreEntriesProblem;
-  }
-  if (data.scorePointsEarned === undefined) return null;
-  return scorePointsEarnedProblem(data.scorePointsEarned, "scorePointsEarned");
+  const facts = arrayProblem(data.factResults, "factResults", factResultProblem);
+  if (facts !== null) return facts;
+  return arrayProblem(data.factUses, "factUses", factUseProblem);
 }
 
 
