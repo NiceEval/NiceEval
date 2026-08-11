@@ -6,6 +6,7 @@
 
 ```ts
 import { Effect } from "effect";
+import type { RecordAttachmentValue } from "niceeval/record";
 
 type RecordAttachmentOwner = "run" | "attempt";
 
@@ -19,11 +20,6 @@ interface RecordAttachmentProjector<
   readonly [recordAttachmentProjectorTypeId]: (value: Value) => Value;
 }
 
-interface RecordAttachmentValue<Payload> {
-  readonly payload: Payload;
-  readonly blobs: Readonly<Record<string, Uint8Array>>;
-}
-
 declare const defineRecordAttachmentProjector: <
   Owner extends RecordAttachmentOwner,
   Payload,
@@ -34,7 +30,7 @@ declare const defineRecordAttachmentProjector: <
 }) => RecordAttachmentProjector<Owner, Value>;
 ```
 
-available Attachment 是完整的 `RecordAttachmentValue<Payload>`。`payload` 是 exact decode 的 payload；`blobs` 是该 Attachment 目录内 package-owned、只读且完整的 blob，按 payload 中的 blob 引用读取。值在读取完成时一次性形成，不存在部分读取形态；projector 同步消费它。
+available Attachment 是 Record Library 唯一拥有的完整 `RecordAttachmentValue<Payload>`。它由 package 在读取完成时一次性构成，不存在部分读取形态；projector 同步消费它。blobs 的可变性与访问方式由 Record owner 的 accessor 决定，Projection 不定义或复制该类型。
 
 一个 projector 固定解释一个 owner 类型和一个 `RecordAttachmentFamily`。它没有 durable identity，也不能改换 family、owner 或 payload decoder。Library 以 definition 的 exact identity 取得 family，读取并 decode Attachment 后才调用 `project`。
 

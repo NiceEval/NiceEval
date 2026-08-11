@@ -34,7 +34,7 @@ slot projection 的每条 entry 恰为下列一种状态：
 
 RecordAttachment 的 unavailable、migration-required、migration-unavailable、unsupported 与 invalid 都是成功结果中的数据状态。它们不会把整个 Sample 改成 core-invalid，也不会变成 Effect failure。
 
-available Attachment 是完整的 `RecordAttachmentValue`：payload 加 package-owned 只读完整 blobs，projector 同步消费它，不存在部分读取形态。
+available Attachment 是 Record Library 定义的完整 `RecordAttachmentValue`：payload 与 package-owned 完整 blobs，projector 同步消费它，不存在部分读取形态。Projection 不定义或复制该类型。
 
 真实 I/O、permission、closed reader、invalid reader-owned handle 与 projection limit 留在 `Effect` 的 typed error channel。projector callback 只在 Attachment available 时执行；callback 意外 throw 是 defect，interruption 保持 Effect Cause。Projection 不把两者伪装成 Attachment invalid 或数据 warning。
 

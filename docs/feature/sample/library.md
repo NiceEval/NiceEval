@@ -24,7 +24,9 @@ interface AnalysisSampleHandle {
 
 `AnalysisSample` 是纯值。它只包含已经读取并验证的 Core 事实、选择摘要和 slot 状态；它不包含 reader、路径、文件句柄或延迟查询。reader 的 Scope 关闭后，调用方仍可显示或纯收窄 `sample`，但没有 API 能从它恢复 I/O。
 
-`AnalysisSampleHandle` 是 live capability。它只公开 `sample` 与 package-private nominal brand：调用方不能靠复制字段或类型断言构造 handle。每个 Library 创建的 handle 只绑定创建它的同一个 frozen reader view，运行时按 exact identity 校验；Library 不接受手工对象、从 `AnalysisSample` 重新绑定的对象或另一个 reader 的对象。reader 关闭后，任何需要 Attachment I/O 的 handle 操作返回 `RecordReadError`，而 `handle.sample` 保持可读。
+`AnalysisSampleHandle` 是 live capability。它只公开 `sample` 与 package-private nominal brand：brand 阻止普通结构赋值伪造 handle，但强制类型断言或复制字段的对象仍可能通过类型检查；运行时按 exact identity 校验，伪造对象被 typed `RecordReadError` 拒绝。
+
+每个 Library 创建的 handle 只绑定创建它的同一个 frozen reader view；Library 不接受手工对象、从 `AnalysisSample` 重新绑定的对象或另一个 reader 的对象。reader 关闭后，任何需要 Attachment I/O 的 handle 操作返回 `RecordReadError`，而 `handle.sample` 保持可读。
 
 ## AnalysisSelectionRequest
 
