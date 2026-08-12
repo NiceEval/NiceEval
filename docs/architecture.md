@@ -63,7 +63,7 @@ NiceEval 的内部实现只有两类计算。
 边界用 Effect Schema 或等价的品牌守卫立即解码成领域类型；解码失败进入具名的 tagged error，解码成功后的内部函数不再接收 `unknown`、手写字段探测或双重类型断言。
 
 资源由 `Effect.Scope` 持有，失败、defect 与 interruption 在单 Attempt 封口前保持分离。
-Sandbox acquire、Sandbox lifecycle、Agent ensure、作者执行和逆序 finalizer 都在同一条结构化生命周期里组合。Effect-native Library API 继续返回 Effect；只有 CLI / application 入口或明确的 Promise 兼容 facade 可以运行它，内部模块不得自行启动第二套 runtime。
+Sandbox acquire、Sandbox lifecycle、Agent ensure、作者执行和逆序 finalizer 都在同一条结构化生命周期里组合。Effect-native Library API 继续返回 Effect；只有 CLI / application 入口可以启动 runtime。作者与 Provider 的公开 callback 若按其 ABI 返回 Promise，只能在 callback 最外层适配一次；内部模块不得为迁移保留 Promise facade，也不得自行启动第二套 runtime。
 
 ## 哪些层稳定，哪些层允许变化
 
