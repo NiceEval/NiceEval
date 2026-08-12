@@ -4,7 +4,6 @@ import {
   command,
   type ExpEvalEvent,
   type ExpEvent,
-  type ExpResultEvent,
   withProjectCopy,
 } from "@niceeval/testkit";
 import { expect } from "vitest";
@@ -40,19 +39,24 @@ export async function proveOpenAiLiveOwner(options: {
       );
       expect(run.exitCode, run.diagnostic()).toBe(0);
       const events = run.ndjson<ExpEvent>();
-      const result: ExpResultEvent = run.expResult();
-      expect(result).toMatchObject({
-        event: "result",
-        status: "passed",
-        passed: 1,
-        failed: 0,
-        errored: 0,
-        completion: "complete",
-      });
+      // The final stream event is the Record v1 InvocationReceipt; it carries no
+      // verdicts, so business results come from each eval event's identity and
+      // verdict below (docs/feature/experiments/cli.md).
+      const receipt = run.expReceipt();
+      expect(receipt.completion).toBe("completed");
+      expect(receipt.runIds, run.diagnostic()).not.toHaveLength(0);
       const evalEvent = events.find(
-        (event): event is ExpEvalEvent => event.event === "eval" && event.evalId === options.evalId,
+        (event): event is ExpEvalEvent =>
+          "event" in event && event.event === "eval" && event.evalId === options.evalId,
       );
       expect(evalEvent, run.diagnostic()).toBeDefined();
+      expect(evalEvent).toMatchObject({
+        evalId: options.evalId,
+        experimentId: options.experimentId,
+        verdict: "passed",
+        attempts: 1,
+      });
+      expect(evalEvent?.locator, run.diagnostic()).toBeTruthy();
 
       const history = await niceeval.run(["show", options.evalId, "--exp", options.experimentId, "--history"], {
         cwd: root,
