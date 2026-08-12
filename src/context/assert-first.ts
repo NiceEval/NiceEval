@@ -1,6 +1,6 @@
 /**
  * The active Eval context. Assertion authoring deliberately enters through
- * `AssertionsRuntimeV1`; this module never constructs a Fact or a Fact
+ * `AssertionsRuntime`; this module never constructs a Fact or a Fact
  * collector. The legacy Context implementation remains internal compatibility
  * code; Runner never hands it to an Eval author.
  */
@@ -11,32 +11,37 @@ import { basename, extname } from "node:path";
 import { Effect } from "effect";
 
 import {
-  captureAssertionSnapshotV1,
-  createAssertionsRuntimeV1,
-  postRunBooleanAssertionHandleV1,
+  captureAssertionSnapshot,
+  createAssertionsRuntime,
+  postRunBooleanAssertionHandle,
 } from "../assertions/runtime.ts";
 import type {
-  AssertionsRuntimeV1,
-  BooleanAssertionHandleV1,
-  MeasurementAssertionHandleV1,
-  PostRunBooleanAssertionHandleV1,
+  AssertionCriterion,
+  AssertionMaterial,
+  AssertionsRuntime,
+  BooleanAssertionHandle,
+  BooleanAssertionEvaluation,
+  DirectScoreAssertionHandle,
+  MeasurementAssertionHandle,
+  PostRunBooleanAssertionHandle,
 } from "../assertions/api.ts";
-import type { WritableCriterionEnvelopeV1 } from "../assertions/record/model.ts";
 import {
-  assertJudgeCapabilityV1,
-  evaluateJudgeMeasurementV1,
-  freezeJudgeMaterialV1,
-  type JudgeRecipeV1,
+  assertJudgeCapability,
+  evaluateJudgeMeasurement,
+  freezeJudgeMaterial,
+  type JudgeRecipe,
 } from "../assertions/judge.ts";
 import {
-  agentWorkspaceDiffChangesForPathV1,
-  agentWorkspaceDiffPathsMatchV1,
-  assertCanonicalWorkspaceRelativePathV1,
-  evaluateWorkspaceDiffNotInV1,
+  agentWorkspaceDiffChangesForPath,
+  agentWorkspaceDiffPathsMatch,
+  evaluateWorkspaceDiffNotIn,
+  type AgentWorkspaceDiffEndpoint,
+  type PostRunWorkspaceDiffState,
+  type WorkspaceDiffNotInOptions,
+} from "../assertions/workspace-diff.ts";
+import {
+  assertCanonicalWorkspaceRelativePath,
   validateExpectedTouchedPaths,
-  type AgentWorkspaceDiffEndpointV1,
-  type PostRunWorkspaceDiffStateV1,
-  type WorkspaceDiffNotInOptionsV1,
 } from "../assertions/diff.ts";
 import {
   assertManagedToolMatch,
@@ -77,12 +82,12 @@ import type {
 } from "../o11y/types.ts";
 
 export interface AssertFirstLateResult {
-  diff: PostRunWorkspaceDiffStateV1;
+  diff: PostRunWorkspaceDiffState;
   scripts: globalThis.Record<string, import("../types.ts").ScriptResult>;
 }
 
 export interface AssertFirstContextState {
-  readonly assertions: AssertionsRuntimeV1<"pass" | "score">;
+  readonly assertions: AssertionsRuntime<"pass" | "score">;
   readonly manager: SessionManager;
   skipReason?: string;
   readonly late: AssertFirstLateResult;
@@ -116,7 +121,7 @@ export interface AssertFirstContextDeps {
   /** The Attempt-scoped bridge is the sole Promise facade for author sends. */
   readonly requestEffect: NonNullable<SessionDeps["requestEffect"]>;
   /** Ordinary immediate Assertion stop barriers stay in the Attempt Effect Scope. */
-  readonly executeStop: import("../assertions/api.ts").AssertionStopExecutorV1;
+  readonly executeStop: import("../assertions/api.ts").AssertionStopExecutor;
   readonly evaluationKind: "pass" | "score";
 }
 
@@ -144,32 +149,32 @@ export interface FileChangedOptions {
 /** The only agent-attributed post-run diff surface exposed to Eval authors. */
 export interface AssertFirstSandbox<Kind extends RuntimeKind>
   extends SandboxOperations, SandboxTransferOperations {
-  changedPaths(paths: readonly string[]): PostRunBooleanAssertionHandleV1<Kind, void>;
-  noChanges(): PostRunBooleanAssertionHandleV1<Kind, void>;
+  changedPaths(paths: readonly string[]): PostRunBooleanAssertionHandle<Kind, void>;
+  noChanges(): PostRunBooleanAssertionHandle<Kind, void>;
   fileChanged(
     path: string,
     options?: FileChangedOptions,
-  ): PostRunBooleanAssertionHandleV1<Kind, void>;
-  fileDeleted(path: string): PostRunBooleanAssertionHandleV1<Kind, void>;
+  ): PostRunBooleanAssertionHandle<Kind, void>;
+  fileDeleted(path: string): PostRunBooleanAssertionHandle<Kind, void>;
   notInDiff(
     pattern: RegExp,
-    options?: WorkspaceDiffNotInOptionsV1,
-  ): PostRunBooleanAssertionHandleV1<Kind, void>;
+    options?: WorkspaceDiffNotInOptions,
+  ): PostRunBooleanAssertionHandle<Kind, void>;
 }
 
 export interface AssertFirstRootJudge<Kind extends RuntimeKind> {
   readonly autoevals: {
-    closedQA(question: string, material: JudgeMaterial): MeasurementAssertionHandleV1<Kind>;
-    factuality(expected: string, material: JudgeMaterial): MeasurementAssertionHandleV1<Kind>;
-    summarizes(source: string, material: JudgeMaterial): MeasurementAssertionHandleV1<Kind>;
+    closedQA(question: string, material: JudgeMaterial): MeasurementAssertionHandle<Kind>;
+    factuality(expected: string, material: JudgeMaterial): MeasurementAssertionHandle<Kind>;
+    summarizes(source: string, material: JudgeMaterial): MeasurementAssertionHandle<Kind>;
   };
 }
 
 export interface AssertFirstTurnJudge<Kind extends RuntimeKind> {
   readonly autoevals: {
-    closedQA(question: string): MeasurementAssertionHandleV1<Kind>;
-    factuality(expected: string): MeasurementAssertionHandleV1<Kind>;
-    summarizes(source: string): MeasurementAssertionHandleV1<Kind>;
+    closedQA(question: string): MeasurementAssertionHandle<Kind>;
+    factuality(expected: string): MeasurementAssertionHandle<Kind>;
+    summarizes(source: string): MeasurementAssertionHandle<Kind>;
   };
 }
 
@@ -180,11 +185,11 @@ export interface AssertFirstTurnHandle<Kind extends RuntimeKind> {
   readonly message: string;
   readonly data?: JsonValue;
   readonly usage?: Usage;
-  succeeded(): BooleanAssertionHandleV1<Kind, void>;
-  calledTool(match: ToolMatch, options?: CalledToolOptions): BooleanAssertionHandleV1<Kind, void>;
-  calledTool(name: string, options?: CalledToolOptions): BooleanAssertionHandleV1<Kind, void>;
-  notCalledTool(match: ToolMatch): BooleanAssertionHandleV1<Kind, void>;
-  notCalledTool(name: string): BooleanAssertionHandleV1<Kind, void>;
+  succeeded(): BooleanAssertionHandle<Kind, void>;
+  calledTool(match: ToolMatch, options?: CalledToolOptions): BooleanAssertionHandle<Kind, void>;
+  calledTool(name: string, options?: CalledToolOptions): BooleanAssertionHandle<Kind, void>;
+  notCalledTool(match: ToolMatch): BooleanAssertionHandle<Kind, void>;
+  notCalledTool(name: string): BooleanAssertionHandle<Kind, void>;
   readonly judge: AssertFirstTurnJudge<Kind>;
 }
 
@@ -198,11 +203,11 @@ export interface AssertFirstSessionHandle<Kind extends RuntimeKind> {
   readonly sessionId: string | undefined;
   readonly events: readonly StreamEvent[];
   readonly usage: Usage;
-  succeeded(): BooleanAssertionHandleV1<Kind, void>;
-  calledTool(match: ToolMatch, options?: CalledToolOptions): BooleanAssertionHandleV1<Kind, void>;
-  calledTool(name: string, options?: CalledToolOptions): BooleanAssertionHandleV1<Kind, void>;
-  notCalledTool(match: ToolMatch): BooleanAssertionHandleV1<Kind, void>;
-  notCalledTool(name: string): BooleanAssertionHandleV1<Kind, void>;
+  succeeded(): BooleanAssertionHandle<Kind, void>;
+  calledTool(match: ToolMatch, options?: CalledToolOptions): BooleanAssertionHandle<Kind, void>;
+  calledTool(name: string, options?: CalledToolOptions): BooleanAssertionHandle<Kind, void>;
+  notCalledTool(match: ToolMatch): BooleanAssertionHandle<Kind, void>;
+  notCalledTool(name: string): BooleanAssertionHandle<Kind, void>;
 }
 
 export type AssertFirstTestContext<Kind extends RuntimeKind> = {
@@ -228,71 +233,68 @@ export type AssertFirstTestContext<Kind extends RuntimeKind> = {
     title: string,
     body: () => Value | PromiseLike<Value>,
   ): Promise<Awaited<Value>>;
-  check: AssertionsRuntimeV1<Kind>["t"]["check"];
+  check: AssertionsRuntime<Kind>["t"]["check"];
   readonly sandbox: AssertFirstSandbox<Kind>;
   readonly o11y: import("../o11y/types.ts").O11ySummary;
   readonly usage: Usage;
-  succeeded(): BooleanAssertionHandleV1<Kind, void>;
-  calledTool(match: ToolMatch, options?: CalledToolOptions): BooleanAssertionHandleV1<Kind, void>;
-  calledTool(name: string, options?: CalledToolOptions): BooleanAssertionHandleV1<Kind, void>;
-  notCalledTool(match: ToolMatch): BooleanAssertionHandleV1<Kind, void>;
-  notCalledTool(name: string): BooleanAssertionHandleV1<Kind, void>;
+  succeeded(): BooleanAssertionHandle<Kind, void>;
+  calledTool(match: ToolMatch, options?: CalledToolOptions): BooleanAssertionHandle<Kind, void>;
+  calledTool(name: string, options?: CalledToolOptions): BooleanAssertionHandle<Kind, void>;
+  notCalledTool(match: ToolMatch): BooleanAssertionHandle<Kind, void>;
+  notCalledTool(name: string): BooleanAssertionHandle<Kind, void>;
   readonly judge: AssertFirstRootJudge<Kind>;
-} & (Kind extends "score" ? { score(points: number): import("../assertions/api.ts").DirectScoreAssertionHandleV1 } : {});
+} & (Kind extends "score" ? { score(points: number): DirectScoreAssertionHandle } : {});
 
-type AssertionScopeV1 = "turn" | "session" | "attempt";
-type ScopeStatusV1 = "completed" | "failed" | "waiting" | "not-started";
-type ScopeCoverageV1 = import("../assertions/coverage.ts").ResolvedEvidenceCoverage;
+type AssertionScope = "turn" | "session" | "attempt";
+type ScopeStatus = "completed" | "failed" | "waiting" | "not-started";
+type ScopeCoverage = import("../assertions/coverage.ts").ResolvedEvidenceCoverage;
 
-function scopeCriterion(scope: AssertionScopeV1): WritableCriterionEnvelopeV1 {
+function scopeCriterion(scope: AssertionScope): AssertionCriterion {
   return Object.freeze({
-    kind: "builtin" as const,
-    id: "scope-status/v1" as const,
-    data: Object.freeze({ scope, assertion: "succeeded" as const }),
+    kind: "scope-status" as const,
+    scope,
+    assertion: "succeeded" as const,
   });
 }
 
 function occurrenceCriterion(
-  scope: AssertionScopeV1,
+  scope: AssertionScope,
   match: ToolMatch,
   quantifier: ToolMatchQuantifier,
-): WritableCriterionEnvelopeV1 {
+): AssertionCriterion {
   return Object.freeze({
-    kind: "builtin" as const,
-    id: "occurrence/v1" as const,
-    data: Object.freeze({
-      scope,
-      occurrence: "tool" as const,
-      assertion: quantifier.kind === "absent"
-        ? "absent" as const
-        : quantifier.kind === "exact"
-          ? "count" as const
-          : "present" as const,
-      matcher: match.name,
-      quantifier: Object.freeze(
-        quantifier.kind === "absent"
-          ? { kind: "absent" as const }
-          : { kind: quantifier.kind, count: quantifier.count },
-      ),
-    }),
+    kind: "occurrence" as const,
+    scope,
+    occurrence: "tool" as const,
+    assertion: quantifier.kind === "absent"
+      ? "absent" as const
+      : quantifier.kind === "exact"
+        ? "count" as const
+        : "present" as const,
+    matcher: match.name,
+    quantifier: Object.freeze(
+      quantifier.kind === "absent"
+        ? { kind: "absent" as const }
+        : { kind: quantifier.kind, count: quantifier.count },
+    ),
   });
 }
 
 function scopeCoverageState(
-  coverage: ScopeCoverageV1,
+  coverage: ScopeCoverage,
   channel: "actions" | "status",
 ): "complete" | "partial" | "unavailable" {
   return coverage[channel].status;
 }
 
 function succeededHandle<Kind extends RuntimeKind>(input: {
-  readonly runtime: AssertionsRuntimeV1<Kind>;
-  readonly scope: AssertionScopeV1;
-  readonly status: ScopeStatusV1;
-  readonly coverage: ScopeCoverageV1;
+  readonly runtime: AssertionsRuntime<Kind>;
+  readonly scope: AssertionScope;
+  readonly status: ScopeStatus;
+  readonly coverage: ScopeCoverage;
   readonly snapshot: unknown;
-}): BooleanAssertionHandleV1<Kind, void> {
-  const captured = captureAssertionSnapshotV1({
+}): BooleanAssertionHandle<Kind, void> {
+  const captured = captureAssertionSnapshot({
     scope: input.scope,
     assertion: "succeeded",
     status: input.status,
@@ -320,13 +322,13 @@ function succeededHandle<Kind extends RuntimeKind>(input: {
 interface ToolScopeSnapshot {
   readonly occurrences: readonly LogicalToolOccurrence[];
   readonly orphanFinishes: readonly OrphanToolOperationFinish[];
-  readonly coverage: ScopeCoverageV1;
+  readonly coverage: ScopeCoverage;
   readonly snapshot: unknown;
 }
 
 function projectToolScope(input: {
   readonly turns: readonly LogicalToolOccurrenceScopeTurn[];
-  readonly coverage: ScopeCoverageV1;
+  readonly coverage: ScopeCoverage;
   readonly snapshot: unknown;
 }): ToolScopeSnapshot {
   const projection = deriveScopedLogicalToolOccurrences(input.turns);
@@ -399,7 +401,7 @@ function toolScopeCoverageReason(snapshot: ToolScopeSnapshot): string | undefine
 
 function collectionAssertionEvaluation(
   result: Awaited<ReturnType<typeof evaluateToolMatchCollection>>,
-): import("../assertions/api.ts").BooleanAssertionEvaluationV1<void> {
+): BooleanAssertionEvaluation<void> {
   switch (result.state) {
     case "matched":
       return Object.freeze({ state: "matched" as const, value: undefined, diagnostic: result.diagnostic });
@@ -415,13 +417,13 @@ function collectionAssertionEvaluation(
 }
 
 function toolAssertionHandle<Kind extends RuntimeKind>(input: {
-  readonly runtime: AssertionsRuntimeV1<Kind>;
-  readonly scope: AssertionScopeV1;
+  readonly runtime: AssertionsRuntime<Kind>;
+  readonly scope: AssertionScope;
   readonly match: ToolMatch;
   readonly quantifier: ToolMatchQuantifier;
   readonly snapshot: ToolScopeSnapshot;
-}): BooleanAssertionHandleV1<Kind, void> {
-  const captured = captureAssertionSnapshotV1({
+}): BooleanAssertionHandle<Kind, void> {
+  const captured = captureAssertionSnapshot({
     scope: input.scope,
     occurrence: "tool",
     matcher: input.match.name,
@@ -436,29 +438,30 @@ function toolAssertionHandle<Kind extends RuntimeKind>(input: {
     subject: captured.material,
     coverage: captured.coverage,
     limitations: captured.limitations,
-    evaluate: () => Effect.tryPromise({
-      try: async () => collectionAssertionEvaluation(await evaluateToolMatchCollection(
-        input.match,
-        input.snapshot.occurrences,
-        {
-          quantifier: input.quantifier,
-          ...(toolScopeCoverageReason(input.snapshot) === undefined
-            ? {}
-            : { coverageReason: toolScopeCoverageReason(input.snapshot)! }),
-        },
-      )),
-      catch: (error) => error,
-    }),
+    evaluate: () => {
+      const coverageReason = toolScopeCoverageReason(input.snapshot);
+      return Effect.tryPromise({
+        try: async () => collectionAssertionEvaluation(await evaluateToolMatchCollection(
+          input.match,
+          input.snapshot.occurrences,
+          {
+            quantifier: input.quantifier,
+            ...(coverageReason === undefined ? {} : { coverageReason }),
+          },
+        )),
+        catch: (error) => error,
+      });
+    },
   });
 }
 
 function calledToolHandle<Kind extends RuntimeKind>(input: {
-  readonly runtime: AssertionsRuntimeV1<Kind>;
-  readonly scope: AssertionScopeV1;
+  readonly runtime: AssertionsRuntime<Kind>;
+  readonly scope: AssertionScope;
   readonly target: ToolMatch | string;
   readonly options: CalledToolOptions | undefined;
   readonly snapshot: ToolScopeSnapshot;
-}): BooleanAssertionHandleV1<Kind, void> {
+}): BooleanAssertionHandle<Kind, void> {
   return toolAssertionHandle({
     runtime: input.runtime,
     scope: input.scope,
@@ -469,11 +472,11 @@ function calledToolHandle<Kind extends RuntimeKind>(input: {
 }
 
 function notCalledToolHandle<Kind extends RuntimeKind>(input: {
-  readonly runtime: AssertionsRuntimeV1<Kind>;
-  readonly scope: AssertionScopeV1;
+  readonly runtime: AssertionsRuntime<Kind>;
+  readonly scope: AssertionScope;
   readonly target: ToolMatch | string;
   readonly snapshot: ToolScopeSnapshot;
-}): BooleanAssertionHandleV1<Kind, void> {
+}): BooleanAssertionHandle<Kind, void> {
   return toolAssertionHandle({
     runtime: input.runtime,
     scope: input.scope,
@@ -483,29 +486,29 @@ function notCalledToolHandle<Kind extends RuntimeKind>(input: {
   });
 }
 
-function judgeCriterion(recipe: JudgeRecipeV1): WritableCriterionEnvelopeV1 {
+function judgeCriterion(recipe: JudgeRecipe): AssertionCriterion {
   return Object.freeze({
-    kind: "builtin" as const,
-    id: "judge-measurement/v1" as const,
-    data: Object.freeze({ recipe: recipe === "closedQA" ? "closed-qa" as const : recipe, scale: "unit-interval" as const }),
+    kind: "judge-measurement" as const,
+    recipe: recipe === "closedQA" ? "closed-qa" as const : recipe,
+    scale: "unit-interval" as const,
   });
 }
 
 function judgeHandle<Kind extends RuntimeKind>(input: {
-  readonly runtime: AssertionsRuntimeV1<Kind>;
+  readonly runtime: AssertionsRuntime<Kind>;
   readonly judge: ResolvedJudgeConfig | undefined;
   readonly signal: AbortSignal;
-  readonly recipe: JudgeRecipeV1;
+  readonly recipe: JudgeRecipe;
   readonly reference: string;
   readonly material: JudgeMaterial;
-}): MeasurementAssertionHandleV1<Kind> {
+}): MeasurementAssertionHandle<Kind> {
   const judge = input.judge;
-  assertJudgeCapabilityV1(judge);
+  assertJudgeCapability(judge);
   if (typeof input.reference !== "string" || input.reference.trim() === "") {
     throw new TypeError("Judge recipe reference must be a non-empty string");
   }
-  const material = freezeJudgeMaterialV1(input.material);
-  const captured = captureAssertionSnapshotV1({
+  const material = freezeJudgeMaterial(input.material);
+  const captured = captureAssertionSnapshot({
     recipe: input.recipe,
     reference: input.reference,
     input: material.input,
@@ -516,7 +519,7 @@ function judgeHandle<Kind extends RuntimeKind>(input: {
     subject: captured.material,
     coverage: captured.coverage,
     limitations: captured.limitations,
-    evaluate: () => evaluateJudgeMeasurementV1({
+    evaluate: () => evaluateJudgeMeasurement({
       judge,
       recipe: input.recipe,
       reference: input.reference,
@@ -526,75 +529,67 @@ function judgeHandle<Kind extends RuntimeKind>(input: {
   });
 }
 
-const DIFF_REFERENCE_PREVIEW_V1 = "agent-attributed send-window endpoint deltas";
+const DIFF_REFERENCE_PREVIEW = "agent-attributed send-window endpoint deltas";
 
-function changedPathsCriterion(paths: readonly string[]): WritableCriterionEnvelopeV1 {
+function changedPathsCriterion(paths: readonly string[]): AssertionCriterion {
   return Object.freeze({
-    kind: "builtin" as const,
-    id: "sandbox-result/v1" as const,
-    data: Object.freeze({ operation: "changed-paths" as const, paths: Object.freeze([...paths]) }),
+    kind: "sandbox-result" as const,
+    operation: "changed-paths" as const,
+    paths: Object.freeze([...paths]),
   });
 }
 
-function noChangesCriterion(): WritableCriterionEnvelopeV1 {
+function noChangesCriterion(): AssertionCriterion {
   return Object.freeze({
-    kind: "builtin" as const,
-    id: "sandbox-result/v1" as const,
-    data: Object.freeze({ operation: "no-changes" as const }),
+    kind: "sandbox-result" as const,
+    operation: "no-changes" as const,
   });
 }
 
 function fileChangedCriterion(
   path: string,
   options: Readonly<FileChangedOptions>,
-): WritableCriterionEnvelopeV1 {
+): AssertionCriterion {
   return Object.freeze({
-    kind: "builtin" as const,
-    id: "sandbox-result/v1" as const,
-    data: Object.freeze({
-      operation: "file-changed" as const,
-      path,
-      ...(options.status === undefined ? {} : { status: options.status }),
-      ...(options.before === undefined ? {} : { before: options.before.name }),
-      ...(options.after === undefined ? {} : { after: options.after.name }),
-    }),
+    kind: "sandbox-result" as const,
+    operation: "file-changed" as const,
+    path,
+    ...(options.status === undefined ? {} : { status: options.status }),
+    ...(options.before === undefined ? {} : { before: options.before.name }),
+    ...(options.after === undefined ? {} : { after: options.after.name }),
   });
 }
 
-function fileDeletedCriterion(path: string): WritableCriterionEnvelopeV1 {
+function fileDeletedCriterion(path: string): AssertionCriterion {
   return Object.freeze({
-    kind: "builtin" as const,
-    id: "sandbox-result/v1" as const,
-    data: Object.freeze({ operation: "file-deleted" as const, path }),
+    kind: "sandbox-result" as const,
+    operation: "file-deleted" as const,
+    path,
   });
 }
 
 function notInDiffCriterion(
   pattern: RegExp,
-  options: Readonly<WorkspaceDiffNotInOptionsV1>,
-): WritableCriterionEnvelopeV1 {
+  options: Readonly<WorkspaceDiffNotInOptions>,
+): AssertionCriterion {
   return Object.freeze({
-    kind: "builtin" as const,
-    id: "sandbox-result/v1" as const,
-    data: Object.freeze({
-      operation: "not-in-diff" as const,
-      pattern: pattern.source,
-      flags: pattern.flags,
-      content: options.content ?? "both",
-    }),
+    kind: "sandbox-result" as const,
+    operation: "not-in-diff" as const,
+    pattern: pattern.source,
+    flags: pattern.flags,
+    content: options.content ?? "both",
   });
 }
 
-function diffReferenceMaterial() {
+function diffReferenceMaterial(): AssertionMaterial {
   return Object.freeze({
     kind: "record-attachment" as const,
-    schemaId: "niceeval.diff/v1" as const,
-    preview: DIFF_REFERENCE_PREVIEW_V1,
+    preview: DIFF_REFERENCE_PREVIEW,
   });
 }
 
 function assertDiffPath(path: unknown, operation: string): asserts path is string {
-  assertCanonicalWorkspaceRelativePathV1(path, `${operation} path`);
+  assertCanonicalWorkspaceRelativePath(path, `${operation} path`);
 }
 
 function normalizeFileChangedOptions(
@@ -621,8 +616,8 @@ function normalizeFileChangedOptions(
 }
 
 function normalizeNotInDiffOptions(
-  value: WorkspaceDiffNotInOptionsV1 | undefined,
-): Readonly<WorkspaceDiffNotInOptionsV1> {
+  value: WorkspaceDiffNotInOptions | undefined,
+): Readonly<WorkspaceDiffNotInOptions> {
   if (value === undefined) return Object.freeze({});
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new TypeError("notInDiff() options must be an object");
@@ -637,7 +632,7 @@ function normalizeNotInDiffOptions(
 }
 
 async function endpointMatches(
-  endpoint: AgentWorkspaceDiffEndpointV1,
+  endpoint: AgentWorkspaceDiffEndpoint,
   match: BooleanMatch<string, string, "value"> | undefined,
 ): Promise<"matched" | "mismatched" | "unavailable"> {
   if (match === undefined) return "matched";
@@ -659,7 +654,7 @@ function unavailableDiffResult() {
 function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
   readonly agent: Agent;
   readonly sandbox: Sandbox;
-  readonly runtime: AssertionsRuntimeV1<Kind>;
+  readonly runtime: AssertionsRuntime<Kind>;
   readonly late: AssertFirstLateResult;
 }): AssertFirstSandbox<Kind> {
   const requireCapability = (): void => {
@@ -670,13 +665,13 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
     }
   };
   const register = (
-    criterion: WritableCriterionEnvelopeV1,
-    evaluate: () => import("effect").Effect.Effect<
-      import("../assertions/api.ts").BooleanAssertionEvaluationV1<void>,
+    criterion: AssertionCriterion,
+    evaluate: () => Effect.Effect<
+      BooleanAssertionEvaluation<void>,
       unknown,
       never
     >,
-  ): PostRunBooleanAssertionHandleV1<Kind, void> => postRunBooleanAssertionHandleV1(
+  ): PostRunBooleanAssertionHandle<Kind, void> => postRunBooleanAssertionHandle(
     input.runtime.registerBoolean<void>({
       criterion,
       subject: diffReferenceMaterial(),
@@ -685,7 +680,7 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
     input.runtime.evaluationKind,
   );
 
-  const changedPaths = (paths: readonly string[]): PostRunBooleanAssertionHandleV1<Kind, void> => {
+  const changedPaths = (paths: readonly string[]): PostRunBooleanAssertionHandle<Kind, void> => {
     requireCapability();
     if (!Array.isArray(paths)) throw new TypeError("changedPaths() requires an array of paths");
     for (const path of paths) assertDiffPath(path, "changedPaths()");
@@ -694,7 +689,7 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
     return register(changedPathsCriterion(expected), () => Effect.sync(() => {
       const diff = input.late.diff;
       if (diff.state !== "available") return unavailableDiffResult();
-      return agentWorkspaceDiffPathsMatchV1(diff.document, expected)
+      return agentWorkspaceDiffPathsMatch(diff.document, expected)
         ? Object.freeze({ state: "matched" as const, value: undefined })
         : Object.freeze({ state: "mismatched" as const });
     }));
@@ -703,7 +698,7 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
   const fileChanged = (
     path: string,
     rawOptions?: FileChangedOptions,
-  ): PostRunBooleanAssertionHandleV1<Kind, void> => {
+  ): PostRunBooleanAssertionHandle<Kind, void> => {
     requireCapability();
     assertDiffPath(path, "fileChanged()");
     const options = normalizeFileChangedOptions(rawOptions);
@@ -712,7 +707,7 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
         const diff = input.late.diff;
         if (diff.state !== "available") return unavailableDiffResult();
         let unavailable = false;
-        for (const candidate of agentWorkspaceDiffChangesForPathV1(diff.document, path)) {
+        for (const candidate of agentWorkspaceDiffChangesForPath(diff.document, path)) {
           if (options.status !== undefined && candidate.status !== options.status) continue;
           const before = await endpointMatches(candidate.before, options.before);
           const after = await endpointMatches(candidate.after, options.after);
@@ -735,15 +730,15 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
 
   const notInDiff = (
     pattern: RegExp,
-    rawOptions?: WorkspaceDiffNotInOptionsV1,
-  ): PostRunBooleanAssertionHandleV1<Kind, void> => {
+    rawOptions?: WorkspaceDiffNotInOptions,
+  ): PostRunBooleanAssertionHandle<Kind, void> => {
     requireCapability();
     if (!(pattern instanceof RegExp)) throw new TypeError("notInDiff() pattern must be a RegExp");
     const options = normalizeNotInDiffOptions(rawOptions);
     return register(notInDiffCriterion(pattern, options), () => Effect.sync(() => {
       const diff = input.late.diff;
       if (diff.state !== "available") return unavailableDiffResult();
-      const result = evaluateWorkspaceDiffNotInV1(diff.document, pattern, options);
+      const result = evaluateWorkspaceDiffNotIn(diff.document, pattern, options);
       return result.state === "matched"
         ? Object.freeze({ state: "matched" as const, value: undefined })
         : result.state === "mismatched"
@@ -752,23 +747,23 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
     }));
   };
 
-  const noChanges = (): PostRunBooleanAssertionHandleV1<Kind, void> => {
+  const noChanges = (): PostRunBooleanAssertionHandle<Kind, void> => {
     requireCapability();
     return register(noChangesCriterion(), () => Effect.sync(() => {
       const diff = input.late.diff;
       if (diff.state !== "available") return unavailableDiffResult();
-      return agentWorkspaceDiffPathsMatchV1(diff.document, [])
+      return agentWorkspaceDiffPathsMatch(diff.document, [])
         ? Object.freeze({ state: "matched" as const, value: undefined })
         : Object.freeze({ state: "mismatched" as const });
     }));
   };
-  const fileDeleted = (path: string): PostRunBooleanAssertionHandleV1<Kind, void> => {
+  const fileDeleted = (path: string): PostRunBooleanAssertionHandle<Kind, void> => {
     requireCapability();
     assertDiffPath(path, "fileDeleted()");
     return register(fileDeletedCriterion(path), () => Effect.sync(() => {
       const diff = input.late.diff;
       if (diff.state !== "available") return unavailableDiffResult();
-      return agentWorkspaceDiffChangesForPathV1(diff.document, path)
+      return agentWorkspaceDiffChangesForPath(diff.document, path)
         .some((change) => change.status === "deleted")
         ? Object.freeze({ state: "matched" as const, value: undefined })
         : Object.freeze({ state: "mismatched" as const });
@@ -981,9 +976,9 @@ export function createAssertFirstEvalContext(
     retrySleep: deps.retrySleep,
     nextSourceOrder: () => ++sourceOrder,
   });
-  const runtime: AssertionsRuntimeV1<RuntimeKind> = deps.evaluationKind === "score"
-    ? createAssertionsRuntimeV1({ evaluationKind: "score", executeStop: deps.executeStop })
-    : createAssertionsRuntimeV1({ evaluationKind: "pass", executeStop: deps.executeStop });
+  const runtime: AssertionsRuntime<RuntimeKind> = deps.evaluationKind === "score"
+    ? createAssertionsRuntime({ evaluationKind: "score", executeStop: deps.executeStop })
+    : createAssertionsRuntime({ evaluationKind: "pass", executeStop: deps.executeStop });
   const state: AssertFirstContextState = {
     assertions: runtime,
     manager,
@@ -995,7 +990,7 @@ export function createAssertFirstEvalContext(
     readonly toolCalls: readonly import("../o11y/types.ts").ToolCall[];
     readonly toolScope: ToolScopeSnapshot;
     readonly status: "completed" | "failed" | "waiting";
-    readonly coverage: ScopeCoverageV1;
+    readonly coverage: ScopeCoverage;
     readonly input: string;
     readonly output: string;
   }
@@ -1011,25 +1006,25 @@ export function createAssertFirstEvalContext(
   const sessions: SessionScopeState[] = [];
   let toolTurnOrdinal = 0;
 
-  const coverageWhileInFlight = (coverage: ScopeCoverageV1): ScopeCoverageV1 =>
+  const coverageWhileInFlight = (coverage: ScopeCoverage): ScopeCoverage =>
     Object.freeze({
       ...coverage,
       actions: Object.freeze({ status: "partial" as const, reason: "scope-still-running" }),
       status: Object.freeze({ status: "partial" as const, reason: "scope-still-running" }),
     });
 
-  const sessionCoverage = (scope: SessionScopeState): ScopeCoverageV1 =>
+  const sessionCoverage = (scope: SessionScopeState): ScopeCoverage =>
     scope.inFlight === 0
       ? scope.session.evidenceCoverage
       : coverageWhileInFlight(scope.session.evidenceCoverage);
 
-  const sessionStatus = (scope: SessionScopeState): ScopeStatusV1 => {
+  const sessionStatus = (scope: SessionScopeState): ScopeStatus => {
     if (!scope.started) return "not-started";
     if (scope.inFlight > 0) return "waiting";
     return scope.failed ? "failed" : scope.session.lastStatus;
   };
 
-  const attemptCoverage = (): ScopeCoverageV1 => {
+  const attemptCoverage = (): ScopeCoverage => {
     const active = sessions.filter((scope) => scope.started);
     const coverage = active.length === 0
       ? manager.evidenceCoverage
@@ -1039,7 +1034,7 @@ export function createAssertFirstEvalContext(
     return coverage;
   };
 
-  const attemptStatus = (): ScopeStatusV1 => {
+  const attemptStatus = (): ScopeStatus => {
     const active = sessions.filter((scope) => scope.started);
     if (active.length === 0) return "not-started";
     const statuses = active.map(sessionStatus);
@@ -1135,7 +1130,7 @@ export function createAssertFirstEvalContext(
     const judge: AssertFirstTurnJudge<Kind> = Object.freeze({
       autoevals: Object.freeze({
         closedQA: (question: string) => judgeHandle({
-          runtime: runtime as AssertionsRuntimeV1<Kind>,
+          runtime: runtime as AssertionsRuntime<Kind>,
           judge: deps.judge,
           signal: deps.signal,
           recipe: "closedQA",
@@ -1143,7 +1138,7 @@ export function createAssertFirstEvalContext(
           material: { input: snapshot.input, output: snapshot.output },
         }),
         factuality: (expected: string) => judgeHandle({
-          runtime: runtime as AssertionsRuntimeV1<Kind>,
+          runtime: runtime as AssertionsRuntime<Kind>,
           judge: deps.judge,
           signal: deps.signal,
           recipe: "factuality",
@@ -1151,7 +1146,7 @@ export function createAssertFirstEvalContext(
           material: { input: snapshot.input, output: snapshot.output },
         }),
         summarizes: (source: string) => judgeHandle({
-          runtime: runtime as AssertionsRuntimeV1<Kind>,
+          runtime: runtime as AssertionsRuntime<Kind>,
           judge: deps.judge,
           signal: deps.signal,
           recipe: "summarizes",
@@ -1163,7 +1158,7 @@ export function createAssertFirstEvalContext(
     const calledTool = (target: ToolMatch | string, options?: CalledToolOptions, ...extra: readonly unknown[]) => {
       if (extra.length > 0) throw new TypeError("calledTool() accepts exactly (match, options)");
       return calledToolHandle({
-        runtime: runtime as AssertionsRuntimeV1<Kind>,
+        runtime: runtime as AssertionsRuntime<Kind>,
         scope: "turn",
         target,
         options,
@@ -1173,7 +1168,7 @@ export function createAssertFirstEvalContext(
     const notCalledTool = (target: ToolMatch | string, ...extra: readonly unknown[]) => {
       if (extra.length > 0) throw new TypeError("notCalledTool() accepts exactly one match or name");
       return notCalledToolHandle({
-        runtime: runtime as AssertionsRuntimeV1<Kind>,
+        runtime: runtime as AssertionsRuntime<Kind>,
         scope: "turn",
         target,
         snapshot: toolScope,
@@ -1187,7 +1182,7 @@ export function createAssertFirstEvalContext(
       ...(turn.data === undefined ? {} : { data: turn.data }),
       ...(turn.usage === undefined ? {} : { usage: turn.usage }),
       succeeded: () => succeededHandle({
-        runtime: runtime as AssertionsRuntimeV1<Kind>,
+        runtime: runtime as AssertionsRuntime<Kind>,
         scope: "turn",
         status: snapshot.status,
         coverage: snapshot.coverage,
@@ -1284,7 +1279,7 @@ export function createAssertFirstEvalContext(
         return Object.freeze({ ...session.usage });
       },
       succeeded: () => succeededHandle({
-        runtime: runtime as AssertionsRuntimeV1<Kind>,
+        runtime: runtime as AssertionsRuntime<Kind>,
         scope: "session",
         status: sessionStatus(scope),
         coverage: sessionCoverage(scope),
@@ -1293,7 +1288,7 @@ export function createAssertFirstEvalContext(
       calledTool: (target: ToolMatch | string, options?: CalledToolOptions, ...extra: readonly unknown[]) => {
         if (extra.length > 0) throw new TypeError("calledTool() accepts exactly (match, options)");
         return calledToolHandle({
-          runtime: runtime as AssertionsRuntimeV1<Kind>,
+          runtime: runtime as AssertionsRuntime<Kind>,
           scope: "session",
           target,
           options,
@@ -1303,7 +1298,7 @@ export function createAssertFirstEvalContext(
       notCalledTool: (target: ToolMatch | string, ...extra: readonly unknown[]) => {
         if (extra.length > 0) throw new TypeError("notCalledTool() accepts exactly one match or name");
         return notCalledToolHandle({
-          runtime: runtime as AssertionsRuntimeV1<Kind>,
+          runtime: runtime as AssertionsRuntime<Kind>,
           scope: "session",
           target,
           snapshot: sessionToolScope(scope),
@@ -1443,7 +1438,7 @@ export function createAssertFirstEvalContext(
   const context = deps.evaluationKind === "score"
     ? Object.freeze({
         ...base,
-        score: (runtime as AssertionsRuntimeV1<"score">).t.score,
+        score: (runtime as AssertionsRuntime<"score">).t.score,
       })
     : Object.freeze(base);
   return {

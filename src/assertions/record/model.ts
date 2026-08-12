@@ -1,14 +1,13 @@
-import type { Brand } from "effect";
+import type { AssertionEntryId } from "../identity.ts";
 
 /**
- * `entryId` is only stable inside one Assertions Attachment.  It is not an
+ * `entryId` is only stable inside one Assertions Attachment. It is not an
  * authoring key and deliberately has no cross-Attempt meaning.
  */
-export const ASSERTION_ENTRY_ID_BRAND =
-  "@niceeval/assertions/AssertionEntryId" as const;
-
-export type AssertionEntryId =
-  string & Brand.Brand<typeof ASSERTION_ENTRY_ID_BRAND>;
+export {
+  ASSERTION_ENTRY_ID_BRAND,
+} from "../identity.ts";
+export type { AssertionEntryId } from "../identity.ts";
 
 export type BoundedJsonPrimitiveV1 = null | boolean | number | string;
 

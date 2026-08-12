@@ -10,7 +10,7 @@ import {
   type ScoreFactEvaluation,
 } from "./collector.ts";
 import { summaryText } from "./display.ts";
-import type { MeasurementAssertionEvaluationV1 } from "./api.ts";
+import type { MeasurementAssertionEvaluation } from "./api.ts";
 import type { JudgeMaterial, ResolvedJudgeConfig, ScoreFact } from "./types.ts";
 import type { JudgeNamespace, TurnJudgeNamespace } from "../context/types.ts";
 import { getEnv } from "../util.ts";
@@ -29,7 +29,7 @@ export interface JudgeDeps {
   readonly random?: () => number;
 }
 
-export type JudgeRecipeV1 = "closedQA" | "factuality" | "summarizes";
+export type JudgeRecipe = "closedQA" | "factuality" | "summarizes";
 type AutoevalResult = { score?: number | null; metadata?: Record<string, unknown> };
 
 function errorSummary(error: unknown): string {
@@ -140,7 +140,7 @@ function formatSeconds(ms: number): string {
   return `${Number.isInteger(seconds) ? seconds : seconds.toFixed(1)}s`;
 }
 
-function checkSummary(kind: JudgeRecipeV1, reference: string): string {
+function checkSummary(kind: JudgeRecipe, reference: string): string {
   const flat = reference.replace(/\s+/g, " ").trim();
   const short = flat.length > 80 ? `${flat.slice(0, 80)}…` : flat;
   return `${kind}(${JSON.stringify(short)})`;
@@ -179,7 +179,7 @@ function bridgeAutoevalClient(client: OpenAI): { readonly client: AutoevalOpenAI
   return { client };
 }
 
-export function freezeJudgeMaterialV1(material: JudgeMaterial): JudgeMaterial {
+export function freezeJudgeMaterial(material: JudgeMaterial): JudgeMaterial {
   if (typeof material !== "object" || material === null || typeof material.input !== "string" || typeof material.output !== "string") {
     throw new TypeError("t.judge requires material { input: string, output: string }");
   }
@@ -252,7 +252,7 @@ function evaluatorError(code: string, message: string): ScoreFactEvaluation {
 }
 
 /** Throws synchronously at the author callsite when the Eval did not opt in. */
-export function assertJudgeCapabilityV1(
+export function assertJudgeCapability(
   judge: ResolvedJudgeConfig | undefined,
 ): asserts judge is ResolvedJudgeConfig {
   if (judge === undefined) {
@@ -260,9 +260,9 @@ export function assertJudgeCapabilityV1(
   }
 }
 
-export interface JudgeRecipeExecutionV1 {
+export interface JudgeRecipeExecution {
   readonly judge: ResolvedJudgeConfig;
-  readonly recipe: JudgeRecipeV1;
+  readonly recipe: JudgeRecipe;
   readonly reference: string;
   readonly material: JudgeMaterial;
   readonly signal?: AbortSignal;
@@ -275,11 +275,11 @@ export interface JudgeRecipeExecutionV1 {
  * Assert-first runtime. It remains Promise-shaped only at the provider SDK
  * boundary; the Assert-first entry below lifts it into the owning Effect.
  */
-export async function evaluateJudgeRecipeV1(
-  input: JudgeRecipeExecutionV1,
+export async function evaluateJudgeRecipe(
+  input: JudgeRecipeExecution,
 ): Promise<ScoreFactEvaluation> {
   const { judge: resolved, recipe, reference } = input;
-  const frozenMaterial = freezeJudgeMaterialV1(input.material);
+  const frozenMaterial = freezeJudgeMaterial(input.material);
   const missing = missingConfiguration(resolved);
   if (missing !== undefined) return missing;
   const model = resolved.model!;
@@ -352,7 +352,7 @@ export async function evaluateJudgeRecipeV1(
 
 function measurementFromJudgeEvaluation(
   evaluation: ScoreFactEvaluation,
-): MeasurementAssertionEvaluationV1 {
+): MeasurementAssertionEvaluation {
   switch (evaluation.outcome) {
     case "scored":
       return Object.freeze({ state: "measured" as const, value: evaluation.normalizedScore });
@@ -364,30 +364,30 @@ function measurementFromJudgeEvaluation(
 }
 
 /** Assert-first bridge: one provider Promise adaptation in the Attempt Effect. */
-export function evaluateJudgeMeasurementV1(
-  input: JudgeRecipeExecutionV1,
-): Effect.Effect<MeasurementAssertionEvaluationV1, never, never> {
+export function evaluateJudgeMeasurement(
+  input: JudgeRecipeExecution,
+): Effect.Effect<MeasurementAssertionEvaluation, never, never> {
   return Effect.tryPromise((signal) =>
-    evaluateJudgeRecipeV1({ ...input, signal: input.signal === undefined ? signal : AbortSignal.any([input.signal, signal]) })
+    evaluateJudgeRecipe({ ...input, signal: input.signal === undefined ? signal : AbortSignal.any([input.signal, signal]) })
   ).pipe(
     Effect.map(measurementFromJudgeEvaluation),
     Effect.catchAll(() => Effect.succeed(Object.freeze({ state: "errored" as const }))),
   );
 }
 
-function createRecipe(deps: JudgeDeps, recipe: JudgeRecipeV1, reference: string, material: JudgeMaterial): ScoreFact<"now"> {
+function createRecipe(deps: JudgeDeps, recipe: JudgeRecipe, reference: string, material: JudgeMaterial): ScoreFact<"now"> {
   const resolved = deps.judge;
-  assertJudgeCapabilityV1(resolved);
+  assertJudgeCapability(resolved);
   if (typeof reference !== "string" || reference.trim() === "") {
     throw new TypeError("Judge recipe reference must be a non-empty string");
   }
-  const frozenMaterial = freezeJudgeMaterialV1(material);
+  const frozenMaterial = freezeJudgeMaterial(material);
   const check = checkSummary(recipe, reference);
   return deps.createScoreFact({
     name: `judge:${check}`,
     phase: "now",
     judge: { check },
-    evaluate: () => evaluateJudgeRecipeV1({
+    evaluate: () => evaluateJudgeRecipe({
       judge: resolved,
       recipe,
       reference,
@@ -410,7 +410,7 @@ export function buildJudge(deps: JudgeDeps): JudgeNamespace {
 }
 
 export function buildTurnJudge(deps: JudgeDeps, material: JudgeMaterial): TurnJudgeNamespace {
-  const frozenMaterial = freezeJudgeMaterialV1(material);
+  const frozenMaterial = freezeJudgeMaterial(material);
   return {
     autoevals: {
       closedQA: (question) => createRecipe(deps, "closedQA", question, frozenMaterial),

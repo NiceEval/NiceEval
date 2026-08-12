@@ -1,4 +1,5 @@
 import { Either, Schema } from "effect";
+import { assertionRuntimeLimits } from "../limits.ts";
 import {
   ASSERTION_ENTRY_ID_BRAND,
   type AssertionCoverageV1,
@@ -25,13 +26,7 @@ import {
   type WritableCriterionEnvelopeV1,
 } from "./model.ts";
 
-export const MAX_ASSERTION_ENTRIES_V1 = 4_096;
-export const MAX_ASSERTION_GROUP_DEPTH_V1 = 16;
-export const MAX_ASSERTION_DISPLAY_CODE_POINTS_V1 = 256;
-export const MAX_ASSERTION_JSON_DEPTH_V1 = 8;
-export const MAX_ASSERTION_JSON_OBJECT_KEYS_V1 = 64;
-export const MAX_ASSERTION_JSON_ARRAY_ITEMS_V1 = 256;
-export const MAX_ASSERTION_STRING_BYTES_V1 = 8 * 1_024;
+/** Durable document-size limit; unlike runtime capture limits it belongs to this codec. */
 export const MAX_ASSERTION_DOCUMENT_BYTES_V1 = 4 * 1_024 * 1_024;
 
 /** All contract-owned objects use aggregate failures and exact object fields. */
@@ -54,13 +49,13 @@ function codePointLength(value: string): number {
 }
 
 function isBoundedString(value: string): boolean {
-  return utf8ByteLength(value) <= MAX_ASSERTION_STRING_BYTES_V1;
+  return utf8ByteLength(value) <= assertionRuntimeLimits.stringBytes;
 }
 
 function isDisplayText(value: string): boolean {
   return (
     !CONTROL_CHARACTER.test(value) &&
-    codePointLength(value) <= MAX_ASSERTION_DISPLAY_CODE_POINTS_V1
+    codePointLength(value) <= assertionRuntimeLimits.displayCodePoints
   );
 }
 
@@ -81,11 +76,11 @@ function isPlainJsonObject(value: object): boolean {
 }
 
 function hasAtMostObjectKeys(value: object): boolean {
-  return Object.keys(value).length <= MAX_ASSERTION_JSON_OBJECT_KEYS_V1;
+  return Object.keys(value).length <= assertionRuntimeLimits.jsonObjectKeys;
 }
 
 function hasAtMostArrayItems<Value>(value: readonly Value[]): boolean {
-  return value.length <= MAX_ASSERTION_JSON_ARRAY_ITEMS_V1;
+  return value.length <= assertionRuntimeLimits.jsonArrayItems;
 }
 
 function isAssertionEntryId(value: string): boolean {
@@ -186,7 +181,7 @@ function isBoundedJsonValueAt(
   if (value === null || typeof value === "boolean") return true;
   if (typeof value === "number") return Number.isFinite(value);
   if (typeof value === "string") return isBoundedString(value);
-  if (typeof value !== "object" || depth >= MAX_ASSERTION_JSON_DEPTH_V1) return false;
+  if (typeof value !== "object" || depth >= assertionRuntimeLimits.jsonDepth) return false;
 
   try {
     if (active.has(value)) return false;
@@ -261,7 +256,7 @@ export const AssertionDisplayV1Schema: Schema.Schema<AssertionDisplayV1> =
     key: Schema.optional(AssertionDisplayTextV1Schema),
     label: Schema.optional(AssertionDisplayTextV1Schema),
     groupPath: Schema.Array(AssertionDisplayTextV1Schema).pipe(
-      Schema.filter((groupPath) => groupPath.length <= MAX_ASSERTION_GROUP_DEPTH_V1, {
+      Schema.filter((groupPath) => groupPath.length <= assertionRuntimeLimits.groupDepth, {
         identifier: "AssertionDisplayGroupPath",
         description: "a group path no deeper than 16 segments",
       }),
@@ -534,7 +529,7 @@ export function createAssertionsRecordSchemas<BlobRef, BlobRefEncoded>(
 
   const outerDocument = Schema.Struct({
     entries: Schema.Array(outerEntry).pipe(
-      Schema.filter((entries) => entries.length <= MAX_ASSERTION_ENTRIES_V1, {
+      Schema.filter((entries) => entries.length <= assertionRuntimeLimits.entries, {
         identifier: "AssertionsEntryCount",
         description: "at most 4,096 assertion entries",
       }),
@@ -568,7 +563,7 @@ export function createAssertionsRecordSchemas<BlobRef, BlobRefEncoded>(
 
   const document = Schema.Struct({
     entries: Schema.Array(entry).pipe(
-      Schema.filter((entries) => entries.length <= MAX_ASSERTION_ENTRIES_V1, {
+      Schema.filter((entries) => entries.length <= assertionRuntimeLimits.entries, {
         identifier: "AssertionsEntryCount",
         description: "at most 4,096 assertion entries",
       }),

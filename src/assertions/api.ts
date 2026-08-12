@@ -5,18 +5,173 @@ import type {
   MatchDiagnostic,
   ScoreMatch,
 } from "./match.ts";
-import type {
-  AssertionsAttachmentEntryInputV1,
-} from "./record/attachment.ts";
-import type {
-  AssertionCoverageV1,
-  AssertionLimitationV1,
-  AssertionMaterialV1,
-  WritableCriterionEnvelopeV1,
-} from "./record/model.ts";
+import type { AgentWorkspaceDiff } from "./workspace-diff.ts";
 
 /** The two Evaluation kinds deliberately share one Assertion entry model. */
-export type AssertionEvaluationKindV1 = "pass" | "score";
+export type AssertionEvaluationKind = "pass" | "score";
+
+/**
+ * A bounded JSON-shaped value owned by the authoring runtime.  It is a
+ * domain value, not the durable Assertions attachment material type.
+ */
+export type AssertionSnapshotValue =
+  | null
+  | boolean
+  | number
+  | string
+  | readonly AssertionSnapshotValue[]
+  | AssertionSnapshotObject;
+
+export interface AssertionSnapshotObject {
+  readonly [key: string]: AssertionSnapshotValue;
+}
+
+export interface AssertionDisplay {
+  readonly key?: string;
+  readonly label?: string;
+  readonly groupPath: readonly string[];
+}
+
+export type AssertionCoverage =
+  | { readonly state: "complete" }
+  | {
+      readonly state: "partial";
+      readonly reason: "sampled" | "truncated" | "redacted" | "provider-limited";
+    }
+  | {
+      readonly state: "unavailable";
+      readonly reason: "not-collected" | "source-unavailable" | "producer-failed";
+    }
+  | {
+      readonly state: "not-applicable";
+      readonly reason: "optional-material" | "unsupported-subject";
+    };
+
+export type AssertionLimitation =
+  | { readonly kind: "redacted"; readonly fieldCount: number }
+  | { readonly kind: "sampled"; readonly captured: number; readonly knownTotal?: number }
+  | { readonly kind: "truncated"; readonly omittedBytes: number }
+  | { readonly kind: "provider-limited" };
+
+/**
+ * Authoring material intentionally has no blob ref, attachment entry ID, or
+ * durable schema identity. The private producer adapter selects the exact
+ * same-owner Attachment schema when it serializes this domain reference.
+ */
+export type AssertionMaterial =
+  | { readonly kind: "snapshot"; readonly value: AssertionSnapshotValue }
+  | {
+      readonly kind: "record-attachment";
+      readonly preview: string;
+    };
+
+export type AssertionCriterion =
+  | { readonly kind: "value-match"; readonly subject: "explicit-value" }
+  | {
+      readonly kind: "scope-status";
+      readonly scope: "turn" | "session" | "attempt";
+      readonly assertion: "succeeded" | "no-failed-actions";
+    }
+  | {
+      readonly kind: "occurrence";
+      readonly scope: "turn" | "session" | "attempt";
+      readonly occurrence: "tool" | "skill" | "event";
+      readonly assertion: "present" | "absent" | "count";
+      readonly matcher?: string;
+      readonly quantifier?:
+        | { readonly kind: "absent" }
+        | { readonly kind: "at-least" | "exact"; readonly count: number };
+    }
+  | {
+      readonly kind: "judge-measurement";
+      readonly recipe: "closed-qa" | "factuality" | "summarizes";
+      readonly scale: "unit-interval";
+    }
+  | {
+      readonly kind: "sandbox-result";
+      readonly operation: "changed-paths";
+      readonly paths: readonly string[];
+    }
+  | { readonly kind: "sandbox-result"; readonly operation: "no-changes" }
+  | {
+      readonly kind: "sandbox-result";
+      readonly operation: "file-changed";
+      readonly path: string;
+      readonly status?: "added" | "modified" | "deleted";
+      readonly before?: string;
+      readonly after?: string;
+    }
+  | { readonly kind: "sandbox-result"; readonly operation: "file-deleted"; readonly path: string }
+  | {
+      readonly kind: "sandbox-result";
+      readonly operation: "not-in-diff";
+      readonly pattern: string;
+      readonly flags: string;
+      readonly content: "added" | "removed" | "both";
+    }
+  | { readonly kind: "direct-score"; readonly source: "author" }
+  | {
+      readonly kind: "third-party";
+      readonly name: string;
+      readonly schemaId: string;
+      readonly data: AssertionSnapshotValue;
+    };
+
+export type AssertionScoreContribution =
+  | { readonly state: "not-scored" }
+  | { readonly state: "earned"; readonly points: number; readonly earned: number }
+  | {
+      readonly state: "unavailable";
+      readonly points: number;
+      readonly reason: "source-unavailable" | "evaluation-errored" | "not-applicable";
+    };
+
+export type AssertionResult =
+  | {
+      readonly state: "matched";
+      readonly gate: "not-gate" | "satisfied";
+      readonly score: Extract<AssertionScoreContribution, { readonly state: "not-scored" | "earned" }>;
+      readonly diagnostic?: AssertionSnapshotObject;
+    }
+  | {
+      readonly state: "mismatched";
+      readonly reason: "condition-not-met";
+      readonly gate: "not-gate" | "failed";
+      readonly score: Extract<AssertionScoreContribution, { readonly state: "not-scored" | "earned" }>;
+      readonly diagnostic?: AssertionSnapshotObject;
+    }
+  | {
+      readonly state: "unavailable";
+      readonly reason: "evidence-unavailable" | "source-unavailable" | "redacted";
+      readonly gate: "not-gate" | "unavailable";
+      readonly score: Extract<AssertionScoreContribution, { readonly state: "not-scored" | "unavailable" }>;
+      readonly diagnostic?: AssertionSnapshotObject;
+    }
+  | {
+      readonly state: "errored";
+      readonly reason: "evaluator-failed" | "producer-interrupted" | "invalid-subject";
+      readonly gate: "not-gate" | "unavailable";
+      readonly score: Extract<AssertionScoreContribution, { readonly state: "not-scored" | "unavailable" }>;
+      readonly diagnostic?: AssertionSnapshotObject;
+    }
+  | {
+      readonly state: "not-applicable";
+      readonly reason: "coverage-not-applicable";
+      readonly gate: "not-gate" | "not-applicable";
+      readonly score: Extract<AssertionScoreContribution, { readonly state: "not-scored" | "unavailable" }>;
+      readonly diagnostic?: AssertionSnapshotObject;
+    };
+
+/** One fully formed author/runtime result, before durable attachment encoding. */
+export interface SealedAssertionEntry {
+  readonly display: AssertionDisplay;
+  readonly criterion: AssertionCriterion;
+  readonly subject: AssertionMaterial;
+  readonly evidence: readonly AssertionMaterial[];
+  readonly coverage: AssertionCoverage;
+  readonly limitations: readonly AssertionLimitation[];
+  readonly result: AssertionResult;
+}
 
 /**
  * Assertion handles are runtime-owned capabilities, not subjects for another
@@ -27,7 +182,7 @@ export const assertionHandleBrand: unique symbol = Symbol(
   "niceeval.assertion-handle",
 );
 
-export interface AssertionHandleBaseV1 {
+export interface AssertionHandleBase {
   readonly [assertionHandleBrand]: true;
   key(value: string): this;
   label(value: string): this;
@@ -36,12 +191,12 @@ export interface AssertionHandleBaseV1 {
 }
 
 /** A value that is not an AssertionHandle. */
-export type AssertionSubjectV1<Value> = Value extends AssertionHandleBaseV1
+export type AssertionSubject<Value> = Value extends AssertionHandleBase
   ? never
   : Value;
 
-export interface AssertionStopErrorV1 {
-  readonly _tag: "AssertionStopErrorV1";
+export interface AssertionStopError {
+  readonly _tag: "AssertionStopError";
   readonly entryIndex: number;
   readonly reason:
     | "condition-not-met"
@@ -52,12 +207,12 @@ export interface AssertionStopErrorV1 {
 
 /**
  * A public authoring call reached an Attempt boundary which is no longer able
- * to accept it.  Keeping this distinct from an evaluator failure lets a
+ * to accept it. Keeping this distinct from an evaluator failure lets a
  * detached Promise diagnose its own lifecycle error instead of looking like a
  * failed assertion.
  */
-export class AssertionAuthoringClosedErrorV1 extends Error {
-  readonly _tag = "AssertionAuthoringClosedErrorV1";
+export class AssertionAuthoringClosedError extends Error {
+  readonly _tag = "AssertionAuthoringClosedError";
 
   constructor(
     readonly reason:
@@ -68,7 +223,7 @@ export class AssertionAuthoringClosedErrorV1 extends Error {
       | "runtime-unattached",
   ) {
     super(`Cannot use an Assertion authoring handle after ${reason}`);
-    this.name = "AssertionAuthoringClosedErrorV1";
+    this.name = "AssertionAuthoringClosedError";
   }
 }
 
@@ -76,12 +231,12 @@ export class AssertionAuthoringClosedErrorV1 extends Error {
  * The owning Attempt executes a requested stop barrier in its existing Effect
  * scope. Handles only enqueue this request; they never create a runtime.
  */
-export type AssertionStopExecutorV1 = <Value>(
-  effect: Effect.Effect<Value, AssertionStopErrorV1, never>,
+export type AssertionStopExecutor = <Value>(
+  effect: Effect.Effect<Value, AssertionStopError, never>,
 ) => Promise<Value>;
 
 /** A Boolean entry is evaluated once and may retain a refinement witness. */
-export type BooleanAssertionEvaluationV1<Refined> =
+export type BooleanAssertionEvaluation<Refined> =
   | { readonly state: "matched"; readonly value: Refined; readonly diagnostic?: MatchDiagnostic }
   | { readonly state: "mismatched"; readonly diagnostic?: MatchDiagnostic }
   | {
@@ -95,7 +250,7 @@ export type BooleanAssertionEvaluationV1<Refined> =
   | { readonly state: "not-applicable"; readonly diagnostic?: MatchDiagnostic };
 
 /** A measurement is always a finite unit-interval value when it is available. */
-export type MeasurementAssertionEvaluationV1 =
+export type MeasurementAssertionEvaluation =
   | { readonly state: "measured"; readonly value: number }
   | {
       readonly state: "unavailable";
@@ -107,29 +262,18 @@ export type MeasurementAssertionEvaluationV1 =
   | { readonly state: "not-applicable" }
   | { readonly state: "errored" };
 
-/** Snapshot-only material keeps this authoring runtime independent of Record blob authority. */
-export type AssertionSnapshotMaterialV1 = Extract<
-  AssertionMaterialV1<never>,
-  { readonly kind: "snapshot" }
->;
+export interface CapturedAssertionSnapshot {
+  readonly material: Extract<AssertionMaterial, { readonly kind: "snapshot" }>;
+  readonly coverage: AssertionCoverage;
+  readonly limitations: readonly AssertionLimitation[];
+}
 
-/** A same-owner, exact post-run Attachment reference with no storage handle. */
-export type AssertionRecordAttachmentMaterialV1 = Extract<
-  AssertionMaterialV1<never>,
-  { readonly kind: "record-attachment" }
->;
-
-/** Runtime registrations never gain raw Record blob authority. */
-export type AssertionRuntimeMaterialV1 =
-  | AssertionSnapshotMaterialV1
-  | AssertionRecordAttachmentMaterialV1;
-
-export interface AssertionRegistrationBaseV1 {
-  readonly criterion: WritableCriterionEnvelopeV1;
-  readonly subject: AssertionRuntimeMaterialV1;
-  readonly evidence?: readonly AssertionRuntimeMaterialV1[];
-  readonly coverage?: AssertionCoverageV1;
-  readonly limitations?: readonly AssertionLimitationV1[];
+export interface AssertionRegistrationBase {
+  readonly criterion: AssertionCriterion;
+  readonly subject: AssertionMaterial;
+  readonly evidence?: readonly AssertionMaterial[];
+  readonly coverage?: AssertionCoverage;
+  readonly limitations?: readonly AssertionLimitation[];
 }
 
 /**
@@ -137,26 +281,26 @@ export interface AssertionRegistrationBaseV1 {
  * They still register exactly one Assertion entry; they do not manufacture a
  * separate intermediate value for a later consumer.
  */
-export interface BooleanAssertionRegistrationV1<Refined>
-  extends AssertionRegistrationBaseV1 {
+export interface BooleanAssertionRegistration<Refined>
+  extends AssertionRegistrationBase {
   readonly evaluate: () => Effect.Effect<
-    BooleanAssertionEvaluationV1<Refined>,
+    BooleanAssertionEvaluation<Refined>,
     unknown,
     never
   >;
 }
 
-export interface MeasurementAssertionRegistrationV1
-  extends AssertionRegistrationBaseV1 {
+export interface MeasurementAssertionRegistration
+  extends AssertionRegistrationBase {
   readonly evaluate: () => Effect.Effect<
-    MeasurementAssertionEvaluationV1,
+    MeasurementAssertionEvaluation,
     unknown,
     never
   >;
 }
 
-export interface PassBooleanAssertionHandleV1<out Refined>
-  extends AssertionHandleBaseV1 {
+export interface PassBooleanAssertionHandle<out Refined>
+  extends AssertionHandleBase {
   readonly kind: "boolean";
   /** An unavailable/errored optional entry does not independently error Verdict. */
   optional(): this;
@@ -164,8 +308,8 @@ export interface PassBooleanAssertionHandleV1<out Refined>
   orStop(): Promise<Refined>;
 }
 
-export interface ScoreBooleanAssertionHandleV1<out Refined>
-  extends AssertionHandleBaseV1 {
+export interface ScoreBooleanAssertionHandle<out Refined>
+  extends AssertionHandleBase {
   readonly kind: "boolean";
   /** An unavailable/errored optional entry does not independently error Verdict. */
   optional(): this;
@@ -174,75 +318,62 @@ export interface ScoreBooleanAssertionHandleV1<out Refined>
   orStop(): Promise<Refined>;
 }
 
-export interface PassMeasurementAssertionHandleV1<
+export interface PassMeasurementAssertionHandle<
   Thresholded extends boolean = false,
-> extends AssertionHandleBaseV1 {
+> extends AssertionHandleBase {
   readonly kind: "measurement";
   /** An unavailable/errored optional entry does not independently error Verdict. */
   optional(): this;
-  atLeast(value: number): PassMeasurementAssertionHandleV1<true>;
-  gate(this: PassMeasurementAssertionHandleV1<true>): this;
+  atLeast(value: number): PassMeasurementAssertionHandle<true>;
+  gate(this: PassMeasurementAssertionHandle<true>): this;
   orStop(
-    this: PassMeasurementAssertionHandleV1<true>,
+    this: PassMeasurementAssertionHandle<true>,
   ): Promise<number>;
 }
 
-export interface ScoreMeasurementAssertionHandleV1<
+export interface ScoreMeasurementAssertionHandle<
   Thresholded extends boolean = false,
-> extends AssertionHandleBaseV1 {
+> extends AssertionHandleBase {
   readonly kind: "measurement";
   /** An unavailable/errored optional entry does not independently error Verdict. */
   optional(): this;
-  atLeast(value: number): ScoreMeasurementAssertionHandleV1<true>;
-  gate(this: ScoreMeasurementAssertionHandleV1<true>): this;
+  atLeast(value: number): ScoreMeasurementAssertionHandle<true>;
+  gate(this: ScoreMeasurementAssertionHandle<true>): this;
   score(points: number): this;
   orStop(
-    this: ScoreMeasurementAssertionHandleV1<true>,
+    this: ScoreMeasurementAssertionHandle<true>,
   ): Promise<number>;
 }
 
-/**
- * A Boolean Assertion whose evaluator runs after authoring has settled. This
- * is the only handle returned by the agent-attributed workspace-diff surface:
- * it configures one registered entry and intentionally has no control-flow
- * operation. It is deliberately a separate narrow interface instead of an
- * alias of ordinary Boolean handles: the runtime object may implement a
- * stop barrier, but a post-run diff assertion cannot expose one.
- */
-interface PostRunPassBooleanAssertionHandleV1<Refined>
-  extends AssertionHandleBaseV1 {
+/** A Boolean Assertion that intentionally has no author control-flow operation. */
+interface PostRunPassBooleanAssertionHandle<Refined>
+  extends AssertionHandleBase {
   readonly kind: "boolean";
   optional(): this;
   gate(): this;
 }
 
-interface PostRunScoreBooleanAssertionHandleV1<Refined>
-  extends AssertionHandleBaseV1 {
+interface PostRunScoreBooleanAssertionHandle<Refined>
+  extends AssertionHandleBase {
   readonly kind: "boolean";
   optional(): this;
   gate(): this;
   score(points: number): this;
 }
 
-export type PostRunBooleanAssertionHandleV1<
-  Kind extends AssertionEvaluationKindV1,
+export type PostRunBooleanAssertionHandle<
+  Kind extends AssertionEvaluationKind,
   Refined,
 > = Kind extends "pass"
-  ? PostRunPassBooleanAssertionHandleV1<Refined>
-  : PostRunScoreBooleanAssertionHandleV1<Refined>;
-
-/** Public name for post-run-only Boolean Assertions such as workspace diff. */
-export type PostRunBooleanAssertionHandle<
-  Kind extends AssertionEvaluationKindV1,
-  Refined,
-> = PostRunBooleanAssertionHandleV1<Kind, Refined>;
+  ? PostRunPassBooleanAssertionHandle<Refined>
+  : PostRunScoreBooleanAssertionHandle<Refined>;
 
 /** Direct score is an Assertion entry, but has no condition or stop barrier. */
-export interface DirectScoreAssertionHandleV1 extends AssertionHandleBaseV1 {
+export interface DirectScoreAssertionHandle extends AssertionHandleBase {
   readonly kind: "direct-score";
 }
 
-export interface AssertionGroupContextV1 {
+export interface AssertionGroupContext {
   /**
    * Runs an ordinary author callback with one display-only group segment. The
    * callback remains inside the Attempt's outer Promise boundary; this facade
@@ -254,48 +385,48 @@ export interface AssertionGroupContextV1 {
   ): Promise<Awaited<Value>>;
 }
 
-export interface PassAssertionsContextV1 extends AssertionGroupContextV1 {
+export interface PassAssertionsContext extends AssertionGroupContext {
   readonly evaluationKind: "pass";
   check<Value, Refined extends Value>(
-    value: AssertionSubjectV1<Value>,
+    value: AssertionSubject<Value>,
     match: BooleanMatch<NoInfer<Value>, Refined, "value">,
-  ): PassBooleanAssertionHandleV1<Refined>;
+  ): PassBooleanAssertionHandle<Refined>;
   check<Value>(
-    value: AssertionSubjectV1<Value>,
+    value: AssertionSubject<Value>,
     match: ScoreMatch<NoInfer<Value>>,
-  ): PassMeasurementAssertionHandleV1;
+  ): PassMeasurementAssertionHandle;
 }
 
-export interface ScoreAssertionsContextV1 extends AssertionGroupContextV1 {
+export interface ScoreAssertionsContext extends AssertionGroupContext {
   readonly evaluationKind: "score";
   check<Value, Refined extends Value>(
-    value: AssertionSubjectV1<Value>,
+    value: AssertionSubject<Value>,
     match: BooleanMatch<NoInfer<Value>, Refined, "value">,
-  ): ScoreBooleanAssertionHandleV1<Refined>;
+  ): ScoreBooleanAssertionHandle<Refined>;
   check<Value>(
-    value: AssertionSubjectV1<Value>,
+    value: AssertionSubject<Value>,
     match: ScoreMatch<NoInfer<Value>>,
-  ): ScoreMeasurementAssertionHandleV1;
-  score(points: number): DirectScoreAssertionHandleV1;
+  ): ScoreMeasurementAssertionHandle;
+  score(points: number): DirectScoreAssertionHandle;
 }
 
-export type AssertionsContextV1<Kind extends AssertionEvaluationKindV1> =
-  Kind extends "pass" ? PassAssertionsContextV1 : ScoreAssertionsContextV1;
+export type AssertionsContext<Kind extends AssertionEvaluationKind> =
+  Kind extends "pass" ? PassAssertionsContext : ScoreAssertionsContext;
 
-export type BooleanAssertionHandleV1<
-  Kind extends AssertionEvaluationKindV1,
+export type BooleanAssertionHandle<
+  Kind extends AssertionEvaluationKind,
   Refined,
 > = Kind extends "pass"
-  ? PassBooleanAssertionHandleV1<Refined>
-  : ScoreBooleanAssertionHandleV1<Refined>;
+  ? PassBooleanAssertionHandle<Refined>
+  : ScoreBooleanAssertionHandle<Refined>;
 
-export type MeasurementAssertionHandleV1<
-  Kind extends AssertionEvaluationKindV1,
+export type MeasurementAssertionHandle<
+  Kind extends AssertionEvaluationKind,
 > = Kind extends "pass"
-  ? PassMeasurementAssertionHandleV1
-  : ScoreMeasurementAssertionHandleV1;
+  ? PassMeasurementAssertionHandle
+  : ScoreMeasurementAssertionHandle;
 
-export interface AssertionSealOptionsV1 {
+export interface AssertionSealOptions {
   readonly execution?: "completed" | "errored";
   readonly explicitlySkipped?: boolean;
   /**
@@ -306,51 +437,81 @@ export interface AssertionSealOptionsV1 {
   readonly interrupted?: boolean;
 }
 
-export interface AssertionSealErrorV1 {
-  readonly _tag: "AssertionSealErrorV1";
+export interface AssertionSealError {
+  readonly _tag: "AssertionSealError";
   readonly code: "pass-measurement-threshold-missing";
   readonly entryIndex: number;
 }
 
-/**
- * The sealed evaluation data owned by Assertions. It is deliberately named
- * for its role, rather than for the historical Record fold input it can be
- * adapted into at the single Record boundary.
- */
-export interface SealedAssertionEvaluationEntryV1 {
+/** The sealed evaluation is a domain result, not a durable Record payload. */
+export interface SealedAssertionEvaluationEntry {
   readonly required: boolean;
-  readonly result: AssertionsAttachmentEntryInputV1<never, never>["result"];
+  readonly result: AssertionResult;
 }
 
-export interface SealedAssertionEvaluationV1 {
+export interface SealedAssertionEvaluation {
   readonly execution: "completed" | "errored";
   readonly explicitlySkipped: boolean;
-  readonly assertions: readonly SealedAssertionEvaluationEntryV1[];
+  readonly assertions: readonly SealedAssertionEvaluationEntry[];
 }
 
 /**
- * One immutable result feeds both independent consumers. `entries` preserve
- * declaration order and may be appended directly to the Assertions producer.
- * `evaluation` is the sealed, attempt-local input shared by the Verdict and
- * Score folds; it does not expose a Fact authoring or Runner model.
+ * One immutable result feeds the Verdict/Score fold and the private durable
+ * producer adapter. No RecordAttachment writer type crosses this boundary.
  */
-export interface SealedAssertionsRuntimeV1 {
-  readonly entries: readonly AssertionsAttachmentEntryInputV1<never, never>[];
-  readonly evaluation: SealedAssertionEvaluationV1;
+export interface SealedAssertionsRuntime {
+  readonly entries: readonly SealedAssertionEntry[];
+  readonly evaluation: SealedAssertionEvaluation;
 }
 
-export interface AssertionsRuntimeV1<
-  Kind extends AssertionEvaluationKindV1,
+/** The runtime Verdict is independent of the durable Verdict attachment codec. */
+export interface AssertionVerdict {
+  readonly state: "passed" | "failed" | "errored" | "skipped";
+}
+
+export type AssertionScoreIncompleteReason =
+  | "execution-errored"
+  | "source-unavailable"
+  | "evaluation-errored"
+  | "not-applicable";
+
+/** The runtime Score is independent of the durable Score attachment codec. */
+export type AssertionScore =
+  | { readonly state: "complete"; readonly earned: number }
+  | {
+      readonly state: "partial";
+      readonly earned: number;
+      readonly reasons: readonly AssertionScoreIncompleteReason[];
+    }
+  | {
+      readonly state: "unavailable";
+      readonly reasons: readonly AssertionScoreIncompleteReason[];
+    };
+
+/**
+ * The attempt-owned frozen result is handed from Runner to the Evaluation
+ * Record adapter. The adapter alone adds attachment schemas and writes.
+ */
+export interface SealedAttemptAssertions {
+  readonly entries: readonly SealedAssertionEntry[];
+  readonly evaluation: SealedAssertionEvaluation;
+  readonly workspaceDiff?: AgentWorkspaceDiff;
+  readonly verdict: AssertionVerdict;
+  readonly score?: AssertionScore;
+}
+
+export interface AssertionsRuntime<
+  Kind extends AssertionEvaluationKind,
 > {
   readonly evaluationKind: Kind;
-  readonly t: AssertionsContextV1<Kind>;
+  readonly t: AssertionsContext<Kind>;
   registerBoolean<Refined>(
-    definition: BooleanAssertionRegistrationV1<Refined>,
-  ): BooleanAssertionHandleV1<Kind, Refined>;
+    definition: BooleanAssertionRegistration<Refined>,
+  ): BooleanAssertionHandle<Kind, Refined>;
   registerMeasurement(
-    definition: MeasurementAssertionRegistrationV1,
-  ): MeasurementAssertionHandleV1<Kind>;
+    definition: MeasurementAssertionRegistration,
+  ): MeasurementAssertionHandle<Kind>;
   seal(
-    options?: AssertionSealOptionsV1,
-  ): Effect.Effect<SealedAssertionsRuntimeV1, AssertionSealErrorV1, never>;
+    options?: AssertionSealOptions,
+  ): Effect.Effect<SealedAssertionsRuntime, AssertionSealError, never>;
 }

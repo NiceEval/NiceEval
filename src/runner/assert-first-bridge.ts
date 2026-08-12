@@ -8,36 +8,36 @@
 import { Cause, Deferred, Effect, Exit, Queue, Scope } from "effect";
 
 import type {
-  AssertionStopErrorV1,
-  AssertionSealOptionsV1,
-  AssertionsRuntimeV1,
+  AssertionStopError,
+  AssertionSealOptions,
+  AssertionsRuntime,
+  SealedAttemptAssertions,
 } from "../assertions/api.ts";
-import { AssertionAuthoringClosedErrorV1 } from "../assertions/api.ts";
-import type { RecordAttachmentWrite } from "../record/attachment/index.ts";
-import type { SealedAttemptAssertionsV1 } from "./assertions.ts";
+import { AssertionAuthoringClosedError } from "../assertions/api.ts";
+import type { AgentWorkspaceDiff } from "../assertions/workspace-diff.ts";
 
-export type AttemptAuthorCompletionV1 =
+export type AttemptAuthorCompletion =
   | { readonly _tag: "succeeded" }
   | { readonly _tag: "stopped" }
   | { readonly _tag: "failed"; readonly error: unknown }
   | { readonly _tag: "defect"; readonly cause: unknown };
 
-export interface AssertionSealRequestV1 {
-  readonly runtime: AssertionsRuntimeV1<"pass" | "score">;
-  readonly options: AssertionSealOptionsV1;
-  /** Post-run evidence writes built from the same frozen semantic document as evaluators. */
-  readonly additionalAttemptWrites?: readonly RecordAttachmentWrite<"attempt", never, never>[];
+export interface AssertionSealRequest {
+  readonly runtime: AssertionsRuntime<"pass" | "score">;
+  readonly options: AssertionSealOptions;
+  /** Frozen post-run evidence shared by evaluators and the Record adapter. */
+  readonly workspaceDiff?: AgentWorkspaceDiff;
 }
 
-type AttemptEffectRequestKindV1 = "assertion" | "operation";
+type AttemptEffectRequestKind = "assertion" | "operation";
 
 /**
  * A request from the Promise-shaped Attempt body into its owning Effect Scope.
  * The resolver pair is deliberately the sole native-Promise state: it adapts
  * the public callback facade after the owner fiber has classified an Exit.
  */
-interface AttemptEffectRequestV1 {
-  readonly kind: AttemptEffectRequestKindV1;
+interface AttemptEffectRequest {
+  readonly kind: AttemptEffectRequestKind;
   readonly effect: Effect.Effect<unknown, unknown, never>;
   readonly resolve: (value: unknown) => void;
   readonly reject: (error: unknown) => void;
@@ -63,15 +63,15 @@ function promiseFacade<Value>(): PromiseFacade<Value> {
   return { promise, resolve, reject };
 }
 
-export interface AssertFirstAttemptBridgeV1<Context> {
+export interface AssertFirstAttemptBridge<Context> {
   /** The Promise body submits Context completion through the owner Queue. */
   offerContext(context: Context): Effect.Effect<void>;
   failBeforeContext(error: unknown): Effect.Effect<void>;
   awaitContext(): Effect.Effect<Context, unknown>;
-  completeAuthor(completion: AttemptAuthorCompletionV1): Effect.Effect<void>;
-  awaitAuthor(): Effect.Effect<AttemptAuthorCompletionV1, unknown>;
+  completeAuthor(completion: AttemptAuthorCompletion): Effect.Effect<void>;
+  awaitAuthor(): Effect.Effect<AttemptAuthorCompletion, unknown>;
   requestAssertion<Value>(
-    effect: Effect.Effect<Value, AssertionStopErrorV1, never>,
+    effect: Effect.Effect<Value, AssertionStopError, never>,
   ): Promise<Value>;
   /** Executes an internal body operation in the existing Attempt Effect Scope. */
   requestEffect<Value, Error>(
@@ -81,14 +81,14 @@ export interface AssertFirstAttemptBridgeV1<Context> {
   closeAssertionRequests(error: unknown): Effect.Effect<void>;
   /** Rejects every queued / in-flight bridge request during Scope release. */
   closeEffectRequests(error: unknown): Effect.Effect<void>;
-  requestSeal(request: AssertionSealRequestV1): Effect.Effect<SealedAttemptAssertionsV1, unknown>;
-  awaitSealRequest(): Effect.Effect<AssertionSealRequestV1, unknown>;
-  completeSeal(sealed: SealedAttemptAssertionsV1): Effect.Effect<void>;
+  requestSeal(request: AssertionSealRequest): Effect.Effect<SealedAttemptAssertions, unknown>;
+  awaitSealRequest(): Effect.Effect<AssertionSealRequest, unknown>;
+  completeSeal(sealed: SealedAttemptAssertions): Effect.Effect<void>;
   failSeal(error: unknown): Effect.Effect<void>;
 }
 
 function completeRequest(
-  request: AttemptEffectRequestV1,
+  request: AttemptEffectRequest,
   exit: Exit.Exit<unknown, unknown>,
   failureOverride?: unknown,
 ): Effect.Effect<void> {
@@ -121,16 +121,16 @@ function exactlyOnce(
  * runtime: public Promise methods only offer work, and the scoped worker
  * performs every Effect, response, interruption and finalization transition.
  */
-export function makeAssertFirstAttemptBridgeV1<Context>():
-  Effect.Effect<AssertFirstAttemptBridgeV1<Context>, never, import("effect").Scope.Scope> {
+export function makeAssertFirstAttemptBridge<Context>():
+  Effect.Effect<AssertFirstAttemptBridge<Context>, never, import("effect").Scope.Scope> {
   return Effect.gen(function* () {
     const context = yield* Deferred.make<Context, unknown>();
-    const author = yield* Deferred.make<AttemptAuthorCompletionV1, unknown>();
-    const sealRequest = yield* Deferred.make<AssertionSealRequestV1, unknown>();
-    const sealed = yield* Deferred.make<SealedAttemptAssertionsV1, unknown>();
+    const author = yield* Deferred.make<AttemptAuthorCompletion, unknown>();
+    const sealRequest = yield* Deferred.make<AssertionSealRequest, unknown>();
+    const sealed = yield* Deferred.make<SealedAttemptAssertions, unknown>();
     const assertionRequestsClosed = yield* Deferred.make<never, unknown>();
     const effectRequestsClosed = yield* Deferred.make<never, unknown>();
-    const requests = yield* Queue.unbounded<AttemptEffectRequestV1>();
+    const requests = yield* Queue.unbounded<AttemptEffectRequest>();
     // Each taken request runs independently in this child Scope. The dispatcher
     // must never await a control barrier such as awaitAuthor(), otherwise an
     // author assertion queued behind it cannot make the barrier complete.
@@ -139,7 +139,7 @@ export function makeAssertFirstAttemptBridgeV1<Context>():
     let assertionCloseError: unknown | undefined;
 
     const closeReason = (): unknown =>
-      terminalError ?? new AssertionAuthoringClosedErrorV1("attempt-sealed");
+      terminalError ?? new AssertionAuthoringClosedError("attempt-sealed");
 
     const closeEffectRequests = (error: unknown): Effect.Effect<void> =>
       Effect.suspend(() => {
@@ -175,13 +175,13 @@ export function makeAssertFirstAttemptBridgeV1<Context>():
         );
       });
 
-    const awaitClose = (kind: AttemptEffectRequestKindV1) =>
+    const awaitClose = (kind: AttemptEffectRequestKind) =>
       Effect.raceFirst(
         Deferred.await(effectRequestsClosed),
         kind === "assertion" ? Deferred.await(assertionRequestsClosed) : Effect.never,
       ).pipe(Effect.exit);
 
-    const runRequest = (request: AttemptEffectRequestV1): Effect.Effect<void> => {
+    const runRequest = (request: AttemptEffectRequest): Effect.Effect<void> => {
       const closureError = (): unknown | undefined =>
         terminalError ?? (request.kind === "assertion" ? assertionCloseError : undefined);
       return Effect.raceFirst(
@@ -215,7 +215,7 @@ export function makeAssertFirstAttemptBridgeV1<Context>():
 
     const enqueue = <Value, Error>(
       effect: Effect.Effect<Value, Error, never>,
-      kind: AttemptEffectRequestKindV1,
+      kind: AttemptEffectRequestKind,
     ): Promise<Value> => {
       const facade = promiseFacade<Value>();
       if (terminalError !== undefined) {
@@ -226,7 +226,7 @@ export function makeAssertFirstAttemptBridgeV1<Context>():
         facade.reject(assertionCloseError);
         return facade.promise;
       }
-      const request: AttemptEffectRequestV1 = {
+      const request: AttemptEffectRequest = {
         kind,
         effect,
         resolve: facade.resolve as (value: unknown) => void,
@@ -241,7 +241,7 @@ export function makeAssertFirstAttemptBridgeV1<Context>():
       return facade.promise;
     };
 
-    const bridge: AssertFirstAttemptBridgeV1<Context> = {
+    const bridge: AssertFirstAttemptBridge<Context> = {
       offerContext(value) {
         return exactlyOnce(
           Deferred.succeed(context, value),
@@ -324,7 +324,7 @@ export function makeAssertFirstAttemptBridgeV1<Context>():
     yield* Effect.addFinalizer((exit) =>
       closeEffectRequests(
         Exit.isFailure(exit) && Cause.isInterruptedOnly(exit.cause)
-          ? new AssertionAuthoringClosedErrorV1("attempt-interrupted")
+          ? new AssertionAuthoringClosedError("attempt-interrupted")
           : closeReason(),
       ));
     return Object.freeze(bridge);

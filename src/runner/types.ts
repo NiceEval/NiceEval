@@ -27,7 +27,7 @@ import type { EvalManifest } from "../record/manifest.ts";
 import type { RecordAttachmentWrite } from "../record/attachment/index.ts";
 import type { FrozenRecordAttempt, FrozenRecordView } from "../record/reader/types.ts";
 import type { RecordReaderReadError } from "../record/reader/errors.ts";
-import type { SealedAttemptAssertionsV1 } from "./assertions.ts";
+import type { SealedAttemptAssertions } from "../assertions/api.ts";
 // report 公共子路径是独立预编译单元；两种 Definition 使用不可构造的结构品牌，因此这里可以
 // 对源码类型编程，同时与下游从 "niceeval/report" 取得的 dist 声明兼容，也不会形成干净构建的
 // source → host → dist 自举环。
@@ -1157,7 +1157,7 @@ export interface RunnerRecordAttachmentProducers<Error = never, Requirements = n
   }) => readonly RecordAttachmentWrite<"run", Error, Requirements>[];
   readonly attemptWrites?: (input: {
     readonly attempt: Attempt;
-    readonly sealed: SealedAttemptAssertionsV1;
+    readonly sealed: SealedAttemptAssertions;
   }) => readonly RecordAttachmentWrite<"attempt", Error, Requirements>[];
 }
 

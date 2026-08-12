@@ -1,16 +1,23 @@
 import { Either, Schema } from "effect";
 
 import {
+  isCanonicalWorkspaceRelativePath,
+} from "../diff.ts";
+import {
+  agentWorkspaceDiffChangeIsCoherent,
+  type AgentWorkspaceDiff,
+} from "../workspace-diff.ts";
+import {
   AGENT_WORKSPACE_DIFF_ATTRIBUTION_V1,
-  agentWorkspaceDiffWindowChangeIsCoherentV1,
-  isCanonicalWorkspaceRelativePathV1,
+  decodeAgentWorkspaceDiffDocumentV1,
+  encodeAgentWorkspaceDiffDocumentV1,
   type AgentWorkspaceDiffDocumentV1,
   type AgentWorkspaceDiffEndpointV1,
   type AgentWorkspaceDiffHunksV1,
   type AgentWorkspaceDiffPolicyV1,
   type AgentWorkspaceDiffWindowChangeV1,
   type AgentWorkspaceDiffWindowV1,
-} from "../diff.ts";
+} from "./diff-model.ts";
 import {
   defineRecordAttachmentFamily,
   encodeJsonRecordAttachmentPayload,
@@ -51,7 +58,7 @@ const DiffHunksV1Schema: Schema.Schema<AgentWorkspaceDiffHunksV1> = Schema.Struc
 
 const DiffWindowChangeV1Schema: Schema.Schema<AgentWorkspaceDiffWindowChangeV1> = Schema.Struct({
   path: Schema.String.pipe(
-    Schema.filter(isCanonicalWorkspaceRelativePathV1, {
+    Schema.filter(isCanonicalWorkspaceRelativePath, {
       identifier: "AgentWorkspaceDiffPath",
       description: "a canonical non-empty workspace-relative path",
     }),
@@ -85,8 +92,8 @@ function documentHasUniqueWindowsAndPaths(document: AgentWorkspaceDiffDocumentV1
     const paths = new Set<string>();
     for (const change of window.changes) {
       if (
-        !isCanonicalWorkspaceRelativePathV1(change.path)
-        || !agentWorkspaceDiffWindowChangeIsCoherentV1(change)
+        !isCanonicalWorkspaceRelativePath(change.path)
+        || !agentWorkspaceDiffChangeIsCoherent(change)
         || paths.has(change.path)
       ) return false;
       paths.add(change.path);
@@ -179,8 +186,9 @@ function assertDiffPayloadFitsRecordJsonLimit(
  * own blobs without changing Assertions' reference shape.
  */
 export function createAgentWorkspaceDiffAttachmentWriteV1(
-  document: AgentWorkspaceDiffDocumentV1,
+  value: AgentWorkspaceDiff,
 ): RecordAttachmentWrite<"attempt", never, never> {
+  const document = encodeAgentWorkspaceDiffDocumentV1(value);
   assertDiffPayloadFitsRecordJsonLimit(document);
   const write = makeRecordAttachmentWrite(
     agentWorkspaceDiffAttachmentFamilyV1,
@@ -194,13 +202,14 @@ export function createAgentWorkspaceDiffAttachmentWriteV1(
 }
 
 /** A neutral typed projector available to scripts and any Report, with no privileged consumer. */
-export const agentWorkspaceDiffProjectorV1: RecordAttachmentProjector<
+export const agentWorkspaceDiffProjector: RecordAttachmentProjector<
   "attempt",
-  AgentWorkspaceDiffDocumentV1
+  AgentWorkspaceDiff
 > = defineRecordAttachmentProjector({
   attachment: agentWorkspaceDiffAttachmentFamilyV1 as RecordAttachmentFamily<
     "attempt",
     AgentWorkspaceDiffDocumentV1
   >,
-  project: (value: RecordAttachmentValue<AgentWorkspaceDiffDocumentV1>) => value.payload,
+  project: (value: RecordAttachmentValue<AgentWorkspaceDiffDocumentV1>) =>
+    decodeAgentWorkspaceDiffDocumentV1(value.payload),
 });

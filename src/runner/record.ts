@@ -53,9 +53,10 @@ import {
   type TargetSlotV1,
 } from "./reuse-plan.ts";
 import {
-  evaluationRecordOriginInputFromAssertionsV1,
-  type SealedAttemptAssertionsV1,
-} from "./assertions.ts";
+  evaluationRecordOriginInputFromSealedAssertions,
+  type SealedAssertionsOriginEncodingError,
+} from "../eval/record/evaluation-record.ts";
+import type { SealedAttemptAssertions } from "../assertions/api.ts";
 import type {
   AgentRun,
   Attempt,
@@ -97,7 +98,7 @@ type GapActionState = "pending" | "sealed" | "executed" | "not-dispatched" | "in
 interface ActiveRunnerRecordAttempt {
   /** Exact logical handle passed through seal and completion for this target Slot. */
   readonly attempt: Attempt;
-  readonly sealed: SealedAttemptAssertionsV1;
+  readonly sealed: SealedAttemptAssertions;
   public?: RunnerRecordAttempt;
   completed: boolean;
 }
@@ -169,6 +170,7 @@ export type RunnerRecordWriteError<AttachmentError> =
   | RunnerRecordMembershipStateInvalid
   | AttemptEligibilityPayloadBuildErrorV1
   | MembershipProvenancePayloadBuildErrorV1
+  | SealedAssertionsOriginEncodingError
   | AttachmentError;
 
 export type RunnerRecordOpenError<AttachmentError> =
@@ -196,7 +198,7 @@ export interface RunnerRecordCoordinator<AttachmentError, AttachmentRequirements
   /** Keeps the exact sealed Assert-first result until its real duration is known. */
   readonly noteSealedOrMarkIncomplete: (
     attempt: Attempt,
-    sealed: SealedAttemptAssertionsV1,
+    sealed: SealedAttemptAssertions,
   ) => Effect.Effect<void, never>;
   /** Allocates and writes a fresh origin only after its execution result is complete. */
   readonly completeAttemptOrMarkIncomplete: (
@@ -577,7 +579,7 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
 
     const noteSealedOrMarkIncomplete = (
       attempt: Attempt,
-      sealed: SealedAttemptAssertionsV1,
+      sealed: SealedAttemptAssertions,
     ): Effect.Effect<void, never> => Effect.sync(() => {
       const targetSlot = targetSlotForAttempt(attempt);
       if (
@@ -640,20 +642,21 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
         const writes = yield* Effect.sync(() =>
           input.attachments?.attemptWrites?.({ attempt, sealed: active.sealed }) ?? [],
         );
-        const origin = evaluationRecordOriginInputFromAssertionsV1(
+        const origin = evaluationRecordOriginInputFromSealedAssertions(
           targetSlot.slotId,
           active.sealed,
         );
+        if (Either.isLeft(origin)) return yield* Effect.fail(origin.left);
         const plan = yield* EvaluationRecordContractV1.preparePlan({
           startedAt: asUtcMillis(input.startedAt),
           completedAt: asUtcMillis(Date.now()),
           expectedSlots: targetSlot.recordRun.expectedSlots,
           evaluations: targetSlot.recordRun.evaluations,
           originAttempts: [Object.freeze({
-            ...origin,
+            ...origin.right,
             writes: Object.freeze([
               eligibility.right,
-              ...(origin.writes ?? []),
+              ...(origin.right.writes ?? []),
               ...writes,
             ]),
           })],

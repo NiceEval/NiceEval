@@ -4,7 +4,7 @@
 // candidate 交给本模块；因此组合 matcher 不会自行重读证据，也不会把 evaluator defect
 // 折成 mismatch 或 unavailable。
 
-import type { StandardSchemaV1 } from "@standard-schema/spec";
+import type { StandardSchemaV1 as StandardSchema } from "@standard-schema/spec";
 
 import type {
   CommandProjection,
@@ -903,7 +903,7 @@ export function equals<const T>(expected: T): BooleanMatch<unknown, T> {
   });
 }
 
-function isStandardSchema(value: unknown): value is StandardSchemaV1 {
+function isStandardSchema(value: unknown): value is StandardSchema {
   if (!isRecord(value)) return false;
   const standard = value["~standard"];
   return isRecord(standard) && typeof standard.validate === "function";
@@ -920,9 +920,9 @@ function standardIssuePath(value: unknown, label: string): readonly MatchPathSeg
   });
 }
 
-export function matches<S extends StandardSchemaV1>(
+export function matches<S extends StandardSchema>(
   schema: S,
-): BooleanMatch<unknown, StandardSchemaV1.InferInput<S>, "value"> {
+): BooleanMatch<unknown, StandardSchema.InferInput<S>, "value"> {
   if (!isStandardSchema(schema)) throw new TypeError("matches() schema must implement Standard Schema v1");
   const name = "matches(schema)";
   return createBooleanMatch("value", name, async (candidate) => {
@@ -931,7 +931,7 @@ export function matches<S extends StandardSchemaV1>(
 
     if (result.issues === undefined) {
       // Standard Schema output (including transforms) is intentionally ignored: Match refines the original candidate.
-      return matched(candidate as StandardSchemaV1.InferInput<S>, diagnostic("schema-match", `${name} validated the original candidate`));
+      return matched(candidate as StandardSchema.InferInput<S>, diagnostic("schema-match", `${name} validated the original candidate`));
     }
     if (!Array.isArray(result.issues)) throw new TypeError(`${name} schema returned invalid issues`);
 

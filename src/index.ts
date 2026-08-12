@@ -2,17 +2,19 @@
 // Agent/Adapter 相关见 "niceeval/adapter";Sandbox 相关见 "niceeval/sandbox"。
 
 export { defineEval, defineScoreEval, defineConfig, defineExperiment } from "./define.ts";
+export type { AssertionEntryId } from "./assertions/identity.ts";
 
 /** Neutral RecordAttachment projector for the Attempt-owned agent workspace diff. */
-export { agentWorkspaceDiffProjectorV1 } from "./assertions/record/diff.ts";
+export { agentWorkspaceDiffProjector } from "./assertions/record/diff.ts";
 export type {
-  AgentWorkspaceDiffDocumentV1,
-  AgentWorkspaceDiffEndpointV1,
-  AgentWorkspaceDiffHunksV1,
-  AgentWorkspaceDiffPolicyV1,
-  AgentWorkspaceDiffWindowChangeV1,
-  AgentWorkspaceDiffWindowV1,
-} from "./assertions/diff.ts";
+  AgentSendWindowIdentity,
+  AgentWorkspaceDiffEndpoint,
+  AgentWorkspaceDiffHunks,
+  AgentWorkspaceDiffPolicy,
+  AgentWorkspaceDiff,
+  AgentWorkspaceDiffWindow,
+  AgentWorkspaceDiffWindowChange,
+} from "./assertions/workspace-diff.ts";
 export type { PostRunBooleanAssertionHandle } from "./assertions/api.ts";
 
 export { requireEnv, getEnv, stripComments } from "./util.ts";

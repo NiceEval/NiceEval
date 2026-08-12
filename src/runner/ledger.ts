@@ -10,6 +10,7 @@
 // - agent 归因增量 = 逐窗口 delta 序列(DiffWindow[]),不做跨窗口压缩。
 
 import type { DiffArtifact, DiffWindow, Sandbox, WindowChange } from "../types.ts";
+import type { AgentWorkspaceDiffPolicy } from "../assertions/workspace-diff.ts";
 import { sandboxSupportsRootCommands } from "../sandbox/backend.ts";
 import { DEFAULT_LEDGER_GIT_DIR, ledgerPathsFor } from "../sandbox/ledger-paths.ts";
 
@@ -135,11 +136,7 @@ export interface ChangeLedger {
    */
   readonly rootExecutionIdentity: boolean;
   /** Frozen semantic identity consumed by the Attempt-owned diff Attachment. */
-  readonly attribution: {
-    readonly defaultPolicy: "niceeval.sandbox-ledger/default-excludes/v1";
-    readonly include: readonly string[];
-    readonly ignore: readonly string[];
-  };
+  readonly attribution: AgentWorkspaceDiffPolicy;
 }
 
 interface LedgerOptions {
@@ -313,7 +310,7 @@ export async function createChangeLedger(sandbox: Sandbox, opts?: LedgerOptions)
   return {
     rootExecutionIdentity: ordinaryUid === "0",
     attribution: Object.freeze({
-      defaultPolicy: "niceeval.sandbox-ledger/default-excludes/v1" as const,
+      defaultPolicy: "niceeval-default-excludes" as const,
       include: Object.freeze([...includes]),
       ignore: Object.freeze([...(opts?.ignore ?? [])]),
     }),

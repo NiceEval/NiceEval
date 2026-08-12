@@ -32,20 +32,21 @@ import {
   type AssertFirstContextState,
 } from "../context/assert-first.ts";
 import {
-  AssertionAuthoringClosedErrorV1,
+  AssertionAuthoringClosedError,
 } from "../assertions/api.ts";
 import type {
-  AssertionStopErrorV1,
-  AssertionsRuntimeV1,
+  AssertionStopError,
+  AssertionsRuntime,
+  SealedAttemptAssertions,
 } from "../assertions/api.ts";
+import type { AgentWorkspaceDiff } from "../assertions/workspace-diff.ts";
 import {
-  sealAttemptAssertionsV1,
-  type SealedAttemptAssertionsV1,
+  sealAttemptAssertions,
 } from "./assertions.ts";
 import {
-  makeAssertFirstAttemptBridgeV1,
-  type AssertFirstAttemptBridgeV1,
-  type AttemptAuthorCompletionV1,
+  makeAssertFirstAttemptBridge,
+  type AssertFirstAttemptBridge,
+  type AttemptAuthorCompletion,
 } from "./assert-first-bridge.ts";
 import { createAgentSession } from "../context/session.ts";
 import { EvalSkipped } from "../context/control-flow.ts";
@@ -56,10 +57,9 @@ import { t } from "../i18n/index.ts";
 import { describeError, firstLine, formatThrown } from "../util.ts";
 import { createChangeLedger, type ChangeLedger } from "./ledger.ts";
 import {
-  createAgentWorkspaceDiffDocumentV1,
   deriveDiffData,
 } from "../assertions/diff.ts";
-import { createAgentWorkspaceDiffAttachmentWriteV1 } from "../assertions/record/diff.ts";
+import { createAgentWorkspaceDiff } from "../assertions/workspace-diff.ts";
 import { createDirectAgentSandbox } from "./direct-agent-sandbox.ts";
 import { createSandboxCommandTarget, SandboxCommandExitError } from "../sandbox/operations.ts";
 import { inheritSandboxCapabilities } from "../sandbox/backend.ts";
@@ -180,7 +180,7 @@ export interface RunAttemptEffectOptions<SealRequirements = never> {
    * Record session or owns Record I/O itself.
    */
   onSealedEvaluation?: (
-    sealed: SealedAttemptAssertionsV1,
+    sealed: SealedAttemptAssertions,
   ) => Effect.Effect<void, never, SealRequirements>;
   /** 由复用池独占借出的实例；池负责物理 Sandbox 生命周期与最终 stop。 */
   reusedSandbox?: {
@@ -302,10 +302,10 @@ export function runAttemptEffect<
   // Assert-first state becomes visible only after the real TestContext has
   // been constructed. Scope finalization owns the interruption seal so an
   // aborted Attempt cannot leave declared entries unsealed.
-  let liveAssertions: AssertionsRuntimeV1<"pass" | "score"> | undefined;
+  let liveAssertions: AssertionsRuntime<"pass" | "score"> | undefined;
   let liveAssertionState: AssertFirstContextState | undefined;
   let assertionsSealed = false;
-  let timeoutSealedAssertions: SealedAttemptAssertionsV1 | undefined;
+  let timeoutSealedAssertions: SealedAttemptAssertions | undefined;
   // Effect.timeoutTo 的 onTimeout 是同步回调,在中断真正下发给 body fiber(从而触发下面的
   // finalizer 链)之前就已经跑完并同步置位这个标记——下面新增的 finalizer 靠它判断本次 Sample
   // release 是不是超时触发的,只在超时路径补折叠证据,正常收尾路径不重复做(见文件顶部
@@ -506,7 +506,7 @@ export function runAttemptEffect<
       let disposition: "stop" | "keep" = "stop";
       // The bridge owns its Queue worker inside this Attempt Scope. Promise
       // code only offers work; no internal module starts a second runtime.
-      const assertFirst = yield* makeAssertFirstAttemptBridgeV1<unknown>();
+      const assertFirst = yield* makeAssertFirstAttemptBridge<unknown>();
       // 退避重试(runtime.ts → retry.ts)期间临时归还这个名额:被限流的 provider 只是在
       // setTimeout 里睡觉,不该攥着 sandboxSem 的槽位陪跑,不然一批 429 能把整体并发拖成个位数。
       const provisionSlot = {
@@ -794,7 +794,7 @@ export function runAttemptEffect<
               reason: "producer-interrupted" as const,
             });
           }
-          return sealAttemptAssertionsV1(liveAssertions, {
+          return sealAttemptAssertions(liveAssertions, {
             execution: "errored",
             interrupted: true,
           }).pipe(
@@ -821,7 +821,7 @@ export function runAttemptEffect<
             Exit.isFailure(exit) && Cause.isInterruptedOnly(exit.cause)
           );
           return assertFirst.closeEffectRequests(
-            new AssertionAuthoringClosedErrorV1(
+            new AssertionAuthoringClosedError(
               interrupted ? "attempt-interrupted" : "attempt-sealed",
             ),
           );
@@ -905,8 +905,8 @@ export function runAttemptEffect<
         if (Cause.isInterruptedOnly(authorExit.cause)) return yield* Effect.interrupt;
         const failure = Cause.failureOption(authorExit.cause);
         const defect = Cause.dieOption(authorExit.cause);
-        const completion: AttemptAuthorCompletionV1 = Option.isSome(failure)
-          ? isAssertionStopErrorV1(failure.value)
+        const completion: AttemptAuthorCompletion = Option.isSome(failure)
+          ? isAssertionStopError(failure.value)
             ? { _tag: "stopped" }
             : { _tag: "failed", error: failure.value }
           : { _tag: "defect", cause: Option.isSome(defect) ? defect.value : authorExit.cause };
@@ -917,7 +917,7 @@ export function runAttemptEffect<
       // still hold a handle, but it cannot enqueue a new control barrier while
       // this Attempt moves to its single ordered seal.
       yield* assertFirst.closeAssertionRequests(
-        new AssertionAuthoringClosedErrorV1("attempt-sealing"),
+        new AssertionAuthoringClosedError("attempt-sealing"),
       );
 
       const sealRequestExit = yield* Effect.exit(assertFirst.awaitSealRequest());
@@ -927,10 +927,10 @@ export function runAttemptEffect<
       }
 
       const sealExit = yield* Effect.exit(
-          sealAttemptAssertionsV1(
+          sealAttemptAssertions(
             sealRequestExit.value.runtime,
             sealRequestExit.value.options,
-            sealRequestExit.value.additionalAttemptWrites,
+            sealRequestExit.value.workspaceDiff,
         ).pipe(
           Effect.tap(() => Effect.sync(() => {
             assertionsSealed = true;
@@ -1038,7 +1038,7 @@ export function runAttemptEffect<
               ...(commands.length > 0 ? { commands: [...commands] } : {}),
             };
             if (liveAssertions === undefined) return Effect.succeed(fallback);
-            return sealAttemptAssertionsV1(liveAssertions, {
+            return sealAttemptAssertions(liveAssertions, {
               execution: "errored",
             }).pipe(
               Effect.tap(() => Effect.sync(() => {
@@ -1099,7 +1099,7 @@ export function runAttemptEffect<
  * Fact/use graph participates in authoring, evaluation, or sealing.
  */
 function legacyResultProjectionFromSealedAssertions(
-  sealed: SealedAttemptAssertionsV1,
+  sealed: SealedAttemptAssertions,
   error?: AttemptError,
   skipReason?: string,
 ): Pick<EvalResult, "factResults" | "factUses" | "scoreResult"> {
@@ -1178,7 +1178,7 @@ function legacyResultProjectionFromSealedAssertions(
 
 function withSealedAssertions(
   result: EvalResult,
-  sealed: SealedAttemptAssertionsV1,
+  sealed: SealedAttemptAssertions,
 ): EvalResult {
   return {
     ...result,
@@ -1187,10 +1187,10 @@ function withSealedAssertions(
   };
 }
 
-function isAssertionStopErrorV1(value: unknown): value is AssertionStopErrorV1 {
+function isAssertionStopError(value: unknown): value is AssertionStopError {
   return typeof value === "object"
     && value !== null
-    && (value as { readonly _tag?: unknown })._tag === "AssertionStopErrorV1";
+    && (value as { readonly _tag?: unknown })._tag === "AssertionStopError";
 }
 
 /** Runner-originated failures before Fact folding still produce a closed Score terminal outcome. */
@@ -1355,10 +1355,10 @@ interface AttemptResources {
   /** 变更分类账一建好(workspace.baseline 阶段)就登记回外层(超时收尾段折叠 workspace.diff 用)。 */
   registerLedger: (ledger: ChangeLedger) => void;
   /** The outer Effect boundary owns author execution and the one seal. */
-  assertFirst: AssertFirstAttemptBridgeV1<unknown>;
+  assertFirst: AssertFirstAttemptBridge<unknown>;
   /** Registers the Attempt-local runtime and its post-run evidence state for scope sealing. */
   registerAssertions: (
-    runtime: AssertionsRuntimeV1<"pass" | "score">,
+    runtime: AssertionsRuntime<"pass" | "score">,
     state: AssertFirstContextState,
   ) => void;
   /** Run 级 Agent artifact prepare 协调器；仅 Runner 的 agent.ensure 使用。 */
@@ -1720,25 +1720,21 @@ async function runAttemptBody(
       }
     }
     const diff = deriveDiffData(diffWindows);
-    let diffAdditionalAttemptWrites: readonly import("../record/attachment/index.ts").RecordAttachmentWrite<
-      "attempt",
-      never,
-      never
-    >[] = Object.freeze([]);
+    let workspaceDiff: AgentWorkspaceDiff | undefined;
     if (usesSandbox && ledger && diffArtifactAvailable && !skipReason) {
-      // This is the one export/freeze point. The Attachment writer captures
-      // this exact object and post-run Assertion closures read this same
-      // object through `state.late.diff`; neither side rebuilds a diff.
+      // This is the one export/freeze point. Post-run Assertion closures and
+      // the later Evaluation Record adapter share this exact object; neither
+      // side rebuilds a diff.
       try {
-        const document = createAgentWorkspaceDiffDocumentV1({
+        const document = createAgentWorkspaceDiff({
           windows: diffWindows,
           policy: ledger.attribution,
         });
-        const attachmentWrite = createAgentWorkspaceDiffAttachmentWriteV1(document);
-        state.late.diff = Object.freeze({ state: "available" as const, document });
-        diffAdditionalAttemptWrites = Object.freeze([
-          attachmentWrite,
-        ]);
+        state.late.diff = Object.freeze({
+          state: "available" as const,
+          document,
+        });
+        workspaceDiff = document;
       } catch (diffError) {
         diffArtifactAvailable = false;
         state.late.diff = Object.freeze({
@@ -1787,7 +1783,7 @@ async function runAttemptBody(
         execution: error === undefined ? "completed" : "errored",
         explicitlySkipped: skipReason !== undefined,
       },
-      additionalAttemptWrites: diffAdditionalAttemptWrites,
+      ...(workspaceDiff === undefined ? {} : { workspaceDiff }),
     }));
     const verdict = sealedAssertions.verdict.state;
 
@@ -1914,7 +1910,7 @@ async function runAttemptBody(
     // If setup failed before Context construction, release the outer Effect
     // boundary instead of leaving it waiting for a Context that cannot exist.
     await assertFirst.requestEffect(assertFirst.failBeforeContext(e));
-    let sealed: SealedAttemptAssertionsV1 | undefined;
+    let sealed: SealedAttemptAssertions | undefined;
     if (assertionState !== undefined) {
       if (assertionState.late.diff.state === "pending") {
         assertionState.late.diff = Object.freeze({

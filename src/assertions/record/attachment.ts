@@ -10,6 +10,16 @@ import {
   type RecordBlobRef,
   type RecordBlobSource,
 } from "../../record/attachment/index.ts";
+import type {
+  AssertionCoverage,
+  AssertionCriterion,
+  AssertionLimitation,
+  AssertionMaterial,
+  AssertionResult,
+  AssertionSnapshotObject,
+  AssertionSnapshotValue,
+  SealedAssertionEntry,
+} from "../api.ts";
 import {
   defineBuiltinJsonRecordAttachment,
 } from "../../record/attachment/internal.ts";
@@ -32,10 +42,15 @@ import type {
   AssertionEntryId,
   AssertionEntryV1,
   AssertionEntryOuterV1,
+  AssertionCoverageV1,
+  AssertionLimitationV1,
   AssertionMaterialV1,
   AssertionsDocumentOuterV1,
   AssertionsProjectionV1,
+  BoundedJsonObjectV1,
   BoundedJsonValueV1,
+  SealedAssertionResultV1,
+  WritableCriterionEnvelopeV1,
 } from "./model.ts";
 
 /**
@@ -145,6 +160,254 @@ export interface AssertionsAttachmentEntryInputV1<E, R> {
   readonly coverage: AssertionEntryInputV1<RecordBlobRef>["coverage"];
   readonly limitations: AssertionEntryInputV1<RecordBlobRef>["limitations"];
   readonly result: AssertionEntryInputV1<RecordBlobRef>["result"];
+}
+
+function encodeSnapshotValueV1(value: AssertionSnapshotValue): BoundedJsonValueV1 {
+  if (value === null || typeof value === "boolean" || typeof value === "number" || typeof value === "string") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return Object.freeze(value.map(encodeSnapshotValueV1));
+  }
+  const encoded: globalThis.Record<string, BoundedJsonValueV1> = {};
+  for (const [key, nested] of Object.entries(value)) {
+    encoded[key] = encodeSnapshotValueV1(nested);
+  }
+  return Object.freeze(encoded);
+}
+
+function encodeSnapshotObjectV1(value: AssertionSnapshotObject): BoundedJsonObjectV1 {
+  const encoded: globalThis.Record<string, BoundedJsonValueV1> = {};
+  for (const [key, nested] of Object.entries(value)) {
+    encoded[key] = encodeSnapshotValueV1(nested);
+  }
+  return Object.freeze(encoded);
+}
+
+function encodeCriterionV1(criterion: AssertionCriterion): WritableCriterionEnvelopeV1 {
+  switch (criterion.kind) {
+    case "value-match":
+      return Object.freeze({
+        kind: "builtin" as const,
+        id: "value-match/v1" as const,
+        data: Object.freeze({ subject: criterion.subject }),
+      });
+    case "scope-status":
+      return Object.freeze({
+        kind: "builtin" as const,
+        id: "scope-status/v1" as const,
+        data: Object.freeze({ scope: criterion.scope, assertion: criterion.assertion }),
+      });
+    case "occurrence":
+      return Object.freeze({
+        kind: "builtin" as const,
+        id: "occurrence/v1" as const,
+        data: Object.freeze({
+          scope: criterion.scope,
+          occurrence: criterion.occurrence,
+          assertion: criterion.assertion,
+          ...(criterion.matcher === undefined ? {} : { matcher: criterion.matcher }),
+          ...(criterion.quantifier === undefined
+            ? {}
+            : {
+                quantifier: criterion.quantifier.kind === "absent"
+                  ? Object.freeze({ kind: "absent" as const })
+                  : Object.freeze({ kind: criterion.quantifier.kind, count: criterion.quantifier.count }),
+              }),
+        }),
+      });
+    case "judge-measurement":
+      return Object.freeze({
+        kind: "builtin" as const,
+        id: "judge-measurement/v1" as const,
+        data: Object.freeze({ recipe: criterion.recipe, scale: criterion.scale }),
+      });
+    case "sandbox-result": {
+      switch (criterion.operation) {
+        case "changed-paths":
+          return Object.freeze({
+            kind: "builtin" as const,
+            id: "sandbox-result/v1" as const,
+            data: Object.freeze({ operation: "changed-paths" as const, paths: Object.freeze([...criterion.paths]) }),
+          });
+        case "no-changes":
+          return Object.freeze({
+            kind: "builtin" as const,
+            id: "sandbox-result/v1" as const,
+            data: Object.freeze({ operation: "no-changes" as const }),
+          });
+        case "file-changed":
+          return Object.freeze({
+            kind: "builtin" as const,
+            id: "sandbox-result/v1" as const,
+            data: Object.freeze({
+              operation: "file-changed" as const,
+              path: criterion.path,
+              ...(criterion.status === undefined ? {} : { status: criterion.status }),
+              ...(criterion.before === undefined ? {} : { before: criterion.before }),
+              ...(criterion.after === undefined ? {} : { after: criterion.after }),
+            }),
+          });
+        case "file-deleted":
+          return Object.freeze({
+            kind: "builtin" as const,
+            id: "sandbox-result/v1" as const,
+            data: Object.freeze({ operation: "file-deleted" as const, path: criterion.path }),
+          });
+        case "not-in-diff":
+          return Object.freeze({
+            kind: "builtin" as const,
+            id: "sandbox-result/v1" as const,
+            data: Object.freeze({
+              operation: "not-in-diff" as const,
+              pattern: criterion.pattern,
+              flags: criterion.flags,
+              content: criterion.content,
+            }),
+          });
+      }
+    }
+    case "direct-score":
+      return Object.freeze({
+        kind: "builtin" as const,
+        id: "direct-score/v1" as const,
+        data: Object.freeze({ source: criterion.source }),
+      });
+    case "third-party":
+      return Object.freeze({
+        name: criterion.name,
+        schemaId: criterion.schemaId,
+        data: encodeSnapshotValueV1(criterion.data),
+      });
+  }
+}
+
+function encodeMaterialV1(
+  material: AssertionMaterial,
+): AssertionMaterialInputV1<never, never> {
+  switch (material.kind) {
+    case "snapshot":
+      return Object.freeze({
+        kind: "snapshot" as const,
+        value: encodeSnapshotValueV1(material.value),
+      });
+    case "record-attachment":
+      return Object.freeze({
+        kind: "record-attachment" as const,
+        schemaId: "niceeval.diff/v1" as const,
+        preview: material.preview,
+      });
+  }
+}
+
+function encodeCoverageV1(coverage: AssertionCoverage): AssertionCoverageV1 {
+  switch (coverage.state) {
+    case "complete":
+      return Object.freeze({ state: "complete" as const });
+    case "partial":
+      return Object.freeze({ state: "partial" as const, reason: coverage.reason });
+    case "unavailable":
+      return Object.freeze({ state: "unavailable" as const, reason: coverage.reason });
+    case "not-applicable":
+      return Object.freeze({ state: "not-applicable" as const, reason: coverage.reason });
+  }
+}
+
+function encodeLimitationsV1(
+  limitations: readonly AssertionLimitation[],
+): readonly AssertionLimitationV1[] {
+  return Object.freeze(limitations.map((limitation): AssertionLimitationV1 => {
+    switch (limitation.kind) {
+      case "redacted":
+        return Object.freeze({ kind: "redacted" as const, fieldCount: limitation.fieldCount });
+      case "sampled":
+        return Object.freeze({
+          kind: "sampled" as const,
+          captured: limitation.captured,
+          ...(limitation.knownTotal === undefined ? {} : { knownTotal: limitation.knownTotal }),
+        });
+      case "truncated":
+        return Object.freeze({ kind: "truncated" as const, omittedBytes: limitation.omittedBytes });
+      case "provider-limited":
+        return Object.freeze({ kind: "provider-limited" as const });
+    }
+  }));
+}
+
+export function encodeAssertionResultV1(result: AssertionResult): SealedAssertionResultV1 {
+  const diagnostic = result.diagnostic === undefined
+    ? {}
+    : { diagnostic: encodeSnapshotObjectV1(result.diagnostic) };
+  switch (result.state) {
+    case "matched":
+      return Object.freeze({
+        state: "matched" as const,
+        gate: result.gate,
+        score: result.score.state === "earned"
+          ? Object.freeze({ state: "earned" as const, points: result.score.points, earned: result.score.earned })
+          : Object.freeze({ state: "not-scored" as const }),
+        ...diagnostic,
+      });
+    case "mismatched":
+      return Object.freeze({
+        state: "mismatched" as const,
+        reason: result.reason,
+        gate: result.gate,
+        score: result.score.state === "earned"
+          ? Object.freeze({ state: "earned" as const, points: result.score.points, earned: result.score.earned })
+          : Object.freeze({ state: "not-scored" as const }),
+        ...diagnostic,
+      });
+    case "unavailable":
+      return Object.freeze({
+        state: "unavailable" as const,
+        reason: result.reason,
+        gate: result.gate,
+        score: result.score.state === "unavailable"
+          ? Object.freeze({ state: "unavailable" as const, points: result.score.points, reason: result.score.reason })
+          : Object.freeze({ state: "not-scored" as const }),
+        ...diagnostic,
+      });
+    case "errored":
+      return Object.freeze({
+        state: "errored" as const,
+        reason: result.reason,
+        gate: result.gate,
+        score: result.score.state === "unavailable"
+          ? Object.freeze({ state: "unavailable" as const, points: result.score.points, reason: result.score.reason })
+          : Object.freeze({ state: "not-scored" as const }),
+        ...diagnostic,
+      });
+    case "not-applicable":
+      return Object.freeze({
+        state: "not-applicable" as const,
+        reason: result.reason,
+        gate: result.gate,
+        score: result.score.state === "unavailable"
+          ? Object.freeze({ state: "unavailable" as const, points: result.score.points, reason: result.score.reason })
+          : Object.freeze({ state: "not-scored" as const }),
+        ...diagnostic,
+      });
+  }
+}
+
+/** Private Runtime → durable Assertions codec bridge. */
+export function encodeSealedAssertionEntryV1(
+  entry: SealedAssertionEntry,
+): AssertionsAttachmentEntryInputV1<never, never> {
+  return Object.freeze({
+    display: Object.freeze({
+      ...(entry.display.key === undefined ? {} : { key: entry.display.key }),
+      ...(entry.display.label === undefined ? {} : { label: entry.display.label }),
+      groupPath: Object.freeze([...entry.display.groupPath]),
+    }),
+    criterion: encodeCriterionV1(entry.criterion),
+    subject: encodeMaterialV1(entry.subject),
+    evidence: Object.freeze(entry.evidence.map(encodeMaterialV1)),
+    coverage: encodeCoverageV1(entry.coverage),
+    limitations: encodeLimitationsV1(entry.limitations),
+    result: encodeAssertionResultV1(entry.result),
+  });
 }
 
 export interface AssertionsAttachmentProducerV1<E, R> {

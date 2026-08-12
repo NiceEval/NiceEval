@@ -1,13 +1,24 @@
+import { randomBytes } from "node:crypto";
+
 import { Effect, Either, Schema } from "effect";
 import {
   assertionsAttachmentDefinitionV1,
+  createAssertionsAttachmentProducerV1,
+  encodeAssertionResultV1,
+  encodeSealedAssertionEntryV1,
 } from "../../assertions/record/attachment.ts";
 import {
   agentWorkspaceDiffAttachmentDefinitionV1,
+  createAgentWorkspaceDiffAttachmentWriteV1,
 } from "../../assertions/record/diff.ts";
 import type {
+  SealedAssertionEvaluation,
+  SealedAttemptAssertions,
+} from "../../assertions/api.ts";
+import type { AssertionsProducerErrorV1 } from "../../assertions/record/producer.ts";
+import type {
   AgentWorkspaceDiffDocumentV1,
-} from "../../assertions/diff.ts";
+} from "../../assertions/record/diff-model.ts";
 import type {
   AssertionsDocumentOuterV1,
   SealedAssertionResultV1,
@@ -48,12 +59,14 @@ import {
 } from "./sealed-assertion.ts";
 import {
   buildScoreAttachmentWriteV1,
+  buildScorePayloadV1,
   decodeScorePayloadV1,
   type ScorePayloadBuildErrorV1,
   type ScorePayloadV1,
 } from "./score.ts";
 import {
   buildVerdictAttachmentWriteV1,
+  buildVerdictPayloadV1,
   decodeVerdictPayloadV1,
   type VerdictPayloadV1,
 } from "./verdict.ts";
@@ -78,6 +91,107 @@ export interface EvaluationRecordOriginAttemptInputV1<
     Error,
     Requirements
   >[];
+}
+
+/**
+ * Runtime assertions reach durable storage only here. This adapter owns both
+ * entry-ID allocation and the v1 Attachment codecs; Runner keeps only the
+ * schema-independent sealed value.
+ */
+export type SealedAssertionsOriginEncodingError =
+  | {
+      readonly code: "assertions-attachment-invalid";
+      readonly issue: AssertionsProducerErrorV1;
+    }
+  | {
+      readonly code: "score-payload-invalid";
+      readonly issue: ScorePayloadBuildErrorV1;
+    }
+  | {
+      readonly code: "workspace-diff-attachment-invalid";
+      readonly message: string;
+    };
+
+function assertionEntryId(): string {
+  return `ae_${randomBytes(10).toString("hex")}`;
+}
+
+function evaluationFactsFromSealedAssertions(
+  evaluation: SealedAssertionEvaluation,
+): EvaluationAttemptFactsV1 {
+  return Object.freeze({
+    execution: evaluation.execution,
+    explicitlySkipped: evaluation.explicitlySkipped,
+    assertions: Object.freeze(evaluation.assertions.map((assertion) => Object.freeze({
+      required: assertion.required,
+      result: encodeAssertionResultV1(assertion.result),
+    }))),
+  });
+}
+
+/**
+ * Encodes an already sealed runtime value at the Evaluation Record boundary.
+ * No author/runtime or Runner module receives an Attachment write or durable
+ * document while constructing the semantic attempt result.
+ */
+export function evaluationRecordOriginInputFromSealedAssertions(
+  slotId: SlotId,
+  sealed: SealedAttemptAssertions,
+): Either.Either<
+  EvaluationRecordOriginAttemptInputV1,
+  SealedAssertionsOriginEncodingError
+> {
+  const producer = createAssertionsAttachmentProducerV1<never, never>({
+    entryIds: { next: assertionEntryId },
+  });
+  for (const entry of sealed.entries) {
+    const appended = producer.append(encodeSealedAssertionEntryV1(entry));
+    if (Either.isLeft(appended)) {
+      return Either.left(Object.freeze({
+        code: "assertions-attachment-invalid" as const,
+        issue: appended.left,
+      }));
+    }
+  }
+  const assertions = producer.seal();
+  if (Either.isLeft(assertions)) {
+    return Either.left(Object.freeze({
+      code: "assertions-attachment-invalid" as const,
+      issue: assertions.left,
+    }));
+  }
+
+  const facts = evaluationFactsFromSealedAssertions(sealed.evaluation);
+  const score = sealed.score === undefined ? undefined : buildScorePayloadV1(facts);
+  if (score !== undefined && Either.isLeft(score)) {
+    return Either.left(Object.freeze({
+      code: "score-payload-invalid" as const,
+      issue: score.left,
+    }));
+  }
+
+  let writes: readonly RecordAttachmentWrite<"attempt", never, never>[] = Object.freeze([]);
+  if (sealed.workspaceDiff !== undefined) {
+    try {
+      writes = Object.freeze([
+        createAgentWorkspaceDiffAttachmentWriteV1(sealed.workspaceDiff),
+      ]);
+    } catch (error) {
+      return Either.left(Object.freeze({
+        code: "workspace-diff-attachment-invalid" as const,
+        message: error instanceof Error ? error.message : String(error),
+      }));
+    }
+  }
+
+  return Either.right(Object.freeze({
+    slotId,
+    facts,
+    assertions: assertions.right,
+    verdict: buildVerdictPayloadV1(facts),
+    ...(score === undefined ? {} : { score: score.right }),
+    ...(writes.length === 0 ? {} : { writes }),
+  }));
 }
 
 /** A reference Member explicitly carries the exact frozen source capability. */

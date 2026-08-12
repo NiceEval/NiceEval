@@ -2,26 +2,35 @@ import { Cause, Deferred, Effect } from "effect";
 
 import {
   assertionHandleBrand,
-  AssertionAuthoringClosedErrorV1,
-  type AssertionEvaluationKindV1,
-  type AssertionSealErrorV1,
-  type AssertionSealOptionsV1,
-  type AssertionRuntimeMaterialV1,
-  type AssertionSnapshotMaterialV1,
-  type AssertionStopErrorV1,
-  type AssertionStopExecutorV1,
-  type AssertionsContextV1,
-  type AssertionsRuntimeV1,
-  type BooleanAssertionHandleV1,
-  type BooleanAssertionEvaluationV1,
-  type BooleanAssertionRegistrationV1,
-  type MeasurementAssertionEvaluationV1,
-  type MeasurementAssertionRegistrationV1,
-  type PassBooleanAssertionHandleV1,
-  type PostRunBooleanAssertionHandleV1,
-  type ScoreBooleanAssertionHandleV1,
-  type SealedAssertionEvaluationV1,
-  type SealedAssertionsRuntimeV1,
+  AssertionAuthoringClosedError,
+  type AssertionCoverage,
+  type AssertionCriterion,
+  type AssertionDisplay,
+  type AssertionEvaluationKind,
+  type AssertionLimitation,
+  type AssertionMaterial,
+  type AssertionResult,
+  type AssertionScoreContribution,
+  type AssertionSealError,
+  type AssertionSealOptions,
+  type AssertionSnapshotObject,
+  type AssertionSnapshotValue,
+  type AssertionStopError,
+  type AssertionStopExecutor,
+  type AssertionsContext,
+  type AssertionsRuntime,
+  type BooleanAssertionHandle,
+  type BooleanAssertionEvaluation,
+  type BooleanAssertionRegistration,
+  type CapturedAssertionSnapshot,
+  type MeasurementAssertionEvaluation,
+  type MeasurementAssertionRegistration,
+  type PassBooleanAssertionHandle,
+  type PostRunBooleanAssertionHandle,
+  type ScoreBooleanAssertionHandle,
+  type SealedAssertionEntry,
+  type SealedAssertionEvaluation,
+  type SealedAssertionsRuntime,
 } from "./api.ts";
 import {
   assertManagedValueMatch,
@@ -31,30 +40,7 @@ import {
   type MatchDiagnostic,
   type ScoreMatch,
 } from "./match.ts";
-import type {
-  AssertionsAttachmentEntryInputV1,
-} from "./record/attachment.ts";
-import {
-  MAX_ASSERTION_DISPLAY_CODE_POINTS_V1,
-  MAX_ASSERTION_ENTRIES_V1,
-  MAX_ASSERTION_GROUP_DEPTH_V1,
-  MAX_ASSERTION_JSON_ARRAY_ITEMS_V1,
-  MAX_ASSERTION_JSON_DEPTH_V1,
-  MAX_ASSERTION_JSON_OBJECT_KEYS_V1,
-  MAX_ASSERTION_STRING_BYTES_V1,
-} from "./record/codec.ts";
-import type {
-  AssertionCoverageV1 as RecordAssertionCoverageV1,
-  AssertionDisplayV1,
-  AssertionLimitationV1,
-  BoundedJsonObjectV1,
-  BoundedJsonValueV1,
-  EarnedScoreContributionV1,
-  NoScoreContributionV1,
-  SealedAssertionResultV1,
-  UnavailableScoreContributionV1,
-  WritableCriterionEnvelopeV1,
-} from "./record/model.ts";
+import { assertionRuntimeLimits } from "./limits.ts";
 
 const UTF8 = new TextEncoder();
 
@@ -87,11 +73,11 @@ type EntrySettlement =
 interface AssertionEntry {
   readonly index: number;
   readonly kind: EntryKind;
-  readonly criterion: WritableCriterionEnvelopeV1;
-  readonly subject: AssertionRuntimeMaterialV1;
-  readonly evidence: readonly AssertionRuntimeMaterialV1[];
-  readonly initialCoverage: RecordAssertionCoverageV1;
-  readonly initialLimitations: readonly AssertionLimitationV1[];
+  readonly criterion: AssertionCriterion;
+  readonly subject: AssertionMaterial;
+  readonly evidence: readonly AssertionMaterial[];
+  readonly initialCoverage: AssertionCoverage;
+  readonly initialLimitations: readonly AssertionLimitation[];
   readonly evaluate: () => Effect.Effect<EntrySettlement, unknown, never>;
   readonly display: {
     key: string | undefined;
@@ -107,25 +93,21 @@ interface AssertionEntry {
   pending: Deferred.Deferred<EntrySettlement> | undefined;
 }
 
-export interface CapturedAssertionSnapshotV1 {
-  readonly material: AssertionSnapshotMaterialV1;
-  readonly coverage: RecordAssertionCoverageV1;
-  readonly limitations: readonly AssertionLimitationV1[];
-}
-
 interface SnapshotState {
   truncated: boolean;
   omittedBytes: number;
   readonly seen: WeakSet<object>;
 }
 
-type AvailableScoreContribution =
-  | NoScoreContributionV1
-  | EarnedScoreContributionV1;
+type AvailableScoreContribution = Extract<
+  AssertionScoreContribution,
+  { readonly state: "not-scored" | "earned" }
+>;
 
-type IncompleteScoreContribution =
-  | NoScoreContributionV1
-  | UnavailableScoreContributionV1;
+type IncompleteScoreContribution = Extract<
+  AssertionScoreContribution,
+  { readonly state: "not-scored" | "unavailable" }
+>;
 
 function isRecord(value: unknown): value is globalThis.Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -150,14 +132,14 @@ function assertDisplayText(value: unknown, owner: string): asserts value is stri
   if (/\p{Cc}/u.test(value)) {
     throw new TypeError(`${owner} must not contain control characters`);
   }
-  if (Array.from(value).length > MAX_ASSERTION_DISPLAY_CODE_POINTS_V1) {
+  if (Array.from(value).length > assertionRuntimeLimits.displayCodePoints) {
     throw new TypeError(
-      `${owner} must be at most ${MAX_ASSERTION_DISPLAY_CODE_POINTS_V1} code points`,
+      `${owner} must be at most ${assertionRuntimeLimits.displayCodePoints} code points`,
     );
   }
 }
 
-function marker(value: string): BoundedJsonObjectV1 {
+function marker(value: string): AssertionSnapshotObject {
   return Object.freeze({ $niceeval: value });
 }
 
@@ -172,13 +154,13 @@ function markTruncated(state: SnapshotState, bytes = 1): void {
 
 function boundedSnapshotString(value: string, state: SnapshotState): string {
   const bytes = omittedBytes(value);
-  if (bytes <= MAX_ASSERTION_STRING_BYTES_V1) return value;
+  if (bytes <= assertionRuntimeLimits.stringBytes) return value;
 
   let retainedBytes = 0;
   let retainedEnd = 0;
   for (const point of value) {
     const pointBytes = omittedBytes(point);
-    if (retainedBytes + pointBytes > MAX_ASSERTION_STRING_BYTES_V1) break;
+    if (retainedBytes + pointBytes > assertionRuntimeLimits.stringBytes) break;
     retainedBytes += pointBytes;
     retainedEnd += point.length;
   }
@@ -192,7 +174,7 @@ function boundedSnapshotKey(
   existing: ReadonlySet<string>,
   state: SnapshotState,
 ): string {
-  if (omittedBytes(key) <= MAX_ASSERTION_STRING_BYTES_V1) return key;
+  if (omittedBytes(key) <= assertionRuntimeLimits.stringBytes) return key;
 
   markTruncated(state, omittedBytes(key));
   let replacement = `$niceeval:truncated-key:${index}`;
@@ -213,7 +195,7 @@ function boundedSnapshotValue(
   value: unknown,
   depth: number,
   state: SnapshotState,
-): BoundedJsonValueV1 {
+): AssertionSnapshotValue {
   if (value === null || typeof value === "boolean") return value;
 
   if (typeof value === "number") {
@@ -236,7 +218,7 @@ function boundedSnapshotValue(
     return marker(typeof value);
   }
 
-  if (depth >= MAX_ASSERTION_JSON_DEPTH_V1) {
+  if (depth >= assertionRuntimeLimits.jsonDepth) {
     markTruncated(state);
     return marker("depth-truncated");
   }
@@ -248,9 +230,9 @@ function boundedSnapshotValue(
   state.seen.add(value);
 
   if (Array.isArray(value)) {
-    const length = Math.min(value.length, MAX_ASSERTION_JSON_ARRAY_ITEMS_V1);
+    const length = Math.min(value.length, assertionRuntimeLimits.jsonArrayItems);
     if (length < value.length) markTruncated(state, value.length - length);
-    const entries: BoundedJsonValueV1[] = [];
+    const entries: AssertionSnapshotValue[] = [];
     for (let index = 0; index < length; index += 1) {
       try {
         const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
@@ -288,9 +270,9 @@ function boundedSnapshotValue(
     markTruncated(state);
     return marker("uninspectable-object");
   }
-  const length = Math.min(keys.length, MAX_ASSERTION_JSON_OBJECT_KEYS_V1);
+  const length = Math.min(keys.length, assertionRuntimeLimits.jsonObjectKeys);
   if (length < keys.length) markTruncated(state, keys.length - length);
-  const entries: Array<readonly [string, BoundedJsonValueV1]> = [];
+  const entries: Array<readonly [string, AssertionSnapshotValue]> = [];
   const reservedKeys = new Set(keys);
   for (let index = 0; index < length; index += 1) {
     const key = keys[index];
@@ -316,14 +298,14 @@ function boundedSnapshotValue(
   return Object.freeze(Object.fromEntries(entries));
 }
 
-export function captureAssertionSnapshotV1(value: unknown): CapturedAssertionSnapshotV1 {
+export function captureAssertionSnapshot(value: unknown): CapturedAssertionSnapshot {
   const state: SnapshotState = {
     truncated: false,
     omittedBytes: 0,
     seen: new WeakSet<object>(),
   };
   const snapshot = boundedSnapshotValue(value, 0, state);
-  const material: AssertionSnapshotMaterialV1 = Object.freeze({
+  const material: Extract<AssertionMaterial, { readonly kind: "snapshot" }> = Object.freeze({
     kind: "snapshot",
     value: snapshot,
   });
@@ -355,12 +337,12 @@ function captureMatchDiagnostic(
   value: MatchDiagnostic | undefined,
   depth = 0,
   seen = new WeakSet<object>(),
-): BoundedJsonObjectV1 | undefined {
+): AssertionSnapshotObject | undefined {
   if (value === undefined) return undefined;
-  if (depth >= MAX_ASSERTION_JSON_DEPTH_V1 || seen.has(value)) {
+  if (depth >= assertionRuntimeLimits.jsonDepth || seen.has(value)) {
     return Object.freeze({
       code: "diagnostic-truncated",
-      message: depth >= MAX_ASSERTION_JSON_DEPTH_V1
+      message: depth >= assertionRuntimeLimits.jsonDepth
         ? "matcher diagnostic exceeded the persisted depth limit"
         : "matcher diagnostic contained a cycle",
       path: Object.freeze([]),
@@ -372,7 +354,7 @@ function captureMatchDiagnostic(
       const state: SnapshotState = { truncated: false, omittedBytes: 0, seen: new WeakSet<object>() };
       return boundedSnapshotString(input, state);
     };
-    const output: globalThis.Record<string, BoundedJsonValueV1> = {
+    const output: globalThis.Record<string, AssertionSnapshotValue> = {
       code: text(value.code),
       message: text(value.message),
       path: Object.freeze(value.path.map((segment) => typeof segment === "string" ? text(segment) : segment)),
@@ -386,9 +368,9 @@ function captureMatchDiagnostic(
         : Object.freeze({ kind: "tool-occurrence", id: text(value.locator.id) });
     }
     if (value.children !== undefined) {
-      const children: BoundedJsonValueV1[] = [];
-      for (const child of value.children.slice(0, MAX_ASSERTION_JSON_ARRAY_ITEMS_V1)) {
-        const entry: globalThis.Record<string, BoundedJsonValueV1> = {
+      const children: AssertionSnapshotValue[] = [];
+      for (const child of value.children.slice(0, assertionRuntimeLimits.jsonArrayItems)) {
+        const entry: globalThis.Record<string, AssertionSnapshotValue> = {
           index: child.index,
           state: child.state,
         };
@@ -405,48 +387,46 @@ function captureMatchDiagnostic(
   }
 }
 
-function freezeRuntimeMaterial(
-  material: AssertionRuntimeMaterialV1,
-): AssertionRuntimeMaterialV1 {
+function freezeAssertionMaterial(
+  material: AssertionMaterial,
+): AssertionMaterial {
   if (material.kind === "snapshot") {
     return Object.freeze({ kind: "snapshot", value: material.value });
   }
-  if (
-    material.schemaId !== "niceeval.diff/v1"
-    || typeof material.preview !== "string"
-    || material.preview.trim() === ""
-  ) {
-    throw new TypeError("record-attachment material must be the exact niceeval.diff/v1 reference with a preview");
+  if (typeof material.preview !== "string" || material.preview.trim() === "") {
+    throw new TypeError("record-attachment material requires a non-empty preview");
   }
   return Object.freeze({
     kind: "record-attachment",
-    schemaId: material.schemaId,
     preview: material.preview,
   });
 }
 
-function cloneCoverage(coverage: RecordAssertionCoverageV1): RecordAssertionCoverageV1 {
+function cloneCoverage(coverage: AssertionCoverage): AssertionCoverage {
   return Object.freeze({ ...coverage });
 }
 
 function cloneLimitations(
-  limitations: readonly AssertionLimitationV1[],
-): readonly AssertionLimitationV1[] {
+  limitations: readonly AssertionLimitation[],
+): readonly AssertionLimitation[] {
   return Object.freeze(limitations.map((limitation) => Object.freeze({ ...limitation })));
 }
 
-function noScore(): NoScoreContributionV1 {
+function noScore(): Extract<AssertionScoreContribution, { readonly state: "not-scored" }> {
   return Object.freeze({ state: "not-scored" as const });
 }
 
-function earnedScore(points: number, earned: number): EarnedScoreContributionV1 {
+function earnedScore(
+  points: number,
+  earned: number,
+): Extract<AssertionScoreContribution, { readonly state: "earned" }> {
   return Object.freeze({ state: "earned" as const, points, earned });
 }
 
 function unavailableScore(
   points: number,
-  reason: UnavailableScoreContributionV1["reason"],
-): UnavailableScoreContributionV1 {
+  reason: Extract<AssertionScoreContribution, { readonly state: "unavailable" }>["reason"],
+): Extract<AssertionScoreContribution, { readonly state: "unavailable" }> {
   return Object.freeze({ state: "unavailable" as const, points, reason });
 }
 
@@ -499,11 +479,11 @@ class BooleanHandle extends HandleBase {
   }
 }
 
-function isScoreBooleanAssertionHandleV1<Refined>(
+function isScoreBooleanAssertionHandle<Refined>(
   handle:
-    | PassBooleanAssertionHandleV1<Refined>
-    | ScoreBooleanAssertionHandleV1<Refined>,
-): handle is ScoreBooleanAssertionHandleV1<Refined> {
+    | PassBooleanAssertionHandle<Refined>
+    | ScoreBooleanAssertionHandle<Refined>,
+): handle is ScoreBooleanAssertionHandle<Refined> {
   return "score" in handle && typeof handle.score === "function";
 }
 
@@ -513,13 +493,13 @@ function isScoreBooleanAssertionHandleV1<Refined>(
  * JavaScript boundary too: a cast must not recover `orStop()` and force a
  * deferred producer to evaluate before its Attempt has frozen its evidence.
  */
-export function postRunBooleanAssertionHandleV1<
-  Kind extends AssertionEvaluationKindV1,
+export function postRunBooleanAssertionHandle<
+  Kind extends AssertionEvaluationKind,
   Refined,
 >(
-  handle: BooleanAssertionHandleV1<Kind, Refined>,
+  handle: BooleanAssertionHandle<Kind, Refined>,
   evaluationKind: Kind,
-): PostRunBooleanAssertionHandleV1<Kind, Refined> {
+): PostRunBooleanAssertionHandle<Kind, Refined> {
   const view = Object.create(null) as object;
   const descriptor = (value: unknown): PropertyDescriptor => ({
     value,
@@ -557,7 +537,7 @@ export function postRunBooleanAssertionHandleV1<
     }),
     ...(evaluationKind === "score"
       ? (() => {
-          if (!isScoreBooleanAssertionHandleV1(handle)) {
+          if (!isScoreBooleanAssertionHandle(handle)) {
             throw new Error("Score post-run Boolean Assertion received a non-score handle");
           }
           return {
@@ -570,7 +550,7 @@ export function postRunBooleanAssertionHandleV1<
       : {}),
   });
   assertionHandleRegistry.add(view);
-  return Object.freeze(view) as PostRunBooleanAssertionHandleV1<Kind, Refined>;
+  return Object.freeze(view) as PostRunBooleanAssertionHandle<Kind, Refined>;
 }
 
 class MeasurementHandle extends HandleBase {
@@ -606,16 +586,16 @@ class DirectScoreHandle extends HandleBase {
 }
 
 class AssertionsRuntimeImplementation {
-  readonly t: AssertionsContextV1<AssertionEvaluationKindV1>;
+  readonly t: AssertionsContext<AssertionEvaluationKind>;
   private readonly entries: AssertionEntry[] = [];
   private readonly groupStack: string[] = [];
-  private stopped: AssertionStopErrorV1 | undefined;
+  private stopped: AssertionStopError | undefined;
   private closing = false;
-  private sealed: SealedAssertionsRuntimeV1 | undefined;
+  private sealed: SealedAssertionsRuntime | undefined;
 
   constructor(
-    readonly evaluationKind: AssertionEvaluationKindV1,
-    private readonly executeStop: AssertionStopExecutorV1,
+    readonly evaluationKind: AssertionEvaluationKind,
+    private readonly executeStop: AssertionStopExecutor,
   ) {
     const base = {
       evaluationKind,
@@ -626,7 +606,7 @@ class AssertionsRuntimeImplementation {
       evaluationKind === "score"
         ? { ...base, score: this.directScore.bind(this) }
         : base,
-    ) as AssertionsContextV1<AssertionEvaluationKindV1>;
+    ) as AssertionsContext<AssertionEvaluationKind>;
   }
 
   check<Value, Refined extends Value>(
@@ -643,15 +623,11 @@ class AssertionsRuntimeImplementation {
       throw new TypeError("t.check() cannot use an AssertionHandle as a subject");
     }
     const managed = assertManagedValueMatch(match, "t.check() match");
-    const captured = captureAssertionSnapshotV1(value);
+    const captured = captureAssertionSnapshot(value);
     if (managed.kind === "boolean") {
       const entry = this.createEntry({
         kind: "boolean",
-        criterion: Object.freeze({
-          kind: "builtin" as const,
-          id: "value-match/v1" as const,
-          data: Object.freeze({ subject: "explicit-value" as const }),
-        }),
+        criterion: Object.freeze({ kind: "value-match" as const, subject: "explicit-value" as const }),
         subject: captured.material,
         evidence: Object.freeze([]),
         coverage: captured.coverage,
@@ -662,11 +638,7 @@ class AssertionsRuntimeImplementation {
     }
     const entry = this.createEntry({
       kind: "measurement",
-      criterion: Object.freeze({
-        kind: "builtin" as const,
-        id: "value-match/v1" as const,
-        data: Object.freeze({ subject: "explicit-value" as const }),
-      }),
+      criterion: Object.freeze({ kind: "value-match" as const, subject: "explicit-value" as const }),
       subject: captured.material,
       evidence: Object.freeze([]),
       coverage: captured.coverage,
@@ -677,15 +649,15 @@ class AssertionsRuntimeImplementation {
   }
 
   registerBoolean<Refined>(
-    definition: BooleanAssertionRegistrationV1<Refined>,
+    definition: BooleanAssertionRegistration<Refined>,
   ): BooleanHandle {
     this.assertCanRegister();
     this.assertRegistration(definition, "registerBoolean()");
     const entry = this.createEntry({
       kind: "boolean",
       criterion: definition.criterion,
-      subject: freezeRuntimeMaterial(definition.subject),
-      evidence: Object.freeze((definition.evidence ?? []).map(freezeRuntimeMaterial)),
+      subject: freezeAssertionMaterial(definition.subject),
+      evidence: Object.freeze((definition.evidence ?? []).map(freezeAssertionMaterial)),
       coverage: cloneCoverage(definition.coverage ?? { state: "complete" }),
       limitations: cloneLimitations(definition.limitations ?? []),
       evaluate: () =>
@@ -697,15 +669,15 @@ class AssertionsRuntimeImplementation {
   }
 
   registerMeasurement(
-    definition: MeasurementAssertionRegistrationV1,
+    definition: MeasurementAssertionRegistration,
   ): MeasurementHandle {
     this.assertCanRegister();
     this.assertRegistration(definition, "registerMeasurement()");
     const entry = this.createEntry({
       kind: "measurement",
       criterion: definition.criterion,
-      subject: freezeRuntimeMaterial(definition.subject),
-      evidence: Object.freeze((definition.evidence ?? []).map(freezeRuntimeMaterial)),
+      subject: freezeAssertionMaterial(definition.subject),
+      evidence: Object.freeze((definition.evidence ?? []).map(freezeAssertionMaterial)),
       coverage: cloneCoverage(definition.coverage ?? { state: "complete" }),
       limitations: cloneLimitations(definition.limitations ?? []),
       evaluate: () =>
@@ -722,14 +694,10 @@ class AssertionsRuntimeImplementation {
       throw new TypeError("t.score() is available only in a Score Eval");
     }
     assertFiniteNonNegative(points, "t.score() points");
-    const captured = captureAssertionSnapshotV1(points);
+    const captured = captureAssertionSnapshot(points);
     const entry = this.createEntry({
       kind: "direct-score",
-      criterion: Object.freeze({
-        kind: "builtin" as const,
-        id: "direct-score/v1" as const,
-        data: Object.freeze({ source: "author" as const }),
-      }),
+      criterion: Object.freeze({ kind: "direct-score" as const, source: "author" as const }),
       subject: captured.material,
       evidence: Object.freeze([]),
       coverage: captured.coverage,
@@ -746,9 +714,9 @@ class AssertionsRuntimeImplementation {
   ): Promise<Awaited<Value>> {
     this.assertCanRegister();
     assertDisplayText(title, "t.group() title");
-    if (this.groupStack.length >= MAX_ASSERTION_GROUP_DEPTH_V1) {
+    if (this.groupStack.length >= assertionRuntimeLimits.groupDepth) {
       throw new Error(
-        `Assertion group depth cannot exceed ${MAX_ASSERTION_GROUP_DEPTH_V1}`,
+        `Assertion group depth cannot exceed ${assertionRuntimeLimits.groupDepth}`,
       );
     }
     this.groupStack.push(title);
@@ -782,9 +750,9 @@ class AssertionsRuntimeImplementation {
     if (entry.display.groupPath.length !== this.groupStack.length) {
       throw new Error("An Assertion group is already configured");
     }
-    if (entry.display.groupPath.length >= MAX_ASSERTION_GROUP_DEPTH_V1) {
+    if (entry.display.groupPath.length >= assertionRuntimeLimits.groupDepth) {
       throw new Error(
-        `Assertion group depth cannot exceed ${MAX_ASSERTION_GROUP_DEPTH_V1}`,
+        `Assertion group depth cannot exceed ${assertionRuntimeLimits.groupDepth}`,
       );
     }
     entry.display.groupPath.push(title);
@@ -834,14 +802,14 @@ class AssertionsRuntimeImplementation {
   }
 
   private requestStop<Value>(
-    effect: Effect.Effect<Value, AssertionStopErrorV1, never>,
+    effect: Effect.Effect<Value, AssertionStopError, never>,
   ): Promise<Value> {
     if (this.stopped !== undefined) return Promise.reject(this.stopped);
     if (this.sealed !== undefined) {
-      return Promise.reject(new AssertionAuthoringClosedErrorV1("attempt-sealed"));
+      return Promise.reject(new AssertionAuthoringClosedError("attempt-sealed"));
     }
     if (this.closing) {
-      return Promise.reject(new AssertionAuthoringClosedErrorV1("attempt-sealing"));
+      return Promise.reject(new AssertionAuthoringClosedError("attempt-sealing"));
     }
     try {
       return this.executeStop(effect);
@@ -850,7 +818,7 @@ class AssertionsRuntimeImplementation {
     }
   }
 
-  private stopBoolean(entry: AssertionEntry): Effect.Effect<unknown, AssertionStopErrorV1> {
+  private stopBoolean(entry: AssertionEntry): Effect.Effect<unknown, AssertionStopError> {
     return this.settleThrough(entry).pipe(
       Effect.flatMap((settlement) => {
         if (settlement.state === "matched") return Effect.succeed(settlement.value);
@@ -859,7 +827,7 @@ class AssertionsRuntimeImplementation {
     );
   }
 
-  private stopMeasurement(entry: AssertionEntry): Effect.Effect<number, AssertionStopErrorV1> {
+  private stopMeasurement(entry: AssertionEntry): Effect.Effect<number, AssertionStopError> {
     return this.settleThrough(entry).pipe(
       Effect.flatMap((settlement) => {
         if (
@@ -875,8 +843,8 @@ class AssertionsRuntimeImplementation {
   }
 
   seal(
-    options: AssertionSealOptionsV1 = {},
-  ): Effect.Effect<SealedAssertionsRuntimeV1, AssertionSealErrorV1, never> {
+    options: AssertionSealOptions = {},
+  ): Effect.Effect<SealedAssertionsRuntime, AssertionSealError, never> {
     return Effect.suspend(() => {
       if (this.sealed !== undefined) return Effect.succeed(this.sealed);
       if (options.interrupted) {
@@ -896,7 +864,7 @@ class AssertionsRuntimeImplementation {
       );
       if (missingThreshold !== undefined) {
         return Effect.fail(Object.freeze({
-          _tag: "AssertionSealErrorV1" as const,
+          _tag: "AssertionSealError" as const,
           code: "pass-measurement-threshold-missing" as const,
           entryIndex: missingThreshold.index,
         }));
@@ -914,17 +882,17 @@ class AssertionsRuntimeImplementation {
 
   private createEntry(input: {
     readonly kind: EntryKind;
-    readonly criterion: WritableCriterionEnvelopeV1;
-    readonly subject: AssertionRuntimeMaterialV1;
-    readonly evidence: readonly AssertionRuntimeMaterialV1[];
-    readonly coverage: RecordAssertionCoverageV1;
-    readonly limitations: readonly AssertionLimitationV1[];
+    readonly criterion: AssertionCriterion;
+    readonly subject: AssertionMaterial;
+    readonly evidence: readonly AssertionMaterial[];
+    readonly coverage: AssertionCoverage;
+    readonly limitations: readonly AssertionLimitation[];
     readonly evaluate: () => Effect.Effect<EntrySettlement, unknown, never>;
     readonly directScorePoints?: number;
   }): AssertionEntry {
-    if (this.entries.length >= MAX_ASSERTION_ENTRIES_V1) {
+    if (this.entries.length >= assertionRuntimeLimits.entries) {
       throw new Error(
-        `An Assertions Attachment cannot contain more than ${MAX_ASSERTION_ENTRIES_V1} entries`,
+        `An Assertions Attachment cannot contain more than ${assertionRuntimeLimits.entries} entries`,
       );
     }
     const entry: AssertionEntry = {
@@ -952,7 +920,7 @@ class AssertionsRuntimeImplementation {
   private assertRegistration(
     definition: unknown,
     owner: string,
-  ): asserts definition is BooleanAssertionRegistrationV1<unknown> | MeasurementAssertionRegistrationV1 {
+  ): asserts definition is BooleanAssertionRegistration<unknown> | MeasurementAssertionRegistration {
     if (!isRecord(definition) || typeof definition.evaluate !== "function") {
       throw new TypeError(`${owner} requires an Effect evaluation function`);
     }
@@ -964,9 +932,9 @@ class AssertionsRuntimeImplementation {
     }
     if (
       definition.subject.kind === "record-attachment"
-      && (definition.subject.schemaId !== "niceeval.diff/v1" || typeof definition.subject.preview !== "string")
+      && typeof definition.subject.preview !== "string"
     ) {
-      throw new TypeError(`${owner} requires the exact niceeval.diff/v1 record-attachment reference`);
+      throw new TypeError(`${owner} requires a record-attachment preview`);
     }
     if (
       definition.evidence !== undefined
@@ -975,10 +943,10 @@ class AssertionsRuntimeImplementation {
           !isRecord(material)
           || (material.kind !== "snapshot" && material.kind !== "record-attachment")
           || (material.kind === "record-attachment"
-            && (material.schemaId !== "niceeval.diff/v1" || typeof material.preview !== "string")),
+            && typeof material.preview !== "string"),
         ))
     ) {
-      throw new TypeError(`${owner} evidence must use snapshot or exact niceeval.diff/v1 record-attachment material`);
+      throw new TypeError(`${owner} evidence must use snapshot or record-attachment material`);
     }
   }
 
@@ -1032,7 +1000,7 @@ class AssertionsRuntimeImplementation {
   }
 
   private booleanSettlement(
-    evaluation: BooleanAssertionEvaluationV1<unknown>,
+    evaluation: BooleanAssertionEvaluation<unknown>,
   ): EntrySettlement {
     switch (evaluation.state) {
       case "matched":
@@ -1061,7 +1029,7 @@ class AssertionsRuntimeImplementation {
   }
 
   private measurementSettlement(
-    evaluation: MeasurementAssertionEvaluationV1,
+    evaluation: MeasurementAssertionEvaluation,
   ): EntrySettlement {
     switch (evaluation.state) {
       case "measured":
@@ -1138,7 +1106,7 @@ class AssertionsRuntimeImplementation {
   private latchStop(
     entry: AssertionEntry,
     settlement: EntrySettlement,
-  ): AssertionStopErrorV1 {
+  ): AssertionStopError {
     if (this.stopped !== undefined) return this.stopped;
     const reason = settlement.state === "mismatched" || settlement.state === "measured"
       ? "condition-not-met" as const
@@ -1148,26 +1116,26 @@ class AssertionsRuntimeImplementation {
           ? "not-applicable" as const
           : "evaluator-failed" as const;
     this.stopped = Object.freeze({
-      _tag: "AssertionStopErrorV1" as const,
+      _tag: "AssertionStopError" as const,
       entryIndex: entry.index,
       reason,
     });
     return this.stopped;
   }
 
-  private finishSeal(options: AssertionSealOptionsV1): SealedAssertionsRuntimeV1 {
+  private finishSeal(options: AssertionSealOptions): SealedAssertionsRuntime {
     if (this.sealed !== undefined) return this.sealed;
-    const entries: AssertionsAttachmentEntryInputV1<never, never>[] = [];
-    const assertions: SealedAssertionEvaluationV1["assertions"][number][] = [];
+    const entries: SealedAssertionEntry[] = [];
+    const assertions: SealedAssertionEvaluation["assertions"][number][] = [];
     for (const entry of this.entries) {
-      const sealedEntry = this.toAttachmentEntry(entry);
+      const sealedEntry = this.toSealedEntry(entry);
       entries.push(sealedEntry);
       assertions.push(Object.freeze({
         required: !entry.optionalConfigured,
         result: sealedEntry.result,
       }));
     }
-    const evaluation: SealedAssertionEvaluationV1 = Object.freeze({
+    const evaluation: SealedAssertionEvaluation = Object.freeze({
       execution: options.execution ?? "completed",
       explicitlySkipped: options.explicitlySkipped ?? false,
       assertions: Object.freeze(assertions),
@@ -1179,12 +1147,12 @@ class AssertionsRuntimeImplementation {
     return this.sealed;
   }
 
-  private toAttachmentEntry(
+  private toSealedEntry(
     entry: AssertionEntry,
-  ): AssertionsAttachmentEntryInputV1<never, never> {
+  ): SealedAssertionEntry {
     const settlement = entry.settled;
     if (settlement === undefined) throw new Error("Attempted to seal an unsettled Assertion entry");
-    const display: AssertionDisplayV1 = Object.freeze({
+    const display: AssertionDisplay = Object.freeze({
       ...(entry.display.key === undefined ? {} : { key: entry.display.key }),
       ...(entry.display.label === undefined ? {} : { label: entry.display.label }),
       groupPath: Object.freeze([...entry.display.groupPath]),
@@ -1202,8 +1170,8 @@ class AssertionsRuntimeImplementation {
   }
 
   private materialFor(entry: AssertionEntry, settlement: EntrySettlement): {
-    readonly coverage: RecordAssertionCoverageV1;
-    readonly limitations: readonly AssertionLimitationV1[];
+    readonly coverage: AssertionCoverage;
+    readonly limitations: readonly AssertionLimitation[];
   } {
     if (settlement.state === "unavailable") {
       return Object.freeze({
@@ -1223,7 +1191,7 @@ class AssertionsRuntimeImplementation {
     });
   }
 
-  private resultFor(entry: AssertionEntry, settlement: EntrySettlement): SealedAssertionResultV1 {
+  private resultFor(entry: AssertionEntry, settlement: EntrySettlement): AssertionResult {
     const capturedDiagnostic = captureMatchDiagnostic(settlement.diagnostic);
     const diagnostic = capturedDiagnostic === undefined ? {} : { diagnostic: capturedDiagnostic };
     switch (settlement.state) {
@@ -1327,7 +1295,7 @@ class AssertionsRuntimeImplementation {
 
   private incompleteScoreFor(
     entry: AssertionEntry,
-    reason: UnavailableScoreContributionV1["reason"],
+    reason: Extract<AssertionScoreContribution, { readonly state: "unavailable" }>["reason"],
   ): IncompleteScoreContribution {
     const points = entry.scorePoints;
     return points === undefined ? noScore() : unavailableScore(points, reason);
@@ -1335,13 +1303,13 @@ class AssertionsRuntimeImplementation {
 
   private assertCanRegister(): void {
     if (this.stopped !== undefined) {
-      throw new AssertionAuthoringClosedErrorV1("stop-latched");
+      throw new AssertionAuthoringClosedError("stop-latched");
     }
     if (this.sealed !== undefined) {
-      throw new AssertionAuthoringClosedErrorV1("attempt-sealed");
+      throw new AssertionAuthoringClosedError("attempt-sealed");
     }
     if (this.closing) {
-      throw new AssertionAuthoringClosedErrorV1("attempt-sealing");
+      throw new AssertionAuthoringClosedError("attempt-sealing");
     }
   }
 
@@ -1354,24 +1322,24 @@ class AssertionsRuntimeImplementation {
 }
 
 /** Creates one Attempt-local assert-first authoring runtime. */
-export function createAssertionsRuntimeV1(input: {
+export function createAssertionsRuntime(input: {
   readonly evaluationKind: "pass";
-  readonly executeStop?: AssertionStopExecutorV1;
-}): AssertionsRuntimeV1<"pass">;
-export function createAssertionsRuntimeV1(input: {
+  readonly executeStop?: AssertionStopExecutor;
+}): AssertionsRuntime<"pass">;
+export function createAssertionsRuntime(input: {
   readonly evaluationKind: "score";
-  readonly executeStop?: AssertionStopExecutorV1;
-}): AssertionsRuntimeV1<"score">;
-export function createAssertionsRuntimeV1(input: {
-  readonly evaluationKind: AssertionEvaluationKindV1;
-  readonly executeStop?: AssertionStopExecutorV1;
-}): AssertionsRuntimeV1<AssertionEvaluationKindV1> {
+  readonly executeStop?: AssertionStopExecutor;
+}): AssertionsRuntime<"score">;
+export function createAssertionsRuntime(input: {
+  readonly evaluationKind: AssertionEvaluationKind;
+  readonly executeStop?: AssertionStopExecutor;
+}): AssertionsRuntime<AssertionEvaluationKind> {
   if (input.evaluationKind !== "pass" && input.evaluationKind !== "score") {
     throw new TypeError("Assertions runtime evaluationKind must be \"pass\" or \"score\"");
   }
   const executeStop = input.executeStop ?? (() =>
-    Promise.reject(new AssertionAuthoringClosedErrorV1("runtime-unattached"))
+    Promise.reject(new AssertionAuthoringClosedError("runtime-unattached"))
   );
   const runtime = new AssertionsRuntimeImplementation(input.evaluationKind, executeStop);
-  return runtime as AssertionsRuntimeV1<AssertionEvaluationKindV1>;
+  return runtime as AssertionsRuntime<AssertionEvaluationKind>;
 }
