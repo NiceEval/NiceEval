@@ -182,34 +182,3 @@ export function fsyncDirEffect(dir: string): EntryFileStoreEffect<void> {
     Effect.catchAll(() => Effect.void),
   );
 }
-
-/**
- * 临时 Promise facade：`session`、`keep-registry` 以及被并行 worker 占用的 runner/CLI 外层尚未
- * 串行迁移。新内部代码只能使用同名 `*Effect` 导出；父侧会在这些路径停稳后删除以下适配。
- */
-export function writeEntryFile(dir: string, id: string, data: unknown): Promise<void> {
-  return Effect.runPromise(writeEntryFileEffect(dir, id, data));
-}
-
-export function readEntryFile<T extends {}>(
-  dir: string,
-  id: string,
-  decode: EntryDecoder<T>,
-): Promise<T | undefined> {
-  return Effect.runPromise(readEntryFileEffect(dir, id, decode));
-}
-
-export function readAllEntryFiles<T extends {}>(
-  dir: string,
-  decode: EntryDecoder<T>,
-): Promise<{ id: string; entry: T }[]> {
-  return Effect.runPromise(readAllEntryFilesEffect(dir, decode));
-}
-
-export function claimEntryFile(dir: string, id: string): Promise<boolean> {
-  return Effect.runPromise(claimEntryFileEffect(dir, id));
-}
-
-export function fsyncDir(dir: string): Promise<void> {
-  return Effect.runPromise(fsyncDirEffect(dir));
-}
