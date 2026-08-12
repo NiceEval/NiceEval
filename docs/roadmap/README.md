@@ -29,7 +29,7 @@ Roadmap 与 Feature、Design 候选共用 [Feature Design Package](../_template/
 - [注入凭据的转写脱敏](credential-redaction/README.md) —— 已知凭据值的精确替换
 - [Prepare 阶段瞬时失败自愈](prepare-transient-retry/README.md) —— 内置 prepare 命令的瞬时重试
 - [Eval Group](eval-groups/README.md) —— Group × Eval × Experiment 三维规划、单 template Layer link、组内复用与组间并行
-- [Plugins](plugins/README.md) —— 组合 Eval、Experiment 与 Eval Group 条件，并以统一 AgentExtension 给已选 Agent 安装 Skill、MCP、原生 Plugin 与 Hook
+- [Plugins](plugins/README.md) —— 在 Eval、Experiment 与 Eval Group 上声明 owner-scoped Sandbox、Agent 与生命周期条件
 - [自定义持久事实边界](record-attachment-authoring/README.md) —— 退役 raw Record 作者 API；未来只允许另行设计高层 opaque capability
 - [Docker Image](docker-image/README.md) —— 用统一 `dockerImage()` 声明预制镜像或按内容构建的镜像
 - [Chart 语义内核与报告交互控制器](report-chart-kernel/README.md) —— 双面语义模型、精确值 HTML、键盘焦点与 Table 渐进增强

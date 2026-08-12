@@ -1,110 +1,73 @@
 # Plugins
 
-Plugin 是可复用的 Eval、Experiment 或 Sandbox Group 条件蓝图。它在 factory 调用时成为不可变 definition，并可挂在四个稳定入口：
+Plugin 是 NiceEval 原生理解的、显式且 owner-scoped 的声明模块。它把一个 owner 上必须共同出现的行为身份、Sandbox 条件、物理资源或 Agent 扩展收成一个不可变 occurrence；runner 负责 link、冲突检查、carry 失效、资源生命周期和 provenance。
+
+它不是只给 lifecycle Hook 换一层写法。普通对象或共享函数不能让 runner 知道「这些贡献属于同一个条件」，也不能自动得到稳定身份、receiver 校验、physical resource 聚合和可审计的 dry plan。
 
 ```ts
-defineEval({ plugins: [...] });
-defineScoreEval({ plugins: [...] });
-defineExperiment({ plugins: [...] });
-defineSandboxGroup({ plugins: [...] });
+import { definePlugin } from "niceeval/plugin";
+
+const repository = definePlugin({
+  name: "example.repository",
+  behaviorRevision: "2",
+  instanceKey: ({ revision }: { revision: string }) => revision,
+  eval: ({ revision }) => ({
+    identity: { revision },
+    resources: [repositorySeed({ revision })],
+  }),
+});
+
+export default defineEval({
+  plugins: [repository({ revision: "8f3c1a2" })],
+  test(t) {},
+});
 ```
 
-folder、suite 与 `defineConfig()` 不产生隐式 Plugin 继承。Plugin 不是新运行时、依赖注入容器、marketplace，也不是 Agent Native Plugin。
+## 价值单位
 
-## 一等能力：扩展已选 Agent
+一个 Plugin occurrence 只属于一个 owner：Eval、Experiment 或 Eval Group。它的完整性只相对于该 owner，不会从一次 attachment 跨 owner fan-out。
 
-Experiment 仍显式选择 Agent；Plugin 只为已选 Agent 贡献能力：
+同一个 family 可以声明多个 owner callback。这只表示同一套命名与选项可在不同 owner 位置使用；调用方仍在实际 owner 的 `plugins` 数组中显式挂载。相同 `(name, instanceKey)` 不得在同一 Eval × Experiment pair 从多个 owner 重复出现，避免一个逻辑实例被拆成多个 provenance 分支。
+
+Plugin 不按目录、Config、命名空间或注册表隐式继承。每个 occurrence 的配置声明位置在调用点可见。
+
+## V1 owner matrix
+
+| owner | 可贡献内容 | 负责的条件 |
+|---|---|---|
+| Eval | identity、resource demand、command-only Sandbox layer | 单道 Eval 的题目 Sandbox 条件 |
+| Experiment | identity、flags、labels、command-only Sandbox layer、setup、teardown、AgentExtension | 整场实验与既有 Agent 的条件 |
+| Eval Group | identity、group-scoped resource demand、command-only Sandbox layer | 闭合成员集共享的物理 Sandbox 条件 |
+
+`requirements` 不属于 V1。没有封闭能力词表、求解规则和失败语义的任意 JSON 只是 metadata，不能冒充 planning constraint。具体 receiver 约束由 branded `SandboxResource` 与 `AgentExtension` 在 link 时验证。
+
+Eval Plugin 不提供私有 before/after Hook。Group Plugin 不提供宿主机 setup/teardown、AgentExtension、flags 或 labels。Plugin 不拥有 Sandbox template、Provider、Docker image、私有 Git 鉴权、Agent 替换、业务顺序、Assertion、Verdict 或 Report。
+
+Plugin callback 在 occurrence 构造时归一并深冻结，不联网、不启动进程、不读取动态运行状态。只有 `niceeval/plugin` 暴露 Effect v3 类型；根入口保持不变。
+
+## API 甜度
+
+有参数 family 必须显式提供 `instanceKey(options)`。无参数 family 可以省略 `instanceKey`，其固定实例键是 `"default"`；两种 family 都通过调用 factory 产生 occurrence：
 
 ```ts
+const isolated = definePlugin({
+  name: "example.isolated",
+  behaviorRevision: "1",
+  experiment: () => ({ identity: { mode: "isolated" } }),
+});
+
 export default defineExperiment({
-  agent: codexAgent(),
-  plugins: [context7(), effectSkill(), remem()],
+  plugins: [isolated()],
+  // ...
 });
 ```
 
-Plugin 可以安装 Skill、MCP server、Codex／Claude 原生 Plugin、Bub Python extension 和 Agent 原生 Hook，也可以声明 NiceEval 托管的 Attempt／逻辑 Send Hook。它不能选择或替换 Agent、model、provider、主 credential、Sandbox template、budget 或 Sequence。
-
-直接配置与 Plugin 复用同一种 `AgentExtension`，没有第二套安装真源：
-
-```ts
-codexAgent({
-  configFile: "configs/codex/base.toml",
-  extensions: [
-    skillsExtension({ review: { source: reviewSkill } }),
-    mcpServersExtension({ docs: { url: "https://mcp.example.com/v1" } }),
-  ],
-});
-```
-
-`configFile`／`settingsFile`、主进程变量集合、model／provider 和主 credential 仍是 Agent base-only 配置。Plugin 不提供 arbitrary native-config patch 或 generic env merge；新能力通过 receiver 拥有的窄 typed protocol 增加。
-
-## 两类 Hook 不能混用
-
-- **Agent 原生 Hook** 是 Codex／Claude 等运行时自己的声明式能力，经 receiver-specific `AgentExtension` 安装并由 Agent 执行。
-- **Hosted Agent Hook** 由 NiceEval 执行，只观察 Attempt 与一次逻辑 `t.send()` 的前后边界。它不能改写 prompt、Session 或 Turn，也不监听逐 token／逐物理重试事件。
-
-Hosted Hook 使用 `beforeSend`／`afterSend`，而不是 `beforeTurn`／`afterTurn`：终局发送失败时不存在可信 Turn，但 `afterSend` 仍必须拿到穷尽的 `SendHookExit` 并完成收尾。
-
-## pair link 与身份
-
-NiceEval 在每个 Eval × Experiment pair 的 link 阶段组合两侧贡献。Plugin 的 contribution 包括：
-
-- behavior identity 与封闭 typed requirements；
-- command-only Sandbox layer 与现有 Experiment lifecycle；
-- `AgentExtension` 与 Hosted Agent Hook；
-- 不包含 Record reader / writer 或持久事实 write grant。
-
-`(name, instance)` 在一个 pair 内唯一，`name` 使用 reverse-domain lowercase ASCII namespace。Eval 与 Experiment 两侧重复同一 identity 是 typed link conflict，不是去重机会。每个 owner 内先接作者原生片段，再按 `plugins[]` 顺序接 Plugin 片段；跨 owner 顺序由 template owner 决定。
-
-Agent factory 与 Experiment Plugin 形成 `RunAgentPlan`，其安全规范投影进入 Run `configHash`。Eval Plugin 只形成 pair-local delta；pair fingerprint 已经包含 `configHash`，不会重复编码 Run 投影。同值 Eval contribution 只增加 provenance，异值在创建资源前形成 pair link conflict。
-
-## 完整 desired state，而不是增量安装
-
-receiver 把 Agent base 与 Plugin contribution 规范化并组合为不可变 `LinkedAgentPlan`。每个 Attempt 都必须把 Agent home 收敛到本次完整 desired state：即使声明为空，也要移除上一 Attempt 留下的 NiceEval-managed Skill、MCP、Plugin、Hook 与 credential materialization。
-
-receiver 只能撤销自己拥有的 overlay，不能删除用户或 Agent 自己的未知状态。无法证明隔离或可撤销的 extension 必须声明不支持 Sandbox reuse，并在资源创建前被 requirement 拒绝。Agent teardown 完成后才 dispose overlay，避免 drain／flush 或 Agent 自身收尾读取不到配置。
-
-## Plugin 不扩张 Record Core
-
-Plugin 不直接修改 Record Core。框架只为需要落 Record 的 Eval／Experiment Plugin 写入版本化 `niceeval.plugin-provenance/v1` RecordAttachment，保存：
-
-- `name`、`instance`、`revision`、mount 与 source；
-- 安全规范化后的 effective behavior identity；
-- 已接受 contribution 的 typed refs；
-- 仅含 domain 与可选 revision 的 redacted credential token（如有）。
-
-credential value、env selector、宿主绝对路径、私有 config、raw token、未规范化 options 与 receiver opaque payload 不进入 provenance。Run-owned document 只包含整份 Run 真正共享的 Experiment mount；Attempt-owned document 保存对应 Eval／pair 事实。Group 不写 provenance，它只留在 demand cohort 的 plan manifest。
-
-## 持久事实 capability 尚未开放
-
-Plugin 当前不能写 RecordAttachment。旧的 `recordAttachments.write`、definition、raw family、
-blob 与 migration registry 方案已经[退役](../record-attachment-authoring/README.md)。未来若开放，
-必须是 Plugin 领域的高层 opaque context capability，不能暴露 Record reader / writer、path、
-schema registry 或 JSON fallback。
-
-## 资产、凭据与信任边界
-
-`pluginAsset(new URL("./assets/...", import.meta.url))` 表示 module-relative trusted local asset。definition 只保存 locator；仅选中的 occurrence 在 planning 阶段读取、拒绝 symlink／special file 并计算 digest。manifest 与 dry plan 只显示用途、kind 和 digest，不显示宿主绝对路径。远程安装内容必须带完整 commit identity 或声明的 content digest；floating branch、movable tag 与默认 ref 在 link 阶段拒绝。
-
-扩展凭据通过 `credentialFromEnv()` 的 opaque runtime binding 引用。factory、link 与 dry plan 不读取 env；materialize 在任何扩展写入前一次性求值，secret value 永不进入 hash、provenance、manifest 或错误文本。
-
-Plugin package、第三方 protocol factory 与 receiver 都是 application-trusted ESM code。NiceEval 只为内建 receiver 承诺纯 `resolve`、redaction 与资源纪律；nominal token 防误接线，不构成 JavaScript sandbox。不提供 marketplace 自动发现、全局 registry 或按 Record 动态 import。
-
-## 框架保证
-
-- discovery、factory activation 与 pure link 不调用 lifecycle、不求值 runtime binding；资产 I/O 只发生在显式 selected planning snapshot。
-- Agent 特殊性留在 Adapter receiver；core 不读取 receiver payload 或 secret。
-- requirements 只拒绝非法计划，不暗改 template、lifetime、Sequence 或并发。
-- keyed contribution 同 canonical value 去重并保留 provenance，异值冲突；有序 Hook 保持 Plugin 声明顺序，不采用 last-wins。
-- dry plan 展示 Plugin → extension → selected receiver → redacted manifest、顺序、冲突与不支持原因，不创建资源。
+不增加 `defineEvalPlugin` 等第二套 owner DSL，也不让 `definePlugin()` 有时返回 occurrence、有时返回 factory。
 
 ## 入口
 
-- [Library](library.md) —— `definePlugin()`、Agent extension protocol、Hosted Hook、asset 与 credential。
-- [Architecture](architecture.md) —— pair link、receiver、身份、收敛、provenance 与信任边界。
-- [Lifecycle](lifecycle.md) —— 分阶段 Agent plan、Effect Scope、Hook 与失败语义。
-- [给 Codex 安装 MCP、Skill 与 Hook](use-case/codex-agent-extensions.md)
-- [Remem 用例](use-case/remem.md)
-- [NiceEval-Eval 候选 Runtime](use-case/niceeval-eval-candidate-runtime.md)
-- [Terminal-Bench Harness](use-case/terminal-bench-harness.md)
-- [Git checkout](use-case/git-checkout.md)
+- [Library](library.md) —— `definePlugin`、resource 与 AgentExtension API。
+- [Architecture](architecture.md) —— link、身份、fingerprint、carry 与公开审计形状。
+- [Lifecycle](lifecycle.md) —— Eval 与 Group resource 的 Effect 生命周期及失败归属。
+- [Eval Group](../eval-groups/README.md) —— 共享物理 Sandbox 的组语义。
+

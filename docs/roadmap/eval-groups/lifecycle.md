@@ -9,8 +9,10 @@ provider acquire
   -> reset anchor
   -> each real Attempt
        -> reset
-       -> resource prepare
-       -> Layer prepare commands
+       -> Group resource prepare
+       -> current Eval resource prepare
+       -> Group author and Plugin prepare commands
+       -> Eval / Experiment prepare commands
        -> agent ensure / setup / test / teardown
        -> registered cleanup
   -> resource release in reverse order
@@ -24,9 +26,10 @@ materialize、release、teardown 与 finalizer 都是“每台实际实例一次
 
 ## carry 与选择
 
-全量 carry 不建立 Sandbox，也不 materialize resource。部分 carry 在规划期冻结完整 selected
-resource envelope，但只有真实派发的 Attempt 调用自己的 resource `prepare`。CLI 过滤、预算、
-首过即停与取消都可能让后续成员不进入本轮 Sandbox；Group 不补造前缀完成状态。
+全量 carry 不建立 Sandbox，也不 materialize resource。部分 carry 在规划期冻结 Group demand
+与所有 selected Eval demand，但只有真实派发的 Attempt 调用 Group demand 和当前 Eval demand
+的 `prepare`。CLI 过滤、预算、首过即停与取消都可能让后续成员不进入本轮 Sandbox；Group
+不补造前缀完成状态。
 
 ## 不可用策略
 

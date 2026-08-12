@@ -264,7 +264,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Agent Judge | Agent Judge | 作为 Assertion evaluator 运行的独立 Agent；调查证据后返回 measurement、理由与引用，不拥有 Verdict 或 score policy | [Agent-as-Judge](roadmap/agent-as-judge/README.md) |
 | Eval Group | Eval Group (`defineEvalGroup`) | 由无业务顺序的 Eval 闭集组成；Runner 按规范化 Eval ID 串行复用一台物理 Sandbox，不同 Group 可以并行 | [Eval Group](roadmap/eval-groups/README.md) |
 | Plugin | Plugin | 挂在 Eval、Experiment 或 Eval Group 上的不可变条件蓝图；组合既有 owner contribution，不选择 Agent 或建立新运行时 | [Plugins](roadmap/plugins/README.md) |
-| demand cohort | demand cohort | 一台计划中的 physical Sandbox 将服务的 selected pair demands 集合；不是新的资源寿命 scope | [Demand cohort](roadmap/plugins/architecture.md#demand-cohort-与-sandbox-resource) |
+| demand cohort | demand cohort | 一台计划中的 physical Sandbox 将服务的 selected demands 集合；不是新的资源寿命 scope | [Demand cohort](roadmap/plugins/architecture.md#demand-cohort-与-physical-resource-envelope) |
 | Agent 扩展 | Agent extension (`AgentExtension`) | 由 nominal protocol 标识、交给已选 Agent receiver 规范化的 opaque 能力声明；可来自 Agent factory 或 Plugin | [Plugin Library](roadmap/plugins/library.md#agentextension统一直配与-plugin) |
 | Agent 扩展协议 | Agent extension protocol | 以 opaque token object identity 定义 payload 契约和静态兼容性的协议；展示 name 不承担兼容匹配 | [Plugin Architecture](roadmap/plugins/architecture.md#agentextension-protocol-与-receiver) |
 | Agent 扩展 receiver | Agent extension receiver | 由 Agent factory 绑定，接受明确 protocol、合并 base／Plugin contribution，并产出安全投影和分阶段 Agent 计划的 Adapter 组件 | [Plugin Architecture](roadmap/plugins/architecture.md#agentextension-protocol-与-receiver) |

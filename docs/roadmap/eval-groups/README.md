@@ -19,7 +19,7 @@ export default defineEvalGroup({
 - Group 成员可以省略 Sandbox Layer，或只声明逐 Attempt 的 `prepare()` 命令。
 - Sandbox template 与实例级 `setup()` / `teardown()` 由 Group 或 Experiment 持有。
 - Group 与 `sandboxReuse: true` 不能同时作用于同一 Experiment。
-- Group Plugin 只贡献 identity 与 requirements；Eval Plugin resource 由物理 Sandbox 持有。
+- Group Plugin 可以贡献 identity、group-scoped resource demand 与逐 Attempt command；Group 与 Eval demand 共用一个物理 Sandbox resource envelope。
 - carry、过滤与首过即停只移除 slot，不会补跑其它成员或制造前缀完成语义。
 
 ## 正文入口
@@ -32,6 +32,6 @@ export default defineEvalGroup({
 
 ## 范围
 
-Group 不提供私有 Eval before/after、Group runtime resource、业务 sequence、complete-prefix，
-也不把作者数组位置解释成依赖。Group 只拥有封闭成员关系、capacity-one lane、物理复用边界
-和 Sandbox 不可用时的处理策略。
+Group 不提供私有 Eval before/after、宿主机 setup/teardown、AgentExtension、业务 sequence
+或 complete-prefix，也不把作者数组位置解释成依赖。Group 只拥有封闭成员关系、
+capacity-one lane、物理复用边界和 Sandbox 不可用时的处理策略。

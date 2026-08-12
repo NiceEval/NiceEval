@@ -55,7 +55,7 @@ export default defineExperiment({
 | extraction drain 与数据库检查 | `agentLifecycleExtension().beforeAgentTeardown` 有序槽位 |
 | Remem 专属 API key | `credentialFromEnv()` runtime binding；selector／value 不进 identity |
 | Codex 主 endpoint／API key | `codexAgent()` base-only；Plugin 无权改写，也不取得明文 |
-| 5 小时寿命 | Experiment 仍显式声明;planning requirement 只验证 requested value |
+| 5 小时寿命 | Experiment 仍显式声明；Plugin 不验证或修改 template 字段 |
 | Remem Dockerfile | package 静态资产，由调用点的 `dockerImage()` 显式选择 |
 | Remem 二进制与版本 | `sandbox.prepare.experiment` 实机探测 |
 
@@ -82,16 +82,15 @@ export default defineExperiment({
 });
 ```
 
-该模式不要求 Sequence 或 stop-group,也不承诺任何跨 Eval 记忆。缺少 accumulated requirements 时不会自动进入 isolated;作者必须在调用点承担这项语义选择。
+该模式不要求 Sequence 或 stop-group,也不承诺任何跨 Eval 记忆。Plugin 不根据 Sandbox 条件自动切换模式；作者必须在调用点承担这项语义选择。
 
 ## 可核查结果
 
 实现后的真实验收至少检查:
 
-1. dry plan 展示 Remem identity、receiver、prepare / hook 顺序与 requirements,不出现凭据值;
-2. 缺 stop-group 或 5 小时 requested lifetime 时在创建 Sandbox 前失败;
-3. 错误镜像在 `sandbox.prepare.experiment` 报 Remem 版本探测失败并点名 plugin source;
-4. 同一 Group 的真实 Attempt 使用同一物理 Sandbox，且没有 carried slot 被误报为记忆历史;
-5. Stop hook 后 extraction queue 在 `preTeardown` 排空,失败只归现有 lifecycle phase;
-6. 同一插件 blueprint 被两个 Experiment 并发使用时,运行时状态与事实互不改写;
-7. 强杀恢复只在 linked plugin identities 完全匹配时运行当前 teardown。
+1. dry plan 展示 Remem identity、receiver、prepare / hook 顺序与 provenance,不出现凭据值;
+2. 错误镜像在 `sandbox.prepare.experiment` 报 Remem 版本探测失败并点名 Plugin source;
+3. 同一 Group 的真实 Attempt 使用同一物理 Sandbox，且没有 carried slot 被误报为记忆历史;
+4. Stop hook 后 extraction queue 在 `preTeardown` 排空,失败只归现有 lifecycle phase;
+5. 同一 Plugin family 被两个 Experiment 并发使用时,运行时状态与事实互不改写;
+6. 强杀恢复只在 linked Plugin identities 完全匹配时运行当前 teardown。

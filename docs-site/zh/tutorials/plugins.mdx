@@ -1,12 +1,14 @@
 ---
-title: "用 Plugin 复用完整评估条件"
+title: "用 Plugin 复用 owner 条件"
 sidebarTitle: "Plugin"
-description: "用 definePlugin 把身份、flags、Sandbox 准备、Agent 扩展与生命周期组合成一个显式条件，并挂到评估用例、实验或评估组。"
+description: "用 definePlugin 把同一个 owner 的身份、Sandbox 准备、Agent 扩展与生命周期组合成一个显式条件。"
 ---
 
 一个实验条件经常不只是一项配置。例如，记忆条件可能同时需要 flags、Sandbox 内的
 安装检查、Agent Skill、生命周期 Hook 和缓存身份。分别导出这些片段时，调用方很容易漏掉
-其中一项。NiceEval Plugin 把它们组合成一个不可变条件，再显式挂到评估用例、实验或评估组。
+其中一项。NiceEval Plugin 把同一个 owner 的这些片段组合成不可变条件，再显式挂到评估用例、实验或评估组。
+
+一次挂载只应用当前位置的 owner callback，不会同时修改其它 owner。同一个 Plugin family 可以支持多个位置，表示它们共享命名和选项，不表示一次挂载会跨位置自动展开。
 
 NiceEval Plugin 与 Agent 原生 Plugin 是两层概念：前者组合评估条件；后者是 Codex 或
 Claude Code 从 Marketplace 安装的扩展包。NiceEval Plugin 可以通过 Agent Extension
@@ -83,9 +85,9 @@ NiceEval 会在创建 Provider 资源前报错。
 
 | callback | 可贡献内容 |
 | --- | --- |
-| `eval(options)` | identity、requirements、resource demand、只含命令的 `SandboxLayer` |
-| `experiment(options)` | identity、requirements、flags、labels、只含命令的 `SandboxLayer`、实验生命周期、Agent Extension |
-| `group(options)` | identity、requirements |
+| `eval(options)` | identity、resource demand、只含命令的 `SandboxLayer` |
+| `experiment(options)` | identity、flags、labels、只含命令的 `SandboxLayer`、实验生命周期、Agent Extension |
+| `group(options)` | identity |
 
 把条件放在最窄且完整的 owner 上。只属于一道题的仓库准备放在评估用例；同一实验的记忆
 安装、Agent 扩展与 flags 放在实验；只用于声明整组兼容性的身份或要求才放在评估组。
@@ -139,7 +141,7 @@ token 或私有代理凭据可以放在这里；单独轮换凭据不会让旧�
 - 同组真实运行的 Attempt 依次使用同一台 Docker Sandbox，不同组仍可并行。
 - Eval Plugin 的 resource 在物理 Sandbox 中 materialize 一次，并为每条真实
   Attempt 执行 prepare。
-- Group Plugin 只贡献 identity 与 requirements，不拥有 runtime resource。
+- Group Plugin 只贡献 identity，不拥有 runtime resource。
 - Plugin 不会把评估组的数组位置解释成业务依赖。当前组内按规范化 Eval ID 稳定派发，
   `evals` 数组只声明成员；业务顺序仍未提供，不能靠调整数组位置表达前后依赖。
 

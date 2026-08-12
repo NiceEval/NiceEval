@@ -48,8 +48,9 @@ Eval 断言失败、Agent 失败和普通业务结果不触发替换。
 ## Sandbox 与 Plugin
 
 Group 的 `sandbox` 可以提供 template、逐物理实例生命周期和逐 Attempt 命令。
-Experiment 与 Group 之间仍遵守唯一 template owner。Group Plugin 只贡献 identity 与
-requirements；runtime resource 必须由 Eval Plugin 声明。
+Experiment 与 Group 之间仍遵守唯一 template owner。Group Plugin 可以贡献 identity、
+group-scoped resource demand 与逐 Attempt command，但不能修改 template 或提供实例级
+setup / teardown。Group demand 与 Eval demand 共用一个物理 resource envelope。
 
 ## 加载错误
 
