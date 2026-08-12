@@ -19,6 +19,26 @@ _Avoid_: Runner core, Record runtime
 停在这里；事实生产者和消费者都不构造版本化 document。
 _Avoid_: Runner serialization, Generic metadata
 
+**RecordAttachment definition**:
+一个事实 family 对 owner、name、全部 schema 版本、current 版本与相邻 migration policy 的完整声明。
+它不表示某个应用已经信任它，也不授予事实生产者写入权。
+_Avoid_: Attachment registration, Writable family
+
+**RecordAttachment installation**:
+一个应用明确选择并信任哪些 RecordAttachment definitions 来解释和迁移事实。它不授权任何 producer
+写入，也不从 producer 声明或历史 bytes 隐式推导。
+_Avoid_: Attachment write registration, Plugin discovery
+
+**RecordAttachment write grant**:
+一个 linked producer occurrence 被允许提交的 exact RecordAttachment definitions 集合。它不安装 migration，
+不跨 occurrence 共享，也不包含当前 owner 的实际生命周期能力。
+_Avoid_: Application registry, Owner-wide allowlist
+
+**Record context lease**:
+当前 Run 或 Attempt 在开放生命周期内实际接纳 RecordAttachment command 的 owner-local authority。它不跨
+owner、session 或封口边界。
+_Avoid_: Record writer, Global attachment context
+
 **Record access runtime**:
 一个 host operation 内为 canonical Record root 管理 snapshot generations、lock authority 与本地 verified
 read cache 的 root-affine capability substrate。它不属于 durable Record，也不是自动刷新的 reader。

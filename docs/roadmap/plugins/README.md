@@ -32,17 +32,19 @@ credential value、私有 config、raw token、未规范化 options 与任意 JS
 整份 Run 真正共享的 Experiment mount；Attempt-owned document 保存对应 Eval／pair 事实。Group 不写 provenance，它只
 留在 demand cohort 的 plan manifest。provider、slot、pair 或 cohort 不能提升成“整个 Run 都如此”的假事实。
 
-## 声明式 RecordAttachment capability
+## 声明式 RecordAttachment write grant
 
-Plugin blueprint 必须通过 [RecordAttachment 作者 SDK](../record-attachment-authoring/README.md) 的 producer
-allowlist 显式声明它可写的每个 definition。运行时 context 只接受该 occurrence allowlist 中、owner 正确的
+Plugin blueprint 必须用 [RecordAttachment 作者 API](../record-attachment-authoring/README.md) 的 producer write grant
+形状 `recordAttachments: { write: [...] }` 显式声明它可写的每个 definition。运行时 context 只接受该 linked
+occurrence grant 中、owner 正确的
 definition；它没有 raw name、path 或 JSON 写入口。
 
 一个 owner 的一个 attachment family 至多写一次。closed、wrong-owner、undeclared 或 duplicate write 都是具名 typed failure；不会由 last-wins、静默改写或开放写入通道处理。完整类型、provenance 与 migration 规则见 [Library](library.md)。
 
 ## 迁移与信任边界
 
-Plugin Attachment definition 自带完整相邻 migration 图，应用经 `defineConfig({ recordAttachments })` 显式安装。
+Plugin Attachment definition 自带完整相邻 migration 图，应用经
+`defineConfig({ recordAttachments: { install: [...] } })` 显式安装。
 registry 只表达 application trust，不重新声明 converter，也不授予 Plugin 写权限。`niceeval migrate` 不按保存的
 schema 动态 import Plugin，也不运行 Plugin factory、hook 或 lifecycle。
 
@@ -58,7 +60,7 @@ converter 是 trusted extension。其 `Effect` requirement 为 `never`，表示 
 
 ## 入口
 
-- [Library](library.md) —— `definePlugin()`、typed attachment capability 与 registry。
+- [Library](library.md) —— `definePlugin()`、typed attachment write grant 与 application install。
 - [Architecture](architecture.md) —— pair link、provenance、identity 与 owner 边界。
 - [Lifecycle](lifecycle.md) —— 资源作用域、失败与封口时点。
 - [Remem 用例](use-case/remem.md)

@@ -35,43 +35,57 @@ interface GroupPluginFragment {
 
 调用 family 时，NiceEval 立即执行纯 callback，规范化并深冻结 Plugin instance。link 不重新调用 callback。Group 是选择与调度 owner，不是运行资源，所以没有 setup、teardown、Sandbox layer、Agent extension 或 runtime Record write。
 
-## 声明 typed RecordAttachment capability
+## 声明 occurrence-local write grant
 
 每个 Plugin 要写 Record 时，先在 blueprint 中列出
-[RecordAttachment producer allowlist](../record-attachment-authoring/library.md#producer-allowlist)。allowlist 引用一个
+[RecordAttachment producer write grant](../record-attachment-authoring/library.md#producer-write-grant)。`write` 引用一个
 完整、多版本 definition，而不是携带 name、schemaId、文件路径或外部 migration edge：
 
 ```ts
 export const candidateRuntime = definePlugin({
   name: "candidate-runtime",
   behaviorRevision: "1",
-  recordAttachments: [candidateRuntimeObservation],
+  recordAttachments: {
+    write: [candidateRuntimeObservation],
+  },
   experiment(options: CandidateRuntimeOptions) {
     return { identity: { version: options.version } };
   },
 });
 ```
 
-blueprint 的 `recordAttachments` 是 occurrence-local allowlist，不是 application migration registry，也不自动写入。
+blueprint 的 `recordAttachments.write` 为每个 linked occurrence 形成独立 grant，不是 application migration registry，
+也不自动写入。
 Plugin 的 `behaviorRevision` 与 existing identity 继续描述 producer 行为；current Attachment presence requirement
-由 reuse contract 另行声明。一个 owner 的同一 definition 只能绑定一次；link 对重复 identity 返回 typed conflict。
+由 reuse contract 另行声明。两个 occurrence 即使引用不同 definition objects，只要 `(owner, name)` 相同，link 也在
+创建资源前返回带双方 provenance 的 typed conflict。
 
 ## runtime write context
 
-已 link 的 lifecycle context 使用中立 owner-local `record()`：
+已 link 的 lifecycle context 直接组合中立 owner-local `record()`；不存在 `PluginRecordContext` 或 Plugin writer：
 
 ```ts
-interface PluginRecordContext<Owner extends "run" | "attempt"> {
-  record<Definition extends AllowedPluginAttachments<Owner>>(
-    attachment: Definition,
-    payload: CurrentPayload<Definition>,
-  ): Promise<void>;
-}
+const candidateRuntime = definePlugin({
+  name: "candidate-runtime",
+  behaviorRevision: "1",
+  recordAttachments: { write: [candidateRuntimeObservation] },
+  experiment() {
+    return {
+      async teardown(ctx) {
+        const version = await probeCandidateRuntime();
+        await ctx.record(candidateRuntimeObservation, {
+          version,
+        });
+      },
+    };
+  },
+});
 ```
 
-blob-backed overload、eager reservation、in-flight tracking 与错误联合以中立
+`ctx.record()` 的 direct payload、blob builder、eager reservation、tracked command 与错误联合以中立
 [Library](../record-attachment-authoring/library.md#owner-local-record-context) 为单源。Plugin 不包装第二种 write，
-也不增加 `plugin-record-*` 平行错误词表。provenance receipt 只在 generic writer 接受同一种 typed write 后形成。
+也不增加 `plugin-record-*` 平行错误词表。只有 generic writer 完整成功后形成的 accepted event 才能进入 framework
+provenance；调用、reserve 或局部 blob 写入都不是成功 contribution。
 
 | mount | 可写 owner | 封口边界 |
 |---|---|---|
@@ -147,9 +161,9 @@ identity 只登记不能由 flags、requirements、Sandbox command 或 receiver 
 ## migration registry / Layer
 
 Plugin package 导出自己的完整 definition；应用通过
-`defineConfig({ recordAttachments: [definition] })` 安装并信任它。family-owned edge、converter、blob target、
+`defineConfig({ recordAttachments: { install: [definition] } })` 安装并信任它。family-owned edge、converter、blob target、
 `R = never` 与 Git 恢复点以中立 [Library](../record-attachment-authoring/library.md) 和
 [CLI](../record-attachment-authoring/cli.md) 为单源。
 
-Plugin blueprint 的 allowlist 不隐式安装 migration。删除 Plugin producer 后，应用可以只保留 definition import
+Plugin blueprint 的 `write` grant 不隐式安装 migration。删除 Plugin producer 后，应用可以只保留 definition import
 与 config registration；`niceeval migrate` 不运行 factory、hook、lifecycle 或 receiver。
