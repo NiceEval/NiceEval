@@ -1,15 +1,9 @@
-// server(data.ts)与前端(app/)共用的 view 数据形状。
-// viewData 会被序列化进静态 HTML,两边必须对同一份声明编程;只允许 type import。
-//
-// viewData 只携带壳需要的东西:unreadable、项目名与 run 元信息。attempt 明细不在这里——
-// 每份 attempt/<locator>.html 是独立静态文档(site.ts),不通过 viewData 这条通道下发;
-// 统计口径(KPI / 实验列表 / 挑选警告)整体住在报告槽的静态 HTML 里(ExperimentComparison 或
-// --report 的报告自己算),壳与报告之间没有第二条数据通道。
+// The browser shell's type-only data shape. Report content and Record facts
+// stay inside the completed ReportExecution projection; this shape carries
+// only report-shell metadata and baked HTML blocks.
 
 export type LocalizedText = string | Readonly<Record<string, string>>;
 export type ReportLocale = "en" | "zh-CN";
-/** A view never dereferences this legacy-shaped string as a Record handle. */
-export type AttemptLocator = string;
 
 /**
  * 一页报告的双语静态 HTML:同一棵页树按 locale 渲染两遍(en / zh-CN),server 烘成
@@ -17,12 +11,6 @@ export type AttemptLocator = string;
  * 对应块,切语言 / 切页不重算数据。
  */
 export type ReportSlotHtml = Partial<globalThis.Record<ReportLocale, string>>;
-
-/** 服务端渲染好的一页报告(HTML 本体不进 viewData,烘成 <template> 静态块)。 */
-export interface ViewReportPageHtml {
-  id: string;
-  html: ReportSlotHtml;
-}
 
 /** 外壳认识的一页(id = `#/page/<id>` 路由、`--page` 的取值与 <template> 静态块的键)。 */
 export interface ViewReportPageMeta {
@@ -58,35 +46,14 @@ export interface ViewReportMeta {
 }
 
 /**
- * 目录扫描里被跳过的 run 的结构化条目;三种原因与 niceeval/record 的 unreadable 一致。
- * 页面上的呈现不走它:不可读快照已形成 `unreadable-run` Sample warning,由报告页内的
- * `ScopeWarnings` 组件显示;这里只随 viewData 携带原始事实。
- */
-export interface SkippedRunNotice {
-  /** run 目录,相对 cwd。 */
-  dir: string;
-  reason: "incompatible" | "malformed" | "incomplete";
-  schemaVersion?: number;
-  /** 完整 producer:只有 name === "niceeval" 才配得出 npx 命令,第三方 harness 如实报名字。 */
-  producerName?: string;
-  producerVersion?: string;
-  /** incompatible 且 producer 是 niceeval:服务端拼好的查看命令。 */
-  command?: string;
-  /** malformed:一句诊断(invalid JSON / results 不是数组 …)。 */
-  detail?: string;
-}
-
-/**
- * 烘焙进 HTML 的页面数据(证据室与壳)。时间/成本一律传原始值(ISO 字符串、number),
- * 格式化统一由前端按当前界面 locale 做。
+ * Baked browser-shell metadata. The report itself owns all current Record
+ * state, including unavailable and invalid projection states.
  */
 export interface ViewData {
   /** 最近一次 run 的 startedAt(ISO);没有历史 run 时缺省。 */
   lastRunAt?: string;
   /** 报告槽 Selection 合成自几个物理 run。 */
   composedRuns: number;
-  /** 读不了的落盘(三种原因);呈现走报告页内的 ScopeWarnings(unreadable-run warning)。 */
-  skippedRuns?: SkippedRunNotice[];
   /** 报告外壳与页导航的声明(规范化后);缺省时前端按单页 `report` 兜底。 */
   report?: ViewReportMeta;
 }
