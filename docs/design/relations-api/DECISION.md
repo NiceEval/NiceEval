@@ -1,5 +1,28 @@
 # Decision
 
-尚未裁决。当前产品没有独立的公共 Relations authoring contract；在本文件完成裁决并把所选契约写入
-Feature 前，两项都不能被实现当作已定 API。
+## 裁决
 
+为 [Record → Analysis → Report Roadmap](../../roadmap/record-analysis-report/README.md) 采纳
+[PLAN-1](PLAN-1/README.md)：领域 package 用 pure assembler 解释关系，host 验证 SameSample 输入与穷尽 population。
+
+这是 Roadmap 目标的选型裁决。该方向被产品采用前，产品没有独立的公共 Relations authoring contract；本裁决不能
+被实现当作已经进入当前 Feature 的 API。
+
+## 为什么选择 PLAN-1
+
+- relation 只消费 closed projections，不延长 reader 或 snapshot 生命周期；
+- durable anchor、cardinality 与领域错误分类留在真正拥有事实语义的 package；
+- host 仍强制相同 Sample、population alignment 与完整 cell 数；
+- unmatched、ambiguous、input states 与 relation coverage 保留为成功数据；
+- Derivation 继续使用普通函数，不引入 managed query runtime。
+
+## 为什么否决 PLAN-2
+
+[PLAN-2](PLAN-2/README.md) 能统一验证公共 edge 与 anchor vocabulary，但会限制第三方领域的关系表达，并增加 field、
+anchor version 与 cardinality tokens。当前目标只需要共同的穷尽输出保证，不需要让 host 理解每种 edge。
+
+## 契约落点
+
+- assembler 与执行入口：[Roadmap Library](../../roadmap/record-analysis-report/library.md)。
+- Relations 在 Analysis 内的职责：[Roadmap Architecture](../../roadmap/record-analysis-report/architecture.md)。
+- 共同的穷尽结果约束：[Relations Limits](LIMITS.md)。

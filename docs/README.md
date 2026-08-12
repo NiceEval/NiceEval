@@ -80,6 +80,7 @@ docs/
 │   ├── multi-agent/                     多 Agent Eval 场景
 │   ├── ordered-sequences/               现有 Eval 的有序执行、完整重放与 lineage
 │   ├── record-attachment-authoring/      中立 RecordAttachment definition、owner context 与显式 migration registry
+│   ├── record-analysis-report/           一套 Record 子系统与 Record → Analysis → Report 三层心智
 │   ├── sandbox-retention/                失败类 Sandbox 的有界停驻、明确销毁与安全 GC
 │   ├── materialization-cache/            Provider cache 的需求、库存、归因与安全回收
 │   ├── sandbox-reuse-groups/            Eval 侧强制复用组与组外并行

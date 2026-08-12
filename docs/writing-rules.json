@@ -439,6 +439,11 @@
       "why": "Record 没有 Fact 领域模型；持久 payload、typed projection 与 Report 计算由不同层拥有"
     },
     {
+      "term": "Record SDK",
+      "use": "按语境写 Record 子系统、RecordAccessRuntime、RecordSnapshotSource、RecordInvocationAccess、RecordMaintenanceAccess 或 ctx.record()",
+      "why": "同一个宽泛名称会把 host root capability、分权 facet 与 owner-local producer context 误解成万能 client"
+    },
+    {
       "term": "inspectFact",
       "use": "RecordReader.readRunAttachment / readAttemptAttachment",
       "why": "读取必须绑定明确 owner 与 typed RecordAttachment family"

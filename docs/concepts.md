@@ -255,6 +255,8 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
+| Record 访问运行时 | `RecordAccessRuntime` | 在一个 host operation 内统一 canonical root、snapshot generations、lock authority 与本地 verified-read cache，并 mint 分权 facets | [Record → Analysis → Report](roadmap/record-analysis-report/README.md) |
+| 分析 | Analysis | 在同一 frozen Record view 上固定分母、解释事实、建立关系并派生 closed values；不写 Record 或渲染页面 | [Record → Analysis → Report](roadmap/record-analysis-report/README.md) |
 | 可重评分 Eval | Replayable Eval | 用独立 execution 与 grading definition 保存完整多轮证据，并允许只对 sealed Execution graph 重新评分 | [可重评分 Eval](roadmap/replayable-grading/README.md) |
 | Execution graph | Execution graph | 保存一次 replayable Agent 执行的 Observation、Provenance、Ref manifest 与 ExecutionOutcome 的 sealed graph | [Replayable Architecture](roadmap/replayable-grading/architecture.md#两个-plane) |
 | Grading | Grading | 一个 GradingDefinition 对一份 sealed Execution graph 产生新的不可变 grading claim 与结果 graph | [Replayable Architecture](roadmap/replayable-grading/architecture.md#gradingrun-与-gradedsample) |

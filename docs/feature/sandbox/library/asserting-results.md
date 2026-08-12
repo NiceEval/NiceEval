@@ -49,4 +49,6 @@ import { attemptSlotProjection } from "niceeval/projection";
 const diffByAttempt = attemptSlotProjection(agentWorkspaceDiffProjector);
 ```
 
-它没有 Report 或官方组件的特权。未来新增官方 diff Attachment schema 时，必须提供一个逐相邻 converter；diff 与 Assertions 属于同一个 Evaluation migration group，整体迁移或明确呈现 migration-unavailable。
+它没有 Report 或官方组件的特权。v1 不预先建立 Evaluation migration group。未来新增官方 diff Attachment schema
+时必须提供逐相邻 converter；若迁移还必须改写 Assertions 中的 schema 指示，则采用该版本前必须完整定义 group
+authority、成员映射、原子提交与失败。缺少这份契约时明确呈现 migration-unavailable，不能独立改写一侧。

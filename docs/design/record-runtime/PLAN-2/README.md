@@ -1,4 +1,4 @@
-# PLAN-2：统一 RecordAccessRuntime substrate
+# PLAN-2（推荐）：统一 RecordAccessRuntime substrate
 
 application/CLI host 为 canonical Record root 建立一个 outer `RecordAccessRuntime`。它统一 root identity、runtime
 registry、private snapshot generation allocator、lock authority 与 exact-content verified cache，但不长期持有

@@ -46,6 +46,11 @@ _Avoid_: Record connection, Record runtime, Live Record reader
 
 ## 分析与报告
 
+**Analysis**:
+在同一 frozen Record view 上固定分母、解释 owner-local facts、建立关系并形成 metric、coverage 与 evidence
+values。它不写 Record，也不渲染页面。
+_Avoid_: Query runtime, Report loader
+
 **Analysis scope**:
 从同一份 frozen Record view 选择的 Runs、完整 logical slots 与分母。
 _Avoid_: Result set, Query context
