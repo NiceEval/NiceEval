@@ -222,6 +222,7 @@ E2E 必须由原生测试 runner 按文件与标题发现；无法按标题选�
 - [Eval](eval.md)：Eval、Context 与公开 Assertion 契约 owner；
 - [CLI](cli.md)：选择、进程出口、机器输出与缓存行为；
 - [Record](README.md)：公开 Record API 与已声明磁盘格式；
+- [Persisted Record handoff](migrate.md)：可替换 producer 与 candidate 的持久化读回边界；
 - [Report](report.md)：公开读面、HTTP、导出与浏览器行为。
 
 这些页面只登记稳定结果与 owner，不复制本篇的 Repo、执行和隔离规则。
