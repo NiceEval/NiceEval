@@ -1,10 +1,13 @@
 import { Effect, Ref } from "effect";
 import type * as Scope from "effect/Scope";
-import type { ReportExecution } from "../execution/model.ts";
+import { isReportExecution, type ReportExecution } from "../execution/model.ts";
+import { basalt, isThemeDefinition, type ThemeDefinition } from "./node/theme.ts";
 
 export interface ReportViewRevision {
   readonly revision: number;
   readonly execution: ReportExecution;
+  /** Theme snapshot for this view revision; it never becomes Report author data. */
+  readonly theme: ThemeDefinition;
 }
 
 export interface ReportViewProblem {
@@ -30,6 +33,25 @@ export interface ReportViewRebuildFailure {
   readonly summary: string;
 }
 
+/** A successful rebuild that also replaced the fixed ReportExecution. */
+export interface ReportViewExecutionRebuild {
+  readonly kind: "execution";
+  readonly execution: ReportExecution;
+  /** Omit when the previous Theme source snapshot remains current. */
+  readonly theme?: ThemeDefinition;
+}
+
+/** A Theme-only rebuild keeps the exact immutable execution and changes presentation only. */
+export interface ReportViewThemeRebuild {
+  readonly kind: "theme-only";
+  readonly theme: ThemeDefinition;
+}
+
+export type ReportViewRebuild =
+  | ReportExecution
+  | ReportViewExecutionRebuild
+  | ReportViewThemeRebuild;
+
 export interface ReportViewSession<Requirements = never> {
   readonly url: string;
   readonly snapshot: Effect.Effect<ReportViewState, ReportViewSessionClosed>;
@@ -38,10 +60,12 @@ export interface ReportViewSession<Requirements = never> {
 
 export interface OpenReportViewSessionInput<Requirements = never> {
   readonly url: string;
+  /** The initial Theme source snapshot; basalt is the host default. */
+  readonly theme?: ThemeDefinition;
   /** The opening execution must be complete; no last-good revision exists yet. */
   readonly initial: Effect.Effect<ReportExecution, ReportViewOpenError, Requirements>;
-  /** Each invocation performs exactly one next execution attempt. */
-  readonly rebuild: () => Effect.Effect<ReportExecution, ReportViewRebuildFailure, Requirements>;
+  /** Each invocation publishes a new execution or a Theme-only revision. */
+  readonly rebuild: () => Effect.Effect<ReportViewRebuild, ReportViewRebuildFailure, Requirements>;
 }
 
 type SessionCell =
@@ -65,7 +89,7 @@ export function openReportViewSession<Requirements>(
   return Effect.gen(function* () {
     const initial = yield* input.initial;
     const initialState: ReportViewState = Object.freeze({
-      current: Object.freeze({ revision: 0, execution: initial }),
+      current: revision(0, initial, input.theme ?? basalt),
     });
     const cell = yield* Ref.make<SessionCell>(Object.freeze({ state: "open", value: initialState }));
     const mutex = yield* Effect.makeSemaphore(1);
@@ -81,12 +105,9 @@ export function openReportViewSession<Requirements>(
       Effect.flatMap(Ref.get(cell), (before) => {
         if (before.state === "closed") return Effect.fail(closedError);
         return input.rebuild().pipe(
-          Effect.flatMap((execution) => {
+          Effect.flatMap((rebuilt) => {
             const next: ReportViewState = Object.freeze({
-              current: Object.freeze({
-                revision: before.value.current.revision + 1,
-                execution,
-              }),
+              current: revisionFromRebuild(before.value.current, rebuilt),
             });
             return Ref.set(cell, Object.freeze({ state: "open", value: next }));
           }),
@@ -110,6 +131,30 @@ export function openReportViewSession<Requirements>(
       () => mutex.withPermits(1)(Ref.set(cell, Object.freeze({ state: "closed" }))),
     );
   });
+}
+
+function revision(
+  revisionNumber: number,
+  execution: ReportExecution,
+  theme: ThemeDefinition,
+): ReportViewRevision {
+  if (!isThemeDefinition(theme)) {
+    throw new TypeError("a Report view revision requires a ThemeDefinition from defineTheme");
+  }
+  return Object.freeze({ revision: revisionNumber, execution, theme });
+}
+
+function revisionFromRebuild(
+  previous: ReportViewRevision,
+  rebuilt: ReportViewRebuild,
+): ReportViewRevision {
+  if (isReportExecution(rebuilt)) {
+    return revision(previous.revision + 1, rebuilt, previous.theme);
+  }
+  if (rebuilt.kind === "execution") {
+    return revision(previous.revision + 1, rebuilt.execution, rebuilt.theme ?? previous.theme);
+  }
+  return revision(previous.revision + 1, previous.execution, rebuilt.theme);
 }
 
 function boundedProblem(failure: ReportViewRebuildFailure): ReportViewProblem {

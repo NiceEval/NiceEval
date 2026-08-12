@@ -31,6 +31,7 @@ import type { SealedAttemptAssertions } from "../assertions/api.ts";
 // Report 的公开子路径是独立预编译单元；这里依赖作者 API 的公开 aggregate，避免把
 // host implementation 或旧的 JSX renderer type 拉回 runner 边界。
 import type { Report } from "../report/index.ts";
+import type { ThemeDefinition } from "../report/host/node.ts";
 
 // ───────────────────────── 结果 / 报告 ─────────────────────────
 
@@ -1015,6 +1016,8 @@ export interface EvalDescriptor {
 export interface Config {
   /** view/show 的项目默认报告。 */
   report?: Report;
+  /** view 的 host-owned closed visual token declaration. */
+  theme?: ThemeDefinition;
   /**
    * 项目名,显示在 `niceeval view` 顶部 hero(`<h1>`),省略则回退到通用标题。
    * 可传字符串,或按 locale 提供多语言(如 `{ en: "...", "zh-CN": "..." }`),随 view 语言切换。

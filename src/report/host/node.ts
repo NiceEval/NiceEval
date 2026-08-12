@@ -22,11 +22,35 @@ import {
   type ViewOptions,
 } from "../../view/server.ts";
 
+export {
+  basalt,
+  chalk,
+  defineTheme,
+  isThemeDefinition,
+  themeStylesheet,
+} from "./node/theme.ts";
+export type {
+  ReportTheme,
+  ThemeColor,
+  ThemeDefinition,
+  ThemeFontSize,
+  ThemeFontTokens,
+  ThemeHex,
+  ThemeRadius,
+  ThemeSeries,
+} from "./node/theme.ts";
+
 export type {
   NodeViewServerError,
   ReportViewServer,
   ViewOptions,
 } from "../../view/server.ts";
+export type {
+  OpenReportViewSessionInput,
+  ReportViewExecutionRebuild,
+  ReportViewRebuild,
+  ReportViewThemeRebuild,
+} from "./view-session.ts";
 
 /** Node host request after its loader/watcher has closed over all live inputs. */
 export type ReportViewRequest = OpenReportViewSessionInput;

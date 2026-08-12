@@ -29,6 +29,7 @@ const PUBLIC_ENTRIES = [
   ["./projection", "projection/index.ts"],
   ["./report", "report/index.ts"],
   ["./report/host", "report/host/index.ts"],
+  ["./report/host/node", "report/host/node.ts"],
   ["./report/built-in", "report/built-in/index.tsx"],
 ];
 

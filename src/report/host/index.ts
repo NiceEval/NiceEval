@@ -35,10 +35,13 @@ export type {
   ReportViewOpenError,
   ReportViewProblem,
   ReportViewRebuildFailure,
+  ReportViewExecutionRebuild,
+  ReportViewRebuild,
   ReportViewRevision,
   ReportViewSession,
   ReportViewSessionClosed,
   ReportViewState,
+  ReportViewThemeRebuild,
 } from "./view-session.ts";
 export {
   NodeReportViewHost,

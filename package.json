@@ -146,6 +146,16 @@
         "default": "./dist/report/host/index.cjs"
       }
     },
+    "./report/host/node": {
+      "import": {
+        "types": "./dist/report/host/node.d.mts",
+        "default": "./dist/report/host/node.mjs"
+      },
+      "require": {
+        "types": "./dist/report/host/node.d.cts",
+        "default": "./dist/report/host/node.cjs"
+      }
+    },
     "./report/built-in": {
       "import": {
         "types": "./dist/report/built-in/index.d.mts",
