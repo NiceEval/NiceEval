@@ -53,6 +53,16 @@ test("turnFromAiSdk 的真实 AI SDK seam 经 Experiment 和公开 CLI 确定性
       const source = await niceeval.run(["show", evalEvent!.locator!, "--source"], { cwd: root });
       expect(source.exitCode, source.diagnostic()).toBe(0);
       expect(source.stdout).toContain("Assertions: available");
+
+      // locator 驱动的真实执行读回(adapter/README.md「Live 验收说明」第 3 步)：
+      // execution 页是「适配器收到了什么」的用户可见投影，逐项断言每个真实
+      // marker 与工具身份落在公开读面上。
+      const execution = await niceeval.run(["show", evalEvent!.locator!, "--execution"], { cwd: root });
+      expect(execution.exitCode, execution.diagnostic()).toBe(0);
+      expect(execution.stdout).toContain("inventory_lookup");
+      expect(execution.stdout).toContain("approval_tool");
+      expect(execution.stdout).toContain("ai-sdk-approved-marker");
+      expect(execution.stdout).toContain("ai-sdk-rejected-marker");
     },
     sdkConverterArtifactStaging("turn-from-ai-sdk"),
   );

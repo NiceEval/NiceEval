@@ -53,6 +53,16 @@ test("createCodexThreadEventStream 的锁定 ThreadEvent 经 Experiment 和公�
       const source = await niceeval.run(["show", evalEvent!.locator!, "--source"], { cwd: root });
       expect(source.exitCode, source.diagnostic()).toBe(0);
       expect(source.stdout).toContain("Assertions: available");
+
+      // locator 驱动的真实执行读回(adapter/README.md「Live 验收说明」第 3 步)：
+      // execution 页是「适配器收到了什么」的用户可见投影，逐项断言每个真实
+      // marker 与工具身份落在公开读面上。
+      const execution = await niceeval.run(["show", evalEvent!.locator!, "--execution"], { cwd: root });
+      expect(execution.exitCode, execution.diagnostic()).toBe(0);
+      expect(execution.stdout).toContain("codex-sdk-command-marker");
+      expect(execution.stdout).toContain("file_change");
+      expect(execution.stdout).toContain("codex-sdk-terminal-failure-marker");
+      expect(execution.stdout).toContain("failed");
     },
     sdkConverterArtifactStaging("codex-thread-stream"),
   );

@@ -8,5 +8,11 @@ test("createLangGraphEventStream 以新实例覆盖真实 interrupt/Command resu
     experimentId: "langgraph-hitl",
     evalId: "langgraph-hitl",
     caseName: "langgraph-hitl",
+    executionMarkers: [
+      "approve_change",
+      "langgraph-hitl-approved-marker",
+      "langgraph-hitl-rejected-marker",
+      "rejected",
+    ],
   });
 });

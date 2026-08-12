@@ -53,6 +53,17 @@ test("createClaudeSdkEventStream 的锁定上游帧经 Experiment 和公开 CLI 
       const source = await niceeval.run(["show", evalEvent!.locator!, "--source"], { cwd: root });
       expect(source.exitCode, source.diagnostic()).toBe(0);
       expect(source.stdout).toContain("Assertions: available");
+
+      // locator 驱动的真实执行读回(adapter/README.md「Live 验收说明」第 3 步)：
+      // execution 页是「适配器收到了什么」的用户可见投影，逐项断言每个真实
+      // marker 与工具身份落在公开读面上。
+      const execution = await niceeval.run(["show", evalEvent!.locator!, "--execution"], { cwd: root });
+      expect(execution.exitCode, execution.diagnostic()).toBe(0);
+      expect(execution.stdout).toContain("claude-sdk-assistant-marker");
+      expect(execution.stdout).toMatch(/TOOL · (shell|Bash)/);
+      expect(execution.stdout).toContain("TOOL · Read");
+      expect(execution.stdout).toContain("TOOL · Write");
+      expect(execution.stdout).toContain("rejected");
     },
     sdkConverterArtifactStaging("claude-sdk-stream"),
   );
