@@ -1,324 +1,82 @@
 ---
-title: "用 Coding Agent 编写评估用例并迭代程序"
+title: "让 Coding Agent 根据结果迭代"
 sidebarTitle: "Coding Agent 反馈闭环"
-description: "让 Coding Agent 读取随包文档，用 Bash 运行实验、查看结果、定位失败并持续迭代，最后通过全量重跑确认结果。"
+description: "让 Coding Agent 读取 receipt 的 runIds，再用 show 或 view 查看已发布 Record 中的结果。"
 ---
 
-Coding Agent 可以根据需求编写 NiceEval 配置与评估用例，也可以根据运行结果持续改进被测程序。整个过程只需要仓库文件和 Bash，不依赖浏览器或额外的 Skill。
+Coding Agent 可以用命令行完成一次清楚的反馈闭环：阅读安装版本的文档，运行 Experiment，读取最后的 receipt，用 receipt 的 `runIds` 查看结果，再修改程序或评估用例并重新运行。
 
-## 读取安装版本的文档
+## 先读取安装版本的文档
 
 NiceEval 把中文文档发布在 npm 包的 `docs-site/zh/` 目录，并在包根提供供 Coding Agent 使用的 `INDEX.md`。Coding Agent 应先读取 `node_modules/niceeval/INDEX.md`，再从索引进入当前任务需要的页面，不依赖训练数据或其它版本的在线示例。这样可以保证 API、CLI 与安装版本一致。
 
 `npx niceeval init` 会初始化配置，并把一段托管指引写进项目的 `AGENTS.md`。如果项目只有 `CLAUDE.md`，则写入 `CLAUDE.md`。两份文件都不存在时，新建 `AGENTS.md`。升级 NiceEval 后再运行一次 `init`，即可刷新托管区块。
 
+托管指引把“编写源码”和“证明某次运行发生了什么”分开：前者当然可以读取 `evals/`、`agents/` 等项目源码；后者只使用 `niceeval show` 及其公开证据切片。不要扫描 `.niceeval/` 原始文件，也不要拿当前源码反推历史执行。公开切片缺少必要证据时，应报告 NiceEval 的呈现缺口。
+
 给 AI 的起始任务可以直接写成：
 
 ```text
-先读取 node_modules/niceeval/INDEX.md，再按索引读取当前任务需要的文档，
-再根据需求编写 niceeval.config.ts、experiment 和 eval。
-不要根据训练数据猜 NiceEval 的 API。
+先读取 node_modules/niceeval/INDEX.md。
+再按索引阅读与当前任务相关的页面。
+使用命令运行 Experiment，并根据最后的 receipt 选择要查看的 Run。
 ```
 
-AI 通常按任务选择这些入口：
+这样 Agent 使用的文档与项目安装的版本一致。
 
-| 任务 | 随包文档 |
+## 运行并保留 receipt
+
+```sh
+npx niceeval exp checkout --json | tee .niceeval-invocation.ndjson
+```
+
+`--json` 的每一行都是当前进程反馈。progress 与 diagnostic 只说明这次运行正在发生什么。最后恰好一条 receipt 包含：
+
+```json
+{
+  "invocationId": "01J8ZK3M6P4T7V9X2C5N8QW0RY",
+  "runIds": ["01J9ZK3M6P4T7V9X2C5N8QW0RY"],
+  "startedAt": "2026-08-09T10:00:00.000Z",
+  "completedAt": "2026-08-09T10:01:00.000Z",
+  "completion": "completed"
+}
+```
+
+Agent 应把最后一条 receipt 当作本次调用的交接信息。它不是持久化的结果协议；业务事实仍要通过 `runIds` 从已发布的 Record 读取。
+
+## 用 Run ID 查看结果
+
+运行结束后，先读取 Run 的 Report：
+
+```sh
+npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
+npx niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --no-open
+```
+
+`show` 与 `view` 选择 Sample，投影需要的 `RecordAttachment`，并形成固定的 `ReportExecution`。Agent 应区分以下状态：
+
+| 看到的状态 | 下一步 |
 | --- | --- |
-| 初始化项目 | `docs-site/zh/tutorials/quickstart.mdx` |
-| 编写评估用例 | `docs-site/zh/explanation/evals.mdx` |
-| 定义实验 | `docs-site/zh/tutorials/write-experiment.mdx` |
-| 连接被测 Agent | `docs-site/zh/explanation/adapter.mdx` |
-| 配置 Sandbox | `docs-site/zh/tutorials/sandbox-agent.mdx` |
-| 解释运行结果 | `docs-site/zh/tutorials/viewing-results.mdx` |
+| `failed` | 检查任务结果与断言，修正被测程序或评估逻辑。 |
+| `errored` | 检查诊断、Adapter、Sandbox 或凭据。 |
+| `not-recorded` | 检查该 expected slot 为什么没有 Member。 |
+| `core-invalid` | 阅读具名 Core issue，不要把它当成未采集。 |
+| `unavailable` | 确认 owner 是否应当有这个 Attachment。 |
+| `migration-required` | 运行 `niceeval migrate`。 |
+| `unsupported` 或 `invalid` | 只处理依赖该 Attachment 的查看内容，并阅读具名 issue。 |
 
-## 用 bash 完成一次反馈闭环
+## 修改后再次运行
 
-闭环的目标不是”把命令跑绿”，而是形成并验证一个假设：失败来自被测程序、评估用例，还是运行环境。推荐按下面的顺序迭代。
+让 Agent 每次只处理一个可验证假设：修改程序或评估用例，运行相同范围，再读取新的 receipt 和 Run。需要确认所有 slot 真实执行时使用：
 
-<Steps>
-  <Step title="运行实验">
-    ```bash
-    npx niceeval exp local --json
-    ```
-
-    <Tip>
-      仓库用 pnpm 时把命令换成 `pnpm --silent exec niceeval exp local --json`。`pnpm exec` 默认会在 stdout 最前面打印一段启动信息，混进要解析的 NDJSON 流。`--silent` 关掉这段前缀。`npx` 没有这个问题。
-    </Tip>
-
-    先读取退出码：`0` 表示所有评估用例通过。`1` 表示至少一个评估用例失败或出错。`2` 表示 NiceEval 自身未能完成运行。退出码决定是否继续。`--json` 输出的事件流给出失败的稳定定位符（locator），下一步据此下钻。
-  </Step>
-  <Step title="读取失败">
-    ```bash
-    npx niceeval show
-    npx niceeval show @1k2m9qtr
-    ```
-
-    第一条命令显示当前各实验的通过率、成本、耗时，以及每个评估用例的紧凑 Attempt locator——locator 本身就是证据入口，不在列表里编码证据可用性。第二条命令直接打开选中的 Attempt，页面末尾的 `available:` 只列出这个 Attempt 实际可用的证据命令。
-  </Step>
-  <Step title="按问题读取证据">
-    ```bash
-    npx niceeval show @1k2m9qtr --execution
-    npx niceeval show @1c3h6tbn --diff
-    ```
-
-    `--execution` 合并 AI 输出与 trace：标准事件流提供消息、thinking、tool call/result 和 Skill load。OTel 在能够关联时给同一节点补开始时间、耗时、父子关系和错误状态。没有 OTel 时步骤仍完整，只不显示时间。
-
-    不带证据 flag 时，`show @<id>` 是失败诊断首页。它先列出失败断言的 group、matcher、expected、received、原因和源码位置，再给执行、生命周期阶段耗时与文件变化摘要。Coding Agent 应先读取这一页。需要追查值的来源时，再打开对应证据。
-
-    ```text
-    $ niceeval show @1k2m9qtr
-    @1k2m9qtr · weather/brooklyn · compare/codex-gpt-5.4 · failed
-    snapshot 2026-07-09T10-00-00-000Z-x1f2 · attempt 2 · 41.2s · 12.3k tokens · $0.04
-    eval source: evals/weather/brooklyn.eval.ts · sha256:8d47…
-
-     8  export default defineEval({
-     9    description: "Brooklyn weather query",
-    10    async test(t) {
-    11      const turn = await t.send("布鲁克林今天天气怎么样？");
-    12 ✗    turn.calledTool("get_weather");
-           calledTool("get_weather") · received 0 tool calls
-    13 ✓    turn.succeeded();
-    14 ✗    t.check(turn.message, judge("回答基于实时数据"));
-           judge("回答基于实时数据") · 0.2 / 1 · reply invents a temperature without any tool call
-    15    },
-    16  });
-
-    assertions: 1 passed · 1 gate failed · 1 soft below target
-
-    execution: 3 events · 0 skill loads · 0 tool calls · 1 AI messages
-    timing: eval.run 40.4s · assertions.evaluate 0.5s · teardown +0.2s
-
-    changes · diff unavailable
-    reason: this Attempt did not produce workspace file changes
-
-    full eval source: …/weather/brooklyn/a2/sources.json
-    available:
-      niceeval show @1k2m9qtr --source
-      niceeval show @1k2m9qtr --execution
-      niceeval show @1k2m9qtr --timing
-    ```
-
-    `--execution` 把 AI 消息、Skill load、工具调用和工具结果排成一棵执行树。它只展示 Agent 可理解的事件。没有关联到这些事件的 SDK / runtime span 不逐行输出，只报告省略数量并保留 `trace.json` 路径。下面的 Attempt 有 OTel，所以能关联的节点同时带相对时间与耗时：
-
-    ```text
-    $ niceeval show @1k2m9qtr --execution
-    @1k2m9qtr · weather/brooklyn · compare/codex-gpt-5.4 · failed · OTel timing
-
-    USER
-      布鲁克林今天天气怎么样？
-
-    ASSISTANT
-      我先读取天气工具的使用说明。
-
-    TOOL · get_weather  0.8s · 1.8s
-      input
-        {"location":"Brooklyn"}
-      result · completed
-        {"temperatureC":18,"condition":"rain"}
-
-    ASSISTANT  2.8s · 1.2s
-      布鲁克林当前约 18°C，有雨。
-
-    total 4.0s · 1 skill load · 1 tool call · 2 AI messages
-    full events: …/weather/brooklyn/a2/events.json
-    69 unlinked telemetry spans omitted; inspect the OTel trace for framework timing.
-    full OTel trace: …/weather/brooklyn/a2/trace.json
-    ```
-
-    没有 OTel 时仍用标准事件流展示相同的步骤，只去掉时间列和瀑布关系，不把“缺时间”误写成“没有执行”：
-
-    ```text
-    $ niceeval show @1nx4dpwq --execution
-    @1nx4dpwq · weather/brooklyn · compare/bub-gpt-5.4 · failed
-
-    USER
-      布鲁克林今天天气怎么样？
-
-    ASSISTANT
-      我先读取天气工具的使用说明。
-
-    TOOL · get_weather
-      input
-        {"location":"Brooklyn"}
-      result · completed
-        {"temperatureC":18,"condition":"rain"}
-
-    ASSISTANT
-      布鲁克林当前约 18°C，有雨。
-
-    timing unavailable · OTel trace was not collected
-    full events: …/weather/brooklyn/a2/events.json
-    ```
-
-    diff 是被测 Agent 在 Sandbox 工作区造成的文件变化，不是评估用例源码的新旧差异。只有 Sandbox 评估用例才会收集到 diff——非 Sandbox 评估用例或 agent 确实没碰任何文件时，attempt 页的 `available:` 列表会省略 `--diff`。默认先给文件级摘要，避免把大段补丁写入 Agent 上下文。`--diff=<文件>` 再展开单个文件，原始 artifact 路径始终保留：
-
-    ```text
-    $ niceeval show @1c3h6tbn --diff
-    @1c3h6tbn · fixtures/button · compare/bub-gpt-5.4 · errored
-
-    M src/components/Button.tsx   +42 −3
-    A src/components/Button.css   +18
-
-    2 files changed · +60 −3
-    full diff: …/fixtures/button/a1/diff.json
-    next: niceeval show @1c3h6tbn --diff=src/components/Button.tsx
-    ```
-
-    用这组输出检查信息是否足够：
-
-    | 诊断目标 | 入口 | 输出必须包含 |
-    | --- | --- | --- |
-    | 查看一次 Attempt 摘要 | `niceeval show @<id>` | 评估用例断言、执行步骤、生命周期阶段耗时摘要、diff 摘要及各块可用性 |
-    | 检查评估用例断言及其通过或失败原因 | `niceeval show @<id> --source` | 运行时评估用例源码、源码哈希、断言所在行、严重度、分数与原因 |
-    | 检查 Coding Agent 的消息与调用 | `niceeval show @<id> --execution` | 消息、thinking、Skill load、工具调用与结果。有 OTel 时在同一节点附时间、父子关系和错误状态 |
-    | 检查 Attempt 各阶段耗时 | `niceeval show @<id> --timing` | lifecycle → hook/turn → shell → OTel 的统一时间树。出错的 Attempt 标出已知的最深失败节点 |
-    | 检查 Sandbox 工作区改动 | `niceeval show @<id> --diff` | 文件摘要、增删行数、具体补丁和原始 diff 路径。无文件工作区时明确 unavailable |
-  </Step>
-  <Step title="需要时把证据交给脚本或下一个 agent">
-    以上任何一条 `show` 命令加 `--json`，都会把同一范围、同一切片选出的同一批实体输出成一份结构化 JSON 文档到 stdout，而不是排好版的文本。字段名与落盘类型保持一致，Coding Agent 不用再解析人读格式：
-
-    ```bash
-    npx niceeval show @1puv8ydu --json
-    ```
-
-    ```json
-    {
-      "format": "niceeval.show",
-      "schemaVersion": 1,
-      "view": "attempt",
-      "sample": { "resultsRoot": "…", "experiments": ["compare/claude-mempal"], "fresh": false },
-      "data": {
-        "summary": {
-          "locator": "@1puv8ydu",
-          "identity": { "experimentId": "compare/claude-mempal", "evalId": "react-datepicker/pr-6058", "attempt": 0 },
-          "verdict": "failed",
-          "durationMs": 29800,
-          "costUSD": 0.07,
-          "capabilities": { "source": false, "execution": true, "timing": false, "diff": false }
-        },
-        "assertions": {
-          "attention": [
-            {
-              "name": "fixes month navigation year sync",
-              "detail": "judge(\"月份切换后年份同步\")",
-              "severity": "gate",
-              "outcome": "failed",
-              "score": 0,
-              "expected": ">= 0.7",
-              "received": "0.4 / 1 · fix still off by one month at year boundary"
-            }
-          ],
-          "passedGroups": []
-        },
-        "fixPrompt": { "prompt": "Fix the failing eval from this niceeval run.\n\n## Failure\n…" }
-      }
-    }
-    ```
-
-    `--json` 是数据超集：text 面为注意力预算省略或截断的字段（完整字符串、完整树）在这里保留完整。`--source`、`--execution`、`--timing`、`--diff`、`--usage`、`--stats` 与对照矩阵同样接受 `--json`，是同一条规则，不是 attempt 视图的特例。需要把某次失败的结构化事实转交给另一个 agent、拼进自己的分析脚本，或喂进 CI 判定时，读这里，不要重新扫 `.niceeval/` 原始文件——那样会复刻出第二套不一致的选择和去重口径。
-  </Step>
-  <Step title="提出假设并修改">
-    根据证据只修改最可能出错的一侧：
-
-    | 看到的现象 | 优先检查 |
-    | --- | --- |
-    | 回复或工具调用不符合需求 | 被测程序、Prompt、工具定义 |
-    | `diff` 与任务要求不符 | 被测 Agent 的实现策略或运行环境 |
-    | 正确行为被 gate 拒绝 | 评估用例断言、fixture、setup |
-    | timeout、鉴权或 Sandbox 错误 | 实验配置、Adapter、Sandbox |
-    | 同一评估用例时好时坏 | `--history`、`attempts` 和稳定性问题 |
-
-    不要为了变绿而放宽一个本来正确的断言。先写清楚“哪条证据支持什么判断”，再修改代码。
-  </Step>
-  <Step title="局部重跑并验证假设">
-    ```bash
-    npx niceeval exp local weather/brooklyn --json --rerun all
-    npx niceeval show weather/brooklyn
-    ```
-
-    位置参数按评估用例 ID 前缀缩小实验范围。调试同一个失败时加 `--rerun all`，确保刚才的修改真的触发一次新运行。然后用 `show` 验证判定、断言和证据是否按预期变化。
-  </Step>
-  <Step title="全量确认没有回归">
-    ```bash
-    npx niceeval exp local --json --rerun all
-    npx niceeval show
-    ```
-
-    局部结果变绿只证明当前假设成立。收工前必须强制全量重跑。只有命令退出码为 `0`，且 `show` 没有新的失败或错误，才算完成。
-  </Step>
-</Steps>
-
-## 从输出读取诊断信号
-
-`--json` 在 stdout 上输出一行一个 JSON 对象的 NDJSON 流——这才是 Coding Agent 应该解析的部分。首行是携带流身份的 `start` 事件。之后只有失败、错误或去重后的 warning 立即追加一行，长时间没有这些事件才补一条 `progress` 心跳（存活信号，不是结果数据源）。最后一个事件永远是给出结论、计数和快照路径的 `result`：
-
-```text
-{"format":"niceeval.exp","schemaVersion":1,"event":"start","total":15,"configs":1,"concurrency":8,"reused":0}
-{"event":"failure","locator":"@1k2m9qtr","evalId":"weather/brooklyn","experimentId":"local","severity":"gate","assertion":"calledTool(\"get_weather\")","received":"0 tool calls"}
-{"event":"result","status":"failed","passed":14,"failed":1,"errored":0,"reused":0,"completion":"complete","snapshots":[".niceeval/local/2026-07-09T10-00-00-000Z-x1f2/"]}
+```sh
+npx niceeval exp checkout --rerun all --json
 ```
 
-Coding Agent 应从 `failure` / `error` 事件里取出 `locator`，再逐个运行 `niceeval show @<id>` 或按需加证据 flag。事件按发生顺序追加，不用等到 `result` 才开始处理已经拿到的 locator。不要用 `progress` 心跳判断结果，它只说明进程还活着。`--json` 不做数量截断——每条失败都是独立事件，量大时用 `niceeval view` 或结果快照做批量分析。机器读取以结果快照为事实来源：
+自动采用已有 Attempt 时，`--dry` 会说明原因。carry 与 accept 的理由位于目标 Run 的 `niceeval.membership-provenance/v1` RecordAttachment；详情见[重跑与沿用](/zh/tutorials/rerun-and-cache)。
 
-```text
-.niceeval/<experiment>/<快照>/
-├── snapshot.json
-└── <eval-id>/a<attempt>/
-    ├── result.json
-    ├── events.json
-    ├── trace.json
-    └── diff.json
-```
+## Record 的边界
 
-- `snapshot.json` 记录实验身份、运行配置、格式版本和时间。
-- `result.json` 记录该 Attempt 的判定、断言、结构化错误、diagnostics 和用量。瞬时 progress 不落盘。
-- `events.json` 是对话与工具调用事件，`trace.json` 是调用链，`diff.json` 是 Sandbox 文件变化。
-- 某类证据不存在时，对应文件不会生成。先以 `show` 的提示为准，不要假设每个目录都有全部文件。
+Record 只保存已发布的事实，发布后不可修改。Agent 需要不同结果时修改程序或评估用例，运行新的 Invocation，再用新 receipt 的 `runIds` 查看。
 
-`show` 的默认结果可能合成自多次运行：每个 Experiment × 评估用例选择最新判定，因此局部重跑后仍能看到其它评估用例的旧结果。该视图用于查看每条评估用例的最新已知判定。同一版代码的整体结果必须通过一次 `--rerun all` 全量运行确认。
-
-## 结果复用条件
-
-不传 `--rerun all` 时，NiceEval 会比较当前指纹与最近结果。指纹由两部分组成：
-
-- **评估用例的源码**：`.eval.ts` 文件本身，加上它 import 的项目内模块，以及用 `loadYaml` / `loadJson` / `loadText` 读进来的数据文件。
-- **运行配置**：实验 ID、Agent、model、flags、Sandbox、`Judge` 的模型与端点，以及 `--strict`。
-
-超时上限不在指纹里：它决定等不等得到，不决定跑出来的结果是什么。改大改小都不会作废已完成的结果。
-
-| 最近结果与当前输入 | 本次行为 |
-| --- | --- |
-| 指纹相同，判定为 `passed` 或 `failed` | 携入旧结果，不重新执行 |
-| 指纹不同 | 重新执行 |
-| 最近结果为 `errored` 或 `skipped` | 重新执行 |
-| 使用 `--rerun` | 只有 `passed` 携入，失败项重新执行 |
-| 使用 `--rerun all` | 忽略旧结果，全部重新执行 |
-
-被测程序的源码不在指纹里。修改实现后，即使行为已经变化，旧的 `passed` 或 `failed` 仍可能被复用。因此可以这样选择：
-
-- 只想重看已有结果：运行 `niceeval show`，不产生新费用。
-- 修改了评估用例或实验配置：直接重跑。指纹变化会触发对应任务。改公共 辅助函数、改数据文件、换 `Judge` 模型都算在内。
-- 修改了被测程序，要复验失败项：加 `--rerun`。已通过的照常携入，不必先去找失败的评估用例 ID——失败面板的 `Retry:` 行给的就是这条命令。
-- 准备结束本轮工作：对整个实验使用 `--rerun all`，排除其它评估用例的回归。
-
-哪一处改动作废哪些结果，逐场景的对照见[重跑与沿用](/zh/tutorials/rerun-and-cache)。
-
-## 设置自主迭代协议
-
-可以把下面的协议放进任务描述。它既适合优化被测实现，也适合调试评估用例：
-
-```text
-读取 node_modules/niceeval/INDEX.md，再按索引读取与任务有关的文档。
-运行 npx niceeval exp local --json，并根据退出码和 failure/error 事件里的 locator 决定下一步。
-对每个失败的 Eval，从事件里取一个 Attempt locator。再运行 niceeval show @<id>
-并按问题选择 --source、--execution、--timing 或 --diff。--timing 从 lifecycle 展开 setup/teardown
-hook、shell 命令、每轮 send 与可关联的 OTel model/tool，回答整个 Attempt 的时间花在哪里。
-写出失败原因的假设，并判断应该修改被测程序、
-Eval，还是实验环境。修改后用 --rerun 重跑失败项，比较新的判定和证据。
-同一问题连续三轮没有新证据或改善时停止并汇报，不要为得到通过结果而放宽正确的断言。
-全部局部失败清零后，用 npx niceeval exp local --json --rerun all 全量验证。退出码 0 才完成。
-```
-
-真实 Agent 的运行可能产生费用。实验阶段可以加 `--budget <美元>` 限制本轮累计成本。预算只能限制单次命令，不能替代上面的停止条件。
-
-人与 AI 随时可以接手同一轮工作。AI 用 `niceeval show` 读取的结果，也能由人运行 `npx niceeval view` 在网页中查看。两者读取同一批 artifact。完整的输出格式、历史选择和网页操作见[查看结果](/zh/tutorials/viewing-results)。
+需要把某次结果交给他人时，使用[发布静态报告](/zh/tutorials/publish-report)，而不是把当前进程反馈当作分享格式。

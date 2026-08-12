@@ -5,6 +5,7 @@ import type { StreamEvent, Usage, ToolName, JsonValue } from "../../types.ts";
 import type { ParsedTranscript } from "./index.ts";
 import { GENERIC_VERB_ALIASES, normalizeToolName as normalizeShared } from "../tool-names.ts";
 import { normalizeJsonValue } from "../../shared/json-value.ts";
+import { notCommandProjection, opaqueCommandProjection } from "../command-projection.ts";
 
 export const OPENCODE_TOOL_ALIASES: globalThis.Record<string, ToolName> = {
   ...GENERIC_VERB_ALIASES,
@@ -39,6 +40,18 @@ function enrichApplyPatchInput(input: JsonValue): { input: JsonValue; tool: Tool
 
 function normalizeToolName(name: string): ToolName {
   return normalizeShared(name, OPENCODE_TOOL_ALIASES);
+}
+
+/** OpenCode 的 shell action 只保留 source/input，不把它误拆成 argv。 */
+function commandProjectionForOpenCodeTool(name: string) {
+  switch (name.toLowerCase()) {
+    case "bash":
+    case "shell":
+    case "exec":
+      return opaqueCommandProjection("unsupported-protocol");
+    default:
+      return notCommandProjection();
+  }
 }
 
 function get(obj: unknown, key: string): unknown {
@@ -177,7 +190,13 @@ export function parseOpenCodeTranscript(raw: string | undefined): ParsedTranscri
         events.push({
           type: "operation.started",
           operationId: callId,
-          operation: { kind: "tool", name, input, tool },
+          operation: {
+            kind: "tool",
+            name,
+            input,
+            tool,
+            command: commandProjectionForOpenCodeTool(name),
+          },
         });
         const status = str(get(state, "status"));
         if (status === "completed" || status === "error" || get(state, "output") !== undefined) {
@@ -260,6 +279,7 @@ export function parseOpenCodeTranscript(raw: string | undefined): ParsedTranscri
                     name,
                     input: coerceArgs(get(get(p, "state"), "input") ?? get(p, "input")),
                     tool: normalizeToolName(name),
+                    command: commandProjectionForOpenCodeTool(name),
                   },
                 });
                 const st = get(p, "state") as globalThis.Record<string, unknown> | undefined;

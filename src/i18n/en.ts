@@ -107,13 +107,13 @@ export const en = {
   "cli.accept.noneChosen": "Nothing accepted; running as planned.\n",
   "cli.accept.usage":
     "error: niceeval accept expects one or more locators in the form @<locator>...\n" +
-    "  fix: copy explicit locators from `niceeval show --history`, then run `niceeval accept @<locator>...`\n",
+    "  fix: copy an explicit locator from `niceeval exp --dry`, then run `niceeval accept @<locator>...`\n",
   "cli.accept.flagUnsupported":
     "error: {{flag}} is not valid with niceeval accept\n" +
     "  fix: pass only @<locator> (and optionally --record <dir>)\n",
   "cli.accept.failed": "error: could not accept result: {{error}}\n",
   "cli.accept.done":
-    "Accepted {{sourceLocator}}. New result locator: {{locator}}. Current fingerprint: {{fingerprint}}\n",
+    "Accepted source Attempt {{sourceLocator}} into new Run {{runId}}. Result locator remains {{locator}}. Current fingerprint: {{fingerprint}}\n",
   "cli.rename.usage":
     "error: niceeval exp rename expects exactly two arguments: an old id and a new id\n" +
     "  fix: niceeval exp rename <oldId> <newId> [--dry] [--json]\n",
@@ -166,6 +166,8 @@ export const en = {
   "cli.flag.invalidNumber": "Flag --{{flag}} expects a number, got \"{{value}}\".\n",
   "cli.flag.outputRemoved":
     "error: unknown option '--output'\n  fix: run without a flag for human text; use --json for the machine feed\n",
+  "cli.flag.strictRemoved":
+    "Unknown option: --strict\nExpress required facts with t.check(...) or await t.require(...) in the Eval source.\n",
   "runner.budgetUnenforceable":
     "budget for {{budgetKey}}: several attempts completed without any cost data (agent reports no usage and the model is not in the price table) — the budget cannot be enforced for this agent; continuing without the guard.\n",
   "runner.experimentTeardownFailed":
@@ -212,42 +214,20 @@ export const en = {
     "      --teardown   recover a killed run: run only the selected experiments'\n" +
     "        teardown (no attempts, no setup); combining it with eval id prefixes is an error\n" +
     "  niceeval accept @<locator>...                      accept explicit historical results\n" +
-    "  niceeval show [eval-id-prefix… | @<locator>]        read results in the terminal\n" +
-    "      no evidence flag: leaderboard scoped to the matched evals (bare show, an\n" +
-    "        eval id prefix, or a single --exp all land here); two or more --exp\n" +
-    "        compares those conditions eval by eval instead\n" +
-    "      @<locator>  exactly one attempt: no flag -> compact overview;\n" +
-    "        with a flag -> that evidence slice\n" +
-    "      --source      the Eval source captured when this attempt ran,\n" +
-    "        assertions mapped back to source lines\n" +
-    "      --execution   this attempt's execution event stream (messages/thinking/\n" +
-    "        Skill loads/tool calls); OTel adds timing to the same node when present\n" +
-    "      --execution --grep <pattern>   only matching cards, plus a cross-attempt\n" +
-    "        match summary; --execution --expand <t<n>.c<n>|cmd<n>>   one full card\n" +
-    "        (mutually exclusive with each other; range must be one attempt for --expand)\n" +
-    "      --timing      unified timing tree for the attempt (phases + hooks/commands/turns + per-turn OTel)\n" +
-    "      --diff[=file] sandbox workspace file-change summary; =file expands one file\n" +
-    "      evidence flags accept any range: a range with more than one attempt\n" +
-    "        renders one section per attempt (experimentId, evalId, attempt order)\n" +
-    "      --history   per experiment × eval execution timeline (mutually exclusive with --report)\n" +
-    "      --usage     UsageTable per attempt in range, sectioned by experiment with totals\n" +
-    "      --stats     eval x experiment stability matrix over all historical executions\n" +
-    "        (mutually exclusive with @<locator> and --report)\n" +
-    "      --json      structured form of any slice: one JSON document on stdout, same\n" +
-    "        selection as the text form (mutually exclusive with --report and --expand)\n" +
-    "      --record <dir>    pin a record root     --exp <id>   repeatable; 2+ compares conditions\n" +
-    "      --report <file>   custom report    --page <id>   pick the initial page (multi-page\n" +
-    "        reports render it, then list the rest as a page index with copyable commands)\n" +
+    "  niceeval show (--latest | --run <run-id>...)          render a Report in the terminal\n" +
+    "      --run <run-id> is repeatable and deduplicated; use complete ids only\n" +
+    "      --latest chooses one published Run per target Experiment; --experiment <id>\n" +
+    "        is repeatable and only valid with --latest\n" +
+    "      --record <root> selects the actual Record root (default: .niceeval/record)\n" +
+    "      --report overview (or omit it) uses the built-in overview; --page <route>\n" +
+    "        selects an exact Report route; --json emits one Report show document\n" +
     "  niceeval list                                       list discovered evals\n" +
     "  niceeval session list [--all] [experiment-prefix]    query Sessions (read-only)\n" +
     "  niceeval session show <sessionId>                   show one Session (read-only)\n" +
-    "  niceeval view [eval-id-prefix…] [--out dir] [--port n] [--no-open]\n" +
-    "      report pages + evidence rooms; --report <file> swaps in your report\n" +
-    "      (same file as show); --page <id> picks the initial page;\n" +
-    "      --record <dir> pins a record root; --run <file> opens exactly\n" +
-    "      one run; --exp <id> (repeatable) narrows to those experiments;\n" +
-    "      --out <dir> exports a static site: index.html plus the viewer\n" +
-    "      artifacts, ready for any static host\n" +
+    "  niceeval view (--latest | --run <run-id>...) [--out dir] [--port n] [--no-open]\n" +
+    "      uses the same Record selection and built-in overview as show; live mode\n" +
+    "      binds loopback only and rebuilds fixed ReportExecutions on Record changes\n" +
+    "      --out <dir> exports one completed static site and starts no server\n" +
     "  niceeval sandbox list|enter|history|diff|stop  inspect & destroy sandboxes kept by --keep-sandbox\n" +
     "  niceeval sandbox list --orphans / prune         reclaim instances orphaned by a killed run\n" +
     "  niceeval clean                                      delete .niceeval/ artifacts\n" +
@@ -255,7 +235,7 @@ export const en = {
     "Flags:\n" +
     "  --attempts n  --max-concurrency n  --max-build-concurrency n  --timeout ms\n" +
     "  --budget usd  --tag t\n" +
-    "  --early-exit / --no-early-exit  --strict  --rerun[=failed|all]  --dry\n" +
+    "  --early-exit / --no-early-exit  --rerun[=failed|all]  --dry\n" +
     "  --json  (machine feed: NDJSON on stdout; default is human text)\n" +
     "  --junit path  --out dir  --port n  --open / --no-open  -h, --help  -v, --version\n\n" +
     "Positional args only select which evals to run (id prefixes); which agent and\n" +
@@ -276,23 +256,14 @@ export const en = {
     "error: --stats cannot combine with a locator ({{locator}}) — a single attempt has no stability to measure\n  fix: drop the locator and use eval id prefixes / --exp to select a range for --stats\n",
   "cli.show.statsReportConflict":
     "error: --stats cannot combine with --report ({{report}}) — --stats is a zero-config slice, it does not render a user report tree\n  fix: drop --report to use --stats, or drop --stats and put a StabilityMatrix in your own report file\n",
-  "cli.show.grepExpandConflict":
-    "error: --grep and --expand cannot combine — --grep scans for matching cards, --expand prints one card in full\n  fix: drop one of the two flags\n",
   "cli.show.grepExecutionOnly":
     "error: --grep only combines with --execution — it narrows that block's text rendering, not a slice of its own\n  fix: add --execution, or drop --grep\n",
-  "cli.show.expandExecutionOnly":
-    "error: --expand only combines with --execution — it narrows that block's text rendering, not a slice of its own\n  fix: add --execution, or drop --expand\n",
   "cli.show.grepInvalidPattern":
     "error: --grep pattern is not a valid JS regular expression: \"{{pattern}}\" ({{message}})\n  fix: fix the pattern syntax (it is passed to `new RegExp(...)`)\n",
-  "cli.show.expandMultiAttempt":
-    "error: --expand requires the range to resolve to exactly one attempt, got {{count}}\n  fix: narrow the range to a single attempt — an eval id prefix matching one eval, or @<locator>\n",
-  "cli.show.expandNotFound": "error: {{message}}\n  fix: use a handle from a truncated card's own hint (t<turn>.c<card> or cmd<n>), or drop --expand to see the whole attempt\n",
   "cli.show.historyReportConflict":
     "`--history` and `--report` are mutually exclusive: both take over the main output. --history is the host's per-attempt execution timeline; for run-level trends, compose exp.runs inside your report file instead.\n",
   "cli.show.jsonReportConflict":
     "error: --json cannot combine with --report ({{report}}) — a report tree says how to look at the data, --json says what the data is\n  fix: drop --report to use --json, or drop --json and read the report tree as text/HTML\n",
-  "cli.show.jsonExpandConflict":
-    "error: --json cannot combine with --expand — JSON never truncates cards, there is nothing to expand\n  fix: drop --expand; --json already returns the full untruncated value\n",
   "cli.show.jsonMultiEvidenceConflict":
     "error: --json requires exactly one of --source/--execution/--timing/--diff at a time — the envelope's \"view\" is a single value, there is no combined shape for more than one\n  fix: drop the extra evidence flags, or make one --json call per flag\n",
   "cli.show.locatorMalformed": "{{message}}\n",
@@ -318,10 +289,6 @@ export const en = {
   "cli.experiment.noEvalsSelected":
     "No evals selected: {{selection}} matched 0 evals. Available eval prefixes: {{experiments}}.\n" +
     "Run `niceeval exp {{selection}} --dry` to see what it covers, or drop the eval filter to run every eval selected by those experiments.\n",
-  "cli.experiment.strictOnPoints":
-    "All {{count}} evals selected by experiment \"{{experimentId}}\" are points-based (defineScoreEval), and `--strict` does nothing for them:\n" +
-    "the flag only promotes soft assertions that carry a threshold into gates, while a points eval's verdict comes solely from a `.gate()` prerequisite abort — losing points never changes it.\n" +
-    "Drop `--strict` and re-run; to tighten a points eval, write the must-hold checks as `.gate()` prerequisites.\n",
   "cli.experimentGroup": " path",
   "cli.fallbackCleanupTimeout": "\ngraceful cleanup timed out; force-cleaning sandboxes...\n",
   "cli.forceCleanupExit": "\nForce-cleaning sandboxes and exiting...\n",
@@ -356,12 +323,12 @@ export const en = {
   "define.evalIdRejected": "defineEval does not accept id; ids are derived from file paths.",
   "define.evalEnvironmentEmpty": "defineEval environment must be a non-empty profile id when provided.",
   "define.evalTestRequired": "defineEval requires an async test(t) function.",
-  "define.evalEvaluationKindRejected": "defineEval does not accept evaluationKind; it is always set to \"pass\" (pass eval kind). Use defineScoreEval for the points kind.",
+  "define.evalEvaluationKindRejected": "defineEval does not accept evaluationKind; it is always set to \"pass\" (pass eval kind). Use defineScoreEval for the score kind.",
   "define.evalConfigHashRejected": "defineEval does not accept configHash; configHash is computed during run planning.",
   "define.scoreEvalIdRejected": "defineScoreEval does not accept id; ids are derived from file paths.",
   "define.scoreEvalEnvironmentEmpty": "defineScoreEval environment must be a non-empty profile id when provided.",
   "define.scoreEvalTestRequired": "defineScoreEval requires an async test(t) function.",
-  "define.scoreEvalEvaluationKindRejected": "defineScoreEval does not accept evaluationKind; it is always set to \"points\" (points eval kind). Use defineEval for the pass kind.",
+  "define.scoreEvalEvaluationKindRejected": "defineScoreEval does not accept evaluationKind; it is always set to \"score\" (score eval kind). Use defineEval for the pass kind.",
   "define.scoreEvalConfigHashRejected": "defineScoreEval does not accept configHash; configHash is computed during run planning.",
   "define.experimentAgentRequired": "defineExperiment requires agent.",
   "define.experimentFlagNotJson": "experiment.flags.{{key}} is not JSON-serializable (functions / undefined / cycles / bigint are not allowed); flags are persisted verbatim into result runs and must be plain JSON.",
@@ -551,7 +518,6 @@ export const en = {
     "a provider's writability guarantee must cover more than workdir, since the runner puts the collector and the change ledger outside it. " +
     "fix: make /tmp writable for the run user (`chmod 1777 /tmp` in the image, or pick an image/user that does not mount /tmp read-only), then rerun — finished attempts carry over.",
   "assertions.evaluationError": "assertion evaluation error: {{error}}",
-  "assertions.pointsInvalid": ".points({{n}}) is invalid; points must be a positive finite number (n > 0).",
   "assertions.scoreInvalid": "t.score({{label}}, {{n}}) is invalid; points must be a non-negative finite number (n >= 0).",
   "session.fileFallback": "[file]",
   "session.tools": "{{count}} tools",

@@ -108,7 +108,7 @@ npx niceeval exp compare evals/coding
 需要查看某个 Attempt 的原始错误和重试摘要时，使用终端给出的定位符：
 
 ```shell
-npx niceeval show @12h8m4k1
+npx niceeval show --run <runId> --page attempt-<attemptId>
 ```
 
 自定义 Adapter 如果有专用的受理前拒绝信号，可以提供 `classifySendFailure`。该字段的类型和边界见 [`defineSandboxAgent` 参考](/zh/reference/define-agent#definesandboxagent)。

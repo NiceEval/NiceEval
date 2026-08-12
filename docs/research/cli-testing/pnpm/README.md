@@ -64,7 +64,7 @@ Rust/TypeScript 双测试栈仍存在行为重叠，这是实现迁移带来的�
 
 ## 对 NiceEval 的直接启示
 
-- 把 repo、cache、record root、adapter state 和本地 server storage 都纳入隔离。
+- 把 repo、cache、`.niceeval` RecordStore、adapter state 和本地 server storage 都纳入隔离。
 - Teardown 聚合所有失败，并等待整个 process tree 退出。
 - Extension 要在真实 consumer repo 被发现和加载。
 - 不长期维护两套等价 E2E harness。

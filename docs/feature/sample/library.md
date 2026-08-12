@@ -1,155 +1,209 @@
-# Sample —— 库用法
+# Sample Library
 
-`niceeval/sample` 把一份 [Record](../record/README.md) 选成当前配置下唯一的结果集。
-判断全部写在返回值上，Reports 不再从 Run 或规划字段重建贡献集合。
+本页是 `niceeval/analysis` 的公开契约。Record 拥有 Run、Member、Attempt 与 Core issue；Analysis 只从 frozen `RecordReader` 形成分析分母。
 
-## 当前选择器
-
-```typescript
-import { openRecord } from "niceeval/record";
-import { loadProjectCurrentTarget, projectCurrentSample } from "niceeval/sample";
-
-const record = await openRecord(".niceeval");
-const { target } = await loadProjectCurrentTarget(process.cwd());
-const current = projectCurrentSample(record, target, {
-  experiments: "compare/",
-  evals: "algebra/",
-});
-```
-
-`projectCurrentSample()` 对每个 Experiment 执行同一条选择规则：
-
-1. 无派发 Project Target 从同一次 identity planning 输出取得 Experiment `runConfigHash`、逐 Eval `resultConfigHash` 与 canonical fingerprint。
-2. 每个 attempt slot 先在全历史过滤三层身份完整匹配的物理结果，再取最新一条；最新 current 是 errored/skipped 时照样进入报告，carry 另行决定是否重跑，不回退更旧 passed。
-3. `attempts` 只限制可选 slot 上界；coverage 仍以 Eval 为粒度，一个 Eval 完全没有 current attempt 时才产生一个缺口。
-4. 身份齐全但不匹配是 `previous-result`；缺身份是 `unverifiable-result` 并产生结构化 Issue。
-5. Target 提供零 current 时的实验、Eval、agent/model/flags 与题型，Sample 不伪造 Run。
-
-物理 Attempt 指 Record 已经登记并暴露的 `AttemptHandle`，不是递归扫描任意 `result.json`。
-`latestRecordSample(record)` 只重建 Record 自己的最新 head：以最新 Run 配置为版本对照点逐 Eval 向历史补齐；它不承诺与工作树项目定义一致。
-
-## 单 Run 选择
-
-```typescript
-import { latestRunSample } from "niceeval/sample";
-
-const snapshot = latestRunSample(record, { experiments: "compare/" });
-```
-
-`latestRunSample()` 只服务需要一份自包含 Run 的发布与审计旅途。
-它收最新 Run 里实际登记的全部 Attempt，不跨 Run 补题，也不产生另一种 current 状态。
-
-## Sample 形状
-
-```typescript
-interface SampleMissing {
-  evalId: string;
-  reason: "never-run" | "previous-result" | "unverifiable-result";
-  previous?: {
-    locator: string;
-    verdict: "passed" | "failed" | "errored" | "skipped";
-    startedAt: string;
-  };
-}
-
-interface SampleCoverage {
-  experimentId: string;
-  run?: Run;
-  target?: ProjectCurrentExperimentTarget;
-  knownEvalIds: string[];
-  missing: SampleMissing[];
-}
-
-interface Sample {
-  attempts: AttemptHandle[];
-  runs: Run[];
-  historyAttempts: AttemptHandle[];
-  coverage: SampleCoverage[];
-  issues: SampleIssue[];
-  scope(options: { experiments?: string | string[]; evals?: string | string[] }): Sample;
-  filter(predicate: (attempt: AttemptHandle) => boolean): Sample;
-}
-```
-
-`attempts` 是当前贡献全集，官方计算函数只消费它。
-`runs` 只保存真正贡献过 Attempt 的 Run；同一个 Experiment 可以有多个贡献 Run，但它们共享当前 `configHash`。
-`historyAttempts` 服务明确的 History、趋势和稳定性旅途，不参与当前报告计票。
-
-## 缺口与分母
-
-项目 current 的 `knownEvalIds` 完全来自 Target；Record head 的分母来自本地历史与各 Run 声明的已知 Eval 并集。两者再与调用方范围求交。
-`missing` 只列当前 `attempts` 里没有对应 Attempt 的 Eval。
-
-`never-run` 表示历史中没有该 Eval 的任何物理 Attempt。
-`previous-result` 表示历史中有身份完整的物理 Attempt，但它与 Project Target 的三层身份不匹配；`previous` 取最近一条可定位结果作为审计入口。
-`unverifiable-result` 表示只有缺少 run config hash、result config hash 或 fingerprint 的历史结果；它们不能被证明为 current。
-这个引用不参与任何读数，也不保证 `accept` 一定成功；`accept` 仍会按当前项目重新完成全部资格校验。
-
-## provenance 事实
-
-`AttemptHandle.carried` 保留为 provenance 事实。
-它用于 Attempt 详情解释证据从哪里来，不用于过滤、分段、降饱和或改变统计。
-
-如果产品要求结果必须在一定时间内重新执行，这项要求进入携带资格或 fingerprint 输入。
-过期结果不能被携带时，自然形成 current 缺口；Reports 不提供时间过滤器修正当前结果集。
-
-## 转换
-
-```typescript
-const algebra = projectCurrentSample(record, target)
-  .scope({ experiments: "compare/", evals: "algebra/" })
-  .filter((attempt) => attempt.result.verdict !== "skipped");
-```
-
-| 方法 | 含义 | coverage 分母 |
-|---|---|---|
-| `scope()` | 重新定义当前总体 | 与范围求交 |
-| `filter()` | 删除不可信或不适用的当前观测 | 保持不变，删出的 Eval 进入缺口 |
-
-转换同步更新 `attempts`、`runs`、`historyAttempts`、`coverage` 与 `issues`(带 experiment 归属的随所属实验存活)。
-Sample 不提供 `freshOnly()`；需要查看单次执行事实时进入 Run 或 History 旅途。
-
-## 去重
-
-携带会让同一 Attempt 出现在多份 Run 中。
-选择器按稳定 locator 身份去重，重复时保留最新 Run 中的物理副本，证据入口因此落在最新副本上。
-缺少稳定身份时宁可保留，不靠近似字段误删。
-
-## Issue code 全集
-
-`issues` 收读取期需要结构化解释的问题；其中 `unverifiable-current-result` 同时解释相应 coverage 缺口为何不能借用历史结果：
+## 纯值与 live handle
 
 ```ts
-type SampleIssue =
-  | { code: "unfinished-run"; experimentId: string; startedAt: string; dir: string }
+import { Effect, Either, Schema } from "effect";
+import { ExperimentIdSchema } from "niceeval/analysis";
+
+type ExperimentId = Schema.Schema.Type<typeof ExperimentIdSchema>;
+
+interface AnalysisSample {
+  readonly selection: AnalysisSelectionSummary;
+  readonly runs: readonly AnalysisRun[];
+  readonly slots: readonly AnalysisSlot[];
+  readonly denominator: number;
+}
+
+declare const analysisSampleHandleTypeId: unique symbol;
+
+interface AnalysisSampleHandle {
+  readonly sample: AnalysisSample;
+  readonly [analysisSampleHandleTypeId]: (sample: AnalysisSample) => AnalysisSample;
+}
+```
+
+`AnalysisSample` 是纯值。它只包含已经读取并验证的 Core 事实、选择摘要和 slot 状态；它不包含 reader、路径、文件句柄或延迟查询。reader 的 Scope 关闭后，调用方仍可显示或纯收窄 `sample`，但没有 API 能从它恢复 I/O。
+
+`AnalysisSampleHandle` 是 live capability。它只公开 `sample` 与 package-private nominal brand：brand 阻止普通结构赋值伪造 handle，但强制类型断言或复制字段的对象仍可能通过类型检查；运行时按 exact identity 校验，伪造对象被 typed `RecordReadError` 拒绝。
+
+每个 Library 创建的 handle 只绑定创建它的同一个 frozen reader view；Library 不接受手工对象、从 `AnalysisSample` 重新绑定的对象或另一个 reader 的对象。reader 关闭后，任何需要 Attachment I/O 的 handle 操作返回 `RecordReadError`，而 `handle.sample` 保持可读。
+
+## AnalysisSelectionRequest
+
+```ts
+interface ExplicitRunsAnalysisInput {
+  readonly runIds: readonly [RunId, ...RunId[]];
+}
+
+interface LatestRunsAnalysisInput {
+  readonly experimentIds?: readonly [ExperimentId, ...ExperimentId[]];
+}
+
+type AnalysisSelectionRequest =
   | {
-      code: "unverifiable-current-result";
-      experimentId: string;
-      evalId: string;
-      attempt: number;
-      missing: readonly ("run-config-hash" | "result-config-hash" | "fingerprint")[];
+      readonly policy: "explicit-runs";
+      readonly input: ExplicitRunsAnalysisInput;
     }
   | {
-      code: "dangling-evidence";
-      experimentId: string;
-      evalId: string;
-      attempt: number;
-      artifactBase: string;
-      artifacts: readonly string[];
+      readonly policy: "latest-runs";
+      readonly input: LatestRunsAnalysisInput;
+    };
+
+declare const selectAnalysisSample: (
+  reader: RecordReader,
+  request: AnalysisSelectionRequest,
+) => Effect.Effect<
+  AnalysisSampleHandle,
+  AnalysisSelectionError | RecordReadError
+>;
+```
+
+`AnalysisSelectionRequest` 是纯选择配置。它不携带 `RecordReader`、`AnalysisSample`、path、callback 或任何 I/O capability；reader 始终由调用点单独传入。
+
+也提供两个只改善调用点的窄入口：
+
+```ts
+declare const selectExplicitRuns: (
+  reader: RecordReader,
+  input: ExplicitRunsAnalysisInput,
+) => Effect.Effect<AnalysisSampleHandle, AnalysisSelectionError | RecordReadError>;
+
+declare const selectLatestRuns: (
+  reader: RecordReader,
+  input: LatestRunsAnalysisInput,
+) => Effect.Effect<AnalysisSampleHandle, AnalysisSelectionError | RecordReadError>;
+```
+
+三个入口都只使用传入 reader 的 frozen view，且返回绑定这同一个 reader 的 handle。它们不会打开第二个 reader，也不会让之后完成的 Run 混入已经选择的 Sample。
+
+Selection 是 set 语义。Library exact decode 输入、去重并按稳定 identity 排序；调用方数组顺序不进入 Sample。需要展示顺序时由 Calculation 或 Page 明确排序。
+
+explicit 要求每个 RunId 对应带完成标识的 Run。missing 或 Run Core invalid 返回具名 selection error，不产生缩小后的假 Sample。
+
+latest 从 Run-owned Evaluations Attachment 读取 Experiment identity，以 `completedAt`、再以 `runId` 决定最后一项。任何候选的分组 identity 无法可靠读取时返回 `sample-latest-indeterminate`，不能静默缩小比较组。
+
+空 `experimentIds` 不等于全部；它是 invalid input。省略字段才表示所有可确定的 Experiment。
+
+## AnalysisSample shape
+
+```ts
+type AnalysisSelectionSummary =
+  | {
+      readonly policy: "explicit-runs";
+      readonly runIds: readonly RunId[];
     }
   | {
-      code: "unreadable-run";
-      dir: string;
-      reason: "incompatible" | "malformed" | "incomplete";
-      producer?: { name: string; version?: string };
+      readonly policy: "latest-runs";
+      readonly experimentIds: readonly ExperimentId[] | "all";
+      readonly selectedRunIds: readonly RunId[];
+    };
+
+interface AnalysisRun {
+  readonly runId: RunId;
+  readonly startedAt: UtcMillis;
+  readonly completedAt: UtcMillis;
+  readonly expectedSlots: readonly SlotId[];
+}
+
+interface AnalysisSlotRef {
+  readonly runId: RunId;
+  readonly slotId: SlotId;
+}
+
+interface IncludedAnalysisSlot extends AnalysisSlotRef {
+  readonly state: "included";
+  readonly relation: "origin" | "reference";
+  readonly attempt: RecordAttemptRef;
+}
+
+interface NotRecordedAnalysisSlot extends AnalysisSlotRef {
+  readonly state: "not-recorded";
+}
+
+interface CoreInvalidAnalysisSlot extends AnalysisSlotRef {
+  readonly state: "core-invalid";
+  readonly issues: NonEmptyRecordIssues;
+}
+
+type AnalysisBaseSlot =
+  | IncludedAnalysisSlot
+  | NotRecordedAnalysisSlot
+  | CoreInvalidAnalysisSlot;
+
+interface ExcludedAnalysisSlot extends AnalysisSlotRef {
+  readonly state: "excluded";
+  readonly base: AnalysisBaseSlot;
+}
+
+type AnalysisSlot = AnalysisBaseSlot | ExcludedAnalysisSlot;
+```
+
+`runs` 按 RunId 排序。`slots` 按 RunId、SlotId 排序，每个 expected SlotId 恰好一项。`denominator` 等于非 excluded slot 数；`slots.length` 始终保留收窄前的完整框架。
+
+ExperimentId、EvalId、Evaluation 类型和 attempt ordinal 不冒充 Core。需要这些数据的 Report 必须声明对应的 `RecordAttachment` projection。
+
+## Narrowing
+
+```ts
+interface AnalysisSampleSelector {
+  readonly runIds?: readonly RunId[];
+  readonly slotIds?: readonly SlotId[];
+}
+
+declare const narrowAnalysisSample: (
+  sample: AnalysisSample,
+  selector: AnalysisSampleSelector,
+) => Either.Either<AnalysisSample, AnalysisSelectionError>;
+
+declare const narrowAnalysisSampleHandle: (
+  handle: AnalysisSampleHandle,
+  selector: AnalysisSampleSelector,
+) => Effect.Effect<
+  AnalysisSampleHandle,
+  AnalysisSelectionError | RecordReadError
+>;
+```
+
+单字段内是 OR，不同字段间是 AND。Narrowing 只做 monotonic intersection：excluded slot 不会重新纳入，也不重新读取 Record。
+
+`narrowAnalysisSample()` 只处理纯值，因此 reader 已关闭后仍可使用。`narrowAnalysisSampleHandle()` 先验证 live handle，再返回绑定同一 frozen reader 的新 handle；它不是把 pure sample 恢复成 I/O capability 的入口。
+
+## Limits 与错误
+
+Library 最多选择 4,096 Runs，最多形成 250,000 Slots。它在复制或分配大数组前检查 count。
+
+```ts
+type AnalysisSelectionError =
+  | {
+      readonly code: "sample-selection-invalid";
+      readonly field: string;
+      readonly reason: string;
+    }
+  | { readonly code: "sample-run-not-found"; readonly runId: RunId }
+  | {
+      readonly code: "sample-run-invalid";
+      readonly runId: RunId;
+      readonly issues: NonEmptyRecordIssues;
+    }
+  | {
+      readonly code: "sample-latest-indeterminate";
+      readonly issues: NonEmptyRecordIssues;
+    }
+  | {
+      readonly code: "sample-limit-exceeded";
+      readonly limit: "selected-runs" | "slots";
+      readonly maximum: number;
+      readonly observedAtLeast: number;
     };
 ```
 
-Issue 不携带文案、严重度或修复命令；Reports 的 Notice policy 决定如何解释。
+Record I/O、permission、closed reader 与 invalid reader-owned handle 保持 `RecordReadError`。latest 所需 Attachment 的 migration-required、unsupported 或 invalid 形成 `sample-latest-indeterminate`，并保留原始 Attachment 状态供诊断。
 
-## 相关阅读
+## 与 Projection、Reports 和 reuse 的边界
 
-- [README](README.md) —— 当前结果集的唯一心智。
-- [局部补跑](use-case/partial-rerun.md) —— 多 Run 如何形成 current。
-- [Record](../record/library.md) —— 物理事实、身份与发布。
-- [Reports](../reports/library.md) —— 消费 Sample 的计算与组件。
+Projection 接收 `AnalysisSampleHandle` 与 `RecordAttachment` projector，形成 scripts 和 Reports 共用的穷尽 `ProjectedSample`。`ReportExecution` 只保存 pure `sample` 与投影结果，不保存 reader 或 handle。
+
+reuse planning 接收当前 Project 或 Execution target，不接收 `AnalysisSample`。Reports 不接收 `ExecutionReusePlan`，Sample 也不判断当前 slot 是否需要执行。

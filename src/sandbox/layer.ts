@@ -1528,15 +1528,27 @@ export function createBuiltinSandboxFactories(
         },
         privateFingerprintIdentity: identity,
         leakGate: { _tag: "Compose", file, workspaceService },
-        plan: ({ authorBaseDir }) => Effect.flatMap(dockerTarget(), (target) => Effect.tryPromise({
-          try: async () => {
-          const plannedFile = plannedLocation(file, authorBaseDir);
-          const collection = await collectComposeBuilds({
+        plan: ({ authorBaseDir }) => Effect.flatMap(dockerTarget(), (target) => Effect.gen(function* () {
+          const plannedFile = yield* Effect.try({
+            try: () => plannedLocation(file, authorBaseDir),
+            catch: (cause) => providerPlanningError(
+              "sandbox.case-identity-unavailable",
+              "docker",
+              cause instanceof Error ? cause.message : String(cause),
+              ["Make the Compose file and every filtered build context readable during physical planning."],
+            ),
+          });
+          const collection = yield* collectComposeBuilds({
             file: plannedFile._tag === "Url" ? new URL(plannedFile.value) : plannedFile.value,
             mainService: workspaceService,
             platform: plannedTargetPlatform(target),
             env: runtimeEnv,
-          });
+          }).pipe(Effect.mapError((cause) => providerPlanningError(
+            "sandbox.case-identity-unavailable",
+            "docker",
+            cause.message,
+            ["Make the Compose file and every filtered build context readable during physical planning."],
+          )));
           const caseIdentity = composeCollectionIdentity(collection);
           const identityInput: JsonValue = {
             file: plannedFile,
@@ -1593,13 +1605,6 @@ export function createBuiltinSandboxFactories(
             },
             identityMarker: collection.providerIdentityMarker,
           });
-          },
-          catch: (cause) => providerPlanningError(
-            "sandbox.case-identity-unavailable",
-            "docker",
-            cause instanceof Error ? cause.message : String(cause),
-            ["Make the Compose file and every filtered build context readable during physical planning."],
-          ),
         })),
       });
     },
@@ -1660,10 +1665,17 @@ export function createBuiltinSandboxFactories(
         },
         privateFingerprintIdentity: identity,
         leakGate: { _tag: "Dockerfile", context, dockerfile },
-        plan: ({ authorBaseDir }) => Effect.flatMap(dockerTargetForProfile(profile), ({ target, profileBinding }) => Effect.tryPromise({
-          try: async () => {
-          const plannedContext = plannedLocation(context, authorBaseDir);
-          const build = await resolveDockerfileBuildIdentity({
+        plan: ({ authorBaseDir }) => Effect.flatMap(dockerTargetForProfile(profile), ({ target, profileBinding }) => Effect.gen(function* () {
+          const plannedContext = yield* Effect.try({
+            try: () => plannedLocation(context, authorBaseDir),
+            catch: (cause) => providerPlanningError(
+              "sandbox.build-identity-unavailable",
+              "docker",
+              cause instanceof Error ? cause.message : String(cause),
+              ["Make the Dockerfile and its filtered build context readable during physical planning."],
+            ),
+          });
+          const build = yield* resolveDockerfileBuildIdentity({
             provider: "docker",
             context: plannedContext._tag === "Url" ? new URL(plannedContext.value) : plannedContext.value,
             dockerfile,
@@ -1671,7 +1683,12 @@ export function createBuiltinSandboxFactories(
             ...(targetStage === undefined ? {} : { target: targetStage }),
             platform: plannedTargetPlatform(target),
             label: "Dockerfile sandbox",
-          });
+          }).pipe(Effect.mapError((cause) => providerPlanningError(
+            "sandbox.build-identity-unavailable",
+            "docker",
+            cause.message,
+            ["Make the Dockerfile and its filtered build context readable during physical planning."],
+          )));
           const runtimeIdentity: JsonValue = {
             context: plannedContext,
             dockerfile,
@@ -1761,13 +1778,6 @@ export function createBuiltinSandboxFactories(
             },
             identityMarker: build.providerIdentityMarker,
           });
-          },
-          catch: (cause) => providerPlanningError(
-            "sandbox.build-identity-unavailable",
-            "docker",
-            cause instanceof Error ? cause.message : String(cause),
-            ["Make the Dockerfile and its filtered build context readable during physical planning."],
-          ),
         })),
       });
     },

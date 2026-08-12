@@ -1,0 +1,59 @@
+---
+title: "Record：持久事实与报告输入"
+sidebarTitle: "Record"
+description: "理解 Record Core、RecordAttachment、完成标识，以及从选择到 ReportExecution 的固定数据路径。"
+---
+
+import { RecordShape } from '/snippets/diagram-record-shape.jsx';
+import { RecordEvolution } from '/snippets/diagram-record-evolution.jsx';
+
+Record 是 `.niceeval/record/` 下可携带的运行事实集。它只包含完整发布的 Run。一个 Run 写完所有内容后，最后创建 `complete`；发布后，writer 不再修改它。
+
+<RecordShape />
+
+## Core 保存骨架，Attachment 保存业务事实
+
+Record Core 保存所有读取者都要理解的关系：Record 身份、Run 的 `expectedSlots`、Member 对 Attempt 的精确引用，以及 Attempt 的 origin。
+
+业务事实属于 owner-local 的 `RecordAttachment`。Run 可以保存 Evaluations、Membership provenance 与 Sources。Attempt 可以保存 Assertions、Verdict、Score 与 Eligibility。一个 Attachment 的问题只影响请求它的功能，不会把其它完整事实变成无效。
+
+Member 表示一个 expected slot 被哪个 Attempt 占据。Attempt 在自己的 origin Run 下只保存一次；另一个 Run 采用它时，Member 只保留精确引用，不复制业务事实。
+
+没有 `complete` 的目录可能短暂留在 `runs/` 下。它不是已发布的 Run，reader 忽略它并返回 `incomplete-run` warning。`session`、锁和 cache 位于 portable Record 外，也不随 Record 复制或分享。
+
+## 从选择到报告
+
+查看或生成报告时，数据沿一条固定链路前进：
+
+```text
+RecordReader + AnalysisSelectionRequest
+                  ↓
+          AnalysisSampleHandle
+             ├─ .sample → AnalysisSample（纯值）
+             └─ 仍可读取已选 Attachment
+                  ↓
+       RecordAttachment projector
+                  ↓
+           ProjectedSample → Report
+                  ↓
+     immutable ReportExecution → show / view / static export
+```
+
+`AnalysisSelectionRequest` 只决定选择哪些已发布的 Run。`AnalysisSampleHandle` 绑定那次 reader 的冻结视图；它的 `.sample` 是关闭 reader 后仍可显示和收窄的 `AnalysisSample`。Sample 保留完整 expected-slot 分母，并标出 `included`、`not-recorded`、`core-invalid` 与 `excluded`。
+
+`RecordAttachment projector` 只把一个明确 owner 的一个 Attachment 解释成 typed view。Projection 将它与 Sample 的每一个逻辑位置对齐，形成 `ProjectedSample`。Report 再用投影结果计算并组织页面，得到一次不可变的 `ReportExecution`。
+
+## 变化停在正确的层
+
+<RecordEvolution />
+
+作者 API、matcher 或算法改变时，只要已保存事实的语义不变，磁盘不需要改变。Attachment payload 改变时发布相邻 schema，并通过明确的相邻迁移边处理历史值。只有 Core 的 owner、引用、目录、完成判断或 shape 改变时，才提升 Record major。
+
+普通读取不会自动改写磁盘。需要迁移时运行 `niceeval migrate`；无法无损迁移的 Attachment 保留其历史 bytes，并对请求新值的功能显示不可用。
+
+## 下一步
+
+- [查看结果](/zh/tutorials/viewing-results)：选择 Sample，并查看 `show` 与 `view` 的结果。
+- [读取 Record 数据](/zh/reference/results-data)：使用 `AnalysisSelectionRequest`、Sample 和 Projection。
+- [报告 API](/zh/reference/report-components)：定义 Projection、Calculation、Page 与 Report。
+- [发布静态报告](/zh/tutorials/publish-report)：分享一个已完成的 `ReportExecution`。

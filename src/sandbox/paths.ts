@@ -6,8 +6,8 @@ import { withSandboxIoRetry } from "./io-retry.ts";
 import { withTransferErrors } from "./transfer-errors.ts";
 import { successfulCommandResult } from "./operations.ts";
 import {
+  providerCompatibilityPromise,
   registerSandboxCapabilities,
-  runProviderBoundary,
   type SandboxProviderBackend,
 } from "./backend.ts";
 
@@ -49,47 +49,47 @@ export function normalizeSandboxPaths(sandbox: SandboxProviderBackend, provider:
       return sandbox.otlpHost;
     },
     runCommand: (cmd, args, opts) =>
-      runProviderBoundary(() => sandbox.runCommand(cmd, args, resolveCommandOptions(sandbox.workdir, opts))),
+      providerCompatibilityPromise(() => sandbox.runCommand(cmd, args, resolveCommandOptions(sandbox.workdir, opts))),
     runShell: (script, opts) =>
-      runProviderBoundary(() => sandbox.runShell(script, resolveCommandOptions(sandbox.workdir, opts))),
+      providerCompatibilityPromise(() => sandbox.runShell(script, resolveCommandOptions(sandbox.workdir, opts))),
     runCommandOrThrow: (cmd, args, opts) => {
       const resolved = resolveCommandOptions(sandbox.workdir, opts);
-      return runProviderBoundary(async () => successfulCommandResult(
+      return providerCompatibilityPromise(async () => successfulCommandResult(
         await sandbox.runCommand(cmd, args, resolved),
         resolved?.sensitiveValues,
       ));
     },
     runShellOrThrow: (script, opts) => {
       const resolved = resolveCommandOptions(sandbox.workdir, opts);
-      return runProviderBoundary(async () => successfulCommandResult(
+      return providerCompatibilityPromise(async () => successfulCommandResult(
         await sandbox.runShell(script, resolved),
         resolved?.sensitiveValues,
       ));
     },
-    readText: (path) => runProviderBoundary(() =>
+    readText: (path) => providerCompatibilityPromise(() =>
       withSandboxIoRetry(() => sandbox.readText(resolveSandboxPath(sandbox.workdir, path))),
     ),
     writeText: (path, content) => {
       const abs = resolveSandboxPath(sandbox.workdir, path);
-      return runProviderBoundary(() => withTransferErrors(
+      return providerCompatibilityPromise(() => withTransferErrors(
         { provider, operation: "writeText", path: abs, bytes: Buffer.byteLength(content) },
         () => withSandboxIoRetry(() => sandbox.writeText(abs, content)),
       ));
     },
     readBytes: (path) => {
       const abs = resolveSandboxPath(sandbox.workdir, path);
-      return runProviderBoundary(() => withTransferErrors({ provider, operation: "readBytes", path: abs }, () =>
+      return providerCompatibilityPromise(() => withTransferErrors({ provider, operation: "readBytes", path: abs }, () =>
         withSandboxIoRetry(() => sandbox.readBytes(abs)),
       ));
     },
     writeBytes: (path, content) => {
       const abs = resolveSandboxPath(sandbox.workdir, path);
-      return runProviderBoundary(() => withTransferErrors(
+      return providerCompatibilityPromise(() => withTransferErrors(
         { provider, operation: "writeBytes", path: abs, bytes: content.byteLength },
         () => withSandboxIoRetry(() => sandbox.writeBytes(abs, content)),
       ));
     },
-    pathExists: (path) => runProviderBoundary(() =>
+    pathExists: (path) => providerCompatibilityPromise(() =>
       withSandboxIoRetry(() => sandbox.pathExists(resolveSandboxPath(sandbox.workdir, path))),
     ),
     // 文件传输的超时报错在这一层补齐三要素(操作名 / 对象 / 这是 SDK 往返超时而非 attempt
@@ -97,34 +97,34 @@ export function normalizeSandboxPaths(sandbox: SandboxProviderBackend, provider:
     // 只有超时形态被改写,其它错误原样上抛(见 transfer-errors.ts)。
     uploadFile: (source, targetPath) => {
       const abs = resolveSandboxPath(sandbox.workdir, targetPath);
-      return runProviderBoundary(() => withTransferErrors(
+      return providerCompatibilityPromise(() => withTransferErrors(
         { provider, operation: "uploadFile", path: abs, localPath: resolveLocalPath(undefined, source) },
         () => withSandboxIoRetry(() => sandbox.uploadFile(source, abs)),
       ));
     },
     uploadDirectory: (sourceDir, targetDir, opts) => {
       const base = resolveSandboxPath(sandbox.workdir, targetDir);
-      return runProviderBoundary(() => withTransferErrors(
+      return providerCompatibilityPromise(() => withTransferErrors(
         { provider, operation: "uploadDirectory", path: base, localPath: resolveLocalPath(undefined, sourceDir) },
         () => withSandboxIoRetry(() => sandbox.uploadDirectory(sourceDir, base, opts)),
       ));
     },
     downloadFile: (sourcePath, target) => {
       const abs = resolveSandboxPath(sandbox.workdir, sourcePath);
-      return runProviderBoundary(() => withTransferErrors({ provider, operation: "downloadFile", path: abs, localPath: resolveLocalPath(undefined, target) }, () =>
+      return providerCompatibilityPromise(() => withTransferErrors({ provider, operation: "downloadFile", path: abs, localPath: resolveLocalPath(undefined, target) }, () =>
         withSandboxIoRetry(() => sandbox.downloadFile(abs, target)),
       ));
     },
     downloadDirectory: (sourceDir, targetDir, opts) => {
       const base = resolveSandboxPath(sandbox.workdir, sourceDir);
-      return runProviderBoundary(() => withTransferErrors(
+      return providerCompatibilityPromise(() => withTransferErrors(
         { provider, operation: "downloadDirectory", path: base, localPath: resolveLocalPath(undefined, targetDir) },
         () => withSandboxIoRetry(() => sandbox.downloadDirectory(base, targetDir, opts)),
       ));
     },
-    stop: () => runProviderBoundary(() => sandbox.stop()),
+    stop: () => providerCompatibilityPromise(() => sandbox.stop()),
     ...(appendLog._tag === "Supported"
-      ? { appendLog: (line: string) => runProviderBoundary(() => appendLog.value(line)) }
+      ? { appendLog: (line: string) => providerCompatibilityPromise(() => appendLog.value(line)) }
       : {}),
   };
   registerSandboxCapabilities(normalized, sandbox.capabilities);

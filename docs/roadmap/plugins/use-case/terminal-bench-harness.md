@@ -19,7 +19,7 @@ export default defineExperiment({
 
 - 对每个 completed pair plan 验证封闭的 typed platform / requested plan 字段;
 - 在两个作者 layer 之后追加轻量 command-only 检查命令;
-- 把实际 provider family、执行身份与 harness revision 写入 facts;
+- 把实际 provider family、执行身份与 harness revision 写入声明过的 Attempt Attachment;
 - 给错误和 diagnostic 附 `contributionSource`;
 - 让 Codex 与 Oracle 两个 Experiment 复用同一组 harness 观测规则。
 
@@ -51,7 +51,7 @@ export default defineExperiment({
 - command-only contribution 越权修改 template env;
 - Run 级插件身份掩盖每题不同的宿主路径与 Compose build identity。
 
-因此每条 Compose Eval 继续在自己的 template factory 中调用它。Plugin 只消费 link 后的 provider-neutral pair facts,不读取 Compose 私有 identity。
+因此每条 Compose Eval 继续在自己的 template factory 中调用它。Plugin 只消费 link 后的 provider-neutral pair 条件,不读取 Compose 私有 identity。
 
 ## 适合共用的调用形状
 
@@ -73,4 +73,4 @@ export const oracleExperiment = defineExperiment({
 });
 ```
 
-共享 blueprint 不共享运行时 mutable state。两个 Experiment 各自得到 Linked Plugin Instance;它们并行跑不同 Sandbox 时,setup handle、facts 与 teardown obligation 互不改写。
+共享 blueprint 不共享运行时 mutable state。两个 Experiment 各自得到 Linked Plugin Instance;它们并行跑不同 Sandbox 时,setup handle、typed Attachment write 与 teardown obligation 互不改写。

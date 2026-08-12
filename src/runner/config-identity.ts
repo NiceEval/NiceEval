@@ -10,7 +10,7 @@
 import type { LinkedRunPlan } from "../sandbox/plan.ts";
 import { sandboxLayerIdentityFor } from "../sandbox/link.ts";
 import type { AgentIdentity, AgentInstaller } from "../agents/types.ts";
-import type { EvalResult, JsonValue, JudgeConfig } from "../types.ts";
+import type { EvalResult, JsonValue, JudgeConfig, ResolvedJudgeConfig } from "../types.ts";
 import type { AgentRun } from "./types.ts";
 
 /**
@@ -28,7 +28,6 @@ export interface ConfigIdentity {
   readonly sandboxReuse: boolean;
   /** Experiment 作者 layer 身份；物理 provider plan 属于逐 Eval fingerprint，不进入 Run 级身份。 */
   readonly sandboxLayer: JsonValue;
-  readonly strict: boolean;
   readonly judge: JudgeConfigIdentity;
   /** 声明顺序、精确 installer 配对、安装模式与计划目标平台的完整静态身份。 */
   readonly agentInstalls: readonly JsonValue[];
@@ -44,6 +43,7 @@ export type JudgeConfigIdentity =
       readonly _tag: "Configured";
       readonly model: DeclaredConfigValue<string>;
       readonly baseUrl: DeclaredConfigValue<string>;
+      readonly apiKeyEnv: DeclaredConfigValue<string>;
       readonly timeoutMs: DeclaredConfigValue<number>;
     };
 
@@ -103,6 +103,7 @@ function freezeConfigIdentity(identity: ConfigIdentity): ConfigIdentity {
           _tag: "Configured" as const,
           model: Object.freeze(identity.judge.model),
           baseUrl: Object.freeze(identity.judge.baseUrl),
+          apiKeyEnv: Object.freeze(identity.judge.apiKeyEnv),
           timeoutMs: Object.freeze(identity.judge.timeoutMs),
         }),
     agentInstalls: Object.freeze(identity.agentInstalls.map((entry) => freezeJson(entry))),
@@ -150,13 +151,14 @@ function declaredString(value: string | undefined): DeclaredConfigValue<string> 
   return value === undefined ? { _tag: "Omitted" } : { _tag: "Configured", value };
 }
 
-function judgeIdentity(judge: JudgeConfig | undefined): JudgeConfigIdentity {
+function judgeIdentity(judge: JudgeConfig | ResolvedJudgeConfig | undefined): JudgeConfigIdentity {
   return judge === undefined
     ? { _tag: "Unconfigured" }
     : {
         _tag: "Configured",
         model: declaredString(judge.model),
         baseUrl: declaredString(judge.baseUrl),
+        apiKeyEnv: declaredString(judge.apiKeyEnv),
         timeoutMs: judge.timeoutMs === undefined ? { _tag: "Omitted" } : { _tag: "Configured", value: judge.timeoutMs },
       };
 }
@@ -164,7 +166,7 @@ function judgeIdentity(judge: JudgeConfig | undefined): JudgeConfigIdentity {
 export function configIdentityForRun(
   run: AgentRun,
   plan: LinkedRunPlan,
-  judge: JudgeConfig | undefined = run.judge,
+  judge: JudgeConfig | ResolvedJudgeConfig | undefined = run.judge,
 ): ConfigIdentity {
   return freezeConfigIdentity({
     agent: run.agent.name,
@@ -173,7 +175,6 @@ export function configIdentityForRun(
     flags: run.flags,
     sandboxReuse: run.sandboxReuse ?? false,
     sandboxLayer: sandboxLayerIdentityFor(plan.pair, "experiment"),
-    strict: run.strict ?? false,
     judge: judgeIdentity(judge),
     agentInstalls: agentInstallPlansForRun(run),
   });
@@ -193,7 +194,6 @@ export function configIdentityFromResult(result: EvalResult): ConfigIdentity | u
     flags: exp.flags ?? {},
     sandboxReuse: exp.sandboxReuse ?? false,
     sandboxLayer: exp.sandboxLayer,
-    strict: exp.strict ?? false,
     judge: judgeIdentity(exp.judge),
     agentInstalls: exp.agentInstalls,
   });
@@ -212,13 +212,13 @@ function flatten(identity: ConfigIdentity): Map<string, JsonValue> {
   putDeclared("model", identity.model);
   putDeclared("reasoningEffort", identity.reasoningEffort);
   put("sandboxReuse", identity.sandboxReuse);
-  put("strict", identity.strict);
   for (const [key, value] of Object.entries(identity.flags)) put(`flags.${key}`, value);
   put("sandboxLayer", identity.sandboxLayer);
   if (identity.judge._tag === "Configured") {
-    putDeclared("judge.model", identity.judge.model);
-    putDeclared("judge.baseUrl", identity.judge.baseUrl);
-    putDeclared("judge.timeoutMs", identity.judge.timeoutMs);
+  putDeclared("judge.model", identity.judge.model);
+  putDeclared("judge.baseUrl", identity.judge.baseUrl);
+  putDeclared("judge.apiKeyEnv", identity.judge.apiKeyEnv);
+  putDeclared("judge.timeoutMs", identity.judge.timeoutMs);
   }
   put("agentInstalls", [...identity.agentInstalls]);
   return out;
@@ -311,7 +311,6 @@ export function counterfactualConfigIdentity(
     flags,
     sandboxReuse: accepted.has("config:sandboxReuse") ? historical.sandboxReuse : current.sandboxReuse,
     sandboxLayer,
-    strict: accepted.has("config:strict") ? historical.strict : current.strict,
     judge,
     agentInstalls,
   });

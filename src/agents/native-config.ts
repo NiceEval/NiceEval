@@ -11,6 +11,7 @@ import { createHash } from "node:crypto";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { isAbsolute, resolve, sep } from "node:path";
 import { posix } from "node:path";
+import { Effect } from "effect";
 import { t } from "../i18n/index.ts";
 import type { Sandbox } from "../types.ts";
 
@@ -41,30 +42,89 @@ export interface LoadNativeConfigOptions {
  * 包含 `..` 的路径、绝对路径、`~` 路径,以及解析符号链接后逃出项目根的路径,全部在
  * setup 阶段抛错(attempt errored,不伪装成断言失败)。
  */
-export async function loadNativeConfigFile(opts: LoadNativeConfigOptions): Promise<LoadedNativeConfig> {
+/** Node filesystem Promise boundary; `readFile` receives the Effect runtime signal. */
+function nodeIo<Value>(run: (signal: AbortSignal) => Promise<Value>): Effect.Effect<Value, unknown> {
+  return Effect.tryPromise({ try: run, catch: (cause) => cause });
+}
+
+function resolveNativeConfigPath(opts: LoadNativeConfigOptions): {
+  agent: string;
+  field: string;
+  path: string;
+  root: string;
+  abs: string;
+} {
   const { agent, field, path } = opts;
   const rejectPath = () => new Error(t("nativeConfig.pathNotProjectRelative", { agent, field, path }));
   if (!path || path.startsWith("~") || isAbsolute(path) || /^[A-Za-z]:[\\/]/.test(path)) throw rejectPath();
   if (path.split(/[\\/]/).includes("..")) throw rejectPath();
 
   const root = opts.projectRoot ?? process.cwd();
-  const abs = resolve(root, path);
-  const info = await stat(abs).catch(() => undefined);
-  if (!info) throw new Error(t("nativeConfig.missing", { agent, field, path, resolved: abs }));
-  if (!info.isFile()) throw new Error(t("nativeConfig.notFile", { agent, field, path }));
+  return { agent, field, path, root, abs: resolve(root, path) };
+}
 
-  // 符号链接逃逸检查按真实路径做:文件与项目根都 realpath 之后再验包含关系。
-  const [realFile, realRoot] = await Promise.all([realpath(abs), realpath(root)]);
-  if (!realFile.startsWith(realRoot + sep)) {
-    throw new Error(t("nativeConfig.escapesRoot", { agent, field, path, resolved: realFile }));
-  }
+/**
+ * Effect main chain: validation is a synchronous boundary, while stat, realpath, and the raw
+ * byte read are all named Node Promise boundaries. Agent setup composes this effect into its outer runtime.
+ */
+export function loadNativeConfigFileEffect(
+  opts: LoadNativeConfigOptions,
+): Effect.Effect<LoadedNativeConfig, unknown> {
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const resolved = yield* Effect.try({
+        try: () => resolveNativeConfigPath(opts),
+        catch: (cause) => cause,
+      });
+      const info = yield* nodeIo(() => stat(resolved.abs)).pipe(
+        // Preserve the old public contract: every unreadable stat target reports as missing.
+        Effect.catchAll(() => Effect.succeed(undefined)),
+      );
+      if (!info) {
+        return yield* Effect.fail(
+          new Error(t("nativeConfig.missing", {
+            agent: resolved.agent,
+            field: resolved.field,
+            path: resolved.path,
+            resolved: resolved.abs,
+          })),
+        );
+      }
+      if (!info.isFile()) {
+        return yield* Effect.fail(
+          new Error(t("nativeConfig.notFile", {
+            agent: resolved.agent,
+            field: resolved.field,
+            path: resolved.path,
+          })),
+        );
+      }
 
-  const bytes = await readFile(abs);
-  return {
-    path: posix.normalize(path.split(/[\\/]/).join("/")),
-    bytes,
-    sha256: createHash("sha256").update(bytes).digest("hex"),
-  };
+      // 符号链接逃逸检查按真实路径做:文件与项目根都 realpath 之后再验包含关系。
+      const realFile = yield* nodeIo(() => realpath(resolved.abs));
+      const realRoot = yield* nodeIo(() => realpath(resolved.root));
+      if (!realFile.startsWith(realRoot + sep)) {
+        return yield* Effect.fail(
+          new Error(t("nativeConfig.escapesRoot", {
+            agent: resolved.agent,
+            field: resolved.field,
+            path: resolved.path,
+            resolved: realFile,
+          })),
+        );
+      }
+
+      const bytes = yield* nodeIo((signal) => readFile(resolved.abs, { signal }));
+      return yield* Effect.try({
+        try: (): LoadedNativeConfig => ({
+          path: posix.normalize(resolved.path.split(/[\\/]/).join("/")),
+          bytes,
+          sha256: createHash("sha256").update(bytes).digest("hex"),
+        }),
+        catch: (cause) => cause,
+      });
+    }),
+  );
 }
 
 // ───────────────────────── 验收:语法 + 保留键 ─────────────────────────
@@ -221,18 +281,57 @@ function tmpUploadPath(): string {
   return `/tmp/niceeval-native-config-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e9).toString(36)}`;
 }
 
+/** Sandbox file / shell Promise boundary. `writeBytes` has no native signal parameter; scope owns cleanup. */
+function sandboxIo<Value>(run: (signal: AbortSignal) => Promise<Value>): Effect.Effect<Value, unknown> {
+  return Effect.tryPromise({ try: run, catch: (cause) => cause });
+}
+
+function cleanupTemporaryUpload(sb: Sandbox, tmp: string): Effect.Effect<void> {
+  return sandboxIo((signal) => sb.runShell(`rm -f ${tmp}`, { signal })).pipe(
+    // Cleanup must not replace the upload error that explains the user-visible failure.
+    Effect.catchAll(() => Effect.void),
+    Effect.asVoid,
+  );
+}
+
+function withTemporaryUpload<Value>(
+  sb: Sandbox,
+  cfg: LoadedNativeConfig,
+  use: (tmp: string) => Effect.Effect<Value, unknown>,
+): Effect.Effect<Value, unknown> {
+  return Effect.scoped(
+    Effect.acquireRelease(
+      Effect.sync(tmpUploadPath),
+      (tmp) => cleanupTemporaryUpload(sb, tmp),
+    ).pipe(
+      Effect.tap((tmp) => sandboxIo(() => sb.writeBytes(tmp, cfg.bytes))),
+      Effect.flatMap(use),
+    ),
+  );
+}
+
 /**
  * 原始字节整文件替换沙箱内 destPath(claude-code:用户级 `~/.claude/settings.json`)。
  * 走 writeBytes + mv 而不是 heredoc:heredoc 会给内容补换行,破坏「原始字节」承诺。
  * destPath 不加引号,以便 shell 展开 `~`(受信内部路径,同 shared.writeFile 的约定)。
  */
-export async function uploadNativeConfigFile(sb: Sandbox, cfg: LoadedNativeConfig, destPath: string): Promise<void> {
-  const tmp = tmpUploadPath();
-  await sb.writeBytes(tmp, cfg.bytes);
-  const res = await sb.runShell(`mkdir -p $(dirname ${destPath}) && mv ${tmp} ${destPath}`);
-  if (res.exitCode !== 0) {
-    throw new Error(t("nativeConfig.uploadFailed", { path: cfg.path, dest: destPath, tail: outputTail(res) }));
-  }
+export function uploadNativeConfigFileEffect(
+  sb: Sandbox,
+  cfg: LoadedNativeConfig,
+  destPath: string,
+): Effect.Effect<void, unknown> {
+  return withTemporaryUpload(sb, cfg, (tmp) =>
+    sandboxIo((signal) => sb.runShell(`mkdir -p $(dirname ${destPath}) && mv ${tmp} ${destPath}`, { signal })).pipe(
+      Effect.flatMap((res) => res.exitCode === 0
+        ? Effect.void
+        : Effect.fail(
+            new Error(t("nativeConfig.uploadFailed", {
+              path: cfg.path,
+              dest: destPath,
+              tail: outputTail(res),
+            })),
+          )),
+    ));
 }
 
 /**
@@ -240,15 +339,28 @@ export async function uploadNativeConfigFile(sb: Sandbox, cfg: LoadedNativeConfi
  * 本身逐字节保留)。codex 专用:codex 只读一份用户级 config.toml,Adapter 生成层与用户层
  * 只能同文件分段共存(见 codex.ts setup 的布局说明)。
  */
-export async function appendNativeConfigFile(sb: Sandbox, cfg: LoadedNativeConfig, destPath: string): Promise<void> {
-  const tmp = tmpUploadPath();
-  await sb.writeBytes(tmp, cfg.bytes);
-  const res = await sb.runShell(
-    `printf '\\n' >> ${destPath} && cat ${tmp} >> ${destPath} && printf '\\n' >> ${destPath} && rm -f ${tmp}`,
-  );
-  if (res.exitCode !== 0) {
-    throw new Error(t("nativeConfig.uploadFailed", { path: cfg.path, dest: destPath, tail: outputTail(res) }));
-  }
+export function appendNativeConfigFileEffect(
+  sb: Sandbox,
+  cfg: LoadedNativeConfig,
+  destPath: string,
+): Effect.Effect<void, unknown> {
+  return withTemporaryUpload(sb, cfg, (tmp) =>
+    sandboxIo((signal) =>
+      sb.runShell(
+        `printf '\\n' >> ${destPath} && cat ${tmp} >> ${destPath} && printf '\\n' >> ${destPath}`,
+        { signal },
+      )
+    ).pipe(
+      Effect.flatMap((res) => res.exitCode === 0
+        ? Effect.void
+        : Effect.fail(
+            new Error(t("nativeConfig.uploadFailed", {
+              path: cfg.path,
+              dest: destPath,
+              tail: outputTail(res),
+            })),
+          )),
+    ));
 }
 
 /**

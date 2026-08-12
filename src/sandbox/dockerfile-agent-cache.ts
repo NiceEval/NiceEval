@@ -1,6 +1,7 @@
 // Dockerfile task image 的内置 staged Agent 派生镜像缓存。
 // 这里只提供内部协调边界；Runner 后续把它接到 DockerfileProviderPlan 的 materialize 前。
 
+import { Deferred, Effect, Exit } from "effect";
 import { digestOf, type BuildKey } from "./identity.ts";
 import { AGENT_DOCKERFILE_CACHE_SAFE, type DockerfileAgentCacheSafeInstaller } from "../agents/cache-marker.ts";
 import type { AgentEnsure, AgentIdentity, AgentInstaller } from "../agents/types.ts";
@@ -26,13 +27,13 @@ export interface DockerfileAgentDerivedImageBuildInput {
 }
 
 export interface DockerfileAgentCacheHooks {
-  readonly imageExists: (locator: string) => Promise<boolean>;
+  readonly imageExists: (locator: string) => Effect.Effect<boolean, Error>;
 }
 
 export type DockerfileAgentDerivedImageBuilder = (
   input: DockerfileAgentDerivedImageBuildInput,
   signal: AbortSignal,
-) => Promise<void>;
+) => Effect.Effect<void, Error>;
 
 export type DockerfileAgentCacheResolution =
   | { readonly status: "unsupported"; readonly locator: string }
@@ -73,7 +74,10 @@ export function dockerfileAgentDerivedLocator(derivedKey: BuildKey): string {
 }
 
 export class DockerfileAgentImageCoordinator {
-  private readonly inflight = new Map<BuildKey, Promise<DockerfileAgentCacheResolution>>();
+  private readonly inflight = new Map<
+    BuildKey,
+    Deferred.Deferred<DockerfileAgentCacheResolution, Error>
+  >();
 
   constructor(private readonly hooks: DockerfileAgentCacheHooks) {}
 
@@ -82,74 +86,78 @@ export class DockerfileAgentImageCoordinator {
     signal: AbortSignal,
     build: DockerfileAgentDerivedImageBuilder,
     timing?: RunTimingRecorder,
-  ): Promise<DockerfileAgentCacheResolution> {
+  ): Effect.Effect<DockerfileAgentCacheResolution, Error> {
     if (!isDockerfileAgentCacheSafeInstaller(input.installer)) {
-      return Promise.resolve({ status: "unsupported", locator: input.taskLocator });
+      return Effect.succeed({ status: "unsupported", locator: input.taskLocator });
     }
 
     const derivedKey = dockerfileAgentDerivedKey(input);
-    const pending = this.inflight.get(derivedKey);
-    if (pending !== undefined) return pending;
-
     const derivedLocator = dockerfileAgentDerivedLocator(derivedKey);
-    const run = (async (): Promise<DockerfileAgentCacheResolution> => {
-      const hit = await timedCacheActivity(
-        timing,
-        "sandbox.build.lookup",
-        `agent image lookup ${derivedLocator}`,
-        () => this.hooks.imageExists(derivedLocator),
+    const imageExists = this.hooks.imageExists;
+    return Effect.gen(this, function* () {
+      const fresh = yield* Deferred.make<DockerfileAgentCacheResolution, Error>();
+      // 读取和登记在一个 synchronous Effect 中完成；两个并发 fiber 不会各自启动一次 build。
+      const flight = yield* Effect.sync(() => {
+        const pending = this.inflight.get(derivedKey);
+        if (pending !== undefined) return { _tag: "Follower" as const, deferred: pending };
+        this.inflight.set(derivedKey, fresh);
+        return { _tag: "Leader" as const, deferred: fresh };
+      });
+      if (flight._tag === "Follower") return yield* Deferred.await(flight.deferred);
+
+      const run = Effect.gen(function* () {
+        const hit = yield* timedCacheActivity(
+          timing,
+          "sandbox.build.lookup",
+          `agent image lookup ${derivedLocator}`,
+          imageExists(derivedLocator),
+        );
+        if (hit) {
+          return { status: "hit" as const, locator: derivedLocator, derivedKey };
+        }
+        yield* timedCacheActivity(
+          timing,
+          "sandbox.build.agent",
+          `agent image build ${derivedLocator}`,
+          build({
+            taskLocator: input.taskLocator,
+            derivedLocator,
+            derivedKey,
+            platform: input.platform,
+            ensureIdentity: input.ensure.identity,
+            installerIdentity: input.installer.identity,
+            installMode: "staged",
+          }, signal),
+        );
+        return { status: "built" as const, locator: derivedLocator, derivedKey };
+      });
+      yield* Effect.intoDeferred(run, flight.deferred).pipe(
+        Effect.ensuring(Effect.sync(() => {
+          if (this.inflight.get(derivedKey) === flight.deferred) this.inflight.delete(derivedKey);
+        })),
       );
-      if (hit) {
-        return { status: "hit", locator: derivedLocator, derivedKey };
-      }
-      await timedCacheActivity(
-        timing,
-        "sandbox.build.agent",
-        `agent image build ${derivedLocator}`,
-        () => build({
-          taskLocator: input.taskLocator,
-          derivedLocator,
-          derivedKey,
-          platform: input.platform,
-          ensureIdentity: input.ensure.identity,
-          installerIdentity: input.installer.identity,
-          installMode: "staged",
-        }, signal),
-      );
-      return { status: "built", locator: derivedLocator, derivedKey };
-    })().finally(() => {
-      this.inflight.delete(derivedKey);
+      return yield* Deferred.await(flight.deferred);
     });
-    this.inflight.set(derivedKey, run);
-    return run;
   }
 }
 
-async function timedCacheActivity<T>(
+function timedCacheActivity<T>(
   timing: RunTimingRecorder | undefined,
   key: "sandbox.build.lookup" | "sandbox.build.agent",
   label: string,
-  run: () => Promise<T>,
-): Promise<T> {
-  if (timing === undefined) return run();
-  const startOffsetMs = timing.offsetNow();
-  try {
-    const result = await run();
-    timing.child({
-      key,
-      label,
-      startOffsetMs,
-      durationMs: Math.max(0, timing.offsetNow() - startOffsetMs),
-    });
-    return result;
-  } catch (error) {
-    timing.child({
-      key,
-      label,
-      startOffsetMs,
-      durationMs: Math.max(0, timing.offsetNow() - startOffsetMs),
-      failed: true,
-    });
-    throw error;
-  }
+  run: Effect.Effect<T, Error>,
+): Effect.Effect<T, Error> {
+  if (timing === undefined) return run;
+  return Effect.suspend(() => {
+    const startOffsetMs = timing.offsetNow();
+    return run.pipe(Effect.onExit((exit) => Effect.sync(() => {
+      timing.child({
+        key,
+        label,
+        startOffsetMs,
+        durationMs: Math.max(0, timing.offsetNow() - startOffsetMs),
+        ...(Exit.isSuccess(exit) ? {} : { failed: true }),
+      });
+    })));
+  });
 }

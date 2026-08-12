@@ -3,9 +3,7 @@
 // 沙箱编排的固定段在 runAttemptBody(基线→setup→驱动 test→采 diff→评分→判定→收 trace),
 // adapter 只填「把 agent 跑起来」一段。
 
-import { resolve as resolvePath } from "node:path";
-import { readFile as readSourceFile } from "node:fs/promises";
-import { Effect, Cause, Duration, Either, Option } from "effect";
+import { Effect, Cause, Duration, Either, Exit, Fiber, Option } from "effect";
 import {
   materializeSandboxRunPlan,
   liveSandboxRuntimeServices,
@@ -14,31 +12,56 @@ import {
 } from "../sandbox/runtime.ts";
 import type { ConcurrencySlot } from "../context/send-retry.ts";
 import { unregisterSandbox } from "../sandbox/registry.ts";
-import { CLEANUP_TIMEOUT_MS, withCleanupTimeout } from "./cleanup-timeout.ts";
+import { CLEANUP_TIMEOUT_MS, cleanupCallback } from "./cleanup-timeout.ts";
 import { resolveAttemptTimeout, type TimeoutSource } from "./timeout.ts";
-import { resolveJudge } from "./judge-config.ts";
 import { SandboxCommandTimeoutError } from "../sandbox/deadline.ts";
 import { ExperimentFatalError } from "../shared/failure-class.ts";
 import type { ExternalCause } from "../shared/external-cause.ts";
 import { computeExpiresAt, nativeEnterCommand, suspendSandbox } from "../sandbox/keep.ts";
-import { keptEntryId, updateKeptEntry, writeKeptEntry } from "../sandbox/keep-registry.ts";
+import {
+  keptEntryId,
+  updateKeptEntryEffect,
+  writeKeptEntryEffect,
+} from "../sandbox/keep-registry.ts";
 import { runAgentEnsure, verifySandboxTargetPlatform } from "../agents/provisioner.ts";
-import { createTraceReceiver, type TraceReceiver } from "../o11y/otlp/receiver.ts";
+import { createTraceReceiver, interruptOnAbort, type TraceReceiver } from "../o11y/otlp/receiver.ts";
 import { createInSandboxTraceReceiver } from "../o11y/otlp/sandbox-receiver.ts";
 import { AgentOtelChannel } from "../o11y/otlp/turn-otel.ts";
 import { selectTraceSpans, enrichTraceWithIO } from "../o11y/otlp/select.ts";
 import { mapGenericSpans } from "../o11y/otlp/mappers/index.ts";
-import { createEvalContext } from "../context/context.ts";
+import {
+  createAssertFirstEvalContext,
+  type AssertFirstContextState,
+} from "../context/assert-first.ts";
+import {
+  AssertionAuthoringClosedError,
+} from "../assertions/api.ts";
+import type {
+  AssertionStopError,
+  AssertionsRuntime,
+  SealedAttemptAssertions,
+} from "../assertions/api.ts";
+import type { AgentWorkspaceDiff } from "../assertions/workspace-diff.ts";
+import {
+  sealAttemptAssertions,
+} from "./assertions.ts";
+import {
+  makeAssertFirstAttemptBridge,
+  type AssertFirstAttemptBridge,
+  type AttemptAuthorCompletion,
+} from "./assert-first-bridge.ts";
 import { createAgentSession } from "../context/session.ts";
-import { EvalRequirementFailed, EvalSkipped } from "../context/control-flow.ts";
+import { EvalSkipped } from "../context/control-flow.ts";
 import { isSendFailure, sendFailureText } from "../context/send-failures.ts";
-import { computeVerdict } from "../shared/verdict.ts";
 import { deriveRunFacts, buildO11ySummary } from "../o11y/derive.ts";
 import { estimateCost } from "../o11y/cost.ts";
 import { t } from "../i18n/index.ts";
 import { describeError, firstLine, formatThrown } from "../util.ts";
 import { createChangeLedger, type ChangeLedger } from "./ledger.ts";
-import { deriveDiffData, emptyDiffData } from "../assertions/diff.ts";
+import {
+  deriveDiffData,
+} from "../assertions/diff.ts";
+import { createAgentWorkspaceDiff } from "../assertions/workspace-diff.ts";
 import { createDirectAgentSandbox } from "./direct-agent-sandbox.ts";
 import { createSandboxCommandTarget, SandboxCommandExitError } from "../sandbox/operations.ts";
 import { inheritSandboxCapabilities } from "../sandbox/backend.ts";
@@ -52,8 +75,23 @@ import type { SandboxCleanupCommand, SandboxCommandContext } from "../sandbox/co
 import { sandboxLayerIdentityFor } from "../sandbox/link.ts";
 import { agentInstallPlansForRun } from "./config-identity.ts";
 import { recordFact, type FactValue } from "../shared/facts.ts";
-import { formatTurnLabel } from "../shared/turn-label.ts";
-import { createSourceRegistry, withSourceRegistry, type SourceRegistry } from "../source-loc.ts";
+import { createSourceRegistry, type SourceRegistry } from "../source-loc.ts";
+import {
+  createRunnerAttemptSourceCapture,
+  retainRunnerAttemptSourceCapture,
+  type RunnerAttemptSourceCapture,
+} from "./source-producer.ts";
+import {
+  bindRunnerAttemptObservabilityCaptureV1,
+  captureRunnerCommandCaptureFailedV1,
+  captureRunnerCommandInterruptedV1,
+  captureRunnerCommandResultV1,
+  captureRunnerCommandStartV1,
+  captureRunnerCommandTimeoutV1,
+  captureRunnerTurnUsageV1,
+  createRunnerAttemptObservabilityRuntimeV1,
+  type RunnerAttemptObservabilityRuntimeV1,
+} from "../o11y/record/runner-producer.ts";
 import {
   attemptFailureInfo,
   resolveAttemptFailureClass,
@@ -70,11 +108,10 @@ import type {
   DiffArtifact,
   EvalResult,
   CommandExitEvidence,
-  JudgeConfig,
+  ResolvedJudgeConfig,
   JsonValue,
   Sandbox,
   ScopedFeedback,
-  AssertionEvaluationContext,
   ScriptResult,
   SourceArtifact,
   StreamEvent,
@@ -83,10 +120,9 @@ import type {
   TraceSpan,
   Usage,
   RetryAttemptRecord,
-  ScoreTestContext,
 } from "../types.ts";
 import { reportAttemptLifecycle, reportDiagnostic, reportKept } from "./feedback/sink.ts";
-import { encodeAttemptKey, runWho } from "./types.ts";
+import { encodeAttemptKey, EVALUATION_ALGORITHM, runWho } from "./types.ts";
 import { attemptOrigin, commandDisplay, commandLimitAttribution, commandNode, createTimingRecorder, sandboxPrepareActivity, turnActivity, workspaceDiffExportActivity, type TimingRecorder } from "./timing.ts";
 import type {
   AgentRun,
@@ -132,7 +168,7 @@ export function attemptFailureDeclaration(
   return { class: cls, phase, text: info.text };
 }
 
-export interface RunAttemptEffectOptions {
+export interface RunAttemptEffectOptions<SealRequirements = never> {
   /** Run 级构建执行产出的 locator；key 集合必须与 Attempt.plan 的完成态物理计划完全一致。 */
   readonly buildLocators: ReadonlyMap<string, JsonValue>;
   /** Invocation 级 Run timing，供 Dockerfile Agent 派生镜像 lookup/build 观测。 */
@@ -155,6 +191,14 @@ export interface RunAttemptEffectOptions {
    * 分类照常决议、只是无人消费。回调必须不抛错:它跑在 attempt 的失败路径上,不得掩盖原始失败。
    */
   onFailureClass?: (declaration: AttemptFailureDeclaration) => void;
+  /**
+   * Invocation coordination may consume the single sealed Assert-first result
+   * here and pass it to EvaluationRecordContractV1. The Attempt never opens a
+   * Record session or owns Record I/O itself.
+   */
+  onSealedEvaluation?: (
+    sealed: SealedAttemptAssertions,
+  ) => Effect.Effect<void, never, SealRequirements>;
   /** 由复用池独占借出的实例；池负责物理 Sandbox 生命周期与最终 stop。 */
   reusedSandbox?: {
     sandbox: Sandbox;
@@ -163,36 +207,52 @@ export interface RunAttemptEffectOptions {
   };
 }
 
-export function runAttemptEffect(
+export function runAttemptEffect<
+  SealRequirements,
+  AttachmentError,
+  AttachmentRequirements,
+>(
   a: Attempt,
-  opts: RunOptions,
+  opts: RunOptions<AttachmentError, AttachmentRequirements>,
   sandboxSem: Effect.Semaphore,
-  { buildLocators, runTiming, parentSignal, onPhase, concurrencySlot, onFailureClass, reusedSandbox }: RunAttemptEffectOptions,
-): Effect.Effect<EvalResult> {
+  {
+    buildLocators,
+    runTiming,
+    parentSignal,
+    onPhase,
+    concurrencySlot,
+    onFailureClass,
+    onSealedEvaluation,
+    reusedSandbox,
+  }: RunAttemptEffectOptions<SealRequirements>,
+) {
   const config = opts.config;
   const { evalDef, run, attempt } = a;
   const niceevalRoot = opts.niceevalRoot ?? `${process.cwd()}/.niceeval`;
   const t0 = Date.now();
+  // Source bytes are snapshotted at the author action, then held only through
+  // an internal capability until the Record producer seals its own Attachments.
+  const sourceRegistry = createSourceRegistry(process.cwd());
+  const sourceCapture = createRunnerAttemptSourceCapture(sourceRegistry);
 
   const base: EvalResult = {
     id: evalDef.id,
     description: evalDef.description,
     experimentId: run.experimentId,
-    experiment: experimentRunInfo(run, a.plan, a.sandboxPlansByEval, config, evalDef.judge),
+    experiment: experimentRunInfo(run, a.plan, a.sandboxPlansByEval, config, a.judge),
     agent: run.agent.name,
     model: run.model,
     verdict: "errored",
     fingerprint: a.fingerprint,
+    evaluationAlgorithm: EVALUATION_ALGORITHM,
     configHash: a.configHash,
     attempt,
     startedAt: new Date(t0).toISOString(),
     durationMs: 0,
-    assertions: [],
+    factResults: [],
+    factUses: [],
     evidenceCoverage: run.agent.evidenceCoverage,
     evaluationKind: evalDef.evaluationKind ?? "pass",
-    // 资源获取/硬超时等在 collector 尚不可用前就可能收束；计分制的异常骨架也保持该字段的
-    // 读取面（空数组而非缺失），与正常路径一致。
-    ...(evalDef.evaluationKind === "points" ? { scoreEntries: [] } : {}),
   };
 
   /**
@@ -225,18 +285,15 @@ export function runAttemptEffect(
   // 链末端不发明一条隐藏的线。
   const attemptTimeout = resolveAttemptTimeout(run, evalDef, config);
   // deadline 的截止**时刻**:沙箱内一切时限从它派生(单条命令未显式传 timeout 时上限 =
-  // 剩余量,见 sandbox/deadline.ts)。与下面那条软截止信号同一个锚点,不各取各的 now()。
+  // 剩余量,见 sandbox/deadline.ts)。与 Effect.timeoutTo 同一个锚点,不各取各的 now()。
   const deadlineAt = attemptTimeout ? Date.now() + attemptTimeout.timeoutMs : undefined;
-  // timeoutSignal:给协作式 adapter / docker 命令的「软」截止信号(到点 abort,让能看 signal 的
-  // 提前优雅停)。但它【不是】attempt 总超时的硬保证 —— 真正的硬边界是下面的 Effect.timeoutTo:
-  // 它中断整段 body,触发 Sample release(停容器),从而即便 adapter 完全无视 signal 也能停掉(P1)。
-  const timeoutSignal = attemptTimeout ? AbortSignal.timeout(attemptTimeout.timeoutMs) : undefined;
-  // 无上限时 signal 仍必须存在(下游 ctx / adapter 一律读它):用一个永不 abort 的信号,
-  // 不用 timeoutSignal 冒充。
-  const signal =
-    parentSignal && timeoutSignal
-      ? AbortSignal.any([parentSignal, timeoutSignal])
-      : (parentSignal ?? timeoutSignal ?? new AbortController().signal);
+  // Adapter 的协作式 deadline 由专用 controller 承载。它绝不能自己设 timer：Effect.timeoutTo
+  // 是唯一的 deadline owner，并会在 onTimeout 同步 abort 这个 controller；否则独立 timer
+  // 可能让 adapter 先 reject，把 deadline 错分成外部 interrupt。
+  const deadlineAbort = new AbortController();
+  const signal = parentSignal
+    ? AbortSignal.any([parentSignal, deadlineAbort.signal])
+    : deadlineAbort.signal;
 
   // Attempt 阶段的正式生命周期投影(见 docs/feature/experiments/cli.md「Attempt 阶段」)。
   // run.ts 在这个 attempt 的 body Effect 真正开始跑之前,已经先发出过一次 attempt:start(占位
@@ -263,6 +320,13 @@ export function runAttemptEffect(
   let liveUsage: (() => Usage) | undefined;
   let liveRetryAttempts: (() => readonly RetryAttemptRecord[]) | undefined;
   let liveLedger: ChangeLedger | undefined;
+  // Assert-first state becomes visible only after the real TestContext has
+  // been constructed. Scope finalization owns the interruption seal so an
+  // aborted Attempt cannot leave declared entries unsealed.
+  let liveAssertions: AssertionsRuntime<"pass" | "score"> | undefined;
+  let liveAssertionState: AssertFirstContextState | undefined;
+  let assertionsSealed = false;
+  let timeoutSealedAssertions: SealedAttemptAssertions | undefined;
   // Effect.timeoutTo 的 onTimeout 是同步回调,在中断真正下发给 body fiber(从而触发下面的
   // finalizer 链)之前就已经跑完并同步置位这个标记——下面新增的 finalizer 靠它判断本次 Sample
   // release 是不是超时触发的,只在超时路径补折叠证据,正常收尾路径不重复做(见文件顶部
@@ -315,6 +379,13 @@ export function runAttemptEffect(
   // CommandOptions.sensitiveValues 的 Attempt 级内存集合。值只供记录边界精确替换；最终
   // result 封口后集合随本次调用释放，不进入任何 artifact、指纹或 provider identity。
   const sensitiveValues = new Set<string>();
+  // Package-internal only: the final EvalResult is weakly associated with this
+  // capture after all Runner evidence is sealed. No public result field or
+  // legacy artifact is used as a transport.
+  const observabilityRuntime = createRunnerAttemptObservabilityRuntimeV1({
+    providerName: run.agent.name,
+    sensitiveValues,
+  });
   const recordDiagnostic = (input: DiagnosticInput) => {
     const phase = (sendActive ? "agent.run" : lastPhase) ?? "eval.run";
     if (input.dedupeKey !== undefined) {
@@ -416,11 +487,17 @@ export function runAttemptEffect(
             ...(rest.trim() !== "" ? { stack: rest } : {}),
           };
           recorder.failCurrent();
+          // `timeoutTo` 已经赢得 deadline：先标记并 abort 协作式 adapter。
+          // Scope release below seals the Attempt-local Assertions runtime as
+          // producer-interrupted before resources are released.
+          // 这个 controller 没有独立 timer；它只把已经裁定的 timeout 传给观察 signal 的
+          // adapter。标记必须先于 abort，才能把本 fiber 的 timeout 中断与真正外层取消区分。
+          timedOut = true;
+          deadlineAbort.abort();
           // 置位给下面的 finalizer 用(它在 Sample release 里跑,LIFO 早于 sandbox stop,
           // 补折叠 workspace.diff / sources——见该 finalizer 的注释)。events/usage 不必等它:
           // SessionManager 是外层已经登记过的活引用(见 liveEvents/liveUsage),截至这一刻已经
           // 归一化的事件与已累计的用量此刻就能直接读出,不随放弃的 body fiber 一起消失。
-          timedOut = true;
           const events = liveEvents?.();
           const usage = liveUsage?.();
           const retryAttempts = liveRetryAttempts?.();
@@ -428,6 +505,7 @@ export function runAttemptEffect(
             ...base,
             durationMs: recorder.offsetNow(),
             error,
+            ...(evalDef.evaluationKind === "score" ? { scoreResult: scoreFactOutcomeForAttemptError(error) } : {}),
             ...(events !== undefined ? { events: [...events], o11y: buildO11ySummary(events) } : {}),
             ...(usage !== undefined ? { usage: { ...usage } } : {}),
             ...(retryAttempts !== undefined && retryAttempts.length > 0
@@ -454,11 +532,14 @@ export function runAttemptEffect(
       // (Ctrl+C 中断外层 Sample 时仍是 stop,照常清理)。是否可留存只读 physical plan
       // 的中性 retention 能力；不在 runner 里按 provider 名或旧声明结构分支。
       let disposition: "stop" | "keep" = "stop";
+      // The bridge owns its Queue worker inside this Attempt Scope. Promise
+      // code only offers work; no internal module starts a second runtime.
+      const assertFirst = yield* makeAssertFirstAttemptBridge<unknown>();
       // 退避重试(runtime.ts → retry.ts)期间临时归还这个名额:被限流的 provider 只是在
       // setTimeout 里睡觉,不该攥着 sandboxSem 的槽位陪跑,不然一批 429 能把整体并发拖成个位数。
       const provisionSlot = {
-        release: () => Effect.runPromise(sandboxSem.release(1)).then(() => {}),
-        reacquire: () => Effect.runPromise(sandboxSem.take(1)).then(() => {}),
+        release: () => assertFirst.requestEffect(sandboxSem.release(1)).then(() => {}),
+        reacquire: () => assertFirst.requestEffect(sandboxSem.take(1)).then(() => {}),
       };
       // Sample release(receiver close + provider stop)整段计成 sandbox.stop:先加的 finalizer
       // 后跑(LIFO),所以「先加的」在 release 链末尾打终点戳、「后加的」在 release 开始前打起点戳;
@@ -521,30 +602,38 @@ export function runAttemptEffect(
                     // Managed disposition，避免外层再包一层 acquireRelease 造成 double-stop。
                     release: {
                       _tag: "Managed",
-                      run: (owned) => Effect.promise(async () => {
+                      run: (owned) => Effect.gen(function* () {
                         const sb = owned.sandbox;
                         if (disposition !== "keep") {
-                          await owned.group.stop();
-                          return;
+                          return yield* tryPromiseAsDefect(() => owned.group.stop());
                         }
-                        unregisterSandbox(sb);
+                        yield* Effect.sync(() => unregisterSandbox(sb));
                         const providerName = runtimeCapabilities.provider;
                         const suspendStart = recorder.offsetNow();
-                        try {
-                          await suspendSandbox(sb);
-                          recorder.record("sandbox.suspend", recorder.offsetNow() - suspendStart);
-                          await updateKeptEntry(niceevalRoot, keptEntryId(providerName, sb.sandboxId), {
-                            state: "dormant",
-                          }).catch(() => false);
-                        } catch (e) {
-                          recorder.record("sandbox.suspend", recorder.offsetNow() - suspendStart, true);
-                          recordDiagnostic({
-                            code: "sandbox-suspend-failed",
-                            level: "warning",
-                            message: `sandbox ${sb.sandboxId} kept but suspend failed; the instance is still running: ${e instanceof Error ? e.message : String(e)}`,
-                            dedupeKey: `sandbox-suspend-failed:${sb.sandboxId}`,
-                          });
-                        }
+                        return yield* tryPromiseAsDefect(() => suspendSandbox(sb)).pipe(
+                          Effect.tap(() => Effect.sync(() => {
+                            recorder.record("sandbox.suspend", recorder.offsetNow() - suspendStart);
+                          })),
+                          Effect.zipRight(
+                            updateKeptEntryEffect(niceevalRoot, keptEntryId(providerName, sb.sandboxId), {
+                              state: "dormant",
+                            }).pipe(Effect.ignore),
+                          ),
+                          Effect.catchAllCause((cause) =>
+                            Cause.isInterrupted(cause)
+                              ? Effect.failCause(cause)
+                              : Effect.sync(() => {
+                                  const error = Cause.squash(cause);
+                                  recorder.record("sandbox.suspend", recorder.offsetNow() - suspendStart, true);
+                                  recordDiagnostic({
+                                    code: "sandbox-suspend-failed",
+                                    level: "warning",
+                                    message: `sandbox ${sb.sandboxId} kept but suspend failed; the instance is still running: ${error instanceof Error ? error.message : String(error)}`,
+                                    dedupeKey: `sandbox-suspend-failed:${sb.sandboxId}`,
+                                  });
+                                }),
+                          ),
+                        );
                       }),
                     },
                   });
@@ -580,13 +669,13 @@ export function runAttemptEffect(
       if (run.agent.kind !== "sandbox" && wantsSharedOtel && opts.otelPool) {
         enterPhase("telemetry.configure");
         try {
-          otelChannel = yield* Effect.promise(() => opts.otelPool!.channel(run.agent.name));
+          otelChannel = yield* opts.otelPool!.channel(run.agent.name);
           const endpoint = otelChannel.receiver.endpoint(config.telemetry?.host ?? "127.0.0.1");
           const env = run.agent.tracing?.env?.(endpoint);
           telemetry = env ? { endpoint, env } : { endpoint };
           log(t("runner.otlpShared", { endpoint }));
         } catch (e) {
-          if (isAttemptAborted(signal)) throw e;
+          if (isAttemptAborted(parentSignal)) throw e;
           recordDiagnostic({
             code: "telemetry-configure-failed",
             level: "warning",
@@ -625,7 +714,7 @@ export function runAttemptEffect(
             log(t("runner.otlpInSandbox", { endpoint, proto: proto ? ` (${proto})` : "" }));
           }
         } catch (e) {
-          if (isAttemptAborted(signal)) throw e;
+          if (isAttemptAborted(parentSignal)) throw e;
           recordDiagnostic({
             code: "telemetry-configure-failed",
             level: "warning",
@@ -661,32 +750,79 @@ export function runAttemptEffect(
       // 到点如实缺失。计时单独记一条 phases 条目,不入 durationMs(durationMs 已在 onTimeout
       // 按中断时刻定格)。sources 折叠是本地文件读取,与沙箱是否存活无关,一并在这里补。
       yield* Effect.addFinalizer(() =>
-        Effect.promise(async () => {
+        Effect.gen(function* () {
           if (!timedOut) return;
-          const events = liveEvents?.() ?? [];
           if (run.agent.kind === "sandbox" && liveLedger) {
             const startedAt = recorder.offsetNow();
-            try {
-              timeoutDiff = await withCleanupTimeout(() => liveLedger!.exportWindows());
-            } catch {
-              // 沙箱不可用 / 导出挂起到点:如实缺失,不阻塞收尾。
-            } finally {
-              recorder.record("workspace.diff", recorder.offsetNow() - startedAt);
-            }
+            const diff = yield* Effect.either(cleanupCallback(() => liveLedger!.exportWindows()));
+            if (Either.isRight(diff)) timeoutDiff = diff.right;
+            // 沙箱不可用 / 导出挂起到点:如实缺失,不阻塞收尾。
+            recorder.record("workspace.diff", recorder.offsetNow() - startedAt);
           }
-          try {
-            timeoutSources = await withCleanupTimeout(() => collectSources(events, [], evalDef.source));
-          } catch {
-            // 源码读不到:如实缺失,不阻塞收尾。
+          const sources = yield* Effect.either(cleanupCallback(() => collectSources(evalDef.source, sourceRegistry)));
+          if (Either.isRight(sources)) timeoutSources = sources.right;
+          // 源码读不到:如实缺失,不阻塞收尾。
+        }),
+      );
+
+      // Scope release owns the interruption seal. It runs before resource
+      // release, so entries already declared by the real Context survive a
+      // timeout or external cancellation in declaration order.
+      yield* Effect.addFinalizer((exit) =>
+        Effect.suspend(() => {
+          const interrupted = timedOut || (
+            Exit.isFailure(exit) && Cause.isInterruptedOnly(exit.cause)
+          );
+          if (interrupted) sourceCapture.markInterrupted();
+          if (!interrupted || liveAssertions === undefined || assertionsSealed) {
+            return Effect.void;
           }
+          if (liveAssertionState?.late.diff.state === "pending") {
+            liveAssertionState.late.diff = Object.freeze({
+              state: "unavailable" as const,
+              reason: "producer-interrupted" as const,
+            });
+          }
+          return sealAttemptAssertions(liveAssertions, {
+            execution: "errored",
+            interrupted: true,
+          }).pipe(
+            Effect.tap((sealed) =>
+              Effect.sync(() => {
+                assertionsSealed = true;
+                timeoutSealedAssertions = sealed;
+              }),
+            ),
+            Effect.tap((sealed) => onSealedEvaluation?.(sealed) ?? Effect.void),
+            // Release must preserve the original interruption/failure. A
+            // malformed attachment is still reflected by the sealed runtime,
+            // but cannot mask the owning Attempt's terminal cause.
+            Effect.catchAllCause(() => Effect.void),
+          );
+        }),
+      );
+
+      // Close outstanding bridge promises before the interruption seal.  This
+      // makes a detached author continuation fail by name while preserving the
+      // already declared entries for the finalizer's declaration-order seal.
+      yield* Effect.addFinalizer((exit) =>
+        Effect.suspend(() => {
+          const interrupted = timedOut || (
+            Exit.isFailure(exit) && Cause.isInterruptedOnly(exit.cause)
+          );
+          return assertFirst.closeEffectRequests(
+            new AssertionAuthoringClosedError(
+              interrupted ? "attempt-interrupted" : "attempt-sealed",
+            ),
+          );
         }),
       );
 
       // Scope 的 LIFO 让作者 cleanup 在 agent teardown 后、Provider Case finalizer 前执行。
-      // cleanup 使用新的有界 signal，不复用已经超时/取消的 Attempt signal。
+      // 这个 finalizer 注册在 bridge close 之后，因此释放时先由桥执行它拥有的 Effect。
       if (run.agent.kind === "sandbox") {
         yield* Effect.addFinalizer(() =>
-          Effect.promise(async () => {
+          tryPromiseAsDefect(async () => {
             if (layerCleanups.length === 0) return;
             enterPhase("sandbox.cleanup");
             await recorder
@@ -702,10 +838,10 @@ export function runAttemptEffect(
                   if (node) recorder.pushParent(node);
                   try {
                     const cleanupSignal = AbortSignal.timeout(CLEANUP_TIMEOUT_MS);
-                    await withCleanupTimeout(() => cleanup.command(commandTarget, {
+                    await assertFirst.requestEffect(cleanupCallback(() => cleanup.command(commandTarget, {
                       ...cleanup.context,
                       signal: cleanupSignal,
-                    }));
+                    })));
                   } catch (error) {
                     if (node) node.failed = true;
                     declareFailure("sandbox.cleanup", error);
@@ -724,45 +860,138 @@ export function runAttemptEffect(
         );
       }
 
-      // body 是 Promise(adapter 边界)。Effect.promise 给的 AbortSignal 在本 fiber 被中断
-      //(用户 Ctrl+C / 下面 timeoutTo 到点)时 abort —— 并进 signal,让真正观察 signal 的
-      // adapter / docker 命令随中断一起停,而不只靠 Sample release 兜底。
-      const bodyResult = yield* Effect.promise((interruptSignal) =>
-        runAttemptBody(a, config, t0, base, {
-          sandbox,
-          receiver,
-          telemetry,
-          otel: otelChannel,
-          signal: AbortSignal.any([signal, interruptSignal]),
-          log,
-          enterPhase,
-          // send 在飞时归因到嵌套的 agent.run(不切换顶层阶段,见 LifecyclePhase 注释)。
-          getPhase: () => (sendActive ? "agent.run" : lastPhase),
-          setSendActive: (active) => {
-            sendActive = active;
-          },
-          recorder,
-          ...(attemptTimeout ? { attemptTimeout } : {}),
-          ...(deadlineAt !== undefined ? { deadlineAt } : {}),
-          feedback: scopedFeedback,
-          diagnostics,
-          facts,
-          commands,
-          sensitiveValues,
-          concurrencySlot,
-          declareFailure,
-          layerCleanups,
-          registerEvidence: (getEvents, getUsage, getRetryAttempts) => {
-            liveEvents = getEvents;
-            liveUsage = getUsage;
-            liveRetryAttempts = getRetryAttempts;
-          },
-          registerLedger: (ledger) => {
-            liveLedger = ledger;
-          },
-          ...(opts.artifactPrepare !== undefined ? { prepareCoordinator: opts.artifactPrepare } : {}),
-        }),
+      // The legacy setup/diff body remains Promise-shaped, while OTLP waits,
+      // author execution, and sealing run in this Attempt's Effect scope. No
+      // nested runtime is introduced.
+      const bodyFiber = yield* Effect.fork(
+        tryPromiseAsDefect((interruptSignal) =>
+          runAttemptBody(a, config, t0, base, {
+            sandbox,
+            sourceRegistry,
+            sourceCapture,
+            receiver,
+            telemetry,
+            otel: otelChannel,
+            signal: AbortSignal.any([signal, interruptSignal]),
+            log,
+            enterPhase,
+            // send 在飞时归因到嵌套的 agent.run(不切换顶层阶段,见 LifecyclePhase 注释)。
+            getPhase: () => (sendActive ? "agent.run" : lastPhase),
+            setSendActive: (active) => {
+              sendActive = active;
+            },
+            recorder,
+            ...(attemptTimeout ? { attemptTimeout } : {}),
+            ...(deadlineAt !== undefined ? { deadlineAt } : {}),
+            feedback: scopedFeedback,
+            diagnostics,
+            facts,
+            commands,
+            sensitiveValues,
+            observabilityRuntime,
+            concurrencySlot,
+            declareFailure,
+            isDeadlineTimedOut: () => timedOut,
+            layerCleanups,
+            registerEvidence: (getEvents, getUsage, getRetryAttempts) => {
+              liveEvents = getEvents;
+              liveUsage = getUsage;
+              liveRetryAttempts = getRetryAttempts;
+            },
+            registerLedger: (ledger) => {
+              liveLedger = ledger;
+            },
+            assertFirst,
+            registerAssertions: (runtime, state) => {
+              if (liveAssertions !== undefined && liveAssertions !== runtime) {
+                throw new Error("Attempt tried to register a second Assertions runtime");
+              }
+              if (liveAssertionState !== undefined && liveAssertionState !== state) {
+                throw new Error("Attempt tried to register a second Assertions state");
+              }
+              liveAssertions = runtime;
+              liveAssertionState = state;
+            },
+            ...(opts.artifactPrepare !== undefined ? { prepareCoordinator: opts.artifactPrepare } : {}),
+          }, parentSignal),
+        ),
       );
+
+      const contextExit = yield* Effect.exit(assertFirst.awaitContext());
+      if (Exit.isFailure(contextExit)) {
+        if (Cause.isInterruptedOnly(contextExit.cause)) return yield* Effect.interrupt;
+        return yield* Fiber.join(bodyFiber);
+      }
+
+      const author = Effect.suspend(() => {
+        // This is the original frozen author Context; the assertion only
+        // resolves Eval-kind overloads and never substitutes a wrapper.
+        // Both Promise and deferred Effect calls capture through explicit
+        // Attempt-owned dependencies, never fiber-local ALS.
+        const returned = evalDef.test(contextExit.value as never) as unknown;
+        if (Effect.isEffect(returned)) {
+          return returned as Effect.Effect<void, unknown, never>;
+        }
+        return Effect.tryPromise({
+          try: () => Promise.resolve(returned),
+          catch: (error) => error,
+        });
+      });
+      const authorExit = yield* Effect.exit(author);
+      if (Exit.isSuccess(authorExit)) {
+        yield* assertFirst.completeAuthor({ _tag: "succeeded" });
+      } else {
+        if (Cause.isInterruptedOnly(authorExit.cause)) return yield* Effect.interrupt;
+        const failure = Cause.failureOption(authorExit.cause);
+        const defect = Cause.dieOption(authorExit.cause);
+        const completion: AttemptAuthorCompletion = Option.isSome(failure)
+          ? isAssertionStopError(failure.value)
+            ? { _tag: "stopped" }
+            : { _tag: "failed", error: failure.value }
+          : { _tag: "defect", cause: Option.isSome(defect) ? defect.value : authorExit.cause };
+        yield* assertFirst.completeAuthor(completion);
+      }
+
+      // The declared author callback has returned. A detached continuation may
+      // still hold a handle, but it cannot enqueue a new control barrier while
+      // this Attempt moves to its single ordered seal.
+      yield* assertFirst.closeAssertionRequests(
+        new AssertionAuthoringClosedError("attempt-sealing"),
+      );
+
+      const sealRequestExit = yield* Effect.exit(assertFirst.awaitSealRequest());
+      if (Exit.isFailure(sealRequestExit)) {
+        if (Cause.isInterruptedOnly(sealRequestExit.cause)) return yield* Effect.interrupt;
+        return yield* Fiber.join(bodyFiber);
+      }
+
+      const sealExit = yield* Effect.exit(
+          sealAttemptAssertions(
+            sealRequestExit.value.runtime,
+            sealRequestExit.value.options,
+            sealRequestExit.value.workspaceDiff,
+        ).pipe(
+          Effect.tap(() => Effect.sync(() => {
+            assertionsSealed = true;
+          })),
+          Effect.tap((sealed) => onSealedEvaluation?.(sealed) ?? Effect.void),
+        ),
+      );
+      if (Exit.isSuccess(sealExit)) {
+        yield* assertFirst.completeSeal(sealExit.value);
+      } else {
+        if (Cause.isInterruptedOnly(sealExit.cause)) return yield* Effect.interrupt;
+        const failure = Cause.failureOption(sealExit.cause);
+        const defect = Cause.dieOption(sealExit.cause);
+        yield* assertFirst.failSeal(
+          Option.isSome(failure)
+            ? failure.value
+            : Option.isSome(defect)
+              ? defect.value
+              : Cause.squash(sealExit.cause),
+        );
+      }
+      const bodyResult = yield* Fiber.join(bodyFiber);
 
       // 留存提交:verdict 定稿、其余收尾(teardown 链、diff 采集)已在 body 内完成后,按档位
       // 提交——failed 档留 failed/errored,all 档全部;顺序不可调换:先原子写登记项,写入成功
@@ -776,26 +1005,24 @@ export function runAttemptEffect(
       ) {
         const providerName = runtimeCapabilities!.provider;
         if (runtimeCapabilities!.retention._tag === "Suspendable") {
-          try {
-            const enter = nativeEnterCommand(providerName, sandbox.sandboxId);
-            const keptAt = new Date().toISOString();
-            const expiresAt = computeExpiresAt(providerName, keptAt);
-            yield* Effect.promise(() =>
-              writeKeptEntry(niceevalRoot, {
-                sandboxId: sandbox.sandboxId,
-                provider: providerName,
-                evalId: evalDef.id,
-                attempt,
-                ...(run.experimentId !== undefined ? { experimentId: run.experimentId } : {}),
-                locator: String(a.locator),
-                verdict: bodyResult.verdict,
-                keptAt,
-                workdir: sandbox.workdir,
-                ...(enter !== undefined ? { enter } : {}),
-                ...(expiresAt !== undefined ? { expiresAt } : {}),
-                state: "alive",
-              }),
-            );
+          const enter = nativeEnterCommand(providerName, sandbox.sandboxId);
+          const keptAt = new Date().toISOString();
+          const expiresAt = computeExpiresAt(providerName, keptAt);
+          const registered = yield* Effect.either(writeKeptEntryEffect(niceevalRoot, {
+            sandboxId: sandbox.sandboxId,
+            provider: providerName,
+            evalId: evalDef.id,
+            attempt,
+            ...(run.experimentId !== undefined ? { experimentId: run.experimentId } : {}),
+            locator: String(a.locator),
+            verdict: bodyResult.verdict,
+            keptAt,
+            workdir: sandbox.workdir,
+            ...(enter !== undefined ? { enter } : {}),
+            ...(expiresAt !== undefined ? { expiresAt } : {}),
+            state: "alive",
+          }));
+          if (Either.isRight(registered)) {
             disposition = "keep";
             reportKept({
               locator: a.locator,
@@ -810,14 +1037,14 @@ export function runAttemptEffect(
             // sandboxFacts 统一挂上(见下方 Effect.map)。
             kept = true;
             return bodyResult;
-          } catch (e) {
-            recordDiagnostic({
-              code: "sandbox-keep-failed",
-              level: "warning",
-              message: `failed to register kept sandbox ${sandbox.sandboxId}; it will be destroyed normally: ${e instanceof Error ? e.message : String(e)}`,
-              dedupeKey: `sandbox-keep-failed:${sandbox.sandboxId}`,
-            });
           }
+          const error = registered.left;
+          recordDiagnostic({
+            code: "sandbox-keep-failed",
+            level: "warning",
+            message: `failed to register kept sandbox ${sandbox.sandboxId}; it will be destroyed normally: ${error instanceof Error ? error.message : String(error)}`,
+            dedupeKey: `sandbox-keep-failed:${sandbox.sandboxId}`,
+          });
         }
       }
       return bodyResult;
@@ -828,8 +1055,10 @@ export function runAttemptEffect(
     // body 自己已兜了 agent 执行错;这里兜的是资源获取 / Sample 层的意外(起沙箱失败等)。
     // 中断【不】吞:此时 Sample 已跑完 release(容器已停),把中断继续上抛,让 forEach 整体停掉,
     // 否则会把中断「恢复」成一条 errored 结果、并让后续 attempt 继续起 —— 那就停不下来了。
+    // `timeoutTo` 已在内层把自己的中断消费成 onTimeout 的成功值，因此这里的 Cause interrupt
+    // 仍是外层 fiber 取消（即使 parent AbortSignal 尚未同步）的权威信号，不能只看 parentSignal。
     Effect.catchAllCause((cause) =>
-      Cause.isInterrupted(cause) || isAttemptAborted(signal)
+      Cause.isInterrupted(cause) || isAttemptAborted(parentSignal)
         ? Effect.interrupt
         : Effect.suspend(() => {
             // 资源获取 / Sample 层的意外(起沙箱失败、provisioning 的确定性配置死因)同样是终局
@@ -837,13 +1066,31 @@ export function runAttemptEffect(
             const raw = Cause.squash(cause);
             const phase = (sendActive ? "agent.run" : lastPhase) ?? "eval.run";
             declareFailure(phase, raw);
-            return Effect.succeed({
+            const error = errorFromThrown(raw, sendActive ? "agent.run" : lastPhase, attemptTimeout);
+            const fallback: EvalResult = {
               ...base,
               durationMs: recorder.offsetNow(),
-              error: errorFromThrown(raw, sendActive ? "agent.run" : lastPhase, attemptTimeout),
+              error,
+              ...(evalDef.evaluationKind === "score" ? { scoreResult: scoreFactOutcomeForAttemptError(error) } : {}),
               ...(commands.length > 0 ? { commands: [...commands] } : {}),
-            });
+            };
+            if (liveAssertions === undefined) return Effect.succeed(fallback);
+            return sealAttemptAssertions(liveAssertions, {
+              execution: "errored",
+            }).pipe(
+              Effect.tap(() => Effect.sync(() => {
+                assertionsSealed = true;
+              })),
+              Effect.tap((sealed) => onSealedEvaluation?.(sealed) ?? Effect.void),
+              Effect.map((sealed) => withSealedAssertions(fallback, sealed)),
+              Effect.catchAll(() => Effect.succeed(fallback)),
+            );
           }),
+    ),
+    Effect.map((result) =>
+      !timedOut || timeoutSealedAssertions === undefined
+        ? result
+        : withSealedAssertions(result, timeoutSealedAssertions),
     ),
     // 结果封口在 Sample release 完成之后:sandbox.stop 已由 finalizer 写进 recorder,
     // 这里把完整的阶段计时挂到即将交还的结果上(timeout / scope 兜底分支同样带上)。超时路径
@@ -876,9 +1123,132 @@ export function runAttemptEffect(
             sources: timeoutSources ?? [],
           }
         : withSandbox;
-      return redactEvalResultEvidence(completed, sensitiveValues);
+      const finalResult = retainRunnerAttemptSourceCapture(
+        redactEvalResultEvidence(completed, sensitiveValues),
+        sourceCapture.snapshot(),
+      );
+      bindRunnerAttemptObservabilityCaptureV1(finalResult, observabilityRuntime);
+      return finalResult;
     }),
   );
+}
+
+/**
+ * `EvalResult` still has historical renderer fields while its replacement
+ * invocation coordinator is being completed. This is the only Runner-side
+ * compatibility projection: it derives empty legacy graph arrays and a score
+ * terminal view from the one sealed Assert-first result. No Fact collector or
+ * Fact/use graph participates in authoring, evaluation, or sealing.
+ */
+function legacyResultProjectionFromSealedAssertions(
+  sealed: SealedAttemptAssertions,
+  error?: AttemptError,
+  skipReason?: string,
+): Pick<EvalResult, "factResults" | "factUses" | "scoreResult"> {
+  const empty = Object.freeze({
+    factResults: Object.freeze([]),
+    factUses: Object.freeze([]),
+  });
+  if (sealed.score === undefined) return empty;
+  if (skipReason !== undefined) {
+    return Object.freeze({
+      ...empty,
+      scoreResult: Object.freeze({
+        status: "skipped" as const,
+        earnedScore: 0,
+        creditedScore: null,
+        reason: skipReason,
+      }),
+    });
+  }
+  const score = sealed.score;
+  const earned = score.state === "unavailable" ? 0 : score.earned;
+  if (sealed.evaluation.execution === "errored") {
+    const reasons = score.state === "complete" ? [] : score.reasons;
+    const errors = [Object.freeze({
+      kind: "error" as const,
+      error: Object.freeze({
+        class: "execution" as const,
+        code: error?.code ?? "assertion-execution-errored",
+        message: error?.message ?? "Assert-first Attempt sealed after an execution error",
+      }),
+    })] as const;
+    const scoreResult: Extract<NonNullable<EvalResult["scoreResult"]>, { readonly status: "errored" }> = {
+      status: "errored",
+      earnedScore: earned,
+      creditedScore: null,
+      errors,
+      issues: reasons.map((reason) => Object.freeze({
+        kind: "unavailable" as const,
+        reason,
+      })),
+    };
+    return Object.freeze({
+      ...empty,
+      scoreResult,
+    });
+  }
+  if (score.state === "complete") {
+    return Object.freeze({
+      ...empty,
+      scoreResult: Object.freeze({
+        status: "scored" as const,
+        earnedScore: score.earned,
+        creditedScore: score.earned,
+      }),
+    });
+  }
+  const [firstReason, ...laterReasons] = score.reasons;
+  const issues = [
+    Object.freeze({ kind: "unavailable" as const, reason: firstReason }),
+    ...laterReasons.map((reason) => Object.freeze({
+      kind: "unavailable" as const,
+      reason,
+    })),
+  ] as const;
+  const scoreResult: Extract<NonNullable<EvalResult["scoreResult"]>, { readonly status: "unavailable" }> = {
+    status: "unavailable",
+    earnedScore: earned,
+    creditedScore: null,
+    issues,
+  };
+  return Object.freeze({
+    ...empty,
+    scoreResult,
+  });
+}
+
+function withSealedAssertions(
+  result: EvalResult,
+  sealed: SealedAttemptAssertions,
+): EvalResult {
+  return {
+    ...result,
+    verdict: sealed.verdict.state,
+    ...legacyResultProjectionFromSealedAssertions(sealed, result.error, result.skipReason),
+  };
+}
+
+function isAssertionStopError(value: unknown): value is AssertionStopError {
+  return typeof value === "object"
+    && value !== null
+    && (value as { readonly _tag?: unknown })._tag === "AssertionStopError";
+}
+
+/** Runner-originated failures before Fact folding still produce a closed Score terminal outcome. */
+export function scoreFactOutcomeForAttemptError(
+  error: AttemptError,
+): import("../assertions/types.ts").ScoreFactAttemptOutcome {
+  return {
+    status: "errored",
+    earnedScore: 0,
+    creditedScore: null,
+    errors: [{
+      kind: "error",
+      error: { class: "execution", code: error.code, message: error.message },
+    }],
+    issues: [],
+  };
 }
 
 /** 把 catch 到的 e(body 里 test()/setup 抛错,或 Sample 层 squash 出来的原始错误)折成
@@ -972,6 +1342,9 @@ function assertDeadlineFitsPlan(
 
 interface AttemptResources {
   sandbox: Sandbox;
+  /** Attempt-local source snapshot and semantic-token journal; never public Record values. */
+  sourceRegistry: SourceRegistry;
+  sourceCapture: RunnerAttemptSourceCapture;
   /** 本 attempt 解析出的超时上限与它的出处;超时归属(`error.timeout`)照它落盘。 */
   attemptTimeout?: { timeoutMs: number; source: TimeoutSource };
   /** attempt deadline 的截止**时刻**;命令节点的时限归属按它算剩余量。四层都没声明上限时缺席。 */
@@ -1008,11 +1381,15 @@ interface AttemptResources {
   commands: CommandExitEvidence[];
   /** `CommandOptions.sensitiveValues` 的 Attempt 级内存集合；只由命令包装写、结果封口读。 */
   sensitiveValues: Set<string>;
-  /** turn 级重试退避期间释放/收回的全局并发槽位;透传给 createEvalContext。 */
+  /** Private Observability capture; its final attachment facts are read only by the Record adapter. */
+  observabilityRuntime: RunnerAttemptObservabilityRuntimeV1;
+  /** turn 级重试退避期间释放/收回的全局并发槽位;透传给 Assert-first Context。 */
   concurrencySlot?: ConcurrencySlot;
   /** 终局失败的空间轴回执(runAttemptEffect 持有的同一个闭包):body 的失败路径与 finally 里的
    *  per-attempt teardown 失败都经它上报,止损闸据此落闸(见 runAttemptEffect 的 declareFailure)。 */
   declareFailure: (phase: LifecyclePhase, e: unknown) => void;
+  /** `timeoutTo` 已经裁定 deadline 后才为 true；用于区分它触发的协作式 abort 与外层 fiber 取消。 */
+  isDeadlineTimedOut: () => boolean;
   /** 作者 prepare 成功后登记的 cleanup；由外层 Scope 全局 LIFO 执行。 */
   layerCleanups: LayerCleanupEntry[];
   /** SessionManager 一建好就登记事件/用量的读取句柄回外层(超时证据保全用,见
@@ -1024,6 +1401,13 @@ interface AttemptResources {
   ) => void;
   /** 变更分类账一建好(workspace.baseline 阶段)就登记回外层(超时收尾段折叠 workspace.diff 用)。 */
   registerLedger: (ledger: ChangeLedger) => void;
+  /** The outer Effect boundary owns author execution and the one seal. */
+  assertFirst: AssertFirstAttemptBridge<unknown>;
+  /** Registers the Attempt-local runtime and its post-run evidence state for scope sealing. */
+  registerAssertions: (
+    runtime: AssertionsRuntime<"pass" | "score">,
+    state: AssertFirstContextState,
+  ) => void;
   /** Run 级 Agent artifact prepare 协调器；仅 Runner 的 agent.ensure 使用。 */
   prepareCoordinator?: import("../agents/provisioner.ts").ArtifactPrepareCoordinator;
 }
@@ -1042,10 +1426,13 @@ async function runAttemptBody(
   t0: number,
   base: EvalResult,
   res: AttemptResources,
+  parentSignal: AbortSignal | undefined,
 ): Promise<EvalResult> {
   const { evalDef, run, attempt } = a;
   const {
     sandbox: rawSandbox,
+    sourceRegistry,
+    sourceCapture,
     receiver,
     telemetry,
     otel,
@@ -1060,11 +1447,15 @@ async function runAttemptBody(
     facts,
     commands,
     sensitiveValues,
+    observabilityRuntime,
     concurrencySlot,
     declareFailure,
+    isDeadlineTimedOut,
     layerCleanups,
     registerEvidence,
     registerLedger,
+    assertFirst,
+    registerAssertions,
     prepareCoordinator,
   } = res;
   // ctx.fact() 闭包:校验后写进 res.facts(与 runAttemptEffect 共享的同一个 Record 引用),
@@ -1074,7 +1465,16 @@ async function runAttemptBody(
   // 命令时间树:所有经这个包装 sandbox 发出的 runCommand/runShell 都挂成当前阶段(或当前 hook
   // 节点)下的 command 子节点。包装只在最外层公开调用记录一次——provider 内部转调不经过它。
   const sandbox = usesSandbox
-    ? withCommandTiming(rawSandbox, recorder, getPhase, commands, sensitiveValues, res.deadlineAt)
+    ? withCommandTiming(
+        rawSandbox,
+        recorder,
+        getPhase,
+        commands,
+        sensitiveValues,
+        res.deadlineAt,
+        observabilityRuntime,
+        signal,
+      )
     : rawSandbox;
   // Direct Agent 只拿基础 ctx；Sandbox Agent 才拿带真实 Sandbox 的扩展 ctx。
   const attemptCtx: AgentContext = {
@@ -1097,6 +1497,9 @@ async function runAttemptBody(
   const commandTarget = createSandboxCommandTarget(sandbox);
   /** agent.setup 时点已走到(未声明 setup 也置位)——agent.teardown 的触发条件(成对触发规则)。 */
   let agentSetupReached = false;
+  // Only the Assert-first runtime is registered with the outer Scope. The
+  // body requests its single seal after gathering non-authoring evidence.
+  let assertionState: AssertFirstContextState | undefined;
   /** adapter 在 agent.setup 里经 `ctx.reportSetup()` 交回的安装清单(宿主侧内存对象,不经沙箱磁盘;
    *  装了 Skill / plugin / MCP 的沙箱型 adapter 才有)。运行器只把它抬成 attempt artifact,
    *  不解释内容、不按 agent 名字分支;什么都没装的 adapter 不调用 → undefined,不生成空 artifact。 */
@@ -1104,7 +1507,6 @@ async function runAttemptBody(
   // 变更分类账(仅沙箱型;workspace.baseline 阶段建立)。
   let ledger: ChangeLedger | undefined;
   // discovery 的 entry 快照加上调用发生时首次读取的 helper 快照；不在 attempt 收尾重读。
-  const sourceRegistry = createSourceRegistry(process.cwd());
   try {
     if (usesSandbox) {
       // Linker 已按「template owner 在前，另一作者在后」排好命令；fresh/reuse 每条 Attempt
@@ -1162,7 +1564,7 @@ async function runAttemptBody(
         }
         enterPhase("agent.ensure");
         log(t("runner.startAgentEnsure"));
-        const verified = await Effect.runPromise(Effect.either(
+        const verified = await assertFirst.requestEffect(Effect.either(
           verifySandboxTargetPlatform(sandbox, a.plan.providerPlan.target.platform),
         ));
         if (Either.isLeft(verified)) throw verified.left;
@@ -1173,7 +1575,7 @@ async function runAttemptBody(
           signal,
           progress: feedback.progress,
         });
-        const ensured = await Effect.runPromise(Effect.either(ensureEffect));
+        const ensured = await assertFirst.requestEffect(Effect.either(ensureEffect));
         if (Either.isLeft(ensured)) throw ensured.left;
       }
 
@@ -1216,7 +1618,7 @@ async function runAttemptBody(
       try {
         await run.agent.tracing.configure(sandbox, sandboxAttemptCtx);
       } catch (configureError) {
-        if (isAttemptAborted(signal)) throw configureError;
+        if (isBodyInterrupted(signal, parentSignal, isDeadlineTimedOut())) throw configureError;
         feedback.diagnostic({
           code: "telemetry-configure-failed",
           level: "warning",
@@ -1233,8 +1635,7 @@ async function runAttemptBody(
     // 构造 t,跑 test
     enterPhase("eval.run");
     log(t("runner.driveAgent"));
-    const judge = resolveJudge(run.judge, evalDef.judge, config.judge);
-    const { context, state } = createEvalContext({
+    const { context, state } = createAssertFirstEvalContext({
       agent: run.agent,
       sandbox,
       evalId: evalDef.id,
@@ -1243,12 +1644,15 @@ async function runAttemptBody(
       reasoningEffort: run.reasoningEffort,
       flags: run.flags,
       experimentId: run.experimentId,
+      judge: a.judge,
+      executeStop: assertFirst.requestAssertion,
+      // Public author send/respond keep their Promise surface, but their
+      // complete Effect graph is executed only by this Attempt-owned bridge.
+      requestEffect: assertFirst.requestEffect,
       signal,
       log,
-      judge,
       telemetry,
       otel,
-      evalBaseDir: evalDef.baseDir,
       feedback,
       fact,
       concurrencySlot,
@@ -1256,10 +1660,11 @@ async function runAttemptBody(
       // docs/feature/error-classification/architecture.md「分类链」)。与本文件 declareFailure
       // 走的生命周期链是同一个函数,两条链的决议序各自单源在 send-failures.ts / failure-class.ts。
       experimentClassifier: run.classifyFailure,
-      // 题型:计分制下句柄上的 .gate() 是前置(就地求值 + 挂了中止 test()),见 collector。
+      sourceRegistry,
+      nextSourceOrder: sourceCapture.nextSourceOrder,
+      // Pass / Score share the same Assert-first entry runtime. Their
+      // independent folds are both derived only after this Attempt seals.
       evaluationKind: evalDef.evaluationKind ?? "pass",
-      // 前置断言就地求值要看当前已提交窗口的 agent diff(非沙箱型没有分类账,省略)。
-      ...(ledger ? { liveDiff: async () => deriveDiffData(await ledger!.exportWindows()) } : {}),
       // send 窗口钩子:进入前落 eval 归因、返回后落 agent 归因(见 ledger.ts)。
       ledgerHooks: ledger
         ? {
@@ -1274,9 +1679,13 @@ async function runAttemptBody(
       // OTel 接入时再带 traceId,trace.json 的 spans 由消费方按它临时挂到 turn 下。usage 有记录
       // 才带(show `--execution`/`--timing` 的 turn 头行读 TimingNode.usage,见 docs/feature/
       // results/architecture.md「result.json」TimingNode.usage)。
-      onTurn: (info) =>
-        recorder.child(turnActivity({
-          label: formatTurnLabel(info.sessionIndex, info.turnIndex),
+      onTurn: (info) => {
+        sourceCapture.onTurn(info);
+        if (info.usage !== undefined) {
+          captureRunnerTurnUsageV1(observabilityRuntime, info.usage);
+        }
+        return recorder.child(turnActivity({
+          label: info.label,
           startOffsetMs: info.startOffsetMs,
           durationMs: info.durationMs,
           ...(info.failed ? { failed: true as const } : {}),
@@ -1285,8 +1694,10 @@ async function runAttemptBody(
           ...(info.traceId !== undefined ? { traceId: info.traceId } : {}),
           ...(info.traceAttribution !== undefined ? { traceAttribution: info.traceAttribution } : {}),
           ...(info.usage !== undefined ? { usage: info.usage } : {}),
-        })),
+        }));
+      },
     });
+    sourceCapture.attachAssertions(state.assertions);
     // 登记回外层:超时中断后由 onTimeout 直接读这两个句柄组装 events/usage(见
     // registerEvidence 注释、docs/runner.md「超时:双层保护」超时不丢证据)。
     registerEvidence(
@@ -1294,19 +1705,19 @@ async function runAttemptBody(
       () => state.manager.usage,
       () => state.manager.retryAttempts,
     );
+    assertionState = state;
+    registerAssertions(state.assertions, state);
 
     let error: AttemptError | undefined;
     let skipReason: string | undefined;
     try {
-      await withSourceRegistry(sourceRegistry, () => evalDef.test(context as ScoreTestContext));
-      // test() 正常返回也要结算待决前置:最后一条前置挂了而后面没有 t.* 调用时,
-      // 中止信号在这里抛出(判定与写了 await 完全一致)。
-      const aborted = await state.collector.settlePrerequisites();
-      if (aborted !== undefined) throw new EvalRequirementFailed(aborted);
+      await assertFirst.requestEffect(assertFirst.offerContext(context));
+      const author = await assertFirst.requestEffect(assertFirst.awaitAuthor());
+      if (author._tag === "failed") throw author.error;
+      if (author._tag === "defect") throw author.cause;
     } catch (e) {
-      if (e instanceof EvalSkipped) skipReason = e.reason;
-      else if (e instanceof EvalRequirementFailed) {
-        /* 断言已记录,非执行错误 */
+      if (e instanceof EvalSkipped) {
+        skipReason = e.reason;
       } else {
         // eval 脚本(比如引用了已改名/删掉的 API)抛出的 TypeError:message 是一层原因,完整 stack
         // 单独进 `error.stack`,niceeval show 展开时才看得到 eval 文件的 file:line。
@@ -1322,11 +1733,24 @@ async function runAttemptBody(
     if (!skipReason && usesSandbox) enterPhase("workspace.diff");
     let diffWindows: DiffArtifact = [];
     let diffArtifactAvailable = true;
-    if (!skipReason && usesSandbox && ledger) {
-      // 快照必须在导出前读取：导出失败时是否致命只由已登记消费者决定，
-      // 不能按“发生在评分前”一刀切。optional 断言仍需要 unavailable 记录，
-      // 因此所有失败都会先冻结 collector 的通道状态。
-      const diffRequirements = state.collector.evidenceRequirementSnapshot();
+    const captureFailure = state.manager.ledgerCaptureFailure;
+    if (captureFailure !== undefined) {
+      // `afterSend` is intentionally non-fatal to the completed agent Turn,
+      // but its missing checkpoint makes every later workspace document
+      // incomplete. Do not export the surviving prefix as a complete diff.
+      diffArtifactAvailable = false;
+      feedback.diagnostic({
+        code: "workspace-diff-unavailable",
+        level: "warning",
+        message: `workspace diff capture failed after ${captureFailure.label}; treating the diff as unavailable: ${firstLine(formatThrown(captureFailure.error))}`,
+        data: evidenceDiagnosticData(
+          "capture",
+          captureFailure.error,
+          a.plan._tag === "Sandbox" ? a.plan.providerPlan.provider : undefined,
+        ),
+      });
+    }
+    if (!skipReason && usesSandbox && ledger && captureFailure === undefined) {
       const startedAt = recorder.offsetNow();
       const operation = recorder.child(workspaceDiffExportActivity({
         label: "export workspace diff",
@@ -1342,28 +1766,18 @@ async function runAttemptBody(
         }
       } catch (diffError) {
         if (operation) operation.failed = true;
-        if (isAttemptAborted(signal)) throw diffError;
+        if (isBodyInterrupted(signal, parentSignal, isDeadlineTimedOut())) throw diffError;
         diffArtifactAvailable = false;
-        const reason = `workspace diff export unavailable: ${firstLine(formatThrown(diffError))}`;
-        state.collector.markEvidenceUnavailable("diff", reason);
-        if (diffRequirements.diff.required) {
-          // 显式 diff 断言会在 finalize 中得到 unavailable；若只是无法绑定到某条
-          // Spec 的直接读取，则补一条 AttemptError，至少不能把空 diff 当成 passed/failed。
-          if (diffRequirements.diff.requiredConsumers === 0 && error === undefined) {
-            error = errorFromThrown(diffError, "workspace.diff", res.attemptTimeout);
-          }
-        } else {
-          feedback.diagnostic({
-            code: "workspace-diff-unavailable",
-            level: "warning",
-            message: `workspace diff export failed; continuing with command/event evidence: ${firstLine(formatThrown(diffError))}`,
-            data: evidenceDiagnosticData(
-              "exportWindows",
-              diffError,
-              a.plan._tag === "Sandbox" ? a.plan.providerPlan.provider : undefined,
-            ),
-          });
-        }
+        feedback.diagnostic({
+          code: "workspace-diff-unavailable",
+          level: "warning",
+          message: `workspace diff export failed; continuing with command/event evidence: ${firstLine(formatThrown(diffError))}`,
+          data: evidenceDiagnosticData(
+            "exportWindows",
+            diffError,
+            a.plan._tag === "Sandbox" ? a.plan.providerPlan.provider : undefined,
+          ),
+        });
       } finally {
         if (operation) {
           operation.durationMs = Math.max(0, recorder.offsetNow() - startedAt);
@@ -1372,7 +1786,46 @@ async function runAttemptBody(
       }
     }
     const diff = deriveDiffData(diffWindows);
-    state.late.diff = diff;
+    let workspaceDiff: AgentWorkspaceDiff | undefined;
+    if (usesSandbox && ledger && diffArtifactAvailable && !skipReason) {
+      // This is the one export/freeze point. Post-run Assertion closures and
+      // the later Evaluation Record adapter share this exact object; neither
+      // side rebuilds a diff.
+      try {
+        const document = createAgentWorkspaceDiff({
+          windows: diffWindows,
+          policy: ledger.attribution,
+        });
+        state.late.diff = Object.freeze({
+          state: "available" as const,
+          document,
+        });
+        workspaceDiff = document;
+      } catch (diffError) {
+        diffArtifactAvailable = false;
+        state.late.diff = Object.freeze({
+          state: "unavailable" as const,
+          reason: "producer-failed" as const,
+        });
+        feedback.diagnostic({
+          code: "workspace-diff-unavailable",
+          level: "warning",
+          message: `workspace diff freeze failed; continuing with command/event evidence: ${firstLine(formatThrown(diffError))}`,
+          data: evidenceDiagnosticData(
+            "freeze",
+            diffError,
+            a.plan._tag === "Sandbox" ? a.plan.providerPlan.provider : undefined,
+          ),
+        });
+      }
+    } else {
+      state.late.diff = Object.freeze({
+        state: "unavailable" as const,
+        reason: usesSandbox
+          ? "producer-failed" as const
+          : "sandbox-unavailable" as const,
+      });
+    }
     if (!skipReason && usesSandbox && diffArtifactAvailable) {
       const files = Object.values(diff.files);
       log(t("runner.diffProgress", {
@@ -1384,40 +1837,21 @@ async function runAttemptBody(
     const scripts: globalThis.Record<string, ScriptResult> = {};
     state.late.scripts = scripts;
 
-    // 评分
+    // Runtime observations remain available to trace/cost projection. Assertion
+    // authoring itself has already been captured as sealed-entry registrations.
     const events = state.manager.allEvents;
     const usage = state.manager.usage;
     const facts = deriveRunFacts(events);
-    const assertionEvaluationContext: AssertionEvaluationContext = {
-      events,
-      facts,
-      diff,
-      scripts,
-      usage,
-      status: state.manager.lastStatus,
-      // attempt 级聚合覆盖(各轮最差值);t.* 作用域断言按它折叠,turn/session 作用域在
-      // record 时已换成各自的覆盖(见 context.ts 的 recordScoped / makeTurnHandle)。
-      evidenceCoverage: state.manager.evidenceCoverage,
-      readFile: async (path) => {
-        try {
-          return await sandbox!.readText(path);
-        } catch {
-          return undefined;
-        }
-      },
-    };
     if (!skipReason) enterPhase("assertions.evaluate");
-    // 类型面挡住通过制 t.points()/t.score()，但 tsx 与 JS 可绕过；持久化边界必须再门控一次。
-    const assertions = skipReason
-      ? []
-      : await state.collector.finalize(assertionEvaluationContext, {
-          includePoints: evalDef.evaluationKind === "points",
-          // assertions.evaluate 阶段唯一值得解释的等待是「在等裁判模型」:有判分断言时逐条推进 detail,
-          // 没有则整段不发 detail(见 docs/feature/experiments/cli.md「Attempt 阶段」)。
-          // 文本是契约字面量,中英一致,不进 i18n。
-          onJudgeProgress: ({ index, total, check }) => log(`judge ${index}/${total} · ${check}`),
-        });
-    const verdict = computeVerdict({ error, assertions, skipReason, strict: run.strict });
+    const sealedAssertions = await assertFirst.requestEffect(assertFirst.requestSeal({
+      runtime: state.assertions,
+      options: {
+        execution: error === undefined ? "completed" : "errored",
+        explicitlySkipped: skipReason !== undefined,
+      },
+      ...(workspaceDiff === undefined ? {} : { workspaceDiff }),
+    }));
+    const verdict = sealedAssertions.verdict.state;
 
     // 收 OTLP trace:给最后一批导出留点落地时间,再 collect(空则不挂)。
     // codex 的 OTLP 把内部 Rust tracing 全导出来(handle_responses / append_items … 上万条);
@@ -1427,7 +1861,10 @@ async function runAttemptBody(
     if (receiver) {
       enterPhase("telemetry.collect");
       try {
-        await receiver.settle(250, 1500);
+        await assertFirst.requestEffect(Effect.raceFirst(
+          receiver.settle(250, 1500),
+          interruptOnAbort(signal),
+        ));
         const spans = receiver.collect();
         if (spans.length) {
           // 归一 → 选语义 span → 按 call_id 把 transcript 的工具入参/出参 join 上去(span 自身不带命令文本)。
@@ -1438,7 +1875,7 @@ async function runAttemptBody(
           log(`trace:${spans.length} span${note}`);
         }
       } catch (collectError) {
-        if (isAttemptAborted(signal)) throw collectError;
+        if (isBodyInterrupted(signal, parentSignal, isDeadlineTimedOut())) throw collectError;
         feedback.diagnostic({
           code: "telemetry-collect-failed",
           level: "warning",
@@ -1455,7 +1892,10 @@ async function runAttemptBody(
       //(逐轮攒的 + 按本 attempt traceId sweep 回的迟到批)。
       enterPhase("telemetry.collect");
       try {
-        const late = await otel.sweep(state.manager.otelTraceIds, state.manager.otelTurnWindows);
+        const late = await assertFirst.requestEffect(Effect.raceFirst(
+          otel.sweepEffect(state.manager.otelTraceIds, state.manager.otelTurnWindows),
+          interruptOnAbort(signal),
+        ));
         const traceIdsBeforeDeferred = new Set(state.manager.otelTraceIds);
         const deferred = state.manager.attributeDeferredOtel(late);
         const knownLate = late.filter((span) => traceIdsBeforeDeferred.has(span.traceId));
@@ -1469,7 +1909,7 @@ async function runAttemptBody(
           log(`trace:${spans.length} span${note}`);
         }
       } catch (collectError) {
-        if (isAttemptAborted(signal)) throw collectError;
+        if (isBodyInterrupted(signal, parentSignal, isDeadlineTimedOut())) throw collectError;
         feedback.diagnostic({
           code: "telemetry-collect-failed",
           level: "warning",
@@ -1489,28 +1929,31 @@ async function runAttemptBody(
     // 权威唯一在 result.json 的 estimatedCostUSD;o11y.json 只留行为计数(见 docs/feature/record/architecture.md「o11y.json」)。
     const cost = usage.costUSD ?? estimateCost(run.model, usage, config.pricing);
 
-    // 收 test 引用到的 eval 源码(按 send / 断言的 loc 去重),供 view 渲染代码视图。
-    const sources = await collectSources(events, assertions, evalDef.source, sourceRegistry);
+    // Assert-first entries carry no legacy source graph. Session events and the
+    // captured entry module still provide the stable source artifact surface.
+    const sources = await collectSources(evalDef.source, sourceRegistry);
+    const legacyProjection = legacyResultProjectionFromSealedAssertions(
+      sealedAssertions,
+      error,
+      skipReason,
+    );
 
     const value: EvalResult = {
       id: evalDef.id,
       description: evalDef.description,
       experimentId: run.experimentId,
-      experiment: experimentRunInfo(run, a.plan, a.sandboxPlansByEval, config, evalDef.judge),
+      experiment: experimentRunInfo(run, a.plan, a.sandboxPlansByEval, config, a.judge),
       agent: run.agent.name,
       model: run.model,
       verdict,
       fingerprint: a.fingerprint,
+      evaluationAlgorithm: EVALUATION_ALGORITHM,
       configHash: a.configHash,
       attempt,
       startedAt: new Date(t0).toISOString(),
       durationMs,
-      assertions,
+      ...legacyProjection,
       evaluationKind: evalDef.evaluationKind ?? "pass",
-      // 只在计分制 eval 上落 scoreEntries(t.score 直接给分记录);通过制 eval 的 t 上没有
-      // t.score,collector.scoreEntries 恒为空数组,省略即等价于空数组
-      // (见 docs/feature/record/architecture.md「result.json」)。
-      ...(evalDef.evaluationKind === "points" ? { scoreEntries: state.collector.scoreEntries } : {}),
       ...(state.manager.retryAttempts.length > 0 ? { retryAttempts: state.manager.retryAttempts } : {}),
       usage,
       estimatedCostUSD: cost,
@@ -1530,15 +1973,40 @@ async function runAttemptBody(
   } catch (e) {
     // telemetry / diff 等 supplemental 路径显式保留 AbortSignal 语义；不要把用户中断
     // 降成 AttemptError 或 warning。外层 Effect 会负责中止并运行 release/finalizer。
-    if (isAttemptAborted(signal)) throw e;
+    if (isBodyInterrupted(signal, parentSignal, isDeadlineTimedOut())) throw e;
     recorder.failCurrent();
     // SandboxLayer command / agent.setup / 评分链路抛出的终局失败:同样先读空间轴回执,
     // 再折成纯数据 AttemptError(顺序不可换,见 declareFailure)。
     declareFailure(getPhase() ?? "eval.run", e);
+    const error = errorFromThrown(e, getPhase(), res.attemptTimeout);
+    // If setup failed before Context construction, release the outer Effect
+    // boundary instead of leaving it waiting for a Context that cannot exist.
+    await assertFirst.requestEffect(assertFirst.failBeforeContext(e));
+    let sealed: SealedAttemptAssertions | undefined;
+    if (assertionState !== undefined) {
+      if (assertionState.late.diff.state === "pending") {
+        assertionState.late.diff = Object.freeze({
+          state: "unavailable" as const,
+          reason: "producer-failed" as const,
+        });
+      }
+      try {
+        sealed = await assertFirst.requestEffect(assertFirst.requestSeal({
+          runtime: assertionState.assertions,
+          options: { execution: "errored" },
+        }));
+      } catch {
+        // The outer Effect branch owns attachment/seal failures. Keep this
+        // fallback as an execution error without inventing another runtime.
+      }
+    }
     const value: EvalResult = {
       ...base,
       durationMs: recorder.offsetNow(),
-      error: errorFromThrown(e, getPhase(), res.attemptTimeout),
+      error,
+      ...(sealed === undefined
+        ? (evalDef.evaluationKind === "score" ? { scoreResult: scoreFactOutcomeForAttemptError(error) } : {})
+        : legacyResultProjectionFromSealedAssertions(sealed, error)),
       ...(agentSetup !== undefined ? { agentSetup } : {}),
     };
     return value;
@@ -1557,10 +2025,10 @@ async function runAttemptBody(
             // AgentTeardown | DirectAgentTeardown 混成无法调用的签名。
             if (run.agent.kind === "sandbox") {
               const teardown = run.agent.teardown;
-              if (teardown) await withCleanupTimeout(() => teardown(sandbox, sandboxAttemptCtx));
+              if (teardown) await assertFirst.requestEffect(cleanupCallback(() => teardown(sandbox, sandboxAttemptCtx)));
             } else {
               const teardown = run.agent.teardown;
-              if (teardown) await withCleanupTimeout(() => teardown(attemptCtx));
+              if (teardown) await assertFirst.requestEffect(cleanupCallback(() => teardown(attemptCtx)));
             }
           } catch (e) {
             declareFailure("agent.teardown", e);
@@ -1588,8 +2056,37 @@ function teardownDiagnostic(phase: LifecyclePhase, e: unknown): DiagnosticRecord
 }
 
 /** telemetry / diff 等 supplemental 采集失败不能吞掉 Attempt 自己的中断。 */
-function isAttemptAborted(signal: AbortSignal): boolean {
-  return signal.aborted;
+function isAttemptAborted(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true;
+}
+
+/**
+ * The legacy body treated rejected author and SDK promises as defects. Keep
+ * that result channel while giving every Promise a named Effect v3 boundary
+ * and its cancellation signal.
+ */
+function tryPromiseAsDefect<Value>(
+  run: (signal: AbortSignal) => PromiseLike<Value>,
+): Effect.Effect<Value> {
+  return Effect.tryPromise({
+    try: run,
+    catch: (error) => error,
+  }).pipe(Effect.orDie);
+}
+
+/**
+ * This named `Effect.tryPromise` bridge aborts its callback signal for every
+ * fiber interruption while preserving the legacy defect channel for rejected
+ * setup/body promises. A timeout uses that same path only after `timeoutTo`
+ * has synchronously set its winner bit, so only the unmarked case is an
+ * external fiber cancellation.
+ */
+function isBodyInterrupted(
+  signal: AbortSignal,
+  parentSignal: AbortSignal | undefined,
+  deadlineTimedOut: boolean,
+): boolean {
+  return isAttemptAborted(parentSignal) || (signal.aborted && !deadlineTimedOut);
 }
 
 /** 诊断只保存有界结构化 cause，不把完整 SDK response 或 stack 灌进结果。 */
@@ -1630,6 +2127,7 @@ const EVAL_RESULT_REDACTION_EXEMPT_KEYS = [
   "model",
   "verdict",
   "fingerprint",
+  "evaluationAlgorithm",
   "configHash",
   "attempt",
   "startedAt",
@@ -1651,8 +2149,9 @@ const EVAL_RESULT_REDACTION_EXEMPT_KEYS = [
 ] as const satisfies readonly (keyof EvalResult)[];
 
 const EVAL_RESULT_REDACTED_EVIDENCE_KEYS = [
-  "assertions",
-  "scoreEntries",
+  "factResults",
+  "factUses",
+  "scoreResult",
   "retryAttempts",
   "error",
   "diagnostics",
@@ -1716,6 +2215,8 @@ function withCommandTiming(
   commands: CommandExitEvidence[],
   sensitiveValues: Set<string>,
   deadlineAt: number | undefined,
+  observabilityRuntime: RunnerAttemptObservabilityRuntimeV1,
+  attemptSignal: AbortSignal,
 ): Sandbox {
   const recordCommandExit = (
     node: TimingActivity | undefined,
@@ -1740,10 +2241,21 @@ function withCommandTiming(
     args: readonly string[] | undefined,
     opts: unknown,
     checked: boolean,
+    invocationKind: "argv" | "shell",
     fn: () => Promise<T>,
   ): Promise<T> => {
     rememberSensitiveValues(sensitiveValues, commandSensitiveValues(opts));
     const display = commandDisplay(cmd, args, sensitiveValues);
+    // Register the command manifest capability before process launch. The
+    // later result can only be attached through this opaque handle.
+    const observabilityCommand = captureRunnerCommandStartV1({
+      runtime: observabilityRuntime,
+      phase: getPhase() ?? "eval.run",
+      invocationKind,
+      command: cmd,
+      ...(args === undefined ? {} : { args }),
+      ...(opts === undefined ? {} : { options: opts }),
+    });
     const startOffsetMs = recorder.offsetNow();
     const wallStartedAt = Date.now();
     // 这条命令这次生效的线:显式 timeout 归命令自己那层,否则是 attempt deadline 在**命令开始
@@ -1777,6 +2289,14 @@ function withCommandTiming(
           exitCode,
           ...(result as { stdout?: unknown; stderr?: unknown }),
         }, checked);
+        captureRunnerCommandResultV1({
+          handle: observabilityCommand,
+          exitCode,
+          stdout: (result as { stdout?: unknown }).stdout,
+          stderr: (result as { stderr?: unknown }).stderr,
+        });
+      } else {
+        captureRunnerCommandCaptureFailedV1(observabilityCommand);
       }
       // CommandResult.command:最外层公开调用恰好是「eval 实际跑了什么」的定义点,摘要
       // 与时间树节点同一份。记录边界是权威来源，provider 即使给过原始 command 也必须覆盖，
@@ -1813,7 +2333,26 @@ function withCommandTiming(
           ...(hit !== undefined ? { limit: hit } : {}),
         }),
       );
-      if (commandResult !== undefined) recordCommandExit(node, display, commandResult, checked);
+      if (commandResult !== undefined) {
+        recordCommandExit(node, display, commandResult, checked);
+        captureRunnerCommandResultV1({
+          handle: observabilityCommand,
+          exitCode: commandResult.exitCode,
+          stdout: commandResult.stdout,
+          stderr: commandResult.stderr,
+        });
+      } else if (e instanceof SandboxCommandTimeoutError) {
+        captureRunnerCommandTimeoutV1(observabilityCommand);
+      } else if (
+        attemptSignal.aborted ||
+        ((opts as { signal?: AbortSignal } | undefined)?.signal?.aborted === true)
+      ) {
+        // Cancellation has no observed terminal result; preserve the partial
+        // capture state rather than inventing one.
+        captureRunnerCommandInterruptedV1(observabilityCommand);
+      } else {
+        captureRunnerCommandCaptureFailedV1(observabilityCommand);
+      }
       throw e;
     }
   };
@@ -1821,19 +2360,47 @@ function withCommandTiming(
     get(target, prop, receiver) {
       if (prop === "runCommand") {
         return (cmd: string, args?: readonly string[], opts?: unknown) =>
-          wrap(cmd, args, opts, false, () => (target.runCommand as (...a: unknown[]) => Promise<unknown>)(cmd, args, opts));
+          wrap(
+            cmd,
+            args,
+            opts,
+            false,
+            "argv",
+            () => (target.runCommand as (...a: unknown[]) => Promise<unknown>)(cmd, args, opts),
+          );
       }
       if (prop === "runShell") {
         return (script: string, opts?: unknown) =>
-          wrap(script, undefined, opts, false, () => (target.runShell as (...a: unknown[]) => Promise<unknown>)(script, opts));
+          wrap(
+            script,
+            undefined,
+            opts,
+            false,
+            "shell",
+            () => (target.runShell as (...a: unknown[]) => Promise<unknown>)(script, opts),
+          );
       }
       if (prop === "runCommandOrThrow") {
         return (cmd: string, args?: readonly string[], opts?: unknown) =>
-          wrap(cmd, args, opts, true, () => (target.runCommandOrThrow as (...a: unknown[]) => Promise<unknown>)(cmd, args, opts));
+          wrap(
+            cmd,
+            args,
+            opts,
+            true,
+            "argv",
+            () => (target.runCommandOrThrow as (...a: unknown[]) => Promise<unknown>)(cmd, args, opts),
+          );
       }
       if (prop === "runShellOrThrow") {
         return (script: string, opts?: unknown) =>
-          wrap(script, undefined, opts, true, () => (target.runShellOrThrow as (...a: unknown[]) => Promise<unknown>)(script, opts));
+          wrap(
+            script,
+            undefined,
+            opts,
+            true,
+            "shell",
+            () => (target.runShellOrThrow as (...a: unknown[]) => Promise<unknown>)(script, opts),
+          );
       }
       const value = Reflect.get(target, prop, receiver);
       return typeof value === "function" ? (value as (...a: unknown[]) => unknown).bind(target) : value;
@@ -1843,40 +2410,13 @@ function withCommandTiming(
   return timed;
 }
 
-/**
- * 收集 test 引用到的 eval 源码:从 send(user message)与断言的 loc 去重出文件集。
- * 命中 eval 自己的定义文件(绝大多数情况——send / 断言几乎总在 eval 主体里直接调用)时,
- * 直接用 discovery 时已经读好、归一化、算过哈希的 `evalSource`,不重新读盘;loc 指向
- * 其它文件(包括 callers 链中的 helper)在首次引用后由 registry 冻结；这里仅把已知路径
- * 补成 artifact。读取失败不能删掉 loc，投影会将该路径表示为 unavailable。
- */
 async function collectSources(
-  events: readonly StreamEvent[],
-  assertions: readonly EvalResult["assertions"][number][],
   evalSource: CapturedEvalSource,
-  registry?: SourceRegistry,
+  registry: SourceRegistry,
 ): Promise<SourceArtifact[]> {
-  if (registry) return registry.artifacts({ path: evalSource.path, content: evalSource.content, role: "entry" });
-  const paths = new Set<string>();
-  const add = (loc: import("../types.ts").SourceLoc | undefined) => {
-    if (!loc) return;
-    paths.add(loc.file);
-    for (const frame of loc.callers ?? []) if (frame.kind === "project") paths.add(frame.file);
-  };
-  for (const e of events) if (e.type === "message") add(e.loc);
-  for (const a of assertions) add(a.loc);
-  const out: SourceArtifact[] = [{ path: evalSource.path, content: evalSource.content, role: "entry" }];
-  for (const path of paths) {
-    if (path === evalSource.path) {
-      continue;
-    }
-    try {
-      out.push({ path, content: await readSourceFile(resolvePath(process.cwd(), path), "utf-8"), role: "referenced" });
-    } catch {
-      // 缺内容仍保留在 callers 内，assembleSourceTree 会输出 unavailable 段。
-    }
-  }
-  return out;
+  // The registry holds only discovery input plus bytes captured at the action
+  // boundary. Deliberately never reread today's workspace to fill history.
+  return registry.artifacts({ path: evalSource.path, content: evalSource.content, role: "entry" });
 }
 
 /** 解析后运行配置的穷尽投影(ExperimentRunInfo,见 docs/feature/record/architecture.md):
@@ -1887,11 +2427,10 @@ export function experimentRunInfo(
   run: AgentRun,
   plan: Attempt["plan"],
   sandboxPlansByEval: globalThis.Record<string, import("../types.ts").JsonValue>,
-  config?: Pick<Config, "timeoutMs" | "judge">,
-  evalJudge?: JudgeConfig,
+  config?: Pick<Config, "timeoutMs">,
+  judge?: ResolvedJudgeConfig,
 ): EvalResult["experiment"] {
   const runLevelTimeoutMs = run.timeoutMs ?? config?.timeoutMs;
-  const judge = resolveJudge(run.judge, evalJudge, config?.judge);
   return {
     ...(run.description !== undefined ? { description: run.description } : {}),
     ...(run.reasoningEffort !== undefined ? { reasoningEffort: run.reasoningEffort } : {}),
@@ -1905,12 +2444,9 @@ export function experimentRunInfo(
     sandboxLayer: sandboxLayerIdentityFor(plan.pair, "experiment"),
     sandboxPlansByEval: { ...sandboxPlansByEval },
     ...(run.sandboxReuse ? { sandboxReuse: true } : {}),
-    ...(run.strict ? { strict: true } : {}),
     ...(judge
-      ? { judge: { model: judge.model, baseUrl: judge.baseUrl, timeoutMs: judge.timeoutMs } }
+      ? { judge: { model: judge.model, baseUrl: judge.baseUrl, apiKeyEnv: judge.apiKeyEnv, timeoutMs: judge.timeoutMs } }
       : {}),
     agentInstalls: [...agentInstallPlansForRun(run)],
   };
 }
-
-export { resolveJudge } from "./judge-config.ts";

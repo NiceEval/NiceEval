@@ -1,6 +1,7 @@
 // reporter 编排与运行级汇总。reporter 是「结果消费方」:单个 reporter 抛错只记
 // diagnostic,不能让整次调度崩。
 
+import { Effect } from "effect";
 import type {
   EvalResult,
   InvocationShape,
@@ -26,27 +27,44 @@ import { reportReporterError } from "./feedback/sink.ts";
  * `EvalResult.error` 那样的落盘字段能保留完整栈,所以「一层可行动摘要」就是这条诊断的全部内容,
  * 不是从更详细的记录里摘出来的简化版——排查真正需要栈时,重跑该 reporter 单独复现更可靠。
  */
-export async function runReporter(reg: ReporterRegistration, stage: string, fn: () => unknown): Promise<void> {
-  try {
-    await fn();
-  } catch (e) {
-    reportReporterError({ reporter: reg.name, required: reg.required, message: `${stage}: ${firstLine(formatThrown(e))}` });
-  }
+export function runReporter(
+  reg: ReporterRegistration,
+  stage: string,
+  fn: () => unknown,
+): Effect.Effect<void> {
+  return Effect.tryPromise({
+    // Public Reporter callbacks are the one Promise boundary for this module.
+    try: () => Promise.resolve().then(fn),
+    catch: (cause) => cause,
+  }).pipe(
+    Effect.catchAll((cause) => Effect.sync(() => {
+      reportReporterError({
+        reporter: reg.name,
+        required: reg.required,
+        message: `${stage}: ${firstLine(formatThrown(cause))}`,
+      });
+    })),
+  );
 }
 
-export async function emitReporterEvent(
+export function emitReporterEvent(
   registrations: readonly ReporterRegistration[],
   event: ReporterEvent,
-): Promise<void> {
-  await Promise.all(
-    registrations.map((reg) => runReporter(reg, `event:${event.type}`, () => reg.reporter.onEvent?.(event))),
+): Effect.Effect<void> {
+  // Existing Promise.all starts every reporter immediately and waits for each one;
+  // retain that concurrent, best-effort observable behavior under Effect.
+  return Effect.forEach(
+    registrations,
+    (reg) => runReporter(reg, `event:${event.type}`, () => reg.reporter.onEvent?.(event)),
+    { concurrency: "unbounded", discard: true },
   );
 }
 
 /** 按 eval id 过滤 InvocationSummary 并重新计数 —— eval 级 reporter 只看它观测的那部分。 */
 export function filterSummary(summary: InvocationSummary, ids: ReadonlySet<string>): InvocationSummary {
   const results = summary.results.filter((r) => ids.has(r.id));
-  const sub = summarize(results, summary.startedAt, summary.durationMs, summary.name);
+  const reusedAttempts = summary.reusedAttempts.filter((attempt) => ids.has(attempt.target.evalId));
+  const sub = summarize(results, reusedAttempts, summary.startedAt, summary.durationMs, summary.name);
   // completedAt 用原值(summarize 会重新取 now);name 等其余字段原样保留。
   return { ...summary, ...sub, completedAt: summary.completedAt };
 }
@@ -97,6 +115,7 @@ export function scopeReporter(r: Reporter, ids: ReadonlySet<string>, shape?: Inv
 /** 全局汇总:verdict 计数 + token / cost 折叠。按 attempt 计(eval 级折叠见 shared/verdict.ts)。不接收 agent/model —— 一次 Invocation 可能横跨多个配置,身份从逐条 `EvalResult` 读取。 */
 export function summarize(
   results: EvalResult[],
+  reusedAttempts: readonly import("./reuse-readback.ts").CurrentReusedAttemptReadback[],
   startedAt: string,
   durationMs: number,
   name?: LocalizedText,
@@ -111,6 +130,9 @@ export function summarize(
     outTok += r.usage?.outputTokens ?? 0;
     cost += r.estimatedCostUSD ?? 0;
   }
+  for (const attempt of reusedAttempts) {
+    counts[attempt.verdict] += 1;
+  }
   return {
     name,
     startedAt,
@@ -122,6 +144,7 @@ export function summarize(
     durationMs,
     usage: { inputTokens: inTok, outputTokens: outTok },
     estimatedCostUSD: cost || undefined,
+    reusedAttempts: Object.freeze([...reusedAttempts]),
     results,
   };
 }

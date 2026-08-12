@@ -69,7 +69,7 @@ OTel 内容字段可能被关闭或脱敏，因此 span 不补写 `Turn.events`�
 新增页面只描述该方言特有的事实：公开入口、原始事件形状、会话、HITL、usage、trace 与已知完整性边界。
 通用数据结构与不变量只在 `architecture/` 定义；Library 页面只展示如何调用和组合。
 
-外部源码阅读和行业调研放在 [`reference/`](reference/README.md)，不会成为用户必须阅读的契约入口。
+外部源码阅读和行业调研放在 [Adapter Research](../../research/adapters/README.md)，不会成为用户必须阅读的契约入口。
 
 ## 实现边界
 

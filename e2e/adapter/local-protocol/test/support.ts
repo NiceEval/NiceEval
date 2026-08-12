@@ -5,7 +5,6 @@ import {
   command,
   type ExpEvalEvent,
   type ExpEvent,
-  type ExpResultEvent,
   waitForOutput,
   withProcess,
   withProjectCopy,
@@ -59,14 +58,14 @@ function artifactInvocationId(): string {
   return safeSegment(value);
 }
 
-function expectFault(events: readonly ExpEvent[], kind: OwnerKind): void {
-  const error = events.find((event) => event.event === "error");
-  expect(error).toMatchObject({ event: "error", evalId: kind, experimentId: kind });
-  expect(["eval.run", "agent.run"]).toContain(error?.phase);
-  if (kind === "disconnect") expect(error?.reason).toMatch(/closed|connect|stream|failed|abort|partial/i);
-  if (kind === "timeout") expect(error?.reason).toMatch(/timed out|timeout/i);
-  if (kind === "http-error") expect(error?.reason).toMatch(/500|failed|POST/i);
-}
+/** 每个 kind 的 (experiment, eval) 身份与期望终局；五个 owner 文件各取一行。 */
+const KIND_EXPECTATIONS: Readonly<Record<OwnerKind, { evalId: string; verdict: "passed" | "errored" }>> = {
+  transport: { evalId: "transport-ok", verdict: "passed" },
+  approval: { evalId: "approval-lifecycle", verdict: "passed" },
+  disconnect: { evalId: "disconnect", verdict: "errored" },
+  timeout: { evalId: "timeout", verdict: "errored" },
+  "http-error": { evalId: "http-error", verdict: "errored" },
+};
 
 /** Mechanical isolation/readback shared by five single-outcome owner files. */
 export async function proveLocalProtocolOwner(kind: OwnerKind): Promise<void> {
@@ -104,42 +103,44 @@ export async function proveLocalProtocolOwner(kind: OwnerKind): Promise<void> {
               },
             );
             const events = receipt.ndjson<ExpEvent>();
-            const result: ExpResultEvent = receipt.expResult();
-            if (kind === "transport" || kind === "approval") {
+            // receipt 只承载 Invocation 级完成事实(见 docs/feature/experiments/cli.md「结束反馈与
+            // receipt」)：completion 与 runIds。pass/fail 由下面带身份的 eval 事件精确断言，不从
+            // receipt 猜成败，也不在 receipt 上断言计数。
+            const inv = receipt.expReceipt();
+            expect(inv.completion, receipt.diagnostic()).toBe("completed");
+            expect(inv.runIds, receipt.diagnostic()).toHaveLength(1);
+            // 每个 kind 恰好一个 Experiment / 一个 Eval；eval 事件是中间的身份事件，严格断言
+            // evalId / experimentId / verdict / attempts——成功与故障的确定性路径都由此判定。
+            const { evalId, verdict } = KIND_EXPECTATIONS[kind];
+            const evalEvent = events.find(
+              (event): event is ExpEvalEvent =>
+                "event" in event && event.event === "eval" && event.evalId === evalId,
+            );
+            expect(evalEvent, receipt.diagnostic()).toMatchObject({
+              event: "eval",
+              evalId,
+              experimentId: kind,
+              verdict,
+              attempts: 1,
+            });
+            if (verdict === "passed") {
               expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
-              expect(result).toMatchObject({
-                event: "result",
-                status: "passed",
-                passed: 1,
-                failed: 0,
-                errored: 0,
-                completion: "complete",
-              });
-              const evalId = kind === "transport" ? "transport-ok" : "approval-lifecycle";
-              const evalEvent = events.find(
-                (event): event is ExpEvalEvent => event.event === "eval" && event.evalId === evalId,
-              );
-              expect(evalEvent, receipt.diagnostic()).toBeDefined();
-              const execution = await niceeval.run(["show", evalEvent!.locator, "--execution"], { cwd: root });
-              expect(execution.exitCode, execution.diagnostic()).toBe(0);
-              if (kind === "transport") expect(execution.stdout).toContain("local-protocol-ok");
-              else {
-                expect(execution.stdout).toContain("calculate");
-                expect(execution.stdout).toContain("local-approval-output");
-                expect(execution.stdout).toContain("rejected");
-              }
             } else {
+              // 故障路径的公开失败结果：非零退出 + 归属于本 Eval 的 errored 结论行
+              // (旧的 error 事件与 result 事件一同退役，见 .agents/friction-log 里
+              // show 执行证据的已知产品缺口)。
               expect(receipt.exitCode, receipt.diagnostic()).not.toBe(0);
-              expect(result).toMatchObject({
-                event: "result",
-                status: "failed",
-                passed: 0,
-                failed: 0,
-                errored: 1,
-                completion: "complete",
-              });
-              expectFault(events, kind);
             }
+            // receipt 的 runId 驱动公开读回(adapter/README.md「Live 验收说明」第 3 步)：
+            // 运行已发布为完整 Run——成功与受控 errored 都随 Run 发布(record/cli.md「exp 与
+            // dry run」)且 Member 可读，slot 状态为 included。
+            const shown = await niceeval.run(["show", "--run", inv.runIds[0]!, "--json"], { cwd: root });
+            expect(shown.exitCode, shown.diagnostic()).toBe(0);
+            const selection = shown
+              .json<{ sample: { selection: { runIds: readonly string[] } } }>()
+              .sample.selection;
+            expect(selection.runIds, shown.diagnostic()).toEqual([inv.runIds[0]!]);
+            expect(shown.stdout, shown.diagnostic()).toContain('"included"');
           },
         );
       } catch (error) {

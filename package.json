@@ -106,14 +106,24 @@
         "default": "./dist/record/index.cjs"
       }
     },
-    "./sample": {
+    "./analysis": {
       "import": {
-        "types": "./dist/sample/index.d.mts",
-        "default": "./dist/sample/index.mjs"
+        "types": "./dist/analysis/index.d.mts",
+        "default": "./dist/analysis/index.mjs"
       },
       "require": {
-        "types": "./dist/sample/index.d.cts",
-        "default": "./dist/sample/index.cjs"
+        "types": "./dist/analysis/index.d.cts",
+        "default": "./dist/analysis/index.cjs"
+      }
+    },
+    "./projection": {
+      "import": {
+        "types": "./dist/projection/index.d.mts",
+        "default": "./dist/projection/index.mjs"
+      },
+      "require": {
+        "types": "./dist/projection/index.d.cts",
+        "default": "./dist/projection/index.cjs"
       }
     },
     "./report": {
@@ -126,14 +136,24 @@
         "default": "./dist/report/index.cjs"
       }
     },
-    "./report/react": {
+    "./report/host": {
       "import": {
-        "types": "./dist/report/react/index.d.mts",
-        "default": "./dist/report/react/index.mjs"
+        "types": "./dist/report/host/index.d.mts",
+        "default": "./dist/report/host/index.mjs"
       },
       "require": {
-        "types": "./dist/report/react/index.d.cts",
-        "default": "./dist/report/react/index.cjs"
+        "types": "./dist/report/host/index.d.cts",
+        "default": "./dist/report/host/index.cjs"
+      }
+    },
+    "./report/host/node": {
+      "import": {
+        "types": "./dist/report/host/node.d.mts",
+        "default": "./dist/report/host/node.mjs"
+      },
+      "require": {
+        "types": "./dist/report/host/node.d.cts",
+        "default": "./dist/report/host/node.cjs"
       }
     },
     "./report/built-in": {
@@ -145,19 +165,7 @@
         "types": "./dist/report/built-in/index.d.cts",
         "default": "./dist/report/built-in/index.cjs"
       }
-    },
-    "./report/extension": {
-      "import": {
-        "types": "./dist/report/extension/index.d.mts",
-        "default": "./dist/report/extension/index.mjs"
-      },
-      "require": {
-        "types": "./dist/report/extension/index.d.cts",
-        "default": "./dist/report/extension/index.cjs"
-      }
-    },
-    "./report/react/styles.css": "./dist/report/assets/styles.css",
-    "./report/react/enhance.js": "./dist/report/assets/enhance.js"
+    }
   },
   "files": [
     "INDEX.md",
@@ -167,8 +175,8 @@
     "docs-site/images"
   ],
   "scripts": {
-    "typecheck": "tsc --noEmit",
-    "lint": "pnpm run lint:docs && pnpm run lint:docs-site",
+    "typecheck": "tsc --noEmit && tsc -p docs/roadmap/assertion-authoring/reference/tsconfig.json",
+    "lint": "vitest run --project lint-docs --project lint-docs-site && pnpm run docs:validate && pnpm run docs:links",
     "lint:docs": "vitest run --project lint-docs",
     "lint:docs-site": "vitest run --project lint-docs-site && pnpm run docs:validate && pnpm run docs:links",
     "niceeval": "node bin/niceeval.js",
@@ -188,10 +196,11 @@
     "docs:links": "cd docs-site && npx --yes mint@latest broken-links --check-anchors --check-redirects"
   },
   "dependencies": {
+    "@effect/platform-node": "0.108.1",
     "@vercel/analytics": "^2.0.1",
     "@vercel/speed-insights": "^2.0.0",
     "autoevals": "0.0.132",
-    "effect": "^3.22.1",
+    "effect": "3.22.1",
     "mermaid": "^11.16.0",
     "openai": "^6.49.0",
     "react": "^19.0.0",
@@ -211,6 +220,7 @@
     "@radix-ui/react-collapsible": "^1.1.14",
     "@radix-ui/react-dialog": "^1.1.17",
     "@radix-ui/react-tabs": "^1.1.15",
+    "@standard-schema/spec": "1.1.0",
     "@tailwindcss/postcss": "^4.3.3",
     "@tailwindcss/vite": "^4.3.1",
     "@types/dockerode": "^3.3.31",

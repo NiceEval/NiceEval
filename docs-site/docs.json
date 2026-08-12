@@ -724,6 +724,7 @@
                 "group": "核心模型",
                 "pages": [
                   "zh/explanation/overview",
+                  "zh/explanation/record",
                   "zh/explanation/evals",
                   "zh/explanation/experiment",
                   "zh/explanation/adapter",

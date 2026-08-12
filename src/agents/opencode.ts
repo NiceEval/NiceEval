@@ -1,4 +1,5 @@
 import { defineSandboxAgent } from "../define.ts";
+import { Effect } from "effect";
 import { requireEnv, getEnv } from "../util.ts";
 import { shared } from "./shared.ts";
 import {
@@ -8,6 +9,7 @@ import {
   skillDiscoveryInstruction,
 } from "./skills.ts";
 import { mapGenericSpans } from "../o11y/otlp/canonical.ts";
+import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
 import { shellQuote } from "../sandbox/shell.ts";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import {
@@ -16,8 +18,15 @@ import {
   extractOpenCodeJsonl,
 } from "../o11y/parsers/opencode.ts";
 import { DEFAULT_OPENCODE_CLI_VERSION, AGENT_BASELINE_RECIPE_REVISION } from "./coding-cli-versions.ts";
-import { createNpmCliInstaller } from "./npm-staged.ts";
-import type { Agent, AgentSetupManifest, Sandbox, SkillSpec, StreamEvent } from "../types.ts";
+import { createNpmCliInstaller, resolveAgentBinEffect } from "./npm-staged.ts";
+import type {
+  Agent,
+  AgentSetupManifest,
+  Sandbox,
+  SkillSpec,
+  StreamEvent,
+  TurnEvidenceCoverage,
+} from "../types.ts";
 import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
 
 // OpenCode sandbox adapter。驱动:`opencode run --format json --auto`;
@@ -168,8 +177,11 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
       }
     },
 
-    async send(input, ctx) {
+    send: (input, ctx) => Effect.runPromise(Effect.scoped(Effect.gen(function* () {
       const sb = ctx.sandbox;
+      const opencodeBin = yield* resolveAgentBinEffect(sb, "opencode");
+      return yield* Effect.tryPromise({
+        try: async (signal) => {
       const baseUrl = resolveBaseUrl(config);
       const args = ["run", input.text, "--format", "json", "--auto"];
       const model = resolveModelFlag(ctx.model, Boolean(baseUrl));
@@ -188,9 +200,8 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
         env.OPENAI_BASE_URL = baseUrl;
       }
 
-      const opencodeBin = await shared.resolveAgentBin(sb, "opencode");
       const sensitiveValues = [apiKey];
-      const res = await sb.runCommand(opencodeBin, args, { env, sensitiveValues, stream: true });
+      const res = await sb.runCommand(opencodeBin, args, { env, sensitiveValues, stream: true, signal });
       let raw = extractOpenCodeJsonl(res.stdout) ?? extractOpenCodeJsonl(`${res.stdout}\n${res.stderr}`);
       let sessionId = sessionIdFromOpenCodeTranscript(raw) ?? sessionIdFromOpenCodeTranscript(res.stdout);
       if (sessionId) ctx.session.capture(sessionId);
@@ -202,7 +213,7 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
       const hasMessages = parsed.events.some((e) => e.type === "message");
       if (!hasActions && !hasMessages && (sessionId ?? ctx.session.id)) {
         const sid = sessionId ?? ctx.session.id!;
-        const exported = await sb.runCommand(opencodeBin, ["export", sid], { env, sensitiveValues });
+        const exported = await sb.runCommand(opencodeBin, ["export", sid], { env, sensitiveValues, signal });
         if (exported.exitCode === 0 && exported.stdout.trim()) {
           raw = exported.stdout;
           parsed = parseOpenCodeTranscript(raw);
@@ -213,6 +224,23 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
 
       const events: StreamEvent[] = [...parsed.events];
       const hasErrorEvent = events.some((e) => e.type === "error");
+      let turnEvidenceCoverage: TurnEvidenceCoverage | undefined;
+      if (!raw?.trim()) {
+        const reason = "OpenCode transcript/export was unavailable; tool trajectory was not observed.";
+        turnEvidenceCoverage = {
+          events: { status: "unavailable", reason },
+          actions: { status: "unavailable", reason },
+          usage: { status: "unavailable", reason },
+        };
+      } else if (!parsed.parseSuccess) {
+        const reason = "Some OpenCode transcript lines could not be parsed.";
+        turnEvidenceCoverage = {
+          events: { status: "partial", reason },
+          actions: { status: "partial", reason },
+        };
+      } else {
+        turnEvidenceCoverage = unclassifiedToolActionsCoverage(events);
+      }
       if (res.exitCode !== 0) {
         throw makeSendFailure({
           acceptance: sendAcceptanceFromEvents(events),
@@ -225,9 +253,13 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
       return {
         events,
         usage: parsed.usage,
-        status: hasErrorEvent ? "failed" : "completed",
+        status: hasErrorEvent ? "failed" as const : "completed" as const,
+        ...(turnEvidenceCoverage === undefined ? {} : { evidenceCoverage: turnEvidenceCoverage }),
       };
-    },
+        },
+        catch: (cause) => cause,
+      });
+    })), { signal: ctx.signal }),
   });
 }
 

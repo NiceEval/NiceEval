@@ -1,100 +1,60 @@
-# 实验改名与结果重绑
+# 实验改名与明确采用
 
-Experiment 的 id 由 `experiments/` 下的文件路径决定。实验文件改名会产生新的 `experimentId`；历史结果不会自动跨越这个身份边界。
+Experiment ID 由 `experiments/` 下的路径决定。改名会产生新的 `experimentId`；旧 Run 与 Attempt 保持原身份，不会被路径改写、移动或删除。
 
-`niceeval exp rename` 让作者显式声明旧 id 的结果现在归属于新 id，并把旧 id 下的终态结果重绑到新 id。这个命令本身就是人工授权边界：它不要求新旧 fingerprint 相同。迁移不运行 Eval、Agent 或 Sandbox，不修改旧条目，并为每条新结果保留可追溯的出处证据。
+`niceeval exp rename` 让操作者明确采用旧 Experiment 的已有 Attempt。它不复制执行事实，也不把 Attempt 改挂到新 Experiment；它为新 Experiment 建立 Run，用 reference Member 引用原 Attempt，并在 Run 的 `niceeval.membership-provenance` 通道保存 `accepted` 与改名理由。
 
 ## 命令
 
-```bash
-# 只读预览
-niceeval exp rename codex codex-5.6-luna --dry
-
-# 执行迁移
-niceeval exp rename codex codex-5.6-luna
-
-# 机器可读的单份计划或结果文档
-niceeval exp rename codex codex-5.6-luna --json
+```sh
+niceeval exp rename codex codex-5.6 --dry
+niceeval exp rename codex codex-5.6
+niceeval exp rename codex codex-5.6 --json
 ```
 
-命令只支持一个旧 id 到一个新 id。旧 id 从 Record 读取；新 id 必须由当前项目的 `experiments/` 发现。命令不移动实验源码，也不删除或改写旧结果树。
+命令只支持一个旧 ID 到一个新 ID。旧 ID 从操作者明确选择的 Run 读取；新 ID 必须由当前项目的 Experiment discovery 找到。`--dry` 与正式执行使用同一组预检，前者不写 Record。
 
-`--dry` 与正式执行使用同一份完整预检。预览逐条列出将迁移的 eval、原 locator、目标身份，以及被排除或阻断的原因；它不创建目录或写入文件。`--json` 输出一个 JSON 文档，不输出 NDJSON 事件流。
+## 预检与范围
 
-## 迁移资格
+rename 在写入前完成整批预检，任一不合格项都会让命令零写入：
 
-命令在写盘前完成整批预检。以下条件必须同时成立：
+1. `oldId` 与 `newId` 不同；
+2. 选定 Run 中有 oldId 的可读、终态 Attempt；
+3. newId 是当前可发现的 Experiment，且仍选择对应 Eval；
+4. 当前配置、Sandbox pair 与 timeout 资格可以求值；
+5. 每个源成员在目标 Run 中只被选择一次。
 
-1. `oldId` 与 `newId` 不同。
-2. `oldId` 下至少有一条当前 Record reader 可读的终态历史。
-3. `newId` 是当前项目发现到的 Experiment；`oldId` 是否仍能从源码发现不影响迁移。
-4. 候选 eval 仍由 `newId` 当前选中。
-5. 候选结果的 verdict 是 `passed` 或 `failed`；`errored` 与 `skipped` 不迁移。
-6. `newId` 下不存在同一 eval 的任何终态结果。
-7. 所有候选都能保留其 artifact 引用，且原 locator 可唯一定位。
+`errored` 与 `skipped` 不能被采用。不再被 newId 选择的 Eval 会在 `--dry` 中列为 excluded，不会被自动加入。命令不会按目录时间猜一次运行，也不会把多个 Run 拼成输入集合。
 
-命令用新实验当前求值结果计算目标 fingerprint，让后续运行能直接 carry；原 fingerprint 只作为出处审计写进 `renamedFrom`。因此即使配置身份或物理规划产生了差异，显式 rename 仍会重绑结果。作者必须只在确认这些旧结果应归入新实验时执行正式命令，并先用 `--dry` 核对范围。
+## 写入语义
 
-旧实验含有新实验不再选择的 eval 时，这些条目列为 `excluded`，不进入迁移，也不阻断其它合格条目。除此之外，任何资格错误都使整批零写入。命令不提供替换优先级，不以旧结果替换新 id 下已有结果。
+正式执行建立新的 Invocation，并为 `newId` 建立一个 Run。每个通过预检的成员产生一个 reference Member，引用原 `{ originRunId, attemptId }`；对应 action 为 `accepted`。原 Attempt 的 origin、locator、Verdict 和采集事实都不复制。
 
-## 写盘结果
+oldId、newId、当前 identity、差异摘要与操作者采用理由写入目标 Run 的 `niceeval.membership-provenance/v1` 通道，并以 `slotId`、`attemptId` 关联。这个通道只解释当时的决定，不持续认证源 Attempt；源 Attempt 已随 origin Run immutable，后续事实变化只能发布新 Run。
 
-正式执行为 `newId` 创建一个已封口 snapshot。该 snapshot 的 `knownEvalIds`、物理 attempts 与 manifest 集合涵盖本批全部迁移条目；运行期选择计划不进入结果配置。
+## 输出与错误
 
-每条迁移结果：
+成功输出列出 source locator、oldId、newId、目标 Run 和 `accepted`：
 
-- 使用 `newId`、当前 configHash、当前 fingerprint 与新的 locator；
-- 保留 verdict、assertions、usage、timing 与证据 artifact；
-- 通过 `artifactBase` 引用原证据，不复制或硬链 artifact；
-- 写入 `renamedFrom`，含旧 experimentId、旧 locator、迁移时刻与原 fingerprint。
-
-```ts
-interface RenamedResult {
-  experimentId: string;
-  locator: string;
-  fingerprint: string;
-  at: string;
-}
-
-interface EvalResult {
-  renamedFrom?: RenamedResult;
-}
+```text
+@01J8ZK3M6P4T7V9X2C5N8QW0RY  codex -> codex-5.6  accepted
 ```
 
-`renamedFrom` 与 `acceptedFrom` 是不同的审计事实。前者由人确认跨 Experiment 身份的结果归属，并把结果锚定到新身份的当前 fingerprint；后者在同一实验身份中确认 fingerprint 差异。迁移自带新的 Record schemaVersion，旧 reader 按既有版本纪律拒绝读取，不对字段使用 sidecar。
+`--json` 输出计划或 Invocation receipt，不另定义迁移结果格式。
 
-旧结果树保持原样，因此迁移失败可直接修正当前实验后重试；迁移成功也不会让旧历史消失。`show --exp <oldId>` 与 `show --exp <newId>` 仍分别读取两个命名空间，不把二者静默合并。
-
-迁移不携带活锁、Session、进行中的 Run、Sandbox 实例或留存状态。报告和后续 carry 只把新 snapshot 当作 `newId` 的结果；读取面可以用 `renamedFrom` 解释出处。
+| 错误 | 条件 | 下一步 |
+|---|---|---|
+| `rename-source-empty` | 选定 Run 没有可采用成员 | 检查 oldId 或明确选择另一个 Run |
+| `rename-target-not-found` | newId 不是当前 Experiment | 恢复或指定目标 Experiment 文件 |
+| `rename-ineligible` | Eval、配置、timeout 或计划不满足条件 | 查看 `--dry` 的具名原因 |
+| `duplicate-rename-member` | 同一目标 slot 被重复选择 | 收窄输入 Run |
 
 ## 与 carry 和 accept 的边界
 
-| 动作 | 身份变化 | fingerprint | 授权结果 |
+| 动作 | Experiment identity | 采用条件 | Core relation / action |
 |---|---|---|---|
-| carry | 无 | 相同 | 自动沿用历史结果 |
-| accept | 无 | 不同 | 人工重锚到当前 fingerprint |
-| exp rename | experimentId 改变 | 锚定到新身份当前值 | 人工重绑结果归属并留下 `renamedFrom` |
+| carry | 不变 | identity 与资格自动满足 | `reference / carried` |
+| accept | 不变 | 人明确接受具体 Attempt | `reference / accepted` |
+| rename | 改变 | 人明确采用旧 Experiment 的具体 Attempt | `reference / accepted` |
 
-三个动作共用 fingerprint 与 manifest 的比较实现，不建立第二套配置等价算法。
-
-## 失败反馈
-
-人读错误必须点名旧 id、新 id、受影响 eval，以及可以执行的下一步。机器输出使用稳定的 reason：
-
-- `source-empty`
-- `target-not-found`
-- `target-has-results`
-- `source-unreadable`
-- `artifact-unavailable`
-- `nothing-to-migrate`
-
-目标已有结果时列出冲突 eval，提示保留目标结果或显式删除目标历史后重新预览；命令自身不删除数据。
-
-## 验收
-
-1. 文件从 `codex.ts` 改名为 `codex-5.6-luna.ts` 且配置未变时，迁移后 `exp codex-5.6-luna --dry` 把迁入的 passed/failed 规划为 carried。
-2. 即使旧 fingerprint 与新实验当前 fingerprint 不同，迁移仍写入新 fingerprint，并在 `renamedFrom.fingerprint` 保留旧值。
-3. 多条合格结果只生成一个 snapshot，每条有新 locator，且 `show` 能经 `artifactBase` 读取原证据。
-4. `renamedFrom` 能把每条新结果追溯到旧 id 与旧 locator，并与 `acceptedFrom` 区分。
-5. 目标已有任一冲突结果时整批零写入；旧结果树在成功和失败路径都逐字不变。
-6. `--dry` 不写盘；`--json` 的计划、拒绝与成功形状稳定且不混入人读文本。
+三种动作都建立新的 Run membership，并保留同一个 Attempt identity。采用原因都进入 `niceeval.membership-provenance` 通道，而不是扩张 Member 核心。

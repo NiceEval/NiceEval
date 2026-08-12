@@ -2,18 +2,11 @@
 // 职责只有编排:指纹缓存在 fingerprint.ts,单 attempt 生命周期在 attempt.ts,
 // reporter 编排 / 汇总在 report.ts，Direct Agent 的 Sandbox 占位适配器在 direct-agent-sandbox.ts。
 
-import { readFile } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
-import { Effect, Cause, Data, Either, Exit, Option } from "effect";
-import { probeJudge } from "../assertions/judge.ts";
+import { Effect, Cause, Data, Deferred, Either, Exit, Option } from "effect";
+import { probeJudgeEffect } from "../assertions/judge.ts";
 import { t } from "../i18n/index.ts";
-import { cacheKey, carriableAttempts, computeConfigHash, planCarry, resolvedTimeoutMsForCarry } from "./fingerprint.ts";
-import {
-  agentInstallPlansForRun,
-  configDeltas,
-  configIdentityForRun,
-  configIdentityFromResult,
-} from "./config-identity.ts";
+import { cacheKey, planProjectTarget } from "./fingerprint.ts";
+import { agentInstallPlansForRun } from "./config-identity.ts";
 import { OtelReceiverPool } from "../o11y/otlp/turn-otel.ts";
 import {
   errorFromThrown,
@@ -22,16 +15,16 @@ import {
   attemptFailureDeclaration,
   experimentRunInfo,
   runAttemptEffect,
+  scoreFactOutcomeForAttemptError,
   type AttemptFailureDeclaration,
 } from "./attempt.ts";
-import { resolveJudge } from "./judge-config.ts";
 import type {
   DiagnosticRecord,
   EvalResult,
   InvocationShape,
   InvocationSummary,
   JsonValue,
-  JudgeConfig,
+  ResolvedJudgeConfig,
   Reporter,
   ReporterRegistration,
   SandboxBuildRecord,
@@ -41,8 +34,8 @@ import type {
   Attempt,
   AttemptError,
   ExperimentHookContext,
-  FingerprintMigration,
   LifecyclePhase,
+  InvocationReceipt,
   AttemptRef,
   RunOptions,
 } from "./types.ts";
@@ -51,9 +44,8 @@ import { buildFailureOrigin, startSandboxBuilds } from "../sandbox/build-coordin
 import { ArtifactPrepareCoordinator } from "../agents/provisioner.ts";
 import { collectBuildPreparation, toBuildPreparation } from "./build-preparation.ts";
 import { digestOf, type BuildKey } from "../sandbox/identity.ts";
-import { firstLine } from "../util.ts";
+import { firstLine, getEnv } from "../util.ts";
 import { recordFact, type FactValue } from "../shared/facts.ts";
-import type { ConcurrencySlot } from "../context/send-retry.ts";
 import { runReporter, emitReporterEvent, scopeReporter, summarize } from "./report.ts";
 import {
   reportAttemptLifecycle,
@@ -67,36 +59,41 @@ import {
   reportPrecheck,
   reportRunActivity,
 } from "./feedback/sink.ts";
-import { failureDetailFromResult } from "./feedback/failure.ts";
-import { encodeAttemptLocator, type AttemptLocator, type AttemptLocatorRegistration } from "../record/locator.ts";
-import { runWho, HALT_DIAGNOSTIC_CODE } from "./types.ts";
-import { runPairKey, type PreparedRunPair } from "./sandbox-selection.ts";
+import { failureDetailFromCurrentReusedAttempt, failureDetailFromResult } from "./feedback/failure.ts";
+import { EVALUATION_ALGORITHM, runWho, HALT_DIAGNOSTIC_CODE } from "./types.ts";
 import { ReusableSandboxPool } from "./sandbox-pool.ts";
 import { liveSandboxRuntimeServices } from "../sandbox/runtime.ts";
 import { detectReuseContamination, reuseContaminationMessage } from "./reuse-diagnostics.ts";
 import { selectedEvalsForRun } from "./eval-selection.ts";
 import { registerExperimentTeardown, unregisterExperimentTeardown } from "./experiment-cleanup-registry.ts";
-import { withCleanupTimeout } from "./cleanup-timeout.ts";
+import { cleanupCallback } from "./cleanup-timeout.ts";
 import { resolveAttemptTimeout } from "./timeout.ts";
 import { hostname } from "node:os";
 import {
   isOrphanedTeardownRegistration,
-  readTeardownRegistrations,
-  removeTeardownRegistrationIfPresent,
+  readTeardownRegistrationsEffect,
+  removeTeardownRegistrationIfPresentEffect,
   teardownEntryId,
-  writeTeardownRegistration,
+  writeTeardownRegistrationEffect,
 } from "./teardown-registry.ts";
 import {
-  acquireCaseLock,
+  acquireCaseLockEffect,
   isCaseLockExpired,
-  readCaseLock,
+  readCaseLockEffect,
   CASE_LOCK_HEARTBEAT_INTERVAL_MS,
-  type CaseLockClaim,
+  type CaseLockEffectClaim,
   type CaseLockRecord,
 } from "./lock.ts";
-import { acquireGateSlot, type GateLeaseClaim, type GateLeaseRecord } from "./gate-lease.ts";
-import { assertFreshAttemptLocatorRegistrations, loadLatestResultsForCase, openRecord } from "../record/open.ts";
-import type { RunManifests } from "../record/manifest.ts";
+import {
+  acquireGateSlotEffect,
+  type GateLeaseEffectClaim,
+  type GateLeaseRecord,
+} from "./gate-lease.ts";
+import {
+  openRunnerRecordCoordinator,
+  prepareRunnerRecordReuse,
+} from "./record.ts";
+import { bindRunnerRunObservabilityDiagnosticsV1 } from "../o11y/record/runner-producer.ts";
 
 export class RunModeConflictError extends Data.TaggedError("RunModeConflictError")<{
   readonly keepSandbox: NonNullable<RunOptions["keepSandbox"]>;
@@ -152,51 +149,30 @@ export function sandboxReusePoolKey(input: {
   });
 }
 
-/** 收集本次要探测的 judge 配置:只看「实际要跑、且源码里出现 judge 字样」的 pair 的生效
- *  配置(Experiment / Eval / Config 逐字段合并,与 attempt.ts 的 resolveJudge 同一份),按
- *  model|baseUrl|apiKeyEnv 去重。要跑的 eval 都不用 judge 时返回空 —— 全局配了 judge
- *  也不探测,纯确定性断言的运行不再被 judge key / 端点问题拦下。
- *  源码扫描是启发式:judge 调用藏在 import 的 helper 里时会漏判,漏判只是退回旧行为
- *  (评分时才报 judge 错误,损失 fail fast),不影响正确性。 */
-export function judgeProbeTargets(
-  evals: Array<{ source: string; judge: JudgeConfig | undefined; experimentJudge?: JudgeConfig }>,
-  configJudge: JudgeConfig | undefined,
-): JudgeConfig[] {
-  return judgeProbePlan(
-    evals.map((e, i) => ({
-      id: `#${i}`,
-      source: e.source,
-      judge: e.judge,
-      experimentJudge: e.experimentJudge,
-    })),
-    configJudge,
-  ).targets.map((target) => target.judge);
+/** Only declared, configured capabilities are prechecked. A missing model or
+ * key is an ordinary consumed-Fact unavailable outcome and does no network I/O. */
+export function judgeProbeTargets(evals: readonly (ResolvedJudgeConfig | undefined)[]): ResolvedJudgeConfig[] {
+  return judgeProbePlan(evals.map((judge, index) => ({ id: `#${index}`, judge }))).targets.map((target) => target.judge);
 }
 
 /** 一份探测目标的去重键:同一个 (model, baseUrl, apiKeyEnv) 只探一次,也用来把探测结局
  *  归回「哪些 Experiment × Eval pair 依赖这个端点」。 */
-function judgeTargetKey(jc: JudgeConfig): string {
-  return `${jc.model ?? ""}|${jc.baseUrl ?? ""}|${jc.apiKeyEnv ?? ""}`;
+function judgeTargetKey(jc: ResolvedJudgeConfig): string {
+  return `${jc.model ?? ""}|${jc.baseUrl}|${jc.apiKeyEnv}`;
 }
 
 /** `judgeProbeTargets` 的完整形态:除了去重后的探测目标,还给出「哪个 pair 依赖哪个目标」——
  *  预检失败只作废需要 judge 的那些 pair(见 docs/feature/judge/library.md「派发前预检」),
  *  所以必须能把探测结局按 pair 归因,不能只知道有几个端点要探。 */
 export function judgeProbePlan(
-  evals: Array<{
-    id: string;
-    source: string;
-    judge: JudgeConfig | undefined;
-    experimentJudge?: JudgeConfig;
-  }>,
-  configJudge: JudgeConfig | undefined,
-): { targets: Array<{ key: string; judge: JudgeConfig }>; evalKeys: Map<string, string> } {
-  const targets: Array<{ key: string; judge: JudgeConfig }> = [];
+  evals: ReadonlyArray<{ id: string; judge: ResolvedJudgeConfig | undefined }>,
+): { targets: Array<{ key: string; judge: ResolvedJudgeConfig }>; evalKeys: Map<string, string> } {
+  const targets: Array<{ key: string; judge: ResolvedJudgeConfig }> = [];
   const evalKeys = new Map<string, string>();
   const seen = new Set<string>();
   for (const e of evals) {
-    const jc = resolveJudge(e.experimentJudge, e.judge, configJudge);
-    if (!jc || !/\bjudge\b/.test(e.source)) continue;
+    const jc = e.judge;
+    if (jc === undefined || jc.model === undefined || !getEnv(jc.apiKeyEnv)) continue;
     const key = judgeTargetKey(jc);
     evalKeys.set(e.id, key);
     if (seen.has(key)) continue;
@@ -206,21 +182,32 @@ export function judgeProbePlan(
   return { targets, evalKeys };
 }
 
-export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
-  const startedAt = new Date().toISOString();
-  // 本次 invocation 的快照身份锚点:在展开/调度任何 attempt 之前确定一次,不同 experiment
-  // 共享它(locator 身份还含 experimentId,不会碰撞)。fresh EvalResult 的 locator(见下方
-  // attempt 完成处)与 Artifacts writer 写进 run.json 的 startedAt 必须用同一个值——
-  // 复用刚建立的 startedAt,不是另起一次 new Date(),避免两者出现毫秒级漂移
-  // (docs/feature/experiments/cli.md「Locator 必须在 result 发布前确定」)。经 InvocationShape
-  // 传给 reporter(见下方 shape 构造),run.ts 之外没有第二个入口能改这份身份。
-  const snapshotStartedAt = startedAt;
-  const t0 = Date.now();
+/** Connect an application-owned AbortSignal to the current Effect Scope. */
+function interruptOnAbort(signal: AbortSignal): Effect.Effect<never> {
+  return Effect.async((resume) => {
+    const abort = () => resume(Effect.interrupt);
+    if (signal.aborted) {
+      abort();
+      return;
+    }
+    signal.addEventListener("abort", abort, { once: true });
+    return Effect.sync(() => signal.removeEventListener("abort", abort));
+  });
+}
+
+/**
+ * The Runner is Effect-native from writer acquisition through dispatch and
+ * publication. NodeRuntime is deliberately owned by the CLI/application edge.
+ */
+export function runEvals<AttachmentError, AttachmentRequirements>(
+  opts: RunOptions<AttachmentError, AttachmentRequirements>,
+) {
+  return Effect.scoped(Effect.gen(function* () {
+  const invocationScope = yield* Effect.scope;
+  const startedAtMs = Date.now();
+  const startedAt = new Date(startedAtMs).toISOString();
+  const t0 = startedAtMs;
   const niceevalRoot = opts.niceevalRoot ?? `${process.cwd()}/.niceeval`;
-  const runIds = new Map(opts.runIds ?? []);
-  for (const run of opts.agentRuns) {
-    if (!runIds.has(run.experimentId)) runIds.set(run.experimentId, randomUUID());
-  }
 
   // `--keep-sandbox` 要把单条 Attempt 的最终现场转交给用户，
   // `sandboxReuse` 则让整个 Invocation 的 pool 继续拥有并在收尾时销毁同一个 Case。
@@ -244,99 +231,88 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     }
   }
 
-  // 按 sourcePath 缓存文件内容,fingerprint 与 judge 预检共用:
-  // 矩阵大时(实验 × eval)规划阶段不做串行重复文件读。
-  const sourceCache = new Map<string, Promise<string>>();
-  const readSource = (path: string): Promise<string> => {
-    let p = sourceCache.get(path);
-    if (!p) {
-      p = readFile(path, "utf-8");
-      sourceCache.set(path, p);
-    }
-    return p;
-  };
-
-  // 跨实验结果复用:上次 passed 或 failed 且 fingerprint 匹配的 (experimentId, evalId) 组合
-  // 直接携入 —— 两者都是"跑完了、判定确定"的终态,没有理由重花一次 agent/sandbox 成本去
-  // 复现同一个已知结果。errored 是框架/环境层面的不确定失败(超时、沙箱挂了、judge 探测失败
-  // 等),判定本身不可信,必须重跑。跳过/fingerprint 不匹配同样重跑。--force 跳过此逻辑
-  // (cli.ts 在 --force 时不传 priorResults,也不算 carryPlan)。
-  // carryPlan 优先用调用方(cli.ts,为了 live 表格)已经算好的那份,不重算一遍。
-  const carryPlan = opts.carryPlan ?? (await Effect.runPromise(planCarry(
+  // Physical planning produces immutable current inputs. Record reuse receives
+  // only this projection and its own frozen view; no historic result facade
+  // participates in dispatch or display.
+  const targetPlan = yield* planProjectTarget(
     opts.evals,
     opts.agentRuns,
-    opts.priorResults,
     opts.config.timeoutMs,
     {
-      rerun: opts.rerun,
       configJudge: opts.config.judge,
-      ...(opts.priorManifests ? { priorManifests: opts.priorManifests } : {}),
-      keepSandbox: opts.keepSandbox,
-      accept: opts.accept,
+      ...(opts.keepSandbox === undefined ? {} : { keepSandbox: opts.keepSandbox }),
     },
-  )));
+  );
   const {
     preparedPairsByKey,
     plannedConfigHashes,
+    resolvedJudgesByKey,
     plannedFingerprints,
-    acceptableFingerprints,
-    carriedAttemptsByKey,
-    carriedResults: planCarriedResults,
-    carriedAcceptingByResult,
-    migratedFromByResult: plannedMigratedFromByResult,
-    manifestsByKey,
-  } = carryPlan;
-  const migratedFromByResult = plannedMigratedFromByResult ?? new Map<EvalResult, FingerprintMigration>();
-  // CarryPlan 是冻结快照；派发重查期间新发现的 accept 留痕进入独立运行状态，绝不回写计划。
-  const runtimeCarriedAcceptingByResult = new Map(carriedAcceptingByResult);
-  if (preparedPairsByKey === undefined) {
-    throw new Error("CarryPlan is incomplete: preparedPairsByKey must come from physical Sandbox planning.");
-  }
-  // Session 文件在首次派发前创建；它只记录 Run 身份与轻量计数，锁和实验闸仍各自维护。
-  await opts.session?.start({
-    runIds,
-    agentRuns: opts.agentRuns,
-    carriedAttemptsByKey,
-    startedAt,
+  } = targetPlan;
+
+  const reuse = yield* prepareRunnerRecordReuse({
+    evals: opts.evals,
+    runs: opts.agentRuns,
+    config: opts.config,
+    plannedFingerprints,
+    plannedConfigHashes,
+    ...(opts.rerun === undefined ? {} : { rerun: opts.rerun }),
+    ...(opts.keepSandbox === undefined ? {} : { keepSandbox: opts.keepSandbox }),
   });
 
-  /**
-   * 携带条目合入本次快照时,指纹按**本次**口径重新打戳。携带的含义就是「这条已落盘的结果对
-   * 本次规划的输入依然成立」,那它在新快照里就该带本次的指纹——否则携带条目会一直背着产出
-   * 它那一轮的指纹漂下去,而新快照记的是本轮的 `ExperimentRunInfo.flags`,两者对不上,
-   * 下一轮的反事实重算(见 fingerprint.ts 的 `acceptableFingerprints`)就得靠翻更早的快照
-   * 才能对上号。判定面不受影响:能走到这里,说明这条已经过了携带资格判据。
-   */
-  const restampCarried = (r: EvalResult): EvalResult => {
-    if (r.experimentId === undefined) return r;
-    const key = runPairKey(r.experimentId, r.id);
-    const fp = plannedFingerprints.get(key);
-    const configHash = plannedConfigHashes.get(key);
-    const migration = migratedFromByResult.get(r);
-    if (fp === undefined) return r;
-    if (migration !== undefined) {
-      const { acceptedFrom: _acceptedFrom, ...withoutAcceptedFrom } = r;
-      void _acceptedFrom;
-      return {
-        ...withoutAcceptedFrom,
-        fingerprint: fp,
-        configHash,
-        migratedFrom: migration,
-        ...(runtimeCarriedAcceptingByResult.has(r)
-          ? { carriedAccepting: [...(runtimeCarriedAcceptingByResult.get(r) ?? [])] }
-          : {}),
-      };
+  // Coordinator creates draft Runs first, then uses their real `draft.runId`
+  // values and the frozen Record view to partition every Slot into reuse/gap.
+  const recordCoordinator = yield* openRunnerRecordCoordinator({
+    niceevalRoot,
+    startedAt: t0,
+    evals: opts.evals,
+    runs: opts.agentRuns,
+    reuse,
+    ...(opts.recordAttachments === undefined
+      ? {}
+      : { attachments: opts.recordAttachments }),
+  });
+  // The draft is the only authority for a Run identity. Session, shape and
+  // reporters all observe this same mapping; no caller can replace it with a
+  // synthetic legacy value.
+  const runIds = recordCoordinator.runIdsByExperiment;
+  const carriedAttemptsByKey = recordCoordinator.carriedAttemptsByKey;
+
+  const reusedAttempts = yield* recordCoordinator.readCarriedResults();
+  const runsByExperimentId = new Map(opts.agentRuns.map((run) => [run.experimentId, run] as const));
+  const runForReusedAttempt = (readback: (typeof reusedAttempts)[number]): AgentRun => {
+    const run = runsByExperimentId.get(readback.target.experimentId);
+    if (run === undefined) {
+      throw new Error(`Record reuse readback references unknown Experiment ${JSON.stringify(readback.target.experimentId)}.`);
     }
-    return {
-      ...r,
-      fingerprint: fp,
-      configHash,
-      ...(runtimeCarriedAcceptingByResult.has(r)
-        ? { carriedAccepting: [...(runtimeCarriedAcceptingByResult.get(r) ?? [])] }
-        : {}),
-    };
+    return run;
   };
-  const carriedResults = planCarriedResults.map(restampCarried);
+  // Readback is the sole authority for the externally visible carry count.
+  // In particular, the CLI must not guess this before the frozen current view
+  // has rejected every non-reusable source.
+  const reusedFailures = Object.freeze(reusedAttempts.flatMap((readback) => {
+    const failure = failureDetailFromCurrentReusedAttempt(readback, runForReusedAttempt(readback));
+    return failure === undefined ? [] : [failure];
+  }));
+  if (opts.onCurrentRecordReusePlan !== undefined) {
+    yield* opts.onCurrentRecordReusePlan({ reused: reusedAttempts.length, reusedFailures });
+  } else {
+    // Direct library callers have no feedback coordinator. Preserve their
+    // fallback failure signal without turning a current readback into a legacy
+    // result-shaped facade.
+    for (const failure of reusedFailures) {
+      reportFailure(failure);
+    }
+  }
+  // Session 文件在首次派发前创建；它只记录 Run 身份与轻量计数，锁和实验闸仍各自维护。
+  if (opts.session !== undefined) {
+    yield* opts.session.start({
+      runIds,
+      agentRuns: opts.agentRuns,
+      carriedAttemptsByKey,
+      startedAt,
+    });
+  }
 
   const preparedPlansByRun = new Map<AgentRun, globalThis.Record<string, JsonValue>>();
   for (const prepared of preparedPairsByKey.values()) {
@@ -380,6 +356,9 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         if (fingerprint === undefined) {
           throw new Error(`Missing planned fingerprint for ${JSON.stringify(cacheKey(run, evalDef.id))}.`);
         }
+        if (!resolvedJudgesByKey.has(carryKey)) {
+          throw new Error(`Missing planned Judge resolution for ${JSON.stringify(carryKey)}.`);
+        }
         const sandboxPlansByEval = preparedPlansByRun.get(run);
         if (sandboxPlansByEval === undefined) {
           throw new Error(`Missing Experiment plan map for ${JSON.stringify(run.experimentId)}.`);
@@ -391,31 +370,12 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
           key,
           fingerprint,
           configHash,
+          judge: resolvedJudgesByKey.get(carryKey),
           plan: prepared.plan,
           sandboxPlansByEval,
-          // locator 在构造 fresh attempt plan 时即算好并作为身份贯穿执行、留存登记与落盘
-          // (不是完成后写回,见 docs/cli.md);裸 run(无 experimentId)不产出。
-          locator: encodeAttemptLocator({
-            runId: runIds.get(run.experimentId)!,
-            evalId: evalDef.id,
-            attempt: i,
-          }),
         });
       }
     }
-  }
-
-  if (attempts.length > 0) {
-    const registrations: AttemptLocatorRegistration[] = attempts.map((attempt) => ({
-      identity: {
-        runId: runIds.get(attempt.run.experimentId)!,
-        evalId: attempt.evalDef.id,
-        attempt: attempt.attempt,
-      },
-      locator: attempt.locator,
-    }));
-    const existingRecord = await openRecord(niceevalRoot);
-    assertFreshAttemptLocatorRegistrations(existingRecord, registrations);
   }
 
   // 派发顺序:瓶颈优先(docs/runner.md「派发顺序:瓶颈优先,追求最小总墙钟时间」)。
@@ -452,15 +412,11 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   const judgePrecheckFailures = new Map<string, string>();
   {
     const uniquePairs = [...new Map(attempts.map((a) => [cacheKey(a.run, a.evalDef.id), a])).entries()];
-    const sources = await Promise.all(uniquePairs.map(([, a]) => readSource(a.evalDef.sourcePath)));
     const { targets, evalKeys } = judgeProbePlan(
-      uniquePairs.map(([id, a], i) => ({
+      uniquePairs.map(([id, a]) => ({
         id,
-        source: sources[i] ?? "",
-        judge: a.evalDef.judge,
-        experimentJudge: a.run.judge,
+        judge: a.judge,
       })),
-      opts.config.judge,
     );
     if (targets.length > 0) {
       // judge 预检是一次真实网络往返,可能慢甚至长时间不返回:发运行级行(started/done/failed),
@@ -472,7 +428,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
       // 而落进 attempt 的 error.message 也必须是它自己那个端点的失败原因。
       const failedByKey = new Map<string, string>();
       for (const target of targets) {
-        const err = await probeJudge(target.judge, opts.signal);
+        const err = yield* probeJudgeEffect(target.judge, opts.signal);
         if (err) failedByKey.set(target.key, err);
       }
       for (const [pairKey, key] of evalKeys) {
@@ -496,10 +452,10 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
 
   const collected =
     opts.buildPreparation === undefined
-      ? await Effect.runPromise(collectBuildPreparation({
+      ? yield* collectBuildPreparation({
           preparedPairs: [...preparedPairsByKey.values()],
           carriedAttemptsByKey,
-        }))
+        })
       : Option.none();
   const buildPreparation = opts.buildPreparation === undefined
     ? Option.flatMap(collected, toBuildPreparation)
@@ -567,16 +523,21 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     opts.artifactPrepare ??
     new ArtifactPrepareCoordinator(artifactPrepareTimingHook(runTiming));
 
-  // 非沙箱 tracing agent 的共享 OTLP 接收池必须先进入 attempt options 快照。被测应用是
-  // 长驻进程，端点不能随 attempt 换；若在快照之后才补 pool，attempt 会退回随机端口。
-  if (!opts.otelPool) {
-    opts = { ...opts, otelPool: new OtelReceiverPool(opts.config.telemetry?.port) };
-  }
+  // The shared receiver belongs to this invocation Scope. Closing through its
+  // finalizer covers ordinary completion, Record write failure, and interrupt
+  // uniformly; attempts receive the same immutable pool snapshot.
+  const otelPool = yield* Effect.acquireRelease(
+    Effect.sync(() => opts.otelPool ?? new OtelReceiverPool(opts.config.telemetry?.port)),
+    (pool) => pool.closeEffect().pipe(Effect.ignore),
+  );
 
-  // 运行期依赖用新快照扩展，不回写调用方交进来的 RunOptions 计划对象。
-  const attemptOptions: RunOptions = opts.artifactPrepare === undefined
-    ? { ...opts, artifactPrepare }
-    : opts;
+  // Runtime dependencies are added to a fresh snapshot; caller-owned planning
+  // inputs remain immutable for the duration of this invocation.
+  const attemptOptions: RunOptions<AttachmentError, AttachmentRequirements> = {
+    ...opts,
+    artifactPrepare,
+    otelPool,
+  };
 
   // 缓存携入只在 plan 的 Reuse 行给数量,不逐条铺 eval id 清单(见 cli.md「人在终端里怎么用」:
   // 哪些 eval 复用、哪些重跑属于 --dry 与 niceeval view,不占 human 的 scrollback)。
@@ -584,53 +545,12 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   // onInvocationStart 报「本次实际要跑的 eval」(过滤 + 去重),不是发现到的全部 —— 否则计数误导。
   const runningIds = new Set(attempts.map((a) => a.evalDef.id));
   const runningEvals = [...runningIds].map((id) => ({ id }));
-  // 指纹输入清单与规划期 configHash 都按 experiment 分组交给落盘面(Artifacts → createWriter),
-  // Run 目录建成那一刻与 run.json 同批写出。分组不切 `${experimentId}|${evalId}` 这个字符串键,
-  // 而是按同一份 (run, evalDef) 组合重取一遍——id 里出现分隔符时切字符串会静默错位。
-  const manifestsByExperiment = new Map<string, RunManifests>();
-  const configHashesByExperiment = new Map<string, string>();
-  for (const run of opts.agentRuns) {
-    if (!run.experimentId) continue;
-    for (const evalDef of selectedEvalsForRun(opts.evals, run)) {
-      const key = cacheKey(run, evalDef.id);
-      const manifest = manifestsByKey?.get(key);
-      if (manifest !== undefined) {
-        const bucket = manifestsByExperiment.get(run.experimentId) ?? {};
-        bucket[evalDef.id] = manifest;
-        manifestsByExperiment.set(run.experimentId, bucket);
-      }
-      const prepared = preparedPairsByKey.get(key);
-      if (prepared !== undefined) {
-        // run.json 的 configHash 只有一槽/experiment,因此必须是真正的 Run 级值——只含
-        // agent/model/flags/sandboxLayer 等在 defineExperiment 层面就固定的字段。
-        // plannedConfigHashes(fingerprint.ts)按 experiment > eval > config 链逐字段解析
-        // judge 后混入携带判据,一条 eval 自己声明 judge 时(docs/feature/experiments/cache.md
-        // 「指纹:两个哈希嵌套」)会让它单独跑出不同的值——这是刻意的携带正确性,不是配置身份
-        // 分叉,不能拿它来校验/落盘 Run 级值。这里改用不带 judge 覆盖的
-        // computeConfigHash(等价 configIdentityForRun(run, plan) 默认单层 run.judge)重算,
-        // 校验的是它——真正应当逐 eval 恒等的那部分,不一致时才说明物理 plan 混进了配置身份。
-        const configHash = computeConfigHash(prepared);
-        const existing = configHashesByExperiment.get(run.experimentId);
-        if (existing !== undefined && existing !== configHash) {
-          throw new Error(
-            `Planned config hash differs across evals within experiment ${JSON.stringify(run.experimentId)} ` +
-              `(${JSON.stringify(existing)} vs ${JSON.stringify(configHash)} for eval ${JSON.stringify(evalDef.id)}). ` +
-              "configHash is a Run-level value and must be identical for every eval scheduled under the same experiment.",
-          );
-        }
-        configHashesByExperiment.set(run.experimentId, configHash);
-      }
-    }
-  }
   const shape: InvocationShape = {
     evals: runningEvals.length,
     configs: opts.agentRuns.length,
     totalAttempts: attempts.length,
     maxConcurrency: opts.maxConcurrency,
-    snapshotStartedAt,
     runIds,
-    ...(manifestsByExperiment.size > 0 ? { manifests: manifestsByExperiment } : {}),
-    ...(configHashesByExperiment.size > 0 ? { configHashes: configHashesByExperiment } : {}),
   };
   // eval 级 reporters:实例只观测引用它的 eval(经 scopeReporter 过滤转发)。
   // 已经挂在全局 reporters 里的同一实例不重复挂;同一实例被多个 eval 引用时合并观测集
@@ -647,8 +567,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   const reporters: ReporterRegistration[] = [...opts.reporters];
   // EvalDef.reporters 是用户在单个 eval 上挂的补充观测(如「这个 eval 单独也发一份到某个
   // dashboard」),不是 CLI 显式注册的默认/机器出口——与 Config.reporters 同样默认
-  // best-effort(见 ReporterRegistration 的字段注释:required 只留给 artifacts / --json /
-  // --junit)。name 用「scope 内第几个」编号,足以在诊断里区分「哪一个 eval 级 reporter」,
+  // best-effort(见 ReporterRegistration 的字段注释:required 只留给 --junit)。name 用「scope 内第几个」编号,足以在诊断里区分「哪一个 eval 级 reporter」,
   // 不需要用户自己起名字。
   let evalReporterIndex = 0;
   for (const [r, ids] of scopedSets) {
@@ -660,7 +579,6 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         configs: opts.agentRuns.length,
         totalAttempts: scopedRuns,
         maxConcurrency: opts.maxConcurrency,
-        snapshotStartedAt,
         runIds,
       }),
       name: `eval-reporter-${evalReporterIndex++}`,
@@ -671,20 +589,14 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   for (const reg of reporters) {
     // reporter 只是结果消费方:单个 reporter 抛错记 diagnostic,不能让整次调度崩,也不阻断
     // 其它 reporter 的必要收尾(required/best-effort 的判定权重在 runReporter 内部处理)。
-    await runReporter(reg, "onInvocationStart", () => reg.reporter.onInvocationStart?.(runningEvals, shape));
+    yield* runReporter(reg, "onInvocationStart", () => reg.reporter.onInvocationStart?.(runningEvals, shape));
   }
-  await emitReporterEvent(reporters, {
+  yield* emitReporterEvent(reporters, {
     type: "invocation:start",
     evals: runningEvals,
     shape,
   });
-
   const results: EvalResult[] = [];
-  // 用例锁释放/接管后重查携带命中的结果(见下方「用例锁」分组与 resolveCaseLockGate)。与
-  // 静态 carriedResults 同一种身份:不触发 onEvalComplete / eval:complete(它们已经在另一次
-  // Invocation 里被报告过一次),只随 allResults 一起进入本次快照与 experiment:complete 的
-  // carriedResults 字段——见 docs/runner.md「并发 Invocation 靠用例锁把续跑扩展到多开」。
-  const lateCarriedResults: EvalResult[] = [];
   const passedKeys = new Set<string>();
   // errored = 框架/环境层面的意外(超时、adapter 崩、eval 脚本抛异常……),不是 agent 表现的信号。
   // 同 key 一旦 errored 就会确定性地重复 error,再跑 runs 里剩下的次数纯烧钱;只有 failed(断言
@@ -694,17 +606,17 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   // 这是止损,不是「首过即停」,两个机制互不混用)。
   const lastErrorCode = new Map<string, { code: string; streak: number }>();
   const failFastKeys = new Map<string, { code: string; skipped: number }>();
-  // 携入的 passed 结果预置进 passedKeys:上面按序号回填的差额 attempt(carriedCount < run.attempts
+  // 当前 Record reuse 的 passed readback 预置进 passedKeys:上面按序号回填的差额 attempt(carriedCount < run.attempts
   // 那部分)如果不预置这个,会在明明已经拿到过 passed 结果的情况下真的再调度一次 agent——
   // earlyExit 的语义是「已知会通过就不用再跑」,携入的 passed 同样是「已知会通过」,理应同等对待
   // (下面 preflight/body 的 earlyExit 判断本来就只在 a.run.earlyExit 为真时读这两个 Set,所以
   // 这里无条件预置对 --no-early-exit 场景没有副作用)。携入的 failed 故意不预置——failed 本来
   // 就不触发 earlyExit,回填的差额必须真的重跑,才对得起用户调大 runs 的意图(想看这次是不是
   // 还失败,或想凑够 pass@N 的样本量)。
-  for (const r of carriedResults) {
-    if (r.verdict === "passed" && r.experimentId) {
-      passedKeys.add(attemptIdentityKey(r.experimentId, r.agent, r.model, r.id));
-    }
+  for (const readback of reusedAttempts) {
+    if (readback.verdict !== "passed") continue;
+    const run = runForReusedAttempt(readback);
+    passedKeys.add(attemptGroupKey(run, readback.target.evalId));
   }
 
   // budget 护栏:只按「已完成 attempt 的实测花费」判断,不做预测性节流。之前的实现会按
@@ -738,10 +650,10 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
 
   // reporter 的 onEvalComplete 要「每个 attempt 完成即时触发」(保流式输出),又不能让
   // 并发 worker 交错写 → 用一个 permit=1 的信号量串起来(替代原先手搓的 reportQueue 链)。
-  const reportMutex = Effect.runSync(Effect.makeSemaphore(1));
+  const reportMutex = yield* Effect.makeSemaphore(1);
   // 沙箱启动单独限流:与 agent 并发(maxConcurrency)解耦,防高并发下 daemon/API 过载。
   // 未显式指定时跟 maxConcurrency 走——各 provider 的推荐值已在 cli 层写进 maxConcurrency 默认值。
-  const sandboxSem = Effect.runSync(Effect.makeSemaphore(opts.maxConcurrency));
+  const sandboxSem = yield* Effect.makeSemaphore(opts.maxConcurrency);
   // 相同 provider physical identity 共享一个按需池；不从 AgentRun 重选 template。
   const reusePools = new Map<AgentRun, Map<string, ReusableSandboxPool>>();
   type ReusePoolSelection =
@@ -802,7 +714,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   // docs/feature/experiments/architecture.md「并发 Invocation:用例锁」末条),所以名额不是
   // 进程内信号量而是磁盘上的逐槽租约——多开不叠加 N,`maxConcurrency: 1` 的临界区声明在
   // 多开下同样成立。全局位反过来是每条 Invocation 私有的吞吐旋钮,仍是进程内信号量。
-  const globalSem = Effect.runSync(Effect.makeSemaphore(opts.maxConcurrency));
+  const globalSem = yield* Effect.makeSemaphore(opts.maxConcurrency);
   // 实验闸在进程内先垫一层同名额的信号量,再去取租约。两个原因:
   // ① 名额在本进程内部交接是即时的(Effect 信号量把 permit 直接递给排队的下一个 attempt),
   //    不必等租约轮询的下一个周期——单开是绝大多数场景,不该为跨进程协调付整整一个轮询周期
@@ -813,7 +725,10 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   const gateLocalSems = new Map<AgentRun, Effect.Semaphore>();
   for (const run of opts.agentRuns) {
     if (run.maxConcurrency !== undefined) {
-      gateLocalSems.set(run, Effect.runSync(Effect.makeSemaphore(Math.max(1, run.maxConcurrency))));
+      gateLocalSems.set(
+        run,
+        yield* Effect.makeSemaphore(Math.max(1, run.maxConcurrency)),
+      );
     }
   }
 
@@ -823,14 +738,25 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   // physical plan 的中性 admission/lane 字段；相同 lane 共用一把锁，表示它们竞争同一份
   // 不可并发底层资源，不是 `provider === "local"` 的行为分支。
   const providerExclusiveSems = new Map<string, Effect.Semaphore>();
+  for (const attempt of attempts) {
+    if (
+      attempt.plan._tag === "Direct" ||
+      attempt.plan.providerPlan.scheduling.admission._tag !== "Exclusive"
+    ) {
+      continue;
+    }
+    const laneKey = attempt.plan.providerPlan.scheduling.lane.key;
+    if (!providerExclusiveSems.has(laneKey)) {
+      providerExclusiveSems.set(laneKey, yield* Effect.makeSemaphore(1));
+    }
+  }
   let exclusiveConcurrencyWarned = false;
   const exclusiveSemFor = (plan: Attempt["plan"]): Effect.Semaphore | undefined => {
     if (plan._tag === "Direct" || plan.providerPlan.scheduling.admission._tag !== "Exclusive") return undefined;
     const laneKey = plan.providerPlan.scheduling.lane.key;
-    let sem = providerExclusiveSems.get(laneKey);
-    if (!sem) {
-      sem = Effect.runSync(Effect.makeSemaphore(1));
-      providerExclusiveSems.set(laneKey, sem);
+    const sem = providerExclusiveSems.get(laneKey);
+    if (sem === undefined) {
+      throw new Error(`Missing provider-exclusive semaphore for ${laneKey}`);
     }
     // 如实标注串行事实(一次性,不管命中多少条 attempt):全局上限比 1 高时,这个 provider 的
     // attempt 实际仍然一个一个跑——不管 --max-concurrency 写了多少,这是正确性约束不是调度旋钮。
@@ -852,7 +778,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
 
   // 实验级生命周期(见 docs/feature/experiments/architecture.md「实验级生命周期」):
   // setup 整场至多一次——第一个通过派发许可(preflight)的 attempt 触发,后续 attempt 等同一个
-  // memoized promise;等待发生在 gated 里、globalSem 之外,不占全局并发位。teardown 是
+  // memoized Effect completion;等待发生在 gated 里、globalSem 之外,不占全局并发位。teardown 是
   // ExperimentDef.teardown 字段,在最后一个 attempt 收尾后执行,当且仅当 setup 时点走到过
   // ——setup 抛错不豁免,未声明 setup 不影响触发。pendingAttempts 按 Attempt 身份结算并挂在
   // Effect.ensuring 上,中断路径同样移除;重复结算不会像数字计数那样下溢。
@@ -861,11 +787,11 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     | { readonly _tag: "Failed"; readonly error: AttemptError };
 
   type ExperimentSetup =
-    | { readonly _tag: "InProgress"; readonly promise: Promise<void> }
+    | { readonly _tag: "InProgress"; readonly completion: Deferred.Deferred<void, unknown> }
     | ExperimentSetupOutcome;
 
   /**
-   * 生命周期是一条闭合状态链，而不是 optional promise、boolean 与计数器的笛卡尔积：
+   * 生命周期是一条闭合状态链，而不是 optional Promise、boolean 与计数器的笛卡尔积：
    *
    * Dormant → Active(setup 进行中/成功/失败) → TearingDown → TornDown
    *        ↘ UntriggeredComplete（所有 attempt 都在触发点前结算）
@@ -884,7 +810,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         readonly _tag: "TearingDown";
         readonly pendingAttempts: ReadonlySet<Attempt>;
         readonly setup: ExperimentSetup;
-        readonly promise: Promise<void>;
+        readonly completion: Deferred.Deferred<void, unknown>;
       }
     | {
         readonly _tag: "TornDown";
@@ -895,6 +821,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
 
   interface ExperimentLifecycleCell {
     state: ExperimentLifecycle;
+    readonly mutex: Effect.Semaphore;
   }
   const expLifecycles = new Map<AgentRun, ExperimentLifecycleCell>();
   for (const a of attempts) {
@@ -904,7 +831,10 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
       if (cell.state._tag !== "Dormant") throw new Error("Experiment lifecycle initialized after dispatch.");
       cell.state = { _tag: "Dormant", pendingAttempts: new Set([...cell.state.pendingAttempts, a]) };
     } else {
-      expLifecycles.set(a.run, { state: { _tag: "Dormant", pendingAttempts: new Set([a]) } });
+      expLifecycles.set(a.run, {
+        state: { _tag: "Dormant", pendingAttempts: new Set([a]) },
+        mutex: yield* Effect.makeSemaphore(1),
+      });
     }
   }
 
@@ -967,22 +897,6 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     list.push(record);
     experimentDiagnostics.set(input.experimentId, list);
   };
-  // 授权携入在 Run 侧也留一条痕:条目自己带的 `carriedAccepting` 跟着结果走,这一条回答
-  // 「本次调用采信了哪些差异」。同一批 selector 折叠成一条,不逐条目刷屏。
-  if (carriedAcceptingByResult !== undefined) {
-    for (const [result, deltas] of carriedAcceptingByResult) {
-      const selectors = deltas.map((delta) => delta.selector);
-      recordExperimentDiagnostic({
-        experimentId: result.experimentId,
-        code: "accept",
-        level: "warning",
-        message: `Carried prior results across accepted differences: ${selectors.join(", ")}.`,
-        phase: "experiment.setup",
-        data: { selectors: [...selectors] },
-        dedupeKey: `accept:${selectors.join(",")}`,
-      });
-    }
-  }
   // 强杀后的收尾兜底(docs/feature/experiments/architecture.md「强杀后的收尾兜底」)的磁盘登记
   // 挂在结果根下,与留存注册表 `.niceeval/sandboxes/` 同一个根(省略时退回 cwd/.niceeval,
   // 与 attempt.ts 的 niceevalRoot 兜底同一口径)。
@@ -1023,109 +937,119 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
       fact: (key, value) => recordExperimentFact(run.experimentId, key, value),
     };
   };
-  const replaceSetup = (cell: ExperimentLifecycleCell, setup: ExperimentSetupOutcome): void => {
+  const replaceSetup = (
+    cell: ExperimentLifecycleCell,
+    setup: ExperimentSetupOutcome,
+  ): Effect.Effect<void> => cell.mutex.withPermits(1)(Effect.sync(() => {
     const state = cell.state;
-    if (state._tag === "Active") {
-      cell.state = { ...state, setup };
-    } else if (state._tag === "TearingDown") {
-      cell.state = { ...state, setup };
-    }
-  };
-  const setupPromiseOf = (setup: ExperimentSetup): Promise<void> =>
-    setup._tag === "InProgress" ? setup.promise : Promise.resolve();
-  const setupOutcomeOf = (state: ExperimentLifecycle): ExperimentSetupOutcome => {
     if (state._tag === "Active" || state._tag === "TearingDown") {
-      if (state.setup._tag === "InProgress") {
-        throw new Error(`Experiment setup is still in progress while lifecycle is ${state._tag}.`);
-      }
-      return state.setup;
+      cell.state = { ...state, setup };
     }
-    if (state._tag === "TornDown") return state.setup;
-    throw new Error(`Experiment setup has no outcome in lifecycle state ${state._tag}.`);
+  }));
+  const awaitSetup = (setup: ExperimentSetup): Effect.Effect<void, unknown> =>
+    setup._tag === "InProgress" ? Deferred.await(setup.completion) : Effect.void;
+  const setupOutcomeOf = (setup: ExperimentSetup): ExperimentSetupOutcome => {
+    if (setup._tag !== "InProgress") return setup;
+    throw new Error("Experiment setup completed without recording its terminal outcome.");
   };
-  const runExperimentTeardown = (run: AgentRun, cell: ExperimentLifecycleCell): Promise<void> => {
-    const current = cell.state;
-    // setup 时点没走到就没有收尾义务；已完成与在飞状态分别复用自己的确定结论/promise。
-    if (current._tag === "Dormant" || current._tag === "UntriggeredComplete") return Promise.resolve();
-    if (current._tag === "TearingDown") return current.promise;
-    if (current._tag === "TornDown") return Promise.resolve();
+  const runExperimentTeardown = (
+    run: AgentRun,
+    cell: ExperimentLifecycleCell,
+  ): Effect.Effect<void, unknown> => Effect.uninterruptibleMask((restore) =>
+    cell.mutex.withPermits(1)(Effect.gen(function* () {
+      const current = cell.state;
+      // setup 时点没走到就没有收尾义务；已完成与在飞状态分别复用自己的确定 Effect。
+      if (current._tag === "Dormant" || current._tag === "UntriggeredComplete" || current._tag === "TornDown") {
+        return undefined;
+      }
+      if (current._tag === "TearingDown") return current.completion;
 
-    // memoized 一次性执行体(docs/cli.md「中断:三级响应」):正常路径(attempt 集合归零 / run
-    // 收尾扫尾)、强清 drain、崩溃路径谁先到都把 Active 原子转成 TearingDown,后到者只等
-    // 该状态携带的同一个 promise——不双跑、也不空转。
-    const experimentId = run.experimentId ?? run.agent.name;
-    const teardownPromise = (async () => {
-      try {
-        // 与 setup 串行:强清 drain 可能在 setup 仍在飞时先取得收尾执行权；等 memoized setup
-        // settle 后再清理。setup 的 rejection 已在边界归一进闭合 outcome,这里不会 reject。
-        await setupPromiseOf(current.setup);
+      // 正常路径、强清 drain 与崩溃路径共同把 Active 原子转成 TearingDown；后到者只 await
+      // 同一个 Deferred，因此不双跑、也不空转。
+      const completion = yield* Deferred.make<void, unknown>();
+      const experimentId = run.experimentId ?? run.agent.name;
+      cell.state = {
+        _tag: "TearingDown",
+        pendingAttempts: current.pendingAttempts,
+        setup: current.setup,
+        completion,
+      };
+      const teardown = Effect.gen(function* () {
+        // 强清可能先取得收尾执行权；必须等 setup 的 Effect 结算后再清理。
+        yield* awaitSetup(current.setup);
         if (!run.teardown) return;
-        // 起止由 runner 发布,不依赖钩子自己调 progress(见 cli.md「实验级 Hook 的显示」)。
         reportExperimentHook({ experimentId, hook: "teardown", status: "started" });
         const startedAt = Date.now();
-        try {
-          // 有界执行(docs/cli.md 的有界性前提):挂起的 teardown 到点按失败收束,不能无限拖住
-          // 退出;超时后遗留的 promise 悬空,随进程退出消亡。
-          const ctx = makeExperimentHookContext(run, "experiment.teardown");
-          await withCleanupTimeout(() => run.teardown!(ctx));
-          reportExperimentHook({ experimentId, hook: "teardown", status: "done", durationMs: Date.now() - startedAt });
-        } catch (e) {
-          reportExperimentHook({ experimentId, hook: "teardown", status: "failed", durationMs: Date.now() - startedAt });
-          // teardown 失败只作运行级诊断,不改任何已产出的 verdict(与 sandbox.teardown 的
-          // teardown-failed 同一语义);资源可能泄漏,所以要说出来。同时进实验域诊断累积器,
-          // 供该 Experiment 的 Run 封口时持久化(docs/runner.md「实验域诊断持久化」)。
-          // 止损闸边界:实验级 teardown 里抛糖衣类**不落闸**,降级为这条普通 teardown 诊断
-          // (docs/feature/error-classification/architecture.md「生命周期边界」)——这个时点
-          // 本实验已无可保护的派发余量,且止损状态不跨 invocation,声明无处生效。所以这里
-          // 刻意不读 FailureClass:少一行代码就是契约本身,别顺手补上。
-          const message = t("runner.experimentTeardownFailed", {
-            experimentId,
-            message: e instanceof Error ? e.message : String(e),
-          }).trimEnd();
-          reportDiagnostic({ key: `experiment-teardown-failed:${experimentId}`, code: "experiment-teardown-failed", severity: "warning", message, data: { experimentId } });
-          recordExperimentDiagnostic({
-            experimentId: run.experimentId,
-            code: "experiment-teardown-failed",
-            level: "warning",
-            message,
-            phase: "experiment.teardown",
-          });
-        }
-        // 这个 Experiment 真正走完了 teardown(不论成败)的时刻——诚实的 Run completedAt,
-        // 不是整个 Invocation 收尾那一刻(见下方 experiment:complete 事件的发送处)。
+        const ctx = makeExperimentHookContext(run, "experiment.teardown");
+        yield* cleanupCallback(() => run.teardown!(ctx)).pipe(Effect.matchEffect({
+          onSuccess: () => Effect.sync(() => {
+            reportExperimentHook({
+              experimentId,
+              hook: "teardown",
+              status: "done",
+              durationMs: Date.now() - startedAt,
+            });
+          }),
+          onFailure: (error) => Effect.sync(() => {
+            reportExperimentHook({
+              experimentId,
+              hook: "teardown",
+              status: "failed",
+              durationMs: Date.now() - startedAt,
+            });
+            // teardown 失败只作运行级诊断，不改任何已产出的 verdict。
+            const message = t("runner.experimentTeardownFailed", {
+              experimentId,
+              message: error instanceof Error ? error.message : String(error),
+            }).trimEnd();
+            reportDiagnostic({
+              key: `experiment-teardown-failed:${experimentId}`,
+              code: "experiment-teardown-failed",
+              severity: "warning",
+              message,
+              data: { experimentId },
+            });
+            recordExperimentDiagnostic({
+              experimentId: run.experimentId,
+              code: "experiment-teardown-failed",
+              level: "warning",
+              message,
+              phase: "experiment.teardown",
+            });
+          }),
+        }));
+        // 这个 Experiment 真正走完 teardown（不论成败）的时刻。
         experimentCompletedAt.set(experimentId, new Date().toISOString());
-      } finally {
-        // teardown promise resolve 之前 setup 必已 settle；把 outcome 留在终态，使强清先完成、
-        // attempt 后恢复的竞态仍能读取 setup 失败，而不是把它随 teardown 状态一起丢掉。
-        cell.state = {
-          _tag: "TornDown",
-          pendingAttempts: cell.state._tag === "TearingDown"
-            ? cell.state.pendingAttempts
-            : current.pendingAttempts,
-          setup: setupOutcomeOf(cell.state),
-        };
-        // settle 后才注销:drain 的「启动全部未启动 + 等待全部未 settle」依赖条目在飞期间仍可见。
-        unregisterExperimentTeardown(experimentId);
-        // 磁盘镜像同一时点删除(所有触发路径:完成 / 中断 / 强清 drain 都经这条 finally)——
-        // 不变量:磁盘上存在登记,当且仅当某次 run 的实验级收尾义务尚未完成(docs/feature/
-        // experiments/architecture.md「强杀后的收尾兜底」)。没写过(裸 run / 无 teardown)
-        // 时删除是 no-op。
-        if (run.experimentId) {
-          await removeTeardownRegistrationIfPresent(
-            niceevalRoot,
-            teardownEntryId(run.experimentId, process.pid),
-          ).catch(() => {});
-        }
-      }
-    })();
-    cell.state = {
-      _tag: "TearingDown",
-      pendingAttempts: current.pendingAttempts,
-      setup: current.setup,
-      promise: teardownPromise,
-    };
-    return teardownPromise;
-  };
+      }).pipe(
+        Effect.ensuring(
+          cell.mutex.withPermits(1)(Effect.gen(function* () {
+            const state = cell.state;
+            const pendingAttempts = state._tag === "TearingDown"
+              ? state.pendingAttempts
+              : current.pendingAttempts;
+            const setup = state._tag === "TearingDown" ? state.setup : current.setup;
+            cell.state = { _tag: "TornDown", pendingAttempts, setup: setupOutcomeOf(setup) };
+            // settle 后才注销：drain 在执行体在飞时仍能看见本项。
+            yield* unregisterExperimentTeardown(experimentId);
+            if (run.experimentId) {
+              yield* removeTeardownRegistrationIfPresentEffect(
+                niceevalRoot,
+                teardownEntryId(run.experimentId, process.pid),
+              ).pipe(Effect.ignore);
+            }
+          })),
+        ),
+      );
+      const settle = Effect.exit(restore(teardown)).pipe(
+        Effect.flatMap((exit) => Deferred.done(completion, exit)),
+        Effect.asVoid,
+      );
+      yield* restore(settle).pipe(Effect.forkIn(invocationScope));
+      return completion;
+    })).pipe(
+      Effect.flatMap((completion) => completion === undefined ? Effect.void : restore(Deferred.await(completion))),
+    ),
+  );
   /**
    * 启动自愈:本实验触发 setup 之前,先核对磁盘上是否有它自己的遗留登记——上一次运行同一
    * experimentId 被强杀、来不及删除。同宿主且 pid 已死才是遗留义务;pid 活或异宿主可能是
@@ -1133,166 +1057,210 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
    * ctx.selectedEvalIds 从登记恢复,不依赖已丢失的 setup 产物)。失败只记诊断,不阻断、
    * 不重试本次 run 的调度——recovery 补偿的是上一次的泄漏,不是这一次的前提条件。
    */
-  const recoverOrphanedTeardownRegistration = async (run: AgentRun, experimentId: string): Promise<void> => {
-    if (!run.experimentId || !run.teardown) return;
-    let registrations;
-    try {
-      registrations = await readTeardownRegistrations(niceevalRoot);
-    } catch {
-      return;
-    }
-    for (const { id, entry } of registrations) {
-      if (entry.experimentId !== run.experimentId || !isOrphanedTeardownRegistration(entry, currentHost)) continue;
-      const claimed = await removeTeardownRegistrationIfPresent(niceevalRoot, id).catch(() => false);
-      if (!claimed) continue; // 已被另一个进程抢先删除,义务已被别处接手
-      reportExperimentHook({ experimentId, hook: "teardown", status: "started", recovery: true });
-      const startedAt = Date.now();
-      const recoveryCtx: ExperimentHookContext = {
-        experimentId,
-        selectedEvalIds: entry.selectedEvalIds,
-        signal: opts.signal ?? new AbortController().signal,
-        progress: (u) => {
-          const suffix = u.current !== undefined && u.total !== undefined ? ` (${u.current}/${u.total})` : "";
-          reportExperimentProgress({ experimentId, detail: `${u.message}${suffix}` });
-        },
-        diagnostic: (input) => {
-          reportDiagnostic({
-            key: input.dedupeKey ?? `${input.code}:experiment:${experimentId}`,
-            code: input.code,
-            severity: input.level,
-            message: input.message,
-            data: { experimentId, ...(input.data ?? {}) },
-          });
-          recordExperimentDiagnostic({
-            experimentId: run.experimentId,
-            code: input.code,
-            level: input.level,
-            message: input.message,
-            phase: "experiment.teardown",
-            ...(input.data !== undefined ? { data: input.data } : {}),
-            ...(input.dedupeKey !== undefined ? { dedupeKey: input.dedupeKey } : {}),
-          });
-        },
-        fact: (key, value) => recordExperimentFact(run.experimentId, key, value),
-      };
-      try {
-        await withCleanupTimeout(() => run.teardown!(recoveryCtx));
-        reportExperimentHook({
+  const recoverOrphanedTeardownRegistration = (
+    run: AgentRun,
+    experimentId: string,
+  ): Effect.Effect<void, unknown> => Effect.suspend(() => {
+    if (!run.experimentId || !run.teardown) return Effect.void;
+    return Effect.gen(function* () {
+      const registrations = yield* readTeardownRegistrationsEffect(niceevalRoot).pipe(
+        Effect.catchAll(() => Effect.succeed([])),
+      );
+      for (const { id, entry } of registrations) {
+        if (entry.experimentId !== run.experimentId || !isOrphanedTeardownRegistration(entry, currentHost)) continue;
+        const claimed = yield* removeTeardownRegistrationIfPresentEffect(niceevalRoot, id).pipe(
+          Effect.catchAll(() => Effect.succeed(false)),
+        );
+        if (!claimed) continue; // 已被另一个进程抢先删除，义务已被别处接手。
+        reportExperimentHook({ experimentId, hook: "teardown", status: "started", recovery: true });
+        const startedAt = Date.now();
+        const recoveryCtx: ExperimentHookContext = {
           experimentId,
-          hook: "teardown",
-          status: "done",
-          durationMs: Date.now() - startedAt,
-          recovery: true,
-        });
-      } catch (e) {
-        reportExperimentHook({
-          experimentId,
-          hook: "teardown",
-          status: "failed",
-          durationMs: Date.now() - startedAt,
-          recovery: true,
-        });
-        const message = t("runner.experimentTeardownFailed", {
-          experimentId,
-          message: e instanceof Error ? e.message : String(e),
-        }).trimEnd();
-        reportDiagnostic({ key: `experiment-teardown-failed:${experimentId}`, code: "experiment-teardown-failed", severity: "warning", message, data: { experimentId } });
-        recordExperimentDiagnostic({
-          experimentId: run.experimentId,
-          code: "experiment-teardown-failed",
-          level: "warning",
-          message,
-          phase: "experiment.teardown",
-        });
+          selectedEvalIds: entry.selectedEvalIds,
+          signal: opts.signal ?? new AbortController().signal,
+          progress: (u) => {
+            const suffix = u.current !== undefined && u.total !== undefined ? ` (${u.current}/${u.total})` : "";
+            reportExperimentProgress({ experimentId, detail: `${u.message}${suffix}` });
+          },
+          diagnostic: (input) => {
+            reportDiagnostic({
+              key: input.dedupeKey ?? `${input.code}:experiment:${experimentId}`,
+              code: input.code,
+              severity: input.level,
+              message: input.message,
+              data: { experimentId, ...(input.data ?? {}) },
+            });
+            recordExperimentDiagnostic({
+              experimentId: run.experimentId,
+              code: input.code,
+              level: input.level,
+              message: input.message,
+              phase: "experiment.teardown",
+              ...(input.data !== undefined ? { data: input.data } : {}),
+              ...(input.dedupeKey !== undefined ? { dedupeKey: input.dedupeKey } : {}),
+            });
+          },
+          fact: (key, value) => recordExperimentFact(run.experimentId, key, value),
+        };
+        yield* cleanupCallback(() => run.teardown!(recoveryCtx)).pipe(Effect.matchEffect({
+          onSuccess: () => Effect.sync(() => {
+            reportExperimentHook({
+              experimentId,
+              hook: "teardown",
+              status: "done",
+              durationMs: Date.now() - startedAt,
+              recovery: true,
+            });
+          }),
+          onFailure: (error) => Effect.sync(() => {
+            reportExperimentHook({
+              experimentId,
+              hook: "teardown",
+              status: "failed",
+              durationMs: Date.now() - startedAt,
+              recovery: true,
+            });
+            const message = t("runner.experimentTeardownFailed", {
+              experimentId,
+              message: error instanceof Error ? error.message : String(error),
+            }).trimEnd();
+            reportDiagnostic({
+              key: `experiment-teardown-failed:${experimentId}`,
+              code: "experiment-teardown-failed",
+              severity: "warning",
+              message,
+              data: { experimentId },
+            });
+            recordExperimentDiagnostic({
+              experimentId: run.experimentId,
+              code: "experiment-teardown-failed",
+              level: "warning",
+              message,
+              phase: "experiment.teardown",
+            });
+          }),
+        }));
       }
-    }
-  };
-  const ensureExperimentSetup = (a: Attempt): Promise<void> => {
+    });
+  });
+  const ensureExperimentSetup = (a: Attempt): Effect.Effect<void, unknown> => {
     const cell = expLifecycles.get(a.run)!;
-    const current = cell.state;
-    if (current._tag === "Active" || current._tag === "TearingDown") {
-      return setupPromiseOf(current.setup);
-    }
-    if (current._tag === "TornDown") return Promise.resolve();
-    if (current._tag === "UntriggeredComplete") {
-      throw new Error("Experiment lifecycle cannot be triggered after all attempts settled.");
-    }
+    return Effect.uninterruptibleMask((restore) =>
+      cell.mutex.withPermits(1)(Effect.gen(function* () {
+        const current = cell.state;
+        if (current._tag === "Active" || current._tag === "TearingDown") return current.setup;
+        if (current._tag === "TornDown") return undefined;
+        if (current._tag === "UntriggeredComplete") {
+          return yield* Effect.die(new Error("Experiment lifecycle cannot be triggered after all attempts settled."));
+        }
 
-    const run = a.run;
-    const experimentId = run.experimentId ?? run.agent.name;
-    // teardown 从触发时点起就静态可达:立即登记进宿主机侧兜底表,setup 挂起 / 抛错都不会
-    // 丢收尾——强清退出(二次中断/看门狗/崩溃路径)时 cli 由此排空未被运行路径消费的
-    // teardown(docs/cli.md「中断:三级响应」)。
-    if (run.teardown) registerExperimentTeardown(experimentId, () => runExperimentTeardown(run, cell));
-    const ctx = run.setup ? makeExperimentHookContext(run, "experiment.setup") : undefined;
-    const setupPromise = (async () => {
-      // 强杀后的收尾兜底(docs/feature/experiments/architecture.md「强杀后的收尾兜底」):
-      // 先核对并补执行本实验自己的遗留登记,再原子写入本次的登记——两步都先于 setup。
-      if (run.teardown && run.experimentId) {
-        await recoverOrphanedTeardownRegistration(run, experimentId);
-        await writeTeardownRegistration(niceevalRoot, {
-          experimentId: run.experimentId,
-          selectedEvalIds: run.selectedEvalIds,
-          pid: process.pid,
-          host: currentHost,
-          startedAt: new Date().toISOString(),
-        }).catch((e) => {
-          const message = t("runner.teardownRegistrationWriteFailed", {
+        const run = a.run;
+        const experimentId = run.experimentId ?? run.agent.name;
+        const completion = yield* Deferred.make<void, unknown>();
+        // 先写 Active、再登记和启动 worker：随后任何 attempt 或强清都会复用同一个 Effect 完成点。
+        cell.state = {
+          _tag: "Active",
+          pendingAttempts: current.pendingAttempts,
+          setup: { _tag: "InProgress", completion },
+        };
+        if (run.teardown) {
+          yield* registerExperimentTeardown(experimentId, () => runExperimentTeardown(run, cell));
+        }
+        let setupStartedAt: number | undefined;
+        const setupBody = Effect.gen(function* () {
+          // 上一进程的遗留收尾先补做，再原子写入本次登记；两步都先于 setup。
+          if (run.teardown && run.experimentId) {
+            yield* recoverOrphanedTeardownRegistration(run, experimentId);
+            yield* writeTeardownRegistrationEffect(niceevalRoot, {
+              experimentId: run.experimentId,
+              selectedEvalIds: run.selectedEvalIds,
+              pid: process.pid,
+              host: currentHost,
+              startedAt: new Date().toISOString(),
+            }).pipe(Effect.catchAll((error) => Effect.sync(() => {
+              const message = t("runner.teardownRegistrationWriteFailed", {
+                experimentId,
+                message: error instanceof Error ? error.message : String(error),
+              }).trimEnd();
+              reportDiagnostic({
+                key: `teardown-registration-write-failed:${experimentId}`,
+                code: "teardown-registration-write-failed",
+                severity: "warning",
+                message,
+                data: { experimentId },
+              });
+              recordExperimentDiagnostic({
+                experimentId: run.experimentId,
+                code: "teardown-registration-write-failed",
+                level: "warning",
+                message,
+                phase: "experiment.setup",
+              });
+            })));
+          }
+          if (!run.setup) return;
+          setupStartedAt = Date.now();
+          reportExperimentHook({ experimentId, hook: "setup", status: "started" });
+          const ctx = makeExperimentHookContext(run, "experiment.setup");
+          const value = yield* Effect.tryPromise({
+            try: () => Promise.resolve().then(() => run.setup!(ctx)),
+            catch: (error) => error,
+          });
+          const returned = value as unknown;
+          if (typeof returned === "function") {
+            // tsx 旧式 setup cleanup 只在 author callback 边界适配；主错误说明迁移方向。
+            yield* cleanupCallback(returned as () => unknown).pipe(Effect.catchAll(() => Effect.void));
+            return yield* Effect.fail(new Error(
+              t("runner.setupReturnedCleanup", {
+                layer: `ExperimentDef.setup (${experimentId})`,
+                hint: "ExperimentDef.teardown",
+              }).trimEnd(),
+            ));
+          }
+          reportExperimentHook({
             experimentId,
-            message: e instanceof Error ? e.message : String(e),
-          }).trimEnd();
-          reportDiagnostic({ key: `teardown-registration-write-failed:${experimentId}`, code: "teardown-registration-write-failed", severity: "warning", message, data: { experimentId } });
-          recordExperimentDiagnostic({
-            experimentId: run.experimentId,
-            code: "teardown-registration-write-failed",
-            level: "warning",
-            message,
-            phase: "experiment.setup",
+            hook: "setup",
+            status: "done",
+            durationMs: Date.now() - (setupStartedAt ?? Date.now()),
           });
         });
-      }
-      if (!run.setup) return;
-      // 起止由 runner 发布(见 cli.md「实验级 Hook 的显示」):一个什么都不调的 setup 也必须
-      // 可见,不能让「0 running · N queued 长时间不动」看起来像调度卡死。
-      reportExperimentHook({ experimentId, hook: "setup", status: "started" });
-      const startedAt = Date.now();
-      try {
-        const returned = (await run.setup(ctx!)) as unknown;
-        if (typeof returned === "function") {
-          // 迁移护栏:tsx 用户没有类型检查,旧式「setup 返回 cleanup」会被静默忽略而泄漏资源。
-          // best-effort 执行一次返回的函数(把已起的资源收掉),然后按 setup 失败报清晰错误。
-          try {
-            await withCleanupTimeout(returned as () => unknown);
-          } catch {
-            // 迁移护栏里的旧式 cleanup 失败不再叠加报错,主错误(下一行)已指明修法。
-          }
-          throw new Error(
-            t("runner.setupReturnedCleanup", {
-              layer: `ExperimentDef.setup (${experimentId})`,
-              hint: "ExperimentDef.teardown",
-            }).trimEnd(),
-          );
-        }
-      } catch (e) {
-        reportExperimentHook({ experimentId, hook: "setup", status: "failed", durationMs: Date.now() - startedAt });
-        throw e;
-      }
-      reportExperimentHook({ experimentId, hook: "setup", status: "done", durationMs: Date.now() - startedAt });
-    })().then(
-      () => replaceSetup(cell, { _tag: "Succeeded" }),
-      (e: unknown) => replaceSetup(cell, {
-        _tag: "Failed",
-        error: { ...errorFromThrown(e, "experiment.setup"), code: "experiment-setup-failed" },
-      }),
+        const setupWorker = setupBody.pipe(
+          Effect.matchEffect({
+            onSuccess: () => replaceSetup(cell, { _tag: "Succeeded" }),
+            onFailure: (error) => Effect.sync(() => {
+              reportExperimentHook({
+                experimentId,
+                hook: "setup",
+                status: "failed",
+                durationMs: Date.now() - (setupStartedAt ?? Date.now()),
+              });
+            }).pipe(Effect.zipRight(replaceSetup(cell, {
+              _tag: "Failed",
+              error: { ...errorFromThrown(error, "experiment.setup"), code: "experiment-setup-failed" },
+            }))),
+          }),
+          Effect.onExit((exit) => {
+            const recordUnexpectedExit = Exit.isFailure(exit)
+              ? replaceSetup(cell, {
+                  _tag: "Failed",
+                  error: {
+                    ...errorFromThrown(Cause.squash(exit.cause), "experiment.setup"),
+                    code: "experiment-setup-failed",
+                  },
+                })
+              : Effect.void;
+            return recordUnexpectedExit.pipe(
+              Effect.zipRight(Deferred.done(completion, exit)),
+              Effect.asVoid,
+            );
+          }),
+        );
+        yield* restore(setupWorker).pipe(Effect.forkIn(invocationScope));
+        return cell.state.setup;
+      })).pipe(
+        Effect.flatMap((setup) => setup === undefined ? Effect.void : restore(awaitSetup(setup))),
+      ),
     );
-    // 先写 Active 再让 promise continuation 有机会落 outcome；JS microtask 保证即使 hook 同步
-    // 返回，then 也只能在这次同步 transition 之后执行。
-    cell.state = {
-      _tag: "Active",
-      pendingAttempts: current.pendingAttempts,
-      setup: { _tag: "InProgress", promise: setupPromise },
-    };
-    return setupPromise;
   };
 
   // 自愈是「选中实验」的启动期职责，不是首个派发 attempt 的副作用：全携带使 attempts 为空时，
@@ -1301,8 +1269,32 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   for (const run of opts.agentRuns) {
     if (!run.experimentId || !run.teardown || recoveredExperimentIds.has(run.experimentId)) continue;
     recoveredExperimentIds.add(run.experimentId);
-    await recoverOrphanedTeardownRegistration(run, run.experimentId);
+    yield* recoverOrphanedTeardownRegistration(run, run.experimentId);
   }
+
+  const settleExperimentAttempt = (a: Attempt): Effect.Effect<void, unknown> => {
+    const cell = expLifecycles.get(a.run)!;
+    return cell.mutex.withPermits(1)(Effect.sync(() => {
+      const state = cell.state;
+      if (state._tag === "UntriggeredComplete") return false;
+      const pendingAttempts = new Set(state.pendingAttempts);
+      pendingAttempts.delete(a);
+      if (state._tag === "Dormant") {
+        cell.state = pendingAttempts.size === 0
+          ? { _tag: "UntriggeredComplete" }
+          : { _tag: "Dormant", pendingAttempts };
+        return false;
+      }
+      if (state._tag === "Active") {
+        cell.state = { ...state, pendingAttempts };
+        return pendingAttempts.size === 0;
+      }
+      cell.state = { ...state, pendingAttempts };
+      return false;
+    })).pipe(
+      Effect.flatMap((startTeardown) => startTeardown ? runExperimentTeardown(a.run, cell) : Effect.void),
+    );
+  };
 
   // ─────────────────────── 派发许可链(docs/runner.md「调度:有界并发」) ───────────────────────
   // 一条 attempt 要真正开跑,顺序通过四道许可,顺序本身是契约:
@@ -1319,15 +1311,14 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
    * 全部 eval 闸——检查点同时读两把,不做物理级联(eval 闸的数量随选择集变化,级联要遍历,
    * 蕴含只要多读一个字段)。
    *
-   * 三个状态载体各有不可替代的角色,不是同一件事的三份副本:
+   * 两个状态载体各有不可替代的角色,不是同一件事的两份副本:
    * - `latch`:`Effect.unsafeMakeLatch(false)`,落闸 = `unsafeOpen()`。`open` 幂等且不可回退,
    *   「落闸幂等、invocation 内不可逆」因此是结构保证而不是调用方自律;`latch.await` 同时是
    *   「等到这把闸落下」的 Effect,给等在全局并发位上的 fiber 当中止信号(见 withGlobalSlot)。
    * - `halted`:同步读的镜像。派发检查点在每轮循环开头问一次,不能为此付一次 await
    *   (`Effect.Latch` 没有同步状态读)。恒在 `unsafeOpen()` 之前置位,两者不会互相领先。
-   * - `abort`:同一时刻 abort。Promise 世界的两处长等待——实验闸名额租约、撞用例锁后的
-   *   elsewhere 轮询——一律经 AbortSignal 中止,那是本仓既有的 interruption 通路,不为止损闸
-   *   另造一条。
+   * 实验闸名额租约与撞用例锁后的 elsewhere 轮询都直接竞速 `latch.await`。这样止损只让等待
+   * 成功收束；用户取消仍保留为 Effect interruption Cause，不再穿过 AbortSignal / Promise 边界。
    */
   interface HaltGate {
     readonly scope: "eval" | "experiment";
@@ -1340,7 +1331,6 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     /** 两条诊断通路共用的折叠键(= scope + evalId,契约见 architecture.md「诊断」)。 */
     readonly dedupeKey: string;
     readonly latch: Effect.Latch;
-    readonly abort: AbortController;
     halted: boolean;
     /** 被这把闸拦下、未派发的 attempt 数(进 InvocationCompletion.unstarted)。 */
     unstarted: number;
@@ -1365,7 +1355,6 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         evalId,
         dedupeKey,
         latch: Effect.unsafeMakeLatch(false),
-        abort: new AbortController(),
         halted: false,
         unstarted: 0,
         message: "",
@@ -1405,14 +1394,6 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     return { halted: false };
   };
 
-  /** 落闸后唤醒 Promise 世界等待的中止信号:两把闸任一落下、或用户中断,都算这次等待到头了。 */
-  const haltAbortSignal = (a: Attempt, extra?: AbortSignal): AbortSignal => {
-    const [experimentGate, evalGate] = haltGatesOf(a);
-    const signals = [experimentGate.abort.signal, evalGate.abort.signal];
-    if (opts.signal) signals.push(opts.signal);
-    if (extra) signals.push(extra);
-    return AbortSignal.any(signals);
-  };
   /** 「等到这条 attempt 头上任一把闸落下」;给 Effect 世界的等待(全局并发位)当中止信号。 */
   const haltAwait = (a: Attempt): Effect.Effect<void> => {
     const [experimentGate, evalGate] = haltGatesOf(a);
@@ -1473,7 +1454,6 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
       gate.phase = declaration.phase;
       gate.halted = true; // 同步镜像先置位,再开 latch:两者不会互相领先
       gate.latch.unsafeOpen();
-      gate.abort.abort();
     }
     reportHaltNotice(gate);
   };
@@ -1485,6 +1465,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
    * 「记账」);退出码由观察到失败的那条 `errored` attempt 判红。
    */
   const accountDispatchHalted = (a: Attempt, gate: HaltGate): void => {
+    recordCoordinator.markNotDispatched(a);
     gate.unstarted += 1;
     reportAttemptLifecycle({
       type: "attempt:early-exit",
@@ -1496,25 +1477,6 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   };
 
   const lockIdentity = { pid: process.pid, host: currentHost };
-  /** 调度整体收束(forEach 已结算)后置位:兜住被 Effect 抛下的挂起轮询,不让它无主空转。 */
-  let dispatchClosed = false;
-
-  /** 可被 abort 打断的定时等待;abort 或到点都以 resolve 收束(调用方自己复查中断状态),
-   *  不留悬挂的定时器——真实的用户 Ctrl+C 不能被别人的锁拖着无限期挂住。 */
-  const delayOrAbort = (ms: number, signal: AbortSignal | undefined): Promise<void> =>
-    new Promise<void>((resolve) => {
-      if (signal?.aborted) return resolve();
-      const done = (): void => {
-        clearTimeout(timer);
-        signal?.removeEventListener("abort", done);
-        resolve();
-      };
-      const timer = setTimeout(done, ms);
-      signal?.addEventListener("abort", done, { once: true });
-    });
-
-  const combinedSignal = (extra: AbortSignal): AbortSignal =>
-    opts.signal ? AbortSignal.any([opts.signal, extra]) : extra;
 
   // 用例锁(docs/feature/experiments/architecture.md「并发 Invocation:用例锁」):按
   // (experimentId, evalId) 给这批已经确定要真实派发的 attempt 分组——被静态携带筛掉的组合
@@ -1526,23 +1488,20 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
    *  已经解决并重新取到锁,它再去建窗口就会读到**自己**的新鲜锁、永久等下去。 */
   type CaseLockTry =
     | { kind: "acquired" }
-    | { kind: "busy"; window: Promise<void> }
-    | { kind: "aborted" };
+    | { kind: "busy"; window: Effect.Effect<void> };
   interface CaseLockState {
     experimentId: string;
     evalId: string;
     /** 本用例这次计划的全部 attempt;持有者一次认领它们全部,不按 attempt 拆锁。 */
     group: Attempt[];
-    /** 还没收尾、也还没被重查携带命中的 attempt 序号——`lock_wait` 的计数与「锁还留不留」都读它。 */
+    /** 还没收尾的 attempt 序号——`lock_wait` 的计数与「锁还留不留」都读它。 */
     pending: Set<number>;
-    /** 重查携带命中的 attempt 序号(elsewhere → reused,不再派发)。 */
-    carried: Set<number>;
     /** 本进程此刻持有的锁;undefined = 没持有(还没试 / 撞锁挂起中)。 */
-    claim?: CaseLockClaim;
-    /** 在飞的一次非阻塞试锁:同组兄弟共享同一次尝试的结论,不各自拍一遍磁盘。 */
-    trying?: Promise<CaseLockTry>;
-    /** 在飞的挂起窗口:撞锁的兄弟全体等同一个 promise。 */
-    suspension?: Promise<void>;
+    claim?: CaseLockEffectClaim;
+    /** 同组兄弟只允许一条 fiber 做磁盘试锁；后到者在临界区内重读 claim / suspension。 */
+    acquireMutex: Effect.Semaphore;
+    /** 在飞的挂起窗口:撞锁的兄弟全体等同一个 Deferred。 */
+    suspension?: Effect.Effect<void>;
     /** 已经用 `lock_wait started` 报进 `elsewhere`、还没被 `resolved` 报出来的 attempt 数。
      *  五项恒等式要求「报进去多少条就要报出来多少条」:收尾时不能拿当下的 `pending.size`
      *  当迁移数——等待期间被中断而提前 settle 的 attempt 会让 `pending` 缩水,差额就永远
@@ -1560,7 +1519,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         evalId: a.evalDef.id,
         group: [],
         pending: new Set<number>(),
-        carried: new Set<number>(),
+        acquireMutex: yield* Effect.makeSemaphore(1),
         inElsewhere: 0,
       };
       caseLocks.set(key, st);
@@ -1571,211 +1530,32 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   const caseStateOf = (a: Attempt): CaseLockState | undefined =>
     a.run.experimentId ? caseLocks.get(cacheKey(a.run, a.evalDef.id)) : undefined;
 
-  /** 取锁之后值不值得重新读盘查携带。`--force` 下 opts.priorResults 恒为 undefined——
-   *  force 关掉的是缓存,等完同样全部自跑;中断路径同样不再读盘。注意这只关掉「重查」,
-   *  不关掉挂起窗口的 `resolved` 事件:少发一次 resolved,elsewhere 就永远挂着,五项恒等式
-   *  当场破(旧实现在 `--force` + 真实撞锁等待这条组合上就是这么漏的)。 */
-  const carryRecheckEnabled = (): boolean => opts.priorResults !== undefined && !opts.signal?.aborted;
-
   /**
-   * 对这个用例**重新做一次携带规划**:别的 Invocation 落盘的终态此刻已可读。判定逐 attempt
-   * 进行(见 memory 的 carry-must-be-per-attempt-not-whole-eval-key —— 按整段 key 判定会让同
-   * eval 里一个 attempt 的终态连带携入其它序号):命中的序号 elsewhere → reused 不再派发,
-   * 仍缺的序号 elsewhere → queued 自跑。
-   *
-   * `waitStartedAt` 有值 = 这次重查在关闭一个真实的挂起窗口,`resolved` 必须发(哪怕一条都
-   * 没携入,不然 elsewhere 永远挂着);省略 = 没有窗口要关(全新取锁 / 接管),只有真的携入了
-   * 才补一对瞬时的 started/resolved 把这些 attempt 从 queued 迁进 reused。
-   *
-   * 读盘走**收窄读**(`loadLatestResultsForCase`):这次 I/O 是在握着全局并发位 + 实验闸名额
-   * + 用例锁的状态下做的,per-case 的问题("这条用例现在还缺哪些 attempt")不能用全根扫描去
-   * 回答——实测 110 ms/条 vs 0.3 ms/条,后者才付得起「每次取锁都重查」。
-   *
-   * 判据不重跑 `planCarry`:本次 Invocation 的 `acceptableFingerprints` 整场是常量,重查只需要
-   * 逐条 attempt 过 `carriableAttempts`(终态 + 指纹在可携带集合里 + durationMs ≤ resolved
-   * timeoutMs),与静态规划共用同一个函数。
+   * A late on-disk result cannot become a V1 carried Member in this invocation:
+   * the writer's frozen view did not receive an exact source capability during
+   * planning. Keep the lock protocol's `resolved` accounting, but dispatch all
+   * still-pending Slots normally instead of guessing from legacy result files.
    */
-  const recheckCarry = async (
+  const resolveCaseWaitWithoutCarry = (
     st: CaseLockState,
     waitStartedAt: number | undefined,
-    holder: CaseLockRecord | undefined,
-  ): Promise<void> => {
+  ): void => {
     const { experimentId, evalId } = st;
     // 这个窗口当初报进 elsewhere 的条数,收尾必须原数报回来(见 CaseLockState.inElsewhere)。
     const inElsewhere = st.inElsewhere;
     st.inElsewhere = 0;
-    const newlyCarried: number[] = [];
-    if (carryRecheckEnabled()) {
-      const a0 = st.group[0]!;
-      const key = cacheKey(a0.run, evalId);
-      const freshPrior = await loadLatestResultsForCase(niceevalRoot, experimentId, evalId).catch(
-        (): EvalResult[] => [],
-      );
-      const carried = carriableAttempts(
-        freshPrior,
-        key,
-        plannedConfigHashes?.get(key),
-        acceptableFingerprints.get(key),
-        resolvedTimeoutMsForCarry(a0.run, a0.evalDef, opts.config.timeoutMs),
-        {
-          rerun: opts.rerun,
-          keepSandbox: opts.keepSandbox,
-          accept: opts.accept,
-        },
-      );
-      for (const r of carried) {
-        if (!st.pending.has(r.attempt)) continue; // 已经跑过 / 上一轮已经携入过的序号不重复计
-        st.pending.delete(r.attempt);
-        st.carried.add(r.attempt);
-        newlyCarried.push(r.attempt);
-        // 迟到携带同样可能是被授权跨过差异才进来的(它的指纹不是本次规划那个)。留痕在这里
-        // 补齐:静态规划算好的那份映射只认规划时刻见过的条目,别的 Invocation 刚落盘的这条
-        // 不在里面,漏掉就成了「授权携入却没有任何账」。
-        if (opts.accept?.length && r.fingerprint !== plannedFingerprints.get(key)) {
-          const historical = configIdentityFromResult(r);
-          const crossed = historical === undefined
-            ? []
-            : configDeltas(
-                historical,
-                configIdentityForRun(
-                  a0.run,
-                  a0.plan,
-                  resolveJudge(a0.run.judge, a0.evalDef.judge, opts.config.judge),
-                ),
-              )
-                .filter((delta) => opts.accept!.includes(delta.selector));
-          if (crossed.length > 0) {
-            runtimeCarriedAcceptingByResult.set(r, crossed);
-            recordExperimentDiagnostic({
-              experimentId,
-              code: "accept",
-              level: "warning",
-              message: `Carried prior results across accepted differences: ${crossed.map((d) => d.selector).join(", ")}.`,
-              phase: "experiment.setup",
-              data: { selectors: crossed.map((d) => d.selector) },
-              dedupeKey: `accept:${crossed.map((d) => d.selector).join(",")}`,
-            });
-          }
-        }
-        lateCarriedResults.push(restampCarried(r));
-        if (r.verdict === "passed") {
-          passedKeys.add(attemptGroupKey(a0.run, evalId));
-        }
-      }
-    }
     if (waitStartedAt === undefined) {
-      if (newlyCarried.length === 0) return; // 没有窗口要关、也没有迁移要报:一个事件都不发
-      // 没有等待窗口要关(接管 / 多开下的全新取锁)。真正携入的那几条此刻仍停在 queued
-      // (从没被标记过 elsewhere),必须先补一个瞬时的 "started",下面的 "resolved" 才能把
-      // 它们正确迁进 reused,否则会打破五项恒等式。**只报这几条**:没携入的兄弟从没离开
-      // queued,把它们也报一遍会在两条事件之间露出一帧「queued 被扣穿」的中间态——极端时序
-      // 下兄弟 attempt 可能已经在这次 await 期间进了 running,那一扣就是负数。
-      const startedAt = Date.now();
-      reportLockWait({
-        experimentId,
-        evalId,
-        status: "started",
-        ...(holder?.pid !== undefined ? { holderPid: holder.pid } : {}),
-        ...(holder?.host !== undefined ? { holderHost: holder.host } : {}),
-        attempts: newlyCarried.length,
-      });
-      reportLockWait({
-        experimentId,
-        evalId,
-        status: "resolved",
-        carried: newlyCarried.length,
-        dispatched: 0,
-        waitedMs: Date.now() - startedAt,
-      });
       return;
     }
     // 真实挂起窗口收尾:carried + dispatched 恒等于 "started" 报进去的 attempts,这条
     // 恒等式是 elsewhere 不挂账的唯一保证(reducer 只按事件携带的数字增减,不自己推)。
-    const carried = Math.min(newlyCarried.length, inElsewhere);
     reportLockWait({
       experimentId,
       evalId,
       status: "resolved",
-      carried,
-      dispatched: inElsewhere - carried,
+      carried: 0,
+      dispatched: inElsewhere,
       waitedMs: Date.now() - waitStartedAt,
-    });
-  };
-
-  /**
-   * 派发时刻的一次**非阻塞**试锁。非阻塞语义借 `acquireCaseLock` 的 `onWaitStart` 实现:确认
-   * 要等待的那一刻立刻自我中断,只保留「一次尝试」的部分——这样仍然复用它的心跳续租与强清
-   * 登记(lock.ts 的 held 表),而 `tryAcquireCaseLockOnce` 两件都不做。撞上过期锁属于「一次
-   * 尝试」内部的 rename 接管,照常返回 acquired。
-   */
-  const tryAcquireCase = (st: CaseLockState): Promise<CaseLockTry> => {
-    // 同组兄弟:自己已持有,直接放行。
-    if (st.claim) return Promise.resolve<CaseLockTry>({ kind: "acquired" });
-    // 已经有兄弟挂在窗口上:全体等同一个窗口,不重复试锁。
-    if (st.suspension) return Promise.resolve<CaseLockTry>({ kind: "busy", window: st.suspension });
-    if (st.trying) return st.trying;
-    const attempt = (async (): Promise<CaseLockTry> => {
-      const { experimentId, evalId } = st;
-      // 接管诊断要报"原持有者是谁",但 acquireCaseLock 只回传 takenOver 布尔值——取锁前先
-      // 无副作用地读一眼当前记录(纯尽力而为:极端时序下这份快照可能已经不是真正被接管的
-      // 那条记录,但诊断本来就是人读提示,不是判定依据)。
-      const priorHolder = await readCaseLock(niceevalRoot, experimentId, evalId).catch(() => undefined);
-      const giveUp = new AbortController();
-      let busyWith: CaseLockRecord | undefined;
-      try {
-        const { claim, takenOver } = await acquireCaseLock(niceevalRoot, experimentId, evalId, lockIdentity, {
-          signal: combinedSignal(giveUp.signal),
-          onWaitStart: (h) => {
-            busyWith = h;
-            giveUp.abort(); // 撞上新鲜锁 = 这次尝试到此为止,不进入 acquireCaseLock 自己的轮询
-          },
-        });
-        st.claim = claim;
-        if (takenOver) {
-          const message = t("runner.lockTakenOver", {
-            experimentId,
-            evalId,
-            pid: priorHolder?.pid ?? "?",
-            host: priorHolder?.host ?? "?",
-          }).trimEnd();
-          reportDiagnostic({
-            key: `lock-taken-over:${experimentId}|${evalId}`,
-            code: "lock-taken-over",
-            severity: "warning",
-            message,
-            data: { experimentId, evalId },
-          });
-          recordExperimentDiagnostic({
-            experimentId,
-            code: "lock-taken-over",
-            level: "warning",
-            message,
-            phase: "eval.run",
-            dedupeKey: `lock-taken-over:${experimentId}|${evalId}`,
-            data: { experimentId, evalId },
-          });
-        }
-        // 取到锁就重查携带,**无条件**。启动时算的静态规划有效期只到「这条用例真正派发」为止:
-        // 另一条 Invocation 完全可能在这中间把它整条跑完并释放锁,而我们随后干干净净地取到那把
-        // 空锁——既没等过也没接管过。任何「有没有碰上别人」的启发式在这条路径上都恒假:那类
-        // 判据全是「此刻碰上了对方」或「对方死了」的证据,观测不到「对方干净地来过又走了」,
-        // 于是先起跑的一侧全程零信号,第二波里被对方跑掉的每一条都会被重跑,是确定性的,不是
-        // 低概率时序(见 memory 的 multi-open-residual-window-closed-by-narrow-read)。
-        // 闭合性来自这条 happens-before 链:对方 result.json 落盘 → 对方
-        // 释放锁 → 我们取到锁 → 我们读盘,所以重查必须在取锁**之后**,顺序反了什么都不保证。
-        // 收窄读把这次重查压到 ~0.3 ms,单开也付得起。
-        await recheckCarry(st, undefined, priorHolder);
-        return { kind: "acquired" };
-      } catch (e) {
-        // 撞新鲜锁:就地开(或加入)挂起窗口,窗口对象随结论一起交给调用方。
-        if (busyWith) return { kind: "busy", window: suspendUntilCaseFree(st, busyWith) };
-        if (opts.signal?.aborted) return { kind: "aborted" };
-        throw e;
-      }
-    })();
-    st.trying = attempt;
-    return attempt.finally(() => {
-      st.trying = undefined;
     });
   };
 
@@ -1784,13 +1564,19 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
    * 心跳周期重读一次锁文件;锁消失(正常释放)或过期(可接管)即结束等待并重查携带。等待没有
    * 超时——心跳新鲜就一直等,用户中断照常退出。同组兄弟共享同一个窗口。
    */
-  const suspendUntilCaseFree = (st: CaseLockState, holder: CaseLockRecord): Promise<void> => {
+  const suspendUntilCaseFree = (
+    st: CaseLockState,
+    holder: CaseLockRecord,
+  ) => Effect.uninterruptibleMask((restore) => Effect.gen(function* () {
     if (st.suspension) return st.suspension;
     const startedAt = Date.now();
     // 等待期间本 eval / 本实验的止损闸落下 → 这一轮等待到头(对方可能还要跑很久,没必要陪着)。
-    // 窗口照常走完 recheckCarry 并发出 `lock_wait resolved`:少发一次 resolved,这批 attempt 就
+    // 窗口照常走完 resolveCaseWaitWithoutCarry 并发出 `lock_wait resolved`:少发一次 resolved,这批 attempt 就
     // 永远挂在 elsewhere 上,五项恒等式当场破。
-    const waitSignal = haltAbortSignal(st.group[0]!);
+    const halt = haltAwait(st.group[0]!);
+    const stopWaiting = opts.signal === undefined
+      ? halt
+      : Effect.raceFirst(halt, interruptOnAbort(opts.signal));
     // 窗口打开这一刻本组还没派发的 attempt 全在 queued(本进程没持锁 = 没有一条开跑),
     // 整批迁进 elsewhere;记下条数,收尾的 resolved 原数迁回(见 CaseLockState.inElsewhere)。
     st.inElsewhere = st.pending.size;
@@ -1802,30 +1588,130 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
       holderHost: holder.host,
       attempts: st.inElsewhere,
     });
-    const window = (async (): Promise<void> => {
+
+    const completion = yield* Deferred.make<void>();
+    const window = Deferred.await(completion);
+    st.suspension = window;
+    const poll = Effect.gen(function* () {
       for (;;) {
-        await delayOrAbort(CASE_LOCK_HEARTBEAT_INTERVAL_MS, waitSignal);
-        if (waitSignal.aborted || dispatchClosed) break;
-        const record = await readCaseLock(niceevalRoot, st.experimentId, st.evalId).catch(() => undefined);
-        if (record === undefined || isCaseLockExpired(record, Date.now())) break;
+        const stopped = yield* Effect.raceFirst(
+          Effect.sleep(CASE_LOCK_HEARTBEAT_INTERVAL_MS).pipe(Effect.as(false)),
+          stopWaiting.pipe(Effect.as(true)),
+        );
+        if (stopped) return;
+        const record = yield* readCaseLockEffect(niceevalRoot, st.experimentId, st.evalId).pipe(
+          Effect.catchAll(() => Effect.succeed(undefined)),
+        );
+        if (record === undefined || isCaseLockExpired(record, Date.now())) return;
       }
-      await recheckCarry(st, startedAt, holder);
-    })();
-    st.suspension = window.finally(() => {
-      st.suspension = undefined;
-    });
-    return st.suspension;
-  };
+    }).pipe(
+      Effect.ensuring(Effect.sync(() => resolveCaseWaitWithoutCarry(st, startedAt))),
+    );
+    // 登记窗口、启动唯一 poller、返回给许可链三步处在同一个 mask 内。poller 本身恢复为可中断，
+    // 结算则重新进入 mask：无论用户中断、兄弟 defect 还是 Scope 收尾，所有 follower 都收到原始 Exit，
+    // 且 `lock_wait resolved` 与 suspension 清理一定发生。
+    const settle = Effect.uninterruptibleMask((restorePoll) =>
+      Effect.exit(restorePoll(poll)).pipe(
+        Effect.flatMap((exit) => Deferred.done(completion, exit)),
+        Effect.ensuring(Effect.sync(() => {
+          if (st.suspension === window) st.suspension = undefined;
+        })),
+      )
+    );
+    yield* Effect.forkScoped(restore(settle));
+    return window;
+  }));
+
+  /**
+   * 派发时刻的一次**非阻塞**试锁。调用直接留在当前 Effect fiber；`onWaitStart` 只用一个局部
+   * AbortController 截断 lock.ts 的轮询，把「新鲜锁」转换成 elsewhere，而用户取消仍沿当前
+   * fiber 的 interruption Cause 上抛。撞上过期锁属于一次尝试内部的 rename 接管，照常 acquired。
+   */
+  const tryAcquireCase = (st: CaseLockState) => st.acquireMutex.withPermits(1)(
+    Effect.suspend(() => {
+      // 同组兄弟:自己已持有,直接放行。
+      if (st.claim) return Effect.succeed<CaseLockTry>({ kind: "acquired" });
+      // 已经有兄弟挂在窗口上:全体等同一个窗口,不重复试锁。
+      if (st.suspension) return Effect.succeed<CaseLockTry>({ kind: "busy", window: st.suspension });
+      return Effect.gen(function* () {
+        const { experimentId, evalId } = st;
+        // 接管诊断要报"原持有者是谁",但 acquireCaseLockEffect 只回传 takenOver 布尔值——取锁前先
+        // 无副作用地读一眼当前记录(纯尽力而为:极端时序下这份快照可能已经不是真正被接管的
+        // 那条记录,但诊断本来就是人读提示,不是判定依据)。
+        const priorHolder = yield* readCaseLockEffect(niceevalRoot, experimentId, evalId).pipe(
+          Effect.catchAll(() => Effect.succeed(undefined)),
+        );
+        const giveUp = new AbortController();
+        let busyWith: CaseLockRecord | undefined;
+        return yield* Effect.uninterruptibleMask((restore) =>
+          restore(acquireCaseLockEffect(niceevalRoot, experimentId, evalId, lockIdentity, {
+            signal: giveUp.signal,
+            onWaitStart: (holder) => {
+              busyWith = holder;
+              giveUp.abort(); // 撞上新鲜锁 = 这次尝试到此为止,不进入 acquireCaseLockEffect 自己的轮询
+            },
+          })).pipe(
+            Effect.matchEffect({
+              onFailure: (error) => {
+                const holder = busyWith;
+                return holder === undefined
+                  ? Effect.fail(error)
+                  : suspendUntilCaseFree(st, holder).pipe(
+                      Effect.map((window): CaseLockTry => ({ kind: "busy", window })),
+                    );
+              },
+              onSuccess: ({ claim, takenOver }) => Effect.sync((): CaseLockTry => {
+                // acquire 返回到 claim 登记之间保持 masked；否则恰好落在这条缝里的 interruption
+                // 会让 heartbeat/held 已启动、CaseLockState 却没有 release 句柄。
+                st.claim = claim;
+                if (takenOver) {
+                  const message = t("runner.lockTakenOver", {
+                    experimentId,
+                    evalId,
+                    pid: priorHolder?.pid ?? "?",
+                    host: priorHolder?.host ?? "?",
+                  }).trimEnd();
+                  reportDiagnostic({
+                    key: `lock-taken-over:${experimentId}|${evalId}`,
+                    code: "lock-taken-over",
+                    severity: "warning",
+                    message,
+                    data: { experimentId, evalId },
+                  });
+                  recordExperimentDiagnostic({
+                    experimentId,
+                    code: "lock-taken-over",
+                    level: "warning",
+                    message,
+                    phase: "eval.run",
+                    dedupeKey: `lock-taken-over:${experimentId}|${evalId}`,
+                    data: { experimentId, evalId },
+                  });
+                }
+                // V1 does not convert late legacy rows into carried Members. The frozen writer view is
+                // authoritative, so a lock acquired after another Invocation left still dispatches every pending Slot.
+                resolveCaseWaitWithoutCarry(st, undefined);
+                return { kind: "acquired" };
+              }),
+            }),
+          )
+        );
+      });
+    }),
+  );
 
   /** 用例全部 attempt(不论真实派发还是被重查携带命中而跳过)都 settle 后删锁;与
    *  ExperimentLifecycle.pendingAttempts 清空触发 teardown 同一种「逐 attempt 身份结算」模式。 */
-  const releaseCaseLockIfDone = async (st: CaseLockState, attempt: number): Promise<void> => {
-    st.pending.delete(attempt);
-    if (st.pending.size > 0) return;
-    const claim = st.claim;
-    st.claim = undefined;
-    if (claim) await claim.release().catch(() => {});
-  };
+  const releaseCaseLockIfDone = (st: CaseLockState, attempt: number): Effect.Effect<void> =>
+    Effect.sync(() => {
+      st.pending.delete(attempt);
+      if (st.pending.size > 0) return undefined;
+      const claim = st.claim;
+      st.claim = undefined;
+      return claim;
+    }).pipe(
+      Effect.flatMap((claim) => claim === undefined ? Effect.void : claim.release.pipe(Effect.ignore)),
+    );
 
   /**
    * 实验闸的取位:声明了 `maxConcurrency` 的实验从**跨 Invocation 共用**的逐槽租约取名额
@@ -1854,54 +1740,47 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     });
   };
 
-  const acquireGateLease = async (
+  const acquireGateLease = (
     experimentId: string,
     maxConcurrency: number,
-    fiberSignal: AbortSignal,
-    haltSignal: AbortSignal,
-  ): Promise<GateLeaseClaim | undefined> => {
-    // 等名额期间止损闸落下 → 立刻放弃取位(不占别人还在用的名额、也不干等一个不会派发的位子);
-    // 与用户中断走同一条 AbortSignal 通路,调用方按 undefined 分辨「没取到」的两种成因。
-    const signal = AbortSignal.any([combinedSignal(fiberSignal), haltSignal]);
-    try {
-      const { claim, takenOver, takenOverFrom } = await acquireGateSlot(
+  ): Effect.Effect<GateLeaseEffectClaim, unknown> =>
+    Effect.uninterruptibleMask((restore) =>
+      restore(acquireGateSlotEffect(
         niceevalRoot,
         experimentId,
         maxConcurrency,
         lockIdentity,
         {
-          signal,
           // 撞满名额只发生在「别的 Invocation 正占着这个实验的位子」——本进程自己的并发早被
           // gateLocalSems 挡在这一层之前了。不报的话面板就只剩 `0 running · N queued` 干等,
           // 看不出在等什么、等谁,也看不出生效名额被对方更小的声明夹低了(min-N)。
           onWaitStart: (holders) => reportGateLeaseWait(experimentId, maxConcurrency, holders),
         },
-      );
-      if (takenOver) {
-        const message = t("runner.gateLeaseTakenOver", {
-          experimentId,
-          slot: claim.slot,
-          pid: takenOverFrom?.pid ?? "?",
-          host: takenOverFrom?.host ?? "?",
-        }).trimEnd();
-        const dedupeKey = `gate-lease-taken-over:${experimentId}`;
-        reportDiagnostic({ key: dedupeKey, code: "gate-lease-taken-over", severity: "warning", message, data: { experimentId } });
-        recordExperimentDiagnostic({
-          experimentId,
-          code: "gate-lease-taken-over",
-          level: "warning",
-          message,
-          phase: "eval.run",
-          dedupeKey,
-          data: { experimentId, slot: claim.slot },
-        });
-      }
-      return claim;
-    } catch (e) {
-      if (signal.aborted) return undefined; // 等名额期间被中断:立刻退出,不留悬挂
-      throw e;
-    }
-  };
+      )).pipe(
+        Effect.map(({ claim, takenOver, takenOverFrom }) => {
+          if (takenOver) {
+            const message = t("runner.gateLeaseTakenOver", {
+              experimentId,
+              slot: claim.slot,
+              pid: takenOverFrom?.pid ?? "?",
+              host: takenOverFrom?.host ?? "?",
+            }).trimEnd();
+            const dedupeKey = `gate-lease-taken-over:${experimentId}`;
+            reportDiagnostic({ key: dedupeKey, code: "gate-lease-taken-over", severity: "warning", message, data: { experimentId } });
+            recordExperimentDiagnostic({
+              experimentId,
+              code: "gate-lease-taken-over",
+              level: "warning",
+              message,
+              phase: "eval.run",
+              dedupeKey,
+              data: { experimentId, slot: claim.slot },
+            });
+          }
+          return claim;
+        }),
+      ),
+    );
 
   /** 派发链一轮的结局:`done` = 这条 attempt 已经了结(跑完 / 被跳过 / 携入 / 中断),
    *  `suspend` = 撞上别人持有的用例锁,许可全部归还、挂进 `window` 这个 elsewhere 窗口后重来,
@@ -1909,21 +1788,21 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
    *  `recheck` 只在闸已经落下时产生,循环顶因此必然收束,不会空转。 */
   type DispatchOutcome =
     | { kind: "done" }
-    | { kind: "suspend"; window: Promise<void> }
+    | { kind: "suspend"; window: Effect.Effect<void> }
     | { kind: "recheck" };
 
   /** 全局并发位的显式持有句柄:`withPermits` 的作用域语义没法表达「中途让位、回来再拿」,
-   *  而实验级 setup 与 turn 退避都要求让位(docs/runner.md「调度:有界并发」)。两个成员都
+   *  而实验级 setup 要求让位(docs/runner.md「调度:有界并发」)。两个成员都
    *  幂等——让位后收尾 finalizer 不会重复归还,回来之后中断也只归还一次。 */
   interface GlobalSlotHold {
     readonly release: Effect.Effect<void>;
     readonly reacquire: Effect.Effect<void>;
   }
 
-  const withGlobalSlot = <R>(
+  const withGlobalSlot = <E, R>(
     haltSignal: Effect.Effect<void>,
-    use: (slot: GlobalSlotHold) => Effect.Effect<DispatchOutcome, never, R>,
-  ): Effect.Effect<DispatchOutcome, never, R> =>
+    use: (slot: GlobalSlotHold) => Effect.Effect<DispatchOutcome, E, R>,
+  ): Effect.Effect<DispatchOutcome, E, R> =>
     Effect.uninterruptibleMask((restore) => {
       const state = { held: false };
       const release = Effect.suspend(() =>
@@ -1970,26 +1849,25 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
    * 正常返回,作用域退出、名额归还,挂起结束后重新取——挂起的用例不占名额,否则同实验的
    * 持锁方(可能就在另一条 Invocation 里)会被自己的等待方饿死。
    */
-  const withExperimentGate = <R>(
+  const withExperimentGate = <E, R>(
     a: Attempt,
-    use: Effect.Effect<DispatchOutcome, never, R>,
-  ): Effect.Effect<DispatchOutcome, never, R> => {
+    use: Effect.Effect<DispatchOutcome, E, R>,
+  ): Effect.Effect<DispatchOutcome, E | unknown, R> => {
     const { maxConcurrency, experimentId } = a.run;
     const localSem = gateLocalSems.get(a.run);
     if (maxConcurrency === undefined || localSem === undefined) return use;
     if (experimentId === undefined) return localSem.withPermits(1)(use);
-    const haltSignal = haltAbortSignal(a);
     const leased = Effect.uninterruptibleMask((restore) =>
-      restore(Effect.promise((sig) => acquireGateLease(experimentId, maxConcurrency, sig, haltSignal))).pipe(
-        Effect.flatMap((claim) =>
-          claim === undefined
-            ? // 没取到名额有两种成因:用户中断(就此了结)与止损闸落下(回到许可链 ① 记账)。
-              Effect.succeed<DispatchOutcome>(
-                checkDispatchHalt(a).halted ? { kind: "recheck" } : { kind: "done" },
-              )
-            : restore(use).pipe(
-                Effect.ensuring(Effect.promise(() => claim.release().catch(() => {}))),
-              ),
+      Effect.raceFirst(
+        restore(acquireGateLease(experimentId, maxConcurrency)).pipe(
+          Effect.map((claim) => ({ kind: "acquired" as const, claim })),
+        ),
+        restore(haltAwait(a)).pipe(Effect.as({ kind: "halted" as const })),
+      ).pipe(
+        Effect.flatMap((lease) =>
+          lease.kind === "halted"
+            ? Effect.succeed<DispatchOutcome>({ kind: "recheck" })
+            : restore(use).pipe(Effect.ensuring(lease.claim.release.pipe(Effect.ignore))),
         ),
       ),
     );
@@ -2005,11 +1883,9 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     }
   }
 
-  // 有界并发调度:forEach 本身 unbounded(每个 attempt 立刻有自己的 fiber),真正的
-  // 并发上限由上面那条许可链把守——执行体依次过止损闸、实验闸(若有)、全局 permit、
-  // 派发时刻试锁才开跑。获取定序恒为 实验闸 → globalSem → 用例锁,无环等待;实验闸的
-  // 持有者在等全局 permit 时不占别的实验的并发位(并发位就是 globalSem 的 permit,
-  // 不再是 forEach 的 fiber 槽)。
+  // 有界派发:forEach 的 worker 数就是 maxConcurrency，不先给全部 Slot 建 fiber。
+  // worker 内仍按止损闸、实验闸、全局 permit、用例锁的顺序取得资源；退避可以占住
+  // 这个有界 worker，避免为了补位再造一层无界 scheduler。
   // runAttemptEffect 只把「执行错误」收进 EvalResult.error(不 fail),
   // 但中断(Ctrl+C / kill)照常向上传播 —— 所以一条挂掉不会中断其它 attempt,而中断能停掉全部。
   //
@@ -2017,13 +1893,10 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   //         → 每个 attempt 的 Sample 跑 release(sb.stop)→ 容器全部停掉(治孤儿)。Effect 保证
   //         所有 finalizer 跑完后才结算,所以下面 summarize 时容器已清理干净。
   //
-  // 用 runPromiseExit 而非 runPromise:{ signal } 触发的中断会让整个 Exit 标记为 interrupted,
-  // 即便内层 catchAllCause 已把中断咽下 —— runPromise 这种情况下会直接 reject,把 Ctrl+C 变成
-  // 一条「niceeval 出错」崩溃栈、并跳过下面的部分汇总。runPromiseExit 返回 Exit 不抛,我们据此
-  // 把「中断/signal 已 abort」当正常的部分结果收尾,只有真·非中断缺陷才上抛。
+  // 外部 AbortSignal 以一个 Effect interrupt race 接入本 Scope。中断仍返回 Exit，
+  // 于是可以保留部分汇总；非中断缺陷照常向上交给 application edge。
   let interrupted = false;
-  const exit = await Effect.runPromiseExit(
-    Effect.scoped(Effect.forEach(
+  const dispatchEffect = Effect.forEach(
       attempts,
       (a) => {
         const budgetKey = a.run.experimentId ?? a.run.agent.name;
@@ -2037,14 +1910,13 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             // architecture.md「调度接口」)。
             if (a.run.earlyExit && passedKeys.has(a.key)) {
               cancelReuseAttempt(a);
+              recordCoordinator.markNotDispatched(a);
               yield* reportMutex.withPermits(1)(
-                Effect.promise(() =>
-                  emitReporterEvent(reporters, {
-                    type: "invocation:earlyExit",
-                    evalId: a.evalDef.id,
-                    experimentId: a.run.experimentId,
-                  }),
-                ),
+                emitReporterEvent(reporters, {
+                  type: "invocation:earlyExit",
+                  evalId: a.evalDef.id,
+                  experimentId: a.run.experimentId,
+                }),
               );
               reportAttemptLifecycle({
                 type: "attempt:early-exit",
@@ -2060,6 +1932,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             const failFast = failFastKeys.get(a.key);
             if (failFast !== undefined) {
               cancelReuseAttempt(a);
+              recordCoordinator.markNotDispatched(a);
               failFast.skipped += 1;
               reportAttemptLifecycle({
                 type: "attempt:early-exit",
@@ -2085,11 +1958,13 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
               const s = budgetState(budgetKey);
               if (s.spent >= budget) {
                 cancelReuseAttempt(a);
+                recordCoordinator.markNotDispatched(a);
                 if (!budgetReported.has(budgetKey)) {
                   budgetReported.add(budgetKey);
                   yield* reportMutex.withPermits(1)(
-                    Effect.promise(() =>
-                      emitReporterEvent(reporters, { type: "invocation:budgetExceeded", budget, spent: s.spent }),
+                    emitReporterEvent(
+                      reporters,
+                      { type: "invocation:budgetExceeded", budget, spent: s.spent },
                     ),
                   );
                 }
@@ -2115,7 +1990,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
           });
 
         // body:许可链全部通过之后才跑,真正的执行段。
-        const body = (slot: GlobalSlotHold) =>
+        const body = (_slot: GlobalSlotHold) =>
           Effect.gen(function* () {
             // 合并全局信号与本 eval 的首过即停信号:任一 abort → 本 attempt 的信号 abort。
             const evalAc = evalAbortControllers.get(a.key);
@@ -2127,36 +2002,44 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             // 这里只把协调器执行结果作为必填运行输入传给 materializer，不回写 Attempt。
             const buildLocators = buildLocatorsByPair.get(cacheKey(a.run, a.evalDef.id)) ?? new Map<BuildKey, JsonValue>();
 
-            // turn 级重试退避期间释放/收回的并发槽位——两级闸按持有期分工的单点契约见
-            // docs/runner.md「调度:有界并发」与 docs/feature/error-classification/
-            // architecture.md「退避与槽位」:这里只释放/收回全局并发位(globalSem),它管
-            // 吞吐,内部等待一律让位。实验闸管正确性,名额与 attempt 同生命周期、退避这类
-            // 内部等待不释放——继续由外层的租约(或裸 run 的回退信号量)全程持有,这个槽位
-            // 对象因此不接触实验闸,否则同实验的下一个 attempt 会趁退避窗口提前进场,击穿
-            // maxConcurrency: 1 的串行契约(bug 台账见
-            // memory/turn-retry-backoff-releases-experiment-serial-lock.md)。
-            // 走 slot 的显式持有对象(而不是直接 take/release 信号量):让「谁此刻还握着位子」
-            // 只有一份真相,退避期间被中断时收尾 finalizer 才不会重复归还一个已经让出的位。
-            const concurrencySlot: ConcurrencySlot = {
-              release: async () => {
-                await Effect.runPromise(slot.release);
-              },
-              reacquire: async () => {
-                await Effect.runPromise(slot.reacquire);
-              },
-            };
+            // 派发前的确定性失败(实验级 setup 失败 / 判分预检失败):不派发 agent、不建沙箱。
+            // 这类 Slot 没有 origin Attempt，因而会使 V1 draft 保持 incomplete；不能为它
+            // 伪造一个没有 sealed Assertions 的 Member。
+            const expLc = expLifecycles.get(a.run);
+            const setupFailure = expLc === undefined
+              ? Option.none<AttemptError>()
+              : (() => {
+                  const state = expLc.state;
+                  const outcome = state._tag === "Active" || state._tag === "TearingDown"
+                    ? setupOutcomeOf(state.setup)
+                    : state._tag === "TornDown"
+                      ? state.setup
+                      : undefined;
+                  if (outcome === undefined) {
+                    throw new Error(`Experiment setup has no outcome in lifecycle state ${state._tag}.`);
+                  }
+                  return outcome._tag === "Failed" ? Option.some(outcome.error) : Option.none<AttemptError>();
+                })();
+            const precheckFailure = judgePrecheckFailures.get(cacheKey(a.run, a.evalDef.id));
+            const buildFailure = buildFailureByPair.get(cacheKey(a.run, a.evalDef.id));
+            const blockedError: AttemptError | undefined = Option.isSome(setupFailure)
+              ? setupFailure.value
+              : precheckFailure !== undefined
+                ? { code: "judge-precheck-failed", message: precheckFailure, origin: attemptOrigin("judge.precheck") }
+                : buildFailure !== undefined
+                  ? buildFailure
+                  : undefined;
+            if (blockedError !== undefined) cancelReuseAttempt(a, true);
 
             yield* reportMutex.withPermits(1)(
-              Effect.promise(() =>
-                emitReporterEvent(reporters, {
-                  type: "eval:start",
-                  eval: { id: a.evalDef.id },
-                  agent: a.run.agent,
-                  model: a.run.model,
-                  attempt: a.attempt,
-                  experimentId: a.run.experimentId,
-                }),
-              ),
+              emitReporterEvent(reporters, {
+                type: "eval:start",
+                eval: { id: a.evalDef.id },
+                agent: a.run.agent,
+                model: a.run.model,
+                attempt: a.attempt,
+                experimentId: a.run.experimentId,
+              }),
             );
             // attempt:start 是这个 attempt 从 queued 移进 running 的唯一时刻(见
             // src/runner/feedback/reducer.ts 的 attempt:start 分支),必须与 eval:start 同一
@@ -2173,28 +2056,6 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
               who: feedbackWho(a),
               phase: initialPhase,
             });
-            // 派发前的确定性失败(实验级 setup 失败 / 判分预检失败):不派发 agent、不建沙箱,
-            // 为这条 attempt 合成结构化 errored 结果,走与真实结果完全相同的下游路径
-            // (locator / 反馈事件 / reporter / 落盘)——环境起不来、判分端点不通都是每条 eval
-            // 都没跑成的事实,要逐条进报告,不是一条一次性日志(见 docs/feature/experiments/
-            // architecture.md「实验级生命周期」、docs/feature/judge/library.md「派发前预检」)。
-            const expLc = expLifecycles.get(a.run);
-            const setupFailure = expLc === undefined
-              ? Option.none<AttemptError>()
-              : (() => {
-                  const outcome = setupOutcomeOf(expLc.state);
-                  return outcome._tag === "Failed" ? Option.some(outcome.error) : Option.none<AttemptError>();
-                })();
-            const precheckFailure = judgePrecheckFailures.get(cacheKey(a.run, a.evalDef.id));
-            const buildFailure = buildFailureByPair.get(cacheKey(a.run, a.evalDef.id));
-            const blockedError: AttemptError | undefined = Option.isSome(setupFailure)
-              ? setupFailure.value
-              : precheckFailure !== undefined
-                ? { code: "judge-precheck-failed", message: precheckFailure, origin: attemptOrigin("judge.precheck") }
-                : buildFailure !== undefined
-                  ? buildFailure
-                  : undefined;
-            if (blockedError !== undefined) cancelReuseAttempt(a, true);
             const poolSelection: ReusePoolSelection = blockedError === undefined
               ? yield* reusePoolFor(a)
               : { _tag: "Fresh" };
@@ -2202,11 +2063,11 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             // attempt 的终局失败**,不是调度缺陷:失败原样交回这里,先读空间轴回执(作者在
             // setup 钩子里抛的 ExperimentFatalError 由此落闸),再折成 errored 结果走与
             // blockedError 完全相同的下游路径。
-            // 拒绝不能直接穿过 Effect.promise:那会变成 defect 打断 forEach,连坐同批其它实验,
+            // 拒绝必须经过具名 Effect 边界:否则会变成 defect 打断 forEach,连坐同批其它实验,
             // 且混进兄弟 fiber 的 interrupt 后被当成用户中断吞掉正文(见
             // docs/feature/error-classification/architecture.md「Effect 边界」:attempt fiber 的
             // E 恒为 never;memory/experiment-fatal-presented-as-user-interrupt.md)。
-            const result = yield* Effect.scoped(Effect.gen(function* () {
+            const completed = yield* Effect.scoped(Effect.gen(function* () {
               const leased = poolSelection._tag === "Reuse"
               ? Either.match(yield* Effect.either(poolSelection.pool.acquire(
                   resolveAttemptTimeout(a.run, a.evalDef, opts.config)?.timeoutMs,
@@ -2230,6 +2091,10 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
               if (declaration) closeHaltGate(a, declaration);
             }
             const failedBeforeDispatch = blockedError ?? leaseError;
+            // A Record Attempt is allocated only after runAttemptEffect has
+            // returned its sealed facts and final executionMs. Thus an
+            // interrupted or blocked Slot cannot leave a fabricated Member.
+            const recordedAttempt = a;
             const evaluated = failedBeforeDispatch
               ? ({
                   id: a.evalDef.id,
@@ -2240,28 +2105,33 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
                     a.plan,
                     a.sandboxPlansByEval,
                     opts.config,
-                    a.evalDef.judge,
+                    a.judge,
                   ),
                   agent: a.run.agent.name,
                   model: a.run.model,
                   verdict: "errored",
                   fingerprint: a.fingerprint,
+                  evaluationAlgorithm: EVALUATION_ALGORITHM,
                   attempt: a.attempt,
                   startedAt: new Date().toISOString(),
                   durationMs: 0,
-                  assertions: [],
+                  factResults: [],
+                  factUses: [],
+                  evaluationKind: a.evalDef.evaluationKind,
+                  ...(a.evalDef.evaluationKind === "score"
+                    ? { scoreResult: scoreFactOutcomeForAttemptError(failedBeforeDispatch) }
+                    : {}),
                   evidenceCoverage: a.run.agent.evidenceCoverage,
                   error: failedBeforeDispatch,
                 } satisfies EvalResult)
               : yield* runAttemptEffect(
-                  a,
+                  recordedAttempt,
                   attemptOptions,
                   sandboxSem,
                   {
                     buildLocators,
                     runTiming,
                     parentSignal: attemptSignal,
-                    concurrencySlot,
                     ...(lease
                       ? {
                           reusedSandbox: {
@@ -2275,6 +2145,11 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
                     // 到达调度器,不走错误通道向上传播——attempt fiber 的 E 保持 never,`errored`
                     // 仍是 eval runner 的合法结果而不是调度失败(architecture.md「Effect 边界」)。
                     onFailureClass: (declaration) => closeHaltGate(a, declaration),
+                    onSealedEvaluation: (sealed) =>
+                      recordCoordinator.noteSealedOrMarkIncomplete(
+                        recordedAttempt,
+                        sealed,
+                      ),
                   },
                 );
             if (lease) {
@@ -2283,22 +2158,25 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
               const mustRetire = reuseResultRequiresRetirement(evaluated);
               yield* lease.commit(mustRetire ? { _tag: "Retire" } : { _tag: "Reset" });
             }
-            return evaluated;
+            return Object.freeze({
+              result: evaluated,
+              executed: failedBeforeDispatch === undefined,
+            });
             }));
-            // locator 在这里确定 —— 早于本 attempt 触发的任何 reporter 回调 / 事件
-            // (onEvalComplete、eval:complete),所以每一个观察者看到的都已经是最终值,
-            // 和落盘 result.json 完全一致(writer.ts 的 entry.locator ?? 兜底分支因此
-            // 对 niceeval 自己的运行永不触发,只服务第三方直调 RunWriter 的场景)。
-            // 没有 experimentId 的裸 run(非 exp 命令)不产出 locator,与
-            // writer.writeAttemptFor() 要求 experimentId 的既有约束一致 ——
-            // encodeAttemptLocator 本身也会在 experimentId 为空时直接抛错。
-            // 单独存一份本地变量(而不是只写 result.locator 再读回来):下面报 "failure" 永久
-            // 事件时需要一个已知是 AttemptLocator 品牌类型的值,result.locator 字段本身是
-            // 落盘/reporter 契约用的裸 string(见 EvalResult.locator 的类型注释)。
-            // locator 在 attempt plan 构造时已算好(见 attempts 构建处);这里只把同一个值写进
-            // 结果,早于本 attempt 触发的任何 reporter 回调 / 事件。
-            const locator: AttemptLocator | undefined = a.locator;
-            if (locator) result.locator = locator;
+            const { result, executed } = completed;
+            // A blocked Slot has no origin Attempt and remains an explicit
+            // Record gap. A completed execution writes its exact origin plus
+            // Eligibility from final `executionMs`, then exposes @AttemptId.
+            let locator: string | undefined;
+            if (!executed) {
+              recordCoordinator.markNotDispatched(a);
+            } else {
+              const recordAttempt = yield* recordCoordinator.completeAttemptOrMarkIncomplete(a, result);
+              if (recordAttempt !== undefined) {
+                locator = recordAttempt.locator;
+                result.locator = locator;
+              }
+            }
             // attempt:complete 与上面的 attempt:start 严格一一配对(同一个 body Effect,唯一
             // 出口),覆盖每一个真正跑过 runAttemptEffect 的 attempt(包括之后被下面的并发去重
             // 分支丢弃、不计入 results 的那些)——reducer 的 attempt:complete 无条件
@@ -2380,21 +2258,18 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             }
             yield* reportMutex.withPermits(1)(
               // 每个 reporter 单独兜错:一个写文件失败 / 自定义 reporter 抛错只记 diagnostic,
-              // 不让 Promise.all 整体 reject —— 否则 Effect.promise 把它当 defect,fail 掉 forEach、
-              // 停掉后续 attempt(P2)。
-              Effect.promise(() =>
-                Promise.all(
-                  reporters.map((reg) =>
-                    runReporter(reg, "onEvalComplete", () => reg.reporter.onEvalComplete?.(result)),
-                  ),
-                ),
+              // 不让一个回调中断其它回调或后续 attempt。
+              Effect.forEach(
+                reporters,
+                (reg) => runReporter(reg, "onEvalComplete", () => reg.reporter.onEvalComplete?.(result)),
+                { concurrency: "unbounded", discard: true },
               ),
             );
             // 和上面的 onEvalComplete 同一把 reportMutex:两条回调路径都要串行化,否则并发
             // attempt 各自触发的 eval:complete 会绕开 permit=1 直接并发跑,和文档承诺的
             // 「报告回调串行化」不一致。
             yield* reportMutex.withPermits(1)(
-              Effect.promise(() => emitReporterEvent(reporters, { type: "eval:complete", result })),
+              emitReporterEvent(reporters, { type: "eval:complete", result }),
             );
           });
         // ③ 全局并发位 → ④ 派发时刻试锁 → preflight → 实验级 setup → body。
@@ -2410,22 +2285,19 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             // 名额一起还回去(返回 "suspend"),由外层转入 elsewhere 挂起;位子当场空出来,
             // 排队中的下一条没被锁的用例接手。
             if (caseState) {
-              const outcome = yield* Effect.promise(() => tryAcquireCase(caseState));
-              if (outcome.kind === "aborted") return { kind: "done" } as const;
+              const outcome = yield* tryAcquireCase(caseState);
               if (outcome.kind === "busy") return { kind: "suspend", window: outcome.window } as const;
-              // 取锁时顺带重查过携带(接管 / 多开)且这个序号已经被对方跑完:不重复派发。
-              if (caseState.carried.has(a.attempt)) return { kind: "done" } as const;
             }
             const proceed = yield* preflight;
             if (!proceed) return { kind: "done" } as const;
             authorizedReuseAttempts.add(a);
             if (a.run.setup || a.run.teardown) {
               // 实验级 setup:第一个通过派发许可的 attempt 真正执行,其余等同一个 memoized
-              // promise(它从不 reject——失败收进 lc.setupFailed,由 body 合成 errored 结果)。
+              // Effect completion（作者 setup 失败收进 lc.setupFailed，由 body 合成 errored 结果）。
               // 等它的时候让出全局并发位(docs/runner.md「调度:有界并发」——内部等待一律让位,
               // 慢启动的 setup 不许饿死同批其它实验),回来再重新拿位。实验闸名额不让。
               yield* slot.release;
-              yield* Effect.promise(() => ensureExperimentSetup(a));
+              yield* ensureExperimentSetup(a);
               yield* slot.reacquire;
             }
             yield* body(slot);
@@ -2435,12 +2307,15 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         const guarded = exclusiveSem ? exclusiveSem.withPermits(1)(dispatch) : dispatch;
 
         // 许可链的循环外壳:撞锁挂起的用例解决后从 ① 重新走一遍(实验闸名额与全局位都要
-        // 重新取,不能拿着别人在等的名额干等),携入的直接收工。
+        // 重新取,不能拿着别人在等的名额干等)。
         const pipeline = Effect.gen(function* () {
           // ⓪ 逐 BuildKey 放行:只等本 eval 引用的那几个 key,不引用任何 key 的 attempt
           // 立刻进入许可链。等在这里不占全局并发位,慢构建因此不挡住同批别的 eval。
           const pairKey = cacheKey(a.run, a.evalDef.id);
-          yield* Effect.promise(() => awaitBuildsFor(pairKey));
+          yield* Effect.tryPromise({
+            try: () => awaitBuildsFor(pairKey),
+            catch: (error) => error,
+          });
           for (;;) {
             // ① 止损闸:落闸 → 本 attempt 不派发,计 unstarted(完成状态因此落 incomplete)。
             const halt = checkDispatchHalt(a);
@@ -2454,47 +2329,19 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             if (outcome.kind === "done") return;
             // 许可获取被落下的闸打断:许可已随作用域归还,回到 ① 让上面的检查点记账。
             if (outcome.kind === "recheck") continue;
-            // ② ③ 已随作用域归还。挂起等锁:不占并发位、计入 elsewhere;锁释放或过期后重查
-            // 携带——携入的收工,仍要自跑的按原优先级回到派发队列(下一轮循环)。
-            yield* Effect.promise(() => outcome.window);
-            if (caseState!.carried.has(a.attempt)) {
-              cancelReuseAttempt(a);
-              return;
-            }
-            if (opts.signal?.aborted) {
-              cancelReuseAttempt(a);
-              return;
-            }
+            // ② ③ 已随作用域归还。挂起等锁:不占并发位、计入 elsewhere;锁释放或过期后
+            // 按原优先级回到派发队列(下一轮循环)。
+            yield* outcome.window;
           }
         });
         // 实验级 teardown 结算:每个 attempt 收尾(含被 preflight 跳过、被中断的、被用例锁
-        // late-carry 跳过的)都从身份集合移除；最后一个触发 ExperimentDef.teardown。ensuring
+        // 被 preflight 跳过、被中断的)都从身份集合移除；最后一个触发 ExperimentDef.teardown。ensuring
         // 在中断路径同样执行，重复 finalizer 也不会让状态下溢。
         const withExpLifecycle =
           !a.run.setup && !a.run.teardown
             ? pipeline
             : pipeline.pipe(
-                Effect.ensuring(
-                  Effect.promise(async () => {
-                    const cell = expLifecycles.get(a.run)!;
-                    const state = cell.state;
-                    if (state._tag === "UntriggeredComplete") return;
-                    const pendingAttempts = new Set(state.pendingAttempts);
-                    pendingAttempts.delete(a);
-                    if (state._tag === "Dormant") {
-                      cell.state = pendingAttempts.size === 0
-                        ? { _tag: "UntriggeredComplete" }
-                        : { _tag: "Dormant", pendingAttempts };
-                      return;
-                    }
-                    if (state._tag === "Active") {
-                      cell.state = { ...state, pendingAttempts };
-                      if (pendingAttempts.size === 0) await runExperimentTeardown(a.run, cell);
-                      return;
-                    }
-                    cell.state = { ...state, pendingAttempts };
-                  }),
-                ),
+                Effect.ensuring(settleExperimentAttempt(a).pipe(Effect.orDie)),
               );
         if (!caseState) return withExpLifecycle;
         // 用例锁释放:这个 key 的全部 attempt(真实派发的与被 late-carry 跳过的)都 settle 后
@@ -2502,10 +2349,10 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         // 挂在最外层确保晚于实验级 teardown 计数结算(docs「用例全部 attempt 收尾(含沙箱销毁)
         // 后删除自己的锁」)。
         return withExpLifecycle.pipe(
-          Effect.ensuring(Effect.promise(() => releaseCaseLockIfDone(caseState, a.attempt))),
+          Effect.ensuring(releaseCaseLockIfDone(caseState, a.attempt)),
         );
       },
-      { concurrency: "unbounded", discard: true },
+      { concurrency: opts.maxConcurrency, discard: true },
     ).pipe(
       // 中断(用户 Ctrl+C):finalizer 已在中断过程中跑完(容器已停),这里只是把它咽下,
       // 好让流程走到 summarize / onInvocationComplete,用已完成的 results 出一份部分汇总,而不是抛栈。
@@ -2520,18 +2367,21 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         }
         return Effect.failCause(cause); // 非中断的意外缺陷:照常抛出
       }),
-    )),
-    { signal: opts.signal },
+    );
+  const exit = yield* Effect.exit(
+    opts.signal === undefined
+      ? dispatchEffect
+      : Effect.raceFirst(dispatchEffect, interruptOnAbort(opts.signal)),
   );
-  // 调度已经结算:任何被中断路径抛下的挂起轮询到下一个心跳周期自行收束,不无主空转。
-  dispatchClosed = true;
   // provenance 在这里齐全:没有任何 attempt 依赖的 key 也照样跑完并留下自己那条记录,
   // 中断路径下同批构建随 signal 收束成 cancelled,不把 run.json 的 sandboxBuilds 落空。
   if (runningBuilds !== undefined) {
-    sandboxBuildRecords = [...(await runningBuilds.done).records];
+    const completedBuilds = yield* Effect.tryPromise({
+      try: () => runningBuilds.done,
+      catch: (error) => error,
+    });
+    sandboxBuildRecords = [...completedBuilds.records];
   }
-  await opts.otelPool?.close();
-
   // 复用污染线索:按实例 × 承接序号聚合本次 Run 真实跑出的结果(携带条目不参与——复用实验
   // 不消费也不产出结果沿用)。只指路,不改判定(见 reuse-diagnostics.ts)。
   for (const notice of detectReuseContamination(results)) {
@@ -2558,71 +2408,110 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   // 扫尾幂等(cleanup 消费一次性),宁可多一道兜底,不把宿主机资源(隧道/容器)留给用户手拆。
   // 真·缺陷抛出前同样要扫(finalizer 语义,见 docs/feature/experiments/architecture.md
   // 「实验级生命周期」);cli 的 main().catch() 只兜沙箱,不知道实验级 cleanup 的存在。
-  const sweepExperimentTeardowns = async (): Promise<void> => {
-    for (const [run, cell] of expLifecycles) {
+  const sweepExperimentTeardowns = (): Effect.Effect<void, unknown> => Effect.forEach(
+    [...expLifecycles],
+    ([run, cell]) => cell.mutex.withPermits(1)(Effect.sync(() => {
       const state = cell.state;
-      // 未触发、已完成均无事可扫；在飞的 teardown 只等 settle，不算漏。
+      // 未触发、已完成均无事可扫；在飞的 teardown 仍须 await 同一个 completion。
       if (state._tag === "Dormant" || state._tag === "UntriggeredComplete" || state._tag === "TornDown") {
-        continue;
+        return { _tag: "None" } as const;
       }
-      if (state._tag === "TearingDown") {
-        await state.promise;
-        continue;
+      if (state._tag === "Active" && run.teardown) {
+        return { _tag: "Late", remaining: state.pendingAttempts.size } as const;
       }
-      if (!run.teardown) {
-        await runExperimentTeardown(run, cell);
-        continue;
-      }
-      // 只有扫尾从 Active 启动时才报「late」诊断。
-      {
+      return { _tag: "Await" } as const;
+    })).pipe(Effect.flatMap((action) => {
+      if (action._tag === "None") return Effect.void;
+      if (action._tag === "Late") {
         const experimentId = run.experimentId ?? run.agent.name;
         const message = t("runner.experimentTeardownLate", { experimentId }).trimEnd();
-        reportDiagnostic({ key: `experiment-teardown-late:${experimentId}`, code: "experiment-teardown-late", severity: "warning", message, data: { experimentId, remaining: state.pendingAttempts.size } });
-        recordExperimentDiagnostic({
-          experimentId: run.experimentId,
-          code: "experiment-teardown-late",
-          level: "warning",
-          message,
-          phase: "experiment.teardown",
-          data: { remaining: state.pendingAttempts.size },
-        });
+        return Effect.sync(() => {
+          reportDiagnostic({
+            key: `experiment-teardown-late:${experimentId}`,
+            code: "experiment-teardown-late",
+            severity: "warning",
+            message,
+            data: { experimentId, remaining: action.remaining },
+          });
+          recordExperimentDiagnostic({
+            experimentId: run.experimentId,
+            code: "experiment-teardown-late",
+            level: "warning",
+            message,
+            phase: "experiment.teardown",
+            data: { remaining: action.remaining },
+          });
+        }).pipe(Effect.zipRight(runExperimentTeardown(run, cell)));
       }
-      await runExperimentTeardown(run, cell);
-    }
-  };
+      return runExperimentTeardown(run, cell);
+    })),
+    { concurrency: 1, discard: true },
+  );
   if (Exit.isFailure(exit)) {
-    // signal abort 或纯中断的 cause → 当作用户中断,走部分汇总;否则是真·缺陷,照常抛出
-    // (混着 die 的 cause 归缺陷,见上面 catchAllCause 的判据)。
-    if (opts.signal?.aborted || Cause.isInterruptedOnly(exit.cause)) {
+    // Only a pure interruption becomes a partial interrupted Invocation. The
+    // AbortSignal may have fired concurrently with a real failure/defect, but
+    // must never relabel that Cause as a user interrupt or hide it behind 130.
+    if (Cause.isInterruptedOnly(exit.cause)) {
       interrupted = true;
     } else {
-      await sweepExperimentTeardowns();
-      throw Cause.squash(exit.cause);
+      return yield* Effect.failCause(exit.cause).pipe(
+        Effect.ensuring(sweepExperimentTeardowns().pipe(Effect.orDie)),
+      );
     }
   }
   if (interrupted) reportInterrupted();
-  await sweepExperimentTeardowns();
+  yield* sweepExperimentTeardowns();
+
+  // Record publication is the intentionally narrow interruption mask. By this
+  // point dispatch has stopped and its Scope/finalizers plus experiment
+  // teardown have settled; only the durable interrupted state, publish marker,
+  // and receipt remain. `uninterruptibleMask` preserves typed failures and
+  // defects from the writer, while preventing a pending cancellation from
+  // splitting that atomic hand-off after some Runs have become readable.
+  const receipt = yield* Effect.uninterruptibleMask(() =>
+    Effect.gen(function* () {
+      // Missing Members remain missing, while membership-provenance records why
+      // each pending gap was interrupted. This never manufactures an Attempt
+      // for budget/early-exit/unstarted Slots.
+      if (interrupted) recordCoordinator.markInterrupted();
+      // These diagnostics are already settled and keyed by exact Experiment /
+      // AgentRun identity. Bind them only at the final Runner → Record
+      // boundary; the invocation-wide Run timing tree deliberately remains
+      // unbound because it cannot be safely attributed to individual Runs.
+      for (const run of opts.agentRuns) {
+        bindRunnerRunObservabilityDiagnosticsV1({
+          run,
+          diagnostics: experimentDiagnostics.get(run.experimentId) ?? [],
+        });
+      }
+      const receiptCompletedAtMs = Date.now();
+      const publishedRuns = yield* recordCoordinator.publish(receiptCompletedAtMs);
+      return Object.freeze({
+        invocationId: recordCoordinator.reusePlan.target.invocationId,
+        runIds: Object.freeze(publishedRuns.map(({ runId }) => String(runId))),
+        startedAt,
+        completedAt: new Date(receiptCompletedAtMs).toISOString(),
+        completion: interrupted ? "interrupted" : "completed",
+      } satisfies InvocationReceipt);
+    }),
+  );
 
   // Experiment 收尾协议(docs/runner.md):每个真正出现在这次 Invocation 里的 experimentId
   // 各发一次 experiment:complete,携带它自己的 completedAt(真实 teardown 完成时刻,没有
   // teardown 或未触发时退回当前时刻)与实验域诊断累积器里attribute 给它的记录。全部
   // Experiment 此刻都已经收尾(sweepExperimentTeardowns 已经等过),严格早于下面的
-  // invocation:summary——供 Artifacts 据此对每个 Run 原子封口,不用等到整个 Invocation
-  // 结束才一次性全部封口(interrupted、reporter error 等 Invocation 级事实不在这条通道里,
-  // 不会误落进任一 Run)。
+  // invocation:summary——Record 已在上面封口；这个事件只给非持久化的 reporter 消费。
   const invocationExperimentIds = new Set(
     opts.agentRuns.map((r) => r.experimentId).filter((id): id is string => id !== undefined),
   );
   const runTimings = runTiming.finalize();
   for (const experimentId of invocationExperimentIds) {
-    await emitReporterEvent(reporters, {
+    yield* emitReporterEvent(reporters, {
       type: "experiment:complete",
       experimentId,
       completedAt: experimentCompletedAt.get(experimentId) ?? new Date().toISOString(),
-      // 静态携带(启动时已知)与用例锁释放/接管后重查携带命中的迟到携带(lateCarriedResults)
-      // 对 Artifacts 封口而言是同一种东西——都是"这个 Experiment 本次没有真实执行、但要计入
-      // 快照的终态结果",合并后一起按 experimentId 过滤。
-      carriedResults: [...carriedResults, ...lateCarriedResults].filter((r) => r.experimentId === experimentId),
+      // Only exact current Record readbacks appear in the invocation snapshot.
+      reusedAttempts: reusedAttempts.filter((attempt) => attempt.target.experimentId === experimentId),
       diagnostics: experimentDiagnostics.get(experimentId) ?? [],
       ...(experimentFacts.has(experimentId) ? { facts: experimentFacts.get(experimentId) } : {}),
       // Run 级共享构建时间与 provenance:属于产出它们的 Run;携带条目不继承。
@@ -2632,26 +2521,26 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     });
   }
 
-  // 稳定排序:按发现顺序 + attempt;携带结果(静态 + 用例锁迟到携带)并入后一起排
+  // Stable fresh-result ordering is separate from Record readbacks, which retain
+  // the planner's target order and are never coerced into EvalResult.
   const order = new Map(opts.evals.map((e, i) => [e.id, i]));
-  const allResults = [...carriedResults, ...lateCarriedResults, ...results];
-  allResults.sort(
+  results.sort(
     (a, b) =>
       (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0) ||
       a.agent.localeCompare(b.agent) ||
       a.attempt - b.attempt,
   );
 
-  const summary = summarize(allResults, startedAt, Date.now() - t0, opts.config.name);
-  await emitReporterEvent(reporters, { type: "invocation:summary", summary });
+  const summary = summarize(results, reusedAttempts, startedAt, Date.now() - t0, opts.config.name);
+  yield* emitReporterEvent(reporters, { type: "invocation:summary", summary });
   for (const reg of reporters) {
-    // required reporter(默认 artifacts、显式 --json/--junit)在这一步失败,不能中断其它
+    // required reporter(显式 --junit)在这一步失败,不能中断其它
     // reporter 的收尾——继续跑完剩下的循环,让每个 reporter 都拿到 onInvocationComplete 的机会;
     // 失败本身经 runReporter → reportReporterError 折成诊断,由调用方(cli.ts)读取
     // RunFeedbackState 组装成 InvocationCompletion,让最终 completion/退出码判红(见
     // docs/feature/experiments/cli.md「运行完成状态不只看 verdict 计数」)。
-    await runReporter(reg, "onInvocationComplete", () => reg.reporter.onInvocationComplete?.(summary));
+    yield* runReporter(reg, "onInvocationComplete", () => reg.reporter.onInvocationComplete?.(summary));
   }
-  await emitReporterEvent(reporters, { type: "invocation:saved", summary });
-  return summary;
+  return receipt;
+  }));
 }

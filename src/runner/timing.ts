@@ -4,6 +4,7 @@
 // - Run 侧 RunMeta.timings 相对 Run 单调时钟起点;
 // - 两域 offset 不得混算;未知 activity key 原样保留。
 
+import { Effect, Exit } from "effect";
 import { commandLimit } from "../sandbox/deadline.ts";
 import { redactSensitiveText } from "../sandbox/redaction.ts";
 import type { CommandLimitAttribution, LifecyclePhase, PhaseTiming, TimingActivity, TimingOrigin } from "./types.ts";
@@ -73,28 +74,23 @@ export function artifactPrepareTimingHook(
   recorder: RunTimingRecorder,
 ): import("../agents/provisioner.ts").ArtifactPrepareTimingHook {
   return {
-    async activity(key, attrs, run) {
-      const startOffsetMs = recorder.offsetNow();
-      const label = `${attrs.identity.agent}@${attrs.identity.version}`;
-      try {
-        const result = await run();
-        recorder.child({
-          key,
-          label,
-          startOffsetMs,
-          durationMs: Math.max(0, recorder.offsetNow() - startOffsetMs),
-        });
-        return result;
-      } catch (e) {
-        recorder.child({
-          key,
-          label,
-          startOffsetMs,
-          durationMs: Math.max(0, recorder.offsetNow() - startOffsetMs),
-          failed: true,
-        });
-        throw e;
-      }
+    activity(key, attrs, run) {
+      return Effect.suspend(() => {
+        const startOffsetMs = recorder.offsetNow();
+        const label = `${attrs.identity.agent}@${attrs.identity.version}`;
+        return run.pipe(
+          Effect.onExit((exit) =>
+            Effect.sync(() => {
+              recorder.child({
+                key,
+                label,
+                startOffsetMs,
+                durationMs: Math.max(0, recorder.offsetNow() - startOffsetMs),
+                ...(Exit.isSuccess(exit) ? {} : { failed: true }),
+              });
+            })),
+        );
+      });
     },
   };
 }

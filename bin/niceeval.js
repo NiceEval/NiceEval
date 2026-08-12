@@ -7,12 +7,12 @@
 // 这样框架与被测项目都不需要编译步骤,也不挑宿主的模块形态。
 // NiceEval 自身始终执行已发布的 canonical CJS runtime；tsx 只负责随后动态装载用户项目的
 // TypeScript，绝不把已安装包回跳到 checkout 的 src/。
-const cliUrl = new URL("../dist/cli.cjs", import.meta.url);
-await import(cliUrl.href);
-
-// 先原生加载 CLI，避免 CJS hook 截获已预编译的 canonical graph 形成 require/import 循环；
-// CLI 随后的 config、eval、experiment 与 report 文件仍由两面 hook 动态装载。
+// 两个 hook 必须早于 bootstrap：CLI 之后的 config、eval、experiment 与 report 动态 import
+// 立刻可用，同时 bootstrap 本身仍只加载预编译的 dist graph。
 const { register: registerCjs } = await import("tsx/cjs/api");
 const { register: registerEsm } = await import("tsx/esm/api");
 registerCjs();
 registerEsm();
+
+const cliUrl = new URL("../dist/cli/bootstrap.cjs", import.meta.url);
+await import(cliUrl.href);

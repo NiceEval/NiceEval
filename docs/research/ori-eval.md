@@ -126,7 +126,7 @@ NiceEval 的 `INIT.md` 与随包 `INDEX.md` 合起来就是 create-eval 入口�
 | 真实执行过程 | Agent 是否真的调用 `niceeval init`、真实 `niceeval exp` 和 `niceeval show` | 加分 |
 | 安装最佳实践 | devDependency、受管区块、非 JS 项目独立目录、ESM | 加分 |
 | Experiment 设计 | 至少两个配置、模型字面量不同、描述存在、Agent 在 Experiment 中配置、`attempts: 1` | 加分 |
-| Adapter 执行证据 | `show --execution` 能否读到标准 `ASSISTANT` 事件 | 机械取证 |
+| Adapter 执行证据 | 已规划的 Attempt execution 页面能否读到标准 `ASSISTANT` 事件 | 机械取证 |
 | Adapter 源码实践 | 真实传输、取消信号、模型和会话透传、工厂配置、反馈通道、完整事件映射 | 加分 |
 | Eval 作者实践 | 使用正式断言 API、宽容的语义或结构判定、不在 Eval 内管理被测进程 | 加分 |
 | 评估内容质量 | 核心用例、具体结果断言、真实负例、Experiment 与 Eval 指向同一系统 | 四条独立 Judge 加分 |
@@ -160,7 +160,7 @@ CLI 只报告工作区里有四个由 NiceEval `0.4.6` 写入的旧 schema 事�
 4. 内容质量、澄清、首次定题与完成交接依赖 LLM Judge，正式研究判断需要固定 Judge 配置并观察重复运行方差。
 5. 新增定题判据要求 agent 先陈述仓库中已确认的事实，只询问会改变有效性或成本的未知项；仍需用实跑检查 Judge 能否稳定区分“先探索”与“把探索甩给用户”。
 6. 较重的 advance 项目为了成本和稳定性，不都执行真实在线 Adapter gate。它们可以证明源码和执行证据形状，却不能替代完整服务链路的持续回归。
-7. 当前结果不可由现行 CLI 直接比较，所有效果判断都应等待一批按当前 schema 产生、可由 `niceeval show` 读取的运行。
+7. 旧 schema 事实不可由现行 CLI 直接比较，所有效果判断都应等待一批按目标 schema 产生、可由 `niceeval show` 在明确 GraphRef 上读取的运行。
 
 这些缺口不否定现有矩阵。
 它们说明 NiceEval-Eval 现在更适合回答“版本化 onboarding 是否让同一 Codex 在同一题上做对更多事”，还不能单独证明这条入口跨 Agent、跨项目都稳定成立。

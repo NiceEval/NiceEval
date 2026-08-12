@@ -4,7 +4,7 @@
 // 再从公开 CLI 读回 Eval、attempt、execution 与 timing。
 // 只从 @niceeval/testkit 根导入；不读 .niceeval 私有布局、不 import 候选源码/类型。
 
-import { command, type ExpResultEvent } from "@niceeval/testkit";
+import { command, type ExpEvalEvent, type ExpEvent } from "@niceeval/testkit";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
@@ -22,6 +22,9 @@ const EXPECTED_EVALS = [
 ] as const;
 // baseline/configfile/mcp/skill 都在首个通过 attempt 后 early-exit；其余实验才跑完整计划。
 const EXPECTED_PASSED_ATTEMPTS = 11;
+// 每个 Experiment 产生一个 Run（docs/feature/experiments/cli.md「结束反馈与 receipt」）；
+// 除 plugin-reuse 外每条 Eval 在首个通过 attempt 后由 earlyExit 省略剩余 attempt。
+const EXPECTED_EXPERIMENTS = 7;
 
 const REQUIRED_LIVE_SECRETS = [
   "CODEX_API_KEY",
@@ -79,15 +82,36 @@ it("真实 Codex CLI adapter 在 Docker sandbox 中的运行结果经过公开 C
     timeoutMs: 44 * 60_000,
   });
   expect(run.exitCode, run.diagnostic()).toBe(0);
-  const result: ExpResultEvent = run.expResult();
-  expect(result).toMatchObject({
-    event: "result",
-    status: "passed",
-    passed: EXPECTED_PASSED_ATTEMPTS,
-    failed: 0,
-    errored: 0,
-    completion: "complete",
-  });
+  // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md「结束反馈与
+  // receipt」）：completion 与 runIds（每个 Experiment 一个 Run）。成败由下面带身份的
+  // eval 事件精确断言，不从 receipt 猜计数。
+  const inv = run.expReceipt();
+  expect(inv.completion, run.diagnostic()).toBe("completed");
+  expect(inv.runIds, run.diagnostic()).toHaveLength(EXPECTED_EXPERIMENTS);
+  // eval 事件是中间的身份事件：identity / verdict / attempts 在此精确断言。early-exit
+  // 触发的 eval 只带 planned/unstarted/reason，不带 passed；跑满的 eval 则 passed ===
+  // attempts。early-exit 的代表 attempt 是首条通过的那一次，每次贡献一个 passed attempt。
+  const evalEvents = run
+    .ndjson<ExpEvent>()
+    .filter(
+      (event): event is ExpEvalEvent => "event" in event && event.event === "eval",
+    );
+  expect(new Set(evalEvents.map((event) => event.evalId))).toEqual(new Set(EXPECTED_EVALS));
+  const totalPassed = evalEvents.reduce(
+    (sum, event) => sum + (event.reason === "early_exit" ? 1 : (event.passed ?? 0)),
+    0,
+  );
+  expect(totalPassed, run.diagnostic()).toBe(EXPECTED_PASSED_ATTEMPTS);
+  for (const event of evalEvents) {
+    expect(event.verdict, `${event.experimentId}/${event.evalId} did not pass`).toBe("passed");
+    if (event.reason === "early_exit") {
+      expect(event.planned, `${event.experimentId}/${event.evalId} planned mismatch`).toBe(
+        event.attempts + event.unstarted,
+      );
+    } else {
+      expect(event.passed, `${event.experimentId}/${event.evalId} lost an attempt`).toBe(event.attempts);
+    }
+  }
 
   const codingTaskLocator = await latestAttemptLocator("coding-task");
   for (const evalId of EXPECTED_EVALS) {

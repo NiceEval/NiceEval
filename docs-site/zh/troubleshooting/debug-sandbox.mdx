@@ -25,12 +25,14 @@ npx niceeval exp local onboarding/tool-first --keep-sandbox=all    # 通过的�
 
 ```text
 Kept sandboxes (1)
-  @1x7f3q9k  onboarding/tool-first #1  errored  docker · a3f9c2d1
+  @0123456789ABCDEFGHJKMNPQRS  onboarding/tool-first #1  errored  docker · a3f9c2d1
              enter: niceeval sandbox enter a3f9c2d1
 Stop them with: niceeval sandbox stop --all
 ```
 
-每行给三样东西：Attempt 定位符（用 `niceeval show @1x7f3q9k` 看落盘证据）、Sandbox 实例 id、进入现场的命令。保留下来的 Sandbox 不会一直跑着烧资源——Docker 容器停在磁盘上，E2B 微 VM 暂停计费，Vercel 保存文件系统。`niceeval sandbox enter` 会先唤醒再进入，在 workdir 打开 shell。退出 shell 后现场自动回到休眠（想让它保持运行，加 `--leave-running`）。进去之后就是这次 Attempt 跑完时的环境，可以手动执行命令、翻文件、复现失败。
+每行给三样东西：Attempt identity、Sandbox 实例 id、进入现场的命令。落盘证据从 `niceeval show --run <runId> --page attempt-<attemptId>` 查看。保留下来的 Sandbox 不会一直跑着烧资源——Docker 容器停在磁盘上，E2B 微 VM 暂停计费，Vercel 保存文件系统。
+
+`niceeval sandbox enter` 会先唤醒再进入，在 workdir 打开 shell。退出 shell 后现场自动回到休眠；想让它保持运行，加 `--leave-running`。进去之后就是这次 Attempt 跑完时的环境，可以手动执行命令、翻文件、复现失败。
 
 ## 查看和清理
 

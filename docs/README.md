@@ -1,12 +1,14 @@
 # ⚡ NiceEval 设计文档
 
 `docs/` 保存 NiceEval 的最终功能契约、形成这些契约的设计材料，以及带日期的外部产品研究。
-Feature 和未归类的产品页描述已经落地并验收的产品状态，Roadmap 描述已经定稿但尚未落地的目标状态，Design 保存多方案比较与裁决存档，Research 只提供决策输入而不构成目标契约。
+Feature 和未归类的产品页描述已经采用的唯一当前目标，Roadmap 描述已定稿但尚未被产品采用为当前契约的方向。
+Design 保存多方案比较与裁决存档，Research 只提供决策输入而不构成目标契约。
 
 因此：
 
-- Roadmap 中的 API、CLI、目录或行为可以先于代码存在。
-- Feature 与代码不一致时视为实现回归；Roadmap 与代码不一致表示目标尚未落地。
+- Feature 与 Roadmap 中的 API、CLI、目录或行为都可以先于代码存在。
+- Feature 与代码不一致时属于暂时的实现缺口，后续代码必须收敛到 Feature；Roadmap 不约束当前产品实现。
+- 把契约写进 Feature 同时建立实现义务，不能把 gap 当作可选方向或长期双真源。
 - 文档正文不写 `已实现` / `未实现` / `目前代码还是` / `之后再做` 等实现状态。
 - 只有设计本身改变时才改契约；`实现进度`、变更审计和历史过程不改变契约措辞。
 
@@ -20,8 +22,8 @@ Feature 和未归类的产品页描述已经落地并验收的产品状态，Roa
 |---|---|
 | 建立产品心智 | [Concepts](concepts.md) → [Architecture](architecture.md) |
 | 从用户价值审视完整产品范围 | [用户故事地图](user-story.md) |
-| 理解结果落盘后怎么被读出来 | [Reading](feature/reading/README.md) |
-| 查什么改动会重跑,或两个 Run 凭什么可比 | [缓存与携带](feature/experiments/cache.md)(指纹与 configHash 同一张输入清单) |
+| 理解当前数据怎样落盘、只读导航并交给 Sample/Reports | [Record](feature/record/README.md) |
+| 查什么改动会重跑，或两个 Run 凭什么可比 | [缓存与携带](feature/experiments/cache.md)（eligibility identity 与 domain） |
 | 让记忆库或累积笔记跨 Attempt 延续 | [Sandbox 复用](feature/sandbox/reuse.md) 与 [Sandbox 生命周期](feature/sandbox/lifecycle.md) |
 | 从零理解使用路径 | [Getting Started](getting-started.md) |
 | 设计或修改一个用户功能 | [Feature](feature/README.md) → 对应功能目录 |
@@ -32,7 +34,7 @@ Feature 和未归类的产品页描述已经落地并验收的产品状态，Roa
 | 设计仓库自身的测试、维护或 benchmark | [Engineering](engineering/README.md) |
 | 给文档画一张 SVG | [SVG 图示的视觉契约](SVG-DESIGN.md) |
 | 从契约找到实现 | [Source Map](source-map.md) |
-| 查一处设计从哪个系统学来 | 该功能目录下的 `reference/`（[record](feature/record/reference/README.md) / [sample](feature/sample/reference/README.md) / [reports](feature/reports/reference/README.md)） |
+| 查一处设计从哪个系统学来 | [Research](research/README.md)；RFC、OWASP 等基础规范仍见对应 Feature 的 `reference/` |
 | 查过去的坑或被否决方案 | [`memory/INDEX.md`](../memory/INDEX.md) |
 | 写公开用户文档 | [`docs-site/AGENTS.md`](../docs-site/AGENTS.md) |
 
@@ -52,7 +54,7 @@ docs/
 ├── SVG-DESIGN.md                        手绘 SVG 的配色、间距与共用样式
 ├── writing-rules.json                   句长、段长规则与禁词库，pnpm lint 读它
 │
-├── feature/                             已落地并验收的功能契约
+├── feature/                             已采用的唯一当前目标契约
 │   ├── adapters/                        连接 AI / Agent；各 SDK 契约见 adapters/sdk/
 │   ├── compile-time-contracts/          作者输入与派生事实分离:阶段类型、穷尽联合与私有品牌
 │   ├── eval/                            编写 Eval：defineEval
@@ -63,16 +65,21 @@ docs/
 │   ├── assertions/                      检查、作用域、证据与 AssertionResult
 │   ├── judge/                           裁判模型配置、调用与 unavailable
 │   ├── verdict/                         Severity、严格模式与四态折叠
-│   ├── reading/                         读取面总纲:三层分工、跨层不变量与跨层用例
-│   ├── record/                          .niceeval 运行记录:格式、读写、身份与发布
-│   ├── sample/                          从记录选出可比较的样本:口径、覆盖、时效与转换
-│   └── reports/                         show、view 与报告组件
+│   ├── record/                          已完成 Run、精确引用与具名 RecordAttachment
+│   ├── sample/                          从 Record 选择 core-only 分母
+│   └── reports/                         一次 execution、show/view 与静态导出
 │
-├── roadmap/                             已定稿、尚未落地的目标契约
+├── roadmap/                             已定稿、尚未采用为当前契约的方向
 │   ├── agent-as-judge/                  用独立 Agent 调查证据并执行 Judge Assertion
+│   ├── assertion-authoring/             Assertion-first 作者面、Verdict 与 score、统一 Match
+│   ├── replayable-grading/              多轮 Execution 与 Grading 分离、Record 重评分
+│   ├── experiment-pilot-sampling/       共同题集、固定 seed 与 non-final Pilot
+│   ├── experiment-families/             keyed record 展开稳定 Experiment ID
+│   ├── sandbox-fixture-content/         identity-aware Fixture 内容 prepare 命令
 │   ├── llm-judge-runtime/               原生 LLM Judge 配方、材料、Provider 与判分图
 │   ├── multi-agent/                     多 Agent Eval 场景
 │   ├── ordered-sequences/               现有 Eval 的有序执行、完整重放与 lineage
+│   ├── record-attachment-authoring/      中立 RecordAttachment definition、owner context 与显式 migration registry
 │   ├── sandbox-retention/                失败类 Sandbox 的有界停驻、明确销毁与安全 GC
 │   ├── materialization-cache/            Provider cache 的需求、库存、归因与安全回收
 │   ├── sandbox-reuse-groups/            Eval 侧强制复用组与组外并行
@@ -85,10 +92,19 @@ docs/
 │   ├── experiment-speed/                实验加速:默认路径与 Sandbox 复用
 │   ├── multi-container-environments/    多容器环境:拓扑声明形态与 provider 构建、启动职责
 │   ├── prepare-commands/                内置 prepare 命令:固定生命周期下的具体化声明与复用成本
+│   ├── record-runtime/                  Record access runtime：独立 open 与统一资源 owner
+│   ├── observability-package-layout/    Observability 持久包：七 family 与 physical packages
+│   ├── projection-api/                  单包投影：runtime calls 与 static graph
+│   ├── relations-api/                   跨包关系：pure assembler 与 typed builder
 │   ├── report-authoring/                报告作者面:组件粒度与取数形态
+│   ├── record-to-report-stack.md         Record 到 Report 的依赖、组合与决策地图
 │
 ├── research/                            带观察日期的外部产品研究，不构成目标契约
-│   └── ori-eval.md                      Ori Eval、spawn-ori-eval 与 NiceEval 的关系
+│   ├── ori-eval.md                      Ori Eval、spawn-ori-eval 与 NiceEval 的关系
+│   ├── eve-assertion-dx.md              Eve 断言 DX 与真实回归题的逐项能力审视
+│   ├── adapters/                         Agent 接入、事件协议与 OTel 生态调研
+│   ├── experiments/                      外部 Experiment 运行矩阵参照
+│   └── assertion-api-dx/                评估断言 API、语法与作者 DX 横向研究
 │
 ├── engineering/                         仓库自身的工程机制
 │   ├── _template/                       新工程主题模板
@@ -114,8 +130,8 @@ docs/
 
 | 内容 | 归属 |
 |---|---|
-| 已落地并验收的功能、API、CLI、语义与架构理由 | `docs/feature/` 或 `docs/` 对应设计页 |
-| 已裁决但尚未落地的目标功能 | `docs/roadmap/` |
+| 已采用的当前功能、API、CLI、语义与架构理由 | `docs/feature/` 或 `docs/` 对应设计页 |
+| 已裁决但尚未采用为当前契约的方向 | `docs/roadmap/` |
 | 需要对比多个候选方案的架构 / 技术选型决策 | `docs/design/` |
 | 带日期的外部产品事实、竞品映射与产品启发 | `docs/research/` |
 | 仓库自身如何测试、维护、同步或 benchmark | `docs/engineering/` |
@@ -138,7 +154,8 @@ Feature、Roadmap 与 Design 的每个候选使用同一套 [`_template/feature-
 - `use-case/`:按用户目标组织的完整路径。
 
 只有 `README.md` 必备,其余页面按功能形态选用。
-三类目录区分落地阶段与裁决职责：Feature 是已落地契约，Roadmap 是已定稿待落地契约，Design 的 `PLAN-N/` 是参与同一裁决的自包含候选。
+三类目录区分采用状态与裁决职责：Feature 是当前唯一目标，Roadmap 是已定稿但尚未采用的方向。
+Design 的 `PLAN-N/` 是参与同一裁决的自包含候选。
 Design 主题外层另用 [`_template/design-decision/`](_template/design-decision/README.md) 保存 Goals、Limits、Cases 与 Decision。
 
 ## 写目标状态
@@ -210,10 +227,10 @@ Design 文档的组织方式由 [`design/README.md`](design/README.md) 定义。
 一次设计迭代按以下顺序完成：
 
 1. 在对话或 Design 中裁决分歧；未裁决内容不写进 Roadmap 或 Feature。
-2. 按最终状态写入 Roadmap；涉及公开任务路径时同步规划公开文档改动。
-3. 修改代码、测试与公开文档，使实现满足契约。
-4. 按 [Source Map](source-map.md) 和对应功能入口核对实现与验收。
-5. 验收完成后把契约并入 Feature 并删除 Roadmap 入口；有翻案或反直觉修法时写入 `memory/`。
+2. 已定稿但尚未成为当前产品目标的方向写入 Roadmap。
+3. 产品采用该方向时，把完整契约并入 Feature，并删除被取代的 Feature 与 Roadmap 入口。
+4. 修改代码、验证与公开文档，使实现满足 Feature；偏差作为实现缺口处理。
+5. 按 [Source Map](source-map.md) 和对应功能入口验收；翻案或反直觉修法写入 `memory/`。
 
 文档先于实现并不表示可以留下永久漂移。
 目标一旦定稿，后续工作应以完成实现和验证为终点。

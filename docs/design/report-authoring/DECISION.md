@@ -34,10 +34,10 @@ PLAN-5 保留通用原语与 TypeScript 组合，同时不建立第二门查询�
 
 ## 契约落点
 
-- 作者 API、page 与普通转换：[Library](../../feature/reports/library.md)。
-- 聚合与准入边界：[Calculations](../../feature/reports/calculations.md)。
-- 求值、缓存和双面：[Architecture](../../feature/reports/architecture.md)。
-- 组件具体属性：[Components](../../feature/reports/components/README.md)。
+- 作者 API、page 与普通转换：[Library](../../feature/reports/README.md)。
+- 聚合与准入边界：[Calculations](../../feature/reports/README.md)。
+- 求值、缓存和双面：[Architecture](../../feature/reports/README.md)。
+- 组件具体属性：[Components](../../feature/reports/README.md)。
 
 ## 风险
 

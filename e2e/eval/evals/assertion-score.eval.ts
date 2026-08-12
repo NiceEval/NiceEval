@@ -1,19 +1,33 @@
 import { defineScoreEval } from "niceeval";
 import { equals, includes } from "niceeval/expect";
 
-export default defineScoreEval({
-  description: "计分制句柄把 points、gate、soft、optional 与直接给分写入真实结果",
+const scored = defineScoreEval({
+  description: "计分制 Assertion 把前置、按检查计分与直接给分写入真实结果",
   async test(t) {
     const turn = await t.send("assertion/score");
-    await turn.succeeded().points(1).gate().stopOnFailure();
+    const completed = turn.succeeded()
+      .score(1)
+      .gate()
+      .label("turn completed");
+    await completed.orStop();
 
     await t.group("计分断言", () => {
-      turn.messageIncludes("assertion-score-marker").points(2);
-      t.check(turn.data, equals({ fixture: "assertion-score", ok: true })).points(3);
-      t.check(turn.message, includes("assertion-score-marker")).atLeast(1);
-      t.check(turn.message, includes("assertion-score-marker")).soft();
-      t.check(turn.message, includes("assertion-score-marker")).optional();
-      t.score("deterministic manual points", 4);
+      const marker = t.check(turn.message, includes("assertion-score-marker"));
+      const result = t.check(
+        turn.data,
+        equals({ fixture: "assertion-score", ok: true }),
+      );
+
+      marker.score(2).label("reply marker");
+      result.score(3).label("fixture data");
+      t.score(4).label("deterministic manual points");
     });
   },
 });
+
+const empty = defineScoreEval({
+  description: "没有分值贡献的计分制 Eval 正常得到零分",
+  test() {},
+});
+
+export default { empty, scored };

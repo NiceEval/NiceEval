@@ -42,14 +42,14 @@ interface Sandbox extends SandboxOperations, SandboxTransferOperations {
 
 `SandboxOperations` 与 `SandboxTransferOperations` 的完整签名、命令退出码、timeout / cancellation、文本/字节/传输分词都只在[操作 Sandbox](library/operations.md)定义。
 这是 provider 实现和 runner 使用的底层接口,所以额外包含 `stop()`。
-eval 作者在 `test(t)` 里拿到的是 author-facing `EvalSandbox`:复用同一操作词汇，只增加归因 diff，不暴露 `stop()` 或 provider 元数据。
+eval 作者在 `test(t)` 里拿到的是 author-facing `EvalSandbox`:复用同一操作词汇，只增加归因断言声明，不暴露 `stop()` 或 provider 元数据。
 沙箱生命周期由 runner 统一管理。
 
 文本读取只有一个 API:`readText(path)` 读一个文件。二进制读写使用 `readBytes` / `writeBytes`；`upload*` / `download*` 专指宿主机与 Sandbox 传输。
 
 批量读、按扩展名过滤、拼接全文这类聚合是普通代码。已知路径直接循环 `readText`；未知路径可用 `runShell` 调 `find` / `cat`。
 
-评「agent 改了什么」时应读取 `t.sandbox.diff` 的归因增量，而不是重读整棵工作区；后者会混入起始 fixture。
+评「agent 改了什么」时用 `fileChanged` / `notInDiff` 等归因断言声明期望，不要重读整棵工作区；后者会混入起始 fixture。需要文件当前内容时用 `readText`。
 不提供带过滤约定的批量读取器:过滤规则(哪些扩展名算源码、哪些目录该剪枝)因项目而异,收进 API 就成了约定式黑箱,违背「显式配置优先于约定」。
 `appendLog` 是可选方法:声明了意图的 adapter 照调,provider 没实现就是 no-op。
 

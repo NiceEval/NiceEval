@@ -19,3 +19,8 @@
 | Vite、Vitest 与 Playwright | [框架工具自身的 E2E 对照](framework-e2e/README.md) |
 | TanStack Table、TanStack Charts 与 NiceEval Reports | [Headless 内核、双面呈现与渐进增强](tanstack-table-charts.md) |
 | Harbor 与 Docker / Agent Sandbox 框架 | [容器启动、keeper、命令执行与 DinD 进程模型](docker-sandbox-process-models.md) |
+| Eve 与 NiceEval-Eval 回归题 | [断言 DX、有序行为与逐项断言审视](eve-assertion-dx.md) |
+| Eve、smevals、Ori Eval 与评估生态 | [断言 API、语法与作者 DX 横向研究](assertion-api-dx/README.md) |
+| agent-eval、Agent SDK、Eve 与 OTel | [Adapter 接入、事件协议与遥测生态](adapters/README.md) |
+| Vercel agent-eval `ExperimentConfig` | [Experiment 运行矩阵设计参照](experiments/README.md) |
+| LLM tracing、事件历史、内容寻址与可验证存储 | [Record 相似系统研究](record-systems/README.md) |

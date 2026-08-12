@@ -21,7 +21,8 @@ Author Input → Definition → Discovered Definition → Linked Configuration �
 
 Runner 内部函数按自己真正消费的阶段收参数。
 发现器构造 `DiscoveredEval` 与 `DiscoveredExperiment`，规划器把 configHash 写进 Planned Run，两者都不回写作者定义。
-通过制与计分制定义组成以 `evaluationKind` 判别的 union；Runner 先收窄分支，再以对应 context 调用 test，不用类型断言抹平两种题型。
+通过制与计分制定义组成以 `evaluationKind: "pass" | "score"` 判别的 union；Runner 先收窄分支，再以
+对应 context 调用 test，不用类型断言抹平两种题型。`points` 只属于 Score Eval 的 Assertion 分值。
 
 Linked Configuration 是跨文件硬约束的边界。
 单个 `EvalDefinition` 与 `ExperimentDefinition` 都可以合法携带 template-bearing 或 command-only SandboxLayer；只有 discovery 与 selector 完成后，Runner 才知道实际配对。

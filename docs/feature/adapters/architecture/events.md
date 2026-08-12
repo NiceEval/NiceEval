@@ -39,7 +39,7 @@ type StreamEvent =
 5. Skill 加载只产 `skill.loaded`，不重复计入工具调用。
 6. 原始协议没有 usage 时省略，不编造数值。
 7. **Adapter 不截断。
-   ** 工具输出再大也原样交出来——断言跑在完整值上，落盘时才由写入面统一削到 256 KiB 并打 `truncated` 标记（见 [Record · 大值截断](../../record/architecture.md#大值截断)）。
+   ** 工具输出再大也原样交出来——断言跑在完整值上，落盘时才由写入面统一削到 256 KiB 并打 `truncated` 标记（见 [Record · 大值截断](../../record/architecture.md)）。
    Adapter 自己先削一刀会让断言看到不完整的输出，是 bug，不是保护。
 8. **`loc` 只属于 eval 侧注入的 user message。
    **    `t.send` 由 core 留存、携带 send 语句的源码位置；adapter 从 SDK 事件或 transcript 归一出的任何消息都不携带 `loc`。
@@ -88,3 +88,11 @@ Adapter 不预计算断言结果。
 `context.injected` 不获得专属的 `Turn` 便利字段（不像 `message` 有 `Turn.message`）。
 它和 `thinking`、`compaction` 同一档次，通过 `Turn.events` / 跨轮 `events` 数组按 `type` 过滤读取。
 `contextInjections` 计数只回答「这一轮有没有发生过注入」这种存在性问题，不替代逐条读取原文用 `text`。
+
+## 工具材料的省略语义
+
+core 用相同 `operationId` 把 started 与 finished 归成一个 `LogicalToolOccurrence`。Adapter 必须保留能确认的原始名称、输入、输出与状态；不能确认的部分不补造。
+
+输入和输出材料在 occurrence 上标为 `complete`、`partial` 或 `unavailable`。`partial` 保留可见片段与缺失边界，`unavailable` 保留具名原因。finished 没有输出时不是空 JSON，也不能据此判成输出不匹配。
+
+HITL 停在审批时只有 started。该 occurrence 的状态是 `pending`，输出是 unavailable。`ToolMatch` 的具体比较与计数规则见 [Scoped assertions](../../assertions/library/scoped-assertions.md)。

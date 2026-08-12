@@ -4,6 +4,289 @@
     "docs",
     "docs-site/zh"
   ],
+  "publicApiExamples": {
+    "$why": "公开示例必须与 Assertion-first 双模式作者面同步。每个入口调用时直接登记一条 Assertion；handle 只配置该 entry，绝不产生第二条。",
+    "assertionFirstContract": {
+      "domainModel": {
+        "subject": "subject 是 Assertion 调用时读取的显式 value，或 receiver 选择的 scope snapshot。",
+        "match": "Match 是可复用、不可变、确定性且无副作用的值比较规则；它没有 identity、callsite 或 policy。",
+        "assertion": "Assertion 绑定 subject、evaluator、callsite、source order 与 groupPath；调用时冻结这些值。",
+        "handle": "AssertionHandle 配置同一 entry 的 key、label、score、atLeast、ifCovered 或 orStop，不登记第二条 Assertion。",
+        "result": "AssertionResult 统一保存 subject a、evaluator 或 Match b、evaluation、evidence、policy 与 pass 或 score 投影，不退化成成功或失败字符串。",
+        "specializedCheck": "succeeded、calledTool、loadedSkill 与 Judge recipe 是 check(a,b) 的特殊化入口；方法替作者取得 subject a 并构造 evaluator b，保存规则不变。",
+        "pass": "Pass Eval 的 Attempt Verdict 是 passed、failed、errored 或 skipped。",
+        "score": "Score Eval 只有累计 score；没有 Attempt Verdict、总分、百分比或另一种数值单位。"
+      },
+      "authoring": {
+        "check": "t.check(value, match) 严格只有两个参数，并返回同一条已登记 Assertion 的 handle。",
+        "scopes": "t.succeeded()、session.succeeded()、turn.succeeded() 与 calledTool 等 scoped 方法直接登记 Boolean Assertion。",
+        "judge": "Judge recipe 直接登记 measurement Assertion。Pass Eval 必须用 atLeast(n) 将它封口为 Boolean condition。",
+        "score": "Score Eval 用 handle.score(n) 让已有 Assertion 贡献 score，或用 t.score(n) 直接登记 score contribution。",
+        "usage": "只有 Usage Assertion 提供 ifCovered()；它只处理 Agent 创建时已声明的 usage 不可用。",
+        "stop": "orStop() 是同一 Assertion handle 的 async barrier；Boolean 或已经 atLeast 的 measurement 才能使用它。"
+      },
+      "examples": [
+        {
+          "bad": "t.check(turn.message, includes(\"done\"), { label: \"完成\" });",
+          "good": "t.check(turn.message, includes(\"done\")).label(\"完成\");"
+        },
+        {
+          "bad": "const done = turn.succeeded(); t.check(done);",
+          "good": "turn.succeeded().label(\"Turn 完成\");"
+        },
+        {
+          "bad": "t.score(\"质量\", quality, { max: 10 });",
+          "good": "turn.judge.autoevals.closedQA(\"质量\").score(10);"
+        },
+        {
+          "bad": "await check.stopOnFailure();",
+          "good": "await check.orStop();"
+        }
+      ],
+      "recordProtocol": {
+        "schemaVersion": 19,
+        "evaluationAlgorithm": "assertion/v1",
+        "resultCollection": "assertionResults",
+        "evaluatorVersionRequired": true,
+        "subject": "保存实际 value 输出或 normalized scope context 的安全结构化 snapshot/ref，不只保存 evaluation。"
+      }
+    },
+    "calledToolContract": {
+      "$why": "calledTool 与 notCalledTool 的选择器、计数和证据语义只由 scoped-assertions.md 定义。其它页面可以展示旅程，但不能把旧的 name + input/output/status options、零计数或局部命令匹配重新带回作者面。",
+      "roots": [
+        "docs/feature/assertions",
+        "docs/feature/eval/use-case/calledtool.md",
+        "docs/feature/adapters/architecture/events.md",
+        "docs-site/zh/reference"
+      ],
+      "methods": {
+        "positive": "calledTool",
+        "negative": "notCalledTool"
+      },
+      "selector": "ToolMatch，或只按名称选择的 name 薄糖",
+      "allowedCalledToolOptions": [
+        "count"
+      ],
+      "forbiddenMatchOptionFields": [
+        "input",
+        "output",
+        "status"
+      ],
+      "count": {
+        "minimum": 1,
+        "allowed": [
+          "positive integer",
+          "{ atLeast: positive integer }"
+        ],
+        "forbidden": [
+          "0",
+          "predicate"
+        ]
+      },
+      "command": {
+        "matcher": "commandMatch",
+        "forbidInlineRegexOrPredicate": true
+      }
+    },
+    "rejectedCliFlags": [
+      {
+        "flag": "--strict",
+        "roots": [
+          "docs-site/zh"
+        ],
+        "use": "在 Pass Eval 中写 Boolean Assertion，或为 measurement 配置 atLeast(n)",
+        "why": "CLI 已把 --strict 当未知选项拒绝，公开站继续展示会让用户复制出启动前即失败的命令"
+      }
+    ],
+    "removedFactories": [
+      {
+        "name": "makeAssertion",
+        "roots": [
+          "docs-site/zh/explanation",
+          "docs-site/zh/tutorials",
+          "docs/feature/eval/README.md"
+        ],
+        "use": "值比较用 Match；Judge recipe 或连续 evaluator 直接登记 measurement Assertion",
+        "why": "niceeval/expect 不再导出 makeAssertion，继续展示会产生导入或类型错误"
+      }
+    ],
+    "ordinaryFactChainMethods": [
+      {
+        "method": "assert",
+        "roots": [
+          "docs/feature/assertions",
+          "docs/feature/eval",
+          "docs/feature/judge",
+          "docs/feature/verdict",
+          "docs/roadmap/assertion-authoring",
+          "docs-site/zh/explanation",
+          "docs-site/zh/tutorials"
+        ],
+        "use": "写 t.check(value, match)，或直接调用 scoped Boolean Assertion 方法",
+        "why": "t.assert 不属于作者面；每个入口在调用时直接登记 Assertion"
+      },
+      {
+        "method": "checkIfCovered",
+        "roots": [
+          "docs/feature/assertions",
+          "docs/feature/eval",
+          "docs/feature/judge",
+          "docs/feature/verdict",
+          "docs/roadmap/assertion-authoring",
+          "docs-site/zh/explanation",
+          "docs-site/zh/tutorials"
+        ],
+        "use": "只对 Usage Assertion handle 调用 .ifCovered()",
+        "why": "coverage 例外仍只属于 usage；调用时已经登记 Assertion"
+      },
+      {
+        "method": "fact",
+        "roots": [
+          "docs/feature/assertions",
+          "docs/feature/eval",
+          "docs/feature/judge",
+          "docs/feature/verdict",
+          "docs/roadmap/assertion-authoring",
+          "docs-site/zh/explanation",
+          "docs-site/zh/tutorials"
+        ],
+        "use": "值比较写 t.check(value, match)，scope 与 Judge 使用各自的 Assertion 入口",
+        "why": "t.fact 不属于作者面；调用入口会直接登记 Assertion"
+      },
+      {
+        "method": "gate",
+        "roots": [
+          "docs/feature/assertions",
+          "docs/feature/eval",
+          "docs/feature/judge",
+          "docs/feature/verdict",
+          "docs/roadmap/assertion-authoring",
+          "docs-site/zh/explanation",
+          "docs-site/zh/tutorials"
+        ],
+        "use": "在 Pass Eval 中使用 Boolean Assertion，或对 measurement 调用 .atLeast(n)",
+        "why": "gate 不是 AssertionHandle API；condition 来自 Boolean evaluation 或 threshold"
+      },
+      {
+        "method": "require",
+        "roots": [
+          "docs/feature/assertions",
+          "docs/feature/eval",
+          "docs/feature/judge",
+          "docs/roadmap/assertion-authoring",
+          "docs-site/zh/explanation",
+          "docs-site/zh/tutorials"
+        ],
+        "use": "在同一 handle 上 await .orStop()",
+        "why": "t.require 不属于作者面；orStop 是同一 Assertion 的 async barrier"
+      },
+      {
+        "method": "requireToolCall",
+        "roots": [
+          "docs/feature/assertions",
+          "docs/feature/eval",
+          "docs/feature/judge",
+          "docs/feature/verdict",
+          "docs/roadmap/assertion-authoring",
+          "docs-site/zh/explanation",
+          "docs-site/zh/tutorials"
+        ],
+        "use": "调用 scoped calledTool(...).orStop()，并 await 它",
+        "why": "requireToolCall 不属于作者面；控制仍属于同一 Assertion handle"
+      },
+      {
+        "method": "stopOnFailure",
+        "roots": [
+          "docs/feature/assertions",
+          "docs/feature/eval",
+          "docs/feature/judge",
+          "docs/roadmap/assertion-authoring",
+          "docs-site/zh/explanation",
+          "docs-site/zh/tutorials"
+        ],
+        "use": "await handle.orStop()",
+        "why": "控制 API 的名字固定为 orStop；它是同一 Assertion 的 async barrier"
+      },
+      {
+        "method": "onFailureStop",
+        "roots": [
+          "docs/feature/assertions",
+          "docs/feature/eval",
+          "docs/feature/judge",
+          "docs/roadmap/assertion-authoring",
+          "docs-site/zh/explanation",
+          "docs-site/zh/tutorials"
+        ],
+        "use": "await handle.orStop()",
+        "why": "控制 API 的名字固定为 orStop；它是同一 Assertion 的 async barrier"
+      },
+      {
+        "method": "points",
+        "roots": [
+          "docs/feature/assertions",
+          "docs/feature/eval",
+          "docs/feature/judge",
+          "docs/roadmap/assertion-authoring",
+          "docs-site/zh/explanation",
+          "docs-site/zh/tutorials"
+        ],
+        "use": "在 Score Eval 中写 handle.score(n)，或直接写 t.score(n)",
+        "why": "score 是唯一的数值单位；不存在 points policy"
+      },
+      {
+        "method": "pointsOnly",
+        "roots": [
+          "docs/feature/assertions",
+          "docs/feature/eval",
+          "docs/feature/judge",
+          "docs/roadmap/assertion-authoring",
+          "docs-site/zh/explanation",
+          "docs-site/zh/tutorials"
+        ],
+        "use": "只登记 Assertion，或在 Score Eval 中写 handle.score(n)",
+        "why": "每条 Assertion 默认只记录 evaluation；没有隐式数值贡献"
+      },
+      {
+        "method": "weight",
+        "roots": [
+          "docs/feature/assertions",
+          "docs/feature/eval",
+          "docs/feature/judge",
+          "docs/roadmap/assertion-authoring",
+          "docs-site/zh/explanation",
+          "docs-site/zh/tutorials"
+        ],
+        "use": "在 Score Eval 中写 handle.score(n)",
+        "why": "score 是唯一的数值单位；不存在 weight"
+      }
+    ],
+    "removedScoreOverloads": [
+      {
+        "callee": "t.score",
+        "roots": [
+          "docs-site/zh/explanation",
+          "docs-site/zh/tutorials",
+          "docs/feature/eval/README.md",
+          "docs/feature/assertions",
+          "docs/roadmap/assertion-authoring"
+        ],
+        "use": "Score Eval 的已有 Assertion 写 handle.score(n)，直接贡献写 t.score(n)",
+        "why": "t.score 严格接收一个 finite 且不小于零的数值，不接 label、value 或 handle"
+      }
+    ],
+    "removedEvaluationKinds": [
+      {
+        "value": "points",
+        "roots": [
+          "docs-site/zh/explanation",
+          "docs-site/zh/tutorials",
+          "docs/feature/eval/README.md"
+        ],
+        "use": "evaluationKind: \"score\"",
+        "why": "defineScoreEval 的定义期与结果判别值是 score"
+      }
+    ]
+  },
   "sentenceLength": {
     "max": 140,
     "$why": "docs/ 与 docs-site/zh/ 的读者都需要一遍读懂条件和下一步,长难句会让关键信息藏在并列分句里。量在段落拼接之后,并且只有句末标点算断句:分号和破折号串起来的分句仍算同一句——长难句正是这么长起来的。超了就拆成两句,或把并列内容改写成列表 / 表格。"
@@ -13,6 +296,24 @@
     "$why": "拦一大坨。只有单句上限时,把长难句改成几句挤在一段里就能过检查,读者面对的仍是一堵墙;这条不看句数,只看一段有多长,两种写法一起拦住。一段只说一件事,罗列条件、字段或状态用列表和表格。列表项各算一段。"
   },
   "siteBannedTerms": [
+    "<code>",
+    "FactRequirement",
+    "inspectFact",
+    "defineJsonFact",
+    "ctx.fact",
+    "RecordChannel",
+    "ChannelProjectorId",
+    "ChannelDescriptorSchemaId",
+    "descriptorSchemaId",
+    "ProjectionRead",
+    "ReportPlan",
+    "ReportInput",
+    "ProjectionMatrix",
+    "analysis projector",
+    "execution projector",
+    "producer profile",
+    "owner temp",
+    "无 writer-lock",
     "↩",
     "s1/t1",
     "钩子",
@@ -29,6 +330,7 @@
     "排行榜",
     "条形图",
     "工作台",
+    "当前数据集",
     "选集",
     "dual-face",
     "probe",
@@ -42,6 +344,7 @@
     "棘轮",
     "闸",
     "sandbox case",
+    "t.sandbox.diff",
     "运行单元",
     "资源组",
     "已实现",
@@ -126,6 +429,96 @@
   ],
   "bannedTerms": [
     {
+      "term": "<code>",
+      "use": "Markdown 行内代码使用反引号；路径中的尖括号直接写在反引号内",
+      "why": "HTML code tag 让简单标识多一层转义，并与仓库已经采用的 Markdown 行内代码写法混用"
+    },
+    {
+      "term": "FactRequirement",
+      "use": "RecordAttachment definition 与 RecordProjection",
+      "why": "Record 没有 Fact 领域模型；持久 payload、typed projection 与 Report 计算由不同层拥有"
+    },
+    {
+      "term": "inspectFact",
+      "use": "RecordReader.readRunAttachment / readAttemptAttachment",
+      "why": "读取必须绑定明确 owner 与 typed RecordAttachment family"
+    },
+    {
+      "term": "defineJsonFact",
+      "use": "producer 用 defineJsonRecordAttachment 定义 payload；Projection 定义 typed view",
+      "why": "持久 schema 与内存 projection 是两个边界，不能由一个 Fact helper 混成同一契约"
+    },
+    {
+      "term": "ctx.fact",
+      "use": "使用 producer-owned typed RecordAttachment capability",
+      "why": "运行时记录必须经过 owner 与精确 schema，不能由通用上下文写入无类型 JSON"
+    },
+    {
+      "term": "RecordChannel",
+      "use": "RecordAttachment",
+      "why": "落盘数据不是 FIFO、Stream 或通信通道；Attachment 直接表达它附着于 Run 或 Attempt"
+    },
+    {
+      "term": "ChannelProjectorId",
+      "use": "RecordAttachmentSchemaId 是 durable identity；projector 使用 package-private definition identity",
+      "why": "projector 是代码中的 typed adapter，不需要第二个持久公共版本号"
+    },
+    {
+      "term": "ChannelDescriptorSchemaId",
+      "use": "固定 RecordAttachmentEnvelopeV1；payload 使用 RecordAttachmentSchemaId",
+      "why": "Record v1 的 Attachment envelope 已闭合，不维护独立 descriptor schema 代际"
+    },
+    {
+      "term": "descriptorSchemaId",
+      "use": "RecordAttachmentEnvelopeV1 的 name 与 schemaId；collection 留在 payload",
+      "why": "descriptor registry 会把一个 owner-local Attachment 拆成多余版本层"
+    },
+    {
+      "term": "ProjectionRead",
+      "use": "RecordAttachmentRead 或 ProjectedSample",
+      "why": "一个名字不能同时表达磁盘 Attachment 状态与 Sample-aligned projection 结果"
+    },
+    {
+      "term": "ReportPlan",
+      "use": "作者只公开 Report；宿主编译计划保持内部",
+      "why": "plan 是 host mechanical，不是作者需要理解的领域对象"
+    },
+    {
+      "term": "ReportInput",
+      "use": "作者 callback 接收具名 projected values 与 Calculation results",
+      "why": "宽泛输入容器会把依赖闭包和 host compilation 重新暴露给作者"
+    },
+    {
+      "term": "ProjectionMatrix",
+      "use": "ProjectedSample",
+      "why": "结果不是二维矩阵，公开名字应表达它与 AnalysisSample 的对齐关系"
+    },
+    {
+      "term": "analysis projector",
+      "use": "analysis selection",
+      "why": "该过程选择 Run 并建立分母，不是单个 payload 到 typed view 的 projector"
+    },
+    {
+      "term": "execution projector",
+      "use": "reuse planning / ExecutionReusePlan",
+      "why": "该过程规划 reuse 与 gap，不与 RecordAttachment projector 共享同一语义"
+    },
+    {
+      "term": "producer profile",
+      "use": "具名领域 aggregate contract，例如 EvaluationRecordContract",
+      "why": "profile 没有说明它验证哪一组持久事实"
+    },
+    {
+      "term": "owner temp",
+      "use": "incomplete Run directory 或 scoped temporary directory",
+      "why": "写出实际生命周期与删除条件，不使用未定义的临时术语"
+    },
+    {
+      "term": "无 writer-lock",
+      "use": "reader 不取得 writer lock，但取得 shared maintenance lock",
+      "why": "Record migration 需要跨 major 的 exclusive maintenance window，因此 reader 并非无锁"
+    },
+    {
       "term": "↩",
       "use": "时效靠三条通道:相对时距(`formatTimeDistance` 的 `12d`)、web 面降饱和与 hover 说明",
       "why": "装饰符号不携带时长,读者要先学会它才知道这一行旧了多久;而且它与 ✓ ✗ ! 这套判定符挤在同一格,看起来像又一个判定符"
@@ -204,6 +597,11 @@
       "term": "工作台",
       "use": "对应页名或组件中文名",
       "why": "内部代号不是契约,读者在 API 面里找不到这个词"
+    },
+    {
+      "term": "当前数据集",
+      "use": "可编辑事实数据集",
+      "why": "Record 保存已经发生的事实，不拥有当前、过期、可复用或需要执行等随本次投影变化的结论"
     },
     {
       "term": "选集",
@@ -331,6 +729,11 @@
       "term": "记录",
       "use": "按词性和对象写 Record 事实对象、写入事件、持久化事实、日志条目或问题条目",
       "why": "可导航的数据对象、producer 写入动作和普通日志条目混用，读者无法判断保存位置与所有者"
+    },
+    {
+      "term": "t.sandbox.diff",
+      "use": "归因期望用 `changedPaths` / `noChanges` / `fileChanged` / `fileDeleted` / `notInDiff` 声明；文件当前内容用 `readText` 读取",
+      "why": "已定的 Assert-first author API 不存在通用或延迟的 diff subject；持久 `niceeval.diff/v1` 经中立 projection / Report 读取"
     },
     {
       "term": "sandbox case",

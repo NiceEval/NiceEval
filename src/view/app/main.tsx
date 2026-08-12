@@ -15,7 +15,7 @@ const LOCALES: readonly Locale[] = ["en", "zh-CN"];
 
 // 报告块:server 把页面 HTML 烘成 <template id="niceeval-report-<pageId>-<locale>"> 静态块
 // (__NICEEVAL_VIEW_DATA__ 旁)。静态产物带全部块;本地模式只带初始页那两块,其余在切过去时
-// 按 `report/<pageId>.<locale>.html` 取(docs/feature/reports/view.md「只渲染看得见的那一块」)。
+// 按 `report/<pageId>.<locale>.html` 取(docs/feature/reports/README.md「只渲染看得见的那一块」)。
 // 前端不解析、不 hydrate,只负责摆放。页 id 来自 viewData.report.pages;缺声明时按单页兜底。
 function readBakedBlocks(data: ViewData): globalThis.Record<string, ReportSlotHtml> {
   const ids = data.report?.pages?.length ? data.report.pages.map((p) => p.id) : ["report"];

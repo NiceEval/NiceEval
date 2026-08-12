@@ -9,6 +9,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative as relativePath, resolve as resolvePath, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { Data, Effect } from "effect";
 import { parseDocument } from "yaml";
 import type { JsonValue } from "../shared/types.ts";
 import {
@@ -58,6 +59,21 @@ const COMPOSE_PLAN_SENTINEL_PROJECTS = ["niceeval-plan-a", "niceeval-plan-b"] as
 const COMPOSE_STOP_TIMEOUT_MS = 6_500;
 /** Compose 收到 TERM 后仍不退出时，升级成 KILL 并结束等待。 */
 const COMPOSE_ABORT_KILL_GRACE_MS = 1_000;
+
+export class ComposeBuildCollectionError extends Data.TaggedError("ComposeBuildCollectionError")<{
+  readonly stage: "read" | "configuration" | "security" | "identity";
+  readonly message: string;
+}> {}
+
+function composeCollectionError(
+  stage: ComposeBuildCollectionError["stage"],
+  cause: unknown,
+): ComposeBuildCollectionError {
+  return new ComposeBuildCollectionError({
+    stage,
+    message: cause instanceof Error ? cause.message : String(cause),
+  });
+}
 
 // ---------------------------------------------------------------------------
 // 目标平台:构建事实(case.md「BuildKey 与 CaseKey」)
@@ -644,24 +660,41 @@ export function leakGateHintsFromInspection(
 }
 
 /** 读 Compose 文件并产出泄题门 hints(供 discover / prepare 挂 attachLeakGateHints)。 */
-export async function leakGateHintsFromComposeFile(
+export function leakGateHintsFromComposeFile(
   file: string | URL,
   opts: { readonly mainService: string; readonly baseDir?: string },
-): Promise<{ hints: LeakGateHints; inspection: ComposeInspection; composePath: string }> {
-  const composePath = resolveComposeFile(file, opts.baseDir);
-  const raw = await readFile(composePath, "utf-8");
-  const inspection = inspectComposeYaml(raw);
-  if (!inspection.services.some((s) => s.name === opts.mainService)) {
-    throw new Error(
-      `Compose file ${composePath} has no service ${JSON.stringify(opts.mainService)} (mainService)`,
-    );
-  }
-  assertComposeBlacklist(inspection, { mainService: opts.mainService });
-  const hints = leakGateHintsFromInspection(inspection, {
-    composeDir: dirname(composePath),
-    mainService: opts.mainService,
+): Effect.Effect<
+  { hints: LeakGateHints; inspection: ComposeInspection; composePath: string },
+  ComposeBuildCollectionError
+> {
+  return Effect.gen(function* () {
+    const composePath = resolveComposeFile(file, opts.baseDir);
+    const raw = yield* Effect.tryPromise({
+      try: () => readFile(composePath, "utf-8"),
+      catch: (cause) => composeCollectionError("read", cause),
+    });
+    const inspection = yield* Effect.try({
+      try: () => inspectComposeYaml(raw),
+      catch: (cause) => composeCollectionError("configuration", cause),
+    });
+    if (!inspection.services.some((service) => service.name === opts.mainService)) {
+      return yield* Effect.fail(new ComposeBuildCollectionError({
+        stage: "configuration",
+        message: `Compose file ${composePath} has no service ${JSON.stringify(opts.mainService)} (mainService)`,
+      }));
+    }
+    const hints = yield* Effect.try({
+      try: () => {
+        assertComposeBlacklist(inspection, { mainService: opts.mainService });
+        return leakGateHintsFromInspection(inspection, {
+          composeDir: dirname(composePath),
+          mainService: opts.mainService,
+        });
+      },
+      catch: (cause) => composeCollectionError("configuration", cause),
+    });
+    return { hints, inspection, composePath };
   });
-  return { hints, inspection, composePath };
 }
 
 function relativeBindSource(vol: string, composeDir: string): string | undefined {
@@ -731,149 +764,202 @@ interface ComposeBuildCollectionOptions {
 }
 
 /** 从 Compose 声明收集 BuildKey 与协调器 works(仅有 `build:` 的服务)。 */
-export async function collectComposeBuilds(opts: ComposeBuildCollectionOptions): Promise<ComposeBuildCollection> {
+export function collectComposeBuilds(
+  opts: ComposeBuildCollectionOptions,
+): Effect.Effect<ComposeBuildCollection, ComposeBuildCollectionError> {
   return collectComposeBuildsInternal(opts);
 }
 
 /** @internal 单测注入有效模型求值通道；不从 `niceeval/sandbox` 对外导出。 */
-export async function collectComposeBuildsForTest(
+export function collectComposeBuildsForTest(
   opts: ComposeBuildCollectionOptions,
   runComposeConfig: (projectName: string) => Promise<ComposeCommandResult>,
-): Promise<ComposeBuildCollection> {
+): Effect.Effect<ComposeBuildCollection, ComposeBuildCollectionError> {
   return collectComposeBuildsInternal(opts, runComposeConfig);
 }
 
-async function collectComposeBuildsInternal(
+function collectComposeBuildsInternal(
   opts: ComposeBuildCollectionOptions,
   runComposeConfig?: (projectName: string) => Promise<ComposeCommandResult>,
-): Promise<ComposeBuildCollection> {
-  const { hints, inspection, composePath } = await leakGateHintsFromComposeFile(opts.file, {
-    mainService: opts.mainService,
-    baseDir: opts.baseDir,
-  });
-  // physical planning 安全门:合成声明 + 双哨兵有效模型,早于 BuildKey 收集与任何携带决策。
-  const raw = await readFile(composePath, "utf-8");
-  assertComposeSyntheticScope(raw);
-  await assertComposeEffectiveModelSecurity({
-    composePath,
-    env: opts.env,
-    runComposeConfig,
-  });
-  const composeBytes = inspection.raw;
-  const composeDir = dirname(composePath);
-  // 目标平台是构建事实:硬编码一个默认值会让 arm64 宿主构出 arm64 镜像却按 amd64 记身份
-  // (台账见 memory/buildkey-platform-declared-not-enforced.md)。
-  const platform = opts.platform
-    ? normalizeBuildPlatform(opts.platform)
-    : await detectDockerBuildPlatform(opts.platformProbe ? { probe: opts.platformProbe } : undefined);
-  const works: SandboxBuildWork[] = [];
-  const buildKeys: BuildKey[] = [];
-  const imageRefs: globalThis.Record<string, string> = {};
-  let providerIdentityMarker: JsonValue | undefined;
-  const bindMountDigests: globalThis.Record<string, string> = {};
-  for (const mount of hints.bindMounts ?? []) {
-    const key = `${mount.label ?? "bind mount"}:${relativeIdentityPath(composeDir, mount.source)}`;
-    bindMountDigests[key] = await pathContentDigest(mount.source);
-  }
-  const configContents: globalThis.Record<string, string> = {};
-  for (const ref of inspection.localFiles) {
-    const absolute = resolvePath(composeDir, ref.path);
-    const key = `${ref.kind}:${ref.label}:${relativeIdentityPath(composeDir, absolute)}`;
-    configContents[key] = await pathContentDigest(absolute);
-  }
-
-  for (const svc of inspection.services) {
-    if (svc.image !== undefined && svc.build === undefined) {
-      imageRefs[svc.name] = svc.image;
-      if (!looksLikeDigestRef(svc.image)) {
-        providerIdentityMarker = unresolvedProviderFingerprintMarker(
-          "sandbox.image-unresolved",
-          "Compose references an image or FROM base that is not pinned to a sha256 digest.",
+): Effect.Effect<ComposeBuildCollection, ComposeBuildCollectionError> {
+  return Effect.gen(function* () {
+    const { hints, inspection, composePath } = yield* leakGateHintsFromComposeFile(opts.file, {
+      mainService: opts.mainService,
+      baseDir: opts.baseDir,
+    });
+    // physical planning 安全门:合成声明 + 双哨兵有效模型,早于 BuildKey 收集与任何携带决策。
+    const raw = yield* Effect.tryPromise({
+      try: () => readFile(composePath, "utf-8"),
+      catch: (cause) => composeCollectionError("read", cause),
+    });
+    yield* Effect.try({
+      try: () => assertComposeSyntheticScope(raw),
+      catch: (cause) => composeCollectionError("security", cause),
+    });
+    yield* Effect.tryPromise({
+      try: () => assertComposeEffectiveModelSecurity({
+        composePath,
+        env: opts.env,
+        runComposeConfig,
+      }),
+      catch: (cause) => composeCollectionError("security", cause),
+    });
+    const composeBytes = inspection.raw;
+    const composeDir = dirname(composePath);
+    // 目标平台是构建事实:硬编码一个默认值会让 arm64 宿主构出 arm64 镜像却按 amd64 记身份
+    // (台账见 memory/buildkey-platform-declared-not-enforced.md)。
+    const platform = opts.platform
+      ? normalizeBuildPlatform(opts.platform)
+      : yield* Effect.tryPromise({
+          try: () => detectDockerBuildPlatform(
+            opts.platformProbe ? { probe: opts.platformProbe } : undefined,
+          ),
+          catch: (cause) => composeCollectionError("identity", cause),
+        });
+    const works: SandboxBuildWork[] = [];
+    const buildKeys: BuildKey[] = [];
+    const imageRefs: globalThis.Record<string, string> = {};
+    let providerIdentityMarker: JsonValue | undefined;
+    const bindMountDigests: globalThis.Record<string, string> = {};
+    yield* Effect.forEach(
+      hints.bindMounts ?? [],
+      (mount) => pathContentDigest(mount.source).pipe(
+        Effect.mapError((cause) => composeCollectionError("identity", cause)),
+        Effect.tap((digest) => Effect.sync(() => {
+          const key = `${mount.label ?? "bind mount"}:${relativeIdentityPath(composeDir, mount.source)}`;
+          bindMountDigests[key] = digest;
+        })),
+        Effect.asVoid,
+      ),
+      { concurrency: 1, discard: true },
+    );
+    const configContents: globalThis.Record<string, string> = {};
+    yield* Effect.forEach(
+      inspection.localFiles,
+      (ref) => {
+        const absolute = resolvePath(composeDir, ref.path);
+        return pathContentDigest(absolute).pipe(
+          Effect.mapError((cause) => composeCollectionError("identity", cause)),
+          Effect.tap((digest) => Effect.sync(() => {
+            const key = `${ref.kind}:${ref.label}:${relativeIdentityPath(composeDir, absolute)}`;
+            configContents[key] = digest;
+          })),
+          Effect.asVoid,
         );
-      }
-      continue;
-    }
-    if (svc.build === undefined) continue;
-
-    const contextDir = resolvePath(composeDir, svc.build.context);
-    const dockerfilePath = resolvePath(contextDir, svc.build.dockerfile ?? "Dockerfile");
-    const dockerfile = await readFile(dockerfilePath, "utf-8").catch(() => {
-      throw new Error(
-        `Compose service ${JSON.stringify(svc.name)} build Dockerfile not found at ${dockerfilePath}`,
-      );
-    });
-    // Compose 声明的平台压过探测默认值:service `platform` 或单元素 `build.platforms` 是
-    // 显式构建目标,必须逐服务进各自 BuildKey,否则声明不同平台的两个 case 会共用同一身份
-    // (台账见 memory/buildkey-platform-declared-not-enforced.md 的第二回合)。
-    const declaredPlatforms = svc.build.platforms;
-    if (declaredPlatforms !== undefined && declaredPlatforms.length > 1) {
-      throw new Error(
-        `Compose service ${JSON.stringify(svc.name)} declares build.platforms with ${declaredPlatforms.length} entries; ` +
-          `NiceEval builds exactly one platform per BuildKey — keep a single entry (or the service-level platform) ` +
-          `and do multi-platform publishing outside the task Compose`,
-      );
-    }
-    const declaredPlatform = declaredPlatforms?.[0] ?? svc.platform;
-    const workPlatform = declaredPlatform !== undefined ? normalizeBuildPlatform(declaredPlatform) : platform;
-    const contextSpec: BuildContextSpec = {
-      contextDir,
-      label: `compose service ${svc.name}`,
-    };
-    const { contextDigest, contextFilterRules } = await buildContextIdentityContribution(contextSpec);
-    const base = dockerfileBaseIdentity(dockerfile, svc.build.target);
-    if (base.providerIdentityMarker !== undefined) {
-      providerIdentityMarker = unresolvedProviderFingerprintMarker(
-        "sandbox.image-unresolved",
-        "Compose references an image or FROM base that is not pinned to a sha256 digest.",
-      );
-    }
-    const buildKey = computeBuildKey({
-      builderKind: BUILDER_KIND,
-      builderRevision: COMPOSE_MATERIALIZER_REVISION,
-      platform: workPlatform,
-      dockerfile,
-      contextDigest,
-      fromDigest: base.fromDigest,
-      contextFilterRules,
-      ...(svc.build.args !== undefined ? { buildArgs: svc.build.args } : {}),
-      ...(svc.build.target !== undefined ? { target: svc.build.target } : {}),
-    });
-    buildKeys.push(buildKey);
-    works.push({
-      buildKey,
-      provider: "docker",
-      label: `compose:${svc.name}`,
-      inputs: {
-        service: svc.name,
-        composeFile: composePath,
-        // 进 BuildKey 的那个平台原样交给构建执行,provenance 里也留下这次构出的是哪种架构。
-        platform: workPlatform,
-        context: svc.build.context,
-        ...(svc.build.dockerfile !== undefined ? { dockerfile: svc.build.dockerfile } : {}),
-        ...(svc.build.args !== undefined ? { args: svc.build.args } : {}),
-        ...(svc.build.target !== undefined ? { target: svc.build.target } : {}),
-        // 每条 work 自带插值 env:Run 级 provider 不得共用「最后一个 eval」的 env/baseDir。
-        ...(opts.env !== undefined
-          ? { composeEnv: opts.env, envNames: Object.keys(opts.env).sort() }
-          : {}),
-        contextFilterRules,
       },
-    });
-  }
+      { concurrency: 1, discard: true },
+    );
 
-  return {
-    buildKeys,
-    works,
-    leakHints: hints,
-    composeBytes,
-    composePath,
-    inspection,
-    imageRefs,
-    platform,
-    ...(providerIdentityMarker === undefined ? {} : { providerIdentityMarker }),
-    bindMountDigests,
-    configContents,
-  };
+    yield* Effect.forEach(
+      inspection.services,
+      (service) => Effect.gen(function* () {
+        if (service.image !== undefined && service.build === undefined) {
+          yield* Effect.sync(() => {
+            imageRefs[service.name] = service.image!;
+            if (!looksLikeDigestRef(service.image!)) {
+              providerIdentityMarker = unresolvedProviderFingerprintMarker(
+                "sandbox.image-unresolved",
+                "Compose references an image or FROM base that is not pinned to a sha256 digest.",
+              );
+            }
+          });
+          return;
+        }
+        const build = service.build;
+        if (build === undefined) return;
+
+        const contextDir = resolvePath(composeDir, build.context);
+        const dockerfilePath = resolvePath(contextDir, build.dockerfile ?? "Dockerfile");
+        const dockerfile = yield* Effect.tryPromise({
+          try: () => readFile(dockerfilePath, "utf-8"),
+          catch: () => new ComposeBuildCollectionError({
+            stage: "read",
+            message: `Compose service ${JSON.stringify(service.name)} build Dockerfile not found at ${dockerfilePath}`,
+          }),
+        });
+        // Compose 声明的平台压过探测默认值:service `platform` 或单元素 `build.platforms` 是
+        // 显式构建目标,必须逐服务进各自 BuildKey,否则声明不同平台的两个 case 会共用同一身份。
+        const declaredPlatforms = build.platforms;
+        if (declaredPlatforms !== undefined && declaredPlatforms.length > 1) {
+          return yield* Effect.fail(new ComposeBuildCollectionError({
+            stage: "configuration",
+            message:
+              `Compose service ${JSON.stringify(service.name)} declares build.platforms with ${declaredPlatforms.length} entries; ` +
+              `NiceEval builds exactly one platform per BuildKey — keep a single entry (or the service-level platform) ` +
+              `and do multi-platform publishing outside the task Compose`,
+          }));
+        }
+        const declaredPlatform = declaredPlatforms?.[0] ?? service.platform;
+        const workPlatform = declaredPlatform !== undefined ? normalizeBuildPlatform(declaredPlatform) : platform;
+        const { contextDigest, contextFilterRules } = yield* buildContextIdentityContribution({
+          contextDir,
+          label: `compose service ${service.name}`,
+        }).pipe(Effect.mapError((cause) => composeCollectionError("identity", cause)));
+        const collected = yield* Effect.try({
+          try: () => {
+            const base = dockerfileBaseIdentity(dockerfile, build.target);
+            const buildKey = computeBuildKey({
+              builderKind: BUILDER_KIND,
+              builderRevision: COMPOSE_MATERIALIZER_REVISION,
+              platform: workPlatform,
+              dockerfile,
+              contextDigest,
+              fromDigest: base.fromDigest,
+              contextFilterRules,
+              ...(build.args !== undefined ? { buildArgs: build.args } : {}),
+              ...(build.target !== undefined ? { target: build.target } : {}),
+            });
+            return { buildKey, base };
+          },
+          catch: (cause) => composeCollectionError("identity", cause),
+        });
+        yield* Effect.sync(() => {
+          if (collected.base.providerIdentityMarker !== undefined) {
+            providerIdentityMarker = unresolvedProviderFingerprintMarker(
+              "sandbox.image-unresolved",
+              "Compose references an image or FROM base that is not pinned to a sha256 digest.",
+            );
+          }
+          buildKeys.push(collected.buildKey);
+          works.push({
+            buildKey: collected.buildKey,
+            provider: "docker",
+            label: `compose:${service.name}`,
+            inputs: {
+              service: service.name,
+              composeFile: composePath,
+              // 进 BuildKey 的那个平台原样交给构建执行,provenance 里也留下这次构出的是哪种架构。
+              platform: workPlatform,
+              context: build.context,
+              ...(build.dockerfile !== undefined ? { dockerfile: build.dockerfile } : {}),
+              ...(build.args !== undefined ? { args: build.args } : {}),
+              ...(build.target !== undefined ? { target: build.target } : {}),
+              // 每条 work 自带插值 env:Run 级 provider 不得共用「最后一个 eval」的 env/baseDir。
+              ...(opts.env !== undefined
+                ? { composeEnv: opts.env, envNames: Object.keys(opts.env).sort() }
+                : {}),
+              contextFilterRules,
+            },
+          });
+        });
+      }),
+      { concurrency: 1, discard: true },
+    );
+
+    return {
+      buildKeys,
+      works,
+      leakHints: hints,
+      composeBytes,
+      composePath,
+      inspection,
+      imageRefs,
+      platform,
+      ...(providerIdentityMarker === undefined ? {} : { providerIdentityMarker }),
+      bindMountDigests,
+      configContents,
+    };
+  });
 }
 
 function relativeIdentityPath(baseDir: string, path: string): string {

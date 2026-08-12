@@ -3,17 +3,18 @@
 import { defineEval } from "niceeval";
 
 export default defineEval({
-  description: "settingsFile 反例:permissions.deny 后 WebSearch/WebFetch 仍不可调用",
+  description:
+    "settingsFile 反例:permissions.deny 后 WebSearch/WebFetch 仍不可调用",
   async test(t) {
     const turn = await t.send(
       '你现在必须调用 WebSearch 工具，搜索这个确切短语:"niceeval e2e mcp test"。' +
         "不要凭自己的知识回答，不要跳过这次工具调用。如果被阻止，请明确说明。",
     );
-    await turn.succeeded().stopOnFailure();
+    await turn.succeeded().orStop();
 
     await t.group("denied 之后 WebSearch/WebFetch 从未被调用", () => {
-      t.notCalledTool("web_search");
-      t.notCalledTool("web_fetch");
+      t.calledTool("web_search", { count: 0 });
+      t.calledTool("web_fetch", { count: 0 });
     });
   },
 });

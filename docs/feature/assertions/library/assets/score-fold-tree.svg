@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 520" role="img" aria-labelledby="figTitle figDesc">
-  <title id="figTitle">评分证据的四层折叠树</title>
-  <desc id="figDesc">Assertion 先折叠进 Group，再折叠进 Eval，最后折叠进 Experiment；verdict 沿边传播，points 求和，tracked 逐层做无权均值。</desc>
+  <title id="figTitle">Attempt 的 Verdict 与 Score 分工</title>
+  <desc id="figDesc">所有 Attempt 都从已封口 Assertion 得到四态 Verdict。Score Eval 另有 earned score，gate failed 不清空 score，执行错误保留 partial 或 unavailable。</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
       <path d="M0 0 L8 4 L0 8 z" fill="#74747b" />
@@ -36,15 +36,23 @@
     </style>
   </defs>
   <rect x="0.5" y="0.5" width="1239" height="519" class="canvas" />
-  <text x="32" y="48" class="title">四层折叠：同一棵树，三种读数各守自己的运算</text>
-  <rect x="440.5" y="80.5" width="359" height="72" class="box" /><text x="460" y="110" class="label mono">Experiment</text><text x="460" y="134">verdict · Σ points · mean tracked</text>
-  <path d="M620 152 V200 H304 M620 200 H936" class="arrow" />
-  <rect x="128.5" y="216.5" width="351" height="72" class="box" /><text x="148" y="246" class="label mono">Eval A</text><text x="148" y="270">判定 / 得分 / 质量分</text>
-  <rect x="760.5" y="216.5" width="351" height="72" class="box" /><text x="780" y="246" class="label mono">Eval B</text><text x="780" y="270">同构折叠</text>
-  <path d="M304 288 V336 H176 M304 336 H432 M936 288 V336 H808 M936 336 H1064" class="arrow" />
-  <rect x="64.5" y="352.5" width="239" height="64" class="box" /><text x="84" y="382" class="label mono">Group 1</text><text x="84" y="406" class="note">语义分块</text>
-  <rect x="320.5" y="352.5" width="239" height="64" class="box" /><text x="340" y="382" class="label mono">Group 2</text><text x="340" y="406" class="note">隐式根组亦同</text>
-  <rect x="696.5" y="352.5" width="239" height="64" class="box" /><text x="716" y="382" class="label mono">Group 1</text><text x="716" y="406" class="note">groupPath 对齐</text>
-  <rect x="952.5" y="352.5" width="239" height="64" class="box" /><text x="972" y="382" class="label mono">Group 2</text><text x="972" y="406" class="note">逐层同构</text>
-  <path d="M184 416 V456 M440 416 V456 M816 416 V456 M1072 416 V456" class="arrow" /><text x="64" y="488" class="mono">Assertion → verdict edge / points / tracked</text><text x="64" y="512" class="note">unavailable 在每一层按 null 传播，不折成 0</text>
+  <text x="32" y="48" class="title">Attempt 的四态 Verdict 与 Score Attachment</text>
+  <rect x="360.5" y="88.5" width="519" height="102" class="box" />
+  <text x="388" y="122" class="label mono">niceeval.assertions/v1</text>
+  <text x="388" y="150">sealed entry · criterion · evidence · points</text>
+  <text x="388" y="174" class="note">entries 保留声明／展示顺序；entryId 是详情 identity</text>
+  <path d="M620 190 V246 H286" class="arrow" />
+  <path d="M620 190 V246 H954" class="arrow" />
+  <rect x="80.5" y="264.5" width="411" height="112" class="box" />
+  <text x="108" y="300" class="label mono">niceeval.verdict/v1</text>
+  <text x="108" y="328"><tspan class="good">passed</tspan> · <tspan class="bad">failed</tspan> · errored · skipped</text>
+  <text x="108" y="354" class="note">Pass 与 Score 的每个 Attempt 都有</text>
+  <rect x="748.5" y="264.5" width="411" height="112" class="box" />
+  <text x="776" y="300" class="label mono">niceeval.score/v1</text>
+  <text x="776" y="328">earned score · complete / partial / unavailable</text>
+  <text x="776" y="354" class="note">仅 Score Eval 写入；不从 Verdict 推导</text>
+  <path d="M286 376 V434 H620 V376" class="arrow" />
+  <path d="M954 376 V434 H620" class="arrow" />
+  <rect x="305.5" y="442.5" width="629" height="48" class="box" />
+  <text x="330" y="472" class="note">gate failed 仍保留 earned score；execution error 不伪造 0，显示 partial 或 unavailable。</text>
 </svg>

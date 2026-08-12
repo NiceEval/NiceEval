@@ -1,12 +1,17 @@
 # Sandbox —— CLI:留存现场与销毁
 
-跑完的沙箱默认销毁,debug 证据靠 artifact([Results](../record/architecture.md))。受管命令(两层 prepare、lifecycle 命令、`ensure` / `install`)经四个公开 `Sandbox.run*()` 方法发出的每一次调用,无论成功还是非零退出,都落进 `commands.json`。`niceeval show @<locator> --execution` 能按 timing 顺序下钻——「准备链装了什么、成功命令实际输出了什么」不再要求留住活现场。
+跑完的 Sandbox 默认销毁，debug 证据写入 Attempt-owned command 与 timing RecordAttachment。
+受管命令（两层 prepare、lifecycle 命令、`ensure` / `install`）经四个公开 `Sandbox.run*()` 方法发出的每一次调用，无论成功还是非零退出，都写成 command 事件。
+`niceeval show --run <runId> --page attempt-<attemptId>` 只读取该页面声明的 RecordAttachment，并按 timing 顺序呈现。
+因此「准备链装了什么、成功命令实际输出了什么」不再要求留住活现场。
 但仍有两类问题 artifact 结构性地回答不了,只能靠留住活现场:
 
 - **agent diff 之外是盲区**——artifact 采的是 workdir 内按 send 区间归因的变更;全局装了什么、`$HOME` 下写了什么配置、PATH 实际长什么样,采不到。
 - **复现成本是分钟级**——冷启动 + 安装每轮几分钟,每验证一个假设(如换一条命令参数重试)重跑一轮太慢;留下的现场把这个循环压到秒级。
 
-真正没有留下任何命令证据的宿主运行条件类 `errored`(agent CLI 进程本身没起来、SDK/网络传输失败,不是某条受管命令非零退出)仍然只有 error 摘要和 phases 计时——这类场景仍然最需要进现场里手动重跑一遍命令。
+真正没有留下命令证据的宿主运行条件类 `errored` Verdict，仍只有结构化执行错误事件与 timing RecordAttachment。
+例如 Agent CLI 进程本身没起来、SDK / 网络传输失败，而不是某条受管命令非零退出。
+这类场景仍最需要进现场里手动重跑一遍命令。
 
 为此 CLI 提供一对能力,合起来是留存沙箱的完整生命周期:`--keep-sandbox` 在 run 侧**留下**现场,`niceeval sandbox` 命令组在事后**查看与销毁**它们。
 
@@ -19,12 +24,25 @@ niceeval exp local onboarding/tool-first --keep-sandbox        # = --keep-sandbo
 niceeval exp local onboarding/tool-first --keep-sandbox=all    # passed 也留,调环境用
 ```
 
-- 两档语义:`failed`(默认值,单独使用 `--keep-sandbox` 等价)留 verdict 为 `failed` / `errored` 的 attempt——包括被硬超时打断的 `errored`(这是最高价值的现场)。`all` 连 `passed` 也留,用于调 prepare 命令、核对 passed 现场的真实状态,不用故意使其失败一条 eval 才能拿到现场。默认(不带 flag)全部销毁——CI、并发与云资源管理不允许无主现场,留存永远是显式选择。
+- 两档语义：`failed`（默认值，单独使用 `--keep-sandbox` 等价）留 Verdict 为 `failed` / `errored` 的 Attempt。
+  它包括被硬超时打断后形成 `errored` Verdict 的现场，这是最高价值的现场。
+  `all` 连 `passed` Verdict 也留，用于调 prepare 命令、核对通过现场的真实状态。
+  默认（不带 flag）全部销毁；CI、并发与云资源管理不允许无主现场，留存永远是显式选择。
 - debug 流程的典型形态是「这条失败,重跑这一条」,配合 eval 前缀位置参数收窄范围,天然不会一次留下几十个容器。
 - 符合 CLI 输入模型:位置参数选 experiment 路径与 eval,flag 说怎么跑。
-- 留存只跳过销毁这一步:Agent teardown 与已登记 cleanup 照常执行，留下的现场是收尾完成后的状态。该实例真正退休时才执行 lifecycle `teardown()` 回存 checkpoint。对应地,该 attempt 的 `phases` 以 `sandbox.suspend` 结尾而没有 `sandbox.stop` 条目。留存提交后现场转入 provider 的休眠形态(docker 停驻容器、e2b pause、vercel stop 后可恢复),不白烧资源;suspend 失败时现场保持运行并记 diagnostic,仍被注册表管理。语义见 [Architecture · 各 provider 的留存语义](architecture.md#留存keep与注册表)。
-- 被中断的 run 不留存:留存授予发生在 verdict 定稿的收尾点,Ctrl+C 时还没有 verdict 的 attempt 走正常销毁;此前已完成并授予留存的沙箱不被中断收回。
-- 留存与[缓存携带](../experiments/cache.md#执行模式划走的两块)不相容:携带条目没有本次沙箱,无从留存。所以 `--keep-sandbox` 运行里,历史终态 verdict 落在**当前留存档内**的 attempt 不参与携带、照常派发重跑拿现场——`failed` 档下上一轮的 `failed` 重跑(`errored` 本就从不缓存)、`passed` 照常携带;`all` 档下全部重跑。要现场就给一次真实执行,不需要为此再配一次 [`--rerun`](../experiments/use-case/重新运行/)——两个 flag 的档位词表同构,`--keep-sandbox` 各档自带对应口径的重跑。
+- 留存只跳过销毁这一步：Agent teardown 与已登记 cleanup 照常执行，留下的现场是收尾完成后的状态。
+  该实例真正退休时才执行 lifecycle `teardown()` 回存 checkpoint。
+  对应地，timing decoding 的 `phases` 以 `sandbox.suspend` 结尾而没有 `sandbox.stop` 条目。
+  留存提交后现场转入 provider 的休眠形态（docker 停驻容器、e2b pause、vercel stop 后可恢复），不白烧资源。
+  suspend 失败时现场保持运行并写入诊断通道，仍被注册表管理。
+  语义见 [Architecture · 各 provider 的留存语义](architecture.md#留存keep与注册表)。
+- 被中断的 Run 不留存:留存授予发生在 Verdict 与 receipt 收敛的收尾点,Ctrl+C 时还没有 Verdict 的 Attempt 走正常销毁;此前已完成并授予留存的 Sandbox 不被中断收回。
+- 留存与 [project-target policy](../experiments/cache.md#复用资格) 不相容：带 carried action 的 reference Member 没有本次 Sandbox，无从留存。
+  因此 `--keep-sandbox` 运行里，满足当前留存档的已有 Attempt 不参与携带，照常派发重跑拿现场。
+  `failed` 档下上一轮 `failed` Attempt 重跑；`errored` Attempt 本就不具备携带资格。
+  `passed` Attempt 可由 reference Member 沿用并写出 carried action；`all` 档下全部重跑。
+  要现场就给一次真实执行，不需要为此再配一次 [`--rerun`](../experiments/use-case/重新运行/)。
+  两个 flag 的档位词表同构，`--keep-sandbox` 各档自带对应口径的重跑。
 - `--keep-sandbox` 与 Experiment 的 [`sandboxReuse: true`](reuse.md) 互斥。
   复用的 Sandbox 由多条 Attempt 共享，最终现场不只属于其中一条；组合在创建 Sandbox 前报错。
   Sandbox 预热行为不变,未领用的预创建实例照常销毁。
@@ -35,9 +53,9 @@ niceeval exp local onboarding/tool-first --keep-sandbox=all    # passed 也留,�
 
 ```text
 ╭─ KEPT SANDBOXES ────────────────────────────────────────────────────── 2 kept ─╮
-│ @1x7f3q9k  onboarding/tool-first #1  errored  docker · a3f9c2d1                │
+│ @6ZCNAVRHPQ4D2KG9EFW5TB8167  onboarding/tool-first #1  errored  docker · a3f9c2d1                │
 │            enter: niceeval sandbox enter a3f9c2d1                              │
-│ @1x7f3q8a  onboarding/tool-first #2  failed   docker · b81e07aa                │
+│ @30SYZCNAVRHPQ4D2KG9EFW5TB8  onboarding/tool-first #2  failed   docker · b81e07aa                │
 │            enter: niceeval sandbox enter b81e07aa                              │
 ╰────────────────────────────────────────────────── niceeval sandbox stop --all ─╯
 ```
@@ -45,10 +63,10 @@ niceeval exp local onboarding/tool-first --keep-sandbox=all    # passed 也留,�
 `--json` 在事件流追加 `kept` 事件(与 run 事件同一词表),非 TTY 人读文本在 `NEXT` 里补 `niceeval sandbox stop --all`:
 
 ```json
-{"event":"kept","locator":"@1x7f3q9k","evalId":"onboarding/tool-first","attempt":1,"verdict":"errored","provider":"docker","sandboxId":"a3f9c2d1","enter":"niceeval sandbox enter a3f9c2d1"}
+{"event":"kept","locator":"@6ZCNAVRHPQ4D2KG9EFW5TB8167","evalId":"onboarding/tool-first","attempt":1,"verdict":"errored","provider":"docker","sandboxId":"a3f9c2d1","enter":"niceeval sandbox enter a3f9c2d1"}
 ```
 
-每条都给三样东西:attempt 定位符(接 `niceeval show @…` 看落盘证据)、provider 与实例 id、进入现场的命令。进入统一走 `niceeval sandbox enter`(见下),不让用户背各家 provider 的语法;provider 原生命令记在注册表里供直连。
+每条都给三样东西:Attempt identity、Provider 与实例 id、进入现场的命令。落盘证据从包含它的 Run 参数化页面查看。进入统一走 `niceeval sandbox enter`(见下),不让用户背各家 Provider 的语法;Provider 原生命令记在注册表里供直连。
 
 ### 残留提醒
 
@@ -78,7 +96,7 @@ niceeval sandbox prune                                 # 销毁已核实的孤�
 
 **输出体裁**:`sandbox` 命令组是一次性读取命令——一次调用、打印、退出,没有「运行中」阶段,因此不额外提供 `--json` 之外的形态开关([`exp` 的两种输出形态](../experiments/cli.md)区分的是长时运行的反馈节奏,不是一次性输出的格式)。
 
-人读与机器读的区分由传输能力承担:stdout 是 TTY 时,`list` / `history` 这类有边界、可整体阅读的输出按[区域框](../reports/library/layout.md#区域框text-面的框线体裁)渲染为面板——标题嵌上边框左侧、规模嵌右侧、下钻命令嵌下边框;非 TTY(agent 捕获、管道、重定向)按同一契约降级为无框纯文本,内容与顺序一字不变。框只是呈现层:字段、缩进与提示行在两种形态下逐字相同,脚本不按框字符读取,注册表条目文件才是程序消费的权威数据。`diff` 的 patch hunk 与 `stop` 的确认行是逐条流事件,按体裁不画框。
+人读与机器读的区分由传输能力承担。stdout 是 TTY 时，`list` / `history` 这类有边界的输出可渲染为面板；非 TTY 时降级为无框纯文本。框只是呈现层，脚本不按框字符读取；注册表条目文件才是程序消费的数据。`diff` 的 patch hunk 与 `stop` 的确认行按逐条流输出，不画框。
 
 **注册表发现**:从当前目录向上找最近的 `.niceeval/`(与 Record 根发现同一规则),所以在项目任何子目录里执行 `sandbox enter/list/stop` 都命中同一份注册表。run 摘要里打出的 enter 命令不因 `cd` 失效;在仓库外执行时用 `--record <记录根>` 显式指定,找不到注册表时报错并提示这条路径,不静默返回空列表。
 
@@ -99,7 +117,7 @@ niceeval sandbox prune                                 # 销毁已核实的孤�
 
 ### 回放留存现场的变更历史:sandbox history / diff
 
-attempt 落盘的 `diff.json` 是折叠后的 agent 归因增量;留存现场里还保有完整的逐区间账本,这两条命令是它的公开出口(现场休眠中同样先唤醒、读完送回休眠;现场销毁后账本随之消失,artifact 不受影响):
+Attempt-owned diff 通道是折叠后的 agent 归因增量;留存现场里还保有完整的逐区间账本,这两条命令是它的公开出口(现场休眠中同样先唤醒、读完送回休眠;现场销毁后账本随之消失,Record 通道不受影响):
 
 ```text
 $ niceeval sandbox history a3f9c2d1
@@ -121,7 +139,7 @@ A notes/decision-log.md · window turn2
 +…
 ```
 
-区间标签与 `show --timing` / `--execution` / `diff.json` 的[轮标签](../assertions/library/display.md#turntsend的展示)是同一枚 token,`--window` 按字符串等值匹配打印出的标签;`--window` 省略时输出全部区间的串联视图,`--path` 省略时输出该区间的全部文件。
+区间标签与 Attempt 详情页中 timing、execution 和 diff 通道的[轮标签](../assertions/library/display.md#turntsend的展示)是同一枚 token。`--window` 按字符串等值匹配打印出的标签；省略时输出全部区间的串联视图。`--path` 省略时输出该区间的全部文件。
 
 ### `sandbox list`
 
@@ -129,9 +147,9 @@ A notes/decision-log.md · window turn2
 $ niceeval sandbox list
 ╭─ SANDBOXES ─────────────────────────────────────────────────────────── 2 kept ─╮
 │ ID        PROVIDER  STATE     FROM                                             │
-│ a3f9c2d1  docker    dormant   onboarding/tool-first #1 · errored · @1x7f3q9k   │
+│ a3f9c2d1  docker    dormant   onboarding/tool-first #1 · errored · @6ZCNAVRHPQ4D2KG9EFW5TB8167   │
 │           2026-07-14 15:02 · enter: niceeval sandbox enter a3f9c2d1            │
-│ 9f21c07b  vercel    expired   onboarding/tool-first #2 · failed  · @1x7f3q8a   │
+│ 9f21c07b  vercel    expired   onboarding/tool-first #2 · failed  · @30SYZCNAVRHPQ4D2KG9EFW5TB8   │
 │           expired 2026-07-14 14:36 — remove: niceeval sandbox stop 9f21c07b    │
 ╰────────────────────────────────────────────────────────────────────────────────╯
 ```
@@ -195,12 +213,14 @@ pruned 2 orphan sandboxes
 
 ## 与 artifact 的分工
 
-留存现场不替代 artifact:判定、断言、diff、事件与计时仍以落盘为准(`niceeval show @<locator>` / `niceeval view`),现场用来回答落盘之外的问题——「这个命令在那个现场里到底怎么失败的」「agent 往 workdir 外写了什么」。留存的沙箱不是可续跑状态,没有续跑 / 重评语义——provider 的休眠唤醒只恢复现场供人进去看,不恢复 eval 运行。
+留存现场不替代 Record。判定、断言、diff、事件与计时仍以 owner-local 通道为准，可从 Attempt 参数化页面或 `view` 读取。现场只回答落盘之外的问题，例如命令当时怎样失败、Agent 向 workdir 外写了什么。
+
+留存的 Sandbox 不是可续跑状态，也没有续跑或重评语义。Provider 的休眠唤醒只恢复现场供人检查，不恢复 eval 运行。
 
 ## 相关阅读
 
 - [CLI 用例](use-case/README.md) —— `--keep-sandbox` 三类问题各自的全流程展示。
 - [README](README.md) —— 为什么需要沙箱、provider 统一接口。
 - [Architecture](architecture.md) —— 留存决策在 attempt 收尾链里的位置、注册表、各 provider 的留存语义。
-- [Results · `result.json`](../record/architecture.md#resultjson) —— `sandbox` 字段(provider、实例 id、是否留存)。
+- [Record · Architecture](../record/architecture.md) —— `sandbox` 字段(provider、实例 id、是否留存)。
 - [CLI 内部架构](../../cli.md) —— 命令分派、中断路径与「不留无主沙箱」。

@@ -48,7 +48,7 @@ interface SandboxAgentDef {
   `command -v` 只能证明「有一个同名命令」;探测 至少检查可执行文件、精确版本与 Adapter 依赖的运行条件。
 - **identity 是纯数据。**
   Agent 名、精确版本与 revision 连同精确匹配的 installer identity/revision/installMode 按声明顺序进入
-  configHash 与 `run.json`;它同时是配对安装层的选择键。installer 分发内容变化必须显式提升 revision。
+  config identity；它同时是配对安装层的选择键。installer 分发内容变化必须显式更换 identity domain。
 - **Adapter 在 Sandbox 内的准备义务只有这份声明。**
   安装步骤、staged payload 与平台探测都在安装层;凭据与鉴权归 runtime `setup`(记 `agent.setup`)。
 
@@ -142,8 +142,9 @@ Agent layer 仍是 command-only、永远排在两方作者 layer 之后、不能
 2. 未命中时按 identity 精确匹配 `AgentInstaller`。存在 `progress.installing` 时，先投影到 Human active 行。
    - `staged` 执行宿主侧 `prepareArtifact()` 和主 Sandbox `install()`；`sandbox-network` 直接 `install()`；`verify-only` 不安装并立即报缺失。
    - 安装后复检同一个 探测。复检成功时，投影可选的 `progress.ready`。
-3. install 失败或复检仍未命中:Attempt `errored`,归 `agent.ensure`,附 identity、期望版本与下一步,不记成 Agent 做题 `failed`。
-4. 探测 未命中且没有 identity 匹配的安装层:同样 `errored`,错误信息给两条出路——换预装该版本的 Prebuilt environment 让 探测 命中,或作者在 Experiment layer 用 [`installTool`](../../sandbox/prepare-commands.md) 自装。
+3. install 失败或复检仍未命中：写 `agent.ensure` 结构化执行错误通道事件，并形成 Attempt 的 `errored` Verdict。
+   Attempt lifecycle 仍只收束为 `completed` 或 `abandoned`，不记成 Agent 做题的 `failed` channel entry。
+4. 探测 未命中且没有 identity 匹配的安装层:同样形成上述 channel event 与 `errored` Verdict；错误信息给两条出路——换预装该版本的 Prebuilt environment 让 探测 命中,或作者在 Experiment layer 用 [`installTool`](../../sandbox/prepare-commands.md) 自装。
 
 离线网络与内部镜像源走同样的两条出路:预装进 Prebuilt environment,或用 `installTool` 按内部渠道安装;ensure 循环只认 探测 的运行事实,不问安装出自哪条渠道。
 
@@ -167,14 +168,14 @@ Agent layer 仍是 command-only、永远排在两方作者 layer 之后、不能
 ## Ensure 契约
 
 - **探测 检查精确身份。**
-  探测 至少检查可执行文件、精确版本与 Adapter 依赖的运行条件;命中还是本次安装写入 attempt 的安装事实。
+  探测 至少检查可执行文件、精确版本与 Adapter 依赖的运行条件;命中或本次安装作为 Attempt stream 的安装 channel event 写入。
 - **不按 template 名短路。**
   官方 template 也必须 探测——template 名、tag 或出处不是运行事实,被错误替换的官方 template 不能因为名字受信绕过验证。
 - **安装必须收敛。**
   安装锁定精确 Agent 版本;安装成功后重跑同一个 探测。
   install 退出 0、复检仍未命中时按 Sandbox 准备失败处理,不把坏 Sandbox 交给 Agent。
 - **失败归准备阶段。**
-  探测 配对、install 与复检都属于 `agent.ensure`;失败得到 `errored`,附缺失命令、期望版本与下一步,不记成 Agent 做题 `failed`。
+  探测 配对、install 与复检都属于 `agent.ensure`;失败写执行错误通道事件 并形成 `errored` Verdict，附缺失命令、期望版本与下一步,不记成 Agent 做题的 `failed` channel entry。
 - **不静默降级。**
   安装缺少 root、可写目录或前置运行时时点名缺项;内置安装层不猜一个近似命令继续跑,也不在安装模式之间静默切换。
 
@@ -187,7 +188,7 @@ Node、npm prefix、包管理器与安装目录是具体安装层的前置要求
 |---|---|---|
 | `staged` | 内置默认路径:staged payload 在题面网络之外准备,经文件 API 送入安装;题面网络不可用也能装 | 内置安装层的默认值 |
 | `sandbox-network` | 安装层显式声明用沙箱内网络与包管理器安装;网络可用性成为该安装层的支持面 | 自定义安装层 |
-| `verify-only` | 只接受预装且 探测 命中的 Sandbox;探测 未命中立即 `errored`,不联网、不修改文件系统 | 不可变、离线或审计用途的用户 |
+| `verify-only` | 只接受预装且 探测 命中的 Sandbox;探测 未命中立即写执行错误通道事件 并形成 `errored` Verdict，不联网、不修改文件系统 | 不可变、离线或审计用途的用户 |
 
 失败后不允许在三种模式之间静默猜测或降级;换模式是配置变更,不是运行时回退。
 
@@ -201,9 +202,9 @@ Node、npm prefix、包管理器与安装目录是具体安装层的前置要求
   不一致立即以 Sandbox 准备失败终止，绝不拿实际结果改写计划或换另一份 staged payload。
 - prepare key 由 ensure identity、installer revision 与计划目标 platform / libc 组成。
   Run 级只取得一次安装文件，多个同目标 attempt 通过 single-flight 共享。
-- 校验 digest 后进入本地 / 远端共享 cache。实际 artifact digest 与实际平台只作为 runtime provenance/facts 落盘，
-  不进入 configHash 或 fingerprint；可比性由 installer 静态 revision 与 ProviderPlan target 分别承担。
-- 准备时间记为 Run 级开放 activity `agent.artifact.prepare`(落盘形状见 [Record · 两层时间模型](../../record/architecture.md) 的两层时间模型一节),不占 attempt 并发位。
+- 校验 digest 后进入本地 / 远端共享 cache。实际 payload digest 与实际平台只作为 runtime provenance channel event 落盘，
+  不进入 eligibility identity；可比性由 installer 静态 identity domain 与 ProviderPlan target 分别承担。
+- 准备时间以 Run-scoped `agent.artifact.prepare` timing boundary channel event 写入，并由 timing decoder 读出（见 [Record · 两层时间模型](../../record/architecture.md)），不占 Attempt 并发位。
 - 安装时经主 Sandbox 的文件 API 上传已准备 payload;**payload 优先自带 Agent 所需运行时**。
   任务镜像由题目决定,不能假设它带 Node / Python 工具链——内置 Node CLI Agent 因此优先取该平台的
   自带运行时原生包(如 `@openai/codex@<ver>-linux-arm64` 里的 musl 静态二进制),安装退化成
@@ -231,11 +232,11 @@ attempt 环境身份
  + 其它解析后配置
 ```
 
-Agent ensure 静态身份进入 configHash；pair-owned ProviderPlan 进入逐 Eval fingerprint 与 Sandbox 复用池键，完整输入清单见[三方准备时序](../../sandbox/lifecycle.md#身份与复用池)。
+Agent ensure 静态身份进入 config identity；pair-owned ProviderPlan 进入 input identity 与 Sandbox 复用池键，完整输入清单见[三方准备时序](../../sandbox/lifecycle.md#身份与复用池)。
 改任务 Dockerfile 只重建 Sandbox、不动 Agent 配置;改 Agent 版本只改变 ensure identity 与 staged payload activity,不重建任务 BuildKey。
 两种变化都触发重跑,但不强制发布二者笛卡尔积的预构建输出——同一份任务构建输出可以被多个 Agent experiment 消费,每个 Agent 在主 Sandbox 内自行 探测 或安装。
 
-探测 命中还是本次安装作为运行事实落盘(attempt `facts` 的 `agent.ensure` 键),用于核对声明身份是否兑现;运行事实不能反过来替代规划期指纹。
+探测命中还是本次安装写入 Attempt-owned `niceeval.agent-ensure` event channel，用于核对声明身份是否兑现；运行事实不能反过来替代 eligibility identity。
 没有精确版本的 `latest` 安装不参与可携带结果:内置安装层不提供这条模式,ensure 声明无法给出稳定 identity 时启动期报错。
 
 ## 构建期与运行时的关系

@@ -1,236 +1,100 @@
 # Getting Started
 
-这一篇带你从零跑通三种 eval:一个会话型 agent eval(走 HTTP)、一个纯函数的语义级单测、一个沙箱里的 coding-agent eval。读完你就有了能在 CI 里跑的最小骨架。
+这一页从一个 Eval 运行到可查看、可分享的 Report。完整 API 见 [Eval](feature/eval/README.md)、[Experiments](feature/experiments/README.md) 与 [Reports](feature/reports/README.md)。
 
 ## 安装
 
-```sh
-npm install -D niceeval
-npx niceeval init        # 生成 evals/、niceeval.config.ts、示例 eval
-```
+~~~sh
+pnpm add -D niceeval
+pnpm exec niceeval init
+~~~
 
-`init` 后的目录:
+`init` 创建项目入口和配置示例。使用 TypeScript 的项目建议采用 ESM；CLI 可以装载 ESM 或 CommonJS 宿主下的 TypeScript 文件。
 
-```
-your-project/
-├─ niceeval.config.ts
-└─ evals/
-   ├─ hello.eval.ts            # 示例:会话型
-   └─ fixtures/
-      └─ button.eval.ts        # 示例:沙箱型,起始文件在 test() 里手工写入
-```
+## 写一个 Eval
 
-## 配置
+在 `evals/greeting.ts` 中定义一次检查：
 
-```typescript
-// niceeval.config.ts
-import { defineConfig } from "niceeval";
-import { JUnit } from "niceeval/reporters";
-
-export default defineConfig({
-  judge: { model: "anthropic/claude-haiku-4-5" }, // 默认裁判模型
-  reporters: [JUnit(".niceeval/junit.xml")], // 终端反馈是人读文本,加 `--json` 换机器事件流;都不是 Reporter
-  maxConcurrency: 8,
-  timeoutMs: 300_000,
-  // 沙箱起点不在这里配 —— 由 Experiment 或 Eval 的 sandbox 字段声明,factory 带出 Provider
-});
-```
-
-## 1. 评一个会话型 agent
-
-驱动一个暴露会话接口的 agent,断言它的回复与工具调用。连你的服务也是写一个 agent —— 它内部按你服务的协议发请求,URL 是它读 env 的私事(NiceEval 不定义 agent 协议,所以没有 `--url`)。就算 agent 和 eval 在同一个代码库里,也照样让 adapter 走 HTTP,不要把 `fetch` 换成进程内的函数直调——直调绕过了用户实际走的链路、进程不隔离导致结果不可复现,取舍详见[接入你的 Agent · 为什么不直调](../docs-site/zh/tutorials/connect-your-agent.mdx):
-
-```typescript
-// agents/weather-bot.ts —— 远程 agent,URL 是它的私事
-import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
-
-export default defineAgent({
-  name: "weather-bot",
-  evidenceCoverage: completeEvidenceCoverage,
-  async send(input, ctx) {
-    const r = await fetch(`${process.env.AGENT_URL}/chat`, {
-      method: "POST",
-      body: JSON.stringify({ message: input.text }),
-      signal: ctx.signal,
-    });
-    const body = await r.json();
-    // 用 calledTool / messageIncludes 等断言时,必须把响应映射成标准事件流
-    return { events: toStreamEvents(body), data: body.output, status: toTurnStatus(body) };
-  },
-});
-```
-
-```typescript
-// evals/weather/brooklyn.eval.ts
+~~~ts
 import { defineEval } from "niceeval";
 import { includes } from "niceeval/expect";
 
 export default defineEval({
-  description: "布鲁克林天气",
   async test(t) {
-    await t.send("布鲁克林今天天气怎么样?");
-    t.succeeded();
-    t.calledTool("get_weather", { input: { city: "Brooklyn" } });
-    t.check(t.reply, includes("晴"));
-    t.judge.autoevals.closedQA("回答是否礼貌且切题").atLeast(0.7);
+    const turn = await t.send("用一句话介绍 NiceEval");
+    t.check(turn.message, includes("NiceEval"));
   },
 });
-```
+~~~
 
-```sh
-AGENT_URL=https://my-agent.example.com npx niceeval exp local weather
-```
+值、行为、Sandbox 和 Judge 检查都会形成 Attempt-local assertion 数据。断言无法取得必需材料时显示为 `unavailable`，不会按通过或零分处理。
 
-## 2. 评一个纯函数(边缘场景:语义级单测,不测生产链路)
+## 选择运行配置
 
-只有当你确实只想把一个纯函数当"语义级单测"跑、并且清楚这测的不是用户实际走的链路时,才让 `send` 直接调用进程内代码——生产路径的评测请用上一节的 HTTP 写法:
+Experiment 选择 Eval、Agent 和本次调度条件。把配置放在 `experiments/`，再运行：
 
-```typescript
-// agents/classify.ts —— 进程内直调,仅用于纯函数单测场景
-import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
-import { classifyIntent } from "../src/agent.js";   // 你自己的代码
+~~~sh
+pnpm exec niceeval exp
+~~~
 
-export default defineAgent({
-  name: "classify",
-  evidenceCoverage: completeEvidenceCoverage,
-  async send(input) {
-    return { data: await classifyIntent(input.text), events: [], status: "completed" };
-  },
-});
-```
+每个选中的 Experiment 建立一个 Run。Run 的 expected slots 是本次分母；每个 slot 最终连接到精确 Attempt：实际执行形成 origin，沿用或显式采用形成 reference。
 
-```typescript
-// evals/classify.eval.ts
-import { defineEval } from "niceeval";
-import { equals } from "niceeval/expect";
+命令结束时显示 Invocation receipt，其中包含 `runIds`。receipt 很小：详细的 Verdict、用量、计时、conversation 和 diff 都在停稳 Record 中。
 
-export default defineEval({
-  description: "意图分类:退款",
-  async test(t) {
-    const turn = await t.send("我想退货退款");
-    t.check(turn.data, equals({ intent: "refund" }));
-  },
-});
-```
+## 查看一次运行
 
-(把 `classify` agent 放进一个 `experiments/local.ts` 运行配置。)
+~~~sh
+pnpm exec niceeval show --run <run-id>
+pnpm exec niceeval view --run <run-id>
+~~~
 
-```sh
-npx niceeval exp local classify
-```
+默认 Record root 为 `<project>/.niceeval/record/`。`show` 和 `view` 通过 Record reader、analysis selection 和 Report 宿主读取它。它们不从目录时间猜测“最近结果”，也不在浏览器内读取 Record 文件。
 
-## 3. 评一个放入沙箱的 coding agent
+若要选择每个 Experiment 最后完成的 Run，使用：
 
-给一个编码任务,让 Claude Code / bub 在隔离 Sandbox 里改代码,再用测试验证。起始文件、验证测试都是 `test(t)` 里手工放进沙箱——没有 `PROMPT.md` 目录约定,也没有自动发现:
+~~~sh
+pnpm exec niceeval show --latest
+~~~
 
-```typescript
-// evals/fixtures/button.eval.ts
-import { defineEval } from "niceeval";
-import { commandSucceeded, excludes } from "niceeval/expect";
+`--latest` 只考虑带 `completedAt` 的 Run。没有完成 Run 时，改用明确的 `--run`。
 
-const PACKAGE_JSON = JSON.stringify({
-  name: "button-fixture",
-  type: "module",
-  scripts: { test: "vitest run" },
-  devDependencies: { vitest: "^2.0.0" },
-});
+## 读懂状态
 
-// 验证测试的源码,agent 跑完之后才会被放进沙箱,它全程看不到
-const BUTTON_TEST = `
-import { test, expect } from "vitest";
-import { existsSync, readFileSync } from "node:fs";
+Sample 保留完整分母。样本状态（Sample slot state）说明每个 slot 是下列哪一种：
 
-test("Button 存在", () => {
-  expect(existsSync("src/components/Button.tsx")).toBe(true);
-});
+| 状态 | 含义 |
+|---|---|
+| `included` | 有合法 Member，能读取其采用的 Attempt。 |
+| `not-recorded` | expected slot 没有 Member。 |
+| `invalid` | Member、Attempt 或引用违反核心规则。 |
+| `excluded` | 选择器在既有 Sample 上排除了该 slot。 |
 
-test("接受 label / onClick", () => {
-  const src = readFileSync("src/components/Button.tsx", "utf-8");
-  expect(src).toContain("label");
-  expect(src).toContain("onClick");
-});
-`;
+Attachment 状态与 slot 状态分开。页面需要的 Attachment 若未采集，会显示 `unavailable`；当前 reader 不支持时显示 `unsupported`；损坏时显示具名 issue。
 
-export default defineEval({
-  description: "实现一个 Button 组件",
-  async test(t) {
-    // fixture 与依赖在 agent 上场前就位,npm test 不依赖 agent 自己想起来装依赖
-    await t.sandbox.writeText("package.json", JSON.stringify(PACKAGE_JSON));
-    const install = await t.sandbox.runCommand("npm", ["install"]);
-    t.require(install, commandSucceeded());
+## 编辑与再次查看
 
-    await t.send(
-      "在 src/components/Button.tsx 导出一个 Button 组件,接受 label 和 onClick 两个 prop。",
-    );
+Record 是 immutable whole-Run 的持久事实集。`show`、`view` 与 export 使用持有 shared maintenance lease 的 frozen reader，可以和 writer 并发。
 
-    // agent 那一轮已经结束,现在才放测试文件、才跑测试
-    await t.sandbox.writeText("button.test.ts", BUTTON_TEST);
-    const test = await t.sandbox.runCommand("npm", ["test"]);
-    t.check(test, commandSucceeded());
+宿主形成 `ReportExecution` 并关闭 reader Scope 后，Report execution 与静态站不再访问 Record。需要不同事实时发布新 Run，不局部编辑已发布 Attempt。
 
-    // 行为断言在宿主侧:agent 与沙箱都感知不到
-    t.check(t.o11y.shellCommands.map((c) => c.command).join("\n"), excludes("rm -rf"));
-  },
-});
-```
+不要在 writer 或 reader lease 存续时编辑目录。Record 不保存编辑事务、历史副本或全局格式整数。
 
-在 `experiments/local.ts` 里给这个沙箱型 agent 声明 `sandbox`：
+## 导出静态报告站
 
-```typescript
-sandbox: dockerSandbox({ source: { type: "image", image: NICEEVAL_CLAUDE_CODE_DOCKER_IMAGE } })
-```
+~~~sh
+pnpm exec niceeval view --run <run-id> --out ./report-site
+~~~
 
-`dockerSandbox` 和镜像常量都从 `niceeval/sandbox` 导入。
-没有游离的 Provider 配置,也没有 `--sandbox` 这种 CLI 替换:起点由 template-bearing factory 声明并同时带出 Provider,写在 Experiment 或 Eval 的 `sandbox` 字段上(配对规则见 [Sandbox Layer](feature/sandbox/layers.md))。
-
-**跑起来:**
-
-```sh
-# 直连 API + 本地 Docker,不需要任何云 token
-export ANTHROPIC_API_KEY=sk-ant-...
-npx niceeval exp local fixtures/button
-
-# 跑 10 次测通过率(默认跑满,不提前退出)
-npx niceeval exp local fixtures/button --attempts 10
-
-# 只想知道能不能过、不在乎通过率:过一次就停,省下剩余次数
-npx niceeval exp local fixtures/button --attempts 10 --early-exit
-```
-
-## 看结果
-
-控制台实时输出:
-
-```text
-Discovered 3 evals
-
-  ✓ classify (12ms)
-  ✓ weather/brooklyn (456ms)
-  ✗ fixtures/button (38s)
-    - gate: commandSucceeded [FAILED]
-      button.test.ts › 接受 label / onClick
-      Expected src to contain "onClick"
-
-Results:  2 passed, 1 failed, 0 skipped
-```
-
-详细 artifact 落在该实验的 Run 目录 `.niceeval/<experiment>/<run>/`。
-Run 级 `run.json`,以及每个 attempt 目录下的 `result.json`(判定、断言、结构化错误与 diagnostics)。
-按需生成 `commands.json`（非零 Sandbox 命令）、`events.json`、`sources.json`、`trace.json`、`o11y.json`、`diff.json`。结构详见 [Record Format](feature/record/architecture.md)。
+export 包含页面、组件宿主数据、精确 runtime、下载项和资源。生成后的站点可离线打开，不需要源 Record 或之后安装 NiceEval。
 
 ## 接进 CI
 
-```yaml
-# .github/workflows/evals.yml
-- run: npx niceeval exp ci --strict --junit .niceeval/junit.xml
-  env:
-    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-```
-
-`--strict` 让 soft 断言低于阈值也判为 `failed`;有任何 `failed` 或 `errored` 即非零退出。
+在 CI 中运行同一条 `niceeval exp` 命令。进程退出状态结合 Invocation completion 和 Verdict；机器调用方可使用 `--json` 获取当前进程反馈与最后的 receipt，再按 `runIds` 读取需要的事实。
 
 ## 接着读
 
-- [Authoring](feature/eval/README.md) —— 多轮、测试集从输入数组生成多条 eval、fixture 进阶。
-- [Assertions](./feature/assertions/README.md) —— 全部评分手段。
-- [CLI 参考](../docs-site/zh/reference/cli.mdx) —— 全部命令与标志。
+- [Record](feature/record/README.md)
+- [Sample](feature/sample/README.md)
+- [Reports CLI](feature/reports/README.md)
+- [缓存与携带](feature/experiments/cache.md)
+- [Assertions](feature/assertions/README.md)

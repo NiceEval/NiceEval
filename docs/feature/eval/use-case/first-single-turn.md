@@ -32,10 +32,9 @@
    带本地文件的一轮用 `t.sendFile(path, text?)`，文件按扩展名推断 MIME、随本轮输入附上。
 
 3. 断言分两类，写在你观察结果的地方：
-   - **作用域断言**（`t.succeeded()`、`t.calledTool(...)`）：记下来，`test` 结束后对整个 attempt 聚合评估。
-     默认就是硬门槛（gate）、默认「至少一次」，多数场景一个修饰都不用链。
-   - **值断言**（`t.check(value, matcher)`）：就地对一个具体值评分，matcher 从 `niceeval/expect` 导入（`includes` / `equals` / `matches` / `satisfies` …，全表见[值断言](../../assertions/library/value-assertions.md)）。
-     后续代码依赖这个值时改用 `await t.require(...)`——不通过直接中止。
+   - **作用域断言**（`t.succeeded()`、`t.calledTool(...)`）：调用时直接登记 Boolean Assertion，进入 Attempt Verdict。
+   - **值断言**（`t.check(value, match)`）：就地对一个具体值登记 Assertion，match 从 `niceeval/expect` 导入（`includes` / `equals` / `matches` / `satisfies` …，全表见[值断言](../../assertions/library/value-assertions.md)）。
+      后续代码依赖这个值时 `await handle.orStop()`——不通过就停止当前 continuation。
 
 4. 结构化输出用 turn 接收者就地断：
 
@@ -53,5 +52,5 @@
 ## 相关阅读
 
 - [Context](../library/context.md) —— `send` / `reply` / `events` 的契约。
-- [值断言](../../assertions/library/value-assertions.md) —— matcher 全表与 `check` / `require` 的区别。
+- [值断言](../../assertions/library/value-assertions.md) —— matcher 全表与 `t.check` 的形状。
 - [作用域断言](../../assertions/library/scoped-assertions.md) —— 断言词汇全表。

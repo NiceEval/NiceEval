@@ -13,7 +13,8 @@ Agent 自己驱动、经 Transcript 归一化进入标准事件流的工具调�
 ## 问题
 
 Agent 用来侦察运行条件的常规命令会把继承到的凭据原样写进自己的 stdout，例如列出并按关键字过滤当前进程 env 的命令。
-o11y 把这份工具输出逐字归一化进标准事件流；若在写盘前不做替换，凭据随 `events.json` 等 artifact 落盘，并随报告站与提交一并传播。
+o11y 把这份工具输出逐字归一化进标准 Observation stream；若在写入 Record 前不做替换，凭据会随 Observation
+evidence 落盘，并随报告站与提交一并传播。
 
 命中不是靠变量名比对触发，而是概率性的字符串匹配：命中过的不是变量名本身，而是随机凭据值内部恰好包含的一段子串。
 命中范围因此无法靠约束 agent 的使用方式来避免——只要 agent 进程持有真实凭据，它就总能在自己的进程 env 里读到该值。
@@ -35,7 +36,7 @@ o11y 把这份工具输出逐字归一化进标准事件流；若在写盘前不
 |---|---|
 | Runner | 为本 Attempt 注入 env；持有 **attempt 内 credential map**（变量名 → 实际值） |
 | o11y | Transcript 归一化 → 标准事件流；**不**持有 secret 语义，不负责「哪些值是凭据」 |
-| Record 写盘 / serializer | 在字符串进入 `events.json`、`trace.json`、日志类 artifact 之前，对 map 中的值做精确替换 |
+| Record 写盘 / serializer | 在字符串进入 Observation body、trace evidence 或日志类 evidence 之前，对 map 中的值做精确替换 |
 
 固定数据流：
 
@@ -44,7 +45,7 @@ Transcript
     → o11y normalize（格式统一，无 secret 语义）
     → Record serializer / write boundary
     → redactKnownSecrets(credentialMap)
-    → events.json / trace.json / 日志 artifact
+    → Observation stream / trace evidence / 日志 evidence
 ```
 
 `redactKnownSecrets` 不进入 o11y 内核。o11y 只归一化协议，Record writer 才持有 Attempt 的凭据值集合并执行过滤。
@@ -59,7 +60,7 @@ Transcript
 
 ### 涵盖面
 
-脱敏范围涵盖全部落盘转写面：`events.json`、`trace.json`，以及日志类 artifact。
+脱敏范围涵盖全部落盘转写面：Observation stream、trace evidence 与日志类 evidence。
 它与既有 `CommandOptions.sensitiveValues` 命令级脱敏共用 `<redacted>` 占位和最长匹配算法。
 命令级登记 Runner 发起的命令内容，Attempt 凭据集合涵盖 Agent 转写路径。
 

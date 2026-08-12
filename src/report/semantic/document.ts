@@ -1,0 +1,900 @@
+import {
+  isReportDownloadPath,
+  isReportRoute,
+  type ReportDownloadPath,
+  type ReportRoute,
+} from "../author/identity.ts";
+
+export type ReportScalar = null | boolean | number | string;
+
+export type ReportInline =
+  | { readonly type: "text"; readonly value: string }
+  | { readonly type: "code"; readonly value: string }
+  | { readonly type: "emphasis"; readonly children: readonly ReportInline[] }
+  | {
+      readonly type: "link";
+      readonly label: readonly ReportInline[];
+      readonly target:
+        | { readonly kind: "route"; readonly route: ReportRoute }
+        | { readonly kind: "download"; readonly path: ReportDownloadPath };
+    };
+
+export interface ReportDocument {
+  readonly title: string;
+  readonly children: readonly ReportBlock[];
+}
+
+export type ReportBlock =
+  | ReportSection
+  | ReportParagraph
+  | ReportList
+  | ReportTable
+  | ReportMetric
+  | ReportStatus
+  | ReportCode
+  | ReportChart;
+
+export interface ReportSection {
+  readonly type: "section";
+  readonly heading: string;
+  readonly children: readonly ReportBlock[];
+}
+
+export interface ReportParagraph {
+  readonly type: "paragraph";
+  readonly children: readonly ReportInline[];
+}
+
+export interface ReportList {
+  readonly type: "list";
+  readonly ordered: boolean;
+  readonly items: readonly (readonly ReportBlock[])[];
+}
+
+export interface ReportTable {
+  readonly type: "table";
+  readonly caption: string;
+  readonly columns: readonly {
+    readonly key: string;
+    readonly label: string;
+    readonly align?: "start" | "end";
+  }[];
+  readonly rows: readonly Readonly<Record<string, ReportScalar>>[];
+}
+
+export interface ReportMetric {
+  readonly type: "metric";
+  readonly label: string;
+  readonly value: ReportScalar;
+  readonly unit?: string;
+}
+
+export interface ReportStatus {
+  readonly type: "status";
+  readonly tone: "neutral" | "positive" | "warning" | "negative";
+  readonly label: string;
+  readonly detail?: readonly ReportInline[];
+}
+
+export interface ReportCode {
+  readonly type: "code-block";
+  readonly value: string;
+  readonly language?: string;
+}
+
+export interface ReportChart {
+  readonly type: "chart";
+  readonly chart: "bar" | "line";
+  readonly title: string;
+  readonly categoryLabel: string;
+  readonly categories: readonly string[];
+  readonly series: readonly {
+    readonly label: string;
+    readonly values: readonly (number | null)[];
+  }[];
+}
+
+export const REPORT_DOCUMENT_NODES_MAX = 20_000;
+export const REPORT_DOCUMENT_DEPTH_MAX = 32;
+
+export interface ReportDocumentClosure {
+  readonly routes?: ReadonlySet<ReportRoute>;
+  readonly downloads?: ReadonlySet<ReportDownloadPath>;
+}
+
+export interface ReportDocumentIssue {
+  readonly code:
+    | "shape"
+    | "unicode"
+    | "number"
+    | "table"
+    | "chart"
+    | "link"
+    | "cycle"
+    | "limit";
+  readonly path: readonly (string | number)[];
+  readonly reason: string;
+}
+
+export interface ReportDocumentValidation {
+  readonly valid: boolean;
+  readonly issues: readonly ReportDocumentIssue[];
+  readonly nodeCount: number;
+  readonly stringBytes: number;
+}
+
+const encoder = new TextEncoder();
+const MAX_ISSUES = 64;
+
+export function reportDocument(input: {
+  readonly title: string;
+  readonly children: readonly ReportBlock[];
+}): ReportDocument {
+  return Object.freeze({
+    title: input.title,
+    children: freezeArray(input.children),
+  });
+}
+
+export function reportText(value: string): ReportInline {
+  return Object.freeze({ type: "text" as const, value });
+}
+
+export function reportCode(value: string): ReportInline {
+  return Object.freeze({ type: "code" as const, value });
+}
+
+export function reportEmphasis(
+  children: readonly ReportInline[],
+): ReportInline {
+  return Object.freeze({ type: "emphasis" as const, children: freezeArray(children) });
+}
+
+export function reportLink(input: {
+  readonly label: readonly ReportInline[];
+  readonly target:
+    | { readonly kind: "route"; readonly route: ReportRoute }
+    | { readonly kind: "download"; readonly path: ReportDownloadPath };
+}): ReportInline {
+  return Object.freeze({
+    type: "link" as const,
+    label: freezeArray(input.label),
+    target: input.target.kind === "route"
+      ? Object.freeze({ kind: "route" as const, route: input.target.route })
+      : Object.freeze({ kind: "download" as const, path: input.target.path }),
+  });
+}
+
+export function reportSection(input: {
+  readonly heading: string;
+  readonly children: readonly ReportBlock[];
+}): ReportSection {
+  return Object.freeze({
+    type: "section" as const,
+    heading: input.heading,
+    children: freezeArray(input.children),
+  });
+}
+
+export function reportParagraph(
+  children: readonly ReportInline[],
+): ReportParagraph {
+  return Object.freeze({ type: "paragraph" as const, children: freezeArray(children) });
+}
+
+export function reportList(input: {
+  readonly ordered: boolean;
+  readonly items: readonly (readonly ReportBlock[])[];
+}): ReportList {
+  return Object.freeze({
+    type: "list" as const,
+    ordered: input.ordered,
+    items: Object.freeze(input.items.map((item) => freezeArray(item))),
+  });
+}
+
+export function reportTable(input: {
+  readonly caption: string;
+  readonly columns: readonly {
+    readonly key: string;
+    readonly label: string;
+    readonly align?: "start" | "end";
+  }[];
+  readonly rows: readonly Readonly<Record<string, ReportScalar>>[];
+}): ReportTable {
+  return Object.freeze({
+    type: "table" as const,
+    caption: input.caption,
+    columns: Object.freeze(
+      input.columns.map((column) =>
+        Object.freeze({
+          key: column.key,
+          label: column.label,
+          ...(column.align === undefined ? {} : { align: column.align }),
+        })
+      ),
+    ),
+    rows: Object.freeze(input.rows.map(cloneRow)),
+  });
+}
+
+export function reportMetric(input: {
+  readonly label: string;
+  readonly value: ReportScalar;
+  readonly unit?: string;
+}): ReportMetric {
+  return Object.freeze({
+    type: "metric" as const,
+    label: input.label,
+    value: input.value,
+    ...(input.unit === undefined ? {} : { unit: input.unit }),
+  });
+}
+
+export function reportStatus(input: {
+  readonly tone: "neutral" | "positive" | "warning" | "negative";
+  readonly label: string;
+  readonly detail?: readonly ReportInline[];
+}): ReportStatus {
+  return Object.freeze({
+    type: "status" as const,
+    tone: input.tone,
+    label: input.label,
+    ...(input.detail === undefined ? {} : { detail: freezeArray(input.detail) }),
+  });
+}
+
+export function reportCodeBlock(input: {
+  readonly value: string;
+  readonly language?: string;
+}): ReportCode {
+  return Object.freeze({
+    type: "code-block" as const,
+    value: input.value,
+    ...(input.language === undefined ? {} : { language: input.language }),
+  });
+}
+
+export function reportChart(input: {
+  readonly chart: "bar" | "line";
+  readonly title: string;
+  readonly categoryLabel: string;
+  readonly categories: readonly string[];
+  readonly series: readonly {
+    readonly label: string;
+    readonly values: readonly (number | null)[];
+  }[];
+}): ReportChart {
+  return Object.freeze({
+    type: "chart" as const,
+    chart: input.chart,
+    title: input.title,
+    categoryLabel: input.categoryLabel,
+    categories: freezeArray(input.categories),
+    series: Object.freeze(
+      input.series.map((series) =>
+        Object.freeze({ label: series.label, values: freezeArray(series.values) })
+      ),
+    ),
+  });
+}
+
+/**
+ * Performs exact-shape and relational checks without rendering or evaluating
+ * author callbacks. Supplying a closure additionally verifies semantic links.
+ */
+export function validateReportDocument(
+  document: unknown,
+  closure: ReportDocumentClosure = {},
+): ReportDocumentValidation {
+  const state: ValidationState = {
+    closure,
+    issues: [],
+    nodeCount: 0,
+    stringBytes: 0,
+    active: new Set<object>(),
+  };
+  validateDocument(document, state, [], 0);
+  return Object.freeze({
+    valid: state.issues.length === 0,
+    issues: Object.freeze(state.issues),
+    nodeCount: state.nodeCount,
+    stringBytes: state.stringBytes,
+  });
+}
+
+/** Copies a validated document into a frozen, self-contained semantic tree. */
+export function freezeReportDocument(document: ReportDocument): ReportDocument {
+  const validation = validateReportDocument(document);
+  if (!validation.valid) {
+    throw new TypeError("a Report document must satisfy the closed semantic tree shape");
+  }
+  return cloneDocument(document);
+}
+
+interface ValidationState {
+  readonly closure: ReportDocumentClosure;
+  readonly issues: ReportDocumentIssue[];
+  nodeCount: number;
+  stringBytes: number;
+  readonly active: Set<object>;
+}
+
+function validateDocument(
+  value: unknown,
+  state: ValidationState,
+  path: readonly (string | number)[],
+  depth: number,
+): void {
+  const record = enterNode(value, state, path, depth);
+  if (record === undefined) {
+    return;
+  }
+  try {
+    exactFields(record, ["title", "children"], state, path);
+    validateString(field(record, "title"), state, pathFor(path, "title"));
+    forEachArray(field(record, "children"), state, pathFor(path, "children"), (child, index) =>
+      validateBlock(child, state, pathFor(pathFor(path, "children"), index), depth + 1)
+    );
+  } finally {
+    state.active.delete(record);
+  }
+}
+
+function validateBlock(
+  value: unknown,
+  state: ValidationState,
+  path: readonly (string | number)[],
+  depth: number,
+): void {
+  const record = enterNode(value, state, path, depth);
+  if (record === undefined) {
+    return;
+  }
+  try {
+    const type = field(record, "type");
+    switch (type) {
+      case "section":
+        exactFields(record, ["type", "heading", "children"], state, path);
+        validateString(field(record, "heading"), state, pathFor(path, "heading"));
+        forEachArray(field(record, "children"), state, pathFor(path, "children"), (child, index) =>
+          validateBlock(child, state, pathFor(pathFor(path, "children"), index), depth + 1)
+        );
+        break;
+      case "paragraph":
+        exactFields(record, ["type", "children"], state, path);
+        forEachArray(field(record, "children"), state, pathFor(path, "children"), (child, index) =>
+          validateInline(child, state, pathFor(pathFor(path, "children"), index), depth + 1)
+        );
+        break;
+      case "list":
+        exactFields(record, ["type", "ordered", "items"], state, path);
+        if (typeof field(record, "ordered") !== "boolean") {
+          issue(state, "shape", pathFor(path, "ordered"), "list ordered must be a boolean");
+        }
+        forEachArray(field(record, "items"), state, pathFor(path, "items"), (item, itemIndex) => {
+          forEachArray(item, state, pathFor(pathFor(path, "items"), itemIndex), (child, childIndex) =>
+            validateBlock(
+              child,
+              state,
+              pathFor(pathFor(pathFor(path, "items"), itemIndex), childIndex),
+              depth + 1,
+            )
+          );
+        });
+        break;
+      case "table":
+        validateTable(record, state, path);
+        break;
+      case "metric":
+        exactFields(record, ["type", "label", "value", "unit"], state, path);
+        validateString(field(record, "label"), state, pathFor(path, "label"));
+        validateScalar(field(record, "value"), state, pathFor(path, "value"));
+        optionalString(record, "unit", state, path);
+        break;
+      case "status":
+        exactFields(record, ["type", "tone", "label", "detail"], state, path);
+        if (!isTone(field(record, "tone"))) {
+          issue(state, "shape", pathFor(path, "tone"), "status tone is not recognized");
+        }
+        validateString(field(record, "label"), state, pathFor(path, "label"));
+        if (hasField(record, "detail")) {
+          forEachArray(field(record, "detail"), state, pathFor(path, "detail"), (child, index) =>
+            validateInline(child, state, pathFor(pathFor(path, "detail"), index), depth + 1)
+          );
+        }
+        break;
+      case "code-block":
+        exactFields(record, ["type", "value", "language"], state, path);
+        validateString(field(record, "value"), state, pathFor(path, "value"));
+        optionalString(record, "language", state, path);
+        break;
+      case "chart":
+        validateChart(record, state, path);
+        break;
+      default:
+        issue(state, "shape", pathFor(path, "type"), "the block type is not part of ReportDocument");
+        break;
+    }
+  } finally {
+    state.active.delete(record);
+  }
+}
+
+function validateInline(
+  value: unknown,
+  state: ValidationState,
+  path: readonly (string | number)[],
+  depth: number,
+): void {
+  const record = enterNode(value, state, path, depth);
+  if (record === undefined) {
+    return;
+  }
+  try {
+    const type = field(record, "type");
+    switch (type) {
+      case "text":
+      case "code":
+        exactFields(record, ["type", "value"], state, path);
+        validateString(field(record, "value"), state, pathFor(path, "value"));
+        break;
+      case "emphasis":
+        exactFields(record, ["type", "children"], state, path);
+        forEachArray(field(record, "children"), state, pathFor(path, "children"), (child, index) =>
+          validateInline(child, state, pathFor(pathFor(path, "children"), index), depth + 1)
+        );
+        break;
+      case "link":
+        exactFields(record, ["type", "label", "target"], state, path);
+        forEachArray(field(record, "label"), state, pathFor(path, "label"), (child, index) =>
+          validateInline(child, state, pathFor(pathFor(path, "label"), index), depth + 1)
+        );
+        validateLinkTarget(field(record, "target"), state, pathFor(path, "target"));
+        break;
+      default:
+        issue(state, "shape", pathFor(path, "type"), "the inline type is not part of ReportDocument");
+        break;
+    }
+  } finally {
+    state.active.delete(record);
+  }
+}
+
+function validateTable(
+  record: Record<string, unknown>,
+  state: ValidationState,
+  path: readonly (string | number)[],
+): void {
+  exactFields(record, ["type", "caption", "columns", "rows"], state, path);
+  validateString(field(record, "caption"), state, pathFor(path, "caption"));
+  const keys = new Set<string>();
+  forEachArray(field(record, "columns"), state, pathFor(path, "columns"), (column, index) => {
+    const columnPath = pathFor(pathFor(path, "columns"), index);
+    const columnRecord = plainRecord(column, state, columnPath);
+    if (columnRecord === undefined) {
+      return;
+    }
+    exactFields(columnRecord, ["key", "label", "align"], state, columnPath);
+    const key = field(columnRecord, "key");
+    if (typeof key !== "string" || key.length === 0) {
+      issue(state, "table", pathFor(columnPath, "key"), "a table column key must be a non-empty string");
+    } else if (keys.has(key)) {
+      issue(state, "table", pathFor(columnPath, "key"), "table column keys must be unique");
+    } else {
+      keys.add(key);
+      validateString(key, state, pathFor(columnPath, "key"));
+    }
+    validateString(field(columnRecord, "label"), state, pathFor(columnPath, "label"));
+    if (hasField(columnRecord, "align") && field(columnRecord, "align") !== "start" && field(columnRecord, "align") !== "end") {
+      issue(state, "table", pathFor(columnPath, "align"), "a table column alignment must be start or end");
+    }
+  });
+  forEachArray(field(record, "rows"), state, pathFor(path, "rows"), (row, index) => {
+    const rowPath = pathFor(pathFor(path, "rows"), index);
+    const rowRecord = plainRecord(row, state, rowPath);
+    if (rowRecord === undefined) {
+      return;
+    }
+    const rowKeys = Object.keys(rowRecord);
+    if (rowKeys.length !== keys.size || rowKeys.some((key) => !keys.has(key))) {
+      issue(state, "table", rowPath, "row keys must exactly match the table columns");
+    }
+    for (const key of rowKeys) {
+      validateScalar(field(rowRecord, key), state, pathFor(rowPath, key));
+    }
+  });
+}
+
+function validateChart(
+  record: Record<string, unknown>,
+  state: ValidationState,
+  path: readonly (string | number)[],
+): void {
+  exactFields(
+    record,
+    ["type", "chart", "title", "categoryLabel", "categories", "series"],
+    state,
+    path,
+  );
+  if (field(record, "chart") !== "bar" && field(record, "chart") !== "line") {
+    issue(state, "chart", pathFor(path, "chart"), "chart kind must be bar or line");
+  }
+  validateString(field(record, "title"), state, pathFor(path, "title"));
+  validateString(field(record, "categoryLabel"), state, pathFor(path, "categoryLabel"));
+  const categories = arrayValue(field(record, "categories"), state, pathFor(path, "categories"));
+  if (categories !== undefined) {
+    categories.forEach((category, index) =>
+      validateString(category, state, pathFor(pathFor(path, "categories"), index))
+    );
+  }
+  forEachArray(field(record, "series"), state, pathFor(path, "series"), (series, index) => {
+    const seriesPath = pathFor(pathFor(path, "series"), index);
+    const seriesRecord = plainRecord(series, state, seriesPath);
+    if (seriesRecord === undefined) {
+      return;
+    }
+    exactFields(seriesRecord, ["label", "values"], state, seriesPath);
+    validateString(field(seriesRecord, "label"), state, pathFor(seriesPath, "label"));
+    const values = arrayValue(field(seriesRecord, "values"), state, pathFor(seriesPath, "values"));
+    if (values === undefined) {
+      return;
+    }
+    if (categories !== undefined && values.length !== categories.length) {
+      issue(state, "chart", pathFor(seriesPath, "values"), "chart series length must match categories");
+    }
+    values.forEach((point, pointIndex) => {
+      if (point !== null && (typeof point !== "number" || !Number.isFinite(point))) {
+        issue(state, "number", pathFor(pathFor(seriesPath, "values"), pointIndex), "chart values must be finite numbers or null");
+      }
+    });
+  });
+}
+
+function validateLinkTarget(
+  value: unknown,
+  state: ValidationState,
+  path: readonly (string | number)[],
+): void {
+  const record = plainRecord(value, state, path);
+  if (record === undefined) {
+    return;
+  }
+  const kind = field(record, "kind");
+  if (kind === "route") {
+    exactFields(record, ["kind", "route"], state, path);
+    const target = field(record, "route");
+    if (!isReportRoute(target)) {
+      issue(state, "link", pathFor(path, "route"), "a route link must use a valid ReportRoute");
+    } else if (state.closure.routes !== undefined && !state.closure.routes.has(target)) {
+      issue(state, "link", pathFor(path, "route"), "the route link is absent from this execution");
+    }
+    return;
+  }
+  if (kind === "download") {
+    exactFields(record, ["kind", "path"], state, path);
+    const target = field(record, "path");
+    if (!isReportDownloadPath(target)) {
+      issue(state, "link", pathFor(path, "path"), "a download link must use a valid ReportDownloadPath");
+    } else if (state.closure.downloads !== undefined && !state.closure.downloads.has(target)) {
+      issue(state, "link", pathFor(path, "path"), "the download link is absent from this execution");
+    }
+    return;
+  }
+  issue(state, "link", pathFor(path, "kind"), "a link target must be a route or download");
+}
+
+function enterNode(
+  value: unknown,
+  state: ValidationState,
+  path: readonly (string | number)[],
+  depth: number,
+): Record<string, unknown> | undefined {
+  if (depth > REPORT_DOCUMENT_DEPTH_MAX) {
+    issue(state, "limit", path, `a document may be at most ${REPORT_DOCUMENT_DEPTH_MAX} nodes deep`);
+    return undefined;
+  }
+  const record = plainRecord(value, state, path);
+  if (record === undefined) {
+    return undefined;
+  }
+  if (state.active.has(record)) {
+    issue(state, "cycle", path, "a semantic document cannot contain a cycle");
+    return undefined;
+  }
+  state.nodeCount += 1;
+  if (state.nodeCount > REPORT_DOCUMENT_NODES_MAX) {
+    issue(state, "limit", path, `a document may contain at most ${REPORT_DOCUMENT_NODES_MAX} nodes`);
+    return undefined;
+  }
+  state.active.add(record);
+  return record;
+}
+
+function plainRecord(
+  value: unknown,
+  state: ValidationState,
+  path: readonly (string | number)[],
+): Record<string, unknown> | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    issue(state, "shape", path, "a semantic node must be a plain object");
+    return undefined;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) {
+    issue(state, "shape", path, "a semantic node must be a plain object");
+    return undefined;
+  }
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== "string") {
+      issue(state, "shape", path, "semantic nodes cannot contain symbol fields");
+      return undefined;
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
+      issue(state, "shape", pathFor(path, key), "semantic nodes cannot contain accessors or hidden fields");
+      return undefined;
+    }
+  }
+  return value as Record<string, unknown>;
+}
+
+function exactFields(
+  record: Record<string, unknown>,
+  allowed: readonly string[],
+  state: ValidationState,
+  path: readonly (string | number)[],
+): void {
+  const allowedFields = new Set(allowed);
+  for (const key of Object.keys(record)) {
+    if (!allowedFields.has(key)) {
+      issue(state, "shape", pathFor(path, key), "this field is not part of ReportDocument");
+    }
+  }
+  for (const key of allowed) {
+    if (!hasField(record, key) && key !== "unit" && key !== "detail" && key !== "language" && key !== "align") {
+      issue(state, "shape", pathFor(path, key), "a required semantic field is missing");
+    }
+  }
+}
+
+function field(record: Record<string, unknown>, key: string): unknown {
+  return Object.getOwnPropertyDescriptor(record, key)?.value;
+}
+
+function hasField(record: Record<string, unknown>, key: string): boolean {
+  return Object.hasOwn(record, key);
+}
+
+function optionalString(
+  record: Record<string, unknown>,
+  key: string,
+  state: ValidationState,
+  path: readonly (string | number)[],
+): void {
+  if (hasField(record, key)) {
+    validateString(field(record, key), state, pathFor(path, key));
+  }
+}
+
+function validateScalar(
+  value: unknown,
+  state: ValidationState,
+  path: readonly (string | number)[],
+): void {
+  if (value === null || typeof value === "boolean") {
+    return;
+  }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) {
+      issue(state, "number", path, "numbers in a semantic document must be finite");
+    }
+    return;
+  }
+  validateString(value, state, path);
+}
+
+function validateString(
+  value: unknown,
+  state: ValidationState,
+  path: readonly (string | number)[],
+): void {
+  if (typeof value !== "string") {
+    issue(state, "shape", path, "this semantic field must be a string");
+    return;
+  }
+  if (!hasOnlyUnicodeScalars(value)) {
+    issue(state, "unicode", path, "strings in a semantic document must contain Unicode scalar values");
+    return;
+  }
+  state.stringBytes += encoder.encode(value).byteLength;
+}
+
+function forEachArray(
+  value: unknown,
+  state: ValidationState,
+  path: readonly (string | number)[],
+  visit: (item: unknown, index: number) => void,
+): void {
+  const values = arrayValue(value, state, path);
+  values?.forEach(visit);
+}
+
+function arrayValue(
+  value: unknown,
+  state: ValidationState,
+  path: readonly (string | number)[],
+): readonly unknown[] | undefined {
+  if (!Array.isArray(value)) {
+    issue(state, "shape", path, "this semantic field must be an array");
+    return undefined;
+  }
+  for (let index = 0; index < value.length; index += 1) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+    if (descriptor === undefined || !("value" in descriptor)) {
+      issue(state, "shape", pathFor(path, index), "semantic arrays cannot contain holes or accessors");
+      return undefined;
+    }
+  }
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key === "symbol" || (key !== "length" && !isArrayIndex(key))) {
+      issue(state, "shape", path, "semantic arrays cannot contain custom fields");
+      return undefined;
+    }
+  }
+  return value;
+}
+
+function issue(
+  state: ValidationState,
+  code: ReportDocumentIssue["code"],
+  path: readonly (string | number)[],
+  reason: string,
+): void {
+  if (state.issues.length >= MAX_ISSUES) {
+    return;
+  }
+  state.issues.push(Object.freeze({ code, path: Object.freeze([...path]), reason }));
+}
+
+function pathFor(
+  path: readonly (string | number)[],
+  segment: string | number,
+): readonly (string | number)[] {
+  return [...path, segment];
+}
+
+function isArrayIndex(value: string): boolean {
+  if (!/^(?:0|[1-9][0-9]*)$/.test(value)) {
+    return false;
+  }
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number >= 0 && number < 2 ** 32 - 1;
+}
+
+function isTone(value: unknown): value is ReportStatus["tone"] {
+  return value === "neutral" || value === "positive" || value === "warning" || value === "negative";
+}
+
+function hasOnlyUnicodeScalars(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (next < 0xdc00 || next > 0xdfff) {
+        return false;
+      }
+      index += 1;
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function freezeArray<Value>(values: readonly Value[]): readonly Value[] {
+  return Object.freeze([...values]);
+}
+
+function cloneDocument(document: ReportDocument): ReportDocument {
+  return Object.freeze({
+    title: document.title,
+    children: Object.freeze(document.children.map(cloneBlock)),
+  });
+}
+
+function cloneBlock(block: ReportBlock): ReportBlock {
+  switch (block.type) {
+    case "section":
+      return Object.freeze({
+        type: "section" as const,
+        heading: block.heading,
+        children: Object.freeze(block.children.map(cloneBlock)),
+      });
+    case "paragraph":
+      return Object.freeze({
+        type: "paragraph" as const,
+        children: Object.freeze(block.children.map(cloneInline)),
+      });
+    case "list":
+      return Object.freeze({
+        type: "list" as const,
+        ordered: block.ordered,
+        items: Object.freeze(block.items.map((item) => Object.freeze(item.map(cloneBlock)))),
+      });
+    case "table":
+      return Object.freeze({
+        type: "table" as const,
+        caption: block.caption,
+        columns: Object.freeze(block.columns.map((column) => Object.freeze({ ...column }))),
+        rows: Object.freeze(block.rows.map(cloneRow)),
+      });
+    case "metric":
+      return Object.freeze({
+        type: "metric" as const,
+        label: block.label,
+        value: block.value,
+        ...(block.unit === undefined ? {} : { unit: block.unit }),
+      });
+    case "status":
+      return Object.freeze({
+        type: "status" as const,
+        tone: block.tone,
+        label: block.label,
+        ...(block.detail === undefined
+          ? {}
+          : { detail: Object.freeze(block.detail.map(cloneInline)) }),
+      });
+    case "code-block":
+      return Object.freeze({
+        type: "code-block" as const,
+        value: block.value,
+        ...(block.language === undefined ? {} : { language: block.language }),
+      });
+    case "chart":
+      return Object.freeze({
+        type: "chart" as const,
+        chart: block.chart,
+        title: block.title,
+        categoryLabel: block.categoryLabel,
+        categories: freezeArray(block.categories),
+        series: Object.freeze(
+          block.series.map((series) =>
+            Object.freeze({ label: series.label, values: freezeArray(series.values) })
+          ),
+        ),
+      });
+  }
+}
+
+function cloneInline(inline: ReportInline): ReportInline {
+  switch (inline.type) {
+    case "text":
+    case "code":
+      return Object.freeze({ type: inline.type, value: inline.value });
+    case "emphasis":
+      return Object.freeze({
+        type: "emphasis" as const,
+        children: Object.freeze(inline.children.map(cloneInline)),
+      });
+    case "link":
+      return Object.freeze({
+        type: "link" as const,
+        label: Object.freeze(inline.label.map(cloneInline)),
+        target: Object.freeze({ ...inline.target }),
+      });
+  }
+}
+
+function cloneRow(
+  row: Readonly<Record<string, ReportScalar>>,
+): Readonly<Record<string, ReportScalar>> {
+  const copy: Record<string, ReportScalar> = Object.create(null) as Record<
+    string,
+    ReportScalar
+  >;
+  for (const key of Object.keys(row)) {
+    copy[key] = row[key];
+  }
+  return Object.freeze(copy);
+}

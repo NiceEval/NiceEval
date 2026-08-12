@@ -51,6 +51,19 @@ Testkit 只接收稳定机械协议。页面动作、项目排除策略与领域
 ```ts
 export type Argv = readonly [string, ...string[]];
 
+export interface InvocationReceipt {
+  readonly invocationId: string;
+  readonly runIds: readonly string[];
+  readonly startedAt: string;
+  readonly completedAt?: string;
+  readonly completion: "completed" | "interrupted" | "failed";
+}
+
+export interface ExpReceiptEvent {
+  readonly type: "receipt";
+  readonly receipt: InvocationReceipt;
+}
+
 export interface ProcessReceipt {
   argv: Argv;
   cwd: string;
@@ -64,7 +77,7 @@ export interface ProcessReceipt {
   diagnostic(): string;
   json<T = unknown>(): T;
   ndjson<T = unknown>(): T[];
-  expResult(): ExpResultEvent;
+  expReceipt(): InvocationReceipt;
 }
 
 export function runProcess(
@@ -84,10 +97,20 @@ argv 仍以数组出现在调用点，收据保存完整 argv。`diagnostic()` �
 `json()` 只接受一个完整 JSON 文档。`ndjson()` 只允许末尾换行，空白噪声、截断内容和 malformed line 都失败；错误包含行号和
 原始进程诊断。泛型只是测试本地的字段提示，不从候选包导入 schema，也不验证 NiceEval 领域字段。
 
-Testkit 直接导出公开原始 `ExpEvent` / `ExpResultEvent` 类型，不改名、不折叠字段。`expResult()` 只确认首行是
-`niceeval.exp` 的 `start`、末行是字段合法的公开 `result`，然后原样返回末行；它不折叠 verdict、不检查退出码，也不提供
-expected 辅助断言。需要检查逐 Eval 身份的场景仍直接用 `ndjson<ExpEvent>()`；其余 Adapter 直接对 `expResult()` 中的
-`passed` / `failed` / `errored` / `completion` 写精确预期。
+Testkit 直接导出公开原始 `ExpEvent`、`ExpReceiptEvent` 与精确的 `InvocationReceipt` 类型，不改名、不折叠字段。
+`expReceipt()` 严格确认首行是字段合法的 `niceeval.exp` `start`。
+它还要求全流中恰好一个 `type: "receipt"`，并且该事件是末行。
+它验证 receipt 的必填字段：
+
+- `invocationId` 与 `startedAt` 是字符串；
+- `runIds` 是字符串数组；
+- `completedAt` 未提供时不存在，否则为字符串；
+- `completion` 是 `"completed" | "interrupted" | "failed"`。
+
+`expReceipt()` 返回末行的内层 `InvocationReceipt`。它不检查退出码、不折叠 Verdict 或 Attempt，也不提供 expected 辅助断言。
+
+业务 Verdict 和 Attempt 只能从中间的 `event: "eval"` 读取，或按 `receipt.runIds` 读取 Record；receipt 本身不复制这些
+业务事实。需要检查逐 Eval 身份的场景仍直接用 `ndjson<ExpEvent>()` 并在读取 `.event` 前排除末行 `type: "receipt"`。
 
 非零 exit 与 signal 会返回收据，`timedOut` 区分 Testkit timeout 与被测进程自行退出。spawn 本身失败时抛
 `ProcessStartError`，错误携带完整 argv、cwd 与原始 cause；调用方不用猜是产品 exit 还是命令没有启动。
@@ -263,7 +286,7 @@ Node 没有可移植的“目录 `rename` 且禁止替换”原语，因此提�
 ## 不进入 Testkit 的内容
 
 - `ExpPlanDocument`、`HistoryDocument`、`ExecutionDocument` 等派生领域文档；
-- 对原始 `ExpEvent` / `ExpResultEvent` 字段的二次命名、折叠或领域解释；
+- 对原始 `ExpEvent` / `ExpReceiptEvent` 字段的二次命名、折叠或领域解释；
 - 工具名和 sentinel 的 expected；
 - `runExperiment()`、`showHistory()`、`expectCarry()`、`openAttempt()` 等产品动作；
 - `.niceeval/` 私有目录读取或候选导出的常量；

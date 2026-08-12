@@ -96,10 +96,10 @@ export default defineEval({
 ```bash
 npx niceeval exp my-agent        # run every eval under this experiment
 npx niceeval exp my-agent refund # only run those whose ID starts with refund
-npx niceeval view              # inspect results in the local viewer
+npx niceeval view --latest --experiment my-agent  # inspect results in the local viewer
 ```
 
-**What a successful run looks like**: the terminal shows a live dashboard where the completed and queued counts update in place; failures, errors, and warnings stay in the output. When the run finishes, it prints the summary, the failure locators, and the result path. `npx niceeval view` shows each eval's per-turn inputs, events, and assertion details.
+**What a successful run looks like**: the terminal shows a live dashboard where the completed and queued counts update in place; failures, errors, and warnings stay in the output. When the run finishes, it prints the summary and receipt. You can use a receipt Run ID with `npx niceeval view --run <runId>` to inspect each eval's per-turn inputs, events, and assertion details.
 
 If it doesn't run, triage by where the error shows up, into three buckets:
 
@@ -173,7 +173,7 @@ The `ctx` fields a turn may use, and how to consume them:
 | `telemetry` | Present when OTel integration is configured | Touch only `headers`: a fresh W3C `traceparent` each turn, spread into the request headers. The receiving endpoint is the same on every run — pin it in `defineConfig` and point the app at it on startup; it is not passed from send — see [OTel Integration](/tutorials/connect-otel) |
 | `session` | The runner (one per session line) | Session continuation and HITL held state live here: `id` / `capture()`, plus typed-slot `get()` / `set()` / `take()` — see [Write Send](/tutorials/write-send) |
 | `progress(update)` | The runner (bound to the current `agent.run`) | Report the short-lived status of a turn or tool; the human dashboard may show it, but it is not saved with the results |
-| `diagnostic(input)` | The runner (bound to the current `agent.run`) | Save warnings/errors such as protocol degradation or an incomplete response; a locator can drill back into them |
+| `diagnostic(input)` | The runner (bound to the current `agent.run`) | Save warnings/errors such as protocol degradation or an incomplete response; inspect them through a planned Attempt page |
 
 ### Progress, diagnostics, and fatal errors in the Adapter
 
@@ -198,7 +198,7 @@ async send(input, ctx) {
 
 `progress` is short-lived status that later updates overwrite; `diagnostic` is a bounded record you can still review after the run ends. Neither can specify a phase or output stream, and neither automatically changes `Turn.status` or the Attempt verdict. Infrastructure errors — a failed connection, parsing that cannot continue — should throw an exception; a normal failure of the Agent under test is expressed with `Turn.status: "failed"`.
 
-The terminal shows only a one-layer summary of the error, plus the locator. The full code, message, cause, stack, and diagnostics are in `result.json`; view them with `niceeval show @<locator>`. An OTel trace only adds call relationships and timing — it is not a prerequisite for recording errors.
+The terminal shows only a one-layer error summary and Attempt identity. The full code, message, cause, stack, and diagnostics live in Attempt-owned channels; inspect them with `niceeval show --run <runId> --page attempt-<attemptId>`. An OTel trace only adds call relationships and timing — it is not a prerequisite for recording errors.
 
 To evaluate local and production separately, create two Experiment files and pass in different factory parameters:
 

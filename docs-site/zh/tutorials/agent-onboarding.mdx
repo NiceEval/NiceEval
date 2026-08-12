@@ -14,7 +14,7 @@ description: "给 Coding Agent 的完整接入流程：探索项目、与用户�
 2. **前端和 Agent 怎么通信**：HTTP 还是 gRPC / WebSocket？协议是标准的还是自己实现的——AI SDK UI Message Stream、OpenAI Responses / Chat Completions 这类标准协议，还是 SDK 原生事件流透传，还是用户自定义的 JSON/SSE 帧？这直接决定 Adapter 是用内置的（零映射）还是手写 `send`（要自己写事件映射）。
 3. **后端有没有接 OTel**：搜有没有 OTel SDK 初始化、AI SDK telemetry、LangSmith / OpenLLMetry / OpenInference 这类埋点。已经有的话 Tier 2 几乎零成本。
 4. **用户自己有没有做 A/B Test / feature flag**：应用里已有变体开关的话，Experiment 的 `flags` 可以直接透传给它（Tier 3 的现成入口）。
-5. **Judge 用什么**：语义评分（`t.judge.autoevals.*`）要一个**与被测 Agent 分离的 Judge 模型**，走 OpenAI 兼容的 `/chat/completions` 协议——OpenAI 官方、DeepSeek、任何兼容该协议的网关都行。问用户手上有哪个服务的 key、想用什么 Judge 模型（没有内置默认模型，必须显式指定）。缺 key 不会静默通过：Judge 断言会记为 `unavailable`，非 optional 断言会让 Attempt `errored`。只有明确不写 Judge，或显式链 `.optional()` 允许该断言缺席时，才先用精确断言跑通。
+5. **Judge 用什么**：语义评估（`t.judge.autoevals.*`）要一个**与被测 Agent 分离的 Judge 模型**，走 OpenAI 兼容的 `/chat/completions` 协议。问用户手上有哪个服务的 key、想用什么 Judge 模型。缺 key 不会静默通过：Judge Assertion 会记为 `unavailable`；它参与 Pass grading，或在 Score Eval 中配置了 `.score()` / `.orStop()` 时，Attempt 的 grading 不可用。没有 Judge 配置时，先只写精确 Match。
 6. **是不是 Agent 本体要进 Sandbox**：被测对象是 coding agent CLI、或给 coding agent 写的 Skill/Plugin/Hook/MCP server（要在隔离 workspace 里改文件/跑命令）的话，必须走 Sandbox，不能像 HTTP 服务那样直接 `send`。
 
    默认建议 `dockerSandbox({ source: { type: "image", image: "node:24-slim" } })`，但**要先跟用户确认**——本机/CI 有没有 Docker、要不要 Vercel Sandbox 或其它远程 Provider。用户没有异议就默认走 Docker。Provider 声明在 Eval 或 Experiment 上，没有 CLI flag、项目级默认值或自动探测——见[选择 Sandbox Provider](/zh/tutorials/sandbox-providers)。
@@ -49,7 +49,7 @@ export default defineConfig({
     model: "gpt-5.4-mini",                // 必填：没有内置默认模型
     // 用非 OpenAI 官方的兼容服务（DeepSeek、网关等）时再加这两项：
     // baseUrl: "https://api.deepseek.com/v1",
-    // apiKeyEnv: "DEEPSEEK_API_KEY",     // key 从这个环境变量读。不配就读 NICEEVAL_JUDGE_KEY
+    // apiKeyEnv: "DEEPSEEK_API_KEY",     // key 从这个环境变量读。不配就读 OPENAI_API_KEY
   },
 });
 ```
@@ -58,10 +58,10 @@ export default defineConfig({
 
 三个要提醒用户的点：
 
-- **配错不会假装通过。** 模型或 key 解析不到、网关拒了鉴权、判分请求超时，这条 Judge 断言记成 `unavailable` 并带上原因，这次 Attempt 判 `errored`——评不出来的结论既不算通过，也不算 agent 答错。所以「全绿」就是真的评过了。确实允许某条缺席（实验性的、开发机上没 key）时，在那一条上显式写 `.optional()`。
-- **配完先验一次。** 写一条只评固定文本的轻量评估用例跑一遍，不需要先调被测 agent：`t.judge.autoevals.closedQA("这段文本是否表达成功?", { on: "operation completed successfully" }).gate(0.8)`。跑完 `niceeval show <评估用例 id>` 确认每条后面真的跟着分数。
-- **没有用户在场（自治接入）时不要直接跳过 Judge**：先看环境里有没有可用的 key（`NICEEVAL_JUDGE_KEY`、`DEEPSEEK_API_KEY` 等），有就用 `apiKeyEnv` 指过去并按上一条验证。确实没有才降级到精确断言 + 形状断言（`includesUrl()` / `hasSections()` 这类，见[题型与断言](/zh/tutorials/evaluation-kinds)），并在收尾总结里明确说明 Judge 未配置及原因。
-- Judge 模型要**与被测 Agent 分离**，避免同一个模型给自己打分。模型解析优先级（单次调用 → 评估用例级 → 全局配置）和三种评分形状见 [Judge](/zh/explanation/judge)，`judge` 字段全集见 [defineConfig 参考](/zh/reference/define-config)。
+- **配错不会假装通过。** 模型或 key 解析不到、网关拒绝鉴权、评估请求超时时，Judge Assertion 记为 `unavailable` 并带上原因；读取面不会把缺失 measurement 伪装成 mismatch 或零分。
+- **配完先验一次。** 写一条带 `judge: true` 的轻量 Pass Eval，调用 `turn.judge.autoevals.closedQA(...).atLeast(0.8)`。跑完 `niceeval show <评估用例 id>`，确认能看到 measurement、threshold、condition 与 Assertion 证据。
+- **没有用户在场（自治接入）时不要直接跳过 Judge**：先看环境里是否已有可用 key，例如 `OPENAI_API_KEY` 或 `DEEPSEEK_API_KEY`。有就用 `apiKeyEnv` 指向它并验证；没有时先写精确 Match，并在收尾说明 Judge 没有配置。
+- Judge 模型要**与被测 Agent 分离**，避免同一个模型给自己的输出打分。配置按 Eval、Experiment、项目配置逐字段解析；三种 recipe 见 [Judge](/zh/explanation/judge)。
 
 ## 第 3 步：写三件套
 

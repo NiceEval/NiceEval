@@ -8,6 +8,7 @@ import {
   skillDiscoveryInstruction,
 } from "./skills.ts";
 import { mapGenericSpans } from "../o11y/otlp/canonical.ts";
+import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import { parseHermesTranscript, sessionIdFromHermesOutput } from "../o11y/parsers/hermes.ts";
 import { DEFAULT_HERMES_CLI_VERSION } from "./coding-cli-versions.ts";
@@ -254,6 +255,14 @@ print(r[0] if r else "")'`,
         ctx.log("hermes transcript unavailable: negative assertions are unreliable");
         const text = res.stdout.trim().split("\n").filter((l) => !l.startsWith("{")).slice(-8).join("\n");
         if (text) events.push({ type: "message", role: "assistant", text });
+      } else if (!parsed.parseSuccess) {
+        const reason = "some Hermes transcript lines could not be parsed";
+        turnEvidenceCoverage = {
+          events: { status: "partial", reason },
+          actions: { status: "partial", reason },
+        };
+      } else {
+        turnEvidenceCoverage = unclassifiedToolActionsCoverage(events);
       }
 
       if (res.exitCode !== 0) {

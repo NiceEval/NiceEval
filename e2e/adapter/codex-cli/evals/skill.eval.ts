@@ -7,16 +7,15 @@
 // 断言双重把关:(a) 行为痕迹——真的用 shell 读过 skill 文件;(b) 结果痕迹——落盘内容确实
 // 采用了 skill 里那条只存在于该文件、模型不可能凭空猜到的约定标记。
 import { defineEval } from "niceeval";
-import { includes } from "niceeval/expect";
-
+import { includes, satisfies } from "niceeval/expect";
 const SKILL_DIR = ".agents/skills";
 const SKILL_NAME = "niceeval-status-report";
 const OTHER_SKILLS = ["niceeval-release-note", "niceeval-decoy"] as const;
 const MARKER = "STATUS-REPORT-FORMAT-NICEEVAL-E2E-914";
 const relPath = "status.txt";
-
 export default defineEval({
-  description: "Skill 正调:装了 niceeval-status-report 之后确实被读取并落进产出内容",
+  description:
+    "Skill 正调:装了 niceeval-status-report 之后确实被读取并落进产出内容",
   async test(t) {
     // 安装痕迹从沙箱里真实存在的文件读:清单本身只在宿主侧(attempt artifact agent-setup.json),
     // eval 够不着它,也不该够得着——沙箱里没有任何框架文件。
@@ -24,32 +23,73 @@ export default defineEval({
       const installed = await t.sandbox.runShell(`ls ${SKILL_DIR}`);
       t.check(installed.stdout, includes(SKILL_NAME));
     });
-
     const turn = await t.send(
       `Check whether this repository has a skill or guide file about writing a "status report" file ` +
         `before you answer — look under ${SKILL_DIR}/ if such a directory exists. ` +
         `Then create a file named ${relPath} that is a status report saying "all systems nominal", ` +
         `following whatever convention you found.`,
     );
-    await turn.succeeded().stopOnFailure();
-    t.noFailedActions();
-
+    await turn.succeeded().orStop();
+    t.check(
+      t.events,
+      satisfies<typeof t.events>(
+        "no failed tool or subagent actions",
+        (events) =>
+          events.every(
+            (event) =>
+              event.type !== "operation.finished" ||
+              event.status !== "failed",
+          ),
+      ),
+    );
     await t.group("行为痕迹:真的用 shell 读过这个 skill 的文件", () => {
       turn.calledTool("shell", {
+        input: (input) =>
+          typeof input === "object" &&
+          input !== null &&
+          !Array.isArray(input) &&
+          (typeof (input as Record<string, unknown>)["command"] === "string"
+            ? new RegExp(`${SKILL_DIR}/${SKILL_NAME}`).test(
+                (input as Record<string, unknown>)["command"] as string,
+              )
+            : new RegExp(`${SKILL_DIR}/${SKILL_NAME}`).test(
+                JSON.stringify(input) ?? "",
+              )),
         status: "completed",
-        input: { command: new RegExp(`${SKILL_DIR}/${SKILL_NAME}`) },
       });
       for (const other of OTHER_SKILLS) {
-        turn.notCalledTool("shell", { input: { command: new RegExp(`${SKILL_DIR}/${other}`) } });
+        turn.calledTool("shell", {
+          input: (input) =>
+            typeof input === "object" &&
+            input !== null &&
+            !Array.isArray(input) &&
+            (typeof (input as Record<string, unknown>)["command"] === "string"
+              ? new RegExp(`${SKILL_DIR}/${other}`).test(
+                  (input as Record<string, unknown>)["command"] as string,
+                )
+              : new RegExp(`${SKILL_DIR}/${other}`).test(
+                  JSON.stringify(input) ?? "",
+                )),
+          count: 0,
+        });
       }
       // Codex 没有原生 Skill 工具；真实读取成立时仍不得伪造 Claude 式 skill.loaded。
-      turn.notEvent("skill.loaded");
-      t.notEvent("skill.loaded");
+      t.check(
+        turn.events,
+        satisfies<typeof turn.events>("no skill.loaded event", (events) =>
+          events.every((event) => event.type !== "skill.loaded"),
+        ),
+      );
+      t.check(
+        t.events,
+        satisfies<typeof t.events>("no skill.loaded event", (events) =>
+          events.every((event) => event.type !== "skill.loaded"),
+        ),
+      );
     });
-
-    await t.group("结果痕迹:产出文件采用了 skill 里的约定标记", () => {
-      t.sandbox.fileChanged(relPath);
-      t.check(t.sandbox.file(relPath), includes(MARKER));
+    await t.group("结果痕迹:产出文件采用了 skill 里的约定标记", async () => {
+      const content = await t.sandbox.readText(relPath);
+      t.check(content, includes(MARKER));
     });
   },
 });

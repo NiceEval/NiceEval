@@ -23,7 +23,7 @@ import {
   skillDiscoveryInstruction,
   type InstallSkillsOptions,
 } from "./skills.ts";
-import { agentBin, resolveAgentBin } from "./npm-staged.ts";
+import { agentBin } from "./npm-staged.ts";
 
 /** 每个沙箱里「已经装过的全局包」去重,避免每轮 send 重复 npm i -g。 */
 const installedBySandbox = new WeakMap<Sandbox, Set<string>>();
@@ -201,8 +201,6 @@ export const shared = {
   ensureInstalled,
   /** 解析 staged / 预装 CLI 路径(用户前缀优先)。 */
   agentBin,
-  /** 解析 CLI 绝对路径,供 runCommand 使用。 */
-  resolveAgentBin,
   captureLatestJsonl,
   writeFile,
   sessionIdFromClaudeTranscript,

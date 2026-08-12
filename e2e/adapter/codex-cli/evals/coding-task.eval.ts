@@ -23,7 +23,8 @@ const cmdMarker = "niceeval-e2e-run-914";
 const seed = `alpha\n${oldMarker}\nomega\n`;
 
 export default defineEval({
-  description: "coding 任务工具轨:文件变更(改既有文件)与 shell 调用都归一进标准事件流,调用与结果配对成立",
+  description:
+    "coding 任务工具轨:文件变更(改既有文件)与 shell 调用都归一进标准事件流,调用与结果配对成立",
   async test(t) {
     await t.sandbox.writeText(relPath, seed);
 
@@ -33,24 +34,46 @@ export default defineEval({
         `(2) 跑 \`echo ${cmdMarker}\`,把命令的输出告诉我。` +
         `当前目录刻意不是 Git 仓库：不要运行 git 或 git diff；需要核对文件时请用 rg、sed 或 cat。`,
     );
-    await turn.succeeded().stopOnFailure();
+    await turn.succeeded().orStop();
 
     await t.group("文件变更事件已归一,调用与结果配对", () => {
-      t.calledTool("file_edit", { status: "completed", input: { path: new RegExp(relPath) } });
+      t.calledTool("file_edit", {
+        input: (input) =>
+          typeof input === "object" &&
+          input !== null &&
+          !Array.isArray(input) &&
+          (typeof (input as Record<string, unknown>)["path"] === "string"
+            ? new RegExp(relPath).test(
+                (input as Record<string, unknown>)["path"] as string,
+              )
+            : new RegExp(relPath).test(JSON.stringify(input) ?? "")),
+        status: "completed",
+      });
     });
     await t.group("shell 调用已归一,调用与结果配对", () => {
-      t.calledTool("shell", { status: "completed", input: { command: new RegExp(cmdMarker) } });
+      t.calledTool("shell", {
+        input: (input) =>
+          typeof input === "object" &&
+          input !== null &&
+          !Array.isArray(input) &&
+          (typeof (input as Record<string, unknown>)["command"] === "string"
+            ? new RegExp(cmdMarker).test(
+                (input as Record<string, unknown>)["command"] as string,
+              )
+            : new RegExp(cmdMarker).test(JSON.stringify(input) ?? "")),
+        status: "completed",
+      });
     });
 
-    turn.messageIncludes(cmdMarker);
+    t.check(turn.message, includes(cmdMarker));
 
-    // 双重核实:沙箱磁盘上的文件内容也要对得上(不是只信事件流自称)——目标行换了,其余行原样。
-    t.sandbox.fileChanged(relPath);
-    await t.group("目标行换了,其余行原样", () => {
-      t.check(t.sandbox.file(relPath), includes(newMarker));
-      t.check(t.sandbox.file(relPath), excludes(oldMarker));
-      t.check(t.sandbox.file(relPath), includes("alpha"));
-      t.check(t.sandbox.file(relPath), includes("omega"));
+    // 磁盘核实:沙箱里文件内容也要对得上(不是只信事件流自称)——目标行换了,其余行原样。
+    await t.group("目标行换了,其余行原样", async () => {
+      const content = await t.sandbox.readText(relPath);
+      t.check(content, includes(newMarker));
+      t.check(content, excludes(oldMarker));
+      t.check(content, includes("alpha"));
+      t.check(content, includes("omega"));
     });
   },
 });

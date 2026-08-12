@@ -1,14 +1,22 @@
-// show 专属的可复制命令拼装:页索引 / 组索引共用的携带规则(docs/feature/reports/show/reports.md
-// 「索引命令携带完整上下文」)。这不是两宿主共用的报告 runtime 部分——view 走网页路由,不生成
-// 终端命令——所以住在 show 自己这一侧,不进 src/report/runtime/host.ts。
+/**
+ * Terminal-only command composition. It is deliberately data-only: a fixed
+ * ReportExecution is rendered by `niceeval/report/host`, not reconstructed by
+ * a copied command line or legacy Record lookup.
+ */
+export interface ShowCommandContext {
+  readonly patterns: readonly string[];
+  readonly record?: string;
+  readonly experiment?: string | readonly string[];
+  readonly report?: string;
+  readonly page?: string;
+}
 
-import type { HostCommandContext } from "../report/runtime/host.ts";
-
-/** 按上下文拼一条可复制的 show 命令(页索引 / 组索引共用的携带规则)。 */
-export function showCommand(ctx: HostCommandContext, extra: string[] = []): string {
+export function showCommand(ctx: ShowCommandContext, extra: readonly string[] = []): string {
   const parts = ["niceeval show", ...ctx.patterns];
   if (ctx.experiment !== undefined) {
-    for (const exp of Array.isArray(ctx.experiment) ? ctx.experiment : [ctx.experiment]) parts.push(`--exp ${exp}`);
+    for (const experiment of Array.isArray(ctx.experiment) ? ctx.experiment : [ctx.experiment]) {
+      parts.push(`--experiment ${experiment}`);
+    }
   }
   if (ctx.record !== undefined) parts.push(`--record ${ctx.record}`);
   if (ctx.report !== undefined) parts.push(`--report ${ctx.report}`);

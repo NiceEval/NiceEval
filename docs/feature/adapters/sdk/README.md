@@ -2,7 +2,7 @@
 
 这里按 SDK 或 coding agent 名称拆分接入契约。
 每篇只记该对象特有的公开入口和协议边界；通用写法见 [`../library.md`](../library.md)，架构纪律见 [`../architecture.md`](../architecture.md)。
-每个对象目录另有一篇 `cost.md`，声明该协议的 token 桶原生口径、归一到[恒互斥 Usage 契约](../../record/architecture.md#usage)的扣减规则，以及成本是实测带回还是价格表估算。
+每个对象目录另有一篇 `cost.md`，声明该协议的 token 桶原生口径、归一到[恒互斥 Usage 契约](../../record/architecture.md)的扣减规则，以及成本是实测带回还是价格表估算。
 
 ## 索引
 

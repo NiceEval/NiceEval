@@ -290,7 +290,7 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
           who: event.who,
           verdict: event.verdict,
           reason: event.reason,
-          ...(event.assertion !== undefined ? { assertion: event.assertion } : {}),
+          ...(event.fact !== undefined ? { fact: event.fact } : {}),
           ...(event.phase !== undefined ? { phase: event.phase } : {}),
           ...(event.code !== undefined ? { code: event.code } : {}),
           ...(event.origin !== undefined ? { origin: event.origin } : {}),
@@ -376,9 +376,9 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
       };
 
     case "summary":
-    case "saved":
+    case "receipt":
       // 终局通知:发出时 counts/active 已经由前面的 attempt 事件更新到位,状态本身不再变化——
-      // 这两个事件的 payload(summary/completion/paths)由 coordinator 直接使用,不经 reducer
+      // 这两个事件的 payload(summary/completion/receipt)由 coordinator 直接使用,不经 reducer
       // 折叠进 RunFeedbackState(RunFeedbackState 是「当前进行中」的 dashboard 状态,不是终局报告)。
       return state;
 

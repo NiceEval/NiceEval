@@ -1,53 +1,54 @@
-# 局部补跑之后，当前结果怎样形成
+# 局部执行之后选择完整分析分母
 
-## 解决什么问题
+## 解决的问题
 
-一次 Experiment 可能只补跑部分 Eval。
-此时「最近一次跑出了什么」和「每道题当前可用的结果」不是同一批数据。
-选错会造成两种相反的误读:把没补跑的题当成缺失,或者把不同配置下的旧结果拼进当前比较。
+reuse planning 可以把部分目标 slot 判为 reuse，把其余 slot 判为 gap。planner 只执行 gap；局部执行是这次规划的结果，不是 Record 或 AnalysisSample 的能力。
+
+运行结束后，Reports 仍需要知道已落盘 Run 的完整分母，以及每个 slot 是本次执行、当时采用已有 Attempt，还是没有结果。
 
 ## 场景
 
-Experiment `baseline` 选择 Eval `a` 和 `b`,先后产生三次 Run:
+Experiment `baseline` 有 Eval `a` 与 `b`：
 
-| Run  | 配置         | 实际包含   |
-| ---- | ------------ | ---------- |
-| `R1` | `model: old` | `a`、`b`   |
-| `R2` | `model: new` | `a`、`b`   |
-| `R3` | `model: new` | 只补跑 `a` |
+| Run | `a` slot | `b` slot | actions provenance |
+|---|---|---|---|
+| `R1` | `origin(A1)` | `origin(B1)` | executed / executed |
+| `R2` | `origin(A2)` | `reference(B1)` | executed / carried |
+| `R3` | `origin(A3)` | `reference(B1)` | executed / accepted |
 
-`R3` 是最新 Run,但它没有 `b`。
+`B1` 的执行事实只保存一次。`R2` 与 `R3` 的 Member 都只表达“这个 slot 由 B1 完整占据”；当时是自动沿用还是人工明确采用，由各 Run 的 `niceeval.membership-provenance/v1` Attachment 说明。这些 Member 和 actions 都不持续证明 `B1` 对未来 Project Target 仍可复用。
 
-## 全流程
+## 选择流程
 
-1. **审计最近一份 Run。**
-   `latestRunSample(record)`。
-   `baseline` 只返回 `R3` 里的 `a`,并通过 `coverage.missing` 报告 `b` 缺失。
-   它不会从旧 Run 拼入 `b`——这个口径的单位就是 Run。
+```ts
+import { Effect } from "effect";
 
-2. **看当前结果集。**
-   `projectCurrentSample(record, target)`。
-   `a` 来自 `R3`,`b` 来自 `R2`。
-   两条 attempt 的 `run.configHash` 与基准(`R3`)一致,因此可以组成当前样本。
-   `sample.runs` 保留 `R2`、`R3` 两份真实 Run,不制造一份合成 Run。
+declare const reader: RecordReader;
+declare const runId: RunId;
 
-3. **拒绝不可比的旧结果。**
-   `R1` 里也有 `b`,但配置是 `model: old`,configHash 与基准不等。
-   `projectCurrentSample` 不用它填补缺口。
-   若 `R2` 不存在,`b` 留在 `coverage.missing`，原因为 `previous-result`，可附上 `R1` 的 locator 作为解释与显式 accept 入口——旧判定不计入当前结果。
+const program = Effect.gen(function* () {
+  const selection = yield* selectExplicitRuns(reader, {
+    runIds: [runId],
+  });
 
-4. **继续收窄。**
-   `sample.pipe(dropExperiments(…))` 等算子只删减已有 Run。
-   删掉 `R2` 这份 Run 后, 来自 `R3` 的 `a` 仍保留,`b` 回到缺口——分母用原始 `knownEvalIds`,不随删减缩水。
-   `pipe` 返回新 Sample,原样本不变。
+  return selection.sample;
+});
+```
+
+1. `explicit-runs` selection 读取 `R3` 的 Run Core 与 expected membership。
+2. `a` slot 的 Member 读出 `A3`，因当前 slot 等于 Attempt.origin 而派生 `relation: "origin"`。
+3. `b` slot 的 Member 读出 `B1`，因 origin 位于 `R1` 而派生 `relation: "reference"`；若 Report 需要“accepted”，再显式请求 `R3` 的 membership provenance Attachment。
+4. expected slot 没有 Member 时，`AnalysisSample` 仍保留该分母项并标为 `not-recorded`。
+
+已经创建的内存 `AnalysisSample` 不会自动变化。重新打开 reader 会重新冻结 candidateSet，但已发布 `B1` 的 bytes 不由 NiceEval 修改。
+
+源 Attempt 因外部损坏而缺失、引用身份不匹配或出现重复身份时，`b` slot 是 `core-invalid`。它不会回扫其它 Run 寻找替代 Attempt，也不会被解释成 `not-recorded`。
 
 ## 边界
 
-- `latestRunSample` 的单位是 Run,不是逐 Eval 找最新。
-- `projectCurrentSample` 可以保留同一 Experiment 的多个贡献 Run。
-- 跨 Run 拼接只在 configHash 相等时发生。
-- 携带条目与本次执行条目同等属于 current；二者差异只留在 Attempt 明细。
-- attempt 始终指向真实的物理副本。
-  Sample 不重写 locator,也不制造合成 Run。
-- 要看历史趋势,不要用 `projectCurrentSample` 代替时间序列。
-  改用 Reports 的 [Experiment 历史用例](../../reports/use-case/分析/跟踪实验历史.md)。
+- Attempt 的 origin 不因任何 reuse/adoption action 改变。
+- 每个 expected slot 最多有一个正式 Member。
+- analysis selection 不根据目录名推断 membership。
+- reader 只分析完整发布的 Run；运行中 draft 不属于 Record。
+- 需要继续读取 RecordAttachment 时传递 `selection`；`.sample` 是关闭 reader 后仍可显示的纯值，不会伪装成 reader capability。
+- 是否再次执行任何 slot 由新的 `ExecutionReusePlan` 决定，不从这份 `AnalysisSample` 推导。

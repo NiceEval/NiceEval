@@ -187,7 +187,7 @@ attempt deadline 与携带资格的 `executionMs` 起算点从
 镜像拉取与构建各带显式上限,不存在不受任何超时约束的阶段。
 新 `LifecyclePhase` 成员(建网、逐服务启动、ready 等待、
 日志采集、销毁、拆网)的插入位置与 `durationMs` 口径随
-[Record 闭集](../../../feature/record/architecture.md#resultjson)
+[Record 闭集](../../../feature/record/architecture.md)
 一并定稿。
 
 **回收契约(R9)。** 构建所需 image、创建网络、启动 Sandbox 与服务并等待 ready整体纳入
@@ -235,7 +235,7 @@ attempt deadline 与携带资格的 `executionMs` 起算点从
 
 服务声明里的 `image` 可以写 tag 或 digest。规划期由 provider
 按目标平台把 tag 读取成不可变 OCI manifest digest。规范化
-拓扑、指纹与 `run.json` 投影都登记 digest;同一 tag 被重推
+拓扑、指纹与 Run payload 投影都登记 digest;同一 tag 被重推
 会得到新指纹。读取发生在携带决策之前,失败是 Sandbox 读取错误,
 不能拿旧结果假装命中。
 `build` 不先构建再算身份,它继续以 context 内容、Dockerfile
@@ -244,15 +244,14 @@ attempt deadline 与携带资格的 `executionMs` 起算点从
 不得声明 `services` 能力。
 
 **证据(R7)。** 服务日志进
-[证据 registry](../../../feature/record/architecture.md)新行
-`service-logs`:逐服务分文件、尾部截断带体积上限、publish
-默认携带、词干进 `AttemptRecord.artifacts`;采集沿用 timing
+[Record payload](../../../feature/record/architecture.md) 新证据
+`service-logs`:逐服务分文件、尾部截断带体积上限、默认随闭包复制;采集沿用 timing
 数据的脱敏纪律(env 值不回显进摘要)。
 
 **指纹与 secrets(R6)。** `{ fromEnv }` 的变量名进指纹与
 落盘投影,值两者都不进——密钥轮换不触发重跑,与
 [judge 凭据的既有裁决](../../../feature/experiments/cache.md)
-同构;`run.json` 的拓扑投影只落 env 的 key 清单与间接
+同构;Run payload 的拓扑投影只落 env 的 key 清单与间接
 引用名,明文值不落盘。
 
 **留存。** `--keep-sandbox` 对带服务的 attempt 留存整组

@@ -1,7 +1,7 @@
 ---
 title: "LLM-as-judge in NiceEval: assessing open-ended output"
 sidebarTitle: "Judge"
-description: "How t.judge, session.judge, and turn.judge use a separate judge model to score factuality, closed-ended quality, and summarization faithfulness — plus model resolution and severity."
+description: "How t.judge and turn.judge use a separate judge model to score factuality, closed-ended quality, and summarization faithfulness — plus model resolution and severity."
 ---
 
 Judge assertions are the fifth assertion mechanism, alongside the four covered in [Assert](/explanation/assert). Use them when correctness cannot be expressed as a rule — for open-ended prose, tone, factual consistency, or summarization quality. The Judge model is **entirely separate** from the agent under test, which prevents self-evaluation bias: the same model grading its own output would be prone to rating itself generously.
@@ -10,7 +10,7 @@ Judge assertions are the fifth assertion mechanism, alongside the four covered i
 t.judge.autoevals.factuality(reference).atLeast(0.8);   // factual consistency with a reference text
 t.judge.autoevals.closedQA("Is the response appropriate for a 10-year-old?");
 t.judge.autoevals.summarizes(sourceDocument);            // faithful summarization check
-t.judge.autoevals.closedQA("Custom evaluation rubric description", { on: t.reply });
+turn.judge.autoevals.closedQA("Custom evaluation rubric description");  // bound to the turn's material
 ```
 
 ## The three judge shapes
@@ -21,19 +21,21 @@ t.judge.autoevals.closedQA("Custom evaluation rubric description", { on: t.reply
 - **`factuality(reference, opts?)`** — factual consistency between the output and a reference text you provide.
 - **`summarizes(source, opts?)`** — whether the output is a faithful summary of a source document.
 
-The `{ on }` option specifies which value to evaluate; it defaults based on the receiver (see below). The `{ model }` option overrides the judge model for a single call.
+Judge material is either bound by the receiver or passed explicitly: `turn.judge` defaults to that turn's material, while root-level `t.judge` must receive explicit `{ input, output }` strings (see below).
 
-## Where judge lives: `t`, `session`, and `turn`
+## Where judge lives: `t` and `turn`
 
 Like scoped assertions, judge calls follow the rule that **the receiver decides the default material, not the call site**:
 
 ```ts
-t.judge.autoevals.closedQA("...")        // defaults to the primary session's full conversation text
-session.judge.autoevals.closedQA("...")  // (from t.newSession()) defaults to that session's conversation text
 turn.judge.autoevals.closedQA("...")     // (from t.send()'s return value) defaults to turn.message only
+t.judge.autoevals.closedQA("...", {      // root level: no implicit material — pass both strings
+  input: "The original request",
+  output: "The material to judge",
+});
 ```
 
-`t.judge` and `session.judge` are session-level: they're the right choice for judging overall reply quality or cross-turn consistency across a whole conversation. `turn.judge` is turn-level: it only sees the message from that one turn, which is what you want when different turns in a multi-turn eval need different rubrics:
+`turn.judge` is turn-level: it only sees the message from that one turn, which is what you want when different turns in a multi-turn eval need different rubrics. Root-level `t.judge` carries no implicit material, so pass `{ input, output }` explicitly for cross-turn, file, or other custom material:
 
 ```ts
 const turn1 = await t.send("What's in this image?");                  // turn 1: the image
@@ -41,27 +43,34 @@ const turn2 = await t.send("What color is the background?");          // turns 2
 const turn3 = await t.send("What color is the shape in the middle?"); // testing cross-turn memory
 
 t.judge.autoevals
-  .closedQA("Does the assistant stay grounded in the image from turn 1 throughout?")
+  .closedQA("Does the assistant stay grounded in the image from turn 1 throughout?", {
+    input: "Identify the object in the image from turn 1 and describe it.",
+    output: "turn 2 and turn 3 answers",
+  })
   .atLeast(0.7);
 
 turn3.judge.autoevals.closedQA("Does this turn answer the shape's color?").gate();
 ```
 
-To judge material that isn't the conversation itself — a sandbox diff, file content, or anything else — pass it explicitly with `{ on }`, regardless of which receiver you're calling from:
+To judge material that isn't the conversation itself — a file's current content or anything else — read it through the public Sandbox API and pass both strings explicitly:
 
 ```ts
+const src = await t.sandbox.readText("src/handler.ts");
 t.judge.autoevals.closedQA("Is the generated code idiomatic TypeScript?", {
-  on: t.sandbox.diff.get("src/handler.ts"),
+  input: "Rewrite src/handler.ts to idiomatic TypeScript.",
+  output: src,
 }).atLeast(0.7);
+
+t.sandbox.fileChanged("src/handler.ts");   // attribution: did the Agent change this file?
 ```
+
+Judge material is content you read; agent attribution is a separate claim made by `fileChanged`, not by what you pass to the Judge.
 
 ## Judge model resolution
 
 The judge model is resolved from most- to least-specific:
 
 ```
-Per-call { model } option
-  ↓
 Per-eval judge.model
   ↓
 Global config judge.model
@@ -78,12 +87,9 @@ defineEval({
     t.judge.autoevals.factuality(reference);  // uses claude-opus-4-8 for this eval
   },
 });
-
-// A single call override
-t.judge.autoevals.closedQA("rubric", { on: t.reply, model: "openai/gpt-4o" });
 ```
 
-If all three levels are unset, the judge call fails at the call site as a configuration error. There is no built-in default judge model, and no environment variable for it — the model is configuration, so it comes from code only.
+If neither level is set, the judge call fails at the call site as a configuration error. There is no built-in default judge model, and no environment variable for it — the model is configuration, so it comes from code only.
 
 ## Judge endpoint and key: OpenAI-compatible protocol
 
@@ -118,9 +124,9 @@ Point `judge.baseUrl` explicitly at your gateway or OpenAI-compatible proxy — 
 Judge calls are assertions, so they follow the same mechanics described in [Assert · Gate vs soft severity](/explanation/assert#gate-vs-soft-severity) — but their **default** is different from most value matchers:
 
 ```ts
-t.judge.autoevals.closedQA("Is the tone polite?");              // no threshold → soft, pure score, never fails the eval
-t.judge.autoevals.closedQA("Is the tone polite?").atLeast(0.7); // soft with a threshold → fails only under --strict
-t.judge.autoevals.closedQA("Is the tone polite?").gate();       // promoted to gate → fails immediately if below threshold
+turn.judge.autoevals.closedQA("Is the tone polite?");              // no threshold → soft, pure score, never fails the eval
+turn.judge.autoevals.closedQA("Is the tone polite?").atLeast(0.7); // soft with a threshold → fails only under --strict
+turn.judge.autoevals.closedQA("Is the tone polite?").gate();       // promoted to gate → fails immediately if below threshold
 ```
 
 With no `.atLeast()` and no `.gate()`, a bare judge call is recorded purely as a quality score — it shows up on the eval's score chip but can never fail the run on its own. This is the right default for judge: it's a probabilistic model assessing another probabilistic model's output, and treating every rubric miss as a hard failure would make suites brittle and constantly red. Reach for `.gate()` only when the judged property is truly load-bearing (for example, "the response must not fabricate account details").
@@ -128,5 +134,5 @@ With no `.atLeast()` and no `.gate()`, a bare judge call is recorded purely as a
 ## Related pages
 
 - [Assert](/explanation/assert) — gate vs soft severity in full, plus the verdict rules judge scores feed into.
-- [Drive](/explanation/drive) — `t.send()`, `t.newSession()`, and which handle `t.judge`, `session.judge`, and `turn.judge` each hang off of.
+- [Drive](/explanation/drive) — `t.send()`, `t.newSession()`, and which handle `t.judge` and `turn.judge` each hang off of.
 - [Evals](/explanation/evals) — how judge scores fold into the eval lifecycle and verdict types.

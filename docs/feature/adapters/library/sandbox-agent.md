@@ -48,13 +48,16 @@ export default defineSandboxAgent({
 ## 生命周期
 
 [Agent Ensure](../architecture/agent-ensure.md)（探测 精确身份、缺失时由配对安装层安装、复检）由 Runner 在 `agent.ensure` 相位按 Adapter 的 ensure 声明执行，排在两方作者 prepare command 之后。
-`setup` 只做 Agent runtime 准备：写鉴权、Agent 配置和扩展；不安装 CLI，失败直接抛出并使 attempt errored。
+`setup` 只做 Agent runtime 准备：写鉴权、Agent 配置和扩展；不安装 CLI。失败会被 Runner 规范化为结构化执行错误通道事件，而不是写入 Attempt state。
 `send` 只执行一轮任务，多轮时会重复调用。只有协议给出完整可信终态才返回 Turn。
 
 CLI 非零、signal、transport 中断或无法辨认终态时 reject `SendFailure`。`Turn.status: "failed"` 只保留给协议明确报告的可评分任务失败，不能由 `exitCode !== 0` 直接推导。
 可选 cleanup 和 `teardown` 始终在 finally 阶段执行。
 
-每个回调的 `ctx.progress(...)` 只更新当前 `agent.setup` / `agent.run` / `agent.teardown` 的短期 activity;需要永久保留的协议降级、transcript 缺失或 cleanup 问题用 `ctx.diagnostic(...)`。
+`setup` 抛错由 Runner 规范化为结构化执行错误通道事件，并形成该 Attempt 的 `errored` Verdict；Attempt lifecycle 仍只收束为 `completed` 或 `abandoned`。
+
+每个回调的 `ctx.progress(...)` 只更新当前 `agent.setup` / `agent.run` / `agent.teardown` 的短期 activity。
+需要永久保留的协议降级、transcript 缺失或 cleanup 问题用 `ctx.diagnostic(...)` 写 diagnostic channel event。
 不要从 CLI stdout 的每个 frame 转发 progress,也不要直接写宿主进程的 stdout/stderr。
 完整语义见 [Adapter Library · 向运行反馈进度与诊断](../library.md#向运行反馈进度与诊断)。
 
@@ -69,7 +72,7 @@ Sandbox 级二进制、预热和跨 attempt 资源属于 Experiment layer 的 `p
 2. CLI 为 resume 保存的完整 transcript/tape；
 3. 两者都没有时返回空事件，并说明负断言不可信。
 
-采集代码负责定位文件、执行命令和取得原始字符串；parser 只接受 raw string，逐行容错并返回标准事件与 usage。
+采集代码负责定位文件、执行命令和取得原始字符串；parser 只接受 raw string，逐行容错并返回标准事件与 raw usage。Runner 将它们写入具名 Attempt event channel；Reports 通过已声明 requirement 读取 usage、trace 与 timing，它们不进入 Attempt 核心。
 不要让 parser 读 Sandbox，也不要让 `send` 内联一百行方言状态机。
 
 ### 字段检查

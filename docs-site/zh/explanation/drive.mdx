@@ -18,7 +18,7 @@ turn.data;      // 结构化产物:仅当这次 send 声明了 output 时存在,
 turn.status;    // "completed" | "failed" | "waiting"
 turn.events;    // 这一轮的 StreamEvent[]
 turn.usage;     // { inputTokens, outputTokens, ... },adapter 报了才有
-turn.succeeded(); // 作用域断言:这一轮没失败、也没卡在未回答的 HITL 上
+turn.succeeded().label("本轮完成"); // 这一轮没失败、也没卡在未回答的 HITL 上
 ```
 
 `t.reply` 是主 session 最后一条 assistant 消息的简写，等价于最近一次 `t.send()` 返回的 `turn.message`。`t.events` 是主 session 已累积的完整事件流。
@@ -35,7 +35,7 @@ t.check(turn.data.amount, equals(3200));   // turn.data 是 { amount: number; cu
 adapter 返回后运行器立刻按声明校验：`data` 不匹配，本轮直接 `failed` 并报出差异。没声明 `output` 的轮次没有 `turn.data`——它不是"agent 顺手返回点什么"的口袋，而是你声明了才存在、存在就强类型的字段。
 
 <Tip>
-`turn.succeeded()` 只看这一轮:检查这一轮的 `status`,以及是否卡在未回答的 HITL 请求上。后面几轮依赖前一轮成功时,紧跟着这一轮调它——在一个已经失败的轮次上继续挂断言,通常只会产出一堆混乱的连带失败。
+`turn.succeeded()` 只看这一轮：检查这一轮的 `status`，以及是否卡在未回答的 HITL 请求上。后面几轮依赖前一轮成功时，`await turn.succeeded().orStop()`。
 </Tip>
 
 ## 带文件的一轮 —— `t.sendFile()`
@@ -53,12 +53,12 @@ t.check(turn.message, includes("$"));
 
 ```ts
 const draft = await t.send("帮我拟一封跟进邮件。");
-draft.succeeded();
+draft.succeeded().label("草稿完成");
 t.check(draft.message, includes("此致"));
-draft.judge.autoevals.closedQA("语气是否专业").atLeast(0.6);
+draft.judge.autoevals.closedQA("语气是否专业").atLeast(0.6).label("语气专业");
 
 await t.send("好,发出去。");
-t.calledTool("send_email");
+t.calledTool("send_email").label("已发送");
 ```
 
 多轮 `t.send()` 能不能真的续上上文，取决于 Adapter 的 `send` 是否接了 `ctx.session` 的会话续接存取器（typed slot 或 `id` + `capture()`）——没接时每轮各是一场新对话。怎么接见 [Adapter](/zh/explanation/adapter) 与[写 send](/zh/tutorials/write-send)。
@@ -74,7 +74,7 @@ t.check(t.reply, includes("小明"));         // 主 session 记住了
 
 const fresh = t.newSession();
 await fresh.send("我叫什么?");
-t.check(fresh.reply, satisfies((r) => !r.includes("小明"), "没有记忆泄漏"));
+t.check(fresh.reply, satisfies("没有记忆泄漏", (r) => !r.includes("小明")));
 ```
 
 <Warning>
@@ -87,7 +87,7 @@ t.check(fresh.reply, satisfies((r) => !r.includes("小明"), "没有记忆泄漏
 
 ```ts
 const draft = await t.send("拟一封跟进邮件,但先别发,等我确认。");
-draft.parked();                              // t.parked() 断言 status === "waiting"
+draft.parked().label("停在审批上");
 
 const request = t.requireInputRequest({
   prompt: /是否发送/,
@@ -95,7 +95,7 @@ const request = t.requireInputRequest({
 });
 
 await t.respond({ request, optionId: "approve" });
-t.calledTool("send_email");
+t.calledTool("send_email").label("已发送");
 ```
 
 `t.requireInputRequest(filter)` 把一个待处理的 HITL 请求变成可检查、可回应的具体值。如果匹配到 0 个或超过 1 个待处理请求就会抛出,所以尽量把能填的 filter 字段都填上(`id` / `prompt` / `display` / `action` / `optionIds` / `input`)来消歧。
@@ -109,12 +109,12 @@ await t.send("把这批改动逐项提交审批。");
 t.requireInputRequest({ display: /审批/ });
 
 await t.respondAll("approve");
-t.succeeded();
+t.succeeded().label("全部完成");
 ```
 
 ## 相关阅读
 
 - [HITL](/zh/explanation/hitl) — 停轮等人的完整概念：握手时序与两侧义务。
 - [Assert](/zh/explanation/assert) — 从 `Turn.events` 和 `Turn.data` 上读的断言词汇。
-- [Judge](/zh/explanation/judge) — `t.judge` / `session.judge` / `turn.judge` 各自默认评什么材料。
+- [Judge](/zh/explanation/judge) — `turn.judge` 的冻结材料，以及根级 `t.judge` 的显式材料。
 - [Adapter](/zh/explanation/adapter) — 能力从哪来:什么解锁 `t.newSession()`、HITL 和工具相关断言。

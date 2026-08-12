@@ -56,7 +56,16 @@ export default defineExperiment({
 
 ## 多开终端时 Sandbox 不共享
 
-Sandbox 复用只发生在一次 Invocation 里。两个终端同时跑一个实验时，两边有各自的 Run 和 Sandbox 池。NiceEval 不把运行中的 Sandbox handle 交给另一个进程。
+Sandbox 复用只发生在一次 Invocation 里。两个终端同时跑一个实验时，两边有各自的 Run 和 Sandbox 池。NiceEval 不把运行中的 Sandbox handle 交给另一个进程。同一个 Record root 同时只允许一项操作；第二个终端指向同一个 root 会立即得到 `record-root-busy`，不会和第一个终端并行写入。
+
+确实需要并行时，给两个终端不同的 Record root：
+
+```bash
+niceeval exp experiments/mempal.ts --record .niceeval/mempal-a
+niceeval exp experiments/mempal.ts --record .niceeval/mempal-b
+```
+
+两个 root 各自形成完整结果，NiceEval 不自动合并它们。
 
 如果 Sandbox 只保留自己的临时状态，两边可以同时跑不同评估用例。两边都会在 Sandbox `setup()` 恢复同一 checkpoint，并在 `teardown()` 回存时，再给实验声明稳定的非密 key：
 
@@ -71,9 +80,9 @@ export default defineExperiment({
 });
 ```
 
-NiceEval 会在创建 Sandbox 前独占这个 key，到 Sandbox `teardown`、Provider finalizer 和实验 `teardown` 后才释放。等待方不创建 Sandbox。对方完成后先重新判断结果沿用，已经齐了就直接结束。
+NiceEval 会在创建 Sandbox 前独占这个 key，到 Sandbox `teardown`、Provider finalizer 和实验 `teardown` 后才释放。等待方不创建 Sandbox。租约释放后，等待方继续自己的既定计划；它不读取或沿用另一 Record 的结果。
 
-key 会进入结果的配置身份。换 key 表示换了状态 cohort，旧结果不会混入。这个租约只协调共享同一 `.niceeval` 记录根的进程。不同机器或工作副本需要外部分布式互斥。
+key 会进入结果的配置身份。换 key 表示换了状态 cohort，旧结果不会混入。这个租约只按 `sharedState.key` 保护外部 checkpoint，不替代 Record root 的独占规则。不同机器或工作副本需要外部分布式互斥。
 
 ## 生命周期：谁跑几次
 

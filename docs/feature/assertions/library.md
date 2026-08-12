@@ -1,35 +1,76 @@
-# Assertions —— 库用法
+# Assertions —— Library
 
-最常见的 Assertion 写法是：先驱动 Agent，再对回复、行为、生成文件与成本登记断言。
+完整持久化语义在 [Assertions](README.md)。所有作者入口都遵守“调用即登记；handle 只配置同一 entry”。`entryId` 由 producer 分配；作者的 key、label 与 groupPath 只服务展示。
+
+## 显式值
 
 ```ts
-import { defineEval } from "niceeval";
-import { includes, commandSucceeded } from "niceeval/expect";
+const config = t.check(rawConfig, matches(ConfigSchema))
+  .key("config-valid")
+  .label("配置有效");
 
-export default defineEval({
-  async test(t) {
-    const turn = await t.send("修复测试失败");
+t.check(turn.message, includes("完成"))
+  .label("说明完成");
+```
 
-    t.check(turn.message, includes("完成"));
-    turn.calledTool("shell");
+`t.check(value, match)` 只接收两个参数。它不接收 options、已有 handle、已有 Assertion 或省略 Match 的一参数形式。
 
-    const test = await t.sandbox.runCommand("pnpm", ["test"]);
-    t.check(test, commandSucceeded());
+## scope 与 Judge
 
-    t.judge.autoevals.closedQA("修改是否聚焦问题?").atLeast(0.7);
-    t.maxCost(0.5);
-  },
+```ts
+const turn = await t.send("总结需求。");
+
+turn.succeeded().label("Turn 完成");
+turn.calledTool(toolMatch("search"), { count: { atLeast: 1 } }).label("搜索资料");
+turn.judge.autoevals.summarizes(source).label("摘要质量");
+```
+
+scope 方法与 Judge recipe 已经登记 Assertion，不能再交给 `check`。它们和显式值比较共享 snapshot、criterion、sealed result 与读取协议。
+
+`calledTool` 与 `notCalledTool` 的签名、`ToolMatch` 和计数规则只在 [Scoped assertions](library/scoped-assertions.md) 定义。本页不复制另一份字段表。
+
+## handle 配置
+
+| 方法 | 适用范围 | 效果 |
+|---|---|---|
+| `.key(value)` | 所有 Assertion | 设置人读的稳定展示 key。 |
+| `.label(value)` | 所有 Assertion | 设置人读标签。 |
+| `.atLeast(n)` | measurement | 设置有限 `[0,1]` threshold。 |
+| `.gate()` | 有 threshold 或 Boolean result 的 Assertion | 让不满足条件参与四态 Verdict fold。 |
+| `.score(points)` | Score Eval 的已有 Assertion | 让该 entry 按 `points` 贡献 earned score。 |
+| `.ifCovered()` | Usage Assertion | 已声明不可用时投影为 not-applicable。 |
+| `.orStop()` | Boolean 或已 threshold 的 measurement | 等待同一 entry，并停止当前 continuation。 |
+
+同一字段重复配置、非法数值、封口后配置与 detached async 配置都是作者错误。
+
+## 两种 Eval
+
+`defineEval` 创建 Pass Eval。Boolean condition 默认是 gate；measurement 必须 `.atLeast(n)`，Pass context 不提供 `t.score` 或 handle `.score`。
+
+```ts
+turn.judge.autoevals.closedQA("回答是否可执行？")
+  .atLeast(0.8)
+  .label("可执行性");
+```
+
+`defineScoreEval` 创建 Score Eval。Assertion 默认只保存 evaluation；`.score(points)` 才贡献数值，`.gate()` 才令该条件改变 Verdict。`t.score(points)` 直接登记带 direct-score criterion 的 Assertion entry。
+
+```ts
+turn.calledTool("search").score(2).label("检索");
+t.score(1).label("人工加分");
+```
+
+两种 Eval 的每个 Attempt 都有 Verdict。Score Eval 另外有 Score Attachment；points、gate 与 score state 的关系见 [Score Eval](library/score-points.md)。
+
+## 组
+
+`t.group(title, fn)` 只写 display 的 `groupPath` 与 source organization。它不改变 subject、criterion、结果、Eval 类型或 route identity。
+
+```ts
+await t.group("输出", () => {
+  t.check(turn.message, includes("下一步")).label("给出下一步");
+  turn.judge.autoevals.closedQA("是否容易执行？").label("可执行性");
 });
 ```
 
-## 按任务阅读
-
-| 任务 | 页面 |
-|---|---|
-| 比较值、schema、字符串或命令结果 | [值断言](library/value-assertions.md) |
-| 断言消息、工具、事件、状态和成本 | [作用域断言](library/scoped-assertions.md) |
-| 用裁判模型评价开放式结果 | [LLM-as-judge](../judge/library.md) |
-| 编写自己的 matcher | [自定义断言](library/custom-assertions.md) |
-| 每类断言与 Turn 在 show / view 里长什么样 | [断言与 Turn 的展示](library/display.md) |
-
-`t`、session 与 turn 怎样取得，见 [Eval Context](../eval/library/context.md)；Sandbox 命令和文件怎样操作，见 [Sandbox 操作](../sandbox/library/operations.md)。
+值比较见 [Value assertions](library/value-assertions.md)，scope 见 [Scoped assertions](library/scoped-assertions.md)，Score Eval 见 [Score Eval](library/score-points.md)。

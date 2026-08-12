@@ -86,7 +86,7 @@ t.check(code, excludes(/process\.env\.\w+\s*\?\?/));
 t.sandbox.fileChanged("src/config/env.ts");
 ```
 
-`t.sandbox.fileChanged()` 是作用域断言：它在运行结束后用 Sandbox diff 判断目标文件是否真的被修改。
+`t.sandbox.fileChanged()` 是作用域断言：它在运行结束后用 agent 归因 diff 判断目标文件是否真的被修改。
 
 ## 运行项目测试或探针脚本
 

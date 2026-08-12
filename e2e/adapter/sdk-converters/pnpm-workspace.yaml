@@ -1,5 +1,7 @@
 packages: []
 allowBuilds:
   '@google/genai': false
+  '@parcel/watcher': false
   esbuild: true
+  msgpackr-extract: false
   protobufjs: false

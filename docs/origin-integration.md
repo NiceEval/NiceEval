@@ -208,7 +208,7 @@ claude-sdk 的 CLI 遥测只有 metrics+logs,niceeval 只消费 trace spans;pi-a
 ## 每个应用要写的 eval(最低集合)
 
 1. **基础问答**:`t.send` 一轮,`t.succeeded()` + 文本断言。
-2. **工具调用**:触发工具,`t.calledTool` / `t.toolOrder` / `t.noFailedActions`。
+2. **工具调用**：触发工具，用 `turn.calledTool` / `turn.toolOrder` / `turn.noFailedActions` 验证单轮；需要跨 Turn 的顺序时改用 `session.toolOrder`。
 3. **多轮记忆 + 隔离**:第一轮报名字、第二轮问名字;`t.newSession()` 再问,新会话不应知道——这条专门验证会话续接没写错(最常见 bug:adapter 没有正确使用 `ctx.session` 存取器,导致跨会话线串用历史,隔离静默失真)。
 4. **HITL 批准 + 拒绝**(有审批流的应用):`waiting` → `respond("approve")` → `calledTool(..., {status:"completed"})`;拒绝分支断 `status:"rejected"`。
 5. **用量/成本**(能拿到 usage 的应用):`t.maxTokens` 冒烟。
