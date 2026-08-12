@@ -21,6 +21,7 @@ import type {
   LogicalToolOccurrence,
   LogicalToolOccurrenceDerivation,
   LogicalToolOccurrenceDeriveOptions,
+  LogicalToolOccurrenceScopeTurn,
   OrphanToolOperationFinish,
 } from "../types.ts";
 
@@ -192,6 +193,7 @@ interface PendingLogicalToolOccurrence {
 interface ToolOperationFinish {
   readonly status: "completed" | "failed" | "rejected";
   readonly position: EventPosition;
+  readonly output: LogicalToolOccurrence["output"];
 }
 
 /**
@@ -228,7 +230,8 @@ export function deriveLogicalToolOccurrences(
           name: event.operation.tool === undefined
             ? { original: event.operation.name }
             : { original: event.operation.name, canonical: event.operation.tool },
-          input: { state: "complete", value: event.operation.input },
+          input: evidenceForEventValue(event, "input", event.operation.input),
+          output: { state: "unavailable", reason: "tool-output-not-finished" },
           ...(event.operation.command === undefined ? {} : { command: event.operation.command }),
           start: position,
         },
@@ -255,10 +258,19 @@ export function deriveLogicalToolOccurrences(
       const finished: ToolOperationFinish = {
         status: event.status,
         position,
+        output: event.output === undefined
+          ? { state: "unavailable", reason: "tool-output-absent" }
+          : evidenceForEventValue(event, "output", event.output),
       };
       const started = openByOperationId.get(event.operationId);
       if (started === undefined || ambiguousOperationIds.has(event.operationId)) {
-        orphanFinishes.push({ ...finished, operationId: event.operationId });
+        orphanFinishes.push({
+          session: options.session,
+          turn: options.turn,
+          operationId: event.operationId,
+          status: finished.status,
+          position: finished.position,
+        });
       } else {
         started.finished = finished;
         openByOperationId.delete(event.operationId);
@@ -269,10 +281,80 @@ export function deriveLogicalToolOccurrences(
   return {
     occurrences: pending.map((item) => ({
       ...item.occurrence,
+      output: outputFor(item, options.outcome),
       lifecycle: lifecycleFor(item, options.outcome),
     })),
     orphanFinishes,
   };
+}
+
+function evidenceForEventValue(
+  event: StreamEvent,
+  field: string,
+  value: JsonValue,
+): LogicalToolOccurrence["input"] {
+  const redacted = opaquePointersFor(event.redacted, field);
+  if (redacted.length > 0) {
+    return Object.freeze({
+      state: "partial" as const,
+      value,
+      opaquePointers: redacted,
+      reason: "redacted" as const,
+    });
+  }
+  const truncated = opaquePointersFor(event.truncated?.map((entry) => entry.path), field);
+  if (truncated.length > 0) {
+    return Object.freeze({
+      state: "partial" as const,
+      value,
+      opaquePointers: truncated,
+      reason: "truncated" as const,
+    });
+  }
+  return Object.freeze({ state: "complete" as const, value });
+}
+
+/**
+ * Event truncation paths begin with the event field (`input`, `output`) and
+ * use dots for nested JSON segments.  Project them into the field-relative
+ * JSON-pointer form that Match diagnostics can retain.  Accepting an already
+ * pointer-shaped producer path makes redaction declarations equally precise.
+ */
+function opaquePointersFor(paths: readonly string[] | undefined, field: string): readonly string[] {
+  if (paths === undefined || paths.length === 0) return Object.freeze([]);
+  const pointers = new Set<string>();
+  for (const path of paths) {
+    const pointer = fieldRelativePointer(path, field);
+    if (pointer !== undefined) pointers.add(pointer);
+  }
+  return Object.freeze([...pointers]);
+}
+
+function fieldRelativePointer(path: string, field: string): string | undefined {
+  const dotPath = path.startsWith("operation.") ? path.slice("operation.".length) : path;
+  if (dotPath === field) return "/";
+  if (dotPath.startsWith(`${field}.`)) {
+    return `/${dotPath.slice(field.length + 1).split(".").map(escapeJsonPointer).join("/")}`;
+  }
+  if (!path.startsWith("/")) return undefined;
+  const segments = path.slice(1).split("/");
+  if (segments[0] !== field) return undefined;
+  return segments.length === 1 ? "/" : `/${segments.slice(1).join("/")}`;
+}
+
+function escapeJsonPointer(segment: string): string {
+  return segment.replace(/~/g, "~0").replace(/\//g, "~1");
+}
+
+function outputFor(
+  occurrence: PendingLogicalToolOccurrence,
+  outcome: LogicalToolOccurrenceDeriveOptions["outcome"],
+): LogicalToolOccurrence["output"] {
+  if (occurrence.finished !== undefined && !occurrence.ambiguous) return occurrence.finished.output;
+  if (outcome === "waiting") {
+    return Object.freeze({ state: "unavailable" as const, reason: "tool-output-pending" });
+  }
+  return Object.freeze({ state: "unavailable" as const, reason: "tool-output-missing-lifecycle-evidence" });
 }
 
 function lifecycleFor(
@@ -285,6 +367,9 @@ function lifecycleFor(
       status: occurrence.finished.status,
       finish: occurrence.finished.position,
     };
+  }
+  if (outcome === "waiting" && !occurrence.ambiguous) {
+    return { state: "available", status: "pending" };
   }
   return {
     state: "opaque",
@@ -315,6 +400,111 @@ function logicalOccurrenceId(
 ): string {
   // JSON array encoding avoids delimiter collision when adapter-provided session / turn IDs contain punctuation.
   return JSON.stringify(["niceeval.logical-tool-occurrence/1", options.session, options.turn, start.turnOrdinal, start.eventOrdinal]);
+}
+
+/**
+ * Projects a frozen scope into logical tool occurrences.  Pairing is scoped
+ * per Session, never across sessions, because operationId is only stable for
+ * one started → finished lifecycle in one session.  A finish in a later Turn
+ * therefore closes an earlier open start in that same session.
+ */
+export function deriveScopedLogicalToolOccurrences(
+  turns: readonly LogicalToolOccurrenceScopeTurn[],
+): LogicalToolOccurrenceDerivation {
+  const occurrences: LogicalToolOccurrence[] = [];
+  const orphanFinishes: OrphanToolOperationFinish[] = [];
+  const bySession = new Map<string, LogicalToolOccurrenceScopeTurn[]>();
+  for (const turn of turns) {
+    const prior = bySession.get(turn.session);
+    if (prior === undefined) bySession.set(turn.session, [turn]);
+    else prior.push(turn);
+  }
+
+  for (const sessionTurns of bySession.values()) {
+    const ordered = [...sessionTurns].sort((left, right) => left.turnOrdinal - right.turnOrdinal);
+    const pending: PendingScopedOccurrence[] = [];
+    const openByOperationId = new Map<string, PendingScopedOccurrence>();
+    const ambiguousOperationIds = new Set<string>();
+
+    for (const turn of ordered) {
+      assertOccurrenceScope(turn);
+      const firstEventOrdinal = turn.firstEventOrdinal ?? 0;
+      assertNonNegativeSafeInteger(firstEventOrdinal, "firstEventOrdinal");
+      for (let eventIndex = 0; eventIndex < turn.events.length; eventIndex += 1) {
+        const event = turn.events[eventIndex]!;
+        const position = eventPosition(turn.turnOrdinal, firstEventOrdinal + eventIndex);
+        if (event.type === "operation.started" && event.operation.kind === "tool") {
+          const occurrence: PendingScopedOccurrence = {
+            occurrence: {
+              id: logicalOccurrenceId(turn, position),
+              session: turn.session,
+              turn: turn.turn,
+              name: event.operation.tool === undefined
+                ? { original: event.operation.name }
+                : { original: event.operation.name, canonical: event.operation.tool },
+              input: evidenceForEventValue(event, "input", event.operation.input),
+              output: { state: "unavailable", reason: "tool-output-not-finished" },
+              ...(event.operation.command === undefined ? {} : { command: event.operation.command }),
+              start: position,
+            },
+            lastOutcome: turn.outcome,
+          };
+          const alreadyOpen = openByOperationId.get(event.operationId);
+          if (ambiguousOperationIds.has(event.operationId)) {
+            occurrence.ambiguous = true;
+          } else if (alreadyOpen !== undefined) {
+            alreadyOpen.ambiguous = true;
+            occurrence.ambiguous = true;
+            openByOperationId.delete(event.operationId);
+            ambiguousOperationIds.add(event.operationId);
+          } else {
+            openByOperationId.set(event.operationId, occurrence);
+          }
+          pending.push(occurrence);
+          continue;
+        }
+        if (event.type === "operation.finished" && event.kind === "tool") {
+          const finished: ToolOperationFinish = {
+            status: event.status,
+            position,
+            output: event.output === undefined
+              ? { state: "unavailable", reason: "tool-output-absent" }
+              : evidenceForEventValue(event, "output", event.output),
+          };
+          const started = openByOperationId.get(event.operationId);
+          if (started === undefined || ambiguousOperationIds.has(event.operationId)) {
+            orphanFinishes.push({
+              session: turn.session,
+              turn: turn.turn,
+              operationId: event.operationId,
+              status: finished.status,
+              position: finished.position,
+            });
+          } else {
+            started.finished = finished;
+            openByOperationId.delete(event.operationId);
+          }
+        }
+      }
+      for (const open of openByOperationId.values()) open.lastOutcome = turn.outcome;
+    }
+
+    for (const item of pending) {
+      occurrences.push(Object.freeze({
+        ...item.occurrence,
+        output: outputFor(item, item.lastOutcome),
+        lifecycle: lifecycleFor(item, item.lastOutcome),
+      }));
+    }
+  }
+  return Object.freeze({
+    occurrences: Object.freeze(occurrences),
+    orphanFinishes: Object.freeze(orphanFinishes),
+  });
+}
+
+interface PendingScopedOccurrence extends PendingLogicalToolOccurrence {
+  lastOutcome: LogicalToolOccurrenceDeriveOptions["outcome"];
 }
 
 // ───────────────────────── extractUsageFromSpans ─────────────────────────

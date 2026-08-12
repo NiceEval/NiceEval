@@ -14,6 +14,7 @@ export {
   isDefined,
   isFalse,
   isTrue,
+  jsonMatch,
   hasSections,
   matches,
   not,

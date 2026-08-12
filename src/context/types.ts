@@ -26,7 +26,13 @@ import type {
 import type { InputRequest, LogicalToolOccurrence, O11ySummary, StreamEvent, Usage } from "../o11y/types.ts";
 import type { DiagnosticInput, JsonMatch, JsonValue, ProgressUpdate } from "../shared/types.ts";
 import type { SandboxOperations, SandboxTransferOperations } from "../sandbox/types.ts";
-import type { AssertFirstTestContextV1 } from "./assert-first.ts";
+import type { AssertFirstTestContext } from "./assert-first.ts";
+
+export type {
+  CalledToolAtLeast,
+  CalledToolCount,
+  CalledToolOptions,
+} from "./assert-first.ts";
 
 export type {
   AssertionEvent,
@@ -255,7 +261,7 @@ export interface LegacyScoreTestContext extends LegacyTestContext {
 }
 
 /** The public Eval Context is the Assert-first runtime handed to Runner. */
-export type TestContext = AssertFirstTestContextV1<"pass">;
+export type TestContext = AssertFirstTestContext<"pass">;
 
 /** Score Eval extends the same sealed entry runtime with direct point entries. */
-export type ScoreTestContext = AssertFirstTestContextV1<"score">;
+export type ScoreTestContext = AssertFirstTestContext<"score">;

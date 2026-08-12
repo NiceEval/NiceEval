@@ -119,6 +119,21 @@ export type LogicalToolLifecycle =
       readonly reason: "partial-stream" | "missing-lifecycle-evidence";
     };
 
+/**
+ * A tool field is independently observable.  Input and output deliberately
+ * use the same envelope so a matcher only becomes uncertain when it actually
+ * asks for the field whose material is incomplete.
+ */
+export type LogicalToolEvidence =
+  | { readonly state: "complete"; readonly value: JsonValue }
+  | {
+      readonly state: "partial";
+      readonly value: JsonValue;
+      readonly opaquePointers: readonly string[];
+      readonly reason: "truncated" | "redacted";
+    }
+  | { readonly state: "unavailable"; readonly reason: string };
+
 /** Fact matcher 消费的一笔、按 started/finished 关联后的 tool operation。 */
 export interface LogicalToolOccurrence {
   /** 由 session、turn 与 started event position 组成的 occurrence identity；不是 operationId。 */
@@ -129,10 +144,12 @@ export interface LogicalToolOccurrence {
     readonly original: string;
     readonly canonical?: ToolName;
   };
-  readonly input:
-    | { readonly state: "complete"; readonly value: JsonValue }
-    | { readonly state: "partial"; readonly value: JsonValue; readonly opaquePointers: readonly string[]; readonly reason: string }
-    | { readonly state: "unavailable"; readonly reason: string };
+  readonly input: LogicalToolEvidence;
+  /**
+   * A completed lifecycle alone does not prove that output was collected.
+   * Missing, pending, and orphan output are explicit unavailable evidence.
+   */
+  readonly output: LogicalToolEvidence;
   /**
    * 旧 Adapter 尚未升级时允许缺失，调用方必须把它视作 command evidence unavailable，
    * 不能回退为 not-command。新 Adapter 对每笔 tool operation 都必须提供分类。
@@ -144,6 +161,8 @@ export interface LogicalToolOccurrence {
 
 /** `operation.finished` 找不到可信 started 时留下的协议诊断输入，不构造 occurrence。 */
 export interface OrphanToolOperationFinish {
+  readonly session: string;
+  readonly turn: string;
   readonly operationId: string;
   readonly status: "completed" | "failed" | "rejected";
   readonly position: EventPosition;
@@ -158,6 +177,17 @@ export interface LogicalToolOccurrenceDeriveOptions {
   readonly firstEventOrdinal?: number;
   /** 没有可信 Outcome 时保持省略，未关闭 operation 因而只能是 partial-stream。 */
   readonly outcome?: "completed" | "failed" | "waiting";
+}
+
+/** One immutable Turn segment in a scope projection. */
+export interface LogicalToolOccurrenceScopeTurn {
+  readonly session: string;
+  readonly turn: string;
+  readonly turnOrdinal: number;
+  readonly events: readonly StreamEvent[];
+  /** The scope's latest Turn controls whether an unclosed call is pending. */
+  readonly outcome?: "completed" | "failed" | "waiting";
+  readonly firstEventOrdinal?: number;
 }
 
 /** occurrence 投影与其不能成为匹配候选的 orphan finished。 */
@@ -197,7 +227,16 @@ export interface Truncation {
  * 各 agent 五花八门的原始 transcript 映射成 StreamEvent[];映射完,整套断言免费。
  * `truncated` 只由 results writer 在落盘时刻写入(运行时全量,落盘截断);adapter 不产出它。
  */
-export type StreamEvent = { truncated?: Truncation[] } & (
+export type StreamEvent = {
+  truncated?: Truncation[];
+  /**
+   * Field paths intentionally withheld by the producing boundary.  Runtime
+   * matching sees the original event shape plus this evidence limitation;
+   * persistence can retain the same signal without replacing values with a
+   * magic string.
+   */
+  redacted?: readonly string[];
+} & (
   /** assistant 回复；它不是 eval 源码上的作者事实，不参与 sourceOrder 序列。 */
   | { type: "message"; role: "assistant"; text: string; loc?: SourceLoc }
   /**

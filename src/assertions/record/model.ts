@@ -70,6 +70,11 @@ export type BuiltInCriterionV1 =
         readonly scope: "turn" | "session" | "attempt";
         readonly occurrence: "tool" | "skill" | "event";
         readonly assertion: "present" | "absent" | "count";
+        /** Tool assertions retain the single managed matcher identity. */
+        readonly matcher?: string;
+        readonly quantifier?:
+          | { readonly kind: "absent" }
+          | { readonly kind: "at-least" | "exact"; readonly count: number };
       };
     }
   | {
@@ -217,30 +222,36 @@ export type SealedAssertionResultV1 =
       readonly state: "matched";
       readonly gate: "not-gate" | "satisfied";
       readonly score: NoScoreContributionV1 | EarnedScoreContributionV1;
+      /** Bounded evaluator diagnostics, including ToolMatch evidence paths. */
+      readonly diagnostic?: BoundedJsonObjectV1;
     }
   | {
       readonly state: "mismatched";
       readonly reason: "condition-not-met";
       readonly gate: "not-gate" | "failed";
       readonly score: NoScoreContributionV1 | EarnedScoreContributionV1;
+      readonly diagnostic?: BoundedJsonObjectV1;
     }
   | {
       readonly state: "unavailable";
       readonly reason: "evidence-unavailable" | "source-unavailable" | "redacted";
       readonly gate: "not-gate" | "unavailable";
       readonly score: NoScoreContributionV1 | UnavailableScoreContributionV1;
+      readonly diagnostic?: BoundedJsonObjectV1;
     }
   | {
       readonly state: "errored";
       readonly reason: "evaluator-failed" | "producer-interrupted" | "invalid-subject";
       readonly gate: "not-gate" | "unavailable";
       readonly score: NoScoreContributionV1 | UnavailableScoreContributionV1;
+      readonly diagnostic?: BoundedJsonObjectV1;
     }
   | {
       readonly state: "not-applicable";
       readonly reason: "coverage-not-applicable";
       readonly gate: "not-gate" | "not-applicable";
       readonly score: NoScoreContributionV1 | UnavailableScoreContributionV1;
+      readonly diagnostic?: BoundedJsonObjectV1;
     };
 
 /** The exact v1 value that a producer is allowed to seal. */

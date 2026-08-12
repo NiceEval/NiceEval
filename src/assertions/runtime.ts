@@ -28,6 +28,7 @@ import {
   evaluateBooleanMatch,
   evaluateScoreMatch,
   type BooleanMatch,
+  type MatchDiagnostic,
   type ScoreMatch,
 } from "./match.ts";
 import type {
@@ -61,23 +62,27 @@ const assertionHandleRegistry = new WeakSet<object>();
 
 type EntryKind = "boolean" | "measurement" | "direct-score";
 
+interface SettlementDiagnostic {
+  readonly diagnostic?: MatchDiagnostic;
+}
+
 type AvailableResult =
-  | { readonly state: "matched"; readonly value: unknown }
-  | { readonly state: "mismatched" }
-  | { readonly state: "measured"; readonly value: number };
+  | ({ readonly state: "matched"; readonly value: unknown } & SettlementDiagnostic)
+  | ({ readonly state: "mismatched" } & SettlementDiagnostic)
+  | ({ readonly state: "measured"; readonly value: number } & SettlementDiagnostic);
 
 type EntrySettlement =
   | AvailableResult
-  | {
+  | ({
       readonly state: "unavailable";
       readonly reason:
         | "evidence-unavailable"
         | "source-unavailable"
         | "redacted";
-    }
-  | { readonly state: "not-applicable" }
-  | { readonly state: "errored" }
-  | { readonly state: "interrupted" };
+    } & SettlementDiagnostic)
+  | ({ readonly state: "not-applicable" } & SettlementDiagnostic)
+  | ({ readonly state: "errored" } & SettlementDiagnostic)
+  | ({ readonly state: "interrupted" } & SettlementDiagnostic);
 
 interface AssertionEntry {
   readonly index: number;
@@ -339,6 +344,65 @@ export function captureAssertionSnapshotV1(value: unknown): CapturedAssertionSna
       }),
     ]),
   });
+}
+
+/**
+ * Matcher diagnostics are runtime objects, but sealed Assertions need a
+ * bounded JSON copy that keeps their tree (field children and locators) for
+ * show/view without granting those readers evaluator authority.
+ */
+function captureMatchDiagnostic(
+  value: MatchDiagnostic | undefined,
+  depth = 0,
+  seen = new WeakSet<object>(),
+): BoundedJsonObjectV1 | undefined {
+  if (value === undefined) return undefined;
+  if (depth >= MAX_ASSERTION_JSON_DEPTH_V1 || seen.has(value)) {
+    return Object.freeze({
+      code: "diagnostic-truncated",
+      message: depth >= MAX_ASSERTION_JSON_DEPTH_V1
+        ? "matcher diagnostic exceeded the persisted depth limit"
+        : "matcher diagnostic contained a cycle",
+      path: Object.freeze([]),
+    });
+  }
+  seen.add(value);
+  try {
+    const text = (input: string): string => {
+      const state: SnapshotState = { truncated: false, omittedBytes: 0, seen: new WeakSet<object>() };
+      return boundedSnapshotString(input, state);
+    };
+    const output: globalThis.Record<string, BoundedJsonValueV1> = {
+      code: text(value.code),
+      message: text(value.message),
+      path: Object.freeze(value.path.map((segment) => typeof segment === "string" ? text(segment) : segment)),
+    };
+    if (value.expected !== undefined) output.expected = text(value.expected);
+    if (value.received !== undefined) output.received = text(value.received);
+    if (value.reason !== undefined) output.reason = text(value.reason);
+    if (value.locator !== undefined) {
+      output.locator = value.locator.kind === "json-pointer"
+        ? Object.freeze({ kind: "json-pointer", pointer: text(value.locator.pointer) })
+        : Object.freeze({ kind: "tool-occurrence", id: text(value.locator.id) });
+    }
+    if (value.children !== undefined) {
+      const children: BoundedJsonValueV1[] = [];
+      for (const child of value.children.slice(0, MAX_ASSERTION_JSON_ARRAY_ITEMS_V1)) {
+        const entry: globalThis.Record<string, BoundedJsonValueV1> = {
+          index: child.index,
+          state: child.state,
+        };
+        if (child.label !== undefined) entry.label = text(child.label);
+        const diagnostic = captureMatchDiagnostic(child.diagnostic, depth + 1, seen);
+        if (diagnostic !== undefined) entry.diagnostic = diagnostic;
+        children.push(Object.freeze(entry));
+      }
+      output.children = Object.freeze(children);
+    }
+    return Object.freeze(output);
+  } finally {
+    seen.delete(value);
+  }
 }
 
 function freezeRuntimeMaterial(
@@ -928,7 +992,11 @@ class AssertionsRuntimeImplementation {
     }).pipe(
       Effect.map((evaluation): EntrySettlement =>
         evaluation.state === "unavailable"
-          ? Object.freeze({ state: "unavailable" as const, reason: "source-unavailable" as const })
+          ? Object.freeze({
+              state: "unavailable" as const,
+              reason: "source-unavailable" as const,
+              ...(evaluation.diagnostic === undefined ? {} : { diagnostic: evaluation.diagnostic }),
+            })
           : this.booleanSettlement(evaluation),
       ),
       this.captureEvaluationFailure(),
@@ -968,13 +1036,27 @@ class AssertionsRuntimeImplementation {
   ): EntrySettlement {
     switch (evaluation.state) {
       case "matched":
-        return Object.freeze({ state: "matched" as const, value: evaluation.value });
+        return Object.freeze({
+          state: "matched" as const,
+          value: evaluation.value,
+          ...(evaluation.diagnostic === undefined ? {} : { diagnostic: evaluation.diagnostic }),
+        });
       case "mismatched":
-        return Object.freeze({ state: "mismatched" as const });
+        return Object.freeze({
+          state: "mismatched" as const,
+          ...(evaluation.diagnostic === undefined ? {} : { diagnostic: evaluation.diagnostic }),
+        });
       case "unavailable":
-        return Object.freeze({ state: "unavailable" as const, reason: evaluation.reason });
+        return Object.freeze({
+          state: "unavailable" as const,
+          reason: evaluation.reason,
+          ...(evaluation.diagnostic === undefined ? {} : { diagnostic: evaluation.diagnostic }),
+        });
       case "not-applicable":
-        return Object.freeze({ state: "not-applicable" as const });
+        return Object.freeze({
+          state: "not-applicable" as const,
+          ...(evaluation.diagnostic === undefined ? {} : { diagnostic: evaluation.diagnostic }),
+        });
     }
   }
 
@@ -1142,12 +1224,15 @@ class AssertionsRuntimeImplementation {
   }
 
   private resultFor(entry: AssertionEntry, settlement: EntrySettlement): SealedAssertionResultV1 {
+    const capturedDiagnostic = captureMatchDiagnostic(settlement.diagnostic);
+    const diagnostic = capturedDiagnostic === undefined ? {} : { diagnostic: capturedDiagnostic };
     switch (settlement.state) {
       case "matched":
         return Object.freeze({
           state: "matched" as const,
           gate: this.gateForMatched(entry),
           score: this.availableScoreFor(entry, 1),
+          ...diagnostic,
         });
       case "mismatched":
         return Object.freeze({
@@ -1155,6 +1240,7 @@ class AssertionsRuntimeImplementation {
           reason: "condition-not-met" as const,
           gate: this.gateForMismatched(entry),
           score: this.availableScoreFor(entry, 0),
+          ...diagnostic,
         });
       case "measured": {
         const matched = entry.threshold === undefined || settlement.value >= entry.threshold;
@@ -1163,12 +1249,14 @@ class AssertionsRuntimeImplementation {
               state: "matched" as const,
               gate: this.gateForMatched(entry),
               score: this.availableScoreFor(entry, settlement.value),
+              ...diagnostic,
             })
           : Object.freeze({
               state: "mismatched" as const,
               reason: "condition-not-met" as const,
               gate: this.gateForMismatched(entry),
               score: this.availableScoreFor(entry, settlement.value),
+              ...diagnostic,
             });
       }
       case "unavailable":
@@ -1177,6 +1265,7 @@ class AssertionsRuntimeImplementation {
           reason: settlement.reason,
           gate: this.gateForUnavailable(entry),
           score: this.incompleteScoreFor(entry, "source-unavailable"),
+          ...diagnostic,
         });
       case "not-applicable":
         return Object.freeze({
@@ -1184,6 +1273,7 @@ class AssertionsRuntimeImplementation {
           reason: "coverage-not-applicable" as const,
           gate: this.gateForNotApplicable(entry),
           score: this.incompleteScoreFor(entry, "not-applicable"),
+          ...diagnostic,
         });
       case "errored":
         return Object.freeze({
@@ -1191,6 +1281,7 @@ class AssertionsRuntimeImplementation {
           reason: "evaluator-failed" as const,
           gate: this.gateForUnavailable(entry),
           score: this.incompleteScoreFor(entry, "evaluation-errored"),
+          ...diagnostic,
         });
       case "interrupted":
         return Object.freeze({
@@ -1198,6 +1289,7 @@ class AssertionsRuntimeImplementation {
           reason: "producer-interrupted" as const,
           gate: this.gateForUnavailable(entry),
           score: this.incompleteScoreFor(entry, "evaluation-errored"),
+          ...diagnostic,
         });
     }
   }

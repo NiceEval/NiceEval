@@ -38,8 +38,16 @@ import {
   type PostRunWorkspaceDiffStateV1,
   type WorkspaceDiffNotInOptionsV1,
 } from "../assertions/diff.ts";
-import { evaluateBooleanMatch, type BooleanMatch } from "../assertions/match.ts";
-import { buildO11ySummary, deriveRunFacts } from "../o11y/derive.ts";
+import {
+  assertManagedToolMatch,
+  evaluateBooleanMatch,
+  evaluateToolMatchCollection,
+  toolMatch,
+  type BooleanMatch,
+  type ToolMatch,
+  type ToolMatchQuantifier,
+} from "../assertions/match.ts";
+import { buildO11ySummary, deriveRunFacts, deriveScopedLogicalToolOccurrences } from "../o11y/derive.ts";
 import { captureLoc } from "../source-loc.ts";
 import { lastAssistantText, RunSession, SessionManager, type SessionDeps } from "./session.ts";
 import { EvalSkipped } from "./control-flow.ts";
@@ -62,6 +70,11 @@ import type {
   Turn,
   Usage,
 } from "../types.ts";
+import type {
+  LogicalToolOccurrence,
+  LogicalToolOccurrenceScopeTurn,
+  OrphanToolOperationFinish,
+} from "../o11y/types.ts";
 
 export interface AssertFirstLateResult {
   diff: PostRunWorkspaceDiffStateV1;
@@ -108,38 +121,34 @@ export interface AssertFirstContextDeps {
 }
 
 type RuntimeKind = "pass" | "score";
-type AssertFirstRespondAnswerV1 = { readonly request: InputRequest } & AnswerValue;
+type AssertFirstRespondAnswer = { readonly request: InputRequest } & AnswerValue;
 
-export interface AssertFirstCalledToolCountV1 {
+export interface CalledToolAtLeast {
   readonly atLeast: number;
 }
 
-export type AssertFirstCalledToolCountMatcherV1 =
+export type CalledToolCount =
   | number
-  | AssertFirstCalledToolCountV1
-  | ((count: number) => boolean);
+  | CalledToolAtLeast;
 
-export interface AssertFirstCalledToolOptionsV1 {
-  readonly input?: JsonMatch;
-  readonly output?: JsonMatch;
-  readonly status?: "pending" | "completed" | "failed" | "rejected";
-  readonly count?: AssertFirstCalledToolCountMatcherV1;
+export interface CalledToolOptions {
+  readonly count?: CalledToolCount;
 }
 
-export interface AssertFirstFileChangedOptionsV1 {
+export interface FileChangedOptions {
   readonly status?: "added" | "modified" | "deleted";
   readonly before?: BooleanMatch<string, string, "value">;
   readonly after?: BooleanMatch<string, string, "value">;
 }
 
 /** The only agent-attributed post-run diff surface exposed to Eval authors. */
-export interface AssertFirstSandboxV1<Kind extends RuntimeKind>
+export interface AssertFirstSandbox<Kind extends RuntimeKind>
   extends SandboxOperations, SandboxTransferOperations {
   changedPaths(paths: readonly string[]): PostRunBooleanAssertionHandleV1<Kind, void>;
   noChanges(): PostRunBooleanAssertionHandleV1<Kind, void>;
   fileChanged(
     path: string,
-    options?: AssertFirstFileChangedOptionsV1,
+    options?: FileChangedOptions,
   ): PostRunBooleanAssertionHandleV1<Kind, void>;
   fileDeleted(path: string): PostRunBooleanAssertionHandleV1<Kind, void>;
   notInDiff(
@@ -148,7 +157,7 @@ export interface AssertFirstSandboxV1<Kind extends RuntimeKind>
   ): PostRunBooleanAssertionHandleV1<Kind, void>;
 }
 
-export interface AssertFirstRootJudgeV1<Kind extends RuntimeKind> {
+export interface AssertFirstRootJudge<Kind extends RuntimeKind> {
   readonly autoevals: {
     closedQA(question: string, material: JudgeMaterial): MeasurementAssertionHandleV1<Kind>;
     factuality(expected: string, material: JudgeMaterial): MeasurementAssertionHandleV1<Kind>;
@@ -156,7 +165,7 @@ export interface AssertFirstRootJudgeV1<Kind extends RuntimeKind> {
   };
 }
 
-export interface AssertFirstTurnJudgeV1<Kind extends RuntimeKind> {
+export interface AssertFirstTurnJudge<Kind extends RuntimeKind> {
   readonly autoevals: {
     closedQA(question: string): MeasurementAssertionHandleV1<Kind>;
     factuality(expected: string): MeasurementAssertionHandleV1<Kind>;
@@ -164,7 +173,7 @@ export interface AssertFirstTurnJudgeV1<Kind extends RuntimeKind> {
   };
 }
 
-export interface AssertFirstTurnHandleV1<Kind extends RuntimeKind> {
+export interface AssertFirstTurnHandle<Kind extends RuntimeKind> {
   readonly events: readonly StreamEvent[];
   readonly toolCalls: readonly import("../o11y/types.ts").ToolCall[];
   readonly status: "completed" | "failed" | "waiting";
@@ -172,41 +181,41 @@ export interface AssertFirstTurnHandleV1<Kind extends RuntimeKind> {
   readonly data?: JsonValue;
   readonly usage?: Usage;
   succeeded(): BooleanAssertionHandleV1<Kind, void>;
-  calledTool(
-    name: string,
-    options?: AssertFirstCalledToolOptionsV1,
-  ): BooleanAssertionHandleV1<Kind, void>;
-  readonly judge: AssertFirstTurnJudgeV1<Kind>;
+  calledTool(match: ToolMatch, options?: CalledToolOptions): BooleanAssertionHandleV1<Kind, void>;
+  calledTool(name: string, options?: CalledToolOptions): BooleanAssertionHandleV1<Kind, void>;
+  notCalledTool(match: ToolMatch): BooleanAssertionHandleV1<Kind, void>;
+  notCalledTool(name: string): BooleanAssertionHandleV1<Kind, void>;
+  readonly judge: AssertFirstTurnJudge<Kind>;
 }
 
-export interface AssertFirstSessionHandleV1<Kind extends RuntimeKind> {
-  send(input: string | { readonly text: string; readonly files?: readonly InputFile[] }): Promise<AssertFirstTurnHandleV1<Kind>>;
-  sendFile(path: string, text?: string): Promise<AssertFirstTurnHandleV1<Kind>>;
+export interface AssertFirstSessionHandle<Kind extends RuntimeKind> {
+  send(input: string | { readonly text: string; readonly files?: readonly InputFile[] }): Promise<AssertFirstTurnHandle<Kind>>;
+  sendFile(path: string, text?: string): Promise<AssertFirstTurnHandle<Kind>>;
   requireInputRequest(filter?: InputRequestFilter): InputRequest;
-  respond(...responses: readonly (string | AssertFirstRespondAnswerV1)[]): Promise<AssertFirstTurnHandleV1<Kind>>;
-  respondAll(optionId: string): Promise<AssertFirstTurnHandleV1<Kind>>;
+  respond(...responses: readonly (string | AssertFirstRespondAnswer)[]): Promise<AssertFirstTurnHandle<Kind>>;
+  respondAll(optionId: string): Promise<AssertFirstTurnHandle<Kind>>;
   readonly reply: string;
   readonly sessionId: string | undefined;
   readonly events: readonly StreamEvent[];
   readonly usage: Usage;
   succeeded(): BooleanAssertionHandleV1<Kind, void>;
-  calledTool(
-    name: string,
-    options?: AssertFirstCalledToolOptionsV1,
-  ): BooleanAssertionHandleV1<Kind, void>;
+  calledTool(match: ToolMatch, options?: CalledToolOptions): BooleanAssertionHandleV1<Kind, void>;
+  calledTool(name: string, options?: CalledToolOptions): BooleanAssertionHandleV1<Kind, void>;
+  notCalledTool(match: ToolMatch): BooleanAssertionHandleV1<Kind, void>;
+  notCalledTool(name: string): BooleanAssertionHandleV1<Kind, void>;
 }
 
-export type AssertFirstTestContextV1<Kind extends RuntimeKind> = {
+export type AssertFirstTestContext<Kind extends RuntimeKind> = {
   readonly evaluationKind: Kind;
-  send(input: string | { readonly text: string; readonly files?: readonly InputFile[] }): Promise<AssertFirstTurnHandleV1<Kind>>;
-  sendFile(path: string, text?: string): Promise<AssertFirstTurnHandleV1<Kind>>;
+  send(input: string | { readonly text: string; readonly files?: readonly InputFile[] }): Promise<AssertFirstTurnHandle<Kind>>;
+  sendFile(path: string, text?: string): Promise<AssertFirstTurnHandle<Kind>>;
   requireInputRequest(filter?: InputRequestFilter): InputRequest;
-  respond(...responses: readonly (string | AssertFirstRespondAnswerV1)[]): Promise<AssertFirstTurnHandleV1<Kind>>;
-  respondAll(optionId: string): Promise<AssertFirstTurnHandleV1<Kind>>;
+  respond(...responses: readonly (string | AssertFirstRespondAnswer)[]): Promise<AssertFirstTurnHandle<Kind>>;
+  respondAll(optionId: string): Promise<AssertFirstTurnHandle<Kind>>;
   readonly reply: string;
   readonly sessionId: string | undefined;
   readonly events: readonly StreamEvent[];
-  newSession(): AssertFirstSessionHandleV1<Kind>;
+  newSession(): AssertFirstSessionHandle<Kind>;
   readonly signal: AbortSignal;
   readonly model?: string;
   readonly reasoningEffort?: string;
@@ -220,15 +229,15 @@ export type AssertFirstTestContextV1<Kind extends RuntimeKind> = {
     body: () => Value | PromiseLike<Value>,
   ): Promise<Awaited<Value>>;
   check: AssertionsRuntimeV1<Kind>["t"]["check"];
-  readonly sandbox: AssertFirstSandboxV1<Kind>;
+  readonly sandbox: AssertFirstSandbox<Kind>;
   readonly o11y: import("../o11y/types.ts").O11ySummary;
   readonly usage: Usage;
   succeeded(): BooleanAssertionHandleV1<Kind, void>;
-  calledTool(
-    name: string,
-    options?: AssertFirstCalledToolOptionsV1,
-  ): BooleanAssertionHandleV1<Kind, void>;
-  readonly judge: AssertFirstRootJudgeV1<Kind>;
+  calledTool(match: ToolMatch, options?: CalledToolOptions): BooleanAssertionHandleV1<Kind, void>;
+  calledTool(name: string, options?: CalledToolOptions): BooleanAssertionHandleV1<Kind, void>;
+  notCalledTool(match: ToolMatch): BooleanAssertionHandleV1<Kind, void>;
+  notCalledTool(name: string): BooleanAssertionHandleV1<Kind, void>;
+  readonly judge: AssertFirstRootJudge<Kind>;
 } & (Kind extends "score" ? { score(points: number): import("../assertions/api.ts").DirectScoreAssertionHandleV1 } : {});
 
 type AssertionScopeV1 = "turn" | "session" | "attempt";
@@ -243,14 +252,28 @@ function scopeCriterion(scope: AssertionScopeV1): WritableCriterionEnvelopeV1 {
   });
 }
 
-function occurrenceCriterion(scope: AssertionScopeV1, count: boolean): WritableCriterionEnvelopeV1 {
+function occurrenceCriterion(
+  scope: AssertionScopeV1,
+  match: ToolMatch,
+  quantifier: ToolMatchQuantifier,
+): WritableCriterionEnvelopeV1 {
   return Object.freeze({
     kind: "builtin" as const,
     id: "occurrence/v1" as const,
     data: Object.freeze({
       scope,
       occurrence: "tool" as const,
-      assertion: count ? "count" as const : "present" as const,
+      assertion: quantifier.kind === "absent"
+        ? "absent" as const
+        : quantifier.kind === "exact"
+          ? "count" as const
+          : "present" as const,
+      matcher: match.name,
+      quantifier: Object.freeze(
+        quantifier.kind === "absent"
+          ? { kind: "absent" as const }
+          : { kind: quantifier.kind, count: quantifier.count },
+      ),
     }),
   });
 }
@@ -294,117 +317,169 @@ function succeededHandle<Kind extends RuntimeKind>(input: {
   });
 }
 
-function assertCalledToolName(name: unknown): asserts name is string {
-  if (typeof name !== "string" || name.trim() === "") {
-    throw new TypeError("calledTool() name must be a non-empty string");
-  }
+interface ToolScopeSnapshot {
+  readonly occurrences: readonly LogicalToolOccurrence[];
+  readonly orphanFinishes: readonly OrphanToolOperationFinish[];
+  readonly coverage: ScopeCoverageV1;
+  readonly snapshot: unknown;
 }
 
-function normalizeCalledToolOptions(
-  value: AssertFirstCalledToolOptionsV1 | undefined,
-): Readonly<AssertFirstCalledToolOptionsV1> {
-  if (value === undefined) return Object.freeze({});
+function projectToolScope(input: {
+  readonly turns: readonly LogicalToolOccurrenceScopeTurn[];
+  readonly coverage: ScopeCoverageV1;
+  readonly snapshot: unknown;
+}): ToolScopeSnapshot {
+  const projection = deriveScopedLogicalToolOccurrences(input.turns);
+  return Object.freeze({
+    occurrences: projection.occurrences,
+    orphanFinishes: projection.orphanFinishes,
+    coverage: input.coverage,
+    snapshot: input.snapshot,
+  });
+}
+
+function resolveToolTarget(target: ToolMatch | string, label: "calledTool" | "notCalledTool"): ToolMatch {
+  if (typeof target === "string") return toolMatch(target);
+  return assertManagedToolMatch(target, `${label}() match`);
+}
+
+function normalizeCalledToolOptions(value: CalledToolOptions | undefined): ToolMatchQuantifier {
+  if (value === undefined) return Object.freeze({ kind: "at-least" as const, count: 1 });
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new TypeError("calledTool() options must be an object");
   }
-  const { count, status } = value;
-  if (status !== undefined && status !== "pending" && status !== "completed" && status !== "failed" && status !== "rejected") {
-    throw new TypeError("calledTool() options.status must be pending, completed, failed, or rejected");
-  }
-  if (count !== undefined) {
-    if (typeof count === "number") {
-      if (!Number.isSafeInteger(count) || count < 0) {
-        throw new TypeError("calledTool() options.count must be a non-negative safe integer");
-      }
-    } else if (typeof count === "function") {
-      // The predicate is deliberately retained only by the evaluator closure.
-      // Persisted material records that a predicate was used, rather than
-      // attempting to serialize arbitrary author code.
-    } else if (
-      typeof count !== "object"
-      || count === null
-      || !Number.isSafeInteger(count.atLeast)
-      || count.atLeast < 0
-    ) {
-      throw new TypeError("calledTool() options.count must be a non-negative integer or { atLeast: non-negative integer }");
+  const options = value as globalThis.Record<string, unknown>;
+  for (const key of Object.keys(options)) {
+    if (key !== "count") {
+      throw new TypeError(`calledTool() options does not support option ${JSON.stringify(key)}; put field constraints in toolMatch()`);
     }
   }
-  return Object.freeze({ ...value });
+  const count = options.count;
+  if (count === undefined) return Object.freeze({ kind: "at-least" as const, count: 1 });
+  if (count !== undefined) {
+    if (typeof count === "number") {
+      if (count === 0) {
+        throw new TypeError("calledTool() options.count must be a positive safe integer; use notCalledTool() for zero");
+      }
+      if (!Number.isSafeInteger(count) || count < 0) {
+        throw new TypeError("calledTool() options.count must be a positive safe integer");
+      }
+      return Object.freeze({ kind: "exact" as const, count });
+    }
+    if (typeof count !== "object" || count === null || Array.isArray(count)) {
+      throw new TypeError("calledTool() options.count must be a positive safe integer or { atLeast: positive safe integer }");
+    }
+    const lowerBound = count as globalThis.Record<string, unknown>;
+    for (const key of Object.keys(lowerBound)) {
+      if (key !== "atLeast") {
+        throw new TypeError(`calledTool() options.count does not support key ${JSON.stringify(key)}`);
+      }
+    }
+    if (lowerBound.atLeast === 0) {
+      throw new TypeError("calledTool() options.count.atLeast must be a positive safe integer; use notCalledTool() for zero");
+    }
+    if (!Number.isSafeInteger(lowerBound.atLeast) || typeof lowerBound.atLeast !== "number" || lowerBound.atLeast < 0) {
+      throw new TypeError("calledTool() options.count.atLeast must be a positive safe integer");
+    }
+    return Object.freeze({ kind: "at-least" as const, count: lowerBound.atLeast });
+  }
+  throw new TypeError("calledTool() options.count must be a positive safe integer or { atLeast: positive safe integer }");
 }
 
-function toolName(call: import("../o11y/types.ts").ToolCall): string {
-  return call.name === "unknown" && call.originalName !== undefined
-    ? call.originalName
-    : call.name;
+function toolScopeCoverageReason(snapshot: ToolScopeSnapshot): string | undefined {
+  const actions = snapshot.coverage.actions;
+  if (actions.status !== "complete") {
+    return `scope-actions-${actions.status}:${actions.reason}`;
+  }
+  if (snapshot.orphanFinishes.length > 0) {
+    return `orphan-tool-finish:${snapshot.orphanFinishes.length}`;
+  }
+  return undefined;
+}
+
+function collectionAssertionEvaluation(
+  result: Awaited<ReturnType<typeof evaluateToolMatchCollection>>,
+): import("../assertions/api.ts").BooleanAssertionEvaluationV1<void> {
+  switch (result.state) {
+    case "matched":
+      return Object.freeze({ state: "matched" as const, value: undefined, diagnostic: result.diagnostic });
+    case "mismatched":
+      return Object.freeze({ state: "mismatched" as const, diagnostic: result.diagnostic });
+    case "unavailable":
+      return Object.freeze({
+        state: "unavailable" as const,
+        reason: "evidence-unavailable" as const,
+        diagnostic: result.diagnostic,
+      });
+  }
+}
+
+function toolAssertionHandle<Kind extends RuntimeKind>(input: {
+  readonly runtime: AssertionsRuntimeV1<Kind>;
+  readonly scope: AssertionScopeV1;
+  readonly match: ToolMatch;
+  readonly quantifier: ToolMatchQuantifier;
+  readonly snapshot: ToolScopeSnapshot;
+}): BooleanAssertionHandleV1<Kind, void> {
+  const captured = captureAssertionSnapshotV1({
+    scope: input.scope,
+    occurrence: "tool",
+    matcher: input.match.name,
+    quantifier: input.quantifier,
+    candidates: input.snapshot.occurrences,
+    orphanFinishes: input.snapshot.orphanFinishes,
+    coverage: input.snapshot.coverage.actions,
+    snapshot: input.snapshot.snapshot,
+  });
+  return input.runtime.registerBoolean<void>({
+    criterion: occurrenceCriterion(input.scope, input.match, input.quantifier),
+    subject: captured.material,
+    coverage: captured.coverage,
+    limitations: captured.limitations,
+    evaluate: () => Effect.tryPromise({
+      try: async () => collectionAssertionEvaluation(await evaluateToolMatchCollection(
+        input.match,
+        input.snapshot.occurrences,
+        {
+          quantifier: input.quantifier,
+          ...(toolScopeCoverageReason(input.snapshot) === undefined
+            ? {}
+            : { coverageReason: toolScopeCoverageReason(input.snapshot)! }),
+        },
+      )),
+      catch: (error) => error,
+    }),
+  });
 }
 
 function calledToolHandle<Kind extends RuntimeKind>(input: {
   readonly runtime: AssertionsRuntimeV1<Kind>;
   readonly scope: AssertionScopeV1;
-  readonly calls: readonly import("../o11y/types.ts").ToolCall[];
-  readonly coverage: ScopeCoverageV1;
-  readonly name: string;
-  readonly options: AssertFirstCalledToolOptionsV1 | undefined;
-  readonly snapshot: unknown;
+  readonly target: ToolMatch | string;
+  readonly options: CalledToolOptions | undefined;
+  readonly snapshot: ToolScopeSnapshot;
 }): BooleanAssertionHandleV1<Kind, void> {
-  assertCalledToolName(input.name);
-  const options = normalizeCalledToolOptions(input.options);
-  const calls = Object.freeze(input.calls.map((call) => Object.freeze({
-    operationId: call.operationId,
-    name: toolName(call),
-    input: call.input,
-    ...(call.output === undefined ? {} : { output: call.output }),
-    status: call.status,
-  })));
-  const captured = captureAssertionSnapshotV1({
+  return toolAssertionHandle({
+    runtime: input.runtime,
     scope: input.scope,
-    occurrence: "tool",
-    name: input.name,
-    options: Object.freeze({
-      ...options,
-      ...(typeof options.count === "function" ? { count: "predicate" } : {}),
-    }),
-    calls,
-    coverage: input.coverage.actions.status,
+    match: resolveToolTarget(input.target, "calledTool"),
+    quantifier: normalizeCalledToolOptions(input.options),
     snapshot: input.snapshot,
   });
-  const exactCount = typeof options.count === "number" ? options.count : undefined;
-  const minimum = typeof options.count === "object" && options.count !== null
-    ? options.count.atLeast
-    : undefined;
-  const predicate = typeof options.count === "function" ? options.count : undefined;
-  return input.runtime.registerBoolean<void>({
-    criterion: occurrenceCriterion(input.scope, exactCount !== undefined),
-    subject: captured.material,
-    coverage: captured.coverage,
-    limitations: captured.limitations,
-    evaluate: () =>
-      Effect.sync(() => {
-        const matches = calls.filter((call) =>
-          call.name === input.name
-          && (options.input === undefined || matchesJson(call.input, options.input))
-          && (options.output === undefined || matchesJson(call.output, options.output))
-          && (options.status === undefined || call.status === options.status)
-        ).length;
-        const complete = scopeCoverageState(input.coverage, "actions") === "complete";
-        if (exactCount !== undefined) {
-          if (matches > exactCount) return Object.freeze({ state: "mismatched" as const });
-          if (matches === exactCount && complete) {
-            return Object.freeze({ state: "matched" as const, value: undefined });
-          }
-          return complete
-            ? Object.freeze({ state: "mismatched" as const })
-            : Object.freeze({ state: "unavailable" as const, reason: "evidence-unavailable" as const });
-        }
-        if (predicate !== undefined) {
-          if (predicate(matches)) return Object.freeze({ state: "matched" as const, value: undefined });
-        } else if (matches >= (minimum ?? 1)) {
-          return Object.freeze({ state: "matched" as const, value: undefined });
-        }
-        return complete
-          ? Object.freeze({ state: "mismatched" as const })
-          : Object.freeze({ state: "unavailable" as const, reason: "evidence-unavailable" as const });
-      }),
+}
+
+function notCalledToolHandle<Kind extends RuntimeKind>(input: {
+  readonly runtime: AssertionsRuntimeV1<Kind>;
+  readonly scope: AssertionScopeV1;
+  readonly target: ToolMatch | string;
+  readonly snapshot: ToolScopeSnapshot;
+}): BooleanAssertionHandleV1<Kind, void> {
+  return toolAssertionHandle({
+    runtime: input.runtime,
+    scope: input.scope,
+    match: resolveToolTarget(input.target, "notCalledTool"),
+    quantifier: Object.freeze({ kind: "absent" as const }),
+    snapshot: input.snapshot,
   });
 }
 
@@ -471,7 +546,7 @@ function noChangesCriterion(): WritableCriterionEnvelopeV1 {
 
 function fileChangedCriterion(
   path: string,
-  options: Readonly<AssertFirstFileChangedOptionsV1>,
+  options: Readonly<FileChangedOptions>,
 ): WritableCriterionEnvelopeV1 {
   return Object.freeze({
     kind: "builtin" as const,
@@ -523,8 +598,8 @@ function assertDiffPath(path: unknown, operation: string): asserts path is strin
 }
 
 function normalizeFileChangedOptions(
-  value: AssertFirstFileChangedOptionsV1 | undefined,
-): Readonly<AssertFirstFileChangedOptionsV1> {
+  value: FileChangedOptions | undefined,
+): Readonly<FileChangedOptions> {
   if (value === undefined) return Object.freeze({});
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new TypeError("fileChanged() options must be an object");
@@ -586,7 +661,7 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
   readonly sandbox: Sandbox;
   readonly runtime: AssertionsRuntimeV1<Kind>;
   readonly late: AssertFirstLateResult;
-}): AssertFirstSandboxV1<Kind> {
+}): AssertFirstSandbox<Kind> {
   const requireCapability = (): void => {
     if (input.agent.kind !== "sandbox") {
       throw new Error(
@@ -627,7 +702,7 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
 
   const fileChanged = (
     path: string,
-    rawOptions?: AssertFirstFileChangedOptionsV1,
+    rawOptions?: FileChangedOptions,
   ): PostRunBooleanAssertionHandleV1<Kind, void> => {
     requireCapability();
     assertDiffPath(path, "fileChanged()");
@@ -699,7 +774,7 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
         : Object.freeze({ state: "mismatched" as const });
     }));
   };
-  const view: AssertFirstSandboxV1<Kind> = {
+  const view: AssertFirstSandbox<Kind> = {
     get workdir() {
       requireCapability();
       return input.sandbox.workdir;
@@ -822,7 +897,7 @@ function resolveStringAnswer(session: RunSession, text: string): InputResponse {
 
 function buildRespondInput(
   session: RunSession,
-  answers: readonly (string | AssertFirstRespondAnswerV1)[],
+  answers: readonly (string | AssertFirstRespondAnswer)[],
 ): { readonly text: string; readonly responses: readonly InputResponse[] } {
   const text: string[] = [];
   const responses: InputResponse[] = [];
@@ -878,7 +953,7 @@ function readInputFileEffect(path: string): Effect.Effect<InputFile, unknown> {
  */
 export function createAssertFirstEvalContext(
   deps: AssertFirstContextDeps,
-): { readonly context: AssertFirstTestContextV1<RuntimeKind>; readonly state: AssertFirstContextState } {
+): { readonly context: AssertFirstTestContext<RuntimeKind>; readonly state: AssertFirstContextState } {
   let sourceOrder = 0;
   const manager = new SessionManager({
     agent: deps.agent,
@@ -918,6 +993,7 @@ export function createAssertFirstEvalContext(
   interface TurnScopeSnapshot {
     readonly events: readonly StreamEvent[];
     readonly toolCalls: readonly import("../o11y/types.ts").ToolCall[];
+    readonly toolScope: ToolScopeSnapshot;
     readonly status: "completed" | "failed" | "waiting";
     readonly coverage: ScopeCoverageV1;
     readonly input: string;
@@ -926,12 +1002,14 @@ export function createAssertFirstEvalContext(
 
   interface SessionScopeState {
     readonly session: RunSession;
+    readonly turns: LogicalToolOccurrenceScopeTurn[];
     started: boolean;
     inFlight: number;
     failed: boolean;
   }
 
   const sessions: SessionScopeState[] = [];
+  let toolTurnOrdinal = 0;
 
   const coverageWhileInFlight = (coverage: ScopeCoverageV1): ScopeCoverageV1 =>
     Object.freeze({
@@ -987,23 +1065,74 @@ export function createAssertFirstEvalContext(
     coverage: attemptCoverage(),
   });
 
+  const sessionToolScope = (scope: SessionScopeState): ToolScopeSnapshot => {
+    const coverage = sessionCoverage(scope);
+    return projectToolScope({
+      turns: Object.freeze([...scope.turns]),
+      coverage,
+      snapshot: Object.freeze({
+        sessionIndex: scope.session.index,
+        turnCount: scope.turns.length,
+        status: sessionStatus(scope),
+        coverage,
+      }),
+    });
+  };
+
+  const attemptToolScope = (): ToolScopeSnapshot => {
+    const active = sessions.filter((scope) => scope.started);
+    const coverage = attemptCoverage();
+    return projectToolScope({
+      turns: Object.freeze(active.flatMap((scope) => scope.turns)),
+      coverage,
+      snapshot: Object.freeze({
+        sessions: Object.freeze(active.map((scope) => ({
+          sessionIndex: scope.session.index,
+          turnCount: scope.turns.length,
+          status: sessionStatus(scope),
+          coverage: sessionCoverage(scope),
+        }))),
+        status: attemptStatus(),
+        coverage,
+      }),
+    });
+  };
+
   const makeTurn = <Kind extends RuntimeKind>(
     scope: SessionScopeState,
     turn: Turn,
     input: string,
-  ): AssertFirstTurnHandleV1<Kind> => {
+  ): AssertFirstTurnHandle<Kind> => {
     const events = Object.freeze([...turn.events]);
     const toolCalls = Object.freeze([...deriveRunFacts(events).toolCalls]);
     const coverage = manager.resolveTurnEvidenceCoverage(turn);
+    const occurrenceTurn: LogicalToolOccurrenceScopeTurn = Object.freeze({
+      session: `session-${scope.session.index}`,
+      turn: `turn-${scope.session.turnCount}`,
+      turnOrdinal: ++toolTurnOrdinal,
+      events,
+      outcome: turn.status,
+    });
+    scope.turns.push(occurrenceTurn);
+    const toolScope = projectToolScope({
+      turns: Object.freeze([occurrenceTurn]),
+      coverage,
+      snapshot: Object.freeze({
+        sessionIndex: scope.session.index,
+        turnIndex: scope.session.turnCount,
+        events: events.length,
+      }),
+    });
     const snapshot: TurnScopeSnapshot = Object.freeze({
       events,
       toolCalls,
+      toolScope,
       status: turn.status,
       coverage,
       input,
       output: lastAssistantText(events) ?? "",
     });
-    const judge: AssertFirstTurnJudgeV1<Kind> = Object.freeze({
+    const judge: AssertFirstTurnJudge<Kind> = Object.freeze({
       autoevals: Object.freeze({
         closedQA: (question: string) => judgeHandle({
           runtime: runtime as AssertionsRuntimeV1<Kind>,
@@ -1031,6 +1160,25 @@ export function createAssertFirstEvalContext(
         }),
       }),
     });
+    const calledTool = (target: ToolMatch | string, options?: CalledToolOptions, ...extra: readonly unknown[]) => {
+      if (extra.length > 0) throw new TypeError("calledTool() accepts exactly (match, options)");
+      return calledToolHandle({
+        runtime: runtime as AssertionsRuntimeV1<Kind>,
+        scope: "turn",
+        target,
+        options,
+        snapshot: toolScope,
+      });
+    };
+    const notCalledTool = (target: ToolMatch | string, ...extra: readonly unknown[]) => {
+      if (extra.length > 0) throw new TypeError("notCalledTool() accepts exactly one match or name");
+      return notCalledToolHandle({
+        runtime: runtime as AssertionsRuntimeV1<Kind>,
+        scope: "turn",
+        target,
+        snapshot: toolScope,
+      });
+    };
     return Object.freeze({
       events: snapshot.events,
       toolCalls: snapshot.toolCalls,
@@ -1049,18 +1197,8 @@ export function createAssertFirstEvalContext(
           events: snapshot.events.length,
         }),
       }),
-      calledTool: (name: string, options?: AssertFirstCalledToolOptionsV1) => calledToolHandle({
-        runtime: runtime as AssertionsRuntimeV1<Kind>,
-        scope: "turn",
-        calls: snapshot.toolCalls,
-        coverage: snapshot.coverage,
-        name,
-        options,
-        snapshot: Object.freeze({
-          sessionIndex: scope.session.index,
-          turnIndex: scope.session.turnCount,
-        }),
-      }),
+      calledTool,
+      notCalledTool,
       judge,
     });
   };
@@ -1071,7 +1209,7 @@ export function createAssertFirstEvalContext(
     files?: readonly InputFile[],
     responses?: readonly InputResponse[],
     loc?: ReturnType<typeof captureLoc>,
-  ): Effect.Effect<AssertFirstTurnHandleV1<Kind>, unknown> => {
+  ): Effect.Effect<AssertFirstTurnHandle<Kind>, unknown> => {
     const capturedLoc = loc ?? captureLoc();
     return Effect.suspend(() => {
       scope.started = true;
@@ -1093,10 +1231,10 @@ export function createAssertFirstEvalContext(
     text: string,
     files?: readonly InputFile[],
     responses?: readonly InputResponse[],
-  ): Promise<AssertFirstTurnHandleV1<Kind>> =>
+  ): Promise<AssertFirstTurnHandle<Kind>> =>
     deps.requestEffect(sendEffect<Kind>(scope, text, files, responses, captureLoc()));
 
-  const makeSession = <Kind extends RuntimeKind>(scope: SessionScopeState): AssertFirstSessionHandleV1<Kind> => {
+  const makeSession = <Kind extends RuntimeKind>(scope: SessionScopeState): AssertFirstSessionHandle<Kind> => {
     const session = scope.session;
     return Object.freeze({
       send: (input: string | { readonly text: string; readonly files?: readonly InputFile[] }) => {
@@ -1113,7 +1251,7 @@ export function createAssertFirstEvalContext(
         );
       },
       requireInputRequest: (filter?: InputRequestFilter) => requireInputRequest(session, filter),
-      async respond(...responses: readonly (string | AssertFirstRespondAnswerV1)[]) {
+      async respond(...responses: readonly (string | AssertFirstRespondAnswer)[]) {
         if (responses.length === 0) throw new Error("respond() requires at least one answer");
         const built = buildRespondInput(session, responses);
         session.pendingInputRequests.length = 0;
@@ -1152,20 +1290,31 @@ export function createAssertFirstEvalContext(
         coverage: sessionCoverage(scope),
         snapshot: sessionSnapshot(scope),
       }),
-      calledTool: (name: string, options?: AssertFirstCalledToolOptionsV1) => calledToolHandle({
-        runtime: runtime as AssertionsRuntimeV1<Kind>,
-        scope: "session",
-        calls: Object.freeze([...deriveRunFacts(session.events).toolCalls]),
-        coverage: sessionCoverage(scope),
-        name,
-        options,
-        snapshot: sessionSnapshot(scope),
-      }),
+      calledTool: (target: ToolMatch | string, options?: CalledToolOptions, ...extra: readonly unknown[]) => {
+        if (extra.length > 0) throw new TypeError("calledTool() accepts exactly (match, options)");
+        return calledToolHandle({
+          runtime: runtime as AssertionsRuntimeV1<Kind>,
+          scope: "session",
+          target,
+          options,
+          snapshot: sessionToolScope(scope),
+        });
+      },
+      notCalledTool: (target: ToolMatch | string, ...extra: readonly unknown[]) => {
+        if (extra.length > 0) throw new TypeError("notCalledTool() accepts exactly one match or name");
+        return notCalledToolHandle({
+          runtime: runtime as AssertionsRuntimeV1<Kind>,
+          scope: "session",
+          target,
+          snapshot: sessionToolScope(scope),
+        });
+      },
     });
   };
 
   const primaryScope: SessionScopeState = {
     session: manager.primary,
+    turns: [],
     started: false,
     inFlight: 0,
     failed: false,
@@ -1173,7 +1322,7 @@ export function createAssertFirstEvalContext(
   sessions.push(primaryScope);
   const primary = makeSession<RuntimeKind>(primaryScope);
 
-  const rootJudge: AssertFirstRootJudgeV1<RuntimeKind> = Object.freeze({
+  const rootJudge: AssertFirstRootJudge<RuntimeKind> = Object.freeze({
     autoevals: Object.freeze({
       closedQA: (question: string, material: JudgeMaterial) => judgeHandle({
         runtime,
@@ -1221,6 +1370,7 @@ export function createAssertFirstEvalContext(
     newSession: () => {
       const scope: SessionScopeState = {
         session: manager.newSession(),
+        turns: [],
         started: false,
         inFlight: 0,
         failed: false,
@@ -1269,15 +1419,25 @@ export function createAssertFirstEvalContext(
       coverage: attemptCoverage(),
       snapshot: attemptSnapshot(),
     }),
-    calledTool: (name: string, options?: AssertFirstCalledToolOptionsV1) => calledToolHandle({
-      runtime,
-      scope: "attempt",
-      calls: Object.freeze([...deriveRunFacts(manager.allEvents).toolCalls]),
-      coverage: attemptCoverage(),
-      name,
-      options,
-      snapshot: attemptSnapshot(),
-    }),
+    calledTool: (target: ToolMatch | string, options?: CalledToolOptions, ...extra: readonly unknown[]) => {
+      if (extra.length > 0) throw new TypeError("calledTool() accepts exactly (match, options)");
+      return calledToolHandle({
+        runtime,
+        scope: "attempt",
+        target,
+        options,
+        snapshot: attemptToolScope(),
+      });
+    },
+    notCalledTool: (target: ToolMatch | string, ...extra: readonly unknown[]) => {
+      if (extra.length > 0) throw new TypeError("notCalledTool() accepts exactly one match or name");
+      return notCalledToolHandle({
+        runtime,
+        scope: "attempt",
+        target,
+        snapshot: attemptToolScope(),
+      });
+    },
     judge: rootJudge,
   };
   const context = deps.evaluationKind === "score"
@@ -1287,7 +1447,7 @@ export function createAssertFirstEvalContext(
       })
     : Object.freeze(base);
   return {
-    context: context as AssertFirstTestContextV1<RuntimeKind>,
+    context: context as AssertFirstTestContext<RuntimeKind>,
     state,
   };
 }

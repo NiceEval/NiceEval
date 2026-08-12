@@ -10,7 +10,8 @@ import type {
   CommandProjection,
   LogicalToolOccurrence,
 } from "../o11y/types.ts";
-import type { JsonValue } from "../shared/types.ts";
+import { matchesJson } from "../shared/json-match.ts";
+import type { JsonMatch, JsonValue } from "../shared/types.ts";
 import { stripComments } from "../util.ts";
 
 export type MatchDomain = "value" | "tool" | "event";
@@ -1187,7 +1188,60 @@ export interface CommandMatchOptions {
 
 export interface ToolMatchOptions {
   readonly input?: BooleanMatch<JsonValue, JsonValue, "value">;
+  readonly output?: BooleanMatch<JsonValue, JsonValue, "value">;
   readonly status?: ToolStatus;
+}
+
+/**
+ * Turns the recursive JsonMatch language into a managed value Match.  Raw
+ * JsonMatch stays at this explicit bridge; tool assertions consume only the
+ * branded Match so every tool field follows the same evaluator path.
+ */
+export function jsonMatch(expected: JsonMatch): BooleanMatch<JsonValue, JsonValue, "value"> {
+  const normalized = normalizeJsonMatch(expected, "jsonMatch() expected");
+  const name = "jsonMatch(...)";
+  return createBooleanMatch("value", name, (candidate) => {
+    if (matchesJson(candidate, normalized)) {
+      return matched(candidate, diagnostic("json-match", `${name} matched`));
+    }
+    return mismatched(
+      diagnostic("json-mismatch", `${name} did not match`, {
+        expected: "the supplied JsonMatch pattern",
+        received: "the candidate JSON value",
+      }),
+    );
+  });
+}
+
+function normalizeJsonMatch(value: unknown, label: string, active = new WeakSet<object>()): JsonMatch {
+  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    if (typeof value === "number" && !Number.isFinite(value)) {
+      throw new TypeError(`${label} must not contain a non-finite number`);
+    }
+    return value;
+  }
+  if (value instanceof RegExp) return new RegExp(value.source, value.flags);
+  if (typeof value === "function") return value as (candidate: unknown) => boolean;
+  if (typeof value !== "object") throw new TypeError(`${label} must be a JsonMatch value`);
+  if (active.has(value)) throw new TypeError(`${label} must not be cyclic`);
+  active.add(value);
+  try {
+    if (Array.isArray(value)) {
+      return Object.freeze(value.map((item, index) => normalizeJsonMatch(item, `${label}[${index}]`, active)));
+    }
+    if (!isPlainJsonObject(value)) throw new TypeError(`${label} must use a plain object`);
+    const entries: [string, JsonMatch][] = [];
+    for (const key of Object.keys(value)) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (descriptor === undefined || !("value" in descriptor)) {
+        throw new TypeError(`${label}.${key} must not be an accessor`);
+      }
+      entries.push([key, normalizeJsonMatch(descriptor.value, `${label}.${key}`, active)]);
+    }
+    return Object.freeze(Object.fromEntries(entries));
+  } finally {
+    active.delete(value);
+  }
 }
 
 function normalizeStatus(value: unknown, label: string): ToolStatus | undefined {
@@ -1211,7 +1265,6 @@ function lifecycleResult(
   occurrence: LogicalToolOccurrence,
   expected: ToolStatus | undefined,
 ): BooleanMatchEvaluation<unknown> {
-  if (expected === undefined) return matched(occurrence, diagnostic("lifecycle-unrestricted", "lifecycle is unrestricted"));
   const lifecycle = occurrence.lifecycle;
   if (!isRecord(lifecycle) || (lifecycle.state !== "available" && lifecycle.state !== "opaque")) {
     throw new TypeError("tool occurrence has an invalid lifecycle envelope");
@@ -1225,6 +1278,14 @@ function lifecycleResult(
       diagnostic("tool-lifecycle-unavailable", "tool lifecycle is not fully observed", {
         expected,
         reason: lifecycle.reason,
+        locator: { kind: "tool-occurrence", id: occurrence.id },
+      }),
+    );
+  }
+  if (expected === undefined) {
+    return matched(
+      occurrence,
+      diagnostic("lifecycle-unrestricted", "lifecycle is unrestricted", {
         locator: { kind: "tool-occurrence", id: occurrence.id },
       }),
     );
@@ -1275,29 +1336,30 @@ function occurrenceNameResult(occurrence: LogicalToolOccurrence, expected: strin
   );
 }
 
-async function toolInputResult(
+async function toolEvidenceResult(
   occurrence: LogicalToolOccurrence,
+  field: "input" | "output",
   match: BooleanMatch<JsonValue, JsonValue, "value">,
 ): Promise<BooleanMatchEvaluation<unknown>> {
-  const input = occurrence.input;
-  if (!isRecord(input) || (input.state !== "complete" && input.state !== "partial" && input.state !== "unavailable")) {
-    throw new TypeError("tool occurrence has an invalid input envelope");
+  const evidence = occurrence[field];
+  if (!isRecord(evidence) || (evidence.state !== "complete" && evidence.state !== "partial" && evidence.state !== "unavailable")) {
+    throw new TypeError(`tool occurrence has an invalid ${field} envelope`);
   }
-  if (input.state === "unavailable") {
-    if (typeof input.reason !== "string" || input.reason.length === 0) {
-      throw new TypeError("tool occurrence has unavailable input without a reason");
+  if (evidence.state === "unavailable") {
+    if (typeof evidence.reason !== "string" || evidence.reason.length === 0) {
+      throw new TypeError(`tool occurrence has unavailable ${field} without a reason`);
     }
     return unavailable(
-      input.reason,
-      diagnostic("tool-input-unavailable", "tool input is unavailable", {
-        reason: input.reason,
+      evidence.reason,
+      diagnostic(`tool-${field}-unavailable`, `tool ${field} is unavailable`, {
+        reason: evidence.reason,
         locator: { kind: "tool-occurrence", id: occurrence.id },
       }),
     );
   }
 
-  const result = await evaluateBooleanMatch(match, input.value as JsonValue);
-  if (input.state === "complete") return result;
+  const result = await evaluateBooleanMatch(match, evidence.value);
+  if (evidence.state === "complete") return result;
 
   // partial input can only produce a positive result when the matcher itself carries the narrowed witness
   // capability. A visible reference hit survives hidden leaves; general predicates / schema checks do not.
@@ -1306,64 +1368,196 @@ async function toolInputResult(
   }
 
   return unavailable(
-    "tool-input-coverage-partial",
-    diagnostic("tool-input-coverage-partial", "tool input is partial without a decisive positive witness", {
-      reason: "tool-input-coverage-partial",
+    `tool-${field}-coverage-partial`,
+    diagnostic(`tool-${field}-coverage-partial`, `tool ${field} is partial without a decisive positive witness`, {
+      reason: `tool-${field}-coverage-partial`,
       locator: { kind: "tool-occurrence", id: occurrence.id },
-      ...(Array.isArray(input.opaquePointers) ? { received: input.opaquePointers.join(",") } : {}),
+      ...(Array.isArray(evidence.opaquePointers) ? { received: evidence.opaquePointers.join(",") } : {}),
     }),
   );
 }
 
 export function toolMatch(name: string, options?: ToolMatchOptions): ToolMatch;
-export function toolMatch(options: {
-  readonly input: BooleanMatch<JsonValue, JsonValue, "value">;
-  readonly status?: ToolStatus;
-}): ToolMatch;
+export function toolMatch(options: ToolMatchOptions): ToolMatch;
 export function toolMatch(
   nameOrOptions:
     | string
-    | {
-        readonly input: BooleanMatch<JsonValue, JsonValue, "value">;
-        readonly status?: ToolStatus;
-      },
+    | ToolMatchOptions,
   options?: ToolMatchOptions,
 ): ToolMatch {
   let expectedName: string | undefined;
   let input: BooleanMatch<JsonValue, JsonValue, "value"> | undefined;
+  let output: BooleanMatch<JsonValue, JsonValue, "value"> | undefined;
   let status: ToolStatus | undefined;
 
   if (typeof nameOrOptions === "string") {
     assertNonEmptyString(nameOrOptions, "toolMatch() name");
     expectedName = nameOrOptions;
-    const normalized = assertPlainOptions(options, "toolMatch() options", ["input", "status"]);
+    const normalized = assertPlainOptions(options, "toolMatch() options", ["input", "output", "status"]);
     if (normalized.input !== undefined) {
       assertBooleanMatch(normalized.input, "toolMatch() options.input", "value");
       input = normalized.input as BooleanMatch<JsonValue, JsonValue, "value">;
     }
+    if (normalized.output !== undefined) {
+      assertBooleanMatch(normalized.output, "toolMatch() options.output", "value");
+      output = normalized.output as BooleanMatch<JsonValue, JsonValue, "value">;
+    }
     status = normalizeStatus(normalized.status, "toolMatch() options.status");
   } else {
     if (options !== undefined) throw new TypeError("toolMatch(options) does not accept a second argument");
-    const normalized = assertPlainOptions(nameOrOptions, "toolMatch() options", ["input", "status"]);
-    if (normalized.input === undefined) throw new TypeError("toolMatch(options) requires input");
-    assertBooleanMatch(normalized.input, "toolMatch() options.input", "value");
-    input = normalized.input as BooleanMatch<JsonValue, JsonValue, "value">;
+    const normalized = assertPlainOptions(nameOrOptions, "toolMatch() options", ["input", "output", "status"]);
+    if (normalized.input === undefined && normalized.output === undefined && normalized.status === undefined) {
+      throw new TypeError("toolMatch(options) requires input, output, or status");
+    }
+    if (normalized.input !== undefined) {
+      assertBooleanMatch(normalized.input, "toolMatch() options.input", "value");
+      input = normalized.input as BooleanMatch<JsonValue, JsonValue, "value">;
+    }
+    if (normalized.output !== undefined) {
+      assertBooleanMatch(normalized.output, "toolMatch() options.output", "value");
+      output = normalized.output as BooleanMatch<JsonValue, JsonValue, "value">;
+    }
     status = normalizeStatus(normalized.status, "toolMatch() options.status");
   }
 
-  const name = expectedName === undefined ? `toolMatch(input=${input!.name})` : `toolMatch(${quoted(expectedName)})`;
+  const name = expectedName === undefined
+    ? `toolMatch(${[
+      input === undefined ? undefined : `input=${input.name}`,
+      output === undefined ? undefined : `output=${output.name}`,
+      status === undefined ? undefined : `status=${status}`,
+    ].filter((part): part is string => part !== undefined).join(", ")})`
+    : `toolMatch(${quoted(expectedName)})`;
   return createBooleanMatch("tool", name, async (occurrence) => {
     const fields = await evaluateFields([
       ...(expectedName === undefined
         ? []
         : [{ label: "name", evaluate: async () => occurrenceNameResult(occurrence, expectedName!) }]),
-      ...(input === undefined
-        ? []
-        : [{ label: "input", evaluate: () => toolInputResult(occurrence, input!) }]),
+      ...(input === undefined ? [] : [{ label: "input", evaluate: () => toolEvidenceResult(occurrence, "input", input!) }]),
+      ...(output === undefined ? [] : [{ label: "output", evaluate: () => toolEvidenceResult(occurrence, "output", output!) }]),
       { label: "status", evaluate: async () => lifecycleResult(occurrence, status) },
     ]);
     return combineConjunction(occurrence, name, fields);
   });
+}
+
+/** @internal Assert-first accepts only branded tool-domain matches. */
+export function assertManagedToolMatch(value: unknown, label = "match"): ToolMatch {
+  assertBooleanMatch(value, label, "tool");
+  return value as ToolMatch;
+}
+
+export type ToolMatchQuantifier =
+  | { readonly kind: "at-least"; readonly count: number }
+  | { readonly kind: "exact"; readonly count: number }
+  | { readonly kind: "absent" };
+
+export interface ToolMatchCollectionOptions {
+  readonly quantifier: ToolMatchQuantifier;
+  /** Scope-level action coverage that can hide additional candidates. */
+  readonly coverageReason?: string;
+}
+
+/**
+ * The sole collection evaluator for scoped tool Assertions. It evaluates each
+ * occurrence through ToolMatch, then folds exact / at-least / absent with the
+ * same three-valued rule: a definite counterexample wins; incomplete evidence
+ * cannot manufacture a positive count or an absence proof.
+ */
+export async function evaluateToolMatchCollection(
+  match: ToolMatch,
+  occurrences: readonly LogicalToolOccurrence[],
+  options: ToolMatchCollectionOptions,
+): Promise<BooleanMatchEvaluation<LogicalToolOccurrence | undefined>> {
+  const candidates: CandidateResult<LogicalToolOccurrence>[] = [];
+  for (const occurrence of occurrences) {
+    candidates.push(Object.freeze({
+      candidate: occurrence,
+      result: await evaluateBooleanMatch(match, occurrence),
+    }));
+  }
+  const children = candidates.map((candidate, index) => resultChild(
+    candidate.result,
+    index,
+    `candidate ${candidate.candidate.id}`,
+  ));
+  const matches = candidates.filter((candidate) => candidate.result.state === "matched");
+  const unavailableCandidate = candidates.find((candidate) => candidate.result.state === "unavailable");
+  const unavailableReason = unavailableCandidate?.result.state === "unavailable"
+    ? unavailableCandidate.result.reason
+    : options.coverageReason;
+  const incomplete = unavailableReason !== undefined;
+  const received = `${matches.length} definite match${matches.length === 1 ? "" : "es"}`;
+  const candidateLocator = (candidate: CandidateResult<LogicalToolOccurrence> | undefined) =>
+    candidate === undefined ? undefined : { kind: "tool-occurrence" as const, id: candidate.candidate.id };
+
+  if (options.quantifier.kind === "absent") {
+    const first = matches[0];
+    if (first !== undefined) {
+      return mismatched(diagnostic("tool-absence-mismatch", `notCalledTool(${match.name}) observed a matching tool`, {
+        expected: `no ${match.name}`,
+        received,
+        locator: candidateLocator(first),
+        children,
+      }));
+    }
+    if (incomplete) {
+      return unavailable(unavailableReason, diagnostic("tool-absence-unavailable", `notCalledTool(${match.name}) cannot prove absence`, {
+        expected: `no ${match.name}`,
+        received,
+        reason: unavailableReason,
+        children,
+      }));
+    }
+    return matched(undefined, diagnostic("tool-absence-match", `notCalledTool(${match.name}) observed no matching tool`, {
+      expected: `no ${match.name}`,
+      received,
+      children,
+    }));
+  }
+
+  const { kind, count } = options.quantifier;
+  const expected = kind === "exact" ? `exactly ${count} × ${match.name}` : `at least ${count} × ${match.name}`;
+  if (kind === "exact" && matches.length > count) {
+    const overage = matches[count];
+    return mismatched(diagnostic("tool-count-exceeded", `calledTool(${match.name}) exceeded its exact count`, {
+      expected,
+      received,
+      locator: candidateLocator(overage),
+      children,
+    }));
+  }
+  if (kind === "at-least" && matches.length >= count) {
+    return matched(matches[0]?.candidate, diagnostic("tool-count-match", `calledTool(${match.name}) satisfied its lower bound`, {
+      expected,
+      received,
+      children,
+    }));
+  }
+  if (kind === "exact" && matches.length === count && !incomplete) {
+    return matched(matches[0]?.candidate, diagnostic("tool-count-match", `calledTool(${match.name}) satisfied its exact count`, {
+      expected,
+      received,
+      children,
+    }));
+  }
+  if (incomplete) {
+    return unavailable(unavailableReason, diagnostic("tool-count-unavailable", `calledTool(${match.name}) cannot decide its count`, {
+      expected,
+      received,
+      reason: unavailableReason,
+      children,
+    }));
+  }
+  return mismatched(diagnostic("tool-count-mismatch", `calledTool(${match.name}) did not satisfy its count`, {
+    expected,
+    received,
+    children,
+  }));
+}
+
+interface CandidateResult<T> {
+  readonly candidate: T;
+  readonly result: BooleanMatchEvaluation<unknown>;
 }
 
 function commandResult(

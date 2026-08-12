@@ -157,6 +157,13 @@ const NonNegativeIntegerV1Schema = Schema.JsonNumber.pipe(
   }),
 );
 
+const PositiveIntegerV1Schema = Schema.JsonNumber.pipe(
+  Schema.filter((value) => Number.isSafeInteger(value) && value > 0, {
+    identifier: "AssertionPositiveInteger",
+    description: "a positive safe integer",
+  }),
+);
+
 const NonNegativeNumberV1Schema = Schema.JsonNumber.pipe(
   Schema.filter(isNonNegativeNumber, {
     identifier: "AssertionNonNegativeNumber",
@@ -300,6 +307,14 @@ const OccurrenceCriterionV1Schema = Schema.Struct({
     scope: Schema.Literal("turn", "session", "attempt"),
     occurrence: Schema.Literal("tool", "skill", "event"),
     assertion: Schema.Literal("present", "absent", "count"),
+    matcher: Schema.optional(BoundedJsonStringV1Schema),
+    quantifier: Schema.optional(Schema.Union(
+      Schema.Struct({ kind: Schema.Literal("absent") }),
+      Schema.Struct({
+        kind: Schema.Literal("at-least", "exact"),
+        count: PositiveIntegerV1Schema,
+      }),
+    )),
   }),
 });
 
@@ -439,30 +454,35 @@ export const SealedAssertionResultV1Schema: Schema.Schema<SealedAssertionResultV
       state: Schema.Literal("matched"),
       gate: Schema.Literal("not-gate", "satisfied"),
       score: Schema.Union(NoScoreContributionV1Schema, EarnedScoreContributionV1Schema),
+      diagnostic: Schema.optional(BoundedJsonObjectV1Schema),
     }),
     Schema.Struct({
       state: Schema.Literal("mismatched"),
       reason: Schema.Literal("condition-not-met"),
       gate: Schema.Literal("not-gate", "failed"),
       score: Schema.Union(NoScoreContributionV1Schema, EarnedScoreContributionV1Schema),
+      diagnostic: Schema.optional(BoundedJsonObjectV1Schema),
     }),
     Schema.Struct({
       state: Schema.Literal("unavailable"),
       reason: Schema.Literal("evidence-unavailable", "source-unavailable", "redacted"),
       gate: Schema.Literal("not-gate", "unavailable"),
       score: Schema.Union(NoScoreContributionV1Schema, UnavailableScoreContributionV1Schema),
+      diagnostic: Schema.optional(BoundedJsonObjectV1Schema),
     }),
     Schema.Struct({
       state: Schema.Literal("errored"),
       reason: Schema.Literal("evaluator-failed", "producer-interrupted", "invalid-subject"),
       gate: Schema.Literal("not-gate", "unavailable"),
       score: Schema.Union(NoScoreContributionV1Schema, UnavailableScoreContributionV1Schema),
+      diagnostic: Schema.optional(BoundedJsonObjectV1Schema),
     }),
     Schema.Struct({
       state: Schema.Literal("not-applicable"),
       reason: Schema.Literal("coverage-not-applicable"),
       gate: Schema.Literal("not-gate", "not-applicable"),
       score: Schema.Union(NoScoreContributionV1Schema, UnavailableScoreContributionV1Schema),
+      diagnostic: Schema.optional(BoundedJsonObjectV1Schema),
     }),
   );
 

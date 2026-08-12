@@ -2,6 +2,7 @@ import type { Effect } from "effect";
 
 import type {
   BooleanMatch,
+  MatchDiagnostic,
   ScoreMatch,
 } from "./match.ts";
 import type {
@@ -81,16 +82,17 @@ export type AssertionStopExecutorV1 = <Value>(
 
 /** A Boolean entry is evaluated once and may retain a refinement witness. */
 export type BooleanAssertionEvaluationV1<Refined> =
-  | { readonly state: "matched"; readonly value: Refined }
-  | { readonly state: "mismatched" }
+  | { readonly state: "matched"; readonly value: Refined; readonly diagnostic?: MatchDiagnostic }
+  | { readonly state: "mismatched"; readonly diagnostic?: MatchDiagnostic }
   | {
       readonly state: "unavailable";
       readonly reason:
         | "evidence-unavailable"
         | "source-unavailable"
         | "redacted";
+      readonly diagnostic?: MatchDiagnostic;
     }
-  | { readonly state: "not-applicable" };
+  | { readonly state: "not-applicable"; readonly diagnostic?: MatchDiagnostic };
 
 /** A measurement is always a finite unit-interval value when it is available. */
 export type MeasurementAssertionEvaluationV1 =
