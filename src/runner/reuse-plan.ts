@@ -4,6 +4,7 @@ import {
   projectEvaluationsAttachmentV1,
   type EvaluationDefinitionV1,
   type EvaluationIdV1,
+  type EvaluationKindV1,
   type ExperimentIdV1,
 } from "../eval/record/evaluation.ts";
 import {
@@ -53,30 +54,30 @@ export const PROJECT_TARGET_POLICY_VERSION_V1 = 1 as const;
 export const PROJECT_TARGET_INVOCATION_ID_MAXIMUM_LENGTH_V1 = 255 as const;
 export const PROJECT_TARGET_RECORD_IDENTITY_MAXIMUM_LENGTH_V1 = 4096 as const;
 
-export interface ExecutionPolicyIdentityV1 {
+export interface ExecutionPolicyIdentity {
   readonly name: typeof PROJECT_TARGET_POLICY_NAME_V1;
   readonly version: typeof PROJECT_TARGET_POLICY_VERSION_V1;
 }
 
-export const projectTargetPolicyIdentityV1: ExecutionPolicyIdentityV1 = Object.freeze({
+export const projectTargetPolicyIdentityV1: ExecutionPolicyIdentity = Object.freeze({
   name: PROJECT_TARGET_POLICY_NAME_V1,
   version: PROJECT_TARGET_POLICY_VERSION_V1,
 });
 
 /** A fully evaluated target is immutable before this planner sees it. */
-export interface ExecutionTargetV1 {
+export interface ExecutionTarget {
   readonly invocationId: string;
-  readonly runs: readonly TargetRunV1[];
+  readonly runs: readonly TargetRun[];
 }
 
-export interface TargetRunV1 {
+export interface TargetRun {
   readonly runId: RunId;
   readonly experimentId: ExperimentIdV1;
   readonly startedAt: UtcMillis;
-  readonly slots: readonly TargetSlotV1[];
+  readonly slots: readonly TargetSlot[];
 }
 
-export interface TargetSlotV1 {
+export interface TargetSlot {
   readonly runId: RunId;
   readonly slotId: SlotId;
   readonly experimentId: ExperimentIdV1;
@@ -93,27 +94,33 @@ export interface TargetSlotV1 {
  * token/domain and fail closed against older eligibility facts.
  */
 export interface ProjectTargetPolicyV1 {
-  readonly identity: ExecutionPolicyIdentityV1;
+  readonly identity: ExecutionPolicyIdentity;
   readonly reuseContract: EqualityTokenV1;
   readonly rerun: "none" | "failed" | "all";
   readonly keepSandbox: boolean;
 }
 
-export interface ExecutionReusePlanSlotBaseV1 extends TargetSlotV1 {
+export interface ExecutionReusePlanSlotBase extends TargetSlot {
   readonly comparisons: readonly ComparisonProvenanceV1[];
 }
 
 /** A carried reference always retains Record's exact frozen Attempt capability. */
-export interface ReusePlanSlotV1 extends ExecutionReusePlanSlotBaseV1 {
+export interface ReusePlanSlot extends ExecutionReusePlanSlotBase {
   readonly state: "reuse";
   readonly adoption: "carried";
+  /**
+   * The source Run's current `niceeval.evaluations/v1` projection. Readback
+   * uses this to decide whether a Score Attachment is semantically applicable
+   * without reopening or guessing from a legacy result shape.
+   */
+  readonly sourceEvaluationKind: EvaluationKindV1;
   readonly attemptId: FrozenRecordAttempt["attemptId"];
   readonly sourceAttempt: FrozenRecordAttempt;
   readonly origin: MembershipAttemptOriginV1;
   readonly sourceBarrier: MembershipSourceBarrierV1;
 }
 
-export interface ExecutionGapSlotV1 extends ExecutionReusePlanSlotBaseV1 {
+export interface ExecutionGapSlot extends ExecutionReusePlanSlotBase {
   readonly state: "gap";
   readonly reason: ExecutionGapReasonV1;
   readonly scope: ExecutionGapScopeV1;
@@ -121,24 +128,24 @@ export interface ExecutionGapSlotV1 extends ExecutionReusePlanSlotBaseV1 {
   readonly sourceBarrier?: MembershipSourceBarrierV1;
 }
 
-export type ExecutionReusePlanSlotV1 = ReusePlanSlotV1 | ExecutionGapSlotV1;
+export type ExecutionReusePlanSlot = ReusePlanSlot | ExecutionGapSlot;
 
-export interface ExecutionReusePlanV1 {
-  readonly target: ExecutionTargetV1;
-  readonly policy: ExecutionPolicyIdentityV1;
+export interface ExecutionReusePlan {
+  readonly target: ExecutionTarget;
+  readonly policy: ExecutionPolicyIdentity;
   readonly effectiveOptions: MembershipEffectiveOptionsV1;
-  readonly slots: readonly ExecutionReusePlanSlotV1[];
-  readonly reuse: readonly ReusePlanSlotV1[];
-  readonly gaps: readonly ExecutionGapSlotV1[];
+  readonly slots: readonly ExecutionReusePlanSlot[];
+  readonly reuse: readonly ReusePlanSlot[];
+  readonly gaps: readonly ExecutionGapSlot[];
 }
 
-export interface ProjectTargetReusePlanInputV1 {
+export interface ProjectTargetReusePlanInput {
   readonly view: FrozenRecordView<RecordReaderReadError>;
-  readonly target: ExecutionTargetV1;
+  readonly target: ExecutionTarget;
   readonly policy: ProjectTargetPolicyV1;
 }
 
-export type ProjectTargetReusePlanInvalidReasonV1 =
+export type ProjectTargetReusePlanInvalidReason =
   | "view-invalid"
   | "invocation-id-invalid"
   | "target-run-invalid"
@@ -152,17 +159,17 @@ export type ProjectTargetReusePlanInvalidReasonV1 =
   | "policy-input-invalid";
 
 /** Planning cannot safely continue when its current target/policy is incomplete. */
-export interface ProjectTargetReusePlanInvalidV1 {
+export interface ProjectTargetReusePlanInvalid {
   readonly code: "project-target-reuse-plan-invalid";
-  readonly reason: ProjectTargetReusePlanInvalidReasonV1;
+  readonly reason: ProjectTargetReusePlanInvalidReason;
 }
 
-interface SourceCandidateV1 {
+interface SourceCandidate {
   readonly run: FrozenRecordRun;
   readonly evaluation: EvaluationDefinitionV1;
 }
 
-export type ProjectTargetAttachmentGapReasonV1 = Extract<
+export type ProjectTargetAttachmentGapReason = Extract<
   ExecutionGapReasonV1,
   | "source-attachment-unavailable"
   | "source-attachment-migration-required"
@@ -171,30 +178,30 @@ export type ProjectTargetAttachmentGapReasonV1 = Extract<
   | "source-attachment-invalid"
 >;
 
-export interface ProjectTargetAttachmentProblemV1 {
-  readonly reason: ProjectTargetAttachmentGapReasonV1;
+export interface ProjectTargetAttachmentProblem {
+  readonly reason: ProjectTargetAttachmentGapReason;
   readonly state: ComparisonSourceStateV1;
   readonly issues: readonly RecordIssue[];
 }
 
-interface SourceDiscoveryV1 {
-  readonly latestByExperimentEval: ReadonlyMap<string, SourceCandidateV1>;
+interface SourceDiscovery {
+  readonly latestByExperimentEval: ReadonlyMap<string, SourceCandidate>;
   readonly unattributedProblem?: {
     readonly reason: ExecutionGapReasonV1;
     readonly issues: readonly RecordIssue[];
   };
 }
 
-interface SourceDiscoveryAccumulatorV1 {
-  readonly latestByExperimentEval: Map<string, SourceCandidateV1>;
-  unattributedProblem?: SourceDiscoveryV1["unattributedProblem"];
+interface SourceDiscoveryAccumulator {
+  readonly latestByExperimentEval: Map<string, SourceCandidate>;
+  unattributedProblem?: SourceDiscovery["unattributedProblem"];
 }
 
-type OriginLookupV1 =
+type OriginLookup =
   | { readonly state: "available"; readonly origin: MembershipAttemptOriginV1 }
   | { readonly state: "invalid"; readonly issues: readonly RecordIssue[] };
 
-interface AttemptEligibilityComparisonV1 {
+interface AttemptEligibilityComparison {
   readonly comparisons: readonly ComparisonProvenanceV1[];
   readonly reason?: Exclude<
     ExecutionGapReasonV1,
@@ -214,10 +221,10 @@ interface AttemptEligibilityComparisonV1 {
  * Validates the immutable input before any Record I/O. This stays pure so the
  * planner never invents target identities or silently repairs duplicate slots.
  */
-export function validateProjectTargetReusePlanInputV1(input: {
-  readonly target: ExecutionTargetV1;
+export function validateProjectTargetReusePlanInput(input: {
+  readonly target: ExecutionTarget;
   readonly policy: ProjectTargetPolicyV1;
-}): ProjectTargetReusePlanInvalidV1 | undefined {
+}): ProjectTargetReusePlanInvalid | undefined {
   const unknownInput: unknown = input;
   if (typeof unknownInput !== "object" || unknownInput === null) {
     return invalidPlan("target-run-invalid");
@@ -310,15 +317,15 @@ export function validateProjectTargetReusePlanInputV1(input: {
  * attachment states are handled outside this function, preserving the domain
  * boundary between I/O and equality/rerun policy.
  */
-export function compareProjectTargetAttemptEligibilityV1(input: {
+export function compareProjectTargetAttemptEligibility(input: {
   readonly eligibility: AttemptEligibilityPayloadV1;
   readonly verdict: VerdictStateV1;
-  readonly target: TargetSlotV1;
+  readonly target: TargetSlot;
   readonly policy: ProjectTargetPolicyV1;
-}): AttemptEligibilityComparisonV1 {
+}): AttemptEligibilityComparison {
   const comparisons: ComparisonProvenanceV1[] = [];
-  let reason: AttemptEligibilityComparisonV1["reason"];
-  const chooseReason = (next: NonNullable<AttemptEligibilityComparisonV1["reason"]>): void => {
+  let reason: AttemptEligibilityComparison["reason"];
+  const chooseReason = (next: NonNullable<AttemptEligibilityComparison["reason"]>): void => {
     if (reason === undefined) reason = next;
   };
 
@@ -391,18 +398,18 @@ export function compareProjectTargetAttemptEligibilityV1(input: {
  * reuse/gap partition. It never opens storage, walks directories, or creates
  * an Effect runtime of its own.
  */
-export function planProjectTargetReuseV1(
-  input: ProjectTargetReusePlanInputV1,
+export function planProjectTargetReuse(
+  input: ProjectTargetReusePlanInput,
 ): Effect.Effect<
-  ExecutionReusePlanV1,
-  ProjectTargetReusePlanInvalidV1 | RecordReaderReadError
+  ExecutionReusePlan,
+  ProjectTargetReusePlanInvalid | RecordReaderReadError
 > {
   return Effect.suspend<
-    ExecutionReusePlanV1,
-    ProjectTargetReusePlanInvalidV1 | RecordReaderReadError,
+    ExecutionReusePlan,
+    ProjectTargetReusePlanInvalid | RecordReaderReadError,
     never
   >(() => {
-    const invalid = validateProjectTargetReusePlanInputV1(input);
+    const invalid = validateProjectTargetReusePlanInput(input);
     if (invalid !== undefined) return Effect.fail(invalid);
 
     const port = resolveFrozenRecordReaderPort(input.view);
@@ -410,12 +417,12 @@ export function planProjectTargetReuseV1(
 
     return Effect.gen(function* () {
       yield* port.assertOpen(input.view);
-      const discovery = yield* discoverSourcesV1(input.view, port, input.target);
-      const slots: ExecutionReusePlanSlotV1[] = [];
-      const origins = new Map<string, OriginLookupV1>();
+      const discovery = yield* discoverSources(input.view, port, input.target);
+      const slots: ExecutionReusePlanSlot[] = [];
+      const origins = new Map<string, OriginLookup>();
 
       for (const target of flattenTargetSlots(input.target)) {
-        const planned = yield* planTargetSlotV1({
+        const planned = yield* planTargetSlot({
           view: input.view,
           port,
           target,
@@ -426,8 +433,8 @@ export function planProjectTargetReuseV1(
         slots.push(planned);
       }
 
-      const reuse: ReusePlanSlotV1[] = [];
-      const gaps: ExecutionGapSlotV1[] = [];
+      const reuse: ReusePlanSlot[] = [];
+      const gaps: ExecutionGapSlot[] = [];
       for (const slot of slots) {
         if (slot.state === "reuse") reuse.push(slot);
         else gaps.push(slot);
@@ -436,7 +443,7 @@ export function planProjectTargetReuseV1(
       return Object.freeze({
         target: input.target,
         policy: projectTargetPolicyIdentityV1,
-        effectiveOptions: effectiveOptionsV1(input.policy),
+        effectiveOptions: effectiveOptions(input.policy),
         slots: Object.freeze(slots),
         reuse: Object.freeze(reuse),
         gaps: Object.freeze(gaps),
@@ -446,19 +453,19 @@ export function planProjectTargetReuseV1(
 }
 
 /** A small named facade lets Runner wiring keep the policy capability explicit. */
-export const ProjectTargetReusePlannerV1 = Object.freeze({
-  plan: planProjectTargetReuseV1,
+export const ProjectTargetReusePlanner = Object.freeze({
+  plan: planProjectTargetReuse,
 });
 
-function discoverSourcesV1(
+function discoverSources(
   view: FrozenRecordView<RecordReaderReadError>,
   port: FrozenRecordReaderPort,
-  target: ExecutionTargetV1,
-): Effect.Effect<SourceDiscoveryV1, RecordReaderReadError> {
+  target: ExecutionTarget,
+): Effect.Effect<SourceDiscovery, RecordReaderReadError> {
   const targetKeys = sourceKeysForTarget(target);
   return targetKeys.size === 0
     ? Effect.succeed(Object.freeze({ latestByExperimentEval: new Map() }))
-    : foldProjectTargetSourceCandidatesV1({
+    : foldProjectTargetSourceCandidates({
         view,
         port,
         candidates: port.candidates(view),
@@ -466,7 +473,7 @@ function discoverSourcesV1(
       });
 }
 
-function sourceKeysForTarget(target: ExecutionTargetV1): ReadonlySet<string> {
+function sourceKeysForTarget(target: ExecutionTarget): ReadonlySet<string> {
   const keys = new Set<string>();
   for (const run of target.runs) {
     for (const slot of run.slots) {
@@ -481,7 +488,7 @@ function sourceKeysForTarget(target: ExecutionTargetV1): ReadonlySet<string> {
  * candidate per requested `(experimentId, evalId)` plus one fail-closed
  * unattributed problem; candidate cardinality never determines heap use.
  */
-export function foldProjectTargetSourceCandidatesV1(input: {
+export function foldProjectTargetSourceCandidates(input: {
   readonly view: FrozenRecordView<RecordReaderReadError>;
   readonly port: FrozenRecordReaderPort;
   readonly candidates: Stream.Stream<
@@ -489,14 +496,14 @@ export function foldProjectTargetSourceCandidatesV1(input: {
     RecordReaderReadError
   >;
   readonly targetKeys: ReadonlySet<string>;
-}): Effect.Effect<SourceDiscoveryV1, RecordReaderReadError> {
-  const initial: SourceDiscoveryAccumulatorV1 = {
+}): Effect.Effect<SourceDiscovery, RecordReaderReadError> {
+  const initial: SourceDiscoveryAccumulator = {
     latestByExperimentEval: new Map(),
   };
   return Stream.runFoldEffect(
     input.candidates,
     initial,
-    (state, candidate) => collectSourceCandidateV1(input, state, candidate),
+    (state, candidate) => collectSourceCandidate(input, state, candidate),
   ).pipe(
     Effect.map((state) =>
       state.unattributedProblem === undefined
@@ -509,15 +516,15 @@ export function foldProjectTargetSourceCandidatesV1(input: {
   );
 }
 
-function collectSourceCandidateV1(
+function collectSourceCandidate(
   input: {
     readonly view: FrozenRecordView<RecordReaderReadError>;
     readonly port: FrozenRecordReaderPort;
     readonly targetKeys: ReadonlySet<string>;
   },
-  state: SourceDiscoveryAccumulatorV1,
+  state: SourceDiscoveryAccumulator,
   candidate: RecordCoreRead<FrozenRecordRun>,
-): Effect.Effect<SourceDiscoveryAccumulatorV1, RecordReaderReadError> {
+): Effect.Effect<SourceDiscoveryAccumulator, RecordReaderReadError> {
   if (state.unattributedProblem !== undefined) return Effect.succeed(state);
   if (candidate.state === "core-invalid") {
     state.unattributedProblem = Object.freeze({
@@ -540,7 +547,7 @@ function collectSourceCandidateV1(
       candidate.value,
       evaluationsAttachmentFamilyV1,
     );
-    const problem = projectTargetAttachmentProblemV1(read);
+    const problem = projectTargetAttachmentProblem(read);
     if (problem !== undefined) {
       state.unattributedProblem = Object.freeze({
         reason: problem.reason,
@@ -556,7 +563,7 @@ function collectSourceCandidateV1(
     for (const evaluation of evaluations.evaluations) {
       const key = sourceKey(evaluations.experimentId, evaluation.evalId);
       if (!input.targetKeys.has(key)) continue;
-      const candidateForEval: SourceCandidateV1 = Object.freeze({
+      const candidateForEval: SourceCandidate = Object.freeze({
         run: candidate.value,
         evaluation,
       });
@@ -572,14 +579,14 @@ function collectSourceCandidateV1(
   });
 }
 
-function planTargetSlotV1(input: {
+function planTargetSlot(input: {
   readonly view: FrozenRecordView<RecordReaderReadError>;
   readonly port: FrozenRecordReaderPort;
-  readonly target: TargetSlotV1;
+  readonly target: TargetSlot;
   readonly policy: ProjectTargetPolicyV1;
-  readonly discovery: SourceDiscoveryV1;
-  readonly origins: Map<string, OriginLookupV1>;
-}): Effect.Effect<ExecutionReusePlanSlotV1, RecordReaderReadError> {
+  readonly discovery: SourceDiscovery;
+  readonly origins: Map<string, OriginLookup>;
+}): Effect.Effect<ExecutionReusePlanSlot, RecordReaderReadError> {
   return Effect.gen(function* () {
     const unattributed = input.discovery.unattributedProblem;
     if (unattributed !== undefined) {
@@ -664,7 +671,7 @@ function planTargetSlotV1(input: {
       });
     }
 
-    const origin = yield* resolveAttemptOriginV1({
+    const origin = yield* resolveAttemptOrigin({
       view: input.view,
       port: input.port,
       attempt: attempt.value,
@@ -692,11 +699,11 @@ function planTargetSlotV1(input: {
       attempt.value,
       verdictAttachmentFamilyV1,
     );
-    const eligibilityProblem = projectTargetAttachmentProblemV1(eligibilityRead);
-    const verdictProblem = projectTargetAttachmentProblemV1(verdictRead);
+    const eligibilityProblem = projectTargetAttachmentProblem(eligibilityRead);
+    const verdictProblem = projectTargetAttachmentProblem(verdictRead);
     if (eligibilityProblem !== undefined || verdictProblem !== undefined) {
       const problems = [eligibilityProblem, verdictProblem].filter(
-        (problem): problem is ProjectTargetAttachmentProblemV1 => problem !== undefined,
+        (problem): problem is ProjectTargetAttachmentProblem => problem !== undefined,
       );
       const comparisons = Object.freeze([
         ...(eligibilityProblem === undefined
@@ -732,7 +739,7 @@ function planTargetSlotV1(input: {
     }
     const eligibility = projectEligibilityAttachmentV1(eligibilityRead.value);
     const verdict = projectVerdictAttachmentV1(verdictRead.value);
-    const comparison = compareProjectTargetAttemptEligibilityV1({
+    const comparison = compareProjectTargetAttemptEligibility({
       eligibility,
       verdict,
       target: input.target,
@@ -752,6 +759,7 @@ function planTargetSlotV1(input: {
       ...input.target,
       state: "reuse" as const,
       adoption: "carried" as const,
+      sourceEvaluationKind: source.evaluation.evaluationKind,
       attemptId: attempt.value.attemptId,
       sourceAttempt: attempt.value,
       origin: origin.origin,
@@ -761,12 +769,12 @@ function planTargetSlotV1(input: {
   });
 }
 
-function resolveAttemptOriginV1(input: {
+function resolveAttemptOrigin(input: {
   readonly view: FrozenRecordView<RecordReaderReadError>;
   readonly port: FrozenRecordReaderPort;
   readonly attempt: FrozenRecordAttempt;
-  readonly cache: Map<string, OriginLookupV1>;
-}): Effect.Effect<OriginLookupV1, RecordReaderReadError> {
+  readonly cache: Map<string, OriginLookup>;
+}): Effect.Effect<OriginLookup, RecordReaderReadError> {
   return Effect.suspend(() => {
     const key = recordAttemptReferenceKey({
       originRunId: input.attempt.originRunId,
@@ -778,7 +786,7 @@ function resolveAttemptOriginV1(input: {
     return Effect.gen(function* () {
       const run = yield* input.port.run(input.view, input.attempt.originRunId);
       if (run.state === "core-invalid") {
-        const result: OriginLookupV1 = Object.freeze({
+        const result: OriginLookup = Object.freeze({
           state: "invalid" as const,
           issues: run.issues,
         });
@@ -786,7 +794,7 @@ function resolveAttemptOriginV1(input: {
         return result;
       }
       if (run.state === "missing") {
-        const result: OriginLookupV1 = Object.freeze({
+        const result: OriginLookup = Object.freeze({
           state: "invalid" as const,
           issues: Object.freeze([]),
         });
@@ -797,7 +805,7 @@ function resolveAttemptOriginV1(input: {
       for (const slotId of run.value.expectedSlots) {
         const member = yield* input.port.member(input.view, run.value, slotId);
         if (member.state === "core-invalid") {
-          const result: OriginLookupV1 = Object.freeze({
+          const result: OriginLookup = Object.freeze({
             state: "invalid" as const,
             issues: member.issues,
           });
@@ -809,7 +817,7 @@ function resolveAttemptOriginV1(input: {
           && member.value.attempt.originRunId === input.attempt.originRunId
           && member.value.attempt.attemptId === input.attempt.attemptId
         ) {
-          const result: OriginLookupV1 = Object.freeze({
+          const result: OriginLookup = Object.freeze({
             state: "available" as const,
             origin: Object.freeze({ runId: run.value.runId, slotId }),
           });
@@ -818,7 +826,7 @@ function resolveAttemptOriginV1(input: {
         }
       }
 
-      const result: OriginLookupV1 = Object.freeze({
+      const result: OriginLookup = Object.freeze({
         state: "invalid" as const,
         issues: Object.freeze([]),
       });
@@ -829,39 +837,39 @@ function resolveAttemptOriginV1(input: {
 }
 
 /** Converts every non-available RecordAttachment read state into a stable gap. */
-export function projectTargetAttachmentProblemV1<Payload>(
+export function projectTargetAttachmentProblem<Payload>(
   read: RecordAttachmentRead<Payload>,
-): ProjectTargetAttachmentProblemV1 | undefined {
+): ProjectTargetAttachmentProblem | undefined {
   switch (read.state) {
     case "available":
       return undefined;
     case "unavailable":
       return Object.freeze({
-        reason: projectTargetAttachmentGapReasonV1("unavailable"),
+        reason: projectTargetAttachmentGapReason("unavailable"),
         state: "unavailable" as const,
         issues: Object.freeze([]),
       });
     case "migration-required":
       return Object.freeze({
-        reason: projectTargetAttachmentGapReasonV1("migration-required"),
+        reason: projectTargetAttachmentGapReason("migration-required"),
         state: "migration-required" as const,
         issues: Object.freeze([]),
       });
     case "migration-unavailable":
       return Object.freeze({
-        reason: projectTargetAttachmentGapReasonV1("migration-unavailable"),
+        reason: projectTargetAttachmentGapReason("migration-unavailable"),
         state: "migration-unavailable" as const,
         issues: Object.freeze([]),
       });
     case "unsupported":
       return Object.freeze({
-        reason: projectTargetAttachmentGapReasonV1("unsupported"),
+        reason: projectTargetAttachmentGapReason("unsupported"),
         state: "unsupported" as const,
         issues: Object.freeze([]),
       });
     case "invalid":
       return Object.freeze({
-        reason: projectTargetAttachmentGapReasonV1("invalid"),
+        reason: projectTargetAttachmentGapReason("invalid"),
         state: "invalid" as const,
         issues: read.issues,
       });
@@ -869,9 +877,9 @@ export function projectTargetAttachmentProblemV1<Payload>(
 }
 
 /** Stable read-state mapping used by both source and required-Attempt facts. */
-export function projectTargetAttachmentGapReasonV1(
+export function projectTargetAttachmentGapReason(
   state: Exclude<ComparisonSourceStateV1, "available">,
-): ProjectTargetAttachmentGapReasonV1 {
+): ProjectTargetAttachmentGapReason {
   switch (state) {
     case "unavailable":
       return "source-attachment-unavailable";
@@ -889,7 +897,7 @@ export function projectTargetAttachmentGapReasonV1(
 function unavailableComparison(
   attachment: ComparisonAttachmentV1,
   recordedClaim: ComparisonProvenanceV1["recordedClaim"],
-  problem: ProjectTargetAttachmentProblemV1,
+  problem: ProjectTargetAttachmentProblem,
 ): ComparisonProvenanceV1 {
   return comparison(
     attachment,
@@ -1009,7 +1017,7 @@ function comparison(
 }
 
 function gapSlot(
-  target: TargetSlotV1,
+  target: TargetSlot,
   input: {
     readonly reason: ExecutionGapReasonV1;
     readonly scope: ExecutionGapScopeV1;
@@ -1017,7 +1025,7 @@ function gapSlot(
     readonly comparisons: readonly ComparisonProvenanceV1[];
     readonly sourceBarrier?: MembershipSourceBarrierV1;
   },
-): ExecutionGapSlotV1 {
+): ExecutionGapSlot {
   return input.sourceBarrier === undefined
     ? Object.freeze({
         ...target,
@@ -1038,7 +1046,7 @@ function gapSlot(
       });
 }
 
-function effectiveOptionsV1(
+function effectiveOptions(
   policy: ProjectTargetPolicyV1,
 ): MembershipEffectiveOptionsV1 {
   return Object.freeze({
@@ -1051,8 +1059,8 @@ function effectiveOptionsV1(
   });
 }
 
-function flattenTargetSlots(target: ExecutionTargetV1): readonly TargetSlotV1[] {
-  const slots: TargetSlotV1[] = [];
+function flattenTargetSlots(target: ExecutionTarget): readonly TargetSlot[] {
+  const slots: TargetSlot[] = [];
   for (const run of target.runs) slots.push(...run.slots);
   return Object.freeze(slots);
 }
@@ -1079,14 +1087,14 @@ function sourceKey(
 }
 
 function invalidPlan(
-  reason: ProjectTargetReusePlanInvalidReasonV1,
-): ProjectTargetReusePlanInvalidV1 {
+  reason: ProjectTargetReusePlanInvalidReason,
+): ProjectTargetReusePlanInvalid {
   return Object.freeze({ code: "project-target-reuse-plan-invalid", reason });
 }
 
-function isTargetRun(value: unknown): value is TargetRunV1 {
+function isTargetRun(value: unknown): value is TargetRun {
   if (typeof value !== "object" || value === null) return false;
-  const run = value as Partial<TargetRunV1>;
+  const run = value as Partial<TargetRun>;
   return (
     typeof run.runId === "string"
     && isPortableSegment(run.runId)
@@ -1098,9 +1106,9 @@ function isTargetRun(value: unknown): value is TargetRunV1 {
   );
 }
 
-function isTargetSlot(value: unknown): value is TargetSlotV1 {
+function isTargetSlot(value: unknown): value is TargetSlot {
   if (typeof value !== "object" || value === null) return false;
-  const slot = value as Partial<TargetSlotV1>;
+  const slot = value as Partial<TargetSlot>;
   return (
     typeof slot.runId === "string"
     && isPortableSegment(slot.runId)
@@ -1140,12 +1148,5 @@ function isRerunOption(value: unknown): value is ProjectTargetPolicyV1["rerun"] 
   return value === "none" || value === "failed" || value === "all";
 }
 
-/** Documentation-level aliases keep the domain names aligned with cache.md. */
-export type ExecutionTarget = ExecutionTargetV1;
-export type TargetRun = TargetRunV1;
-export type TargetSlot = TargetSlotV1;
+/** Documentation-level alias keeps the versioned policy type aligned with cache.md. */
 export type ProjectTargetPolicy = ProjectTargetPolicyV1;
-export type ExecutionReusePlan = ExecutionReusePlanV1;
-export type ExecutionReusePlanSlot = ExecutionReusePlanSlotV1;
-export type ReusePlanSlot = ReusePlanSlotV1;
-export type ExecutionGapSlot = ExecutionGapSlotV1;

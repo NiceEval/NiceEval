@@ -43,16 +43,21 @@ import type {
 import { cacheKey } from "./fingerprint.ts";
 import { selectedEvalsForRun } from "./eval-selection.ts";
 import {
-  planProjectTargetReuseV1,
-  type ExecutionGapSlotV1,
-  type ExecutionReusePlanSlotV1,
-  type ExecutionReusePlanV1,
-  type ExecutionTargetV1,
+  planProjectTargetReuse,
+  type ExecutionGapSlot,
+  type ExecutionReusePlanSlot,
+  type ExecutionReusePlan,
+  type ExecutionTarget,
   type ProjectTargetPolicyV1,
-  type ProjectTargetReusePlanInvalidV1,
-  type TargetRunV1,
-  type TargetSlotV1,
+  type ProjectTargetReusePlanInvalid,
+  type TargetRun,
+  type TargetSlot,
 } from "./reuse-plan.ts";
+import {
+  readCurrentExecutionReusePlanResults,
+  type CurrentReusedAttemptReadback,
+  type CurrentReuseReadbackPlanInvalid,
+} from "./reuse-readback.ts";
 import {
   evaluationRecordOriginInputFromSealedAssertions,
   type EvaluationRecordOriginAttemptInputV1,
@@ -139,9 +144,9 @@ interface ActiveRunnerRecordAttempt<AttachmentError, AttachmentRequirements> {
 
 interface RunnerRecordRun<AttachmentError, AttachmentRequirements> extends PlannedRunnerRecordRun {
   readonly draft: RecordRunDraft;
-  readonly target: TargetRunV1;
+  readonly target: TargetRun;
   readonly attempts: Map<SlotId, ActiveRunnerRecordAttempt<AttachmentError, AttachmentRequirements>>;
-  readonly planSlots: Map<SlotId, ExecutionReusePlanSlotV1>;
+  readonly planSlots: Map<SlotId, ExecutionReusePlanSlot>;
   readonly gapActions: Map<SlotId, GapActionState>;
 }
 
@@ -221,7 +226,7 @@ export type RunnerRecordOpenError<AttachmentError> =
   | RecordRootConstructionError
   | OpenRecordWriteSessionError
   | RecordReaderReadError
-  | ProjectTargetReusePlanInvalidV1
+  | ProjectTargetReusePlanInvalid
   | RunnerRecordTargetInputMissing
   | RunnerRecordTargetIdentityInvalid
   | RunnerRecordMembershipStateInvalid
@@ -232,7 +237,16 @@ export type RunnerRecordOpenError<AttachmentError> =
 
 export interface RunnerRecordCoordinator<AttachmentError, AttachmentRequirements> {
   /** The complete policy result remains with the invocation coordinator. */
-  readonly reusePlan: ExecutionReusePlanV1;
+  readonly reusePlan: ExecutionReusePlan;
+  /**
+   * Current visible facts for exact carried Attempts. This remains an Effect
+   * because the frozen reader capability is scoped; it never recreates a
+   * legacy EvalResult from paths, graph, or evidence.
+   */
+  readonly readCarriedResults: () => Effect.Effect<
+    readonly CurrentReusedAttemptReadback[],
+    RecordReaderReadError | CurrentReuseReadbackPlanInvalid
+  >;
   /** Actual draft identities, one durable Record Run for each Experiment. */
   readonly runIdsByExperiment: ReadonlyMap<string, string>;
   /** Scheduler authority: only these Record-planned slots bypass fresh execution. */
@@ -436,7 +450,7 @@ function observabilityContractInvalid(
   });
 }
 
-function gapFromPlan(slot: ExecutionGapSlotV1): MembershipGapV1 {
+function gapFromPlan(slot: ExecutionGapSlot): MembershipGapV1 {
   return Object.freeze({
     reason: slot.reason,
     scope: slot.scope,
@@ -518,13 +532,13 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
     const byRun = new Map<AgentRun, RunnerRecordRun<AttachmentError, AttachmentRequirements>>();
     const byRecordRunId = new Map<string, RunnerRecordRun<AttachmentError, AttachmentRequirements>>();
     const runIdsByExperiment = new Map<string, string>();
-    const targetRuns: TargetRunV1[] = [];
+    const targetRuns: TargetRun[] = [];
     for (const planned of plannedRuns) {
       const draft = yield* session.createRun({
         startedAt: asUtcMillis(input.startedAt),
         expectedSlots: planned.expectedSlots,
       });
-      const target: TargetRunV1 = Object.freeze({
+      const target: TargetRun = Object.freeze({
         runId: draft.runId,
         experimentId: planned.run.experimentId,
         startedAt: asUtcMillis(input.startedAt),
@@ -537,7 +551,7 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
           inputIdentity: entry.reuse.inputIdentity,
           configIdentity: entry.reuse.configIdentity,
           ...(entry.reuse.timeout === undefined ? {} : { timeout: entry.reuse.timeout }),
-        } satisfies TargetSlotV1))),
+        } satisfies TargetSlot))),
       });
       const recordRun: RunnerRecordRun<AttachmentError, AttachmentRequirements> = {
         ...planned,
@@ -553,11 +567,11 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
       targetRuns.push(target);
     }
 
-    const target: ExecutionTargetV1 = Object.freeze({
+    const target: ExecutionTarget = Object.freeze({
       invocationId: yield* mintInvocationId(entropy),
       runs: Object.freeze(targetRuns),
     });
-    const reusePlan = yield* planProjectTargetReuseV1({
+    const reusePlan = yield* planProjectTargetReuse({
       view: session.view,
       target,
       policy: input.reuse.policy,
@@ -622,7 +636,7 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
     const targetSlotForAttempt = (attempt: Attempt): {
       readonly recordRun: RunnerRecordRun<AttachmentError, AttachmentRequirements>;
       readonly slotId: SlotId;
-      readonly plan: ExecutionReusePlanSlotV1;
+      readonly plan: ExecutionReusePlanSlot;
     } | undefined => {
       const recordRun = recordRunForAttempt(attempt);
       if (recordRun === undefined) return undefined;
@@ -825,6 +839,10 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
 
     return Object.freeze({
       reusePlan,
+      readCarriedResults: () => readCurrentExecutionReusePlanResults({
+        view: session.view,
+        plan: reusePlan,
+      }),
       runIdsByExperiment: new Map(runIdsByExperiment),
       carriedAttemptsByKey: new Map(
         [...carriedAttemptsByKey].map(([key, attempts]) =>

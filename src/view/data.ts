@@ -1,10 +1,24 @@
 // Node view data starts with a completed ReportExecution. The former scan of
-// legacy Record snapshots lived here; it intentionally has no compatibility
-// path because a view revision must never reopen old Record/Fact data.
+// legacy Record snapshots is gone; stale callers fail closed below rather than
+// silently treating a current Record as empty history.
 
 import type { EvalManifest } from "../runner/manifest.ts";
 import type { EvalResult, JsonValue } from "../types.ts";
 import type { ReportExecution } from "../report/execution/model.ts";
+
+export {
+  readCurrentExecutionReusePlanResults,
+  readCurrentReusedAttempt,
+  readFrozenAttemptAttachmentProjection,
+} from "../runner/reuse-readback.ts";
+export type {
+  CurrentReusedAttemptReadback,
+  CurrentReusedAttemptScore,
+  CurrentReusedAttemptSource,
+  CurrentReusedAttemptTarget,
+  CurrentReusedExecutionError,
+  CurrentReuseReadbackPlanInvalid,
+} from "../runner/reuse-readback.ts";
 
 export class ViewInputError extends Error {}
 
@@ -53,9 +67,9 @@ export function viewRoot(input = ".niceeval"): string {
 }
 
 /**
- * Compatibility helpers for the runner's still-separate carry planner. They
- * deliberately expose no retired Record object and therefore never cause a
- * view/report request to recreate the old Record graph.
+ * @deprecated This is the old result-shaped carry boundary. It remains a type
+ * declaration only while CLI wiring moves to `CurrentReusedAttemptReadback`;
+ * a current Record must never be coerced into it.
  */
 export interface CarryInputs {
   readonly results: EvalResult[];
@@ -65,18 +79,24 @@ export interface CarryInputs {
   readonly incompatibleHistory: Set<string>;
 }
 
+/**
+ * @deprecated Current Record carry reads require a FrozenRecordView and an
+ * ExecutionReusePlan. This function intentionally fails rather than claiming
+ * that the Record has no reusable results.
+ */
 export async function loadCarryInputs(_root = ".niceeval"): Promise<CarryInputs> {
-  return Object.freeze({
-    results: [],
-    evidenceStatesByAttempt: new Map<string, "local" | "borrowed" | "dangling">(),
-    flagBagsByExperiment: new Map<string, globalThis.Record<string, JsonValue>[]>(),
-    manifestsByEvalKey: new Map<string, EvalManifest>(),
-    incompatibleHistory: new Set<string>(),
-  });
+  throw legacyCarryReadbackUnavailable();
 }
 
+/** @deprecated See `loadCarryInputs`; no path-based current Record scan exists. */
 export async function loadLatestResultsPerEval(_root = ".niceeval"): Promise<EvalResult[]> {
-  return [];
+  throw legacyCarryReadbackUnavailable();
+}
+
+function legacyCarryReadbackUnavailable(): ViewInputError {
+  return new ViewInputError(
+    "Legacy carry readback has been removed. Use the current FrozenRecordView and ExecutionReusePlan readback capability.",
+  );
 }
 
 export interface IncompatibleRun {
