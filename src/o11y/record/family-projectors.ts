@@ -42,6 +42,7 @@ import {
  * never replaces the projected name.
  */
 export type ConversationView = RecordAttachmentPayloadSnapshot<ConversationAttachmentV1>;
+export type ObservabilityLimitationView = ConversationView["collection"]["limitations"][number];
 export type UsageView = RecordAttachmentPayloadSnapshot<UsageAttachmentV1>;
 export type AttemptTimingView = RecordAttachmentPayloadSnapshot<AttemptTimingAttachmentV1>;
 export type RunTimingView = RecordAttachmentPayloadSnapshot<RunTimingAttachmentV1>;

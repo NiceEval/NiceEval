@@ -40,8 +40,6 @@ export interface ViewOptions<Requirements = never> {
   readonly host?: string;
   /** Retained for the CLI-shaped facade; it is never interpreted as Record data. */
   readonly scan?: ViewScanOptions;
-  /** A legacy alias for one caller-supplied watch input. */
-  readonly watchRoot?: string;
   /**
    * Bootstrap watch inputs when the session/request has none yet. After each
    * successful rebuild the session revision owns the next-round watch set.
@@ -403,10 +401,7 @@ function refreshSession<Requirements>(
 }
 
 function optionWatchInputs<Requirements>(options: ViewOptions<Requirements>): readonly string[] {
-  const values = [
-    ...(options.watchInputs ?? []),
-    ...(options.watchRoot === undefined ? [] : [options.watchRoot]),
-  ];
+  const values = options.watchInputs ?? [];
   return Object.freeze([...new Set(values.map((value) => resolve(value)))]);
 }
 

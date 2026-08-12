@@ -15,9 +15,9 @@ import {
   type AttemptTimingView,
   type CommandsView,
   type ConversationView,
+  type ObservabilityLimitationView,
   type UsageView,
 } from "../../o11y/record/family-projectors.ts";
-import type { ObservabilityLimitationV1 } from "../../o11y/record/model.ts";
 import {
   definePage,
   defineReport,
@@ -56,15 +56,13 @@ type ExecutionInputs = {
 
 type AttemptSlotEntry<Value> = ProjectedSample<"attempt-slot", Value>["entries"][number];
 type CollectionDisplay =
-  | { readonly state: "complete"; readonly limitations: readonly ObservabilityLimitationV1[] }
-  | { readonly state: "partial"; readonly limitations: readonly ObservabilityLimitationV1[] };
+  | { readonly state: "complete"; readonly limitations: readonly ObservabilityLimitationView[] }
+  | { readonly state: "partial"; readonly limitations: readonly ObservabilityLimitationView[] };
 
 /** Consumer-local presentation options; they never add Record inputs or I/O. */
 export interface ExecutionEvidenceReportOptions {
   /** Match against complete retained transcript, tool, and command card text. */
   readonly grep?: string;
-  /** A legacy evidence handle; neutral views retain no compatible handle namespace. */
-  readonly expand?: string;
 }
 
 /**
@@ -76,7 +74,6 @@ export function executionEvidenceReport(input: ExecutionEvidenceReportOptions = 
   if (input.grep !== undefined) new RegExp(input.grep);
   const options: ExecutionEvidenceReportOptions = Object.freeze({
     ...(input.grep === undefined ? {} : { grep: input.grep }),
-    ...(input.expand === undefined ? {} : { expand: input.expand }),
   });
   const page = definePage({
     id: Either.getOrThrow(reportComponentId("execution-evidence")),
@@ -115,7 +112,6 @@ function executionEvidenceDocument(
       })]
       : [
         ...(grep === undefined ? [] : [grepStatusBlock(inputs, grep)]),
-        ...(options.expand === undefined ? [] : [legacyExpandWarningBlock(options.expand)]),
         ...slots.map((slot) => {
           const key = slotKey(slot);
           return reportSection({
@@ -151,14 +147,6 @@ function grepStatusBlock(inputs: ExecutionInputs, grep: RegExp): ReportBlock {
   return reportStatus({
     tone: matches === 0 ? "warning" : "neutral",
     label: `Grep /${grep.source}/: ${matches} matching evidence card${matches === 1 ? "" : "s"}`,
-  });
-}
-
-function legacyExpandWarningBlock(handle: string): ReportBlock {
-  return reportStatus({
-    tone: "warning",
-    label: `Legacy --expand handle "${handle}" cannot be mapped to this neutral execution view`,
-    detail: [reportText("The Report already displays the full unfiltered retained evidence; no content was hidden.")],
   });
 }
 
@@ -824,7 +812,7 @@ function collectionStatus(name: string, collection: CollectionDisplay): ReportBl
   }
 }
 
-function limitationText(limitation: ObservabilityLimitationV1): string {
+function limitationText(limitation: ObservabilityLimitationView): string {
   switch (limitation.code) {
     case "capture-failed":
       return `${limitation.target}: capture failed at ${limitation.stage}`;
