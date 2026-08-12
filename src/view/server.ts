@@ -22,6 +22,7 @@ import {
   type ReportViewSessionClosed,
   type ReportViewSession,
 } from "../report/host/view-session.ts";
+import type { ThemeDefinition } from "../report/host/node/theme.ts";
 import type { ViewScanOptions } from "./data.ts";
 import { renderHtml } from "./site.ts";
 
@@ -46,6 +47,8 @@ export interface ViewOptions<Requirements = never> {
   readonly onRebuild?: (completedAt: Date) => void;
   /** Static export consumes this exact fixed execution. */
   readonly reportExecution?: ReportExecution;
+  /** A one-shot static export Theme; an open session keeps its revision Theme. */
+  readonly theme?: ThemeDefinition;
   /** An already-open scoped session owned by the caller. */
   readonly session?: ReportViewSession<Requirements>;
   /** Or let this scope open a session from a caller-supplied current rebuild. */
@@ -315,7 +318,7 @@ function serveRequest<Requirements>(
         return Effect.sync(() => send(
           request.response,
           200,
-          renderHtml(`${prefix}${renderReportExecutionProblemsText(state.current.execution)}`),
+          renderHtml(`${prefix}${renderReportExecutionProblemsText(state.current.execution)}`, state.current.theme),
           "text/html; charset=utf-8",
           headers,
         ));
@@ -331,7 +334,13 @@ function serveRequest<Requirements>(
       const prefix = state.lastProblem === undefined
         ? `Revision ${state.current.revision}\n\n`
         : `Revision ${state.current.revision}\nLast rebuild failed: ${state.lastProblem.summary}\n\n`;
-      return Effect.sync(() => send(request.response, 200, renderHtml(`${prefix}${rendered}`), "text/html; charset=utf-8", headers));
+      return Effect.sync(() => send(
+        request.response,
+        200,
+        renderHtml(`${prefix}${rendered}`, state.current.theme),
+        "text/html; charset=utf-8",
+        headers,
+      ));
     }),
     Effect.catchAll(() => Effect.sync(() => sendText(request.response, 503, "report view session is closed"))),
   );

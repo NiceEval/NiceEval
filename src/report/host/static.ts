@@ -7,6 +7,8 @@ import {
   renderReportExecutionText,
   type ReportShowRenderError,
 } from "./presentation.ts";
+import { renderReportHtml } from "./html.ts";
+import { basalt, type ThemeDefinition } from "./node/theme.ts";
 
 /** A host-private normalized output path. Author route strings never become filesystem paths directly. */
 export interface ReportHostOutputPath {
@@ -69,6 +71,8 @@ export type ReportExportError =
 export function exportStaticReport(input: {
   readonly execution: ReportExecution;
   readonly out: string;
+  /** A closed host Theme; omission uses the same Basalt default as live view. */
+  readonly theme?: ThemeDefinition;
 }): Effect.Effect<ReportStaticExportReceipt, ReportExportError, ReportFileSystem> {
   return Effect.gen(function* () {
     const executionProblems = input.execution.problemTable
@@ -82,7 +86,7 @@ export function exportStaticReport(input: {
     }
 
     const fileSystem = yield* ReportFileSystem;
-    const files = yield* staticFiles(input.execution).pipe(
+    const files = yield* staticFiles(input.execution, input.theme ?? basalt).pipe(
       Effect.mapError((error): ReportFileSystemError => ({
         code: "report-export-write-failed",
         operation: error.operation,
@@ -109,6 +113,7 @@ interface StaticFile {
 
 function staticFiles(
   execution: ReportExecution,
+  theme: ThemeDefinition,
 ): Effect.Effect<readonly StaticFile[], ReportShowRenderError> {
   const encoder = new TextEncoder();
   return Effect.try({
@@ -121,7 +126,7 @@ function staticFiles(
         const text = renderReportExecutionText({ execution, page: page.route });
         files.push(Object.freeze({
           path: outputPathForRoute(page.route),
-          bytes: encoder.encode(renderStaticHtml(text)),
+          bytes: encoder.encode(renderReportHtml({ text, theme })),
         }));
       }
       // An execution may have no rendered author route (for example, every
@@ -130,7 +135,10 @@ function staticFiles(
       if (!wroteRootPage) {
         files.push(Object.freeze({
           path: "index.html",
-          bytes: encoder.encode(renderStaticHtml(renderReportExecutionText({ execution }))),
+          bytes: encoder.encode(renderReportHtml({
+            text: renderReportExecutionText({ execution }),
+            theme,
+          })),
         }));
       }
       for (const download of [...execution.downloads].sort((left, right) => compareText(left.downloadId, right.downloadId))) {
@@ -144,7 +152,10 @@ function staticFiles(
       }
       files.push(Object.freeze({
         path: "_niceeval/problems/index.html",
-        bytes: encoder.encode(renderStaticHtml(renderReportExecutionProblemsText(execution))),
+        bytes: encoder.encode(renderReportHtml({
+          text: renderReportExecutionProblemsText(execution),
+          theme,
+        })),
       }));
       return files;
     },
@@ -183,17 +194,4 @@ function compareText(left: string, right: string): number {
 
 function outputPathForRoute(route: string): string {
   return route === "/" ? "index.html" : `${route.slice(1)}/index.html`;
-}
-
-function renderStaticHtml(text: string): string {
-  return `<!doctype html><html lang="en"><meta charset="utf-8"><title>NiceEval report</title><body><pre>${escapeHtml(text)}</pre></body></html>`;
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
 }

@@ -23,6 +23,7 @@ import {
   type ReportStaticExportReceipt,
 } from "../report/host/static.ts";
 import { makeNodeReportFileSystem } from "../report/host/node.ts";
+import { basalt, type ThemeDefinition } from "../report/host/node/theme.ts";
 import type { ReportExecution } from "../report/execution/model.ts";
 import type { ReportViewSessionClosed } from "../report/host/view-session.ts";
 
@@ -132,15 +133,22 @@ export function exportViewSite(
   if (existsSync(out)) {
     return Effect.fail(Object.freeze({ code: "report-export-target-exists" as const }));
   }
-  const execution: Effect.Effect<ReportExecution, ReportViewExportInputError | ReportViewSessionClosed> = options.reportExecution === undefined
+  const revision: Effect.Effect<
+    Readonly<{ readonly execution: ReportExecution; readonly theme: ThemeDefinition }>,
+    ReportViewExportInputError | ReportViewSessionClosed
+  > = options.reportExecution === undefined
     ? options.session === undefined
       ? Effect.fail<ReportViewExportInputError>(Object.freeze({
         code: "report-view-export-input-invalid" as const,
         reason: "view export needs a fixed ReportExecution or an open ReportViewSession",
       }))
-      : Effect.map(options.session.snapshot, (state) => state.current.execution)
-    : Effect.succeed(options.reportExecution);
-  return Effect.flatMap(execution, (value) => exportStaticReport({ execution: value, out }));
+      : Effect.map(options.session.snapshot, (state) => state.current)
+    : Effect.succeed(Object.freeze({ execution: options.reportExecution, theme: options.theme ?? basalt }));
+  return Effect.flatMap(revision, (value) => exportStaticReport({
+    execution: value.execution,
+    out,
+    theme: value.theme,
+  }));
 }
 
 /** Node-facing publication service, still entirely inside the caller's Effect. */

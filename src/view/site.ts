@@ -2,7 +2,9 @@
 // publication belongs to the report host's Effect boundary, not this planner.
 
 import type { ReportExecution } from "../report/execution/model.ts";
+import { renderReportHtml } from "../report/host/html.ts";
 import { renderReportExecutionText } from "../report/host/presentation.ts";
+import { basalt, type ThemeDefinition } from "../report/host/node/theme.ts";
 import {
   exportStaticReport,
   type ReportExportError,
@@ -20,11 +22,14 @@ export interface SiteFile {
 
 export interface SitePlan {
   readonly execution: ReportExecution;
+  /** A site is fixed to the same closed Theme as its source view revision. */
+  readonly theme: ThemeDefinition;
   readonly files: readonly SiteFile[];
 }
 
 export interface SitePlanOptions {
   readonly execution?: ReportExecution;
+  readonly theme?: ThemeDefinition;
 }
 
 export function planSite(
@@ -36,14 +41,16 @@ export function planSite(
   if (execution === undefined) {
     throw new Error("A static Report site requires a completed ReportExecution.");
   }
+  const theme = site.theme ?? basalt;
   const text = renderReportExecutionText({ execution });
   return Object.freeze({
     execution,
+    theme,
     files: Object.freeze([
       Object.freeze({
         path: "index.html",
         contentType: "text/html; charset=utf-8",
-        content: renderHtml(text),
+        content: renderHtml(text, theme),
       }),
     ]),
   });
@@ -54,18 +61,9 @@ export function writeSite(
   plan: SitePlan,
   out: string,
 ): Effect.Effect<ReportStaticExportReceipt, ReportExportError, ReportFileSystem> {
-  return exportStaticReport({ execution: plan.execution, out });
+  return exportStaticReport({ execution: plan.execution, out, theme: plan.theme });
 }
 
-export function renderHtml(text: string): string {
-  return `<!doctype html><html lang="en"><meta charset="utf-8"><title>NiceEval report</title><body><pre>${escapeHtml(text)}</pre></body></html>`;
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
+export function renderHtml(text: string, theme?: ThemeDefinition): string {
+  return renderReportHtml({ text, ...(theme === undefined ? {} : { theme }) });
 }
