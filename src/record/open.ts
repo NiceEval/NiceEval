@@ -22,7 +22,6 @@ import {
   evalDirOf,
   experimentDirOf,
 } from "../record/format.ts";
-import { isNewerSnapshot, isNewerSnapshotPlacement } from "../sample/index.ts";
 import {
   assertLocatorRegistrationsAvailable,
   attemptIdentitiesEqual,
@@ -393,7 +392,7 @@ export function withArtifactBase(attempt: AttemptHandle): EvalResult {
  * 收窄读:只取某条 `(experimentId, evalId)` 的「当前可用」attempt,不扫全根。
  *
  * 口径与 `loadLatestResultsPerEval` 完全一致——整批取自**含它的最新快照**,不跨快照混装;
- * 「哪份最新」走 `isNewerSnapshotPlacement`(run.json 的 `startedAt` 优先、同刻按目录名),
+ * 「哪份最新」按 run.json 的 `startedAt` 优先、同刻按目录名,
  * 目录名倒序只作为候选遍历顺序,不作判据。**不检查快照有没有 `completedAt`**:被中断或强杀的
  * 未收尾快照里已落盘的终态照常可读(docs/runner.md「缓存:指纹去重」的「携带来源不要求快照收尾」)。
  *
@@ -415,7 +414,7 @@ export async function loadLatestResultsForCase(
   } catch {
     return []; // 这个实验还没跑过:不是错误
   }
-  // 目录名带时间戳前缀,倒序 = 最可能命中的先试;权威判定仍在下面的 isNewerSnapshotPlacement。
+  // 目录名带时间戳前缀,倒序 = 最可能命中的先试;权威判定仍按 startedAt、再目录名。
   snapshotDirNames.sort((a, b) => b.localeCompare(a));
   const evalSegment = evalDirOf(evalId);
 
@@ -439,7 +438,13 @@ export async function loadLatestResultsForCase(
     } catch {
       continue;
     }
-    if (best === undefined || isNewerSnapshotPlacement({ startedAt: meta.startedAt, dir: snapshotDir }, { startedAt: best.meta.startedAt, dir: best.dir })) {
+    if (
+      best === undefined ||
+      compareSnapshotPlacement(
+        { startedAt: meta.startedAt, dir: snapshotDir },
+        { startedAt: best.meta.startedAt, dir: best.dir },
+      ) > 0
+    ) {
       best = { dir: snapshotDir, meta, attemptDirNames };
     }
   }
@@ -538,6 +543,13 @@ function deriveConfigHashFromAttempts(attempts: readonly AttemptHandle[]): strin
     else if (hash !== value) return undefined;
   }
   return hash;
+}
+
+function compareSnapshotPlacement(
+  left: Pick<Run, "startedAt" | "dir">,
+  right: Pick<Run, "startedAt" | "dir">,
+): number {
+  return left.startedAt.localeCompare(right.startedAt) || left.dir.localeCompare(right.dir);
 }
 
 function makeAttempt(run: Run, snapshotDir: string, attemptDir: string, record: EvalResult): AttemptHandle {
@@ -712,7 +724,7 @@ function buildExperiments(runs: Run[]): Experiment[] {
 
   const experiments: Experiment[] = [];
   for (const [id, group] of byId) {
-    group.sort((a, b) => (isNewerSnapshot(a, b) ? -1 : 1));
+    group.sort((a, b) => compareSnapshotPlacement(b, a));
     // 已知并集 = 本地历史(各快照覆盖的题)∪ 各快照携带的 knownEvalIds ——
     // 不是「优先字段」:把快照复制进已有历史的目录时,本地并集可能更大,优先字段会让分母缩水。
     const ids = new Set<string>();
