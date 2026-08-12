@@ -25,6 +25,7 @@ Report Repo 只消费公开 Record API 或公开 CLI 产生的事实，不直接
 
 ## 稳定性归属
 
-本页只界定公开边界与 owner，不另设一套无法读取 PR diff 的执行规则。测试文件、fixture、expected 是否超出变更预算，
-以及 contract-preserving perturbation 与公开格式 mutation 的收据是否充分，统一由
-[Pullfrog review prompt](../../../../.github/pullfrog-review-prompt.md#prompt)逐文件审计并给出 `Request changes` verdict。
+本页只界定公开边界与 owner，不另设一套无法读取 PR diff 的执行规则。
+测试变更预算及 perturbation / mutation 收据统一由
+[Pullfrog review prompt](../../../../.github/pullfrog-review-prompt.md#prompt)逐文件审计。
+不满足时在唯一持续审查报告中列为阻塞问题，最终态标为“需要修改”；不创建 GitHub review event 或源码行评论。

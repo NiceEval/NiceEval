@@ -37,6 +37,17 @@ variables consumed by packaging scripts. Prefer an explicit API, CLI flag,
 configuration file, argument, or constant whenever the value does not need an
 ambient deployment boundary. "Convenient" is not sufficient justification for
 a new environment variable.
+
+Complete the Record schema section for every PR, including when the answer is
+"not affected". Public Record files, attachments, envelopes, discriminators,
+field meanings, and public reader/writer behavior belong to the versioned
+format. Private caches, indexes, temporary files, and directory organization do
+not become public schema merely because they persist; inventory their data-loss
+or observable impact separately. A version bump must identify the incompatible
+public-format change and the stored-data upgrade path; a version that stays
+unchanged must explain why the public format remains readable in both
+directions. "No migration" is a valid decision only when the resulting reader
+behavior and concrete user command for historical Records are stated.
 -->
 
 ## Problem
@@ -179,6 +190,49 @@ boundaries.
 - Before usage or result: <concrete input and observed result>
 - After usage or result: <the same input, or its replacement, and the observed result>
 - User impact: <compatibility, migration, stored data, or automation effect>
+
+## Record schema and stored-data upgrade
+
+<!--
+Always complete this receipt. If Record is unaffected, write "None" for the
+affected surfaces and "not affected" for the remaining fields. Otherwise:
+
+- Name every public persisted surface whose shape or meaning changes, including
+  run/attempt metadata, events, artifacts, attachments, and envelopes. List
+  private persisted implementation changes separately; they do not by
+  themselves justify a public schema version bump.
+- Explicitly check the stable `format` / `schemaVersion` / `producer`
+  recognition header; public file names and file-presence rules; artifact and
+  source-blob shapes; and every cross-file reference whose interpretation
+  changes.
+- Use `unchanged at <N>` or `<N> -> <M>` for the version decision.
+- If the version is unchanged, explain why old readers remain correct on new
+  data and new readers remain correct on old data.
+- If the version changes, identify the exact incompatible field/meaning and
+  link the version-history entry that records why invalidating old Records is
+  necessary.
+- State what happens to every existing Record: direct read, explicit migration,
+  automatic migration, or rejection with the exact recovery/view command.
+- The current Record contract has no cross-version migration. Under that
+  contract, a real version bump must select rejection plus the producer-version
+  recovery command. Explicit or automatic migration is valid only when the same
+  PR first changes the canonical Record contract and implements that public
+  migration boundary; the receipt cannot invent migration by itself.
+- For a real migration, name the from/to versions, public trigger, preservation
+  rules, atomicity, idempotence, interruption recovery, and data-loss boundary.
+  Do not write only "migrated" or "handled".
+-->
+
+- Affected public Record Format surfaces: <`None` or exact files, attachments, fields, discriminators, and meanings>
+- Private persisted implementation impact: <`None` or caches, indexes, temporary/layout changes and their observable or data-loss effect>
+- Version decision: <`not affected` | `unchanged at N` | `N -> M`>
+- Version reason: <why the change is compatible without a bump, or the exact incompatibility that requires one>
+- Existing Record behavior: <what the new reader does with old data and what the old reader does with new data>
+- Migration or recovery path: <`not applicable` with reason, or exact from/to versions, trigger/command, and user-visible result>
+- Migration safety: <preservation, atomicity, idempotence, interruption recovery, and known data loss, or why no migration runs>
+- Contract: <Record architecture link whenever Record is affected, or `not applicable`>
+- Version history: <schema-version history entry when the version changes, otherwise `not applicable`>
+- Verification: <literal old/new fixtures at the public Record owner, or real old/new Records exercised through the public writer, reader, or CLI; include exact commands and observed results>
 
 ## Environment variables
 

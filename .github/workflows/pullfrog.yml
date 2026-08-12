@@ -25,13 +25,15 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 1
-      # Keep inspection and reporting in one agent invocation so the final
-      # review uses the same PR context and evidence gathered during inspection.
-      - name: Inspect pull request and report review
+      # Keep inspection and reporting in one invocation. On a successful review
+      # with a stable HEAD and an unambiguous marker state, repository instructions
+      # create or edit one marked final-state comment and forbid all other output.
+      - name: Inspect pull request and update final review state
         uses: pullfrog/pullfrog@v0
         with:
           prompt: ${{ inputs.prompt }}
           model: openai/gpt-5.6-sol
+          progress_comments: disabled
           push: disabled
           shell: disabled
         env:
