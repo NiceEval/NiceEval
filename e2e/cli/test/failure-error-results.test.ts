@@ -3,16 +3,8 @@
 
 import { mkdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { command, only, withProjectCopy } from "@niceeval/testkit";
+import { command, only, type ExpEvent, withProjectCopy } from "@niceeval/testkit";
 import { expect, test } from "vitest";
-
-interface ExpEvent {
-  event: string;
-  evalId?: string;
-  verdict?: string;
-  attempts?: number;
-  passed?: number;
-}
 
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
 const projectCopy = {
@@ -47,7 +39,7 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
     }));
     only(
       failedEvents,
-      (event) => event.event === "eval" && event.evalId === "deliberate-fail/broken",
+      (event) => "event" in event && event.event === "eval" && event.evalId === "deliberate-fail/broken",
       failed.diagnostic(),
     );
     expect(failed.expReceipt()).toMatchObject({ completion: "completed" });
@@ -76,7 +68,7 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
     }));
     only(
       erroredEvents,
-      (event) => event.event === "eval" && event.evalId === "deliberate-error/crash",
+      (event) => "event" in event && event.event === "eval" && event.evalId === "deliberate-error/crash",
       errored.diagnostic(),
     );
     expect(errored.expReceipt()).toMatchObject({ completion: "completed" });
