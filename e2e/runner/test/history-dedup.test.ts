@@ -4,12 +4,15 @@ import { join, resolve } from "node:path";
 import { command, only, withProjectCopy } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 
-interface ResultEvent {
+interface ExpEvent {
   event: string;
+  total?: number;
   reused?: number;
+  locator?: string;
+  evalId?: string;
+  verdict?: string;
+  attempts?: number;
   passed?: number;
-  failed?: number;
-  completion?: string;
 }
 
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
@@ -28,38 +31,47 @@ test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt",
   await withProjectCopy(projectCopy, async ({ root }) => {
     const first = await niceeval.run(["exp", "history", "--rerun", "all", "--json"], { cwd: root });
     expect(first.exitCode, first.diagnostic()).toBe(0);
-
-    const baseline = await niceeval.run(["show", "suite/stable", "--history"], { cwd: root });
-    expect(baseline.exitCode, baseline.diagnostic()).toBe(0);
-    const firstLocators = locators(baseline.stdout);
-    expect(firstLocators).toHaveLength(1);
-    expect(baseline.stdout).toMatch(/passed/i);
+    const firstEval = only(first.ndjson<ExpEvent>(), (event) => event.event === "eval", first.diagnostic());
+    expect(firstEval).toMatchObject({
+      event: "eval",
+      evalId: "suite/stable",
+      verdict: "passed",
+      attempts: 1,
+      passed: 1,
+    });
+    const firstLocator = firstEval.locator!;
+    expect(firstLocator).toMatch(/^@[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 
     const forced = await niceeval.run(["exp", "history", "--rerun", "all", "--json"], { cwd: root });
     expect(forced.exitCode, forced.diagnostic()).toBe(0);
-    const afterForce = await niceeval.run(["show", "suite/stable", "--history"], { cwd: root });
-    expect(afterForce.exitCode, afterForce.diagnostic()).toBe(0);
-    const forcedLocators = locators(afterForce.stdout);
-    expect(forcedLocators).toHaveLength(2);
-    expect(forcedLocators).toContain(firstLocators[0]);
+    const forcedEval = only(forced.ndjson<ExpEvent>(), (event) => event.event === "eval", forced.diagnostic());
+    expect(forcedEval).toMatchObject({
+      event: "eval",
+      evalId: "suite/stable",
+      verdict: "passed",
+      attempts: 1,
+      passed: 1,
+    });
+    const forcedLocator = forcedEval.locator!;
+    expect(forcedLocator).not.toBe(firstLocator);
 
     const carried = await niceeval.run(["exp", "history", "--json"], { cwd: root });
     expect(carried.exitCode, carried.diagnostic()).toBe(0);
-    const result = only(
-      carried.ndjson<ResultEvent>(),
-      (event) => event.event === "result",
-      carried.diagnostic(),
-    );
-    expect(result).toMatchObject({
-      event: "result",
-      reused: 1,
+    const carriedEvents = carried.ndjson<ExpEvent>();
+    const carriedStart = only(carriedEvents, (event) => event.event === "start", carried.diagnostic());
+    expect(carriedStart).toMatchObject({ event: "start", total: 1, reused: 1 });
+    const carriedEval = only(carriedEvents, (event) => event.event === "eval", carried.diagnostic());
+    expect(carriedEval).toMatchObject({
+      event: "eval",
+      evalId: "suite/stable",
+      verdict: "passed",
+      attempts: 1,
       passed: 1,
-      failed: 0,
-      completion: "complete",
     });
+    expect(carried.expReceipt()).toMatchObject({ completion: "completed" });
 
     const afterCarry = await niceeval.run(["show", "suite/stable", "--history"], { cwd: root });
     expect(afterCarry.exitCode, afterCarry.diagnostic()).toBe(0);
-    expect(locators(afterCarry.stdout)).toEqual(forcedLocators);
+    expect(locators(afterCarry.stdout)).toEqual([firstLocator, forcedLocator].sort());
   });
 });

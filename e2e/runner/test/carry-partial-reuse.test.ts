@@ -75,8 +75,7 @@ test("改变一个 Eval 后只重新派发该 identity，未改变的 Eval 继�
     expect(fullDispatch.exitCode, fullDispatch.diagnostic()).toBe(0);
     const fullDispatchEvents = fullDispatch.ndjson<ExpEvent>();
     const fullDispatchStart = only(fullDispatchEvents, (event) => event.event === "start", fullDispatch.diagnostic());
-    const fullDispatchResult = only(fullDispatchEvents, (event) => event.event === "result", fullDispatch.diagnostic());
     expect(fullDispatchStart).toMatchObject({ event: "start", total: 2, reused: 2 });
-    expect(fullDispatchResult).toMatchObject({ event: "result", reused: 2 });
+    expect(fullDispatch.expReceipt()).toMatchObject({ completion: "completed" });
   });
 });

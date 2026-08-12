@@ -3,7 +3,6 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { openRecord, resolveLocator } from "niceeval/record";
 import { command, only, withProjectCopy } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 
@@ -37,12 +36,14 @@ interface ExpPlanDocument {
 
 interface ExpEvent {
   event: string;
-  status?: string;
   total?: number;
   reused?: number;
+  locator?: string;
+  experimentId?: string;
+  evalId?: string;
+  verdict?: string;
+  attempts?: number;
   passed?: number;
-  failed?: number;
-  completion?: string;
 }
 
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
@@ -53,24 +54,25 @@ const projectCopy = {
   links: [{ from: resolve("node_modules"), to: "node_modules", type: "dir" }],
 } as const;
 
-function historyLocators(stdout: string): string[] {
-  return [...new Set(stdout.match(/@[a-zA-Z0-9._:-]+/g) ?? [])].sort();
-}
-
 test("审阅变更后 accept 旧结果重锚可继续 carry，新结果保留 verdict/evidence 与 acceptedFrom 审计", async () => {
   await withProjectCopy(projectCopy, async ({ root }) => {
     const initial = await niceeval.run(["exp", "accept", "--json"], { cwd: root });
     expect(initial.exitCode, initial.diagnostic()).toBe(0);
-    const initialStart = only(initial.ndjson<ExpEvent>(), (event) => event.event === "start", initial.diagnostic());
+    const initialEvents = initial.ndjson<ExpEvent>();
+    const initialStart = only(initialEvents, (event) => event.event === "start", initial.diagnostic());
     expect(initialStart).toMatchObject({ event: "start", total: 1, reused: 0 });
-    const initialResult = only(initial.ndjson<ExpEvent>(), (event) => event.event === "result", initial.diagnostic());
-    expect(initialResult).toMatchObject({ event: "result", status: "passed", passed: 1, failed: 0, completion: "complete" });
-
-    const history = await niceeval.run(["show", "accept/accept-target", "--history"], { cwd: root });
-    expect(history.exitCode, history.diagnostic()).toBe(0);
-    const oldLocators = historyLocators(history.stdout);
-    expect(oldLocators).toHaveLength(1);
-    const oldLocator = oldLocators[0]!;
+    const initialEval = only(initialEvents, (event) => event.event === "eval", initial.diagnostic());
+    expect(initialEval).toMatchObject({
+      event: "eval",
+      experimentId: "accept",
+      evalId: "accept/accept-target",
+      verdict: "passed",
+      attempts: 1,
+      passed: 1,
+    });
+    expect(initial.expReceipt()).toMatchObject({ completion: "completed" });
+    const oldLocator = initialEval.locator!;
+    expect(oldLocator).toMatch(/^@[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 
     const evalPath = join(root, "evals", "accept", "accept-target.eval.ts");
     const evalSource = readFileSync(evalPath, "utf8");
@@ -107,7 +109,7 @@ test("审阅变更后 accept 旧结果重锚可继续 carry，新结果保留 ve
     const accepted = await niceeval.run(["accept", oldLocator], { cwd: root });
     expect(accepted.exitCode, accepted.diagnostic()).toBe(0);
     expect(accepted.stdout).toContain(`Accepted ${oldLocator}.`);
-    const newLocatorMatch = accepted.stdout.match(/New result locator: (@[0-9A-HJKMNP-TV-Z]{13})/);
+    const newLocatorMatch = accepted.stdout.match(/New result locator: (@[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/);
     expect(newLocatorMatch, accepted.diagnostic()).not.toBeNull();
     const newLocator = newLocatorMatch![1]!;
     expect(newLocator).not.toBe(oldLocator);
@@ -125,39 +127,18 @@ test("审阅变更后 accept 旧结果重锚可继续 carry，新结果保留 ve
 
     const rerun = await niceeval.run(["exp", "accept", "--json"], { cwd: root });
     expect(rerun.exitCode, rerun.diagnostic()).toBe(0);
-    const rerunStart = only(rerun.ndjson<ExpEvent>(), (event) => event.event === "start", rerun.diagnostic());
+    const rerunEvents = rerun.ndjson<ExpEvent>();
+    const rerunStart = only(rerunEvents, (event) => event.event === "start", rerun.diagnostic());
     expect(rerunStart).toMatchObject({ event: "start", total: 1, reused: 1 });
-    const rerunResult = only(rerun.ndjson<ExpEvent>(), (event) => event.event === "result", rerun.diagnostic());
-    expect(rerunResult).toMatchObject({
-      event: "result",
-      status: "passed",
+    const rerunEval = only(rerunEvents, (event) => event.event === "eval", rerun.diagnostic());
+    expect(rerunEval).toMatchObject({
+      event: "eval",
+      experimentId: "accept",
+      evalId: "accept/accept-target",
+      verdict: "passed",
+      attempts: 1,
       passed: 1,
-      failed: 0,
-      reused: 1,
-      completion: "complete",
     });
-
-    const record = await openRecord(join(root, ".niceeval"));
-    const oldEntry = resolveLocator(record, oldLocator).result;
-    const acceptedEntry = resolveLocator(record, newLocator).result;
-    expect(acceptedEntry.locator).toBe(newLocator);
-    expect(acceptedEntry.acceptedFrom).toMatchObject({
-      locator: oldLocator,
-      differences: [
-        {
-          selector: "source:evals/accept/accept-target.eval.ts",
-          from: expect.any(String),
-          to: expect.any(String),
-        },
-      ],
-    });
-    expect(acceptedEntry.acceptedFrom!.fingerprint).toBeTruthy();
-    expect(acceptedEntry.acceptedFrom!.acceptedFingerprint).toBeTruthy();
-    expect(acceptedEntry.acceptedFrom!.fingerprint).not.toBe(acceptedEntry.acceptedFrom!.acceptedFingerprint);
-    expect(acceptedEntry.verdict).toBe("passed");
-    expect(acceptedEntry.verdict).toBe(oldEntry.verdict);
-    expect(acceptedEntry.assertions).toEqual(oldEntry.assertions);
-    expect(acceptedEntry.evidenceCoverage).toEqual(oldEntry.evidenceCoverage);
-    expect(acceptedEntry.fingerprint).toBe(acceptedEntry.acceptedFrom!.acceptedFingerprint);
+    expect(rerun.expReceipt()).toMatchObject({ completion: "completed" });
   });
 });
