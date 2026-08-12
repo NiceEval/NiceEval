@@ -858,5 +858,5 @@ migration-required 或 migration-unavailable；用户显式运行 niceeval migra
   —— 通用 envelope、blob 与读取状态。
 - [Record Library](../library.md) —— Effect-native capture 与 contract API。
 - [Projection](../../projection/README.md) —— owner-local projector 怎样进入 Sample。
-- [Record-to-Report DX](../../../design/record-to-report-dx/README.md) —— 候选数据面比较，
+- [Record → Report 设计地图](../../../design/record-to-report-stack.md) —— 各层决策、依赖与合法组合，
   不构成当前契约。

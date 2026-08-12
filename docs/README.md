@@ -91,8 +91,11 @@ docs/
 │   ├── experiment-speed/                实验加速:默认路径与 Sandbox 复用
 │   ├── multi-container-environments/    多容器环境:拓扑声明形态与 provider 构建、启动职责
 │   ├── prepare-commands/                内置 prepare 命令:固定生命周期下的具体化声明与复用成本
+│   ├── observability-package-layout/    Observability 持久包：七 family 与 physical packages
+│   ├── projection-api/                  单包投影：runtime calls 与 static graph
+│   ├── relations-api/                   跨包关系：pure assembler 与 typed builder
 │   ├── report-authoring/                报告作者面:组件粒度与取数形态
-│   ├── record-to-report-dx/              从 frozen Record 到 Report 的端到端 API 与 DX 候选
+│   ├── record-to-report-stack.md         Record 到 Report 的依赖、组合与决策地图
 │
 ├── research/                            带观察日期的外部产品研究，不构成目标契约
 │   ├── ori-eval.md                      Ori Eval、spawn-ori-eval 与 NiceEval 的关系

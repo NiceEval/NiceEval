@@ -200,6 +200,6 @@ mapper，也不访问 provider、网络或当前 worktree。
 - [Record 架构](feature/record/architecture.md) —— Core、closure、完成标识与 migration。
 - [Record Library](feature/record/library.md) —— family、capture contract 与 Effect API。
 - [Projection](feature/projection/README.md) —— owner access 与穷尽读取结果。
-- [Record-to-Report DX](design/record-to-report-dx/README.md) —— 候选作者数据面的比较材料，
+- [Record → Report 设计地图](design/record-to-report-stack.md) —— 各层决策、依赖与合法组合，
   不构成当前契约。
 - [Assertions 证据](feature/assertions/architecture/evidence.md) —— evidence 完整度怎样影响断言。
