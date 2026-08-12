@@ -1,99 +1,95 @@
-import type {
-  AssertionEntryId,
-  AssertionEntryReadV1,
-} from "../assertions/record/model.ts";
-import type { RecordBlobRef } from "../record/attachment/index.ts";
+import type { AssertionEntryId } from "../assertions/record/model.ts";
 import type { ProjectedRecordAttachmentResult } from "../projection/attachment-result.ts";
 import type {
-  AssertionSourceFileFrameV1,
-  AssertionSourceFrameV1,
-  AssertionSourceOccurrenceV1,
-  AssertionSourcePackageFrameV1,
-  AssertionSourceSendOccurrenceV1,
-  AssertionSourceSendSiteV1,
-  AssertionSourceSiteV1,
-  AssertionSourceSitesEntryV1,
-  AssertionSourceSitesDocumentV1,
-  AttemptSourceAnnotationV1,
-  AttemptSourceEntryUnmappedV1,
-  AttemptSourceTreeAssemblyInputV1,
-  AttemptSourceTreeAssemblyIssueV1,
-  AttemptSourceTreeAssemblyResultV1,
-  AttemptSourceTreeEntryV1,
-  AttemptSourceTreeLineV1,
-  AttemptSourceTreeNodeV1,
-  AttemptSourceTreeSlotV1,
-  AttemptSourceTreeSummaryV1,
-  AttemptSourceTreeV1,
-  AttemptSourceUnmappedReasonV1,
-  AttemptSourceUnownedUnmappedV1,
-  AssertionSourceSitesProjectionV1,
-  AssertionsSourceProjectionV1,
-  SourceCoordinateV1,
-  SourceFileItemRefV1,
-  SourceFileProjectionV1,
-  SourcePackageItemRefV1,
-  SourcePackageProjectionV1,
-  SourcesProjectionV1,
-} from "./model.ts";
+  AssertionSourceEntry,
+  AssertionSourceFileFrame,
+  AssertionSourceFrame,
+  AssertionSourceOccurrence,
+  AssertionSourcePackageFrame,
+  AssertionSourceSendOccurrence,
+  AssertionSourceSendSite,
+  AssertionSourceSite,
+  AssertionSourceSitesEntry,
+  AssertionSourceSitesProjection,
+  AssertionsSourceProjection,
+  AttemptSourceAnnotation,
+  AttemptSourceEntryUnmapped,
+  AttemptSourceTreeAssemblyInput,
+  AttemptSourceTreeAssemblyIssue,
+  AttemptSourceTreeAssemblyResult,
+  AttemptSourceTreeEntry,
+  AttemptSourceTreeLine,
+  AttemptSourceTreeNode,
+  AttemptSourceTreeSlot,
+  AttemptSourceTreeSummary,
+  AttemptSourceTree,
+  AttemptSourceUnmappedReason,
+  AttemptSourceUnownedUnmapped,
+  SourceCoordinate,
+  SourceFileItemRef,
+  SourceFileProjection,
+  SourcePackageItemRef,
+  SourcePackageProjection,
+  SourcesProjection,
+} from "./projection-model.ts";
 
 const UTF8 = new TextEncoder();
 
-interface MutableSourceTreeLineV1 {
+interface MutableSourceTreeLine {
   readonly line: number;
   readonly text: string;
-  readonly annotations: AttemptSourceAnnotationV1[];
-  readonly calls: MutableSourceTreeNodeV1[];
+  readonly annotations: AttemptSourceAnnotation[];
+  readonly calls: MutableSourceTreeNode[];
 }
 
-interface MutableSourceFileNodeV1 {
+interface MutableSourceFileNode {
   readonly kind: "file";
-  readonly file: SourceFileProjectionV1;
-  readonly lines: MutableSourceTreeLineV1[];
+  readonly file: SourceFileProjection;
+  readonly lines: MutableSourceTreeLine[];
 }
 
-interface MutableSourcePackageNodeV1 {
+interface MutableSourcePackageNode {
   readonly kind: "package";
-  readonly package: SourcePackageProjectionV1;
-  readonly calls: MutableSourceTreeNodeV1[];
+  readonly package: SourcePackageProjection;
+  readonly calls: MutableSourceTreeNode[];
 }
 
-type MutableSourceTreeNodeV1 =
-  | MutableSourceFileNodeV1
-  | MutableSourcePackageNodeV1;
+type MutableSourceTreeNode =
+  | MutableSourceFileNode
+  | MutableSourcePackageNode;
 
-interface EntryBuildV1 {
-  readonly entry: AssertionEntryReadV1<RecordBlobRef>;
-  readonly mappedSites: AssertionSourceSiteV1[];
-  readonly unmapped: AttemptSourceEntryUnmappedV1[];
+interface EntryBuild {
+  readonly entry: AssertionSourceEntry;
+  readonly mappedSites: AssertionSourceSite[];
+  readonly unmapped: AttemptSourceEntryUnmapped[];
 }
 
-interface SourcesLookupV1 {
-  readonly packages: ReadonlyMap<string, SourcePackageProjectionV1>;
-  readonly files: ReadonlyMap<string, SourceFileProjectionV1>;
+interface SourcesLookup {
+  readonly packages: ReadonlyMap<string, SourcePackageProjection>;
+  readonly files: ReadonlyMap<string, SourceFileProjection>;
 }
 
-type TraceResolutionV1 =
+type TraceResolution =
   | {
       readonly state: "mapped";
-      readonly line: MutableSourceTreeLineV1;
+      readonly line: MutableSourceTreeLine;
     }
   | {
       readonly state: "unmapped";
-      readonly reason: AttemptSourceUnmappedReasonV1;
+      readonly reason: AttemptSourceUnmappedReason;
     };
 
 function fileKey(packageItemId: string, fileItemId: string): string {
   return `${packageItemId}\u0000${fileItemId}`;
 }
 
-function isFileFrameV1(frame: AssertionSourceFrameV1): frame is AssertionSourceFileFrameV1 {
+function isFileFrame(frame: AssertionSourceFrame): frame is AssertionSourceFileFrame {
   return frame.target.kind === "file";
 }
 
-function isPackageFrameV1(
-  frame: AssertionSourceFrameV1,
-): frame is AssertionSourcePackageFrameV1 {
+function isPackageFrame(
+  frame: AssertionSourceFrame,
+): frame is AssertionSourcePackageFrame {
   return frame.target.kind === "package";
 }
 
@@ -105,10 +101,10 @@ function isAvailable<Value>(
 
 function assertionUnavailableReason(
   result: Exclude<
-    ProjectedRecordAttachmentResult<AssertionsSourceProjectionV1>,
+    ProjectedRecordAttachmentResult<AssertionsSourceProjection>,
     { readonly state: "available" }
   >,
-): AttemptSourceUnmappedReasonV1 {
+): AttemptSourceUnmappedReason {
   return Object.freeze({
     code: "attachment-not-available",
     attachment: Object.freeze({ attachment: "assertions", result }),
@@ -117,10 +113,10 @@ function assertionUnavailableReason(
 
 function sourceSitesUnavailableReason(
   result: Exclude<
-    ProjectedRecordAttachmentResult<AssertionSourceSitesProjectionV1>,
+    ProjectedRecordAttachmentResult<AssertionSourceSitesProjection>,
     { readonly state: "available" }
   >,
-): AttemptSourceUnmappedReasonV1 {
+): AttemptSourceUnmappedReason {
   return Object.freeze({
     code: "attachment-not-available",
     attachment: Object.freeze({ attachment: "source-sites", result }),
@@ -129,62 +125,62 @@ function sourceSitesUnavailableReason(
 
 function sourcesUnavailableReason(
   result: Exclude<
-    ProjectedRecordAttachmentResult<SourcesProjectionV1>,
+    ProjectedRecordAttachmentResult<SourcesProjection>,
     { readonly state: "available" }
   >,
-): AttemptSourceUnmappedReasonV1 {
+): AttemptSourceUnmappedReason {
   return Object.freeze({
     code: "attachment-not-available",
     attachment: Object.freeze({ attachment: "sources", result }),
   });
 }
 
-function sourceSitesEntryMissingReason(): AttemptSourceUnmappedReasonV1 {
+function sourceSitesEntryMissingReason(): AttemptSourceUnmappedReason {
   return Object.freeze({ code: "source-sites-entry-missing" });
 }
 
-function sourceSitesEntryDuplicateReason(): AttemptSourceUnmappedReasonV1 {
+function sourceSitesEntryDuplicateReason(): AttemptSourceUnmappedReason {
   return Object.freeze({ code: "source-sites-entry-duplicate" });
 }
 
-function sourceSitesEntryOrphanReason(): AttemptSourceUnmappedReasonV1 {
+function sourceSitesEntryOrphanReason(): AttemptSourceUnmappedReason {
   return Object.freeze({ code: "source-sites-entry-orphan" });
 }
 
-function duplicateSourceOrderReason(sourceOrder: number): AttemptSourceUnmappedReasonV1 {
+function duplicateSourceOrderReason(sourceOrder: number): AttemptSourceUnmappedReason {
   return Object.freeze({ code: "source-order-duplicate", sourceOrder });
 }
 
 function packageMissingReason(
-  packageItemId: SourcePackageItemRefV1["packageItemId"],
-): AttemptSourceUnmappedReasonV1 {
+  packageItemId: SourcePackageItemRef["packageItemId"],
+): AttemptSourceUnmappedReason {
   return Object.freeze({
     code: "package-item-missing",
     target: Object.freeze({ kind: "package", packageItemId }),
   });
 }
 
-function fileMissingReason(target: SourceFileItemRefV1): AttemptSourceUnmappedReasonV1 {
+function fileMissingReason(target: SourceFileItemRef): AttemptSourceUnmappedReason {
   return Object.freeze({ code: "file-item-missing", target });
 }
 
-function digestMismatchReason(target: SourceFileItemRefV1): AttemptSourceUnmappedReasonV1 {
+function digestMismatchReason(target: SourceFileItemRef): AttemptSourceUnmappedReason {
   return Object.freeze({ code: "file-digest-mismatch", target });
 }
 
 function coordinateOutOfRangeReason(
-  coordinate: SourceCoordinateV1,
-): AttemptSourceUnmappedReasonV1 {
+  coordinate: SourceCoordinate,
+): AttemptSourceUnmappedReason {
   return Object.freeze({ code: "coordinate-out-of-range", coordinate });
 }
 
-function traceMalformedReason(): AttemptSourceUnmappedReasonV1 {
+function traceMalformedReason(): AttemptSourceUnmappedReason {
   return Object.freeze({ code: "trace-malformed" });
 }
 
 function addEntryUnmapped(
-  build: EntryBuildV1,
-  reason: AttemptSourceUnmappedReasonV1,
+  build: EntryBuild,
+  reason: AttemptSourceUnmappedReason,
 ): void {
   build.unmapped.push(Object.freeze({
     kind: "assertion-entry",
@@ -194,9 +190,9 @@ function addEntryUnmapped(
 }
 
 function addSiteUnmapped(
-  build: EntryBuildV1,
-  site: AssertionSourceSiteV1,
-  reason: AttemptSourceUnmappedReasonV1,
+  build: EntryBuild,
+  site: AssertionSourceSite,
+  reason: AttemptSourceUnmappedReason,
 ): void {
   build.unmapped.push(Object.freeze({
     kind: "assertion-site",
@@ -207,10 +203,10 @@ function addSiteUnmapped(
 }
 
 function addOrphanUnmapped(
-  unmapped: AttemptSourceUnownedUnmappedV1[],
+  unmapped: AttemptSourceUnownedUnmapped[],
   entryId: AssertionEntryId,
-  site: AssertionSourceSiteV1,
-  reason: AttemptSourceUnmappedReasonV1,
+  site: AssertionSourceSite,
+  reason: AttemptSourceUnmappedReason,
 ): void {
   unmapped.push(Object.freeze({
     kind: "orphan-assertion-site",
@@ -221,17 +217,17 @@ function addOrphanUnmapped(
 }
 
 function addSendUnmapped(
-  unmapped: AttemptSourceUnownedUnmappedV1[],
-  site: AssertionSourceSendSiteV1,
-  occurrence: AssertionSourceSendOccurrenceV1,
-  reason: AttemptSourceUnmappedReasonV1,
+  unmapped: AttemptSourceUnownedUnmapped[],
+  site: AssertionSourceSendSite,
+  occurrence: AssertionSourceSendOccurrence,
+  reason: AttemptSourceUnmappedReason,
 ): void {
   unmapped.push(Object.freeze({ kind: "send", site, occurrence, reason }));
 }
 
-function makeSourcesLookupV1(sources: SourcesProjectionV1): SourcesLookupV1 {
-  const packages = new Map<string, SourcePackageProjectionV1>();
-  const files = new Map<string, SourceFileProjectionV1>();
+function makeSourcesLookup(sources: SourcesProjection): SourcesLookup {
+  const packages = new Map<string, SourcePackageProjection>();
+  const files = new Map<string, SourceFileProjection>();
   for (const sourcePackage of sources.packages) {
     packages.set(sourcePackage.ref.packageItemId, sourcePackage);
     for (const file of sourcePackage.files) {
@@ -241,9 +237,9 @@ function makeSourcesLookupV1(sources: SourcesProjectionV1): SourcesLookupV1 {
   return Object.freeze({ packages, files });
 }
 
-function coordinateIsValidV1(
+function coordinateIsValid(
   text: string,
-  coordinate: SourceCoordinateV1,
+  coordinate: SourceCoordinate,
 ): boolean {
   if (text.includes("\r")) return false;
   const lines = text.split("\n");
@@ -256,7 +252,7 @@ function coordinateIsValidV1(
   return byte !== undefined && (byte < 0x80 || byte > 0xbf);
 }
 
-function makeMutableFileNodeV1(file: SourceFileProjectionV1): MutableSourceFileNodeV1 {
+function makeMutableFileNode(file: SourceFileProjection): MutableSourceFileNode {
   const lines = file.text.split("\n").map((text, index) => ({
     line: index + 1,
     text,
@@ -266,7 +262,7 @@ function makeMutableFileNodeV1(file: SourceFileProjectionV1): MutableSourceFileN
   return { kind: "file", file, lines };
 }
 
-function sameFileRefV1(left: SourceFileProjectionV1, right: SourceFileProjectionV1): boolean {
+function sameFileRef(left: SourceFileProjection, right: SourceFileProjection): boolean {
   return (
     left.ref.packageItemId === right.ref.packageItemId &&
     left.ref.fileItemId === right.ref.fileItemId &&
@@ -274,51 +270,51 @@ function sameFileRefV1(left: SourceFileProjectionV1, right: SourceFileProjection
   );
 }
 
-function samePackageRefV1(
-  left: SourcePackageProjectionV1,
-  right: SourcePackageProjectionV1,
+function samePackageRef(
+  left: SourcePackageProjection,
+  right: SourcePackageProjection,
 ): boolean {
   return left.ref.packageItemId === right.ref.packageItemId;
 }
 
-function ensureRootFileV1(
-  roots: MutableSourceTreeNodeV1[],
-  file: SourceFileProjectionV1,
-): MutableSourceFileNodeV1 {
+function ensureRootFile(
+  roots: MutableSourceTreeNode[],
+  file: SourceFileProjection,
+): MutableSourceFileNode {
   const existing = roots.find(
-    (node): node is MutableSourceFileNodeV1 =>
-      node.kind === "file" && sameFileRefV1(node.file, file),
+    (node): node is MutableSourceFileNode =>
+      node.kind === "file" && sameFileRef(node.file, file),
   );
   if (existing !== undefined) return existing;
-  const created = makeMutableFileNodeV1(file);
+  const created = makeMutableFileNode(file);
   roots.push(created);
   return created;
 }
 
-function ensureFileCallV1(
-  calls: MutableSourceTreeNodeV1[],
-  file: SourceFileProjectionV1,
-): MutableSourceFileNodeV1 {
+function ensureFileCall(
+  calls: MutableSourceTreeNode[],
+  file: SourceFileProjection,
+): MutableSourceFileNode {
   const existing = calls.find(
-    (node): node is MutableSourceFileNodeV1 =>
-      node.kind === "file" && sameFileRefV1(node.file, file),
+    (node): node is MutableSourceFileNode =>
+      node.kind === "file" && sameFileRef(node.file, file),
   );
   if (existing !== undefined) return existing;
-  const created = makeMutableFileNodeV1(file);
+  const created = makeMutableFileNode(file);
   calls.push(created);
   return created;
 }
 
-function ensurePackageCallV1(
-  calls: MutableSourceTreeNodeV1[],
-  sourcePackage: SourcePackageProjectionV1,
-): MutableSourcePackageNodeV1 {
+function ensurePackageCall(
+  calls: MutableSourceTreeNode[],
+  sourcePackage: SourcePackageProjection,
+): MutableSourcePackageNode {
   const existing = calls.find(
-    (node): node is MutableSourcePackageNodeV1 =>
-      node.kind === "package" && samePackageRefV1(node.package, sourcePackage),
+    (node): node is MutableSourcePackageNode =>
+      node.kind === "package" && samePackageRef(node.package, sourcePackage),
   );
   if (existing !== undefined) return existing;
-  const created: MutableSourcePackageNodeV1 = {
+  const created: MutableSourcePackageNode = {
     kind: "package",
     package: sourcePackage,
     calls: [],
@@ -327,27 +323,27 @@ function ensurePackageCallV1(
   return created;
 }
 
-function resolveTraceV1(
-  trace: AssertionSourceSiteV1["trace"],
-  lookup: SourcesLookupV1,
-  roots: MutableSourceTreeNodeV1[],
-): TraceResolutionV1 {
+function resolveTrace(
+  trace: AssertionSourceSite["trace"],
+  lookup: SourcesLookup,
+  roots: MutableSourceTreeNode[],
+): TraceResolution {
   const frames = trace.frames;
   const first = frames[0];
   const last = frames.at(-1);
   if (
     first === undefined ||
     last === undefined ||
-    !isFileFrameV1(first) ||
-    !isFileFrameV1(last)
+    !isFileFrame(first) ||
+    !isFileFrame(last)
   ) {
     return Object.freeze({ state: "unmapped", reason: traceMalformedReason() });
   }
 
-  const files: (SourceFileProjectionV1 | undefined)[] = [];
-  const packages: (SourcePackageProjectionV1 | undefined)[] = [];
+  const files: (SourceFileProjection | undefined)[] = [];
+  const packages: (SourcePackageProjection | undefined)[] = [];
   for (const frame of frames) {
-    if (isPackageFrameV1(frame)) {
+    if (isPackageFrame(frame)) {
       const sourcePackage = lookup.packages.get(frame.target.packageItemId);
       if (sourcePackage === undefined) {
         return Object.freeze({
@@ -359,7 +355,7 @@ function resolveTraceV1(
       files.push(undefined);
       continue;
     }
-    if (!isFileFrameV1(frame)) {
+    if (!isFileFrame(frame)) {
       return Object.freeze({ state: "unmapped", reason: traceMalformedReason() });
     }
     const sourcePackage = lookup.packages.get(frame.target.packageItemId);
@@ -376,7 +372,7 @@ function resolveTraceV1(
     if (file.ref.sha256 !== frame.target.sha256) {
       return Object.freeze({ state: "unmapped", reason: digestMismatchReason(frame.target) });
     }
-    if (!coordinateIsValidV1(file.text, frame.coordinate)) {
+    if (!coordinateIsValid(file.text, frame.coordinate)) {
       return Object.freeze({
         state: "unmapped",
         reason: coordinateOutOfRangeReason(frame.coordinate),
@@ -388,10 +384,10 @@ function resolveTraceV1(
 
   const firstFile = files[0];
   const firstFrame = frames[0];
-  if (firstFile === undefined || firstFrame === undefined || !isFileFrameV1(firstFrame)) {
+  if (firstFile === undefined || firstFrame === undefined || !isFileFrame(firstFrame)) {
     return Object.freeze({ state: "unmapped", reason: traceMalformedReason() });
   }
-  let current = ensureRootFileV1(roots, firstFile);
+  let current = ensureRootFile(roots, firstFile);
   let calls = current.lines[firstFrame.coordinate.line - 1]?.calls;
   if (calls === undefined) {
     return Object.freeze({
@@ -407,14 +403,14 @@ function resolveTraceV1(
     if (frame === undefined || sourcePackage === undefined) {
       return Object.freeze({ state: "unmapped", reason: traceMalformedReason() });
     }
-    if (isPackageFrameV1(frame)) {
-      calls = ensurePackageCallV1(calls, sourcePackage).calls;
+    if (isPackageFrame(frame)) {
+      calls = ensurePackageCall(calls, sourcePackage).calls;
       continue;
     }
-    if (!isFileFrameV1(frame) || file === undefined) {
+    if (!isFileFrame(frame) || file === undefined) {
       return Object.freeze({ state: "unmapped", reason: traceMalformedReason() });
     }
-    current = ensureFileCallV1(calls, file);
+    current = ensureFileCall(calls, file);
     const line = current.lines[frame.coordinate.line - 1];
     if (line === undefined) {
       return Object.freeze({
@@ -426,7 +422,7 @@ function resolveTraceV1(
   }
 
   const leafFrame = frames.at(-1);
-  const leaf = leafFrame !== undefined && isFileFrameV1(leafFrame)
+  const leaf = leafFrame !== undefined && isFileFrame(leafFrame)
     ? current.lines[leafFrame.coordinate.line - 1]
     : undefined;
   return leaf === undefined
@@ -434,7 +430,7 @@ function resolveTraceV1(
     : Object.freeze({ state: "mapped", line: leaf });
 }
 
-function countSourceOrdersV1(document: AssertionSourceSitesDocumentV1): ReadonlyMap<number, number> {
+function countSourceOrders(document: AssertionSourceSitesProjection): ReadonlyMap<number, number> {
   const counts = new Map<number, number>();
   const count = (sourceOrder: number): void => {
     counts.set(sourceOrder, (counts.get(sourceOrder) ?? 0) + 1);
@@ -450,17 +446,17 @@ function countSourceOrdersV1(document: AssertionSourceSitesDocumentV1): Readonly
   return counts;
 }
 
-function sourceOrderIsUniqueV1(
+function sourceOrderIsUnique(
   counts: ReadonlyMap<number, number>,
   sourceOrder: number,
 ): boolean {
   return counts.get(sourceOrder) === 1;
 }
 
-function sourceSiteRowsByEntryIdV1(
-  document: AssertionSourceSitesDocumentV1,
-): ReadonlyMap<string, readonly AssertionSourceSitesEntryV1[]> {
-  const rows = new Map<string, AssertionSourceSitesEntryV1[]>();
+function sourceSiteRowsByEntryId(
+  document: AssertionSourceSitesProjection,
+): ReadonlyMap<string, readonly AssertionSourceSitesEntry[]> {
+  const rows = new Map<string, AssertionSourceSitesEntry[]>();
   for (const row of document.entries) {
     const entryRows = rows.get(row.entryId) ?? [];
     entryRows.push(row);
@@ -469,16 +465,16 @@ function sourceSiteRowsByEntryIdV1(
   return rows;
 }
 
-function addAssertionSiteV1(input: {
-  readonly build: EntryBuildV1;
-  readonly site: AssertionSourceSiteV1;
-  readonly roots: MutableSourceTreeNodeV1[];
-  readonly lookup: SourcesLookupV1;
+function addAssertionSite(input: {
+  readonly build: EntryBuild;
+  readonly site: AssertionSourceSite;
+  readonly roots: MutableSourceTreeNode[];
+  readonly lookup: SourcesLookup;
   readonly sourceOrders: ReadonlyMap<number, number>;
 }): void {
-  const uniqueOccurrences: AssertionSourceOccurrenceV1[] = [];
+  const uniqueOccurrences: AssertionSourceOccurrence[] = [];
   for (const occurrence of input.site.occurrences) {
-    if (!sourceOrderIsUniqueV1(input.sourceOrders, occurrence.sourceOrder)) {
+    if (!sourceOrderIsUnique(input.sourceOrders, occurrence.sourceOrder)) {
       addSiteUnmapped(
         input.build,
         input.site,
@@ -490,7 +486,7 @@ function addAssertionSiteV1(input: {
   }
   if (uniqueOccurrences.length === 0) return;
 
-  const resolution = resolveTraceV1(input.site.trace, input.lookup, input.roots);
+  const resolution = resolveTrace(input.site.trace, input.lookup, input.roots);
   if (resolution.state === "unmapped") {
     addSiteUnmapped(input.build, input.site, resolution.reason);
     return;
@@ -505,16 +501,16 @@ function addAssertionSiteV1(input: {
   input.build.mappedSites.push(input.site);
 }
 
-function addSendSiteV1(input: {
-  readonly site: AssertionSourceSendSiteV1;
-  readonly roots: MutableSourceTreeNodeV1[];
-  readonly lookup: SourcesLookupV1;
+function addSendSite(input: {
+  readonly site: AssertionSourceSendSite;
+  readonly roots: MutableSourceTreeNode[];
+  readonly lookup: SourcesLookup;
   readonly sourceOrders: ReadonlyMap<number, number>;
-  readonly unmapped: AttemptSourceUnownedUnmappedV1[];
+  readonly unmapped: AttemptSourceUnownedUnmapped[];
 }): void {
-  const uniqueOccurrences: AssertionSourceSendOccurrenceV1[] = [];
+  const uniqueOccurrences: AssertionSourceSendOccurrence[] = [];
   for (const occurrence of input.site.occurrences) {
-    if (!sourceOrderIsUniqueV1(input.sourceOrders, occurrence.sourceOrder)) {
+    if (!sourceOrderIsUnique(input.sourceOrders, occurrence.sourceOrder)) {
       addSendUnmapped(
         input.unmapped,
         input.site,
@@ -527,7 +523,7 @@ function addSendSiteV1(input: {
   }
   if (uniqueOccurrences.length === 0) return;
 
-  const resolution = resolveTraceV1(input.site.trace, input.lookup, input.roots);
+  const resolution = resolveTrace(input.site.trace, input.lookup, input.roots);
   if (resolution.state === "unmapped") {
     for (const occurrence of uniqueOccurrences) {
       addSendUnmapped(input.unmapped, input.site, occurrence, resolution.reason);
@@ -539,18 +535,18 @@ function addSendSiteV1(input: {
   }
 }
 
-function freezeTreeNodeV1(node: MutableSourceTreeNodeV1): AttemptSourceTreeNodeV1 {
+function freezeTreeNode(node: MutableSourceTreeNode): AttemptSourceTreeNode {
   if (node.kind === "package") {
     return Object.freeze({
       kind: "package",
       package: node.package,
-      calls: Object.freeze(node.calls.map(freezeTreeNodeV1)),
+      calls: Object.freeze(node.calls.map(freezeTreeNode)),
     });
   }
   return Object.freeze({
     kind: "file",
     file: node.file,
-    lines: Object.freeze(node.lines.map((line): AttemptSourceTreeLineV1 => {
+    lines: Object.freeze(node.lines.map((line): AttemptSourceTreeLine => {
       const annotations = [...line.annotations].sort(
         (left, right) => left.occurrence.sourceOrder - right.occurrence.sourceOrder,
       );
@@ -558,15 +554,15 @@ function freezeTreeNodeV1(node: MutableSourceTreeNodeV1): AttemptSourceTreeNodeV
         line: line.line,
         text: line.text,
         annotations: Object.freeze(annotations),
-        calls: Object.freeze(line.calls.map(freezeTreeNodeV1)),
+        calls: Object.freeze(line.calls.map(freezeTreeNode)),
       });
     })),
   });
 }
 
-function makeSummaryV1(
-  entries: readonly EntryBuildV1[],
-): AttemptSourceTreeSummaryV1 {
+function makeSummary(
+  entries: readonly EntryBuild[],
+): AttemptSourceTreeSummary {
   let matched = 0;
   let mismatched = 0;
   let unavailable = 0;
@@ -617,20 +613,20 @@ function makeSummaryV1(
   });
 }
 
-function buildTreeV1(input: {
-  readonly assertions: ProjectedRecordAttachmentResult<AssertionsSourceProjectionV1>;
-  readonly sourceSites: ProjectedRecordAttachmentResult<AssertionSourceSitesProjectionV1>;
-  readonly sources: ProjectedRecordAttachmentResult<SourcesProjectionV1>;
-}): AttemptSourceTreeV1 {
-  const roots: MutableSourceTreeNodeV1[] = [];
-  const unmapped: AttemptSourceUnownedUnmappedV1[] = [];
-  const builds: EntryBuildV1[] = [];
-  const buildsByEntryId = new Map<string, EntryBuildV1>();
+function buildTree(input: {
+  readonly assertions: ProjectedRecordAttachmentResult<AssertionsSourceProjection>;
+  readonly sourceSites: ProjectedRecordAttachmentResult<AssertionSourceSitesProjection>;
+  readonly sources: ProjectedRecordAttachmentResult<SourcesProjection>;
+}): AttemptSourceTree {
+  const roots: MutableSourceTreeNode[] = [];
+  const unmapped: AttemptSourceUnownedUnmapped[] = [];
+  const builds: EntryBuild[] = [];
+  const buildsByEntryId = new Map<string, EntryBuild>();
 
   if (isAvailable(input.assertions)) {
     for (const entry of input.assertions.value.entries) {
       if (buildsByEntryId.has(entry.entry.entryId)) continue;
-      const build: EntryBuildV1 = {
+      const build: EntryBuild = {
         entry,
         mappedSites: [],
         unmapped: [],
@@ -652,10 +648,10 @@ function buildTreeV1(input: {
     }
     if (isAvailable(input.sources)) {
       const document = input.sourceSites.value;
-      const sourceOrders = countSourceOrdersV1(document);
-      const lookup = makeSourcesLookupV1(input.sources.value);
+      const sourceOrders = countSourceOrders(document);
+      const lookup = makeSourcesLookup(input.sources.value);
       for (const site of document.sendSites) {
-        addSendSiteV1({ site, roots, lookup, sourceOrders, unmapped });
+        addSendSite({ site, roots, lookup, sourceOrders, unmapped });
       }
     } else {
       const reason = sourcesUnavailableReason(input.sources);
@@ -667,7 +663,7 @@ function buildTreeV1(input: {
     }
   } else if (!isAvailable(input.sources)) {
     const sourceReason = sourcesUnavailableReason(input.sources);
-    const rowsByEntryId = sourceSiteRowsByEntryIdV1(input.sourceSites.value);
+    const rowsByEntryId = sourceSiteRowsByEntryId(input.sourceSites.value);
     for (const build of builds) {
       const rows = rowsByEntryId.get(build.entry.entry.entryId);
       if (rows === undefined) {
@@ -693,9 +689,9 @@ function buildTreeV1(input: {
     }
   } else {
     const document = input.sourceSites.value;
-    const sourceOrders = countSourceOrdersV1(document);
-    const lookup = makeSourcesLookupV1(input.sources.value);
-    const rowsByEntryId = sourceSiteRowsByEntryIdV1(document);
+    const sourceOrders = countSourceOrders(document);
+    const lookup = makeSourcesLookup(input.sources.value);
+    const rowsByEntryId = sourceSiteRowsByEntryId(document);
     for (const build of builds) {
       const rows = rowsByEntryId.get(build.entry.entry.entryId);
       if (rows === undefined) {
@@ -709,7 +705,7 @@ function buildTreeV1(input: {
       const row = rows[0];
       if (row === undefined) continue;
       for (const site of row.sites) {
-        addAssertionSiteV1({ build, site, roots, lookup, sourceOrders });
+        addAssertionSite({ build, site, roots, lookup, sourceOrders });
       }
     }
     for (const row of document.entries) {
@@ -719,38 +715,38 @@ function buildTreeV1(input: {
       }
     }
     for (const site of document.sendSites) {
-      addSendSiteV1({ site, roots, lookup, sourceOrders, unmapped });
+      addSendSite({ site, roots, lookup, sourceOrders, unmapped });
     }
   }
 
-  const entries: AttemptSourceTreeEntryV1[] = builds.map((build) => Object.freeze({
+  const entries: AttemptSourceTreeEntry[] = builds.map((build) => Object.freeze({
     entry: build.entry,
     mappedSites: Object.freeze([...build.mappedSites]),
     unmapped: Object.freeze([...build.unmapped]),
   }));
   return Object.freeze({
-    roots: Object.freeze(roots.map(freezeTreeNodeV1)),
+    roots: Object.freeze(roots.map(freezeTreeNode)),
     entries: Object.freeze(entries),
     unmapped: Object.freeze(unmapped),
-    summary: makeSummaryV1(builds),
+    summary: makeSummary(builds),
   });
 }
 
-function entrySlotIdV1(entry: { readonly slot: { readonly slotId: string } }): string {
+function entrySlotId(entry: { readonly slot: { readonly slotId: string } }): string {
   return entry.slot.slotId;
 }
 
-function entryMatchesSampleSlotV1(
-  state: AttemptSourceTreeSlotV1["state"] | "attachment-result",
-  sampleState: AttemptSourceTreeSlotV1["state"] | "included",
+function entryMatchesSampleSlot(
+  state: AttemptSourceTreeSlot["state"] | "attachment-result",
+  sampleState: AttemptSourceTreeSlot["state"] | "included",
 ): boolean {
   if (sampleState === "included") return state === "attachment-result";
   return state === sampleState;
 }
 
-function alignmentIssuesV1(
-  input: AttemptSourceTreeAssemblyInputV1,
-): readonly AttemptSourceTreeAssemblyIssueV1[] {
+function alignmentIssues(
+  input: AttemptSourceTreeAssemblyInput,
+): readonly AttemptSourceTreeAssemblyIssue[] {
   const sample = input.assertions.sample;
   if (sample !== input.sourceSites.sample || sample !== input.sources.sample) {
     return Object.freeze([Object.freeze({ code: "sample-mismatch" as const })]);
@@ -762,7 +758,7 @@ function alignmentIssuesV1(
   ) {
     return Object.freeze([Object.freeze({ code: "sample-mismatch" as const })]);
   }
-  const issues: AttemptSourceTreeAssemblyIssueV1[] = [];
+  const issues: AttemptSourceTreeAssemblyIssue[] = [];
   for (const [index, slot] of sample.slots.entries()) {
     const assertions = input.assertions.entries[index];
     const sourceSites = input.sourceSites.entries[index];
@@ -772,12 +768,12 @@ function alignmentIssuesV1(
       continue;
     }
     if (
-      entrySlotIdV1(assertions) !== slot.slotId ||
-      entrySlotIdV1(sourceSites) !== slot.slotId ||
-      entrySlotIdV1(sources) !== slot.slotId ||
-      entrySlotIdV1(assertions) !== entrySlotIdV1(sourceSites) ||
-      entrySlotIdV1(assertions) !== entrySlotIdV1(sources) ||
-      !entryMatchesSampleSlotV1(assertions.state, slot.state) ||
+      entrySlotId(assertions) !== slot.slotId ||
+      entrySlotId(sourceSites) !== slot.slotId ||
+      entrySlotId(sources) !== slot.slotId ||
+      entrySlotId(assertions) !== entrySlotId(sourceSites) ||
+      entrySlotId(assertions) !== entrySlotId(sources) ||
+      !entryMatchesSampleSlot(assertions.state, slot.state) ||
       assertions.state !== sourceSites.state ||
       assertions.state !== sources.state
     ) {
@@ -787,19 +783,19 @@ function alignmentIssuesV1(
   return Object.freeze(issues);
 }
 
-function nonEmptyAssemblyIssuesV1(
-  issues: readonly AttemptSourceTreeAssemblyIssueV1[],
+function nonEmptyAssemblyIssues(
+  issues: readonly AttemptSourceTreeAssemblyIssue[],
 ): readonly [
-  AttemptSourceTreeAssemblyIssueV1,
-  ...AttemptSourceTreeAssemblyIssueV1[],
+  AttemptSourceTreeAssemblyIssue,
+  ...AttemptSourceTreeAssemblyIssue[],
 ] {
   const [first, ...rest] = issues;
   if (first === undefined) {
     throw new Error("Source tree assembly issue list was unexpectedly empty");
   }
   const nonEmpty: [
-    AttemptSourceTreeAssemblyIssueV1,
-    ...AttemptSourceTreeAssemblyIssueV1[],
+    AttemptSourceTreeAssemblyIssue,
+    ...AttemptSourceTreeAssemblyIssue[],
   ] = [first, ...rest];
   return Object.freeze(nonEmpty);
 }
@@ -808,18 +804,18 @@ function nonEmptyAssemblyIssuesV1(
  * Purely combines already-projected values. It never retains a reader, opens a
  * blob, follows a path, or recalculates an Assertion result.
  */
-export function assembleAttemptSourceTreeV1(
-  input: AttemptSourceTreeAssemblyInputV1,
-): AttemptSourceTreeAssemblyResultV1 {
-  const issues = alignmentIssuesV1(input);
+export function assembleAttemptSourceTree(
+  input: AttemptSourceTreeAssemblyInput,
+): AttemptSourceTreeAssemblyResult {
+  const issues = alignmentIssues(input);
   if (issues.length > 0) {
     return Object.freeze({
       state: "input-invalid",
-      issues: nonEmptyAssemblyIssuesV1(issues),
+      issues: nonEmptyAssemblyIssues(issues),
     });
   }
 
-  const slots: AttemptSourceTreeSlotV1[] = [];
+  const slots: AttemptSourceTreeSlot[] = [];
   for (const [index, assertions] of input.assertions.entries.entries()) {
     const sourceSites = input.sourceSites.entries[index];
     const sources = input.sources.entries[index];
@@ -846,7 +842,7 @@ export function assembleAttemptSourceTreeV1(
           assertions,
           sourceSites,
           sources,
-          tree: buildTreeV1({
+          tree: buildTree({
             assertions: assertions.attachment,
             sourceSites: sourceSites.attachment,
             sources: sources.attachment,

@@ -3,6 +3,9 @@ import { Either } from "effect";
 import {
   assertionsAttachmentFamilyV1,
   projectAssertionsDocumentV1,
+  type AssertionEntryReadV1,
+  type ScoreContributionV1,
+  type SealedAssertionResultV1,
   type ThirdPartyCriterionRegistryV1,
 } from "../assertions/record/index.ts";
 import type {
@@ -19,22 +22,38 @@ import {
   sourcesAttachmentFamilyV1,
 } from "./attachment.ts";
 import type {
-  AssertionSourceSitesDocumentV1,
-  AssertionSourceSitesProjectionV1,
-  AssertionSourceFrameV1,
   AssertionSourceFileFrameV1,
+  AssertionSourceFrameV1,
   AssertionSourceOccurrenceV1,
   AssertionSourceSendOccurrenceV1,
   AssertionSourceSendSiteV1,
   AssertionSourceSiteV1,
+  AssertionSourceSitesDocumentV1,
   AssertionSourceSitesEntryV1,
   AssertionSourceTraceV1,
-  AssertionsSourceProjectionV1,
   SourceFileItemId,
   SourcePackageItemId,
   SourcesDocumentV1,
-  SourcesProjectionV1,
 } from "./model.ts";
+import type {
+  AssertionSourceEntry,
+  AssertionSourceEntryValue,
+  AssertionSourceFileFrame,
+  AssertionSourceFrame,
+  AssertionSourceOccurrence,
+  AssertionSourceResult,
+  AssertionSourceScore,
+  AssertionSourceSendOccurrence,
+  AssertionSourceSendSite,
+  AssertionSourceSite,
+  AssertionSourceSitesEntry,
+  AssertionSourceSitesProjection,
+  AssertionSourceTrace,
+  AssertionsSourceProjection,
+  SourceFileProjection,
+  SourcePackageProjection,
+  SourcesProjection,
+} from "./projection-model.ts";
 
 const STRICT_UTF8 = new TextDecoder("utf-8", { fatal: true });
 
@@ -42,25 +61,108 @@ const noThirdPartyCriterionRegistryV1: ThirdPartyCriterionRegistryV1 = Object.fr
   lookup: () => undefined,
 });
 
-/**
- * The fixed source-navigation projector preserves each Assertion entry's
- * reader-local criterion state. A caller that has installed third-party
- * criterion definitions can opt into the same shape with its registry.
- */
-export function createAssertionsProjectorV1(
+function projectAssertionScore(value: ScoreContributionV1): AssertionSourceScore {
+  switch (value.state) {
+    case "not-scored":
+      return Object.freeze({ state: "not-scored" });
+    case "earned":
+      return Object.freeze({
+        state: "earned",
+        points: value.points,
+        earned: value.earned,
+      });
+    case "unavailable":
+      return Object.freeze({
+        state: "unavailable",
+        points: value.points,
+        reason: value.reason,
+      });
+  }
+}
+
+function projectAssertionResult(value: SealedAssertionResultV1): AssertionSourceResult {
+  switch (value.state) {
+    case "matched":
+      return Object.freeze({
+        state: "matched",
+        gate: value.gate,
+        score: projectAssertionScore(value.score),
+      });
+    case "mismatched":
+      return Object.freeze({
+        state: "mismatched",
+        reason: value.reason,
+        gate: value.gate,
+        score: projectAssertionScore(value.score),
+      });
+    case "unavailable":
+      return Object.freeze({
+        state: "unavailable",
+        reason: value.reason,
+        gate: value.gate,
+        score: projectAssertionScore(value.score),
+      });
+    case "errored":
+      return Object.freeze({
+        state: "errored",
+        reason: value.reason,
+        gate: value.gate,
+        score: projectAssertionScore(value.score),
+      });
+    case "not-applicable":
+      return Object.freeze({
+        state: "not-applicable",
+        reason: value.reason,
+        gate: value.gate,
+        score: projectAssertionScore(value.score),
+      });
+  }
+}
+
+function projectAssertionEntryValue(
+  value: AssertionEntryReadV1<RecordBlobRef>["entry"],
+): AssertionSourceEntryValue {
+  return Object.freeze({
+    entryId: value.entryId,
+    display: Object.freeze({
+      ...(value.display.key === undefined ? {} : { key: value.display.key }),
+      ...(value.display.label === undefined ? {} : { label: value.display.label }),
+      groupPath: Object.freeze([...value.display.groupPath]),
+    }),
+    result: projectAssertionResult(value.result),
+  });
+}
+
+function projectAssertionEntry(
+  value: AssertionEntryReadV1<RecordBlobRef>,
+): AssertionSourceEntry {
+  const entry = projectAssertionEntryValue(value.entry);
+  switch (value.state) {
+    case "available":
+      return Object.freeze({ state: "available", entry });
+    case "unsupported":
+      return Object.freeze({ state: "unsupported", entry, reason: value.reason });
+    case "invalid":
+      return Object.freeze({ state: "invalid", entry, reason: value.reason });
+  }
+}
+
+function createAssertionsProjector(
   registry: ThirdPartyCriterionRegistryV1 = noThirdPartyCriterionRegistryV1,
-): RecordAttachmentProjector<"attempt", AssertionsSourceProjectionV1> {
+): RecordAttachmentProjector<"attempt", AssertionsSourceProjection> {
   return defineRecordAttachmentProjector({
     attachment: assertionsAttachmentFamilyV1,
-    project: (value): AssertionsSourceProjectionV1 => Object.freeze({
-      entries: Object.freeze(projectAssertionsDocumentV1(value.payload, registry).entries),
-    }),
+    project: (value): AssertionsSourceProjection => {
+      const projected = projectAssertionsDocumentV1(value.payload, registry);
+      return Object.freeze({
+        entries: Object.freeze(projected.entries.map(projectAssertionEntry)),
+      });
+    },
   });
 }
 
 /** Fixed, package-created source-navigation Assertions projector. */
-export const assertionsProjector = createAssertionsProjectorV1();
-export const assertionsProjectorV1 = assertionsProjector;
+export const assertionsProjector = createAssertionsProjector();
 
 function nonEmpty<Value>(
   values: readonly Value[],
@@ -71,40 +173,40 @@ function nonEmpty<Value>(
   return Object.freeze([first, ...rest]);
 }
 
-function isSnapshotFileFrameV1(
+function isSnapshotFileFrame(
   frame: RecordAttachmentPayloadSnapshot<AssertionSourceFrameV1>,
 ): frame is RecordAttachmentPayloadSnapshot<AssertionSourceFileFrameV1> {
   return frame.target.kind === "file";
 }
 
-function isFileFrameV1(
-  frame: AssertionSourceFrameV1,
-): frame is AssertionSourceFileFrameV1 {
+function isFileFrame(
+  frame: AssertionSourceFrame,
+): frame is AssertionSourceFileFrame {
   return frame.target.kind === "file";
 }
 
-function singletonFileFrameV1(
-  frame: AssertionSourceFileFrameV1,
-): readonly [AssertionSourceFileFrameV1] {
+function singletonFileFrame(
+  frame: AssertionSourceFileFrame,
+): readonly [AssertionSourceFileFrame] {
   return Object.freeze([frame]);
 }
 
-function traceFramesV1(
-  first: AssertionSourceFileFrameV1,
-  middle: readonly AssertionSourceFrameV1[],
-  last: AssertionSourceFileFrameV1,
+function traceFrames(
+  first: AssertionSourceFileFrame,
+  middle: readonly AssertionSourceFrame[],
+  last: AssertionSourceFileFrame,
 ): readonly [
-  AssertionSourceFileFrameV1,
-  ...AssertionSourceFrameV1[],
-  AssertionSourceFileFrameV1,
+  AssertionSourceFileFrame,
+  ...AssertionSourceFrame[],
+  AssertionSourceFileFrame,
 ] {
   return Object.freeze([first, ...middle, last]);
 }
 
-function projectSourceFrameV1(
+function projectSourceFrame(
   frame: RecordAttachmentPayloadSnapshot<AssertionSourceFrameV1>,
-): AssertionSourceFrameV1 {
-  if (isSnapshotFileFrameV1(frame)) {
+): AssertionSourceFrame {
+  if (isSnapshotFileFrame(frame)) {
     return Object.freeze({
       target: Object.freeze({
         kind: "file",
@@ -126,28 +228,28 @@ function projectSourceFrameV1(
   });
 }
 
-function projectSourceTraceV1(
+function projectSourceTrace(
   trace: RecordAttachmentPayloadSnapshot<AssertionSourceTraceV1>,
-): AssertionSourceTraceV1 {
-  const frames = trace.frames.map(projectSourceFrameV1);
+): AssertionSourceTrace {
+  const frames = trace.frames.map(projectSourceFrame);
   const first = frames[0];
   const last = frames.at(-1);
   if (
     first === undefined ||
     last === undefined ||
-    !isFileFrameV1(first) ||
-    !isFileFrameV1(last)
+    !isFileFrame(first) ||
+    !isFileFrame(last)
   ) {
     throw new Error("Decoded assertion source trace lost its required file endpoints");
   }
   return frames.length === 1
-    ? Object.freeze({ frames: singletonFileFrameV1(first) })
-    : Object.freeze({ frames: traceFramesV1(first, frames.slice(1, -1), last) });
+    ? Object.freeze({ frames: singletonFileFrame(first) })
+    : Object.freeze({ frames: traceFrames(first, frames.slice(1, -1), last) });
 }
 
-function projectAssertionOccurrenceV1(
+function projectAssertionOccurrence(
   occurrence: RecordAttachmentPayloadSnapshot<AssertionSourceOccurrenceV1>,
-): AssertionSourceOccurrenceV1 {
+): AssertionSourceOccurrence {
   return occurrence.role === "stop"
     ? Object.freeze({
         sourceOrder: occurrence.sourceOrder,
@@ -160,33 +262,33 @@ function projectAssertionOccurrenceV1(
       });
 }
 
-function projectAssertionSourceSiteV1(
+function projectAssertionSourceSite(
   site: RecordAttachmentPayloadSnapshot<AssertionSourceSiteV1>,
-): AssertionSourceSiteV1 {
+): AssertionSourceSite {
   return Object.freeze({
-    trace: projectSourceTraceV1(site.trace),
+    trace: projectSourceTrace(site.trace),
     occurrences: nonEmpty(
-      site.occurrences.map(projectAssertionOccurrenceV1),
+      site.occurrences.map(projectAssertionOccurrence),
       "Decoded assertion source site lost its occurrence",
     ),
   });
 }
 
-function projectSourceSitesEntryV1(
+function projectSourceSitesEntry(
   entry: RecordAttachmentPayloadSnapshot<AssertionSourceSitesEntryV1>,
-): AssertionSourceSitesEntryV1 {
+): AssertionSourceSitesEntry {
   return Object.freeze({
     entryId: entry.entryId,
     sites: nonEmpty(
-      entry.sites.map(projectAssertionSourceSiteV1),
+      entry.sites.map(projectAssertionSourceSite),
       "Decoded assertion source-sites entry lost its site",
     ),
   });
 }
 
-function projectSendOccurrenceV1(
+function projectSendOccurrence(
   occurrence: RecordAttachmentPayloadSnapshot<AssertionSourceSendOccurrenceV1>,
-): AssertionSourceSendOccurrenceV1 {
+): AssertionSourceSendOccurrence {
   return Object.freeze({
     sourceOrder: occurrence.sourceOrder,
     label: occurrence.label,
@@ -195,40 +297,38 @@ function projectSendOccurrenceV1(
   });
 }
 
-function projectSendSiteV1(
+function projectSendSite(
   site: RecordAttachmentPayloadSnapshot<AssertionSourceSendSiteV1>,
-): AssertionSourceSendSiteV1 {
+): AssertionSourceSendSite {
   return Object.freeze({
-    trace: projectSourceTraceV1(site.trace),
+    trace: projectSourceTrace(site.trace),
     occurrences: nonEmpty(
-      site.occurrences.map(projectSendOccurrenceV1),
+      site.occurrences.map(projectSendOccurrence),
       "Decoded assertion source send site lost its occurrence",
     ),
   });
 }
 
-function projectAssertionSourceSitesDocumentV1(
+function projectAssertionSourceSitesDocument(
   document: RecordAttachmentPayloadSnapshot<AssertionSourceSitesDocumentV1>,
-): AssertionSourceSitesDocumentV1 {
+): AssertionSourceSitesProjection {
   return Object.freeze({
-    entries: Object.freeze(document.entries.map(projectSourceSitesEntryV1)),
-    sendSites: Object.freeze(document.sendSites.map(projectSendSiteV1)),
+    entries: Object.freeze(document.entries.map(projectSourceSitesEntry)),
+    sendSites: Object.freeze(document.sendSites.map(projectSendSite)),
   });
 }
 
-/** This Attachment has no blob closure, so its exact decoded document is its neutral view. */
+/** Fixed Attempt-owned source-site projector with a detached semantic view. */
 export const assertionSourceSitesProjector: RecordAttachmentProjector<
   "attempt",
-  AssertionSourceSitesProjectionV1
+  AssertionSourceSitesProjection
 > = defineRecordAttachmentProjector({
   attachment: assertionSourceSitesAttachmentFamilyV1,
-  project: (value): AssertionSourceSitesProjectionV1 =>
-    projectAssertionSourceSitesDocumentV1(value.payload),
+  project: (value): AssertionSourceSitesProjection =>
+    projectAssertionSourceSitesDocument(value.payload),
 });
 
-export const assertionSourceSitesProjectorV1 = assertionSourceSitesProjector;
-
-export type SourcesProjectionErrorV1 =
+type SourcesProjectionError =
   | {
       readonly code: "source-blob-unavailable";
       readonly packageItemId: SourcePackageItemId;
@@ -251,20 +351,20 @@ export type SourcesProjectionErrorV1 =
     };
 
 function sourceProjectionError(
-  code: SourcesProjectionErrorV1["code"],
+  code: SourcesProjectionError["code"],
   packageItemId: SourcePackageItemId,
   fileItemId: SourceFileItemId,
-): SourcesProjectionErrorV1 {
+): SourcesProjectionError {
   return Object.freeze({ code, packageItemId, fileItemId });
 }
 
-function materializeSourceTextV1(input: {
+function materializeSourceText(input: {
   readonly value: RecordAttachmentValue<SourcesDocumentV1<RecordBlobRef>>;
   readonly packageItemId: SourcePackageItemId;
   readonly fileItemId: SourceFileItemId;
   readonly ref: RecordBlobRef;
   readonly expectedDigest: string;
-}): Either.Either<string, SourcesProjectionErrorV1> {
+}): Either.Either<string, SourcesProjectionError> {
   const bytes = input.value.blobs.bytes(input.ref);
   if (Either.isLeft(bytes)) {
     return Either.left(
@@ -301,17 +401,17 @@ function materializeSourceTextV1(input: {
 }
 
 /**
- * Validates the Sources-only semantic closure that generic Record blob
- * validation cannot inspect: strict UTF-8, canonical LF, and the exact digest.
+ * Validates Sources' semantic closure and produces a detached display view.
+ * Durable schema evolution stays behind this adapter.
  */
-export function projectSourcesAttachmentValueV1(
+function projectSourcesAttachmentValue(
   value: RecordAttachmentValue<SourcesDocumentV1<RecordBlobRef>>,
-): Either.Either<SourcesProjectionV1, SourcesProjectionErrorV1> {
-  const packages: SourcesProjectionV1["packages"][number][] = [];
+): Either.Either<SourcesProjection, SourcesProjectionError> {
+  const packages: SourcePackageProjection[] = [];
   for (const sourcePackage of value.payload.packages) {
-    const files: SourcesProjectionV1["packages"][number]["files"][number][] = [];
+    const files: SourceFileProjection[] = [];
     for (const file of sourcePackage.files) {
-      const text = materializeSourceTextV1({
+      const text = materializeSourceText({
         value,
         packageItemId: sourcePackage.packageItemId,
         fileItemId: file.fileItemId,
@@ -321,7 +421,7 @@ export function projectSourcesAttachmentValueV1(
       if (Either.isLeft(text)) return Either.left(text.left);
       files.push(Object.freeze({
         ref: Object.freeze({
-          kind: "file" as const,
+          kind: "file",
           packageItemId: sourcePackage.packageItemId,
           fileItemId: file.fileItemId,
           sha256: file.sha256,
@@ -332,7 +432,7 @@ export function projectSourcesAttachmentValueV1(
     }
     packages.push(Object.freeze({
       ref: Object.freeze({
-        kind: "package" as const,
+        kind: "package",
         packageItemId: sourcePackage.packageItemId,
       }),
       label: sourcePackage.label,
@@ -342,15 +442,10 @@ export function projectSourcesAttachmentValueV1(
   return Either.right(Object.freeze({ packages: Object.freeze(packages) }));
 }
 
-/**
- * Record integration forms `available` only after Sources closure validation.
- * This defensive check keeps an integration bug a defect instead of silently
- * presenting a substituted snapshot as a valid source tree.
- */
-function requireSourcesProjectionV1(
+function requireSourcesProjection(
   value: RecordAttachmentValue<SourcesDocumentV1<RecordBlobRef>>,
-): SourcesProjectionV1 {
-  const projected = projectSourcesAttachmentValueV1(value);
+): SourcesProjection {
+  const projected = projectSourcesAttachmentValue(value);
   if (Either.isLeft(projected)) {
     throw new Error(`Sources Attachment semantic validation failed: ${projected.left.code}`);
   }
@@ -358,10 +453,8 @@ function requireSourcesProjectionV1(
 }
 
 /** Fixed Run-owned source snapshot projector; it never consults the current worktree. */
-export const sourcesProjector: RecordAttachmentProjector<"run", SourcesProjectionV1> =
+export const sourcesProjector: RecordAttachmentProjector<"run", SourcesProjection> =
   defineRecordAttachmentProjector({
     attachment: sourcesAttachmentFamilyV1,
-    project: requireSourcesProjectionV1,
+    project: requireSourcesProjection,
   });
-
-export const sourcesProjectorV1 = sourcesProjector;
