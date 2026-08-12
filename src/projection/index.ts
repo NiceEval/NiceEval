@@ -35,6 +35,8 @@ export type {
   MembershipPolicy,
   MembershipProvenance,
 } from "../eval/record/membership-provenance.ts";
+export { sandboxProjector } from "../sandbox/record/projector.ts";
+export type { SandboxView } from "../sandbox/record/projector.ts";
 export {
   attemptCommandsProjector,
   attemptConversationProjector,
