@@ -380,19 +380,3 @@ export function removeKeptEntryEffect(niceevalRoot: string, id: string): Registr
     ),
   );
 }
-
-/**
- * 临时 Promise 兼容门面：`src/runner/attempt.ts` 正在由上层串行接到 `*Effect` API。
- * 它不是内部调用入口；sandbox 域的新消费者必须直接组合上面的 Effect。
- */
-export function writeKeptEntry(niceevalRoot: string, entry: KeptSandboxEntry): Promise<void> {
-  return Effect.runPromise(writeKeptEntryEffect(niceevalRoot, entry));
-}
-
-export function updateKeptEntry(
-  niceevalRoot: string,
-  id: string,
-  patch: Partial<KeptSandboxEntry> | ((entry: KeptSandboxEntry) => KeptSandboxEntry),
-): Promise<boolean> {
-  return Effect.runPromise(updateKeptEntryEffect(niceevalRoot, id, patch));
-}

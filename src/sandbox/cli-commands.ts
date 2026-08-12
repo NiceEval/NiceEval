@@ -698,25 +698,4 @@ function formatWhen(iso: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-/**
- * 兼容门面：当前 `src/cli.ts` 仍通过动态 import 取得 Promise 命令 API。新内部调用直接组合
- * 上面的 `*Effect` 导出；当 CLI 完成串行接线后，此处是唯一可删除的嵌套 runtime 边界。
- */
-export function runSandboxCommand(
-  cwd: string,
-  positionals: string[],
-  flags: SandboxCommandFlags,
-  io: Io = { out: (s) => process.stdout.write(s), err: (s) => process.stderr.write(s) },
-): Promise<number> {
-  return Effect.runPromise(runSandboxCommandEffect(cwd, positionals, flags, io));
-}
-
-export function orphanReminder(cwd: string): Promise<string | undefined> {
-  return Effect.runPromise(orphanReminderEffect(cwd));
-}
-
-export function keptSandboxReminder(cwd: string): Promise<string | undefined> {
-  return Effect.runPromise(keptSandboxReminderEffect(cwd));
-}
-
 export { keptEntryId };
