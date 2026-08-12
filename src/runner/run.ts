@@ -287,11 +287,22 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     }
     return run;
   };
-  // Reused failures are durable facts for this invocation, but remain their own
-  // readback ADT instead of being reconstructed as legacy EvalResults.
-  for (const readback of reusedAttempts) {
+  // Readback is the sole authority for the externally visible carry count.
+  // In particular, the CLI must not guess this before the frozen current view
+  // has rejected every non-reusable source.
+  const reusedFailures = Object.freeze(reusedAttempts.flatMap((readback) => {
     const failure = failureDetailFromCurrentReusedAttempt(readback, runForReusedAttempt(readback));
-    if (failure !== undefined) reportFailure(failure);
+    return failure === undefined ? [] : [failure];
+  }));
+  if (opts.onCurrentRecordReusePlan !== undefined) {
+    yield* opts.onCurrentRecordReusePlan({ reused: reusedAttempts.length, reusedFailures });
+  } else {
+    // Direct library callers have no feedback coordinator. Preserve their
+    // fallback failure signal without turning a current readback into a legacy
+    // result-shaped facade.
+    for (const failure of reusedFailures) {
+      reportFailure(failure);
+    }
   }
   // Session 文件在首次派发前创建；它只记录 Run 身份与轻量计数，锁和实验闸仍各自维护。
   if (opts.session !== undefined) {

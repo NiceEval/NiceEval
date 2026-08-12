@@ -1183,6 +1183,16 @@ export interface RunOptions<RecordError = never, RecordRequirements = never> {
   /** CLI 为 `niceeval exp` 提供的持久 Session 索引；只观察调度事件，不参与锁/闸判定。 */
   session?: import("./session.ts").SessionTracker;
   /**
+   * The current Record coordinator calls this after its frozen-view readback
+   * has established the exact reusable attempts. The CLI uses this one-way
+   * Effect hand-off to emit the invocation plan; callers cannot provide or
+   * alter Record reuse authority through it.
+   */
+  onCurrentRecordReusePlan?: (input: {
+    readonly reused: number;
+    readonly reusedFailures: readonly FailureDetail[];
+  }) => Effect.Effect<void, never>;
+  /**
    * 已注册的 reporter,携带 name/required 元数据(见 `ReporterRegistration`)。这是内部编排
    * 通道——调用方(今天只有 `cli.ts`)按来源(显式 --junit / 用户 `Config.reporters`)把裸
    * `Reporter` 各自包一层元数据后传进来;eval 级 `EvalDef.reporters`

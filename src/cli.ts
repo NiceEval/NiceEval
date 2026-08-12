@@ -137,7 +137,6 @@ import type {
   InvocationSummary,
   ReporterError,
   ReporterRegistration,
-  RunFeedbackPlan,
   RunFeedbackState,
   Verdict,
 } from "./types.ts";
@@ -1877,13 +1876,9 @@ function runEvaluationCommand(
     for (const run of agentRuns) {
       if (run.experimentId !== undefined && run.maxConcurrency !== undefined) experimentConcurrency[run.experimentId] = run.maxConcurrency;
     }
-    const plan: RunFeedbackPlan = {
+    const plan = {
       shape: { evals: uniqueEvalIds.size, configs: agentRuns.length, totalAttempts, maxConcurrency },
       ...(Object.keys(experimentConcurrency).length === 0 ? {} : { experimentConcurrency }),
-      // The runner owns exact current-Record reuse and emits its durable facts;
-      // this CLI no longer rebuilds result-shaped history for the live facade.
-      reused: 0,
-      reusedFailures: [],
     };
 
     const io = createNodeFeedbackIO();
@@ -1898,7 +1893,6 @@ function runEvaluationCommand(
       io,
       onEvent: (event, state) => sessionTracker.onFeedback(event, state),
     });
-    coordinator.start(plan);
 
     let resourcesReleased = false;
     const releaseResources = Effect.suspend(() => {
@@ -1961,6 +1955,11 @@ function runEvaluationCommand(
       rerun: flags.rerun,
       niceevalRoot: resolvePath(cwd, ".niceeval"),
       session: sessionTracker,
+      onCurrentRecordReusePlan: (current) => Effect.sync(() => coordinator.start({
+        ...plan,
+        reused: current.reused,
+        ...(current.reusedFailures.length === 0 ? {} : { reusedFailures: current.reusedFailures }),
+      })),
       ...(interruption === undefined ? {} : { signal: interruption.invocationSignal }),
     }));
     yield* releaseResources;
