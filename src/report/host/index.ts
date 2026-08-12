@@ -44,18 +44,31 @@ export type {
   ReportViewThemeRebuild,
 } from "./view-session.ts";
 export {
+  basalt,
+  chalk,
   NodeReportViewHost,
   NodeReportFileSystemLive,
   NodeReportViewHostLive,
+  loadTrustedReportConfig,
+  loadTrustedReportModule,
+  loadTrustedThemeModule,
   makeNodeReportFileSystem,
   openNodeReportView,
   openNodeReportViewServer,
+  ReportModuleLoadError,
+  resolveTrustedModulePath,
 } from "./node.ts";
 export type {
+  LoadedTrustedConfig,
+  LoadedTrustedReport,
+  LoadedTrustedTheme,
   NodeReportViewHostService,
   NodeViewServerError,
+  ReportModuleLoadCode,
+  ReportModuleLoadStage,
   ReportViewRequest,
   ReportViewServer,
+  ThemeDefinition,
   ViewOptions,
 } from "./node.ts";
 export { exportStaticReport, ReportFileSystem } from "./static.ts";

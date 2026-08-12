@@ -11,7 +11,7 @@ import { spawn } from "node:child_process";
 import { hostname } from "node:os";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, resolve as resolvePath } from "node:path";
+import { dirname, isAbsolute, join, resolve as resolvePath } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs as nodeParseArgs } from "node:util";
 import { Data, Effect, Either, Schema } from "effect";
@@ -42,14 +42,22 @@ import { reportRoute, type ReportRoute } from "./report/author/identity.ts";
 import type { Report } from "./report/author/model.ts";
 import type { ReportExecution } from "./report/execution/model.ts";
 import {
+  basalt,
+  chalk,
   executeReportForAttemptFromRecord,
   executeReportFromRecord,
   exportStaticReport,
+  loadTrustedReportConfig,
+  loadTrustedReportModule,
+  loadTrustedThemeModule,
   makeNodeReportFileSystem,
   openReportViewSession,
+  ReportModuleLoadError,
   ReportConsole,
   ReportFileSystem,
+  resolveTrustedModulePath,
   showReport,
+  type ThemeDefinition,
 } from "./report/host/index.ts";
 import { openViewServer } from "./view/server.ts";
 import { runRecordCliCommand } from "./cli/record.ts";
@@ -136,16 +144,9 @@ export class CliOperationError extends Data.TaggedError("CliOperationError")<{
   readonly exitCode: number;
 }> {}
 
-/** A trusted Report module needs a static dependency-closure loader that is not installed yet. */
-export class CliReportModuleLoaderUnavailable extends Data.TaggedError("CliReportModuleLoaderUnavailable")<{
-  readonly module: string;
-  readonly exitCode: number;
-}> {}
-
 export type CliFailure =
   | CliUsageError
-  | CliOperationError
-  | CliReportModuleLoaderUnavailable;
+  | CliOperationError;
 
 /**
  * Bootstrap owns process signals until an Eval has reached actual dispatch.
@@ -163,7 +164,7 @@ function usageError(message: string, exitCode = 1): CliUsageError {
 }
 
 function cliFailure(operation: string, cause: unknown, exitCode = 1): CliFailure {
-  return cause instanceof CliUsageError || cause instanceof CliOperationError || cause instanceof CliReportModuleLoaderUnavailable
+  return cause instanceof CliUsageError || cause instanceof CliOperationError
     ? cause
     : new CliOperationError({ operation, cause, exitCode });
 }
@@ -187,19 +188,14 @@ function cliEffect<A, E, R>(operation: string, effect: Effect.Effect<A, E, R>): 
 /** Bootstrap owns presentation of typed failures; defects and interruption stay in Cause. */
 export function renderCliFailure(failure: CliFailure): string {
   if (failure._tag === "CliUsageError") return failure.message;
-  if (failure._tag === "CliReportModuleLoaderUnavailable") {
-    return [
-      `report-module-loader-unavailable: ${failure.module}`,
-      "Use the built-in overview with --report overview, or omit --report.",
-      "Trusted Report module loading needs static dependency-closure tracking and is not installed yet.",
-      "",
-    ].join("\n");
-  }
   if (failure.cause instanceof SandboxLayerLinkError) return `${formatSandboxLayerLinkError(failure.cause)}\n`;
   if (failure.cause instanceof SandboxPhysicalPlanningError) return `${formatSandboxPhysicalPlanningError(failure.cause)}\n`;
   if (isReportCliOperation(failure.operation)) {
     const code = failureCode(failure.cause);
-    if (code !== undefined) return `${code}\n`;
+    if (code !== undefined) {
+      const reason = failure.cause instanceof ReportModuleLoadError ? `: ${failure.cause.reason}` : "";
+      return `${code}${reason}\n`;
+    }
   }
   return t("cli.error", { error: formatThrown(failure.cause) });
 }
@@ -357,9 +353,9 @@ const FLAG_OPTIONS = {
   run: { type: "string", multiple: true },
   /** `show` / `view` 命令专用：按每个完整 ExperimentId 选择 latest published Run；与 `--run` 二选一。 */
   latest: { type: "boolean" },
-  /** `show` / `view` 命令专用：内建 `overview`；省略同样选择默认 overview。 */
+  /** `show` / `view` 命令专用：内建 `overview` 或受信任的 Report module 路径。 */
   report: { type: "string" },
-  /** 实现收敛占位；目标静态 runtime 不接受任意主题文件路径。 */
+  /** `show` / `view` 命令专用：内建 Theme 或受信任的闭合 Theme module 路径。 */
   theme: { type: "string" },
   /** `show` / `view` 命令专用:选择报告的初始页;`show` 渲染该页并在尾部附其余页索引,`view` 以它作初始路由。未命中的页 id 按用法错误退出并列出可用页 id。 */
   page: { type: "string" },
@@ -2020,8 +2016,20 @@ function runEvaluationCommand(
 
 type ReportCliCommand = "show" | "view";
 
+type ReportSelection =
+  | { readonly kind: "fixed"; readonly report: Report }
+  | { readonly kind: "config" }
+  | { readonly kind: "built-in"; readonly name: "overview" }
+  | { readonly kind: "module"; readonly path: string };
+
+type ThemeSelection =
+  | { readonly kind: "config" }
+  | { readonly kind: "built-in"; readonly name: "basalt" | "chalk" }
+  | { readonly kind: "module"; readonly path: string };
+
 interface ReportCliRequest {
   readonly command: ReportCliCommand;
+  readonly cwd: string;
   readonly root: RecordRoot;
   readonly rootPath: string;
   readonly target:
@@ -2033,7 +2041,8 @@ interface ReportCliRequest {
       readonly kind: "attempt";
       readonly attemptId: AttemptId;
     };
-  readonly report?: Report;
+  readonly reportSelection: ReportSelection;
+  readonly themeSelection: ThemeSelection;
   readonly page?: ReportRoute;
 }
 
@@ -2091,10 +2100,12 @@ function parseReportCliRequest(input: {
     const attemptId = parseCurrentAttemptLocator(locator);
     return Object.freeze({
       command: input.command,
+      cwd: input.cwd,
       root: root.right,
       rootPath,
       target: Object.freeze({ kind: "attempt" as const, attemptId }),
-      report,
+      reportSelection: Object.freeze({ kind: "fixed" as const, report }),
+      themeSelection: themeSelection(input.cwd, input.flags.theme),
       ...(page === undefined ? {} : { page }),
     });
   }
@@ -2117,10 +2128,12 @@ function parseReportCliRequest(input: {
     const report = sourceEvidenceReport();
     return Object.freeze({
       command: input.command,
+      cwd: input.cwd,
       root: root.right,
       rootPath,
       target: Object.freeze({ kind: "attempt" as const, attemptId }),
-      report,
+      reportSelection: Object.freeze({ kind: "fixed" as const, report }),
+      themeSelection: themeSelection(input.cwd, input.flags.theme),
       ...(page === undefined ? {} : { page }),
     });
   }
@@ -2140,17 +2153,20 @@ function parseReportCliRequest(input: {
     throw usageError("--experiment only combines with --latest; it cannot narrow explicit --run selection.\n");
   }
 
-  const report = resolveBuiltInReport(input.flags.report);
+  const report = reportSelection(input.cwd, input.flags.report);
+  const theme = themeSelection(input.cwd, input.flags.theme);
   const selection = input.flags.latest
     ? latestSelection(input.flags.experiment)
     : explicitSelection(runs);
 
   return Object.freeze({
     command: input.command,
+    cwd: input.cwd,
     root: root.right,
     rootPath,
     target: Object.freeze({ kind: "selection" as const, selection }),
-    ...(report === undefined ? {} : { report }),
+    reportSelection: report,
+    themeSelection: theme,
     ...(page === undefined ? {} : { page }),
   });
 }
@@ -2208,7 +2224,6 @@ function reportUnsupportedFlag(command: ReportCliCommand, flags: Flags): string 
     ["--history", flags.history],
     ["--usage", flags.usage],
     ["--stats", flags.stats],
-    ["--theme", flags.theme],
     ["--orphans", flags.orphans],
     ["--teardown", flags.teardown],
     ["--yes", flags.yes],
@@ -2228,10 +2243,28 @@ function parseReportRoute(value: string | undefined): ReportRoute | undefined {
   return parsed.right;
 }
 
-function resolveBuiltInReport(value: string | undefined): Report | undefined {
-  if (value === undefined) return undefined;
-  if (value === "overview") return defaultOverviewReport;
-  throw new CliReportModuleLoaderUnavailable({ module: value, exitCode: 1 });
+function reportSelection(cwd: string, value: string | undefined): ReportSelection {
+  if (value === undefined) return Object.freeze({ kind: "config" as const });
+  if (value === "overview") return Object.freeze({ kind: "built-in" as const, name: "overview" as const });
+  if (isTrustedModulePath(value)) {
+    return Object.freeze({ kind: "module" as const, path: resolveTrustedModulePath(cwd, value) });
+  }
+  throw usageError("--report accepts built-in overview or an explicit trusted module path.\n");
+}
+
+function themeSelection(cwd: string, value: string | undefined): ThemeSelection {
+  if (value === undefined) return Object.freeze({ kind: "config" as const });
+  if (value === "basalt" || value === "chalk") {
+    return Object.freeze({ kind: "built-in" as const, name: value });
+  }
+  if (isTrustedModulePath(value)) {
+    return Object.freeze({ kind: "module" as const, path: resolveTrustedModulePath(cwd, value) });
+  }
+  throw usageError("--theme accepts built-in basalt/chalk or an explicit trusted module path.\n");
+}
+
+function isTrustedModulePath(value: string): boolean {
+  return value.startsWith("./") || value.startsWith("../") || isAbsolute(value);
 }
 
 function explicitSelection(values: readonly string[]): AnalysisSelectionRequest {
@@ -2307,17 +2340,94 @@ function parseCurrentAttemptLocator(value: string): AttemptId {
   return decoded.right;
 }
 
-function executeCliReport(request: ReportCliRequest) {
+interface LoadedCliReportInputs {
+  readonly report: Report;
+  readonly theme: ThemeDefinition;
+  /** Record, config, and every statically discovered author module input. */
+  readonly watchInputs: readonly string[];
+}
+
+/**
+ * Config is deliberately fresh-read for every view rebuild even when CLI flags
+ * override its current Report or Theme. It is both a trusted boundary and a
+ * live input: an invalid config must not leave a stale hidden module graph.
+ */
+function loadCliReportInputs(request: ReportCliRequest): Effect.Effect<LoadedCliReportInputs, CliFailure> {
+  return Effect.gen(function* () {
+    const configured = yield* cliEffect(
+      "load trusted Report config",
+      loadTrustedReportConfig(request.cwd),
+    );
+    const selectedReport = yield* reportFromSelection(request.reportSelection, configured.report);
+    const selectedTheme = yield* themeFromSelection(request.themeSelection, configured.theme);
+    return Object.freeze({
+      report: selectedReport.value,
+      theme: selectedTheme.value,
+      watchInputs: uniqueWatchInputs([
+        request.rootPath,
+        ...configured.watchInputs,
+        ...selectedReport.watchInputs,
+        ...selectedTheme.watchInputs,
+      ]),
+    });
+  });
+}
+
+function reportFromSelection(
+  selection: ReportSelection,
+  configured: Report | undefined,
+): Effect.Effect<{ readonly value: Report; readonly watchInputs: readonly string[] }, CliFailure> {
+  switch (selection.kind) {
+    case "fixed":
+      return Effect.succeed(Object.freeze({ value: selection.report, watchInputs: Object.freeze([]) }));
+    case "config":
+      return Effect.succeed(Object.freeze({
+        value: configured ?? defaultOverviewReport,
+        watchInputs: Object.freeze([]),
+      }));
+    case "built-in":
+      return Effect.succeed(Object.freeze({ value: defaultOverviewReport, watchInputs: Object.freeze([]) }));
+    case "module":
+      return cliEffect("load trusted Report module", loadTrustedReportModule(selection.path)).pipe(
+        Effect.map((loaded) => Object.freeze({ value: loaded.report, watchInputs: loaded.watchInputs })),
+      );
+  }
+}
+
+function themeFromSelection(
+  selection: ThemeSelection,
+  configured: ThemeDefinition | undefined,
+): Effect.Effect<{ readonly value: ThemeDefinition; readonly watchInputs: readonly string[] }, CliFailure> {
+  switch (selection.kind) {
+    case "config":
+      return Effect.succeed(Object.freeze({ value: configured ?? basalt, watchInputs: Object.freeze([]) }));
+    case "built-in":
+      return Effect.succeed(Object.freeze({
+        value: selection.name === "chalk" ? chalk : basalt,
+        watchInputs: Object.freeze([]),
+      }));
+    case "module":
+      return cliEffect("load trusted Theme module", loadTrustedThemeModule(selection.path)).pipe(
+        Effect.map((loaded) => Object.freeze({ value: loaded.theme, watchInputs: loaded.watchInputs })),
+      );
+  }
+}
+
+function uniqueWatchInputs(paths: readonly string[]): readonly string[] {
+  return Object.freeze([...new Set(paths.map((path) => resolvePath(path)))].sort());
+}
+
+function executeCliReport(request: ReportCliRequest, report: Report) {
   const execution = request.target.kind === "attempt"
     ? executeReportForAttemptFromRecord({
       root: request.root,
       attemptId: request.target.attemptId,
-      ...(request.report === undefined ? {} : { report: request.report }),
+      report,
     })
     : executeReportFromRecord({
       root: request.root,
       selection: request.target.selection,
-      ...(request.report === undefined ? {} : { report: request.report }),
+      report,
     });
   return execution.pipe(
     Effect.mapError(reportExecutionFailure),
@@ -2407,7 +2517,8 @@ function runShowCommand(
       try: () => parseReportCliRequest({ command: "show", cwd, positionals, flags }),
       catch: (cause) => cliFailure("parse show arguments", cause),
     });
-    const execution = yield* executeCliReport(request);
+    const inputs = yield* loadCliReportInputs(request);
+    const execution = yield* executeCliReport(request, inputs.report);
     yield* requireKnownReportPage(execution, request.page);
     yield* showReport({
       execution,
@@ -2431,7 +2542,8 @@ function runViewCommand(
       try: () => parseReportCliRequest({ command: "view", cwd, positionals, flags }),
       catch: (cause) => cliFailure("parse view arguments", cause),
     });
-    const initial = yield* executeCliReport(request);
+    const initialInputs = yield* loadCliReportInputs(request);
+    const initial = yield* executeCliReport(request, initialInputs.report);
     yield* requireKnownReportPage(initial, request.page);
 
     if (flags.out !== undefined) {
@@ -2444,6 +2556,7 @@ function runViewCommand(
       const receipt = yield* exportStaticReport({
         execution: initial,
         out: resolvePath(cwd, flags.out),
+        theme: initialInputs.theme,
       }).pipe(
         Effect.provideService(ReportFileSystem, makeNodeReportFileSystem()),
         Effect.mapError((error) => staticExportFailure(error, resolvePath(cwd, flags.out!))),
@@ -2458,17 +2571,15 @@ function runViewCommand(
     });
     const session = yield* openReportViewSession({
       url: `http://${host.includes(":") ? `[${host}]` : host}:${port}/`,
+      theme: initialInputs.theme,
       initial: Effect.succeed(initial),
-      rebuild: () => executeCliReport(request).pipe(
-        Effect.flatMap((execution) => requireKnownReportPage(execution, request.page).pipe(Effect.as(execution))),
-        Effect.mapError(reportViewRebuildFailure),
-      ),
+      rebuild: () => rebuildReportView(request),
     }).pipe(Effect.mapError((error) => cliFailure("open report view session", error)));
     const server = yield* openViewServer({
       session,
       host,
       port,
-      watchInputs: [request.rootPath],
+      watchInputs: initialInputs.watchInputs,
     }).pipe(Effect.mapError((error) => cliFailure("open report view", error)));
     const url = request.page === undefined ? server.url : new URL(request.page, server.url).toString();
     yield* writeStdout(`niceeval view — open in a browser:\n${url}\n`);
@@ -2477,6 +2588,27 @@ function runViewCommand(
     }
     return yield* Effect.never;
   });
+}
+
+/**
+ * A watcher signal is only a hint. Every refresh re-reads config plus its
+ * fresh author graph and Record before one completed immutable revision is
+ * published; a typed boundary failure is logged once and leaves last-good.
+ */
+function rebuildReportView(request: ReportCliRequest) {
+  return Effect.gen(function* () {
+    const inputs = yield* loadCliReportInputs(request);
+    const execution = yield* executeCliReport(request, inputs.report);
+    yield* requireKnownReportPage(execution, request.page);
+    return Object.freeze({ kind: "execution" as const, execution, theme: inputs.theme });
+  }).pipe(
+    Effect.catchAll((failure) => {
+      const problem = reportViewRebuildFailure(failure);
+      return writeStderr(`view rebuild failed: ${problem.summary}\n`).pipe(
+        Effect.zipRight(Effect.fail(problem)),
+      );
+    }),
+  );
 }
 
 function staticExportFailure(error: unknown, out: string): CliFailure {
@@ -2505,8 +2637,8 @@ function viewPort(value: number | undefined): number {
 function reportViewRebuildFailure(failure: CliFailure): { readonly summary: string } {
   const summary = failure._tag === "CliUsageError"
     ? failure.message
-    : failure._tag === "CliReportModuleLoaderUnavailable"
-      ? "Report module loader is unavailable"
+    : failure.cause instanceof ReportModuleLoadError
+      ? `${failure.cause.code}: ${failure.cause.reason}`
       : failureCode(failure.cause) ?? "Report rebuild failed";
   return Object.freeze({ summary });
 }

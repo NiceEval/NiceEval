@@ -1,7 +1,10 @@
 // tsx namespaced register:整棵 import 子图都是新实例,绕开 ESM 模块缓存。
 // view 本地模式的持续重建靠它兑现「改组件 → 浏览器看到新样子」
 // (docs/feature/reports/README.md「持续重建」);query cache-busting 只能击穿入口本体。
-// 每次调用泄漏一代模块实例——dev server 可接受。品牌校验走 Symbol.for,跨实例安全。
+// 每次调用泄漏一代项目模块实例——dev server 可接受。它不能泛化为「跨实例产品都安全」：
+// Report 的身份是 package-private WeakMap。受信任的 Report loader 只在打包 candidate
+// 中使用这里的项目图，并依赖 niceeval/* ESM facade 通过 createRequire 落到同一份
+// canonical CJS graph；它随后仍以宿主 isReport 作精确验收。
 // 并发 register 会死锁,整进程串行化 namespaced import。
 
 import { register } from "tsx/esm/api";

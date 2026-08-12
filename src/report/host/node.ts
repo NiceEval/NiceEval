@@ -40,6 +40,21 @@ export type {
   ThemeSeries,
 } from "./node/theme.ts";
 
+export {
+  loadTrustedReportConfig,
+  loadTrustedReportModule,
+  loadTrustedThemeModule,
+  resolveTrustedModulePath,
+  ReportModuleLoadError,
+} from "./node/loader.ts";
+export type {
+  LoadedTrustedConfig,
+  LoadedTrustedReport,
+  LoadedTrustedTheme,
+  ReportModuleLoadCode,
+  ReportModuleLoadStage,
+} from "./node/loader.ts";
+
 export type {
   NodeViewServerError,
   ReportViewServer,
