@@ -34,13 +34,17 @@ credential value、私有 config、raw token、未规范化 options 与任意 JS
 
 ## 声明式 RecordAttachment capability
 
-Plugin blueprint 必须显式声明它可写的每个 RecordAttachment family。运行时 context 只能把该声明对应、owner 正确的 typed attachment write 写入仍未封口的 owner；它没有 raw name、path 或 JSON 写入口。
+Plugin blueprint 必须通过 [RecordAttachment 作者 SDK](../record-attachment-authoring/README.md) 的 producer
+allowlist 显式声明它可写的每个 definition。运行时 context 只接受该 occurrence allowlist 中、owner 正确的
+definition；它没有 raw name、path 或 JSON 写入口。
 
 一个 owner 的一个 attachment family 至多写一次。closed、wrong-owner、undeclared 或 duplicate write 都是具名 typed failure；不会由 last-wins、静默改写或开放写入通道处理。完整类型、provenance 与 migration 规则见 [Library](library.md)。
 
 ## 迁移与信任边界
 
-Plugin Attachment family 由应用显式注册到 migration registry / Layer。registry 只接受相邻 converter 或显式 unavailable edge，并拒绝重复 family identity。`niceeval migrate` 只使用已注册 family；它不按保存的 schema 动态 import Plugin，也不运行 Plugin factory、hook 或 lifecycle。
+Plugin Attachment definition 自带完整相邻 migration 图，应用经 `defineConfig({ recordAttachments })` 显式安装。
+registry 只表达 application trust，不重新声明 converter，也不授予 Plugin 写权限。`niceeval migrate` 不按保存的
+schema 动态 import Plugin，也不运行 Plugin factory、hook 或 lifecycle。
 
 converter 是 trusted extension。其 `Effect` requirement 为 `never`，表示 converter 不需要 NiceEval runtime service；这不是 JavaScript 沙箱，也不证明第三方代码安全。
 

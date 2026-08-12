@@ -37,34 +37,11 @@ interface GroupPluginFragment {
 
 ## 声明 typed RecordAttachment capability
 
-每个 Plugin 要写 Record 时，先在 blueprint 中列出 capability。它引用已定义的 family，而不是携带 name、schemaId 或文件路径字符串：
+每个 Plugin 要写 Record 时，先在 blueprint 中列出
+[RecordAttachment producer allowlist](../record-attachment-authoring/library.md#producer-allowlist)。allowlist 引用一个
+完整、多版本 definition，而不是携带 name、schemaId、文件路径或外部 migration edge：
 
 ```ts
-import { Effect, Schema } from "effect";
-
-interface PluginAttachmentCapability<
-  Owner extends "run" | "attempt",
-  Payload,
-> {
-  readonly owner: Owner;
-  readonly family: RecordAttachmentFamily<Owner, Payload>;
-}
-
-declare function declarePluginAttachment<
-  const Owner extends "run" | "attempt",
-  S extends Schema.Schema.AnyNoContext,
->(input: {
-  readonly family: RecordAttachmentFamily<Owner, Schema.Schema.Type<S>>;
-}): PluginAttachmentCapability<Owner, Schema.Schema.Type<S>>;
-```
-
-`Schema.Schema.AnyNoContext` 与 `Schema.Schema.Type<S>` 是 Effect 3.22.1 的实际类型名。family 已经拥有 exact JSON encoder、decoder、owner 与相邻 migration policy；Plugin 不重复定义它们。
-
-```ts
-const candidateRuntimeObservation = declarePluginAttachment({
-  family: CandidateRuntimeObservationFamily,
-});
-
 export const candidateRuntime = definePlugin({
   name: "candidate-runtime",
   behaviorRevision: "1",
@@ -75,28 +52,26 @@ export const candidateRuntime = definePlugin({
 });
 ```
 
-blueprint 的 `recordAttachments` 是 allowlist，不是自动写入。一个 owner 的同一 family 只能声明一次；link 对重复 capability identity 返回 typed conflict，即使两个 declaration 的内容相同。
+blueprint 的 `recordAttachments` 是 occurrence-local allowlist，不是 application migration registry，也不自动写入。
+Plugin 的 `behaviorRevision` 与 existing identity 继续描述 producer 行为；current Attachment presence requirement
+由 reuse contract 另行声明。一个 owner 的同一 definition 只能绑定一次；link 对重复 identity 返回 typed conflict。
 
 ## runtime write context
 
-已 link 的 lifecycle context 提供窄 `record()` 能力：
+已 link 的 lifecycle context 使用中立 owner-local `record()`：
 
 ```ts
 interface PluginRecordContext<Owner extends "run" | "attempt"> {
-  readonly record: <Payload, E, R>(
-    capability: PluginAttachmentCapability<Owner, Payload>,
-    write: RecordAttachmentWrite<Owner, E, R>,
-  ) => Effect.Effect<void, PluginRecordAttachmentWriteError | E, R>;
+  record<Definition extends AllowedPluginAttachments<Owner>>(
+    attachment: Definition,
+    payload: CurrentPayload<Definition>,
+  ): Promise<void>;
 }
-
-type PluginRecordAttachmentWriteError =
-  | { readonly code: "plugin-record-closed" }
-  | { readonly code: "plugin-record-wrong-owner" }
-  | { readonly code: "plugin-record-attachment-undeclared" }
-  | { readonly code: "plugin-record-attachment-duplicate" };
 ```
 
-`write` 只能由 capability family 的 typed attachment builder 产生，payload 与 `Schema.Schema.Type<S>` 同源。`record()` 以 builder 捕获的 family 与 capability 的 family 做 exact-identity 比较；`RecordAttachmentWrite` 的泛型保留 blob stream 的 `E` / `R`，并原样传出。`record()` 没有 raw name、path、schemaId 或 `unknown` / JSON 参数；它自己的 failure 也只暴露 opaque capability 与 owner 语义，不泄露 payload 或路径。
+blob-backed overload、eager reservation、in-flight tracking 与错误联合以中立
+[Library](../record-attachment-authoring/library.md#owner-local-record-context) 为单源。Plugin 不包装第二种 write，
+也不增加 `plugin-record-*` 平行错误词表。provenance receipt 只在 generic writer 接受同一种 typed write 后形成。
 
 | mount | 可写 owner | 封口边界 |
 |---|---|---|
@@ -104,7 +79,8 @@ type PluginRecordAttachmentWriteError =
 | Experiment `setup` / `teardown` | 当前 Run | Run 的 Record draft 封口前。 |
 | Group | 无 | Group 没有 runtime context。 |
 
-wrong-owner、undeclared、duplicate 与 closed 在 TypeScript 入口尽量不可表达；JavaScript、类型断言或错误时序仍得到上表的 typed failure。没有开放 JSON 回退入口。
+wrong-owner 与 undeclared 在 TypeScript 入口尽量不可表达；动态 JavaScript、类型断言、duplicate 或错误时序仍得到
+中立 RecordAttachment command failure。没有开放 JSON 回退入口。
 
 ## pnpm 与 Yarn
 
@@ -170,23 +146,10 @@ identity 只登记不能由 flags、requirements、Sandbox command 或 receiver 
 
 ## migration registry / Layer
 
-应用通过显式 `PluginAttachmentMigrationRegistry` Layer 提供它信任的 families。每个 family 必须登记 current definition 和每条相邻 edge：converter 或 `not-losslessly-migratable`。registry 拒绝同一 owner/name/schema identity 或 edge 的 duplicate registration。
+Plugin package 导出自己的完整 definition；应用通过
+`defineConfig({ recordAttachments: [definition] })` 安装并信任它。family-owned edge、converter、blob target、
+`R = never` 与 Git 恢复点以中立 [Library](../record-attachment-authoring/library.md) 和
+[CLI](../record-attachment-authoring/cli.md) 为单源。
 
-converter 的形状是：
-
-```ts
-type PluginAttachmentConverter<
-  Owner extends "run" | "attempt",
-  From,
-  To,
-> = (
-  source: RecordAttachmentValue<From>,
-  target: RecordAttachmentMigrationTarget<Owner, To>,
-) => Effect.Effect<
-  RecordAttachmentWrite<Owner, PluginAttachmentMigrationFailure, never>,
-  PluginAttachmentMigrationFailure,
-  never
->;
-```
-
-converter 通过 `target` builder mint target refs 和 bytes，不能交回 raw JSON、旧 ref 或路径。`R = never` 不允许依赖 NiceEval service；它不是第三方 JavaScript 的安全隔离。`niceeval migrate` 只消费显式 Layer，绝不根据保存数据 import package，也绝不运行 factory、hook、lifecycle 或 receiver。
+Plugin blueprint 的 allowlist 不隐式安装 migration。删除 Plugin producer 后，应用可以只保留 definition import
+与 config registration；`niceeval migrate` 不运行 factory、hook、lifecycle 或 receiver。

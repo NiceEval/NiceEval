@@ -39,12 +39,15 @@ before 失败时不运行尚未进入的 hook；已登记 after 仍运行。多�
 
 ## Record write 时点
 
-Plugin 只能经 blueprint 已声明的 typed attachment capability 写入。Eval hook 只写当前 Attempt，Experiment
-hook 只写当前 Run；两者都必须发生在对应 Record draft 封口前。Group 没有 runtime write context。
+Plugin 只能经 blueprint 已声明的
+[producer allowlist](../record-attachment-authoring/library.md#producer-allowlist) 写入。Eval hook 只取得 Attempt context，
+Experiment hook 只取得 Run context；两者都必须发生在对应 Record owner 封口前。Group 没有 runtime write
+context。
 
-同一 owner + attachment family 的第二次写入立即返回 `plugin-record-attachment-duplicate`。已封口、错误 owner
-或未声明 capability 分别返回 `plugin-record-closed`、`plugin-record-wrong-owner` 或
-`plugin-record-attachment-undeclared`。这些 failure 不降级为 diagnostic，更不会改写已有 Attachment。
+同一 owner + family 的第一次调用原子取得 reservation，第二次调用稳定返回中立 duplicate failure。owner seal
+等待所有 tracked Promise；closed、wrong-owner、undeclared、payload、closure 与 blob failure 不降级为 diagnostic，
+更不会改写已有 Attachment。完整并发、封口与中断语义见
+[RecordAttachment Lifecycle](../record-attachment-authoring/lifecycle.md)。
 
 ## Sandbox resource 时序
 

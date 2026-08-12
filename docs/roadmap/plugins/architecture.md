@@ -171,7 +171,10 @@ pair、provider、template 或 cohort 提升成 Run-wide 事实。
 
 ## 声明的 attachment capability
 
-blueprint 的 `recordAttachments` 是其唯一的 Record 写权限根。link 将声明的 capability 与允许的 mount、owner 绑定；runtime context 只能消费这个 opaque token 和对应的 typed write。它不能接收 name、schemaId、路径或 raw JSON。
+blueprint 的 `recordAttachments` 是其唯一的 Record 写权限根。link 按中立
+[producer allowlist](../record-attachment-authoring/library.md#producer-allowlist) 将 opaque definition 与 mount、owner
+绑定；runtime context 只能消费这个 allowlist 中的 definition。它不能接收 name、
+schemaId、路径或 raw JSON。
 
 Eval lifecycle 只能在其 Attempt 尚未封口时写 Attempt owner；Experiment lifecycle 只能在 Run 尚未封口时写 Run owner。Group 没有 runtime write context。closed、wrong-owner、undeclared 与 duplicate 都是具名 failure，既不改写已有 Attachment，也不退回开放持久化存储。
 
@@ -193,7 +196,8 @@ requirements 本身进入 manifest；它验证的 completed plan 依所属 owner
 
 ## 显式 migration registry
 
-Plugin Attachment family、相邻 converter 与 unavailable edge 由应用显式加入 migration registry / Layer。registry 以 owner、name、schema identity 和 edge 为键，拒绝 duplicate、分叉、跳过版本或不相邻 converter。
+Plugin Attachment definition 自己拥有全部版本、相邻 converter 与 unavailable edge。应用通过 config 显式安装
+整份 definition；registry 以 owner、name 与 schema identity 去重，不接收外部 edge。
 
 `niceeval migrate` 只遍历此时提供的 registry。它不从 Record bytes 推断 package 名并 import Plugin，也不调用 factory、requirements、hook、receiver lifecycle 或 runtime binding。converter 是 trusted extension：`Effect` 的 requirement 为 `never` 只限制依赖注入，并不构成 JavaScript sandbox。
 
