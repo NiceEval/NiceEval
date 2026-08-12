@@ -2,6 +2,23 @@
 
 NiceEval 保存不可变评估事实，并让分析与报告从同一份事实形成可追溯结果。
 
+## 运行与持久化
+
+**Attempt execution**:
+执行一个已经规划好的 gap，并形成一份不可变的 sealed Attempt outcome。它不选择历史事实、不决定
+reuse，也不构造任何版本化持久格式。
+_Avoid_: Record execution, Attempt writer
+
+**Invocation coordination**:
+在一次 Invocation 内组合 frozen Record view、target、reuse plan 与 Attempt execution；它穷尽处理
+reference、gap、未派发与已完成 outcome，并在最后请求发布完整 Runs。
+_Avoid_: Runner core, Record runtime
+
+**Record adaptation**:
+把某个领域已经封口的事实转换成该领域拥有的版本化 RecordAttachment。schema 版本与 migration
+停在这里；事实生产者和消费者都不构造版本化 document。
+_Avoid_: Runner serialization, Generic metadata
+
 ## 分析与报告
 
 **Analysis scope**:
