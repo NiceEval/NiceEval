@@ -180,12 +180,16 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| Transcript | Transcript | Agent 一次运行的逐事件原始事实,归一化后供消费 | [Events](feature/adapters/architecture/events.md) |
-| 标准事件流 | StreamEvent / events | Transcript 或 `send` 返回归一化成的统一事件模型 | [Events](feature/adapters/architecture/events.md) |
-| o11y 摘要 | o11y summary | 从标准事件流可重算的行为计数,注入 Sandbox 供行为断言 | [Observability](observability.md) |
-| trace 瀑布图 | Trace waterfall | OTLP span 画出的统一时间轨 | [Observability](observability.md) |
-| 用量 | Usage | 一次运行的 token 计数 | [Observability](observability.md) |
-| 成本 | Cost | 用量经价格表换算的估算金额 `estimatedCostUSD` | [Observability](observability.md) |
+| Transcript | Transcript | Adapter 的临时逐事件输入；归一后可供本次 Attempt 消费，但不是持久 Record 格式 | [Observability](observability.md) |
+| 标准事件流 | StreamEvent / events | Transcript 或 `send` 返回归一化成的临时统一事件模型 | [Events](feature/adapters/architecture/events.md) |
+| o11y 摘要 | o11y summary | 从已声明 observability projection 形成的临时派生读数；不拥有 Attachment，也不改变 Sample 分母 | [Observability](observability.md) |
+| trace 瀑布图 | Trace waterfall | 从 owner-monotonic timing interval 投影的时间关系；OTLP 只可补充本次采集 | [Observability](observability.md) |
+| 用量 | Usage | token bucket、单个 request 或 provider-observed cost 的原子 observation；不是 Attempt 总计 | [Observability](observability.md) |
+| 成本 | Cost | provider-observed cost 是事实；价格表估算、FX 与跨币种汇总是 Calculation | [Observability](observability.md) |
+| 采集状态 | Collection | 一个已写入 Attachment 的 complete 或 partial 完备度；不是 reader 的 unavailable 或 invalid 状态 | [Observability Attachments](feature/record/architecture/observability-attachments.md) |
+| 采集限制 | limitation | partial collection 必有的 closed、非空原因；表达上限、截断、脱敏或采集不足 | [Observability Attachments](feature/record/architecture/observability-attachments.md) |
+| owner-local identity | owner-local identity | producer 为 Attachment 内 turn、item、call、command、usage、interval 与 diagnostic mint 的稳定身份 | [Observability Attachments](feature/record/architecture/observability-attachments.md) |
+| Observability 联合契约 | `ObservabilityRecordContractV1` | whole-Run publish 前验证每个 Attempt 的五份与 Run 的两份官方 Attachment 的联合契约 | [Observability Attachments](feature/record/architecture/observability-attachments.md) |
 | 报告器 | Reporter | 运行中流式消费结果的插件;与运行后的 Report 不同 | [Observability](observability.md) |
 
 ### 结果落盘
@@ -205,6 +209,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Record 附件 envelope | `RecordAttachmentEnvelopeV1` | 保存 name 与 schemaId | [Record](feature/record/architecture.md#recordattachment) |
 | Record 附件 schema identity | `RecordAttachmentSchemaId` | 冻结 Attachment payload 的精确 shape 与语义 | [Record](feature/record/architecture.md#三个演进边界) |
 | Record 附件 migration | RecordAttachment migration | Attachment owner 提供的相邻 `vN → vN+1` converter 或明确不可迁移声明 | [Record](feature/record/architecture.md#migration-definition) |
+| 中立 Record 附件 projector | neutral RecordAttachmentProjector | 只把一个明确 owner 的 available Attachment 变为 typed view；不聚合、不选择 Run、不读另一 family | [Observability Attachments](feature/record/architecture/observability-attachments.md) |
 | 评估类型附件 | Evaluations Attachment | Run-owned `niceeval.evaluations/v1`；保存 Slot、Eval 与 `pass | score` | [Record](feature/record/architecture.md#内建-attachment) |
 | 源码快照 | Sources snapshot | origin Run-owned `niceeval.sources/v1`；保存当时 source closure 的 manifest 与 own blobs | [Sources manifest](feature/record/architecture.md#sources-manifest) |
 | 源码项 | source item | Sources snapshot 中由非数组 `SourceItemId`、canonical project-relative path、SHA-256 与 own blob 标识的一项源码 | [Sources manifest](feature/record/architecture.md#sources-manifest) |

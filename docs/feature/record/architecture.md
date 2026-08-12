@@ -209,8 +209,33 @@ bytes。
 | Attempt | `niceeval.verdict/v1` | 所有 Pass/Score Attempt 的四态 Verdict |
 | Attempt | `niceeval.score/v1` | Score Eval 的独立得分 |
 | Attempt | `niceeval.eligibility/v1` | reuse 所需的当时资格事实 |
+| Attempt | `niceeval.conversation/v1` | provider-neutral、用户可见的对话与操作 |
+| Attempt | `niceeval.commands/v1` | command manifest、终态 result 与安全输出 |
+| Attempt | `niceeval.usage/v1` | 原子 token、request 与 provider-observed cost |
+| Attempt | `niceeval.timing/v1` | Attempt owner-monotonic 时间区间 |
+| Attempt | `niceeval.diagnostics/v1` | Attempt advisory 与 execution-error |
+| Run | `niceeval.timing/v1` | Run owner-monotonic 时间区间 |
+| Run | `niceeval.diagnostics/v1` | Run advisory 与 execution-error |
 
 这张表描述 owner，不要求 generic writer 知道这些名字。
+
+### Observability Attachments
+
+官方 producer 对每个实际执行的 Attempt 固定写入 conversation、commands、usage、timing 与
+diagnostics 五份 Attachment。每个 Run 固定写入 timing 与 diagnostics 两份 Attachment。它们的
+owner、exact schema、collection、limitation、entity identity、blob closure、seal 与失败语义唯一由
+[Observability Attachments](architecture/observability-attachments.md) 定义。
+
+这七份 family 不替代 Assertions、Verdict、Score、Eligibility、Sources、diff、Evaluation 或
+membership provenance。确知没有 observation 的 official family 仍写 complete collection；只有历史
+或第三方 owner 从未写入该 family 时，reader 才返回 unavailable。
+
+ObservabilityRecordContractV1 在 generic writer 前联合验证每个实际 Attempt 的五份与该 Run 的两份
+official Attachment。它验证 owner-local entity 与可选 direct cross-family reference。generic writer 仍只验证 Core、
+typed Attachment、exact encoding 与 owner-local closure，不认识 official family 名称。
+
+每个 family 独立拥有相邻 migration。普通 open 不自动改写磁盘；显式 migrate 才执行完整链。
+不得从 legacy event file、当前 worktree、provider input 或其他 owner 回填迁移目标。
 
 ### Sources manifest
 
@@ -330,6 +355,11 @@ reader 与 writer 可以并发。writer lock 保证只有一个进程创建 Run�
 `RecordWriterLock`、`RecordEntropy`、`RecordGit` 与 `RecordMigrationRegistry`。
 
 ## 直接写入与发布状态机
+
+一次 official Run 在 publish 前分别完成 EvaluationRecordContract 与
+ObservabilityRecordContractV1。前者验证 Evaluation 领域事实，后者验证每个实际 Attempt 的五份
+与 Run 的两份 Observability Attachment。两个 aggregate contract 都先于 generic writer；它们不互相用
+payload 字段回填业务事实。
 
 `EvaluationRecordContract` 属于 Evaluation producer。它在调用 generic writer 前验证
 Evaluation 的业务事实，例如 AssertionResult、Verdict、Score、Slot 映射、Sources 与

@@ -1,102 +1,205 @@
-# Observability —— 事实数据、反馈与 Reports
+# Observability —— 运行反馈、持久观测与 Reports
 
-可观测数据分成两条边界：运行中的反馈服务当前进程；停稳后的业务事实写入 Record 的 owner-local RecordAttachment。Reader 和 analysis selection 把后者交给 Sample 与 Reports。
+Observability 有两条边界。运行中的反馈只服务当前进程。停稳后的业务观测写入 Record 的
+owner-local RecordAttachment。Reader、AnalysisSample 与 Report 只消费后一条边界。
+
+本页是 Observability 领域的唯一入口。七个官方 owner-specific Attachment family 的精确 durable schema、限制、
+seal 和读取语义唯一由
+[Observability Attachments](feature/record/architecture/observability-attachments.md) 定义。
+这里不复制字段表。
 
 ## 数据路径
 
-Agent、Sandbox 和 Runner 同时产生当前进程反馈以及 Run/Attempt RecordAttachment 数据。前者进入 TTY 或机器可读的进程反馈；后者经 RecordReader、analysis selection 与 Reports 呈现。
+```text
+Adapter / Sandbox / Runner
+        │
+        ├─ 运行中反馈 → TTY、机器可读进程反馈
+        │
+        └─ 收集、脱敏、seal
+                         │
+                         ▼
+            owner-local RecordAttachment
+                         │
+                         ▼
+  RecordReader → neutral projector → AnalysisSample → Calculation → Report
+```
 
-终端进度、心跳、活动行和临时计数不进入 Record。进程退出后，只有已写入 RecordAttachment 的业务数据可以由 `show`、`view` 或静态报告站读取。
+终端进度、心跳、活动行与临时计数不进入 Record。进程退出后，只有已发布 Run 内的
+RecordAttachment 能由 show、view 或静态报告读取。
 
-## 内建业务 Attachment 闭环
+## 官方持久观测
 
-下表冻结标准能力的 owner、精确 JSON payload 形状和消费入口。每个 Attachment 都由固定 envelope、exact JSON payload 与 owner-local blob closure 组成。
+官方 producer 对每个实际执行的 Attempt 固定写入五个独立 Attachment。对每个 Run 固定写入
+两个独立 Attachment。reference Member 沿精确 Attempt 引用读取，绝不复制这些 payload。
 
-reader 先解码固定 `RecordAttachmentEnvelopeV1`，再按 `(owner, name, schemaId)` 选择 payload decoder。具名 RecordAttachment projector 把自包含 payload 形成 typed view。
+| owner | schema identity | 观察范围 |
+|---|---|---|
+| Attempt | niceeval.conversation/v1 | provider-neutral、用户可见的对话和操作 |
+| Attempt | niceeval.commands/v1 | Sandbox 命令 manifest、结束结果与安全输出 |
+| Attempt | niceeval.usage/v1 | 原子 token、request 与 provider-observed cost |
+| Attempt | niceeval.timing/v1 | Attempt 本地单调时间区间 |
+| Attempt | niceeval.diagnostics/v1 | Attempt advisory 与 execution error |
+| Run | niceeval.timing/v1 | Run 本地单调时间区间 |
+| Run | niceeval.diagnostics/v1 | Run advisory 与 execution error |
 
-| producer / 事实 | owner 与 RecordAttachment | payload、collection 与 limitation 细节 | 标准消费 |
-|---|---|---|---|
-| Assertion collector | Attempt / `niceeval.assertions/v1` | exact JSON；subject、evaluator、evaluation、evidence、policy 与 projection | Attempt checks 与 score detail |
-| Assertion source capture | Attempt / `niceeval.assertion-source-sites/v1` | exact JSON；`entryId` 到 role-tagged runtime site、occurrence、sourceOrder 与 stop disposition | Assertion source navigation |
-| 四态判定 | Attempt / `niceeval.verdict/v1` | exact JSON；所有 Pass/Score Attempt 的四态 Verdict | overview、Attempt state 与 reuse planning |
-| Score Eval 得分 | Attempt / `niceeval.score/v1` | exact JSON；Score Eval 的独立得分、可排名性、stop cause 与 issues | overview 与排行 |
-| Execution eligibility | Attempt / `niceeval.eligibility/v1` | exact JSON；含 mandatory `reuseContract` | reuse planning |
-| Adapter / usage 与 provider 计费观测 | Attempt / `niceeval.usage/v1` | exact JSON；token、request 与 provider-observed cost 分开标记 | usage 与 cost cards |
-| Adapter / message、tool call、tool result | Attempt / `niceeval.conversation/v1` | exact JSON；未知 event variant 形成 collection partial | conversation/tool timeline |
-| Sandbox / command manifest 与结果 | Attempt / `niceeval.commands/v1` | exact JSON；大 stdout/stderr 可引用 owner-local blob | commands 与 evidence |
-| Sandbox ledger / 文件变化 | Attempt / `niceeval.diff/v1` | exact JSON；大 patch 可引用 owner-local blob | change summary 与 detail |
-| Runner、Adapter、Sandbox / 时间区间 | Attempt / `niceeval.timing/v1` | exact JSON；规范 phase interval 与 parent 关系 | duration 与 waterfall |
-| Attempt lifecycle / diagnostics | Attempt / `niceeval.diagnostics/v1` | exact JSON；code、phase、detail 与 context | Attempt diagnostics |
-| Eval discovery / definition | Run / `niceeval.evaluations/v1` | exact JSON；distinct evalId → `pass | score` | 离线分母分类 |
-| Run lifecycle / diagnostics | Run / `niceeval.diagnostics/v1` | exact JSON；setup、teardown、dispatch 与 stop reason | Run diagnostics |
-| Planner 与 operator / 采用原因 | Run / `niceeval.membership-provenance/v1` | exact JSON；关联 slotId、attemptId 与当时理由 | membership provenance |
-| Eval discovery / source snapshot | Run / `niceeval.sources/v1` | exact JSON；stable `SourceItemId`、canonical project-relative path、SHA-256 与 own blobs | origin source viewer |
-| Runner / invocation provenance | Run / `niceeval.run-provenance/v1` | exact JSON | Invocation detail |
+这些是独立 owner-local Attachment，不是一个可选的观测大对象。官方 producer 不能因为某类
+没有观察项而省略它：确知为空时仍写 collection 为 complete 且 limitations 为空的 payload。
+只有历史 Run 或第三方 producer 从未写入该 schema 时，reader 才把这一 family 表示为
+unavailable。
 
-这些链路都经过 producer → fixed envelope → payload decoder → RecordAttachment projector → 标准呈现。未受 projector 支持的自定义 schema 可以 `unsupported`。
+Assertions、Verdict、Score、Eligibility、Sources、diff、Evaluation 与 membership provenance
+仍由各自的 producer 拥有。它们不是这些 Observability family 的备用字段，也不会被本领域重写。
 
-Pass 与 Score 都保存四态 Verdict，Score 另有独立得分。两者都是所属评估类型的权威结果，Report 不从 Assertions 重新折叠。
+## Collection、limitation 与读取状态
 
-Attachment 的 `collection` 只表达 complete 或带 reason 的 partial。没有同名 Attachment 时，读取是 `unavailable`。截断、脱敏、采样或过滤由 payload 用结构化 limitation 说明；`unsupported`、`invalid` 等读取状态另由 `RecordAttachmentRead` 表达。
+collection 说明 producer 对一个已写入 Attachment 的采集完备度。它只有 complete 与 partial：
 
-## Run-owned Attachment
+- complete 必须带空 limitations，表示 producer 已知该列举域完整；零条 observation 也可以 complete。
+- partial 必须带至少一条封闭的结构化 limitation，说明截断、脱敏、输入不能归一、采集失败或上限。
+- unavailable 不属于 payload。它只表示 owner 下没有这份 family，或请求的是历史／第三方缺失的
+  schema。
 
-Run 保存不能归属单个 Attempt 的事实，例如题型、Experiment setup 或 teardown 诊断、共享准备计时、采用理由、源码快照，以及停止派发的原因。它们使用 Run-owned RecordAttachment，并以 eval、slot 或 Attempt identity 关联需要的上下文。
+unsupported、migration-required、migration-unavailable 与 invalid 是 RecordAttachmentRead 的读取
+状态。它们不等于 partial，也不能被投影为零、空数组或成功采集。
 
-Run-owned RecordAttachment 不复制 Attempt 的业务值。采用已有 Attempt 的 reference Member 仍读取该 immutable Attempt 的 Attachment 数据。
+所有 payload 都是 exact JSON。它们没有 metadata、attributes、data 或任意 JSON 扩展袋。
+未知字段、超出上限、重复 identity 和不符合本页限制的值都会使该 Attachment invalid。
 
-Sources 是 origin Run-owned；source-sites 是 Attempt-owned。两者只以 schema-declared
-`SourceItemId` 与 digest 做 semantic join，不能共享 blob、storage path、reader handle 或
-capability。source-sites 缺失、unsupported 或 invalid 时，Assertions 仍可读取，source navigation
-只显示 `unmapped`。
+## 用户可见对话与临时输入
 
-## 事件与归一化
+conversation 只保存 provider-neutral 的用户可见语义：
 
-Adapter 把 SDK 或 CLI 的原始流转换为稳定的 conversation、usage 与 timing payload。不受当前 decoder 支持的 event variant 不会使 Core 无效；请求它的 projection 可以 partial 或 unsupported。
+- user 与 assistant message；
+- tool call 与 tool result；
+- 已提供给用户的 thinking summary，绝不保存 hidden chain of thought；
+- subagent、input request、skill load、context injection、compaction 与 conversation error。
 
-Adapter 可以把可识别的 GenAI 语义归一为 conversation、usage 与 timing RecordAttachment。Reports 只消费 projector 明确交付的 typed view，不能直接读取 provider 输出或 Record 文件。
+Adapter 可以在内存中读取 SDK、CLI 或协议帧，但不得把 raw provider frame、原始请求体、原始响应体
+或 provider 私有 trace 属性写入 Record。不能映射到固定 variant 的输入只增加 collection limitation。
 
-raw OTLP 是否默认持久化不由本轮 Record 契约决定。无论该策略怎样选择，`niceeval.timing/v1` 都必须保留可画 waterfall 的 normalized phase intervals；关闭 raw trace 不能删除标准时间事实。
+### Transcript 标准事件流
 
-一个 span 必须归属明确的 Attempt，或归属明确的 Run。归属不明的 span 只作为局部诊断，不能被拼进任一 Attempt 的耗时或用量。
+Transcript 与标准事件流是 Adapter 的临时归一边界。它们可供本次 Attempt 的断言、反馈和
+conversation collector 使用，却不是持久格式。持久 conversation 只保留上节列出的安全 variant。
+
+### Canonical 目标: OpenTelemetry GenAI 语义约定，不发明私有 schema
+
+OTel GenAI 语义可帮助 Adapter 在内存中识别操作与时间。它不是 Record payload，也不让
+niceeval.timing/v1 保存 raw OTLP、span attribute 或 provider 名称。
+
+### 每个 Agent 一个薄 mapper
+
+每个 Adapter 把自己的协议输入映射到同一组 conversation、usage 与 timing capture 调用。
+mapper 不能让 Report 依赖 provider 分支，也不能以未知字段透传绕过 durable schema。
+
+## 命令、安全输出与诊断
+
+每次 Sandbox 命令先登记脱敏 manifest，再调用外部进程。进程结束后登记一个终态 result。
+成功、非零退出、取消与未启动都保留 observed result；成功不是由 collector 预先过滤的情况。
+
+stdout 与 stderr 分流处理。collector 先把输入转成安全 UTF-8，再应用已登记敏感值的脱敏，最后
+分别执行大小上限。每流最多保存 65,536 bytes；不超过 4,096 bytes inline，其余作为该命令
+Attachment 自己 closure 中的 blob。截断、替换非 UTF-8 或脱敏都会留下 partial limitation。
+
+这种脱敏只处理 collector 已知的敏感值。它不是未知 secret 的检测器，也不是恶意 JavaScript、
+恶意 provider 或 hostile filesystem 的安全沙箱。
+
+diagnostics 分开保存 advisory 与 execution-error。它只允许公开 code、受限安全摘要、稳定 phase、
+安全 cause chain、封闭 context 与可选 SourceItem frame。它不保存 raw Error.message、stack、
+Cause、绝对路径、secret 或任意 JSON。诊断本身不自动改变 Verdict、Score 或 Eligibility。
 
 ## 用量、成本与时间
 
-`niceeval.usage/v1` 保存 provider 报告的 token、请求和计费观测，以及足以说明读数状态的 collection。provider-observed cost 必须带 provider identity 与币种，不能冒充 NiceEval 计算值。
+usage 保存原子 observation，而非 Attempt 总计。token bucket、一个 request 与一笔
+provider-observed cost 各自是一项 observation。cost 以 canonical decimal string、provider 与
+currency 保存。
 
-价格表换算、汇总和图表属于 Calculation。派生 cost 保存 price table identity，并声明所需数据、完整度 policy、observed 与 Sample denominator。
+总 token、cache ratio、价格表估算、FX、跨币种汇总、命令成功、总耗时、critical path、
+diagnostic 分组与跨 family join 都是 Calculation。它们必须显式声明所需 projection、完整度策略、
+observed 与逻辑 Sample denominator，不能回写 Record。
 
-timing RecordAttachment 保存明确命名的区间和计时 domain。timeout、执行耗时和共享准备耗时使用各自的区间；Reports 不从目录时间或终端文本推断它们。
+每个 timing Attachment 有自己的 owner-monotonic clock。Run offset 与 Attempt offset 不能相减或
+拼接。interval 保存稳定 phase、稳定 label、startOffsetMs、durationMs、可选 parent 与终态。
+raw epoch、OTLP span、span attribute 与 provider 名称都不落盘。
 
-每个 timing interval 具有稳定 id、phase、start、duration 和可选 parent interval id。decoder 必须拒绝负 duration、重复 id、缺失 parent 或 parent cycle；标准 Report 用这些 normalized intervals 形成文字 phase 表与 waterfall。
+### 用量与成本：token / 计费
 
-partial 用量或计时读数必须显示 observed、denominator 与 partial。未采集、当前 reader 不支持和损坏输入分别保留自己的状态，不能合并为零。
+provider-observed cost 是 provider 当时报告的事实。价格表、模型价、货币换算与总成本属于独立
+Calculation 的输入和输出。缺少 provider cost 不得用估算金额冒充一项 observation。
 
-`o11y summary` 是 Report Calculation 从 conversation、usage 和 timing projections 得到的读数集合。它不拥有原始 RecordAttachment，也不改变 Sample 分母。
+### OTLP traces-统一瀑布图
 
-## 断言证据
+OTLP 可以补充本次进程的时间采集。持久瀑布图只从 normalized timing interval 投影形成。
+无法归属到明确 Run 或 Attempt 的 span 只可形成局部 diagnostic，不得加入任一 owner 的 usage、
+duration 或 timing tree。
 
-行为、usage、diff 和 Sandbox 断言只消费已声明的 RecordAttachment。采集不足时，Assertion 根据自己的需求形成 `unavailable`；它不会把缺席解释为“没有发生”。
+## owner-local identity 与组合读取
 
-完整规则见 [Assertions 证据](feature/assertions/architecture/evidence.md)。Verdict 的四态折叠见 [Verdict](feature/verdict/architecture.md)。
+turn、item、call、command、usage observation、interval 与 diagnostic 都由 producer mint
+attachment-local identity。它们不是数组下标、消息文本、时间戳或目录名称的函数。
 
-## Reports 与静态分享
+跨 family reference 是可选的。官方 seal 前，ObservabilityRecordContractV1 验证每个提供的
+reference 在同一 owner 下恰有一个 target，且 family、entity kind 与 identity 匹配。它不凭文字、
+时间或数组顺序猜 target。
 
-Reports runtime 只消费 `ReportExecution`，不打开磁盘，也不再次读取 Attachment。每页和 Calculation 只受自己声明的数据影响。
+单一 family 的 decoder 只验证自己的 payload、blob closure 和 attachment-local relation。读取端遇到
+跨 family dangling reference 时，单一 family 仍可用；请求组合视图的 projector 或 Calculation 把该
+组合结果标为 partial，并给出结构化原因。
 
-Attempt-owned projection 通过 included slot 读取。Run-owned provenance 与 diagnostics 从 selected Run 读取；sources 固定通过 included Attempt 的 origin Run 读取。
+## seal、发布与失败
 
-源码导航同时声明 Assertions、source-sites 与 attempt-origin Sources 三个中立 projection，再用
-纯 `assembleAttemptSourceTreeV1` 组合已形成的值。它不把 Record reader、source blob capability
-或当前 worktree 传给 Report；一个 `entryId` 即使有多个 site，result 与 score 仍只计一次。
+Attempt 的全部 finalizer 停稳后，官方 producer 才冻结该 Attempt 的五份 Attachment。Run teardown
+停稳后，才冻结 Run 的 timing 与 diagnostics。随后 coordinator 让
+ObservabilityRecordContractV1 对全部 owner、identity、collection、跨 family reference 与 SourceItem
+frame 联合验证。
 
-origin Run 不进入 Sample 分母，也不把 Record root、path 或 reader 暴露给 Report。
+generic Record writer 仍只验证 Core、typed Attachment、owner-local blob closure 与精确 Core
+reference。它不知道官方 observability 名称或业务规则。联合验证或任一普通写入失败时，Run 不创建
+complete marker；没有 marker 的目录不是 Record 事实。
 
-静态 export 将预渲染页面、组件宿主数据、精确 runtime、资源和 `StaticAssetManifest` 写入一个目录。浏览器离线读取该目录；它不访问源 Record、网络或之后安装的 NiceEval。
+采集不能完整时，producer 尽量 seal 已验证的安全数据，并写 partial limitation。不能安全构成 exact
+payload、联合验证失败或 Record I/O 失败保留为 typed error。它们不被伪装成 complete、空值或
+unavailable。
+
+## Projector、Calculation 与 Report 同权
+
+每个 owner-specific family 都公开一个 neutral RecordAttachmentProjector。projector 只把一份
+available Attachment 变为自包含 typed view。commands projector 在此处统一 inline 与 blob，因而
+consumer 看不到二者的物理差异。
+
+一个 projector 不汇总计数、命令成功、耗时、critical path、成本或 diagnostic 分组，也不读取另一
+family。需要这些结果的作者同时声明多个 projection，再由 Calculation 显式组合。
+
+官方 Report 与第三方 Report 都通过最终选定的公共 Record-to-Report 数据面消费这些 family。
+官方页面没有私有 reader、legacy evidence bridge 或额外数据权限。
+
+## 迁移与第三方边界
+
+本页只定义 current v1。每个 owner-specific Attachment 独立拥有相邻 schema migration。普通 open
+不会改写磁盘；用户显式运行 niceeval migrate 后才执行完整相邻链。
+
+第三方长期保存的事实必须使用自己的 versioned Attachment 与 projector。`ctx.fact`、`FactRecord`、
+`AttemptEvidence.capabilities`、`events.json`、`commands.json` 与 `trace.json` 不是新的持久契约，
+也不能作为官方或第三方 Report 的回填依据。
+
+## 宿主侧行为断言：t.o11y
+
+行为断言只消费自己声明的 evidence。缺少或 partial 的观测由该断言的完整度规则处理，不能解释为
+“没有发生”。临时 o11y summary 可以从已声明 projection 形成，但它不拥有原始 Attachment，也不
+改变 Sample denominator。
+
+## 结果可视化：niceeval view
+
+show、view 与静态报告只消费已形成的 ReportExecution。它们不重新打开 Record、不重跑 Adapter
+mapper，也不访问 provider、网络或当前 worktree。
 
 ## 相关阅读
 
-- [Record 架构](feature/record/architecture.md)
-- [Record Library](feature/record/library.md)
-- [Reports 架构](feature/reports/architecture.md)
-- [Adapter 证据](feature/adapters/architecture/evidence.md)
+- [Observability Attachments](feature/record/architecture/observability-attachments.md)
+  —— 七个 owner-specific family schema、限制、seal 和 failure 语义。
+- [Record 架构](feature/record/architecture.md) —— Core、closure、完成标识与 migration。
+- [Record Library](feature/record/library.md) —— family、capture contract 与 Effect API。
+- [Projection](feature/projection/README.md) —— owner access 与穷尽读取结果。
+- [Record-to-Report DX](design/record-to-report-dx/README.md) —— 候选作者数据面的比较材料，
+  不构成当前契约。
+- [Assertions 证据](feature/assertions/architecture/evidence.md) —— evidence 完整度怎样影响断言。
