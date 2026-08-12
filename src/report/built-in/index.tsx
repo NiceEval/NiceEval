@@ -7,6 +7,10 @@ export {
   overviewPage,
 } from "./overview.ts";
 export {
+  defaultAttemptOverviewReport,
+  attemptOverviewReport,
+} from "./attempt-overview.ts";
+export {
   defaultSourceEvidenceReport,
   sourceEvidenceReport,
 } from "./source.ts";

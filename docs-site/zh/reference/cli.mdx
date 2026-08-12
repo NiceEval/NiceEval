@@ -21,8 +21,8 @@ description: "NiceEval CLI 参考：exp、show、view、init、list 和 clean �
   <Card title="npx niceeval clean" icon="trash">
     删除明确 writer 留下的 Record 临时目录，不删除正式 Run 或 Attempt。
   </Card>
-  <Card title="npx niceeval show --run | --latest" icon="terminal">
-    在终端执行报告。用 `explicit-runs` 或 `latest-runs` 形成 `AnalysisSample`。
+  <Card title="npx niceeval show @定位符 | --run | --latest" icon="terminal">
+    在终端执行报告。精确 Attempt 定位符显示默认概览，Run 选择形成 `AnalysisSample`。
   </Card>
   <Card title="npx niceeval view" icon="eye">
     打开固定 ReportExecution 的网页结果。选择与 `show` 相同；要看编辑后的 Record，结束后重新运行。
@@ -176,9 +176,10 @@ npx niceeval exp compare --junit ./artifacts/niceeval-junit.xml
 ```bash
 npx niceeval view --latest
 npx niceeval view --run 01H...
+npx niceeval view @01H...
 ```
 
-打开本地记录查看器。它和 `show` 共用同一份默认 Report 和同一套明确选择：从已发布的 Record 按 `explicit-runs` 或 `latest-runs` 形成 `AnalysisSampleHandle`，投影所需 RecordAttachment，并执行一次 Report。
+打开本地记录查看器。它和 `show` 共用同一份默认 Report 和明确选择：精确 `@<AttemptLocator>` 显示该 Attempt 的默认概览；`--run` 或 `--latest` 从已发布的 Record 形成 `AnalysisSampleHandle`。随后命令投影所需 RecordAttachment，并执行一次 Report。
 
 此前的局部执行可能让部分 slot 以 `reference` 采用已有 Attempt。这些是当时的采用事实，不是补跑状态。同一份 `AnalysisSample` 不按可变 head 重选。`--experiment`、`--eval` 和 `--record` 对两种宿主的收窄一致。
 
@@ -188,11 +189,14 @@ npx niceeval view --run 01H...
 npx niceeval show --latest
 npx niceeval show --run 01H...
 npx niceeval show --run 01H... --run 01J...
+npx niceeval show @01H...
+npx niceeval show @01H... --source
+npx niceeval show @01H... --execution
 npx niceeval show --run 01H... --page attempt-0123456789ABCDEFGHJKMNPQRS
 npx niceeval show --run 01H... --report ./reports/summary.ts --page overview
 ```
 
-`show` 是终端报告入口，适合人直接阅读，也适合 coding agent 在上下文窗口里逐级下钻。它不接受模糊的位置选择：`--run` 与 `--latest` 二选一。单个 Attempt 详情是 `AnalysisSample` 中的参数化页面，不是另一条 selector。
+`show` 是终端报告入口，适合人直接阅读，也适合 coding agent 在上下文窗口里逐级下钻。它不接受模糊的位置选择。精确 `@<AttemptLocator>` 默认显示该 Attempt 的 Evaluation identity、evaluation kind、四态 Verdict、Assertions 和适用的 Score；加 `--source` 或 `--execution` 查看专用证据面。
 
 `--run` 可重复，只读取这些显式 Run；`--latest` 对每个目标 Experiment 按完成时间和 Run identity 的稳定规则各选择一个。`--latest --experiment <id>` 定义目标集合；不带 `--experiment` 时目标来自可读 Run 核心。目标集合为空、任一目标没有已发布 Run，或任一候选 Run 的排序核心损坏都明确失败，不缩小比较组去猜“最近一次”。Record 只包含完整发布的 Run。
 

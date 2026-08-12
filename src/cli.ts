@@ -32,6 +32,7 @@ import {
   type ExperimentId,
   type RunId,
 } from "./analysis/index.ts";
+import { defaultAttemptOverviewReport } from "./report/built-in/attempt-overview.ts";
 import { defaultOverviewReport } from "./report/built-in/overview.ts";
 import { executionEvidenceReport } from "./report/built-in/execution.ts";
 import { sourceEvidenceReport } from "./report/built-in/source.ts";
@@ -2106,10 +2107,37 @@ function parseReportCliRequest(input: {
   }
 
   if (input.positionals.length > 0) {
-    throw usageError(
-      `niceeval ${input.command} selects Record data only with --run or --latest; positional selectors are not supported.\n`,
-    );
+    if (input.positionals.length !== 1) {
+      throw usageError(
+        `niceeval ${input.command} accepts one exact Attempt locator, or a --run/--latest selection.\n`,
+      );
+    }
+    if (input.flags.latest || runs.length > 0 || input.flags.experiment !== undefined) {
+      throw usageError(
+        `niceeval ${input.command} uses its Attempt locator as the only selection; remove --latest, --run, and --experiment.\n`,
+      );
+    }
+    const locator = input.positionals[0];
+    if (locator === undefined || !locator.startsWith("@")) {
+      throw usageError(
+        `niceeval ${input.command} selects Record data only with an exact @<current-AttemptId> locator, --run, or --latest.\n`,
+      );
+    }
+    const attemptId = parseCurrentAttemptLocator(locator);
+    return Object.freeze({
+      command: input.command,
+      cwd: input.cwd,
+      root: root.right,
+      rootPath,
+      target: Object.freeze({ kind: "attempt" as const, attemptId }),
+      reportSelection: input.flags.report === undefined
+        ? Object.freeze({ kind: "fixed" as const, report: defaultAttemptOverviewReport })
+        : reportSelection(input.cwd, input.flags.report),
+      themeSelection: themeSelection(input.cwd, input.flags.theme),
+      ...(page === undefined ? {} : { page }),
+    });
   }
+
   if (input.flags.latest && runs.length > 0) {
     throw usageError("--latest and --run are mutually exclusive; choose exactly one selection policy.\n");
   }

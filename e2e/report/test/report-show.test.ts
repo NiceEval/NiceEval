@@ -56,6 +56,26 @@ test("show 从一次固定 ReportExecution 呈现内建与自定义报告", asyn
       expect(overview.stdout).toContain("Sample: 1 run(s), 3 slot(s)");
       expect(overview.stdout).toContain("No slot problems");
 
+      const attempt = await niceeval.run(
+        ["show", failed.locator!, "--record", ".niceeval/record"],
+        { cwd: root },
+      );
+      expect(attempt.exitCode, attempt.diagnostic()).toBe(0);
+      expect(attempt.stdout).toContain("Attempt overview");
+      expect(attempt.stdout).toContain("Evaluation kind");
+      expect(attempt.stdout).toContain("Verdict: failed");
+      expect(attempt.stdout).toContain("Assertions");
+      expect(attempt.stdout).toContain("mismatched");
+      expect(attempt.stdout).not.toContain("unavailable input assertions");
+      expect(attempt.stdout).not.toContain("unavailable input verdict");
+
+      const attemptJson = await niceeval.run(
+        ["show", failed.locator!, "--record", ".niceeval/record", "--json"],
+        { cwd: root },
+      );
+      expect(attemptJson.exitCode, attemptJson.diagnostic()).toBe(0);
+      expect(attemptJson.json<ShowDocument>().format).toBe("niceeval.report-show/v1");
+
       const shown = await niceeval.run(
         ["show", "--latest", "--record", ".niceeval/record", "--json"],
         { cwd: root },

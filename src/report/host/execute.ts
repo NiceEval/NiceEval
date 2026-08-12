@@ -981,6 +981,7 @@ function recordedDataProblem(input: {
     : { runId: input.entry.run.runId };
   switch (input.entry.state) {
     case "excluded":
+      return undefined;
     case "not-recorded":
     case "core-invalid":
       return recordedProblem({

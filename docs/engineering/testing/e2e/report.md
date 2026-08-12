@@ -52,9 +52,11 @@
 ```text
 niceeval show --run <runId>
 niceeval show --latest
+niceeval show @<exact-current-AttemptId>
 niceeval show --run <runId> --page /attempts/attempt-<attemptId>
 niceeval view --run <runId>
 niceeval view --latest
+niceeval view @<exact-current-AttemptId> --out <new-directory>
 niceeval view --run <runId> --out <new-directory>
 ```
 
@@ -108,7 +110,7 @@ niceeval view --run <runId> --out <new-directory>
 
 ### report-show-json
 
-`report-show.test.ts` 验证 `show --json` 输出 exact `niceeval.report-show/v1`，与 text/静态站共享同一 semantic tree、状态、分母和 problem table。
+`report-show.test.ts` 验证 bare Attempt locator 的默认报告显示 Evaluation identity、Verdict 与 Assertions；problems 只关联选中的 Slot，不把 excluded Slot 当作输入缺失。`show --json` 继续输出 exact `niceeval.report-show/v1`。两种形态与 text/静态站共享同一 semantic tree、状态、分母和 problem table。
 
 ### report-source-snapshot
 
