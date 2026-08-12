@@ -19,6 +19,11 @@ _Avoid_: Runner core, Record runtime
 停在这里；事实生产者和消费者都不构造版本化 document。
 _Avoid_: Runner serialization, Generic metadata
 
+**Record access runtime**:
+一个 host operation 内为 canonical Record root 管理 snapshot generations、lock authority 与本地 verified
+read cache 的 root-affine capability substrate。它不属于 durable Record，也不是自动刷新的 reader。
+_Avoid_: Record connection, Record runtime, Live Record reader
+
 ## 分析与报告
 
 **Analysis scope**:

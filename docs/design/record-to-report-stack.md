@@ -6,7 +6,9 @@
 ## 依赖方向
 
 ```text
-Record Core ── selection ──→ Sample（固定 population）──────┐
+Record storage ─→ Record access runtime / FrozenRecordView ─┬─→ reuse planning → ExecutionReusePlan
+                                                            │
+Record Core ── selection ──→ Sample（固定 population）──────┤
       │                                                     │
       └─ RecordAttachment + layout ─→ package access ───────┤
                                                             ▼
@@ -22,11 +24,17 @@ Report authoring（已裁决：static page + ordinary values）
 Sample 与 package access 是在 Projection 汇合的两条输入。Sample 决定 population，物理 layout 决定怎样
 读取 owner package；任何一支都不能独自形成 Report rows。
 
+Reuse planning 与 Report 是两个消费目的，不是两套 Record。它们共用 `FrozenRecordView` 的 Core、Attachment
+decoder 与 projector；前者形成当前 target 的 reuse/gap，后者形成历史 Sample 与 closed projections。
+[Record access runtime](record-runtime/README.md) 单独比较两条路径是否还共享 root-level runtime、generation 与
+verified cache 生命周期。
+
 ## 各层为什么这样落文档
 
 | 层 | 文档形态 | 理由 |
 |---|---|---|
 | Record Core | [Feature](../feature/record/README.md) | portable Core、owner 与读取公理已经固定 |
+| Record access runtime | [Design Decision](record-runtime/README.md) | 是否统一不同 open 的 root authority、generations 与 verified cache |
 | Observability layout | [Design Decision](observability-package-layout/README.md) | 七 family 与 physical packages 是互斥持久布局 |
 | Sample | [Feature](../feature/sample/README.md) | selection、四态与 frozen denominator 已固定；fluent/callback 只是语法 |
 | Projection | [Design Decision](projection-api/README.md) | runtime calls 与 static graph 提供互斥的 host guarantee |
