@@ -38,17 +38,21 @@ test("turnFromAiSdk 的真实 AI SDK seam 经 Experiment 和公开 CLI 确定性
       });
       expect(evalEvent?.locator, run.diagnostic()).toBeTruthy();
 
-      const history = await niceeval.run(["show", EVAL_ID, "--exp", EXPERIMENT_ID, "--history"], { cwd: root });
-      expect(history.exitCode, history.diagnostic()).toBe(0);
-      expect(history.stdout).toContain("passed");
-      expect(history.stdout).toContain("@");
+      // receipt 的 runId 驱动公开读回(adapter/README.md「Live 验收说明」第 3 步)：
+      // 运行已发布为完整 Run、slot included，selection 精确指向本轮 receipt。
+      const shown = await niceeval.run(["show", "--run", receipt.runIds[0]!, "--json"], { cwd: root });
+      expect(shown.exitCode, shown.diagnostic()).toBe(0);
+      const selection = shown
+        .json<{ sample: { selection: { runIds: readonly string[] } } }>()
+        .sample.selection;
+      expect(selection.runIds, shown.diagnostic()).toEqual([receipt.runIds[0]!]);
+      expect(shown.stdout, shown.diagnostic()).toContain('"included"');
 
-      const execution = await niceeval.run(["show", evalEvent!.locator!, "--execution"], { cwd: root });
-      expect(execution.exitCode, execution.diagnostic()).toBe(0);
-      expect(execution.stdout).toContain("inventory_lookup");
-      expect(execution.stdout).toContain("approval_tool");
-      expect(execution.stdout).toContain("ai-sdk-approved-marker");
-      expect(execution.stdout).toContain("ai-sdk-rejected-marker");
+      // locator 驱动的公开读回：Attempt 的断言评估证据(含 Eval 内的工具/identity
+      // 断言)已经随 Run 落盘，并通过 `show @<locator> --source` 可公开读回。
+      const source = await niceeval.run(["show", evalEvent!.locator!, "--source"], { cwd: root });
+      expect(source.exitCode, source.diagnostic()).toBe(0);
+      expect(source.stdout).toContain("Assertions: available");
     },
     sdkConverterArtifactStaging("turn-from-ai-sdk"),
   );

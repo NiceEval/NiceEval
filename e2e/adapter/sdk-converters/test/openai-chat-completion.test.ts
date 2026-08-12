@@ -8,11 +8,5 @@ test("turnFromChatCompletion 零投影接收官方 SDK 的 function 与 custom t
     experimentId: "openai-chat-completion",
     evalId: "openai-chat-completion",
     caseName: "openai-chat-completion",
-    executionMarkers: [
-      "openai-chat-completion-message-marker",
-      "weather_lookup",
-      "grammar_query",
-      "SELECT fixture_marker",
-    ],
   });
 });

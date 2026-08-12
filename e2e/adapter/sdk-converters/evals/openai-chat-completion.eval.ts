@@ -1,12 +1,15 @@
 // owner: docs/engineering/testing/e2e/adapter/sdk-converters.md#openai-chat-completion-deterministic
 import { defineEval } from "niceeval";
-import { includes, satisfies } from "niceeval/expect";
+import { equals, includes, satisfies } from "niceeval/expect";
 export default defineEval({
   description:
     "openai@6.49 ChatCompletion raw response 保留 function/custom tool 与互斥 usage",
   async test(t) {
     const turn = await t.send("openai chat completion fixture");
-    await turn.succeeded().orStop();
+    // Chat Completions 的 status 通道如实声明 partial(converter 只映射返回的响应，
+    // 不观察完整请求生命周期)，succeeded() 在非 complete 通道上不可判定；这里断言
+    // 转换器映射出的 status 值本身(显式值断言，不依赖通道 coverage)。
+    t.check(turn.status, equals("completed"));
     t.check(turn.message, includes("openai-chat-completion-message-marker"));
     t.check(
       turn.events,

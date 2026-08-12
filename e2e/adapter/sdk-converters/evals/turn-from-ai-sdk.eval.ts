@@ -15,12 +15,14 @@ export default defineEval({
       "produce deterministic AI SDK tool calls and wait for approval",
     );
     t.check(draft.status, equals("waiting"));
+    // AI SDK 的工具操作没有 command/not-command 分类，actions 通道如实降级为 partial；
+    // partial 通道上精确计数不可判定(可能有隐藏候选)，存在性断言(at-least)是能给出的
+    // 最强确定结论——call/result 配对与 output marker 由下面 satisfies 断言持有。
     draft.calledTool(
       toolMatch("inventory_lookup", {
         input: jsonMatch({ sku: "fixture-001" }),
         status: "completed",
       }),
-      { count: 1 },
     );
     t.check(
       draft.events,
