@@ -35,6 +35,25 @@ export type {
   MembershipPolicy,
   MembershipProvenance,
 } from "../eval/record/membership-provenance.ts";
+export {
+  attemptCommandsProjector,
+  attemptConversationProjector,
+  attemptDiagnosticsProjector,
+  attemptTimingProjector,
+  attemptUsageProjector,
+  runDiagnosticsProjector,
+  runTimingProjector,
+} from "../o11y/record/family-projectors.ts";
+export type {
+  AttemptDiagnosticsView,
+  AttemptTimingView,
+  CommandsView,
+  CommandStreamView,
+  ConversationView,
+  RunDiagnosticsView,
+  RunTimingView,
+  UsageView,
+} from "../o11y/record/family-projectors.ts";
 export { projectAnalysisSample } from "./runtime.ts";
 export type { ProjectedRecordAttachmentResult } from "./attachment-result.ts";
 export type { ProjectionCoverage } from "./coverage.ts";
