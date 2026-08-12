@@ -5,7 +5,9 @@ import {
   EvaluationRecordContractV1,
   buildEligibilityAttachmentWriteV1,
   buildMembershipProvenanceAttachmentWriteV1,
+  type AttemptEligibilityPayloadV1,
   type AttemptEligibilityPayloadBuildErrorV1,
+  type ComparisonProvenanceV1,
   type DurationLimitV1,
   type EqualityTokenV1,
   type EvaluationRecordContractInvalidV1,
@@ -14,14 +16,19 @@ import {
   type EvaluationSlotV1,
   type EvaluationsPayloadV1,
   type MembershipActionV1,
+  type MembershipEffectiveOptionsV1,
   type MembershipGapV1,
+  type MembershipPolicyIdentityV1,
   type MembershipProvenancePayloadBuildErrorV1,
+  type MembershipSourceBarrierV1,
+  type MembershipAttemptOriginV1,
   EXECUTION_DURATION_DOMAIN_V1,
 } from "../eval/record/index.ts";
-import { SlotIdSchema, UtcMillisSchema } from "../record/codec/identifiers.ts";
+import { RunIdSchema, SlotIdSchema, UtcMillisSchema } from "../record/codec/identifiers.ts";
 import {
   compareCanonicalIdentity,
   type AttemptId,
+  type RunId,
   type SlotId,
   type UtcMillis,
 } from "../record/model/identifiers.ts";
@@ -31,6 +38,7 @@ import {
 } from "../record/platform/services.ts";
 import { makeRecordRoot, type RecordRootConstructionError } from "../record/platform/root.ts";
 import type { RecordReaderReadError } from "../record/reader/errors.ts";
+import { openRecordReader } from "../record/reader/runtime.ts";
 import { openRecordWriteSession } from "../record/writer/runtime.ts";
 import type {
   OpenRecordWriteSessionError,
@@ -42,20 +50,31 @@ import type {
 } from "../record/writer/types.ts";
 import { cacheKey } from "./fingerprint.ts";
 import { selectedEvalsForRun } from "./eval-selection.ts";
+import { resolveAttemptTimeout } from "./timeout.ts";
 import {
   planProjectTargetReuse,
+  projectTargetPolicyIdentity,
+  type ExecutionComparison,
+  type ExecutionDurationLimit,
   type ExecutionGapSlot,
+  type ExecutionIdentity,
+  type ExecutionPolicyIdentity,
+  type ExecutionReuseEffectiveOptions,
   type ExecutionReusePlanSlot,
   type ExecutionReusePlan,
+  type ExecutionSourceBarrier,
+  type ExecutionSourceOrigin,
   type ExecutionTarget,
-  type ProjectTargetPolicyV1,
+  type ProjectTargetPolicy,
   type ProjectTargetReusePlanInvalid,
   type TargetRun,
   type TargetSlot,
 } from "./reuse-plan.ts";
 import {
+  readCurrentExecutionReusePlanReadbacks,
   readCurrentExecutionReusePlanResults,
   type CurrentReusedAttemptReadback,
+  type CurrentReuseReadback,
   type CurrentReuseReadbackPlanInvalid,
 } from "./reuse-readback.ts";
 import {
@@ -87,29 +106,99 @@ import type { SealedAttemptAssertions } from "../assertions/api.ts";
 import type {
   AgentRun,
   Attempt,
+  Config,
   DiscoveredEval,
   EvalResult,
   RunnerRecordAttachmentProducers,
 } from "./types.ts";
 
 /** Current, fully evaluated facts consumed by the Record-backed reuse policy. */
-export interface RunnerRecordReuseSlotInputV1 {
-  readonly inputIdentity: EqualityTokenV1;
-  readonly configIdentity: EqualityTokenV1;
-  readonly timeout?: DurationLimitV1;
+export interface RunnerRecordReuseSlotInput {
+  readonly inputIdentity: import("./reuse-plan.ts").ExecutionIdentity;
+  readonly configIdentity: import("./reuse-plan.ts").ExecutionIdentity;
+  readonly timeout?: ExecutionDurationLimit;
 }
 
 /** The Runner supplies current identities; this coordinator never infers them from history. */
-export interface RunnerRecordReuseInputV1 {
-  readonly policy: ProjectTargetPolicyV1;
-  readonly slotsByKey: ReadonlyMap<string, RunnerRecordReuseSlotInputV1>;
+export interface RunnerRecordReuseInput {
+  readonly policy: ProjectTargetPolicy;
+  readonly slotsByKey: ReadonlyMap<string, RunnerRecordReuseSlotInput>;
+}
+
+/** Inputs already evaluated by ProjectTarget planning; history is never an input here. */
+export interface RunnerRecordReusePreparationInput {
+  readonly evals: readonly DiscoveredEval[];
+  readonly runs: readonly AgentRun[];
+  readonly config: Pick<Config, "timeoutMs">;
+  readonly plannedFingerprints: ReadonlyMap<string, string>;
+  readonly plannedConfigHashes: ReadonlyMap<string, string>;
+  readonly rerun?: "failed" | "all";
+  readonly keepSandbox?: "failed" | "all";
+}
+
+const runnerReuseContract = Object.freeze({
+  domain: "niceeval.reuse/base-v1",
+  value: "project-target/v1",
+});
+
+/**
+ * Builds the one current-policy input used by both the writer coordinator and
+ * the dry reader. It never reads historical result files or creates legacy results.
+ */
+export function prepareRunnerRecordReuse(
+  input: RunnerRecordReusePreparationInput,
+): Effect.Effect<RunnerRecordReuseInput, RunnerRecordTargetInputMissing> {
+  return Effect.suspend(() => {
+    const slotsByKey = new Map<string, RunnerRecordReuseSlotInput>();
+    for (const run of input.runs) {
+      for (const evalDef of selectedEvalsForRun(input.evals, run)) {
+        const key = cacheKey(run, evalDef.id);
+        const fingerprint = input.plannedFingerprints.get(key);
+        const configHash = input.plannedConfigHashes.get(key);
+        if (fingerprint === undefined || configHash === undefined) {
+          return Effect.fail<RunnerRecordTargetInputMissing>(Object.freeze({
+            code: "runner-record-target-input-missing" as const,
+            key,
+          }));
+        }
+        const timeout = resolveAttemptTimeout(run, evalDef, input.config);
+        slotsByKey.set(key, Object.freeze({
+          inputIdentity: Object.freeze({
+            domain: "niceeval.input/fingerprint-v1",
+            value: fingerprint,
+          }),
+          configIdentity: Object.freeze({
+            domain: "niceeval.config/identity-v1",
+            value: configHash,
+          }),
+          ...(timeout === undefined
+            ? {}
+            : {
+                timeout: Object.freeze({
+                  domain: EXECUTION_DURATION_DOMAIN_V1,
+                  milliseconds: timeout.timeoutMs,
+                }),
+              }),
+        }));
+      }
+    }
+    return Effect.succeed(Object.freeze({
+      policy: Object.freeze({
+        identity: projectTargetPolicyIdentity,
+        reuseContract: Object.freeze({ ...runnerReuseContract }),
+        rerun: input.rerun ?? "none",
+        keepSandbox: input.keepSandbox !== undefined,
+      }),
+      slotsByKey: new Map(slotsByKey),
+    }));
+  });
 }
 
 interface PlannedRunnerRecordSlot {
   readonly evalDef: DiscoveredEval;
   readonly attempt: number;
   readonly slotId: SlotId;
-  readonly reuse: RunnerRecordReuseSlotInputV1;
+  readonly reuse: RunnerRecordReuseSlotInput;
 }
 
 interface PlannedRunnerRecordRun {
@@ -153,19 +242,15 @@ interface RunnerRecordRun<AttachmentError, AttachmentRequirements> extends Plann
 export interface RunnerRecordAttempt {
   readonly slotId: SlotId;
   readonly attemptId: AttemptId;
-  readonly locator: RecordAttemptLocatorV1;
+  readonly locator: RecordAttemptLocator;
 }
 
-declare const recordAttemptLocatorV1Brand: unique symbol;
-
 /**
- * Record v1's public locator is the complete exact durable AttemptId. It is
+ * Record's public locator is the complete exact durable AttemptId. It is
  * intentionally separate from the historical short-hash `AttemptLocator`
  * brand, whose encoder/decoder must not participate in this path.
  */
-export type RecordAttemptLocatorV1 = string & {
-  readonly [recordAttemptLocatorV1Brand]: "RecordAttemptLocatorV1";
-};
+export type RecordAttemptLocator = string;
 
 export interface RunnerRecordAttemptInvalid {
   readonly code: "runner-record-attempt-invalid";
@@ -251,8 +336,6 @@ export interface RunnerRecordCoordinator<AttachmentError, AttachmentRequirements
   readonly runIdsByExperiment: ReadonlyMap<string, string>;
   /** Scheduler authority: only these Record-planned slots bypass fresh execution. */
   readonly carriedAttemptsByKey: ReadonlyMap<string, ReadonlySet<number>>;
-  /** A legacy result may be displayed only when it names this exact reused Attempt. */
-  readonly carriedAttemptIdsBySlotKey: ReadonlyMap<string, AttemptId>;
   /** Keeps the exact sealed Assert-first result until its real duration is known. */
   readonly noteSealedOrMarkIncomplete: (
     attempt: Attempt,
@@ -281,10 +364,6 @@ function slotKey(evalId: string, attempt: number): string {
   return `${evalId}\u0000${attempt}`;
 }
 
-function slotAttemptKey(run: AgentRun, evalId: string, attempt: number): string {
-  return `${cacheKey(run, evalId)}\u0000${attempt}`;
-}
-
 function asSlotId(value: string): Either.Either<SlotId, RunnerRecordTargetIdentityInvalid> {
   const decoded = Schema.decodeUnknownEither(SlotIdSchema)(value);
   return Either.isLeft(decoded)
@@ -302,6 +381,17 @@ function asUtcMillis(value: number): UtcMillis {
     throw new Error(`Runner produced an invalid Record timestamp: ${value}`);
   }
   return decoded.right;
+}
+
+function asRunId(value: string): Either.Either<RunId, RunnerRecordTargetIdentityInvalid> {
+  const decoded = Schema.decodeUnknownEither(RunIdSchema)(value);
+  return Either.isLeft(decoded)
+    ? Either.left(Object.freeze({
+        code: "runner-record-target-identity-invalid" as const,
+        kind: "invocation" as const,
+        value,
+      }))
+    : Either.right(decoded.right);
 }
 
 /** Target Slot identity is invocation-local opaque data, minted through RecordEntropy. */
@@ -338,6 +428,26 @@ function mintInvocationId(
   );
 }
 
+/** A preview target needs valid ephemeral Run IDs but never creates a draft or writer lock. */
+function mintPreviewRunId(
+  entropy: RecordEntropyService,
+  used: ReadonlySet<string>,
+): Effect.Effect<RunId, RunnerRecordTargetIdentityInvalid> {
+  return Effect.gen(function* () {
+    for (let attempts = 0; attempts < 16; attempts += 1) {
+      const uuid = yield* entropy.uuid;
+      const runId = asRunId(`preview-run-${uuid}`);
+      if (Either.isLeft(runId)) return yield* Effect.fail(runId.left);
+      if (!used.has(runId.right)) return runId.right;
+    }
+    return yield* Effect.fail(Object.freeze({
+      code: "runner-record-target-identity-invalid" as const,
+      kind: "invocation" as const,
+      value: "RecordEntropy produced duplicate preview Run identities",
+    }));
+  });
+}
+
 function nonEmptySlots(
   slots: readonly EvaluationSlotV1[],
 ): readonly [EvaluationSlotV1, ...EvaluationSlotV1[]] {
@@ -349,14 +459,14 @@ function nonEmptySlots(
 }
 
 /** The current Record locator is the exact durable AttemptId, not a hash alias. */
-function locatorForAttemptId(attemptId: AttemptId): RecordAttemptLocatorV1 {
-  return `@${attemptId}` as RecordAttemptLocatorV1;
+function locatorForAttemptId(attemptId: AttemptId): RecordAttemptLocator {
+  return `@${attemptId}`;
 }
 
 function planRun(input: {
   readonly run: AgentRun;
   readonly evals: readonly DiscoveredEval[];
-  readonly reuse: RunnerRecordReuseInputV1;
+  readonly reuse: RunnerRecordReuseInput;
   readonly usedSlotIds: Set<string>;
   readonly entropy: RecordEntropyService;
 }): Effect.Effect<
@@ -416,6 +526,114 @@ function planRun(input: {
   });
 }
 
+/**
+ * Current dry/readback capability. Its callback runs while the FrozenRecordView
+ * remains open, so callers must project readbacks before returning from `use`.
+ * It deliberately never opens a write session, creates a draft, or takes the
+ * writer lock.
+ */
+export function withRunnerCurrentReusePreview<A, E, R>(input: {
+  readonly niceevalRoot: string;
+  readonly startedAt: number;
+  readonly evals: readonly DiscoveredEval[];
+  readonly runs: readonly AgentRun[];
+  readonly reuse: RunnerRecordReuseInput;
+  readonly use: (preview: {
+    readonly reusePlan: ExecutionReusePlan;
+    readonly readReadbacks: () => Effect.Effect<
+      readonly CurrentReuseReadback[],
+      RecordReaderReadError | CurrentReuseReadbackPlanInvalid
+    >;
+  }) => Effect.Effect<A, E, R>;
+}) {
+  return Effect.scoped(Effect.gen(function* () {
+    const rootResult = makeRecordRoot(resolvePath(input.niceevalRoot, "record"));
+    if (Either.isLeft(rootResult)) return yield* Effect.fail(rootResult.left);
+    const reader = yield* openRecordReader({ root: rootResult.right });
+    const target = yield* previewExecutionTarget({
+      startedAt: input.startedAt,
+      evals: input.evals,
+      runs: input.runs,
+      reuse: input.reuse,
+    });
+    const reusePlan = yield* planProjectTargetReuse({
+      view: reader,
+      target,
+      policy: input.reuse.policy,
+    });
+    return yield* input.use({
+      reusePlan,
+      readReadbacks: () => readCurrentExecutionReusePlanReadbacks({
+        view: reader,
+        plan: reusePlan,
+      }),
+    });
+  }));
+}
+
+function previewExecutionTarget(input: {
+  readonly startedAt: number;
+  readonly evals: readonly DiscoveredEval[];
+  readonly runs: readonly AgentRun[];
+  readonly reuse: RunnerRecordReuseInput;
+}): Effect.Effect<
+  ExecutionTarget,
+  RunnerRecordTargetInputMissing | RunnerRecordTargetIdentityInvalid,
+  RecordEntropy
+> {
+  return Effect.gen(function* () {
+    const entropy = yield* RecordEntropy;
+    const experimentIds = new Set<string>();
+    for (const run of input.runs) {
+      if (experimentIds.has(run.experimentId)) {
+        return yield* Effect.fail<RunnerRecordTargetIdentityInvalid>(Object.freeze({
+          code: "runner-record-target-identity-invalid" as const,
+          kind: "invocation" as const,
+          value: `duplicate experimentId ${JSON.stringify(run.experimentId)}`,
+        }));
+      }
+      experimentIds.add(run.experimentId);
+    }
+    const plannedRuns: PlannedRunnerRecordRun[] = [];
+    const usedSlotIds = new Set<string>();
+    for (const run of input.runs) {
+      plannedRuns.push(yield* planRun({
+        run,
+        evals: input.evals,
+        reuse: input.reuse,
+        usedSlotIds,
+        entropy,
+      }));
+    }
+
+    const usedRunIds = new Set<string>();
+    const targetRuns: TargetRun[] = [];
+    for (const planned of plannedRuns) {
+      const runId = yield* mintPreviewRunId(entropy, usedRunIds);
+      usedRunIds.add(runId);
+      targetRuns.push(Object.freeze({
+        runId,
+        experimentId: planned.run.experimentId,
+        startedAt: asUtcMillis(input.startedAt),
+        slots: Object.freeze(planned.slotEntries.map((entry) => Object.freeze({
+          runId,
+          slotId: entry.slotId,
+          experimentId: planned.run.experimentId,
+          evalId: entry.evalDef.id,
+          attempt: entry.attempt,
+          inputIdentity: entry.reuse.inputIdentity,
+          configIdentity: entry.reuse.configIdentity,
+          ...(entry.reuse.timeout === undefined ? {} : { timeout: entry.reuse.timeout }),
+        } satisfies TargetSlot))),
+      }));
+    }
+    return Object.freeze({
+      invocationId: yield* mintInvocationId(entropy),
+      runs: Object.freeze(targetRuns),
+    });
+  });
+}
+
 function attemptInvalid(): RunnerRecordAttemptInvalid {
   return Object.freeze({ code: "runner-record-attempt-invalid" as const });
 }
@@ -450,12 +668,88 @@ function observabilityContractInvalid(
   });
 }
 
+/** The Record writer is the only boundary that reintroduces durable payload shapes. */
+function durableExecutionIdentity(identity: ExecutionIdentity): EqualityTokenV1 {
+  return Object.freeze({
+    domain: identity.domain,
+    value: identity.value,
+  });
+}
+
+function durableExecutionDuration(limit: ExecutionDurationLimit): DurationLimitV1 {
+  return Object.freeze({
+    domain: limit.domain,
+    milliseconds: limit.milliseconds,
+  });
+}
+
+function durableEligibility(input: {
+  readonly reuseContract: ExecutionIdentity;
+  readonly inputIdentity: ExecutionIdentity;
+  readonly configIdentity: ExecutionIdentity;
+  readonly executionDuration: ExecutionDurationLimit;
+}): AttemptEligibilityPayloadV1 {
+  return Object.freeze({
+    reuseContract: durableExecutionIdentity(input.reuseContract),
+    inputIdentity: durableExecutionIdentity(input.inputIdentity),
+    configIdentity: durableExecutionIdentity(input.configIdentity),
+    executionDuration: durableExecutionDuration(input.executionDuration),
+  });
+}
+
+function durableMembershipPolicy(identity: ExecutionPolicyIdentity): MembershipPolicyIdentityV1 {
+  return Object.freeze({ name: identity.name, version: identity.version });
+}
+
+function durableMembershipOrigin(origin: ExecutionSourceOrigin): MembershipAttemptOriginV1 {
+  return Object.freeze({ runId: origin.runId, slotId: origin.slotId });
+}
+
+function durableMembershipBarrier(
+  barrier: ExecutionSourceBarrier,
+): MembershipSourceBarrierV1 {
+  return Object.freeze({ runId: barrier.runId, startedAt: barrier.startedAt });
+}
+
+function durableMembershipComparison(
+  comparison: ExecutionComparison,
+): ComparisonProvenanceV1 {
+  return Object.freeze({
+    attachment: comparison.attachment,
+    recordedClaim: comparison.recordedClaim,
+    sourceState: comparison.sourceState,
+    result: comparison.result,
+    reason: comparison.reason,
+  });
+}
+
+function durableMembershipComparisons(
+  comparisons: readonly ExecutionComparison[],
+): readonly ComparisonProvenanceV1[] {
+  return Object.freeze(comparisons.map(durableMembershipComparison));
+}
+
+function durableMembershipEffectiveOptions(
+  options: ExecutionReuseEffectiveOptions,
+): MembershipEffectiveOptionsV1 {
+  return Object.freeze({
+    rerun: options.rerun,
+    keepSandbox: options.keepSandbox,
+    reuseContract: Object.freeze({
+      domain: options.reuseContract.domain,
+      value: options.reuseContract.value,
+    }),
+  });
+}
+
 function gapFromPlan(slot: ExecutionGapSlot): MembershipGapV1 {
   return Object.freeze({
     reason: slot.reason,
     scope: slot.scope,
     issues: Object.freeze([...slot.issues]),
-    ...(slot.sourceBarrier === undefined ? {} : { sourceBarrier: slot.sourceBarrier }),
+    ...(slot.sourceBarrier === undefined
+      ? {}
+      : { sourceBarrier: durableMembershipBarrier(slot.sourceBarrier) }),
   });
 }
 
@@ -484,7 +778,7 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
   readonly startedAt: number;
   readonly evals: readonly DiscoveredEval[];
   readonly runs: readonly AgentRun[];
-  readonly reuse: RunnerRecordReuseInputV1;
+  readonly reuse: RunnerRecordReuseInput;
   readonly attachments?: RunnerRecordAttachmentProducers<
     AttachmentError,
     AttachmentRequirements
@@ -578,7 +872,6 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
     });
 
     const carriedAttemptsByKey = new Map<string, Set<number>>();
-    const carriedAttemptIdsBySlotKey = new Map<string, AttemptId>();
     for (const slot of reusePlan.slots) {
       const recordRun = byRecordRunId.get(slot.runId);
       if (recordRun === undefined) {
@@ -595,17 +888,13 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
       const carried = carriedAttemptsByKey.get(key) ?? new Set<number>();
       carried.add(entry.attempt);
       carriedAttemptsByKey.set(key, carried);
-      carriedAttemptIdsBySlotKey.set(
-        slotAttemptKey(recordRun.run, entry.evalDef.id, entry.attempt),
-        slot.attemptId,
-      );
     }
 
     for (const recordRun of byRun.values()) {
       const references = recordRun.target.slots.flatMap((targetSlot) => {
         const slot = recordRun.planSlots.get(targetSlot.slotId);
         return slot?.state === "reuse"
-          ? [Object.freeze({ slotId: targetSlot.slotId, attempt: slot.sourceAttempt })]
+          ? [Object.freeze({ slotId: targetSlot.slotId, attempt: slot.source.attempt })]
           : [];
       });
       const runWrites = yield* Effect.sync(() =>
@@ -696,15 +985,15 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
       const duration = executionDuration(result);
       if (duration === undefined) return Effect.fail(executionDurationInvalid(targetSlot.slotId));
 
-      const eligibility = buildEligibilityAttachmentWriteV1({
+      const eligibility = buildEligibilityAttachmentWriteV1(durableEligibility({
         reuseContract: input.reuse.policy.reuseContract,
         inputIdentity: targetSlot.plan.inputIdentity,
         configIdentity: targetSlot.plan.configIdentity,
-        executionDuration: Object.freeze({
+        executionDuration: {
           domain: EXECUTION_DURATION_DOMAIN_V1,
           milliseconds: duration,
-        }),
-      });
+        },
+      }));
       if (Either.isLeft(eligibility)) return Effect.fail(eligibility.left);
 
       return Effect.gen(function* () {
@@ -802,10 +1091,10 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
           actions.push(Object.freeze({
             action: "carried" as const,
             slotId: slot.slotId,
-            attemptId: slot.attemptId,
-            origin: slot.origin,
-            sourceBarrier: slot.sourceBarrier,
-            comparisons: Object.freeze([...slot.comparisons]),
+            attemptId: slot.source.attemptId,
+            origin: durableMembershipOrigin(slot.source.origin),
+            sourceBarrier: durableMembershipBarrier(slot.source.sourceBarrier),
+            comparisons: durableMembershipComparisons(slot.comparisons),
           }));
           continue;
         }
@@ -823,7 +1112,7 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
             slotId: slot.slotId,
             attemptId: active.public.attemptId,
             gap,
-            comparisons: Object.freeze([...slot.comparisons]),
+            comparisons: durableMembershipComparisons(slot.comparisons),
           }));
           continue;
         }
@@ -831,7 +1120,7 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
           action: state === "interrupted" ? "interrupted" as const : "not-dispatched" as const,
           slotId: slot.slotId,
           gap,
-          comparisons: Object.freeze([...slot.comparisons]),
+          comparisons: durableMembershipComparisons(slot.comparisons),
         }));
       }
       return Either.right(Object.freeze(actions));
@@ -849,7 +1138,6 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
           [key, new Set(attempts)] as const,
         ),
       ),
-      carriedAttemptIdsBySlotKey: new Map(carriedAttemptIdsBySlotKey),
       noteSealedOrMarkIncomplete,
       completeAttemptOrMarkIncomplete,
       markNotDispatched,
@@ -936,8 +1224,8 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
             const actions = membershipActionsFor(recordRun);
             if (Either.isLeft(actions)) return yield* Effect.fail(actions.left);
             const provenance = buildMembershipProvenanceAttachmentWriteV1({
-              policy: reusePlan.policy,
-              effectiveOptions: reusePlan.effectiveOptions,
+              policy: durableMembershipPolicy(reusePlan.policy),
+              effectiveOptions: durableMembershipEffectiveOptions(reusePlan.effectiveOptions),
               actions: actions.right,
             });
             if (Either.isLeft(provenance)) return yield* Effect.fail(provenance.left);

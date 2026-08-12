@@ -3,29 +3,12 @@ import {
   evaluationsAttachmentFamilyV1,
   projectEvaluationsAttachmentV1,
   type EvaluationDefinitionV1,
-  type EvaluationIdV1,
-  type EvaluationKindV1,
-  type ExperimentIdV1,
 } from "../eval/record/evaluation.ts";
 import {
   eligibilityAttachmentFamilyV1,
-  isDurationLimitV1,
-  isEqualityTokenV1,
   projectEligibilityAttachmentV1,
   type AttemptEligibilityPayloadV1,
-  type DurationLimitV1,
-  type EqualityTokenV1,
 } from "../eval/record/eligibility.ts";
-import {
-  type ComparisonAttachmentV1,
-  type ComparisonProvenanceV1,
-  type ComparisonSourceStateV1,
-  type ExecutionGapReasonV1,
-  type ExecutionGapScopeV1,
-  type MembershipAttemptOriginV1,
-  type MembershipEffectiveOptionsV1,
-  type MembershipSourceBarrierV1,
-} from "../eval/record/membership-provenance.ts";
 import {
   projectVerdictAttachmentV1,
   verdictAttachmentFamilyV1,
@@ -48,21 +31,99 @@ import type {
   FrozenRecordRun,
   FrozenRecordView,
 } from "../record/reader/types.ts";
+import type { EvaluationKind } from "./types.ts";
 
-export const PROJECT_TARGET_POLICY_NAME_V1 = "project-target" as const;
-export const PROJECT_TARGET_POLICY_VERSION_V1 = 1 as const;
-export const PROJECT_TARGET_INVOCATION_ID_MAXIMUM_LENGTH_V1 = 255 as const;
-export const PROJECT_TARGET_RECORD_IDENTITY_MAXIMUM_LENGTH_V1 = 4096 as const;
+export const PROJECT_TARGET_POLICY_NAME = "project-target" as const;
+export const PROJECT_TARGET_POLICY_VERSION = 1 as const;
+export const PROJECT_TARGET_INVOCATION_ID_MAXIMUM_LENGTH = 255 as const;
+export const PROJECT_TARGET_RECORD_IDENTITY_MAXIMUM_LENGTH = 4096 as const;
 
 export interface ExecutionPolicyIdentity {
-  readonly name: typeof PROJECT_TARGET_POLICY_NAME_V1;
-  readonly version: typeof PROJECT_TARGET_POLICY_VERSION_V1;
+  readonly name: typeof PROJECT_TARGET_POLICY_NAME;
+  readonly version: typeof PROJECT_TARGET_POLICY_VERSION;
 }
 
-export const projectTargetPolicyIdentityV1: ExecutionPolicyIdentity = Object.freeze({
-  name: PROJECT_TARGET_POLICY_NAME_V1,
-  version: PROJECT_TARGET_POLICY_VERSION_V1,
+export const projectTargetPolicyIdentity: ExecutionPolicyIdentity = Object.freeze({
+  name: PROJECT_TARGET_POLICY_NAME,
+  version: PROJECT_TARGET_POLICY_VERSION,
 });
+
+/** Version-neutral execution data normalized at the Record decoder boundary. */
+export interface ExecutionIdentity {
+  readonly domain: string;
+  readonly value: string;
+}
+
+/** A current timeout comparison, independent of the Attachment schema that stored it. */
+export interface ExecutionDurationLimit {
+  readonly domain: string;
+  readonly milliseconds: number;
+}
+
+export type ExecutionComparisonAttachment = "niceeval.eligibility/v1" | "niceeval.verdict/v1";
+export type ExecutionComparisonSourceState =
+  | "available"
+  | "unavailable"
+  | "migration-required"
+  | "migration-unavailable"
+  | "unsupported"
+  | "invalid";
+export type ExecutionComparisonResult = "match" | "mismatch" | "ineligible" | "not-comparable";
+export type ExecutionRecordedClaim =
+  | "reuse-contract"
+  | "verdict-state"
+  | "input-identity"
+  | "config-identity"
+  | "execution-duration";
+
+/** Policy comparison as a runner fact; `/v1` only appears in durable attachment identity. */
+export interface ExecutionComparison {
+  readonly attachment: ExecutionComparisonAttachment;
+  readonly recordedClaim: ExecutionRecordedClaim;
+  readonly sourceState: ExecutionComparisonSourceState;
+  readonly result: ExecutionComparisonResult;
+  readonly reason: string;
+}
+
+export type ExecutionGapReason =
+  | "no-source-run"
+  | "source-slot-missing"
+  | "source-member-missing"
+  | "source-core-invalid"
+  | "source-attachment-unavailable"
+  | "source-attachment-migration-required"
+  | "source-attachment-migration-unavailable"
+  | "source-attachment-unsupported"
+  | "source-attachment-invalid"
+  | "reuse-contract-domain-mismatch"
+  | "reuse-contract-mismatch"
+  | "verdict-ineligible"
+  | "identity-mismatch"
+  | "identity-domain-mismatch"
+  | "duration-domain-mismatch"
+  | "timeout-exceeded"
+  | "rerun-requested"
+  | "sandbox-retention-requested";
+
+export type ExecutionGapScope = "slot" | "experiment" | "target";
+
+/** The minimum exact source-membership identity required beyond AttemptId. */
+export interface ExecutionSourceOrigin {
+  readonly runId: RunId;
+  readonly slotId: SlotId;
+}
+
+/** The policy-selected source Run, represented without exposing a schema type. */
+export interface ExecutionSourceBarrier {
+  readonly runId: RunId;
+  readonly startedAt: UtcMillis;
+}
+
+export interface ExecutionReuseEffectiveOptions {
+  readonly rerun: "none" | "failed" | "all";
+  readonly keepSandbox: boolean;
+  readonly reuseContract: ExecutionIdentity;
+}
 
 /** A fully evaluated target is immutable before this planner sees it. */
 export interface ExecutionTarget {
@@ -72,7 +133,7 @@ export interface ExecutionTarget {
 
 export interface TargetRun {
   readonly runId: RunId;
-  readonly experimentId: ExperimentIdV1;
+  readonly experimentId: string;
   readonly startedAt: UtcMillis;
   readonly slots: readonly TargetSlot[];
 }
@@ -80,12 +141,30 @@ export interface TargetRun {
 export interface TargetSlot {
   readonly runId: RunId;
   readonly slotId: SlotId;
-  readonly experimentId: ExperimentIdV1;
-  readonly evalId: EvaluationIdV1;
+  readonly experimentId: string;
+  readonly evalId: string;
   readonly attempt: number;
-  readonly inputIdentity: EqualityTokenV1;
-  readonly configIdentity: EqualityTokenV1;
-  readonly timeout?: DurationLimitV1;
+  readonly inputIdentity: ExecutionIdentity;
+  readonly configIdentity: ExecutionIdentity;
+  readonly timeout?: ExecutionDurationLimit;
+}
+
+/**
+ * An exact frozen source selected from the current Record. A reuse slot owns
+ * this source; a gap may retain it as a non-authorizing candidate so dry
+ * consumers can explain what the current policy declined without searching
+ * historic paths a second time.
+ */
+export interface ExecutionReusePlanSource {
+  /** The source Run's current evaluation declaration. */
+  readonly evaluationKind: EvaluationKind;
+  readonly attemptId: FrozenRecordAttempt["attemptId"];
+  /** Scoped Record capability; it is never reconstructed from an id string. */
+  readonly attempt: FrozenRecordAttempt;
+  /** Exact origin membership that anchors the immutable Attempt. */
+  readonly origin: ExecutionSourceOrigin;
+  /** The policy-selected source Run, which may be a reference Run. */
+  readonly sourceBarrier: ExecutionSourceBarrier;
 }
 
 /**
@@ -93,39 +172,37 @@ export interface TargetSlot {
  * from a prior Attempt. This lets a new required gate change only the policy
  * token/domain and fail closed against older eligibility facts.
  */
-export interface ProjectTargetPolicyV1 {
+export interface ProjectTargetPolicy {
   readonly identity: ExecutionPolicyIdentity;
-  readonly reuseContract: EqualityTokenV1;
+  readonly reuseContract: ExecutionIdentity;
   readonly rerun: "none" | "failed" | "all";
   readonly keepSandbox: boolean;
 }
 
 export interface ExecutionReusePlanSlotBase extends TargetSlot {
-  readonly comparisons: readonly ComparisonProvenanceV1[];
+  readonly comparisons: readonly ExecutionComparison[];
 }
 
 /** A carried reference always retains Record's exact frozen Attempt capability. */
 export interface ReusePlanSlot extends ExecutionReusePlanSlotBase {
   readonly state: "reuse";
   readonly adoption: "carried";
-  /**
-   * The source Run's current `niceeval.evaluations/v1` projection. Readback
-   * uses this to decide whether a Score Attachment is semantically applicable
-   * without reopening or guessing from a legacy result shape.
-   */
-  readonly sourceEvaluationKind: EvaluationKindV1;
-  readonly attemptId: FrozenRecordAttempt["attemptId"];
-  readonly sourceAttempt: FrozenRecordAttempt;
-  readonly origin: MembershipAttemptOriginV1;
-  readonly sourceBarrier: MembershipSourceBarrierV1;
+  /** The source carries authority because every policy gate matched. */
+  readonly source: ExecutionReusePlanSource;
 }
 
 export interface ExecutionGapSlot extends ExecutionReusePlanSlotBase {
   readonly state: "gap";
-  readonly reason: ExecutionGapReasonV1;
-  readonly scope: ExecutionGapScopeV1;
+  readonly reason: ExecutionGapReason;
+  readonly scope: ExecutionGapScope;
   readonly issues: readonly RecordIssue[];
-  readonly sourceBarrier?: MembershipSourceBarrierV1;
+  readonly sourceBarrier?: ExecutionSourceBarrier;
+  /**
+   * The exact current source observed before a policy gate formed this gap.
+   * It is explanatory only: scheduler authority remains limited to
+   * `ReusePlanSlot`, never this candidate.
+   */
+  readonly candidate?: ExecutionReusePlanSource;
 }
 
 export type ExecutionReusePlanSlot = ReusePlanSlot | ExecutionGapSlot;
@@ -133,7 +210,7 @@ export type ExecutionReusePlanSlot = ReusePlanSlot | ExecutionGapSlot;
 export interface ExecutionReusePlan {
   readonly target: ExecutionTarget;
   readonly policy: ExecutionPolicyIdentity;
-  readonly effectiveOptions: MembershipEffectiveOptionsV1;
+  readonly effectiveOptions: ExecutionReuseEffectiveOptions;
   readonly slots: readonly ExecutionReusePlanSlot[];
   readonly reuse: readonly ReusePlanSlot[];
   readonly gaps: readonly ExecutionGapSlot[];
@@ -142,7 +219,7 @@ export interface ExecutionReusePlan {
 export interface ProjectTargetReusePlanInput {
   readonly view: FrozenRecordView<RecordReaderReadError>;
   readonly target: ExecutionTarget;
-  readonly policy: ProjectTargetPolicyV1;
+  readonly policy: ProjectTargetPolicy;
 }
 
 export type ProjectTargetReusePlanInvalidReason =
@@ -170,7 +247,7 @@ interface SourceCandidate {
 }
 
 export type ProjectTargetAttachmentGapReason = Extract<
-  ExecutionGapReasonV1,
+  ExecutionGapReason,
   | "source-attachment-unavailable"
   | "source-attachment-migration-required"
   | "source-attachment-migration-unavailable"
@@ -180,14 +257,14 @@ export type ProjectTargetAttachmentGapReason = Extract<
 
 export interface ProjectTargetAttachmentProblem {
   readonly reason: ProjectTargetAttachmentGapReason;
-  readonly state: ComparisonSourceStateV1;
+  readonly state: ExecutionComparisonSourceState;
   readonly issues: readonly RecordIssue[];
 }
 
 interface SourceDiscovery {
   readonly latestByExperimentEval: ReadonlyMap<string, SourceCandidate>;
   readonly unattributedProblem?: {
-    readonly reason: ExecutionGapReasonV1;
+    readonly reason: ExecutionGapReason;
     readonly issues: readonly RecordIssue[];
   };
 }
@@ -198,13 +275,13 @@ interface SourceDiscoveryAccumulator {
 }
 
 type OriginLookup =
-  | { readonly state: "available"; readonly origin: MembershipAttemptOriginV1 }
+  | { readonly state: "available"; readonly origin: ExecutionSourceOrigin }
   | { readonly state: "invalid"; readonly issues: readonly RecordIssue[] };
 
 interface AttemptEligibilityComparison {
-  readonly comparisons: readonly ComparisonProvenanceV1[];
+  readonly comparisons: readonly ExecutionComparison[];
   readonly reason?: Exclude<
-    ExecutionGapReasonV1,
+    ExecutionGapReason,
     | "no-source-run"
     | "source-slot-missing"
     | "source-member-missing"
@@ -217,13 +294,21 @@ interface AttemptEligibilityComparison {
   >;
 }
 
+/** Durable eligibility is normalized before planning facts leave this module. */
+interface RecordedExecutionEligibility {
+  readonly reuseContract: ExecutionIdentity;
+  readonly inputIdentity: ExecutionIdentity;
+  readonly configIdentity: ExecutionIdentity;
+  readonly executionDuration: ExecutionDurationLimit;
+}
+
 /**
  * Validates the immutable input before any Record I/O. This stays pure so the
  * planner never invents target identities or silently repairs duplicate slots.
  */
 export function validateProjectTargetReusePlanInput(input: {
   readonly target: ExecutionTarget;
-  readonly policy: ProjectTargetPolicyV1;
+  readonly policy: ProjectTargetPolicy;
 }): ProjectTargetReusePlanInvalid | undefined {
   const unknownInput: unknown = input;
   if (typeof unknownInput !== "object" || unknownInput === null) {
@@ -244,7 +329,7 @@ export function validateProjectTargetReusePlanInput(input: {
     typeof target.invocationId !== "string"
     || !isBoundedNonEmptyText(
       target.invocationId,
-      PROJECT_TARGET_INVOCATION_ID_MAXIMUM_LENGTH_V1,
+      PROJECT_TARGET_INVOCATION_ID_MAXIMUM_LENGTH,
     )
   ) {
     return invalidPlan("invocation-id-invalid");
@@ -268,13 +353,13 @@ export function validateProjectTargetReusePlanInput(input: {
     readonly version?: unknown;
   };
   if (
-    identity.name !== PROJECT_TARGET_POLICY_NAME_V1
-    || identity.version !== PROJECT_TARGET_POLICY_VERSION_V1
+    identity.name !== PROJECT_TARGET_POLICY_NAME
+    || identity.version !== PROJECT_TARGET_POLICY_VERSION
   ) {
     return invalidPlan("policy-unsupported");
   }
   if (
-    !isEqualityTokenV1(policy.reuseContract)
+    !isExecutionIdentity(policy.reuseContract)
     || !isRerunOption(policy.rerun)
     || typeof policy.keepSandbox !== "boolean"
   ) {
@@ -317,13 +402,13 @@ export function validateProjectTargetReusePlanInput(input: {
  * attachment states are handled outside this function, preserving the domain
  * boundary between I/O and equality/rerun policy.
  */
-export function compareProjectTargetAttemptEligibility(input: {
-  readonly eligibility: AttemptEligibilityPayloadV1;
-  readonly verdict: VerdictStateV1;
+function compareProjectTargetAttemptEligibility(input: {
+  readonly eligibility: RecordedExecutionEligibility;
+  readonly verdict: "passed" | "failed" | "errored" | "skipped";
   readonly target: TargetSlot;
-  readonly policy: ProjectTargetPolicyV1;
+  readonly policy: ProjectTargetPolicy;
 }): AttemptEligibilityComparison {
-  const comparisons: ComparisonProvenanceV1[] = [];
+  const comparisons: ExecutionComparison[] = [];
   let reason: AttemptEligibilityComparison["reason"];
   const chooseReason = (next: NonNullable<AttemptEligibilityComparison["reason"]>): void => {
     if (reason === undefined) reason = next;
@@ -442,7 +527,7 @@ export function planProjectTargetReuse(
 
       return Object.freeze({
         target: input.target,
-        policy: projectTargetPolicyIdentityV1,
+        policy: projectTargetPolicyIdentity,
         effectiveOptions: effectiveOptions(input.policy),
         slots: Object.freeze(slots),
         reuse: Object.freeze(reuse),
@@ -488,7 +573,7 @@ function sourceKeysForTarget(target: ExecutionTarget): ReadonlySet<string> {
  * candidate per requested `(experimentId, evalId)` plus one fail-closed
  * unattributed problem; candidate cardinality never determines heap use.
  */
-export function foldProjectTargetSourceCandidates(input: {
+function foldProjectTargetSourceCandidates(input: {
   readonly view: FrozenRecordView<RecordReaderReadError>;
   readonly port: FrozenRecordReaderPort;
   readonly candidates: Stream.Stream<
@@ -583,7 +668,7 @@ function planTargetSlot(input: {
   readonly view: FrozenRecordView<RecordReaderReadError>;
   readonly port: FrozenRecordReaderPort;
   readonly target: TargetSlot;
-  readonly policy: ProjectTargetPolicyV1;
+  readonly policy: ProjectTargetPolicy;
   readonly discovery: SourceDiscovery;
   readonly origins: Map<string, OriginLookup>;
 }): Effect.Effect<ExecutionReusePlanSlot, RecordReaderReadError> {
@@ -687,6 +772,14 @@ function planTargetSlot(input: {
       });
     }
 
+    const candidate: ExecutionReusePlanSource = Object.freeze({
+      evaluationKind: source.evaluation.evaluationKind,
+      attemptId: attempt.value.attemptId,
+      attempt: attempt.value,
+      origin: origin.origin,
+      sourceBarrier: barrier,
+    });
+
     const eligibilityRead = yield* input.port.readAttemptAttachment(
       input.view,
       attempt.value,
@@ -730,6 +823,7 @@ function planTargetSlot(input: {
         scope: "slot",
         issues: Object.freeze(problems.flatMap((problem) => problem.issues)),
         sourceBarrier: barrier,
+        candidate,
         comparisons,
       });
     }
@@ -737,8 +831,10 @@ function planTargetSlot(input: {
     if (eligibilityRead.state !== "available" || verdictRead.state !== "available") {
       throw new Error("available reuse Attachment was lost before projection");
     }
-    const eligibility = projectEligibilityAttachmentV1(eligibilityRead.value);
-    const verdict = projectVerdictAttachmentV1(verdictRead.value);
+    const eligibility = normalizeRecordedEligibility(
+      projectEligibilityAttachmentV1(eligibilityRead.value),
+    );
+    const verdict = normalizeRecordedVerdict(projectVerdictAttachmentV1(verdictRead.value));
     const comparison = compareProjectTargetAttemptEligibility({
       eligibility,
       verdict,
@@ -751,6 +847,7 @@ function planTargetSlot(input: {
         scope: "slot",
         issues: [],
         sourceBarrier: barrier,
+        candidate,
         comparisons: comparison.comparisons,
       });
     }
@@ -759,11 +856,7 @@ function planTargetSlot(input: {
       ...input.target,
       state: "reuse" as const,
       adoption: "carried" as const,
-      sourceEvaluationKind: source.evaluation.evaluationKind,
-      attemptId: attempt.value.attemptId,
-      sourceAttempt: attempt.value,
-      origin: origin.origin,
-      sourceBarrier: barrier,
+      source: candidate,
       comparisons: comparison.comparisons,
     });
   });
@@ -878,7 +971,7 @@ export function projectTargetAttachmentProblem<Payload>(
 
 /** Stable read-state mapping used by both source and required-Attempt facts. */
 export function projectTargetAttachmentGapReason(
-  state: Exclude<ComparisonSourceStateV1, "available">,
+  state: Exclude<ExecutionComparisonSourceState, "available">,
 ): ProjectTargetAttachmentGapReason {
   switch (state) {
     case "unavailable":
@@ -895,10 +988,10 @@ export function projectTargetAttachmentGapReason(
 }
 
 function unavailableComparison(
-  attachment: ComparisonAttachmentV1,
-  recordedClaim: ComparisonProvenanceV1["recordedClaim"],
+  attachment: ExecutionComparisonAttachment,
+  recordedClaim: ExecutionRecordedClaim,
   problem: ProjectTargetAttachmentProblem,
-): ComparisonProvenanceV1 {
+): ExecutionComparison {
   return comparison(
     attachment,
     recordedClaim,
@@ -910,12 +1003,12 @@ function unavailableComparison(
 
 function compareToken(
   recordedClaim: "reuse-contract" | "input-identity" | "config-identity",
-  source: EqualityTokenV1,
-  target: EqualityTokenV1,
+  source: ExecutionIdentity,
+  target: ExecutionIdentity,
   domainReason: "reuse-contract-domain-mismatch" | "identity-domain-mismatch",
   mismatchReason: "reuse-contract-mismatch" | "identity-mismatch",
 ): {
-  readonly comparison: ComparisonProvenanceV1;
+  readonly comparison: ExecutionComparison;
   readonly reason?: typeof domainReason | typeof mismatchReason;
 } {
   if (source.domain !== target.domain) {
@@ -954,10 +1047,10 @@ function compareToken(
 }
 
 function compareDuration(
-  source: DurationLimitV1,
-  timeout: DurationLimitV1 | undefined,
+  source: ExecutionDurationLimit,
+  timeout: ExecutionDurationLimit | undefined,
 ): {
-  readonly comparison: ComparisonProvenanceV1;
+  readonly comparison: ExecutionComparison;
   readonly reason?: "duration-domain-mismatch" | "timeout-exceeded";
 } {
   if (timeout === undefined) {
@@ -1007,48 +1100,41 @@ function compareDuration(
 }
 
 function comparison(
-  attachment: ComparisonAttachmentV1,
-  recordedClaim: ComparisonProvenanceV1["recordedClaim"],
-  sourceState: ComparisonSourceStateV1,
-  result: ComparisonProvenanceV1["result"],
+  attachment: ExecutionComparisonAttachment,
+  recordedClaim: ExecutionRecordedClaim,
+  sourceState: ExecutionComparisonSourceState,
+  result: ExecutionComparisonResult,
   reason: string,
-): ComparisonProvenanceV1 {
+): ExecutionComparison {
   return Object.freeze({ attachment, recordedClaim, sourceState, result, reason });
 }
 
 function gapSlot(
   target: TargetSlot,
   input: {
-    readonly reason: ExecutionGapReasonV1;
-    readonly scope: ExecutionGapScopeV1;
+    readonly reason: ExecutionGapReason;
+    readonly scope: ExecutionGapScope;
     readonly issues: readonly RecordIssue[];
-    readonly comparisons: readonly ComparisonProvenanceV1[];
-    readonly sourceBarrier?: MembershipSourceBarrierV1;
+    readonly comparisons: readonly ExecutionComparison[];
+    readonly sourceBarrier?: ExecutionSourceBarrier;
+    readonly candidate?: ExecutionReusePlanSource;
   },
 ): ExecutionGapSlot {
-  return input.sourceBarrier === undefined
-    ? Object.freeze({
-        ...target,
-        state: "gap" as const,
-        reason: input.reason,
-        scope: input.scope,
-        issues: Object.freeze([...input.issues]),
-        comparisons: Object.freeze([...input.comparisons]),
-      })
-    : Object.freeze({
-        ...target,
-        state: "gap" as const,
-        reason: input.reason,
-        scope: input.scope,
-        issues: Object.freeze([...input.issues]),
-        sourceBarrier: input.sourceBarrier,
-        comparisons: Object.freeze([...input.comparisons]),
-      });
+  return Object.freeze({
+    ...target,
+    state: "gap" as const,
+    reason: input.reason,
+    scope: input.scope,
+    issues: Object.freeze([...input.issues]),
+    ...(input.sourceBarrier === undefined ? {} : { sourceBarrier: input.sourceBarrier }),
+    ...(input.candidate === undefined ? {} : { candidate: input.candidate }),
+    comparisons: Object.freeze([...input.comparisons]),
+  });
 }
 
 function effectiveOptions(
-  policy: ProjectTargetPolicyV1,
-): MembershipEffectiveOptionsV1 {
+  policy: ProjectTargetPolicy,
+): ExecutionReuseEffectiveOptions {
   return Object.freeze({
     rerun: policy.rerun,
     keepSandbox: policy.keepSandbox,
@@ -1065,7 +1151,7 @@ function flattenTargetSlots(target: ExecutionTarget): readonly TargetSlot[] {
   return Object.freeze(slots);
 }
 
-function sourceBarrier(run: FrozenRecordRun): MembershipSourceBarrierV1 {
+function sourceBarrier(run: FrozenRecordRun): ExecutionSourceBarrier {
   return Object.freeze({ runId: run.runId, startedAt: run.startedAt });
 }
 
@@ -1121,9 +1207,9 @@ function isTargetSlot(value: unknown): value is TargetSlot {
     && typeof slot.attempt === "number"
     && Number.isSafeInteger(slot.attempt)
     && slot.attempt >= 0
-    && isEqualityTokenV1(slot.inputIdentity)
-    && isEqualityTokenV1(slot.configIdentity)
-    && (slot.timeout === undefined || isDurationLimitV1(slot.timeout))
+    && isExecutionIdentity(slot.inputIdentity)
+    && isExecutionIdentity(slot.configIdentity)
+    && (slot.timeout === undefined || isExecutionDurationLimit(slot.timeout))
   );
 }
 
@@ -1135,7 +1221,7 @@ function isBoundedRecordIdentity(value: string): boolean {
   return (
     isBoundedNonEmptyText(
       value,
-      PROJECT_TARGET_RECORD_IDENTITY_MAXIMUM_LENGTH_V1,
+      PROJECT_TARGET_RECORD_IDENTITY_MAXIMUM_LENGTH,
     ) && !value.includes("\u0000")
   );
 }
@@ -1144,9 +1230,54 @@ function isUtcMillis(value: unknown): value is UtcMillis {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
-function isRerunOption(value: unknown): value is ProjectTargetPolicyV1["rerun"] {
+function isRerunOption(value: unknown): value is ProjectTargetPolicy["rerun"] {
   return value === "none" || value === "failed" || value === "all";
 }
 
-/** Documentation-level alias keeps the versioned policy type aligned with cache.md. */
-export type ProjectTargetPolicy = ProjectTargetPolicyV1;
+function isExecutionIdentity(value: unknown): value is ExecutionIdentity {
+  if (typeof value !== "object" || value === null) return false;
+  const identity = value as { readonly domain?: unknown; readonly value?: unknown };
+  return typeof identity.domain === "string"
+    && isBoundedRecordIdentity(identity.domain)
+    && typeof identity.value === "string"
+    && isBoundedRecordIdentity(identity.value);
+}
+
+function isExecutionDurationLimit(value: unknown): value is ExecutionDurationLimit {
+  if (typeof value !== "object" || value === null) return false;
+  const duration = value as { readonly domain?: unknown; readonly milliseconds?: unknown };
+  return typeof duration.domain === "string"
+    && isBoundedRecordIdentity(duration.domain)
+    && typeof duration.milliseconds === "number"
+    && Number.isFinite(duration.milliseconds)
+    && duration.milliseconds >= 0;
+}
+
+function normalizeRecordedEligibility(
+  eligibility: AttemptEligibilityPayloadV1,
+): RecordedExecutionEligibility {
+  return Object.freeze({
+    reuseContract: Object.freeze({
+      domain: eligibility.reuseContract.domain,
+      value: eligibility.reuseContract.value,
+    }),
+    inputIdentity: Object.freeze({
+      domain: eligibility.inputIdentity.domain,
+      value: eligibility.inputIdentity.value,
+    }),
+    configIdentity: Object.freeze({
+      domain: eligibility.configIdentity.domain,
+      value: eligibility.configIdentity.value,
+    }),
+    executionDuration: Object.freeze({
+      domain: eligibility.executionDuration.domain,
+      milliseconds: eligibility.executionDuration.milliseconds,
+    }),
+  });
+}
+
+function normalizeRecordedVerdict(
+  verdict: VerdictStateV1,
+): "passed" | "failed" | "errored" | "skipped" {
+  return verdict;
+}
