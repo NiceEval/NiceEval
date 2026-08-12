@@ -294,8 +294,8 @@ function wrapSingleSandbox(
       if (stopped) return;
       if (stopping !== undefined) return stopping;
       const pending = (async () => {
-        // runtime 的 finalizer 通过 providerBoundaryEffect(group.stop) 执行这条 Promise；
-        // 不要从内部反向调用公开 Sandbox Promise facade。
+        // runtime 的 finalizer 通过 providerBoundaryEffect(group.stop) 执行这条 provider Promise；
+        // 不要从内部反向启动 Sandbox 的外层运行时。
         await backend.stop();
         stopped = true;
         unregisterSandbox(sandbox);
@@ -934,15 +934,16 @@ export function collectDockerComposeProviderBuildPreparation(
   published: SandboxProviderPlan,
   evalId: string,
 ): Effect.Effect<Option.Option<SandboxRuntimeBuildPreparation>, SandboxRuntimeMaterializationError> {
-  return Effect.tryPromise({
-    try: async () => {
-      const file = plan.file._tag === "Url" ? new URL(plan.file.value) : plan.file.value;
-      const collection = await collectComposeBuilds({
-        file,
-        mainService: plan.workspaceService,
-        platform: plan.collection.platform,
-        env: plan.env,
-      });
+  return Effect.gen(function* () {
+    const file = plan.file._tag === "Url" ? new URL(plan.file.value) : plan.file.value;
+    const collection = yield* collectComposeBuilds({
+      file,
+      mainService: plan.workspaceService,
+      platform: plan.collection.platform,
+      env: plan.env,
+    }).pipe(Effect.mapError((cause) => buildFailure(published, "sandbox.build-input-drift", cause)));
+    return yield* Effect.try({
+      try: () => {
       assertSameBuildKeys(plan.collection.buildKeys, collection.buildKeys, "Compose");
       if (digestOf(composeCollectionIdentity(plan.collection)) !== digestOf(composeCollectionIdentity(collection))) {
         throw new Error("Compose case inputs changed after physical planning. Restart the Run to plan the new inputs.");
@@ -951,8 +952,9 @@ export function collectDockerComposeProviderBuildPreparation(
         works: collection.works,
         provider: dockerComposeBuildProvider({ env: plan.env }),
       });
-    },
-    catch: (cause) => buildFailure(published, "sandbox.build-input-drift", cause),
+      },
+      catch: (cause) => buildFailure(published, "sandbox.build-input-drift", cause),
+    });
   });
 }
 
@@ -961,19 +963,20 @@ export function collectDockerfileProviderBuildPreparation(
   published: SandboxProviderPlan,
   evalId: string,
 ): Effect.Effect<Option.Option<SandboxRuntimeBuildPreparation>, SandboxRuntimeMaterializationError> {
-  return Effect.tryPromise({
-    try: async () => {
-      const collection = await collectDockerfileBuildFromIdentity({
-        provider: "docker",
-        profile: evalId,
-        context: plan.context,
-        dockerfile: plan.dockerfile,
-        buildArgs: plan.buildArgs,
-        ...(plan.target === undefined ? {} : { target: plan.target }),
-        platform: plan.platform,
-        expected: plan.build,
-        ...(plan.profileBinding === undefined ? {} : { dockerSocketPath: plan.profileBinding.dockerSocketPath }),
-      });
+  return Effect.gen(function* () {
+    const collection = yield* collectDockerfileBuildFromIdentity({
+      provider: "docker",
+      profile: evalId,
+      context: plan.context,
+      dockerfile: plan.dockerfile,
+      buildArgs: plan.buildArgs,
+      ...(plan.target === undefined ? {} : { target: plan.target }),
+      platform: plan.platform,
+      expected: plan.build,
+      ...(plan.profileBinding === undefined ? {} : { dockerSocketPath: plan.profileBinding.dockerSocketPath }),
+    }).pipe(Effect.mapError((cause) => buildFailure(published, "sandbox.build-input-drift", cause)));
+    return yield* Effect.try({
+      try: () => {
       if (collection.buildKey !== plan.buildKey) {
         throw new Error("Dockerfile build inputs changed after physical planning. Restart the Run to plan the new inputs.");
       }
@@ -1036,8 +1039,9 @@ export function collectDockerfileProviderBuildPreparation(
         works: [collection.work],
         provider: managedProvider,
       });
-    },
-    catch: (cause) => buildFailure(published, "sandbox.build-input-drift", cause),
+      },
+      catch: (cause) => buildFailure(published, "sandbox.build-input-drift", cause),
+    });
   });
 }
 

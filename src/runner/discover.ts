@@ -330,18 +330,17 @@ function leakGateHintsForLayer(
       ["Fix the Docker Compose declaration used by this eval SandboxLayer."],
     ),
   }).pipe(
-    Effect.flatMap(({ leakGateHintsFromComposeFile }) => Effect.tryPromise({
-      try: () => leakGateHintsFromComposeFile(composeFile, {
+    Effect.flatMap(({ leakGateHintsFromComposeFile }) =>
+      leakGateHintsFromComposeFile(composeFile, {
         mainService: leakGate.workspaceService,
         baseDir,
-      }),
-      catch: (cause) => issue(
+      }).pipe(Effect.mapError((cause) => issue(
         file,
         "discovery.leak-gate-failed",
         causeMessage(cause),
         ["Fix the Docker Compose declaration used by this eval SandboxLayer."],
-      ),
-    })),
+      ))),
+    ),
     Effect.map(({ hints }) => Option.some(hints)),
   );
 }
@@ -443,9 +442,6 @@ export function discoverEvals(
   );
 }
 
-/** @deprecated Use discoverEvals; kept as a no-runtime alias for internal migration. */
-export const discoverEvalsEffect = discoverEvals;
-
 function discoverExperimentFile(
   file: string,
   root: string,
@@ -487,9 +483,6 @@ export function discoverExperiments(
       : Effect.succeed(Object.freeze(groups.flat()))),
   );
 }
-
-/** @deprecated Use discoverExperiments; kept as a no-runtime alias for internal migration. */
-export const discoverExperimentsEffect = discoverExperiments;
 
 /** eval id 的裸字面前缀过滤；exp / show / view 共用 shared helper。 */
 export function makeFilter(patterns: string[]): (id: string) => boolean {

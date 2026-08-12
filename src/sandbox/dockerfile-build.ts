@@ -5,6 +5,7 @@
 import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, resolve as resolvePath } from "node:path";
+import { Data, Effect } from "effect";
 import type { SandboxBuildExecutionContext, SandboxBuildProvider, SandboxBuildWork } from "./build-coordinator.ts";
 import { detectDockerBuildPlatform, normalizeBuildPlatform } from "./compose.ts";
 import { computeCaseKey, type BuildKey, type CaseKey } from "./identity.ts";
@@ -38,8 +39,12 @@ export interface DockerfileBuildCollection {
   readonly providerIdentityMarker?: import("../shared/types.ts").JsonValue;
 }
 
+export class DockerfileBuildCollectionError extends Data.TaggedError("DockerfileBuildCollectionError")<{
+  readonly message: string;
+}> {}
+
 /** ProviderModule 的 typed Dockerfile 收集入口；不从作者输入逆向重建计划。 */
-export async function collectDockerfileBuildFromIdentity(input: {
+export function collectDockerfileBuildFromIdentity(input: {
   readonly provider: "docker" | "e2b";
   readonly profile: string;
   readonly context: SandboxLocation;
@@ -49,55 +54,66 @@ export async function collectDockerfileBuildFromIdentity(input: {
   readonly platform: string;
   readonly expected: DockerfileBuildIdentity;
   readonly dockerSocketPath?: string;
-}): Promise<DockerfileBuildCollection> {
-  const context = input.context._tag === "Url" ? new URL(input.context.value) : input.context.value;
-  const identity = await resolveDockerfileBuildIdentity({
-    provider: input.provider,
-    context,
-    dockerfile: input.dockerfile,
-    buildArgs: input.buildArgs,
-    ...(input.target === undefined ? {} : { target: input.target }),
-    platform: input.platform,
-    label: `sandbox profile ${input.profile}`,
-  });
-  if (identity.buildKey !== input.expected.buildKey) {
-    throw new Error("Dockerfile build inputs changed after physical planning. Restart the Run to plan the new inputs.");
-  }
-  const caseKey = computeCaseKey({
-    caseKind: "on-demand-build",
-    materializerRevision: DOCKERFILE_MATERIALIZER_REVISION,
-    buildKeys: [identity.buildKey],
-    caseParams: { provider: input.provider, profile: input.profile, buildKey: identity.buildKey },
-  });
-  const details: DockerfileBuildDetails = {
-    provider: input.provider,
-    contextDir: identity.contextDir,
-    dockerfilePath: identity.dockerfilePath,
-    dockerfile: identity.dockerfile,
-    buildArgs: input.buildArgs,
-    ...(input.target === undefined ? {} : { target: input.target }),
-    platform: input.platform,
-    ...(input.dockerSocketPath === undefined ? {} : { dockerSocketPath: input.dockerSocketPath }),
-  };
-  return Object.freeze({
-    buildKey: identity.buildKey,
-    caseKey,
-    details,
-    ...(identity.providerIdentityMarker === undefined ? {} : { providerIdentityMarker: identity.providerIdentityMarker }),
-    work: Object.freeze({
-      buildKey: identity.buildKey,
+}): Effect.Effect<DockerfileBuildCollection, DockerfileBuildCollectionError> {
+  return Effect.gen(function* () {
+    const context = input.context._tag === "Url" ? new URL(input.context.value) : input.context.value;
+    const identity = yield* resolveDockerfileBuildIdentity({
       provider: input.provider,
-      label: `${input.provider}:dockerfile:${input.profile}`,
-      inputs: Object.freeze({
-        kind: "dockerfile",
-        profile: input.profile,
-        platform: input.platform,
-        context: identity.contextDir,
-        dockerfile: identity.dockerfilePath,
-        contextFilterRules: identity.contextFilterRules,
-        args: input.buildArgs,
+      context,
+      dockerfile: input.dockerfile,
+      buildArgs: input.buildArgs,
+      ...(input.target === undefined ? {} : { target: input.target }),
+      platform: input.platform,
+      label: `sandbox profile ${input.profile}`,
+    }).pipe(Effect.mapError((cause) => new DockerfileBuildCollectionError({ message: cause.message })));
+    if (identity.buildKey !== input.expected.buildKey) {
+      return yield* Effect.fail(new DockerfileBuildCollectionError({
+        message: "Dockerfile build inputs changed after physical planning. Restart the Run to plan the new inputs.",
+      }));
+    }
+    return yield* Effect.try({
+      try: () => {
+        const caseKey = computeCaseKey({
+          caseKind: "on-demand-build",
+          materializerRevision: DOCKERFILE_MATERIALIZER_REVISION,
+          buildKeys: [identity.buildKey],
+          caseParams: { provider: input.provider, profile: input.profile, buildKey: identity.buildKey },
+        });
+        const details: DockerfileBuildDetails = {
+          provider: input.provider,
+          contextDir: identity.contextDir,
+          dockerfilePath: identity.dockerfilePath,
+          dockerfile: identity.dockerfile,
+          buildArgs: input.buildArgs,
+          ...(input.target === undefined ? {} : { target: input.target }),
+          platform: input.platform,
+          ...(input.dockerSocketPath === undefined ? {} : { dockerSocketPath: input.dockerSocketPath }),
+        };
+        return Object.freeze({
+          buildKey: identity.buildKey,
+          caseKey,
+          details,
+          ...(identity.providerIdentityMarker === undefined ? {} : { providerIdentityMarker: identity.providerIdentityMarker }),
+          work: Object.freeze({
+            buildKey: identity.buildKey,
+            provider: input.provider,
+            label: `${input.provider}:dockerfile:${input.profile}`,
+            inputs: Object.freeze({
+              kind: "dockerfile",
+              profile: input.profile,
+              platform: input.platform,
+              context: identity.contextDir,
+              dockerfile: identity.dockerfilePath,
+              contextFilterRules: identity.contextFilterRules,
+              args: input.buildArgs,
+            }),
+          }),
+        });
+      },
+      catch: (cause) => new DockerfileBuildCollectionError({
+        message: cause instanceof Error ? cause.message : String(cause),
       }),
-    }),
+    });
   });
 }
 

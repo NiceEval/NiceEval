@@ -4,6 +4,7 @@
 import { readFile } from "node:fs/promises";
 import { isAbsolute, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
+import { Data, Effect } from "effect";
 import { buildContextIdentityContribution } from "../runner/leak-gate.ts";
 import type { JsonValue } from "../shared/types.ts";
 import {
@@ -34,40 +35,66 @@ export interface DockerfileBuildIdentity {
   readonly providerIdentityMarker?: JsonValue;
 }
 
-export async function resolveDockerfileBuildIdentity(
+export class DockerfileBuildIdentityError extends Data.TaggedError("DockerfileBuildIdentityError")<{
+  readonly stage: "dockerfile" | "context" | "identity";
+  readonly message: string;
+}> {}
+
+function identityError(
+  stage: DockerfileBuildIdentityError["stage"],
+  cause: unknown,
+): DockerfileBuildIdentityError {
+  return new DockerfileBuildIdentityError({
+    stage,
+    message: cause instanceof Error ? cause.message : String(cause),
+  });
+}
+
+export function resolveDockerfileBuildIdentity(
   input: DockerfileBuildIdentityInput,
-): Promise<DockerfileBuildIdentity> {
-  const rawContext = input.context instanceof URL ? fileURLToPath(input.context) : input.context;
-  const contextDir = isAbsolute(rawContext)
-    ? rawContext
-    : resolvePath(input.baseDir ?? process.cwd(), rawContext);
-  const dockerfilePath = resolvePath(contextDir, input.dockerfile ?? "Dockerfile");
-  const dockerfile = await readFile(dockerfilePath, "utf8").catch(() => {
-    throw new Error(`Dockerfile not found at ${dockerfilePath}`);
-  });
-  const { contextDigest, contextFilterRules } = await buildContextIdentityContribution({
-    contextDir,
-    label: input.label ?? "Dockerfile sandbox",
-  });
-  const base = dockerfileBaseIdentity(dockerfile, input.target);
-  const buildKey = computeBuildKey({
-    builderKind: `${input.provider}-dockerfile`,
-    builderRevision: DOCKERFILE_MATERIALIZER_REVISION,
-    platform: input.platform,
-    dockerfile,
-    contextDigest,
-    fromDigest: base.fromDigest,
-    contextFilterRules,
-    ...(input.buildArgs !== undefined ? { buildArgs: input.buildArgs } : {}),
-    ...(input.target !== undefined ? { target: input.target } : {}),
-  });
-  return Object.freeze({
-    buildKey,
-    contextDir,
-    dockerfilePath,
-    dockerfile,
-    contextFilterRules,
-    ...(base.providerIdentityMarker === undefined ? {} : { providerIdentityMarker: base.providerIdentityMarker }),
+): Effect.Effect<DockerfileBuildIdentity, DockerfileBuildIdentityError> {
+  return Effect.gen(function* () {
+    const rawContext = input.context instanceof URL ? fileURLToPath(input.context) : input.context;
+    const contextDir = isAbsolute(rawContext)
+      ? rawContext
+      : resolvePath(input.baseDir ?? process.cwd(), rawContext);
+    const dockerfilePath = resolvePath(contextDir, input.dockerfile ?? "Dockerfile");
+    const dockerfile = yield* Effect.tryPromise({
+      try: () => readFile(dockerfilePath, "utf8"),
+      catch: () => new DockerfileBuildIdentityError({
+        stage: "dockerfile",
+        message: `Dockerfile not found at ${dockerfilePath}`,
+      }),
+    });
+    const { contextDigest, contextFilterRules } = yield* buildContextIdentityContribution({
+      contextDir,
+      label: input.label ?? "Dockerfile sandbox",
+    }).pipe(Effect.mapError((cause) => identityError("context", cause)));
+    return yield* Effect.try({
+      try: () => {
+        const base = dockerfileBaseIdentity(dockerfile, input.target);
+        const buildKey = computeBuildKey({
+          builderKind: `${input.provider}-dockerfile`,
+          builderRevision: DOCKERFILE_MATERIALIZER_REVISION,
+          platform: input.platform,
+          dockerfile,
+          contextDigest,
+          fromDigest: base.fromDigest,
+          contextFilterRules,
+          ...(input.buildArgs !== undefined ? { buildArgs: input.buildArgs } : {}),
+          ...(input.target !== undefined ? { target: input.target } : {}),
+        });
+        return Object.freeze({
+          buildKey,
+          contextDir,
+          dockerfilePath,
+          dockerfile,
+          contextFilterRules,
+          ...(base.providerIdentityMarker === undefined ? {} : { providerIdentityMarker: base.providerIdentityMarker }),
+        });
+      },
+      catch: (cause) => identityError("identity", cause),
+    });
   });
 }
 
