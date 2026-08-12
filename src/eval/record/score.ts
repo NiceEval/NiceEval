@@ -290,7 +290,14 @@ export function buildScorePayloadV1(
           state: "unavailable" as const,
           reasons: nonEmptyReasons,
         }),
-      );
+  );
+}
+
+/** Wraps an already validated durable Score payload in its Attempt Attachment. */
+export function createScoreAttachmentWriteV1(
+  payload: ScorePayloadV1,
+): RecordAttachmentWrite<"attempt", never, never> {
+  return makeNoBlobRecordAttachmentWriteV1(scoreAttachmentFamilyV1, payload);
 }
 
 /** Builds the real Attempt-owned Score write from sealed score contributions. */
@@ -304,12 +311,7 @@ export function buildScoreAttachmentWriteV1(
   if (Either.isLeft(payload)) {
     return Either.left(payload.left);
   }
-  return Either.right(
-    makeNoBlobRecordAttachmentWriteV1(
-      scoreAttachmentFamilyV1,
-      payload.right,
-    ),
-  );
+  return Either.right(createScoreAttachmentWriteV1(payload.right));
 }
 
 export type ScoreCoherenceIssueV1 =

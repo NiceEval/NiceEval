@@ -93,14 +93,18 @@ export function buildVerdictPayloadV1(
   return Object.freeze({ state: foldVerdictV1(input) });
 }
 
+/** Wraps an already validated durable Verdict payload in its Attempt Attachment. */
+export function createVerdictAttachmentWriteV1(
+  payload: VerdictPayloadV1,
+): RecordAttachmentWrite<"attempt", never, never> {
+  return makeNoBlobRecordAttachmentWriteV1(verdictAttachmentFamilyV1, payload);
+}
+
 /** Builds the real Attempt-owned write without embedding Score or diagnostics. */
 export function buildVerdictAttachmentWriteV1(
   input: VerdictFoldInputV1,
 ): RecordAttachmentWrite<"attempt", never, never> {
-  return makeNoBlobRecordAttachmentWriteV1(
-    verdictAttachmentFamilyV1,
-    buildVerdictPayloadV1(input),
-  );
+  return createVerdictAttachmentWriteV1(buildVerdictPayloadV1(input));
 }
 
 export type VerdictCoherenceIssueV1 = {

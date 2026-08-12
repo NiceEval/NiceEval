@@ -58,17 +58,16 @@ import {
   type EvaluationAttemptFactsV1,
 } from "./sealed-assertion.ts";
 import {
-  buildScoreAttachmentWriteV1,
-  buildScorePayloadV1,
+  createScoreAttachmentWriteV1,
   decodeScorePayloadV1,
-  type ScorePayloadBuildErrorV1,
   type ScorePayloadV1,
+  ScorePayloadV1Schema,
 } from "./score.ts";
 import {
-  buildVerdictAttachmentWriteV1,
-  buildVerdictPayloadV1,
+  createVerdictAttachmentWriteV1,
   decodeVerdictPayloadV1,
   type VerdictPayloadV1,
+  VerdictPayloadV1Schema,
 } from "./verdict.ts";
 
 /**
@@ -104,8 +103,12 @@ export type SealedAssertionsOriginEncodingError =
       readonly issue: AssertionsProducerErrorV1;
     }
   | {
-      readonly code: "score-payload-invalid";
-      readonly issue: ScorePayloadBuildErrorV1;
+      readonly code: "sealed-verdict-payload-invalid";
+      readonly message: string;
+    }
+  | {
+      readonly code: "sealed-score-payload-invalid";
+      readonly message: string;
     }
   | {
       readonly code: "workspace-diff-attachment-invalid";
@@ -127,6 +130,65 @@ function evaluationFactsFromSealedAssertions(
       result: encodeAssertionResultV1(assertion.result),
     }))),
   });
+}
+
+function encodingErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * The runtime fold is already frozen at seal time. The Record boundary maps it
+ * into the exact durable shape, then leaves facts-vs-payload agreement to the
+ * independent Evaluation Record coherence check.
+ */
+function encodeSealedVerdictPayload(
+  verdict: SealedAttemptAssertions["verdict"],
+): Either.Either<VerdictPayloadV1, SealedAssertionsOriginEncodingError> {
+  const decoded = Schema.decodeUnknownEither(
+    VerdictPayloadV1Schema,
+    ExactRecordAttachmentParseOptions,
+  )(Object.freeze({ state: verdict.state }));
+  return Either.isLeft(decoded)
+    ? Either.left(Object.freeze({
+        code: "sealed-verdict-payload-invalid" as const,
+        message: encodingErrorMessage(decoded.left),
+      }))
+    : Either.right(decoded.right);
+}
+
+function encodeSealedScorePayload(
+  score: NonNullable<SealedAttemptAssertions["score"]>,
+): Either.Either<ScorePayloadV1, SealedAssertionsOriginEncodingError> {
+  const candidate = (() => {
+    switch (score.state) {
+      case "complete":
+        return Object.freeze({
+          state: "complete" as const,
+          earned: score.earned,
+        });
+      case "partial":
+        return Object.freeze({
+          state: "partial" as const,
+          earned: score.earned,
+          reasons: Object.freeze([...score.reasons]),
+        });
+      case "unavailable":
+        return Object.freeze({
+          state: "unavailable" as const,
+          reasons: Object.freeze([...score.reasons]),
+        });
+    }
+  })();
+  const decoded = Schema.decodeUnknownEither(
+    ScorePayloadV1Schema,
+    ExactRecordAttachmentParseOptions,
+  )(candidate);
+  return Either.isLeft(decoded)
+    ? Either.left(Object.freeze({
+        code: "sealed-score-payload-invalid" as const,
+        message: encodingErrorMessage(decoded.left),
+      }))
+    : Either.right(decoded.right);
 }
 
 /**
@@ -162,12 +224,14 @@ export function evaluationRecordOriginInputFromSealedAssertions(
   }
 
   const facts = evaluationFactsFromSealedAssertions(sealed.evaluation);
-  const score = sealed.score === undefined ? undefined : buildScorePayloadV1(facts);
-  if (score !== undefined && Either.isLeft(score)) {
-    return Either.left(Object.freeze({
-      code: "score-payload-invalid" as const,
-      issue: score.left,
-    }));
+  const verdict = encodeSealedVerdictPayload(sealed.verdict);
+  if (Either.isLeft(verdict)) return Either.left(verdict.left);
+
+  let score: ScorePayloadV1 | undefined;
+  if (sealed.score !== undefined) {
+    const encodedScore = encodeSealedScorePayload(sealed.score);
+    if (Either.isLeft(encodedScore)) return Either.left(encodedScore.left);
+    score = encodedScore.right;
   }
 
   let writes: readonly RecordAttachmentWrite<"attempt", never, never>[] = Object.freeze([]);
@@ -188,8 +252,8 @@ export function evaluationRecordOriginInputFromSealedAssertions(
     slotId,
     facts,
     assertions: assertions.right,
-    verdict: buildVerdictPayloadV1(facts),
-    ...(score === undefined ? {} : { score: score.right }),
+    verdict: verdict.right,
+    ...(score === undefined ? {} : { score }),
     ...(writes.length === 0 ? {} : { writes }),
   }));
 }
@@ -258,11 +322,6 @@ export type EvaluationRecordContractIssueV1 =
   | {
       readonly code: "evaluation-record-coherence-invalid";
       readonly issue: EvaluationRecordCoherenceIssueV1;
-    }
-  | {
-      readonly code: "evaluation-record-score-build-invalid";
-      readonly slotId: SlotId;
-      readonly issue: ScorePayloadBuildErrorV1;
     }
   | {
       readonly code: "evaluation-record-reference-slot-unexpected";
@@ -645,26 +704,16 @@ export function createEvaluationRecordPlanV1<Error, Requirements>(
 
   const plannedOrigins: PlannedOriginAttemptV1<Error, Requirements>[] = [];
   for (const origin of preparedAttempts) {
-    const verdictWrite = buildVerdictAttachmentWriteV1(origin.facts);
+    const verdictWrite = createVerdictAttachmentWriteV1(origin.verdict);
     const scoreWrite = origin.score === undefined
       ? undefined
-      : buildScoreAttachmentWriteV1(origin.facts);
-    if (scoreWrite !== undefined && Either.isLeft(scoreWrite)) {
-      issues.push(
-        Object.freeze({
-          code: "evaluation-record-score-build-invalid" as const,
-          slotId: origin.slotId,
-          issue: scoreWrite.left,
-        }),
-      );
-      continue;
-    }
+      : createScoreAttachmentWriteV1(origin.score);
     plannedOrigins.push(
       Object.freeze({
         slotId: origin.slotId,
         assertions: origin.assertions,
         verdict: verdictWrite,
-        score: scoreWrite === undefined ? undefined : scoreWrite.right,
+        score: scoreWrite,
         additionalWrites: origin.writes,
       }),
     );
