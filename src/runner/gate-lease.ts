@@ -416,58 +416,9 @@ export function pendingHeldGateLeaseCount(): number {
 }
 
 /**
- * 兼容 facade：`src/runner/run.ts` 与 `src/cli.ts` 由并行 worker 占用。父侧完成串行切换前，
- * 这里只保留一次 Effect.runPromise 适配；新内部调用必须使用 `*Effect` API。
+ * CLI 兼容债务：退出清理仍从 `src/cli.ts` 调这个 Promise facade。CLI 直接组合
+ * `drainHeldGateLeasesEffect` 后删除最后一个 `Effect.runPromise` 边界；runner 内部不得引用它。
  */
-export interface GateLeaseClaim {
-  slot: number;
-  release(): Promise<void>;
-}
-
-export interface AcquireGateSlotResult {
-  claim: GateLeaseClaim;
-  takenOver: boolean;
-  takenOverFrom?: GateLeaseRecord;
-}
-
-export function readGateLeases(niceevalRoot: string, experimentId: string): Promise<GateLeaseRecord[]> {
-  return Effect.runPromise(readGateLeasesEffect(niceevalRoot, experimentId));
-}
-
-export function tryAcquireGateSlotOnce(
-  niceevalRoot: string,
-  experimentId: string,
-  maxConcurrency: number,
-  identity: { pid: number; host: string },
-  nowMs: number,
-): Promise<
-  | { kind: "acquired"; slot: number; takenOver: boolean; takenOverFrom?: GateLeaseRecord; record: GateLeaseRecord }
-  | { kind: "full"; holders: GateLeaseRecord[] }
-> {
-  return Effect.runPromise(tryAcquireGateSlotOnceEffect(niceevalRoot, experimentId, maxConcurrency, identity, nowMs));
-}
-
-export function acquireGateSlot(
-  niceevalRoot: string,
-  experimentId: string,
-  maxConcurrency: number,
-  identity: { pid: number; host: string },
-  opts: {
-    signal?: AbortSignal;
-    pollIntervalMs?: number;
-    heartbeatIntervalMs?: number;
-    onWaitStart?: (holders: GateLeaseRecord[]) => void;
-  } = {},
-): Promise<AcquireGateSlotResult> {
-  return Effect.runPromise(acquireGateSlotEffect(niceevalRoot, experimentId, maxConcurrency, identity, opts).pipe(
-    Effect.map(({ claim, takenOver, takenOverFrom }) => ({
-      claim: { slot: claim.slot, release: () => Effect.runPromise(claim.release) },
-      takenOver,
-      ...(takenOverFrom === undefined ? {} : { takenOverFrom }),
-    })),
-  ));
-}
-
 export function drainHeldGateLeases(): Promise<number> {
   return Effect.runPromise(drainHeldGateLeasesEffect());
 }

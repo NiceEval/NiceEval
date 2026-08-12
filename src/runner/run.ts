@@ -2,7 +2,7 @@
 // 职责只有编排:指纹缓存在 fingerprint.ts,单 attempt 生命周期在 attempt.ts,
 // reporter 编排 / 汇总在 report.ts，Direct Agent 的 Sandbox 占位适配器在 direct-agent-sandbox.ts。
 
-import { Effect, Cause, Data, Either, Exit, Option } from "effect";
+import { Effect, Cause, Data, Deferred, Either, Exit, Option } from "effect";
 import { probeJudgeEffect } from "../assertions/judge.ts";
 import { t } from "../i18n/index.ts";
 import { cacheKey, planProjectTarget } from "./fingerprint.ts";
@@ -84,14 +84,18 @@ import {
   writeTeardownRegistration,
 } from "./teardown-registry.ts";
 import {
-  acquireCaseLock,
+  acquireCaseLockEffect,
   isCaseLockExpired,
-  readCaseLock,
+  readCaseLockEffect,
   CASE_LOCK_HEARTBEAT_INTERVAL_MS,
-  type CaseLockClaim,
+  type CaseLockEffectClaim,
   type CaseLockRecord,
 } from "./lock.ts";
-import { acquireGateSlot, type GateLeaseClaim, type GateLeaseRecord } from "./gate-lease.ts";
+import {
+  acquireGateSlotEffect,
+  type GateLeaseEffectClaim,
+  type GateLeaseRecord,
+} from "./gate-lease.ts";
 import {
   openRunnerRecordCoordinator,
   type RecordAttemptLocatorV1,
@@ -1270,15 +1274,14 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
    * 全部 eval 闸——检查点同时读两把,不做物理级联(eval 闸的数量随选择集变化,级联要遍历,
    * 蕴含只要多读一个字段)。
    *
-   * 三个状态载体各有不可替代的角色,不是同一件事的三份副本:
+   * 两个状态载体各有不可替代的角色,不是同一件事的两份副本:
    * - `latch`:`Effect.unsafeMakeLatch(false)`,落闸 = `unsafeOpen()`。`open` 幂等且不可回退,
    *   「落闸幂等、invocation 内不可逆」因此是结构保证而不是调用方自律;`latch.await` 同时是
    *   「等到这把闸落下」的 Effect,给等在全局并发位上的 fiber 当中止信号(见 withGlobalSlot)。
    * - `halted`:同步读的镜像。派发检查点在每轮循环开头问一次,不能为此付一次 await
    *   (`Effect.Latch` 没有同步状态读)。恒在 `unsafeOpen()` 之前置位,两者不会互相领先。
-   * - `abort`:同一时刻 abort。Promise 世界的两处长等待——实验闸名额租约、撞用例锁后的
-   *   elsewhere 轮询——一律经 AbortSignal 中止,那是本仓既有的 interruption 通路,不为止损闸
-   *   另造一条。
+   * 实验闸名额租约与撞用例锁后的 elsewhere 轮询都直接竞速 `latch.await`。这样止损只让等待
+   * 成功收束；用户取消仍保留为 Effect interruption Cause，不再穿过 AbortSignal / Promise 边界。
    */
   interface HaltGate {
     readonly scope: "eval" | "experiment";
@@ -1291,7 +1294,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     /** 两条诊断通路共用的折叠键(= scope + evalId,契约见 architecture.md「诊断」)。 */
     readonly dedupeKey: string;
     readonly latch: Effect.Latch;
-    readonly abort: AbortController;
     halted: boolean;
     /** 被这把闸拦下、未派发的 attempt 数(进 InvocationCompletion.unstarted)。 */
     unstarted: number;
@@ -1316,7 +1318,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         evalId,
         dedupeKey,
         latch: Effect.unsafeMakeLatch(false),
-        abort: new AbortController(),
         halted: false,
         unstarted: 0,
         message: "",
@@ -1356,14 +1357,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     return { halted: false };
   };
 
-  /** 落闸后唤醒 Promise 世界等待的中止信号:两把闸任一落下、或用户中断,都算这次等待到头了。 */
-  const haltAbortSignal = (a: Attempt, extra?: AbortSignal): AbortSignal => {
-    const [experimentGate, evalGate] = haltGatesOf(a);
-    const signals = [experimentGate.abort.signal, evalGate.abort.signal];
-    if (opts.signal) signals.push(opts.signal);
-    if (extra) signals.push(extra);
-    return AbortSignal.any(signals);
-  };
   /** 「等到这条 attempt 头上任一把闸落下」;给 Effect 世界的等待(全局并发位)当中止信号。 */
   const haltAwait = (a: Attempt): Effect.Effect<void> => {
     const [experimentGate, evalGate] = haltGatesOf(a);
@@ -1424,7 +1417,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       gate.phase = declaration.phase;
       gate.halted = true; // 同步镜像先置位,再开 latch:两者不会互相领先
       gate.latch.unsafeOpen();
-      gate.abort.abort();
     }
     reportHaltNotice(gate);
   };
@@ -1448,25 +1440,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   };
 
   const lockIdentity = { pid: process.pid, host: currentHost };
-  /** 调度整体收束(forEach 已结算)后置位:兜住被 Effect 抛下的挂起轮询,不让它无主空转。 */
-  let dispatchClosed = false;
-
-  /** 可被 abort 打断的定时等待;abort 或到点都以 resolve 收束(调用方自己复查中断状态),
-   *  不留悬挂的定时器——真实的用户 Ctrl+C 不能被别人的锁拖着无限期挂住。 */
-  const delayOrAbort = (ms: number, signal: AbortSignal | undefined): Promise<void> =>
-    new Promise<void>((resolve) => {
-      if (signal?.aborted) return resolve();
-      const done = (): void => {
-        clearTimeout(timer);
-        signal?.removeEventListener("abort", done);
-        resolve();
-      };
-      const timer = setTimeout(done, ms);
-      signal?.addEventListener("abort", done, { once: true });
-    });
-
-  const combinedSignal = (extra: AbortSignal): AbortSignal =>
-    opts.signal ? AbortSignal.any([opts.signal, extra]) : extra;
 
   // 用例锁(docs/feature/experiments/architecture.md「并发 Invocation:用例锁」):按
   // (experimentId, evalId) 给这批已经确定要真实派发的 attempt 分组——被静态携带筛掉的组合
@@ -1478,8 +1451,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
    *  已经解决并重新取到锁,它再去建窗口就会读到**自己**的新鲜锁、永久等下去。 */
   type CaseLockTry =
     | { kind: "acquired" }
-    | { kind: "busy"; window: Promise<void> }
-    | { kind: "aborted" };
+    | { kind: "busy"; window: Effect.Effect<void> };
   interface CaseLockState {
     experimentId: string;
     evalId: string;
@@ -1488,11 +1460,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     /** 还没收尾的 attempt 序号——`lock_wait` 的计数与「锁还留不留」都读它。 */
     pending: Set<number>;
     /** 本进程此刻持有的锁;undefined = 没持有(还没试 / 撞锁挂起中)。 */
-    claim?: CaseLockClaim;
-    /** 在飞的一次非阻塞试锁:同组兄弟共享同一次尝试的结论,不各自拍一遍磁盘。 */
-    trying?: Promise<CaseLockTry>;
-    /** 在飞的挂起窗口:撞锁的兄弟全体等同一个 promise。 */
-    suspension?: Promise<void>;
+    claim?: CaseLockEffectClaim;
+    /** 同组兄弟只允许一条 fiber 做磁盘试锁；后到者在临界区内重读 claim / suspension。 */
+    acquireMutex: Effect.Semaphore;
+    /** 在飞的挂起窗口:撞锁的兄弟全体等同一个 Deferred。 */
+    suspension?: Effect.Effect<void>;
     /** 已经用 `lock_wait started` 报进 `elsewhere`、还没被 `resolved` 报出来的 attempt 数。
      *  五项恒等式要求「报进去多少条就要报出来多少条」:收尾时不能拿当下的 `pending.size`
      *  当迁移数——等待期间被中断而提前 settle 的 attempt 会让 `pending` 缩水,差额就永远
@@ -1510,6 +1482,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         evalId: a.evalDef.id,
         group: [],
         pending: new Set<number>(),
+        acquireMutex: yield* Effect.makeSemaphore(1),
         inElsewhere: 0,
       };
       caseLocks.set(key, st);
@@ -1550,95 +1523,23 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   };
 
   /**
-   * 派发时刻的一次**非阻塞**试锁。非阻塞语义借 `acquireCaseLock` 的 `onWaitStart` 实现:确认
-   * 要等待的那一刻立刻自我中断,只保留「一次尝试」的部分——这样仍然复用它的心跳续租与强清
-   * 登记(lock.ts 的 held 表),而 `tryAcquireCaseLockOnce` 两件都不做。撞上过期锁属于「一次
-   * 尝试」内部的 rename 接管,照常返回 acquired。
-   */
-  const tryAcquireCase = (st: CaseLockState): Promise<CaseLockTry> => {
-    // 同组兄弟:自己已持有,直接放行。
-    if (st.claim) return Promise.resolve<CaseLockTry>({ kind: "acquired" });
-    // 已经有兄弟挂在窗口上:全体等同一个窗口,不重复试锁。
-    if (st.suspension) return Promise.resolve<CaseLockTry>({ kind: "busy", window: st.suspension });
-    if (st.trying) return st.trying;
-    const attempt = (async (): Promise<CaseLockTry> => {
-      const { experimentId, evalId } = st;
-      // 接管诊断要报"原持有者是谁",但 acquireCaseLock 只回传 takenOver 布尔值——取锁前先
-      // 无副作用地读一眼当前记录(纯尽力而为:极端时序下这份快照可能已经不是真正被接管的
-      // 那条记录,但诊断本来就是人读提示,不是判定依据)。
-      const priorHolder = await readCaseLock(niceevalRoot, experimentId, evalId).catch(() => undefined);
-      const giveUp = new AbortController();
-      let busyWith: CaseLockRecord | undefined;
-      try {
-        const { claim, takenOver } = await acquireCaseLock(niceevalRoot, experimentId, evalId, lockIdentity, {
-          signal: combinedSignal(giveUp.signal),
-          onWaitStart: (h) => {
-            busyWith = h;
-            giveUp.abort(); // 撞上新鲜锁 = 这次尝试到此为止,不进入 acquireCaseLock 自己的轮询
-          },
-        });
-        st.claim = claim;
-        if (takenOver) {
-          const message = t("runner.lockTakenOver", {
-            experimentId,
-            evalId,
-            pid: priorHolder?.pid ?? "?",
-            host: priorHolder?.host ?? "?",
-          }).trimEnd();
-          reportDiagnostic({
-            key: `lock-taken-over:${experimentId}|${evalId}`,
-            code: "lock-taken-over",
-            severity: "warning",
-            message,
-            data: { experimentId, evalId },
-          });
-          recordExperimentDiagnostic({
-            experimentId,
-            code: "lock-taken-over",
-            level: "warning",
-            message,
-            phase: "eval.run",
-            dedupeKey: `lock-taken-over:${experimentId}|${evalId}`,
-            data: { experimentId, evalId },
-          });
-        }
-        // 取到锁就重查携带,**无条件**。启动时算的静态规划有效期只到「这条用例真正派发」为止:
-        // 另一条 Invocation 完全可能在这中间把它整条跑完并释放锁,而我们随后干干净净地取到那把
-        // 空锁——既没等过也没接管过。任何「有没有碰上别人」的启发式在这条路径上都恒假:那类
-        // 判据全是「此刻碰上了对方」或「对方死了」的证据,观测不到「对方干净地来过又走了」,
-        // 于是先起跑的一侧全程零信号,第二波里被对方跑掉的每一条都会被重跑,是确定性的,不是
-        // 低概率时序(见 memory 的 multi-open-residual-window-closed-by-narrow-read)。
-        // 闭合性来自这条 happens-before 链:对方 result.json 落盘 → 对方
-        // 释放锁 → 我们取到锁 → 我们读盘,所以重查必须在取锁**之后**,顺序反了什么都不保证。
-        // V1 does not convert late legacy rows into carried Members. The
-        // already-pending slots remain fresh and continue through dispatch.
-        resolveCaseWaitWithoutCarry(st, undefined);
-        return { kind: "acquired" };
-      } catch (e) {
-        // 撞新鲜锁:就地开(或加入)挂起窗口,窗口对象随结论一起交给调用方。
-        if (busyWith) return { kind: "busy", window: suspendUntilCaseFree(st, busyWith) };
-        if (opts.signal?.aborted) return { kind: "aborted" };
-        throw e;
-      }
-    })();
-    st.trying = attempt;
-    return attempt.finally(() => {
-      st.trying = undefined;
-    });
-  };
-
-  /**
    * 撞新鲜锁后的挂起窗口:这一条用例转 `elsewhere`(不占全局并发位、不占实验闸名额),每个
    * 心跳周期重读一次锁文件;锁消失(正常释放)或过期(可接管)即结束等待并重查携带。等待没有
    * 超时——心跳新鲜就一直等,用户中断照常退出。同组兄弟共享同一个窗口。
    */
-  const suspendUntilCaseFree = (st: CaseLockState, holder: CaseLockRecord): Promise<void> => {
+  const suspendUntilCaseFree = (
+    st: CaseLockState,
+    holder: CaseLockRecord,
+  ) => Effect.uninterruptibleMask((restore) => Effect.gen(function* () {
     if (st.suspension) return st.suspension;
     const startedAt = Date.now();
     // 等待期间本 eval / 本实验的止损闸落下 → 这一轮等待到头(对方可能还要跑很久,没必要陪着)。
     // 窗口照常走完 resolveCaseWaitWithoutCarry 并发出 `lock_wait resolved`:少发一次 resolved,这批 attempt 就
     // 永远挂在 elsewhere 上,五项恒等式当场破。
-    const waitSignal = haltAbortSignal(st.group[0]!);
+    const halt = haltAwait(st.group[0]!);
+    const stopWaiting = opts.signal === undefined
+      ? halt
+      : Effect.raceFirst(halt, interruptOnAbort(opts.signal));
     // 窗口打开这一刻本组还没派发的 attempt 全在 queued(本进程没持锁 = 没有一条开跑),
     // 整批迁进 elsewhere;记下条数,收尾的 resolved 原数迁回(见 CaseLockState.inElsewhere)。
     st.inElsewhere = st.pending.size;
@@ -1650,30 +1551,130 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       holderHost: holder.host,
       attempts: st.inElsewhere,
     });
-    const window = (async (): Promise<void> => {
+
+    const completion = yield* Deferred.make<void>();
+    const window = Deferred.await(completion);
+    st.suspension = window;
+    const poll = Effect.gen(function* () {
       for (;;) {
-        await delayOrAbort(CASE_LOCK_HEARTBEAT_INTERVAL_MS, waitSignal);
-        if (waitSignal.aborted || dispatchClosed) break;
-        const record = await readCaseLock(niceevalRoot, st.experimentId, st.evalId).catch(() => undefined);
-        if (record === undefined || isCaseLockExpired(record, Date.now())) break;
+        const stopped = yield* Effect.raceFirst(
+          Effect.sleep(CASE_LOCK_HEARTBEAT_INTERVAL_MS).pipe(Effect.as(false)),
+          stopWaiting.pipe(Effect.as(true)),
+        );
+        if (stopped) return;
+        const record = yield* readCaseLockEffect(niceevalRoot, st.experimentId, st.evalId).pipe(
+          Effect.catchAll(() => Effect.succeed(undefined)),
+        );
+        if (record === undefined || isCaseLockExpired(record, Date.now())) return;
       }
-      resolveCaseWaitWithoutCarry(st, startedAt);
-    })();
-    st.suspension = window.finally(() => {
-      st.suspension = undefined;
-    });
-    return st.suspension;
-  };
+    }).pipe(
+      Effect.ensuring(Effect.sync(() => resolveCaseWaitWithoutCarry(st, startedAt))),
+    );
+    // 登记窗口、启动唯一 poller、返回给许可链三步处在同一个 mask 内。poller 本身恢复为可中断，
+    // 结算则重新进入 mask：无论用户中断、兄弟 defect 还是 Scope 收尾，所有 follower 都收到原始 Exit，
+    // 且 `lock_wait resolved` 与 suspension 清理一定发生。
+    const settle = Effect.uninterruptibleMask((restorePoll) =>
+      Effect.exit(restorePoll(poll)).pipe(
+        Effect.flatMap((exit) => Deferred.done(completion, exit)),
+        Effect.ensuring(Effect.sync(() => {
+          if (st.suspension === window) st.suspension = undefined;
+        })),
+      )
+    );
+    yield* Effect.forkScoped(restore(settle));
+    return window;
+  }));
+
+  /**
+   * 派发时刻的一次**非阻塞**试锁。调用直接留在当前 Effect fiber；`onWaitStart` 只用一个局部
+   * AbortController 截断 lock.ts 的轮询，把「新鲜锁」转换成 elsewhere，而用户取消仍沿当前
+   * fiber 的 interruption Cause 上抛。撞上过期锁属于一次尝试内部的 rename 接管，照常 acquired。
+   */
+  const tryAcquireCase = (st: CaseLockState) => st.acquireMutex.withPermits(1)(
+    Effect.suspend(() => {
+      // 同组兄弟:自己已持有,直接放行。
+      if (st.claim) return Effect.succeed<CaseLockTry>({ kind: "acquired" });
+      // 已经有兄弟挂在窗口上:全体等同一个窗口,不重复试锁。
+      if (st.suspension) return Effect.succeed<CaseLockTry>({ kind: "busy", window: st.suspension });
+      return Effect.gen(function* () {
+        const { experimentId, evalId } = st;
+        // 接管诊断要报"原持有者是谁",但 acquireCaseLockEffect 只回传 takenOver 布尔值——取锁前先
+        // 无副作用地读一眼当前记录(纯尽力而为:极端时序下这份快照可能已经不是真正被接管的
+        // 那条记录,但诊断本来就是人读提示,不是判定依据)。
+        const priorHolder = yield* readCaseLockEffect(niceevalRoot, experimentId, evalId).pipe(
+          Effect.catchAll(() => Effect.succeed(undefined)),
+        );
+        const giveUp = new AbortController();
+        let busyWith: CaseLockRecord | undefined;
+        return yield* Effect.uninterruptibleMask((restore) =>
+          restore(acquireCaseLockEffect(niceevalRoot, experimentId, evalId, lockIdentity, {
+            signal: giveUp.signal,
+            onWaitStart: (holder) => {
+              busyWith = holder;
+              giveUp.abort(); // 撞上新鲜锁 = 这次尝试到此为止,不进入 acquireCaseLockEffect 自己的轮询
+            },
+          })).pipe(
+            Effect.matchEffect({
+              onFailure: (error) => {
+                const holder = busyWith;
+                return holder === undefined
+                  ? Effect.fail(error)
+                  : suspendUntilCaseFree(st, holder).pipe(
+                      Effect.map((window): CaseLockTry => ({ kind: "busy", window })),
+                    );
+              },
+              onSuccess: ({ claim, takenOver }) => Effect.sync((): CaseLockTry => {
+                // acquire 返回到 claim 登记之间保持 masked；否则恰好落在这条缝里的 interruption
+                // 会让 heartbeat/held 已启动、CaseLockState 却没有 release 句柄。
+                st.claim = claim;
+                if (takenOver) {
+                  const message = t("runner.lockTakenOver", {
+                    experimentId,
+                    evalId,
+                    pid: priorHolder?.pid ?? "?",
+                    host: priorHolder?.host ?? "?",
+                  }).trimEnd();
+                  reportDiagnostic({
+                    key: `lock-taken-over:${experimentId}|${evalId}`,
+                    code: "lock-taken-over",
+                    severity: "warning",
+                    message,
+                    data: { experimentId, evalId },
+                  });
+                  recordExperimentDiagnostic({
+                    experimentId,
+                    code: "lock-taken-over",
+                    level: "warning",
+                    message,
+                    phase: "eval.run",
+                    dedupeKey: `lock-taken-over:${experimentId}|${evalId}`,
+                    data: { experimentId, evalId },
+                  });
+                }
+                // V1 does not convert late legacy rows into carried Members. The frozen writer view is
+                // authoritative, so a lock acquired after another Invocation left still dispatches every pending Slot.
+                resolveCaseWaitWithoutCarry(st, undefined);
+                return { kind: "acquired" };
+              }),
+            }),
+          )
+        );
+      });
+    }),
+  );
 
   /** 用例全部 attempt(不论真实派发还是被重查携带命中而跳过)都 settle 后删锁;与
    *  ExperimentLifecycle.pendingAttempts 清空触发 teardown 同一种「逐 attempt 身份结算」模式。 */
-  const releaseCaseLockIfDone = async (st: CaseLockState, attempt: number): Promise<void> => {
-    st.pending.delete(attempt);
-    if (st.pending.size > 0) return;
-    const claim = st.claim;
-    st.claim = undefined;
-    if (claim) await claim.release().catch(() => {});
-  };
+  const releaseCaseLockIfDone = (st: CaseLockState, attempt: number): Effect.Effect<void> =>
+    Effect.sync(() => {
+      st.pending.delete(attempt);
+      if (st.pending.size > 0) return undefined;
+      const claim = st.claim;
+      st.claim = undefined;
+      return claim;
+    }).pipe(
+      Effect.flatMap((claim) => claim === undefined ? Effect.void : claim.release.pipe(Effect.ignore)),
+    );
 
   /**
    * 实验闸的取位:声明了 `maxConcurrency` 的实验从**跨 Invocation 共用**的逐槽租约取名额
@@ -1702,54 +1703,47 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     });
   };
 
-  const acquireGateLease = async (
+  const acquireGateLease = (
     experimentId: string,
     maxConcurrency: number,
-    fiberSignal: AbortSignal,
-    haltSignal: AbortSignal,
-  ): Promise<GateLeaseClaim | undefined> => {
-    // 等名额期间止损闸落下 → 立刻放弃取位(不占别人还在用的名额、也不干等一个不会派发的位子);
-    // 与用户中断走同一条 AbortSignal 通路,调用方按 undefined 分辨「没取到」的两种成因。
-    const signal = AbortSignal.any([combinedSignal(fiberSignal), haltSignal]);
-    try {
-      const { claim, takenOver, takenOverFrom } = await acquireGateSlot(
+  ): Effect.Effect<GateLeaseEffectClaim, unknown> =>
+    Effect.uninterruptibleMask((restore) =>
+      restore(acquireGateSlotEffect(
         niceevalRoot,
         experimentId,
         maxConcurrency,
         lockIdentity,
         {
-          signal,
           // 撞满名额只发生在「别的 Invocation 正占着这个实验的位子」——本进程自己的并发早被
           // gateLocalSems 挡在这一层之前了。不报的话面板就只剩 `0 running · N queued` 干等,
           // 看不出在等什么、等谁,也看不出生效名额被对方更小的声明夹低了(min-N)。
           onWaitStart: (holders) => reportGateLeaseWait(experimentId, maxConcurrency, holders),
         },
-      );
-      if (takenOver) {
-        const message = t("runner.gateLeaseTakenOver", {
-          experimentId,
-          slot: claim.slot,
-          pid: takenOverFrom?.pid ?? "?",
-          host: takenOverFrom?.host ?? "?",
-        }).trimEnd();
-        const dedupeKey = `gate-lease-taken-over:${experimentId}`;
-        reportDiagnostic({ key: dedupeKey, code: "gate-lease-taken-over", severity: "warning", message, data: { experimentId } });
-        recordExperimentDiagnostic({
-          experimentId,
-          code: "gate-lease-taken-over",
-          level: "warning",
-          message,
-          phase: "eval.run",
-          dedupeKey,
-          data: { experimentId, slot: claim.slot },
-        });
-      }
-      return claim;
-    } catch (e) {
-      if (signal.aborted) return undefined; // 等名额期间被中断:立刻退出,不留悬挂
-      throw e;
-    }
-  };
+      )).pipe(
+        Effect.map(({ claim, takenOver, takenOverFrom }) => {
+          if (takenOver) {
+            const message = t("runner.gateLeaseTakenOver", {
+              experimentId,
+              slot: claim.slot,
+              pid: takenOverFrom?.pid ?? "?",
+              host: takenOverFrom?.host ?? "?",
+            }).trimEnd();
+            const dedupeKey = `gate-lease-taken-over:${experimentId}`;
+            reportDiagnostic({ key: dedupeKey, code: "gate-lease-taken-over", severity: "warning", message, data: { experimentId } });
+            recordExperimentDiagnostic({
+              experimentId,
+              code: "gate-lease-taken-over",
+              level: "warning",
+              message,
+              phase: "eval.run",
+              dedupeKey,
+              data: { experimentId, slot: claim.slot },
+            });
+          }
+          return claim;
+        }),
+      ),
+    );
 
   /** 派发链一轮的结局:`done` = 这条 attempt 已经了结(跑完 / 被跳过 / 携入 / 中断),
    *  `suspend` = 撞上别人持有的用例锁,许可全部归还、挂进 `window` 这个 elsewhere 窗口后重来,
@@ -1757,7 +1751,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
    *  `recheck` 只在闸已经落下时产生,循环顶因此必然收束,不会空转。 */
   type DispatchOutcome =
     | { kind: "done" }
-    | { kind: "suspend"; window: Promise<void> }
+    | { kind: "suspend"; window: Effect.Effect<void> }
     | { kind: "recheck" };
 
   /** 全局并发位的显式持有句柄:`withPermits` 的作用域语义没法表达「中途让位、回来再拿」,
@@ -1826,26 +1820,17 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     const localSem = gateLocalSems.get(a.run);
     if (maxConcurrency === undefined || localSem === undefined) return use;
     if (experimentId === undefined) return localSem.withPermits(1)(use);
-    const haltSignal = haltAbortSignal(a);
     const leased = Effect.uninterruptibleMask((restore) =>
-      restore(Effect.tryPromise({
-        try: (signal) => acquireGateLease(experimentId, maxConcurrency, signal, haltSignal),
-        catch: (error) => error,
-      })).pipe(
-        Effect.flatMap((claim) =>
-          claim === undefined
-            ? // 没取到名额有两种成因:用户中断(就此了结)与止损闸落下(回到许可链 ① 记账)。
-              Effect.succeed<DispatchOutcome>(
-                checkDispatchHalt(a).halted ? { kind: "recheck" } : { kind: "done" },
-              )
-            : restore(use).pipe(
-                Effect.ensuring(
-                  Effect.tryPromise({
-                    try: () => claim.release(),
-                    catch: () => undefined,
-                  }).pipe(Effect.ignore),
-                ),
-              ),
+      Effect.raceFirst(
+        restore(acquireGateLease(experimentId, maxConcurrency)).pipe(
+          Effect.map((claim) => ({ kind: "acquired" as const, claim })),
+        ),
+        restore(haltAwait(a)).pipe(Effect.as({ kind: "halted" as const })),
+      ).pipe(
+        Effect.flatMap((lease) =>
+          lease.kind === "halted"
+            ? Effect.succeed<DispatchOutcome>({ kind: "recheck" })
+            : restore(use).pipe(Effect.ensuring(lease.claim.release.pipe(Effect.ignore))),
         ),
       ),
     );
@@ -2271,11 +2256,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             // 名额一起还回去(返回 "suspend"),由外层转入 elsewhere 挂起;位子当场空出来,
             // 排队中的下一条没被锁的用例接手。
             if (caseState) {
-              const outcome = yield* Effect.tryPromise({
-                try: () => tryAcquireCase(caseState),
-                catch: (error) => error,
-              });
-              if (outcome.kind === "aborted") return { kind: "done" } as const;
+              const outcome = yield* tryAcquireCase(caseState);
               if (outcome.kind === "busy") return { kind: "suspend", window: outcome.window } as const;
             }
             const proceed = yield* preflight;
@@ -2324,14 +2305,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             if (outcome.kind === "recheck") continue;
             // ② ③ 已随作用域归还。挂起等锁:不占并发位、计入 elsewhere;锁释放或过期后
             // 按原优先级回到派发队列(下一轮循环)。
-            yield* Effect.tryPromise({
-              try: () => outcome.window,
-              catch: (error) => error,
-            });
-            if (opts.signal?.aborted) {
-              cancelReuseAttempt(a);
-              return;
-            }
+            yield* outcome.window;
           }
         });
         // 实验级 teardown 结算:每个 attempt 收尾(含被 preflight 跳过、被中断的、被用例锁
@@ -2372,10 +2346,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         // 挂在最外层确保晚于实验级 teardown 计数结算(docs「用例全部 attempt 收尾(含沙箱销毁)
         // 后删除自己的锁」)。
         return withExpLifecycle.pipe(
-          Effect.ensuring(Effect.tryPromise({
-            try: () => releaseCaseLockIfDone(caseState, a.attempt),
-            catch: (error) => error,
-          }).pipe(Effect.catchAll(() => Effect.void))),
+          Effect.ensuring(releaseCaseLockIfDone(caseState, a.attempt)),
         );
       },
       { concurrency: opts.maxConcurrency, discard: true },
@@ -2399,8 +2370,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       ? dispatchEffect
       : Effect.raceFirst(dispatchEffect, interruptOnAbort(opts.signal)),
   );
-  // 调度已经结算:任何被中断路径抛下的挂起轮询到下一个心跳周期自行收束,不无主空转。
-  dispatchClosed = true;
   // provenance 在这里齐全:没有任何 attempt 依赖的 key 也照样跑完并留下自己那条记录,
   // 中断路径下同批构建随 signal 收束成 cancelled,不把 run.json 的 sandboxBuilds 落空。
   if (runningBuilds !== undefined) {

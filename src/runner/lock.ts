@@ -360,54 +360,16 @@ export function pendingHeldCaseLockCount(): number {
 }
 
 /**
- * 兼容 facade：并行占用中的 `src/runner/run.ts` 与 `src/cli.ts` 仍消费 Promise。父侧串行切换
- * 到 `*Effect` API 前，这里是唯一的 Effect.runPromise 边界；新内部调用不得引用这些导出。
+ * CLI 兼容债务：`exp --dry` 仍经这个 Promise facade 只读锁，退出清理仍经下方 drain facade。
+ * `src/cli.ts` 改为直接组合 `readCaseLockEffect` / `drainHeldCaseLocksEffect` 后删除这两个
+ * `Effect.runPromise` 边界；runner 内部不得再引用它们。
  */
-export interface CaseLockClaim {
-  release(): Promise<void>;
-}
-
-export interface AcquireCaseLockResult {
-  claim: CaseLockClaim;
-  takenOver: boolean;
-}
-
 export function readCaseLock(
   niceevalRoot: string,
   experimentId: string,
   evalId: string,
 ): Promise<CaseLockRecord | undefined> {
   return Effect.runPromise(readCaseLockEffect(niceevalRoot, experimentId, evalId));
-}
-
-export function tryAcquireCaseLockOnce(
-  niceevalRoot: string,
-  experimentId: string,
-  evalId: string,
-  identity: { pid: number; host: string },
-  nowMs: number,
-): Promise<{ kind: "acquired"; takenOver: boolean } | { kind: "waiting"; holder: CaseLockRecord }> {
-  return Effect.runPromise(tryAcquireCaseLockOnceEffect(niceevalRoot, experimentId, evalId, identity, nowMs));
-}
-
-export function acquireCaseLock(
-  niceevalRoot: string,
-  experimentId: string,
-  evalId: string,
-  identity: { pid: number; host: string },
-  opts: {
-    signal?: AbortSignal;
-    pollIntervalMs?: number;
-    heartbeatIntervalMs?: number;
-    onWaitStart?: (holder: CaseLockRecord) => void;
-  } = {},
-): Promise<AcquireCaseLockResult> {
-  return Effect.runPromise(acquireCaseLockEffect(niceevalRoot, experimentId, evalId, identity, opts).pipe(
-    Effect.map(({ claim, takenOver }) => ({
-      claim: { release: () => Effect.runPromise(claim.release) },
-      takenOver,
-    })),
-  ));
 }
 
 export function drainHeldCaseLocks(): Promise<number> {
