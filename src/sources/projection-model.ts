@@ -1,4 +1,4 @@
-import type { AssertionEntryId } from "../assertions/record/model.ts";
+import type { AssertionEntryId } from "../assertions/identity.ts";
 import type { SlotId } from "../record/model/identifiers.ts";
 import type {
   AttemptOriginRunProjectedEntry,
@@ -17,7 +17,7 @@ import type {
   Sha256Digest,
   SourceFileItemId,
   SourcePackageItemId,
-} from "./model.ts";
+} from "./identity.ts";
 
 /**
  * The source-navigation view keeps the assertion facts needed to render and

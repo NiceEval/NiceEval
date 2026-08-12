@@ -31,11 +31,13 @@ import type {
   AssertionSourceSitesDocumentV1,
   AssertionSourceSitesEntryV1,
   CanonicalSourcePathV1,
+  SourcesDocumentV1,
+} from "./model.ts";
+import type {
   Sha256Digest,
   SourceFileItemId,
   SourcePackageItemId,
-  SourcesDocumentV1,
-} from "./model.ts";
+} from "./identity.ts";
 
 export const SOURCES_ATTACHMENT_NAME_V1 = "niceeval.sources" as const;
 export const ASSERTION_SOURCE_SITES_ATTACHMENT_NAME_V1 =

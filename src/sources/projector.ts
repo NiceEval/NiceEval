@@ -31,10 +31,9 @@ import type {
   AssertionSourceSitesDocumentV1,
   AssertionSourceSitesEntryV1,
   AssertionSourceTraceV1,
-  SourceFileItemId,
-  SourcePackageItemId,
   SourcesDocumentV1,
 } from "./model.ts";
+import type { SourceFileItemId, SourcePackageItemId } from "./identity.ts";
 import type {
   AssertionSourceEntry,
   AssertionSourceEntryValue,

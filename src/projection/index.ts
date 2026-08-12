@@ -81,4 +81,4 @@ export type {
   Sha256Digest,
   SourceFileItemId,
   SourcePackageItemId,
-} from "../sources/model.ts";
+} from "../sources/identity.ts";

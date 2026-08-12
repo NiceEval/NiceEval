@@ -3,9 +3,6 @@ import { AssertionEntryIdSchema } from "../assertions/record/codec.ts";
 import type { RecordBlobRef } from "../record/attachment/index.ts";
 import {
   CANONICAL_SOURCE_PATH_V1_BRAND,
-  SHA256_DIGEST_BRAND,
-  SOURCE_FILE_ITEM_ID_BRAND,
-  SOURCE_PACKAGE_ITEM_ID_BRAND,
   type AssertionSourceFileFrameV1,
   type AssertionSourceFrameV1,
   type AssertionSourceOccurrenceV1,
@@ -17,16 +14,21 @@ import {
   type AssertionSourceSitesEntryV1,
   type AssertionSourceTraceV1,
   type CanonicalSourcePathV1,
-  type Sha256Digest,
   type SourceCoordinateV1,
-  type SourceFileItemId,
   type SourceFileItemRefV1,
   type SourceFileV1,
-  type SourcePackageItemId,
   type SourcePackageItemRefV1,
   type SourcePackageV1,
   type SourcesDocumentV1,
 } from "./model.ts";
+import {
+  SHA256_DIGEST_BRAND,
+  SOURCE_FILE_ITEM_ID_BRAND,
+  SOURCE_PACKAGE_ITEM_ID_BRAND,
+  type Sha256Digest,
+  type SourceFileItemId,
+  type SourcePackageItemId,
+} from "./identity.ts";
 
 /** Every durable Sources object rejects excess fields and aggregates parse failures. */
 export const SourcesExactParseOptions = Object.freeze({
