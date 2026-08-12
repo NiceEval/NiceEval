@@ -14,7 +14,6 @@ import {
   NodeRecordLive,
   openRecordReader,
   openRecordWriteSession,
-  type RecordAttachmentBlobDraft,
   SlotIdSchema,
   UtcMillisSchema,
 } from "niceeval/record";
@@ -74,7 +73,7 @@ it("公开写入的 Run、origin Attempt 与 typed Run attachment 在发布后�
           yield* draft.record(
             makeRecordAttachmentWrite(attachmentFamily, () => ({
               payload: { state: "published", producer: "record-e2e" },
-              blobs: [] as readonly RecordAttachmentBlobDraft<never, never>[],
+              blobs: [],
             })),
           );
           const receipt = yield* draft.publish({ completedAt });

@@ -125,10 +125,18 @@ export interface RecordAttachmentBlobDraft<out E, out R> {
 export type RecordBlobDrafts = readonly RecordAttachmentBlobDraft<unknown, unknown>[];
 
 export type RecordBlobErrors<Blobs extends RecordBlobDrafts> =
-  Blobs[number] extends RecordAttachmentBlobDraft<infer E, unknown> ? E : never;
+  [Blobs[number]] extends [never]
+    ? never
+    : Blobs[number] extends RecordAttachmentBlobDraft<infer E, unknown>
+      ? E
+      : never;
 
 export type RecordBlobRequirements<Blobs extends RecordBlobDrafts> =
-  Blobs[number] extends RecordAttachmentBlobDraft<unknown, infer R> ? R : never;
+  [Blobs[number]] extends [never]
+    ? never
+    : Blobs[number] extends RecordAttachmentBlobDraft<unknown, infer R>
+      ? R
+      : never;
 
 export interface RecordAttachmentBlobBuilder {
   readonly add: <E, R>(
