@@ -54,6 +54,10 @@ Assertion evaluator、Plugin 生命周期或聚合实现可以独立变化。只
 `pass | score` 属于 Run-owned Evaluation Attachment。两类 Eval 的 Attempt 都保存四态
 Verdict；Score Eval 另存 Score。它们都不进入 Core。
 
+源码快照同样不进入 Core。origin Run-owned `niceeval.sources/v1` 保存当时项目源码的
+manifest 与 own blobs；Attempt-owned source-sites 只以声明的语义 join 把 Assertions `entryId`
+导航到这个 snapshot。它们不共享 blob、storage path 或读取 capability。
+
 ## 当前格式专用读取与显式迁移
 
 普通 `show`、`view`、`exp --dry` 和 `exp` 只打开 current Record major。已知旧 major
@@ -106,8 +110,12 @@ writer 只验证 Core、owner、typed Attachment、完整 closure 与精确引�
 ## 文档入口
 
 - [Architecture](architecture.md) —— Core、Attachment closure、完成标识、锁和 migration 不变量。
+- [Sources manifest](architecture.md#sources-manifest) —— Run-owned source item、path、digest 与 own blob。
 - [Library](library.md) —— Effect API、frozen view、draft、typed projection 与 migration builder。
 - [CLI](cli.md) —— `show`、`view`、`exp`、`clean` 与 `migrate`。
 - [发布完整 Run](use-case/发布完整运行.md) —— producer 怎样写入并留下完成标识。
 - [上层变化如何停在上层](use-case/上层变化不改持久格式.md) —— Assert-first 与算法边界。
 - [选择正确的演进边界](use-case/未来功能不扩张核心格式.md) —— Attachment、projector 与 Record major 的选择规则。
+- [多个 Attempt 怎样共用源码快照](use-case/多个Attempt怎样共用源码快照.md) —— origin Run source ownership。
+- [跨文件 Eval 怎样进入源码闭包](use-case/跨文件Eval怎样进入源码闭包.md) —— source closure 的输入范围。
+- [源码 Attachment 怎样安全演进](use-case/源码Attachment怎样安全演进.md) —— source identity migration group。
