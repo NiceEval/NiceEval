@@ -12,7 +12,7 @@ import type {
   ExcludedAnalysisSlot,
   IncludedAnalysisSlot,
   NotRecordedAnalysisSlot,
-} from "../sample/index.ts";
+} from "../analysis/index.ts";
 import type {
   Sha256Digest,
   SourceFileItemId,

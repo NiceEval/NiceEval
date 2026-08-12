@@ -22,7 +22,7 @@ import type {
   CoreInvalidAnalysisSlot,
   IncludedAnalysisSlot,
   RunId,
-} from "../sample/index.ts";
+} from "../analysis/index.ts";
 import { resolveAnalysisSampleHandle } from "../sample/analysis.ts";
 import {
   projectRecordAttachmentRead,

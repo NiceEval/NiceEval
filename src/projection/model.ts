@@ -7,7 +7,7 @@ import type {
   NotRecordedAnalysisSlot,
   RecordAttemptRef,
   RunId,
-} from "../sample/index.ts";
+} from "../analysis/index.ts";
 import type { ProjectedRecordAttachmentResult } from "./attachment-result.ts";
 import type { ProjectionCoverage } from "./coverage.ts";
 
