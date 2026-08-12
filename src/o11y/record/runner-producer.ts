@@ -1307,6 +1307,7 @@ function normalizeConversationV1(input: {
 }
 
 function commandSafeTextV1(input: {
+  readonly commandId: CommandIdV1;
   readonly value: string;
   readonly maximumBytes: number;
   readonly target: "command-manifest" | "command-stdout" | "command-stderr";
@@ -1314,9 +1315,19 @@ function commandSafeTextV1(input: {
 }): SafeText | undefined {
   const redacted = redactSensitiveText(input.value, input.runtime.sensitiveValues);
   if (redacted !== input.value) input.runtime.commandLimitations.addRedacted(input.target);
-  const safe = makeBoundedSafeTextV1(redacted, input.maximumBytes);
-  if (safe === undefined) input.runtime.commandLimitations.addUnsupported("command-manifest");
-  return safe;
+  const retained = retainSafeTextV1(redacted, input.maximumBytes);
+  if (retained === undefined) {
+    input.runtime.commandLimitations.addUnsupported("command-manifest");
+    return undefined;
+  }
+  if (retained.omittedBytes !== undefined) {
+    input.runtime.commandLimitations.addCommandManifestTextTruncated(
+      input.commandId,
+      retained.retainedBytes,
+      retained.omittedBytes,
+    );
+  }
+  return retained.text;
 }
 
 function isProjectRelativeCommandPathV1(value: string): boolean {
@@ -1324,6 +1335,8 @@ function isProjectRelativeCommandPathV1(value: string): boolean {
     makeBoundedSafeTextV1(value, MAX_COMMAND_PROJECT_RELATIVE_PATH_BYTES_V1) !== undefined &&
     value.length > 0 &&
     !value.startsWith("/") &&
+    !value.includes("\\") &&
+    !value.includes(":") &&
     value.split("/").every((segment) => segment.length > 0 && segment !== "." && segment !== "..")
   );
 }
@@ -1362,6 +1375,7 @@ function commandManifestV1(
   const workingDirectory = commandWorkingDirectoryV1(command.options, runtime);
   if (command.invocationKind === "shell") {
     const script = commandSafeTextV1({
+      commandId: command.commandId,
       value: command.command,
       maximumBytes: MAX_COMMAND_SHELL_BYTES_V1,
       target: "command-manifest",
@@ -1380,6 +1394,7 @@ function commandManifestV1(
     return undefined;
   }
   const executable = commandSafeTextV1({
+    commandId: command.commandId,
     value: command.command,
     maximumBytes: MAX_COMMAND_EXECUTABLE_BYTES_V1,
     target: "command-manifest",
@@ -1389,6 +1404,7 @@ function commandManifestV1(
   const arguments_: SafeText[] = [];
   for (const raw of command.args ?? []) {
     const argument = commandSafeTextV1({
+      commandId: command.commandId,
       value: raw,
       maximumBytes: MAX_COMMAND_ARGUMENT_BYTES_V1,
       target: "command-manifest",
