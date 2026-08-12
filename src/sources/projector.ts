@@ -13,7 +13,7 @@ import type {
 import {
   defineRecordAttachmentProjector,
   type RecordAttachmentProjector,
-} from "../projection/index.ts";
+} from "../projection/projector.ts";
 import {
   assertionSourceSitesAttachmentFamilyV1,
   sourcesAttachmentFamilyV1,
