@@ -11,16 +11,59 @@
 // 「启动全部未启动 + 等待全部未 settle」;在飞中的 teardown 对 drain 同样可等待,这正是
 // 强清「事件驱动收口」的数据基础。
 
-const pending = new Map<string, () => Promise<void>>();
+import { Effect, Scope } from "effect";
 
-/** 登记一个实验的 teardown 入口(实验生命周期触发时点调用;setup 尚未完成也已可达)。 */
-export function registerExperimentTeardown(experimentId: string, run: () => Promise<void>): void {
-  pending.set(experimentId, run);
+export type ExperimentTeardown = () => Effect.Effect<void, unknown>;
+
+const pending = new Map<string, ExperimentTeardown>();
+
+function settleTeardown(run: ExperimentTeardown): Effect.Effect<void> {
+  // Draining is best-effort by contract: failures are already recorded by the
+  // lifecycle owner and must not keep sibling cleanup from starting.
+  return Effect.suspend(run).pipe(Effect.catchAllCause(() => Effect.void));
+}
+
+/** Effect-native registration for an explicit lifecycle coordinator. */
+export function registerExperimentTeardown(
+  experimentId: string,
+  run: ExperimentTeardown,
+): Effect.Effect<void> {
+  return Effect.sync(() => {
+    pending.set(experimentId, run);
+  });
+}
+
+/**
+ * Scope-owned registration. If the coordinator exits before it explicitly
+ * settles its lifecycle, the scope drains the still-current entry exactly once.
+ * A later replacement or explicit unregister is never accidentally removed.
+ */
+export function registerExperimentTeardownScoped(
+  experimentId: string,
+  run: ExperimentTeardown,
+): Effect.Effect<void, never, Scope.Scope> {
+  return Effect.acquireRelease(
+    Effect.sync(() => {
+      pending.set(experimentId, run);
+      return run;
+    }),
+    (registered) => Effect.suspend(() =>
+      pending.get(experimentId) === registered
+        ? settleTeardown(registered).pipe(
+            Effect.ensuring(Effect.sync(() => {
+              if (pending.get(experimentId) === registered) pending.delete(experimentId);
+            })),
+          )
+        : Effect.void,
+    ),
+  ).pipe(Effect.asVoid);
 }
 
 /** teardown settle 后注销;不存在时是 no-op。 */
-export function unregisterExperimentTeardown(experimentId: string): void {
-  pending.delete(experimentId);
+export function unregisterExperimentTeardown(experimentId: string): Effect.Effect<void> {
+  return Effect.sync(() => {
+    pending.delete(experimentId);
+  });
 }
 
 export function pendingExperimentTeardownCount(): number {
@@ -32,8 +75,10 @@ export function pendingExperimentTeardownCount(): number {
  * 绝不抛;已在飞的返回同一个 memoized promise,等待而非重跑)。返回本次等待的条目数。
  * 与 stopAllSandboxes 同语义:重复调用安全,表空时是 no-op。
  */
-export async function drainExperimentTeardowns(): Promise<number> {
-  const entries = [...pending.values()];
-  await Promise.allSettled(entries.map((run) => run()));
-  return entries.length;
+export function drainExperimentTeardowns(): Effect.Effect<number> {
+  return Effect.gen(function* () {
+    const entries = yield* Effect.sync(() => [...pending.values()]);
+    yield* Effect.forEach(entries, settleTeardown, { concurrency: "unbounded", discard: true });
+    return entries.length;
+  });
 }

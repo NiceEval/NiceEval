@@ -364,20 +364,17 @@ function runLeakGate(
   return leakGateHintsForLayer(definition.sandbox, input.baseDir, input.file).pipe(
     Effect.flatMap(Option.match({
       onNone: () => Effect.void,
-      onSome: (hints) => Effect.tryPromise({
-        try: () => assertNoHiddenInputLeaks({
+      onSome: (hints) => assertNoHiddenInputLeaks({
           hidden,
           buildContexts: hints.buildContexts,
           bindMounts: hints.bindMounts,
           evalId: input.evalId,
-        }),
-        catch: (cause) => issue(
+        }).pipe(Effect.mapError((cause) => issue(
           input.file,
           "discovery.leak-gate-failed",
           causeMessage(cause),
           ["Remove hidden verifier/private inputs from the sandbox build context or bind mounts."],
-        ),
-      }),
+        ))),
     })),
   );
 }

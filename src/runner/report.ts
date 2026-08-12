@@ -1,6 +1,7 @@
 // reporter 编排与运行级汇总。reporter 是「结果消费方」:单个 reporter 抛错只记
 // diagnostic,不能让整次调度崩。
 
+import { Effect } from "effect";
 import type {
   EvalResult,
   InvocationShape,
@@ -26,20 +27,36 @@ import { reportReporterError } from "./feedback/sink.ts";
  * `EvalResult.error` 那样的落盘字段能保留完整栈,所以「一层可行动摘要」就是这条诊断的全部内容,
  * 不是从更详细的记录里摘出来的简化版——排查真正需要栈时,重跑该 reporter 单独复现更可靠。
  */
-export async function runReporter(reg: ReporterRegistration, stage: string, fn: () => unknown): Promise<void> {
-  try {
-    await fn();
-  } catch (e) {
-    reportReporterError({ reporter: reg.name, required: reg.required, message: `${stage}: ${firstLine(formatThrown(e))}` });
-  }
+export function runReporter(
+  reg: ReporterRegistration,
+  stage: string,
+  fn: () => unknown,
+): Effect.Effect<void> {
+  return Effect.tryPromise({
+    // Public Reporter callbacks are the one Promise boundary for this module.
+    try: () => Promise.resolve().then(fn),
+    catch: (cause) => cause,
+  }).pipe(
+    Effect.catchAll((cause) => Effect.sync(() => {
+      reportReporterError({
+        reporter: reg.name,
+        required: reg.required,
+        message: `${stage}: ${firstLine(formatThrown(cause))}`,
+      });
+    })),
+  );
 }
 
-export async function emitReporterEvent(
+export function emitReporterEvent(
   registrations: readonly ReporterRegistration[],
   event: ReporterEvent,
-): Promise<void> {
-  await Promise.all(
-    registrations.map((reg) => runReporter(reg, `event:${event.type}`, () => reg.reporter.onEvent?.(event))),
+): Effect.Effect<void> {
+  // Existing Promise.all starts every reporter immediately and waits for each one;
+  // retain that concurrent, best-effort observable behavior under Effect.
+  return Effect.forEach(
+    registrations,
+    (reg) => runReporter(reg, `event:${event.type}`, () => reg.reporter.onEvent?.(event)),
+    { concurrency: "unbounded", discard: true },
   );
 }
 

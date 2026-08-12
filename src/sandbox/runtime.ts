@@ -55,7 +55,7 @@ import {
 import { digestOf, isPureDataIdentity, type BuildKey } from "./identity.ts";
 import type { LinkedRunPlan } from "./plan.ts";
 import { ArtifactPrepareCoordinator, platformKey, runAgentEnsure } from "../agents/provisioner.ts";
-import { CLEANUP_TIMEOUT_MS, withCleanupTimeout } from "../runner/cleanup-timeout.ts";
+import { CLEANUP_TIMEOUT_MS, cleanupCallback } from "../runner/cleanup-timeout.ts";
 import type { JsonValue, Sandbox, SandboxHook, SandboxHookContext, ScopedFeedback } from "../types.ts";
 import type { AgentIdentity, SandboxAgent } from "../agents/types.ts";
 import type { DockerSandbox } from "./docker.ts";
@@ -1077,10 +1077,7 @@ function runTeardownHooks(
     [...hooks].reverse(),
     (hook) => {
       const cleanupContext = { ...context, signal: AbortSignal.timeout(CLEANUP_TIMEOUT_MS) };
-      return Effect.tryPromise({
-        try: () => withCleanupTimeout(() => hook(sandbox, cleanupContext)),
-        catch: (cause) => cause,
-      }).pipe(Effect.catchAll((cause) => Effect.sync(() => {
+      return cleanupCallback(() => hook(sandbox, cleanupContext)).pipe(Effect.catchAll((cause) => Effect.sync(() => {
         context.diagnostic({
           code: "sandbox-teardown-failed",
           level: "warning",

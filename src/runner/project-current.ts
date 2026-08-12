@@ -6,7 +6,11 @@ import { loadConfigFile } from "../load-config.ts";
 import { matchExperimentSelector } from "../shared/aggregate.ts";
 import { discoverEvals, discoverExperiments, type DiscoveryError } from "./discover.ts";
 import { resolveExperimentEvals } from "./eval-selection.ts";
-import { planProjectTarget, type ProjectTargetPlan } from "./fingerprint.ts";
+import {
+  planProjectTarget,
+  type FingerprintPlanningFailure,
+  type ProjectTargetPlan,
+} from "./fingerprint.ts";
 import type { ProjectCurrentTarget } from "./project-target.ts";
 import type { SandboxRunPlanningError } from "./sandbox-selection.ts";
 import { resolveRunTimeout } from "./timeout.ts";
@@ -51,7 +55,7 @@ export function loadProjectCurrent(
   options: LoadProjectCurrentOptions = {},
 ): Effect.Effect<
   LoadedProjectCurrent,
-  ProjectCurrentLoadError | DiscoveryError | SandboxRunPlanningError
+  ProjectCurrentLoadError | DiscoveryError | SandboxRunPlanningError | FingerprintPlanningFailure
 > {
   const discoveryOptions = { freshImport: options.freshImport };
   return Effect.gen(function*() {

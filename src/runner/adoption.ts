@@ -73,6 +73,7 @@ import {
 } from "./discover.ts";
 import { resolveExperimentEvals } from "./eval-selection.ts";
 import {
+  createFingerprintSourceCache,
   fingerprintWithManifest,
   hashConfigIdentity,
   resolvedTimeoutMsForCarry,
@@ -501,7 +502,7 @@ export function prepareCurrentAdoptionTargetV1(input: {
       ));
     }
 
-    const sourceCache = new Map<string, Promise<string>>();
+    const sourceCache = createFingerprintSourceCache();
     const plannedPairs = yield* Effect.forEach(
       pairs,
       (pair): Effect.Effect<CurrentTargetPairV1, ExplicitAdoptionErrorV1> =>
@@ -517,16 +518,13 @@ export function prepareCurrentAdoptionTargetV1(input: {
               `Current configuration identity for "${pair.evalDef.id}" failed: ${safeMessage(cause)}`,
             ),
           });
-          const fingerprint = yield* Effect.tryPromise({
-            try: () => fingerprintWithManifest(pair, sourceCache, {
+          const fingerprint = yield* fingerprintWithManifest(pair, sourceCache, {
               _tag: "Current",
               identity,
-            }),
-            catch: (cause) => adoptionError(
+            }).pipe(Effect.mapError((cause) => adoptionError(
               "adoption-target-invalid",
               `Current input identity for "${pair.evalDef.id}" failed: ${safeMessage(cause)}`,
-            ),
-          });
+            )));
           const timeoutMs = resolvedTimeoutMsForCarry(
             run,
             pair.evalDef,
