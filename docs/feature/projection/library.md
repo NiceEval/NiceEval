@@ -641,6 +641,37 @@ closure 错误才使用对应的 six-state Attachment result。未知、重复�
 或 Calculation 可以消费 `AttemptSourceTreeSample`，但不存在私有 host reader 或额外 owner lookup
 作为替代输入。
 
+## Evaluation plan primitive
+
+`evaluationPlanProjector` 是 Run-owned 的中立语义投影。它只回答某个已选 Slot 在这份 Run 的
+evaluation plan 中对应哪组 experiment、eval 与 attempt 坐标；它不复制持久 plan 的数组结构，也不从
+Attempt、当前 worktree 或其它 Attachment 补值。
+
+```ts
+type EvaluationPlanCoordinate = {
+  readonly experimentId: ExperimentId;
+  readonly evalId: string;
+  readonly attempt: number;
+  readonly kind: "pass" | "score";
+};
+
+type EvaluationPlanView = {
+  readonly coordinateForSlot: (
+    slotId: SlotId,
+  ) => EvaluationPlanCoordinate | undefined;
+};
+
+declare const evaluationPlanProjector: RecordAttachmentProjector<
+  "run",
+  EvaluationPlanView
+>;
+```
+
+`coordinateForSlot()` 返回 `undefined` 表示 available plan 没有这条 Slot 的语义坐标；Report 必须把它作为
+可见的 partial 输入，而不是猜测或静默省略。history 一类 Report 通过 `selectedRunProjection` 取得当前
+selected Run 的 plan，再和 attempt-slot projection 按 `(runId, slotId)` 做纯 join。这个 join 不触发另一次
+owner lookup、不读取当前 worktree 或其它 Attachment，也不把 reference Member 变成另一份 physical Attempt。
+
 ## Direct Effect 入口
 
 ```ts

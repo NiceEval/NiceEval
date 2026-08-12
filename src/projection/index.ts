@@ -22,6 +22,11 @@ export type {
   EvaluationKind,
   Evaluations,
 } from "../eval/record/evaluation.ts";
+export { evaluationPlanProjector } from "../eval/record/evaluation-plan.ts";
+export type {
+  EvaluationPlanCoordinate,
+  EvaluationPlanView,
+} from "../eval/record/evaluation-plan.ts";
 export { eligibilityProjector } from "../eval/record/eligibility.ts";
 export type {
   Eligibility,
