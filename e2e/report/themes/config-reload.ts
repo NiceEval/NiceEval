@@ -1,4 +1,4 @@
-import { defineTheme } from "niceeval/report";
+import { defineTheme } from "niceeval/report/host/node";
 
 export default defineTheme({
   appearance: "light",
