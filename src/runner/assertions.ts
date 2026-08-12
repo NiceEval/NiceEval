@@ -47,6 +47,8 @@ export interface SealedAttemptAssertionsV1 {
   readonly entries: SealedAssertionsRuntimeV1["entries"];
   readonly evaluation: SealedAssertionEvaluationV1;
   readonly assertions: RecordAttachmentWrite<"attempt", never, never>;
+  /** Owner-neutral writes captured from the same post-run frozen evidence. */
+  readonly additionalAttemptWrites: readonly RecordAttachmentWrite<"attempt", never, never>[];
   readonly verdict: VerdictPayloadV1;
   readonly score?: ScorePayloadV1;
 }
@@ -92,6 +94,7 @@ function scoreInvalid(
 function materializeSealedAssertions(
   sealed: SealedAssertionsRuntimeV1,
   evaluationKind: "pass" | "score",
+  additionalAttemptWrites: readonly RecordAttachmentWrite<"attempt", never, never>[],
 ): Either.Either<SealedAttemptAssertionsV1, AttemptAssertionsSealErrorV1> {
   const producer = createAssertionsAttachmentProducerV1<never, never>({
     entryIds: { next: assertionEntryId },
@@ -111,6 +114,7 @@ function materializeSealedAssertions(
       entries: sealed.entries,
       evaluation: sealed.evaluation,
       assertions: assertions.right,
+      additionalAttemptWrites: Object.freeze([...additionalAttemptWrites]),
       verdict: buildVerdictPayloadV1(evaluation),
     }));
   }
@@ -122,6 +126,7 @@ function materializeSealedAssertions(
     entries: sealed.entries,
     evaluation: sealed.evaluation,
     assertions: assertions.right,
+    additionalAttemptWrites: Object.freeze([...additionalAttemptWrites]),
     verdict: buildVerdictPayloadV1(evaluation),
     score: score.right,
   }));
@@ -134,10 +139,15 @@ function materializeSealedAssertions(
 export function sealAttemptAssertionsV1<Kind extends "pass" | "score">(
   runtime: AssertionsRuntimeV1<Kind>,
   options: AssertionSealOptionsV1,
+  additionalAttemptWrites: readonly RecordAttachmentWrite<"attempt", never, never>[] = [],
 ): Effect.Effect<SealedAttemptAssertionsV1, AttemptAssertionsSealErrorV1> {
   return runtime.seal(options).pipe(
     Effect.flatMap((sealed) => {
-      const materialized = materializeSealedAssertions(sealed, runtime.evaluationKind);
+      const materialized = materializeSealedAssertions(
+        sealed,
+        runtime.evaluationKind,
+        additionalAttemptWrites,
+      );
       return Either.isLeft(materialized)
         ? Effect.fail(materialized.left)
         : Effect.succeed(materialized.right);
@@ -160,6 +170,9 @@ export function evaluationRecordOriginInputFromAssertionsV1(
     // authoring API uses that model.
     facts: evaluationFoldInput(sealed.evaluation),
     assertions: sealed.assertions,
+    ...(sealed.additionalAttemptWrites.length === 0
+      ? {}
+      : { writes: sealed.additionalAttemptWrites }),
     verdict: sealed.verdict,
     ...(sealed.score === undefined ? {} : { score: sealed.score }),
   });

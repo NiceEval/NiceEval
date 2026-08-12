@@ -6,6 +6,7 @@ import {
   type AssertionEvaluationKindV1,
   type AssertionSealErrorV1,
   type AssertionSealOptionsV1,
+  type AssertionRuntimeMaterialV1,
   type AssertionSnapshotMaterialV1,
   type AssertionStopErrorV1,
   type AssertionStopExecutorV1,
@@ -78,8 +79,8 @@ interface AssertionEntry {
   readonly index: number;
   readonly kind: EntryKind;
   readonly criterion: WritableCriterionEnvelopeV1;
-  readonly subject: AssertionSnapshotMaterialV1;
-  readonly evidence: readonly AssertionSnapshotMaterialV1[];
+  readonly subject: AssertionRuntimeMaterialV1;
+  readonly evidence: readonly AssertionRuntimeMaterialV1[];
   readonly initialCoverage: RecordAssertionCoverageV1;
   readonly initialLimitations: readonly AssertionLimitationV1[];
   readonly evaluate: () => Effect.Effect<EntrySettlement, unknown, never>;
@@ -336,10 +337,24 @@ export function captureAssertionSnapshotV1(value: unknown): CapturedAssertionSna
   });
 }
 
-function freezeSnapshotMaterial(
-  material: AssertionSnapshotMaterialV1,
-): AssertionSnapshotMaterialV1 {
-  return Object.freeze({ kind: "snapshot", value: material.value });
+function freezeRuntimeMaterial(
+  material: AssertionRuntimeMaterialV1,
+): AssertionRuntimeMaterialV1 {
+  if (material.kind === "snapshot") {
+    return Object.freeze({ kind: "snapshot", value: material.value });
+  }
+  if (
+    material.schemaId !== "niceeval.diff/v1"
+    || typeof material.preview !== "string"
+    || material.preview.trim() === ""
+  ) {
+    throw new TypeError("record-attachment material must be the exact niceeval.diff/v1 reference with a preview");
+  }
+  return Object.freeze({
+    kind: "record-attachment",
+    schemaId: material.schemaId,
+    preview: material.preview,
+  });
 }
 
 function cloneCoverage(coverage: RecordAssertionCoverageV1): RecordAssertionCoverageV1 {
@@ -527,8 +542,8 @@ class AssertionsRuntimeImplementation {
     const entry = this.createEntry({
       kind: "boolean",
       criterion: definition.criterion,
-      subject: freezeSnapshotMaterial(definition.subject),
-      evidence: Object.freeze((definition.evidence ?? []).map(freezeSnapshotMaterial)),
+      subject: freezeRuntimeMaterial(definition.subject),
+      evidence: Object.freeze((definition.evidence ?? []).map(freezeRuntimeMaterial)),
       coverage: cloneCoverage(definition.coverage ?? { state: "complete" }),
       limitations: cloneLimitations(definition.limitations ?? []),
       evaluate: () =>
@@ -547,8 +562,8 @@ class AssertionsRuntimeImplementation {
     const entry = this.createEntry({
       kind: "measurement",
       criterion: definition.criterion,
-      subject: freezeSnapshotMaterial(definition.subject),
-      evidence: Object.freeze((definition.evidence ?? []).map(freezeSnapshotMaterial)),
+      subject: freezeRuntimeMaterial(definition.subject),
+      evidence: Object.freeze((definition.evidence ?? []).map(freezeRuntimeMaterial)),
       coverage: cloneCoverage(definition.coverage ?? { state: "complete" }),
       limitations: cloneLimitations(definition.limitations ?? []),
       evaluate: () =>
@@ -758,8 +773,8 @@ class AssertionsRuntimeImplementation {
   private createEntry(input: {
     readonly kind: EntryKind;
     readonly criterion: WritableCriterionEnvelopeV1;
-    readonly subject: AssertionSnapshotMaterialV1;
-    readonly evidence: readonly AssertionSnapshotMaterialV1[];
+    readonly subject: AssertionRuntimeMaterialV1;
+    readonly evidence: readonly AssertionRuntimeMaterialV1[];
     readonly coverage: RecordAssertionCoverageV1;
     readonly limitations: readonly AssertionLimitationV1[];
     readonly evaluate: () => Effect.Effect<EntrySettlement, unknown, never>;
@@ -799,8 +814,29 @@ class AssertionsRuntimeImplementation {
     if (!isRecord(definition) || typeof definition.evaluate !== "function") {
       throw new TypeError(`${owner} requires an Effect evaluation function`);
     }
-    if (!isRecord(definition.subject) || definition.subject.kind !== "snapshot") {
-      throw new TypeError(`${owner} requires snapshot subject material`);
+    if (
+      !isRecord(definition.subject)
+      || (definition.subject.kind !== "snapshot" && definition.subject.kind !== "record-attachment")
+    ) {
+      throw new TypeError(`${owner} requires snapshot or same-owner record-attachment subject material`);
+    }
+    if (
+      definition.subject.kind === "record-attachment"
+      && (definition.subject.schemaId !== "niceeval.diff/v1" || typeof definition.subject.preview !== "string")
+    ) {
+      throw new TypeError(`${owner} requires the exact niceeval.diff/v1 record-attachment reference`);
+    }
+    if (
+      definition.evidence !== undefined
+      && (!Array.isArray(definition.evidence)
+        || definition.evidence.some((material) =>
+          !isRecord(material)
+          || (material.kind !== "snapshot" && material.kind !== "record-attachment")
+          || (material.kind === "record-attachment"
+            && (material.schemaId !== "niceeval.diff/v1" || typeof material.preview !== "string")),
+        ))
+    ) {
+      throw new TypeError(`${owner} evidence must use snapshot or exact niceeval.diff/v1 record-attachment material`);
     }
   }
 

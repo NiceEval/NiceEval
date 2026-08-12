@@ -84,7 +84,43 @@ export type BuiltInCriterionV1 =
       readonly kind: "builtin";
       readonly id: "sandbox-result/v1";
       readonly data: {
-        readonly operation: "command" | "path" | "file" | "diff" | "usage";
+        readonly operation: "changed-paths";
+        readonly paths: readonly string[];
+      };
+    }
+  | {
+      readonly kind: "builtin";
+      readonly id: "sandbox-result/v1";
+      readonly data: { readonly operation: "no-changes" };
+    }
+  | {
+      readonly kind: "builtin";
+      readonly id: "sandbox-result/v1";
+      readonly data: {
+        readonly operation: "file-changed";
+        readonly path: string;
+        readonly status?: "added" | "modified" | "deleted";
+        /** Persisted display identity only; evaluators retain the managed Match. */
+        readonly before?: string;
+        readonly after?: string;
+      };
+    }
+  | {
+      readonly kind: "builtin";
+      readonly id: "sandbox-result/v1";
+      readonly data: {
+        readonly operation: "file-deleted";
+        readonly path: string;
+      };
+    }
+  | {
+      readonly kind: "builtin";
+      readonly id: "sandbox-result/v1";
+      readonly data: {
+        readonly operation: "not-in-diff";
+        readonly pattern: string;
+        readonly flags: string;
+        readonly content: "added" | "removed" | "both";
       };
     }
   | {
@@ -106,6 +142,17 @@ export type AssertionMaterialV1<BlobRef> =
       readonly ref: BlobRef;
       readonly encoding: "utf-8" | "binary";
       readonly byteLength: number;
+      readonly preview: string;
+    }
+  /**
+   * An Assertion can name an exact, same-owner Attachment without receiving a
+   * storage handle.  v1 deliberately exposes no hash, path, blob ref, or
+   * evidence id here: the Evaluation Record contract verifies the matching
+   * Attempt write before a complete marker can be published.
+   */
+  | {
+      readonly kind: "record-attachment";
+      readonly schemaId: "niceeval.diff/v1";
       readonly preview: string;
     };
 

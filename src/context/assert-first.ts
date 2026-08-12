@@ -18,6 +18,7 @@ import type {
   AssertionsRuntimeV1,
   BooleanAssertionHandleV1,
   MeasurementAssertionHandleV1,
+  PostRunBooleanAssertionHandleV1,
 } from "../assertions/api.ts";
 import type { WritableCriterionEnvelopeV1 } from "../assertions/record/model.ts";
 import {
@@ -26,7 +27,16 @@ import {
   freezeJudgeMaterialV1,
   type JudgeRecipeV1,
 } from "../assertions/judge.ts";
-import { emptyDiffData } from "../assertions/diff.ts";
+import {
+  agentWorkspaceDiffChangesForPathV1,
+  agentWorkspaceDiffPathsMatchV1,
+  evaluateWorkspaceDiffNotInV1,
+  validateExpectedTouchedPaths,
+  type AgentWorkspaceDiffEndpointV1,
+  type PostRunWorkspaceDiffStateV1,
+  type WorkspaceDiffNotInOptionsV1,
+} from "../assertions/diff.ts";
+import { evaluateBooleanMatch, type BooleanMatch } from "../assertions/match.ts";
 import { buildO11ySummary, deriveRunFacts } from "../o11y/derive.ts";
 import { captureLoc } from "../source-loc.ts";
 import { lastAssistantText, RunSession, SessionManager, type SessionDeps } from "./session.ts";
@@ -36,7 +46,6 @@ import type { AnswerValue, InputResponse } from "../agents/types.ts";
 import { matchesJson } from "../shared/json-match.ts";
 import type {
   Agent,
-  DiffData,
   InputFile,
   InputRequest,
   InputRequestFilter,
@@ -51,7 +60,7 @@ import type {
 } from "../types.ts";
 
 export interface AssertFirstLateResult {
-  diff: DiffData;
+  diff: PostRunWorkspaceDiffStateV1;
   scripts: globalThis.Record<string, import("../types.ts").ScriptResult>;
 }
 
@@ -89,6 +98,7 @@ export interface AssertFirstContextDeps {
   readonly judge: ResolvedJudgeConfig | undefined;
   /** The Attempt-scoped bridge is the sole Promise facade for author sends. */
   readonly requestEffect: NonNullable<SessionDeps["requestEffect"]>;
+  /** Ordinary immediate Assertion stop barriers stay in the Attempt Effect Scope. */
   readonly executeStop: import("../assertions/api.ts").AssertionStopExecutorV1;
   readonly evaluationKind: "pass" | "score";
 }
@@ -110,6 +120,27 @@ export interface AssertFirstCalledToolOptionsV1 {
   readonly output?: JsonMatch;
   readonly status?: "pending" | "completed" | "failed" | "rejected";
   readonly count?: AssertFirstCalledToolCountMatcherV1;
+}
+
+export interface AssertFirstFileChangedOptionsV1 {
+  readonly status?: "added" | "modified" | "deleted";
+  readonly before?: BooleanMatch<string, string, "value">;
+  readonly after?: BooleanMatch<string, string, "value">;
+}
+
+/** The only agent-attributed post-run diff surface exposed to Eval authors. */
+export interface AssertFirstSandboxV1<Kind extends RuntimeKind> extends Sandbox {
+  changedPaths(paths: readonly string[]): PostRunBooleanAssertionHandleV1<Kind, void>;
+  noChanges(): PostRunBooleanAssertionHandleV1<Kind, void>;
+  fileChanged(
+    path: string,
+    options?: AssertFirstFileChangedOptionsV1,
+  ): PostRunBooleanAssertionHandleV1<Kind, void>;
+  fileDeleted(path: string): PostRunBooleanAssertionHandleV1<Kind, void>;
+  notInDiff(
+    pattern: RegExp,
+    options?: WorkspaceDiffNotInOptionsV1,
+  ): PostRunBooleanAssertionHandleV1<Kind, void>;
 }
 
 export interface AssertFirstRootJudgeV1<Kind extends RuntimeKind> {
@@ -184,7 +215,7 @@ export type AssertFirstTestContextV1<Kind extends RuntimeKind> = {
     body: () => Value | PromiseLike<Value>,
   ): Promise<Awaited<Value>>;
   check: AssertionsRuntimeV1<Kind>["t"]["check"];
-  readonly sandbox: Sandbox;
+  readonly sandbox: AssertFirstSandboxV1<Kind>;
   readonly o11y: import("../o11y/types.ts").O11ySummary;
   readonly usage: Usage;
   succeeded(): BooleanAssertionHandleV1<Kind, void>;
@@ -426,6 +457,266 @@ function guardSandbox(agent: Agent, sandbox: Sandbox): Sandbox {
   });
 }
 
+const DIFF_REFERENCE_PREVIEW_V1 = "agent-attributed send-window endpoint deltas";
+
+function changedPathsCriterion(paths: readonly string[]): WritableCriterionEnvelopeV1 {
+  return Object.freeze({
+    kind: "builtin" as const,
+    id: "sandbox-result/v1" as const,
+    data: Object.freeze({ operation: "changed-paths" as const, paths: Object.freeze([...paths]) }),
+  });
+}
+
+function noChangesCriterion(): WritableCriterionEnvelopeV1 {
+  return Object.freeze({
+    kind: "builtin" as const,
+    id: "sandbox-result/v1" as const,
+    data: Object.freeze({ operation: "no-changes" as const }),
+  });
+}
+
+function fileChangedCriterion(
+  path: string,
+  options: Readonly<AssertFirstFileChangedOptionsV1>,
+): WritableCriterionEnvelopeV1 {
+  return Object.freeze({
+    kind: "builtin" as const,
+    id: "sandbox-result/v1" as const,
+    data: Object.freeze({
+      operation: "file-changed" as const,
+      path,
+      ...(options.status === undefined ? {} : { status: options.status }),
+      ...(options.before === undefined ? {} : { before: options.before.name }),
+      ...(options.after === undefined ? {} : { after: options.after.name }),
+    }),
+  });
+}
+
+function fileDeletedCriterion(path: string): WritableCriterionEnvelopeV1 {
+  return Object.freeze({
+    kind: "builtin" as const,
+    id: "sandbox-result/v1" as const,
+    data: Object.freeze({ operation: "file-deleted" as const, path }),
+  });
+}
+
+function notInDiffCriterion(
+  pattern: RegExp,
+  options: Readonly<WorkspaceDiffNotInOptionsV1>,
+): WritableCriterionEnvelopeV1 {
+  return Object.freeze({
+    kind: "builtin" as const,
+    id: "sandbox-result/v1" as const,
+    data: Object.freeze({
+      operation: "not-in-diff" as const,
+      pattern: pattern.source,
+      flags: pattern.flags,
+      content: options.content ?? "both",
+    }),
+  });
+}
+
+function diffReferenceMaterial() {
+  return Object.freeze({
+    kind: "record-attachment" as const,
+    schemaId: "niceeval.diff/v1" as const,
+    preview: DIFF_REFERENCE_PREVIEW_V1,
+  });
+}
+
+function assertDiffPath(path: unknown, operation: string): asserts path is string {
+  if (typeof path !== "string" || path.length === 0 || path.includes("\u0000")) {
+    throw new TypeError(`${operation} path must be a non-empty string without NUL`);
+  }
+}
+
+function normalizeFileChangedOptions(
+  value: AssertFirstFileChangedOptionsV1 | undefined,
+): Readonly<AssertFirstFileChangedOptionsV1> {
+  if (value === undefined) return Object.freeze({});
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new TypeError("fileChanged() options must be an object");
+  }
+  for (const key of Object.keys(value)) {
+    if (key !== "status" && key !== "before" && key !== "after") {
+      throw new TypeError(`fileChanged() options has unknown key ${JSON.stringify(key)}`);
+    }
+  }
+  if (
+    value.status !== undefined
+    && value.status !== "added"
+    && value.status !== "modified"
+    && value.status !== "deleted"
+  ) {
+    throw new TypeError("fileChanged() options.status must be added, modified, or deleted");
+  }
+  return Object.freeze({ ...value });
+}
+
+function normalizeNotInDiffOptions(
+  value: WorkspaceDiffNotInOptionsV1 | undefined,
+): Readonly<WorkspaceDiffNotInOptionsV1> {
+  if (value === undefined) return Object.freeze({});
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new TypeError("notInDiff() options must be an object");
+  }
+  for (const key of Object.keys(value)) {
+    if (key !== "content") throw new TypeError(`notInDiff() options has unknown key ${JSON.stringify(key)}`);
+  }
+  if (value.content !== undefined && value.content !== "added" && value.content !== "removed" && value.content !== "both") {
+    throw new TypeError("notInDiff() options.content must be added, removed, or both");
+  }
+  return Object.freeze({ ...value });
+}
+
+async function endpointMatches(
+  endpoint: AgentWorkspaceDiffEndpointV1,
+  match: BooleanMatch<string, string, "value"> | undefined,
+): Promise<"matched" | "mismatched" | "unavailable"> {
+  if (match === undefined) return "matched";
+  if (endpoint.state === "absent") return "mismatched";
+  if (endpoint.state === "elided") return "unavailable";
+  const result = await evaluateBooleanMatch(match, endpoint.text);
+  return result.state;
+}
+
+function unavailableDiffResult() {
+  return Object.freeze({ state: "unavailable" as const, reason: "source-unavailable" as const });
+}
+
+/**
+ * Wraps a raw Sandbox capability with post-run Assertion registration. The
+ * wrapper has no generic diff value: every call immediately declares exactly
+ * one Assertion whose closure reads the single Attempt-owned frozen document.
+ */
+function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
+  readonly agent: Agent;
+  readonly sandbox: Sandbox;
+  readonly runtime: AssertionsRuntimeV1<Kind>;
+  readonly late: AssertFirstLateResult;
+}): AssertFirstSandboxV1<Kind> {
+  const guarded = guardSandbox(input.agent, input.sandbox);
+  const requireCapability = (): void => {
+    if (input.agent.kind !== "sandbox") {
+      throw new Error(
+        `Agent ${JSON.stringify(input.agent.name)} does not provide sandbox; agent-attributed workspace diff Assertions are unavailable.`,
+      );
+    }
+  };
+  const register = (
+    criterion: WritableCriterionEnvelopeV1,
+    evaluate: () => import("effect").Effect.Effect<
+      import("../assertions/api.ts").BooleanAssertionEvaluationV1<void>,
+      unknown,
+      never
+    >,
+  ): PostRunBooleanAssertionHandleV1<Kind, void> => input.runtime.registerBoolean<void>({
+    criterion,
+    subject: diffReferenceMaterial(),
+    evaluate,
+  });
+
+  const changedPaths = (paths: readonly string[]): PostRunBooleanAssertionHandleV1<Kind, void> => {
+    requireCapability();
+    if (!Array.isArray(paths)) throw new TypeError("changedPaths() requires an array of paths");
+    for (const path of paths) assertDiffPath(path, "changedPaths()");
+    validateExpectedTouchedPaths(paths);
+    const expected = Object.freeze([...paths]);
+    return register(changedPathsCriterion(expected), () => Effect.sync(() => {
+      const diff = input.late.diff;
+      if (diff.state !== "available") return unavailableDiffResult();
+      return agentWorkspaceDiffPathsMatchV1(diff.document, expected)
+        ? Object.freeze({ state: "matched" as const, value: undefined })
+        : Object.freeze({ state: "mismatched" as const });
+    }));
+  };
+
+  const fileChanged = (
+    path: string,
+    rawOptions?: AssertFirstFileChangedOptionsV1,
+  ): PostRunBooleanAssertionHandleV1<Kind, void> => {
+    requireCapability();
+    assertDiffPath(path, "fileChanged()");
+    const options = normalizeFileChangedOptions(rawOptions);
+    return register(fileChangedCriterion(path, options), () => Effect.tryPromise({
+      try: async () => {
+        const diff = input.late.diff;
+        if (diff.state !== "available") return unavailableDiffResult();
+        let unavailable = false;
+        for (const candidate of agentWorkspaceDiffChangesForPathV1(diff.document, path)) {
+          if (options.status !== undefined && candidate.status !== options.status) continue;
+          const before = await endpointMatches(candidate.before, options.before);
+          const after = await endpointMatches(candidate.after, options.after);
+          if (before === "matched" && after === "matched") {
+            return Object.freeze({ state: "matched" as const, value: undefined });
+          }
+          // Both endpoint constraints belong to this one WindowChange. A
+          // cross-send restore therefore remains visible, while a same-send
+          // restore never became a ledger endpoint delta in the first place.
+          if (before === "mismatched" || after === "mismatched") continue;
+          if (before === "unavailable" || after === "unavailable") unavailable = true;
+        }
+        return unavailable
+          ? unavailableDiffResult()
+          : Object.freeze({ state: "mismatched" as const });
+      },
+      catch: (error) => error,
+    }));
+  };
+
+  const notInDiff = (
+    pattern: RegExp,
+    rawOptions?: WorkspaceDiffNotInOptionsV1,
+  ): PostRunBooleanAssertionHandleV1<Kind, void> => {
+    requireCapability();
+    if (!(pattern instanceof RegExp)) throw new TypeError("notInDiff() pattern must be a RegExp");
+    const options = normalizeNotInDiffOptions(rawOptions);
+    return register(notInDiffCriterion(pattern, options), () => Effect.sync(() => {
+      const diff = input.late.diff;
+      if (diff.state !== "available") return unavailableDiffResult();
+      const result = evaluateWorkspaceDiffNotInV1(diff.document, pattern, options);
+      return result.state === "matched"
+        ? Object.freeze({ state: "matched" as const, value: undefined })
+        : result.state === "mismatched"
+          ? Object.freeze({ state: "mismatched" as const })
+          : unavailableDiffResult();
+    }));
+  };
+
+  return Object.freeze(new Proxy(guarded, {
+    get(target, property, receiver) {
+      switch (property) {
+        case "changedPaths": return changedPaths;
+        case "noChanges": return () => {
+          requireCapability();
+          return register(noChangesCriterion(), () => Effect.sync(() => {
+            const diff = input.late.diff;
+            if (diff.state !== "available") return unavailableDiffResult();
+            return agentWorkspaceDiffPathsMatchV1(diff.document, [])
+              ? Object.freeze({ state: "matched" as const, value: undefined })
+              : Object.freeze({ state: "mismatched" as const });
+          }));
+        };
+        case "fileChanged": return fileChanged;
+        case "fileDeleted": return (path: string) => {
+          requireCapability();
+          assertDiffPath(path, "fileDeleted()");
+          return register(fileDeletedCriterion(path), () => Effect.sync(() => {
+            const diff = input.late.diff;
+            if (diff.state !== "available") return unavailableDiffResult();
+            return agentWorkspaceDiffChangesForPathV1(diff.document, path)
+              .some((change) => change.status === "deleted")
+              ? Object.freeze({ state: "matched" as const, value: undefined })
+              : Object.freeze({ state: "mismatched" as const });
+          }));
+        };
+        case "notInDiff": return notInDiff;
+        default: return Reflect.get(target, property, receiver);
+      }
+    },
+  })) as AssertFirstSandboxV1<Kind>;
+}
+
 function requireInputRequest(
   session: RunSession,
   filter: InputRequestFilter | undefined,
@@ -572,7 +863,7 @@ export function createAssertFirstEvalContext(
   const state: AssertFirstContextState = {
     assertions: runtime,
     manager,
-    late: { diff: emptyDiffData(), scripts: {} },
+    late: { diff: Object.freeze({ state: "pending" as const }), scripts: {} },
   };
 
   interface TurnScopeSnapshot {
@@ -910,7 +1201,12 @@ export function createAssertFirstEvalContext(
     },
     group: runtime.t.group,
     check: runtime.t.check,
-    sandbox: guardSandbox(deps.agent, deps.sandbox),
+    sandbox: createAssertFirstSandbox({
+      agent: deps.agent,
+      sandbox: deps.sandbox,
+      runtime,
+      late: state.late,
+    }),
     get o11y() {
       return buildO11ySummary(manager.allEvents);
     },

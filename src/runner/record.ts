@@ -651,7 +651,11 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
           evaluations: targetSlot.recordRun.evaluations,
           originAttempts: [Object.freeze({
             ...origin,
-            writes: Object.freeze([eligibility.right, ...writes]),
+            writes: Object.freeze([
+              eligibility.right,
+              ...(origin.writes ?? []),
+              ...writes,
+            ]),
           })],
         });
         return yield* Effect.uninterruptible(

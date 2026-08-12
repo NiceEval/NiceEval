@@ -16,7 +16,7 @@
 | [`#eval-assertion-values`](#eval-assertion-values) | 值 Match 登记 Assertion，并在真实 evidence 上给出 passed Verdict | 单边界 E2E | `e2e/eval/test/assertion-values.test.ts` | PR |
 | [`#eval-assertion-scopes`](#eval-assertion-scopes) | turn、session 与 attempt scope 在真实工具事件上完成断言 | 单边界 E2E | `e2e/eval/test/assertion-scopes.test.ts` | PR |
 | [`#eval-assertion-score`](#eval-assertion-score) | 计分制正常返回自动封口，Assertion 分值贡献、直接给分与空计分写入公开 Record | 单边界 E2E | `e2e/eval/test/assertion-score.test.ts` | PR |
-| [`#eval-assertion-sandbox`](#eval-assertion-sandbox) | Sandbox 文件与 shell evidence 由公开 assertion 与 Record 判定 | 单边界 E2E | `e2e/eval/test/assertion-sandbox.test.ts` | PR |
+| [`#eval-assertion-sandbox`](#eval-assertion-sandbox) | Sandbox agent-attributed endpoint diff 与 shell evidence 由公开 Assertion、Record 判定和中立 projector 观察 | 单边界 E2E | `e2e/eval/test/assertion-sandbox.test.ts` | PR |
 | [`#eval-assertion-judge-unavailable`](#eval-assertion-judge-unavailable) | 未配置 Judge 时 required Judge Assertion 以 unavailable 使 Attempt errored，且不进入网络路径 | 单边界 E2E | `e2e/eval/test/assertion-judge-unavailable.test.ts` | PR |
 
 ## eval-context
@@ -41,7 +41,7 @@ turn、session 与 attempt scope 必须以同一批真实工具事件完成断�
 
 ## eval-assertion-sandbox
 
-Sandbox 的真实文件与 shell evidence 由公开 assertion 和 Record 判定；readback 包含 agent 写入的 diff marker。
+Sandbox Eval 在真实 send window 中产生 modified、added 和 deleted endpoint delta；Eval 用 `changedPaths`、`fileChanged`、`fileDeleted` 与 `notInDiff` 直接登记 post-run Assertion。测试只从候选包取得 `agentWorkspaceDiffProjectorV1` 并经 `attemptSlotProjection` 声明中立读取，不读旧的通用 diff subject 或私有落盘事实。
 
 ## eval-assertion-judge-unavailable
 

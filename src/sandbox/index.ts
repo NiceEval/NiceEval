@@ -96,7 +96,6 @@ export type { RegisteredSandboxContent } from "./content.ts";
 
 export type {
   Sandbox,
-  EvalSandbox,
   SandboxOperations,
   SandboxTransferOperations,
   SandboxProvider,

@@ -111,10 +111,21 @@ export type AssertionSnapshotMaterialV1 = Extract<
   { readonly kind: "snapshot" }
 >;
 
+/** A same-owner, exact post-run Attachment reference with no storage handle. */
+export type AssertionRecordAttachmentMaterialV1 = Extract<
+  AssertionMaterialV1<never>,
+  { readonly kind: "record-attachment" }
+>;
+
+/** Runtime registrations never gain raw Record blob authority. */
+export type AssertionRuntimeMaterialV1 =
+  | AssertionSnapshotMaterialV1
+  | AssertionRecordAttachmentMaterialV1;
+
 export interface AssertionRegistrationBaseV1 {
   readonly criterion: WritableCriterionEnvelopeV1;
-  readonly subject: AssertionSnapshotMaterialV1;
-  readonly evidence?: readonly AssertionSnapshotMaterialV1[];
+  readonly subject: AssertionRuntimeMaterialV1;
+  readonly evidence?: readonly AssertionRuntimeMaterialV1[];
   readonly coverage?: AssertionCoverageV1;
   readonly limitations?: readonly AssertionLimitationV1[];
 }
@@ -187,6 +198,42 @@ export interface ScoreMeasurementAssertionHandleV1<
     this: ScoreMeasurementAssertionHandleV1<true>,
   ): Promise<number>;
 }
+
+/**
+ * A Boolean Assertion whose evaluator runs after authoring has settled. This
+ * is the only handle returned by the agent-attributed workspace-diff surface:
+ * it configures one registered entry and intentionally has no control-flow
+ * operation. It is deliberately a separate narrow interface instead of an
+ * alias of ordinary Boolean handles: the runtime object may implement a
+ * stop barrier, but a post-run diff assertion cannot expose one.
+ */
+interface PostRunPassBooleanAssertionHandleV1<Refined>
+  extends AssertionHandleBaseV1 {
+  readonly kind: "boolean";
+  optional(): this;
+  gate(): this;
+}
+
+interface PostRunScoreBooleanAssertionHandleV1<Refined>
+  extends AssertionHandleBaseV1 {
+  readonly kind: "boolean";
+  optional(): this;
+  gate(): this;
+  score(points: number): this;
+}
+
+export type PostRunBooleanAssertionHandleV1<
+  Kind extends AssertionEvaluationKindV1,
+  Refined,
+> = Kind extends "pass"
+  ? PostRunPassBooleanAssertionHandleV1<Refined>
+  : PostRunScoreBooleanAssertionHandleV1<Refined>;
+
+/** Public name for post-run-only Boolean Assertions such as workspace diff. */
+export type PostRunBooleanAssertionHandle<
+  Kind extends AssertionEvaluationKindV1,
+  Refined,
+> = PostRunBooleanAssertionHandleV1<Kind, Refined>;
 
 /** Direct score is an Assertion entry, but has no condition or stop barrier. */
 export interface DirectScoreAssertionHandleV1 extends AssertionHandleBaseV1 {

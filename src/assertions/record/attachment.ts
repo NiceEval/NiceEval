@@ -130,6 +130,11 @@ export type AssertionMaterialInputV1<E, R> =
       readonly encoding: "utf-8" | "binary";
       readonly byteLength: number;
       readonly preview: string;
+    }
+  | {
+      readonly kind: "record-attachment";
+      readonly schemaId: "niceeval.diff/v1";
+      readonly preview: string;
     };
 
 export interface AssertionsAttachmentEntryInputV1<E, R> {
@@ -159,15 +164,24 @@ function makeProvisionalBlobRefV1(): AssertionsProvisionalBlobRefV1 {
 function provisionalMaterial<E, R>(
   material: AssertionMaterialInputV1<E, R>,
 ): AssertionMaterialV1<AssertionsProvisionalBlobRefV1> {
-  return material.kind === "snapshot"
-    ? Object.freeze({ kind: "snapshot", value: material.value })
-    : Object.freeze({
+  switch (material.kind) {
+    case "snapshot":
+      return Object.freeze({ kind: "snapshot", value: material.value });
+    case "record-attachment":
+      return Object.freeze({
+        kind: "record-attachment",
+        schemaId: material.schemaId,
+        preview: material.preview,
+      });
+    case "blob":
+      return Object.freeze({
         kind: "blob",
         ref: makeProvisionalBlobRefV1(),
         encoding: material.encoding,
         byteLength: material.byteLength,
         preview: material.preview,
       });
+  }
 }
 
 function provisionalEntry<E, R>(
@@ -209,6 +223,16 @@ function materializeMaterial<E, R>(
       throw new Error("Assertions producer changed a sealed material kind");
     }
     return Object.freeze({ kind: "snapshot", value: material.value });
+  }
+  if (material.kind === "record-attachment") {
+    if (source.kind !== "record-attachment") {
+      throw new Error("Assertions producer changed a sealed material kind");
+    }
+    return Object.freeze({
+      kind: "record-attachment",
+      schemaId: material.schemaId,
+      preview: material.preview,
+    });
   }
   if (source.kind !== "blob") {
     throw new Error("Assertions producer changed a sealed material kind");

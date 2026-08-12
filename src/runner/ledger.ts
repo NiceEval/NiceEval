@@ -134,6 +134,12 @@ export interface ChangeLedger {
    * `resetToAnchor()` 内的同款判断作纵深防御保留。
    */
   readonly rootExecutionIdentity: boolean;
+  /** Frozen semantic identity consumed by the Attempt-owned diff Attachment. */
+  readonly attribution: {
+    readonly defaultPolicy: "niceeval.sandbox-ledger/default-excludes/v1";
+    readonly include: readonly string[];
+    readonly ignore: readonly string[];
+  };
 }
 
 interface LedgerOptions {
@@ -306,6 +312,11 @@ export async function createChangeLedger(sandbox: Sandbox, opts?: LedgerOptions)
 
   return {
     rootExecutionIdentity: ordinaryUid === "0",
+    attribution: Object.freeze({
+      defaultPolicy: "niceeval.sandbox-ledger/default-excludes/v1" as const,
+      include: Object.freeze([...includes]),
+      ignore: Object.freeze([...(opts?.ignore ?? [])]),
+    }),
     async commitEvalWindow(label: string): Promise<void> {
       // 有未记录变化才落这一笔;干净时不产生空的 eval 归因 commit。
       const result = await sandbox.runShell(`${addAll} && (git diff --cached --quiet || git commit -q -m ${shellQuote(`eval ${label}`)})${lockPrivateLedger}`, {

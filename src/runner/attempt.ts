@@ -55,7 +55,11 @@ import { estimateCost } from "../o11y/cost.ts";
 import { t } from "../i18n/index.ts";
 import { describeError, firstLine, formatThrown } from "../util.ts";
 import { createChangeLedger, type ChangeLedger } from "./ledger.ts";
-import { deriveDiffData, emptyDiffData } from "../assertions/diff.ts";
+import {
+  createAgentWorkspaceDiffDocumentV1,
+  deriveDiffData,
+} from "../assertions/diff.ts";
+import { createAgentWorkspaceDiffAttachmentWriteV1 } from "../assertions/record/diff.ts";
 import { createDirectAgentSandbox } from "./direct-agent-sandbox.ts";
 import { createSandboxCommandTarget, SandboxCommandExitError } from "../sandbox/operations.ts";
 import { inheritSandboxCapabilities } from "../sandbox/backend.ts";
@@ -299,6 +303,7 @@ export function runAttemptEffect<
   // been constructed. Scope finalization owns the interruption seal so an
   // aborted Attempt cannot leave declared entries unsealed.
   let liveAssertions: AssertionsRuntimeV1<"pass" | "score"> | undefined;
+  let liveAssertionState: AssertFirstContextState | undefined;
   let assertionsSealed = false;
   let timeoutSealedAssertions: SealedAttemptAssertionsV1 | undefined;
   // Effect.timeoutTo 的 onTimeout 是同步回调,在中断真正下发给 body fiber(从而触发下面的
@@ -783,6 +788,12 @@ export function runAttemptEffect<
           if (!interrupted || liveAssertions === undefined || assertionsSealed) {
             return Effect.void;
           }
+          if (liveAssertionState?.late.diff.state === "pending") {
+            liveAssertionState.late.diff = Object.freeze({
+              state: "unavailable" as const,
+              reason: "producer-interrupted" as const,
+            });
+          }
           return sealAttemptAssertionsV1(liveAssertions, {
             execution: "errored",
             interrupted: true,
@@ -856,11 +867,15 @@ export function runAttemptEffect<
               liveLedger = ledger;
             },
             assertFirst,
-            registerAssertions: (runtime) => {
+            registerAssertions: (runtime, state) => {
               if (liveAssertions !== undefined && liveAssertions !== runtime) {
                 throw new Error("Attempt tried to register a second Assertions runtime");
               }
+              if (liveAssertionState !== undefined && liveAssertionState !== state) {
+                throw new Error("Attempt tried to register a second Assertions state");
+              }
               liveAssertions = runtime;
+              liveAssertionState = state;
             },
             ...(opts.artifactPrepare !== undefined ? { prepareCoordinator: opts.artifactPrepare } : {}),
           }, parentSignal),
@@ -912,9 +927,10 @@ export function runAttemptEffect<
       }
 
       const sealExit = yield* Effect.exit(
-        sealAttemptAssertionsV1(
-          sealRequestExit.value.runtime,
-          sealRequestExit.value.options,
+          sealAttemptAssertionsV1(
+            sealRequestExit.value.runtime,
+            sealRequestExit.value.options,
+            sealRequestExit.value.additionalAttemptWrites,
         ).pipe(
           Effect.tap(() => Effect.sync(() => {
             assertionsSealed = true;
@@ -1340,8 +1356,11 @@ interface AttemptResources {
   registerLedger: (ledger: ChangeLedger) => void;
   /** The outer Effect boundary owns author execution and the one seal. */
   assertFirst: AssertFirstAttemptBridgeV1<unknown>;
-  /** Registers the Attempt-local runtime for interruption-safe scope sealing. */
-  registerAssertions: (runtime: AssertionsRuntimeV1<"pass" | "score">) => void;
+  /** Registers the Attempt-local runtime and its post-run evidence state for scope sealing. */
+  registerAssertions: (
+    runtime: AssertionsRuntimeV1<"pass" | "score">,
+    state: AssertFirstContextState,
+  ) => void;
   /** Run 级 Agent artifact prepare 协调器；仅 Runner 的 agent.ensure 使用。 */
   prepareCoordinator?: import("../agents/provisioner.ts").ArtifactPrepareCoordinator;
 }
@@ -1621,7 +1640,7 @@ async function runAttemptBody(
       () => state.manager.retryAttempts,
     );
     assertionState = state;
-    registerAssertions(state.assertions);
+    registerAssertions(state.assertions, state);
 
     let error: AttemptError | undefined;
     let skipReason: string | undefined;
@@ -1684,7 +1703,48 @@ async function runAttemptBody(
       }
     }
     const diff = deriveDiffData(diffWindows);
-    state.late.diff = diff;
+    let diffAdditionalAttemptWrites: readonly import("../record/attachment/index.ts").RecordAttachmentWrite<
+      "attempt",
+      never,
+      never
+    >[] = Object.freeze([]);
+    if (usesSandbox && ledger && diffArtifactAvailable && !skipReason) {
+      // This is the one export/freeze point. The Attachment writer captures
+      // this exact object and post-run Assertion closures read this same
+      // object through `state.late.diff`; neither side rebuilds a diff.
+      try {
+        const document = createAgentWorkspaceDiffDocumentV1({
+          windows: diffWindows,
+          policy: ledger.attribution,
+        });
+        state.late.diff = Object.freeze({ state: "available" as const, document });
+        diffAdditionalAttemptWrites = Object.freeze([
+          createAgentWorkspaceDiffAttachmentWriteV1(document),
+        ]);
+      } catch (diffError) {
+        state.late.diff = Object.freeze({
+          state: "unavailable" as const,
+          reason: "producer-failed" as const,
+        });
+        feedback.diagnostic({
+          code: "workspace-diff-unavailable",
+          level: "warning",
+          message: `workspace diff freeze failed; continuing with command/event evidence: ${firstLine(formatThrown(diffError))}`,
+          data: evidenceDiagnosticData(
+            "freeze",
+            diffError,
+            a.plan._tag === "Sandbox" ? a.plan.providerPlan.provider : undefined,
+          ),
+        });
+      }
+    } else {
+      state.late.diff = Object.freeze({
+        state: "unavailable" as const,
+        reason: usesSandbox
+          ? "producer-failed" as const
+          : "sandbox-unavailable" as const,
+      });
+    }
     if (!skipReason && usesSandbox && diffArtifactAvailable) {
       const files = Object.values(diff.files);
       log(t("runner.diffProgress", {
@@ -1708,6 +1768,7 @@ async function runAttemptBody(
         execution: error === undefined ? "completed" : "errored",
         explicitlySkipped: skipReason !== undefined,
       },
+      additionalAttemptWrites: diffAdditionalAttemptWrites,
     }));
     const verdict = sealedAssertions.verdict.state;
 
@@ -1836,6 +1897,12 @@ async function runAttemptBody(
     await assertFirst.requestEffect(assertFirst.failBeforeContext(e));
     let sealed: SealedAttemptAssertionsV1 | undefined;
     if (assertionState !== undefined) {
+      if (assertionState.late.diff.state === "pending") {
+        assertionState.late.diff = Object.freeze({
+          state: "unavailable" as const,
+          reason: "producer-failed" as const,
+        });
+      }
       try {
         sealed = await assertFirst.requestEffect(assertFirst.requestSeal({
           runtime: assertionState.assertions,

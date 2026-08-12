@@ -312,13 +312,50 @@ const JudgeMeasurementCriterionV1Schema = Schema.Struct({
   }),
 });
 
-const SandboxResultCriterionV1Schema = Schema.Struct({
-  kind: Schema.Literal("builtin"),
-  id: Schema.Literal("sandbox-result/v1"),
-  data: Schema.Struct({
-    operation: Schema.Literal("command", "path", "file", "diff", "usage"),
+const SandboxResultCriterionV1Schema = Schema.Union(
+  Schema.Struct({
+    kind: Schema.Literal("builtin"),
+    id: Schema.Literal("sandbox-result/v1"),
+    data: Schema.Struct({
+      operation: Schema.Literal("changed-paths"),
+      paths: Schema.Array(BoundedJsonStringV1Schema),
+    }),
   }),
-});
+  Schema.Struct({
+    kind: Schema.Literal("builtin"),
+    id: Schema.Literal("sandbox-result/v1"),
+    data: Schema.Struct({ operation: Schema.Literal("no-changes") }),
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("builtin"),
+    id: Schema.Literal("sandbox-result/v1"),
+    data: Schema.Struct({
+      operation: Schema.Literal("file-changed"),
+      path: BoundedJsonStringV1Schema,
+      status: Schema.optional(Schema.Literal("added", "modified", "deleted")),
+      before: Schema.optional(BoundedJsonStringV1Schema),
+      after: Schema.optional(BoundedJsonStringV1Schema),
+    }),
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("builtin"),
+    id: Schema.Literal("sandbox-result/v1"),
+    data: Schema.Struct({
+      operation: Schema.Literal("file-deleted"),
+      path: BoundedJsonStringV1Schema,
+    }),
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("builtin"),
+    id: Schema.Literal("sandbox-result/v1"),
+    data: Schema.Struct({
+      operation: Schema.Literal("not-in-diff"),
+      pattern: BoundedJsonStringV1Schema,
+      flags: BoundedJsonStringV1Schema,
+      content: Schema.Literal("added", "removed", "both"),
+    }),
+  }),
+);
 
 const DirectScoreCriterionV1Schema = Schema.Struct({
   kind: Schema.Literal("builtin"),
@@ -447,6 +484,11 @@ export function createAssertionsRecordSchemas<BlobRef, BlobRefEncoded>(
       ref: blobRefSchema,
       encoding: Schema.Literal("utf-8", "binary"),
       byteLength: NonNegativeIntegerV1Schema,
+      preview: BoundedJsonStringV1Schema,
+    }),
+    Schema.Struct({
+      kind: Schema.Literal("record-attachment"),
+      schemaId: Schema.Literal("niceeval.diff/v1"),
       preview: BoundedJsonStringV1Schema,
     }),
   );

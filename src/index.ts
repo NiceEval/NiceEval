@@ -3,6 +3,18 @@
 
 export { defineEval, defineScoreEval, defineConfig, defineExperiment } from "./define.ts";
 
+/** Neutral RecordAttachment projector for the Attempt-owned agent workspace diff. */
+export { agentWorkspaceDiffProjectorV1 } from "./assertions/record/diff.ts";
+export type {
+  AgentWorkspaceDiffDocumentV1,
+  AgentWorkspaceDiffEndpointV1,
+  AgentWorkspaceDiffHunksV1,
+  AgentWorkspaceDiffPolicyV1,
+  AgentWorkspaceDiffWindowChangeV1,
+  AgentWorkspaceDiffWindowV1,
+} from "./assertions/diff.ts";
+export type { PostRunBooleanAssertionHandle } from "./assertions/api.ts";
+
 export { requireEnv, getEnv, stripComments } from "./util.ts";
 
 // 执行失败分类:抛出点糖衣类(声明死因波及多远)+ 结构守卫。判据、分类链与止损语义见
@@ -59,27 +71,7 @@ export type {
   DiagnosticRecord,
   ExperimentRunInfo,
   SandboxRunInfo,
-  DiffData,
   ScriptResult,
-  EvalSandbox,
-  BooleanFact,
-  ScoreFact,
-  UsageEvidenceFact,
-  EvidenceSource,
-  FactPhase,
-  FactUseOptions,
-  ThresholdedScoreFact,
-  ThresholdedScoreMatch,
-  AssertionEvent,
-  ScoreUseOptions,
-  DirectScoreOptions,
-  EvaluationFactResult,
-  PrimaryFactSummary,
-  VerdictFactUseResult,
-  ScoreFactUseResult,
-  AttemptFactIssue,
-  PassFactAttemptOutcome,
-  ScoreFactAttemptOutcome,
   CommandResult,
   InputRequest,
   InputRequestFilter,

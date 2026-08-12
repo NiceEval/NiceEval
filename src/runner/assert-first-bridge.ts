@@ -13,6 +13,7 @@ import type {
   AssertionsRuntimeV1,
 } from "../assertions/api.ts";
 import { AssertionAuthoringClosedErrorV1 } from "../assertions/api.ts";
+import type { RecordAttachmentWrite } from "../record/attachment/index.ts";
 import type { SealedAttemptAssertionsV1 } from "./assertions.ts";
 
 export type AttemptAuthorCompletionV1 =
@@ -24,6 +25,8 @@ export type AttemptAuthorCompletionV1 =
 export interface AssertionSealRequestV1 {
   readonly runtime: AssertionsRuntimeV1<"pass" | "score">;
   readonly options: AssertionSealOptionsV1;
+  /** Post-run evidence writes built from the same frozen semantic document as evaluators. */
+  readonly additionalAttemptWrites?: readonly RecordAttachmentWrite<"attempt", never, never>[];
 }
 
 type AttemptEffectRequestKindV1 = "assertion" | "operation";

@@ -2,6 +2,12 @@ import { Effect, Either, Schema } from "effect";
 import {
   assertionsAttachmentDefinitionV1,
 } from "../../assertions/record/attachment.ts";
+import {
+  agentWorkspaceDiffAttachmentDefinitionV1,
+} from "../../assertions/record/diff.ts";
+import type {
+  AgentWorkspaceDiffDocumentV1,
+} from "../../assertions/diff.ts";
 import type {
   AssertionsDocumentOuterV1,
   SealedAssertionResultV1,
@@ -122,7 +128,9 @@ export type EvaluationRecordContractIssueV1 =
       readonly reason:
         | "closure-invalid"
         | "definition-invalid"
-        | "facts-mismatch";
+        | "facts-mismatch"
+        | "record-attachment-reference-missing"
+        | "record-attachment-coverage-incoherent";
       readonly issue?: RecordAttachmentClosureInvalid;
     }
   | {
@@ -280,6 +288,60 @@ function assertionsMatchFacts(
     });
 }
 
+function hasWorkspaceDiffReference(
+  document: AssertionsDocumentOuterV1<RecordBlobRef>,
+): boolean {
+  const isReference = (material: (typeof document.entries)[number]["subject"]): boolean =>
+    material.kind === "record-attachment" && material.schemaId === "niceeval.diff/v1";
+  return document.entries.some((entry) =>
+    isReference(entry.subject) || entry.evidence.some(isReference));
+}
+
+function workspaceDiffDocuments<Error, Requirements>(
+  writes: readonly RecordAttachmentWrite<"attempt", Error, Requirements>[],
+): readonly AgentWorkspaceDiffDocumentV1[] {
+  const documents: AgentWorkspaceDiffDocumentV1[] = [];
+  for (const write of writes) {
+    const contents = recordAttachmentWriteContents<
+      "attempt",
+      AgentWorkspaceDiffDocumentV1,
+      Error,
+      Requirements
+    >(write);
+    if (
+      Either.isRight(contents)
+      && contents.right.definition === agentWorkspaceDiffAttachmentDefinitionV1
+    ) {
+      documents.push(contents.right.payload);
+    }
+  }
+  return Object.freeze(documents);
+}
+
+function hasCoherentWorkspaceDiffCoverage(
+  document: AssertionsDocumentOuterV1<RecordBlobRef>,
+  facts: EvaluationAttemptFactsV1,
+  documents: readonly AgentWorkspaceDiffDocumentV1[],
+): boolean {
+  const hasSingleWrite = documents.length === 1;
+  for (const [index, entry] of document.entries.entries()) {
+    const referencesDiff = entry.subject.kind === "record-attachment"
+      && entry.subject.schemaId === "niceeval.diff/v1"
+      || entry.evidence.some(
+        (material) => material.kind === "record-attachment"
+          && material.schemaId === "niceeval.diff/v1",
+      );
+    if (!referencesDiff) continue;
+    const determined = entry.result.state === "matched" || entry.result.state === "mismatched";
+    if (determined && (!hasSingleWrite || entry.coverage.state === "unavailable")) return false;
+    // Required references must name the same Attempt's actual write. Optional
+    // unavailable observations can remain durable facts without independently
+    // blocking the Verdict when collection never produced an Attachment.
+    if (facts.assertions[index]?.required === true && !hasSingleWrite) return false;
+  }
+  return true;
+}
+
 function decodeFacts(
   facts: EvaluationAttemptFactsV1,
 ): Either.Either<EvaluationAttemptFactsV1, "invalid"> {
@@ -296,6 +358,7 @@ function validateAssertionsWrite<Error, Requirements>(input: {
   readonly slotId: SlotId;
   readonly facts: EvaluationAttemptFactsV1;
   readonly write: RecordAttachmentWrite<"attempt", Error, Requirements>;
+  readonly writes: readonly RecordAttachmentWrite<"attempt", Error, Requirements>[];
 }): EvaluationRecordContractIssueV1 | undefined {
   const contents = recordAttachmentWriteContents<
     "attempt",
@@ -318,13 +381,25 @@ function validateAssertionsWrite<Error, Requirements>(input: {
       reason: "definition-invalid" as const,
     });
   }
-  return assertionsMatchFacts(contents.right.payload, input.facts)
-    ? undefined
-    : Object.freeze({
-        code: "evaluation-record-assertions-write-invalid" as const,
-        slotId: input.slotId,
-        reason: "facts-mismatch" as const,
-      });
+  if (!assertionsMatchFacts(contents.right.payload, input.facts)) {
+    return Object.freeze({
+      code: "evaluation-record-assertions-write-invalid" as const,
+      slotId: input.slotId,
+      reason: "facts-mismatch" as const,
+    });
+  }
+  const referencesDiff = hasWorkspaceDiffReference(contents.right.payload);
+  const documents = workspaceDiffDocuments(input.writes);
+  if (referencesDiff && !hasCoherentWorkspaceDiffCoverage(contents.right.payload, input.facts, documents)) {
+    return Object.freeze({
+      code: "evaluation-record-assertions-write-invalid" as const,
+      slotId: input.slotId,
+      reason: documents.length === 1
+        ? "record-attachment-coverage-incoherent" as const
+        : "record-attachment-reference-missing" as const,
+    });
+  }
+  return undefined;
 }
 
 function planRuntime<Error, Requirements>(
@@ -413,6 +488,7 @@ export function createEvaluationRecordPlanV1<Error, Requirements>(
       slotId: origin.slotId,
       facts: facts.right,
       write: origin.assertions,
+      writes: origin.writes ?? [],
     });
     if (assertionsIssue !== undefined) {
       issues.push(assertionsIssue);
