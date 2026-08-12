@@ -9,9 +9,8 @@ export default defineEval({
     "会话续接:首轮 thread ID 被捕获,第二轮 codex exec resume 续接并引用首轮事实",
   async test(t) {
     const suffix = "这轮不用跑命令也不用建文件。";
-    await (
-      await t.send(`我叫 niceeval-e2e-tester,帮我记住这个名字。${suffix}`)
-    ).succeeded().orStop();
+    const first = await t.send(`我叫 niceeval-e2e-tester,帮我记住这个名字。${suffix}`);
+    await first.succeeded().orStop();
 
     // 首轮结束后,ctx.session.capture() 应该已经把 thread.started 回传的 id 记下来了。
     t.check(
