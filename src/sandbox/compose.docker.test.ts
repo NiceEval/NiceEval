@@ -7,6 +7,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Docker from "dockerode";
+import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import {
   collectComposeBuilds,
@@ -51,7 +52,9 @@ describe("Docker Compose provider real cleanup", () => {
 
     let projectName: string | undefined;
     try {
-      const collection = await collectComposeBuilds({ file: composePath, mainService: "client" });
+      const collection = await Effect.runPromise(
+        collectComposeBuilds({ file: composePath, mainService: "client" }),
+      );
       const identity = { provider: "docker", kind: "compose", file: composePath, mainService: "client" } as const;
       const plan = {
         evalId: `docker/abort-cleanup-${suffix}`,
