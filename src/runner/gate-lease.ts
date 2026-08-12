@@ -374,7 +374,11 @@ export function acquireGateSlotEffect(
             ),
           ),
         );
-        return Effect.forkDaemon(heartbeat).pipe(
+        // A child inherits the parent's interruptibility. This branch still
+        // runs under the acquisition mask, so restore the heartbeat before
+        // forking; otherwise release would wait forever while interrupting an
+        // uninterruptible sleeping fiber.
+        return Effect.forkDaemon(restore(heartbeat)).pipe(
           Effect.map((fiber) => {
             const release = Effect.uninterruptible(Effect.suspend(() => {
               if (released) return Effect.void;
