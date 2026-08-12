@@ -2574,14 +2574,16 @@ function runViewCommand(
     const session = yield* openReportViewSession({
       url: `http://${host.includes(":") ? `[${host}]` : host}:${port}/`,
       theme: initialInputs.theme,
+      watchInputs: initialInputs.watchInputs,
       initial: Effect.succeed(initial),
       rebuild: () => rebuildReportView(request),
     }).pipe(Effect.mapError((error) => cliFailure("open report view session", error)));
+    // Watch set is owned by the session revision; openViewServer only transports
+    // fs.watch hints and replaces them after each successful rebuild.
     const server = yield* openViewServer({
       session,
       host,
       port,
-      watchInputs: initialInputs.watchInputs,
     }).pipe(Effect.mapError((error) => cliFailure("open report view", error)));
     const url = request.page === undefined ? server.url : new URL(request.page, server.url).toString();
     yield* writeStdout(`niceeval view — open in a browser:\n${url}\n`);
@@ -2595,14 +2597,20 @@ function runViewCommand(
 /**
  * A watcher signal is only a hint. Every refresh re-reads config plus its
  * fresh author graph and Record before one completed immutable revision is
- * published; a typed boundary failure is logged once and leaves last-good.
+ * published with its next recoverable watch set; a typed boundary failure is
+ * logged once and leaves last-good execution and the prior watch set.
  */
 function rebuildReportView(request: ReportCliRequest) {
   return Effect.gen(function* () {
     const inputs = yield* loadCliReportInputs(request);
     const execution = yield* executeCliReport(request, inputs.report);
     yield* requireKnownReportPage(execution, request.page);
-    return Object.freeze({ kind: "execution" as const, execution, theme: inputs.theme });
+    return Object.freeze({
+      kind: "execution" as const,
+      execution,
+      theme: inputs.theme,
+      watchInputs: inputs.watchInputs,
+    });
   }).pipe(
     Effect.catchAll((failure) => {
       const problem = reportViewRebuildFailure(failure);

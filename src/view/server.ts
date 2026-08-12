@@ -42,7 +42,10 @@ export interface ViewOptions<Requirements = never> {
   readonly scan?: ViewScanOptions;
   /** A legacy alias for one caller-supplied watch input. */
   readonly watchRoot?: string;
-  /** Exact files or directories whose changes should request one rebuild. */
+  /**
+   * Bootstrap watch inputs when the session/request has none yet. After each
+   * successful rebuild the session revision owns the next-round watch set.
+   */
   readonly watchInputs?: readonly string[];
   readonly onRebuild?: (completedAt: Date) => void;
   /** Static export consumes this exact fixed execution. */
@@ -181,14 +184,31 @@ interface ServerResources {
 }
 
 interface WatchResources {
-  readonly watchers: Map<string, FSWatcher>;
+  /** The one currently published watcher closure. */
+  current: WatchSet;
+  /** Stable refresh request callback for the current server lifetime. */
+  onChange: () => void;
   closed: boolean;
+}
+
+/**
+ * A complete watcher closure. A candidate stays `opening` until every watch
+ * for its current directory tree has opened. Callbacks test both this state
+ * and the owning resource's current reference, so an old or failed candidate
+ * cannot enqueue a late rebuild.
+ */
+interface WatchSet {
+  readonly inputs: readonly string[];
+  readonly watchers: Map<string, FSWatcher>;
+  state: "opening" | "active" | "closed";
 }
 
 /**
  * Opens a real loopback HTTP server. A watcher event only requests
  * `session.refresh`; the session serializes rebuild and close, preserves the
- * last good immutable execution, and publishes a new revision only on success.
+ * last good immutable execution and recoverable watch set, and publishes a new
+ * revision only on success. The Node server then atomically replaces its
+ * fs.watch resources from that revision's watchInputs.
  */
 export function openViewServer<Requirements>(
   options: ViewOptions<Requirements> = {},
@@ -208,7 +228,18 @@ export function openViewServer<Requirements>(
 
     const session = options.session ?? (options.request === undefined
       ? yield* Effect.fail(serverError("open", "view needs a scoped ReportViewSession or current rebuild request"))
-      : yield* openReportViewSession(options.request));
+      : yield* openReportViewSession({
+        ...options.request,
+        // Bootstrap the opening revision when the request omitted a watch set.
+        watchInputs: options.request.watchInputs ?? optionWatchInputs(options),
+      }));
+
+    const opening = yield* session.snapshot.pipe(
+      Effect.mapError(() => serverError("open", "report view session closed before watchers opened")),
+    );
+    const initialWatchInputs = opening.current.watchInputs.length > 0
+      ? opening.current.watchInputs
+      : optionWatchInputs(options);
 
     const resources = yield* Effect.acquireRelease(
       Effect.sync(() => makeResources()),
@@ -216,7 +247,7 @@ export function openViewServer<Requirements>(
     );
     const address = yield* listen(resources.server, host, port);
     const watches = yield* Effect.acquireRelease(
-      openWatchers(watchInputs(options), () => resources.refreshes.request()),
+      openWatchers(initialWatchInputs, () => resources.refreshes.request()),
       (value) => closeWatchers(value),
     );
 
@@ -227,7 +258,8 @@ export function openViewServer<Requirements>(
     );
     yield* Effect.forkScoped(
       Effect.forever(
-        Effect.flatMap(resources.refreshes.take(), () => refreshSession(session, options.onRebuild)),
+        Effect.flatMap(resources.refreshes.take(), () =>
+          refreshSession(session, watches, options.onRebuild)),
       ).pipe(Effect.catchAll(() => Effect.void)),
     );
 
@@ -348,13 +380,20 @@ function serveRequest<Requirements>(
 
 function refreshSession<Requirements>(
   session: ReportViewSession<Requirements>,
+  watches: WatchResources,
   onRebuild: ViewOptions["onRebuild"],
 ): Effect.Effect<void, ReportViewSessionClosed, Requirements> {
   return Effect.gen(function* () {
     const before = yield* session.snapshot;
     yield* session.refresh;
     const after = yield* session.snapshot;
-    if (after.current.revision > before.current.revision && onRebuild !== undefined) {
+    if (after.current.revision <= before.current.revision) {
+      // Failure kept last-good execution and the prior recoverable watch set.
+      return;
+    }
+    // One successful revision owns one fixed execution and one next-round watch set.
+    yield* Effect.sync(() => replaceWatchInputs(watches, after.current.watchInputs));
+    if (onRebuild !== undefined) {
       yield* Effect.try({
         try: () => onRebuild(new Date()),
         catch: () => undefined,
@@ -363,7 +402,7 @@ function refreshSession<Requirements>(
   });
 }
 
-function watchInputs<Requirements>(options: ViewOptions<Requirements>): readonly string[] {
+function optionWatchInputs<Requirements>(options: ViewOptions<Requirements>): readonly string[] {
   const values = [
     ...(options.watchInputs ?? []),
     ...(options.watchRoot === undefined ? [] : [options.watchRoot]),
@@ -377,26 +416,17 @@ function openWatchers(
 ): Effect.Effect<WatchResources, NodeViewServerError> {
   return Effect.try({
     try: () => {
-      const resources: WatchResources = { watchers: new Map(), closed: false };
-      const notify = (): void => {
-        if (resources.closed) return;
-        // A new Run gets its own directory before its completion marker. Rescan
-        // immediately after the parent event so the marker change is observed
-        // as well as the first incomplete rebuild.
-        try {
-          synchronizeWatchers(resources, inputs, notify);
-        } catch {
-          // A transient directory race must not escape a Node callback. The
-          // existing watcher still requests this rebuild and the next event
-          // will retry the watch-set synchronization.
-        }
-        onChange();
+      const resources: WatchResources = {
+        current: closedWatchSet(),
+        onChange,
+        closed: false,
       };
       try {
-        synchronizeWatchers(resources, inputs, notify);
+        const opening = openWatchSet(resources, inputs);
+        publishWatchSet(resources, opening);
         return resources;
       } catch (error) {
-        for (const watcher of resources.watchers.values()) watcher.close();
+        closeWatchSet(resources.current);
         throw error;
       }
     },
@@ -404,71 +434,195 @@ function openWatchers(
   });
 }
 
-/** Watch the Record root and its current Run directories without a polling loop. */
-function synchronizeWatchers(
+/**
+ * Atomically swaps the next-round watch set after a successful revision. Failure
+ * paths never call this, so last-good entry edges remain recoverable.
+ */
+function replaceWatchInputs(
   resources: WatchResources,
   inputs: readonly string[],
-  onChange: () => void,
 ): void {
-  for (const input of inputs) {
+  if (resources.closed) return;
+  try {
+    const opening = openWatchSet(resources, inputs);
+    if (resources.closed) {
+      closeWatchSet(opening);
+      return;
+    }
+    // No Effect boundary or callback can interleave this publication: the
+    // replacement is entirely synchronous after the candidate validated.
+    publishWatchSet(resources, opening);
+  } catch {
+    // A transient directory race must not discard the previous recoverable
+    // closure. The next filesystem hint retries full reconciliation.
+  }
+}
+
+function closedWatchSet(): WatchSet {
+  return {
+    inputs: Object.freeze([]),
+    watchers: new Map(),
+    state: "closed",
+  };
+}
+
+/**
+ * Opens a whole candidate closure without touching the published set. This is
+ * also the full reconciliation path for directory-tree changes: fs.watch is a
+ * hint, so every event rescans all inputs before requesting a rebuild.
+ */
+function openWatchSet(resources: WatchResources, inputs: readonly string[]): WatchSet {
+  const watchSet: WatchSet = {
+    inputs: normalizeWatchInputs(inputs),
+    watchers: new Map(),
+    state: "opening",
+  };
+  try {
+    synchronizeWatchSet(resources, watchSet);
+    return watchSet;
+  } catch (error) {
+    closeWatchSet(watchSet);
+    throw error;
+  }
+}
+
+/** Watch the Record root and its current Run directories without a polling loop. */
+function synchronizeWatchSet(resources: WatchResources, watchSet: WatchSet): void {
+  for (const input of watchSet.inputs) {
+    let inputIsDirectory: boolean;
     try {
-      if (statSync(input).isDirectory()) {
-        watchDirectoryTree(resources, input, onChange, 0);
-      } else {
-        watchNamedInput(resources, dirname(input), basename(input), onChange);
-      }
-    } catch {
+      inputIsDirectory = statSync(input).isDirectory();
+    } catch (error) {
+      if (!isMissingPath(error)) throw error;
       // A missing config / module / Record root remains observable through its
       // parent directory. It can appear later without restarting the host.
-      watchNamedInput(resources, dirname(input), basename(input), onChange);
+      watchNamedInput(resources, watchSet, dirname(input), basename(input));
+      continue;
+    }
+    if (inputIsDirectory) {
+      watchDirectoryTree(resources, watchSet, input, 0);
+    } else {
+      watchNamedInput(resources, watchSet, dirname(input), basename(input));
     }
   }
+}
+
+function normalizeWatchInputs(inputs: readonly string[]): readonly string[] {
+  return Object.freeze([...new Set(inputs.map((input) => resolve(input)))].sort());
 }
 
 const WATCH_DIRECTORY_DEPTH_MAX = 4;
 
 function watchDirectoryTree(
   resources: WatchResources,
+  watchSet: WatchSet,
   directory: string,
-  onChange: () => void,
   depth: number,
 ): void {
-  watchDirectory(resources, directory, onChange);
+  try {
+    watchDirectory(resources, watchSet, directory);
+  } catch (error) {
+    if (!isMissingPath(error)) throw error;
+    watchNamedInput(resources, watchSet, dirname(directory), basename(directory));
+    return;
+  }
   if (depth >= WATCH_DIRECTORY_DEPTH_MAX) return;
   let entries: readonly { readonly name: string; isDirectory(): boolean }[];
   try {
     entries = readdirSync(directory, { withFileTypes: true });
-  } catch {
+  } catch (error) {
+    if (!isMissingPath(error)) throw error;
+    watchNamedInput(resources, watchSet, dirname(directory), basename(directory));
     return;
   }
   for (const entry of entries) {
     if (entry.isDirectory()) {
-      watchDirectoryTree(resources, resolve(directory, entry.name), onChange, depth + 1);
+      watchDirectoryTree(resources, watchSet, resolve(directory, entry.name), depth + 1);
     }
   }
 }
 
 function watchDirectory(
   resources: WatchResources,
+  watchSet: WatchSet,
   directory: string,
-  onChange: () => void,
 ): void {
   const key = `directory:${directory}`;
-  if (resources.watchers.has(key)) return;
-  resources.watchers.set(key, watch(directory, () => onChange()));
+  if (watchSet.watchers.has(key)) return;
+  const watcher = watch(directory, () => watchSetChanged(resources, watchSet));
+  watchSet.watchers.set(key, watcher);
+  watchFailure(resources, watchSet, key, watcher);
 }
 
 function watchNamedInput(
   resources: WatchResources,
+  watchSet: WatchSet,
   directory: string,
   name: string,
-  onChange: () => void,
 ): void {
   const key = `named:${directory}:${name}`;
-  if (resources.watchers.has(key)) return;
-  resources.watchers.set(key, watch(directory, (_event, filename) => {
-    if (filename === null || filename.toString() === name) onChange();
-  }));
+  if (watchSet.watchers.has(key)) return;
+  const watcher = watch(directory, (_event, filename) => {
+    if (filename === null || filename.toString() === name) watchSetChanged(resources, watchSet);
+  });
+  watchSet.watchers.set(key, watcher);
+  watchFailure(resources, watchSet, key, watcher);
+}
+
+function watchFailure(
+  resources: WatchResources,
+  watchSet: WatchSet,
+  key: string,
+  watcher: FSWatcher,
+): void {
+  watcher.once("error", () => {
+    if (watchSet.watchers.get(key) === watcher) {
+      watchSet.watchers.delete(key);
+      closeWatcher(watcher);
+    }
+    watchSetChanged(resources, watchSet);
+  });
+}
+
+function watchSetChanged(resources: WatchResources, watchSet: WatchSet): void {
+  if (!isCurrentWatchSet(resources, watchSet)) return;
+  // A new Run gets its own directory before its completion marker. Reconcile
+  // the whole closure now so the marker change is observed as well as the
+  // first incomplete rebuild. Failure leaves this complete old set active.
+  replaceWatchInputs(resources, watchSet.inputs);
+  if (isCurrentWatchSet(resources, resources.current)) resources.onChange();
+}
+
+function isCurrentWatchSet(resources: WatchResources, watchSet: WatchSet): boolean {
+  return !resources.closed && resources.current === watchSet && watchSet.state === "active";
+}
+
+/** Publishes a fully opened candidate, then retires the old closure synchronously. */
+function publishWatchSet(resources: WatchResources, opening: WatchSet): void {
+  if (resources.closed) {
+    closeWatchSet(opening);
+    return;
+  }
+  const previous = resources.current;
+  opening.state = "active";
+  resources.current = opening;
+  closeWatchSet(previous);
+}
+
+function closeWatchSet(watchSet: WatchSet): void {
+  if (watchSet.state === "closed") return;
+  watchSet.state = "closed";
+  const watchers = [...watchSet.watchers.values()];
+  watchSet.watchers.clear();
+  for (const watcher of watchers) closeWatcher(watcher);
+}
+
+function closeWatcher(watcher: FSWatcher): void {
+  try {
+    watcher.close();
+  } catch {
+    // Closing is best-effort and idempotent at the Node boundary.
+  }
 }
 
 function closeResources(resources: ServerResources): Effect.Effect<void> {
@@ -490,16 +644,7 @@ function closeWatchers(resources: WatchResources): Effect.Effect<void> {
   return Effect.suspend(() => {
     if (resources.closed) return Effect.void;
     resources.closed = true;
-    return Effect.sync(() => {
-      for (const watcher of resources.watchers.values()) {
-        try {
-          watcher.close();
-        } catch {
-          // Closing is best-effort and idempotent at the Node boundary. The
-          // owning Scope still proceeds to close the listener and sockets.
-        }
-      }
-    });
+    return Effect.sync(() => closeWatchSet(resources.current));
   });
 }
 
@@ -571,4 +716,10 @@ function serverError(operation: NodeViewServerError["operation"], reason: string
 
 function asError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
+}
+
+function isMissingPath(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const code = Reflect.get(error, "code");
+  return code === "ENOENT" || code === "ENOTDIR";
 }

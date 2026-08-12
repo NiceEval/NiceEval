@@ -8,6 +8,12 @@ export interface ReportViewRevision {
   readonly execution: ReportExecution;
   /** Theme snapshot for this view revision; it never becomes Report author data. */
   readonly theme: ThemeDefinition;
+  /**
+   * Recoverable Node watch set published with this revision. `fs.watch` is only
+   * a hint; the next rebuild re-reads its own loader closure. Failure keeps the
+   * last-good set so the entry (and prior static edges) remain recoverable.
+   */
+  readonly watchInputs: readonly string[];
 }
 
 export interface ReportViewProblem {
@@ -39,12 +45,19 @@ export interface ReportViewExecutionRebuild {
   readonly execution: ReportExecution;
   /** Omit when the previous Theme source snapshot remains current. */
   readonly theme?: ThemeDefinition;
+  /**
+   * On success, atomically replaces the next-round watch set. Omit to keep the
+   * last-good recoverable set (at least the prior entry edges).
+   */
+  readonly watchInputs?: readonly string[];
 }
 
 /** A Theme-only rebuild keeps the exact immutable execution and changes presentation only. */
 export interface ReportViewThemeRebuild {
   readonly kind: "theme-only";
   readonly theme: ThemeDefinition;
+  /** Same atomic watch-set rule as an execution rebuild. */
+  readonly watchInputs?: readonly string[];
 }
 
 export type ReportViewRebuild =
@@ -62,6 +75,11 @@ export interface OpenReportViewSessionInput<Requirements = never> {
   readonly url: string;
   /** The initial Theme source snapshot; basalt is the host default. */
   readonly theme?: ThemeDefinition;
+  /**
+   * Initial recoverable watch set for the opening revision. A successful
+   * rebuild may replace it atomically with the next loader closure.
+   */
+  readonly watchInputs?: readonly string[];
   /** The opening execution must be complete; no last-good revision exists yet. */
   readonly initial: Effect.Effect<ReportExecution, ReportViewOpenError, Requirements>;
   /** Each invocation publishes a new execution or a Theme-only revision. */
@@ -78,8 +96,9 @@ const closedError: ReportViewSessionClosed = Object.freeze({
 
 /**
  * Builds the immutable-revision state machine used by a Node watcher/server.
- * A successful refresh atomically publishes a new fixed execution; a typed
- * failed refresh only updates the bounded last-good problem. Defects and
+ * A successful refresh atomically publishes a new fixed execution and the next
+ * recoverable watch set; a typed failed refresh only updates the bounded
+ * last-good problem and leaves the prior watch set intact. Defects and
  * interruption intentionally remain in the Effect cause and do not masquerade
  * as a recoverable rebuild result.
  */
@@ -89,7 +108,7 @@ export function openReportViewSession<Requirements>(
   return Effect.gen(function* () {
     const initial = yield* input.initial;
     const initialState: ReportViewState = Object.freeze({
-      current: revision(0, initial, input.theme ?? basalt),
+      current: revision(0, initial, input.theme ?? basalt, freezeWatchInputs(input.watchInputs)),
     });
     const cell = yield* Ref.make<SessionCell>(Object.freeze({ state: "open", value: initialState }));
     const mutex = yield* Effect.makeSemaphore(1);
@@ -112,6 +131,7 @@ export function openReportViewSession<Requirements>(
             return Ref.set(cell, Object.freeze({ state: "open", value: next }));
           }),
           Effect.catchAll((failure) => {
+            // Keep last-good execution, theme, and recoverable watch set.
             const next: ReportViewState = Object.freeze({
               current: before.value.current,
               lastProblem: boundedProblem(failure),
@@ -137,11 +157,17 @@ function revision(
   revisionNumber: number,
   execution: ReportExecution,
   theme: ThemeDefinition,
+  watchInputs: readonly string[],
 ): ReportViewRevision {
   if (!isThemeDefinition(theme)) {
     throw new TypeError("a Report view revision requires a ThemeDefinition from defineTheme");
   }
-  return Object.freeze({ revision: revisionNumber, execution, theme });
+  return Object.freeze({
+    revision: revisionNumber,
+    execution,
+    theme,
+    watchInputs: freezeWatchInputs(watchInputs),
+  });
 }
 
 function revisionFromRebuild(
@@ -149,12 +175,27 @@ function revisionFromRebuild(
   rebuilt: ReportViewRebuild,
 ): ReportViewRevision {
   if (isReportExecution(rebuilt)) {
-    return revision(previous.revision + 1, rebuilt, previous.theme);
+    // Legacy bare execution rebuilds keep the prior recoverable watch set.
+    return revision(previous.revision + 1, rebuilt, previous.theme, previous.watchInputs);
   }
   if (rebuilt.kind === "execution") {
-    return revision(previous.revision + 1, rebuilt.execution, rebuilt.theme ?? previous.theme);
+    return revision(
+      previous.revision + 1,
+      rebuilt.execution,
+      rebuilt.theme ?? previous.theme,
+      rebuilt.watchInputs ?? previous.watchInputs,
+    );
   }
-  return revision(previous.revision + 1, previous.execution, rebuilt.theme);
+  return revision(
+    previous.revision + 1,
+    previous.execution,
+    rebuilt.theme,
+    rebuilt.watchInputs ?? previous.watchInputs,
+  );
+}
+
+function freezeWatchInputs(inputs: readonly string[] | undefined): readonly string[] {
+  return Object.freeze([...(inputs ?? [])]);
 }
 
 function boundedProblem(failure: ReportViewRebuildFailure): ReportViewProblem {
