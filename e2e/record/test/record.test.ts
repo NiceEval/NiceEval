@@ -1,79 +1,115 @@
 // owner: docs/engineering/testing/e2e/record.md#record-public-api-roundtrip
 //
-// 只从候选包公开 niceeval/record export 写入并读回；测试不读取或拼接 Record
-// 私有文件布局，expected 是公开格式契约中的字面事实。
+// 只从候选包公开 niceeval/record export 写入、发布并读回；测试不读取或拼接
+// 私有 Run 布局。
 
+import { join } from "node:path";
 import { withTempDir } from "@niceeval/testkit";
-import { createWriter, openRecord, resolveLocator } from "niceeval/record";
+import { Effect, Either, Schema } from "effect";
+import {
+  defineJsonRecordAttachment,
+  defineRecordAttachmentFamily,
+  makeRecordAttachmentWrite,
+  makeRecordRoot,
+  NodeRecordLive,
+  openRecordReader,
+  openRecordWriteSession,
+  type RecordAttachmentBlobDraft,
+  SlotIdSchema,
+  UtcMillisSchema,
+} from "niceeval/record";
 import { expect, it } from "vitest";
 
-const completeEvidenceCoverage = {
-  events: { status: "complete" },
-  actions: { status: "complete" },
-  messages: { status: "complete" },
-  usage: { status: "complete" },
-  status: { status: "complete" },
-  data: { status: "complete" },
-} as const;
+function rightOrThrow<Value>(value: Either.Either<Value, unknown>): Value {
+  if (Either.isLeft(value)) {
+    throw new Error("Record public constructor rejected the E2E fixture");
+  }
+  return value.right;
+}
 
-it("公开 writer 产生的 Run、Attempt 与 events 可由公开 reader 和 locator 完整读回", async () => {
+const attachmentDefinition = rightOrThrow(
+  defineJsonRecordAttachment({
+    owner: "run",
+    name: "com.example.record-e2e",
+    schemaId: "com.example.record-e2e/v1",
+    schema: Schema.Struct({
+      state: Schema.Literal("published"),
+      producer: Schema.Literal("record-e2e"),
+    }),
+    blobRefs: () => [],
+  }),
+);
+
+const attachmentFamily = rightOrThrow(
+  defineRecordAttachmentFamily({
+    current: attachmentDefinition,
+    migrations: [],
+  }),
+);
+
+const slotId = rightOrThrow(
+  Schema.decodeUnknownEither(SlotIdSchema)("record-e2e-slot"),
+);
+const startedAt = rightOrThrow(
+  Schema.decodeUnknownEither(UtcMillisSchema)(1_754_582_400_000),
+);
+const completedAt = rightOrThrow(
+  Schema.decodeUnknownEither(UtcMillisSchema)(1_754_582_401_000),
+);
+
+it("公开写入的 Run、origin Attempt 与 typed Run attachment 在发布后可读回", async () => {
   await withTempDir("niceeval-record-e2e-", async (root) => {
-    const writer = createWriter(root, {
-      producer: { name: "external-harness", version: "1.0.0" },
-    });
-    const run = await writer.run({
-      experimentId: "public/roundtrip",
-      agent: "deterministic-agent",
-      model: "fixture-model",
-      startedAt: "2026-08-07T00:00:00.000Z",
-      configHash: "public-config-hash",
-      knownEvalIds: ["greet/hello"],
-    });
-    await run.writeAttempt(
-      {
-        id: "greet/hello",
-        attempt: 1,
-        verdict: "passed",
-        durationMs: 42,
-        evaluationAlgorithm: "fact-use/v3",
-        evaluationKind: "pass",
-        factResults: [],
-        factUses: [],
-        evidenceCoverage: completeEvidenceCoverage,
-        facts: { fixture: "record-e2e" },
-      },
-      {
-        events: [{ type: "message", role: "assistant", text: "hello from the public record" }],
-      },
+    const recordPath = join(root, "record");
+    const recordRoot = rightOrThrow(makeRecordRoot(recordPath));
+
+    const published = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* openRecordWriteSession({ root: recordRoot });
+          const draft = yield* session.createRun({
+            startedAt,
+            expectedSlots: [slotId],
+          });
+          const attempt = yield* draft.createAttempt({ slotId });
+          yield* draft.record(
+            makeRecordAttachmentWrite(attachmentFamily, () => ({
+              payload: { state: "published", producer: "record-e2e" },
+              blobs: [] as readonly RecordAttachmentBlobDraft<never, never>[],
+            })),
+          );
+          const receipt = yield* draft.publish({ completedAt });
+          return { attemptId: attempt.attemptId, receipt };
+        }),
+      ).pipe(Effect.provide(NodeRecordLive)),
     );
-    await run.finish({
-      completedAt: "2026-08-07T00:00:01.000Z",
-      facts: { lane: "pr" },
+
+    const readBack = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const reader = yield* openRecordReader({ root: recordRoot });
+          const run = yield* reader.run(published.receipt.runId);
+          if (run.state !== "available") {
+            throw new Error(`published Run read back as ${run.state}`);
+          }
+          const attempt = yield* reader.attempt(published.receipt.attempts[0]!.ref);
+          if (attempt.state !== "available") {
+            throw new Error(`published Attempt read back as ${attempt.state}`);
+          }
+          const attachment = yield* reader.readRunAttachment(run.value, attachmentFamily);
+          if (attachment.state !== "available") {
+            throw new Error(`published RecordAttachment read back as ${attachment.state}`);
+          }
+          return { attachment, attempt, run };
+        }),
+      ).pipe(Effect.provide(NodeRecordLive)),
+    );
+
+    expect(published.receipt.attempts).toHaveLength(1);
+    expect(readBack.run.value.runId).toBe(published.receipt.runId);
+    expect(readBack.attempt.value.attemptId).toBe(published.attemptId);
+    expect(readBack.attachment.value.payload).toEqual({
+      state: "published",
+      producer: "record-e2e",
     });
-
-    const record = await openRecord(root);
-    expect(record.unreadable).toEqual([]);
-    expect(record.experiments.map((experiment) => experiment.id)).toEqual(["public/roundtrip"]);
-
-    const openedRun = record.experiments[0]!.runs[0]!;
-    expect(openedRun.producer).toEqual({ name: "external-harness", version: "1.0.0" });
-    expect(openedRun.configHash).toBe("public-config-hash");
-    expect(openedRun.knownEvalIds).toEqual(["greet/hello"]);
-    expect(openedRun.facts).toEqual({ lane: "pr" });
-
-    const attempt = openedRun.attempts[0]!;
-    expect(attempt.evalId).toBe("greet/hello");
-    expect(attempt.result).toMatchObject({
-      verdict: "passed",
-      durationMs: 42,
-      facts: { fixture: "record-e2e" },
-    });
-    expect(await attempt.events()).toEqual([
-      { type: "message", role: "assistant", text: "hello from the public record" },
-    ]);
-
-    const located = resolveLocator(record, attempt.result.locator);
-    expect(located.evalId).toBe("greet/hello");
-    expect(located.result.locator).toBe(attempt.result.locator);
   });
 });
