@@ -243,7 +243,7 @@ export interface ResolvedJudgeConfig {
   readonly timeoutMs: number;
 }
 
-/** Explicit text material for a root-level Judge Fact. */
+/** Explicit text material for a root-level Judge Assertion. */
 export interface JudgeMaterial {
   readonly input: string;
   readonly output: string;

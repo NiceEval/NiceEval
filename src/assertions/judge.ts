@@ -141,13 +141,20 @@ type JudgeProbeFailure = JudgeProviderFailure | JudgeProbeTimeout;
  */
 function interruptWhenAborted(signal: AbortSignal): Effect.Effect<never> {
   return Effect.async<never>((resume) => {
-    const interrupted = () => resume(Effect.interrupt);
-    if (signal.aborted) {
-      interrupted();
-      return;
-    }
+    let completed = false;
+    const interrupted = () => {
+      if (completed) return;
+      completed = true;
+      resume(Effect.interrupt);
+    };
     signal.addEventListener("abort", interrupted, { once: true });
-    return Effect.sync(() => signal.removeEventListener("abort", interrupted));
+    // Register first, then inspect state so an abort cannot fall between the
+    // initial check and listener installation.
+    if (signal.aborted) interrupted();
+    return Effect.sync(() => {
+      completed = true;
+      signal.removeEventListener("abort", interrupted);
+    });
   });
 }
 
@@ -155,7 +162,11 @@ function interruptibleByCaller<A, E, R>(
   effect: Effect.Effect<A, E, R>,
   signal: AbortSignal | undefined,
 ): Effect.Effect<A, E, R> {
-  return signal === undefined ? effect : Effect.raceFirst(effect, interruptWhenAborted(signal));
+  if (signal === undefined) return effect;
+  return Effect.suspend(() =>
+    signal.aborted
+      ? Effect.interrupt
+      : Effect.raceFirst(effect, interruptWhenAborted(signal)));
 }
 
 function formatSeconds(ms: number): string {
@@ -270,7 +281,7 @@ function probeFailureMessage(
 
 /**
  * A precheck only tests a configured, credentialed endpoint.  Missing model or
- * key remains a normal zero-network unavailable Fact when an author consumes it.
+ * key remains a normal zero-network unavailable Assertion when an author consumes it.
  */
 export function probeJudgeEffect(
   judge: ResolvedJudgeConfig,
