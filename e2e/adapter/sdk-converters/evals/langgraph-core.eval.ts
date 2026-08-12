@@ -1,6 +1,6 @@
 // owner: docs/engineering/testing/e2e/adapter/sdk-converters.md#langgraph-core-deterministic
 import { defineEval } from "niceeval";
-import { includes, satisfies } from "niceeval/expect";
+import { includes, jsonMatch, satisfies, toolMatch } from "niceeval/expect";
 export default defineEval({
   description:
     "LangGraph v3 real GraphRunStream envelope plus official message/tool protocol frames",
@@ -8,11 +8,13 @@ export default defineEval({
     const turn = await t.send("langgraph core fixture");
     await turn.succeeded().orStop();
     t.check(turn.message, includes("langgraph-runtime-methods:lifecycle"));
-    turn.calledTool("graph_lookup", {
-      input: { query: "fixture" },
-      status: "completed",
-      count: 1,
-    });
+    turn.calledTool(
+      toolMatch("graph_lookup", {
+        input: jsonMatch({ query: "fixture" }),
+        status: "completed",
+      }),
+      { count: 1 },
+    );
     t.check(
       turn.events,
       satisfies<typeof turn.events>(

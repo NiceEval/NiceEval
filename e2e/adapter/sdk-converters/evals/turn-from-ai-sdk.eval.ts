@@ -3,7 +3,9 @@ import { defineEval } from "niceeval";
 import {
   equals,
   includes,
+  jsonMatch,
   satisfies,
+  toolMatch,
 } from "niceeval/expect";
 export default defineEval({
   description:
@@ -13,11 +15,13 @@ export default defineEval({
       "produce deterministic AI SDK tool calls and wait for approval",
     );
     t.check(draft.status, equals("waiting"));
-    draft.calledTool("inventory_lookup", {
-      input: { sku: "fixture-001" },
-      status: "completed",
-      count: 1,
-    });
+    draft.calledTool(
+      toolMatch("inventory_lookup", {
+        input: jsonMatch({ sku: "fixture-001" }),
+        status: "completed",
+      }),
+      { count: 1 },
+    );
     t.check(
       draft.events,
       satisfies<typeof draft.events>(

@@ -1,7 +1,7 @@
 // owner: docs/engineering/testing/e2e/adapter/sdk-converters.md#claude-sdk-stream-deterministic
 
 import { join } from "node:path";
-import { command, type ExpEvalEvent, type ExpEvent, type ExpResultEvent, withProjectCopy } from "@niceeval/testkit";
+import { command, type ExpEvalEvent, type ExpEvent, withProjectCopy } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { sdkConverterArtifactStaging, sdkConverterProjectCopy } from "./support.ts";
 
@@ -19,19 +19,24 @@ test("createClaudeSdkEventStream 的锁定上游帧经 Experiment 和公开 CLI 
       );
       expect(run.exitCode, run.diagnostic()).toBe(0);
       const events = run.ndjson<ExpEvent>();
-      const result: ExpResultEvent = run.expResult();
-      expect(result).toMatchObject({
-        event: "result",
-        status: "passed",
-        passed: 1,
-        failed: 0,
-        errored: 0,
-        completion: "complete",
-      });
+      // The terminal stream event is the Record v1 InvocationReceipt; it carries
+      // no verdicts, so business results come from each eval event's identity
+      // and verdict below (docs/feature/experiments/cli.md).
+      const receipt = run.expReceipt();
+      expect(receipt.completion).toBe("completed");
+      expect(receipt.invocationId, run.diagnostic()).toBeTruthy();
+      expect(receipt.runIds, run.diagnostic()).not.toHaveLength(0);
       const evalEvent = events.find(
-        (event): event is ExpEvalEvent => event.event === "eval" && event.evalId === EVAL_ID,
+        (event): event is ExpEvalEvent =>
+          "event" in event && event.event === "eval" && event.evalId === EVAL_ID,
       );
       expect(evalEvent, run.diagnostic()).toBeDefined();
+      expect(evalEvent).toMatchObject({
+        evalId: EVAL_ID,
+        experimentId: EXPERIMENT_ID,
+        verdict: "passed",
+      });
+      expect(evalEvent?.locator, run.diagnostic()).toBeTruthy();
 
       const history = await niceeval.run(["show", EVAL_ID, "--exp", EXPERIMENT_ID, "--history"], { cwd: root });
       expect(history.exitCode, history.diagnostic()).toBe(0);

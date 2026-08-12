@@ -3,7 +3,9 @@ import { defineEval } from "niceeval";
 import {
   equals,
   includes,
+  jsonMatch,
   satisfies,
+  toolMatch,
 } from "niceeval/expect";
 export default defineEval({
   description:
@@ -12,16 +14,20 @@ export default defineEval({
     const completed = await t.send("codex completed fixture");
     await completed.succeeded().orStop();
     t.check(completed.message, includes("codex-sdk-message-marker"));
-    completed.calledTool("shell", {
-      input: { command: "printf codex-sdk-command-marker" },
-      status: "completed",
-      count: 1,
-    });
-    completed.calledTool("file_edit", {
-      input: { path: "src/fixture.ts", kind: "update" },
-      status: "completed",
-      count: 1,
-    });
+    completed.calledTool(
+      toolMatch("shell", {
+        input: jsonMatch({ command: "printf codex-sdk-command-marker" }),
+        status: "completed",
+      }),
+      { count: 1 },
+    );
+    completed.calledTool(
+      toolMatch("file_edit", {
+        input: jsonMatch({ path: "src/fixture.ts", kind: "update" }),
+        status: "completed",
+      }),
+      { count: 1 },
+    );
     t.check(
       completed.events,
       satisfies<typeof completed.events>(
@@ -90,11 +96,13 @@ export default defineEval({
           ),
       ),
     );
-    terminal.calledTool("shell", {
-      input: { command: "printf codex-sdk-terminal-marker" },
-      status: "completed",
-      count: 1,
-    });
+    terminal.calledTool(
+      toolMatch("shell", {
+        input: jsonMatch({ command: "printf codex-sdk-terminal-marker" }),
+        status: "completed",
+      }),
+      { count: 1 },
+    );
     t.check(
       terminal.events,
       satisfies<typeof terminal.events>(

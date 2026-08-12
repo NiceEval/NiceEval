@@ -3,7 +3,9 @@ import { defineEval } from "niceeval";
 import {
   equals,
   includes,
+  jsonMatch,
   satisfies,
+  toolMatch,
 } from "niceeval/expect";
 export default defineEval({
   description:
@@ -12,11 +14,13 @@ export default defineEval({
     const completed = await t.send("pi agent completed fixture");
     await completed.succeeded().orStop();
     t.check(completed.message, includes("pi-agent-subscribe-success-marker"));
-    completed.calledTool("inventory_lookup", {
-      input: { sku: "pi-001" },
-      status: "completed",
-      count: 1,
-    });
+    completed.calledTool(
+      toolMatch("inventory_lookup", {
+        input: jsonMatch({ sku: "pi-001" }),
+        status: "completed",
+      }),
+      { count: 1 },
+    );
     t.check(
       completed.events,
       satisfies<typeof completed.events>(
