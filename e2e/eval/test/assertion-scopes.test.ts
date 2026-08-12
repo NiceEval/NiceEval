@@ -11,9 +11,9 @@ interface ExpEvent {
   event: string;
   evalId?: string;
   locator?: string;
-  status?: string;
+  verdict?: string;
+  attempts?: number;
   passed?: number;
-  failed?: number;
 }
 
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
@@ -24,13 +24,19 @@ test("turn、session 与 attempt scope 都以同一批真实工具事件完成�
     async ({ root }) => {
       const run = await niceeval.run(["exp", "assertion-scopes", "--rerun", "all", "--json"], { cwd: root });
       expect(run.exitCode, run.diagnostic()).toBe(0);
-      const result = only(run.ndjson<ExpEvent>(), (event) => event.event === "result", run.diagnostic());
-      expect(result).toMatchObject({ event: "result", status: "passed", passed: 1, failed: 0 });
-      const locator = only(
+      const evaluation = only(
         run.ndjson<ExpEvent>(),
         (event) => event.event === "eval" && event.evalId === "assertion-scopes" && event.locator !== undefined,
         run.diagnostic(),
-      ).locator!;
+      );
+      expect(evaluation).toMatchObject({
+        event: "eval",
+        evalId: "assertion-scopes",
+        verdict: "passed",
+        attempts: 1,
+        passed: 1,
+      });
+      const locator = evaluation.locator!;
 
       const shown = await niceeval.run(["show", locator, "--record", ".niceeval", "--execution"], { cwd: root });
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
