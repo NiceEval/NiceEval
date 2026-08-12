@@ -50,9 +50,9 @@ export default defineScoreEval({
       .score(1)
       .label("配置运行环境");
 
-    t.check(await t.sandbox.runCommand("pnpm", ["test"]), commandSucceeded())
+    const tests = await t.sandbox.runCommand("pnpm", ["test"]);
+    t.check(tests, commandSucceeded())
       .score(2)
-      .gate()
       .label("测试通过");
 
     t.score(1).label("代码精简");
@@ -60,7 +60,7 @@ export default defineScoreEval({
 });
 ```
 
-若“测试通过”失败，Attempt 是 `failed`，但其它已封口 entry 仍组成 earned score。若命令本身无法取得可信结果，Attempt 是 `errored`，Score Attachment 依上表保留 partial 或 unavailable。
+若“测试通过”失败，该 entry 贡献 `0`，但其它已封口 entry 仍组成 earned score。若命令本身无法取得可信结果，Score Attachment 依上表保留 partial 或 unavailable。
 
 ## 相关阅读
 

@@ -176,7 +176,7 @@ duration。reader 只能读取 `sendSites` 的 exact occurrence，不能从缺�
 Fact storage 或其他 Attachment 推断一个 send annotation。
 
 这些是 producer seal invariants。structurally readable input 若有 duplicate `entryId` row 或 duplicate
-`sourceOrder`，assembler 只把受影响 row／occurrence 标为 locally unmapped；它不使整个 source-sites
+`sourceOrder`，assembler 只把受影响 row／occurrence 标为 locally unmapped。它不使整个 source-sites
 Attachment `invalid`。
 
 `label` 是最多 256 Unicode scalar value、无控制字符的 sealed display text。`durationMs` 是 finite
