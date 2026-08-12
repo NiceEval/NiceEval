@@ -680,6 +680,7 @@ function renderCurrentDryPlan(input: {
   for (const row of input.rows) {
     const reusedAttempts = row.slots.filter((slot) => slot.state === "reused").map((slot) => slot.attempt);
     const gaps = row.slots.filter((slot) => slot.state === "gap");
+    const hasIdentityGap = gaps.some((slot) => slot.reason === "identity-mismatch");
     const parts = [
       ...(row.locked ? ["locked"] : []),
       ...(reusedAttempts.length === 0 ? [] : [`reused ${reusedAttempts.join(",")}`]),
@@ -693,6 +694,9 @@ function renderCurrentDryPlan(input: {
           ? readback.verdict.value
           : readback.verdict.state;
       lines.push(`  source @${readback.source.attemptId} · ${readback.state} · verdict ${verdict}`);
+      if (hasIdentityGap && readback.state === "prior") {
+        lines.push(`  accept: niceeval accept @${readback.source.attemptId}`);
+      }
     }
   }
   return `${lines.join("\n")}\n`;
@@ -883,6 +887,7 @@ function parseAcceptLocators(positionals: string[], flags: Flags): string[] {
 }
 
 interface AcceptLocatorResult {
+  runId: string;
   locator: string;
   sourceLocator: string;
   fingerprint?: string;
@@ -906,6 +911,7 @@ function runAcceptCommand(cwd: string, locators: readonly string[], recordRoot: 
     yield* Effect.sync(() => {
       for (const result of results) {
         process.stdout.write(t("cli.accept.done", {
+          runId: result.runId,
           sourceLocator: result.sourceLocator,
           locator: result.locator,
           fingerprint: result.fingerprint ?? "—",

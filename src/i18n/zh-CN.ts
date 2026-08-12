@@ -105,13 +105,13 @@ export const zhCN = {
   "cli.accept.noneChosen": "没有授权任何差异,按原计划运行。\n",
   "cli.accept.usage":
     "error: niceeval accept 必须接收一个或多个 @<locator>\n" +
-    "  fix: 从 `niceeval show --history` 复制明确的 locator,再运行 `niceeval accept @<locator>...`\n",
+    "  fix: 从 `niceeval exp --dry` 复制明确的 locator,再运行 `niceeval accept @<locator>...`\n",
   "cli.accept.flagUnsupported":
     "error: {{flag}} 不能用于 niceeval accept\n" +
     "  fix: 只传 @<locator>(可选 `--record <目录>`)\n",
   "cli.accept.failed": "error: 接受结果失败:{{error}}\n",
   "cli.accept.done":
-    "已接受 {{sourceLocator}}。新结果 locator: {{locator}}。当前指纹:{{fingerprint}}\n",
+    "已将源 Attempt {{sourceLocator}} 接受进新 Run {{runId}}。结果 locator 仍为 {{locator}}。当前指纹:{{fingerprint}}\n",
   "cli.rename.usage":
     "error: niceeval exp rename 需要恰好两个参数:旧 id 和新 id\n" +
     "  fix: niceeval exp rename <oldId> <newId> [--dry] [--json]\n",

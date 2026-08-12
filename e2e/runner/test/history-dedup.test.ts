@@ -15,6 +15,22 @@ interface ExpEvent {
   passed?: number;
 }
 
+interface DryTarget {
+  experimentId: string;
+  evalId: string;
+  slots: Array<{ state: "reused" | "gap" }>;
+  readbacks: Array<{
+    source: { attemptId: string };
+    verdict: string | { state: string; value?: string };
+  }>;
+}
+
+interface DryPlan {
+  total: number;
+  reused: number;
+  matrix: DryTarget[];
+}
+
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
 const projectCopy = {
   from: process.cwd(),
@@ -22,10 +38,6 @@ const projectCopy = {
   omitTopLevel: [".niceeval", "node_modules", "test"],
   links: [{ from: resolve("node_modules"), to: "node_modules", type: "dir" }],
 } as const;
-
-function locators(stdout: string): string[] {
-  return [...new Set(stdout.match(/@[a-zA-Z0-9._:-]+/g) ?? [])].sort();
-}
 
 test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt", async () => {
   await withProjectCopy(projectCopy, async ({ root }) => {
@@ -55,23 +67,31 @@ test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt",
     const forcedLocator = forcedEval.locator!;
     expect(forcedLocator).not.toBe(firstLocator);
 
+    const currentDry = await niceeval.run(["exp", "history", "--dry", "--json"], { cwd: root });
+    expect(currentDry.exitCode, currentDry.diagnostic()).toBe(0);
+    const currentPlan = currentDry.json<DryPlan>();
+    expect(currentPlan).toMatchObject({ total: 1, reused: 1 });
+    const currentTarget = currentPlan.matrix.find((row) => row.evalId === "suite/stable");
+    expect(currentTarget).toBeDefined();
+    expect(currentTarget!.slots.map((slot) => slot.state)).toEqual(["reused"]);
+    expect(currentTarget!.readbacks).toHaveLength(1);
+    expect(`@${currentTarget!.readbacks[0]!.source.attemptId}`).toBe(forcedLocator);
+    expect(currentTarget!.readbacks[0]!.verdict).toBe("passed");
+
     const carried = await niceeval.run(["exp", "history", "--json"], { cwd: root });
     expect(carried.exitCode, carried.diagnostic()).toBe(0);
     const carriedEvents = carried.ndjson<ExpEvent>();
     const carriedStart = only(carriedEvents, (event) => event.event === "start", carried.diagnostic());
     expect(carriedStart).toMatchObject({ event: "start", total: 1, reused: 1 });
-    const carriedEval = only(carriedEvents, (event) => event.event === "eval", carried.diagnostic());
-    expect(carriedEval).toMatchObject({
-      event: "eval",
-      evalId: "suite/stable",
-      verdict: "passed",
-      attempts: 1,
-      passed: 1,
-    });
-    expect(carried.expReceipt()).toMatchObject({ completion: "completed" });
+    const carriedReceipt = carried.expReceipt();
+    expect(carriedReceipt).toMatchObject({ completion: "completed" });
+    expect(carriedReceipt.runIds).toHaveLength(1);
 
-    const afterCarry = await niceeval.run(["show", "suite/stable", "--history"], { cwd: root });
-    expect(afterCarry.exitCode, afterCarry.diagnostic()).toBe(0);
-    expect(locators(afterCarry.stdout)).toEqual([firstLocator, forcedLocator].sort());
+    const current = await niceeval.run(["show", "--latest", "--json"], { cwd: root });
+    expect(current.exitCode, current.diagnostic()).toBe(0);
+    expect(current.stdout).toContain(carriedReceipt.runIds[0]!);
+    const forcedEvidence = await niceeval.run(["show", forcedLocator, "--execution"], { cwd: root });
+    expect(forcedEvidence.exitCode, forcedEvidence.diagnostic()).toBe(0);
+    expect(forcedEvidence.stdout).toContain("runner-fixture-ok");
   });
 });

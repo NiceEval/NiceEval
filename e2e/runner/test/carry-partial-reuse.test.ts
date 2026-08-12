@@ -6,18 +6,29 @@ import { join, resolve } from "node:path";
 import { command, only, withProjectCopy } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 
-interface ExpPlanDocument {
-  format: "niceeval.exp-plan";
-  schemaVersion: number;
+interface DryTarget {
+  experimentId: string;
+  evalId: string;
+  slots: Array<{ state: "reused" | "gap" }>;
+  readbacks: Array<{
+    source: { attemptId: string };
+    verdict: string | { state: string; value?: string };
+  }>;
+}
+
+interface DryPlan {
   total: number;
   reused: number;
-  matrix: Array<{ experimentId: string; evalId: string; reused: boolean }>;
+  matrix: DryTarget[];
 }
 
 interface ExpEvent {
   event: string;
   reused?: number;
   total?: number;
+  evalId?: string;
+  verdict?: string;
+  locator?: string;
 }
 
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
@@ -34,6 +45,23 @@ test("改变一个 Eval 后只重新派发该 identity，未改变的 Eval 继�
     expect(baseline.exitCode, baseline.diagnostic()).toBe(0);
     const baselineStart = only(baseline.ndjson<ExpEvent>(), (event) => event.event === "start", baseline.diagnostic());
     expect(baselineStart).toMatchObject({ event: "start", reused: 0 });
+    const baselineEvents = baseline.ndjson<ExpEvent>();
+    const baselineAlpha = only(
+      baselineEvents,
+      (event) => event.event === "eval" && event.evalId === "simple/alpha",
+      baseline.diagnostic(),
+    );
+    const baselineBeta = only(
+      baselineEvents,
+      (event) => event.event === "eval" && event.evalId === "simple/beta",
+      baseline.diagnostic(),
+    );
+    expect(baselineAlpha).toMatchObject({ event: "eval", verdict: "passed" });
+    expect(baselineBeta).toMatchObject({ event: "eval", verdict: "passed" });
+    const baselineAlphaLocator = baselineAlpha.locator!;
+    const baselineBetaLocator = baselineBeta.locator!;
+    expect(baselineAlphaLocator).toMatch(/^@[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(baselineBetaLocator).toMatch(/^@[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 
     const alphaPath = join(root, "evals", "simple", "alpha.eval.ts");
     const alphaSource = readFileSync(alphaPath, "utf8");
@@ -46,12 +74,14 @@ test("改变一个 Eval 后只重新派发该 identity，未改变的 Eval 继�
 
     const changedOnly = await niceeval.run(["exp", "carry", "simple/alpha", "--dry", "--json"], { cwd: root });
     expect(changedOnly.exitCode, changedOnly.diagnostic()).toBe(0);
-    const changedPlan = changedOnly.json<ExpPlanDocument>();
-    expect(changedPlan).toMatchObject({ format: "niceeval.exp-plan", schemaVersion: 3, total: 1, reused: 0 });
-    expect(changedPlan.matrix).toHaveLength(1);
-    expect(changedPlan.matrix).toMatchObject([
-      { experimentId: "carry", evalId: "simple/alpha", reused: false },
-    ]);
+    const changedPlan = changedOnly.json<DryPlan>();
+    expect(changedPlan).toMatchObject({ total: 1, reused: 0 });
+    const changedAlpha = changedPlan.matrix.find((row) => row.evalId === "simple/alpha");
+    expect(changedAlpha).toBeDefined();
+    expect(changedAlpha!.slots.map((slot) => slot.state)).toEqual(["gap"]);
+    expect(changedAlpha!.readbacks).toHaveLength(1);
+    expect(`@${changedAlpha!.readbacks[0]!.source.attemptId}`).toBe(baselineAlphaLocator);
+    expect(changedAlpha!.readbacks[0]!.verdict).toMatchObject({ state: "available", value: "passed" });
 
     const changedDispatch = await niceeval.run(["exp", "carry", "simple/alpha", "--json"], { cwd: root });
     expect(changedDispatch.exitCode, changedDispatch.diagnostic()).toBe(0);
@@ -61,15 +91,32 @@ test("改变一个 Eval 后只重新派发该 identity，未改变的 Eval 继�
       changedDispatch.diagnostic(),
     );
     expect(changedDispatchStart).toMatchObject({ event: "start", total: 1, reused: 0 });
+    const changedAlphaResult = only(
+      changedDispatch.ndjson<ExpEvent>(),
+      (event) => event.event === "eval" && event.evalId === "simple/alpha",
+      changedDispatch.diagnostic(),
+    );
+    expect(changedAlphaResult).toMatchObject({ event: "eval", verdict: "passed" });
+    const changedAlphaLocator = changedAlphaResult.locator!;
+    expect(changedAlphaLocator).toMatch(/^@[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(changedAlphaLocator).not.toBe(baselineAlphaLocator);
 
     const fullDry = await niceeval.run(["exp", "carry", "--dry", "--json"], { cwd: root });
     expect(fullDry.exitCode, fullDry.diagnostic()).toBe(0);
-    const fullPlan = fullDry.json<ExpPlanDocument>();
-    expect(fullPlan).toMatchObject({ format: "niceeval.exp-plan", schemaVersion: 3, total: 2, reused: 2 });
-    expect(fullPlan.matrix).toEqual([
-      { experimentId: "carry", evalId: "simple/alpha", reused: true },
-      { experimentId: "carry", evalId: "simple/beta", reused: true },
-    ]);
+    const fullPlan = fullDry.json<DryPlan>();
+    expect(fullPlan).toMatchObject({ total: 2, reused: 2 });
+    const carriedAlpha = fullPlan.matrix.find((row) => row.evalId === "simple/alpha");
+    expect(carriedAlpha).toBeDefined();
+    expect(carriedAlpha!.slots.map((slot) => slot.state)).toEqual(["reused"]);
+    expect(carriedAlpha!.readbacks).toHaveLength(1);
+    expect(`@${carriedAlpha!.readbacks[0]!.source.attemptId}`).toBe(changedAlphaLocator);
+    expect(carriedAlpha!.readbacks[0]!.verdict).toBe("passed");
+    const carriedBeta = fullPlan.matrix.find((row) => row.evalId === "simple/beta");
+    expect(carriedBeta).toBeDefined();
+    expect(carriedBeta!.slots.map((slot) => slot.state)).toEqual(["reused"]);
+    expect(carriedBeta!.readbacks).toHaveLength(1);
+    expect(`@${carriedBeta!.readbacks[0]!.source.attemptId}`).toBe(baselineBetaLocator);
+    expect(carriedBeta!.readbacks[0]!.verdict).toBe("passed");
 
     const fullDispatch = await niceeval.run(["exp", "carry", "--json"], { cwd: root });
     expect(fullDispatch.exitCode, fullDispatch.diagnostic()).toBe(0);

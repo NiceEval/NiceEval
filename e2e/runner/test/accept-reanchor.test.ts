@@ -6,34 +6,6 @@ import { join, resolve } from "node:path";
 import { command, only, withProjectCopy } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 
-interface ExpPlanRow {
-  experimentId: string;
-  evalId: string;
-  reused: boolean;
-  prior?: Array<{
-    locator: string;
-    verdict: "passed" | "failed" | "errored" | "skipped";
-    acceptance: "available" | "legacy-locator";
-    evidenceState: string;
-  }>;
-  dispatch?: Array<{
-    gate: string;
-    attempts: number[];
-    comparison?: {
-      kind: string;
-      deltas?: Array<{ selector: string; kind: string; from?: string; to?: string }>;
-    };
-  }>;
-}
-
-interface ExpPlanDocument {
-  format: "niceeval.exp-plan";
-  schemaVersion: number;
-  total: number;
-  reused: number;
-  matrix: ExpPlanRow[];
-}
-
 interface ExpEvent {
   event: string;
   total?: number;
@@ -46,6 +18,22 @@ interface ExpEvent {
   passed?: number;
 }
 
+interface DryTarget {
+  experimentId: string;
+  evalId: string;
+  slots: Array<{ state: "reused" | "gap" }>;
+  readbacks: Array<{
+    source: { attemptId: string };
+    verdict: string | { state: string; value?: string };
+  }>;
+}
+
+interface DryPlan {
+  total: number;
+  reused: number;
+  matrix: DryTarget[];
+}
+
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
 const projectCopy = {
   from: process.cwd(),
@@ -54,7 +42,7 @@ const projectCopy = {
   links: [{ from: resolve("node_modules"), to: "node_modules", type: "dir" }],
 } as const;
 
-test("审阅变更后 accept 旧结果重锚可继续 carry，新结果保留 verdict/evidence 与 acceptedFrom 审计", async () => {
+test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 verdict/evidence 与审计 provenance", async () => {
   await withProjectCopy(projectCopy, async ({ root }) => {
     const initial = await niceeval.run(["exp", "accept", "--json"], { cwd: root });
     expect(initial.exitCode, initial.diagnostic()).toBe(0);
@@ -81,64 +69,51 @@ test("审阅变更后 accept 旧结果重锚可继续 carry，新结果保留 ve
 
     const humanDry = await niceeval.run(["exp", "accept", "--dry"], { cwd: root });
     expect(humanDry.exitCode, humanDry.diagnostic()).toBe(0);
-    expect(humanDry.stdout).toMatch(/previous-result passed/);
-    expect(humanDry.stdout).toContain("source:evals/accept/accept-target.eval.ts changed");
-    expect(humanDry.stdout).toContain(`  prior:  ${oldLocator} (passed · evidence available)`);
-    expect(humanDry.stdout).toContain(`  accept: niceeval accept ${oldLocator}`);
+    expect(humanDry.stdout).toContain("gap 0:identity-mismatch");
+    expect(humanDry.stdout).toContain(`source ${oldLocator} · prior · verdict passed`);
+    expect(humanDry.stdout).toContain(`accept: niceeval accept ${oldLocator}`);
 
     const jsonDry = await niceeval.run(["exp", "accept", "--dry", "--json"], { cwd: root });
     expect(jsonDry.exitCode, jsonDry.diagnostic()).toBe(0);
-    const plan = jsonDry.json<ExpPlanDocument>();
-    expect(plan).toMatchObject({ format: "niceeval.exp-plan", schemaVersion: 3, total: 1, reused: 0 });
-    expect(plan.matrix).toHaveLength(1);
-    expect(plan.matrix[0]).toMatchObject({
-      experimentId: "accept",
-      evalId: "accept/accept-target",
-      reused: false,
-      prior: [{ locator: oldLocator, verdict: "passed", acceptance: "available" }],
-      dispatch: [{ gate: "fingerprint", attempts: [0] }],
-    });
-    expect(plan.matrix[0]!.dispatch![0]!.comparison).toMatchObject({
-      kind: "changed",
-      deltas: [{ selector: "source:evals/accept/accept-target.eval.ts", kind: "changed" }],
-    });
-    const delta = plan.matrix[0]!.dispatch![0]!.comparison!.deltas![0]!;
-    expect(delta.from).toBeDefined();
-    expect(delta.to).toBeDefined();
+    const plan = jsonDry.json<DryPlan>();
+    expect(plan).toMatchObject({ total: 1, reused: 0 });
+    const changedTarget = plan.matrix.find((row) => row.evalId === "accept/accept-target");
+    expect(changedTarget).toBeDefined();
+    expect(changedTarget!.slots.map((slot) => slot.state)).toEqual(["gap"]);
+    expect(changedTarget!.readbacks).toHaveLength(1);
+    expect(`@${changedTarget!.readbacks[0]!.source.attemptId}`).toBe(oldLocator);
+    expect(changedTarget!.readbacks[0]!.verdict).toMatchObject({ state: "available", value: "passed" });
 
     const accepted = await niceeval.run(["accept", oldLocator], { cwd: root });
     expect(accepted.exitCode, accepted.diagnostic()).toBe(0);
-    expect(accepted.stdout).toContain(`Accepted ${oldLocator}.`);
-    const newLocatorMatch = accepted.stdout.match(/New result locator: (@[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/);
-    expect(newLocatorMatch, accepted.diagnostic()).not.toBeNull();
-    const newLocator = newLocatorMatch![1]!;
-    expect(newLocator).not.toBe(oldLocator);
+    expect(accepted.stdout).toContain(`Accepted source Attempt ${oldLocator} into new Run `);
+    const acceptedRunMatch = accepted.stdout.match(
+      /into new Run ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\. Result locator remains (@[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\./,
+    );
+    expect(acceptedRunMatch, accepted.diagnostic()).not.toBeNull();
+    const acceptedRunId = acceptedRunMatch![1]!;
+    const newLocator = acceptedRunMatch![2]!;
+    // Explicit adoption writes a reference Member, so its result locator keeps
+    // the immutable source Attempt identity instead of manufacturing an Attempt.
+    expect(newLocator).toBe(oldLocator);
 
-    const carriedDry = await niceeval.run(["exp", "accept", "--dry", "--json"], { cwd: root });
-    expect(carriedDry.exitCode, carriedDry.diagnostic()).toBe(0);
-    const carriedPlan = carriedDry.json<ExpPlanDocument>();
-    expect(carriedPlan).toMatchObject({ format: "niceeval.exp-plan", schemaVersion: 3, total: 1, reused: 1 });
-    expect(carriedPlan.matrix[0]).toMatchObject({
-      experimentId: "accept",
-      evalId: "accept/accept-target",
-      reused: true,
-    });
-    expect(carriedPlan.matrix[0]!.dispatch).toBeUndefined();
+    const acceptedCurrent = await niceeval.run(["show", "--latest", "--json"], { cwd: root });
+    expect(acceptedCurrent.exitCode, acceptedCurrent.diagnostic()).toBe(0);
+    expect(acceptedCurrent.stdout).toContain(acceptedRunId);
 
-    const rerun = await niceeval.run(["exp", "accept", "--json"], { cwd: root });
-    expect(rerun.exitCode, rerun.diagnostic()).toBe(0);
-    const rerunEvents = rerun.ndjson<ExpEvent>();
-    const rerunStart = only(rerunEvents, (event) => event.event === "start", rerun.diagnostic());
-    expect(rerunStart).toMatchObject({ event: "start", total: 1, reused: 1 });
-    const rerunEval = only(rerunEvents, (event) => event.event === "eval", rerun.diagnostic());
-    expect(rerunEval).toMatchObject({
-      event: "eval",
-      experimentId: "accept",
-      evalId: "accept/accept-target",
-      verdict: "passed",
-      attempts: 1,
-      passed: 1,
-    });
-    expect(rerun.expReceipt()).toMatchObject({ completion: "completed" });
+    const currentEvidence = await niceeval.run(["show", newLocator, "--execution"], { cwd: root });
+    expect(currentEvidence.exitCode, currentEvidence.diagnostic()).toBe(0);
+    expect(currentEvidence.stdout).toContain("runner-fixture-ok");
+
+    // An accepted action explains this Run's membership; it is deliberately
+    // not a future eligibility grant for the immutable source Attempt.
+    const nextDry = await niceeval.run(["exp", "accept", "--dry", "--json"], { cwd: root });
+    expect(nextDry.exitCode, nextDry.diagnostic()).toBe(0);
+    const nextPlan = nextDry.json<DryPlan>();
+    expect(nextPlan).toMatchObject({ total: 1, reused: 0 });
+    const nextTarget = nextPlan.matrix.find((row) => row.evalId === "accept/accept-target");
+    expect(nextTarget).toBeDefined();
+    expect(nextTarget!.slots.map((slot) => slot.state)).toEqual(["gap"]);
+    expect(`@${nextTarget!.readbacks[0]!.source.attemptId}`).toBe(newLocator);
   });
 });
