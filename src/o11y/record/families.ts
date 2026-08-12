@@ -19,6 +19,7 @@ import {
   RunTimingReferencesV1Schema,
   SafeIdentifierV1Schema,
   SafeTextV1Schema,
+  SourceNativeToolNameV1Schema,
   StableLabelV1Schema,
   UsageObservationIdV1Schema,
   UsageReferencesV1Schema,
@@ -190,7 +191,7 @@ export const ConversationItemV1Schema = Schema.Union(
     ...ConversationItemBaseV1Fields,
     kind: Schema.Literal("tool-call"),
     callId: CallIdV1Schema,
-    tool: SafeIdentifierV1Schema,
+    tool: SourceNativeToolNameV1Schema,
     inputSummary: boundedSafeTextV1Schema(MAX_CONVERSATION_TEXT_BYTES_V1),
   }),
   Schema.Struct({

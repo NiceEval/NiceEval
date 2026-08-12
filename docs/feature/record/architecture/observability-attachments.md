@@ -34,6 +34,7 @@ Run family。reference Member 没有新的 physical Attempt，因此不再写第
 | NonNegativeSafeInteger | JSON number、整数、0 至 9,007,199,254,740,991 |
 | PositiveSafeInteger | JSON number、整数、1 至 9,007,199,254,740,991 |
 | SafeIdentifier | lowercase ASCII，匹配 [a-z][a-z0-9.-]{0,63} |
+| SourceNativeToolName | 非空、区分大小写的原始工具名；允许安全 UTF-8、空格与 source-native 标点，不允许换行，最长 256 bytes |
 | StableLabel | lowercase ASCII，匹配 [a-z][a-z0-9.-]{0,63}；不是 provider 名称 |
 | SafeText | 已脱敏的 UTF-8 text；不得含 NUL 或 C0 control，换行除外 |
 | CanonicalDecimal | 非负 decimal string，匹配 (0\|[1-9][0-9]*)(\.[0-9]*[1-9])?，最长 64 bytes |
@@ -318,7 +319,7 @@ type ConversationItemV1 =
   | (ConversationItemBaseV1 & {
       readonly kind: "tool-call";
       readonly callId: CallIdV1;
-      readonly tool: string;
+      readonly tool: SourceNativeToolName;
       readonly inputSummary: string;
     })
   | (ConversationItemBaseV1 & {
@@ -365,8 +366,15 @@ type ConversationItemV1 =
     });
 ```
 
-turn sequence 必须唯一。item sequence 必须唯一，且 item 指向已有 turn。tool 字段、skill、label 与
-code 都是 SafeIdentifier。message text、inputSummary、outputSummary 与 summary 最多 16,384 bytes。
+turn sequence 必须唯一。item sequence 必须唯一，且 item 指向已有 turn。
+
+tool 字段是最多 256 UTF-8 bytes 的 SourceNativeToolName。producer 原样保存
+`operation.started.operation.name`。它不得用 shell、file_edit、unknown 等 canonical kind 替换持久原名，
+也不得因大小写、下划线、空格或 Unicode 拒收合法名称。canonical grouping 若有需要，只能由中立
+projector 从持久原名派生。
+
+skill、label 与 code 仍是 SafeIdentifier。message text、inputSummary、outputSummary 与 summary
+最多 16,384 bytes。
 responseSummary 为 null 只表示还没有安全可保存的回答；对应 collection 必须 partial。
 
 tool-call 的 callId 在 conversation 内唯一。tool-result 必须指向一个已有 tool-call，且每个 call

@@ -36,6 +36,10 @@ import {
  * owns one current family definition; a later schema migration may keep this
  * semantic view or publish a separately named view without forcing callers to
  * reason about envelope versions.
+ *
+ * The public neutral view keeps each durable source-native tool name verbatim.
+ * Canonical grouping, when a consumer needs it, is a derived view concern and
+ * never replaces the projected name.
  */
 export type ConversationView = RecordAttachmentPayloadSnapshot<ConversationAttachmentV1>;
 export type UsageView = RecordAttachmentPayloadSnapshot<UsageAttachmentV1>;

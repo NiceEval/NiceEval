@@ -11,6 +11,7 @@ import {
   POSITIVE_SAFE_INTEGER_V1_BRAND,
   SAFE_IDENTIFIER_V1_BRAND,
   SAFE_TEXT_V1_BRAND,
+  SOURCE_NATIVE_TOOL_NAME_V1_BRAND,
   STABLE_LABEL_V1_BRAND,
   TURN_ID_V1_BRAND,
   USAGE_OBSERVATION_ID_V1_BRAND,
@@ -28,6 +29,7 @@ import {
   isPositiveSafeIntegerV1,
   isSafeIdentifierV1,
   isSafeTextV1,
+  isSourceNativeToolNameV1,
   isStableLabelV1,
   isTurnIdV1,
   isUsageObservationIdV1,
@@ -52,12 +54,16 @@ import {
   type RunTimingReferencesV1,
   type SafeIdentifier,
   type SafeText,
+  type SourceNativeToolName,
   type StableLabel,
   type TurnIdV1,
   type UsageObservationIdV1,
   type UsageReferencesV1,
 } from "./model.ts";
-import { MAX_DIRECT_CROSS_FAMILY_REFS_V1 } from "./limits.ts";
+import {
+  MAX_DIRECT_CROSS_FAMILY_REFS_V1,
+  MAX_SOURCE_NATIVE_TOOL_NAME_BYTES_V1,
+} from "./limits.ts";
 
 /** All official Observability schemas aggregate failures and reject extra fields. */
 export const ObservabilityExactParseOptions = Object.freeze({
@@ -110,6 +116,18 @@ export const SafeTextV1Schema: Schema.Schema<SafeText, string> = Schema.String.p
     description: "strict UTF-8 text without NUL or C0 controls other than LF",
   }),
   Schema.brand(SAFE_TEXT_V1_BRAND),
+);
+
+export const SourceNativeToolNameV1Schema: Schema.Schema<
+  SourceNativeToolName,
+  string
+> = Schema.String.pipe(
+  Schema.filter(isSourceNativeToolNameV1, {
+    identifier: "ObservabilitySourceNativeToolNameV1",
+    description:
+      `a non-empty source-native tool name no longer than ${MAX_SOURCE_NATIVE_TOOL_NAME_BYTES_V1} UTF-8 bytes`,
+  }),
+  Schema.brand(SOURCE_NATIVE_TOOL_NAME_V1_BRAND),
 );
 
 /** A SafeText field whose maximum is part of its owning family contract. */

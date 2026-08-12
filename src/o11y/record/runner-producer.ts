@@ -71,6 +71,7 @@ import {
   makeNonNegativeSafeIntegerV1,
   makePositiveSafeIntegerV1,
   makeSafeIdentifierV1,
+  makeSourceNativeToolNameV1,
   makeStableLabelV1,
   utf8ByteLengthV1,
   type AttemptReferenceTargetV1,
@@ -90,6 +91,7 @@ import {
   type RunReferenceTargetV1,
   type SafeIdentifier,
   type SafeText,
+  type SourceNativeToolName,
   type StableLabel,
   type TurnIdV1,
   type CallIdV1,
@@ -989,8 +991,12 @@ function standardEventUnavailableV1(
   return false;
 }
 
-function safeToolIdentifierV1(value: string): SafeIdentifier | undefined {
+function safeIdentifierV1(value: string): SafeIdentifier | undefined {
   return makeSafeIdentifierV1(value);
+}
+
+function sourceNativeToolNameV1(value: string): SourceNativeToolName | undefined {
+  return makeSourceNativeToolNameV1(value);
 }
 
 function stableLabelV1(value: string): StableLabel | undefined {
@@ -1122,7 +1128,10 @@ function normalizeConversationV1(input: {
         }
         case "operation.started": {
           if (event.operation.kind === "tool") {
-            const tool = safeToolIdentifierV1(event.operation.tool ?? event.operation.name);
+            // Conversation is the source-native execution record. Canonical
+            // ToolName is useful to runtime assertions, but must never replace
+            // or rescue the provider's real identity in durable evidence.
+            const tool = sourceNativeToolNameV1(event.operation.name);
             const summary = jsonSummaryV1(event.operation.input);
             if (tool === undefined || summary === undefined) {
               limitations.addUnsupported("conversation-item");
@@ -1149,7 +1158,7 @@ function normalizeConversationV1(input: {
             break;
           }
 
-          const label = safeToolIdentifierV1(event.operation.name);
+          const label = safeIdentifierV1(event.operation.name);
           if (label === undefined) {
             limitations.addUnsupported("conversation-item");
             continue;
@@ -1207,7 +1216,7 @@ function normalizeConversationV1(input: {
           break;
         }
         case "skill.loaded": {
-          const skill = safeToolIdentifierV1(event.skill);
+          const skill = safeIdentifierV1(event.skill);
           if (skill === undefined) {
             limitations.addUnsupported("conversation-item");
             continue;

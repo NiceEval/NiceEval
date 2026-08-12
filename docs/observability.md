@@ -70,7 +70,7 @@ unsupported、migration-required、migration-unavailable 与 invalid 是 RecordA
 conversation 只保存 provider-neutral 的用户可见语义：
 
 - user 与 assistant message；
-- tool call 与 tool result；
+- tool call 与 tool result；tool call 原样保留 source-native 名称，canonical kind 不得替换它；
 - 已提供给用户的 thinking summary，绝不保存 hidden chain of thought；
 - subagent、input request、skill load、context injection、compaction 与 conversation error。
 

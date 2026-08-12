@@ -4,6 +4,7 @@ import {
   MAX_DIRECT_CROSS_FAMILY_REFS_V1,
   MAX_OBSERVABILITY_ENTITY_ID_ENTROPY_BYTES_V1,
   MAX_SAFE_IDENTIFIER_BYTES_V1,
+  MAX_SOURCE_NATIVE_TOOL_NAME_BYTES_V1,
   MAX_STABLE_LABEL_BYTES_V1,
   OBSERVABILITY_ENTITY_ID_BASE32_LENGTH_V1,
 } from "./limits.ts";
@@ -17,6 +18,8 @@ export const POSITIVE_SAFE_INTEGER_V1_BRAND =
   "@niceeval/o11y/PositiveSafeIntegerV1" as const;
 export const SAFE_IDENTIFIER_V1_BRAND =
   "@niceeval/o11y/SafeIdentifierV1" as const;
+export const SOURCE_NATIVE_TOOL_NAME_V1_BRAND =
+  "@niceeval/o11y/SourceNativeToolNameV1" as const;
 export const STABLE_LABEL_V1_BRAND =
   "@niceeval/o11y/StableLabelV1" as const;
 export const SAFE_TEXT_V1_BRAND = "@niceeval/o11y/SafeTextV1" as const;
@@ -31,6 +34,9 @@ export type PositiveSafeInteger = number & Brand.Brand<
   typeof POSITIVE_SAFE_INTEGER_V1_BRAND
 >;
 export type SafeIdentifier = string & Brand.Brand<typeof SAFE_IDENTIFIER_V1_BRAND>;
+export type SourceNativeToolName = string & Brand.Brand<
+  typeof SOURCE_NATIVE_TOOL_NAME_V1_BRAND
+>;
 export type StableLabel = string & Brand.Brand<typeof STABLE_LABEL_V1_BRAND>;
 export type SafeText = string & Brand.Brand<typeof SAFE_TEXT_V1_BRAND>;
 export type CanonicalDecimal = string & Brand.Brand<
@@ -42,6 +48,7 @@ export type CurrencyCode = string & Brand.Brand<typeof CURRENCY_CODE_V1_BRAND>;
 export type NonNegativeSafeIntegerV1 = NonNegativeSafeInteger;
 export type PositiveSafeIntegerV1 = PositiveSafeInteger;
 export type SafeIdentifierV1 = SafeIdentifier;
+export type SourceNativeToolNameV1 = SourceNativeToolName;
 export type StableLabelV1 = StableLabel;
 export type SafeTextV1 = SafeText;
 export type CanonicalDecimalV1 = CanonicalDecimal;
@@ -107,6 +114,22 @@ export function isStableLabelV1(value: string): value is StableLabel {
   );
 }
 
+/**
+ * A provider's exact tool name. Unlike SafeIdentifier, this durable value is
+ * intentionally case-sensitive and admits source-native punctuation and
+ * Unicode. Line breaks remain excluded so a name cannot reshape a Report
+ * heading while still passing through unchanged.
+ */
+export function isSourceNativeToolNameV1(
+  value: string,
+): value is SourceNativeToolName {
+  return (
+    value.length > 0 &&
+    !value.includes("\n") &&
+    isBoundedSafeTextV1(value, MAX_SOURCE_NATIVE_TOOL_NAME_BYTES_V1)
+  );
+}
+
 export function isSafeTextV1(value: string): value is SafeText {
   return isStrictUnicodeTextV1(value) && !UNSAFE_SAFE_TEXT_CONTROL.test(value);
 }
@@ -136,6 +159,14 @@ export function isCurrencyCodeV1(value: string): value is CurrencyCode {
 
 export function makeSafeIdentifierV1(value: string): SafeIdentifier | undefined {
   return isSafeIdentifierV1(value) ? (value as SafeIdentifier) : undefined;
+}
+
+export function makeSourceNativeToolNameV1(
+  value: string,
+): SourceNativeToolName | undefined {
+  return isSourceNativeToolNameV1(value)
+    ? (value as SourceNativeToolName)
+    : undefined;
 }
 
 export function makeStableLabelV1(value: string): StableLabel | undefined {

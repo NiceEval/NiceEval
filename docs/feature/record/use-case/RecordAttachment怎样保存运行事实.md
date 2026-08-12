@@ -65,7 +65,8 @@ Attachment 的 ref 或类型断言绕过 runtime identity 检查。
 ## 每次 send 不原样保存 Turn
 
 `send()` 返回的 `Turn` 是作者运行时对象。Adapter 把 message、tool call 与 tool result
-归一化，再写入 Attempt-owned Conversation Attachment。
+归一化，再写入 Attempt-owned Conversation Attachment。tool call 的 source-native name 原样落入
+conversation；运行时 canonical kind 只服务跨 Adapter 断言，不得替换该持久身份。
 
 Usage、Timing 与 Diagnostics 分别进入自己的 Attachment。一个 Attachment 损坏、需要
 migration、无法无损迁移或 unsupported，只影响请求它的 projection。

@@ -359,6 +359,8 @@ function conversationItemBlock(
       });
     case "tool-call":
       return reportSection({
+        // `item.tool` is the source-native name supplied by the public
+        // Conversation projector, not a Report-owned canonical fallback.
         heading: `${item.sequence} · TOOL · ${item.tool}`,
         children: [
           reportStatus({ tone: "neutral", label: `Call: ${item.callId}` }),
