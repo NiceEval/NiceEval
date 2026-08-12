@@ -1,14 +1,14 @@
 // Trusted Node-side Report / Theme loading. Author modules are project code,
 // so the loader always uses the namespaced fresh project graph. In packaged
-// NiceEval, its `niceeval/*` ESM facades require the canonical CJS graph; the
-// exact host predicates below remain the authority for Report / Theme values.
+// NiceEval, that graph resolves this exact install's `niceeval/*` imports to
+// the canonical CJS graph; the predicates below remain the final authority.
 
 import { readFile, stat } from "node:fs/promises";
 import { dirname, extname, join, resolve } from "node:path";
 import { Data, Effect } from "effect";
 import { freshImportModule } from "../../../fresh-import.ts";
 import { isReport, type Report } from "../../author/model.ts";
-import { isThemeDefinition, type ThemeDefinition } from "./theme.ts";
+import { isThemeDefinition, type ThemeDefinition } from "../theme.ts";
 
 export type ReportModuleLoadStage = "config" | "report" | "theme";
 
