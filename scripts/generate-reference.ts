@@ -479,7 +479,7 @@ export const SOURCE_FILES = [
   "src/assertions/match.ts",
   "src/assertions/types.ts",
   "src/runner/types.ts",
-  "src/context/types.ts",
+  "src/context/assert-first.ts",
   "src/agents/types.ts",
   "src/sandbox/types.ts",
   "src/o11y/types.ts",
@@ -517,6 +517,15 @@ const EXPECT_FACTORY_NAMES = new Set([
   "commandMatch",
   "eventMatch",
 ]);
+
+// `TestContext` is the public alias of this Assert-first declaration. Its
+// nested Turn shape lives beside it, so reference output must read both from
+// here rather than from the retired Fact compatibility declarations.
+const ASSERT_FIRST_REFERENCE = {
+  source: "src/context/assert-first.ts",
+  testContext: "AssertFirstTestContextV1",
+  turnHandle: "AssertFirstTurnHandleV1",
+} as const;
 
 function computeRegionBody(regionId: string, sources: SourceMap): string {
   switch (regionId) {
@@ -565,31 +574,21 @@ function computeRegionBody(regionId: string, sources: SourceMap): string {
         ],
       );
     case "test-context":
-      // 参考页展示通过制的完整 `t`。Fact 迁移后 TestContext 自身就是唯一公开声明，
-      // 不能为生成器补回已删除的 BaseTestContext 兼容影子。继承的 attempt 作用域 Fact
-      // producer 仍要显式合并，否则参考页会漏掉 succeeded/calledTool 等成员。
-      return renderMemberList([
-        ...extractInterfaceMembers(
-          sources["src/context/types.ts"],
-          "src/context/types.ts",
-          "AggregateScopedFactProducers",
+      return renderMemberList(
+        extractTypeLiteralMembers(
+          sources[ASSERT_FIRST_REFERENCE.source],
+          ASSERT_FIRST_REFERENCE.source,
+          ASSERT_FIRST_REFERENCE.testContext,
         ),
-        ...extractInterfaceMembers(sources["src/context/types.ts"], "src/context/types.ts", "TestContext"),
-      ]);
+      );
     case "turn-handle":
-      return renderMemberList([
-        ...extractInterfaceMembers(
-          sources["src/context/types.ts"],
-          "src/context/types.ts",
-          "AggregateScopedFactProducers",
+      return renderMemberList(
+        extractInterfaceMembers(
+          sources[ASSERT_FIRST_REFERENCE.source],
+          ASSERT_FIRST_REFERENCE.source,
+          ASSERT_FIRST_REFERENCE.turnHandle,
         ),
-        ...extractInterfaceMembers(
-          sources["src/context/types.ts"],
-          "src/context/types.ts",
-          "OrderedScopedFactProducers",
-        ),
-        ...extractInterfaceMembers(sources["src/context/types.ts"], "src/context/types.ts", "TurnHandle"),
-      ]);
+      );
     case "config-fields":
       return renderMemberList(
         extractInterfaceMembers(sources["src/runner/types.ts"], "src/runner/types.ts", "Config"),

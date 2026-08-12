@@ -99,7 +99,7 @@ gitignore 风格 glob(workdir 相对)。默认排除 .git/node_modules/构建产
 #### `test`
 
 ```ts
-test(t: TestContext): Promise<void> | void;
+test(t: TestContext): EvalTestReturn;
 ```
 
 {/* GENERATED:END defineeval-options */}
@@ -114,88 +114,22 @@ Pass Eval 用 Boolean condition 折叠 Attempt Verdict。measurement 必须 `.at
 
 {/* 本区块由 pnpm docs:reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 scripts/generate-reference.ts) */}
 
-#### `succeeded`
+#### `evaluationKind`
 
 ```ts
-succeeded(): BooleanFact<void, P>;
-```
-
-#### `parked`
-
-```ts
-parked(): BooleanFact<void, P>;
-```
-
-#### `calledTool`
-
-```ts
-calledTool(match: ToolMatch, options?: CollectionMatch): BooleanFact<LogicalToolOccurrence, P>;
-```
-
-#### `notCalledTool`
-
-```ts
-notCalledTool(match: ToolMatch): BooleanFact<void, P>;
-```
-
-#### `usedNoTools`
-
-```ts
-usedNoTools(): BooleanFact<void, P>;
-```
-
-#### `maxToolCalls`
-
-```ts
-maxToolCalls(max: number): BooleanFact<void, P>;
-```
-
-#### `loadedSkill`
-
-```ts
-loadedSkill(skill: string): BooleanFact<void, P>;
-```
-
-#### `noFailedActions`
-
-```ts
-noFailedActions(): BooleanFact<void, P>;
-```
-
-#### `event`
-
-```ts
-event(match: EventMatch, options?: CollectionMatch): BooleanFact<AssertionEvent, P>;
-```
-
-#### `notEvent`
-
-```ts
-notEvent(match: EventMatch): BooleanFact<void, P>;
-```
-
-#### `maxTokens`
-
-```ts
-maxTokens(max: number): UsageEvidenceFact<P>;
-```
-
-#### `maxCost`
-
-```ts
-maxCost(usd: number): UsageEvidenceFact<P>;
+readonly evaluationKind: Kind;
 ```
 
 #### `send`
 
 ```ts
-send(input: SendInput): Promise<TurnHandle>;
+send(input: string | { readonly text: string; readonly files?: readonly InputFile[] }): Promise<AssertFirstTurnHandleV1<Kind>>;
 ```
 
 #### `sendFile`
 
 ```ts
-sendFile(path: string, text?: string): Promise<TurnHandle>;
+sendFile(path: string, text?: string): Promise<AssertFirstTurnHandleV1<Kind>>;
 ```
 
 #### `requireInputRequest`
@@ -207,13 +141,13 @@ requireInputRequest(filter?: InputRequestFilter): InputRequest;
 #### `respond`
 
 ```ts
-respond(...responses: (string | RespondAnswer)[]): Promise<TurnHandle>;
+respond(...responses: readonly (string | AssertFirstRespondAnswerV1)[]): Promise<AssertFirstTurnHandleV1<Kind>>;
 ```
 
 #### `respondAll`
 
 ```ts
-respondAll(optionId: string): Promise<TurnHandle>;
+respondAll(optionId: string): Promise<AssertFirstTurnHandleV1<Kind>>;
 ```
 
 #### `reply`
@@ -237,7 +171,7 @@ readonly events: readonly StreamEvent[];
 #### `newSession`
 
 ```ts
-newSession(): SessionHandle;
+newSession(): AssertFirstSessionHandleV1<Kind>;
 ```
 
 #### `signal`
@@ -267,13 +201,13 @@ readonly flags: Readonly<globalThis.Record<string, JsonValue>>;
 #### `progress`
 
 ```ts
-progress(update: ProgressUpdate): void;
+progress(update: import("../types.ts").ProgressUpdate): void;
 ```
 
 #### `diagnostic`
 
 ```ts
-diagnostic(input: DiagnosticInput): void;
+diagnostic(input: import("../types.ts").DiagnosticInput): void;
 ```
 
 #### `log`
@@ -282,122 +216,37 @@ diagnostic(input: DiagnosticInput): void;
 log(message: string): void;
 ```
 
-`progress({ message: msg })` 的别名(调试日志),不出现在最终结果里。
-
 #### `skip`
 
 ```ts
 skip(reason: string): never;
 ```
 
-立即中止本评估用例,在 `niceeval.verdict` 通道形成 `skipped` Verdict;`reason` 不能为空。
-
-#### `check`
-
-```ts
-check<F extends BooleanFact<unknown, FactPhase>>(fact: F, options?: FactUseOptions): F;
-```
-
-#### `check`
-
-```ts
-check<F extends ScoreFact<FactPhase>>(fact: ThresholdedScoreFact<F>, options?: FactUseOptions): F;
-```
-
-#### `check`
-
-```ts
-check<T, I, R extends I, P extends FactPhase>(
-  source: EvidenceSource<T, P> & AcceptsMatchInput<T, NoInfer<I>>,
-  match: BooleanMatch<I, R, "value">,
-  options?: FactUseOptions,
-): BooleanFact<T & R, P>;
-```
-
-#### `check`
-
-```ts
-check<T, P extends FactPhase>(
-  source: EvidenceSource<T, P>,
-  match: ThresholdedScoreMatch<NoInfer<T>>,
-  options?: FactUseOptions,
-): ScoreFact<P>;
-```
-
-#### `check`
-
-```ts
-check<T, I, R extends I>(
-  value: T & AuthorValue<T> & AcceptsMatchInput<T, NoInfer<I>>,
-  match: BooleanMatch<I, R, "value">,
-  options?: FactUseOptions,
-): BooleanFact<T & R, "now">;
-```
-
-#### `check`
-
-```ts
-check<T>(
-  value: T & AuthorValue<T>,
-  match: ThresholdedScoreMatch<NoInfer<T>>,
-  options?: FactUseOptions,
-): ScoreFact<"now">;
-```
-
-#### `checkIfCovered`
-
-```ts
-checkIfCovered<F extends UsageEvidenceFact<FactPhase>>(fact: F, options?: FactUseOptions): F;
-```
-
-#### `require`
-
-```ts
-require<R>(fact: BooleanFact<R, "now">, options?: FactUseOptions): Promise<R>;
-```
-
-#### `require`
-
-```ts
-require<F extends ScoreFact<"now">>(fact: ThresholdedScoreFact<F>, options?: FactUseOptions): Promise<number>;
-```
-
-#### `require`
-
-```ts
-require<T, I, R extends I>(
-  value: T & AuthorValue<T> & AcceptsMatchInput<T, NoInfer<I>>,
-  match: BooleanMatch<I, R, "value">,
-  options?: FactUseOptions,
-): Promise<T & R>;
-```
-
-#### `require`
-
-```ts
-require<T>(
-  value: T & AuthorValue<T>,
-  match: ThresholdedScoreMatch<NoInfer<T>>,
-  options?: FactUseOptions,
-): Promise<number>;
-```
-
 #### `group`
 
 ```ts
-group<T>(title: string, fn: () => Promise<T> | T): Promise<T>;
+group<Value>(
+  title: string,
+  body: () => Value | PromiseLike<Value>,
+): Promise<Awaited<Value>>;
+```
+
+#### `check`
+
+```ts
+check: AssertionsRuntimeV1<Kind>["t"]["check"];
 ```
 
 #### `sandbox`
 
 ```ts
-readonly sandbox: EvalSandbox;
+readonly sandbox: AssertFirstSandboxV1<Kind>;
 ```
 
 #### `o11y`
 
 ```ts
-readonly o11y: O11ySummary;
+readonly o11y: import("../o11y/types.ts").O11ySummary;
 ```
 
 #### `usage`
@@ -406,10 +255,25 @@ readonly o11y: O11ySummary;
 readonly usage: Usage;
 ```
 
+#### `succeeded`
+
+```ts
+succeeded(): BooleanAssertionHandleV1<Kind, void>;
+```
+
+#### `calledTool`
+
+```ts
+calledTool(
+  name: string,
+  options?: AssertFirstCalledToolOptionsV1,
+): BooleanAssertionHandleV1<Kind, void>;
+```
+
 #### `judge`
 
 ```ts
-readonly judge: JudgeNamespace;
+readonly judge: AssertFirstRootJudgeV1<Kind>;
 ```
 
 {/* GENERATED:END test-context */}
@@ -434,99 +298,6 @@ turn.judge.autoevals.summarizes(sourceText).score(20).label("摘要质量");
 {/* GENERATED:BEGIN turn-handle */}
 
 {/* 本区块由 pnpm docs:reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 scripts/generate-reference.ts) */}
-
-#### `succeeded`
-
-```ts
-succeeded(): BooleanFact<void, P>;
-```
-
-#### `parked`
-
-```ts
-parked(): BooleanFact<void, P>;
-```
-
-#### `calledTool`
-
-```ts
-calledTool(match: ToolMatch, options?: CollectionMatch): BooleanFact<LogicalToolOccurrence, P>;
-```
-
-#### `notCalledTool`
-
-```ts
-notCalledTool(match: ToolMatch): BooleanFact<void, P>;
-```
-
-#### `usedNoTools`
-
-```ts
-usedNoTools(): BooleanFact<void, P>;
-```
-
-#### `maxToolCalls`
-
-```ts
-maxToolCalls(max: number): BooleanFact<void, P>;
-```
-
-#### `loadedSkill`
-
-```ts
-loadedSkill(skill: string): BooleanFact<void, P>;
-```
-
-#### `noFailedActions`
-
-```ts
-noFailedActions(): BooleanFact<void, P>;
-```
-
-#### `event`
-
-```ts
-event(match: EventMatch, options?: CollectionMatch): BooleanFact<AssertionEvent, P>;
-```
-
-#### `notEvent`
-
-```ts
-notEvent(match: EventMatch): BooleanFact<void, P>;
-```
-
-#### `maxTokens`
-
-```ts
-maxTokens(max: number): UsageEvidenceFact<P>;
-```
-
-#### `maxCost`
-
-```ts
-maxCost(usd: number): UsageEvidenceFact<P>;
-```
-
-#### `toolOrder`
-
-```ts
-toolOrder(matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]]): BooleanFact<void, P>;
-```
-
-#### `eventOrder`
-
-```ts
-eventOrder(matches: readonly [EventMatch, EventMatch, ...EventMatch[]]): BooleanFact<void, P>;
-```
-
-#### `eventsSatisfy`
-
-```ts
-eventsSatisfy(
-  label: string,
-  predicate: (events: readonly AssertionEvent[]) => boolean | Promise<boolean>,
-): BooleanFact<void, P>;
-```
 
 #### `events`
 
@@ -564,13 +335,26 @@ readonly data?: JsonValue;
 readonly usage?: Usage;
 ```
 
+#### `succeeded`
+
+```ts
+succeeded(): BooleanAssertionHandleV1<Kind, void>;
+```
+
+#### `calledTool`
+
+```ts
+calledTool(
+  name: string,
+  options?: AssertFirstCalledToolOptionsV1,
+): BooleanAssertionHandleV1<Kind, void>;
+```
+
 #### `judge`
 
 ```ts
-readonly judge: TurnJudgeNamespace;
+readonly judge: AssertFirstTurnJudgeV1<Kind>;
 ```
-
-Judge facts are bound to this immutable turn's original input and output.
 
 {/* GENERATED:END turn-handle */}
 
