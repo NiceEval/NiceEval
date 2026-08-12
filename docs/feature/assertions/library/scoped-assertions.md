@@ -8,10 +8,10 @@
 
 ```ts
 interface CalledToolAtLeast {
-  readonly atLeast: PositiveInteger;
+  readonly atLeast: number;
 }
 
-type CalledToolCount = PositiveInteger | CalledToolAtLeast;
+type CalledToolCount = number | CalledToolAtLeast;
 
 interface CalledToolOptions {
   readonly count?: CalledToolCount;
