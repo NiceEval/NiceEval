@@ -7,9 +7,9 @@ export default defineEval({
     const first = await t.send(
       "我最喜欢的数字是 47。只需确认你会记住它——不要写任何文件。",
     );
-    await t.require(first.succeeded());
+    await first.succeeded().orStop();
     const recall = await t.send("我最喜欢的数字是多少?只回答数字。");
-    await t.require(recall.succeeded());
+    await recall.succeeded().orStop();
     t.check(recall.message, includes("47"));
   },
 });

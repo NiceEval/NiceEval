@@ -6,7 +6,7 @@ export default defineEval({
     "openai@6.49 ChatCompletion raw response 保留 function/custom tool 与互斥 usage",
   async test(t) {
     const turn = await t.send("openai chat completion fixture");
-    await t.require(turn.succeeded());
+    await turn.succeeded().orStop();
     t.check(turn.message, includes("openai-chat-completion-message-marker"));
     t.check(
       turn.events,

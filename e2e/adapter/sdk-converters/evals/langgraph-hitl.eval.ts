@@ -7,7 +7,6 @@ export default defineEval({
   async test(t) {
     const draft = await t.send("langgraph hitl approve fixture");
     t.check(draft.status, equals("waiting"));
-    t.check(draft.parked());
     t.check(
       draft.events,
       satisfies<typeof draft.events>(
@@ -33,7 +32,7 @@ export default defineEval({
       includes("langgraph-hitl-runtime-initial:lifecycle"),
     );
     const approved = await t.respond("accept");
-    await t.require(approved.succeeded());
+    await approved.succeeded().orStop();
     t.check(approved.message, includes("langgraph-hitl-approved-marker"));
     t.check(
       approved.events,
@@ -56,10 +55,10 @@ export default defineEval({
     const rejectedDraft = await rejectedSession.send(
       "langgraph hitl reject fixture",
     );
-    t.check(rejectedDraft.parked());
+    t.check(rejectedDraft.status, equals("waiting"));
     rejectedSession.requireInputRequest({ action: "approve_change" });
     const rejected = await rejectedSession.respond("ignore");
-    await t.require(rejected.succeeded());
+    await rejected.succeeded().orStop();
     t.check(rejected.message, includes("langgraph-hitl-rejected-marker"));
     t.check(
       rejectedSession.events,

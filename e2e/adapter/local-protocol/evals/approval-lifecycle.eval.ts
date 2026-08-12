@@ -8,7 +8,6 @@ export default defineEval({
   async test(t) {
     const draft = await t.send("request the deterministic approval fixture");
     t.check(draft.status, equals("waiting"));
-    t.check(draft.parked());
     t.requireInputRequest({ action: "calculate" });
     t.check(
       draft.events,
@@ -34,7 +33,7 @@ export default defineEval({
       ),
     );
     const approved = await t.respond("approve");
-    await t.require(approved.succeeded());
+    await approved.succeeded().orStop();
     t.check(approved.message, includes("local-approval-approved"));
     t.check(
       approved.events,
@@ -59,10 +58,10 @@ export default defineEval({
     const deniedDraft = await denied.send(
       "request the deterministic approval fixture",
     );
-    t.check(deniedDraft.parked());
+    t.check(deniedDraft.status, equals("waiting"));
     denied.requireInputRequest({ action: "calculate" });
     const rejected = await denied.respond("deny");
-    await t.require(rejected.succeeded());
+    await rejected.succeeded().orStop();
     t.check(rejected.message, includes("local-approval-denied"));
     t.check(
       denied.events,

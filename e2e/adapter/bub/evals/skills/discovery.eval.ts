@@ -1,5 +1,5 @@
 import { defineEval } from "niceeval";
-import { eventMatch, includes, satisfies } from "niceeval/expect";
+import { includes, satisfies } from "niceeval/expect";
 import { REPLY_DIRECTIVE, SKIP_BUILD_NOTE } from "../shared.ts";
 // bub 没有原生 Skill 加载机制:装进 .agents/skills/ 目录 + AGENTS.md 里的发现指引
 // (见 src/agents/skills.ts skillDiscoveryInstruction)是唯一途径。证据因此不是一等的
@@ -15,15 +15,8 @@ export default defineEval({
         `检查你的项目 skills 目录里的 review-conventions skill,把其中记录的确切魔法词` +
         `告诉我。`,
     );
-    await t.require(turn.succeeded());
-    t.check(
-      t.event(
-        eventMatch("message", {
-          role: "assistant",
-          text: includes(MAGIC_WORD),
-        }),
-      ),
-    );
+    await turn.succeeded().orStop();
+    t.check(turn.message, includes(MAGIC_WORD));
     t.check(
       t.events,
       satisfies<typeof t.events>(

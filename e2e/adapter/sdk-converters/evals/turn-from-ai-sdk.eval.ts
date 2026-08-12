@@ -2,10 +2,8 @@
 import { defineEval } from "niceeval";
 import {
   equals,
-  eventMatch,
   includes,
   satisfies,
-  toolMatch,
 } from "niceeval/expect";
 export default defineEval({
   description:
@@ -15,25 +13,11 @@ export default defineEval({
       "produce deterministic AI SDK tool calls and wait for approval",
     );
     t.check(draft.status, equals("waiting"));
-    t.check(draft.parked());
-    t.check(
-      draft.event(
-        eventMatch("operation.finished", {
-          tool: toolMatch("inventory_lookup", {
-            input: satisfies(
-              "AI SDK inventory lookup input",
-              (input) =>
-                typeof input === "object" &&
-                input !== null &&
-                !Array.isArray(input) &&
-                input["sku"] === "fixture-001",
-            ),
-            status: "completed",
-          }),
-        }),
-        { count: 1 },
-      ),
-    );
+    draft.calledTool("inventory_lookup", {
+      input: { sku: "fixture-001" },
+      status: "completed",
+      count: 1,
+    });
     t.check(
       draft.events,
       satisfies<typeof draft.events>(
@@ -92,7 +76,7 @@ export default defineEval({
       ),
     );
     const approved = await t.respond("approve");
-    t.check(approved.succeeded());
+    approved.succeeded();
     t.check(approved.message, includes("ai-sdk-approved-marker"));
     t.check(
       approved.events,
@@ -117,10 +101,10 @@ export default defineEval({
     const deniedDraft = await denied.send(
       "produce deterministic AI SDK tool calls and wait for approval",
     );
-    t.check(deniedDraft.parked());
+    t.check(deniedDraft.status, equals("waiting"));
     denied.requireInputRequest({ action: "approval_tool" });
     const rejection = await denied.respond("deny");
-    t.check(rejection.succeeded());
+    rejection.succeeded();
     t.check(rejection.message, includes("ai-sdk-rejected-marker"));
     t.check(
       denied.events,

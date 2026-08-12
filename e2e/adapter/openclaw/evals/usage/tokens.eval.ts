@@ -5,9 +5,9 @@ export default defineEval({
   description: "usage 每轮都读到正的 inputTokens 与 outputTokens",
   async test(t) {
     const first = await t.send("只回答数字:1+1等于几?不要调用任何工具。");
-    await t.require(first.succeeded());
+    await first.succeeded().orStop();
     const second = await t.send("只回答数字:9-4等于几?不要调用任何工具。");
-    await t.require(second.succeeded());
+    await second.succeeded().orStop();
 
     for (const [label, turn] of [
       ["首轮", first],

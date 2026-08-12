@@ -1,86 +1,36 @@
 // owner: docs/engineering/testing/e2e/adapter/sdk-converters.md#claude-sdk-stream-deterministic
 import { defineEval } from "niceeval";
-import { eventMatch, includes, satisfies, toolMatch } from "niceeval/expect";
+import { includes, satisfies } from "niceeval/expect";
 export default defineEval({
   description:
     "Claude Agent SDK raw frames 经 converter 保留 tool_use_id、原生工具 canonical、usage/session 与 markRejected",
   async test(t) {
     const turn = await t.send("feed the locked Claude SDK protocol fixture");
-    await t.require(turn.succeeded());
+    await turn.succeeded().orStop();
     t.check(turn.message, includes("claude-sdk-assistant-marker"));
-    t.check(
-      turn.event(
-        eventMatch("operation.finished", {
-          tool: toolMatch("shell", {
-            input: satisfies(
-              "Claude Bash input",
-              (input) =>
-                typeof input === "object" &&
-                input !== null &&
-                !Array.isArray(input) &&
-                input["command"] === "printf claude-sdk-bash-marker",
-            ),
-            status: "completed",
-          }),
-        }),
-        { count: 1 },
-      ),
-    );
-    t.check(
-      turn.event(
-        eventMatch("operation.finished", {
-          tool: toolMatch("file_read", {
-            input: satisfies(
-              "Claude file read input",
-              (input) =>
-                typeof input === "object" &&
-                input !== null &&
-                !Array.isArray(input) &&
-                input["file_path"] === "/offline/fixture.txt",
-            ),
-            status: "completed",
-          }),
-        }),
-        { count: 1 },
-      ),
-    );
-    t.check(
-      turn.event(
-        eventMatch("operation.finished", {
-          tool: toolMatch("file_write", {
-            input: satisfies(
-              "Claude file write input",
-              (input) =>
-                typeof input === "object" &&
-                input !== null &&
-                !Array.isArray(input) &&
-                input["file_path"] === "/offline/out.txt" &&
-                input["content"] === "claude-sdk-write-marker",
-            ),
-            status: "completed",
-          }),
-        }),
-        { count: 1 },
-      ),
-    );
-    t.check(
-      turn.event(
-        eventMatch("operation.finished", {
-          tool: toolMatch("shell", {
-            input: satisfies(
-              "Claude rejected Bash input",
-              (input) =>
-                typeof input === "object" &&
-                input !== null &&
-                !Array.isArray(input) &&
-                input["command"] === "rm -f prohibited-fixture",
-            ),
-            status: "rejected",
-          }),
-        }),
-        { count: 1 },
-      ),
-    );
+    turn.calledTool("shell", {
+      input: { command: "printf claude-sdk-bash-marker" },
+      status: "completed",
+      count: 1,
+    });
+    turn.calledTool("file_read", {
+      input: { file_path: "/offline/fixture.txt" },
+      status: "completed",
+      count: 1,
+    });
+    turn.calledTool("file_write", {
+      input: {
+        file_path: "/offline/out.txt",
+        content: "claude-sdk-write-marker",
+      },
+      status: "completed",
+      count: 1,
+    });
+    turn.calledTool("shell", {
+      input: { command: "rm -f prohibited-fixture" },
+      status: "rejected",
+      count: 1,
+    });
     t.check(
       turn.events,
       satisfies<typeof turn.events>(

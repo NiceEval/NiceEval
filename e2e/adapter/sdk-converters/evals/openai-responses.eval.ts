@@ -6,7 +6,7 @@ export default defineEval({
     "openai@6.49 Responses raw response 保留 message/function_call 与互斥 usage",
   async test(t) {
     const turn = await t.send("openai responses fixture");
-    await t.require(turn.succeeded());
+    await turn.succeeded().orStop();
     t.check(turn.message, includes("openai-responses-message-marker"));
     t.check(
       turn.events,

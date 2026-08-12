@@ -2,36 +2,21 @@
 import { defineEval } from "niceeval";
 import {
   equals,
-  eventMatch,
   includes,
   satisfies,
-  toolMatch,
 } from "niceeval/expect";
 export default defineEval({
   description:
     "真实 Pi Agent prompt/subscribe 生命周期直入 converter，覆盖成功、工具配对、usage 与 terminal failure",
   async test(t) {
     const completed = await t.send("pi agent completed fixture");
-    await t.require(completed.succeeded());
+    await completed.succeeded().orStop();
     t.check(completed.message, includes("pi-agent-subscribe-success-marker"));
-    t.check(
-      completed.event(
-        eventMatch("operation.finished", {
-          tool: toolMatch("inventory_lookup", {
-            input: satisfies(
-              "Pi inventory lookup input",
-              (input) =>
-                typeof input === "object" &&
-                input !== null &&
-                !Array.isArray(input) &&
-                input["sku"] === "pi-001",
-            ),
-            status: "completed",
-          }),
-        }),
-        { count: 1 },
-      ),
-    );
+    completed.calledTool("inventory_lookup", {
+      input: { sku: "pi-001" },
+      status: "completed",
+      count: 1,
+    });
     t.check(
       completed.events,
       satisfies<typeof completed.events>(

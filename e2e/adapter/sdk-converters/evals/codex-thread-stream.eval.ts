@@ -2,55 +2,26 @@
 import { defineEval } from "niceeval";
 import {
   equals,
-  eventMatch,
   includes,
   satisfies,
-  toolMatch,
 } from "niceeval/expect";
 export default defineEval({
   description:
     "Codex ThreadEvent raw frames 经 converter 保留 command/file canonical、call ID、usage/thread 与 terminal failure",
   async test(t) {
     const completed = await t.send("codex completed fixture");
-    await t.require(completed.succeeded());
+    await completed.succeeded().orStop();
     t.check(completed.message, includes("codex-sdk-message-marker"));
-    t.check(
-      completed.event(
-        eventMatch("operation.finished", {
-          tool: toolMatch("shell", {
-            input: satisfies(
-              "Codex command input",
-              (input) =>
-                typeof input === "object" &&
-                input !== null &&
-                !Array.isArray(input) &&
-                input["command"] === "printf codex-sdk-command-marker",
-            ),
-            status: "completed",
-          }),
-        }),
-        { count: 1 },
-      ),
-    );
-    t.check(
-      completed.event(
-        eventMatch("operation.finished", {
-          tool: toolMatch("file_edit", {
-            input: satisfies(
-              "Codex file edit input",
-              (input) =>
-                typeof input === "object" &&
-                input !== null &&
-                !Array.isArray(input) &&
-                input["path"] === "src/fixture.ts" &&
-                input["kind"] === "update",
-            ),
-            status: "completed",
-          }),
-        }),
-        { count: 1 },
-      ),
-    );
+    completed.calledTool("shell", {
+      input: { command: "printf codex-sdk-command-marker" },
+      status: "completed",
+      count: 1,
+    });
+    completed.calledTool("file_edit", {
+      input: { path: "src/fixture.ts", kind: "update" },
+      status: "completed",
+      count: 1,
+    });
     t.check(
       completed.events,
       satisfies<typeof completed.events>(
@@ -119,24 +90,11 @@ export default defineEval({
           ),
       ),
     );
-    t.check(
-      terminal.event(
-        eventMatch("operation.finished", {
-          tool: toolMatch("shell", {
-            input: satisfies(
-              "Codex terminal command input",
-              (input) =>
-                typeof input === "object" &&
-                input !== null &&
-                !Array.isArray(input) &&
-                input["command"] === "printf codex-sdk-terminal-marker",
-            ),
-            status: "completed",
-          }),
-        }),
-        { count: 1 },
-      ),
-    );
+    terminal.calledTool("shell", {
+      input: { command: "printf codex-sdk-terminal-marker" },
+      status: "completed",
+      count: 1,
+    });
     t.check(
       terminal.events,
       satisfies<typeof terminal.events>(

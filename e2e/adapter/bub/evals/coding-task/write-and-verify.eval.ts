@@ -1,5 +1,5 @@
 import { defineEval } from "niceeval";
-import { eventMatch, pattern, satisfies, toolMatch } from "niceeval/expect";
+import { pattern, satisfies } from "niceeval/expect";
 
 import { REPLY_DIRECTIVE, SKIP_BUILD_NOTE } from "../shared.ts";
 
@@ -17,39 +17,49 @@ export default defineEval({
         `第二步:作为单独一步,用 shell 命令(例如 \`cat notes.txt\`)把 notes.txt 读回来,` +
         `并把它打印的内容原样告诉我。`,
     );
-    await t.require(turn.succeeded());
+    await turn.succeeded().orStop();
 
     await t.group("写入 notes.txt,再串行 shell 读回来验证", () => {
+      t.calledTool("file_write", {
+        input: { path: /notes\.txt/ },
+      });
+      t.calledTool("shell");
       t.check(
-        t.calledTool(
-          toolMatch("file_write", {
-            input: satisfies(
-              '"file_write" input',
-              (input) =>
-                typeof input === "object" &&
-                input !== null &&
-                !Array.isArray(input) &&
-                (typeof input["path"] === "string"
-                  ? /notes\.txt/.test(input["path"])
-                  : /notes\.txt/.test(JSON.stringify(input) ?? "")),
-            ),
-          }),
+        turn.toolCalls,
+        satisfies(
+          "file_write 先于 shell",
+          (calls) => {
+            const write = calls.findIndex((call) => call.name === "file_write");
+            const shell = calls.findIndex((call) => call.name === "shell");
+            return write !== -1 && shell !== -1 && write < shell;
+          },
         ),
       );
-      t.check(t.calledTool(toolMatch("shell")));
-      t.check(turn.toolOrder([toolMatch("file_write"), toolMatch("shell")]));
-      t.check(t.noFailedActions());
+      t.check(
+        turn.toolCalls,
+        satisfies(
+          "no failed actions",
+          (calls) => calls.every((call) => call.status !== "failed"),
+        ),
+      );
     });
 
+    t.check(turn.message, pattern(/bub e2e ok/));
     t.check(
-      t.event(
-        eventMatch("message", {
-          role: "assistant",
-          text: pattern(/bub e2e ok/),
-        }),
+      turn.usage,
+      satisfies(
+        "usage within 50_000 tokens",
+        (usage) =>
+          usage !== undefined &&
+          (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0) <= 50_000,
       ),
     );
-    t.check(turn.maxTokens(50_000));
-    t.check(turn.maxCost(0.5));
+    t.check(
+      turn.usage,
+      satisfies(
+        "cost within $0.5",
+        (usage) => usage !== undefined && (usage.costUSD ?? 0) <= 0.5,
+      ),
+    );
   },
 });

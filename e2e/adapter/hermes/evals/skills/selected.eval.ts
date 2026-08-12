@@ -20,9 +20,19 @@ export default defineEval({
         `do not load ${DECOY_SKILL}. Then create ${relPath} as an incident report about ` +
         `"adapter evidence is complete", following the selected skill's convention exactly.`,
     );
-    await t.require(turn.succeeded());
+    await turn.succeeded().orStop();
     await t.group("匹配的原生 Skill 被选择,decoy 没有误用", () => {
-      t.check(turn.loadedSkill(SKILL_NAME));
+      t.check(
+        turn.events,
+        satisfies<typeof turn.events>(
+          `loaded skill ${SKILL_NAME}`,
+          (events) =>
+            events.some(
+              (event) =>
+                event.type === "skill.loaded" && event.skill === SKILL_NAME,
+            ),
+        ),
+      );
       t.check(
         turn.events,
         satisfies<typeof turn.events>(
@@ -35,7 +45,7 @@ export default defineEval({
         ),
       );
     });
-    t.check(t.sandbox.fileChanged(relPath));
-    t.check(t.sandbox.file(relPath), includes(MARKER));
+    t.check(await t.sandbox.pathExists(relPath), equals(true));
+    t.check(await t.sandbox.readText(relPath), includes(MARKER));
   },
 });

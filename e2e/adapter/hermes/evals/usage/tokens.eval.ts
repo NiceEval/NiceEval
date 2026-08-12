@@ -7,12 +7,12 @@ export default defineEval({
     const first = await t
       .newSession()
       .send("只回答数字: 2 加 3 等于几?不要调用任何工具。");
-    await t.require(first.succeeded());
+    await first.succeeded().orStop();
 
     const second = await t
       .newSession()
       .send("只回答数字: 7 减 4 等于几?不要调用任何工具。");
-    await t.require(second.succeeded());
+    await second.succeeded().orStop();
 
     for (const [label, turn] of [
       ["first", first],
