@@ -8,8 +8,13 @@ import type { Socket } from "node:net";
 import { basename, dirname, resolve } from "node:path";
 import { Effect, Either } from "effect";
 import type * as Scope from "effect/Scope";
-import { reportRoute, type ReportRoute } from "../report/author/identity.ts";
+import {
+  isReportDownloadPath,
+  reportRoute,
+  type ReportRoute,
+} from "../report/author/identity.ts";
 import type { ReportExecution } from "../report/execution/model.ts";
+import type { ReportPageResult } from "../report/execution/results.ts";
 import {
   renderReportExecutionJson,
   renderReportExecutionProblemsText,
@@ -75,6 +80,9 @@ interface HttpRequest {
   readonly request: IncomingMessage;
   readonly response: ServerResponse;
 }
+
+type RenderedPage = Extract<ReportPageResult, { readonly state: "rendered" }>;
+type PageLookup = RenderedPage | "fallback" | "missing";
 
 const HTTP_REQUEST_QUEUE_MAX = 128;
 
@@ -335,6 +343,9 @@ function serveRequest<Requirements>(
         "x-niceeval-report-revision": String(state.current.revision),
         ...(state.lastProblem === undefined ? {} : { "x-niceeval-last-rebuild-problem": "1" }),
       });
+      const hostTextPrefix = state.lastProblem === undefined
+        ? `Revision ${state.current.revision}\n\n`
+        : `Revision ${state.current.revision}\nLast rebuild failed: ${state.lastProblem.summary}\n\n`;
       if (url.pathname === "/_niceeval/execution.json") {
         return Effect.flatMap(
           renderReportExecutionJson({ execution: state.current.execution }),
@@ -342,32 +353,64 @@ function serveRequest<Requirements>(
         );
       }
       if (url.pathname === "/_niceeval/problems" || url.pathname === "/_niceeval/problems/") {
-        const prefix = state.lastProblem === undefined
-          ? `Revision ${state.current.revision}\n\n`
-          : `Revision ${state.current.revision}\nLast rebuild failed: ${state.lastProblem.summary}\n\n`;
         return Effect.sync(() => send(
           request.response,
           200,
-          renderHtml(`${prefix}${renderReportExecutionProblemsText(state.current.execution)}`, state.current.theme),
+          renderHtml(`${hostTextPrefix}${renderReportExecutionProblemsText(state.current.execution)}`, state.current.theme),
           "text/html; charset=utf-8",
           headers,
         ));
       }
+      const download = downloadForPath(url.pathname, state.current.execution);
+      if (download !== undefined) {
+        return Effect.sync(() => send(
+          request.response,
+          200,
+          download.bytes,
+          downloadContentType(download.mediaType),
+          {
+            ...headers,
+            "content-disposition": "attachment",
+            "x-content-type-options": "nosniff",
+          },
+        ));
+      }
+      const canonical = canonicalPagePath(url.pathname);
+      if (
+        canonical !== undefined &&
+        canonical !== url.pathname &&
+        pageForPath(canonical, state.current.execution) !== "missing"
+      ) {
+        return Effect.sync(() => redirect(request.response, canonical, headers));
+      }
       const page = pageForPath(url.pathname, state.current.execution);
       if (page === "missing") {
-        return Effect.sync(() => sendText(request.response, 404, "page not found", headers));
+        return Effect.sync(() => sendText(
+          request.response,
+          404,
+          url.pathname.startsWith("/downloads/") ? "download not found" : "page not found",
+          headers,
+        ));
       }
-      const rendered = renderReportExecutionText({
-        execution: state.current.execution,
-        ...(page === undefined ? {} : { page }),
-      });
-      const prefix = state.lastProblem === undefined
-        ? `Revision ${state.current.revision}\n\n`
-        : `Revision ${state.current.revision}\nLast rebuild failed: ${state.lastProblem.summary}\n\n`;
       return Effect.sync(() => send(
         request.response,
         200,
-        renderHtml(`${prefix}${rendered}`, state.current.theme),
+        page === "fallback"
+          ? renderHtml(
+            `${hostTextPrefix}${renderReportExecutionText({ execution: state.current.execution })}`,
+            state.current.theme,
+          )
+          : renderHtml({
+            document: page.document,
+            route: page.route,
+            theme: state.current.theme,
+            hostMetadata: {
+              revision: state.current.revision,
+              ...(state.lastProblem === undefined
+                ? {}
+                : { lastRebuildProblem: state.lastProblem.summary }),
+            },
+          }),
         "text/html; charset=utf-8",
         headers,
       ));
@@ -658,14 +701,53 @@ function closeServer(server: Server): Effect.Effect<void> {
   });
 }
 
-function pageForPath(
+function pageForPath(pathname: string, execution: ReportExecution): PageLookup {
+  const route = routeForOutputPath(pathname);
+  if (route === undefined) return "missing";
+  const page = execution.pages.find(
+    (candidate): candidate is RenderedPage =>
+      candidate.state === "rendered" && candidate.route === route,
+  );
+  if (page !== undefined) return page;
+  return route === "/" ? "fallback" : "missing";
+}
+
+function canonicalPagePath(pathname: string): string | undefined {
+  if (routeForOutputPath(pathname) !== undefined) return pathname;
+  const direct = reportRoute(pathname);
+  if (Either.isRight(direct) && direct.right !== "/") {
+    return `${direct.right}/index.html`;
+  }
+  if (pathname.endsWith("/") && pathname.length > 1) {
+    const withoutTrailingSlash = pathname.slice(0, -1);
+    const parsed = reportRoute(withoutTrailingSlash);
+    if (Either.isRight(parsed)) return `${parsed.right}/index.html`;
+  }
+  return undefined;
+}
+
+function routeForOutputPath(pathname: string): ReportRoute | undefined {
+  if (pathname === "/" || pathname === "/index.html") {
+    return reportRoute("/").pipe(Either.getOrUndefined);
+  }
+  if (!pathname.endsWith("/index.html")) return undefined;
+  return reportRoute(pathname.slice(0, -"/index.html".length)).pipe(Either.getOrUndefined);
+}
+
+function downloadForPath(
   pathname: string,
   execution: ReportExecution,
-): ReportRoute | "missing" | undefined {
-  if (pathname === "/") return undefined;
-  const parsed = reportRoute(pathname);
-  if (Either.isLeft(parsed) || !execution.pages.some((page) => page.route === parsed.right)) return "missing";
-  return parsed.right;
+): { readonly bytes: Uint8Array; readonly mediaType: string } | undefined {
+  const prefix = "/downloads/";
+  if (!pathname.startsWith(prefix)) return undefined;
+  const path = pathname.slice(prefix.length);
+  if (!isReportDownloadPath(path)) return undefined;
+  for (const download of execution.downloads) {
+    if (download.state !== "built") continue;
+    const file = download.files.find((candidate) => candidate.path === path);
+    if (file !== undefined) return file;
+  }
+  return undefined;
 }
 
 function requestUrl(request: IncomingMessage): URL | undefined {
@@ -688,13 +770,29 @@ function sendText(
 function send(
   response: ServerResponse,
   status: number,
-  body: string,
+  body: string | Uint8Array,
   contentType: string,
   headers: Readonly<Record<string, string>>,
 ): void {
   if (response.destroyed) return;
   response.writeHead(status, { "content-type": contentType, ...headers });
   response.end(body);
+}
+
+function redirect(
+  response: ServerResponse,
+  location: string,
+  headers: Readonly<Record<string, string>>,
+): void {
+  if (response.destroyed) return;
+  response.writeHead(308, { location, ...headers });
+  response.end();
+}
+
+const SAFE_MEDIA_TYPE = /^[A-Za-z0-9!#$%&'*+.^_`|~-]+\/[A-Za-z0-9!#$%&'*+.^_`|~-]+$/;
+
+function downloadContentType(mediaType: string): string {
+  return SAFE_MEDIA_TYPE.test(mediaType) ? mediaType : "application/octet-stream";
 }
 
 function isLoopbackHost(host: string): boolean {

@@ -1,4 +1,8 @@
 import { Context, Effect } from "effect";
+import {
+  staticPathForReportDownload,
+  staticPathForReportRoute,
+} from "../author/identity.ts";
 import type { ReportExecution, ReportLimitExceeded } from "../execution/model.ts";
 import type { ReportExecutionProblem } from "../execution/problems.ts";
 import {
@@ -123,10 +127,13 @@ function staticFiles(
       for (const page of [...execution.pages].sort(comparePages)) {
         if (page.state !== "rendered") continue;
         if (page.route === "/") wroteRootPage = true;
-        const text = renderReportExecutionText({ execution, page: page.route });
         files.push(Object.freeze({
-          path: outputPathForRoute(page.route),
-          bytes: encoder.encode(renderReportHtml({ text, theme })),
+          path: staticPathForReportRoute(page.route).posix,
+          bytes: encoder.encode(renderReportHtml({
+            document: page.document,
+            route: page.route,
+            theme,
+          })),
         }));
       }
       // An execution may have no rendered author route (for example, every
@@ -145,7 +152,7 @@ function staticFiles(
         if (download.state !== "built") continue;
         for (const file of [...download.files].sort((left, right) => compareText(left.path, right.path))) {
           files.push(Object.freeze({
-            path: `downloads/${file.path}`,
+            path: staticPathForReportDownload(file.path).posix,
             bytes: new Uint8Array(file.bytes),
           }));
         }
@@ -190,8 +197,4 @@ function comparePages(
 function compareText(left: string, right: string): number {
   if (left === right) return 0;
   return left < right ? -1 : 1;
-}
-
-function outputPathForRoute(route: string): string {
-  return route === "/" ? "index.html" : `${route.slice(1)}/index.html`;
 }

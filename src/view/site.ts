@@ -2,7 +2,10 @@
 // publication belongs to the report host's Effect boundary, not this planner.
 
 import type { ReportExecution } from "../report/execution/model.ts";
-import { renderReportHtml } from "../report/host/html.ts";
+import {
+  renderReportHtml,
+  type RenderReportHtmlInput,
+} from "../report/host/html.ts";
 import { renderReportExecutionText } from "../report/host/presentation.ts";
 import { basalt, type ThemeDefinition } from "../report/host/node/theme.ts";
 import {
@@ -42,7 +45,10 @@ export function planSite(
     throw new Error("A static Report site requires a completed ReportExecution.");
   }
   const theme = site.theme ?? basalt;
-  const text = renderReportExecutionText({ execution });
+  const root = execution.pages.find(
+    (page): page is Extract<ReportExecution["pages"][number], { readonly state: "rendered" }> =>
+      page.state === "rendered" && page.route === "/",
+  );
   return Object.freeze({
     execution,
     theme,
@@ -50,7 +56,9 @@ export function planSite(
       Object.freeze({
         path: "index.html",
         contentType: "text/html; charset=utf-8",
-        content: renderHtml(text, theme),
+        content: root === undefined
+          ? renderHtml(renderReportExecutionText({ execution }), theme)
+          : renderHtml({ document: root.document, route: root.route, theme }),
       }),
     ]),
   });
@@ -64,6 +72,13 @@ export function writeSite(
   return exportStaticReport({ execution: plan.execution, out, theme: plan.theme });
 }
 
-export function renderHtml(text: string, theme?: ThemeDefinition): string {
-  return renderReportHtml({ text, ...(theme === undefined ? {} : { theme }) });
+export function renderHtml(text: string, theme?: ThemeDefinition): string;
+export function renderHtml(input: RenderReportHtmlInput): string;
+export function renderHtml(
+  input: string | RenderReportHtmlInput,
+  theme?: ThemeDefinition,
+): string {
+  return typeof input === "string"
+    ? renderReportHtml({ text: input, ...(theme === undefined ? {} : { theme }) })
+    : renderReportHtml(input);
 }
