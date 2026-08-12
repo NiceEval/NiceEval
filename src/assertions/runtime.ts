@@ -17,7 +17,9 @@ import {
   type BooleanAssertionRegistrationV1,
   type MeasurementAssertionEvaluationV1,
   type MeasurementAssertionRegistrationV1,
+  type PassBooleanAssertionHandleV1,
   type PostRunBooleanAssertionHandleV1,
+  type ScoreBooleanAssertionHandleV1,
   type SealedAssertionEvaluationV1,
   type SealedAssertionsRuntimeV1,
 } from "./api.ts";
@@ -433,6 +435,14 @@ class BooleanHandle extends HandleBase {
   }
 }
 
+function isScoreBooleanAssertionHandleV1<Refined>(
+  handle:
+    | PassBooleanAssertionHandleV1<Refined>
+    | ScoreBooleanAssertionHandleV1<Refined>,
+): handle is ScoreBooleanAssertionHandleV1<Refined> {
+  return "score" in handle && typeof handle.score === "function";
+}
+
 /**
  * Gives a post-run producer a configuration-only view of an ordinary Boolean
  * entry. Keeping this as a distinct, null-prototype object matters at the
@@ -482,12 +492,17 @@ export function postRunBooleanAssertionHandleV1<
       return view;
     }),
     ...(evaluationKind === "score"
-      ? {
-          score: descriptor((points: number) => {
-            (handle as unknown as { score(value: number): unknown }).score(points);
-            return view;
-          }),
-        }
+      ? (() => {
+          if (!isScoreBooleanAssertionHandleV1(handle)) {
+            throw new Error("Score post-run Boolean Assertion received a non-score handle");
+          }
+          return {
+            score: descriptor((points: number) => {
+              handle.score(points);
+              return view;
+            }),
+          };
+        })()
       : {}),
   });
   assertionHandleRegistry.add(view);
