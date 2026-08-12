@@ -28,7 +28,8 @@ import {
 } from "../assertions/judge.ts";
 import { emptyDiffData } from "../assertions/diff.ts";
 import { buildO11ySummary, deriveRunFacts } from "../o11y/derive.ts";
-import { lastAssistantText, RunSession, SessionManager } from "./session.ts";
+import { captureLoc } from "../source-loc.ts";
+import { lastAssistantText, RunSession, SessionManager, type SessionDeps } from "./session.ts";
 import { EvalSkipped } from "./control-flow.ts";
 import type { ConcurrencySlot } from "./send-retry.ts";
 import type { AnswerValue, InputResponse } from "../agents/types.ts";
@@ -86,6 +87,8 @@ export interface AssertFirstContextDeps {
   readonly retryRandom?: import("./session.ts").SessionDeps["retryRandom"];
   readonly retrySleep?: import("./session.ts").SessionDeps["retrySleep"];
   readonly judge: ResolvedJudgeConfig | undefined;
+  /** The Attempt-scoped bridge is the sole Promise facade for author sends. */
+  readonly requestEffect: NonNullable<SessionDeps["requestEffect"]>;
   readonly executeStop: import("../assertions/api.ts").AssertionStopExecutorV1;
   readonly evaluationKind: "pass" | "score";
 }
@@ -516,13 +519,17 @@ function mimeTypeFor(path: string): string {
   }
 }
 
-async function readInputFile(path: string): Promise<InputFile> {
-  const bytes = await readFile(path);
-  return Object.freeze({
-    filename: basename(path),
-    mimeType: mimeTypeFor(path),
-    dataBase64: bytes.toString("base64"),
-  });
+function readInputFileEffect(path: string): Effect.Effect<InputFile, unknown> {
+  return Effect.tryPromise({
+    try: () => readFile(path),
+    catch: (error) => error,
+  }).pipe(
+    Effect.map((bytes) => Object.freeze({
+      filename: basename(path),
+      mimeType: mimeTypeFor(path),
+      dataBase64: bytes.toString("base64"),
+    })),
+  );
 }
 
 /**
@@ -543,6 +550,7 @@ export function createAssertFirstEvalContext(
     flags: deps.flags,
     experimentId: deps.experimentId,
     signal: deps.signal,
+    requestEffect: deps.requestEffect,
     log: deps.log,
     telemetry: deps.telemetry,
     otel: deps.otel,
@@ -717,23 +725,36 @@ export function createAssertFirstEvalContext(
     });
   };
 
-  const send = async <Kind extends RuntimeKind>(
+  const sendEffect = <Kind extends RuntimeKind>(
     scope: SessionScopeState,
     text: string,
     files?: readonly InputFile[],
     responses?: readonly InputResponse[],
-  ): Promise<AssertFirstTurnHandleV1<Kind>> => {
-    scope.started = true;
-    scope.inFlight += 1;
-    try {
-      return makeTurn<Kind>(scope, await manager.send(scope.session, text, files, responses), text);
-    } catch (error) {
-      scope.failed = true;
-      throw error;
-    } finally {
-      scope.inFlight -= 1;
-    }
+    loc?: ReturnType<typeof captureLoc>,
+  ): Effect.Effect<AssertFirstTurnHandleV1<Kind>, unknown> => {
+    const capturedLoc = loc ?? captureLoc();
+    return Effect.suspend(() => {
+      scope.started = true;
+      scope.inFlight += 1;
+      return manager.sendEffect(scope.session, text, files, responses, capturedLoc).pipe(
+        Effect.map((turn) => makeTurn<Kind>(scope, turn, text)),
+        Effect.tapError(() => Effect.sync(() => {
+          scope.failed = true;
+        })),
+        Effect.ensuring(Effect.sync(() => {
+          scope.inFlight -= 1;
+        })),
+      );
+    });
   };
+
+  const send = <Kind extends RuntimeKind>(
+    scope: SessionScopeState,
+    text: string,
+    files?: readonly InputFile[],
+    responses?: readonly InputResponse[],
+  ): Promise<AssertFirstTurnHandleV1<Kind>> =>
+    deps.requestEffect(sendEffect<Kind>(scope, text, files, responses, captureLoc()));
 
   const makeSession = <Kind extends RuntimeKind>(scope: SessionScopeState): AssertFirstSessionHandleV1<Kind> => {
     const session = scope.session;
@@ -743,9 +764,13 @@ export function createAssertFirstEvalContext(
         const files = typeof input === "string" ? undefined : input.files;
         return send<Kind>(scope, text, files);
       },
-      async sendFile(path: string, text?: string) {
-        const file = await readInputFile(path);
-        return send<Kind>(scope, text ?? "", [file]);
+      sendFile: (path: string, text?: string) => {
+        const loc = captureLoc();
+        return deps.requestEffect(
+          readInputFileEffect(path).pipe(
+            Effect.flatMap((file) => sendEffect<Kind>(scope, text ?? "", [file], undefined, loc)),
+          ),
+        );
       },
       requireInputRequest: (filter?: InputRequestFilter) => requireInputRequest(session, filter),
       async respond(...responses: readonly (string | AssertFirstRespondAnswerV1)[]) {

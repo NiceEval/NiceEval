@@ -1569,6 +1569,9 @@ async function runAttemptBody(
       experimentId: run.experimentId,
       judge: a.judge,
       executeStop: assertFirst.requestAssertion,
+      // Public author send/respond keep their Promise surface, but their
+      // complete Effect graph is executed only by this Attempt-owned bridge.
+      requestEffect: assertFirst.requestEffect,
       signal,
       log,
       telemetry,
