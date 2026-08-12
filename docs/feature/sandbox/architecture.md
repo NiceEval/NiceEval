@@ -198,7 +198,43 @@ entry id 由 `provider + sandboxId` 做稳定散列;每条先写同目录临时�
 - **Local** —— 不参与留存,`--keep-sandbox` 组合在创建前报错:本地档从不销毁,现场天然留在用户的工作树里,无需注册表纳管(见[本地执行](local.md))。
 - **`defineSandbox` 自定义 provider** —— 不参与留存。`niceeval sandbox` 刻意不加载 config / eval 模块,新进程只有序列化登记项,无法安全找回用户对象上的任意 `stopDetached` 函数;只删登记项又会违反「stop = 销毁」。因此 `--keep-sandbox` 与自定义 provider 组合在创建前报清晰错误。需要统一留存生命周期的 provider 应贡献为内置 provider;未来若引入可序列化、可审计的 detached cleanup 协议,再扩这条边界。
 
-`Sandbox` 接口不因留存扩大:没有 pause / detach / keep 方法——「留下」不是沙箱的能力,是 runner 的一次调度决定。留存的 attempt 在 Record 提交 `sandbox: { provider, sandboxId, kept: true }`(字段契约见 [Record · Architecture](../record/architecture.md)),`phases` 无 `sandbox.stop` 条目。
+`Sandbox` 接口不因留存扩大:没有 pause / detach / keep 方法——「留下」不是沙箱的能力,是 runner 的一次调度决定。留存的 Attempt 仍只写入下节的 Sandbox execution fact；是否已停驻、何时过期或收尾成功与否只留在注册表，`phases` 无 `sandbox.stop` 条目。
+
+## Sandbox RecordAttachment
+
+每个实际执行的 Attempt 恰有一个零 blob 的 `niceeval.sandbox/v1` Attachment。它持久化执行时的
+Sandbox 分配事实，不是注册表、生命周期报告或任意 provider metadata 容器：
+
+```ts
+type SandboxAttachmentV1 =
+  | { readonly state: "not-used" }
+  | {
+      readonly state: "assigned";
+      readonly provider: SafeIdentifier;
+      readonly sandboxId: SourceNativeSandboxId;
+      readonly reuse:
+        | { readonly kind: "fresh" }
+        | {
+            readonly kind: "pooled";
+            readonly sandbox: PositiveSafeInteger;
+            readonly ordinal: PositiveSafeInteger;
+          };
+    };
+```
+
+`provider` 是实际 Sandbox provider 的 safe identifier。`sandboxId` 是 provider 给出的 source-native
+id：非空、安全 UTF-8、没有换行、最长 256 bytes，原样持久化，不作 hash 或截断。`fresh` 表示这次
+分配新建的 Sandbox；从池中 lease 的 Sandbox 一律是 `pooled`，包括第一次 lease 的
+`ordinal: 1`。不另存 `reused` boolean。
+
+`not-used` 只可陈述这次真实执行没有使用 Sandbox；缺失、无效或不可读取的 Attachment 必须由
+RecordAttachmentRead 和 projection 的外层状态表示，不能伪造成 `not-used`。reference Member 只
+指向 origin Attempt，不能复制这个 Attachment。
+
+Attachment 从不保存 workdir、URL、credentials、liveness、suspend / cleanup 结果或 plugin metadata。
+这些信息若供留存或资源终结所需，只属于相应的运行时注册表。公开消费者从
+`niceeval/projection` 使用无版本的 `sandboxProjector` 和 `SandboxView`；durable schema version 不进入
+公开 Sandbox API。
 
 ## 孤儿核对:强杀路径的实例面回退
 

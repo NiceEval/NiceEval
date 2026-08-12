@@ -19,11 +19,18 @@ schema identity 的 name 是 slash 前的部分。Record envelope 分别保存 n
 | Attempt | niceeval.usage | niceeval.usage/v1 | UsageAttachmentV1 |
 | Attempt | niceeval.timing | niceeval.timing/v1 | AttemptTimingAttachmentV1 |
 | Attempt | niceeval.diagnostics | niceeval.diagnostics/v1 | AttemptDiagnosticsAttachmentV1 |
+| Attempt | niceeval.sandbox | niceeval.sandbox/v1 | SandboxAttachmentV1 |
 | Run | niceeval.timing | niceeval.timing/v1 | RunTimingAttachmentV1 |
 | Run | niceeval.diagnostics | niceeval.diagnostics/v1 | RunDiagnosticsAttachmentV1 |
 
-一个实际执行的 Attempt 必须拥有表中的全部五个 Attempt family。一个 Run 必须拥有表中的两个
-Run family。reference Member 没有新的 physical Attempt，因此不再写第二份 Attachment。
+一个实际执行的 Attempt 必须拥有五个 Observability Attempt family；一个 Run 必须拥有两个 Run
+family。表中的 `niceeval.sandbox` 只在此登记其 Attempt owner：它是 Sandbox-owned singleton，不属于
+Observability 的五-family 联合 contract。
+
+每个实际执行的 Attempt 还必须恰有一份 `niceeval.sandbox`。payload 的 `state: "not-used"` 只陈述
+这次实际执行没有使用 Sandbox；读取时的 missing、invalid 或不可用状态由外层
+RecordAttachmentRead / projection 表达，producer 不得伪造 `not-used`。reference Member 没有新的
+physical Attempt，只引用 origin Attempt，不能复制任一 Attachment。
 
 ## 共同模型
 
