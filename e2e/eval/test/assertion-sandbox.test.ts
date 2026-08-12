@@ -2,17 +2,13 @@
 // rerun: pnpm e2e --repo eval -- --run test/assertion-sandbox.test.ts
 
 import { join } from "node:path";
-import { Effect, Either } from "effect";
 import { agentWorkspaceDiffProjector } from "niceeval";
-import { selectLatestRuns } from "niceeval/analysis";
-import {
-  makeRecordRoot,
-  NodeRecordLive,
-  openRecordReader,
-} from "niceeval/record";
-import { attemptSlotProjection, projectAnalysisSample } from "niceeval/projection";
 import { command, only, withProjectCopy } from "@niceeval/testkit";
 import { expect, test } from "vitest";
+import {
+  projectAttemptAttachment,
+  singleAvailableAttemptAttachment,
+} from "./record-reader.ts";
 import { evalArtifactStaging, evalProjectCopy } from "./support.ts";
 
 interface ExpEvent {
@@ -46,42 +42,28 @@ test("Sandbox 的 agent 归因 endpoint Assertion 与中立 diff projector 由�
       });
       const locator = evaluation.locator!;
 
-      const shown = await niceeval.run(["show", locator, "--record", ".niceeval", "--execution"], { cwd: root });
-      expect(shown.exitCode, shown.diagnostic()).toBe(0);
-      expect(shown.stdout).toContain("workspace_edit");
-
-      const diffByAttempt = attemptSlotProjection(agentWorkspaceDiffProjector);
-      const recordRoot = makeRecordRoot(join(root, ".niceeval", "record"));
-      if (Either.isLeft(recordRoot)) {
-        throw new Error(`Record root rejected the E2E run: ${recordRoot.left.code}`);
-      }
-      const projected = await Effect.runPromise(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const reader = yield* openRecordReader({ root: recordRoot.right });
-            const sampleHandle = yield* selectLatestRuns(reader, {});
-            return yield* projectAnalysisSample({ sampleHandle, projection: diffByAttempt });
-          }),
-        ).pipe(Effect.provide(NodeRecordLive)),
+      const diff = singleAvailableAttemptAttachment(
+        await projectAttemptAttachment({
+          root,
+          locator,
+          projector: agentWorkspaceDiffProjector,
+        }),
       );
-
-      expect(projected.access).toBe("attempt-slot");
-      expect(projected.entries).toHaveLength(1);
-      const entry = projected.entries[0];
-      if (entry === undefined || entry.state !== "attachment-result") {
-        throw new Error("Sandbox run did not produce a projected Attempt Attachment");
-      }
-      if (entry.attachment.state !== "available") {
-        throw new Error(`Workspace diff Attachment read as ${entry.attachment.state}`);
-      }
-      expect(entry.attachment.value.attribution).toBe("agent-send-window-endpoints/v1");
+      expect(diff.attribution).toBe("agent-send-window-endpoints/v1");
       expect(
-        entry.attachment.value.windows.flatMap((window) => window.changes.map((change) => change.path)),
+        diff.windows.flatMap((window) => window.changes.map((change) => change.path)),
       ).toEqual(expect.arrayContaining([
         "fixture/changed.txt",
         "fixture/created.txt",
         "fixture/delete-me.txt",
       ]));
+
+      const shown = await niceeval.run(
+        ["show", locator, "--record", ".niceeval/record", "--execution"],
+        { cwd: root },
+      );
+      expect(shown.exitCode, shown.diagnostic()).toBe(0);
+      expect(shown.stdout).toContain("workspace_edit");
     },
     evalArtifactStaging("sandbox"),
   );

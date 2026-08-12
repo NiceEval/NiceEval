@@ -2,9 +2,19 @@
 // rerun: pnpm e2e --repo eval -- --run test/assertion-score.test.ts
 
 import { join } from "node:path";
-import { openRecord, resolveLocator } from "niceeval/record";
+import {
+  assertionsProjector,
+  evaluationsProjector,
+  scoreProjector,
+  verdictProjector,
+} from "niceeval/projection";
 import { command, only, withProjectCopy } from "@niceeval/testkit";
 import { expect, test } from "vitest";
+import {
+  projectAttemptAttachment,
+  projectAttemptOriginRunAttachment,
+  singleAvailableAttemptAttachment,
+} from "./record-reader.ts";
 import { evalArtifactStaging, evalProjectCopy } from "./support.ts";
 
 interface ExpEvent {
@@ -52,35 +62,64 @@ test("计分 Eval 正常返回自动封口并把空计分写成零分", async ()
       });
       const emptyLocator = emptyEvent.locator!;
 
-      const record = await openRecord(join(root, ".niceeval"));
-      const scoredAttempt = resolveLocator(record, scoredLocator);
-      expect(scoredAttempt.result.verdict).toBe("passed");
-      expect(scoredAttempt.result.evaluationKind).toBe("score");
-      expect(scoredAttempt.result.evaluationAlgorithm).toBe("fact-use/v3");
-      expect(scoredAttempt.result.factUses).toContainEqual(
-        expect.objectContaining({
-          useKind: "score",
-          label: "deterministic manual points",
-          input: { kind: "direct", earned: 4 },
-          outcome: "scored",
-          earned: 4,
-        }),
+      const scoredVerdict = singleAvailableAttemptAttachment(
+        await projectAttemptAttachment({ root, locator: scoredLocator, projector: verdictProjector }),
+        "Verdict Attachment",
       );
-      expect(scoredAttempt.result.scoreResult).toEqual({
-        status: "scored",
-        earnedScore: 10,
-        creditedScore: 10,
-      });
+      expect(scoredVerdict).toBe("passed");
 
-      const emptyAttempt = resolveLocator(record, emptyLocator);
-      expect(emptyAttempt.result.verdict).toBe("passed");
-      expect(emptyAttempt.result.factResults).toEqual([]);
-      expect(emptyAttempt.result.factUses).toEqual([]);
-      expect(emptyAttempt.result.scoreResult).toEqual({
-        status: "scored",
-        earnedScore: 0,
-        creditedScore: 0,
+      const scoredEvaluationsProjection = await projectAttemptOriginRunAttachment({
+        root,
+        locator: scoredLocator,
+        projector: evaluationsProjector,
       });
+      const scoredEvaluations = singleAvailableAttemptAttachment(
+        scoredEvaluationsProjection,
+        "Evaluations Attachment",
+      );
+      const scoredEvaluationEntry = scoredEvaluationsProjection.entries.find(
+        (entry) => entry.state === "attachment-result",
+      );
+      if (scoredEvaluationEntry === undefined || scoredEvaluationEntry.state !== "attachment-result") {
+        throw new Error("Scored Attempt did not resolve to its origin Run Evaluations Attachment");
+      }
+      expect(scoredEvaluations.evaluationForSlot(scoredEvaluationEntry.slot.slotId)).toEqual({ kind: "score" });
+
+      const scoredAssertions = singleAvailableAttemptAttachment(
+        await projectAttemptAttachment({ root, locator: scoredLocator, projector: assertionsProjector }),
+      );
+      expect(scoredAssertions.entries).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          state: "available",
+          entry: expect.objectContaining({
+            display: expect.objectContaining({ label: "deterministic manual points" }),
+            result: expect.objectContaining({
+              state: "matched",
+              score: { state: "earned", points: 4, earned: 4 },
+            }),
+          }),
+        }),
+      ]));
+      const scoredScore = singleAvailableAttemptAttachment(
+        await projectAttemptAttachment({ root, locator: scoredLocator, projector: scoreProjector }),
+        "Score Attachment",
+      );
+      expect(scoredScore).toEqual({ state: "complete", earned: 10, comparable: true });
+
+      const emptyVerdict = singleAvailableAttemptAttachment(
+        await projectAttemptAttachment({ root, locator: emptyLocator, projector: verdictProjector }),
+        "Verdict Attachment",
+      );
+      expect(emptyVerdict).toBe("passed");
+      const emptyAssertions = singleAvailableAttemptAttachment(
+        await projectAttemptAttachment({ root, locator: emptyLocator, projector: assertionsProjector }),
+      );
+      expect(emptyAssertions.entries).toEqual([]);
+      const emptyScore = singleAvailableAttemptAttachment(
+        await projectAttemptAttachment({ root, locator: emptyLocator, projector: scoreProjector }),
+        "Score Attachment",
+      );
+      expect(emptyScore).toEqual({ state: "complete", earned: 0, comparable: true });
     },
     evalArtifactStaging("score"),
   );

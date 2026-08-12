@@ -2,9 +2,17 @@
 // rerun: pnpm e2e --repo eval -- --run test/assertion-judge-unavailable.test.ts
 
 import { join } from "node:path";
-import { openRecord, resolveLocator } from "niceeval/record";
+import {
+  assertionsProjector,
+  attemptDiagnosticsProjector,
+  verdictProjector,
+} from "niceeval/projection";
 import { command, only, withProjectCopy } from "@niceeval/testkit";
 import { expect, test } from "vitest";
+import {
+  projectAttemptAttachment,
+  singleAvailableAttemptAttachment,
+} from "./record-reader.ts";
 import { evalArtifactStaging, evalProjectCopy } from "./support.ts";
 
 interface ExpEvent {
@@ -39,20 +47,40 @@ test("未配置 Judge 时硬消费的 Judge Fact 以 unavailable errored，且�
       });
       const locator = evaluation.locator!;
 
-      const record = await openRecord(join(root, ".niceeval"));
-      const attempt = resolveLocator(record, locator);
-      expect(attempt.result.verdict).toBe("errored");
-      expect(attempt.result.factResults).toEqual(expect.arrayContaining([
-        expect.objectContaining({ factKind: "score", outcome: "unavailable", reason: "judge-model-unresolved" }),
+      const verdict = singleAvailableAttemptAttachment(
+        await projectAttemptAttachment({ root, locator, projector: verdictProjector }),
+        "Verdict Attachment",
+      );
+      expect(verdict).toBe("errored");
+
+      const assertions = singleAvailableAttemptAttachment(
+        await projectAttemptAttachment({ root, locator, projector: assertionsProjector }),
+      );
+      expect(assertions.entries).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          state: "available",
+          entry: expect.objectContaining({
+            display: expect.objectContaining({ label: "Judge marker" }),
+            result: expect.objectContaining({
+              state: "unavailable",
+              reason: "source-unavailable",
+              gate: "unavailable",
+            }),
+          }),
+        }),
       ]));
-      expect(attempt.result.factUses).toEqual(expect.arrayContaining([
-        expect.objectContaining({ useKind: "verdict", label: "Judge marker", outcome: "unavailable", reason: "judge-model-unresolved" }),
-      ]));
-      // The only public model boundary is the result record. A missing model
-      // yields this exact reason before precheck or evaluator transport, so no
-      // network-capable Judge path was entered.
-      expect(JSON.stringify(attempt.result)).not.toContain("judge-precheck-failed");
-      expect(JSON.stringify(attempt.result)).not.toContain("judge-call-failed");
+
+      const diagnostics = singleAvailableAttemptAttachment(
+        await projectAttemptAttachment({
+          root,
+          locator,
+          projector: attemptDiagnosticsProjector,
+        }),
+        "Attempt Diagnostics Attachment",
+      );
+      const diagnosticCodes = diagnostics.diagnostics.map((diagnostic) => diagnostic.code);
+      expect(diagnosticCodes).not.toContain("judge-precheck-failed");
+      expect(diagnosticCodes).not.toContain("judge-call-failed");
     },
     evalArtifactStaging("judge-unavailable"),
   );

@@ -2,9 +2,19 @@
 // rerun: pnpm e2e --repo eval -- --run test/context.test.ts
 
 import { join } from "node:path";
-import { openRecord, resolveLocator } from "niceeval/record";
+import {
+  assertionsProjector,
+  attemptConversationProjector,
+  attemptUsageProjector,
+  verdictProjector,
+  type UsageView,
+} from "niceeval/projection";
 import { command, only, withProjectCopy } from "@niceeval/testkit";
 import { expect, test } from "vitest";
+import {
+  projectAttemptAttachment,
+  singleAvailableAttemptAttachment,
+} from "./record-reader.ts";
 import { evalArtifactStaging, evalProjectCopy } from "./support.ts";
 
 interface ExpEvent {
@@ -16,13 +26,25 @@ interface ExpEvent {
   passed?: number;
 }
 
-interface ShowDocument {
-  format: string;
-  view: string;
-  data: unknown;
-}
-
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
+
+function usageSummary(usage: UsageView) {
+  const total = {
+    inputTokens: 0,
+    outputTokens: 0,
+    costUSD: undefined as number | undefined,
+  };
+  for (const observation of usage.observations) {
+    if (observation.kind === "token-bucket") {
+      if (observation.bucket === "input") total.inputTokens += observation.tokens;
+      if (observation.bucket === "output") total.outputTokens += observation.tokens;
+    }
+    if (observation.kind === "provider-cost" && observation.currency === "USD") {
+      total.costUSD = (total.costUSD ?? 0) + Number(observation.amount);
+    }
+  }
+  return total;
+}
 
 test("多轮和 newSession 的 Context 只在各自公开 scope 读取真实事件、usage 与输出", async () => {
   await withProjectCopy(
@@ -43,23 +65,52 @@ test("多轮和 newSession 的 Context 只在各自公开 scope 读取真实事�
         attempts: 1,
       });
 
+      const locator = attemptEvent.locator!;
       const shown = await niceeval.run(
-        ["show", attemptEvent.locator!, "--record", ".niceeval", "--json"],
+        ["show", locator, "--record", ".niceeval/record", "--source", "--json"],
         { cwd: root },
       );
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
-      const document = shown.json<ShowDocument>();
-      expect(document).toMatchObject({ format: "niceeval.show", view: "attempt" });
-      const visible = JSON.stringify(document.data);
-      expect(visible).toContain("context-main-first");
-      expect(visible).toContain("context-branch-only");
+      expect(shown.stdout).toContain("context-main-first");
+      expect(shown.stdout).toContain("context-branch-only");
 
-      const record = await openRecord(join(root, ".niceeval"));
-      const attempt = resolveLocator(record, attemptEvent.locator!);
-      expect(attempt.result.verdict).toBe("passed");
-      expect(attempt.result.usage).toMatchObject({ inputTokens: 6, outputTokens: 9, costUSD: 0 });
-      const events = await attempt.events();
-      expect(events?.filter((event) => event.type === "message" && event.role === "assistant")).toHaveLength(3);
+      const verdict = singleAvailableAttemptAttachment(
+        await projectAttemptAttachment({ root, locator, projector: verdictProjector }),
+        "Verdict Attachment",
+      );
+      expect(verdict).toBe("passed");
+
+      const assertions = singleAvailableAttemptAttachment(
+        await projectAttemptAttachment({ root, locator, projector: assertionsProjector }),
+      );
+      expect(assertions.entries).toHaveLength(33);
+      expect(assertions.entries.every(
+        (entry) => entry.state === "available" && entry.entry.result.state === "matched",
+      )).toBe(true);
+
+      const conversation = singleAvailableAttemptAttachment(
+        await projectAttemptAttachment({
+          root,
+          locator,
+          projector: attemptConversationProjector,
+        }),
+        "Attempt Conversation Attachment",
+      );
+      expect(
+        conversation.items.filter(
+          (item) => item.kind === "message" && item.role === "assistant",
+        ),
+      ).toHaveLength(3);
+
+      const usage = singleAvailableAttemptAttachment(
+        await projectAttemptAttachment({ root, locator, projector: attemptUsageProjector }),
+        "Attempt Usage Attachment",
+      );
+      expect(usageSummary(usage)).toEqual({
+        inputTokens: 6,
+        outputTokens: 9,
+        costUSD: 0,
+      });
     },
     evalArtifactStaging("context"),
   );

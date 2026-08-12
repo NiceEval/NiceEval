@@ -2,9 +2,13 @@
 // rerun: pnpm e2e --repo eval -- --run test/assertion-values.test.ts
 
 import { join } from "node:path";
-import { openRecord, resolveLocator } from "niceeval/record";
+import { assertionsProjector, verdictProjector } from "niceeval/projection";
 import { command, only, withProjectCopy } from "@niceeval/testkit";
 import { expect, test } from "vitest";
+import {
+  projectAttemptAttachment,
+  singleAvailableAttemptAttachment,
+} from "./record-reader.ts";
 import { evalArtifactStaging, evalProjectCopy } from "./support.ts";
 
 interface ExpEvent {
@@ -38,17 +42,26 @@ test("值 Match 通过原生 Fact 消费折叠为 passed", async () => {
       });
       const locator = evaluation.locator!;
 
-      const shown = await niceeval.run(["show", locator, "--record", ".niceeval", "--json"], { cwd: root });
+      const shown = await niceeval.run(
+        ["show", locator, "--record", ".niceeval/record", "--source", "--json"],
+        { cwd: root },
+      );
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
       expect(shown.stdout).toContain("assertion-values-marker");
 
-      const record = await openRecord(join(root, ".niceeval"));
-      const attempt = resolveLocator(record, locator);
-      expect(attempt.result.verdict).toBe("passed");
-      expect(attempt.result.evaluationAlgorithm).toBe("fact-use/v3");
-      expect(attempt.result.factResults).toContainEqual(
-        expect.objectContaining({ name: "satisfies(two values)", outcome: "passed" }),
+      const verdict = singleAvailableAttemptAttachment(
+        await projectAttemptAttachment({ root, locator, projector: verdictProjector }),
+        "Verdict Attachment",
       );
+      expect(verdict).toBe("passed");
+
+      const assertions = singleAvailableAttemptAttachment(
+        await projectAttemptAttachment({ root, locator, projector: assertionsProjector }),
+      );
+      expect(assertions.entries).toHaveLength(17);
+      expect(assertions.entries.every(
+        (entry) => entry.state === "available" && entry.entry.result.state === "matched",
+      )).toBe(true);
     },
     evalArtifactStaging("values"),
   );
