@@ -46,14 +46,6 @@ export type AttemptDiagnosticsView = RecordAttachmentPayloadSnapshot<
 >;
 export type RunDiagnosticsView = RecordAttachmentPayloadSnapshot<RunDiagnosticsAttachmentV1>;
 
-/** Compatibility aliases name the durable family, not an alternative projection protocol. */
-export type ConversationViewV1 = ConversationView;
-export type UsageViewV1 = UsageView;
-export type AttemptTimingViewV1 = AttemptTimingView;
-export type RunTimingViewV1 = RunTimingView;
-export type AttemptDiagnosticsViewV1 = AttemptDiagnosticsView;
-export type RunDiagnosticsViewV1 = RunDiagnosticsView;
-
 export interface CommandStreamView {
   readonly text: string;
   readonly retainedBytes: NonNegativeSafeInteger;
@@ -73,9 +65,6 @@ export interface CommandsView {
     readonly refs: RecordAttachmentPayloadSnapshot<readonly CommandsReferencesV1[]>;
   }[];
 }
-
-export type CommandStreamViewV1 = CommandStreamView;
-export type CommandsViewV1 = CommandsView;
 
 function detachedPayload<Payload>(
   value: RecordAttachmentValue<Payload>,
@@ -139,7 +128,7 @@ function projectCommandsV1(
   });
 }
 
-export const attemptConversationProjectorV1: RecordAttachmentProjector<
+export const attemptConversationProjector: RecordAttachmentProjector<
   "attempt",
   ConversationView
 > = defineRecordAttachmentProjector({
@@ -147,7 +136,7 @@ export const attemptConversationProjectorV1: RecordAttachmentProjector<
   project: detachedPayload,
 });
 
-export const attemptCommandsProjectorV1: RecordAttachmentProjector<
+export const attemptCommandsProjector: RecordAttachmentProjector<
   "attempt",
   CommandsView
 > = defineRecordAttachmentProjector({
@@ -155,7 +144,7 @@ export const attemptCommandsProjectorV1: RecordAttachmentProjector<
   project: projectCommandsV1,
 });
 
-export const attemptUsageProjectorV1: RecordAttachmentProjector<
+export const attemptUsageProjector: RecordAttachmentProjector<
   "attempt",
   UsageView
 > = defineRecordAttachmentProjector({
@@ -163,7 +152,7 @@ export const attemptUsageProjectorV1: RecordAttachmentProjector<
   project: detachedPayload,
 });
 
-export const attemptTimingProjectorV1: RecordAttachmentProjector<
+export const attemptTimingProjector: RecordAttachmentProjector<
   "attempt",
   AttemptTimingView
 > = defineRecordAttachmentProjector({
@@ -171,7 +160,7 @@ export const attemptTimingProjectorV1: RecordAttachmentProjector<
   project: detachedPayload,
 });
 
-export const attemptDiagnosticsProjectorV1: RecordAttachmentProjector<
+export const attemptDiagnosticsProjector: RecordAttachmentProjector<
   "attempt",
   AttemptDiagnosticsView
 > = defineRecordAttachmentProjector({
@@ -179,7 +168,7 @@ export const attemptDiagnosticsProjectorV1: RecordAttachmentProjector<
   project: detachedPayload,
 });
 
-export const runTimingProjectorV1: RecordAttachmentProjector<
+export const runTimingProjector: RecordAttachmentProjector<
   "run",
   RunTimingView
 > = defineRecordAttachmentProjector({
@@ -187,7 +176,7 @@ export const runTimingProjectorV1: RecordAttachmentProjector<
   project: detachedPayload,
 });
 
-export const runDiagnosticsProjectorV1: RecordAttachmentProjector<
+export const runDiagnosticsProjector: RecordAttachmentProjector<
   "run",
   RunDiagnosticsView
 > = defineRecordAttachmentProjector({
