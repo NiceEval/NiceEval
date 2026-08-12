@@ -6,8 +6,12 @@ export type {
   ReportDefinitionInvalid,
   ReportExecutionError,
 } from "./execute.ts";
-export { executeReportFromRecord } from "./from-record.ts";
+export {
+  executeReportForAttemptFromRecord,
+  executeReportFromRecord,
+} from "./from-record.ts";
 export type {
+  ExecuteReportForAttemptFromRecordError,
   ExecuteReportFromRecordError,
   ExecuteReportFromRecordRequirements,
 } from "./from-record.ts";

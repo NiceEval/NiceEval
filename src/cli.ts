@@ -24,7 +24,9 @@ import { ATTEMPT_LOCATOR_PREFIX, decodeAttemptLocator } from "./record/locator.t
 import {
   makeRecordRoot,
   NodeRecordLive,
+  AttemptIdSchema,
   RunIdSchema,
+  type AttemptId,
   type RecordRoot,
 } from "./record/index.ts";
 import {
@@ -34,10 +36,12 @@ import {
   type RunId,
 } from "./analysis/index.ts";
 import { defaultOverviewReport } from "./report/built-in/overview.ts";
+import { sourceEvidenceReport } from "./report/built-in/source.ts";
 import { reportRoute, type ReportRoute } from "./report/author/identity.ts";
 import type { Report } from "./report/author/model.ts";
 import type { ReportExecution } from "./report/execution/model.ts";
 import {
+  executeReportForAttemptFromRecord,
   executeReportFromRecord,
   exportStaticReport,
   makeNodeReportFileSystem,
@@ -313,7 +317,7 @@ const FLAG_OPTIONS = {
   /** `view` 命令专用:指定 loopback 监听地址；拒绝公网或局域网地址。 */
   host: { type: "string" },
   // 以下旧 show 切片只为实现收敛期间保留解析位置，不属于目标公开 CLI，也不进入参考页。
-  /** 实现收敛占位；目标公开 CLI 通过 Report page 读取源码通道。 */
+  /** `show` 专用：按一个 exact Attempt locator 展示已记录的 source snapshot。 */
   source: { type: "boolean" },
   /** 实现收敛占位；目标公开 CLI 通过 Report page 读取事件通道。 */
   execution: { type: "boolean" },
@@ -1998,7 +2002,15 @@ interface ReportCliRequest {
   readonly command: ReportCliCommand;
   readonly root: RecordRoot;
   readonly rootPath: string;
-  readonly selection: AnalysisSelectionRequest;
+  readonly target:
+    | {
+      readonly kind: "selection";
+      readonly selection: AnalysisSelectionRequest;
+    }
+    | {
+      readonly kind: "attempt";
+      readonly attemptId: AttemptId;
+    };
   readonly report?: Report;
   readonly page?: ReportRoute;
 }
@@ -2017,22 +2029,7 @@ function parseReportCliRequest(input: {
   if (unsupported !== undefined) {
     throw usageError(`niceeval ${input.command} does not accept ${unsupported}.\n`);
   }
-  if (input.positionals.length > 0) {
-    throw usageError(
-      `niceeval ${input.command} selects Record data only with --run or --latest; positional selectors are not supported.\n`,
-    );
-  }
-
   const runs = input.flags.run ?? [];
-  if (input.flags.latest && runs.length > 0) {
-    throw usageError("--latest and --run are mutually exclusive; choose exactly one selection policy.\n");
-  }
-  if (!input.flags.latest && runs.length === 0) {
-    throw usageError("niceeval show/view requires exactly one of --latest or one or more --run <run-id>.\n");
-  }
-  if (!input.flags.latest && input.flags.experiment !== undefined) {
-    throw usageError("--experiment only combines with --latest; it cannot narrow explicit --run selection.\n");
-  }
 
   const rootText = input.flags.record;
   if (rootText !== undefined && rootText.trim() === "") {
@@ -2045,6 +2042,47 @@ function parseReportCliRequest(input: {
   }
 
   const page = parseReportRoute(input.flags.page);
+  if (input.flags.source !== undefined) {
+    if (input.positionals.length !== 1) {
+      throw usageError("niceeval show --source requires exactly one current Record Attempt locator.\n");
+    }
+    if (input.flags.latest || runs.length > 0 || input.flags.experiment !== undefined) {
+      throw usageError("niceeval show --source uses its Attempt locator as the only selection; remove --latest, --run, and --experiment.\n");
+    }
+    if (input.flags.report !== undefined) {
+      throw usageError("niceeval show --source selects its built-in source Report; remove --report.\n");
+    }
+    const locator = input.positionals[0];
+    if (locator === undefined) {
+      throw usageError("niceeval show --source requires one current Record Attempt locator.\n");
+    }
+    const attemptId = parseCurrentAttemptLocator(locator);
+    const report = sourceEvidenceReport();
+    return Object.freeze({
+      command: input.command,
+      root: root.right,
+      rootPath,
+      target: Object.freeze({ kind: "attempt" as const, attemptId }),
+      report,
+      ...(page === undefined ? {} : { page }),
+    });
+  }
+
+  if (input.positionals.length > 0) {
+    throw usageError(
+      `niceeval ${input.command} selects Record data only with --run or --latest; positional selectors are not supported.\n`,
+    );
+  }
+  if (input.flags.latest && runs.length > 0) {
+    throw usageError("--latest and --run are mutually exclusive; choose exactly one selection policy.\n");
+  }
+  if (!input.flags.latest && runs.length === 0) {
+    throw usageError("niceeval show/view requires exactly one of --latest or one or more --run <run-id>.\n");
+  }
+  if (!input.flags.latest && input.flags.experiment !== undefined) {
+    throw usageError("--experiment only combines with --latest; it cannot narrow explicit --run selection.\n");
+  }
+
   const report = resolveBuiltInReport(input.flags.report);
   const selection = input.flags.latest
     ? latestSelection(input.flags.experiment)
@@ -2054,7 +2092,7 @@ function parseReportCliRequest(input: {
     command: input.command,
     root: root.right,
     rootPath,
-    selection,
+    target: Object.freeze({ kind: "selection" as const, selection }),
     ...(report === undefined ? {} : { report }),
     ...(page === undefined ? {} : { page }),
   });
@@ -2081,7 +2119,7 @@ function reportUnsupportedFlag(command: ReportCliCommand, flags: Flags): string 
     ["--out", command === "show" ? flags.out : undefined],
     ["--port", command === "show" ? flags.port : undefined],
     ["--host", command === "show" ? flags.host : undefined],
-    ["--source", flags.source],
+    ["--source", command === "show" ? undefined : flags.source],
     ["--execution", flags.execution],
     ["--diff", flags.diff || flags.diffPath !== undefined],
     ["--grep", flags.grep],
@@ -2182,16 +2220,35 @@ function uniqueExactExperimentIds(values: readonly string[]): readonly Experimen
   return Object.freeze(result);
 }
 
+/** Current Record locators are exact durable AttemptIds, never historical hash aliases. */
+function parseCurrentAttemptLocator(value: string): AttemptId {
+  if (!value.startsWith("@") || value.length === 1) {
+    throw usageError(`Invalid Attempt locator "${value}": expected @<exact-current-AttemptId>.\n`);
+  }
+  const decoded = Schema.decodeUnknownEither(AttemptIdSchema)(value.slice(1));
+  if (Either.isLeft(decoded)) {
+    throw usageError(`Invalid Attempt locator "${value}": expected @<exact-current-AttemptId>.\n`);
+  }
+  return decoded.right;
+}
+
 function executeCliReport(request: ReportCliRequest) {
-  return executeReportFromRecord({
-    root: request.root,
-    selection: request.selection,
-    ...(request.report === undefined ? {} : { report: request.report }),
-  }).pipe(
+  const execution = request.target.kind === "attempt"
+    ? executeReportForAttemptFromRecord({
+      root: request.root,
+      attemptId: request.target.attemptId,
+      ...(request.report === undefined ? {} : { report: request.report }),
+    })
+    : executeReportFromRecord({
+      root: request.root,
+      selection: request.target.selection,
+      ...(request.report === undefined ? {} : { report: request.report }),
+    });
+  return execution.pipe(
     Effect.mapError(reportExecutionFailure),
-    Effect.flatMap((execution) => execution.sample.runs.length === 0
-      ? Effect.fail(emptyReportSelectionFailure(request))
-      : Effect.succeed(execution)),
+    Effect.flatMap((completed) => request.target.kind === "selection" && completed.sample.runs.length === 0
+      ? Effect.fail(emptyReportSelectionFailure(request.target.selection))
+      : Effect.succeed(completed)),
   );
 }
 
@@ -2203,6 +2260,10 @@ function reportExecutionFailure(error: unknown): CliFailure {
       return usageError(`Run "${stringProperty(error, "runId") ?? "unknown"}" is not a valid published Record Run.\n`);
     case "sample-selection-invalid":
       return usageError(`Invalid Record analysis selection: ${stringProperty(error, "field") ?? "selection"}.\n`);
+    case "sample-attempt-not-found":
+      return usageError(`Attempt "${stringProperty(error, "attemptId") ?? "unknown"}" was not found in the selected Record.\n`);
+    case "sample-attempt-ambiguous":
+      return usageError(`Attempt "${stringProperty(error, "attemptId") ?? "unknown"}" is ambiguous in the selected Record.\n`);
     case "sample-latest-indeterminate":
       return usageError("--latest could not determine a published Run for the current Record. Repair the Record or select exact --run values.\n");
     case "record-migration-required":
@@ -2224,9 +2285,9 @@ function stringProperty(value: unknown, key: string): string | undefined {
   return typeof candidate === "string" ? candidate : undefined;
 }
 
-function emptyReportSelectionFailure(request: ReportCliRequest): CliUsageError {
-  const scope = request.selection.policy === "latest-runs"
-    ? request.selection.input.experimentIds === undefined
+function emptyReportSelectionFailure(selection: AnalysisSelectionRequest): CliUsageError {
+  const scope = selection.policy === "latest-runs"
+    ? selection.input.experimentIds === undefined
       ? "--latest"
       : "--latest with --experiment"
     : "--run";
