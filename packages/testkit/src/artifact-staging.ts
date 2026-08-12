@@ -1,5 +1,6 @@
 import { constants } from "node:fs";
 import { copyFile, cp, lstat, mkdir, mkdtemp, readdir, realpath, rm, rmdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 export type ArtifactStageEntry = {
@@ -341,7 +342,9 @@ async function rollbackCreated(
 /**
  * Copy declared artifact entries into a durable destination without deleting or
  * overwriting any pre-existing target. Sources are copied through a private
- * directory inside destinationRoot, then committed only after preflight passes.
+ * OS-temp directory, then committed only after preflight passes. Keeping the
+ * staging tree outside destinationRoot prevents concurrent project copies from
+ * observing a directory that another artifact operation is about to remove.
  */
 export async function stageArtifacts(options: StageArtifactsOptions): Promise<StageArtifactsReceipt> {
   if (options.collision !== "error") {
@@ -395,7 +398,7 @@ export async function stageArtifacts(options: StageArtifactsOptions): Promise<St
   const createdDirectories: string[] = [];
 
   try {
-    stagingRoot = await mkdtemp(join(destinationRoot, ".niceeval-artifact-stage-"));
+    stagingRoot = await mkdtemp(join(tmpdir(), "niceeval-artifact-stage-"));
     for (const [index, entry] of pending.entries()) {
       const stagingPath = join(stagingRoot, String(index));
       await cp(entry.sourcePath, stagingPath, {
