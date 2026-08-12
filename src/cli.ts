@@ -1523,6 +1523,7 @@ function runEvaluationCommand(
   command: CliCommand,
   positionals: readonly string[],
   flags: Flags,
+  signal?: AbortSignal,
 ) {
   return Effect.gen(function* () {
     const config = yield* loadConfig(cwd);
@@ -1964,8 +1965,9 @@ function runEvaluationCommand(
         },
       },
     });
-    // Runner is Effect-native: interruption from NodeRuntime propagates through
-    // this exact tree and then releases the Scope above. No Promise adapter.
+    // Runner remains Effect-native. The application edge translates SIGINT into
+    // this scoped AbortSignal so dispatch can settle and the receipt can close
+    // before the process receives its interrupted exit status.
     const receipt = yield* cliEffect("run evaluations", runEvals<never, never>({
       config,
       evals,
@@ -1979,6 +1981,7 @@ function runEvaluationCommand(
       rerun: flags.rerun,
       niceevalRoot: resolvePath(cwd, ".niceeval"),
       session: sessionTracker,
+      ...(signal === undefined ? {} : { signal }),
     }));
     yield* releaseResources;
 
@@ -2436,7 +2439,7 @@ function reportViewRebuildFailure(failure: CliFailure): { readonly summary: stri
   return Object.freeze({ summary });
 }
 
-export const cliProgram = Effect.gen(function* () {
+export const cliProgram = (signal?: AbortSignal) => Effect.gen(function* () {
   const cwd = process.cwd();
   const { command, positionals, flags } = yield* Effect.try({
     try: () => parseArgs(process.argv.slice(2)),
@@ -2490,7 +2493,7 @@ export const cliProgram = Effect.gen(function* () {
     return yield* runExperimentRenameCommand(cwd, positionals.slice(1), flags);
   }
 
-  return yield* runEvaluationCommand(cwd, command, positionals, flags);
+  return yield* runEvaluationCommand(cwd, command, positionals, flags, signal);
 }).pipe(
   // The CLI is the one application composition boundary for current Record
   // services. Report host internals remain Effect-native and never install a

@@ -2474,9 +2474,10 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     }
   };
   if (Exit.isFailure(exit)) {
-    // signal abort 或纯中断的 cause → 当作用户中断,走部分汇总;否则是真·缺陷,照常抛出
-    // (混着 die 的 cause 归缺陷,见上面 catchAllCause 的判据)。
-    if (opts.signal?.aborted || Cause.isInterruptedOnly(exit.cause)) {
+    // Only a pure interruption becomes a partial interrupted Invocation. The
+    // AbortSignal may have fired concurrently with a real failure/defect, but
+    // must never relabel that Cause as a user interrupt or hide it behind 130.
+    if (Cause.isInterruptedOnly(exit.cause)) {
       interrupted = true;
     } else {
       yield* Effect.tryPromise({
@@ -2492,19 +2493,29 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     catch: (error) => error,
   });
 
-  // Record can publish a factual partial Run: missing Members remain missing,
-  // while membership-provenance records why each pending gap was interrupted.
-  // This never manufactures an Attempt for budget/early-exit/unstarted Slots.
-  if (interrupted) recordCoordinator.markInterrupted();
-  const receiptCompletedAtMs = Date.now();
-  const publishedRuns = yield* recordCoordinator.publish(receiptCompletedAtMs);
-  const receipt: InvocationReceipt = Object.freeze({
-    invocationId: recordCoordinator.reusePlan.target.invocationId,
-    runIds: Object.freeze(publishedRuns.map(({ runId }) => String(runId))),
-    startedAt,
-    completedAt: new Date(receiptCompletedAtMs).toISOString(),
-    completion: interrupted ? "interrupted" : "completed",
-  });
+  // Record publication is the intentionally narrow interruption mask. By this
+  // point dispatch has stopped and its Scope/finalizers plus experiment
+  // teardown have settled; only the durable interrupted state, publish marker,
+  // and receipt remain. `uninterruptibleMask` preserves typed failures and
+  // defects from the writer, while preventing a pending cancellation from
+  // splitting that atomic hand-off after some Runs have become readable.
+  const receipt = yield* Effect.uninterruptibleMask(() =>
+    Effect.gen(function* () {
+      // Missing Members remain missing, while membership-provenance records why
+      // each pending gap was interrupted. This never manufactures an Attempt
+      // for budget/early-exit/unstarted Slots.
+      if (interrupted) recordCoordinator.markInterrupted();
+      const receiptCompletedAtMs = Date.now();
+      const publishedRuns = yield* recordCoordinator.publish(receiptCompletedAtMs);
+      return Object.freeze({
+        invocationId: recordCoordinator.reusePlan.target.invocationId,
+        runIds: Object.freeze(publishedRuns.map(({ runId }) => String(runId))),
+        startedAt,
+        completedAt: new Date(receiptCompletedAtMs).toISOString(),
+        completion: interrupted ? "interrupted" : "completed",
+      } satisfies InvocationReceipt);
+    }),
+  );
 
   // Experiment 收尾协议(docs/runner.md):每个真正出现在这次 Invocation 里的 experimentId
   // 各发一次 experiment:complete,携带它自己的 completedAt(真实 teardown 完成时刻,没有
