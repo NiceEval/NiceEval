@@ -97,7 +97,7 @@ Provider 仍收到原始 script、argv 与 env，运行时 stdout/stderr 也原�
 变化只发生在 Runner 的落盘边界：命令摘要先精确替换再截断，失败输出与最终执行证据中的同一已知值也替换成 `<redacted>`。
 敏感值集合只活在当前 Attempt 内存里，不进入 timing、artifact、指纹或 Sandbox identity。
 
-这不是按字段名猜测的 secret scanner。NiceEval 不会因为文本出现 `token=`、`api_key` 或 `Authorization` 就擅自隐藏后面的任意内容；未登记的自由文本、调用方先行编码/拆分后未一并登记的形态、Provider 自己的原生日志，以及已有旧 artifact 都无法由读取端可靠恢复 provenance。`--timing=full`、`--execution --expand` 与 `--json` 只展开已经脱敏的落盘值，不会还原原文。
+这不是按字段名猜测的 secret scanner。NiceEval 不会因为文本出现 `token=`、`api_key` 或 `Authorization` 就擅自隐藏后面的任意内容。未登记的自由文本、调用方先行编码或拆分后未一并登记的形态、Provider 原生日志，以及已有旧 artifact，都无法由读取端可靠恢复 provenance。Report 的 timing、execution 与 JSON 页面只展开已经脱敏的落盘值，不会还原原文。
 
 ### 命令 timeout 与取消
 
@@ -152,7 +152,7 @@ await t.sandbox.downloadDirectory("src", new URL("out/attempt-final/", import.me
 
 固定路径的幂等文件 IO 可以对 429、5xx、连接重置等瞬时传输失败做有限重试。不存在、权限、路径、取消与 Sandbox terminated 第一次即抛；重试不得改变目标路径或把部分结果伪装成完整结果。
 
-批量聚合与过滤不是 Sandbox API：需要明确规则时用一条命令，评 Agent 改动时读归因后的 `t.sandbox.diff`。
+批量聚合与过滤不是 Sandbox API：需要明确规则时用一条命令。评 Agent 改动时用 `fileChanged` / `notInDiff` 等归因断言（见[断言 Sandbox 结果](asserting-results.md)），读文件当前内容用 `readText`。
 
 ## 三个公开视图
 
@@ -165,7 +165,8 @@ interface Sandbox extends SandboxOperations, SandboxTransferOperations {
 }
 
 interface EvalSandbox extends SandboxOperations, SandboxTransferOperations {
-  readonly diff: DiffData;
+  // 归因断言声明:changedPaths / noChanges / fileChanged / fileDeleted / notInDiff。
+  // 完整契约见「断言 Sandbox 结果」;不存在通用或延迟的 diff subject。
 }
 
 interface SandboxCommandTarget extends SandboxOperations {
@@ -175,7 +176,7 @@ interface SandboxCommandTarget extends SandboxOperations {
 ```
 
 - `Sandbox` 是 Provider / Runner / Sandbox Agent 的完整运行句柄，含生命周期；
-- `EvalSandbox` 是 `t.sandbox`，含宿主传输和归因 diff，但不含 `stop()` 与 provider 元数据；
+- `EvalSandbox` 是 `t.sandbox`，含宿主传输与归因断言声明（见[断言 Sandbox 结果](asserting-results.md)），但不含 `stop()` 与 provider 元数据；
 - `SandboxCommandTarget` 是 layer callback 的窄视图，不能访问宿主文件系统、停止 Case 或改变拓扑；`putContent()` 只消费先经 `registerSandboxContent()` 登记的 digest-backed 内容。
 - `putContent()` 会把大文件拆成有界写入并在 Sandbox 内原子合并；单次 provider 请求不承载整个大文件，失败也不暴露部分目标文件。
 

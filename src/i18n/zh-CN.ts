@@ -105,13 +105,13 @@ export const zhCN = {
   "cli.accept.noneChosen": "没有授权任何差异,按原计划运行。\n",
   "cli.accept.usage":
     "error: niceeval accept 必须接收一个或多个 @<locator>\n" +
-    "  fix: 从 `niceeval show --history` 复制明确的 locator,再运行 `niceeval accept @<locator>...`\n",
+    "  fix: 从 `niceeval exp --dry` 复制明确的 locator,再运行 `niceeval accept @<locator>...`\n",
   "cli.accept.flagUnsupported":
     "error: {{flag}} 不能用于 niceeval accept\n" +
     "  fix: 只传 @<locator>(可选 `--record <目录>`)\n",
   "cli.accept.failed": "error: 接受结果失败:{{error}}\n",
   "cli.accept.done":
-    "已接受 {{sourceLocator}}。新结果 locator: {{locator}}。当前指纹:{{fingerprint}}\n",
+    "已将源 Attempt {{sourceLocator}} 接受进新 Run {{runId}}。结果 locator 仍为 {{locator}}。当前指纹:{{fingerprint}}\n",
   "cli.rename.usage":
     "error: niceeval exp rename 需要恰好两个参数:旧 id 和新 id\n" +
     "  fix: niceeval exp rename <oldId> <newId> [--dry] [--json]\n",
@@ -162,6 +162,8 @@ export const zhCN = {
     "跑 `niceeval exp <选择> --dry` 看每条差异拦下了哪些条目。\n",
   "cli.flag.invalidNumber": "标志 --{{flag}} 需要数字,收到 \"{{value}}\"。\n",
   "cli.flag.outputRemoved": "error: unknown option '--output'\n  fix: 不加 flag 运行得到人读文本;机器面用 --json\n",
+  "cli.flag.strictRemoved":
+    "Unknown option: --strict\nExpress required facts with t.check(...) or await t.require(...) in the Eval source.\n",
   "runner.budgetUnenforceable":
     "{{budgetKey}} 的 budget:连续多个 attempt 完成后都拿不到成本数据(agent 不上报用量且模型不在价格表)——该 agent 的 budget 无法执行,取消护栏继续跑。\n",
   "runner.experimentTeardownFailed":
@@ -208,37 +210,20 @@ export const zhCN = {
     "      --teardown   强杀后补收尾:只对选中的实验各执行一次 teardown(不派发\n" +
     "        attempt、不跑 setup);与 eval id 前缀组合是用法错误\n" +
     "  niceeval accept @<locator>...           接受明确列出的历史结果\n" +
-    "  niceeval show [eval-id 前缀… | @<locator>]   终端读结果\n" +
-    "      不带证据 flag:命中范围的默认报告(裸跑、eval id 前缀、单个 --exp 都落在这里);\n" +
-    "        两个以上 --exp 改为逐条件对照\n" +
-    "      @<locator>  精确一个 attempt:无 flag → 紧凑全景;带 flag → 对应证据切面\n" +
-    "      --source      该 attempt 运行时保存的 Eval 源码,断言标回源码行\n" +
-    "      --execution   该 attempt 的执行事件流(消息/thinking/Skill/工具调用),\n" +
-    "        有 OTel 时同一节点补时间\n" +
-    "      --execution --grep <pattern>   只输出命中卡片,末尾附跨 attempt 汇总;\n" +
-    "        --execution --expand <t<n>.c<n>|cmd<n>>   展开一张卡片完整内容\n" +
-    "        (两者互斥;--expand 要求范围恰好一个 attempt)\n" +
-    "      --timing      整个 attempt 的统一时间树(阶段 + hook/命令/turn + 轮内 OTel)\n" +
-    "      --diff[=文件] agent 归因的文件改动摘要;=文件 按窗口展开单个文件\n" +
-    "      证据 flag 接受任意范围:范围含多个 attempt 时逐 attempt 分节\n" +
-    "        (按 experimentId、evalId、attempt 序)\n" +
-    "      --history   逐 experiment × eval 的执行时间轴(与 --report 互斥)\n" +
-    "      --usage     范围内逐 attempt 的用量表,按 experiment 分节各自合计\n" +
-    "      --stats     eval × experiment 的历史全执行稳定性矩阵\n" +
-    "        (与 @<locator>、--report 互斥)\n" +
-    "      --json      任何切片的结构化形态:一个 JSON 文档到 stdout,选择与 text 面同一批\n" +
-    "        (与 --report、--expand 互斥)\n" +
-    "      --record <目录>  钉死记录根   --exp <id> 可重复,两个以上进入对照\n" +
-    "      --report <文件> 自定义报告   --page <id> 定初始页(多页报告渲染该页,\n" +
-    "        尾部再附其余页索引)\n" +
+    "  niceeval show (--latest | --run <run-id>...)       在终端渲染 Report\n" +
+    "      --run <run-id> 可重复且按完整 id 去重;不接受前缀或猜测\n" +
+    "      --latest 为每个目标 Experiment 选一个已发布 Run;--experiment <id>\n" +
+    "        可重复且只能与 --latest 合用\n" +
+    "      --record <root> 指定实际 Record root(默认 .niceeval/record)\n" +
+    "      --report overview(或省略)使用内建 overview;--page <route> 选择精确\n" +
+    "        Report route;--json 输出单份 Report show 文档\n" +
     "  niceeval list                            列出发现到的 eval\n" +
     "  niceeval session list [--all] [实验前缀]  查询 Session(只读)\n" +
     "  niceeval session show <sessionId>         查看一个 Session(只读)\n" +
-    "  niceeval view [eval-id 前缀…] [--out 目录] [--port n] [--no-open]\n" +
-    "      报告页 + 证据室;--report <文件> 整槽换成自定义报告(与 show 同一文件)\n" +
-    "      --page <id> 定初始页   --record <目录> 钉死记录根\n" +
-    "      --run <文件> 只打开这一份快照   --exp <id>(可重复)收窄到这些实验;\n" +
-    "      --out <目录> 静态导出:index.html 连同查看器 artifact,可直接静态托管\n" +
+    "  niceeval view (--latest | --run <run-id>...) [--out 目录] [--port n] [--no-open]\n" +
+    "      与 show 共用 Record 选择和内建 overview;live 模式只绑定 loopback,\n" +
+    "      Record 变化时重新形成固定 ReportExecution\n" +
+    "      --out <目录> 只导出一份完整静态站,不启动 server\n" +
     "  niceeval sandbox list|enter|history|diff|stop  查看与销毁 --keep-sandbox 留下的现场\n" +
     "  niceeval sandbox list --orphans / prune         核对并收回被强杀留下的无主实例\n" +
     "  niceeval clean                           删除 .niceeval/ 历史 artifact\n" +
@@ -246,7 +231,7 @@ export const zhCN = {
     "标志:\n" +
     "  --attempts n  --max-concurrency n  --max-build-concurrency n  --timeout ms\n" +
     "  --budget usd  --tag t\n" +
-    "  --early-exit / --no-early-exit  --strict  --rerun[=failed|all]  --dry  --keep-sandbox[=failed|all]\n" +
+    "  --early-exit / --no-early-exit  --rerun[=failed|all]  --dry  --keep-sandbox[=failed|all]\n" +
     "  --json  (机器面:stdout 上的 NDJSON 事件流;默认是人读文本)\n" +
     "  --junit path  --out dir  --port n  --open / --no-open  -h, --help  -v, --version\n\n" +
     "位置参数只选「跑哪些 eval」(id 前缀);对着哪个 agent、怎么跑来自 experiments/ 与\n" +
@@ -267,23 +252,14 @@ export const zhCN = {
     "error: --stats cannot combine with a locator ({{locator}}) — a single attempt has no stability to measure\n  fix: drop the locator and use eval id prefixes / --exp to select a range for --stats\n",
   "cli.show.statsReportConflict":
     "error: --stats cannot combine with --report ({{report}}) — --stats is a zero-config slice, it does not render a user report tree\n  fix: drop --report to use --stats, or drop --stats and put a StabilityMatrix in your own report file\n",
-  "cli.show.grepExpandConflict":
-    "error: --grep and --expand cannot combine — --grep scans for matching cards, --expand prints one card in full\n  fix: drop one of the two flags\n",
   "cli.show.grepExecutionOnly":
     "error: --grep only combines with --execution — it narrows that block's text rendering, not a slice of its own\n  fix: add --execution, or drop --grep\n",
-  "cli.show.expandExecutionOnly":
-    "error: --expand only combines with --execution — it narrows that block's text rendering, not a slice of its own\n  fix: add --execution, or drop --expand\n",
   "cli.show.grepInvalidPattern":
     "error: --grep pattern is not a valid JS regular expression: \"{{pattern}}\" ({{message}})\n  fix: fix the pattern syntax (it is passed to `new RegExp(...)`)\n",
-  "cli.show.expandMultiAttempt":
-    "error: --expand requires the range to resolve to exactly one attempt, got {{count}}\n  fix: narrow the range to a single attempt — an eval id prefix matching one eval, or @<locator>\n",
-  "cli.show.expandNotFound": "error: {{message}}\n  fix: use a handle from a truncated card's own hint (t<turn>.c<card> or cmd<n>), or drop --expand to see the whole attempt\n",
   "cli.show.historyReportConflict":
     "`--history` and `--report` are mutually exclusive: both take over the main output. --history is the host's per-attempt execution timeline; for run-level trends, compose exp.runs inside your report file instead.\n",
   "cli.show.jsonReportConflict":
     "error: --json cannot combine with --report ({{report}}) — a report tree says how to look at the data, --json says what the data is\n  fix: drop --report to use --json, or drop --json and read the report tree as text/HTML\n",
-  "cli.show.jsonExpandConflict":
-    "error: --json cannot combine with --expand — JSON never truncates cards, there is nothing to expand\n  fix: drop --expand; --json already returns the full untruncated value\n",
   "cli.show.jsonMultiEvidenceConflict":
     "error: --json requires exactly one of --source/--execution/--timing/--diff at a time — the envelope's \"view\" is a single value, there is no combined shape for more than one\n  fix: drop the extra evidence flags, or make one --json call per flag\n",
   "cli.show.locatorMalformed": "{{message}}\n",
@@ -309,10 +285,6 @@ export const zhCN = {
   "cli.experiment.noEvalsSelected":
     "未选择任何 eval:{{selection}} 匹配到 0 个 eval。可用的 eval 前缀:{{experiments}}。\n" +
     "运行 `niceeval exp {{selection}} --dry` 查看它覆盖了什么,或去掉 eval 过滤跑这些实验选中的全部 eval。\n",
-  "cli.experiment.strictOnPoints":
-    "实验 \"{{experimentId}}\" 选中的 {{count}} 个 eval 全是计分制(defineScoreEval),而 `--strict` 对它们一件事都做不了:\n" +
-    "这个开关只把「带通过线的 soft 断言」翻成 gate,而计分制的判定只认前置 `.gate()` 中止——丢分从不改 verdict。\n" +
-    "去掉 `--strict` 重跑;要收紧计分制的判定,把该硬的检查写成前置 `.gate()`。\n",
   "cli.experimentGroup": "路径",
   "cli.fallbackCleanupTimeout": "\ngraceful 清理超时,强制清理沙箱…\n",
   "cli.forceCleanupExit": "\n强制清理沙箱并退出…\n",
@@ -352,7 +324,7 @@ export const zhCN = {
   "define.scoreEvalIdRejected": "defineScoreEval 不接受 id —— id 由文件路径推导。",
   "define.scoreEvalEnvironmentEmpty": "defineScoreEval 的 environment 如有提供，必须是非空的 profile id。",
   "define.scoreEvalTestRequired": "defineScoreEval 需要一个 async test(t) 函数。",
-  "define.scoreEvalEvaluationKindRejected": "defineScoreEval 不接受 evaluationKind —— 恒定为 \"points\"(计分制)。通过制请用 defineEval。",
+  "define.scoreEvalEvaluationKindRejected": "defineScoreEval 不接受 evaluationKind —— 恒定为 \"score\"(计分制)。通过制请用 defineEval。",
   "define.scoreEvalConfigHashRejected": "defineScoreEval 不接受 configHash —— configHash 由运行规划计算。",
   "define.experimentAgentRequired": "defineExperiment 需要 agent。",
   "define.experimentFlagNotJson": "experiment.flags.{{key}} 不是可 JSON 序列化的值(函数 / undefined / 循环引用 / bigint 不允许);flags 会原样进入结果快照,必须是纯 JSON。",
@@ -548,7 +520,6 @@ export const zhCN = {
     "provider 的可写保证不止 workdir,runner 要在 workdir 之外放采集器与变更分类账。" +
     "修法:让 /tmp 对运行用户可写(镜像里 `chmod 1777 /tmp`,或换一个不把 /tmp 挂成只读的镜像 / 用户),修好后重跑即续上。",
   "assertions.evaluationError": "断言评估出错: {{error}}",
-  "assertions.pointsInvalid": ".points({{n}}) 非法;给分必须是正有限数(n > 0)。",
   "assertions.scoreInvalid": "t.score({{label}}, {{n}}) 非法;给分必须是非负有限数(n >= 0)。",
   "session.fileFallback": "[file]",
   "session.tools": "{{count}} 工具",

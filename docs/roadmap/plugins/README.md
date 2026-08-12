@@ -1,10 +1,6 @@
 # Plugins
 
-## 解决的问题
-
-一个评估条件经常同时占据多个既有声明面。Remem 需要条件身份、Sandbox 探测、Codex 配置、安装后 hook、收尾 drain 与运行事实；Terminal-Bench 的公共 harness 又需要从 Eval 一侧复用。手工返回多个 fragment 会迫使作者记住每个落点和收尾顺序，漏接一项仍可能通过 TypeScript。
-
-**Plugin 是可复用的 Eval、Experiment 或 Sandbox Group 条件蓝图。** 它可以挂在四个稳定定义入口：
+Plugin 是可复用的 Eval、Experiment 或 Sandbox Group 条件蓝图。它在 factory 调用时成为不可变 definition，并可挂在四个稳定入口：
 
 ```ts
 defineEval({ plugins: [...] });
@@ -13,94 +9,101 @@ defineExperiment({ plugins: [...] });
 defineSandboxGroup({ plugins: [...] });
 ```
 
-folder、suite 与 `defineConfig()` 不产生隐式 Plugin 继承。目录级复用就是普通 TypeScript 常量或构造函数。
+folder、suite 与 `defineConfig()` 不产生隐式 Plugin 继承。Plugin 不是新运行时、依赖注入容器、marketplace，也不是 Agent Native Plugin。
 
-Plugin 在 factory 调用时求值成不可变定义值；NiceEval 在每个 Eval × Experiment pair 的 link 阶段组合两侧贡献。Plugin 不是新运行时、依赖注入容器或 marketplace，也不是 Codex / Claude Code 的 Agent Native Plugin。
+## 一等能力：扩展已选 Agent
 
-## 消费示例
-
-Remem package 携带 Dockerfile，而不是要求用户预先构建或发布镜像：
+Experiment 仍显式选择 Agent；Plugin 只为已选 Agent 贡献能力：
 
 ```ts
-import { defineExperiment } from "niceeval";
-import { codexAgent } from "niceeval/adapter";
-import { dockerImage } from "niceeval/sandbox";
-import { REMEM_DOCKER_CONTEXT, remem } from "@memorybench/remem-niceeval";
-
 export default defineExperiment({
-  ...memoryExperimentBase,
   agent: codexAgent(),
-  sandbox: dockerImage({
-    context: REMEM_DOCKER_CONTEXT,
-    dockerfile: "remem.Dockerfile",
-    lifetimeMs: 5 * 60 * 60_000,
-  }),
-  plugins: [remem({ memoryModel: "gpt-5.6-luna" })],
+  plugins: [context7(), effectSkill(), remem()],
 });
 ```
 
-调用点仍显式拥有 Sandbox template。第一次缺少 BuildKey 时构建，之后只在同一 cache domain 命中时复用；cache 被回收或换 Domain 后会重建。准确契约见 [Docker Image](../docker-image/README.md)。
+Plugin 可以安装 Skill、MCP server、Codex／Claude 原生 Plugin、Bub Python extension 和 Agent 原生 Hook，也可以声明 NiceEval 托管的 Attempt／逻辑 Send Hook。它不能选择或替换 Agent、model、provider、主 credential、Sandbox template、budget 或 Sequence。
 
-Eval 也能挂 Plugin：
+直接配置与 Plugin 复用同一种 `AgentExtension`，没有第二套安装真源：
 
 ```ts
-export default defineEval({
-  sandbox: dockerImage({ context: new URL("./sandbox/", import.meta.url) }),
-  plugins: [pnpm({ version: "10.15.0" })],
-  async test(t) {
-    await t.agent("Implement the requested change");
-  },
+codexAgent({
+  configFile: "configs/codex/base.toml",
+  extensions: [
+    skillsExtension({ review: { source: reviewSkill } }),
+    mcpServersExtension({ docs: { url: "https://mcp.example.com/v1" } }),
+  ],
 });
 ```
 
-需要 Yarn 的 Eval 直接声明 `plugins: [yarn({ version: "4.9.2" })]`。`pnpm()` 与 `yarn()` 是不同产品 Plugin，不用一个 `packageManager({ kind })` 抹平各自的安装、探测与版本语义。
+`configFile`／`settingsFile`、主进程变量集合、model／provider 和主 credential 仍是 Agent base-only 配置。Plugin 不提供 arbitrary native-config patch 或 generic env merge；新能力通过 receiver 拥有的窄 typed protocol 增加。
 
-## Plugin 能贡献什么
+## 两类 Hook 不能混用
 
-| 能力 | Eval | Experiment | Sandbox Group | 效果 |
-|---|---:|---:|---:|---|
-| behavior identity | ✓ | ✓ | ✓ | 让影响执行的选项进入所属 owner 的 hash |
-| typed requirements | ✓ | ✓ | ✓ | 在创建资源前验证 platform、lifetime、Sequence 或 reuse group |
-| command-only `SandboxLayer` | ✓ | ✓ | — | 直接复用现有 layer 安装或探测工具，不替换 template |
-| 官方 cohort resource | Git | — | — | 官方 Git Eval Plugin 私有能力，不开放第二套 resource DSL |
-| Eval `before` / `after` | ✓ | — | — | 直接使用 Eval hook 包围每条 Attempt 的 test body |
-| flags / labels | — | ✓ | — | 声明实验条件身份与报告分组 |
-| AgentExtension | — | ✓ | — | 接入 Adapter 已有配置、安装、postSetup / preTeardown 槽位 |
-| Experiment setup / teardown | — | ✓ | — | 管理整场一次的宿主资源 |
+- **Agent 原生 Hook** 是 Codex／Claude 等运行时自己的声明式能力，经 receiver-specific `AgentExtension` 安装并由 Agent 执行。
+- **Hosted Agent Hook** 由 NiceEval 执行，只观察 Attempt 与一次逻辑 `t.send()` 的前后边界。它不能改写 prompt、Session 或 Turn，也不监听逐 token／逐物理重试事件。
 
-框架还会自动把规范化原生片段、attachment owner 与 provenance 写入 manifest。运行时观测继续使用既有 `ctx.fact()` / `ctx.facts()`，不是 Plugin 自创一份 facts 存储。
+Hosted Hook 使用 `beforeSend`／`afterSend`，而不是 `beforeTurn`／`afterTurn`：终局发送失败时不存在可信 Turn，但 `afterSend` 仍必须拿到穷尽的 `SendHookExit` 并完成收尾。
+
+## pair link 与身份
+
+NiceEval 在每个 Eval × Experiment pair 的 link 阶段组合两侧贡献。Plugin 的 contribution 包括：
+
+- behavior identity 与封闭 typed requirements；
+- command-only Sandbox layer 与现有 Experiment lifecycle；
+- `AgentExtension` 与 Hosted Agent Hook；
+- 声明式 RecordAttachment write grant。
+
+`(name, instance)` 在一个 pair 内唯一，`name` 使用 reverse-domain lowercase ASCII namespace。Eval 与 Experiment 两侧重复同一 identity 是 typed link conflict，不是去重机会。每个 owner 内先接作者原生片段，再按 `plugins[]` 顺序接 Plugin 片段；跨 owner 顺序由 template owner 决定。
+
+Agent factory 与 Experiment Plugin 形成 `RunAgentPlan`，其安全规范投影进入 Run `configHash`。Eval Plugin 只形成 pair-local delta；pair fingerprint 已经包含 `configHash`，不会重复编码 Run 投影。同值 Eval contribution 只增加 provenance，异值在创建资源前形成 pair link conflict。
+
+## 完整 desired state，而不是增量安装
+
+receiver 把 Agent base 与 Plugin contribution 规范化并组合为不可变 `LinkedAgentPlan`。每个 Attempt 都必须把 Agent home 收敛到本次完整 desired state：即使声明为空，也要移除上一 Attempt 留下的 NiceEval-managed Skill、MCP、Plugin、Hook 与 credential materialization。
+
+receiver 只能撤销自己拥有的 overlay，不能删除用户或 Agent 自己的未知状态。无法证明隔离或可撤销的 extension 必须声明不支持 Sandbox reuse，并在资源创建前被 requirement 拒绝。Agent teardown 完成后才 dispose overlay，避免 drain／flush 或 Agent 自身收尾读取不到配置。
+
+## Plugin 不扩张 Record Core
+
+Plugin 不直接修改 Record Core。框架只为需要落 Record 的 Eval／Experiment Plugin 写入版本化 `niceeval.plugin-provenance/v1` RecordAttachment，保存：
+
+- `name`、`instance`、`revision`、mount 与 source；
+- 安全规范化后的 effective behavior identity；
+- 已接受 contribution 的 typed refs；
+- 仅含 domain 与可选 revision 的 redacted credential token（如有）。
+
+credential value、env selector、宿主绝对路径、私有 config、raw token、未规范化 options 与 receiver opaque payload 不进入 provenance。Run-owned document 只包含整份 Run 真正共享的 Experiment mount；Attempt-owned document 保存对应 Eval／pair 事实。Group 不写 provenance，它只留在 demand cohort 的 plan manifest。
+
+## 声明式 RecordAttachment capability
+
+Plugin blueprint 必须通过 [RecordAttachment 作者 API](../record-attachment-authoring/README.md) 的 producer `recordAttachments: { write: [...] }` 显式声明它可写的每个 definition。运行时 context 只接受该 linked occurrence grant 中、owner 正确的 definition；它没有 raw name、path 或 JSON 写入口。
+
+一个 owner 的一个 attachment family 至多写一次。closed、wrong-owner、undeclared 或 duplicate write 都是具名 typed failure；不会由 last-wins、静默改写或开放写入通道处理。完整类型、provenance 与 migration 规则见 [Library](library.md)。
+
+## 资产、凭据与信任边界
+
+`pluginAsset(new URL("./assets/...", import.meta.url))` 表示 module-relative trusted local asset。definition 只保存 locator；仅选中的 occurrence 在 planning 阶段读取、拒绝 symlink／special file 并计算 digest。manifest 与 dry plan 只显示用途、kind 和 digest，不显示宿主绝对路径。远程安装内容必须带完整 commit identity 或声明的 content digest；floating branch、movable tag 与默认 ref 在 link 阶段拒绝。
+
+扩展凭据通过 `credentialFromEnv()` 的 opaque runtime binding 引用。factory、link 与 dry plan 不读取 env；materialize 在任何扩展写入前一次性求值，secret value 永不进入 hash、provenance、manifest 或错误文本。
+
+Plugin package、第三方 protocol factory 与 receiver 都是 application-trusted ESM code。NiceEval 只为内建 receiver 承诺纯 `resolve`、redaction 与资源纪律；nominal token 防误接线，不构成 JavaScript sandbox。不提供 marketplace 自动发现、全局 registry 或按 Record 动态 import。
 
 ## 框架保证
 
-- `definePlugin()` 的 `eval(options)`、`experiment(options)` 与 `group(options)` 直接返回对应 owner 的现有字段；作者不接触 attachment 路由树或 contribution constructor。
-- 同一 `(name, instanceKey)` 在整个 pair 内只能出现一次；Eval 与 Experiment 两侧重复也会在创建资源前报错。
-- 每个 owner 内先接作者贡献，再按 `plugins[]` 顺序接插件；跨 owner 顺序由 template owner 决定。
-- 独占与 keyed 槽位不做 last-wins；冲突保留 attachment scope、owner、源码与数组位置。
-- Plugin 只接入既有生命周期；setup 正序、teardown 按实际登记链逆序。
-- Experiment attachment 行为进入 Run 级 `configHash`；Eval attachment 行为只进入对应 Eval fingerprint / manifest。
-- Agent 专属贡献由 opaque receiver 规范化；core 不读取 payload，也不把凭据明文交给 Plugin。
-- requirements 是封闭的 typed plan guard，只拒绝非法计划，不暗改 template、lifetime、Sequence 或并发。
-- Group 只形成 demand cohort 与 unavailable policy，不拥有跨 replacement 的 runtime hook；资源 lifetime 仍是 physical Sandbox instance。
-
-可信 TypeScript Plugin 的模块 import 和 factory 必须保持纯函数。NiceEval 保证 discovery / link 不重跑 factory、不调用 lifecycle、不求值 runtime binding；框架不宣称能沙箱化或证明第三方模块纯度。
-
-## Remem 状态边界
-
-`remem()` 只支持 Experiment attachment，因为它贡献 Experiment flag 与 Codex AgentExtension。默认 `mode: "accumulated"` 要求 stop-group 的物理连续性和 Ordered Sequence complete-prefix；`mode: "isolated"` 必须显式选择。MemoryBench 六个独立 group 仍是六次 Invocation。
-
-## 范围
-
-Plugin 不替换 Agent、model、Sandbox template、provider、lifetime、resources、Sequence、并发、预算或 Eval 选择。
-
-Plugin 不提供任意字符串 capability registry、返回 secret 的通用函数、动态下载或第三方隔离执行。
+- discovery、factory activation 与 pure link 不调用 lifecycle、不求值 runtime binding；资产 I/O 只发生在显式 selected planning snapshot。
+- Agent 特殊性留在 Adapter receiver；core 不读取 receiver payload 或 secret。
+- requirements 只拒绝非法计划，不暗改 template、lifetime、Sequence 或并发。
+- keyed contribution 同 canonical value 去重并保留 provenance，异值冲突；有序 Hook 保持 Plugin 声明顺序，不采用 last-wins。
+- dry plan 展示 Plugin → extension → selected receiver → redacted manifest、顺序、冲突与不支持原因，不创建资源。
 
 ## 入口
 
-- [Library](library.md) —— 完整 `definePlugin()` 作者 API 与两侧挂载示例
-- [Architecture](architecture.md) —— pair link、顺序、身份、冲突与 Record 投影
-- [Lifecycle](lifecycle.md) —— 资源作用域、失败与强杀恢复
+- [Library](library.md) —— `definePlugin()`、Agent extension protocol、Hosted Hook、asset／credential 与 RecordAttachment write grant。
+- [Architecture](architecture.md) —— pair link、receiver、身份、收敛、provenance 与信任边界。
+- [Lifecycle](lifecycle.md) —— 分阶段 Agent plan、Effect Scope、Hook 与失败语义。
+- [给 Codex 安装 MCP、Skill 与 Hook](use-case/codex-agent-extensions.md)
 - [Remem 用例](use-case/remem.md)
 - [NiceEval-Eval 候选 Runtime](use-case/niceeval-eval-candidate-runtime.md)
 - [Terminal-Bench Harness](use-case/terminal-bench-harness.md)
-- [Git checkout](use-case/git-checkout.md) —— 官方 Git Plugin 私下聚合同仓库 commits
-- [Docker Image](../docker-image/README.md) —— `dockerImage()` 与构建缓存的 Sandbox 单源
+- [Git checkout](use-case/git-checkout.md)

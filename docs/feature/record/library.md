@@ -1,335 +1,1266 @@
-# Record —— 库用法
+# Record Library
 
-磁盘上的 Record 格式的 TS 读写 API(`niceeval/record`)。
-层的分工见 [README](README.md),磁盘上的格式规范见 [Architecture](architecture.md),选口径与算缺口见 [Sample](../sample/README.md)。
+Record Library 提供五类 Effect-native 能力：打开 current reader、定义并读取 typed
+RecordAttachment、在 Scope 内写完并发布 Run、删除未完成 Run，以及显式迁移旧格式。
 
-这一层只有事实。
-没有选择器、没有缺口判断、没有 Sample Issue——`openRecord()` 返回的每个值都能在磁盘上逐字节指回对应的事实。
+普通 reader 不包含跨 Core major decoder。旧 Core decoder、Core converter 与
+RecordAttachment migration 只由 migration registry 提供。
 
-## 读:`openRecord`
+## Effect runtime 与 platform
 
-两条设计决策。
-**层次跟使用者的心智走**(「所有实验 → 单次跑的实验 → 每道题」)——磁盘布局与这个心智同构(实验目录在外层),reader 的分层就是目录树的类型化投影。
-**「record」一个词不在层级里重复**:分层把它拆成 `experiments` / `runs` / `attempt.result` 各归其位。
-API 如下:
+```ts
+import { Brand, Context, Effect, Either, Schema, Scope, Stream } from "effect";
 
-```typescript
-import { openRecord } from "niceeval/record";
+class RecordFileSystem extends Context.Tag("@niceeval/record/RecordFileSystem")<
+  RecordFileSystem,
+  RecordFileSystemService
+>() {}
 
-const record = await openRecord(".niceeval");
+class RecordMaintenanceLock extends Context.Tag(
+  "@niceeval/record/RecordMaintenanceLock",
+)<RecordMaintenanceLock, RecordMaintenanceLockService>() {}
 
-record.experiments;            // Experiment[]:每个实验一项,挂着自己的全部历史(id 字典序)
-record.unreadable;             // 读不了的落盘:{ dir, reason, schemaVersion?, producer?, detail? }[]
-record.root;                   // 记录根的绝对路径(入参解析后的原样值,不论传入的是记录根、
-                               // 实验目录、run 目录还是某个 run.json)
+class RecordWriterLock extends Context.Tag("@niceeval/record/RecordWriterLock")<
+  RecordWriterLock,
+  RecordWriterLockService
+>() {}
 
-const exp = record.experiments.find((e) => e.id === "compare/bub-gpt-5.4")!;
-exp.runs;                      // Run[]:历次运行,最新在前
-exp.knownEvalIds;              // 已知 eval 并集 = 本地历史 ∪ 各 Run 携带的 knownEvalIds
+class RecordEntropy extends Context.Tag("@niceeval/record/RecordEntropy")<
+  RecordEntropy,
+  RecordEntropyService
+>() {}
 
-const run = exp.runs[0];       // 单次跑的实验 = 一个 run 目录
-run.dir;                       // run 目录的绝对路径
-run.agent; run.model; run.startedAt;
-run.completedAt;               // 缺失 = 未收尾(进程中断);已落盘 attempt 照常在下面读到
-run.configHash;                // 这次运行的配置身份 —— 跨 Run 可比性的唯一判据,见下
-run.experiment;                // 实验运行配置(flags / attempts / earlyExit / sandbox …)
-run.producer;                  // { name, version?, commit? }:谁写的这份记录
-run.schemaVersion;             // 记录格式版本(能读进来的恒为当前版本;不兼容的在 unreadable)
-run.evals;                     // Eval[]:每道题一项 { id, attempts }
-run.attempts;                  // 全部 attempt 平铺(不关心题目边界的聚合消费用)
+class RecordGit extends Context.Tag("@niceeval/record/RecordGit")<
+  RecordGit,
+  RecordGitService
+>() {}
 
-const attempt = run.evals[0].attempts[0];
-attempt.evalId;                // 属于哪道题 —— 直达字段,不绕 result
-attempt.experimentId;          // 属于哪个实验
-attempt.result;                // EvalResult 瘦身条目:判定、断言、用量、成本(Run 级字段已拼合)
-attempt.ref;                   // { run, attempt }:证据路径引用(根相对 run 目录 + run 相对 attempt 目录),
-                               // 站点 artifact/ 证据树按它布局;寻址一个 attempt 用 result.locator
-attempt.run;                   // 所属 Run(比较新旧、读配置靠它)
-attempt.carried;               // true = 携带条目:fingerprint 未变、上一轮终态结果合入本 Run,
-                               // startedAt 是原执行时刻
-attempt.evidenceState;         // "local" | "borrowed" | "dangling" —— artifact 在哪,见下
-await attempt.events();        // StreamEvent[] | null —— 重 artifact 全部懒加载
-await attempt.commands();      // CommandExitEvidence[] | null —— Sandbox 命令(成功与非零退出都记)、checked 调用事实与 stdout/stderr
-await attempt.trace();         // TraceSpan[] | null(span 属性同样受 256 KiB 值上限约束)
-await attempt.o11y();          // O11ySummary | null
-await attempt.agentSetup();    // AgentSetupManifest | null
-await attempt.diff();          // DiffData | null(不截断,可达百 MB,所以必须懒)
-await attempt.sources();       // SourceArtifact[] | null：{ path, content, role }，恰好一个 entry
+class RecordMigrationRegistry extends Context.Tag(
+  "@niceeval/record/RecordMigrationRegistry",
+)<RecordMigrationRegistry, RecordMigrationRegistryService>() {}
 ```
 
-以上懒加载方法名与[证据 registry](architecture.md#证据-registry)的词干一一对应(`events` → `attempt.events()`、`agentSetup` → `attempt.agentSetup()`,以此类推);新增一种证据在库内加一个同名方法即可,不另造别名。
+这些是 Effect v3 `Context.Tag`。Node Layer 在 application 边界组合 live services；
+动态 `root` 是 constructor 参数，不为每个 root 创建 Layer。
 
-命名约定:`Experiment` / `Run` / `Eval` 是纯数据,不带 `Handle` 后缀;唯一叫 `AttemptHandle` 的是 attempt——它的方法真的会碰磁盘,后缀标记的就是这件事。
+| 能力 | Effect 依赖 |
+|---|---|
+| reader | `Scope.Scope | RecordFileSystem | RecordMaintenanceLock` |
+| writer | reader 所需 Tag，加 `RecordWriterLock | RecordEntropy` |
+| clean | `RecordFileSystem | RecordMaintenanceLock | RecordWriterLock` |
+| migration plan/run | `RecordFileSystem | RecordMaintenanceLock | RecordGit | RecordMigrationRegistry` |
 
-`AttemptRef` 的字段名(`run` / `attempt`)是证据文件的持久化路径契约,不随句柄改名:`run` 恒为两段(`<实验目录>/<run 目录>`),`attempt` 是 `<evalId 路径>/a<n>`, [导出站的 `artifact/` 树](../reports/view.md#静态导出)按这两段拼路径。
+Library 内部不调用 `Effect.runPromise`。CLI 或 application 在最外层 provide Node
+Layer，并只运行一次 Effect。typed failure、defect 与 interruption 在拥有结果语义的
+边界之前保持分离。
 
-**寻址一个 attempt 是另一回事。**
-报告的 `MetricValue.refs`、`show @<locator>` 与 view 深链 `#/attempt/@<locator>` 用的都是不透明的 [`AttemptLocator`](#按-locator-寻址一个-attemptresolvelocator),不走磁盘路径。
+`RecordFileSystem` 负责 directory/file create、exact JSON、blob I/O、flush、close
+与删除未完成目录。Run 的提交点始终是最后创建的 `complete`。
 
-要点:
+## Identity 与 Attachment definition
 
-- **懒加载即存在性判断。**
-  artifact 缺失返回 `null`,不抛错。
-  「不 stat 磁盘就知道有什么」由 `result.json` 上的 `AttemptRecord.artifacts`(writer 实际写出的按需 artifact 词干列表) 回答;两者在 `evidenceState` 上对齐,见下节。
-- **截断是磁盘上的事实,读取面不参与。**
-  reader 原样读出被截断的值(含 marker 与 `truncated` 字段),既不重新截断,也变不回完整值——完整值只在写入那次运行的内存里存在过。
-  要在 UI 上如实说「这里少了东西」,读 `truncated`。
-- **版本过滤沿用格式规范。**
-  按 [Architecture · 版本与升级设计](architecture.md#版本与升级设计) 判定,不兼容的落盘进 `unreadable` 并带 `schemaVersion` 与完整的 `producer`(name + version), 供调用方生成正确的版本建议。
-  只有 `producer.name === "niceeval"` 时才能拼 `npx niceeval@<version>`;第三方 producer 保留自己的名字与版本。
-- **`unreadable` 的三种 reason。**
-  `"incompatible"`(schema 版本不同)、`"malformed"`(元数据是坏 JSON 或必需字段错误)、`"incomplete"`(有 attempt 落盘、没有 `run.json`——只可能出现在「run 目录建好、元数据还没写完」的极短间隙里进程死亡,或人为删文件)。
-  三种的诊断动作完全不同, 所以不合并成一个「读不了」。
-  字段名叫 `unreadable` 而不是 `skipped`,因为 `skipped` 已经是一个 verdict 取值,同一个词在同一份数据里指两件事会让 `.filter()` 写错。
-- **未收尾 Run 不是数据黑洞。**
-  `run.json` 在、缺 `completedAt` 是进程中断的常态:判定与 artifact 同级落盘、随 attempt 完成即写,中断只丢未完成的 attempt,已完成的照常读出。
-  它不进 `unreadable`;「这批数据可能不完整」是选择层产生的 Issue,见 [Sample](../sample/library.md#issue-code-全集)。
-- **分组是切片,不是看法。**
-  实验归组、eval 分组都是确定性切片(不合并、不聚合、不去重)。
-- **同一进程内按 handle 记忆化。**
-  两个都要读 diff 的消费方不会把「可达百 MB」的 `diff.json` 读两遍;扫全部历史仍然可能慢,但要慢得线性、可预期。
-- **只读不写事实。**
-  reader 的一切派生物删了随时可重算;事实只住在磁盘上的落盘格式里。
+```ts
+type RecordId = string & Brand.Brand<"RecordId">;
+type RunId = string & Brand.Brand<"RunId">;
+type SlotId = string & Brand.Brand<"SlotId">;
+type AttemptId = string & Brand.Brand<"AttemptId">;
+type UtcMillis = number & Brand.Brand<"UtcMillis">;
 
-## `configHash`:配置身份只算一次
+type RecordAttachmentName = string & Brand.Brand<"RecordAttachmentName">;
+type RecordAttachmentSchemaId = string & Brand.Brand<"RecordAttachmentSchemaId">;
+type RecordFormatId = string & Brand.Brand<"RecordFormatId">;
+type RecordAttachmentOwner = "run" | "attempt";
 
-跨 Run 比较有一个前提:两个 Run 得是同一套配置跑出来的。
-这个前提由 `run.configHash` 单点回答。
-它与逐 eval 指纹是同一个嵌套哈希的两层,**输入清单与嵌套关系单源在 [Experiments · 指纹](../experiments/cache.md#指纹两个哈希嵌套)**——配置身份和缓存判据用的是同一张清单,一个字段只在那里裁决一次。
+type SourceItemId = string & Brand.Brand<"SourceItemId">;
+type CanonicalProjectRelativePath = string & Brand.Brand<
+  "CanonicalProjectRelativePath"
+>;
+type Sha256Digest = string & Brand.Brand<"Sha256Digest">;
 
-跨 Run 可比性据此定下两条,理由与那边同源:
+declare const recordRootTypeId: unique symbol;
 
-- **`timeoutMs` 与 `budget` 不进 configHash。**
-  它们决定「等不等得到、跑不跑得完」,不决定「跑出来的那条结果是什么」。
-  一条 15 分钟跑完的 `passed`,在 20 分钟和 40 分钟上限下是同一个事实。
-  把它们放入配置身份会让提高上限一次性切断全部历史可比性,为一个不影响结果的参数付全量重跑。
-  两者各有正交判据:超时上限管[携带资格](../experiments/cache.md#携带资格timeoutms-不进哈希)(`executionMs` ≤ 当前上限),止损规则管缺口:被掐掉的题没有结果,如实进 [`coverage`](../sample/library.md)。
-- **`attempts` / `earlyExit` / `maxConcurrency` / `labels` 不进。**
-  编排与选题字段决定跑哪些、跑几次,不改变单题被测行为;`labels` 是报告坐标。
+interface RecordRoot {
+  readonly [recordRootTypeId]: typeof recordRootTypeId;
+}
 
-`configHash` 落在 `run.json` 上,是格式的一部分:niceeval 自己的写入面按规划期算出的配置身份把它写进 `run.json`,`niceeval exp` 与 `niceeval accept` 都在这条路径上。
-第三方转换器可以不声明这个字段。
-Run 级字段缺失时,`openRecord()` 按该快照全部 attempt 的 `result.configHash` 回退推导——全部 attempt 都带且相等才取用,否则保持缺失,这份 Run 只与自己可比。
+type RecordRootInput = string | URL;
 
-这份推导只发生在 Record 层,Sample 层跨 Run 拼接时只读 `run.configHash`(声明值或推导值),不重新推导配置——推导逻辑一旦有第二份实现,两份就会分叉。
-反过来,进 configHash 的字段必须在 `run.json` 上找得到,顶层或 `ExperimentRunInfo` 二选一:拿历史 Run 重算配置身份是解释配置面差异的前提,少落一个字段,那条路径就只能靠猜。
+type RecordRootConstructionError =
+  | { readonly code: "record-root-empty" }
+  | { readonly code: "record-root-relative" }
+  | {
+      readonly code: "record-root-non-file-url";
+      readonly protocol: string;
+    }
+  | { readonly code: "record-root-file-url-invalid" };
 
-[`niceeval accept @<locator>...`](../experiments/cache.md#niceeval-accept-locator接受一条或多条结果) 是这条可比性担保上唯一的人为出口:它只让显式列出的历史条目重锚到当前口径。
-它不消除「混着两套配置的数据」的风险,而是把风险显式交给人。读取面可从 `acceptedFrom` 看出这条结果的原 locator、旧/新指纹与差异摘要。
+declare const makeRecordRoot: (
+  input: RecordRootInput,
+) => Either.Either<RecordRoot, RecordRootConstructionError>;
 
-已知 fingerprint 版本迁移不是人为出口。Runner 能证明旧、新输入等价时自动携带，并在结果保存 `migratedFrom: { fingerprint, algorithmVersion, coverageVersion }`。
-`acceptedFrom` 与 `migratedFrom` 互斥：前者表示人承担一次判断，后者表示 NiceEval 的迁移规则证明等价。
+declare const recordBlobRefTypeId: unique symbol;
 
-## 携带条目与 `evidenceState`
-
-运行器默认把上一轮 fingerprint 匹配、判定为终态的结果**携带合入**新 Run(语义见 [Experiments · 缓存与携带](../experiments/cache.md)),让最新 Run 天然完整。
-携带条目在新 Run 里也是一条 `result.json`,带原条目的 `startedAt`、`locator`、`locatorRunId`、`artifactBase`(相对落盘根,指向原 Run 的 attempt 目录)与 `artifacts` 词干列表。`locatorRunId` 是 locator 所属 Run 的身份,因此同一条 attempt 被多轮 carry 后仍是同一索引身份;旧条目缺失它时 reader 沿 `artifactBase` 回溯。
-读取面把它投影成 `attempt.carried`,消费方不自己探测 artifactBase。
-
-artifact 因此有三种去处,`attempt.evidenceState` 如实说出是哪一种:
-
-| 取值 | 含义 | 懒加载行为 |
-|---|---|---|
-| `"local"` | artifact 与 `result.json` 同目录 | 按 `artifacts` 列表命中 |
-| `"borrowed"` | 经 `artifactBase` 指向原 Run,目录仍在 | 按 `artifacts` 列表命中 |
-| `"dangling"` | `artifactBase` 指向的目录已不存在 | 一律返回 `null` |
-
-**`dangling` 必须可分辨,否则 `artifacts` 字段在撒谎。**
-原 Run 被删除后,`result.json` 上 `artifacts: ["events", "trace"]` 仍然声明有,而 `events()` 返回 `null`——两个契约当场互相打脸, 而 `artifacts` 存在的唯一理由正是「不 stat 磁盘就知道有什么」。
-把它和「这类证据本来就没采集」混成同一个 `null`,消费方无法区分「没有」与「丢了」。
-`openRecord()` 扫描时逐条判定这个状态, Sample 层据此产出 [`dangling-evidence`](../sample/library.md#issue-code-全集) Issue。
-这条借用与悬空的形状抄自 Git 的 alternates,连修法都同源,见[参考方案](reference/README.md#git-object-alternates-借用与悬空)。
-
-避免 dangling 的正确动作是删除历史 Run 前先用 `publish()` 解引用并复制要保留的结果,见下。
-
-**跨 schemaVersion 不携带。**
-落盘格式版本变化时,上一轮的落盘对本轮 writer 是另一种格式: `artifactBase` 会让新 Run 的条目指向旧版本写的 artifact,而 artifact 是原始 JSON、不带版本, 版本判定只在 `run.json` 层做——沿着这条路读出来的东西没有任何一层能声明它可信。
-所以 `schemaVersion` 不同的历史 Run 一律不参与携带判定,如实重跑。
-这是「不做兼容机制」在携带路径上的同一条纪律,不是例外。
-
-## 身份键
-
-同一个 attempt 因携带而存在于多份落盘。
-reader 忠实反映这份重复、不擅自去重;跨 Run 聚合前的去重是消费方的义务,官方实现在 [Sample](../sample/library.md#去重)。
-Record 的义务是**把身份键四字段全部放在数据上**,让任何人都能自己实现:
-
-- `experimentId` / `evalId` 是 `AttemptHandle` 直达字段;
-- `attempt` 序号与 `startedAt` 在 `attempt.result` 上。
-
-`ref` 指条目所在的落盘(携带入的新 Run):证据身份跟着条目走,artifact 经 `artifactBase` 回退仍可达;view 深链与 `publish()` 的源 artifact 定位用同一套候选顺序。
-
-## 按 locator 寻址一个 attempt:`resolveLocator`
-
-`AttemptLocator` 是 attempt 的不透明短标识,不是数组下标,也不编码磁盘路径。
-它的字符形态与派生元组单点声明在 [Architecture · `AttemptRecord`](architecture.md#resultjson),本页不复述——两处各写一份,迟早给出两个互斥的格式。
-用户从 `niceeval show` 的输出、报告或 view 深链里复制到一个 locator,拿它回到库里定位同一个 attempt:
-
-```typescript
-import {
-  openRecord,
-  resolveLocator,
-  AmbiguousLocatorError,
-  LocatorNotFoundError,
-  MalformedLocatorError,
-} from "niceeval/record";
-
-const record = await openRecord(".niceeval");
-const attempt = resolveLocator(record, locatorFromShowOutput);   // → AttemptHandle
-console.log(attempt.evalId, attempt.result.verdict);
-```
-
-`openRecord()` 收尾时已经把扫到的全部 attempt 建成多值 locator 索引,`resolveLocator` 只查这份索引,不碰磁盘。
-同一 provenance 身份经 carry 出现在多份落盘时只保留最新副本；不同 provenance 身份恰好共享同一 locator 才是多候选。
-
-三种失败各自抛一个可分辨的错误,不返回 `null`:
-
-- 输入串本身语法不合法(不是 `@` 开头、body 长度或 Crockford 字符不对)抛 `MalformedLocatorError`;
-- 语法合法但索引里没有这个 attempt(落盘目录被删除、locator 来自别的项目)抛 `LocatorNotFoundError`;
-- 同一个 locator 经 provenance 身份去重后仍命中多份落盘则抛 `AmbiguousLocatorError`,其 `candidates` 逐条列出 `experimentId` / `evalId` / `attempt`,不任取一条。
-
-CLI 据此分别给出「这不是一个 locator」「这个 attempt 不在当前落盘里」和「当前落盘里有多条候选」三种提示。
-
-## 写:`createWriter`
-
-writer 与 reader 是同一组类型的两半,而且是**字面的**两半。
-reader 的 `attempt.result`(瘦身 `EvalResult`)由两部分拼成:Run 级字段(experimentId / agent / model / startedAt / configHash / 实验运行配置 / producer)来自 `writer.run()` 的一次声明。
-前者是 Run 层注入的装饰;其余全部字段就是 `writeAttempt` 第一参数的类型。
-第二参数是 reader 懒加载能拿到的那几样 artifact 的类型。
-**「writeAttempt 参数 + run() 声明 = reader 读回的全部,由类型拼合背书」**:Run 级字段不在 attempt 参数类型里,不存在「谁的值为准」的运行时问题。
-
-```typescript
-import { createWriter } from "niceeval/record";
-
-const writer = createWriter(".niceeval", {
-  producer: { name: "niceeval", version: "0.12.0" },
-});
-
-const run = await writer.run({           // 建 run 目录(独占创建,撞名换后缀重试)+ 写 run.json
-  experimentId: "compare/bub-gpt-5.4",
-  agent: "bub",
-  model: "gpt-5.4",
-  startedAt,                             // 必填:身份键与去重以它为锚,官方产出永不缺
-  configHash,                            // 配置身份;不声明的 Run 只与自己可比
-});
-run.dir;                                 // .niceeval/compare_bub-gpt-5.4/2026-07-11T…Z-x1f2/
-
-await run.writeAttempt(result, {         // 写 result.json(判定权威落点,一次写成)+ 拆 artifact 文件;
-  commands, events, trace, o11y, agentSetup, diff, sources,
-                                         // 全部是按需 artifact,词干见证据 registry;
-});                                      // 空数据不落文件;逐值截断的适用范围见 registry「逐值截断」列
-
-await run.finish({                       // 封口这个 Run:唯一一次补 completedAt
-  diagnostics,                           // + Run 级诊断(如 teardown 失败 / budget 不可执行)
-  facts,                                 // + experiment 作用域 ctx.fact() 累计的运行事实
-});                                      // 不写跨 Run 聚合;Invocation 审计走 Json(path) reporter
-```
-
-`writer.run()` 是读取面「实验 → Run 」层次的镜像:experimentId / agent / model / startedAt / configHash 这些 Run 级身份在这里声明一次,不放入每条 attempt。
-否则第三方转换器要么漏写、要么各条不一致,reader 侧还得猜以谁为准(类型上由 `writeAttempt` 参数的 `Omit` 保证)。
-
-Run 级可选项还包括 `experiment`(实验运行配置 `ExperimentRunInfo`)、`knownEvalIds`(该实验已知的 eval 并集, 残缺检测的分母)、`completedAt`(转换历史数据时如实交代收尾时刻)与 `name`(项目名,view hero 显示)。
-attempt 级 facts 不走 `finish()`——随 `writeAttempt` 第一参数的 `facts` 字段与判定一起一次写成,形状与两级归属语义见 [Architecture · facts](architecture.md#facts运行事实)。
-
-**每个文件只有一个封口时点**是写入面的核心承诺:`run.json` 开跑即写、`run.finish()` 收尾唯一一次补 `completedAt`、 Run 级 `diagnostics` 与 `facts`;`result.json` 与 artifact 随 attempt 完成落盘。
-进程中断只丢未完成的 attempt 与尚未封口的 Run 级诊断/事实;并发进程各写各的 run 目录, 互不触碰(唯一性由独占创建保证,见 [Architecture](architecture.md#目录结构))。
-
-**超大字符串在这里截断,而且只在这里。**
-`writeAttempt` 是全仓库唯一的截断落点:哪些 artifact 逐值截断、哪些原样落盘,单源在[证据 registry](architecture.md#证据-registry)的「逐值截断」列 (截断上限 256 KiB,超出打 `truncated` 标记)。
-调用方——包括第三方转换器——传进来的永远是完整数据,不需要自己先削一遍;断言与 `o11y` 派生统计跑在完整值上,截断不影响判定。
-完整规则、marker 形状与两条「明确不做」见 [Architecture · 大值截断](architecture.md#大值截断)。
-
-## 发布:`publish`
-
-把选中的 Run 按格式感知地复制到另一个目录——只带指定 artifact、只带选中的 attempt,布局知识不外泄。
-输入只收 `Sample`,产出一个**落盘根目录**(实验目录在外层的同一布局, `openRecord` 直接能开);与 Reports 组件的 `data` 函数同一输入约定。
-
-**这个原语不叫 `copy`,因为它做的事不是 cp。**
-一个 Run 通常**不自包含**:携带条目的 artifact 以 `artifactBase` 指向原 Run 的 attempt 目录。
-手工 cp 一个 run 目录出去,携带条目的 events / trace / 源码在新根里静默变成 `dangling`,没有任何报错。
-整根搬运不受影响(`artifactBase` 相对落盘根,整个 `.niceeval/` 搬到哪里引用都完整);取子集离根必须经 `publish()`,它解开引用并把完整内容复制进目标 Run,使复制出的内容自包含。
-
-```typescript
-import { openRecord, publish } from "niceeval/record";
-import { latestRunSample } from "niceeval/sample";
-
-const record = await openRecord(".niceeval");
-await publish(latestRunSample(record), "site/data/run", {
-  artifacts: ["commands", "sources", "events", "trace", "o11y", "agentSetup"], // diff 默认不带
-});   // 所有待发布文件还会经过 50 MiB 单文件预检
-```
-
-`o11y` 在默认携带之列。
-「查看器不读所以不带」是循环论证——因为没消费者所以不带,因为不带所以做不了消费它的内置指标;`assistantTurns`(见 [Reports 的内置读数](../reports/library/measures.md#官方-calculation)) 就是它的消费者,且 `o11y.json` 实测几 KB 一个。
-
-逐值[截断](architecture.md#大值截断)与整文件发布预算解决不同问题:`events` / `trace` 的 256 KiB 上限与 `commands` 的 64 KiB 上限会切断一条失控输出被重复落盘的常见爆炸链,但一个文件可以含很多正常值, 不能据此宣称文件大小有界。
-`diff`、源码 blob 与历史版本的 artifact 也可能超过 Git host 的单文件限制。
-因此 `.niceeval/` 是本地事实根,不是默认可提交目录。
-
-落盘数据分**两类**:
-
-- `.niceeval/` 是**本地事实根**——prompt、工具参数、命令输出、Agent 输出、源码全在里面。
-- 任何要**跨出可信边界**的拷贝(进 Git、静态托管、对外分享)是**发布拷贝**,经 `publish()` 这一条管线产出(`niceeval view --out` 的 artifact 复制走同一管线)。
-
-可信边界内搬运事实根不是发布:把整个 `.niceeval/` 作为 CI job artifact 在 job 间传递或取回本机,就是搬一个普通目录,搬到哪里那里就是落盘根,`--record` 直接打开。
-没有更细的档位:体积取舍由 `artifacts` 字段声明,导出层不做二次裁剪。
-
-发布内容的保密边界由格式在**采集侧**划定,不在发布侧设关卡:宿主注入的 env 值不落盘,命令 display 脱敏。
-但进程写到 stdout/stderr 的内容(成功与非零退出都算)会进入 `commands.json`,与 Agent transcript 同属待发布作者审核的证据。
-复制忠实于源:artifact 原字节复制,不重新序列化、不改写。
-契约细节:
-
-- **复制结果自包含。**
-  携带条目的 artifact 解引用复制进目标 Run,复制出的条目不带 `artifactBase` 指针,`evidenceState` 恒为 `"local"`;`sources` 内容按哈希在目标 Run 的去重仓库重新落盘。
-  「忠实于源」在这里的边界:改变的只是引用结构与落盘位置,artifact 内容字节不变。
-- **缺口判断的依据随数据走(`knownEvalIds`)。**
-  缺口的分母是实验的历史并集,而发布目录没有历史——只复制选中 Run,发布目录上重新算,缺口会静默消失。
-  解法不是持久化算好的缺口(那违反「reader 派生物删了可重算」),而是让缺口判断的**依据**随数据走。
-  `publish()` 给每个复制出的 Run 补记 `knownEvalIds`(复制时刻该实验的 `exp.knownEvalIds`)。
-  reader 端 `exp.knownEvalIds` 的定义是 **并集(本地历史, 各 Run 携带的 knownEvalIds)**——不是「优先字段」:把 Run 复制进已有历史的目录时,本地并集可能更大,优先字段会让分母缩水。
-- **目标目录非空即报错**,不静默覆写、不合并——发布脚本要幂等就自己先清目录;盘上不该出现「我没写的东西被动过」的惊讶。
-- **发布前整文件预检。**
-  `publish()` 在创建目标目录前先规划并序列化全部目标文件。
-  任一文件超过固定的 `PUBLISH_FILE_MAX_BYTES = 50 * 1024 * 1024` 就整体失败。
-  错误列出源路径、实际字节数与处理动作(从 `artifacts` 排除该类证据,或用当前 writer 重新生成历史 events / trace)。
-  不自动删半个 artifact,也不留下半成品目标目录。
-  50 MiB 为 GitHub 的 100 MB 单文件硬限保留余量,对其它常见 Git host 同样够用;它不是可调旋钮,避免发布脚本把保护调没。
-- **`dangling` 条目整体失败。**
-  源里有 artifact 已丢失的携带条目时,`publish()` 报错并列出这些 attempt 与它们指向的原 Run 目录,不产出一份「看起来完整、实际缺证据」的发布物。
-  要发布只剩判定的历史,显式把该类 artifact 从 `artifacts` 里排除。
-- **`artifacts` 的合法词干与默认携带单源在[证据 registry](architecture.md#证据-registry)**——新增一种证据只需要 registry 加一行。
-  两条默认理由需要显式交代:命令退出证据是 errored attempt 的主要下钻面,也保留被调用方接受的非零事实,`commands` 默认发布拷贝不能静默删掉;`diff` 不在默认之列,体量取舍留给显式选择。
-
-## 直接吃读取面:一个真实脚本
-
-折叠类的看法(表格、矩阵、成绩单、散点)去用 [Reports](../reports/README.md) 的计算函数;要按官方口径选数据用 [Sample](../sample/README.md)。
-直接吃 Record 服务的是连口径都自定义的场景, 比如「把全部历史按 agent 拉成 shell 命令分布直方图」——那是分布,不是折叠:
-
-```typescript
-import { openRecord } from "niceeval/record";
-
-const record = await openRecord(".niceeval");
-const points = [];
-for (const exp of record.experiments) {
-  for (const attempt of exp.runs[0].attempts) {
-    const o11y = await attempt.o11y();
-    points.push({
-      agent: exp.runs[0].agent,
-      eval: attempt.evalId,
-      passed: attempt.result.verdict === "passed",
-      shellCommands: o11y?.shellCommands.length ?? 0,
-    });
-  }
+interface RecordBlobRef {
+  readonly [recordBlobRefTypeId]: typeof recordBlobRefTypeId;
 }
 ```
 
-即使在这条最深的路径上,用户也**不碰磁盘布局**——路径拼接、存在性判断、版本过滤、 Run 定位都被库消化了。
-落盘格式若演进,全宇宙只有这一个库要改。
+ID、时间、Attachment name 与 schema ID 都由 exact Schema constructor 创建。
 
-## 相关阅读
+`RecordBlobRef` 也只能由包创建。它没有可拼接的 path、可编辑 key 或公开 constructor。
+持久化 codec 只在所属 Attachment 内解释它的 opaque key。
 
-- [README](README.md) —— 三层分工、库的边界、消费方。
-- [Architecture](architecture.md) —— 磁盘上的格式规范。
-- [参考方案](reference/README.md) —— 这一层的形状从哪些系统学来。
-- [Sample](../sample/library.md) —— 选口径、缺口、时效与转换算子。
-- [Reports](../reports/README.md) —— 建立在样本之上的指标与组件。
-- [Experiments](../experiments/README.md) —— experimentId、运行期选题计划与物理 Attempt 从哪来。
+`SourceItemId`、`CanonicalProjectRelativePath` 与 `Sha256Digest` 同样只经 package 的 exact
+Schema constructor 建立。Sources manifest 拥有它们的取值约束与组合语义。
+
+`RecordRoot` 同样只能由 package constructor 创建。`makeRecordRoot` 接受非空的 host
+absolute-path string，或 protocol 为 `file:` 的 `URL`。
+
+它只做 host path 的 lexical normalization，不检查存在性、不做 I/O，也不 realpath。
+relative string、非-file URL 与无法表示为 host absolute path 的 file URL 分别返回上述
+稳定 code。它不承诺 hostile symlink defense。
+
+portable Record 只持久化 root-relative portable segments。host absolute path 与
+`RecordRoot` 的输入形式都不进入 `record.json`、Attachment、blob ref 或任何磁盘 identity。
+
+`RecordAttachmentName` 使用 reverse-domain lowercase ASCII namespace。
+`RecordAttachmentSchemaId` 是 `<name>/vN`。`niceeval.*` 只由包内 built-in constructor
+创建；第三方使用自己的 namespace。
+
+一个 definition 同时拥有 exact JSON encoder、decoder 与完整的 blob-reference
+projection。`blobRefs` 必须按 payload 中的出现顺序穷尽所有 `RecordBlobRef`；它不是
+可选提示。
+
+```ts
+declare const recordAttachmentDefinitionTypeId: unique symbol;
+
+interface JsonRecordAttachmentDefinition<
+  Owner extends RecordAttachmentOwner,
+  Payload,
+> {
+  readonly owner: Owner;
+  readonly name: RecordAttachmentName;
+  readonly schemaId: RecordAttachmentSchemaId;
+  readonly blobRefs: (payload: Payload) => readonly RecordBlobRef[];
+  readonly [recordAttachmentDefinitionTypeId]: {
+    readonly owner: Owner;
+    readonly payload: Payload;
+  };
+}
+
+declare const defineJsonRecordAttachment: <
+  const Owner extends RecordAttachmentOwner,
+  S extends Schema.Schema.AnyNoContext,
+>(input: {
+  readonly owner: Owner;
+  readonly name: string;
+  readonly schemaId: string;
+  readonly schema: S;
+  readonly blobRefs: (
+    payload: Schema.Schema.Type<S>,
+  ) => readonly RecordBlobRef[];
+}) => Either.Either<
+  JsonRecordAttachmentDefinition<Owner, Schema.Schema.Type<S>>,
+  RecordAttachmentDefinitionError
+>;
+```
+
+本仓库的 Effect 3.22.1 把这两个公共类型放在 `Schema.Schema` namespace：
+`Schema.Schema.AnyNoContext` 与 `Schema.Schema.Type<S>`。definition 固定使用
+`{ errors: "all", onExcessProperty: "error" }`。
+
+Schema 负责 decoded type 与 exact JSON encoded value 的转换。JSON boundary 拒绝
+function、symbol、native bytes 与任意 prototype。Date、BigInt 等值必须由作者 schema
+显式转换。definition callback 意外 throw 是 defect；definition 是受信任扩展。
+
+definition 的运行时 authority 来自 package-private registry 与 exact object identity。
+复制字段、移植 phantom symbol 或类型断言不能形成可写 capability。
+
+```ts
+type RecordAttachmentDefinitionError =
+  | { readonly code: "record-attachment-name-invalid"; readonly name: string }
+  | {
+      readonly code: "record-attachment-schema-id-invalid";
+      readonly schemaId: string;
+    }
+  | { readonly code: "niceeval-namespace-reserved"; readonly name: string }
+  | {
+      readonly code: "record-attachment-definition-invalid";
+      readonly issues: NonEmptyRecordIssues;
+    };
+```
+
+## Blob closure、写入 builder 与读取 value
+
+Attachment 的 payload 是 exact JSON。它可以包含 `RecordBlobRef`，但 ref 只能指向
+同一个 Attachment directory 的 `blobs/**`。一个 Attachment 没有跨 owner、跨
+Attachment 或 root 外的 blob path。
+
+```ts
+interface RecordBlobSource<E, R> {
+  readonly stream: Stream.Stream<Uint8Array, E, R>;
+}
+
+declare const recordAttachmentBlobDraftTypeId: unique symbol;
+
+interface RecordAttachmentBlobDraft<E, R> {
+  readonly ref: RecordBlobRef;
+  readonly [recordAttachmentBlobDraftTypeId]: {
+    readonly error: E;
+    readonly requirements: R;
+  };
+}
+
+type RecordBlobDrafts = readonly RecordAttachmentBlobDraft<unknown, unknown>[];
+
+type RecordBlobErrors<Blobs extends RecordBlobDrafts> =
+  Blobs[number] extends RecordAttachmentBlobDraft<infer E, unknown> ? E : never;
+
+type RecordBlobRequirements<Blobs extends RecordBlobDrafts> =
+  Blobs[number] extends RecordAttachmentBlobDraft<unknown, infer R> ? R : never;
+
+interface RecordAttachmentBlobBuilder {
+  readonly add: <E, R>(
+    source: RecordBlobSource<E, R>,
+  ) => RecordAttachmentBlobDraft<E, R>;
+}
+
+interface RecordAttachmentBlobBuild<
+  Payload,
+  Blobs extends RecordBlobDrafts,
+> {
+  readonly payload: Payload;
+  readonly blobs: Blobs;
+}
+
+declare const recordAttachmentWriteTypeId: unique symbol;
+
+interface RecordAttachmentWrite<
+  Owner extends RecordAttachmentOwner,
+  E,
+  R,
+> {
+  readonly [recordAttachmentWriteTypeId]: {
+    readonly owner: Owner;
+    readonly error: E;
+    readonly requirements: R;
+  };
+}
+
+declare const makeRecordAttachmentWrite: <
+  Owner extends RecordAttachmentOwner,
+  Payload,
+  const Blobs extends RecordBlobDrafts,
+>(
+  family: RecordAttachmentFamily<Owner, Payload>,
+  build: (
+    blobs: RecordAttachmentBlobBuilder,
+  ) => RecordAttachmentBlobBuild<Payload, Blobs>,
+) => RecordAttachmentWrite<
+  Owner,
+  RecordBlobErrors<Blobs>,
+  RecordBlobRequirements<Blobs>
+>;
+```
+
+`makeRecordAttachmentWrite` 是唯一的 generic write builder。它捕获 family、payload、
+每个新 ref 与对应 blob Stream。`add` 为每份 source mint 一个新的 ref；payload 使用
+`draft.ref`，并把同一个 opaque draft 放进 `blobs`。调用方不能提交 raw name、raw path、
+raw bytes 或手写 ref。
+
+generic writer 用 family 的 `blobRefs` 与 builder 捕获的 drafts 做双向精确比较：
+
+- payload 引用而没有 source 是 missing key；
+- source 没有被 payload 引用是 extra key；
+- 同一 key 出现不止一次是 duplicate key；
+- ref 不属于本次 builder、编码非法或越出 owner-local directory 是 illegal ref；
+- key、bytes 与 payload projection 不能形成同一完整 closure 是 closure mismatch。
+
+写入时的上述问题是 `RecordAttachmentClosureInvalid`。从磁盘读取时，任一种问题都使
+该 Attachment 成为 `invalid`；reader 不返回一个不完整的 `available` value。
+
+```ts
+type RecordBlobHandleInvalid = {
+  readonly code: "record-blob-handle-invalid";
+};
+
+type RecordAttachmentPayloadSnapshot<Payload> =
+  Payload extends readonly (infer Item)[]
+    ? readonly RecordAttachmentPayloadSnapshot<Item>[]
+    : Payload extends object
+      ? {
+          readonly [Key in keyof Payload]: RecordAttachmentPayloadSnapshot<
+            Payload[Key]
+          >;
+        }
+      : Payload;
+
+interface RecordAttachmentBlobs {
+  readonly refs: () => readonly RecordBlobRef[];
+  readonly bytes: (
+    ref: RecordBlobRef,
+  ) => Either.Either<Uint8Array, RecordBlobHandleInvalid>;
+}
+
+interface RecordAttachmentValue<Payload> {
+  readonly payload: RecordAttachmentPayloadSnapshot<Payload>;
+  readonly blobs: RecordAttachmentBlobs;
+}
+```
+
+`RecordAttachmentBlobs` 是同步、只读的内存 snapshot capability。`refs()` 返回 payload
+完整 closure 的 frozen defensive list。
+
+`bytes(ref)` 只从该 snapshot 取值。它不读取磁盘、不创建 Stream，也不能借用另一个
+Attachment 的 ref。
+
+成功时每次返回 exact-length `Uint8Array` defensive copy。调用方 mutation 不影响
+package-owned snapshot。
+
+错误或伪造 ref 返回 `Either.left(record-blob-handle-invalid)`。这只是一项同步 capability
+结果；`RecordBlobHandleInvalid` 不属于 `RecordReadError`。
+
+`readRunAttachment` 与 `readAttemptAttachment` 在返回 `available` 前，读取、exact
+decode、验证并 materialize 整个 blob closure 到内存。permission、EIO 或 materialization
+failure 是它们的 `RecordReadError`；它们不降格为 `invalid`。fiber interruption 也不变成
+data state；它继续以 Effect Cause 传播。
+
+`RecordAttachmentValue` 是 package-created、完整且自包含的值。
+
+package 在 decode 时把 payload 的 JSON object 与 array 递归 deep-freeze 成
+`RecordAttachmentPayloadSnapshot`。
+
+JSON boundary 不接纳 native bytes，所有 binary 只由 `blobs.bytes(ref)` 提供。调用方不能
+通过 mutation 改变另一个 projector 或 consumer 所见的 payload。
+
+reader Scope 关闭后，`payload`、`refs()` 与 `bytes()` 仍可同步消费。它们不再依赖
+filesystem、lock、reader registry 或 Effect environment。
+
+每个 `available` value 只在 read Effect 内构成一次；projector 只同步读取这个固定
+snapshot，既不触发第二次 blob I/O，也不获得 Stream。
+
+## RecordAttachment family 与读取状态
+
+```ts
+declare const recordAttachmentFamilyTypeId: unique symbol;
+
+interface RecordAttachmentFamily<
+  Owner extends RecordAttachmentOwner,
+  Payload,
+> {
+  readonly [recordAttachmentFamilyTypeId]: {
+    readonly owner: Owner;
+    readonly payload: Payload;
+  };
+}
+
+type RecordAttachmentRead<Payload> =
+  | {
+      readonly state: "available";
+      readonly value: RecordAttachmentValue<Payload>;
+    }
+  | { readonly state: "unavailable" }
+  | {
+      readonly state: "migration-required";
+      readonly from: RecordAttachmentSchemaId;
+      readonly to: RecordAttachmentSchemaId;
+      readonly command: "niceeval migrate";
+    }
+  | {
+      readonly state: "migration-unavailable";
+      readonly from: RecordAttachmentSchemaId;
+      readonly to: RecordAttachmentSchemaId;
+      readonly reason: string;
+    }
+  | {
+      readonly state: "unsupported";
+      readonly schemaId: RecordAttachmentSchemaId;
+    }
+  | {
+      readonly state: "invalid";
+      readonly issues: NonEmptyReadonlyArray<RecordIssue>;
+    };
+```
+
+`available` 同时表示 exact decoded、deep-frozen payload 与完整 blob closure 已验证并
+materialize。
+missing directory 是 `unavailable`。known old schema 在完整 converter 链上是
+`migration-required`。known path 命中不可无损边时是 `migration-unavailable`；
+它是已知的终态，不含 migration command，也不提示再次运行 migrate。
+
+unknown family 或 schema 始终是 `unsupported`。envelope、payload、blob、ref 或 closure
+验证失败优先是 `invalid`。这些都是 Projection 可消费的成功数据；真实 I/O、permission、
+closed reader 与错误 handle 留在 Effect typed error。
+
+## Official Observability family、capture 与 projector
+
+官方 Observability durable shape 由
+[Observability Attachments](architecture/observability-attachments.md) 唯一拥有。本节只定义公开
+family、capture constructor、typed error、Effect 边界与 neutral projector；不复制 payload schema。
+
+```ts
+import type { RecordAttachmentProjector } from "niceeval/projection";
+
+declare const attemptConversationAttachmentV1: RecordAttachmentFamily<
+  "attempt",
+  ConversationAttachmentV1
+>;
+
+declare const attemptCommandsAttachmentV1: RecordAttachmentFamily<
+  "attempt",
+  CommandsAttachmentV1
+>;
+
+declare const attemptUsageAttachmentV1: RecordAttachmentFamily<
+  "attempt",
+  UsageAttachmentV1
+>;
+
+declare const attemptTimingAttachmentV1: RecordAttachmentFamily<
+  "attempt",
+  AttemptTimingAttachmentV1
+>;
+
+declare const attemptDiagnosticsAttachmentV1: RecordAttachmentFamily<
+  "attempt",
+  AttemptDiagnosticsAttachmentV1
+>;
+
+declare const runTimingAttachmentV1: RecordAttachmentFamily<
+  "run",
+  RunTimingAttachmentV1
+>;
+
+declare const runDiagnosticsAttachmentV1: RecordAttachmentFamily<
+  "run",
+  RunDiagnosticsAttachmentV1
+>;
+```
+
+这七个 family 是 package-owned builtin。第三方不能以 niceeval namespace 重定义、替换或扩展它们；
+第三方长期事实使用自己的 versioned Attachment 与 projector。
+
+### capture constructor
+
+capture 是 official producer 的结构化入口，不是作者向 Record 追加万能 JSON 的入口。各方法的 input
+都是对应 durable schema 的闭合语义输入：collector mint identity、执行已登记的 redaction、检查每项
+上限，并把 opaque entity handle 转成 durable ref。input 不能携带 raw provider frame、raw error、
+path、blob key 或任意扩展 object。
+
+```ts
+declare const attemptObservabilityCaptureTypeId: unique symbol;
+declare const runObservabilityCaptureTypeId: unique symbol;
+declare const observabilityEntityRefTypeId: unique symbol;
+declare const runObservabilityEntityRefTypeId: unique symbol;
+declare const registeredCommandCaptureTypeId: unique symbol;
+
+interface AttemptObservabilityEntityRefV1 {
+  readonly [observabilityEntityRefTypeId]: typeof observabilityEntityRefTypeId;
+}
+
+interface RunObservabilityEntityRefV1 {
+  readonly [runObservabilityEntityRefTypeId]: typeof runObservabilityEntityRefTypeId;
+}
+
+interface RegisteredCommandCaptureV1 extends AttemptObservabilityEntityRefV1 {
+  readonly [registeredCommandCaptureTypeId]: typeof registeredCommandCaptureTypeId;
+}
+
+interface ObservabilityRedactorV1 {
+  readonly redact: (input: string) => {
+    readonly text: string;
+    readonly replacements: number;
+  };
+}
+
+interface ObservabilityAttemptCapture {
+  readonly [attemptObservabilityCaptureTypeId]: typeof attemptObservabilityCaptureTypeId;
+
+  readonly recordConversation: (
+    input: ConversationCaptureInputV1,
+  ) => Effect.Effect<
+    AttemptObservabilityEntityRefV1,
+    ObservabilityCaptureError
+  >;
+
+  readonly registerCommand: (
+    input: CommandManifestCaptureInputV1,
+  ) => Effect.Effect<
+    RegisteredCommandCaptureV1,
+    ObservabilityCaptureError
+  >;
+
+  readonly recordCommandResult: (
+    command: RegisteredCommandCaptureV1,
+    input: CommandResultCaptureInputV1,
+  ) => Effect.Effect<void, ObservabilityCaptureError>;
+
+  readonly recordUsage: (
+    input: UsageCaptureInputV1,
+  ) => Effect.Effect<
+    AttemptObservabilityEntityRefV1,
+    ObservabilityCaptureError
+  >;
+
+  readonly recordTiming: (
+    input: AttemptTimingCaptureInputV1,
+  ) => Effect.Effect<
+    AttemptObservabilityEntityRefV1,
+    ObservabilityCaptureError
+  >;
+
+  readonly recordDiagnostic: (
+    input: AttemptDiagnosticCaptureInputV1,
+  ) => Effect.Effect<
+    AttemptObservabilityEntityRefV1,
+    ObservabilityCaptureError
+  >;
+}
+
+interface ObservabilityRunCapture {
+  readonly [runObservabilityCaptureTypeId]: typeof runObservabilityCaptureTypeId;
+
+  readonly recordTiming: (
+    input: RunTimingCaptureInputV1,
+  ) => Effect.Effect<RunObservabilityEntityRefV1, ObservabilityCaptureError>;
+
+  readonly recordDiagnostic: (
+    input: RunDiagnosticCaptureInputV1,
+  ) => Effect.Effect<RunObservabilityEntityRefV1, ObservabilityCaptureError>;
+}
+
+declare const makeObservabilityAttemptCaptureV1: (input: {
+  readonly draft: RecordAttemptDraft;
+  readonly redactor: ObservabilityRedactorV1;
+}) => Effect.Effect<ObservabilityAttemptCapture, never>;
+
+declare const makeObservabilityRunCaptureV1: (input: {
+  readonly draft: RecordRunDraft;
+  readonly redactor: ObservabilityRedactorV1;
+}) => Effect.Effect<ObservabilityRunCapture, never>;
+```
+
+下列 input 都是 package-exported closed union：
+
+- ConversationCaptureInputV1、CommandManifestCaptureInputV1 与 CommandResultCaptureInputV1；
+- UsageCaptureInputV1、AttemptTimingCaptureInputV1 与 RunTimingCaptureInputV1；
+- AttemptDiagnosticCaptureInputV1 与 RunDiagnosticCaptureInputV1。
+
+每一种 input 都省略 durable entity identity。Attempt input 只能用 AttemptObservabilityEntityRefV1，
+Run input 只能用 RunObservabilityEntityRefV1，表达可选 direct cross-family ref。它们的 field、variant、
+limit 与 redaction 规则完全对应 Observability Attachments。实现不得用 index signature、unknown、
+JSON record 或 cast 扩张它们。
+
+capture 的 state 与 handles 是 package-branded。伪造 ref、来自另一 capture 的 ref、sealed capture 或
+对已完成 command 再写 result 都返回 ObservabilityCaptureError。redactor callback throw 是 defect；
+interruption 不变成 capture error，继续保留 Effect Cause。
+
+### whole-Run contract
+
+Attempt finalizer 全部停稳后才可 seal Attempt capture。Run teardown 停稳后才可 seal Run capture。
+constructor 将 capture 与一个 draft 绑定，只建立内存 collector，不写 filesystem。whole-Run contract
+先冻结并联合验证每个 Attempt 的五份与 Run 的两份 official Attachment，再调用绑定 draft 的
+generic writer 路径。
+
+```ts
+interface ObservabilityRecordContractV1 {
+  readonly write: () => Effect.Effect<void, RecordWriteError>;
+}
+
+declare const sealObservabilityRecordContractV1: (input: {
+  readonly run: ObservabilityRunCapture;
+  readonly attempts: readonly ObservabilityAttemptCapture[];
+}) => Effect.Effect<
+  ObservabilityRecordContractV1,
+  ObservabilityCaptureError | ObservabilityRecordContractError
+>;
+```
+
+sealObservabilityRecordContractV1 拒绝没有五份 Attempt family 或两份 Run family 的输入。它也验证
+collection、owner-local identity、command register/result 对、closure、timing tree、SourceItem frame
+与同 owner 的 direct cross-family ref。成功后 contract.write 只使用 generic writer 的 typed write
+路径。writer failure 保持 RecordWriteError；在它成功且其它 Run 事实也已写入前，不得创建 complete
+marker。
+
+### typed error
+
+```ts
+type ObservabilityCaptureError =
+  | {
+      readonly code: "observability-capture-sealed";
+      readonly owner: "run" | "attempt";
+    }
+  | {
+      readonly code: "observability-command-not-registered";
+      readonly commandId: CommandIdV1;
+    }
+  | {
+      readonly code: "observability-command-result-already-recorded";
+      readonly commandId: CommandIdV1;
+    }
+  | {
+      readonly code: "observability-input-not-safe";
+      readonly field: "text" | "manifest" | "diagnostic";
+    };
+
+type ObservabilityRecordContractError =
+  | {
+      readonly code: "observability-required-attachment-missing";
+      readonly owner: "run" | "attempt";
+      readonly schemaId: string;
+    }
+  | {
+      readonly code: "observability-owner-or-schema-invalid";
+      readonly owner: "run" | "attempt";
+      readonly schemaId: string;
+    }
+  | {
+      readonly code: "observability-identity-invalid";
+      readonly schemaId: string;
+      readonly entity: string;
+    }
+  | {
+      readonly code: "observability-cross-reference-invalid";
+      readonly schemaId: string;
+      readonly sourceId: string;
+    }
+  | {
+      readonly code: "observability-timing-tree-invalid";
+      readonly intervalId: IntervalIdV1;
+    }
+  | {
+      readonly code: "observability-source-frame-invalid";
+      readonly diagnosticId: DiagnosticIdV1;
+    };
+```
+
+这两个 union 只暴露 bounded safe code 与 identity。collector 采集不足应 seal safe partial value；
+不能安全形成 input 或整个 Run 联合验证失败才走 typed error。原始 exception、secret、path、stack 与
+payload 不进入 error value。
+
+### neutral projector
+
+RecordAttachmentProjector 和 defineRecordAttachmentProjector 仍由 Projection Library 公开。以下
+prebuilt projector 与其它第三方 projector 同样接受一份 available Attachment，且只读其自包含 value：
+
+版本仅属于 durable Attachment family/schema identity；projector 与 semantic view 的 ABI 不按磁盘版本命名。
+
+```ts
+type ConversationView = ConversationAttachmentV1;
+type UsageView = UsageAttachmentV1;
+type AttemptTimingView = AttemptTimingAttachmentV1;
+type RunTimingView = RunTimingAttachmentV1;
+type AttemptDiagnosticsView = AttemptDiagnosticsAttachmentV1;
+type RunDiagnosticsView = RunDiagnosticsAttachmentV1;
+
+type CommandStreamView = {
+  readonly text: string;
+  readonly retainedBytes: NonNegativeSafeInteger;
+  readonly totalSafeUtf8Bytes: NonNegativeSafeInteger;
+};
+
+type CommandsView = {
+  readonly collection: CommandsAttachmentV1["collection"];
+  readonly commands: readonly {
+    readonly commandId: CommandIdV1;
+    readonly manifest: CommandManifestV1;
+    readonly result: {
+      readonly outcome: CommandResultV1["outcome"];
+      readonly stdout: CommandStreamView;
+      readonly stderr: CommandStreamView;
+    };
+    readonly refs: readonly CommandsReferencesV1[];
+  }[];
+};
+
+declare const attemptConversationProjector: RecordAttachmentProjector<
+  "attempt",
+  ConversationView
+>;
+
+declare const attemptCommandsProjector: RecordAttachmentProjector<
+  "attempt",
+  CommandsView
+>;
+
+declare const attemptUsageProjector: RecordAttachmentProjector<
+  "attempt",
+  UsageView
+>;
+
+declare const attemptTimingProjector: RecordAttachmentProjector<
+  "attempt",
+  AttemptTimingView
+>;
+
+declare const attemptDiagnosticsProjector: RecordAttachmentProjector<
+  "attempt",
+  AttemptDiagnosticsView
+>;
+
+declare const runTimingProjector: RecordAttachmentProjector<
+  "run",
+  RunTimingView
+>;
+
+declare const runDiagnosticsProjector: RecordAttachmentProjector<
+  "run",
+  RunDiagnosticsView
+>;
+```
+
+ConversationView、UsageView、AttemptTimingView、RunTimingView、AttemptDiagnosticsView 与
+RunDiagnosticsView 保留对应 durable payload 的 value 语义。CommandsView 只把每条 stream 的
+inline/blob storage 归一成相同的 UTF-8 text、retainedBytes 与
+totalSafeUtf8Bytes。view 不暴露 RecordBlobRef、path、reader 或 stream。
+
+一个 projector 不计数、不聚合 command success、不计算 duration 或 critical path、不分组
+diagnostic，也不 join 另一 family。最终选定的公共 Record-to-Report 数据面负责声明多个
+projection；Calculation 才能组合它们。官方 Report 不得到私有 projector 或额外 reader capability。
+
+### migration ownership
+
+每个 owner-specific family 各自调用 defineRecordAttachmentFamily 并只注册相邻 migration edge。
+conversation、commands、usage、Attempt timing、Run timing、Attempt diagnostics 与 Run diagnostics
+不能共用一个万能 migration。payload、closure、entity identity 或 ref 解释改变时，只有受影响的
+family 发布下一个 schema identity。
+
+普通 reader 不自动 migrate。explicit migrate 依既有 migration registry 执行完整相邻链。converter
+只能读取同一 Attachment 的 complete value 与 own blob closure，不能读取另一个 owner、legacy event
+file、当前 worktree、provider input 或 private evidence 补值。
+
+## Frozen snapshot、reader 与 handles
+
+```ts
+type RecordAttemptRef = {
+  readonly originRunId: RunId;
+  readonly attemptId: AttemptId;
+};
+
+type RecordCoreRead<Value> =
+  | { readonly state: "available"; readonly value: Value }
+  | { readonly state: "missing" }
+  | {
+      readonly state: "core-invalid";
+      readonly issues: NonEmptyReadonlyArray<RecordIssue>;
+    };
+
+declare const frozenRecordViewTypeId: unique symbol;
+declare const frozenRecordRunTypeId: unique symbol;
+declare const frozenRecordAttemptTypeId: unique symbol;
+
+interface FrozenRecordRun {
+  readonly runId: RunId;
+  readonly startedAt: UtcMillis;
+  readonly completedAt: UtcMillis;
+  readonly expectedSlots: readonly SlotId[];
+  readonly [frozenRecordRunTypeId]: typeof frozenRecordRunTypeId;
+}
+
+interface FrozenRecordAttempt {
+  readonly attemptId: AttemptId;
+  readonly originRunId: RunId;
+  readonly [frozenRecordAttemptTypeId]: typeof frozenRecordAttemptTypeId;
+}
+
+interface FrozenRecordView {
+  readonly [frozenRecordViewTypeId]: typeof frozenRecordViewTypeId;
+  readonly warnings: readonly RecordWarning[];
+  readonly runs: readonly RecordCoreRead<FrozenRecordRun>[];
+
+  readonly run: (
+    runId: RunId,
+  ) => Effect.Effect<RecordCoreRead<FrozenRecordRun>, RecordReadError>;
+
+  readonly attempt: (
+    ref: RecordAttemptRef,
+  ) => Effect.Effect<RecordCoreRead<FrozenRecordAttempt>, RecordReadError>;
+
+  readonly readRunAttachment: <Payload>(
+    owner: FrozenRecordRun,
+    family: RecordAttachmentFamily<"run", Payload>,
+  ) => Effect.Effect<RecordAttachmentRead<Payload>, RecordReadError>;
+
+  readonly readAttemptAttachment: <Payload>(
+    owner: FrozenRecordAttempt,
+    family: RecordAttachmentFamily<"attempt", Payload>,
+  ) => Effect.Effect<RecordAttachmentRead<Payload>, RecordReadError>;
+}
+
+interface RecordReader extends FrozenRecordView {}
+
+declare const openRecordReader: (input: {
+  readonly root: RecordRoot;
+}) => Effect.Effect<
+  RecordReader,
+  RecordOpenError,
+  Scope.Scope | RecordFileSystem | RecordMaintenanceLock
+>;
+```
+
+`RecordReader` 与 `RecordWriteSession.view` 都是完整 `FrozenRecordView`，不是两个近似
+接口。open 一次冻结已完成 Run 集合与 warning；以后完成的新 Run 不进入这个 view。
+
+`FrozenRecordView`、`FrozenRecordRun`、`FrozenRecordAttempt` 与下文的 drafts 都是
+package-branded nominal handles。
+
+每次调用还用 package registry 检查 exact object identity、所属 snapshot 或 session、owner
+与 Scope 状态。
+
+伪造、复制、来自另一个 reader 的 handle 或已关闭的 handle 分别得到稳定的 typed handle、
+read 或 state error。registry 自己出现矛盾才是 defect。
+
+`RecordAttachmentValue` 不是这种 live handle；它是 reader 返回的 package-owned
+self-contained snapshot。
+
+`Scope.Scope` 可以让正常调用留在 `Effect.scoped` 内，但 TypeScript 不能静态证明一个
+generative handle 永远不会逃出 Scope。runtime identity 与 closed-state 检查因此不可省略。
+
+未完成 Run 不进入 `runs`，只产生：
+
+```ts
+type RecordIncompleteRunWarning = {
+  readonly code: "incomplete-run";
+  readonly runId: RunId;
+  readonly cleanupCommand: "niceeval clean";
+};
+```
+
+Core 损坏是成功 ADT。`missing` 不把未完成 Run 提升为业务对象。
+
+## Write session、draft 与发布
+
+```ts
+declare const recordRunDraftTypeId: unique symbol;
+declare const recordAttemptDraftTypeId: unique symbol;
+
+interface RecordWriteSession {
+  readonly view: FrozenRecordView;
+  readonly createRun: (input: {
+    readonly startedAt: UtcMillis;
+    readonly expectedSlots: readonly SlotId[];
+  }) => Effect.Effect<RecordRunDraft, RecordWriteError>;
+}
+
+interface RecordRunDraft {
+  readonly runId: RunId;
+  readonly [recordRunDraftTypeId]: typeof recordRunDraftTypeId;
+
+  readonly record: <E, R>(
+    write: RecordAttachmentWrite<"run", E, R>,
+  ) => Effect.Effect<void, RecordWriteError | E, R>;
+
+  readonly createAttempt: (input: {
+    readonly slotId: SlotId;
+  }) => Effect.Effect<RecordAttemptDraft, RecordWriteError>;
+
+  readonly reference: (input: {
+    readonly slotId: SlotId;
+    readonly attempt: FrozenRecordAttempt;
+  }) => Effect.Effect<void, RecordWriteError>;
+
+  readonly publish: (input: {
+    readonly completedAt: UtcMillis;
+  }) => Effect.Effect<RecordPublishReceipt, RecordWriteError>;
+}
+
+interface RecordAttemptDraft {
+  readonly attemptId: AttemptId;
+  readonly [recordAttemptDraftTypeId]: typeof recordAttemptDraftTypeId;
+
+  readonly record: <E, R>(
+    write: RecordAttachmentWrite<"attempt", E, R>,
+  ) => Effect.Effect<void, RecordWriteError | E, R>;
+}
+
+declare const openRecordWriteSession: (input: {
+  readonly root: RecordRoot;
+}) => Effect.Effect<
+  RecordWriteSession,
+  RecordOpenError | RecordWriteError,
+  | Scope.Scope
+  | RecordFileSystem
+  | RecordMaintenanceLock
+  | RecordWriterLock
+  | RecordEntropy
+>;
+```
+
+session 取得 shared maintenance lock 与 exclusive writer lock，并冻结 `view`。`reference` 只
+接受这个 `session.view` 中的 exact frozen Attempt；不能按 ID 猜 latest，也不能引用本
+session 尚未发布的 Run。
+
+每个 Run draft 的状态严格为：
+
+```text
+open → publishing → published
+                  ↘ failed
+```
+
+| 状态 | 行为 |
+|---|---|
+| `open` | 接受 record、createAttempt 与 reference，并跟踪所有在飞 mutation。 |
+| `publishing` | publish 已拒绝新的 mutation，并等待此前在飞 mutation 停稳。 |
+| `published` | `complete` 已创建；draft 同步 consumed，任何后续调用都失败。 |
+| `failed` | marker 前的 typed failure、defect 或 interruption 已使 draft 无法复用。 |
+
+`record<E, R>` 消费 builder 捕获的 blob Stream，并在 marker 前 exact encode、写入和验证。
+它把 explicit blob failure 保留为 `E`，把 filesystem 与 contract failure 放进
+`RecordWriteError`。同时进行的 mutation 失败后，publish 以稳定
+`record-draft-write-failed` state error 收口它；它不会把任意 `E` 伪装成成功。
+
+`publish` 先从 `open` 同步转入 `publishing`，再等待在飞 mutation。普通写入、final
+Core/reference/closure validation 与 receipt 数据构造都在 marker 前。任一 marker 前
+failure、defect 或 interruption 令 draft 进入 `failed`，不创建 `complete`，也不删除
+未完成目录。
+
+最终 commit 是短暂的 `Effect.uninterruptibleMask` 区域：
+
+1. final flush 并 close Run 的全部 durable handles；
+2. exclusive create 零字节 `complete`；
+3. 在同一不可中断区域同步把 draft 标为 `published` 并 consume；
+4. 退出区域后不再运行可失败的业务步骤。
+
+marker 前 interruption 不发布 Run。marker 后 fiber 仍可能在 receipt 被观察到前收到
+interruption；磁盘上的 published Run 仍有效。Scope finalizer 只释放 session、lock 与
+handle，绝不删除未完成目录。release finalizer failure 保留受控 diagnostic cause 后作为
+defect 传播；它既不冒充 `RecordWriteError`，也不被静默吞掉。
+
+```ts
+type RecordPublishReceipt = {
+  readonly runId: RunId;
+  readonly attempts: readonly {
+    readonly slotId: SlotId;
+    readonly ref: RecordAttemptRef;
+  }[];
+};
+```
+
+receipt 不保存 `publishedAt`；durable completion time 是 Run Core 的 `completedAt`。
+
+## Closure-aware 相邻 Attachment migration
+
+一个 schema version 是一个 definition。每条 converter 只连接同 owner、同 name 的精确
+`vN → vN+1`；family 拒绝跳过、倒序、缺边、重复边与分叉。
+
+```ts
+declare const recordAttachmentMigrationEdgeTypeId: unique symbol;
+declare const recordAttachmentMigrationTypeId: unique symbol;
+
+interface RecordAttachmentMigrationEdge<
+  Owner extends RecordAttachmentOwner,
+> {
+  readonly [recordAttachmentMigrationEdgeTypeId]: Owner;
+}
+
+interface RecordAttachmentMigration<
+  Owner extends RecordAttachmentOwner,
+  E,
+  R,
+> extends RecordAttachmentMigrationEdge<Owner> {
+  readonly [recordAttachmentMigrationTypeId]: {
+    readonly error: E;
+    readonly requirements: R;
+  };
+}
+
+interface RecordAttachmentMigrationTarget<
+  Owner extends RecordAttachmentOwner,
+  To,
+> {
+  readonly create: <const Blobs extends RecordBlobDrafts>(
+    build: (
+      blobs: RecordAttachmentBlobBuilder,
+    ) => RecordAttachmentBlobBuild<To, Blobs>,
+  ) => RecordAttachmentWrite<
+    Owner,
+    RecordBlobErrors<Blobs>,
+    RecordBlobRequirements<Blobs>
+  >;
+}
+
+declare const defineRecordAttachmentMigration: <
+  Owner extends RecordAttachmentOwner,
+  From,
+  To,
+  E,
+  R,
+>(input: {
+  readonly from: JsonRecordAttachmentDefinition<Owner, From>;
+  readonly to: JsonRecordAttachmentDefinition<Owner, To>;
+  readonly convert: (
+    source: RecordAttachmentValue<From>,
+    target: RecordAttachmentMigrationTarget<Owner, To>,
+  ) => Effect.Effect<RecordAttachmentWrite<Owner, E, R>, E, R>;
+}) => Either.Either<
+  RecordAttachmentMigration<Owner, E, R>,
+  RecordAttachmentMigrationDefinitionError
+>;
+
+declare const declareRecordAttachmentMigrationUnavailable: <
+  Owner extends RecordAttachmentOwner,
+  From,
+  To,
+>(input: {
+  readonly from: JsonRecordAttachmentDefinition<Owner, From>;
+  readonly to: JsonRecordAttachmentDefinition<Owner, To>;
+  readonly reason: string;
+}) => RecordAttachmentMigrationEdge<Owner>;
+
+declare const defineRecordAttachmentFamily: <
+  Owner extends RecordAttachmentOwner,
+  Current,
+>(input: {
+  readonly current: JsonRecordAttachmentDefinition<Owner, Current>;
+  readonly migrations: readonly RecordAttachmentMigrationEdge<Owner>[];
+}) => Either.Either<
+  RecordAttachmentFamily<Owner, Current>,
+  RecordAttachmentFamilyError
+>;
+```
+
+converter 的 `source` 是完整、已验证并 materialize 的 `RecordAttachmentValue<From>`，
+不是单独 payload。
+
+source payload 是 package-owned deep-frozen JSON snapshot。converter 不能靠 mutation
+改写其它 consumer。
+
+它只能通过 `source.blobs.bytes(ref)` 同步取得 old bytes。错误或伪造 ref 返回
+`Either.left(record-blob-handle-invalid)`；converter 必须映射它到自己的 explicit `E`。
+
+随后可用新的 `RecordBlobSource` 组成 target 写入 Stream。`target.create` 为每个目标 blob
+mint 新 ref，并捕获 target bytes。
+
+converter 可以不创建某个 old blob、为新 payload 改名、原样保留或转换 bytes。它不能把
+old ref 或手写 path 放进 target payload 冒充新 ref。
+
+converter callback 意外 throw 是 defect。`Effect.fail(e)` 保留 explicit `E`；interruption
+仍以 Cause 传播。`R = never` 只说明 Effect 类型不要求 NiceEval Layer。它不能证明
+converter 没有通过 ambient JavaScript API 进行 I/O。第三方 converter 是受信任 extension，
+不属于 hostile-code sandbox。
+
+`not-losslessly-migratable` 是显式 edge。它保留 old Attachment bytes，current family 的
+reader 返回 `migration-unavailable`。这是 settled data state，不是建议用户重新运行
+`niceeval migrate`。
+
+## Source identity migration group
+
+普通 Attachment migration 只能转换一个 owner 的一个 Attachment。`SourceItemId` 或 source-site
+source ref 的 identity 语义改变时，`niceeval.sources` 与
+`niceeval.assertion-source-sites` 改用以下 group；两条成员边不能同时作为普通 family migration
+注册。
+
+```ts
+type SourceItemIdMigration = {
+  readonly from: SourceItemId;
+  readonly to: SourceItemId;
+};
+
+interface SourceIdentitySourcesMigrationResult<E, R> {
+  readonly write: RecordAttachmentWrite<"run", E, R>;
+  readonly itemMapping: readonly SourceItemIdMigration[];
+}
+
+declare const sourceIdentityMigrationGroupTypeId: unique symbol;
+
+interface SourceIdentityMigrationGroup<E, R> {
+  readonly [sourceIdentityMigrationGroupTypeId]: {
+    readonly error: E;
+    readonly requirements: R;
+  };
+}
+
+type SourceIdentityMigrationGroupDefinitionError = {
+  readonly code: "source-identity-migration-group-invalid";
+  readonly issues: NonEmptyRecordIssues;
+};
+
+declare const defineSourceIdentityMigrationGroup: <
+  SourcesFrom,
+  SourcesTo,
+  SitesFrom,
+  SitesTo,
+  E,
+  R,
+>(input: {
+  readonly sources: {
+    readonly from: JsonRecordAttachmentDefinition<"run", SourcesFrom>;
+    readonly to: JsonRecordAttachmentDefinition<"run", SourcesTo>;
+    readonly convert: (
+      source: RecordAttachmentValue<SourcesFrom>,
+      target: RecordAttachmentMigrationTarget<"run", SourcesTo>,
+    ) => Effect.Effect<SourceIdentitySourcesMigrationResult<E, R>, E, R>;
+  };
+  readonly sourceSites: {
+    readonly from: JsonRecordAttachmentDefinition<"attempt", SitesFrom>;
+    readonly to: JsonRecordAttachmentDefinition<"attempt", SitesTo>;
+    readonly convert: (
+      source: RecordAttachmentValue<SitesFrom>,
+      input: {
+        readonly itemMapping: readonly SourceItemIdMigration[];
+        readonly target: RecordAttachmentMigrationTarget<"attempt", SitesTo>;
+      },
+    ) => Effect.Effect<RecordAttachmentWrite<"attempt", E, R>, E, R>;
+  };
+}) => Either.Either<
+  SourceIdentityMigrationGroup<E, R>,
+  SourceIdentityMigrationGroupDefinitionError
+>;
+
+declare const declareSourceIdentityMigrationUnavailable: <
+  SourcesFrom,
+  SourcesTo,
+  SitesFrom,
+  SitesTo,
+>(input: {
+  readonly sources: {
+    readonly from: JsonRecordAttachmentDefinition<"run", SourcesFrom>;
+    readonly to: JsonRecordAttachmentDefinition<"run", SourcesTo>;
+  };
+  readonly sourceSites: {
+    readonly from: JsonRecordAttachmentDefinition<"attempt", SitesFrom>;
+    readonly to: JsonRecordAttachmentDefinition<"attempt", SitesTo>;
+  };
+  readonly reason: string;
+}) => SourceIdentityMigrationGroup<never, never>;
+```
+
+definition 只接受 `niceeval.sources` 的相邻 Run-owned edge 与
+`niceeval.assertion-source-sites` 的相邻 Attempt-owned edge。registry 为一个 origin Run 只执行一次
+Sources converter，并验证 `itemMapping` 逐一包含该完整旧 manifest 的每个 `SourceItemId`，且每个 target
+id 在 mapping 中至多出现一次并存在于 target manifest。
+
+随后 registry 将同一份 frozen mapping 传给该 origin Run 中每个匹配的 source-sites Attachment converter。
+converter 不能按 path、digest、数组位置、当前 worktree 或自身局部猜测 source item 对应关系。若 group
+没有无损边，`declareSourceIdentityMigrationUnavailable` 保留原 bytes，并让需要 current source navigation
+的读取得到 `migration-unavailable`。
+
+只改变 Sources payload 或 blob closure、而不改变 source item identity 时，仍使用普通
+`RecordAttachmentMigration`。group 只保护必须同步改变的跨 owner semantic join；它不授权跨 owner
+blob、storage path 或 `RecordAttachmentValue` capability。
+
+## Clean 与显式 migration
+
+```ts
+declare const inspectIncompleteRuns: (input: {
+  readonly root: RecordRoot;
+}) => Effect.Effect<
+  readonly RecordIncompleteRun[],
+  RecordCleanError,
+  RecordFileSystem | RecordMaintenanceLock
+>;
+
+declare const cleanIncompleteRuns: (input: {
+  readonly root: RecordRoot;
+  readonly runIds: readonly RunId[];
+}) => Effect.Effect<
+  RecordCleanReceipt,
+  RecordCleanError,
+  RecordFileSystem | RecordMaintenanceLock | RecordWriterLock
+>;
+
+declare const planRecordMigration: (input: {
+  readonly root: RecordRoot;
+}) => Effect.Effect<
+  RecordMigrationPlan,
+  RecordMigrationPlanError,
+  RecordFileSystem | RecordMaintenanceLock | RecordGit | RecordMigrationRegistry
+>;
+
+declare const migrateRecord: (input: {
+  readonly plan: RecordMigrationPlan;
+  readonly authorization:
+    | { readonly state: "git-restore-point" }
+    | { readonly state: "accept-data-loss" };
+}) => Effect.Effect<
+  RecordMigrationReceipt,
+  RecordMigrationError,
+  RecordFileSystem | RecordMaintenanceLock | RecordGit | RecordMigrationRegistry
+>;
+```
+
+`RecordMigrationPlan` 是 package-created opaque value，绑定 root snapshot、source
+identities、installed registry 与 Git inspection。输入变化后执行返回
+`record-migration-plan-stale`。
+
+任何 Core 或 Attachment-only migration 在第一次修改 portable bytes 前，exclusive create
+并 sync `migration.in-progress`。它是 Record root 下预期为零字节的 exact sentinel。
+只要该 path 存在，即使内容损坏，open、plan 与 migrate 都 fail closed 为
+`record-migration-interrupted`。它们不自动恢复、不删除 sentinel，也不重跑 migration。
+
+所有 target Core、Attachment 与 blob bytes 先完成并 sync。target `record.json` 始终最后
+写入并 sync，即使 Attachment-only migration 的内容与 source 相同。只有随后删除并 sync
+`migration.in-progress`，root 才再次可读。中断、converter failure 或 I/O failure 留下
+sentinel；用户从 Git 或自己的备份恢复。
+
+preflight 在 sentinel 创建前验证 source decode、target identity、owner preservation、
+路径冲突与完整 converter 链。Core 缺 converter、family edge 不连续或 Core 无法保留
+unknown Attachment owner 时，plan 失败且不写文件。
+
+`migrationUnavailable` 与 `unsupported` 都保留 exact old bytes，并逐项出现在 plan 与
+receipt；两者不可混同。registry 把 extension 的 explicit converter failure 收口为稳定的
+`record-attachment-migration-step-failed`。它不把 explicit failure 改成 defect。
+
+## Typed error、Cause 与 Stream 边界
+
+```ts
+type RecordOpenError =
+  | RecordIoError
+  | RecordPermissionError
+  | RecordBusyError
+  | RecordBootstrapInvalid
+  | RecordMigrationRequired
+  | RecordMigrationInterruptedState
+  | RecordFormatUnsupported;
+
+type RecordReadError =
+  | RecordIoError
+  | RecordPermissionError
+  | RecordReaderClosed
+  | RecordHandleInvalid;
+
+type RecordWriteError =
+  | RecordIoError
+  | RecordPermissionError
+  | RecordBusyError
+  | RecordWriterClosed
+  | RecordDraftStateError
+  | RecordDraftHandleInvalid
+  | RecordReferenceInvalid
+  | RecordCoreInvalid
+  | RecordAttachmentEncodeError
+  | RecordAttachmentClosureInvalid;
+
+type RecordMigrationError =
+  | RecordIoError
+  | RecordPermissionError
+  | RecordBusyError
+  | RecordMigrationPlanStale
+  | RecordAttachmentMigrationStepFailed
+  | RecordMigrationInterruptedState;
+```
+
+每个 typed error 有稳定 `code` 与 bounded safe context。原始 filesystem error、Schema
+tree、stack 与任意第三方 message 不进入 portable data 或默认 CLI JSON；它们只留在
+受控 diagnostic cause。
+
+interruption 不在这些联合中。Effect finalizer 释放资源后继续传播原 Cause。内部不变量、
+registry 矛盾与 callback throw 是 defect，不能被转换成 data state 或 typed I/O error。
+
+Library 不公开用于 Attachment value 的 Stream。内部 Stream 只服务 Run 扫描、写入、
+migration 与形成读取 snapshot 的 blob I/O；`RecordAttachmentValue`、Sample、Projection
+与 Report 仍是有界、自包含值。
+
+## 最小调用形状
+
+```ts
+const program = Effect.scoped(
+  Effect.gen(function* () {
+    const reader = yield* openRecordReader({ root });
+    return reader.runs.filter((entry) => entry.state === "available");
+  }),
+).pipe(Effect.provide(NodeRecordLive));
+```
+
+Effect 应用直接组合并运行 `program`。Promise compatibility facade 如果存在，只能包在这条
+最外层 Effect 外面。

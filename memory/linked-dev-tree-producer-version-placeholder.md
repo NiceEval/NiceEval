@@ -1,5 +1,7 @@
 # link 开发树写出的 producer.version 恒是占位号,恢复提示照抄它就不可执行
 
+> 状态（2026-08-11）：这是旧 Results Format 的历史问题。新 `niceeval.record/v1` reader 不读取旧 Results，也不以 `producer.version` 拼可执行恢复命令；本页保留为旧格式证据，不构成新 Record 待办。边界见 [schemaVersion 历史存档](results-schema-version-history.md)。
+
 ## 现象
 
 版本不兼容的快照在扫描时给的提示是「用写这份结果的那个版本去看」:
@@ -23,8 +25,8 @@
 **不写回仓库**(见 CLAUDE.md「Release」)。所以 main 上的 `version` 是一个恒定占位值,
 而 `producer.version` 忠实地记录了写盘那一刻 `package.json` 里的东西。
 
-落盘侧没有做错任何事:`producer` 的用途在契约里就是「拼 npx 提示」,不是 schema 判据
-([字段规则](../docs/feature/record/architecture.md#字段规则))。
+落盘侧没有做错任何事:`producer` 的用途在旧契约里就是「拼 npx 提示」,不是 schema 判据
+([旧 Results 格式历史](results-schema-version-history.md))。
 错的是这个用途在「跑的不是已发布版本」时无解——工作树没有可安装的坐标。
 
 ## 修法

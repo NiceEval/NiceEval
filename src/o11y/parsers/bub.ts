@@ -15,6 +15,7 @@ import type { StreamEvent, Usage, ToolName, JsonValue } from "../../types.ts";
 import type { ParsedTranscript } from "./index.ts";
 import { GENERIC_VERB_ALIASES, normalizeToolName as normalizeShared } from "../tool-names.ts";
 import { normalizeJsonValue } from "../../shared/json-value.ts";
+import { notCommandProjection, opaqueCommandProjection } from "../command-projection.ts";
 
 /** Bub 特有别名(fs.* / web.* 命名空间与裸 read/write/edit)+ 裸动词;通用别名走基表。 */
 export const BUB_TOOL_ALIASES: globalThis.Record<string, ToolName> = {
@@ -29,6 +30,13 @@ export const BUB_TOOL_ALIASES: globalThis.Record<string, ToolName> = {
 
 function normalizeToolName(name: string): ToolName {
   return normalizeShared(name, BUB_TOOL_ALIASES);
+}
+
+/** Bub tape 的 `bash` 是原生 shell action；tape 只保留 source，不能证明 argv。 */
+function commandProjectionForBubTool(name: string) {
+  return name.toLowerCase() === "bash"
+    ? opaqueCommandProjection("unsupported-protocol")
+    : notCommandProjection();
 }
 
 function get(obj: unknown, key: string): unknown {
@@ -117,7 +125,13 @@ export function parseBubTranscript(raw: string | undefined): ParsedTranscript {
     events.push({
       type: "operation.started",
       operationId: callId,
-      operation: { kind: "tool", name: originalName, input, tool: normalizeToolName(originalName) },
+      operation: {
+        kind: "tool",
+        name: originalName,
+        input,
+        tool: normalizeToolName(originalName),
+        command: commandProjectionForBubTool(originalName),
+      },
     });
     return callId;
   };

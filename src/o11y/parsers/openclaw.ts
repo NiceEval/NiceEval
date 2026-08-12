@@ -13,6 +13,7 @@ import type { StreamEvent, Usage, ToolName, JsonValue } from "../../types.ts";
 import type { ParsedTranscript } from "./index.ts";
 import { GENERIC_VERB_ALIASES, normalizeToolName as normalizeShared } from "../tool-names.ts";
 import { normalizeJsonValue } from "../../shared/json-value.ts";
+import { notCommandProjection, opaqueCommandProjection } from "../command-projection.ts";
 
 /**
  * OpenClaw 特有工具别名(CLI 自己的 transcript 词汇,不会撞用户域名,裸动词可 opt-in)
@@ -30,6 +31,14 @@ export const OPENCLAW_TOOL_ALIASES: globalThis.Record<string, ToolName> = {
 
 function normalizeToolName(name: string): ToolName {
   return normalizeShared(name, OPENCLAW_TOOL_ALIASES);
+}
+
+/** OpenClaw 的 exec/process parts 标识 shell action，但 transcript 不提供原生 argv。 */
+function commandProjectionForOpenClawTool(name: string) {
+  const lower = name.toLowerCase();
+  return lower === "exec" || lower === "process"
+    ? opaqueCommandProjection("unsupported-protocol")
+    : notCommandProjection();
 }
 
 function get(obj: unknown, key: string): unknown {
@@ -176,6 +185,7 @@ export function parseOpenClawTranscript(raw: string | undefined): ParsedTranscri
                 name,
                 input: coerceArgs(get(part, "arguments") ?? get(part, "args") ?? get(part, "input")),
                 tool: normalizeToolName(name),
+                command: commandProjectionForOpenClawTool(name),
               },
             });
           }

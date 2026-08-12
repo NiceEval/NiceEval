@@ -76,11 +76,11 @@ api-validation   claude-code             pass@3 = 1/3 (33%)    mean 41s
 Beyond pass rate, you should also compare mean time, tokens, cost, and failure types.
 
 ```bash
-npx niceeval show --exp compare-models
-npx niceeval view
+npx niceeval show --latest --experiment models
+npx niceeval view --latest --experiment models
 ```
 
-`show --exp` matches id prefixes by path segment, so a group name selects every configuration in that group, without accidentally matching another group whose name merely looks similar as a string. `view` loads the full results by default and lets you pick a group directly on the page; `--exp` is just an optional narrowing at startup.
+Each Experiment uses its own `evals` selection to choose evals. Use `--latest --experiment <id>` to select the final completed Run for each named Experiment before you compare them.
 
 ## Design advice
 

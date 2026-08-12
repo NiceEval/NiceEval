@@ -1,158 +1,76 @@
 ---
-title: "Rerun only the evals affected by a change"
-sidebarTitle: "Reruns and cache"
-description: "NiceEval carries completed attempts into the next run and dispatches only the missing or invalidated work. Learn what invalidates results, how to inspect the plan, and when to use --accept or --rerun."
+title: "Rerun and Carry Results"
+sidebarTitle: "Rerun and Carry"
+description: "See whether each slot executes, is adopted automatically, or is accepted by an operator, and how those relationships enter the Record."
 ---
 
-When you repeat the same command, NiceEval carries completed results forward instead of paying for the same Agent and Sandbox work again. Only missing or invalidated Attempts are dispatched.
+Every Invocation creates a new Run. Its expected slots define that run's denominator, and each slot has at most one Member. A Member has one of three forms:
 
-```text
-╭─ PLAN ──────────────────────────────────────────╮
-│ 36 attempts · 36 evals × 1 configs              │
-│ 24 of 36 reused · 12 to run                     │
-╰─────────────────────────────────────────────────╯
-```
-
-Use `--dry` to inspect the attempt-level plan before dispatch. Human output keeps the Verdict of every carried result:
-
-```text
-compare/codex  memory/passed       carried (passed)
-compare/codex  memory/failed       carried (failed)
-compare/codex  memory/mixed        carried (2 passed · 1 failed)
-compare/codex  memory/partial      carried 2/3 (1 passed · 1 failed) · errored 1/3
-```
-
-For a row with multiple Attempts, each dispatched reason uses the same `N/total` form. The default policy carries matching `passed` and `failed` Verdicts, while `errored` and `skipped` Attempts run again. Bare `--rerun` actively reruns `failed` Attempts; `--rerun all` reruns every selected Attempt.
-
-## Understand the invalidation scope
-
-The scope follows the input that changed:
-
-| Change | What runs |
+| Member | When it appears |
 | --- | --- |
-| Prompt, assertion, comment, or formatting in one `.eval.ts` file | That eval reruns |
-| A shared source file imported by 30 evals | Those 30 evals rerun |
-| Experiment `model`, `reasoningEffort`, or any `flags` key | Every selected eval reruns |
-| `labels`, description, comments, or experiment-field order | Nothing reruns |
-| `attempts` from 3 to 5 | The existing 3 carry forward; the missing 2 run |
-| A larger `timeoutMs` | Completed results carry forward |
-| A smaller `timeoutMs` | Results whose execution exceeded the new limit rerun |
-| A different Sandbox `template`, `image`, or `snapshotId` | Every affected eval reruns |
-| A rebuilt image under the same name, an Agent CLI upgrade, or a changed external service | The fingerprint cannot see it; use `--rerun all` |
+| `executed` | The Runner executes this slot. |
+| `carried` | The planner automatically adopts an existing Attempt. |
+| `accepted` | An operator explicitly adopts an existing Attempt. |
 
-Write stable experimental conditions in `flags`. Put values that are known only after execution, such as a tunnel URL, in `ctx.fact()`. Keep report-only grouping coordinates in `labels`.
+All three Members refer to one Attempt. The Attempt's `origin` stays unchanged, so an adopted slot reads that Attempt's current Verdict, Usage, and other channel values.
 
-## A cached Attempt must pass every gate
+## Inspect the plan first
 
-The fingerprint is only one gate:
+Use `--dry` before a run. It reads the planning channels from a quiescent Record and lists why each slot will execute or be adopted.
 
-| Gate | Requirement |
-| --- | --- |
-| Terminal state | The verdict is `passed` or `failed`; `errored` and `skipped` always rerun |
-| Fingerprint | The eval fingerprint matches, or every difference was authorized with `--accept` |
-| Eligibility | Its execution time does not exceed the currently resolved `timeoutMs` |
-| Rerun policy | The current `--rerun` mode still trusts that verdict |
-| Execution mode | The Attempt is outside the current `--keep-sandbox` band |
-
-Carry-forward works per Attempt. Increasing `attempts` therefore fills only the missing ordinals, and an interrupted Run can contribute every completed terminal Attempt even when the Run itself was never finalized.
-
-## Know which files enter the fingerprint
-
-For each eval, NiceEval fingerprints:
-
-- The complete bytes of its `.eval.ts` file.
-- Every project-local module in its static import graph, recursively.
-- Files registered by `loadYaml`, `loadJson`, `loadText`, or `loadCriteria`.
-- The resolved experiment configuration and the eval's Sandbox case identity.
-
-Packages under `node_modules`, dynamic `import()`, and files read directly with `fs` are outside this closure. Use NiceEval's loaders for criteria files. When an external input changes outside the fingerprint, explicitly revalidate with `--rerun`.
-
-## Move runtime coordinates out of flags
-
-A tunnel address changes every time the service starts. Putting it in `flags` invalidates every completed result whenever the address changes. Record it as an execution fact instead:
-
-```ts
-sandboxSetup(): SandboxHook {
-  return async (sandbox, ctx) => {
-    ctx.fact("nowledge.endpoint", env.url);
-    await sandbox.writeText(".nowledge/env", `NMEM_URL=${env.url}\n`);
-  };
-}
+```sh
+npx niceeval exp checkout --dry
 ```
 
-Carried results retain the address they actually used. A newly started Attempt records its new address.
-
-## Move a key without rerunning the previous batch
-
-If a runtime coordinate was already stored in `flags`, moving it to `ctx.fact()` changes the flags bag and invalidates the earlier results. Run `--dry` first to see why the whole batch would rerun:
-
-```bash
-npx niceeval exp compare --dry
-```
+Example output:
 
 ```text
-plan: 36 attempts · 36 evals × 1 configs · attempts 1
-0 carried in from cache · 36 to run
-
-compare/baseline  01  previous-result passed: config:flags.tunnelUrl changed (https://a1b2.trycloudflare.com → https://c3d4.trycloudflare.com)
-  prior:  @1A1B2C3D4E5F (passed)
-  accept: niceeval accept @1A1B2C3D4E5F
+PLAN
+checkout  cart/add-item  ordinal 0  carried @01J8ZK3M6P4T7V9X2C5N8QW0RY
+checkout  cart/add-item  ordinal 1  execute: input-identity-changed
 ```
 
-`previous-result passed` means that the historical verdict passed, but the current fingerprint has changed, so the result cannot be carried from cache yet. The difference explanation and execution evidence are separate: `fingerprint version changed` only means that the input difference cannot be expanded from the current manifest. It does not mean that execution, diff, or timing evidence is gone. Open the locator, verify that the verdict still holds, and then accept it:
+If information is missing, invalid, unsupported, or from a different domain, the planner explains the reason and executes that slot instead of treating it as adoptable.
 
-```bash
-npx niceeval show @1A1B2C3D4E5F --timing
-npx niceeval accept @1A1B2C3D4E5F
-npx niceeval accept @1A1B2C3D4E5F @5E6F7G8H9J0K
+## Conditions for automatic adoption
+
+An Attempt becomes a `carried` Member only when all of these conditions hold:
+
+- Its Verdict is a terminal Verdict that can be adopted.
+- Its input identity matches the current input.
+- Its execution duration satisfies the current timeout.
+- This Invocation's `--rerun` setting permits the Verdict to be adopted.
+- This Invocation does not require a real execution through `--keep-sandbox`.
+
+Input and configuration identity are opaque values with domains. NiceEval compares their values only when the domains match exactly. When it creates a `carried` Member, it writes eligibility, identity, and reason into the target Run's `niceeval.actions` channel. The Member itself does not copy those explanations or the Attempt's business values.
+
+## Control the rerun scope
+
+```sh
+# By default, adopt eligible passed and failed Attempts
+npx niceeval exp checkout
+
+# Rerun failed Attempts
+npx niceeval exp checkout --rerun
+
+# Execute every selected slot again
+npx niceeval exp checkout --rerun all
 ```
 
-```text
-╭─ PLAN ─────────────────────────────────────────────╮
-│ Accepted @1A1B2C3D4E5F as @1D4C3B2A1F5E          │
-│ Current fingerprint: 5f3b…                      │
-╰──────────────────────────────────────────────────╯
+Changing `--rerun` affects this Invocation only. It never changes an existing Run or Attempt.
+
+## Explicitly accept an existing Attempt
+
+When automatic-adoption conditions do not hold but an existing Attempt is still valid, use its complete locator:
+
+```sh
+npx niceeval accept @01J8ZK3M6P4T7V9X2C5N8QW0RY
 ```
 
-Acceptance writes a new result under the current fingerprint and records its source locator, old and new fingerprints, and difference summary. When you pass several explicit locators, NiceEval validates all of them before writing anything. If any locator fails, it writes nothing. Otherwise it groups them by experiment and creates one snapshot per experiment. One command may accept results from several experiments, but it never accepts unlisted results merely because they share the same difference, and there is no bulk-accept option.
+`accept` checks every input before it creates a Run with `accepted` Members. It writes the operator's reason, differences, and eligibility into that Run's `niceeval.actions` channel. It does not modify the source Attempt or copy the source Attempt's channel values.
 
-Fingerprint-version migrations that NiceEval knows and can prove equivalent carry automatically and record `migratedFrom`. Migrations that cannot be proven appear as `previous-result` and require acceptance or a rerun. The output does not use the ambiguous phrase `details unavailable`.
+## An edit affects the next read
 
-Very old records may contain locators that do not follow the current format. In that case, `--dry` prints `accept: unavailable (legacy locator …)` instead of suggesting a command that must fail. Rerun that eval to produce a new locator that can be accepted.
+After a directory becomes quiescent, editing an Attempt's Verdict, Usage, or another channel changes what a later read of a `carried` or `accepted` Member sees. If an Attempt or its reference is invalid, the Sample marks that slot `invalid`, not `not-recorded`.
 
-Historical `passed` and `failed` results can be accepted. Whether a result came from Sandbox reuse, or whether the current experiment declares `sandboxReuse: true`, does not affect eligibility. Results with `errored` or `skipped` verdicts cannot be accepted, and neither can execution modes that require a real Sandbox to remain available. The command explains the reason instead of silently running the experiment.
-
-## Force revalidation outside the fingerprint
-
-`--rerun` has three modes:
-
-| Form | Results still trusted | What runs |
-| --- | --- | --- |
-| Omitted | `passed` and `failed` | Missing, `errored`, and `skipped` Attempts |
-| `--rerun` or `--rerun failed` | `passed` only | The above, plus every `failed` Attempt |
-| `--rerun all` | None | Every selected Attempt |
-
-```bash
-npx niceeval exp compare --rerun
-npx niceeval exp compare --rerun all
-```
-
-`--accept` only opens the fingerprint gate. With `--rerun failed`, an accepted historical `failed` result still reruns, while an accepted `passed` result may carry forward. `--accept` and `--rerun all` are mutually exclusive because one authorizes cache use and the other rejects all cached results.
-
-## Resume an interrupted Run
-
-An Attempt writes `result.json` after its cleanup chain completes. Its trustworthiness does not depend on the enclosing Run reaching a normal end. After Ctrl-C, `kill -9`, or a CI timeout, repeat the same command: completed terminal Attempts carry forward and only the missing work runs.
-
-Concurrent invocations use the same rule. Before dispatch, each eval takes a lease and checks the records again; work completed by another invocation carries forward, while still-missing Attempts run locally.
-
-## Execution modes and carry
-
-- An experiment with `sandboxReuse: true` follows the same carry rule as a regular experiment. Terminal Attempts with a matching fingerprint carry forward; only Attempts that are not carried run in the invocation's shared Sandbox. `--rerun` can still require those Attempts to execute again.
-- `--keep-sandbox` requires a real execution to leave a live debugging environment. Attempts inside the requested keep band rerun because a carried result has no Sandbox to keep.
-
-## Next steps
-
-- [Inspect and publish results](/tutorials/viewing-results)
-- [Run NiceEval in CI](/tutorials/ci-integration)
-- [Configure Sandbox providers](/tutorials/sandbox-providers)
-- [Understand the runner](/explanation/runner)
+After a run completes, select its results with the receipt's `runIds`. See [Viewing Results](/tutorials/viewing-results) for the viewing workflow.

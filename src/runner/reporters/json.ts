@@ -1,5 +1,5 @@
 // JSON / JUnit 报告器:把运行结果落成机器可读 artifact,接 CI 或下游 dashboard。
-// 两者都是「整次运行结束时写一份聚合文件」(不像 Artifacts 的逐 attempt 增量落盘),见
+// 两者都是「整次运行结束时写一份聚合文件」,见
 // docs/feature/experiments/cli.md「输出流和落盘节奏」——一旦开始写就必须原子替换目标:
 // 半途失败(磁盘满、权限问题、进程被杀)不能把上一次成功的 JSON/JUnit 覆盖成截断文件,
 // 那会让 CI 读到一份看似存在、实际损坏的报告,比「文件不存在」更危险。
@@ -8,6 +8,7 @@ import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { InvocationSummary, Reporter } from "../../types.ts";
+import { attemptTerminalOf, factRecordOf, materializeFactRecord, scoreOutcomeOf, verdictForTerminal } from "../../record/fact-record.ts";
 
 /**
  * 同目录 temp → write → rename 的原子替换:内容先整体写进同目录下的临时文件,写完才
@@ -36,7 +37,13 @@ async function atomicWriteFile(path: string, content: string): Promise<void> {
 export function Json(path: string): Reporter {
   return {
     async onInvocationComplete(summary: InvocationSummary) {
-      await atomicWriteFile(path, JSON.stringify(summary, null, 2));
+      // Fresh runner traces are non-enumerable until the Record bridge sees
+      // them. JSON is also a public observation surface, so materialize every
+      // result instead of letting JSON.stringify silently erase Fact/use data.
+      await atomicWriteFile(
+        path,
+        JSON.stringify({ ...summary, results: summary.results.map((result) => materializeFactRecord(result)) }, null, 2),
+      );
     },
   };
 }
@@ -44,30 +51,67 @@ export function Json(path: string): Reporter {
 export function JUnit(path: string): Reporter {
   return {
     async onInvocationComplete(summary: InvocationSummary) {
-      const cases = summary.results
-        .map((r) => {
+      const mapped = summary.results.map((r) => {
           const name = xmlAttr(`${r.id} [${r.agent}${r.model ? "/" + r.model : ""}]`);
           const time = (r.durationMs / 1000).toFixed(3);
-          if (r.verdict === "errored") {
-            return `    <testcase name="${name}" time="${time}"><error message="${xmlAttr(r.error?.message ?? "execution error")}"/></testcase>`;
+          const terminal = attemptTerminalOf(r);
+          const verdict = verdictForTerminal(r);
+          if (terminal === "unavailable" || terminal === "errored" || verdict === "errored") {
+            return {
+              verdict: "errored" as const,
+              xml: `    <testcase name="${name}" time="${time}"><error message="${xmlAttr(errorMessage(r, terminal))}"/></testcase>`,
+            };
           }
-          if (r.verdict === "failed") {
-            const msg = xmlAttr(r.assertions.filter((a) => a.outcome === "failed").map((a) => a.name).join("; "));
-            return `    <testcase name="${name}" time="${time}"><failure message="${msg}"/></testcase>`;
+          if (terminal === "invalid" || verdict === "failed") {
+            return {
+              verdict: "failed" as const,
+              xml: `    <testcase name="${name}" time="${time}"><failure message="${xmlAttr(failureMessage(r, terminal))}"/></testcase>`,
+            };
           }
-          if (r.verdict === "skipped") {
-            return `    <testcase name="${name}" time="${time}"><skipped message="${xmlAttr(r.skipReason ?? "")}"/></testcase>`;
+          if (terminal === "skipped") {
+            const score = scoreOutcomeOf(r);
+            return {
+              verdict: "skipped" as const,
+              xml: `    <testcase name="${name}" time="${time}"><skipped message="${xmlAttr(r.skipReason ?? (score?.status === "skipped" ? score.reason : ""))}"/></testcase>`,
+            };
           }
-          return `    <testcase name="${name}" time="${time}"/>`;
-        })
-        .join("\n");
+          return { verdict: "passed" as const, xml: `    <testcase name="${name}" time="${time}"/>` };
+        });
+      const cases = mapped.map((item) => item.xml).join("\n");
+      const failures = mapped.filter((item) => item.verdict === "failed").length;
+      const errors = mapped.filter((item) => item.verdict === "errored").length;
+      const skipped = mapped.filter((item) => item.verdict === "skipped").length;
       const xml =
         `<?xml version="1.0" encoding="UTF-8"?>\n` +
-        `<testsuite name="niceeval" tests="${summary.results.length}" failures="${summary.failed}" errors="${summary.errored}" skipped="${summary.skipped}" time="${(summary.durationMs / 1000).toFixed(3)}">\n` +
+        `<testsuite name="niceeval" tests="${summary.results.length}" failures="${failures}" errors="${errors}" skipped="${skipped}" time="${(summary.durationMs / 1000).toFixed(3)}">\n` +
         `${cases}\n</testsuite>\n`;
       await atomicWriteFile(path, xml);
     },
   };
+}
+
+function failureMessage(result: InvocationSummary["results"][number], terminal: ReturnType<typeof attemptTerminalOf>): string {
+  const outcome = scoreOutcomeOf(result);
+  if (terminal === "invalid" && outcome?.status === "invalid") {
+    return `invalid · earned ${outcome.earnedScore} · credited ${outcome.creditedScore}`;
+  }
+  const fact = factRecordOf(result);
+  const failures = fact?.factUses.flatMap((use) =>
+    use.useKind === "verdict" && use.outcome === "failed" ? [use.label ?? use.key ?? use.method] : [],
+  ) ?? [];
+  if (failures.length > 0) return failures.join("; ");
+  return result.error?.message ?? "assertion failure";
+}
+
+function errorMessage(result: InvocationSummary["results"][number], terminal: ReturnType<typeof attemptTerminalOf>): string {
+  const outcome = scoreOutcomeOf(result);
+  if (terminal === "unavailable" && outcome?.status === "unavailable") {
+    return `unavailable · ${outcome.issues.map((issue) => issue.reason).join("; ")}`;
+  }
+  if (terminal === "errored" && outcome?.status === "errored") {
+    return `errored · ${outcome.errors.map((issue) => issue.error.message).join("; ")}`;
+  }
+  return result.error?.message ?? "execution error";
 }
 
 function xmlAttr(s: string): string {

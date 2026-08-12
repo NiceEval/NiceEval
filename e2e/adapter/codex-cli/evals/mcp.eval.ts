@@ -1,5 +1,5 @@
 // 协议行为:MCP——stdio 与远程 HTTP 两种形态的 `[mcp_servers.<name>]` 都能被调用;反例断言
-// 未挂载的 server `notCalledTool`(见 docs/engineering/testing/e2e/adapter/codex-cli.md)。
+// 未挂载的 server `calledTool` 调用计数为零(见 docs/engineering/testing/e2e/adapter/codex-cli.md)。
 //
 // stdio:官方 @modelcontextprotocol/server-everything 的确定性 get-sum 工具(挂成 "e2e")。
 // 远程 HTTP:DeepWiki 的公开、免鉴权 Streamable HTTP 端点(挂成 "deepwiki"),真实工具
@@ -13,9 +13,11 @@
 // 本仓库设计阶段真机复现过,两轮各自的 mcp_tool_call 都恰好落在 item_3,call ID 在这条会话的
 // 累积事件流里发生碰撞,导致按 call ID 配对结果与调用错位。同一轮内地道具编号连续、不会碰撞。
 import { defineEval } from "niceeval";
+import { includes } from "niceeval/expect";
 
 export default defineEval({
-  description: "MCP 挂载:stdio 与远程 HTTP 两种形态在同一轮里都真实调用且入参正确;反例断言未挂载的 server",
+  description:
+    "MCP 挂载:stdio 与远程 HTTP 两种形态在同一轮里都真实调用且入参正确;反例断言未挂载的 server",
   async test(t) {
     const turn = await t.send(
       "In this single turn, call two different MCP tools and report both results: " +
@@ -24,19 +26,37 @@ export default defineEval({
         '(call it with repoName "openai/codex", do not guess). ' +
         "Report the sum, then a comma-separated list of the top-level topic names you found.",
     );
-    await turn.succeeded().stopOnFailure();
+    await turn.succeeded().orStop();
 
     await t.group("stdio MCP 工具调用且入参正确", () => {
-      t.calledTool("e2e.get-sum", { status: "completed", input: { a: 100, b: 23 } });
+      t.calledTool("e2e.get-sum", {
+        input: (input) =>
+          typeof input === "object" &&
+          input !== null &&
+          !Array.isArray(input) &&
+          Object.is((input as Record<string, unknown>)["a"], 100) &&
+          Object.is((input as Record<string, unknown>)["b"], 23),
+        status: "completed",
+      });
     });
-    turn.messageIncludes("123");
+    t.check(turn.message, includes("123"));
 
     await t.group("远程 HTTP MCP 工具调用且入参正确", () => {
-      t.calledTool("deepwiki.read_wiki_structure", { status: "completed", input: { repoName: "openai/codex" } });
+      t.calledTool("deepwiki.read_wiki_structure", {
+        input: (input) =>
+          typeof input === "object" &&
+          input !== null &&
+          !Array.isArray(input) &&
+          Object.is(
+            (input as Record<string, unknown>)["repoName"],
+            "openai/codex",
+          ),
+        status: "completed",
+      });
     });
 
     // 反例:这个仓库没有挂载天气 MCP server,同一段事件流不应该出现这个工具调用——
     // 证明转换器不会为不存在的挂载编造归一结果。
-    t.notCalledTool("weather.get_weather");
+    t.calledTool("weather.get_weather", { count: 0 });
   },
 });

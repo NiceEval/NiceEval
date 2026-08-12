@@ -90,7 +90,7 @@ Overrides the project-level / CLI timeout for a single attempt (milliseconds), t
 metadata?: Record<string, JsonValue>;
 ```
 
-Arbitrary extra metadata, passed through as-is into `EvalResult`; does not participate in scheduling or assertion evaluation, and is meant for custom reporters to consume.
+Arbitrary extra metadata, saved as Attempt Provenance; does not participate in scheduling or assertion evaluation, and is meant for custom reporters to consume.
 
 #### `diff`
 
@@ -286,7 +286,7 @@ An alias for `progress({ message: msg })` (debug logging); does not appear in th
 skip(reason: string): never;
 ```
 
-Immediately aborts this eval and marks it skipped (verdict / `EvalResult.skipReason`); `reason` cannot be empty.
+Immediately aborts this eval and forms a `skipped` Verdict in the `niceeval.verdict` channel; `reason` cannot be empty.
 
 #### `check`
 

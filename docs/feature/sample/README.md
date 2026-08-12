@@ -1,60 +1,65 @@
-# Sample —— 当前结果集
+# Sample：从已发布 Run 形成分析分母
 
-[Record](../record/README.md) 回答「盘上有什么」。
-Sample 回答「当前配置下，每道题现在有什么有效结果」。
+[Record](../record/README.md) 保存 immutable Run。Analysis selection 从 frozen `RecordReader` 选择 Run，形成 Scope-bound `AnalysisSampleHandle`；其中的 `.sample` 是可以离线消费的纯 `AnalysisSample`。
 
-```typescript
-import { openRecord } from "niceeval/record";
-import { loadProjectCurrentTarget, projectCurrentSample } from "niceeval/sample";
-
-const record = await openRecord(".niceeval");
-const { target } = await loadProjectCurrentTarget(process.cwd());
-const sample = projectCurrentSample(record, target, { experiments: "compare/" });
-
-sample.attempts; // 当前配置下每道题选出的 Attempt
-sample.coverage; // 完整分母与结构化缺口原因
-sample.issues;   // 无法落到单题缺口上的读取问题
+```text
+AnalysisSelectionRequest + RecordReader
+                  │
+                  ▼
+           AnalysisSampleHandle
+             │             │
+             │ live        └─ .sample：关闭 reader 后仍可显示的纯值
+             ▼
+       Record Projection
 ```
 
-## 唯一心智
+`AnalysisSample` 不写回 Record。它保存 selected Run、完整 expected SlotId 分母、Member/Attempt 精确引用及 included、not-recorded、core-invalid、excluded 四态。
 
-主报告只有一份 current 结果集。
-每个 Experiment × Eval 的 Run 级 `configHash`、逐 Eval `configHash` 与 canonical fingerprint 都匹配项目 Target，且 attempt 序号没有超过当前 `attempts`，才进入 `sample.attempts`；否则进入 coverage 缺口。
+## Selection 与 reuse planning 分开
 
-Attempt 是实际执行、携带合入还是从可比旧 Run 补入，只属于 provenance 事实，不改变它是不是 current，也不改变计票。
-身份不匹配的旧结果只用于解释缺口和进入 History，不混进当前报告。Eval 源码、loader/data、判据或 physical plan 变化都会改变 fingerprint；只比较 Run `configHash` 不足以证明 current。
+Analysis selection 回答“分析哪些已发布 Run”。reuse planning 回答“当前 ExecutionTarget 的哪些 Slot 可以沿用，哪些是 gap”。
 
-## 缺口不是第二套结果
+```text
+RecordReader ── analysis selection ──→ AnalysisSampleHandle
 
-缺口统一表示「当前配置下没有结果」，并带下一步所需的原因：
+RecordWriteSession.view ── reuse planning ──→ ExecutionReusePlan
+```
 
-- `never-run`：Record 历史里从未出现这道题的物理 Attempt。
-- `previous-result`（旧结果缺口）：历史里有结果，但没有一条能代表当前配置；缺口可带最近旧 locator，供用户重跑或显式 `niceeval accept`。
-- `unverifiable-result`：只有缺 fingerprint 或 config hash 的历史结果；它们不能被证明为 current，也不冒充从未运行。
+Report 不接收 execution gap，planner 也不把历史 Sample 的 not-recorded 当成待执行任务。
 
-三种原因都不进入通过率、得分、成本或样本命中范围的分子。
-原因只帮助用户决定下一步，不把旧 verdict 变成半有效结果。
+## 内建 selection
 
-## 常见用途
+- `explicit-runs`：精确选择调用方给出的 RunId；
+- `latest-runs`：使用 Run-owned Evaluation/Provenance Attachment，为目标 Experiment 选择最后完成的 Run。
 
-| 用户目标 | 入口 |
-|---|---|
-| 看当前项目定义下的完整水平 | `projectCurrentSample(record, target)` |
-| 收窄实验或题目 | `projectCurrentSample(record, target, { experiments, evals })` 或 `sample.scope()` |
-| 离线查看 Record 最新 head | `latestRecordSample(record)` |
-| 按数据质量删减当前观测 | `sample.filter()` |
-| 查看一次 Run 的事实 | Record 中的 `Run` 与 `niceeval show --run` |
-| 查看历次执行 | `niceeval show --history` 或 History 页面 |
-| 人工确认旧结果仍适用 | `niceeval accept @<locator>` |
-| 发布一份自包含 Run | `latestRunSample(record)` 后交给 `publish()` |
+Core 不保存 ExperimentId，因此 latest 所需业务分组来自 typed Attachment，而不是偷偷扩张 RunDocument。旧 Attachment 需要 migration 时，latest 返回具名 selection error；explicit selection 和其它 Core 读取仍可运行。
 
-`latestRunSample()` 服务发布和单 Run 审计，不定义另一种结果状态。
-plain show、view 与静态导出都从项目 Target 的 `projectCurrentSample()` 出发；显式 `--record` / `--run` 与 History 旅途不拿当前 cwd 的项目定义解释外来 Record。
+复杂自定义策略可以用 Record/Projection API 计算 RunId，再调用 explicit selection。v1 不公开一个可以绕过 Library 分母构造规则的 Sample builder。
 
-## 相关阅读
+## Frozen 读取
 
-- [Library](library.md) —— current 选择、缺口原因与转换形状。
-- [参考方案](reference/README.md) —— 显式选择与转换从哪里学。
-- [用例手册](use-case/README.md) —— 局部补跑与人工接受的完整路径。
-- [Record](../record/README.md) —— 被选择的物理事实。
-- [Reports](../reports/README.md) —— 只消费一份 Sample 的呈现层。
+reference Member 保留源 Attempt 引用。origin Run 进入 dependency closure，但不因此进入 selected Runs 或分析分母。
+
+一次 selection 不会自动看见并发刚完成的 Run。重新打开 reader 后才能得到新 snapshot。未完成 Run 从未进入 reader candidates，因此不会出现在 Sample。
+
+RecordAttachment 的 unavailable、migration-required、migration-unavailable、unsupported 或 invalid 不自动改变 Slot 的 Core state。Projection 使用仍存活的 `AnalysisSampleHandle` 按需读取 Attachment；pure `.sample` 不能重新打开 I/O。
+
+## 范围
+
+Sample 包含：
+
+- explicit/latest selection；
+- expected SlotId 完整分母；
+- included、not-recorded、core-invalid、excluded 四态；
+- pure narrowing；
+- pure `AnalysisSample` 与 live `AnalysisSampleHandle` 的能力边界。
+
+Sample 不包含 reuse planning、writer、业务 Calculation、Report 页面或可持久化 Sample 文件。
+
+## 入口
+
+- [Library](library.md) —— selection、handle、Sample shape 与 narrowing。
+- [局部执行后的分析](use-case/partial-rerun.md) —— origin/reference 怎样进入同一分母。
+- [收窄样本](use-case/收窄样本.md) —— 怎样显式排除成员。
+- [Projection](../projection/README.md) —— 怎样读取 selected owner 的 RecordAttachment。
+- [Reuse planning](../experiments/cache.md) —— 当前目标怎样形成 reuse 与 gap。

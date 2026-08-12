@@ -25,11 +25,12 @@ const PUBLIC_ENTRIES = [
   ["./reporters", "runner/reporters/index.ts"],
   ["./loaders", "loaders/index.ts"],
   ["./record", "record/index.ts"],
-  ["./sample", "sample/index.ts"],
+  ["./analysis", "analysis/index.ts"],
+  ["./projection", "projection/index.ts"],
   ["./report", "report/index.ts"],
-  ["./report/react", "report/react/index.tsx"],
+  ["./report/host", "report/host/index.ts"],
+  ["./report/host/node", "report/host/node.ts"],
   ["./report/built-in", "report/built-in/index.tsx"],
-  ["./report/extension", "report/extension/index.ts"],
 ];
 
 function isRuntimeSource(file) {

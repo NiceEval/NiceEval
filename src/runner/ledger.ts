@@ -10,6 +10,7 @@
 // - agent 归因增量 = 逐窗口 delta 序列(DiffWindow[]),不做跨窗口压缩。
 
 import type { DiffArtifact, DiffWindow, Sandbox, WindowChange } from "../types.ts";
+import type { AgentWorkspaceDiffPolicy } from "../assertions/workspace-diff.ts";
 import { sandboxSupportsRootCommands } from "../sandbox/backend.ts";
 import { DEFAULT_LEDGER_GIT_DIR, ledgerPathsFor } from "../sandbox/ledger-paths.ts";
 
@@ -134,6 +135,8 @@ export interface ChangeLedger {
    * `resetToAnchor()` 内的同款判断作纵深防御保留。
    */
   readonly rootExecutionIdentity: boolean;
+  /** Frozen semantic identity consumed by the Attempt-owned diff Attachment. */
+  readonly attribution: AgentWorkspaceDiffPolicy;
 }
 
 interface LedgerOptions {
@@ -306,6 +309,11 @@ export async function createChangeLedger(sandbox: Sandbox, opts?: LedgerOptions)
 
   return {
     rootExecutionIdentity: ordinaryUid === "0",
+    attribution: Object.freeze({
+      defaultPolicy: "niceeval-default-excludes" as const,
+      include: Object.freeze([...includes]),
+      ignore: Object.freeze([...(opts?.ignore ?? [])]),
+    }),
     async commitEvalWindow(label: string): Promise<void> {
       // 有未记录变化才落这一笔;干净时不产生空的 eval 归因 commit。
       const result = await sandbox.runShell(`${addAll} && (git diff --cached --quiet || git commit -q -m ${shellQuote(`eval ${label}`)})${lockPrivateLedger}`, {

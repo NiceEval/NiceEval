@@ -67,7 +67,7 @@ type EvalAuthorInput<Context> = EvalAuthorFields & {
 type EvalInput = EvalAuthorInput<TestContext>;
 type ScoreEvalInput = EvalAuthorInput<ScoreTestContext>;
 
-type EvaluationKind = "pass" | "points";
+type EvaluationKind = "pass" | "score";
 
 interface EvalDefinition<
   Kind extends EvaluationKind,
@@ -80,15 +80,16 @@ interface EvalDefinition<
 function defineEval(input: EvalInput): EvalDefinition<"pass", TestContext>;
 function defineScoreEval(
   input: ScoreEvalInput,
-): EvalDefinition<"points", ScoreTestContext>;
+): EvalDefinition<"score", ScoreTestContext>;
 
 type AnyEvalDefinition =
   | EvalDefinition<"pass", TestContext>
-  | EvalDefinition<"points", ScoreTestContext>;
+  | EvalDefinition<"score", ScoreTestContext>;
 ```
 
 `id` 只在发现阶段加入，`configHash` 只属于规划和 Run 身份。
 通过制与计分制在 factory 返回后仍保留精确的 `evaluationKind` 与 test context，不退化成共同的可选字段。
+`points` 是 Score Eval 中 Assertion 的分值单位，不是 `EvaluationKind` 成员。
 
 Experiment 使用同一条阶段规则：
 
@@ -125,7 +126,7 @@ export default defineEval({
 
 ```ts
 defineEval({ id: "weather", test: async () => {} });
-defineEval({ evaluationKind: "points", test: async () => {} });
+defineEval({ evaluationKind: "score", test: async () => {} });
 defineEval({ configHash: "8f21", test: async () => {} });
 defineExperiment({ id: "codex", agent });
 ```

@@ -2,6 +2,20 @@
 // Agent/Adapter 相关见 "niceeval/adapter";Sandbox 相关见 "niceeval/sandbox"。
 
 export { defineEval, defineScoreEval, defineConfig, defineExperiment } from "./define.ts";
+export type { AssertionEntryId } from "./assertions/identity.ts";
+
+/** Neutral RecordAttachment projector for the Attempt-owned agent workspace diff. */
+export { agentWorkspaceDiffProjector } from "./assertions/record/diff.ts";
+export type {
+  AgentSendWindowIdentity,
+  AgentWorkspaceDiffEndpoint,
+  AgentWorkspaceDiffHunks,
+  AgentWorkspaceDiffPolicy,
+  AgentWorkspaceDiff,
+  AgentWorkspaceDiffWindow,
+  AgentWorkspaceDiffWindowChange,
+} from "./assertions/workspace-diff.ts";
+export type { PostRunBooleanAssertionHandle } from "./assertions/api.ts";
 
 export { requireEnv, getEnv, stripComments } from "./util.ts";
 
@@ -28,17 +42,8 @@ export type {
   RespondAnswer,
   TurnHandle,
   SessionHandle,
-  BaseTestContext,
-  AssertionEvaluationContext,
   TestContext,
   ScoreTestContext,
-  ToolMatch,
-  ValueAssertion,
-  BaseAssertionHandle,
-  AssertionHandle,
-  ScoreAssertionHandle,
-  ScorePointHandle,
-  Severity,
   Verdict,
   EvalAuthorFields,
   EvalInput,
@@ -47,7 +52,6 @@ export type {
   AnyEvalDefinition,
   EvaluationKind,
   EvalDescriptor,
-  ScoreEntry,
   ExperimentAuthorFields,
   ExperimentInput,
   ExperimentDefinition,
@@ -55,6 +59,8 @@ export type {
   Config,
   LocalizedText,
   JudgeConfig,
+  JudgeDeclaration,
+  JudgeMaterial,
   Reporter,
   ReporterEvent,
   EvalResult,
@@ -63,16 +69,14 @@ export type {
   RetryAttemptRecord,
   InvocationSummary,
   InvocationShape,
-  AssertionResult,
   DiagnosticRecord,
   ExperimentRunInfo,
   SandboxRunInfo,
-  DiffData,
-  DiffView,
   ScriptResult,
-  EvalSandbox,
-  DeferredFileContent,
   CommandResult,
+  CalledToolAtLeast,
+  CalledToolCount,
+  CalledToolOptions,
   InputRequest,
   InputRequestFilter,
   O11ySummary,

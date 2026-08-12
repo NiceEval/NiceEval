@@ -3,9 +3,16 @@
 // 原子创建、心跳续租、过期判据、过期锁的 rename 接管、释放。
 // 契约见 docs/feature/experiments/architecture.md「并发 Invocation:用例锁」。
 
-import { mkdir, open, rm } from "node:fs/promises";
+import { mkdir, open, rm, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
-import { claimEntryFile, fsyncDir, readEntryFile, slugHashEntryId, writeEntryFile } from "../shared/entry-file-store.ts";
+import { Effect, Fiber } from "effect";
+import {
+  claimEntryFileEffect,
+  fsyncDirEffect,
+  readEntryFileEffect,
+  slugHashEntryId,
+  writeEntryFileEffect,
+} from "../shared/entry-file-store.ts";
 
 /** 锁文件的 JSON 形状。身份的权威在内容,文件名只须无碰撞、不承载解析。 */
 export interface CaseLockRecord {
@@ -29,6 +36,29 @@ function isPositiveInteger(value: unknown): value is number {
 
 function isTimestamp(value: unknown): value is string {
   return typeof value === "string" && Number.isFinite(Date.parse(value));
+}
+
+function errnoCode(cause: unknown): string | undefined {
+  return typeof cause === "object" && cause !== null && "code" in cause && typeof cause.code === "string"
+    ? cause.code
+    : undefined;
+}
+
+function nodeIo<A>(operation: (signal: AbortSignal) => Promise<A>): Effect.Effect<A, unknown> {
+  return Effect.tryPromise({ try: operation, catch: (cause) => cause });
+}
+
+function withOpenFile<A>(
+  path: string,
+  flags: string,
+  use: (handle: FileHandle) => Effect.Effect<A, unknown>,
+): Effect.Effect<A, unknown> {
+  return Effect.scoped(
+    Effect.acquireRelease(
+      nodeIo(() => open(path, flags)),
+      (handle) => nodeIo(() => handle.close()).pipe(Effect.orDie),
+    ).pipe(Effect.flatMap(use)),
+  );
 }
 
 /** 只接受本锁身份对应的完整记录，避免错位或半截 JSON 被当成持有者。 */
@@ -70,75 +100,71 @@ function caseLockEntryId(experimentId: string, evalId: string): string {
   return slugHashEntryId(`${experimentId}-${evalId}`, [experimentId, evalId]);
 }
 
-/** 读取当前锁记录,无副作用——`--dry` 用它只读锁目录标注 `locked`,不取锁、不等待。 */
-export async function readCaseLock(
+/** Effect 主 API:读取当前锁记录,无副作用——`--dry` 用它只读锁目录标注 `locked`,不取锁、不等待。 */
+export function readCaseLockEffect(
   niceevalRoot: string,
   experimentId: string,
   evalId: string,
-): Promise<CaseLockRecord | undefined> {
-  return readEntryFile(
+): Effect.Effect<CaseLockRecord | undefined, unknown> {
+  return readEntryFileEffect(
     locksDirOf(niceevalRoot),
     caseLockEntryId(experimentId, evalId),
     decodeCaseLockRecord(experimentId, evalId),
   );
 }
 
-/** 过期判据:只看心跳时间戳,不看 pid(容器/跨用户场景下 pid 判活不可靠)。
- * 落后严格大于阈值才算过期(`>`,不是 `>=`);无法解析的 `heartbeatAt` 一律视为过期。 */
+/** 过期判据:只看心跳时间戳,不看 pid(容器/跨用户场景下 pid 判活不可靠)。 */
 export function isCaseLockExpired(record: CaseLockRecord, nowMs: number): boolean {
   const heartbeatMs = Date.parse(record.heartbeatAt);
   if (Number.isNaN(heartbeatMs)) return true;
   return nowMs - heartbeatMs > CASE_LOCK_EXPIRY_MS;
 }
 
-export interface CaseLockClaim {
-  /** 停止心跳定时器并删除锁文件。幂等——重复调用是 no-op。 */
-  release(): Promise<void>;
+/** Effect 持有句柄；release 是 Effect finalizer，供运行器的外层 Scope / ensuring 组合。 */
+export interface CaseLockEffectClaim {
+  readonly release: Effect.Effect<void, unknown>;
 }
 
-export interface AcquireCaseLockResult {
-  claim: CaseLockClaim;
+export interface AcquireCaseLockEffectResult {
+  claim: CaseLockEffectClaim;
   /** true 当且仅当本次调用接管了一把过期锁,而不是全新创建。 */
   takenOver: boolean;
 }
 
 /**
  * O_EXCL 独占创建锁文件;已存在则返回 false,不覆盖、不抛错。不走共享层的 `writeEntryFile`
- * ——那是「写入或覆盖」的语义(rename 会无条件替换目标),这里需要的是「不存在才创建」,与
- * sandbox/keep-registry.ts 的 lease 占坑(`open(path, "wx")`)同一个模式。
+ * ——那是「写入或覆盖」的语义(rename 会无条件替换目标),这里需要的是「不存在才创建」。
  */
-async function createLockFileExclusive(dir: string, id: string, record: CaseLockRecord): Promise<boolean> {
-  await mkdir(dir, { recursive: true });
+function createLockFileExclusiveEffect(
+  dir: string,
+  id: string,
+  record: CaseLockRecord,
+): Effect.Effect<boolean, unknown> {
   const path = join(dir, `${id}.json`);
-  try {
-    const handle = await open(path, "wx");
-    try {
-      await handle.writeFile(JSON.stringify(record, null, 2), "utf-8");
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "EEXIST") return false;
-    throw e;
-  }
-  await fsyncDir(dir);
-  return true;
+  return nodeIo(() => mkdir(dir, { recursive: true })).pipe(
+    Effect.zipRight(
+      withOpenFile(
+        path,
+        "wx",
+        (handle) => nodeIo(() => handle.writeFile(JSON.stringify(record, null, 2), "utf-8")).pipe(
+          Effect.zipRight(nodeIo(() => handle.sync())),
+        ),
+      ),
+    ),
+    Effect.zipRight(fsyncDirEffect(dir)),
+    Effect.as(true),
+    Effect.catchAll((cause) => errnoCode(cause) === "EEXIST" ? Effect.succeed(false) : Effect.fail(cause)),
+  );
 }
 
-/**
- * 一次非阻塞尝试:先原子创建锁文件(O_EXCL)。已存在且新鲜 → `{kind:"waiting", holder}`。
- * 已存在且过期 → 经 `claimEntryFile`(rename-墓碑)尝试接管,接管成功后立刻在原路径用
- * `identity` 重建;接管竞争落败(claim 拿到 false,或重建本身撞上 EEXIST——说明另一个赢家
- * 已经抢先写回)都不报错,而是原地递归一次重新评估当前状态。
- */
-export async function tryAcquireCaseLockOnce(
+/** 一次非阻塞尝试:新建、过期接管与损坏条目回收都保持原来的 rename 互斥语义。 */
+export function tryAcquireCaseLockOnceEffect(
   niceevalRoot: string,
   experimentId: string,
   evalId: string,
   identity: { pid: number; host: string },
   nowMs: number,
-): Promise<{ kind: "acquired"; takenOver: boolean } | { kind: "waiting"; holder: CaseLockRecord }> {
+): Effect.Effect<{ kind: "acquired"; takenOver: boolean } | { kind: "waiting"; holder: CaseLockRecord }, unknown> {
   const dir = locksDirOf(niceevalRoot);
   const id = caseLockEntryId(experimentId, evalId);
   const record: CaseLockRecord = {
@@ -149,56 +175,55 @@ export async function tryAcquireCaseLockOnce(
     startedAt: new Date(nowMs).toISOString(),
     heartbeatAt: new Date(nowMs).toISOString(),
   };
-
-  if (await createLockFileExclusive(dir, id, record)) {
-    return { kind: "acquired", takenOver: false };
-  }
-
-  const existing = await readEntryFile(dir, id, decodeCaseLockRecord(experimentId, evalId));
-  if (existing === undefined) {
-    // O_EXCL 失败之后、读回之前锁可能已被正常释放，也可能是 decoder 拒绝的坏条目；后者
-    // 先经 rename 认领移除，不能让坏文件把后续重试卡成永久递归。
-    await claimEntryFile(dir, id);
-    return tryAcquireCaseLockOnce(niceevalRoot, experimentId, evalId, identity, nowMs);
-  }
-  if (!isCaseLockExpired(existing, nowMs)) {
-    return { kind: "waiting", holder: existing };
-  }
-
-  const claimed = await claimEntryFile(dir, id);
-  if (!claimed) {
-    // 认领竞争落败:锁在我们读到之后、claim 之前已被别人接管或释放,重新评估当前状态。
-    return tryAcquireCaseLockOnce(niceevalRoot, experimentId, evalId, identity, nowMs);
-  }
-  if (!(await createLockFileExclusive(dir, id, record))) {
-    // 罕见:claim 成功后、重建之前另一个赢家已经抢先写回原路径,重新评估当前状态。
-    return tryAcquireCaseLockOnce(niceevalRoot, experimentId, evalId, identity, nowMs);
-  }
-  return { kind: "acquired", takenOver: true };
+  return Effect.suspend(() => createLockFileExclusiveEffect(dir, id, record).pipe(
+    Effect.flatMap((created) => {
+      if (created) return Effect.succeed({ kind: "acquired" as const, takenOver: false });
+      return readEntryFileEffect(dir, id, decodeCaseLockRecord(experimentId, evalId)).pipe(
+        Effect.flatMap((existing) => {
+          if (existing === undefined) {
+            // O_EXCL 失败后锁可能正常释放，也可能是坏条目；认领后重新评估当前状态。
+            return claimEntryFileEffect(dir, id).pipe(
+              Effect.ignore,
+              Effect.zipRight(tryAcquireCaseLockOnceEffect(niceevalRoot, experimentId, evalId, identity, nowMs)),
+            );
+          }
+          if (!isCaseLockExpired(existing, nowMs)) return Effect.succeed({ kind: "waiting" as const, holder: existing });
+          return claimEntryFileEffect(dir, id).pipe(
+            Effect.flatMap((claimed) => claimed
+              ? createLockFileExclusiveEffect(dir, id, record).pipe(
+                  Effect.flatMap((rebuilt) => rebuilt
+                    ? Effect.succeed({ kind: "acquired" as const, takenOver: true })
+                    : tryAcquireCaseLockOnceEffect(niceevalRoot, experimentId, evalId, identity, nowMs)),
+                )
+              : tryAcquireCaseLockOnceEffect(niceevalRoot, experimentId, evalId, identity, nowMs)),
+          );
+        }),
+      );
+    }),
+  ));
 }
 
 /**
- * `isReleased` 是 `acquireCaseLock` 闭包里 `released` 标志的读取器。`release()` 只
- * `clearInterval`,拦不住已经进入回调、卡在 `readEntryFile` 这次 await 上的心跳——它读完时
- * 锁文件可能已被 `rm`,若不再确认就直接写回,会把刚删掉的文件重新创建出来(见
- * memory/lock-heartbeat-resurrects-released-lock.md)。因此写回前必须再查一次;入口也查一次
- * 省一次读,但不是竞态的关键检查点。
+ * 只重写 `heartbeatAt`。心跳以单一 Effect fiber 串行执行，因此 release 可以先中断休眠，再等
+ * 当前不可中断写入结束，最后删除文件，不会重现已释放锁被旧心跳写回的竞态。
  */
-async function renewHeartbeat(
+function renewHeartbeatEffect(
   niceevalRoot: string,
   experimentId: string,
   evalId: string,
   nowMs: number,
   isReleased: () => boolean,
-): Promise<void> {
-  if (isReleased()) return;
+): Effect.Effect<void, unknown> {
+  if (isReleased()) return Effect.void;
   const dir = locksDirOf(niceevalRoot);
   const id = caseLockEntryId(experimentId, evalId);
-  const current = await readEntryFile(dir, id, decodeCaseLockRecord(experimentId, evalId));
-  if (current === undefined) return; // 锁已经不在了(已释放或被接管),没有心跳可续
-  if (isReleased()) return; // 释放发生在上面这次 await 期间——写回之前的最后一道闸
-  const next: CaseLockRecord = { ...current, heartbeatAt: new Date(nowMs).toISOString() };
-  await writeEntryFile(dir, id, next);
+  return readEntryFileEffect(dir, id, decodeCaseLockRecord(experimentId, evalId)).pipe(
+    Effect.flatMap((current) => {
+      if (current === undefined || isReleased()) return Effect.void;
+      const next: CaseLockRecord = { ...current, heartbeatAt: new Date(nowMs).toISOString() };
+      return writeEntryFileEffect(dir, id, next);
+    }),
+  );
 }
 
 function makeAbortError(signal: AbortSignal | undefined): Error {
@@ -209,48 +234,44 @@ function makeAbortError(signal: AbortSignal | undefined): Error {
   return err;
 }
 
-function throwIfAborted(signal: AbortSignal | undefined): void {
-  if (signal?.aborted) throw makeAbortError(signal);
-}
-
-/** 可被 AbortSignal 中断的延时;abort 时立刻 reject,不留下悬挂的定时器。 */
-function delayOrAbort(ms: number, signal: AbortSignal | undefined): Promise<void> {
-  if (signal?.aborted) return Promise.reject(makeAbortError(signal));
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      cleanup();
-      resolve();
-    }, ms);
+function awaitAbort(signal: AbortSignal | undefined): Effect.Effect<never, Error> {
+  return Effect.async((resume, effectSignal) => {
+    if (signal === undefined) return;
+    const cleanup = (): void => {
+      signal.removeEventListener("abort", onAbort);
+      effectSignal.removeEventListener("abort", cleanup);
+    };
     const onAbort = (): void => {
       cleanup();
-      reject(makeAbortError(signal));
+      resume(Effect.fail(makeAbortError(signal)));
     };
-    const cleanup = (): void => {
-      clearTimeout(timer);
-      signal?.removeEventListener("abort", onAbort);
-    };
-    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+    effectSignal.addEventListener("abort", cleanup, { once: true });
   });
 }
 
-// 当前进程持有中的锁,供 drainHeldCaseLocks 强清兜底排空——与 experiment-cleanup-registry.ts
-// 的 pending 表同一个模式:登记释放闭包,正常释放时自己注销,强清路径统一排空。
-const held = new Map<string, () => Promise<void>>();
+/** 可被外部 AbortSignal 或 Effect interruption 立刻打断的轮询延时。 */
+function delayOrAbortEffect(ms: number, signal: AbortSignal | undefined): Effect.Effect<void, Error> {
+  if (signal?.aborted) return Effect.fail(makeAbortError(signal));
+  return Effect.raceFirst(Effect.sleep(ms), awaitAbort(signal)).pipe(Effect.asVoid);
+}
+
+// 当前进程持有中的锁,供 drainHeldCaseLocksEffect 强清兜底排空。值是 Effect release。
+const held = new Map<string, Effect.Effect<void, unknown>>();
 
 function heldKey(niceevalRoot: string, id: string): string {
   return `${niceevalRoot} ${id}`;
 }
 
 /**
- * 高层入口:立刻取锁,或者每 `pollIntervalMs`(默认等于心跳周期)重试一次 `tryAcquireCaseLockOnce`
- * 直到取到为止。没有超时——心跳新鲜就一直等(架构文档明确要求)。`onWaitStart(holder)` 只在
- * 第一次尝试就撞上新鲜锁时触发一次(不是每次轮询都触发),取锁成功(不论是新建还是接管)都不会
- * 触发。取锁成功后启动心跳续租定时器(只重写 `heartbeatAt`,其余字段原样保留),并把释放闭包
- * 登记进模块内的「本进程持有中」表(供 `drainHeldCaseLocks` 使用)。必须响应 `opts.signal`:
- * 等待期间被中断要立刻停止轮询、以 AbortError 形状的错误 reject,不留下悬挂的定时器——真实的
- * 用户 Ctrl+C 不能被别人的锁拖着无限期挂起。
+ * 高层 Effect 入口。等待保持可中断；一旦拿到锁，心跳 fiber 与 release 的删除顺序进入
+ * uninterruptible mask，保证 interruption 不会留下无主锁或让旧心跳晚于删除写回。
  */
-export async function acquireCaseLock(
+export function acquireCaseLockEffect(
   niceevalRoot: string,
   experimentId: string,
   evalId: string,
@@ -261,74 +282,79 @@ export async function acquireCaseLock(
     heartbeatIntervalMs?: number;
     onWaitStart?: (holder: CaseLockRecord) => void;
   } = {},
-): Promise<AcquireCaseLockResult> {
+): Effect.Effect<AcquireCaseLockEffectResult, unknown> {
   const heartbeatIntervalMs = opts.heartbeatIntervalMs ?? CASE_LOCK_HEARTBEAT_INTERVAL_MS;
   const pollIntervalMs = opts.pollIntervalMs ?? heartbeatIntervalMs;
-  const { signal } = opts;
-
-  throwIfAborted(signal);
-
   let waitStarted = false;
-  let takenOver = false;
-  for (;;) {
-    const result = await tryAcquireCaseLockOnce(niceevalRoot, experimentId, evalId, identity, Date.now());
-    if (result.kind === "acquired") {
-      takenOver = result.takenOver;
-      break;
-    }
-    if (!waitStarted) {
-      waitStarted = true;
-      opts.onWaitStart?.(result.holder);
-    }
-    await delayOrAbort(pollIntervalMs, signal);
-  }
+  const acquire = (): Effect.Effect<{ takenOver: boolean }, unknown> => Effect.suspend(() => {
+    if (opts.signal?.aborted) return Effect.fail(makeAbortError(opts.signal));
+    return tryAcquireCaseLockOnceEffect(niceevalRoot, experimentId, evalId, identity, Date.now()).pipe(
+      Effect.flatMap((result) => {
+        if (result.kind === "acquired") return Effect.succeed({ takenOver: result.takenOver });
+        const reportWait = waitStarted
+          ? Effect.void
+          : Effect.sync(() => {
+              waitStarted = true;
+              opts.onWaitStart?.(result.holder);
+            });
+        return reportWait.pipe(Effect.zipRight(delayOrAbortEffect(pollIntervalMs, opts.signal)), Effect.zipRight(acquire()));
+      }),
+    );
+  });
 
-  const dir = locksDirOf(niceevalRoot);
-  const id = caseLockEntryId(experimentId, evalId);
-  const key = heldKey(niceevalRoot, id);
-
-  // `inFlight` 追踪当前正在飞的心跳续租调用。仅在写回前查一次 `released` 不够:一旦某次心跳
-  // 通过了检查、开始调用 `writeEntryFile`,该调用内部(mkdir/写临时文件/rename)本身还有多个
-  // await 点——release() 可能在这些 await 之间跑完 `rm`,随后心跳的 rename 落地,把刚删掉的
-  // 文件重新创建出来。真正堵住这条缝的办法不是"检查更早",而是让 release() 在删除之前等所有
-  // 已发起的心跳调用结束,保证不会有写回落在 rm 之后。
-  let released = false;
-  const inFlight = new Set<Promise<void>>();
-  const timer = setInterval(() => {
-    if (released) return;
-    const task = renewHeartbeat(niceevalRoot, experimentId, evalId, Date.now(), () => released).catch(() => {
-      // 心跳续租失败(如磁盘瞬时错误)不应该让定时器本身崩溃;下一个周期再试。
-    });
-    inFlight.add(task);
-    void task.finally(() => inFlight.delete(task));
-  }, heartbeatIntervalMs);
-  timer.unref?.();
-
-  const release = async (): Promise<void> => {
-    if (released) return;
-    released = true;
-    clearInterval(timer);
-    held.delete(key);
-    await Promise.all(inFlight); // 等在飞心跳全部落地(写或不写),再删——不然写回可能晚于 rm
-    await rm(join(dir, `${id}.json`), { force: true });
-    await fsyncDir(dir);
-  };
-  held.set(key, release);
-
-  return { claim: { release }, takenOver };
+  return Effect.uninterruptibleMask((restore) =>
+    restore(acquire()).pipe(
+      Effect.flatMap(({ takenOver }) => {
+        const dir = locksDirOf(niceevalRoot);
+        const id = caseLockEntryId(experimentId, evalId);
+        const key = heldKey(niceevalRoot, id);
+        let released = false;
+        const heartbeat = Effect.forever(
+          Effect.sleep(heartbeatIntervalMs).pipe(
+            Effect.zipRight(
+              // File-system promises do not guarantee AbortSignal support. Keep one renewal uninterruptible so
+              // Fiber.interrupt below waits for any started write before rm can make the path reusable.
+              Effect.suspend(() => Effect.uninterruptible(renewHeartbeatEffect(
+                niceevalRoot,
+                experimentId,
+                evalId,
+                Date.now(),
+                () => released,
+              ))).pipe(Effect.ignore),
+            ),
+          ),
+        );
+        // A child inherits the parent's interruptibility. This branch still
+        // runs under the acquisition mask, so restore the heartbeat before
+        // forking; otherwise release would wait forever while interrupting an
+        // uninterruptible sleeping fiber.
+        return Effect.forkDaemon(restore(heartbeat)).pipe(
+          Effect.map((fiber) => {
+            const release = Effect.uninterruptible(Effect.suspend(() => {
+              if (released) return Effect.void;
+              released = true;
+              held.delete(key);
+              return Fiber.interrupt(fiber).pipe(
+                Effect.zipRight(nodeIo(() => rm(join(dir, `${id}.json`), { force: true }))),
+                Effect.zipRight(fsyncDirEffect(dir)),
+              );
+            }));
+            held.set(key, release);
+            return { claim: { release }, takenOver };
+          }),
+        );
+      }),
+    ),
+  );
 }
 
-/**
- * 强清兜底:释放当前进程持有的每一把锁(尽力而为,单条失败不影响其它;幂等,空表也安全)。
- * 与 experiment-cleanup-registry.ts 的 `drainExperimentTeardowns` 同一个精神。返回本次排空的条数。
- */
-export async function drainHeldCaseLocks(): Promise<number> {
+/** 强清兜底:尽力释放当前进程持有的每一把锁。 */
+export function drainHeldCaseLocksEffect(): Effect.Effect<number> {
   const releases = [...held.values()];
-  await Promise.allSettled(releases.map((release) => release()));
-  return releases.length;
+  return Effect.forEach(releases, (release) => Effect.exit(release), { discard: true }).pipe(Effect.as(releases.length));
 }
 
-/** 测试探针,镜像 `pendingExperimentTeardownCount`。 */
+/** 当前进程仍持有的用例锁数量，供退出清理与可观察状态汇总。 */
 export function pendingHeldCaseLockCount(): number {
   return held.size;
 }

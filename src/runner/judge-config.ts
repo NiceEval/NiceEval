@@ -1,26 +1,28 @@
-import type { JudgeConfig } from "../types.ts";
+import type { JudgeDeclaration, JudgeConfig, ResolvedJudgeConfig } from "../types.ts";
+
+const DEFAULT_BASE_URL = "https://api.openai.com/v1";
+const DEFAULT_API_KEY_ENV = "OPENAI_API_KEY";
+const DEFAULT_TIMEOUT_MS = 180_000;
 
 /**
- * Judge 执行配置逐字段解析。Experiment 是一次可签入的运行变化轴，因此排在 Eval 与
- * 项目默认之前；单条 assertion 的 model 覆盖由 assertions/judge.ts 在调用点处理。
+ * Resolve Judge once for a declared Eval capability. `true` inherits the
+ * Experiment and project configuration; an Eval object both declares the
+ * capability and overrides those layers. The frozen result is the sole input
+ * to fingerprinting, precheck, and evaluator execution.
  */
 export function resolveJudge(
   experimentJudge: JudgeConfig | undefined,
-  evalJudge: JudgeConfig | undefined,
+  declaration: JudgeDeclaration | undefined,
   configJudge: JudgeConfig | undefined,
-): JudgeConfig | undefined {
-  if (!experimentJudge && !evalJudge) return configJudge;
-  if (!experimentJudge && !configJudge) return evalJudge;
-  if (!evalJudge && !configJudge) return experimentJudge;
-  return {
-    ...pick("model", experimentJudge?.model ?? evalJudge?.model ?? configJudge?.model),
-    ...pick("baseUrl", experimentJudge?.baseUrl ?? evalJudge?.baseUrl ?? configJudge?.baseUrl),
-    ...pick("apiKeyEnv", experimentJudge?.apiKeyEnv ?? evalJudge?.apiKeyEnv ?? configJudge?.apiKeyEnv),
-    ...pick("timeoutMs", experimentJudge?.timeoutMs ?? evalJudge?.timeoutMs ?? configJudge?.timeoutMs),
-  };
-}
-
-/** 没有来源的可选字段不落成显式 undefined，保持配置“有没有写”的语义。 */
-function pick<K extends string, V>(key: K, value: V | undefined): { [P in K]?: V } {
-  return (value === undefined ? {} : { [key]: value }) as { [P in K]?: V };
+): ResolvedJudgeConfig | undefined {
+  if (declaration === undefined) return undefined;
+  const evalJudge = declaration === true ? undefined : declaration;
+  return Object.freeze({
+    ...(evalJudge?.model ?? experimentJudge?.model ?? configJudge?.model) === undefined
+      ? {}
+      : { model: evalJudge?.model ?? experimentJudge?.model ?? configJudge?.model },
+    baseUrl: evalJudge?.baseUrl ?? experimentJudge?.baseUrl ?? configJudge?.baseUrl ?? DEFAULT_BASE_URL,
+    apiKeyEnv: evalJudge?.apiKeyEnv ?? experimentJudge?.apiKeyEnv ?? configJudge?.apiKeyEnv ?? DEFAULT_API_KEY_ENV,
+    timeoutMs: evalJudge?.timeoutMs ?? experimentJudge?.timeoutMs ?? configJudge?.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+  });
 }

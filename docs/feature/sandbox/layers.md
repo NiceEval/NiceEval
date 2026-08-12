@@ -83,7 +83,7 @@ interface SandboxLayer<Kind extends SandboxLayerKind = SandboxLayerKind> {
 interface SandboxHookContext {
   readonly experimentId: string;
   readonly signal: AbortSignal;
-  fact(key: string, value: string | number | boolean): void;
+  fact(name: string, value: JsonValue): void;
   // 另有与当前生命周期绑定的 progress() / diagnostic() 反馈入口。
 }
 

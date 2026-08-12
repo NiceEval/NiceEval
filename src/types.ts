@@ -2,11 +2,11 @@
 //
 // 类型按域住在各自目录(改哪个域的类型去哪个文件),这里只做 re-export,
 // 模块代码统一 `import type { … } from "../types.ts"`,不必记住每个类型的家:
-//   · shared/types.ts   跨域原子(JsonValue / Severity / SourceLoc / Cleanup / LocalizedText)
+//   · shared/types.ts   跨域原子(JsonValue / SourceLoc / Cleanup / LocalizedText)
 //   · o11y/types.ts     标准事件流 / DerivedFacts / TraceSpan / Usage / O11ySummary
 //   · sandbox/types.ts  Sandbox 接口 / provider spec / 命令与文件 IO
 //   · agents/types.ts   Agent / Adapter 契约 / 会话 / tracing 导出
-//   · assertions/types.ts  断言(值 / 记录 / 结果)/ AssertionEvaluationContext / JudgeConfig
+//   · assertions/types.ts  历史结果读取桥、diff 类型与 JudgeConfig
 //   · context/types.ts  TestContext(t)与子句柄(turn / session / sandbox 视图)
 //   · runner/types.ts   EvalResult / InvocationSummary / Reporter / eval・experiment・config 定义 / 调度编排
 //

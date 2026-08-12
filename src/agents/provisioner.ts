@@ -6,7 +6,7 @@
 
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { Data, Effect, Exit, Option, Schema } from "effect";
+import { Data, Deferred, Effect, Exit, Option, Schema } from "effect";
 import { t } from "../i18n/index.ts";
 import type { SandboxOperations } from "../sandbox/types.ts";
 import { createSandboxCommandTarget, SandboxCommandExitError } from "../sandbox/operations.ts";
@@ -33,11 +33,11 @@ export const AGENT_ARTIFACT_PREPARE_ACTIVITY = "agent.artifact.prepare" as const
  * Runner 接线后传入真实 Run 级 recorder,把 prepare 记为 `agent.artifact.prepare`。
  */
 export interface ArtifactPrepareTimingHook {
-  activity<T>(
+  activity<A, E, R>(
     key: typeof AGENT_ARTIFACT_PREPARE_ACTIVITY,
     attrs: { identity: AgentIdentity; platform: AgentArtifactPlatform; cacheKey: string },
-    run: () => Promise<T>,
-  ): Promise<T>;
+    run: Effect.Effect<A, E, R>,
+  ): Effect.Effect<A, E, R>;
 }
 
 export interface AgentEnsureContext {
@@ -278,19 +278,24 @@ export function defaultArtifactCacheDir(): string {
 /**
  * Run 级 staged payload single-flight / cache。
  * 多个 attempt 共享同一 coordinator 实例;prepare 时间经 timing hook 记 `agent.artifact.prepare`。
+ * coordinator 不 fork detached fiber:每个 Deferred 只从同步登记存活到同一终局 Exit 发布并清理。
  */
 export class ArtifactPrepareCoordinator {
   private readonly cache = new Map<string, AgentStagedArtifact>();
-  private readonly inflight = new Map<string, Promise<Exit.Exit<AgentStagedArtifact, AgentEnsureError>>>();
+  private readonly inflight = new Map<
+    string,
+    Deferred.Deferred<AgentStagedArtifact, AgentEnsureError>
+  >();
   private readonly timing: ArtifactPrepareTimingHook | undefined;
 
   constructor(timing?: ArtifactPrepareTimingHook) {
     this.timing = timing;
   }
 
-  /** 已缓存或正在准备的制品;没有则 undefined。 */
-  peek(identity: AgentIdentity, platform: AgentArtifactPlatform): AgentStagedArtifact | undefined {
-    return this.cache.get(artifactCacheKey(identity, platform));
+  /** 已缓存的制品;没有则 undefined。 */
+  peek(identity: AgentIdentity, platform: AgentArtifactPlatform): Effect.Effect<AgentStagedArtifact | undefined> {
+    const key = artifactCacheKey(identity, platform);
+    return Effect.sync(() => this.cache.get(key));
   }
 
   prepare(
@@ -299,22 +304,52 @@ export class ArtifactPrepareCoordinator {
     signal: AbortSignal,
   ): Effect.Effect<AgentStagedArtifact, AgentEnsureError> {
     const key = artifactCacheKey(installer.identity, platform);
-    const hit = this.cache.get(key);
-    if (hit) return Effect.succeed(hit);
+    return Effect.uninterruptibleMask((restore) =>
+      Effect.gen(this, function* () {
+        const fresh = yield* Deferred.make<AgentStagedArtifact, AgentEnsureError>();
+        // Map 的读写只在同步 Effect 中做:同 key 的并发 fiber 只会选出一个 leader。
+        const flight = yield* Effect.sync(() => {
+          const cached = this.cache.get(key);
+          if (cached !== undefined) return { _tag: "Cached" as const, artifact: cached };
 
-    const pending = this.inflight.get(key);
-    if (pending) {
-      return Effect.promise(() => pending).pipe(
-        Effect.flatMap(Exit.match({ onFailure: Effect.failCause, onSuccess: Effect.succeed })),
-      );
-    }
+          const pending = this.inflight.get(key);
+          if (pending !== undefined) return { _tag: "Follower" as const, deferred: pending };
 
-    const retain = (artifact: AgentStagedArtifact): Effect.Effect<AgentStagedArtifact> => {
-      this.cache.set(key, artifact);
-      return Effect.succeed(artifact);
-    };
-    const prepare = Effect.tryPromise({
-      try: () => Promise.resolve(installer.prepareArtifact({ targetPlatform: platform, signal })),
+          this.inflight.set(key, fresh);
+          return { _tag: "Leader" as const, deferred: fresh };
+        });
+
+        if (flight._tag === "Cached") return flight.artifact;
+        if (flight._tag === "Follower") return yield* restore(Deferred.await(flight.deferred));
+
+        // 从登记到完成/清理都处在 mask 内。restore 的 typed failure / defect / interruption
+        // 都先保留为 Exit，再发布给所有 follower，避免 leader 中断留下永远未完成的 Deferred。
+        const exit = yield* Effect.exit(
+          restore(Effect.suspend(() => this.prepareArtifact(installer, platform, signal, key))),
+        );
+        yield* Deferred.done(flight.deferred, exit);
+        yield* Effect.sync(() => {
+          if (Exit.isSuccess(exit)) this.cache.set(key, exit.value);
+          if (this.inflight.get(key) === flight.deferred) this.inflight.delete(key);
+        });
+        return yield* Deferred.await(flight.deferred);
+      }),
+    );
+  }
+
+  private prepareArtifact(
+    installer: Extract<AgentInstaller, { installMode: "staged" }>,
+    platform: AgentArtifactPlatform,
+    signal: AbortSignal,
+    cacheKey: string,
+  ): Effect.Effect<AgentStagedArtifact, AgentEnsureError> {
+    const prepared = Effect.tryPromise({
+      // Node >=22 的 AbortSignal.any 保留数组中第一个已中断 signal 的 reason。
+      // 调用方 signal 排在前面，Effect runtime signal 则确保 fiber interruption 能取消 SDK Promise。
+      try: (runtimeSignal) => Promise.resolve(installer.prepareArtifact({
+        targetPlatform: platform,
+        signal: AbortSignal.any([signal, runtimeSignal]),
+      })),
       catch: (cause) => new AgentEnsureError({
         reason: "artifact-prepare-failed",
         phase: "installer",
@@ -327,37 +362,14 @@ export class ArtifactPrepareCoordinator {
       }),
     }).pipe(
       Effect.flatMap((artifact) => decodePreparedArtifact(artifact, installer.identity, platform)),
-      Effect.flatMap(retain),
     );
-    const measured = this.timing
-      ? Effect.tryPromise({
-          try: () => this.timing!.activity(
-            AGENT_ARTIFACT_PREPARE_ACTIVITY,
-            { identity: installer.identity, platform, cacheKey: key },
-            () => Effect.runPromise(prepare),
-          ),
-          catch: (cause) =>
-            cause instanceof AgentEnsureError
-              ? cause
-              : new AgentEnsureError({
-                  reason: "artifact-prepare-failed",
-                  phase: "installer",
-                  identity: installer.identity,
-                  message: formatEnsureError({
-                    identity: installer.identity,
-                    phase: "installer",
-                    result: { detail: errorMessage(cause) },
-                  }),
-                }),
-        })
-      : prepare;
-    const promise = Effect.runPromiseExit(measured).finally(() => {
-      this.inflight.delete(key);
-    });
-    this.inflight.set(key, promise);
-    return Effect.promise(() => promise).pipe(
-      Effect.flatMap(Exit.match({ onFailure: Effect.failCause, onSuccess: Effect.succeed })),
-    );
+    return this.timing === undefined
+      ? prepared
+      : this.timing.activity(
+        AGENT_ARTIFACT_PREPARE_ACTIVITY,
+        { identity: installer.identity, platform, cacheKey },
+        prepared,
+      );
   }
 }
 

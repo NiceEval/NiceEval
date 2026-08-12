@@ -1,36 +1,36 @@
-# Assertion 作用域绑定
+# Assertions —— scope snapshots
 
-作用域由接收者决定，不由断言名字决定。
-同一套作用域断言共享同一份实现，只替换 selector 与求值时机——把同一行断言挂到另一个接收者上，读的数据和求值的时刻都跟着变。
+完整模型见 [Assertions](../README.md)。断言范围（Assertion scope）方法在调用时直接登记 Boolean Assertion；它们不产生可由
+另一条 API 再登记的中间对象。
 
-| 接收者 | Selector | 求值时机 |
-|---|---|---|
-| `t` | attempt 的全部 session 和 turn | 延迟到 test 结束后对聚合结果求值 |
-| session（`t.newSession()` 的返回值） | 该 session 在断言登记时已有的事件和 usage | 登记时求值 |
-| turn（`t.send()` 的返回值） | 该轮不可变的事件、状态和 usage | 登记时求值 |
+## 三种 receiver
 
-```ts
-const first = await t.send("查布鲁克林天气");
-first.calledTool("get_weather");
-//  turn 接收者:记录这一行时就对该轮的不可变事件求值,之后再发生什么都不改这条结论
+| receiver | 读取的 call-time snapshot |
+|---|---|
+| Turn | 该不可变 Turn。 |
+| Session | 调用点之前的该 Session 前缀。 |
+| 根 `t` | 调用点所有已启动 Session 的 vector cut。 |
 
-const other = t.newSession();
-await other.send("查旧金山天气");
-other.calledTool("get_weather");
-//  session 接收者:记录时求值,只看这条 session 到此刻为止的事件
-//  写在下一次 other.send() 之前和之后,读到的事件不是同一批
+Session 从第一次交互开始算已启动。仅创建空 handle 不会进入根 scope。于是早调用不会被未来事件补成
+matched，早晚两个根 Assertion 可以得到不同结果。
 
-t.calledTool("get_weather", { count: 2 });
-//  t 接收者:延迟到 test 结束后,对全部 session、全部轮次的聚合结果求值
-//  上面两条 session 各自那一次调用都数进这个 2
-```
+Session scope 包含本 Session 在调用处之前的全部 Turn，因此 scoped tool Assertion 可以检查跨 Turn 的行为。根 `t` 冻结所有已启动 Session 的 vector cut，并按 Session 保留前缀。它不把独立 Session 拼成一条全局事件顺序。
 
-`t.newSession()` 创建的 session 仍属于当前 attempt，因此它的事件进入 `t.*` 聚合，但不会进入主 session 的即时 `t.reply` / `t.events` 读取视图。
+`calledTool` 与 `notCalledTool` 的 selector、材料状态和三值计数只在 [Scoped assertions](../library/scoped-assertions.md) 定义。这里的 snapshot 规则决定那些方法在何处读取 occurrence，不另立匹配契约。
 
-`t.*` 的聚合是有意设计，不是要消除的黑箱——「对整个 attempt 断言」是真实需求，把它做成一等作用域比让用户手工拼接每轮回复更诚实。
-`Attempt` 只作为 runner / results 的执行单位存在，不是 authoring 层的接收者。
+## `succeeded`
 
-值断言只评价显式传入值；Sandbox diff 是 attempt 级最终资源；judge 默认材料按接收者分层。
-这些 scope 不能为了 API 表面一致而混合。
+`succeeded` 读取可信终态和 unresolved HITL。它不是 `noFailedActions` 的别名：一次 action 失败后如果
+协议恢复为 completed，`succeeded` 可 matched，而 `noFailedActions` 保持 mismatched。
 
-词汇全集、匹配条件与接收者专属能力见 [作用域断言](../library/scoped-assertions.md)； Session 和 Turn 的 author-facing 获取方式见 [Eval Context](../../eval/library/context.md)。
+协议终态为 failed 时 `succeeded` mismatched。只有消息文本含“502”而协议为 completed 时，不猜测失败。
+Adapter 或 transport 不能给出可信 snapshot 时，Attempt 是 execution error。Judge evaluator 的失败不影响
+`succeeded`。
+
+根 `t.succeeded()` 在零活动时确定地 mismatched。运行中或没有可信终态的 scope 不能被当作 completed，
+也不能用 last status 代替 vector cut。
+
+## 停止
+
+scoped Boolean handle 可 `await .orStop()`。mismatch 会设置 authoring stop latch；已登记 scope Assertion
+仍结算，未执行到的源码不会凭空产生结果。详细控制流见 [Assertions · `.orStop()`](../README.md#orstop)。

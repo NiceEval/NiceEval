@@ -6,11 +6,14 @@
 时间轴 `retryable` 的消费点只有两处：包住 `agent.send` 的重试执行体，以及 sandbox provisioning 内部重试。
 `sandbox.prepare` 命令与 `test(t)` 体内的失败，无论分类结果如何，都不进任何重试执行体。
 
-本主题把**可证明瞬时、且可安全重新执行**的 prepare 失败纳入 attempt 内自愈，而不是一律落成 `errored` 再靠整次 invocation 续跑——且**不**把 `retryable` 扩成第三条 Runner 生命周期消费点。
+本主题把**可证明瞬时、且可安全重新执行**的 prepare 失败纳入同一 Attempt 内的命令自愈，而不是一律形成
+`errored` Verdict Claim 后再靠整次 invocation 续跑——且**不**把 `retryable` 扩成第三条 Runner 生命周期消费点。
+本页的 `passed`、`failed`、`errored` 与 `skipped` 都是 Verdict Claim token；Attempt lifecycle 始终只有
+`active`、`completed`、`abandoned`。
 
 ## 解决的问题
 
-批跑里大量 `errored` 死在 agent 真正做题之前：沙箱已创建，`prepare` / 依赖安装撞外网抖动后直接封口。
+批跑里大量 Attempt 在 agent 真正做题之前形成 `errored` Verdict Claim：沙箱已创建，`prepare` / 依赖安装撞外网抖动后直接封口。
 观察面能看到 `sandbox.prepare.*` 或 install 阶段的 stderr，也能看到 skill / session 注入已发生，但没有「框架试过自愈没有」的摘要——因为这里从未重试。
 
 prepare 失败按处置路径分成三类：
@@ -23,7 +26,7 @@ prepare 失败按处置路径分成三类：
 
 领域判分失败仍是 `failed`，不进入本主题的重试面。
 
-第二类浪费与 error-classification 的动机同构：瞬时故障被放大成终局 `errored`，唯一外层恢复是[重跑同一条命令只补失败 attempt](../../feature/experiments/cache.md)。
+第二类浪费与 error-classification 的动机同构：瞬时故障被放大成终局 `errored` Verdict Claim，唯一外层恢复是[重跑同一条命令只补失败 attempt](../../feature/experiments/cache.md)。
 该路径正确但粗：又付一次沙箱创建与前面已成功的 prepare 步骤。
 
 第三类则是反例：缺 `python3` 再试仍挂。
@@ -38,15 +41,16 @@ prepare 失败按处置路径分成三类：
 | [内置 prepare 命令](../../feature/sandbox/prepare-commands.md) | 失败即 `sandbox.prepare.<owner>` | `checkout` / `installTool` 等对网络瞬时失败有界重试 |
 | [Provisioning 失败与重试](../../feature/sandbox/architecture.md#provisioning-失败与重试) | 只涵盖 `createSandbox` | 与 prepare **分层独立**；可共享退避形状与词表 |
 | [空间轴 scope](../../feature/error-classification/README.md#分类) | 确定性共享失败可停止同范围派发 | 缺依赖类失败，**不**靠重试 |
-| [运行观测协议](../observation-protocol/README.md) | 旁路 phase / 可选 kind | 观察可对齐 `phase` 与既有 reason；**不**为本主题新造 failure kind 词表 |
+| [Record · phase 事实](../../feature/record/architecture.md) | 旁路 phase / 可选 kind | 观察可对齐 `phase` 与既有 reason；**不**为本主题新造 failure kind 词表 |
 
 作者自定义 prepare 需要容忍抖动时自行声明并实现重试边界（[error-classification · library](../../feature/error-classification/library.md)）。
 官方常用网络准备面提供零配置自愈，避免每条 Eval 手写相同退避。
 
 ## 核心心智
 
-1. **`errored` 仍是基建判断，不改成 `failed`。**
-   自愈成功则结果零痕迹（与 send 重试一致）；耗尽后仍是 `errored`，message 带重试摘要。
+1. **`errored` 仍是基建 Verdict Claim，不改成 `failed`。**
+   自愈成功不形成终局 `errored` Claim，但每次物理命令重试仍以 Observation 保存；耗尽后形成 `errored` Verdict Claim，
+   并引用带重试摘要的执行错误 Observation。
 
 2. **时间轴判据仍是重新执行安全性，不是「看起来像网络」。**
    能证明「整条 prepare 命令可安全重新执行」才可重试。
@@ -71,7 +75,7 @@ Runner / SandboxLayer 协议不变；`runCommand` 公共纪律不变；error-cla
 | 识别 | stderr / exit 形态命中内建瞬时表：GnuTLS recv、early EOF、ECONNRESET、fetch aborted、registry 超时等；确定性失败（ref 不存在、鉴权 401/403、磁盘满、`command not found`）第一次抛出 |
 | 重新执行单元 | **整条**内置命令（checkout 从干净目标或官方镜像缓存语义重来；installTool 的 install 步重跑后复检 探测） |
 | 预算 | 总计至多 3 次尝试；两次重试前分别等待 `uniform(0, 1s)` 与 `uniform(0, 2s)`；参数固定、零配置 |
-| 观察 | activity：`prepare retry 2/3 (network) — checkout`；耗尽 message 带 `retries exhausted` |
+| 观察 | 每次命令发送与 activity 形成 Observation：`prepare retry 2/3 (network) — checkout`；耗尽的执行错误 Observation 带 `retries exhausted` |
 | 副作用边界 | 仅官方命令承诺的幂等语义；作者 opaque `prepare()` callback 与直接调用 `shell("yarn install")` **不**享受 |
 
 这条边界直接涵盖 checkout TLS 与 installTool 安装，不打开通用 shell 重试。
@@ -92,7 +96,7 @@ Runner 无法证明 opaque callback 或通用 shell 是否幂等，自动重新�
 
 1. **修 Sandbox**：官方 Sandbox 保证 python3；题面需要的编译链进预构建输出或 prepare 的显式安装。
 2. **空间轴**：同 eval / 同实验必复现时，prepare 抛 `EvalFatalError` / `ExperimentFatalError`，或实验 `classifyFailure` 给出 `scope`。
-3. **读数**：报告与补跑工具把此类与网络瞬时分开，避免自动 `--rerun=errored` 把确定性死题刷成重复账单。
+3. **读数**：报告与补跑工具把此类与网络瞬时分开，避免自动 `niceeval exp --rerun failed` 把确定性死题刷成重复账单。
 
 ## 范围
 
@@ -101,13 +105,13 @@ Runner 无法证明 opaque callback 或通用 shell 是否幂等，自动重新�
 - 内置 prepare 命令对网络瞬时失败的 attempt 内自愈；
 - 瞬时识别表与整命令重新执行边界；
 - 观察面：activity 行、耗尽摘要；与 live-run 的 phase 对齐；
-- 与续跑 / 指纹：自愈成功不进 `errored`；耗尽后仍不进缓存，续跑语义不变。
+- 与续跑 / 指纹：自愈成功不形成 `errored` Verdict Claim；耗尽后仍不进缓存，续跑语义不变。
 
 **不包含**
 
 - Runner 级的第三条 `retryable` 全局消费点；
 - 给通用 `runCommand` / `runShell` 打开隐式重试；
-- 改 `AttemptError.code` 公开形状或 `failed` / `errored` 判定；
+- 改执行错误 Observation 的 reason/code 形状，或 `failed` / `errored` Verdict Claim 的判定；
 - 用 `attempts` 当基建抖动预算；
 - agent send 中途断流的重试纪律；
 - 为 prepare 新建平行 failure kind 词表（用既有 reason / message 即可）；
@@ -126,7 +130,7 @@ Runner 无法证明 opaque callback 或通用 shell 是否幂等，自动重新�
 1. 同一次 attempt 内，Git TLS / registry 抖动在预算内可被吸收，结果与一次成功 prepare 无异。
 2. `python3: command not found` 类确定性失败**零**次被重试，且文案或 scope 指向修镜像 / 配方。
 3. 通用 `runCommand` 不自动重试；无幂等声明的 opaque prepare 行为第一次失败即抛出。
-4. 读者能从 message / activity 区分：从未重试、重试耗尽、领域 `failed`。
+4. 读者能从执行错误 Observation / activity 投影区分：从未重试、重试耗尽、领域 `failed` Verdict Claim。
 5. error-classification 文档仍写「retryable 消费点只有两处」。
 
 ## 契约分工
@@ -142,5 +146,5 @@ Runner 无法证明 opaque callback 或通用 shell 是否幂等，自动重新�
 - [内置 prepare 命令](../../feature/sandbox/prepare-commands.md) —— `checkout` / `installTool`
 - [Sandbox · 命令不自动重试](../../feature/sandbox/library/operations.md) —— 副作用边界
 - [跨 provider 工具契约](../../feature/sandbox/library/prebuilt-environments.md) —— python3 / yarn 的统一约束
-- [运行观测协议](../observation-protocol/README.md) —— phase 观察
+- [Record · Architecture](../../feature/record/architecture.md) —— phase 观察
 - [缓存与携带](../../feature/experiments/cache.md) —— `errored` 不进指纹、续跑只补失败

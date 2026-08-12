@@ -2,38 +2,101 @@
 //   niceeval check [组|配置] [pattern]  只做发现、选择与 SandboxLayer pure link
 //   niceeval exp [组|配置] [pattern]    跑实验
 //   niceeval accept @<locator>...       接受多条历史结果并重锚到当前配置
-//   niceeval show [pattern]          终端读结果:默认报告 / 单 eval / 证据切面 / 时间轴 / --report
+//   niceeval show [selection]        终端渲染一次固定的 ReportExecution
 //   niceeval list                    只列出发现到的 eval
-//   niceeval clean                   删除 .niceeval/ 历史运行 artifact
+//   niceeval clean [--record <root>] [--yes]    删除未完成 Run
+//   niceeval migrate [--record <root>] [--yes]  显式迁移 Record
 
 import { spawn } from "node:child_process";
 import { hostname } from "node:os";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, relative, resolve as resolvePath, sep } from "node:path";
+import { dirname, isAbsolute, join, resolve as resolvePath } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs as nodeParseArgs } from "node:util";
-import { Effect } from "effect";
+import { Data, Effect, Either, Schema } from "effect";
 import { discoverEvals, discoverExperiments } from "./runner/discover.ts";
 import { browsableExperimentPaths, evalPrefixPredicate, matchExperimentSelector } from "./shared/aggregate.ts";
 import { runEvals, type AgentRun } from "./runner/run.ts";
-import { cacheKey, missingReason, planCarry, type CarryPlan, type DispatchGroup } from "./runner/fingerprint.ts";
-import type { FingerprintComparison, FingerprintDelta, FingerprintDiagnostic } from "./runner/manifest.ts";
-import { ATTEMPT_LOCATOR_PREFIX, decodeAttemptLocator } from "./record/locator.ts";
+import { planProjectTarget, type ProjectTargetPlan } from "./runner/fingerprint.ts";
+import {
+  makeRecordRoot,
+  AttemptIdSchema,
+  RunIdSchema,
+  type AttemptId,
+  type RecordRoot,
+} from "./record/index.ts";
+import {
+  ExperimentIdSchema,
+  type AnalysisSelectionRequest,
+  type ExperimentId,
+  type RunId,
+} from "./analysis/index.ts";
+import { defaultAttemptOverviewReport } from "./report/built-in/attempt-overview.ts";
+import { defaultOverviewReport } from "./report/built-in/overview.ts";
+import { executionEvidenceReport } from "./report/built-in/execution.ts";
+import { sourceEvidenceReport } from "./report/built-in/source.ts";
+import { reportRoute, type ReportRoute } from "./report/author/identity.ts";
+import type { Report } from "./report/author/model.ts";
+import type { ReportExecution } from "./report/execution/model.ts";
+import {
+  executeReportForAttemptFromRecord,
+  executeReportFromRecord,
+  exportStaticReport,
+  openReportViewSession,
+  ReportConsole,
+  ReportFileSystem,
+  showReport,
+} from "./report/host/index.ts";
+import {
+  basalt,
+  chalk,
+  loadTrustedReportConfig,
+  loadTrustedReportModule,
+  loadTrustedThemeModule,
+  makeNodeReportFileSystem,
+  ReportModuleLoadError,
+  resolveTrustedModulePath,
+  type ThemeDefinition,
+} from "./report/host/node.ts";
+import { openViewServer } from "./view/server.ts";
+import { runRecordCliCommand } from "./cli/record.ts";
 import { resolveExperimentEvals, selectedEvalsForRun } from "./runner/eval-selection.ts";
-import { failureDetailFromResult } from "./runner/feedback/failure.ts";
-import { stopAllSandboxes, liveSandboxCount } from "./sandbox/registry.ts";
+import { stopAllSandboxes } from "./sandbox/registry.ts";
+import {
+  keptSandboxReminderEffect,
+  orphanReminderEffect,
+  runSandboxCommandEffect,
+} from "./sandbox/cli-commands.ts";
 import { formatSandboxLayerLinkError, SandboxLayerLinkError } from "./sandbox/link.ts";
 import {
   formatSandboxPhysicalPlanningError,
   SandboxPhysicalPlanningError,
 } from "./sandbox/plan.ts";
 import { drainExperimentTeardowns } from "./runner/experiment-cleanup-registry.ts";
-import { drainHeldCaseLocks, isCaseLockExpired, readCaseLock } from "./runner/lock.ts";
-import { drainHeldGateLeases } from "./runner/gate-lease.ts";
-import { CLEANUP_TIMEOUT_MS, withCleanupTimeout } from "./runner/cleanup-timeout.ts";
+import {
+  drainHeldCaseLocksEffect,
+  isCaseLockExpired,
+  readCaseLockEffect,
+} from "./runner/lock.ts";
+import { drainHeldGateLeasesEffect } from "./runner/gate-lease.ts";
+import { cleanupCallback } from "./runner/cleanup-timeout.ts";
 import { resolveRunTimeout } from "./runner/timeout.ts";
-import { loadProjectCurrent } from "./runner/project-current.ts";
+import {
+  prepareRunnerRecordReuse,
+  withRunnerCurrentReusePreview,
+} from "./runner/record.ts";
+import {
+  projectCurrentReuseReadback,
+  type CurrentReuseReadbackSnapshot,
+} from "./runner/reuse-readback.ts";
+import type { ExecutionReusePlanSlot } from "./runner/reuse-plan.ts";
+import {
+  isOrphanedTeardownRegistration,
+  orphanedTeardownReminderEffect,
+  readTeardownRegistrationsEffect,
+  removeTeardownRegistrationIfPresentEffect,
+} from "./runner/teardown-registry.ts";
 import type { ExperimentHookContext } from "./runner/types.ts";
 import type {
   ExperimentRenameBlocked,
@@ -45,12 +108,8 @@ import type {
 import { ExperimentRenameError } from "./runner/rename-experiment.ts";
 import { evalLevelStats } from "./shared/verdict.ts";
 import { recordFact } from "./shared/facts.ts";
-import {
-  linkRunSandboxes,
-  recommendedConcurrencyForPreparedPairs,
-} from "./runner/sandbox-selection.ts";
+import { linkRunSandboxes, recommendedConcurrencyForPreparedPairs } from "./runner/sandbox-selection.ts";
 import { JUnit } from "./runner/reporters/json.ts";
-import { Artifacts as ArtifactsReporter } from "./runner/reporters/artifacts.ts";
 import {
   resolveOutputForm,
   createFeedbackCoordinator,
@@ -59,30 +118,8 @@ import {
   createNodeInputGuardStdin,
   createHumanRenderer,
   createJsonRenderer,
-  renderHumanDryPlan,
-  renderJsonPlanDocument,
   computeExitCode,
-  reportActivity,
-  type JsonPlanRow,
-  type JsonPlanDelta,
-  type JsonPlanDiagnostic,
-  type JsonPlanDiagnosticFact,
-  type JsonPlanFingerprintComparison,
 } from "./runner/feedback/index.ts";
-import {
-  buildView,
-  startViewServer,
-  incompatibleHistoryKey,
-  loadCarryInputs,
-  resolveViewInput,
-  IncompatibleResultsError,
-  ViewInputError,
-} from "./view/index.ts";
-// load.ts 本身没有 JSX,但它的 ReportDefinition/ReportLoadError 要和 view 报告槽实际装载
-// --report 与 CLI 同属一个 canonical runtime graph。`unique symbol` 品牌与 class 的
-// instanceof 必须从同一份模块实例读取，不能再混用源码与另一份预编译图。
-import { ReportLoadError } from "./report/runtime/load.ts";
-import { runShow } from "./show/index.ts";
 import { setConfiguredLocale, t } from "./i18n/index.ts";
 import type { MessageKey } from "./i18n/zh-CN.ts";
 import { formatThrown, upsertManagedBlock } from "./util.ts";
@@ -101,21 +138,91 @@ import type {
   InvocationSummary,
   ReporterError,
   ReporterRegistration,
-  RunFeedbackPlan,
   RunFeedbackState,
   Verdict,
 } from "./types.ts";
 
+/** A recoverable command-line usage error. Defects deliberately do not enter this channel. */
+export class CliUsageError extends Data.TaggedError("CliUsageError")<{
+  readonly message: string;
+  readonly exitCode: number;
+}> {}
+
+/** A recoverable failure from a concrete CLI-owned boundary (file, process, or dynamic module). */
+export class CliOperationError extends Data.TaggedError("CliOperationError")<{
+  readonly operation: string;
+  readonly cause: unknown;
+  readonly exitCode: number;
+}> {}
+
+export type CliFailure =
+  | CliUsageError
+  | CliOperationError;
+
 /**
- * view 的可预期用户错误:版本不同的报告(npx 提示)、位置参数/组合语义错误、
- * --report 装载失败。打一句直说问题与下一步后退出,不抛堆栈。
+ * Bootstrap owns process signals until an Eval has reached actual dispatch.
+ * The CLI claims the Invocation signal synchronously immediately before
+ * `runEvals`; it never infers this from argv outside the command dispatcher.
  */
-function exitOnViewUserError(e: unknown): never {
-  if (e instanceof IncompatibleResultsError || e instanceof ViewInputError || e instanceof ReportLoadError) {
-    process.stderr.write(e.message.endsWith("\n") ? e.message : `${e.message}\n`);
-    process.exit(1);
+export interface CliInterruptionOwnership {
+  readonly invocationSignal: AbortSignal;
+  /** False means bootstrap already accepted a root-owned first signal. */
+  readonly enterGracefulDispatch: () => boolean;
+}
+
+function usageError(message: string, exitCode = 1): CliUsageError {
+  return new CliUsageError({ message, exitCode });
+}
+
+function cliFailure(operation: string, cause: unknown, exitCode = 1): CliFailure {
+  return cause instanceof CliUsageError || cause instanceof CliOperationError
+    ? cause
+    : new CliOperationError({ operation, cause, exitCode });
+}
+
+/**
+ * Lift one actual Promise boundary into the application Effect. It is never a
+ * private runtime: CLI owns the sole runtime in `cli/bootstrap.ts`.
+ */
+function cliPromise<A>(operation: string, promise: (signal: AbortSignal) => PromiseLike<A>): Effect.Effect<A, CliFailure> {
+  return Effect.tryPromise({
+    try: promise,
+    catch: (cause) => cliFailure(operation, cause),
+  });
+}
+
+/** Preserve library effects without running a nested runtime. */
+function cliEffect<A, E, R>(operation: string, effect: Effect.Effect<A, E, R>): Effect.Effect<A, CliFailure, R> {
+  return effect.pipe(Effect.mapError((cause) => cliFailure(operation, cause)));
+}
+
+/** Bootstrap owns presentation of typed failures; defects and interruption stay in Cause. */
+export function renderCliFailure(failure: CliFailure): string {
+  if (failure._tag === "CliUsageError") return failure.message;
+  if (failure.cause instanceof SandboxLayerLinkError) return `${formatSandboxLayerLinkError(failure.cause)}\n`;
+  if (failure.cause instanceof SandboxPhysicalPlanningError) return `${formatSandboxPhysicalPlanningError(failure.cause)}\n`;
+  if (isReportCliOperation(failure.operation)) {
+    const code = failureCode(failure.cause);
+    if (code !== undefined) {
+      const reason = failure.cause instanceof ReportModuleLoadError ? `: ${failure.cause.reason}` : "";
+      return `${code}${reason}\n`;
+    }
   }
-  throw e;
+  return t("cli.error", { error: formatThrown(failure.cause) });
+}
+
+function isReportCliOperation(operation: string): boolean {
+  return operation === "execute report from Record" ||
+    operation === "render Report show output" ||
+    operation === "open report view session" ||
+    operation === "open report view" ||
+    operation === "export static Report";
+}
+
+function failureCode(value: unknown): string | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const code = Reflect.get(value, "code");
+  return typeof code === "string" ? code : undefined;
 }
 
 export interface Flags {
@@ -129,7 +236,6 @@ export interface Flags {
   dry: boolean;
   force: boolean;
   rerun?: "failed" | "all";
-  strict: boolean;
   budget?: number;
   tag?: string;
   junit?: string;
@@ -143,16 +249,16 @@ export interface Flags {
   host?: string;
   help: boolean;
   version: boolean;
+  /** `clean` / `migrate` 专用：确认删除未完成 Run 或没有 Git restore point 的 migration。 */
+  yes: boolean;
   // ── show 专属(位置参数仍是 eval id 前缀 / `@<locator>`;这些 flag 选「怎么看」)──
   source?: true | string;
   execution: boolean;
   diff: boolean;
   /** --diff=<路径>(必须 = 连写;空格形式会把路径当 eval id 前缀,按文档如此)。 */
   diffPath?: string;
-  /** --grep <pattern>:只与 --execution 组合,收窄命中卡片;与 --expand 互斥。 */
+  /** `show @<AttemptId> --execution` 专用：JS 正则，只显示命中的 transcript / tool / command evidence。 */
   grep?: string;
-  /** --expand <handle>:只与 --execution 组合,要求范围恰好一个 attempt;与 --grep 互斥。 */
-  expand?: string;
   timing?: "summary" | "full";
   keepSandbox?: "failed" | "all";
   all: boolean;
@@ -162,11 +268,14 @@ export interface Flags {
   history: boolean;
   usage: boolean;
   stats: boolean;
-  /** `show` / `view` 命令专用:`--exp` 可重复出现;每次出现是一个数组元素,顺序即用户输入顺序。 */
+  /** `show` / `view` 命令专用：`--experiment` 可重复；只与 `--latest` 共同形成目标集合。 */
   experiment?: string[];
   /** `show` / `view` / `accept` / `sandbox enter|list|stop` 共用:记录根目录(`.niceeval` 之外的另一个根,如 `publish` 产出的发布根)。 */
   record?: string;
-  run?: string;
+  /** `show` / `view` 命令专用：`--run` 可重复；按完整 RunId 去重。 */
+  run?: string[];
+  /** `show` / `view` 命令专用：按 Experiment 选择其 latest published Run。 */
+  latest: boolean;
   report?: string;
   page?: string;
   theme?: string;
@@ -176,8 +285,9 @@ export interface Flags {
   teardown: boolean;
 }
 
-// 表驱动的 flag 定义(node:util parseArgs)。--no-x 显式声明，不启用全局 allowNegative，
-// 避免每个 boolean flag 都隐式获得未设计的负向别名。未知 flag 由 strict 模式报清晰错误。
+// 表驱动的 flag 定义(node:util parseArgs)。--no-x 显式声明，不依赖 Node 20.14+
+// 才支持的 allowNegative，也避免每个 boolean flag 都隐式获得未设计的负向别名。
+// 未知 flag 由 strict 模式报清晰错误，不会静默吞掉后面的位置参数。
 //
 // 每个 flag 的 JSDoc 就是它在 docs-site/zh/reference/cli.mdx flag 表里的说明,由
 // scripts/generate-reference.ts 提取渲染——改 flag 语义时改这里的注释即可,不用碰生成脚本。
@@ -213,7 +323,7 @@ const FLAG_OPTIONS = {
   tag: { type: "string" },
   /** 额外写一份 JUnit XML 报告到指定路径,供 CI 消费。 */
   junit: { type: "string" },
-  /** `exp` 命令专用:机器面——stdout 上单一有序的 NDJSON 事件流(一行一个 JSON 对象),供 coding agent、CI annotation adapter 或脚本消费;`--dry --json` 输出单个 JSON 计划文档而不是流。省略即人读文本(TTY live 面板 / 非 TTY 追加流)。`show` 命令专用:任何切片的结构化形态——同一范围、同一切片选出的同一批实体,输出成一个 JSON 文档到 stdout;与 `--report`、`--expand` 互斥,多个证据 flag(`--source`/`--execution`/`--timing`/`--diff`)只能选一个。 */
+  /** `exp` 命令专用:stdout 上单一有序的 NDJSON 事件流；`--dry --json` 输出单个 JSON 计划文档。`show` 命令专用:输出同一 ReportExecution 的宿主数据与状态，不打开第二条取数路径。 */
   json: { type: "boolean" },
   /** `docker profile doctor` 专用：启动受限 DinD 容器并运行内层容器。 */
   smoke: { type: "boolean" },
@@ -221,40 +331,38 @@ const FLAG_OPTIONS = {
   out: { type: "string" },
   /** `view` 命令专用:指定本地服务器监听端口。 */
   port: { type: "string" },
-  /** `view` 命令专用:指定监听地址；可裸写，此时监听全部网络地址并打印可打开的本机与局域网 URL。省略时同样监听全部网络地址。 */
+  /** `view` 命令专用:指定 loopback 监听地址；拒绝公网或局域网地址。 */
   host: { type: "string" },
-  // show 的证据切面 / 时间轴 / 报告装载(docs-site/zh/tutorials/viewing-results.mdx)。
-  // 证据切面只认 `@<locator>`(或收窄到单个 eval 的前缀)选出的那一个 attempt——不再有
-  // 数字 `--attempt`,选哪个 attempt 由 locator 精确指名,不是「先选 eval 再挑第几次」。
-  /** `show` 命令专用:该 attempt 运行时保存的 Eval 源码调用树。裸写为有界默认投影；`--source=full` 展开全部调用路径；`--source=<path>` 按捕获路径后缀唯一匹配并显示该文件全文。 */
+  // 以下旧 show 切片只为实现收敛期间保留解析位置，不属于目标公开 CLI，也不进入参考页。
+  /** `show` 专用：按一个 exact Attempt locator 展示已记录的 source snapshot。 */
   source: { type: "boolean" },
-  /** `show` 命令专用:该 attempt 的标准执行事件流(消息、thinking、Skill load、工具调用/结果);有 OTel 时同一节点补时间(证据切面)。每个内容段最多预览前 3 行,截断尾巴自带 `--expand` 展开句柄。 */
+  /** `show @<exact-current-AttemptId> --execution`：从公开 Record projection 呈现该 Attempt 的 transcript、tool 与 command evidence。 */
   execution: { type: "boolean" },
-  /** `show` 命令专用:整个 Attempt 的统一时间树;裸 `--timing` 给有界诊断投影,`--timing=full` 逐节点展开全部 runner/已关联 OTel 节点。 */
+  /** 实现收敛占位；目标公开 CLI 通过 Report page 读取 timing 通道。 */
   timing: { type: "boolean" },
-  /** `show` 命令专用:只与 `--execution` 组合;JS 正则,只输出命中的执行卡片(角色文本、工具名、input、result,失败命令再加 display/stdout/stderr),末尾报跨 attempt 汇总 `N matches in M attempts`。与 `--expand` 互斥。 */
+  /** `show @<AttemptId> --execution` 专用：JS 正则过滤 retained transcript、tool 与 command evidence。 */
   grep: { type: "string" },
-  /** `show` 命令专用:只与 `--execution` 组合,要求范围恰好命中一个 attempt;展开一张卡片的完整落盘内容(不截断)。句柄语法 `t<轮次>.c<卡片>`(agent 事件)或 `cmd<n>`(失败 Sandbox 命令),来自截断卡片自带的提示。与 `--grep` 互斥。 */
-  expand: { type: "string" },
   // --diff 是布尔;--diff=<路径> 在 parseArgs 前预扫成 diffPath(路径必须 = 连写,
   // 空格形式的下一个 token 仍是位置参数 = eval id 前缀,与文档一致)。
-  /** `show` 命令专用:sandbox 里的文件改动摘要;`--diff=<文件路径>` 看单个文件的完整改动(路径必须 `=` 连写)。 */
+  /** 实现收敛占位；目标公开 CLI 通过 Report page 读取 diff 通道。 */
   diff: { type: "boolean" },
-  /** `show` 命令专用:执行时间轴——对匹配的每个 experiment × eval 分节,逐 attempt 列时间 / verdict / 摘要 / 耗时 / 成本 / locator;与 `--report` 互斥。 */
+  /** 实现收敛占位；目标公开 CLI 不提供跨 Run history。 */
   history: { type: "boolean" },
-  /** `show` 命令专用:范围内逐 attempt 的用量表(`UsageTable` 装配)——判定、轮数、工具调用数、token 拆分与成本;多个 experiment 时逐 experiment 分节、节尾各自合计,缺失字段显示 `—` 且不计入合计。`@<locator>` 范围下退化成该 attempt 的单行表。 */
+  /** 实现收敛占位；目标公开 CLI 通过 Report Calculation 呈现用量。 */
   usage: { type: "boolean" },
-  /** `show` 命令专用:eval × experiment 的稳定性矩阵(`StabilityMatrix` 装配)——每格是该组合全部历史执行(跨快照去重、不设可比性门槛)的判定计数,回答「哪些题从来没通过过」;与 `@<locator>`、`--report` 互斥。 */
+  /** 实现收敛占位；目标公开 CLI 不提供隐式跨 Run 统计。 */
   stats: { type: "boolean" },
-  /** `show` / `view` 命令专用:按路径段前缀收窄 experiment(与 `niceeval exp` 位置参数同一套匹配);目录路径会选中其下全部配置。可重复;出现两次以上进入对照语义——每次出现必须恰好解析到一个 experiment,顺序即对照条件顺序、首个是基准,`@<locator>` 与重复 `--exp` 互斥。`view --out` 时同一收窄决定出站内容。 */
-  exp: { type: "string", multiple: true },
-  /** `show` / `view` / `accept` / `sandbox enter|list|stop` 共用:记录根目录(`.niceeval` 之外的另一个根,如 `publish` 产出的发布根)。 */
+  /** `show` / `view` 命令专用：选择 latest policy 的完整 ExperimentId；可重复，不接受前缀或逗号列表。 */
+  experiment: { type: "string", multiple: true },
+  /** `show` / `view` / `accept` / `sandbox enter|list|stop` 共用:指定实际 Record root;CLI 不补接 `.niceeval/record` 或其它后缀。 */
   record: { type: "string" },
-  /** `view` 命令专用:只打开这一份快照文件(`run.json`);文件不可读时命令失败(扫描模式只跳过)。 */
-  run: { type: "string" },
-  /** `show` / `view` 命令专用:用文件默认导出的 `defineReport(...)` 替换两者共用的默认报告。 */
+  /** `show` / `view` 可重复传入 `--run`;每次按完整 RunId 增加一个显式 Run,重复 identity 去重。 */
+  run: { type: "string", multiple: true },
+  /** `show` / `view` 命令专用：按每个完整 ExperimentId 选择 latest published Run；与 `--run` 二选一。 */
+  latest: { type: "boolean" },
+  /** `show` / `view` 命令专用：内建 `overview` 或受信任的 Report module 路径。 */
   report: { type: "string" },
-  /** `view` 命令专用:内建主题名或显式主题文件路径。 */
+  /** `show` / `view` 命令专用：内建 Theme 或受信任的闭合 Theme module 路径。 */
   theme: { type: "string" },
   /** `show` / `view` 命令专用:选择报告的初始页;`show` 渲染该页并在尾部附其余页索引,`view` 以它作初始路由。未命中的页 id 按用法错误退出并列出可用页 id。 */
   page: { type: "string" },
@@ -262,12 +370,10 @@ const FLAG_OPTIONS = {
   teardown: { type: "boolean" },
   /** 只打印本次会匹配到的 eval × 运行配置,不实际执行(人读文本或 `--json` 单文档,见「机器怎么读:--json」)。 */
   dry: { type: "boolean" },
-  /** 忽略上次运行结果,不跳过已通过的 (experiment, eval) 组合,强制全部重跑。 */
+  /** `sandbox prune` 专用:除 orphan 外也销毁 unverified 实例;`exp` 明确拒绝此 flag,重跑失败项或全部项请用 `--rerun` / `--rerun all`。 */
   force: { type: "boolean" },
   /** `exp` 命令专用:重新运行失败项(裸写/failed)或全部项(all),不改变长期指纹。 */
   rerun: { type: "boolean" },
-  /** CI 中推荐使用:让软阈值(`soft`)失败也计入整条 eval 的 verdict。 */
-  strict: { type: "boolean" },
   /** 某个 eval 的一次 attempt 通过后,停止该 eval 剩余的 attempts;省略默认关(`attempts` 默认跑满、测完整通过率)。 */
   "early-exit": { type: "boolean" },
   /** 强制关闭首过即停,即使实验文件里写了 `earlyExit: true`。 */
@@ -275,6 +381,8 @@ const FLAG_OPTIONS = {
   /** `view` 命令专用:启动后自动打开浏览器(默认行为)。 */
   open: { type: "boolean" },
   "no-open": { type: "boolean" },
+  /** `clean` / `migrate` 专用：确认不可逆 maintenance 动作或没有 Git restore point 的 migration。 */
+  yes: { type: "boolean" },
   /** 打印用法说明并退出。 */
   help: { type: "boolean", short: "h" },
   /** 打印 niceeval 的版本号并退出。 */
@@ -285,13 +393,12 @@ function numberFlag(name: string, raw: string | undefined): number | undefined {
   if (raw === undefined) return undefined;
   const n = Number(raw);
   if (!Number.isFinite(n)) {
-    process.stderr.write(t("cli.flag.invalidNumber", { flag: name, value: raw }));
-    process.exit(1);
+    throw usageError(t("cli.flag.invalidNumber", { flag: name, value: raw }));
   }
   return n;
 }
 
-const CLI_COMMANDS = ["check", "exp", "accept", "show", "list", "view", "clean", "init", "run", "sandbox", "session", "docker"] as const;
+const CLI_COMMANDS = ["check", "exp", "accept", "show", "list", "view", "clean", "migrate", "init", "run", "sandbox", "session", "docker"] as const;
 type CliCommand = (typeof CLI_COMMANDS)[number];
 
 function isCliCommand(candidate: string): candidate is CliCommand {
@@ -300,6 +407,9 @@ function isCliCommand(candidate: string): candidate is CliCommand {
 
 function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]; flags: Flags } {
   if (argv[0] === "--") argv = argv.slice(1);
+  if (argv.some((arg) => arg === "--strict" || arg.startsWith("--strict="))) {
+    throw usageError(t("cli.flag.strictRemoved"));
+  }
 
   // --diff=<路径> 预扫:diff 本体是布尔(裸 --diff = 文件级摘要),路径只接受 = 连写。
   let diffPath: string | undefined;
@@ -333,15 +443,13 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
     if (arg.startsWith("--host=")) {
       const value = arg.slice("--host=".length);
       if (value.length === 0) {
-        process.stderr.write("--host=<address> requires a non-empty address, or use bare --host.\n");
-        process.exit(1);
+        throw usageError("--host=<address> requires a non-empty address, or use bare --host.\n");
       }
     }
     if (arg.startsWith("--source=")) {
       const value = arg.slice("--source=".length);
       if (value.length === 0) {
-        process.stderr.write("--source=<path> requires a non-empty captured source path, or use bare --source.\n");
-        process.exit(1);
+        throw usageError("--source=<path> requires a non-empty captured source path, or use bare --source.\n");
       }
       sourceValue = value;
       return "--source";
@@ -354,8 +462,7 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
     if (arg.startsWith("--keep-sandbox=")) {
       const tier = arg.slice("--keep-sandbox=".length);
       if (tier !== "failed" && tier !== "all") {
-        process.stderr.write(`--keep-sandbox only accepts "failed" (default) or "all", got "${tier}".\n`);
-        process.exit(1);
+        throw usageError(`--keep-sandbox only accepts "failed" (default) or "all", got "${tier}".\n`);
       }
       keepSandboxTier = tier;
       return "--keep-sandbox";
@@ -363,8 +470,7 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
     if (arg.startsWith("--timing=")) {
       const mode = arg.slice("--timing=".length);
       if (mode !== "summary" && mode !== "full") {
-        process.stderr.write(`--timing only accepts "summary" (default) or "full", got "${mode}".\n`);
-        process.exit(1);
+        throw usageError(`--timing only accepts "summary" (default) or "full", got "${mode}".\n`);
       }
       timingMode = mode;
       return "--timing";
@@ -372,8 +478,7 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
     if (arg.startsWith("--rerun=")) {
       const mode = arg.slice("--rerun=".length);
       if (mode !== "failed" && mode !== "all") {
-        process.stderr.write(`--rerun only accepts "failed" (default) or "all", got "${mode}".\n`);
-        process.exit(1);
+        throw usageError(`--rerun only accepts "failed" (default) or "all", got "${mode}".\n`);
       }
       rerunMode = mode;
       return "--rerun";
@@ -383,8 +488,7 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
     // 落到 node:util parseArgs 的通用「unknown option」文案——给出专门的 error:/fix: 两行,
     // 指向唯一还存在的两条路径:不加 flag 跑人读文本,机器面用 `--json`。
     if (arg === "--output" || arg.startsWith("--output=")) {
-      process.stderr.write(t("cli.flag.outputRemoved"));
-      process.exit(1);
+      throw usageError(t("cli.flag.outputRemoved"));
     }
     return arg;
   });
@@ -396,8 +500,8 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
     values = parsed.values as globalThis.Record<string, string | boolean | undefined>;
     rawPositionals = parsed.positionals;
   } catch (e) {
-    process.stderr.write(t("cli.flag.parseError", { message: e instanceof Error ? e.message : String(e) }));
-    process.exit(1);
+    if (e instanceof CliUsageError) throw e;
+    throw usageError(t("cli.flag.parseError", { message: e instanceof Error ? e.message : String(e) }));
   }
 
   // 第一个位置参数必须是已知命令;其余是 eval id 前缀 / view 输入。
@@ -408,8 +512,7 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
   if (rawPositionals.length > 0) {
     const candidate = rawPositionals[0];
     if (!isCliCommand(candidate)) {
-      process.stderr.write(t("cli.command.unknown", { command: candidate }));
-      process.exit(1);
+      throw usageError(t("cli.command.unknown", { command: candidate }));
     }
     command = candidate;
     positionals = rawPositionals.slice(1);
@@ -433,18 +536,17 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
     dry: values.dry === true,
     force: values.force === true,
     rerun: values.rerun === true ? (rerunMode ?? "failed") : undefined,
-    strict: values.strict === true,
     earlyExit: values["no-early-exit"] === true ? false : values["early-exit"] === true ? true : undefined,
     open: values["no-open"] === true ? false : values.open === true ? true : undefined,
     help: values.help === true,
     version: values.version === true,
+    yes: values.yes === true,
     source: values.source === true ? (sourceValue ?? true) : undefined,
     execution: values.execution === true,
     diff: values.diff === true && diffPath === undefined,
     diffPath,
     timing: values.timing === true ? (timingMode ?? "summary") : undefined,
     grep: values.grep as string | undefined,
-    expand: values.expand as string | undefined,
     keepSandbox: values["keep-sandbox"] === true ? (keepSandboxTier ?? "failed") : undefined,
     all: values.all === true,
     window: values.window as string | undefined,
@@ -453,9 +555,10 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
     history: values.history === true,
     usage: values.usage === true,
     stats: values.stats === true,
-    experiment: values.exp as string[] | undefined,
+    experiment: values.experiment as string[] | undefined,
     record: values.record as string | undefined,
-    run: values.run as string | undefined,
+    run: values.run as string[] | undefined,
+    latest: values.latest === true,
     report: values.report as string | undefined,
     page: values.page as string | undefined,
     theme: values.theme as string | undefined,
@@ -468,130 +571,178 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
 /**
  * exp 只接受两类输入:位置参数选「跑哪些 eval」+ 调度/输出/机器出口 flag 选「对着哪个 agent、
  * 怎么跑」。show / view 专属的证据切面(`--source`/`--execution`/`--diff`)、时间轴(`--history`)、
- * Sample 收窄(`--exp`/`--record`)、报告装载(`--report`/`--page`)、查看器
+ * Sample 收窄(`--experiment`/`--record`)、报告装载(`--report`/`--page`)、查看器
  * (`--run`/`--out`/`--port`/`--open`)不能被 exp 静默忽略(见 docs/feature/experiments/
  * cli.md「用法错误」)。返回第一个被误用的 flag 及其归属命令(用于报错),没有误用返回 undefined。
  */
-/**
- * 计划矩阵的行原料:(experimentId, evalId) 逐行,携带预测与未携带原因分组各一份。
- * `--dry` 的两种形态共用同一份计划矩阵，避免人读与机器面各自重算出不同的携带结论。
- */
-function planRowInputs(
-  agentRuns: AgentRun[],
-  matchedByRun: DiscoveredEval[][],
-  carryPlan: CarryPlan | undefined,
-  incompatibleKeys: ReadonlySet<string>,
-  priorResults: readonly { experimentId?: string; id: string; attempt: number; locator?: string; verdict: Verdict }[] = [],
-  evidenceStatesByAttempt: ReadonlyMap<string, "local" | "borrowed" | "dangling"> = new Map(),
-): {
-  experimentId: string;
-  evalId: string;
-  attempts: number;
-  reused: boolean;
-  carried: readonly { attempt: number; verdict: "passed" | "failed" }[];
-  dispatch: readonly DispatchGroup[];
-  prior?: readonly { attempt: number; locator: string; verdict: Verdict; acceptance: "available" | "legacy-locator"; evidenceState: "local" | "borrowed" | "dangling"; comparison?: FingerprintComparison }[];
-}[] {
-  const priorByKeyAttempt = new Map<string, { attempt: number; locator: string; verdict: Verdict; acceptance: "available" | "legacy-locator"; evidenceState: "local" | "borrowed" | "dangling" }>();
-  for (const prior of priorResults) {
-    if (prior.locator === undefined) continue;
-    priorByKeyAttempt.set(`${prior.experimentId ?? ""}|${prior.id}|${prior.attempt}`, {
-      attempt: prior.attempt,
-      locator: prior.locator,
-      verdict: prior.verdict,
-      acceptance: decodeAttemptLocator(prior.locator).valid ? "available" : "legacy-locator",
-      evidenceState: evidenceStatesByAttempt.get(`${prior.experimentId ?? ""}|${prior.id}|${prior.attempt}`) ?? "dangling",
-    });
-  }
-  const rows: {
+/** A dry plan never retains scoped Record capabilities or result-shaped legacy data. */
+interface CurrentDryPlan {
+  readonly slots: readonly CurrentDryPlanSlot[];
+  readonly readbacks: readonly CurrentReuseReadbackSnapshot[];
+}
+
+interface CurrentDryPlanSlot {
+  readonly runId: string;
+  readonly slotId: string;
+  readonly experimentId: string;
+  readonly evalId: string;
+  readonly attempt: number;
+  readonly state: "reused" | "gap";
+  readonly comparisons: readonly {
+    readonly attachment: string;
+    readonly recordedClaim: string;
+    readonly sourceState: string;
+    readonly result: string;
+    readonly reason: string;
+  }[];
+  readonly reason?: string;
+  readonly scope?: string;
+}
+
+interface CurrentDryPlanRow {
+  readonly experimentId: string;
+  readonly evalId: string;
+  readonly slots: readonly CurrentDryPlanSlot[];
+  readonly readbacks: readonly CurrentReuseReadbackSnapshot[];
+  readonly locked?: boolean;
+}
+
+function projectCurrentDryPlan(input: {
+  readonly slots: readonly ExecutionReusePlanSlot[];
+  readonly readbacks: readonly import("./runner/reuse-readback.ts").CurrentReuseReadback[];
+}): CurrentDryPlan {
+  return Object.freeze({
+    slots: Object.freeze(input.slots.map(projectCurrentDryPlanSlot)),
+    readbacks: Object.freeze(input.readbacks.map(projectCurrentReuseReadback)),
+  });
+}
+
+function projectCurrentDryPlanSlot(slot: ExecutionReusePlanSlot): CurrentDryPlanSlot {
+  return Object.freeze({
+    runId: String(slot.runId),
+    slotId: String(slot.slotId),
+    experimentId: slot.experimentId,
+    evalId: slot.evalId,
+    attempt: slot.attempt,
+    state: slot.state === "reuse" ? "reused" : "gap",
+    comparisons: Object.freeze(slot.comparisons.map((comparison) => Object.freeze({
+      attachment: comparison.attachment,
+      recordedClaim: comparison.recordedClaim,
+      sourceState: comparison.sourceState,
+      result: comparison.result,
+      reason: comparison.reason,
+    }))),
+    ...(slot.state === "gap" ? { reason: slot.reason, scope: slot.scope } : {}),
+  });
+}
+
+function currentDryPlanRows(plan: CurrentDryPlan): readonly CurrentDryPlanRow[] {
+  const rows = new Map<string, {
     experimentId: string;
     evalId: string;
-    attempts: number;
-    reused: boolean;
-    carried: readonly { attempt: number; verdict: "passed" | "failed" }[];
-    dispatch: readonly DispatchGroup[];
-    prior?: readonly { attempt: number; locator: string; verdict: Verdict; acceptance: "available" | "legacy-locator"; evidenceState: "local" | "borrowed" | "dangling"; comparison?: FingerprintComparison }[];
-  }[] = [];
-  const carriedByPair = new Map<string, { attempt: number; verdict: "passed" | "failed" }[]>();
-  for (const result of carryPlan?.carriedResults ?? []) {
-    if (result.experimentId === undefined || (result.verdict !== "passed" && result.verdict !== "failed")) continue;
-    const key = JSON.stringify([result.experimentId, result.id]);
-    const carried = carriedByPair.get(key) ?? [];
-    carried.push({ attempt: result.attempt, verdict: result.verdict });
-    carriedByPair.set(key, carried);
+    slots: CurrentDryPlanSlot[];
+    readbacks: CurrentReuseReadbackSnapshot[];
+  }>();
+  const rowFor = (experimentId: string, evalId: string) => {
+    const key = JSON.stringify([experimentId, evalId]);
+    const existing = rows.get(key);
+    if (existing !== undefined) return existing;
+    const created = { experimentId, evalId, slots: [], readbacks: [] };
+    rows.set(key, created);
+    return created;
+  };
+  for (const slot of plan.slots) rowFor(slot.experimentId, slot.evalId).slots.push(slot);
+  for (const readback of plan.readbacks) {
+    rowFor(readback.target.experimentId, readback.target.evalId).readbacks.push(readback);
   }
-  for (let i = 0; i < agentRuns.length; i++) {
-    const run = agentRuns[i]!;
-    for (const e of matchedByRun[i]!) {
-      const carried = carriedByPair.get(JSON.stringify([run.experimentId ?? "", e.id])) ?? [];
-      const carriedCount = carryPlan?.carriedAttemptsByKey.get(cacheKey(run, e.id))?.size ?? carried.length;
-      // 没有任何可读历史时不必先跑一趟携带规划:计划内每个序号都缺条目,逐条报缺历史门的原因词。
-      const dispatch: readonly DispatchGroup[] = carryPlan?.dispatchByKey.get(cacheKey(run, e.id))
-        ?? (carriedCount >= run.attempts
-          ? []
-          : [{ ...missingReason(cacheKey(run, e.id), { incompatibleKeys }), attempts: [...Array(run.attempts).keys()] }]);
-      const previousResults = dispatch.flatMap((group) => group.reason === "previous-result"
-        ? group.attempts.flatMap((attempt) => {
-            const prior = priorByKeyAttempt.get(`${run.experimentId ?? ""}|${e.id}|${attempt}`);
-            return prior === undefined ? [] : [{ ...prior, ...(group.comparison !== undefined ? { comparison: group.comparison } : {}) }];
-          })
-        : []);
-      rows.push({
-        experimentId: run.experimentId ?? "",
-        evalId: e.id,
-        attempts: run.attempts,
-        reused: carriedCount >= run.attempts,
-        carried,
-        dispatch,
-        ...(previousResults.length > 0 ? { prior: previousResults } : {}),
-      });
+  return Object.freeze([...rows.values()].map((row) => Object.freeze({
+    experimentId: row.experimentId,
+    evalId: row.evalId,
+    slots: Object.freeze([...row.slots].sort((left, right) => left.attempt - right.attempt)),
+    readbacks: Object.freeze([...row.readbacks].sort((left, right) => left.target.attempt - right.target.attempt)),
+  })).sort((left, right) =>
+    left.experimentId.localeCompare(right.experimentId) || left.evalId.localeCompare(right.evalId),
+  ));
+}
+
+function renderCurrentDryPlan(input: {
+  readonly totalAttempts: number;
+  readonly evals: number;
+  readonly configs: number;
+  readonly attempts: number;
+  readonly rows: readonly CurrentDryPlanRow[];
+}): string {
+  const reused = input.rows.reduce((total, row) =>
+    total + row.slots.filter((slot) => slot.state === "reused").length, 0);
+  const lines = [
+    `plan: ${input.totalAttempts} attempts · ${input.evals} evals × ${input.configs} configs · runs ${input.attempts}`,
+    ...(reused === 0 ? [] : [`reuse: ${reused}/${input.totalAttempts} exact current Record attempts`]),
+  ];
+  for (const row of input.rows) {
+    const reusedAttempts = row.slots.filter((slot) => slot.state === "reused").map((slot) => slot.attempt);
+    const gaps = row.slots.filter((slot) => slot.state === "gap");
+    const hasIdentityGap = gaps.some((slot) => slot.reason === "identity-mismatch");
+    const parts = [
+      ...(row.locked ? ["locked"] : []),
+      ...(reusedAttempts.length === 0 ? [] : [`reused ${reusedAttempts.join(",")}`]),
+      ...gaps.map((slot) => `gap ${slot.attempt}:${slot.reason ?? "unknown"}`),
+    ];
+    lines.push(`${row.experimentId}  ${row.evalId}  ${parts.join(" · ") || "no slots"}`);
+    for (const readback of row.readbacks) {
+      const verdict = readback.state === "reused"
+        ? readback.verdict
+        : readback.verdict.state === "available"
+          ? readback.verdict.value
+          : readback.verdict.state;
+      lines.push(`  source @${readback.source.attemptId} · ${readback.state} · verdict ${verdict}`);
+      if (hasIdentityGap && readback.state === "prior") {
+        lines.push(`  accept: niceeval accept @${readback.source.attemptId}`);
+      }
     }
   }
-  return rows;
+  return `${lines.join("\n")}\n`;
 }
 
-/** 内部 ADT tag 不属于 `ExpPlanDelta` 的公开 JSON 契约；边界显式投影，禁止对象展开泄漏。 */
-function jsonPlanDelta(delta: FingerprintDelta): JsonPlanDelta {
-  switch (delta._tag) {
-    case "Added": return { selector: delta.selector, kind: "added", to: delta.to };
-    case "Removed": return { selector: delta.selector, kind: "removed", from: delta.from };
-    case "Changed": return { selector: delta.selector, kind: "changed", from: delta.from, to: delta.to };
-    case "Unknown": return { selector: delta.selector, kind: "unknown" };
-  }
+function renderCurrentDryPlanJson(input: {
+  readonly totalAttempts: number;
+  readonly evals: number;
+  readonly configs: number;
+  readonly attempts: number;
+  readonly rows: readonly CurrentDryPlanRow[];
+}): string {
+  const reused = input.rows.reduce((total, row) =>
+    total + row.slots.filter((slot) => slot.state === "reused").length, 0);
+  return `${JSON.stringify({
+    format: "niceeval.current-reuse-plan/v1",
+    schemaVersion: 1,
+    total: input.totalAttempts,
+    evals: input.evals,
+    configs: input.configs,
+    attempts: input.attempts,
+    reused,
+    matrix: input.rows,
+  })}\n`;
 }
 
-function jsonPlanDiagnostic(diagnostic: FingerprintDiagnostic): JsonPlanDiagnostic {
-  const facts = diagnostic.facts?.map((fact): JsonPlanDiagnosticFact =>
-    "value" in fact
-      ? { label: fact.label, value: fact.value }
-      : { label: fact.label, from: fact.from, to: fact.to },
-  );
-  return {
-    code: diagnostic.code,
-    summary: diagnostic.summary,
-    ...(facts === undefined ? {} : { facts }),
-    ...(diagnostic.observedDeltas === undefined
-      ? {}
-      : { observedDeltas: diagnostic.observedDeltas.map(jsonPlanDelta) }),
-    ...(diagnostic.limitations === undefined ? {} : { limitations: [...diagnostic.limitations] }),
-    ...(diagnostic.causes === undefined ? {} : { causes: diagnostic.causes.map(jsonPlanDiagnostic) }),
-  };
-}
-
-function jsonPlanComparison(comparison: FingerprintComparison): JsonPlanFingerprintComparison {
-  if (comparison.kind === "match") {
-    throw new Error("A matching fingerprint has no plan comparison projection.");
-  }
-  if (comparison.kind === "changed") {
-    const deltas = comparison.deltas.map(jsonPlanDelta);
-    const [first, ...rest] = deltas;
-    if (first === undefined) throw new Error("A changed fingerprint comparison requires at least one delta.");
-    return { kind: "changed", deltas: [first, ...rest] };
-  }
-  return {
-    kind: "unexplained",
-    diagnostic: jsonPlanDiagnostic(comparison.diagnostic),
-  };
+/**
+ * Fold the invocation's real fresh results and current Record readbacks at the
+ * same eval identity. This intentionally projects only identity + terminal
+ * verdict; a reused readback is never recreated as an EvalResult.
+ */
+export function foldInvocationEvalStats(
+  summary: Pick<InvocationSummary, "results" | "reusedAttempts">,
+) {
+  const terminals = [
+    ...summary.results.map((result) => Object.freeze({
+      identity: `${result.experimentId ?? ""}|${result.id}`,
+      verdict: result.verdict,
+    })),
+    ...summary.reusedAttempts.map((readback) => Object.freeze({
+      identity: `${readback.target.experimentId}|${readback.target.evalId}`,
+      verdict: readback.verdict,
+    })),
+  ];
+  return evalLevelStats(terminals, (terminal) => terminal.identity);
 }
 
 function firstViewerOnlyFlag(flags: Flags): { flag: string; command: string } | undefined {
@@ -602,21 +753,74 @@ function firstViewerOnlyFlag(flags: Flags): { flag: string; command: string } | 
   if (flags.execution) return { flag: "--execution", command: SHOW };
   if (flags.timing !== undefined) return { flag: "--timing", command: SHOW };
   if (flags.grep !== undefined) return { flag: "--grep", command: SHOW };
-  if (flags.expand !== undefined) return { flag: "--expand", command: SHOW };
   if (flags.diff || flags.diffPath !== undefined) return { flag: "--diff", command: SHOW };
   if (flags.history) return { flag: "--history", command: SHOW };
   if (flags.usage) return { flag: "--usage", command: SHOW };
   if (flags.stats) return { flag: "--stats", command: SHOW };
-  if (flags.experiment !== undefined) return { flag: "--exp", command: BOTH };
+  if (flags.experiment !== undefined) return { flag: "--experiment", command: BOTH };
   if (flags.record !== undefined) return { flag: "--record", command: BOTH };
   if (flags.report !== undefined) return { flag: "--report", command: BOTH };
   if (flags.theme !== undefined) return { flag: "--theme", command: VIEW };
   if (flags.page !== undefined) return { flag: "--page", command: BOTH };
   if (flags.run !== undefined) return { flag: "--run", command: VIEW };
+  if (flags.latest) return { flag: "--latest", command: BOTH };
   if (flags.out !== undefined) return { flag: "--out", command: VIEW };
   if (flags.port !== undefined) return { flag: "--port", command: VIEW };
   if (flags.open !== undefined) return { flag: "--open", command: VIEW };
   return undefined;
+}
+
+/** `clean` and `migrate` operate on a current Record root with explicit confirmation. */
+function firstRecordMaintenanceUnsupportedFlag(flags: Flags): string | undefined {
+  const unsupported: Array<[string, unknown]> = [
+    ["--agent", flags.agent],
+    ["--model", flags.model],
+    ["--attempts", flags.attempts],
+    ["--max-concurrency", flags.maxConcurrency],
+    ["--max-build-concurrency", flags.maxBuildConcurrency],
+    ["--timeout", flags.timeout],
+    ["--budget", flags.budget],
+    ["--tag", flags.tag],
+    ["--junit", flags.junit],
+    ["--json", flags.json],
+    ["--smoke", flags.smoke],
+    ["--dry", flags.dry],
+    ["--force", flags.force],
+    ["--rerun", flags.rerun],
+    ["--early-exit/--no-early-exit", flags.earlyExit],
+    ["--open/--no-open", flags.open],
+    ["--out", flags.out],
+    ["--port", flags.port],
+    ["--host", flags.host],
+    ["--source", flags.source],
+    ["--execution", flags.execution],
+    ["--diff", flags.diff || flags.diffPath !== undefined],
+    ["--grep", flags.grep],
+    ["--timing", flags.timing],
+    ["--keep-sandbox", flags.keepSandbox],
+    ["--all", flags.all],
+    ["--window", flags.window],
+    ["--path", flags.sandboxPath],
+    ["--leave-running", flags.leaveRunning],
+    ["--history", flags.history],
+    ["--usage", flags.usage],
+    ["--stats", flags.stats],
+    ["--experiment", flags.experiment],
+    ["--run", flags.run],
+    ["--latest", flags.latest],
+    ["--report", flags.report],
+    ["--page", flags.page],
+    ["--theme", flags.theme],
+    ["--orphans", flags.orphans],
+    ["--teardown", flags.teardown],
+  ];
+  const bad = unsupported.find(([flag, value]) => {
+    if (flag === "--open/--no-open" || flag === "--early-exit/--no-early-exit") {
+      return value !== undefined;
+    }
+    return value !== undefined && value !== false && (!Array.isArray(value) || value.length > 0);
+  });
+  return bad?.[0];
 }
 
 /**
@@ -625,12 +829,10 @@ function firstViewerOnlyFlag(flags: Flags): { flag: string; command: string } | 
  */
 function parseAcceptLocators(positionals: string[], flags: Flags): string[] {
   if (positionals.length === 0 || positionals.some((locator) => !/^@[^@\s]+$/.test(locator))) {
-    process.stderr.write(t("cli.accept.usage"));
-    process.exit(1);
+    throw usageError(t("cli.accept.usage"));
   }
   if (new Set(positionals).size !== positionals.length) {
-    process.stderr.write("niceeval accept rejects duplicate locators.\n");
-    process.exit(1);
+    throw usageError("niceeval accept rejects duplicate locators.\n");
   }
 
   // `parseArgs` 已经负责未知 flag；这里拒绝那些虽为全局已知、但会改变运行/查看语义的 flag。
@@ -649,14 +851,12 @@ function parseAcceptLocators(positionals: string[], flags: Flags): string[] {
     ["--dry", flags.dry],
     ["--force", flags.force],
     ["--rerun", flags.rerun],
-    ["--strict", flags.strict],
     ["--early-exit/--no-early-exit", flags.earlyExit],
     ["--open/--no-open", flags.open],
     ["--source", flags.source],
     ["--execution", flags.execution],
     ["--diff", flags.diff || flags.diffPath !== undefined],
     ["--grep", flags.grep],
-    ["--expand", flags.expand],
     ["--timing", flags.timing],
     ["--keep-sandbox", flags.keepSandbox],
     ["--all", flags.all],
@@ -666,8 +866,9 @@ function parseAcceptLocators(positionals: string[], flags: Flags): string[] {
     ["--history", flags.history],
     ["--usage", flags.usage],
     ["--stats", flags.stats],
-    ["--exp", flags.experiment],
+    ["--experiment", flags.experiment],
     ["--run", flags.run],
+    ["--latest", flags.latest],
     ["--report", flags.report],
     ["--page", flags.page],
     ["--theme", flags.theme],
@@ -681,35 +882,44 @@ function parseAcceptLocators(positionals: string[], flags: Flags): string[] {
     return value !== undefined && value !== false && (!Array.isArray(value) || value.length > 0);
   });
   if (bad) {
-    process.stderr.write(t("cli.accept.flagUnsupported", { flag: bad[0] }));
-    process.exit(1);
+    throw usageError(t("cli.accept.flagUnsupported", { flag: bad[0] }));
   }
   return [...positionals];
 }
 
 interface AcceptLocatorResult {
+  runId: string;
   locator: string;
   sourceLocator: string;
   fingerprint?: string;
 }
 
 /** 调用 acceptance core；CLI 只负责 cwd/记录根边界、输出与退出码，不重建结果或启动 runner。 */
-async function runAcceptCommand(cwd: string, locators: readonly string[], recordRoot: string | undefined): Promise<void> {
-  const mod = await import("./runner/accept.ts") as {
-    acceptLocators(input: { cwd: string; locators: readonly string[]; recordRoot?: string }): Promise<readonly AcceptLocatorResult[]>;
+function runAcceptCommand(cwd: string, locators: readonly string[], recordRoot: string | undefined): Effect.Effect<void, CliFailure> {
+  return Effect.gen(function* () {
+    const mod = (yield* cliPromise("load acceptance command", () => import("./runner/accept.ts"))) as unknown as {
+      acceptLocators(input: { cwd: string; locators: readonly string[]; recordRoot?: string }): Effect.Effect<
+        readonly AcceptLocatorResult[],
+        unknown,
+        never
+    >;
   };
-  const results = await mod.acceptLocators({
-    cwd,
-    locators,
-    ...(recordRoot !== undefined ? { recordRoot } : {}),
-  });
-  for (const result of results) {
-    process.stdout.write(t("cli.accept.done", {
-      sourceLocator: result.sourceLocator,
-      locator: result.locator,
-      fingerprint: result.fingerprint ?? "—",
+    const results = yield* cliEffect("accept locators", mod.acceptLocators({
+      cwd,
+      locators,
+      ...(recordRoot !== undefined ? { recordRoot } : {}),
     }));
-  }
+    yield* Effect.sync(() => {
+      for (const result of results) {
+        process.stdout.write(t("cli.accept.done", {
+          runId: result.runId,
+          sourceLocator: result.sourceLocator,
+          locator: result.locator,
+          fingerprint: result.fingerprint ?? "—",
+        }));
+      }
+    });
+  });
 }
 
 // ── exp rename:CLI 契约与纯解析/格式化 ──────────────────────────────────────
@@ -769,14 +979,12 @@ export function firstExperimentRenameUnsupportedFlag(flags: Flags): string | und
     ["--junit", flags.junit],
     ["--force", flags.force],
     ["--rerun", flags.rerun],
-    ["--strict", flags.strict],
     ["--early-exit/--no-early-exit", flags.earlyExit],
     ["--open/--no-open", flags.open],
     ["--source", flags.source],
     ["--execution", flags.execution],
     ["--diff", flags.diff || flags.diffPath !== undefined],
     ["--grep", flags.grep],
-    ["--expand", flags.expand],
     ["--timing", flags.timing],
     ["--keep-sandbox", flags.keepSandbox],
     ["--all", flags.all],
@@ -786,9 +994,10 @@ export function firstExperimentRenameUnsupportedFlag(flags: Flags): string | und
     ["--history", flags.history],
     ["--usage", flags.usage],
     ["--stats", flags.stats],
-    ["--exp", flags.experiment],
+    ["--experiment", flags.experiment],
     ["--record", flags.record],
     ["--run", flags.run],
+    ["--latest", flags.latest],
     ["--report", flags.report],
     ["--page", flags.page],
     ["--theme", flags.theme],
@@ -916,63 +1125,75 @@ export function experimentRenameExitCode(document: ExperimentRenameJsonDocument)
  * src/runner/rename-experiment.ts(planExperimentRename / renameExperiment)。
  * renameExperiment 对资格失败抛 ExperimentRenameError,CLI 把它投影成 rejected 文档。
  */
-async function runExperimentRenameCommand(cwd: string, args: readonly string[], flags: Flags): Promise<number> {
-  const parsed = parseExperimentRenamePositionals(args);
-  if (!parsed.ok) {
-    process.stderr.write(t("cli.rename.usage"));
-    return 1;
-  }
-  const unsupported = firstExperimentRenameUnsupportedFlag(flags);
-  if (unsupported !== undefined) {
-    process.stderr.write(t("cli.rename.flagUnsupported", { flag: unsupported }));
-    return 1;
-  }
-  const { oldId, newId } = parsed;
-  const mod = await import("./runner/rename-experiment.ts") as unknown as {
-    planExperimentRename(options: { cwd: string; oldId: string; newId: string }): Promise<ExperimentRenamePlan>;
-    renameExperiment(options: { cwd: string; oldId: string; newId: string }): Promise<RenamedExperiment>;
-  };
-  if (flags.dry) {
-    const plan = await mod.planExperimentRename({ cwd, oldId, newId });
-    if (flags.json) process.stdout.write(renderExperimentRenameJson(plan));
-    else process.stdout.write(renderExperimentRenamePlanHuman(plan));
-    return experimentRenameExitCode(plan);
-  }
-  try {
-    const renamed = await mod.renameExperiment({ cwd, oldId, newId });
-    if (flags.json) process.stdout.write(renderExperimentRenameJson(renamed));
-    else process.stdout.write(renderExperimentRenameDoneHuman(renamed));
-    return 0;
-  } catch (e) {
-    // ExperimentRenameError 携带稳定 reason 与 rejected plan;其它异常按通用失败兜底。
-    if (e instanceof ExperimentRenameError) {
-      const rejected = experimentRenameRejectedFromError(e);
-      if (flags.json) process.stdout.write(renderExperimentRenameJson(rejected));
-      else process.stdout.write(renderExperimentRenameRejectedHuman(rejected));
+function runExperimentRenameCommand(cwd: string, args: readonly string[], flags: Flags): Effect.Effect<number, CliFailure> {
+  return Effect.gen(function* () {
+    const parsed = parseExperimentRenamePositionals(args);
+    if (!parsed.ok) {
+      yield* Effect.sync(() => process.stderr.write(t("cli.rename.usage")));
       return 1;
     }
-    process.stderr.write(t("cli.rename.failed", { error: e instanceof Error ? e.message : String(e) }));
+    const unsupported = firstExperimentRenameUnsupportedFlag(flags);
+    if (unsupported !== undefined) {
+      yield* Effect.sync(() => process.stderr.write(t("cli.rename.flagUnsupported", { flag: unsupported })));
+      return 1;
+    }
+    const { oldId, newId } = parsed;
+    const mod = (yield* cliPromise("load experiment rename command", () => import("./runner/rename-experiment.ts"))) as unknown as {
+      planExperimentRename(options: { cwd: string; oldId: string; newId: string }): Effect.Effect<ExperimentRenamePlan, unknown, never>;
+      renameExperiment(options: { cwd: string; oldId: string; newId: string }): Effect.Effect<RenamedExperiment, unknown, never>;
+    };
+    if (flags.dry) {
+      const plan = yield* cliEffect("plan experiment rename", mod.planExperimentRename({ cwd, oldId, newId }));
+      yield* Effect.sync(() => {
+        if (flags.json) process.stdout.write(renderExperimentRenameJson(plan));
+        else process.stdout.write(renderExperimentRenamePlanHuman(plan));
+      });
+      return experimentRenameExitCode(plan);
+    }
+    const outcome = yield* Effect.either(cliEffect("rename experiment", mod.renameExperiment({ cwd, oldId, newId })));
+    if (Either.isRight(outcome)) {
+      yield* Effect.sync(() => {
+        if (flags.json) process.stdout.write(renderExperimentRenameJson(outcome.right));
+        else process.stdout.write(renderExperimentRenameDoneHuman(outcome.right));
+      });
+      return 0;
+    }
+    // ExperimentRenameError 携带稳定 reason 与 rejected plan;其它异常按通用失败兜底。
+    const error = outcome.left.cause;
+    yield* Effect.sync(() => {
+      if (error instanceof ExperimentRenameError) {
+        const rejected = experimentRenameRejectedFromError(error);
+        if (flags.json) process.stdout.write(renderExperimentRenameJson(rejected));
+        else process.stdout.write(renderExperimentRenameRejectedHuman(rejected));
+      } else {
+        process.stderr.write(t("cli.rename.failed", { error: error instanceof Error ? error.message : String(error) }));
+      }
+    });
     return 1;
-  }
+  });
 }
 
 /** 加载 cwd/.env(不覆盖已有环境变量)。 */
-async function loadDotenv(cwd: string): Promise<void> {
+function loadDotenv(cwd: string): Effect.Effect<void, CliFailure> {
   const path = join(cwd, ".env");
-  if (!existsSync(path)) return;
-  const raw = await readFile(path, "utf-8");
-  for (const line of raw.split("\n")) {
-    const t = line.trim();
-    if (!t || t.startsWith("#")) continue;
-    const eq = t.indexOf("=");
-    if (eq === -1) continue;
-    const key = t.slice(0, eq).trim();
-    let value = t.slice(eq + 1).trim();
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
-    }
-    if (process.env[key] === undefined) process.env[key] = value;
-  }
+  if (!existsSync(path)) return Effect.void;
+  return cliPromise("read .env", () => readFile(path, "utf-8")).pipe(
+    Effect.tap((raw) => Effect.sync(() => {
+      for (const line of raw.split("\n")) {
+        const entry = line.trim();
+        if (!entry || entry.startsWith("#")) continue;
+        const eq = entry.indexOf("=");
+        if (eq === -1) continue;
+        const key = entry.slice(0, eq).trim();
+        let value = entry.slice(eq + 1).trim();
+        if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+          value = value.slice(1, -1);
+        }
+        if (process.env[key] === undefined) process.env[key] = value;
+      }
+    })),
+    Effect.asVoid,
+  );
 }
 
 /**
@@ -981,24 +1202,27 @@ async function loadDotenv(cwd: string): Promise<void> {
  * 判定——语言是装饰性设置,不该让 `niceeval show` 因为一个坏 config 打不开结果;真正需要
  * config 的命令随后走 loadConfig,由它报出完整错误(模块缓存让这次装载不重复付出代价)。
  */
-async function applyConfiguredLocale(cwd: string): Promise<void> {
+function applyConfiguredLocale(cwd: string): Effect.Effect<void> {
   const path = join(cwd, "niceeval.config.ts");
-  if (!existsSync(path)) return;
-  try {
-    const mod = (await import(pathToFileURL(path).href)) as { default?: Config };
-    setConfiguredLocale(mod.default?.locale);
-  } catch {
+  if (!existsSync(path)) return Effect.void;
+  return cliPromise("load configured locale", () => import(pathToFileURL(path).href)).pipe(
+    Effect.tap((mod) => Effect.sync(() => setConfiguredLocale((mod as { default?: Config }).default?.locale))),
     // 交给后续 loadConfig 报错;这里不抢在语言还没定下来时打印任何东西。
-  }
+    Effect.catchAll(() => Effect.void),
+  );
 }
 
-async function loadConfig(cwd: string): Promise<Config> {
-  const { loadConfigFile } = await import("./load-config.ts");
-  return loadConfigFile(cwd);
+function loadConfig(cwd: string): Effect.Effect<Config, CliFailure> {
+  return Effect.gen(function* () {
+    const { loadConfigFile } = (yield* cliPromise("load config module", () => import("./load-config.ts"))) as {
+      loadConfigFile(cwd: string): Promise<Config>;
+    };
+    return yield* cliPromise("load NiceEval config", () => loadConfigFile(cwd));
+  });
 }
 
 // AGENTS.md/CLAUDE.md 托管区块:告诉在这个项目里干活的 coding agent「niceeval 不在你的训练数据里,
-// 先读随包文档,跑完读结构化结果」。随包只发中文准绳版文档(英文站是手工同步、可能滞后,
+// 先读随包文档,跑完只经公开 show 面诊断」。随包只发中文准绳版文档(英文站是手工同步、可能滞后,
 // 不进包,见 package.json 的 files);init 时写入/刷新;标记之外的用户内容永不触碰。
 const AGENT_RULES_BEGIN = "<!-- BEGIN:niceeval-agent-rules -->";
 const AGENT_RULES_END = "<!-- END:niceeval-agent-rules -->";
@@ -1009,12 +1233,14 @@ const AGENT_RULES_CONTENT = [
   "`node_modules/niceeval/INDEX.md`, then read the task-specific bundled guides it points",
   "to before writing any eval, experiment, adapter, or niceeval config. That index and",
   "the bundled Chinese docs are the authoritative version matching this installation.",
-  "After a run, drill into failures with `niceeval show` — pick an `@<locator>` from the",
-  "compact index it prints, then `niceeval show @<locator>` for a compact overview, or add",
-  "`--source` / `--execution` / `--diff` for evidence; the run directories the CLI prints",
-  "are the structured source of truth: `run.json` holds the run's metadata and each",
-  "`<evalId>/a<attempt>/result.json` holds that attempt's verdict and assertions, next to",
-  "its artifact files (`events.json` / `trace.json` / `diff.json`).",
+  "After a run, use this repository's package-manager invocation of `niceeval show` for",
+  "diagnosis (`pnpm --silent exec niceeval show` in a pnpm project). Pick an `@<locator>`",
+  "from the compact index, then show that locator for an overview, or add",
+  "`--source` / `--execution` / `--timing` / `--diff` / `--json` for evidence.",
+  "When diagnosing an existing run, do not inspect raw `.niceeval` files or treat the current",
+  "`evals/` or `agents/` source as evidence of what happened in that run. If `niceeval show`",
+  "cannot expose the evidence you need, report that product gap. Reading source remains",
+  "appropriate when the task is to author or modify that source.",
 ].join("\n");
 
 // 优先复用已有的 AGENTS.md;项目只有 CLAUDE.md(没有 AGENTS.md)时改写 CLAUDE.md 本身,
@@ -1052,41 +1278,45 @@ function hostPrefersEsm(cwd: string): boolean {
   }
 }
 
-async function initProject(cwd: string): Promise<void> {
-  await mkdir(join(cwd, "evals"), { recursive: true });
-  const configPath = join(cwd, "niceeval.config.ts");
-  if (!existsSync(configPath)) {
-    await writeFile(
-      configPath,
-      [
-        'import { defineConfig } from "niceeval";',
-        "",
-        "export default defineConfig({",
-        "  // Add experiments/ with defineExperiment(...) to run evals.",
-        "  //",
-        "  // IMPORTANT(judge): semantic assertions (t.judge.*) are unavailable until a judge",
-        "  // model is configured. A required unavailable assertion errors the attempt; only",
-        "  // .optional() leaves its Verdict unchanged. Any OpenAI-compatible /chat/completions",
-        "  // service works; the key is read from NICEEVAL_JUDGE_KEY unless apiKeyEnv says otherwise.",
-        '  // judge: { model: "gpt-5.4-mini" },',
-        "});",
-        "",
-      ].join("\n"),
-      "utf-8",
-    );
-  }
-  const agentDocPath = resolveAgentDocPath(cwd);
-  const existing = existsSync(agentDocPath) ? await readFile(agentDocPath, "utf-8") : "";
-  const next = upsertManagedBlock(existing, AGENT_RULES_BEGIN, AGENT_RULES_END, AGENT_RULES_CONTENT);
-  if (next !== existing) await writeFile(agentDocPath, next, "utf-8");
+function initProject(cwd: string): Effect.Effect<void, CliFailure> {
+  return Effect.gen(function* () {
+    yield* cliPromise("create eval directory", () => mkdir(join(cwd, "evals"), { recursive: true }));
+    const configPath = join(cwd, "niceeval.config.ts");
+    if (!existsSync(configPath)) {
+      yield* cliPromise("write initial config", () => writeFile(
+        configPath,
+        [
+          'import { defineConfig } from "niceeval";',
+          "",
+          "export default defineConfig({",
+          "  // Add experiments/ with defineExperiment(...) to run evals.",
+          "  //",
+          "  // Judge Facts require an Eval declaration: judge: true. Configure the model here or",
+          "  // on an Experiment. A consumed Fact without a model or key becomes unavailable and",
+          "  // makes that Attempt errored. Any OpenAI-compatible /chat/completions service works;",
+          "  // the key is read from OPENAI_API_KEY unless apiKeyEnv says otherwise.",
+          '  // judge: { model: "gpt-5.4-mini" },',
+          "});",
+          "",
+        ].join("\n"),
+        "utf-8",
+      ));
+    }
+    const agentDocPath = resolveAgentDocPath(cwd);
+    const existing = existsSync(agentDocPath)
+      ? yield* cliPromise("read agent instructions", () => readFile(agentDocPath, "utf-8"))
+      : "";
+    const next = upsertManagedBlock(existing, AGENT_RULES_BEGIN, AGENT_RULES_END, AGENT_RULES_CONTENT);
+    if (next !== existing) yield* cliPromise("write agent instructions", () => writeFile(agentDocPath, next, "utf-8"));
+  });
 }
 
-async function openBrowser(url: string): Promise<boolean> {
+function openBrowser(url: string): Effect.Effect<boolean, CliFailure> {
   const command =
     process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
   const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
 
-  return new Promise((resolveOpen) => {
+  return cliPromise("open browser", () => new Promise((resolveOpen: (opened: boolean) => void) => {
     let done = false;
     const finish = (ok: boolean) => {
       if (done) return;
@@ -1100,7 +1330,7 @@ async function openBrowser(url: string): Promise<boolean> {
     child.once("error", () => finish(false));
     child.once("exit", (code) => finish(code === 0));
     child.unref();
-  });
+  }));
 }
 
 /**
@@ -1113,8 +1343,8 @@ async function openBrowser(url: string): Promise<boolean> {
  *   experiment 求和得到 `unstarted`。
  * - `"reporter-error:<reporter>"` 诊断转成 `ReporterError[]`;`required` 字段来自事件自带的
  *   `data.required`,直接反映这个 reporter 注册时的真实 required/best-effort 分类(见上面
- *   构造 `reporters: ReporterRegistration[]` 的地方——artifacts / --json / --junit 恒
- *   `required: true`,`config.reporters` 恒 `false`),不是一个统一写死的占位值。
+ *   构造 `reporters: ReporterRegistration[]` 的地方——`--junit` 为 `required: true`,
+ *   `config.reporters` 恒 `false`),不是一个统一写死的占位值。
  * - `earlyExitUnstarted` 从反馈状态的 attempt:early-exit 计数派生(减去 fail-fast 的那部分——
  *   那是「未完整覆盖」,进 unstarted,不是「省下的重复验证」)。
  */
@@ -1172,895 +1402,1298 @@ function assembleInvocationCompletion(state: RunFeedbackState): InvocationComple
 }
 
 /** package.json 的 version 字段;-v/--version 直接回显这个号。 */
-async function packageVersion(): Promise<string> {
-  const raw = await readFile(new URL("../package.json", import.meta.url), "utf-8");
-  return (JSON.parse(raw) as { version: string }).version;
+function packageVersion(): Effect.Effect<string, CliFailure> {
+  return cliPromise("read package version", () => readFile(new URL("../package.json", import.meta.url), "utf-8")).pipe(
+    Effect.flatMap((raw) => Effect.try({
+      try: () => (JSON.parse(raw) as { version: string }).version,
+      catch: (cause) => cliFailure("decode package version", cause),
+    })),
+  );
 }
 
-async function main(): Promise<void> {
-  const cwd = process.cwd();
-  const { command, positionals, flags } = parseArgs(process.argv.slice(2));
-  const offlineShow = command === "show" && (
-    flags.record !== undefined || flags.history || flags.stats ||
-    positionals.some((value) => value.startsWith(ATTEMPT_LOCATOR_PREFIX))
-  );
-  const offlineView = command === "view" && (flags.record !== undefined || flags.run !== undefined);
-  // Session / Docker profile 查询必须是纯读取路径：连 dotenv 与界面 locale 也不从项目装载，
-  // 否则一个有副作用/损坏的 config 会让 `session list` 违背「不加载配置」契约。
-  if (command !== "session" && command !== "docker" && !offlineShow && !offlineView) {
-    await loadDotenv(cwd);
-    await applyConfiguredLocale(cwd);
-  }
+function writeStdout(text: string): Effect.Effect<void> {
+  return Effect.sync(() => {
+    process.stdout.write(text);
+  });
+}
 
-  // --help / --version 不需要 config,先于一切命令处理。
-  if (flags.help) {
-    process.stdout.write(t("cli.help"));
-    process.exit(0);
-  }
+function writeStderr(text: string): Effect.Effect<void> {
+  return Effect.sync(() => {
+    process.stderr.write(text);
+  });
+}
 
-  if (flags.version) {
-    process.stdout.write(`${await packageVersion()}\n`);
-    process.exit(0);
-  }
+/** Idempotent application-level sweep for resources owned by this invocation. */
+function releaseCliResources(): Effect.Effect<void> {
+  return Effect.all([
+    cliPromise("stop remaining sandboxes", () => stopAllSandboxes()).pipe(Effect.ignore),
+    drainExperimentTeardowns().pipe(Effect.ignore),
+    drainHeldCaseLocksEffect().pipe(Effect.ignore),
+    drainHeldGateLeasesEffect().pipe(Effect.ignore),
+  ], { concurrency: "unbounded" }).pipe(Effect.asVoid);
+}
 
-  if (command === "docker") {
-    const { runDockerProfileCommand } = await import("./sandbox/docker-profile/cli.ts");
-    process.exit(await runDockerProfileCommand(positionals, { json: flags.json, smoke: flags.smoke }));
-  }
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
+}
 
-  if (command === "accept") {
-    const locators = parseAcceptLocators(positionals, flags);
-    try {
-      await runAcceptCommand(cwd, locators, flags.record);
-    } catch (e) {
-      // acceptance core 的资格/定位错误都是用户可修复的：不进入 runner 的崩溃路径，
-      // 直接给出一行错误并以 1 退出，保证不会误报“已派发 attempt”。
-      process.stderr.write(t("cli.accept.failed", {
-        error: e instanceof Error ? e.message : String(e),
-      }));
-      process.exit(1);
-    }
-    process.exit(0);
-  }
-
-  if (command === "view") {
-    // 位置参数只有一种含义:eval id 前缀(收窄有效根)。记录根经 --record 递入,
-    // 单开一份快照经 --run 递入;--report 整槽替换报告槽(与 show --report 吃同一个文件),
-    // --page 定初始页。文件与目录都不进位置参数(docs/feature/reports/view.md「打开与收窄」)。
-    // --out 接受同一收窄:出站内容即收窄后的有效根(docs/feature/reports/view.md「静态导出」)。
-    let viewInput: { input?: string; patterns: string[] };
-    try {
-      viewInput = resolveViewInput(cwd, positionals, {
-        ...(flags.record !== undefined ? { record: flags.record } : {}),
-        ...(flags.run !== undefined ? { run: flags.run } : {}),
-      });
-    } catch (e) {
-      exitOnViewUserError(e);
-    }
-    // 配置只记 cwd:每次 rebuild 由 loadViewScan 重装 niceeval.config.ts,
-    // 不把启动时那份 config.report 对象塞进 scan(否则改报告文件只刷新页面、定义仍旧)。
-    const projectMode = !offlineView && existsSync(join(cwd, "niceeval.config.ts"));
-    const scan = {
-      patterns: viewInput.patterns,
-      ...(flags.experiment !== undefined ? { experiment: flags.experiment } : {}),
-      ...(flags.report !== undefined ? { report: { path: flags.report, cwd } } : {}),
-      ...(flags.theme !== undefined ? { theme: { value: flags.theme, cwd } } : {}),
-      ...(projectMode ? { config: { cwd }, projectCurrent: { cwd, freshImport: true } } : {}),
-      ...(flags.page !== undefined ? { page: flags.page } : {}),
+function runDockerCommand(
+  positionals: readonly string[],
+  flags: Flags,
+): Effect.Effect<number, CliFailure> {
+  return Effect.gen(function* () {
+    const { runDockerProfileCommand } = (yield* cliPromise(
+      "load Docker profile command",
+      () => import("./sandbox/docker-profile/cli.ts"),
+    )) as {
+      runDockerProfileCommand(
+        positionals: readonly string[],
+        options: { readonly json: boolean; readonly smoke: boolean },
+      ): Promise<number>;
     };
-    if (flags.out) {
-      const out = await buildView({ input: viewInput.input, out: flags.out, scan }).catch(exitOnViewUserError);
-      process.stdout.write(t("cli.view.exportedDir", { out }));
-      process.exit(0);
-    }
-    const server = await startViewServer({
-      input: viewInput.input,
-      port: flags.port,
-      host: flags.host,
-      scan,
-      watchRoot: cwd,
-      onRebuild: (completedAt) => {
-        const time = new Intl.DateTimeFormat("en-GB", {
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-          hourCycle: "h23",
-        }).format(completedAt);
-        process.stdout.write(t("cli.view.hotReloadComplete", { time }));
-      },
-    }).catch(exitOnViewUserError);
-    process.stdout.write(t("cli.view.urls", { urls: server.urls.map((url) => `  ${url}`).join("\n") }));
-    if (flags.open !== false) {
-      const opened = await openBrowser(server.url);
-      if (!opened) process.stderr.write(t("cli.browserOpenFailed", { url: server.url }));
-    }
-    process.stdout.write(t("cli.pressCtrlC"));
-    await new Promise(() => {});
-  }
+    return yield* cliPromise(
+      "run Docker profile command",
+      () => runDockerProfileCommand(positionals, { json: flags.json, smoke: flags.smoke }),
+    );
+  });
+}
 
-  if (command === "sandbox") {
-    // sandbox 命令组不读 niceeval.config.ts、不发现 eval:只操作留存注册表与 provider 的
-    // detached 能力(见 docs/feature/sandbox/cli.md)。
-    const { runSandboxCommand } = await import("./sandbox/cli-commands.ts");
-    const code = await runSandboxCommand(cwd, positionals, {
+function runSandboxCliCommand(
+  cwd: string,
+  positionals: readonly string[],
+  flags: Flags,
+): Effect.Effect<number, CliFailure> {
+  return cliEffect("run sandbox command", runSandboxCommandEffect(
+    cwd,
+    [...positionals],
+    {
       all: flags.all,
       window: flags.window,
       path: flags.sandboxPath,
       leaveRunning: flags.leaveRunning,
-      // CLI flag 是 --record(记录根);sandbox 命令组的内部选项名保持 run,值语义相同。
       run: flags.record,
       orphans: flags.orphans,
       force: flags.force,
-    });
-    process.exit(code);
-  }
+    },
+  ));
+}
 
-  if (command === "session") {
-    // Session 查询严格只读：不加载 niceeval.config.ts、不发现 eval/experiment、不触碰
-    // locks、Sandbox 或 agent。记录根固定为当前工作副本的 .niceeval。
+function runSessionCommand(
+  cwd: string,
+  positionals: readonly string[],
+  flags: Flags,
+): Effect.Effect<number, never> {
+  return Effect.gen(function* () {
     const niceevalRoot = resolvePath(cwd, ".niceeval");
-    try {
-      const subcommand = positionals[0] ?? "list";
-      if (subcommand === "list") {
-        if (positionals.length > 2) {
-          process.stderr.write("niceeval session list accepts at most one experiment prefix.\n");
-          process.exit(1);
-        }
-        const document = await listSessions(niceevalRoot, {
-          all: flags.all,
-          ...(positionals[1] !== undefined ? { selector: positionals[1] } : {}),
-        });
-        if (flags.json) process.stdout.write(`${JSON.stringify(document)}\n`);
-        else process.stdout.write(renderSessionListText(document, Date.now(), flags.all));
-        process.exit(0);
-      }
-      if (subcommand === "show") {
-        if (positionals.length !== 2 || flags.all) {
-          process.stderr.write("Usage: niceeval session show <sessionId> [--json]\n");
-          process.exit(1);
-        }
-        const document = await showSession(niceevalRoot, positionals[1]!);
-        if (flags.json) process.stdout.write(`${JSON.stringify(document)}\n`);
-        else process.stdout.write(renderSessionShowText(document));
-        process.exit(0);
-      }
-      process.stderr.write("Usage: niceeval session list [--all] [<experiment-prefix>] [--json]\n" +
-        "       niceeval session show <sessionId> [--json]\n");
-      process.exit(1);
-    } catch (e) {
-      process.stderr.write(`${e instanceof Error ? e.message : String(e)}\n`);
-      process.exit(1);
-    }
-  }
-
-  if (command === "show") {
-    if (flags.theme !== undefined) {
-      process.stderr.write("--theme only affects the web view. Use `niceeval view --theme …` instead.\n");
-      process.exit(1);
-    }
-    // show 中不带 --report 的 locator 是官方诊断入口,不读取项目默认报告;显式 --report 也已经替换了
-    // config.report。其余报告槽路径才读取 config.report 作为默认报告。
-    let configReport: Config["report"] | undefined;
-    const hasAttemptLocator = positionals.some((value) => value.startsWith(ATTEMPT_LOCATOR_PREFIX));
-    if (!offlineShow && !hasAttemptLocator && flags.report === undefined && existsSync(join(cwd, "niceeval.config.ts"))) {
-      try {
-        configReport = (await loadConfig(cwd)).report;
-      } catch (e) {
-        process.stderr.write(`${formatThrown(e)}\n`);
-        process.exit(1);
-      }
-    }
-    let projectTarget: import("./record/types.ts").ProjectCurrentTarget | undefined;
-    if (!offlineShow && existsSync(join(cwd, "niceeval.config.ts"))) {
-      try {
-        projectTarget = (await loadProjectCurrent(cwd, {
-          experiments: flags.experiment,
-          evals: positionals,
-        })).target;
-      } catch (e) {
-        process.stderr.write(`${formatThrown(e)}\n`);
-        process.exit(1);
-      }
-    }
-    const code = await runShow(cwd, positionals, {
-      source: flags.source,
-      execution: flags.execution,
-      timing: flags.timing,
-      diff: flags.diff,
-      diffPath: flags.diffPath,
-      grep: flags.grep,
-      expand: flags.expand,
-      history: flags.history,
-      usage: flags.usage,
-      stats: flags.stats,
-      experiment: flags.experiment,
-      record: flags.record,
-      report: flags.report,
-      configReport,
-      page: flags.page,
-      json: flags.json,
-      ...(projectTarget !== undefined ? { projectTarget } : {}),
-    });
-    // show 的 JSON 常被管给 jq/python。直接 process.exit 会丢弃 pipe 中尚未 flush 的
-    // stdout（典型截在 128 KiB）；交给事件循环自然收尾。
-    process.exitCode = code;
-    return;
-  }
-
-  if (command === "clean") {
-    await rm(join(cwd, ".niceeval"), { recursive: true, force: true });
-    process.stdout.write(t("cli.clean.done"));
-    process.exit(0);
-  }
-
-  if (command === "init") {
-    await initProject(cwd);
-    process.stdout.write(t("cli.init.done"));
-    if (!hostPrefersEsm(cwd)) process.stdout.write(t("cli.init.esmHint"));
-    process.exit(0);
-  }
-
-  // exp rename 是 exp 的保留子命令(list 同例):只读迁移坐标,不进 exp 的选择/调度路径,
-  // 不装载项目 config / 发现 eval。旧 id 从 Record 读取、newId 发现与资格门都在核心。
-  if (command === "exp" && positionals[0] === "rename") {
-    const code = await runExperimentRenameCommand(cwd, positionals.slice(1), flags);
-    process.exit(code);
-  }
-
-  const config = await loadConfig(cwd);
-  const maxBuildConcurrency = flags.maxBuildConcurrency ?? config.maxBuildConcurrency ?? 2;
-  if (!Number.isInteger(maxBuildConcurrency) || maxBuildConcurrency <= 0) {
-    process.stderr.write(`maxBuildConcurrency must be a positive integer, got ${maxBuildConcurrency}.\n`);
-    process.exit(1);
-  }
-  const allEvals = await discoverEvals(cwd);
-  const evals = flags.tag ? allEvals.filter((e) => e.tags?.includes(flags.tag as string)) : allEvals;
-
-  if (command === "list") {
-    process.stdout.write(t("cli.list.header", { count: evals.length }));
-    for (const e of evals) process.stdout.write(`  ${e.id}${e.description ? `  — ${e.description}` : ""}\n`);
-    process.exit(0);
-  }
-
-  const agentRuns: AgentRun[] = [];
-  let experimentSelection = t("cli.all");
-  let availableExperimentPaths = t("cli.none");
-
-  if (command === "exp" || command === "check") {
-    if (flags.agent || flags.model) {
-      process.stderr.write(t("cli.exp.agentModelFlagUnsupported"));
-      process.exit(1);
-    }
-    if (flags.force) {
-      process.stderr.write("experiment 运行不支持 --force；请使用 --rerun all。\n");
-      process.exit(1);
-    }
-    const viewerFlag = firstViewerOnlyFlag(flags);
-    if (viewerFlag) {
-      process.stderr.write(t("cli.exp.viewerFlagUnsupported", { flag: viewerFlag.flag, command: viewerFlag.command }));
-      process.exit(1);
-    }
-    const experiments = await discoverExperiments(cwd);
-    // `list` 是 exp 的保留子命令：它只做发现与选择，不进入 link、carry、lock 或
-    // runner，因此绝不会创建 Session。实验 id 含有 `list` 时需给更长的 selector。
-    if (command === "exp" && positionals[0] === "list") {
+    const subcommand = positionals[0] ?? "list";
+    if (subcommand === "list") {
       if (positionals.length > 2) {
-        process.stderr.write("niceeval exp list accepts at most one experiment prefix.\n");
-        process.exit(1);
+        yield* writeStderr("niceeval session list accepts at most one experiment prefix.\n");
+        return 1;
       }
-      const selector = positionals[1];
-      const ids = experiments.map((experiment) => experiment.id);
-      const selectedIds = selector === undefined
-        ? new Set(ids)
-        : new Set(matchExperimentSelector(ids, selector));
-      const selected = experiments.filter((experiment) => selectedIds.has(experiment.id));
-      if (selected.length === 0 && selector !== undefined) {
-        process.stderr.write(t("cli.experiment.noMatch", {
-          arg: selector ?? "list",
-          experiments: browsableExperimentPaths(ids).join(", ") || t("cli.none"),
+      const outcome = yield* Effect.either(cliEffect("list sessions", listSessions(niceevalRoot, {
+        all: flags.all,
+        ...(positionals[1] === undefined ? {} : { selector: positionals[1] }),
+      })));
+      if (Either.isLeft(outcome)) {
+        yield* writeStderr(`${errorMessage(outcome.left.cause)}\n`);
+        return 1;
+      }
+      yield* writeStdout(flags.json
+        ? `${JSON.stringify(outcome.right)}\n`
+        : renderSessionListText(outcome.right, Date.now(), flags.all));
+      return 0;
+    }
+    if (subcommand === "show") {
+      if (positionals.length !== 2 || flags.all) {
+        yield* writeStderr("Usage: niceeval session show <sessionId> [--json]\n");
+        return 1;
+      }
+      const outcome = yield* Effect.either(cliEffect("show session", showSession(niceevalRoot, positionals[1]!)));
+      if (Either.isLeft(outcome)) {
+        yield* writeStderr(`${errorMessage(outcome.left.cause)}\n`);
+        return 1;
+      }
+      yield* writeStdout(flags.json
+        ? `${JSON.stringify(outcome.right)}\n`
+        : renderSessionShowText(outcome.right));
+      return 0;
+    }
+    yield* writeStderr("Usage: niceeval session list [--all] [<experiment-prefix>] [--json]\n" +
+      "       niceeval session show <sessionId> [--json]\n");
+    return 1;
+  });
+}
+
+function runRecordMaintenanceCommand(
+  cwd: string,
+  command: "clean" | "migrate",
+  positionals: readonly string[],
+  flags: Flags,
+): Effect.Effect<number, CliFailure> {
+  return Effect.gen(function* () {
+    if (positionals.length > 0) {
+      yield* writeStderr(`niceeval ${command} does not accept positional arguments.\n`);
+      return 1;
+    }
+    const unsupported = firstRecordMaintenanceUnsupportedFlag(flags);
+    if (unsupported !== undefined) {
+      yield* writeStderr(`niceeval ${command} does not accept ${unsupported}.\n`);
+      return 1;
+    }
+    const result = yield* cliEffect("run Record maintenance", runRecordCliCommand({
+      command,
+      cwd,
+      ...(flags.record === undefined ? {} : { record: flags.record }),
+      yes: flags.yes,
+    }));
+    if (result.stdout !== "") yield* writeStdout(result.stdout);
+    if (result.stderr !== "") yield* writeStderr(result.stderr);
+    return result.exitCode;
+  });
+}
+
+function runEvaluationCommand(
+  cwd: string,
+  command: CliCommand,
+  positionals: readonly string[],
+  flags: Flags,
+  interruption?: CliInterruptionOwnership,
+) {
+  return Effect.gen(function* () {
+    const config = yield* loadConfig(cwd);
+    const maxBuildConcurrency = flags.maxBuildConcurrency ?? config.maxBuildConcurrency ?? 2;
+    if (!Number.isInteger(maxBuildConcurrency) || maxBuildConcurrency <= 0) {
+      yield* writeStderr(`maxBuildConcurrency must be a positive integer, got ${maxBuildConcurrency}.\n`);
+      return 1;
+    }
+    const allEvals = yield* cliEffect("discover evals", discoverEvals(cwd));
+    const evals = flags.tag ? allEvals.filter((evalDefinition) => evalDefinition.tags?.includes(flags.tag as string)) : allEvals;
+
+    if (command === "list") {
+      yield* writeStdout(t("cli.list.header", { count: evals.length }));
+      for (const evalDefinition of evals) {
+        yield* writeStdout(`  ${evalDefinition.id}${evalDefinition.description ? `  — ${evalDefinition.description}` : ""}\n`);
+      }
+      return 0;
+    }
+
+    const agentRuns: AgentRun[] = [];
+    let experimentSelection = t("cli.all");
+    let availableExperimentPaths = t("cli.none");
+
+    if (command === "exp" || command === "check") {
+      if (flags.agent || flags.model) {
+        yield* writeStderr(t("cli.exp.agentModelFlagUnsupported"));
+        return 1;
+      }
+      if (flags.force) {
+        yield* writeStderr("experiment 运行不支持 --force；请使用 --rerun all。\n");
+        return 1;
+      }
+      const viewerFlag = firstViewerOnlyFlag(flags);
+      if (viewerFlag) {
+        yield* writeStderr(t("cli.exp.viewerFlagUnsupported", { flag: viewerFlag.flag, command: viewerFlag.command }));
+        return 1;
+      }
+      const experiments = yield* cliEffect("discover experiments", discoverExperiments(cwd));
+      if (command === "exp" && positionals[0] === "list") {
+        if (positionals.length > 2) {
+          yield* writeStderr("niceeval exp list accepts at most one experiment prefix.\n");
+          return 1;
+        }
+        const selector = positionals[1];
+        const ids = experiments.map((experiment) => experiment.id);
+        const selectedIds = selector === undefined ? new Set(ids) : new Set(matchExperimentSelector(ids, selector));
+        const selected = experiments.filter((experiment) => selectedIds.has(experiment.id));
+        if (selected.length === 0 && selector !== undefined) {
+          yield* writeStderr(t("cli.experiment.noMatch", {
+            arg: selector,
+            experiments: browsableExperimentPaths(ids).join(", ") || t("cli.none"),
+          }));
+          return 1;
+        }
+        const rows = selected.map((experiment) => {
+          const { selectedEvalIds } = resolveExperimentEvals({
+            experimentId: experiment.id,
+            selector: experiment.evals,
+            cliPatterns: [],
+            evals,
+          });
+          return {
+            experimentId: experiment.id,
+            ...(experiment.description !== undefined ? { description: experiment.description } : {}),
+            agent: experiment.agent.name,
+            ...(experiment.model !== undefined ? { model: experiment.model } : {}),
+            attempts: experiment.attempts,
+            evalCount: selectedEvalIds.length,
+            labels: { ...experiment.labels },
+            selectedEvalIds,
+          };
+        });
+        if (flags.json) {
+          yield* writeStdout(`${JSON.stringify({ format: "niceeval.experiments", schemaVersion: 1, experiments: rows })}\n`);
+        } else {
+          for (const row of rows) {
+            yield* writeStdout([
+              row.experimentId,
+              row.description ?? "—",
+              row.agent,
+              row.model ?? "—",
+              `attempts=${row.attempts}`,
+              `evals=${row.evalCount}`,
+              `labels=${JSON.stringify(row.labels)}`,
+            ].join("\t") + "\n");
+          }
+        }
+        return 0;
+      }
+
+      const expArg = positionals[0];
+      const extraPatterns = positionals.slice(1);
+      experimentSelection = positionals.join(" ") || t("cli.all");
+      availableExperimentPaths = browsableExperimentPaths(experiments.map((experiment) => experiment.id)).join(", ") || t("cli.none");
+      const selectedIds = expArg === undefined ? undefined : new Set(matchExperimentSelector(experiments.map((experiment) => experiment.id), expArg));
+      const selected = selectedIds === undefined ? experiments : experiments.filter((experiment) => selectedIds.has(experiment.id));
+      if (selected.length === 0) {
+        yield* writeStderr(t("cli.experiment.noMatch", {
+          arg: expArg ?? t("cli.all"),
+          experiments: availableExperimentPaths,
         }));
-        process.exit(1);
+        if (expArg === "show" || expArg === "view") {
+          yield* writeStderr(t("cli.experiment.viewerCommandHint", {
+            command: expArg,
+            args: extraPatterns.length > 0 ? ` ${extraPatterns.join(" ")}` : "",
+          }));
+        }
+        return 1;
       }
-      const rows = selected.map((experiment) => {
-        const { selectedEvalIds } = resolveExperimentEvals({
+
+      const reminder = yield* keptSandboxReminderEffect(cwd).pipe(
+        Effect.catchAll(() => Effect.succeed(undefined)),
+      );
+      if (reminder) yield* writeStderr(reminder);
+      const orphans = yield* orphanReminderEffect(cwd).pipe(
+        Effect.catchAll(() => Effect.succeed(undefined)),
+      );
+      if (orphans) yield* writeStderr(orphans);
+      const teardownReminder = yield* orphanedTeardownReminderEffect(
+        resolvePath(cwd, ".niceeval"),
+        new Set(selected.filter((experiment) => experiment.teardown).map((experiment) => experiment.id)),
+        hostname(),
+      ).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+      if (teardownReminder) yield* writeStderr(teardownReminder);
+
+      if (flags.teardown) {
+        if (extraPatterns.length > 0) {
+          yield* writeStderr(t("cli.exp.teardownNoEvalPatterns"));
+          return 1;
+        }
+        const niceevalRootForTeardown = resolvePath(cwd, ".niceeval");
+        let anyFailed = false;
+        for (const experiment of selected) {
+          if (!experiment.teardown) continue;
+          const { selectedEvalIds } = resolveExperimentEvals({
+            experimentId: experiment.id,
+            selector: experiment.evals,
+            cliPatterns: [],
+            evals,
+          });
+          const ctx: ExperimentHookContext = {
+            experimentId: experiment.id,
+            selectedEvalIds,
+            signal: new AbortController().signal,
+            progress: () => {},
+            diagnostic: (input) => process.stderr.write(`${input.message}\n`),
+            fact: (key, value) => recordFact({}, key, value),
+          };
+          const registrations = yield* readTeardownRegistrationsEffect(niceevalRootForTeardown).pipe(
+            Effect.catchAll(() => Effect.succeed([] as const)),
+          );
+          const matching = registrations.filter(({ entry }) => entry.experimentId === experiment.id);
+          const claimed = yield* Effect.all(
+            matching
+              .filter(({ entry }) => isOrphanedTeardownRegistration(entry, hostname()))
+              .map(({ id }) => removeTeardownRegistrationIfPresentEffect(niceevalRootForTeardown, id).pipe(
+                Effect.catchAll(() => Effect.succeed(false)),
+                Effect.map((claimed) => claimed ? id : undefined),
+              )),
+            { concurrency: "unbounded" },
+          );
+          const executions = matching.length === 0 ? [undefined] : claimed.filter((id): id is string => id !== undefined);
+          for (const _ of executions) {
+            const outcome = yield* Effect.either(cliEffect(
+              "run experiment teardown",
+              cleanupCallback(() => experiment.teardown!(ctx)),
+            ));
+            if (Either.isRight(outcome)) {
+              yield* writeStderr(t("cli.exp.teardownDone", { experimentId: experiment.id }));
+            } else {
+              anyFailed = true;
+              const error = outcome.left.cause;
+              yield* writeStderr(t("cli.exp.teardownFailed", {
+                experimentId: experiment.id,
+                message: error instanceof Error ? error.message : String(error),
+              }));
+            }
+          }
+        }
+        return anyFailed ? 1 : 0;
+      }
+
+      const experimentScopeIds = new Set<string>();
+      for (const experiment of selected) {
+        const { selectedEvalIds, selectorEvals } = resolveExperimentEvals({
           experimentId: experiment.id,
           selector: experiment.evals,
-          cliPatterns: [],
+          cliPatterns: extraPatterns,
           evals,
         });
-        return {
-          experimentId: experiment.id,
-          ...(experiment.description !== undefined ? { description: experiment.description } : {}),
-          agent: experiment.agent.name,
-          ...(experiment.model !== undefined ? { model: experiment.model } : {}),
-          attempts: experiment.attempts,
-          evalCount: selectedEvalIds.length,
-          labels: { ...experiment.labels },
+        for (const evalDefinition of selectorEvals) experimentScopeIds.add(evalDefinition.id);
+        agentRuns.push({
+          agent: experiment.agent,
+          model: experiment.model,
+          reasoningEffort: experiment.reasoningEffort,
+          flags: experiment.flags ?? {},
+          attempts: flags.attempts ?? experiment.attempts ?? 1,
+          earlyExit: flags.earlyExit ?? experiment.earlyExit ?? false,
+          sandbox: experiment.sandbox,
+          sandboxReuse: experiment.sandboxReuse,
+          judge: experiment.judge,
+          ...resolveRunTimeout(flags.timeout, experiment.timeoutMs),
+          budget: flags.budget ?? experiment.budget,
           selectedEvalIds,
-        };
-      });
-      if (flags.json) {
-        process.stdout.write(`${JSON.stringify({ format: "niceeval.experiments", schemaVersion: 1, experiments: rows })}\n`);
-      } else {
-        for (const row of rows) {
-          process.stdout.write([
-            row.experimentId,
-            row.description ?? "—",
-            row.agent,
-            row.model ?? "—",
-            `attempts=${row.attempts}`,
-            `evals=${row.evalCount}`,
-            `labels=${JSON.stringify(row.labels)}`,
-          ].join("\t") + "\n");
-        }
+          experimentId: experiment.id,
+          experimentBaseDir: experiment.baseDir,
+          experimentSourcePath: experiment.sourcePath,
+          description: experiment.description,
+          labels: experiment.labels,
+          maxConcurrency: experiment.maxConcurrency,
+          setup: experiment.setup,
+          teardown: experiment.teardown,
+          classifyFailure: experiment.classifyFailure,
+        });
       }
-      process.exit(0);
-    }
-    const expArg = positionals[0];
-    const extraPatterns = positionals.slice(1);
-    experimentSelection = positionals.join(" ") || t("cli.all");
-    availableExperimentPaths = browsableExperimentPaths(experiments.map((e) => e.id)).join(", ") || t("cli.none");
-    const selectedIds = expArg ? new Set(matchExperimentSelector(experiments.map((e) => e.id), expArg)) : undefined;
-    const selected = selectedIds ? experiments.filter((e) => selectedIds.has(e.id)) : experiments;
-    if (selected.length === 0) {
-      process.stderr.write(t("cli.experiment.noMatch", {
-        arg: expArg ?? t("cli.all"),
-        experiments: availableExperimentPaths,
-      }));
-      // show / view 是顶层命令。只有同名 experiment 确实不存在时才纠错，不能抢占合法 id。
-      if (expArg === "show" || expArg === "view") {
-        process.stderr.write(t("cli.experiment.viewerCommandHint", {
-          command: expArg,
-          args: extraPatterns.length > 0 ? ` ${extraPatterns.join(" ")}` : "",
+      for (const pattern of extraPatterns) {
+        const matches = evalPrefixPredicate([pattern]);
+        if ([...experimentScopeIds].some((id) => matches(id))) continue;
+        yield* writeStderr(t("cli.experiment.noEvalPrefixMatch", {
+          pattern,
+          selection: expArg ?? t("cli.all"),
+        }));
+        return 1;
+      }
+    } else {
+      const experiments = yield* cliEffect("discover experiments", discoverExperiments(cwd));
+      const ids = experiments.map((experiment) => experiment.id);
+      const matchedIds = new Set(positionals.flatMap((pattern) => matchExperimentSelector(ids, pattern)));
+      const asExp = experiments.filter((experiment) => matchedIds.has(experiment.id));
+      yield* writeStderr(t("cli.run.experimentRequired"));
+      if (asExp.length > 0) {
+        yield* writeStderr(t("cli.run.experimentRequiredHint", {
+          pattern: positionals[0] ?? "",
+          kind: asExp.length > 1 ? t("cli.experimentGroup") : "",
+        }));
+      } else {
+        yield* writeStderr(t("cli.run.experimentRequiredKnown", {
+          experiments: experiments.map((experiment) => experiment.id).join(", ") || t("cli.none"),
         }));
       }
-      process.exit(1);
-    }
-    // 残留提醒:注册表里还有上次留下的沙箱、强杀留下的孤儿候选、或不在本次选择里的遗留实验级
-    // teardown 时各打一行(不阻塞、不清理;见 docs/feature/sandbox/cli.md「残留提醒」与
-    // docs/feature/experiments/architecture.md「强杀后的收尾兜底」)。
-    {
-      const { keptSandboxReminder, orphanReminder } = await import("./sandbox/cli-commands.ts");
-      const reminder = await keptSandboxReminder(cwd).catch(() => undefined);
-      if (reminder) process.stderr.write(reminder);
-      const orphans = await orphanReminder(cwd).catch(() => undefined);
-      if (orphans) process.stderr.write(orphans);
-      const { orphanedTeardownReminder } = await import("./runner/teardown-registry.ts");
-      const teardownReminder = await orphanedTeardownReminder(
-        resolvePath(cwd, ".niceeval"),
-        new Set(selected.filter((e) => e.teardown).map((e) => e.id)),
-        hostname(),
-      ).catch(() => undefined);
-      if (teardownReminder) process.stderr.write(teardownReminder);
+      return 1;
     }
 
-    // `--teardown`:只对选中的实验各执行一次实验级 teardown(新进程语义),不派发任何 attempt、
-    // 不跑 setup;与 eval 前缀位置参数组合是用法错误(这个 flag 选择的是「只收尾」这种跑法,
-    // 不参与 eval 选择)。启动自愈(选中实验里遗留登记的补执行)发生在 runEvals() 内部
-    // 触发 setup 之前,不需要这里重复处理(见 run.ts 的 recoverOrphanedTeardownRegistration)。
-    if (flags.teardown) {
-      if (extraPatterns.length > 0) {
-        process.stderr.write(t("cli.exp.teardownNoEvalPatterns"));
-        process.exit(1);
-      }
-      const niceevalRootForTeardown = resolvePath(cwd, ".niceeval");
-      const { isOrphanedTeardownRegistration, readTeardownRegistrations, removeTeardownRegistrationIfPresent } =
-        await import("./runner/teardown-registry.ts");
-      let anyFailed = false;
-      for (const exp of selected) {
-        if (!exp.teardown) continue;
-        const { selectedEvalIds } = resolveExperimentEvals({
-          experimentId: exp.id,
-          selector: exp.evals,
-          cliPatterns: [],
-          evals,
-        });
-        const ctx: ExperimentHookContext = {
-          experimentId: exp.id,
-          selectedEvalIds,
-          signal: new AbortController().signal,
-          progress: () => {},
-          diagnostic: (input) => process.stderr.write(`${input.message}\n`),
-          // 独立 `--teardown` 路径不派发任何 attempt、不打开快照,没有 `RunMeta.facts`
-          // 这条落盘去处可写(见 runner/types.ts 的 ExperimentHookContext.fact 注释)。仍然复用
-          // 共享校验(非法 key / 非标量 value 照样抛错——诚实优于静默),校验通过后丢弃写入:
-          // 这是有意的 no-op,不是遗漏。
-          fact: (key, value) => recordFact({}, key, value),
-        };
-        const registrations = await readTeardownRegistrations(niceevalRootForTeardown).catch(() => []);
-        const matching = registrations.filter(({ entry }) => entry.experimentId === exp.id);
-        // 已有登记时，只有抢到某一条原子删除的路径可以执行；没有登记才保留手动兜底的一次执行。
-        const claimed = await Promise.all(
-          matching
-            .filter(({ entry }) => isOrphanedTeardownRegistration(entry, hostname()))
-            .map(async ({ id }) => (await removeTeardownRegistrationIfPresent(niceevalRootForTeardown, id).catch(() => false)) ? id : undefined),
-        );
-        const executions = matching.length === 0 ? [undefined] : claimed.filter((id): id is string => id !== undefined);
-        for (const _ of executions) {
-          try {
-            await withCleanupTimeout(() => exp.teardown!(ctx));
-            process.stderr.write(t("cli.exp.teardownDone", { experimentId: exp.id }));
-          } catch (e) {
-            anyFailed = true;
-            process.stderr.write(
-              t("cli.exp.teardownFailed", { experimentId: exp.id, message: e instanceof Error ? e.message : String(e) }),
-            );
-          }
-        }
-      }
-      process.exit(anyFailed ? 1 : 0);
-    }
-    // 选中实验的发现集(各实验 `evals` 选择器选出的并集,未经尾随前缀收窄);
-    // 尾随前缀逐个必须在它里面命中至少一条,见下面的零匹配用法错误。
-    const experimentScopeIds = new Set<string>();
-    for (const exp of selected) {
-      // 一个实验 = 一个配置(单 model)。跨模型对比写多个实验文件,各钉一个 model。
-      // evals 谓词在这里对本次 invocation 的候选 eval 各求值一次;下游(dry-run、sandbox 查表、
-      // fingerprint/carry、attempt 展开)只消费 selectedEvalIds,不重新调用谓词
-      // (见 docs/feature/experiments/library.md「evals」)。
-      const { selectedEvals, selectedEvalIds, selectorEvals } = resolveExperimentEvals({
-        experimentId: exp.id,
-        selector: exp.evals,
-        cliPatterns: extraPatterns,
-        evals,
-      });
-      for (const e of selectorEvals) experimentScopeIds.add(e.id);
-      agentRuns.push({
-        agent: exp.agent,
-        model: exp.model,
-        reasoningEffort: exp.reasoningEffort,
-        flags: exp.flags ?? {},
-        attempts: flags.attempts ?? exp.attempts ?? 1,
-        earlyExit: flags.earlyExit ?? exp.earlyExit ?? false,
-        sandbox: exp.sandbox,
-        sandboxReuse: exp.sandboxReuse,
-        judge: exp.judge,
-        // 解析链只求值到 experiment 这一层:eval 与 config 由 attempt 派发时的
-        // resolveAttemptTimeout 接上。这里 `?? config.timeoutMs` 会把缺省底提前物化成 run 值,
-        // 让 eval 自己声明的上限永久短路(见 runner/timeout.ts 与
-        // memory/multi-source-field-resolution-order.md)。
-        ...resolveRunTimeout(flags.timeout, exp.timeoutMs),
-        budget: flags.budget ?? exp.budget,
-        selectedEvalIds,
-        experimentId: exp.id,
-        experimentBaseDir: exp.baseDir,
-        experimentSourcePath: exp.sourcePath,
-        description: exp.description,
-        labels: exp.labels,
-        strict: flags.strict,
-        // 实验级并发上限:随 AgentRun 进调度器按实验单独限流(runner 两级信号量),
-        // 不再取所有选中实验的最小值钳全局——那会让一个串行实验拖慢整批基线。
-        maxConcurrency: exp.maxConcurrency,
-        setup: exp.setup,
-        teardown: exp.teardown,
-        // 实验级失败分类器:随 AgentRun 进 attempt(turn 链与生命周期链共用同一份),
-        // 产出的 scope 由止损闸消费(见 docs/feature/error-classification/architecture.md)。
-        classifyFailure: exp.classifyFailure,
-      });
-    }
-    // 尾随 eval 前缀逐个必须命中:静默丢弃会把「写了两个实验名」这类手滑变成一次悄悄膨胀或
-    // 缩水的计划(见 docs/feature/experiments/cli.md「实验选择器怎样解析」第 5 条)。
-    for (const pattern of extraPatterns) {
-      const matches = evalPrefixPredicate([pattern]);
-      if ([...experimentScopeIds].some((id) => matches(id))) continue;
-      process.stderr.write(t("cli.experiment.noEvalPrefixMatch", {
-        pattern,
-        selection: expArg ?? t("cli.all"),
+    const outputForm = resolveOutputForm({ json: flags.json, isTTY: process.stderr.isTTY === true });
+    const matchedByRun = agentRuns.map((run) => selectedEvalsForRun(evals, run));
+    const totalAttempts = agentRuns.reduce((sum, run, index) => sum + matchedByRun[index]!.length * run.attempts, 0);
+    const uniqueEvalIds = new Set(matchedByRun.flat().map((evalDefinition) => evalDefinition.id));
+    if (totalAttempts === 0) {
+      yield* writeStderr(t("cli.experiment.noEvalsSelected", {
+        selection: experimentSelection,
+        experiments: availableExperimentPaths,
       }));
-      process.exit(1);
+      return 1;
     }
-  } else {
-    // 裸 run / `niceeval <eval>` 不再执行。运行配置必须来自 experiments/,
-    // 这样 agent/model/flags/attempts/budget 与结果聚合都有可签入的身份。
-    const experiments = await discoverExperiments(cwd);
-    const ids = experiments.map((e) => e.id);
-    const matchedIds = new Set(positionals.flatMap((p) => matchExperimentSelector(ids, p)));
-    const asExp = experiments.filter((e) => matchedIds.has(e.id));
-    process.stderr.write(t("cli.run.experimentRequired"));
-    if (asExp.length > 0) {
-      process.stderr.write(t("cli.run.experimentRequiredHint", {
-        pattern: positionals[0] ?? "",
-        kind: asExp.length > 1 ? t("cli.experimentGroup") : "",
-      }));
-    } else {
-      process.stderr.write(t("cli.run.experimentRequiredKnown", {
-        experiments: experiments.map((e) => e.id).join(", ") || t("cli.none"),
-      }));
+
+    if (command === "check") {
+      yield* cliEffect("link run sandboxes", linkRunSandboxes(evals, agentRuns));
+      const pairCount = matchedByRun.reduce((sum, selected) => sum + selected.length, 0);
+      yield* writeStdout(`Sandbox layers linked: ${pairCount} pair${pairCount === 1 ? "" : "s"}.\n`);
+      return 0;
     }
-    process.exit(1);
-  }
 
-  // 输出形态只改变反馈,不改变选择/调度/判定;`--json` 即机器面,否则人读文本(见
-  // resolveOutputForm)。--dry 和真正开跑共用同一个已解析形态。
-  const outputForm = resolveOutputForm({ json: flags.json, isTTY: process.stderr.isTTY === true });
-
-  // matchedByRun[i] 对应 agentRuns[i] 匹配到的 eval 集合;--dry 预览与真正开跑时的
-  // RunFeedbackPlan(总量、去重 eval 数)共用同一份计算,不重复过滤一遍。
-  const matchedByRun = agentRuns.map((run) => selectedEvalsForRun(evals, run));
-  const totalAttempts = agentRuns.reduce((sum, run, i) => sum + matchedByRun[i]!.length * run.attempts, 0);
-  const uniqueEvalIds = new Set(matchedByRun.flat().map((e) => e.id));
-
-  if (totalAttempts === 0) {
-    process.stderr.write(t("cli.experiment.noEvalsSelected", {
-      selection: experimentSelection,
-      experiments: availableExperimentPaths,
-    }));
-    process.exit(1);
-  }
-
-  // check 的边界就是 pure link：不读取 provider 文件、不做网络请求、不算 fingerprint，
-  // 更不会 build / create Sandbox。Effect 必须在这里执行，不能把一次失败留在惰性值里误报成功。
-  if (command === "check") {
-    await Effect.runPromise(linkRunSandboxes(evals, agentRuns));
-    const pairCount = matchedByRun.reduce((sum, selected) => sum + selected.length, 0);
-    process.stdout.write(`Sandbox layers linked: ${pairCount} pair${pairCount === 1 ? "" : "s"}.\n`);
-    process.exit(0);
-  }
-
-  // 提前算好携入计划:coordinator 的 plan 事件与 runEvals 内部实际调度必须共用同一份
-  // planCarry() 判断,否则两边各自算一遍,一旦不一致,dashboard/事件流展示的"携入"就会和
-  // run.ts 真实调度的"携入"对不上(见 memory 的 live-carry-row-shows-waiting-forever)。
-  // `--dry`(两种形态)都需要这份计算:`--dry --json` 的 `ExpPlanDocument.matrix[].reused`,
-  // 人读 `--dry` 首行的携入摘要(见 docs/feature/experiments/cli.md 开头示例与「事件与计划
-  // 文档的 TypeScript 形状」),口径必须与真正开跑时一致。
-  const carryInputs = await loadCarryInputs(join(cwd, ".niceeval"));
-  const priorResults = carryInputs?.results;
-  // 本次计划里哪些坐标「有历史但那份落盘读不动」:不标出来,它们会跟从没跑过的坐标一样落在
-  // `new` 上(见 docs/feature/experiments/cli.md 的门级词表)。坐标按目录名认,所以在这里从
-  // 目录键换算成 cacheKey。
-  const incompatibleKeys = new Set<string>();
-  for (let i = 0; i < agentRuns.length; i++) {
-    const run = agentRuns[i]!;
-    for (const e of matchedByRun[i]!) {
-      if (carryInputs.incompatibleHistory.has(incompatibleHistoryKey(run.experimentId ?? "", e.id))) {
-        incompatibleKeys.add(cacheKey(run, e.id));
-      }
-    }
-  }
-  // 即使没有历史也必须规划：它是 link → physical plan → fingerprint → dispatch 的唯一完成态，
-  // dry 与真实运行都消费同一组不可变 PreparedRunPair。
-  const carryPlan = await Effect.runPromise(planCarry(evals, agentRuns, priorResults, config.timeoutMs, {
-    rerun: flags.rerun,
-    configJudge: config.judge,
-    keepSandbox: flags.keepSandbox,
-    incompatibleKeys,
-    priorManifests: carryInputs?.manifestsByEvalKey,
-  }));
-
-  if (flags.dry) {
-    // --dry 只按所选形态打印计划,不运行、不落盘——一次完成的读取,不是事件流
-    // (见 docs/feature/experiments/cli.md「机器怎么读:--json」)。两种形态共用同一份摊平
-    // 矩阵——(experimentId, evalId) 逐行,携带同一口径的 reused 预测——不是各自重算一遍。
-    const dryRuns = Math.max(1, ...agentRuns.map((r) => r.attempts));
-    // 一行一份未携带原因分组:人读面投影出门的人读词,`--json` 投影出 gate 名,同一份数据。
-    const rowInputs = planRowInputs(
-      agentRuns,
-      matchedByRun,
-      carryPlan,
-      incompatibleKeys,
-      priorResults ?? [],
-      carryInputs.evidenceStatesByAttempt,
-    );
-    // 只读锁目录,不取锁、不等待(见 docs/feature/experiments/architecture.md「并发
-    // Invocation:用例锁」);过期(无人续心跳)的锁不算"正被持锁运行",不标注。裸 run(没有
-    // experimentId)不参与锁,恒不标注。并行读——矩阵行数可能不小,不逐行串行等磁盘。
-    const niceevalRootForDry = resolvePath(cwd, ".niceeval");
-    const now = Date.now();
-    const lockedFlags = await Promise.all(
-      rowInputs.map(async (row) => {
-        if (!row.experimentId) return false;
-        const lock = await readCaseLock(niceevalRootForDry, row.experimentId, row.evalId).catch(() => undefined);
-        return lock !== undefined && !isCaseLockExpired(lock, now);
+    const targetPlan: ProjectTargetPlan = yield* cliEffect(
+      "plan current ProjectTarget",
+      planProjectTarget(evals, agentRuns, config.timeoutMs, {
+        configJudge: config.judge,
+        keepSandbox: flags.keepSandbox,
       }),
     );
-    const matrix: JsonPlanRow[] = rowInputs.map((row, i) => ({
-      experimentId: row.experimentId,
-      evalId: row.evalId,
-      reused: row.reused,
-      ...(row.prior !== undefined
-        ? { prior: row.prior.map(({ locator, verdict, acceptance, evidenceState }) => ({ locator, verdict, acceptance, evidenceState })) }
-        : {}),
-      ...(lockedFlags[i] ? { locked: true } : {}),
-      ...(row.dispatch.length > 0
-        ? {
-            dispatch: row.dispatch.map((group) => ({
-              gate: group.gate,
-              attempts: [...group.attempts],
-              ...(group.comparison !== undefined ? { comparison: jsonPlanComparison(group.comparison) } : {}),
-            })),
-          }
-        : {}),
-    }));
-    if (outputForm === "json") {
-      process.stdout.write(
-        renderJsonPlanDocument({
-          total: totalAttempts,
-          evals: uniqueEvalIds.size,
-          configs: agentRuns.length,
-          attempts: dryRuns,
-          matrix,
-        }),
-      );
-    } else {
-      process.stdout.write(
-        renderHumanDryPlan({
-          totalAttempts,
-          evals: uniqueEvalIds.size,
-          configs: agentRuns.length,
-          attempts: dryRuns,
-          reused: carryPlan?.carriedResults.length ?? 0,
-          // previous-result 行逐条提供历史 locator；接受动作通过顶层 `niceeval accept @<locator>` 完成。
-          command: ["niceeval", command, ...positionals].join(" "),
-          rows: rowInputs.map((row, i) => ({
-            experimentId: row.experimentId,
-            evalId: row.evalId,
-            attempts: row.attempts,
-            ...(lockedFlags[i] ? { locked: true } : {}),
-            ...(row.carried.length > 0 ? { carried: row.carried } : {}),
-            ...(row.prior !== undefined ? { prior: row.prior } : {}),
-            dispatch: row.dispatch.map((group) => ({
-              reason: group.reason,
-              attempts: [...group.attempts],
-              ...(group.comparison !== undefined ? { comparison: group.comparison } : {}),
-            })),
-          })),
-        }),
-      );
+
+    if (flags.dry) {
+      const reuse = yield* cliEffect("prepare current Record reuse", prepareRunnerRecordReuse({
+        evals,
+        runs: agentRuns,
+        config: { timeoutMs: config.timeoutMs },
+        plannedFingerprints: targetPlan.plannedFingerprints,
+        plannedConfigHashes: targetPlan.plannedConfigHashes,
+        rerun: flags.rerun,
+        keepSandbox: flags.keepSandbox,
+      }));
+      const currentPlan = yield* cliEffect("preview current Record reuse", withRunnerCurrentReusePreview({
+        niceevalRoot: resolvePath(cwd, ".niceeval"),
+        startedAt: Date.now(),
+        evals,
+        runs: agentRuns,
+        reuse,
+        // `readReadbacks` is deliberately consumed and projected before this
+        // callback returns, while the exact frozen Record capability is live.
+        use: ({ reusePlan, readReadbacks }) => readReadbacks().pipe(
+          Effect.map((readbacks) => projectCurrentDryPlan({ slots: reusePlan.slots, readbacks })),
+        ),
+      }));
+      const rows = currentDryPlanRows(currentPlan);
+      const now = Date.now();
+      const lockedFlags = yield* Effect.all(rows.map((row) =>
+        readCaseLockEffect(resolvePath(cwd, ".niceeval"), row.experimentId, row.evalId).pipe(
+          Effect.catchAll(() => Effect.succeed(undefined)),
+          Effect.map((lock) => lock !== undefined && !isCaseLockExpired(lock, now)),
+        ),
+      ), { concurrency: "unbounded" });
+      const rowsWithLocks = Object.freeze(rows.map((row, index) => Object.freeze({
+        ...row,
+        ...(lockedFlags[index] ? { locked: true } : {}),
+      })));
+      const input = {
+        totalAttempts,
+        evals: uniqueEvalIds.size,
+        configs: agentRuns.length,
+        attempts: Math.max(1, ...agentRuns.map((run) => run.attempts)),
+        rows: rowsWithLocks,
+      };
+      yield* writeStdout(outputForm === "json"
+        ? renderCurrentDryPlanJson(input)
+        : renderCurrentDryPlan(input));
+      return 0;
     }
-    process.exit(0);
-  }
 
-  const reusedFailures = (carryPlan?.carriedResults ?? [])
-    .map(failureDetailFromResult)
-    .filter((failure) => failure !== undefined);
+    const maxConcurrency = flags.maxConcurrency ?? config.maxConcurrency ?? recommendedConcurrencyForPreparedPairs(
+      [...targetPlan.preparedPairsByKey.values()],
+    );
+    const experimentConcurrency: globalThis.Record<string, number> = {};
+    for (const run of agentRuns) {
+      if (run.experimentId !== undefined && run.maxConcurrency !== undefined) experimentConcurrency[run.experimentId] = run.maxConcurrency;
+    }
+    const plan = {
+      shape: { evals: uniqueEvalIds.size, configs: agentRuns.length, totalAttempts, maxConcurrency },
+      ...(Object.keys(experimentConcurrency).length === 0 ? {} : { experimentConcurrency }),
+    };
 
-  if (carryPlan.preparedPairsByKey === undefined) {
-    throw new Error("Internal error: production carry planning did not return prepared Sandbox pairs.");
-  }
-
-  // 无全局默认:并发上限由 sandbox provider 的推荐值决定(多个 agentRun 各有 sandbox 时取
-  // 最小值,最保守的 provider 决定上限)。同一个值既进 RunFeedbackPlan.shape,也传给 runEvals——
-  // 两处必须是同一个数字,dashboard 展示的并发上限不能和真实调度的并发上限对不上。
-  const sandboxDefaultConcurrency = recommendedConcurrencyForPreparedPairs(
-    [...carryPlan.preparedPairsByKey.values()],
-  );
-  const maxConcurrency =
-    flags.maxConcurrency ??
-    config.maxConcurrency ??
-    sandboxDefaultConcurrency;
-
-  // 声明了实验闸的实验逐个附注上限(PLAN 行 / `start` 事件的 experimentConcurrency);
-  // 未声明的不收,一个都没声明时整个字段省略(见 docs/feature/experiments/cli.md)。
-  const experimentConcurrency: globalThis.Record<string, number> = {};
-  for (const run of agentRuns) {
-    if (run.experimentId === undefined || run.maxConcurrency === undefined) continue;
-    experimentConcurrency[run.experimentId] = run.maxConcurrency;
-  }
-
-  const plan: RunFeedbackPlan = {
-    shape: { evals: uniqueEvalIds.size, configs: agentRuns.length, totalAttempts, maxConcurrency },
-    ...(Object.keys(experimentConcurrency).length > 0 ? { experimentConcurrency } : {}),
-    reused: carryPlan?.carriedResults.length ?? 0,
-    reusedFailures,
-  };
-
-  // 一个 run 内只有一个终端协调者(见 docs/feature/experiments/cli.md「输出流和落盘节奏」):
-  // 两种 profile 各自的展示逻辑全部在 renderer 里,这里只按解析出的形态选一个构造好、
-  // 交给 coordinator。invocation:start 前(coordinator.start(plan) 之前)的一切都还没有活跃 sink,
-  // 出错走 bootstrap stderr;之后所有诊断都经它。
-  const io = createNodeFeedbackIO();
-  const commandLabel = ["niceeval", command, ...positionals].join(" ").trim();
-  const renderer =
-    outputForm === "human" ? createHumanRenderer({ io, command: commandLabel }) : createJsonRenderer({ io });
-  const sessionTracker = new SessionTracker(resolvePath(cwd, ".niceeval"));
-  const coordinator = createFeedbackCoordinator({
-    profile: outputForm,
-    renderer,
-    io,
-    onEvent: (event, state) => sessionTracker.onFeedback(event, state),
-  });
-  coordinator.start(plan);
-
-  // Ctrl+C / kill 的三级响应,核心目标:任何情况下都不留下孤儿沙箱。
-  //   1 次:abort controller → runEvals 把它喂给 Effect signal → 各 attempt 的 Sample 跑 release
-  //         停容器(graceful)。同时起一个看门狗:graceful 若迟迟不收口(如 vsb.stop() 挂),
-  //         到点直接走兜底强清,不干等。
-  //   2 次:用户等不及 —— 立刻兜底强清(带超时)再退,而不是裸 process.exit 把进程连同
-  //         在飞的 stop 一起杀掉(那正是之前漏掉孤儿的根因)。
-  //   3 次:真不耐烦了,硬退(此时多半已无可清理的)。
-  const ctrl = new AbortController();
-  let signalCount = 0;
-  // 强清 = 加速收尾,不是绕过收尾(docs/cli.md「中断:三级响应」)。顺序:先强停沙箱(卡在
-  // 沙箱 I/O 上的收尾立刻失败返回),然后事件驱动收口——并发等待「在飞收尾链 settle」与
-  // 「实验级 teardown 注册表排空」(drain 会启动未启动的、等待在飞的同一 memoized promise),
-  // 两者都 settle 即退。兜底上限从单可调用体清理上限推导(docs 声明的不等式:provider stop 8s
-  // < 看门狗 < CLEANUP_TIMEOUT_MS ≤ 本上限),不是第 2 级的语义——settle 才是——只拦
-  // 「收尾可调用体绕过了自己的超时」的失守病态,到点放弃退出(职责同第 3 级硬退)。
-  // 只跑一次;先停 dashboard 的 tick/动态区域(coordinator.stopDynamic()),
-  // 避免硬退时终端卡在半帧 ANSI 状态。
-  const FORCE_SETTLE_CAP_MS = CLEANUP_TIMEOUT_MS * 2;
-  let runInFlight: Promise<InvocationSummary> | undefined;
-  let forcing = false;
-  const forceCleanupAndExit = (code: number) => {
-    if (forcing) return;
-    forcing = true;
-    void (async () => {
-      inputGuard.stop();
-      await Promise.all([coordinator.stopDynamic(), stopAllSandboxes()]);
-      const settled = Promise.allSettled([
-        ...(runInFlight ? [runInFlight] : []),
-        drainExperimentTeardowns(),
-        drainHeldCaseLocks(),
-        drainHeldGateLeases(),
-      ]);
-      await Promise.race([
-        settled.then(() => {}),
-        new Promise<void>((r) => {
-          setTimeout(r, FORCE_SETTLE_CAP_MS).unref();
-        }),
-      ]);
-      process.exit(code);
-    })();
-  };
-  for (const sig of ["SIGINT", "SIGTERM"] as const) {
-    process.on(sig, () => {
-      signalCount += 1;
-      if (signalCount === 1) {
-        reportActivity(t("cli.interruptCleanup").trimEnd());
-        ctrl.abort();
-        // 看门狗:graceful 清理迟迟没让进程自己收口,就强清兜底。取值在 docs/cli.md 声明的
-        // 不等式链里:> provider stop 超时(8s,一次正常停容器超时后才升级,不误伤),
-        // < CLEANUP_TIMEOUT_MS(30s)。
-        const GRACEFUL_WATCHDOG_MS = 12_000;
-        setTimeout(() => {
-          if (liveSandboxCount() > 0) {
-            reportActivity(t("cli.fallbackCleanupTimeout").trimEnd());
-            forceCleanupAndExit(130);
-          }
-        }, GRACEFUL_WATCHDOG_MS).unref();
-      } else if (signalCount === 2) {
-        reportActivity(t("cli.forceCleanupExit").trimEnd());
-        forceCleanupAndExit(130);
-      } else {
-        inputGuard.stop();
-        process.exit(130); // 第三次:硬退
-      }
+    const io = createNodeFeedbackIO();
+    const commandLabel = ["niceeval", command, ...positionals].join(" ").trim();
+    const renderer = outputForm === "human"
+      ? createHumanRenderer({ io, command: commandLabel })
+      : createJsonRenderer({ io });
+    const sessionTracker = new SessionTracker(resolvePath(cwd, ".niceeval"));
+    const coordinator = createFeedbackCoordinator({
+      profile: outputForm,
+      renderer,
+      io,
+      onEvent: (event, state) => sessionTracker.onFeedback(event, state),
     });
-  }
 
-  // live 面板期间的键盘接管与终端自愈(docs/feature/experiments/cli.md「键盘输入与画面自愈」):
-  // 只在 stdin/stderr 都是 TTY(human dashboard 真的在画)时接线;`\x03` 合成上面刚注册的
-  // SIGINT 事件,复用同一条中断路径,不在 input-guard 里重新实现一遍清理逻辑;SIGWINCH/回车
-  // 都走 coordinator.forceRedraw() 整帧重绘。process "exit" 兜底一层——显式收尾路径(见下)
-  // 之外的任何退出都不能把用户终端留在 raw mode。
-  const inputGuard = createInputGuard({
-    stdin: createNodeInputGuardStdin(),
-    stderrIsTTY: io.stderr.isTTY,
-    coordinator,
-    onInterrupt: () => {
-      process.emit("SIGINT");
-    },
-  });
-  process.once("exit", () => inputGuard.stop());
+    let resourcesReleased = false;
+    const releaseResources = Effect.suspend(() => {
+      if (resourcesReleased) return Effect.void;
+      resourcesReleased = true;
+      return releaseCliResources();
+    });
+    let sessionClosed = false;
+    const closeSession = (input: Parameters<SessionTracker["close"]>[0]) => sessionTracker.close(input).pipe(
+      Effect.tap(() => Effect.sync(() => { sessionClosed = true; })),
+    );
+    yield* Effect.addFinalizer(() => releaseResources);
+    yield* Effect.addFinalizer(() => sessionClosed
+      ? Effect.void
+      : closeSession({ status: "incomplete" }).pipe(Effect.ignore));
+    yield* Effect.addFinalizer(() => cliPromise("stop dynamic feedback", () => coordinator.stopDynamic()).pipe(Effect.ignore));
+    yield* Effect.acquireRelease(
+      Effect.sync(() => createInputGuard({
+        stdin: createNodeInputGuardStdin(),
+        stderrIsTTY: io.stderr.isTTY,
+        coordinator,
+        onInterrupt: () => process.emit("SIGINT"),
+      })),
+      (inputGuard) => Effect.sync(() => inputGuard.stop()),
+    );
 
-  // reporter 只剩正交的机器/artifact 出口:human/json 的展示完全由上面的 coordinator +
-  // renderer 负责,不再有 Console/Live/Quiet 这类兼职当 reporter 的展示层(见 docs 的
-  // 「CLI 只负责解析形态、构造 coordinator/reporters、运行和退出」)。每个 reporter 在这里
-  // 按来源分类 required/best-effort(见 `ReporterRegistration` 的字段注释):默认落盘的
-  // artifacts、显式指定的 --junit 是 agent/CI 读结果的唯一入口,写失败必须让
-  // completion/退出码判红;用户 `config.reporters` 只是补充观测,失败只折成一条 diagnostic,
-  // 不影响 completion。`exp` 没有 `--json <path>` 聚合文件出口(`Json(path)` 仍是库 reporter,
-  // 只是不再由这里接线)——JSON 聚合改走事件流本身(`--json`)或 `niceeval show --json`。
-  const reporters: ReporterRegistration[] = [];
-  const artifacts = ArtifactsReporter();
-  reporters.push({ reporter: artifacts, name: "artifacts", required: true });
-  if (flags.junit) reporters.push({ reporter: JUnit(flags.junit), name: "junit", required: true, target: flags.junit });
-  (config.reporters ?? []).forEach((reporter, i) => {
-    reporters.push({ reporter, name: `config-reporter-${i}`, required: false });
-  });
+    let invocationSummary: InvocationSummary | undefined;
+    const reporters: ReporterRegistration[] = [];
+    if (flags.junit) reporters.push({ reporter: JUnit(flags.junit), name: "junit", required: true, target: flags.junit });
+    (config.reporters ?? []).forEach((reporter, index) => {
+      reporters.push({ reporter, name: `config-reporter-${index}`, required: false });
+    });
+    reporters.push({
+      name: "cli-summary",
+      required: false,
+      reporter: {
+        onInvocationComplete(summary) {
+          invocationSummary = summary;
+        },
+      },
+    });
+    // This synchronous hand-off and the following `runEvals` yield have no
+    // asynchronous gap. A first signal therefore either interrupts the root
+    // before dispatch begins, or aborts this Invocation so it can close its
+    // durable interrupted receipt before the CLI returns.
+    const ownsGracefulDispatch = yield* Effect.sync(() => interruption?.enterGracefulDispatch() ?? true);
+    if (!ownsGracefulDispatch) yield* Effect.interrupt;
 
-  let summary: InvocationSummary;
-  try {
-    const inFlight = runEvals({
+    // Runner remains Effect-native. During graceful dispatch the application
+    // edge translates SIGINT into this Invocation signal, letting dispatch
+    // settle and the receipt close before the process exits with 130.
+    const receipt = yield* cliEffect("run evaluations", runEvals<never, never>({
       config,
       evals,
       agentRuns,
       reporters,
       maxConcurrency,
       maxBuildConcurrency,
-      signal: ctrl.signal,
-      priorResults,
-      carryPlan,
       keepSandbox: flags.keepSandbox,
       rerun: flags.rerun,
       niceevalRoot: resolvePath(cwd, ".niceeval"),
       session: sessionTracker,
-    });
-    // 交给强清路径一个可等待的收尾句柄:二次中断/看门狗强清时先有界等它收口,让在飞的
-    // teardown 链跑完,而不是 process.exit 把它们连同进程一起杀掉。
-    runInFlight = inFlight;
-    summary = await inFlight;
-  } catch (e) {
-    // 真崩溃前先撤下 dashboard,不让半帧 ANSI 状态和下面 main().catch 打印的错误交织;
-    // 同时释放键盘接管,不把终端留在 raw mode。
-    inputGuard.stop();
-    await coordinator.stopDynamic();
-    await sessionTracker.close({ status: "incomplete" }).catch(() => undefined);
-    throw e;
+      onCurrentRecordReusePlan: (current) => Effect.sync(() => coordinator.start({
+        ...plan,
+        reused: current.reused,
+        ...(current.reusedFailures.length === 0 ? {} : { reusedFailures: current.reusedFailures }),
+      })),
+      ...(interruption === undefined ? {} : { signal: interruption.invocationSignal }),
+    }));
+    yield* releaseResources;
+
+    const summary = invocationSummary;
+    if (summary === undefined) {
+      return yield* Effect.fail(cliFailure("collect invocation summary", new Error("Runner completed without an invocation summary.")));
+    }
+
+    const completion = assembleInvocationCompletion(coordinator.state);
+    yield* closeSession({ status: completion.status, completion, receipt, completedAt: receipt.completedAt });
+    yield* cliPromise("finish feedback", () => coordinator.finish({ summary, completion, receipt }));
+
+    const foldedStats = foldInvocationEvalStats(summary);
+    return computeExitCode({ ...summary, failed: foldedStats.failed, errored: foldedStats.errored }, completion);
+  });
+}
+
+type ReportCliCommand = "show" | "view";
+
+type ReportSelection =
+  | { readonly kind: "fixed"; readonly report: Report }
+  | { readonly kind: "config" }
+  | { readonly kind: "built-in"; readonly name: "overview" }
+  | { readonly kind: "module"; readonly path: string };
+
+type ThemeSelection =
+  | { readonly kind: "config" }
+  | { readonly kind: "built-in"; readonly name: "basalt" | "chalk" }
+  | { readonly kind: "module"; readonly path: string };
+
+interface ReportCliRequest {
+  readonly command: ReportCliCommand;
+  readonly cwd: string;
+  readonly root: RecordRoot;
+  readonly rootPath: string;
+  readonly target:
+    | {
+      readonly kind: "selection";
+      readonly selection: AnalysisSelectionRequest;
+    }
+    | {
+      readonly kind: "attempt";
+      readonly attemptId: AttemptId;
+    };
+  readonly reportSelection: ReportSelection;
+  readonly themeSelection: ThemeSelection;
+  readonly page?: ReportRoute;
+}
+
+/**
+ * The CLI validates selection identity before Record I/O. It never turns a
+ * prefix, a path, or a directory entry into a Run / Experiment selection.
+ */
+function parseReportCliRequest(input: {
+  readonly command: ReportCliCommand;
+  readonly cwd: string;
+  readonly positionals: readonly string[];
+  readonly flags: Flags;
+}): ReportCliRequest {
+  const unsupported = reportUnsupportedFlag(input.command, input.flags);
+  if (unsupported !== undefined) {
+    throw usageError(`niceeval ${input.command} does not accept ${unsupported}.\n`);
+  }
+  const runs = input.flags.run ?? [];
+
+  const rootText = input.flags.record;
+  if (rootText !== undefined && rootText.trim() === "") {
+    throw usageError("--record requires an actual Record root directory.\n");
+  }
+  const rootPath = resolvePath(input.cwd, rootText ?? ".niceeval/record");
+  const root = makeRecordRoot(rootPath);
+  if (Either.isLeft(root)) {
+    throw usageError(`Invalid --record root: ${root.left.code}.\n`);
   }
 
-  // 正常返回(含被中断后走部分汇总)后再兜一刀:Sample finalizer 没停掉的残留沙箱、没被运行
-  // 路径消费的实验级 cleanup、没被 per-attempt Effect.ensuring 释放的用例锁与实验闸租约在这里
-  // 强清。跑顺利时四份登记表都已空,是 no-op。
-  await stopAllSandboxes();
-  await drainExperimentTeardowns();
-  await drainHeldCaseLocks();
-  await drainHeldGateLeases();
+  const page = parseReportRoute(input.flags.page);
+  if (input.flags.source !== undefined && input.flags.execution) {
+    throw usageError("niceeval show chooses one evidence Report at a time; remove either --source or --execution.\n");
+  }
+  if (!input.flags.execution && input.flags.grep !== undefined) {
+    throw usageError("niceeval show --grep only combines with --execution.\n");
+  }
+  if (input.flags.execution) {
+    const report = executionEvidenceReport(executionEvidenceOptions(input.flags));
+    if (input.positionals.length !== 1) {
+      throw usageError("niceeval show --execution requires exactly one current Record Attempt locator.\n");
+    }
+    if (input.flags.latest || runs.length > 0 || input.flags.experiment !== undefined) {
+      throw usageError("niceeval show --execution uses its Attempt locator as the only selection; remove --latest, --run, and --experiment.\n");
+    }
+    if (input.flags.report !== undefined) {
+      throw usageError("niceeval show --execution selects its built-in execution Report; remove --report.\n");
+    }
+    const locator = input.positionals[0];
+    if (locator === undefined) {
+      throw usageError("niceeval show --execution requires one current Record Attempt locator.\n");
+    }
+    const attemptId = parseCurrentAttemptLocator(locator);
+    return Object.freeze({
+      command: input.command,
+      cwd: input.cwd,
+      root: root.right,
+      rootPath,
+      target: Object.freeze({ kind: "attempt" as const, attemptId }),
+      reportSelection: Object.freeze({ kind: "fixed" as const, report }),
+      themeSelection: themeSelection(input.cwd, input.flags.theme),
+      ...(page === undefined ? {} : { page }),
+    });
+  }
 
-  // completion 要先算好,--junit 是否"这次真的写出"才有依据(见下)。
-  const completion = assembleInvocationCompletion(coordinator.state);
+  if (input.flags.source !== undefined) {
+    if (input.positionals.length !== 1) {
+      throw usageError("niceeval show --source requires exactly one current Record Attempt locator.\n");
+    }
+    if (input.flags.latest || runs.length > 0 || input.flags.experiment !== undefined) {
+      throw usageError("niceeval show --source uses its Attempt locator as the only selection; remove --latest, --run, and --experiment.\n");
+    }
+    if (input.flags.report !== undefined) {
+      throw usageError("niceeval show --source selects its built-in source Report; remove --report.\n");
+    }
+    const locator = input.positionals[0];
+    if (locator === undefined) {
+      throw usageError("niceeval show --source requires one current Record Attempt locator.\n");
+    }
+    const attemptId = parseCurrentAttemptLocator(locator);
+    const report = sourceEvidenceReport();
+    return Object.freeze({
+      command: input.command,
+      cwd: input.cwd,
+      root: root.right,
+      rootPath,
+      target: Object.freeze({ kind: "attempt" as const, attemptId }),
+      reportSelection: Object.freeze({ kind: "fixed" as const, report }),
+      themeSelection: themeSelection(input.cwd, input.flags.theme),
+      ...(page === undefined ? {} : { page }),
+    });
+  }
 
-  // --junit 是正交机器出口,只在这次运行真的写出文件时才把路径交给 coordinator(它转发给
-  // json renderer 打印独立的 `junit` 字段,见 docs「机器怎么读:--json」)。判据是
-  // completion.reporterErrors 里有没有这次 required reporter("junit")的失败记录——不能用
-  // existsSync 探测磁盘:atomicWriteFile(json.ts)失败时原地保留上一次运行遗留的旧文件,
-  // existsSync 只会看到"文件存在"就误判成这次写成功,把上一轮的陈旧内容当成本次结果打印出去。
-  const junitPath =
-    flags.junit && !completion.reporterErrors.some((e) => e.reporter === "junit") ? flags.junit : undefined;
+  if (input.positionals.length > 0) {
+    if (input.positionals.length !== 1) {
+      throw usageError(
+        `niceeval ${input.command} accepts one exact Attempt locator, or a --run/--latest selection.\n`,
+      );
+    }
+    if (input.flags.latest || runs.length > 0 || input.flags.experiment !== undefined) {
+      throw usageError(
+        `niceeval ${input.command} uses its Attempt locator as the only selection; remove --latest, --run, and --experiment.\n`,
+      );
+    }
+    const locator = input.positionals[0];
+    if (locator === undefined || !locator.startsWith("@")) {
+      throw usageError(
+        `niceeval ${input.command} selects Record data only with an exact @<current-AttemptId> locator, --run, or --latest.\n`,
+      );
+    }
+    const attemptId = parseCurrentAttemptLocator(locator);
+    return Object.freeze({
+      command: input.command,
+      cwd: input.cwd,
+      root: root.right,
+      rootPath,
+      target: Object.freeze({ kind: "attempt" as const, attemptId }),
+      reportSelection: input.flags.report === undefined
+        ? Object.freeze({ kind: "fixed" as const, report: defaultAttemptOverviewReport })
+        : reportSelection(input.cwd, input.flags.report),
+      themeSelection: themeSelection(input.cwd, input.flags.theme),
+      ...(page === undefined ? {} : { page }),
+    });
+  }
 
-  // 机器反馈闭环的入口:跑完直接给出每个已创建快照的目录,agent/CI 读 run.json 与各
-  // attempt 的 result.json / artifact(events/trace/diff),不必解析人类向的流式输出。相对 cwd
-  // 的路径更友好;结果落在 cwd 外时(relative 路径以 .. 开头)原样打印绝对路径。打印本身由
-  // renderer 的 "saved" 处理完成,这里只负责把路径交给 coordinator。
-  const paths = artifacts.outputDirs().map(({ dir }) => {
-    const rel = relative(cwd, dir);
-    return rel && !rel.startsWith("..") ? rel : dir;
+  if (input.flags.latest && runs.length > 0) {
+    throw usageError("--latest and --run are mutually exclusive; choose exactly one selection policy.\n");
+  }
+  if (!input.flags.latest && runs.length === 0) {
+    throw usageError("niceeval show/view requires exactly one of --latest or one or more --run <run-id>.\n");
+  }
+  if (!input.flags.latest && input.flags.experiment !== undefined) {
+    throw usageError("--experiment only combines with --latest; it cannot narrow explicit --run selection.\n");
+  }
+
+  const report = reportSelection(input.cwd, input.flags.report);
+  const theme = themeSelection(input.cwd, input.flags.theme);
+  const selection = input.flags.latest
+    ? latestSelection(input.flags.experiment)
+    : explicitSelection(runs);
+
+  return Object.freeze({
+    command: input.command,
+    cwd: input.cwd,
+    root: root.right,
+    rootPath,
+    target: Object.freeze({ kind: "selection" as const, selection }),
+    reportSelection: report,
+    themeSelection: theme,
+    ...(page === undefined ? {} : { page }),
   });
+}
 
-  const pathsByExperiment = new Map(
-    artifacts.outputDirs().map(({ experimentId, dir }) => {
-      const rel = relative(cwd, dir);
-      return [experimentId, rel && !rel.startsWith("..") ? rel : dir] as const;
+function executionEvidenceOptions(flags: Flags): { readonly grep?: string } {
+  if (flags.grep === undefined) return Object.freeze({});
+  try {
+    new RegExp(flags.grep);
+    return Object.freeze({ grep: flags.grep });
+  } catch {
+    throw usageError(`--grep "${flags.grep}" is not a valid JavaScript regular expression.\n`);
+  }
+}
+
+function reportUnsupportedFlag(command: ReportCliCommand, flags: Flags): string | undefined {
+  const unsupported: Array<[string, unknown]> = [
+    ["--agent", flags.agent],
+    ["--model", flags.model],
+    ["--attempts", flags.attempts],
+    ["--max-concurrency", flags.maxConcurrency],
+    ["--max-build-concurrency", flags.maxBuildConcurrency],
+    ["--timeout", flags.timeout],
+    ["--budget", flags.budget],
+    ["--tag", flags.tag],
+    ["--junit", flags.junit],
+    ["--json", command === "view" && flags.json],
+    ["--smoke", flags.smoke],
+    ["--dry", flags.dry],
+    ["--force", flags.force],
+    ["--rerun", flags.rerun],
+    ["--early-exit/--no-early-exit", flags.earlyExit],
+    ["--open/--no-open", command === "show" ? flags.open : undefined],
+    ["--out", command === "show" ? flags.out : undefined],
+    ["--port", command === "show" ? flags.port : undefined],
+    ["--host", command === "show" ? flags.host : undefined],
+    ["--source", command === "show" ? undefined : flags.source],
+    ["--execution", command === "show" ? undefined : flags.execution],
+    ["--diff", flags.diff || flags.diffPath !== undefined],
+    ["--grep", command === "show" ? undefined : flags.grep],
+    ["--timing", flags.timing],
+    ["--keep-sandbox", flags.keepSandbox],
+    ["--all", flags.all],
+    ["--window", flags.window],
+    ["--path", flags.sandboxPath],
+    ["--leave-running", flags.leaveRunning],
+    ["--history", flags.history],
+    ["--usage", flags.usage],
+    ["--stats", flags.stats],
+    ["--orphans", flags.orphans],
+    ["--teardown", flags.teardown],
+    ["--yes", flags.yes],
+  ];
+  const found = unsupported.find(([, value]) =>
+    value !== undefined && value !== false && (!Array.isArray(value) || value.length > 0)
+  );
+  return found?.[0];
+}
+
+function parseReportRoute(value: string | undefined): ReportRoute | undefined {
+  if (value === undefined) return undefined;
+  const parsed = reportRoute(value);
+  if (Either.isLeft(parsed)) {
+    throw usageError(`Invalid --page route "${value}": ${parsed.left.reason}.\n`);
+  }
+  return parsed.right;
+}
+
+function reportSelection(cwd: string, value: string | undefined): ReportSelection {
+  if (value === undefined) return Object.freeze({ kind: "config" as const });
+  if (value === "overview") return Object.freeze({ kind: "built-in" as const, name: "overview" as const });
+  if (isTrustedModulePath(value)) {
+    return Object.freeze({ kind: "module" as const, path: resolveTrustedModulePath(cwd, value) });
+  }
+  throw usageError("--report accepts built-in overview or an explicit trusted module path.\n");
+}
+
+function themeSelection(cwd: string, value: string | undefined): ThemeSelection {
+  if (value === undefined) return Object.freeze({ kind: "config" as const });
+  if (value === "basalt" || value === "chalk") {
+    return Object.freeze({ kind: "built-in" as const, name: value });
+  }
+  if (isTrustedModulePath(value)) {
+    return Object.freeze({ kind: "module" as const, path: resolveTrustedModulePath(cwd, value) });
+  }
+  throw usageError("--theme accepts built-in basalt/chalk or an explicit trusted module path.\n");
+}
+
+function isTrustedModulePath(value: string): boolean {
+  return value.startsWith("./") || value.startsWith("../") || isAbsolute(value);
+}
+
+function explicitSelection(values: readonly string[]): AnalysisSelectionRequest {
+  const runIds = uniqueExactRunIds(values);
+  const [first, ...rest] = runIds;
+  if (first === undefined) {
+    throw usageError("niceeval show/view requires one or more --run <run-id> values.\n");
+  }
+  const nonEmptyRunIds: readonly [RunId, ...RunId[]] = [first, ...rest];
+  return Object.freeze({
+    policy: "explicit-runs",
+    input: Object.freeze({ runIds: nonEmptyRunIds }),
+  });
+}
+
+function latestSelection(values: readonly string[] | undefined): AnalysisSelectionRequest {
+  if (values === undefined) {
+    return Object.freeze({ policy: "latest-runs", input: Object.freeze({}) });
+  }
+  const experimentIds = uniqueExactExperimentIds(values);
+  const [first, ...rest] = experimentIds;
+  if (first === undefined) {
+    throw usageError("--experiment requires one or more complete ExperimentId values.\n");
+  }
+  const nonEmptyExperimentIds: readonly [ExperimentId, ...ExperimentId[]] = [first, ...rest];
+  return Object.freeze({
+    policy: "latest-runs",
+    input: Object.freeze({ experimentIds: nonEmptyExperimentIds }),
+  });
+}
+
+function uniqueExactRunIds(values: readonly string[]): readonly RunId[] {
+  const result: RunId[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    const decoded = Schema.decodeUnknownEither(RunIdSchema)(value);
+    if (Either.isLeft(decoded)) {
+      throw usageError(`Invalid --run value "${value}": expected one exact portable RunId.\n`);
+    }
+    if (!seen.has(decoded.right)) {
+      seen.add(decoded.right);
+      result.push(decoded.right);
+    }
+  }
+  return Object.freeze(result);
+}
+
+function uniqueExactExperimentIds(values: readonly string[]): readonly ExperimentId[] {
+  const result: ExperimentId[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    const decoded = Schema.decodeUnknownEither(ExperimentIdSchema)(value);
+    if (Either.isLeft(decoded)) {
+      throw usageError(`Invalid --experiment value "${value}": expected one exact ExperimentId.\n`);
+    }
+    if (!seen.has(decoded.right)) {
+      seen.add(decoded.right);
+      result.push(decoded.right);
+    }
+  }
+  return Object.freeze(result);
+}
+
+/** Current Record locators are exact durable AttemptIds, never historical hash aliases. */
+function parseCurrentAttemptLocator(value: string): AttemptId {
+  if (!value.startsWith("@") || value.length === 1) {
+    throw usageError(`Invalid Attempt locator "${value}": expected @<exact-current-AttemptId>.\n`);
+  }
+  const decoded = Schema.decodeUnknownEither(AttemptIdSchema)(value.slice(1));
+  if (Either.isLeft(decoded)) {
+    throw usageError(`Invalid Attempt locator "${value}": expected @<exact-current-AttemptId>.\n`);
+  }
+  return decoded.right;
+}
+
+interface LoadedCliReportInputs {
+  readonly report: Report;
+  readonly theme: ThemeDefinition;
+  /** Record, config, and every statically discovered author module input. */
+  readonly watchInputs: readonly string[];
+}
+
+/**
+ * Config is deliberately fresh-read for every view rebuild even when CLI flags
+ * override its current Report or Theme. It is both a trusted boundary and a
+ * live input: an invalid config must not leave a stale hidden module graph.
+ */
+function loadCliReportInputs(request: ReportCliRequest): Effect.Effect<LoadedCliReportInputs, CliFailure> {
+  return Effect.gen(function* () {
+    const configured = yield* cliEffect(
+      "load trusted Report config",
+      loadTrustedReportConfig(request.cwd),
+    );
+    const selectedReport = yield* reportFromSelection(request.reportSelection, configured.report);
+    const selectedTheme = yield* themeFromSelection(request.themeSelection, configured.theme);
+    return Object.freeze({
+      report: selectedReport.value,
+      theme: selectedTheme.value,
+      watchInputs: uniqueWatchInputs([
+        request.rootPath,
+        ...configured.watchInputs,
+        ...selectedReport.watchInputs,
+        ...selectedTheme.watchInputs,
+      ]),
+    });
+  });
+}
+
+function reportFromSelection(
+  selection: ReportSelection,
+  configured: Report | undefined,
+): Effect.Effect<{ readonly value: Report; readonly watchInputs: readonly string[] }, CliFailure> {
+  switch (selection.kind) {
+    case "fixed":
+      return Effect.succeed(Object.freeze({ value: selection.report, watchInputs: Object.freeze([]) }));
+    case "config":
+      return Effect.succeed(Object.freeze({
+        value: configured ?? defaultOverviewReport,
+        watchInputs: Object.freeze([]),
+      }));
+    case "built-in":
+      return Effect.succeed(Object.freeze({ value: defaultOverviewReport, watchInputs: Object.freeze([]) }));
+    case "module":
+      return cliEffect("load trusted Report module", loadTrustedReportModule(selection.path)).pipe(
+        Effect.map((loaded) => Object.freeze({ value: loaded.report, watchInputs: loaded.watchInputs })),
+      );
+  }
+}
+
+function themeFromSelection(
+  selection: ThemeSelection,
+  configured: ThemeDefinition | undefined,
+): Effect.Effect<{ readonly value: ThemeDefinition; readonly watchInputs: readonly string[] }, CliFailure> {
+  switch (selection.kind) {
+    case "config":
+      return Effect.succeed(Object.freeze({ value: configured ?? basalt, watchInputs: Object.freeze([]) }));
+    case "built-in":
+      return Effect.succeed(Object.freeze({
+        value: selection.name === "chalk" ? chalk : basalt,
+        watchInputs: Object.freeze([]),
+      }));
+    case "module":
+      return cliEffect("load trusted Theme module", loadTrustedThemeModule(selection.path)).pipe(
+        Effect.map((loaded) => Object.freeze({ value: loaded.theme, watchInputs: loaded.watchInputs })),
+      );
+  }
+}
+
+function uniqueWatchInputs(paths: readonly string[]): readonly string[] {
+  return Object.freeze([...new Set(paths.map((path) => resolvePath(path)))].sort());
+}
+
+function executeCliReport(request: ReportCliRequest, report: Report) {
+  const execution = request.target.kind === "attempt"
+    ? executeReportForAttemptFromRecord({
+      root: request.root,
+      attemptId: request.target.attemptId,
+      report,
+    })
+    : executeReportFromRecord({
+      root: request.root,
+      selection: request.target.selection,
+      report,
+    });
+  return execution.pipe(
+    Effect.mapError(reportExecutionFailure),
+    Effect.flatMap((completed) => request.target.kind === "selection" && completed.sample.runs.length === 0
+      ? Effect.fail(emptyReportSelectionFailure(request.target.selection))
+      : Effect.succeed(completed)),
+  );
+}
+
+function reportExecutionFailure(error: unknown): CliFailure {
+  switch (failureCode(error)) {
+    case "sample-run-not-found":
+      return usageError(`Run "${stringProperty(error, "runId") ?? "unknown"}" was not found in the selected Record.\n`);
+    case "sample-run-invalid":
+      return usageError(`Run "${stringProperty(error, "runId") ?? "unknown"}" is not a valid published Record Run.\n`);
+    case "sample-selection-invalid":
+      return usageError(`Invalid Record analysis selection: ${stringProperty(error, "field") ?? "selection"}.\n`);
+    case "sample-attempt-not-found":
+      return usageError(`Attempt "${stringProperty(error, "attemptId") ?? "unknown"}" was not found in the selected Record.\n`);
+    case "sample-attempt-ambiguous":
+      return usageError(`Attempt "${stringProperty(error, "attemptId") ?? "unknown"}" is ambiguous in the selected Record.\n`);
+    case "sample-latest-indeterminate":
+      return usageError("--latest could not determine a published Run for the current Record. Repair the Record or select exact --run values.\n");
+    case "record-migration-required":
+      return usageError("record-migration-required\nRun: niceeval migrate\n");
+    case "record-bootstrap-invalid":
+      return usageError("record-bootstrap-invalid\nPass --record <actual-record-root> or create a current NiceEval Record.\n");
+    case "record-format-unsupported":
+      return usageError("record-format-unsupported\nUse a NiceEval version that supports this Record format.\n");
+    case "record-migration-interrupted":
+      return usageError("record-migration-interrupted\nRestore the Record from Git or a backup before retrying.\n");
+    default:
+      return cliFailure("execute report from Record", error);
+  }
+}
+
+function stringProperty(value: unknown, key: string): string | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const candidate = Reflect.get(value, key);
+  return typeof candidate === "string" ? candidate : undefined;
+}
+
+function emptyReportSelectionFailure(selection: AnalysisSelectionRequest): CliUsageError {
+  const scope = selection.policy === "latest-runs"
+    ? selection.input.experimentIds === undefined
+      ? "--latest"
+      : "--latest with --experiment"
+    : "--run";
+  return usageError(`No published Runs matched ${scope} in the selected Record.\n`);
+}
+
+function requireKnownReportPage(
+  execution: ReportExecution,
+  page: ReportRoute | undefined,
+): Effect.Effect<void, CliUsageError> {
+  if (page === undefined || execution.pages.some((candidate) => candidate.route === page)) {
+    return Effect.void;
+  }
+  const available = execution.pages
+    .flatMap((candidate) => candidate.route === undefined ? [] : [candidate.route])
+    .sort()
+    .join(", ");
+  return Effect.fail(usageError(
+    `Unknown Report route "${page}". Available routes: ${available || "none"}.\n`,
+  ));
+}
+
+const cliReportConsole = Object.freeze({
+  write: (text: string) => Effect.try({
+    try: () => {
+      process.stdout.write(text);
+    },
+    catch: () => Object.freeze({
+      code: "report-console-write-failed" as const,
+      operation: "write" as const,
+    }),
+  }),
+});
+
+function runShowCommand(
+  cwd: string,
+  positionals: readonly string[],
+  flags: Flags,
+) {
+  return Effect.gen(function* () {
+    const request = yield* Effect.try({
+      try: () => parseReportCliRequest({ command: "show", cwd, positionals, flags }),
+      catch: (cause) => cliFailure("parse show arguments", cause),
+    });
+    const inputs = yield* loadCliReportInputs(request);
+    const execution = yield* executeCliReport(request, inputs.report);
+    yield* requireKnownReportPage(execution, request.page);
+    yield* showReport({
+      execution,
+      ...(flags.json ? { format: "json" as const } : {}),
+      ...(request.page === undefined ? {} : { page: request.page }),
+    }).pipe(
+      Effect.provideService(ReportConsole, cliReportConsole),
+      Effect.mapError((error) => cliFailure("render Report show output", error)),
+    );
+    return 0;
+  });
+}
+
+function runViewCommand(
+  cwd: string,
+  positionals: readonly string[],
+  flags: Flags,
+) {
+  return Effect.gen(function* () {
+    const request = yield* Effect.try({
+      try: () => parseReportCliRequest({ command: "view", cwd, positionals, flags }),
+      catch: (cause) => cliFailure("parse view arguments", cause),
+    });
+    const initialInputs = yield* loadCliReportInputs(request);
+    const initial = yield* executeCliReport(request, initialInputs.report);
+    yield* requireKnownReportPage(initial, request.page);
+
+    if (flags.out !== undefined) {
+      if (flags.out.trim() === "") {
+        return yield* Effect.fail(usageError("--out requires a target directory.\n"));
+      }
+      if (flags.port !== undefined || flags.host !== undefined || flags.open === true) {
+        return yield* Effect.fail(usageError("view --out does not start a server; remove --port, --host, and --open.\n"));
+      }
+      const receipt = yield* exportStaticReport({
+        execution: initial,
+        out: resolvePath(cwd, flags.out),
+        theme: initialInputs.theme,
+      }).pipe(
+        Effect.provideService(ReportFileSystem, makeNodeReportFileSystem()),
+        Effect.mapError((error) => staticExportFailure(error, resolvePath(cwd, flags.out!))),
+      );
+      yield* writeStdout(`Exported static report site: ${receipt.out}\n`);
+      return 0;
+    }
+
+    const { host, port } = yield* Effect.try({
+      try: () => ({ host: loopbackViewHost(flags.host), port: viewPort(flags.port) }),
+      catch: (cause) => cliFailure("parse view server arguments", cause),
+    });
+    const session = yield* openReportViewSession({
+      url: `http://${host.includes(":") ? `[${host}]` : host}:${port}/`,
+      theme: initialInputs.theme,
+      watchInputs: initialInputs.watchInputs,
+      initial: Effect.succeed(initial),
+      rebuild: () => rebuildReportView(request),
+    }).pipe(Effect.mapError((error) => cliFailure("open report view session", error)));
+    // Watch set is owned by the session revision; openViewServer only transports
+    // fs.watch hints and replaces them after each successful rebuild.
+    const server = yield* openViewServer({
+      session,
+      host,
+      port,
+    }).pipe(Effect.mapError((error) => cliFailure("open report view", error)));
+    const url = request.page === undefined ? server.url : new URL(request.page, server.url).toString();
+    yield* writeStdout(`niceeval view — open in a browser:\n${url}\n`);
+    if (flags.open !== false) {
+      yield* openBrowser(url).pipe(Effect.catchAll(() => Effect.succeed(false)));
+    }
+    return yield* Effect.never;
+  });
+}
+
+/**
+ * A watcher signal is only a hint. Every refresh re-reads config plus its
+ * fresh author graph and Record before one completed immutable revision is
+ * published with its next recoverable watch set; a typed boundary failure is
+ * logged once and leaves last-good execution and the prior watch set.
+ */
+function rebuildReportView(request: ReportCliRequest) {
+  return Effect.gen(function* () {
+    const inputs = yield* loadCliReportInputs(request);
+    const execution = yield* executeCliReport(request, inputs.report);
+    yield* requireKnownReportPage(execution, request.page);
+    return Object.freeze({
+      kind: "execution" as const,
+      execution,
+      theme: inputs.theme,
+      watchInputs: inputs.watchInputs,
+    });
+  }).pipe(
+    Effect.catchAll((failure) => {
+      const problem = reportViewRebuildFailure(failure);
+      return writeStderr(`view rebuild failed: ${problem.summary}\n`).pipe(
+        Effect.zipRight(Effect.fail(problem)),
+      );
     }),
   );
-  await sessionTracker.close({ status: completion.status, completion, paths: pathsByExperiment });
-
-  inputGuard.stop();
-  await coordinator.finish({ summary, completion, paths, junit: junitPath });
-
-  // 退出码统一走 CompletionStatus 驱动的语义(interrupted → 130、incomplete/required reporter
-  // 失败 → 1),不再只看 verdict 计数;两种 profile 共用同一套退出码,不是 json 专属。failed/errored
-  // 先按 (experiment, eval) 折叠再喂给 computeExitCode——它只认 InvocationSummary 原始字段,不知道
-  // 「同一 eval 的重试轮不该重复计红」这条 eval 级判定规则(被 attempts+earlyExit 重试吸收的失败,
-  // 先挂一次、后来过了,不该把进程判红,否则 CI 判定与 evalLevelStats 报表口径不一致;
-  // 见 memory 的 cli-exit-code-attempt-level-not-eval-level)。
-  const foldedStats = evalLevelStats(summary.results, (r) => `${r.experimentId ?? ""}|${r.id}`);
-  const exitCode = computeExitCode({ ...summary, failed: foldedStats.failed, errored: foldedStats.errored }, completion);
-  process.exit(exitCode);
 }
 
-// 只有经 bin/niceeval.js 启动时才运行 main();测试直接 import 本文件的纯函数(exp rename 的
-// 解析与格式化)时不能让 main() 运行——单元层不起 CLI 进程,进程行为归 E2E。入口判断基于
-// argv,不读环境变量:src/ 的环境变量白名单守护不允许新增测试专用变量
-// (见 test/unit/config-env-boundary.test.ts),而 vitest 的 argv[1] 永远不会是 bin/niceeval.js。
-if (
-  process.argv[1]?.endsWith(`${sep}bin${sep}niceeval.js`) ||
-  process.argv[1]?.endsWith(`${sep}.bin${sep}niceeval`)
-) {
-  main().catch(async (e) => {
-    process.stderr.write(
-      e instanceof SandboxLayerLinkError
-        ? `${formatSandboxLayerLinkError(e)}\n`
-        : e instanceof SandboxPhysicalPlanningError
-          ? `${formatSandboxPhysicalPlanningError(e)}\n`
-        : t("cli.error", { error: formatThrown(e) }),
-    );
-    // 真·崩溃路径也别留孤儿:强清还活着的沙箱(带超时)、排空实验级 cleanup 注册表、用例锁与
-    // 实验闸租约,再退。
-    await stopAllSandboxes();
-    await drainExperimentTeardowns();
-    await drainHeldCaseLocks();
-    await drainHeldGateLeases();
-    process.exit(2);
+function staticExportFailure(error: unknown, out: string): CliFailure {
+  if (failureCode(error) === "report-export-target-exists") {
+    return usageError(`report-export-target-exists\nRemove ${out} before retrying.\n`);
+  }
+  return cliFailure("export static Report", error);
+}
+
+function loopbackViewHost(value: string | undefined): string {
+  const host = value ?? "127.0.0.1";
+  if (host !== "127.0.0.1" && host !== "::1" && host !== "localhost") {
+    throw usageError(`view host must be loopback, got ${host}.\n`);
+  }
+  return host;
+}
+
+function viewPort(value: number | undefined): number {
+  const port = value ?? 4173;
+  if (!Number.isInteger(port) || port < 0 || port > 65_535) {
+    throw usageError(`--port must be an integer from 0 through 65535, got ${port}.\n`);
+  }
+  return port;
+}
+
+function reportViewRebuildFailure(failure: CliFailure): { readonly summary: string } {
+  const summary = failure._tag === "CliUsageError"
+    ? failure.message
+    : failure.cause instanceof ReportModuleLoadError
+      ? `${failure.cause.code}: ${failure.cause.reason}`
+      : failureCode(failure.cause) ?? "Report rebuild failed";
+  return Object.freeze({ summary });
+}
+
+export const cliProgram = (interruption?: CliInterruptionOwnership) => Effect.gen(function* () {
+  const cwd = process.cwd();
+  const { command, positionals, flags } = yield* Effect.try({
+    try: () => parseArgs(process.argv.slice(2)),
+    catch: (cause) => cliFailure("parse CLI arguments", cause),
   });
-}
+
+  // Session / Docker profile queries must remain config-free read paths.
+  if (command !== "session" && command !== "docker") {
+    yield* loadDotenv(cwd);
+    yield* applyConfiguredLocale(cwd);
+  }
+
+  if (flags.help) {
+    yield* writeStdout(t("cli.help"));
+    return 0;
+  }
+  if (flags.version) {
+    yield* writeStdout((yield* packageVersion()) + "\n");
+    return 0;
+  }
+
+  if (command === "docker") return yield* runDockerCommand(positionals, flags);
+
+  if (command === "accept") {
+    const locators = yield* Effect.try({
+      try: () => parseAcceptLocators(positionals, flags),
+      catch: (cause) => cliFailure("parse acceptance locators", cause),
+    });
+    const outcome = yield* Effect.either(runAcceptCommand(cwd, locators, flags.record));
+    if (Either.isLeft(outcome)) {
+      yield* writeStderr(t("cli.accept.failed", { error: errorMessage(outcome.left.cause) }));
+      return 1;
+    }
+    return 0;
+  }
+
+  if (command === "view") return yield* runViewCommand(cwd, positionals, flags);
+  if (command === "sandbox") return yield* runSandboxCliCommand(cwd, positionals, flags);
+  if (command === "session") return yield* runSessionCommand(cwd, positionals, flags);
+  if (command === "show") return yield* runShowCommand(cwd, positionals, flags);
+  if (command === "clean" || command === "migrate") {
+    return yield* runRecordMaintenanceCommand(cwd, command, positionals, flags);
+  }
+  if (command === "init") {
+    yield* initProject(cwd);
+    yield* writeStdout(t("cli.init.done"));
+    if (!hostPrefersEsm(cwd)) yield* writeStdout(t("cli.init.esmHint"));
+    return 0;
+  }
+  if (command === "exp" && positionals[0] === "rename") {
+    return yield* runExperimentRenameCommand(cwd, positionals.slice(1), flags);
+  }
+
+  return yield* runEvaluationCommand(cwd, command, positionals, flags, interruption);
+}).pipe(
+  // Every command boundary reports a typed CLI failure; defects and
+  // interruption remain in the Cause channel for bootstrap to own.
+  Effect.mapError((cause) => cliFailure("run CLI command", cause)),
+);

@@ -1,170 +1,36 @@
 ---
-title: "Theme a report"
-sidebarTitle: "Report Theming"
-description: "Swap report appearance with --theme, write your own theme with defineTheme, and set it as the project default or publish it as an npm package."
+title: "Report Appearance and Safety Boundaries"
+sidebarTitle: "Report Appearance"
+description: "Understand the current Report host's fixed appearance and why Reports cannot inject theme files, CSS, or browser code."
 ---
 
-The report decides what a result set shows; the theme decides how it looks. The two stay separate: one theme can wrap any report, and one report can swap any theme. Rebranding a results site therefore does not require copying the report file, and a team's palette is written once.
+The current Record and Reports contract has no `--theme` flag and does not load arbitrary theme files. `show`, local `view`, and static export consume the same `ReportExecution`. NiceEval's exporter supplies the web shell completely through its built-in runtime, base styles, and fonts.
 
-Themes only affect the web surface: the page chrome and in-page components of `niceeval view` read the same theme, and the local viewer matches the static site from `--out`. `niceeval show` is terminal output and has no theme layer.
-
-## Try an appearance once
-
-Without changing any files, try a theme on the same report:
-
-```bash
-niceeval view --theme ./themes/acme.ts
-niceeval view --report reports/site.tsx --theme ./themes/acme.ts
-niceeval view --theme basalt                 # official dark theme (default): black surface, sharp corners
-niceeval view --theme chalk                  # official light theme: white surface, rounded corners
+```sh
+niceeval view --latest
+niceeval view --latest --report ./reports/site.ts --out ./report-site
 ```
 
-A bare word for `--theme` looks up a built-in theme name (`basalt` and `chalk`); a path loads a file. The two official themes are one dark and one light, one sharp and one rounded — run both against the same report to see that appearance lives entirely in the theme.
+## What a Report can control
 
-Only one theme is active per run, chosen in four steps, earlier wins:
+A Report uses a structured `ReportPageModel` to choose its title, content, tables, chart data, status prompts, and text alternative. It can organize information and choose appropriate built-in components, but it cannot return scripts, CSS, fonts, workers, WASM, network URLs, or local file paths.
 
-| Step | Source |
-|---|---|
-| 1 | `--theme <name\|file>` |
-| 2 | the report's own `theme` field |
-| 3 | the `theme` field in `niceeval.config.ts` |
-| 4 | built-in `basalt` |
+Color and interaction can only enhance existing meaning. Partial, unavailable, unsupported, and invalid states must also have text or table representations; color alone cannot distinguish them.
 
-Anything missing from the winning theme falls back to official values; it is not merged with the next step.
+## Why arbitrary theme injection is excluded
 
-## Write your own theme
+A static Report promises to be self-contained, preflightable, and available offline. If a Report or CLI could load arbitrary CSS, scripts, or fonts, export would need to deal again with code execution, resource closure, network URLs, path escapes, and version drift. Sharing a fixed result would become another plugin and build system.
 
-To change only the brand color, one field is a complete theme:
+A fixed host lets the exporter enumerate every asset before writing files, keep the manifest and ordinary files one-to-one, and give local and static pages the same interpretation even when an external theme package changes.
 
-```tsx
-// themes/acme.ts
-import { defineTheme } from "niceeval/report";
+## Branding later
 
-export default defineTheme({ accent: { light: "#6D28D9", dark: "#C4B5FD" } });
-```
+The current choice is to design branding as a future host capability rather than let users inject arbitrary resources. Any future capability must still:
 
-Write one color to use it for both light and dark. When a brand color only works on one background, give both sides explicitly — NiceEval does not invent the other side for you.
+- Change appearance only, not a Calculation, denominator, or state.
+- Allow the asset set to be verified exhaustively before export.
+- Avoid network and arbitrary user paths.
+- Keep terminal text and web semantics equivalent for the same `ReportExecution`.
+- Preserve the static site's offline and content-security boundaries.
 
-For a recognizable theme, touch the palette, backgrounds, fonts, and radius:
-
-```tsx
-// themes/acme.ts
-import { defineTheme } from "niceeval/report";
-
-export default defineTheme({
-  appearance: "system",
-  accent: { light: "#6D28D9", dark: "#C4B5FD" },
-  positive: { light: "#047857", dark: "#6EE7B7" },
-  negative: { light: "#BE123C", dark: "#FDA4AF" },
-  warning: { light: "#A16207", dark: "#FDE047" },
-  series: [
-    { light: "#2563EB", dark: "#60A5FA" },
-    { light: "#059669", dark: "#34D399" },
-    { light: "#D97706", dark: "#FBBF24" },
-    { light: "#7C3AED", dark: "#C4B5FD" },
-    { light: "#DB2777", dark: "#F472B6" },
-    { light: "#0891B2", dark: "#22D3EE" },
-  ],
-  page: { light: "#FFFBF5", dark: "#120F0C" },
-  surface: { light: "#FFFFFF", dark: "#1C1713" },
-  font: { sans: '"IBM Plex Sans", ui-sans-serif, sans-serif' },
-  radius: "2px",
-  styles: [{ src: "./acme.css" }],
-});
-```
-
-`./acme.css` resolves relative to the theme file, not the report file — move the theme and its CSS to another project and the path still holds.
-
-Each field names a meaning, not a particular color:
-
-| Field | Expresses |
-|---|---|
-| `accent` | site identity, current nav, links, and Attempt locators |
-| `positive` / `negative` / `warning` | passed / failed / errored plus truncation and coverage gaps |
-| `series` | categorical identities such as experiment, Agent, and label — six slots |
-| `page` / `surface` / `border` / `text` and related | backgrounds, cards, dividers, and three text levels |
-| `font` / `fontSize` / `radius` | font stacks, body base size, and corner radius |
-
-Colors only accept `#RRGGBB`. Font, size, and radius values are already CSS — write them as-is. Effects tokens cannot express go in `styles`, the full CSS escape hatch.
-
-## Light and dark
-
-One `appearance` field decides both the default side and whether readers can switch:
-
-- `system` (default): starts with the browser and OS; the header includes a light / dark toggle, and the site remembers the reader's choice.
-- `light` / `dark`: lock the whole site with no toggle. Use this when the theme's CSS was written for only one background.
-
-Open the static site with JavaScript off and you still see the declared side; every value stays readable.
-
-## Set it as the project default
-
-Nobody on the team should have to type `--theme` every time:
-
-```ts
-// niceeval.config.ts
-import { defineConfig } from "niceeval";
-import acme from "./themes/acme";
-import site from "./reports/site";
-
-export default defineConfig({
-  report: site,
-  theme: acme,
-});
-```
-
-After that, a bare `niceeval view` is your report with your appearance. To pin appearance on one report and ignore project config (for example a public site that must stay on brand), put it on that report:
-
-```tsx
-export default defineReport({
-  pages: [...standard.pages],
-  title: "Acme Evals",
-  theme: acme,
-});
-```
-
-## Publish a package, or fork someone else's theme
-
-A theme is a plain value, so publishing needs no extra mechanism: an npm package whose default export is the `defineTheme` product, with CSS and fonts shipped alongside.
-
-```tsx
-import acme from "@acme/niceeval-theme";
-
-export default defineConfig({ theme: acme });
-```
-
-To change two fields on an existing theme, use ordinary object spread; `styles` is an array, so append with array concatenation:
-
-```tsx
-export default defineTheme({
-  ...acme,
-  accent: { light: "#0F766E", dark: "#5EEAD4" },
-  styles: [...(acme.styles ?? []), { inline: ".niceeval-report .niceeval-hero { padding-block: 48px; }" }],
-});
-```
-
-## Publish and embed
-
-The exported static site carries the same theme — what you see locally is what ships:
-
-```bash
-niceeval view --report reports/site.tsx --theme ./themes/acme.ts --out site
-```
-
-When you embed report components in your own React page, the same theme works directly:
-
-```tsx
-import { themeStylesheet } from "niceeval/report";
-import acme from "@acme/niceeval-theme";
-
-<style dangerouslySetInnerHTML={{ __html: themeStylesheet(acme) }} />;
-```
-
-The other direction also works: skip injecting a theme, declare your product's `--niceeval-*` tokens on the container that wraps `.niceeval-report`, and the report components take on the product look.
-
-## Boundaries
-
-- Themes only affect the web. `niceeval show --theme …` errors and tells you to use `view`.
-- Swapping a theme does not change numbers: themes do not participate in reads or computation, so changing colors does not require rerunning evals.
-- Which dimension value always uses which visual slot lives in the report's `dimensionPins`, not in the theme — swapping a palette must not swap baseline and candidate identity (see [Custom Reports](/tutorials/custom-reports#pin-a-value-to-a-color)).
-- Custom components only follow themes when they follow the token discipline; hard-coded colors break on the dark branch (see [Make your components follow any theme](/tutorials/custom-reports#make-your-components-follow-any-theme)).
-- The NiceEval mark and brand line in the header do not take color from `accent`; the theme is not a switch for hiding them.
+Until that contract exists, a product that needs a fully custom branded page can consume the Report's structured result and implement a host within its own application boundary. NiceEval static export remains a fixed, safe built-in shell.

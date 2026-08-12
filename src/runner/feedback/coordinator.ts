@@ -42,6 +42,7 @@ import type {
   DurableFeedbackEvent,
   FeedbackTickEvent,
   InvocationCompletion,
+  InvocationReceipt,
   InvocationSummary,
   OutputProfile,
   RunFeedbackEvent,
@@ -98,7 +99,7 @@ export interface FeedbackCoordinator extends FeedbackSink {
    */
   stopDynamic(): Promise<void>;
   /**
-   * 关闭顺序最后一步:确保 stopDynamic() 已执行,追加 "summary"/"saved" 两个永久事件,
+   * 关闭顺序最后一步:确保 stopDynamic() 已执行,追加 "summary"/"receipt" 两个永久事件,
    * 排空内部队列,通知 `renderer.close()`,并把自己从 sink.ts 的活跃栈里摘下(之后
    * `reportActivity()` 等调用会落回 bootstrap 兜底)。resolve 后保证不会再有任何 timer 或
    * 排队任务写终端 —— 调用方(CLI 接线阶段)应在这一步之前完成全部 reporter 收尾
@@ -108,11 +109,7 @@ export interface FeedbackCoordinator extends FeedbackSink {
   finish(input: {
     summary: InvocationSummary;
     completion: InvocationCompletion;
-    paths: readonly string[];
-    /** 实际写出的 `--junit` 聚合报告路径;省略表示没有写出(未传 `--junit` 或写入失败),
-     *  转发进 "saved" 永久事件的同名字段,供 json renderer 打印独立的 `junit` 字段(见
-     *  docs/feature/experiments/cli.md「机器怎么读:--json」)。human renderer 不读这个字段。 */
-    junit?: string;
+    receipt: InvocationReceipt;
   }): Promise<void>;
 }
 
@@ -250,7 +247,7 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
       who: input.who,
       verdict: input.verdict,
       reason: input.reason,
-      ...(input.assertion !== undefined ? { assertion: input.assertion } : {}),
+      ...(input.fact !== undefined ? { fact: input.fact } : {}),
       ...(input.phase !== undefined ? { phase: input.phase } : {}),
       ...(input.code !== undefined ? { code: input.code } : {}),
       ...(input.origin !== undefined ? { origin: input.origin } : {}),
@@ -407,13 +404,12 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
   async function finish(input: {
     summary: InvocationSummary;
     completion: InvocationCompletion;
-    paths: readonly string[];
-    junit?: string;
+    receipt: InvocationReceipt;
   }): Promise<void> {
     if (phase === "finished") return; // 幂等
     await stopDynamic();
     emit({ type: "summary", at: io.clock.now(), summary: input.summary, completion: input.completion });
-    emit({ type: "saved", at: io.clock.now(), paths: input.paths, junit: input.junit });
+    emit({ type: "receipt", at: io.clock.now(), receipt: input.receipt });
     await queue.drain();
     try {
       await renderer.close?.();
@@ -452,7 +448,7 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
 }
 
 /** 渲染失败时的兜底文本 —— 保证一条真正的失败/诊断证据不会因为 renderer 自己抛错而彻底
- *  消失。"plan"/"summary"/"saved" 不需要兜底文本:它们描述的信息在 RunFeedbackState / 落盘
+ *  消失。"plan"/"summary"/"receipt" 不需要兜底文本:它们描述的信息在 RunFeedbackState / 落盘
  *  结果里仍然完整,renderer 崩溃只是丢了这一次的终端展示,不是丢了数据本身。 */
 function fallbackTextFor(event: DurableFeedbackEvent): string | undefined {
   switch (event.type) {
@@ -468,7 +464,7 @@ function fallbackTextFor(event: DurableFeedbackEvent): string | undefined {
       return `reporter "${event.reporter}" failed: ${event.message}`;
     case "plan":
     case "summary":
-    case "saved":
+    case "receipt":
     case "experiment-hook":
     case "precheck":
     case "lock-wait":

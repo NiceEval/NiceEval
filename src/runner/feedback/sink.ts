@@ -42,7 +42,7 @@ export interface DiagnosticInput {
 
 /** `sink.failure()` 的输入 —— 与 `DurableFeedbackEvent` 的 "failure" 变体字段一致,只省略
  *  `type`/`at`(由 coordinator 补上)。`locator` 只有在 attempt 挂靠 experiment 时才存在
- *  (见 `results/locator.ts` 的 `encodeAttemptLocator`);调用方(run.ts)只在拿到 locator 之后
+ *  (writer 发出的精确 `@AttemptId`);调用方(run.ts)只在拿到 locator 之后
  *  才应该调用这个函数——没有 locator 的裸 run 不产出这类永久失败通知。 */
 export type FailureInput = FailureDetail;
 
@@ -317,8 +317,8 @@ export function reportAttemptLifecycle(event: AttemptLifecycleEvent): void {
 }
 
 /** 一个 reporter 的某次回调抛错(见 `runner/report.ts` 的 `runReporter`)。`reporter`/`required`
- *  来自调用方注册这个 reporter 时的 `ReporterRegistration`(见其字段注释)——默认 artifacts、
- *  显式 `--json`/`--junit` 传 `required: true`,用户 `config.reporters`/`EvalDef.reporters`
+ *  来自调用方注册这个 reporter 时的 `ReporterRegistration`(见其字段注释)——显式 `--junit`
+ *  传 `required: true`,用户 `config.reporters`/`EvalDef.reporters`
  *  传 `required: false`。coordinator 把它折进 `RunFeedbackState.diagnostics`(reducer 按
  *  `reporter-error:<reporter>` 去重),调用方(`cli.ts` 的 `assembleInvocationCompletion`)据此把
  *  `required` 为真的失败折进 `InvocationCompletion.reporterErrors`,让 completion/CI 退出码判红。 */

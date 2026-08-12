@@ -4,10 +4,11 @@
 //   2. 磁盘上 session rollout JSONL(ResponseItem:message / function_call / reasoning ...)。
 // 唯一硬活:把这堆五花八门的原始事件归一成 niceeval 的 StreamEvent[]。
 
-import type { StreamEvent, Usage, ToolName, JsonValue } from "../../types.ts";
+import type { CommandProjection, StreamEvent, Usage, ToolName, JsonValue } from "../../types.ts";
 import type { ParsedTranscript } from "./index.ts";
 import { GENERIC_VERB_ALIASES, normalizeToolName as normalizeShared } from "../tool-names.ts";
 import { normalizeJsonValue } from "../../shared/json-value.ts";
+import { notCommandProjection, opaqueCommandProjection } from "../command-projection.ts";
 
 // ───────────────────────── 工具名归一 ─────────────────────────
 
@@ -162,9 +163,15 @@ export function parseCodexTranscript(raw: string | undefined): ParsedTranscript 
     requests += 1;
   };
 
-  const emitCall = (callId: string, name: string, input: JsonValue, tool: ToolName): void => {
+  const emitCall = (
+    callId: string,
+    name: string,
+    input: JsonValue,
+    tool: ToolName,
+    command: CommandProjection,
+  ): void => {
     startedCallIds.add(callId);
-    events.push({ type: "operation.started", operationId: callId, operation: { kind: "tool", name, input, tool } });
+    events.push({ type: "operation.started", operationId: callId, operation: { kind: "tool", name, input, tool, command } });
   };
 
   const emitResult = (
@@ -206,10 +213,12 @@ export function parseCodexTranscript(raw: string | undefined): ParsedTranscript 
         const callId = baseId || nextSynthId("cmd");
         const command = get(item, "command") ?? get(get(item, "action"), "command");
         if (!isCompleted) {
-          emitCall(callId, "command_execution", { command } as JsonValue, "shell");
+          emitCall(callId, "command_execution", { command } as JsonValue, "shell", opaqueCommandProjection("unsupported-protocol"));
           return;
         }
-        if (!startedCallIds.has(callId)) emitCall(callId, "command_execution", { command } as JsonValue, "shell");
+        if (!startedCallIds.has(callId)) {
+          emitCall(callId, "command_execution", { command } as JsonValue, "shell", opaqueCommandProjection("unsupported-protocol"));
+        }
         const exit = get(item, "exit_code");
         const statusStr = get(item, "status");
         const success =
@@ -233,10 +242,12 @@ export function parseCodexTranscript(raw: string | undefined): ParsedTranscript 
           typeof server === "string" ? `${server}.${String(toolRaw)}` : String(toolRaw);
         const input = coerceArgs(get(item, "arguments") ?? get(item, "input"));
         if (!isCompleted) {
-          emitCall(callId, originalName, input, normalizeToolName(String(toolRaw)));
+          emitCall(callId, originalName, input, normalizeToolName(String(toolRaw)), notCommandProjection());
           return;
         }
-        if (!startedCallIds.has(callId)) emitCall(callId, originalName, input, normalizeToolName(String(toolRaw)));
+        if (!startedCallIds.has(callId)) {
+          emitCall(callId, originalName, input, normalizeToolName(String(toolRaw)), notCommandProjection());
+        }
         const statusStr = get(item, "status");
         const success = !get(item, "error") && statusStr !== "failed";
         emitResult(callId, (get(item, "result") ?? null) as JsonValue, success ? "completed" : "failed");
@@ -247,10 +258,12 @@ export function parseCodexTranscript(raw: string | undefined): ParsedTranscript 
         const callId = baseId || nextSynthId("web");
         const query = get(item, "query") ?? get(item, "search");
         if (!isCompleted) {
-          emitCall(callId, "web_search", { query } as JsonValue, "web_search");
+          emitCall(callId, "web_search", { query } as JsonValue, "web_search", notCommandProjection());
           return;
         }
-        if (!startedCallIds.has(callId)) emitCall(callId, "web_search", { query } as JsonValue, "web_search");
+        if (!startedCallIds.has(callId)) {
+          emitCall(callId, "web_search", { query } as JsonValue, "web_search", notCommandProjection());
+        }
         emitResult(callId, (get(item, "results") ?? get(item, "result") ?? null) as JsonValue, "completed");
         return;
       }
@@ -267,7 +280,7 @@ export function parseCodexTranscript(raw: string | undefined): ParsedTranscript 
           const kind = typeof kindRaw === "string" ? kindRaw.toLowerCase() : "update";
           const tool: ToolName = kind === "add" || kind === "delete" ? "file_write" : "file_edit";
           const callId = `${baseId || "patch"}#${i}`;
-          emitCall(callId, "file_change", { path, kind } as JsonValue, tool);
+          emitCall(callId, "file_change", { path, kind } as JsonValue, tool, notCommandProjection());
           emitResult(callId, { path, kind } as JsonValue, "completed");
         });
         return;
@@ -374,7 +387,13 @@ export function parseCodexTranscript(raw: string | undefined): ParsedTranscript 
           const explicit = get(data, "call_id") ?? get(data, "id") ?? get(data, "tool_call_id");
           const callId = explicit != null ? String(explicit) : nextSynthId("call");
           if (explicit == null) pendingCallIds.push(callId);
-          emitCall(callId, name, input, normalizeToolName(name));
+          emitCall(
+            callId,
+            name,
+            input,
+            normalizeToolName(name),
+            isShell ? opaqueCommandProjection("unsupported-protocol") : notCommandProjection(),
+          );
           break;
         }
 

@@ -254,6 +254,7 @@ export function extractUnionVariants(sourceText: string, fileName: string, typeN
 interface FlagEntry {
   key: string; // FLAG_OPTIONS 里的原始 key,如 "max-concurrency"
   type: "string" | "boolean";
+  multiple: boolean;
   short?: string;
   /** 紧邻该 flag 属性的 JSDoc,即文档 flag 表里的中文说明。 */
   doc?: string;
@@ -285,6 +286,7 @@ function extractFlagOptions(sourceText: string, fileName: string): FlagEntry[] {
     const key = ts.isStringLiteral(prop.name) ? prop.name.text : prop.name.getText();
     if (!ts.isObjectLiteralExpression(prop.initializer)) continue;
     let type: "string" | "boolean" | undefined;
+    let multiple = false;
     let short: string | undefined;
     for (const p of prop.initializer.properties) {
       if (!ts.isPropertyAssignment(p)) continue;
@@ -292,11 +294,14 @@ function extractFlagOptions(sourceText: string, fileName: string): FlagEntry[] {
       if (pname === "type" && ts.isStringLiteral(p.initializer)) {
         type = p.initializer.text as "string" | "boolean";
       }
+      if (pname === "multiple" && p.initializer.kind === ts.SyntaxKind.TrueKeyword) {
+        multiple = true;
+      }
       if (pname === "short" && ts.isStringLiteral(p.initializer)) {
         short = p.initializer.text;
       }
     }
-    if (type) entries.push({ key, type, short, doc: extractDoc(sourceFile, prop) });
+    if (type) entries.push({ key, type, multiple, short, doc: extractDoc(sourceFile, prop) });
   }
   return entries;
 }
@@ -327,13 +332,27 @@ function extractNumberFlagKeys(sourceText: string, fileName: string): Set<string
 
 interface CliFlagRow {
   flags: string[]; // 一或两个 `--x` 形式,负向 flag 配对显示在同一行
-  type: "string" | "number" | "boolean";
+  type: "string" | "string[]" | "number" | "boolean";
   description: string;
 }
 
 function buildCliFlagRows(sourceText: string, fileName: string): CliFlagRow[] {
   const entries = extractFlagOptions(sourceText, fileName);
   const numberKeys = extractNumberFlagKeys(sourceText, fileName);
+  // 这些选项只属于尚待删除的旧实现入口，不是 docs/ 已定稿的目标 CLI。
+  // 参考页必须描述目标契约，不能因解析器暂未收敛而继续公开已砍功能。
+  const hiddenImplementationFlags = new Set([
+    "source",
+    "execution",
+    "timing",
+    "grep",
+    "expand",
+    "diff",
+    "history",
+    "usage",
+    "stats",
+    "theme",
+  ]);
 
   // 负向 flag(no-early-exit / no-open)与正向 flag 合并成一行,不单独成表项。
   const negatedOf = new Map<string, string>(); // "no-early-exit" -> "early-exit"
@@ -344,6 +363,7 @@ function buildCliFlagRows(sourceText: string, fileName: string): CliFlagRow[] {
   const rows: CliFlagRow[] = [];
   for (const e of entries) {
     if (negatedOf.has(e.key)) continue; // 作为配对项在正向 flag 那里一起渲染
+    if (hiddenImplementationFlags.has(e.key)) continue;
     const desc = e.doc;
     if (desc === undefined) {
       throw new Error(
@@ -353,7 +373,13 @@ function buildCliFlagRows(sourceText: string, fileName: string): CliFlagRow[] {
     const flags = [`--${e.key}`];
     const negKey = `no-${e.key}`;
     if (entries.some((x) => x.key === negKey)) flags.push(`--${negKey}`);
-    const type: CliFlagRow["type"] = numberKeys.has(e.key) ? "number" : e.type === "boolean" ? "boolean" : "string";
+    const type: CliFlagRow["type"] = numberKeys.has(e.key)
+      ? "number"
+      : e.type === "boolean"
+      ? "boolean"
+      : e.multiple
+      ? "string[]"
+      : "string";
     rows.push({ flags, type, description: desc });
   }
   return rows;
@@ -450,9 +476,10 @@ function replaceBetween(content: string, begin: string, end: string, newBody: st
 /** 生成器需要读取的源文件(相对仓库根),CLI 与测试共用同一份清单。 */
 export const SOURCE_FILES = [
   "src/expect/index.ts",
+  "src/assertions/match.ts",
   "src/assertions/types.ts",
   "src/runner/types.ts",
-  "src/context/types.ts",
+  "src/context/assert-first.ts",
   "src/agents/types.ts",
   "src/sandbox/types.ts",
   "src/o11y/types.ts",
@@ -465,14 +492,101 @@ export const SOURCE_FILES = [
 
 export type SourceMap = Record<(typeof SOURCE_FILES)[number], string>;
 
+/** `niceeval/expect` 的公开 matcher factory；内部 evaluator 与纯辅助函数不进入作者参考。 */
+const EXPECT_FACTORY_NAMES = new Set([
+  "and",
+  "or",
+  "not",
+  "includes",
+  "excludes",
+  "pattern",
+  "equals",
+  "matches",
+  "similarity",
+  "includesUrl",
+  "hasSections",
+  "satisfies",
+  "isDefined",
+  "isTrue",
+  "isFalse",
+  "commandSucceeded",
+  "defineValueMatch",
+  "defineScoreMatch",
+  // Tool selectors live in docs/feature/assertions/library/scoped-assertions.md.
+  // Keeping their signatures out of this generated list avoids a second author-facing
+  // definition beside the scope contract.
+  "eventMatch",
+]);
+
+const ASSERTION_SCOPE_METHODS = new Set(["calledTool", "notCalledTool"]);
+
+// Implementation-only interface names are not the public authoring ABI. Reference
+// output exposes stable domain names; durable RecordAttachment schemas keep their
+// own versioned identities elsewhere.
+const AUTHORING_TYPE_NAMES: readonly [RegExp, string][] = [
+  [/\bAssertFirstTurnHandle\b/g, "TurnHandle"],
+  [/\bAssertFirstSessionHandle\b/g, "SessionHandle"],
+  [/\bAssertFirstRespondAnswer\b/g, "InputAnswer"],
+  [/\bAssertFirstSandbox\b/g, "Sandbox"],
+  [/\bAssertFirstRootJudge\b/g, "RootJudge"],
+  [/\bAssertFirstTurnJudge\b/g, "TurnJudge"],
+  [/\bAssertionsRuntimeV1\b/g, "AssertionRuntime"],
+  [/\bBooleanAssertionHandleV1\b/g, "BooleanAssertionHandle"],
+  [/\bMeasurementAssertionHandleV1\b/g, "MeasurementAssertionHandle"],
+  [/\bPostRunBooleanAssertionHandleV1\b/g, "PostRunBooleanAssertionHandle"],
+  [/\bDirectScoreAssertionHandleV1\b/g, "DirectScoreAssertionHandle"],
+];
+
+function authorFacingMembers(members: Member[]): Member[] {
+  return members.map((member) => ({
+    ...member,
+    signature: AUTHORING_TYPE_NAMES.reduce(
+      (signature, [implementationName, publicName]) => signature.replace(implementationName, publicName),
+      member.signature,
+    ),
+  }));
+}
+
+// `TestContext` is the public alias of this Assert-first declaration. Its nested Turn
+// shape lives beside it, so reference output reads both from here instead of legacy
+// compatibility declarations.
+const ASSERT_FIRST_REFERENCE = {
+  source: "src/context/assert-first.ts",
+  testContext: "AssertFirstTestContext",
+  turnHandle: "AssertFirstTurnHandle",
+} as const;
+
 function computeRegionBody(regionId: string, sources: SourceMap): string {
   switch (regionId) {
     case "expect-matchers":
-      return renderMemberList(extractExportedFunctions(sources["src/expect/index.ts"], "src/expect/index.ts"));
-    case "value-assertion":
       return renderMemberList(
-        extractInterfaceMembers(sources["src/assertions/types.ts"], "src/assertions/types.ts", "ValueAssertion"),
+        extractExportedFunctions(sources["src/assertions/match.ts"], "src/assertions/match.ts")
+          .filter((member) => EXPECT_FACTORY_NAMES.has(member.name)),
       );
+    case "value-assertion":
+      return renderMemberGroups([
+        {
+          heading: "Match",
+          members: extractInterfaceMembers(sources["src/assertions/match.ts"], "src/assertions/match.ts", "Match")
+            .filter((member) => !member.name.startsWith("[")),
+        },
+        {
+          heading: "BooleanMatch",
+          members: extractInterfaceMembers(
+            sources["src/assertions/match.ts"],
+            "src/assertions/match.ts",
+            "BooleanMatch",
+          ),
+        },
+        {
+          heading: "ScoreMatch",
+          members: extractInterfaceMembers(
+            sources["src/assertions/match.ts"],
+            "src/assertions/match.ts",
+            "ScoreMatch",
+          ),
+        },
+      ]);
     case "defineeval-options":
       return renderMemberList(
         [
@@ -489,22 +603,43 @@ function computeRegionBody(regionId: string, sources: SourceMap): string {
         ],
       );
     case "test-context":
-      // `t` 的成员分两处声明:两种题型共有的在 BaseTestContext,通过制专属的 require 在
-      // TestContext(计分制的 ScoreTestContext 换成 score)。参考页给的是通过制的 `t`,
-      // 两段按声明顺序接起来,漏掉任一段都会让这一页只剩半张表。
-      return renderMemberList([
-        ...extractInterfaceMembers(sources["src/context/types.ts"], "src/context/types.ts", "BaseTestContext"),
-        ...extractInterfaceMembers(sources["src/context/types.ts"], "src/context/types.ts", "TestContext"),
-      ]);
+      return renderMemberList(
+        authorFacingMembers(
+          extractTypeLiteralMembers(
+            sources[ASSERT_FIRST_REFERENCE.source],
+            ASSERT_FIRST_REFERENCE.source,
+            ASSERT_FIRST_REFERENCE.testContext,
+          ).filter((member) => !ASSERTION_SCOPE_METHODS.has(member.name)),
+        ),
+      );
     case "turn-handle":
       return renderMemberList(
-        extractInterfaceMembers(sources["src/context/types.ts"], "src/context/types.ts", "TurnHandle"),
+        authorFacingMembers(
+          extractInterfaceMembers(
+            sources[ASSERT_FIRST_REFERENCE.source],
+            ASSERT_FIRST_REFERENCE.source,
+            ASSERT_FIRST_REFERENCE.turnHandle,
+          ).filter((member) => !ASSERTION_SCOPE_METHODS.has(member.name)),
+        ),
       );
     case "config-fields":
       return renderMemberList(
         extractInterfaceMembers(sources["src/runner/types.ts"], "src/runner/types.ts", "Config"),
       );
     case "agent-def":
+      const agentContextMembers = extractInterfaceMembers(
+        sources["src/agents/types.ts"],
+        "src/agents/types.ts",
+        "AgentContext",
+      ).map((member) =>
+        member.name === "fact"
+          ? {
+              ...member,
+              signature: "fact(name: string, value: JsonValue): void;",
+              doc: "写入本 Attempt 的 generic custom fact document。name 使用反向域格式且不能以 `niceeval.` 开头；同一 owner/name 只允许写一次，第二次写入是 typed error，不替换也不追加。value 可以是任意 JsonValue。`{ observedAt, value }` 经 JSON.stringify 后最多 65,536 UTF-8 bytes；超限同步抛出 `record-custom-fact-too-large`，且不留下部分文件。不影响 Turn status、verdict、评分或指纹。形状与归属语义见 docs/feature/record/architecture.md。",
+            }
+          : member,
+      );
       return renderMemberGroups([
         {
           heading: "DirectAgentDef",
@@ -516,7 +651,7 @@ function computeRegionBody(regionId: string, sources: SourceMap): string {
         },
         {
           heading: "AgentContext",
-          members: extractInterfaceMembers(sources["src/agents/types.ts"], "src/agents/types.ts", "AgentContext"),
+          members: agentContextMembers,
         },
       ]);
     case "sandbox-methods":

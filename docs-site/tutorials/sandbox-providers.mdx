@@ -149,10 +149,10 @@ const sandbox = e2bSandbox({ template: "niceeval-agents" })
 ```
 
 <Warning>
-  `progress`, `diagnostic`, and `facts` are mutually exclusive feedback channels. Use `progress` for short-lived status, `diagnostic` only for a real exception, degradation, or problem that needs attention, and `ctx.facts(...)` for neutral runtime observations. Normal capacity, cache size, version, and hit status are not warnings by default; emit a diagnostic only when a clear, explainable risk condition is met. If the environment cannot continue, throw.
+  `progress`, `diagnostic`, and `fact` are mutually exclusive feedback channels. Use `progress` for short-lived status, `diagnostic` only for a real exception, degradation, or problem that needs attention, and `ctx.fact(...)` for neutral runtime facts. A fact uses a reverse-domain name and its complete JSON document is limited to 65,536 UTF-8 bytes. Normal capacity, cache size, version, and hit status are not warnings by default; emit a diagnostic only when a clear, explainable risk condition is met. If the environment cannot continue, throw.
 </Warning>
 
-Neither `progress` nor `diagnostic` can pick a global phase, a color, or an output stream. The runner knows the current callback belongs to `sandbox.setup` and shows the phase as sandbox setup in the human terminal. A `diagnostic` is written into `result.json` with the attempt and can be reviewed later with `niceeval show @<locator>`; it does not change the verdict by itself. If the environment cannot continue, throw.
+Neither `progress` nor `diagnostic` can pick a global phase, a color, or an output stream. The Runner knows the current callback belongs to `sandbox.setup` and shows the phase as Sandbox setup in the human terminal. A `diagnostic` is written to an Attempt-owned diagnostics channel and can later be reviewed with `niceeval show --run <runId> --page attempt-<attemptId>`. It does not change the Verdict by itself. Throw when the Sandbox cannot continue.
 
 Each of the three setups has its own job: the Adapter's `setup` handles connecting to the agent under test — for example, installing the CLI and writing auth config; the code at the top of `test(t)` in an eval prepares the task's starting files; the Sandbox's `.setup()` handles the current experiment's extra environment setup. MCP servers, skills, and the model — the configuration of the agent under test — still only come in through the Adapter factory arguments.
 

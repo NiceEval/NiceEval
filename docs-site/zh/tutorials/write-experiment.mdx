@@ -140,7 +140,7 @@ npx niceeval exp prompts/concise
 // experiments/shared/nowledge.ts —— 每个 Sandbox 执行一次的 Hook
 sandboxSetup(): SandboxHook {
   return async (sandbox, ctx) => {
-    ctx.fact("nowledge.endpoint", env.url); // 这条 Attempt 实际连的实例
+    ctx.fact("com.example.nowledge-endpoint", env.url); // 这条 Attempt 实际连的实例
     await sandbox.writeText(".nowledge/env", `NMEM_URL=${env.url}\n`);
   };
 }
@@ -152,13 +152,13 @@ sandboxSetup(): SandboxHook {
 $ pnpm exec niceeval exp compare/codex--nowledge
 ╭─ PLAN ──────────────────────────────────────────╮
 │ 36 attempts · 36 evals × 1 configs              │
-│ 24 of 36 carried in from cache · 12 to run      │
+│ 24 of 36 reuse from cache · 12 to run           │
 ╰─────────────────────────────────────────────────╯
 ```
 
 记录一样不少：`niceeval show` 的 `facts:` 行会列出这条 Attempt 连的地址，报告也能按它分组。复用进来的结果带的是它当初那一轮的地址，不会被这一轮的新 URL 顶替。
 
-服务端版本号则相反：写成 `flags: { memoryVersion: "0.10.39" }`，换了版本行为可能真的不一样，那种变化就该让结果重跑。判据是**谁写下这个值**——你在实验里声明的是条件，写 `flags`。跑起来才知道的是观测，用 `ctx.fact()`。Adapter 和评估用例都不需要读、只给报告分组用的标注写 `labels`。
+服务端版本号则相反：写成 `flags: { memoryVersion: "0.10.39" }`，换了版本行为可能真的不一样，那种变化就该让结果重跑。判据是**谁写下这个值**——你在实验里声明的是条件，写 `flags`。跑起来才知道的是观测，用 `ctx.fact()`。完整 fact document 不能超过 65,536 UTF-8 bytes；大内容要用专用 Attempt channel 与 blob。Adapter 和评估用例都不需要读、只给报告分组用的标注写 `labels`。
 
 ## 启动 Experiment 共享服务
 

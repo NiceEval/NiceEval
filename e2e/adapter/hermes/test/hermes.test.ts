@@ -4,7 +4,7 @@
 // 再从公开 CLI 读回 Eval、attempt、execution 与 timing。
 // 只从 @niceeval/testkit 根导入；不读 .niceeval 私有布局、不 import 候选源码/类型。
 
-import { command, type ExpResultEvent } from "@niceeval/testkit";
+import { command, only, type ExpEvalEvent, type ExpEvent } from "@niceeval/testkit";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
@@ -75,15 +75,22 @@ it("真实 Hermes CLI adapter 在 Docker sandbox 中的运行结果经过公开 
     timeoutMs: 36 * 60_000,
   });
   expect(run.exitCode, run.diagnostic()).toBe(0);
-  const result: ExpResultEvent = run.expResult();
-  expect(result).toMatchObject({
-    event: "result",
-    status: "passed",
-    passed: EXPECTED_EVALS.length,
-    failed: 0,
-    errored: 0,
-    completion: "complete",
-  });
+  // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md「结束反馈与
+  // receipt」）：completion 与 runIds（每个 Experiment 一个 Run）。成败由下面带身份的
+  // eval 事件精确断言，不从 receipt 猜计数。
+  const inv = run.expReceipt();
+  expect(inv.completion, run.diagnostic()).toBe("completed");
+  expect(inv.runIds, run.diagnostic()).toHaveLength(1);
+  const evalEvents = run
+    .ndjson<ExpEvent>()
+    .filter(
+      (event): event is ExpEvalEvent => "event" in event && event.event === "eval",
+    );
+  for (const evalId of EXPECTED_EVALS) {
+    expect(
+      only(evalEvents, (event) => event.evalId === evalId, run.diagnostic()),
+    ).toMatchObject({ event: "eval", evalId, verdict: "passed", attempts: 1 });
+  }
 
   const locators: Record<string, string> = {};
   for (const evalId of EXPECTED_EVALS) {

@@ -58,7 +58,6 @@ function scriptedInstaller(steps: {
 - **Agent 构造入口**（[Adapter Library](../../../feature/adapters/library.md)）：
 
   - `defineAgent` 固定产出 `kind: "direct"`，并保留 Direct Agent 的公开定义字段。
-  - `defineDirectAgent` 是指向 `defineAgent` 的 deprecated 兼容 alias，不建立第二套构造逻辑。
   - 动态 JavaScript 输入违反必填契约时，错误统一指向 canonical `defineAgent`。
 - **原始工具名与规范分类**（[标准事件模型](../../../feature/adapters/architecture/events.md)）：
 
@@ -78,7 +77,7 @@ function scriptedInstaller(steps: {
   - `installMode: "verify-only"` 的 探测 未命中立即 `errored`，不联网、不改文件系统。
 - **Agent identity / artifact identity**：
 
-  - `identity`（Agent 名、精确版本）与配对安装层 identity、staged payload digest / 平台正交进入指纹与 `run.json`。
+  - `identity`（Agent 名、精确版本）与配对安装层 identity、staged payload digest / 平台正交进入指纹与 Run payload。
   - 改 Agent 版本改变 ensure identity 与 `agent.artifact.prepare`，不重建任务 BuildKey。
   - 改任务 Dockerfile 只重建镜像，不动 Agent 配置。
   - 无精确版本的 `latest` 安装不参与可携带结果；ensure 声明无法给出稳定 identity 时启动期报错。

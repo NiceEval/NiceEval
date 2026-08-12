@@ -5,10 +5,9 @@
 // 目标形态是"发现时捕获,同一快照内相同内容只存一份"——本函数只做捕获这一步(读 + 归一化 +
 // 哈希),不碰去重存储、不写 result.json。同一文件(数组默认导出多个 eval)共享同一份引用。
 //
-// 归一化 + 哈希算法住在 results/source-hash.ts,不在这里重新实现一遍——discovery 侧捕获的
-// 哈希与证据重建侧(annotated-source.ts)重算的哈希必须逐字节一致,唯一的办法是共用同一个
-// 函数。runner 已经单向依赖 results(reporters/artifacts.ts 用 createWriter),这里
-// 反向引用不新增循环。
+// 归一化 + 哈希算法住在 record/source-hash.ts,不在这里重新实现一遍——discovery 侧捕获的
+// 哈希与证据重建侧重算的哈希必须逐字节一致,唯一的办法是共用同一个函数。这里不参与持久化：
+// Record v1 writer 独自拥有 Run 的草稿、封口与发布。
 //
 // folder-local eval 的目录入口 id 也落在本文件；它只负责「目录路径 → eval base id」。
 // Sandbox 起点由每条 Eval 的普通 TypeScript helper 直接声明，不存在 profile registry 或按名查表。

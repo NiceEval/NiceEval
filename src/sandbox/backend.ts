@@ -1,6 +1,6 @@
 // Provider Promise SDK 与公共 Sandbox facade 之间的唯一边界。
 
-import { Cause, Effect, Exit, Option } from "effect";
+import { Effect } from "effect";
 import type {
   CommandOptions,
   CommandResult,
@@ -55,20 +55,34 @@ export function supportedBackendCapability<T>(value: T): SandboxBackendSupport<T
   return Object.freeze({ _tag: "Supported", value });
 }
 
+function providerBoundaryError(cause: unknown): Error {
+  return cause instanceof Error ? cause : new Error(String(cause));
+}
+
 /** Promise provider SDK 在这一处 lift 成 typed-error Effect；Error 实例原样保留给现有归因逻辑。 */
-export function providerBoundaryEffect<T>(operation: () => Promise<T>): Effect.Effect<T, Error> {
+export function providerBoundaryEffect<T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+): Effect.Effect<T, Error> {
   return Effect.tryPromise({
-    try: operation,
-    catch: (cause) => cause instanceof Error ? cause : new Error(String(cause)),
+    // 保留 Effect 运行时的取消信号，供真正支持 AbortSignal 的 SDK adapter 接入；不把中断
+    // 编码成 Error，也不在这里启动嵌套 runtime。
+    try: (signal) => operation(signal),
+    catch: providerBoundaryError,
   });
 }
 
-export async function runProviderBoundary<T>(operation: () => Promise<T>): Promise<T> {
-  const exit = await Effect.runPromiseExit(providerBoundaryEffect(operation));
-  if (Exit.isSuccess(exit)) return exit.value;
-  const failure = Cause.failureOption(exit.cause);
-  if (Option.isSome(failure)) throw failure.value;
-  throw Cause.squash(exit.cause);
+/**
+ * 公开 Sandbox Promise 接口唯一的兼容入口。
+ *
+ * 这不是内部 Effect runner：它只把 provider Promise 原样留在公开兼容面，并归一化非 Error
+ * rejection。runtime / resource lifecycle 必须改用 providerBoundaryEffect() 组合 Effect。
+ */
+export async function providerCompatibilityPromise<T>(operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch (cause) {
+    throw providerBoundaryError(cause);
+  }
 }
 
 /** defineSandbox() 的公共新接口实现显式降成 provider backend；不探测任何旧方法。 */

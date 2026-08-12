@@ -1,70 +1,85 @@
 ---
 title: "编写自定义报告"
-description: "用普通 TypeScript 函数计算结果，并同时生成终端与网页报告。"
+description: "声明 RecordProjection，把投影结果组织成 Calculation、页面和一次固定的 ReportExecution。"
 ---
 
-自定义报告接收宿主选好的 Sample，返回组件树：
+自定义 Report 不接收 Record 路径，也不在页面 render 时临时查数据。先声明所需的 `RecordProjection`，再定义 Calculation、Page、PageFamily 或 Download：
 
 ```text
-Sample
-  → 普通 TypeScript 函数
-  → 可序列化结果值
-  → 组件
-  → text / web
+AnalysisSampleHandle
+        ↓
+RecordAttachment projector → ProjectedSample
+        ↓
+Report → immutable ReportExecution
+          ↙       ↓       ↘
+        show     view    export
 ```
 
-计算发生在 page render 中。
-组件只显示 `rows`、`points`、`items`、`nodes` 或 `attempt` 等具体值。
+## 先准备 Attachment projector
 
-## 创建第一份报告
+运行方负责把运行事实写成 typed `RecordAttachment`。Report 只消费已经定义好的 Attachment family，并用 `RecordAttachment projector` 把 payload 变成报告需要的 view。
 
-新建 `reports/quality.tsx`：
+```ts
+const verdicts = attemptSlotProjection(verdictProjector);
+const assertions = attemptSlotProjection(assertionsProjector);
 
-```tsx
-import {
-  Page,
-  Scatter,
-  Table,
-  agent,
-  aggregate,
-  costUSD,
-  defineReport,
-  passRate,
-} from "niceeval/report";
+const inputs = reportInputs({ verdicts, assertions });
+```
 
-export default defineReport(async (sample) => {
-  const performance = await aggregate(sample, {
-    by: { agent },
-    values: { passRate, costUSD },
-  });
+每个 projection 都有明确 owner 和访问方式。`attemptSlotProjection` 保留 Sample 的每个 slot；`selectedRunProjection` 只对 selected Run 读取；`attemptOriginRunProjection` 为每个 slot 读取其 Attempt 的 origin Run。
 
-  return (
-    <Col>
-      <Scatter
-        points={performance}
-        x="costUSD"
-        y="passRate"
-        point="agent"
-      />
-      <Table rows={performance} />
-    </Col>
-  );
+Report 不在 callback 中打开 Record，也不能通过 pure `AnalysisSample` 恢复 I/O。
+
+## 定义计算
+
+Calculation 使用静态声明的 inputs。它返回领域值，而不是让 host 推导通过率或分母。
+
+```ts
+const passRate = defineCalculation({
+  id: Either.getOrThrow(reportComponentId("pass-rate")),
+  inputs,
+  completeness: "allow-partial",
+  calculate: ({ sample, inputs }) =>
+    calculatePassRate(sample, inputs.verdicts, inputs.assertions),
 });
 ```
 
-运行：
+选择 `allow-partial` 时，callback 能看到 `ProjectedSample`、coverage 和 issues。结果必须保留自己的业务分母与完整度。选择 `require-complete` 时，只要必需数据不完整，callback 不会执行。
 
-```bash
-niceeval show --report ./reports/quality.tsx
-niceeval view --report ./reports/quality.tsx
+## 定义页面和 Report
+
+```ts
+const overview = definePage({
+  id: Either.getOrThrow(reportComponentId("overview")),
+  route: Either.getOrThrow(reportRoute("/")),
+  calculations: { passRate },
+  render: ({ calculations }) =>
+    reportDocument({
+      title: "Summary",
+      children: [
+        reportMetric({
+          label: "Pass rate",
+          value:
+            calculations.passRate.state === "available"
+              ? calculations.passRate.value.rate
+              : null,
+        }),
+      ],
+    }),
+});
+
+export default defineReport({
+  id: Either.getOrThrow(reportId("quality")),
+  calculations: { passRate },
+  pages: [overview],
+});
 ```
 
-两个宿主执行同一个 page render。
-同一棵结果树分别交给 text 和 web renderer。
+Page 返回闭合的语义 document，而不是 React、HTML 或文件路径。要为每个 Assertion、Turn 或 diagnostics category 增加详情页时，使用 `definePageFamily`。实例、route 和 document 只能从已经投影或计算出的内存值展开。
 
 ## 设成项目默认
 
-在 `niceeval.config.ts` 中直接导入定义：
+在 `niceeval.config.ts` 中导入 Report。以后不带 `--report` 的 `show` 与 `view` 使用它：
 
 ```ts
 import { defineConfig } from "niceeval";
@@ -75,317 +90,26 @@ export default defineConfig({
 });
 ```
 
-以后直接运行 `niceeval show` 或 `niceeval view`。
-临时切回内建报告时使用 `--report standard`。
+## 处理不完整与失败
 
-## 收窄 Sample
+recorded-data problem 不会改变 Sample 分母：
 
-宿主先处理 `--record`、`--exp` 和评估位置参数，
-再把 Sample 交给报告。
-携带与本次执行的 Attempt 同等属于这一份当前 Sample。
+- `unavailable` 表示 owner 没有请求的 Attachment；
+- `migration-required`、`migration-unavailable` 与 `unsupported` 表示历史 schema 不能按当前需要读取；
+- `invalid` 或 partial collection 表示记录的数据不完整。
 
-报告内继续使用 Sample 方法：
+这些问题由内建 problems surface 显示。`allow-partial` consumer 可以展示可用值；`require-complete` consumer 形成 `data-unavailable`。
 
-```ts
-const security = sample.scope({ evals: "security/" });
+projector、Calculation 或页面 callback 抛错，以及非法 document 或 route conflict，属于 execution problem。`show` 与 `view` 显示问题并保留其它页面；静态导出不会发布这一份 execution。
 
-const reliable = security.filter((attempt) =>
-  attempt.result.verdict !== "errored"
-);
+## 运行和发布
+
+```sh
+npx niceeval show --run <run-id> --report ./reports/quality.ts
+npx niceeval view --run <run-id> --report ./reports/quality.ts --no-open
+npx niceeval view --run <run-id> --report ./reports/quality.ts --out ./quality-site
 ```
 
-`scope()` 改变比较总体和 coverage 分母。
-`filter()` 删除不可信或不适用的观测。
+`show`、`view` 与 `--out` 都选择 Sample、执行同一个 Report，并得到固定 `ReportExecution`。`view` 后续的成功 rebuild 会产生下一份 execution；失败时保留 last-good execution。
 
-一组图共享范围时，先生成一个具名 Sample：
-
-```ts
-const production = sample
-  .scope({ experiments: "production/" })
-  .filter(isReliableAttempt);
-```
-
-然后把同一个 `production` 传给每次计算。
-
-## 使用 `aggregate()`
-
-`aggregate()` 接收分组函数和 Calculation：
-
-```tsx
-const rows = await aggregate(sample, {
-  by: {
-    experiment,
-    agent,
-  },
-  values: {
-    passRate,
-    costUSD,
-  },
-});
-```
-
-对象键就是结果字段名。
-每个读数字段是 MetricValue，包含 value、unit、samples、total、basis 与 refs。
-
-结果是普通数组，可以继续使用 JavaScript：
-
-```ts
-const ranked = rows
-  .toSorted((a, b) =>
-    (b.passRate.value ?? -Infinity) -
-    (a.passRate.value ?? -Infinity)
-  )
-  .slice(0, 10);
-```
-
-不要把聚合结果再次传给 `aggregate()`。
-需要增加读数时，回到同一份 Sample，把 Calculation 加进原来的 `values`。
-
-## 定义自己的 Calculation
-
-`rollup()` 把单 Attempt 取值函数变成 Calculation：
-
-```ts
-import {
-  mean,
-  min,
-  rollup,
-} from "niceeval/report";
-
-export const changedLines = rollup(
-  async (attempt) => {
-    if (attempt.result.verdict !== "passed") {
-      return null;
-    }
-
-    const diff = await attempt.diff();
-    return diff ? countChangedLines(diff) : null;
-  },
-  {
-    withinEval: min,
-    acrossEvals: mean,
-    unit: "lines",
-    better: "lower",
-  },
-);
-```
-
-官方 Calculation 和用户 Calculation 使用同一个 `rollup()`。
-空集合保持 `null`，不会被伪装成零。
-
-## 显示实体列表
-
-Sample 已经提供展开后的 `attempts`：
-
-```tsx
-export default defineReport((sample) => {
-  const failures = sample
-    .filter((attempt) =>
-      attempt.result.verdict === "failed" ||
-      attempt.result.verdict === "errored"
-    )
-    .attempts
-    .toSorted((a, b) =>
-      (attemptCostUSD(b.result) ?? 0) -
-      (attemptCostUSD(a.result) ?? 0)
-    )
-    .slice(0, 50);
-
-  return <AttemptList attempts={failures} />;
-});
-```
-
-需要通用表格时先立即转换：
-
-```tsx
-const rows = toAttemptRows(failures);
-return <Table rows={rows} />;
-```
-
-## 复用动态区块
-
-复用就是普通函数：
-
-```tsx
-export async function overview(sample: Sample) {
-  const performance = await aggregate(sample, {
-    by: { agent },
-    values: { passRate, costUSD },
-  });
-
-  return (
-    <>
-      <Scatter
-        points={performance}
-        x="costUSD"
-        y="passRate"
-        point="agent"
-      />
-      <Table rows={performance} />
-    </>
-  );
-}
-```
-
-在 page render 中直接调用：
-
-```tsx
-render: async (sample) => (
-  <Col>
-    {await overview(sample)}
-  </Col>
-)
-```
-
-多个独立计算使用普通 `Promise.all()`。
-
-## 创建多页报告
-
-```tsx
-export default defineReport({
-  title: "Team evals",
-  pages: [
-    {
-      id: "overview",
-      title: "Overview",
-      render: async (sample) => (
-        <Col>
-          {await overview(sample)}
-        </Col>
-      ),
-    },
-    {
-      id: "failures",
-      title: "Failures",
-      render: failuresPage,
-    },
-    standardAttemptPage,
-  ],
-});
-```
-
-`pages` 的数组顺序就是导航顺序。
-宿主只执行当前请求的 page。
-`standardAttemptPage` 提供官方 Attempt 详情与 locator 下钻。`standardExperimentPage` 同样可以放进来，散点上的实验点就能点开实验详情。
-
-## 自定义 Attempt 详情
-
-复用官方页的参数与装载，只换 `render`：
-
-```tsx
-{
-  ...standardAttemptPage,
-  render: async (attempt) => {
-    const [turns, files] = await Promise.all([
-      toConversationTurns(attempt),
-      toDiffFiles(attempt),
-    ]);
-
-    return (
-      <Col>
-        <Conversation turns={turns} />
-        <DiffView files={files} />
-      </Col>
-    );
-  },
-}
-```
-
-Attempt 详情页的 id 是 `attempt`。
-报告里没有这张 page 时，locator 只显示为文本。
-
-## 接入外部业务快照
-
-先把外部数据写成冻结快照模块：
-
-```tsx
-// budget-snapshot.ts —— 运行前由脚本生成，随报告进版本库
-export const budgets = {
-  checkout: { monthlyUSD: 40 },
-  search: { monthlyUSD: 25 },
-};
-```
-
-报告文件直接 import：
-
-```tsx
-import { budgets } from "./budget-snapshot";
-
-export default defineReport(async (sample) => {
-  const performance = await aggregate(sample, {
-    by: { experiment },
-    values: { passRate, costUSD },
-  });
-
-  return <Table rows={joinBudgets(performance, budgets)} />;
-});
-```
-
-page render 不请求网络，不读取环境变量、时钟或随机数。要更新数据，就重新生成快照模块。
-快照属于报告的 import 图，开发服务器会在它变化时重新构建报告。
-
-## 编写新的显示形状
-
-现有组件组合不出目标显示时，使用扩展入口：
-
-```tsx
-import { defineRenderer } from "niceeval/report/extension";
-
-const ConfusionMatrix = defineRenderer({
-  text(value, options, context) {
-    return renderTextMatrix(value, options, context);
-  },
-  web(value, options, context) {
-    return <WebMatrix value={value} options={options} />;
-  },
-});
-```
-
-两个 renderer 都只接已经计算好的普通值。
-自定义计算继续写普通函数，不需要注册协议。
-
-## 固定某个值的颜色
-
-在报告外壳的 `dimensionPins` 中按分组字段和完整值固定视觉身份。
-例如可以让同一个 Agent 在每一页都使用同一组颜色、线型和符号。
-
-显示标签不是身份键。不要截 Experiment 路径末段，也不要按数组下标分配颜色。
-完整主题字段见[报告主题](/zh/tutorials/theming)。
-
-## 让自己的组件跟随任何主题
-
-自定义 renderer 使用 `--niceeval-*` 主题令牌，
-不要把 Basalt 或 Chalk 的 hex 值复制进组件。
-状态使用 positive、negative、warning 等语义令牌，
-名义 series 使用运行时分配的视觉身份。
-
-## 嵌入自己的 React 页面
-
-在服务端或构建进程中计算：
-
-```ts
-const points = await aggregate(sample, {
-  by: { agent },
-  values: { passRate, costUSD },
-});
-```
-
-在浏览器使用 `niceeval/report/react`：
-
-```tsx
-<Scatter
-  points={points}
-  x="costUSD"
-  y="passRate"
-  point="agent"
-/>
-```
-
-React 入口不读取 Record、Sample 或 artifact。
-记录根不在产品运行环境时，把 Result 在构建期写成 JSON。
-
-## 下一步
-
-- 查完整形状：[报告组件 API](/zh/reference/report-components)
-- 发布静态站：[发布报告](/zh/tutorials/publish-report)
-- 自定义外观：[报告主题](/zh/tutorials/theming)
+`--out` 必须指向不存在的目录。详情见[发布静态报告](/zh/tutorials/publish-report)和[报告 API](/zh/reference/report-components)。

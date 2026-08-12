@@ -5,24 +5,23 @@
 // 不消费 Vitest 预先生成的 site-export，也不用 Testkit 静态服务器冒充产品 server。
 
 import { command, pollUntil, waitForOutput, withProcess, withProjectCopy } from "@niceeval/testkit";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import { reportArtifactStaging, reportProjectCopy } from "./support.ts";
 
-const FIXTURE_COPY_TEXT = "niceeval report fixture copy text";
 const binary = join(process.cwd(), "node_modules", ".bin", "niceeval");
 const niceeval = command([binary]);
 
-test("custom report Journey：本轮导出后在真实 view server 中导航证据", async ({ page }) => {
+test("custom report Journey：固定执行可导出、导航并热重载静态导入", async ({ page }) => {
   test.setTimeout(120_000);
 
   await withProjectCopy(
     reportProjectCopy,
     async ({ root }) => {
-      const liveComponentPath = join(root, "reports", "site-copy-block.tsx");
-      const liveComponent = await readFile(liveComponentPath, "utf8");
-      expect(liveComponent).toContain("Fixture copy block");
+      const liveModulePath = join(root, "reports", "site-copy-block.ts");
+      const liveModule = await readFile(liveModulePath, "utf8");
+      expect(liveModule).toContain("Fixture copy block");
 
       const run = await niceeval.run(["exp", "main", "--rerun", "all", "--json"], { cwd: root });
       expect(run.exitCode, run.diagnostic()).not.toBe(0);
@@ -30,10 +29,11 @@ test("custom report Journey：本轮导出后在真实 view server 中导航证�
       const exported = await niceeval.run(
         [
           "view",
+          "--latest",
           "--record",
-          ".niceeval",
+          ".niceeval/record",
           "--report",
-          "./reports/site.tsx",
+          "./reports/site.ts",
           "--out",
           "site-export",
           "--no-open",
@@ -42,15 +42,17 @@ test("custom report Journey：本轮导出后在真实 view server 中导航证�
       );
       expect(exported.exitCode, exported.diagnostic()).toBe(0);
       expect(await readFile(join(root, "site-export", "index.html"), "utf8")).toContain("Report fixture");
+      expect((await stat(join(root, "site-export", "_niceeval", "complete"))).size).toBe(0);
 
       await withProcess(
         [
           binary,
           "view",
+          "--latest",
           "--record",
-          ".niceeval",
+          ".niceeval/record",
           "--report",
-          "./reports/site.tsx",
+          "./reports/site.ts",
           "--host",
           "127.0.0.1",
           "--port",
@@ -78,69 +80,36 @@ test("custom report Journey：本轮导出后在真实 view server 中导航证�
           );
 
           await page.goto(origin!);
-          const copyTitle = page.getByText("Fixture copy block", { exact: true });
-          await expect(copyTitle).toBeVisible();
-          await copyTitle.click();
-          await expect(page.getByText(FIXTURE_COPY_TEXT, { exact: true }).first()).toBeVisible();
-          const copyButton = page.getByRole("button", { name: "Copy", exact: true });
-          await expect(copyButton).toBeVisible();
+          await expect(page.getByText("Report fixture", { exact: true }).first()).toBeVisible();
+          await expect(page.getByText("Fixture copy block", { exact: true }).first()).toBeVisible();
 
-          await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: origin! });
-          await copyButton.click();
-          await expect
-            .poll(() => page.evaluate(() => navigator.clipboard.readText()))
-            .toBe(FIXTURE_COPY_TEXT);
+          const slotLink = page.locator("a").filter({ hasText: "Slot " }).first();
+          await expect(slotLink).toBeVisible();
+          const href = await slotLink.getAttribute("href");
+          expect(href).toBeTruthy();
+          const slotUrl = new URL(href!, page.url()).href;
+          expect((await page.request.get(slotUrl)).status()).toBe(200);
 
-          const attemptsTab = page.getByRole("tab", { name: "Attempts", exact: true });
-          await expect(attemptsTab).toBeVisible();
-          await attemptsTab.click();
-
-          const failedRow = page.getByRole("row").filter({ hasText: "failed" }).first();
-          await expect(failedRow).toBeVisible();
-          const failedLink = failedRow.getByRole("link").first();
-          const failedHref = await failedLink.getAttribute("href");
-          expect(failedHref).toBeTruthy();
-
-          const failedUrl = new URL(failedHref!, page.url()).href;
-          expect((await page.request.get(failedUrl)).status()).toBe(200);
-          await page.goto(failedUrl);
-          await expect(page.getByText("failed", { exact: true }).first()).toBeVisible();
+          await page.goto(slotUrl);
+          await expect(page.getByText("Report fixture slot", { exact: true }).first()).toBeVisible();
 
           await page.goto(origin!);
-          const attemptsTabAgain = page.getByRole("tab", { name: "Attempts", exact: true });
-          await expect(attemptsTabAgain).toBeVisible();
-          await attemptsTabAgain.click();
-
-          const passedRow = page.getByRole("row").filter({ hasText: "passed" });
-          await expect(passedRow).toBeVisible();
-          const toolCallLink = passedRow.getByRole("link").first();
-          const toolCallHref = await toolCallLink.getAttribute("href");
-          expect(toolCallHref).toBeTruthy();
-
-          const toolCallUrl = new URL(toolCallHref!, page.url()).href;
-          expect((await page.request.get(toolCallUrl)).status()).toBe(200);
-          await page.goto(toolCallUrl);
-          await expect(page.getByText("Deterministic report fixture response.", { exact: true }).first()).toBeVisible();
-          await expect(page.getByText("assistant", { exact: true }).first()).toBeVisible();
-
-          await page.goto(origin!);
-          await expect(page.getByText("Fixture copy block", { exact: true })).toBeVisible();
           const liveUrl = page.url();
-          await page.evaluate(() => {
-            (window as typeof window & { __niceevalE2eSentinel?: string }).__niceevalE2eSentinel = "kept";
-          });
           await writeFile(
-            liveComponentPath,
-            liveComponent.replace("Fixture copy block", "Fixture copy block reloaded"),
+            liveModulePath,
+            liveModule.replace("Fixture copy block", "Fixture copy block reloaded"),
             "utf8",
           );
-          await expect(page.getByText("Fixture copy block reloaded", { exact: true })).toBeVisible({ timeout: 15_000 });
+          await expect.poll(
+            async () => {
+              const response = await page.request.get(origin!);
+              return response.status() === 200 ? response.text() : "";
+            },
+            { timeout: 15_000 },
+          ).toContain("Fixture copy block reloaded");
+          await page.reload();
+          await expect(page.getByText("Fixture copy block reloaded", { exact: true }).first()).toBeVisible();
           expect(page.url()).toBe(liveUrl);
-          expect(
-            await page.evaluate(
-              () => (window as typeof window & { __niceevalE2eSentinel?: string }).__niceevalE2eSentinel,
-            ),
-          ).toBe("kept");
         },
       );
     },

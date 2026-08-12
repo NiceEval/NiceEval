@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      effect:
+        specifier: 3.22.1
+        version: 3.22.1
       niceeval:
         specifier: ^0.10.2
         version: 0.10.2(ai@7.0.31(zod@3.25.76))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -813,8 +816,8 @@ packages:
   dompurify@3.4.12:
     resolution: {integrity: sha512-zQvGet8Z2sWbQhCmfFz/T5QWH2oBmjnqK3qvOjaqaNLrLEF912WamU+ohnTp0TCep/MFVHpdJuCZEdFOdTnEFg==}
 
-  effect@3.22.0:
-    resolution: {integrity: sha512-jhYFe0zTlIRqYFrKTS+6luhmS/Tm0f+JLo0K9KUxvtFab1SUGEszQi2ehOP6QzAZvy831lDmTwwzvVDZSPNz3g==}
+  effect@3.22.1:
+    resolution: {integrity: sha512-TNoXushmPOBAjJlthF5d2QwnX2xBPEtcNJr5XKNKbRLbDvBcOYkXlYDfvGfSA0zriwLFuCll5MDtNMAdZL17PQ==}
 
   es-module-lexer@2.3.1:
     resolution: {integrity: sha512-shc1dbU90Yl/xq1QrC7QRtfcwURZuVRfPhZbDoldJ1cn1gzDvBaBWlv0eFolj5+0znnPJz5TXLxsN77X/12KTA==}
@@ -2024,7 +2027,7 @@ snapshots:
     optionalDependencies:
       '@types/trusted-types': 2.0.7
 
-  effect@3.22.0:
+  effect@3.22.1:
     dependencies:
       '@standard-schema/spec': 1.1.0
       fast-check: 3.23.2
@@ -2260,7 +2263,7 @@ snapshots:
       '@vercel/analytics': 2.0.1(react@19.2.7)
       '@vercel/speed-insights': 2.0.0(react@19.2.7)
       autoevals: 0.0.132
-      effect: 3.22.0
+      effect: 3.22.1
       mermaid: 11.16.0
       tar-stream: 3.2.0
       tsx: 4.23.1

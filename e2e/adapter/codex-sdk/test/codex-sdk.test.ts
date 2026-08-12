@@ -4,7 +4,7 @@
 // candidate as an owned process, then proves the same result through public
 // show commands only; it never reads the private .niceeval layout.
 
-import { command, withProcess, withTempDir } from "@niceeval/testkit";
+import { command, type ExpEvalEvent, type ExpEvent, withProcess, withTempDir } from "@niceeval/testkit";
 import { randomUUID } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -71,13 +71,23 @@ it("真实 Codex SDK converter 兼容性从 Experiment 到公开 CLI 读回", as
       },
     );
     expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
-    expect(receipt.expResult()).toMatchObject({
-      event: "result",
-      status: "passed",
-      passed: 1,
-      failed: 0,
-      errored: 0,
-      completion: "complete",
+    const events = receipt.ndjson<ExpEvent>();
+    // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md）：
+    // completion 与 runIds；成败由带身份的 eval 事件精确断言，live provider
+    // 故障不会冒充通过。
+    const inv = receipt.expReceipt();
+    expect(inv.completion, receipt.diagnostic()).toBe("completed");
+    expect(inv.runIds, receipt.diagnostic()).toHaveLength(1);
+    const evalEvent = events.find(
+      (event): event is ExpEvalEvent =>
+        "event" in event && event.event === "eval" && event.evalId === EVAL_ID,
+    );
+    expect(evalEvent, receipt.diagnostic()).toBeDefined();
+    expect(evalEvent).toMatchObject({
+      event: "eval",
+      evalId: EVAL_ID,
+      verdict: "passed",
+      attempts: 1,
     });
 
     const locator = await latestPassedLocator(env);

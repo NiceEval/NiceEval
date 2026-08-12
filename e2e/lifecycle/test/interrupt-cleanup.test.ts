@@ -16,34 +16,10 @@ interface ProcessReceipt { diagnostic(): string }
 interface ExpEvent {
   event: string;
   status?: string;
-  completion?: string;
   experimentId?: string;
-  passed?: number;
+  evalId?: string;
+  verdict?: string;
 }
-interface HistoryAttempt {
-  attempt: number;
-  verdict: string;
-  sandbox?: {
-    provider: string;
-    sandboxId: string;
-    reused?: true;
-    reuseSandbox?: number;
-    reuseOrdinal?: number;
-  };
-}
-interface ShowHistoryDocument {
-  format: "niceeval.show";
-  schemaVersion: number;
-  view: "history";
-  data: {
-    sections: Array<{
-      experimentId: string;
-      evalId: string;
-      attempts: HistoryAttempt[];
-    }>;
-  };
-}
-
 const binary = join(process.cwd(), "node_modules", ".bin", "niceeval");
 const niceeval = command([binary]);
 const docker = command(["docker"]);
@@ -113,18 +89,8 @@ async function waitForOwnedContainersGone(pid: number, cwd: string): Promise<voi
   );
 }
 
-async function waitForContainerGone(container: string, cwd: string): Promise<void> {
+async function waitForSecondReuseAttempt(pid: number, cwd: string): Promise<void> {
   await pollUntil(
-    async () => {
-      const inspected = await docker.run(["inspect", container], { cwd });
-      return inspected.exitCode !== 0 ? true : undefined;
-    },
-    { timeoutMs: 15_000, intervalMs: 100, label: `Docker sandbox ${container} to be removed` },
-  );
-}
-
-async function waitForSecondReuseAttempt(pid: number, cwd: string): Promise<string> {
-  return await pollUntil(
     async () => {
       const containers = await containersOwnedBy(pid, cwd);
       if (containers.length > 1) {
@@ -136,23 +102,10 @@ async function waitForSecondReuseAttempt(pid: number, cwd: string): Promise<stri
         ["exec", container, "test", "-f", "/tmp/niceeval-lifecycle-second-attempt-ready"],
         { cwd },
       );
-      return ready.exitCode === 0 ? container : undefined;
+      return ready.exitCode === 0 ? true : undefined;
     },
     { timeoutMs: 60_000, intervalMs: 250, label: "second attempt in reused Docker sandbox" },
   );
-}
-
-async function historyAttempt(root: string, experimentId: string, evalId: string): Promise<HistoryAttempt> {
-  const shown = await niceeval.run(["show", evalId, "--history", "--json"], { cwd: root });
-  expect(shown.exitCode, shown.diagnostic()).toBe(0);
-  const document = shown.json<ShowHistoryDocument>();
-  expect(document).toMatchObject({ format: "niceeval.show", schemaVersion: 1, view: "history" });
-  const section = only(
-    document.data.sections,
-    (candidate) => candidate.experimentId === experimentId && candidate.evalId === evalId,
-    shown.diagnostic(),
-  );
-  return only(section.attempts, () => true, shown.diagnostic());
 }
 
 test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源，下一消费者仍可运行", async () => {
@@ -178,15 +131,25 @@ test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源
         );
         await waitForHealth(info.port, controlled.done);
         const invocationPid = defined(controlled.pid, "niceeval invocation did not expose a pid");
-        const sandboxId = await waitForSecondReuseAttempt(invocationPid, root);
+        await waitForSecondReuseAttempt(invocationPid, root);
         expect(controlled.signal("SIGINT")).toBe(true);
 
         const interrupted = await controlled.done;
         expect(interrupted.exitCode, interrupted.diagnostic()).toBe(130);
         const events = interrupted.ndjson<ExpEvent>();
+        // receipt 只承载 Invocation 级完成事实(见 docs/feature/experiments/cli.md「结束反馈与
+        // receipt」)：completion。中断前完成的 attempt 由带身份的 eval 事件断言；不读 Record
+        // 内部细节，也不在 receipt 上断言计数。
+        expect(interrupted.expReceipt(), interrupted.diagnostic()).toMatchObject({
+          completion: "interrupted",
+        });
         expect(
-          only(events, (event) => event.event === "result", interrupted.diagnostic()),
-        ).toMatchObject({ event: "result", status: "interrupted", completion: "interrupted", passed: 1 });
+          only(
+            events,
+            (event) => event.event === "eval" && event.experimentId === "interrupt",
+            interrupted.diagnostic(),
+          ),
+        ).toMatchObject({ event: "eval", experimentId: "interrupt", evalId: "interrupt", verdict: "passed" });
         expect(
           only(
             events,
@@ -202,7 +165,6 @@ test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源
           invocationPid,
           backendPid: info.pid,
           port: info.port,
-          sandboxId,
         };
       },
     );
@@ -212,34 +174,18 @@ test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源
     await expect(fetch(`http://127.0.0.1:${owned.port}/health`)).rejects.toThrow();
     await waitForOwnedContainersGone(owned.invocationPid, root);
 
-    const completedBeforeInterrupt = await historyAttempt(root, "interrupt", "interrupt");
-    expect(completedBeforeInterrupt).toMatchObject({
-      attempt: 0,
-      verdict: "passed",
-      sandbox: {
-        provider: "docker",
-        sandboxId: owned.sandboxId.slice(0, 12),
-        reused: true,
-        reuseSandbox: 1,
-        reuseOrdinal: 1,
-      },
-    });
-
     const next = await niceeval.run(["exp", "probe", "--rerun", "all", "--json"], {
       cwd: root,
     });
     expect(next.exitCode, next.diagnostic()).toBe(0);
+    const nextEvents = next.ndjson<ExpEvent>();
+    expect(next.expReceipt(), next.diagnostic()).toMatchObject({ completion: "completed" });
     expect(
-      only(next.ndjson<ExpEvent>(), (event) => event.event === "result", next.diagnostic()),
-    ).toMatchObject({ event: "result", status: "passed", completion: "complete" });
-
-    const nextAttempt = await historyAttempt(root, "probe", "probe");
-    expect(nextAttempt).toMatchObject({
-      attempt: 0,
-      verdict: "passed",
-      sandbox: { provider: "docker" },
-    });
-    expect(nextAttempt.sandbox?.sandboxId).not.toBe(owned.sandboxId.slice(0, 12));
-    await waitForContainerGone(defined(nextAttempt.sandbox?.sandboxId), root);
+      only(
+        nextEvents,
+        (event) => event.event === "eval" && event.experimentId === "probe",
+        next.diagnostic(),
+      ),
+    ).toMatchObject({ event: "eval", experimentId: "probe", evalId: "probe", verdict: "passed" });
   });
 });

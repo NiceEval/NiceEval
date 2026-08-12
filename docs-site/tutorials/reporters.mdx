@@ -1,113 +1,52 @@
 ---
-title: "Report Results to Braintrust and Other Destinations"
-sidebarTitle: "Reporters"
-description: "Use built-in reporters to send eval results to Braintrust experiments, JUnit XML, or custom destinations."
+title: "Connect the Current Run to External Systems"
+sidebarTitle: "Reporter Integration"
+description: "Use a Reporter, JUnit, or process feedback to send information from one current Invocation to an external system."
 ---
 
-[NiceEval](https://niceeval.com/) runs and scores evals itself. Reporters send completed results elsewhere. Feedback while a run is in flight (human text or `--json`) is decided by `niceeval exp` itself, not a user-configured Reporter; the `.niceeval/` results artifacts are always on. Other reporters are imported from `niceeval/reporters` and mounted as needed.
+A Reporter belongs to the current Invocation. It can send information known to that process to an external system. It does not own the Record, select samples, or replace later Report viewing.
 
-There are two mount points:
+## Choose the right output
 
-- `reporters` in `niceeval.config.ts`: observes every eval in the run. Shared destinations, such as one Braintrust experiment, usually belong here.
-- `reporters` on a single eval: the instance only observes that eval. If multiple evals reference the same instance, their results are merged into the same destination. Listing an instance on an eval again after it was already configured globally does not report it twice.
+| Need | Use |
+| --- | --- |
+| A CI gate | The `niceeval exp` process exit status. |
+| A CI test-results view | `--junit <path>`. |
+| Process feedback for a script | `niceeval exp --json`. |
+| A later view of current data | The final receipt's `runIds` with `show`, `view`, or `view --out`. |
+| A custom external destination | A Reporter attached to the Invocation. |
 
-## Braintrust
+## Use JUnit in CI
 
-`Braintrust(...)` uploads one NiceEval run as a Braintrust experiment, with one row per attempt. Put it in config to cover the whole run:
-
-```ts niceeval.config.ts
-import { defineConfig } from "niceeval";
-import { Braintrust } from "niceeval/reporters";
-
-export default defineConfig({
-  reporters: [Braintrust({ project: "weather-agent" })],
-});
+```sh
+npx niceeval exp ci --junit ./artifacts/niceeval-junit.xml
 ```
 
-Mount it on an eval when only some evals should report:
+The file is an external output for the CI platform. The quiescent Record remains the owner of current Verdicts, Usage, assertions, and diagnostics.
 
-```ts evals/forecast.eval.ts
-import { defineEval } from "niceeval";
-import { Braintrust } from "niceeval/reporters";
+## Read current-process feedback
 
-export default defineEval({
-  reporters: [Braintrust({ project: "weather-agent" })],
-  async test(t) {
-    await t.send("Is Beijing good for cycling today?");
-    t.succeeded();
-  },
-});
+```sh
+npx niceeval exp ci --json
 ```
 
-Prerequisites: install the optional `braintrust` package (`npm install braintrust`; other features work without it) and set `BRAINTRUST_API_KEY`. Pass `apiKey` when the key must be provided explicitly in code. After the run, the terminal prints the experiment URL.
+The output is ordered NDJSON. Progress and diagnostic records describe only the current Invocation. The final record is a receipt with its `invocationId`, `runIds`, timing, and completion status.
 
-### Reporting Shape
+Use those `runIds` to select a Sample in a later step. Do not treat the feedback stream as a persisted Record protocol.
 
-- Each attempt becomes one Braintrust row. `attempts: 3` creates three rows, distinguished by `attempt` in metadata.
-- Soft assertions are recorded as scores by name. Gate assertions are recorded under a `gate:` prefix, so gate regressions and soft score regressions appear in the same Braintrust experiment diff surface.
-- Metrics include start/end time, token usage, and estimated cost. Missing data is omitted rather than filled with zero.
-- Metadata includes `agent`, `model`, `experiment`, `flags`, `verdict`, and failed assertion details, so Braintrust filters can slice by those dimensions.
+## Write a custom Reporter
 
-### Options
+A custom Reporter receives the data that the current process makes available. Use it for a destination not covered by JUnit or an existing integration. Keep its work bounded: reporter failure should be reported clearly without changing the persisted facts that a later Report reads.
 
-<ParamField body="project" type="string">
-  Braintrust project name. Defaults to `niceeval`.
-</ParamField>
+When the Invocation finishes, inspect the resulting current data through an explicit Run selection or the named latest policy:
 
-<ParamField body="projectId" type="string">
-  Braintrust project ID. Provide either `project` or `projectId`.
-</ParamField>
-
-<ParamField body="experiment" type="string">
-  Experiment name. If omitted, Braintrust names it automatically.
-</ParamField>
-
-<ParamField body="baseExperiment" type="string">
-  Existing experiment name to use as the diff base.
-</ParamField>
-
-<ParamField body="baseExperimentId" type="string">
-  Existing experiment ID to use as the diff base.
-</ParamField>
-
-<ParamField body="update" type="boolean">
-  When `true`, updates an existing experiment with the same name instead of creating a new one.
-</ParamField>
-
-<ParamField body="metadata" type="Record<string, JsonValue>">
-  Experiment-level metadata. Merged with NiceEval's automatic fields; this value wins on name conflicts.
-</ParamField>
-
-<ParamField body="apiKey" type="string">
-  Braintrust API key. Defaults to the SDK reading `BRAINTRUST_API_KEY`.
-</ParamField>
-
-## JUnit and JSON
-
-`JUnit(path)` writes JUnit XML so failures appear in CI test report UIs. For temporary output, use the CLI flag `--junit <path>` without changing config. `Json(path)` writes the full `InvocationSummary` as JSON for downstream scripts or dashboards. See [CI Integration](./ci-integration) for a complete CI setup.
-
-## Custom Reporters
-
-A reporter is an object that implements optional callbacks and receives the same structured results as built-in reporters:
-
-```ts
-import type { Reporter } from "niceeval";
-
-const notify: Reporter = {
-  async onEvalComplete(result) {
-    if (result.verdict === "failed") {
-      await fetch("http://localhost:3000/notify", {
-        method: "POST",
-        body: JSON.stringify({ eval: result.id, agent: result.agent }),
-      });
-    }
-  },
-};
+```sh
+npx niceeval show --run <runId>
+npx niceeval view --run <runId> --no-open
 ```
 
-- `onInvocationStart(evals, shape)`: invocation start, with the eval list that will actually run and the run shape.
-- `onEvalComplete(result)`: fires as soon as each attempt completes. Callbacks are serialized and do not interleave.
-- `onInvocationComplete(summary)`: invocation complete, with the aggregate summary.
-- `onEvent(event)`: lower-level event stream, such as `eval:start` and `invocation:budgetExceeded`.
+## Keep long-lived data in the Record
 
-Reporters mounted on config/eval are best-effort by default: an error becomes a permanent diagnostic but never interrupts an in-flight attempt. The CLI's explicit `--json` / `--junit` and the default results artifacts are required outputs — a write failure turns the whole run red. Custom reporters are only needed for destinations not covered by built-ins. `.niceeval/` artifacts already record all results, so post-run analysis can read them directly. See [Viewing Results](./viewing-results).
+The Reporter, JUnit file, and NDJSON stream are outputs for one process. The Record is an editable fact dataset. Its named owner-local channels preserve business values until an authorized writer or user edits them while the directory is quiescent.
+
+For result inspection and static sharing, see [Viewing Results](/tutorials/viewing-results) and [Publish a Static Report](/tutorials/publish-report).

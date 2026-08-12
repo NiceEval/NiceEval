@@ -24,8 +24,8 @@ export interface FeedbackRenderer {
   /**
    * 一条永久事件落地(见 `DurableFeedbackEvent`):human 打一行、json 按 NDJSON 事件追加到
    * stdout。两种 profile 都必须实现 —— 这是最基本的职责,即便某个 profile 选择对
-   * 某个 `event.type` 不输出任何可见内容(如 json 暂存 "summary"，等 "saved" 到达后一次写出
-   * eval 结论与 result),也要显式接住、不抛错。
+   * 某个 `event.type` 不输出任何可见内容(如 json 暂存 "summary"，等 "receipt" 到达后一次写出
+   * eval 结论与最终 receipt),也要显式接住、不抛错。
    *
    * 同一个逻辑事件(如两次 `key` 相同的 "diagnostic")可能被调用多次 —— coordinator 只保证
    * `RunFeedbackState.diagnostics` 里的去重计数正确,不代为决定「该不该重复打印」;renderer
@@ -75,7 +75,7 @@ export interface FeedbackRenderer {
 
   /**
    * coordinator 关闭时的最后一次机会 —— 在 `finish()` 内部,已经完成 stopDynamic() 且已经把
-   * "summary"/"saved" 两个永久事件送进 appendDurable 之后才调用。之后保证不会再收到任何调用。
+   * "summary"/"receipt" 两个永久事件送进 appendDurable 之后才调用。之后保证不会再收到任何调用。
    * 适合释放 renderer 自己持有的资源(如未 unref 的句柄);不适合再写任何输出 —— 该写的已经
    * 通过 appendDurable 写完。
    */

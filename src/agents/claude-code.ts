@@ -1,4 +1,5 @@
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
+import { Effect } from "effect";
 import { defineSandboxAgent } from "../define.ts";
 import { requireEnv, getEnv } from "../util.ts";
 import { shared } from "./shared.ts";
@@ -6,17 +7,18 @@ import { cloneRepo, installSkills } from "./skills.ts";
 import { verifyMarketplaceName } from "./marketplace.ts";
 import {
   assertJsonNativeConfig,
-  loadNativeConfigFile,
-  uploadNativeConfigFile,
+  loadNativeConfigFileEffect,
+  uploadNativeConfigFileEffect,
   type LoadedNativeConfig,
 } from "./native-config.ts";
 import { mapClaudeCodeSpans } from "../o11y/otlp/mappers/claude-code.ts";
+import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
 import { t } from "../i18n/index.ts";
 import { DEFAULT_CLAUDE_CODE_CLI_VERSION, AGENT_BASELINE_RECIPE_REVISION } from "./coding-cli-versions.ts";
 import { assertMcpServers, isHttpMcp, mcpManifestEntries } from "./mcp.ts";
 import { runPostSetupHooks, runPreTeardownHooks } from "./post-setup.ts";
-import { createNpmCliInstaller } from "./npm-staged.ts";
-import type { Agent, AgentSetupManifest, McpServer, Sandbox, SkillSpec } from "../types.ts";
+import { createNpmCliInstaller, resolveAgentBinEffect } from "./npm-staged.ts";
+import type { Agent, AgentSetupManifest, McpServer, Sandbox, SkillSpec, TurnEvidenceCoverage } from "../types.ts";
 import type { SandboxCommand } from "../sandbox/commands.ts";
 import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
 
@@ -146,25 +148,30 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
       }),
     },
 
-    async setup(sb, ctx) {
+    setup: (sb, ctx) => Effect.runPromise(Effect.scoped(Effect.gen(function* () {
       // 原生配置文件最先落(安装顺序契约的第 1 步):本地读原始字节 → 验 JSON 语法与保留键
       // → 原样替换沙箱里原本为空的用户级 settings.json。字节 SHA-256 进 manifest 与安装
       // checkpoint key(见 native-config.ts 的 nativeConfigCheckpointItem)。
       let settings: LoadedNativeConfig | undefined;
       if (config?.settingsFile !== undefined) {
-        settings = await loadNativeConfigFile({
+        settings = yield* loadNativeConfigFileEffect({
           agent: "claude-code",
           field: "settingsFile",
           path: config.settingsFile,
         });
-        assertJsonNativeConfig(settings, {
-          agent: "claude-code",
-          field: "settingsFile",
-          reservedKeys: RESERVED_SETTINGS_KEYS,
+        yield* Effect.try({
+          try: () => assertJsonNativeConfig(settings!, {
+            agent: "claude-code",
+            field: "settingsFile",
+            reservedKeys: RESERVED_SETTINGS_KEYS,
+          }),
+          catch: (cause) => cause,
         });
-        await uploadNativeConfigFile(sb, settings, SETTINGS_PATH);
+        yield* uploadNativeConfigFileEffect(sb, settings, SETTINGS_PATH);
       }
 
+      yield* Effect.tryPromise({
+        try: async () => {
       if (config?.mcpServers?.length) {
         assertMcpServers(config.mcpServers);
         const servers: globalThis.Record<string, object> = {};
@@ -226,7 +233,10 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
       // 安装后钩子(postSetup):排在 manifest 之后——manifest 审计 Adapter 自身的安装事实,
       // 钩子失败不该丢掉这份证据。
       await runPostSetupHooks(sb, ctx, "claude-code", config?.postSetup);
-    },
+        },
+        catch: (cause) => cause,
+      });
+    })), { signal: ctx.signal }),
 
     async teardown(sb, ctx) {
       // preTeardown 与 postSetup 成对:LIFO 镜像,先于 agent 自己的收尾步骤执行。
@@ -234,8 +244,11 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
       await runPreTeardownHooks(sb, ctx, "claude-code", config?.preTeardown);
     },
 
-    async send(input, ctx) {
+    send: (input, ctx) => Effect.runPromise(Effect.scoped(Effect.gen(function* () {
       const sb = ctx.sandbox;
+      const claudeBin = yield* resolveAgentBinEffect(sb, "claude");
+      return yield* Effect.tryPromise({
+        try: async (signal) => {
       const args = ["--print", "--dangerously-skip-permissions"];
       if (ctx.model) args.push("--model", ctx.model);
       if (config?.maxTurns != null) args.push("--max-turns", String(config.maxTurns));
@@ -253,10 +266,11 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
       const baseUrl = getBaseUrl();
       if (baseUrl) env["ANTHROPIC_BASE_URL"] = baseUrl;
 
-      const res = await sb.runCommand(await shared.resolveAgentBin(sb, "claude"), args, {
+      const res = await sb.runCommand(claudeBin, args, {
         env,
         sensitiveValues: [apiKey],
         stream: true,
+        signal,
       });
 
       // 「最新 jsonl」而非按 session id 精确定位:--resume 会 fork 新 session id 的新文件,
@@ -265,6 +279,23 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
       ctx.session.capture(shared.sessionIdFromClaudeTranscript(raw));
       const parsed = shared.parseClaudeCode(raw);
       const events = [...parsed.events];
+      let turnEvidenceCoverage: TurnEvidenceCoverage | undefined;
+      if (!raw?.trim()) {
+        const reason = "Claude Code transcript was unavailable; tool trajectory was not observed.";
+        turnEvidenceCoverage = {
+          events: { status: "unavailable", reason },
+          actions: { status: "unavailable", reason },
+          usage: { status: "unavailable", reason },
+        };
+      } else if (!parsed.parseSuccess) {
+        const reason = "Some Claude Code transcript lines could not be parsed.";
+        turnEvidenceCoverage = {
+          events: { status: "partial", reason },
+          actions: { status: "partial", reason },
+        };
+      } else {
+        turnEvidenceCoverage = unclassifiedToolActionsCoverage(events);
+      }
       if (res.exitCode !== 0) {
         throw makeSendFailure({
           acceptance: sendAcceptanceFromEvents(events),
@@ -274,8 +305,16 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
           process: res,
         });
       }
-      return { events, usage: parsed.usage, status: "completed" };
-    },
+      return {
+        events,
+        usage: parsed.usage,
+        status: "completed" as const,
+        ...(turnEvidenceCoverage === undefined ? {} : { evidenceCoverage: turnEvidenceCoverage }),
+      };
+        },
+        catch: (cause) => cause,
+      });
+    })), { signal: ctx.signal }),
   });
 }
 

@@ -1,312 +1,227 @@
-import type { StandardSchemaV1 } from "@standard-schema/spec";
-
 export {};
 
-type MatchDomain = "value" | "tool" | "event";
-declare const matchInputBrand: unique symbol;
-declare const matchRefinementBrand: unique symbol;
+declare const assertionHandleBrand: unique symbol;
+declare const measurementStateBrand: unique symbol;
 
-interface Match<in T, D extends MatchDomain> {
-  readonly domain: D;
-  readonly name: string;
-  readonly [matchInputBrand]: (candidate: T) => void;
+type EvaluationKind = "pass" | "score";
+
+interface AssertionHandleBase {
+  readonly [assertionHandleBrand]: true;
+  key(value: string): this;
+  label(value: string): this;
 }
 
-interface BooleanMatch<in T, out R extends T, D extends MatchDomain = "value"> extends Match<T, D> {
-  readonly kind: "boolean";
-  readonly [matchRefinementBrand]: () => R;
+interface PassBooleanHandle<out R = void> extends AssertionHandleBase {
+  readonly kind: "pass-boolean";
+  orStop(): Promise<R>;
 }
 
-interface ScoreMatch<in T> extends Match<T, "value"> {
-  readonly kind: "score";
+interface ScoreBooleanHandle<out R = void, HasScore extends boolean = false>
+  extends AssertionHandleBase {
+  readonly kind: "score-boolean";
+  readonly [measurementStateBrand]: { readonly score: HasScore };
+  score(this: ScoreBooleanHandle<R, false>, value: number): ScoreBooleanHandle<R, true>;
+  orStop(): Promise<R>;
 }
 
-interface LogicalToolOccurrence {
-  readonly id: string;
+interface PassMeasurementHandle<Thresholded extends boolean = false> extends AssertionHandleBase {
+  readonly kind: "pass-measurement";
+  readonly [measurementStateBrand]: { readonly threshold: Thresholded };
+  atLeast(value: number): PassMeasurementHandle<true>;
+  orStop(this: PassMeasurementHandle<true>): Promise<number>;
 }
 
-interface LogicalCommandOccurrence extends LogicalToolOccurrence {
-  readonly command: readonly string[];
+interface ScoreMeasurementHandle<
+  Thresholded extends boolean = false,
+  HasScore extends boolean = false,
+> extends AssertionHandleBase {
+  readonly kind: "score-measurement";
+  readonly [measurementStateBrand]: {
+    readonly threshold: Thresholded;
+    readonly score: HasScore;
+  };
+  atLeast(value: number): ScoreMeasurementHandle<true, HasScore>;
+  score(this: ScoreMeasurementHandle<Thresholded, false>, value: number): ScoreMeasurementHandle<Thresholded, true>;
+  orStop(this: ScoreMeasurementHandle<true, HasScore>): Promise<number>;
 }
 
-interface MatchableEvent {
-  readonly type: string;
+interface DirectScoreHandle extends AssertionHandleBase {
+  readonly kind: "direct-score";
 }
 
-type ToolMatch<R extends LogicalToolOccurrence = LogicalToolOccurrence> = BooleanMatch<
-  LogicalToolOccurrence,
-  R,
-  "tool"
->;
-type EventMatch<R extends MatchableEvent = MatchableEvent> = BooleanMatch<MatchableEvent, R, "event">;
-
-type RefinementOf<M> = M extends BooleanMatch<infer _T, infer R, infer _D> ? R : never;
-type RefinementIntersection<M extends readonly unknown[]> = M extends readonly [infer Head, ...infer Tail]
-  ? RefinementOf<Head> & RefinementIntersection<Tail>
-  : unknown;
-
-declare function and<
-  T,
-  R extends T,
-  D extends MatchDomain,
-  const Rest extends readonly [
-    BooleanMatch<NoInfer<T>, T, NoInfer<D>>,
-    ...BooleanMatch<NoInfer<T>, T, NoInfer<D>>[],
-  ],
->(
-  first: BooleanMatch<T, R, D>,
-  ...rest: Rest
-): BooleanMatch<T, T & R & RefinementIntersection<Rest>, D>;
-
-declare function or<
-  T,
-  R extends T,
-  D extends MatchDomain,
-  const Rest extends readonly [
-    BooleanMatch<NoInfer<T>, T, NoInfer<D>>,
-    ...BooleanMatch<NoInfer<T>, T, NoInfer<D>>[],
-  ],
->(
-  first: BooleanMatch<T, R, D>,
-  ...rest: Rest
-): BooleanMatch<T, T & (R | RefinementOf<Rest[number]>), D>;
-
-declare function not<T>(match: BooleanMatch<T, T, "value">): BooleanMatch<T, T, "value">;
-
-declare function matches<S extends StandardSchemaV1>(
-  schema: S,
-): BooleanMatch<unknown, StandardSchemaV1.InferInput<S>, "value">;
-
-declare function satisfies<T, R extends T>(
-  label: string,
-  predicate: (value: T) => value is R,
-): BooleanMatch<T, R, "value">;
-declare function satisfies<T>(
-  label: string,
-  predicate: (value: T) => boolean | Promise<boolean>,
-): BooleanMatch<T, T, "value">;
-
-declare function defineValueMatch<T, R extends T>(spec: {
-  readonly name: string;
-  readonly evaluate: (value: T) => value is R;
-}): BooleanMatch<T, R, "value">;
-declare function defineValueMatch<T>(spec: {
-  readonly name: string;
-  readonly evaluate: (value: T) => boolean | Promise<boolean>;
-}): BooleanMatch<T, T, "value">;
-
-declare function defineScoreMatch<T>(spec: {
-  readonly name: string;
-  readonly score: (value: T) => number | Promise<number>;
-}): ScoreMatch<T>;
-
-type FactPhase = "now" | "final";
-declare const factBrand: unique symbol;
-declare const usageCoverageBrand: unique symbol;
-declare const scoreCompletionBrand: unique symbol;
-
-interface BooleanFact<out R = unknown, P extends FactPhase = FactPhase> {
-  readonly kind: "boolean";
-  readonly phase: P;
-  readonly [factBrand]: () => R;
+interface BooleanMatch<in T, out R extends T = T> {
+  readonly kind: "boolean-match";
+  readonly refine: (value: T) => R;
 }
 
-interface ScoreFact<P extends FactPhase = FactPhase> {
-  readonly kind: "score";
-  readonly phase: P;
-  readonly [factBrand]: () => number;
+interface MeasurementMatch<in T> {
+  readonly kind: "measurement-match";
+  readonly evaluate: (value: T) => number | Promise<number>;
 }
 
-interface UsageEvidenceFact<P extends FactPhase = FactPhase> extends BooleanFact<unknown, P> {
-  readonly [usageCoverageBrand]: true;
+type Subject<T> = T extends AssertionHandleBase ? never : T;
+
+interface CalledToolOptions {
+  readonly input?: unknown;
+  readonly count?: number | { readonly atLeast: number };
+  readonly status?: "completed" | "failed" | "rejected" | "pending";
 }
 
-interface ScoreCompletion {
-  readonly [scoreCompletionBrand]: true;
+interface PassScope {
+  succeeded(): PassBooleanHandle<void>;
+  calledTool(name: string, options?: CalledToolOptions): PassBooleanHandle<void>;
+  maxTokens(maximum: number): PassUsageHandle<void>;
 }
 
-interface FactUseOptions {
-  readonly key?: string;
-  readonly label?: string;
+interface ScoreScope {
+  succeeded(): ScoreBooleanHandle<void>;
+  calledTool(name: string, options?: CalledToolOptions): ScoreBooleanHandle<void>;
+  maxTokens(maximum: number): ScoreUsageHandle<void>;
 }
 
-interface ScoreThresholdOptions extends FactUseOptions {
-  readonly atLeast: number;
+interface PassUsageHandle<out R = void> extends PassBooleanHandle<R> {
+  ifCovered(): this;
 }
 
-interface TestContext {
-  check<T, R extends T>(subject: T, match: BooleanMatch<T, R, "value">): BooleanFact<R, "now">;
-  check<T>(subject: T, match: ScoreMatch<T>): ScoreFact<"now">;
-
-  assert<R, P extends FactPhase>(fact: BooleanFact<R, P>, options?: FactUseOptions): void;
-  assert<P extends FactPhase>(fact: ScoreFact<P>, options: ScoreThresholdOptions): void;
-  assertIfCovered<P extends FactPhase>(fact: UsageEvidenceFact<P>, options?: FactUseOptions): void;
-
-  require<R>(fact: BooleanFact<R, "now">, options?: FactUseOptions): Promise<R>;
-  require(fact: ScoreFact<"now">, options: ScoreThresholdOptions): Promise<number>;
-  require<T, R extends T>(
-    value: T,
-    match: BooleanMatch<T, R, "value">,
-    options?: FactUseOptions,
-  ): Promise<R>;
+interface ScoreUsageHandle<out R = void> extends ScoreBooleanHandle<R> {
+  ifCovered(): this;
 }
 
-interface ScoreTestContext extends TestContext {
-  score<P extends FactPhase>(
-    label: string,
-    fact: BooleanFact<unknown, P> | ScoreFact<P>,
-    options: { readonly key?: string; readonly max: number },
-  ): void;
-  score(label: string, direct: { readonly key?: string; readonly earned: number }): void;
-  finishScore(): ScoreCompletion;
+interface PassJudgeRecipes {
+  closedQA(question: string): PassMeasurementHandle;
+  factuality(reference: string): PassMeasurementHandle;
 }
 
-interface KeyedFactUseOptions extends FactUseOptions {
-  readonly key: string;
+interface ScoreJudgeRecipes {
+  closedQA(question: string): ScoreMeasurementHandle;
+  factuality(reference: string): ScoreMeasurementHandle;
 }
 
-interface KeyedScoreThresholdOptions extends KeyedFactUseOptions {
-  readonly atLeast: number;
+interface PassTurn extends PassScope {
+  readonly message: string;
+  readonly judge: PassJudgeRecipes;
 }
 
-interface ReplayGradingFactUses {
-  assert<R, P extends FactPhase>(fact: BooleanFact<R, P>, options: KeyedFactUseOptions): void;
-  assert<P extends FactPhase>(fact: ScoreFact<P>, options: KeyedScoreThresholdOptions): void;
-  assertIfCovered<P extends FactPhase>(fact: UsageEvidenceFact<P>, options: KeyedFactUseOptions): void;
+interface ScoreTurn extends ScoreScope {
+  readonly message: string;
+  readonly judge: ScoreJudgeRecipes;
 }
 
-interface ReplayScoreFactUses extends ReplayGradingFactUses {
-  score<P extends FactPhase>(
-    label: string,
-    fact: BooleanFact<unknown, P> | ScoreFact<P>,
-    options: { readonly key: string; readonly max: number },
-  ): void;
-  score(label: string, direct: { readonly key: string; readonly earned: number }): void;
+interface PassSession extends PassScope {
+  send(input: string): Promise<PassTurn>;
 }
 
-interface ScoreEvalInput {
-  test(t: ScoreTestContext): ScoreCompletion | Promise<ScoreCompletion>;
+interface ScoreSession extends ScoreScope {
+  send(input: string): Promise<ScoreTurn>;
 }
 
-type HasId = { readonly id: string };
-type HasTitle = { readonly title: string };
+interface PassTestContext extends PassScope {
+  readonly evaluationKind: "pass";
+  check<V, R extends V>(value: Subject<V>, match: BooleanMatch<NoInfer<V>, R>): PassBooleanHandle<R>;
+  check<V>(value: Subject<V>, match: MeasurementMatch<NoInfer<V>>): PassMeasurementHandle;
+  newSession(): PassSession;
+  send(input: string): Promise<PassTurn>;
+}
 
-declare const t: TestContext;
-declare const scoreT: ScoreTestContext;
-declare const grading: ReplayGradingFactUses;
-declare const scoreGrading: ReplayScoreFactUses;
+interface ScoreTestContext extends ScoreScope {
+  readonly evaluationKind: "score";
+  check<V, R extends V>(value: Subject<V>, match: BooleanMatch<NoInfer<V>, R>): ScoreBooleanHandle<R>;
+  check<V>(value: Subject<V>, match: MeasurementMatch<NoInfer<V>>): ScoreMeasurementHandle;
+  newSession(): ScoreSession;
+  send(input: string): Promise<ScoreTurn>;
+  score(value: number): DirectScoreHandle;
+}
+
+type PassFinalizable = PassBooleanHandle<unknown> | PassMeasurementHandle<true>;
+declare function finalizePass(...entries: readonly PassFinalizable[]): void;
+
+declare const pass: PassTestContext;
+declare const passSession: PassSession;
+declare const passTurn: PassTurn;
+declare const score: ScoreTestContext;
+declare const scoreTurn: ScoreTurn;
 declare const candidate: unknown;
-declare const hasId: BooleanMatch<unknown, HasId>;
-declare const hasTitle: BooleanMatch<unknown, HasTitle>;
-declare const command: ToolMatch<LogicalCommandOccurrence>;
-declare const event: EventMatch;
-declare const score: ScoreMatch<string>;
-declare const finalFact: BooleanFact<void, "final">;
-declare const usageFact: UsageEvidenceFact<"final">;
-declare const transformingSchema: StandardSchemaV1<string, number>;
+declare const reply: string;
+declare const hasId: BooleanMatch<unknown, { readonly id: string }>;
+declare const isTrue: BooleanMatch<boolean, true>;
+declare const quality: MeasurementMatch<string>;
 
-function proveReplayUseKeys(): void {
-  grading.assert(finalFact, { key: "final-valid" });
-  grading.assertIfCovered(usageFact, { key: "usage-covered" });
-  scoreGrading.score("回答质量", finalFact, { key: "answer-quality", max: 10 });
-  scoreGrading.score("代码精简", { key: "code-simplicity", earned: 2 });
+async function positiveAuthoringShapes(): Promise<void> {
+  const refined = await pass.check(candidate, hasId)
+    .key("candidate-id")
+    .label("候选项有 id")
+    .orStop();
+  refined.id.toUpperCase();
 
-  // @ts-expect-error Replayable grading requires a key for every verdict use.
-  grading.assert(finalFact);
-  // @ts-expect-error Replayable grading requires a key for every score use.
-  scoreGrading.score("回答质量", finalFact, { max: 10 });
+  // Root、Session 与 Turn 都在调用时登记 scoped Assertion。
+  await pass.succeeded().orStop();
+  passSession.succeeded().label("Session 完成");
+  passTurn.calledTool("write_file", { count: { atLeast: 1 } }).label("写入文件");
+  pass.maxTokens(4_000).ifCovered().label("token 可读取");
+
+  const thresholded = pass.check(reply, quality).atLeast(0.8).label("最低质量");
+  await thresholded.orStop();
+  finalizePass(pass.succeeded(), thresholded);
+
+  // Score Eval 可只记录，也可明确贡献 score；threshold 与 score 可以交换次序。
+  scoreTurn.calledTool("search").label("仅记录");
+  scoreTurn.calledTool("search").score(2).label("检索贡献");
+  await score.check(reply, quality).score(5).atLeast(0.8).orStop();
+  await score.check(reply, quality).atLeast(0.8).score(5).orStop();
+  score.maxTokens(4_000).ifCovered().score(1);
+  score.score(5).key("manual").label("人工贡献");
 }
+void positiveAuthoringShapes;
 
-async function proveRefinements(): Promise<void> {
-  const both = await t.require(candidate, and(hasId, hasTitle));
-  both.id.toUpperCase();
-  both.title.toUpperCase();
+function negativeAuthoringShapes(): void {
+  const passBoolean = pass.succeeded();
+  const passMeasurement = pass.check(reply, quality);
+  const direct = score.score(1);
 
-  const either = await t.require(candidate, or(hasId, hasTitle));
-  if ("id" in either) either.id.toUpperCase();
-  else either.title.toUpperCase();
+  // @ts-expect-error t.check is strictly value plus Match.
+  pass.check(reply);
+  // @ts-expect-error t.check has no third parameter.
+  pass.check(reply, quality, { label: "禁止第三参数" });
+  // @ts-expect-error An AssertionHandle cannot become a new subject.
+  pass.check(passBoolean, isTrue);
 
-  const original = await t.require(candidate, matches(transformingSchema));
-  original.toUpperCase();
-  // @ts-expect-error A transform output is not the original candidate returned by require().
-  original.toFixed();
+  // @ts-expect-error A Pass measurement must have a threshold before finalize.
+  finalizePass(passMeasurement);
+  // @ts-expect-error A Pass measurement without atLeast cannot stop control flow.
+  passMeasurement.orStop();
+  // @ts-expect-error Pass contexts have no direct score API.
+  pass.score(1);
+  // @ts-expect-error Pass measurement handles have no score policy.
+  passMeasurement.score(1);
 
-  const asyncMatch = defineValueMatch({
-    name: "async check",
-    async evaluate(value: unknown) {
-      return value !== null;
-    },
-  });
-  const asyncValue = await t.require(candidate, asyncMatch);
-  // @ts-expect-error Async boolean evaluators do not refine the candidate.
-  asyncValue.id;
+  // @ts-expect-error A direct score handle cannot be scored again.
+  direct.score(1);
+  // @ts-expect-error A direct score handle cannot receive a threshold.
+  direct.atLeast(0.8);
+  // @ts-expect-error A direct score handle cannot stop authoring.
+  direct.orStop();
 
-  const hasIdFact = t.check(candidate, hasId);
-  t.assert(hasIdFact);
-  const id = await t.require(t.check(candidate, hasId));
-  id.id.toUpperCase();
+  // @ts-expect-error A Score measurement needs atLeast before orStop.
+  score.check(reply, quality).orStop();
+  // @ts-expect-error score policy can be configured only once.
+  scoreTurn.calledTool("search").score(1).score(1);
 
-  const quality = t.check("answer", score);
-  t.assert(quality, { atLeast: 0.7 });
-  await t.require(quality, { atLeast: 0.7 });
+  // Runtime checks, not literal types, reject zero and negative handle scores.
+  scoreTurn.calledTool("search").score(0);
+  scoreTurn.calledTool("search").score(-1);
 
-  t.assert(finalFact);
-  // @ts-expect-error A final Fact cannot control code before finalization.
-  await t.require(finalFact);
-
-  t.assertIfCovered(usageFact);
-  // @ts-expect-error Coverage policy is restricted to branded usage Facts.
-  t.assertIfCovered(hasIdFact);
+  // @ts-expect-error Removed author APIs are not part of this model.
+  pass.require(passBoolean);
+  // @ts-expect-error Usage coverage lives on the Usage Assertion handle.
+  pass.checkIfCovered(pass.maxTokens(100));
+  // @ts-expect-error Old numeric APIs are absent.
+  passBoolean.points(1);
+  // @ts-expect-error Old numeric APIs are absent.
+  passBoolean.weight(1);
+  // @ts-expect-error Control API is named orStop.
+  passBoolean.stopOnFailure();
 }
+void negativeAuthoringShapes;
 
-defineValueMatch({
-  name: "has id",
-  evaluate(value: unknown): value is HasId {
-    return typeof value === "object" && value !== null && "id" in value;
-  },
-});
-defineScoreMatch({ name: "quality", score: (value: string) => value.length / 10 });
-satisfies("has id", (value: unknown): value is HasId => {
-  return typeof value === "object" && value !== null && "id" in value;
-});
-
-const combinedCommand = and(command, command);
-declare const refinedCommand: RefinementOf<typeof combinedCommand>;
-refinedCommand.command.at(0);
-// @ts-expect-error Boolean composition cannot cross Match domains.
-and(command, event);
-// @ts-expect-error ScoreMatch cannot enter boolean composition.
-and(command, score);
-// @ts-expect-error not() is value-only and cannot negate a ToolMatch.
-not(command);
-
-const boolFact = t.check(candidate, hasId);
-const scoreFact = t.check("answer", score);
-
-scoreT.score("has id", boolFact, { max: 2 });
-scoreT.score("quality", scoreFact, { max: 10 });
-scoreT.score("direct", { earned: 3 });
-t.assert(scoreFact, { atLeast: 0.5 });
-
-// @ts-expect-error A Score Fact needs an explicit threshold when used for verdict.
-t.assert(scoreFact);
-// @ts-expect-error Passing TestContext does not expose score().
-t.score("has id", boolFact, { max: 2 });
-// @ts-expect-error Facts do not expose the retired points() chain.
-boolFact.points(2);
-// @ts-expect-error Score completion has no unverifiable early-exit options.
-scoreT.finishScore({ reason: "early" });
-
-const validScoreEval: ScoreEvalInput = {
-  test(context) {
-    context.score("zero is explicit", { earned: 0 });
-    return context.finishScore();
-  },
-};
-void validScoreEval;
-
-const invalidScoreEval: ScoreEvalInput = {
-  // @ts-expect-error A normal Score Eval path must return ScoreCompletion.
-  test() {},
-};
-void invalidScoreEval;
+declare const _kind: EvaluationKind;
+void _kind;

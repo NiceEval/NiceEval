@@ -279,26 +279,40 @@ export async function preflightHostCapabilities(
 const browserPreflightProgram = String.raw`
 const fs = require("node:fs");
 const browsers = JSON.parse(process.argv[1]);
-let playwright;
-try {
-  playwright = require("playwright");
-} catch (error) {
-  console.error("Playwright is not installed for this browser requirement:", error instanceof Error ? error.message : String(error));
+(async () => {
+  let playwright;
+  try {
+    playwright = require("playwright");
+  } catch (error) {
+    console.error("Playwright is not installed for this browser requirement:", error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+  for (const browser of browsers) {
+    const launcher = playwright[browser];
+    if (!launcher || typeof launcher.executablePath !== "function" || typeof launcher.launch !== "function") {
+      console.error("Unsupported Playwright browser:", browser);
+      process.exit(1);
+    }
+    const override = process.env[browser.toUpperCase() + "_EXECUTABLE_PATH"];
+    const executable = override || launcher.executablePath();
+    if (!executable || !fs.existsSync(executable)) {
+      console.error("Browser " + browser + " is unavailable at " + (executable || "(no executable path)"));
+      process.exit(1);
+    }
+    let instance;
+    try {
+      instance = await launcher.launch({ headless: true, ...(override ? { executablePath: override } : {}) });
+    } catch (error) {
+      console.error("Browser " + browser + " cannot launch:", error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    } finally {
+      if (instance) await instance.close();
+    }
+  }
+})().catch((error) => {
+  console.error("Browser preflight failed:", error instanceof Error ? error.message : String(error));
   process.exit(1);
-}
-for (const browser of browsers) {
-  const launcher = playwright[browser];
-  if (!launcher || typeof launcher.executablePath !== "function") {
-    console.error("Unsupported Playwright browser:", browser);
-    process.exit(1);
-  }
-  const override = process.env[browser.toUpperCase() + "_EXECUTABLE_PATH"];
-  const executable = override || launcher.executablePath();
-  if (!executable || !fs.existsSync(executable)) {
-    console.error("Browser " + browser + " is unavailable at " + (executable || "(no executable path)"));
-    process.exit(1);
-  }
-}
+});
 `;
 
 /** Browser binaries are checked only after the isolated repo has installed its Playwright dependency. */

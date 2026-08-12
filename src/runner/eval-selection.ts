@@ -98,7 +98,7 @@ export function resolveExperimentEvals(input: ResolveExperimentEvalsInput): Reso
 /** `resolveExperimentEvals` 选中的 eval 按题型分桶后的 id 列表(见 splitByEvaluationKind)。 */
 export interface EvaluationKindSplit {
   pass: string[];
-  points: string[];
+  score: string[];
 }
 
 /**
@@ -107,11 +107,11 @@ export interface EvaluationKindSplit {
  */
 export function splitByEvaluationKind(selectedEvals: readonly DiscoveredEval[]): EvaluationKindSplit {
   const pass: string[] = [];
-  const points: string[] = [];
+  const score: string[] = [];
   for (const evalDef of selectedEvals) {
-    (evalDef.evaluationKind === "points" ? points : pass).push(evalDef.id);
+    (evalDef.evaluationKind === "score" ? score : pass).push(evalDef.id);
   }
-  return { pass, points };
+  return { pass, score };
 }
 
 /** 所有消费者按已解析的 `selectedEvalIds` 取 eval;不持有、不调用用户谓词。 */

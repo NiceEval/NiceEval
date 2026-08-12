@@ -1,121 +1,74 @@
-# Verdict 与 Severity
+# Verdict 与 AssertionResult
 
-一条断言链上什么词，决定它失败怎样向上传播。
-本篇是**判定面**的单源：两种题型各一段标注代码，每个词旁边写「失败会怎样」。
-分数怎么算、每个词落到哪个读数见 [计分粒度](../assertions/library/score-points.md)，matcher 自带的通过线见 [值断言](../assertions/library/value-assertions.md#内置-matcher)。
+Verdict 是 producer 根据一个 Attempt 的 sealed Assertion result、execution outcome 和显式 skip 形成的 Attempt-owned `RecordAttachment`。名称是 `niceeval.verdict`，payload schema 是 `niceeval.verdict/v1`；它是独立业务事实，不是 reader 的计算副本。
 
-## Severity
+## 四态折叠
 
-`defineEval` 的 `t` 上，严重度既可以链在 matcher 上，也可以链在作用域断言的句柄上。
-不链词就用 matcher 自带的默认严重度。
+Pass Eval 与 Score Eval 的每个 Attempt 都按同一优先级写入一个 Verdict：
 
-```typescript
-export default defineEval({
-  async test(t) {
-    await t.send("查一下布鲁克林今天的天气。");
+| 优先级 | 条件 | Verdict |
+|---|---|---|
+| 1 | execution error，或 required Assertion unavailable / errored | `errored` |
+| 2 | 任一 gate 的 sealed condition 不满足 | `failed` |
+| 3 | 显式 `t.skip(reason)`，且没有更高优先级条件 | `skipped` |
+| 4 | 其余情形 | `passed` |
 
-    t.check(t.reply, includes("Brooklyn"));
-    //  不链词 → 用 matcher 自带的严重度，includes 默认 gate：没命中 → 这次 attempt failed
+Verdict 不从最后一个 Turn、当前源码或 score 值猜测。`errored` 表示无法完成 execution 或必要材料；`failed` 表示已经取得不满足 gate 的事实。页面必须保留相应 Assertion 或 diagnostic，不能只显示四态词。
 
-    t.check(t.reply, similarity(expected).gate(0.8));
-    //  .gate(x) → 硬要求：分数低于 0.8 → failed
-    //  省略 x 用默认通过线 1，也就是 matcher 自身的及格线（0/1 断言即「命中」）
+严格模式可以把明确带 threshold 的 soft condition 作为 gate 参加本次 fold。它不改变 sealed Assertion result、points 或 score state，也不自动停止作者控制流。
 
-    t.check(t.reply, similarity(expected).atLeast(0.7));
-    //  .atLeast(x) → 降级为带通过线的 soft：低于 0.7 照实记 failed，verdict 不动
-    //  --strict 下这条线翻成 gate → failed
-    //  x 是分数线：0/1 断言写 .atLeast(1)，打分断言写 .atLeast(0.7)
+## Score Eval 的独立 Score Attachment
 
-    t.calledTool("get_weather", { count: 2 }).atLeast(1);
-    //  作用域断言默认 gate，降级同样链这三个词
-    //  「至少调用 2 次」是匹配条件，写在 count 里，不写成严重度的参数
+Score Eval 在 Verdict 之外写 `niceeval.score/v1`。Attachment 保存 earned score 与 `complete`、`partial` 或 `unavailable`：
 
-    t.judge.autoevals.closedQA("回答准不准？").optional();
-    //  judge 的默认严重度是无线的 .soft()：分数如实落盘、永不 fail
-    //  .soft() 无参数——要设线用 .atLeast(x)，不提供同义的 soft(x)
-    //  .optional() 与上面三个词正交：它管证据允不允许缺席，不管判定怎么传播（见下）
-  },
-});
+| 情形 | Verdict | Score Attachment |
+|---|---|---|
+| 所有 points contribution 可算，gate failed | `failed` | `complete`，保留 earned score。 |
+| execution error 在部分贡献封口后发生 | `errored` | `partial`，保留可审计下界。 |
+| required score source 不可用且没有可审计 earned 数值 | `errored` | `unavailable`，不伪造零分。 |
+| 显式 skip | `skipped`，除非更高优先级条件 | 已封口贡献照实保存，并标明 complete、partial 或 unavailable。 |
+
+`points` 只是 Assertion 的分值／计算单位。`evaluationKind` 只来自 Run-owned `niceeval.evaluations/v1`，值只有 `pass` 或 `score`。Verdict 不按分数折叠，score 也不从 Verdict 派生。
+
+## RecordAttachment 数据
+
+```ts
+type VerdictStateV1 = "passed" | "failed" | "errored" | "skipped";
+
+type VerdictPayloadV1 = {
+  readonly state: VerdictStateV1;
+};
 ```
 
-`.atLeast` 的参数是分数线，不是调用次数——次数与其余匹配条件都在 [`ToolMatch`](../assertions/library/scoped-assertions.md#匹配条件的字段全集) 里表达。
+`niceeval.verdict/v1` 的 exact payload 只有四态 `state`。Assertion、diagnostic ref、人读摘要与 Score 都属于
+各自的业务 Attachment，不进入 Verdict。`niceeval.eligibility/v1` 的 exact payload 由
+[Reuse planning](../experiments/cache.md#executiontarget-的形成) 唯一拥有：它的 `reuseContract`、identity 与
+execution duration 是资格领域值，不是 Verdict 字段。
 
-severity 只管**判定面**：它声明一条断言的失败怎么向上传播，同一语义沿组、eval、experiment 逐层作用，不按层另设规则。
-`--strict` 是作用于所有层的同一个旋钮——它把带线 soft 翻成 gate，只改判定传播，分数照记。
-质量分（soft 断言的均值）与分数面（计分制的给分）是另外两个读数，折叠规则见[计分粒度](../assertions/library/score-points.md#折叠树判定面分数面质量分)。
+`RecordAttachmentRead` 的 state 描述该 Attachment 是否取得：只有 `available` 同时给出 exact decoded payload 与
+完整 own blob closure。`unavailable`、`migration-required`、`migration-unavailable`、`unsupported` 与 `invalid`
+都不是领域 Verdict，也不能被替换成 `passed`。
 
-## 控制流与严重度正交
+被请求的 Verdict Attachment 为 `invalid` 时，planner 形成对应 gap，依赖它的 Projection 显示 read state；其它
+非-available state 也不允许采用。Verdict 的领域状态仍只有上面的四态；eligibility 的领域比较只在它自己的
+Attachment read 为 available 后进行。
 
-`.gate()` 在 `defineEval` 与 `defineScoreEval` 中始终表示同一件事：断言不通过使 Attempt `failed`。
-它不改变 `test()` 控制流。
-后续代码依赖这条断言时，显式链 `.stopOnFailure()`；值断言可用两种题型都有的 `t.require()` 简写。
+payload、own blob closure 语义或解释改变时，发布同名的相邻 `RecordAttachmentSchemaId`。family 必须提供精确
+converter 或 `not-losslessly-migratable` edge；普通 reader 不自动迁移，也不补默认值或重算 Verdict。
 
-```typescript
-export default defineScoreEval({
-  async test(t) {
-    await t.send("把 DB-GPT 装起来并通过健康检查。");
+## Planner 与 Reports
 
-    await t.require(await t.sandbox.pathExists("db-gpt/README.md"), isTrue());
-    //  等价于 t.check(...).gate().stopOnFailure()：记硬失败，并停止依赖它的后续代码
+reuse planning 从 frozen `RecordWriteSession.view` 读取 Verdict 与 eligibility。两份 `RecordAttachmentRead` 都必须为
+`available`，此时才有 exact payload 和完整 own closure。
 
-    t.sandbox.fileChanged("db-gpt/.env").points(1);
-    //  .points(n) = 得分点：通过挣 n 分、不过挣 0 分，继续往下跑
+随后 Verdict 的领域 state 必须是 `passed` 或 `failed`。eligibility 的 schema、`reuseContract`、identity、duration
+与本次 policy 也必须满足，planner 才可采用 Attempt。
 
-    await t.calledTool("shell", { input: { command: /pip install/ } })
-      .points(1).gate().stopOnFailure();
-    //  得分点兼硬要求：丢 1 分、Attempt failed，并停止后续代码
+Reports 通过声明的 `RecordProjection` 显示 Verdict、相关 Assertion、Score 与 diagnostic，并将已取得的值写成闭合的 `niceeval.report-document/v1`。它不打开 Record 文件、不重新折叠 Verdict，也不猜 strict policy、控制流或缺失材料。
 
-    t.judge.autoevals.closedQA("说明讲清动机没有？").atLeast(0.6);
-    //  .atLeast(x) = soft 通过线；低于线如实记 failed，--strict 下升级为 gate
+## 相关阅读
 
-    t.check(t.reply, includes("healthy"));
-    //  不链词 = 观测：进质量分；matcher 自带的通过线照常生效，没做到如实记 failed
-    //  .soft() 再把这条线也去掉——纯记录一个分数、永不 failed
-  },
-});
-```
-
-`.stopOnFailure()` 在写下的位置立即结算断言；通过时返回原值或句柄，失败时登记既定 AssertionResult 并中止 `test()`。
-它不能单独出现，必须跟在带通过线的 `.gate()` / `.atLeast()` 或使用 matcher 默认通过线的断言之后。
-`.gate().stopOnFailure()` 是硬前置；`.atLeast(x).stopOnFailure()` 只停止后续代码，仍保持 soft 严重度。
-控制流不再借 severity 一词表达。
-
-`--strict` 对两种题型同义：带线 soft 升级为 gate，但不自行添加 `.stopOnFailure()`。
-
-## Verdict
-
-Verdict 只有 passed、failed、errored、skipped，按固定优先级取第一个成立项：
-
-```text
-执行异常、超时、作者错误，或任一非 optional 断言 unavailable   → errored
-任一 gate 不通过，或 strict 下任一 soft 不通过                 → failed
-显式 t.skip(reason)                                            → skipped
-否则                                                           → passed
-```
-
-Errored 压过一切，因为执行证据已经不可信。
-Failed 压过 skipped，避免 `t.skip()` 掩盖此前登记的硬失败。
-
-计分制（`defineScoreEval`）使用同一张表。
-得分点丢分本身不产生 failed；显式 gate 不通过仍产生 failed。
-`.stopOnFailure()` 只决定是否继续执行，不新增第五种 Verdict。
-
-## 证据不可用（unavailable）不折叠成通过
-
-一条断言评不了和它通过、失败都是两回事。
-以下情况把该条 `AssertionResult` 记为 `outcome: "unavailable"`（带机器可读 `reason`），绝不静默丢弃、绝不按空证据判通过：
-
-- **负断言与上限断言的证据通道不完整**——`notEvent` / `usedNoTools` 这类「确认没发生」的断言，以及 token / cost 上限断言，都依赖完整采集。
-  所需通道非 complete 时，空流不能证明「没发生」，缺 usage 不能按零聚合；unknown 也属于这种情况，见 [证据与完整性](../assertions/architecture/evidence.md)。
-- **正断言在非 complete 通道上没找到匹配**——「没采到」不能算成「Agent 没做」；找到匹配则照常通过（证据存在就是证据），complete 通道上没找到才是 failed。
-- **judge 没有找到模型或 API key**——rubric 写了就必须留下条目（见 [LLM-as-judge](../judge/library.md)）。
-- **judge 调用没有产出可信分数**——请求发出去了但失败（HTTP 非 2xx、连接中断、单次调用超时），或响应回来了但取不出分数（不合协议、分数缺失或无法解读）。
-  判分请求失败与 agent 没做到在分数面上必须可分辨：**这种情况绝不落成 `score: 0` 的通过条目**，否则「裁判失败」和「答得一塌糊涂」在报告里长得一模一样，而前者是要修配置、后者是要修 agent。
-  `reason` 用 `judge-call-failed`，状态码或异常摘要进 `evidence`。
-
-折叠规则只有一条：**作者写下的每条断言默认都要求可评估**——任一非 optional 断言 unavailable，attempt 即 `errored`，不分 gate / soft。
-评不了的判定不可信，不能当 agent 答对，也不该当 agent 答错；「soft 全部评不了但 attempt 还绿着」是没有测量的绿，不允许出现。
-确实允许缺席的断言由作者显式链 `.optional()`——它的 unavailable 只保留在条目里由报告如实展示，不影响 Verdict。
-optional 与 severity 正交： severity 说「影不影响质量判定」，optional 说「证据允许不允许缺席」，不互相复用。
-
-Turn failed 和 attempt errored 不是同一概念：Agent 行为失败可以形成可评分结果；基础设施、超时或作者异常使本次执行无法形成可信判定。
+- [Assertions 架构](../assertions/architecture.md)
+- [Score Eval](../assertions/library/score-points.md)
+- [RecordAttachment](../record/architecture.md#recordattachment-与完整-blob-closure)
+- [缓存与携带](../experiments/cache.md)

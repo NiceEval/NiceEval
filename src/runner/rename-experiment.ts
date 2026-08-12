@@ -1,35 +1,41 @@
-// Experiment 身份改名后的结果重绑核心。
-//
-// 这里只做 discovery / planning / fingerprint 预检和 Record 写入，不启动 Eval、Agent 或
-// Sandbox。正式写入严格复用同一份 plan，目标快照只创建一次，旧结果树只读不改。
+/**
+ * Experiment rename is explicit Record v1 adoption: one selected old Run is
+ * read from a frozen view and its exact Attempts become reference Members of a
+ * new current-target Run. No source Attempt, Attachment or legacy result is
+ * copied or rewritten.
+ */
+import { Effect, Either } from "effect";
 
-import { join, relative, resolve, sep } from "node:path";
-import { Effect } from "effect";
-import { loadConfigFile } from "../load-config.ts";
-import { linkedRunRecordIdentity, type SandboxPlanningServices } from "../sandbox/plan.ts";
-import { encodeAttemptLocator, type AttemptLocator } from "../record/locator.ts";
-import { experimentDirOf } from "../record/format.ts";
-import { openRecord, withArtifactBase } from "../record/open.ts";
-import { createWriter } from "../record/writer.ts";
-import type { AttemptHandle, Producer, Record as ResultsRecord, Run } from "../record/types.ts";
-import type { EvalManifest } from "../record/manifest.ts";
-import { discoverEvals, discoverExperiments } from "./discover.ts";
-import { resolveExperimentEvals } from "./eval-selection.ts";
-import { fingerprintWithManifest, hashConfigIdentity } from "./fingerprint.ts";
-import { configIdentityForRun } from "./config-identity.ts";
-import { resolveJudge } from "./judge-config.ts";
-import { experimentRunInfo } from "./attempt.ts";
-import { prepareRunSandboxes, type PreparedRunPair } from "./sandbox-selection.ts";
-import { resolveRunTimeout } from "./timeout.ts";
+import type { SandboxPlanningServices } from "../sandbox/plan.ts";
+import {
+  type AdoptionProjectInputV1,
+  type AdoptionProjectV1,
+  ExplicitAdoptionErrorV1,
+  type ExplicitAdoptionOpenErrorV1,
+  type ExplicitAdoptionReadErrorV1,
+  type ExplicitAdoptionRunPlanV1,
+  type ExplicitAdoptionRunReceiptV1,
+  type RenameAdoptionPreflightV1,
+  adoptionRecordRootV1,
+  adoptionStartedAtV1,
+  buildExplicitAdoptionRunPlanV1,
+  commitExplicitAdoptionRunPlansV1,
+  createExplicitAdoptionInvocationIdV1,
+  loadAdoptionProjectV1,
+  mapExplicitAdoptionCommitFailureV1,
+  prepareCurrentAdoptionTargetV1,
+  prepareRenameAdoptionMembersV1,
+  resolveRenameSourceRunV1,
+  withAdoptionReaderV1,
+  withAdoptionWriteSessionV1,
+} from "./adoption.ts";
 import type {
-  AgentRun,
   Config,
   DiscoveredEval,
   DiscoveredExperiment,
-  EvalResult,
-  RenamedResult,
 } from "./types.ts";
 
+/** Kept stable only because the current CLI renders these compatibility keys. */
 export type ExperimentRenameReason =
   | "source-empty"
   | "target-not-found"
@@ -39,451 +45,408 @@ export type ExperimentRenameReason =
   | "nothing-to-migrate";
 
 export class ExperimentRenameError extends Error {
+  readonly name = "ExperimentRenameError";
+
   constructor(
-    public readonly reason: ExperimentRenameReason,
+    readonly reason: ExperimentRenameReason,
     message: string,
-    public readonly plan?: ExperimentRenamePlan,
+    readonly plan?: ExperimentRenamePlan,
   ) {
     super(message);
-    this.name = "ExperimentRenameError";
   }
 }
 
 export interface ExperimentRenameOptions {
-  /** 当前项目根。用于 discovery、配置解析与默认 `.niceeval` 结果根。 */
-  cwd: string;
-  /** 旧实验身份。 */
-  oldId: string;
-  /** 当前项目发现到的新实验身份。 */
-  newId: string;
-  recordRoot?: string;
-  config?: Config;
-  evals?: readonly DiscoveredEval[];
-  experiments?: readonly DiscoveredExperiment[];
-  /** 测试/嵌入调用方可复用的 physical planner。 */
-  planningServices?: SandboxPlanningServices;
-  /** 固定迁移时刻，保证计划与审计字段共用同一值。 */
-  now?: () => string;
-  producer?: Producer;
-  /** 仅供已打开 Record 的嵌入调用方复用；写盘仍以 recordRoot 为目标。 */
-  record?: ResultsRecord;
+  readonly cwd: string;
+  readonly oldId: string;
+  readonly newId: string;
+  readonly recordRoot?: string;
+  /** Required when oldId has multiple published Runs; never inferred by time. */
+  readonly sourceRunId?: string;
+  readonly config?: Config;
+  readonly evals?: readonly DiscoveredEval[];
+  readonly experiments?: readonly DiscoveredExperiment[];
+  readonly planningServices?: SandboxPlanningServices;
+  readonly now?: () => string | number;
+  /** Stored in accepted membership provenance as the explicit rename reason. */
+  readonly operatorReason?: string;
 }
 
 export interface ExperimentRenameMigration {
-  evalId: string;
-  sourceLocator: string;
-  targetExperimentId: string;
-  fingerprint: string;
+  readonly evalId: string;
+  readonly sourceLocator: string;
+  readonly targetExperimentId: string;
+  readonly fingerprint: string;
 }
 
 export interface ExperimentRenameExcluded {
-  evalId: string;
-  reason: string;
+  readonly evalId: string;
+  readonly reason: string;
 }
 
 export interface ExperimentRenameBlocked {
-  reason: ExperimentRenameReason;
-  evalId?: string;
-  conflictingEvals?: readonly string[];
-  detail?: string;
+  readonly reason: ExperimentRenameReason;
+  readonly evalId?: string;
+  readonly conflictingEvals?: readonly string[];
+  readonly detail?: string;
 }
 
 export interface ExperimentRenamePlan {
-  status: "plan";
-  oldId: string;
-  newId: string;
-  migrations: readonly ExperimentRenameMigration[];
-  excluded: readonly ExperimentRenameExcluded[];
-  blocked?: ExperimentRenameBlocked;
+  readonly status: "plan";
+  readonly oldId: string;
+  readonly newId: string;
+  readonly migrations: readonly ExperimentRenameMigration[];
+  readonly excluded: readonly ExperimentRenameExcluded[];
+  readonly blocked?: ExperimentRenameBlocked;
+}
+
+/** A receipt-only replacement for the retired EvalResult. It is never stored. */
+export interface RenamedAttemptSourceReceiptV1 {
+  readonly experimentId: string;
+  readonly locator: string;
+  readonly originRunId: string;
+  readonly attemptId: string;
 }
 
 export interface ExperimentRenameDoneEntry {
-  evalId: string;
-  sourceLocator: string;
-  locator: string;
-  fingerprint: string;
-  verdict: "passed" | "failed";
-  renamedFrom: RenamedResult;
+  readonly evalId: string;
+  readonly sourceLocator: string;
+  readonly locator: string;
+  readonly fingerprint: string;
+  readonly verdict: "passed" | "failed";
+  readonly renamedFrom: RenamedAttemptSourceReceiptV1;
 }
 
 export interface RenamedExperiment {
-  status: "done";
-  oldId: string;
-  newId: string;
-  snapshotPath: string;
-  migrated: readonly ExperimentRenameDoneEntry[];
+  readonly status: "done";
+  readonly invocationId: string;
+  readonly runId: string;
+  readonly oldId: string;
+  readonly newId: string;
+  readonly snapshotPath: string;
+  readonly migrated: readonly ExperimentRenameDoneEntry[];
 }
 
 export interface ExperimentRenameRejected {
-  status: "rejected";
-  oldId: string;
-  newId: string;
-  reason: ExperimentRenameReason;
-  evalId?: string;
-  conflictingEvals?: readonly string[];
-  detail?: string;
+  readonly status: "rejected";
+  readonly oldId: string;
+  readonly newId: string;
+  readonly reason: ExperimentRenameReason;
+  readonly evalId?: string;
+  readonly conflictingEvals?: readonly string[];
+  readonly detail?: string;
 }
 
-interface RenamePlanEntry {
-  evalId: string;
-  attempt: number;
-  verdict: "passed" | "failed";
-  sourceLocator: string;
-  fingerprint: string;
-  targetFingerprint: string;
-  configHash: string;
-  artifactBase: string;
-  source: AttemptHandle;
+export interface RenamePreflightV1 {
+  readonly source: RenameAdoptionPreflightV1;
+  readonly plan: ExplicitAdoptionRunPlanV1;
 }
 
-interface InternalRenamePlan {
-  plan: ExperimentRenamePlan;
-  entries: readonly RenamePlanEntry[];
-  pairByEval: ReadonlyMap<string, PreparedRunPair>;
-  manifestByEval: ReadonlyMap<string, EvalManifest>;
-  targetRun: AgentRun;
-  targetExperiment: DiscoveredExperiment;
-  config: Config;
-  producer: Producer;
-  recordRoot: string;
+/** All native Record v1 failures before/while the formal publication runs. */
+export type ExperimentRenameNativeErrorV1 =
+  | ExplicitAdoptionOpenErrorV1;
+
+function explicitError(
+  code: ExplicitAdoptionErrorV1["code"],
+  message: string,
+): ExplicitAdoptionErrorV1 {
+  return new ExplicitAdoptionErrorV1(code, message);
 }
 
-const internalPlans = new WeakMap<ExperimentRenamePlan, InternalRenamePlan>();
-
-export async function planExperimentRename(options: ExperimentRenameOptions): Promise<ExperimentRenamePlan> {
-  const at = (options.now ?? (() => new Date().toISOString()))();
-  const oldId = options.oldId;
-  const newId = options.newId;
-  const base = {
-    status: "plan" as const,
-    oldId,
-    newId,
-    migrations: [] as readonly ExperimentRenameMigration[],
-    excluded: [] as readonly ExperimentRenameExcluded[],
+function projectInputV1(input: ExperimentRenameOptions): AdoptionProjectInputV1 {
+  return {
+    cwd: input.cwd,
+    ...(input.config === undefined ? {} : { config: input.config }),
+    ...(input.evals === undefined ? {} : { evals: input.evals }),
+    ...(input.experiments === undefined ? {} : { experiments: input.experiments }),
+    ...(input.planningServices === undefined
+      ? {}
+      : { planningServices: input.planningServices }),
   };
+}
 
-  if (oldId === newId) {
-    return rememberPlan({ ...base, blocked: { reason: "source-unreadable", detail: "Source and target experiment ids must differ." } }, undefined);
-  }
+function defaultOperatorReason(input: ExperimentRenameOptions): string {
+  return input.operatorReason ?? `rename ${input.oldId} -> ${input.newId}`;
+}
 
-  const cwd = resolve(options.cwd);
-  const recordRoot = resolve(options.recordRoot ?? join(cwd, ".niceeval"));
-  const config = options.config ?? await loadConfigFile(cwd);
-  const evals = options.evals ?? await discoverEvals(cwd);
-  const experiments = options.experiments ?? await discoverExperiments(cwd);
-  const record = options.record ?? await openRecord(recordRoot);
-  const sourceExperiment = record.experiments.find((candidate) => candidate.id === oldId);
-  if (sourceExperiment === undefined || sourceExperiment.runs.every((run) => run.attempts.length === 0)) {
-    const sourceDir = resolve(recordRoot, experimentDirOf(oldId));
-    const unreadableSource = record.unreadable.find((entry) => entry.dir === sourceDir || entry.dir.startsWith(`${sourceDir}${sep}`));
-    return rememberPlan({
-      ...base,
-      blocked: unreadableSource === undefined
-        ? { reason: "source-empty" }
-        : { reason: "source-unreadable", detail: unreadableSource.detail ?? unreadableSource.reason },
-    }, undefined);
-  }
-
-  const targetExperiment = experiments.find((candidate) => candidate.id === newId);
-  if (targetExperiment === undefined) {
-    return rememberPlan({ ...base, blocked: { reason: "target-not-found" } }, undefined);
-  }
-
-  const targetHistory = record.experiments.find((candidate) => candidate.id === newId);
-  const conflicts = [...new Set(
-    (targetHistory?.runs.flatMap((run) => run.attempts) ?? [])
-      .filter((attempt) => attempt.result.verdict === "passed" || attempt.result.verdict === "failed")
-      .map((attempt) => attempt.evalId),
-  )].sort();
-  if (conflicts.length > 0) {
-    return rememberPlan({ ...base, blocked: { reason: "target-has-results", conflictingEvals: conflicts } }, undefined);
-  }
-
-  const selection = resolveExperimentEvals({
-    experimentId: newId,
-    selector: targetExperiment.evals,
-    cliPatterns: [],
-    evals,
+/**
+ * Native frozen-view preflight. It selects one old Run, rebuilds the complete
+ * current target for newId, and validates every source Member before any
+ * generic writer operation may begin.
+ */
+export function preflightExperimentRenameV1(input: {
+  readonly view: Parameters<typeof resolveRenameSourceRunV1>[0]["view"];
+  readonly project: AdoptionProjectV1;
+  readonly oldId: string;
+  readonly newId: string;
+  readonly sourceRunId?: string;
+  readonly startedAt: Parameters<typeof prepareCurrentAdoptionTargetV1>[0]["startedAt"];
+  readonly operatorReason: string;
+}): Effect.Effect<RenamePreflightV1, ExplicitAdoptionReadErrorV1> {
+  return Effect.gen(function* () {
+    if (input.oldId === input.newId) {
+      return yield* Effect.fail(explicitError(
+        "adoption-source-run-mismatch",
+        "The old and new Experiment identities must differ.",
+      ));
+    }
+    const sourceRun = yield* resolveRenameSourceRunV1({
+      view: input.view,
+      oldId: input.oldId,
+      ...(input.sourceRunId === undefined ? {} : { sourceRunId: input.sourceRunId }),
+    });
+    const target = yield* prepareCurrentAdoptionTargetV1({
+      project: input.project,
+      experimentId: input.newId,
+      startedAt: input.startedAt,
+    });
+    const source = yield* prepareRenameAdoptionMembersV1({
+      view: input.view,
+      oldId: input.oldId,
+      sourceRun,
+      target,
+      operatorReason: input.operatorReason,
+    });
+    if (source.members.length === 0) {
+      return yield* Effect.fail(explicitError(
+        "adoption-target-invalid",
+        `Selected source Run "${sourceRun.runId}" has no Members eligible for explicit rename adoption.`,
+      ));
+    }
+    const plan = yield* buildExplicitAdoptionRunPlanV1({
+      intent: "rename",
+      target,
+      members: source.members.map((entry) => entry.member),
+    });
+    return Object.freeze({ source, plan });
   });
-  const selectedEvalIds = selection.selectedEvalIds;
-  const selectedIds = new Set(selectedEvalIds);
-  const sourceAttempts: AttemptHandle[] = [];
-  const seenEvalIds = new Set<string>();
-  for (const run of [sourceExperiment.latestRun, ...sourceExperiment.runs.filter((candidate) => candidate !== sourceExperiment.latestRun)]) {
-    const attemptsByEval = new Map<string, AttemptHandle[]>();
-    for (const attempt of run.attempts) {
-      const group = attemptsByEval.get(attempt.evalId) ?? [];
-      group.push(attempt);
-      attemptsByEval.set(attempt.evalId, group);
-    }
-    for (const [evalId, attempts] of attemptsByEval) {
-      if (seenEvalIds.has(evalId)) continue;
-      seenEvalIds.add(evalId);
-      sourceAttempts.push(...attempts);
-    }
-  }
-  const excluded: ExperimentRenameExcluded[] = [];
-  const terminalCandidates: AttemptHandle[] = [];
-  const seenLocators = new Set<string>();
-  for (const source of sourceAttempts) {
-    const sourceLocator = locatorOf(source);
-    if (seenLocators.has(sourceLocator)) {
-      return rememberPlan({ ...base, excluded, blocked: { reason: "source-unreadable" } }, undefined);
-    }
-    seenLocators.add(sourceLocator);
-    if (source.result.verdict !== "passed" && source.result.verdict !== "failed") {
-      excluded.push({
-        evalId: source.evalId,
-        reason: `${source.result.verdict} results do not migrate`,
-      });
-      continue;
-    }
-    if (!selectedIds.has(source.evalId)) {
-      excluded.push({
-        evalId: source.evalId,
-        reason: `${newId} no longer selects this eval`,
-      });
-      continue;
-    }
-    terminalCandidates.push(source);
-  }
+}
 
-  if (terminalCandidates.length === 0) {
-    return rememberPlan({ ...base, excluded, blocked: { reason: "nothing-to-migrate" } }, undefined);
-  }
-
-  if (terminalCandidates.some((source) => source.evidenceState === "dangling")) {
-    return rememberPlan({ ...base, excluded, blocked: { reason: "artifact-unavailable" } }, undefined);
-  }
-
-  const targetRun = agentRunOf(targetExperiment, selectedEvalIds);
-  let pairs: readonly PreparedRunPair[];
-  try {
-    pairs = await Effect.runPromise(prepareRunSandboxes(
-      selection.selectedEvals,
-      [targetRun],
-      options.planningServices,
-      { configTimeoutMs: config.timeoutMs },
-    ));
-  } catch (cause) {
-    return rememberPlan({ ...base, excluded, blocked: { reason: "source-unreadable", detail: cause instanceof Error ? cause.message : String(cause) } }, undefined);
-  }
-
-  const pairByEval = new Map(pairs.map((pair) => [pair.evalDef.id, pair]));
-  const sourceCache = new Map<string, Promise<string>>();
-  const targetByEval = new Map<string, {
-    pair: PreparedRunPair;
-    fingerprint: string;
-    configHash: string;
-    manifest: EvalManifest;
-  }>();
-  for (const evalDef of selection.selectedEvals) {
-    const pair = pairByEval.get(evalDef.id);
-    if (pair === undefined) {
-      return rememberPlan({ ...base, excluded, blocked: { reason: "source-unreadable" } }, undefined);
-    }
-    const judge = resolveJudge(targetRun.judge, evalDef.judge, config.judge);
-    const identity = configIdentityForRun(targetRun, pair.plan, judge);
-    const { fingerprint, manifest } = await fingerprintWithManifest(pair, sourceCache, { _tag: "Current", identity });
-    targetByEval.set(evalDef.id, {
-      pair,
-      fingerprint,
-      configHash: hashConfigIdentity(identity),
-      manifest,
-    });
-  }
-
-  const entries: RenamePlanEntry[] = [];
-  for (const source of terminalCandidates) {
-    const current = targetByEval.get(source.evalId);
-    const verdict = source.result.verdict;
-    if (verdict !== "passed" && verdict !== "failed") continue;
-    if (current === undefined || source.result.fingerprint === undefined) {
-      continue;
-    }
-    entries.push({
-      evalId: source.evalId,
-      attempt: source.result.attempt,
-      verdict,
-      sourceLocator: locatorOf(source),
-      fingerprint: source.result.fingerprint,
-      targetFingerprint: current.fingerprint,
-      configHash: current.configHash,
-      artifactBase: withArtifactBase(source).artifactBase!,
-      source,
-    });
-  }
-  if (entries.length === 0) {
-    return rememberPlan({ ...base, excluded, blocked: { reason: "nothing-to-migrate" } }, undefined);
-  }
-
-  const plan: ExperimentRenamePlan = {
-    ...base,
-    excluded,
-    migrations: entries.map((entry) => ({
+function planFromPreflightV1(input: {
+  readonly oldId: string;
+  readonly newId: string;
+  readonly preflight: RenamePreflightV1;
+}): ExperimentRenamePlan {
+  return Object.freeze({
+    status: "plan",
+    oldId: input.oldId,
+    newId: input.newId,
+    migrations: Object.freeze(input.preflight.source.members.map((entry) => Object.freeze({
       evalId: entry.evalId,
-      sourceLocator: entry.sourceLocator,
-      targetExperimentId: newId,
-      fingerprint: entry.targetFingerprint,
-    })),
-  };
-  const producer = options.producer ?? { name: "niceeval" };
-  const manifestByEval = new Map<string, EvalManifest>();
-  for (const [evalId, current] of targetByEval) manifestByEval.set(evalId, current.manifest);
-  const internal: InternalRenamePlan = {
-    plan,
-    entries,
-    pairByEval,
-    targetRun,
-    targetExperiment,
-    config,
-    producer,
-    recordRoot,
-    manifestByEval,
-  };
-  internalPlans.set(plan, internal);
-  return plan;
+      sourceLocator: entry.member.locator,
+      targetExperimentId: input.newId,
+      fingerprint: entry.member.target.inputIdentity.value,
+    }))),
+    excluded: Object.freeze(input.preflight.source.excluded.map((entry) => Object.freeze({
+      evalId: entry.evalId,
+      reason: entry.reason,
+    }))),
+  });
 }
 
-export async function renameExperiment(options: ExperimentRenameOptions): Promise<RenamedExperiment> {
-  const plan = await planExperimentRename(options);
-  if (plan.blocked !== undefined) {
-    throw new ExperimentRenameError(
-      plan.blocked.reason,
-      `Cannot rename experiment "${plan.oldId}" to "${plan.newId}": ${plan.blocked.reason}.`,
-      plan,
+function compatibilityReason(error: ExplicitAdoptionErrorV1): ExperimentRenameReason {
+  switch (error.code) {
+    case "adoption-source-run-not-found":
+      return "source-empty";
+    case "adoption-target-experiment-not-found":
+      return "target-not-found";
+    case "adoption-target-planning-failed":
+    case "adoption-target-invalid":
+      return "artifact-unavailable";
+    case "adoption-source-eligibility-unavailable":
+    case "adoption-source-verdict-unavailable":
+    case "adoption-source-verdict-ineligible":
+    case "adoption-duration-domain-mismatch":
+    case "adoption-timeout-exceeded":
+      return "artifact-unavailable";
+    default:
+      return "source-unreadable";
+  }
+}
+
+function blockedPlanFromError(
+  input: Pick<ExperimentRenameOptions, "oldId" | "newId">,
+  error: ExplicitAdoptionErrorV1,
+): ExperimentRenamePlan {
+  const reason = error.code === "adoption-target-invalid"
+    && error.message.includes("no Members eligible")
+    ? "nothing-to-migrate"
+    : compatibilityReason(error);
+  return Object.freeze({
+    status: "plan",
+    oldId: input.oldId,
+    newId: input.newId,
+    migrations: Object.freeze([]),
+    excluded: Object.freeze([]),
+    blocked: Object.freeze({ reason, detail: error.message }),
+  });
+}
+
+function renameErrorFor(
+  input: Pick<ExperimentRenameOptions, "oldId" | "newId">,
+  error: ExplicitAdoptionErrorV1,
+): ExperimentRenameError {
+  const plan = blockedPlanFromError(input, error);
+  return new ExperimentRenameError(plan.blocked!.reason, error.message, plan);
+}
+
+/**
+ * Reader-only CLI compatibility plan. Expected adoption failures are rendered
+ * as stable blocked documents; it never opens a writer or creates a Run.
+ */
+export function planExperimentRename(input: ExperimentRenameOptions) {
+  return Effect.gen(function* () {
+    const root = yield* adoptionRecordRootV1(input);
+    const startedAt = yield* adoptionStartedAtV1(input.now);
+    const project = yield* loadAdoptionProjectV1(projectInputV1(input));
+    const result = yield* Effect.either(withAdoptionReaderV1({
+      root,
+      use: (view) => preflightExperimentRenameV1({
+        view,
+        project,
+        oldId: input.oldId,
+        newId: input.newId,
+        ...(input.sourceRunId === undefined ? {} : { sourceRunId: input.sourceRunId }),
+        startedAt,
+        operatorReason: defaultOperatorReason(input),
+      }),
+    }));
+    if (Either.isRight(result)) {
+      return planFromPreflightV1({
+        oldId: input.oldId,
+        newId: input.newId,
+        preflight: result.right,
+      });
+    }
+    if (result.left instanceof ExplicitAdoptionErrorV1) {
+      return blockedPlanFromError(input, result.left);
+    }
+    return yield* Effect.fail(result.left);
+  });
+}
+
+function renamedReceiptV1(input: {
+  readonly invocationId: string;
+  readonly oldId: string;
+  readonly newId: string;
+  readonly preflight: RenamePreflightV1;
+  readonly receipt: readonly ExplicitAdoptionRunReceiptV1[];
+}): Effect.Effect<RenamedExperiment, ExplicitAdoptionErrorV1> {
+  return Effect.gen(function* () {
+    const [runReceipt] = input.receipt;
+    if (input.receipt.length !== 1 || runReceipt === undefined) {
+      return yield* Effect.fail(explicitError(
+        "adoption-provenance-invalid",
+        "Explicit rename publication did not return exactly one target Run receipt.",
+      ));
+    }
+    if (runReceipt.members.length !== input.preflight.source.members.length) {
+      return yield* Effect.fail(explicitError(
+        "adoption-provenance-invalid",
+        "Explicit rename publication omitted Member receipts.",
+      ));
+    }
+    const migrated: ExperimentRenameDoneEntry[] = [];
+    for (const [index, entry] of input.preflight.source.members.entries()) {
+      const memberReceipt = runReceipt.members[index];
+      if (memberReceipt === undefined) {
+        return yield* Effect.fail(explicitError(
+          "adoption-provenance-invalid",
+          "Explicit rename publication omitted one accepted Member receipt.",
+        ));
+      }
+      migrated.push(Object.freeze({
+        evalId: entry.evalId,
+        sourceLocator: entry.member.locator,
+        // A reference has no new Attempt; the exact source locator remains it.
+        locator: entry.member.locator,
+        fingerprint: entry.member.target.inputIdentity.value,
+        verdict: entry.member.verdict,
+        renamedFrom: Object.freeze({
+          experimentId: input.oldId,
+          locator: entry.member.locator,
+          originRunId: entry.member.source.origin.run.runId,
+          attemptId: entry.member.source.attempt.attemptId,
+        }),
+      }));
+    }
+    return Object.freeze({
+      status: "done" as const,
+      invocationId: input.invocationId,
+      runId: runReceipt.runId,
+      oldId: input.oldId,
+      newId: input.newId,
+      snapshotPath: `runs/${runReceipt.runId}`,
+      migrated: Object.freeze(migrated),
+    });
+  });
+}
+
+/**
+ * Effect-native formal rename. The frozen reader preflight occurs before the
+ * writer lock. The one write-session frozen view then repeats every decision
+ * before its sole target Run is created and published.
+ */
+export function renameExperimentV1(input: ExperimentRenameOptions) {
+  return Effect.gen(function* () {
+    const root = yield* adoptionRecordRootV1(input);
+    const startedAt = yield* adoptionStartedAtV1(input.now);
+    const projectInput = projectInputV1(input);
+    const previewProject = yield* loadAdoptionProjectV1(projectInput);
+    const initial = yield* Effect.either(withAdoptionReaderV1({
+      root,
+      use: (view) => preflightExperimentRenameV1({
+        view,
+        project: previewProject,
+        oldId: input.oldId,
+        newId: input.newId,
+        ...(input.sourceRunId === undefined ? {} : { sourceRunId: input.sourceRunId }),
+        startedAt,
+        operatorReason: defaultOperatorReason(input),
+      }),
+    }));
+    if (Either.isLeft(initial)) {
+      if (initial.left instanceof ExplicitAdoptionErrorV1) {
+        return yield* Effect.fail(renameErrorFor(input, initial.left));
+      }
+      return yield* Effect.fail(initial.left);
+    }
+
+    const invocationId = yield* createExplicitAdoptionInvocationIdV1();
+    const published = yield* withAdoptionWriteSessionV1({
+      root,
+      use: (session) => Effect.gen(function* () {
+        const project = yield* loadAdoptionProjectV1(projectInput);
+        const preflight = yield* preflightExperimentRenameV1({
+          view: session.view,
+          project,
+          oldId: input.oldId,
+          newId: input.newId,
+          ...(input.sourceRunId === undefined ? {} : { sourceRunId: input.sourceRunId }),
+          startedAt,
+          operatorReason: defaultOperatorReason(input),
+        });
+        const receipt = yield* commitExplicitAdoptionRunPlansV1(session, [preflight.plan]).pipe(
+          Effect.mapError(mapExplicitAdoptionCommitFailureV1),
+        );
+        return yield* renamedReceiptV1({
+          invocationId,
+          oldId: input.oldId,
+          newId: input.newId,
+          preflight,
+          receipt,
+        });
+      }),
+    }).pipe(
+      Effect.mapError((error) => error instanceof ExplicitAdoptionErrorV1
+        ? renameErrorFor(input, error)
+        : error),
     );
-  }
-  const internal = internalPlans.get(plan);
-  if (internal === undefined) {
-    throw new ExperimentRenameError("source-unreadable", "Rename plan is not writable in this process.", plan);
-  }
-  const first = internal.entries[0];
-  if (first === undefined) {
-    throw new ExperimentRenameError("nothing-to-migrate", "Rename plan contains no entries.", plan);
-  }
-
-  const now = (options.now ?? (() => new Date().toISOString()))();
-  const writer = createWriter(internal.recordRoot, {
-    producer: internal.producer,
-    snapshotStartedAt: now,
-  });
-  const firstPair = internal.pairByEval.get(first.evalId);
-  if (firstPair === undefined) {
-    throw new ExperimentRenameError("source-unreadable", `Missing physical plan for eval "${first.evalId}".`, plan);
-  }
-  const plansByEval: globalThis.Record<string, import("../types.ts").JsonValue> = {};
-  for (const pair of internal.pairByEval.values()) plansByEval[pair.evalDef.id] = linkedRunRecordIdentity(pair.plan);
-  const selectedEvals = (internal.targetRun.selectedEvalIds.length > 0
-    ? internal.targetRun.selectedEvalIds
-    : [first.evalId]);
-  const targetDefs = [...internal.pairByEval.values()].map((pair) => pair.evalDef);
-  const firstDef = targetDefs.find((evalDef) => evalDef.id === first.evalId) ?? targetDefs[0];
-  const experimentInfo = firstDef === undefined
-    ? undefined
-    : experimentRunInfo(internal.targetRun, firstPair.plan, plansByEval, internal.config, firstDef.judge);
-  const snapshot = await writer.run({
-    experimentId: internal.targetExperiment.id,
-    agent: internal.targetRun.agent.name,
-    ...(internal.targetRun.model === undefined ? {} : { model: internal.targetRun.model }),
-    startedAt: now,
-    configHash: first.configHash,
-    ...(experimentInfo === undefined ? {} : { experiment: experimentInfo }),
-    knownEvalIds: [...selectedEvals],
-    manifests: Object.fromEntries(internal.entries.flatMap((entry) => {
-      const manifest = internal.manifestByEval.get(entry.evalId);
-      return manifest === undefined ? [] : [[entry.evalId, manifest] as const];
-    })),
-    ...(internal.config.name === undefined ? {} : { name: internal.config.name }),
-  });
-
-  for (const entry of internal.entries) {
-    const source = entry.source;
-    const sourceResult = withArtifactBase(source);
-    const renamedFrom: RenamedResult = {
-      experimentId: plan.oldId,
-      locator: entry.sourceLocator,
-      fingerprint: entry.fingerprint,
-      at: now,
-    };
-    const locator = encodeAttemptLocator({ runId: snapshot.runId, evalId: entry.evalId, attempt: entry.attempt });
-    const renamed: EvalResult = {
-      ...sourceResult,
-      id: entry.evalId,
-      experimentId: plan.newId,
-      agent: internal.targetRun.agent.name,
-      ...(internal.targetRun.model === undefined ? {} : { model: internal.targetRun.model }),
-      ...(experimentInfo === undefined ? {} : { experiment: experimentInfo }),
-      fingerprint: entry.targetFingerprint,
-      configHash: entry.configHash,
-      locator,
-      locatorRunId: snapshot.runId,
-      artifactBase: sourceResult.artifactBase,
-      renamedFrom,
-    };
-    await writer.writeAttemptFor(renamed);
-  }
-  await snapshot.finish({ completedAt: now });
-  const record = await openRecord(internal.recordRoot);
-  const renamedExperiment = record.experiments.find((experiment) => experiment.id === plan.newId);
-  if (renamedExperiment === undefined) {
-    throw new ExperimentRenameError("source-unreadable", `Record did not contain renamed experiment "${plan.newId}".`, plan);
-  }
-  const run = renamedExperiment.latestRun;
-  const migrated = run.attempts.map((attempt) => ({
-    evalId: attempt.evalId,
-    sourceLocator: attempt.result.renamedFrom!.locator,
-    locator: attempt.locator!,
-    fingerprint: attempt.result.fingerprint!,
-    verdict: attempt.result.verdict as "passed" | "failed",
-    renamedFrom: attempt.result.renamedFrom!,
-  }));
-  return {
-    status: "done",
-    oldId: plan.oldId,
-    newId: plan.newId,
-    snapshotPath: relative(resolve(options.cwd), run.dir).split(sep).join("/"),
-    migrated,
-  };
-}
-
-function rememberPlan(plan: ExperimentRenamePlan, internal: InternalRenamePlan | undefined): ExperimentRenamePlan {
-  if (internal !== undefined) internalPlans.set(plan, internal);
-  return plan;
-}
-
-function locatorOf(source: AttemptHandle): AttemptLocator {
-  if (source.locator !== undefined) return source.locator;
-  return encodeAttemptLocator(source.locatorIdentity ?? {
-    runId: source.result.locatorRunId ?? source.run.runId,
-    evalId: source.evalId,
-    attempt: source.result.attempt,
+    return published;
   });
 }
 
-function agentRunOf(experiment: DiscoveredExperiment, selectedEvalIds: readonly string[]): AgentRun {
-  return {
-    agent: experiment.agent,
-    ...(experiment.model === undefined ? {} : { model: experiment.model }),
-    ...(experiment.reasoningEffort === undefined ? {} : { reasoningEffort: experiment.reasoningEffort }),
-    flags: experiment.flags,
-    attempts: experiment.attempts,
-    earlyExit: experiment.earlyExit,
-    ...(experiment.sandbox === undefined ? {} : { sandbox: experiment.sandbox }),
-    sandboxReuse: experiment.sandboxReuse,
-    ...(experiment.judge === undefined ? {} : { judge: experiment.judge }),
-    ...resolveRunTimeout(undefined, experiment.timeoutMs),
-    ...(experiment.budget === undefined ? {} : { budget: experiment.budget }),
-    experimentId: experiment.id,
-    experimentBaseDir: experiment.baseDir,
-    experimentSourcePath: experiment.sourcePath,
-    ...(experiment.description === undefined ? {} : { description: experiment.description }),
-    ...(Object.keys(experiment.labels).length === 0 ? {} : { labels: experiment.labels }),
-    selectedEvalIds,
-    strict: false,
-    ...(experiment.maxConcurrency === undefined ? {} : { maxConcurrency: experiment.maxConcurrency }),
-    ...(experiment.setup === undefined ? {} : { setup: experiment.setup }),
-    ...(experiment.teardown === undefined ? {} : { teardown: experiment.teardown }),
-    ...(experiment.classifyFailure === undefined ? {} : { classifyFailure: experiment.classifyFailure }),
-  };
+/** Current CLI compatibility adapter; native callers should use renameExperimentV1. */
+export function renameExperiment(input: ExperimentRenameOptions) {
+  return renameExperimentV1(input);
 }

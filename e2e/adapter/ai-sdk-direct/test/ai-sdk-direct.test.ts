@@ -5,6 +5,8 @@
 
 import {
   command,
+  type ExpEvalEvent,
+  type ExpEvent,
   type ProcessReceipt,
   withProcess,
   withTempDir,
@@ -59,13 +61,23 @@ it("真实 aiSdkAgent 结果经过公开 CLI 完整读回", async () => {
       async (running) => {
         runReceipt = await running.done;
         expect(runReceipt.exitCode, runReceipt.diagnostic()).toBe(0);
-        expect(runReceipt.expResult()).toMatchObject({
-          event: "result",
-          status: "passed",
-          passed: 1,
-          failed: 0,
-          errored: 0,
-          completion: "complete",
+        const events = runReceipt.ndjson<ExpEvent>();
+        // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md）：
+        // completion 与 runIds；成败由带身份的 eval 事件精确断言，不让 live provider
+        // 故障冒充通过，也不在 receipt 上断言计数。
+        const inv = runReceipt.expReceipt();
+        expect(inv.completion, runReceipt.diagnostic()).toBe("completed");
+        expect(inv.runIds, runReceipt.diagnostic()).toHaveLength(1);
+        const evalEvent = events.find(
+          (event): event is ExpEvalEvent =>
+            "event" in event && event.event === "eval" && event.evalId === EVAL_ID,
+        );
+        expect(evalEvent, runReceipt.diagnostic()).toBeDefined();
+        expect(evalEvent).toMatchObject({
+          event: "eval",
+          evalId: EVAL_ID,
+          verdict: "passed",
+          attempts: 1,
         });
       },
     );

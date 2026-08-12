@@ -1,11 +1,11 @@
 // niceeval/adapter 公开导出:「连到哪个 AI」相关的类型 + 内置 adapter + 自定义 adapter 的入口。
 
-export { defineAgent, defineDirectAgent, defineSandboxAgent } from "../define.ts";
+export { defineAgent, defineSandboxAgent } from "../define.ts";
 export { createSessionSlot } from "./session-slot.ts";
 export { shared } from "./shared.ts";
 export type { Shared } from "./shared.ts";
 
-export { createNpmCliInstaller, agentBin, resolveAgentBin } from "./npm-staged.ts";
+export { createNpmCliInstaller, agentBin } from "./npm-staged.ts";
 export type { NpmCliInstallerOptions } from "./npm-staged.ts";
 
 // 证据覆盖声明:官方 SDK 适配器声明全通道 complete 用 completeEvidenceCoverage;
@@ -17,6 +17,24 @@ export type {
   EvidenceCoverage,
   TurnEvidenceCoverage,
 } from "../types.ts";
+
+// tool operation 的 command 分类只能由 Adapter 根据原生协议事实产生。
+// structured argv 走 commandProjection() 与同一 logical-command/v1 normalizer；
+// 无法安全取得 argv 时显式 opaque，确认不是 command 时显式 not-command。
+export {
+  LOGICAL_COMMAND_NORMALIZER,
+  commandProjection,
+  normalizeLogicalCommand,
+  notCommandProjection,
+  opaqueCommandProjection,
+} from "../o11y/command-projection.ts";
+export type {
+  CommandProjection,
+  LogicalCommandInvocation,
+  LogicalCommandNormalizer,
+  OriginalCommandInvocation,
+  OriginalCommandOpaqueReason,
+} from "../o11y/types.ts";
 
 // 执行失败分类:`Agent.classifySendFailure` 认的结构化 envelope 与同源摘要。两轴词表
 // (FailureClass / FailureScope)与包根导出的是同一个形状——adapter

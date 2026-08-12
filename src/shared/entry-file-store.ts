@@ -4,14 +4,52 @@
 // 过期判断或 pid/host 这类判活逻辑,那些都留在各消费方自己的模块里。
 
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, open, readdir, readFile, rename, unlink } from "node:fs/promises";
+import { mkdir, open, readdir, readFile, rename, unlink, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
+import { Effect } from "effect";
 
 /**
  * 持久条目从 JSON.parse 出来后仍是 unknown。每个消费域必须在读取边界提供自己的完整 decoder，
  * 才能把它带入后续业务逻辑；返回 undefined 代表该条目对该领域而言已损坏或不属于该领域。
  */
-export type EntryDecoder<T> = (value: unknown) => T | undefined;
+export type EntryDecoder<T extends {}> = (value: unknown) => T | undefined;
+
+/** 共享层只保留 Node I/O 的真实 unknown failure；各消费域决定哪些读取失败是可恢复的。 */
+export type EntryFileStoreEffect<A> = Effect.Effect<A, unknown>;
+
+function nodeIo<A>(operation: (signal: AbortSignal) => Promise<A>): EntryFileStoreEffect<A> {
+  return Effect.tryPromise({ try: operation, catch: (cause) => cause });
+}
+
+function nodeSync<A>(operation: () => A): EntryFileStoreEffect<A> {
+  return Effect.try({ try: operation, catch: (cause) => cause });
+}
+
+function errnoCode(cause: unknown): string | undefined {
+  return typeof cause === "object" && cause !== null && "code" in cause && typeof cause.code === "string"
+    ? cause.code
+    : undefined;
+}
+
+function removeFileIfPresent(path: string): EntryFileStoreEffect<void> {
+  return nodeIo(() => unlink(path)).pipe(
+    Effect.catchAll((cause) => errnoCode(cause) === "ENOENT" ? Effect.void : Effect.fail(cause)),
+  );
+}
+
+/** 持有 FileHandle 的 Scope；成功、失败与 interruption 都关闭它。 */
+function withOpenFile<A>(
+  path: string,
+  flags: string,
+  use: (handle: FileHandle) => EntryFileStoreEffect<A>,
+): EntryFileStoreEffect<A> {
+  return Effect.scoped(
+    Effect.acquireRelease(
+      nodeIo(() => open(path, flags)),
+      (handle) => nodeIo(() => handle.close()).pipe(Effect.orDie),
+    ).pipe(Effect.flatMap(use)),
+  );
+}
 
 /** 纯哈希 entry id:parts 用 ":" 拼接后 sha256,取十六进制前缀。不带可读前缀,只须无碰撞。 */
 export function hashEntryId(parts: readonly string[], length = 12): string {
@@ -28,22 +66,38 @@ export function slugHashEntryId(slugSource: string, hashParts: readonly string[]
 }
 
 /** 原子写入一条 entry:先验证 plain JSON tree，再临时文件 → fsync 文件 → rename → fsync 目录。 */
-export async function writeEntryFile(dir: string, id: string, data: unknown): Promise<void> {
+export function writeEntryFileEffect(dir: string, id: string, data: unknown): EntryFileStoreEffect<void> {
   if (!isPlainJsonTree(data)) {
-    throw new TypeError("Entry file data must be a finite, acyclic plain JSON tree");
+    return Effect.fail(new TypeError("Entry file data must be a finite, acyclic plain JSON tree"));
   }
-  await mkdir(dir, { recursive: true });
   const tmpPath = join(dir, `.${id}.${process.pid}.tmp`);
   const finalPath = join(dir, `${id}.json`);
-  const handle = await open(tmpPath, "w");
-  try {
-    await handle.writeFile(JSON.stringify(data, null, 2), "utf-8");
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-  await rename(tmpPath, finalPath);
-  await fsyncDir(dir);
+  let renamed = false;
+  const writeTmp = withOpenFile(
+    tmpPath,
+    "w",
+    (handle) => nodeIo(() => handle.writeFile(JSON.stringify(data, null, 2), "utf-8")).pipe(
+      Effect.zipRight(nodeIo(() => handle.sync())),
+    ),
+  );
+
+  return nodeIo(() => mkdir(dir, { recursive: true })).pipe(
+    Effect.zipRight(
+      writeTmp.pipe(
+        Effect.zipRight(
+          nodeIo(() => rename(tmpPath, finalPath)).pipe(
+            Effect.tap(() => Effect.sync(() => {
+              renamed = true;
+            })),
+          ),
+        ),
+        Effect.zipRight(fsyncDirEffect(dir)),
+        // rename 前的失败或 interruption 不能留下会被后续扫描跳过的临时残骸；rename 后
+        // tmp 已不存在，清理只会成为 no-op，不触碰已发布的最终路径。
+        Effect.ensuring(Effect.suspend(() => renamed ? Effect.void : removeFileIfPresent(tmpPath)).pipe(Effect.orDie)),
+      ),
+    ),
+  );
 }
 
 /** unknown 只活在写入边界；通过后才允许交给 JSON.stringify 与持久层。 */
@@ -62,37 +116,36 @@ function isPlainJsonTree(value: unknown, ancestors: ReadonlySet<object> = new Se
 }
 
 /** 读一条 entry(不存在、JSON 损坏或 decoder 拒绝都返回 undefined,不抛错)。 */
-export async function readEntryFile<T>(dir: string, id: string, decode: EntryDecoder<T>): Promise<T | undefined> {
-  try {
-    return decode(JSON.parse(await readFile(join(dir, `${id}.json`), "utf-8")));
-  } catch {
-    return undefined;
-  }
+export function readEntryFileEffect<T extends {}>(
+  dir: string,
+  id: string,
+  decode: EntryDecoder<T>,
+): EntryFileStoreEffect<T | undefined> {
+  return nodeIo(() => readFile(join(dir, `${id}.json`), "utf-8")).pipe(
+    Effect.flatMap((raw) => nodeSync(() => decode(JSON.parse(raw)))),
+    Effect.catchAll(() => Effect.succeed(undefined)),
+  );
 }
 
 /**
  * 读全部 entry(目录不存在返回空集合;跳过点文件与非 `.json` 文件;JSON 损坏或 decoder 拒绝的
  * 条目跳过,不拖垮整次扫描)。
  */
-export async function readAllEntryFiles<T>(dir: string, decode: EntryDecoder<T>): Promise<{ id: string; entry: T }[]> {
-  let files: string[];
-  try {
-    files = await readdir(dir);
-  } catch {
-    return [];
-  }
-  const out: { id: string; entry: T }[] = [];
-  for (const file of files) {
-    if (!file.endsWith(".json") || file.startsWith(".")) continue; // 点文件是在飞临时/墓碑文件
-    try {
-      const raw = await readFile(join(dir, file), "utf-8");
-      const entry = decode(JSON.parse(raw));
-      if (entry !== undefined) out.push({ id: file.slice(0, -".json".length), entry });
-    } catch {
-      // 跳过 JSON 损坏条目,不让一条坏文件拖垮整次扫描。
-    }
-  }
-  return out;
+export function readAllEntryFilesEffect<T extends {}>(
+  dir: string,
+  decode: EntryDecoder<T>,
+): EntryFileStoreEffect<{ id: string; entry: T }[]> {
+  return nodeIo(() => readdir(dir)).pipe(
+    Effect.catchAll(() => Effect.succeed([] as string[])),
+    Effect.flatMap((files) => Effect.forEach(files, (file) => {
+      if (!file.endsWith(".json") || file.startsWith(".")) return Effect.succeed(undefined);
+      const id = file.slice(0, -".json".length);
+      return readEntryFileEffect(dir, id, decode).pipe(
+        Effect.map((entry) => entry === undefined ? undefined : { id, entry }),
+      );
+    })),
+    Effect.map((entries) => entries.filter((entry): entry is { id: string; entry: T } => entry !== undefined)),
+  );
 }
 
 /**
@@ -111,35 +164,21 @@ export async function readAllEntryFiles<T>(dir: string, decode: EntryDecoder<T>)
  * 返回 `true` 即拿到认领权;返回 `false` 表示 entry 已被别的调用者认领或删除(rename 源
  * ENOENT);其余错误原样抛出。
  */
-export async function claimEntryFile(dir: string, id: string): Promise<boolean> {
+export function claimEntryFileEffect(dir: string, id: string): EntryFileStoreEffect<boolean> {
   const path = join(dir, `${id}.json`);
   const claimedPath = join(dir, `.${id}.${process.pid}.${randomUUID()}.claimed`);
-  try {
-    await rename(path, claimedPath);
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "ENOENT") return false;
-    throw e;
-  }
-  try {
-    await unlink(claimedPath);
-    await fsyncDir(dir);
-  } catch (e) {
-    // 已经夺得认领权;清理墓碑失败不允许把 entry 重新暴露给第二个认领者。
-    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
-  }
-  return true;
+  return nodeIo(() => rename(path, claimedPath)).pipe(
+    Effect.as(true),
+    Effect.catchAll((cause) => errnoCode(cause) === "ENOENT" ? Effect.succeed(false) : Effect.fail(cause)),
+    Effect.flatMap((claimed) => claimed
+      ? removeFileIfPresent(claimedPath).pipe(Effect.zipRight(fsyncDirEffect(dir)), Effect.as(true))
+      : Effect.succeed(false)),
+  );
 }
 
 /** 目录 fsync,尽力而为——部分平台/文件系统不支持目录 fsync(如 Windows),静默降级。 */
-export async function fsyncDir(dir: string): Promise<void> {
-  try {
-    const handle = await open(dir, "r");
-    try {
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-  } catch {
-    // rename/rm 本身已是原子操作,fsync 只是尽力而为的额外保险。
-  }
+export function fsyncDirEffect(dir: string): EntryFileStoreEffect<void> {
+  return withOpenFile(dir, "r", (handle) => nodeIo(() => handle.sync())).pipe(
+    Effect.catchAll(() => Effect.void),
+  );
 }

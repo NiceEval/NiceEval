@@ -40,8 +40,8 @@ export default defineEval({
 
 ```sh
 pnpm exec niceeval exp local eval-tool-call  # run only eval-tool-call under the local experiment
-pnpm exec niceeval show                      # read results in the terminal, for humans and AI alike
-pnpm exec niceeval view                      # browse results in the web viewer
+pnpm exec niceeval show --latest             # read each Experiment's latest completed Run in the terminal
+pnpm exec niceeval view --latest             # browse the same Sample in the web viewer
 ```
 
 ## Why NiceEval when DeepEval, LangFuse, and BrainTrust already exist

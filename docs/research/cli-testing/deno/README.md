@@ -25,7 +25,7 @@ CI 先产生 binary，再让 integration tests 复用它，避免每个测试重
 **事实。** Test context 创建 TempDir，把 testdata 复制到真实磁盘目录，并为命令分配隔离的 `DENO_DIR`。
 需要网络语义时，tests 连接仓库内的 HTTP、npm、WebSocket 等本地 servers，而不是访问任意公网 endpoint。
 
-**推断。** Deno 的隔离点同时包含 project 与 global cache。NiceEval 也必须隔离 HOME、cache、record root 和 adapter state，不能只复制 repo。
+**推断。** Deno 的隔离点同时包含 project 与 global cache。NiceEval 也必须隔离 HOME、cache、`.niceeval` RecordStore 和 adapter state，不能只复制 repo。
 
 ## 3. stdout、stderr、exit、JSON 与 golden 如何断言
 

@@ -44,6 +44,27 @@ interface WritingRules {
   siteBannedTerms: string[];
   siteOnlyBannedTerms: BannedTerm[];
   bannedTerms: BannedTerm[];
+  publicApiExamples?: {
+    calledToolContract?: CalledToolContract;
+  };
+}
+
+interface CalledToolContract {
+  roots: string[];
+  methods: {
+    positive: string;
+    negative: string;
+  };
+  allowedCalledToolOptions: string[];
+  forbiddenMatchOptionFields: string[];
+  count: {
+    minimum: number;
+    forbidden: string[];
+  };
+  command: {
+    matcher: string;
+    forbidInlineRegexOrPredicate: boolean;
+  };
 }
 
 /** 两条长度规则既驱动检查,也用来校验 JSON 的规则形状。 */
@@ -186,6 +207,222 @@ function walkDocs(dir: string, extensions: string[] = [".md"]): string[] {
     if (statSync(join(ROOT, rel)).isDirectory()) return walkDocs(rel, extensions);
     return extensions.some((ext) => name.endsWith(ext)) ? [rel] : [];
   });
+}
+
+function filesAt(root: string): string[] {
+  const absolute = join(ROOT, root);
+  return statSync(absolute).isDirectory() ? walkDocs(root, [".md", ".mdx"]) : [root];
+}
+
+function lineAt(text: string, offset: number): number {
+  return text.slice(0, offset).split("\n").length;
+}
+
+function balancedEnd(text: string, opening: number): number | undefined {
+  let depth = 0;
+  let quote: "'" | '"' | "`" | undefined;
+
+  for (let index = opening; index < text.length; index += 1) {
+    const char = text[index];
+    if (quote !== undefined) {
+      if (char === "\\") {
+        index += 1;
+      } else if (char === quote) {
+        quote = undefined;
+      }
+      continue;
+    }
+    if (char === "'" || char === '"' || char === "`") {
+      quote = char;
+      continue;
+    }
+    if (char === "(") depth += 1;
+    if (char !== ")") continue;
+    depth -= 1;
+    if (depth === 0) return index;
+  }
+  return undefined;
+}
+
+function splitTopLevelArguments(text: string): string[] {
+  const parts: string[] = [];
+  let start = 0;
+  let parens = 0;
+  let braces = 0;
+  let brackets = 0;
+  let quote: "'" | '"' | "`" | undefined;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (quote !== undefined) {
+      if (char === "\\") index += 1;
+      else if (char === quote) quote = undefined;
+      continue;
+    }
+    if (char === "'" || char === '"' || char === "`") {
+      quote = char;
+      continue;
+    }
+    if (char === "(") parens += 1;
+    else if (char === ")") parens -= 1;
+    else if (char === "{") braces += 1;
+    else if (char === "}") braces -= 1;
+    else if (char === "[") brackets += 1;
+    else if (char === "]") brackets -= 1;
+    else if (char === "," && parens === 0 && braces === 0 && brackets === 0) {
+      parts.push(text.slice(start, index).trim());
+      start = index + 1;
+    }
+  }
+  parts.push(text.slice(start).trim());
+  return parts;
+}
+
+function topLevelObjectFields(text: string): string[] {
+  if (!text.trimStart().startsWith("{")) return [];
+  const fields = new Set<string>();
+  let braces = 0;
+  let quote: "'" | '"' | "`" | undefined;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (quote !== undefined) {
+      if (char === "\\") index += 1;
+      else if (char === quote) quote = undefined;
+      continue;
+    }
+    if (char === "'" || char === '"' || char === "`") {
+      quote = char;
+      continue;
+    }
+    if (char === "{") {
+      braces += 1;
+      continue;
+    }
+    if (char === "}") {
+      braces -= 1;
+      continue;
+    }
+    if (braces !== 1) continue;
+    const field = /^(?:\s|,)*(?:readonly\s+)?([A-Za-z_$][A-Za-z0-9_$]*)\s*:/.exec(text.slice(index));
+    if (field === null) continue;
+    fields.add(field[1]);
+    index += field[0].length - 1;
+  }
+  return [...fields];
+}
+
+/**
+ * 作者示例的 calledTool 契约不靠逐页命中名单维护。规则数据来自 writing-rules.json，
+ * 这里仅把「第二参数只允许 count」「零计数与 predicate 不可用」翻成对代码片段的检查。
+ */
+export function lintCalledToolContractText(
+  file: string,
+  content: string,
+  contract: CalledToolContract,
+): Hit[] {
+  const hits: Hit[] = [];
+  const methodPattern = new RegExp(`\\b(${contract.methods.positive}|${contract.methods.negative})\\s*\\(`, "g");
+
+  for (const match of content.matchAll(methodPattern)) {
+    const method = match[1];
+    const start = match.index ?? 0;
+    const opening = start + match[0].lastIndexOf("(");
+    const end = balancedEnd(content, opening);
+    if (end === undefined) continue;
+    const args = splitTopLevelArguments(content.slice(opening + 1, end));
+    const second = args[1];
+    const line = lineAt(content, start);
+
+    if (method === contract.methods.negative && second !== undefined) {
+      hits.push({
+        file,
+        line,
+        rule: "calledToolContract",
+        message: `${contract.methods.negative} 只接收 ToolMatch 或名称；零匹配不通过 count 表示`,
+      });
+      continue;
+    }
+    if (method !== contract.methods.positive || second === undefined) continue;
+    const option = topLevelObjectFields(second).find(
+      (field) => !contract.allowedCalledToolOptions.includes(field),
+    );
+    if (option !== undefined) {
+      hits.push({
+        file,
+        line,
+        rule: "calledToolContract",
+        message: `${contract.methods.positive} 的第二参数只允许 ${contract.allowedCalledToolOptions.join("、")}；${option} 属于 ToolMatch`,
+      });
+    }
+  }
+
+  const countZero = /\bcount\s*:\s*0\b/g;
+  for (const match of content.matchAll(countZero)) {
+    hits.push({
+      file,
+      line: lineAt(content, match.index ?? 0),
+      rule: "calledToolContract",
+      message: `count 必须不小于 ${contract.count.minimum}；需要零匹配时使用 ${contract.methods.negative}`,
+    });
+  }
+
+  const atLeastZero = /\bcount\s*:\s*\{\s*atLeast\s*:\s*0\b/g;
+  for (const match of content.matchAll(atLeastZero)) {
+    hits.push({
+      file,
+      line: lineAt(content, match.index ?? 0),
+      rule: "calledToolContract",
+      message: `count 必须不小于 ${contract.count.minimum}；需要零匹配时使用 ${contract.methods.negative}`,
+    });
+  }
+
+  const nonIntegerCount = /\bcount\s*:\s*(?:-\d|\d+\.\d)|\bcount\s*:\s*\{\s*atLeast\s*:\s*(?:-\d|\d+\.\d)/g;
+  for (const match of content.matchAll(nonIntegerCount)) {
+    hits.push({
+      file,
+      line: lineAt(content, match.index ?? 0),
+      rule: "calledToolContract",
+      message: "count 只接受正整数或 { atLeast: 正整数 }",
+    });
+  }
+
+  const countPredicate = /\bcount\s*:\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][A-Za-z0-9_$]*)\s*=>/g;
+  for (const match of content.matchAll(countPredicate)) {
+    hits.push({
+      file,
+      line: lineAt(content, match.index ?? 0),
+      rule: "calledToolContract",
+      message: `count 只接受${contract.count.forbidden.includes("predicate") ? "正整数或 { atLeast: 正整数 }" : "声明的计数形状"}，不接受 predicate`,
+    });
+  }
+
+  if (contract.command.forbidInlineRegexOrPredicate) {
+    const inlineCommandMatcher = /\bcommand\s*:\s*\//g;
+    const inlineCommandPredicate = /\bcommand\s*:\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][A-Za-z0-9_$]*)\s*=>/g;
+    for (const pattern of [inlineCommandMatcher, inlineCommandPredicate]) {
+      for (const match of content.matchAll(pattern)) {
+        hits.push({
+          file,
+          line: lineAt(content, match.index ?? 0),
+          rule: "calledToolContract",
+          message: `命令匹配使用 ${contract.command.matcher}，不在 JSON 片段内写正则或 predicate`,
+        });
+      }
+    }
+  }
+
+  return hits;
+}
+
+function lintCalledToolContract(rules: WritingRules): Hit[] {
+  const contract = rules.publicApiExamples?.calledToolContract;
+  if (contract === undefined) return [];
+  return contract.roots.flatMap((root) =>
+    filesAt(root).flatMap((file) =>
+      lintCalledToolContractText(file, readFileSync(join(ROOT, file), "utf8"), contract),
+    ),
+  );
 }
 
 /** 行内代码与代码块里的同名标识符不算命中:`钩子` 可能正是某个字段或输出示例。 */
@@ -441,6 +678,8 @@ export function lintDocsWriting(): LintReport {
     });
   }
 
+  hits.push(...lintCalledToolContract(rules));
+
   return { hits };
 }
 
@@ -588,6 +827,27 @@ export function validateRules(): string[] {
   }
   if (rules.paragraphLength?.max < rules.sentenceLength?.max) {
     problems.push("paragraphLength.max 小于 sentenceLength.max——合法的单句会被段长规则判死,没法改");
+  }
+  const contract = rules.publicApiExamples?.calledToolContract;
+  if (contract === undefined) {
+    problems.push("publicApiExamples.calledToolContract 缺失——calledTool 示例没有唯一契约守护");
+  } else {
+    if (contract.roots.length === 0) problems.push("calledToolContract.roots 不能为空");
+    if (!contract.methods.positive || !contract.methods.negative) {
+      problems.push("calledToolContract.methods 必须声明正断言和负断言方法");
+    }
+    if (!contract.allowedCalledToolOptions.includes("count")) {
+      problems.push("calledToolContract.allowedCalledToolOptions 必须保留 count");
+    }
+    if (!["input", "output", "status"].every((field) => contract.forbiddenMatchOptionFields.includes(field))) {
+      problems.push("calledToolContract.forbiddenMatchOptionFields 必须拦 input、output 与 status");
+    }
+    if (contract.count.minimum !== 1 || !contract.count.forbidden.includes("0") || !contract.count.forbidden.includes("predicate")) {
+      problems.push("calledToolContract.count 必须固定为正整数并禁用 0 与 predicate");
+    }
+    if (contract.command.matcher !== "commandMatch" || !contract.command.forbidInlineRegexOrPredicate) {
+      problems.push("calledToolContract.command 必须要求 commandMatch 并拦局部正则和 predicate");
+    }
   }
   return problems;
 }

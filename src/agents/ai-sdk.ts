@@ -21,6 +21,7 @@ import { makeSendFailure } from "../context/send-failures.ts";
 import { normalizeExternalCause } from "../shared/external-cause.ts";
 import { normalizeJsonValue } from "../shared/json-value.ts";
 import { normalizeToolName as normalizeShared } from "../o11y/tool-names.ts";
+import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
 import type { Agent, InputRequest, InputResponse, JsonValue, StreamEvent, ToolName, Usage } from "../types.ts";
 
 // ───────────────────────── AI SDK 结果的形状子集 ─────────────────────────
@@ -120,6 +121,8 @@ export interface AiSdkTurn {
   usage?: Usage;
   /** 有待人批准的工具调用(非 automatic 的 tool-approval-request)→ "waiting",否则 "completed"。 */
   status: "completed" | "waiting";
+  /** 通用 AI SDK tool call 没有原生 command 分类时，随有工具调用的 Turn 降级 actions。 */
+  evidenceCoverage?: { readonly actions: { readonly status: "partial"; readonly reason: string } };
 }
 
 // ───────────────────────── 转换 ─────────────────────────
@@ -164,7 +167,13 @@ export function turnFromAiSdk(result: AiSdkResultLike): AiSdkTurn {
 
   const events = [...minedEvents, ...stepEvents];
   const waiting = events.some((e) => e.type === "input.requested");
-  return { events, usage: readUsage(result, steps.length), status: waiting ? "waiting" : "completed" };
+  const evidenceCoverage = unclassifiedToolActionsCoverage(events);
+  return {
+    events,
+    usage: readUsage(result, steps.length),
+    status: waiting ? "waiting" : "completed",
+    ...(evidenceCoverage === undefined ? {} : { evidenceCoverage }),
+  };
 }
 
 interface SeenCallIds {

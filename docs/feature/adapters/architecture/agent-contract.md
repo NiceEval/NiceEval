@@ -56,7 +56,7 @@ interface Turn {
 进程内函数和远程 HTTP 服务都属于 Direct Agent，不形成第三种运行器分支。
 
 `usage` 的 token 桶按恒互斥口径落值:`inputTokens` 是未缓存输入。
-OpenAI 系协议报的「含缓存输入总量」要先扣掉缓存命中子集再落桶(契约与理由见 [Record · Usage](../../record/architecture.md#usage))。
+OpenAI 系协议报的「含缓存输入总量」要先扣掉缓存命中子集再落桶(契约与理由见 [Record · Architecture](../../record/architecture.md))。
 各协议的原生口径与扣减明细见各 adapter 的 cost 文档。
 网关实测成本只经 `usage.costUSD` 显式带回,core 从不从 token 反推。
 
@@ -68,7 +68,7 @@ Adapter 只负责把行为落进 `events` 单源，`send` 返回的 `Turn` 不�
 - `completed` / `waiting` 是正常终态；
 - `failed` 是协议已经给出完整、可信、可评分的任务失败，例如 Agent 明确结束并报告无法完成；它不是 transport error，也不自动触发重试；
 - CLI 非零退出、signal、transport 中断、无法辨认终态，或协议没有给出可信终态时，`send()` 必须 reject `SendFailure`，不能伪造 `failed` Turn；
-- Eval 若要求任务必须完成，显式写 `await turn.succeeded().stopOnFailure()`；框架不提供把执行错误和领域失败混在一起的 `expectOk()`。
+- Eval 若要求任务必须完成，显式写 `await turn.succeeded().orStop()`；框架不提供把执行错误和领域失败混在一起的 `expectOk()`。
 
 `SendFailure` 必须携带受理事实 `acceptance: "rejected" | "started" | "unknown"`，并尽可能保存 events、usage、进程状态与正规化后的 `ExternalCause`。只有协议能证明输入未被受理时才写 `rejected`；空事件、非零退出或一句 “retry later” 都不能独自证明未受理。完整分类与重试门见[执行失败分类](../../error-classification/architecture.md)。
 
@@ -85,7 +85,7 @@ interface AgentContext {
   readonly experimentId?: string;
   progress(update: { message: string; current?: number; total?: number }): void;
   diagnostic(input: DiagnosticInput): void;
-  fact(key: string, value: string | number | boolean): void;
+  fact(name: string, value: JsonValue): void;
   log(msg: string): void;
 }
 
@@ -94,8 +94,9 @@ interface SandboxAgentContext extends AgentContext {
 }
 ```
 
-`fact(key, value)` 是与 `progress` / `diagnostic` 并列的第三条反馈通道:上报本次运行的中性运行观测(如实际生效的 agent 配置、缓存命中状态),落进 `AttemptRecord.facts` 成为一等观测量。
-它不影响 Turn status 或 verdict,形状与覆写语义见 [Record · facts](../../record/architecture.md#facts运行事实)。
+`fact(name, value)` 是与 `progress` / `diagnostic` 并列的第三条反馈入口：它以反向域 name 写入本 Attempt 的中性 JSON document，完整 document 上限为 65,536 UTF-8 bytes。
+同一 owner/name 只允许写一次；第二次写入是 typed error，不替换也不追加。它作为 Attempt-owned custom channel 保存，成为一等观测量。
+它不影响 Turn status 或 verdict，精确形状与写入语义见 [Record · Architecture](../../record/architecture.md)。
 
 `ctx` 是驱动 Agent 的低层上下文,eval 的 `t` 是运行器构造的断言视图。
 二者共享 experiment 输入、signal 与作用域反馈能力,但只有 `ctx` 暴露 Agent 会话状态,只有 `t` 暴露断言和 judge。

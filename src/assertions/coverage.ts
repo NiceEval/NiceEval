@@ -1,6 +1,6 @@
 // 证据覆盖的解析与折叠:Agent 级默认 + Turn 级降级 → attempt 级聚合
 // (见 docs/feature/adapters/architecture/evidence.md「覆盖声明」)。
-// 消费规则(正/负断言的三值折叠)在 scoped.ts;这里只管状态代数:
+// Fact producer/consumer 的三值折叠在 context/collector;这里只管状态代数:
 // unavailable < partial < complete,Turn 只能降级、聚合取最差。
 
 import type {

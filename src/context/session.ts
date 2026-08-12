@@ -1,6 +1,8 @@
 // 会话驱动:把 t.send(text) 翻成 agent.send(input, ctx),在同一沙箱里多轮 resume /
 // newSession,并把每轮的标准事件流与用量累加进整次运行(供作用域断言 / o11y)。
 
+import { Effect } from "effect";
+
 import type { Agent, AgentContext, AgentSession, InputFile, InputRequest, InputResponse, JsonValue, Sandbox, SandboxAgentContext, SessionSlot, StreamEvent, Telemetry, TraceSpan, Turn, TurnInput, Usage } from "../types.ts";
 import type { AgentOtelChannel, TurnSpans } from "../o11y/otlp/turn-otel.ts";
 import {
@@ -8,7 +10,7 @@ import {
   worstEvidenceCoverage,
   type ResolvedEvidenceCoverage,
 } from "../assertions/coverage.ts";
-import { captureLoc } from "../source-loc.ts";
+import { captureLoc, type SourceRegistry } from "../source-loc.ts";
 import { t } from "../i18n/index.ts";
 import {
   createAttemptRetryBudget,
@@ -18,10 +20,17 @@ import {
   type SendRetryDeps,
 } from "./send-retry.ts";
 import type { AttemptFailureClassifier } from "../shared/failure-class.ts";
-import { isSendFailure, sendFailureText } from "./send-failures.ts";
+import { isSendFailure, normalizeSendFailure, sendFailureText } from "./send-failures.ts";
 import type { RetryAttemptRecord, TimingActivity } from "../runner/types.ts";
 import { recordFact } from "../shared/facts.ts";
 import { formatTurnLabel } from "../shared/turn-label.ts";
+
+interface PhysicalSendResult {
+  readonly turn: Turn;
+  readonly traceId?: string;
+  readonly attribution?: "traceparent" | "window" | "none";
+  readonly window?: TurnSpans["window"];
+}
 
 /**
  * 一条会话线的存取器实现。slot 值只按 factory 创建的 symbol 身份存取；
@@ -94,7 +103,6 @@ export class RunSession implements AgentSession {
 
   index = 1;
   lastMessage = "";
-  lastInput = "";
   lastStatus: "completed" | "failed" | "waiting" = "completed";
   readonly events: StreamEvent[] = [];
   readonly pendingInputRequests: InputRequest[] = [];
@@ -116,6 +124,11 @@ export interface SessionDeps {
   reasoningEffort?: string;
   flags: globalThis.Record<string, JsonValue>;
   signal: AbortSignal;
+  /**
+   * The only Promise facade for the active Assert-first author surface. It
+   * executes this SessionManager's Effect graph in the owning Attempt Scope.
+   */
+  requestEffect?: <Value, Error>(effect: Effect.Effect<Value, Error, never>) => Promise<Value>;
   log(msg: string): void;
   /** runner 绑定的作用域反馈(adapter ctx.progress/diagnostic);省略时 progress 退回 log。 */
   feedback?: import("../types.ts").ScopedFeedback;
@@ -143,9 +156,15 @@ export interface SessionDeps {
   onTurn?: (info: {
     sessionIndex: number;
     turnIndex: number;
+    /** Exact terminal label allocated by this SessionManager. */
+    label: string;
     startOffsetMs: number;
     durationMs: number;
     failed?: boolean;
+    /** The real user-event source location, when stack capture succeeded. */
+    loc?: ReturnType<typeof captureLoc>;
+    /** Shared author-fact order; absent when there is no durable source site. */
+    sourceOrder?: number;
     traceId?: string;
     traceAttribution?: "traceparent" | "window" | "none";
     otelWindow?: TurnSpans["window"];
@@ -170,8 +189,17 @@ export interface SessionDeps {
   /** 仅供确定性单测注入:turn 重试执行体的随机数与睡眠(生产路径省略,走真实退避)。 */
   retryRandom?: () => number;
   retrySleep?: (ms: number, signal: AbortSignal) => Promise<void>;
-  /** 与 AssertionCollector 共用的 attempt 级源码事实序号分配器。 */
+  /** 与 Fact collector 共用的 attempt 级源码事实序号分配器。 */
   nextSourceOrder?: () => number;
+  /** Attempt-owned source snapshot registry; Runner injects it explicitly. */
+  sourceRegistry?: SourceRegistry;
+}
+
+/** A successful agent send whose post-send ledger checkpoint could not be recorded. */
+export interface LedgerCaptureFailure {
+  readonly state: "capture-failed";
+  readonly label: string;
+  readonly error: unknown;
 }
 
 export class SessionManager {
@@ -207,8 +235,10 @@ export class SessionManager {
   private readonly sessions: RunSession[] = [];
   private turnCount = 0;
   private sessionCount = 0;
-  /** 沙箱型 send 的串行链(见 SessionDeps.ledgerHooks):窗口不重叠。 */
-  private sendChain: Promise<void> = Promise.resolve();
+  /** 沙箱型 send 的 Effect 串行闸(见 SessionDeps.ledgerHooks):窗口不重叠。 */
+  private readonly sendSemaphore = Effect.unsafeMakeSemaphore(1);
+  /** First failed post-send checkpoint makes the entire later diff producer unavailable. */
+  private ledgerCaptureFailureValue: LedgerCaptureFailure | undefined;
   /** attempt 级 turn 重试预算,跨该 attempt 全部 send(全部 session)持续扣减,不随单次 send 重置。 */
   private readonly retryBudget: AttemptRetryBudget = createAttemptRetryBudget();
   private localSourceOrder = 0;
@@ -219,6 +249,11 @@ export class SessionManager {
     this.agentEvidenceCoverage = deps.agent.evidenceCoverage;
     this.evidenceCoverage = this.agentEvidenceCoverage;
     this.primary = this.newSession();
+  }
+
+  /** A ledger checkpoint failure is attempt state, not a synthetic empty diff. */
+  get ledgerCaptureFailure(): LedgerCaptureFailure | undefined {
+    return this.ledgerCaptureFailureValue;
   }
 
   newSession(): RunSession {
@@ -234,218 +269,265 @@ export class SessionManager {
     return downgradeEvidenceCoverage(this.agentEvidenceCoverage, turn.evidenceCoverage);
   }
 
-  async send(
+  send(
     session: RunSession,
     text: string,
     files?: readonly InputFile[],
     responses?: readonly InputResponse[],
   ): Promise<Turn> {
-    // 抓住作者调 t.send / t.sendFile 那一行(view 把回复叠回这一行)。
-    const loc = captureLoc();
-    if (this.deps.ledgerHooks) {
-      // 沙箱型 send 经串行链执行:同一 workdir 上重叠的 send 本身就是写入竞争,
-      // 合并窗口只会掩盖归因不确定性(见 docs/feature/sandbox/architecture.md)。
-      const run = this.sendChain.then(() => this.sendSerialized(session, text, loc, files, responses));
-      this.sendChain = run.then(
-        () => undefined,
-        () => undefined,
-      );
-      return run;
+    const requestEffect = this.deps.requestEffect;
+    if (requestEffect === undefined) {
+      throw new Error("SessionManager requires the Attempt Effect bridge");
     }
-    return this.sendSerialized(session, text, loc, files, responses);
+    return requestEffect(this.sendEffect(session, text, files, responses));
   }
 
-  private async sendSerialized(
+  /**
+   * The entire logical send is one Effect. The public Promise facade above is
+   * deliberately only available through AssertFirstAttemptBridge.requestEffect.
+   */
+  sendEffect(
+    session: RunSession,
+    text: string,
+    files?: readonly InputFile[],
+    responses?: readonly InputResponse[],
+    loc?: ReturnType<typeof captureLoc>,
+  ): Effect.Effect<Turn, unknown> {
+    const send = this.sendSerializedEffect(
+      session,
+      text,
+      loc ?? captureLoc({ registry: this.deps.sourceRegistry }),
+      files,
+      responses,
+    );
+    // Sandbox sends share one workdir, so their attribution windows cannot
+    // overlap. Direct Agent sends retain their existing unconstrained behavior.
+    return this.deps.ledgerHooks === undefined
+      ? send
+      : this.sendSemaphore.withPermits(1)(send);
+  }
+
+  private sendSerializedEffect(
     session: RunSession,
     text: string,
     loc: ReturnType<typeof captureLoc>,
     files?: readonly InputFile[],
     responses?: readonly InputResponse[],
-  ): Promise<Turn> {
-    const ctx: AgentContext = {
-      signal: this.deps.signal,
-      evalId: this.deps.evalId,
-      attempt: this.deps.attempt,
-      model: this.deps.model,
-      reasoningEffort: this.deps.reasoningEffort,
-      flags: this.deps.flags,
-      experimentId: this.deps.experimentId,
-      session,
-      telemetry: this.deps.telemetry,
-      progress: (u) =>
-        this.deps.feedback
-          ? this.deps.feedback.progress(u)
-          : this.deps.log(u.current !== undefined && u.total !== undefined ? `${u.message} (${u.current}/${u.total})` : u.message),
-      diagnostic: (d) => this.deps.feedback?.diagnostic(d),
-      fact: (key, value) => {
-        // 没有 runner 绑定的落点时(测试直调 SessionManager)仍要校验,只是无处落盘——
-        // 与 progress 退回 log、diagnostic 静默丢弃是同一种「测试直调降级」纪律。
-        if (this.deps.fact) this.deps.fact(key, value);
-        else recordFact({}, key, value);
-      },
-      // log 是 progress({ message }) 的别名(见 AgentContext.log)。
-      log: this.deps.log,
-    };
+  ): Effect.Effect<Turn, unknown> {
+    return Effect.suspend(() => {
+      const ctx: AgentContext = {
+        signal: this.deps.signal,
+        evalId: this.deps.evalId,
+        attempt: this.deps.attempt,
+        model: this.deps.model,
+        reasoningEffort: this.deps.reasoningEffort,
+        flags: this.deps.flags,
+        experimentId: this.deps.experimentId,
+        session,
+        telemetry: this.deps.telemetry,
+        progress: (u) =>
+          this.deps.feedback
+            ? this.deps.feedback.progress(u)
+            : this.deps.log(u.current !== undefined && u.total !== undefined ? `${u.message} (${u.current}/${u.total})` : u.message),
+        diagnostic: (d) => this.deps.feedback?.diagnostic(d),
+        fact: (key, value) => {
+          // 没有 runner 绑定的落点时(测试直调 SessionManager)仍要校验,只是无处落盘——
+          // 与 progress 退回 log、diagnostic 静默丢弃是同一种「测试直调降级」纪律。
+          if (this.deps.fact) this.deps.fact(key, value);
+          else recordFact({}, key, value);
+        },
+        // log 是 progress({ message }) 的别名(见 AgentContext.log)。
+        log: this.deps.log,
+      };
 
-    const n = ++this.turnCount;
-    const attach = files?.length ? ` 📎${files.length}` : "";
-    const preview = (text.replace(/\s+/g, " ").slice(0, 36) || (files?.[0]?.filename ?? t("session.fileFallback"))) + attach;
-    const turnLabel = session.index === 1
-      ? t("session.turn.primary", { turn: n })
-      : t("session.turn.secondary", { session: session.index, turn: n });
-    this.deps.log(`${turnLabel} → "${preview}…"`);
-    const timingNow = this.deps.timingNow ?? (() => performance.now());
-    const startOffsetMs = timingNow();
+      const n = ++this.turnCount;
+      const attach = files?.length ? ` 📎${files.length}` : "";
+      const preview = (text.replace(/\s+/g, " ").slice(0, 36) || (files?.[0]?.filename ?? t("session.fileFallback"))) + attach;
+      const turnLabel = session.index === 1
+        ? t("session.turn.primary", { turn: n })
+        : t("session.turn.secondary", { session: session.index, turn: n });
+      this.deps.log(`${turnLabel} → "${preview}…"`);
+      const timingNow = this.deps.timingNow ?? (() => performance.now());
+      const startOffsetMs = timingNow();
 
-    session.lastInput = text;
-    const userEvent: StreamEvent = {
-      type: "message",
-      role: "user",
-      text,
-      loc,
-      sourceOrder: this.nextSourceOrder(),
-    };
-    this.allEvents.push(userEvent);
-    session.events.push(userEvent);
-    session.pendingInputRequests.length = 0;
-    const turnIndex = ++session.turnCount;
-    const windowLabel = formatTurnLabel(session.index, turnIndex);
-    // send 进入前:workdir 有未记录变化(fixture / setup / runCommand 副作用)先落 eval 归因。
-    await this.deps.ledgerHooks?.beforeSend(windowLabel);
-    let turn: Turn;
-    let sentTraceId: string | undefined;
-    let sentAttribution: "traceparent" | "window" | "none" | undefined;
-    let sentWindow: TurnSpans["window"] | undefined;
-    this.deps.onSendActive?.(true);
-    // turn 级重试:包住这一次逻辑 send(下面两个分支各一次调用),分类判据与执行体时序见
-    // docs/feature/error-classification/architecture.md。retryDeps 复用同一个 attempt 级
-    // 预算(this.retryBudget)与 ctx.signal(合并了 attempt 超时 / Ctrl+C 中断),退避睡眠
-    // 因此能被 Effect interruption 干净打断,不新增超时语义。
-    const retryDeps: SendRetryDeps = {
-      classifier: this.deps.agent.classifySendFailure,
-      experimentClassifier: this.deps.experimentClassifier,
-      onRetryAttempt: ({ sendAttempt, startedAt, durationMs, failure, classification }) => {
-        const process = failure.process;
-        this.retryAttempts.push({
-          sessionIndex: session.index,
-          turnIndex,
-          sendAttempt,
-          startedAt,
-          durationMs,
-          failure: {
-            type: "agent-send-failed",
-            acceptance: "rejected",
-            message: sendFailureText(failure),
-            ...(process?.exitCode !== undefined || process?.signal !== undefined
-              ? { process: { ...(process.exitCode !== undefined ? { exitCode: process.exitCode } : {}), ...(process.signal !== undefined ? { signal: process.signal } : {}) } }
-              : {}),
-          },
-          classification: {
-            retryable: true,
-            scope: classification.scope ?? "attempt",
-            reason: classification.reason,
-          },
-          events: failure.events ? [...failure.events] : [],
-          ...(failure.usage !== undefined ? { usage: { ...failure.usage } } : {}),
-        });
-        if (failure.usage) {
-          accumulateUsage(this.usage, failure.usage);
-          accumulateUsage(session.usage, failure.usage);
-        }
-      },
-      budget: this.retryBudget,
-      slot: this.deps.concurrencySlot,
-      reportRetry: (message: string) => ctx.progress({ message }),
-      signal: ctx.signal,
-      random: this.deps.retryRandom,
-      sleep: this.deps.retrySleep,
-    };
-    try {
-      if (this.deps.otel) {
-        const otel = this.deps.otel;
-        const r = await sendWithTurnRetry(
-          () => this.sendWithOtel(otel, { text, files, responses }, ctx),
-          retryDeps,
-        );
-        turn = r.turn;
-        sentTraceId = r.traceId;
-        sentAttribution = r.attribution;
-        sentWindow = r.window;
-      } else {
-        turn = await sendWithTurnRetry(
-          () => this.sendAgent({ text, files, responses }, ctx),
-          retryDeps,
-        );
-      }
-    } catch (e) {
-      // 最终失败的物理尝试没有进入 retryAttempts，但已经真实花掉的 usage 仍计入顶层聚合。
-      if (isSendFailure(e) && e.usage) {
-        accumulateUsage(this.usage, e.usage);
-        accumulateUsage(session.usage, e.usage);
-      }
-      this.deps.onTurn?.({
-        sessionIndex: session.index,
-        turnIndex,
-        startOffsetMs,
-        durationMs: Math.max(0, timingNow() - startOffsetMs),
-        failed: true,
-        traceAttribution: sentAttribution,
-        otelWindow: sentWindow,
-        ...(isSendFailure(e) && e.usage !== undefined ? { usage: e.usage } : {}),
-      });
-      throw e;
-    } finally {
-      this.deps.onSendActive?.(false);
-      // send 返回后:这个 send 窗口内的全部 workspace 变化落 agent 归因(HITL waiting 同样收窗:
-      // adapter 义务保证返回时 agent 侧进程已退出或进入不再写 workspace 的静止态)。
-      await this.deps.ledgerHooks?.afterSend(windowLabel).catch(() => {});
-    }
-    const timingActivity = this.deps.onTurn?.({
-      sessionIndex: session.index,
-      turnIndex,
-      startOffsetMs,
-      durationMs: Math.max(0, timingNow() - startOffsetMs),
-      failed: turn.status === "failed" ? true : undefined,
-      ...(sentAttribution !== "none" && sentTraceId !== undefined ? { traceId: sentTraceId } : {}),
-      traceAttribution: sentAttribution,
-      otelWindow: sentWindow,
-      usage: turn.usage,
+      // A source order belongs only to a user event that can become an
+      // Attempt source-site. Do not consume the shared sequence for a failed
+      // stack capture.
+      const sourceOrder = loc === undefined ? undefined : this.nextSourceOrder();
+      const userEvent: StreamEvent = {
+        type: "message",
+        role: "user",
+        text,
+        loc,
+        ...(sourceOrder === undefined ? {} : { sourceOrder }),
+      };
+      this.allEvents.push(userEvent);
+      session.events.push(userEvent);
+      session.pendingInputRequests.length = 0;
+      const turnIndex = ++session.turnCount;
+      const windowLabel = formatTurnLabel(session.index, turnIndex);
+      const beforeSend = this.deps.ledgerHooks === undefined
+        ? Effect.void
+        : Effect.tryPromise({
+            try: () => this.deps.ledgerHooks!.beforeSend(windowLabel),
+            catch: (error) => error,
+          });
+      const afterSend = this.deps.ledgerHooks === undefined
+        ? Effect.void
+        : Effect.tryPromise({
+            try: () => this.deps.ledgerHooks!.afterSend(windowLabel),
+            catch: (error) => error,
+          }).pipe(Effect.catchAll((error) => Effect.sync(() => {
+            // The agent turn itself did complete. Preserve that success for
+            // the author, but retain the failed checkpoint so freeze cannot
+            // turn an incomplete capture into a convincing empty document.
+            if (this.ledgerCaptureFailureValue === undefined) {
+              this.ledgerCaptureFailureValue = Object.freeze({
+                state: "capture-failed" as const,
+                label: windowLabel,
+                error,
+              });
+            }
+          })));
+
+      // turn 级重试只包这一次物理 agent send。SDK Promise 在这两个
+      // Effect.tryPromise 边界适配；retry 本身不再包含手写 Promise / timeout。
+      const sendOnce: Effect.Effect<PhysicalSendResult, unknown> = this.deps.otel
+        ? this.sendWithOtelEffect(this.deps.otel, { text, files, responses }, ctx)
+        : this.sendAgentEffect({ text, files, responses }, ctx).pipe(
+            Effect.map((turn) => ({ turn })),
+          );
+      const retryDeps: SendRetryDeps = {
+        classifier: this.deps.agent.classifySendFailure,
+        experimentClassifier: this.deps.experimentClassifier,
+        onRetryAttempt: ({ sendAttempt, startedAt, durationMs, failure, classification }) => {
+          const process = failure.process;
+          this.retryAttempts.push({
+            sessionIndex: session.index,
+            turnIndex,
+            sendAttempt,
+            startedAt,
+            durationMs,
+            failure: {
+              type: "agent-send-failed",
+              acceptance: "rejected",
+              message: sendFailureText(failure),
+              ...(process?.exitCode !== undefined || process?.signal !== undefined
+                ? { process: { ...(process.exitCode !== undefined ? { exitCode: process.exitCode } : {}), ...(process.signal !== undefined ? { signal: process.signal } : {}) } }
+                : {}),
+            },
+            classification: {
+              retryable: true,
+              scope: classification.scope ?? "attempt",
+              reason: classification.reason,
+            },
+            events: failure.events ? [...failure.events] : [],
+            ...(failure.usage !== undefined ? { usage: { ...failure.usage } } : {}),
+          });
+          if (failure.usage) {
+            accumulateUsage(this.usage, failure.usage);
+            accumulateUsage(session.usage, failure.usage);
+          }
+        },
+        budget: this.retryBudget,
+        slot: this.deps.concurrencySlot,
+        reportRetry: (message: string) => ctx.progress({ message }),
+        signal: ctx.signal,
+        random: this.deps.retryRandom,
+        sleep: this.deps.retrySleep,
+      };
+      const send = sendWithTurnRetry(sendOnce, retryDeps).pipe(
+        Effect.tapError((error) => Effect.sync(() => {
+          // 最终失败的物理尝试没有进入 retryAttempts，但已经真实花掉的 usage 仍计入顶层聚合。
+          if (isSendFailure(error) && error.usage) {
+            accumulateUsage(this.usage, error.usage);
+            accumulateUsage(session.usage, error.usage);
+          }
+          this.deps.onTurn?.({
+            sessionIndex: session.index,
+            turnIndex,
+            label: windowLabel,
+            startOffsetMs,
+            durationMs: Math.max(0, timingNow() - startOffsetMs),
+            failed: true,
+            ...(loc === undefined ? {} : { loc }),
+            ...(sourceOrder === undefined ? {} : { sourceOrder }),
+            ...(isSendFailure(error) && error.usage !== undefined ? { usage: error.usage } : {}),
+          });
+        })),
+        Effect.flatMap(({ turn, traceId, attribution, window }) => Effect.sync(() => {
+          const timingActivity = this.deps.onTurn?.({
+            sessionIndex: session.index,
+            turnIndex,
+            label: windowLabel,
+            startOffsetMs,
+            durationMs: Math.max(0, timingNow() - startOffsetMs),
+            failed: turn.status === "failed" ? true : undefined,
+            ...(loc === undefined ? {} : { loc }),
+            ...(sourceOrder === undefined ? {} : { sourceOrder }),
+            ...(attribution !== "none" && traceId !== undefined ? { traceId } : {}),
+            traceAttribution: attribution,
+            otelWindow: window,
+            usage: turn.usage,
+          });
+          if (window !== undefined) {
+            this.otelTurnRecords.push({
+              window,
+              activity: timingActivity,
+              hasSpans: attribution !== "none",
+            });
+          }
+
+          this.allEvents.push(...turn.events);
+          session.events.push(...turn.events);
+          session.pendingInputRequests.push(
+            ...turn.events
+              .filter((e): e is Extract<StreamEvent, { type: "input.requested" }> => e.type === "input.requested")
+              .map((e) => e.request),
+          );
+          if (turn.usage) {
+            accumulateUsage(this.usage, turn.usage);
+            accumulateUsage(session.usage, turn.usage);
+          }
+          // 证据覆盖:attempt / session 级聚合取各轮最差值(见 assertions/coverage.ts)。
+          const turnEvidenceCoverage = this.resolveTurnEvidenceCoverage(turn);
+          this.evidenceCoverage = worstEvidenceCoverage([this.evidenceCoverage, turnEvidenceCoverage]);
+          session.evidenceCoverage = worstEvidenceCoverage([session.evidenceCoverage, turnEvidenceCoverage]);
+          session.lastStatus = turn.status;
+          this.lastStatus = turn.status;
+          const reply = lastAssistantText(turn.events);
+          if (reply !== undefined) session.lastMessage = reply;
+
+          const tok = (turn.usage?.inputTokens ?? 0) + (turn.usage?.outputTokens ?? 0);
+          const tools = turn.events.filter((event) => event.type === "operation.started" && event.operation.kind === "tool").length;
+          const reason = turn.status === "failed" ? failureReason(turn.events) : undefined;
+          this.deps.log(
+            `${turnLabel} ← ${turn.status} · ${t("session.tools", { count: tools })} · ${tok} tok · ${Math.round(Math.max(0, timingNow() - startOffsetMs) / 1000)}s${reason ? ` · ${reason}` : ""}`,
+          );
+          return turn;
+        })),
+      );
+      return beforeSend.pipe(
+        Effect.zipRight(
+          Effect.sync(() => this.deps.onSendActive?.(true)).pipe(
+            Effect.zipRight(send),
+            Effect.ensuring(Effect.sync(() => this.deps.onSendActive?.(false))),
+            // send 返回后:这个 send 窗口内的全部 workspace 变化落 agent 归因。
+            Effect.ensuring(afterSend),
+          ),
+        ),
+      );
     });
-    if (sentWindow !== undefined) {
-      this.otelTurnRecords.push({
-        window: sentWindow,
-        activity: timingActivity,
-        hasSpans: sentAttribution !== "none",
-      });
-    }
+  }
 
-    this.allEvents.push(...turn.events);
-    session.events.push(...turn.events);
-    session.pendingInputRequests.push(
-      ...turn.events
-        .filter((e): e is Extract<StreamEvent, { type: "input.requested" }> => e.type === "input.requested")
-        .map((e) => e.request),
-    );
-    if (turn.usage) {
-      accumulateUsage(this.usage, turn.usage);
-      accumulateUsage(session.usage, turn.usage);
-    }
-    // 证据覆盖:attempt / session 级聚合取各轮最差值(见 assertions/coverage.ts)。
-    const turnEvidenceCoverage = this.resolveTurnEvidenceCoverage(turn);
-    this.evidenceCoverage = worstEvidenceCoverage([this.evidenceCoverage, turnEvidenceCoverage]);
-    session.evidenceCoverage = worstEvidenceCoverage([session.evidenceCoverage, turnEvidenceCoverage]);
-    session.lastStatus = turn.status;
-    this.lastStatus = turn.status;
-    const reply = lastAssistantText(turn.events);
-    if (reply !== undefined) session.lastMessage = reply;
-
-    const tok = (turn.usage?.inputTokens ?? 0) + (turn.usage?.outputTokens ?? 0);
-    const tools = turn.events.filter((e) => e.type === "operation.started" && e.operation.kind === "tool").length;
-    const reason = turn.status === "failed" ? failureReason(turn.events) : undefined;
-    this.deps.log(
-      `${turnLabel} ← ${turn.status} · ${t("session.tools", { count: tools })} · ${tok} tok · ${Math.round(Math.max(0, timingNow() - startOffsetMs) / 1000)}s${reason ? ` · ${reason}` : ""}`,
-    );
-    return turn;
+  private sendAgentEffect(
+    input: TurnInput,
+    ctx: AgentContext,
+  ): Effect.Effect<Turn, ReturnType<typeof normalizeSendFailure>> {
+    return Effect.tryPromise({
+      try: (signal) => this.sendAgent(input, this.withFiberSignal(ctx, signal)),
+      catch: normalizeSendFailure,
+    });
   }
 
   /**
@@ -453,34 +535,42 @@ export class SessionManager {
    * 返回后按 traceId / 时间窗口把本轮 span 归属进瀑布图。span 只进瀑布图,不进事件流、
    * 不喂断言——断言依据全部来自 send 返回的 Turn。
    */
-  private async sendWithOtel(
+  private sendWithOtelEffect(
     otel: AgentOtelChannel,
     input: { text: string; files?: readonly InputFile[]; responses?: readonly InputResponse[] },
     ctx: AgentContext,
-  ): Promise<{ turn: Turn; traceId: string; attribution: "traceparent" | "window" | "none"; window: TurnSpans["window"] }> {
-    const r = await otel.runTurn((headers) => {
+  ): Effect.Effect<PhysicalSendResult, ReturnType<typeof normalizeSendFailure>> {
+    return otel.runTurnEffect((headers) => {
       const turnCtx: AgentContext = ctx.telemetry
         ? { ...ctx, telemetry: { ...ctx.telemetry, headers } }
         : ctx;
-      return this.sendAgent(input, turnCtx);
-    });
-    this.otelSpans.push(...r.spans);
-    if (r.spans.length > 0) this.otelTraceIds.add(r.traceId);
+      return this.sendAgentEffect(input, turnCtx);
+    }).pipe(
+      Effect.map((result) => {
+        this.otelSpans.push(...result.spans);
+        if (result.spans.length > 0) this.otelTraceIds.add(result.traceId);
 
-    if (r.attribution === "window" && r.spans.length > 0 && !this.warnedWindowAttribution) {
-      this.warnedWindowAttribution = true;
-      this.deps.log(t("otel.windowAttribution"));
-    }
-    if (r.spans.length === 0 && !this.warnedNoSpans) {
-      this.warnedNoSpans = true;
-      this.deps.log(t("otel.noSpans"));
-    }
-    return {
-      turn: r.result,
-      traceId: r.traceId,
-      attribution: r.spans.length === 0 ? "none" : r.attribution,
-      window: r.window,
-    };
+        if (result.attribution === "window" && result.spans.length > 0 && !this.warnedWindowAttribution) {
+          this.warnedWindowAttribution = true;
+          this.deps.log(t("otel.windowAttribution"));
+        }
+        if (result.spans.length === 0 && !this.warnedNoSpans) {
+          this.warnedNoSpans = true;
+          this.deps.log(t("otel.noSpans"));
+        }
+        return {
+          turn: result.result,
+          traceId: result.traceId,
+          attribution: result.spans.length === 0 ? "none" : result.attribution,
+          window: result.window,
+        };
+      }),
+    );
+  }
+
+  private withFiberSignal(ctx: AgentContext, fiberSignal: AbortSignal): AgentContext {
+    if (ctx.signal === fiberSignal) return ctx;
+    return { ...ctx, signal: AbortSignal.any([ctx.signal, fiberSignal]) };
   }
 
   /** telemetry.collect 收到 BatchSpanProcessor 迟到导出后，回写尚无 span 的 turn。 */

@@ -1,153 +1,347 @@
 # Assertions —— 架构
 
-值 matcher、作用域检查与 Judge 最终都进入同一个 Assertion collector。
-collector 只产出 `AssertionResult[]`；执行状态与断言怎样折叠成 Verdict 由 [Verdict](../verdict/README.md) 定义。
+`niceeval.assertions/v1` 是一个 Attempt-owned、auditable、non-executable 的
+`RecordAttachment`。它保存已经结束的检查事实；Record、Projection 和 Report 不需要作者调用图、
+matcher 或 evaluator 内部实现才能解释它。
+
+## 版本边界
+
+这里的 `v1` 与 `AssertionsDocumentV1` 只标识 `RecordAttachment` 的持久 schema、迁移边界或跨进程 wire codec。它们不进入 Assertion、Projection、Report 或其它作者 ABI 的名字。
+
+`ToolMatch`、Assertion handle、Projection 与 Report 作者 API 都没有 `V1` 或 `V2` 心智模型。未来的中高层 breaking change 通过包与 API 升级交付，不要求用户迁移 `.niceeval`。
 
 ```text
-value / scope / judge / sandbox / efficiency
-                    │
-                    ▼
-           Assertion collector
-                    │
-                    ▼
-           AssertionResult[] ─────┐
-                                  ├──► Verdict
-Runner execution state + strict ──┘
+author calls / evaluator internals / producer control flow
+                    ↓
+          producer evaluates and seals
+          ↙         ↓          ↘
+niceeval.assertions/v1  niceeval.assertion-source-sites/v1  niceeval.verdict/v1
+             │                  │                     (+ score for Score Eval)
+             └──── declared neutral projections ────┘
+                              ↓
+                  closed report document
 ```
 
-## 设计主题
+source-sites 是独立的 Attempt-owned Attachment。它保留已执行的 entry source mapping 与 send
+annotation，不把 source path、source blob、作者调用图或 Assertion result 写回
+`AssertionsDocumentV1`。精确形状、canonical snapshot coordinate 与跨 owner semantic join 由
+[Source sites](architecture/source-sites.md) 拥有。
 
-- [作用域绑定](architecture/scopes.md)
-- [证据与完整性](architecture/evidence.md)
+## v1 外层 payload
 
-Severity 与四态折叠不属于本层，见 [Verdict](../verdict/architecture.md)。
+writer 产出的 v1 payload 是 `AssertionsDocumentV1`。所有契约拥有的 object 都 exact decode；不在下列形状中的
+字段一律拒绝。`BoundedJsonValueV1` 是唯一允许任意 JSON key 的值域，只用于 snapshot 或 criterion 的 raw `data`，
+不是开放 metadata。decoder 限制深度为 8、对象键数为 64、数组项数为 256、单字符串为 8 KiB，且整个 payload
+最多 4 MiB。
 
-**Assertion（输入态）** 是 matcher、作用域断言与 Judge 这些「怎么查」的表达。
-例如 [`custom-assertions`](library/custom-assertions.md) 里的 `function jsonValid(): Assertion`。
-collector 把每次检查折叠成的「查出了什么」是 **`AssertionResult`（结果态）**。
-`Verdict` 表达整个 Attempt 的互斥结果。
-多个 Attempt 的报告聚合通过率和平均耗时，不制造第五种 Verdict。
+```ts
+type BoundedJsonValueV1 =
+  | null
+  | boolean
+  | number
+  | string
+  | readonly BoundedJsonValueV1[]
+  | { readonly [key: string]: BoundedJsonValueV1 };
 
-## 断言条目（AssertionResult）
+type BoundedJsonObjectV1 = {
+  readonly [key: string]: BoundedJsonValueV1;
+};
 
-`result.json` 的 `assertions` 数组元素，也是 [Severity 与 Verdict](../verdict/architecture.md) 判定规则的输入。
-字段契约单点定义在这里，[Record Format](../record/architecture.md#resultjson) 引用而不复写：
+type AssertionEntryId = string;
 
-```typescript
-interface ProjectSourceFrame {
-  kind: "project";
-  /** 相对项目根的路径。 */
-  file: string;
-  line: number;
-  column?: number;
-}
+type AssertionDisplayV1 = {
+  readonly key?: string;
+  readonly label?: string;
+  readonly groupPath: readonly string[];
+};
 
-interface PackageSourceFrame {
-  kind: "package";
-  package: string;
-}
+type AssertionsDocumentV1 = {
+  readonly entries: readonly AssertionEntryV1[];
+};
 
-type SourcePathFrame = ProjectSourceFrame | PackageSourceFrame;
+type AssertionsDocumentOuterV1 = {
+  readonly entries: readonly AssertionEntryOuterV1[];
+};
 
-interface SourceLoc {
-  /** 声明位置，相对项目根。 */
-  file: string;
-  line: number;
-  column?: number;
-  /** 从 eval 入口到声明处，由外到内；不含声明处自身，无可用链时为空数组。 */
-  callers: SourcePathFrame[];
-}
+type AssertionEntryV1 = {
+  readonly entryId: AssertionEntryId;
+  readonly display: AssertionDisplayV1;
+  readonly criterion: BuiltInCriterionV1 | ThirdPartyCriterionV1;
+  readonly subject: AssertionMaterialV1;
+  readonly evidence: readonly AssertionMaterialV1[];
+  readonly coverage: AssertionCoverageV1;
+  readonly limitations: readonly AssertionLimitationV1[];
+  readonly result: SealedAssertionResultV1;
+};
 
-interface AssertionBase {
-  /** 断言标题:t.group 内是该断言自己的摘要,组外是 matcher 摘要或 judge 问题;show/view 失败行的标题。 */
-  name: string;
-  /** 所属分组路径:外层在前的 t.group 标题数组;无分组省略。报告分块与对比得分点的维度键,不影响判定。 */
-  groupPath?: string[];
-  severity: "gate" | "soft";
-  /** 作者链过 .stopOnFailure();仅在本条 failed 时停止后续 test 代码,与 severity 正交。 */
-  stopOnFailure?: true;
-  /** 作者用 .optional() 显式允许该断言缺席;只改变 unavailable 的折叠方式(见 Severity 与 Verdict),不改变 severity 语义。 */
-  optional?: true;
-  /** matcher / judge 摘要,如 `equals(4)`、`closedQA("…")`;与 name 分开,供 show/view 同时展示分组标题与检查方式。 */
-  detail?: string;
-  /** 断言在 eval 源码中的声明位置与调用路径，`--source` 据此装配源码调用树。 */
-  loc?: SourceLoc;
-  /** 与 ScoreEntry、用户 send 共用的 attempt 级发生顺序；历史记录可省略，当前产物必写。 */
-  sourceOrder?: number;
-  /** `.points(n)` 声明的可得分值；failed / unavailable 也保留，未链 points 与通过制省略。 */
-  pointsAvailable?: number;
-}
-
-type AssertionResult =
-  | (AssertionBase & {
-      outcome: "passed" | "failed";
-      /** 归一化得分:值断言 0/1,judge 等打分断言 0..1。 */
-      score: number;
-      /** .atLeast(x) / .gate(x) 设的通过线;纯记录 soft 与默认线时省略。 */
-      threshold?: number;
-      /** 失败证据摘要:期望值 / 实际值的有界文本预览,供 show/view 直接展示。 */
-      expected?: string;
-      received?: string;
-      /** 这条分数看着什么材料算出(judge 输入或被检查值预览);view 展开排查用,默认不展示。 */
-      evidence?: string;
-      /**
-       * `.points(n)` 挂在这条断言上的挣分:`n × score`(0/1 断言通过挣 n、不过挣 0;打分断言按
-       * 连续分比例挣)。只在计分制 eval 里链过 `.points()` 时出现;省略表示这条断言不参与计分
-       * (通过制 eval 的全部断言,或计分制 eval 里没链 `.points()` 的断言)。与 `score` 是两个读数——
-       * `score` 判定用,`points` 计分用,互不派生(见[计分粒度](library/score-points.md))。
-       */
-      points?: number;
-    })
-  | (AssertionBase & {
-      outcome: "unavailable";
-      /** 机器可读原因,如 "judge-model-unresolved"、"judge-call-failed"、"evidence-coverage:actions=partial"。 */
-      reason: string;
-      /**
-       * 评不了的一层人读细节:judge 调用失败时是状态码 / 异常摘要,证据通道不完整时是缺的通道与
-       * 实际覆盖度。`reason` 回答「归哪一类」,它回答「这一条具体怎么了」——没有它,一个
-       * `judge-call-failed` 分不出是网关拒了鉴权还是请求体不合协议,而两者的下一步完全不同。
-       */
-      evidence?: string;
-    });
-
-/**
- * `t.score(label, n)` 的直接给分记录,与 `AssertionResult` 分属两个数组——它不是一条被评估的
- * 断言,没有 severity、没有 outcome,不参与判定或质量分,只贡献分数面:
- */
-interface ScoreEntry {
-  /** 作者传入的 label,原样进报告。 */
-  label: string;
-  /** 直接给分,n >= 0(见[计分粒度](library/score-points.md))。 */
-  points: number;
-  /** 所属分组路径,同 AssertionBase.groupPath;规则一致(外层在前的 t.group 标题数组)。 */
-  groupPath?: string[];
-  /** 调用点，同 AssertionBase.loc。 */
-  loc?: SourceLoc;
-  /** 与断言、用户 send 共用的 attempt 级发生顺序；历史记录可省略，当前产物必写。 */
-  sourceOrder?: number;
-}
+type AssertionEntryOuterV1 = {
+  readonly entryId: AssertionEntryId;
+  readonly display: AssertionDisplayV1;
+  readonly criterion: BoundedJsonObjectV1;
+  readonly subject: AssertionMaterialV1;
+  readonly evidence: readonly AssertionMaterialV1[];
+  readonly coverage: AssertionCoverageV1;
+  readonly limitations: readonly AssertionLimitationV1[];
+  readonly result: SealedAssertionResultV1;
+};
 ```
 
-`loc` 整体仍可省略：运行时无法取得栈时，条目进入源码视图的 unmapped 区。
-只要 `loc` 存在，`callers` 就是必选数组；单文件 eval 与调用链缺失都写空数组，避免多个构造点各自解释“没填”含义。
-`package` 帧只保存包名，不把第三方源码纳入 Record。
+`AssertionsDocumentV1` 是 writer 可写的形状。reader 先以 `AssertionsDocumentOuterV1` exact decode：除了
+`criterion` 暂时只要求为有界 JSON object 外，其余 document 与 entry 字段已经完整验证。这样 reader 能先确定
+entry 边界，再局部解释 criterion，而不会把未知 criterion 当成整个 payload 损坏。
 
-判别键是 `outcome`。
-`unavailable` 是没有分数的独立态，不存在「`passed: false` 但又不许当失败」或「`score: 0` 但又不许聚合」的非法组合。
-普通聚合代码按 `outcome` 分支，不会把证据缺口算成零分。
+`entryId` 精确匹配 `ae_[a-z0-9]{20}`，只在这份 Attachment 内唯一。`entries` 顺序就是原始声明／展示顺序；
+它不从 key、label、数组位置、源码或材料推导。一个 document 最多 4,096 个 entry；key、label、groupPath
+的每项都是无控制字符、最多 256 code points 的文本，group 深度最多 16。
 
-这份字段全集是穷尽的。
-show、view 与报告需要的每个展示字段都在表内，不存在「放入 `name` 再拆」的隐式约定。
-`expected`、`received` 与 `evidence` 是有界预览，而不是原始值。
-原始证据保存在 `events.json`、`diff.json` 等 artifact 里。
-判定只消费 `severity`、`outcome`、`optional`、`score` 与 `threshold`；`points` 与
-`pointsAvailable` 不参与判定。`pointsAvailable` 是单个给分项的分值，不是 eval 的全局满分声明；
-展示 “0 / 5” 必须读取这两个独立字段，不能从实得 `points` 或归一化 `score` 反推分母。
+## Criterion envelope 与内建 criterion
 
-`points` 与 `ScoreEntry` 是计分制(`defineScoreEval`)才会出现的分数面数据;通过制 eval 的 `AssertionResult` 永不带 `points`,其 attempt 条目也永不携带 `ScoreEntry`。
-两者共用同一套 `groupPath` 折叠约定, 分数面的逐层求和规则见[计分粒度](library/score-points.md#折叠树判定面分数面质量分)。
+criterion 的 outer envelope 只有两种 exact object。third-party 形态就是精确的
+`{ name, schemaId, data }`；它没有额外 discriminator 或自由字段。builtin 形态保留 `id` 和 raw JSON
+`data`，以便未知的未来 builtin 仍可在单条 entry 内显示 unsupported。
 
-计分制条目里 `severity`、`points` 与 `stopOnFailure` 分别回答硬不硬、挣不挣分、停不停：得分点是 `severity: "soft"` + 有 `points`，硬要求是 `severity: "gate"`，前置再显式带 `stopOnFailure: true`。
-观测是 `severity: "soft"` + 无 `points`。
-质量分因此按「soft 且没有 `points`」取子集聚合。
-得分点已经在分数面被读过一次，不再进入质量分。
+builtin `id`、third-party `name` 与 `schemaId` 都是最多 128 bytes 的 ASCII identifier，不允许控制字符或空值。
+builtin `id` 的唯一 `/vN` 后缀只是 schema version，不是 filesystem path；这些值是 schema 选择 identity，不是作者传入的
+可执行 evaluator 名。
+
+```ts
+type BuiltInCriterionEnvelopeV1 = {
+  readonly kind: "builtin";
+  readonly id: string;
+  readonly data: BoundedJsonValueV1;
+};
+
+type ThirdPartyCriterionV1 = {
+  readonly name: string;
+  readonly schemaId: string;
+  readonly data: BoundedJsonValueV1;
+};
+
+type CriterionEnvelopeV1 = BuiltInCriterionEnvelopeV1 | ThirdPartyCriterionV1;
+
+type BuiltInCriterionV1 =
+  | {
+      readonly kind: "builtin";
+      readonly id: "value-match/v1";
+      readonly data: { readonly subject: "explicit-value" };
+    }
+  | {
+      readonly kind: "builtin";
+      readonly id: "scope-status/v1";
+      readonly data: {
+        readonly scope: "turn" | "session" | "attempt";
+        readonly assertion: "succeeded" | "no-failed-actions";
+      };
+    }
+  | {
+      readonly kind: "builtin";
+      readonly id: "occurrence/v1";
+      readonly data: {
+        readonly scope: "turn" | "session" | "attempt";
+        readonly occurrence: "tool" | "skill" | "event";
+        readonly assertion: "present" | "absent" | "count";
+      };
+    }
+  | {
+      readonly kind: "builtin";
+      readonly id: "judge-measurement/v1";
+      readonly data: {
+        readonly recipe: "closed-qa" | "factuality" | "summarizes";
+        readonly scale: "unit-interval";
+      };
+    }
+  | {
+      readonly kind: "builtin";
+      readonly id: "sandbox-result/v1";
+      readonly data: {
+        readonly operation: "command" | "path" | "file" | "diff" | "usage";
+      };
+    }
+  | {
+      readonly kind: "builtin";
+      readonly id: "direct-score/v1";
+      readonly data: { readonly source: "author" };
+    };
+```
+
+这些 data 是可离线解释的闭合类别，不保存 `Match` object、predicate、regex、Judge client、collector 或
+作者 API 对象。criterion 以外的 display、subject、evidence 与 sealed result 才提供本次检查的审计材料。
+
+`BuiltInCriterionEnvelopeV1` 与 `CriterionEnvelopeV1` 是 reader 的 raw identity 阶段形状，不是当前 writer 的
+开放写入类型。writer 只写 `BuiltInCriterionV1` 的六个成员，或第三方的 exact 三字段形态；未来 writer 写出的
+未知 builtin `id` 仍可由旧 reader 保留为 raw entry 并局部显示 unsupported。
+
+第二层按 identity 处理 criterion：已知 builtin 的 `id` 用相应 `BuiltInCriterionV1` exact schema decode；
+third-party 的 `{ name, schemaId }` 选择已安装的精确 schema，再 decode `data`。未知 builtin `id` 或未安装的
+third-party schema 使这条 entry 为 `unsupported`；envelope、known builtin data 或 third-party data 不合法时，
+这条 entry 为 `invalid`。二者都不重新执行 evaluator。
+
+```ts
+type AssertionEntryReadV1 =
+  | { readonly state: "available"; readonly entry: AssertionEntryV1 }
+  | {
+      readonly state: "unsupported";
+      readonly entry: AssertionEntryOuterV1;
+      readonly reason: "builtin-unknown" | "third-party-schema-unavailable";
+    }
+  | {
+      readonly state: "invalid";
+      readonly entry: AssertionEntryOuterV1;
+      readonly reason: "criterion-envelope-invalid" | "criterion-data-invalid";
+    };
+```
+
+若 document framing、entry 字段边界、entryId 唯一性、JSON 限额或 own blob closure 无法验证，整个
+Attachment 是 `RecordAttachmentRead.invalid`。只有已经通过 outer decode 的单条 criterion 问题才使用上面的
+entry-local state；因此一个第三方 criterion 不会拖垮同一 Attempt 的其它 Assertions、Verdict 或 Projection。
+
+## 材料、coverage 与 limitations
+
+v1 的 material 只来自有界 snapshot 或本 Assertions Attachment 自己的 blob closure。`RecordBlobRef` 的唯一
+owner 是 [Record Library](../record/library.md#blob-closure写入-builder-与读取-value)：只有该 family 的 typed
+builder 能 mint 它，`blobRefs(payload)` 也只接受同一 Attachment 的 ref。v1 不保存另一个 Attachment 的
+`RecordBlobRef`、attachment name、磁盘 path 或可变“最新状态”。
+
+每个 own blob ref 在整个 payload 中恰出现一次，符合 Record 的双向 closure 校验。同一大材料被多个 entry 需要时，
+producer 为每处 mint 独立 ref／bytes，或改存各自的有界 snapshot；它不能共享一个 ref。
+
+```ts
+type AssertionMaterialV1 =
+  | {
+      readonly kind: "snapshot";
+      readonly value: BoundedJsonValueV1;
+    }
+  | {
+      readonly kind: "blob";
+      readonly ref: RecordBlobRef;
+      readonly encoding: "utf-8" | "binary";
+      readonly byteLength: number;
+      readonly preview: string;
+    };
+
+type AssertionCoverageV1 =
+  | { readonly state: "complete" }
+  | {
+      readonly state: "partial";
+      readonly reason: "sampled" | "truncated" | "redacted" | "provider-limited";
+    }
+  | {
+      readonly state: "unavailable";
+      readonly reason: "not-collected" | "source-unavailable" | "producer-failed";
+    }
+  | {
+      readonly state: "not-applicable";
+      readonly reason: "optional-material" | "unsupported-subject";
+    };
+
+type AssertionLimitationV1 =
+  | { readonly kind: "redacted"; readonly fieldCount: number }
+  | { readonly kind: "sampled"; readonly captured: number; readonly knownTotal?: number }
+  | { readonly kind: "truncated"; readonly omittedBytes: number }
+  | { readonly kind: "provider-limited" };
+```
+
+`byteLength`、`fieldCount`、`captured`、`knownTotal` 与 `omittedBytes` 都是 finite non-negative integers；preview
+最多 8 KiB。coverage 是 entry-owned producer 事实，不是 Record envelope 的字段。`complete` 不允许
+limitations；`partial` 至少有一个相符 limitation；`unavailable` 与 `not-applicable` 不伪装成空 evidence。
+snapshot、preview 与 blob bytes 都先经过 secret/redaction policy，不能携带函数、native bytes 或当前 worktree。
+
+scope Assertion 将 call-time vector cut 归一为 snapshot；它不保留一个可在 reader 时打开的 Session、Turn、
+Conversation 或其它 Attachment ref。
+
+## Sealed result、gate 与 score contribution
+
+每个 entry 的 evaluation 一次封口。result 有闭合 state、gate disposition 与 score contribution；它不保存
+await 顺序、early stop、memo table 或以后还能调用的 evaluator。
+
+```ts
+type GateDispositionV1 =
+  | "not-gate"
+  | "satisfied"
+  | "failed"
+  | "unavailable"
+  | "not-applicable";
+
+type NoScoreContributionV1 = { readonly state: "not-scored" };
+
+type EarnedScoreContributionV1 = {
+  readonly state: "earned";
+  readonly points: number;
+  readonly earned: number;
+};
+
+type UnavailableScoreContributionV1 = {
+  readonly state: "unavailable";
+  readonly points: number;
+  readonly reason: "source-unavailable" | "evaluation-errored" | "not-applicable";
+};
+
+type SealedAssertionResultV1 =
+  | {
+      readonly state: "matched";
+      readonly gate: "not-gate" | "satisfied";
+      readonly score: NoScoreContributionV1 | EarnedScoreContributionV1;
+    }
+  | {
+      readonly state: "mismatched";
+      readonly reason: "condition-not-met";
+      readonly gate: "not-gate" | "failed";
+      readonly score: NoScoreContributionV1 | EarnedScoreContributionV1;
+    }
+  | {
+      readonly state: "unavailable";
+      readonly reason: "evidence-unavailable" | "source-unavailable" | "redacted";
+      readonly gate: "not-gate" | "unavailable";
+      readonly score: NoScoreContributionV1 | UnavailableScoreContributionV1;
+    }
+  | {
+      readonly state: "errored";
+      readonly reason: "evaluator-failed" | "producer-interrupted" | "invalid-subject";
+      readonly gate: "not-gate" | "unavailable";
+      readonly score: NoScoreContributionV1 | UnavailableScoreContributionV1;
+    }
+  | {
+      readonly state: "not-applicable";
+      readonly reason: "coverage-not-applicable";
+      readonly gate: "not-gate" | "not-applicable";
+      readonly score: NoScoreContributionV1 | UnavailableScoreContributionV1;
+    };
+```
+
+`points` 与 `earned` 都是 finite non-negative numbers；`earned` 不大于 `points`。Score Eval 汇总每个
+`earned` contribution 得到独立 `niceeval.score/v1` Attachment。gate failed 会让 Verdict 成为 `failed`，但不改写
+已经 sealed 的 earned 值。执行错误或 score source unavailable 则保留已知 contribution，并让 Score Attachment
+成为 partial 或 unavailable；它们不会伪造 0。
+
+## 归属、Projection 与演进
+
+producer 在 whole Run 发布前分配 entryId、归一 material 并写入 Assertions Attachment。它不打开 Record path、
+不读取 Report Projection，也不把作者调用图或 evaluator internals 序列化进 payload。
+
+`niceeval.assertion-source-sites/v1` 另行保存 `entryId` 到已执行 source site 的 mapping。它只含
+schema-declared immutable semantic join，不能携带另一个 Attachment 的 blob ref、storage path 或 capability。
+Assertions entry 的 criterion / result 状态与 source mapping 相互隔离。
+
+需要源码导航的 consumer 必须显式声明三个中立 input：attempt-slot Assertions、attempt-slot
+source-sites 与 attempt-origin-run Sources。公开的 pure `assembleAttemptSourceTree` 组合已形成的值，
+不能在 reader 时猜测当前 worktree 或绕过已声明的 projection 读取。
+
+一个 entry 的 sealed result、points 与 unavailable 仍只来自 Assertions。因此多 site 不会重复计分，
+也不会重复计算 check。
+
+payload、own blob closure 语义或解释改变时，发布同 name 的相邻 `RecordAttachmentSchemaId`。family
+为相邻版本提供无损 converter，或显式声明 `not-losslessly-migratable`；普通 reader 不自动迁移。
+
+converter 只读取精确旧 payload，不读取当前 Eval、源码、网络、进程变量或新的 evaluation。不可无损时，
+`niceeval migrate` 保留旧 bytes 并返回 `migration-unavailable`，不补默认值或重算 Assertions。若
+source-sites source ref identity 同时改变，它与 Sources 进入相同的 source identity migration group，
+不能独立转换该 Attachment；跨 owner group 的依赖由 [Source sites](architecture/source-sites.md) 声明。
+
+## 相关阅读
+
+- [Assertions](README.md) —— 作者面与范围。
+- [Evidence](architecture/evidence.md) —— material 的采集边界。
+- [Source sites](architecture/source-sites.md) —— source mapping、unmapped 与 migration group。
+- [Score Eval](library/score-points.md) —— score state 与 points。
+- [Verdict](../verdict/architecture.md) —— 四态折叠。
+- [RecordAttachment](../record/architecture.md#recordattachment-与完整-blob-closure) —— owner、closure 与发布。

@@ -4,8 +4,9 @@
 
 import { mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { pathToFileURL } from "node:url";
+import { Effect } from "effect";
 import { t } from "../i18n/index.ts";
 import { shellQuote } from "../sandbox/shell.ts";
 import type { Sandbox } from "../sandbox/types.ts";
@@ -70,25 +71,149 @@ function defaultParseVersion(stdout: string): string | undefined {
   return matches?.at(-1);
 }
 
-async function runHost(command: string, args: string[], cwd?: string): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, env: process.env });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString();
-    });
-    child.stderr.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString();
-    });
-    child.on("error", reject);
-    child.on("close", (code) => {
-      resolve({ stdout, stderr, exitCode: code ?? 1 });
-    });
+type HostCommandResult = { stdout: string; stderr: string; exitCode: number };
+interface HostProcess {
+  readonly child: ChildProcess;
+  closed: boolean;
+}
+
+/** Node / provider Promise 边界统一进入 Effect,让运行时 signal 能传到支持取消的调用。 */
+function promiseEffect<Value>(
+  run: (signal: AbortSignal) => Promise<Value>,
+): Effect.Effect<Value, unknown> {
+  return Effect.tryPromise({ try: run, catch: (cause) => cause });
+}
+
+/** Sandbox command 仍是 Promise API;这里是 installer 内唯一的适配边界。 */
+function sandboxShellEffect(
+  sandbox: Pick<SandboxCommandTarget, "runShell">,
+  script: string,
+): Effect.Effect<Awaited<ReturnType<SandboxCommandTarget["runShell"]>>, unknown> {
+  return promiseEffect((signal) => sandbox.runShell(script, { signal }));
+}
+
+function processExited(child: ChildProcess): boolean {
+  return child.exitCode !== null || child.signalCode !== null || child.pid === undefined;
+}
+
+function signalHostProcess(child: ChildProcess, signal: NodeJS.Signals): void {
+  if (processExited(child)) return;
+  try {
+    child.kill(signal);
+  } catch {
+    // The process may have exited between the state check and kill(). Its close event is still
+    // the source of truth for the scoped release below.
+  }
+}
+
+function awaitHostProcessClose(host: HostProcess): Effect.Effect<void> {
+  return Effect.async<void>((resume) => {
+    if (host.closed || host.child.pid === undefined) {
+      resume(Effect.void);
+      return;
+    }
+    const onClose = () => {
+      host.closed = true;
+      resume(Effect.void);
+    };
+    host.child.once("close", onClose);
+    return Effect.sync(() => host.child.removeListener("close", onClose));
   });
 }
 
-async function npmPackToCache(opts: {
+/**
+ * A host `npm pack` process is a scoped resource. Interruption asks it to stop immediately,
+ * waits for the close receipt, then escalates only when SIGTERM did not settle it.
+ */
+function releaseHostProcess(host: HostProcess): Effect.Effect<void> {
+  return Effect.suspend(() => {
+    const { child } = host;
+    if (host.closed || child.pid === undefined) return Effect.void;
+    const ignoreError = () => {};
+    return Effect.sync(() => child.on("error", ignoreError)).pipe(
+      Effect.zipRight(
+        processExited(child)
+          ? Effect.void
+          : Effect.sync(() => signalHostProcess(child, "SIGTERM")),
+      ),
+      Effect.zipRight(
+        processExited(child)
+          ? awaitHostProcessClose(host)
+          : Effect.raceFirst(
+              awaitHostProcessClose(host),
+              Effect.sleep("5 seconds").pipe(
+                Effect.zipRight(Effect.sync(() => signalHostProcess(child, "SIGKILL"))),
+                Effect.zipRight(awaitHostProcessClose(host)),
+              ),
+            ),
+      ),
+      Effect.ensuring(Effect.sync(() => child.removeListener("error", ignoreError))),
+    );
+  });
+}
+
+function waitForHostProcess(host: HostProcess): Effect.Effect<HostCommandResult, unknown> {
+  return Effect.async<HostCommandResult, unknown>((resume, signal) => {
+    const { child } = host;
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    const onStdout = (chunk: Buffer) => {
+      stdout += chunk.toString();
+    };
+    const onStderr = (chunk: Buffer) => {
+      stderr += chunk.toString();
+    };
+    const cleanup = () => {
+      child.stdout?.removeListener("data", onStdout);
+      child.stderr?.removeListener("data", onStderr);
+      child.removeListener("error", onError);
+      child.removeListener("close", onClose);
+      signal.removeEventListener("abort", onAbort);
+    };
+    const complete = (result: Effect.Effect<HostCommandResult, unknown>) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resume(result);
+    };
+    const onError = (cause: unknown) => complete(Effect.fail(cause));
+    const onClose = (code: number | null) => {
+      host.closed = true;
+      complete(Effect.succeed({ stdout, stderr, exitCode: code ?? 1 }));
+    };
+    const onAbort = () => signalHostProcess(child, "SIGTERM");
+
+    child.stdout?.on("data", onStdout);
+    child.stderr?.on("data", onStderr);
+    child.once("error", onError);
+    child.once("close", onClose);
+    signal.addEventListener("abort", onAbort, { once: true });
+    if (signal.aborted) onAbort();
+    return Effect.sync(cleanup);
+  });
+}
+
+function runHostEffect(command: string, args: string[], cwd?: string): Effect.Effect<HostCommandResult, unknown> {
+  return Effect.scoped(
+    Effect.acquireRelease(
+      Effect.try({
+        try: () => {
+          const child = spawn(command, args, { cwd, env: process.env });
+          const host: HostProcess = { child, closed: false };
+          child.once("close", () => {
+            host.closed = true;
+          });
+          return host;
+        },
+        catch: (cause) => cause,
+      }),
+      releaseHostProcess,
+    ).pipe(Effect.flatMap(waitForHostProcess)),
+  );
+}
+
+function npmPackToCacheEffect(opts: {
   packageName: string;
   version: string;
   cacheDir: string;
@@ -97,50 +222,61 @@ async function npmPackToCache(opts: {
   /** 覆盖 pack 的 spec(原生平台包);省略时用 `<packageName>@<version>`。 */
   spec?: string;
   install: AgentStagedArtifact["install"];
-}): Promise<AgentStagedArtifact> {
-  const dest = join(
-    opts.cacheDir,
-    opts.identity.agent,
-    `${opts.identity.version}-r${opts.identity.revision}`,
-    platformKey(opts.platform),
-  );
-  await mkdir(dest, { recursive: true });
-  const spec = opts.spec ?? `${opts.packageName}@${opts.version}`;
-  const pack = await runHost("npm", ["pack", spec, "--pack-destination", dest], dest);
-  if (pack.exitCode !== 0) {
-    throw new Error(
-      t("agent.ensure.npmPackFailed", {
-        packageName: opts.packageName,
-        version: opts.version,
-        tail: (pack.stdout + pack.stderr).trim().split("\n").slice(-12).join("\n"),
-      }),
+}): Effect.Effect<AgentStagedArtifact, unknown> {
+  return Effect.gen(function* () {
+    const dest = join(
+      opts.cacheDir,
+      opts.identity.agent,
+      `${opts.identity.version}-r${opts.identity.revision}`,
+      platformKey(opts.platform),
     );
-  }
-  const packedName = pack.stdout.trim().split("\n").at(-1)?.trim();
-  const files = await readdir(dest);
-  if (
-    packedName === undefined ||
-    !/^[^/\\]+\.tgz$/.test(packedName) ||
-    !files.includes(packedName)
-  ) {
-    throw new Error(
-      t("agent.ensure.npmPackEmpty", { packageName: opts.packageName, version: opts.version, dest }),
-    );
-  }
-  const localPath = join(dest, packedName);
-  const content = registerSandboxContent(pathToFileURL(localPath));
-  return {
-    platform: opts.platform,
-    content,
-    targetPath: `${SANDBOX_TARBALL_DIR}/${opts.identity.agent}.tgz`,
-    install: opts.install,
-  };
+    yield* promiseEffect(() => mkdir(dest, { recursive: true }));
+    const spec = opts.spec ?? `${opts.packageName}@${opts.version}`;
+    const pack = yield* runHostEffect("npm", ["pack", spec, "--pack-destination", dest], dest);
+    if (pack.exitCode !== 0) {
+      return yield* Effect.fail(
+        new Error(
+          t("agent.ensure.npmPackFailed", {
+            packageName: opts.packageName,
+            version: opts.version,
+            tail: (pack.stdout + pack.stderr).trim().split("\n").slice(-12).join("\n"),
+          }),
+        ),
+      );
+    }
+    const packedName = pack.stdout.trim().split("\n").at(-1)?.trim();
+    const files = yield* promiseEffect(() => readdir(dest));
+    if (
+      packedName === undefined ||
+      !/^[^/\\]+\.tgz$/.test(packedName) ||
+      !files.includes(packedName)
+    ) {
+      return yield* Effect.fail(
+        new Error(
+          t("agent.ensure.npmPackEmpty", { packageName: opts.packageName, version: opts.version, dest }),
+        ),
+      );
+    }
+    const localPath = join(dest, packedName);
+    // registerSandboxContent synchronously snapshots and digests the staged file. Keep that file
+    // boundary in the same Effect as mkdir / npm / readdir so it cannot escape the cancellation path.
+    const content = yield* Effect.try({
+      try: () => registerSandboxContent(pathToFileURL(localPath)),
+      catch: (cause) => cause,
+    });
+    return {
+      platform: opts.platform,
+      content,
+      targetPath: `${SANDBOX_TARBALL_DIR}/${opts.identity.agent}.tgz`,
+      install: opts.install,
+    };
+  });
 }
 
-async function checkNpmCli(
+function checkNpmCliEffect(
   sandbox: SandboxCommandTarget,
   opts: { bin: string; expectedVersion: string; parseVersion: (stdout: string) => string | undefined },
-): Promise<AgentProbeResult> {
+): Effect.Effect<AgentProbeResult, unknown> {
   // 运行用户身份断言:先看用户前缀,再看 PATH。不以 root 跑出假绿。
   const bin = opts.bin;
   const versionCmd = [
@@ -151,41 +287,51 @@ async function checkNpmCli(
     `if [ -z "$BIN" ]; then exit 127; fi`,
     `"$BIN" --version`,
   ].join("; ");
-  const res = await sandbox.runShell(versionCmd);
-  if (res.exitCode !== 0) {
-    return {
-      ok: false,
-      detail: t("agent.ensure.missingBin", { bin, tail: (res.stdout + res.stderr).trim().slice(0, 200) }),
-    };
-  }
-  const actualVersion = opts.parseVersion(res.stdout.trim());
-  if (actualVersion === undefined) {
-    return {
-      ok: false,
-      detail: t("agent.ensure.versionUnparseable", { bin, stdout: res.stdout.trim().slice(0, 200) }),
-    };
-  }
-  if (actualVersion !== opts.expectedVersion) {
-    return {
-      ok: false,
-      actualVersion,
-      detail: t("agent.ensure.versionMismatch", {
-        bin,
-        expected: opts.expectedVersion,
-        actual: actualVersion,
-      }),
-    };
-  }
-  return { ok: true, actualVersion };
+  return sandboxShellEffect(sandbox, versionCmd).pipe(
+    Effect.flatMap((res) => {
+      if (res.exitCode !== 0) {
+        return Effect.succeed({
+          ok: false,
+          detail: t("agent.ensure.missingBin", { bin, tail: (res.stdout + res.stderr).trim().slice(0, 200) }),
+        });
+      }
+      return Effect.try({
+        try: () => opts.parseVersion(res.stdout.trim()),
+        catch: (cause) => cause,
+      }).pipe(
+        Effect.map((actualVersion): AgentProbeResult => {
+          if (actualVersion === undefined) {
+            return {
+              ok: false,
+              detail: t("agent.ensure.versionUnparseable", { bin, stdout: res.stdout.trim().slice(0, 200) }),
+            };
+          }
+          if (actualVersion !== opts.expectedVersion) {
+            return {
+              ok: false,
+              actualVersion,
+              detail: t("agent.ensure.versionMismatch", {
+                bin,
+                expected: opts.expectedVersion,
+                actual: actualVersion,
+              }),
+            };
+          }
+          return { ok: true, actualVersion };
+        }),
+      );
+    }),
+  );
 }
 
 /** 自带运行时的原生包:解压 + 链接,沙箱里不需要 node / npm。 */
-async function installSelfContained(
+function installSelfContainedEffect(
   sandbox: SandboxCommandTarget,
   opts: { tarball: string; prefix: string; agent: string; bin: string; binPath: string },
-): Promise<void> {
+): Effect.Effect<void, unknown> {
   const libDir = `${opts.prefix}/lib/${opts.agent}`;
-  const extract = await sandbox.runShell(
+  return sandboxShellEffect(
+    sandbox,
     [
       "set -eu",
       `rm -rf ${shellQuote(libDir)}`,
@@ -196,67 +342,76 @@ async function installSelfContained(
       `ln -sfn ${shellQuote(`${libDir}/${opts.binPath}`)} ${shellQuote(`${opts.prefix}/bin/${opts.bin}`)}`,
       `rm -f ${shellQuote(opts.tarball)}`,
     ].join("\n"),
+  ).pipe(
+    Effect.flatMap((extract) => extract.exitCode === 0
+      ? Effect.void
+      : Effect.fail(
+          new Error(
+            t("agent.ensure.selfContainedInstallFailed", {
+              agent: opts.agent,
+              tail: (extract.stdout + extract.stderr).trim().split("\n").slice(-12).join("\n"),
+            }),
+          ),
+        )),
   );
-  if (extract.exitCode !== 0) {
-    throw new Error(
-      t("agent.ensure.selfContainedInstallFailed", {
-        agent: opts.agent,
-        tail: (extract.stdout + extract.stderr).trim().split("\n").slice(-12).join("\n"),
-      }),
-    );
-  }
 }
 
-async function installFromStaged(
+function installFromStagedEffect(
   sandbox: SandboxCommandTarget,
   artifact: AgentStagedArtifact,
   identity: AgentIdentity,
   bin: string,
-): Promise<void> {
-  const tarball = await expandSandboxHomePath(sandbox, artifact.targetPath);
-  const prefix = await expandSandboxHomePath(sandbox, AGENT_USER_PREFIX);
-  await sandbox.runShell(`mkdir -p ${shellQuote(dirnameOf(tarball))} ${shellQuote(prefix)}`);
-  await sandbox.putContent(artifact.content, tarball);
+): Effect.Effect<void, unknown> {
+  return Effect.gen(function* () {
+    const tarball = yield* expandSandboxHomePathEffect(sandbox, artifact.targetPath);
+    const prefix = yield* expandSandboxHomePathEffect(sandbox, AGENT_USER_PREFIX);
+    yield* sandboxShellEffect(sandbox, `mkdir -p ${shellQuote(dirnameOf(tarball))} ${shellQuote(prefix)}`);
+    yield* promiseEffect(() => sandbox.putContent(artifact.content, tarball));
 
-  if (artifact.install.kind === "self-contained") {
-    await installSelfContained(sandbox, {
-      tarball,
-      prefix,
-      agent: identity.agent,
-      bin,
-      binPath: artifact.install.binPath,
-    });
-  } else {
-    const hasNpm = await sandbox.runShell("command -v npm >/dev/null 2>&1");
-    if (hasNpm.exitCode !== 0) {
-      // 任务镜像是题给的,不能假设它带 Node 工具链;点名缺什么,不猜一个近似命令继续跑。
-      throw new Error(t("agent.ensure.npmMissingInSandbox", { agent: identity.agent }));
-    }
-    const install = await sandbox.runShell(
-      `npm install -g --prefix ${shellQuote(prefix)} ${shellQuote(tarball)}`,
-    );
-    if (install.exitCode !== 0) {
-      throw new Error(
-        t("agent.ensure.npmInstallFailed", {
-          agent: identity.agent,
-          tail: (install.stdout + install.stderr).trim().split("\n").slice(-12).join("\n"),
-        }),
+    if (artifact.install.kind === "self-contained") {
+      yield* installSelfContainedEffect(sandbox, {
+        tarball,
+        prefix,
+        agent: identity.agent,
+        bin,
+        binPath: artifact.install.binPath,
+      });
+    } else {
+      const hasNpm = yield* sandboxShellEffect(sandbox, "command -v npm >/dev/null 2>&1");
+      if (hasNpm.exitCode !== 0) {
+        // 任务镜像是题给的,不能假设它带 Node 工具链;点名缺什么,不猜一个近似命令继续跑。
+        return yield* Effect.fail(new Error(t("agent.ensure.npmMissingInSandbox", { agent: identity.agent })));
+      }
+      const install = yield* sandboxShellEffect(
+        sandbox,
+        `npm install -g --prefix ${shellQuote(prefix)} ${shellQuote(tarball)}`,
       );
+      if (install.exitCode !== 0) {
+        return yield* Effect.fail(
+          new Error(
+            t("agent.ensure.npmInstallFailed", {
+              agent: identity.agent,
+              tail: (install.stdout + install.stderr).trim().split("\n").slice(-12).join("\n"),
+            }),
+          ),
+        );
+      }
     }
-  }
 
-  // bash -c 不读 profile;把用户前缀 bin 链到常见 PATH 目录,让后续 setup/send 的裸命令名仍可用。
-  // 写不进就不强求——check 已能解析 $HOME/.local/bin;send 侧用 agentBin() 兜底。
-  await sandbox.runShell(
-    [
-      `SRC=${shellQuote(`${prefix}/bin/${bin}`)}`,
-      `if [ -x "$SRC" ]; then`,
-      `  for d in /usr/local/bin /usr/bin; do`,
-      `    if [ -w "$d" ]; then ln -sfn "$SRC" "$d/${bin}" && break; fi`,
-      `  done`,
-      `fi`,
-    ].join("\n"),
-  );
+    // bash -c 不读 profile;把用户前缀 bin 链到常见 PATH 目录,让后续 setup/send 的裸命令名仍可用。
+    // 写不进就不强求——check 已能解析 $HOME/.local/bin;send 侧用 agentBin() 兜底。
+    yield* sandboxShellEffect(
+      sandbox,
+      [
+        `SRC=${shellQuote(`${prefix}/bin/${bin}`)}`,
+        `if [ -x "$SRC" ]; then`,
+        `  for d in /usr/local/bin /usr/bin; do`,
+        `    if [ -w "$d" ]; then ln -sfn "$SRC" "$d/${bin}" && break; fi`,
+        `  done`,
+        `fi`,
+      ].join("\n"),
+    );
+  });
 }
 
 function dirnameOf(path: string): string {
@@ -264,15 +419,21 @@ function dirnameOf(path: string): string {
   return idx <= 0 ? "." : path.slice(0, idx);
 }
 
-async function expandSandboxHomePath(sandbox: SandboxCommandTarget, pathWithHome: string): Promise<string> {
+function expandSandboxHomePathEffect(
+  sandbox: SandboxCommandTarget,
+  pathWithHome: string,
+): Effect.Effect<string, unknown> {
   if (!pathWithHome.includes("$HOME") && !pathWithHome.startsWith("~")) {
-    return pathWithHome;
+    return Effect.succeed(pathWithHome);
   }
-  const home = (await sandbox.runShell("printf '%s' \"$HOME\"")).stdout.trim();
-  if (!home) {
-    throw new Error(t("agent.ensure.homeDetectFailed"));
-  }
-  return pathWithHome.replace(/\$HOME/g, home).replace(/^~\//, `${home}/`).replace(/^~$/, home);
+  return sandboxShellEffect(sandbox, "printf '%s' \"$HOME\"").pipe(
+    Effect.flatMap((result) => {
+      const home = result.stdout.trim();
+      return home
+        ? Effect.succeed(pathWithHome.replace(/\$HOME/g, home).replace(/^~\//, `${home}/`).replace(/^~$/, home))
+        : Effect.fail(new Error(t("agent.ensure.homeDetectFailed")));
+    }),
+  );
 }
 
 /**
@@ -291,21 +452,25 @@ export function createNpmCliInstaller(opts: NpmCliInstallerOptions): {
       revision: opts.identity.revision,
       inputs: { agent: opts.identity.agent, version: opts.identity.version, bin: opts.bin },
     },
-    async (sandbox) => {
-      const result = await checkNpmCli(sandbox, {
+    (sandbox, context) => Effect.runPromise(
+      checkNpmCliEffect(sandbox, {
         bin: opts.bin,
         expectedVersion: opts.identity.version,
         parseVersion,
-      });
-      if (!result.ok) {
-        throw new SandboxCommandExitError({
-          stdout: result.actualVersion ?? "",
-          stderr: result.detail ?? `missing ${opts.bin}`,
-          exitCode: 1,
-          command: `${opts.bin} --version`,
-        });
-      }
-    },
+      }).pipe(
+        Effect.flatMap((result) => result.ok
+          ? Effect.void
+          : Effect.fail(
+              new SandboxCommandExitError({
+                stdout: result.actualVersion ?? "",
+                stderr: result.detail ?? `missing ${opts.bin}`,
+                exitCode: 1,
+                command: `${opts.bin} --version`,
+              }),
+            )),
+      ),
+      { signal: context.signal },
+    ),
   );
   const installer: Extract<AgentInstaller, { installMode: "staged" }> & DockerfileAgentCacheSafeInstaller = {
     [AGENT_DOCKERFILE_CACHE_SAFE]: true,
@@ -314,23 +479,30 @@ export function createNpmCliInstaller(opts: NpmCliInstallerOptions): {
     ...(opts.progress?.installing !== undefined
       ? { progress: { installing: opts.progress.installing } }
       : {}),
-    prepareArtifact: ({ targetPlatform }) =>
-      opts.prepare !== undefined ? opts.prepare(targetPlatform) : (() => {
-        // 目标平台有自带运行时的原生包就取它:装的时候只要 tar,不要 node / npm。
-        const native = opts.platformPackage?.(targetPlatform);
-        return npmPackToCache({
-          packageName: opts.packageName,
-          version: opts.identity.version,
-          cacheDir,
-          platform: targetPlatform,
-          identity: opts.identity,
-          ...(native !== undefined ? { spec: native.spec } : {}),
-          install: native !== undefined
-            ? { kind: "self-contained" as const, binPath: native.binPath }
-            : { kind: "npm-tarball" as const },
-        });
-      })(),
-    install: (sandbox, context) => installFromStaged(sandbox, context.artifact, opts.identity, opts.bin),
+    prepareArtifact: ({ targetPlatform, signal }) => Effect.runPromise(
+      opts.prepare !== undefined
+        ? promiseEffect(() => opts.prepare!(targetPlatform))
+        : Effect.suspend(() => {
+            // 目标平台有自带运行时的原生包就取它:装的时候只要 tar,不要 node / npm。
+            const native = opts.platformPackage?.(targetPlatform);
+            return npmPackToCacheEffect({
+              packageName: opts.packageName,
+              version: opts.identity.version,
+              cacheDir,
+              platform: targetPlatform,
+              identity: opts.identity,
+              ...(native !== undefined ? { spec: native.spec } : {}),
+              install: native !== undefined
+                ? { kind: "self-contained" as const, binPath: native.binPath }
+                : { kind: "npm-tarball" as const },
+            });
+          }),
+      { signal },
+    ),
+    install: (sandbox, context) => Effect.runPromise(
+      installFromStagedEffect(sandbox, context.artifact, opts.identity, opts.bin),
+      { signal: context.signal },
+    ),
   };
   return {
     ensure: {
@@ -358,13 +530,20 @@ export function agentBin(bin: string): string {
 }
 
 /** 解析 Agent CLI 的绝对路径,供 `runCommand` 使用(不经 shell)。 */
-export async function resolveAgentBin(sandbox: Sandbox, bin: string): Promise<string> {
-  const res = await sandbox.runShell(
+export function resolveAgentBinEffect(sandbox: Sandbox, bin: string): Effect.Effect<string, unknown> {
+  return sandboxShellEffect(
+    sandbox,
     `if [ -x "$HOME/.local/bin/${bin}" ]; then printf '%s' "$HOME/.local/bin/${bin}"; else command -v ${shellQuote(bin)}; fi`,
+  ).pipe(
+    Effect.flatMap((res) => {
+      const path = res.stdout.trim();
+      return res.exitCode === 0 && path
+        ? Effect.succeed(path)
+        : Effect.fail(
+            new Error(
+              t("agent.ensure.missingBin", { bin, tail: (res.stdout + res.stderr).trim().slice(0, 200) }),
+            ),
+          );
+    }),
   );
-  const path = res.stdout.trim();
-  if (res.exitCode !== 0 || !path) {
-    throw new Error(t("agent.ensure.missingBin", { bin, tail: (res.stdout + res.stderr).trim().slice(0, 200) }));
-  }
-  return path;
 }

@@ -31,8 +31,8 @@
 | Experiment       | 内容                    | 预期                                                            |
 | ---------------- | ----------------------- | --------------------------------------------------------------- |
 | 正常             | 断言通过的 Eval         | 按 Eval 级折叠后退出 `0`                                        |
-| deliberate-fail  | 断言必然不通过的 Eval   | attempt verdict `failed`，进程非零退出                          |
-| deliberate-error | 必然产生执行错误的 Eval | attempt verdict `errored`，进程非零退出，且与 `failed` 判然有别 |
+| deliberate-fail  | 断言必然不通过的 Eval   | Attempt 的 Verdict 为 `failed`，进程非零退出                          |
+| deliberate-error | 必然产生执行错误的 Eval | 执行错误通道事件 支撑 Attempt 的 `errored` Verdict，进程非零退出，且与 `failed` 判然有别 |
 
 ### 缓存
 
@@ -47,7 +47,7 @@
 对人读文本与 `--json` 两种输出形态各跑一次真实进程，在真实 stdout/stderr 上断言[Experiments CLI](../../../feature/experiments/cli.md) 声明的反馈契约。`--json` 每行是一个可 `JSON.parse` 的事件对象，永不出现 ANSI 控制字符，正常事件全部落在 stdout，只有 run 建立前的错误落 stderr。非 TTY 人读文本是零 ANSI 的单一 stdout 追加流。真实 PTY smoke 证明运行期确实选择 dashboard renderer、产生光标控制与框面，并与另外两种形态给出一致的完成态判定和退出码。
 TTY 的精确宽度、行高降级、折叠和逐帧顺序由[Runner](../unit/experiments-runner.md)对可控 IO 的纯 renderer 输出证明；E2E 不实现第二个终端模拟器，也不逐秒断言心跳节奏。
 
-公开命令与 flag 的进程级失败面同样在本仓库验收。未采纳的 `watch` 是未知命令，必须在装载项目之前以明确用法错误退出。已删除的 `--output`、不存在的 `--quiet`、把 `show` 专属 flag 传给 `exp`、非法 `--timing` mode 也必须在运行前以明确用法错误退出。`--dry` 的人读/JSON 两面都不写请求的 JUnit 文件，`--dry --json` 只输出一个计划文档而不是事件流。
+公开命令与 flag 的进程级失败面同样在本仓库验收。未采纳的 `watch` 是未知命令，必须在装载项目之前以明确用法错误退出。已删除的 `--output`、`--timing` 与不存在的 `--quiet` 都是未知 flag；把 `show` 专属 flag 传给 `exp` 也必须在运行前以明确用法错误退出。timing 只能由已规划的 Report 页面提供。`--dry` 的人读/JSON 两面都不写请求的 JUnit 文件，`--dry --json` 只输出一个计划文档而不是事件流。
 flag 组合的完整语义矩阵仍由 unit 的纯 parse 与错误对象证明，本域只保留每类公开进程边界的一条区分力代表。
 
 ## 边界

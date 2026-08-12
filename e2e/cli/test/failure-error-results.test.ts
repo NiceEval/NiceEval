@@ -3,18 +3,8 @@
 
 import { mkdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { command, withProjectCopy } from "@niceeval/testkit";
+import { command, only, type ExpEvent, withProjectCopy } from "@niceeval/testkit";
 import { expect, test } from "vitest";
-
-interface ExpEvent {
-  event: string;
-  status?: string;
-  evalId?: string;
-  failed?: number;
-  errored?: number;
-  completion?: string;
-  junit?: string;
-}
 
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
 const projectCopy = {
@@ -37,18 +27,22 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
     expect(failed.stdout).not.toMatch(/[\x1b\x08]/);
     const failedEvents = failed.ndjson<ExpEvent>();
     expect(failedEvents).toContainEqual(expect.objectContaining({
-      event: "failure",
+      event: "eval",
       evalId: "deliberate-fail/broken",
+      verdict: "failed",
+      attempts: 1,
+      passed: 0,
     }));
-    expect(failedEvents.some((event) => event.event === "error")).toBe(false);
-    expect(failedEvents.at(-1)).toMatchObject({
-      event: "result",
-      status: "failed",
-      failed: 1,
-      errored: 0,
-      completion: "complete",
-      junit: "junit/failed.xml",
-    });
+    expect(failedEvents).not.toContainEqual(expect.objectContaining({
+      event: "eval",
+      verdict: "errored",
+    }));
+    only(
+      failedEvents,
+      (event) => "event" in event && event.event === "eval" && event.evalId === "deliberate-fail/broken",
+      failed.diagnostic(),
+    );
+    expect(failed.expReceipt()).toMatchObject({ completion: "completed" });
     const failedJunit = readFileSync(join(root, "junit", "failed.xml"), "utf8");
     expect(failedJunit).toContain("<failure");
     expect(failedJunit).not.toContain("<error");
@@ -62,18 +56,22 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
     expect(errored.stdout).not.toMatch(/[\x1b\x08]/);
     const erroredEvents = errored.ndjson<ExpEvent>();
     expect(erroredEvents).toContainEqual(expect.objectContaining({
-      event: "error",
+      event: "eval",
       evalId: "deliberate-error/crash",
+      verdict: "errored",
+      attempts: 1,
+      passed: 0,
     }));
-    expect(erroredEvents.some((event) => event.event === "failure")).toBe(false);
-    expect(erroredEvents.at(-1)).toMatchObject({
-      event: "result",
-      status: "failed",
-      failed: 0,
-      errored: 1,
-      completion: "complete",
-      junit: "junit/errored.xml",
-    });
+    expect(erroredEvents).not.toContainEqual(expect.objectContaining({
+      event: "eval",
+      verdict: "failed",
+    }));
+    only(
+      erroredEvents,
+      (event) => "event" in event && event.event === "eval" && event.evalId === "deliberate-error/crash",
+      errored.diagnostic(),
+    );
+    expect(errored.expReceipt()).toMatchObject({ completion: "completed" });
     const erroredJunit = readFileSync(join(root, "junit", "errored.xml"), "utf8");
     expect(erroredJunit).toContain("<error");
     expect(erroredJunit).not.toContain("<failure");
