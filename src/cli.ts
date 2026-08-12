@@ -147,6 +147,17 @@ export type CliFailure =
   | CliOperationError
   | CliReportModuleLoaderUnavailable;
 
+/**
+ * Bootstrap owns process signals until an Eval has reached actual dispatch.
+ * The CLI claims the Invocation signal synchronously immediately before
+ * `runEvals`; it never infers this from argv outside the command dispatcher.
+ */
+export interface CliInterruptionOwnership {
+  readonly invocationSignal: AbortSignal;
+  /** False means bootstrap already accepted a root-owned first signal. */
+  readonly enterGracefulDispatch: () => boolean;
+}
+
 function usageError(message: string, exitCode = 1): CliUsageError {
   return new CliUsageError({ message, exitCode });
 }
@@ -1524,7 +1535,7 @@ function runEvaluationCommand(
   command: CliCommand,
   positionals: readonly string[],
   flags: Flags,
-  signal?: AbortSignal,
+  interruption?: CliInterruptionOwnership,
 ) {
   return Effect.gen(function* () {
     const config = yield* loadConfig(cwd);
@@ -1966,9 +1977,16 @@ function runEvaluationCommand(
         },
       },
     });
-    // Runner remains Effect-native. The application edge translates SIGINT into
-    // this scoped AbortSignal so dispatch can settle and the receipt can close
-    // before the process receives its interrupted exit status.
+    // This synchronous hand-off and the following `runEvals` yield have no
+    // asynchronous gap. A first signal therefore either interrupts the root
+    // before dispatch begins, or aborts this Invocation so it can close its
+    // durable interrupted receipt before the CLI returns.
+    const ownsGracefulDispatch = yield* Effect.sync(() => interruption?.enterGracefulDispatch() ?? true);
+    if (!ownsGracefulDispatch) yield* Effect.interrupt;
+
+    // Runner remains Effect-native. During graceful dispatch the application
+    // edge translates SIGINT into this Invocation signal, letting dispatch
+    // settle and the receipt close before the process exits with 130.
     const receipt = yield* cliEffect("run evaluations", runEvals<never, never>({
       config,
       evals,
@@ -1982,7 +2000,7 @@ function runEvaluationCommand(
       rerun: flags.rerun,
       niceevalRoot: resolvePath(cwd, ".niceeval"),
       session: sessionTracker,
-      ...(signal === undefined ? {} : { signal }),
+      ...(interruption === undefined ? {} : { signal: interruption.invocationSignal }),
     }));
     yield* releaseResources;
 
@@ -2493,7 +2511,7 @@ function reportViewRebuildFailure(failure: CliFailure): { readonly summary: stri
   return Object.freeze({ summary });
 }
 
-export const cliProgram = (signal?: AbortSignal) => Effect.gen(function* () {
+export const cliProgram = (interruption?: CliInterruptionOwnership) => Effect.gen(function* () {
   const cwd = process.cwd();
   const { command, positionals, flags } = yield* Effect.try({
     try: () => parseArgs(process.argv.slice(2)),
@@ -2547,7 +2565,7 @@ export const cliProgram = (signal?: AbortSignal) => Effect.gen(function* () {
     return yield* runExperimentRenameCommand(cwd, positionals.slice(1), flags);
   }
 
-  return yield* runEvaluationCommand(cwd, command, positionals, flags, signal);
+  return yield* runEvaluationCommand(cwd, command, positionals, flags, interruption);
 }).pipe(
   // The CLI is the one application composition boundary for current Record
   // services. Report host internals remain Effect-native and never install a

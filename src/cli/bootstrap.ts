@@ -2,28 +2,65 @@
 // Effect values; this file is the only place NiceEval starts a runtime.
 
 import { Cause, Effect, Exit } from "effect";
-import { cliProgram, renderCliFailure } from "../cli.ts";
+import { cliProgram, renderCliFailure, type CliInterruptionOwnership } from "../cli.ts";
 
-// A SIGINT must request cancellation through the Invocation's AbortSignal,
-// rather than interrupting this root fiber directly. A root interruption stays
-// pending in Effect v3: it correctly stops dispatch and runs finalizers, but
-// immediately interrupts the subsequent Record publish / feedback receipt
-// continuation as soon as it becomes interruptible again. `runEvals` races
-// this signal into dispatch, consumes only the interrupted Cause, then performs
-// its short durable closure before the CLI emits the receipt.
-const interruption = new AbortController();
-let receivedSignal = false;
-const onInterrupt = (): void => {
-  if (receivedSignal) return;
-  receivedSignal = true;
+// There is exactly one synchronous ownership state for the first signal. Node
+// invokes both signal handlers and Effect continuations serially, so the CLI's
+// hand-off cannot race a SIGINT into an unowned interval:
+//
+// root -> root-interrupted              (interrupt the application fiber)
+// root -> graceful-dispatch             (CLI is about to call runEvals)
+// graceful-dispatch -> graceful-aborted (abort only the Invocation signal)
+//
+// Graceful ownership is deliberately one-way. Returning it after `runEvals`
+// would create a second boundary where a first signal could miss both the
+// durable closure and root interruption.
+type SignalOwnership =
+  | "root"
+  | "root-interrupted"
+  | "graceful-dispatch"
+  | "graceful-aborted";
+
+let signalOwnership: SignalOwnership = "root";
+const invocationInterruption = new AbortController();
+let fiber: ReturnType<typeof Effect.runFork> | undefined;
+
+const interruption: CliInterruptionOwnership = {
+  invocationSignal: invocationInterruption.signal,
+  enterGracefulDispatch: () => {
+    if (signalOwnership === "root") {
+      signalOwnership = "graceful-dispatch";
+      return true;
+    }
+    // A root-owned first signal has already scheduled root interruption. Let
+    // the CLI preserve that Cause rather than start an Invocation underneath it.
+    return signalOwnership !== "root-interrupted";
+  },
+};
+
+const onInterrupt = (signal: NodeJS.Signals): void => {
+  if (signalOwnership === "root") {
+    signalOwnership = "root-interrupted";
+    fiber?.unsafeInterruptAsFork(fiber.id());
+    return;
+  }
+  if (signalOwnership === "graceful-dispatch") {
+    signalOwnership = "graceful-aborted";
+    invocationInterruption.abort();
+    return;
+  }
+  // Keep this listener through the first-signal drain: libuv may already have
+  // captured a second signal before the first handler runs. On escalation,
+  // remove it and re-raise that exact OS signal so default forced termination
+  // cannot become a queued no-op.
   process.removeListener("SIGINT", onInterrupt);
   process.removeListener("SIGTERM", onInterrupt);
-  interruption.abort();
+  process.kill(process.pid, signal);
 };
 process.on("SIGINT", onInterrupt);
 process.on("SIGTERM", onInterrupt);
 
-const application = Effect.scoped(cliProgram(interruption.signal)).pipe(
+const application = Effect.scoped(cliProgram(interruption)).pipe(
   // Typed CLI failures are expected, user-actionable outcomes. They become an
   // ordinary process status after their message has been written once.
   Effect.catchAll((failure) => Effect.sync(() => {
@@ -46,7 +83,14 @@ const application = Effect.scoped(cliProgram(interruption.signal)).pipe(
 // Match NodeRuntime.runMain's liveness contract: an Effect.async boundary may
 // be awaiting a callback that owns no Node event-loop handle of its own.
 const keepAlive = setInterval(() => {}, 2 ** 31 - 1);
-const fiber = Effect.runFork(application);
+fiber = Effect.runFork(application);
+// A signal cannot normally interleave with this synchronous bootstrap, but
+// retaining the state makes that startup edge explicit and lossless as well.
+const interruptRootIfPending = (): void => {
+  if (signalOwnership !== "root-interrupted" || fiber === undefined) return;
+  fiber.unsafeInterruptAsFork(fiber.id());
+};
+interruptRootIfPending();
 fiber.addObserver((exit) => {
   clearInterval(keepAlive);
   process.removeListener("SIGINT", onInterrupt);
