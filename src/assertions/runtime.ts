@@ -12,10 +12,12 @@ import {
   type AssertionStopExecutorV1,
   type AssertionsContextV1,
   type AssertionsRuntimeV1,
+  type BooleanAssertionHandleV1,
   type BooleanAssertionEvaluationV1,
   type BooleanAssertionRegistrationV1,
   type MeasurementAssertionEvaluationV1,
   type MeasurementAssertionRegistrationV1,
+  type PostRunBooleanAssertionHandleV1,
   type SealedAssertionEvaluationV1,
   type SealedAssertionsRuntimeV1,
 } from "./api.ts";
@@ -429,6 +431,67 @@ class BooleanHandle extends HandleBase {
   orStop(): Promise<unknown> {
     return this.runtime.requestStopBoolean(this.entry);
   }
+}
+
+/**
+ * Gives a post-run producer a configuration-only view of an ordinary Boolean
+ * entry. Keeping this as a distinct, null-prototype object matters at the
+ * JavaScript boundary too: a cast must not recover `orStop()` and force a
+ * deferred producer to evaluate before its Attempt has frozen its evidence.
+ */
+export function postRunBooleanAssertionHandleV1<
+  Kind extends AssertionEvaluationKindV1,
+  Refined,
+>(
+  handle: BooleanAssertionHandleV1<Kind, Refined>,
+  evaluationKind: Kind,
+): PostRunBooleanAssertionHandleV1<Kind, Refined> {
+  const view = Object.create(null) as object;
+  const descriptor = (value: unknown): PropertyDescriptor => ({
+    value,
+    enumerable: true,
+    writable: false,
+    configurable: false,
+  });
+  Object.defineProperties(view, {
+    [assertionHandleBrand]: {
+      value: true,
+      enumerable: false,
+      writable: false,
+      configurable: false,
+    },
+    kind: descriptor("boolean"),
+    key: descriptor((value: string) => {
+      handle.key(value);
+      return view;
+    }),
+    label: descriptor((value: string) => {
+      handle.label(value);
+      return view;
+    }),
+    group: descriptor((title: string) => {
+      handle.group(title);
+      return view;
+    }),
+    optional: descriptor(() => {
+      handle.optional();
+      return view;
+    }),
+    gate: descriptor(() => {
+      handle.gate();
+      return view;
+    }),
+    ...(evaluationKind === "score"
+      ? {
+          score: descriptor((points: number) => {
+            (handle as unknown as { score(value: number): unknown }).score(points);
+            return view;
+          }),
+        }
+      : {}),
+  });
+  assertionHandleRegistry.add(view);
+  return Object.freeze(view) as PostRunBooleanAssertionHandleV1<Kind, Refined>;
 }
 
 class MeasurementHandle extends HandleBase {

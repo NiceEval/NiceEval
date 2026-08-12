@@ -13,6 +13,7 @@ import { Effect } from "effect";
 import {
   captureAssertionSnapshotV1,
   createAssertionsRuntimeV1,
+  postRunBooleanAssertionHandleV1,
 } from "../assertions/runtime.ts";
 import type {
   AssertionsRuntimeV1,
@@ -30,6 +31,7 @@ import {
 import {
   agentWorkspaceDiffChangesForPathV1,
   agentWorkspaceDiffPathsMatchV1,
+  assertCanonicalWorkspaceRelativePathV1,
   evaluateWorkspaceDiffNotInV1,
   validateExpectedTouchedPaths,
   type AgentWorkspaceDiffEndpointV1,
@@ -54,6 +56,8 @@ import type {
   JudgeMaterial,
   ResolvedJudgeConfig,
   Sandbox,
+  SandboxOperations,
+  SandboxTransferOperations,
   StreamEvent,
   Turn,
   Usage,
@@ -129,7 +133,8 @@ export interface AssertFirstFileChangedOptionsV1 {
 }
 
 /** The only agent-attributed post-run diff surface exposed to Eval authors. */
-export interface AssertFirstSandboxV1<Kind extends RuntimeKind> extends Sandbox {
+export interface AssertFirstSandboxV1<Kind extends RuntimeKind>
+  extends SandboxOperations, SandboxTransferOperations {
   changedPaths(paths: readonly string[]): PostRunBooleanAssertionHandleV1<Kind, void>;
   noChanges(): PostRunBooleanAssertionHandleV1<Kind, void>;
   fileChanged(
@@ -446,17 +451,6 @@ function judgeHandle<Kind extends RuntimeKind>(input: {
   });
 }
 
-function guardSandbox(agent: Agent, sandbox: Sandbox): Sandbox {
-  if (agent.kind === "sandbox") return sandbox;
-  return new Proxy(sandbox, {
-    get(_target, property) {
-      throw new Error(
-        `Agent ${JSON.stringify(agent.name)} does not provide sandbox; t.sandbox.${String(property)} is unavailable.`,
-      );
-    },
-  });
-}
-
 const DIFF_REFERENCE_PREVIEW_V1 = "agent-attributed send-window endpoint deltas";
 
 function changedPathsCriterion(paths: readonly string[]): WritableCriterionEnvelopeV1 {
@@ -525,9 +519,7 @@ function diffReferenceMaterial() {
 }
 
 function assertDiffPath(path: unknown, operation: string): asserts path is string {
-  if (typeof path !== "string" || path.length === 0 || path.includes("\u0000")) {
-    throw new TypeError(`${operation} path must be a non-empty string without NUL`);
-  }
+  assertCanonicalWorkspaceRelativePathV1(path, `${operation} path`);
 }
 
 function normalizeFileChangedOptions(
@@ -595,7 +587,6 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
   readonly runtime: AssertionsRuntimeV1<Kind>;
   readonly late: AssertFirstLateResult;
 }): AssertFirstSandboxV1<Kind> {
-  const guarded = guardSandbox(input.agent, input.sandbox);
   const requireCapability = (): void => {
     if (input.agent.kind !== "sandbox") {
       throw new Error(
@@ -610,11 +601,14 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
       unknown,
       never
     >,
-  ): PostRunBooleanAssertionHandleV1<Kind, void> => input.runtime.registerBoolean<void>({
-    criterion,
-    subject: diffReferenceMaterial(),
-    evaluate,
-  });
+  ): PostRunBooleanAssertionHandleV1<Kind, void> => postRunBooleanAssertionHandleV1(
+    input.runtime.registerBoolean<void>({
+      criterion,
+      subject: diffReferenceMaterial(),
+      evaluate,
+    }),
+    input.runtime.evaluationKind,
+  );
 
   const changedPaths = (paths: readonly string[]): PostRunBooleanAssertionHandleV1<Kind, void> => {
     requireCapability();
@@ -683,38 +677,93 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
     }));
   };
 
-  return Object.freeze(new Proxy(guarded, {
-    get(target, property, receiver) {
-      switch (property) {
-        case "changedPaths": return changedPaths;
-        case "noChanges": return () => {
-          requireCapability();
-          return register(noChangesCriterion(), () => Effect.sync(() => {
-            const diff = input.late.diff;
-            if (diff.state !== "available") return unavailableDiffResult();
-            return agentWorkspaceDiffPathsMatchV1(diff.document, [])
-              ? Object.freeze({ state: "matched" as const, value: undefined })
-              : Object.freeze({ state: "mismatched" as const });
-          }));
-        };
-        case "fileChanged": return fileChanged;
-        case "fileDeleted": return (path: string) => {
-          requireCapability();
-          assertDiffPath(path, "fileDeleted()");
-          return register(fileDeletedCriterion(path), () => Effect.sync(() => {
-            const diff = input.late.diff;
-            if (diff.state !== "available") return unavailableDiffResult();
-            return agentWorkspaceDiffChangesForPathV1(diff.document, path)
-              .some((change) => change.status === "deleted")
-              ? Object.freeze({ state: "matched" as const, value: undefined })
-              : Object.freeze({ state: "mismatched" as const });
-          }));
-        };
-        case "notInDiff": return notInDiff;
-        default: return Reflect.get(target, property, receiver);
-      }
+  const noChanges = (): PostRunBooleanAssertionHandleV1<Kind, void> => {
+    requireCapability();
+    return register(noChangesCriterion(), () => Effect.sync(() => {
+      const diff = input.late.diff;
+      if (diff.state !== "available") return unavailableDiffResult();
+      return agentWorkspaceDiffPathsMatchV1(diff.document, [])
+        ? Object.freeze({ state: "matched" as const, value: undefined })
+        : Object.freeze({ state: "mismatched" as const });
+    }));
+  };
+  const fileDeleted = (path: string): PostRunBooleanAssertionHandleV1<Kind, void> => {
+    requireCapability();
+    assertDiffPath(path, "fileDeleted()");
+    return register(fileDeletedCriterion(path), () => Effect.sync(() => {
+      const diff = input.late.diff;
+      if (diff.state !== "available") return unavailableDiffResult();
+      return agentWorkspaceDiffChangesForPathV1(diff.document, path)
+        .some((change) => change.status === "deleted")
+        ? Object.freeze({ state: "matched" as const, value: undefined })
+        : Object.freeze({ state: "mismatched" as const });
+    }));
+  };
+  const view: AssertFirstSandboxV1<Kind> = {
+    get workdir() {
+      requireCapability();
+      return input.sandbox.workdir;
     },
-  })) as AssertFirstSandboxV1<Kind>;
+    runCommand: (cmd, args, options) => {
+      requireCapability();
+      return input.sandbox.runCommand(cmd, args, options);
+    },
+    runShell: (script, options) => {
+      requireCapability();
+      return input.sandbox.runShell(script, options);
+    },
+    runCommandOrThrow: (cmd, args, options) => {
+      requireCapability();
+      return input.sandbox.runCommandOrThrow(cmd, args, options);
+    },
+    runShellOrThrow: (script, options) => {
+      requireCapability();
+      return input.sandbox.runShellOrThrow(script, options);
+    },
+    readText: (path) => {
+      requireCapability();
+      return input.sandbox.readText(path);
+    },
+    writeText: (path, content) => {
+      requireCapability();
+      return input.sandbox.writeText(path, content);
+    },
+    readBytes: (path) => {
+      requireCapability();
+      return input.sandbox.readBytes(path);
+    },
+    writeBytes: (path, content) => {
+      requireCapability();
+      return input.sandbox.writeBytes(path, content);
+    },
+    pathExists: (path) => {
+      requireCapability();
+      return input.sandbox.pathExists(path);
+    },
+    uploadFile: (source, targetPath) => {
+      requireCapability();
+      return input.sandbox.uploadFile(source, targetPath);
+    },
+    uploadDirectory: (sourceDir, targetDir, options) => {
+      requireCapability();
+      return input.sandbox.uploadDirectory(sourceDir, targetDir, options);
+    },
+    downloadFile: (sourcePath, target) => {
+      requireCapability();
+      return input.sandbox.downloadFile(sourcePath, target);
+    },
+    downloadDirectory: (sourceDir, targetDir, options) => {
+      requireCapability();
+      return input.sandbox.downloadDirectory(sourceDir, targetDir, options);
+    },
+    changedPaths,
+    noChanges,
+    fileChanged,
+    fileDeleted,
+    notInDiff,
+  };
+  Object.setPrototypeOf(view, null);
+  return Object.freeze(view);
 }
 
 function requireInputRequest(

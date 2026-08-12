@@ -128,13 +128,39 @@ export function emptyDiffData(): DiffData {
 
 /**
  * 校验 `changedPaths()` 的 expected 路径列表。
- * 同步 author error 只在已定稿的重复 expected path(docs/roadmap/assertion-authoring/
- * architecture.md「Error classification」)。路径本身的公开输入校验留给未来 author
- * boundary；空数组合法——`noChanges()` 就是空 exact set 的同源形态，path 顺序无意义。
+ * 每条 expected path 必须已经是 Sandbox workdir 相对的 canonical POSIX 路径；空数组
+ * 合法——`noChanges()` 就是空 exact set 的同源形态，path 顺序无意义。
  */
+/** Canonical Sandbox workdir-relative path shared by registration and storage. */
+export function isCanonicalWorkspaceRelativePathV1(value: unknown): value is string {
+  if (
+    typeof value !== "string"
+    || value.length === 0
+    || value.includes("\u0000")
+    || value.startsWith("/")
+  ) {
+    return false;
+  }
+  return value.split("/").every((segment) =>
+    segment.length > 0 && segment !== "." && segment !== ".."
+  );
+}
+
+export function assertCanonicalWorkspaceRelativePathV1(
+  value: unknown,
+  owner: string,
+): asserts value is string {
+  if (!isCanonicalWorkspaceRelativePathV1(value)) {
+    throw new TypeError(
+      `${owner} must be a canonical workspace-relative path without absolute, ., .., empty, or NUL segments`,
+    );
+  }
+}
+
 export function validateExpectedTouchedPaths(expected: readonly string[]): void {
   const seen = new Set<string>();
   for (const path of expected) {
+    assertCanonicalWorkspaceRelativePathV1(path, "changedPaths() path");
     if (seen.has(path)) {
       throw new Error(`changedPaths(): duplicate expected path ${JSON.stringify(path)}`);
     }
@@ -559,6 +585,7 @@ export function createAgentWorkspaceDiffDocumentV1(input: {
     const changes = Object.entries(window.changes)
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([path, change]) => {
+        assertCanonicalWorkspaceRelativePathV1(path, "workspace diff ledger path");
         let before = endpointFor(change, "before");
         let after = endpointFor(change, "after");
         let hunks = hunksFor(before, after);
@@ -616,6 +643,7 @@ export function agentWorkspaceDiffChangesForPathV1(
   document: AgentWorkspaceDiffDocumentV1,
   path: string,
 ): readonly AgentWorkspaceDiffWindowChangeV1[] {
+  assertCanonicalWorkspaceRelativePathV1(path, "workspace diff path");
   return frozenArray(
     document.windows.flatMap((window) => window.changes.filter((change) => change.path === path)),
   );

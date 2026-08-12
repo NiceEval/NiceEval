@@ -3,6 +3,7 @@ import { Either, Schema } from "effect";
 import {
   AGENT_WORKSPACE_DIFF_ATTRIBUTION_V1,
   agentWorkspaceDiffWindowChangeIsCoherentV1,
+  isCanonicalWorkspaceRelativePathV1,
   type AgentWorkspaceDiffDocumentV1,
   type AgentWorkspaceDiffEndpointV1,
   type AgentWorkspaceDiffHunksV1,
@@ -42,9 +43,9 @@ const DiffHunksV1Schema: Schema.Schema<AgentWorkspaceDiffHunksV1> = Schema.Struc
 
 const DiffWindowChangeV1Schema: Schema.Schema<AgentWorkspaceDiffWindowChangeV1> = Schema.Struct({
   path: Schema.String.pipe(
-    Schema.filter((value) => value.length > 0 && !value.includes("\u0000"), {
+    Schema.filter(isCanonicalWorkspaceRelativePathV1, {
       identifier: "AgentWorkspaceDiffPath",
-      description: "a non-empty workspace-relative path without NUL",
+      description: "a canonical non-empty workspace-relative path",
     }),
   ),
   status: Schema.Literal("added", "modified", "deleted"),
@@ -75,7 +76,11 @@ function documentHasUniqueWindowsAndPaths(document: AgentWorkspaceDiffDocumentV1
     windows.add(key);
     const paths = new Set<string>();
     for (const change of window.changes) {
-      if (!agentWorkspaceDiffWindowChangeIsCoherentV1(change) || paths.has(change.path)) return false;
+      if (
+        !isCanonicalWorkspaceRelativePathV1(change.path)
+        || !agentWorkspaceDiffWindowChangeIsCoherentV1(change)
+        || paths.has(change.path)
+      ) return false;
       paths.add(change.path);
     }
   }
