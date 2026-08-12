@@ -114,6 +114,8 @@ function fail(path: string, message: string): never {
   throw new TypeError(`defineTheme ${path} ${message}`);
 }
 
+function isPlainObject<T extends object>(value: T): value is T & Record<string, unknown>;
+function isPlainObject(value: unknown): value is Record<string, unknown>;
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const prototype = Object.getPrototypeOf(value);
@@ -168,33 +170,30 @@ function copyFont(value: unknown): ThemeFontTokens {
  */
 export function defineTheme(input: ReportTheme): ThemeDefinition {
   if (!isPlainObject(input)) fail("", "expects a plain theme object.");
-  // The runtime plain-object guard narrows to an index signature; retain the
-  // public declaration shape for the remaining token validation.
-  const theme: ReportTheme = input as ReportTheme;
-  for (const key of Object.keys(theme)) {
+  for (const key of Object.keys(input)) {
     if (!THEME_KEYS.has(key)) fail(key, "is not a supported theme token.");
   }
 
-  if (theme.appearance !== undefined && !APPEARANCES.has(theme.appearance)) {
+  if (input.appearance !== undefined && !APPEARANCES.has(input.appearance)) {
     fail("appearance", 'must be "system", "light", or "dark".');
   }
-  if (theme.fontSize !== undefined && !FONT_SIZES.has(theme.fontSize)) {
+  if (input.fontSize !== undefined && !FONT_SIZES.has(input.fontSize)) {
     fail("fontSize", 'must be "compact", "standard", or "comfortable".');
   }
-  if (theme.radius !== undefined && !RADII.has(theme.radius)) {
+  if (input.radius !== undefined && !RADII.has(input.radius)) {
     fail("radius", 'must be "none", "small", "medium", or "large".');
   }
 
   const definition: Record<string | symbol, unknown> = {
     kind: "theme",
-    ...(theme.appearance === undefined ? {} : { appearance: theme.appearance }),
-    ...(theme.series === undefined ? {} : { series: copySeries(theme.series) }),
-    ...(theme.font === undefined ? {} : { font: copyFont(theme.font) }),
-    ...(theme.fontSize === undefined ? {} : { fontSize: theme.fontSize }),
-    ...(theme.radius === undefined ? {} : { radius: theme.radius }),
+    ...(input.appearance === undefined ? {} : { appearance: input.appearance }),
+    ...(input.series === undefined ? {} : { series: copySeries(input.series) }),
+    ...(input.font === undefined ? {} : { font: copyFont(input.font) }),
+    ...(input.fontSize === undefined ? {} : { fontSize: input.fontSize }),
+    ...(input.radius === undefined ? {} : { radius: input.radius }),
   };
   for (const key of COLOR_KEYS) {
-    const color = theme[key];
+    const color = input[key];
     if (color !== undefined) definition[key] = copyColor(color, key);
   }
   Object.defineProperty(definition, THEME_DEFINITION, { value: true });
