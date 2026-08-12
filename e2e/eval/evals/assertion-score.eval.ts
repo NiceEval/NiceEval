@@ -2,12 +2,14 @@ import { defineScoreEval } from "niceeval";
 import { equals, includes } from "niceeval/expect";
 
 const scored = defineScoreEval({
-  description: "计分制 Fact 把前置、按事实计分与直接给分写入真实结果",
+  description: "计分制 Assertion 把前置、按检查计分与直接给分写入真实结果",
   async test(t) {
     const turn = await t.send("assertion/score");
-    const completed = turn.succeeded();
-    t.score("turn completed", completed, { max: 1 });
-    await t.require(completed);
+    const completed = turn.succeeded()
+      .score(1)
+      .gate()
+      .label("turn completed");
+    await completed.orStop();
 
     await t.group("计分断言", () => {
       const marker = t.check(turn.message, includes("assertion-score-marker"));
@@ -16,15 +18,15 @@ const scored = defineScoreEval({
         equals({ fixture: "assertion-score", ok: true }),
       );
 
-      t.score("reply marker", marker, { max: 2 });
-      t.score("fixture data", result, { max: 3 });
-      t.score("deterministic manual points", { earned: 4 });
+      marker.score(2).label("reply marker");
+      result.score(3).label("fixture data");
+      t.score(4).label("deterministic manual points");
     });
   },
 });
 
 const empty = defineScoreEval({
-  description: "没有 score use 的计分制 Eval 正常得到零分",
+  description: "没有分值贡献的计分制 Eval 正常得到零分",
   test() {},
 });
 

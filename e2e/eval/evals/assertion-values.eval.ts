@@ -39,13 +39,13 @@ const valueDataSchema = {
 } as const;
 
 export default defineEval({
-  description: "确定性回复上的值 Match 与 Fact 消费",
+  description: "确定性回复上的值 Match 与已登记 Assertion",
   async test(t) {
     const turn = await t.send("assertion/values");
-    await t.require(turn.succeeded());
+    await turn.succeeded().orStop();
 
     await t.group("值 matcher", async () => {
-      t.check(turn.usedNoTools());
+      turn.usedNoTools();
       t.check(turn.data, equals({ fixture: "assertion-values", ok: true }));
       t.check(turn.data, matches(valueDataSchema));
       t.check(turn.message, includes("assertion-values-marker"));
@@ -81,7 +81,7 @@ export default defineEval({
           score: (value) => (value === 4 ? 1 : 0),
         }).atLeast(1),
       );
-      await t.require(turn.data, isDefined("required fixture data"));
+      await t.check(turn.data, isDefined("required fixture data")).orStop();
     });
   },
 });
