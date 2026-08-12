@@ -8,11 +8,9 @@ import type { AttemptEvidence } from "../record/attempt-evidence.ts";
 import type { AttemptHandle, Run, Sample } from "../record/types.ts";
 import type { AttemptLocator } from "../record/locator.ts";
 import type { AttemptIdentity } from "../record/locator.ts";
-import {
-  projectSourceView,
-  type AnnotatedSourceTree,
-  type SourceContent,
-} from "../record/annotated-source.ts";
+import type { AssertionsProjectionV1 } from "../assertions/record/model.ts";
+import type { ScoreProjectionV1 } from "../eval/record/score.ts";
+import type { AttemptSlotProjectedEntry } from "../projection/index.ts";
 import type {
   EvalResult,
   CommandExitEvidence,
@@ -20,9 +18,9 @@ import type {
   SandboxBuildRecord,
   TimingActivity,
   TraceSpan,
+  Verdict,
 } from "../types.ts";
-import { factDisplaySummary, summaryText } from "../assertions/display.ts";
-import { firstLine } from "../util.ts";
+import { verdictDisplaySummary } from "../assertions/display.ts";
 import {
   aggregate,
   agent,
@@ -35,22 +33,15 @@ import {
   type MetricValue,
 } from "./model/calculation.ts";
 import { attemptCostUSD } from "./model/metrics.ts";
-import {
-  attemptTerminalOf,
-  factRecordOf,
-  materializeFactRecord,
-  verdictForTerminal,
-  type FactRecordResult,
-} from "../record/fact-record.ts";
 import type {
   AttemptAssertionsData,
   AttemptConversationData,
   AttemptDiagnosticsData,
   AttemptDiffData,
   AttemptErrorData,
-  AttemptFactsData,
   AttemptFixPromptData,
   AttemptSummaryData,
+  AttemptSourceDisplayInput,
   AttemptTraceData,
   DeltaData,
   DimensionInput,
@@ -68,7 +59,6 @@ import {
   attemptDiagnosticsData,
   attemptDiffData,
   attemptErrorData,
-  attemptFactsData,
   attemptFixPromptData,
   attemptSummaryData,
   attemptTraceData,
@@ -132,62 +122,25 @@ export type ComparisonOptions = DeltaTableOptions;
 export type StabilityOptions = StabilityMatrixOptions;
 export type StabilityResult = StabilityMatrixData;
 
-/** text / web / JSON 共用的唯一源码任务结果。 */
-export interface AnnotatedSourceResult {
+/** text / web / JSON 共用的已投影源码任务结果。 */
+export interface ProjectedSourceResult<BlobRef = unknown> {
   locator: AttemptLocator;
-  source: SourceContent | null;
+  source: AttemptSourceDisplayInput<BlobRef> | null;
 }
 
-export interface AnnotatedSourceOptions {
-  mode?: "default" | "full" | "file" | "web";
-  file?: string;
-  budgetLines?: number;
+/** One logical slot's declared Assertions, Verdict, and optional Score projections. */
+export interface AttemptAssessmentInput<BlobRef = unknown> {
+  readonly assertions: AttemptSlotProjectedEntry<AssertionsProjectionV1<BlobRef>>;
+  readonly verdict: AttemptSlotProjectedEntry<Verdict>;
+  readonly score?: AttemptSlotProjectedEntry<ScoreProjectionV1>;
+  readonly sites?: AttemptAssertionsData<BlobRef>["sites"];
 }
 
-export class SourceFileSelectionError extends Error {
-  readonly requested: string;
-  readonly candidates: readonly string[];
-
-  constructor(requested: string, candidates: readonly string[]) {
-    const detail = candidates.length === 0
-      ? `No captured source file matches suffix "${requested}".`
-      : `Source suffix "${requested}" matches multiple captured files: ${candidates.join(", ")}.`;
-    const next = candidates.length === 0
-      ? "Use `--source=full` to inspect the captured paths, then pass a unique suffix with `--source=<path>`."
-      : "Use one of the captured paths shown above with `--source=<path>`.";
-    super(`${detail}\n${next}`);
-    this.name = "SourceFileSelectionError";
-    this.requested = requested;
-    this.candidates = candidates;
-  }
-}
-
-function sourcePaths(tree: AnnotatedSourceTree): string[] {
-  const paths = new Set<string>();
-  const visitCalls = (calls: readonly import("../record/annotated-source.ts").SourceCall[]) => {
-    for (const call of calls) {
-      if (call.target.kind === "source") visitNode(call.target.node);
-      else {
-        visitCalls(call.target.calls);
-      }
-    }
-  };
-  const visitNode = (node: import("../record/annotated-source.ts").SourceNode) => {
-    paths.add(node.file);
-    for (const line of node.lines) visitCalls(line.calls);
-  };
-  visitNode(tree.spine);
-  for (const node of tree.detached) visitNode(node);
-  return [...paths].sort();
-}
-
-function resolveSourceSuffix(tree: AnnotatedSourceTree, requested: string): string {
-  const suffix = requested.replaceAll("\\", "/").replace(/^\.\//, "");
-  const matches = sourcePaths(tree).filter((path) =>
-    path === suffix || path.endsWith(`/${suffix}`)
-  );
-  if (matches.length !== 1) throw new SourceFileSelectionError(requested, matches);
-  return matches[0]!;
+/** The complete public input required to render one Attempt detail result. */
+export interface AttemptDetailsInput<BlobRef = unknown> {
+  readonly attempt: AttemptEvidence;
+  readonly assessment: AttemptAssessmentInput<BlobRef>;
+  readonly source: AttemptSourceDisplayInput<BlobRef> | null;
 }
 
 /** execution text 与 AttemptConversation 组件共同所需的普通数据。 */
@@ -232,10 +185,10 @@ export type UsageResult = UsageTableData;
 export type DiffResult = AttemptDiffData | null;
 
 /** AttemptRecord 全字段 + show / history 所需的归属与公共派生。 */
-export type HistoryAttemptResult = (EvalResult | FactRecordResult) & {
+export type HistoryAttemptResult = EvalResult & {
   experimentId: string;
   runStartedAt: string;
-  terminal: ReturnType<typeof attemptTerminalOf>;
+  terminal: Verdict;
   summary?: string;
   costUSD: number | null;
 };
@@ -254,17 +207,16 @@ export interface HistoryOptions {
   evals?: string | readonly string[];
 }
 
-export interface AttemptDetailsResult {
+export interface AttemptDetailsResult<BlobRef = unknown> {
   summary: AttemptSummaryData;
   error: AttemptErrorData | null;
-  assertions: AttemptAssertionsData | null;
-  source: AnnotatedSourceResult;
+  assertions: AttemptAssertionsData<BlobRef>;
+  source: ProjectedSourceResult<BlobRef>;
   fixPrompt: AttemptFixPromptData | null;
   timing: AttemptTimingResult;
   conversation: ConversationResult;
   diagnostics: AttemptDiagnosticsData | null;
   usage: UsageResult;
-  facts: AttemptFactsData | null;
   trace: AttemptTraceData | null;
   diff: DiffResult;
 }
@@ -357,26 +309,6 @@ export function stabilityResult(
   return stabilityMatrixData(sample, options);
 }
 
-export async function annotatedSourceResult(
-  attempt: AttemptEvidence,
-  options: AnnotatedSourceOptions = {},
-): Promise<AnnotatedSourceResult> {
-  const tree = attempt.evalSource;
-  if (tree === null) return { locator: attempt.locator, source: null };
-  const mode = options.mode ?? "default";
-  const file = mode === "file"
-    ? resolveSourceSuffix(tree, options.file ?? "")
-    : undefined;
-  return {
-    locator: attempt.locator,
-    source: projectSourceView(tree, {
-      mode,
-      ...(file !== undefined ? { file } : {}),
-      ...(options.budgetLines !== undefined ? { budgetLines: options.budgetLines } : {}),
-    }),
-  };
-}
-
 export async function conversationResult(attempt: AttemptEvidence): Promise<ConversationResult> {
   return {
     locator: attempt.locator,
@@ -446,8 +378,8 @@ export async function usageResult(attempt: AttemptEvidence): Promise<UsageResult
     experimentId: attempt.experimentId,
     evalId: attempt.identity.evalId,
     attempt: attempt.identity.attempt,
-    terminal: attemptTerminalOf(attempt.result),
-    verdict: verdictForTerminal(attempt.result),
+    terminal: attempt.result.verdict,
+    verdict: attempt.result.verdict,
   };
 }
 
@@ -463,11 +395,11 @@ function historyAttemptKey(attempt: AttemptHandle): string | undefined {
 }
 
 function historySummary(result: EvalResult): string | undefined {
-  const fact = factDisplaySummary(result);
-  if (fact !== undefined) return fact.text;
-  if (result.error !== undefined) return summaryText(firstLine(result.error.message));
-  if (result.skipReason !== undefined) return summaryText(result.skipReason);
-  return undefined;
+  return verdictDisplaySummary({
+    verdict: result.verdict,
+    ...(result.error === undefined ? {} : { error: result.error }),
+    ...(result.skipReason === undefined ? {} : { skipReason: result.skipReason }),
+  })?.text;
 }
 
 function matchesEvalOption(evalId: string, option: HistoryOptions["evals"]): boolean {
@@ -510,12 +442,11 @@ export async function historyResult(
         evalId: first.evalId,
         attempts: group.map((attempt): HistoryAttemptResult => {
           const summary = historySummary(attempt.result);
-          const result = factRecordOf(attempt.result) !== undefined ? materializeFactRecord(attempt.result) : attempt.result;
           return {
-            ...result,
+            ...attempt.result,
             experimentId: attempt.experimentId,
             runStartedAt: attempt.run.startedAt,
-            terminal: attemptTerminalOf(attempt.result),
+            terminal: attempt.result.verdict,
             ...(summary !== undefined ? { summary } : {}),
             costUSD: attemptCostUSD(attempt.result),
           };
@@ -528,27 +459,32 @@ export async function historyResult(
   return { sections };
 }
 
-export async function attemptDetailsResult(
-  attempt: AttemptEvidence,
-): Promise<AttemptDetailsResult> {
-  const [source, timing, conversation, usage, diff] = await Promise.all([
-    annotatedSourceResult(attempt, { mode: "web" }),
+export async function attemptDetailsResult<BlobRef>(
+  input: AttemptDetailsInput<BlobRef>,
+): Promise<AttemptDetailsResult<BlobRef>> {
+  const { attempt } = input;
+  const assessment = attemptAssertionsData(input.assessment);
+  const [timing, conversation, usage, diff] = await Promise.all([
     timingResult(attempt),
     conversationResult(attempt),
     usageResult(attempt),
     diffResult(attempt),
   ]);
   return {
-    summary: attemptSummaryData(attempt),
+    summary: attemptSummaryData(attempt, input.assessment.score),
     error: attemptErrorData(attempt),
-    assertions: attemptAssertionsData(attempt),
-    source,
-    fixPrompt: attemptFixPromptData(attempt),
+    assertions: assessment,
+    source: { locator: attempt.locator, source: input.source },
+    fixPrompt: attemptFixPromptData({
+      locator: attempt.locator,
+      experimentId: attempt.experimentId,
+      identity: attempt.identity,
+      assessment,
+    }),
     timing,
     conversation,
     diagnostics: attemptDiagnosticsData(attempt),
     usage,
-    facts: attemptFactsData(attempt),
     trace: attemptTraceData(attempt),
     diff,
   };

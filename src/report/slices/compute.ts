@@ -33,7 +33,6 @@ import type { AttemptLocator } from "../../record/locator.ts";
 import type { AttemptHandle, Run } from "../../record/types.ts";
 import { comparabilityConfigOf, deepEqualJson } from "../../sample/index.ts";
 import { foldEvalVerdict } from "../../shared/verdict.ts";
-import { verdictForTerminal } from "../../record/fact-record.ts";
 import {
   assertUniqueMetricNames,
   axisValueOf,
@@ -56,10 +55,11 @@ import {
   toColumn,
   type Item,
 } from "../model/aggregate.ts";
-import { costUSD as costUSDMetric, examScore, tokens as tokensMetric, totalScore as totalScoreMetric } from "../model/metrics.ts";
+import { costUSD as costUSDMetric, tokens as tokensMetric } from "../model/metrics.ts";
 import { formatMetricValue, formatPlainNumber, formatPoints } from "../model/format.ts";
 import type { LocalizedText } from "../model/locale.ts";
 import { metricFieldOf } from "../model/dataset.ts";
+import { assessmentScoreMetric } from "../components/entity-lists/score-metric.ts";
 
 // ───────────────────────── measureRowsData ─────────────────────────
 
@@ -235,7 +235,13 @@ export async function scoreboardData(input: ReportInput, options: ScoreboardOpti
       );
     }
   }
-  const scoreMetric = options.score ?? examScore;
+  const scoreMetric = options.score;
+  if (scoreMetric === undefined) {
+    throw new Error(
+      "scoreboardData requires options.score: Score assessment projections preserve earned points, not a universal 0–1 grading scale. " +
+        "Pass the declared assessment-backed metric that defines your normalization.",
+    );
+  }
   const subjectOf = options.subject ?? evalGroupOf;
 
   const { runs, attempts } = resolveInput(input);
@@ -572,7 +578,7 @@ async function buildDeltaCell(items: readonly Item[]): Promise<DeltaCell> {
   for (const item of items) {
     refs.add(locatorOf(item));
     if (evaluationKind === "score") {
-      const value = await evaluateMetric(totalScoreMetric, item.attempt);
+      const value = await evaluateMetric(assessmentScoreMetric, item.attempt);
       if (value !== null) {
         scoreSum += value;
         scoreCount += 1;
@@ -851,7 +857,7 @@ export async function stabilityMatrixData(
     const key = JSON.stringify([evalId, column]);
     let cell = cellsByKey.get(key);
     if (!cell) cellsByKey.set(key, (cell = { row: evalId, column, passed: 0, failed: 0, errored: 0, refs: new Set() }));
-    const verdict = verdictForTerminal(item.attempt.result);
+    const verdict = item.attempt.result.verdict;
     if (verdict === "passed") cell.passed += 1;
     else if (verdict === "failed") cell.failed += 1;
     else if (verdict === "errored") cell.errored += 1;

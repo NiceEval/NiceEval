@@ -13,6 +13,7 @@ import type {
   ExperimentListItem,
   SampleSummaryContent,
 } from "./types.ts";
+import type { AttemptAssessmentInput, ProjectedSourceResult } from "../tasks.ts";
 import { attemptListData, attemptRowsOf, evalListData, experimentListData } from "../components/entity-lists/compute.ts";
 import { experimentDetailsData } from "../components/experiment-detail/compute.ts";
 import { sampleSummary } from "../components/summaries/compute.ts";
@@ -41,7 +42,6 @@ import {
   attemptDiagnosticsData,
   attemptDiffData,
   attemptErrorData,
-  attemptFactsData,
   attemptFixPromptData,
   attemptSummaryData,
   attemptTimelineData,
@@ -103,8 +103,11 @@ export function toEvalRows(sample: Sample): Promise<readonly EvalListItem[]> {
   return evalListData(sample);
 }
 
-export async function toAttemptSummary(attempt: AttemptEvidence) {
-  return attemptSummaryData(attempt);
+export async function toAttemptSummary<BlobRef>(input: {
+  attempt: AttemptEvidence;
+  assessment?: AttemptAssessmentInput<BlobRef>;
+}) {
+  return attemptSummaryData(input.attempt, input.assessment?.score);
 }
 
 export async function toAttemptNotices(attempt: AttemptEvidence): Promise<readonly CalloutGroup[]> {
@@ -127,24 +130,27 @@ export async function toTimelineNodes(attempt: AttemptEvidence): Promise<Waterfa
   return (await attemptTimelineContent(attemptTimelineData(attempt))) ?? [];
 }
 
-export async function toAttemptSource(attempt: AttemptEvidence) {
-  const { annotatedSourceResult } = await import("../tasks.ts");
-  const result = await annotatedSourceResult(attempt, { mode: "web" });
-  return projectedSourceContent(result.source, result.locator);
+export async function toAttemptSource<BlobRef>(input: ProjectedSourceResult<BlobRef>) {
+  return projectedSourceContent(input.source, input.locator);
 }
 
-export async function toAttemptAssertions(attempt: AttemptEvidence) {
-  return attemptAssertionsContent(attemptAssertionsData(attempt));
+export async function toAttemptAssertions<BlobRef>(assessment: AttemptAssessmentInput<BlobRef>) {
+  return attemptAssertionsContent(attemptAssertionsData(assessment));
 }
 
-export async function toAttemptFixPrompt(attempt: AttemptEvidence): Promise<CopyBlockContent | null> {
-  return attemptFixPromptContent(attemptFixPromptData(attempt));
+export async function toAttemptFixPrompt<BlobRef>(input: {
+  attempt: AttemptEvidence;
+  assessment: AttemptAssessmentInput<BlobRef>;
+}): Promise<CopyBlockContent | null> {
+  const assessment = attemptAssertionsData(input.assessment);
+  return attemptFixPromptContent(attemptFixPromptData({
+    locator: input.attempt.locator,
+    experimentId: input.attempt.experimentId,
+    identity: input.attempt.identity,
+    assessment,
+  }));
 }
 
 export async function toAttemptUsage(attempt: AttemptEvidence) {
   return usageTableData(attempt);
-}
-
-export async function toAttemptFacts(attempt: AttemptEvidence) {
-  return attemptFactsData(attempt);
 }

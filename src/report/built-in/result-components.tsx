@@ -34,7 +34,7 @@ import {
 } from "../components/attempt-detail/content.tsx";
 import { stabilityMatrixContent } from "../slices/content.ts";
 import { DEFAULT_REPORT_LOCALE, localeText, type ReportLocale } from "../model/locale.ts";
-import type { AttemptFactsData, Dataset, UsageTableData } from "../model/types.ts";
+import type { Dataset, UsageTableData } from "../model/types.ts";
 import type { MetricValue } from "../model/calculation.ts";
 import type {
   AttemptDetailsResult,
@@ -314,20 +314,6 @@ const TaskUsageKpi = defineComponent<{ label: string; value: string }>({
 });
 TaskUsageKpi.displayName = "TaskUsageKpi";
 
-/** attempt 级 `ctx.fact()` 运行事实的完整键值表(docs/feature/record/architecture.md#facts运行事实);
- *  没有 facts 时零输出,不摆空表。 */
-const TaskFactsResultView = defineComponent<{ data: AttemptFactsData | null }>(({ data }) => {
-  if (data === null || data.facts.length === 0) return null;
-  return (
-    <Grid className="niceeval-facts-table">
-      {data.facts.map(({ key, value }) => (
-        <TaskUsageKpi key={key} label={key} value={String(value)} />
-      ))}
-    </Grid>
-  );
-});
-TaskFactsResultView.displayName = "TaskFactsResultView";
-
 export const AttemptDetailsResultView = defineComponent<{
   result: AttemptDetailsResult;
 }>(({ result }) => {
@@ -357,7 +343,6 @@ export const AttemptDetailsResultView = defineComponent<{
       <CopyBlock content={attemptFixPromptContent(result.fixPrompt)} />
       <Waterfall nodes={timeline ?? []} title={{ en: "Execution timeline", "zh-CN": "执行时间轴" }} />
       <TaskUsageResultView data={result.usage} />
-      <TaskFactsResultView data={result.facts} />
       {conversation === null ? (
         <Callouts items={executionEvidenceUnavailableCallouts} />
       ) : embedded.conversation !== null ? (

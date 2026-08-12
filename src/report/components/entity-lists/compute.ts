@@ -30,22 +30,20 @@ import {
   resolveInput,
   type Item,
 } from "../../model/aggregate.ts";
-import { attemptCostUSD, costUSD, durationMs, examScore, passRate, tokens, totalScore } from "../../model/metrics.ts";
-import { factDisplaySummary, summaryText } from "../../../assertions/display.ts";
+import { attemptCostUSD, costUSD, durationMs, passRate, tokens } from "../../model/metrics.ts";
+import { summaryText, verdictDisplaySummary } from "../../../assertions/display.ts";
 import { firstLine } from "../../../util.ts";
 import { summarizeItems } from "../shared-compute.ts";
-import { attemptTerminalOf, verdictForTerminal } from "../../../record/fact-record.ts";
+import { assessmentScoreMetric } from "./score-metric.ts";
 
 /**
  * 一次 attempt 的单行结果摘要(断言摘要契约):failed 取主失败断言摘要(不含
  * "+N more",N 单独进 moreFailures),errored 取结构化 error 的一层摘要
- * (phase · code · message)。Fact Record 直接显示 Fact use 或 score terminal。
+ * (phase · code · message)。没有声明 Assertions assessment 的列表只显示独立
+ * Verdict / 结构化执行原因，绝不从已退役的结果壳重建断言细节。
  */
 export function failureSummaryOf(result: EvalResult): { summary: string | null; more: number } {
-  const fact = factDisplaySummary(result);
-  if (fact !== undefined) return { summary: fact.text, more: fact.more };
-  const verdict = verdictForTerminal(result);
-  if (verdict === "errored" && result.error !== undefined) {
+  if (result.verdict === "errored" && result.error !== undefined) {
     // message 取首行:多行 message 的后续行(diagnose 的 output tail)是下钻证据,折进
     // 单行摘要会把 traceback 碎片挤满 Result 单元格;summaryText 只管折行与截断,分层归这里。
     const parts = [(result.error.origin?.scope === "attempt" ? result.error.origin.phase : undefined), result.error.code, firstLine(result.error.message)].filter(
@@ -53,8 +51,13 @@ export function failureSummaryOf(result: EvalResult): { summary: string | null; 
     );
     return { summary: summaryText(parts.join(" · ")), more: 0 };
   }
-  if (verdict === "errored" && result.skipReason !== undefined) return { summary: summaryText(result.skipReason), more: 0 };
-  return { summary: null, more: 0 };
+  if (result.verdict === "errored" && result.skipReason !== undefined) return { summary: summaryText(result.skipReason), more: 0 };
+  const summary = verdictDisplaySummary({
+    verdict: result.verdict,
+    ...(result.error === undefined ? {} : { error: result.error }),
+    ...(result.skipReason === undefined ? {} : { skipReason: result.skipReason }),
+  });
+  return summary === undefined ? { summary: null, more: 0 } : { summary: summary.text, more: summary.more };
 }
 
 /** AttemptList / ExperimentList / EvalList 共用的叶子构造:一个 Item → 一个 AttemptListItem。 */
@@ -67,12 +70,12 @@ async function attemptListItemOf(item: Item): Promise<AttemptListItem> {
     attempt: result.attempt,
     agent: result.agent,
     evaluationKind: result.evaluationKind === "score" ? "score" : "pass",
-    terminal: attemptTerminalOf(result),
-    verdict: verdictForTerminal(result),
+    terminal: result.verdict,
+    verdict: result.verdict,
     failureSummary: summary,
     moreFailures: more,
-    examScore: await computeCell(examScore, [item]),
-    totalScore: await computeCell(totalScore, [item]),
+    examScore: await computeCell(assessmentScoreMetric, [item]),
+    totalScore: await computeCell(assessmentScoreMetric, [item]),
     tokens: await computeCell(tokens, [item]),
     durationMs: result.durationMs,
     costUSD: attemptCostUSD(result),
@@ -117,8 +120,8 @@ export async function evalListData(input: ReportInput): Promise<EvalListItem[]> 
       experimentId: experimentIdOf(sorted[0]!),
       evalId: evalIdOf(sorted[0]!),
       verdict,
-      examScore: await computeCell(examScore, sorted),
-      totalScore: await computeCell(totalScore, sorted),
+      examScore: await computeCell(assessmentScoreMetric, sorted),
+      totalScore: await computeCell(assessmentScoreMetric, sorted),
       durationMs: await computeCell(durationMs, sorted),
       costUSD: await computeCell(costUSD, sorted),
       attempts,
@@ -227,7 +230,7 @@ export async function experimentListData(input: ReportInput): Promise<Experiment
         evaluationKind: itemEvaluationKindComposition(sorted),
         verdict,
         endToEndPassRate: await computeCell(passRate, passEvaluationItems(sorted)),
-        totalScore: await computeCell(totalScore, sorted),
+        totalScore: await computeCell(assessmentScoreMetric, sorted),
         durationMs: await computeCell(durationMs, sorted),
         costUSD: await computeCell(costUSD, sorted),
         tokens: await computeCell(tokens, sorted),
@@ -252,7 +255,7 @@ export async function experimentListData(input: ReportInput): Promise<Experiment
       evaluationKind: targetComposition ?? itemEvaluationKindComposition(group),
       evalVerdicts: stats.verdicts,
       endToEndPassRate: await computeCell(passRate, passEvaluationItems(group)),
-      totalScore: await computeCell(totalScore, group),
+      totalScore: await computeCell(assessmentScoreMetric, group),
       costUSD: await computeCell(costUSD, group),
       durationMs: await computeCell(durationMs, group),
       tokens: await computeCell(tokens, group),
@@ -288,7 +291,7 @@ export async function experimentListData(input: ReportInput): Promise<Experiment
       evaluationKind: composition,
       evalVerdicts: { passed: 0, failed: 0, errored: 0, skipped: 0 },
       endToEndPassRate: await computeCell(passRate, emptyItems),
-      totalScore: await computeCell(totalScore, emptyItems),
+      totalScore: await computeCell(assessmentScoreMetric, emptyItems),
       costUSD: await computeCell(costUSD, emptyItems),
       durationMs: await computeCell(durationMs, emptyItems),
       tokens: await computeCell(tokens, emptyItems),
