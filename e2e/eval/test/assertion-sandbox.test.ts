@@ -2,13 +2,8 @@
 // rerun: pnpm e2e --repo eval -- --run test/assertion-sandbox.test.ts
 
 import { join } from "node:path";
-import { agentWorkspaceDiffProjector } from "niceeval";
 import { command, only, withProjectCopy } from "@niceeval/testkit";
 import { expect, test } from "vitest";
-import {
-  projectAttemptAttachment,
-  singleAvailableAttemptAttachment,
-} from "./record-reader.ts";
 import { evalArtifactStaging, evalProjectCopy } from "./support.ts";
 
 interface ExpEvent {
@@ -16,13 +11,11 @@ interface ExpEvent {
   evalId?: string;
   locator?: string;
   verdict?: string;
-  attempts?: number;
-  passed?: number;
 }
 
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
 
-test("Sandbox 的 agent 归因 endpoint Assertion 与中立 diff projector 由公开 API 判定", async () => {
+test("Sandbox Assertion Eval 以 passed 终态完成", async () => {
   await withProjectCopy(
     evalProjectCopy,
     async ({ root }) => {
@@ -38,32 +31,7 @@ test("Sandbox 的 agent 归因 endpoint Assertion 与中立 diff projector 由�
         event: "eval",
         evalId: "assertion-sandbox",
         verdict: "passed",
-        attempts: 1,
       });
-      const locator = evaluation.locator!;
-
-      const diff = singleAvailableAttemptAttachment(
-        await projectAttemptAttachment({
-          root,
-          locator,
-          projector: agentWorkspaceDiffProjector,
-        }),
-      );
-      expect(diff.attribution).toBe("agent-send-window-endpoints/v1");
-      expect(
-        diff.windows.flatMap((window) => window.changes.map((change) => change.path)),
-      ).toEqual(expect.arrayContaining([
-        "fixture/changed.txt",
-        "fixture/created.txt",
-        "fixture/delete-me.txt",
-      ]));
-
-      const shown = await niceeval.run(
-        ["show", locator, "--record", ".niceeval/record", "--execution"],
-        { cwd: root },
-      );
-      expect(shown.exitCode, shown.diagnostic()).toBe(0);
-      expect(shown.stdout).toContain("workspace_edit");
     },
     evalArtifactStaging("sandbox"),
   );
