@@ -11,9 +11,9 @@ interface ExpEvent {
   event: string;
   evalId?: string;
   locator?: string;
-  status?: string;
+  verdict?: string;
+  attempts?: number;
   passed?: number;
-  failed?: number;
 }
 
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
@@ -24,13 +24,19 @@ test("值 Match 通过原生 Fact 消费折叠为 passed", async () => {
     async ({ root }) => {
       const run = await niceeval.run(["exp", "assertion-values", "--rerun", "all", "--json"], { cwd: root });
       expect(run.exitCode, run.diagnostic()).toBe(0);
-      const result = only(run.ndjson<ExpEvent>(), (event) => event.event === "result", run.diagnostic());
-      expect(result).toMatchObject({ event: "result", status: "passed", passed: 1, failed: 0 });
-      const locator = only(
+      expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
+      const evaluation = only(
         run.ndjson<ExpEvent>(),
         (event) => event.event === "eval" && event.evalId === "assertion-values" && event.locator !== undefined,
         run.diagnostic(),
-      ).locator!;
+      );
+      expect(evaluation).toMatchObject({
+        event: "eval",
+        evalId: "assertion-values",
+        verdict: "passed",
+        attempts: 1,
+      });
+      const locator = evaluation.locator!;
 
       const shown = await niceeval.run(["show", locator, "--record", ".niceeval", "--json"], { cwd: root });
       expect(shown.exitCode, shown.diagnostic()).toBe(0);

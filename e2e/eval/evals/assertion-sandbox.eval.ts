@@ -3,6 +3,7 @@ import {
   commandSucceeded,
   includes,
   isTrue,
+  toolMatch,
 } from "niceeval/expect";
 
 export default defineEval({
@@ -24,7 +25,10 @@ export default defineEval({
     turn.succeeded().label("Sandbox Agent completed");
 
     await t.group("Sandbox 结果断言", async () => {
-      turn.calledTool("workspace_edit", { status: "completed", count: 1 });
+      turn.calledTool(
+        toolMatch("workspace_edit", { status: "completed" }),
+        { count: 1 },
+      );
       t.sandbox.changedPaths([
         "fixture/changed.txt",
         "fixture/created.txt",

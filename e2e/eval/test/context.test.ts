@@ -11,9 +11,9 @@ interface ExpEvent {
   event: string;
   evalId?: string;
   locator?: string;
-  status?: string;
+  verdict?: string;
+  attempts?: number;
   passed?: number;
-  failed?: number;
 }
 
 interface ShowDocument {
@@ -30,13 +30,18 @@ test("多轮和 newSession 的 Context 只在各自公开 scope 读取真实事�
     async ({ root }) => {
       const run = await niceeval.run(["exp", "context", "--rerun", "all", "--json"], { cwd: root });
       expect(run.exitCode, run.diagnostic()).toBe(0);
-      const result = only(run.ndjson<ExpEvent>(), (event) => event.event === "result", run.diagnostic());
-      expect(result).toMatchObject({ event: "result", status: "passed", passed: 1, failed: 0 });
+      expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
       const attemptEvent = only(
         run.ndjson<ExpEvent>(),
         (event) => event.event === "eval" && event.evalId === "context-scopes" && event.locator !== undefined,
         run.diagnostic(),
       );
+      expect(attemptEvent).toMatchObject({
+        event: "eval",
+        evalId: "context-scopes",
+        verdict: "passed",
+        attempts: 1,
+      });
 
       const shown = await niceeval.run(
         ["show", attemptEvent.locator!, "--record", ".niceeval", "--json"],

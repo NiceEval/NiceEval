@@ -11,9 +11,9 @@ interface ExpEvent {
   event: string;
   evalId?: string;
   locator?: string;
-  status?: string;
+  verdict?: string;
+  attempts?: number;
   passed?: number;
-  failed?: number;
 }
 
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
@@ -24,18 +24,33 @@ test("计分 Eval 正常返回自动封口并把空计分写成零分", async ()
     async ({ root }) => {
       const run = await niceeval.run(["exp", "assertion-score", "--rerun", "all", "--json"], { cwd: root });
       expect(run.exitCode, run.diagnostic()).toBe(0);
-      const result = only(run.ndjson<ExpEvent>(), (event) => event.event === "result", run.diagnostic());
-      expect(result).toMatchObject({ event: "result", status: "passed", passed: 2, failed: 0 });
-      const scoredLocator = only(
+      expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
+      const scoredEvent = only(
         run.ndjson<ExpEvent>(),
-        (event) => event.event === "eval" && event.evalId === "assertion-score/scored" && event.locator !== undefined,
+        (event) =>
+          event.event === "eval" && event.evalId === "assertion-score/scored" && event.locator !== undefined,
         run.diagnostic(),
-      ).locator!;
-      const emptyLocator = only(
+      );
+      expect(scoredEvent).toMatchObject({
+        event: "eval",
+        evalId: "assertion-score/scored",
+        verdict: "passed",
+        attempts: 1,
+      });
+      const scoredLocator = scoredEvent.locator!;
+      const emptyEvent = only(
         run.ndjson<ExpEvent>(),
-        (event) => event.event === "eval" && event.evalId === "assertion-score/empty" && event.locator !== undefined,
+        (event) =>
+          event.event === "eval" && event.evalId === "assertion-score/empty" && event.locator !== undefined,
         run.diagnostic(),
-      ).locator!;
+      );
+      expect(emptyEvent).toMatchObject({
+        event: "eval",
+        evalId: "assertion-score/empty",
+        verdict: "passed",
+        attempts: 1,
+      });
+      const emptyLocator = emptyEvent.locator!;
 
       const record = await openRecord(join(root, ".niceeval"));
       const scoredAttempt = resolveLocator(record, scoredLocator);

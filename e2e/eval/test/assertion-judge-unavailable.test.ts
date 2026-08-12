@@ -11,10 +11,9 @@ interface ExpEvent {
   event: string;
   evalId?: string;
   locator?: string;
-  status?: string;
+  verdict?: string;
+  attempts?: number;
   passed?: number;
-  failed?: number;
-  errored?: number;
 }
 
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
@@ -25,14 +24,20 @@ test("未配置 Judge 时硬消费的 Judge Fact 以 unavailable errored，且�
     async ({ root }) => {
       const run = await niceeval.run(["exp", "assertion-judge", "--rerun", "all", "--json"], { cwd: root });
       expect(run.exitCode, run.diagnostic()).toBe(1);
-      const result = only(run.ndjson<ExpEvent>(), (event) => event.event === "result", run.diagnostic());
-      expect(result).toMatchObject({ event: "result", status: "failed", passed: 0, failed: 0, errored: 1 });
-      const locator = only(
+      expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
+      const evaluation = only(
         run.ndjson<ExpEvent>(),
         (event) =>
           event.event === "eval" && event.evalId === "assertion-judge-unavailable" && event.locator !== undefined,
         run.diagnostic(),
-      ).locator!;
+      );
+      expect(evaluation).toMatchObject({
+        event: "eval",
+        evalId: "assertion-judge-unavailable",
+        verdict: "errored",
+        attempts: 1,
+      });
+      const locator = evaluation.locator!;
 
       const record = await openRecord(join(root, ".niceeval"));
       const attempt = resolveLocator(record, locator);

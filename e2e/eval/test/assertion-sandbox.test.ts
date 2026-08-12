@@ -3,7 +3,7 @@
 
 import { join } from "node:path";
 import { Effect, Either } from "effect";
-import { agentWorkspaceDiffProjectorV1 } from "niceeval";
+import { agentWorkspaceDiffProjector } from "niceeval";
 import { selectLatestRuns } from "niceeval/analysis";
 import {
   makeRecordRoot,
@@ -19,9 +19,9 @@ interface ExpEvent {
   event: string;
   evalId?: string;
   locator?: string;
-  status?: string;
+  verdict?: string;
+  attempts?: number;
   passed?: number;
-  failed?: number;
 }
 
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
@@ -32,19 +32,25 @@ test("Sandbox 的 agent 归因 endpoint Assertion 与中立 diff projector 由�
     async ({ root }) => {
       const run = await niceeval.run(["exp", "assertion-sandbox", "--rerun", "all", "--json"], { cwd: root });
       expect(run.exitCode, run.diagnostic()).toBe(0);
-      const result = only(run.ndjson<ExpEvent>(), (event) => event.event === "result", run.diagnostic());
-      expect(result).toMatchObject({ event: "result", status: "passed", passed: 1, failed: 0 });
-      const locator = only(
+      expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
+      const evaluation = only(
         run.ndjson<ExpEvent>(),
         (event) => event.event === "eval" && event.evalId === "assertion-sandbox" && event.locator !== undefined,
         run.diagnostic(),
-      ).locator!;
+      );
+      expect(evaluation).toMatchObject({
+        event: "eval",
+        evalId: "assertion-sandbox",
+        verdict: "passed",
+        attempts: 1,
+      });
+      const locator = evaluation.locator!;
 
       const shown = await niceeval.run(["show", locator, "--record", ".niceeval", "--execution"], { cwd: root });
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
       expect(shown.stdout).toContain("workspace_edit");
 
-      const diffByAttempt = attemptSlotProjection(agentWorkspaceDiffProjectorV1);
+      const diffByAttempt = attemptSlotProjection(agentWorkspaceDiffProjector);
       const recordRoot = makeRecordRoot(join(root, ".niceeval", "record"));
       if (Either.isLeft(recordRoot)) {
         throw new Error(`Record root rejected the E2E run: ${recordRoot.left.code}`);
