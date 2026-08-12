@@ -5,8 +5,9 @@ Assertion 是一次 Attempt 内已经完成、可离线复核的检查事实。�
 它保存当时检查了什么、基于什么材料得出了什么结果；它不决定 Attempt 的生命周期，也不替代 [Verdict](../verdict/README.md)。producer 在整个 Run 发布前封口这份 Attachment，Record 与 Report 只读取已封口的事实。
 
 源码导航是相邻的 Attempt-owned `niceeval.assertion-source-sites/v1`。它把本 Attachment 的
-`entryId` 关联到 origin Run 保存的 Sources snapshot，不把 source path、source blob 或控制流写入
-Assertions payload。它只服务持久审计与导航，不能改变 Assertion、Verdict、Score 或 reuse identity。
+`entryId` 和实际执行的 send annotation 关联到 origin Run 保存的 Sources snapshot，不把 source path、
+source blob 或控制流写入 Assertions payload。它只服务持久审计与导航，不能改变 Assertion、Verdict、
+Score 或 reuse identity。
 
 ## Assertions v1 持久化什么
 
@@ -38,10 +39,12 @@ Assertions payload。它只服务持久审计与导航，不能改变 Assertion�
 
 每个 source-sites row 只用本 Attachment 内的 `entryId` 关联已执行的 role-tagged site。它不复制
 criterion、result、points、gate 或 unavailable。`entryId` 的 authoritative result 因而只计算一次，
-一个 entry 有多个 site 也不形成多条 check 或 score contribution。
+一个 entry 有多个 site 也不形成多条 check 或 score contribution。send 的 location、terminal status 与
+duration 则是独立持久 occurrence，不能从 `sourceOrder` 的数字缺口猜测。
 
 source-sites 与 Sources 缺失、unsupported 或 invalid 时，Assertions 仍按自己的 entry 规则读取；
-相应 entry 只显示 `unmapped`。criterion 的 unsupported 或 invalid 同样不击穿 source mapping。
+相应 entry 只显示 `unmapped`。criterion 的 unsupported 或 invalid 同样不击穿 source mapping。每个
+Run 都有独立 Sources snapshot，不能以相同 path、digest 或 item identity 假装配对另一个 Run。
 完整 payload、局部错误、runtime capture、三个公开 projection 与 migration group 见
 [Source sites](architecture/source-sites.md)。
 

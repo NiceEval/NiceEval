@@ -16,9 +16,10 @@ niceeval.assertions/v1  niceeval.assertion-source-sites/v1  niceeval.verdict/v1
                   closed report document
 ```
 
-source-sites 是独立的 Attempt-owned Attachment。它保留已执行的 entry source mapping，不把
-source path、source blob、作者调用图或 Assertion result 写回 `AssertionsDocumentV1`。精确形状与
-跨 owner semantic join 由 [Source sites](architecture/source-sites.md) 拥有。
+source-sites 是独立的 Attempt-owned Attachment。它保留已执行的 entry source mapping 与 send
+annotation，不把 source path、source blob、作者调用图或 Assertion result 写回
+`AssertionsDocumentV1`。精确形状、canonical snapshot coordinate 与跨 owner semantic join 由
+[Source sites](architecture/source-sites.md) 拥有。
 
 ## v1 外层 payload
 
@@ -315,8 +316,8 @@ producer 在 whole Run 发布前分配 entryId、归一 material 并写入 Asser
 schema-declared immutable semantic join，不能携带另一个 Attachment 的 blob ref、storage path 或 capability。
 Assertions entry 的 criterion / result 状态与 source mapping 相互隔离。
 
-需要源码导航的 Report 必须显式声明三个中立 input：attempt-slot Assertions、attempt-slot
-source-sites 与 attempt-origin-run Sources。公开的纯 `assembleAttemptSourceTreeV1` 组合已形成的值，
+需要源码导航的 consumer 必须显式声明三个中立 input：attempt-slot Assertions、attempt-slot
+source-sites 与 attempt-origin-run Sources。公开的 pure `assembleAttemptSourceTreeV1` 组合已形成的值，
 不能在 reader 时猜测当前 worktree 或绕过已声明的 projection 读取。
 
 一个 entry 的 sealed result、points 与 unavailable 仍只来自 Assertions。因此多 site 不会重复计分，
@@ -327,8 +328,8 @@ payload、own blob closure 语义或解释改变时，发布同 name 的相邻 `
 
 converter 只读取精确旧 payload，不读取当前 Eval、源码、网络、进程变量或新的 evaluation。不可无损时，
 `niceeval migrate` 保留旧 bytes 并返回 `migration-unavailable`，不补默认值或重算 Assertions。若
-source-sites source ref identity 同时改变，改用
-[source identity migration group](../record/library.md#source-identity-migration-group)，不能独立转换该 Attachment。
+source-sites source ref identity 同时改变，它与 Sources 进入相同的 source identity migration group，
+不能独立转换该 Attachment；跨 owner group 的依赖由 [Source sites](architecture/source-sites.md) 声明。
 
 ## 相关阅读
 
