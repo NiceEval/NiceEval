@@ -8,8 +8,10 @@ name: e2e
 #           （runner 在当前 checkout 为声明的 consumer clean-build Testkit 并注入目录依赖）
 #           --artifact-root "$RUNNER_TEMP/niceeval-e2e-artifacts/<safe-id>"
 #
-# Lane: PR=pr(无 secret) | push main=main | schedule=nightly | dispatch=输入
-# 可信 lane 挂 GitHub Environment（与 lane 同名），不复制 Repo 选择逻辑。
+# Lane: 同仓可信 PR / push main=main | fork / Dependabot PR=pr(无 secret)
+#       schedule=nightly | dispatch=输入。CI 每次执行所选 lane 全集。
+# 只有非 PR 的可信 lane 挂同名 GitHub Environment；同仓 PR 直接使用仓库级
+# Actions secrets，避免把 Environment 误当成 PR 代码无法外传 secret 的边界。
 
 on:
   pull_request:
@@ -28,7 +30,7 @@ on:
           - main
           - nightly
           - release
-        default: pr
+        default: main
       repo:
         description: "只跑一个 Repo id（留空=该 lane 全集）"
         required: false
@@ -74,31 +76,64 @@ jobs:
         id: lane
         env:
           DISPATCH_LANE: ${{ github.event.inputs.lane }}
+          PR_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
           set -euo pipefail
           case "$GITHUB_EVENT_NAME" in
-            pull_request) lane=pr ;;
-            schedule) lane=nightly ;;
-            workflow_dispatch) lane="${DISPATCH_LANE:-pr}" ;;
-            push)
-              if [ "$GITHUB_REF" = "refs/heads/main" ]; then lane=main; else lane=pr; fi
+            pull_request)
+              if [ "$PR_HEAD_REPOSITORY" = "$GITHUB_REPOSITORY" ] \
+                && [ "$PR_AUTHOR" != "dependabot[bot]" ]; then
+                lane=main
+                inject=true
+                environment=
+              else
+                lane=pr
+                inject=false
+                environment=
+              fi
               ;;
-            *) lane=pr ;;
-          esac
-          case "$lane" in
-            pr)
+            schedule)
+              lane=nightly
+              inject=true
+              environment=nightly
+              ;;
+            workflow_dispatch)
+              lane="${DISPATCH_LANE:-main}"
+              ;;
+            push)
+              if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+                lane=main
+                inject=true
+                environment=main
+              else
+                lane=pr
+                inject=false
+                environment=
+              fi
+              ;;
+            *)
+              lane=pr
               inject=false
               environment=
               ;;
-            main|nightly|release)
-              inject=true
-              environment="$lane"
-              ;;
-            *)
-              echo "::error::unknown lane ${lane}"
-              exit 1
-              ;;
           esac
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            case "$lane" in
+              pr)
+                inject=false
+                environment=
+                ;;
+              main|nightly|release)
+                inject=true
+                environment="$lane"
+                ;;
+              *)
+                echo "::error::unknown lane ${lane}"
+                exit 1
+                ;;
+            esac
+          fi
           {
             echo "lane=${lane}"
             echo "inject-secrets=${inject}"
@@ -111,26 +146,12 @@ jobs:
         env:
           LANE: ${{ steps.lane.outputs.lane }}
           DISPATCH_REPO: ${{ github.event.inputs.repo }}
-          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: |
           set -euo pipefail
-          args=(--lane "$LANE" --json)
+          args=(--lane "$LANE" --no-diff --json)
           repo="$(printf '%s' "${DISPATCH_REPO:-}" | tr -d '[:space:]')"
           if [ -n "$repo" ]; then
             args+=(--repo "$repo")
-          fi
-          # Release 明确跑全集；其它 lane 能求 diff 时交给 plan 做 path 省时，
-          # 否则 fail-open 跑 lane 全集。
-          if [ "$LANE" = "release" ]; then
-            args+=(--no-diff)
-          elif [ "$GITHUB_EVENT_NAME" = "pull_request" ] || [ "$GITHUB_EVENT_NAME" = "push" ]; then
-            if [ -n "${BASE_SHA:-}" ] && git cat-file -e "$BASE_SHA" 2>/dev/null; then
-              while IFS= read -r path; do
-                [ -n "$path" ] && args+=(--diff-path "$path")
-              done < <(git diff --name-only "$BASE_SHA" "$GITHUB_SHA")
-            else
-              echo "[e2e] base unavailable — full lane (fail-open)"
-            fi
           fi
           plan_file="${RUNNER_TEMP}/e2e-plan.json"
           pnpm e2e plan "${args[@]}" > "$plan_file"
@@ -198,7 +219,8 @@ jobs:
     if: needs.prepare.outputs.has-jobs == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 150
-    # PR: null（不挂 Environment）；main/nightly/release: 同名 Environment
+    # 同仓可信 PR 不挂 Environment；push / schedule / dispatch 的可信 lane
+    # 才挂同名 Environment。两者都只注入 manifest 声明的仓库级 secret。
     environment: ${{ needs.prepare.outputs.inject-secrets == 'true' && needs.prepare.outputs.environment || fromJSON('null') }}
     strategy:
       fail-fast: false
@@ -392,3 +414,30 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
           include-hidden-files: true
+
+  gate:
+    name: e2e gate
+    needs: [prepare, e2e]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require the complete selected matrix
+        env:
+          PREPARE_RESULT: ${{ needs.prepare.result }}
+          HAS_JOBS: ${{ needs.prepare.outputs.has-jobs }}
+          MATRIX_RESULT: ${{ needs.e2e.result }}
+        run: |
+          set -euo pipefail
+          if [ "$PREPARE_RESULT" != "success" ]; then
+            echo "::error::prepare e2e ended as ${PREPARE_RESULT}"
+            exit 1
+          fi
+          if [ "$HAS_JOBS" = "true" ] && [ "$MATRIX_RESULT" != "success" ]; then
+            echo "::error::e2e matrix ended as ${MATRIX_RESULT}"
+            exit 1
+          fi
+          if [ "$HAS_JOBS" != "true" ] && [ "$MATRIX_RESULT" != "skipped" ]; then
+            echo "::error::empty e2e plan expected a skipped matrix, got ${MATRIX_RESULT}"
+            exit 1
+          fi
+          echo "[e2e] gate passed: has-jobs=${HAS_JOBS} matrix=${MATRIX_RESULT}"
