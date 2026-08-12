@@ -252,23 +252,14 @@ export const zhCN = {
     "error: --stats cannot combine with a locator ({{locator}}) — a single attempt has no stability to measure\n  fix: drop the locator and use eval id prefixes / --exp to select a range for --stats\n",
   "cli.show.statsReportConflict":
     "error: --stats cannot combine with --report ({{report}}) — --stats is a zero-config slice, it does not render a user report tree\n  fix: drop --report to use --stats, or drop --stats and put a StabilityMatrix in your own report file\n",
-  "cli.show.grepExpandConflict":
-    "error: --grep and --expand cannot combine — --grep scans for matching cards, --expand prints one card in full\n  fix: drop one of the two flags\n",
   "cli.show.grepExecutionOnly":
     "error: --grep only combines with --execution — it narrows that block's text rendering, not a slice of its own\n  fix: add --execution, or drop --grep\n",
-  "cli.show.expandExecutionOnly":
-    "error: --expand only combines with --execution — it narrows that block's text rendering, not a slice of its own\n  fix: add --execution, or drop --expand\n",
   "cli.show.grepInvalidPattern":
     "error: --grep pattern is not a valid JS regular expression: \"{{pattern}}\" ({{message}})\n  fix: fix the pattern syntax (it is passed to `new RegExp(...)`)\n",
-  "cli.show.expandMultiAttempt":
-    "error: --expand requires the range to resolve to exactly one attempt, got {{count}}\n  fix: narrow the range to a single attempt — an eval id prefix matching one eval, or @<locator>\n",
-  "cli.show.expandNotFound": "error: {{message}}\n  fix: use a handle from a truncated card's own hint (t<turn>.c<card> or cmd<n>), or drop --expand to see the whole attempt\n",
   "cli.show.historyReportConflict":
     "`--history` and `--report` are mutually exclusive: both take over the main output. --history is the host's per-attempt execution timeline; for run-level trends, compose exp.runs inside your report file instead.\n",
   "cli.show.jsonReportConflict":
     "error: --json cannot combine with --report ({{report}}) — a report tree says how to look at the data, --json says what the data is\n  fix: drop --report to use --json, or drop --json and read the report tree as text/HTML\n",
-  "cli.show.jsonExpandConflict":
-    "error: --json cannot combine with --expand — JSON never truncates cards, there is nothing to expand\n  fix: drop --expand; --json already returns the full untruncated value\n",
   "cli.show.jsonMultiEvidenceConflict":
     "error: --json requires exactly one of --source/--execution/--timing/--diff at a time — the envelope's \"view\" is a single value, there is no combined shape for more than one\n  fix: drop the extra evidence flags, or make one --json call per flag\n",
   "cli.show.locatorMalformed": "{{message}}\n",
