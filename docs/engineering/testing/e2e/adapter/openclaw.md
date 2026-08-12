@@ -18,5 +18,6 @@ Repo ID 是 `adapter/openclaw`；manifest 声明 `areas: ["adapter", "sandbox"]`
 ## 仓库验收
 
 - `ci` Experiment 选中本仓库的 coding、Skill、会话与 usage Eval；原生验收脚本列全 OpenClaw 协议 Eval ID，防止少发现/少运行后假绿。
-- **CLI 读回**：`show` 成绩单列出本仓库 Eval 与 verdict；对通过 attempt 的 `show --execution` 执行树读回写入内容与 `cat notes.txt` 的工具 input，并读回目标 Skill 的 `SKILL.md` 路径。decoy 未被读取由同一 Eval 的事件流负断言核验。
-- **OTel**：适配器复用 canonical OTel mapper；OTel 内容关闭时只影响 timing 注释，事件流断言照常通过。
+- **Eval 结果**：原生验收只断言通过数与未通过数。Skill 读取与 decoy 反选都留在 Eval 的事件流断言中。
+- **Execution**：独立 `show --execution` test 只读回 coding Eval 的代表性文件工具证据，不用 CLI 文本再判定 Skill。
+- **Timing**：独立 `show --timing` test 验收阶段树。本轮关闭 OTel 内容时，execution 必须诚实显示 `timing unavailable`；事件流判分不受影响。

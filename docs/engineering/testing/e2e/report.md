@@ -102,7 +102,7 @@ niceeval view --run <runId> --out <new-directory>
 
 ### report-execution-evidence
 
-`report-execution.test.ts` 验证 `show --execution` 从本轮 Record 读回确定性的 conversation 与 tool-call evidence（Attempt-owned RecordAttachment），不读取修改后的工作树。
+`report-execution.test.ts` 验证 `show --execution` 从本轮 Record 读回确定性的 conversation、tool-call 名称与入参 evidence（Attempt-owned RecordAttachment）。它同时验证 `show --timing` 的通用阶段树渲染。各 Adapter 的 telemetry 注入、mapper 与 correlation 仍由各自 Repo 的独立 timing test 拥有。
 
 ### report-static-export
 
