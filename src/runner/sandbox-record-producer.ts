@@ -25,7 +25,6 @@ export interface RunnerSandboxRecordProducerInvalid {
     | "origin-slot-duplicate"
     | "sandbox-reuse-shape-invalid"
     | "pooled-ordinal-duplicate"
-    | "pooled-ordinal-gap"
     | "pooled-identity-missing";
 }
 
@@ -217,12 +216,8 @@ export function createRunnerSandboxWritePlan(
   const orderedPooled = [...pooledByIdentity.values()].sort(comparePooledIdentity);
   const pooledNumbers = new Map<string, number>();
   for (const [index, pooled] of orderedPooled.entries()) {
-    const orderedOrdinals = [...pooled.ordinals.entries()].sort(([left], [right]) => left - right);
-    for (const [ordinalIndex, [ordinal, slotId]] of orderedOrdinals.entries()) {
-      if (ordinal !== ordinalIndex + 1) {
-        return Either.left(producerInvalid(slotId, "pooled-ordinal-gap"));
-      }
-    }
+    // The provider's lease order can have absent origins, so only duplicate
+    // ordinals are incoherent within the completed facts available here.
     pooledNumbers.set(identityKey(pooled.provider, pooled.sandboxId), index + 1);
   }
 
