@@ -137,7 +137,9 @@ export function isCanonicalWorkspaceRelativePathV1(value: unknown): value is str
     typeof value !== "string"
     || value.length === 0
     || value.includes("\u0000")
+    || value.includes("\\")
     || value.startsWith("/")
+    || /^[A-Za-z]:\//.test(value)
   ) {
     return false;
   }
@@ -152,7 +154,7 @@ export function assertCanonicalWorkspaceRelativePathV1(
 ): asserts value is string {
   if (!isCanonicalWorkspaceRelativePathV1(value)) {
     throw new TypeError(
-      `${owner} must be a canonical workspace-relative path without absolute, ., .., empty, or NUL segments`,
+      `${owner} must be a canonical portable workspace-relative path without absolute, ., .., empty, NUL, or backslash segments`,
     );
   }
 }
