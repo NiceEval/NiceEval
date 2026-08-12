@@ -1,18 +1,11 @@
 import { defineEval } from "niceeval";
-import { eventMatch, includes } from "niceeval/expect";
+import { includes } from "niceeval/expect";
 
 export default defineEval({
   description: "next consumer after interrupt",
   async test(t) {
     const turn = await t.send("probe");
-    await t.require(turn.succeeded());
-    t.check(
-      t.event(
-        eventMatch("message", {
-          role: "assistant",
-          text: includes("lifecycle-fixture-ok"),
-        }),
-      ),
-    );
+    await turn.succeeded().orStop();
+    t.check(turn.message, includes("lifecycle-fixture-ok"));
   },
 });
