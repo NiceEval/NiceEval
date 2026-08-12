@@ -1,8 +1,7 @@
 /**
  * The active Eval context. Assertion authoring deliberately enters through
- * `AssertionsRuntime`; this module never constructs a Fact or a Fact
- * collector. The legacy Context implementation remains internal compatibility
- * code; Runner never hands it to an Eval author.
+ * `AssertionsRuntime`; this module never constructs an intermediate Fact or
+ * starts a private runtime.
  */
 
 import { readFile } from "node:fs/promises";

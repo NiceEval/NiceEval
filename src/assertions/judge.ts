@@ -5,14 +5,9 @@ import { ClosedQA, Factuality, Summary } from "autoevals";
 import { Effect } from "effect";
 import OpenAI from "openai";
 
-import {
-  type ScoreFactDefinition,
-  type ScoreFactEvaluation,
-} from "./collector.ts";
 import { summaryText } from "./display.ts";
 import type { MeasurementAssertionEvaluation } from "./api.ts";
-import type { JudgeMaterial, ResolvedJudgeConfig, ScoreFact } from "./types.ts";
-import type { JudgeNamespace, TurnJudgeNamespace } from "../context/types.ts";
+import type { JudgeMaterial, ResolvedJudgeConfig } from "./types.ts";
 import { getEnv } from "../util.ts";
 
 const JUDGE_MAX_ATTEMPTS = 3;
@@ -20,16 +15,27 @@ const JUDGE_RETRY_BASE_DELAY_MS = 1_000;
 const PROBE_TIMEOUT_MS = 20_000;
 const PROBE_MAX_ATTEMPTS = 2;
 
-export interface JudgeDeps {
-  /** Undefined means the Eval never declared Judge capability. */
-  readonly judge: ResolvedJudgeConfig | undefined;
-  readonly signal?: AbortSignal;
-  readonly createScoreFact: (definition: ScoreFactDefinition<"now">) => ScoreFact<"now">;
-  readonly random?: () => number;
-}
-
 export type JudgeRecipe = "closedQA" | "factuality" | "summarizes";
 type AutoevalResult = { score?: number | null; metadata?: Record<string, unknown> };
+
+type JudgeMeasurementResult =
+  | {
+      readonly state: "measured";
+      readonly value: number;
+      readonly evidence?: string;
+      readonly explanation?: string;
+    }
+  | {
+      readonly state: "unavailable";
+      readonly reason: "source-unavailable";
+      readonly detail: string;
+      readonly evidence?: string;
+    }
+  | {
+      readonly state: "errored";
+      readonly code: string;
+      readonly message: string;
+    };
 
 function errorSummary(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
@@ -157,12 +163,6 @@ function formatSeconds(ms: number): string {
   return `${Number.isInteger(seconds) ? seconds : seconds.toFixed(1)}s`;
 }
 
-function checkSummary(kind: JudgeRecipe, reference: string): string {
-  const flat = reference.replace(/\s+/g, " ").trim();
-  const short = flat.length > 80 ? `${flat.slice(0, 80)}…` : flat;
-  return `${kind}(${JSON.stringify(short)})`;
-}
-
 function judgeFailureEvidence(error: unknown, model: string, attempts: number, retried: boolean): string {
   const parts = [`model=${model}`];
   const status = judgeStatus(error);
@@ -207,7 +207,7 @@ function evidenceFor(material: JudgeMaterial): string {
   return JSON.stringify({ input: summaryText(material.input), output: summaryText(material.output) });
 }
 
-function missingConfiguration(resolved: ResolvedJudgeConfig): ScoreFactEvaluation | undefined {
+function missingConfiguration(resolved: ResolvedJudgeConfig): JudgeMeasurementResult | undefined {
   if (!resolved.model) return unavailable("judge-model-unresolved");
   if (!getEnv(resolved.apiKeyEnv)) return unavailable(`judge-key-unresolved (${resolved.apiKeyEnv} unset)`);
   return undefined;
@@ -295,19 +295,24 @@ export function probeJudgeEffect(
   });
 }
 
-function unavailableForCall(model: string, timeoutMs: number, attempts: number, retried: boolean): ScoreFactEvaluation {
+function unavailableForCall(model: string, timeoutMs: number, attempts: number, retried: boolean): JudgeMeasurementResult {
   return unavailable(
     "judge-call-failed",
     `model=${model} · timed out after ${formatSeconds(timeoutMs)} · retry=${retried ? "yes" : "no"} · attempts=${attempts}`,
   );
 }
 
-function unavailable(reason: string, evidence?: string): ScoreFactEvaluation {
-  return { outcome: "unavailable", reason, ...(evidence === undefined ? {} : { evidence }) };
+function unavailable(detail: string, evidence?: string): JudgeMeasurementResult {
+  return {
+    state: "unavailable",
+    reason: "source-unavailable",
+    detail,
+    ...(evidence === undefined ? {} : { evidence }),
+  };
 }
 
-function evaluatorError(code: string, message: string): ScoreFactEvaluation {
-  return { outcome: "errored", error: { class: "evaluator", code, message } };
+function evaluatorError(code: string, message: string): JudgeMeasurementResult {
+  return { state: "errored", code, message };
 }
 
 /** Throws synchronously at the author callsite when the Eval did not opt in. */
@@ -362,9 +367,9 @@ function judgeSleep(delayMs: number): Effect.Effect<void> {
  * The real Judge invocation. Provider I/O is adapted once, then retry,
  * timeout, interruption, and delay remain inside the owning Effect.
  */
-export function evaluateJudgeRecipeEffect(
+function evaluateJudgeRecipe(
   input: JudgeRecipeExecution,
-): Effect.Effect<ScoreFactEvaluation> {
+): Effect.Effect<JudgeMeasurementResult> {
   const evaluation = Effect.suspend(() => {
     const { judge: resolved } = input;
     const frozenMaterial = freezeJudgeMaterial(input.material);
@@ -375,25 +380,25 @@ export function evaluateJudgeRecipeEffect(
     let attempts = 0;
     let retried = false;
 
-    const evaluate = (attempt: number): Effect.Effect<ScoreFactEvaluation> =>
+    const evaluate = (attempt: number): Effect.Effect<JudgeMeasurementResult> =>
       Effect.sync(() => {
         attempts = attempt + 1;
       }).pipe(
         Effect.zipRight(
           evaluateAutoeval(input, frozenMaterial, apiKey, model).pipe(
-            Effect.flatMap((result): Effect.Effect<ScoreFactEvaluation> => {
+            Effect.flatMap((result): Effect.Effect<JudgeMeasurementResult> => {
               if (typeof result.score !== "number" || !Number.isFinite(result.score) || result.score < 0 || result.score > 1) {
                 return Effect.succeed(evaluatorError("judge-invalid-response", "Judge returned no finite score in [0, 1]"));
               }
               const rationale = result.metadata?.rationale;
               return Effect.succeed({
-                outcome: "scored" as const,
-                normalizedScore: result.score,
+                state: "measured" as const,
+                value: result.score,
                 evidence: evidenceFor(frozenMaterial),
                 ...(typeof rationale === "string" && rationale.trim() !== "" ? { explanation: summaryText(rationale) } : {}),
               });
             }),
-            Effect.catchAll((failure: JudgeProviderFailure): Effect.Effect<ScoreFactEvaluation> => {
+            Effect.catchAll((failure: JudgeProviderFailure): Effect.Effect<JudgeMeasurementResult> => {
               const error = failure.error;
               if (!isTransportFailure(error)) return Effect.succeed(evaluatorError("judge-evaluator-error", errorSummary(error)));
               if (!isTransientJudgeFailure(error) || attempt + 1 >= JUDGE_MAX_ATTEMPTS) {
@@ -421,79 +426,9 @@ export function evaluateJudgeRecipeEffect(
   return interruptibleByCaller(evaluation, input.signal);
 }
 
-/**
- * @deprecated Pending FactCollector retirement. This legacy compatibility
- * facade owns a private Effect runtime; Assert-first and Runner callers must
- * use Effect-native exports directly.
- */
-export function evaluateJudgeRecipe(
-  input: JudgeRecipeExecution,
-): Promise<ScoreFactEvaluation> {
-  return Effect.runPromise(evaluateJudgeRecipeEffect(input));
-}
-
-function measurementFromJudgeEvaluation(
-  evaluation: ScoreFactEvaluation,
-): MeasurementAssertionEvaluation {
-  switch (evaluation.outcome) {
-    case "scored":
-      return Object.freeze({ state: "measured" as const, value: evaluation.normalizedScore });
-    case "unavailable":
-      return Object.freeze({ state: "unavailable" as const, reason: "source-unavailable" as const });
-    case "errored":
-      return Object.freeze({ state: "errored" as const });
-  }
-}
-
 /** Assert-first bridge: one provider Promise adaptation in the Attempt Effect. */
 export function evaluateJudgeMeasurement(
   input: JudgeRecipeExecution,
 ): Effect.Effect<MeasurementAssertionEvaluation, never, never> {
-  return evaluateJudgeRecipeEffect(input).pipe(
-    Effect.map(measurementFromJudgeEvaluation),
-  );
-}
-
-function createRecipe(deps: JudgeDeps, recipe: JudgeRecipe, reference: string, material: JudgeMaterial): ScoreFact<"now"> {
-  const resolved = deps.judge;
-  assertJudgeCapability(resolved);
-  if (typeof reference !== "string" || reference.trim() === "") {
-    throw new TypeError("Judge recipe reference must be a non-empty string");
-  }
-  const frozenMaterial = freezeJudgeMaterial(material);
-  const check = checkSummary(recipe, reference);
-  return deps.createScoreFact({
-    name: `judge:${check}`,
-    phase: "now",
-    judge: { check },
-    evaluate: () => evaluateJudgeRecipe({
-      judge: resolved,
-      recipe,
-      reference,
-      material: frozenMaterial,
-      ...(deps.signal === undefined ? {} : { signal: deps.signal }),
-      ...(deps.random === undefined ? {} : { random: deps.random }),
-    }),
-  });
-}
-
-export function buildJudge(deps: JudgeDeps): JudgeNamespace {
-  return {
-    autoevals: {
-      closedQA: (question, material) => createRecipe(deps, "closedQA", question, material),
-      factuality: (expected, material) => createRecipe(deps, "factuality", expected, material),
-      summarizes: (source, material) => createRecipe(deps, "summarizes", source, material),
-    },
-  };
-}
-
-export function buildTurnJudge(deps: JudgeDeps, material: JudgeMaterial): TurnJudgeNamespace {
-  const frozenMaterial = freezeJudgeMaterial(material);
-  return {
-    autoevals: {
-      closedQA: (question) => createRecipe(deps, "closedQA", question, frozenMaterial),
-      factuality: (expected) => createRecipe(deps, "factuality", expected, frozenMaterial),
-      summarizes: (source) => createRecipe(deps, "summarizes", source, frozenMaterial),
-    },
-  };
+  return evaluateJudgeRecipe(input);
 }

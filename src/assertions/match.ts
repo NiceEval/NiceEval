@@ -1,6 +1,6 @@
 // Match 内核：纯候选比较、三态结果与领域 matcher。
 //
-// 这里不创建 Fact，也不决定 verdict / score use。调用方先解析 EvidenceSource，再把同一
+// 这里不登记 Assertion，也不决定 Verdict / Score。调用方先冻结 subject，再把同一
 // candidate 交给本模块；因此组合 matcher 不会自行重读证据，也不会把 evaluator defect
 // 折成 mismatch 或 unavailable。
 
@@ -427,7 +427,7 @@ export function assertionEventOccurrence(event: AssertionEvent): LogicalToolOccu
   return assertionEventOccurrences.get(event);
 }
 
-/** 供 Fact / scope owner 消费 BooleanMatch；普通作者面不会导出此 evaluator。 */
+/** 供 Assertion runtime / scope owner 消费 BooleanMatch；普通作者面不会导出此 evaluator。 */
 export async function evaluateBooleanMatch<T, R extends T, D extends MatchDomain>(
   match: BooleanMatch<T, R, D>,
   candidate: T,
@@ -437,7 +437,7 @@ export async function evaluateBooleanMatch<T, R extends T, D extends MatchDomain
   return assertBooleanEvaluation<R>(result, `matcher ${internal.name}`);
 }
 
-/** 供 Fact owner 消费 ScoreMatch。范围非法是 evaluator defect，绝不 clamp。 */
+/** 供 Assertion runtime 消费 ScoreMatch。范围非法是 evaluator defect，绝不 clamp。 */
 export async function evaluateScoreMatch<T>(match: ScoreMatch<T>, candidate: T): Promise<number> {
   const internal = internalMatchOf(match, "match");
   if (internal.kind !== "score" || internal.domain !== "value") {

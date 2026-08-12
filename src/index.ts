@@ -42,7 +42,6 @@ export type {
   RespondAnswer,
   TurnHandle,
   SessionHandle,
-  AssertionEvaluationContext,
   TestContext,
   ScoreTestContext,
   Verdict,
