@@ -62,7 +62,7 @@ test("createCodexThreadEventStream 的锁定 ThreadEvent 经 Experiment 和公�
       expect(execution.stdout).toContain("codex-sdk-command-marker");
       expect(execution.stdout).toContain("file_change");
       expect(execution.stdout).toContain("codex-sdk-terminal-failure-marker");
-      expect(execution.stdout).toContain("failed");
+      expect(execution.stdout).toContain("conversation error stream-error");
     },
     sdkConverterArtifactStaging("codex-thread-stream"),
   );
