@@ -20,7 +20,7 @@ import { Effect } from "effect";
 import type { Sandbox, TraceSpan } from "../../types.ts";
 import { t } from "../../i18n/index.ts";
 import { parseOtlpTraces } from "./parse.ts";
-import { interruptOnAbort, type TraceReceiver } from "./receiver.ts";
+import type { TraceReceiver } from "./receiver.ts";
 
 // collector 脚本:纯 Node.js CJS,无外部依赖。
 // 每收一个 OTLP/HTTP 请求就把 { ct, body(base64) } 追加写一行到 spans 文件,
@@ -233,9 +233,6 @@ function makeInSandboxReceiver(sandbox: Sandbox): Effect.Effect<TraceReceiver, u
       endpoint: (_host: string) => `http://127.0.0.1:${port}/v1/traces`,
       collect: () => cached.slice(),
       settle,
-      // This receiver is only used from Effect-native attempt acquisition paths.
-      settlePromise: (quietMs: number, maxMs: number, signal?: AbortSignal) =>
-        Effect.runPromise(signal === undefined ? settle(quietMs, maxMs) : Effect.raceFirst(settle(quietMs, maxMs), interruptOnAbort(signal))),
       close,
     });
   }));

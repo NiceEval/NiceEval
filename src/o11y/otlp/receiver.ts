@@ -17,11 +17,6 @@ export interface TraceReceiver {
   collect(): TraceSpan[];
   /** 给在途的最后一批导出留点落地时间(无新 span 持续 quietMs 即返回,至多 maxMs)。 */
   settle(quietMs: number, maxMs: number): Effect.Effect<void>;
-  /**
-   * 仍由旧 async attempt body 调用的最外层 Promise compatibility facade。
-   * Effect-native callers 必须使用 settle；signal 会把这层等待接回其 owning Effect 的 interruption。
-   */
-  settlePromise(quietMs: number, maxMs: number, signal?: AbortSignal): Promise<void>;
   /** receiver owner 的 release action；Effect.acquireRelease 负责正常、失败与中断时调用它。 */
   readonly close: Effect.Effect<void>;
 }
@@ -136,8 +131,6 @@ export function makeTraceReceiver(port = 0): Effect.Effect<TraceReceiver, Error>
       endpoint: (host: string) => `http://${host}:${boundPort}/v1/traces`,
       collect: () => resources.spans.slice(),
       settle,
-      settlePromise: (quietMs: number, maxMs: number, signal?: AbortSignal) =>
-        Effect.runPromise(withAbortSignal(settle(quietMs, maxMs), signal)),
       close,
     });
   });
@@ -357,11 +350,6 @@ function closeServer(server: Server): Effect.Effect<void> {
     }
     return Effect.void;
   });
-}
-
-/** A narrow bridge only for the remaining legacy async attempt body. */
-function withAbortSignal<A>(effect: Effect.Effect<A>, signal: AbortSignal | undefined): Effect.Effect<A> {
-  return signal === undefined ? effect : Effect.raceFirst(effect, interruptOnAbort(signal));
 }
 
 /**

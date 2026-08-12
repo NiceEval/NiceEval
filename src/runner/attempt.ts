@@ -12,15 +12,19 @@ import {
 } from "../sandbox/runtime.ts";
 import type { ConcurrencySlot } from "../context/send-retry.ts";
 import { unregisterSandbox } from "../sandbox/registry.ts";
-import { CLEANUP_TIMEOUT_MS, withCleanupTimeout } from "./cleanup-timeout.ts";
+import { CLEANUP_TIMEOUT_MS, cleanupCallback } from "./cleanup-timeout.ts";
 import { resolveAttemptTimeout, type TimeoutSource } from "./timeout.ts";
 import { SandboxCommandTimeoutError } from "../sandbox/deadline.ts";
 import { ExperimentFatalError } from "../shared/failure-class.ts";
 import type { ExternalCause } from "../shared/external-cause.ts";
 import { computeExpiresAt, nativeEnterCommand, suspendSandbox } from "../sandbox/keep.ts";
-import { keptEntryId, updateKeptEntry, writeKeptEntry } from "../sandbox/keep-registry.ts";
+import {
+  keptEntryId,
+  updateKeptEntryEffect,
+  writeKeptEntryEffect,
+} from "../sandbox/keep-registry.ts";
 import { runAgentEnsure, verifySandboxTargetPlatform } from "../agents/provisioner.ts";
-import { createTraceReceiver, type TraceReceiver } from "../o11y/otlp/receiver.ts";
+import { createTraceReceiver, interruptOnAbort, type TraceReceiver } from "../o11y/otlp/receiver.ts";
 import { createInSandboxTraceReceiver } from "../o11y/otlp/sandbox-receiver.ts";
 import { AgentOtelChannel } from "../o11y/otlp/turn-otel.ts";
 import { selectTraceSpans, enrichTraceWithIO } from "../o11y/otlp/select.ts";
@@ -598,30 +602,38 @@ export function runAttemptEffect<
                     // Managed disposition，避免外层再包一层 acquireRelease 造成 double-stop。
                     release: {
                       _tag: "Managed",
-                      run: (owned) => tryPromiseAsDefect(async () => {
+                      run: (owned) => Effect.gen(function* () {
                         const sb = owned.sandbox;
                         if (disposition !== "keep") {
-                          await owned.group.stop();
-                          return;
+                          return yield* tryPromiseAsDefect(() => owned.group.stop());
                         }
-                        unregisterSandbox(sb);
+                        yield* Effect.sync(() => unregisterSandbox(sb));
                         const providerName = runtimeCapabilities.provider;
                         const suspendStart = recorder.offsetNow();
-                        try {
-                          await suspendSandbox(sb);
-                          recorder.record("sandbox.suspend", recorder.offsetNow() - suspendStart);
-                          await updateKeptEntry(niceevalRoot, keptEntryId(providerName, sb.sandboxId), {
-                            state: "dormant",
-                          }).catch(() => false);
-                        } catch (e) {
-                          recorder.record("sandbox.suspend", recorder.offsetNow() - suspendStart, true);
-                          recordDiagnostic({
-                            code: "sandbox-suspend-failed",
-                            level: "warning",
-                            message: `sandbox ${sb.sandboxId} kept but suspend failed; the instance is still running: ${e instanceof Error ? e.message : String(e)}`,
-                            dedupeKey: `sandbox-suspend-failed:${sb.sandboxId}`,
-                          });
-                        }
+                        return yield* tryPromiseAsDefect(() => suspendSandbox(sb)).pipe(
+                          Effect.tap(() => Effect.sync(() => {
+                            recorder.record("sandbox.suspend", recorder.offsetNow() - suspendStart);
+                          })),
+                          Effect.zipRight(
+                            updateKeptEntryEffect(niceevalRoot, keptEntryId(providerName, sb.sandboxId), {
+                              state: "dormant",
+                            }).pipe(Effect.ignore),
+                          ),
+                          Effect.catchAllCause((cause) =>
+                            Cause.isInterrupted(cause)
+                              ? Effect.failCause(cause)
+                              : Effect.sync(() => {
+                                  const error = Cause.squash(cause);
+                                  recorder.record("sandbox.suspend", recorder.offsetNow() - suspendStart, true);
+                                  recordDiagnostic({
+                                    code: "sandbox-suspend-failed",
+                                    level: "warning",
+                                    message: `sandbox ${sb.sandboxId} kept but suspend failed; the instance is still running: ${error instanceof Error ? error.message : String(error)}`,
+                                    dedupeKey: `sandbox-suspend-failed:${sb.sandboxId}`,
+                                  });
+                                }),
+                          ),
+                        );
                       }),
                     },
                   });
@@ -738,68 +750,20 @@ export function runAttemptEffect<
       // 到点如实缺失。计时单独记一条 phases 条目,不入 durationMs(durationMs 已在 onTimeout
       // 按中断时刻定格)。sources 折叠是本地文件读取,与沙箱是否存活无关,一并在这里补。
       yield* Effect.addFinalizer(() =>
-        tryPromiseAsDefect(async () => {
+        Effect.gen(function* () {
           if (!timedOut) return;
-          const events = liveEvents?.() ?? [];
           if (run.agent.kind === "sandbox" && liveLedger) {
             const startedAt = recorder.offsetNow();
-            try {
-              timeoutDiff = await withCleanupTimeout(() => liveLedger!.exportWindows());
-            } catch {
-              // 沙箱不可用 / 导出挂起到点:如实缺失,不阻塞收尾。
-            } finally {
-              recorder.record("workspace.diff", recorder.offsetNow() - startedAt);
-            }
+            const diff = yield* Effect.either(cleanupCallback(() => liveLedger!.exportWindows()));
+            if (Either.isRight(diff)) timeoutDiff = diff.right;
+            // 沙箱不可用 / 导出挂起到点:如实缺失,不阻塞收尾。
+            recorder.record("workspace.diff", recorder.offsetNow() - startedAt);
           }
-          try {
-            timeoutSources = await withCleanupTimeout(() => collectSources(evalDef.source, sourceRegistry));
-          } catch {
-            // 源码读不到:如实缺失,不阻塞收尾。
-          }
+          const sources = yield* Effect.either(cleanupCallback(() => collectSources(evalDef.source, sourceRegistry)));
+          if (Either.isRight(sources)) timeoutSources = sources.right;
+          // 源码读不到:如实缺失,不阻塞收尾。
         }),
       );
-
-      // Scope 的 LIFO 让作者 cleanup 在 agent teardown 后、Provider Case finalizer 前执行。
-      // cleanup 使用新的有界 signal，不复用已经超时/取消的 Attempt signal。
-      if (run.agent.kind === "sandbox") {
-        yield* Effect.addFinalizer(() =>
-          tryPromiseAsDefect(async () => {
-            if (layerCleanups.length === 0) return;
-            enterPhase("sandbox.cleanup");
-            await recorder
-              .measureClosing("sandbox.cleanup", async () => {
-                const before = diagnostics.length;
-                for (let i = layerCleanups.length - 1; i >= 0; i--) {
-                  const cleanup = layerCleanups[i]!;
-                  const startedAt = recorder.offsetNow();
-                  const node = recorder.child(sandboxPrepareActivity({
-                    label: `${cleanup.label} cleanup`,
-                    startOffsetMs: startedAt,
-                  }));
-                  if (node) recorder.pushParent(node);
-                  try {
-                    const cleanupSignal = AbortSignal.timeout(CLEANUP_TIMEOUT_MS);
-                    await withCleanupTimeout(() => cleanup.command(commandTarget, {
-                      ...cleanup.context,
-                      signal: cleanupSignal,
-                    }));
-                  } catch (error) {
-                    if (node) node.failed = true;
-                    declareFailure("sandbox.cleanup", error);
-                    diagnostics.push(teardownDiagnostic("sandbox.cleanup", error));
-                  } finally {
-                    if (node) {
-                      node.durationMs = Math.max(0, recorder.offsetNow() - startedAt);
-                      recorder.popParent();
-                    }
-                  }
-                }
-                if (diagnostics.length > before) throw new Error("sandbox cleanup diagnostics");
-              })
-              .catch(() => {});
-          }),
-        );
-      }
 
       // Scope release owns the interruption seal. It runs before resource
       // release, so entries already declared by the real Context survive a
@@ -837,6 +801,7 @@ export function runAttemptEffect<
           );
         }),
       );
+
       // Close outstanding bridge promises before the interruption seal.  This
       // makes a detached author continuation fail by name while preserving the
       // already declared entries for the finalizer's declaration-order seal.
@@ -853,8 +818,50 @@ export function runAttemptEffect<
         }),
       );
 
-      // The legacy setup/diff/trace body remains Promise-shaped, while only
-      // author execution and seal run in this Attempt's Effect scope. No
+      // Scope 的 LIFO 让作者 cleanup 在 agent teardown 后、Provider Case finalizer 前执行。
+      // 这个 finalizer 注册在 bridge close 之后，因此释放时先由桥执行它拥有的 Effect。
+      if (run.agent.kind === "sandbox") {
+        yield* Effect.addFinalizer(() =>
+          tryPromiseAsDefect(async () => {
+            if (layerCleanups.length === 0) return;
+            enterPhase("sandbox.cleanup");
+            await recorder
+              .measureClosing("sandbox.cleanup", async () => {
+                const before = diagnostics.length;
+                for (let i = layerCleanups.length - 1; i >= 0; i--) {
+                  const cleanup = layerCleanups[i]!;
+                  const startedAt = recorder.offsetNow();
+                  const node = recorder.child(sandboxPrepareActivity({
+                    label: `${cleanup.label} cleanup`,
+                    startOffsetMs: startedAt,
+                  }));
+                  if (node) recorder.pushParent(node);
+                  try {
+                    const cleanupSignal = AbortSignal.timeout(CLEANUP_TIMEOUT_MS);
+                    await assertFirst.requestEffect(cleanupCallback(() => cleanup.command(commandTarget, {
+                      ...cleanup.context,
+                      signal: cleanupSignal,
+                    })));
+                  } catch (error) {
+                    if (node) node.failed = true;
+                    declareFailure("sandbox.cleanup", error);
+                    diagnostics.push(teardownDiagnostic("sandbox.cleanup", error));
+                  } finally {
+                    if (node) {
+                      node.durationMs = Math.max(0, recorder.offsetNow() - startedAt);
+                      recorder.popParent();
+                    }
+                  }
+                }
+                if (diagnostics.length > before) throw new Error("sandbox cleanup diagnostics");
+              })
+              .catch(() => {});
+          }),
+        );
+      }
+
+      // The legacy setup/diff body remains Promise-shaped, while OTLP waits,
+      // author execution, and sealing run in this Attempt's Effect scope. No
       // nested runtime is introduced.
       const bodyFiber = yield* Effect.fork(
         tryPromiseAsDefect((interruptSignal) =>
@@ -998,26 +1005,24 @@ export function runAttemptEffect<
       ) {
         const providerName = runtimeCapabilities!.provider;
         if (runtimeCapabilities!.retention._tag === "Suspendable") {
-          try {
-            const enter = nativeEnterCommand(providerName, sandbox.sandboxId);
-            const keptAt = new Date().toISOString();
-            const expiresAt = computeExpiresAt(providerName, keptAt);
-            yield* tryPromiseAsDefect(() =>
-              writeKeptEntry(niceevalRoot, {
-                sandboxId: sandbox.sandboxId,
-                provider: providerName,
-                evalId: evalDef.id,
-                attempt,
-                ...(run.experimentId !== undefined ? { experimentId: run.experimentId } : {}),
-                locator: String(a.locator),
-                verdict: bodyResult.verdict,
-                keptAt,
-                workdir: sandbox.workdir,
-                ...(enter !== undefined ? { enter } : {}),
-                ...(expiresAt !== undefined ? { expiresAt } : {}),
-                state: "alive",
-              }),
-            );
+          const enter = nativeEnterCommand(providerName, sandbox.sandboxId);
+          const keptAt = new Date().toISOString();
+          const expiresAt = computeExpiresAt(providerName, keptAt);
+          const registered = yield* Effect.either(writeKeptEntryEffect(niceevalRoot, {
+            sandboxId: sandbox.sandboxId,
+            provider: providerName,
+            evalId: evalDef.id,
+            attempt,
+            ...(run.experimentId !== undefined ? { experimentId: run.experimentId } : {}),
+            locator: String(a.locator),
+            verdict: bodyResult.verdict,
+            keptAt,
+            workdir: sandbox.workdir,
+            ...(enter !== undefined ? { enter } : {}),
+            ...(expiresAt !== undefined ? { expiresAt } : {}),
+            state: "alive",
+          }));
+          if (Either.isRight(registered)) {
             disposition = "keep";
             reportKept({
               locator: a.locator,
@@ -1032,14 +1037,14 @@ export function runAttemptEffect<
             // sandboxFacts 统一挂上(见下方 Effect.map)。
             kept = true;
             return bodyResult;
-          } catch (e) {
-            recordDiagnostic({
-              code: "sandbox-keep-failed",
-              level: "warning",
-              message: `failed to register kept sandbox ${sandbox.sandboxId}; it will be destroyed normally: ${e instanceof Error ? e.message : String(e)}`,
-              dedupeKey: `sandbox-keep-failed:${sandbox.sandboxId}`,
-            });
           }
+          const error = registered.left;
+          recordDiagnostic({
+            code: "sandbox-keep-failed",
+            level: "warning",
+            message: `failed to register kept sandbox ${sandbox.sandboxId}; it will be destroyed normally: ${error instanceof Error ? error.message : String(error)}`,
+            dedupeKey: `sandbox-keep-failed:${sandbox.sandboxId}`,
+          });
         }
       }
       return bodyResult;
@@ -1856,7 +1861,10 @@ async function runAttemptBody(
     if (receiver) {
       enterPhase("telemetry.collect");
       try {
-        await receiver.settlePromise(250, 1500, signal);
+        await assertFirst.requestEffect(Effect.raceFirst(
+          receiver.settle(250, 1500),
+          interruptOnAbort(signal),
+        ));
         const spans = receiver.collect();
         if (spans.length) {
           // 归一 → 选语义 span → 按 call_id 把 transcript 的工具入参/出参 join 上去(span 自身不带命令文本)。
@@ -1884,7 +1892,10 @@ async function runAttemptBody(
       //(逐轮攒的 + 按本 attempt traceId sweep 回的迟到批)。
       enterPhase("telemetry.collect");
       try {
-        const late = await otel.sweep(state.manager.otelTraceIds, state.manager.otelTurnWindows, signal);
+        const late = await assertFirst.requestEffect(Effect.raceFirst(
+          otel.sweepEffect(state.manager.otelTraceIds, state.manager.otelTurnWindows),
+          interruptOnAbort(signal),
+        ));
         const traceIdsBeforeDeferred = new Set(state.manager.otelTraceIds);
         const deferred = state.manager.attributeDeferredOtel(late);
         const knownLate = late.filter((span) => traceIdsBeforeDeferred.has(span.traceId));
@@ -2014,10 +2025,10 @@ async function runAttemptBody(
             // AgentTeardown | DirectAgentTeardown 混成无法调用的签名。
             if (run.agent.kind === "sandbox") {
               const teardown = run.agent.teardown;
-              if (teardown) await withCleanupTimeout(() => teardown(sandbox, sandboxAttemptCtx));
+              if (teardown) await assertFirst.requestEffect(cleanupCallback(() => teardown(sandbox, sandboxAttemptCtx)));
             } else {
               const teardown = run.agent.teardown;
-              if (teardown) await withCleanupTimeout(() => teardown(attemptCtx));
+              if (teardown) await assertFirst.requestEffect(cleanupCallback(() => teardown(attemptCtx)));
             }
           } catch (e) {
             declareFailure("agent.teardown", e);

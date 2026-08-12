@@ -15,7 +15,7 @@
 import { randomBytes } from "node:crypto";
 import { Effect } from "effect";
 import type { TraceSpan } from "../../types.ts";
-import { interruptOnAbort, makeTraceReceiver, type TraceReceiver } from "./receiver.ts";
+import { makeTraceReceiver, type TraceReceiver } from "./receiver.ts";
 
 export interface TurnSpans {
   /** traceparent 命中时是本轮生成值；窗口归属时是实际 span 的 traceId，供 timing 直接挂树。 */
@@ -96,19 +96,6 @@ export class AgentOtelChannel {
         return late;
       })),
     );
-  }
-
-  /**
-   * Compatibility facade for runAttemptBody, which remains one outer `tryPromise` boundary.
-   * The body passes its own AbortSignal so an interrupted attempt cancels the Effect wait too.
-   */
-  sweep(
-    traceIds: ReadonlySet<string>,
-    attemptWindows?: AttemptWindow,
-    signal?: AbortSignal,
-  ): Promise<TraceSpan[]> {
-    const effect = this.sweepEffect(traceIds, attemptWindows);
-    return Effect.runPromise(signal === undefined ? effect : Effect.raceFirst(effect, interruptOnAbort(signal)));
   }
 
   private attributeTurn<T>(
@@ -204,6 +191,7 @@ export class OtelReceiverPool {
     }));
   }
 
+  /** Invocation owners compose this release directly in their scoped finalizer. */
   closeEffect(): Effect.Effect<void> {
     return this.mutex.withPermits(1)(Effect.suspend(() => {
       if (this.closed) return Effect.void;
@@ -218,10 +206,4 @@ export class OtelReceiverPool {
     }));
   }
 
-  /** Runner's existing invocation finalizer is the outer Promise facade. */
-  close(): Promise<void> {
-    return Effect.runPromise(this.closeEffect());
-  }
 }
-
-/** Keep external AbortSignal cancellation as Cause.interrupt, without a check/listener race. */
