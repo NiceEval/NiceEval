@@ -3,10 +3,11 @@
 **相关文档**：[GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) ·
 [EVALUATION](EVALUATION.md) ·
 [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md)
-· [PLAN-4](PLAN-4/README.md)
+· [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md)
 
-当前 Record 持久格式已经落地。它保存 immutable Runs、精确 Attempt 引用与 owner-local
-Attachments；本设计不修改这些 bytes。
+当前 Record Core 已经落地。它保存 immutable Runs、精确 Attempt 引用、owner 与通用 owner-local
+Attachment closure；这些公理不在候选范围。PLAN-1～4 不修改现有 Attachment bytes，PLAN-5 单独挑战未来
+官方 package inventory/schema，因此若胜出也不等于 Record major。
 
 需要重新比较的是它上面的整条作者路径：怎样打开 frozen Record、选择 Runs、建立 logical
 slots、读取 Attachments、计算指标，并形成终端、网页和静态报告。只改 Report 最后一层会把前面
@@ -55,3 +56,22 @@ slots、读取 Attachments、计算指标，并形成终端、网页和静态报
 
 因此区别不是同一 API 换名字：PLAN-1 让宿主看到静态 query DAG，PLAN-2 让作者拥有普通控制流，
 PLAN-3 则把查询和统计语义提升成公开 relational language。
+
+## Physical package 轴
+
+[PLAN-5](PLAN-5/README.md) 挑战前三套 API 共同假设的 Attachment 粒度。当前 Observability Feature
+按 conversation、commands、usage、timing 与 diagnostics 等逻辑消费面拆 durable families。
+
+PLAN-5 改为按 producer、owner 与 atomic seal 保存 physical fact packages。Projection 解释单包，
+Relations 建立跨包关系。
+
+这条轴与 PLAN-4 正交。若采用它，完整责任链是：
+
+```text
+Record → Sample → Projection → Relations → [Derivation] → Report
+```
+
+Sample 先从 Core 选择 population，Projection 才知道应读取哪些 package owner。作者 API 可以隐藏
+Projection 与 Relations，但 Record 的物理包不能因某个 Page 想单独查询 usage 而提前变成 Report table。
+PLAN-5 不改变 Record Core 或通用 Attachment closure；它会改变官方 Attachment inventory 与上层
+projectors，因此尚未成为 Feature 契约。

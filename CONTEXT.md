@@ -32,3 +32,8 @@ _Avoid_: Recomputed verdict, Latest claim
 在同一 frozen Record view 中显式选择产生 grading claims 的 Runs；它不改变 Analysis scope 的 logical
 slots 或分母。
 _Avoid_: Latest grading, Analysis selection
+
+**Physical fact package**:
+由一个事实权威为一个 Record owner 在同一不可拆 seal transaction 中冻结的 durable facts；它保存
+bounded capture algebra、blob closure 与 join anchors，不按某个 Report 想看到的列预先拆分。
+_Avoid_: Report table, Logical view, One field per Attachment

@@ -17,6 +17,8 @@
 | C10 | 分析脚本复用查询 | 同一查询既用于 Report 又用于非 UI 脚本 | 候选说明能否复用，以及脚本是否必须学习 Report 概念 |
 | C11 | 读取大型 trace 的单个详情 | 一个 Attachment 含大量 blob chunks | 候选不得声称当前 reader 能选择性读取；必须暴露限制或提出独立 reader 变化 |
 | C12 | 输出机器可读结果 | 一个指标同时需要页面与 JSON/CSV | 不从页面文本反推数值，也不重复公式 |
+| C13 | 从物理采集包建立关系 | 同一 Attempt 有 OTel、agent events、commands、Assertions 等独立 packages | 单包 projector 不跨包；Relations 只用 durable anchors 建 relation，不按时间、文本或数组位置猜测 |
+| C14 | 只查询物理包中的一个逻辑视图 | 一份 OTel package 同时可投影 spans、usage 与 timing | 语义视图不要求拆 durable family；当前完整 closure reader 限制被如实暴露 |
 
 表格定义问题集合，不代表每个候选都必须满足。具体 fixture、可观察结果与候选状态见
 [Evaluation](EVALUATION.md)。

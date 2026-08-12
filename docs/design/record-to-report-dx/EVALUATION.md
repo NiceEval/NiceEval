@@ -60,6 +60,36 @@ base denominator 与 selected execution Runs 不变。省略 grading claim selec
 Overview 与 CSV 都展示 C3 的宏平均与 evidence。期望 CSV 直接消费同一 typed value 或 query result，不
 从页面文本反推数值，也不执行第二份公式。
 
+### C13：物理 packages 与 relations
+
+同一 Attempt 的 agent-events 与 OTel 都保存 coordinator-minted `send_01`；Assertions 保存
+`assertion_01 → send_01`；Verdict evidence 指向 `assertion_01`。另一个 OTel operation 没有 send anchor。
+期望前三者形成一条可复核 relation，孤立 operation 保留为 unmatched。系统不得用时间、文本或数组位置
+补 join，也不能让 unmatched 反向使任何独立 package invalid。
+
+### C14：单逻辑视图的读取成本
+
+一份 OTel package 含 4,096 observations、2 MiB payload 与 30 MiB closure，Report 只请求 usage
+view。期望 planner 不读 Commands/Agent-events packages，但当前 reader 仍完整 materialize OTel
+closure。多包的总 raw bytes 超过 256 MiB 时，scheduler 降低并发度，不让同时持有的 raw
+snapshot leases 超限，也不假装存在 range read。
+
+## Physical package tradeoff
+
+同一 C13/C14 fixture 必须比较当前 seven-family 与 PLAN-5，不能预设任一胜出：
+
+| 评价轴 | Current seven-family | PLAN-5 physical packages |
+|---|---|---|
+| producer complexity | 每个逻辑 family 独立 capture/seal，coordinator 联合验证 | 每个事实权威一次 seal，但需要 capture receipt 与 anchor context |
+| write-time integrity | 单 family 可独立验证，跨 family refs 由联合 contract 验证 | package 内 event coherence 较强，跨包 anchor 仍由 relation contract 验证 |
+| event coherence | 同一 operation 的 usage/timing 可能跨 schemas | 同一 OTel operation 保留在一包；跨 Agent/OTel 仍需 anchor |
+| 单 view memory | 只读 usage/timing family，closure 较小 | 只查 usage 仍完整读取 OTel package，峰值更高 |
+| migration blast radius | family 独立演进 | OTel/Agent-events 任一子域变化可能推动整包 schema 演进 |
+| relation partiality | write-time cross-family validation 可拒绝新 Run | 独立 packages 可用，dangling/ambiguous 在 Relations 显式呈现 |
+
+PLAN-5 只有在真实下游 fixture 中证明 event coherence、producer DX 或未来查询弹性的收益大于内存与迁移
+代价，才应进入 Feature。C13/C14 只让假设可证伪，不证明 current seven-family 错误。
+
 ## 候选状态
 
 | Case | PLAN-1 opaque graph | PLAN-2 scoped loader | PLAN-3 semantic relations |

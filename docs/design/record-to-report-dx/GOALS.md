@@ -4,8 +4,9 @@
 
 ## 目的与范围
 
-本设计比较 Record 持久层之上的全部公开 API。Record portable format、Run/Attempt owner、
-Attachment schema 与 migration bytes 不在候选范围；Record 的 open/read DX 可以重做。
+本设计比较 Record 持久层之上的全部公开 API。Record portable Core 与 Run/Attempt owner 不在
+候选范围；Record 的 open/read DX 可以重做。PLAN-1～4 也固定 Attachment schema 与 migration
+bytes，PLAN-5 单独挑战七个 Observability families 的未来 inventory/schema。
 
 ## 设计目标
 
@@ -19,6 +20,8 @@ Attachment schema 与 migration bytes 不在候选范围；Record 的 open/read 
 - **G8 — 同源交付。** terminal、web 与 static 消费同一 immutable execution，不各自查询或重算。
 - **G9 — 官方无特权。** Built-in Report 只能使用用户可调用的公开数据 API。
 - **G10 — Record 可证伪。** 候选必须指出哪些需求仅靠现有 Record reader 无法实现，不能把底层缺口伪装成上层 DX。
+- **G11 — 物理与关系分离。** 若采用 PLAN-5，package schema 跟随事实权威与 seal transaction；单包
+  Projection 和跨包 Relations 分别拥有可执行的不变量。
 
 ## 评价原则
 
