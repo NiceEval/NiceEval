@@ -154,35 +154,3 @@ export function orphanedTeardownReminderEffect(
     }),
   );
 }
-
-/**
- * 暂时的 Promise 边界：`src/runner/run.ts` 与 `src/cli.ts` 正由其它 worker 修改，父侧会在
- * 串行合并后改接上面的 Effect API。这里是唯一允许运行 Effect 的兼容 facade，不供新内部代码使用。
- */
-export function writeTeardownRegistration(niceevalRoot: string, entry: TeardownRegistration): Promise<void> {
-  return Effect.runPromise(writeTeardownRegistrationEffect(niceevalRoot, entry));
-}
-
-export function readTeardownRegistration(
-  niceevalRoot: string,
-  experimentId: string,
-  pid: number,
-): Promise<TeardownRegistration | undefined> {
-  return Effect.runPromise(readTeardownRegistrationEffect(niceevalRoot, experimentId, pid));
-}
-
-export function readTeardownRegistrations(niceevalRoot: string): Promise<{ id: string; entry: TeardownRegistration }[]> {
-  return Effect.runPromise(readTeardownRegistrationsEffect(niceevalRoot));
-}
-
-export function removeTeardownRegistrationIfPresent(niceevalRoot: string, id: string): Promise<boolean> {
-  return Effect.runPromise(removeTeardownRegistrationIfPresentEffect(niceevalRoot, id));
-}
-
-export function orphanedTeardownReminder(
-  niceevalRoot: string,
-  recoveringExperimentIds: ReadonlySet<string>,
-  currentHost: string,
-): Promise<string | undefined> {
-  return Effect.runPromise(orphanedTeardownReminderEffect(niceevalRoot, recoveringExperimentIds, currentHost));
-}

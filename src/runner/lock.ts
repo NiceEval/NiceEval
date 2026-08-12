@@ -260,7 +260,7 @@ function delayOrAbortEffect(ms: number, signal: AbortSignal | undefined): Effect
   return Effect.raceFirst(Effect.sleep(ms), awaitAbort(signal)).pipe(Effect.asVoid);
 }
 
-// 当前进程持有中的锁,供 drainHeldCaseLocks 强清兜底排空。值是 Effect release，不再存 Promise。
+// 当前进程持有中的锁,供 drainHeldCaseLocksEffect 强清兜底排空。值是 Effect release。
 const held = new Map<string, Effect.Effect<void, unknown>>();
 
 function heldKey(niceevalRoot: string, id: string): string {
@@ -357,21 +357,4 @@ export function drainHeldCaseLocksEffect(): Effect.Effect<number> {
 /** 当前进程仍持有的用例锁数量，供退出清理与可观察状态汇总。 */
 export function pendingHeldCaseLockCount(): number {
   return held.size;
-}
-
-/**
- * CLI 兼容债务：`exp --dry` 仍经这个 Promise facade 只读锁，退出清理仍经下方 drain facade。
- * `src/cli.ts` 改为直接组合 `readCaseLockEffect` / `drainHeldCaseLocksEffect` 后删除这两个
- * `Effect.runPromise` 边界；runner 内部不得再引用它们。
- */
-export function readCaseLock(
-  niceevalRoot: string,
-  experimentId: string,
-  evalId: string,
-): Promise<CaseLockRecord | undefined> {
-  return Effect.runPromise(readCaseLockEffect(niceevalRoot, experimentId, evalId));
-}
-
-export function drainHeldCaseLocks(): Promise<number> {
-  return Effect.runPromise(drainHeldCaseLocksEffect());
 }

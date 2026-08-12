@@ -414,11 +414,3 @@ export function drainHeldGateLeasesEffect(): Effect.Effect<number> {
 export function pendingHeldGateLeaseCount(): number {
   return held.size;
 }
-
-/**
- * CLI 兼容债务：退出清理仍从 `src/cli.ts` 调这个 Promise facade。CLI 直接组合
- * `drainHeldGateLeasesEffect` 后删除最后一个 `Effect.runPromise` 边界；runner 内部不得引用它。
- */
-export function drainHeldGateLeases(): Promise<number> {
-  return Effect.runPromise(drainHeldGateLeasesEffect());
-}
