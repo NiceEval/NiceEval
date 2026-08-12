@@ -689,6 +689,7 @@ function phaseLabel(phase: LifecyclePhase): string {
       return t("feedback.phase.sandboxCreate");
     case "sandbox.prepare":
     case "sandbox.prepare.eval":
+    case "sandbox.prepare.group":
     case "sandbox.prepare.experiment":
       return t("feedback.phase.sandboxPrepare");
     case "agent.ensure":

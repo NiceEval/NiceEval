@@ -429,6 +429,29 @@ function sandboxLifecycleHooks(
   ));
 }
 
+function pluginResourceSteps(
+  pair: PreparedRunPair,
+  phase: "materialize" | "prepare" | "release",
+  condition?: SandboxCommandPlanCondition,
+): readonly CommandPlanStep[] {
+  const envelope = pair.resourceEnvelope;
+  if (envelope === undefined) return [];
+  const owner: CommandPlanOwner = {
+    kind: "provider",
+    id: pair.plan._tag === "Sandbox" ? pair.plan.providerPlan.provider : "physical-sandbox",
+  };
+  return envelope.entries.map((entry) => opaque(
+    `plugin.resource.${phase}`,
+    `plugin-resource-${phase}-callback`,
+    `Plugin resource ${entry.receiver}@${entry.behaviorRevision} ${phase} callback is Effect-managed and opaque`,
+    {
+      owner,
+      label: `${entry.receiver}@${entry.behaviorRevision}`,
+      ...(condition === undefined ? {} : { condition }),
+    },
+  ));
+}
+
 function physicalBefore(pair: PreparedRunPair, shared: boolean): readonly CommandPlanStep[] {
   if (pair.plan._tag !== "Sandbox") return [];
   const provider: CommandPlanOwner = { kind: "provider", id: pair.plan.providerPlan.provider };
@@ -440,6 +463,7 @@ function physicalBefore(pair: PreparedRunPair, shared: boolean): readonly Comman
       { owner: provider, ...(shared ? { condition: SHARED_INSTANCE_AVAILABLE } : {}) },
     ),
     ...sandboxLifecycleHooks(pair, "setup", shared ? SHARED_INSTANCE_AVAILABLE : undefined),
+    ...pluginResourceSteps(pair, "materialize", shared ? SHARED_INSTANCE_AVAILABLE : undefined),
     opaque(
       "sandbox.baseline-anchor",
       "provider-baseline-anchor",
@@ -453,6 +477,7 @@ function physicalAfter(pair: PreparedRunPair, shared: boolean): readonly Command
   if (pair.plan._tag !== "Sandbox") return [];
   const provider: CommandPlanOwner = { kind: "provider", id: pair.plan.providerPlan.provider };
   return [
+    ...pluginResourceSteps(pair, "release", shared ? SHARED_INSTANCE_AVAILABLE : undefined),
     ...sandboxLifecycleHooks(pair, "teardown", shared ? SHARED_INSTANCE_AVAILABLE : undefined),
     opaque(
       "sandbox.finalize",
@@ -478,6 +503,7 @@ function attemptBody(pair: PreparedRunPair, shared: boolean): readonly CommandPl
           { owner: provider, condition: SHARED_INSTANCE_AVAILABLE },
         )]
       : []),
+    ...pluginResourceSteps(pair, "prepare"),
     ...prepareSteps(pair),
     ...ensureSteps(pair),
     ...(pair.plan._tag === "Sandbox"

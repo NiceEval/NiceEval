@@ -72,18 +72,29 @@ export class PluginResourcePrepareError extends Data.TaggedError("PluginResource
   readonly cause: Error;
 }> {}
 
+export class PluginResourceMaterializeError extends Data.TaggedError("PluginResourceMaterializeError")<{
+  readonly receiver: string;
+  readonly behaviorRevision: string;
+  readonly message: string;
+  readonly cause: Error;
+}> {}
+
 function stableKey(value: JsonValue): string {
   return stableJson(value);
 }
 
 function demandProjection(demand: SelectedResourceDemand): JsonValue {
   return Object.freeze({
-    pairKey: demand.pairKey,
-    evalId: demand.evalId,
+    scope: demand.linked.scope,
+    owner: demand.linked.occurrence.provenance.owner,
+    plugin: Object.freeze({
+      name: demand.linked.occurrence.name,
+      instanceKey: demand.linked.occurrence.instanceKey,
+      behaviorRevision: demand.linked.occurrence.behaviorRevision,
+    }),
     receiver: demand.linked.receiver,
-    behaviorRevision: demand.linked.behaviorRevision,
-    demand: demand.linked.projection,
-    plugin: demand.linked.occurrence.projection,
+    resourceRevision: demand.linked.behaviorRevision,
+    projection: demand.linked.projection,
   }) as JsonValue;
 }
 
@@ -133,7 +144,12 @@ export function createSelectedResourceEnvelope(
     .sort((left, right) => `${left.receiver}\u0000${left.behaviorRevision}`.localeCompare(`${right.receiver}\u0000${right.behaviorRevision}`))
     .map((entry) => {
       const entryDemands = entry.demands
-        .toSorted((left, right) => stableKey(demandProjection(left)).localeCompare(stableKey(demandProjection(right))))
+        .toSorted((left, right) => {
+          const scopeOrder = (left.linked.scope === "group" ? 0 : 1) - (right.linked.scope === "group" ? 0 : 1);
+          return scopeOrder !== 0
+            ? scopeOrder
+            : stableKey(demandProjection(left)).localeCompare(stableKey(demandProjection(right)));
+        })
         .map((demand) => Object.freeze(demand));
       const projection = Object.freeze({
         receiver: entry.receiver,
@@ -155,7 +171,7 @@ export function createSelectedResourceEnvelope(
     projection: Object.freeze({
       version: 1,
       cohort: frozenCohort,
-      entries: entries.map((entry) => entry.projection),
+      demands: entries.flatMap((entry) => entry.demands.map(demandProjection)),
     }) as JsonValue,
   });
 }
@@ -221,7 +237,16 @@ export function materializeSelectedPluginResources(input: {
         sandboxResourceDemandDataOf(demand.linked.demand).payload,
       ));
       const handle = yield* Effect.acquireRelease(
-        entry.definition.materialize(demands, context),
+        entry.definition.materialize(demands, context).pipe(
+          Effect.mapError((cause) => new PluginResourceMaterializeError({
+            receiver: entry.receiver,
+            behaviorRevision: entry.behaviorRevision,
+            message:
+              `Plugin Sandbox resource ${JSON.stringify(entry.receiver)}@${JSON.stringify(entry.behaviorRevision)} ` +
+              `materialization failed: ${cause.message}`,
+            cause,
+          })),
+        ),
         (value) => releaseWithBudget(entry, value, context, input.feedback),
       );
       materialized.push(Object.freeze({ entry, handle }));
@@ -233,7 +258,11 @@ export function materializeSelectedPluginResources(input: {
         (entry) => {
           if (entry.entry.definition.prepare === undefined) return Effect.void;
           const selected = entry.entry.demands.filter((demand) =>
-            demand.experimentId === attempt.experimentId && demand.evalId === attempt.evalId
+            demand.experimentId === attempt.experimentId && (
+              demand.linked.scope === "eval"
+                ? demand.evalId === attempt.evalId
+                : attempt.evalGroupId === demand.linked.occurrence.provenance.owner.id
+            )
           );
           return Effect.forEach(
             selected,

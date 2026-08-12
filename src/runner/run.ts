@@ -355,12 +355,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     readonly evalDef: ReturnType<typeof selectedEvalsForRun>[number];
   };
   const lanes: SchedulingSlot[][] = [];
-  for (const sourceRun of opts.agentRuns) {
-    const run = effectiveRunBySource.get(sourceRun) ?? sourceRun;
+  for (const run of effectiveAgentRuns) {
     // selectedEvalIds 已由 CLI 在构造 AgentRun 时对候选 eval 各求值一次算好(见
     // eval-selection.ts 的 resolveExperimentEvals());这里只按 resolved id 取 eval,
     // 不重新调用用户谓词(见 docs/feature/record/architecture.md「selectedEvalIds」)。
-    const evals = selectedEvalsForRun(opts.evals, sourceRun);
+    const evals = selectedEvalsForRun(opts.evals, run);
     const grouped = new Map<string, Array<(typeof evals)[number]>>();
     for (const evalDef of evals) {
       if (evalDef.evalGroup === undefined) continue;
@@ -418,6 +417,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         const prepared = preparedPairsByKey.get(cacheKey(run, evalDef.id));
         if (prepared === undefined) {
           throw new Error(`Missing prepared Sandbox plan for ${JSON.stringify(cacheKey(run, evalDef.id))}.`);
+        }
+        if (prepared.run !== run) {
+          throw new Error(
+            `Plugin effective Run invariant failed for ${JSON.stringify(cacheKey(run, evalDef.id))}.`,
+          );
         }
         const configHash = plannedConfigHashes.get(cacheKey(run, evalDef.id));
         if (configHash === undefined) {

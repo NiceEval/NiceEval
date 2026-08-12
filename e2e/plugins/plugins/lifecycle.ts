@@ -58,9 +58,6 @@ export const experimentLifecycle = definePlugin<{ readonly variant: string }>({
   experiment: ({ variant }) => ({
     identity: { variant },
     flags: { pluginScope: "experiment", variant },
-    sandbox: sandboxLayer().prepare(
-      shell("printf '%s' ready > /tmp/niceeval-experiment-plugin-ready"),
-    ),
     setup: (context) => appendPluginLifecycleEvent({
       kind: "experiment.plugin.setup",
       experimentId: context.experimentId,
@@ -90,12 +87,25 @@ export const evalLifecycle = definePlugin<{ readonly marker: string }>({
   }),
 });
 
-export const groupIdentity = definePlugin<{ readonly variant: string }>({
-  name: "e2e.group-identity",
+/** Proves the no-option family sugar: its stable instance key is `default`. */
+export const defaultEvalIdentity = definePlugin({
+  name: "e2e.default-eval-identity",
+  behaviorRevision: "1",
+  eval: () => ({ identity: { fixture: "default" } }),
+});
+
+export const groupLifecycle = definePlugin<{ readonly variant: string }>({
+  name: "e2e.group-lifecycle",
   behaviorRevision: "1",
   instanceKey: ({ variant }) => variant,
   group: ({ variant }) => ({
     identity: { variant },
-    requirements: [{ capability: "shared-physical-sandbox" }],
+    resources: [lifecycleResource({ marker: "group" })],
+    sandbox: sandboxLayer().prepare(
+      shell(
+        "test -f /tmp/niceeval-plugin-resource-group && " +
+        "printf '%s' ready > /tmp/niceeval-plugin-group-command",
+      ),
+    ),
   }),
 });

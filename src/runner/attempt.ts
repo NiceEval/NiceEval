@@ -16,6 +16,7 @@ import { CLEANUP_TIMEOUT_MS, cleanupCallback } from "./cleanup-timeout.ts";
 import { resolveAttemptTimeout, type TimeoutSource } from "./timeout.ts";
 import {
   materializeSelectedPluginResources,
+  PluginResourceMaterializeError,
   PluginResourcePrepareError,
   type MaterializedPluginResources,
   type SelectedResourceEnvelope,
@@ -695,6 +696,7 @@ export function runAttemptEffect<
           signal,
           physicalId: sandbox.sandboxId,
           evalId: evalDef.id,
+          ...(evalDef.evalGroup === undefined ? {} : { evalGroupId: evalDef.evalGroup.id }),
           experimentId: run.experimentId,
           attempt,
           progress: scopedFeedback.progress,
@@ -1315,6 +1317,15 @@ export function errorFromThrown(
   phase: LifecyclePhase | undefined,
   deadline?: { timeoutMs: number; source: TimeoutSource },
 ): AttemptError {
+  if (e instanceof PluginResourceMaterializeError) {
+    return {
+      code: "plugin-resource-materialize-failed",
+      message: e.message,
+      origin: attemptOrigin("sandbox.create"),
+      ...(e.cause.stack ? { stack: e.cause.stack } : {}),
+      cause: { name: e.cause.name, message: e.cause.message },
+    };
+  }
   if (e instanceof PluginResourcePrepareError) {
     return {
       code: "plugin-resource-prepare-failed",
@@ -1590,7 +1601,9 @@ async function runAttemptBody(
         for (const entry of linked.commands) {
           const ownerPhase = entry.owner.kind === "eval"
             ? "sandbox.prepare.eval"
-            : "sandbox.prepare.experiment";
+            : entry.owner.kind === "eval-group"
+              ? "sandbox.prepare.group"
+              : "sandbox.prepare.experiment";
           enterPhase(ownerPhase);
           const label = `${entry.owner.kind}#${entry.index}`;
           const startedAt = recorder.offsetNow();

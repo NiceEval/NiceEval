@@ -29,8 +29,6 @@ export interface PluginInstance<Owners extends PluginOwner = PluginOwner> {
   readonly [PLUGIN_INSTANCE]: (owner: Owners) => void;
 }
 
-export type PluginRequirement = JsonValue;
-
 export interface AgentExtension<Receiver extends string = any> {
   readonly [AGENT_EXTENSION]: (receiver: Receiver) => void;
 }
@@ -78,6 +76,7 @@ export interface SandboxResourceTiming {
 
 export interface SandboxResourceAttemptContext extends SandboxResourceContext {
   readonly evalId: string;
+  readonly evalGroupId?: string;
   readonly experimentId: string;
   readonly attempt: number;
 }
@@ -110,14 +109,12 @@ export interface SandboxResource<Receiver extends string, Demand extends JsonVal
 
 export interface EvalPluginFragment {
   readonly identity?: Readonly<globalThis.Record<string, JsonValue>>;
-  readonly requirements?: readonly PluginRequirement[];
   readonly resources?: readonly SandboxResourceDemand<any>[];
   readonly sandbox?: SandboxLayer<"command-only">;
 }
 
 export interface ExperimentPluginFragment {
   readonly identity?: Readonly<globalThis.Record<string, JsonValue>>;
-  readonly requirements?: readonly PluginRequirement[];
   readonly flags?: Readonly<globalThis.Record<string, JsonValue>>;
   /** Labels are deliberately kept out of behavior hashes. */
   readonly labels?: Readonly<globalThis.Record<string, string | number>>;
@@ -131,13 +128,14 @@ export interface ExperimentPluginFragment {
 
 export interface GroupPluginFragment {
   readonly identity?: Readonly<globalThis.Record<string, JsonValue>>;
-  readonly requirements?: readonly PluginRequirement[];
+  readonly resources?: readonly SandboxResourceDemand<any>[];
+  readonly sandbox?: SandboxLayer<"command-only">;
 }
 
 export interface PluginDefinition<Options> {
   readonly name: string;
   readonly behaviorRevision: string;
-  readonly instanceKey: (options: Options) => string;
+  readonly instanceKey?: (options: Options) => string;
   readonly eval?: (options: Options) => EvalPluginFragment;
   readonly experiment?: (options: Options) => ExperimentPluginFragment;
   readonly group?: (options: Options) => GroupPluginFragment;
@@ -216,12 +214,6 @@ function normalizeJsonRecord(value: unknown, path: string): Readonly<globalThis.
   return normalizeJson(value, path) as Readonly<globalThis.Record<string, JsonValue>>;
 }
 
-function normalizeRequirements(value: unknown, path: string): readonly PluginRequirement[] {
-  if (value === undefined) return Object.freeze([]);
-  if (!Array.isArray(value)) throw new TypeError(`${path} must be an array.`);
-  return Object.freeze(value.map((entry, index) => normalizeJson(entry, `${path}[${index}]`)));
-}
-
 function normalizeLabels(value: unknown, path: string): Readonly<globalThis.Record<string, string | number>> {
   if (!isPlainRecord(value)) throw new TypeError(`${path} must be an object.`);
   const normalized: globalThis.Record<string, string | number> = {};
@@ -263,17 +255,15 @@ function normalizeAgentExtensions(value: unknown, path: string): readonly AgentE
 function normalizeEvalFragment(value: unknown, path: string): Readonly<EvalPluginFragment> {
   if (!isPlainRecord(value)) throw new TypeError(`${path} must return an object.`);
   for (const key of Object.keys(value)) {
-    if (!["identity", "requirements", "resources", "sandbox"].includes(key)) {
+    if (!["identity", "resources", "sandbox"].includes(key)) {
       throw new TypeError(`${path}.${key} is not supported by Eval plugins.`);
     }
   }
   const identity = value.identity === undefined ? undefined : normalizeJsonRecord(value.identity, `${path}.identity`);
-  const requirements = normalizeRequirements(value.requirements, `${path}.requirements`);
   const resources = normalizeResources(value.resources, `${path}.resources`);
   const sandbox = normalizeCommandOnlyLayer(value.sandbox, `${path}.sandbox`);
   return Object.freeze({
     ...(identity === undefined ? {} : { identity }),
-    ...(requirements.length === 0 ? {} : { requirements }),
     ...(resources.length === 0 ? {} : { resources }),
     ...(sandbox === undefined ? {} : { sandbox }),
   });
@@ -282,12 +272,11 @@ function normalizeEvalFragment(value: unknown, path: string): Readonly<EvalPlugi
 function normalizeExperimentFragment(value: unknown, path: string): Readonly<ExperimentPluginFragment> {
   if (!isPlainRecord(value)) throw new TypeError(`${path} must return an object.`);
   for (const key of Object.keys(value)) {
-    if (!["identity", "requirements", "flags", "labels", "sandbox", "setup", "teardown", "agentExtensions"].includes(key)) {
+    if (!["identity", "flags", "labels", "sandbox", "setup", "teardown", "agentExtensions"].includes(key)) {
       throw new TypeError(`${path}.${key} is not supported by Experiment plugins.`);
     }
   }
   const identity = value.identity === undefined ? undefined : normalizeJsonRecord(value.identity, `${path}.identity`);
-  const requirements = normalizeRequirements(value.requirements, `${path}.requirements`);
   const flags = value.flags === undefined ? undefined : normalizeJsonRecord(value.flags, `${path}.flags`);
   const labels = value.labels === undefined ? undefined : normalizeLabels(value.labels, `${path}.labels`);
   const sandbox = normalizeCommandOnlyLayer(value.sandbox, `${path}.sandbox`);
@@ -296,7 +285,6 @@ function normalizeExperimentFragment(value: unknown, path: string): Readonly<Exp
   const agentExtensions = normalizeAgentExtensions(value.agentExtensions, `${path}.agentExtensions`);
   return Object.freeze({
     ...(identity === undefined ? {} : { identity }),
-    ...(requirements.length === 0 ? {} : { requirements }),
     ...(flags === undefined ? {} : { flags }),
     ...(labels === undefined ? {} : { labels }),
     ...(sandbox === undefined ? {} : { sandbox }),
@@ -309,21 +297,63 @@ function normalizeExperimentFragment(value: unknown, path: string): Readonly<Exp
 function normalizeGroupFragment(value: unknown, path: string): Readonly<GroupPluginFragment> {
   if (!isPlainRecord(value)) throw new TypeError(`${path} must return an object.`);
   for (const key of Object.keys(value)) {
-    if (!["identity", "requirements"].includes(key)) {
+    if (!["identity", "resources", "sandbox"].includes(key)) {
       throw new TypeError(`${path}.${key} is not supported by Eval Group plugins.`);
     }
   }
   const identity = value.identity === undefined ? undefined : normalizeJsonRecord(value.identity, `${path}.identity`);
-  const requirements = normalizeRequirements(value.requirements, `${path}.requirements`);
+  const resources = normalizeResources(value.resources, `${path}.resources`);
+  const sandbox = normalizeCommandOnlyLayer(value.sandbox, `${path}.sandbox`);
   return Object.freeze({
     ...(identity === undefined ? {} : { identity }),
-    ...(requirements.length === 0 ? {} : { requirements }),
+    ...(resources.length === 0 ? {} : { resources }),
+    ...(sandbox === undefined ? {} : { sandbox }),
   });
 }
 
-/** Construct a plugin family spanning all three supported owners. */
+type KeyedPluginDefinition<Options> = PluginDefinition<Options> & {
+  readonly instanceKey: (options: Options) => string;
+};
+
+/** A no-option family has one stable occurrence identity and remains an explicit factory call. */
+export function definePlugin(
+  definition: PluginDefinition<void> & {
+    readonly eval: () => EvalPluginFragment;
+    readonly experiment: () => ExperimentPluginFragment;
+    readonly group: () => GroupPluginFragment;
+  },
+): () => PluginInstance<PluginOwner>;
+export function definePlugin(
+  definition: PluginDefinition<void> & {
+    readonly eval: () => EvalPluginFragment;
+    readonly experiment: () => ExperimentPluginFragment;
+  },
+): () => PluginInstance<"eval" | "experiment">;
+export function definePlugin(
+  definition: PluginDefinition<void> & {
+    readonly eval: () => EvalPluginFragment;
+    readonly group: () => GroupPluginFragment;
+  },
+): () => PluginInstance<"eval" | "group">;
+export function definePlugin(
+  definition: PluginDefinition<void> & {
+    readonly experiment: () => ExperimentPluginFragment;
+    readonly group: () => GroupPluginFragment;
+  },
+): () => PluginInstance<"experiment" | "group">;
+export function definePlugin(
+  definition: PluginDefinition<void> & { readonly eval: () => EvalPluginFragment },
+): () => PluginInstance<"eval">;
+export function definePlugin(
+  definition: PluginDefinition<void> & { readonly experiment: () => ExperimentPluginFragment },
+): () => PluginInstance<"experiment">;
+export function definePlugin(
+  definition: PluginDefinition<void> & { readonly group: () => GroupPluginFragment },
+): () => PluginInstance<"group">;
+
+/** Construct a parameterized plugin family spanning all three supported owners. */
 export function definePlugin<Options>(
-  definition: PluginDefinition<Options> & {
+  definition: KeyedPluginDefinition<Options> & {
     readonly eval: (options: Options) => EvalPluginFragment;
     readonly experiment: (options: Options) => ExperimentPluginFragment;
     readonly group: (options: Options) => GroupPluginFragment;
@@ -331,45 +361,47 @@ export function definePlugin<Options>(
 ): (options: Options) => PluginInstance<PluginOwner>;
 /** Construct an Eval and Experiment plugin family. */
 export function definePlugin<Options>(
-  definition: PluginDefinition<Options> & {
+  definition: KeyedPluginDefinition<Options> & {
     readonly eval: (options: Options) => EvalPluginFragment;
     readonly experiment: (options: Options) => ExperimentPluginFragment;
   },
 ): (options: Options) => PluginInstance<"eval" | "experiment">;
 /** Construct an Eval and Group plugin family. */
 export function definePlugin<Options>(
-  definition: PluginDefinition<Options> & {
+  definition: KeyedPluginDefinition<Options> & {
     readonly eval: (options: Options) => EvalPluginFragment;
     readonly group: (options: Options) => GroupPluginFragment;
   },
 ): (options: Options) => PluginInstance<"eval" | "group">;
 /** Construct an Experiment and Group plugin family. */
 export function definePlugin<Options>(
-  definition: PluginDefinition<Options> & {
+  definition: KeyedPluginDefinition<Options> & {
     readonly experiment: (options: Options) => ExperimentPluginFragment;
     readonly group: (options: Options) => GroupPluginFragment;
   },
 ): (options: Options) => PluginInstance<"experiment" | "group">;
 /** Construct an Eval-only plugin family and normalize each occurrence immediately. */
 export function definePlugin<Options>(
-  definition: PluginDefinition<Options> & { readonly eval: (options: Options) => EvalPluginFragment },
+  definition: KeyedPluginDefinition<Options> & { readonly eval: (options: Options) => EvalPluginFragment },
 ): (options: Options) => PluginInstance<"eval">;
 /** Construct an Experiment-only plugin family and normalize each occurrence immediately. */
 export function definePlugin<Options>(
-  definition: PluginDefinition<Options> & { readonly experiment: (options: Options) => ExperimentPluginFragment },
+  definition: KeyedPluginDefinition<Options> & { readonly experiment: (options: Options) => ExperimentPluginFragment },
 ): (options: Options) => PluginInstance<"experiment">;
 /** Construct a Group-only plugin family and normalize each occurrence immediately. */
 export function definePlugin<Options>(
-  definition: PluginDefinition<Options> & { readonly group: (options: Options) => GroupPluginFragment },
+  definition: KeyedPluginDefinition<Options> & { readonly group: (options: Options) => GroupPluginFragment },
 ): (options: Options) => PluginInstance<"group">;
 /** Runtime implementation shared by the public ownership overloads. */
 export function definePlugin(
-  definition: PluginDefinition<unknown> & AtLeastOneOwner<unknown>,
-): (options: unknown) => PluginInstance<PluginOwner> {
+  definition: PluginDefinition<any> & AtLeastOneOwner<any>,
+): (...options: readonly unknown[]) => PluginInstance<PluginOwner> {
   if (!isPlainRecord(definition)) throw new TypeError("definePlugin requires an object.");
   const name = assertNonEmptyString(definition.name, "definePlugin name");
   const behaviorRevision = assertNonEmptyString(definition.behaviorRevision, "definePlugin behaviorRevision");
-  if (typeof definition.instanceKey !== "function") throw new TypeError("definePlugin instanceKey is required.");
+  if (definition.instanceKey !== undefined && typeof definition.instanceKey !== "function") {
+    throw new TypeError("definePlugin instanceKey must be a function when provided.");
+  }
   if (definition.eval === undefined && definition.experiment === undefined && definition.group === undefined) {
     throw new TypeError("definePlugin must declare at least one owner callback.");
   }
@@ -380,8 +412,17 @@ export function definePlugin(
   ] as const) {
     if (callback !== undefined && typeof callback !== "function") throw new TypeError(`definePlugin ${owner} must be a function.`);
   }
-  return (options: unknown): PluginInstance<PluginOwner> => {
-    const instanceKey = assertNonEmptyString(definition.instanceKey(options), `Plugin ${name} instanceKey`);
+  return (...args: readonly unknown[]): PluginInstance<PluginOwner> => {
+    if (definition.instanceKey === undefined && args.length !== 0) {
+      throw new TypeError(`Plugin ${name} takes no options.`);
+    }
+    if (definition.instanceKey !== undefined && args.length !== 1) {
+      throw new TypeError(`Plugin ${name} requires exactly one options value.`);
+    }
+    const options = args[0];
+    const instanceKey = definition.instanceKey === undefined
+      ? "default"
+      : assertNonEmptyString(definition.instanceKey(options), `Plugin ${name} instanceKey`);
     const data: PluginInstanceData = Object.freeze({
       name,
       behaviorRevision,

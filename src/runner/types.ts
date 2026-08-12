@@ -90,6 +90,7 @@ export type LifecyclePhase =
   | "sandbox.create" // provider 物化沙箱实例(共享构建不在这里,它在 Run 级 activity)
   | "sandbox.prepare" // 两层作者 layer 的 prepare 链
   | "sandbox.prepare.eval" // 仅错误/诊断归因,不单列计时
+  | "sandbox.prepare.group" // Eval Group 作者与 Plugin command 的错误/诊断归因
   | "sandbox.prepare.experiment" // 仅错误/诊断归因,不单列计时
   | "agent.ensure" // Runner 的 probe → 缺失才 install → 同一 probe 复检
   | "workspace.baseline" // 变更分类账锚点(runner 私有 git ledger 首笔 commit)

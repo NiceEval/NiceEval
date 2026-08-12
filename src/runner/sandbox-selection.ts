@@ -426,6 +426,7 @@ export function prepareRunSandboxes(
         const cohorts = new Map<string, {
           cohort: ResourcePhysicalCohort;
           demands: SelectedResourceDemand[];
+          groupDemandKeys: Set<string>;
         }>();
         const cohortByPair = new Map<PreparedRunPair, ResourcePhysicalCohort>();
         for (const entry of prepared) {
@@ -435,7 +436,7 @@ export function prepareRunSandboxes(
               return Effect.fail(new SandboxRunPlanningInvariantError({
                 code: "sandbox.run-planning-invariant",
                 message:
-                  `Eval Plugin resources require a physical Sandbox, but Eval ${JSON.stringify(entry.evalDef.id)} ` +
+                  `Plugin resources require a physical Sandbox, but Eval ${JSON.stringify(entry.evalDef.id)} ` +
                   `in Experiment ${JSON.stringify(entry.run.experimentId)} uses a direct Agent plan.`,
               }));
             }
@@ -444,10 +445,19 @@ export function prepareRunSandboxes(
           cohortByPair.set(entry, cohort);
           let bucket = cohorts.get(cohort.id);
           if (bucket === undefined) {
-            bucket = { cohort, demands: [] };
+            bucket = { cohort, demands: [], groupDemandKeys: new Set() };
             cohorts.set(cohort.id, bucket);
           }
           for (const linked of entry.plugin.resources) {
+            if (linked.scope === "group") {
+              const groupDemandKey = JSON.stringify([
+                linked.occurrence.provenance.owner.id,
+                linked.occurrence.provenance.owner.position,
+                linked.position,
+              ]);
+              if (bucket.groupDemandKeys.has(groupDemandKey)) continue;
+              bucket.groupDemandKeys.add(groupDemandKey);
+            }
             bucket.demands.push(Object.freeze({
               pairKey: entry.key,
               evalId: entry.evalDef.id,

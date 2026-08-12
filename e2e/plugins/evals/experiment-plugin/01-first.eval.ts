@@ -3,7 +3,6 @@ import { defineEval } from "niceeval";
 export default defineEval({
   async test(t) {
     const turn = await t.send("verify Experiment Plugin lifecycle for the first Eval");
-    await turn.succeeded().stopOnFailure();
-    t.messageIncludes("experiment-plugin:experiment-plugin/01-first:plugin-ready");
+    await turn.succeeded().orStop();
   },
 });

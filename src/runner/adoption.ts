@@ -380,6 +380,7 @@ function runForExperiment(
       ? {}
       : { reasoningEffort: experiment.reasoningEffort }),
     flags: experiment.flags,
+    plugins: experiment.plugins,
     attempts: experiment.attempts,
     earlyExit: experiment.earlyExit,
     ...(experiment.sandbox === undefined ? {} : { sandbox: experiment.sandbox }),

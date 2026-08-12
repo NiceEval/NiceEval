@@ -21,7 +21,6 @@ export type {
   PluginInstance,
   PluginOnUnavailable,
   PluginOwner,
-  PluginRequirement,
   SandboxResource,
   SandboxResourceAttemptContext,
   SandboxResourceContext,

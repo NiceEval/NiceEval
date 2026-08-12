@@ -17,6 +17,7 @@ import { parseArgs as nodeParseArgs } from "node:util";
 import { Data, Effect, Either, Schema } from "effect";
 import { discoverEvals, discoverExperiments } from "./runner/discover.ts";
 import { browsableExperimentPaths, evalPrefixPredicate, matchExperimentSelector } from "./shared/aggregate.ts";
+import type { JsonValue } from "./shared/types.ts";
 import { runEvals, type AgentRun } from "./runner/run.ts";
 import { planProjectTarget, type ProjectTargetPlan } from "./runner/fingerprint.ts";
 import {
@@ -682,12 +683,14 @@ function renderCurrentDryPlan(input: {
   readonly configs: number;
   readonly attempts: number;
   readonly rows: readonly CurrentDryPlanRow[];
+  readonly pluginAudit: CurrentDryPluginAudit;
 }): string {
   const reused = input.rows.reduce((total, row) =>
     total + row.slots.filter((slot) => slot.state === "reused").length, 0);
   const lines = [
     `plan: ${input.totalAttempts} attempts · ${input.evals} evals × ${input.configs} configs · runs ${input.attempts}`,
     ...(reused === 0 ? [] : [`reuse: ${reused}/${input.totalAttempts} exact current Record attempts`]),
+    `plugins: ${input.pluginAudit.occurrences.length} occurrences · ${input.pluginAudit.resourceEnvelopes.length} physical resource envelopes`,
   ];
   for (const row of input.rows) {
     const reusedAttempts = row.slots.filter((slot) => slot.state === "reused").map((slot) => slot.attempt);
@@ -714,12 +717,18 @@ function renderCurrentDryPlan(input: {
   return `${lines.join("\n")}\n`;
 }
 
+interface CurrentDryPluginAudit {
+  readonly occurrences: readonly JsonValue[];
+  readonly resourceEnvelopes: readonly JsonValue[];
+}
+
 function renderCurrentDryPlanJson(input: {
   readonly totalAttempts: number;
   readonly evals: number;
   readonly configs: number;
   readonly attempts: number;
   readonly rows: readonly CurrentDryPlanRow[];
+  readonly pluginAudit: CurrentDryPluginAudit;
   readonly commandPlan?: ReturnType<typeof assembleCommandPlan>;
 }): string {
   const reused = input.rows.reduce((total, row) =>
@@ -733,6 +742,8 @@ function renderCurrentDryPlanJson(input: {
     attempts: input.attempts,
     reused,
     matrix: input.rows,
+    plugins: input.pluginAudit.occurrences,
+    resources: input.pluginAudit.resourceEnvelopes,
     ...(input.commandPlan === undefined ? {} : { commandPlan: input.commandPlan }),
   })}\n`;
 }
@@ -1768,6 +1779,7 @@ function runEvaluationCommand(
           model: experiment.model,
           reasoningEffort: experiment.reasoningEffort,
           flags: experiment.flags ?? {},
+          plugins: experiment.plugins,
           attempts: flags.attempts ?? experiment.attempts ?? 1,
           earlyExit: flags.earlyExit ?? experiment.earlyExit ?? false,
           sandbox: experiment.sandbox,
@@ -1908,12 +1920,27 @@ function runEvaluationCommand(
             preparedPairsByKey: targetPlan.preparedPairsByKey,
           })
         : undefined;
+      const occurrenceAudits = new Map<string, JsonValue>();
+      const resourceAudits = new Map<string, JsonValue>();
+      for (const pair of targetPlan.preparedPairsByKey.values()) {
+        for (const occurrence of pair.plugin.occurrences) {
+          occurrenceAudits.set(JSON.stringify(occurrence.audit), occurrence.audit);
+        }
+        if (pair.resourceEnvelope !== undefined) {
+          resourceAudits.set(pair.resourceEnvelope.cohort.id, pair.resourceEnvelope.projection);
+        }
+      }
+      const pluginAudit: CurrentDryPluginAudit = Object.freeze({
+        occurrences: Object.freeze([...occurrenceAudits.values()]),
+        resourceEnvelopes: Object.freeze([...resourceAudits.values()]),
+      });
       const input = {
         totalAttempts,
         evals: uniqueEvalIds.size,
         configs: agentRuns.length,
         attempts: Math.max(1, ...agentRuns.map((run) => run.attempts)),
         rows: rowsWithLocks,
+        pluginAudit,
         ...(commandPlan === undefined ? {} : { commandPlan }),
       };
       if (outputForm === "json") {

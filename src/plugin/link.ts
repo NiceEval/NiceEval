@@ -44,10 +44,14 @@ export interface LinkedPluginOccurrence {
   readonly behaviorRevision: string;
   readonly provenance: PluginOccurrenceProvenance;
   readonly projection: JsonValue;
+  readonly audit: JsonValue;
 }
 
 export interface LinkedPluginResourceDemand {
   readonly demand: SandboxResourceDemand;
+  readonly scope: "eval" | "group";
+  /** Position within this Plugin fragment's resources array. */
+  readonly position: number;
   readonly receiver: string;
   readonly behaviorRevision: string;
   readonly projection: JsonValue;
@@ -112,8 +116,8 @@ function occurrenceProjection(
 ): JsonValue {
   const fragment = ownerFragment(data, owner);
   if (fragment === undefined) throw new TypeError(`Plugin ${data.name} has no ${owner} fragment.`);
-  const resources = owner === "eval"
-    ? ((fragment as NonNullable<PluginInstanceData["eval"]>).resources ?? []).map((demand) => {
+  const resources = owner === "eval" || owner === "group"
+    ? ((fragment as NonNullable<PluginInstanceData["eval"] | PluginInstanceData["group"]>).resources ?? []).map((demand) => {
         const resource = sandboxResourceDemandDataOf(demand);
         return Object.freeze({
           receiver: resource.receiver,
@@ -129,16 +133,47 @@ function occurrenceProjection(
     attachment: provenance.attachment,
     owner: provenance.owner,
     ...(fragment.identity === undefined ? {} : { identity: fragment.identity }),
-    ...(fragment.requirements === undefined || fragment.requirements.length === 0
-      ? {}
-      : { requirements: [...fragment.requirements] }),
     ...(owner === "experiment" && (fragment as NonNullable<PluginInstanceData["experiment"]>).flags !== undefined
       ? { flags: (fragment as NonNullable<PluginInstanceData["experiment"]>).flags }
       : {}),
-    ...((owner === "eval" || owner === "experiment") && (fragment as { readonly sandbox?: SandboxLayer<"command-only"> }).sandbox !== undefined
+    ...((owner === "eval" || owner === "experiment" || owner === "group") && (fragment as { readonly sandbox?: SandboxLayer<"command-only"> }).sandbox !== undefined
       ? { sandbox: sandboxLayerDefinitionIdentity((fragment as { readonly sandbox: SandboxLayer<"command-only"> }).sandbox) }
       : {}),
     ...(resources.length === 0 ? {} : { resources: Object.freeze(resources) }),
+  }) as unknown as JsonValue;
+}
+
+function occurrenceAudit(
+  data: PluginInstanceData,
+  owner: PluginOwner,
+  provenance: PluginOccurrenceProvenance,
+): JsonValue {
+  const fragment = ownerFragment(data, owner);
+  if (fragment === undefined) throw new TypeError(`Plugin ${data.name} has no ${owner} fragment.`);
+  const contributions: string[] = [];
+  if (fragment.identity !== undefined) contributions.push("identity");
+  if ((fragment as { readonly flags?: unknown }).flags !== undefined) contributions.push("flags");
+  if ((fragment as { readonly labels?: unknown }).labels !== undefined) contributions.push("labels");
+  if ((fragment as { readonly sandbox?: unknown }).sandbox !== undefined) contributions.push("sandbox-commands");
+  if ((fragment as { readonly setup?: unknown; readonly teardown?: unknown }).setup !== undefined ||
+    (fragment as { readonly setup?: unknown; readonly teardown?: unknown }).teardown !== undefined) {
+    contributions.push("experiment-lifecycle");
+  }
+  const extensions = (fragment as { readonly agentExtensions?: readonly AgentExtension[] }).agentExtensions ?? [];
+  if (extensions.length > 0) contributions.push("agent-extension");
+  const demands = (fragment as { readonly resources?: readonly SandboxResourceDemand[] }).resources ?? [];
+  if (demands.length > 0) contributions.push("sandbox-resource");
+  const receivers = new Set<string>();
+  for (const extension of extensions) receivers.add(agentExtensionDataOf(extension).receiver);
+  for (const demand of demands) receivers.add(sandboxResourceDemandDataOf(demand).receiver);
+  return Object.freeze({
+    owner,
+    ownerSource: provenance.owner,
+    name: data.name,
+    instanceKey: data.instanceKey,
+    behaviorRevision: data.behaviorRevision,
+    contributions: Object.freeze(contributions),
+    receivers: Object.freeze([...receivers].sort()),
   }) as unknown as JsonValue;
 }
 
@@ -184,6 +219,7 @@ function collectOwnerOccurrences(
       behaviorRevision: data.behaviorRevision,
       provenance,
       projection: occurrenceProjection(data, owner, provenance),
+      audit: occurrenceAudit(data, owner, provenance),
     }));
   }
   return Object.freeze({ occurrences: Object.freeze(occurrences), issues: Object.freeze(issues) });
@@ -387,20 +423,30 @@ export function linkPluginPair(
     : fragmentsFor(evalDef.evalGroup.plugins as readonly PluginInstance[] | undefined, "group");
   const experimentFragments = fragmentsFor(run.plugins as readonly PluginInstance[] | undefined, "experiment");
   const resources: LinkedPluginResourceDemand[] = [];
-  for (let i = 0; i < evalFragments.length; i++) {
-    const fragment = evalFragments[i]!;
-    const occurrence = evalResult.occurrences[i]!;
-    for (const demand of fragment.resources ?? []) {
-      const data = sandboxResourceDemandDataOf(demand);
-      resources.push(Object.freeze({
-        demand,
-        receiver: data.receiver,
-        behaviorRevision: data.behaviorRevision,
-        projection: data.projection,
-        occurrence,
-      }));
+  const appendResources = (
+    scope: "eval" | "group",
+    fragments: readonly (NonNullable<PluginInstanceData["eval"]> | NonNullable<PluginInstanceData["group"]>)[],
+    linkedOccurrences: readonly LinkedPluginOccurrence[],
+  ): void => {
+    for (let i = 0; i < fragments.length; i++) {
+      const fragment = fragments[i]!;
+      const occurrence = linkedOccurrences[i]!;
+      for (const [position, demand] of (fragment.resources ?? []).entries()) {
+        const data = sandboxResourceDemandDataOf(demand);
+        resources.push(Object.freeze({
+          demand,
+          scope,
+          position,
+          receiver: data.receiver,
+          behaviorRevision: data.behaviorRevision,
+          projection: data.projection,
+          occurrence,
+        }));
+      }
     }
-  }
+  };
+  appendResources("group", groupFragments, groupResult.occurrences);
+  appendResources("eval", evalFragments, evalResult.occurrences);
   const pairProjection = Object.freeze({
     version: 1,
     occurrences: occurrences.map((occurrence) => occurrence.projection),
@@ -409,6 +455,7 @@ export function linkPluginPair(
       : { ownResourceDemand: resources.map((resource) => Object.freeze({
           receiver: resource.receiver,
           behaviorRevision: resource.behaviorRevision,
+          scope: resource.scope,
           demand: resource.projection,
           plugin: resource.occurrence.projection,
         })) }),
@@ -417,7 +464,7 @@ export function linkPluginPair(
     evalLayer: appendCommandOnlyLayers(evalDef.sandbox, evalFragments),
     ...(evalDef.evalGroup === undefined
       ? {}
-      : { groupLayer: evalDef.evalGroup.sandbox }),
+      : { groupLayer: appendCommandOnlyLayers(evalDef.evalGroup.sandbox, groupFragments) }),
     experimentLayer: appendCommandOnlyLayers(run.sandbox, experimentFragments),
     occurrences: Object.freeze(occurrences),
     resources: Object.freeze(resources),
