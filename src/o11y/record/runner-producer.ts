@@ -1052,6 +1052,7 @@ function normalizeConversationV1(input: {
   readonly result: EvalResult;
   readonly sealed: SealedAttemptAssertions;
   readonly mint: AttemptEntityMinterV1;
+  readonly runtime: RunnerAttemptObservabilityRuntimeStateV1;
 }): Effect.Effect<NormalizedAttemptObservabilityCaptureV1["conversation"], RunnerObservabilityProducerErrorV1> {
   return Effect.gen(function* () {
     const limitations = new RunnerCollectionLimitationsV1();
@@ -1274,16 +1275,21 @@ function normalizeConversationV1(input: {
           break;
         }
         case "error": {
-          yield* appendItem((ids) => Object.freeze({
+          const redacted = redactSensitiveText(event.message, input.runtime.sensitiveValues);
+          if (redacted !== event.message) limitations.addRedacted("conversation-text");
+          const summary = retainSafeTextV1(redacted, MAX_CONVERSATION_TEXT_BYTES_V1);
+          if (summary === undefined) {
+            limitations.addUnsupported("conversation-item");
+            continue;
+          }
+          const item = yield* appendItem((ids) => Object.freeze({
             ...ids,
             kind: "conversation-error" as const,
             code: makeSafeIdentifierV1("stream-error")!,
-            summary: makeBoundedSafeTextV1(
-              "The standardized event stream reported an error.",
-              MAX_CONVERSATION_TEXT_BYTES_V1,
-            )!,
+            summary: summary.text,
             refs: Object.freeze([]),
           }));
+          appendConversationTextLimitationV1(item, summary, limitations);
           break;
         }
         // Thinking can contain hidden reasoning, and compaction has no safe
@@ -1972,6 +1978,7 @@ export function createRunnerAttemptObservabilityCaptureV1(input: {
       result: input.result,
       sealed: input.sealed,
       mint: minter.mint,
+      runtime,
     });
     const timing = yield* normalizeAttemptTimingV1({ result: input.result, mint: minter.mint });
     const diagnostics = yield* normalizeAttemptDiagnosticsV1({ result: input.result, mint: minter.mint });
