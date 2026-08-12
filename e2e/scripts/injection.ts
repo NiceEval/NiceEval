@@ -21,8 +21,12 @@ import {
   hasSuccessfulOwnedProcessResult,
   isExecutionCancelled,
   E2EExecutionCancelledError,
+  type OwnedProcessResult,
   type E2EExecutionControl,
 } from "./owned-process.ts";
+import { acquireCandidatePackLock } from "./candidate-pack-lock.ts";
+
+const PACK_FAILURE_STDERR_LIMIT = 8_192;
 
 export interface CandidateTarball {
   /** Absolute path to the built .tgz. */
@@ -61,6 +65,14 @@ export function readCandidateTarball(tarballPath: string): CandidateTarball {
   return fingerprint(bytes, resolvedPath);
 }
 
+function boundedStderr(stderr: string): string {
+  const trimmed = stderr.trim();
+  if (trimmed.length === 0) return "stderr was empty";
+  if (trimmed.length <= PACK_FAILURE_STDERR_LIMIT) return trimmed;
+  const omitted = trimmed.length - PACK_FAILURE_STDERR_LIMIT;
+  return `… ${omitted} earlier stderr character(s) omitted …\n${trimmed.slice(-PACK_FAILURE_STDERR_LIMIT)}`;
+}
+
 /**
  * Build the current niceeval checkout into an installable tarball via
  * `pnpm pack`, once, into destDir. Returns the tarball path plus a content
@@ -75,14 +87,25 @@ export async function buildCandidateTarball(
   mkdirSync(destDir, { recursive: true });
 
   const control = options.control ?? createUnmanagedExecutionControl();
-  const packed = await control.supervisor.run(["pnpm", "pack", "--pack-destination", destDir], {
-    cwd: repoRoot,
-    env: process.env,
-    output: options.quiet === true ? "capture" : "inherit",
-    stream: options.quiet !== true,
-    timeoutMs: 30 * 60_000,
-    abortSignal: control.abortSignal,
-  });
+  // `pnpm pack` runs root prepare and therefore writes shared checkout output.
+  // Keep only that lifecycle inside the lease; all later tarball inspection and
+  // all scenario execution remain invocation-local and can run concurrently.
+  const packLock = await acquireCandidatePackLock(repoRoot, control);
+  let packed: OwnedProcessResult;
+  try {
+    packed = await control.supervisor.run(["pnpm", "pack", "--pack-destination", destDir], {
+      cwd: repoRoot,
+      env: process.env,
+      // Always retain stderr for an actionable pack failure. `stream` still
+      // keeps non-quiet callers' normal lifecycle output live on the terminal.
+      output: "capture",
+      stream: options.quiet !== true,
+      timeoutMs: 30 * 60_000,
+      abortSignal: control.abortSignal,
+    });
+  } finally {
+    await packLock.release();
+  }
   if (packed.cancelled || isExecutionCancelled(control)) {
     throw new E2EExecutionCancelledError("e2e candidate packing cancelled");
   }
@@ -92,7 +115,8 @@ export async function buildCandidateTarball(
         ? "timed out after TERM → grace → KILL"
         : !hasConfirmedOwnedGroupCleanup(packed)
           ? packed.groupCleanup.detail
-          : packed.error ?? packed.signal ?? `exit ${packed.exitCode}`}) while building the candidate niceeval tarball from ${repoRoot} — fix the build before running the e2e matrix`,
+          : packed.error ?? packed.signal ?? `exit ${packed.exitCode}`}) while building the candidate niceeval tarball from ${repoRoot} — fix the build before running the e2e matrix` +
+        `\n--- pnpm pack stderr (last ${PACK_FAILURE_STDERR_LIMIT} characters) ---\n${boundedStderr(packed.stderr)}`,
     );
   }
 
