@@ -12,6 +12,11 @@ import {
   type SlotId,
 } from "../../record/model/identifiers.ts";
 import {
+  defineRecordAttachmentProjector,
+  type RecordProjection,
+  selectedRunProjection,
+} from "../../projection/index.ts";
+import {
   EvaluationRecordIdentitySchema,
   ExactRecordAttachmentParseOptions,
   makeNoBlobRecordAttachmentWriteV1,
@@ -394,4 +399,21 @@ export function defineEvaluationsProjectorV1(): EvaluationsProjectorDefinitionV1
     family: evaluationsAttachmentFamilyV1,
     project: projectEvaluationsAttachmentV1,
   });
+}
+
+/**
+ * Declares Evaluations for the Sample's selected Runs. It does not infer
+ * origin Runs from Attempt slots.
+ */
+export function defineSelectedRunEvaluationsProjectionV1(): RecordProjection<
+  "selected-run",
+  EvaluationsProjectionV1
+> {
+  const evaluations = defineEvaluationsProjectorV1();
+  return selectedRunProjection(
+    defineRecordAttachmentProjector({
+      attachment: evaluations.family,
+      project: evaluations.project,
+    }),
+  );
 }

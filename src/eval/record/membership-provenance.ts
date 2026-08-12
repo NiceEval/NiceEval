@@ -14,6 +14,11 @@ import {
 import type { RecordAttachmentRead } from "../../record/model/read-state.ts";
 import { AttemptIdSchema, RunIdSchema, SlotIdSchema, UtcMillisSchema } from "../../record/codec/identifiers.ts";
 import type { FrozenRecordRun, FrozenRecordView } from "../../record/reader/types.ts";
+import {
+  defineRecordAttachmentProjector,
+  type RecordProjection,
+  selectedRunProjection,
+} from "../../projection/index.ts";
 import { isJsonValue } from "../../shared/json-value.ts";
 import {
   ExactRecordAttachmentParseOptions,
@@ -450,6 +455,23 @@ export function defineMembershipProvenanceProjectorV1(): MembershipProvenancePro
     family: membershipProvenanceAttachmentFamilyV1,
     project: projectMembershipProvenanceAttachmentV1,
   });
+}
+
+/**
+ * Declares Membership Provenance for the Sample's selected Runs. Scripts and
+ * Reports consume the resulting projection without reader-specific access.
+ */
+export function defineSelectedRunMembershipProvenanceProjectionV1(): RecordProjection<
+  "selected-run",
+  MembershipProvenancePayloadV1
+> {
+  const provenance = defineMembershipProvenanceProjectorV1();
+  return selectedRunProjection(
+    defineRecordAttachmentProjector({
+      attachment: provenance.family,
+      project: provenance.project,
+    }),
+  );
 }
 
 /** Re-exported for callers that construct an action's preserved issue refs. */

@@ -10,6 +10,11 @@ import { defineBuiltinJsonRecordAttachment } from "../../record/attachment/inter
 import type { RecordAttachmentRead } from "../../record/model/read-state.ts";
 import type { FrozenRecordAttempt, FrozenRecordView } from "../../record/reader/types.ts";
 import {
+  attemptSlotProjection,
+  defineRecordAttachmentProjector,
+  type RecordProjection,
+} from "../../projection/index.ts";
+import {
   ExactRecordAttachmentParseOptions,
   FiniteNonNegativeNumberV1Schema,
   makeNoBlobRecordAttachmentWriteV1,
@@ -252,4 +257,21 @@ export function defineEligibilityProjectorV1(): EligibilityProjectorDefinitionV1
     family: eligibilityAttachmentFamilyV1,
     project: projectEligibilityAttachmentV1,
   });
+}
+
+/**
+ * Declares Eligibility for every Sample slot's exact Attempt owner. Scripts
+ * and Reports consume the resulting projection without opening a reader.
+ */
+export function defineAttemptSlotEligibilityProjectionV1(): RecordProjection<
+  "attempt-slot",
+  AttemptEligibilityPayloadV1
+> {
+  const eligibility = defineEligibilityProjectorV1();
+  return attemptSlotProjection(
+    defineRecordAttachmentProjector({
+      attachment: eligibility.family,
+      project: eligibility.project,
+    }),
+  );
 }
