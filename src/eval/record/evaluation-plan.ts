@@ -2,10 +2,9 @@ import {
   defineRecordAttachmentProjector,
   type RecordAttachmentProjector,
 } from "../../projection/projector.ts";
-import type { SlotId } from "../../record/model/identifiers.ts";
+import type { ExperimentId, SlotId } from "../../analysis/index.ts";
 import {
   evaluationsAttachmentFamily,
-  type ExperimentId,
 } from "../experiment-id.ts";
 import type { EvaluationKind } from "./evaluation.ts";
 
