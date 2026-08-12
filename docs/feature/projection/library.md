@@ -230,125 +230,214 @@ Calculation 的 `observed` 与 `denominator` 由作者返回 domain value，host
 ## Source navigation primitives
 
 `niceeval/projection` 还导出 Assertions 源码导航所需的三个 fixed projector 和一个 pure assembler。
-它们是普通 Projection API，不是 Report host 的特权入口。payload 与 snapshot 的语义由
-[Assertions source sites](../assertions/architecture/source-sites.md) 拥有；本节只拥有 public
-TypeScript input／output contract。
-
-下列 source schema type 由 `niceeval/projection` type-only re-export。它们仍由 source-sites owner
-定义，且 module 不提供 writable payload constructor 或 Record capability。
+它们是普通 Projection API，不是 Report host 的特权入口。每个 projector 把已解码的 Attachment
+深复制为当前的语义值；payload、blob ref、schema type 与 Record capability 不会向上泄露。
+未来 Sources 或 source-sites 的持久格式变化，只在对应 decoder／adapter 收敛，调用者继续消费本节的
+无版本值。
 
 ```ts
 import type { SlotId } from "niceeval/record";
 
-type AssertionsSourceProjectionV1 = {
-  readonly entries: readonly AssertionEntryReadV1[];
+type AssertionSourceEntry =
+  | {
+      readonly state: "available";
+      readonly entry: AssertionSourceEntryValue;
+    }
+  | {
+      readonly state: "unsupported";
+      readonly entry: AssertionSourceEntryValue;
+      readonly reason: "builtin-unknown" | "third-party-schema-unavailable";
+    }
+  | {
+      readonly state: "invalid";
+      readonly entry: AssertionSourceEntryValue;
+      readonly reason: "criterion-envelope-invalid" | "criterion-data-invalid";
+    };
+
+type AssertionSourceEntryValue = {
+  readonly entryId: AssertionEntryId;
+  readonly display: {
+    readonly key?: string;
+    readonly label?: string;
+    readonly groupPath: readonly string[];
+  };
+  readonly result: AssertionSourceResult;
 };
 
-type AssertionSourceSitesProjectionV1 = AssertionSourceSitesDocumentV1;
-
-type SourcesProjectionV1 = {
-  readonly packages: readonly SourcePackageProjectionV1[];
+type AssertionsSourceProjection = {
+  readonly entries: readonly AssertionSourceEntry[];
 };
 
-type SourcePackageProjectionV1 = {
-  readonly ref: SourcePackageItemRefV1;
+type AssertionSourceResult =
+  | {
+      readonly state: "matched";
+      readonly gate: "not-gate" | "satisfied";
+      readonly score: AssertionSourceScore;
+    }
+  | {
+      readonly state: "mismatched";
+      readonly reason: "condition-not-met";
+      readonly gate: "not-gate" | "failed";
+      readonly score: AssertionSourceScore;
+    }
+  | {
+      readonly state: "unavailable";
+      readonly reason: "evidence-unavailable" | "source-unavailable" | "redacted";
+      readonly gate: "not-gate" | "unavailable";
+      readonly score: AssertionSourceScore;
+    }
+  | {
+      readonly state: "errored";
+      readonly reason: "evaluator-failed" | "producer-interrupted" | "invalid-subject";
+      readonly gate: "not-gate" | "unavailable";
+      readonly score: AssertionSourceScore;
+    }
+  | {
+      readonly state: "not-applicable";
+      readonly reason: "coverage-not-applicable";
+      readonly gate: "not-gate" | "not-applicable";
+      readonly score: AssertionSourceScore;
+    };
+
+type AssertionSourceScore =
+  | { readonly state: "not-scored" }
+  | { readonly state: "earned"; readonly points: number; readonly earned: number }
+  | {
+      readonly state: "unavailable";
+      readonly points: number;
+      readonly reason:
+        | "source-unavailable"
+        | "evaluation-errored"
+        | "not-applicable";
+    };
+
+type SourcePackageItemRef = {
+  readonly kind: "package";
+  readonly packageItemId: SourcePackageItemId;
+};
+
+type SourceFileItemRef = {
+  readonly kind: "file";
+  readonly packageItemId: SourcePackageItemId;
+  readonly fileItemId: SourceFileItemId;
+  readonly sha256: Sha256Digest;
+};
+
+type AssertionSourceSitesProjection = {
+  readonly entries: readonly AssertionSourceSitesEntry[];
+  readonly sendSites: readonly AssertionSourceSendSite[];
+};
+
+type SourcesProjection = {
+  readonly packages: readonly SourcePackageProjection[];
+};
+
+type SourcePackageProjection = {
+  readonly ref: SourcePackageItemRef;
   readonly label: string;
-  readonly files: readonly SourceFileProjectionV1[];
+  readonly files: readonly SourceFileProjection[];
 };
 
-type SourceFileProjectionV1 = {
-  readonly ref: SourceFileItemRefV1;
+type SourceFileProjection = {
+  readonly ref: SourceFileItemRef;
   readonly path: string;
   readonly text: string;
 };
 
 declare const assertionsProjector: RecordAttachmentProjector<
   "attempt",
-  AssertionsSourceProjectionV1
+  AssertionsSourceProjection
 >;
 
 declare const assertionSourceSitesProjector: RecordAttachmentProjector<
   "attempt",
-  AssertionSourceSitesProjectionV1
+  AssertionSourceSitesProjection
 >;
 
 declare const sourcesProjector: RecordAttachmentProjector<
   "run",
-  SourcesProjectionV1
+  SourcesProjection
 >;
 ```
 
-`assertionsProjector` 保留 outer-decoded entry 的 declaration order，以及 criterion 的 entry-local
+`assertionsProjector` 保留 entry 的 declaration order，以及 criterion 的 entry-local
 available、unsupported 与 invalid 状态。
+每条 entry 只携带源码导航所需的 identity、display 与 sealed result。
 
-`assertionSourceSitesProjector` 保留 exact source-sites document。
+`assertionSourceSitesProjector` 深复制 source-site trace、occurrence、source item ref 和 coordinate，形成
+`AssertionSourceSitesProjection`。它不是持久 document 的别名。
+
+`AssertionSourceSitesEntry`、`AssertionSourceSite`、`AssertionSourceSendSite` 与
+`AssertionSourceTrace` 是同一份无版本 view 的组成部分。
+`SourceCoordinate`、`SourcePackageItemRef` 与 `SourceFileItemRef` 表达已 materialize snapshot 内的
+join identity，不授予 blob、path 或另一个 Attachment 的读取能力。
 
 `sourcesProjector` 只在 Sources Attachment available 后 materialize package label、file display path
 和已验证的 canonical UTF-8/LF text。它不读取当前 worktree。三个 projector 都由包创建，不能被同形
 object 或另一个 Attachment family 冒充。
 
 ```ts
-type AttemptSourceTreeAssemblyInputV1 = {
+type AttemptSourceTreeAssemblyInput = {
   readonly assertions: ProjectedSample<
     "attempt-slot",
-    AssertionsSourceProjectionV1
+    AssertionsSourceProjection
   >;
   readonly sourceSites: ProjectedSample<
     "attempt-slot",
-    AssertionSourceSitesProjectionV1
+    AssertionSourceSitesProjection
   >;
   readonly sources: ProjectedSample<
     "attempt-origin-run",
-    SourcesProjectionV1
+    SourcesProjection
   >;
 };
 
-type AttemptSourceTreeAssemblyIssueV1 =
+type AttemptSourceTreeAssemblyIssue =
   | { readonly code: "sample-mismatch" }
   | {
       readonly code: "slot-alignment-mismatch";
       readonly slotId: SlotId;
     };
 
-type AttemptSourceTreeAssemblyResultV1 =
+type AttemptSourceTreeAssemblyResult =
   | {
       readonly state: "assembled";
-      readonly value: AttemptSourceTreeSampleV1;
+      readonly value: AttemptSourceTreeSample;
     }
   | {
       readonly state: "input-invalid";
       readonly issues: readonly [
-        AttemptSourceTreeAssemblyIssueV1,
-        ...AttemptSourceTreeAssemblyIssueV1[],
+        AttemptSourceTreeAssemblyIssue,
+        ...AttemptSourceTreeAssemblyIssue[],
       ];
     };
 
-declare const assembleAttemptSourceTreeV1: (
-  input: AttemptSourceTreeAssemblyInputV1,
-) => AttemptSourceTreeAssemblyResultV1;
+declare const assembleAttemptSourceTree: (
+  input: AttemptSourceTreeAssemblyInput,
+) => AttemptSourceTreeAssemblyResult;
 ```
 
 输入的三个 `ProjectedSample` 必须来自同一个 `AnalysisSample`，并按同一 slot identity 对齐。
-`assembleAttemptSourceTreeV1` 不做 I/O、不接收 reader、path、blob、callback 或 Report object。若这两个
+`assembleAttemptSourceTree` 不做 I/O、不接收 reader、path、blob、callback 或 Report object。若这两个
 前提不成立，它返回 `input-invalid`，而不是把不相关的 Run、Attempt 或 array position 配对。
 
 ```ts
-type AttemptSourceAssertionsAttachmentV1 = Extract<
-  AttemptSlotProjectedEntry<AssertionsSourceProjectionV1>,
+type AttemptSourceAssertionsAttachment = Extract<
+  AttemptSlotProjectedEntry<AssertionsSourceProjection>,
   { readonly state: "attachment-result" }
 >;
 
-type AttemptSourceSitesAttachmentV1 = Extract<
-  AttemptSlotProjectedEntry<AssertionSourceSitesProjectionV1>,
+type AttemptSourceSitesAttachment = Extract<
+  AttemptSlotProjectedEntry<AssertionSourceSitesProjection>,
   { readonly state: "attachment-result" }
 >;
 
-type AttemptSourcesAttachmentV1 = Extract<
-  AttemptOriginRunProjectedEntry<SourcesProjectionV1>,
+type AttemptSourcesAttachment = Extract<
+  AttemptOriginRunProjectedEntry<SourcesProjection>,
   { readonly state: "attachment-result" }
 >;
 
-type AttemptSourceTreeSlotV1 =
+type AttemptSourceTreeSlot =
   | {
       readonly state: "excluded";
       readonly slot: ExcludedAnalysisSlot;
@@ -364,15 +453,15 @@ type AttemptSourceTreeSlotV1 =
   | {
       readonly state: "attachment-result";
       readonly slot: IncludedAnalysisSlot;
-      readonly assertions: AttemptSourceAssertionsAttachmentV1;
-      readonly sourceSites: AttemptSourceSitesAttachmentV1;
-      readonly sources: AttemptSourcesAttachmentV1;
-      readonly tree: AttemptSourceTreeV1;
+      readonly assertions: AttemptSourceAssertionsAttachment;
+      readonly sourceSites: AttemptSourceSitesAttachment;
+      readonly sources: AttemptSourcesAttachment;
+      readonly tree: AttemptSourceTree;
     };
 
-type AttemptSourceTreeSampleV1 = {
+type AttemptSourceTreeSample = {
   readonly sample: AnalysisSample;
-  readonly slots: readonly AttemptSourceTreeSlotV1[];
+  readonly slots: readonly AttemptSourceTreeSlot[];
 };
 ```
 
@@ -385,33 +474,33 @@ six-state result：`available`、`unavailable`、`migration-required`、`migrati
 Attachment 的状态。
 
 ```ts
-type AttemptSourceUnavailableAttachmentV1 =
+type AttemptSourceUnavailableAttachment =
   | {
       readonly attachment: "assertions";
       readonly result: Exclude<
-        ProjectedRecordAttachmentResult<AssertionsSourceProjectionV1>,
+        ProjectedRecordAttachmentResult<AssertionsSourceProjection>,
         { readonly state: "available" }
       >;
     }
   | {
       readonly attachment: "source-sites";
       readonly result: Exclude<
-        ProjectedRecordAttachmentResult<AssertionSourceSitesProjectionV1>,
+        ProjectedRecordAttachmentResult<AssertionSourceSitesProjection>,
         { readonly state: "available" }
       >;
     }
   | {
       readonly attachment: "sources";
       readonly result: Exclude<
-        ProjectedRecordAttachmentResult<SourcesProjectionV1>,
+        ProjectedRecordAttachmentResult<SourcesProjection>,
         { readonly state: "available" }
       >;
     };
 
-type AttemptSourceUnmappedReasonV1 =
+type AttemptSourceUnmappedReason =
   | {
       readonly code: "attachment-not-available";
-      readonly attachment: AttemptSourceUnavailableAttachmentV1;
+      readonly attachment: AttemptSourceUnavailableAttachment;
     }
   | { readonly code: "source-sites-entry-missing" }
   | { readonly code: "source-sites-entry-orphan" }
@@ -419,98 +508,98 @@ type AttemptSourceUnmappedReasonV1 =
   | { readonly code: "source-order-duplicate"; readonly sourceOrder: number }
   | {
       readonly code: "package-item-missing";
-      readonly target: SourcePackageItemRefV1;
+      readonly target: SourcePackageItemRef;
     }
   | {
       readonly code: "file-item-missing";
-      readonly target: SourceFileItemRefV1;
+      readonly target: SourceFileItemRef;
     }
   | {
       readonly code: "file-digest-mismatch";
-      readonly target: SourceFileItemRefV1;
+      readonly target: SourceFileItemRef;
     }
   | {
       readonly code: "coordinate-out-of-range";
-      readonly coordinate: SourceCoordinateV1;
+      readonly coordinate: SourceCoordinate;
     }
   | { readonly code: "trace-malformed" };
 
-type AttemptSourceUnmappedV1 =
+type AttemptSourceUnmapped =
   | {
       readonly kind: "assertion-entry";
-      readonly entry: AssertionEntryReadV1;
-      readonly reason: AttemptSourceUnmappedReasonV1;
+      readonly entry: AssertionSourceEntry;
+      readonly reason: AttemptSourceUnmappedReason;
     }
   | {
       readonly kind: "assertion-site";
       readonly entryId: AssertionEntryId;
-      readonly site: AssertionSourceSiteV1;
-      readonly reason: AttemptSourceUnmappedReasonV1;
+      readonly site: AssertionSourceSite;
+      readonly reason: AttemptSourceUnmappedReason;
     }
   | {
       readonly kind: "orphan-assertion-site";
       readonly entryId: AssertionEntryId;
-      readonly site: AssertionSourceSiteV1;
-      readonly reason: AttemptSourceUnmappedReasonV1;
+      readonly site: AssertionSourceSite;
+      readonly reason: AttemptSourceUnmappedReason;
     }
   | {
       readonly kind: "send";
-      readonly site: AssertionSourceSendSiteV1;
-      readonly occurrence: AssertionSourceSendOccurrenceV1;
-      readonly reason: AttemptSourceUnmappedReasonV1;
+      readonly site: AssertionSourceSendSite;
+      readonly occurrence: AssertionSourceSendOccurrence;
+      readonly reason: AttemptSourceUnmappedReason;
     };
 
-type AttemptSourceEntryUnmappedV1 = Extract<
-  AttemptSourceUnmappedV1,
+type AttemptSourceEntryUnmapped = Extract<
+  AttemptSourceUnmapped,
   { readonly kind: "assertion-entry" | "assertion-site" }
 >;
 
-type AttemptSourceUnownedUnmappedV1 = Extract<
-  AttemptSourceUnmappedV1,
+type AttemptSourceUnownedUnmapped = Extract<
+  AttemptSourceUnmapped,
   { readonly kind: "orphan-assertion-site" | "send" }
 >;
 
-type AttemptSourceAnnotationV1 =
+type AttemptSourceAnnotation =
   | {
       readonly kind: "assertion";
       readonly entryId: AssertionEntryId;
-      readonly occurrence: AssertionSourceOccurrenceV1;
+      readonly occurrence: AssertionSourceOccurrence;
     }
   | {
       readonly kind: "send";
-      readonly occurrence: AssertionSourceSendOccurrenceV1;
+      readonly occurrence: AssertionSourceSendOccurrence;
     };
 
-type AttemptSourceTreeLineV1 = {
+type AttemptSourceTreeLine = {
   readonly line: number;
   readonly text: string;
-  readonly annotations: readonly AttemptSourceAnnotationV1[];
-  readonly calls: readonly AttemptSourceTreeNodeV1[];
+  readonly annotations: readonly AttemptSourceAnnotation[];
+  readonly calls: readonly AttemptSourceTreeNode[];
 };
 
-type AttemptSourceFileNodeV1 = {
+type AttemptSourceFileNode = {
   readonly kind: "file";
-  readonly file: SourceFileProjectionV1;
-  readonly lines: readonly AttemptSourceTreeLineV1[];
+  readonly file: SourceFileProjection;
+  readonly lines: readonly AttemptSourceTreeLine[];
 };
 
-type AttemptSourcePackageNodeV1 = {
+type AttemptSourcePackageNode = {
   readonly kind: "package";
-  readonly package: SourcePackageProjectionV1;
-  readonly calls: readonly AttemptSourceTreeNodeV1[];
+  readonly package: SourcePackageProjection;
+  readonly calls: readonly AttemptSourceTreeNode[];
 };
 
-type AttemptSourceTreeNodeV1 =
-  | AttemptSourceFileNodeV1
-  | AttemptSourcePackageNodeV1;
+type AttemptSourceTreeNode =
+  | AttemptSourceFileNode
+  | AttemptSourcePackageNode;
 
-type AttemptSourceTreeEntryV1 = {
-  readonly entry: AssertionEntryReadV1;
-  readonly mappedSites: readonly AssertionSourceSiteV1[];
-  readonly unmapped: readonly AttemptSourceEntryUnmappedV1[];
+type AttemptSourceTreeEntry = {
+  readonly entry: AssertionSourceEntry;
+  readonly mappedSites: readonly AssertionSourceSite[];
+  readonly unmapped: readonly AttemptSourceEntryUnmapped[];
 };
 
-type AttemptSourceTreeSummaryV1 = {
+type AttemptSourceTreeSummary = {
   readonly entries: number;
   readonly results: {
     readonly matched: number;
@@ -526,17 +615,17 @@ type AttemptSourceTreeSummaryV1 = {
   };
 };
 
-type AttemptSourceTreeV1 = {
-  readonly roots: readonly AttemptSourceTreeNodeV1[];
-  readonly entries: readonly AttemptSourceTreeEntryV1[];
-  readonly unmapped: readonly AttemptSourceUnownedUnmappedV1[];
-  readonly summary: AttemptSourceTreeSummaryV1;
+type AttemptSourceTree = {
+  readonly roots: readonly AttemptSourceTreeNode[];
+  readonly entries: readonly AttemptSourceTreeEntry[];
+  readonly unmapped: readonly AttemptSourceUnownedUnmapped[];
+  readonly summary: AttemptSourceTreeSummary;
 };
 ```
 
 assembler 对每个可定位 trace 建立 file／package tree。file line 的 annotation 按 unique
 `sourceOrder` 排序。send annotation 的 label、terminal status 与 duration 全部来自
-`AssertionSourceSendOccurrenceV1`；不从 source-order gaps 或其它 Attachment 补值。
+`AssertionSourceSendOccurrence`；不从 source-order gaps 或其它 Attachment 补值。
 
 `entries` 对每个 Assertions `entryId` 恰有一项。一个 entry 可在多个 mapped site 出现，也可同时有
 mapped site 与 locally unmapped site；line annotation 因而可以出现多次。`summary` 只遍历这份 unique
@@ -549,7 +638,7 @@ closure 错误才使用对应的 six-state Attachment result。未知、重复�
 不会让其它 entry、site 或 send 消失。
 
 官方 Report 与第三方 consumer 都调用这三个 exported projector 和同一个 pure assembler。Report、page
-或 Calculation 可以消费 `AttemptSourceTreeSampleV1`，但不存在私有 host reader 或额外 owner lookup
+或 Calculation 可以消费 `AttemptSourceTreeSample`，但不存在私有 host reader 或额外 owner lookup
 作为替代输入。
 
 ## Direct Effect 入口
