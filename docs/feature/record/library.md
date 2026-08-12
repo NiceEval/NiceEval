@@ -643,73 +643,75 @@ payload 不进入 error value。
 RecordAttachmentProjector 和 defineRecordAttachmentProjector 仍由 Projection Library 公开。以下
 prebuilt projector 与其它第三方 projector 同样接受一份 available Attachment，且只读其自包含 value：
 
-```ts
-type ConversationViewV1 = ConversationAttachmentV1;
-type UsageViewV1 = UsageAttachmentV1;
-type AttemptTimingViewV1 = AttemptTimingAttachmentV1;
-type RunTimingViewV1 = RunTimingAttachmentV1;
-type AttemptDiagnosticsViewV1 = AttemptDiagnosticsAttachmentV1;
-type RunDiagnosticsViewV1 = RunDiagnosticsAttachmentV1;
+版本仅属于 durable Attachment family/schema identity；projector 与 semantic view 的 ABI 不按磁盘版本命名。
 
-type CommandStreamViewV1 = {
+```ts
+type ConversationView = ConversationAttachmentV1;
+type UsageView = UsageAttachmentV1;
+type AttemptTimingView = AttemptTimingAttachmentV1;
+type RunTimingView = RunTimingAttachmentV1;
+type AttemptDiagnosticsView = AttemptDiagnosticsAttachmentV1;
+type RunDiagnosticsView = RunDiagnosticsAttachmentV1;
+
+type CommandStreamView = {
   readonly text: string;
   readonly retainedBytes: NonNegativeSafeInteger;
   readonly totalSafeUtf8Bytes: NonNegativeSafeInteger;
 };
 
-type CommandsViewV1 = {
+type CommandsView = {
   readonly collection: CommandsAttachmentV1["collection"];
   readonly commands: readonly {
     readonly commandId: CommandIdV1;
     readonly manifest: CommandManifestV1;
     readonly result: {
       readonly outcome: CommandResultV1["outcome"];
-      readonly stdout: CommandStreamViewV1;
-      readonly stderr: CommandStreamViewV1;
+      readonly stdout: CommandStreamView;
+      readonly stderr: CommandStreamView;
     };
     readonly refs: readonly CommandsReferencesV1[];
   }[];
 };
 
-declare const attemptConversationProjectorV1: RecordAttachmentProjector<
+declare const attemptConversationProjector: RecordAttachmentProjector<
   "attempt",
-  ConversationViewV1
+  ConversationView
 >;
 
-declare const attemptCommandsProjectorV1: RecordAttachmentProjector<
+declare const attemptCommandsProjector: RecordAttachmentProjector<
   "attempt",
-  CommandsViewV1
+  CommandsView
 >;
 
-declare const attemptUsageProjectorV1: RecordAttachmentProjector<
+declare const attemptUsageProjector: RecordAttachmentProjector<
   "attempt",
-  UsageViewV1
+  UsageView
 >;
 
-declare const attemptTimingProjectorV1: RecordAttachmentProjector<
+declare const attemptTimingProjector: RecordAttachmentProjector<
   "attempt",
-  AttemptTimingViewV1
+  AttemptTimingView
 >;
 
-declare const attemptDiagnosticsProjectorV1: RecordAttachmentProjector<
+declare const attemptDiagnosticsProjector: RecordAttachmentProjector<
   "attempt",
-  AttemptDiagnosticsViewV1
+  AttemptDiagnosticsView
 >;
 
-declare const runTimingProjectorV1: RecordAttachmentProjector<
+declare const runTimingProjector: RecordAttachmentProjector<
   "run",
-  RunTimingViewV1
+  RunTimingView
 >;
 
-declare const runDiagnosticsProjectorV1: RecordAttachmentProjector<
+declare const runDiagnosticsProjector: RecordAttachmentProjector<
   "run",
-  RunDiagnosticsViewV1
+  RunDiagnosticsView
 >;
 ```
 
-ConversationViewV1、UsageViewV1、AttemptTimingViewV1、RunTimingViewV1、
-AttemptDiagnosticsViewV1 与 RunDiagnosticsViewV1 保留对应 durable payload 的 value 语义。
-CommandsViewV1 只把每条 stream 的 inline/blob storage 归一成相同的 UTF-8 text、retainedBytes 与
+ConversationView、UsageView、AttemptTimingView、RunTimingView、AttemptDiagnosticsView 与
+RunDiagnosticsView 保留对应 durable payload 的 value 语义。CommandsView 只把每条 stream 的
+inline/blob storage 归一成相同的 UTF-8 text、retainedBytes 与
 totalSafeUtf8Bytes。view 不暴露 RecordBlobRef、path、reader 或 stream。
 
 一个 projector 不计数、不聚合 command success、不计算 duration 或 critical path、不分组

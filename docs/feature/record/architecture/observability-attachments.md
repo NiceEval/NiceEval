@@ -808,13 +808,13 @@ RecordWriteError，不能被 contract 吞掉。
 
 | projector | family |
 |---|---|
-| attemptConversationProjectorV1 | Attempt conversation |
-| attemptCommandsProjectorV1 | Attempt commands |
-| attemptUsageProjectorV1 | Attempt usage |
-| attemptTimingProjectorV1 | Attempt timing |
-| attemptDiagnosticsProjectorV1 | Attempt diagnostics |
-| runTimingProjectorV1 | Run timing |
-| runDiagnosticsProjectorV1 | Run diagnostics |
+| attemptConversationProjector | Attempt conversation |
+| attemptCommandsProjector | Attempt commands |
+| attemptUsageProjector | Attempt usage |
+| attemptTimingProjector | Attempt timing |
+| attemptDiagnosticsProjector | Attempt diagnostics |
+| runTimingProjector | Run timing |
+| runDiagnosticsProjector | Run diagnostics |
 
 每个 projector 只解释一份 available Attachment。它不选择 Run、读取另一份 family、重建 denominator、
 聚合或重新判定结果。commands projector 唯一负责把 inline/blob storage 统一为相同的 text view。
