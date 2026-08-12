@@ -1,56 +1,98 @@
 # Assertions —— scoped methods
 
-scope 语义由 [Assertions](../README.md#scope-与-succeeded) 单独定义。本页只列出作者调用形状。
+本页是 `calledTool`、`notCalledTool`、`ToolMatch` 与计数的唯一公开契约。其它页面只链接本页，不重复签名、字段或计数规则。
+
+每一次调用都直接登记 Boolean Assertion。receiver 在调用处取得 snapshot；随后发生的 Session 或 Turn 不能改写这条 entry。Boolean handle 仍可 `await .orStop()`，它只等待并控制同一条已登记 Assertion。
+
+## 调用形状
 
 ```ts
-const turn = await t.send("查找配置并汇报。");
+interface CalledToolAtLeast {
+  readonly atLeast: PositiveInteger;
+}
 
-t.succeeded().label("所有已启动会话完成");
-turn.succeeded().label("当前 Turn 完成");
-turn.calledTool("search", { count: { atLeast: 1 } }).label("至少一次搜索");
+type CalledToolCount = PositiveInteger | CalledToolAtLeast;
+
+interface CalledToolOptions {
+  readonly count?: CalledToolCount;
+}
+
+calledTool(match: ToolMatch, options?: CalledToolOptions): BooleanAssertionHandle<Kind, void>;
+calledTool(name: string, options?: CalledToolOptions): BooleanAssertionHandle<Kind, void>;
+notCalledTool(match: ToolMatch): BooleanAssertionHandle<Kind, void>;
+notCalledTool(name: string): BooleanAssertionHandle<Kind, void>;
 ```
 
-每一次调用都直接登记 Boolean Assertion。receiver 决定 snapshot，不能通过随后发生的 Session 或 Turn
-改写。`t` 读取已启动 Session 的 vector cut；Session 读取自己的前缀；Turn 读取不可变 Turn。
+`name` 是 `toolMatch(name)` 的薄糖，只按原始工具名选择 occurrence。`calledTool` 的第二参数只含 `count`；`input`、`output` 与 `status` 都属于 `ToolMatch`。
 
-`calledTool(...)` 与 `loadedSkill(...)` 是 `check(a, b)` 的特例：它们从 receiver scope 取得 normalized
-occurrences 作为 subject `a`，用方法参数构造 evaluator `b`，并登记 evaluation。保存的 `a` 包括 scope、
-operation / event identity、input、status、output / error refs、coverage 与匹配 event refs。
+`count` 的数字是恰好次数，且必须为正整数。`{ atLeast: n }` 的 `n` 同样必须为正整数。省略 `count` 等于 `{ atLeast: 1 }`。数值 `0` 无效；需要证明没有匹配调用时使用 `notCalledTool`。
 
-负断言和上限断言依赖这条 entry 的完整材料。
-producer 不能完整取得所需 material 时，entry 写入 `coverage: partial` 或 `unavailable`。这类断言形成
-`unavailable` Assertion result，不会按空证据静默通过。
+```ts
+import {
+  commandMatch,
+  jsonMatch,
+  referencesAnyPath,
+  toolMatch,
+} from "niceeval/expect";
 
-非 `.optional()` 断言评不了会形成 Attempt 的 `errored` Verdict，而非 lifecycle state。正断言在 material
-coverage 不是 `complete` 时没找到匹配，同样记 `unavailable` 而不是 failed。
+const turn = await t.send("查询台北天气，检查项目状态，然后汇报结果。");
 
-`count` 为精确数字且实测已超出时是确凿失败。
-partial material 只会少采，超出不可能由采集造成。
-`count` 为谓词且不满足时，coverage 不是 `complete` 的 entry 一律记 `unavailable`。
-缺证据的计数没有可信判定。
-完整度声明与消费规则见 [证据与完整性](../architecture/evidence.md)。
+turn.calledTool(
+  toolMatch("get_weather", {
+    input: jsonMatch({ city: "Taipei" }),
+    output: jsonMatch({ forecast: "sunny" }),
+    status: "completed",
+  }),
+  { count: 1 },
+).label("完成天气查询");
+
+turn.calledTool(
+  toolMatch("read_file", {
+    input: referencesAnyPath([".env", "secrets/**"]),
+  }),
+).label("读取敏感路径");
+
+turn.calledTool(commandMatch("pnpm", { argsStart: ["test"] }));
+turn.notCalledTool(commandMatch("rm", { argsStart: ["-rf"] }));
+```
+
+普通 JSON 结构交给受管的 `jsonMatch`。路径搜索交给 `referencesAnyPath`，二者用在 `toolMatch` 的 JSON 条件中。命令 token 交给可直接作为 selector 的 `commandMatch`；不在局部 JSON 中写命令正则或自定义函数。
+
+## 一个 occurrence 的合取
+
+`ToolMatch` 每次只比较一个 `LogicalToolOccurrence`。名称、`input`、`output` 与 `status` 是同一 occurrence 上的 AND 条件。计数只数完整满足这一组条件的 occurrence，不会把一笔调用的输入和另一笔调用的输出拼成命中。
+
+`toolMatch` 适用于官方工具和第三方工具。两者都按 Adapter 归一后的 occurrence、原始名称与材料状态求值，没有官方工具的特权分支。
+
+## 输入、输出与 HITL
+
+输入和输出材料各有 `complete`、`partial`、`unavailable` 三种状态。`complete` 有完整 JSON；`partial` 明示可见片段与缺失边界；`unavailable` 带具名原因，不能用空对象、`null` 或普通 mismatch 代替。
+
+受管 Match 在 `partial` 材料中只有取得决定性正向见证时才可 matched。其余需要不可见部分的比较是 unavailable。`unavailable` 材料不会产生假阴性。
+
+HITL 等待中的工具已有 `operation.started`，却还没有相配的 finished。它的 occurrence 状态是 `pending`，输出为 unavailable。匹配 `status: "pending"` 可以成立；要求输出的 Match 必须是 unavailable。缺少输出从不等同于输出不匹配。
+
+## receiver、Session 与 vector cut
+
+Turn receiver 只读取该不可变 Turn。Session receiver 读取该 Session 在调用处之前的全部 Turn，所以可以断言跨 Turn 的工具行为。
+
+根 `t` 在调用处冻结所有已启动 Session 的 vector cut。每个 Session 保留自己的前缀，根 scope 不把多个 Session 伪造成一条全局时间线。之后新增的 Turn、Session 或工具调用不进入已登记 Assertion。
+
+## 三值计数
+
+每个候选 occurrence 先得到 `matched`、`mismatched` 或 `unavailable`。计数在这三种结果上求值，不能把未知当作零。
+
+- 精确 `n`：已知匹配数超过 `n` 时确定 mismatched。只有已知匹配数等于 `n` 且其余候选都可判定时才 matched；否则为 unavailable。
+- `{ atLeast: n }`：已知匹配数达到 `n` 时立即 matched。已知匹配数不足且其余候选都可判定时才 mismatched；否则为 unavailable。
+- 省略计数：按 `{ atLeast: 1 }` 求值。
+- `notCalledTool`：按精确零匹配求值。一个已知匹配即可 mismatched；只有所有候选都可判定且没有匹配时才 matched。
+
+这套规则也要求 receiver 的 actions 材料足以判定。材料不完整时，正断言、负断言和未达到的下限都保留 unavailable，而不是据空白认定结果。
+
+## 版本边界
+
+`ToolMatch`、scoped Assertion、Projection 与 Report 作者 API 都不用 `V1` 或 `V2` 后缀。未来的中高层 breaking change 通过包与 API 升级交付，不要求用户迁移 `.niceeval`。
+
+只有 `RecordAttachment` 的持久 schema、迁移边界或跨进程 wire codec 使用版本号。Assertions 的持久 payload 规则见 [Architecture](../architecture.md)。
+
 Sandbox 专属结果断言见 [断言 Sandbox 结果](../../sandbox/library/asserting-results.md)。
-
-## 匹配条件的字段全集
-
-`calledTool` / `notCalledTool` 的 `match` 是 `ToolMatch`。**
-一条调用的全部可断面——入参、次数、输出、状态——都在这一个 match 对象里表达**，不借助断言句柄。
-`input` / `output` / `status` 之间是 AND，且作用在**同一笔调用**上；`count` 数的是满足这些条件的调用笔数——不存在「一笔满足 input、另一笔满足 output」也算命中的读法：
-
-| 字段 | 语义 |
-|---|---|
-| `input?: JsonMatch` | 递归匹配小语言：JSON 标量严格相等；对象做**深度部分匹配**；数组等长逐项匹配；`RegExp` 与谓词 `(value: unknown) => boolean` 可出现在任意层级。正则先匹配当前位置的字符串，不命中时再匹配完整输入的序列化文本；谓词是唯一接收动态 `unknown` 的边界 |
-| `count?: number \| ((n: number) => boolean)` | 数字＝恰好 n 次；谓词＝对命中次数自行判定（`(n) => n >= 2`）；省略＝至少一次 |
-| `output?: JsonMatch` | 与 `input` 使用同一递归 `JsonMatch`：JSON 标量、数组、对象、`RegExp` 或动态谓词；对象仍是部分匹配，数组是等长逐项匹配 |
-| `status?: "pending" \| "completed" \| "failed" \| "rejected"` | 只匹配处于该状态的调用。`pending` 是已发起、尚无结果的调用——典型是 HITL 停在审批上的那一笔 |
-
-`calledSubagent` 的 `match` 是 `SubagentMatch`，语义同 `ToolMatch`：
-
-```ts
-turn.usage.maxTokens(4_000)
-  .ifCovered()
-  .label("token 使用量可读取");
-```
-
-普通 scoped Assertion 在 Pass Eval 默认参与 Verdict fold。在 Score Eval 它默认只保存 evaluation；需要贡献
-score 时调用 `.score(points)`，需要改变 Verdict 时显式调用 `.gate()`。Boolean scoped handle 可 `await .orStop()`。

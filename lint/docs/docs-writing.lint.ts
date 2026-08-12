@@ -1,8 +1,11 @@
+import { readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
   formatLintHits,
   lintDocsWriting,
+  lintCalledToolContractText,
   lintSvgTerms,
   parseConcepts,
   proseBlocks,
@@ -13,6 +16,8 @@ import {
   synonymBans,
   validateRules,
 } from "../../scripts/docs-writing-lint.js";
+
+const ROOT = resolve(import.meta.dirname, "../..");
 
 // docs/ 与 docs-site/zh/ 的可读性规矩(句长、段长、禁用写法)由 docs/writing-rules.json 声明,
 // 规矩本身写在 docs/README.md「写给人读」与 docs/concepts.md「禁用写法」。
@@ -127,6 +132,31 @@ describe("文档可读性守护", () => {
     expect(proseText("见 [运行器](feature/runner/README.md) 的 `--concurrency`。")).toBe(
       "见 运行器 的 --concurrency。",
     );
+  });
+
+  it("calledTool 示例只把 count 放在第二参数，并拒绝零计数和局部命令匹配", () => {
+    const rules = JSON.parse(readFileSync(join(ROOT, "docs/writing-rules.json"), "utf8"));
+    const contract = rules.publicApiExamples.calledToolContract;
+    const hits = lintCalledToolContractText(
+      "docs/feature/assertions/example.md",
+      [
+        'turn.calledTool("shell", { input: { command: /pnpm test/ } });',
+        "turn.calledTool(toolMatch(\"shell\"), { count: 0 });",
+        "turn.calledTool(toolMatch(\"shell\"), { count: { atLeast: 0 } });",
+        "turn.calledTool(toolMatch(\"shell\"), { count: (n) => n > 1 });",
+        "turn.notCalledTool(toolMatch(\"shell\"), { count: 1 });",
+      ].join("\n"),
+      contract,
+    );
+
+    expect(hits.map((hit) => hit.message)).toEqual([
+      "calledTool 的第二参数只允许 count；input 属于 ToolMatch",
+      "notCalledTool 只接收 ToolMatch 或名称；零匹配不通过 count 表示",
+      "count 必须不小于 1；需要零匹配时使用 notCalledTool",
+      "count 必须不小于 1；需要零匹配时使用 notCalledTool",
+      "count 只接受正整数或 { atLeast: 正整数 }，不接受 predicate",
+      "命令匹配使用 commandMatch，不在 JSON 片段内写正则或 predicate",
+    ]);
   });
 });
 

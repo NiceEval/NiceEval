@@ -252,11 +252,11 @@ attemptSlotProjection(assertionSourceSitesProjector)
 attemptOriginRunProjection(sourcesProjector)
                     │
                     ▼
-      assembleAttemptSourceTreeV1(...)
+      assembleAttemptSourceTree(...)
 ```
 
 `assertionsProjector`、`assertionSourceSitesProjector`、`sourcesProjector` 与
-`assembleAttemptSourceTreeV1` 是公开 source navigation primitive。
+`assembleAttemptSourceTree` 是公开 source navigation primitive。
 它们的 TypeScript signature、input／output ADT、slot 穷尽性和 Attachment 六态由
 [Projection Library](../../projection/library.md#source-navigation-primitives) 拥有。
 assembler 是 pure：它只组合已经形成的 `ProjectedSample`，不读取 Record、blob、path 或当前 worktree，

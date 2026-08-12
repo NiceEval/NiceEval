@@ -87,7 +87,7 @@ Score Eval 使用 `handle.score(points)` 或 `t.score(points)` 写明贡献。�
 
 - [Library](library.md) —— 作者 API 和 handle 配置。
 - [Value assertions](library/value-assertions.md) —— Match 与 refinement。
-- [Scoped assertions](library/scoped-assertions.md) —— scope snapshot 与 `succeeded`。
+- [Scoped assertions](library/scoped-assertions.md) —— scope snapshot、`calledTool`、`notCalledTool` 与 `succeeded`。
 - [Score Eval](library/score-points.md) —— score、gate 与可用性。
 - [Evidence](architecture/evidence.md) —— snapshot、refs 与完整度。
 - [Source sites](architecture/source-sites.md) —— 源码位置、sourceOrder 与导航。

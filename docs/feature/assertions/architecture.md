@@ -4,6 +4,12 @@
 `RecordAttachment`。它保存已经结束的检查事实；Record、Projection 和 Report 不需要作者调用图、
 matcher 或 evaluator 内部实现才能解释它。
 
+## 版本边界
+
+这里的 `v1` 与 `AssertionsDocumentV1` 只标识 `RecordAttachment` 的持久 schema、迁移边界或跨进程 wire codec。它们不进入 Assertion、Projection、Report 或其它作者 ABI 的名字。
+
+`ToolMatch`、Assertion handle、Projection 与 Report 作者 API 都没有 `V1` 或 `V2` 心智模型。未来的中高层 breaking change 通过包与 API 升级交付，不要求用户迁移 `.niceeval`。
+
 ```text
 author calls / evaluator internals / producer control flow
                     ↓
@@ -317,7 +323,7 @@ schema-declared immutable semantic join，不能携带另一个 Attachment 的 b
 Assertions entry 的 criterion / result 状态与 source mapping 相互隔离。
 
 需要源码导航的 consumer 必须显式声明三个中立 input：attempt-slot Assertions、attempt-slot
-source-sites 与 attempt-origin-run Sources。公开的 pure `assembleAttemptSourceTreeV1` 组合已形成的值，
+source-sites 与 attempt-origin-run Sources。公开的 pure `assembleAttemptSourceTree` 组合已形成的值，
 不能在 reader 时猜测当前 worktree 或绕过已声明的 projection 读取。
 
 一个 entry 的 sealed result、points 与 unavailable 仍只来自 Assertions。因此多 site 不会重复计分，

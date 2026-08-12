@@ -88,3 +88,11 @@ Adapter 不预计算断言结果。
 `context.injected` 不获得专属的 `Turn` 便利字段（不像 `message` 有 `Turn.message`）。
 它和 `thinking`、`compaction` 同一档次，通过 `Turn.events` / 跨轮 `events` 数组按 `type` 过滤读取。
 `contextInjections` 计数只回答「这一轮有没有发生过注入」这种存在性问题，不替代逐条读取原文用 `text`。
+
+## 工具材料的省略语义
+
+core 用相同 `operationId` 把 started 与 finished 归成一个 `LogicalToolOccurrence`。Adapter 必须保留能确认的原始名称、输入、输出与状态；不能确认的部分不补造。
+
+输入和输出材料在 occurrence 上标为 `complete`、`partial` 或 `unavailable`。`partial` 保留可见片段与缺失边界，`unavailable` 保留具名原因。finished 没有输出时不是空 JSON，也不能据此判成输出不匹配。
+
+HITL 停在审批时只有 started。该 occurrence 的状态是 `pending`，输出是 unavailable。`ToolMatch` 的具体比较与计数规则见 [Scoped assertions](../../assertions/library/scoped-assertions.md)。

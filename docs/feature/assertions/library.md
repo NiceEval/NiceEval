@@ -21,11 +21,13 @@ t.check(turn.message, includes("完成"))
 const turn = await t.send("总结需求。");
 
 turn.succeeded().label("Turn 完成");
-turn.calledTool("search", { count: { atLeast: 1 } }).label("搜索资料");
+turn.calledTool(toolMatch("search"), { count: { atLeast: 1 } }).label("搜索资料");
 turn.judge.autoevals.summarizes(source).label("摘要质量");
 ```
 
 scope 方法与 Judge recipe 已经登记 Assertion，不能再交给 `check`。它们和显式值比较共享 snapshot、criterion、sealed result 与读取协议。
+
+`calledTool` 与 `notCalledTool` 的签名、`ToolMatch` 和计数规则只在 [Scoped assertions](library/scoped-assertions.md) 定义。本页不复制另一份字段表。
 
 ## handle 配置
 

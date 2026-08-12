@@ -51,6 +51,43 @@
         "subject": "保存实际 value 输出或 normalized scope context 的安全结构化 snapshot/ref，不只保存 evaluation。"
       }
     },
+    "calledToolContract": {
+      "$why": "calledTool 与 notCalledTool 的选择器、计数和证据语义只由 scoped-assertions.md 定义。其它页面可以展示旅程，但不能把旧的 name + input/output/status options、零计数或局部命令匹配重新带回作者面。",
+      "roots": [
+        "docs/feature/assertions",
+        "docs/feature/eval/use-case/calledtool.md",
+        "docs/feature/adapters/architecture/events.md",
+        "docs-site/zh/reference"
+      ],
+      "methods": {
+        "positive": "calledTool",
+        "negative": "notCalledTool"
+      },
+      "selector": "ToolMatch，或只按名称选择的 name 薄糖",
+      "allowedCalledToolOptions": [
+        "count"
+      ],
+      "forbiddenMatchOptionFields": [
+        "input",
+        "output",
+        "status"
+      ],
+      "count": {
+        "minimum": 1,
+        "allowed": [
+          "positive integer",
+          "{ atLeast: positive integer }"
+        ],
+        "forbidden": [
+          "0",
+          "predicate"
+        ]
+      },
+      "command": {
+        "matcher": "commandMatch",
+        "forbidInlineRegexOrPredicate": true
+      }
+    },
     "rejectedCliFlags": [
       {
         "flag": "--strict",
