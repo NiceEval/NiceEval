@@ -5,7 +5,7 @@
 // Eval 只从标准事件流读取结果。
 
 import { defineEval } from "niceeval";
-import { isDefined, satisfies, includes, toolMatch } from "niceeval/expect";
+import { isDefined, satisfies, includes } from "niceeval/expect";
 
 function requiredInjectedValue(name: string): string {
   const value = process.env[name];
@@ -21,7 +21,10 @@ const marker = requiredInjectedValue("NICEEVAL_CLAUDE_AGENT_SDK_MARKER");
 const sentinel = requiredInjectedValue("NICEEVAL_CLAUDE_AGENT_SDK_SENTINEL");
 const command = `printf '%s\\n' '${marker}'`;
 const positive = (label: string) =>
-  satisfies(`${label} > 0`, (value) => typeof value === "number" && value > 0);
+  satisfies<number | undefined, number>(
+    `${label} > 0`,
+    (value): value is number => typeof value === "number" && value > 0,
+  );
 
 export default defineEval({
   description:
@@ -35,28 +38,19 @@ export default defineEval({
         `完成后记住本轮会话哨兵 ${sentinel}，并用一句简短的话确认。`,
       ].join("\n"),
     );
-    await t.require(first.succeeded());
-    t.check(
-      first.calledTool(
-        toolMatch("shell", {
-          input: satisfies(
-            "shell command",
-            (input) =>
-              typeof input === "object" &&
-              input !== null &&
-              !Array.isArray(input) &&
-              input["command"] === command,
-          ),
-          status: "completed",
-        }),
-        { count: 1 },
-      ),
-    );
+    await first.succeeded().orStop();
+    first
+      .calledTool("shell", {
+        input: { command },
+        status: "completed",
+        count: 1,
+      })
+      .label("shell command");
     t.check(first.usage?.inputTokens, positive("first.usage.inputTokens"));
     t.check(first.usage?.outputTokens, positive("first.usage.outputTokens"));
     t.check(
       t.sessionId,
-      isDefined(
+      isDefined<string | undefined>(
         "Claude Agent SDK system/init session_id captured before the first result",
       ),
     );
@@ -64,17 +58,20 @@ export default defineEval({
     const resumed = await t.send(
       `只回复上一轮要求你记住的会话哨兵。不要调用任何工具，不要读取或写入文件。`,
     );
-    await t.require(resumed.succeeded());
+    await resumed.succeeded().orStop();
     t.check(resumed.message, includes(sentinel));
-    t.check(resumed.notCalledTool(toolMatch("shell")));
-    t.check(resumed.usage?.inputTokens, positive("resumed.usage.inputTokens"));
+    resumed.calledTool("shell", { count: 0 });
+    t.check(
+      resumed.usage?.inputTokens,
+      positive("resumed.usage.inputTokens"),
+    );
     t.check(
       resumed.usage?.outputTokens,
       positive("resumed.usage.outputTokens"),
     );
     t.check(
       t.sessionId,
-      isDefined(
+      isDefined<string | undefined>(
         "Claude Agent SDK session_id remains captured at the resumed result terminal",
       ),
     );

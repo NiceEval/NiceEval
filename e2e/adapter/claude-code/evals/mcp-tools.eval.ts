@@ -1,9 +1,9 @@
 // MCP(适配器契约页 Eval 闭环表):stdio 与 Streamable HTTP 两种 server 形态都能被真实调用,
 // 工具以 mcp__<server>__<tool> 命名出现,入参连名带参一起断言(入参保真是协议路径的
-// 一部分)。反例 notCalledTool 的目标 server(e2e-absent)从未挂载过,负断言在结构上
+// 一部分)。反例 calledTool count:0 的目标 server(e2e-absent)从未挂载过,负断言在结构上
 // 必然成立,不依赖模型这一次具体怎么回答。
 import { defineEval } from "niceeval";
-import { includes, satisfies, toolMatch } from "niceeval/expect";
+import { includes, satisfies } from "niceeval/expect";
 
 export default defineEval({
   description:
@@ -18,42 +18,18 @@ export default defineEval({
         "然后重试同一个工具调用;持续重试直到两次调用都成功,不要放弃。" +
         "把两个结果按调用顺序报告为用空格分隔的两个数字。",
     );
-    await t.require(turn.succeeded());
+    await turn.succeeded().orStop();
 
     await t.group(
       "两个已挂载的 MCP server 都以精确入参被调用;未挂载的 server 从未被调用",
       () => {
-        t.check(
-          t.calledTool(
-            toolMatch("mcp__e2e-stdio__get-sum", {
-              input: satisfies(
-                '"mcp__e2e-stdio__get-sum" input',
-                (input) =>
-                  typeof input === "object" &&
-                  input !== null &&
-                  !Array.isArray(input) &&
-                  Object.is(input["a"], 100) &&
-                  Object.is(input["b"], 23),
-              ),
-            }),
-          ),
-        );
-        t.check(
-          t.calledTool(
-            toolMatch("mcp__e2e-http__get-sum", {
-              input: satisfies(
-                '"mcp__e2e-http__get-sum" input',
-                (input) =>
-                  typeof input === "object" &&
-                  input !== null &&
-                  !Array.isArray(input) &&
-                  Object.is(input["a"], 6) &&
-                  Object.is(input["b"], 36),
-              ),
-            }),
-          ),
-        );
-        t.check(t.notCalledTool(toolMatch("mcp__e2e-absent__get-diff")));
+        t.calledTool("mcp__e2e-stdio__get-sum", {
+          input: { a: 100, b: 23 },
+        }).label('"mcp__e2e-stdio__get-sum" input');
+        t.calledTool("mcp__e2e-http__get-sum", {
+          input: { a: 6, b: 36 },
+        }).label('"mcp__e2e-http__get-sum" input');
+        t.calledTool("mcp__e2e-absent__get-diff", { count: 0 });
       },
     );
 

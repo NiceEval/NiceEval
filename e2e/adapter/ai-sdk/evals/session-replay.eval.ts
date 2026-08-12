@@ -8,9 +8,10 @@ import { excludes, includes } from "niceeval/expect";
 export default defineEval({
   description: "全量历史重放让第二轮能记起第一轮的事实;全新会话则完全不共享",
   async test(t) {
-    await t.require((await t.send("我叫小明，帮我记住这个名字。")).succeeded());
+    const first = await t.send("我叫小明，帮我记住这个名字。");
+    await first.succeeded().orStop();
     const recall = await t.send("我刚才说我叫什么名字？");
-    await t.require(recall.succeeded());
+    await recall.succeeded().orStop();
     t.check(recall.message, includes("小明"));
 
     // The reverse half only means something once we've proven this turn actually ran —
@@ -18,7 +19,7 @@ export default defineEval({
     // vacuously true and would make "isolation held" a hollow conclusion.
     const fresh = t.newSession();
     const freshTurn = await fresh.send("我叫什么名字？");
-    await t.require(freshTurn.succeeded());
+    await freshTurn.succeeded().orStop();
     t.check(fresh.reply, excludes("小明"));
   },
 });

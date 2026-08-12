@@ -1,5 +1,5 @@
 import { defineEval } from "niceeval";
-import { equals, includes } from "niceeval/expect";
+import { equals, includes, satisfies } from "niceeval/expect";
 
 const MARKETPLACE = "claude-plugins-official";
 const PLUGIN = "frontend-design";
@@ -25,9 +25,30 @@ export default defineEval({
       `Use the installed frontend-design Skill, then reply with exactly ${LIVE_MARKER}. ` +
         "Do not use tools or edit files.",
     );
-    await t.require(turn.succeeded());
-    t.check(turn.loadedSkill("frontend-design:frontend-design"));
+    await turn.succeeded().orStop();
+    t.check(
+      turn.events,
+      satisfies<typeof turn.events>(
+        "loaded skill frontend-design:frontend-design",
+        (events) =>
+          events.some(
+            (event) =>
+              event.type === "skill.loaded" &&
+              event.skill === "frontend-design:frontend-design",
+          ),
+      ),
+    );
     t.check(turn.message, includes(LIVE_MARKER));
-    t.check(t.noFailedActions());
+    t.check(
+      t.events,
+      satisfies<typeof t.events>(
+        "no failed tool or subagent actions",
+        (events) =>
+          !events.some(
+            (event) =>
+              event.type === "operation.finished" && event.status === "failed",
+          ),
+      ),
+    );
   },
 });

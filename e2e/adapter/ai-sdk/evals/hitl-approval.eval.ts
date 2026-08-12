@@ -4,13 +4,7 @@
 // operation.finished. Denying produces a rejected result with no tool output ever having
 // existed — the reverse guard below rules out "execute first, ask forgiveness later".
 import { defineEval } from "niceeval";
-import {
-  equals,
-  eventMatch,
-  pattern,
-  toolMatch,
-  satisfies,
-} from "niceeval/expect";
+import { equals, satisfies } from "niceeval/expect";
 export default defineEval({
   description:
     "审批请求(approval-requested)会阻塞执行直到给出答复;approve 恢复为 completed,deny 则为 rejected 且从未产生工具结果",
@@ -19,12 +13,6 @@ export default defineEval({
       "[REQUIRE_CALCULATE_TOOL] 用计算器算一下 (23+19)*3 等于多少",
     );
     t.check(draft.status, equals("waiting"));
-    t.check(draft.parked());
-    t.check(
-      draft.calledTool(toolMatch("calculate", { status: "pending" }), {
-        count: 1,
-      }),
-    );
     t.check(
       draft.events,
       satisfies<typeof draft.events>(
@@ -49,13 +37,22 @@ export default defineEval({
         },
       ),
     );
+    draft.calledTool("calculate", { status: "pending", count: 1 });
     t.requireInputRequest({ action: "calculate" });
     const approved = await t.respond("approve");
-    t.check(approved.succeeded());
-    t.check(t.calledTool(toolMatch("calculate", { status: "completed" })));
+    approved.succeeded();
+    t.calledTool("calculate", { status: "completed" });
     t.check(
-      t.event(
-        eventMatch("message", { role: "assistant", text: pattern(/126/) }),
+      t.events,
+      satisfies<typeof t.events>(
+        "assistant 回复包含计算器结果",
+        (events) =>
+          events.some(
+            (event) =>
+              event.type === "message" &&
+              event.role === "assistant" &&
+              /126/.test(event.text),
+          ),
       ),
     );
     // Deny branch on an independent session line — same prompt, the opposite decision.
@@ -63,20 +60,39 @@ export default defineEval({
     const deniedDraft = await denied.send(
       "[REQUIRE_CALCULATE_TOOL] 用计算器算 (23+19)*3。",
     );
-    t.check(deniedDraft.parked());
-    t.check(denied.parked());
+    t.check(deniedDraft.status, equals("waiting"));
     t.check(
-      denied.calledTool(toolMatch("calculate", { status: "pending" }), {
-        count: 1,
-      }),
+      denied.events,
+      satisfies<typeof denied.events>(
+        "deny 会话停在等待审批",
+        (events) => {
+          let parked = false;
+          for (let i = events.length - 1; i >= 0; i--) {
+            const type = events[i]!.type;
+            if (type === "thinking" || type === "compaction") continue;
+            parked = type === "input.requested";
+            break;
+          }
+          return parked;
+        },
+      ),
     );
+    denied.calledTool("calculate", { status: "pending", count: 1 });
     denied.requireInputRequest({ action: "calculate" });
     const turn = await denied.respond("deny");
     t.check(turn.status, equals("completed"));
-    t.check(denied.calledTool(toolMatch("calculate", { status: "rejected" })));
+    denied.calledTool("calculate", { status: "rejected" });
+    denied.calledTool("calculate", { status: "completed", count: 0 });
     t.check(
-      denied.notCalledTool(toolMatch("calculate", { status: "completed" })),
+      denied.events,
+      satisfies<typeof denied.events>(
+        "no failed tool or subagent actions",
+        (events) =>
+          !events.some(
+            (event) =>
+              event.type === "operation.finished" && event.status === "failed",
+          ),
+      ),
     );
-    t.check(denied.noFailedActions());
   },
 });
