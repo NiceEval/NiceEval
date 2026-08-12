@@ -14,7 +14,7 @@ interface ExpEvent {
 
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
 
-test("show --execution 读回本轮 tool-call 的确定性对话证据", async () => {
+test("show --execution 呈现本轮 tool-call 的正文、证据类别与终态", async () => {
   await withProjectCopy(
     reportProjectCopy,
     async ({ root }) => {
@@ -33,7 +33,11 @@ test("show --execution 读回本轮 tool-call 的确定性对话证据", async (
       );
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
       expect(shown.stdout).toContain("Deterministic report fixture response.");
-      expect(shown.stdout).toContain("ASSISTANT");
+      expect(shown.stdout).toMatch(/\bconversation\b/i);
+      expect(shown.stdout).toMatch(/\bcommands\b/i);
+      expect(shown.stdout).toMatch(/\btiming\b/i);
+      expect(shown.stdout).toMatch(/\bdiagnostics\b/i);
+      expect(shown.stdout).toMatch(/\bcompleted\b/i);
     },
     reportArtifactStaging("execution"),
   );
