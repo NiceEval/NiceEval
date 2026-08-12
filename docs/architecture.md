@@ -92,7 +92,7 @@ Direct 与 Sandbox 不是两个 Eval 函数；同一份 Eval 可以被两类 Age
 |---|---|---|
 | 典型目标 | 进程内函数、SDK、HTTP / RPC 服务 | coding-agent CLI + Sandbox |
 | Task 形态 | `t.send(...)` 序列 | 同左——沙箱型的任务照样写在 `t.send(...)` 里,没有另一种任务格式 |
-| `t` 可用什么 | `send`/`reply`/`calledTool`/`judge`;调用 `t.sandbox` 立即报能力错误 | 同一宽接口,且 `t.sandbox` 可用(文件 IO / 命令执行 / 结果断言 / diff) |
+| `t` 可用什么 | `send`/`reply`/`calledTool`/`judge`;调用 `t.sandbox` 立即报能力错误 | 同一宽接口,且 `t.sandbox` 可用(文件 IO / 命令执行 / 结果断言 / 归因断言) |
 | 评分手段 | expect + 作用域断言 + judge | 上述 + 手工在沙箱里跑命令,再用 `t.check(result, commandSucceeded())` 判定 |
 | 共享 | **Assertion、Judge、Verdict、Runner、Reporter、Config、Record 格式全部共享** | 同 → |
 
@@ -105,15 +105,15 @@ Direct 与 Sandbox 不是两个 Eval 函数；同一份 Eval 可以被两类 Age
 
 - 任何 Agent → `t.check(value, match)`、scope Assertion、`t.log`、`t.skip`、`t.signal`、`t.judge`，以及 `t.send` / `t.reply` / `t.newSession`。多轮取决于 `send` 是否接上 `ctx.session` 的续接存取器，不取决于声明。
 - `send` 吐出 `action.*` 事件 → `turn.calledTool` / `turn.toolOrder` / `turn.usedNoTools` 有数据可断；跨 Turn 的顺序断言放在 `session`，`t` 只保留全 Attempt 的出现与计数聚合。没吐事件时，正断言自然不命中，负断言按事件出处的完整性证明判断可信度（见[断言证据与完整性](feature/adapters/architecture/evidence.md)）。
-- `defineSandboxAgent` 构造(`kind: "sandbox"`)→ `t.sandbox`:文件 IO、宿主传输与命令执行。
-  `writeText` / `readText` / `writeBytes` / `readBytes`、`upload*` / `download*`、`runCommand` / `runShell` 与结果断言 / diff 都收在这一个命名空间下。
-  评 sandbox 输出用 `t.judge.autoevals.closedQA` 配 `{ on: t.sandbox.diff.get(path) }`。
-  非沙箱型 agent 调用这组方法会立即得到清晰报错(`capabilityGuard`)——这是唯一仍需要运行时拦截的能力,因为没有沙箱就没有文件系统可读。
+- `defineSandboxAgent` 构造(`kind: "sandbox"`)→ `t.sandbox`:文件 IO、宿主传输与归因断言。
+  `writeText` / `readText` / `writeBytes` / `readBytes`、`upload*` / `download*`、`runCommand` / `runShell`,以及 `fileChanged` / `notInDiff` 等归因断言都收在这一个命名空间下。
+  评文件内容先 `readText` 读成字符串,再在根级 `t.judge` 显式传 `{ input, output }`;是否改过该文件由 `fileChanged` 判定。
+  非沙箱型 agent 调用这组方法会立即报错(`capabilityGuard`)——这是唯一仍需要运行时拦截的能力。
 
 ## 一次 Invocation,端到端
 
 以 Sandbox Agent 的 Eval 为例。
-Direct Agent 跳过 Sandbox 创建、变更分类账与 Sandbox diff：
+Direct Agent 跳过 Sandbox 创建、变更分类账与 diff 采集：
 
 1. **加载配置。
    ** 对支持 Eval 替换的字段按 CLI → experiment → eval → `niceeval.config.ts` → 默认值求值。
@@ -141,7 +141,7 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 Sandbox diff：
    `t.send()` 驱动 agent——adapter 在沙箱里跑 CLI、抓 transcript、归一化成标准事件流。
    顺序、次数、要不要对 agent 隐藏某些文件,全部是 `test(t)` 里的普通代码决定;核心不插手,也不预设"先上传什么、后上传什么"这种固定编排。
 7. **折叠 agent 归因增量。
-   ** `test(t)` 跑完后从分类账取得各 send 区间的变更事实，折叠其并集，供 `t.sandbox.diff` / `t.sandbox.fileChanged` 的 finalize 与 Record diff Attachment 使用。fixture 写入和 agent 跑完后手工写入的校验材料都不在其中。
+   ** `test(t)` 跑完后从分类账取得各 send 区间的变更事实，折叠其并集，供 `fileChanged` / `notInDiff` 等归因断言的 finalize 与 Record diff Attachment 使用。fixture 写入和 agent 跑完后手工写入的校验材料都不在其中。
 8. **断言求值。
    ** `test(t)` 里写入的作用域断言、值断言与 Judge，连同手工校验命令的结果断言，全部形成结构化 assertion 结果。
 9. **判定。

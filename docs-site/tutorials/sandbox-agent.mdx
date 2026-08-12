@@ -115,7 +115,7 @@ Create a Sandbox
 
 Write starting files and verification commands in `test(t)`. The Agent can see only files you wrote into the Sandbox.
 
-`t.sandbox.diff` and `t.sandbox.fileChanged()` contain only files the Agent changed during `t.send()`. NiceEval records workspace state before and after each `t.send()`, so the changes between those points belong to the Agent. Starting files you uploaded and verification materials you write after `t.send()` are not included. `fileChanged("src/app.ts")` passes only when the Agent really changed that file.
+`t.sandbox.fileChanged()` and the other attribution assertions cover only files the Agent changed during `t.send()`. NiceEval records workspace state before and after each `t.send()`, so the changes between those points belong to the Agent. Starting files you uploaded and verification materials you write after `t.send()` are not included. `fileChanged("src/app.ts")` passes only when the Agent really changed that file.
 
 ## Requirements for collecting file changes
 

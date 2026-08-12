@@ -86,7 +86,7 @@ t.check(code, excludes(/process\.env\.\w+\s*\?\?/));
 t.sandbox.fileChanged("src/config/env.ts");
 ```
 
-`t.sandbox.fileChanged()` is a scoped assertion: after the run ends, it uses a Sandbox diff to determine whether the target file actually changed.
+`t.sandbox.fileChanged()` is a scoped assertion: after the run ends, it uses the agent-attributed diff to determine whether the target file actually changed.
 
 ## Run project tests or probe scripts
 

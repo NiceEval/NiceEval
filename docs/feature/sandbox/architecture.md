@@ -17,7 +17,7 @@
   → Agent runtime setup                    # agent.setup:本 Attempt 的连接与运行配置
   → test(t)                                # ← 驱动 Agent 与读取结果:
   │    t.send()                              #   驱动 agent(Adapter 在沙箱里跑 CLI,解析成 events);send 窗口内的变化归因给 agent
-  │    断言…                                 #   t.sandbox.fileChanged / t.sandbox.diff 读 agent 归因增量
+  │    断言…                                 #   t.sandbox.fileChanged 等归因断言读 agent 归因增量
   │    t.sandbox.upload* / runShell         # send 窗口外的普通 eval 归因操作
   → workspace.diff                         # 折叠全部 send 窗口；失败后果由本 Attempt 的证据依赖决定
   → assertions.evaluate → telemetry.collect   # 断言 finalize + Verdict 语义确定(judge 调用在此)、trace 收口
@@ -48,7 +48,7 @@ Ctrl+C 是可处理的中断，SIGKILL 不是。
 
 ## 变更归因:send 区间与分类账
 
-`t.sandbox.diff` / `fileChanged` / `fileDeleted` / `notInDiff` 回答的是「**agent** 改了什么」,不是「workspace 相对空目录变了什么」。归因由 runner 的**变更分类账**(私有 git ledger)提供:
+`fileChanged` / `fileDeleted` / `notInDiff` / `changedPaths` 这些归因断言回答的是「**agent** 改了什么」,不是「workspace 相对空目录变了什么」。归因由 runner 的**变更分类账**(私有 git ledger)提供:
 
 - **分类账在沙箱内、workdir 外。** ledger 的 git 目录放在 runner 控制的私有路径,以 workdir 为 work-tree。workdir 保持素净——agent 看不到 runner 的 `.git`,eval 需要真实 git repo 时自己 `git init`,agent 在 workdir 里的任何 git 操作都碰不到分类账。
 - **受限文件由分类账自己提权读取,不改题目。**
@@ -76,8 +76,8 @@ export default defineEval({
     await t.send("把 src/app.ts 改成 async/await。");
     //  send 窗口:从进入到返回的全部 workspace 变化落一笔 agent 归因
 
-    t.check(t.sandbox.diff.get("src/app.ts"), excludes(/callback/));
-    //  读的是最后一笔包含该路径的 agent delta 的 after 值;其间的 eval 写入不会被算进 agent 的账
+    t.sandbox.fileChanged("src/app.ts", { after: excludes(/callback/) });
+    //  读的是最后一笔包含该路径的 agent delta 的 after 端点;其间的 eval 写入不会被算进 agent 的账
   },
 });
 ```
@@ -90,7 +90,7 @@ export default defineEval({
 - **归因排除清单,runner 私有、baseline 时冻结。** 默认在任意目录深度排除 `.git`、`node_modules`、`__pycache__`、Python venv(`*venv*/`)、常见构建输出与包管理器缓存。不排除的话,prepare 命令里一次 `npm install` 或 agent 自建一次 venv 就会让分类账哈希成千上万个依赖文件,后续区间的二进制与缓存变化持续放大 object 库。
 - `diff.ignore` / `diff.include` 使用 workdir 根的 gitignore 风格 glob：无 `/` 的 pattern 匹配任意深度的同名项，含 `/` 的 pattern 从 workdir 根匹配，尾 `/` 表示目录。项目自己的 ignore 规则**不**参与归因判断——被项目 ignore 的文件照常入账。
 - **nested Git repository 不得变成证据盲区。** 私有 ledger 发现索引 mode `160000`（submodule / nested repo 的 gitlink）立即让当前阶段报执行错误，并列出路径与修法：被测 checkout 应直接位于 `workdir` 根；确实不参与评分的 nested repo 应由 `diff.ignore` 整体排除。只打印 Git warning 后继续会让 repo 内普通文件修改从 agent diff 静默消失，禁止这种降级。
-- **agent 归因增量 = 逐区间 delta 序列,不做跨区间压缩。** `workspace.diff` 阶段从分类账导出每个 send 区间自己的 before/after,按时序作为 workspace change 事实提交(契约见 [Record · Architecture](../record/architecture.md))。不压成单一 before/after 是硬约束:区间之间可能夹着 eval 写入,压缩会把 eval 的修改夹带进 agent 的账;「创建又删除」「改完又改回」也会被压没。文件级摘要(`net` / 触及区间)与 `diff.get(path)`(最后触及区间的终态)都是读取面从区间序列派生的视图,agent 区间内发生过的改动不因 eval 事后重写同一路径而被抹掉。
+- **agent 归因增量 = 逐区间 delta 序列,不做跨区间压缩。** `workspace.diff` 阶段从分类账导出每个 send 区间自己的 before/after,按时序作为 workspace change 事实提交(契约见 [Record · Architecture](../record/architecture.md))。不压成单一 before/after 是硬约束:区间之间可能夹着 eval 写入,压缩会把 eval 的修改夹带进 agent 的账;「创建又删除」「改完又改回」也会被压没。文件级摘要(`net` / 触及区间)与 `fileChanged(path)` 读取的最后触及区间终态都是读取面从区间序列派生的视图,agent 区间内发生过的改动不因 eval 事后重写同一路径而被抹掉。
 - **导出往返是常数次。** `workspace.diff` 用一条沙箱内命令完成**全部** agent 区间的路径枚举、文本 blob 读取与二进制尺寸统计,结果写进沙箱内的导出文件,宿主经文件通道一次下载并在宿主侧校验。provider 往返数与区间数、文件数都无关,不能退化成逐文件或逐区间的远端调用,也不把大证据灌进命令 stdout 通道。
 - 导出对 Sandbox 侧的全部要求是 git 与 POSIX shell 工具(分类账本身已要求 git),不要求 node、python 等运行时。
 - 单区间上限:最多导出 10,000 个路径、64 MiB 文本 blob 证据,预算只数真正要传输的字节(文本 before/after 实际字节)。

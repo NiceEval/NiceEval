@@ -307,6 +307,7 @@
     "棘轮",
     "闸",
     "sandbox case",
+    "t.sandbox.diff",
     "运行单元",
     "资源组",
     "已实现",
@@ -691,6 +692,11 @@
       "term": "记录",
       "use": "按词性和对象写 Record 事实对象、写入事件、持久化事实、日志条目或问题条目",
       "why": "可导航的数据对象、producer 写入动作和普通日志条目混用，读者无法判断保存位置与所有者"
+    },
+    {
+      "term": "t.sandbox.diff",
+      "use": "归因期望用 `changedPaths` / `noChanges` / `fileChanged` / `fileDeleted` / `notInDiff` 声明；文件当前内容用 `readText` 读取",
+      "why": "已定的 Assert-first author API 不存在通用或延迟的 diff subject；持久 `niceeval.diff/v1` 经中立 projection / Report 读取"
     },
     {
       "term": "sandbox case",

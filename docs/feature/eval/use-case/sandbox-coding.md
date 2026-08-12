@@ -16,17 +16,17 @@ export default defineEval({
     const test = await t.sandbox.runCommand("npm", ["test"]);
     t.check(test, commandSucceeded()).label("测试通过");
     t.sandbox.fileChanged("src/legacy.js").label("修改目标文件");
-    const diff = t.sandbox.diff.get("src/legacy.js") ?? "";
-    t.check(diff, includes("await")).label("使用 await");
+    const src = await t.sandbox.readText("src/legacy.js");
+    t.check(src, includes("await")).label("使用 await");
     t.judge.autoevals.closedQA("重构是否保持原有错误处理？", {
       input: "重构 src/legacy.js，保持原有错误处理。",
-      output: diff,
+      output: src,
     }).atLeast(0.7).label("重构质量");
   },
 });
 ```
 
-验证命令使用 `runCommand` 或 `runShell`，结果经 `t.check` 登记为值 Assertion。`fileChanged` 与 `t.sandbox.diff` 只评 Agent 归因的增量；Fixture 和验证写入不混进该 diff。
+验证命令使用 `runCommand` 或 `runShell`，结果经 `t.check` 登记为值 Assertion。`fileChanged` 负责 Agent 归因判定；`readText` 只提供当前内容，不判断是谁写入的。Fixture 和验证写入不混进归因。
 
 文件内容要送给 Judge 时先读取或取得字符串，再在根级 `t.judge` 中明确传入 `{ input, output }`。Judge 不接受路径或 `{ on }`。
 

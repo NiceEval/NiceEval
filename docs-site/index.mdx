@@ -139,7 +139,7 @@ npx niceeval show --latest  # read each Experiment's latest completed Run in the
 npx niceeval view --latest  # browse the same Sample in the web viewer
 ```
 
-If the subject under test is a coding agent that needs an isolated workspace (Codex, a Claude Code plugin/Skill), use `t.sandbox.uploadDirectory()` in the eval to lay down the workspace, `t.sandbox.fileChanged()` / `t.sandbox.file()` to check which files changed, and `t.sandbox.runCommand()` to run tests — see the standalone repository [coding-agent-skill](https://github.com/CorrectRoadH/coding-agent-skill) for reference.
+If the subject under test is a coding agent that needs an isolated workspace (Codex, a Claude Code plugin/Skill), use `t.sandbox.uploadDirectory()` in the eval to lay down the workspace, `t.sandbox.fileChanged()` / `t.sandbox.changedPaths()` to check which files changed, and `t.sandbox.runCommand()` to run tests — see the standalone repository [coding-agent-skill](https://github.com/CorrectRoadH/coding-agent-skill) for reference.
 
 ## Quickstart
 
