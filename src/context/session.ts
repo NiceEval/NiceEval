@@ -540,15 +540,11 @@ export class SessionManager {
     input: { text: string; files?: readonly InputFile[]; responses?: readonly InputResponse[] },
     ctx: AgentContext,
   ): Effect.Effect<PhysicalSendResult, ReturnType<typeof normalizeSendFailure>> {
-    return Effect.tryPromise({
-      try: (signal) => otel.runTurn((headers) => {
-        const base = this.withFiberSignal(ctx, signal);
-        const turnCtx: AgentContext = base.telemetry
-          ? { ...base, telemetry: { ...base.telemetry, headers } }
-          : base;
-        return this.sendAgent(input, turnCtx);
-      }),
-      catch: normalizeSendFailure,
+    return otel.runTurnEffect((headers) => {
+      const turnCtx: AgentContext = ctx.telemetry
+        ? { ...ctx, telemetry: { ...ctx.telemetry, headers } }
+        : ctx;
+      return this.sendAgentEffect(input, turnCtx);
     }).pipe(
       Effect.map((result) => {
         this.otelSpans.push(...result.spans);

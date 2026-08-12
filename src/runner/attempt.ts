@@ -657,7 +657,7 @@ export function runAttemptEffect<
       if (run.agent.kind !== "sandbox" && wantsSharedOtel && opts.otelPool) {
         enterPhase("telemetry.configure");
         try {
-          otelChannel = yield* tryPromiseAsDefect(() => opts.otelPool!.channel(run.agent.name));
+          otelChannel = yield* opts.otelPool!.channel(run.agent.name);
           const endpoint = otelChannel.receiver.endpoint(config.telemetry?.host ?? "127.0.0.1");
           const env = run.agent.tracing?.env?.(endpoint);
           telemetry = env ? { endpoint, env } : { endpoint };
@@ -1856,7 +1856,7 @@ async function runAttemptBody(
     if (receiver) {
       enterPhase("telemetry.collect");
       try {
-        await receiver.settle(250, 1500);
+        await receiver.settlePromise(250, 1500, signal);
         const spans = receiver.collect();
         if (spans.length) {
           // 归一 → 选语义 span → 按 call_id 把 transcript 的工具入参/出参 join 上去(span 自身不带命令文本)。
@@ -1884,7 +1884,7 @@ async function runAttemptBody(
       //(逐轮攒的 + 按本 attempt traceId sweep 回的迟到批)。
       enterPhase("telemetry.collect");
       try {
-        const late = await otel.sweep(state.manager.otelTraceIds, state.manager.otelTurnWindows);
+        const late = await otel.sweep(state.manager.otelTraceIds, state.manager.otelTurnWindows, signal);
         const traceIdsBeforeDeferred = new Set(state.manager.otelTraceIds);
         const deferred = state.manager.attributeDeferredOtel(late);
         const knownLate = late.filter((span) => traceIdsBeforeDeferred.has(span.traceId));
