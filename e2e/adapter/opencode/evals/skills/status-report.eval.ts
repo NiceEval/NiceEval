@@ -4,7 +4,6 @@ import {
   excludes,
   includes,
   satisfies,
-  toolMatch,
 } from "niceeval/expect";
 const SKILL_DIR = ".agents/skills";
 const STATUS_SKILL = "niceeval-opencode-status-report";
@@ -26,37 +25,35 @@ export default defineEval({
         "do not inspect another Skill. " +
         `Create ${reportPath} saying "all systems nominal" and follow the selected Skill exactly.`,
     );
-    await t.require(turn.succeeded());
-    t.check(t.noFailedActions());
+    await turn.succeeded().orStop();
+    t.check(
+      t.events,
+      satisfies<typeof t.events>(
+        "no failed tool or subagent actions",
+        (events) =>
+          events.every(
+            (event) =>
+              event.type !== "operation.finished" ||
+              event.status !== "failed",
+          ),
+      ),
+    );
     await t.group("OpenCode 原生 skill 工具选择目标，且没有选择 decoy", () => {
-      t.check(
-        turn.calledTool(
-          toolMatch("skill", {
-            input: satisfies(
-              '"skill" input',
-              (input) =>
-                typeof input === "object" &&
-                input !== null &&
-                !Array.isArray(input) &&
-                Object.is(input["name"], STATUS_SKILL),
-            ),
-          }),
-        ),
-      );
-      t.check(
-        turn.notCalledTool(
-          toolMatch("skill", {
-            input: satisfies(
-              '"skill" input',
-              (input) =>
-                typeof input === "object" &&
-                input !== null &&
-                !Array.isArray(input) &&
-                Object.is(input["name"], DECOY_SKILL),
-            ),
-          }),
-        ),
-      );
+      turn.calledTool("skill", {
+        input: (input) =>
+          typeof input === "object" &&
+          input !== null &&
+          !Array.isArray(input) &&
+          Object.is((input as Record<string, unknown>)["name"], STATUS_SKILL),
+      });
+      turn.calledTool("skill", {
+        input: (input) =>
+          typeof input === "object" &&
+          input !== null &&
+          !Array.isArray(input) &&
+          Object.is((input as Record<string, unknown>)["name"], DECOY_SKILL),
+        count: 0,
+      });
       t.check(
         turn.events,
         satisfies<typeof turn.events>(
@@ -71,10 +68,10 @@ export default defineEval({
         ),
       );
     });
-    await t.group("选中的 Skill 约定进入实际产物，decoy 约定未进入", () => {
-      t.check(t.sandbox.fileChanged(reportPath));
-      t.check(t.sandbox.file(reportPath), includes(STATUS_MARKER));
-      t.check(t.sandbox.file(reportPath), excludes(DECOY_MARKER));
+    await t.group("选中的 Skill 约定进入实际产物，decoy 约定未进入", async () => {
+      const content = await t.sandbox.readText(reportPath);
+      t.check(content, includes(STATUS_MARKER));
+      t.check(content, excludes(DECOY_MARKER));
     });
   },
 });

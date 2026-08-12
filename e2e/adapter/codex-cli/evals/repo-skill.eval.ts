@@ -1,5 +1,5 @@
 import { defineEval } from "niceeval";
-import { equals, includes, satisfies, toolMatch } from "niceeval/expect";
+import { equals, includes, satisfies } from "niceeval/expect";
 const SKILL_NAME = "calibre";
 const SKILL_PATH = `.agents/skills/${SKILL_NAME}/SKILL.md`;
 const EXPECTED_COMMAND = "ebook-convert novel.epub novel.azw3";
@@ -18,24 +18,19 @@ export default defineEval({
       `Inspect the installed ${SKILL_PATH} guide, then tell me the exact one-line command that converts ` +
         "novel.epub to novel.azw3. Do not run the conversion or create files.",
     );
-    await t.require(turn.succeeded());
-    t.check(
-      turn.calledTool(
-        toolMatch("shell", {
-          input: satisfies(
-            '"shell" input',
-            (input) =>
-              typeof input === "object" &&
-              input !== null &&
-              !Array.isArray(input) &&
-              (typeof input["command"] === "string"
-                ? new RegExp(SKILL_PATH).test(input["command"])
-                : new RegExp(SKILL_PATH).test(JSON.stringify(input) ?? "")),
-          ),
-          status: "completed",
-        }),
-      ),
-    );
+    await turn.succeeded().orStop();
+    turn.calledTool("shell", {
+      input: (input) =>
+        typeof input === "object" &&
+        input !== null &&
+        !Array.isArray(input) &&
+        (typeof (input as Record<string, unknown>)["command"] === "string"
+          ? new RegExp(SKILL_PATH).test(
+              (input as Record<string, unknown>)["command"] as string,
+            )
+          : new RegExp(SKILL_PATH).test(JSON.stringify(input) ?? "")),
+      status: "completed",
+    });
     t.check(
       turn.events,
       satisfies<typeof turn.events>("no skill.loaded event", (events) =>
@@ -43,6 +38,17 @@ export default defineEval({
       ),
     );
     t.check(turn.message, includes(EXPECTED_COMMAND));
-    t.check(t.noFailedActions());
+    t.check(
+      t.events,
+      satisfies<typeof t.events>(
+        "no failed tool or subagent actions",
+        (events) =>
+          events.every(
+            (event) =>
+              event.type !== "operation.finished" ||
+              event.status !== "failed",
+          ),
+      ),
+    );
   },
 });

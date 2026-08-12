@@ -15,7 +15,7 @@ export default defineEval({
     const turn = await t.send(
       "9 乘以 7 等于多少?先说明简短的推理过程,再给出最终数字。",
     );
-    await t.require(turn.succeeded());
+    await turn.succeeded().orStop();
 
     await t.group("usage 逐轮非空", () => {
       t.check(

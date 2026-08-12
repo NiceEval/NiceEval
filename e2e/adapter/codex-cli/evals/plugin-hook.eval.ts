@@ -45,8 +45,8 @@ export default defineEval({
     const turn = await t.send(
       'Say "ok" and nothing else. Do not run any commands or read any files.',
     );
-    await t.require(turn.succeeded());
-    t.check(t.succeeded());
+    await turn.succeeded().orStop();
+    t.succeeded().label("attempt 完成");
 
     await t.group(
       "hook 证据:SessionStart 钩子的输出真的落进了 Codex 自己的 session 记录",

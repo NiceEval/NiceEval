@@ -1,5 +1,5 @@
 import { defineEval } from "niceeval";
-import { isDefined, satisfies, includes, toolMatch } from "niceeval/expect";
+import { isDefined, satisfies, includes } from "niceeval/expect";
 
 function requiredEnv(name: string): string {
   const value = process.env[name];
@@ -26,29 +26,35 @@ export default defineEval({
         `Then report its output and remember this private sentinel for the next turn: ${sentinel}. ` +
         "Do not use network access, edit files, or run any other command.",
     );
-    await t.require(first.succeeded());
+    await first.succeeded().orStop();
     t.check(first.message, includes(marker));
 
     // The public converter supplies the canonical shell identity and the paired
     // completed result from the unmodified command_execution ThreadItem.
+    first.calledTool("shell", {
+      input: (input) =>
+        typeof input === "object" &&
+        input !== null &&
+        !Array.isArray(input) &&
+        (typeof (input as Record<string, unknown>)["command"] === "string"
+          ? new RegExp(marker).test(
+              (input as Record<string, unknown>)["command"] as string,
+            )
+          : new RegExp(marker).test(JSON.stringify(input) ?? "")),
+      status: "completed",
+    });
     t.check(
-      first.calledTool(
-        toolMatch("shell", {
-          input: satisfies(
-            '"shell" input',
-            (input) =>
-              typeof input === "object" &&
-              input !== null &&
-              !Array.isArray(input) &&
-              (typeof input["command"] === "string"
-                ? new RegExp(marker).test(input["command"])
-                : new RegExp(marker).test(JSON.stringify(input) ?? "")),
+      first.events,
+      satisfies<typeof first.events>(
+        "no failed tool or subagent actions",
+        (events) =>
+          events.every(
+            (event) =>
+              event.type !== "operation.finished" ||
+              event.status !== "failed",
           ),
-          status: "completed",
-        }),
       ),
     );
-    t.check(first.noFailedActions());
     t.check(
       first.usage?.inputTokens,
       satisfies(
@@ -65,14 +71,16 @@ export default defineEval({
     );
     t.check(
       t.sessionId,
-      isDefined("thread.started must be captured as the session id"),
+      isDefined<string | undefined>(
+        "thread.started must be captured as the session id",
+      ),
     );
 
     const resumed = await t.send(
       "Without running a command, tell me the private sentinel from my preceding message exactly.",
     );
-    await t.require(resumed.succeeded());
+    await resumed.succeeded().orStop();
     t.check(resumed.message, includes(sentinel));
-    t.check(t.succeeded());
+    t.succeeded().label("attempt completed");
   },
 });

@@ -14,7 +14,7 @@
 //    两轮各自的工具调用可能巧合落在同一个 item 号上,call ID 在这条会话的累积事件流里发生
 //    碰撞,导致按 call ID 配对结果与调用错位(同类问题见 evals/mcp.eval.ts 的说明)。
 import { defineEval } from "niceeval";
-import { excludes, includes, satisfies, toolMatch } from "niceeval/expect";
+import { excludes, includes } from "niceeval/expect";
 
 const relPath = "niceeval-e2e-coding-task.txt";
 const oldMarker = "niceeval-e2e-old-914";
@@ -34,56 +34,46 @@ export default defineEval({
         `(2) 跑 \`echo ${cmdMarker}\`,把命令的输出告诉我。` +
         `当前目录刻意不是 Git 仓库：不要运行 git 或 git diff；需要核对文件时请用 rg、sed 或 cat。`,
     );
-    await t.require(turn.succeeded());
+    await turn.succeeded().orStop();
 
     await t.group("文件变更事件已归一,调用与结果配对", () => {
-      t.check(
-        t.calledTool(
-          toolMatch("file_edit", {
-            input: satisfies(
-              '"file_edit" input',
-              (input) =>
-                typeof input === "object" &&
-                input !== null &&
-                !Array.isArray(input) &&
-                (typeof input["path"] === "string"
-                  ? new RegExp(relPath).test(input["path"])
-                  : new RegExp(relPath).test(JSON.stringify(input) ?? "")),
-            ),
-            status: "completed",
-          }),
-        ),
-      );
+      t.calledTool("file_edit", {
+        input: (input) =>
+          typeof input === "object" &&
+          input !== null &&
+          !Array.isArray(input) &&
+          (typeof (input as Record<string, unknown>)["path"] === "string"
+            ? new RegExp(relPath).test(
+                (input as Record<string, unknown>)["path"] as string,
+              )
+            : new RegExp(relPath).test(JSON.stringify(input) ?? "")),
+        status: "completed",
+      });
     });
     await t.group("shell 调用已归一,调用与结果配对", () => {
-      t.check(
-        t.calledTool(
-          toolMatch("shell", {
-            input: satisfies(
-              '"shell" input',
-              (input) =>
-                typeof input === "object" &&
-                input !== null &&
-                !Array.isArray(input) &&
-                (typeof input["command"] === "string"
-                  ? new RegExp(cmdMarker).test(input["command"])
-                  : new RegExp(cmdMarker).test(JSON.stringify(input) ?? "")),
-            ),
-            status: "completed",
-          }),
-        ),
-      );
+      t.calledTool("shell", {
+        input: (input) =>
+          typeof input === "object" &&
+          input !== null &&
+          !Array.isArray(input) &&
+          (typeof (input as Record<string, unknown>)["command"] === "string"
+            ? new RegExp(cmdMarker).test(
+                (input as Record<string, unknown>)["command"] as string,
+              )
+            : new RegExp(cmdMarker).test(JSON.stringify(input) ?? "")),
+        status: "completed",
+      });
     });
 
     t.check(turn.message, includes(cmdMarker));
 
-    // 双重核实:沙箱磁盘上的文件内容也要对得上(不是只信事件流自称)——目标行换了,其余行原样。
-    t.check(t.sandbox.fileChanged(relPath));
-    await t.group("目标行换了,其余行原样", () => {
-      t.check(t.sandbox.file(relPath), includes(newMarker));
-      t.check(t.sandbox.file(relPath), excludes(oldMarker));
-      t.check(t.sandbox.file(relPath), includes("alpha"));
-      t.check(t.sandbox.file(relPath), includes("omega"));
+    // 磁盘核实:沙箱里文件内容也要对得上(不是只信事件流自称)——目标行换了,其余行原样。
+    await t.group("目标行换了,其余行原样", async () => {
+      const content = await t.sandbox.readText(relPath);
+      t.check(content, includes(newMarker));
+      t.check(content, excludes(oldMarker));
+      t.check(content, includes("alpha"));
+      t.check(content, includes("omega"));
     });
   },
 });
