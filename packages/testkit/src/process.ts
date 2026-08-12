@@ -14,21 +14,23 @@ export interface DiagnosticTruncation {
   stderr: boolean;
 }
 
-/** `niceeval exp --json` 最后一行的公开原始事件。 */
-export interface ExpResultEvent {
-  event: "result";
-  status: "passed" | "failed" | "incomplete" | "interrupted";
-  passed: number;
-  failed: number;
-  errored: number;
-  reused?: number;
-  unstarted?: number;
-  completion: "complete" | "incomplete" | "interrupted";
-  snapshots: string[];
-  junit?: string;
+/** The invocation-level hand-off emitted by `niceeval exp --json`. */
+export interface InvocationReceipt {
+  readonly invocationId: string;
+  readonly runIds: readonly string[];
+  readonly startedAt: string;
+  readonly completedAt?: string;
+  readonly completion: "completed" | "interrupted" | "failed";
 }
 
-interface ExpStartEvent {
+/** The sole terminal envelope in a `niceeval exp --json` stream. */
+export interface ExpReceiptEvent {
+  readonly type: "receipt";
+  readonly receipt: InvocationReceipt;
+}
+
+/** The stream identity line emitted first by `niceeval exp --json`. */
+export interface ExpStartEvent {
   format: "niceeval.exp";
   schemaVersion: number;
   event: "start";
@@ -164,7 +166,7 @@ export type ExpEvent =
   | ExpJudgePrecheckEvent
   | ExpExperimentHookEvent
   | ExpLockWaitEvent
-  | ExpResultEvent;
+  | ExpReceiptEvent;
 
 export const DIAGNOSTIC_LIMIT = 4096;
 
@@ -278,28 +280,38 @@ export class ProcessReceipt {
     return out;
   }
 
-  /** 严格读取 `niceeval exp --json`，原样返回末尾的公开 `result` 事件。 */
-  expResult(): ExpResultEvent {
+  /**
+   * Strictly read `niceeval exp --json` and return its only terminal
+   * InvocationReceipt. It does not infer any Eval outcome from the stream.
+   */
+  expReceipt(): InvocationReceipt {
     const events = this.ndjson<unknown>();
     const first = events[0];
-    if (
-      !isRecord(first) ||
-      first.event !== "start" ||
-      first.format !== "niceeval.exp" ||
-      !isNonNegativeInteger(first.schemaVersion)
-    ) {
+    if (!isExpStartEvent(first)) {
       throw new Error(
-        `expResult(): stdout does not start with a niceeval.exp start event\n\n${this.diagnostic()}`,
+        `expReceipt(): stdout does not start with a valid niceeval.exp start event\n\n${this.diagnostic()}`,
       );
     }
 
-    const result = events.at(-1);
-    if (!isExpResultEvent(result)) {
+    const receiptIndexes = events.flatMap((event, index) =>
+      isReceiptEvent(event) ? [index] : [],
+    );
+    if (
+      receiptIndexes.length !== 1 ||
+      receiptIndexes[0] !== events.length - 1
+    ) {
       throw new Error(
-        `expResult(): stdout does not end with a valid niceeval.exp result event\n\n${this.diagnostic()}`,
+        `expReceipt(): stdout must contain exactly one receipt event as its final line\n\n${this.diagnostic()}`,
       );
     }
-    return result;
+
+    const terminal = events.at(-1);
+    if (!isExpReceiptEvent(terminal)) {
+      throw new Error(
+        `expReceipt(): stdout does not end with a valid InvocationReceipt\n\n${this.diagnostic()}`,
+      );
+    }
+    return terminal.receipt;
   }
 }
 
@@ -311,19 +323,44 @@ function isNonNegativeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0;
 }
 
-function isExpResultEvent(value: unknown): value is ExpResultEvent {
+function isNonNegativeIntegerRecord(value: unknown): value is Record<string, number> {
+  return isRecord(value) && Object.values(value).every(isNonNegativeInteger);
+}
+
+function isExpStartEvent(value: unknown): value is ExpStartEvent {
   if (!isRecord(value)) return false;
-  if (value.event !== "result") return false;
-  if (!(["passed", "failed", "incomplete", "interrupted"] as const).includes(value.status as never)) return false;
-  if (!isNonNegativeInteger(value.passed)) return false;
-  if (!isNonNegativeInteger(value.failed)) return false;
-  if (!isNonNegativeInteger(value.errored)) return false;
-  if (value.reused !== undefined && !isNonNegativeInteger(value.reused)) return false;
-  if (value.unstarted !== undefined && !isNonNegativeInteger(value.unstarted)) return false;
-  if (!(["complete", "incomplete", "interrupted"] as const).includes(value.completion as never)) return false;
-  if (!Array.isArray(value.snapshots) || !value.snapshots.every((item) => typeof item === "string")) return false;
-  if (value.junit !== undefined && typeof value.junit !== "string") return false;
+  if (value.format !== "niceeval.exp" || value.event !== "start") return false;
+  if (!isNonNegativeInteger(value.schemaVersion)) return false;
+  if (!isNonNegativeInteger(value.total)) return false;
+  if (!isNonNegativeInteger(value.configs)) return false;
+  if (!isNonNegativeInteger(value.concurrency)) return false;
+  if (!isNonNegativeInteger(value.reused)) return false;
+  if (
+    value.experimentConcurrency !== undefined &&
+    !isNonNegativeIntegerRecord(value.experimentConcurrency)
+  ) return false;
   return true;
+}
+
+function isReceiptEvent(value: unknown): value is Record<string, unknown> {
+  return isRecord(value) && value.type === "receipt";
+}
+
+function isExpReceiptEvent(value: unknown): value is ExpReceiptEvent {
+  return isReceiptEvent(value) && isInvocationReceipt(value.receipt);
+}
+
+function isInvocationReceipt(value: unknown): value is InvocationReceipt {
+  if (!isRecord(value)) return false;
+  if (typeof value.invocationId !== "string") return false;
+  if (!Array.isArray(value.runIds) || !value.runIds.every((runId) => typeof runId === "string")) return false;
+  if (typeof value.startedAt !== "string") return false;
+  if (value.completedAt !== undefined && typeof value.completedAt !== "string") return false;
+  return (
+    value.completion === "completed" ||
+    value.completion === "interrupted" ||
+    value.completion === "failed"
+  );
 }
 
 function truncateForDisplay(text: string, stream: "stdout" | "stderr"): string {
