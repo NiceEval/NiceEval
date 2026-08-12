@@ -102,6 +102,11 @@ import {
   type RunnerSourceOriginInput,
   type RunnerSourceProducerInvalid,
 } from "./source-producer.ts";
+import {
+  createRunnerSandboxWritePlan,
+  type RunnerSandboxOriginInput,
+  type RunnerSandboxRecordProducerError,
+} from "./sandbox-record-producer.ts";
 import type { SealedAttemptAssertions } from "../assertions/api.ts";
 import type {
   AgentRun,
@@ -303,6 +308,7 @@ export type RunnerRecordWriteError<AttachmentError> =
   | MembershipProvenancePayloadBuildErrorV1
   | SealedAssertionsOriginEncodingError
   | RunnerSourceProducerInvalid
+  | RunnerSandboxRecordProducerError
   | ObservabilityAttachmentBuildErrorV1
   | RunnerObservabilityProducerErrorV1
   | AttachmentError;
@@ -1173,6 +1179,7 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
             }
 
             const sourceOrigins: RunnerSourceOriginInput[] = [];
+            const sandboxOrigins: RunnerSandboxOriginInput[] = [];
             for (const [slotId, active] of recordRun.attempts) {
               if (!active.completed) continue;
               if (active.durable === undefined) return yield* Effect.fail(attemptInvalid());
@@ -1181,9 +1188,15 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
                 result: active.durable.result,
                 assertions: active.durable.origin.assertions,
               }));
+              sandboxOrigins.push(Object.freeze({
+                slotId,
+                sandbox: active.durable.result.sandbox,
+              }));
             }
             const sourcePlan = createRunnerSourceWritePlan(sourceOrigins);
             if (Either.isLeft(sourcePlan)) return yield* Effect.fail(sourcePlan.left);
+            const sandboxPlan = createRunnerSandboxWritePlan(sandboxOrigins);
+            if (Either.isLeft(sandboxPlan)) return yield* Effect.fail(sandboxPlan.left);
 
             const originPlans: {
               readonly slotId: SlotId;
@@ -1198,6 +1211,8 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
               }
               const sourceSites = sourcePlan.right.attemptWrites.get(slotId);
               if (sourceSites === undefined) return yield* Effect.fail(attemptInvalid());
+              const sandboxWrite = sandboxPlan.right.attemptWrites.get(slotId);
+              if (sandboxWrite === undefined) return yield* Effect.fail(attemptInvalid());
               const plan = yield* EvaluationRecordContractV1.preparePlan({
                 startedAt: asUtcMillis(input.startedAt),
                 completedAt: asUtcMillis(completedAt),
@@ -1215,6 +1230,7 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
                     durable.observability.diagnostics,
                     ...durable.pluginWrites,
                     sourceSites,
+                    sandboxWrite,
                   ]),
                 })],
               });
