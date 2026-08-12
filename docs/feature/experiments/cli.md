@@ -96,7 +96,7 @@ interface InvocationReceipt {
 }
 ```
 
-receipt 不复制 locator、Verdict、usage、cost 或 Attempt 计数。需要这些值时，以 `runIds` 运行 `explicit-runs/v1` analysis selection，或调用 `niceeval show --run <runId>`。
+receipt 不复制 locator、Verdict、usage、cost 或 Attempt 计数。需要这些值时，以 `runIds` 运行 `explicit-runs` analysis selection，或调用 `niceeval show --run <runId>`。
 
 ## `--json`
 

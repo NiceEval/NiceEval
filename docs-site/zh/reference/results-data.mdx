@@ -14,7 +14,7 @@ description: "从 frozen RecordReader 选择 AnalysisSample，并用 RecordAttac
 
 ```ts
 const sampleHandle = yield* selectAnalysisSample(reader, {
-  policy: "explicit-runs/v1",
+  policy: "explicit-runs",
   input: {
     runIds: [runId],
   },
@@ -23,11 +23,11 @@ const sampleHandle = yield* selectAnalysisSample(reader, {
 const sample = sampleHandle.sample;
 ```
 
-`explicit-runs/v1` 选择精确 Run。`latest-runs/v1` 使用 Run-owned Evaluations Attachment，为目标 Experiment 选择最后完成的 Run：
+`explicit-runs` 选择精确 Run。`latest-runs` 使用 Run-owned Evaluations Attachment，为目标 Experiment 选择最后完成的 Run：
 
 ```ts
 const sampleHandle = yield* selectAnalysisSample(reader, {
-  policy: "latest-runs/v1",
+  policy: "latest-runs",
   input: {
     experimentIds: ["checkout"],
   },

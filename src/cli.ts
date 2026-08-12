@@ -27,8 +27,12 @@ import {
   RunIdSchema,
   type RecordRoot,
 } from "./record/index.ts";
-import type { AnalysisSelectionRequest, ExperimentId, RunId } from "./analysis/index.ts";
-import { EvaluationRecordIdentitySchema } from "./eval/record/attachment.ts";
+import {
+  ExperimentIdSchema,
+  type AnalysisSelectionRequest,
+  type ExperimentId,
+  type RunId,
+} from "./analysis/index.ts";
 import { defaultOverviewReport } from "./report/built-in/overview.ts";
 import { reportRoute, type ReportRoute } from "./report/author/identity.ts";
 import type { Report } from "./report/author/model.ts";
@@ -2125,14 +2129,14 @@ function explicitSelection(values: readonly string[]): AnalysisSelectionRequest 
   }
   const nonEmptyRunIds: readonly [RunId, ...RunId[]] = [first, ...rest];
   return Object.freeze({
-    policy: "explicit-runs/v1",
+    policy: "explicit-runs",
     input: Object.freeze({ runIds: nonEmptyRunIds }),
   });
 }
 
 function latestSelection(values: readonly string[] | undefined): AnalysisSelectionRequest {
   if (values === undefined) {
-    return Object.freeze({ policy: "latest-runs/v1", input: Object.freeze({}) });
+    return Object.freeze({ policy: "latest-runs", input: Object.freeze({}) });
   }
   const experimentIds = uniqueExactExperimentIds(values);
   const [first, ...rest] = experimentIds;
@@ -2141,7 +2145,7 @@ function latestSelection(values: readonly string[] | undefined): AnalysisSelecti
   }
   const nonEmptyExperimentIds: readonly [ExperimentId, ...ExperimentId[]] = [first, ...rest];
   return Object.freeze({
-    policy: "latest-runs/v1",
+    policy: "latest-runs",
     input: Object.freeze({ experimentIds: nonEmptyExperimentIds }),
   });
 }
@@ -2166,7 +2170,7 @@ function uniqueExactExperimentIds(values: readonly string[]): readonly Experimen
   const result: ExperimentId[] = [];
   const seen = new Set<string>();
   for (const value of values) {
-    const decoded = Schema.decodeUnknownEither(EvaluationRecordIdentitySchema)(value);
+    const decoded = Schema.decodeUnknownEither(ExperimentIdSchema)(value);
     if (Either.isLeft(decoded)) {
       throw usageError(`Invalid --experiment value "${value}": expected one exact ExperimentId.\n`);
     }
@@ -2221,7 +2225,7 @@ function stringProperty(value: unknown, key: string): string | undefined {
 }
 
 function emptyReportSelectionFailure(request: ReportCliRequest): CliUsageError {
-  const scope = request.selection.policy === "latest-runs/v1"
+  const scope = request.selection.policy === "latest-runs"
     ? request.selection.input.experimentIds === undefined
       ? "--latest"
       : "--latest with --experiment"

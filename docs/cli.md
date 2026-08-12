@@ -59,7 +59,7 @@ show / view / static export
 
 Reports runtime 从不打开 Record path，也不自行读取 Attachment bytes。
 
-`--run` 与 `--latest` 分别映射到 `explicit-runs/v1` 与 `latest-runs/v1` analysis selection。CLI 不从目录名、时间或显示文本猜测对象。`view --out` 写出自包含站点；浏览器只读取站点自己的文件。
+`--run` 与 `--latest` 分别映射到 `explicit-runs` 与 `latest-runs` analysis selection。CLI 不从目录名、时间或显示文本猜测对象。`view --out` 写出自包含站点；浏览器只读取站点自己的文件。
 
 ### 恢复
 

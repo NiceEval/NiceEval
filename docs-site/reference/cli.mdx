@@ -22,7 +22,7 @@ The [NiceEval](https://niceeval.com/) CLI discovers, runs, and reviews evals. Ru
     Deletes the temporary Record directory left by one named writer. It never deletes a completed Run or Attempt.
   </Card>
   <Card title="npx niceeval show --run | --latest" icon="terminal">
-    Runs a terminal Report. `explicit-runs/v1` or `latest/v1` forms the AnalysisSample.
+    Runs a terminal Report. `explicit-runs` or `latest-runs` forms the AnalysisSample.
   </Card>
   <Card title="npx niceeval view --run | --latest" icon="eye">
     Opens a web view for one fixed ReportExecution. End and rerun it to read an edited Record.
@@ -173,7 +173,7 @@ npx niceeval view --latest
 npx niceeval view --run 01H...
 ```
 
-This opens the local Record viewer. It shares `show`'s default Report and explicit selection: it creates a core-only AnalysisSample with `explicit-runs/v1` or `latest/v1` on a quiescent Record, then reads only the channels requested by the ReportPlan.
+This opens the local Record viewer. It shares `show`'s default Report and explicit selection: it creates a core-only AnalysisSample with `explicit-runs` or `latest-runs` on a quiescent Record, then reads only the channels requested by the ReportPlan.
 
 A previous local execution can leave `carried` or `accepted` Members for slots that reused an Attempt. These are adoption facts, not a rerun state. The same AnalysisSample does not reselect a moving head. `--experiment`, `--eval`, and `--record` narrow the same way for both hosts.
 

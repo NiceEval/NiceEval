@@ -111,7 +111,7 @@ interface InvocationReceipt {
 }
 ```
 
-receipt 不复制 locator、Verdict、Usage、cost、Attempt 计数或 Report 聚合。需要这些结果时，以 `runIds` 打开 Record，并用 `explicit-runs/v1` analysis selection 创建 `AnalysisSample`。
+receipt 不复制 locator、Verdict、Usage、cost、Attempt 计数或 Report 聚合。需要这些结果时，以 `runIds` 打开 Record，并用 `explicit-runs` analysis selection 创建 `AnalysisSample`。
 
 进程退出码由本次 Runner 已知的 Verdict、执行错误和 Invocation completion 计算。receipt 只描述调用完成情况，不成为另一份结果摘要。
 
