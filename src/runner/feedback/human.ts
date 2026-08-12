@@ -18,13 +18,12 @@
 // (buildFailuresPanelRows),不再逐条铺开;新增的 WARNINGS 面板按 code 汇总本次去重后的诊断。
 // 详见 docs/feature/experiments/cli.md「运行中的 live 面板」与「人看的结束反馈」。
 //
-// 完成页(summary/saved 两个永久事件)不再调用 `./reporters/table.ts` 的 `renderRunReport()`
-// 大表:失败优先摘要 + locator + show/view 下一步 + 折叠后的快照路径,完整对比留给
-// `niceeval show` / `niceeval view`(见 docs 的「人看的结束反馈」)。
+// 完成页(summary/receipt 两个永久事件)不再调用 `./reporters/table.ts` 的 `renderRunReport()`
+// 大表:失败优先摘要留在终端，完整证据始终由 receipt 中的真实 Run ID 打开。
 
 import { t } from "../../i18n/index.ts";
 import { formatCost } from "../../shared/format.ts";
-import { compactFactSummary, fitCompactFactSummary } from "../../assertions/display.ts";
+import { compactAssertionSummary, fitCompactAssertionSummary } from "../../assertions/display.ts";
 import { encodeAttemptKey, HALT_DIAGNOSTIC_CODE } from "../types.ts";
 import {
   panelCapabilityOf as panelCapability,
@@ -109,10 +108,6 @@ const FAILURE_GROUPS_CAP = 10;
 /** 非 TTY / `--json` 没有可依赖的终端宽度,失败单行投影用固定预算(见
  *  docs/feature/assertions/library/display.md「一条摘要怎样排版」)。 */
 const NON_TTY_FAILURE_LINE_MAX_CHARS = 100;
-/** 快照结果路径超过这个数量才折叠成「前 N 个 + … 还有 M 个」,不是 cli.md 的强制数字 ——
- *  docs 的两个完成页示例(FAILED / PASSED)对同样 5 条路径给了两种不同的排版,契约本身只要求
- *  「多时折叠,不逐行刷满几十个」,这里选一个单一、可预测的算法同时满足两边。 */
-const RESULTS_PATH_CAP = 3;
 /** 非 TTY human 退化流的空闲 heartbeat 阈值(见 cli.md「什么动态更新,什么逐条追加」表)。 */
 const NON_TTY_HEARTBEAT_IDLE_MS = 30_000;
 /** dashboard 高度预留:避免最后一行触发终端自动滚动(与 live.ts 旧实现的 `rows - 2` 同一动机,
@@ -136,7 +131,7 @@ export function createHumanRenderer(options: HumanRendererOptions): FeedbackRend
 
 /** 一条永久事件 → 待写入的整行文本(不含结尾换行,调用方统一 join("\n") + "\n")。
  *  空数组表示这个事件类型在 human 下没有可见内容(目前没有这种情形,保留以防未来扩展)。
- *  `panel` 是面板的传输能力(见 `panelCapabilityOf`)——只有面板体裁(plan/summary/saved)
+ *  `panel` 是面板的传输能力(见 `panelCapabilityOf`)——只有面板体裁(plan/summary/receipt)
  *  消费它;流事件(failure/diagnostic/…)不画框,不需要这份能力。 */
 export function renderDurableLines(
   event: DurableFeedbackEvent,
@@ -250,8 +245,8 @@ export function renderDurableLines(
     }
     case "summary":
       return buildSummaryLines(event, state, panel);
-    case "saved":
-      return buildSavedLines(event, state, panel);
+    case "receipt":
+      return buildReceiptLines(event, panel);
     default: {
       // 穷尽性检查:新增 DurableFeedbackEvent 变体时这里编译期报错提醒补上对应分支。
       const exhaustive: never = event;
@@ -264,7 +259,7 @@ export function renderDurableLines(
  * 把一条永久事件的渲染行写到正确的流(见 docs/feature/experiments/cli.md「输出流和落盘节奏」
  * 的流边界表)。TTY 与非 TTY 两个变体在这里分岔,共用同一份「事件 → 文本行」的纯函数:
  *
- * - TTY(`allStdout: false`):`stdout` 只留给"最终摘要与结果路径"("summary"/"saved" 两个
+ * - TTY(`allStdout: false`):`stdout` 只留给"最终摘要与 Run 指引"("summary"/"receipt" 两个
  *   事件);计划、失败、诊断等其它永久事件与 live 面板本身都在 `stderr`。
  * - 非 TTY(`allStdout: true`):从 start 到结束摘要是单一有序的 `stdout` 追加流,`stderr` 只留
  *   给启动期用法/配置错误——两个 OS stream 被 CI runner 或 agent 工具层分开缓冲时会打乱顺序,
@@ -274,7 +269,7 @@ function writeDurable(io: FeedbackIO, event: DurableFeedbackEvent, state: RunFee
   const lines = renderDurableLines(event, state, panelCapabilityForFeedback(io));
   if (lines.length === 0) return;
   const text = `${lines.join("\n")}\n`;
-  if (allStdout || event.type === "summary" || event.type === "saved") io.stdout.write(text);
+  if (allStdout || event.type === "summary" || event.type === "receipt") io.stdout.write(text);
   else io.stderr.write(text);
 }
 
@@ -341,7 +336,7 @@ function buildFailureFactLine(failure: FailureFact, maxWidth: number): string {
   const prefix = `${FAILURE_SYMBOL} ${failure.locator}  ${failure.identity.evalId}  [${failure.who}]  `;
   const budget = Math.max(0, maxWidth - stringWidth(prefix));
   const info = failure.fact
-    ? fitCompactFactSummary(failure.fact, budget)
+    ? fitCompactAssertionSummary(failure.fact, budget)
     : buildErroredInfo(failure.phase, failure.code, failure.reason);
   return prefix + clipDisplayWidth(info, budget);
 }
@@ -358,7 +353,7 @@ function buildErroredInfo(phase: LifecyclePhase | undefined, code: string | unde
   return reason ? `${base}: ${reason}` : base;
 }
 
-/** 按显示列硬夹紧,超宽尾部截断补 `…`。`fitCompactFactSummary` 的截断口径是字符数,不是
+/** 按显示列硬夹紧,超宽尾部截断补 `…`。`fitCompactAssertionSummary` 的截断口径是字符数,不是
  *  显示列(见该函数注释「显示宽度的精确裁剪仍归渲染面」);这里补上那道显示宽度的硬夹紧,
  *  堵住 CJK 内容"按字符数收口仍超显示列"的缝,保证渲染行恒不超过预算。 */
 function clipDisplayWidth(text: string, maxWidth: number): string {
@@ -404,8 +399,8 @@ function buildDiagnosticLines(event: DurableFeedbackEvent & { type: "diagnostic"
 
 /** 结束结论(`FAILED`/`PASSED`/…)+ `FAILURES`(有失败才出现)+ `KEPT SANDBOXES`(有留存才
  *  出现)——三个各自独立的面板,用空行分隔(docs/feature/experiments/cli.md「人看的结束反馈」、
- *  docs/feature/sandbox/cli.md「run 收尾输出」)。`NEXT` 面板不在这里:它要等 `saved` 事件
- *  的落盘路径,见 `buildSavedLines`。 */
+ *  docs/feature/sandbox/cli.md「run 收尾输出」)。`NEXT` 面板不在这里:它要等 `receipt` 事件
+ *  的真实 Run ID,见 `buildReceiptLines`。 */
 function buildSummaryLines(
   event: DurableFeedbackEvent & { type: "summary" },
   state: RunFeedbackState,
@@ -413,10 +408,9 @@ function buildSummaryLines(
 ): string[] {
   const { summary, completion } = event;
   const fullReuse = state.total > 0 && state.total === state.reused;
-  // required reporter(默认 artifacts、显式 --json/--junit)写失败必须让这行判红——它不是
-  // CompletionStatus 的第四个值(那个枚举只有 complete/incomplete/interrupted 三态),但和
-  // ci.ts 的 resultStatusWord() 同一个判断顺序:不能让人看到一句会被误读成"全绿"的 PASSED,
-  // 而进程实际以非零退出(见 computeCiExitCode 对 reporterErrors 的同一条判断)。
+  // required reporter(显式 --junit)写失败必须让这行判红——它不是
+  // CompletionStatus 的第四个值(那个枚举只有 complete/incomplete/interrupted 三态),但必须
+  // 避免人看到一句会被误读成"全绿"的 PASSED、进程却以非零退出。
   const verdictWord =
     completion.status === "interrupted"
       ? t("feedback.human.resultInterrupted")
@@ -560,7 +554,7 @@ function groupFailuresByShape(failures: readonly FailureNotice[]): FailureShapeG
  *  结构化执行错误)按 `phase · code` 分组,摘要文本复用 `buildErroredInfo`(不带 message)。 */
 function failureShapeOf(failure: FailureNotice): { key: string; shapeText: string } {
   if (failure.fact) {
-    const shapeText = compactFactSummary({ ...failure.fact, received: undefined, additionalFailures: 0 });
+    const shapeText = compactAssertionSummary({ ...failure.fact, received: undefined, additionalFailures: 0 });
     return { key: `fact\u0000${failure.fact.title}\u0000${failure.fact.matcher ?? ""}`, shapeText };
   }
   return {
@@ -570,7 +564,7 @@ function failureShapeOf(failure: FailureNotice): { key: string; shapeText: strin
 }
 
 /** 行内 facts 摘要提示(cli.md「人看的结束反馈」):有 `ctx.fact()` 上报的运行事实才提示,
- *  只给键数,不展开值——完整键值表留给 `niceeval show @<locator>`,面板保持密度不展开。 */
+ *  只给键数,不展开值——完整键值表留给 receipt 指向的 Record Run,面板保持密度不展开。 */
 function factsHint(factsCount: number | undefined): string {
   return factsCount !== undefined && factsCount > 0 ? `  ${t("feedback.human.failureFacts", { count: factsCount })}` : "";
 }
@@ -591,7 +585,7 @@ function buildSingleFailureGroupRows(failure: FailureNotice, contentWidth: numbe
   const indent = stringWidth(`${FAILURE_SYMBOL} `);
   const budget = Math.max(0, contentWidth - indent);
   const info = failure.fact
-    ? fitCompactFactSummary(failure.fact, budget)
+    ? fitCompactAssertionSummary(failure.fact, budget)
     : buildErroredInfo(failure.phase, failure.code, failure.reason);
   return [
     { kind: "line", text: identityLine },
@@ -626,34 +620,17 @@ function warningCodeLabel(code: string, count: number): string {
   return count > 1 ? `${code} ×${count}` : code;
 }
 
-/** `NEXT` 面板(docs/feature/experiments/cli.md「人看的结束反馈」):下钻命令(只给第一条
- *  失败做示范)+ `Compare:`,再加一条嵌套 `RESULTS` 横隔带出本次落盘的快照路径——两部分
- *  在旧实现里分属两个事件(summary 的下钻命令 / saved 的路径),现在合成同一个面板,
- *  借 `state.failures` 在 `saved` 事件触发时仍然可读(reducer 早已把失败收进 state)。 */
-function buildSavedLines(
-  event: DurableFeedbackEvent & { type: "saved" },
-  state: RunFeedbackState,
+/** `NEXT` 面板只由 receipt 的真实 Run ID 给出 Record 读取命令。 */
+function buildReceiptLines(
+  event: DurableFeedbackEvent & { type: "receipt" },
   panel: { mode: PanelMode; width: number },
 ): string[] {
   const rows: PanelRow[] = [];
-  const first = state.failures[0];
-  if (first) {
-    rows.push({ kind: "line", text: t("feedback.human.inspect", { locator: first.locator }) });
-    rows.push({ kind: "line", text: t("feedback.human.evalHint", { locator: first.locator }) });
-    rows.push({ kind: "line", text: t("feedback.human.trace", { locator: first.locator }) });
-    rows.push({ kind: "line", text: t("feedback.human.diffHint", { locator: first.locator }) });
+  for (const runId of event.receipt.runIds) {
+    rows.push({ kind: "line", text: `niceeval show --run ${runId}` });
   }
-  // 比较命令直接是 `niceeval view`——它读整个结果根,不需要(也不该被)目录路径收窄成
-  // 一个 eval 位置参数(那是选择语义,不是报告分组语义);见 docs/feature/experiments/cli.md。
-  rows.push({ kind: "line", text: t("feedback.human.compare") });
-
-  const paths = event.paths;
-  if (paths.length > 0) {
-    rows.push({ kind: "divider", title: t("feedback.human.resultsHeader") });
-    for (const p of paths.slice(0, RESULTS_PATH_CAP)) rows.push({ kind: "line", text: p });
-    if (paths.length > RESULTS_PATH_CAP) {
-      rows.push({ kind: "line", text: t("feedback.human.resultsMore", { count: paths.length - RESULTS_PATH_CAP }) });
-    }
+  if (rows.length === 0) {
+    rows.push({ kind: "line", text: "No published Record Runs are available for this invocation." });
   }
   return renderPanel({ title: t("feedback.human.nextHeader"), rows, width: panel.width, mode: panel.mode });
 }

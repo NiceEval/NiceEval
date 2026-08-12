@@ -11,7 +11,7 @@ import { spawn } from "node:child_process";
 import { hostname } from "node:os";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, relative, resolve as resolvePath } from "node:path";
+import { dirname, join, resolve as resolvePath } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs as nodeParseArgs } from "node:util";
 import { Data, Effect, Either, Schema } from "effect";
@@ -74,7 +74,6 @@ import {
   recommendedConcurrencyForPreparedPairs,
 } from "./runner/sandbox-selection.ts";
 import { JUnit } from "./runner/reporters/json.ts";
-import { Artifacts as ArtifactsReporter } from "./runner/reporters/artifacts.ts";
 import {
   resolveOutputForm,
   createFeedbackCoordinator,
@@ -1276,8 +1275,8 @@ function openBrowser(url: string): Effect.Effect<boolean, CliFailure> {
  *   experiment 求和得到 `unstarted`。
  * - `"reporter-error:<reporter>"` 诊断转成 `ReporterError[]`;`required` 字段来自事件自带的
  *   `data.required`,直接反映这个 reporter 注册时的真实 required/best-effort 分类(见上面
- *   构造 `reporters: ReporterRegistration[]` 的地方——artifacts / --json / --junit 恒
- *   `required: true`,`config.reporters` 恒 `false`),不是一个统一写死的占位值。
+ *   构造 `reporters: ReporterRegistration[]` 的地方——`--junit` 为 `required: true`,
+ *   `config.reporters` 恒 `false`),不是一个统一写死的占位值。
  * - `earlyExitUnstarted` 从反馈状态的 attempt:early-exit 计数派生(减去 fail-fast 的那部分——
  *   那是「未完整覆盖」,进 unstarted,不是「省下的重复验证」)。
  */
@@ -1942,15 +1941,24 @@ function runEvaluationCommand(
       (inputGuard) => Effect.sync(() => inputGuard.stop()),
     );
 
-    const artifacts = ArtifactsReporter();
-    const reporters: ReporterRegistration[] = [{ reporter: artifacts, name: "artifacts", required: true }];
+    let invocationSummary: InvocationSummary | undefined;
+    const reporters: ReporterRegistration[] = [];
     if (flags.junit) reporters.push({ reporter: JUnit(flags.junit), name: "junit", required: true, target: flags.junit });
     (config.reporters ?? []).forEach((reporter, index) => {
       reporters.push({ reporter, name: `config-reporter-${index}`, required: false });
     });
+    reporters.push({
+      name: "cli-summary",
+      required: false,
+      reporter: {
+        onInvocationComplete(summary) {
+          invocationSummary = summary;
+        },
+      },
+    });
     // Runner is Effect-native: interruption from NodeRuntime propagates through
     // this exact tree and then releases the Scope above. No Promise adapter.
-    const summary = yield* cliEffect("run evaluations", runEvals<never, never>({
+    const receipt = yield* cliEffect("run evaluations", runEvals<never, never>({
       config,
       evals,
       agentRuns,
@@ -1966,18 +1974,14 @@ function runEvaluationCommand(
     }));
     yield* releaseResources;
 
+    const summary = invocationSummary;
+    if (summary === undefined) {
+      return yield* Effect.fail(cliFailure("collect invocation summary", new Error("Runner completed without an invocation summary.")));
+    }
+
     const completion = assembleInvocationCompletion(coordinator.state);
-    const junitPath = flags.junit && !completion.reporterErrors.some((error) => error.reporter === "junit") ? flags.junit : undefined;
-    const paths = artifacts.outputDirs().map(({ dir }) => {
-      const relativePath = relative(cwd, dir);
-      return relativePath && !relativePath.startsWith("..") ? relativePath : dir;
-    });
-    const pathsByExperiment = new Map(artifacts.outputDirs().map(({ experimentId, dir }) => {
-      const relativePath = relative(cwd, dir);
-      return [experimentId, relativePath && !relativePath.startsWith("..") ? relativePath : dir] as const;
-    }));
-    yield* closeSession({ status: completion.status, completion, paths: pathsByExperiment });
-    yield* cliPromise("finish feedback", () => coordinator.finish({ summary, completion, paths, junit: junitPath }));
+    yield* closeSession({ status: completion.status, completion, receipt, completedAt: receipt.completedAt });
+    yield* cliPromise("finish feedback", () => coordinator.finish({ summary, completion, receipt }));
 
     const foldedStats = evalLevelStats(summary.results, (result) => `${result.experimentId ?? ""}|${result.id}`);
     return computeExitCode({ ...summary, failed: foldedStats.failed, errored: foldedStats.errored }, completion);

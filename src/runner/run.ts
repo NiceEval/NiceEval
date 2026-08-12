@@ -5,7 +5,7 @@
 import { Effect, Cause, Data, Either, Exit, Option } from "effect";
 import { probeJudge } from "../assertions/judge.ts";
 import { t } from "../i18n/index.ts";
-import { cacheKey, computeConfigHash, planProjectTarget } from "./fingerprint.ts";
+import { cacheKey, planProjectTarget } from "./fingerprint.ts";
 import { agentInstallPlansForRun } from "./config-identity.ts";
 import { OtelReceiverPool } from "../o11y/otlp/turn-otel.ts";
 import {
@@ -35,6 +35,7 @@ import type {
   AttemptError,
   ExperimentHookContext,
   LifecyclePhase,
+  InvocationReceipt,
   AttemptRef,
   RunOptions,
 } from "./types.ts";
@@ -91,7 +92,6 @@ import {
   type CaseLockRecord,
 } from "./lock.ts";
 import { acquireGateSlot, type GateLeaseClaim, type GateLeaseRecord } from "./gate-lease.ts";
-import type { RunManifests } from "../record/manifest.ts";
 import {
   openRunnerRecordCoordinator,
   type RecordAttemptLocatorV1,
@@ -215,12 +215,9 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   opts: RunOptions<AttachmentError, AttachmentRequirements>,
 ) {
   return Effect.scoped(Effect.gen(function* () {
-  const startedAt = new Date().toISOString();
-  // This invocation has one snapshot timestamp for reporter/artifact metadata.
-  // Record Attempt locators are deliberately separate: their exact AttemptId is
-  // minted only when a fresh Slot is actually dispatched.
-  const snapshotStartedAt = startedAt;
-  const t0 = Date.now();
+  const startedAtMs = Date.now();
+  const startedAt = new Date(startedAtMs).toISOString();
+  const t0 = startedAtMs;
   const niceevalRoot = opts.niceevalRoot ?? `${process.cwd()}/.niceeval`;
 
   // `--keep-sandbox` 要把单条 Attempt 的最终现场转交给用户，
@@ -262,7 +259,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     plannedConfigHashes,
     resolvedJudgesByKey,
     plannedFingerprints,
-    manifestsByKey,
   } = targetPlan;
 
   const reusePolicy = Object.freeze({
@@ -318,8 +314,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       : { attachments: opts.recordAttachments }),
   });
   // The draft is the only authority for a Run identity. Session, shape and
-  // reporters all observe this same mapping; deprecated `opts.runIds` cannot
-  // replace it with a synthetic legacy value.
+  // reporters all observe this same mapping; no caller can replace it with a
+  // synthetic legacy value.
   const runIds = recordCoordinator.runIdsByExperiment;
   const carriedAttemptsByKey = recordCoordinator.carriedAttemptsByKey;
 
@@ -586,53 +582,12 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // onInvocationStart 报「本次实际要跑的 eval」(过滤 + 去重),不是发现到的全部 —— 否则计数误导。
   const runningIds = new Set(attempts.map((a) => a.evalDef.id));
   const runningEvals = [...runningIds].map((id) => ({ id }));
-  // 指纹输入清单与规划期 configHash 都按 experiment 分组交给落盘面(Artifacts → createWriter),
-  // Run 目录建成那一刻与 run.json 同批写出。分组不切 `${experimentId}|${evalId}` 这个字符串键,
-  // 而是按同一份 (run, evalDef) 组合重取一遍——id 里出现分隔符时切字符串会静默错位。
-  const manifestsByExperiment = new Map<string, RunManifests>();
-  const configHashesByExperiment = new Map<string, string>();
-  for (const run of opts.agentRuns) {
-    if (!run.experimentId) continue;
-    for (const evalDef of selectedEvalsForRun(opts.evals, run)) {
-      const key = cacheKey(run, evalDef.id);
-      const manifest = manifestsByKey?.get(key);
-      if (manifest !== undefined) {
-        const bucket = manifestsByExperiment.get(run.experimentId) ?? {};
-        bucket[evalDef.id] = manifest;
-        manifestsByExperiment.set(run.experimentId, bucket);
-      }
-      const prepared = preparedPairsByKey.get(key);
-      if (prepared !== undefined) {
-        // run.json 的 configHash 只有一槽/experiment,因此必须是真正的 Run 级值——只含
-        // agent/model/flags/sandboxLayer 等在 defineExperiment 层面就固定的字段。
-        // plannedConfigHashes(fingerprint.ts)按 experiment > eval > config 链逐字段解析
-        // judge 后混入携带判据,一条 eval 自己声明 judge 时(docs/feature/experiments/cache.md
-        // 「指纹:两个哈希嵌套」)会让它单独跑出不同的值——这是刻意的携带正确性,不是配置身份
-        // 分叉,不能拿它来校验/落盘 Run 级值。这里改用不带 judge 覆盖的
-        // computeConfigHash(等价 configIdentityForRun(run, plan) 默认单层 run.judge)重算,
-        // 校验的是它——真正应当逐 eval 恒等的那部分,不一致时才说明物理 plan 混进了配置身份。
-        const configHash = computeConfigHash(prepared);
-        const existing = configHashesByExperiment.get(run.experimentId);
-        if (existing !== undefined && existing !== configHash) {
-          throw new Error(
-            `Planned config hash differs across evals within experiment ${JSON.stringify(run.experimentId)} ` +
-              `(${JSON.stringify(existing)} vs ${JSON.stringify(configHash)} for eval ${JSON.stringify(evalDef.id)}). ` +
-              "configHash is a Run-level value and must be identical for every eval scheduled under the same experiment.",
-          );
-        }
-        configHashesByExperiment.set(run.experimentId, configHash);
-      }
-    }
-  }
   const shape: InvocationShape = {
     evals: runningEvals.length,
     configs: opts.agentRuns.length,
     totalAttempts: attempts.length,
     maxConcurrency: opts.maxConcurrency,
-    snapshotStartedAt,
     runIds,
-    ...(manifestsByExperiment.size > 0 ? { manifests: manifestsByExperiment } : {}),
-    ...(configHashesByExperiment.size > 0 ? { configHashes: configHashesByExperiment } : {}),
   };
   // eval 级 reporters:实例只观测引用它的 eval(经 scopeReporter 过滤转发)。
   // 已经挂在全局 reporters 里的同一实例不重复挂;同一实例被多个 eval 引用时合并观测集
@@ -649,8 +604,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   const reporters: ReporterRegistration[] = [...opts.reporters];
   // EvalDef.reporters 是用户在单个 eval 上挂的补充观测(如「这个 eval 单独也发一份到某个
   // dashboard」),不是 CLI 显式注册的默认/机器出口——与 Config.reporters 同样默认
-  // best-effort(见 ReporterRegistration 的字段注释:required 只留给 artifacts / --json /
-  // --junit)。name 用「scope 内第几个」编号,足以在诊断里区分「哪一个 eval 级 reporter」,
+  // best-effort(见 ReporterRegistration 的字段注释:required 只留给 --junit)。name 用「scope 内第几个」编号,足以在诊断里区分「哪一个 eval 级 reporter」,
   // 不需要用户自己起名字。
   let evalReporterIndex = 0;
   for (const [r, ids] of scopedSets) {
@@ -662,7 +616,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         configs: opts.agentRuns.length,
         totalAttempts: scopedRuns,
         maxConcurrency: opts.maxConcurrency,
-        snapshotStartedAt,
         runIds,
       }),
       name: `eval-reporter-${evalReporterIndex++}`,
@@ -2543,15 +2496,21 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // while membership-provenance records why each pending gap was interrupted.
   // This never manufactures an Attempt for budget/early-exit/unstarted Slots.
   if (interrupted) recordCoordinator.markInterrupted();
-  yield* recordCoordinator.publish(Date.now());
+  const receiptCompletedAtMs = Date.now();
+  const publishedRuns = yield* recordCoordinator.publish(receiptCompletedAtMs);
+  const receipt: InvocationReceipt = Object.freeze({
+    invocationId: recordCoordinator.reusePlan.target.invocationId,
+    runIds: Object.freeze(publishedRuns.map(({ runId }) => String(runId))),
+    startedAt,
+    completedAt: new Date(receiptCompletedAtMs).toISOString(),
+    completion: interrupted ? "interrupted" : "completed",
+  });
 
   // Experiment 收尾协议(docs/runner.md):每个真正出现在这次 Invocation 里的 experimentId
   // 各发一次 experiment:complete,携带它自己的 completedAt(真实 teardown 完成时刻,没有
   // teardown 或未触发时退回当前时刻)与实验域诊断累积器里attribute 给它的记录。全部
   // Experiment 此刻都已经收尾(sweepExperimentTeardowns 已经等过),严格早于下面的
-  // invocation:summary——供 Artifacts 据此对每个 Run 原子封口,不用等到整个 Invocation
-  // 结束才一次性全部封口(interrupted、reporter error 等 Invocation 级事实不在这条通道里,
-  // 不会误落进任一 Run)。
+  // invocation:summary——Record 已在上面封口；这个事件只给非持久化的 reporter 消费。
   const invocationExperimentIds = new Set(
     opts.agentRuns.map((r) => r.experimentId).filter((id): id is string => id !== undefined),
   );
@@ -2592,7 +2551,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     catch: (error) => error,
   });
   for (const reg of reporters) {
-    // required reporter(默认 artifacts、显式 --json/--junit)在这一步失败,不能中断其它
+    // required reporter(显式 --junit)在这一步失败,不能中断其它
     // reporter 的收尾——继续跑完剩下的循环,让每个 reporter 都拿到 onInvocationComplete 的机会;
     // 失败本身经 runReporter → reportReporterError 折成诊断,由调用方(cli.ts)读取
     // RunFeedbackState 组装成 InvocationCompletion,让最终 completion/退出码判红(见
@@ -2602,10 +2561,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       catch: (error) => error,
     });
   }
-  yield* Effect.tryPromise({
-    try: () => emitReporterEvent(reporters, { type: "invocation:saved", summary }),
-    catch: (error) => error,
-  });
-  return summary;
+  return receipt;
   }));
 }

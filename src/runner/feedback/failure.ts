@@ -1,5 +1,5 @@
 import { decodeAttemptLocator, type AttemptLocator } from "../../record/locator.ts";
-import { summaryText } from "../../assertions/display.ts";
+import { compactAssertionSummary, summaryText } from "../../assertions/display.ts";
 import type {
   EvaluationFactResult,
   EvalResult,
@@ -27,8 +27,7 @@ export function failureDetailFromResult(result: EvalResult): FailureDetail | und
 
   const terminal = failureSummaryTerminal(result);
   const fact = terminal === undefined ? undefined : primaryFactSummary(result, terminal);
-  // A score `invalid` deliberately wins over later execution errors. Conversely,
-  // an errored terminal can only fall back to the runner error after every
+  // An errored terminal can only fall back to the runner error after every
   // evaluator-originated Fact cause has been considered.
   const fallbackError = terminal === "errored" && fact === undefined ? result.error : undefined;
   // 执行错误只给一层可行动摘要(docs/feature/experiments/cli.md「运行反馈」):message 取首行
@@ -45,7 +44,7 @@ export function failureDetailFromResult(result: EvalResult): FailureDetail | und
   const reason = fallbackError !== undefined
     ? `${summaryText(firstLine(fallbackError.message))}${attribution}`
     : fact !== undefined
-      ? compactFactSummary(fact)
+      ? compactAssertionSummary(fact)
       : summaryText(result.verdict);
   const origin = fallbackError?.origin;
   const phase = origin?.scope === "attempt" ? origin.phase : undefined;
@@ -73,11 +72,11 @@ export function failureDetailFromResult(result: EvalResult): FailureDetail | und
  * 只选择真正参与当前失败终态的 use；同一 Fact 同时用于 verdict 与 score 时只显示一次。
  * 反馈只投影 Fact/use 的因果关系，不重建另一套判定等级。
  */
-type FailureSummaryTerminal = "failed" | "invalid" | "errored" | "unavailable";
+type FailureSummaryTerminal = "failed" | "errored";
 
 function failureSummaryTerminal(result: EvalResult): FailureSummaryTerminal | undefined {
   const terminal = attemptTerminalOf(result);
-  return terminal === "failed" || terminal === "invalid" || terminal === "errored" || terminal === "unavailable"
+  return terminal === "failed" || terminal === "errored"
     ? terminal
     : undefined;
 }
@@ -98,7 +97,7 @@ function primaryFactSummary(
   // A dependency Fact can be the evaluator root cause even when no use points
   // to it directly. Uses keep their labels when present; these rows fill only
   // the otherwise invisible roots.
-  if (terminal === "errored" || terminal === "unavailable") {
+  if (terminal === "errored") {
     for (const fact of result.factResults) {
       const candidate = factCandidate(fact, result.factUses, terminal);
       if (candidate !== undefined && !candidates.has(`fact:${fact.factId}`)) {
@@ -134,11 +133,9 @@ function useCandidate(
   facts: ReadonlyMap<string, EvaluationFactResult>,
   terminal: FailureSummaryTerminal,
 ): FactFailureCandidate | undefined {
-  const isFailure = terminal === "failed" || terminal === "invalid"
+  const isFailure = terminal === "failed"
     ? use.useKind === "verdict" && use.outcome === "failed"
-    : terminal === "errored"
-      ? use.outcome === "errored"
-      : use.outcome === "unavailable";
+    : use.outcome === "errored" || use.outcome === "unavailable";
   if (!isFailure) return undefined;
   const factId = use.useKind === "verdict"
     ? use.target.factId
@@ -169,7 +166,7 @@ function useCandidate(
 function factCandidate(
   fact: EvaluationFactResult,
   uses: readonly (VerdictFactUseResult | ScoreFactUseResult)[],
-  terminal: Extract<FailureSummaryTerminal, "errored" | "unavailable">,
+  terminal: Extract<FailureSummaryTerminal, "errored">,
 ): FactFailureCandidate | undefined {
   if (terminal === "errored" && fact.outcome === "errored") {
     return {
@@ -179,7 +176,7 @@ function factCandidate(
       reason: fact.error.message,
     };
   }
-  if (terminal !== "unavailable" || fact.outcome !== "unavailable") return undefined;
+  if (fact.outcome !== "unavailable") return undefined;
   const consumers = uses.filter((use) =>
     use.useKind === "verdict"
       ? use.target.factId === fact.factId

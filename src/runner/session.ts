@@ -7,7 +7,13 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { readAllEntryFiles, writeEntryFile } from "../shared/entry-file-store.ts";
-import type { CompletionStatus, InvocationCompletion, RunFeedbackEvent, RunFeedbackState } from "./types.ts";
+import type {
+  CompletionStatus,
+  InvocationCompletion,
+  InvocationReceipt,
+  RunFeedbackEvent,
+  RunFeedbackState,
+} from "./types.ts";
 import type { AgentRun } from "./types.ts";
 
 export const SESSION_HEARTBEAT_INTERVAL_MS = 10_000;
@@ -19,11 +25,12 @@ export type SessionStatus = "active" | "completed" | "incomplete" | "interrupted
 export interface SessionExperimentRecord {
   experimentId: string;
   runId: string;
+  /** The Record v1 receipt confirmed that this draft reached a complete marker. */
+  published?: boolean;
   state?: SessionExperimentState;
   running?: number;
   queued?: number;
   elsewhere?: number;
-  path?: string;
 }
 
 export interface SessionRecord {
@@ -70,9 +77,9 @@ export interface SessionStartInput {
 export interface SessionCloseInput {
   status?: CompletionStatus | SessionStatus;
   completion?: InvocationCompletion;
+  /** Only IDs in this receipt are safe targets for `niceeval show --run`. */
+  receipt?: InvocationReceipt;
   completedAt?: string;
-  /** `experimentId -> Run snapshot directory`;没有对应路径时省略。 */
-  paths?: ReadonlyMap<string, string>;
 }
 
 function sessionsDirOf(niceevalRoot: string): string {
@@ -100,6 +107,7 @@ function isNonNegativeInteger(value: unknown): value is number {
 function decodeExperiment(value: unknown): SessionExperimentRecord | undefined {
   const raw = asRecord(value);
   if (raw === undefined || typeof raw.experimentId !== "string" || typeof raw.runId !== "string") return undefined;
+  if (raw.published !== undefined && typeof raw.published !== "boolean") return undefined;
   const state = raw.state;
   if (state !== undefined && state !== "setup" && state !== "running" && state !== "waiting" && state !== "teardown") {
     return undefined;
@@ -107,19 +115,17 @@ function decodeExperiment(value: unknown): SessionExperimentRecord | undefined {
   for (const key of ["running", "queued", "elsewhere"] as const) {
     if (raw[key] !== undefined && !isNonNegativeInteger(raw[key])) return undefined;
   }
-  if (raw.path !== undefined && typeof raw.path !== "string") return undefined;
   const running = raw.running;
   const queued = raw.queued;
   const elsewhere = raw.elsewhere;
-  const path = raw.path;
   return {
     experimentId: raw.experimentId,
     runId: raw.runId,
+    ...(raw.published === true ? { published: true } : {}),
     ...(state !== undefined ? { state } : {}),
     ...(running !== undefined ? { running: running as number } : {}),
     ...(queued !== undefined ? { queued: queued as number } : {}),
     ...(elsewhere !== undefined ? { elsewhere: elsewhere as number } : {}),
-    ...(path !== undefined ? { path } : {}),
   };
 }
 
@@ -309,13 +315,14 @@ export class SessionTracker {
     this.record.completedAt = input.completedAt ?? now;
     delete this.record.heartbeatAt;
     if (input.completion !== undefined) this.record.completion = input.completion;
+    const publishedRunIds = new Set(input.receipt?.runIds ?? []);
     for (const experiment of this.record.experiments) {
-      const path = input.paths?.get(experiment.experimentId);
+      if (publishedRunIds.has(experiment.runId)) experiment.published = true;
+      else delete experiment.published;
       delete experiment.state;
       delete experiment.running;
       delete experiment.queued;
       delete experiment.elsewhere;
-      if (path !== undefined) experiment.path = path;
     }
     this.enqueuePersist();
     await this.writes;
@@ -418,9 +425,9 @@ function ageLabel(iso: string, nowMs: number): string {
   return `${Math.floor(elapsed / 3_600_000)}h ago`;
 }
 
-function renderExperimentLine(experiment: SessionExperimentRecord): string {
-  if (experiment.path !== undefined) {
-    return `  ${experiment.experimentId}  @run:${shortRunId(experiment.runId)}  ${experiment.path}`;
+function renderExperimentLine(experiment: SessionExperimentRecord, published: boolean): string {
+  if (published) {
+    return `  ${experiment.experimentId}  niceeval show --run ${experiment.runId}`;
   }
   const counters = [
     experiment.running ? `${experiment.running} running` : "",
@@ -430,13 +437,19 @@ function renderExperimentLine(experiment: SessionExperimentRecord): string {
   return `  ${experiment.experimentId}  @run:${shortRunId(experiment.runId)}  ${experiment.state ?? "running"}${counters.length ? ` · ${counters.join(" · ")}` : ""}`;
 }
 
+function publishedForSession(experiment: SessionExperimentRecord, status: SessionStatus): boolean {
+  // Older session entries have no receipt marker. Preserve their established
+  // completed/interrupted behavior while new entries rely on the exact receipt.
+  return experiment.published ?? (status === "completed" || status === "interrupted");
+}
+
 export function renderSessionListText(document: SessionListDocument, nowMs = Date.now(), all = false): string {
   const lines: string[] = [`ACTIVE SESSIONS (${document.sessions.filter((session) => session.status === "active").length})`];
   const active = document.sessions.filter((session) => session.status === "active");
   if (active.length === 0) lines.push("(none)");
   for (const session of active) {
     lines.push(`${session.sessionId} · pid ${session.pid} · ${ageLabel(session.startedAt, nowMs)} · heartbeat ${ageLabel(session.heartbeatAt ?? session.startedAt, nowMs)}`);
-    lines.push(...session.experiments.map(renderExperimentLine));
+    lines.push(...session.experiments.map((experiment) => renderExperimentLine(experiment, false)));
   }
   if (all) {
     const completed = document.sessions.filter((session) => session.status !== "active");
@@ -444,7 +457,9 @@ export function renderSessionListText(document: SessionListDocument, nowMs = Dat
     if (completed.length === 0) lines.push("(none)");
     for (const session of completed) {
       lines.push(`${session.sessionId} · pid ${session.pid} · ${session.status} · completed ${session.completedAt ?? "—"}`);
-      lines.push(...session.experiments.map(renderExperimentLine));
+      lines.push(...session.experiments.map((experiment) =>
+        renderExperimentLine(experiment, publishedForSession(experiment, session.status))
+      ));
     }
     if (document.expired.length > 0) {
       lines.push(`EXPIRED SESSIONS (${document.expired.length})`);
@@ -460,7 +475,11 @@ export function renderSessionShowText(document: SessionShowDocument): string {
   const session = document.session;
   const lines = [`SESSION ${session.sessionId}${document.expired ? " · EXPIRED" : ""}`, `pid ${session.pid} · started ${session.startedAt}`];
   if ("status" in session) lines.push(`status ${session.status}${session.completedAt ? ` · completed ${session.completedAt}` : ""}`);
-  if ("experiments" in session) lines.push(...session.experiments.map(renderExperimentLine));
+  if ("experiments" in session) {
+    lines.push(...session.experiments.map((experiment) =>
+      renderExperimentLine(experiment, publishedForSession(experiment, session.status))
+    ));
+  }
   if (document.expired) lines.push("NEXT 重新运行原命令");
   return `${lines.join("\n")}\n`;
 }

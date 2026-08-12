@@ -90,5 +90,5 @@ export {
   type ExperimentSetupEvent,
   type ExperimentTeardownEvent,
   type LockWaitEvent,
-  type ResultEvent,
+  type ReceiptEvent,
 } from "./json.ts";

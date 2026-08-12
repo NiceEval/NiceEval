@@ -29,6 +29,7 @@ import type { FeedbackIO } from "./io.ts";
 import type {
   DurableFeedbackEvent,
   InvocationCompletion,
+  InvocationReceipt,
   InvocationSummary,
   LifecyclePhase,
   RunFeedbackState,
@@ -181,17 +182,10 @@ export interface LockWaitEvent {
   waitedMs?: number;
 }
 
-export interface ResultEvent {
-  event: "result";
-  status: "passed" | "failed" | "incomplete" | "interrupted";
-  passed: number;
-  failed: number;
-  errored: number;
-  reused?: number;
-  unstarted?: number;
-  completion: "complete" | "incomplete" | "interrupted";
-  snapshots: string[];
-  junit?: string;
+/** The final machine hand-off is the Record v1 receipt, without paths or snapshots. */
+export interface ReceiptEvent {
+  type: "receipt";
+  receipt: InvocationReceipt;
 }
 
 /** `niceeval exp --json` 唯一公开事件词表；新增事件必须先进入已采纳文档与这个闭合联合。 */
@@ -210,7 +204,7 @@ export type ExpEvent =
   | ExperimentSetupEvent
   | ExperimentTeardownEvent
   | LockWaitEvent
-  | ResultEvent;
+  | ReceiptEvent;
 
 function writeEvent(io: FeedbackIO, event: ExpEvent): void {
   io.stdout.write(`${JSON.stringify(event)}\n`);
@@ -227,10 +221,9 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
   // 距上一次「有意义的输出」(任意一次永久事件)过了多久,用来判断要不要追加一条心跳;
   // 由 appendDurable 无条件更新——"plan" 本身就是第一次永久事件,天然把这个时钟从 0 开始计。
   let lastCheckpointAtMs = 0;
-  // "summary" 与 "saved" 是 coordinator.finish() 里连续 emit 的两个独立永久事件(中间不会插入
-  // 其它事件)——`result` 收尾需要两者合并,所以 "summary" 到达时先记下来,"saved" 到达时才
-  // 真正写出 eval 结论行 + `result` 事件。
-  let pendingSummary: { summary: InvocationSummary; completion: InvocationCompletion; reused: number } | undefined;
+  // "summary" 与 "receipt" 是 coordinator.finish() 里连续 emit 的两个独立永久事件(中间不会插入
+  // 其它事件)。先暂存 summary，receipt 到达时再写 eval 结论行与唯一的最终 receipt。
+  let pendingSummary: InvocationSummary | undefined;
 
   function noteCheckpoint(atMs: number): void {
     lastCheckpointAtMs = atMs;
@@ -368,7 +361,7 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
         }
 
         case "summary":
-          pendingSummary = { summary: event.summary, completion: event.completion, reused: state.reused };
+          pendingSummary = event.summary;
           return;
 
         case "kept": {
@@ -388,9 +381,9 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
           return;
         }
 
-        case "saved":
+        case "receipt":
           writeEvalConclusions(io, pendingSummary, state);
-          writeResultEvent(io, pendingSummary, event);
+          writeEvent(io, { type: "receipt", receipt: event.receipt });
           return;
 
         default: {
@@ -549,49 +542,12 @@ function evalConclusionEvent(row: EvalConclusionRow): EvalEvent {
 
 function writeEvalConclusions(
   io: FeedbackIO,
-  pending: { summary: InvocationSummary; completion: InvocationCompletion; reused: number } | undefined,
+  pending: InvocationSummary | undefined,
   state: RunFeedbackState,
 ): void {
   if (!pending) return;
-  const rows = evalConclusionRows(pending.summary.results, state.earlyExitByEval, state.diagnostics);
+  const rows = evalConclusionRows(pending.results, state.earlyExitByEval, state.diagnostics);
   for (const row of rows) writeEvent(io, evalConclusionEvent(row));
-}
-
-// ───────────────────────── result 收尾 ─────────────────────────
-
-/** completion 优先于 verdict 计数——interrupted/incomplete 时即便全部 attempt 都通过,也不能
- *  说 "passed"(cli.md「事件与计划文档的 TypeScript 形状」的 `ResultEvent.status` 注释)。
- *  required reporter 失败同样折进 "failed":它不是 `CompletionStatus` 的第四个值,但必须让
- *  退出码非零、状态词不能显示一个会被误读成「全绿」的 "passed"。 */
-function resultStatusWord(
-  summary: InvocationSummary,
-  completion: InvocationCompletion,
-): "passed" | "failed" | "incomplete" | "interrupted" {
-  if (completion.status === "interrupted") return "interrupted";
-  if (completion.status === "incomplete") return "incomplete";
-  if (completion.reporterErrors.some((e) => e.required)) return "failed";
-  return summary.failed > 0 || summary.errored > 0 ? "failed" : "passed";
-}
-
-function writeResultEvent(
-  io: FeedbackIO,
-  pending: { summary: InvocationSummary; completion: InvocationCompletion; reused: number } | undefined,
-  event: DurableFeedbackEvent & { type: "saved" },
-): void {
-  if (!pending) return; // 不应发生:coordinator.finish() 恒先 emit "summary" 再 emit "saved"。
-  const { summary, completion, reused } = pending;
-  writeEvent(io, {
-    event: "result",
-    status: resultStatusWord(summary, completion),
-    passed: summary.passed,
-    failed: summary.failed,
-    errored: summary.errored,
-    ...(reused > 0 ? { reused } : {}),
-    ...(completion.unstarted > 0 ? { unstarted: completion.unstarted } : {}),
-    completion: completion.status,
-    snapshots: [...event.paths],
-    ...(event.junit !== undefined ? { junit: event.junit } : {}),
-  });
 }
 
 // ───────────────────────── 退出码(CompletionStatus 驱动) ─────────────────────────

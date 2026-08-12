@@ -23,7 +23,7 @@ import type {
 import type { ScoreTestContext, TestContext } from "../context/types.ts";
 import type { CapturedEvalSource } from "./eval-source.ts";
 import type { AttemptLocator } from "../record/locator.ts";
-import type { EvalManifest, RunManifests } from "../record/manifest.ts";
+import type { EvalManifest } from "../record/manifest.ts";
 import type { RecordAttachmentWrite } from "../record/attachment/index.ts";
 import type { FrozenRecordAttempt, FrozenRecordView } from "../record/reader/types.ts";
 import type { RecordReaderReadError } from "../record/reader/errors.ts";
@@ -548,6 +548,19 @@ export interface InvocationSummary {
   results: EvalResult[];
 }
 
+/**
+ * The only invocation-level durable hand-off. Record Runs retain every
+ * result, diagnostic, and artifact; this receipt only identifies those Runs
+ * and records the invocation lifecycle fact.
+ */
+export interface InvocationReceipt {
+  readonly invocationId: string;
+  readonly runIds: readonly string[];
+  readonly startedAt: string;
+  readonly completedAt?: string;
+  readonly completion: "completed" | "interrupted" | "failed";
+}
+
 /** onInvocationStart 的运行规模:去重后 eval 数 × 配置(agent×model×flags)数 → 总 attempt 数。 */
 export interface InvocationShape {
   /** 去重后实际要跑的 eval 数(= evals.length)。 */
@@ -560,34 +573,10 @@ export interface InvocationShape {
    *  实验级 maxConcurrency 只在该实验内部限流,不改这个全局值。 */
   maxConcurrency: number;
   /**
-   * 本次 Invocation 的快照时间(ISO 时间戳),在调度任何 attempt 前确定。
-   * Artifacts writer 把它写入 `run.json.startedAt`；Attempt locator 另由持久化 Run 的
-   * `runId` 与 `evalId` / attempt 下标派生，不把时间戳当身份。`runEvals()` 恒在
-   * `onInvocationStart` 触发前填入该值；省略只出现在测试/第三方手写
-   * `InvocationShape` 的直调场景。
-   */
-  snapshotStartedAt?: string;
-  /**
-   * 调度前为每个 Experiment 分配的持久化 Run 身份。Artifacts writer 必须把同一值写进
-   * run.json；其它 reporter 可用它关联 plan 期 attempt locator 与最终 Run。
+   * 调度前由 Record v1 draft 分配的真实持久化 Run 身份。其它 reporter 可用它关联
+   * plan 期的 attempt locator 与最终 Run，但不能替换或重新生成它。
    */
   runIds?: ReadonlyMap<string, string>;
-  /**
-   * 本次规划期算出的指纹输入清单,按 experimentId 分组(evalId → 清单)。落盘面据此在建 Run
-   * 目录时与 `run.json` 同批写出 `manifests.json`(见 record/writer.ts 的 `WriterOptions`)。
-   * 与 `snapshotStartedAt` 同一条路径:runner 显式递给 reporter,不由落盘面自己猜。
-   * 省略只出现在没有携带规划的直调场景。
-   */
-  manifests?: ReadonlyMap<string, RunManifests>;
-  /**
-   * 本次规划期按 experimentId 算好的 Run 级配置身份(见
-   * `config-identity.ts` 的 `configIdentityForRun` / `hashConfigHash`)。同一 experiment 内
-   * 全部 eval 共享一个值(configHash 只依赖 run 与 Experiment 作者 layer,不依赖逐 eval 的
-   * 物理 provider plan);落盘面据此在建 Run 目录时把它写进 `run.json.configHash`,不再只有
-   * `niceeval accept` 显式声明。与 `manifests` 同一条路径:runner 显式递给 reporter,
-   * 不由落盘面自己猜。省略只出现在没有携带规划的直调场景。
-   */
-  configHashes?: ReadonlyMap<string, string>;
 }
 
 export interface Reporter {
@@ -607,8 +596,8 @@ export interface Reporter {
  * 诊断消息里的次要上下文,不参与去重身份。
  *
  * `required` 语义(见 docs/feature/experiments/cli.md「运行完成状态不只看 verdict 计数」):
- * - 默认 Artifacts reporter、CLI 显式 `--json` / `--junit`:`required: true`——它们的产物是
- *   agent/CI 读取权威结果的唯一入口,写失败必须让 `InvocationCompletion` 判红、CI 退出码非零。
+ * - CLI 显式 `--junit`:`required: true`——这是调用者要求的附加聚合文件,写失败必须让
+ *   `InvocationCompletion` 判红、CI 退出码非零。CLI `--json` 是终端 receipt 流，不是 Reporter。
  * - 用户 `Config.reporters` / `EvalDef.reporters`:`required: false`——失败只折成一条
  *   diagnostic,不影响 completion,也不阻断其它 reporter 收尾或后续 attempt。
  *
@@ -630,11 +619,7 @@ export type ReporterEvent =
   | { type: "invocation:saved"; summary: InvocationSummary }
   | { type: "invocation:summary"; summary: InvocationSummary }
   | {
-      /**
-       * 该 Experiment 的 teardown(若声明)完成之后、invocation:summary 之前触发,标记它
-       * 已经彻底跑完;供内建 Artifacts 精确地在这一刻封口对应的 Run,不必等到整个
-       * Invocation 结束才一次性封全部快照(见 docs/runner.md「Experiment 收尾协议」)。
-       */
+      /** 该 Experiment 的 teardown(若声明)完成之后、invocation:summary 之前触发。 */
       type: "experiment:complete";
       experimentId: string;
       /** 该 Experiment 封口时刻,即它的 Run completedAt。 */
@@ -1217,15 +1202,9 @@ export interface RunOptions<RecordError = never, RecordRequirements = never> {
   /** CLI 为 `niceeval exp` 提供的持久 Session 索引；只观察调度事件，不参与锁/闸判定。 */
   session?: import("./session.ts").SessionTracker;
   /**
-   * @deprecated Record v1 drafts are the only Run-identity authority. This
-   * legacy injection is ignored by `runEvals`; callers must observe
-   * `InvocationShape.runIds` instead.
-   */
-  runIds?: ReadonlyMap<string, string>;
-  /**
    * 已注册的 reporter,携带 name/required 元数据(见 `ReporterRegistration`)。这是内部编排
-   * 通道——调用方(今天只有 `cli.ts`)按来源(默认 artifacts / 显式 --json·--junit / 用户
-   * `Config.reporters`)把裸 `Reporter` 各自包一层元数据后传进来;eval 级 `EvalDef.reporters`
+   * 通道——调用方(今天只有 `cli.ts`)按来源(显式 --junit / 用户 `Config.reporters`)把裸
+   * `Reporter` 各自包一层元数据后传进来;eval 级 `EvalDef.reporters`
    * 不经过这里,由 `runEvals()` 自己按 `scopeReporter()` 包装、统一记作 `required: false`
    *(见 run.ts 的 scopedSets 处理)。
    */
@@ -1338,7 +1317,7 @@ export interface AttemptRef {
 }
 
 /** `AttemptRef` 的确定性字符串编码,只作 `RunFeedbackState.active` 的 Map key 使用 ——
- *  不是展示文本(那是 `who`),也不是 `AttemptLocator`(那需要额外的 `snapshotStartedAt`)。 */
+ *  不是展示文本(那是 `who`),也不是 `AttemptLocator`(后者是 Record 的持久化身份)。 */
 export type AttemptKey = string & { readonly __brand: "AttemptKey" };
 
 /** 由 `AttemptRef` 派生 `AttemptKey`;同一身份永远编码出同一个 key。 */
@@ -1784,19 +1763,7 @@ export type DurableFeedbackEvent =
   | { type: "interrupted"; at: number }
   | { type: "reporter-error"; at: number; reporter: string; required: boolean; message: string }
   | { type: "summary"; at: number; summary: InvocationSummary; completion: InvocationCompletion }
-  | {
-      type: "saved";
-      at: number;
-      /** 本次 invocation 实际落盘的快照结果路径。不含 `--junit` 聚合文件——那个由 `junit`
-       *  独立字段单独携带,而不是塞进这个数组后靠猜文件后缀去反推「哪个是聚合报告、哪些是
-       *  快照目录」。`exp` 没有 JSON 聚合文件出口(`--json` 是布尔:整条事件流本身就是机器面,
-       *  见 docs/feature/experiments/cli.md「机器怎么读:--json」);需要 JSON 聚合文件时
-       *  重定向事件流,或运行后 `niceeval show --json`。 */
-      paths: readonly string[];
-      /** 实际写出的 `--junit` 聚合报告路径;未传 `--junit`,或写入失败(见 required reporter
-       *  语义),都省略这个字段——省略表示「不打印这一行」,不是打印一个空路径。 */
-      junit?: string;
-    };
+  | { type: "receipt"; at: number; receipt: InvocationReceipt };
 
 /**
  * runner → feedback coordinator 的内部事件通道,与公共 `Reporter` / `ReporterEvent` 分开:
