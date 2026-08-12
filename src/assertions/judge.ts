@@ -1,5 +1,5 @@
-// Native LLM-as-Judge Fact producer.  A Judge recipe only creates one lazy
-// ScoreFact; assert/require/score decide how that Fact is consumed.
+// Native LLM-as-Judge evaluator. The Assert-first path keeps provider I/O,
+// timeout, retry, and interruption inside the owning Effect.
 
 import { ClosedQA, Factuality, Summary } from "autoevals";
 import { Effect } from "effect";
@@ -25,7 +25,6 @@ export interface JudgeDeps {
   readonly judge: ResolvedJudgeConfig | undefined;
   readonly signal?: AbortSignal;
   readonly createScoreFact: (definition: ScoreFactDefinition<"now">) => ScoreFact<"now">;
-  readonly sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   readonly random?: () => number;
 }
 
@@ -119,20 +118,38 @@ function isTransientJudgeFailure(error: unknown): boolean {
   return isTransientJudgeStatus(status) || (status === undefined && isConnectionFailure(error));
 }
 
-function defaultJudgeSleep(ms: number, signal: AbortSignal): Promise<void> {
-  if (ms <= 0) return Promise.resolve();
-  if (signal.aborted) return Promise.reject(signal.reason ?? new Error("aborted"));
-  return new Promise((resolve, reject) => {
-    const onAbort = () => {
-      clearTimeout(timer);
-      reject(signal.reason ?? new Error("aborted"));
-    };
-    const timer = setTimeout(() => {
-      signal.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    signal.addEventListener("abort", onAbort, { once: true });
+interface JudgeProviderFailure {
+  readonly _tag: "JudgeProviderFailure";
+  readonly error: unknown;
+}
+
+interface JudgeProbeTimeout {
+  readonly _tag: "JudgeProbeTimeout";
+}
+
+type JudgeProbeFailure = JudgeProviderFailure | JudgeProbeTimeout;
+
+/**
+ * An author-facing AbortSignal is external to this fiber. It must interrupt
+ * the owning Effect instead of being reclassified as a Judge result.
+ */
+function interruptWhenAborted(signal: AbortSignal): Effect.Effect<never> {
+  return Effect.async<never>((resume) => {
+    const interrupted = () => resume(Effect.interrupt);
+    if (signal.aborted) {
+      interrupted();
+      return;
+    }
+    signal.addEventListener("abort", interrupted, { once: true });
+    return Effect.sync(() => signal.removeEventListener("abort", interrupted));
   });
+}
+
+function interruptibleByCaller<A, E, R>(
+  effect: Effect.Effect<A, E, R>,
+  signal: AbortSignal | undefined,
+): Effect.Effect<A, E, R> {
+  return signal === undefined ? effect : Effect.raceFirst(effect, interruptWhenAborted(signal));
 }
 
 function formatSeconds(ms: number): string {
@@ -196,50 +213,92 @@ function missingConfiguration(resolved: ResolvedJudgeConfig): ScoreFactEvaluatio
   return undefined;
 }
 
+const retryProbe = Symbol("retry-judge-probe");
+
+function probeAttempt(
+  judge: ResolvedJudgeConfig,
+  apiKey: string,
+  endpoint: string,
+  attempt: number,
+  callerSignal: AbortSignal | undefined,
+): Effect.Effect<string | undefined | typeof retryProbe, JudgeProbeFailure> {
+  const probe = Effect.gen(function* () {
+    const response = yield* Effect.tryPromise({
+      try: async (effectSignal) => {
+        // This is the probe's sole Promise adapter boundary. The Effect fiber
+        // owns provider cancellation; caller aborts interrupt that fiber first.
+        const response = await fetch(`${endpoint}/chat/completions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+          body: JSON.stringify({ model: judge.model, messages: [{ role: "user", content: "Reply with the single word: ok" }] }),
+          signal: effectSignal,
+        });
+        return {
+          response,
+          body: response.ok ? "" : await response.text().catch(() => ""),
+        };
+      },
+      catch: (error): JudgeProviderFailure => ({ _tag: "JudgeProviderFailure", error }),
+    });
+    if (response.response.ok) return undefined;
+
+    if (isTransientJudgeStatus(response.response.status) && attempt < PROBE_MAX_ATTEMPTS) {
+      const delay = retryAfterMs(response.response.headers);
+      if (delay !== undefined) yield* Effect.sleep(delay);
+      return retryProbe;
+    }
+    return `Judge precheck failed for ${endpoint} (${judge.model}): HTTP ${response.response.status} ${response.body.slice(0, 300)}`;
+  }).pipe(
+    Effect.timeoutFail({
+      duration: PROBE_TIMEOUT_MS,
+      onTimeout: (): JudgeProbeTimeout => ({ _tag: "JudgeProbeTimeout" }),
+    }),
+  );
+  return interruptibleByCaller(probe, callerSignal);
+}
+
+function probeFailureMessage(
+  failure: JudgeProbeFailure,
+  judge: ResolvedJudgeConfig,
+  endpoint: string,
+): string {
+  if (failure._tag === "JudgeProbeTimeout") {
+    return `Judge precheck timed out for ${endpoint} (${judge.model}) after ${PROBE_TIMEOUT_MS / 1000}s`;
+  }
+  return `Judge precheck failed for ${endpoint} (${judge.model}): ${errorSummary(failure.error)}`;
+}
+
 /**
  * A precheck only tests a configured, credentialed endpoint.  Missing model or
  * key remains a normal zero-network unavailable Fact when an author consumes it.
  */
-export async function probeJudge(judge: ResolvedJudgeConfig, signal?: AbortSignal): Promise<string | undefined> {
-  const apiKey = getEnv(judge.apiKeyEnv);
-  if (!judge.model || !apiKey) return undefined;
-  const endpoint = judge.baseUrl.replace(/\/$/, "");
-  for (let attempt = 1; attempt <= PROBE_MAX_ATTEMPTS; attempt++) {
-    const timeoutSignal = AbortSignal.timeout(PROBE_TIMEOUT_MS);
-    const probeSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
-    try {
-      const response = await fetch(`${endpoint}/chat/completions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify({ model: judge.model, messages: [{ role: "user", content: "Reply with the single word: ok" }] }),
-        signal: probeSignal,
-      });
-      if (response.ok) return undefined;
-      const body = await response.text().catch(() => "");
-      if (isTransientJudgeStatus(response.status) && attempt < PROBE_MAX_ATTEMPTS) {
-        const delay = retryAfterMs(response.headers);
-        if (delay !== undefined) await defaultJudgeSleep(delay, probeSignal);
-        continue;
-      }
-      return `Judge precheck failed for ${endpoint} (${judge.model}): HTTP ${response.status} ${body.slice(0, 300)}`;
-    } catch (error) {
-      if (signal?.aborted || attempt === PROBE_MAX_ATTEMPTS) {
-        if (error instanceof Error && error.name === "TimeoutError") {
-          return `Judge precheck timed out for ${endpoint} (${judge.model}) after ${PROBE_TIMEOUT_MS / 1000}s`;
-        }
-        return `Judge precheck failed for ${endpoint} (${judge.model}): ${errorSummary(error)}`;
-      }
-    }
-  }
-  return undefined;
+export function probeJudgeEffect(
+  judge: ResolvedJudgeConfig,
+  signal?: AbortSignal,
+): Effect.Effect<string | undefined> {
+  return Effect.suspend(() => {
+    const apiKey = getEnv(judge.apiKeyEnv);
+    if (!judge.model || !apiKey) return Effect.succeed(undefined);
+    const endpoint = judge.baseUrl.replace(/\/$/, "");
+    const probe = (attempt: number): Effect.Effect<string | undefined> =>
+      probeAttempt(judge, apiKey, endpoint, attempt, signal).pipe(
+        Effect.flatMap((result) =>
+          result === retryProbe
+            ? probe(attempt + 1)
+            : Effect.succeed(result)),
+        Effect.catchAll((failure) =>
+          attempt === PROBE_MAX_ATTEMPTS
+            ? Effect.succeed(probeFailureMessage(failure, judge, endpoint))
+            : probe(attempt + 1)),
+      );
+    return probe(1);
+  });
 }
 
-function unavailableForCall(model: string, timeoutMs: number, attempts: number, retried: boolean, interrupted = false): ScoreFactEvaluation {
+function unavailableForCall(model: string, timeoutMs: number, attempts: number, retried: boolean): ScoreFactEvaluation {
   return unavailable(
     "judge-call-failed",
-    interrupted
-      ? `model=${model} · interrupted · retry=no · attempts=${attempts}`
-      : `model=${model} · timed out after ${formatSeconds(timeoutMs)} · retry=${retried ? "yes" : "no"} · attempts=${attempts}`,
+    `model=${model} · timed out after ${formatSeconds(timeoutMs)} · retry=${retried ? "yes" : "no"} · attempts=${attempts}`,
   );
 }
 
@@ -266,88 +325,111 @@ export interface JudgeRecipeExecution {
   readonly reference: string;
   readonly material: JudgeMaterial;
   readonly signal?: AbortSignal;
-  readonly sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   readonly random?: () => number;
 }
 
+function evaluateAutoeval(
+  input: JudgeRecipeExecution,
+  material: JudgeMaterial,
+  apiKey: string,
+  model: string,
+): Effect.Effect<AutoevalResult, JudgeProviderFailure> {
+  const provider = Effect.tryPromise({
+    try: (effectSignal) => {
+      const client = bridgeAutoevalClient(judgeClient(
+        apiKey,
+        input.judge.baseUrl,
+        effectSignal,
+      ));
+      return Promise.resolve(
+        input.recipe === "closedQA"
+          ? ClosedQA({ input: material.input, output: material.output, criteria: input.reference, model, ...client })
+          : input.recipe === "factuality"
+            ? Factuality({ input: material.input, output: material.output, expected: input.reference, model, ...client })
+            : Summary({ input: material.input, output: material.output, expected: input.reference, model, ...client }),
+      );
+    },
+    catch: (error): JudgeProviderFailure => ({ _tag: "JudgeProviderFailure", error }),
+  });
+  return provider;
+}
+
+function judgeSleep(delayMs: number): Effect.Effect<void> {
+  return Effect.sleep(delayMs);
+}
+
 /**
- * The real Judge invocation shared by the legacy Fact adapter and the
- * Assert-first runtime. It remains Promise-shaped only at the provider SDK
- * boundary; the Assert-first entry below lifts it into the owning Effect.
+ * The real Judge invocation. Provider I/O is adapted once, then retry,
+ * timeout, interruption, and delay remain inside the owning Effect.
  */
-export async function evaluateJudgeRecipe(
+export function evaluateJudgeRecipeEffect(
+  input: JudgeRecipeExecution,
+): Effect.Effect<ScoreFactEvaluation> {
+  const evaluation = Effect.suspend(() => {
+    const { judge: resolved } = input;
+    const frozenMaterial = freezeJudgeMaterial(input.material);
+    const missing = missingConfiguration(resolved);
+    if (missing !== undefined) return Effect.succeed(missing);
+    const model = resolved.model!;
+    const apiKey = getEnv(resolved.apiKeyEnv)!;
+    let attempts = 0;
+    let retried = false;
+
+    const evaluate = (attempt: number): Effect.Effect<ScoreFactEvaluation> =>
+      Effect.sync(() => {
+        attempts = attempt + 1;
+      }).pipe(
+        Effect.zipRight(
+          evaluateAutoeval(input, frozenMaterial, apiKey, model).pipe(
+            Effect.flatMap((result): Effect.Effect<ScoreFactEvaluation> => {
+              if (typeof result.score !== "number" || !Number.isFinite(result.score) || result.score < 0 || result.score > 1) {
+                return Effect.succeed(evaluatorError("judge-invalid-response", "Judge returned no finite score in [0, 1]"));
+              }
+              const rationale = result.metadata?.rationale;
+              return Effect.succeed({
+                outcome: "scored" as const,
+                normalizedScore: result.score,
+                evidence: evidenceFor(frozenMaterial),
+                ...(typeof rationale === "string" && rationale.trim() !== "" ? { explanation: summaryText(rationale) } : {}),
+              });
+            }),
+            Effect.catchAll((failure: JudgeProviderFailure): Effect.Effect<ScoreFactEvaluation> => {
+              const error = failure.error;
+              if (!isTransportFailure(error)) return Effect.succeed(evaluatorError("judge-evaluator-error", errorSummary(error)));
+              if (!isTransientJudgeFailure(error) || attempt + 1 >= JUDGE_MAX_ATTEMPTS) {
+                return Effect.succeed(unavailable("judge-call-failed", judgeFailureEvidence(error, model, attempts, retried)));
+              }
+              const retryAfter = retryAfterMs(objectField(error, "headers"));
+              const delay = retryAfter ?? (input.random ?? Math.random)() * JUDGE_RETRY_BASE_DELAY_MS * 2 ** attempt;
+              retried = true;
+              return judgeSleep(delay).pipe(
+                Effect.zipRight(evaluate(attempt + 1)),
+              );
+            }),
+          ),
+        ),
+      );
+
+    return evaluate(0).pipe(
+      Effect.timeoutTo({
+        duration: resolved.timeoutMs,
+        onSuccess: (evaluation) => evaluation,
+        onTimeout: () => unavailableForCall(model, resolved.timeoutMs, attempts, retried),
+      }),
+    );
+  });
+  return interruptibleByCaller(evaluation, input.signal);
+}
+
+/**
+ * @deprecated Pending FactCollector retirement. This legacy compatibility
+ * facade owns a private Effect runtime; Assert-first and Runner callers must
+ * use Effect-native exports directly.
+ */
+export function evaluateJudgeRecipe(
   input: JudgeRecipeExecution,
 ): Promise<ScoreFactEvaluation> {
-  const { judge: resolved, recipe, reference } = input;
-  const frozenMaterial = freezeJudgeMaterial(input.material);
-  const missing = missingConfiguration(resolved);
-  if (missing !== undefined) return missing;
-  const model = resolved.model!;
-  const apiKey = getEnv(resolved.apiKeyEnv)!;
-  const budget = new AbortController();
-  const deadlineAt = Date.now() + resolved.timeoutMs;
-  let timedOut = false;
-  let attempts = 0;
-  let retried = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    budget.abort();
-  }, resolved.timeoutMs);
-  const callSignal = input.signal ? AbortSignal.any([input.signal, budget.signal]) : budget.signal;
-  try {
-    for (let attempt = 0; attempt < JUDGE_MAX_ATTEMPTS; attempt++) {
-      if (Date.now() >= deadlineAt || budget.signal.aborted) {
-        return unavailableForCall(model, resolved.timeoutMs, attempts, retried);
-      }
-      attempts = attempt + 1;
-      try {
-        const client = bridgeAutoevalClient(judgeClient(apiKey, resolved.baseUrl, callSignal));
-        const call = Promise.resolve(
-          recipe === "closedQA"
-            ? ClosedQA({ input: frozenMaterial.input, output: frozenMaterial.output, criteria: reference, model, ...client })
-            : recipe === "factuality"
-              ? Factuality({ input: frozenMaterial.input, output: frozenMaterial.output, expected: reference, model, ...client })
-              : Summary({ input: frozenMaterial.input, output: frozenMaterial.output, expected: reference, model, ...client }),
-        );
-        call.catch(() => {});
-        const result = await Promise.race([
-          call,
-          new Promise<never>((_, reject) => budget.signal.addEventListener("abort", () => reject(new Error("judge call exceeded its budget")), { once: true })),
-        ]) as AutoevalResult;
-        if (typeof result?.score !== "number" || !Number.isFinite(result.score) || result.score < 0 || result.score > 1) {
-          return evaluatorError("judge-invalid-response", "Judge returned no finite score in [0, 1]");
-        }
-        const rationale = result.metadata?.rationale;
-        return {
-          outcome: "scored",
-          normalizedScore: result.score,
-          evidence: evidenceFor(frozenMaterial),
-          ...(typeof rationale === "string" && rationale.trim() !== "" ? { explanation: summaryText(rationale) } : {}),
-        };
-      } catch (error) {
-        if (timedOut || input.signal?.aborted) {
-          return unavailableForCall(model, resolved.timeoutMs, attempts, retried, !timedOut);
-        }
-        if (!isTransportFailure(error)) return evaluatorError("judge-evaluator-error", errorSummary(error));
-        if (!isTransientJudgeFailure(error) || attempt + 1 >= JUDGE_MAX_ATTEMPTS) {
-          return unavailable("judge-call-failed", judgeFailureEvidence(error, model, attempts, retried));
-        }
-        const remaining = deadlineAt - Date.now();
-        if (remaining <= 0) return unavailableForCall(model, resolved.timeoutMs, attempts, retried);
-        const retryAfter = retryAfterMs(objectField(error, "headers"));
-        const delay = Math.min(retryAfter ?? (input.random ?? Math.random)() * JUDGE_RETRY_BASE_DELAY_MS * 2 ** attempt, remaining);
-        retried = true;
-        try {
-          await (input.sleep ?? defaultJudgeSleep)(delay, budget.signal);
-        } catch {
-          return unavailableForCall(model, resolved.timeoutMs, attempts, true, !budget.signal.aborted);
-        }
-      }
-    }
-  } finally {
-    clearTimeout(timer);
-  }
-  return evaluatorError("judge-evaluator-error", "Judge evaluator ended without a result");
+  return Effect.runPromise(evaluateJudgeRecipeEffect(input));
 }
 
 function measurementFromJudgeEvaluation(
@@ -367,11 +449,8 @@ function measurementFromJudgeEvaluation(
 export function evaluateJudgeMeasurement(
   input: JudgeRecipeExecution,
 ): Effect.Effect<MeasurementAssertionEvaluation, never, never> {
-  return Effect.tryPromise((signal) =>
-    evaluateJudgeRecipe({ ...input, signal: input.signal === undefined ? signal : AbortSignal.any([input.signal, signal]) })
-  ).pipe(
+  return evaluateJudgeRecipeEffect(input).pipe(
     Effect.map(measurementFromJudgeEvaluation),
-    Effect.catchAll(() => Effect.succeed(Object.freeze({ state: "errored" as const }))),
   );
 }
 
@@ -393,7 +472,6 @@ function createRecipe(deps: JudgeDeps, recipe: JudgeRecipe, reference: string, m
       reference,
       material: frozenMaterial,
       ...(deps.signal === undefined ? {} : { signal: deps.signal }),
-      ...(deps.sleep === undefined ? {} : { sleep: deps.sleep }),
       ...(deps.random === undefined ? {} : { random: deps.random }),
     }),
   });

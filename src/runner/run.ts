@@ -3,7 +3,7 @@
 // reporter 编排 / 汇总在 report.ts，Direct Agent 的 Sandbox 占位适配器在 direct-agent-sandbox.ts。
 
 import { Effect, Cause, Data, Either, Exit, Option } from "effect";
-import { probeJudge } from "../assertions/judge.ts";
+import { probeJudgeEffect } from "../assertions/judge.ts";
 import { t } from "../i18n/index.ts";
 import { cacheKey, planProjectTarget } from "./fingerprint.ts";
 import { agentInstallPlansForRun } from "./config-identity.ts";
@@ -457,13 +457,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       // 而落进 attempt 的 error.message 也必须是它自己那个端点的失败原因。
       const failedByKey = new Map<string, string>();
       for (const target of targets) {
-        const err = yield* Effect.tryPromise({
-          try: (signal) => probeJudge(
-            target.judge,
-            opts.signal === undefined ? signal : AbortSignal.any([opts.signal, signal]),
-          ),
-          catch: (error) => error,
-        });
+        const err = yield* probeJudgeEffect(target.judge, opts.signal);
         if (err) failedByKey.set(target.key, err);
       }
       for (const [pairKey, key] of evalKeys) {
