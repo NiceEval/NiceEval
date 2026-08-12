@@ -34,17 +34,19 @@ t.sandbox.notInDiff(/console\.log/, { content: "both" });
 
 `notInDiff()` 从不扫描未变化上下文。路径命中或已知 added/removed hunk 命中立即为 mismatch；没有命中但所选内容侧存在 binary 或 oversized elision 时为 unavailable。`content` 未参与的路径判定不因 elision 失去确定性。
 
-Runner 在作者 settle 后只导出并冻结一次 `niceeval.diff/v1` Attempt Attachment。它含 agent send-window endpoint attribution、有效 include/ignore/default-policy identity、零变化 window，以及每条路径的 absent/text/elided 端点和 added/removed hunks。所有上述 Assertion evaluator 与该 Attachment writer 持有同一冻结 document。空变化是可用的空 document；采集失败是 unavailable，绝不伪装为空 diff。
+Runner 在作者 settle 后只导出并冻结一次无版本的 workspace diff 语义值。Evaluation Record adapter 在写入边界把它编码为 `niceeval.diff/v1` Attempt Attachment。
+
+该值含 agent send-window endpoint attribution、有效 include/ignore/default-policy identity、零变化 window，以及每条路径的 absent/text/elided 端点和 added/removed hunks。所有上述 Assertion evaluator 与该 adapter 共享同一冻结值。空变化是可用的空值；采集失败是 unavailable，绝不伪装为空 diff。
 
 required 的 diff Assertion 在 unavailable 时使 Verdict errored；optional 的 unavailable 不单独改变 Verdict。没有声明 diff Assertion 时，采集失败只留下 warning 和 unavailable Attachment，不妨碍其他证据继续。超时或中断先把尚未结算的 Assertion 封为 `producer-interrupted`；之后的 best-effort diff 仅供诊断，不重新决定它。
 
 读取持久化的 typed diff 要通过中立的 RecordAttachment projector：
 
 ```ts
-import { agentWorkspaceDiffProjectorV1 } from "niceeval";
+import { agentWorkspaceDiffProjector } from "niceeval";
 import { attemptSlotProjection } from "niceeval/projection";
 
-const diffByAttempt = attemptSlotProjection(agentWorkspaceDiffProjectorV1);
+const diffByAttempt = attemptSlotProjection(agentWorkspaceDiffProjector);
 ```
 
 它没有 Report 或官方组件的特权。未来新增官方 diff Attachment schema 时，必须提供一个逐相邻 converter；diff 与 Assertions 属于同一个 Evaluation migration group，整体迁移或明确呈现 migration-unavailable。

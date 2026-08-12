@@ -137,9 +137,9 @@ export function equals<const T>(expected: T): BooleanMatch<unknown, T> { ... }
 #### `matches`
 
 ```ts
-export function matches<S extends StandardSchemaV1>(
+export function matches<S extends StandardSchema>(
   schema: S,
-): BooleanMatch<unknown, StandardSchemaV1.InferInput<S>, "value"> { ... }
+): BooleanMatch<unknown, StandardSchema.InferInput<S>, "value"> { ... }
 ```
 
 #### `satisfies`

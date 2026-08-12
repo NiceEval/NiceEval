@@ -41,7 +41,7 @@ turn、session 与 attempt scope 必须以同一批真实工具事件完成断�
 
 ## eval-assertion-sandbox
 
-Sandbox Eval 在真实 send window 中产生 modified、added 和 deleted endpoint delta；Eval 用 `changedPaths`、`fileChanged`、`fileDeleted` 与 `notInDiff` 直接登记 post-run Assertion。测试只从候选包取得 `agentWorkspaceDiffProjectorV1` 并经 `attemptSlotProjection` 声明中立读取，不读旧的通用 diff subject 或私有落盘事实。
+Sandbox Eval 在真实 send window 中产生 modified、added 和 deleted endpoint delta；Eval 用 `changedPaths`、`fileChanged`、`fileDeleted` 与 `notInDiff` 直接登记 post-run Assertion。测试只从候选包取得 `agentWorkspaceDiffProjector` 并经 `attemptSlotProjection` 声明中立读取，不读旧的通用 diff subject 或私有落盘事实。
 
 ## eval-assertion-judge-unavailable
 
