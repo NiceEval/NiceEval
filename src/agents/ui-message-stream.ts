@@ -24,6 +24,7 @@
 // 事件流始终从协议帧直构。
 
 import { randomUUID } from "node:crypto";
+import { Effect } from "effect";
 
 import { defineAgent } from "../define.ts";
 import { makeSendFailure } from "../context/send-failures.ts";
@@ -87,60 +88,75 @@ type ReadUIMessageStream = (options: {
 // ai 是可选 peer 依赖:动态 import,缺了就把「装什么」直接说清楚。
 // 说明符经变量传入,避免 TS 对字面量模块名做安装检查(niceeval 自身不依赖 ai)。
 let aiModule: Promise<{ readUIMessageStream: ReadUIMessageStream }> | undefined;
-function loadAi(): Promise<{ readUIMessageStream: ReadUIMessageStream }> {
-  if (!aiModule) {
-    const specifier = "ai";
-    aiModule = (import(specifier) as Promise<{ readUIMessageStream: ReadUIMessageStream }>).catch(() => {
+
+function missingAiModule(): Error {
+  return new Error(
+    "uiMessageStreamAgent 需要 `ai` 包(AI SDK v5+,协议 reducer readUIMessageStream 来自它)。在你的 eval 项目里安装:npm install -D ai",
+  );
+}
+
+/** Dynamic import is an SDK Promise boundary; a rejected load is never cached. */
+function loadAiEffect(): Effect.Effect<{ readUIMessageStream: ReadUIMessageStream }, Error> {
+  const pending = aiModule;
+  return Effect.tryPromise({
+    try: () => {
+      if (pending !== undefined) return pending;
+      const specifier = "ai";
+      const loading = import(specifier) as Promise<{ readUIMessageStream: ReadUIMessageStream }>;
+      aiModule = loading;
+      return loading;
+    },
+    catch: () => missingAiModule(),
+  }).pipe(
+    Effect.tapError(() => Effect.sync(() => {
       aiModule = undefined;
-      throw new Error(
-        "uiMessageStreamAgent 需要 `ai` 包(AI SDK v5+,协议 reducer readUIMessageStream 来自它)。在你的 eval 项目里安装:npm install -D ai",
-      );
-    });
-  }
-  return aiModule;
+    })),
+  );
 }
 
 // ───────────────────────── SSE 解析 ─────────────────────────
 
-async function* parseSseChunks(body: ReadableStream<Uint8Array>): AsyncGenerator<UIMessageChunkLike> {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
+function drainSseEvents(
+  buffer: string,
+  controller: TransformStreamDefaultController<UIMessageChunkLike>,
+  onChunk: (chunk: UIMessageChunkLike) => void,
+): string {
   for (;;) {
     const sepIndex = buffer.indexOf("\n\n");
-    if (sepIndex !== -1) {
-      const rawEvent = buffer.slice(0, sepIndex);
-      buffer = buffer.slice(sepIndex + 2);
-      const line = rawEvent.split("\n").find((l) => l.startsWith("data: "));
-      if (line) {
-        const payload = line.slice("data: ".length);
-        if (payload !== "[DONE]") yield JSON.parse(payload) as UIMessageChunkLike;
-      }
-      continue;
-    }
-    const { value, done } = await reader.read();
-    if (done) return;
-    buffer += decoder.decode(value, { stream: true });
+    if (sepIndex === -1) return buffer;
+    const rawEvent = buffer.slice(0, sepIndex);
+    buffer = buffer.slice(sepIndex + 2);
+    const line = rawEvent.split("\n").find((candidate) => candidate.startsWith("data: "));
+    if (!line) continue;
+    const payload = line.slice("data: ".length);
+    if (payload === "[DONE]") continue;
+    const chunk = JSON.parse(payload) as UIMessageChunkLike;
+    onChunk(chunk);
+    controller.enqueue(chunk);
   }
 }
 
-/** 把 SSE 包成 readUIMessageStream 要的 ReadableStream,顺带旁路探测(错误帧等)。 */
+/**
+ * Build the AI SDK reducer input with native stream composition rather than a hand-owned reader.
+ * Scope finalization below aborts/cancels this pipeline, so an interrupted reducer cannot retain a
+ * body reader or live HTTP transport.
+ */
 function toChunkStream(
   body: ReadableStream<Uint8Array>,
   onChunk: (c: UIMessageChunkLike) => void,
 ): ReadableStream<UIMessageChunkLike> {
-  const gen = parseSseChunks(body);
-  return new ReadableStream<UIMessageChunkLike>({
-    async pull(controller) {
-      const { value, done } = await gen.next();
-      if (done) {
-        controller.close();
-        return;
-      }
-      onChunk(value);
-      controller.enqueue(value);
+  const decoder = new TextDecoder();
+  let buffer = "";
+  return body.pipeThrough(new TransformStream<Uint8Array, UIMessageChunkLike>({
+    transform(value, controller) {
+      buffer += decoder.decode(value, { stream: true });
+      buffer = drainSseEvents(buffer, controller, onChunk);
     },
-  });
+    flush(controller) {
+      // Keep the original protocol rule: only a completed `\n\n` record is observable.
+      buffer = drainSseEvents(buffer, controller, onChunk);
+    },
+  }));
 }
 
 // ───────────────────────── parts → 事件 ─────────────────────────
@@ -253,6 +269,275 @@ export interface UiMessageStreamAgentOptions {
 
 const DEFAULT_DENY_REASON = "用户拒绝了这次调用,不要重试,直接告知用户操作未执行。";
 
+interface PreparedUiMessageStreamSend {
+  readonly bookkeeping: UiMessageSessionState;
+  readonly messagesToSend: UIMessageLike[];
+  readonly resumeFrom: UIMessageLike | undefined;
+}
+
+/** External SDK / transport Promise boundary. */
+function promiseEffect<Value>(
+  run: (signal: AbortSignal) => PromiseLike<Value>,
+): Effect.Effect<Value, unknown> {
+  return Effect.tryPromise({ try: run, catch: (cause) => cause });
+}
+
+function resolveUrlEffect(
+  options: UiMessageStreamAgentOptions,
+  ctx: AgentContext,
+): Effect.Effect<string, unknown> {
+  const url = options.url;
+  return typeof url === "function"
+    ? promiseEffect(() => Promise.resolve(url(ctx)))
+    : Effect.succeed(url);
+}
+
+function resolveHeadersEffect(
+  options: UiMessageStreamAgentOptions,
+  ctx: AgentContext,
+): Effect.Effect<globalThis.Record<string, string>, unknown> {
+  return Effect.try({
+    try: () => typeof options.headers === "function" ? options.headers(ctx) : (options.headers ?? {}),
+    catch: (cause) => cause,
+  });
+}
+
+function transportController() {
+  return Effect.acquireRelease(
+    Effect.sync(() => new AbortController()),
+    (controller) => Effect.sync(() => controller.abort()),
+  );
+}
+
+function cancelReadableStreamEffect<Value>(stream: ReadableStream<Value>): Effect.Effect<void> {
+  return promiseEffect(() => stream.cancel()).pipe(
+    Effect.catchAll(() => Effect.void),
+    Effect.asVoid,
+  );
+}
+
+function prepareMessages(
+  options: UiMessageStreamAgentOptions,
+  input: TurnInput,
+  ctx: AgentContext,
+): PreparedUiMessageStreamSend {
+  // 会话续接是「客户端带全量历史」模式:历史与协议簿记各用一个 typed slot,
+  // 新线自然两者都为空；相同名字不会让其它 Adapter 的 slot 与它们碰撞。
+  const priorMessages = ctx.session.get(historySlot) ?? [];
+  const bookkeeping = ctx.session.get(sessionStateSlot) ?? {};
+  ctx.session.set(sessionStateSlot, bookkeeping);
+  let id = bookkeeping.chatId;
+  if (!id) {
+    id = `uims-${randomUUID()}`;
+    bookkeeping.chatId = id;
+    ctx.session.capture(id); // 镜像:t.sessionId / 报告可见
+  }
+
+  const lastMessage = priorMessages.at(-1);
+  const pendingPart =
+    lastMessage?.role === "assistant" ? lastMessage.parts.find(isApprovalRequested) : undefined;
+
+  if (pendingPart && lastMessage) {
+    // HITL 续跑:不追加新 user 消息 —— 把停在 approval-requested 的 part 原地改成
+    // approval-responded,原样重发,服务端续跑同一条被打断的 assistant 消息。
+    // 裁决按 requestId 从 input.responses 对位读取(t.respond 的结构化回答)。
+    const requestId = pendingPart.approval?.id ?? pendingPart.toolCallId;
+    const approved = approvalDecision(input.responses, requestId);
+    const mutatedParts = lastMessage.parts.map((part) =>
+      isApprovalRequested(part) && part.approval?.id === pendingPart.approval?.id
+        ? {
+            ...part,
+            state: "approval-responded",
+            approval: {
+              id: pendingPart.approval!.id,
+              approved,
+              ...(approved ? {} : { reason: options.denyReason ?? DEFAULT_DENY_REASON }),
+            },
+          }
+        : part,
+    );
+    const resumeFrom = { ...lastMessage, parts: mutatedParts };
+    return {
+      bookkeeping,
+      resumeFrom,
+      messagesToSend: [...priorMessages.slice(0, -1), resumeFrom],
+    };
+  }
+
+  const parts: UIMessagePartLike[] = [{ type: "text", text: input.text }];
+  for (const file of input.files ?? []) {
+    parts.push({ type: "file", mediaType: file.mimeType, url: `data:${file.mimeType};base64,${file.dataBase64}` });
+  }
+  return {
+    bookkeeping,
+    resumeFrom: undefined,
+    messagesToSend: [...priorMessages, { id: randomUUID(), role: "user", parts }],
+  };
+}
+
+/** Consume the SDK's native async iterator only inside its named Effect Promise boundary. */
+function reduceUiMessageStreamEffect(
+  readUIMessageStream: ReadUIMessageStream,
+  resumeFrom: UIMessageLike | undefined,
+  stream: ReadableStream<UIMessageChunkLike>,
+  transport: AbortController,
+): Effect.Effect<UIMessageLike | undefined, unknown> {
+  return promiseEffect(async (signal) => {
+    const onAbort = () => transport.abort(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+    if (signal.aborted) onAbort();
+    try {
+      let finalMessage: UIMessageLike | undefined;
+      for await (const message of readUIMessageStream({ message: resumeFrom, stream })) {
+        finalMessage = message;
+      }
+      return finalMessage;
+    } finally {
+      signal.removeEventListener("abort", onAbort);
+    }
+  });
+}
+
+function uiMessageStreamSendEffect(
+  options: UiMessageStreamAgentOptions,
+  input: TurnInput,
+  ctx: AgentContext,
+): Effect.Effect<import("../types.ts").Turn, unknown> {
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const { readUIMessageStream } = yield* loadAiEffect();
+      const prepared = yield* Effect.try({
+        try: () => prepareMessages(options, input, ctx),
+        catch: (cause) => cause,
+      });
+      const url = yield* resolveUrlEffect(options, ctx);
+      const extraHeaders = yield* resolveHeadersEffect(options, ctx);
+      const transport = yield* transportController();
+      const res = yield* Effect.tryPromise({
+        try: (signal) => fetch(url, {
+          method: "POST",
+          // traceparent 随请求带过去:应用埋点支持 context 传播时,span 归属精确到本轮。
+          headers: { "content-type": "application/json", ...extraHeaders, ...ctx.telemetry?.headers },
+          body: JSON.stringify({ ...options.body?.(ctx), messages: prepared.messagesToSend }),
+          signal: AbortSignal.any([ctx.signal, signal, transport.signal]),
+        }),
+        catch: (err) => {
+          if (ctx.signal.aborted) return err;
+          const cause = err instanceof Error
+            ? (err.cause instanceof Error ? err.cause.message : err.message)
+            : String(err);
+          return makeSendFailure({
+            acceptance: "unknown",
+            message: `Could not connect to ${url} (${cause}). Is the app under test running? Start it yourself first, or point url at a deployed instance via config.`,
+            cause: normalizeExternalCause(err),
+          });
+        },
+      });
+      const responseBody = res.body;
+      if (!res.ok || !responseBody) {
+        const responseText = yield* promiseEffect(() => res.text()).pipe(
+          Effect.catchAll(() => Effect.succeed("")),
+        );
+        return yield* Effect.fail(
+          makeSendFailure({
+            acceptance: "unknown",
+            message: `POST ${url} failed: ${res.status} ${responseText}. Confirm the app is running and the endpoint speaks the UI Message Stream protocol (the backend useChat expects).`,
+            cause: normalizeExternalCause({ status: res.status }),
+          }),
+        );
+      }
+
+      const streamState: { sawError: string | undefined } = { sawError: undefined };
+      const chunkStream = toChunkStream(responseBody, (chunk) => {
+        if (chunk.type === "error") streamState.sawError = chunk.errorText;
+      });
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => transport.abort()).pipe(
+          Effect.zipRight(cancelReadableStreamEffect(chunkStream)),
+        ));
+      const finalMessage = yield* reduceUiMessageStreamEffect(
+        readUIMessageStream,
+        prepared.resumeFrom,
+        chunkStream,
+        transport,
+      );
+      if (!finalMessage) {
+        return yield* Effect.fail(
+          makeSendFailure({
+            acceptance: "unknown",
+            message: `POST ${url} 的流结束了但一条 assistant 消息都没归约出来 —— 端点吐的不是 UI Message Stream 帧?`,
+          }),
+        );
+      }
+
+      const derived = yield* Effect.try({
+        try: () => {
+          // 续跑轮:finalMessage 是同一条消息的完整版,替换末尾半成品;全新轮:追加。
+          ctx.session.set(
+            historySlot,
+            prepared.resumeFrom
+              ? [...prepared.messagesToSend.slice(0, -1), finalMessage]
+              : [...prepared.messagesToSend, finalMessage],
+          );
+          const reported: ReportedState = prepared.resumeFrom && prepared.bookkeeping.reported
+            ? prepared.bookkeeping.reported
+            : { startedCalls: new Set(), finishedCalls: new Set(), textLen: 0 };
+          prepared.bookkeeping.reported = reported;
+          return {
+            events: deriveTurnEvents(finalMessage, reported),
+            request: finalMessage.parts.find(isApprovalRequested),
+          };
+        },
+        catch: (cause) => cause,
+      });
+
+      const request = derived.request;
+      if (request) {
+        return yield* Effect.try({
+          try: () => {
+            const waitingEvents = [
+              ...derived.events,
+              {
+                type: "input.requested" as const,
+                request: {
+                  id: request.approval?.id ?? request.toolCallId,
+                  action: toolNameOf(request),
+                  input: (request.input ?? null) as JsonValue,
+                  options: [{ id: "approve" }, { id: "deny" }],
+                },
+              },
+            ];
+            const evidenceCoverage = unclassifiedToolActionsCoverage(waitingEvents);
+            return {
+              status: "waiting" as const,
+              events: waitingEvents,
+              ...(evidenceCoverage === undefined ? {} : { evidenceCoverage }),
+            };
+          },
+          catch: (cause) => cause,
+        });
+      }
+
+      if (options.settleMs) yield* Effect.sleep(options.settleMs);
+      return yield* Effect.try({
+        try: () => {
+          const finalEvents = [
+            ...derived.events,
+            ...(streamState.sawError ? [{ type: "error" as const, message: streamState.sawError }] : []),
+          ];
+          const evidenceCoverage = unclassifiedToolActionsCoverage(finalEvents);
+          return {
+            status: streamState.sawError ? ("failed" as const) : ("completed" as const),
+            events: finalEvents,
+            ...(evidenceCoverage === undefined ? {} : { evidenceCoverage }),
+          };
+        },
+        catch: (cause) => cause,
+      });
+    }),
+  );
+}
+
 /**
  * UI Message Stream Protocol(AI SDK `useChat` 后端的标准 SSE 协议)的内置无侵入 adapter。
  * 对着已部署应用的 HTTP 端点收发,不 import 应用代码:
@@ -274,143 +559,6 @@ export function uiMessageStreamAgent(options: UiMessageStreamAgentOptions): Agen
     tracing: options.tracing,
     spanMapper: options.spanMapper,
 
-    async send(input: TurnInput, ctx: AgentContext) {
-      const { readUIMessageStream } = await loadAi();
-
-      // 会话续接是「客户端带全量历史」模式:历史与协议簿记各用一个 typed slot,
-      // 新线自然两者都为空；相同名字不会让其它 Adapter 的 slot 与它们碰撞。
-      const priorMessages = ctx.session.get(historySlot) ?? [];
-      const bookkeeping = ctx.session.get(sessionStateSlot) ?? {};
-      ctx.session.set(sessionStateSlot, bookkeeping);
-      let id = bookkeeping.chatId;
-      if (!id) {
-        id = `uims-${randomUUID()}`;
-        bookkeeping.chatId = id;
-        ctx.session.capture(id); // 镜像:t.sessionId / 报告可见
-      }
-
-      const lastMessage = priorMessages.at(-1);
-      const pendingPart =
-        lastMessage?.role === "assistant" ? lastMessage.parts.find(isApprovalRequested) : undefined;
-
-      let messagesToSend: UIMessageLike[];
-      let resumeFrom: UIMessageLike | undefined;
-
-      if (pendingPart && lastMessage) {
-        // HITL 续跑:不追加新 user 消息 —— 把停在 approval-requested 的 part 原地改成
-        // approval-responded,原样重发,服务端续跑同一条被打断的 assistant 消息。
-        // 裁决按 requestId 从 input.responses 对位读取(t.respond 的结构化回答)。
-        const requestId = pendingPart.approval?.id ?? pendingPart.toolCallId;
-        const approved = approvalDecision(input.responses, requestId);
-        const mutatedParts = lastMessage.parts.map((part) =>
-          isApprovalRequested(part) && part.approval?.id === pendingPart.approval?.id
-            ? {
-                ...part,
-                state: "approval-responded",
-                approval: {
-                  id: pendingPart.approval!.id,
-                  approved,
-                  ...(approved ? {} : { reason: options.denyReason ?? DEFAULT_DENY_REASON }),
-                },
-              }
-            : part,
-        );
-        resumeFrom = { ...lastMessage, parts: mutatedParts };
-        messagesToSend = [...priorMessages.slice(0, -1), resumeFrom];
-      } else {
-        const parts: UIMessagePartLike[] = [{ type: "text", text: input.text }];
-        for (const f of input.files ?? []) {
-          parts.push({ type: "file", mediaType: f.mimeType, url: `data:${f.mimeType};base64,${f.dataBase64}` });
-        }
-        messagesToSend = [...priorMessages, { id: randomUUID(), role: "user", parts }];
-      }
-
-      const url = typeof options.url === "function" ? await options.url(ctx) : options.url;
-      const extraHeaders = typeof options.headers === "function" ? options.headers(ctx) : (options.headers ?? {});
-      let res: Response;
-      try {
-        res = await fetch(url, {
-          method: "POST",
-          // traceparent 随请求带过去:应用埋点支持 context 传播时,span 归属精确到本轮。
-          headers: { "content-type": "application/json", ...extraHeaders, ...ctx.telemetry?.headers },
-          body: JSON.stringify({ ...options.body?.(ctx), messages: messagesToSend }),
-          signal: ctx.signal,
-        });
-      } catch (err) {
-        if (ctx.signal.aborted) throw err;
-        const cause = err instanceof Error ? (err.cause instanceof Error ? err.cause.message : err.message) : String(err);
-        throw makeSendFailure({
-          acceptance: "unknown",
-          message: `Could not connect to ${url} (${cause}). Is the app under test running? Start it yourself first, or point url at a deployed instance via config.`,
-          cause: normalizeExternalCause(err),
-        });
-      }
-      if (!res.ok || !res.body) {
-        throw makeSendFailure({
-          acceptance: "unknown",
-          message: `POST ${url} failed: ${res.status} ${await res.text().catch(() => "")}. Confirm the app is running and the endpoint speaks the UI Message Stream protocol (the backend useChat expects).`,
-          cause: normalizeExternalCause({ status: res.status }),
-        });
-      }
-
-      let sawError: string | undefined;
-      const chunkStream = toChunkStream(res.body, (c) => {
-        if (c.type === "error") sawError = c.errorText;
-      });
-
-      let finalMessage: UIMessageLike | undefined;
-      for await (const msg of readUIMessageStream({ message: resumeFrom, stream: chunkStream })) {
-        finalMessage = msg;
-      }
-      if (!finalMessage) {
-        throw makeSendFailure({
-          acceptance: "unknown",
-          message: `POST ${url} 的流结束了但一条 assistant 消息都没归约出来 —— 端点吐的不是 UI Message Stream 帧?`,
-        });
-      }
-
-      // 续跑轮:finalMessage 是同一条消息的完整版,替换末尾半成品;全新轮:追加。
-      ctx.session.set(
-        historySlot,
-        resumeFrom ? [...messagesToSend.slice(0, -1), finalMessage] : [...messagesToSend, finalMessage],
-      );
-
-      const reported: ReportedState = resumeFrom && bookkeeping.reported
-        ? bookkeeping.reported
-        : { startedCalls: new Set(), finishedCalls: new Set(), textLen: 0 };
-      bookkeeping.reported = reported;
-      const events = deriveTurnEvents(finalMessage, reported);
-
-      const request = finalMessage.parts.find(isApprovalRequested);
-      if (request) {
-        const waitingEvents = [
-          ...events,
-          {
-            type: "input.requested" as const,
-            request: {
-              id: request.approval?.id ?? request.toolCallId,
-              action: toolNameOf(request),
-              input: (request.input ?? null) as JsonValue,
-              options: [{ id: "approve" }, { id: "deny" }],
-            },
-          },
-        ];
-        const evidenceCoverage = unclassifiedToolActionsCoverage(waitingEvents);
-        return {
-          status: "waiting" as const,
-          events: waitingEvents,
-          ...(evidenceCoverage === undefined ? {} : { evidenceCoverage }),
-        };
-      }
-
-      if (options.settleMs) await new Promise((resolve) => setTimeout(resolve, options.settleMs));
-      const finalEvents = [...events, ...(sawError ? [{ type: "error" as const, message: sawError }] : [])];
-      const evidenceCoverage = unclassifiedToolActionsCoverage(finalEvents);
-      return {
-        status: sawError ? ("failed" as const) : ("completed" as const),
-        events: finalEvents,
-        ...(evidenceCoverage === undefined ? {} : { evidenceCoverage }),
-      };
-    },
+    send: (input, ctx) => Effect.runPromise(uiMessageStreamSendEffect(options, input, ctx), { signal: ctx.signal }),
   });
 }

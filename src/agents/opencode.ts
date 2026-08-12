@@ -1,4 +1,5 @@
 import { defineSandboxAgent } from "../define.ts";
+import { Effect } from "effect";
 import { requireEnv, getEnv } from "../util.ts";
 import { shared } from "./shared.ts";
 import {
@@ -17,7 +18,7 @@ import {
   extractOpenCodeJsonl,
 } from "../o11y/parsers/opencode.ts";
 import { DEFAULT_OPENCODE_CLI_VERSION, AGENT_BASELINE_RECIPE_REVISION } from "./coding-cli-versions.ts";
-import { createNpmCliInstaller } from "./npm-staged.ts";
+import { createNpmCliInstaller, resolveAgentBinEffect } from "./npm-staged.ts";
 import type {
   Agent,
   AgentSetupManifest,
@@ -176,8 +177,11 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
       }
     },
 
-    async send(input, ctx) {
+    send: (input, ctx) => Effect.runPromise(Effect.scoped(Effect.gen(function* () {
       const sb = ctx.sandbox;
+      const opencodeBin = yield* resolveAgentBinEffect(sb, "opencode");
+      return yield* Effect.tryPromise({
+        try: async (signal) => {
       const baseUrl = resolveBaseUrl(config);
       const args = ["run", input.text, "--format", "json", "--auto"];
       const model = resolveModelFlag(ctx.model, Boolean(baseUrl));
@@ -196,9 +200,8 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
         env.OPENAI_BASE_URL = baseUrl;
       }
 
-      const opencodeBin = await shared.resolveAgentBin(sb, "opencode");
       const sensitiveValues = [apiKey];
-      const res = await sb.runCommand(opencodeBin, args, { env, sensitiveValues, stream: true });
+      const res = await sb.runCommand(opencodeBin, args, { env, sensitiveValues, stream: true, signal });
       let raw = extractOpenCodeJsonl(res.stdout) ?? extractOpenCodeJsonl(`${res.stdout}\n${res.stderr}`);
       let sessionId = sessionIdFromOpenCodeTranscript(raw) ?? sessionIdFromOpenCodeTranscript(res.stdout);
       if (sessionId) ctx.session.capture(sessionId);
@@ -210,7 +213,7 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
       const hasMessages = parsed.events.some((e) => e.type === "message");
       if (!hasActions && !hasMessages && (sessionId ?? ctx.session.id)) {
         const sid = sessionId ?? ctx.session.id!;
-        const exported = await sb.runCommand(opencodeBin, ["export", sid], { env, sensitiveValues });
+        const exported = await sb.runCommand(opencodeBin, ["export", sid], { env, sensitiveValues, signal });
         if (exported.exitCode === 0 && exported.stdout.trim()) {
           raw = exported.stdout;
           parsed = parseOpenCodeTranscript(raw);
@@ -250,10 +253,13 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
       return {
         events,
         usage: parsed.usage,
-        status: hasErrorEvent ? "failed" : "completed",
+        status: hasErrorEvent ? "failed" as const : "completed" as const,
         ...(turnEvidenceCoverage === undefined ? {} : { evidenceCoverage: turnEvidenceCoverage }),
       };
-    },
+        },
+        catch: (cause) => cause,
+      });
+    })), { signal: ctx.signal }),
   });
 }
 

@@ -75,9 +75,6 @@ export function defineAgent(def: DirectAgentDef): DirectAgent {
   };
 }
 
-/** @deprecated Use {@link defineAgent}. */
-export const defineDirectAgent = defineAgent;
-
 /** 会话型 eval(通过制:一个 eval 折叠成一分)。禁止提供 id —— 从路径推导。 */
 export function defineEval(def: EvalInput): EvalDefinition<"pass", TestContext> {
   if (Object.hasOwn(def, "id")) {

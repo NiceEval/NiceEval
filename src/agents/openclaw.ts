@@ -1,4 +1,5 @@
 import { defineSandboxAgent } from "../define.ts";
+import { Effect } from "effect";
 import { requireEnv, getEnv } from "../util.ts";
 import { shared } from "./shared.ts";
 import {
@@ -12,7 +13,7 @@ import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
 import { parseOpenClawTranscript, parseOpenClawRunJson } from "../o11y/parsers/openclaw.ts";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import { DEFAULT_OPENCLAW_CLI_VERSION, AGENT_BASELINE_RECIPE_REVISION } from "./coding-cli-versions.ts";
-import { createNpmCliInstaller } from "./npm-staged.ts";
+import { createNpmCliInstaller, resolveAgentBinEffect } from "./npm-staged.ts";
 import { randomUUID } from "node:crypto";
 import type { Agent, AgentSetupManifest, SkillSpec, StreamEvent, TurnEvidenceCoverage } from "../types.ts";
 import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
@@ -172,8 +173,11 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
       }
     },
 
-    async send(input, ctx) {
+    send: (input, ctx) => Effect.runPromise(Effect.scoped(Effect.gen(function* () {
       const sb = ctx.sandbox;
+      const openclawBin = yield* resolveAgentBinEffect(sb, "openclaw");
+      return yield* Effect.tryPromise({
+        try: async (signal) => {
       // 会话契约:新会话线显式发新 session id(隔离);后续轮 resume 记录的 id。
       const sessionId = ctx.session.id ?? `niceeval-${sb.sandboxId}-${randomUUID().slice(0, 8)}`;
       ctx.session.capture(sessionId);
@@ -195,10 +199,11 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
         env.OPENAI_BASE_URL = baseUrl;
       }
 
-      const res = await sb.runCommand(await shared.resolveAgentBin(sb, "openclaw"), args, {
+      const res = await sb.runCommand(openclawBin, args, {
         env,
         sensitiveValues: [apiKey],
         stream: true,
+        signal,
       });
 
       const runJson = parseOpenClawRunJson(res.stdout);
@@ -268,10 +273,13 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
       return {
         events,
         usage,
-        status: runJson.failed ? "failed" : "completed",
+        status: runJson.failed ? "failed" as const : "completed" as const,
         ...(turnEvidenceCoverage ? { evidenceCoverage: turnEvidenceCoverage } : {}),
       };
-    },
+        },
+        catch: (cause) => cause,
+      });
+    })), { signal: ctx.signal }),
   });
 }
 

@@ -1,4 +1,5 @@
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
+import { Effect } from "effect";
 import { defineSandboxAgent } from "../define.ts";
 import { requireEnv, getEnv } from "../util.ts";
 import { shared } from "./shared.ts";
@@ -10,9 +11,9 @@ import {
 } from "./skills.ts";
 import { verifyMarketplaceName } from "./marketplace.ts";
 import {
-  appendNativeConfigFile,
+  appendNativeConfigFileEffect,
   assertTomlNativeConfig,
-  loadNativeConfigFile,
+  loadNativeConfigFileEffect,
   type LoadedNativeConfig,
 } from "./native-config.ts";
 import { mapCodexSpans } from "../o11y/otlp/mappers/codex.ts";
@@ -295,13 +296,20 @@ export function codexAgent(config?: CodexConfig): Agent {
     ensure,
     installers: [installer],
 
-    async setup(sb, ctx) {
+    setup: (sb, ctx) => Effect.runPromise(Effect.scoped(Effect.gen(function* () {
       // 用户的原生配置文件:本地读原始字节 → 验 TOML 语法与保留键。字节 SHA-256 进
       // manifest 与安装 checkpoint key(见 native-config.ts 的 nativeConfigCheckpointItem)。
       let nativeConfig: LoadedNativeConfig | undefined;
       if (config?.configFile !== undefined) {
-        nativeConfig = await loadNativeConfigFile({ agent: "codex", field: "configFile", path: config.configFile });
-        assertTomlNativeConfig(nativeConfig, { agent: "codex", field: "configFile", reservedKeys: RESERVED_CONFIG_KEYS });
+        nativeConfig = yield* loadNativeConfigFileEffect({ agent: "codex", field: "configFile", path: config.configFile });
+        yield* Effect.try({
+          try: () => assertTomlNativeConfig(nativeConfig!, {
+            agent: "codex",
+            field: "configFile",
+            reservedKeys: RESERVED_CONFIG_KEYS,
+          }),
+          catch: (cause) => cause,
+        });
       }
 
       // model 归属:实验决定(ctx.model);省略时不写 model 行,交给 codex CLI 原生默认,
@@ -324,24 +332,38 @@ export function codexAgent(config?: CodexConfig): Agent {
         : "";
 
       if (!nativeConfig) {
-        await shared.writeFile(
-          sb,
-          "~/.codex/config.toml",
-          providerTable ? `${topLevel}\n${providerTable}` : topLevel,
-        );
+        yield* Effect.tryPromise({
+          try: () => shared.writeFile(
+            sb,
+            "~/.codex/config.toml",
+            providerTable ? `${topLevel}\n${providerTable}` : topLevel,
+          ),
+          catch: (cause) => cause,
+        });
       } else {
         // codex 只读一份用户级 config.toml(没有 include / 第二配置层),Adapter 生成层与
         // 用户文件只能同文件分段共存。TOML 没有「回到根表」的语法,顶层键必须先于任何表头,
         // 所以布局固定为:Adapter 顶层键 → 用户文件原始字节(逐字节保留,自带表随意)→
         // Adapter 的表([model_providers.*] 以及后续追加的 [mcp_servers.*]、[otel])。
         // 保留键校验保证两层键不重叠,用户内容不被解析重写。
-        await shared.writeFile(sb, "~/.codex/config.toml", topLevel);
-        await appendNativeConfigFile(sb, nativeConfig, "~/.codex/config.toml");
+        yield* Effect.tryPromise({
+          try: () => shared.writeFile(sb, "~/.codex/config.toml", topLevel),
+          catch: (cause) => cause,
+        });
+        yield* appendNativeConfigFileEffect(sb, nativeConfig, "~/.codex/config.toml");
         if (providerTable) {
-          await sb.runShell(`cat >> ~/.codex/config.toml <<'NICEEVAL_PROVIDER_EOF'\n\n${providerTable}NICEEVAL_PROVIDER_EOF\n`);
+          yield* Effect.tryPromise({
+            try: (signal) => sb.runShell(
+              `cat >> ~/.codex/config.toml <<'NICEEVAL_PROVIDER_EOF'\n\n${providerTable}NICEEVAL_PROVIDER_EOF\n`,
+              { signal },
+            ),
+            catch: (cause) => cause,
+          });
         }
       }
 
+      yield* Effect.tryPromise({
+        try: async (signal) => {
       if (config?.mcpServers?.length) {
         assertMcpServers(config.mcpServers);
         const sensitiveValues: string[] = [];
@@ -377,7 +399,7 @@ export function codexAgent(config?: CodexConfig): Agent {
           .join("\n\n");
         await sb.runShell(
           `cat >> ~/.codex/config.toml <<'MCPEOF'\n\n${mcpToml}\nMCPEOF\n`,
-          { sensitiveValues },
+          { sensitiveValues, signal },
         );
       }
 
@@ -413,7 +435,10 @@ export function codexAgent(config?: CodexConfig): Agent {
       // 安装后钩子(postSetup):排在 manifest 之后——manifest 审计 Adapter 自身的安装事实,
       // 钩子失败不该丢掉这份证据。
       await runPostSetupHooks(sb, ctx, "codex", config?.postSetup);
-    },
+        },
+        catch: (cause) => cause,
+      });
+    })), { signal: ctx.signal }),
 
     async teardown(sb, ctx) {
       // preTeardown 与 postSetup 成对:LIFO 镜像,先于 agent 自己的收尾步骤执行。
