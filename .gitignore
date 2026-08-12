@@ -1,8 +1,10 @@
 node_modules/
-/.env
+.env
 .niceeval/
 .fasteval/
 .pnpm-store/
+/.omo/
+/.playwright-mcp/
 *.log
 .DS_Store
 dist/
