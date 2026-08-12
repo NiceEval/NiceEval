@@ -47,5 +47,9 @@ export default defineEval({
     });
     t.check(await t.sandbox.pathExists(relPath), equals(true));
     t.check(await t.sandbox.readText(relPath), includes(MARKER));
+    t.sandbox.fileChanged(relPath, {
+      status: "added",
+      after: includes(MARKER),
+    });
   },
 });

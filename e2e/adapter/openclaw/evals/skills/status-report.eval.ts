@@ -70,6 +70,10 @@ export default defineEval({
     await t.group("Skill 内容影响产物", async () => {
       t.check(await t.sandbox.pathExists(REPORT_PATH), equals(true));
       t.check(await t.sandbox.readText(REPORT_PATH), includes(MARKER));
+      t.sandbox.fileChanged(REPORT_PATH, {
+        status: "added",
+        after: includes(MARKER),
+      });
     });
   },
 });
