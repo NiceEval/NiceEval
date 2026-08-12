@@ -14,3 +14,7 @@ export {
   defaultExecutionEvidenceReport,
   executionEvidenceReport,
 } from "./execution.ts";
+export {
+  defaultSandboxHistoryReport,
+  sandboxHistoryReport,
+} from "./sandbox-history.ts";

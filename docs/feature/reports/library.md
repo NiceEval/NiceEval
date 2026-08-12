@@ -588,6 +588,22 @@ Execution 不含 reader、root、path、Scope、Stream、callback 或 projector 
 
 每个 declared projection、Calculation、PageFamily、page instance 与 Download 在一个 execution 中最多执行一次。Author graph 的内部 intermediate values 不持久化，也不进入 Record。
 
+## Built-in Reports
+
+`niceeval/report/built-in` 的 `defaultSandboxHistoryReport` 是一份普通、无额外 reader capability 的
+history Report。调用点先用公开的 all-runs Analysis selection 形成 Sample；Report 只声明并消费
+evaluation plan、Verdict 与 Sandbox 三条 public projection。
+
+它按 exact origin `(runId, attemptId)` 去重。reference Member 只在同一 origin 的 Slot coordinate
+列表中出现，不复制 Sandbox Attachment。
+
+每个 origin 显示 origin locator、Verdict、provider、source-native sandbox ID、fresh／pooled 状态。
+pooled origin 额外显示 sandbox number 与 ordinal。每条 coordinate 显示当前 Run 的 experiment、eval 与
+attempt。
+
+missing coordinate、slot state 和六态 Attachment read result 都留在 Report 的 partial / problems 语义中，
+不能被聚合成空历史。
+
 ## Effect-native execution
 
 ```ts
