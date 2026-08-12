@@ -16,9 +16,9 @@ interface ProcessReceipt { diagnostic(): string }
 interface ExpEvent {
   event: string;
   status?: string;
-  completion?: string;
   experimentId?: string;
-  passed?: number;
+  evalId?: string;
+  verdict?: string;
 }
 interface HistoryAttempt {
   attempt: number;
@@ -184,9 +184,19 @@ test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源
         const interrupted = await controlled.done;
         expect(interrupted.exitCode, interrupted.diagnostic()).toBe(130);
         const events = interrupted.ndjson<ExpEvent>();
+        // receipt 只承载 Invocation 级完成事实(见 docs/feature/experiments/cli.md「结束反馈与
+        // receipt」)：completion。中断前完成的 attempt 由带身份的 eval 事件与后续 history 读回断言，
+        // 不从 receipt 猜成败，也不在 receipt 上断言计数。
+        expect(interrupted.expReceipt(), interrupted.diagnostic()).toMatchObject({
+          completion: "interrupted",
+        });
         expect(
-          only(events, (event) => event.event === "result", interrupted.diagnostic()),
-        ).toMatchObject({ event: "result", status: "interrupted", completion: "interrupted", passed: 1 });
+          only(
+            events,
+            (event) => event.event === "eval" && event.experimentId === "interrupt",
+            interrupted.diagnostic(),
+          ),
+        ).toMatchObject({ event: "eval", experimentId: "interrupt", evalId: "interrupt", verdict: "passed" });
         expect(
           only(
             events,
@@ -229,9 +239,15 @@ test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源
       cwd: root,
     });
     expect(next.exitCode, next.diagnostic()).toBe(0);
+    const nextEvents = next.ndjson<ExpEvent>();
+    expect(next.expReceipt(), next.diagnostic()).toMatchObject({ completion: "completed" });
     expect(
-      only(next.ndjson<ExpEvent>(), (event) => event.event === "result", next.diagnostic()),
-    ).toMatchObject({ event: "result", status: "passed", completion: "complete" });
+      only(
+        nextEvents,
+        (event) => event.event === "eval" && event.experimentId === "probe",
+        next.diagnostic(),
+      ),
+    ).toMatchObject({ event: "eval", experimentId: "probe", evalId: "probe", verdict: "passed" });
 
     const nextAttempt = await historyAttempt(root, "probe", "probe");
     expect(nextAttempt).toMatchObject({
