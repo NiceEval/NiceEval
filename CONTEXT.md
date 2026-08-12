@@ -37,3 +37,18 @@ _Avoid_: Latest grading, Analysis selection
 由一个事实权威为一个 Record owner 在同一不可拆 seal transaction 中冻结的 durable facts；它保存
 bounded capture algebra、blob closure 与 join anchors，不按某个 Report 想看到的列预先拆分。
 _Avoid_: Report table, Logical view, One field per Attachment
+
+**Local projection**:
+在同一 frozen Record view 中，将一份 owner-local package 解释为一个或多个 typed views。它不读取
+第二份 package，也不建立跨包关系。
+_Avoid_: Joined view, Report model
+
+**Fact relation**:
+在一个 Analysis scope 内，使用 exact owner 与 durable anchors 把多份 local projections 对齐到
+logical slots 的结构关系。它不根据数值容差判定 agreement 或 authority。
+_Avoid_: Heuristic join, Metric result
+
+**Derivation**:
+从 Sample-aligned facts 或 relations 计算指标、coverage 与领域模型的可选责任。只有 host 管理其
+dependency、去重或局部失败时，它才是独立 runtime layer。
+_Avoid_: Projection, Page loader

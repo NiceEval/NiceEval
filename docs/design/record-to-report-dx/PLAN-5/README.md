@@ -176,6 +176,8 @@ Receipt 声明 `physical-v1` 时它是 authoritative selection。Official writer
 
 ## 入口
 
+- [分层子设计](layer/README.md)：Sample、Projection、Relations、Derivation 与 Report 各自的责任、
+  失败边界和验收条件。
 - [Library](library.md)：package/projector/relation 的最小公开形状。
 - [Architecture](architecture.md)：职责、不变量、failure 与演进边界。
 - [Lifecycle](lifecycle.md)：capture、seal、Receipt、publish 与失败顺序。
