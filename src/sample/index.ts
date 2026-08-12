@@ -24,6 +24,7 @@ import { evalPrefixPredicate, matchExperimentSelector } from "../shared/aggregat
 export {
   decodeAnalysisSample,
   encodeAnalysisSample,
+  ExperimentIdSchema,
   narrowAnalysisSample,
   narrowAnalysisSampleHandle,
   selectAnalysisSample,

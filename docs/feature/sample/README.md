@@ -29,8 +29,8 @@ Report 不接收 execution gap，planner 也不把历史 Sample 的 not-recorded
 
 ## 内建 selection
 
-- `explicit-runs/v1`：精确选择调用方给出的 RunId；
-- `latest-runs/v1`：使用 Run-owned Evaluation/Provenance Attachment，为目标 Experiment 选择最后完成的 Run。
+- `explicit-runs`：精确选择调用方给出的 RunId；
+- `latest-runs`：使用 Run-owned Evaluation/Provenance Attachment，为目标 Experiment 选择最后完成的 Run。
 
 Core 不保存 ExperimentId，因此 latest 所需业务分组来自 typed Attachment，而不是偷偷扩张 RunDocument。旧 Attachment 需要 migration 时，latest 返回具名 selection error；explicit selection 和其它 Core 读取仍可运行。
 

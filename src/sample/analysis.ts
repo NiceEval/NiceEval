@@ -32,12 +32,12 @@ import type {
   FrozenRecordRun,
   RecordReader,
 } from "../record/reader/types.ts";
-import { EvaluationRecordIdentitySchema } from "../eval/record/attachment.ts";
 import {
-  EVALUATIONS_ATTACHMENT_NAME_V1,
-  evaluationsAttachmentFamilyV1,
-} from "../eval/record/evaluation.ts";
-import type { ExperimentIdV1 as ExperimentId } from "../eval/record/evaluation.ts";
+  evaluationsAttachmentFamily,
+  evaluationsAttachmentName,
+  ExperimentIdSchema,
+  type ExperimentId,
+} from "../eval/experiment-id.ts";
 
 export type { RecordAttemptRef } from "../record/model/core.ts";
 export type {
@@ -61,7 +61,8 @@ export type {
   RecordIoError,
   RecordPermissionError,
 } from "../record/platform/errors.ts";
-export type { ExperimentIdV1 as ExperimentId } from "../eval/record/evaluation.ts";
+export { ExperimentIdSchema } from "../eval/experiment-id.ts";
+export type { ExperimentId } from "../eval/experiment-id.ts";
 
 export interface ExplicitRunsAnalysisInput {
   readonly runIds: readonly [RunId, ...RunId[]];
@@ -74,21 +75,21 @@ export interface LatestRunsAnalysisInput {
 /** A portable request. It deliberately carries neither a reader nor a callback. */
 export type AnalysisSelectionRequest =
   | {
-      readonly policy: "explicit-runs/v1";
+      readonly policy: "explicit-runs";
       readonly input: ExplicitRunsAnalysisInput;
     }
   | {
-      readonly policy: "latest-runs/v1";
+      readonly policy: "latest-runs";
       readonly input: LatestRunsAnalysisInput;
     };
 
 export type AnalysisSelectionSummary =
   | {
-      readonly policy: "explicit-runs/v1";
+      readonly policy: "explicit-runs";
       readonly runIds: readonly RunId[];
     }
   | {
-      readonly policy: "latest-runs/v1";
+      readonly policy: "latest-runs";
       readonly experimentIds: readonly ExperimentId[] | "all";
       readonly selectedRunIds: readonly RunId[];
     };
@@ -216,12 +217,12 @@ interface NormalizedSelector {
 }
 
 interface NormalizedExplicitSelection {
-  readonly policy: "explicit-runs/v1";
+  readonly policy: "explicit-runs";
   readonly runIds: readonly RunId[];
 }
 
 interface NormalizedLatestSelection {
-  readonly policy: "latest-runs/v1";
+  readonly policy: "latest-runs";
   readonly experimentIds: readonly ExperimentId[] | "all";
 }
 
@@ -306,7 +307,7 @@ export function selectExplicitRuns(
       ? Effect.fail(runIds.left)
       : selectNormalizedAnalysisSample(
         reader,
-        Object.freeze({ policy: "explicit-runs/v1", runIds: runIds.right }),
+        Object.freeze({ policy: "explicit-runs", runIds: runIds.right }),
       );
   });
 }
@@ -322,7 +323,7 @@ export function selectLatestRuns(
       ? Effect.fail(experimentIds.left)
       : selectNormalizedAnalysisSample(
         reader,
-        Object.freeze({ policy: "latest-runs/v1", experimentIds: experimentIds.right }),
+        Object.freeze({ policy: "latest-runs", experimentIds: experimentIds.right }),
       );
   });
 }
@@ -417,10 +418,10 @@ function selectNormalizedAnalysisSample(
     if (port === undefined) return Effect.fail(recordHandleInvalid());
     return Effect.gen(function* () {
       yield* port.assertOpen(reader);
-      if (selection.policy === "explicit-runs/v1") {
+      if (selection.policy === "explicit-runs") {
         const runs = yield* selectExplicitRunsFromPort(reader, port, selection.runIds);
         const summary: AnalysisSelectionSummary = Object.freeze({
-          policy: "explicit-runs/v1",
+          policy: "explicit-runs",
           runIds: selection.runIds,
         });
         const sample = yield* materializeAnalysisSample(reader, port, summary, runs);
@@ -428,7 +429,7 @@ function selectNormalizedAnalysisSample(
       }
       const runs = yield* selectLatestRunsFromPort(reader, port, selection.experimentIds);
       const summary: AnalysisSelectionSummary = Object.freeze({
-        policy: "latest-runs/v1",
+        policy: "latest-runs",
         experimentIds: selection.experimentIds,
         selectedRunIds: Object.freeze(runs.map((run) => run.runId)),
       });
@@ -510,14 +511,14 @@ function collectLatestCandidate(
     const attachment = yield* port.readRunAttachment(
       reader,
       candidate.value,
-      evaluationsAttachmentFamilyV1,
+      evaluationsAttachmentFamily,
     );
     if (attachment.state !== "available") {
       return yield* Effect.fail(
         latestIndeterminate(
           singleRecordIssue(
             "record-schema-invalid",
-            ["attachments", EVALUATIONS_ATTACHMENT_NAME_V1, attachment.state],
+            ["attachments", evaluationsAttachmentName, attachment.state],
           ),
         ),
       );
@@ -648,19 +649,21 @@ function normalizeSelectionRequest(
     return Either.left(selectionInvalid("request", "must contain exactly policy and input"));
   }
   const policy = valueAt(input, "policy");
-  if (policy === "explicit-runs/v1") {
+  if (policy === "explicit-runs") {
     const runIds = normalizeExplicitRunIds(valueAt(input, "input"));
     return Either.isLeft(runIds)
       ? Either.left(runIds.left)
       : Either.right(Object.freeze({ policy, runIds: runIds.right }));
   }
-  if (policy === "latest-runs/v1") {
+  if (policy === "latest-runs") {
     const experimentIds = normalizeLatestExperimentIds(valueAt(input, "input"));
     return Either.isLeft(experimentIds)
       ? Either.left(experimentIds.left)
       : Either.right(Object.freeze({ policy, experimentIds: experimentIds.right }));
   }
-  return Either.left(selectionInvalid("request.policy", "must be an analysis selection policy"));
+  return Either.left(
+    selectionInvalid("request.policy", "must be explicit-runs or latest-runs"),
+  );
 }
 
 function normalizeExplicitRunIds(
@@ -781,7 +784,7 @@ function decodeSelectionSummary(
     return Either.left(codecError(path, "contains unsupported fields"));
   }
   const policy = valueAt(input, "policy");
-  if (policy === "explicit-runs/v1") {
+  if (policy === "explicit-runs") {
     if (!isExactObject(input, ["policy", "runIds"])) {
       return Either.left(codecError(path, "explicit selection must contain exactly policy and runIds"));
     }
@@ -793,12 +796,12 @@ function decodeSelectionSummary(
     );
     if (Either.isLeft(runIds)) return Either.left(runIds.left);
     const selection: AnalysisSelectionSummary = {
-      policy: "explicit-runs/v1",
+      policy: "explicit-runs",
       runIds: runIds.right,
     };
     return Either.right(Object.freeze(selection));
   }
-  if (policy === "latest-runs/v1") {
+  if (policy === "latest-runs") {
     if (!isExactObject(input, ["policy", "experimentIds", "selectedRunIds"])) {
       return Either.left(codecError(path, "latest selection must contain policy, experimentIds, and selectedRunIds"));
     }
@@ -826,13 +829,15 @@ function decodeSelectionSummary(
     );
     if (Either.isLeft(selectedRunIds)) return Either.left(selectedRunIds.left);
     const selection: AnalysisSelectionSummary = {
-      policy: "latest-runs/v1",
+      policy: "latest-runs",
       experimentIds,
       selectedRunIds: selectedRunIds.right,
     };
     return Either.right(Object.freeze(selection));
   }
-  return Either.left(codecError([...path, "policy"], "must be an analysis selection policy"));
+  return Either.left(
+    codecError([...path, "policy"], "must be explicit-runs or latest-runs"),
+  );
 }
 
 function decodeAnalysisRun(
@@ -1067,7 +1072,7 @@ function decodeExperimentId(
   input: unknown,
   path: readonly string[],
 ): Either.Either<ExperimentId, AnalysisSampleCodecError> {
-  const decoded = Schema.decodeUnknownEither(EvaluationRecordIdentitySchema)(input);
+  const decoded = Schema.decodeUnknownEither(ExperimentIdSchema)(input);
   return Either.isLeft(decoded)
     ? Either.left(codecError(path, "must be an Experiment identity"))
     : Either.right(decoded.right);
@@ -1120,7 +1125,7 @@ function validateSampleIntegrity(sample: AnalysisSample): AnalysisSampleCodecErr
     return codecError(["denominator"], "must equal the number of non-excluded slots");
   }
   const runIds = sample.runs.map((run) => run.runId);
-  if (sample.selection.policy === "explicit-runs/v1") {
+  if (sample.selection.policy === "explicit-runs") {
     if (!sameIdentitySequence(sample.selection.runIds, runIds)) {
       return codecError(["selection", "runIds"], "must equal selected runs in canonical order");
     }
@@ -1223,9 +1228,9 @@ function makeAnalysisSample(
 }
 
 function copySelectionSummary(selection: AnalysisSelectionSummary): AnalysisSelectionSummary {
-  if (selection.policy === "explicit-runs/v1") {
+  if (selection.policy === "explicit-runs") {
     const summary: AnalysisSelectionSummary = {
-      policy: "explicit-runs/v1",
+      policy: "explicit-runs",
       runIds: Object.freeze(sortedUnique(selection.runIds)),
     };
     return Object.freeze(summary);
@@ -1234,7 +1239,7 @@ function copySelectionSummary(selection: AnalysisSelectionSummary): AnalysisSele
     ? "all"
     : Object.freeze(sortedUnique(selection.experimentIds));
   const summary: AnalysisSelectionSummary = {
-    policy: "latest-runs/v1",
+    policy: "latest-runs",
     experimentIds,
     selectedRunIds: Object.freeze(sortedUnique(selection.selectedRunIds)),
   };

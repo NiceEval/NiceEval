@@ -5,7 +5,10 @@
 ## 纯值与 live handle
 
 ```ts
-import { Effect, Either } from "effect";
+import { Effect, Either, Schema } from "effect";
+import { ExperimentIdSchema } from "niceeval/analysis";
+
+type ExperimentId = Schema.Schema.Type<typeof ExperimentIdSchema>;
 
 interface AnalysisSample {
   readonly selection: AnalysisSelectionSummary;
@@ -41,11 +44,11 @@ interface LatestRunsAnalysisInput {
 
 type AnalysisSelectionRequest =
   | {
-      readonly policy: "explicit-runs/v1";
+      readonly policy: "explicit-runs";
       readonly input: ExplicitRunsAnalysisInput;
     }
   | {
-      readonly policy: "latest-runs/v1";
+      readonly policy: "latest-runs";
       readonly input: LatestRunsAnalysisInput;
     };
 
@@ -89,11 +92,11 @@ latest 从 Run-owned Evaluations Attachment 读取 Experiment identity，以 `co
 ```ts
 type AnalysisSelectionSummary =
   | {
-      readonly policy: "explicit-runs/v1";
+      readonly policy: "explicit-runs";
       readonly runIds: readonly RunId[];
     }
   | {
-      readonly policy: "latest-runs/v1";
+      readonly policy: "latest-runs";
       readonly experimentIds: readonly ExperimentId[] | "all";
       readonly selectedRunIds: readonly RunId[];
     };
@@ -170,7 +173,7 @@ declare const narrowAnalysisSampleHandle: (
 
 ## Limits 与错误
 
-v1 最多选择 4,096 Runs，最多形成 250,000 Slots。Library 在复制或分配大数组前检查 count。
+Library 最多选择 4,096 Runs，最多形成 250,000 Slots。它在复制或分配大数组前检查 count。
 
 ```ts
 type AnalysisSelectionError =

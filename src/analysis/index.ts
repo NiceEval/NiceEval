@@ -4,6 +4,7 @@
 export {
   decodeAnalysisSample,
   encodeAnalysisSample,
+  ExperimentIdSchema,
   narrowAnalysisSample,
   narrowAnalysisSampleHandle,
   selectAnalysisSample,

@@ -16,7 +16,7 @@ Experiment `baseline` 有 Eval `a` 与 `b`：
 | `R2` | `origin(A2)` | `reference(B1)` | executed / carried |
 | `R3` | `origin(A3)` | `reference(B1)` | executed / accepted |
 
-`B1` 的执行事实只保存一次。`R2` 与 `R3` 的 Member 都只表达“这个 slot 由 B1 完整占据”；当时是自动沿用还是人工明确采用，由各 Run 的 `niceeval.membership-provenance/v1` 说明。这些 Member 和 actions 都不持续证明 `B1` 对未来 Project Target 仍可复用。
+`B1` 的执行事实只保存一次。`R2` 与 `R3` 的 Member 都只表达“这个 slot 由 B1 完整占据”；当时是自动沿用还是人工明确采用，由各 Run 的 `niceeval.membership-provenance` Attachment 说明。这些 Member 和 actions 都不持续证明 `B1` 对未来 Project Target 仍可复用。
 
 ## 选择流程
 
@@ -35,7 +35,7 @@ const program = Effect.gen(function* () {
 });
 ```
 
-1. `niceeval.analysis-selection/explicit-runs/v1` 读取 `R3` 的 Run Core 与 expected membership。
+1. `explicit-runs` selection 读取 `R3` 的 Run Core 与 expected membership。
 2. `a` slot 的 Member 读出 `A3`，因当前 slot 等于 Attempt.origin 而派生 `relation: "origin"`。
 3. `b` slot 的 Member 读出 `B1`，因 origin 位于 `R1` 而派生 `relation: "reference"`；若 Report 需要“accepted”，再显式请求 `R3` 的 membership provenance Attachment。
 4. expected slot 没有 Member 时，`AnalysisSample` 仍保留该分母项并标为 `not-recorded`。
