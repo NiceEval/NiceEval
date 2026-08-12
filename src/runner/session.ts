@@ -6,7 +6,8 @@
 
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { readAllEntryFiles, writeEntryFile } from "../shared/entry-file-store.ts";
+import { Cause, Deferred, Effect, Exit, Fiber, Queue, Scope } from "effect";
+import { readAllEntryFilesEffect, writeEntryFileEffect } from "../shared/entry-file-store.ts";
 import type {
   CompletionStatus,
   InvocationCompletion,
@@ -179,13 +180,52 @@ function cloneRecord(record: SessionRecord): SessionRecord {
   };
 }
 
-/** 可持久化的 Session 生命周期；所有 fs 写入按调用顺序串行化。 */
+type SessionPersistenceRequest =
+  | {
+    readonly _tag: "write";
+    readonly snapshot: SessionRecord;
+    /** 缺席时是反馈索引的尽力写；失败不影响 attempt 判定。 */
+    readonly completion?: Deferred.Deferred<void, unknown>;
+  }
+  | {
+    readonly _tag: "barrier";
+    readonly completion: Deferred.Deferred<void, unknown>;
+  };
+
+/**
+ * Session 的 Effect 资源组刻意不绑定 `startEffect()` 调用点的 Scope：`runEvals()` 自己会
+ * 在 dispatch 完成时关闭内部 Scope，但 CLI 仍要在随后拿到 receipt 后再写最终 completed
+ * Session。调用方的 `closeEffect()`（CLI 已有的 finalizer）才是这一组 worker/timer 的唯一
+ * 释放边界。
+ */
+interface SessionPersistence {
+  readonly scope: Scope.CloseableScope;
+  readonly requests: Queue.Queue<SessionPersistenceRequest>;
+  readonly worker: Fiber.RuntimeFiber<void, never>;
+  heartbeat?: Fiber.RuntimeFiber<never, never>;
+  accepting: boolean;
+  stopped: boolean;
+}
+
+/**
+ * 在 Effect 中等一段不会让 Node 进程仅因 Session 心跳而存活的时间。中断会清掉当前 timer；
+ * 这保留旧 `setInterval(...).unref()` 的进程退出语义，同时不会把定时器生命周期漏到 Effect
+ * 之外。
+ */
+function unrefDelayEffect(milliseconds: number): Effect.Effect<void> {
+  return Effect.async<void>((resume) => {
+    const timer = setTimeout(() => resume(Effect.void), milliseconds);
+    timer.unref?.();
+    return Effect.sync(() => clearTimeout(timer));
+  });
+}
+
+/** 可持久化的 Session 生命周期；所有磁盘 I/O 由一个 Effect worker 按入队顺序串行化。 */
 export class SessionTracker {
   readonly niceevalRoot: string;
   readonly sessionId: string;
   private record: SessionRecord | undefined;
-  private timer: ReturnType<typeof setInterval> | undefined;
-  private writes: Promise<void> = Promise.resolve();
+  private persistence: SessionPersistence | undefined;
   private started = false;
   private closed = false;
 
@@ -198,49 +238,67 @@ export class SessionTracker {
     return this.record === undefined ? undefined : cloneRecord(this.record);
   }
 
-  async start(input: SessionStartInput): Promise<SessionRecord> {
-    if (this.started) throw new Error("SessionTracker.start() called more than once.");
-    this.started = true;
-    const startedAt = input.startedAt ?? new Date().toISOString();
-    const carried = input.carriedAttemptsByKey;
-    const experiments: SessionExperimentRecord[] = [];
-    for (const run of input.agentRuns) {
-      if (run.experimentId === undefined) continue;
-      const runId = input.runIds.get(run.experimentId);
-      if (runId === undefined) continue;
-      const planned = run.selectedEvalIds.length * run.attempts;
-      const carriedCount = run.selectedEvalIds.reduce(
-        (count, evalId) => count + (carried?.get(keyOf(run.experimentId!, evalId))?.size ?? 0),
-        0,
-      );
-      const queued = Math.max(0, planned - carriedCount);
-      experiments.push({
-        experimentId: run.experimentId,
-        runId,
-        state: run.setup && queued > 0 ? "setup" : "running",
-        running: 0,
-        queued,
-        elsewhere: 0,
-      });
-    }
-    const now = new Date().toISOString();
-    this.record = {
-      sessionId: this.sessionId,
-      pid: input.pid ?? process.pid,
-      startedAt,
-      status: "active",
-      heartbeatAt: now,
-      experiments,
-    };
-    await this.persist();
-    this.timer = setInterval(() => {
-      void this.heartbeat();
-    }, SESSION_HEARTBEAT_INTERVAL_MS);
-    this.timer.unref?.();
-    return this.current!;
+  /**
+   * Effect 主入口：先完成第一份 durable snapshot，再开始心跳。持久化 Scope 跨过
+   * `runEvals()` 的内部 Scope，由 closeEffect 关闭，因而最终 receipt 不会被抢先截断。
+   */
+  startEffect(input: SessionStartInput): Effect.Effect<SessionRecord, unknown> {
+    let persistence: SessionPersistence | undefined;
+    return Effect.gen(this, function* () {
+      if (this.started) return yield* Effect.fail(new Error("SessionTracker.start() called more than once."));
+      const scope = yield* Scope.make();
+      const requests = yield* Queue.unbounded<SessionPersistenceRequest>();
+      const worker = yield* Effect.forkIn(this.persistenceWorkerEffect(requests), scope);
+      persistence = { scope, requests, worker, accepting: true, stopped: false };
+      this.persistence = persistence;
+      this.started = true;
+
+      const startedAt = input.startedAt ?? new Date().toISOString();
+      const carried = input.carriedAttemptsByKey;
+      const experiments: SessionExperimentRecord[] = [];
+      for (const run of input.agentRuns) {
+        if (run.experimentId === undefined) continue;
+        const runId = input.runIds.get(run.experimentId);
+        if (runId === undefined) continue;
+        const planned = run.selectedEvalIds.length * run.attempts;
+        const carriedCount = run.selectedEvalIds.reduce(
+          (count, evalId) => count + (carried?.get(keyOf(run.experimentId!, evalId))?.size ?? 0),
+          0,
+        );
+        const queued = Math.max(0, planned - carriedCount);
+        experiments.push({
+          experimentId: run.experimentId,
+          runId,
+          state: run.setup && queued > 0 ? "setup" : "running",
+          running: 0,
+          queued,
+          elsewhere: 0,
+        });
+      }
+      const now = new Date().toISOString();
+      this.record = {
+        sessionId: this.sessionId,
+        pid: input.pid ?? process.pid,
+        startedAt,
+        status: "active",
+        heartbeatAt: now,
+        experiments,
+      };
+      // Unlike feedback snapshots, the initial entry is a durable boundary:
+      // dispatch must not start until it has either reached disk or failed.
+      yield* this.flushEffect();
+      persistence.heartbeat = yield* Effect.forkIn(this.heartbeatLoopEffect(), scope);
+      return this.current!;
+    }).pipe(
+      // A failed first write must not leave the manually held Scope (or its
+      // queue worker) alive. Preserve the original failure after cleanup.
+      Effect.onError((cause) => persistence === undefined
+        ? Effect.void
+        : this.stopPersistenceEffect(persistence, Exit.failCause(cause)).pipe(Effect.ignore)),
+    );
   }
 
-  /** coordinator 的事件回调；只维护 Session 索引允许的最小状态。 */
+  /** coordinator 的同步事件回调；只更新最小索引并把 snapshot 交给 Effect-owned serial worker。 */
   onFeedback(event: RunFeedbackEvent, _state?: RunFeedbackState): void {
     if (!this.started || this.closed || this.record === undefined || this.record.status !== "active") return;
     const identity = "identity" in event && event.identity !== undefined ? event.identity : undefined;
@@ -298,50 +356,190 @@ export class SessionTracker {
     }
   }
 
-  async heartbeat(): Promise<void> {
-    if (!this.started || this.closed || this.record === undefined || this.record.status !== "active") return;
-    this.record.heartbeatAt = new Date().toISOString();
-    this.enqueuePersist();
-    await this.writes;
+  /** 一次可观察的 heartbeat；显式调用者会收到本次 flush 的真实 I/O failure。 */
+  heartbeatEffect(): Effect.Effect<void, unknown> {
+    return Effect.suspend(() => {
+      if (!this.started || this.closed || this.record === undefined || this.record.status !== "active") return Effect.void;
+      this.record.heartbeatAt = new Date().toISOString();
+      return this.flushEffect();
+    });
   }
 
-  async close(input: SessionCloseInput = {}): Promise<SessionRecord | undefined> {
-    if (!this.started || this.record === undefined || this.closed) return this.current;
-    this.closed = true;
-    if (this.timer !== undefined) clearInterval(this.timer);
-    this.timer = undefined;
-    const now = new Date().toISOString();
-    this.record.status = sessionStatusOf(input.status);
-    this.record.completedAt = input.completedAt ?? now;
-    delete this.record.heartbeatAt;
-    if (input.completion !== undefined) this.record.completion = input.completion;
-    const publishedRunIds = new Set(input.receipt?.runIds ?? []);
-    for (const experiment of this.record.experiments) {
-      if (publishedRunIds.has(experiment.runId)) experiment.published = true;
-      else delete experiment.published;
-      delete experiment.state;
-      delete experiment.running;
-      delete experiment.queued;
-      delete experiment.elsewhere;
-    }
-    this.enqueuePersist();
-    await this.writes;
-    return this.current;
+  /**
+   * 完成最终 Session：先停止 heartbeat，再把完成 snapshot 排在所有既有反馈写之后。该收尾
+   * 区域不可中断，避免 interruption 留下 active 条目或后台 Fiber。
+   */
+  closeEffect(input: SessionCloseInput = {}): Effect.Effect<SessionRecord | undefined, unknown> {
+    return Effect.uninterruptible(Effect.suspend(() => {
+      if (!this.started || this.record === undefined || this.closed) return Effect.succeed(this.current);
+      this.closed = true;
+      const now = new Date().toISOString();
+      this.record.status = sessionStatusOf(input.status);
+      this.record.completedAt = input.completedAt ?? now;
+      delete this.record.heartbeatAt;
+      if (input.completion !== undefined) this.record.completion = input.completion;
+      const publishedRunIds = new Set(input.receipt?.runIds ?? []);
+      for (const experiment of this.record.experiments) {
+        if (publishedRunIds.has(experiment.runId)) experiment.published = true;
+        else delete experiment.published;
+        delete experiment.state;
+        delete experiment.running;
+        delete experiment.queued;
+        delete experiment.elsewhere;
+      }
+      const snapshot = cloneRecord(this.record);
+      const persistence = this.persistence;
+      const persist = persistence === undefined
+        ? writeEntryFileEffect(sessionsDirOf(this.niceevalRoot), this.sessionId, snapshot)
+        : this.stopPersistenceEffect(persistence, Exit.void, snapshot);
+      return persist.pipe(Effect.as(this.current));
+    }));
+  }
+
+  /** 按入队顺序强制写出当前 snapshot；worker 已关闭后退化为同一条 *Effect 原语的直接写。 */
+  flushEffect(): Effect.Effect<void, unknown> {
+    return Effect.suspend(() => {
+      if (this.record === undefined) return Effect.void;
+      const snapshot = cloneRecord(this.record);
+      const persistence = this.persistence;
+      return persistence !== undefined && persistence.accepting && !persistence.stopped
+        ? this.offerWriteEffect(persistence, snapshot)
+        : writeEntryFileEffect(sessionsDirOf(this.niceevalRoot), this.sessionId, snapshot);
+    });
   }
 
   private enqueuePersist(): void {
-    if (this.record === undefined) return;
+    const persistence = this.persistence;
+    if (
+      this.record === undefined ||
+      persistence === undefined ||
+      !persistence.accepting ||
+      persistence.stopped
+    ) return;
     const snapshot = cloneRecord(this.record);
-    // Session 是可观测索引；单次心跳写失败不应制造 unhandled rejection 或改变 attempt
-    // 判定。下一次心跳/状态变化会再次尝试写入。
-    this.writes = this.writes
-      .catch(() => undefined)
-      .then(() => writeEntryFile(sessionsDirOf(this.niceevalRoot), this.sessionId, snapshot));
+    // 反馈 API 受 coordinator 的同步 callback 契约限制，不能在这里启动 runtime。Queue 是
+    // Effect worker 的同步入口；false 只会发生在 close 已关闭队列的竞态，此时最终 flush
+    // 已覆盖当前 record。
+    Queue.unsafeOffer(persistence.requests, { _tag: "write", snapshot });
   }
 
-  private async persist(): Promise<void> {
-    if (this.record === undefined) return;
-    await writeEntryFile(sessionsDirOf(this.niceevalRoot), this.sessionId, cloneRecord(this.record));
+  private persistenceWorkerEffect(
+    requests: Queue.Queue<SessionPersistenceRequest>,
+  ): Effect.Effect<void> {
+    const handle = (request: SessionPersistenceRequest): Effect.Effect<void> => {
+      if (request._tag === "barrier") {
+        return Deferred.succeed(request.completion, undefined).pipe(Effect.asVoid);
+      }
+      // Each request owns a frozen snapshot. Capture the full Exit before
+      // settling its waiter so a failed heartbeat cannot kill the serial
+      // worker; a later state change is still allowed to retry the index write.
+      return writeEntryFileEffect(sessionsDirOf(this.niceevalRoot), this.sessionId, request.snapshot).pipe(
+        Effect.exit,
+        Effect.flatMap((exit) => request.completion === undefined
+          ? Effect.void
+          : Deferred.done(request.completion, exit).pipe(Effect.asVoid)),
+      );
+    };
+    return Effect.forever(Queue.take(requests).pipe(Effect.flatMap(handle))).pipe(
+      // Queue shutdown interrupts its pending take. A different cause is a
+      // broken worker invariant and stays a defect instead of being erased.
+      Effect.catchAllCause((cause) => Cause.isInterruptedOnly(cause) ? Effect.void : Effect.die(cause)),
+    );
+  }
+
+  private heartbeatLoopEffect(): Effect.Effect<never> {
+    return Effect.forever(
+      unrefDelayEffect(SESSION_HEARTBEAT_INTERVAL_MS).pipe(
+        // Heartbeats are observability only. Explicit heartbeatEffect callers
+        // receive failures; the background loop deliberately retries later.
+        Effect.zipRight(this.heartbeatEffect().pipe(Effect.ignore)),
+      ),
+    );
+  }
+
+  private offerWriteEffect(
+    persistence: SessionPersistence,
+    snapshot: SessionRecord,
+  ): Effect.Effect<void, unknown> {
+    return Effect.gen(function* () {
+      const completion = yield* Deferred.make<void, unknown>();
+      const accepted = yield* Effect.sync(() => Queue.unsafeOffer(
+        persistence.requests,
+        { _tag: "write", snapshot, completion },
+      ));
+      if (!accepted) return yield* Effect.fail(new Error("Session persistence queue closed before flush."));
+      yield* Deferred.await(completion);
+    });
+  }
+
+  private barrierEffect(persistence: SessionPersistence): Effect.Effect<void, unknown> {
+    return Effect.gen(function* () {
+      const completion = yield* Deferred.make<void, unknown>();
+      const accepted = yield* Effect.sync(() => Queue.unsafeOffer(
+        persistence.requests,
+        { _tag: "barrier", completion },
+      ));
+      if (!accepted) return yield* Effect.fail(new Error("Session persistence queue closed before drain."));
+      yield* Deferred.await(completion);
+    });
+  }
+
+  /**
+   * 停止顺序固定为：拒绝新反馈 → 等 heartbeat 停稳 → FIFO flush/barrier → shutdown queue →
+   * close Scope。因而 final snapshot 不会被较早的后台写覆盖，且任一路径都会终结两条 Fiber。
+   */
+  private stopPersistenceEffect(
+    persistence: SessionPersistence,
+    exit: Exit.Exit<unknown, unknown>,
+    finalSnapshot?: SessionRecord,
+  ): Effect.Effect<void, unknown> {
+    return Effect.uninterruptible(Effect.suspend(() => {
+      if (persistence.stopped) return Effect.void;
+      persistence.accepting = false;
+      const stopHeartbeat = persistence.heartbeat === undefined
+        ? Effect.void
+        : Fiber.interrupt(persistence.heartbeat).pipe(Effect.asVoid);
+      const drain = finalSnapshot === undefined
+        ? this.barrierEffect(persistence)
+        : this.offerWriteEffect(persistence, finalSnapshot);
+      return stopHeartbeat.pipe(
+        Effect.zipRight(drain),
+        Effect.ensuring(this.releasePersistenceEffect(persistence, exit)),
+      );
+    }));
+  }
+
+  private releasePersistenceEffect(
+    persistence: SessionPersistence,
+    exit: Exit.Exit<unknown, unknown>,
+  ): Effect.Effect<void> {
+    return Effect.uninterruptible(Effect.suspend(() => {
+      if (persistence.stopped) return Effect.void;
+      persistence.stopped = true;
+      if (this.persistence === persistence) this.persistence = undefined;
+      return Queue.shutdown(persistence.requests).pipe(
+        Effect.zipRight(Scope.close(persistence.scope, exit)),
+      );
+    }));
+  }
+
+  /**
+   * 临时 Promise facade。债务逐项为：
+   * - `src/runner/run.ts` 仍经 `Effect.tryPromise(() => session.start(...))` 调用 start；
+   * - `src/cli.ts` 仍经 `cliPromise` 调用 close、session list 与 session show。
+   * 父侧改接 `*Effect` API 后可删除这些唯一的 `Effect.runPromise` 边界；队列 worker 和
+   * 所有内部持久化路径不会自行启动 runtime。
+   */
+  start(input: SessionStartInput): Promise<SessionRecord> {
+    return Effect.runPromise(this.startEffect(input));
+  }
+
+  heartbeat(): Promise<void> {
+    return Effect.runPromise(this.heartbeatEffect());
+  }
+
+  close(input: SessionCloseInput = {}): Promise<SessionRecord | undefined> {
+    return Effect.runPromise(this.closeEffect(input));
   }
 }
 
@@ -360,9 +558,11 @@ function expiredProjection(record: SessionRecord): ExpiredSessionRecord {
   };
 }
 
-export async function readSessions(niceevalRoot: string): Promise<SessionRecord[]> {
-  const entries = await readAllEntryFiles(sessionsDirOf(niceevalRoot), decodeSession);
-  return entries.map(({ entry }) => entry).sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+/** Effect 主 API：完整读取边界仍由 entry-file-store 的 decoder 容错纪律拥有。 */
+export function readSessionsEffect(niceevalRoot: string): Effect.Effect<SessionRecord[], unknown> {
+  return readAllEntryFilesEffect(sessionsDirOf(niceevalRoot), decodeSession).pipe(
+    Effect.map((entries) => entries.map(({ entry }) => entry).sort((a, b) => a.startedAt.localeCompare(b.startedAt))),
+  );
 }
 
 export function sessionListDocument(
@@ -386,11 +586,11 @@ export function sessionListDocument(
   return { format: "niceeval.sessions", schemaVersion: 2, sessions, expired };
 }
 
-export async function listSessions(
+export function listSessionsEffect(
   niceevalRoot: string,
   options: { all?: boolean; selector?: string; nowMs?: number } = {},
-): Promise<SessionListDocument> {
-  return sessionListDocument(await readSessions(niceevalRoot), options);
+): Effect.Effect<SessionListDocument, unknown> {
+  return readSessionsEffect(niceevalRoot).pipe(Effect.map((records) => sessionListDocument(records, options)));
 }
 
 export function resolveSessionPrefix(records: readonly SessionRecord[], prefix: string): SessionRecord {
@@ -402,15 +602,42 @@ export function resolveSessionPrefix(records: readonly SessionRecord[], prefix: 
   return cloneRecord(matches[0]!);
 }
 
-export async function showSession(niceevalRoot: string, prefix: string, nowMs = Date.now()): Promise<SessionShowDocument> {
-  const record = resolveSessionPrefix(await readSessions(niceevalRoot), prefix);
-  const expired = isSessionExpired(record, nowMs);
-  return {
-    format: "niceeval.session",
-    schemaVersion: 2,
-    session: expired ? expiredProjection(record) : record,
-    ...(expired ? { expired: true } : {}),
-  };
+export function showSessionEffect(
+  niceevalRoot: string,
+  prefix: string,
+  nowMs = Date.now(),
+): Effect.Effect<SessionShowDocument, unknown> {
+  return readSessionsEffect(niceevalRoot).pipe(
+    Effect.map((records) => {
+      const record = resolveSessionPrefix(records, prefix);
+      const expired = isSessionExpired(record, nowMs);
+      return {
+        format: "niceeval.session",
+        schemaVersion: 2,
+        session: expired ? expiredProjection(record) : record,
+        ...(expired ? { expired: true } : {}),
+      };
+    }),
+  );
+}
+
+/**
+ * 与 SessionTracker 的 Promise methods 同一笔兼容债：现有 CLI caller 尚未接上上面的
+ * Effect exports。除这些外层 facade 外，本模块不运行 Effect runtime。
+ */
+export function readSessions(niceevalRoot: string): Promise<SessionRecord[]> {
+  return Effect.runPromise(readSessionsEffect(niceevalRoot));
+}
+
+export function listSessions(
+  niceevalRoot: string,
+  options: { all?: boolean; selector?: string; nowMs?: number } = {},
+): Promise<SessionListDocument> {
+  return Effect.runPromise(listSessionsEffect(niceevalRoot, options));
+}
+
+export function showSession(niceevalRoot: string, prefix: string, nowMs = Date.now()): Promise<SessionShowDocument> {
+  return Effect.runPromise(showSessionEffect(niceevalRoot, prefix, nowMs));
 }
 
 function shortRunId(runId: string): string {
