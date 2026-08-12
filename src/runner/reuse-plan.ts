@@ -537,6 +537,42 @@ export function planProjectTargetReuse(
   });
 }
 
+/**
+ * Plans a missing Record root without manufacturing a frozen reader capability.
+ * Callers must use this only after the Record filesystem classified the whole
+ * root as missing; an existing root stays on the reader path so malformed
+ * durable state remains fail-closed.
+ */
+export function planProjectTargetReuseWithoutSources(input: {
+  readonly target: ExecutionTarget;
+  readonly policy: ProjectTargetPolicy;
+}): Effect.Effect<ExecutionReusePlan, ProjectTargetReusePlanInvalid> {
+  return Effect.suspend<ExecutionReusePlan, ProjectTargetReusePlanInvalid, never>(() => {
+    const invalid = validateProjectTargetReusePlanInput(input);
+    if (invalid !== undefined) return Effect.fail(invalid);
+
+    const gaps = Object.freeze(
+      flattenTargetSlots(input.target).map((target) =>
+        gapSlot(target, {
+          reason: "no-source-run",
+          scope: "slot",
+          issues: [],
+          comparisons: [],
+        }),
+      ),
+    );
+    const reuse: readonly ReusePlanSlot[] = Object.freeze([]);
+    return Effect.succeed(Object.freeze({
+      target: input.target,
+      policy: projectTargetPolicyIdentity,
+      effectiveOptions: effectiveOptions(input.policy),
+      slots: gaps,
+      reuse,
+      gaps,
+    }));
+  });
+}
+
 /** A small named facade lets Runner wiring keep the policy capability explicit. */
 export const ProjectTargetReusePlanner = Object.freeze({
   plan: planProjectTargetReuse,

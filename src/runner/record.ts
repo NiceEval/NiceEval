@@ -34,6 +34,8 @@ import {
 } from "../record/model/identifiers.ts";
 import {
   RecordEntropy,
+  RecordFileSystem,
+  recordPortablePath,
   type RecordEntropyService,
 } from "../record/platform/services.ts";
 import { makeRecordRoot, type RecordRootConstructionError } from "../record/platform/root.ts";
@@ -53,6 +55,7 @@ import { selectedEvalsForRun } from "./eval-selection.ts";
 import { resolveAttemptTimeout } from "./timeout.ts";
 import {
   planProjectTargetReuse,
+  planProjectTargetReuseWithoutSources,
   projectTargetPolicyIdentity,
   type ExecutionComparison,
   type ExecutionDurationLimit,
@@ -555,7 +558,26 @@ export function withRunnerCurrentReusePreview<A, E, R>(input: {
   return Effect.scoped(Effect.gen(function* () {
     const rootResult = makeRecordRoot(resolvePath(input.niceevalRoot, "record"));
     if (Either.isLeft(rootResult)) return yield* Effect.fail(rootResult.left);
-    const reader = yield* openRecordReader({ root: rootResult.right });
+    const root = rootResult.right;
+    const fileSystem = yield* RecordFileSystem;
+    if ((yield* fileSystem.pathKind(recordPortablePath(root))) === "missing") {
+      const target = yield* previewExecutionTarget({
+        startedAt: input.startedAt,
+        evals: input.evals,
+        runs: input.runs,
+        reuse: input.reuse,
+      });
+      const reusePlan = yield* planProjectTargetReuseWithoutSources({
+        target,
+        policy: input.reuse.policy,
+      });
+      return yield* input.use({
+        reusePlan,
+        readReadbacks: () => Effect.succeed<readonly CurrentReuseReadback[]>(Object.freeze([])),
+      });
+    }
+
+    const reader = yield* openRecordReader({ root });
     const target = yield* previewExecutionTarget({
       startedAt: input.startedAt,
       evals: input.evals,
