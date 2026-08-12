@@ -3,6 +3,9 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "paths": {
+      "@niceeval/testkit": ["../../packages/testkit/src/index.ts"]
+    },
     "lib": ["ES2022"],
     "types": ["node", "vitest/globals"],
     "strict": true,

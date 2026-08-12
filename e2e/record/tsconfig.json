@@ -3,6 +3,10 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "paths": {
+      "@niceeval/testkit": ["../../packages/testkit/src/index.ts"],
+      "niceeval/record": ["../../src/record/index.ts"]
+    },
     "lib": ["ES2023"],
     "types": ["node"],
     "strict": true,
