@@ -1,6 +1,5 @@
-// This is the current-process host boundary. A future ./node host may own
-// loaders, watchers, and filesystem services, but it must consume the fixed
-// ReportExecution produced here instead of reopening a Sample or Record.
+// This is the platform-neutral current-process host boundary. Node loaders,
+// watchers, and filesystem services live at niceeval/report/host/node.
 export { executeReport } from "./execute.ts";
 export type {
   ReportAuthoringInvalid,
@@ -43,34 +42,6 @@ export type {
   ReportViewState,
   ReportViewThemeRebuild,
 } from "./view-session.ts";
-export {
-  basalt,
-  chalk,
-  NodeReportViewHost,
-  NodeReportFileSystemLive,
-  NodeReportViewHostLive,
-  loadTrustedReportConfig,
-  loadTrustedReportModule,
-  loadTrustedThemeModule,
-  makeNodeReportFileSystem,
-  openNodeReportView,
-  openNodeReportViewServer,
-  ReportModuleLoadError,
-  resolveTrustedModulePath,
-} from "./node.ts";
-export type {
-  LoadedTrustedConfig,
-  LoadedTrustedReport,
-  LoadedTrustedTheme,
-  NodeReportViewHostService,
-  NodeViewServerError,
-  ReportModuleLoadCode,
-  ReportModuleLoadStage,
-  ReportViewRequest,
-  ReportViewServer,
-  ThemeDefinition,
-  ViewOptions,
-} from "./node.ts";
 export { exportStaticReport, ReportFileSystem } from "./static.ts";
 export type {
   ReportExportError,

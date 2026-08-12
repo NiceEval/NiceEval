@@ -2,7 +2,7 @@ import {
   basalt,
   themeStylesheet,
   type ThemeDefinition,
-} from "./node/theme.ts";
+} from "./theme.ts";
 
 export interface RenderReportHtmlInput {
   readonly text: string;

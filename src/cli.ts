@@ -42,23 +42,25 @@ import { reportRoute, type ReportRoute } from "./report/author/identity.ts";
 import type { Report } from "./report/author/model.ts";
 import type { ReportExecution } from "./report/execution/model.ts";
 import {
-  basalt,
-  chalk,
   executeReportForAttemptFromRecord,
   executeReportFromRecord,
   exportStaticReport,
+  openReportViewSession,
+  ReportConsole,
+  ReportFileSystem,
+  showReport,
+} from "./report/host/index.ts";
+import {
+  basalt,
+  chalk,
   loadTrustedReportConfig,
   loadTrustedReportModule,
   loadTrustedThemeModule,
   makeNodeReportFileSystem,
-  openReportViewSession,
   ReportModuleLoadError,
-  ReportConsole,
-  ReportFileSystem,
   resolveTrustedModulePath,
-  showReport,
   type ThemeDefinition,
-} from "./report/host/index.ts";
+} from "./report/host/node.ts";
 import { openViewServer } from "./view/server.ts";
 import { runRecordCliCommand } from "./cli/record.ts";
 import { resolveExperimentEvals, selectedEvalsForRun } from "./runner/eval-selection.ts";

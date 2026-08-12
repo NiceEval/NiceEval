@@ -31,7 +31,7 @@ import type { SealedAttemptAssertions } from "../assertions/api.ts";
 // Report 的公开子路径是独立预编译单元；这里依赖作者 API 的公开 aggregate，避免把
 // host implementation 或旧的 JSX renderer type 拉回 runner 边界。
 import type { Report } from "../report/index.ts";
-import type { ThemeDefinition } from "../report/host/node.ts";
+import type { ThemeDefinition } from "../report/host/theme.ts";
 
 // ───────────────────────── 结果 / 报告 ─────────────────────────
 

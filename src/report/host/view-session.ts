@@ -1,7 +1,7 @@
 import { Effect, Ref } from "effect";
 import type * as Scope from "effect/Scope";
 import { isReportExecution, type ReportExecution } from "../execution/model.ts";
-import { basalt, isThemeDefinition, type ThemeDefinition } from "./node/theme.ts";
+import { basalt, isThemeDefinition, type ThemeDefinition } from "./theme.ts";
 
 export interface ReportViewRevision {
   readonly revision: number;

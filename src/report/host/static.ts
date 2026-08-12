@@ -8,7 +8,7 @@ import {
   type ReportShowRenderError,
 } from "./presentation.ts";
 import { renderReportHtml } from "./html.ts";
-import { basalt, type ThemeDefinition } from "./node/theme.ts";
+import { basalt, type ThemeDefinition } from "./theme.ts";
 
 /** A host-private normalized output path. Author route strings never become filesystem paths directly. */
 export interface ReportHostOutputPath {
