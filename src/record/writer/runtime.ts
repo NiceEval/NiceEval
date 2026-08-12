@@ -94,6 +94,10 @@ import {
   type RecordDraftOperation,
 } from "./errors.ts";
 import {
+  encodeRecordJsonUtf8,
+  RECORD_JSON_MAXIMUM_BYTES,
+} from "./limits.ts";
+import {
   recordAttemptDraftBrand,
   recordRunDraftBrand,
   recordWriteSessionBrand,
@@ -105,7 +109,6 @@ import {
   type RecordWriteSession,
 } from "./types.ts";
 
-const JSON_MAXIMUM_BYTES = 4 * 1024 * 1024;
 const BLOB_MAXIMUM_BYTES = 64 * 1024 * 1024;
 const ENTROPY_RETRY_LIMIT = 16;
 const ROOT_EMPTY_CHECK_MAXIMUM_ENTRIES = 1;
@@ -172,11 +175,7 @@ function coreInvalidFromCodec(error: RecordCodecError): RecordCoreInvalid {
 }
 
 function jsonBytes(value: unknown): Uint8Array {
-  const encoded = JSON.stringify(value);
-  if (encoded === undefined) {
-    throw new Error("Record durable JSON encoder received a non-JSON value");
-  }
-  return new TextEncoder().encode(encoded);
+  return encodeRecordJsonUtf8(value);
 }
 
 function bytesFromCodec<Value>(
@@ -590,7 +589,7 @@ function writeCoreFile(
   return fileSystem.writeFile({
     file,
     bytes,
-    maximumBytes: JSON_MAXIMUM_BYTES,
+    maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
     mode: "exclusive",
   });
 }

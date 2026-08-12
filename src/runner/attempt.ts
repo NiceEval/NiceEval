@@ -1734,9 +1734,10 @@ async function runAttemptBody(
           windows: diffWindows,
           policy: ledger.attribution,
         });
+        const attachmentWrite = createAgentWorkspaceDiffAttachmentWriteV1(document);
         state.late.diff = Object.freeze({ state: "available" as const, document });
         diffAdditionalAttemptWrites = Object.freeze([
-          createAgentWorkspaceDiffAttachmentWriteV1(document),
+          attachmentWrite,
         ]);
       } catch (diffError) {
         state.late.diff = Object.freeze({

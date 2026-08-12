@@ -13,6 +13,7 @@ import {
 } from "../diff.ts";
 import {
   defineRecordAttachmentFamily,
+  encodeJsonRecordAttachmentPayload,
   makeRecordAttachmentWrite,
   validateRecordAttachmentWrite,
   type RecordAttachmentFamily,
@@ -21,6 +22,13 @@ import {
 } from "../../record/attachment/index.ts";
 import { defineBuiltinJsonRecordAttachment } from "../../record/attachment/internal.ts";
 import { defineRecordAttachmentProjector, type RecordAttachmentProjector } from "../../projection/index.ts";
+import {
+  RECORD_JSON_MAXIMUM_BYTES,
+} from "../../record/writer/limits.ts";
+import {
+  encodeAttachmentPayloadForStorage,
+  encodeRecordAttachmentJsonBytes,
+} from "../../record/writer/attachment-payload.ts";
 
 export const AGENT_WORKSPACE_DIFF_ATTACHMENT_NAME_V1 = "niceeval.diff" as const;
 
@@ -131,6 +139,40 @@ export const agentWorkspaceDiffAttachmentFamilyV1 = requireDefinition(
 const noDiffBlobDraftsV1: readonly [] = Object.freeze([]);
 
 /**
+ * The generic writer enforces this limit only after a draft has started to
+ * write. Diff is a post-run producer, so reject an oversized canonical
+ * payload before it becomes available to Assertions or reaches that writer.
+ */
+function assertDiffPayloadFitsRecordJsonLimit(
+  document: AgentWorkspaceDiffDocumentV1,
+): void {
+  const payload = encodeJsonRecordAttachmentPayload(
+    agentWorkspaceDiffAttachmentDefinitionV1,
+    document,
+  );
+  if (Either.isLeft(payload)) {
+    throw new Error("Agent workspace diff v1 payload could not be canonically encoded");
+  }
+  // v1 declares no blobs, so the writer will allocate the same empty key map.
+  // Run the actual storage conversion and serializer here: this is the exact
+  // final `payload.json` byte sequence rather than an estimate of the source
+  // document's size.
+  const storedPayload = encodeAttachmentPayloadForStorage({
+    payload: payload.right,
+    blobKeys: new Map<object, string>(),
+  });
+  if (Either.isLeft(storedPayload)) {
+    throw new Error("Agent workspace diff v1 payload could not be stored");
+  }
+  const bytes = encodeRecordAttachmentJsonBytes(storedPayload.right).byteLength;
+  if (bytes > RECORD_JSON_MAXIMUM_BYTES) {
+    throw new Error(
+      `Agent workspace diff v1 payload is ${bytes} bytes; Record JSON limit is ${RECORD_JSON_MAXIMUM_BYTES} bytes`,
+    );
+  }
+}
+
+/**
  * Captures the exact frozen semantic object held by post-run evaluators. The
  * no-blob v1 representation is intentionally small enough for normal ledger
  * exports; a future adjacent schema may move endpoint text into this owner's
@@ -139,6 +181,7 @@ const noDiffBlobDraftsV1: readonly [] = Object.freeze([]);
 export function createAgentWorkspaceDiffAttachmentWriteV1(
   document: AgentWorkspaceDiffDocumentV1,
 ): RecordAttachmentWrite<"attempt", never, never> {
+  assertDiffPayloadFitsRecordJsonLimit(document);
   const write = makeRecordAttachmentWrite(
     agentWorkspaceDiffAttachmentFamilyV1,
     () => Object.freeze({ payload: document, blobs: noDiffBlobDraftsV1 }),
