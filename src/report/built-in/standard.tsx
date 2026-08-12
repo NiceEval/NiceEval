@@ -14,13 +14,12 @@ import {
   toTraceNodes,
 } from "../model/conversions.ts";
 import {
-  attemptDetailsResult,
   standardOverviewResult,
 } from "../tasks.ts";
 import {
-  AttemptDetailsResultView,
   StandardOverviewResultView,
 } from "./result-components.tsx";
+import { LegacyAttemptDetails } from "./legacy-attempt-detail.tsx";
 
 export async function standardOverviewRender(sample: Sample) {
   return <StandardOverviewResultView result={await standardOverviewResult(sample)} />;
@@ -47,7 +46,7 @@ export async function standardTracesRender(sample: Sample) {
 }
 
 export async function standardAttemptRender(attempt: AttemptEvidence) {
-  return <AttemptDetailsResultView result={await attemptDetailsResult(attempt)} />;
+  return <LegacyAttemptDetails attempt={attempt} />;
 }
 
 export async function standardExperimentRender(sample: Sample) {
