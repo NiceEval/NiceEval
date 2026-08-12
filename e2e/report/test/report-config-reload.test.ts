@@ -13,7 +13,7 @@ const niceeval = command([binary]);
 function withLiveViewConfig(config: string): string {
   const imported = config.replace(
     'import { defineConfig } from "niceeval";',
-    'import { defineConfig } from "niceeval";\nimport report from "./reports/config-reload.tsx";\nimport alternateReport from "./reports/config-reload-alternate.tsx";\nimport theme from "./themes/config-reload.ts";',
+    'import { defineConfig } from "niceeval";\nimport report from "./reports/config-reload.ts";\nimport alternateReport from "./reports/config-reload-alternate.ts";\nimport theme from "./themes/config-reload.ts";',
   );
   if (imported === config) throw new Error("report fixture config no longer has its defineConfig import");
   const configured = imported.replace('  locale: "en",', '  locale: "en",\n  report,\n  theme,');
@@ -32,7 +32,7 @@ async function htmlWithMarkers(url: string, ...markers: string[]): Promise<strin
   }
 }
 
-test("view 持续重建项目模块、配置、Record，并在修复报告后恢复", async () => {
+test("view 重建项目模块、配置与 Record，失败时保留 last-good execution", async () => {
   await withProjectCopy(
     reportProjectCopy,
     async ({ root }) => {
@@ -41,8 +41,8 @@ test("view 持续重建项目模块、配置、Record，并在修复报告后恢
       expect(run.expReceipt()).toMatchObject({ completion: "completed" });
 
       const configPath = join(root, "niceeval.config.ts");
-      const reportPath = join(root, "reports", "config-reload.tsx");
-      const componentPath = join(root, "reports", "config-reload-content.tsx");
+      const reportPath = join(root, "reports", "config-reload.ts");
+      const componentPath = join(root, "reports", "config-reload-content.ts");
       const themePath = join(root, "themes", "config-reload.ts");
       const config = await readFile(configPath, "utf8");
       const report = await readFile(reportPath, "utf8");
@@ -90,13 +90,13 @@ test("view 持续重建项目模块、配置、Record，并在修复报告后恢
           const first = await firstResponse.text();
           expect(first).toContain("REPORT_FIRST");
           expect(first).toContain("INDIRECT_FIRST");
-          expect(first).toContain("ATTEMPTS_3");
+          expect(first).toContain("SLOTS_3");
           expect(first).toContain("#123456");
           expect(first).not.toContain("INDIRECT_SECOND");
 
           await writeFile(componentPath, component.replace("INDIRECT_FIRST", "INDIRECT_SECOND"), "utf8");
           const indirect = await pollUntil(
-            () => htmlWithMarkers(origin!, "REPORT_FIRST", "INDIRECT_SECOND", "ATTEMPTS_3"),
+            () => htmlWithMarkers(origin!, "REPORT_FIRST", "INDIRECT_SECOND", "SLOTS_3"),
             { timeoutMs: 15_000, intervalMs: 100, label: "indirect report component reload" },
           );
           expect(indirect).not.toContain("INDIRECT_FIRST");
@@ -128,28 +128,31 @@ test("view 持续重建项目模块、配置、Record，并在修复报告后恢
           const newRecord = await niceeval.run(["exp", "source", "--rerun", "all", "--json"], { cwd: root });
           expect(newRecord.exitCode, newRecord.diagnostic()).toBe(0);
           const withNewRecord = await pollUntil(
-            () => htmlWithMarkers(origin!, "ATTEMPTS_4", "REPORT_FIRST", "INDIRECT_SECOND"),
+            () => htmlWithMarkers(origin!, "SLOTS_4", "REPORT_FIRST", "INDIRECT_SECOND"),
             { timeoutMs: 15_000, intervalMs: 100, label: "record reload" },
           );
-          expect(withNewRecord).not.toContain("ATTEMPTS_3");
+          expect(withNewRecord).not.toContain("SLOTS_3");
 
           await writeFile(reportPath, 'throw new Error("BROKEN_REPORT");\nexport default {};\n', "utf8");
           await waitForOutput(view, "stderr", /view rebuild failed:/, {
             timeoutMs: 15_000,
             label: "broken report rebuild",
           });
-          const unavailable = await pollUntil(
+          const retained = await pollUntil(
             async () => {
               const response = await fetch(origin!);
-              if (response.status !== 503) return undefined;
+              if (response.status !== 200) return undefined;
               const body = await response.text();
-              return body.includes("current target unavailable") && body.includes("BROKEN_REPORT")
+              return body.includes("REPORT_FIRST")
+                && body.includes("INDIRECT_SECOND")
+                && body.includes("SLOTS_4")
+                && body.includes("BROKEN_REPORT")
                 ? body
                 : undefined;
             },
-            { timeoutMs: 15_000, intervalMs: 100, label: "broken report unavailable" },
+            { timeoutMs: 15_000, intervalMs: 100, label: "broken report retains last-good execution" },
           );
-          expect(unavailable).toContain("BROKEN_REPORT");
+          expect(retained).toContain("BROKEN_REPORT");
 
           await writeFile(reportPath, report.replace("REPORT_FIRST", "REPORT_RECOVERED"), "utf8");
           const recovered = await pollUntil(
@@ -158,7 +161,7 @@ test("view 持续重建项目模块、配置、Record，并在修复报告后恢
                 origin!,
                 "REPORT_RECOVERED",
                 "INDIRECT_SECOND",
-                "ATTEMPTS_4",
+                "SLOTS_4",
                 "#654321",
               ),
             { timeoutMs: 15_000, intervalMs: 100, label: "report recovery" },

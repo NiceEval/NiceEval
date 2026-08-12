@@ -2,14 +2,14 @@
 // rerun: pnpm e2e --repo report -- --run test/report-export.test.ts
 
 import { command, withProjectCopy } from "@niceeval/testkit";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { reportArtifactStaging, reportProjectCopy } from "./support.ts";
 
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
 
-test("view --out 为本轮 report evidence 导出可读静态站", async () => {
+test("view --out 从一份固定 ReportExecution 导出带完成标识的静态站", async () => {
   await withProjectCopy(
     reportProjectCopy,
     async ({ root }) => {
@@ -23,7 +23,7 @@ test("view --out 为本轮 report evidence 导出可读静态站", async () => {
           "--record",
           ".niceeval/record",
           "--report",
-          "./reports/site.tsx",
+          "./reports/site.ts",
           "--out",
           "site-export",
           "--no-open",
@@ -34,8 +34,11 @@ test("view --out 为本轮 report evidence 导出可读静态站", async () => {
 
       const index = await readFile(join(root, "site-export", "index.html"), "utf8");
       expect(index).toContain("Report fixture");
-      expect(index).toContain("tool-call");
-      expect(index).toContain("deliberate-fail");
+      expect(index).toContain("Slot denominator");
+      expect(index).toContain("Fixture copy block");
+
+      const complete = await stat(join(root, "site-export", "_niceeval", "complete"));
+      expect(complete.size).toBe(0);
     },
     reportArtifactStaging("export", ["site-export"]),
   );

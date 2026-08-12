@@ -16,13 +16,11 @@ interface ExpEvent {
 
 interface ShowDocument {
   format: string;
-  sample: { runCount: number; slotCount: number; denominator: number };
-  problemTable: readonly unknown[];
 }
 
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
 
-test("show --json 读回本轮完整运行的三态 sample", async () => {
+test("show 从一次固定 ReportExecution 呈现内建与自定义报告", async () => {
   await withProjectCopy(
     reportProjectCopy,
     async ({ root }) => {
@@ -64,13 +62,7 @@ test("show --json 读回本轮完整运行的三态 sample", async () => {
       );
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
       const document = shown.json<ShowDocument>();
-      expect(document).toMatchObject({
-        format: "niceeval.report-show/v1",
-        sample: { runCount: 1, slotCount: 3, denominator: 3 },
-        problemTable: [],
-      });
-      const data = JSON.stringify(document.sample);
-      expect(data).toContain('"policy":"latest-runs"');
+      expect(document.format).toBe("niceeval.report-show/v1");
 
       const custom = await niceeval.run(
         [
@@ -79,13 +71,14 @@ test("show --json 读回本轮完整运行的三态 sample", async () => {
           "--record",
           ".niceeval/record",
           "--report",
-          "./reports/site.tsx",
+          "./reports/site.ts",
           "--page",
-          "/overview",
+          "/",
         ],
         { cwd: root },
       );
       expect(custom.exitCode, custom.diagnostic()).toBe(0);
+      expect(custom.stdout).toContain("Report fixture");
       expect(custom.stdout).toContain("Fixture copy block");
     },
     reportArtifactStaging("show", ["junit"]),

@@ -15,7 +15,7 @@ interface ExpEvent {
 
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
 
-test("旧 locator 的 show --source 保留入口、调用链与导入断言快照", async () => {
+test("show --source 从本轮 Record 呈现入口与导入断言快照", async () => {
   await withProjectCopy(
     reportProjectCopy,
     async ({ root }) => {
@@ -41,7 +41,7 @@ test("旧 locator 的 show --source 保留入口、调用链与导入断言快�
       );
 
       const shown = await niceeval.run(
-        ["show", attempt.locator!, "--record", ".niceeval/record", "--source", "--json"],
+        ["show", attempt.locator!, "--record", ".niceeval/record", "--source"],
         { cwd: root },
       );
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
@@ -49,7 +49,6 @@ test("旧 locator 的 show --source 保留入口、调用链与导入断言快�
       expect(shown.stdout).toContain("evals/source-snapshot/assertions.ts");
       expect(shown.stdout).toContain("ENTRY_SNAPSHOT_BEFORE");
       expect(shown.stdout).toContain("IMPORTED_ASSERTION_SNAPSHOT_BEFORE");
-      expect(shown.stdout).toContain('"calls"');
       expect(shown.stdout).not.toContain("ENTRY_SNAPSHOT_AFTER");
       expect(shown.stdout).not.toContain("IMPORTED_ASSERTION_SNAPSHOT_AFTER");
     },

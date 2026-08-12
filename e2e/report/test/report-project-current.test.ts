@@ -19,7 +19,6 @@ interface ExpEvent {
 
 interface ShowOverview {
   format: "niceeval.report-show/v1";
-  sample: { runCount: number; slotCount: number; denominator: number };
 }
 
 test("项目未变时复用结果，Eval 源码变化后重新执行并读回新结果", async () => {
@@ -42,10 +41,7 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
 
       const initialShow = await niceeval.run(["show", "--latest", "--json"], { cwd: root });
       expect(initialShow.exitCode, initialShow.diagnostic()).toBe(0);
-      expect(initialShow.json<ShowOverview>()).toMatchObject({
-        format: "niceeval.report-show/v1",
-        sample: { runCount: 1, slotCount: 1, denominator: 1 },
-      });
+      expect(initialShow.json<ShowOverview>().format).toBe("niceeval.report-show/v1");
 
       const unchangedRun = await niceeval.run(["exp", "source", "--json"], { cwd: root });
       expect(unchangedRun.exitCode, unchangedRun.diagnostic()).toBe(0);
@@ -71,10 +67,7 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
       expect(staleShow.exitCode, staleShow.diagnostic()).toBe(0);
       // --latest 只读已发布 Record，不按工作区源码重新校验指纹；源码变化要等下一次
       // exp 的 reuse plan 才体现为重新派发（reports cli.md「共同选择项」）。
-      expect(staleShow.json<ShowOverview>()).toMatchObject({
-        format: "niceeval.report-show/v1",
-        sample: { runCount: 1, slotCount: 1, denominator: 1 },
-      });
+      expect(staleShow.json<ShowOverview>().format).toBe("niceeval.report-show/v1");
 
       const changedRun = await niceeval.run(["exp", "source", "--json"], { cwd: root });
       expect(changedRun.exitCode, changedRun.diagnostic()).toBe(0);
@@ -96,10 +89,7 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
 
       const refreshedShow = await niceeval.run(["show", "--latest", "--json"], { cwd: root });
       expect(refreshedShow.exitCode, refreshedShow.diagnostic()).toBe(0);
-      expect(refreshedShow.json<ShowOverview>()).toMatchObject({
-        format: "niceeval.report-show/v1",
-        sample: { runCount: 1, slotCount: 1, denominator: 1 },
-      });
+      expect(refreshedShow.json<ShowOverview>().format).toBe("niceeval.report-show/v1");
     },
     reportArtifactStaging("project-current"),
   );
