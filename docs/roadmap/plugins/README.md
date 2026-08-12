@@ -52,7 +52,7 @@ NiceEval 在每个 Eval × Experiment pair 的 link 阶段组合两侧贡献。P
 - behavior identity 与封闭 typed requirements；
 - command-only Sandbox layer 与现有 Experiment lifecycle；
 - `AgentExtension` 与 Hosted Agent Hook；
-- 声明式 RecordAttachment write grant。
+- 不包含 Record reader / writer 或持久事实 write grant。
 
 `(name, instance)` 在一个 pair 内唯一，`name` 使用 reverse-domain lowercase ASCII namespace。Eval 与 Experiment 两侧重复同一 identity 是 typed link conflict，不是去重机会。每个 owner 内先接作者原生片段，再按 `plugins[]` 顺序接 Plugin 片段；跨 owner 顺序由 template owner 决定。
 
@@ -75,11 +75,12 @@ Plugin 不直接修改 Record Core。框架只为需要落 Record 的 Eval／Exp
 
 credential value、env selector、宿主绝对路径、私有 config、raw token、未规范化 options 与 receiver opaque payload 不进入 provenance。Run-owned document 只包含整份 Run 真正共享的 Experiment mount；Attempt-owned document 保存对应 Eval／pair 事实。Group 不写 provenance，它只留在 demand cohort 的 plan manifest。
 
-## 声明式 RecordAttachment capability
+## 持久事实 capability 尚未开放
 
-Plugin blueprint 必须通过 [RecordAttachment 作者 API](../record-attachment-authoring/README.md) 的 producer `recordAttachments: { write: [...] }` 显式声明它可写的每个 definition。运行时 context 只接受该 linked occurrence grant 中、owner 正确的 definition；它没有 raw name、path 或 JSON 写入口。
-
-一个 owner 的一个 attachment family 至多写一次。closed、wrong-owner、undeclared 或 duplicate write 都是具名 typed failure；不会由 last-wins、静默改写或开放写入通道处理。完整类型、provenance 与 migration 规则见 [Library](library.md)。
+Plugin 当前不能写 RecordAttachment。旧的 `recordAttachments.write`、definition、raw family、
+blob 与 migration registry 方案已经[退役](../record-attachment-authoring/README.md)。未来若开放，
+必须是 Plugin 领域的高层 opaque context capability，不能暴露 Record reader / writer、path、
+schema registry 或 JSON fallback。
 
 ## 资产、凭据与信任边界
 
@@ -99,7 +100,7 @@ Plugin package、第三方 protocol factory 与 receiver 都是 application-trus
 
 ## 入口
 
-- [Library](library.md) —— `definePlugin()`、Agent extension protocol、Hosted Hook、asset／credential 与 RecordAttachment write grant。
+- [Library](library.md) —— `definePlugin()`、Agent extension protocol、Hosted Hook、asset 与 credential。
 - [Architecture](architecture.md) —— pair link、receiver、身份、收敛、provenance 与信任边界。
 - [Lifecycle](lifecycle.md) —— 分阶段 Agent plan、Effect Scope、Hook 与失败语义。
 - [给 Codex 安装 MCP、Skill 与 Hook](use-case/codex-agent-extensions.md)

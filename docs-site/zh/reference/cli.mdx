@@ -179,7 +179,7 @@ npx niceeval view --run 01H...
 npx niceeval view @01H...
 ```
 
-打开本地记录查看器。它和 `show` 共用同一份默认 Report 和明确选择：精确 `@<AttemptLocator>` 显示该 Attempt 的默认概览；`--run` 或 `--latest` 从已发布的 Record 形成 `AnalysisSampleHandle`。随后命令投影所需 RecordAttachment，并执行一次 Report。
+打开本地记录查看器。它和 `show` 共用同一份默认 Report 和明确选择：精确 `@<AttemptLocator>` 显示该 Attempt 的默认概览；`--run` 或 `--latest` 从已发布的 opaque Record 形成纯 AnalysisSample。随后内部 host 投影所需事实，并执行一次 Report。
 
 此前的局部执行可能让部分 slot 以 `reference` 采用已有 Attempt。这些是当时的采用事实，不是补跑状态。同一份 `AnalysisSample` 不按可变 head 重选。`--experiment`、`--eval` 和 `--record` 对两种宿主的收窄一致。
 

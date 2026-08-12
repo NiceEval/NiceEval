@@ -96,16 +96,6 @@
         "default": "./dist/loaders/index.cjs"
       }
     },
-    "./record": {
-      "import": {
-        "types": "./dist/record/index.d.mts",
-        "default": "./dist/record/index.mjs"
-      },
-      "require": {
-        "types": "./dist/record/index.d.cts",
-        "default": "./dist/record/index.cjs"
-      }
-    },
     "./analysis": {
       "import": {
         "types": "./dist/analysis/index.d.mts",
@@ -134,26 +124,6 @@
       "require": {
         "types": "./dist/report/index.d.cts",
         "default": "./dist/report/index.cjs"
-      }
-    },
-    "./report/host": {
-      "import": {
-        "types": "./dist/report/host/index.d.mts",
-        "default": "./dist/report/host/index.mjs"
-      },
-      "require": {
-        "types": "./dist/report/host/index.d.cts",
-        "default": "./dist/report/host/index.cjs"
-      }
-    },
-    "./report/host/node": {
-      "import": {
-        "types": "./dist/report/host/node.d.mts",
-        "default": "./dist/report/host/node.mjs"
-      },
-      "require": {
-        "types": "./dist/report/host/node.d.cts",
-        "default": "./dist/report/host/node.cjs"
       }
     },
     "./report/built-in": {

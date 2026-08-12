@@ -1,7 +1,6 @@
 export {
   attemptOriginRunProjection,
   attemptSlotProjection,
-  defineRecordAttachmentProjector,
   selectedRunProjection,
 } from "./projector.ts";
 export type {
@@ -61,15 +60,8 @@ export type {
   RunTimingView,
   UsageView,
 } from "../o11y/record/family-projectors.ts";
-export { projectAnalysisSample } from "./runtime.ts";
 export type { ProjectedRecordAttachmentResult } from "./attachment-result.ts";
 export type { ProjectionCoverage } from "./coverage.ts";
-export { selectAnalysisSampleForAttempt } from "./attempt-selection.ts";
-export type {
-  AnalysisAttemptAmbiguousError,
-  AnalysisAttemptNotFoundError,
-  SelectAnalysisSampleForAttemptError,
-} from "./attempt-selection.ts";
 export type {
   AttemptAttachmentOwner,
   AttemptOriginRunProjectedEntry,

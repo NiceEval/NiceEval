@@ -28,7 +28,7 @@ import {
   type RecordAttachmentWrite,
 } from "../../record/attachment/index.ts";
 import { defineBuiltinJsonRecordAttachment } from "../../record/attachment/internal.ts";
-import { defineRecordAttachmentProjector, type RecordAttachmentProjector } from "../../projection/index.ts";
+import { defineRecordAttachmentProjector, type RecordAttachmentProjector } from "../../projection/projector.ts";
 import {
   RECORD_JSON_MAXIMUM_BYTES,
 } from "../../record/writer/limits.ts";

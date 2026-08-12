@@ -135,25 +135,11 @@ Agent 原生 Hook 只能由 receiver-specific extension 声明，例如 `codexNa
 
 原生 Hook 的文件、credential 与注册项属于 managed overlay，必须参与完整 desired-state 收敛。原生 Hook 失败按 Adapter 已有的 Agent 执行／setup failure 语义报告，不创建 `plugin.native-hook.*` 平行 phase。
 
-## Record write 时点
+## 持久事实时点不在当前契约
 
-Plugin 只能经 blueprint 已声明的 [producer write grant](../record-attachment-authoring/library.md#producer-write-grant) 写入：
-
-| callback | 可写 owner | 封口边界 |
-|---|---|---|
-| Eval／Experiment Hosted Hook | 当前 Attempt | Attempt Record draft 封口前。 |
-| Experiment `setup`／`teardown` | 当前 Run | Run Record draft 封口前。 |
-| Group | 无 | Group 没有 runtime write context。 |
-
-每个 runtime context 只取得自己的 occurrence-local grant。一个 owner + family 的第一次调用原子取得 reservation，第二次稳定返回中立 duplicate failure。
-
-owner seal 依次完成三步：
-
-1. 关闭 external occurrence grants，再 drain tracked commands；
-2. framework 根据成功 accepted events 写完 Plugin provenance，并关闭 built-in grants；
-3. 原子停止 owner-wide admission，再 drain 到静止。
-
-closed、wrong-owner、undeclared、payload、closure 与 blob failure 不降级为 diagnostic，更不会改写已有 Attachment。完整并发、封口与中断语义见 [RecordAttachment Lifecycle](../record-attachment-authoring/lifecycle.md)。
+Plugin 当前没有 Record write context。旧 producer grant 与 owner-local writer 方案已经
+[退役](../record-attachment-authoring/README.md)。未来高层 capability 若立项，必须在 Plugin
+lifecycle 内另行定义时点、封口与错误，不能复用或公开内部 Record session。
 
 ## Sandbox resource 时序
 

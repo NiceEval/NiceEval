@@ -11,11 +11,11 @@ import {
   selectAnalysisSample,
   type AnalysisSelectionError,
   type AnalysisSelectionRequest,
-} from "../../analysis/index.ts";
+} from "../../sample/analysis.ts";
 import {
   selectAnalysisSampleForAttempt,
   type SelectAnalysisSampleForAttemptError,
-} from "../../projection/index.ts";
+} from "../../projection/attempt-selection.ts";
 import defaultOverviewReport from "../built-in/overview.ts";
 import type { Report } from "../author/model.ts";
 import type { ReportExecution } from "../execution/model.ts";

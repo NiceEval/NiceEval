@@ -4,7 +4,7 @@ import {
   selectExplicitRuns,
   type AnalysisSampleHandle,
   type AnalysisSelectionError,
-} from "../analysis/index.ts";
+} from "../sample/analysis.ts";
 import type {
   AttemptId,
   RecordReader,

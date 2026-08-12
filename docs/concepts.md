@@ -196,22 +196,20 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| Record | Record | `.niceeval/record/` 中带完成标识的 Run、Core 与 RecordAttachment 组成的 portable 事实集 | [Record](feature/record/README.md) |
+| Record | Record | `.niceeval/record/` 中可整体复制、进入 Git，并只由 CLI / Report 解释的 opaque portable 事实集 | [Record](feature/record/README.md) |
 | maintenance lock | maintenance lock | reader/writer 取得 shared；migration 取得 exclusive 的跨进程维护锁 | [Record](feature/record/architecture.md#reader锁与-effect) |
-| Record reader | `RecordReader` | 只打开 current Core major，并冻结当时已完成 Run 集合的 scoped view | [Record library](feature/record/library.md#reader) |
-| Record write session | `RecordWriteSession` | 读取 frozen history、写入 Run draft 并最后创建完成标识的 Scope-bound 能力 | [Record library](feature/record/library.md#write-session) |
+| Record reader（内部） | `RecordReader` | CLI / runner 内部只打开 current Core major，并冻结当时已完成 Run 集合的 scoped view；不从包导出 | [Record library](feature/record/library.md#reader) |
+| Record write session（内部） | `RecordWriteSession` | runner 内部读取 frozen history、写入 Run draft并最后创建完成标识的 Scope-bound 能力；不从包导出 | [Record library](feature/record/library.md#write-session) |
 | Run | Run | 一个带完成标识的 immutable 运行单位；expected SlotId 定义分析分母 | [Record](feature/record/architecture.md#完成标识与局部隔离) |
 | Run 完成标识 | Run completion marker | writer 最后创建的 zero-byte `complete`；只表示写入结束，不是 hash 或完整性证明 | [Record](feature/record/architecture.md#durable-record-布局) |
 | 未完成 Run | Incomplete Run | 没有完成标识的中断写入；不是 Record 事实，只产生 warning 并可由 `niceeval clean` 删除 | [Record CLI](feature/record/cli.md#clean) |
 | Member | Member | 一个 Run Slot 对精确 Attempt 的引用；不保存采用原因 | [Record](feature/record/architecture.md#core-v1) |
 | Attempt | Attempt | 一次实际执行的稳定身份；只存放在 origin Run，后续采用不复制 | [Record](feature/record/architecture.md#core-v1) |
 | Record 附件 | `RecordAttachment` | 一个 Run 或 Attempt owner 下具名、schema-identified 的 immutable payload closure | [Record](feature/record/architecture.md#recordattachment) |
-| Record 附件定义 | `RecordAttachmentDefinition` | 一次声明 owner、全部连续 schema 版本、current 与完整相邻 migration 图的 opaque family identity；不自动授予写权限 | [RecordAttachment 作者 SDK](roadmap/record-attachment-authoring/README.md) |
 | Record 附件 envelope | `RecordAttachmentEnvelopeV1` | 保存 name 与 schemaId | [Record](feature/record/architecture.md#recordattachment) |
 | Record 附件 schema identity | `RecordAttachmentSchemaId` | 冻结 Attachment payload 的精确 shape 与语义 | [Record](feature/record/architecture.md#三个演进边界) |
 | Record 附件 migration | RecordAttachment migration | Attachment owner 提供的相邻 `vN → vN+1` converter 或明确不可迁移声明 | [Record](feature/record/architecture.md#migration-definition) |
 | 中立 Record 附件 projector | neutral RecordAttachmentProjector | 只把一个明确 owner 的 available Attachment 变为 typed view；不聚合、不选择 Run、不读另一 family | [Observability Attachments](feature/record/architecture/observability-attachments.md) |
-| 评估类型附件 | Evaluations Attachment | Run-owned `niceeval.evaluations/v1`；保存 Slot、Eval 与 `pass | score` | [Record](feature/record/architecture.md#内建-attachment) |
 | 源码快照 | Sources snapshot | origin Run-owned `niceeval.sources/v1`；保存当时 source closure 的 manifest 与 own blobs | [Sources manifest](feature/record/architecture.md#sources-manifest) |
 | 源码项 | source item | Sources snapshot 中由非数组 `SourceItemId`、canonical project-relative path、SHA-256 与 own blob 标识的一项源码 | [Sources manifest](feature/record/architecture.md#sources-manifest) |
 | 断言源码位置 | Assertion source site | Attempt-owned source-sites 中，一个 Assertions `entryId` 的 role-tagged runtime source site 与 occurrence | [Source sites](feature/assertions/architecture/source-sites.md) |
@@ -226,8 +224,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 |---|---|---|---|
 | 分析选择请求 | `AnalysisSelectionRequest` | 选择哪些已发布 Run 的纯配置，不携带 reader 或 I/O 能力 | [Sample](feature/sample/library.md#analysis-selection) |
 | 分析样本 | `AnalysisSample` | 从已发布 Run 形成的 portable core-only 选择，保留完整 expected-slot 分母 | [Sample](feature/sample/README.md) |
-| 分析样本句柄 | `AnalysisSampleHandle` | 将 AnalysisSample 绑定到同一个 frozen Record view、允许继续按需读取的 scoped capability | [Sample](feature/sample/README.md) |
-| 分析选择 | Analysis selection | 从明确 Run 或具名 latest policy 形成 AnalysisSampleHandle 的只读过程 | [Sample](feature/sample/README.md) |
+| 分析选择（内部） | Analysis selection | CLI host 从明确 Run 或具名 latest policy 形成纯 AnalysisSample 的只读过程；作者通过 `show` / `view` 选择 | [Sample](feature/sample/README.md) |
 | 执行沿用计划 | `ExecutionReusePlan` | reuse policy 把当前 `ExecutionTarget` 的每个 Slot 穷尽判为 reuse 或 gap | [Cache](feature/experiments/cache.md#公开形状) |
 | 执行缺口 | Execution gap | 当前目标中没有可复用 Attempt、必须交给 planner/scheduler 执行的 slot；不是 Record 状态 | [Cache](feature/experiments/cache.md#错误与缺口作用域) |
 | 收窄 | Narrowing | 在既有 `AnalysisSample` 上显式排除范围，不重新读取 Record | [Sample](feature/sample/library.md#构造入口) |

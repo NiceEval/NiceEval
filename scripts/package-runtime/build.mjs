@@ -24,12 +24,9 @@ const PUBLIC_ENTRIES = [
   ["./expect", "expect/index.ts"],
   ["./reporters", "runner/reporters/index.ts"],
   ["./loaders", "loaders/index.ts"],
-  ["./record", "record/index.ts"],
   ["./analysis", "analysis/index.ts"],
   ["./projection", "projection/index.ts"],
   ["./report", "report/index.ts"],
-  ["./report/host", "report/host/index.ts"],
-  ["./report/host/node", "report/host/node.ts"],
   ["./report/built-in", "report/built-in/index.tsx"],
 ];
 

@@ -70,7 +70,9 @@ npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
 npx niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --no-open
 ```
 
-`show` 和 `view` 以 `AnalysisSelectionRequest` 选择 Run，形成 `AnalysisSampleHandle`，投影所需 Attachment，并生成固定的 `ReportExecution`。已发布的 Run 不可修改；再次查看会形成新的选择与 execution。
+`show` 和 `view` 以 locator、`--run` 或 `--latest` 选择 Run。内部 host 形成纯
+`AnalysisSample`，按 Report 声明投影所需事实，并生成固定的 `ReportExecution`。
+已发布的 Run 不可修改；再次查看会形成新的选择与 execution。
 
 ## 结束状态
 

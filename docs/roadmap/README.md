@@ -29,7 +29,7 @@ Roadmap 与 Feature、Design 候选共用 [Feature Design Package](../_template/
 - [Prepare 阶段瞬时失败自愈](prepare-transient-retry/README.md) —— 内置 prepare 命令的瞬时重试
 - [有序 Eval 序列](ordered-sequences/README.md) —— 用独立 Sequence 声明现有 Eval 的顺序、完整重新执行与执行 lineage
 - [Plugins](plugins/README.md) —— 组合 Eval／Experiment 条件，并以统一 AgentExtension 给已选 Agent 安装 Skill、MCP、原生 Plugin 与 Hook
-- [RecordAttachment 作者 API](record-attachment-authoring/README.md) —— 用一个多版本 definition、独立 install / write authority 与同一 context 统一自定义、Plugin 和内建事实
+- [自定义持久事实边界](record-attachment-authoring/README.md) —— 退役 raw Record 作者 API；未来只允许另行设计高层 opaque capability
 - [Docker Image](docker-image/README.md) —— 用统一 `dockerImage()` 声明预制镜像或按内容构建的镜像
 - [Chart 语义内核与报告交互控制器](report-chart-kernel/README.md) —— 双面语义模型、精确值 HTML、键盘焦点与 Table 渐进增强
 - [Assertion 作者面](assertion-authoring/README.md) —— 用 Fact 分离 matcher、判定、控制流与计分，并统一 scope、command 和 Sandbox 检查

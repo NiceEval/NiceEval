@@ -12,7 +12,6 @@ e2e/
 ├── cli/                    # argv、机器输出、失败分类与缓存
 ├── runner/                 # carry、history 与确定性调度
 ├── package/                # ESM、CJS、exports 与外部 cwd
-├── record/                 # 公开 niceeval/record 写读边界
 ├── report/                 # show、view、导出与浏览器 Journey
 ├── lifecycle/              # signal、资源终结与下一消费者
 ├── adapter/

@@ -169,15 +169,16 @@ Docker 是 Repo 的 backend / sandbox 依赖，不属于 executor 类型。host 
 
 - CLI 结果从 exit、stdout、stderr、PTY、JUnit 或 `show --json` 读取；
 - Report 从 `show`、`view --out`、HTTP 和浏览器读取；
-- Record 格式测试可以用公开 `niceeval/record` API；
+- Record 目录只作为 opaque 整体由 CLI 产生、复制或进入 Git，不通过 Library API 读取内部结构或写入；
 - Adapter 从公开运行流和 `show --execution/--timing/--json` 读取；
-- 除非磁盘格式本身就是被测契约，不直接扫描 `.niceeval/` 私有布局；
+- 不直接扫描 `.niceeval/` 私有布局；无法通过 CLI / Report 观察的事实属于呈现缺口，不以测试绕过；
 - 不 import 候选内部类型给测试手写 expected。
 
 测试可以从公开 history 取得动态 locator，因为 locator 是上一步用户获得的结果；它随后必须被另一条公开命令真正消费。
 
 功能 Repo 的 `.niceeval` 只来自本次 invocation 中安装后 candidate 的完整 Experiment 运行。不得签入、下载或从另一个 Repo
-复制结果作为常规测试输入；公开旧格式兼容性本身是契约时，才由 Record Repo 拥有最小版本 fixture。只读 case 可以共享本轮
+复制结果作为常规测试输入。旧版本迁移若成为公开 CLI 契约，由 CLI Journey 使用最小完整目录 fixture 验收迁移结果，不把
+具体文件 schema 变成作者契约。只读 case 可以共享本轮
 冻结 evidence；修改 Eval、config、结果或执行 accept 的 case 必须在私有项目副本中先完成自己的初始运行。
 
 ## 隔离规则

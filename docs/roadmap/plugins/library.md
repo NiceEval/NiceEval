@@ -274,55 +274,12 @@ receiver 显式列出接受的 token，并由 Agent factory 携带；不使用 `
 
 Plugin package、第三方 protocol 与 receiver 都是 application-trusted ESM code。NiceEval 只保证内建 receiver 的 redaction、纯 `resolve` 与资源纪律，不宣称验证或隔离恶意第三方实现。
 
-## 声明 occurrence-local write grant
+## 持久事实不在当前 Plugin API
 
-每个 Plugin 要写 Record 时，先在 blueprint 中列出 [RecordAttachment producer write grant](../record-attachment-authoring/library.md#producer-write-grant)。`write` 引用一个完整、多版本 definition，而不是携带 name、schemaId、文件路径或外部 migration edge：
-
-```ts
-export const candidateRuntime = definePlugin({
-  name: "dev.niceeval.candidate-runtime",
-  behaviorRevision: "1",
-  recordAttachments: {
-    write: [candidateRuntimeObservation],
-  },
-  experiment(options: CandidateRuntimeOptions) {
-    return { identity: { version: options.version } };
-  },
-});
-```
-
-blueprint 的 `recordAttachments.write` 为每个 linked occurrence 形成独立 grant，不是 application migration registry，也不自动写入。Plugin 的 `behaviorRevision` 与 existing identity 继续描述 producer 行为；current Attachment presence requirement 由 reuse contract 另行声明。两个 occurrence 即使引用不同 definition objects，只要 `(owner, name)` 相同，link 也在创建资源前返回带双方 provenance 的 typed conflict。
-
-## runtime write context
-
-已 link 的 lifecycle context 直接组合中立 owner-local `record()`；不存在 `PluginRecordContext` 或 Plugin writer：
-
-```ts
-const candidateRuntime = definePlugin({
-  name: "dev.niceeval.candidate-runtime",
-  behaviorRevision: "1",
-  recordAttachments: { write: [candidateRuntimeObservation] },
-  experiment() {
-    return {
-      async teardown(ctx) {
-        const version = await probeCandidateRuntime();
-        await ctx.record(candidateRuntimeObservation, { version });
-      },
-    };
-  },
-});
-```
-
-`ctx.record()` 的 direct payload、blob builder、eager reservation、tracked command 与错误联合以中立 [Library](../record-attachment-authoring/library.md#owner-local-record-context) 为单源。Plugin 不包装第二种 write，也不增加 `plugin-record-*` 平行错误词表。只有 generic writer 完整成功后形成的 accepted event 才能进入 framework provenance。
-
-| mount | 可写 owner | 封口边界 |
-|---|---|---|
-| Eval Hosted Hook | 当前 Attempt | Attempt 的 Record draft 封口前。 |
-| Experiment Hosted Hook | 当前 Attempt | Attempt 的 Record draft 封口前。 |
-| Experiment `setup` / `teardown` | 当前 Run | Run 的 Record draft 封口前。 |
-| Group | 无 | Group 没有 runtime context。 |
-
-wrong-owner 与 undeclared 在 TypeScript 入口尽量不可表达；动态 JavaScript、类型断言、duplicate 或错误时序仍得到中立 RecordAttachment command failure。没有开放 JSON 回退入口。
+Plugin blueprint 不接受 `recordAttachments.write`，lifecycle context 也没有 `ctx.record()`。
+raw definition、family、payload/blob 与 migration registry 方案已经
+[退役](../record-attachment-authoring/README.md)。未来若设计高层持久事实 capability，必须由
+Plugin 领域单独定义，不得把内部 Record API 包装成公开入口。
 
 ## Requirements、identity 与冲突
 
@@ -361,8 +318,7 @@ export const pnpm = definePlugin({
 
 这里的 `.prepare()` 是既有 `SandboxLayer` API，不是 Plugin wrapper。`yarn({ version })` 是另一个具名 Plugin，拥有自己的安装、探测与版本规则。
 
-## migration registry / Layer
+## migration 边界
 
-Plugin package 导出自己的完整 definition；应用通过 `defineConfig({ recordAttachments: { install: [definition] } })` 安装并信任它。family-owned edge、converter、blob target、`R = never` 与 Git 恢复点以中立 [Library](../record-attachment-authoring/library.md) 和 [CLI](../record-attachment-authoring/cli.md) 为单源。
-
-Plugin blueprint 的 `write` grant 不隐式安装 migration。删除 Plugin producer 后，应用可以只保留 definition import 与 config registration；`niceeval migrate` 不运行 factory、Hook、lifecycle 或 receiver。
+Plugin 不能安装 Record migration registry 或 converter。`niceeval migrate` 只使用 NiceEval
+内部已知的格式与官方事实迁移，不按 Record 内容动态 import Plugin。

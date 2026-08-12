@@ -147,16 +147,16 @@ Adapter 的分页或事件 fixture 必须属于被测公开协议。E2B `Sandbox
 
 ## Report
 
-`e2e/record/` 是公开 `niceeval/record` API 与已声明磁盘格式的唯一 owner。它可以使用签入的公开格式 fixture；未在
-Record 契约逐项声明的 `.niceeval` 位置与文件布局仍是私有实现。改变公开 Record 格式会修改这个 owner；只改变私有存储组织
-或 reader 实现，不得修改 Report E2E。
-
 Report Repo 用真实 Experiment 产生结果，再通过公开入口读取：
 
 - `show`：text / JSON 的身份、范围、切片和大输出；
 - `view --out`：导出文件、链接闭合、base path 与无 server 读取；
 - `view`：HTTP、持续重建与浏览器动作；
 - 自定义 Report：外部 cwd 的 TSX 编译、公开组件和页面目标。
+
+Record 目录是可复制、可进入 Git 的 opaque 产品资产，不是公开磁盘 schema。Report Repo 只从安装后 CLI 产生它，
+再用 `show`、`view` 与自定义 Report 验收公开结果；测试不得 import reader / writer，也不得扫描物理文件来反推成功。
+损坏、不完整、迁移与删除未完成 Run，只有在 CLI 能稳定制造并返回公开诊断时才由对应 CLI Journey 接管。
 
 `show --source` 的生产—读取闭环也归 Report Repo：Eval 从入口文件和嵌套断言模块声明断言，完整运行后再修改工作区源码；旧 locator
 仍必须显示运行时捕获的入口、callers、路径与内容，而不是当前磁盘内容。需要另一种 verdict、conversation、tool、timing 或源码树时，

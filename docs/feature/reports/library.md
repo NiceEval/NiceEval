@@ -1,21 +1,25 @@
 # Reports Library
 
-本页是 `niceeval/report`、`niceeval/report/host` 与 `niceeval/report/host/node` 的目标契约 owner。Report 把一份 reader-bound `AnalysisSampleHandle` 变成一次 immutable、self-contained `ReportExecution`；终端、热重载网页与静态导出只消费 execution，不重新读取 Record 或调用作者代码。
+本页以 `niceeval/report` 作为唯一公开作者入口。它导出 Report DSL、Theme 与官方 opaque
+projector，也导出 projection declaration constructors 与需要的纯 Analysis / Projection 类型。
+Record selection、reader-bound handle 与 projection interpreter 属于 CLI 的内部 Report host。
+loader、watcher、文件系统、server 与 execution 调度也留在内部，不导出
+`niceeval/report/host` 或 `niceeval/report/host/node`。
 
 依赖方向固定为：
 
 ```text
-niceeval/record
+internal Record
       ↓
-niceeval/analysis
+internal selection
       ↓
-niceeval/projection
+internal projection runtime
       ↓
 niceeval/report
       ↓
-niceeval/report/host
+internal Report host
       ↓
-niceeval/report/host/node
+CLI / Node runtime
 ```
 
 Report 作者只理解两件事：需要哪些 `RecordProjection`，以及怎样把 projected values / derived values 包装成页面或下载。作者 callback 看不到 `RecordReader`、root、Scope、Effect、path、owner lookup、compiled plan 或 route expansion。
