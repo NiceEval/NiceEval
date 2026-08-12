@@ -34,7 +34,10 @@ import {
 } from "./analysis/index.ts";
 import { defaultAttemptOverviewReport } from "./report/built-in/attempt-overview.ts";
 import { defaultOverviewReport } from "./report/built-in/overview.ts";
-import { executionEvidenceReport } from "./report/built-in/execution.ts";
+import {
+  executionEvidenceReport,
+  timingEvidenceReport,
+} from "./report/built-in/execution.ts";
 import { sourceEvidenceReport } from "./report/built-in/source.ts";
 import { reportRoute, type ReportRoute } from "./report/author/identity.ts";
 import type { Report } from "./report/author/model.ts";
@@ -338,7 +341,7 @@ const FLAG_OPTIONS = {
   source: { type: "boolean" },
   /** `show @<exact-current-AttemptId> --execution`：从公开 Record projection 呈现该 Attempt 的 transcript、tool 与 command evidence。 */
   execution: { type: "boolean" },
-  /** 实现收敛占位；目标公开 CLI 通过 Report page 读取 timing 通道。 */
+  /** `show @<AttemptLocator> --timing[=summary|full]` 专用：从内建 timing Report 读取该 Attempt 的 runner 阶段树。 */
   timing: { type: "boolean" },
   /** `show @<AttemptId> --execution` 专用：JS 正则过滤 retained transcript、tool 与 command evidence。 */
   grep: { type: "string" },
@@ -2044,8 +2047,13 @@ function parseReportCliRequest(input: {
   }
 
   const page = parseReportRoute(input.flags.page);
-  if (input.flags.source !== undefined && input.flags.execution) {
-    throw usageError("niceeval show chooses one evidence Report at a time; remove either --source or --execution.\n");
+  const evidenceReports = [
+    input.flags.source !== undefined ? "--source" : undefined,
+    input.flags.execution ? "--execution" : undefined,
+    input.flags.timing !== undefined ? "--timing" : undefined,
+  ].filter((flag): flag is string => flag !== undefined);
+  if (evidenceReports.length > 1) {
+    throw usageError(`niceeval show chooses one evidence Report at a time; remove all but one of ${evidenceReports.join(", ")}.\n`);
   }
   if (!input.flags.execution && input.flags.grep !== undefined) {
     throw usageError("niceeval show --grep only combines with --execution.\n");
@@ -2073,6 +2081,36 @@ function parseReportCliRequest(input: {
       rootPath,
       target: Object.freeze({ kind: "attempt" as const, attemptId }),
       reportSelection: Object.freeze({ kind: "fixed" as const, report }),
+      themeSelection: themeSelection(input.cwd, input.flags.theme),
+      ...(page === undefined ? {} : { page }),
+    });
+  }
+
+  if (input.flags.timing !== undefined) {
+    if (input.positionals.length !== 1) {
+      throw usageError("niceeval show --timing requires exactly one current Record Attempt locator.\n");
+    }
+    if (input.flags.latest || runs.length > 0 || input.flags.experiment !== undefined) {
+      throw usageError("niceeval show --timing uses its Attempt locator as the only selection; remove --latest, --run, and --experiment.\n");
+    }
+    if (input.flags.report !== undefined) {
+      throw usageError("niceeval show --timing selects its built-in timing Report; remove --report.\n");
+    }
+    const locator = input.positionals[0];
+    if (locator === undefined) {
+      throw usageError("niceeval show --timing requires one current Record Attempt locator.\n");
+    }
+    const attemptId = parseCurrentAttemptLocator(locator);
+    return Object.freeze({
+      command: input.command,
+      cwd: input.cwd,
+      root: root.right,
+      rootPath,
+      target: Object.freeze({ kind: "attempt" as const, attemptId }),
+      reportSelection: Object.freeze({
+        kind: "fixed" as const,
+        report: timingEvidenceReport({ mode: input.flags.timing }),
+      }),
       themeSelection: themeSelection(input.cwd, input.flags.theme),
       ...(page === undefined ? {} : { page }),
     });
@@ -2201,7 +2239,7 @@ function reportUnsupportedFlag(command: ReportCliCommand, flags: Flags): string 
     ["--execution", command === "show" ? undefined : flags.execution],
     ["--diff", flags.diff || flags.diffPath !== undefined],
     ["--grep", command === "show" ? undefined : flags.grep],
-    ["--timing", flags.timing],
+    ["--timing", command === "show" ? undefined : flags.timing],
     ["--keep-sandbox", flags.keepSandbox],
     ["--all", flags.all],
     ["--window", flags.window],

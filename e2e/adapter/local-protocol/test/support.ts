@@ -123,6 +123,7 @@ export async function proveLocalProtocolOwner(kind: OwnerKind): Promise<void> {
               verdict,
               attempts: 1,
             });
+            expect(evalEvent?.locator, receipt.diagnostic()).toBeTruthy();
             if (verdict === "passed") {
               expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
             } else {
@@ -141,6 +142,18 @@ export async function proveLocalProtocolOwner(kind: OwnerKind): Promise<void> {
               .sample.selection;
             expect(selection.runIds, shown.diagnostic()).toEqual([inv.runIds[0]!]);
             expect(shown.stdout, shown.diagnostic()).toContain('"included"');
+
+            // tracing 缺席不代表 runner 阶段也丢失了 timing：已落盘的阶段树仍
+            // 必须可从公开 timing 页面读出 Eval 与首轮 Turn。此 direct Agent 没有
+            // 声明 setup，runner 不应凭空补一个 agent.setup 阶段。
+            const timing = await niceeval.run(
+              ["show", evalEvent!.locator!, "--timing"],
+              { cwd: root },
+            );
+            expect(timing.exitCode, timing.diagnostic()).toBe(0);
+            expect(timing.stdout, timing.diagnostic()).toContain("eval.run");
+            expect(timing.stdout, timing.diagnostic()).toMatch(/turn\s+turn1\b/);
+
           },
         );
       } catch (error) {

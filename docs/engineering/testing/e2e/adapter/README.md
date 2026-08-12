@@ -40,9 +40,9 @@
    - 工具断言**连名带参**：`t.calledTool("mcp__demo-tools__get_weather", { input: { city: "Brooklyn" } })`。名字对但参数被丢弃或改写，同样是归一 bug，入参保真是协议路径的一部分（`ToolMatch` 的深度部分匹配见[Assertions · 作用域断言](../../../../feature/assertions/library/scoped-assertions.md#匹配条件的字段全集)）。
    - 支持负断言的协议同时验证反例（`notCalledTool`）；证据不完整的协议在文档里写明负断言边界，不从最终文本猜测过程。
 3. **用一条代表证据核验 execution 投影**：每个 Adapter Repo 从本轮 Eval event 直接取一个通过 Attempt 的 locator，在独立 test 中执行 `niceeval show @locator --execution`。只断言一个能区分该协议投影是否可达的工具或入参 sentinel；工具、Skill、session 和 usage 的完整正反矩阵留在 Eval，不再由 CLI 文本重复评分。
-4. **每个 Adapter 独立核验 timing**：同一个通过 Attempt 由另一个 test 执行 `niceeval show @locator --timing`。声明 tracing 的 Adapter 断言自己的 mapper、model/tool 层级与显式 correlation 结果；未声明 tracing 的 Adapter 断言阶段树可读且 execution 诚实显示 `timing unavailable`。不能用另一个 Adapter 或 Report Repo 的 `--timing` 通过代替本 Adapter。
+4. **每个 Adapter 独立核验 timing**：同一个通过 Attempt 由另一个 test 执行 `niceeval show @locator --timing`。Runner 在 OTel 之前就会写入该 Attempt **实际跨过**的 owner-monotonic 阶段 interval。
 
-   span 与事件的对应靠显式 correlation（`gen_ai.tool.call.id` 这类 GenAI 语义约定属性）成立、不靠名字猜——correlation 断裂的可见症状就是节点退回 timing unavailable。
+   成功的 `t.send()` 至少证明 `eval.run` 与首轮 turn。只有确实声明并执行 setup 的 Adapter 才要求 `agent.setup`。Adapter owner 不再于 timing test 内重跑 `--execution`，也不用 execution 文本反推 Skill 或 tracing。不能用另一个 Adapter 或 Report Repo 的 `--timing` 通过代替本 Adapter。
    trace 只作时间与结构证据，从不参与判分——判分断言永远只读事件流（见[Observability](../../../../observability.md)）。
 
 一次昂贵的 live 运行可在 `beforeAll` 中生产冻结 evidence，再由 verdict、execution 与 timing 三个独立 test 只读共用；按标题单项运行时 `beforeAll` 仍必须现场产生本轮 evidence。第 2 步是唯一的 Eval 判分断言：第 3、4 步只验收公开投影与 telemetry 机制，绝不反过来给事件流评分。

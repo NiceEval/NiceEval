@@ -38,32 +38,25 @@ export default defineEval({
           ),
       ),
     );
-    await t.group("OpenCode 原生 skill 工具选择目标，且没有选择 decoy", () => {
-      turn.calledTool("skill", {
-        input: (input) =>
-          typeof input === "object" &&
-          input !== null &&
-          !Array.isArray(input) &&
-          Object.is((input as Record<string, unknown>)["name"], STATUS_SKILL),
-      });
-      turn.calledTool("skill", {
-        input: (input) =>
-          typeof input === "object" &&
-          input !== null &&
-          !Array.isArray(input) &&
-          Object.is((input as Record<string, unknown>)["name"], DECOY_SKILL),
-        count: 0,
-      });
+    await t.group("OpenCode 原生 skill 工具归一为目标 skill.loaded，且没有加载 decoy", () => {
       t.check(
         turn.events,
         satisfies<typeof turn.events>(
-          "任何工具的 input 均未引用 decoy Skill",
+          `loaded ${STATUS_SKILL}`,
+          (events) =>
+            events.some(
+              (event) => event.type === "skill.loaded" && event.skill === STATUS_SKILL,
+            ),
+        ),
+      );
+      t.check(
+        turn.events,
+        satisfies<typeof turn.events>(
+          `did not load ${DECOY_SKILL}`,
           (events) =>
             events.every(
               (event) =>
-                event.type !== "operation.started" ||
-                event.operation.kind !== "tool" ||
-                !JSON.stringify(event.operation.input).includes(DECOY_SKILL),
+                event.type !== "skill.loaded" || event.skill !== DECOY_SKILL,
             ),
         ),
       );

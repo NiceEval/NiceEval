@@ -86,7 +86,7 @@ it("show --execution 读回 OpenClaw 的代表性工具证据", async () => {
   expect(execution.stdout).toContain("notes.txt");
 });
 
-it("show --timing 如实呈现 OpenClaw 本轮没有 telemetry enrichment", async () => {
+it("show --timing 读回 OpenClaw 的 runner 阶段", async () => {
   const event = only(
     evalEvents,
     (candidate) => candidate.evalId === "coding-task/write-and-verify",
@@ -95,6 +95,4 @@ it("show --timing 如实呈现 OpenClaw 本轮没有 telemetry enrichment", asyn
   expect(timing.exitCode, timing.diagnostic()).toBe(0);
   expect(timing.stdout).toMatch(/turn\s+turn1\b/);
 
-  const execution = await niceeval.run(["show", event.locator!, "--execution"]);
-  expect(execution.stdout).toContain("timing unavailable");
 });

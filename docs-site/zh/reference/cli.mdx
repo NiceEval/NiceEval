@@ -192,11 +192,15 @@ npx niceeval show --run 01H... --run 01J...
 npx niceeval show @01H...
 npx niceeval show @01H... --source
 npx niceeval show @01H... --execution
+npx niceeval show @01H... --timing
+npx niceeval show @01H... --timing=full
 npx niceeval show --run 01H... --page attempt-0123456789ABCDEFGHJKMNPQRS
 npx niceeval show --run 01H... --report ./reports/summary.ts --page overview
 ```
 
-`show` 是终端报告入口，适合人直接阅读，也适合 coding agent 在上下文窗口里逐级下钻。它不接受模糊的位置选择。精确 `@<AttemptLocator>` 默认显示该 Attempt 的 Evaluation identity、evaluation kind、四态 Verdict、Assertions 和适用的 Score；加 `--source` 或 `--execution` 查看专用证据面。
+`show` 是终端报告入口，适合人直接阅读，也适合 coding agent 在上下文窗口里逐级下钻。它不接受模糊的位置选择。精确 `@<AttemptLocator>` 默认显示该 Attempt 的 Evaluation identity、evaluation kind、四态 Verdict、Assertions 和适用的 Score。
+
+加 `--source`、`--execution` 或 `--timing` 可查看对应的专用证据面。`--timing` 默认显示精简阶段树；`--timing=full` 还显示 interval identity、parent 和 offset。三种证据面互斥，并且都要求一个精确 Attempt 定位符。
 
 `--run` 可重复，只读取这些显式 Run；`--latest` 对每个目标 Experiment 按完成时间和 Run identity 的稳定规则各选择一个。`--latest --experiment <id>` 定义目标集合；不带 `--experiment` 时目标来自可读 Run 核心。目标集合为空、任一目标没有已发布 Run，或任一候选 Run 的排序核心损坏都明确失败，不缩小比较组去猜“最近一次”。Record 只包含完整发布的 Run。
 

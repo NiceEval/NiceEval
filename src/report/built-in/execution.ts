@@ -46,6 +46,10 @@ const executionInputs = reportInputs({
   diagnostics: attemptSlotProjection(attemptDiagnosticsProjector),
 });
 
+const timingEvidenceInputs = reportInputs({
+  timing: attemptSlotProjection(attemptTimingProjector),
+});
+
 type ExecutionInputs = {
   readonly conversation: ProjectedSample<"attempt-slot", ConversationView>;
   readonly commands: ProjectedSample<"attempt-slot", CommandsView>;
@@ -63,6 +67,11 @@ type CollectionDisplay =
 export interface ExecutionEvidenceReportOptions {
   /** Match against complete retained transcript, tool, and command card text. */
   readonly grep?: string;
+}
+
+export interface TimingEvidenceReportOptions {
+  /** Summary omits opaque interval identity and offsets; full retains every projected field. */
+  readonly mode?: "summary" | "full";
 }
 
 /**
@@ -90,6 +99,55 @@ export function executionEvidenceReport(input: ExecutionEvidenceReportOptions = 
 
 /** The built-in execution evidence Report with no private reader capability. */
 export const defaultExecutionEvidenceReport = executionEvidenceReport();
+
+/**
+ * The dedicated Attempt timing Report. It deliberately declares only the
+ * timing projection, so `show --timing` cannot accidentally depend on the
+ * broader execution-evidence surface.
+ */
+export function timingEvidenceReport(input: TimingEvidenceReportOptions = {}): Report {
+  const mode = input.mode ?? "summary";
+  const page = definePage({
+    id: Either.getOrThrow(reportComponentId("timing-evidence")),
+    route: Either.getOrThrow(reportRoute("/")),
+    inputs: timingEvidenceInputs,
+    completeness: "allow-partial",
+    render: ({ inputs }) => timingEvidenceDocument(inputs.timing, mode),
+  });
+  return defineReport({
+    id: Either.getOrThrow(reportId("timing-evidence")),
+    pages: [page],
+  });
+}
+
+export const defaultTimingEvidenceReport = timingEvidenceReport();
+
+function timingEvidenceDocument(
+  timing: ProjectedSample<"attempt-slot", AttemptTimingView>,
+  mode: "summary" | "full",
+) {
+  const timingBySlot = entriesBySlot(timing);
+  const slots = timing.sample.slots;
+  return reportDocument({
+    title: "Attempt timing",
+    children: slots.length === 0
+      ? [reportStatus({
+        tone: "warning",
+        label: "The selected sample has no Slots to display",
+      })]
+      : slots.map((slot) => reportSection({
+        heading: `Slot ${slot.runId}/${slot.slotId}`,
+        children: [
+          slotStateBlock(slot),
+          ...projectionBlocks(
+            "Timing",
+            timingBySlot.get(slotKey(slot)),
+            (view) => timingBlocks(view, mode),
+          ),
+        ],
+      })),
+  });
+}
 
 function executionEvidenceDocument(
   inputs: ExecutionInputs,
@@ -626,7 +684,10 @@ function usageObservationText(observation: UsageView["observations"][number]): s
   }
 }
 
-function timingBlocks(view: AttemptTimingView): readonly ReportBlock[] {
+function timingBlocks(
+  view: AttemptTimingView,
+  mode: "summary" | "full" = "full",
+): readonly ReportBlock[] {
   const depths = timingDepths(view.intervals);
   return [reportSection({
     heading: "Timing tree",
@@ -634,7 +695,23 @@ function timingBlocks(view: AttemptTimingView): readonly ReportBlock[] {
       collectionStatus("Timing", view.collection),
       ...(view.intervals.length === 0
         ? [reportStatus({ tone: "warning", label: "No recorded timing intervals" })]
-        : [reportTable({
+        : [mode === "summary" ? reportTable({
+          caption: "Timing tree summary (record order)",
+          columns: [
+            { key: "depth", label: "Depth", align: "end" },
+            { key: "phase", label: "Phase" },
+            { key: "label", label: "Label" },
+            { key: "duration", label: "Duration (ms)", align: "end" },
+            { key: "outcome", label: "Outcome" },
+          ],
+          rows: view.intervals.map((interval) => ({
+            depth: depths.get(interval.intervalId) ?? 0,
+            phase: interval.phase,
+            label: timingIntervalLabel(interval),
+            duration: interval.durationMs,
+            outcome: interval.outcome,
+          })),
+        }) : reportTable({
           caption: "Timing tree (record order)",
           columns: [
             { key: "interval", label: "Interval" },
@@ -651,7 +728,7 @@ function timingBlocks(view: AttemptTimingView): readonly ReportBlock[] {
             parent: interval.parentIntervalId ?? "root",
             depth: depths.get(interval.intervalId) ?? 0,
             phase: interval.phase,
-            label: interval.label,
+            label: timingIntervalLabel(interval),
             start: interval.startOffsetMs,
             duration: interval.durationMs,
             outcome: interval.outcome,
@@ -659,6 +736,10 @@ function timingBlocks(view: AttemptTimingView): readonly ReportBlock[] {
         })]),
     ],
   })];
+}
+
+function timingIntervalLabel(interval: AttemptTimingView["intervals"][number]): string {
+  return interval.phase === "agent.send" ? `turn ${interval.label}` : interval.label;
 }
 
 function timingDepths(

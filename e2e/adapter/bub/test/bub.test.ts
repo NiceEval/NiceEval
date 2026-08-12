@@ -112,7 +112,7 @@ it("show --execution 读回 Bub 的代表性工具证据", async () => {
   expect(execution.stdout).toContain("notes.txt");
 });
 
-it("show --timing 分别读回 Bub 当前版与 legacy OTel", async () => {
+it("show --timing 分别读回 Bub 当前版与 legacy runner 阶段", async () => {
   for (const [receipt, events] of [[run, evalEvents], [legacy, legacyEvalEvents]] as const) {
     const event = only(
       events,
@@ -120,9 +120,7 @@ it("show --timing 分别读回 Bub 当前版与 legacy OTel", async () => {
     );
     const timing = await niceeval.run(["show", event.locator!, "--timing"]);
     expect(timing.exitCode, timing.diagnostic()).toBe(0);
-    expect(timing.stdout, receipt.diagnostic()).toMatch(/model|tool/i);
-
-    const execution = await niceeval.run(["show", event.locator!, "--execution"]);
-    expect(execution.stdout, receipt.diagnostic()).not.toContain("timing unavailable");
+    expect(timing.stdout, receipt.diagnostic()).toContain("eval.run");
+    expect(timing.stdout, receipt.diagnostic()).toMatch(/turn\s+turn1\b/);
   }
 });

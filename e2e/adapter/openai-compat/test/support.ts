@@ -4,12 +4,49 @@ import {
   command,
   type ExpEvalEvent,
   type ExpEvent,
+  type ProcessReceipt,
   withProjectCopy,
 } from "@niceeval/testkit";
 import { expect } from "vitest";
 
 const requiredSecrets = ["OPENAI_API_KEY", "OPENAI_BASE_URL"] as const;
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
+
+type ProcessWithLocalInvocation = NodeJS.Process & {
+  __niceevalOpenAiCompatArtifactInvocationId?: string;
+};
+
+const processWithLocalInvocation = process as ProcessWithLocalInvocation;
+const localInvocationId = processWithLocalInvocation.__niceevalOpenAiCompatArtifactInvocationId ??=
+  `local-${process.pid}-${randomUUID()}`;
+
+function safePathSegment(value: string, label: string): string {
+  if (
+    !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(value) ||
+    /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(value)
+  ) {
+    throw new Error(`${label} must be one safe path segment`);
+  }
+  return value;
+}
+
+function artifactInvocationId(): string {
+  const injected = process.env.NICEEVAL_E2E_INVOCATION_ID;
+  return injected === undefined || injected.length === 0
+    ? localInvocationId
+    : safePathSegment(injected, "NICEEVAL_E2E_INVOCATION_ID");
+}
+
+const invocationId = artifactInvocationId();
+
+export interface OpenAiLiveEvidence {
+  readonly receipt: ProcessReceipt;
+  readonly evalEvent: ExpEvalEvent;
+  readonly experimentId: string;
+  readonly evalId: string;
+  readonly executionMarkers: readonly string[];
+  readonly recordRoot: string;
+}
 
 function requireLiveSecrets(): void {
   const missing = requiredSecrets.filter((name) => !process.env[name]);
@@ -18,13 +55,23 @@ function requireLiveSecrets(): void {
   }
 }
 
-export async function proveOpenAiLiveOwner(options: {
+export async function runOpenAiLiveEvidence(options: {
   experimentId: string;
   evalId: string;
   caseName: string;
   executionMarkers: readonly string[];
-}): Promise<void> {
+}): Promise<OpenAiLiveEvidence> {
   requireLiveSecrets();
+  const safeCaseName = safePathSegment(options.caseName, "artifact caseName");
+  const artifactRoot = join(
+    process.cwd(),
+    ".niceeval",
+    "e2e-artifacts",
+    invocationId,
+    safeCaseName,
+  );
+  let evidence: OpenAiLiveEvidence | undefined;
+
   await withProjectCopy(
     {
       from: process.cwd(),
@@ -39,35 +86,21 @@ export async function proveOpenAiLiveOwner(options: {
       );
       expect(run.exitCode, run.diagnostic()).toBe(0);
       const events = run.ndjson<ExpEvent>();
-      // The final stream event is the Record v1 InvocationReceipt; it carries no
-      // verdicts, so business results come from each eval event's identity and
-      // verdict below (docs/feature/experiments/cli.md).
-      const receipt = run.expReceipt();
-      expect(receipt.completion).toBe("completed");
-      expect(receipt.runIds, run.diagnostic()).not.toHaveLength(0);
       const evalEvent = events.find(
         (event): event is ExpEvalEvent =>
           "event" in event && event.event === "eval" && event.evalId === options.evalId,
       );
-      expect(evalEvent, run.diagnostic()).toBeDefined();
-      expect(evalEvent).toMatchObject({
-        evalId: options.evalId,
+      if (evalEvent === undefined || evalEvent.locator === undefined) {
+        throw new Error(`live ${options.evalId} eval has no public locator: ${run.diagnostic()}`);
+      }
+      evidence = {
+        receipt: run,
+        evalEvent,
         experimentId: options.experimentId,
-        verdict: "passed",
-        attempts: 1,
-      });
-      expect(evalEvent?.locator, run.diagnostic()).toBeTruthy();
-
-      const history = await niceeval.run(["show", options.evalId, "--exp", options.experimentId, "--history"], {
-        cwd: root,
-      });
-      expect(history.exitCode, history.diagnostic()).toBe(0);
-      expect(history.stdout).toContain("passed");
-      expect(history.stdout).toContain("@");
-
-      const execution = await niceeval.run(["show", evalEvent!.locator!, "--execution"], { cwd: root });
-      expect(execution.exitCode, execution.diagnostic()).toBe(0);
-      for (const marker of options.executionMarkers) expect(execution.stdout).toContain(marker);
+        evalId: options.evalId,
+        executionMarkers: options.executionMarkers,
+        recordRoot: join(artifactRoot, "record"),
+      };
     },
     {
       stageArtifacts: {
@@ -78,8 +111,8 @@ export async function proveOpenAiLiveOwner(options: {
             target: join(
               ".niceeval",
               "e2e-artifacts",
-              process.env.NICEEVAL_E2E_INVOCATION_ID ?? `local-${process.pid}-${randomUUID()}`,
-              options.caseName,
+              invocationId,
+              safeCaseName,
             ),
             optional: true,
           },
@@ -88,4 +121,14 @@ export async function proveOpenAiLiveOwner(options: {
       },
     },
   );
+
+  if (evidence === undefined) throw new Error(`live ${options.evalId} evidence was not produced`);
+  return evidence;
+}
+
+export async function showOpenAiLiveEvidence(
+  evidence: OpenAiLiveEvidence,
+  args: readonly string[],
+): Promise<ProcessReceipt> {
+  return await niceeval.run(["show", ...args, "--record", evidence.recordRoot]);
 }

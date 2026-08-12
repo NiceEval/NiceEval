@@ -54,6 +54,11 @@ test("createCodexThreadEventStream 的锁定 ThreadEvent 经 Experiment 和公�
       expect(source.exitCode, source.diagnostic()).toBe(0);
       expect(source.stdout).toContain("Assertions: available");
 
+      const timing = await niceeval.run(["show", evalEvent!.locator!, "--timing"], { cwd: root });
+      expect(timing.exitCode, timing.diagnostic()).toBe(0);
+      expect(timing.stdout, timing.diagnostic()).toContain("eval.run");
+      expect(timing.stdout, timing.diagnostic()).toMatch(/turn\s+turn1\b/);
+
       // locator 驱动的真实执行读回(adapter/README.md「Live 验收说明」第 3 步)：
       // execution 页是「适配器收到了什么」的用户可见投影，逐项断言每个真实
       // marker 与工具身份落在公开读面上。

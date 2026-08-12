@@ -121,6 +121,14 @@ export async function proveSdkConverterOwner(options: {
       expect(source.exitCode, source.diagnostic()).toBe(0);
       expect(source.stdout).toContain("Assertions: available");
 
+      // 同一 Attempt 仍带 runner 自己记录的实际阶段 timing。只读公开页面，既不
+      // 新跑 Experiment，也不把 timing 反过来当作协议事件的判分依据。这些 direct
+      // Agent 没有声明 setup，因此不能要求虚构的 agent.setup。
+      const timing = await niceeval.run(["show", evalEvent!.locator!, "--timing"], { cwd: root });
+      expect(timing.exitCode, timing.diagnostic()).toBe(0);
+      expect(timing.stdout, timing.diagnostic()).toContain("eval.run");
+      expect(timing.stdout, timing.diagnostic()).toMatch(/turn\s+turn1\b/);
+
       // locator 驱动的真实执行读回(adapter/README.md「Live 验收说明」第 3 步)：
       // execution 页是「适配器收到了什么」的用户可见投影，逐项断言该 converter
       // 的真实 marker 落在公开读面上。

@@ -87,10 +87,6 @@ it("真实 Hermes CLI adapter 完成运行并公开读回工具与 timing 证据
       expect(timing.exitCode, timing.diagnostic()).toBe(0);
       expect(timing.stdout).toMatch(/turn\s+turn1\b/);
 
-      const execution = await niceeval.run(["show", event.locator!, "--execution"]);
-      expect(execution.exitCode, execution.diagnostic()).toBe(0);
-      expect(execution.stdout).toContain("niceeval-hermes-tool-input-914");
-      expect(execution.stdout).toContain("timing unavailable");
     },
   );
 }, 38 * 60_000);

@@ -39,5 +39,5 @@ Repo ID 是 `adapter/bub`；manifest 声明 `areas: ["adapter", "sandbox"]`、li
 - `ci` Experiment 选中本仓库的 coding、Skill、plugin / postSetup、会话和 usage Eval；原生验收脚本列全协议 Eval ID，防止少发现/少运行后假绿。
 - **Eval 结果**：原生验收分别核对当前版与 legacy 版的通过数、未通过数；工具、Skill 与 plugin 细节由 Eval 判分。
 - **Execution**：独立 `show --execution` test 只读回 coding Eval 的代表性工具证据。
-- **OTel**：adapter 的 `tracing.env` 注入标准 `OTEL_*` 进程变量（OTLP/protobuf）。独立 `show --timing` test 对当前版与 legacy 版分别断言 mapper 归一后的 model / tool span，execution 不得退回 `timing unavailable`。
+- **Timing**：adapter 的 `tracing.env` 仍注入标准 `OTEL_*` 进程变量（OTLP/protobuf）。独立 `show --timing` test 对当前版与 legacy 版分别读回 runner 阶段，不在同一 owner 里重复 execution 断言。
   span mapper 只影响瀑布图——判分断言仍只读 tape 归一的事件流。
