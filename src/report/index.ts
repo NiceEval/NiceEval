@@ -62,21 +62,21 @@ export {
 } from "./semantic/index.ts";
 
 export type {
-  ReportBlockV1,
-  ReportChartV1,
-  ReportCodeV1,
+  ReportBlock,
+  ReportChart,
+  ReportCode,
   ReportDocumentClosure,
   ReportDocumentIssue,
-  ReportDocumentV1,
+  ReportDocument,
   ReportDocumentValidation,
-  ReportInlineV1,
-  ReportListV1,
-  ReportMetricV1,
-  ReportParagraphV1,
-  ReportScalarV1,
-  ReportSectionV1,
-  ReportStatusV1,
-  ReportTableV1,
+  ReportInline,
+  ReportList,
+  ReportMetric,
+  ReportParagraph,
+  ReportScalar,
+  ReportSection,
+  ReportStatus,
+  ReportTable,
 } from "./semantic/index.ts";
 
 // Completed execution data is immutable and safe for an author to inspect.

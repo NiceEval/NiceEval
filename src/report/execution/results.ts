@@ -9,7 +9,7 @@ import type {
   ReportDataState,
   ReportDownloadFile,
 } from "../author/model.ts";
-import type { ReportDocumentV1 } from "../semantic/document.ts";
+import type { ReportDocument } from "../semantic/document.ts";
 import type { ReportProblemId } from "./problems.ts";
 
 const reportProjectionIdTypeId: unique symbol = Symbol(
@@ -119,7 +119,7 @@ export type ReportPageResult =
       readonly state: "rendered";
       readonly pageId: ReportComponentId;
       readonly route: ReportRoute;
-      readonly document: ReportDocumentV1;
+      readonly document: ReportDocument;
       readonly problemIds: readonly ReportProblemId[];
     }
   | {

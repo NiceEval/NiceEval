@@ -5,7 +5,7 @@ import {
   type RecordProjection,
 } from "../../projection/projector.ts";
 import type { ReportCalculationResult } from "../execution/results.ts";
-import type { ReportDocumentV1 } from "../semantic/document.ts";
+import type { ReportDocument } from "../semantic/document.ts";
 import {
   isReportComponentId,
   isReportId,
@@ -320,7 +320,7 @@ export function definePage<Calculations extends object = {}>(definition: {
   readonly calculations?: Calculations & CalculationSetCheck<Calculations>;
   readonly render: (
     context: ReportComponentContext<undefined, Calculations>,
-  ) => ReportDocumentV1;
+  ) => ReportDocument;
 }): ReportPage;
 export function definePage<
   Inputs extends NonEmptyReportDataPlan,
@@ -333,7 +333,7 @@ export function definePage<
   readonly calculations?: Calculations & CalculationSetCheck<Calculations>;
   readonly render: (
     context: ReportComponentContext<Inputs, Calculations>,
-  ) => ReportDocumentV1;
+  ) => ReportDocument;
 }): ReportPage;
 export function definePage(definition: unknown): ReportPage {
   const fields = fieldsOnly(
@@ -373,7 +373,7 @@ export function definePageFamily<Instance, Calculations extends object = {}>(
       context: ReportComponentContext<undefined, Calculations> & {
         readonly instance: Instance;
       },
-    ) => ReportDocumentV1;
+    ) => ReportDocument;
   },
 ): ReportPageFamily;
 export function definePageFamily<
@@ -394,7 +394,7 @@ export function definePageFamily<
     context: ReportComponentContext<Inputs, Calculations> & {
       readonly instance: Instance;
     },
-  ) => ReportDocumentV1;
+    ) => ReportDocument;
 }): ReportPageFamily;
 export function definePageFamily(definition: unknown): ReportPageFamily {
   const fields = fieldsOnly(

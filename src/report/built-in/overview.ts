@@ -14,7 +14,7 @@ import {
   reportStatus,
   reportTable,
   reportText,
-  type ReportBlockV1,
+  type ReportBlock,
 } from "../semantic/index.ts";
 
 const RUN_ROWS_MAX = 200;
@@ -123,7 +123,7 @@ function countSlotStates(slots: readonly AnalysisSlot[]): Readonly<Record<SlotSt
 }
 
 function selectionLabel(sample: AnalysisSample): string {
-  if (sample.selection.policy === "explicit-runs/v1") {
+  if (sample.selection.policy === "explicit-runs") {
     return "Selection policy: explicit runs";
   }
   return sample.selection.experimentIds === "all"
@@ -144,7 +144,7 @@ function slotStateMeaning(state: SlotState): string {
   }
 }
 
-function slotIssueBlocks(slots: readonly AnalysisSlot[]): readonly ReportBlockV1[] {
+function slotIssueBlocks(slots: readonly AnalysisSlot[]): readonly ReportBlock[] {
   const problems = slots.filter((slot) => slot.state !== "included");
   if (problems.length === 0) {
     return [reportStatus({
@@ -154,7 +154,7 @@ function slotIssueBlocks(slots: readonly AnalysisSlot[]): readonly ReportBlockV1
   }
 
   const visible = problems.slice(0, SLOT_ISSUES_MAX);
-  const blocks: ReportBlockV1[] = visible.map((slot) =>
+  const blocks: ReportBlock[] = visible.map((slot) =>
     reportStatus({
       tone: slotTone(slot),
       label: `${slot.state}: ${slot.runId}/${slot.slotId}`,

@@ -10,10 +10,10 @@ import type {
 import type { ReportExecution } from "../execution/model.ts";
 import type { ReportProblem, ReportProblemTableEntry } from "../execution/problems.ts";
 import type {
-  ReportBlockV1,
-  ReportDocumentV1,
-  ReportInlineV1,
-  ReportScalarV1,
+  ReportBlock,
+  ReportDocument,
+  ReportInline,
+  ReportScalar,
 } from "../semantic/document.ts";
 import type { ReportRoute } from "../author/identity.ts";
 
@@ -250,7 +250,7 @@ function problemLines(execution: ReportExecution): readonly string[] {
 }
 
 function selectionShowValue(selection: AnalysisSelectionSummary): Readonly<Record<string, unknown>> {
-  if (selection.policy === "explicit-runs/v1") {
+  if (selection.policy === "explicit-runs") {
     return Object.freeze({
       policy: selection.policy,
       runIds: Object.freeze([...selection.runIds].sort(compareUtf8)),
@@ -311,7 +311,7 @@ function renderPageText(page: ReportPageResult): string[] {
   ];
 }
 
-function renderDocumentText(document: ReportDocumentV1): string[] {
+function renderDocumentText(document: ReportDocument): string[] {
   const lines = [`  ${visibleText(document.title)}`];
   for (const block of document.children) {
     lines.push(...renderBlockText(block, "  "));
@@ -319,7 +319,7 @@ function renderDocumentText(document: ReportDocumentV1): string[] {
   return lines;
 }
 
-function renderBlockText(block: ReportBlockV1, indent: string): string[] {
+function renderBlockText(block: ReportBlock, indent: string): string[] {
   switch (block.type) {
     case "section": {
       const lines = [`${indent}${visibleText(block.heading)}`];
@@ -382,7 +382,7 @@ function renderBlockText(block: ReportBlockV1, indent: string): string[] {
   }
 }
 
-function renderInlineText(children: readonly ReportInlineV1[]): string {
+function renderInlineText(children: readonly ReportInline[]): string {
   return children.map((child) => {
     switch (child.type) {
       case "text":
@@ -399,7 +399,7 @@ function renderInlineText(children: readonly ReportInlineV1[]): string {
   }).join("");
 }
 
-function scalarText(value: ReportScalarV1): string {
+function scalarText(value: ReportScalar): string {
   return typeof value === "string" ? visibleText(value) : String(value);
 }
 

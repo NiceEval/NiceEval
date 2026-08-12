@@ -2,7 +2,7 @@ import type { AnalysisSample } from "../../analysis/index.ts";
 import type { ProjectedSample, ProjectionAccess } from "../../projection/model.ts";
 import type { RecordProjection } from "../../projection/projector.ts";
 import type { ReportCalculationResult } from "../execution/results.ts";
-import type { ReportDocumentV1 } from "../semantic/document.ts";
+import type { ReportDocument } from "../semantic/document.ts";
 import type {
   ReportComponentId,
   ReportId,
@@ -94,7 +94,7 @@ export interface ReportPageDescriptor extends ReportComponentReferences {
   readonly kind: "page";
   readonly id: ReportComponentId;
   readonly route: ReportRoute;
-  readonly render: (context: ReportHostContext) => ReportDocumentV1;
+  readonly render: (context: ReportHostContext) => ReportDocument;
 }
 
 export interface ReportPageFamilyDescriptor extends ReportComponentReferences {
@@ -103,7 +103,7 @@ export interface ReportPageFamilyDescriptor extends ReportComponentReferences {
   readonly instances: (context: ReportHostContext) => Iterable<unknown>;
   readonly key: (instance: unknown) => ReportInstanceKey;
   readonly route: (instance: unknown) => ReportRoute;
-  readonly render: (context: ReportHostContext & { readonly instance: unknown }) => ReportDocumentV1;
+  readonly render: (context: ReportHostContext & { readonly instance: unknown }) => ReportDocument;
 }
 
 export interface ReportDownloadDescriptor extends ReportComponentReferences {
@@ -200,8 +200,8 @@ function pageDescriptor(
     id: page.id,
     route: page.route,
     ...componentReferences(contents),
-    render: (context: ReportHostContext): ReportDocumentV1 =>
-      invoke(contents.render, context) as ReportDocumentV1,
+    render: (context: ReportHostContext): ReportDocument =>
+      invoke(contents.render, context) as ReportDocument,
   });
 }
 
@@ -219,8 +219,8 @@ function pageFamilyDescriptor(
       invoke(contents.key, instance) as ReportInstanceKey,
     route: (instance: unknown): ReportRoute =>
       invoke(contents.route, instance) as ReportRoute,
-    render: (context: ReportHostContext & { readonly instance: unknown }): ReportDocumentV1 =>
-      invoke(contents.render, context) as ReportDocumentV1,
+    render: (context: ReportHostContext & { readonly instance: unknown }): ReportDocument =>
+      invoke(contents.render, context) as ReportDocument,
   });
 }
 

@@ -14,10 +14,8 @@ export type {
 export type { ReportExecution } from "../execution/model.ts";
 export {
   ReportConsole,
-  renderReportExecutionJson,
   renderReportExecutionProblemsText,
   renderReportExecutionText,
-  reportExecutionShowDocument,
   showReport,
 } from "./presentation.ts";
 export type {

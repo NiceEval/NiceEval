@@ -5,10 +5,8 @@
 export {
   executeReport,
   ReportConsole,
-  renderReportExecutionJson,
   renderReportExecutionProblemsText,
   renderReportExecutionText,
-  reportExecutionShowDocument,
   showReport,
   openReportViewSession,
   exportStaticReport,

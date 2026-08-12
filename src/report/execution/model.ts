@@ -18,7 +18,6 @@ import type { ReportDataState, ReportDownloadFile } from "../author/model.ts";
 import {
   freezeReportDocument,
   validateReportDocument,
-  type ReportDocumentV1,
 } from "../semantic/document.ts";
 import {
   isReportProblemId,

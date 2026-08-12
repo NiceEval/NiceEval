@@ -5,54 +5,53 @@ import {
   type ReportRoute,
 } from "../author/identity.ts";
 
-export type ReportScalarV1 = null | boolean | number | string;
+export type ReportScalar = null | boolean | number | string;
 
-export type ReportInlineV1 =
+export type ReportInline =
   | { readonly type: "text"; readonly value: string }
   | { readonly type: "code"; readonly value: string }
-  | { readonly type: "emphasis"; readonly children: readonly ReportInlineV1[] }
+  | { readonly type: "emphasis"; readonly children: readonly ReportInline[] }
   | {
       readonly type: "link";
-      readonly label: readonly ReportInlineV1[];
+      readonly label: readonly ReportInline[];
       readonly target:
         | { readonly kind: "route"; readonly route: ReportRoute }
         | { readonly kind: "download"; readonly path: ReportDownloadPath };
     };
 
-export interface ReportDocumentV1 {
-  readonly schema: "niceeval.report-document/v1";
+export interface ReportDocument {
   readonly title: string;
-  readonly children: readonly ReportBlockV1[];
+  readonly children: readonly ReportBlock[];
 }
 
-export type ReportBlockV1 =
-  | ReportSectionV1
-  | ReportParagraphV1
-  | ReportListV1
-  | ReportTableV1
-  | ReportMetricV1
-  | ReportStatusV1
-  | ReportCodeV1
-  | ReportChartV1;
+export type ReportBlock =
+  | ReportSection
+  | ReportParagraph
+  | ReportList
+  | ReportTable
+  | ReportMetric
+  | ReportStatus
+  | ReportCode
+  | ReportChart;
 
-export interface ReportSectionV1 {
+export interface ReportSection {
   readonly type: "section";
   readonly heading: string;
-  readonly children: readonly ReportBlockV1[];
+  readonly children: readonly ReportBlock[];
 }
 
-export interface ReportParagraphV1 {
+export interface ReportParagraph {
   readonly type: "paragraph";
-  readonly children: readonly ReportInlineV1[];
+  readonly children: readonly ReportInline[];
 }
 
-export interface ReportListV1 {
+export interface ReportList {
   readonly type: "list";
   readonly ordered: boolean;
-  readonly items: readonly (readonly ReportBlockV1[])[];
+  readonly items: readonly (readonly ReportBlock[])[];
 }
 
-export interface ReportTableV1 {
+export interface ReportTable {
   readonly type: "table";
   readonly caption: string;
   readonly columns: readonly {
@@ -60,30 +59,30 @@ export interface ReportTableV1 {
     readonly label: string;
     readonly align?: "start" | "end";
   }[];
-  readonly rows: readonly Readonly<Record<string, ReportScalarV1>>[];
+  readonly rows: readonly Readonly<Record<string, ReportScalar>>[];
 }
 
-export interface ReportMetricV1 {
+export interface ReportMetric {
   readonly type: "metric";
   readonly label: string;
-  readonly value: ReportScalarV1;
+  readonly value: ReportScalar;
   readonly unit?: string;
 }
 
-export interface ReportStatusV1 {
+export interface ReportStatus {
   readonly type: "status";
   readonly tone: "neutral" | "positive" | "warning" | "negative";
   readonly label: string;
-  readonly detail?: readonly ReportInlineV1[];
+  readonly detail?: readonly ReportInline[];
 }
 
-export interface ReportCodeV1 {
+export interface ReportCode {
   readonly type: "code-block";
   readonly value: string;
   readonly language?: string;
 }
 
-export interface ReportChartV1 {
+export interface ReportChart {
   readonly type: "chart";
   readonly chart: "bar" | "line";
   readonly title: string;
@@ -105,7 +104,6 @@ export interface ReportDocumentClosure {
 
 export interface ReportDocumentIssue {
   readonly code:
-    | "schema"
     | "shape"
     | "unicode"
     | "number"
@@ -130,35 +128,34 @@ const MAX_ISSUES = 64;
 
 export function reportDocument(input: {
   readonly title: string;
-  readonly children: readonly ReportBlockV1[];
-}): ReportDocumentV1 {
+  readonly children: readonly ReportBlock[];
+}): ReportDocument {
   return Object.freeze({
-    schema: "niceeval.report-document/v1" as const,
     title: input.title,
     children: freezeArray(input.children),
   });
 }
 
-export function reportText(value: string): ReportInlineV1 {
+export function reportText(value: string): ReportInline {
   return Object.freeze({ type: "text" as const, value });
 }
 
-export function reportCode(value: string): ReportInlineV1 {
+export function reportCode(value: string): ReportInline {
   return Object.freeze({ type: "code" as const, value });
 }
 
 export function reportEmphasis(
-  children: readonly ReportInlineV1[],
-): ReportInlineV1 {
+  children: readonly ReportInline[],
+): ReportInline {
   return Object.freeze({ type: "emphasis" as const, children: freezeArray(children) });
 }
 
 export function reportLink(input: {
-  readonly label: readonly ReportInlineV1[];
+  readonly label: readonly ReportInline[];
   readonly target:
     | { readonly kind: "route"; readonly route: ReportRoute }
     | { readonly kind: "download"; readonly path: ReportDownloadPath };
-}): ReportInlineV1 {
+}): ReportInline {
   return Object.freeze({
     type: "link" as const,
     label: freezeArray(input.label),
@@ -170,8 +167,8 @@ export function reportLink(input: {
 
 export function reportSection(input: {
   readonly heading: string;
-  readonly children: readonly ReportBlockV1[];
-}): ReportSectionV1 {
+  readonly children: readonly ReportBlock[];
+}): ReportSection {
   return Object.freeze({
     type: "section" as const,
     heading: input.heading,
@@ -180,15 +177,15 @@ export function reportSection(input: {
 }
 
 export function reportParagraph(
-  children: readonly ReportInlineV1[],
-): ReportParagraphV1 {
+  children: readonly ReportInline[],
+): ReportParagraph {
   return Object.freeze({ type: "paragraph" as const, children: freezeArray(children) });
 }
 
 export function reportList(input: {
   readonly ordered: boolean;
-  readonly items: readonly (readonly ReportBlockV1[])[];
-}): ReportListV1 {
+  readonly items: readonly (readonly ReportBlock[])[];
+}): ReportList {
   return Object.freeze({
     type: "list" as const,
     ordered: input.ordered,
@@ -203,8 +200,8 @@ export function reportTable(input: {
     readonly label: string;
     readonly align?: "start" | "end";
   }[];
-  readonly rows: readonly Readonly<Record<string, ReportScalarV1>>[];
-}): ReportTableV1 {
+  readonly rows: readonly Readonly<Record<string, ReportScalar>>[];
+}): ReportTable {
   return Object.freeze({
     type: "table" as const,
     caption: input.caption,
@@ -223,9 +220,9 @@ export function reportTable(input: {
 
 export function reportMetric(input: {
   readonly label: string;
-  readonly value: ReportScalarV1;
+  readonly value: ReportScalar;
   readonly unit?: string;
-}): ReportMetricV1 {
+}): ReportMetric {
   return Object.freeze({
     type: "metric" as const,
     label: input.label,
@@ -237,8 +234,8 @@ export function reportMetric(input: {
 export function reportStatus(input: {
   readonly tone: "neutral" | "positive" | "warning" | "negative";
   readonly label: string;
-  readonly detail?: readonly ReportInlineV1[];
-}): ReportStatusV1 {
+  readonly detail?: readonly ReportInline[];
+}): ReportStatus {
   return Object.freeze({
     type: "status" as const,
     tone: input.tone,
@@ -250,7 +247,7 @@ export function reportStatus(input: {
 export function reportCodeBlock(input: {
   readonly value: string;
   readonly language?: string;
-}): ReportCodeV1 {
+}): ReportCode {
   return Object.freeze({
     type: "code-block" as const,
     value: input.value,
@@ -267,7 +264,7 @@ export function reportChart(input: {
     readonly label: string;
     readonly values: readonly (number | null)[];
   }[];
-}): ReportChartV1 {
+}): ReportChart {
   return Object.freeze({
     type: "chart" as const,
     chart: input.chart,
@@ -283,7 +280,7 @@ export function reportChart(input: {
 }
 
 /**
- * Performs exact-schema and relational checks without rendering or evaluating
+ * Performs exact-shape and relational checks without rendering or evaluating
  * author callbacks. Supplying a closure additionally verifies semantic links.
  */
 export function validateReportDocument(
@@ -307,10 +304,10 @@ export function validateReportDocument(
 }
 
 /** Copies a validated document into a frozen, self-contained semantic tree. */
-export function freezeReportDocument(document: ReportDocumentV1): ReportDocumentV1 {
+export function freezeReportDocument(document: ReportDocument): ReportDocument {
   const validation = validateReportDocument(document);
   if (!validation.valid) {
-    throw new TypeError("a Report document must satisfy the closed semantic schema");
+    throw new TypeError("a Report document must satisfy the closed semantic tree shape");
   }
   return cloneDocument(document);
 }
@@ -334,10 +331,7 @@ function validateDocument(
     return;
   }
   try {
-    exactFields(record, ["schema", "title", "children"], state, path);
-    if (field(record, "schema") !== "niceeval.report-document/v1") {
-      issue(state, "schema", pathFor(path, "schema"), "the document schema must be niceeval.report-document/v1");
-    }
+    exactFields(record, ["title", "children"], state, path);
     validateString(field(record, "title"), state, pathFor(path, "title"));
     forEachArray(field(record, "children"), state, pathFor(path, "children"), (child, index) =>
       validateBlock(child, state, pathFor(pathFor(path, "children"), index), depth + 1)
@@ -419,7 +413,7 @@ function validateBlock(
         validateChart(record, state, path);
         break;
       default:
-        issue(state, "shape", pathFor(path, "type"), "the block type is not part of ReportDocumentV1");
+        issue(state, "shape", pathFor(path, "type"), "the block type is not part of ReportDocument");
         break;
     }
   } finally {
@@ -459,7 +453,7 @@ function validateInline(
         validateLinkTarget(field(record, "target"), state, pathFor(path, "target"));
         break;
       default:
-        issue(state, "shape", pathFor(path, "type"), "the inline type is not part of ReportDocumentV1");
+        issue(state, "shape", pathFor(path, "type"), "the inline type is not part of ReportDocument");
         break;
     }
   } finally {
@@ -654,7 +648,7 @@ function exactFields(
   const allowedFields = new Set(allowed);
   for (const key of Object.keys(record)) {
     if (!allowedFields.has(key)) {
-      issue(state, "shape", pathFor(path, key), "this field is not part of ReportDocumentV1");
+      issue(state, "shape", pathFor(path, key), "this field is not part of ReportDocument");
     }
   }
   for (const key of allowed) {
@@ -778,7 +772,7 @@ function isArrayIndex(value: string): boolean {
   return Number.isSafeInteger(number) && number >= 0 && number < 2 ** 32 - 1;
 }
 
-function isTone(value: unknown): value is ReportStatusV1["tone"] {
+function isTone(value: unknown): value is ReportStatus["tone"] {
   return value === "neutral" || value === "positive" || value === "warning" || value === "negative";
 }
 
@@ -802,15 +796,14 @@ function freezeArray<Value>(values: readonly Value[]): readonly Value[] {
   return Object.freeze([...values]);
 }
 
-function cloneDocument(document: ReportDocumentV1): ReportDocumentV1 {
+function cloneDocument(document: ReportDocument): ReportDocument {
   return Object.freeze({
-    schema: "niceeval.report-document/v1" as const,
     title: document.title,
     children: Object.freeze(document.children.map(cloneBlock)),
   });
 }
 
-function cloneBlock(block: ReportBlockV1): ReportBlockV1 {
+function cloneBlock(block: ReportBlock): ReportBlock {
   switch (block.type) {
     case "section":
       return Object.freeze({
@@ -874,7 +867,7 @@ function cloneBlock(block: ReportBlockV1): ReportBlockV1 {
   }
 }
 
-function cloneInline(inline: ReportInlineV1): ReportInlineV1 {
+function cloneInline(inline: ReportInline): ReportInline {
   switch (inline.type) {
     case "text":
     case "code":
@@ -894,11 +887,11 @@ function cloneInline(inline: ReportInlineV1): ReportInlineV1 {
 }
 
 function cloneRow(
-  row: Readonly<Record<string, ReportScalarV1>>,
-): Readonly<Record<string, ReportScalarV1>> {
-  const copy: Record<string, ReportScalarV1> = Object.create(null) as Record<
+  row: Readonly<Record<string, ReportScalar>>,
+): Readonly<Record<string, ReportScalar>> {
+  const copy: Record<string, ReportScalar> = Object.create(null) as Record<
     string,
-    ReportScalarV1
+    ReportScalar
   >;
   for (const key of Object.keys(row)) {
     copy[key] = row[key];

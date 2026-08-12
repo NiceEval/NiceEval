@@ -85,7 +85,9 @@ import {
   REPORT_DOCUMENT_NODES_MAX,
   freezeReportDocument,
   validateReportDocument,
-  type ReportDocumentV1,
+  type ReportBlock,
+  type ReportDocument,
+  type ReportInline,
 } from "../semantic/document.ts";
 
 /** A Report or its private author descriptors did not come from NiceEval. */
@@ -166,7 +168,7 @@ interface PageCandidate {
   readonly kind: "candidate";
   readonly pageId: ReportComponentId;
   readonly route: ReportRoute;
-  document: ReportDocumentV1;
+  document: ReportDocument;
   readonly problemIds: readonly ReportProblemId[];
   conflictProblemId?: ReportProblemId;
   semanticProblemId?: ReportProblemId;
@@ -1431,11 +1433,11 @@ function validateDocuments(input: {
 }
 
 function validateCandidateDocument(
-  document: ReportDocumentV1,
+  document: ReportDocument,
   routes: ReadonlySet<ReportRoute>,
   downloads: ReadonlySet<ReportDownloadPath>,
 ):
-  | { readonly state: "valid"; readonly document: ReportDocumentV1; readonly routes: readonly ReportRoute[] }
+  | { readonly state: "valid"; readonly document: ReportDocument; readonly routes: readonly ReportRoute[] }
   | { readonly state: "invalid" }
   | { readonly state: "limit"; readonly error: ReportLimitExceeded } {
   try {
@@ -1482,9 +1484,9 @@ function markSemanticProblem(page: PageCandidate, problems: ProblemCollector): v
   }
 }
 
-function routeLinks(document: ReportDocumentV1): readonly ReportRoute[] {
+function routeLinks(document: ReportDocument): readonly ReportRoute[] {
   const routes: ReportRoute[] = [];
-  const visitInline = (inline: import("../semantic/document.ts").ReportInlineV1): void => {
+  const visitInline = (inline: ReportInline): void => {
     switch (inline.type) {
       case "text":
       case "code":
@@ -1498,7 +1500,7 @@ function routeLinks(document: ReportDocumentV1): readonly ReportRoute[] {
         return;
     }
   };
-  const visitBlock = (block: import("../semantic/document.ts").ReportBlockV1): void => {
+  const visitBlock = (block: ReportBlock): void => {
     switch (block.type) {
       case "section":
         block.children.forEach(visitBlock);
