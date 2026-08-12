@@ -91,7 +91,7 @@ import {
 } from "../semantic/document.ts";
 
 /** A Report or its private author descriptors did not come from NiceEval. */
-export interface ReportDefinitionInvalid {
+export interface ReportAuthoringInvalid {
   readonly code: "report-definition-invalid";
   readonly issues: readonly string[];
 }
@@ -101,7 +101,7 @@ export type ReportExecutionError =
   | RecordReaderReadError
   | ProjectionLimitError
   | ReportLimitExceeded
-  | ReportDefinitionInvalid
+  | ReportAuthoringInvalid
   | ReportProblemTableError;
 
 interface CompiledProjection {
@@ -359,10 +359,10 @@ export function executeReport(input: {
 
 function compileReportEffect(
   report: Report,
-): Effect.Effect<CompiledReport, ReportDefinitionInvalid, never> {
+): Effect.Effect<CompiledReport, ReportAuthoringInvalid, never> {
   return Effect.try({
     try: () => compileReport(report),
-    catch: () => reportDefinitionInvalid(),
+    catch: () => reportAuthoringInvalid(),
   });
 }
 
@@ -1762,7 +1762,7 @@ function reportLimit(
   });
 }
 
-function reportDefinitionInvalid(): ReportDefinitionInvalid {
+function reportAuthoringInvalid(): ReportAuthoringInvalid {
   return Object.freeze({
     code: "report-definition-invalid" as const,
     issues: Object.freeze(["the Report must be created by NiceEval author constructors"]),

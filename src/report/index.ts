@@ -1,6 +1,5 @@
 // niceeval/report is the Report authoring surface. Execution is deliberately
-// separate at niceeval/report/host; legacy show/view implementation remains
-// package-private behind its own internal imports.
+// separate at niceeval/report/host.
 export {
   defineCalculation,
   defineDownload,

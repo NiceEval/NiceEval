@@ -1,6 +1,5 @@
-// Public built-ins are ordinary new author-API Reports. Legacy JSX report
-// definitions stay behind the package-private legacy loader and are not
-// re-exported from this package entry.
+// Public built-ins are ordinary author-API Reports over projections and
+// closed semantic documents.
 export {
   default,
   defaultOverviewReport,

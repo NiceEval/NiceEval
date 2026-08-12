@@ -3,7 +3,7 @@
 // ReportExecution produced here instead of reopening a Sample or Record.
 export { executeReport } from "./execute.ts";
 export type {
-  ReportDefinitionInvalid,
+  ReportAuthoringInvalid,
   ReportExecutionError,
 } from "./execute.ts";
 export {
