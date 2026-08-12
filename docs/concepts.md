@@ -206,6 +206,11 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Record 附件 schema identity | `RecordAttachmentSchemaId` | 冻结 Attachment payload 的精确 shape 与语义 | [Record](feature/record/architecture.md#三个演进边界) |
 | Record 附件 migration | RecordAttachment migration | Attachment owner 提供的相邻 `vN → vN+1` converter 或明确不可迁移声明 | [Record](feature/record/architecture.md#migration-definition) |
 | 评估类型附件 | Evaluations Attachment | Run-owned `niceeval.evaluations/v1`；保存 Slot、Eval 与 `pass | score` | [Record](feature/record/architecture.md#内建-attachment) |
+| 源码快照 | Sources snapshot | origin Run-owned `niceeval.sources/v1`；保存当时 source closure 的 manifest 与 own blobs | [Sources manifest](feature/record/architecture.md#sources-manifest) |
+| 源码项 | source item | Sources snapshot 中由非数组 `SourceItemId`、canonical project-relative path、SHA-256 与 own blob 标识的一项源码 | [Sources manifest](feature/record/architecture.md#sources-manifest) |
+| 断言源码位置 | Assertion source site | Attempt-owned source-sites 中，一个 Assertions `entryId` 的 role-tagged runtime source site 与 occurrence | [Source sites](feature/assertions/architecture/source-sites.md) |
+| 未映射 | `unmapped` | 可读 Assertion 没有可用 source navigation；不改变 Assertion、Verdict 或 Score | [Source sites](feature/assertions/architecture/source-sites.md#局部-unmapped-与-assertion-隔离) |
+| 源码身份迁移组 | Source identity migration group | 同步迁移 Sources item identity 与该 origin Run 全部 source-sites 的相邻 migration unit | [Record Library](feature/record/library.md#source-identity-migration-group) |
 | Invocation receipt | `InvocationReceipt` | 只含 Invocation 身份、Run IDs、时间和完成状态的进程返回值 | [Record library](feature/record/library.md#write-session) |
 | Attempt 定位符 | AttemptLocator | 完整 128-bit `attemptId` 的 26 字符规范大写 Crockford 编码；CLI 写 `@` 加 26 字符 | [Record](feature/record/architecture.md) |
 

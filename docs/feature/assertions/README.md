@@ -4,6 +4,10 @@ Assertion 是一次 Attempt 内已经完成、可离线复核的检查事实。�
 
 它保存当时检查了什么、基于什么材料得出了什么结果；它不决定 Attempt 的生命周期，也不替代 [Verdict](../verdict/README.md)。producer 在整个 Run 发布前封口这份 Attachment，Record 与 Report 只读取已封口的事实。
 
+源码导航是相邻的 Attempt-owned `niceeval.assertion-source-sites/v1`。它把本 Attachment 的
+`entryId` 关联到 origin Run 保存的 Sources snapshot，不把 source path、source blob 或控制流写入
+Assertions payload。它只服务持久审计与导航，不能改变 Assertion、Verdict、Score 或 reuse identity。
+
 ## Assertions v1 持久化什么
 
 每个 entry 都有仅在本 Attempt Assertions Attachment 内稳定的 `entryId`。它是详情、路由与导航的 identity，不从名称、数组位置、源码位置或证据内容推导，也不承诺跨 Attempt 相同。
@@ -26,7 +30,20 @@ Assertion 是一次 Attempt 内已经完成、可离线复核的检查事实。�
 
 作者调用图、evaluator 内部实现、memoization、求值控制流、未执行的源码和当前 worktree 都不属于 `niceeval.assertions/v1`。它们可以变化；只要已保存 criterion、材料、coverage 与 sealed result 的含义不变，Assertions Attachment 不变。
 
-`.orStop()`、`stopOnFailure` 和 detached async 都只影响 producer 执行。它们不是 entry 事实，也不会凭空产生 `notReached` 条目或补零。
+`.orStop()`、`stopOnFailure` 和 detached async 都不改变 entry 的 sealed result，也不会凭空产生
+`notReached` 条目或补零。实际执行的 `.orStop()` 位置与 `continued`、`stopped`、`interrupted`
+结果属于 [source sites](architecture/source-sites.md) 的导航事实。
+
+## 源码导航
+
+每个 source-sites row 只用本 Attachment 内的 `entryId` 关联已执行的 role-tagged site。它不复制
+criterion、result、points、gate 或 unavailable。`entryId` 的 authoritative result 因而只计算一次，
+一个 entry 有多个 site 也不形成多条 check 或 score contribution。
+
+source-sites 与 Sources 缺失、unsupported 或 invalid 时，Assertions 仍按自己的 entry 规则读取；
+相应 entry 只显示 `unmapped`。criterion 的 unsupported 或 invalid 同样不击穿 source mapping。
+完整 payload、局部错误、runtime capture、三个公开 projection 与 migration group 见
+[Source sites](architecture/source-sites.md)。
 
 ## entry 局部隔离
 
@@ -70,4 +87,5 @@ Score Eval 使用 `handle.score(points)` 或 `t.score(points)` 写明贡献。�
 - [Scoped assertions](library/scoped-assertions.md) —— scope snapshot 与 `succeeded`。
 - [Score Eval](library/score-points.md) —— score、gate 与可用性。
 - [Evidence](architecture/evidence.md) —— snapshot、refs 与完整度。
+- [Source sites](architecture/source-sites.md) —— 源码位置、sourceOrder 与导航。
 - [Verdict](../verdict/README.md) —— 每个 Attempt 的四态折叠。

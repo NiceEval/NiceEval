@@ -7,13 +7,16 @@ Eval 源码快照属于 Run-owned `niceeval.sources/v1`。Attempt 不各自复�
 ```text
 Run R1
   ├─ niceeval.sources/v1
-  │    ├─ manifest
+  │    ├─ SourceItemId manifest
   │    └─ Run-local blobs
   ├─ Attempt A1
+  │    └─ niceeval.assertion-source-sites/v1
   └─ Attempt A2
 ```
 
-A1 与 A2 都由 R1 实际产生时，可以通过同一个 origin Run 读取这份源码快照。Attempt-owned Assertions 若携带 source location，其 `path` 与 `digest` 必须匹配 origin Run 的 sources entry。
+A1 与 A2 都由 R1 实际产生时，可以通过同一个 origin Run 读取这份源码快照。Attempt-owned
+source-sites 以 `sourceItemId` 与 digest join origin Run Sources entry；canonical path 与 source
+blob 仍只留在 Run-owned Attachment。Assertions payload 本身不携带 source location。
 
 ## 后续 Run 引用历史 Attempt
 
@@ -36,9 +39,11 @@ deep-freeze decoded JSON payload。
 projector 随后只同步消费自包含内存 value。即使 reader Scope 已关闭，展示源码也不会再次
 触发磁盘 I/O，亦不能以 mutation 改写其它 consumer 的 payload 视图。
 
-## SHA-256 不替代源码 bytes
+## SourceItemId 与 SHA-256 不替代源码 bytes
 
-Sources RecordAttachment 使用 manifest 与 Run-local SHA-256 blobs。digest 属于 Sources 领域契约，用于确认内容身份并把 Assertion source location 连接到当时的源码；Run 完成标识本身不保存 hash。
+Sources manifest 的每个项目都有 stable `SourceItemId`、canonical project-relative path、SHA-256 与
+own blob。`SourceItemId` 是 stable manifest index，不是数组位置；source-sites 用它与 digest
+定位当时项目。Run 完成标识本身不保存 hash。
 
 Record 仍保存实际 source bytes。只保存 hash 会让离线 Report 无法展示源码，也无法证明一个外部同名文件就是当时内容。
 
@@ -48,10 +53,15 @@ Record 仍保存实际 source bytes。只保存 hash 会让离线 Report 无法�
 
 RecordAttachment blob ref 只能指向同一 RecordAttachment directory 的 `blobs/**`。跨 Run 或跨 RecordAttachment 的全局 blob pool 会改变 owner、portable closure 与路径公理，不能作为 Sources payload 的普通 schema 演进。
 
+source-sites 的 `sourceItemId` 与 digest 只是 schema-declared semantic join。它们不赋予 Attempt
+对 Sources blob、storage path、Run handle 或读取 capability 的访问权；公开读取仍由三个中立
+projection 组成。
+
 本用例不声明 sources entries 与 expected Eval 的集合等式，也不推断一个全-reference Run 必须保存哪些当前源码。可依赖的读取规则只有一条：Attempt 的历史源码始终由它的 origin Run 拥有。
 
 ## 相关阅读
 
 - [Attempt origin 与 reference](../architecture.md#core-v1)
+- [Sources manifest](../architecture.md#sources-manifest)
 - [Run RecordAttachment](../../../observability.md)
-- [Attempt source location](../../assertions/architecture.md#source-位置)
+- [Assertion source sites](../../assertions/architecture/source-sites.md)

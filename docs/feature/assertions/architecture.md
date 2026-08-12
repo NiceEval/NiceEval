@@ -8,11 +8,17 @@ matcher 或 evaluator 内部实现才能解释它。
 author calls / evaluator internals / producer control flow
                     ↓
           producer evaluates and seals
-             ↙                    ↘
-niceeval.assertions/v1    niceeval.verdict/v1 (+ score for Score Eval)
-             ↓
-  declared RecordProjection → closed report document
+          ↙         ↓          ↘
+niceeval.assertions/v1  niceeval.assertion-source-sites/v1  niceeval.verdict/v1
+             │                  │                     (+ score for Score Eval)
+             └──── declared neutral projections ────┘
+                              ↓
+                  closed report document
 ```
+
+source-sites 是独立的 Attempt-owned Attachment。它保留已执行的 entry source mapping，不把
+source path、source blob、作者调用图或 Assertion result 写回 `AssertionsDocumentV1`。精确形状与
+跨 owner semantic join 由 [Source sites](architecture/source-sites.md) 拥有。
 
 ## v1 外层 payload
 
@@ -305,19 +311,30 @@ type SealedAssertionResultV1 =
 producer 在 whole Run 发布前分配 entryId、归一 material 并写入 Assertions Attachment。它不打开 Record path、
 不读取 Report Projection，也不把作者调用图或 evaluator internals 序列化进 payload。
 
-标准 detail Report 只声明 Assertions Attachment，并消费其 exact payload 与 own blob closure，形成自包含的
-`niceeval.report-document/v1`。v1 display 不保存 source path 或跨 Attachment source ref；需要源码导航的 Report
-必须另行声明它自己的 origin-source input，不能让 Assertions detail 在 reader 时猜测当前 worktree。
+`niceeval.assertion-source-sites/v1` 另行保存 `entryId` 到已执行 source site 的 mapping。它只含
+schema-declared immutable semantic join，不能携带另一个 Attachment 的 blob ref、storage path 或 capability。
+Assertions entry 的 criterion / result 状态与 source mapping 相互隔离。
 
-payload、own blob closure 语义或解释改变时，发布同 name 的相邻 `RecordAttachmentSchemaId`。family 为相邻版本提供
-无损 converter，或显式声明 `not-losslessly-migratable`；普通 reader 不自动迁移。converter 只读取精确旧 payload，
-不读取当前 Eval、源码、网络、进程变量或新的 evaluation。不可无损时，`niceeval migrate` 保留旧 bytes 并返回
-`migration-unavailable`，不补默认值或重算 Assertions。
+需要源码导航的 Report 必须显式声明三个中立 input：attempt-slot Assertions、attempt-slot
+source-sites 与 attempt-origin-run Sources。公开的纯 `assembleAttemptSourceTreeV1` 组合已形成的值，
+不能在 reader 时猜测当前 worktree 或绕过已声明的 projection 读取。
+
+一个 entry 的 sealed result、points 与 unavailable 仍只来自 Assertions。因此多 site 不会重复计分，
+也不会重复计算 check。
+
+payload、own blob closure 语义或解释改变时，发布同 name 的相邻 `RecordAttachmentSchemaId`。family
+为相邻版本提供无损 converter，或显式声明 `not-losslessly-migratable`；普通 reader 不自动迁移。
+
+converter 只读取精确旧 payload，不读取当前 Eval、源码、网络、进程变量或新的 evaluation。不可无损时，
+`niceeval migrate` 保留旧 bytes 并返回 `migration-unavailable`，不补默认值或重算 Assertions。若
+source-sites source ref identity 同时改变，改用
+[source identity migration group](../record/library.md#source-identity-migration-group)，不能独立转换该 Attachment。
 
 ## 相关阅读
 
 - [Assertions](README.md) —— 作者面与范围。
 - [Evidence](architecture/evidence.md) —— material 的采集边界。
+- [Source sites](architecture/source-sites.md) —— source mapping、unmapped 与 migration group。
 - [Score Eval](library/score-points.md) —— score state 与 points。
 - [Verdict](../verdict/architecture.md) —— 四态折叠。
 - [RecordAttachment](../record/architecture.md#recordattachment-与完整-blob-closure) —— owner、closure 与发布。

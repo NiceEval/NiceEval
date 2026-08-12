@@ -203,13 +203,56 @@ bytes。
 |---|---|---|
 | Run | `niceeval.evaluations/v1` | Slot 与 Evaluation 类型等定义期事实 |
 | Run | `niceeval.membership-provenance/v1` | reference Member 的采用原因 |
-| Run | `niceeval.sources/v1` | 当次输入源码与 manifest |
+| Run | `niceeval.sources/v1` | 当次源码快照、stable source item manifest 与 own blobs |
 | Attempt | `niceeval.assertions/v1` | 规范化 AssertionResult |
+| Attempt | `niceeval.assertion-source-sites/v1` | Assertions `entryId` 到已执行 source site 的导航事实 |
 | Attempt | `niceeval.verdict/v1` | 所有 Pass/Score Attempt 的四态 Verdict |
 | Attempt | `niceeval.score/v1` | Score Eval 的独立得分 |
 | Attempt | `niceeval.eligibility/v1` | reuse 所需的当时资格事实 |
 
 这张表描述 owner，不要求 generic writer 知道这些名字。
+
+### Sources manifest
+
+`niceeval.sources/v1` 是 origin Run-owned 的源码快照。它保存 producer 已经确定属于本次
+source closure 的项目文件，不从 reader 所在 worktree、网络或 package installation 补读内容。
+
+```ts
+type SourceItemV1 = {
+  readonly sourceItemId: SourceItemId;
+  readonly path: CanonicalProjectRelativePath;
+  readonly sha256: Sha256Digest;
+  readonly blob: RecordBlobRef;
+};
+
+type SourcesDocumentV1 = {
+  readonly items: readonly SourceItemV1[];
+};
+```
+
+`SourceItemId`、`CanonicalProjectRelativePath` 与 `Sha256Digest` 的 public identity type 由
+[Record Library](library.md#identity-与-attachment-definition) 拥有；本节只定义它们在 Sources
+payload 中的 arrangement。
+
+`path` 是 project root 下的 canonical relative path：以 `/` 分隔，不以 `/`
+开头，且不含空、`.` 或 `..` segment。它保留当时路径的精确大小写；host absolute path、
+realpath 和 platform separator 不进入 payload。
+
+`sourceItemId` 是 manifest 内稳定的 item identity，不是 `items` 的数组下标，也不能由 path、
+digest 或 blob key 推导。`items` 按 `sourceItemId` canonical 排序，且 `sourceItemId` 与 `path`
+各自唯一。`sha256` 是 own `blob` exact bytes 的 SHA-256；reader 验证二者相等后才把 Sources
+视为 available。它不承诺跨任意 Run 或 schema version 直接配对；这类 identity 演进使用 source
+identity migration group。
+
+每个 `blob` 都属于这个 Run Attachment 自己的 closure。Sources 不能借用 Attempt、另一个
+Run 或另一个 Sources Attachment 的 `RecordBlobRef`、storage path 或 blob capability。后续
+Run reference 某个 Attempt 时，也不复制这个 manifest 或 closure。
+
+Attempt-owned `niceeval.assertion-source-sites/v1` 只能以其 schema 中声明的
+`sourceItemId` 与 digest join 这个 origin Run manifest。join 不成为 Core 引用，也不会让
+source-sites payload 取得 Sources 的 blob、owner handle、path 或读取 capability。完整 source-sites
+shape 与局部 `unmapped` 规则由 [Assertions source sites](../assertions/architecture/source-sites.md)
+拥有。
 
 ### RecordAttachment projector 与读取状态
 
@@ -292,6 +335,20 @@ reader 与 writer 可以并发。writer lock 保证只有一个进程创建 Run�
 Evaluation 的业务事实，例如 AssertionResult、Verdict、Score、Slot 映射、Sources 与
 Membership Provenance。
 
+写入源码导航时，它在 `complete` 前封口同一 Run 的 Sources、Assertions 与 source-sites：
+
+- 每个 Sources item 的 canonical path、unique non-array `sourceItemId`、digest 与 own blob
+  都已验证；
+- source-sites 的 `entryId` 属于同一 Attempt 已封口的 Assertions Attachment；
+- 每个 source-sites frame 的 `sourceItemId` 与 digest 都匹配该 Attempt origin Run 的 exact
+  Sources item，coordinate 能由该 item blob 验证；
+- role、occurrence、stop disposition 与 globally unique `sourceOrder` 都对应实际执行的 runtime
+  token，而非静态 source analysis；
+- 任一 source-sites Attachment 都不形成跨 owner blob、storage、capability 或 Core ref。
+
+Sources 可以存在而没有 source-sites；Assertions 也可以没有可映射 site。反过来，producer
+不得封口一个不能 join 到同一 origin Run Sources manifest 的 source-sites Attachment。
+
 generic writer 不验证这些领域组合，也不知道内建 Attachment 名称。它只验证 Core shape、
 owner、typed definition、exact encoding、完整 owner-local blob closure 与精确引用。
 
@@ -328,11 +385,13 @@ Core migration 只注册相邻 converter：未来从 `niceeval.record/vN`
 演进到 `niceeval.record/vN+1` 时，每条边单独定义并串行组合。当前只有
 `niceeval.record/v1`，因此没有伪造的 v2 / v3 Core converter。
 
-每个 Attachment family 也只登记相邻关系，并且每条边恰有一个 converter 或
-`not-losslessly-migratable` 声明。converter 接收完整 `RecordAttachmentValue<From>`；其
-source payload 是 package-owned、deep-frozen JSON snapshot，converter 不能靠 mutation
-影响其它 consumer。它从只读 `bytes(ref)` 取得 source bytes，再通过新的
-`RecordBlobSource` 与 target builder mint 新 refs、target Stream 和 target bytes。
+除 source identity migration group 的成对成员外，每个 Attachment family 也只登记相邻关系。
+每条边恰有一个 converter 或 `not-losslessly-migratable` 声明。
+
+converter 接收完整 `RecordAttachmentValue<From>`。其 source payload 是 package-owned、
+deep-frozen JSON snapshot，converter 不能靠 mutation 影响其它 consumer。它从只读 `bytes(ref)`
+取得 source bytes，再通过新的 `RecordBlobSource` 与 target builder mint 新 refs、target Stream
+和 target bytes。
 
 converter 可以保留、删除、改名或转换 blob。old ref 与手写 path 不属于 target builder，
 不能冒充 target ref。callback throw 是 defect；`Effect.fail(e)` 保留 explicit `E`；
@@ -343,13 +402,31 @@ interruption 保留 Cause。`R = never` 只表示没有 NiceEval Layer requireme
 返回 `migration-unavailable`。它不是可重试的 migration 工作，也不显示
 `niceeval migrate` 提示。
 
+### Source identity migration group
+
+`SourceItemId` 或 source-site source ref 的 identity 语义改变时，Sources 与 source-sites
+各自发布相邻 schema version，但不能把两条边作为独立 Attachment migration 注册。它们组成一个
+source identity migration group，由 [Record Library](library.md#source-identity-migration-group)
+定义其唯一注册与转换入口。
+
+group 先从一个 origin Run 的完整旧 Sources value 建立并验证 old-to-new `SourceItemId` mapping，
+再把同一份 mapping 交给该 Run 全部 Attempt 的相邻 source-sites conversion。mapping 不得由
+path、digest、数组位置、当前 worktree 或各 Attempt converter 各自猜测。一个 origin Run 的
+Sources target 与全部可转换 source-sites target 是同一 migration unit，不产生混用两代 item
+identity 的已发布 Record。
+
+无法给出无损 mapping 时，group 显式声明 `not-losslessly-migratable`。它保留关联的旧 bytes；
+需要 current source navigation 的读取返回 `migration-unavailable`，不从其它 owner、当前 worktree
+或网络补值。
+
 ### Git safety、preflight 与 sentinel
 
 migrate 在任何写入前完成 preflight：
 
 1. 确认 `migration.in-progress` 不存在；
 2. exact decode source Core 与可识别 Attachment envelope 和 closure；
-3. 找到 Core 与每个可迁移 Attachment 的完整相邻 converter 链；
+3. 找到 Core 与每个可迁移 Attachment 的完整相邻 converter 链，并按 origin Run 确定 source
+   identity migration group；
 4. 列出每个不可无损迁移边与 unknown Attachment；
 5. 验证 ID、owner 与路径可以保持，且 target 没有 identity 或目录冲突；
 6. 检查 portable root 的 Git restore point。
@@ -394,6 +471,7 @@ reader 解释。
 | matcher、early stop、score 算法改变 | behavior identity | 否 |
 | 新增 Diagnostics 或 Plugin 数据 | 新 Attachment | 否 |
 | Attachment payload、blob ref 或 closure shape 改变 | 新相邻 Attachment schema | 否 |
+| Sources 与 source-sites 的 source item identity 语义改变 | 相邻 source identity migration group | 否 |
 | typed view 改变 | 新 projector/API | 否 |
 | membership 采用原因增加 | provenance Attachment | 否 |
 | owner、引用、Core shape 或完成判断改变 | 新 Record major | 是，显式 migrate |

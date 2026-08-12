@@ -71,6 +71,12 @@ type RecordAttachmentSchemaId = string & Brand.Brand<"RecordAttachmentSchemaId">
 type RecordFormatId = string & Brand.Brand<"RecordFormatId">;
 type RecordAttachmentOwner = "run" | "attempt";
 
+type SourceItemId = string & Brand.Brand<"SourceItemId">;
+type CanonicalProjectRelativePath = string & Brand.Brand<
+  "CanonicalProjectRelativePath"
+>;
+type Sha256Digest = string & Brand.Brand<"Sha256Digest">;
+
 declare const recordRootTypeId: unique symbol;
 
 interface RecordRoot {
@@ -103,6 +109,9 @@ ID、时间、Attachment name 与 schema ID 都由 exact Schema constructor 创�
 
 `RecordBlobRef` 也只能由包创建。它没有可拼接的 path、可编辑 key 或公开 constructor。
 持久化 codec 只在所属 Attachment 内解释它的 opaque key。
+
+`SourceItemId`、`CanonicalProjectRelativePath` 与 `Sha256Digest` 同样只经 package 的 exact
+Schema constructor 建立。Sources manifest 拥有它们的取值约束与组合语义。
 
 `RecordRoot` 同样只能由 package constructor 创建。`makeRecordRoot` 接受非空的 host
 absolute-path string，或 protocol 为 `file:` 的 `URL`。
@@ -696,6 +705,102 @@ converter 没有通过 ambient JavaScript API 进行 I/O。第三方 converter �
 `not-losslessly-migratable` 是显式 edge。它保留 old Attachment bytes，current family 的
 reader 返回 `migration-unavailable`。这是 settled data state，不是建议用户重新运行
 `niceeval migrate`。
+
+## Source identity migration group
+
+普通 Attachment migration 只能转换一个 owner 的一个 Attachment。`SourceItemId` 或 source-site
+source ref 的 identity 语义改变时，`niceeval.sources` 与
+`niceeval.assertion-source-sites` 改用以下 group；两条成员边不能同时作为普通 family migration
+注册。
+
+```ts
+type SourceItemIdMigration = {
+  readonly from: SourceItemId;
+  readonly to: SourceItemId;
+};
+
+interface SourceIdentitySourcesMigrationResult<E, R> {
+  readonly write: RecordAttachmentWrite<"run", E, R>;
+  readonly itemMapping: readonly SourceItemIdMigration[];
+}
+
+declare const sourceIdentityMigrationGroupTypeId: unique symbol;
+
+interface SourceIdentityMigrationGroup<E, R> {
+  readonly [sourceIdentityMigrationGroupTypeId]: {
+    readonly error: E;
+    readonly requirements: R;
+  };
+}
+
+type SourceIdentityMigrationGroupDefinitionError = {
+  readonly code: "source-identity-migration-group-invalid";
+  readonly issues: NonEmptyRecordIssues;
+};
+
+declare const defineSourceIdentityMigrationGroup: <
+  SourcesFrom,
+  SourcesTo,
+  SitesFrom,
+  SitesTo,
+  E,
+  R,
+>(input: {
+  readonly sources: {
+    readonly from: JsonRecordAttachmentDefinition<"run", SourcesFrom>;
+    readonly to: JsonRecordAttachmentDefinition<"run", SourcesTo>;
+    readonly convert: (
+      source: RecordAttachmentValue<SourcesFrom>,
+      target: RecordAttachmentMigrationTarget<"run", SourcesTo>,
+    ) => Effect.Effect<SourceIdentitySourcesMigrationResult<E, R>, E, R>;
+  };
+  readonly sourceSites: {
+    readonly from: JsonRecordAttachmentDefinition<"attempt", SitesFrom>;
+    readonly to: JsonRecordAttachmentDefinition<"attempt", SitesTo>;
+    readonly convert: (
+      source: RecordAttachmentValue<SitesFrom>,
+      input: {
+        readonly itemMapping: readonly SourceItemIdMigration[];
+        readonly target: RecordAttachmentMigrationTarget<"attempt", SitesTo>;
+      },
+    ) => Effect.Effect<RecordAttachmentWrite<"attempt", E, R>, E, R>;
+  };
+}) => Either.Either<
+  SourceIdentityMigrationGroup<E, R>,
+  SourceIdentityMigrationGroupDefinitionError
+>;
+
+declare const declareSourceIdentityMigrationUnavailable: <
+  SourcesFrom,
+  SourcesTo,
+  SitesFrom,
+  SitesTo,
+>(input: {
+  readonly sources: {
+    readonly from: JsonRecordAttachmentDefinition<"run", SourcesFrom>;
+    readonly to: JsonRecordAttachmentDefinition<"run", SourcesTo>;
+  };
+  readonly sourceSites: {
+    readonly from: JsonRecordAttachmentDefinition<"attempt", SitesFrom>;
+    readonly to: JsonRecordAttachmentDefinition<"attempt", SitesTo>;
+  };
+  readonly reason: string;
+}) => SourceIdentityMigrationGroup<never, never>;
+```
+
+definition 只接受 `niceeval.sources` 的相邻 Run-owned edge 与
+`niceeval.assertion-source-sites` 的相邻 Attempt-owned edge。registry 为一个 origin Run 只执行一次
+Sources converter，并验证 `itemMapping` 逐一包含该完整旧 manifest 的每个 `SourceItemId`，且每个 target
+id 在 mapping 中至多出现一次并存在于 target manifest。
+
+随后 registry 将同一份 frozen mapping 传给该 origin Run 中每个匹配的 source-sites Attachment converter。
+converter 不能按 path、digest、数组位置、当前 worktree 或自身局部猜测 source item 对应关系。若 group
+没有无损边，`declareSourceIdentityMigrationUnavailable` 保留原 bytes，并让需要 current source navigation
+的读取得到 `migration-unavailable`。
+
+只改变 Sources payload 或 blob closure、而不改变 source item identity 时，仍使用普通
+`RecordAttachmentMigration`。group 只保护必须同步改变的跨 owner semantic join；它不授权跨 owner
+blob、storage path 或 `RecordAttachmentValue` capability。
 
 ## Clean 与显式 migration
 

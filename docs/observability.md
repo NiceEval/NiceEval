@@ -17,6 +17,7 @@ reader 先解码固定 `RecordAttachmentEnvelopeV1`，再按 `(owner, name, sche
 | producer / 事实 | owner 与 RecordAttachment | payload、collection 与 limitation 细节 | 标准消费 |
 |---|---|---|---|
 | Assertion collector | Attempt / `niceeval.assertions/v1` | exact JSON；subject、evaluator、evaluation、evidence、policy 与 projection | Attempt checks 与 score detail |
+| Assertion source capture | Attempt / `niceeval.assertion-source-sites/v1` | exact JSON；`entryId` 到 role-tagged runtime site、occurrence、sourceOrder 与 stop disposition | Assertion source navigation |
 | 四态判定 | Attempt / `niceeval.verdict/v1` | exact JSON；所有 Pass/Score Attempt 的四态 Verdict | overview、Attempt state 与 reuse planning |
 | Score Eval 得分 | Attempt / `niceeval.score/v1` | exact JSON；Score Eval 的独立得分、可排名性、stop cause 与 issues | overview 与排行 |
 | Execution eligibility | Attempt / `niceeval.eligibility/v1` | exact JSON；含 mandatory `reuseContract` | reuse planning |
@@ -29,7 +30,7 @@ reader 先解码固定 `RecordAttachmentEnvelopeV1`，再按 `(owner, name, sche
 | Eval discovery / definition | Run / `niceeval.evaluations/v1` | exact JSON；distinct evalId → `pass | score` | 离线分母分类 |
 | Run lifecycle / diagnostics | Run / `niceeval.diagnostics/v1` | exact JSON；setup、teardown、dispatch 与 stop reason | Run diagnostics |
 | Planner 与 operator / 采用原因 | Run / `niceeval.membership-provenance/v1` | exact JSON；关联 slotId、attemptId 与当时理由 | membership provenance |
-| Eval discovery / source snapshot | Run / `niceeval.sources/v1` | exact JSON manifest 与 owner-local SHA-256 blobs | origin source viewer |
+| Eval discovery / source snapshot | Run / `niceeval.sources/v1` | exact JSON；stable `SourceItemId`、canonical project-relative path、SHA-256 与 own blobs | origin source viewer |
 | Runner / invocation provenance | Run / `niceeval.run-provenance/v1` | exact JSON | Invocation detail |
 
 这些链路都经过 producer → fixed envelope → payload decoder → RecordAttachment projector → 标准呈现。未受 projector 支持的自定义 schema 可以 `unsupported`。
@@ -43,6 +44,11 @@ Attachment 的 `collection` 只表达 complete 或带 reason 的 partial。没�
 Run 保存不能归属单个 Attempt 的事实，例如题型、Experiment setup 或 teardown 诊断、共享准备计时、采用理由、源码快照，以及停止派发的原因。它们使用 Run-owned RecordAttachment，并以 eval、slot 或 Attempt identity 关联需要的上下文。
 
 Run-owned RecordAttachment 不复制 Attempt 的业务值。采用已有 Attempt 的 reference Member 仍读取该 immutable Attempt 的 Attachment 数据。
+
+Sources 是 origin Run-owned；source-sites 是 Attempt-owned。两者只以 schema-declared
+`SourceItemId` 与 digest 做 semantic join，不能共享 blob、storage path、reader handle 或
+capability。source-sites 缺失、unsupported 或 invalid 时，Assertions 仍可读取，source navigation
+只显示 `unmapped`。
 
 ## 事件与归一化
 
@@ -79,6 +85,10 @@ partial 用量或计时读数必须显示 observed、denominator 与 partial。�
 Reports runtime 只消费 `ReportExecution`，不打开磁盘，也不再次读取 Attachment。每页和 Calculation 只受自己声明的数据影响。
 
 Attempt-owned projection 通过 included slot 读取。Run-owned provenance 与 diagnostics 从 selected Run 读取；sources 固定通过 included Attempt 的 origin Run 读取。
+
+源码导航同时声明 Assertions、source-sites 与 attempt-origin Sources 三个中立 projection，再用
+纯 `assembleAttemptSourceTreeV1` 组合已形成的值。它不把 Record reader、source blob capability
+或当前 worktree 传给 Report；一个 `entryId` 即使有多个 site，result 与 score 仍只计一次。
 
 origin Run 不进入 Sample 分母，也不把 Record root、path 或 reader 暴露给 Report。
 

@@ -14,9 +14,10 @@ Score 显示 `complete`、`partial` 或 `unavailable`。partial 显示已知 ear
 
 未配置 points 的 Assertion 显示 `recorded`，不显示 `+0`。配置 points 的 entry 显示 points、其 sealed evaluation 与实际贡献。entry 的 points 不是 max、百分比或 Evaluation kind。
 
-Assertions v1 的 display 不携带 source path、origin source snapshot 或跨 Attachment ref。需要源码导航时，Report
-必须显式声明自己的 origin-source input；否则 entry 保持 unmapped，不能猜测当前 worktree 位置。`.orStop()` 与其它
-控制流只由独立 diagnostic 说明，不能从 entry 猜出。
+Assertions v1 的 display 不携带 source path、origin source snapshot 或跨 Attachment blob ref。需要源码导航时，Report
+必须显式声明 Assertions、source-sites 与 origin Sources 三个 projection；否则 entry 保持 `unmapped`，不能猜测当前
+worktree 位置。`.orStop()` 的已执行位置和 `continued`、`stopped`、`interrupted` 结果从
+[source-sites mapping](../architecture/source-sites.md) 显示，不再只靠 diagnostic 推断。
 
 ## identity 与 route
 
