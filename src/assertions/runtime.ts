@@ -1,5 +1,7 @@
 import { Cause, Deferred, Effect } from "effect";
 
+import type { SourceLoc } from "../shared/types.ts";
+
 import {
   assertionHandleBrand,
   AssertionAuthoringClosedError,
@@ -97,6 +99,54 @@ interface AssertionEntry {
   pending: Deferred.Deferred<EntrySettlement> | undefined;
 }
 
+/**
+ * Source navigation remains a Runner-owned observation.  These types are
+ * intentionally package-internal: neither the author-facing handle nor the
+ * sealed Assertion value acquires a source field or durable identity.
+ */
+export type AssertionRuntimeSourceRole =
+  | "declaration"
+  | "threshold"
+  | "score"
+  | "gate"
+  | "optional"
+  | "stop";
+
+export interface AssertionRuntimeSourceSite {
+  readonly location: SourceLoc;
+  readonly sourceOrder: number;
+}
+
+export interface AssertionRuntimeSourceOccurrence {
+  readonly role: AssertionRuntimeSourceRole;
+  readonly site?: AssertionRuntimeSourceSite;
+  readonly outcome?: "continued" | "stopped" | "interrupted";
+}
+
+export interface AssertionsRuntimeSourceCaptureSnapshot {
+  readonly entries: readonly {
+    readonly occurrences: readonly AssertionRuntimeSourceOccurrence[];
+  }[];
+}
+
+interface MutableAssertionRuntimeSourceOccurrence {
+  readonly role: AssertionRuntimeSourceRole;
+  readonly site?: AssertionRuntimeSourceSite;
+  outcome?: "continued" | "stopped" | "interrupted";
+}
+
+interface AssertionRuntimeSourceEntry {
+  readonly occurrences: MutableAssertionRuntimeSourceOccurrence[];
+}
+
+interface AssertionsRuntimeSourceCapture {
+  readonly capture: () => AssertionRuntimeSourceSite | undefined;
+  readonly entries: AssertionRuntimeSourceEntry[];
+  readonly byEntry: WeakMap<AssertionEntry, AssertionRuntimeSourceEntry>;
+}
+
+const sourceCaptureByRuntime = new WeakMap<AssertionsRuntimeImplementation, AssertionsRuntimeSourceCapture>();
+
 interface SnapshotState {
   truncated: boolean;
   omittedBytes: number;
@@ -115,6 +165,14 @@ type IncompleteScoreContribution = Extract<
 
 function isRecord(value: unknown): value is globalThis.Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isAssertionStop(value: unknown): value is AssertionStopError {
+  return isRecord(value) && value._tag === "AssertionStopError";
+}
+
+function isInterruptedAuthoringClosure(value: unknown): boolean {
+  return value instanceof AssertionAuthoringClosedError && value.reason === "attempt-interrupted";
 }
 
 function assertFiniteNonNegative(value: unknown, owner: string): asserts value is number {
@@ -613,6 +671,27 @@ class AssertionsRuntimeImplementation {
     ) as AssertionsContext<AssertionEvaluationKind>;
   }
 
+  private recordSourceOccurrence(
+    entry: AssertionEntry,
+    role: AssertionRuntimeSourceRole,
+  ): MutableAssertionRuntimeSourceOccurrence | undefined {
+    const capture = sourceCaptureByRuntime.get(this);
+    const capturedEntry = capture?.byEntry.get(entry);
+    if (capturedEntry === undefined || capture === undefined) return undefined;
+    let site: AssertionRuntimeSourceSite | undefined;
+    try {
+      site = capture.capture();
+    } catch {
+      // Source navigation must never change authoring or assertion behavior.
+    }
+    const occurrence: MutableAssertionRuntimeSourceOccurrence = {
+      role,
+      ...(site === undefined ? {} : { site }),
+    };
+    capturedEntry.occurrences.push(occurrence);
+    return occurrence;
+  }
+
   check<Value, Refined extends Value>(
     value: Value,
     match: BooleanMatch<NoInfer<Value>, Refined, "value">,
@@ -774,6 +853,7 @@ class AssertionsRuntimeImplementation {
     this.assertMutable(entry, "optional()");
     if (entry.optionalConfigured) throw new Error("An Assertion optional policy is already configured");
     entry.optionalConfigured = true;
+    this.recordSourceOccurrence(entry, "optional");
   }
 
   configureGate(entry: AssertionEntry): void {
@@ -784,6 +864,7 @@ class AssertionsRuntimeImplementation {
     }
     if (entry.gateConfigured) throw new Error("An Assertion gate policy is already configured");
     entry.gateConfigured = true;
+    this.recordSourceOccurrence(entry, "gate");
   }
 
   configureThreshold(entry: AssertionEntry, value: number): void {
@@ -792,6 +873,7 @@ class AssertionsRuntimeImplementation {
     assertUnitInterval(value, "atLeast() threshold");
     if (entry.threshold !== undefined) throw new Error("An Assertion threshold is already configured");
     entry.threshold = value;
+    this.recordSourceOccurrence(entry, "threshold");
   }
 
   configureScore(entry: AssertionEntry, points: number): void {
@@ -803,14 +885,37 @@ class AssertionsRuntimeImplementation {
     assertFiniteNonNegative(points, "score() points");
     if (entry.scorePoints !== undefined) throw new Error("An Assertion score contribution is already configured");
     entry.scorePoints = points;
+    this.recordSourceOccurrence(entry, "score");
   }
 
   requestStopBoolean(entry: AssertionEntry): Promise<unknown> {
-    return this.requestStop(this.stopBoolean(entry));
+    return this.observeStop(entry, this.requestStop(this.stopBoolean(entry)));
   }
 
   requestStopMeasurement(entry: AssertionEntry): Promise<number> {
-    return this.requestStop(this.stopMeasurement(entry));
+    return this.observeStop(entry, this.requestStop(this.stopMeasurement(entry)));
+  }
+
+  private observeStop<Value>(
+    entry: AssertionEntry,
+    result: Promise<Value>,
+  ): Promise<Value> {
+    const occurrence = this.recordSourceOccurrence(entry, "stop");
+    return result.then(
+      (value) => {
+        if (occurrence !== undefined && occurrence.outcome === undefined) {
+          occurrence.outcome = "continued";
+        }
+        return value;
+      },
+      (error: unknown) => {
+        if (occurrence !== undefined && occurrence.outcome === undefined) {
+          if (isAssertionStop(error)) occurrence.outcome = "stopped";
+          else if (isInterruptedAuthoringClosure(error)) occurrence.outcome = "interrupted";
+        }
+        throw error;
+      },
+    );
   }
 
   private requestStop<Value>(
@@ -926,6 +1031,13 @@ class AssertionsRuntimeImplementation {
       pending: undefined,
     };
     this.entries.push(entry);
+    const capture = sourceCaptureByRuntime.get(this);
+    if (capture !== undefined) {
+      const capturedEntry: AssertionRuntimeSourceEntry = { occurrences: [] };
+      capture.entries.push(capturedEntry);
+      capture.byEntry.set(entry, capturedEntry);
+      this.recordSourceOccurrence(entry, "declaration");
+    }
     return entry;
   }
 
@@ -1329,6 +1441,65 @@ class AssertionsRuntimeImplementation {
     this.assertCanRegister();
     if (entry.settled !== undefined || entry.pending !== undefined) {
       throw new Error(`Cannot configure an Assertion after ${method} has begun evaluation`);
+    }
+  }
+}
+
+function sourceCaptureRuntime(
+  runtime: AssertionsRuntime<"pass" | "score">,
+): AssertionsRuntimeImplementation | undefined {
+  return runtime instanceof AssertionsRuntimeImplementation ? runtime : undefined;
+}
+
+/** @internal Runner-only source observation hook; it never changes the public runtime value. */
+export function attachAssertionsRuntimeSourceCapture(
+  runtime: AssertionsRuntime<"pass" | "score">,
+  capture: () => AssertionRuntimeSourceSite | undefined,
+): void {
+  const implementation = sourceCaptureRuntime(runtime);
+  if (implementation === undefined) {
+    throw new TypeError("Assertions source capture requires a NiceEval AssertionsRuntime");
+  }
+  if (sourceCaptureByRuntime.has(implementation)) {
+    throw new Error("Assertions source capture is already attached to this runtime");
+  }
+  sourceCaptureByRuntime.set(implementation, {
+    capture,
+    entries: [],
+    byEntry: new WeakMap<AssertionEntry, AssertionRuntimeSourceEntry>(),
+  });
+}
+
+/** @internal Detached immutable journal for the Runner source producer. */
+export function assertionsRuntimeSourceCaptureSnapshot(
+  runtime: AssertionsRuntime<"pass" | "score">,
+): AssertionsRuntimeSourceCaptureSnapshot | undefined {
+  const implementation = sourceCaptureRuntime(runtime);
+  const capture = implementation === undefined ? undefined : sourceCaptureByRuntime.get(implementation);
+  if (capture === undefined) return undefined;
+  return Object.freeze({
+    entries: Object.freeze(capture.entries.map((entry) => Object.freeze({
+      occurrences: Object.freeze(entry.occurrences.map((occurrence) => Object.freeze({
+        role: occurrence.role,
+        ...(occurrence.site === undefined ? {} : { site: occurrence.site }),
+        ...(occurrence.outcome === undefined ? {} : { outcome: occurrence.outcome }),
+      }))),
+    }))),
+  });
+}
+
+/** @internal Attempt interruption gives pending real stop calls their terminal disposition. */
+export function markAssertionsRuntimeSourceCaptureInterrupted(
+  runtime: AssertionsRuntime<"pass" | "score">,
+): void {
+  const implementation = sourceCaptureRuntime(runtime);
+  const capture = implementation === undefined ? undefined : sourceCaptureByRuntime.get(implementation);
+  if (capture === undefined) return;
+  for (const entry of capture.entries) {
+    for (const occurrence of entry.occurrences) {
+      if (occurrence.role === "stop" && occurrence.outcome === undefined) {
+        occurrence.outcome = "interrupted";
+      }
     }
   }
 }

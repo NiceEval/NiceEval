@@ -10,7 +10,7 @@ import {
   worstEvidenceCoverage,
   type ResolvedEvidenceCoverage,
 } from "../assertions/coverage.ts";
-import { captureLoc } from "../source-loc.ts";
+import { captureLoc, type SourceRegistry } from "../source-loc.ts";
 import { t } from "../i18n/index.ts";
 import {
   createAttemptRetryBudget,
@@ -156,9 +156,15 @@ export interface SessionDeps {
   onTurn?: (info: {
     sessionIndex: number;
     turnIndex: number;
+    /** Exact terminal label allocated by this SessionManager. */
+    label: string;
     startOffsetMs: number;
     durationMs: number;
     failed?: boolean;
+    /** The real user-event source location, when stack capture succeeded. */
+    loc?: ReturnType<typeof captureLoc>;
+    /** Shared author-fact order; absent when there is no durable source site. */
+    sourceOrder?: number;
     traceId?: string;
     traceAttribution?: "traceparent" | "window" | "none";
     otelWindow?: TurnSpans["window"];
@@ -185,6 +191,8 @@ export interface SessionDeps {
   retrySleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   /** 与 Fact collector 共用的 attempt 级源码事实序号分配器。 */
   nextSourceOrder?: () => number;
+  /** Attempt-owned source snapshot registry; Runner injects it explicitly. */
+  sourceRegistry?: SourceRegistry;
 }
 
 /** A successful agent send whose post-send ledger checkpoint could not be recorded. */
@@ -285,7 +293,13 @@ export class SessionManager {
     responses?: readonly InputResponse[],
     loc?: ReturnType<typeof captureLoc>,
   ): Effect.Effect<Turn, unknown> {
-    const send = this.sendSerializedEffect(session, text, loc ?? captureLoc(), files, responses);
+    const send = this.sendSerializedEffect(
+      session,
+      text,
+      loc ?? captureLoc({ registry: this.deps.sourceRegistry }),
+      files,
+      responses,
+    );
     // Sandbox sends share one workdir, so their attribution windows cannot
     // overlap. Direct Agent sends retain their existing unconstrained behavior.
     return this.deps.ledgerHooks === undefined
@@ -336,12 +350,16 @@ export class SessionManager {
       const timingNow = this.deps.timingNow ?? (() => performance.now());
       const startOffsetMs = timingNow();
 
+      // A source order belongs only to a user event that can become an
+      // Attempt source-site. Do not consume the shared sequence for a failed
+      // stack capture.
+      const sourceOrder = loc === undefined ? undefined : this.nextSourceOrder();
       const userEvent: StreamEvent = {
         type: "message",
         role: "user",
         text,
         loc,
-        sourceOrder: this.nextSourceOrder(),
+        ...(sourceOrder === undefined ? {} : { sourceOrder }),
       };
       this.allEvents.push(userEvent);
       session.events.push(userEvent);
@@ -428,9 +446,12 @@ export class SessionManager {
           this.deps.onTurn?.({
             sessionIndex: session.index,
             turnIndex,
+            label: windowLabel,
             startOffsetMs,
             durationMs: Math.max(0, timingNow() - startOffsetMs),
             failed: true,
+            ...(loc === undefined ? {} : { loc }),
+            ...(sourceOrder === undefined ? {} : { sourceOrder }),
             ...(isSendFailure(error) && error.usage !== undefined ? { usage: error.usage } : {}),
           });
         })),
@@ -438,9 +459,12 @@ export class SessionManager {
           const timingActivity = this.deps.onTurn?.({
             sessionIndex: session.index,
             turnIndex,
+            label: windowLabel,
             startOffsetMs,
             durationMs: Math.max(0, timingNow() - startOffsetMs),
             failed: turn.status === "failed" ? true : undefined,
+            ...(loc === undefined ? {} : { loc }),
+            ...(sourceOrder === undefined ? {} : { sourceOrder }),
             ...(attribution !== "none" && traceId !== undefined ? { traceId } : {}),
             traceAttribution: attribution,
             otelWindow: window,

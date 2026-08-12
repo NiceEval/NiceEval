@@ -8,9 +8,16 @@ import type {
   RecordBlobRef,
 } from "../record/attachment/index.ts";
 import type { SlotId } from "../record/model/identifiers.ts";
+import {
+  assertionsRuntimeSourceCaptureSnapshot,
+  attachAssertionsRuntimeSourceCapture,
+  markAssertionsRuntimeSourceCaptureInterrupted,
+  type AssertionRuntimeSourceSite,
+  type AssertionsRuntimeSourceCaptureSnapshot,
+} from "../assertions/runtime.ts";
+import type { AssertionsRuntime } from "../assertions/api.ts";
 import { captureLoc, type SourceRegistry } from "../source-loc.ts";
 import type { SourceArtifact, SourceLoc, SourcePathFrame } from "../shared/types.ts";
-import { formatTurnLabel } from "../shared/turn-label.ts";
 import {
   createAssertionSourceSitesAttachmentWriteV1,
   createSourcesAttachmentWriteV1,
@@ -50,44 +57,33 @@ interface CapturedSite {
   readonly sourceOrder: number;
 }
 
-interface CapturedAssertionOccurrence {
-  readonly role: AssertionSourceRole;
-  readonly site?: CapturedSite;
-  /** A stop only becomes durable after its actual terminal state is known. */
-  outcome?: "continued" | "stopped" | "interrupted";
-}
-
-interface CapturedAssertionEntry {
-  readonly occurrences: CapturedAssertionOccurrence[];
-}
-
 interface CapturedSend {
-  readonly site?: CapturedSite;
-  terminal?: {
+  readonly site: CapturedSite;
+  readonly terminal: {
     readonly label: string;
-    readonly status: "completed" | "failed" | "interrupted";
+    readonly status: "completed" | "failed";
     readonly durationMs: number;
   };
-  ambiguous?: true;
 }
 
 /** Package-internal runtime facts retained outside the public sealed value. */
 export interface RunnerAttemptSourceCaptureSnapshot {
-  readonly entries: readonly {
-    readonly occurrences: readonly CapturedAssertionOccurrence[];
-  }[];
+  readonly entries: AssertionsRuntimeSourceCaptureSnapshot["entries"];
   readonly sends: readonly CapturedSend[];
 }
 
 export interface RunnerAttemptSourceCapture {
-  /** Wraps only the author-facing value; no durable type enters the author API. */
-  readonly instrument: (context: unknown) => unknown;
+  /** One Attempt-wide allocator shared by Assert-first registrations and sends. */
+  readonly nextSourceOrder: () => number;
+  /** Binds the original Assert-first runtime to its private source journal. */
+  readonly attachAssertions: (runtime: AssertionsRuntime<"pass" | "score">) => void;
   /** Receives the exact Runner turn terminal fact, never reconstructs one from events. */
   readonly onTurn: (input: {
-    readonly sessionIndex: number;
-    readonly turnIndex: number;
+    readonly label: string;
     readonly durationMs: number;
     readonly failed?: boolean;
+    readonly loc?: SourceLoc;
+    readonly sourceOrder?: number;
   }) => void;
   /** Called only from the Attempt interruption boundary. */
   readonly markInterrupted: () => void;
@@ -111,20 +107,6 @@ function sourceCaptureForResult(
   return sourceCaptureByResult.get(result);
 }
 
-function isObject(value: unknown): value is object {
-  return typeof value === "object" && value !== null;
-}
-
-function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
-  return isObject(value) && typeof Reflect.get(value, "then") === "function";
-}
-
-function isAssertionHandle(value: unknown): value is object {
-  if (!isObject(value)) return false;
-  const kind = Reflect.get(value, "kind");
-  return kind === "boolean" || kind === "measurement" || kind === "direct-score";
-}
-
 function cloneLocation(value: SourceLoc): SourceLoc {
   const callers: SourcePathFrame[] | undefined = value.callers?.map((frame) =>
     frame.kind === "project"
@@ -144,191 +126,76 @@ function cloneLocation(value: SourceLoc): SourceLoc {
   };
 }
 
-function sourceCaptureFrom(registry: SourceRegistry, nextSourceOrder: () => number): CapturedSite | undefined {
+function sourceCaptureFrom(
+  registry: SourceRegistry,
+  nextSourceOrder: () => number,
+): AssertionRuntimeSourceSite | undefined {
   const location = captureLoc({ registry });
   if (location === undefined) return undefined;
   return Object.freeze({ location: cloneLocation(location), sourceOrder: nextSourceOrder() });
 }
 
-function stopOutcome(error: unknown): "stopped" | "interrupted" | undefined {
-  if (!isObject(error)) return undefined;
-  if (Reflect.get(error, "_tag") === "AssertionStopError") return "stopped";
-  return Reflect.get(error, "reason") === "attempt-interrupted" ? "interrupted" : undefined;
-}
-
 /**
- * Captures only actions that actually return an Assertion handle or begin a
- * send. The journal is intentionally package-internal: the public sealed
- * assertion value remains source-location agnostic.
+ * Holds only Attempt-owned package-internal joins. Assert-first owns entry
+ * registration/modifier facts; SessionManager owns user-event locations and
+ * turn terminals. No author-facing Context value is wrapped or replaced.
  */
 export function createRunnerAttemptSourceCapture(
   registry: SourceRegistry,
 ): RunnerAttemptSourceCapture {
   let sourceOrder = 0;
-  const entries: CapturedAssertionEntry[] = [];
   const sends: CapturedSend[] = [];
-  const entryForHandle = new WeakMap<object, CapturedAssertionEntry>();
-  const proxyForObject = new WeakMap<object, object>();
-
-  const capture = (): CapturedSite | undefined => sourceCaptureFrom(registry, () => ++sourceOrder);
-
-  const recordDeclaration = (site: CapturedSite | undefined): CapturedAssertionEntry => {
-    const entry: CapturedAssertionEntry = { occurrences: [] };
-    entry.occurrences.push({ role: "declaration", site });
-    entries.push(entry);
-    return entry;
-  };
-
-  const recordModifier = (
-    entry: CapturedAssertionEntry,
-    role: Exclude<AssertionSourceRole, "declaration" | "stop">,
-    site: CapturedSite | undefined,
-  ): void => {
-    entry.occurrences.push({ role, site });
-  };
-
-  const recordStop = (
-    entry: CapturedAssertionEntry,
-    site: CapturedSite | undefined,
-  ): CapturedAssertionOccurrence => {
-    const occurrence: CapturedAssertionOccurrence = { role: "stop", site };
-    entry.occurrences.push(occurrence);
-    return occurrence;
-  };
-
-  const wrap = (value: unknown): unknown => {
-    if (!isObject(value) || isPromiseLike(value)) return value;
-    const known = proxyForObject.get(value);
-    if (known !== undefined) return known;
-
-    const proxy = new Proxy(value, {
-      get(target, property) {
-        const member = Reflect.get(target, property, target);
-        if (typeof member !== "function") {
-          if (
-            (property === "sandbox" || property === "judge" || property === "autoevals")
-            && isObject(member)
-          ) {
-            return wrap(member);
-          }
-          return member;
-        }
-
-        return (...args: readonly unknown[]) => {
-          const name = typeof property === "string" ? property : undefined;
-          const handleEntry = entryForHandle.get(target);
-
-          if (handleEntry !== undefined) {
-            if (name === "orStop") {
-              const site = capture();
-              const result = Reflect.apply(member, target, args);
-              const occurrence = recordStop(handleEntry, site);
-              if (!isPromiseLike(result)) return result;
-              return Promise.resolve(result).then(
-                (resolved) => {
-                  occurrence.outcome = "continued";
-                  return resolved;
-                },
-                (error) => {
-                  const outcome = stopOutcome(error);
-                  if (outcome !== undefined) occurrence.outcome = outcome;
-                  throw error;
-                },
-              );
-            }
-
-            const role = name === "atLeast"
-              ? "threshold"
-              : name === "score"
-                ? "score"
-                : name === "gate"
-                  ? "gate"
-                  : name === "optional"
-                    ? "optional"
-                    : undefined;
-            const site = role === undefined ? undefined : capture();
-            const result = Reflect.apply(member, target, args);
-            if (role !== undefined) recordModifier(handleEntry, role, site);
-            return wrap(result);
-          }
-
-          const isSend = name === "send"
-            || name === "sendFile"
-            || name === "respond"
-            || name === "respondAll";
-          const site = capture();
-          const result = Reflect.apply(member, target, args);
-          if (isSend) {
-            const send: CapturedSend = { site };
-            sends.push(send);
-            if (!isPromiseLike(result)) return result;
-            return Promise.resolve(result).then((resolved) => wrap(resolved));
-          }
-
-          if (isAssertionHandle(result)) {
-            const entry = recordDeclaration(site);
-            entryForHandle.set(result, entry);
-            return wrap(result);
-          }
-          if (name === "newSession") return wrap(result);
-          return wrap(result);
-        };
-      },
-    });
-    proxyForObject.set(value, proxy);
-    return proxy;
-  };
+  let assertionsRuntime: AssertionsRuntime<"pass" | "score"> | undefined;
+  const nextSourceOrder = (): number => ++sourceOrder;
 
   return Object.freeze({
-    instrument: (context: unknown) => wrap(context),
+    nextSourceOrder,
+    attachAssertions(runtime: AssertionsRuntime<"pass" | "score">) {
+      if (assertionsRuntime !== undefined && assertionsRuntime !== runtime) {
+        throw new Error("Runner source capture cannot observe two Assertions runtimes");
+      }
+      if (assertionsRuntime === runtime) return;
+      attachAssertionsRuntimeSourceCapture(
+        runtime,
+        () => sourceCaptureFrom(registry, nextSourceOrder),
+      );
+      assertionsRuntime = runtime;
+    },
     onTurn(input: {
-      readonly sessionIndex: number;
-      readonly turnIndex: number;
+      readonly label: string;
       readonly durationMs: number;
       readonly failed?: boolean;
+      readonly loc?: SourceLoc;
+      readonly sourceOrder?: number;
     }) {
-      const pending = sends.filter((send) => send.terminal === undefined && send.ambiguous !== true);
-      if (pending.length !== 1) {
-        for (const send of pending) send.ambiguous = true;
-        return;
-      }
-      const [send] = pending;
-      if (send === undefined) return;
-      send.terminal = Object.freeze({
-        label: formatTurnLabel(input.sessionIndex, input.turnIndex),
+      if (input.loc === undefined || input.sourceOrder === undefined) return;
+      const site: CapturedSite = Object.freeze({
+        location: cloneLocation(input.loc),
+        sourceOrder: input.sourceOrder,
+      });
+      sends.push(Object.freeze({
+        site,
+        terminal: Object.freeze({
+          label: input.label,
         status: input.failed ? "failed" : "completed",
         durationMs: input.durationMs,
-      });
+        }),
+      }));
     },
     markInterrupted() {
-      for (const send of sends) {
-        if (send.terminal === undefined && send.ambiguous !== true) {
-          // An interrupted call without a Runner turn terminal fact has no
-          // exact label or duration. Omit it rather than inventing either.
-          send.ambiguous = true;
-        }
-      }
-      for (const entry of entries) {
-        for (const occurrence of entry.occurrences) {
-          if (occurrence.role === "stop" && occurrence.outcome === undefined) {
-            occurrence.outcome = "interrupted";
-          }
-        }
+      if (assertionsRuntime !== undefined) {
+        markAssertionsRuntimeSourceCaptureInterrupted(assertionsRuntime);
       }
     },
     snapshot() {
+      const assertions = assertionsRuntime === undefined
+        ? undefined
+        : assertionsRuntimeSourceCaptureSnapshot(assertionsRuntime);
       return Object.freeze({
-        entries: Object.freeze(entries.map((entry) => Object.freeze({
-          occurrences: Object.freeze(entry.occurrences.map((occurrence) => Object.freeze({
-            role: occurrence.role,
-            ...(occurrence.site === undefined ? {} : { site: occurrence.site }),
-            ...(occurrence.outcome === undefined ? {} : { outcome: occurrence.outcome }),
-          }))),
-        }))),
+        entries: assertions?.entries ?? Object.freeze([]),
         sends: Object.freeze(sends.map((send) => Object.freeze({
-          ...(send.site === undefined ? {} : { site: send.site }),
-          ...(send.terminal === undefined ? {} : { terminal: send.terminal }),
-          ...(send.ambiguous === true ? { ambiguous: true as const } : {}),
+          site: send.site,
+          terminal: send.terminal,
         }))),
       });
     },
@@ -690,7 +557,6 @@ export function createRunnerSourceWritePlan(
       readonly occurrences: AssertionSourceSendOccurrenceV1[];
     }>();
     for (const send of capture?.sends ?? []) {
-      if (send.site === undefined || send.terminal === undefined || send.ambiguous === true) continue;
       const trace = sourceTrace(send.site.location, localFiles, lookup);
       if (trace === undefined) continue;
       const key = traceKey(trace);

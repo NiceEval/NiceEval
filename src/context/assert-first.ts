@@ -60,7 +60,7 @@ import {
   type ToolMatchQuantifier,
 } from "../assertions/match.ts";
 import { buildO11ySummary, deriveRunFacts, deriveScopedLogicalToolOccurrences } from "../o11y/derive.ts";
-import { captureLoc } from "../source-loc.ts";
+import { captureLoc, type SourceRegistry } from "../source-loc.ts";
 import { lastAssistantText, RunSession, SessionManager, type SessionDeps } from "./session.ts";
 import { EvalSkipped } from "./control-flow.ts";
 import type { ConcurrencySlot } from "./send-retry.ts";
@@ -124,6 +124,10 @@ export interface AssertFirstContextDeps {
   readonly experimentClassifier?: import("./session.ts").SessionDeps["experimentClassifier"];
   readonly retryRandom?: import("./session.ts").SessionDeps["retryRandom"];
   readonly retrySleep?: import("./session.ts").SessionDeps["retrySleep"];
+  /** Attempt-owned source snapshot registry; never inferred from an Effect fiber. */
+  readonly sourceRegistry?: SourceRegistry;
+  /** Shared ordering with Assertion runtime source facts and Session user events. */
+  readonly nextSourceOrder?: () => number;
   readonly judge: ResolvedJudgeConfig | undefined;
   /** The Attempt-scoped bridge is the sole Promise facade for author sends. */
   readonly requestEffect: NonNullable<SessionDeps["requestEffect"]>;
@@ -1490,7 +1494,6 @@ function readInputFileEffect(path: string): Effect.Effect<InputFile, unknown> {
 export function createAssertFirstEvalContext(
   deps: AssertFirstContextDeps,
 ): { readonly context: AssertFirstTestContext<RuntimeKind>; readonly state: AssertFirstContextState } {
-  let sourceOrder = 0;
   const manager = new SessionManager({
     agent: deps.agent,
     sandbox: deps.sandbox,
@@ -1515,7 +1518,8 @@ export function createAssertFirstEvalContext(
     experimentClassifier: deps.experimentClassifier,
     retryRandom: deps.retryRandom,
     retrySleep: deps.retrySleep,
-    nextSourceOrder: () => ++sourceOrder,
+    nextSourceOrder: deps.nextSourceOrder,
+    sourceRegistry: deps.sourceRegistry,
   });
   const runtime: AssertionsRuntime<RuntimeKind> = deps.evaluationKind === "score"
     ? createAssertionsRuntime({ evaluationKind: "score", executeStop: deps.executeStop })
@@ -1875,7 +1879,7 @@ export function createAssertFirstEvalContext(
     responses?: readonly InputResponse[],
     loc?: ReturnType<typeof captureLoc>,
   ): Effect.Effect<AssertFirstTurnHandle<Kind>, unknown> => {
-    const capturedLoc = loc ?? captureLoc();
+    const capturedLoc = loc ?? captureLoc({ registry: deps.sourceRegistry });
     return Effect.suspend(() => {
       scope.started = true;
       scope.inFlight += 1;
@@ -1897,7 +1901,9 @@ export function createAssertFirstEvalContext(
     files?: readonly InputFile[],
     responses?: readonly InputResponse[],
   ): Promise<AssertFirstTurnHandle<Kind>> =>
-    deps.requestEffect(sendEffect<Kind>(scope, text, files, responses, captureLoc()));
+    deps.requestEffect(
+      sendEffect<Kind>(scope, text, files, responses, captureLoc({ registry: deps.sourceRegistry })),
+    );
 
   const makeSession = <Kind extends RuntimeKind>(scope: SessionScopeState): AssertFirstSessionHandle<Kind> => {
     const session = scope.session;
@@ -2005,7 +2011,7 @@ export function createAssertFirstEvalContext(
         return send<Kind>(scope, text, files);
       },
       sendFile: (path: string, text?: string) => {
-        const loc = captureLoc();
+        const loc = captureLoc({ registry: deps.sourceRegistry });
         return deps.requestEffect(
           readInputFileEffect(path).pipe(
             Effect.flatMap((file) => sendEffect<Kind>(scope, text ?? "", [file], undefined, loc)),

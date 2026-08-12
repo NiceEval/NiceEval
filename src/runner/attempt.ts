@@ -71,7 +71,6 @@ import type { SandboxCleanupCommand, SandboxCommandContext } from "../sandbox/co
 import { sandboxLayerIdentityFor } from "../sandbox/link.ts";
 import { agentInstallPlansForRun } from "./config-identity.ts";
 import { recordFact, type FactValue } from "../shared/facts.ts";
-import { formatTurnLabel } from "../shared/turn-label.ts";
 import { createSourceRegistry, type SourceRegistry } from "../source-loc.ts";
 import {
   createRunnerAttemptSourceCapture,
@@ -899,7 +898,11 @@ export function runAttemptEffect<
       }
 
       const author = Effect.suspend(() => {
-        const returned = evalDef.test(sourceCapture.instrument(contextExit.value) as never) as unknown;
+        // This is the original frozen author Context; the assertion only
+        // resolves Eval-kind overloads and never substitutes a wrapper.
+        // Both Promise and deferred Effect calls capture through explicit
+        // Attempt-owned dependencies, never fiber-local ALS.
+        const returned = evalDef.test(contextExit.value as never) as unknown;
         if (Effect.isEffect(returned)) {
           return returned as Effect.Effect<void, unknown, never>;
         }
@@ -1619,6 +1622,8 @@ async function runAttemptBody(
       // docs/feature/error-classification/architecture.md「分类链」)。与本文件 declareFailure
       // 走的生命周期链是同一个函数,两条链的决议序各自单源在 send-failures.ts / failure-class.ts。
       experimentClassifier: run.classifyFailure,
+      sourceRegistry,
+      nextSourceOrder: sourceCapture.nextSourceOrder,
       // Pass / Score share the same Assert-first entry runtime. Their
       // independent folds are both derived only after this Attempt seals.
       evaluationKind: evalDef.evaluationKind ?? "pass",
@@ -1639,7 +1644,7 @@ async function runAttemptBody(
       onTurn: (info) => {
         sourceCapture.onTurn(info);
         return recorder.child(turnActivity({
-          label: formatTurnLabel(info.sessionIndex, info.turnIndex),
+          label: info.label,
           startOffsetMs: info.startOffsetMs,
           durationMs: info.durationMs,
           ...(info.failed ? { failed: true as const } : {}),
@@ -1651,6 +1656,7 @@ async function runAttemptBody(
         }));
       },
     });
+    sourceCapture.attachAssertions(state.assertions);
     // 登记回外层:超时中断后由 onTimeout 直接读这两个句柄组装 events/usage(见
     // registerEvidence 注释、docs/runner.md「超时:双层保护」超时不丢证据)。
     registerEvidence(
