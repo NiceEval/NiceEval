@@ -19,6 +19,7 @@ import {
   makeAttemptObservabilityCaptureIdentityV1,
   makeRunObservabilityCaptureIdentityV1,
   mintAttemptObservabilityEntityV1,
+  mintRunObservabilityEntityV1,
   recordRegisteredCommandResultV1,
   registerCommandCaptureV1,
   registeredCommandIdV1,
@@ -27,6 +28,7 @@ import {
   type AttemptObservabilityCaptureIdentityV1,
   type AttemptCapturedObservabilityEntityV1,
   type RegisteredCommandCaptureV1,
+  type RunObservabilityCaptureIdentityV1,
 } from "./capture.ts";
 import {
   type AttemptDiagnosticV1,
@@ -34,6 +36,7 @@ import {
   type CommandManifestV1,
   type ConversationItemV1,
   type ConversationTurnV1,
+  type RunDiagnosticV1,
   type UsageObservationV1,
 } from "./families.ts";
 import type {
@@ -84,6 +87,7 @@ import {
   type ObservabilityEntityKindV1,
   type ObservabilityLimitationV1,
   type PositiveSafeInteger,
+  type RunReferenceTargetV1,
   type SafeIdentifier,
   type SafeText,
   type StableLabel,
@@ -482,6 +486,7 @@ const runnerCommandHandleStatesV1 = new WeakMap<object, {
   readonly runtime: RunnerAttemptObservabilityRuntimeStateV1;
   readonly command: CapturedCommandRuntimeV1;
 }>();
+const runnerRunDiagnosticsV1 = new WeakMap<object, readonly DiagnosticRecord[]>();
 
 function runtimeStateV1(
   runtime: RunnerAttemptObservabilityRuntimeV1,
@@ -574,6 +579,67 @@ function makeAttemptEntityMinterV1(
   });
 }
 
+type RunObservabilityEntityKindV1 = "interval" | "diagnostic";
+
+type RunEntityMinterV1 = <Kind extends RunObservabilityEntityKindV1>(
+  kind: Kind,
+) => Effect.Effect<ObservabilityEntityIdForKindV1<Kind>, RunnerObservabilityProducerErrorV1>;
+
+function runTargetForEntityV1<Kind extends RunObservabilityEntityKindV1>(
+  kind: Kind,
+  id: ObservabilityEntityIdForKindV1<Kind>,
+): RunReferenceTargetV1 {
+  switch (kind) {
+    case "interval":
+      return Object.freeze({
+        family: "niceeval.timing/v1" as const,
+        kind: "interval" as const,
+        id: id as IntervalIdV1,
+      });
+    case "diagnostic":
+      return Object.freeze({
+        family: "niceeval.diagnostics/v1" as const,
+        kind: "diagnostic" as const,
+        id: id as DiagnosticIdV1,
+      });
+  }
+}
+
+function mintRunEntityV1<Kind extends RunObservabilityEntityKindV1>(
+  capture: RunObservabilityCaptureIdentityV1,
+  kind: Kind,
+): ObservabilityEntityIdForKindV1<Kind> | undefined {
+  let uuid: string;
+  try {
+    uuid = randomUUID();
+  } catch {
+    return undefined;
+  }
+  const bytes = uuidEntropyBytesV1(uuid);
+  const id = bytes === undefined ? undefined : entityIdFromEntropyV1(kind, bytes);
+  if (id === undefined) return undefined;
+  const minted = mintRunObservabilityEntityV1(capture, runTargetForEntityV1(kind, id));
+  return minted === undefined ? undefined : id;
+}
+
+function makeRunEntityMinterV1(
+  capture: RunObservabilityCaptureIdentityV1,
+): {
+  readonly mint: RunEntityMinterV1;
+  readonly seal: () => boolean;
+} {
+  return Object.freeze({
+    mint: <Kind extends RunObservabilityEntityKindV1>(kind: Kind) =>
+      Effect.suspend(() => {
+        const id = mintRunEntityV1(capture, kind);
+        return id === undefined
+          ? Effect.fail(producerEntityIdInvalid(kind))
+          : Effect.succeed(id);
+      }),
+    seal: () => sealRunObservabilityCaptureIdentityV1(capture),
+  });
+}
+
 /** Creates one private capture for a real Runner Attempt. */
 export function createRunnerAttemptObservabilityRuntimeV1(input: {
   readonly providerName: string;
@@ -611,6 +677,19 @@ export function bindRunnerAttemptObservabilityCaptureV1(
     return;
   }
   runnerAttemptResultStatesV1.set(result, state);
+}
+
+/**
+ * Associates only the settled diagnostics that belong to this exact Run. The
+ * invocation-wide timing recorder is intentionally not bound here: its facts
+ * have no safe per-experiment owner attribution when an invocation has more
+ * than one Run.
+ */
+export function bindRunnerRunObservabilityDiagnosticsV1(input: {
+  readonly run: AgentRun;
+  readonly diagnostics: readonly DiagnosticRecord[];
+}): void {
+  runnerRunDiagnosticsV1.set(input.run, Object.freeze([...input.diagnostics]));
 }
 
 function commandManifestPhaseV1(
@@ -1772,6 +1851,80 @@ function normalizeAttemptDiagnosticsV1(input: {
   });
 }
 
+function runDiagnosticPhaseV1(
+  origin: TimingOrigin | undefined,
+): RunDiagnosticV1["phase"] {
+  // Runner's existing experiment diagnostic accumulator predates the
+  // owner-local Attachment and represents its lifecycle anchor as an Attempt
+  // origin. Its phase is still a real Run fact; no timing-node or provider
+  // attribute is inferred here.
+  switch (origin?.scope === "attempt" ? origin.phase : undefined) {
+    case "judge.precheck":
+    case "experiment.setup":
+      return "run.setup";
+    case "sandbox.queue":
+      return "run.dispatch";
+    case "experiment.teardown":
+      return "run.teardown";
+    default:
+      return "collection";
+  }
+}
+
+function normalizeRunDiagnosticsV1(input: {
+  readonly diagnostics: readonly DiagnosticRecord[] | undefined;
+  readonly mint: RunEntityMinterV1;
+}): Effect.Effect<NormalizedRunObservabilityCaptureV1["diagnostics"], RunnerObservabilityProducerErrorV1> {
+  return Effect.gen(function* () {
+    const limitations = new RunnerCollectionLimitationsV1();
+    if (input.diagnostics === undefined) {
+      limitations.addCaptureFailed("run-teardown", "diagnostic");
+      return Object.freeze({ collection: limitations.collection(), diagnostics: Object.freeze([]) });
+    }
+
+    const diagnostics: RunDiagnosticV1[] = [];
+    for (const source of input.diagnostics) {
+      const code = makeSafeIdentifierV1(source.code);
+      if (code === undefined) {
+        limitations.addUnsupported("diagnostic");
+        continue;
+      }
+      const summary = makeBoundedSafeTextV1(source.detail, MAX_DIAGNOSTIC_SUMMARY_BYTES_V1);
+      if (summary === undefined) limitations.addUnsupported("diagnostic");
+      if (diagnostics.length >= MAX_DIAGNOSTICS_V1) {
+        limitations.addCap("diagnostic", diagnostics.length);
+        continue;
+      }
+      const diagnosticId = yield* input.mint("diagnostic");
+      diagnostics.push(Object.freeze({
+        diagnosticId: diagnosticId as DiagnosticIdV1,
+        kind: source.level === "error" ? "execution-error" as const : "advisory" as const,
+        code,
+        phase: runDiagnosticPhaseV1(source.origin),
+        summary: summary ?? makeBoundedSafeTextV1(
+          source.level === "error"
+            ? "Runner recorded an execution error."
+            : "Runner recorded an advisory diagnostic.",
+          MAX_DIAGNOSTIC_SUMMARY_BYTES_V1,
+        )!,
+        causes: Object.freeze([]),
+        context: Object.freeze([]),
+        redaction: Object.freeze({ state: "none" as const }),
+        sourceFrame: null,
+        refs: Object.freeze([]),
+      }));
+    }
+    return Object.freeze({
+      collection: limitations.collection(),
+      diagnostics: Object.freeze(
+        [...diagnostics].sort((left, right) =>
+          compareObservabilityTextV1(left.diagnosticId, right.diagnosticId),
+        ),
+      ),
+    });
+  });
+}
+
 /**
  * Normalizes only facts already sealed by Runner. It never reads legacy
  * result.json, raw transcript/provider data, Report/Sample data, or paths.
@@ -1810,32 +1963,31 @@ export function createRunnerAttemptObservabilityCaptureV1(input: {
 }
 
 /**
- * Runner currently gives its generic Record adapter no monotonic Run tree or
- * Run diagnostics. Seal the required Run families as partial rather than
- * deriving wall-clock intervals or pretending the collection is empty.
+ * The generic Record adapter receives only per-experiment facts that Runner
+ * can safely attribute to one Run. Invocation-wide timing remains partial:
+ * its single clock cannot be copied into every Run without inventing owner
+ * attribution. Settled Run diagnostics are bound by run.ts immediately before
+ * this same publish boundary.
  */
 export function createRunnerRunObservabilityCaptureV1(input: {
   readonly run: AgentRun;
 }): Effect.Effect<NormalizedRunObservabilityCaptureV1, RunnerObservabilityProducerErrorV1> {
-  return Effect.suspend(() => {
-    void input.run;
+  return Effect.gen(function* () {
     const capture = makeRunObservabilityCaptureIdentityV1();
-    if (!sealRunObservabilityCaptureIdentityV1(capture)) {
-      return Effect.fail(producerCaptureSealInvalid("run"));
-    }
+    const minter = makeRunEntityMinterV1(capture);
     const timingLimitations = new RunnerCollectionLimitationsV1();
     timingLimitations.addCaptureFailed("run-teardown", "timing-interval");
-    const diagnosticLimitations = new RunnerCollectionLimitationsV1();
-    diagnosticLimitations.addCaptureFailed("run-teardown", "diagnostic");
-    return Effect.succeed(Object.freeze({
+    const diagnostics = yield* normalizeRunDiagnosticsV1({
+      diagnostics: runnerRunDiagnosticsV1.get(input.run),
+      mint: minter.mint,
+    });
+    if (!minter.seal()) return yield* Effect.fail(producerCaptureSealInvalid("run"));
+    return Object.freeze({
       timing: Object.freeze({
         collection: timingLimitations.collection(),
         intervals: Object.freeze([]),
       }),
-      diagnostics: Object.freeze({
-        collection: diagnosticLimitations.collection(),
-        diagnostics: Object.freeze([]),
-      }),
-    }));
+      diagnostics,
+    });
   });
 }

@@ -97,6 +97,7 @@ import {
   type RecordAttemptLocatorV1,
   type RunnerRecordReuseSlotInputV1,
 } from "./record.ts";
+import { bindRunnerRunObservabilityDiagnosticsV1 } from "../o11y/record/runner-producer.ts";
 
 export class RunModeConflictError extends Data.TaggedError("RunModeConflictError")<{
   readonly keepSandbox: NonNullable<RunOptions["keepSandbox"]>;
@@ -2505,6 +2506,16 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       // each pending gap was interrupted. This never manufactures an Attempt
       // for budget/early-exit/unstarted Slots.
       if (interrupted) recordCoordinator.markInterrupted();
+      // These diagnostics are already settled and keyed by exact Experiment /
+      // AgentRun identity. Bind them only at the final Runner → Record
+      // boundary; the invocation-wide Run timing tree deliberately remains
+      // unbound because it cannot be safely attributed to individual Runs.
+      for (const run of opts.agentRuns) {
+        bindRunnerRunObservabilityDiagnosticsV1({
+          run,
+          diagnostics: experimentDiagnostics.get(run.experimentId) ?? [],
+        });
+      }
       const receiptCompletedAtMs = Date.now();
       const publishedRuns = yield* recordCoordinator.publish(receiptCompletedAtMs);
       return Object.freeze({
