@@ -18,12 +18,9 @@ import { Data, Effect, Either, Schema } from "effect";
 import { discoverEvals, discoverExperiments } from "./runner/discover.ts";
 import { browsableExperimentPaths, evalPrefixPredicate, matchExperimentSelector } from "./shared/aggregate.ts";
 import { runEvals, type AgentRun } from "./runner/run.ts";
-import { cacheKey, missingReason, planCarry, type CarryPlan, type DispatchGroup } from "./runner/fingerprint.ts";
-import type { FingerprintComparison, FingerprintDelta, FingerprintDiagnostic } from "./runner/manifest.ts";
-import { ATTEMPT_LOCATOR_PREFIX, decodeAttemptLocator } from "./record/locator.ts";
+import { planProjectTarget, type ProjectTargetPlan } from "./runner/fingerprint.ts";
 import {
   makeRecordRoot,
-  NodeRecordLive,
   AttemptIdSchema,
   RunIdSchema,
   type AttemptId,
@@ -64,19 +61,41 @@ import {
 import { openViewServer } from "./view/server.ts";
 import { runRecordCliCommand } from "./cli/record.ts";
 import { resolveExperimentEvals, selectedEvalsForRun } from "./runner/eval-selection.ts";
-import { failureDetailFromResult } from "./runner/feedback/failure.ts";
 import { stopAllSandboxes } from "./sandbox/registry.ts";
+import {
+  keptSandboxReminderEffect,
+  orphanReminderEffect,
+  runSandboxCommandEffect,
+} from "./sandbox/cli-commands.ts";
 import { formatSandboxLayerLinkError, SandboxLayerLinkError } from "./sandbox/link.ts";
 import {
   formatSandboxPhysicalPlanningError,
   SandboxPhysicalPlanningError,
 } from "./sandbox/plan.ts";
 import { drainExperimentTeardowns } from "./runner/experiment-cleanup-registry.ts";
-import { drainHeldCaseLocks, isCaseLockExpired, readCaseLock } from "./runner/lock.ts";
-import { drainHeldGateLeases } from "./runner/gate-lease.ts";
-import { withCleanupTimeout } from "./runner/cleanup-timeout.ts";
+import {
+  drainHeldCaseLocksEffect,
+  isCaseLockExpired,
+  readCaseLockEffect,
+} from "./runner/lock.ts";
+import { drainHeldGateLeasesEffect } from "./runner/gate-lease.ts";
+import { cleanupCallback } from "./runner/cleanup-timeout.ts";
 import { resolveRunTimeout } from "./runner/timeout.ts";
-import { loadProjectCurrent } from "./runner/project-current.ts";
+import {
+  prepareRunnerRecordReuse,
+  withRunnerCurrentReusePreview,
+} from "./runner/record.ts";
+import {
+  projectCurrentReuseReadback,
+  type CurrentReuseReadbackSnapshot,
+} from "./runner/reuse-readback.ts";
+import type { ExecutionReusePlanSlot } from "./runner/reuse-plan.ts";
+import {
+  isOrphanedTeardownRegistration,
+  orphanedTeardownReminderEffect,
+  readTeardownRegistrationsEffect,
+  removeTeardownRegistrationIfPresentEffect,
+} from "./runner/teardown-registry.ts";
 import type { ExperimentHookContext } from "./runner/types.ts";
 import type {
   ExperimentRenameBlocked,
@@ -88,10 +107,7 @@ import type {
 import { ExperimentRenameError } from "./runner/rename-experiment.ts";
 import { evalLevelStats } from "./shared/verdict.ts";
 import { recordFact } from "./shared/facts.ts";
-import {
-  linkRunSandboxes,
-  recommendedConcurrencyForPreparedPairs,
-} from "./runner/sandbox-selection.ts";
+import { linkRunSandboxes, recommendedConcurrencyForPreparedPairs } from "./runner/sandbox-selection.ts";
 import { JUnit } from "./runner/reporters/json.ts";
 import {
   resolveOutputForm,
@@ -101,14 +117,7 @@ import {
   createNodeInputGuardStdin,
   createHumanRenderer,
   createJsonRenderer,
-  renderHumanDryPlan,
-  renderJsonPlanDocument,
   computeExitCode,
-  type JsonPlanRow,
-  type JsonPlanDelta,
-  type JsonPlanDiagnostic,
-  type JsonPlanDiagnosticFact,
-  type JsonPlanFingerprintComparison,
 } from "./runner/feedback/index.ts";
 import { setConfiguredLocale, t } from "./i18n/index.ts";
 import type { MessageKey } from "./i18n/zh-CN.ts";
@@ -248,10 +257,8 @@ export interface Flags {
   diff: boolean;
   /** --diff=<路径>(必须 = 连写;空格形式会把路径当 eval id 前缀,按文档如此)。 */
   diffPath?: string;
-  /** `show @<AttemptId> --execution` 专用：JS 正则，只显示命中的 transcript / tool / command evidence；与 --expand 互斥。 */
+  /** `show @<AttemptId> --execution` 专用：JS 正则，只显示命中的 transcript / tool / command evidence。 */
   grep?: string;
-  /** `show @<AttemptId> --execution` 专用：保留旧 --expand 入口；中立 evidence view 已完整展示 retained 内容，因此显示完整视图并说明旧句柄不可用；与 --grep 互斥。 */
-  expand?: string;
   timing?: "summary" | "full";
   keepSandbox?: "failed" | "all";
   all: boolean;
@@ -333,10 +340,8 @@ const FLAG_OPTIONS = {
   execution: { type: "boolean" },
   /** 实现收敛占位；目标公开 CLI 通过 Report page 读取 timing 通道。 */
   timing: { type: "boolean" },
-  /** `show @<AttemptId> --execution` 专用：JS 正则过滤 retained transcript、tool 与 command evidence；与 --expand 互斥。 */
+  /** `show @<AttemptId> --execution` 专用：JS 正则过滤 retained transcript、tool 与 command evidence。 */
   grep: { type: "string" },
-  /** `show @<AttemptId> --execution` 专用：旧 evidence handle 入口；中立 view 完整展示 retained 内容并明确说明句柄不可映射；与 --grep 互斥。 */
-  expand: { type: "string" },
   // --diff 是布尔;--diff=<路径> 在 parseArgs 前预扫成 diffPath(路径必须 = 连写,
   // 空格形式的下一个 token 仍是位置参数 = eval id 前缀,与文档一致)。
   /** 实现收敛占位；目标公开 CLI 通过 Report page 读取 diff 通道。 */
@@ -542,7 +547,6 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
     diffPath,
     timing: values.timing === true ? (timingMode ?? "summary") : undefined,
     grep: values.grep as string | undefined,
-    expand: values.expand as string | undefined,
     keepSandbox: values["keep-sandbox"] === true ? (keepSandboxTier ?? "failed") : undefined,
     all: values.all === true,
     window: values.window as string | undefined,
@@ -571,126 +575,170 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
  * (`--run`/`--out`/`--port`/`--open`)不能被 exp 静默忽略(见 docs/feature/experiments/
  * cli.md「用法错误」)。返回第一个被误用的 flag 及其归属命令(用于报错),没有误用返回 undefined。
  */
-/**
- * 计划矩阵的行原料:(experimentId, evalId) 逐行,携带预测与未携带原因分组各一份。
- * `--dry` 的两种形态共用同一份计划矩阵，避免人读与机器面各自重算出不同的携带结论。
- */
-function planRowInputs(
-  agentRuns: AgentRun[],
-  matchedByRun: DiscoveredEval[][],
-  carryPlan: CarryPlan | undefined,
-  incompatibleKeys: ReadonlySet<string>,
-  priorResults: readonly { experimentId?: string; id: string; attempt: number; locator?: string; verdict: Verdict }[] = [],
-  evidenceStatesByAttempt: ReadonlyMap<string, "local" | "borrowed" | "dangling"> = new Map(),
-): {
-  experimentId: string;
-  evalId: string;
-  attempts: number;
-  reused: boolean;
-  carried: readonly { attempt: number; verdict: "passed" | "failed" }[];
-  dispatch: readonly DispatchGroup[];
-  prior?: readonly { attempt: number; locator: string; verdict: Verdict; acceptance: "available" | "legacy-locator"; evidenceState: "local" | "borrowed" | "dangling"; comparison?: FingerprintComparison }[];
-}[] {
-  const priorByKeyAttempt = new Map<string, { attempt: number; locator: string; verdict: Verdict; acceptance: "available" | "legacy-locator"; evidenceState: "local" | "borrowed" | "dangling" }>();
-  for (const prior of priorResults) {
-    if (prior.locator === undefined) continue;
-    priorByKeyAttempt.set(`${prior.experimentId ?? ""}|${prior.id}|${prior.attempt}`, {
-      attempt: prior.attempt,
-      locator: prior.locator,
-      verdict: prior.verdict,
-      acceptance: decodeAttemptLocator(prior.locator).valid ? "available" : "legacy-locator",
-      evidenceState: evidenceStatesByAttempt.get(`${prior.experimentId ?? ""}|${prior.id}|${prior.attempt}`) ?? "dangling",
-    });
-  }
-  const rows: {
+/** A dry plan never retains scoped Record capabilities or result-shaped legacy data. */
+interface CurrentDryPlan {
+  readonly slots: readonly CurrentDryPlanSlot[];
+  readonly readbacks: readonly CurrentReuseReadbackSnapshot[];
+}
+
+interface CurrentDryPlanSlot {
+  readonly runId: string;
+  readonly slotId: string;
+  readonly experimentId: string;
+  readonly evalId: string;
+  readonly attempt: number;
+  readonly state: "reused" | "gap";
+  readonly comparisons: readonly {
+    readonly attachment: string;
+    readonly recordedClaim: string;
+    readonly sourceState: string;
+    readonly result: string;
+    readonly reason: string;
+  }[];
+  readonly reason?: string;
+  readonly scope?: string;
+}
+
+interface CurrentDryPlanRow {
+  readonly experimentId: string;
+  readonly evalId: string;
+  readonly slots: readonly CurrentDryPlanSlot[];
+  readonly readbacks: readonly CurrentReuseReadbackSnapshot[];
+  readonly locked?: boolean;
+}
+
+function projectCurrentDryPlan(input: {
+  readonly slots: readonly ExecutionReusePlanSlot[];
+  readonly readbacks: readonly import("./runner/reuse-readback.ts").CurrentReuseReadback[];
+}): CurrentDryPlan {
+  return Object.freeze({
+    slots: Object.freeze(input.slots.map(projectCurrentDryPlanSlot)),
+    readbacks: Object.freeze(input.readbacks.map(projectCurrentReuseReadback)),
+  });
+}
+
+function projectCurrentDryPlanSlot(slot: ExecutionReusePlanSlot): CurrentDryPlanSlot {
+  return Object.freeze({
+    runId: String(slot.runId),
+    slotId: String(slot.slotId),
+    experimentId: slot.experimentId,
+    evalId: slot.evalId,
+    attempt: slot.attempt,
+    state: slot.state === "reuse" ? "reused" : "gap",
+    comparisons: Object.freeze(slot.comparisons.map((comparison) => Object.freeze({
+      attachment: comparison.attachment,
+      recordedClaim: comparison.recordedClaim,
+      sourceState: comparison.sourceState,
+      result: comparison.result,
+      reason: comparison.reason,
+    }))),
+    ...(slot.state === "gap" ? { reason: slot.reason, scope: slot.scope } : {}),
+  });
+}
+
+function currentDryPlanRows(plan: CurrentDryPlan): readonly CurrentDryPlanRow[] {
+  const rows = new Map<string, {
     experimentId: string;
     evalId: string;
-    attempts: number;
-    reused: boolean;
-    carried: readonly { attempt: number; verdict: "passed" | "failed" }[];
-    dispatch: readonly DispatchGroup[];
-    prior?: readonly { attempt: number; locator: string; verdict: Verdict; acceptance: "available" | "legacy-locator"; evidenceState: "local" | "borrowed" | "dangling"; comparison?: FingerprintComparison }[];
-  }[] = [];
-  const carriedByPair = new Map<string, { attempt: number; verdict: "passed" | "failed" }[]>();
-  for (const result of carryPlan?.carriedResults ?? []) {
-    if (result.experimentId === undefined || (result.verdict !== "passed" && result.verdict !== "failed")) continue;
-    const key = JSON.stringify([result.experimentId, result.id]);
-    const carried = carriedByPair.get(key) ?? [];
-    carried.push({ attempt: result.attempt, verdict: result.verdict });
-    carriedByPair.set(key, carried);
+    slots: CurrentDryPlanSlot[];
+    readbacks: CurrentReuseReadbackSnapshot[];
+  }>();
+  const rowFor = (experimentId: string, evalId: string) => {
+    const key = JSON.stringify([experimentId, evalId]);
+    const existing = rows.get(key);
+    if (existing !== undefined) return existing;
+    const created = { experimentId, evalId, slots: [], readbacks: [] };
+    rows.set(key, created);
+    return created;
+  };
+  for (const slot of plan.slots) rowFor(slot.experimentId, slot.evalId).slots.push(slot);
+  for (const readback of plan.readbacks) {
+    rowFor(readback.target.experimentId, readback.target.evalId).readbacks.push(readback);
   }
-  for (let i = 0; i < agentRuns.length; i++) {
-    const run = agentRuns[i]!;
-    for (const e of matchedByRun[i]!) {
-      const carried = carriedByPair.get(JSON.stringify([run.experimentId ?? "", e.id])) ?? [];
-      const carriedCount = carryPlan?.carriedAttemptsByKey.get(cacheKey(run, e.id))?.size ?? carried.length;
-      // 没有任何可读历史时不必先跑一趟携带规划:计划内每个序号都缺条目,逐条报缺历史门的原因词。
-      const dispatch: readonly DispatchGroup[] = carryPlan?.dispatchByKey.get(cacheKey(run, e.id))
-        ?? (carriedCount >= run.attempts
-          ? []
-          : [{ ...missingReason(cacheKey(run, e.id), { incompatibleKeys }), attempts: [...Array(run.attempts).keys()] }]);
-      const previousResults = dispatch.flatMap((group) => group.reason === "previous-result"
-        ? group.attempts.flatMap((attempt) => {
-            const prior = priorByKeyAttempt.get(`${run.experimentId ?? ""}|${e.id}|${attempt}`);
-            return prior === undefined ? [] : [{ ...prior, ...(group.comparison !== undefined ? { comparison: group.comparison } : {}) }];
-          })
-        : []);
-      rows.push({
-        experimentId: run.experimentId ?? "",
-        evalId: e.id,
-        attempts: run.attempts,
-        reused: carriedCount >= run.attempts,
-        carried,
-        dispatch,
-        ...(previousResults.length > 0 ? { prior: previousResults } : {}),
-      });
+  return Object.freeze([...rows.values()].map((row) => Object.freeze({
+    experimentId: row.experimentId,
+    evalId: row.evalId,
+    slots: Object.freeze([...row.slots].sort((left, right) => left.attempt - right.attempt)),
+    readbacks: Object.freeze([...row.readbacks].sort((left, right) => left.target.attempt - right.target.attempt)),
+  })).sort((left, right) =>
+    left.experimentId.localeCompare(right.experimentId) || left.evalId.localeCompare(right.evalId),
+  ));
+}
+
+function renderCurrentDryPlan(input: {
+  readonly totalAttempts: number;
+  readonly evals: number;
+  readonly configs: number;
+  readonly attempts: number;
+  readonly rows: readonly CurrentDryPlanRow[];
+}): string {
+  const reused = input.rows.reduce((total, row) =>
+    total + row.slots.filter((slot) => slot.state === "reused").length, 0);
+  const lines = [
+    `plan: ${input.totalAttempts} attempts · ${input.evals} evals × ${input.configs} configs · runs ${input.attempts}`,
+    ...(reused === 0 ? [] : [`reuse: ${reused}/${input.totalAttempts} exact current Record attempts`]),
+  ];
+  for (const row of input.rows) {
+    const reusedAttempts = row.slots.filter((slot) => slot.state === "reused").map((slot) => slot.attempt);
+    const gaps = row.slots.filter((slot) => slot.state === "gap");
+    const parts = [
+      ...(row.locked ? ["locked"] : []),
+      ...(reusedAttempts.length === 0 ? [] : [`reused ${reusedAttempts.join(",")}`]),
+      ...gaps.map((slot) => `gap ${slot.attempt}:${slot.reason ?? "unknown"}`),
+    ];
+    lines.push(`${row.experimentId}  ${row.evalId}  ${parts.join(" · ") || "no slots"}`);
+    for (const readback of row.readbacks) {
+      const verdict = readback.state === "reused"
+        ? readback.verdict
+        : readback.verdict.state === "available"
+          ? readback.verdict.value
+          : readback.verdict.state;
+      lines.push(`  source @${readback.source.attemptId} · ${readback.state} · verdict ${verdict}`);
     }
   }
-  return rows;
+  return `${lines.join("\n")}\n`;
 }
 
-/** 内部 ADT tag 不属于 `ExpPlanDelta` 的公开 JSON 契约；边界显式投影，禁止对象展开泄漏。 */
-function jsonPlanDelta(delta: FingerprintDelta): JsonPlanDelta {
-  switch (delta._tag) {
-    case "Added": return { selector: delta.selector, kind: "added", to: delta.to };
-    case "Removed": return { selector: delta.selector, kind: "removed", from: delta.from };
-    case "Changed": return { selector: delta.selector, kind: "changed", from: delta.from, to: delta.to };
-    case "Unknown": return { selector: delta.selector, kind: "unknown" };
-  }
+function renderCurrentDryPlanJson(input: {
+  readonly totalAttempts: number;
+  readonly evals: number;
+  readonly configs: number;
+  readonly attempts: number;
+  readonly rows: readonly CurrentDryPlanRow[];
+}): string {
+  const reused = input.rows.reduce((total, row) =>
+    total + row.slots.filter((slot) => slot.state === "reused").length, 0);
+  return `${JSON.stringify({
+    format: "niceeval.current-reuse-plan/v1",
+    schemaVersion: 1,
+    total: input.totalAttempts,
+    evals: input.evals,
+    configs: input.configs,
+    attempts: input.attempts,
+    reused,
+    matrix: input.rows,
+  })}\n`;
 }
 
-function jsonPlanDiagnostic(diagnostic: FingerprintDiagnostic): JsonPlanDiagnostic {
-  const facts = diagnostic.facts?.map((fact): JsonPlanDiagnosticFact =>
-    "value" in fact
-      ? { label: fact.label, value: fact.value }
-      : { label: fact.label, from: fact.from, to: fact.to },
-  );
-  return {
-    code: diagnostic.code,
-    summary: diagnostic.summary,
-    ...(facts === undefined ? {} : { facts }),
-    ...(diagnostic.observedDeltas === undefined
-      ? {}
-      : { observedDeltas: diagnostic.observedDeltas.map(jsonPlanDelta) }),
-    ...(diagnostic.limitations === undefined ? {} : { limitations: [...diagnostic.limitations] }),
-    ...(diagnostic.causes === undefined ? {} : { causes: diagnostic.causes.map(jsonPlanDiagnostic) }),
-  };
-}
-
-function jsonPlanComparison(comparison: FingerprintComparison): JsonPlanFingerprintComparison {
-  if (comparison.kind === "match") {
-    throw new Error("A matching fingerprint has no plan comparison projection.");
-  }
-  if (comparison.kind === "changed") {
-    const deltas = comparison.deltas.map(jsonPlanDelta);
-    const [first, ...rest] = deltas;
-    if (first === undefined) throw new Error("A changed fingerprint comparison requires at least one delta.");
-    return { kind: "changed", deltas: [first, ...rest] };
-  }
-  return {
-    kind: "unexplained",
-    diagnostic: jsonPlanDiagnostic(comparison.diagnostic),
-  };
+/**
+ * Fold the invocation's real fresh results and current Record readbacks at the
+ * same eval identity. This intentionally projects only identity + terminal
+ * verdict; a reused readback is never recreated as an EvalResult.
+ */
+export function foldInvocationEvalStats(
+  summary: Pick<InvocationSummary, "results" | "reusedAttempts">,
+) {
+  const terminals = [
+    ...summary.results.map((result) => Object.freeze({
+      identity: `${result.experimentId ?? ""}|${result.id}`,
+      verdict: result.verdict,
+    })),
+    ...summary.reusedAttempts.map((readback) => Object.freeze({
+      identity: `${readback.target.experimentId}|${readback.target.evalId}`,
+      verdict: readback.verdict,
+    })),
+  ];
+  return evalLevelStats(terminals, (terminal) => terminal.identity);
 }
 
 function firstViewerOnlyFlag(flags: Flags): { flag: string; command: string } | undefined {
@@ -701,7 +749,6 @@ function firstViewerOnlyFlag(flags: Flags): { flag: string; command: string } | 
   if (flags.execution) return { flag: "--execution", command: SHOW };
   if (flags.timing !== undefined) return { flag: "--timing", command: SHOW };
   if (flags.grep !== undefined) return { flag: "--grep", command: SHOW };
-  if (flags.expand !== undefined) return { flag: "--expand", command: SHOW };
   if (flags.diff || flags.diffPath !== undefined) return { flag: "--diff", command: SHOW };
   if (flags.history) return { flag: "--history", command: SHOW };
   if (flags.usage) return { flag: "--usage", command: SHOW };
@@ -745,7 +792,6 @@ function firstRecordMaintenanceUnsupportedFlag(flags: Flags): string | undefined
     ["--execution", flags.execution],
     ["--diff", flags.diff || flags.diffPath !== undefined],
     ["--grep", flags.grep],
-    ["--expand", flags.expand],
     ["--timing", flags.timing],
     ["--keep-sandbox", flags.keepSandbox],
     ["--all", flags.all],
@@ -807,7 +853,6 @@ function parseAcceptLocators(positionals: string[], flags: Flags): string[] {
     ["--execution", flags.execution],
     ["--diff", flags.diff || flags.diffPath !== undefined],
     ["--grep", flags.grep],
-    ["--expand", flags.expand],
     ["--timing", flags.timing],
     ["--keep-sandbox", flags.keepSandbox],
     ["--all", flags.all],
@@ -934,7 +979,6 @@ export function firstExperimentRenameUnsupportedFlag(flags: Flags): string | und
     ["--execution", flags.execution],
     ["--diff", flags.diff || flags.diffPath !== undefined],
     ["--grep", flags.grep],
-    ["--expand", flags.expand],
     ["--timing", flags.timing],
     ["--keep-sandbox", flags.keepSandbox],
     ["--all", flags.all],
@@ -1186,7 +1230,7 @@ const AGENT_RULES_CONTENT = [
   "After a run, use this repository's package-manager invocation of `niceeval show` for",
   "diagnosis (`pnpm --silent exec niceeval show` in a pnpm project). Pick an `@<locator>`",
   "from the compact index, then show that locator for an overview, or add",
-  "`--source` / `--execution` / `--timing` / `--diff` / `--expand` / `--json` for evidence.",
+  "`--source` / `--execution` / `--timing` / `--diff` / `--json` for evidence.",
   "When diagnosing an existing run, do not inspect raw `.niceeval` files or treat the current",
   "`evals/` or `agents/` source as evidence of what happened in that run. If `niceeval show`",
   "cannot expose the evidence you need, report that product gap. Reading source remains",
@@ -1373,13 +1417,13 @@ function writeStderr(text: string): Effect.Effect<void> {
   });
 }
 
-/** Idempotent application-level sweep for resources the legacy registries own. */
+/** Idempotent application-level sweep for resources owned by this invocation. */
 function releaseCliResources(): Effect.Effect<void> {
   return Effect.all([
     cliPromise("stop remaining sandboxes", () => stopAllSandboxes()).pipe(Effect.ignore),
-    cliPromise("drain experiment teardowns", () => drainExperimentTeardowns()).pipe(Effect.ignore),
-    cliPromise("drain held case locks", () => drainHeldCaseLocks()).pipe(Effect.ignore),
-    cliPromise("drain held gate leases", () => drainHeldGateLeases()).pipe(Effect.ignore),
+    drainExperimentTeardowns().pipe(Effect.ignore),
+    drainHeldCaseLocksEffect().pipe(Effect.ignore),
+    drainHeldGateLeasesEffect().pipe(Effect.ignore),
   ], { concurrency: "unbounded" }).pipe(Effect.asVoid);
 }
 
@@ -1413,38 +1457,19 @@ function runSandboxCliCommand(
   positionals: readonly string[],
   flags: Flags,
 ): Effect.Effect<number, CliFailure> {
-  return Effect.gen(function* () {
-    const { runSandboxCommand } = (yield* cliPromise(
-      "load sandbox command",
-      () => import("./sandbox/cli-commands.ts"),
-    )) as {
-      runSandboxCommand(
-        cwd: string,
-        positionals: string[],
-        flags: {
-          readonly all: boolean;
-          readonly window?: string;
-          readonly path?: string;
-          readonly leaveRunning: boolean;
-          readonly run?: string;
-          readonly orphans: boolean;
-          readonly force: boolean;
-        },
-      ): Promise<number>;
-    };
-    return yield* cliPromise(
-      "run sandbox command",
-      () => runSandboxCommand(cwd, [...positionals], {
-        all: flags.all,
-        window: flags.window,
-        path: flags.sandboxPath,
-        leaveRunning: flags.leaveRunning,
-        run: flags.record,
-        orphans: flags.orphans,
-        force: flags.force,
-      }),
-    );
-  });
+  return cliEffect("run sandbox command", runSandboxCommandEffect(
+    cwd,
+    [...positionals],
+    {
+      all: flags.all,
+      window: flags.window,
+      path: flags.sandboxPath,
+      leaveRunning: flags.leaveRunning,
+      run: flags.record,
+      orphans: flags.orphans,
+      force: flags.force,
+    },
+  ));
 }
 
 function runSessionCommand(
@@ -1460,13 +1485,10 @@ function runSessionCommand(
         yield* writeStderr("niceeval session list accepts at most one experiment prefix.\n");
         return 1;
       }
-      const outcome = yield* Effect.either(cliPromise(
-        "list sessions",
-        () => listSessions(niceevalRoot, {
-          all: flags.all,
-          ...(positionals[1] === undefined ? {} : { selector: positionals[1] }),
-        }),
-      ));
+      const outcome = yield* Effect.either(cliEffect("list sessions", listSessions(niceevalRoot, {
+        all: flags.all,
+        ...(positionals[1] === undefined ? {} : { selector: positionals[1] }),
+      })));
       if (Either.isLeft(outcome)) {
         yield* writeStderr(`${errorMessage(outcome.left.cause)}\n`);
         return 1;
@@ -1481,10 +1503,7 @@ function runSessionCommand(
         yield* writeStderr("Usage: niceeval session show <sessionId> [--json]\n");
         return 1;
       }
-      const outcome = yield* Effect.either(cliPromise(
-        "show session",
-        () => showSession(niceevalRoot, positionals[1]!),
-      ));
+      const outcome = yield* Effect.either(cliEffect("show session", showSession(niceevalRoot, positionals[1]!)));
       if (Either.isLeft(outcome)) {
         yield* writeStderr(`${errorMessage(outcome.left.cause)}\n`);
         return 1;
@@ -1644,29 +1663,19 @@ function runEvaluationCommand(
         return 1;
       }
 
-      const sandboxCommand = (yield* cliPromise("load sandbox command helpers", () => import("./sandbox/cli-commands.ts"))) as {
-        keptSandboxReminder(cwd: string): Promise<string | undefined>;
-        orphanReminder(cwd: string): Promise<string | undefined>;
-      };
-      const reminder = yield* cliPromise("read kept sandbox reminder", () => sandboxCommand.keptSandboxReminder(cwd)).pipe(
+      const reminder = yield* keptSandboxReminderEffect(cwd).pipe(
         Effect.catchAll(() => Effect.succeed(undefined)),
       );
       if (reminder) yield* writeStderr(reminder);
-      const orphans = yield* cliPromise("read orphan sandbox reminder", () => sandboxCommand.orphanReminder(cwd)).pipe(
+      const orphans = yield* orphanReminderEffect(cwd).pipe(
         Effect.catchAll(() => Effect.succeed(undefined)),
       );
       if (orphans) yield* writeStderr(orphans);
-      const teardownRegistry = (yield* cliPromise("load teardown registry", () => import("./runner/teardown-registry.ts"))) as {
-        orphanedTeardownReminder(root: string, selected: ReadonlySet<string>, host: string): Promise<string | undefined>;
-        isOrphanedTeardownRegistration(entry: unknown, host: string): boolean;
-        readTeardownRegistrations(root: string): Promise<readonly { id: string; entry: { experimentId: string } }[]>;
-        removeTeardownRegistrationIfPresent(root: string, id: string): Promise<boolean>;
-      };
-      const teardownReminder = yield* cliPromise("read orphaned teardown reminder", () => teardownRegistry.orphanedTeardownReminder(
+      const teardownReminder = yield* orphanedTeardownReminderEffect(
         resolvePath(cwd, ".niceeval"),
         new Set(selected.filter((experiment) => experiment.teardown).map((experiment) => experiment.id)),
         hostname(),
-      )).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+      ).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
       if (teardownReminder) yield* writeStderr(teardownReminder);
 
       if (flags.teardown) {
@@ -1692,14 +1701,14 @@ function runEvaluationCommand(
             diagnostic: (input) => process.stderr.write(`${input.message}\n`),
             fact: (key, value) => recordFact({}, key, value),
           };
-          const registrations = yield* cliPromise("read teardown registrations", () => teardownRegistry.readTeardownRegistrations(niceevalRootForTeardown)).pipe(
+          const registrations = yield* readTeardownRegistrationsEffect(niceevalRootForTeardown).pipe(
             Effect.catchAll(() => Effect.succeed([] as const)),
           );
           const matching = registrations.filter(({ entry }) => entry.experimentId === experiment.id);
           const claimed = yield* Effect.all(
             matching
-              .filter(({ entry }) => teardownRegistry.isOrphanedTeardownRegistration(entry, hostname()))
-              .map(({ id }) => cliPromise("claim teardown registration", () => teardownRegistry.removeTeardownRegistrationIfPresent(niceevalRootForTeardown, id)).pipe(
+              .filter(({ entry }) => isOrphanedTeardownRegistration(entry, hostname()))
+              .map(({ id }) => removeTeardownRegistrationIfPresentEffect(niceevalRootForTeardown, id).pipe(
                 Effect.catchAll(() => Effect.succeed(false)),
                 Effect.map((claimed) => claimed ? id : undefined),
               )),
@@ -1707,9 +1716,9 @@ function runEvaluationCommand(
           );
           const executions = matching.length === 0 ? [undefined] : claimed.filter((id): id is string => id !== undefined);
           for (const _ of executions) {
-            const outcome = yield* Effect.either(cliPromise(
+            const outcome = yield* Effect.either(cliEffect(
               "run experiment teardown",
-              () => withCleanupTimeout(() => experiment.teardown!(ctx)),
+              cleanupCallback(() => experiment.teardown!(ctx)),
             ));
             if (Either.isRight(outcome)) {
               yield* writeStderr(t("cli.exp.teardownDone", { experimentId: experiment.id }));
@@ -1806,108 +1815,63 @@ function runEvaluationCommand(
       return 0;
     }
 
-    const carryData = (yield* cliPromise("load carry inputs", () => import("./view/data.ts"))) as {
-      incompatibleHistoryKey(experimentId: string, evalId: string): string;
-      loadCarryInputs(root: string): Promise<Awaited<ReturnType<typeof import("./view/data.ts")["loadCarryInputs"]>>>;
-    };
-    const carryInputs = yield* cliPromise("read carry inputs", () => carryData.loadCarryInputs(join(cwd, ".niceeval")));
-    const priorResults = carryInputs?.results;
-    const incompatibleKeys = new Set<string>();
-    if (carryInputs !== undefined) {
-      for (let index = 0; index < agentRuns.length; index += 1) {
-        const run = agentRuns[index]!;
-        for (const evalDefinition of matchedByRun[index]!) {
-          if (carryInputs.incompatibleHistory.has(carryData.incompatibleHistoryKey(run.experimentId ?? "", evalDefinition.id))) {
-            incompatibleKeys.add(cacheKey(run, evalDefinition.id));
-          }
-        }
-      }
-    }
-    const carryPlan = yield* cliEffect("plan carried attempts", planCarry(evals, agentRuns, priorResults, config.timeoutMs, {
-      rerun: flags.rerun,
-      configJudge: config.judge,
-      keepSandbox: flags.keepSandbox,
-      incompatibleKeys,
-      priorManifests: carryInputs?.manifestsByEvalKey,
-    }));
+    const targetPlan: ProjectTargetPlan = yield* cliEffect(
+      "plan current ProjectTarget",
+      planProjectTarget(evals, agentRuns, config.timeoutMs, {
+        configJudge: config.judge,
+        keepSandbox: flags.keepSandbox,
+      }),
+    );
 
     if (flags.dry) {
-      const dryRuns = Math.max(1, ...agentRuns.map((run) => run.attempts));
-      const rowInputs = planRowInputs(
-        agentRuns,
-        matchedByRun,
-        carryPlan,
-        incompatibleKeys,
-        priorResults ?? [],
-        carryInputs?.evidenceStatesByAttempt,
-      );
-      const niceevalRootForDry = resolvePath(cwd, ".niceeval");
+      const reuse = yield* cliEffect("prepare current Record reuse", prepareRunnerRecordReuse({
+        evals,
+        runs: agentRuns,
+        config: { timeoutMs: config.timeoutMs },
+        plannedFingerprints: targetPlan.plannedFingerprints,
+        plannedConfigHashes: targetPlan.plannedConfigHashes,
+        rerun: flags.rerun,
+        keepSandbox: flags.keepSandbox,
+      }));
+      const currentPlan = yield* cliEffect("preview current Record reuse", withRunnerCurrentReusePreview({
+        niceevalRoot: resolvePath(cwd, ".niceeval"),
+        startedAt: Date.now(),
+        evals,
+        runs: agentRuns,
+        reuse,
+        // `readReadbacks` is deliberately consumed and projected before this
+        // callback returns, while the exact frozen Record capability is live.
+        use: ({ reusePlan, readReadbacks }) => readReadbacks().pipe(
+          Effect.map((readbacks) => projectCurrentDryPlan({ slots: reusePlan.slots, readbacks })),
+        ),
+      }));
+      const rows = currentDryPlanRows(currentPlan);
       const now = Date.now();
-      const lockedFlags = yield* Effect.all(rowInputs.map((row) => {
-        if (!row.experimentId) return Effect.succeed(false);
-        return cliPromise("read case lock", () => readCaseLock(niceevalRootForDry, row.experimentId, row.evalId)).pipe(
+      const lockedFlags = yield* Effect.all(rows.map((row) =>
+        readCaseLockEffect(resolvePath(cwd, ".niceeval"), row.experimentId, row.evalId).pipe(
           Effect.catchAll(() => Effect.succeed(undefined)),
           Effect.map((lock) => lock !== undefined && !isCaseLockExpired(lock, now)),
-        );
-      }), { concurrency: "unbounded" });
-      const matrix: JsonPlanRow[] = rowInputs.map((row, index) => ({
-        experimentId: row.experimentId,
-        evalId: row.evalId,
-        reused: row.reused,
-        ...(row.prior === undefined
-          ? {}
-          : { prior: row.prior.map(({ locator, verdict, acceptance, evidenceState }) => ({ locator, verdict, acceptance, evidenceState })) }),
+        ),
+      ), { concurrency: "unbounded" });
+      const rowsWithLocks = Object.freeze(rows.map((row, index) => Object.freeze({
+        ...row,
         ...(lockedFlags[index] ? { locked: true } : {}),
-        ...(row.dispatch.length === 0
-          ? {}
-          : {
-            dispatch: row.dispatch.map((group) => ({
-              gate: group.gate,
-              attempts: [...group.attempts],
-              ...(group.comparison === undefined ? {} : { comparison: jsonPlanComparison(group.comparison) }),
-            })),
-          }),
-      }));
-      if (outputForm === "json") {
-        yield* writeStdout(renderJsonPlanDocument({
-          total: totalAttempts,
-          evals: uniqueEvalIds.size,
-          configs: agentRuns.length,
-          attempts: dryRuns,
-          matrix,
-        }));
-      } else {
-        yield* writeStdout(renderHumanDryPlan({
-          totalAttempts,
-          evals: uniqueEvalIds.size,
-          configs: agentRuns.length,
-          attempts: dryRuns,
-          reused: carryPlan?.carriedResults.length ?? 0,
-          command: ["niceeval", command, ...positionals].join(" "),
-          rows: rowInputs.map((row, index) => ({
-            experimentId: row.experimentId,
-            evalId: row.evalId,
-            attempts: row.attempts,
-            ...(lockedFlags[index] ? { locked: true } : {}),
-            ...(row.carried.length > 0 ? { carried: row.carried } : {}),
-            ...(row.prior === undefined ? {} : { prior: row.prior }),
-            dispatch: row.dispatch.map((group) => ({
-              reason: group.reason,
-              attempts: [...group.attempts],
-              ...(group.comparison === undefined ? {} : { comparison: group.comparison }),
-            })),
-          })),
-        }));
-      }
+      })));
+      const input = {
+        totalAttempts,
+        evals: uniqueEvalIds.size,
+        configs: agentRuns.length,
+        attempts: Math.max(1, ...agentRuns.map((run) => run.attempts)),
+        rows: rowsWithLocks,
+      };
+      yield* writeStdout(outputForm === "json"
+        ? renderCurrentDryPlanJson(input)
+        : renderCurrentDryPlan(input));
       return 0;
     }
 
-    const reusedFailures = (carryPlan?.carriedResults ?? []).map(failureDetailFromResult).filter((failure) => failure !== undefined);
-    if (carryPlan.preparedPairsByKey === undefined) {
-      throw new Error("Internal error: production carry planning did not return prepared Sandbox pairs.");
-    }
     const maxConcurrency = flags.maxConcurrency ?? config.maxConcurrency ?? recommendedConcurrencyForPreparedPairs(
-      [...carryPlan.preparedPairsByKey.values()],
+      [...targetPlan.preparedPairsByKey.values()],
     );
     const experimentConcurrency: globalThis.Record<string, number> = {};
     for (const run of agentRuns) {
@@ -1916,8 +1880,10 @@ function runEvaluationCommand(
     const plan: RunFeedbackPlan = {
       shape: { evals: uniqueEvalIds.size, configs: agentRuns.length, totalAttempts, maxConcurrency },
       ...(Object.keys(experimentConcurrency).length === 0 ? {} : { experimentConcurrency }),
-      reused: carryPlan?.carriedResults.length ?? 0,
-      reusedFailures,
+      // The runner owns exact current-Record reuse and emits its durable facts;
+      // this CLI no longer rebuilds result-shaped history for the live facade.
+      reused: 0,
+      reusedFailures: [],
     };
 
     const io = createNodeFeedbackIO();
@@ -1941,10 +1907,9 @@ function runEvaluationCommand(
       return releaseCliResources();
     });
     let sessionClosed = false;
-    const closeSession = (input: Parameters<SessionTracker["close"]>[0]) => cliPromise(
-      "close invocation session",
-      () => sessionTracker.close(input),
-    ).pipe(Effect.tap(() => Effect.sync(() => { sessionClosed = true; })));
+    const closeSession = (input: Parameters<SessionTracker["close"]>[0]) => sessionTracker.close(input).pipe(
+      Effect.tap(() => Effect.sync(() => { sessionClosed = true; })),
+    );
     yield* Effect.addFinalizer(() => releaseResources);
     yield* Effect.addFinalizer(() => sessionClosed
       ? Effect.void
@@ -1992,8 +1957,6 @@ function runEvaluationCommand(
       reporters,
       maxConcurrency,
       maxBuildConcurrency,
-      priorResults,
-      carryPlan,
       keepSandbox: flags.keepSandbox,
       rerun: flags.rerun,
       niceevalRoot: resolvePath(cwd, ".niceeval"),
@@ -2011,7 +1974,7 @@ function runEvaluationCommand(
     yield* closeSession({ status: completion.status, completion, receipt, completedAt: receipt.completedAt });
     yield* cliPromise("finish feedback", () => coordinator.finish({ summary, completion, receipt }));
 
-    const foldedStats = evalLevelStats(summary.results, (result) => `${result.experimentId ?? ""}|${result.id}`);
+    const foldedStats = foldInvocationEvalStats(summary);
     return computeExitCode({ ...summary, failed: foldedStats.failed, errored: foldedStats.errored }, completion);
   });
 }
@@ -2080,9 +2043,6 @@ function parseReportCliRequest(input: {
   }
   if (!input.flags.execution && input.flags.grep !== undefined) {
     throw usageError("niceeval show --grep only combines with --execution.\n");
-  }
-  if (!input.flags.execution && input.flags.expand !== undefined) {
-    throw usageError("niceeval show --expand only combines with --execution.\n");
   }
   if (input.flags.execution) {
     const report = executionEvidenceReport(executionEvidenceOptions(input.flags));
@@ -2173,16 +2133,8 @@ function parseReportCliRequest(input: {
   });
 }
 
-function executionEvidenceOptions(flags: Flags): {
-  readonly grep?: string;
-  readonly expand?: string;
-} {
-  if (flags.grep !== undefined && flags.expand !== undefined) {
-    throw usageError("niceeval show --execution cannot combine --grep with --expand.\n");
-  }
-  if (flags.grep === undefined) {
-    return Object.freeze(flags.expand === undefined ? {} : { expand: flags.expand });
-  }
+function executionEvidenceOptions(flags: Flags): { readonly grep?: string } {
+  if (flags.grep === undefined) return Object.freeze({});
   try {
     new RegExp(flags.grep);
     return Object.freeze({ grep: flags.grep });
@@ -2216,7 +2168,6 @@ function reportUnsupportedFlag(command: ReportCliCommand, flags: Flags): string 
     ["--execution", command === "show" ? undefined : flags.execution],
     ["--diff", flags.diff || flags.diffPath !== undefined],
     ["--grep", command === "show" ? undefined : flags.grep],
-    ["--expand", command === "show" ? undefined : flags.expand],
     ["--timing", flags.timing],
     ["--keep-sandbox", flags.keepSandbox],
     ["--all", flags.all],
@@ -2709,8 +2660,7 @@ export const cliProgram = (interruption?: CliInterruptionOwnership) => Effect.ge
 
   return yield* runEvaluationCommand(cwd, command, positionals, flags, interruption);
 }).pipe(
-  // The CLI is the one application composition boundary for current Record
-  // services. Report host internals remain Effect-native and never install a
-  // second Node runtime or Layer.
-  Effect.provide(NodeRecordLive),
+  // Every command boundary reports a typed CLI failure; defects and
+  // interruption remain in the Cause channel for bootstrap to own.
+  Effect.mapError((cause) => cliFailure("run CLI command", cause)),
 );

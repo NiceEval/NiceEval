@@ -3,6 +3,7 @@
 
 import { Cause, Effect, Exit } from "effect";
 import { cliProgram, renderCliFailure, type CliInterruptionOwnership } from "../cli.ts";
+import { NodeRecordLive } from "../record/index.ts";
 
 // There is exactly one synchronous ownership state for the first signal. Node
 // invokes both signal handlers and Effect continuations serially, so the CLI's
@@ -61,6 +62,9 @@ process.on("SIGINT", onInterrupt);
 process.on("SIGTERM", onInterrupt);
 
 const application = Effect.scoped(cliProgram(interruption)).pipe(
+  // Application bootstrap is the sole provider of concrete Node services.
+  // Command and library modules retain their real requirements for callers.
+  Effect.provide(NodeRecordLive),
   // Typed CLI failures are expected, user-actionable outcomes. They become an
   // ordinary process status after their message has been written once.
   Effect.catchAll((failure) => Effect.sync(() => {
