@@ -6,7 +6,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { command, withProcess, withTempDir } from "@niceeval/testkit";
+import { command, type ExpEvalEvent, type ExpEvent, withProcess, withTempDir } from "@niceeval/testkit";
 import { expect, it } from "vitest";
 
 const EVAL_ID = "bash-session";
@@ -63,13 +63,23 @@ it("真实 Claude Agent SDK converter 结果经过公共 CLI 完整读回", asyn
       async (handle) => {
         const receipt = await handle.done;
         expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
-        expect(receipt.expResult()).toMatchObject({
-          event: "result",
-          status: "passed",
-          passed: 1,
-          failed: 0,
-          errored: 0,
-          completion: "complete",
+        const events = receipt.ndjson<ExpEvent>();
+        // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md）：
+        // completion 与 runIds；成败由带身份的 eval 事件精确断言，live provider
+        // 故障不会冒充通过。
+        const inv = receipt.expReceipt();
+        expect(inv.completion, receipt.diagnostic()).toBe("completed");
+        expect(inv.runIds, receipt.diagnostic()).toHaveLength(1);
+        const evalEvent = events.find(
+          (event): event is ExpEvalEvent =>
+            "event" in event && event.event === "eval" && event.evalId === EVAL_ID,
+        );
+        expect(evalEvent, receipt.diagnostic()).toBeDefined();
+        expect(evalEvent).toMatchObject({
+          event: "eval",
+          evalId: EVAL_ID,
+          verdict: "passed",
+          attempts: 1,
         });
       },
     );
