@@ -9,7 +9,7 @@ evals/        # 测什么 —— agent 无关,评分逻辑都在各自的 test()
 experiments/  # 怎么跑 —— 运行矩阵:agent × model × attempts over 选定 evals
 ```
 
-> 外部方案的参考与取舍单独收在[设计参照](reference/README.md)，不作为目标契约的一部分。
+> 外部方案的参考与取舍单独收在[设计参照](../../research/experiments/README.md)，不作为目标契约的一部分。
 
 ## 为什么要分开
 
@@ -168,7 +168,7 @@ id 只从**路径**推导:`experiments/agents/codex/gpt-5.4.ts` → `agents/code
 - [计分粒度](../assertions/library/score-points.md) —— 对比里一个 eval 记几分:通过制(`defineEval`,一题一分,读通过率)与计分制(`defineScoreEval`,题内叠加挣分,读 earned score)；混合时两种读数各算各的。
 - [计分粒度的 Experiments 边界](score-points.md) —— Experiment 不复制评分语义，只保留选择与运行边界。
 - [Architecture](architecture.md) —— 实体、配置求值、生命周期、跨 Invocation 协调与完成状态。
-- [设计参照](reference/README.md) —— agent-eval 等外部方案带来了什么、哪些边界没有跟随。
+- [设计参照](../../research/experiments/README.md) —— agent-eval 等外部方案带来了什么、哪些边界没有跟随。
 - [CLI](cli.md) —— `niceeval exp` 命令。
 - [Authoring](../eval/README.md) —— eval 怎么写(experiment 跑的就是它们)。
 - [Observability](../../observability.md) —— 跨 agent 的质量×成本对比与 `niceeval view`。

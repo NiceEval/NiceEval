@@ -101,13 +101,13 @@ span 只有结构与计时(未开内容 flag),行为轨与断言仍走 transcrip
 
 **不建议现在替换行为轨(`StreamEvent[]`)的采集方式。
 ** 磁盘旁读 transcript 免费给全量内容(prompt / 工具参数 / 工具输出 / 助手文本),OTel 版本要拿到同等内容得开三个额外 flag、还处于 beta(字段随时可能变,`user_prompt` 等内容属性文档原文写明"不是稳定 span schema 的一部分")。
-负断言完整性见 [断言证据](../architecture/evidence.md)。
+负断言完整性见 [断言证据](../../feature/adapters/architecture/evidence.md)。
 
 **值得作为时间轨(`TraceSpan[]`)的可选升级路径考虑,分两档:**
 
 1. **保底档:** receiver 或 exporter 不可用时，行为轨仍由 transcript 旁读提供；`view` 如实显示 timing unavailable，断言不受影响。
 2. **时间轨:** `claudeCodeAgent` 默认声明 `tracing.env`，runner 在 Sandbox 内提供 receiver；用户只有在需要 span 内容时才另外打开 `OTEL_LOG_TOOL_DETAILS` 等敏感内容开关。
-   这条时间轨不影响现有行为轨，失败只产生 supplemental telemetry diagnostic，不改判定——符合[采集设计](../architecture/collection.md)里「时间轨缺数据是降级，不是契约问题」的原则。
+   这条时间轨不影响现有行为轨，失败只产生 supplemental telemetry diagnostic，不改判定——符合[采集设计](../../feature/adapters/architecture/collection.md)里「时间轨缺数据是降级，不是契约问题」的原则。
 
 **不建议**因为这个能力去改变现有"等 `runCommand` 返回再读 transcript"的行为轨轮询模型。
 近实时的是 span(计时结构),不是行为数据本身。
@@ -116,7 +116,7 @@ OTel 版本要么没内容,要么要额外开脱敏 flag 且不保证字段稳�
 
 ## 相关阅读
 
-- [行为与 Trace 采集](../architecture/collection.md) —— 双轨采集设计。
+- [行为与 Trace 采集](../../feature/adapters/architecture/collection.md) —— 双轨采集设计。
 - [agent-eval 参考](agent-eval.md) —— agent-eval 的 claude-code 适配源码阅读(纯磁盘旁读,不涉及 OTel)。
 - [OTel GenAI 等标准参考](otel-genai.md) —— OTel GenAI semconv 本身讲的是"字段该叫什么",这篇讲的是"Claude Code 到底发不发、多快发"。
-- [Observability](../../../observability.md) —— niceeval 的 `TraceReceiver` / OTLP 解码管线现状。
+- [Observability](../../observability.md) —— niceeval 的 `TraceReceiver` / OTLP 解码管线现状。

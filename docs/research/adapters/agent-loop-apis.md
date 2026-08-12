@@ -5,7 +5,7 @@
 和两篇姊妹调研对照着读:[otel-genai.md](otel-genai.md) 讲「描述 agent 行为的 schema 标准」,[otel-instrumentation.md](otel-instrumentation.md) 讲「应用侧现成 OTel 埋点里有什么数据」;本篇讲**框架原生 API 本身**。
 
 本篇调研四家:OpenAI Agents SDK、Claude Agent SDK、LangGraph、pi。
-AI SDK 不重复(已是内建 adapter,见 [行为与 Trace 采集](../architecture/collection.md)),但列进末尾对照表。
+AI SDK 不重复(已是内建 adapter,见 [行为与 Trace 采集](../../feature/adapters/architecture/collection.md)),但列进末尾对照表。
 
 ## OpenAI Agents SDK(`openai-agents` / `@openai/agents`)
 
@@ -169,11 +169,11 @@ AI SDK 不重复(已是内建 adapter,见 [行为与 Trace 采集](../architectu
    归一的活落在接收侧,这正是 niceeval 已有的 canonical mapper 结构(每方言一个薄 mapper)能吃下的形状。
 5. **transcript 侧仍然不可替代,而且有的框架比 OTel 侧更全。**
    Claude 的 jsonl + 官方读取 API、pi 的自带 usage/cost 的树形 JSONL,都比各自的遥测通道信息更全、更稳(Claude traces 还在 beta)。
-   接这两家优先 transcript,OTel 只补 trace——与 [observability.md](../../../observability.md) 的双轨判定一致。
+   接这两家优先 transcript,OTel 只补 trace——与 [observability.md](../../observability.md) 的双轨判定一致。
 
 ## 相关阅读
 
 - [otel-instrumentation.md](otel-instrumentation.md) —— 应用侧现成 OTel 埋点里有什么数据(mixin 可行性的证据)。
 - [otel-genai.md](otel-genai.md) —— 描述 agent 行为的 schema 标准对照(OTel GenAI / OpenInference / AG-UI …)。
-- [Observability · OTLP traces](../../../observability.md#otlp-traces-统一瀑布图) —— OTel 在当前设计里的实际角色(只画瀑布图,不产出事件)。
-- [标准事件模型](../architecture/events.md) —— 这些原语要映射到的目标形状。
+- [Observability · OTLP traces](../../observability.md#otlp-traces-统一瀑布图) —— OTel 在当前设计里的实际角色(只画瀑布图,不产出事件)。
+- [标准事件模型](../../feature/adapters/architecture/events.md) —— 这些原语要映射到的目标形状。

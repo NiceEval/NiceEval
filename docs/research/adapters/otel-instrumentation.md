@@ -4,7 +4,7 @@
 
 **问题:** 如果被测 agent 已经接了 OTel(应用把 `OTEL_EXPORTER_OTLP_ENDPOINT` 指向 niceeval 起的本机接收器),能不能从 spans 里还原出「调了什么工具、入参出参、说了什么、用了多少 token」。
 这是评估"从 span 派生事件"这条路线是否可行的数据可得性调研。
-判定:不划算,niceeval 现在事件流一律走 `send`,OTel 只用来画 trace 瀑布图,见 [Observability](../../../observability.md#otlp-traces-统一瀑布图)。
+判定:不划算,niceeval 现在事件流一律走 `send`,OTel 只用来画 trace 瀑布图,见 [Observability](../../observability.md#otlp-traces-统一瀑布图)。
 
 [otel-genai.md](otel-genai.md) 讲的是这些生态的 **schema 长什么样**;本篇只回答**内容默认采不采、字段在哪**。
 
@@ -82,10 +82,10 @@
    四套词汇(gen_ai semconv 的 `input/output.messages` / OpenLLMetry 的索引式 `gen_ai.prompt.{i}.*` / OpenInference / `ai.*`)各自的工具调用字段都不同。
    每套内部结构清楚、有显式 call id——一方言一个薄解码器,与 niceeval 既有的「每 agent 一个薄 mapper」是同一个形状。
 3. **接收器不用动。**
-   现有 receiver 已满足 OTLP/HTTP 双编码 + gzip + 正确响应契约;它现在只服务 trace 瀑布图,见 [Observability](../../../observability.md#otlp-traces-统一瀑布图)。
+   现有 receiver 已满足 OTLP/HTTP 双编码 + gzip + 正确响应契约;它现在只服务 trace 瀑布图,见 [Observability](../../observability.md#otlp-traces-统一瀑布图)。
 
 ## 相关阅读
 
 - [agent-loop-apis.md](agent-loop-apis.md) —— 四个 agent loop 的原生 API 面(转换路线的对照组)。
 - [otel-genai.md](otel-genai.md) —— 这些生态的 schema 全景与 niceeval 双轨判定。
-- [Observability · OTLP traces](../../../observability.md#otlp-traces-统一瀑布图) —— OTel 在当前设计里的实际角色(只画瀑布图,不产出事件)。
+- [Observability · OTLP traces](../../observability.md#otlp-traces-统一瀑布图) —— OTel 在当前设计里的实际角色(只画瀑布图,不产出事件)。

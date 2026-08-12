@@ -42,7 +42,7 @@ adapter 按被测系统的真实语义选择，不要互相模拟。
 - **OpenAI Agents SDK**:handoff 本质是 `transfer_to_<agent>` 工具调用,流式有 `handoff_occured` / `AgentUpdatedStreamEvent`;RunItem 天然归属当前 agent → `handoff` 事件直接映射。trace 侧印证:GenAI semconv 至今没有 handoff 词汇,官方 OTel contrib 只能自造 `agent_handoff` span(`gen_ai.handoff.from_agent/to_agent`)——说明「交接需要独立词汇」不是 niceeval 的臆造。
 - **LangGraph**:节点名即归属;节点跳转即交接。
 - **AI SDK 单循环**:没有多 agent,不声明 `agentObservability`,零改动。
-- 上限参照:eve 协议的 RuntimeIdentity(运行时自报身份),见 [reference/eve-protocol.md](../../feature/adapters/reference/eve-protocol.md)。
+- 上限参照:eve 协议的 RuntimeIdentity(运行时自报身份),见 [Eve protocol](../../research/adapters/eve-protocol.md)。
 
 ## 和 trace 的分工
 

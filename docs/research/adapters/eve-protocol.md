@@ -72,7 +72,7 @@ type RuntimeActionRequest =
 `load-skill` 在 eve 里是一种 action kind——niceeval 不照搬这个位置。
 Skill 加载在 niceeval 是 `skill.loaded` 一等事件。
 adapter 负责从各自的原生形态(eve 的 `load-skill` action kind、Claude Code 的 Skill `tool_use`)识别出来并归一。
-`t.loadedSkill` 只读这条事件(见[标准事件模型](../architecture/events.md))。
+`t.loadedSkill` 只读这条事件(见[标准事件模型](../../feature/adapters/architecture/events.md))。
 subagent 调用在 eve 里也是 action 的一种,再由运行时展开成 `subagent.*` 事件。
 
 ### `InputRequest`:HITL 请求的完整形状
@@ -147,7 +147,7 @@ interface RuntimeIdentity {
    评测带三方连接的 agent 时会需要。
 7. **durable channel event payload 带独立 schema 版本。**
    `StreamEvent` 是进程内模型可以不带版本,但进入长期 Record 的 channel event stream 会跨版本读取;eve 的 `x-eve-stream-version` 头是先例。
-   niceeval 的具体取舍见 [Record Format · 版本与升级设计](../../record/architecture.md):容器版本只属于 frozen core,领域内容用独立 typed payload media type 演进,未知 payload 原字节保留。
+   niceeval 的具体取舍见 [Record Format · 版本与升级设计](../../feature/record/architecture.md):容器版本只属于 frozen core,领域内容用独立 typed payload media type 演进,未知 payload 原字节保留。
 
 没抄的也记一笔:**流式 delta(`message.appended` 的 `messageDelta / messageSoFar`)不需要**——评测离线跑,整段的 `message` 事件就够;AG-UI 的三段式同理(见 [otel-genai 笔记](otel-genai.md#ag-ui-和-niceeval-streamevent-同形态的扁平事件流))。
 要做"实时看 agent 跑"的 view 时再回头看。
@@ -156,5 +156,5 @@ interface RuntimeIdentity {
 
 - [agent-eval 笔记](agent-eval.md) —— 逆向适配路线:采集 / 转换 / 落地三层与顺序配对的坑。
 - [OTel GenAI 等标准](otel-genai.md) —— 标准化遥测路线;三条路线的汇总对照表在那篇。
-- [Adapter Architecture](../architecture.md) —— niceeval 自己的事件模型与实现不变量。
-- [Observability](../../../observability.md) —— 双轨设计:StreamEvent 断言 + canonical GenAI trace。
+- [Adapter Architecture](../../feature/adapters/architecture.md) —— niceeval 自己的事件模型与实现不变量。
+- [Observability](../../observability.md) —— 双轨设计:StreamEvent 断言 + canonical GenAI trace。

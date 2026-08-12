@@ -34,7 +34,7 @@ Design 保存多方案比较与裁决存档，Research 只提供决策输入而�
 | 设计仓库自身的测试、维护或 benchmark | [Engineering](engineering/README.md) |
 | 给文档画一张 SVG | [SVG 图示的视觉契约](SVG-DESIGN.md) |
 | 从契约找到实现 | [Source Map](source-map.md) |
-| 查一处设计从哪个系统学来 | 该功能目录下的 `reference/`（[record](feature/record/reference/README.md) / [sample](feature/sample/reference/README.md) / [reports](feature/reports/README.md)） |
+| 查一处设计从哪个系统学来 | [Research](research/README.md)；RFC、OWASP 等基础规范仍见对应 Feature 的 `reference/` |
 | 查过去的坑或被否决方案 | [`memory/INDEX.md`](../memory/INDEX.md) |
 | 写公开用户文档 | [`docs-site/AGENTS.md`](../docs-site/AGENTS.md) |
 
@@ -73,6 +73,7 @@ docs/
 │   ├── agent-as-judge/                  用独立 Agent 调查证据并执行 Judge Assertion
 │   ├── assertion-authoring/             Assertion-first 作者面、Verdict 与 score、统一 Match
 │   ├── replayable-grading/              多轮 Execution 与 Grading 分离、Record 重评分
+│   ├── report-query-api/                 Consumer-local query 与 Report 顶层作者 API
 │   ├── experiment-pilot-sampling/       共同题集、固定 seed 与 non-final Pilot
 │   ├── experiment-families/             keyed record 展开稳定 Experiment ID
 │   ├── sandbox-fixture-content/         identity-aware Fixture 内容 prepare 命令
@@ -96,6 +97,8 @@ docs/
 ├── research/                            带观察日期的外部产品研究，不构成目标契约
 │   ├── ori-eval.md                      Ori Eval、spawn-ori-eval 与 NiceEval 的关系
 │   ├── eve-assertion-dx.md              Eve 断言 DX 与真实回归题的逐项能力审视
+│   ├── adapters/                         Agent 接入、事件协议与 OTel 生态调研
+│   ├── experiments/                      外部 Experiment 运行矩阵参照
 │   └── assertion-api-dx/                评估断言 API、语法与作者 DX 横向研究
 │
 ├── engineering/                         仓库自身的工程机制

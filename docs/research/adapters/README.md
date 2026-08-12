@@ -12,4 +12,4 @@
 | [OTel GenAI](otel-genai.md) | GenAI semantic conventions 与相关生态 |
 | [OTel instrumentation](otel-instrumentation.md) | 现成框架埋点的数据完整性 |
 
-已采纳的产品判定必须写回 [`../architecture.md`](../architecture.md) 或对应 [`../sdk/`](../sdk/README.md) 页面；研究页不替代目标契约。
+已采纳的产品判定必须写回 [Adapter Architecture](../../feature/adapters/architecture.md) 或对应 [SDK](../../feature/adapters/sdk/README.md) 页面；研究页不替代目标契约。
