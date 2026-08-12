@@ -278,6 +278,18 @@ export function isDiagnosticIdV1(value: string): value is DiagnosticIdV1 {
   return DIAGNOSTIC_ID_PATTERN_V1.test(value);
 }
 
+export function isObservabilityEntityIdV1(value: string): value is ObservabilityEntityIdV1 {
+  return (
+    isTurnIdV1(value) ||
+    isItemIdV1(value) ||
+    isCallIdV1(value) ||
+    isCommandIdV1(value) ||
+    isUsageObservationIdV1(value) ||
+    isIntervalIdV1(value) ||
+    isDiagnosticIdV1(value)
+  );
+}
+
 export function makeTurnIdV1(value: string): TurnIdV1 | undefined {
   return isTurnIdV1(value) ? (value as TurnIdV1) : undefined;
 }
