@@ -1,43 +1,32 @@
-import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 import {
   command,
+  createE2EContext,
   type ExpEvalEvent,
   type ExpEvent,
   type ProcessReceipt,
-  withProjectCopy,
 } from "@niceeval/testkit";
 import { expect } from "vitest";
 
 const requiredSecrets = ["OPENAI_API_KEY", "OPENAI_BASE_URL"] as const;
-const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
+const niceevalBin = [join(process.cwd(), "node_modules", ".bin", "niceeval")] as const;
 
-type ProcessWithLocalInvocation = NodeJS.Process & {
-  __niceevalOpenAiCompatArtifactInvocationId?: string;
-};
+const e2e = createE2EContext({
+  repoId: "openai-compat",
+  project: {
+    from: process.cwd(),
+    prefix: "niceeval-e2e-openai-compat-",
+    omitTopLevel: [".e2e-artifacts", ".niceeval", "junit", "node_modules", "test"],
+    links: [{ from: resolve("node_modules"), to: "node_modules", type: "dir" }],
+  },
+  commands: {
+    niceeval: niceevalBin,
+  },
+});
 
-const processWithLocalInvocation = process as ProcessWithLocalInvocation;
-const localInvocationId = processWithLocalInvocation.__niceevalOpenAiCompatArtifactInvocationId ??=
-  `local-${process.pid}-${randomUUID()}`;
-
-function safePathSegment(value: string, label: string): string {
-  if (
-    !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(value) ||
-    /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(value)
-  ) {
-    throw new Error(`${label} must be one safe path segment`);
-  }
-  return value;
-}
-
-function artifactInvocationId(): string {
-  const injected = process.env.NICEEVAL_E2E_INVOCATION_ID;
-  return injected === undefined || injected.length === 0
-    ? localInvocationId
-    : safePathSegment(injected, "NICEEVAL_E2E_INVOCATION_ID");
-}
-
-const invocationId = artifactInvocationId();
+// show 读回发生在 case 之外：--record 指向已暂存的 case artifact root，
+// 完整 argv 与 recordRoot 语义留在调用点，不进入 Testkit。
+const niceevalShow = command(niceevalBin);
 
 export interface OpenAiLiveEvidence {
   readonly receipt: ProcessReceipt;
@@ -62,27 +51,15 @@ export async function runOpenAiLiveEvidence(options: {
   executionMarkers: readonly string[];
 }): Promise<OpenAiLiveEvidence> {
   requireLiveSecrets();
-  const safeCaseName = safePathSegment(options.caseName, "artifact caseName");
-  const artifactRoot = join(
-    process.cwd(),
-    ".niceeval",
-    "e2e-artifacts",
-    invocationId,
-    safeCaseName,
-  );
   let evidence: OpenAiLiveEvidence | undefined;
 
-  await withProjectCopy(
-    {
-      from: process.cwd(),
-      prefix: `niceeval-openai-${options.caseName}-`,
-      omitTopLevel: [".niceeval", "junit", "node_modules", "test"],
-      links: [{ from: resolve("node_modules"), to: "node_modules", type: "dir" }],
-    },
-    async ({ root }) => {
+  await e2e.case(
+    options.caseName,
+    { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
+    async ({ commands: { niceeval }, paths }) => {
       const run = await niceeval.run(
         ["exp", options.experimentId, "--rerun", "all", "--json"],
-        { cwd: root, timeoutMs: 4 * 60_000 },
+        { timeoutMs: 4 * 60_000 },
       );
       expect(run.exitCode, run.diagnostic()).toBe(0);
       const events = run.ndjson<ExpEvent>();
@@ -99,26 +76,8 @@ export async function runOpenAiLiveEvidence(options: {
         experimentId: options.experimentId,
         evalId: options.evalId,
         executionMarkers: options.executionMarkers,
-        recordRoot: join(artifactRoot, "record"),
+        recordRoot: join(paths.artifactRoot, ".niceeval", "record"),
       };
-    },
-    {
-      stageArtifacts: {
-        destinationRoot: process.cwd(),
-        entries: [
-          {
-            source: ".niceeval",
-            target: join(
-              ".niceeval",
-              "e2e-artifacts",
-              invocationId,
-              safeCaseName,
-            ),
-            optional: true,
-          },
-        ],
-        collision: "error",
-      },
     },
   );
 
@@ -130,5 +89,5 @@ export async function showOpenAiLiveEvidence(
   evidence: OpenAiLiveEvidence,
   args: readonly string[],
 ): Promise<ProcessReceipt> {
-  return await niceeval.run(["show", ...args, "--record", evidence.recordRoot]);
+  return await niceevalShow.run(["show", ...args, "--record", evidence.recordRoot]);
 }

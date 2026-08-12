@@ -38,6 +38,8 @@ export interface E2ECaseOptions {
 
 export interface E2EContextOptions<Commands extends Record<string, Argv>> {
   repoId: string;
+  /** Isolated scenario Repo root that owns the runner-injected staging directory. */
+  sourceRoot?: string;
   project: ProjectCopyOptions;
   commands: Commands;
 }
@@ -144,7 +146,7 @@ export function createE2EContext<const Commands extends Record<string, Argv>>(
 ): E2EContext<Commands> {
   const repoId = options.repoId.trim();
   if (repoId.length === 0) throw new Error("repoId must be non-empty");
-  const sourceRoot = resolve(options.project.from);
+  const sourceRoot = resolve(options.sourceRoot ?? options.project.from);
   const invocation = invocationIdentity(sourceRoot);
   const identity = Object.freeze({
     repoId,

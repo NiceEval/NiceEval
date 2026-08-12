@@ -2,9 +2,10 @@
 // rerun: pnpm e2e --repo runner -- --run test/carry-partial-reuse.test.ts
 
 import { readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { command, only, withProjectCopy } from "@niceeval/testkit";
+import { only } from "@niceeval/testkit";
+import { join } from "node:path";
 import { expect, test } from "vitest";
+import { runnerE2E } from "./context.ts";
 
 interface DryTarget {
   experimentId: string;
@@ -31,17 +32,13 @@ interface ExpEvent {
   locator?: string;
 }
 
-const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
-const projectCopy = {
-  from: process.cwd(),
-  prefix: "niceeval-e2e-runner-carry-partial-",
-  omitTopLevel: [".niceeval", "node_modules", "test"],
-  links: [{ from: resolve("node_modules"), to: "node_modules", type: "dir" }],
-} as const;
-
 test("改变一个 Eval 后只重新派发该 identity，未改变的 Eval 继续携带", async () => {
-  await withProjectCopy(projectCopy, async ({ root }) => {
-    const baseline = await niceeval.run(["exp", "carry", "--rerun", "all", "--json"], { cwd: root });
+  await runnerE2E.case(
+    "carry-partial-reuse",
+    { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
+    async ({ commands: { niceeval }, paths }) => {
+      const root = paths.projectRoot;
+    const baseline = await niceeval.run(["exp", "carry", "--rerun", "all", "--json"]);
     expect(baseline.exitCode, baseline.diagnostic()).toBe(0);
     const baselineStart = only(baseline.ndjson<ExpEvent>(), (event) => event.event === "start", baseline.diagnostic());
     expect(baselineStart).toMatchObject({ event: "start", reused: 0 });
@@ -72,7 +69,7 @@ test("改变一个 Eval 后只重新派发该 identity，未改变的 Eval 继�
       "utf8",
     );
 
-    const changedOnly = await niceeval.run(["exp", "carry", "simple/alpha", "--dry", "--json"], { cwd: root });
+    const changedOnly = await niceeval.run(["exp", "carry", "simple/alpha", "--dry", "--json"]);
     expect(changedOnly.exitCode, changedOnly.diagnostic()).toBe(0);
     const changedPlan = changedOnly.json<DryPlan>();
     expect(changedPlan).toMatchObject({ total: 1, reused: 0 });
@@ -83,7 +80,7 @@ test("改变一个 Eval 后只重新派发该 identity，未改变的 Eval 继�
     expect(`@${changedAlpha!.readbacks[0]!.source.attemptId}`).toBe(baselineAlphaLocator);
     expect(changedAlpha!.readbacks[0]!.verdict).toMatchObject({ state: "available", value: "passed" });
 
-    const changedDispatch = await niceeval.run(["exp", "carry", "simple/alpha", "--json"], { cwd: root });
+    const changedDispatch = await niceeval.run(["exp", "carry", "simple/alpha", "--json"]);
     expect(changedDispatch.exitCode, changedDispatch.diagnostic()).toBe(0);
     const changedDispatchStart = only(
       changedDispatch.ndjson<ExpEvent>(),
@@ -101,7 +98,7 @@ test("改变一个 Eval 后只重新派发该 identity，未改变的 Eval 继�
     expect(changedAlphaLocator).toMatch(/^@[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
     expect(changedAlphaLocator).not.toBe(baselineAlphaLocator);
 
-    const fullDry = await niceeval.run(["exp", "carry", "--dry", "--json"], { cwd: root });
+    const fullDry = await niceeval.run(["exp", "carry", "--dry", "--json"]);
     expect(fullDry.exitCode, fullDry.diagnostic()).toBe(0);
     const fullPlan = fullDry.json<DryPlan>();
     expect(fullPlan).toMatchObject({ total: 2, reused: 2 });
@@ -118,11 +115,12 @@ test("改变一个 Eval 后只重新派发该 identity，未改变的 Eval 继�
     expect(`@${carriedBeta!.readbacks[0]!.source.attemptId}`).toBe(baselineBetaLocator);
     expect(carriedBeta!.readbacks[0]!.verdict).toBe("passed");
 
-    const fullDispatch = await niceeval.run(["exp", "carry", "--json"], { cwd: root });
+    const fullDispatch = await niceeval.run(["exp", "carry", "--json"]);
     expect(fullDispatch.exitCode, fullDispatch.diagnostic()).toBe(0);
     const fullDispatchEvents = fullDispatch.ndjson<ExpEvent>();
     const fullDispatchStart = only(fullDispatchEvents, (event) => event.event === "start", fullDispatch.diagnostic());
     expect(fullDispatchStart).toMatchObject({ event: "start", total: 2, reused: 2 });
     expect(fullDispatch.expReceipt()).toMatchObject({ completion: "completed" });
-  });
+    },
+  );
 });

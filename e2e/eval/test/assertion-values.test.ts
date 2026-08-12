@@ -1,10 +1,9 @@
 // owner: docs/engineering/testing/e2e/eval.md#eval-assertion-values
 // rerun: pnpm e2e --repo eval -- --run test/assertion-values.test.ts
 
-import { join } from "node:path";
-import { command, only, withProjectCopy } from "@niceeval/testkit";
+import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
-import { evalArtifactStaging, evalProjectCopy } from "./support.ts";
+import { evalE2E } from "./context.ts";
 
 interface ExpEvent {
   event: string;
@@ -13,13 +12,12 @@ interface ExpEvent {
   verdict?: string;
 }
 
-const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
-
 test("值 Match Eval 以 passed 终态完成", async () => {
-  await withProjectCopy(
-    evalProjectCopy,
-    async ({ root }) => {
-      const run = await niceeval.run(["exp", "assertion-values", "--rerun", "all", "--json"], { cwd: root });
+  await evalE2E.case(
+    "values",
+    { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
+    async ({ commands: { niceeval } }) => {
+      const run = await niceeval.run(["exp", "assertion-values", "--rerun", "all", "--json"]);
       expect(run.exitCode, run.diagnostic()).toBe(0);
       expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
       const evaluation = only(
@@ -33,6 +31,5 @@ test("值 Match Eval 以 passed 终态完成", async () => {
         verdict: "passed",
       });
     },
-    evalArtifactStaging("values"),
   );
 });

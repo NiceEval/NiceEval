@@ -19,5 +19,5 @@
     "src/runner/**",
     "src/record/**"
   ],
-  "artifacts": [".niceeval/**"]
+  "artifacts": [".e2e-artifacts/**"]
 }

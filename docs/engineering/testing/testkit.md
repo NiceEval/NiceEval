@@ -17,6 +17,7 @@ invocation 的 scratch snapshot，再把该 snapshot 作为本地目录依赖只
 `createE2EContext()` 是对已有项目副本、进程和 artifact staging 原语的中立组合。Repo context
 只保存冻结的 source / invocation 身份，`case()` 每次创建独占可写 `projectRoot`。调用方显式提供
 项目复制策略和具名命令前缀；Testkit 不知道 `niceeval`、`.niceeval`、Experiment、producer 或 candidate。
+Repo `sourceRoot` 与 `project.from` 是两个身份：前者承载 runner 注入的 staging root，后者可指向 Repo 内的 fixture 子目录。
 
 case 中的 `commands.<name>.run/start` 固定使用该 case 的 cwd，调用点不能替换 `cwd` 或 `processGroup`。
 `start` 登记的进程在正文结束后按逆序回收，然后才暂存 artifact 并删除项目副本；多个失败按
