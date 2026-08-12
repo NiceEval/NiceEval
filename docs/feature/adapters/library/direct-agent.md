@@ -3,7 +3,6 @@
 runner 直接调用函数、SDK 或服务端点时，使用 `defineAgent`。
 目标可以在当前进程，也可以是远程服务； Direct 描述调用拓扑，不描述部署位置。
 Adapter 知道应用协议，NiceEval 不定义通用 URL、鉴权或消息格式。
-`defineDirectAgent` 是指向同一函数的 deprecated 兼容 alias；新代码只使用 `defineAgent`。
 
 ```ts
 import { completeEvidenceCoverage, defineAgent, makeSendFailure } from "niceeval/adapter";

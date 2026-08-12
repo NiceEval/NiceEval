@@ -20,8 +20,6 @@ import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
 
 `defineAgent` 产出的 `Agent.kind` 恒为 `"direct"`（内部判别字段，不用你声明）。`t` 上没有需要声明才解锁的能力位——`t.sandbox` 这类文件系统断言只在 `defineSandboxAgent` 构造的 Agent（`kind: "sandbox"`）上才有。其余由 `send` 实际返回的事件和 `ctx.session` 的使用决定，详见[能力位参考](/zh/reference/capabilities)。字段全集见下方「Agent 与 Adapter Context 字段」。
 
-`defineDirectAgent` 是指向同一函数的 deprecated 兼容 alias。新代码使用 `defineAgent`。
-
 ### direct agent 示例
 
 ```ts
