@@ -61,6 +61,19 @@ import {
 } from "../eval/record/evaluation-record.ts";
 import type { RecordAttachmentWrite } from "../record/attachment/index.ts";
 import {
+  createAttemptObservabilityAttachmentWritesV1,
+  createRunObservabilityAttachmentWritesV1,
+  validateObservabilityAttachmentWriteBundlesV1,
+  type AttemptObservabilityAttachmentWritesV1,
+  type ObservabilityAttachmentBuildErrorV1,
+} from "../o11y/record/family-writers.ts";
+import {
+  createRunnerAttemptObservabilityCaptureV1,
+  createRunnerRunObservabilityCaptureV1,
+  type RunnerObservabilityProducerErrorV1,
+} from "../o11y/record/runner-producer.ts";
+import type { ObservabilityRecordContractError } from "../o11y/record/errors.ts";
+import {
   createRunnerSourceWritePlan,
   type RunnerSourceOriginInput,
   type RunnerSourceProducerInvalid,
@@ -112,6 +125,7 @@ interface ActiveRunnerRecordAttempt<AttachmentError, AttachmentRequirements> {
     readonly result: EvalResult;
     readonly origin: EvaluationRecordOriginAttemptInputV1;
     readonly eligibility: RecordAttachmentWrite<"attempt", never, never>;
+    readonly observability: AttemptObservabilityAttachmentWritesV1;
     readonly pluginWrites: readonly RecordAttachmentWrite<
       "attempt",
       AttachmentError,
@@ -178,6 +192,12 @@ export interface RunnerRecordMembershipStateInvalid {
   readonly slotId: SlotId;
 }
 
+/** The official seven-family preflight failed before any of its writes began. */
+export interface RunnerRecordObservabilityContractInvalid {
+  readonly code: "runner-record-observability-contract-invalid";
+  readonly errors: readonly ObservabilityRecordContractError[];
+}
+
 /** A planned Slot was neither exactly referenced nor sealed as a fresh origin. */
 export type RunnerRecordWriteError<AttachmentError> =
   | EvaluationRecordContractInvalidV1
@@ -188,10 +208,13 @@ export type RunnerRecordWriteError<AttachmentError> =
   | RunnerRecordUnsealedAttempt
   | RunnerRecordExecutionDurationInvalid
   | RunnerRecordMembershipStateInvalid
+  | RunnerRecordObservabilityContractInvalid
   | AttemptEligibilityPayloadBuildErrorV1
   | MembershipProvenancePayloadBuildErrorV1
   | SealedAssertionsOriginEncodingError
   | RunnerSourceProducerInvalid
+  | ObservabilityAttachmentBuildErrorV1
+  | RunnerObservabilityProducerErrorV1
   | AttachmentError;
 
 export type RunnerRecordOpenError<AttachmentError> =
@@ -401,6 +424,15 @@ function membershipStateInvalid(slotId: SlotId): RunnerRecordMembershipStateInva
   return Object.freeze({
     code: "runner-record-membership-state-invalid" as const,
     slotId,
+  });
+}
+
+function observabilityContractInvalid(
+  errors: readonly ObservabilityRecordContractError[],
+): RunnerRecordObservabilityContractInvalid {
+  return Object.freeze({
+    code: "runner-record-observability-contract-invalid" as const,
+    errors: Object.freeze([...errors]),
   });
 }
 
@@ -675,6 +707,18 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
           active.sealed,
         );
         if (Either.isLeft(origin)) return yield* Effect.fail(origin.left);
+        // This is the only Runner → Record boundary that sees both the sealed
+        // Assert-first outcome and its final EvalResult. The producer returns
+        // normalized owner facts; the Record adapter constructs the official
+        // typed writes without exposing attachment names or paths to Runner.
+        const observabilityCapture = yield* createRunnerAttemptObservabilityCaptureV1({
+          result,
+          sealed: active.sealed,
+        });
+        const observability = createAttemptObservabilityAttachmentWritesV1(
+          observabilityCapture,
+        );
+        if (Either.isLeft(observability)) return yield* Effect.fail(observability.left);
         return yield* Effect.uninterruptible(
           Effect.gen(function* () {
             const draft = yield* targetSlot.recordRun.draft.createAttempt({
@@ -689,6 +733,7 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
               result,
               origin: origin.right,
               eligibility: eligibility.right,
+              observability: observability.right,
               pluginWrites: Object.freeze([...writes]),
               draft,
             });
@@ -799,6 +844,28 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
         Effect.gen(function* () {
           if (writeFailure !== undefined) return yield* Effect.fail(writeFailure.error);
           for (const recordRun of byRun.values()) {
+            const runObservabilityCapture = yield* createRunnerRunObservabilityCaptureV1({
+              run: recordRun.run,
+            });
+            const runObservability = createRunObservabilityAttachmentWritesV1(
+              runObservabilityCapture,
+            );
+            if (Either.isLeft(runObservability)) return yield* Effect.fail(runObservability.left);
+
+            const attemptObservability: AttemptObservabilityAttachmentWritesV1[] = [];
+            for (const active of recordRun.attempts.values()) {
+              if (!active.completed) continue;
+              if (active.durable === undefined) return yield* Effect.fail(attemptInvalid());
+              attemptObservability.push(active.durable.observability);
+            }
+            const observabilityErrors = validateObservabilityAttachmentWriteBundlesV1({
+              run: runObservability.right,
+              attempts: Object.freeze(attemptObservability),
+            });
+            if (observabilityErrors.length > 0) {
+              return yield* Effect.fail(observabilityContractInvalid(observabilityErrors));
+            }
+
             const sourceOrigins: RunnerSourceOriginInput[] = [];
             for (const [slotId, active] of recordRun.attempts) {
               if (!active.completed) continue;
@@ -835,6 +902,11 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
                   writes: Object.freeze([
                     durable.eligibility,
                     ...(durable.origin.writes ?? []),
+                    durable.observability.conversation,
+                    durable.observability.commands,
+                    durable.observability.usage,
+                    durable.observability.timing,
+                    durable.observability.diagnostics,
                     ...durable.pluginWrites,
                     sourceSites,
                   ]),
@@ -851,6 +923,8 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
               actions: actions.right,
             });
             if (Either.isLeft(provenance)) return yield* Effect.fail(provenance.left);
+            yield* recordRun.draft.record(runObservability.right.timing);
+            yield* recordRun.draft.record(runObservability.right.diagnostics);
             if (sourcePlan.right !== undefined) {
               yield* recordRun.draft.record(sourcePlan.right.runWrite);
             }

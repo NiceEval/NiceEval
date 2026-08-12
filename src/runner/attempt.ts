@@ -78,6 +78,17 @@ import {
   type RunnerAttemptSourceCapture,
 } from "./source-producer.ts";
 import {
+  bindRunnerAttemptObservabilityCaptureV1,
+  captureRunnerCommandCaptureFailedV1,
+  captureRunnerCommandInterruptedV1,
+  captureRunnerCommandResultV1,
+  captureRunnerCommandStartV1,
+  captureRunnerCommandTimeoutV1,
+  captureRunnerTurnUsageV1,
+  createRunnerAttemptObservabilityRuntimeV1,
+  type RunnerAttemptObservabilityRuntimeV1,
+} from "../o11y/record/runner-producer.ts";
+import {
   attemptFailureInfo,
   resolveAttemptFailureClass,
   type AttemptFailureClassifier,
@@ -364,6 +375,13 @@ export function runAttemptEffect<
   // CommandOptions.sensitiveValues 的 Attempt 级内存集合。值只供记录边界精确替换；最终
   // result 封口后集合随本次调用释放，不进入任何 artifact、指纹或 provider identity。
   const sensitiveValues = new Set<string>();
+  // Package-internal only: the final EvalResult is weakly associated with this
+  // capture after all Runner evidence is sealed. No public result field or
+  // legacy artifact is used as a transport.
+  const observabilityRuntime = createRunnerAttemptObservabilityRuntimeV1({
+    providerName: run.agent.name,
+    sensitiveValues,
+  });
   const recordDiagnostic = (input: DiagnosticInput) => {
     const phase = (sendActive ? "agent.run" : lastPhase) ?? "eval.run";
     if (input.dedupeKey !== undefined) {
@@ -863,6 +881,7 @@ export function runAttemptEffect<
             facts,
             commands,
             sensitiveValues,
+            observabilityRuntime,
             concurrencySlot,
             declareFailure,
             isDeadlineTimedOut: () => timedOut,
@@ -1099,10 +1118,12 @@ export function runAttemptEffect<
             sources: timeoutSources ?? [],
           }
         : withSandbox;
-      return retainRunnerAttemptSourceCapture(
+      const finalResult = retainRunnerAttemptSourceCapture(
         redactEvalResultEvidence(completed, sensitiveValues),
         sourceCapture.snapshot(),
       );
+      bindRunnerAttemptObservabilityCaptureV1(finalResult, observabilityRuntime);
+      return finalResult;
     }),
   );
 }
@@ -1355,6 +1376,8 @@ interface AttemptResources {
   commands: CommandExitEvidence[];
   /** `CommandOptions.sensitiveValues` 的 Attempt 级内存集合；只由命令包装写、结果封口读。 */
   sensitiveValues: Set<string>;
+  /** Private Observability capture; its final attachment facts are read only by the Record adapter. */
+  observabilityRuntime: RunnerAttemptObservabilityRuntimeV1;
   /** turn 级重试退避期间释放/收回的全局并发槽位;透传给 Assert-first Context。 */
   concurrencySlot?: ConcurrencySlot;
   /** 终局失败的空间轴回执(runAttemptEffect 持有的同一个闭包):body 的失败路径与 finally 里的
@@ -1419,6 +1442,7 @@ async function runAttemptBody(
     facts,
     commands,
     sensitiveValues,
+    observabilityRuntime,
     concurrencySlot,
     declareFailure,
     isDeadlineTimedOut,
@@ -1436,7 +1460,16 @@ async function runAttemptBody(
   // 命令时间树:所有经这个包装 sandbox 发出的 runCommand/runShell 都挂成当前阶段(或当前 hook
   // 节点)下的 command 子节点。包装只在最外层公开调用记录一次——provider 内部转调不经过它。
   const sandbox = usesSandbox
-    ? withCommandTiming(rawSandbox, recorder, getPhase, commands, sensitiveValues, res.deadlineAt)
+    ? withCommandTiming(
+        rawSandbox,
+        recorder,
+        getPhase,
+        commands,
+        sensitiveValues,
+        res.deadlineAt,
+        observabilityRuntime,
+        signal,
+      )
     : rawSandbox;
   // Direct Agent 只拿基础 ctx；Sandbox Agent 才拿带真实 Sandbox 的扩展 ctx。
   const attemptCtx: AgentContext = {
@@ -1643,6 +1676,9 @@ async function runAttemptBody(
       // results/architecture.md「result.json」TimingNode.usage)。
       onTurn: (info) => {
         sourceCapture.onTurn(info);
+        if (info.usage !== undefined) {
+          captureRunnerTurnUsageV1(observabilityRuntime, info.usage);
+        }
         return recorder.child(turnActivity({
           label: info.label,
           startOffsetMs: info.startOffsetMs,
@@ -2168,6 +2204,8 @@ function withCommandTiming(
   commands: CommandExitEvidence[],
   sensitiveValues: Set<string>,
   deadlineAt: number | undefined,
+  observabilityRuntime: RunnerAttemptObservabilityRuntimeV1,
+  attemptSignal: AbortSignal,
 ): Sandbox {
   const recordCommandExit = (
     node: TimingActivity | undefined,
@@ -2192,10 +2230,21 @@ function withCommandTiming(
     args: readonly string[] | undefined,
     opts: unknown,
     checked: boolean,
+    invocationKind: "argv" | "shell",
     fn: () => Promise<T>,
   ): Promise<T> => {
     rememberSensitiveValues(sensitiveValues, commandSensitiveValues(opts));
     const display = commandDisplay(cmd, args, sensitiveValues);
+    // Register the command manifest capability before process launch. The
+    // later result can only be attached through this opaque handle.
+    const observabilityCommand = captureRunnerCommandStartV1({
+      runtime: observabilityRuntime,
+      phase: getPhase() ?? "eval.run",
+      invocationKind,
+      command: cmd,
+      ...(args === undefined ? {} : { args }),
+      ...(opts === undefined ? {} : { options: opts }),
+    });
     const startOffsetMs = recorder.offsetNow();
     const wallStartedAt = Date.now();
     // 这条命令这次生效的线:显式 timeout 归命令自己那层,否则是 attempt deadline 在**命令开始
@@ -2229,6 +2278,14 @@ function withCommandTiming(
           exitCode,
           ...(result as { stdout?: unknown; stderr?: unknown }),
         }, checked);
+        captureRunnerCommandResultV1({
+          handle: observabilityCommand,
+          exitCode,
+          stdout: (result as { stdout?: unknown }).stdout,
+          stderr: (result as { stderr?: unknown }).stderr,
+        });
+      } else {
+        captureRunnerCommandCaptureFailedV1(observabilityCommand);
       }
       // CommandResult.command:最外层公开调用恰好是「eval 实际跑了什么」的定义点,摘要
       // 与时间树节点同一份。记录边界是权威来源，provider 即使给过原始 command 也必须覆盖，
@@ -2265,7 +2322,26 @@ function withCommandTiming(
           ...(hit !== undefined ? { limit: hit } : {}),
         }),
       );
-      if (commandResult !== undefined) recordCommandExit(node, display, commandResult, checked);
+      if (commandResult !== undefined) {
+        recordCommandExit(node, display, commandResult, checked);
+        captureRunnerCommandResultV1({
+          handle: observabilityCommand,
+          exitCode: commandResult.exitCode,
+          stdout: commandResult.stdout,
+          stderr: commandResult.stderr,
+        });
+      } else if (e instanceof SandboxCommandTimeoutError) {
+        captureRunnerCommandTimeoutV1(observabilityCommand);
+      } else if (
+        attemptSignal.aborted ||
+        ((opts as { signal?: AbortSignal } | undefined)?.signal?.aborted === true)
+      ) {
+        // Cancellation has no observed terminal result; preserve the partial
+        // capture state rather than inventing one.
+        captureRunnerCommandInterruptedV1(observabilityCommand);
+      } else {
+        captureRunnerCommandCaptureFailedV1(observabilityCommand);
+      }
       throw e;
     }
   };
@@ -2273,19 +2349,47 @@ function withCommandTiming(
     get(target, prop, receiver) {
       if (prop === "runCommand") {
         return (cmd: string, args?: readonly string[], opts?: unknown) =>
-          wrap(cmd, args, opts, false, () => (target.runCommand as (...a: unknown[]) => Promise<unknown>)(cmd, args, opts));
+          wrap(
+            cmd,
+            args,
+            opts,
+            false,
+            "argv",
+            () => (target.runCommand as (...a: unknown[]) => Promise<unknown>)(cmd, args, opts),
+          );
       }
       if (prop === "runShell") {
         return (script: string, opts?: unknown) =>
-          wrap(script, undefined, opts, false, () => (target.runShell as (...a: unknown[]) => Promise<unknown>)(script, opts));
+          wrap(
+            script,
+            undefined,
+            opts,
+            false,
+            "shell",
+            () => (target.runShell as (...a: unknown[]) => Promise<unknown>)(script, opts),
+          );
       }
       if (prop === "runCommandOrThrow") {
         return (cmd: string, args?: readonly string[], opts?: unknown) =>
-          wrap(cmd, args, opts, true, () => (target.runCommandOrThrow as (...a: unknown[]) => Promise<unknown>)(cmd, args, opts));
+          wrap(
+            cmd,
+            args,
+            opts,
+            true,
+            "argv",
+            () => (target.runCommandOrThrow as (...a: unknown[]) => Promise<unknown>)(cmd, args, opts),
+          );
       }
       if (prop === "runShellOrThrow") {
         return (script: string, opts?: unknown) =>
-          wrap(script, undefined, opts, true, () => (target.runShellOrThrow as (...a: unknown[]) => Promise<unknown>)(script, opts));
+          wrap(
+            script,
+            undefined,
+            opts,
+            true,
+            "shell",
+            () => (target.runShellOrThrow as (...a: unknown[]) => Promise<unknown>)(script, opts),
+          );
       }
       const value = Reflect.get(target, prop, receiver);
       return typeof value === "function" ? (value as (...a: unknown[]) => unknown).bind(target) : value;
