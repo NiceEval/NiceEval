@@ -3,11 +3,11 @@
 
 import { Data, Effect } from "effect";
 import { loadConfigFile } from "../load-config.ts";
-import type { ProjectCurrentTarget } from "../record/types.ts";
 import { matchExperimentSelector } from "../shared/aggregate.ts";
 import { discoverEvals, discoverExperiments, type DiscoveryError } from "./discover.ts";
 import { resolveExperimentEvals } from "./eval-selection.ts";
 import { planProjectTarget, type ProjectTargetPlan } from "./fingerprint.ts";
+import type { ProjectCurrentTarget } from "./project-target.ts";
 import type { SandboxRunPlanningError } from "./sandbox-selection.ts";
 import { resolveRunTimeout } from "./timeout.ts";
 import type { AgentRun, Config } from "./types.ts";

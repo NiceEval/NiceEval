@@ -11,7 +11,7 @@ import type { DiscoveredEval, EvalResult, JsonValue, ResolvedJudgeConfig } from 
 import type {
   ProjectCurrentExperimentTarget,
   ProjectCurrentTarget,
-} from "../record/types.ts";
+} from "./project-target.ts";
 import { EVALUATION_ALGORITHM, type AgentRun, type FingerprintMigration } from "./types.ts";
 import { resolveJudge } from "./judge-config.ts";
 import {
