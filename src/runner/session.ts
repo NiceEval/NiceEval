@@ -54,14 +54,12 @@ export interface ExpiredSessionRecord {
 
 export interface SessionListDocument {
   format: "niceeval.sessions";
-  schemaVersion: 2;
   sessions: SessionRecord[];
   expired: ExpiredSessionRecord[];
 }
 
 export interface SessionShowDocument {
   format: "niceeval.session";
-  schemaVersion: 2;
   session: SessionRecord | ExpiredSessionRecord;
   expired?: boolean;
 }
@@ -193,9 +191,9 @@ type SessionPersistenceRequest =
   };
 
 /**
- * Session 的 Effect 资源组刻意不绑定 `startEffect()` 调用点的 Scope：`runEvals()` 自己会
+ * Session 的 Effect 资源组刻意不绑定 `start()` 调用点的 Scope：`runEvals()` 自己会
  * 在 dispatch 完成时关闭内部 Scope，但 CLI 仍要在随后拿到 receipt 后再写最终 completed
- * Session。调用方的 `closeEffect()`（CLI 已有的 finalizer）才是这一组 worker/timer 的唯一
+ * Session。调用方的 `close()`（CLI 已有的 finalizer）才是这一组 worker/timer 的唯一
  * 释放边界。
  */
 interface SessionPersistence {
@@ -242,7 +240,7 @@ export class SessionTracker {
    * Effect 主入口：先完成第一份 durable snapshot，再开始心跳。持久化 Scope 跨过
    * `runEvals()` 的内部 Scope，由 closeEffect 关闭，因而最终 receipt 不会被抢先截断。
    */
-  startEffect(input: SessionStartInput): Effect.Effect<SessionRecord, unknown> {
+  start(input: SessionStartInput): Effect.Effect<SessionRecord, unknown> {
     let persistence: SessionPersistence | undefined;
     return Effect.gen(this, function* () {
       if (this.started) return yield* Effect.fail(new Error("SessionTracker.start() called more than once."));
@@ -286,7 +284,7 @@ export class SessionTracker {
       };
       // Unlike feedback snapshots, the initial entry is a durable boundary:
       // dispatch must not start until it has either reached disk or failed.
-      yield* this.flushEffect();
+      yield* this.flush();
       persistence.heartbeat = yield* Effect.forkIn(this.heartbeatLoopEffect(), scope);
       return this.current!;
     }).pipe(
@@ -357,11 +355,11 @@ export class SessionTracker {
   }
 
   /** 一次可观察的 heartbeat；显式调用者会收到本次 flush 的真实 I/O failure。 */
-  heartbeatEffect(): Effect.Effect<void, unknown> {
+  heartbeat(): Effect.Effect<void, unknown> {
     return Effect.suspend(() => {
       if (!this.started || this.closed || this.record === undefined || this.record.status !== "active") return Effect.void;
       this.record.heartbeatAt = new Date().toISOString();
-      return this.flushEffect();
+      return this.flush();
     });
   }
 
@@ -369,7 +367,7 @@ export class SessionTracker {
    * 完成最终 Session：先停止 heartbeat，再把完成 snapshot 排在所有既有反馈写之后。该收尾
    * 区域不可中断，避免 interruption 留下 active 条目或后台 Fiber。
    */
-  closeEffect(input: SessionCloseInput = {}): Effect.Effect<SessionRecord | undefined, unknown> {
+  close(input: SessionCloseInput = {}): Effect.Effect<SessionRecord | undefined, unknown> {
     return Effect.uninterruptible(Effect.suspend(() => {
       if (!this.started || this.record === undefined || this.closed) return Effect.succeed(this.current);
       this.closed = true;
@@ -397,7 +395,7 @@ export class SessionTracker {
   }
 
   /** 按入队顺序强制写出当前 snapshot；worker 已关闭后退化为同一条 *Effect 原语的直接写。 */
-  flushEffect(): Effect.Effect<void, unknown> {
+  private flush(): Effect.Effect<void, unknown> {
     return Effect.suspend(() => {
       if (this.record === undefined) return Effect.void;
       const snapshot = cloneRecord(this.record);
@@ -450,9 +448,9 @@ export class SessionTracker {
   private heartbeatLoopEffect(): Effect.Effect<never> {
     return Effect.forever(
       unrefDelayEffect(SESSION_HEARTBEAT_INTERVAL_MS).pipe(
-        // Heartbeats are observability only. Explicit heartbeatEffect callers
+        // Heartbeats are observability only. Explicit heartbeat callers
         // receive failures; the background loop deliberately retries later.
-        Effect.zipRight(this.heartbeatEffect().pipe(Effect.ignore)),
+        Effect.zipRight(this.heartbeat().pipe(Effect.ignore)),
       ),
     );
   }
@@ -523,24 +521,6 @@ export class SessionTracker {
     }));
   }
 
-  /**
-   * 临时 Promise facade。债务逐项为：
-   * - `src/runner/run.ts` 仍经 `Effect.tryPromise(() => session.start(...))` 调用 start；
-   * - `src/cli.ts` 仍经 `cliPromise` 调用 close、session list 与 session show。
-   * 父侧改接 `*Effect` API 后可删除这些唯一的 `Effect.runPromise` 边界；队列 worker 和
-   * 所有内部持久化路径不会自行启动 runtime。
-   */
-  start(input: SessionStartInput): Promise<SessionRecord> {
-    return Effect.runPromise(this.startEffect(input));
-  }
-
-  heartbeat(): Promise<void> {
-    return Effect.runPromise(this.heartbeatEffect());
-  }
-
-  close(input: SessionCloseInput = {}): Promise<SessionRecord | undefined> {
-    return Effect.runPromise(this.closeEffect(input));
-  }
 }
 
 export function isSessionExpired(record: SessionRecord, nowMs = Date.now()): boolean {
@@ -558,8 +538,8 @@ function expiredProjection(record: SessionRecord): ExpiredSessionRecord {
   };
 }
 
-/** Effect 主 API：完整读取边界仍由 entry-file-store 的 decoder 容错纪律拥有。 */
-export function readSessionsEffect(niceevalRoot: string): Effect.Effect<SessionRecord[], unknown> {
+/** 完整读取边界仍由 entry-file-store 的 decoder 容错纪律拥有。 */
+export function readSessions(niceevalRoot: string): Effect.Effect<SessionRecord[], unknown> {
   return readAllEntryFilesEffect(sessionsDirOf(niceevalRoot), decodeSession).pipe(
     Effect.map((entries) => entries.map(({ entry }) => entry).sort((a, b) => a.startedAt.localeCompare(b.startedAt))),
   );
@@ -583,14 +563,14 @@ export function sessionListDocument(
       sessions.push(cloneRecord(record));
     }
   }
-  return { format: "niceeval.sessions", schemaVersion: 2, sessions, expired };
+  return { format: "niceeval.sessions", sessions, expired };
 }
 
-export function listSessionsEffect(
+export function listSessions(
   niceevalRoot: string,
   options: { all?: boolean; selector?: string; nowMs?: number } = {},
 ): Effect.Effect<SessionListDocument, unknown> {
-  return readSessionsEffect(niceevalRoot).pipe(Effect.map((records) => sessionListDocument(records, options)));
+  return readSessions(niceevalRoot).pipe(Effect.map((records) => sessionListDocument(records, options)));
 }
 
 export function resolveSessionPrefix(records: readonly SessionRecord[], prefix: string): SessionRecord {
@@ -602,42 +582,22 @@ export function resolveSessionPrefix(records: readonly SessionRecord[], prefix: 
   return cloneRecord(matches[0]!);
 }
 
-export function showSessionEffect(
+export function showSession(
   niceevalRoot: string,
   prefix: string,
   nowMs = Date.now(),
 ): Effect.Effect<SessionShowDocument, unknown> {
-  return readSessionsEffect(niceevalRoot).pipe(
+  return readSessions(niceevalRoot).pipe(
     Effect.map((records) => {
       const record = resolveSessionPrefix(records, prefix);
       const expired = isSessionExpired(record, nowMs);
       return {
         format: "niceeval.session",
-        schemaVersion: 2,
         session: expired ? expiredProjection(record) : record,
         ...(expired ? { expired: true } : {}),
       };
     }),
   );
-}
-
-/**
- * 与 SessionTracker 的 Promise methods 同一笔兼容债：现有 CLI caller 尚未接上上面的
- * Effect exports。除这些外层 facade 外，本模块不运行 Effect runtime。
- */
-export function readSessions(niceevalRoot: string): Promise<SessionRecord[]> {
-  return Effect.runPromise(readSessionsEffect(niceevalRoot));
-}
-
-export function listSessions(
-  niceevalRoot: string,
-  options: { all?: boolean; selector?: string; nowMs?: number } = {},
-): Promise<SessionListDocument> {
-  return Effect.runPromise(listSessionsEffect(niceevalRoot, options));
-}
-
-export function showSession(niceevalRoot: string, prefix: string, nowMs = Date.now()): Promise<SessionShowDocument> {
-  return Effect.runPromise(showSessionEffect(niceevalRoot, prefix, nowMs));
 }
 
 function shortRunId(runId: string): string {
