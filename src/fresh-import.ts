@@ -38,7 +38,7 @@ const ASYNC_CANONICAL_RUNTIME_HOOK = `
 
   export async function resolve(specifier, context, nextResolve) {
     const belongsToGeneration = context.parentURL?.includes(
-      "tsx-namespace=" + encodeURIComponent(namespace),
+      "namespace=" + encodeURIComponent(namespace),
     ) === true;
     const isEffect = specifier === "effect" || specifier.startsWith("effect/");
     const isNiceEval = specifier === "niceeval" || specifier.startsWith("niceeval/");
@@ -47,11 +47,13 @@ const ASYNC_CANONICAL_RUNTIME_HOOK = `
       !belongsToGeneration ||
       (!isEffect && !(canonicalizeNiceEval && isNiceEval))
     ) {
-      return nextResolve(specifier, context);
+      const resolved = await nextResolve(specifier, context);
+      return forceNamespacedTypeScriptModule(resolved, namespace);
     }
     try {
       const resolved = await nextResolve(specifier, context);
-      if (!isNiceEval) return resolved;
+      const freshResolved = forceNamespacedTypeScriptModule(resolved, namespace);
+      if (!isNiceEval) return freshResolved;
       const canonicalPath = canonicalRequire.resolve(specifier);
       if (
         resolved.url.startsWith("file:") &&
@@ -59,7 +61,7 @@ const ASYNC_CANONICAL_RUNTIME_HOOK = `
       ) {
         return { shortCircuit: true, url: pathToFileURL(canonicalPath).href };
       }
-      return resolved;
+      return freshResolved;
     } catch (cause) {
       if (!isEffect) throw cause;
       const code = cause !== null && typeof cause === "object" ? cause.code : undefined;
@@ -69,6 +71,17 @@ const ASYNC_CANONICAL_RUNTIME_HOOK = `
         url: pathToFileURL(canonicalRequire.resolve(specifier)).href,
       };
     }
+  }
+
+  function forceNamespacedTypeScriptModule(resolved, namespace) {
+    if (
+      !resolved.url.includes("tsx-namespace=" + encodeURIComponent(namespace)) ||
+      !resolved.url.includes("tsx-commonjs-virtual-query=1") ||
+      (resolved.format !== "commonjs" && resolved.format !== "commonjs-typescript")
+    ) {
+      return resolved;
+    }
+    return { ...resolved, format: "module-typescript" };
   }
 `;
 
@@ -96,12 +109,14 @@ function registerCanonicalRuntimeResolution(
           !belongsToFreshGeneration(context.parentURL, namespace) ||
           (!isEffect && !isNiceEval)
         ) {
-          return nextResolve(specifier, context);
+          const resolved = nextResolve(specifier, context);
+          return forceNamespacedTypeScriptModule(resolved, namespace);
         }
         try {
           const resolved = nextResolve(specifier, context);
-          if (!isNiceEval) return resolved;
-          return resolveCanonicalNiceEval(specifier, resolved);
+          const freshResolved = forceNamespacedTypeScriptModule(resolved, namespace);
+          if (!isNiceEval) return freshResolved;
+          return resolveCanonicalNiceEval(specifier, freshResolved);
         } catch (cause) {
           if (!isEffect) throw cause;
           if (!isModuleNotFound(cause)) throw cause;
@@ -154,8 +169,24 @@ function isNiceEvalSpecifier(specifier: string): boolean {
   return specifier === "niceeval" || specifier.startsWith("niceeval/");
 }
 
+// tsx's CJS virtual URLs preserve the generation as `?namespace=…`, while
+// its ESM URLs use `tsx-namespace=…`; the unique value scopes both forms.
 function belongsToFreshGeneration(parentURL: string | undefined, namespace: string): boolean {
-  return parentURL?.includes(`tsx-namespace=${encodeURIComponent(namespace)}`) === true;
+  return parentURL?.includes(`namespace=${encodeURIComponent(namespace)}`) === true;
+}
+
+function forceNamespacedTypeScriptModule(
+  resolved: NodeModule.ResolveFnOutput,
+  namespace: string,
+): NodeModule.ResolveFnOutput {
+  if (
+    !resolved.url.includes("tsx-namespace=" + encodeURIComponent(namespace)) ||
+    !resolved.url.includes("tsx-commonjs-virtual-query=1") ||
+    (resolved.format !== "commonjs" && resolved.format !== "commonjs-typescript")
+  ) {
+    return resolved;
+  }
+  return { ...resolved, format: "module-typescript" };
 }
 
 function isModuleNotFound(cause: unknown): boolean {
