@@ -1740,6 +1740,7 @@ async function runAttemptBody(
           attachmentWrite,
         ]);
       } catch (diffError) {
+        diffArtifactAvailable = false;
         state.late.diff = Object.freeze({
           state: "unavailable" as const,
           reason: "producer-failed" as const,
