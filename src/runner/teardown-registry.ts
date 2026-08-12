@@ -4,12 +4,13 @@
 // 契约见 docs/feature/experiments/architecture.md「强杀后的收尾兜底:收尾登记与启动自愈」。
 
 import { join } from "node:path";
+import { Effect } from "effect";
 import {
-  claimEntryFile,
+  claimEntryFileEffect,
   hashEntryId,
-  readAllEntryFiles,
-  readEntryFile,
-  writeEntryFile,
+  readAllEntryFilesEffect,
+  readEntryFileEffect,
+  writeEntryFileEffect,
 } from "../shared/entry-file-store.ts";
 
 /** 一条收尾登记项(逐条目文件的 JSON 形状)。 */
@@ -73,18 +74,21 @@ export function teardownEntryId(experimentId: string, pid: number): string {
 }
 
 /** 原子写入一条登记项(委托给共享层的 write-tmp-then-rename 纪律)。 */
-export async function writeTeardownRegistration(niceevalRoot: string, entry: TeardownRegistration): Promise<void> {
+export function writeTeardownRegistrationEffect(
+  niceevalRoot: string,
+  entry: TeardownRegistration,
+): Effect.Effect<void, unknown> {
   const id = teardownEntryId(entry.experimentId, entry.pid);
-  await writeEntryFile(teardownsDirOf(niceevalRoot), id, entry);
+  return writeEntryFileEffect(teardownsDirOf(niceevalRoot), id, entry);
 }
 
 /** 读一条登记项(不存在或损坏都返回 undefined,不抛错)。 */
-export async function readTeardownRegistration(
+export function readTeardownRegistrationEffect(
   niceevalRoot: string,
   experimentId: string,
   pid: number,
-): Promise<TeardownRegistration | undefined> {
-  return readEntryFile(
+): Effect.Effect<TeardownRegistration | undefined, unknown> {
+  return readEntryFileEffect(
     teardownsDirOf(niceevalRoot),
     teardownEntryId(experimentId, pid),
     (value) => decodeTeardownRegistration(value, { experimentId, pid }),
@@ -92,10 +96,10 @@ export async function readTeardownRegistration(
 }
 
 /** 读全部登记项(损坏条目跳过,不整体失败;目录不存在时返回空集合)。 */
-export async function readTeardownRegistrations(
+export function readTeardownRegistrationsEffect(
   niceevalRoot: string,
-): Promise<{ id: string; entry: TeardownRegistration }[]> {
-  return readAllEntryFiles(teardownsDirOf(niceevalRoot), decodeTeardownRegistration);
+): Effect.Effect<{ id: string; entry: TeardownRegistration }[], unknown> {
+  return readAllEntryFilesEffect(teardownsDirOf(niceevalRoot), decodeTeardownRegistration);
 }
 
 /**
@@ -103,8 +107,11 @@ export async function readTeardownRegistrations(
  * `claimEntryFile` 头注释)。成功认领(返回 true)即拿到执行权;登记已被别的进程删除
  * (返回 false)则跳过——同一份遗留义务不会被两个进程双跑。
  */
-export async function removeTeardownRegistrationIfPresent(niceevalRoot: string, id: string): Promise<boolean> {
-  return claimEntryFile(teardownsDirOf(niceevalRoot), id);
+export function removeTeardownRegistrationIfPresentEffect(
+  niceevalRoot: string,
+  id: string,
+): Effect.Effect<boolean, unknown> {
+  return claimEntryFileEffect(teardownsDirOf(niceevalRoot), id);
 }
 
 /** 同宿主 pid 存活探测。runner 已依赖 sandbox 模块;此处保持本地小函数,是因为收尾登记只需
@@ -128,19 +135,54 @@ export function isOrphanedTeardownRegistration(entry: TeardownRegistration, curr
  * 在本次选择且仍声明 teardown 的遗留义务由 run.ts 在调度前自动补执行,不出现在这里
  * (见 docs/feature/experiments/architecture.md「强杀后的收尾兜底」)。
  */
-export async function orphanedTeardownReminder(
+export function orphanedTeardownReminderEffect(
+  niceevalRoot: string,
+  recoveringExperimentIds: ReadonlySet<string>,
+  currentHost: string,
+): Effect.Effect<string | undefined, unknown> {
+  return readTeardownRegistrationsEffect(niceevalRoot).pipe(
+    Effect.map((registrations) => {
+      const lines: string[] = [];
+      for (const { entry } of registrations) {
+        if (!isOrphanedTeardownRegistration(entry, currentHost)) continue;
+        if (recoveringExperimentIds.has(entry.experimentId)) continue;
+        lines.push(
+          `unfinished experiment teardown for "${entry.experimentId}" from a killed run — niceeval exp ${entry.experimentId} --teardown\n`,
+        );
+      }
+      return lines.length > 0 ? lines.join("") : undefined;
+    }),
+  );
+}
+
+/**
+ * 暂时的 Promise 边界：`src/runner/run.ts` 与 `src/cli.ts` 正由其它 worker 修改，父侧会在
+ * 串行合并后改接上面的 Effect API。这里是唯一允许运行 Effect 的兼容 facade，不供新内部代码使用。
+ */
+export function writeTeardownRegistration(niceevalRoot: string, entry: TeardownRegistration): Promise<void> {
+  return Effect.runPromise(writeTeardownRegistrationEffect(niceevalRoot, entry));
+}
+
+export function readTeardownRegistration(
+  niceevalRoot: string,
+  experimentId: string,
+  pid: number,
+): Promise<TeardownRegistration | undefined> {
+  return Effect.runPromise(readTeardownRegistrationEffect(niceevalRoot, experimentId, pid));
+}
+
+export function readTeardownRegistrations(niceevalRoot: string): Promise<{ id: string; entry: TeardownRegistration }[]> {
+  return Effect.runPromise(readTeardownRegistrationsEffect(niceevalRoot));
+}
+
+export function removeTeardownRegistrationIfPresent(niceevalRoot: string, id: string): Promise<boolean> {
+  return Effect.runPromise(removeTeardownRegistrationIfPresentEffect(niceevalRoot, id));
+}
+
+export function orphanedTeardownReminder(
   niceevalRoot: string,
   recoveringExperimentIds: ReadonlySet<string>,
   currentHost: string,
 ): Promise<string | undefined> {
-  const registrations = await readTeardownRegistrations(niceevalRoot);
-  const lines: string[] = [];
-  for (const { entry } of registrations) {
-    if (!isOrphanedTeardownRegistration(entry, currentHost)) continue;
-    if (recoveringExperimentIds.has(entry.experimentId)) continue;
-    lines.push(
-      `unfinished experiment teardown for "${entry.experimentId}" from a killed run — niceeval exp ${entry.experimentId} --teardown\n`,
-    );
-  }
-  return lines.length > 0 ? lines.join("") : undefined;
+  return Effect.runPromise(orphanedTeardownReminderEffect(niceevalRoot, recoveringExperimentIds, currentHost));
 }
