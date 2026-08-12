@@ -35,6 +35,7 @@ import { openRecordWriteSession } from "../record/writer/runtime.ts";
 import type {
   OpenRecordWriteSessionError,
   OpenRecordWriteSessionRequirements,
+  RecordAttemptDraft,
   RecordPublishReceipt,
   RecordRunDraft,
   RecordWriteError,
@@ -54,8 +55,16 @@ import {
 } from "./reuse-plan.ts";
 import {
   evaluationRecordOriginInputFromSealedAssertions,
+  type EvaluationRecordOriginAttemptInputV1,
+  type EvaluationRecordPlanV1,
   type SealedAssertionsOriginEncodingError,
 } from "../eval/record/evaluation-record.ts";
+import type { RecordAttachmentWrite } from "../record/attachment/index.ts";
+import {
+  createRunnerSourceWritePlan,
+  type RunnerSourceOriginInput,
+  type RunnerSourceProducerInvalid,
+} from "./source-producer.ts";
 import type { SealedAttemptAssertions } from "../assertions/api.ts";
 import type {
   AgentRun,
@@ -95,18 +104,29 @@ interface PlannedRunnerRecordRun {
 
 type GapActionState = "pending" | "sealed" | "executed" | "not-dispatched" | "interrupted";
 
-interface ActiveRunnerRecordAttempt {
+interface ActiveRunnerRecordAttempt<AttachmentError, AttachmentRequirements> {
   /** Exact logical handle passed through seal and completion for this target Slot. */
   readonly attempt: Attempt;
   readonly sealed: SealedAttemptAssertions;
+  durable?: {
+    readonly result: EvalResult;
+    readonly origin: EvaluationRecordOriginAttemptInputV1;
+    readonly eligibility: RecordAttachmentWrite<"attempt", never, never>;
+    readonly pluginWrites: readonly RecordAttachmentWrite<
+      "attempt",
+      AttachmentError,
+      AttachmentRequirements
+    >[];
+    readonly draft: RecordAttemptDraft;
+  };
   public?: RunnerRecordAttempt;
   completed: boolean;
 }
 
-interface RunnerRecordRun extends PlannedRunnerRecordRun {
+interface RunnerRecordRun<AttachmentError, AttachmentRequirements> extends PlannedRunnerRecordRun {
   readonly draft: RecordRunDraft;
   readonly target: TargetRunV1;
-  readonly attempts: Map<SlotId, ActiveRunnerRecordAttempt>;
+  readonly attempts: Map<SlotId, ActiveRunnerRecordAttempt<AttachmentError, AttachmentRequirements>>;
   readonly planSlots: Map<SlotId, ExecutionReusePlanSlotV1>;
   readonly gapActions: Map<SlotId, GapActionState>;
 }
@@ -171,6 +191,7 @@ export type RunnerRecordWriteError<AttachmentError> =
   | AttemptEligibilityPayloadBuildErrorV1
   | MembershipProvenancePayloadBuildErrorV1
   | SealedAssertionsOriginEncodingError
+  | RunnerSourceProducerInvalid
   | AttachmentError;
 
 export type RunnerRecordOpenError<AttachmentError> =
@@ -462,8 +483,8 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
       plannedRuns.push(planned);
     }
 
-    const byRun = new Map<AgentRun, RunnerRecordRun>();
-    const byRecordRunId = new Map<string, RunnerRecordRun>();
+    const byRun = new Map<AgentRun, RunnerRecordRun<AttachmentError, AttachmentRequirements>>();
+    const byRecordRunId = new Map<string, RunnerRecordRun<AttachmentError, AttachmentRequirements>>();
     const runIdsByExperiment = new Map<string, string>();
     const targetRuns: TargetRunV1[] = [];
     for (const planned of plannedRuns) {
@@ -486,7 +507,7 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
           ...(entry.reuse.timeout === undefined ? {} : { timeout: entry.reuse.timeout }),
         } satisfies TargetSlotV1))),
       });
-      const recordRun: RunnerRecordRun = {
+      const recordRun: RunnerRecordRun<AttachmentError, AttachmentRequirements> = {
         ...planned,
         draft,
         target,
@@ -562,10 +583,12 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
       if (writeFailure === undefined) writeFailure = Object.freeze({ error });
     };
 
-    const recordRunForAttempt = (attempt: Attempt): RunnerRecordRun | undefined =>
+    const recordRunForAttempt = (
+      attempt: Attempt,
+    ): RunnerRecordRun<AttachmentError, AttachmentRequirements> | undefined =>
       byRun.get(attempt.run);
     const targetSlotForAttempt = (attempt: Attempt): {
-      readonly recordRun: RunnerRecordRun;
+      readonly recordRun: RunnerRecordRun<AttachmentError, AttachmentRequirements>;
       readonly slotId: SlotId;
       readonly plan: ExecutionReusePlanSlotV1;
     } | undefined => {
@@ -640,27 +663,18 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
 
       return Effect.gen(function* () {
         const writes = yield* Effect.sync(() =>
-          input.attachments?.attemptWrites?.({ attempt, sealed: active.sealed }) ?? [],
+          input.attachments?.attemptWrites?.({
+            attempt,
+            result,
+            sealed: active.sealed,
+            sources: Object.freeze([...(result.sources ?? [])]),
+          }) ?? [],
         );
         const origin = evaluationRecordOriginInputFromSealedAssertions(
           targetSlot.slotId,
           active.sealed,
         );
         if (Either.isLeft(origin)) return yield* Effect.fail(origin.left);
-        const plan = yield* EvaluationRecordContractV1.preparePlan({
-          startedAt: asUtcMillis(input.startedAt),
-          completedAt: asUtcMillis(Date.now()),
-          expectedSlots: targetSlot.recordRun.expectedSlots,
-          evaluations: targetSlot.recordRun.evaluations,
-          originAttempts: [Object.freeze({
-            ...origin.right,
-            writes: Object.freeze([
-              eligibility.right,
-              ...(origin.right.writes ?? []),
-              ...writes,
-            ]),
-          })],
-        });
         return yield* Effect.uninterruptible(
           Effect.gen(function* () {
             const draft = yield* targetSlot.recordRun.draft.createAttempt({
@@ -671,10 +685,13 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
               attemptId: draft.attemptId,
               locator: locatorForAttemptId(draft.attemptId),
             });
-            yield* EvaluationRecordContractV1.writePlanOriginsToAttempts(
-              new Map([[targetSlot.slotId, draft]]),
-              plan,
-            );
+            active.durable = Object.freeze({
+              result,
+              origin: origin.right,
+              eligibility: eligibility.right,
+              pluginWrites: Object.freeze([...writes]),
+              draft,
+            });
             active.public = issued;
             active.completed = true;
             targetSlot.recordRun.gapActions.set(targetSlot.slotId, "executed");
@@ -716,7 +733,7 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
     };
 
     const membershipActionsFor = (
-      recordRun: RunnerRecordRun,
+      recordRun: RunnerRecordRun<AttachmentError, AttachmentRequirements>,
     ): Either.Either<readonly MembershipActionV1[], RunnerRecordWriteError<AttachmentError>> => {
       const actions: MembershipActionV1[] = [];
       for (const targetSlot of recordRun.target.slots) {
@@ -782,6 +799,50 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
         Effect.gen(function* () {
           if (writeFailure !== undefined) return yield* Effect.fail(writeFailure.error);
           for (const recordRun of byRun.values()) {
+            const sourceOrigins: RunnerSourceOriginInput[] = [];
+            for (const [slotId, active] of recordRun.attempts) {
+              if (!active.completed) continue;
+              if (active.durable === undefined) return yield* Effect.fail(attemptInvalid());
+              sourceOrigins.push(Object.freeze({
+                slotId,
+                result: active.durable.result,
+                assertions: active.durable.origin.assertions,
+              }));
+            }
+            const sourcePlan = createRunnerSourceWritePlan(sourceOrigins);
+            if (Either.isLeft(sourcePlan)) return yield* Effect.fail(sourcePlan.left);
+
+            const originPlans: {
+              readonly slotId: SlotId;
+              readonly draft: RecordAttemptDraft;
+              readonly plan: EvaluationRecordPlanV1<AttachmentError, AttachmentRequirements>;
+            }[] = [];
+            for (const [slotId, active] of recordRun.attempts) {
+              if (!active.completed) continue;
+              const durable = active.durable;
+              if (durable === undefined || sourcePlan.right === undefined) {
+                return yield* Effect.fail(attemptInvalid());
+              }
+              const sourceSites = sourcePlan.right.attemptWrites.get(slotId);
+              if (sourceSites === undefined) return yield* Effect.fail(attemptInvalid());
+              const plan = yield* EvaluationRecordContractV1.preparePlan({
+                startedAt: asUtcMillis(input.startedAt),
+                completedAt: asUtcMillis(completedAt),
+                expectedSlots: recordRun.expectedSlots,
+                evaluations: recordRun.evaluations,
+                originAttempts: [Object.freeze({
+                  ...durable.origin,
+                  writes: Object.freeze([
+                    durable.eligibility,
+                    ...(durable.origin.writes ?? []),
+                    ...durable.pluginWrites,
+                    sourceSites,
+                  ]),
+                })],
+              });
+              originPlans.push(Object.freeze({ slotId, draft: durable.draft, plan }));
+            }
+
             const actions = membershipActionsFor(recordRun);
             if (Either.isLeft(actions)) return yield* Effect.fail(actions.left);
             const provenance = buildMembershipProvenanceAttachmentWriteV1({
@@ -790,6 +851,15 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
               actions: actions.right,
             });
             if (Either.isLeft(provenance)) return yield* Effect.fail(provenance.left);
+            if (sourcePlan.right !== undefined) {
+              yield* recordRun.draft.record(sourcePlan.right.runWrite);
+            }
+            for (const origin of originPlans) {
+              yield* EvaluationRecordContractV1.writePlanOriginsToAttempts(
+                new Map([[origin.slotId, origin.draft]]),
+                origin.plan,
+              );
+            }
             yield* recordRun.draft.record(provenance.right);
           }
           return yield* Effect.forEach(

@@ -3,8 +3,6 @@
 // 沙箱编排的固定段在 runAttemptBody(基线→setup→驱动 test→采 diff→评分→判定→收 trace),
 // adapter 只填「把 agent 跑起来」一段。
 
-import { resolve as resolvePath } from "node:path";
-import { readFile as readSourceFile } from "node:fs/promises";
 import { Effect, Cause, Duration, Either, Exit, Fiber, Option } from "effect";
 import {
   materializeSandboxRunPlan,
@@ -75,6 +73,11 @@ import { agentInstallPlansForRun } from "./config-identity.ts";
 import { recordFact, type FactValue } from "../shared/facts.ts";
 import { formatTurnLabel } from "../shared/turn-label.ts";
 import { createSourceRegistry, type SourceRegistry } from "../source-loc.ts";
+import {
+  createRunnerAttemptSourceCapture,
+  retainRunnerAttemptSourceCapture,
+  type RunnerAttemptSourceCapture,
+} from "./source-producer.ts";
 import {
   attemptFailureInfo,
   resolveAttemptFailureClass,
@@ -213,6 +216,10 @@ export function runAttemptEffect<
   const { evalDef, run, attempt } = a;
   const niceevalRoot = opts.niceevalRoot ?? `${process.cwd()}/.niceeval`;
   const t0 = Date.now();
+  // Source bytes are snapshotted at the author action, then held only through
+  // an internal capability until the Record producer seals its own Attachments.
+  const sourceRegistry = createSourceRegistry(process.cwd());
+  const sourceCapture = createRunnerAttemptSourceCapture(sourceRegistry);
 
   const base: EvalResult = {
     id: evalDef.id,
@@ -728,7 +735,7 @@ export function runAttemptEffect<
             }
           }
           try {
-            timeoutSources = await withCleanupTimeout(() => collectSources(events, evalDef.source));
+            timeoutSources = await withCleanupTimeout(() => collectSources(evalDef.source, sourceRegistry));
           } catch {
             // 源码读不到:如实缺失,不阻塞收尾。
           }
@@ -785,6 +792,7 @@ export function runAttemptEffect<
           const interrupted = timedOut || (
             Exit.isFailure(exit) && Cause.isInterruptedOnly(exit.cause)
           );
+          if (interrupted) sourceCapture.markInterrupted();
           if (!interrupted || liveAssertions === undefined || assertionsSealed) {
             return Effect.void;
           }
@@ -835,6 +843,8 @@ export function runAttemptEffect<
         tryPromiseAsDefect((interruptSignal) =>
           runAttemptBody(a, config, t0, base, {
             sandbox,
+            sourceRegistry,
+            sourceCapture,
             receiver,
             telemetry,
             otel: otelChannel,
@@ -889,7 +899,7 @@ export function runAttemptEffect<
       }
 
       const author = Effect.suspend(() => {
-        const returned = evalDef.test(contextExit.value as never) as unknown;
+        const returned = evalDef.test(sourceCapture.instrument(contextExit.value) as never) as unknown;
         if (Effect.isEffect(returned)) {
           return returned as Effect.Effect<void, unknown, never>;
         }
@@ -1086,7 +1096,10 @@ export function runAttemptEffect<
             sources: timeoutSources ?? [],
           }
         : withSandbox;
-      return redactEvalResultEvidence(completed, sensitiveValues);
+      return retainRunnerAttemptSourceCapture(
+        redactEvalResultEvidence(completed, sensitiveValues),
+        sourceCapture.snapshot(),
+      );
     }),
   );
 }
@@ -1300,6 +1313,9 @@ function assertDeadlineFitsPlan(
 
 interface AttemptResources {
   sandbox: Sandbox;
+  /** Attempt-local source snapshot and semantic-token journal; never public Record values. */
+  sourceRegistry: SourceRegistry;
+  sourceCapture: RunnerAttemptSourceCapture;
   /** 本 attempt 解析出的超时上限与它的出处;超时归属(`error.timeout`)照它落盘。 */
   attemptTimeout?: { timeoutMs: number; source: TimeoutSource };
   /** attempt deadline 的截止**时刻**;命令节点的时限归属按它算剩余量。四层都没声明上限时缺席。 */
@@ -1384,6 +1400,8 @@ async function runAttemptBody(
   const { evalDef, run, attempt } = a;
   const {
     sandbox: rawSandbox,
+    sourceRegistry,
+    sourceCapture,
     receiver,
     telemetry,
     otel,
@@ -1448,7 +1466,6 @@ async function runAttemptBody(
   // 变更分类账(仅沙箱型;workspace.baseline 阶段建立)。
   let ledger: ChangeLedger | undefined;
   // discovery 的 entry 快照加上调用发生时首次读取的 helper 快照；不在 attempt 收尾重读。
-  const sourceRegistry = createSourceRegistry(process.cwd());
   try {
     if (usesSandbox) {
       // Linker 已按「template owner 在前，另一作者在后」排好命令；fresh/reuse 每条 Attempt
@@ -1619,8 +1636,9 @@ async function runAttemptBody(
       // OTel 接入时再带 traceId,trace.json 的 spans 由消费方按它临时挂到 turn 下。usage 有记录
       // 才带(show `--execution`/`--timing` 的 turn 头行读 TimingNode.usage,见 docs/feature/
       // results/architecture.md「result.json」TimingNode.usage)。
-      onTurn: (info) =>
-        recorder.child(turnActivity({
+      onTurn: (info) => {
+        sourceCapture.onTurn(info);
+        return recorder.child(turnActivity({
           label: formatTurnLabel(info.sessionIndex, info.turnIndex),
           startOffsetMs: info.startOffsetMs,
           durationMs: info.durationMs,
@@ -1630,7 +1648,8 @@ async function runAttemptBody(
           ...(info.traceId !== undefined ? { traceId: info.traceId } : {}),
           ...(info.traceAttribution !== undefined ? { traceAttribution: info.traceAttribution } : {}),
           ...(info.usage !== undefined ? { usage: info.usage } : {}),
-        })),
+        }));
+      },
     });
     // 登记回外层:超时中断后由 onTimeout 直接读这两个句柄组装 events/usage(见
     // registerEvidence 注释、docs/runner.md「超时:双层保护」超时不丢证据)。
@@ -1859,7 +1878,7 @@ async function runAttemptBody(
 
     // Assert-first entries carry no legacy source graph. Session events and the
     // captured entry module still provide the stable source artifact surface.
-    const sources = await collectSources(events, evalDef.source, sourceRegistry);
+    const sources = await collectSources(evalDef.source, sourceRegistry);
     const legacyProjection = legacyResultProjectionFromSealedAssertions(
       sealedAssertions,
       error,
@@ -2271,30 +2290,12 @@ function withCommandTiming(
 }
 
 async function collectSources(
-  events: readonly StreamEvent[],
   evalSource: CapturedEvalSource,
-  registry?: SourceRegistry,
+  registry: SourceRegistry,
 ): Promise<SourceArtifact[]> {
-  if (registry) return registry.artifacts({ path: evalSource.path, content: evalSource.content, role: "entry" });
-  const paths = new Set<string>();
-  const add = (loc: import("../types.ts").SourceLoc | undefined) => {
-    if (!loc) return;
-    paths.add(loc.file);
-    for (const frame of loc.callers ?? []) if (frame.kind === "project") paths.add(frame.file);
-  };
-  for (const e of events) if (e.type === "message") add(e.loc);
-  const out: SourceArtifact[] = [{ path: evalSource.path, content: evalSource.content, role: "entry" }];
-  for (const path of paths) {
-    if (path === evalSource.path) {
-      continue;
-    }
-    try {
-      out.push({ path, content: await readSourceFile(resolvePath(process.cwd(), path), "utf-8"), role: "referenced" });
-    } catch {
-      // 缺内容仍保留在 callers 内，assembleSourceTree 会输出 unavailable 段。
-    }
-  }
-  return out;
+  // The registry holds only discovery input plus bytes captured at the action
+  // boundary. Deliberately never reread today's workspace to fill history.
+  return registry.artifacts({ path: evalSource.path, content: evalSource.content, role: "entry" });
 }
 
 /** 解析后运行配置的穷尽投影(ExperimentRunInfo,见 docs/feature/record/architecture.md):

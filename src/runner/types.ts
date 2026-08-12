@@ -1157,7 +1157,11 @@ export interface RunnerRecordAttachmentProducers<Error = never, Requirements = n
   }) => readonly RecordAttachmentWrite<"run", Error, Requirements>[];
   readonly attemptWrites?: (input: {
     readonly attempt: Attempt;
+    /** The already sealed runner result; its source snapshot is historical input, never a Record value. */
+    readonly result: EvalResult;
     readonly sealed: SealedAttemptAssertions;
+    /** Convenience view of the exact material captured before result sealing. */
+    readonly sources: readonly SourceArtifact[];
   }) => readonly RecordAttachmentWrite<"attempt", Error, Requirements>[];
 }
 
