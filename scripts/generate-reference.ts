@@ -512,19 +512,48 @@ const EXPECT_FACTORY_NAMES = new Set([
   "commandSucceeded",
   "defineValueMatch",
   "defineScoreMatch",
-  "referencesAnyPath",
-  "toolMatch",
-  "commandMatch",
+  // Tool selectors live in docs/feature/assertions/library/scoped-assertions.md.
+  // Keeping their signatures out of this generated list avoids a second author-facing
+  // definition beside the scope contract.
   "eventMatch",
 ]);
 
-// `TestContext` is the public alias of this Assert-first declaration. Its
-// nested Turn shape lives beside it, so reference output must read both from
-// here rather than from the retired Fact compatibility declarations.
+const ASSERTION_SCOPE_METHODS = new Set(["calledTool", "notCalledTool"]);
+
+// Implementation-only interface names are not the public authoring ABI. Reference
+// output exposes stable domain names; durable RecordAttachment schemas keep their
+// own versioned identities elsewhere.
+const AUTHORING_TYPE_NAMES: readonly [RegExp, string][] = [
+  [/\bAssertFirstTurnHandle\b/g, "TurnHandle"],
+  [/\bAssertFirstSessionHandle\b/g, "SessionHandle"],
+  [/\bAssertFirstRespondAnswer\b/g, "InputAnswer"],
+  [/\bAssertFirstSandbox\b/g, "Sandbox"],
+  [/\bAssertFirstRootJudge\b/g, "RootJudge"],
+  [/\bAssertFirstTurnJudge\b/g, "TurnJudge"],
+  [/\bAssertionsRuntimeV1\b/g, "AssertionRuntime"],
+  [/\bBooleanAssertionHandleV1\b/g, "BooleanAssertionHandle"],
+  [/\bMeasurementAssertionHandleV1\b/g, "MeasurementAssertionHandle"],
+  [/\bPostRunBooleanAssertionHandleV1\b/g, "PostRunBooleanAssertionHandle"],
+  [/\bDirectScoreAssertionHandleV1\b/g, "DirectScoreAssertionHandle"],
+];
+
+function authorFacingMembers(members: Member[]): Member[] {
+  return members.map((member) => ({
+    ...member,
+    signature: AUTHORING_TYPE_NAMES.reduce(
+      (signature, [implementationName, publicName]) => signature.replace(implementationName, publicName),
+      member.signature,
+    ),
+  }));
+}
+
+// `TestContext` is the public alias of this Assert-first declaration. Its nested Turn
+// shape lives beside it, so reference output reads both from here instead of legacy
+// compatibility declarations.
 const ASSERT_FIRST_REFERENCE = {
   source: "src/context/assert-first.ts",
-  testContext: "AssertFirstTestContextV1",
-  turnHandle: "AssertFirstTurnHandleV1",
+  testContext: "AssertFirstTestContext",
+  turnHandle: "AssertFirstTurnHandle",
 } as const;
 
 function computeRegionBody(regionId: string, sources: SourceMap): string {
@@ -575,18 +604,22 @@ function computeRegionBody(regionId: string, sources: SourceMap): string {
       );
     case "test-context":
       return renderMemberList(
-        extractTypeLiteralMembers(
-          sources[ASSERT_FIRST_REFERENCE.source],
-          ASSERT_FIRST_REFERENCE.source,
-          ASSERT_FIRST_REFERENCE.testContext,
+        authorFacingMembers(
+          extractTypeLiteralMembers(
+            sources[ASSERT_FIRST_REFERENCE.source],
+            ASSERT_FIRST_REFERENCE.source,
+            ASSERT_FIRST_REFERENCE.testContext,
+          ).filter((member) => !ASSERTION_SCOPE_METHODS.has(member.name)),
         ),
       );
     case "turn-handle":
       return renderMemberList(
-        extractInterfaceMembers(
-          sources[ASSERT_FIRST_REFERENCE.source],
-          ASSERT_FIRST_REFERENCE.source,
-          ASSERT_FIRST_REFERENCE.turnHandle,
+        authorFacingMembers(
+          extractInterfaceMembers(
+            sources[ASSERT_FIRST_REFERENCE.source],
+            ASSERT_FIRST_REFERENCE.source,
+            ASSERT_FIRST_REFERENCE.turnHandle,
+          ).filter((member) => !ASSERTION_SCOPE_METHODS.has(member.name)),
         ),
       );
     case "config-fields":

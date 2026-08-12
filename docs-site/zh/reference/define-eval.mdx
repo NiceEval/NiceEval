@@ -106,9 +106,9 @@ test(t: TestContext): EvalTestReturn;
 
 ## Test context: `t`
 
-`t`（`TestContext`）是评估用例作者拿到的高层上下文。每一次作者入口调用都直接登记一条 Assertion：`t.check(value, match)` 严格接收两个参数；`t.succeeded()`、`session.succeeded()`、`turn.succeeded()`、`calledTool(name, options?)` 等 scoped 方法与 Judge recipe 也直接登记 Assertion。handle 只配置同一条 entry 的 `key`、`label`、`.atLeast(n)`、`.score(n)` 与 `.orStop()`，绝不登记第二条 Assertion。
+`t`（`TestContext`）是评估用例作者拿到的高层上下文。每一次作者入口调用都直接登记一条 Assertion。`t.check(value, match)` 严格接收两个参数。`t.succeeded()`、`session.succeeded()`、`turn.succeeded()`、`calledTool(...)`、`notCalledTool(...)` 与 Judge recipe 也直接登记 Assertion。handle 只配置同一条 entry 的 `key`、`label`、`.atLeast(n)` 与 `.score(n)`。`.orStop()` 也只作用于此 entry，绝不登记第二条 Assertion。
 
-Pass Eval 用 Boolean condition 折叠 Attempt Verdict。measurement 必须 `.atLeast(n)`；`await handle.orStop()` 在 mismatch 或 below 时停止当前 continuation。`defineScoreEval` 的 `ScoreTestContext` 额外提供 `t.score(n)` 直接登记 contribution，`n` 必须 finite 且不小于零；已有 Assertion 用 `.score(n)` 贡献分数，`n` 必须 finite 且大于零。完整规则见[通过制与计分制](/zh/tutorials/evaluation-kinds)。全部成员：
+Pass Eval 用 Boolean condition 折叠 Attempt Verdict。measurement 必须 `.atLeast(n)`；`await handle.orStop()` 在 mismatch 或 below 时停止当前 continuation。`defineScoreEval` 的 `ScoreTestContext` 额外提供 `t.score(n)` 直接登记 contribution，`n` 必须 finite 且不小于零；已有 Assertion 用 `.score(n)` 贡献分数，`n` 必须 finite 且大于零。`calledTool` 与 `notCalledTool` 的完整契约见 [Scoped assertions](https://github.com/NiceEval/NiceEval/blob/main/docs/feature/assertions/library/scoped-assertions.md)。全部成员：
 
 {/* GENERATED:BEGIN test-context */}
 
@@ -123,13 +123,13 @@ readonly evaluationKind: Kind;
 #### `send`
 
 ```ts
-send(input: string | { readonly text: string; readonly files?: readonly InputFile[] }): Promise<AssertFirstTurnHandleV1<Kind>>;
+send(input: string | { readonly text: string; readonly files?: readonly InputFile[] }): Promise<TurnHandle<Kind>>;
 ```
 
 #### `sendFile`
 
 ```ts
-sendFile(path: string, text?: string): Promise<AssertFirstTurnHandleV1<Kind>>;
+sendFile(path: string, text?: string): Promise<TurnHandle<Kind>>;
 ```
 
 #### `requireInputRequest`
@@ -141,13 +141,13 @@ requireInputRequest(filter?: InputRequestFilter): InputRequest;
 #### `respond`
 
 ```ts
-respond(...responses: readonly (string | AssertFirstRespondAnswerV1)[]): Promise<AssertFirstTurnHandleV1<Kind>>;
+respond(...responses: readonly (string | InputAnswer)[]): Promise<TurnHandle<Kind>>;
 ```
 
 #### `respondAll`
 
 ```ts
-respondAll(optionId: string): Promise<AssertFirstTurnHandleV1<Kind>>;
+respondAll(optionId: string): Promise<TurnHandle<Kind>>;
 ```
 
 #### `reply`
@@ -171,7 +171,7 @@ readonly events: readonly StreamEvent[];
 #### `newSession`
 
 ```ts
-newSession(): AssertFirstSessionHandleV1<Kind>;
+newSession(): SessionHandle<Kind>;
 ```
 
 #### `signal`
@@ -234,13 +234,13 @@ group<Value>(
 #### `check`
 
 ```ts
-check: AssertionsRuntimeV1<Kind>["t"]["check"];
+check: AssertionRuntime<Kind>["t"]["check"];
 ```
 
 #### `sandbox`
 
 ```ts
-readonly sandbox: AssertFirstSandboxV1<Kind>;
+readonly sandbox: Sandbox<Kind>;
 ```
 
 #### `o11y`
@@ -258,22 +258,13 @@ readonly usage: Usage;
 #### `succeeded`
 
 ```ts
-succeeded(): BooleanAssertionHandleV1<Kind, void>;
-```
-
-#### `calledTool`
-
-```ts
-calledTool(
-  name: string,
-  options?: AssertFirstCalledToolOptionsV1,
-): BooleanAssertionHandleV1<Kind, void>;
+succeeded(): BooleanAssertionHandle<Kind, void>;
 ```
 
 #### `judge`
 
 ```ts
-readonly judge: AssertFirstRootJudgeV1<Kind>;
+readonly judge: RootJudge<Kind>;
 ```
 
 {/* GENERATED:END test-context */}
@@ -294,6 +285,8 @@ turn.judge.autoevals.summarizes(sourceText).score(20).label("摘要质量");
 ## `Turn` 返回类型
 
 `t.send(...)` 返回一个 `TurnHandle`：从事件流派生的便利字段，加上一整套本轮作用域断言。
+
+`calledTool` 与 `notCalledTool` 也属于 Turn 的作用域断言；它们的签名和 Match 规则只在 [Scoped assertions](https://github.com/NiceEval/NiceEval/blob/main/docs/feature/assertions/library/scoped-assertions.md) 定义。
 
 {/* GENERATED:BEGIN turn-handle */}
 
@@ -338,22 +331,13 @@ readonly usage?: Usage;
 #### `succeeded`
 
 ```ts
-succeeded(): BooleanAssertionHandleV1<Kind, void>;
-```
-
-#### `calledTool`
-
-```ts
-calledTool(
-  name: string,
-  options?: AssertFirstCalledToolOptionsV1,
-): BooleanAssertionHandleV1<Kind, void>;
+succeeded(): BooleanAssertionHandle<Kind, void>;
 ```
 
 #### `judge`
 
 ```ts
-readonly judge: AssertFirstTurnJudgeV1<Kind>;
+readonly judge: TurnJudge<Kind>;
 ```
 
 {/* GENERATED:END turn-handle */}

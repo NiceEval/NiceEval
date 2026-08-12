@@ -169,34 +169,6 @@ export function defineScoreMatch<T>(spec: {
 }): ScoreMatch<T> { ... }
 ```
 
-#### `referencesAnyPath`
-
-```ts
-export function referencesAnyPath(
-  paths: readonly [string, ...string[]],
-): BooleanMatch<JsonValue, JsonValue, "value"> { ... }
-```
-
-#### `toolMatch`
-
-```ts
-export function toolMatch(
-  nameOrOptions:
-    | string
-    | {
-        readonly input: BooleanMatch<JsonValue, JsonValue, "value">;
-        readonly status?: ToolStatus;
-      },
-  options?: ToolMatchOptions,
-): ToolMatch { ... }
-```
-
-#### `commandMatch`
-
-```ts
-export function commandMatch(executable: string, options?: CommandMatchOptions): ToolMatch<LogicalCommandOccurrence> { ... }
-```
-
 #### `eventMatch`
 
 ```ts
@@ -210,20 +182,36 @@ export function eventMatch<K extends keyof EventOptionsByType>(
 
 ### 匹配工具调用
 
-`calledTool(name, options)` 直接登记 Boolean Assertion。`name` 是工具名；`input` 约束同一次调用的完整 JSON 输入，`count` 约束匹配次数，`status` 约束工具生命周期状态：
+`ToolMatch` 比较一条 `LogicalToolOccurrence`。`calledTool` 接收 `ToolMatch`，或只按名称选择的薄糖；第二参数只表达次数。`notCalledTool` 使用相同 selector 表达零匹配。
 
 ```ts
-t.calledTool("get_weather", {
-  input: { city: "Taipei", unit: "celsius" },
-  count: 1,
-}).label("精确查询天气");
+import {
+  commandMatch,
+  jsonMatch,
+  referencesAnyPath,
+  toolMatch,
+} from "niceeval/expect";
 
-t.calledTool("shell", {
-  input: { command: /pnpm install/ },
-}).label("运行安装命令");
+turn.calledTool(
+  toolMatch("get_weather", {
+    input: jsonMatch({ city: "Taipei", unit: "celsius" }),
+    status: "completed",
+  }),
+  { count: 1 },
+).label("精确查询天气");
+
+turn.calledTool(
+  toolMatch("read_file", {
+    input: referencesAnyPath([".env", "secrets/**"]),
+  }),
+).label("读取受限路径");
+
+turn.notCalledTool(commandMatch("rm", { argsStart: ["-rf"] }));
 ```
 
-`input` 使用递归 JSON 匹配：对象部分匹配、数组逐项匹配，任意层可用 `RegExp` 或动态谓词。省略 `count` 表示至少一次。若 NiceEval 没有取得准确的输入或状态证据，这项检查会是 `unavailable`，不会被当成否定。
+普通 JSON 用 `jsonMatch`，路径用 `referencesAnyPath`，命令 token 用 `commandMatch`。输出不存在、材料不完整或 HITL 尚未完成时，Match 会成为 unavailable，不会伪装成普通不匹配。
+
+完整签名、材料状态与三值计数规则见 [Scoped assertions](https://github.com/NiceEval/NiceEval/blob/main/docs/feature/assertions/library/scoped-assertions.md)。
 
 ### 常见用法示例
 

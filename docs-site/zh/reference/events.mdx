@@ -196,7 +196,7 @@ token 用量或 OTel span 反推得到)。与顶层 `estimatedCostUSD`(价目表
 |---|---|---|
 | `message` | agent（或用户）说了一段话 | `turn.message`、`turn.event(eventMatch("message", ...))`、Judge 的材料 |
 | `operation.started`（`kind: "tool"`） | 发起一次工具调用 | `turn.calledTool(...)`、`turn.toolOrder(...)`、`turn.event(...)` |
-| `operation.finished`（`kind: "tool"`） | 该次工具调用的结果 | 带 `status` 的 `turn.calledTool(...)` |
+| `operation.finished`（`kind: "tool"`） | 该次工具调用的结果 | 带状态条件的 `ToolMatch` |
 | `operation.started`（`kind: "subagent"`） | 委派一个子 agent | `turn.event(eventMatch("operation.started", ...))` |
 | `operation.finished`（`kind: "subagent"`） | 子 agent 返回 | `turn.event(eventMatch("operation.finished", ...))` |
 | `input.requested` | 停下来等人输入（HITL） | `t.requireInputRequest()`、`turn.event(...)` |
@@ -227,14 +227,21 @@ token 用量或 OTel span 反推得到)。与顶层 `estimatedCostUSD`(价目表
 ```
 
 - 每个 tool `operation.started` 配一个**同 `operationId`** 的 tool `operation.finished`——并发调用靠它不错配。你的 agent 返回里有显式 id（AI SDK 的 `toolCallId`、Anthropic 的 `tool_use.id`）就直接用；实在没有再按顺序合成。
-- `status` 如实填：工具执行失败是 `"failed"`；**人否决是 `"rejected"`**。评估作者用带 `status` 选项的 `calledTool(...)` 精确区分，两回事不要混。
+- `status` 如实填：工具执行失败是 `"failed"`；**人否决是 `"rejected"`**。评估作者用 `ToolMatch` 的状态条件精确区分，两回事不要混。
 - `name` 用工具的原始名字。
+- 只有 started 时，逻辑 occurrence 的状态是 `pending`，输出为 unavailable。finished 省略 `output` 也表示 unavailable，不能把缺失写成空 JSON 或普通不匹配。
 
-#### `calledTool` 的 input 与 status 匹配
+#### 将工具事件交给 `ToolMatch`
 
-`calledTool(name, options)` 直接登记 Boolean Assertion。`options` 的 `input` 使用递归 JSON 匹配：对象部分匹配、数组逐项匹配，任意层可用 `RegExp` 或动态谓词；`status` 精确匹配工具生命周期状态；`count` 约束匹配次数。
+同一个 `shell` 工具可以先后运行 `git status` 和 `pnpm test`。名称只能说明工具类别；需要辨认命令时，评估作者使用已归一的 command projection：
 
-例如，同一个 `shell` 工具可以先后运行 `git status` 和 `pnpm test`。两次调用的工具名称都是 `shell`，但 `input.command` 分别记录两组命令。评估作者因此可以用 `calledTool("shell")` 检查工具类别，或用 `calledTool("shell", { input: { command: /pnpm test/ } })` 检查具体命令。
+```ts
+import { commandMatch } from "niceeval/expect";
+
+turn.calledTool(commandMatch("pnpm", { argsStart: ["test"] }));
+```
+
+`ToolMatch` 每次比较一条逻辑 occurrence。完整 selector、JSON、路径、输出与计数规则见 [Scoped assertions](https://github.com/NiceEval/NiceEval/blob/main/docs/feature/assertions/library/scoped-assertions.md)。
 
 原生协议直接给出单一 invocation 的 structured argv 时，从 `niceeval/adapter` 调用公开构造器：
 
