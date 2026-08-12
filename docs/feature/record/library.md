@@ -392,6 +392,341 @@ unknown family 或 schema 始终是 `unsupported`。envelope、payload、blob、
 验证失败优先是 `invalid`。这些都是 Projection 可消费的成功数据；真实 I/O、permission、
 closed reader 与错误 handle 留在 Effect typed error。
 
+## Official Observability family、capture 与 projector
+
+官方 Observability durable shape 由
+[Observability Attachments](architecture/observability-attachments.md) 唯一拥有。本节只定义公开
+family、capture constructor、typed error、Effect 边界与 neutral projector；不复制 payload schema。
+
+```ts
+import type { RecordAttachmentProjector } from "niceeval/projection";
+
+declare const attemptConversationAttachmentV1: RecordAttachmentFamily<
+  "attempt",
+  ConversationAttachmentV1
+>;
+
+declare const attemptCommandsAttachmentV1: RecordAttachmentFamily<
+  "attempt",
+  CommandsAttachmentV1
+>;
+
+declare const attemptUsageAttachmentV1: RecordAttachmentFamily<
+  "attempt",
+  UsageAttachmentV1
+>;
+
+declare const attemptTimingAttachmentV1: RecordAttachmentFamily<
+  "attempt",
+  AttemptTimingAttachmentV1
+>;
+
+declare const attemptDiagnosticsAttachmentV1: RecordAttachmentFamily<
+  "attempt",
+  AttemptDiagnosticsAttachmentV1
+>;
+
+declare const runTimingAttachmentV1: RecordAttachmentFamily<
+  "run",
+  RunTimingAttachmentV1
+>;
+
+declare const runDiagnosticsAttachmentV1: RecordAttachmentFamily<
+  "run",
+  RunDiagnosticsAttachmentV1
+>;
+```
+
+这七个 family 是 package-owned builtin。第三方不能以 niceeval namespace 重定义、替换或扩展它们；
+第三方长期事实使用自己的 versioned Attachment 与 projector。
+
+### capture constructor
+
+capture 是 official producer 的结构化入口，不是作者向 Record 追加万能 JSON 的入口。各方法的 input
+都是对应 durable schema 的闭合语义输入：collector mint identity、执行已登记的 redaction、检查每项
+上限，并把 opaque entity handle 转成 durable ref。input 不能携带 raw provider frame、raw error、
+path、blob key 或任意扩展 object。
+
+```ts
+declare const attemptObservabilityCaptureTypeId: unique symbol;
+declare const runObservabilityCaptureTypeId: unique symbol;
+declare const observabilityEntityRefTypeId: unique symbol;
+declare const runObservabilityEntityRefTypeId: unique symbol;
+declare const registeredCommandCaptureTypeId: unique symbol;
+
+interface AttemptObservabilityEntityRefV1 {
+  readonly [observabilityEntityRefTypeId]: typeof observabilityEntityRefTypeId;
+}
+
+interface RunObservabilityEntityRefV1 {
+  readonly [runObservabilityEntityRefTypeId]: typeof runObservabilityEntityRefTypeId;
+}
+
+interface RegisteredCommandCaptureV1 extends AttemptObservabilityEntityRefV1 {
+  readonly [registeredCommandCaptureTypeId]: typeof registeredCommandCaptureTypeId;
+}
+
+interface ObservabilityRedactorV1 {
+  readonly redact: (input: string) => {
+    readonly text: string;
+    readonly replacements: number;
+  };
+}
+
+interface ObservabilityAttemptCapture {
+  readonly [attemptObservabilityCaptureTypeId]: typeof attemptObservabilityCaptureTypeId;
+
+  readonly recordConversation: (
+    input: ConversationCaptureInputV1,
+  ) => Effect.Effect<
+    AttemptObservabilityEntityRefV1,
+    ObservabilityCaptureError
+  >;
+
+  readonly registerCommand: (
+    input: CommandManifestCaptureInputV1,
+  ) => Effect.Effect<
+    RegisteredCommandCaptureV1,
+    ObservabilityCaptureError
+  >;
+
+  readonly recordCommandResult: (
+    command: RegisteredCommandCaptureV1,
+    input: CommandResultCaptureInputV1,
+  ) => Effect.Effect<void, ObservabilityCaptureError>;
+
+  readonly recordUsage: (
+    input: UsageCaptureInputV1,
+  ) => Effect.Effect<
+    AttemptObservabilityEntityRefV1,
+    ObservabilityCaptureError
+  >;
+
+  readonly recordTiming: (
+    input: AttemptTimingCaptureInputV1,
+  ) => Effect.Effect<
+    AttemptObservabilityEntityRefV1,
+    ObservabilityCaptureError
+  >;
+
+  readonly recordDiagnostic: (
+    input: AttemptDiagnosticCaptureInputV1,
+  ) => Effect.Effect<
+    AttemptObservabilityEntityRefV1,
+    ObservabilityCaptureError
+  >;
+}
+
+interface ObservabilityRunCapture {
+  readonly [runObservabilityCaptureTypeId]: typeof runObservabilityCaptureTypeId;
+
+  readonly recordTiming: (
+    input: RunTimingCaptureInputV1,
+  ) => Effect.Effect<RunObservabilityEntityRefV1, ObservabilityCaptureError>;
+
+  readonly recordDiagnostic: (
+    input: RunDiagnosticCaptureInputV1,
+  ) => Effect.Effect<RunObservabilityEntityRefV1, ObservabilityCaptureError>;
+}
+
+declare const makeObservabilityAttemptCaptureV1: (input: {
+  readonly draft: RecordAttemptDraft;
+  readonly redactor: ObservabilityRedactorV1;
+}) => Effect.Effect<ObservabilityAttemptCapture, never>;
+
+declare const makeObservabilityRunCaptureV1: (input: {
+  readonly draft: RecordRunDraft;
+  readonly redactor: ObservabilityRedactorV1;
+}) => Effect.Effect<ObservabilityRunCapture, never>;
+```
+
+下列 input 都是 package-exported closed union：
+
+- ConversationCaptureInputV1、CommandManifestCaptureInputV1 与 CommandResultCaptureInputV1；
+- UsageCaptureInputV1、AttemptTimingCaptureInputV1 与 RunTimingCaptureInputV1；
+- AttemptDiagnosticCaptureInputV1 与 RunDiagnosticCaptureInputV1。
+
+每一种 input 都省略 durable entity identity。Attempt input 只能用 AttemptObservabilityEntityRefV1，
+Run input 只能用 RunObservabilityEntityRefV1，表达可选 direct cross-family ref。它们的 field、variant、
+limit 与 redaction 规则完全对应 Observability Attachments。实现不得用 index signature、unknown、
+JSON record 或 cast 扩张它们。
+
+capture 的 state 与 handles 是 package-branded。伪造 ref、来自另一 capture 的 ref、sealed capture 或
+对已完成 command 再写 result 都返回 ObservabilityCaptureError。redactor callback throw 是 defect；
+interruption 不变成 capture error，继续保留 Effect Cause。
+
+### whole-Run contract
+
+Attempt finalizer 全部停稳后才可 seal Attempt capture。Run teardown 停稳后才可 seal Run capture。
+constructor 将 capture 与一个 draft 绑定，只建立内存 collector，不写 filesystem。whole-Run contract
+先冻结并联合验证每个 Attempt 的五份与 Run 的两份 official Attachment，再调用绑定 draft 的
+generic writer 路径。
+
+```ts
+interface ObservabilityRecordContractV1 {
+  readonly write: () => Effect.Effect<void, RecordWriteError>;
+}
+
+declare const sealObservabilityRecordContractV1: (input: {
+  readonly run: ObservabilityRunCapture;
+  readonly attempts: readonly ObservabilityAttemptCapture[];
+}) => Effect.Effect<
+  ObservabilityRecordContractV1,
+  ObservabilityCaptureError | ObservabilityRecordContractError
+>;
+```
+
+sealObservabilityRecordContractV1 拒绝没有五份 Attempt family 或两份 Run family 的输入。它也验证
+collection、owner-local identity、command register/result 对、closure、timing tree、SourceItem frame
+与同 owner 的 direct cross-family ref。成功后 contract.write 只使用 generic writer 的 typed write
+路径。writer failure 保持 RecordWriteError；在它成功且其它 Run 事实也已写入前，不得创建 complete
+marker。
+
+### typed error
+
+```ts
+type ObservabilityCaptureError =
+  | {
+      readonly code: "observability-capture-sealed";
+      readonly owner: "run" | "attempt";
+    }
+  | {
+      readonly code: "observability-command-not-registered";
+      readonly commandId: CommandIdV1;
+    }
+  | {
+      readonly code: "observability-command-result-already-recorded";
+      readonly commandId: CommandIdV1;
+    }
+  | {
+      readonly code: "observability-input-not-safe";
+      readonly field: "text" | "manifest" | "diagnostic";
+    };
+
+type ObservabilityRecordContractError =
+  | {
+      readonly code: "observability-required-attachment-missing";
+      readonly owner: "run" | "attempt";
+      readonly schemaId: string;
+    }
+  | {
+      readonly code: "observability-owner-or-schema-invalid";
+      readonly owner: "run" | "attempt";
+      readonly schemaId: string;
+    }
+  | {
+      readonly code: "observability-identity-invalid";
+      readonly schemaId: string;
+      readonly entity: string;
+    }
+  | {
+      readonly code: "observability-cross-reference-invalid";
+      readonly schemaId: string;
+      readonly sourceId: string;
+    }
+  | {
+      readonly code: "observability-timing-tree-invalid";
+      readonly intervalId: IntervalIdV1;
+    }
+  | {
+      readonly code: "observability-source-frame-invalid";
+      readonly diagnosticId: DiagnosticIdV1;
+    };
+```
+
+这两个 union 只暴露 bounded safe code 与 identity。collector 采集不足应 seal safe partial value；
+不能安全形成 input 或整个 Run 联合验证失败才走 typed error。原始 exception、secret、path、stack 与
+payload 不进入 error value。
+
+### neutral projector
+
+RecordAttachmentProjector 和 defineRecordAttachmentProjector 仍由 Projection Library 公开。以下
+prebuilt projector 与其它第三方 projector 同样接受一份 available Attachment，且只读其自包含 value：
+
+```ts
+type ConversationViewV1 = ConversationAttachmentV1;
+type UsageViewV1 = UsageAttachmentV1;
+type AttemptTimingViewV1 = AttemptTimingAttachmentV1;
+type RunTimingViewV1 = RunTimingAttachmentV1;
+type AttemptDiagnosticsViewV1 = AttemptDiagnosticsAttachmentV1;
+type RunDiagnosticsViewV1 = RunDiagnosticsAttachmentV1;
+
+type CommandStreamViewV1 = {
+  readonly text: string;
+  readonly retainedBytes: NonNegativeSafeInteger;
+  readonly totalSafeUtf8Bytes: NonNegativeSafeInteger;
+};
+
+type CommandsViewV1 = {
+  readonly collection: CommandsAttachmentV1["collection"];
+  readonly commands: readonly {
+    readonly commandId: CommandIdV1;
+    readonly manifest: CommandManifestV1;
+    readonly result: {
+      readonly outcome: CommandResultV1["outcome"];
+      readonly stdout: CommandStreamViewV1;
+      readonly stderr: CommandStreamViewV1;
+    };
+    readonly refs: readonly CommandsReferencesV1[];
+  }[];
+};
+
+declare const attemptConversationProjectorV1: RecordAttachmentProjector<
+  "attempt",
+  ConversationViewV1
+>;
+
+declare const attemptCommandsProjectorV1: RecordAttachmentProjector<
+  "attempt",
+  CommandsViewV1
+>;
+
+declare const attemptUsageProjectorV1: RecordAttachmentProjector<
+  "attempt",
+  UsageViewV1
+>;
+
+declare const attemptTimingProjectorV1: RecordAttachmentProjector<
+  "attempt",
+  AttemptTimingViewV1
+>;
+
+declare const attemptDiagnosticsProjectorV1: RecordAttachmentProjector<
+  "attempt",
+  AttemptDiagnosticsViewV1
+>;
+
+declare const runTimingProjectorV1: RecordAttachmentProjector<
+  "run",
+  RunTimingViewV1
+>;
+
+declare const runDiagnosticsProjectorV1: RecordAttachmentProjector<
+  "run",
+  RunDiagnosticsViewV1
+>;
+```
+
+ConversationViewV1、UsageViewV1、AttemptTimingViewV1、RunTimingViewV1、
+AttemptDiagnosticsViewV1 与 RunDiagnosticsViewV1 保留对应 durable payload 的 value 语义。
+CommandsViewV1 只把每条 stream 的 inline/blob storage 归一成相同的 UTF-8 text、retainedBytes 与
+totalSafeUtf8Bytes。view 不暴露 RecordBlobRef、path、reader 或 stream。
+
+一个 projector 不计数、不聚合 command success、不计算 duration 或 critical path、不分组
+diagnostic，也不 join 另一 family。最终选定的公共 Record-to-Report 数据面负责声明多个
+projection；Calculation 才能组合它们。官方 Report 不得到私有 projector 或额外 reader capability。
+
+### migration ownership
+
+每个 owner-specific family 各自调用 defineRecordAttachmentFamily 并只注册相邻 migration edge。
+conversation、commands、usage、Attempt timing、Run timing、Attempt diagnostics 与 Run diagnostics
+不能共用一个万能 migration。payload、closure、entity identity 或 ref 解释改变时，只有受影响的
+family 发布下一个 schema identity。
+
+普通 reader 不自动 migrate。explicit migrate 依既有 migration registry 执行完整相邻链。converter
+只能读取同一 Attachment 的 complete value 与 own blob closure，不能读取另一个 owner、legacy event
+file、当前 worktree、provider input 或 private evidence 补值。
+
 ## Frozen snapshot、reader 与 handles
 
 ```ts
