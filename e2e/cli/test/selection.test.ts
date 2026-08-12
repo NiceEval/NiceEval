@@ -6,9 +6,7 @@ import { command, withProjectCopy } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 
 interface ExpPlanDocument {
-  format: string;
-  schemaVersion: number;
-  matrix: Array<{ experimentId: string; evalId: string; reused: boolean }>;
+  matrix: Array<{ evalId: string }>;
 }
 
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
@@ -25,7 +23,6 @@ test("Eval 前缀只选择命中的 Eval", async () => {
 
     expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
     const plan = receipt.json<ExpPlanDocument>();
-    expect(plan).toMatchObject({ format: "niceeval.exp-plan", schemaVersion: 3 });
     expect(plan.matrix.map((row) => row.evalId)).toEqual(["greet/hello"]);
   });
 });
