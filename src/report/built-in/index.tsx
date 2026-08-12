@@ -11,3 +11,7 @@ export {
   defaultSourceEvidenceReport,
   sourceEvidenceReport,
 } from "./source.ts";
+export {
+  defaultExecutionEvidenceReport,
+  executionEvidenceReport,
+} from "./execution.ts";
