@@ -2,11 +2,11 @@
 
 NiceEval 保存不可变评估事实，并让分析与报告从同一份事实形成可追溯结果。
 
-## Report 查询
+## 分析与报告
 
-**ReportQuery**:
-Report 对一份 frozen selection 的静态取数或同步派生声明。作者可以组合和消费它，但不能直接执行它。
-_Avoid_: Source, Projection, Calculation object
+**Analysis scope**:
+从同一份 frozen Record view 选择的 Runs、完整 logical slots 与分母。
+_Avoid_: Result set, Query context
 
 **Logical slot**:
 由 selected Run 与 slot ID 共同标识的一次样本位置；即使多个位置引用同一个 Attempt，它们仍是不同位置。
@@ -27,3 +27,8 @@ _Avoid_: Latest grading
 **Grading claim**:
 后续 grading Run 对一个 sealed subject 产生的 immutable 评定事实。
 _Avoid_: Recomputed verdict, Latest claim
+
+**Grading claim selection**:
+在同一 frozen Record view 中显式选择产生 grading claims 的 Runs；它不改变 Analysis scope 的 logical
+slots 或分母。
+_Avoid_: Latest grading, Analysis selection

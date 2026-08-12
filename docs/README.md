@@ -73,7 +73,6 @@ docs/
 │   ├── agent-as-judge/                  用独立 Agent 调查证据并执行 Judge Assertion
 │   ├── assertion-authoring/             Assertion-first 作者面、Verdict 与 score、统一 Match
 │   ├── replayable-grading/              多轮 Execution 与 Grading 分离、Record 重评分
-│   ├── report-query-api/                 Consumer-local query 与 Report 顶层作者 API
 │   ├── experiment-pilot-sampling/       共同题集、固定 seed 与 non-final Pilot
 │   ├── experiment-families/             keyed record 展开稳定 Experiment ID
 │   ├── sandbox-fixture-content/         identity-aware Fixture 内容 prepare 命令
@@ -93,6 +92,7 @@ docs/
 │   ├── multi-container-environments/    多容器环境:拓扑声明形态与 provider 构建、启动职责
 │   ├── prepare-commands/                内置 prepare 命令:固定生命周期下的具体化声明与复用成本
 │   ├── report-authoring/                报告作者面:组件粒度与取数形态
+│   ├── record-to-report-dx/              从 frozen Record 到 Report 的端到端 API 与 DX 候选
 │
 ├── research/                            带观察日期的外部产品研究，不构成目标契约
 │   ├── ori-eval.md                      Ori Eval、spawn-ori-eval 与 NiceEval 的关系

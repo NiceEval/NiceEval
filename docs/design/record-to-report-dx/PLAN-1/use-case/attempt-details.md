@@ -1,4 +1,4 @@
-# 展示 Attempt 的 Assertions、Verdict 与 Score
+# C2：展示 Attempt 的 Assertions、Verdict 与 Score
 
 报告要为每个 logical slot 展示 Assertions，并同时显示 execution Verdict、可选 Score 与 origin
 Evaluation。作者不分别执行三份 Projection，也不手工按 slot 查找和拼接 entries。

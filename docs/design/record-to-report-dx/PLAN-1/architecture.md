@@ -130,7 +130,7 @@ Assertions、Verdict、Score 与 Evaluation 等有界 JSON 不受阻。大型 Co
 多媒体或分块 artifact 不能宣称支持选择性详情读取；PageFamily 也不能用 per-instance query 绕过。
 
 这是 Record Library reader capability 的高等级、架构级范围限制，不是 portable format correctness
-defect。本方向不修改 Record 持久契约；未来可以另行设计 selective/indexed blob snapshot 或新的
+defect。本候选不修改 Record 持久契约；未来可以另行设计 selective/indexed blob snapshot 或新的
 reader capability。
 
 ## 下一项 falsifier

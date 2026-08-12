@@ -1,7 +1,28 @@
 # Report Query Library
 
-本页定义未来 `niceeval/report` 的顶层作者调用面。所有 constructor 在模块求值时只创建不可执行的
+本页定义 PLAN-1 的 `niceeval/report` 顶层作者调用面。所有 constructor 在模块求值时只创建不可执行的
 声明；只有 Report host 能在 frozen Record selection 内执行 `ReportQuery`。
+
+## Record 与 selection
+
+```ts
+declare const openRecord: (input: {
+  readonly root: RecordRoot;
+}) => Effect.Effect<FrozenRecord, RecordOpenError, Scope.Scope>;
+
+type RunSelection =
+  | ReturnType<typeof explicitRuns>
+  | ReturnType<typeof latestRuns>;
+
+declare const selectRuns: (
+  record: FrozenRecord,
+  selection: RunSelection,
+) => Effect.Effect<AnalysisScope, AnalysisSelectionError | RecordReadError>;
+```
+
+`AnalysisScope` 同时是 pure logical universe 与绑定当前 frozen Record 的 I/O capability。作者不能
+从 pure rows 重新构造它。普通 Report module 不收到 `AnalysisScope`；脚本高级入口可以把它交给
+`runQuery()`。
 
 ## 最小报告
 
@@ -72,7 +93,9 @@ const energy = attachment(energyFamily, ({ value, owner }) => ({
 ```
 
 `project` 必须同步。它只读取当前 relation 的完整 immutable Attachment value 与 owner identity；
-不能读取其它 query、RecordReader、filesystem、network 或 ambient Effect service。
+按 author contract，callback 只能读取已声明 inputs，不能读取其它 query、RecordReader 或 ambient Effect
+service。Report module 仍是 trusted Node code，技术上可以 import filesystem/network；宿主不跟踪或阻止
+这种副作用，因此参数收窄不是安全或完全确定性保证。
 
 每个 addressable field 保留完整六态：
 
@@ -255,13 +278,24 @@ namespace。route 与 component identity 分开校验。
 官方入口区分 execution-time claim 与后续 grading claim：
 
 ```ts
+declare const gradingClaims: <Fields>(input: {
+  readonly selection: GradingClaimSelection;
+  readonly fields: Fields;
+}) => ReportQuery<GradingClaimRows<Fields>>;
+
+const selectedGradingClaims = gradingClaims({
+  selection: explicitGradingRuns({ runIds: gradingRunIds }),
+  fields: { verdict: gradingVerdict, score: gradingScore },
+});
+
 const executionPassRate = metrics.execution.passRate();
 const gradingPassRate = metrics.grading.passRate({
   claims: selectedGradingClaims,
 });
 ```
 
-不存在无限定的 `metrics.passRate()`，也不自动选择 latest grading claim。
+`gradingClaims()` 在同一个 frozen view 中查询 claim-producing Runs，但不改变 Analysis 的 base
+population。不存在无限定的 `metrics.passRate()`，也不自动选择 latest grading claim。
 
 Execution pass rate 使用 selected Run Evaluation 决定每个 logical slot 的 evaluation kind 与
 denominator。Attempt-owned Verdict 提供 execution-time claim。Origin Run Evaluation 只校验
