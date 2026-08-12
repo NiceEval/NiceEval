@@ -30,8 +30,9 @@ test("custom report Journey：本轮导出后在真实 view server 中导航证�
       const exported = await niceeval.run(
         [
           "view",
+          "--latest",
           "--record",
-          ".niceeval",
+          ".niceeval/record",
           "--report",
           "./reports/site.tsx",
           "--out",
@@ -47,8 +48,9 @@ test("custom report Journey：本轮导出后在真实 view server 中导航证�
         [
           binary,
           "view",
+          "--latest",
           "--record",
-          ".niceeval",
+          ".niceeval/record",
           "--report",
           "./reports/site.tsx",
           "--host",

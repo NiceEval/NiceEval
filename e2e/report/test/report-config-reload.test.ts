@@ -38,7 +38,7 @@ test("view 持续重建项目模块、配置、Record，并在修复报告后恢
     async ({ root }) => {
       const run = await niceeval.run(["exp", "main", "--rerun", "all", "--json"], { cwd: root });
       expect(run.exitCode, run.diagnostic()).not.toBe(0);
-      expect(run.stdout).toContain('"event":"result"');
+      expect(run.expReceipt()).toMatchObject({ completion: "completed" });
 
       const configPath = join(root, "niceeval.config.ts");
       const reportPath = join(root, "reports", "config-reload.tsx");
@@ -58,6 +58,7 @@ test("view 持续重建项目模块、配置、Record，并在修复报告后恢
         [
           binary,
           "view",
+          "--latest",
           "--host",
           "127.0.0.1",
           "--port",

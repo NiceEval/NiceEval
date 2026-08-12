@@ -11,19 +11,13 @@ interface ExpEvent {
   event: string;
   evalId?: string;
   locator?: string;
-  status?: string;
-  passed?: number;
-  failed?: number;
-  errored?: number;
-  completion?: string;
+  verdict?: string;
 }
 
 interface ShowDocument {
   format: string;
-  schemaVersion: number;
-  view: string;
-  sample: { experiments: string[] };
-  data: unknown;
+  sample: { runCount: number; slotCount: number; denominator: number };
+  problemTable: readonly unknown[];
 }
 
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
@@ -40,72 +34,59 @@ test("show --json 读回本轮完整运行的三态 sample", async () => {
       expect(run.exitCode, run.diagnostic()).not.toBe(0);
       expect(run.stderr).toBe("");
 
-      const result = only(run.ndjson<ExpEvent>(), (event) => event.event === "result", run.diagnostic());
-      expect(result).toMatchObject({
-        event: "result",
-        status: "failed",
-        passed: 1,
-        failed: 1,
-        errored: 1,
-        completion: "complete",
-      });
+      const result = run.expReceipt();
+      expect(result).toMatchObject({ completion: "completed" });
+      const evals = run.ndjson<ExpEvent>().filter((event) => event.event === "eval");
+      expect(evals.map((event) => [event.evalId, event.verdict]).sort()).toEqual([
+        ["deliberate-error", "errored"],
+        ["deliberate-fail", "failed"],
+        ["tool-call", "passed"],
+      ]);
 
       const failed = only(
         run.ndjson<ExpEvent>(),
         (event) => event.event === "eval" && event.evalId === "deliberate-fail" && event.locator !== undefined,
         run.diagnostic(),
       );
+      expect(failed.locator, run.diagnostic()).toBeTruthy();
       const junit = await readFile(join(root, "junit", "main.xml"), "utf8");
       expect(junit).toContain("<failure");
       expect(junit).toContain("<error");
 
-      const overview = await niceeval.run(["show", "--record", ".niceeval"], { cwd: root });
+      const overview = await niceeval.run(["show", "--latest", "--record", ".niceeval/record"], { cwd: root });
       expect(overview.exitCode, overview.diagnostic()).toBe(0);
-      expect(overview.stdout).toContain("tool-call");
-      expect(overview.stdout).toContain("deliberate-fail");
-      expect(overview.stdout).toContain("deliberate-error");
+      expect(overview.stdout).toContain("Sample: 1 run(s), 3 slot(s)");
+      expect(overview.stdout).toContain("No slot problems");
 
-      const shown = await niceeval.run(["show", "--record", ".niceeval", "--json"], { cwd: root });
+      const shown = await niceeval.run(
+        ["show", "--latest", "--record", ".niceeval/record", "--json"],
+        { cwd: root },
+      );
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
       const document = shown.json<ShowDocument>();
       expect(document).toMatchObject({
-        format: "niceeval.show",
-        schemaVersion: 1,
-        view: "leaderboard",
-        sample: { experiments: ["main"] },
+        format: "niceeval.report-show/v1",
+        sample: { runCount: 1, slotCount: 3, denominator: 3 },
+        problemTable: [],
       });
-      const data = JSON.stringify(document.data);
-      expect(data).toContain("tool-call");
-      expect(data).toContain("deliberate-fail");
-      expect(data).toContain("deliberate-error");
-
-      const attempt = await niceeval.run(
-        ["show", failed.locator!, "--record", ".niceeval", "--json"],
-        { cwd: root },
-      );
-      expect(attempt.exitCode, attempt.diagnostic()).toBe(0);
-      const attemptDocument = attempt.json<ShowDocument>();
-      expect(attemptDocument).toMatchObject({
-        format: "niceeval.show",
-        schemaVersion: 1,
-        view: "attempt",
-      });
-      expect(JSON.stringify(attemptDocument.data)).toContain('"verdict":"failed"');
+      const data = JSON.stringify(document.sample);
+      expect(data).toContain('"policy":"latest-runs"');
 
       const custom = await niceeval.run(
         [
           "show",
+          "--latest",
           "--record",
-          ".niceeval",
+          ".niceeval/record",
           "--report",
           "./reports/site.tsx",
           "--page",
-          "overview",
+          "/overview",
         ],
         { cwd: root },
       );
       expect(custom.exitCode, custom.diagnostic()).toBe(0);
-      expect(custom.stdout).toContain("tool-call");
+      expect(custom.stdout).toContain("Fixture copy block");
     },
     reportArtifactStaging("show", ["junit"]),
   );

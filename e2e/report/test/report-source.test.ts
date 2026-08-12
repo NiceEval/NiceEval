@@ -41,7 +41,7 @@ test("旧 locator 的 show --source 保留入口、调用链与导入断言快�
       );
 
       const shown = await niceeval.run(
-        ["show", attempt.locator!, "--record", ".niceeval", "--source", "--json"],
+        ["show", attempt.locator!, "--record", ".niceeval/record", "--source", "--json"],
         { cwd: root },
       );
       expect(shown.exitCode, shown.diagnostic()).toBe(0);

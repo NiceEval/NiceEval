@@ -19,8 +19,9 @@ test("view --out 为本轮 report evidence 导出可读静态站", async () => {
       const exported = await niceeval.run(
         [
           "view",
+          "--latest",
           "--record",
-          ".niceeval",
+          ".niceeval/record",
           "--report",
           "./reports/site.tsx",
           "--out",

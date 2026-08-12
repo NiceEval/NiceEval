@@ -28,7 +28,7 @@ test("show --execution 读回本轮 tool-call 的确定性对话证据", async (
       );
 
       const shown = await niceeval.run(
-        ["show", toolCall.locator!, "--record", ".niceeval", "--execution"],
+        ["show", toolCall.locator!, "--record", ".niceeval/record", "--execution"],
         { cwd: root },
       );
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
