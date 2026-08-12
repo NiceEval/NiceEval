@@ -76,11 +76,10 @@ import {
   createFingerprintSourceCache,
   fingerprintWithManifest,
   hashConfigIdentity,
-  resolvedTimeoutMsForCarry,
 } from "./fingerprint.ts";
 import { resolveJudge } from "./judge-config.ts";
 import { prepareRunSandboxes, type PreparedRunPair } from "./sandbox-selection.ts";
-import { resolveRunTimeout } from "./timeout.ts";
+import { resolveAttemptTimeout, resolveRunTimeout } from "./timeout.ts";
 import type {
   AgentRun,
   Config,
@@ -525,12 +524,12 @@ export function prepareCurrentAdoptionTargetV1(input: {
               "adoption-target-invalid",
               `Current input identity for "${pair.evalDef.id}" failed: ${safeMessage(cause)}`,
             )));
-          const timeoutMs = resolvedTimeoutMsForCarry(
+          const timeout = resolveAttemptTimeout(
             run,
             pair.evalDef,
-            input.project.config.timeoutMs,
+            input.project.config,
           );
-          if (!Number.isFinite(timeoutMs) && timeoutMs !== Infinity) {
+          if (timeout !== undefined && !Number.isFinite(timeout.timeoutMs)) {
             return yield* Effect.fail(adoptionError(
               "adoption-target-invalid",
               `Current timeout for "${pair.evalDef.id}" is invalid.`,
@@ -546,12 +545,12 @@ export function prepareCurrentAdoptionTargetV1(input: {
               domain: ADOPTION_CONFIG_IDENTITY_DOMAIN_V1,
               value: hashConfigIdentity(identity),
             }),
-            ...(timeoutMs === Infinity
+            ...(timeout === undefined
               ? {}
               : {
                   timeout: Object.freeze({
                     domain: EXECUTION_DURATION_DOMAIN_V1,
-                    milliseconds: timeoutMs,
+                    milliseconds: timeout.timeoutMs,
                   }),
                 }),
           });

@@ -23,11 +23,9 @@ import type {
 import type { ScoreTestContext, TestContext } from "../context/types.ts";
 import type { CapturedEvalSource } from "./eval-source.ts";
 import type { AttemptLocator } from "../record/locator.ts";
-import type { EvalManifest } from "../record/manifest.ts";
 import type { RecordAttachmentWrite } from "../record/attachment/index.ts";
-import type { FrozenRecordAttempt, FrozenRecordView } from "../record/reader/types.ts";
-import type { RecordReaderReadError } from "../record/reader/errors.ts";
 import type { SealedAttemptAssertions } from "../assertions/api.ts";
+import type { CurrentReusedAttemptReadback } from "./reuse-readback.ts";
 // Report 的公开子路径是独立预编译单元；这里依赖作者 API 的公开 aggregate，避免把
 // host implementation 或旧的 JSX renderer type 拉回 runner 边界。
 import type { Report } from "../report/index.ts";
@@ -544,6 +542,8 @@ export interface InvocationSummary {
   durationMs: number;
   usage?: Usage;
   estimatedCostUSD?: number;
+  /** Current Record readbacks adopted by this invocation; these are never recreated EvalResults. */
+  reusedAttempts: readonly CurrentReusedAttemptReadback[];
   results: EvalResult[];
 }
 
@@ -623,8 +623,8 @@ export type ReporterEvent =
       experimentId: string;
       /** 该 Experiment 封口时刻,即它的 Run completedAt。 */
       completedAt: string;
-      /** 本次携带合入(fingerprint 命中、未真实执行)的历史终态结果,收尾时一并落盘。 */
-      carriedResults: EvalResult[];
+      /** 当前 Record 读取出的精确复用 Attempt；不伪造成历史 EvalResult。 */
+      reusedAttempts: readonly CurrentReusedAttemptReadback[];
       /** 该 Experiment 域产生的全部诊断;空集合传空数组,不省略字段。 */
       diagnostics: readonly DiagnosticRecord[];
       /** 该 Experiment 域经 `ctx.fact()` 累计的运行事实(experiment.setup / .teardown,含收尾自愈路径);省略 = 没有上报过。 */
@@ -1164,22 +1164,6 @@ export interface RunnerRecordAttachmentProducers<Error = never, Requirements = n
   }) => readonly RecordAttachmentWrite<"attempt", Error, Requirements>[];
 }
 
-/**
- * Carry planning may provide only the exact frozen source selected for a
- * target Slot. The Runner deliberately does not infer a source from historic
- * experiment/eval/ordinal fields: an absent source is a named carry gap and
- * returns that Slot to fresh execution.
- */
-export interface RunnerRecordCarryReferences {
-  readonly sourceForCarriedSlot: (input: {
-    readonly run: AgentRun;
-    readonly evalDef: DiscoveredEval;
-    readonly attempt: number;
-    readonly slotId: import("../record/model/identifiers.ts").SlotId;
-    readonly view: FrozenRecordView<RecordReaderReadError>;
-  }) => Effect.Effect<FrozenRecordAttempt | undefined, RecordReaderReadError>;
-}
-
 export interface RunOptions<RecordError = never, RecordRequirements = never> {
   config: Config;
   evals: readonly DiscoveredEval[];
@@ -1194,12 +1178,6 @@ export interface RunOptions<RecordError = never, RecordRequirements = never> {
   rerun?: "failed" | "all";
   /** `--accept` 本次授权跨过的差异 selector(`config:<字段路径>` 等)。 */
   accept?: readonly string[];
-  /**
-   * 历史侧的指纹输入清单(`${experimentId}|${evalId}` → 清单),差异解释与 `--accept` 的授权
-   * 判据读它;缺席的 key 差异算不出,如实是 `opaque:no-manifest`。调用方已经算好 `carryPlan`
-   * 时这个字段不参与——那份计划里的差异已经定了。
-   */
-  priorManifests?: ReadonlyMap<string, EvalManifest>;
   /** 结果根目录(.niceeval;留存注册表 `.niceeval/sandboxes/` 挂在它下面)。省略 = cwd/.niceeval。 */
   niceevalRoot?: string;
   /** CLI 为 `niceeval exp` 提供的持久 Session 索引；只观察调度事件，不参与锁/闸判定。 */
@@ -1216,25 +1194,6 @@ export interface RunOptions<RecordError = never, RecordRequirements = never> {
   /** Run 级 Sandbox 镜像 lookup/build 并发；省略时安全默认 2。 */
   maxBuildConcurrency?: number;
   signal?: AbortSignal;
-  /**
-   * Legacy summary/display input. Record v1 reuse never derives dispatch or
-   * Members from these objects; a result is displayed only after the Runner
-   * has selected the same exact frozen Attempt through project-target/v1.
-   */
-  priorResults?: EvalResult[];
-  /**
-   * Compatibility input retained for callers that still prepare legacy live
-   * display. `runEvals` does not use it for reuse or Record references; its
-   * physical Sandbox plan comes from planProjectTarget and reuse authority
-   * comes solely from the frozen Record view.
-   */
-  carryPlan?: import("./fingerprint.ts").CarryPlan;
-  /**
-   * @deprecated Record v1 resolves exact frozen sources itself from
-   * RecordWriteSession.view. Retained only for source compatibility with
-   * callers compiled against the former boundary.
-   */
-  recordCarryReferences?: RunnerRecordCarryReferences;
   /** Linked plugin RecordAttachment producers for this invocation. */
   recordAttachments?: RunnerRecordAttachmentProducers<RecordError, RecordRequirements>;
   /**
@@ -1420,7 +1379,8 @@ export interface ActiveRunActivity {
  * 解析 `reason` 之外的任何文本就能拼出机器可读的输出。
  */
 export interface FailureDetail {
-  locator: AttemptLocator;
+  /** Exact current Record locator (`@AttemptId`), never a reconstructed hash locator. */
+  locator: string;
   identity: AttemptRef;
   who: string;
   verdict: "failed" | "errored";
@@ -1644,7 +1604,8 @@ export type DurableFeedbackEvent =
   | {
       type: "failure";
       at: number;
-      locator: AttemptLocator;
+      /** Exact writer-issued Record identity (`@AttemptId`). */
+      locator: string;
       identity: AttemptRef;
       who: string;
       verdict: "failed" | "errored";

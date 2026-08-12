@@ -59,29 +59,22 @@ import {
   reportPrecheck,
   reportRunActivity,
 } from "./feedback/sink.ts";
-import { failureDetailFromResult } from "./feedback/failure.ts";
-import type { AttemptLocator } from "../record/locator.ts";
+import { failureDetailFromCurrentReusedAttempt, failureDetailFromResult } from "./feedback/failure.ts";
 import { EVALUATION_ALGORITHM, runWho, HALT_DIAGNOSTIC_CODE } from "./types.ts";
-import { runPairKey, type PreparedRunPair } from "./sandbox-selection.ts";
 import { ReusableSandboxPool } from "./sandbox-pool.ts";
 import { liveSandboxRuntimeServices } from "../sandbox/runtime.ts";
 import { detectReuseContamination, reuseContaminationMessage } from "./reuse-diagnostics.ts";
 import { selectedEvalsForRun } from "./eval-selection.ts";
 import { registerExperimentTeardown, unregisterExperimentTeardown } from "./experiment-cleanup-registry.ts";
-import { withCleanupTimeout } from "./cleanup-timeout.ts";
+import { cleanupCallback } from "./cleanup-timeout.ts";
 import { resolveAttemptTimeout } from "./timeout.ts";
-import { EXECUTION_DURATION_DOMAIN_V1 } from "../eval/record/eligibility.ts";
-import {
-  projectTargetPolicyIdentityV1,
-  type ProjectTargetPolicyV1,
-} from "./reuse-plan.ts";
 import { hostname } from "node:os";
 import {
   isOrphanedTeardownRegistration,
-  readTeardownRegistrations,
-  removeTeardownRegistrationIfPresent,
+  readTeardownRegistrationsEffect,
+  removeTeardownRegistrationIfPresentEffect,
   teardownEntryId,
-  writeTeardownRegistration,
+  writeTeardownRegistrationEffect,
 } from "./teardown-registry.ts";
 import {
   acquireCaseLockEffect,
@@ -98,8 +91,7 @@ import {
 } from "./gate-lease.ts";
 import {
   openRunnerRecordCoordinator,
-  type RecordAttemptLocatorV1,
-  type RunnerRecordReuseSlotInputV1,
+  prepareRunnerRecordReuse,
 } from "./record.ts";
 import { bindRunnerRunObservabilityDiagnosticsV1 } from "../o11y/record/runner-producer.ts";
 
@@ -116,15 +108,6 @@ function feedbackIdentity(a: Attempt): AttemptRef {
 }
 function feedbackWho(a: Attempt): string {
   return runWho({ agentName: a.run.agent.name, model: a.run.model, experimentId: a.run.experimentId });
-}
-
-/**
- * Feedback still exposes the historical branded locator type. This is a
- * temporary brand-only bridge for the exact Record v1 `@AttemptId` string;
- * it does not invoke the old locator encoder or decoder.
- */
-function feedbackLocatorFromRecordV1(locator: RecordAttemptLocatorV1): AttemptLocator {
-  return String(locator) as AttemptLocator;
 }
 
 function attemptIdentityKey(
@@ -220,6 +203,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   opts: RunOptions<AttachmentError, AttachmentRequirements>,
 ) {
   return Effect.scoped(Effect.gen(function* () {
+  const invocationScope = yield* Effect.scope;
   const startedAtMs = Date.now();
   const startedAt = new Date(startedAtMs).toISOString();
   const t0 = startedAtMs;
@@ -247,9 +231,9 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     }
   }
 
-  // Physical Sandbox planning remains separate from durable reuse. `priorResults`
-  // and an optional legacy carryPlan may still reach this API for display
-  // compatibility, but neither decides whether a Slot is reused or referenced.
+  // Physical planning produces immutable current inputs. Record reuse receives
+  // only this projection and its own frozen view; no historic result facade
+  // participates in dispatch or display.
   const targetPlan = yield* planProjectTarget(
     opts.evals,
     opts.agentRuns,
@@ -266,45 +250,15 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     plannedFingerprints,
   } = targetPlan;
 
-  const reusePolicy = Object.freeze({
-    identity: projectTargetPolicyIdentityV1,
-    reuseContract: Object.freeze({
-      domain: "niceeval.reuse/base-v1",
-      value: "project-target/v1",
-    }),
-    rerun: opts.rerun ?? "none",
-    keepSandbox: opts.keepSandbox !== undefined,
-  } satisfies ProjectTargetPolicyV1);
-  const reuseSlotsByKey = new Map<string, RunnerRecordReuseSlotInputV1>();
-  for (const run of opts.agentRuns) {
-    for (const evalDef of selectedEvalsForRun(opts.evals, run)) {
-      const key = cacheKey(run, evalDef.id);
-      const fingerprint = plannedFingerprints.get(key);
-      const configHash = plannedConfigHashes.get(key);
-      if (fingerprint === undefined || configHash === undefined) {
-        throw new Error(`ProjectTarget planning omitted identity for ${JSON.stringify(key)}.`);
-      }
-      const timeout = resolveAttemptTimeout(run, evalDef, opts.config);
-      reuseSlotsByKey.set(key, Object.freeze({
-        inputIdentity: Object.freeze({
-          domain: "niceeval.input/fingerprint-v1",
-          value: fingerprint,
-        }),
-        configIdentity: Object.freeze({
-          domain: "niceeval.config/identity-v1",
-          value: configHash,
-        }),
-        ...(timeout === undefined
-          ? {}
-          : {
-              timeout: Object.freeze({
-                domain: EXECUTION_DURATION_DOMAIN_V1,
-                milliseconds: timeout.timeoutMs,
-              }),
-            }),
-      }));
-    }
-  }
+  const reuse = yield* prepareRunnerRecordReuse({
+    evals: opts.evals,
+    runs: opts.agentRuns,
+    config: opts.config,
+    plannedFingerprints,
+    plannedConfigHashes,
+    ...(opts.rerun === undefined ? {} : { rerun: opts.rerun }),
+    ...(opts.keepSandbox === undefined ? {} : { keepSandbox: opts.keepSandbox }),
+  });
 
   // Coordinator creates draft Runs first, then uses their real `draft.runId`
   // values and the frozen Record view to partition every Slot into reuse/gap.
@@ -313,7 +267,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     startedAt: t0,
     evals: opts.evals,
     runs: opts.agentRuns,
-    reuse: Object.freeze({ policy: reusePolicy, slotsByKey: reuseSlotsByKey }),
+    reuse,
     ...(opts.recordAttachments === undefined
       ? {}
       : { attachments: opts.recordAttachments }),
@@ -324,26 +278,28 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   const runIds = recordCoordinator.runIdsByExperiment;
   const carriedAttemptsByKey = recordCoordinator.carriedAttemptsByKey;
 
-  // Legacy result objects never supply Record authority. They are retained for
-  // summary/report compatibility only when they explicitly name the exact
-  // FrozenRecordAttempt selected by project-target/v1.
-  const carriedResults = Object.freeze((opts.priorResults ?? []).filter((result) => {
-    if (result.experimentId === undefined) return false;
-    const sourceAttemptId = recordCoordinator.carriedAttemptIdsBySlotKey.get(
-      `${runPairKey(result.experimentId, result.id)}\u0000${result.attempt}`,
-    );
-    return sourceAttemptId !== undefined && result.locator === `@${sourceAttemptId}`;
-  }));
+  const reusedAttempts = yield* recordCoordinator.readCarriedResults();
+  const runsByExperimentId = new Map(opts.agentRuns.map((run) => [run.experimentId, run] as const));
+  const runForReusedAttempt = (readback: (typeof reusedAttempts)[number]): AgentRun => {
+    const run = runsByExperimentId.get(readback.target.experimentId);
+    if (run === undefined) {
+      throw new Error(`Record reuse readback references unknown Experiment ${JSON.stringify(readback.target.experimentId)}.`);
+    }
+    return run;
+  };
+  // Reused failures are durable facts for this invocation, but remain their own
+  // readback ADT instead of being reconstructed as legacy EvalResults.
+  for (const readback of reusedAttempts) {
+    const failure = failureDetailFromCurrentReusedAttempt(readback, runForReusedAttempt(readback));
+    if (failure !== undefined) reportFailure(failure);
+  }
   // Session 文件在首次派发前创建；它只记录 Run 身份与轻量计数，锁和实验闸仍各自维护。
   if (opts.session !== undefined) {
-    yield* Effect.tryPromise({
-      try: () => opts.session!.start({
-        runIds,
-        agentRuns: opts.agentRuns,
-        carriedAttemptsByKey,
-        startedAt,
-      }),
-      catch: (error) => error,
+    yield* opts.session.start({
+      runIds,
+      agentRuns: opts.agentRuns,
+      carriedAttemptsByKey,
+      startedAt,
     });
   }
 
@@ -561,10 +517,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // uniformly; attempts receive the same immutable pool snapshot.
   const otelPool = yield* Effect.acquireRelease(
     Effect.sync(() => opts.otelPool ?? new OtelReceiverPool(opts.config.telemetry?.port)),
-    (pool) => Effect.tryPromise({
-      try: () => pool.close(),
-      catch: () => undefined,
-    }).pipe(Effect.ignore),
+    (pool) => pool.closeEffect().pipe(Effect.ignore),
   );
 
   // Runtime dependencies are added to a fresh snapshot; caller-owned planning
@@ -625,18 +578,12 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   for (const reg of reporters) {
     // reporter 只是结果消费方:单个 reporter 抛错记 diagnostic,不能让整次调度崩,也不阻断
     // 其它 reporter 的必要收尾(required/best-effort 的判定权重在 runReporter 内部处理)。
-    yield* Effect.tryPromise({
-      try: () => runReporter(reg, "onInvocationStart", () => reg.reporter.onInvocationStart?.(runningEvals, shape)),
-      catch: (error) => error,
-    });
+    yield* runReporter(reg, "onInvocationStart", () => reg.reporter.onInvocationStart?.(runningEvals, shape));
   }
-  yield* Effect.tryPromise({
-    try: () => emitReporterEvent(reporters, {
-      type: "invocation:start",
-      evals: runningEvals,
-      shape,
-    }),
-    catch: (error) => error,
+  yield* emitReporterEvent(reporters, {
+    type: "invocation:start",
+    evals: runningEvals,
+    shape,
   });
   const results: EvalResult[] = [];
   const passedKeys = new Set<string>();
@@ -648,17 +595,17 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // 这是止损,不是「首过即停」,两个机制互不混用)。
   const lastErrorCode = new Map<string, { code: string; streak: number }>();
   const failFastKeys = new Map<string, { code: string; skipped: number }>();
-  // 携入的 passed 结果预置进 passedKeys:上面按序号回填的差额 attempt(carriedCount < run.attempts
+  // 当前 Record reuse 的 passed readback 预置进 passedKeys:上面按序号回填的差额 attempt(carriedCount < run.attempts
   // 那部分)如果不预置这个,会在明明已经拿到过 passed 结果的情况下真的再调度一次 agent——
   // earlyExit 的语义是「已知会通过就不用再跑」,携入的 passed 同样是「已知会通过」,理应同等对待
   // (下面 preflight/body 的 earlyExit 判断本来就只在 a.run.earlyExit 为真时读这两个 Set,所以
   // 这里无条件预置对 --no-early-exit 场景没有副作用)。携入的 failed 故意不预置——failed 本来
   // 就不触发 earlyExit,回填的差额必须真的重跑,才对得起用户调大 runs 的意图(想看这次是不是
   // 还失败,或想凑够 pass@N 的样本量)。
-  for (const r of carriedResults) {
-    if (r.verdict === "passed" && r.experimentId) {
-      passedKeys.add(attemptIdentityKey(r.experimentId, r.agent, r.model, r.id));
-    }
+  for (const readback of reusedAttempts) {
+    if (readback.verdict !== "passed") continue;
+    const run = runForReusedAttempt(readback);
+    passedKeys.add(attemptGroupKey(run, readback.target.evalId));
   }
 
   // budget 护栏:只按「已完成 attempt 的实测花费」判断,不做预测性节流。之前的实现会按
@@ -820,7 +767,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
 
   // 实验级生命周期(见 docs/feature/experiments/architecture.md「实验级生命周期」):
   // setup 整场至多一次——第一个通过派发许可(preflight)的 attempt 触发,后续 attempt 等同一个
-  // memoized promise;等待发生在 gated 里、globalSem 之外,不占全局并发位。teardown 是
+  // memoized Effect completion;等待发生在 gated 里、globalSem 之外,不占全局并发位。teardown 是
   // ExperimentDef.teardown 字段,在最后一个 attempt 收尾后执行,当且仅当 setup 时点走到过
   // ——setup 抛错不豁免,未声明 setup 不影响触发。pendingAttempts 按 Attempt 身份结算并挂在
   // Effect.ensuring 上,中断路径同样移除;重复结算不会像数字计数那样下溢。
@@ -829,11 +776,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     | { readonly _tag: "Failed"; readonly error: AttemptError };
 
   type ExperimentSetup =
-    | { readonly _tag: "InProgress"; readonly promise: Promise<void> }
+    | { readonly _tag: "InProgress"; readonly completion: Deferred.Deferred<void, unknown> }
     | ExperimentSetupOutcome;
 
   /**
-   * 生命周期是一条闭合状态链，而不是 optional promise、boolean 与计数器的笛卡尔积：
+   * 生命周期是一条闭合状态链，而不是 optional Promise、boolean 与计数器的笛卡尔积：
    *
    * Dormant → Active(setup 进行中/成功/失败) → TearingDown → TornDown
    *        ↘ UntriggeredComplete（所有 attempt 都在触发点前结算）
@@ -852,7 +799,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         readonly _tag: "TearingDown";
         readonly pendingAttempts: ReadonlySet<Attempt>;
         readonly setup: ExperimentSetup;
-        readonly promise: Promise<void>;
+        readonly completion: Deferred.Deferred<void, unknown>;
       }
     | {
         readonly _tag: "TornDown";
@@ -863,6 +810,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
 
   interface ExperimentLifecycleCell {
     state: ExperimentLifecycle;
+    readonly mutex: Effect.Semaphore;
   }
   const expLifecycles = new Map<AgentRun, ExperimentLifecycleCell>();
   for (const a of attempts) {
@@ -872,7 +820,10 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       if (cell.state._tag !== "Dormant") throw new Error("Experiment lifecycle initialized after dispatch.");
       cell.state = { _tag: "Dormant", pendingAttempts: new Set([...cell.state.pendingAttempts, a]) };
     } else {
-      expLifecycles.set(a.run, { state: { _tag: "Dormant", pendingAttempts: new Set([a]) } });
+      expLifecycles.set(a.run, {
+        state: { _tag: "Dormant", pendingAttempts: new Set([a]) },
+        mutex: yield* Effect.makeSemaphore(1),
+      });
     }
   }
 
@@ -975,109 +926,119 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       fact: (key, value) => recordExperimentFact(run.experimentId, key, value),
     };
   };
-  const replaceSetup = (cell: ExperimentLifecycleCell, setup: ExperimentSetupOutcome): void => {
+  const replaceSetup = (
+    cell: ExperimentLifecycleCell,
+    setup: ExperimentSetupOutcome,
+  ): Effect.Effect<void> => cell.mutex.withPermits(1)(Effect.sync(() => {
     const state = cell.state;
-    if (state._tag === "Active") {
-      cell.state = { ...state, setup };
-    } else if (state._tag === "TearingDown") {
-      cell.state = { ...state, setup };
-    }
-  };
-  const setupPromiseOf = (setup: ExperimentSetup): Promise<void> =>
-    setup._tag === "InProgress" ? setup.promise : Promise.resolve();
-  const setupOutcomeOf = (state: ExperimentLifecycle): ExperimentSetupOutcome => {
     if (state._tag === "Active" || state._tag === "TearingDown") {
-      if (state.setup._tag === "InProgress") {
-        throw new Error(`Experiment setup is still in progress while lifecycle is ${state._tag}.`);
-      }
-      return state.setup;
+      cell.state = { ...state, setup };
     }
-    if (state._tag === "TornDown") return state.setup;
-    throw new Error(`Experiment setup has no outcome in lifecycle state ${state._tag}.`);
+  }));
+  const awaitSetup = (setup: ExperimentSetup): Effect.Effect<void, unknown> =>
+    setup._tag === "InProgress" ? Deferred.await(setup.completion) : Effect.void;
+  const setupOutcomeOf = (setup: ExperimentSetup): ExperimentSetupOutcome => {
+    if (setup._tag !== "InProgress") return setup;
+    throw new Error("Experiment setup completed without recording its terminal outcome.");
   };
-  const runExperimentTeardown = (run: AgentRun, cell: ExperimentLifecycleCell): Promise<void> => {
-    const current = cell.state;
-    // setup 时点没走到就没有收尾义务；已完成与在飞状态分别复用自己的确定结论/promise。
-    if (current._tag === "Dormant" || current._tag === "UntriggeredComplete") return Promise.resolve();
-    if (current._tag === "TearingDown") return current.promise;
-    if (current._tag === "TornDown") return Promise.resolve();
+  const runExperimentTeardown = (
+    run: AgentRun,
+    cell: ExperimentLifecycleCell,
+  ): Effect.Effect<void, unknown> => Effect.uninterruptibleMask((restore) =>
+    cell.mutex.withPermits(1)(Effect.gen(function* () {
+      const current = cell.state;
+      // setup 时点没走到就没有收尾义务；已完成与在飞状态分别复用自己的确定 Effect。
+      if (current._tag === "Dormant" || current._tag === "UntriggeredComplete" || current._tag === "TornDown") {
+        return undefined;
+      }
+      if (current._tag === "TearingDown") return current.completion;
 
-    // memoized 一次性执行体(docs/cli.md「中断:三级响应」):正常路径(attempt 集合归零 / run
-    // 收尾扫尾)、强清 drain、崩溃路径谁先到都把 Active 原子转成 TearingDown,后到者只等
-    // 该状态携带的同一个 promise——不双跑、也不空转。
-    const experimentId = run.experimentId ?? run.agent.name;
-    const teardownPromise = (async () => {
-      try {
-        // 与 setup 串行:强清 drain 可能在 setup 仍在飞时先取得收尾执行权；等 memoized setup
-        // settle 后再清理。setup 的 rejection 已在边界归一进闭合 outcome,这里不会 reject。
-        await setupPromiseOf(current.setup);
+      // 正常路径、强清 drain 与崩溃路径共同把 Active 原子转成 TearingDown；后到者只 await
+      // 同一个 Deferred，因此不双跑、也不空转。
+      const completion = yield* Deferred.make<void, unknown>();
+      const experimentId = run.experimentId ?? run.agent.name;
+      cell.state = {
+        _tag: "TearingDown",
+        pendingAttempts: current.pendingAttempts,
+        setup: current.setup,
+        completion,
+      };
+      const teardown = Effect.gen(function* () {
+        // 强清可能先取得收尾执行权；必须等 setup 的 Effect 结算后再清理。
+        yield* awaitSetup(current.setup);
         if (!run.teardown) return;
-        // 起止由 runner 发布,不依赖钩子自己调 progress(见 cli.md「实验级 Hook 的显示」)。
         reportExperimentHook({ experimentId, hook: "teardown", status: "started" });
         const startedAt = Date.now();
-        try {
-          // 有界执行(docs/cli.md 的有界性前提):挂起的 teardown 到点按失败收束,不能无限拖住
-          // 退出;超时后遗留的 promise 悬空,随进程退出消亡。
-          const ctx = makeExperimentHookContext(run, "experiment.teardown");
-          await withCleanupTimeout(() => run.teardown!(ctx));
-          reportExperimentHook({ experimentId, hook: "teardown", status: "done", durationMs: Date.now() - startedAt });
-        } catch (e) {
-          reportExperimentHook({ experimentId, hook: "teardown", status: "failed", durationMs: Date.now() - startedAt });
-          // teardown 失败只作运行级诊断,不改任何已产出的 verdict(与 sandbox.teardown 的
-          // teardown-failed 同一语义);资源可能泄漏,所以要说出来。同时进实验域诊断累积器,
-          // 供该 Experiment 的 Run 封口时持久化(docs/runner.md「实验域诊断持久化」)。
-          // 止损闸边界:实验级 teardown 里抛糖衣类**不落闸**,降级为这条普通 teardown 诊断
-          // (docs/feature/error-classification/architecture.md「生命周期边界」)——这个时点
-          // 本实验已无可保护的派发余量,且止损状态不跨 invocation,声明无处生效。所以这里
-          // 刻意不读 FailureClass:少一行代码就是契约本身,别顺手补上。
-          const message = t("runner.experimentTeardownFailed", {
-            experimentId,
-            message: e instanceof Error ? e.message : String(e),
-          }).trimEnd();
-          reportDiagnostic({ key: `experiment-teardown-failed:${experimentId}`, code: "experiment-teardown-failed", severity: "warning", message, data: { experimentId } });
-          recordExperimentDiagnostic({
-            experimentId: run.experimentId,
-            code: "experiment-teardown-failed",
-            level: "warning",
-            message,
-            phase: "experiment.teardown",
-          });
-        }
-        // 这个 Experiment 真正走完了 teardown(不论成败)的时刻——诚实的 Run completedAt,
-        // 不是整个 Invocation 收尾那一刻(见下方 experiment:complete 事件的发送处)。
+        const ctx = makeExperimentHookContext(run, "experiment.teardown");
+        yield* cleanupCallback(() => run.teardown!(ctx)).pipe(Effect.matchEffect({
+          onSuccess: () => Effect.sync(() => {
+            reportExperimentHook({
+              experimentId,
+              hook: "teardown",
+              status: "done",
+              durationMs: Date.now() - startedAt,
+            });
+          }),
+          onFailure: (error) => Effect.sync(() => {
+            reportExperimentHook({
+              experimentId,
+              hook: "teardown",
+              status: "failed",
+              durationMs: Date.now() - startedAt,
+            });
+            // teardown 失败只作运行级诊断，不改任何已产出的 verdict。
+            const message = t("runner.experimentTeardownFailed", {
+              experimentId,
+              message: error instanceof Error ? error.message : String(error),
+            }).trimEnd();
+            reportDiagnostic({
+              key: `experiment-teardown-failed:${experimentId}`,
+              code: "experiment-teardown-failed",
+              severity: "warning",
+              message,
+              data: { experimentId },
+            });
+            recordExperimentDiagnostic({
+              experimentId: run.experimentId,
+              code: "experiment-teardown-failed",
+              level: "warning",
+              message,
+              phase: "experiment.teardown",
+            });
+          }),
+        }));
+        // 这个 Experiment 真正走完 teardown（不论成败）的时刻。
         experimentCompletedAt.set(experimentId, new Date().toISOString());
-      } finally {
-        // teardown promise resolve 之前 setup 必已 settle；把 outcome 留在终态，使强清先完成、
-        // attempt 后恢复的竞态仍能读取 setup 失败，而不是把它随 teardown 状态一起丢掉。
-        cell.state = {
-          _tag: "TornDown",
-          pendingAttempts: cell.state._tag === "TearingDown"
-            ? cell.state.pendingAttempts
-            : current.pendingAttempts,
-          setup: setupOutcomeOf(cell.state),
-        };
-        // settle 后才注销:drain 的「启动全部未启动 + 等待全部未 settle」依赖条目在飞期间仍可见。
-        unregisterExperimentTeardown(experimentId);
-        // 磁盘镜像同一时点删除(所有触发路径:完成 / 中断 / 强清 drain 都经这条 finally)——
-        // 不变量:磁盘上存在登记,当且仅当某次 run 的实验级收尾义务尚未完成(docs/feature/
-        // experiments/architecture.md「强杀后的收尾兜底」)。没写过(裸 run / 无 teardown)
-        // 时删除是 no-op。
-        if (run.experimentId) {
-          await removeTeardownRegistrationIfPresent(
-            niceevalRoot,
-            teardownEntryId(run.experimentId, process.pid),
-          ).catch(() => {});
-        }
-      }
-    })();
-    cell.state = {
-      _tag: "TearingDown",
-      pendingAttempts: current.pendingAttempts,
-      setup: current.setup,
-      promise: teardownPromise,
-    };
-    return teardownPromise;
-  };
+      }).pipe(
+        Effect.ensuring(
+          cell.mutex.withPermits(1)(Effect.gen(function* () {
+            const state = cell.state;
+            const pendingAttempts = state._tag === "TearingDown"
+              ? state.pendingAttempts
+              : current.pendingAttempts;
+            const setup = state._tag === "TearingDown" ? state.setup : current.setup;
+            cell.state = { _tag: "TornDown", pendingAttempts, setup: setupOutcomeOf(setup) };
+            // settle 后才注销：drain 在执行体在飞时仍能看见本项。
+            yield* unregisterExperimentTeardown(experimentId);
+            if (run.experimentId) {
+              yield* removeTeardownRegistrationIfPresentEffect(
+                niceevalRoot,
+                teardownEntryId(run.experimentId, process.pid),
+              ).pipe(Effect.ignore);
+            }
+          })),
+        ),
+      );
+      const settle = Effect.exit(restore(teardown)).pipe(
+        Effect.flatMap((exit) => Deferred.done(completion, exit)),
+        Effect.asVoid,
+      );
+      yield* restore(settle).pipe(Effect.forkIn(invocationScope));
+      return completion;
+    })).pipe(
+      Effect.flatMap((completion) => completion === undefined ? Effect.void : restore(Deferred.await(completion))),
+    ),
+  );
   /**
    * 启动自愈:本实验触发 setup 之前,先核对磁盘上是否有它自己的遗留登记——上一次运行同一
    * experimentId 被强杀、来不及删除。同宿主且 pid 已死才是遗留义务;pid 活或异宿主可能是
@@ -1085,166 +1046,210 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
    * ctx.selectedEvalIds 从登记恢复,不依赖已丢失的 setup 产物)。失败只记诊断,不阻断、
    * 不重试本次 run 的调度——recovery 补偿的是上一次的泄漏,不是这一次的前提条件。
    */
-  const recoverOrphanedTeardownRegistration = async (run: AgentRun, experimentId: string): Promise<void> => {
-    if (!run.experimentId || !run.teardown) return;
-    let registrations;
-    try {
-      registrations = await readTeardownRegistrations(niceevalRoot);
-    } catch {
-      return;
-    }
-    for (const { id, entry } of registrations) {
-      if (entry.experimentId !== run.experimentId || !isOrphanedTeardownRegistration(entry, currentHost)) continue;
-      const claimed = await removeTeardownRegistrationIfPresent(niceevalRoot, id).catch(() => false);
-      if (!claimed) continue; // 已被另一个进程抢先删除,义务已被别处接手
-      reportExperimentHook({ experimentId, hook: "teardown", status: "started", recovery: true });
-      const startedAt = Date.now();
-      const recoveryCtx: ExperimentHookContext = {
-        experimentId,
-        selectedEvalIds: entry.selectedEvalIds,
-        signal: opts.signal ?? new AbortController().signal,
-        progress: (u) => {
-          const suffix = u.current !== undefined && u.total !== undefined ? ` (${u.current}/${u.total})` : "";
-          reportExperimentProgress({ experimentId, detail: `${u.message}${suffix}` });
-        },
-        diagnostic: (input) => {
-          reportDiagnostic({
-            key: input.dedupeKey ?? `${input.code}:experiment:${experimentId}`,
-            code: input.code,
-            severity: input.level,
-            message: input.message,
-            data: { experimentId, ...(input.data ?? {}) },
-          });
-          recordExperimentDiagnostic({
-            experimentId: run.experimentId,
-            code: input.code,
-            level: input.level,
-            message: input.message,
-            phase: "experiment.teardown",
-            ...(input.data !== undefined ? { data: input.data } : {}),
-            ...(input.dedupeKey !== undefined ? { dedupeKey: input.dedupeKey } : {}),
-          });
-        },
-        fact: (key, value) => recordExperimentFact(run.experimentId, key, value),
-      };
-      try {
-        await withCleanupTimeout(() => run.teardown!(recoveryCtx));
-        reportExperimentHook({
+  const recoverOrphanedTeardownRegistration = (
+    run: AgentRun,
+    experimentId: string,
+  ): Effect.Effect<void, unknown> => Effect.suspend(() => {
+    if (!run.experimentId || !run.teardown) return Effect.void;
+    return Effect.gen(function* () {
+      const registrations = yield* readTeardownRegistrationsEffect(niceevalRoot).pipe(
+        Effect.catchAll(() => Effect.succeed([])),
+      );
+      for (const { id, entry } of registrations) {
+        if (entry.experimentId !== run.experimentId || !isOrphanedTeardownRegistration(entry, currentHost)) continue;
+        const claimed = yield* removeTeardownRegistrationIfPresentEffect(niceevalRoot, id).pipe(
+          Effect.catchAll(() => Effect.succeed(false)),
+        );
+        if (!claimed) continue; // 已被另一个进程抢先删除，义务已被别处接手。
+        reportExperimentHook({ experimentId, hook: "teardown", status: "started", recovery: true });
+        const startedAt = Date.now();
+        const recoveryCtx: ExperimentHookContext = {
           experimentId,
-          hook: "teardown",
-          status: "done",
-          durationMs: Date.now() - startedAt,
-          recovery: true,
-        });
-      } catch (e) {
-        reportExperimentHook({
-          experimentId,
-          hook: "teardown",
-          status: "failed",
-          durationMs: Date.now() - startedAt,
-          recovery: true,
-        });
-        const message = t("runner.experimentTeardownFailed", {
-          experimentId,
-          message: e instanceof Error ? e.message : String(e),
-        }).trimEnd();
-        reportDiagnostic({ key: `experiment-teardown-failed:${experimentId}`, code: "experiment-teardown-failed", severity: "warning", message, data: { experimentId } });
-        recordExperimentDiagnostic({
-          experimentId: run.experimentId,
-          code: "experiment-teardown-failed",
-          level: "warning",
-          message,
-          phase: "experiment.teardown",
-        });
+          selectedEvalIds: entry.selectedEvalIds,
+          signal: opts.signal ?? new AbortController().signal,
+          progress: (u) => {
+            const suffix = u.current !== undefined && u.total !== undefined ? ` (${u.current}/${u.total})` : "";
+            reportExperimentProgress({ experimentId, detail: `${u.message}${suffix}` });
+          },
+          diagnostic: (input) => {
+            reportDiagnostic({
+              key: input.dedupeKey ?? `${input.code}:experiment:${experimentId}`,
+              code: input.code,
+              severity: input.level,
+              message: input.message,
+              data: { experimentId, ...(input.data ?? {}) },
+            });
+            recordExperimentDiagnostic({
+              experimentId: run.experimentId,
+              code: input.code,
+              level: input.level,
+              message: input.message,
+              phase: "experiment.teardown",
+              ...(input.data !== undefined ? { data: input.data } : {}),
+              ...(input.dedupeKey !== undefined ? { dedupeKey: input.dedupeKey } : {}),
+            });
+          },
+          fact: (key, value) => recordExperimentFact(run.experimentId, key, value),
+        };
+        yield* cleanupCallback(() => run.teardown!(recoveryCtx)).pipe(Effect.matchEffect({
+          onSuccess: () => Effect.sync(() => {
+            reportExperimentHook({
+              experimentId,
+              hook: "teardown",
+              status: "done",
+              durationMs: Date.now() - startedAt,
+              recovery: true,
+            });
+          }),
+          onFailure: (error) => Effect.sync(() => {
+            reportExperimentHook({
+              experimentId,
+              hook: "teardown",
+              status: "failed",
+              durationMs: Date.now() - startedAt,
+              recovery: true,
+            });
+            const message = t("runner.experimentTeardownFailed", {
+              experimentId,
+              message: error instanceof Error ? error.message : String(error),
+            }).trimEnd();
+            reportDiagnostic({
+              key: `experiment-teardown-failed:${experimentId}`,
+              code: "experiment-teardown-failed",
+              severity: "warning",
+              message,
+              data: { experimentId },
+            });
+            recordExperimentDiagnostic({
+              experimentId: run.experimentId,
+              code: "experiment-teardown-failed",
+              level: "warning",
+              message,
+              phase: "experiment.teardown",
+            });
+          }),
+        }));
       }
-    }
-  };
-  const ensureExperimentSetup = (a: Attempt): Promise<void> => {
+    });
+  });
+  const ensureExperimentSetup = (a: Attempt): Effect.Effect<void, unknown> => {
     const cell = expLifecycles.get(a.run)!;
-    const current = cell.state;
-    if (current._tag === "Active" || current._tag === "TearingDown") {
-      return setupPromiseOf(current.setup);
-    }
-    if (current._tag === "TornDown") return Promise.resolve();
-    if (current._tag === "UntriggeredComplete") {
-      throw new Error("Experiment lifecycle cannot be triggered after all attempts settled.");
-    }
+    return Effect.uninterruptibleMask((restore) =>
+      cell.mutex.withPermits(1)(Effect.gen(function* () {
+        const current = cell.state;
+        if (current._tag === "Active" || current._tag === "TearingDown") return current.setup;
+        if (current._tag === "TornDown") return undefined;
+        if (current._tag === "UntriggeredComplete") {
+          return yield* Effect.die(new Error("Experiment lifecycle cannot be triggered after all attempts settled."));
+        }
 
-    const run = a.run;
-    const experimentId = run.experimentId ?? run.agent.name;
-    // teardown 从触发时点起就静态可达:立即登记进宿主机侧兜底表,setup 挂起 / 抛错都不会
-    // 丢收尾——强清退出(二次中断/看门狗/崩溃路径)时 cli 由此排空未被运行路径消费的
-    // teardown(docs/cli.md「中断:三级响应」)。
-    if (run.teardown) registerExperimentTeardown(experimentId, () => runExperimentTeardown(run, cell));
-    const ctx = run.setup ? makeExperimentHookContext(run, "experiment.setup") : undefined;
-    const setupPromise = (async () => {
-      // 强杀后的收尾兜底(docs/feature/experiments/architecture.md「强杀后的收尾兜底」):
-      // 先核对并补执行本实验自己的遗留登记,再原子写入本次的登记——两步都先于 setup。
-      if (run.teardown && run.experimentId) {
-        await recoverOrphanedTeardownRegistration(run, experimentId);
-        await writeTeardownRegistration(niceevalRoot, {
-          experimentId: run.experimentId,
-          selectedEvalIds: run.selectedEvalIds,
-          pid: process.pid,
-          host: currentHost,
-          startedAt: new Date().toISOString(),
-        }).catch((e) => {
-          const message = t("runner.teardownRegistrationWriteFailed", {
+        const run = a.run;
+        const experimentId = run.experimentId ?? run.agent.name;
+        const completion = yield* Deferred.make<void, unknown>();
+        // 先写 Active、再登记和启动 worker：随后任何 attempt 或强清都会复用同一个 Effect 完成点。
+        cell.state = {
+          _tag: "Active",
+          pendingAttempts: current.pendingAttempts,
+          setup: { _tag: "InProgress", completion },
+        };
+        if (run.teardown) {
+          yield* registerExperimentTeardown(experimentId, () => runExperimentTeardown(run, cell));
+        }
+        let setupStartedAt: number | undefined;
+        const setupBody = Effect.gen(function* () {
+          // 上一进程的遗留收尾先补做，再原子写入本次登记；两步都先于 setup。
+          if (run.teardown && run.experimentId) {
+            yield* recoverOrphanedTeardownRegistration(run, experimentId);
+            yield* writeTeardownRegistrationEffect(niceevalRoot, {
+              experimentId: run.experimentId,
+              selectedEvalIds: run.selectedEvalIds,
+              pid: process.pid,
+              host: currentHost,
+              startedAt: new Date().toISOString(),
+            }).pipe(Effect.catchAll((error) => Effect.sync(() => {
+              const message = t("runner.teardownRegistrationWriteFailed", {
+                experimentId,
+                message: error instanceof Error ? error.message : String(error),
+              }).trimEnd();
+              reportDiagnostic({
+                key: `teardown-registration-write-failed:${experimentId}`,
+                code: "teardown-registration-write-failed",
+                severity: "warning",
+                message,
+                data: { experimentId },
+              });
+              recordExperimentDiagnostic({
+                experimentId: run.experimentId,
+                code: "teardown-registration-write-failed",
+                level: "warning",
+                message,
+                phase: "experiment.setup",
+              });
+            })));
+          }
+          if (!run.setup) return;
+          setupStartedAt = Date.now();
+          reportExperimentHook({ experimentId, hook: "setup", status: "started" });
+          const ctx = makeExperimentHookContext(run, "experiment.setup");
+          const value = yield* Effect.tryPromise({
+            try: () => Promise.resolve().then(() => run.setup!(ctx)),
+            catch: (error) => error,
+          });
+          const returned = value as unknown;
+          if (typeof returned === "function") {
+            // tsx 旧式 setup cleanup 只在 author callback 边界适配；主错误说明迁移方向。
+            yield* cleanupCallback(returned as () => unknown).pipe(Effect.catchAll(() => Effect.void));
+            return yield* Effect.fail(new Error(
+              t("runner.setupReturnedCleanup", {
+                layer: `ExperimentDef.setup (${experimentId})`,
+                hint: "ExperimentDef.teardown",
+              }).trimEnd(),
+            ));
+          }
+          reportExperimentHook({
             experimentId,
-            message: e instanceof Error ? e.message : String(e),
-          }).trimEnd();
-          reportDiagnostic({ key: `teardown-registration-write-failed:${experimentId}`, code: "teardown-registration-write-failed", severity: "warning", message, data: { experimentId } });
-          recordExperimentDiagnostic({
-            experimentId: run.experimentId,
-            code: "teardown-registration-write-failed",
-            level: "warning",
-            message,
-            phase: "experiment.setup",
+            hook: "setup",
+            status: "done",
+            durationMs: Date.now() - (setupStartedAt ?? Date.now()),
           });
         });
-      }
-      if (!run.setup) return;
-      // 起止由 runner 发布(见 cli.md「实验级 Hook 的显示」):一个什么都不调的 setup 也必须
-      // 可见,不能让「0 running · N queued 长时间不动」看起来像调度卡死。
-      reportExperimentHook({ experimentId, hook: "setup", status: "started" });
-      const startedAt = Date.now();
-      try {
-        const returned = (await run.setup(ctx!)) as unknown;
-        if (typeof returned === "function") {
-          // 迁移护栏:tsx 用户没有类型检查,旧式「setup 返回 cleanup」会被静默忽略而泄漏资源。
-          // best-effort 执行一次返回的函数(把已起的资源收掉),然后按 setup 失败报清晰错误。
-          try {
-            await withCleanupTimeout(returned as () => unknown);
-          } catch {
-            // 迁移护栏里的旧式 cleanup 失败不再叠加报错,主错误(下一行)已指明修法。
-          }
-          throw new Error(
-            t("runner.setupReturnedCleanup", {
-              layer: `ExperimentDef.setup (${experimentId})`,
-              hint: "ExperimentDef.teardown",
-            }).trimEnd(),
-          );
-        }
-      } catch (e) {
-        reportExperimentHook({ experimentId, hook: "setup", status: "failed", durationMs: Date.now() - startedAt });
-        throw e;
-      }
-      reportExperimentHook({ experimentId, hook: "setup", status: "done", durationMs: Date.now() - startedAt });
-    })().then(
-      () => replaceSetup(cell, { _tag: "Succeeded" }),
-      (e: unknown) => replaceSetup(cell, {
-        _tag: "Failed",
-        error: { ...errorFromThrown(e, "experiment.setup"), code: "experiment-setup-failed" },
-      }),
+        const setupWorker = setupBody.pipe(
+          Effect.matchEffect({
+            onSuccess: () => replaceSetup(cell, { _tag: "Succeeded" }),
+            onFailure: (error) => Effect.sync(() => {
+              reportExperimentHook({
+                experimentId,
+                hook: "setup",
+                status: "failed",
+                durationMs: Date.now() - (setupStartedAt ?? Date.now()),
+              });
+            }).pipe(Effect.zipRight(replaceSetup(cell, {
+              _tag: "Failed",
+              error: { ...errorFromThrown(error, "experiment.setup"), code: "experiment-setup-failed" },
+            }))),
+          }),
+          Effect.onExit((exit) => {
+            const recordUnexpectedExit = Exit.isFailure(exit)
+              ? replaceSetup(cell, {
+                  _tag: "Failed",
+                  error: {
+                    ...errorFromThrown(Cause.squash(exit.cause), "experiment.setup"),
+                    code: "experiment-setup-failed",
+                  },
+                })
+              : Effect.void;
+            return recordUnexpectedExit.pipe(
+              Effect.zipRight(Deferred.done(completion, exit)),
+              Effect.asVoid,
+            );
+          }),
+        );
+        yield* restore(setupWorker).pipe(Effect.forkIn(invocationScope));
+        return cell.state.setup;
+      })).pipe(
+        Effect.flatMap((setup) => setup === undefined ? Effect.void : restore(awaitSetup(setup))),
+      ),
     );
-    // 先写 Active 再让 promise continuation 有机会落 outcome；JS microtask 保证即使 hook 同步
-    // 返回，then 也只能在这次同步 transition 之后执行。
-    cell.state = {
-      _tag: "Active",
-      pendingAttempts: current.pendingAttempts,
-      setup: { _tag: "InProgress", promise: setupPromise },
-    };
-    return setupPromise;
   };
 
   // 自愈是「选中实验」的启动期职责，不是首个派发 attempt 的副作用：全携带使 attempts 为空时，
@@ -1253,11 +1258,32 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   for (const run of opts.agentRuns) {
     if (!run.experimentId || !run.teardown || recoveredExperimentIds.has(run.experimentId)) continue;
     recoveredExperimentIds.add(run.experimentId);
-    yield* Effect.tryPromise({
-      try: () => recoverOrphanedTeardownRegistration(run, run.experimentId),
-      catch: (error) => error,
-    });
+    yield* recoverOrphanedTeardownRegistration(run, run.experimentId);
   }
+
+  const settleExperimentAttempt = (a: Attempt): Effect.Effect<void, unknown> => {
+    const cell = expLifecycles.get(a.run)!;
+    return cell.mutex.withPermits(1)(Effect.sync(() => {
+      const state = cell.state;
+      if (state._tag === "UntriggeredComplete") return false;
+      const pendingAttempts = new Set(state.pendingAttempts);
+      pendingAttempts.delete(a);
+      if (state._tag === "Dormant") {
+        cell.state = pendingAttempts.size === 0
+          ? { _tag: "UntriggeredComplete" }
+          : { _tag: "Dormant", pendingAttempts };
+        return false;
+      }
+      if (state._tag === "Active") {
+        cell.state = { ...state, pendingAttempts };
+        return pendingAttempts.size === 0;
+      }
+      cell.state = { ...state, pendingAttempts };
+      return false;
+    })).pipe(
+      Effect.flatMap((startTeardown) => startTeardown ? runExperimentTeardown(a.run, cell) : Effect.void),
+    );
+  };
 
   // ─────────────────────── 派发许可链(docs/runner.md「调度:有界并发」) ───────────────────────
   // 一条 attempt 要真正开跑,顺序通过四道许可,顺序本身是契约:
@@ -1875,13 +1901,10 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               cancelReuseAttempt(a);
               recordCoordinator.markNotDispatched(a);
               yield* reportMutex.withPermits(1)(
-                Effect.tryPromise({
-                  try: () => emitReporterEvent(reporters, {
-                    type: "invocation:earlyExit",
-                    evalId: a.evalDef.id,
-                    experimentId: a.run.experimentId,
-                  }),
-                  catch: (error) => error,
+                emitReporterEvent(reporters, {
+                  type: "invocation:earlyExit",
+                  evalId: a.evalDef.id,
+                  experimentId: a.run.experimentId,
                 }),
               );
               reportAttemptLifecycle({
@@ -1928,13 +1951,10 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                 if (!budgetReported.has(budgetKey)) {
                   budgetReported.add(budgetKey);
                   yield* reportMutex.withPermits(1)(
-                    Effect.tryPromise({
-                      try: () => emitReporterEvent(
-                        reporters,
-                        { type: "invocation:budgetExceeded", budget, spent: s.spent },
-                      ),
-                      catch: (error) => error,
-                    }),
+                    emitReporterEvent(
+                      reporters,
+                      { type: "invocation:budgetExceeded", budget, spent: s.spent },
+                    ),
                   );
                 }
                 // 反馈层:对每一个因预算到顶而不派发的 attempt 各发一次(与上面的
@@ -1978,7 +1998,15 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             const setupFailure = expLc === undefined
               ? Option.none<AttemptError>()
               : (() => {
-                  const outcome = setupOutcomeOf(expLc.state);
+                  const state = expLc.state;
+                  const outcome = state._tag === "Active" || state._tag === "TearingDown"
+                    ? setupOutcomeOf(state.setup)
+                    : state._tag === "TornDown"
+                      ? state.setup
+                      : undefined;
+                  if (outcome === undefined) {
+                    throw new Error(`Experiment setup has no outcome in lifecycle state ${state._tag}.`);
+                  }
                   return outcome._tag === "Failed" ? Option.some(outcome.error) : Option.none<AttemptError>();
                 })();
             const precheckFailure = judgePrecheckFailures.get(cacheKey(a.run, a.evalDef.id));
@@ -1993,16 +2021,13 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             if (blockedError !== undefined) cancelReuseAttempt(a, true);
 
             yield* reportMutex.withPermits(1)(
-              Effect.tryPromise({
-                try: () => emitReporterEvent(reporters, {
-                  type: "eval:start",
-                  eval: { id: a.evalDef.id },
-                  agent: a.run.agent,
-                  model: a.run.model,
-                  attempt: a.attempt,
-                  experimentId: a.run.experimentId,
-                }),
-                catch: (error) => error,
+              emitReporterEvent(reporters, {
+                type: "eval:start",
+                eval: { id: a.evalDef.id },
+                agent: a.run.agent,
+                model: a.run.model,
+                attempt: a.attempt,
+                experimentId: a.run.experimentId,
               }),
             );
             // attempt:start 是这个 attempt 从 queued 移进 running 的唯一时刻(见
@@ -2131,13 +2156,13 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             // A blocked Slot has no origin Attempt and remains an explicit
             // Record gap. A completed execution writes its exact origin plus
             // Eligibility from final `executionMs`, then exposes @AttemptId.
-            let locator: AttemptLocator | undefined;
+            let locator: string | undefined;
             if (!executed) {
               recordCoordinator.markNotDispatched(a);
             } else {
               const recordAttempt = yield* recordCoordinator.completeAttemptOrMarkIncomplete(a, result);
               if (recordAttempt !== undefined) {
-                locator = feedbackLocatorFromRecordV1(recordAttempt.locator);
+                locator = recordAttempt.locator;
                 result.locator = locator;
               }
             }
@@ -2222,25 +2247,18 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             }
             yield* reportMutex.withPermits(1)(
               // 每个 reporter 单独兜错:一个写文件失败 / 自定义 reporter 抛错只记 diagnostic,
-              // 不让 Promise.all 整体 reject —— named boundary 把拒绝保留为 Effect failure,
-              // 停掉后续 attempt(P2)。
-              Effect.tryPromise({
-                try: () => Promise.all(
-                  reporters.map((reg) =>
-                    runReporter(reg, "onEvalComplete", () => reg.reporter.onEvalComplete?.(result)),
-                  ),
-                ),
-                catch: (error) => error,
-              }),
+              // 不让一个回调中断其它回调或后续 attempt。
+              Effect.forEach(
+                reporters,
+                (reg) => runReporter(reg, "onEvalComplete", () => reg.reporter.onEvalComplete?.(result)),
+                { concurrency: "unbounded", discard: true },
+              ),
             );
             // 和上面的 onEvalComplete 同一把 reportMutex:两条回调路径都要串行化,否则并发
             // attempt 各自触发的 eval:complete 会绕开 permit=1 直接并发跑,和文档承诺的
             // 「报告回调串行化」不一致。
             yield* reportMutex.withPermits(1)(
-              Effect.tryPromise({
-                try: () => emitReporterEvent(reporters, { type: "eval:complete", result }),
-                catch: (error) => error,
-              }),
+              emitReporterEvent(reporters, { type: "eval:complete", result }),
             );
           });
         // ③ 全局并发位 → ④ 派发时刻试锁 → preflight → 实验级 setup → body。
@@ -2264,14 +2282,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             authorizedReuseAttempts.add(a);
             if (a.run.setup || a.run.teardown) {
               // 实验级 setup:第一个通过派发许可的 attempt 真正执行,其余等同一个 memoized
-              // promise(它从不 reject——失败收进 lc.setupFailed,由 body 合成 errored 结果)。
+              // Effect completion（作者 setup 失败收进 lc.setupFailed，由 body 合成 errored 结果）。
               // 等它的时候让出全局并发位(docs/runner.md「调度:有界并发」——内部等待一律让位,
               // 慢启动的 setup 不许饿死同批其它实验),回来再重新拿位。实验闸名额不让。
               yield* slot.release;
-              yield* Effect.tryPromise({
-                try: () => ensureExperimentSetup(a),
-                catch: (error) => error,
-              });
+              yield* ensureExperimentSetup(a);
               yield* slot.reacquire;
             }
             yield* body(slot);
@@ -2315,30 +2330,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           !a.run.setup && !a.run.teardown
             ? pipeline
             : pipeline.pipe(
-                Effect.ensuring(
-                  Effect.tryPromise({
-                    try: async () => {
-                    const cell = expLifecycles.get(a.run)!;
-                    const state = cell.state;
-                    if (state._tag === "UntriggeredComplete") return;
-                    const pendingAttempts = new Set(state.pendingAttempts);
-                    pendingAttempts.delete(a);
-                    if (state._tag === "Dormant") {
-                      cell.state = pendingAttempts.size === 0
-                        ? { _tag: "UntriggeredComplete" }
-                        : { _tag: "Dormant", pendingAttempts };
-                      return;
-                    }
-                    if (state._tag === "Active") {
-                      cell.state = { ...state, pendingAttempts };
-                      if (pendingAttempts.size === 0) await runExperimentTeardown(a.run, cell);
-                      return;
-                    }
-                    cell.state = { ...state, pendingAttempts };
-                    },
-                    catch: (error) => error,
-                  }).pipe(Effect.catchAll(() => Effect.void)),
-                ),
+                Effect.ensuring(settleExperimentAttempt(a).pipe(Effect.orDie)),
               );
         if (!caseState) return withExpLifecycle;
         // 用例锁释放:这个 key 的全部 attempt(真实派发的与被 late-carry 跳过的)都 settle 后
@@ -2405,38 +2397,45 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // 扫尾幂等(cleanup 消费一次性),宁可多一道兜底,不把宿主机资源(隧道/容器)留给用户手拆。
   // 真·缺陷抛出前同样要扫(finalizer 语义,见 docs/feature/experiments/architecture.md
   // 「实验级生命周期」);cli 的 main().catch() 只兜沙箱,不知道实验级 cleanup 的存在。
-  const sweepExperimentTeardowns = async (): Promise<void> => {
-    for (const [run, cell] of expLifecycles) {
+  const sweepExperimentTeardowns = (): Effect.Effect<void, unknown> => Effect.forEach(
+    [...expLifecycles],
+    ([run, cell]) => cell.mutex.withPermits(1)(Effect.sync(() => {
       const state = cell.state;
-      // 未触发、已完成均无事可扫；在飞的 teardown 只等 settle，不算漏。
+      // 未触发、已完成均无事可扫；在飞的 teardown 仍须 await 同一个 completion。
       if (state._tag === "Dormant" || state._tag === "UntriggeredComplete" || state._tag === "TornDown") {
-        continue;
+        return { _tag: "None" } as const;
       }
-      if (state._tag === "TearingDown") {
-        await state.promise;
-        continue;
+      if (state._tag === "Active" && run.teardown) {
+        return { _tag: "Late", remaining: state.pendingAttempts.size } as const;
       }
-      if (!run.teardown) {
-        await runExperimentTeardown(run, cell);
-        continue;
-      }
-      // 只有扫尾从 Active 启动时才报「late」诊断。
-      {
+      return { _tag: "Await" } as const;
+    })).pipe(Effect.flatMap((action) => {
+      if (action._tag === "None") return Effect.void;
+      if (action._tag === "Late") {
         const experimentId = run.experimentId ?? run.agent.name;
         const message = t("runner.experimentTeardownLate", { experimentId }).trimEnd();
-        reportDiagnostic({ key: `experiment-teardown-late:${experimentId}`, code: "experiment-teardown-late", severity: "warning", message, data: { experimentId, remaining: state.pendingAttempts.size } });
-        recordExperimentDiagnostic({
-          experimentId: run.experimentId,
-          code: "experiment-teardown-late",
-          level: "warning",
-          message,
-          phase: "experiment.teardown",
-          data: { remaining: state.pendingAttempts.size },
-        });
+        return Effect.sync(() => {
+          reportDiagnostic({
+            key: `experiment-teardown-late:${experimentId}`,
+            code: "experiment-teardown-late",
+            severity: "warning",
+            message,
+            data: { experimentId, remaining: action.remaining },
+          });
+          recordExperimentDiagnostic({
+            experimentId: run.experimentId,
+            code: "experiment-teardown-late",
+            level: "warning",
+            message,
+            phase: "experiment.teardown",
+            data: { remaining: action.remaining },
+          });
+        }).pipe(Effect.zipRight(runExperimentTeardown(run, cell)));
       }
-      await runExperimentTeardown(run, cell);
-    }
-  };
+      return runExperimentTeardown(run, cell);
+    })),
+    { concurrency: 1, discard: true },
+  );
   if (Exit.isFailure(exit)) {
     // Only a pure interruption becomes a partial interrupted Invocation. The
     // AbortSignal may have fired concurrently with a real failure/defect, but
@@ -2444,18 +2443,13 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     if (Cause.isInterruptedOnly(exit.cause)) {
       interrupted = true;
     } else {
-      yield* Effect.tryPromise({
-        try: () => sweepExperimentTeardowns(),
-        catch: (error) => error,
-      });
-      throw Cause.squash(exit.cause);
+      return yield* Effect.failCause(exit.cause).pipe(
+        Effect.ensuring(sweepExperimentTeardowns().pipe(Effect.orDie)),
+      );
     }
   }
   if (interrupted) reportInterrupted();
-  yield* Effect.tryPromise({
-    try: () => sweepExperimentTeardowns(),
-    catch: (error) => error,
-  });
+  yield* sweepExperimentTeardowns();
 
   // Record publication is the intentionally narrow interruption mask. By this
   // point dispatch has stopped and its Scope/finalizers plus experiment
@@ -2501,50 +2495,40 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   );
   const runTimings = runTiming.finalize();
   for (const experimentId of invocationExperimentIds) {
-    yield* Effect.tryPromise({
-      try: () => emitReporterEvent(reporters, {
-        type: "experiment:complete",
-        experimentId,
-        completedAt: experimentCompletedAt.get(experimentId) ?? new Date().toISOString(),
-      // Only planning-time carries backed by exact frozen Record capabilities
-      // are included in the invocation snapshot.
-      carriedResults: carriedResults.filter((r) => r.experimentId === experimentId),
+    yield* emitReporterEvent(reporters, {
+      type: "experiment:complete",
+      experimentId,
+      completedAt: experimentCompletedAt.get(experimentId) ?? new Date().toISOString(),
+      // Only exact current Record readbacks appear in the invocation snapshot.
+      reusedAttempts: reusedAttempts.filter((attempt) => attempt.target.experimentId === experimentId),
       diagnostics: experimentDiagnostics.get(experimentId) ?? [],
       ...(experimentFacts.has(experimentId) ? { facts: experimentFacts.get(experimentId) } : {}),
       // Run 级共享构建时间与 provenance:属于产出它们的 Run;携带条目不继承。
       ...(runTimings !== undefined ? { timings: runTimings } : {}),
       ...(sandboxBuildRecords.length > 0 ? { sandboxBuilds: sandboxBuildRecords } : {}),
-        name: opts.config.name,
-      }),
-      catch: (error) => error,
+      name: opts.config.name,
     });
   }
 
-  // 稳定排序:按发现顺序 + attempt;exact carried results and fresh results一起排
+  // Stable fresh-result ordering is separate from Record readbacks, which retain
+  // the planner's target order and are never coerced into EvalResult.
   const order = new Map(opts.evals.map((e, i) => [e.id, i]));
-  const allResults = [...carriedResults, ...results];
-  allResults.sort(
+  results.sort(
     (a, b) =>
       (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0) ||
       a.agent.localeCompare(b.agent) ||
       a.attempt - b.attempt,
   );
 
-  const summary = summarize(allResults, startedAt, Date.now() - t0, opts.config.name);
-  yield* Effect.tryPromise({
-    try: () => emitReporterEvent(reporters, { type: "invocation:summary", summary }),
-    catch: (error) => error,
-  });
+  const summary = summarize(results, reusedAttempts, startedAt, Date.now() - t0, opts.config.name);
+  yield* emitReporterEvent(reporters, { type: "invocation:summary", summary });
   for (const reg of reporters) {
     // required reporter(显式 --junit)在这一步失败,不能中断其它
     // reporter 的收尾——继续跑完剩下的循环,让每个 reporter 都拿到 onInvocationComplete 的机会;
     // 失败本身经 runReporter → reportReporterError 折成诊断,由调用方(cli.ts)读取
     // RunFeedbackState 组装成 InvocationCompletion,让最终 completion/退出码判红(见
     // docs/feature/experiments/cli.md「运行完成状态不只看 verdict 计数」)。
-    yield* Effect.tryPromise({
-      try: () => runReporter(reg, "onInvocationComplete", () => reg.reporter.onInvocationComplete?.(summary)),
-      catch: (error) => error,
-    });
+    yield* runReporter(reg, "onInvocationComplete", () => reg.reporter.onInvocationComplete?.(summary));
   }
   return receipt;
   }));

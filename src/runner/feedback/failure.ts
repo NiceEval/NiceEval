@@ -1,4 +1,3 @@
-import { decodeAttemptLocator, type AttemptLocator } from "../../record/locator.ts";
 import { compactAssertionSummary, summaryText } from "../../assertions/display.ts";
 import type {
   EvaluationFactResult,
@@ -9,19 +8,16 @@ import type {
 } from "../../types.ts";
 import { firstLine } from "../../util.ts";
 import { attemptTerminalOf } from "../../shared/verdict.ts";
-import { runWho, type FailureDetail } from "../types.ts";
-
-function isAttemptLocator(value: string): value is AttemptLocator {
-  return decodeAttemptLocator(value).valid;
-}
+import { runWho, type AgentRun, type FailureDetail } from "../types.ts";
+import type { CurrentReusedAttemptReadback } from "../reuse-readback.ts";
 
 /**
- * 把落定的结果投影成反馈层失败事实。fresh 与 carry 共用这一处，区别只在消费者：
- * fresh 作为 durable event，carry 作为 plan seed，因此不会把历史失败重放成实时事件。
+ * Fresh results and current Record readbacks use separate projections so the
+ * latter never has to impersonate an EvalResult at the feedback boundary.
  */
 export function failureDetailFromResult(result: EvalResult): FailureDetail | undefined {
   const locator = result.locator;
-  if (!locator || !isAttemptLocator(locator) || (result.verdict !== "failed" && result.verdict !== "errored")) {
+  if (!locator || (result.verdict !== "failed" && result.verdict !== "errored")) {
     return undefined;
   }
 
@@ -64,6 +60,38 @@ export function failureDetailFromResult(result: EvalResult): FailureDetail | und
     ...(code !== undefined ? { code } : {}),
     ...(origin !== undefined ? { origin } : {}),
     ...(factsCount !== undefined && factsCount > 0 ? { factsCount } : {}),
+  };
+}
+
+/**
+ * A current Record reuse remains a readback ADT all the way to display. The
+ * durable source identity is already exact, so this path neither decodes nor
+ * recreates the retired hash locator.
+ */
+export function failureDetailFromCurrentReusedAttempt(
+  readback: CurrentReusedAttemptReadback,
+  run: Pick<AgentRun, "agent" | "model" | "experimentId">,
+): FailureDetail | undefined {
+  if (readback.verdict !== "failed") return undefined;
+  const diagnostic = readback.executionErrors.state === "available"
+    ? readback.executionErrors.value[0]
+    : undefined;
+  return {
+    locator: `@${readback.source.attemptId}`,
+    identity: {
+      experimentId: readback.target.experimentId,
+      evalId: readback.target.evalId,
+      attempt: readback.target.attempt,
+    },
+    who: runWho({
+      agentName: run.agent.name,
+      model: run.model,
+      experimentId: run.experimentId,
+    }),
+    verdict: "failed",
+    reason: diagnostic === undefined
+      ? summaryText(readback.verdict)
+      : summaryText(firstLine(diagnostic.summary)),
   };
 }
 
