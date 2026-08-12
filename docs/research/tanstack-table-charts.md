@@ -255,7 +255,7 @@ NiceEval 已有 `Dataset`、field metadata、公开 `Chart` / `Series`、axis bi
 目标方案要承认它是一套 closed-mark 作者 DSL，并把 Dataset 写法到 points 写法的迁移列入契约。
 
 问题是这些概念仍在 renderer 内重新装配。
-[`chart.tsx`](../../src/report/definition/primitives/chart.tsx) 同时承担 mapping、固定画布几何、SVG、图例、点标签、tooltip 文本、证据 href 与 text 读值表。
+当时的 [`chart.tsx`](https://github.com/NiceEval/NiceEval/blob/de8684a10087bf9d17a52a7e1516e1011eef38fb/src/report/definition/primitives/chart.tsx) 同时承担 mapping、固定画布几何、SVG、图例、点标签、tooltip 文本、证据 href 与 text 读值表。
 
 web 图表使用固定的 `760 × 400` viewBox。
 `ChartPresentation.tooltip` 已出现在类型里，却没有形成可观察行为开关；增强脚本只监听鼠标 hover。
