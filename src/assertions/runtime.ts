@@ -36,9 +36,13 @@ import {
   assertManagedValueMatch,
   evaluateBooleanMatch,
   evaluateScoreMatch,
+  isManagedThresholdedScoreMatch,
+  looksLikeThresholdedScoreMatch,
+  thresholdedScoreMatchValue,
   type BooleanMatch,
   type MatchDiagnostic,
   type ScoreMatch,
+  type ThresholdedScoreMatch,
 } from "./match.ts";
 import { assertionRuntimeLimits } from "./limits.ts";
 
@@ -614,6 +618,7 @@ class AssertionsRuntimeImplementation {
     match: BooleanMatch<NoInfer<Value>, Refined, "value">,
   ): BooleanHandle;
   check<Value>(value: Value, match: ScoreMatch<NoInfer<Value>>): MeasurementHandle;
+  check<Value>(value: Value, match: ThresholdedScoreMatch<NoInfer<Value>>): MeasurementHandle;
   check(value: unknown, match: unknown, ...extra: readonly unknown[]): BooleanHandle | MeasurementHandle {
     if (extra.length > 0) {
       throw new TypeError("t.check() accepts exactly (value, match)");
@@ -622,7 +627,13 @@ class AssertionsRuntimeImplementation {
     if (typeof value === "object" && value !== null && assertionHandleRegistry.has(value)) {
       throw new TypeError("t.check() cannot use an AssertionHandle as a subject");
     }
-    const managed = assertManagedValueMatch(match, "t.check() match");
+    const thresholded = isManagedThresholdedScoreMatch(match)
+      ? thresholdedScoreMatchValue(match)
+      : undefined;
+    if (thresholded === undefined && looksLikeThresholdedScoreMatch(match)) {
+      throw new TypeError("t.check() match must be a threshold view created by ScoreMatch.atLeast()");
+    }
+    const managed = thresholded?.match ?? assertManagedValueMatch(match, "t.check() match");
     const captured = captureAssertionSnapshot(value);
     if (managed.kind === "boolean") {
       const entry = this.createEntry({
@@ -645,6 +656,7 @@ class AssertionsRuntimeImplementation {
       limitations: captured.limitations,
       evaluate: () => this.evaluateScoreMatch(managed, value),
     });
+    if (thresholded !== undefined) this.configureThreshold(entry, thresholded.threshold);
     return new MeasurementHandle(this, entry);
   }
 

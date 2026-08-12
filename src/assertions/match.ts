@@ -1446,6 +1446,12 @@ export function assertManagedToolMatch(value: unknown, label = "match"): ToolMat
   return value as ToolMatch;
 }
 
+/** @internal Assert-first accepts only branded event-domain matches. */
+export function assertManagedEventMatch(value: unknown, label = "match"): EventMatch {
+  assertBooleanMatch(value, label, "event");
+  return value as EventMatch;
+}
+
 export type ToolMatchQuantifier =
   | { readonly kind: "at-least"; readonly count: number }
   | { readonly kind: "exact"; readonly count: number }

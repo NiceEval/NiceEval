@@ -4,6 +4,7 @@ import type {
   BooleanMatch,
   MatchDiagnostic,
   ScoreMatch,
+  ThresholdedScoreMatch,
 } from "./match.ts";
 import type { AgentWorkspaceDiff } from "./workspace-diff.ts";
 
@@ -395,6 +396,10 @@ export interface PassAssertionsContext extends AssertionGroupContext {
     value: AssertionSubject<Value>,
     match: ScoreMatch<NoInfer<Value>>,
   ): PassMeasurementAssertionHandle;
+  check<Value>(
+    value: AssertionSubject<Value>,
+    match: ThresholdedScoreMatch<NoInfer<Value>>,
+  ): PassMeasurementAssertionHandle<true>;
 }
 
 export interface ScoreAssertionsContext extends AssertionGroupContext {
@@ -407,6 +412,10 @@ export interface ScoreAssertionsContext extends AssertionGroupContext {
     value: AssertionSubject<Value>,
     match: ScoreMatch<NoInfer<Value>>,
   ): ScoreMeasurementAssertionHandle;
+  check<Value>(
+    value: AssertionSubject<Value>,
+    match: ThresholdedScoreMatch<NoInfer<Value>>,
+  ): ScoreMeasurementAssertionHandle<true>;
   score(points: number): DirectScoreAssertionHandle;
 }
 

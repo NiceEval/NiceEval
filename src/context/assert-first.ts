@@ -44,11 +44,18 @@ import {
   validateExpectedTouchedPaths,
 } from "../assertions/diff.ts";
 import {
+  assertionEventOccurrence,
+  assertManagedEventMatch,
   assertManagedToolMatch,
   evaluateBooleanMatch,
   evaluateToolMatchCollection,
+  makeAssertionMessageEvent,
+  makeAssertionToolEvent,
   toolMatch,
   type BooleanMatch,
+  type BooleanMatchEvaluation,
+  type EventMatch,
+  type MatchableEvent,
   type ToolMatch,
   type ToolMatchQuantifier,
 } from "../assertions/match.ts";
@@ -140,6 +147,11 @@ export interface CalledToolOptions {
   readonly count?: CalledToolCount;
 }
 
+export interface EventOptions {
+  /** An omitted count requires at least one matching event; a number is exact. */
+  readonly count?: number;
+}
+
 export interface FileChangedOptions {
   readonly status?: "added" | "modified" | "deleted";
   readonly before?: BooleanMatch<string, string, "value">;
@@ -190,6 +202,15 @@ export interface AssertFirstTurnHandle<Kind extends RuntimeKind> {
   calledTool(name: string, options?: CalledToolOptions): BooleanAssertionHandle<Kind, void>;
   notCalledTool(match: ToolMatch): BooleanAssertionHandle<Kind, void>;
   notCalledTool(name: string): BooleanAssertionHandle<Kind, void>;
+  toolOrder(matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]]): BooleanAssertionHandle<Kind, void>;
+  usedNoTools(): BooleanAssertionHandle<Kind, void>;
+  maxToolCalls(max: number): BooleanAssertionHandle<Kind, void>;
+  noFailedActions(): BooleanAssertionHandle<Kind, void>;
+  event(match: EventMatch, options?: EventOptions): BooleanAssertionHandle<Kind, void>;
+  notEvent(match: EventMatch): BooleanAssertionHandle<Kind, void>;
+  eventOrder(matches: readonly [EventMatch, EventMatch, ...EventMatch[]]): BooleanAssertionHandle<Kind, void>;
+  maxTokens(max: number): BooleanAssertionHandle<Kind, void>;
+  maxCost(usd: number): BooleanAssertionHandle<Kind, void>;
   readonly judge: AssertFirstTurnJudge<Kind>;
 }
 
@@ -208,6 +229,15 @@ export interface AssertFirstSessionHandle<Kind extends RuntimeKind> {
   calledTool(name: string, options?: CalledToolOptions): BooleanAssertionHandle<Kind, void>;
   notCalledTool(match: ToolMatch): BooleanAssertionHandle<Kind, void>;
   notCalledTool(name: string): BooleanAssertionHandle<Kind, void>;
+  toolOrder(matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]]): BooleanAssertionHandle<Kind, void>;
+  usedNoTools(): BooleanAssertionHandle<Kind, void>;
+  maxToolCalls(max: number): BooleanAssertionHandle<Kind, void>;
+  noFailedActions(): BooleanAssertionHandle<Kind, void>;
+  event(match: EventMatch, options?: EventOptions): BooleanAssertionHandle<Kind, void>;
+  notEvent(match: EventMatch): BooleanAssertionHandle<Kind, void>;
+  eventOrder(matches: readonly [EventMatch, EventMatch, ...EventMatch[]]): BooleanAssertionHandle<Kind, void>;
+  maxTokens(max: number): BooleanAssertionHandle<Kind, void>;
+  maxCost(usd: number): BooleanAssertionHandle<Kind, void>;
 }
 
 export type AssertFirstTestContext<Kind extends RuntimeKind> = {
@@ -242,6 +272,13 @@ export type AssertFirstTestContext<Kind extends RuntimeKind> = {
   calledTool(name: string, options?: CalledToolOptions): BooleanAssertionHandle<Kind, void>;
   notCalledTool(match: ToolMatch): BooleanAssertionHandle<Kind, void>;
   notCalledTool(name: string): BooleanAssertionHandle<Kind, void>;
+  usedNoTools(): BooleanAssertionHandle<Kind, void>;
+  maxToolCalls(max: number): BooleanAssertionHandle<Kind, void>;
+  noFailedActions(): BooleanAssertionHandle<Kind, void>;
+  event(match: EventMatch, options?: EventOptions): BooleanAssertionHandle<Kind, void>;
+  notEvent(match: EventMatch): BooleanAssertionHandle<Kind, void>;
+  maxTokens(max: number): BooleanAssertionHandle<Kind, void>;
+  maxCost(usd: number): BooleanAssertionHandle<Kind, void>;
   readonly judge: AssertFirstRootJudge<Kind>;
 } & (Kind extends "score" ? { score(points: number): DirectScoreAssertionHandle } : {});
 
@@ -249,29 +286,33 @@ type AssertionScope = "turn" | "session" | "attempt";
 type ScopeStatus = "completed" | "failed" | "waiting" | "not-started";
 type ScopeCoverage = import("../assertions/coverage.ts").ResolvedEvidenceCoverage;
 
-function scopeCriterion(scope: AssertionScope): AssertionCriterion {
+function scopeCriterion(
+  scope: AssertionScope,
+  assertion: "succeeded" | "no-failed-actions" = "succeeded",
+): AssertionCriterion {
   return Object.freeze({
     kind: "scope-status" as const,
     scope,
-    assertion: "succeeded" as const,
+    assertion,
   });
 }
 
 function occurrenceCriterion(
   scope: AssertionScope,
-  match: ToolMatch,
+  occurrence: "tool" | "event",
+  matcher: string | undefined,
   quantifier: ToolMatchQuantifier,
 ): AssertionCriterion {
   return Object.freeze({
     kind: "occurrence" as const,
     scope,
-    occurrence: "tool" as const,
+    occurrence,
     assertion: quantifier.kind === "absent"
       ? "absent" as const
       : quantifier.kind === "exact"
         ? "count" as const
         : "present" as const,
-    matcher: match.name,
+    ...(matcher === undefined ? {} : { matcher }),
     quantifier: Object.freeze(
       quantifier.kind === "absent"
         ? { kind: "absent" as const }
@@ -434,7 +475,7 @@ function toolAssertionHandle<Kind extends RuntimeKind>(input: {
     snapshot: input.snapshot.snapshot,
   });
   return input.runtime.registerBoolean<void>({
-    criterion: occurrenceCriterion(input.scope, input.match, input.quantifier),
+    criterion: occurrenceCriterion(input.scope, "tool", input.match.name, input.quantifier),
     subject: captured.material,
     coverage: captured.coverage,
     limitations: captured.limitations,
@@ -483,6 +524,506 @@ function notCalledToolHandle<Kind extends RuntimeKind>(input: {
     match: resolveToolTarget(input.target, "notCalledTool"),
     quantifier: Object.freeze({ kind: "absent" as const }),
     snapshot: input.snapshot,
+  });
+}
+
+function valueMatchCriterion(): AssertionCriterion {
+  return Object.freeze({ kind: "value-match" as const, subject: "explicit-value" as const });
+}
+
+function matchedVoid(): BooleanAssertionEvaluation<void> {
+  return Object.freeze({ state: "matched" as const, value: undefined });
+}
+
+function mismatchedVoid(): BooleanAssertionEvaluation<void> {
+  return Object.freeze({ state: "mismatched" as const });
+}
+
+function unavailableVoid(): BooleanAssertionEvaluation<void> {
+  return Object.freeze({ state: "unavailable" as const, reason: "evidence-unavailable" as const });
+}
+
+function scopedBooleanHandle<Kind extends RuntimeKind>(input: {
+  readonly runtime: AssertionsRuntime<Kind>;
+  readonly criterion: AssertionCriterion;
+  readonly snapshot: unknown;
+  readonly evaluate: () => Effect.Effect<BooleanAssertionEvaluation<void>, unknown, never>;
+}): BooleanAssertionHandle<Kind, void> {
+  const captured = captureAssertionSnapshot(input.snapshot);
+  return input.runtime.registerBoolean<void>({
+    criterion: input.criterion,
+    subject: captured.material,
+    coverage: captured.coverage,
+    limitations: captured.limitations,
+    evaluate: input.evaluate,
+  });
+}
+
+function hasCompleteCoverage(
+  coverage: ScopeCoverage,
+  channel: "actions" | "events" | "usage",
+): boolean {
+  return coverage[channel].status === "complete";
+}
+
+function assertNonNegativeFinite(value: unknown, label: string): asserts value is number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    throw new TypeError(`${label} must be a finite non-negative number`);
+  }
+}
+
+function assertNonNegativeSafeInteger(value: unknown, label: string): asserts value is number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    throw new TypeError(`${label} must be a non-negative safe integer`);
+  }
+}
+
+function usedNoToolsHandle<Kind extends RuntimeKind>(input: {
+  readonly runtime: AssertionsRuntime<Kind>;
+  readonly scope: AssertionScope;
+  readonly snapshot: ToolScopeSnapshot;
+}): BooleanAssertionHandle<Kind, void> {
+  return scopedBooleanHandle({
+    runtime: input.runtime,
+    criterion: occurrenceCriterion(
+      input.scope,
+      "tool",
+      undefined,
+      Object.freeze({ kind: "absent" as const }),
+    ),
+    snapshot: Object.freeze({
+      scope: input.scope,
+      assertion: "used-no-tools",
+      occurrences: input.snapshot.occurrences,
+      orphanFinishes: input.snapshot.orphanFinishes,
+      coverage: input.snapshot.coverage.actions,
+      snapshot: input.snapshot.snapshot,
+    }),
+    evaluate: () => Effect.sync(() => {
+      if (input.snapshot.occurrences.length > 0) return mismatchedVoid();
+      return toolScopeCoverageReason(input.snapshot) === undefined
+        ? matchedVoid()
+        : unavailableVoid();
+    }),
+  });
+}
+
+function maxToolCallsHandle<Kind extends RuntimeKind>(input: {
+  readonly runtime: AssertionsRuntime<Kind>;
+  readonly scope: AssertionScope;
+  readonly max: number;
+  readonly snapshot: ToolScopeSnapshot;
+}): BooleanAssertionHandle<Kind, void> {
+  assertNonNegativeSafeInteger(input.max, "maxToolCalls() max");
+  return scopedBooleanHandle({
+    runtime: input.runtime,
+    criterion: valueMatchCriterion(),
+    snapshot: Object.freeze({
+      scope: input.scope,
+      assertion: "max-tool-calls",
+      max: input.max,
+      occurrences: input.snapshot.occurrences,
+      orphanFinishes: input.snapshot.orphanFinishes,
+      coverage: input.snapshot.coverage.actions,
+      snapshot: input.snapshot.snapshot,
+    }),
+    evaluate: () => Effect.sync(() => {
+      if (input.snapshot.occurrences.length > input.max) return mismatchedVoid();
+      return toolScopeCoverageReason(input.snapshot) === undefined
+        ? matchedVoid()
+        : unavailableVoid();
+    }),
+  });
+}
+
+function noFailedActionsHandle<Kind extends RuntimeKind>(input: {
+  readonly runtime: AssertionsRuntime<Kind>;
+  readonly scope: AssertionScope;
+  readonly events: readonly StreamEvent[];
+  readonly coverage: ScopeCoverage;
+  readonly snapshot: unknown;
+}): BooleanAssertionHandle<Kind, void> {
+  return scopedBooleanHandle({
+    runtime: input.runtime,
+    criterion: scopeCriterion(input.scope, "no-failed-actions"),
+    snapshot: Object.freeze({
+      scope: input.scope,
+      assertion: "no-failed-actions",
+      events: input.events,
+      coverage: input.coverage.actions,
+      snapshot: input.snapshot,
+    }),
+    evaluate: () => Effect.sync(() => {
+      const facts = deriveRunFacts(input.events);
+      const failed = facts.toolCalls.some((call) => call.status === "failed")
+        || facts.subagentCalls.some((call) => call.status === "failed");
+      if (failed) return mismatchedVoid();
+      return hasCompleteCoverage(input.coverage, "actions")
+        ? matchedVoid()
+        : unavailableVoid();
+    }),
+  });
+}
+
+function usageLimitHandle<Kind extends RuntimeKind>(input: {
+  readonly runtime: AssertionsRuntime<Kind>;
+  readonly scope: AssertionScope;
+  readonly metric: "tokens" | "cost";
+  readonly maximum: number;
+  readonly usage: Usage;
+  readonly coverage: ScopeCoverage;
+  readonly snapshot: unknown;
+}): BooleanAssertionHandle<Kind, void> {
+  assertNonNegativeFinite(input.maximum, input.metric === "tokens" ? "maxTokens() max" : "maxCost() usd");
+  return scopedBooleanHandle({
+    runtime: input.runtime,
+    criterion: valueMatchCriterion(),
+    snapshot: Object.freeze({
+      scope: input.scope,
+      assertion: input.metric === "tokens" ? "max-tokens" : "max-cost",
+      maximum: input.maximum,
+      usage: Object.freeze({ ...input.usage }),
+      coverage: input.coverage.usage,
+      snapshot: input.snapshot,
+    }),
+    evaluate: () => Effect.sync(() => {
+      const actual = input.metric === "tokens"
+        ? (input.usage.inputTokens ?? 0) + (input.usage.outputTokens ?? 0)
+        : input.usage.costUSD ?? 0;
+      if (actual > input.maximum) return mismatchedVoid();
+      return hasCompleteCoverage(input.coverage, "usage")
+        ? matchedVoid()
+        : unavailableVoid();
+    }),
+  });
+}
+
+function orderedMatchList<Match>(
+  value: readonly Match[],
+  label: string,
+  assertMatch: (value: unknown, label: string) => Match,
+): readonly Match[] {
+  if (!Array.isArray(value) || value.length < 2) {
+    throw new TypeError(`${label} requires at least two Match values`);
+  }
+  return Object.freeze(value.map((match, index) => assertMatch(match, `${label} match ${index + 1}`)));
+}
+
+function hasOrderedPath(
+  matrix: readonly (readonly BooleanMatchEvaluation<unknown>[])[],
+  allowed: (result: BooleanMatchEvaluation<unknown>) => boolean,
+): boolean {
+  let cursor = 0;
+  for (const row of matrix) {
+    let found = -1;
+    for (let index = cursor; index < row.length; index += 1) {
+      if (allowed(row[index]!)) {
+        found = index;
+        break;
+      }
+    }
+    if (found < 0) return false;
+    cursor = found + 1;
+  }
+  return true;
+}
+
+function toolMatchEvaluation(
+  occurrence: LogicalToolOccurrence,
+  result: BooleanMatchEvaluation<unknown>,
+): BooleanMatchEvaluation<unknown> {
+  if (occurrence.lifecycle.state === "opaque" && result.state === "matched") {
+    return Object.freeze({
+      state: "unavailable" as const,
+      reason: `tool-lifecycle-unavailable:${occurrence.lifecycle.reason}`,
+      diagnostic: Object.freeze({
+        code: "tool-lifecycle-unavailable",
+        message: "the matching tool lifecycle is incomplete",
+        path: Object.freeze([]),
+        reason: occurrence.lifecycle.reason,
+      }),
+    });
+  }
+  return result;
+}
+
+function toolOrderHandle<Kind extends RuntimeKind>(input: {
+  readonly runtime: AssertionsRuntime<Kind>;
+  readonly scope: AssertionScope;
+  readonly matches: readonly ToolMatch[];
+  readonly snapshot: ToolScopeSnapshot;
+}): BooleanAssertionHandle<Kind, void> {
+  const matches = orderedMatchList(input.matches, "toolOrder()", assertManagedToolMatch);
+  return scopedBooleanHandle({
+    runtime: input.runtime,
+    criterion: valueMatchCriterion(),
+    snapshot: Object.freeze({
+      scope: input.scope,
+      assertion: "tool-order",
+      matches: matches.map((match) => match.name),
+      occurrences: input.snapshot.occurrences,
+      orphanFinishes: input.snapshot.orphanFinishes,
+      coverage: input.snapshot.coverage.actions,
+      snapshot: input.snapshot.snapshot,
+    }),
+    evaluate: () => Effect.tryPromise({
+      try: async () => {
+        const matrix: BooleanMatchEvaluation<unknown>[][] = [];
+        for (const match of matches) {
+          const row: BooleanMatchEvaluation<unknown>[] = [];
+          for (const occurrence of input.snapshot.occurrences) {
+            row.push(toolMatchEvaluation(occurrence, await evaluateBooleanMatch(match, occurrence)));
+          }
+          matrix.push(row);
+        }
+        if (hasOrderedPath(matrix, (result) => result.state === "matched")) return matchedVoid();
+        if (
+          toolScopeCoverageReason(input.snapshot) !== undefined
+          || hasOrderedPath(matrix, (result) => result.state === "matched" || result.state === "unavailable")
+        ) {
+          return unavailableVoid();
+        }
+        return mismatchedVoid();
+      },
+      catch: (error) => error,
+    }),
+  });
+}
+
+interface EventScopeSnapshot {
+  readonly events: readonly MatchableEvent[];
+  readonly unassociatedOperation: boolean;
+  readonly coverage: ScopeCoverage;
+  readonly snapshot: unknown;
+}
+
+function eventPositionKey(position: { readonly turnOrdinal: number; readonly eventOrdinal: number }): string {
+  return `${position.turnOrdinal}:${position.eventOrdinal}`;
+}
+
+function projectEventScope(input: {
+  readonly turns: readonly LogicalToolOccurrenceScopeTurn[];
+  readonly coverage: ScopeCoverage;
+  readonly snapshot: unknown;
+}): EventScopeSnapshot {
+  const derivation = deriveScopedLogicalToolOccurrences(input.turns);
+  const starts = new Map<string, LogicalToolOccurrence>();
+  const finishes = new Map<string, LogicalToolOccurrence>();
+  for (const occurrence of derivation.occurrences) {
+    starts.set(eventPositionKey(occurrence.start), occurrence);
+    if (occurrence.lifecycle.state === "available" && occurrence.lifecycle.status !== "pending") {
+      finishes.set(eventPositionKey(occurrence.lifecycle.finish), occurrence);
+    }
+  }
+  const events: MatchableEvent[] = [];
+  let unassociatedOperation = false;
+  for (const turn of [...input.turns].sort((left, right) => left.turnOrdinal - right.turnOrdinal)) {
+    for (const [eventOrdinal, event] of turn.events.entries()) {
+      const position = { turnOrdinal: turn.turnOrdinal, eventOrdinal };
+      if (event.type === "message") {
+        events.push(makeAssertionMessageEvent({
+          session: turn.session,
+          turn: turn.turn,
+          ...position,
+          role: event.role,
+          text: event.text,
+        }));
+      } else if (event.type === "operation.started" && event.operation.kind === "tool") {
+        const occurrence = starts.get(eventPositionKey(position));
+        if (occurrence === undefined) unassociatedOperation = true;
+        else {
+          events.push(makeAssertionToolEvent({
+            session: turn.session,
+            turn: turn.turn,
+            ...position,
+            type: "operation.started",
+            occurrence,
+          }));
+        }
+      } else if (event.type === "operation.finished" && event.kind === "tool") {
+        const occurrence = finishes.get(eventPositionKey(position));
+        if (occurrence === undefined) unassociatedOperation = true;
+        else {
+          events.push(makeAssertionToolEvent({
+            session: turn.session,
+            turn: turn.turn,
+            ...position,
+            type: "operation.finished",
+            occurrence,
+            status: event.status,
+          }));
+        }
+      }
+    }
+  }
+  return Object.freeze({
+    events: Object.freeze(events),
+    unassociatedOperation,
+    coverage: input.coverage,
+    snapshot: input.snapshot,
+  });
+}
+
+function eventMatchEvaluation(
+  event: MatchableEvent,
+  result: BooleanMatchEvaluation<unknown>,
+): BooleanMatchEvaluation<unknown> {
+  const occurrence = assertionEventOccurrence(event);
+  return occurrence === undefined ? result : toolMatchEvaluation(occurrence, result);
+}
+
+function eventCoverageComplete(snapshot: EventScopeSnapshot): boolean {
+  return hasCompleteCoverage(snapshot.coverage, "events") && !snapshot.unassociatedOperation;
+}
+
+function normalizeEventCount(value: EventOptions | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new TypeError("event() options must be an object");
+  }
+  const options = value as globalThis.Record<string, unknown>;
+  for (const key of Object.keys(options)) {
+    if (key !== "count") throw new TypeError(`event() options does not support option ${JSON.stringify(key)}`);
+  }
+  if (options.count === undefined) return undefined;
+  if (!Number.isSafeInteger(options.count) || typeof options.count !== "number" || options.count <= 0) {
+    throw new TypeError("event() options.count must be a positive safe integer; use notEvent() for zero");
+  }
+  return options.count;
+}
+
+function eventCollectionEvaluation(
+  evaluations: readonly BooleanMatchEvaluation<unknown>[],
+  count: number | undefined,
+  complete: boolean,
+): BooleanAssertionEvaluation<void> {
+  const matched = evaluations.filter((evaluation) => evaluation.state === "matched").length;
+  const unavailable = evaluations.some((evaluation) => evaluation.state === "unavailable");
+  if (count === undefined) {
+    if (matched > 0) return matchedVoid();
+    return unavailable || !complete ? unavailableVoid() : mismatchedVoid();
+  }
+  if (matched > count) return mismatchedVoid();
+  if (matched === count && !unavailable && complete) return matchedVoid();
+  return unavailable || !complete ? unavailableVoid() : mismatchedVoid();
+}
+
+function eventAssertionHandle<Kind extends RuntimeKind>(input: {
+  readonly runtime: AssertionsRuntime<Kind>;
+  readonly scope: AssertionScope;
+  readonly match: EventMatch;
+  readonly count: number | undefined;
+  readonly snapshot: EventScopeSnapshot;
+}): BooleanAssertionHandle<Kind, void> {
+  const quantifier: ToolMatchQuantifier = input.count === undefined
+    ? Object.freeze({ kind: "at-least" as const, count: 1 })
+    : Object.freeze({ kind: "exact" as const, count: input.count });
+  return scopedBooleanHandle({
+    runtime: input.runtime,
+    criterion: occurrenceCriterion(input.scope, "event", input.match.name, quantifier),
+    snapshot: Object.freeze({
+      scope: input.scope,
+      occurrence: "event",
+      matcher: input.match.name,
+      quantifier,
+      candidates: input.snapshot.events,
+      unassociatedOperation: input.snapshot.unassociatedOperation,
+      coverage: input.snapshot.coverage.events,
+      snapshot: input.snapshot.snapshot,
+    }),
+    evaluate: () => Effect.tryPromise({
+      try: async () => {
+        const evaluations: BooleanMatchEvaluation<unknown>[] = [];
+        for (const event of input.snapshot.events) {
+          evaluations.push(eventMatchEvaluation(event, await evaluateBooleanMatch(input.match, event)));
+        }
+        return eventCollectionEvaluation(evaluations, input.count, eventCoverageComplete(input.snapshot));
+      },
+      catch: (error) => error,
+    }),
+  });
+}
+
+function notEventHandle<Kind extends RuntimeKind>(input: {
+  readonly runtime: AssertionsRuntime<Kind>;
+  readonly scope: AssertionScope;
+  readonly match: EventMatch;
+  readonly snapshot: EventScopeSnapshot;
+}): BooleanAssertionHandle<Kind, void> {
+  return scopedBooleanHandle({
+    runtime: input.runtime,
+    criterion: occurrenceCriterion(
+      input.scope,
+      "event",
+      input.match.name,
+      Object.freeze({ kind: "absent" as const }),
+    ),
+    snapshot: Object.freeze({
+      scope: input.scope,
+      occurrence: "event",
+      matcher: input.match.name,
+      quantifier: Object.freeze({ kind: "absent" as const }),
+      candidates: input.snapshot.events,
+      unassociatedOperation: input.snapshot.unassociatedOperation,
+      coverage: input.snapshot.coverage.events,
+      snapshot: input.snapshot.snapshot,
+    }),
+    evaluate: () => Effect.tryPromise({
+      try: async () => {
+        const evaluations: BooleanMatchEvaluation<unknown>[] = [];
+        for (const event of input.snapshot.events) {
+          evaluations.push(eventMatchEvaluation(event, await evaluateBooleanMatch(input.match, event)));
+        }
+        if (evaluations.some((evaluation) => evaluation.state === "matched")) return mismatchedVoid();
+        return evaluations.some((evaluation) => evaluation.state === "unavailable") || !eventCoverageComplete(input.snapshot)
+          ? unavailableVoid()
+          : matchedVoid();
+      },
+      catch: (error) => error,
+    }),
+  });
+}
+
+function eventOrderHandle<Kind extends RuntimeKind>(input: {
+  readonly runtime: AssertionsRuntime<Kind>;
+  readonly scope: AssertionScope;
+  readonly matches: readonly EventMatch[];
+  readonly snapshot: EventScopeSnapshot;
+}): BooleanAssertionHandle<Kind, void> {
+  const matches = orderedMatchList(input.matches, "eventOrder()", assertManagedEventMatch);
+  return scopedBooleanHandle({
+    runtime: input.runtime,
+    criterion: valueMatchCriterion(),
+    snapshot: Object.freeze({
+      scope: input.scope,
+      assertion: "event-order",
+      matches: matches.map((match) => match.name),
+      candidates: input.snapshot.events,
+      unassociatedOperation: input.snapshot.unassociatedOperation,
+      coverage: input.snapshot.coverage.events,
+      snapshot: input.snapshot.snapshot,
+    }),
+    evaluate: () => Effect.tryPromise({
+      try: async () => {
+        const matrix: BooleanMatchEvaluation<unknown>[][] = [];
+        for (const match of matches) {
+          const row: BooleanMatchEvaluation<unknown>[] = [];
+          for (const event of input.snapshot.events) {
+            row.push(eventMatchEvaluation(event, await evaluateBooleanMatch(match, event)));
+          }
+          matrix.push(row);
+        }
+        if (hasOrderedPath(matrix, (result) => result.state === "matched")) return matchedVoid();
+        if (
+          !eventCoverageComplete(input.snapshot)
+          || hasOrderedPath(matrix, (result) => result.state === "matched" || result.state === "unavailable")
+        ) {
+          return unavailableVoid();
+        }
+        return mismatchedVoid();
+      },
+      catch: (error) => error,
+    }),
   });
 }
 
@@ -1093,30 +1634,69 @@ export function createAssertFirstEvalContext(
     });
   };
 
+  const sessionScopedEvents = (scope: SessionScopeState): readonly StreamEvent[] =>
+    Object.freeze(scope.turns.flatMap((turn) => turn.events));
+
+  const sessionEventScope = (scope: SessionScopeState): EventScopeSnapshot => {
+    const coverage = sessionCoverage(scope);
+    return projectEventScope({
+      turns: Object.freeze([...scope.turns]),
+      coverage,
+      snapshot: sessionSnapshot(scope),
+    });
+  };
+
+  const attemptScopedEvents = (): readonly StreamEvent[] =>
+    Object.freeze(
+      sessions
+        .filter((scope) => scope.started)
+        .flatMap((scope) => scope.turns.flatMap((turn) => turn.events)),
+    );
+
+  const attemptEventScope = (): EventScopeSnapshot => {
+    const active = sessions.filter((scope) => scope.started);
+    const coverage = attemptCoverage();
+    return projectEventScope({
+      turns: Object.freeze(active.flatMap((scope) => scope.turns)),
+      coverage,
+      snapshot: attemptSnapshot(),
+    });
+  };
+
   const makeTurn = <Kind extends RuntimeKind>(
     scope: SessionScopeState,
     turn: Turn,
     input: string,
   ): AssertFirstTurnHandle<Kind> => {
     const events = Object.freeze([...turn.events]);
+    const scopedEvents = Object.freeze([
+      Object.freeze({ type: "message" as const, role: "user" as const, text: input }),
+      ...events,
+    ]);
     const toolCalls = Object.freeze([...deriveRunFacts(events).toolCalls]);
     const coverage = manager.resolveTurnEvidenceCoverage(turn);
     const occurrenceTurn: LogicalToolOccurrenceScopeTurn = Object.freeze({
       session: `session-${scope.session.index}`,
       turn: `turn-${scope.session.turnCount}`,
       turnOrdinal: ++toolTurnOrdinal,
-      events,
+      events: scopedEvents,
       outcome: turn.status,
     });
     scope.turns.push(occurrenceTurn);
+    const scopeSnapshot = Object.freeze({
+      sessionIndex: scope.session.index,
+      turnIndex: scope.session.turnCount,
+      events: scopedEvents.length,
+    });
     const toolScope = projectToolScope({
       turns: Object.freeze([occurrenceTurn]),
       coverage,
-      snapshot: Object.freeze({
-        sessionIndex: scope.session.index,
-        turnIndex: scope.session.turnCount,
-        events: events.length,
-      }),
+      snapshot: scopeSnapshot,
+    });
+    const eventScope = projectEventScope({
+      turns: Object.freeze([occurrenceTurn]),
+      coverage,
+      snapshot: scopeSnapshot,
     });
     const snapshot: TurnScopeSnapshot = Object.freeze({
       events,
@@ -1174,6 +1754,91 @@ export function createAssertFirstEvalContext(
         snapshot: toolScope,
       });
     };
+    const toolOrder = (
+      matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]],
+      ...extra: readonly unknown[]
+    ) => {
+      if (extra.length > 0) throw new TypeError("toolOrder() accepts exactly one ordered match list");
+      return toolOrderHandle({
+        runtime: runtime as AssertionsRuntime<Kind>,
+        scope: "turn",
+        matches,
+        snapshot: toolScope,
+      });
+    };
+    const usedNoTools = (...extra: readonly unknown[]) => {
+      if (extra.length > 0) throw new TypeError("usedNoTools() accepts no arguments");
+      return usedNoToolsHandle({ runtime: runtime as AssertionsRuntime<Kind>, scope: "turn", snapshot: toolScope });
+    };
+    const maxToolCalls = (max: number, ...extra: readonly unknown[]) => {
+      if (extra.length > 0) throw new TypeError("maxToolCalls() accepts exactly one maximum");
+      return maxToolCallsHandle({ runtime: runtime as AssertionsRuntime<Kind>, scope: "turn", max, snapshot: toolScope });
+    };
+    const noFailedActions = (...extra: readonly unknown[]) => {
+      if (extra.length > 0) throw new TypeError("noFailedActions() accepts no arguments");
+      return noFailedActionsHandle({
+        runtime: runtime as AssertionsRuntime<Kind>,
+        scope: "turn",
+        events: occurrenceTurn.events,
+        coverage,
+        snapshot: scopeSnapshot,
+      });
+    };
+    const event = (match: EventMatch, options?: EventOptions, ...extra: readonly unknown[]) => {
+      if (extra.length > 0) throw new TypeError("event() accepts exactly (match, options)");
+      return eventAssertionHandle({
+        runtime: runtime as AssertionsRuntime<Kind>,
+        scope: "turn",
+        match: assertManagedEventMatch(match, "event() match"),
+        count: normalizeEventCount(options),
+        snapshot: eventScope,
+      });
+    };
+    const notEvent = (match: EventMatch, ...extra: readonly unknown[]) => {
+      if (extra.length > 0) throw new TypeError("notEvent() accepts exactly one match");
+      return notEventHandle({
+        runtime: runtime as AssertionsRuntime<Kind>,
+        scope: "turn",
+        match: assertManagedEventMatch(match, "notEvent() match"),
+        snapshot: eventScope,
+      });
+    };
+    const eventOrder = (
+      matches: readonly [EventMatch, EventMatch, ...EventMatch[]],
+      ...extra: readonly unknown[]
+    ) => {
+      if (extra.length > 0) throw new TypeError("eventOrder() accepts exactly one ordered match list");
+      return eventOrderHandle({
+        runtime: runtime as AssertionsRuntime<Kind>,
+        scope: "turn",
+        matches,
+        snapshot: eventScope,
+      });
+    };
+    const maxTokens = (max: number, ...extra: readonly unknown[]) => {
+      if (extra.length > 0) throw new TypeError("maxTokens() accepts exactly one maximum");
+      return usageLimitHandle({
+        runtime: runtime as AssertionsRuntime<Kind>,
+        scope: "turn",
+        metric: "tokens",
+        maximum: max,
+        usage: turn.usage ?? {},
+        coverage,
+        snapshot: scopeSnapshot,
+      });
+    };
+    const maxCost = (usd: number, ...extra: readonly unknown[]) => {
+      if (extra.length > 0) throw new TypeError("maxCost() accepts exactly one maximum");
+      return usageLimitHandle({
+        runtime: runtime as AssertionsRuntime<Kind>,
+        scope: "turn",
+        metric: "cost",
+        maximum: usd,
+        usage: turn.usage ?? {},
+        coverage,
+        snapshot: scopeSnapshot,
+      });
+    };
     return Object.freeze({
       events: snapshot.events,
       toolCalls: snapshot.toolCalls,
@@ -1186,14 +1851,19 @@ export function createAssertFirstEvalContext(
         scope: "turn",
         status: snapshot.status,
         coverage: snapshot.coverage,
-        snapshot: Object.freeze({
-          sessionIndex: scope.session.index,
-          turnIndex: scope.session.turnCount,
-          events: snapshot.events.length,
-        }),
+        snapshot: scopeSnapshot,
       }),
       calledTool,
       notCalledTool,
+      toolOrder,
+      usedNoTools,
+      maxToolCalls,
+      noFailedActions,
+      event,
+      notEvent,
+      eventOrder,
+      maxTokens,
+      maxCost,
       judge,
     });
   };
@@ -1231,6 +1901,103 @@ export function createAssertFirstEvalContext(
 
   const makeSession = <Kind extends RuntimeKind>(scope: SessionScopeState): AssertFirstSessionHandle<Kind> => {
     const session = scope.session;
+    const toolOrder = (
+      matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]],
+      ...extra: readonly unknown[]
+    ) => {
+      if (extra.length > 0) throw new TypeError("toolOrder() accepts exactly one ordered match list");
+      return toolOrderHandle({
+        runtime: runtime as AssertionsRuntime<Kind>,
+        scope: "session",
+        matches,
+        snapshot: sessionToolScope(scope),
+      });
+    };
+    const usedNoTools = (...extra: readonly unknown[]) => {
+      if (extra.length > 0) throw new TypeError("usedNoTools() accepts no arguments");
+      return usedNoToolsHandle({
+        runtime: runtime as AssertionsRuntime<Kind>,
+        scope: "session",
+        snapshot: sessionToolScope(scope),
+      });
+    };
+    const maxToolCalls = (max: number, ...extra: readonly unknown[]) => {
+      if (extra.length > 0) throw new TypeError("maxToolCalls() accepts exactly one maximum");
+      return maxToolCallsHandle({
+        runtime: runtime as AssertionsRuntime<Kind>,
+        scope: "session",
+        max,
+        snapshot: sessionToolScope(scope),
+      });
+    };
+    const noFailedActions = (...extra: readonly unknown[]) => {
+      if (extra.length > 0) throw new TypeError("noFailedActions() accepts no arguments");
+      const coverage = sessionCoverage(scope);
+      return noFailedActionsHandle({
+        runtime: runtime as AssertionsRuntime<Kind>,
+        scope: "session",
+        events: sessionScopedEvents(scope),
+        coverage,
+        snapshot: sessionSnapshot(scope),
+      });
+    };
+    const event = (match: EventMatch, options?: EventOptions, ...extra: readonly unknown[]) => {
+      if (extra.length > 0) throw new TypeError("event() accepts exactly (match, options)");
+      return eventAssertionHandle({
+        runtime: runtime as AssertionsRuntime<Kind>,
+        scope: "session",
+        match: assertManagedEventMatch(match, "event() match"),
+        count: normalizeEventCount(options),
+        snapshot: sessionEventScope(scope),
+      });
+    };
+    const notEvent = (match: EventMatch, ...extra: readonly unknown[]) => {
+      if (extra.length > 0) throw new TypeError("notEvent() accepts exactly one match");
+      return notEventHandle({
+        runtime: runtime as AssertionsRuntime<Kind>,
+        scope: "session",
+        match: assertManagedEventMatch(match, "notEvent() match"),
+        snapshot: sessionEventScope(scope),
+      });
+    };
+    const eventOrder = (
+      matches: readonly [EventMatch, EventMatch, ...EventMatch[]],
+      ...extra: readonly unknown[]
+    ) => {
+      if (extra.length > 0) throw new TypeError("eventOrder() accepts exactly one ordered match list");
+      return eventOrderHandle({
+        runtime: runtime as AssertionsRuntime<Kind>,
+        scope: "session",
+        matches,
+        snapshot: sessionEventScope(scope),
+      });
+    };
+    const maxTokens = (max: number, ...extra: readonly unknown[]) => {
+      if (extra.length > 0) throw new TypeError("maxTokens() accepts exactly one maximum");
+      const coverage = sessionCoverage(scope);
+      return usageLimitHandle({
+        runtime: runtime as AssertionsRuntime<Kind>,
+        scope: "session",
+        metric: "tokens",
+        maximum: max,
+        usage: session.usage,
+        coverage,
+        snapshot: sessionSnapshot(scope),
+      });
+    };
+    const maxCost = (usd: number, ...extra: readonly unknown[]) => {
+      if (extra.length > 0) throw new TypeError("maxCost() accepts exactly one maximum");
+      const coverage = sessionCoverage(scope);
+      return usageLimitHandle({
+        runtime: runtime as AssertionsRuntime<Kind>,
+        scope: "session",
+        metric: "cost",
+        maximum: usd,
+        usage: session.usage,
+        coverage,
+        snapshot: sessionSnapshot(scope),
+      });
+    };
     return Object.freeze({
       send: (input: string | { readonly text: string; readonly files?: readonly InputFile[] }) => {
         const text = typeof input === "string" ? input : input.text;
@@ -1304,6 +2071,15 @@ export function createAssertFirstEvalContext(
           snapshot: sessionToolScope(scope),
         });
       },
+      toolOrder,
+      usedNoTools,
+      maxToolCalls,
+      noFailedActions,
+      event,
+      notEvent,
+      eventOrder,
+      maxTokens,
+      maxCost,
     });
   };
 
@@ -1345,6 +2121,71 @@ export function createAssertFirstEvalContext(
       }),
     }),
   });
+
+  const rootUsedNoTools = (...extra: readonly unknown[]) => {
+    if (extra.length > 0) throw new TypeError("usedNoTools() accepts no arguments");
+    return usedNoToolsHandle({ runtime, scope: "attempt", snapshot: attemptToolScope() });
+  };
+  const rootMaxToolCalls = (max: number, ...extra: readonly unknown[]) => {
+    if (extra.length > 0) throw new TypeError("maxToolCalls() accepts exactly one maximum");
+    return maxToolCallsHandle({ runtime, scope: "attempt", max, snapshot: attemptToolScope() });
+  };
+  const rootNoFailedActions = (...extra: readonly unknown[]) => {
+    if (extra.length > 0) throw new TypeError("noFailedActions() accepts no arguments");
+    const coverage = attemptCoverage();
+    return noFailedActionsHandle({
+      runtime,
+      scope: "attempt",
+      events: attemptScopedEvents(),
+      coverage,
+      snapshot: attemptSnapshot(),
+    });
+  };
+  const rootEvent = (match: EventMatch, options?: EventOptions, ...extra: readonly unknown[]) => {
+    if (extra.length > 0) throw new TypeError("event() accepts exactly (match, options)");
+    return eventAssertionHandle({
+      runtime,
+      scope: "attempt",
+      match: assertManagedEventMatch(match, "event() match"),
+      count: normalizeEventCount(options),
+      snapshot: attemptEventScope(),
+    });
+  };
+  const rootNotEvent = (match: EventMatch, ...extra: readonly unknown[]) => {
+    if (extra.length > 0) throw new TypeError("notEvent() accepts exactly one match");
+    return notEventHandle({
+      runtime,
+      scope: "attempt",
+      match: assertManagedEventMatch(match, "notEvent() match"),
+      snapshot: attemptEventScope(),
+    });
+  };
+  const rootMaxTokens = (max: number, ...extra: readonly unknown[]) => {
+    if (extra.length > 0) throw new TypeError("maxTokens() accepts exactly one maximum");
+    const coverage = attemptCoverage();
+    return usageLimitHandle({
+      runtime,
+      scope: "attempt",
+      metric: "tokens",
+      maximum: max,
+      usage: manager.usage,
+      coverage,
+      snapshot: attemptSnapshot(),
+    });
+  };
+  const rootMaxCost = (usd: number, ...extra: readonly unknown[]) => {
+    if (extra.length > 0) throw new TypeError("maxCost() accepts exactly one maximum");
+    const coverage = attemptCoverage();
+    return usageLimitHandle({
+      runtime,
+      scope: "attempt",
+      metric: "cost",
+      maximum: usd,
+      usage: manager.usage,
+      coverage,
+      snapshot: attemptSnapshot(),
+    });
+  };
 
   const base = {
     evaluationKind: deps.evaluationKind,
@@ -1433,6 +2274,13 @@ export function createAssertFirstEvalContext(
         snapshot: attemptToolScope(),
       });
     },
+    usedNoTools: rootUsedNoTools,
+    maxToolCalls: rootMaxToolCalls,
+    noFailedActions: rootNoFailedActions,
+    event: rootEvent,
+    notEvent: rootNotEvent,
+    maxTokens: rootMaxTokens,
+    maxCost: rootMaxCost,
     judge: rootJudge,
   };
   const context = deps.evaluationKind === "score"
