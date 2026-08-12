@@ -17,7 +17,7 @@ export default defineExperiment({
 });
 ```
 
-`rememCodexConfig()` 内部又要拼 `configFile`、env、`postSetup` 与 `preTeardown`;其 factory 在 import 时读取 Codex endpoint 与 API key。Experiment 调用点看不出这些 fragment 必须成套出现,也无法静态证明跨题历史的完整性。
+`rememCodexConfig()` 内部又要拼 `configFile`、env、`postSetup` 与 `preTeardown`;其 factory 在 import 时读取 Codex endpoint 与 API key。Experiment 调用点看不出这些 fragment 必须成套出现,也无法静态证明跨题历史的完整性。这些旧字段只是现状，不是 Plugin 目标 API：roadmap 会把安装能力统一成 `AgentExtension`，把 secret 延迟到 materialize。
 
 ## Plugin 调用点
 
@@ -50,12 +50,16 @@ export default defineExperiment({
 |---|---|
 | `rememFlags(MODEL)` | 原生 `flags` / `labels` 字段 |
 | `.prepare(rememPrepare())` | command-only Sandbox layer |
-| Codex config 与安装后 hook | Codex AgentExtension receiver 的既有具名槽位 |
-| extraction drain 与数据库检查 | Codex `preTeardown` 有序槽位 |
-| Codex endpoint / API key | receiver 的 effective runtime auth/provider binding |
+| Remem Skill／MCP／Codex Native Plugin | `skillsExtension()`、`mcpServersExtension()` 与 `codexNativeExtension()` |
+| 安装后注册脚本 | `agentLifecycleExtension().afterConfigure` 稳定命令 |
+| extraction drain 与数据库检查 | `agentLifecycleExtension().beforeAgentTeardown` 有序槽位 |
+| Remem 专属 API key | `credentialFromEnv()` runtime binding；selector／value 不进 identity |
+| Codex 主 endpoint／API key | `codexAgent()` base-only；Plugin 无权改写，也不取得明文 |
 | 5 小时寿命 | Experiment 仍显式声明;planning requirement 只验证 requested value |
 | Remem Dockerfile | package 静态资产，由调用点的 `dockerImage()` 显式选择 |
 | Remem 二进制与版本 | `sandbox.prepare.experiment` 实机探测 |
+
+Remem 自带的 Skill、Codex Plugin 与脚本使用 `pluginAsset(new URL(..., import.meta.url))` 随包定位；selected planning snapshot 计算内容 digest。远程安装 package 必须固定完整 commit 或 content digest。Plugin 不向完整 `config.toml` 打 patch；需要的 MCP、Native Plugin 与 native Hook 都走 Codex receiver 的窄 typed slot。
 
 `@memorybench/remem-niceeval` 把 Dockerfile 随包发布，并导出普通 `REMEM_DOCKER_CONTEXT` URL。它不再导出预制镜像常量，也不要求用户先跑手工 build 脚本。同一 BuildKey 首次 cache miss 时构建，后续只在同一 cache domain 精确命中时复用；详见 [Docker Image](../../docker-image/README.md)。
 
@@ -88,10 +92,11 @@ export default defineExperiment({
 
 实现后的真实验收至少检查:
 
-1. dry plan 展示 Remem identity、receiver、prepare / hook 顺序与 requirements,不出现凭据值;
-2. 缺 Sequence、stop-group 或 5 小时 requested lifetime 时在创建 Sandbox 前失败;
-3. 错误镜像在 `sandbox.prepare.experiment` 报 Remem 版本探测失败并点名 plugin source;
-4. 同一 Sequence 的后一步看到前一步留下的 `$HOME/.remem` 状态,且没有 carried 前序;
-5. Stop hook 后 extraction queue 在 `preTeardown` 排空,失败只归现有 lifecycle phase;
-6. 同一插件 blueprint 被两个 Experiment 并发使用时,运行时状态与 typed Attachment write 互不改写;
-7. 强杀恢复只在 linked plugin identities 完全匹配时运行当前 teardown。
+1. dry plan 展示 `dev.remem.agent-extension` identity、AgentExtension → receiver 与 asset digest；
+2. dry plan 区分 Hosted／native Hook，展示 prepare／lifecycle 顺序与 requirements，不出现 credential selector／value 或宿主绝对路径；
+3. 缺 Sequence、stop-group 或 5 小时 requested lifetime 时在创建 Sandbox 前失败;
+4. 错误镜像在 `sandbox.prepare.experiment` 报 Remem 版本探测失败并点名 plugin source;
+5. 同一 Sequence 的后一步看到前一步留下的 `$HOME/.remem` 状态,且没有 carried 前序;
+6. `beforeAgentTeardown` 在 Agent teardown 前排空 extraction queue，receiver overlay 只在 Agent teardown 后 dispose；失败只归既有 lifecycle／teardown aggregation;
+7. 同一插件 blueprint 被两个 Experiment 并发使用时,运行时状态与 typed Attachment write 互不改写;
+8. 强杀恢复只在 linked Plugin identities 完全匹配时运行当前 teardown；下一条复用 Attempt 的完整 desired state 不继承上一条的 Remem Skill、MCP、native Hook 或 credential materialization。

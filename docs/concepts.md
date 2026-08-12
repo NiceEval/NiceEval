@@ -267,6 +267,13 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Agent Judge | Agent Judge | 作为 Assertion evaluator 运行的独立 Agent；调查证据后返回 measurement、理由与引用，不拥有 Verdict 或 score policy | [Agent-as-Judge](roadmap/agent-as-judge/README.md) |
 | Eval 序列 | Sequence (`defineSequence`) | 引用现有 Eval ID，并要求从第一步开始按声明顺序真实执行的文件派生定义 | [有序 Eval 序列](roadmap/ordered-sequences/README.md) |
 | Sandbox 复用组 | Sandbox reuse group | `evals/` 中显式声明必须共用一台活跃 Sandbox 的 Eval 集合；选中即生效，组外 Attempt 保持 fresh | [分组 Sandbox 复用](roadmap/sandbox-reuse-groups/README.md) |
+| Plugin | Plugin | 挂在 Eval、Experiment 或 Sandbox Group 上的不可变条件蓝图；组合既有 owner contribution，不选择 Agent 或建立新运行时 | [Plugins](roadmap/plugins/README.md) |
+| Agent 扩展 | Agent extension (`AgentExtension`) | 由 nominal protocol 标识、交给已选 Agent receiver 规范化的 opaque 能力声明；可来自 Agent factory 或 Plugin | [Plugin Library](roadmap/plugins/library.md#agentextension统一直配与-plugin) |
+| Agent 扩展协议 | Agent extension protocol | 以 opaque token object identity 定义 payload 契约和静态兼容性的协议；展示 name 不承担兼容匹配 | [Plugin Architecture](roadmap/plugins/architecture.md#agentextension-protocol-与-receiver) |
+| Agent 扩展 receiver | Agent extension receiver | 由 Agent factory 绑定，接受明确 protocol、合并 base／Plugin contribution，并产出安全投影和分阶段 Agent 计划的 Adapter 组件 | [Plugin Architecture](roadmap/plugins/architecture.md#agentextension-protocol-与-receiver) |
+| 已连接 Agent 计划 | `LinkedAgentPlan` | `RunAgentPlan` 与 Eval 的 pair delta 经 receiver 规范化并组合后形成的完整 desired state，拥有 provision、configure、lifecycle 与 dispose 阶段 | [Plugin Architecture](roadmap/plugins/architecture.md#完整-desired-state-与-managed-overlay) |
+| Hosted Agent Hook | Hosted Agent Hook | 由 NiceEval host 在每 Attempt 和逻辑 Send 边界执行的只读 Hook；不同于 Agent runtime 自己执行的原生 Hook | [Plugin Lifecycle](roadmap/plugins/lifecycle.md#hosted-send-hook) |
+| Agent 原生 Hook | Agent-native Hook | 通过 receiver-specific extension 写入 Agent 官方配置，并由 Codex、Claude 等 Agent runtime 自己执行的声明式 Hook | [Plugin Lifecycle](roadmap/plugins/lifecycle.md#agent-原生-hook) |
 
 ## 禁用写法
 
