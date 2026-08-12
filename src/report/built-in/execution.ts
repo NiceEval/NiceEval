@@ -59,18 +59,31 @@ type CollectionDisplay =
   | { readonly state: "complete"; readonly limitations: readonly ObservabilityLimitationV1[] }
   | { readonly state: "partial"; readonly limitations: readonly ObservabilityLimitationV1[] };
 
+/** Consumer-local presentation options; they never add Record inputs or I/O. */
+export interface ExecutionEvidenceReportOptions {
+  /** Match against complete retained transcript, tool, and command card text. */
+  readonly grep?: string;
+  /** A legacy evidence handle; neutral views retain no compatible handle namespace. */
+  readonly expand?: string;
+}
+
 /**
  * An ordinary, capability-free Report over the public Attempt observability
  * projectors. All Record reads are declared statically above; the renderer
  * receives only completed projected values.
  */
-export function executionEvidenceReport(): Report {
+export function executionEvidenceReport(input: ExecutionEvidenceReportOptions = {}): Report {
+  if (input.grep !== undefined) new RegExp(input.grep);
+  const options: ExecutionEvidenceReportOptions = Object.freeze({
+    ...(input.grep === undefined ? {} : { grep: input.grep }),
+    ...(input.expand === undefined ? {} : { expand: input.expand }),
+  });
   const page = definePage({
     id: Either.getOrThrow(reportComponentId("execution-evidence")),
     route: Either.getOrThrow(reportRoute("/")),
     inputs: executionInputs,
     completeness: "allow-partial",
-    render: ({ inputs }) => executionEvidenceDocument(inputs),
+    render: ({ inputs }) => executionEvidenceDocument(inputs, options),
   });
   return defineReport({
     id: Either.getOrThrow(reportId("execution-evidence")),
@@ -81,7 +94,11 @@ export function executionEvidenceReport(): Report {
 /** The built-in execution evidence Report with no private reader capability. */
 export const defaultExecutionEvidenceReport = executionEvidenceReport();
 
-function executionEvidenceDocument(inputs: ExecutionInputs) {
+function executionEvidenceDocument(
+  inputs: ExecutionInputs,
+  options: ExecutionEvidenceReportOptions,
+) {
+  const grep = options.grep === undefined ? undefined : new RegExp(options.grep);
   const conversationBySlot = entriesBySlot(inputs.conversation);
   const commandsBySlot = entriesBySlot(inputs.commands);
   const usageBySlot = entriesBySlot(inputs.usage);
@@ -96,21 +113,72 @@ function executionEvidenceDocument(inputs: ExecutionInputs) {
         tone: "warning",
         label: "The selected sample has no Slots to display",
       })]
-      : slots.map((slot) => {
-        const key = slotKey(slot);
-        return reportSection({
-          heading: `Slot ${slot.runId}/${slot.slotId}`,
-          children: [
-            slotStateBlock(slot),
-            ...projectionBlocks("Conversation", conversationBySlot.get(key), conversationBlocks),
-            ...projectionBlocks("Commands", commandsBySlot.get(key), commandsBlocks),
-            ...projectionBlocks("Usage", usageBySlot.get(key), usageBlocks),
-            ...projectionBlocks("Timing", timingBySlot.get(key), timingBlocks),
-            ...projectionBlocks("Diagnostics", diagnosticsBySlot.get(key), diagnosticsBlocks),
-          ],
-        });
-      }),
+      : [
+        ...(grep === undefined ? [] : [grepStatusBlock(inputs, grep)]),
+        ...(options.expand === undefined ? [] : [legacyExpandWarningBlock(options.expand)]),
+        ...slots.map((slot) => {
+          const key = slotKey(slot);
+          return reportSection({
+            heading: `Slot ${slot.runId}/${slot.slotId}`,
+            children: [
+              slotStateBlock(slot),
+              ...projectionBlocks(
+                "Conversation",
+                conversationBySlot.get(key),
+                (view) => conversationBlocks(view, grep),
+              ),
+              ...projectionBlocks(
+                "Commands",
+                commandsBySlot.get(key),
+                (view) => commandsBlocks(view, grep),
+              ),
+              ...(grep === undefined
+                ? [
+                  ...projectionBlocks("Usage", usageBySlot.get(key), usageBlocks),
+                  ...projectionBlocks("Timing", timingBySlot.get(key), timingBlocks),
+                  ...projectionBlocks("Diagnostics", diagnosticsBySlot.get(key), diagnosticsBlocks),
+                ]
+                : []),
+            ],
+          });
+        }),
+      ],
   });
+}
+
+function grepStatusBlock(inputs: ExecutionInputs, grep: RegExp): ReportBlock {
+  const matches = grepMatchCount(inputs, grep);
+  return reportStatus({
+    tone: matches === 0 ? "warning" : "neutral",
+    label: `Grep /${grep.source}/: ${matches} matching evidence card${matches === 1 ? "" : "s"}`,
+  });
+}
+
+function legacyExpandWarningBlock(handle: string): ReportBlock {
+  return reportStatus({
+    tone: "warning",
+    label: `Legacy --expand handle "${handle}" cannot be mapped to this neutral execution view`,
+    detail: [reportText("The Report already displays the full unfiltered retained evidence; no content was hidden.")],
+  });
+}
+
+function grepMatchCount(inputs: ExecutionInputs, grep: RegExp): number {
+  return availableProjectionValues(inputs.conversation)
+    .reduce((total, view) => total + view.items.filter((item) => grepMatches(grep, conversationItemSearchText(item))).length, 0)
+    + availableProjectionValues(inputs.commands)
+      .reduce((total, view) => total + view.commands.filter((command) => grepMatches(grep, commandSearchText(command))).length, 0);
+}
+
+function availableProjectionValues<Value>(
+  projection: ProjectedSample<"attempt-slot", Value>,
+): readonly Value[] {
+  const values: Value[] = [];
+  for (const entry of projection.entries) {
+    if (entry.state === "attachment-result" && entry.attachment.state === "available") {
+      values.push(entry.attachment.value);
+    }
+  }
+  return values;
 }
 
 function entriesBySlot<Value>(
@@ -235,7 +303,7 @@ function attachmentBlocks<Value>(
   }
 }
 
-function conversationBlocks(view: ConversationView): readonly ReportBlock[] {
+function conversationBlocks(view: ConversationView, grep: RegExp | undefined): readonly ReportBlock[] {
   const turns = [...view.turns].sort((left, right) => left.sequence - right.sequence);
   const itemsByTurn = new Map<string, typeof view.items>();
   for (const item of view.items) {
@@ -252,14 +320,31 @@ function conversationBlocks(view: ConversationView): readonly ReportBlock[] {
           tone: "warning",
           label: "No recorded conversation turns or items",
         })]
-        : turns.map((turn) => reportSection({
-          heading: `Turn ${turn.sequence} · ${turn.outcome}`,
-          children: (itemsByTurn.get(turn.turnId) ?? [])
-            .slice()
-            .sort((left, right) => left.sequence - right.sequence)
-            .map(conversationItemBlock),
-        }))),
+        : matchedConversationTurns(turns, itemsByTurn, grep)),
     ],
+  })];
+}
+
+function matchedConversationTurns(
+  turns: readonly ConversationView["turns"][number][],
+  itemsByTurn: ReadonlyMap<string, ConversationView["items"]>,
+  grep: RegExp | undefined,
+): readonly ReportBlock[] {
+  const sections = turns.flatMap((turn) => {
+    const items = (itemsByTurn.get(turn.turnId) ?? [])
+      .slice()
+      .sort((left, right) => left.sequence - right.sequence)
+      .filter((item) => grep === undefined || grepMatches(grep, conversationItemSearchText(item)));
+    if (grep !== undefined && items.length === 0) return [];
+    return [reportSection({
+      heading: `Turn ${turn.sequence} · ${turn.outcome}`,
+      children: items.map(conversationItemBlock),
+    })];
+  });
+  if (sections.length > 0 || grep === undefined) return sections;
+  return [reportStatus({
+    tone: "warning",
+    label: `No recorded conversation items match /${grep.source}/`,
   })];
 }
 
@@ -274,7 +359,7 @@ function conversationItemBlock(
       });
     case "tool-call":
       return reportSection({
-        heading: `${item.sequence} · tool call ${item.tool}`,
+        heading: `${item.sequence} · TOOL · ${item.tool}`,
         children: [
           reportStatus({ tone: "neutral", label: `Call: ${item.callId}` }),
           reportSection({
@@ -285,7 +370,7 @@ function conversationItemBlock(
       });
     case "tool-result":
       return reportSection({
-        heading: `${item.sequence} · tool result · ${item.outcome}`,
+        heading: `${item.sequence} · TOOL RESULT · ${item.outcome}`,
         children: [
           reportStatus({ tone: "neutral", label: `Call: ${item.callId}` }),
           reportSection({
@@ -345,14 +430,20 @@ function conversationItemBlock(
   }
 }
 
-function commandsBlocks(view: CommandsView): readonly ReportBlock[] {
+function commandsBlocks(view: CommandsView, grep: RegExp | undefined): readonly ReportBlock[] {
+  const commands = grep === undefined
+    ? view.commands
+    : view.commands.filter((command) => grepMatches(grep, commandSearchText(command)));
   return [reportSection({
     heading: "Commands",
     children: [
       collectionStatus("Commands", view.collection),
-      ...(view.commands.length === 0
-        ? [reportStatus({ tone: "warning", label: "No recorded commands" })]
-        : view.commands.map((command) => reportSection({
+      ...(commands.length === 0
+        ? [reportStatus({
+          tone: "warning",
+          label: grep === undefined ? "No recorded commands" : `No recorded commands match /${grep.source}/`,
+        })]
+        : commands.map((command) => reportSection({
           heading: `Command ${command.commandId}`,
           children: [
             reportStatus({ tone: "neutral", label: `Phase: ${command.manifest.phase}` }),
@@ -368,6 +459,68 @@ function commandsBlocks(view: CommandsView): readonly ReportBlock[] {
         }))),
     ],
   })];
+}
+
+function conversationItemSearchText(item: ConversationView["items"][number]): string {
+  switch (item.kind) {
+    case "message":
+      return `${item.role}\n${item.text}`;
+    case "tool-call":
+      return `${item.tool}\n${item.callId}\n${item.inputSummary}`;
+    case "tool-result":
+      return `${item.callId}\n${item.outcome}\n${item.outputSummary}`;
+    case "thinking-summary":
+      return item.summary;
+    case "subagent":
+      return `${item.label}\n${item.state}\n${item.summary}`;
+    case "input-request":
+      return [item.state, item.promptSummary, item.responseSummary ?? ""].join("\n");
+    case "skill-load":
+      return `${item.skill}\n${item.outcome}`;
+    case "context-injection":
+      return `${item.source}\n${item.summary}`;
+    case "compaction":
+      return `${item.compactedItemCount}\n${item.summary}`;
+    case "conversation-error":
+      return `${item.code}\n${item.summary}`;
+    default:
+      return unreachable(item);
+  }
+}
+
+function commandSearchText(command: CommandsView["commands"][number]): string {
+  const invocation = command.manifest.invocation.kind === "argv"
+    ? [command.manifest.invocation.executable, ...command.manifest.invocation.arguments].join("\n")
+    : command.manifest.invocation.command;
+  return [
+    command.commandId,
+    command.manifest.phase,
+    invocation,
+    workingDirectoryText(command.manifest.workingDirectory),
+    commandOutcomeSearchText(command.result.outcome),
+    command.result.stdout.text,
+    command.result.stderr.text,
+  ].join("\n");
+}
+
+function commandOutcomeSearchText(
+  outcome: CommandsView["commands"][number]["result"]["outcome"],
+): string {
+  switch (outcome.kind) {
+    case "exited":
+      return `exited ${outcome.exitCode}`;
+    case "terminated":
+      return `terminated ${outcome.reason}`;
+    case "not-started":
+      return `not started ${outcome.reason}`;
+    default:
+      return unreachable(outcome);
+  }
+}
+
+function grepMatches(grep: RegExp, text: string): boolean {
+  grep.lastIndex = 0;
+  return grep.test(text);
 }
 
 function commandInvocationBlock(

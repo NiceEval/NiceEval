@@ -36,6 +36,7 @@ import {
   type RunId,
 } from "./analysis/index.ts";
 import { defaultOverviewReport } from "./report/built-in/overview.ts";
+import { executionEvidenceReport } from "./report/built-in/execution.ts";
 import { sourceEvidenceReport } from "./report/built-in/source.ts";
 import { reportRoute, type ReportRoute } from "./report/author/identity.ts";
 import type { Report } from "./report/author/model.ts";
@@ -238,9 +239,9 @@ export interface Flags {
   diff: boolean;
   /** --diff=<路径>(必须 = 连写;空格形式会把路径当 eval id 前缀,按文档如此)。 */
   diffPath?: string;
-  /** --grep <pattern>:只与 --execution 组合,收窄命中卡片;与 --expand 互斥。 */
+  /** `show @<AttemptId> --execution` 专用：JS 正则，只显示命中的 transcript / tool / command evidence；与 --expand 互斥。 */
   grep?: string;
-  /** --expand <handle>:只与 --execution 组合,要求范围恰好一个 attempt;与 --grep 互斥。 */
+  /** `show @<AttemptId> --execution` 专用：保留旧 --expand 入口；中立 evidence view 已完整展示 retained 内容，因此显示完整视图并说明旧句柄不可用；与 --grep 互斥。 */
   expand?: string;
   timing?: "summary" | "full";
   keepSandbox?: "failed" | "all";
@@ -319,13 +320,13 @@ const FLAG_OPTIONS = {
   // 以下旧 show 切片只为实现收敛期间保留解析位置，不属于目标公开 CLI，也不进入参考页。
   /** `show` 专用：按一个 exact Attempt locator 展示已记录的 source snapshot。 */
   source: { type: "boolean" },
-  /** 实现收敛占位；目标公开 CLI 通过 Report page 读取事件通道。 */
+  /** `show @<exact-current-AttemptId> --execution`：从公开 Record projection 呈现该 Attempt 的 transcript、tool 与 command evidence。 */
   execution: { type: "boolean" },
   /** 实现收敛占位；目标公开 CLI 通过 Report page 读取 timing 通道。 */
   timing: { type: "boolean" },
-  /** 实现收敛占位；不属于目标公开 CLI。 */
+  /** `show @<AttemptId> --execution` 专用：JS 正则过滤 retained transcript、tool 与 command evidence；与 --expand 互斥。 */
   grep: { type: "string" },
-  /** 实现收敛占位；不属于目标公开 CLI。 */
+  /** `show @<AttemptId> --execution` 专用：旧 evidence handle 入口；中立 view 完整展示 retained 内容并明确说明句柄不可映射；与 --grep 互斥。 */
   expand: { type: "string" },
   // --diff 是布尔;--diff=<路径> 在 parseArgs 前预扫成 diffPath(路径必须 = 连写,
   // 空格形式的下一个 token 仍是位置参数 = eval id 前缀,与文档一致)。
@@ -2045,6 +2046,41 @@ function parseReportCliRequest(input: {
   }
 
   const page = parseReportRoute(input.flags.page);
+  if (input.flags.source !== undefined && input.flags.execution) {
+    throw usageError("niceeval show chooses one evidence Report at a time; remove either --source or --execution.\n");
+  }
+  if (!input.flags.execution && input.flags.grep !== undefined) {
+    throw usageError("niceeval show --grep only combines with --execution.\n");
+  }
+  if (!input.flags.execution && input.flags.expand !== undefined) {
+    throw usageError("niceeval show --expand only combines with --execution.\n");
+  }
+  if (input.flags.execution) {
+    const report = executionEvidenceReport(executionEvidenceOptions(input.flags));
+    if (input.positionals.length !== 1) {
+      throw usageError("niceeval show --execution requires exactly one current Record Attempt locator.\n");
+    }
+    if (input.flags.latest || runs.length > 0 || input.flags.experiment !== undefined) {
+      throw usageError("niceeval show --execution uses its Attempt locator as the only selection; remove --latest, --run, and --experiment.\n");
+    }
+    if (input.flags.report !== undefined) {
+      throw usageError("niceeval show --execution selects its built-in execution Report; remove --report.\n");
+    }
+    const locator = input.positionals[0];
+    if (locator === undefined) {
+      throw usageError("niceeval show --execution requires one current Record Attempt locator.\n");
+    }
+    const attemptId = parseCurrentAttemptLocator(locator);
+    return Object.freeze({
+      command: input.command,
+      root: root.right,
+      rootPath,
+      target: Object.freeze({ kind: "attempt" as const, attemptId }),
+      report,
+      ...(page === undefined ? {} : { page }),
+    });
+  }
+
   if (input.flags.source !== undefined) {
     if (input.positionals.length !== 1) {
       throw usageError("niceeval show --source requires exactly one current Record Attempt locator.\n");
@@ -2101,6 +2137,24 @@ function parseReportCliRequest(input: {
   });
 }
 
+function executionEvidenceOptions(flags: Flags): {
+  readonly grep?: string;
+  readonly expand?: string;
+} {
+  if (flags.grep !== undefined && flags.expand !== undefined) {
+    throw usageError("niceeval show --execution cannot combine --grep with --expand.\n");
+  }
+  if (flags.grep === undefined) {
+    return Object.freeze(flags.expand === undefined ? {} : { expand: flags.expand });
+  }
+  try {
+    new RegExp(flags.grep);
+    return Object.freeze({ grep: flags.grep });
+  } catch {
+    throw usageError(`--grep "${flags.grep}" is not a valid JavaScript regular expression.\n`);
+  }
+}
+
 function reportUnsupportedFlag(command: ReportCliCommand, flags: Flags): string | undefined {
   const unsupported: Array<[string, unknown]> = [
     ["--agent", flags.agent],
@@ -2123,10 +2177,10 @@ function reportUnsupportedFlag(command: ReportCliCommand, flags: Flags): string 
     ["--port", command === "show" ? flags.port : undefined],
     ["--host", command === "show" ? flags.host : undefined],
     ["--source", command === "show" ? undefined : flags.source],
-    ["--execution", flags.execution],
+    ["--execution", command === "show" ? undefined : flags.execution],
     ["--diff", flags.diff || flags.diffPath !== undefined],
-    ["--grep", flags.grep],
-    ["--expand", flags.expand],
+    ["--grep", command === "show" ? undefined : flags.grep],
+    ["--expand", command === "show" ? undefined : flags.expand],
     ["--timing", flags.timing],
     ["--keep-sandbox", flags.keepSandbox],
     ["--all", flags.all],
