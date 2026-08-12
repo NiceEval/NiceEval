@@ -118,9 +118,9 @@ state:       partial
 
 ## Closed semantic tree 与路径
 
-Page 输出 `niceeval.report-document/v1` closed ADT，不是任意 JSON、HTML、React DOM、CSS 或用户 renderer。Web、terminal 与 static 从同一棵树派生；没有平行 `textAlternative`。
+Page 输出闭合的 `ReportDocument` ADT，不是任意 JSON、HTML、React DOM、CSS 或用户 renderer。Web、terminal 与 static 从同一棵树派生；没有平行 `textAlternative`。
 
-Schema exact decode 之外，host 验证 number、Unicode、table keys、chart 长度、cycle、深度、nodes、strings 与 route/download links。HTML 按 context escape，terminal 把控制字符转成可见文本；不存在 raw HTML 逃逸口。
+精确树形状验证之外，host 验证 number、Unicode、table keys、chart 长度、cycle、深度、nodes、strings 与 route/download links。HTML 按 context escape，terminal 把控制字符转成可见文本；不存在 raw HTML 逃逸口。
 
 Semantic route 与 filesystem path 分开。Route / download constructor 固定 lowercase ASCII grammar；static host 把 author route 映射到 `a/b/index.html`，再从当前页面 output path 计算相对 href。所有 author outputs 与 host files 进入同一 collision set。
 

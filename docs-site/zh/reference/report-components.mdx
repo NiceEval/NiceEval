@@ -60,7 +60,7 @@ const passRate = defineCalculation({
 
 `unavailable`、`migration-required`、`migration-unavailable`、`unsupported`、`invalid` 与 partial collection 都是 recorded-data problem。callback 的意外 throw 属于 execution problem，两者不能互相替代。
 
-Page 返回闭合的 `ReportDocumentV1` 语义树。它不是 HTML、React element 或另一套文本输出。PageFamily 只能根据已投影或已计算的内存值展开 route，不能在展开时追加 Attachment I/O。
+Page 返回闭合的 `ReportDocument` 语义树。它不是 HTML、React element 或另一套文本输出。PageFamily 只能根据已投影或已计算的内存值展开 route，不能在展开时追加 Attachment I/O。
 
 ## 组合一个 Report
 

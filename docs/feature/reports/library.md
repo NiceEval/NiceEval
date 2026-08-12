@@ -239,7 +239,7 @@ declare const definePage: {
     readonly calculations?: Calculations;
     readonly render: (
       context: ReportComponentContext<{}, Calculations>,
-    ) => ReportDocumentV1;
+    ) => ReportDocument;
   }): ReportPage;
 
   <Inputs extends ReportDataPlan, Calculations extends ReportCalculationSet = {}>(definition: {
@@ -250,7 +250,7 @@ declare const definePage: {
     readonly calculations?: Calculations;
     readonly render: (
       context: ReportComponentContext<Inputs, Calculations>,
-    ) => ReportDocumentV1;
+    ) => ReportDocument;
   }): ReportPage;
 };
 ```
@@ -277,7 +277,7 @@ declare const definePageFamily: {
       context: ReportComponentContext<{}, Calculations> & {
         readonly instance: Instance;
       },
-    ) => ReportDocumentV1;
+    ) => ReportDocument;
   }): ReportPageFamily;
 
   <Inputs extends ReportDataPlan, Instance, Calculations extends ReportCalculationSet = {}>(definition: {
@@ -294,7 +294,7 @@ declare const definePageFamily: {
       context: ReportComponentContext<Inputs, Calculations> & {
         readonly instance: Instance;
       },
-    ) => ReportDocumentV1;
+    ) => ReportDocument;
   }): ReportPageFamily;
 };
 ```
@@ -397,49 +397,48 @@ Static link 不直接写 semantic `/a/b`。Host codec 从当前页面 output 的
 页面返回闭合语义树，不返回任意 JSON、HTML、DOM、React element、CSS 或 parallel `textAlternative`。
 
 ```ts
-type ReportScalarV1 = null | boolean | number | string;
+type ReportScalar = null | boolean | number | string;
 
-type ReportInlineV1 =
+type ReportInline =
   | { readonly type: "text"; readonly value: string }
   | { readonly type: "code"; readonly value: string }
-  | { readonly type: "emphasis"; readonly children: readonly ReportInlineV1[] }
+  | { readonly type: "emphasis"; readonly children: readonly ReportInline[] }
   | {
       readonly type: "link";
-      readonly label: readonly ReportInlineV1[];
+      readonly label: readonly ReportInline[];
       readonly target:
         | { readonly kind: "route"; readonly route: ReportRoute }
         | { readonly kind: "download"; readonly path: ReportDownloadPath };
     };
 
-interface ReportDocumentV1 {
-  readonly schema: "niceeval.report-document/v1";
+interface ReportDocument {
   readonly title: string;
-  readonly children: readonly ReportBlockV1[];
+  readonly children: readonly ReportBlock[];
 }
 
-type ReportBlockV1 =
-  | ReportSectionV1
-  | ReportParagraphV1
-  | ReportListV1
-  | ReportTableV1
-  | ReportMetricV1
-  | ReportStatusV1
-  | ReportCodeV1
-  | ReportChartV1;
+type ReportBlock =
+  | ReportSection
+  | ReportParagraph
+  | ReportList
+  | ReportTable
+  | ReportMetric
+  | ReportStatus
+  | ReportCode
+  | ReportChart;
 
-interface ReportSectionV1 { readonly type: "section"; readonly heading: string; readonly children: readonly ReportBlockV1[]; }
-interface ReportParagraphV1 { readonly type: "paragraph"; readonly children: readonly ReportInlineV1[]; }
-interface ReportListV1 { readonly type: "list"; readonly ordered: boolean; readonly items: readonly (readonly ReportBlockV1[])[]; }
-interface ReportTableV1 {
+interface ReportSection { readonly type: "section"; readonly heading: string; readonly children: readonly ReportBlock[]; }
+interface ReportParagraph { readonly type: "paragraph"; readonly children: readonly ReportInline[]; }
+interface ReportList { readonly type: "list"; readonly ordered: boolean; readonly items: readonly (readonly ReportBlock[])[]; }
+interface ReportTable {
   readonly type: "table";
   readonly caption: string;
   readonly columns: readonly { readonly key: string; readonly label: string; readonly align?: "start" | "end" }[];
-  readonly rows: readonly Readonly<Record<string, ReportScalarV1>>[];
+  readonly rows: readonly Readonly<Record<string, ReportScalar>>[];
 }
-interface ReportMetricV1 { readonly type: "metric"; readonly label: string; readonly value: ReportScalarV1; readonly unit?: string; }
-interface ReportStatusV1 { readonly type: "status"; readonly tone: "neutral" | "positive" | "warning" | "negative"; readonly label: string; readonly detail?: readonly ReportInlineV1[]; }
-interface ReportCodeV1 { readonly type: "code-block"; readonly value: string; readonly language?: string; }
-interface ReportChartV1 {
+interface ReportMetric { readonly type: "metric"; readonly label: string; readonly value: ReportScalar; readonly unit?: string; }
+interface ReportStatus { readonly type: "status"; readonly tone: "neutral" | "positive" | "warning" | "negative"; readonly label: string; readonly detail?: readonly ReportInline[]; }
+interface ReportCode { readonly type: "code-block"; readonly value: string; readonly language?: string; }
+interface ReportChart {
   readonly type: "chart";
   readonly chart: "bar" | "line";
   readonly title: string;
@@ -449,7 +448,7 @@ interface ReportChartV1 {
 }
 ```
 
-Exact Schema 之外还必须做 relational validation：
+精确树形状之外还必须做 relational validation：
 
 - number 全部 finite；
 - string 只含 Unicode scalar values；
@@ -457,7 +456,7 @@ Exact Schema 之外还必须做 relational validation：
 - chart series 长度与 categories 相等；
 - route / download link 必须存在于本 execution 的 closure；
 - depth、node、string 与 bytes limits 在 active recursion stack 中执行；
-- HTML 按 context escape，terminal 把控制字符转成可见文本；renderer 穷尽 union，未知 schema 返回 unsupported。
+- HTML 按 context escape，terminal 把控制字符转成可见文本；renderer 穷尽 union，未知节点类型返回 unsupported。
 
 Web、terminal 与 static text 都从同一棵树派生。Chart 的 label、categories 与 series 足以形成 table/text；颜色、hover 与图形不能承载唯一语义。通过率等统计口径必须由 Calculation value 自己定义；host 不替作者公式猜 `observed` / `denominator`。
 
@@ -548,7 +547,7 @@ type ReportPageResult =
       readonly state: "rendered";
       readonly pageId: ReportComponentId;
       readonly route: ReportRoute;
-      readonly document: ReportDocumentV1;
+      readonly document: ReportDocument;
       readonly problemIds: readonly ReportProblemId[];
     }
   | {
