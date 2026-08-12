@@ -5,9 +5,11 @@ packages:
   - "!examples/**"
 
 allowBuilds:
+  '@parcel/watcher': false
   braintrust: false
   cpu-features: false
   esbuild: false
+  msgpackr-extract: false
   protobufjs: false
   sharp: true
   ssh2: false
