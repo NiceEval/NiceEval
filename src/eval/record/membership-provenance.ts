@@ -13,12 +13,12 @@ import {
 } from "../../record/errors/record-errors.ts";
 import type { RecordAttachmentRead } from "../../record/model/read-state.ts";
 import { AttemptIdSchema, RunIdSchema, SlotIdSchema, UtcMillisSchema } from "../../record/codec/identifiers.ts";
+import type { SlotId } from "../../record/model/identifiers.ts";
 import type { FrozenRecordRun, FrozenRecordView } from "../../record/reader/types.ts";
 import {
   defineRecordAttachmentProjector,
-  type RecordProjection,
-  selectedRunProjection,
-} from "../../projection/index.ts";
+  type RecordAttachmentProjector,
+} from "../../projection/projector.ts";
 import { isJsonValue } from "../../shared/json-value.ts";
 import {
   ExactRecordAttachmentParseOptions,
@@ -434,45 +434,72 @@ export function projectMembershipProvenancePayloadV1(
 export function projectMembershipProvenanceAttachmentV1(
   value: RecordAttachmentValue<MembershipProvenancePayloadV1>,
 ): MembershipProvenancePayloadV1 {
-  const payload = decodeMembershipProvenancePayloadV1(value.payload);
-  if (Either.isLeft(payload)) {
-    throw new Error(
-      "An available Membership Provenance Attachment failed its exact decoder",
-    );
+  // Record has already exact-decoded and frozen every available payload.
+  return projectMembershipProvenancePayloadV1(value.payload);
+}
+
+export interface MembershipPolicy {
+  readonly name: string;
+  readonly version: number;
+}
+
+export type MembershipGapReason = ExecutionGapReasonV1;
+
+/** The final disposition for one target Slot. */
+export type MembershipAction =
+  | {
+      readonly outcome: "carried" | "accepted";
+      readonly slotId: SlotId;
+    }
+  | {
+      readonly outcome: "executed" | "not-dispatched" | "interrupted";
+      readonly slotId: SlotId;
+      readonly reason: MembershipGapReason;
+    };
+
+/** A compact, report-safe account of how this Run acquired its Members. */
+export interface MembershipProvenance {
+  readonly policy: MembershipPolicy;
+  readonly actions: readonly MembershipAction[];
+}
+
+function projectMembershipAction(action: MembershipActionV1): MembershipAction {
+  switch (action.action) {
+    case "carried":
+    case "accepted":
+      return Object.freeze({ outcome: action.action, slotId: action.slotId });
+    case "executed":
+    case "not-dispatched":
+    case "interrupted":
+      return Object.freeze({
+        outcome: action.action,
+        slotId: action.slotId,
+        reason: action.gap.reason,
+      });
   }
-  return projectMembershipProvenancePayloadV1(payload.right);
 }
 
-export interface MembershipProvenanceProjectorDefinitionV1 {
-  readonly family: typeof membershipProvenanceAttachmentFamilyV1;
-  readonly project: (
-    value: RecordAttachmentValue<MembershipProvenancePayloadV1>,
-  ) => MembershipProvenancePayloadV1;
-}
-
-export function defineMembershipProvenanceProjectorV1(): MembershipProvenanceProjectorDefinitionV1 {
+function projectMembershipProvenance(
+  value: RecordAttachmentValue<MembershipProvenancePayloadV1>,
+): MembershipProvenance {
+  const payload = value.payload;
   return Object.freeze({
-    family: membershipProvenanceAttachmentFamilyV1,
-    project: projectMembershipProvenanceAttachmentV1,
+    policy: Object.freeze({
+      name: payload.policy.name,
+      version: payload.policy.version,
+    }),
+    actions: Object.freeze(payload.actions.map(projectMembershipAction)),
   });
 }
 
-/**
- * Declares Membership Provenance for the Sample's selected Runs. Scripts and
- * Reports consume the resulting projection without reader-specific access.
- */
-export function defineSelectedRunMembershipProvenanceProjectionV1(): RecordProjection<
-  "selected-run",
-  MembershipProvenancePayloadV1
-> {
-  const provenance = defineMembershipProvenanceProjectorV1();
-  return selectedRunProjection(
-    defineRecordAttachmentProjector({
-      attachment: provenance.family,
-      project: provenance.project,
-    }),
-  );
-}
+/** The public Membership provenance view for a Run-owned Attachment. */
+export const membershipProvenanceProjector: RecordAttachmentProjector<
+  "run",
+  MembershipProvenance
+> = defineRecordAttachmentProjector({
+  attachment: membershipProvenanceAttachmentFamilyV1,
+  project: projectMembershipProvenance,
+});
 
 /** Re-exported for callers that construct an action's preserved issue refs. */
 export type { RecordIssue };

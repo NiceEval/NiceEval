@@ -13,9 +13,8 @@ import {
 } from "../../record/model/identifiers.ts";
 import {
   defineRecordAttachmentProjector,
-  type RecordProjection,
-  selectedRunProjection,
-} from "../../projection/index.ts";
+  type RecordAttachmentProjector,
+} from "../../projection/projector.ts";
 import {
   EvaluationRecordIdentitySchema,
   ExactRecordAttachmentParseOptions,
@@ -380,40 +379,63 @@ export function projectEvaluationsPayloadV1(
 export function projectEvaluationsAttachmentV1(
   value: RecordAttachmentValue<EvaluationsPayloadV1>,
 ): EvaluationsProjectionV1 {
-  const payload = decodeEvaluationsPayloadV1(value.payload);
-  if (Either.isLeft(payload)) {
-    throw new Error("An available Evaluations Attachment failed its exact decoder");
-  }
-  return projectEvaluationsPayloadV1(payload.right);
-}
-
-export interface EvaluationsProjectorDefinitionV1 {
-  readonly family: typeof evaluationsAttachmentFamilyV1;
-  readonly project: (
-    value: RecordAttachmentValue<EvaluationsPayloadV1>,
-  ) => EvaluationsProjectionV1;
-}
-
-export function defineEvaluationsProjectorV1(): EvaluationsProjectorDefinitionV1 {
-  return Object.freeze({
-    family: evaluationsAttachmentFamilyV1,
-    project: projectEvaluationsAttachmentV1,
+  // Record has already exact-decoded and frozen every available payload. The
+  // snapshot type erases non-empty tuple evidence, so rebuild only that static
+  // witness before handing the producer's current view to legacy planner code.
+  const payload: EvaluationsPayloadV1 = Object.freeze({
+    experimentId: value.payload.experimentId,
+    evaluations: Object.freeze(
+      value.payload.evaluations.map((evaluation) =>
+        Object.freeze({
+          evalId: evaluation.evalId,
+          evaluationKind: evaluation.evaluationKind,
+          slots: asNonEmptySlots(
+            evaluation.slots.map((slot) =>
+              Object.freeze({ slotId: slot.slotId, attempt: slot.attempt }),
+            ),
+          ),
+        }),
+      ),
+    ),
   });
+  return projectEvaluationsPayloadV1(payload);
+}
+
+/** The report-facing type of one Slot's Evaluation. */
+export type EvaluationKind = "pass" | "score";
+
+export interface Evaluation {
+  readonly kind: EvaluationKind;
 }
 
 /**
- * Declares Evaluations for the Sample's selected Runs. It does not infer
- * origin Runs from Attempt slots.
+ * Run-level Evaluation lookup. It intentionally exposes only the question a
+ * consumer can answer for a Sample slot, rather than the durable plan shape.
  */
-export function defineSelectedRunEvaluationsProjectionV1(): RecordProjection<
-  "selected-run",
-  EvaluationsProjectionV1
-> {
-  const evaluations = defineEvaluationsProjectorV1();
-  return selectedRunProjection(
-    defineRecordAttachmentProjector({
-      attachment: evaluations.family,
-      project: evaluations.project,
-    }),
-  );
+export interface Evaluations {
+  readonly evaluationForSlot: (slotId: SlotId) => Evaluation | undefined;
 }
+
+function projectEvaluations(
+  value: RecordAttachmentValue<EvaluationsPayloadV1>,
+): Evaluations {
+  const bySlotId = new Map<string, Evaluation>();
+  for (const evaluation of value.payload.evaluations) {
+    for (const slot of evaluation.slots) {
+      bySlotId.set(
+        slot.slotId,
+        Object.freeze({ kind: evaluation.evaluationKind }),
+      );
+    }
+  }
+  return Object.freeze({
+    evaluationForSlot: (slotId: SlotId) => bySlotId.get(slotId),
+  });
+}
+
+/** The public Evaluation lookup for a Run-owned Attachment. */
+export const evaluationsProjector: RecordAttachmentProjector<"run", Evaluations> =
+  defineRecordAttachmentProjector({
+    attachment: evaluationsAttachmentFamilyV1,
+    project: projectEvaluations,
+  });

@@ -8,6 +8,33 @@ export type {
   RecordAttachmentProjector,
   RecordProjection,
 } from "./projector.ts";
+export { verdictProjector } from "../eval/record/verdict.ts";
+export type { Verdict } from "../shared/types.ts";
+export { scoreProjector } from "../eval/record/score.ts";
+export type {
+  Score,
+  ScoreIncompleteReason,
+  ScoreIncompleteReasons,
+} from "../eval/record/score.ts";
+export { evaluationsProjector } from "../eval/record/evaluation.ts";
+export type {
+  Evaluation,
+  EvaluationKind,
+  Evaluations,
+} from "../eval/record/evaluation.ts";
+export { eligibilityProjector } from "../eval/record/eligibility.ts";
+export type {
+  Eligibility,
+  EligibilityDuration,
+  EligibilityToken,
+} from "../eval/record/eligibility.ts";
+export { membershipProvenanceProjector } from "../eval/record/membership-provenance.ts";
+export type {
+  MembershipAction,
+  MembershipGapReason,
+  MembershipPolicy,
+  MembershipProvenance,
+} from "../eval/record/membership-provenance.ts";
 export { projectAnalysisSample } from "./runtime.ts";
 export type { ProjectedRecordAttachmentResult } from "./attachment-result.ts";
 export type { ProjectionCoverage } from "./coverage.ts";

@@ -10,10 +10,9 @@ import { defineBuiltinJsonRecordAttachment } from "../../record/attachment/inter
 import type { RecordAttachmentRead } from "../../record/model/read-state.ts";
 import type { FrozenRecordAttempt, FrozenRecordView } from "../../record/reader/types.ts";
 import {
-  attemptSlotProjection,
   defineRecordAttachmentProjector,
-  type RecordProjection,
-} from "../../projection/index.ts";
+  type RecordAttachmentProjector,
+} from "../../projection/projector.ts";
 import {
   ExactRecordAttachmentParseOptions,
   FiniteNonNegativeNumberV1Schema,
@@ -238,40 +237,53 @@ export function projectAttemptEligibilityPayloadV1(
 export function projectEligibilityAttachmentV1(
   value: RecordAttachmentValue<AttemptEligibilityPayloadV1>,
 ): AttemptEligibilityPayloadV1 {
-  const payload = decodeAttemptEligibilityPayloadV1(value.payload);
-  if (Either.isLeft(payload)) {
-    throw new Error("An available Eligibility Attachment failed its exact decoder");
-  }
-  return projectAttemptEligibilityPayloadV1(payload.right);
+  // Record has already exact-decoded and frozen every available payload.
+  return projectAttemptEligibilityPayloadV1(value.payload);
 }
 
-export interface EligibilityProjectorDefinitionV1 {
-  readonly family: typeof eligibilityAttachmentFamilyV1;
-  readonly project: (
-    value: RecordAttachmentValue<AttemptEligibilityPayloadV1>,
-  ) => AttemptEligibilityPayloadV1;
+/** A domain-qualified equality token exposed without durable payload coupling. */
+export interface EligibilityToken {
+  readonly domain: string;
+  readonly token: string;
 }
 
-export function defineEligibilityProjectorV1(): EligibilityProjectorDefinitionV1 {
+export interface EligibilityDuration {
+  readonly clockDomain: string;
+  readonly milliseconds: number;
+}
+
+/** Historical reuse facts exposed as an immutable semantic view. */
+export interface Eligibility {
+  readonly reuseContract: EligibilityToken;
+  readonly input: EligibilityToken;
+  readonly configuration: EligibilityToken;
+  readonly duration: EligibilityDuration;
+}
+
+function projectEligibilityToken(value: EqualityTokenV1): EligibilityToken {
+  return Object.freeze({ domain: value.domain, token: value.value });
+}
+
+function projectEligibility(
+  value: RecordAttachmentValue<AttemptEligibilityPayloadV1>,
+): Eligibility {
+  const payload = value.payload;
   return Object.freeze({
-    family: eligibilityAttachmentFamilyV1,
-    project: projectEligibilityAttachmentV1,
+    reuseContract: projectEligibilityToken(payload.reuseContract),
+    input: projectEligibilityToken(payload.inputIdentity),
+    configuration: projectEligibilityToken(payload.configIdentity),
+    duration: Object.freeze({
+      clockDomain: payload.executionDuration.domain,
+      milliseconds: payload.executionDuration.milliseconds,
+    }),
   });
 }
 
-/**
- * Declares Eligibility for every Sample slot's exact Attempt owner. Scripts
- * and Reports consume the resulting projection without opening a reader.
- */
-export function defineAttemptSlotEligibilityProjectionV1(): RecordProjection<
-  "attempt-slot",
-  AttemptEligibilityPayloadV1
-> {
-  const eligibility = defineEligibilityProjectorV1();
-  return attemptSlotProjection(
-    defineRecordAttachmentProjector({
-      attachment: eligibility.family,
-      project: eligibility.project,
-    }),
-  );
-}
+/** The public Eligibility view for an Attempt-owned Attachment. */
+export const eligibilityProjector: RecordAttachmentProjector<
+  "attempt",
+  Eligibility
+> = defineRecordAttachmentProjector({
+  attachment: eligibilityAttachmentFamilyV1,
+  project: projectEligibility,
+});

@@ -2,10 +2,15 @@ import { Either, Schema } from "effect";
 import {
   decodeJsonRecordAttachmentPayload,
   defineRecordAttachmentFamily,
+  type RecordAttachmentPayloadSnapshot,
   type RecordAttachmentValue,
   type RecordAttachmentWrite,
 } from "../../record/attachment/index.ts";
 import { defineBuiltinJsonRecordAttachment } from "../../record/attachment/internal.ts";
+import {
+  defineRecordAttachmentProjector,
+  type RecordAttachmentProjector,
+} from "../../projection/projector.ts";
 import {
   ExactRecordAttachmentParseOptions,
   FiniteNonNegativeNumberV1Schema,
@@ -367,22 +372,49 @@ export function validateScoreCoherenceV1(input: {
       ]);
 }
 
-/** Score projector preserves partial and unavailable as distinct non-ranking states. */
-export type ScoreProjectionV1 =
-  | { readonly state: "complete"; readonly earned: EarnedScoreV1; readonly comparable: true }
+/** A semantic reason why a Score is not a complete ranking value. */
+export type ScoreIncompleteReason =
+  | "execution-errored"
+  | "source-unavailable"
+  | "evaluation-errored"
+  | "not-applicable";
+
+export type ScoreIncompleteReasons = readonly [
+  ScoreIncompleteReason,
+  ...ScoreIncompleteReason[],
+];
+
+/** Score keeps partial and unavailable as ordinary, non-ranking values. */
+export type Score =
+  | { readonly state: "complete"; readonly earned: number; readonly comparable: true }
   | {
       readonly state: "partial";
-      readonly earned: EarnedScoreV1;
-      readonly reasons: ScoreIncompleteReasonsV1;
+      readonly earned: number;
+      readonly reasons: ScoreIncompleteReasons;
       readonly comparable: false;
     }
   | {
       readonly state: "unavailable";
-      readonly reasons: ScoreIncompleteReasonsV1;
+      readonly reasons: ScoreIncompleteReasons;
       readonly comparable: false;
     };
 
-export function projectScorePayloadV1(payload: ScorePayloadV1): ScoreProjectionV1 {
+/** @internal The historical name remains for existing producer-only consumers. */
+export type ScoreProjectionV1 = Score;
+
+function scoreIncompleteReasons(
+  reasons: readonly ScoreIncompleteReason[],
+): ScoreIncompleteReasons {
+  const [first, ...rest] = reasons;
+  if (first === undefined) {
+    throw new Error("A persisted incomplete Score must retain at least one reason");
+  }
+  return Object.freeze([first, ...rest]);
+}
+
+export function projectScorePayloadV1(
+  payload: RecordAttachmentPayloadSnapshot<ScorePayloadV1>,
+): Score {
   switch (payload.state) {
     case "complete":
       return Object.freeze({
@@ -394,13 +426,13 @@ export function projectScorePayloadV1(payload: ScorePayloadV1): ScoreProjectionV
       return Object.freeze({
         state: "partial" as const,
         earned: payload.earned,
-        reasons: payload.reasons,
+        reasons: scoreIncompleteReasons(payload.reasons),
         comparable: false as const,
       });
     case "unavailable":
       return Object.freeze({
         state: "unavailable" as const,
-        reasons: payload.reasons,
+        reasons: scoreIncompleteReasons(payload.reasons),
         comparable: false as const,
       });
   }
@@ -409,24 +441,14 @@ export function projectScorePayloadV1(payload: ScorePayloadV1): ScoreProjectionV
 /** A typed, synchronous projection over an available Score Attachment. */
 export function projectScoreAttachmentV1(
   value: RecordAttachmentValue<ScorePayloadV1>,
-): ScoreProjectionV1 {
-  const payload = decodeScorePayloadV1(value.payload);
-  if (Either.isLeft(payload)) {
-    throw new Error("An available Score Attachment failed its exact decoder");
-  }
-  return projectScorePayloadV1(payload.right);
+): Score {
+  // Record has already exact-decoded and frozen every available payload.
+  return projectScorePayloadV1(value.payload);
 }
 
-export interface ScoreProjectorDefinitionV1 {
-  readonly family: typeof scoreAttachmentFamilyV1;
-  readonly project: (
-    value: RecordAttachmentValue<ScorePayloadV1>,
-  ) => ScoreProjectionV1;
-}
-
-export function defineScoreProjectorV1(): ScoreProjectorDefinitionV1 {
-  return Object.freeze({
-    family: scoreAttachmentFamilyV1,
+/** The public Score view for an Attempt-owned Attachment. */
+export const scoreProjector: RecordAttachmentProjector<"attempt", Score> =
+  defineRecordAttachmentProjector({
+    attachment: scoreAttachmentFamilyV1,
     project: projectScoreAttachmentV1,
   });
-}

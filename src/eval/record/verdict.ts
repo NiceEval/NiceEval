@@ -1,4 +1,4 @@
-import { Either, Schema } from "effect";
+import { Schema } from "effect";
 import {
   decodeJsonRecordAttachmentPayload,
   defineRecordAttachmentFamily,
@@ -6,6 +6,11 @@ import {
   type RecordAttachmentWrite,
 } from "../../record/attachment/index.ts";
 import { defineBuiltinJsonRecordAttachment } from "../../record/attachment/internal.ts";
+import {
+  defineRecordAttachmentProjector,
+  type RecordAttachmentProjector,
+} from "../../projection/projector.ts";
+import type { Verdict } from "../../shared/types.ts";
 import {
   makeNoBlobRecordAttachmentWriteV1,
   noRecordAttachmentBlobs,
@@ -131,33 +136,21 @@ export function validateVerdictCoherenceV1(input: {
 }
 
 /** A projector needs only the already-decoded exact Verdict state. */
-export function projectVerdictPayloadV1(
-  payload: VerdictPayloadV1,
-): VerdictStateV1 {
+export function projectVerdictPayloadV1(payload: VerdictPayloadV1): Verdict {
   return payload.state;
 }
 
-/** A typed, synchronous projection over an available Verdict Attachment. */
+/** Internal current-family interpretation used by the Evaluation producer. */
 export function projectVerdictAttachmentV1(
   value: RecordAttachmentValue<VerdictPayloadV1>,
-): VerdictStateV1 {
-  const payload = decodeVerdictPayloadV1(value.payload);
-  if (Either.isLeft(payload)) {
-    throw new Error("An available Verdict Attachment failed its exact decoder");
-  }
-  return projectVerdictPayloadV1(payload.right);
+): Verdict {
+  // Record has already exact-decoded and frozen every available payload.
+  return projectVerdictPayloadV1(value.payload);
 }
 
-export interface VerdictProjectorDefinitionV1 {
-  readonly family: typeof verdictAttachmentFamilyV1;
-  readonly project: (
-    value: RecordAttachmentValue<VerdictPayloadV1>,
-  ) => VerdictStateV1;
-}
-
-export function defineVerdictProjectorV1(): VerdictProjectorDefinitionV1 {
-  return Object.freeze({
-    family: verdictAttachmentFamilyV1,
+/** The public four-state Verdict view for an Attempt-owned Attachment. */
+export const verdictProjector: RecordAttachmentProjector<"attempt", Verdict> =
+  defineRecordAttachmentProjector({
+    attachment: verdictAttachmentFamilyV1,
     project: projectVerdictAttachmentV1,
   });
-}
