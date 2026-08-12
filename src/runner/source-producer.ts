@@ -303,11 +303,9 @@ export function createRunnerAttemptSourceCapture(
     markInterrupted() {
       for (const send of sends) {
         if (send.terminal === undefined && send.ambiguous !== true) {
-          send.terminal = Object.freeze({
-            label: "interrupted",
-            status: "interrupted",
-            durationMs: 0,
-          });
+          // An interrupted call without a Runner turn terminal fact has no
+          // exact label or duration. Omit it rather than inventing either.
+          send.ambiguous = true;
         }
       }
       for (const entry of entries) {

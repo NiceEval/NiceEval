@@ -261,6 +261,48 @@ readonly usage: Usage;
 succeeded(): BooleanAssertionHandle<Kind, void>;
 ```
 
+#### `usedNoTools`
+
+```ts
+usedNoTools(): BooleanAssertionHandle<Kind, void>;
+```
+
+#### `maxToolCalls`
+
+```ts
+maxToolCalls(max: number): BooleanAssertionHandle<Kind, void>;
+```
+
+#### `noFailedActions`
+
+```ts
+noFailedActions(): BooleanAssertionHandle<Kind, void>;
+```
+
+#### `event`
+
+```ts
+event(match: EventMatch, options?: EventOptions): BooleanAssertionHandle<Kind, void>;
+```
+
+#### `notEvent`
+
+```ts
+notEvent(match: EventMatch): BooleanAssertionHandle<Kind, void>;
+```
+
+#### `maxTokens`
+
+```ts
+maxTokens(max: number): BooleanAssertionHandle<Kind, void>;
+```
+
+#### `maxCost`
+
+```ts
+maxCost(usd: number): BooleanAssertionHandle<Kind, void>;
+```
+
 #### `judge`
 
 ```ts
@@ -332,6 +374,60 @@ readonly usage?: Usage;
 
 ```ts
 succeeded(): BooleanAssertionHandle<Kind, void>;
+```
+
+#### `toolOrder`
+
+```ts
+toolOrder(matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]]): BooleanAssertionHandle<Kind, void>;
+```
+
+#### `usedNoTools`
+
+```ts
+usedNoTools(): BooleanAssertionHandle<Kind, void>;
+```
+
+#### `maxToolCalls`
+
+```ts
+maxToolCalls(max: number): BooleanAssertionHandle<Kind, void>;
+```
+
+#### `noFailedActions`
+
+```ts
+noFailedActions(): BooleanAssertionHandle<Kind, void>;
+```
+
+#### `event`
+
+```ts
+event(match: EventMatch, options?: EventOptions): BooleanAssertionHandle<Kind, void>;
+```
+
+#### `notEvent`
+
+```ts
+notEvent(match: EventMatch): BooleanAssertionHandle<Kind, void>;
+```
+
+#### `eventOrder`
+
+```ts
+eventOrder(matches: readonly [EventMatch, EventMatch, ...EventMatch[]]): BooleanAssertionHandle<Kind, void>;
+```
+
+#### `maxTokens`
+
+```ts
+maxTokens(max: number): BooleanAssertionHandle<Kind, void>;
+```
+
+#### `maxCost`
+
+```ts
+maxCost(usd: number): BooleanAssertionHandle<Kind, void>;
 ```
 
 #### `judge`
