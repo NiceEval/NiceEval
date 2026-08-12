@@ -187,6 +187,13 @@ export interface SessionDeps {
   nextSourceOrder?: () => number;
 }
 
+/** A successful agent send whose post-send ledger checkpoint could not be recorded. */
+export interface LedgerCaptureFailure {
+  readonly state: "capture-failed";
+  readonly label: string;
+  readonly error: unknown;
+}
+
 export class SessionManager {
   /** 整次运行(所有会话、所有轮)累计的标准事件流。 */
   readonly allEvents: StreamEvent[] = [];
@@ -222,6 +229,8 @@ export class SessionManager {
   private sessionCount = 0;
   /** 沙箱型 send 的 Effect 串行闸(见 SessionDeps.ledgerHooks):窗口不重叠。 */
   private readonly sendSemaphore = Effect.unsafeMakeSemaphore(1);
+  /** First failed post-send checkpoint makes the entire later diff producer unavailable. */
+  private ledgerCaptureFailureValue: LedgerCaptureFailure | undefined;
   /** attempt 级 turn 重试预算,跨该 attempt 全部 send(全部 session)持续扣减,不随单次 send 重置。 */
   private readonly retryBudget: AttemptRetryBudget = createAttemptRetryBudget();
   private localSourceOrder = 0;
@@ -232,6 +241,11 @@ export class SessionManager {
     this.agentEvidenceCoverage = deps.agent.evidenceCoverage;
     this.evidenceCoverage = this.agentEvidenceCoverage;
     this.primary = this.newSession();
+  }
+
+  /** A ledger checkpoint failure is attempt state, not a synthetic empty diff. */
+  get ledgerCaptureFailure(): LedgerCaptureFailure | undefined {
+    return this.ledgerCaptureFailureValue;
   }
 
   newSession(): RunSession {
@@ -345,7 +359,18 @@ export class SessionManager {
         : Effect.tryPromise({
             try: () => this.deps.ledgerHooks!.afterSend(windowLabel),
             catch: (error) => error,
-          }).pipe(Effect.catchAll(() => Effect.void));
+          }).pipe(Effect.catchAll((error) => Effect.sync(() => {
+            // The agent turn itself did complete. Preserve that success for
+            // the author, but retain the failed checkpoint so freeze cannot
+            // turn an incomplete capture into a convincing empty document.
+            if (this.ledgerCaptureFailureValue === undefined) {
+              this.ledgerCaptureFailureValue = Object.freeze({
+                state: "capture-failed" as const,
+                label: windowLabel,
+                error,
+              });
+            }
+          })));
 
       // turn 级重试只包这一次物理 agent send。SDK Promise 在这两个
       // Effect.tryPromise 边界适配；retry 本身不再包含手写 Promise / timeout。

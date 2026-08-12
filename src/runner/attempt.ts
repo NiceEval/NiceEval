@@ -1667,7 +1667,24 @@ async function runAttemptBody(
     if (!skipReason && usesSandbox) enterPhase("workspace.diff");
     let diffWindows: DiffArtifact = [];
     let diffArtifactAvailable = true;
-    if (!skipReason && usesSandbox && ledger) {
+    const captureFailure = state.manager.ledgerCaptureFailure;
+    if (captureFailure !== undefined) {
+      // `afterSend` is intentionally non-fatal to the completed agent Turn,
+      // but its missing checkpoint makes every later workspace document
+      // incomplete. Do not export the surviving prefix as a complete diff.
+      diffArtifactAvailable = false;
+      feedback.diagnostic({
+        code: "workspace-diff-unavailable",
+        level: "warning",
+        message: `workspace diff capture failed after ${captureFailure.label}; treating the diff as unavailable: ${firstLine(formatThrown(captureFailure.error))}`,
+        data: evidenceDiagnosticData(
+          "capture",
+          captureFailure.error,
+          a.plan._tag === "Sandbox" ? a.plan.providerPlan.provider : undefined,
+        ),
+      });
+    }
+    if (!skipReason && usesSandbox && ledger && captureFailure === undefined) {
       const startedAt = recorder.offsetNow();
       const operation = recorder.child(workspaceDiffExportActivity({
         label: "export workspace diff",
