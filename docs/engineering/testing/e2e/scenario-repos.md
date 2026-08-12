@@ -137,6 +137,9 @@ durable root 先物理锚定，root 自身及以下拒绝 symlink。candidate、
    realpath 位于副本自己的 pnpm virtual store；
 6. 把 candidate digest、Testkit version/source/installed realpath（诊断）、Repo ID、artifact 路径和 candidate 复现命令写入摘要。
 
+各场景 `pnpm-workspace.yaml` 对 `@parcel/watcher` 与 `msgpackr-extract` 显式关闭构建脚本：两者是 candidate 依赖图引入的
+可选原生扩展，不启用时使用各自的 JS 回退实现。
+
 场景 Repo 禁止 workspace link、相邻源码相对 import、直接执行根仓库 `src/` 或修改 `node_modules/niceeval`。
 否则测试通过只说明工作树能自洽，不能说明发布包可消费。
 
