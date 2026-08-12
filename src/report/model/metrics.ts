@@ -8,8 +8,6 @@
 //   taskPassRate(task-pass-rate)                   null     null             0       1             higher
 //   executionReliability(execution-reliability)    null     0                1       1             higher
 //   passRate(pass-rate)                            null     0                0       1             higher
-//   examScore(exam-score)                          null     有分数则均分，否则 null            higher
-//   totalScore(total-score)                        null     null             Σpoints Σpoints       higher(通过制 eval 恒 null,不参与聚合)
 //   durationMs(duration)                           null     实测;timeout→null 同左   实测     实测          lower
 //   tokens(tokens)                                 null     实测;无 usage→null 同左   同左          lower
 //   costUSD(cost)                                  null     同上             同左     同左          lower
@@ -17,8 +15,8 @@
 //   repeatedFailedCommands(repeated-failed-commands) null   实测;o11y 缺失→null 同左  同左          lower
 //
 // bounds(自然边界,驱动图轴呼吸边距的钳制,见 docs/feature/reports/README.md
-// 「值域」):三个通过率指标与 examScore 是 { min: 0, max: 1 };其余七个(totalScore、
-// durationMs、tokens、costUSD、assistantTurns、repeatedFailedCommands)是 { min: 0 }。
+// 「值域」):三个通过率指标是 { min: 0, max: 1 };其余五个(durationMs、tokens、costUSD、
+// assistantTurns、repeatedFailedCommands)是 { min: 0 }。
 //
 // 两档指标(docs/feature/reports/README.md「内置指标」):以上除 assistantTurns 与
 // repeatedFailedCommands 外全部只读 attempt.result 的瘦身字段——任何 producer、任何
@@ -27,7 +25,7 @@
 // 不算 0——报告作者自己摆时心里要有这根弦,内置报告不用它们。
 
 import type { EvalResult } from "../../types.ts";
-import { factRecordOf, scoreOutcomeOf, verdictForTerminal } from "../../record/fact-record.ts";
+import type { ScoreProjectionV1 } from "../../eval/record/score.ts";
 import type { AttemptMetric } from "./types.ts";
 
 /** 内部：校验 AttemptMetric 字面量；不对外导出。 */
@@ -59,7 +57,7 @@ export const taskPassRate = attemptMetric({
   unit: "%",
   bounds: { min: 0, max: 1 },
   value(a) {
-    switch (verdictForTerminal(a.result)) {
+    switch (a.result.verdict) {
       case "passed":
         return 1;
       case "failed":
@@ -80,7 +78,7 @@ export const executionReliability = attemptMetric({
   unit: "%",
   bounds: { min: 0, max: 1 },
   value(a) {
-    switch (verdictForTerminal(a.result)) {
+    switch (a.result.verdict) {
       case "passed":
       case "failed":
         return 1;
@@ -104,54 +102,20 @@ export const passRate = attemptMetric({
   unit: "%",
   bounds: { min: 0, max: 1 },
   value: (a) => {
-    const verdict = verdictForTerminal(a.result);
+    const verdict = a.result.verdict;
     return verdict === "skipped" ? null : verdict === "passed" ? 1 : 0;
   },
 });
 
-export const examScore = attemptMetric({
-  name: "exam-score",
-  label: { en: "Exam score", "zh-CN": "考试得分" },
-  description: "Per-eval score: consumed successful Score Facts without score uses are averaged once each.",
-  better: "higher",
-  unit: "%",
-  bounds: { min: 0, max: 1 },
-  value(a) {
-    const fact = factRecordOf(a.result);
-    if (fact === undefined) return null;
-    const scoreUseFactIds = new Set(
-      fact.factUses.flatMap((use) => use.useKind === "score" && use.input.kind === "fact" ? [use.input.factId] : []),
-    );
-    const consumedFactIds = new Set(
-      fact.factUses.flatMap((use) => use.useKind === "verdict" ? [use.target.factId] : use.input.kind === "fact" ? [use.input.factId] : []),
-    );
-    const scores = fact.factResults.flatMap((item) =>
-      item.factKind === "score" && item.outcome === "scored" && consumedFactIds.has(item.factId) && !scoreUseFactIds.has(item.factId)
-        ? [item.normalizedScore]
-        : [],
-    );
-    if (scores.length === 0) return null;
-    return scores.reduce((sum, score) => sum + score, 0) / scores.length;
-  },
-});
-
 /**
- * 计分制 Attempt 只读 Fact score outcome 的 `creditedScore`：invalid 的 0 正常进入均值，
- * unavailable / errored / skipped 的 null 不进分母；earnedScore 永远只是诊断。通过制同样
- * 返回 null。每题对所有非 null Attempt 取均值，再跨题求和，因此不会产生 survivor bias。
+ * A Score calculation starts from its independent projected Attachment,
+ * rather than an AttemptHandle. `partial` retains the known earned lower
+ * bound but is non-comparable; `unavailable` retains reasons and never turns
+ * into zero. A ReportDataPlan-owned calculation decides any later aggregate.
  */
-export const totalScore = attemptMetric({
-  name: "total-score",
-  label: { en: "Total score", "zh-CN": "总分" },
-  description: "Score eval creditedScore: invalid contributes 0, unavailable/errored/skipped contribute null; pass evals are null.",
-  better: "higher",
-  bounds: { min: 0 },
-  value(a) {
-    return scoreOutcomeOf(a.result)?.creditedScore ?? null;
-  },
-  perEval: "mean",
-  acrossEvals: "sum",
-});
+export function projectedScoreMetric(score: ScoreProjectionV1): ScoreProjectionV1 {
+  return score;
+}
 
 export const durationMs = attemptMetric({
   name: "duration",
@@ -161,11 +125,11 @@ export const durationMs = attemptMetric({
   unit: "ms",
   bounds: { min: 0 },
   value(a) {
-    if (verdictForTerminal(a.result) === "skipped") return null;
+    if (a.result.verdict === "skipped") return null;
     // 超时删失:线值不是「跑了这么久」,是「被砍在这里」——计入聚合会把截断当实测,
     // 排除又制造幸存者偏差(慢条件因为被截断反而显得快)。唯一诚实做法是 null,
     // 让 MetricValue 的 samples < total 把删失显式呈现出来(docs/feature/reports/README.md「内置指标」)。
-    if (verdictForTerminal(a.result) === "errored" && a.result.error?.code === "timeout") return null;
+    if (a.result.verdict === "errored" && a.result.error?.code === "timeout") return null;
     return a.result.durationMs;
   },
 });
@@ -178,7 +142,7 @@ export const tokens = attemptMetric({
   unit: "tokens",
   bounds: { min: 0 },
   value(a) {
-    if (verdictForTerminal(a.result) === "skipped") return null;
+    if (a.result.verdict === "skipped") return null;
     const usage = a.result.usage;
     // input/output 缺失(协议没提供)→ null:缺了主干桶,剩下缓存明细只是局部数据,
     // 拿它冒充完整流量比编 0 更误导(docs/feature/record/architecture.md#usage)。
@@ -201,7 +165,7 @@ export const costUSD = attemptMetric({
   better: "lower",
   unit: "$",
   bounds: { min: 0 },
-  value: (a) => (verdictForTerminal(a.result) === "skipped" ? null : attemptCostUSD(a.result)),
+  value: (a) => (a.result.verdict === "skipped" ? null : attemptCostUSD(a.result)),
 });
 
 /**
@@ -218,7 +182,7 @@ export const assistantTurns = attemptMetric({
   unit: "turns",
   bounds: { min: 0 },
   async value(a) {
-    if (verdictForTerminal(a.result) === "skipped") return null;
+    if (a.result.verdict === "skipped") return null;
     const o11y = await a.o11y();
     return o11y?.totalTurns ?? null;
   },
@@ -237,7 +201,7 @@ export const repeatedFailedCommands = attemptMetric({
   unit: "cmds",
   bounds: { min: 0 },
   async value(a) {
-    if (verdictForTerminal(a.result) === "skipped") return null;
+    if (a.result.verdict === "skipped") return null;
     const o11y = await a.o11y();
     if (!o11y) return null;
     const failures = new Map<string, number>();

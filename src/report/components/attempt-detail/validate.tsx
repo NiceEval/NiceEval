@@ -1,5 +1,5 @@
 // Attempt 详情 Content / Data 形状校验(供 validate.test 与组件共用)。
-import { arrayProblem, isObject, type Validator } from "../shared.ts";
+import { arrayProblem, isObject } from "../shared.ts";
 
 // ───────────────────────── 跨叶子复用的字段路径校验 ─────────────────────────
 
@@ -35,7 +35,7 @@ function attemptIdentityProblem(value: unknown, path: string): string | null {
   return null;
 }
 
-/** AttemptEvidenceCapabilities(src/record/attempt-evidence.ts):四个证据切面开关。 */
+/** Detail-data plan availability flags: four independently declared evidence views. */
 function capabilitiesProblem(value: unknown, path: string): string | null {
   if (!isObject(value)) return `"${path}" must be an object { source, execution, timing, diff }`;
   for (const key of ["source", "execution", "timing", "diff"] as const) {
@@ -54,9 +54,9 @@ export function validateSummaryData(data: unknown): string | null {
   if (typeof data.terminal !== "string") return 'missing "terminal" (string)';
   if (typeof data.durationMs !== "number") return '"durationMs" must be a number';
   if (!(data.costUSD === null || typeof data.costUSD === "number")) return '"costUSD" must be a number or null';
-  if (data.earnedScore !== undefined && typeof data.earnedScore !== "number") return '"earnedScore" must be a number';
-  if (!(data.creditedScore === undefined || data.creditedScore === null || typeof data.creditedScore === "number")) {
-    return '"creditedScore" must be a number, null, or omitted';
+  if (data.score !== undefined) {
+    const scoreProblem = attachmentEntryProblem(data.score, "score", scoreProjectionProblem);
+    if (scoreProblem !== null) return scoreProblem;
   }
   return capabilitiesProblem(data.capabilities, "capabilities");
 }
@@ -79,27 +79,122 @@ export function validateErrorData(data: unknown): string | null {
 
 // ───────────────────────── AttemptAssertions ─────────────────────────
 
-function factResultProblem(value: unknown, path: string): string | null {
-  if (!isObject(value)) return `"${path}" must be an EvaluationFactResult object`;
-  if (typeof value.factId !== "string") return `"${path}.factId" must be a string`;
-  if (typeof value.name !== "string") return `"${path}.name" must be a string`;
-  if (typeof value.outcome !== "string") return `"${path}.outcome" must be a string`;
-  if (!Array.isArray(value.dependencyFactIds)) return `"${path}.dependencyFactIds" must be an array`;
+function assertionEntryProblem(value: unknown, path: string): string | null {
+  if (!isObject(value)) return `"${path}" must be an Assertion entry object`;
+  if (value.state !== "available" && value.state !== "unsupported" && value.state !== "invalid") {
+    return `"${path}.state" must be available, unsupported, or invalid`;
+  }
+  if (!isObject(value.entry)) return `"${path}.entry" must be an object`;
+  if (typeof value.entry.entryId !== "string") return `"${path}.entry.entryId" must be a string`;
+  if (!isObject(value.entry.display)) return `"${path}.entry.display" must be an object`;
+  if (!Array.isArray(value.entry.display.groupPath)) return `"${path}.entry.display.groupPath" must be an array`;
+  if (!isObject(value.entry.result) || typeof value.entry.result.state !== "string") {
+    return `"${path}.entry.result.state" must be a string`;
+  }
+  if (value.state !== "available" && typeof value.reason !== "string") {
+    return `"${path}.reason" must be a string`;
+  }
   return null;
 }
 
-function factUseProblem(value: unknown, path: string): string | null {
-  if (!isObject(value)) return `"${path}" must be a FactUseResult object`;
-  if (value.useKind !== "verdict" && value.useKind !== "score") return `"${path}.useKind" must be "verdict" or "score"`;
-  if (typeof value.outcome !== "string") return `"${path}.outcome" must be a string`;
+function scoreProjectionProblem(value: unknown, path: string): string | null {
+  if (!isObject(value)) return `"${path}" must be a Score projection object`;
+  if (value.state === "complete") {
+    if (typeof value.earned !== "number") return `"${path}.earned" must be a number`;
+    if (value.comparable !== true) return `"${path}.comparable" must be true`;
+    return null;
+  }
+  if (value.state === "partial") {
+    if (typeof value.earned !== "number") return `"${path}.earned" must be a number`;
+    if (!Array.isArray(value.reasons) || value.reasons.length === 0) return `"${path}.reasons" must be a non-empty array`;
+    if (value.comparable !== false) return `"${path}.comparable" must be false`;
+    return null;
+  }
+  if (value.state === "unavailable") {
+    if (!Array.isArray(value.reasons) || value.reasons.length === 0) return `"${path}.reasons" must be a non-empty array`;
+    if (value.comparable !== false) return `"${path}.comparable" must be false`;
+    return null;
+  }
+  return `"${path}.state" must be complete, partial, or unavailable`;
+}
+
+type PathValidator = (value: unknown, path: string) => string | null;
+
+function attachmentEntryProblem(
+  value: unknown,
+  path: string,
+  available: PathValidator,
+): string | null {
+  if (!isObject(value)) return `"${path}" must be a projected Attempt slot`;
+  if (value.state === "excluded" || value.state === "not-recorded" || value.state === "core-invalid") return null;
+  if (value.state !== "attachment-result") {
+    return `"${path}.state" must be an Attempt-slot projection state`;
+  }
+  if (!isObject(value.attachment)) return `"${path}.attachment" must be an object`;
+  switch (value.attachment.state) {
+    case "available":
+      return available(value.attachment.value, `${path}.attachment.value`);
+    case "unavailable":
+      return null;
+    case "migration-required":
+      return typeof value.attachment.command === "string" ? null : `"${path}.attachment.command" must be a string`;
+    case "migration-unavailable":
+      return typeof value.attachment.reason === "string" ? null : `"${path}.attachment.reason" must be a string`;
+    case "unsupported":
+      return typeof value.attachment.schemaId === "string" ? null : `"${path}.attachment.schemaId" must be a string`;
+    case "invalid":
+      return Array.isArray(value.attachment.issues) ? null : `"${path}.attachment.issues" must be an array`;
+    default:
+      return `"${path}.attachment.state" must be a projected Attachment state`;
+  }
+}
+
+function assertionEntriesProblem(value: unknown, path: string): string | null {
+  return arrayProblem(value, path, assertionEntryProblem);
+}
+
+function verdictProblem(value: unknown, path: string): string | null {
+  return value === "passed" || value === "failed" || value === "errored" || value === "skipped"
+    ? null
+    : `"${path}" must be a four-state Verdict`;
+}
+
+const ASSERTION_SOURCE_SITE_ROLES = new Set([
+  "declaration",
+  "threshold",
+  "score",
+  "gate",
+  "optional",
+  "stop",
+]);
+
+function assertionSourceSiteProblem(value: unknown, path: string): string | null {
+  if (!isObject(value)) return `"${path}" must be an Assertion source site object`;
+  if (typeof value.entryId !== "string") return `"${path}.entryId" must be a string`;
+  const locationProblem = sourceLocProblem(value.location, `${path}.location`);
+  if (locationProblem !== null) return locationProblem;
+  if (!Array.isArray(value.roles) || value.roles.length === 0) {
+    return `"${path}.roles" must be a non-empty array`;
+  }
+  for (const [index, role] of value.roles.entries()) {
+    if (typeof role !== "string" || !ASSERTION_SOURCE_SITE_ROLES.has(role)) {
+      return `"${path}.roles[${index}]" must be a known Assertion source role`;
+    }
+  }
   return null;
 }
 
 export function validateAssertionsData(data: unknown): string | null {
   if (!isObject(data)) return "expected an object";
-  const facts = arrayProblem(data.factResults, "factResults", factResultProblem);
-  if (facts !== null) return facts;
-  return arrayProblem(data.factUses, "factUses", factUseProblem);
+  const entriesProblem = attachmentEntryProblem(data.entries, "entries", assertionEntriesProblem);
+  if (entriesProblem !== null) return entriesProblem;
+  const verdictProjectionProblem = attachmentEntryProblem(data.verdict, "verdict", verdictProblem);
+  if (verdictProjectionProblem !== null) return verdictProjectionProblem;
+  if (data.score !== undefined) {
+    const scoreProblem = attachmentEntryProblem(data.score, "score", scoreProjectionProblem);
+    if (scoreProblem !== null) return scoreProblem;
+  }
+  return data.sites === undefined ? null : arrayProblem(data.sites, "sites", assertionSourceSiteProblem);
 }
 
 

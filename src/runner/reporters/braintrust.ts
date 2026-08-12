@@ -4,7 +4,16 @@
 // (reporter 错误按框架约定只记 diagnostic,不会让运行崩)。
 
 import type { EvalResult, JsonValue, Reporter } from "../../types.ts";
-import { attemptTerminalOf, factRecordOf, scoreOutcomeOf, verdictForTerminal } from "../../record/fact-record.ts";
+import type {
+  AssertionCoverageV1,
+  AssertionEntryReadV1,
+  AssertionLimitationV1,
+  AssertionsProjectionV1,
+  ScoreContributionV1,
+} from "../../assertions/record/model.ts";
+import type { ScoreProjectionV1 } from "../../eval/record/score.ts";
+import type { AttemptSlotProjectedEntry } from "../../projection/index.ts";
+import type { Verdict } from "../../shared/types.ts";
 import { reportActivity } from "../feedback/sink.ts";
 
 export interface BraintrustConfig {
@@ -62,6 +71,29 @@ export interface BraintrustLogEvent {
 }
 
 /**
+ * A post-Record Projection calculation supplies this optional assessment. The
+ * live Reporter callback currently has no RecordProjection input, so its
+ * absence is represented explicitly rather than as a made-up Attachment read.
+ */
+export type BraintrustAssessment =
+  | {
+      readonly state: "projected";
+      /** Exact Report-style public projections, including every data state. */
+      readonly assertions: AttemptSlotProjectedEntry<AssertionsProjectionV1<unknown>>;
+      readonly verdict: AttemptSlotProjectedEntry<Verdict>;
+      readonly score?: AttemptSlotProjectedEntry<ScoreProjectionV1>;
+    }
+  | {
+      readonly state: "not-projected";
+      readonly reason: "reporter-contract-does-not-provide-record-projections";
+    };
+
+const NOT_PROJECTED_ASSESSMENT: BraintrustAssessment = Object.freeze({
+  state: "not-projected" as const,
+  reason: "reporter-contract-does-not-provide-record-projections" as const,
+});
+
+/**
  * 创建 Braintrust 报告器。挂在 `defineConfig({ reporters })` 上观测整次运行,
  * 或挂在单个 eval 的 `reporters` 上只观测它(同一实例被多个 eval 引用时共享一个实验)。
  */
@@ -95,7 +127,7 @@ export function Braintrust(config: BraintrustConfig = {}): Reporter {
     },
 
     onEvalComplete(result) {
-      experiment?.log(toBraintrustEvent(result));
+      experiment?.log(toBraintrustEvent(result, NOT_PROJECTED_ASSESSMENT));
     },
 
     async onInvocationComplete() {
@@ -115,41 +147,19 @@ export function Braintrust(config: BraintrustConfig = {}): Reporter {
 }
 
 /**
- * EvalResult → Braintrust 一行。导出仅为单测;映射口径:
- * - scores:每个已消费且成功的 Score Fact 记归一化分；阈值 verdict use 另记 0/1。
- * - metrics:start/end(Braintrust 由此算时长)+ token 用量 + 估算成本;缺就不写,不编 0。
- * - metadata:身份维度(agent / model / experiment / attempt / flags)+ 失败断言明细。
+ * EvalResult identity/transport data plus an optional post-Record assessment
+ * become one Braintrust row. Assertions, Verdict, and Score only enter through
+ * that assessment's public Attachment projections; this function never reads
+ * a historical result graph.
  */
-export function toBraintrustEvent(result: EvalResult): BraintrustLogEvent {
-  const scores: globalThis.Record<string, number> = {};
-  const fact = factRecordOf(result);
-  const terminal = attemptTerminalOf(result);
-  const verdict = verdictForTerminal(result);
-  if (fact !== undefined) {
-    const consumedFactIds = new Set<string>();
-    for (const use of fact.factUses) {
-      if (use.useKind === "verdict") consumedFactIds.add(use.target.factId);
-      else if (use.input.kind === "fact") consumedFactIds.add(use.input.factId);
-    }
-    const byId = new Map(fact.factResults.map((item) => [item.factId, item]));
-    for (const item of fact.factResults) {
-      if (item.factKind !== "score" || item.outcome !== "scored" || !consumedFactIds.has(item.factId)) continue;
-      addScore(scores, `fact:${item.factId}`, item.normalizedScore);
-    }
-    for (const use of fact.factUses) {
-      if (use.useKind !== "verdict" || use.target.kind !== "score") continue;
-      const target = byId.get(use.target.factId);
-      if (target?.factKind !== "score" || target.outcome !== "scored") continue;
-      if (use.outcome !== "passed" && use.outcome !== "failed") continue;
-      const stableUseKey = use.key ?? use.label ?? target.name;
-      addScore(scores, `use:${stableUseKey}`, use.outcome === "passed" ? 1 : 0);
-    }
-    // A scored zero is a successful terminal, whereas invalid is the only
-    // observed zero for terminal validity. Unavailable/errored intentionally
-    // omit this score rather than masquerading as ordinary 0.
-    if (terminal === "scored") addScore(scores, "niceeval:terminal", 1);
-    if (terminal === "invalid") addScore(scores, "niceeval:terminal", 0);
-  }
+export function toBraintrustEvent(
+  result: EvalResult,
+  assessment: BraintrustAssessment = NOT_PROJECTED_ASSESSMENT,
+): BraintrustLogEvent {
+  const projectedVerdict = assessment.state === "projected"
+    ? availableProjectionValue(assessment.verdict)
+    : undefined;
+  const verdict = projectedVerdict ?? result.verdict;
 
   const metrics: globalThis.Record<string, number> = {};
   if (result.startedAt) {
@@ -176,23 +186,35 @@ export function toBraintrustEvent(result: EvalResult): BraintrustLogEvent {
     agent: result.agent,
     attempt: result.attempt,
     verdict,
-    terminal,
+    status: verdict,
+    evaluationAlgorithm: result.evaluationAlgorithm,
+    evaluationKind: result.evaluationKind,
+    assessmentProjection: assessment.state,
   };
+  const scores: globalThis.Record<string, number> = {};
+  if (assessment.state === "projected") {
+    metadata.assertions = projectionMetadata(
+      assessment.assertions,
+      (assertions) => ({ entries: assertionMetadata(assertions.entries) }),
+    );
+    metadata.verdictProjection = projectionMetadata(
+      assessment.verdict,
+      (value) => ({ value }),
+    );
+    if (assessment.score !== undefined) {
+      metadata.score = projectionMetadata(assessment.score, scoreMetadata);
+      const score = availableProjectionValue(assessment.score);
+      if (score?.state === "complete") scores["niceeval:score"] = score.earned;
+    }
+  } else {
+    metadata.assessmentProjectionReason = assessment.reason;
+  }
   if (result.model !== undefined) metadata.model = result.model;
   if (result.experimentId !== undefined) metadata.experiment = result.experimentId;
   if (result.experiment?.flags && Object.keys(result.experiment.flags).length > 0) {
     metadata.flags = result.experiment.flags;
   }
   if (result.skipReason !== undefined) metadata.skipReason = result.skipReason;
-  if (fact !== undefined) {
-    metadata.evaluationAlgorithm = fact.evaluationAlgorithm;
-    metadata.evaluationKind = fact.evaluationKind;
-    metadata.factResults = fact.factResults as unknown as JsonValue;
-    metadata.factUses = fact.factUses as unknown as JsonValue;
-    const score = scoreOutcomeOf(result);
-    if (score !== undefined) metadata.scoreResult = score as unknown as JsonValue;
-  }
-
   // 一次运行内 (experiment, eval, agent, model, attempt) 唯一;Braintrust 按 id 合并重复行。
   const id = [result.experimentId ?? "", result.id, result.agent, result.model ?? "", `a${result.attempt}`].join("|");
 
@@ -201,16 +223,160 @@ export function toBraintrustEvent(result: EvalResult): BraintrustLogEvent {
     input: result.description ?? result.id,
     output: lastAssistantText(result.events),
     error: result.error,
-    scores,
     metadata,
     metrics,
+    ...(Object.keys(scores).length > 0 ? { scores } : {}),
   };
 }
 
-function addScore(scores: globalThis.Record<string, number>, base: string, value: number): void {
-  let key = base;
-  for (let n = 2; key in scores; n++) key = `${base}#${n}`;
-  scores[key] = value;
+function availableProjectionValue<Value>(
+  entry: AttemptSlotProjectedEntry<Value>,
+): Value | undefined {
+  return entry.state === "attachment-result" && entry.attachment.state === "available"
+    ? entry.attachment.value
+    : undefined;
+}
+
+function projectionMetadata<Value>(
+  entry: AttemptSlotProjectedEntry<Value>,
+  available: (value: Value) => globalThis.Record<string, JsonValue>,
+): JsonValue {
+  if (entry.state !== "attachment-result") {
+    return { state: entry.state };
+  }
+  switch (entry.attachment.state) {
+    case "available":
+      return { state: "available", ...available(entry.attachment.value) };
+    case "unavailable":
+      return { state: "unavailable" };
+    case "migration-required":
+      return {
+        state: "migration-required",
+        from: entry.attachment.from,
+        to: entry.attachment.to,
+        command: entry.attachment.command,
+      };
+    case "migration-unavailable":
+      return {
+        state: "migration-unavailable",
+        from: entry.attachment.from,
+        to: entry.attachment.to,
+        reason: entry.attachment.reason,
+      };
+    case "unsupported":
+      return { state: "unsupported", schemaId: entry.attachment.schemaId };
+    case "invalid":
+      return {
+        state: "invalid",
+        issues: entry.attachment.issues.map((issue) => ({
+          code: issue.code,
+          path: [...issue.path],
+        })),
+      };
+  }
+}
+
+function assertionMetadata(entries: readonly AssertionEntryReadV1<unknown>[]): JsonValue {
+  const metadata: JsonValue[] = [];
+  for (const entry of entries) {
+    const display = entry.entry.display;
+    const result = entry.entry.result;
+    const item: globalThis.Record<string, JsonValue> = {
+      entryId: entry.entry.entryId,
+      groupPath: [...display.groupPath],
+      outcome: entry.state === "available" ? result.state : entry.state,
+      coverage: coverageMetadata(entry.entry.coverage),
+      limitations: entry.entry.limitations.map(limitationMetadata),
+      scoreContribution: scoreContributionMetadata(result.score),
+    };
+    if (display.label !== undefined) item.label = display.label;
+    if (display.key !== undefined) item.key = display.key;
+    const reason = assertionReason(entry);
+    if (reason !== undefined) item.reason = reason;
+    metadata.push(item);
+  }
+  return metadata;
+}
+
+function assertionReason(entry: AssertionEntryReadV1<unknown>): string | undefined {
+  if (entry.state !== "available") return entry.reason;
+  switch (entry.entry.result.state) {
+    case "matched":
+      return undefined;
+    case "mismatched":
+    case "unavailable":
+    case "errored":
+    case "not-applicable":
+      return entry.entry.result.reason;
+  }
+}
+
+function coverageMetadata(
+  coverage: AssertionCoverageV1,
+): globalThis.Record<string, JsonValue> {
+  const metadata: globalThis.Record<string, JsonValue> = { state: coverage.state };
+  if (coverage.state !== "complete") metadata.reason = coverage.reason;
+  return metadata;
+}
+
+function limitationMetadata(
+  limitation: AssertionLimitationV1,
+): globalThis.Record<string, JsonValue> {
+  switch (limitation.kind) {
+    case "redacted":
+      return { kind: limitation.kind, fieldCount: limitation.fieldCount };
+    case "sampled":
+      return {
+        kind: limitation.kind,
+        captured: limitation.captured,
+        ...(limitation.knownTotal === undefined ? {} : { knownTotal: limitation.knownTotal }),
+      };
+    case "truncated":
+      return { kind: limitation.kind, omittedBytes: limitation.omittedBytes };
+    case "provider-limited":
+      return { kind: limitation.kind };
+  }
+}
+
+function scoreContributionMetadata(
+  contribution: ScoreContributionV1,
+): globalThis.Record<string, JsonValue> {
+  switch (contribution.state) {
+    case "not-scored":
+      return { state: contribution.state };
+    case "earned":
+      return {
+        state: contribution.state,
+        points: contribution.points,
+        earned: contribution.earned,
+      };
+    case "unavailable":
+      return {
+        state: contribution.state,
+        points: contribution.points,
+        reason: contribution.reason,
+      };
+  }
+}
+
+function scoreMetadata(score: ScoreProjectionV1): globalThis.Record<string, JsonValue> {
+  switch (score.state) {
+    case "complete":
+      return { state: score.state, earned: score.earned, comparable: score.comparable };
+    case "partial":
+      return {
+        state: score.state,
+        earned: score.earned,
+        reasons: [...score.reasons],
+        comparable: score.comparable,
+      };
+    case "unavailable":
+      return {
+        state: score.state,
+        reasons: [...score.reasons],
+        comparable: score.comparable,
+      };
+  }
 }
 
 /** agent 的最终回复文本(事件流里最后一条 assistant message);没有就不填。 */

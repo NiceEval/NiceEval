@@ -1,6 +1,5 @@
-// Attempt 详情组合件:叶子区块用原语 + 公开 to* 装配。
+// Attempt 详情组合件:只组合已计算的纯投影值，不读取 Record 或 evidence shell。
 
-import { isAttemptEvidence, type AttemptEvidence } from "../../../record/attempt-evidence.ts";
 import { defineComponent } from "../../definition/tree.ts";
 import {
   Callouts,
@@ -14,25 +13,20 @@ import {
   TableContentView,
   Waterfall,
 } from "../../definition/primitives.tsx";
-import type { CommandEvidenceContent } from "../../definition/primitives/conversation.tsx";
-import type { AttemptFactsData, AttemptSummaryData, UsageTableData } from "../../model/types.ts";
+import type { CalloutGroup } from "../../definition/primitives/callouts-logic.ts";
+import type { CopyBlockContent } from "../../definition/primitives/copy-block.tsx";
+import type { CommandEvidenceContent, ConversationContent } from "../../definition/primitives/conversation.tsx";
+import type { DiffContent } from "../../definition/primitives/diff-view.tsx";
+import type { SourceContent } from "../../definition/primitives/source-view.tsx";
+import type { WaterfallContent } from "../../definition/primitives/waterfall.tsx";
+import type { AttemptAssertionsData, AttemptSummaryData, UsageTableData } from "../../model/types.ts";
 import { formatDurationMs, formatInstant, formatPoints, formatUSD } from "../../model/format.ts";
 import { cx, type ValueProps } from "../shared.ts";
-import type { PageContext } from "../../definition/tree.ts";
 import {
-  toAttemptAssertions,
-  toAttemptFacts,
-  toAttemptFixPrompt,
-  toAttemptNotices,
-  toAttemptSource,
-  toAttemptSummary,
-  toAttemptUsage,
-  toCommandEvidence,
-  toConversationTurns,
-  toDiffFiles,
-  toTimelineNodes,
-} from "../../model/conversions.ts";
-import { embedConversationInSource, executionEvidenceUnavailableCallouts } from "./content.tsx";
+  attemptAssertionsContent,
+  embedConversationInSource,
+  executionEvidenceUnavailableCallouts,
+} from "./content.tsx";
 
 export {
   validateAssertionsData,
@@ -62,6 +56,31 @@ function Kpi(props: { label: string; value: string }) {
   );
 }
 
+function scoreText(score: NonNullable<AttemptSummaryData["score"]>): string {
+  if (score.state !== "attachment-result") return score.state;
+  switch (score.attachment.state) {
+    case "available":
+      switch (score.attachment.value.state) {
+        case "complete":
+          return `complete · ${formatPoints(score.attachment.value.earned)}`;
+        case "partial":
+          return `partial · ${formatPoints(score.attachment.value.earned)} · ${score.attachment.value.reasons.join(", ")}`;
+        case "unavailable":
+          return `unavailable · ${score.attachment.value.reasons.join(", ")}`;
+      }
+    case "unavailable":
+      return "Attachment unavailable";
+    case "migration-required":
+      return "migration required";
+    case "migration-unavailable":
+      return "migration unavailable";
+    case "unsupported":
+      return "unsupported";
+    case "invalid":
+      return "invalid";
+  }
+}
+
 type SummaryProps = ValueProps<AttemptSummaryData, { className?: string }>;
 
 export const AttemptSummary = defineComponent<SummaryProps>({
@@ -75,7 +94,7 @@ export const AttemptSummary = defineComponent<SummaryProps>({
       <div className={cx("niceeval-report", "niceeval-attempt-summary", props.className)}>
         <div className="niceeval-attempt-summary-head">
           <span className={`niceeval-verdict-pill niceeval-verdict-${d.verdict}`}>
-            {d.terminal}
+            {d.verdict}
           </span>
           <span className="niceeval-attempt-summary-locator">{d.locator}</span>
         </div>
@@ -83,8 +102,7 @@ export const AttemptSummary = defineComponent<SummaryProps>({
           <Kpi label="Experiment" value={d.experimentId} />
           <Kpi label="Eval" value={d.identity.evalId} />
           <Kpi label="Attempt" value={String(d.identity.attempt + 1)} />
-          {d.earnedScore !== undefined ? <Kpi label="Earned score" value={formatPoints(d.earnedScore)} /> : null}
-          {d.creditedScore !== undefined ? <Kpi label="Credited score" value={d.creditedScore === null ? "unavailable" : formatPoints(d.creditedScore)} /> : null}
+          {d.score !== undefined ? <Kpi label="Score" value={scoreText(d.score)} /> : null}
           {d.startedAt ? <Kpi label="Started" value={formatInstant(d.startedAt, ctx.locale)} /> : null}
           <Kpi label="Duration" value={formatDurationMs(d.durationMs)} />
           {d.costUSD !== null ? <Kpi label="Cost" value={formatUSD(d.costUSD)} /> : null}
@@ -99,7 +117,9 @@ export const AttemptSummary = defineComponent<SummaryProps>({
   },
   text(props) {
     const d = props.data!;
-    return `${d.locator} · ${d.terminal} · ${formatDurationMs(d.durationMs)}`;
+    return [d.locator, d.verdict, d.score === undefined ? undefined : scoreText(d.score), formatDurationMs(d.durationMs)]
+      .filter((part): part is string => part !== undefined)
+      .join(" · ");
   },
 });
 AttemptSummary.displayName = "AttemptSummary";
@@ -155,48 +175,37 @@ const AttemptUsage = defineComponent<UsageProps>({
 });
 AttemptUsage.displayName = "AttemptUsage";
 
-type FactsProps = ValueProps<AttemptFactsData | null, { className?: string }>;
+type AssertionsProps = ValueProps<AttemptAssertionsData | null, { className?: string }>;
 
-/** attempt 级 `ctx.fact()` 运行事实的完整键值表(docs/feature/record/architecture.md#facts运行事实);
- *  没有 facts 时零输出,不摆空表。 */
-const AttemptFacts = defineComponent<FactsProps>({
+/** Renders only the public Projection/Calculation result, including attachment states. */
+export const AttemptAssertions = defineComponent<AssertionsProps>({
   dimensions: () => ({}),
   web(props) {
-    const d = props.data;
-    if (d === null || d === undefined || d.facts.length === 0) return null;
-    return (
-      <Grid className={cx("niceeval-facts-table", props.className)}>
-        {d.facts.map(({ key, value }) => (
-          <Kpi key={key} label={key} value={String(value)} />
-        ))}
-      </Grid>
-    );
+    const table = attemptAssertionsContent(props.data);
+    return table === null ? null : <TableContentView data={table} className={props.className} />;
   },
-  text(props) {
-    const d = props.data;
-    if (d === null || d === undefined || d.facts.length === 0) return "";
-    const lines = ["facts:"];
-    for (const { key, value } of d.facts) lines.push(`  ${key}  ${value}`);
-    return lines.join("\n");
+  text() {
+    return "";
   },
 });
-AttemptFacts.displayName = "AttemptFacts";
+AttemptAssertions.displayName = "AttemptAssertions";
 
-function evidenceOf(props: { attempt?: AttemptEvidence }, ctx: { page: PageContext }): AttemptEvidence {
-  if (props.attempt !== undefined) return props.attempt;
-  const input = ctx.page.input;
-  if (!isAttemptEvidence(input)) {
-    throw new Error(
-      "AttemptDetails requires attempt={evidence} or a page whose load produces AttemptEvidence (e.g. the standard attempt page).",
-    );
-  }
-  return input;
+export interface AttemptAssessmentProps {
+  readonly notices: readonly CalloutGroup[];
+  readonly source: SourceContent | null;
+  readonly assertions: AttemptAssertionsData | null;
+  className?: string;
 }
 
-export type AttemptDetailsProps = {
-  attempt?: AttemptEvidence;
-  className?: string;
-};
+export interface AttemptDetailsProps extends AttemptAssessmentProps {
+  readonly summary: AttemptSummaryData;
+  readonly fixPrompt: CopyBlockContent | null;
+  readonly timeline: WaterfallContent | null;
+  readonly usage: UsageTableData | null;
+  readonly commandEvidence: CommandEvidenceContent | null;
+  readonly conversation: ConversationContent | null;
+  readonly diff: DiffContent | null;
+}
 
 const COMMAND_CLOSING_PHASES = new Set(["agent.teardown", "sandbox.cleanup", "sandbox.suspend", "sandbox.stop"]);
 
@@ -213,64 +222,39 @@ function commandEvidenceSections(data: CommandEvidenceContent | null): {
   };
 }
 
-export const AttemptAssessment = defineComponent<AttemptDetailsProps>(async (props, ctx) => {
-  const evidence = evidenceOf(props, ctx);
-  const notices = await toAttemptNotices(evidence);
-  const pageInput = ctx.page.input;
-  const hasSource = isAttemptEvidence(pageInput) ? pageInput.capabilities.source : evidence.capabilities.source;
-  const assertions = hasSource ? null : await toAttemptAssertions(evidence);
+export const AttemptAssessment = defineComponent<AttemptAssessmentProps>((props) => {
   return (
-    <Col>
-      <Callouts items={notices} />
-      {hasSource ? (
-        <SourceView data={await toAttemptSource(evidence)} />
-      ) : assertions !== null && assertions.rows.length > 0 ? (
-        <TableContentView data={assertions} />
-      ) : null}
+    <Col className={props.className}>
+      <Callouts items={props.notices} />
+      <AttemptAssertions data={props.assertions} />
+      {props.source !== null ? <SourceView data={props.source} /> : null}
     </Col>
   );
 });
 AttemptAssessment.displayName = "AttemptAssessment";
 
 /** 公开 Attempt 详情组合；文档名 AttemptDetails。 */
-export const AttemptDetails = defineComponent<AttemptDetailsProps>(async (props, ctx) => {
-  const evidence = evidenceOf(props, ctx);
-  const hasSource = evidence.capabilities.source;
-  const [notices, source, assertions, summary, fixPrompt, timeline, usage, facts, commandEvidence, conversation, diff] = await Promise.all([
-    toAttemptNotices(evidence),
-    hasSource ? toAttemptSource(evidence) : Promise.resolve(null),
-    hasSource ? Promise.resolve(null) : toAttemptAssertions(evidence),
-    toAttemptSummary(evidence),
-    toAttemptFixPrompt(evidence),
-    toTimelineNodes(evidence),
-    toAttemptUsage(evidence),
-    toAttemptFacts(evidence),
-    toCommandEvidence(evidence),
-    toConversationTurns(evidence),
-    toDiffFiles(evidence),
-  ]);
-  const embedded = embedConversationInSource(source, conversation);
-  const commandSections = commandEvidenceSections(commandEvidence);
+export const AttemptDetails = defineComponent<AttemptDetailsProps>((props) => {
+  const embedded = embedConversationInSource(props.source, props.conversation);
+  const commandSections = commandEvidenceSections(props.commandEvidence);
   return (
     <Col className={props.className}>
-      <AttemptSummary data={summary} />
+      <AttemptSummary data={props.summary} />
       <Col>
-        <Callouts items={notices} />
+        <Callouts items={props.notices} />
         <CommandEvidence data={commandSections.before} />
+        <AttemptAssertions data={props.assertions} />
         {embedded.source !== null ? (
           <SourceView data={embedded.source} />
-        ) : assertions !== null && assertions.rows.length > 0 ? (
-          <TableContentView data={assertions} />
         ) : null}
       </Col>
-      <CopyBlock content={fixPrompt} />
+      <CopyBlock content={props.fixPrompt} />
       <Waterfall
-        nodes={timeline}
+        nodes={props.timeline}
         title={{ en: "Execution timeline", "zh-CN": "执行时间轴" }}
       />
-      <AttemptUsage data={usage} />
-      <AttemptFacts data={facts} />
-      {conversation === null ? (
+      <AttemptUsage data={props.usage} />
+      {props.conversation === null ? (
         <Callouts items={executionEvidenceUnavailableCallouts} />
       ) : embedded.conversation !== null ? (
         <Conversation data={embedded.conversation} />
@@ -278,7 +262,7 @@ export const AttemptDetails = defineComponent<AttemptDetailsProps>(async (props,
         null
       )}
       <CommandEvidence data={commandSections.after} />
-      <DiffView files={diff} />
+      <DiffView files={props.diff} />
     </Col>
   );
 });

@@ -15,6 +15,9 @@ import type {
 } from "../../definition/primitives/source-view.tsx";
 import type { WaterfallContent, WaterfallNode } from "../../definition/primitives/waterfall.tsx";
 import type { TableContent, TableContentRow } from "../../definition/cell.ts";
+import type { AssertionEntryReadV1 } from "../../../assertions/record/model.ts";
+import type { ScoreProjectionV1 } from "../../../eval/record/score.ts";
+import type { AttemptSlotProjectedEntry } from "../../../projection/index.ts";
 import type {
   AttemptAssertionsData,
   AttemptCommandEvidenceData,
@@ -24,57 +27,163 @@ import type {
   AttemptDiagnosticsData,
   AttemptErrorData,
   AttemptFixPromptData,
+  AttemptLocator,
+  AttemptSourceDisplayAnnotation,
+  AttemptSourceDisplayCall,
+  AttemptSourceDisplayInput,
+  AttemptSourceDisplayLine,
+  AttemptSourceDisplayNode,
+  AttemptSourceDisplaySummary,
   AttemptTimelineData,
   AttemptTraceData,
 } from "../../model/types.ts";
 import type { JsonValue, TimingActivity, TraceSpan } from "../../../types.ts";
-import type { EvaluationFactResult } from "../../../assertions/types.ts";
-import type { FactUseResult } from "../../../record/fact-record.ts";
 import { summaryText } from "../../../assertions/display.ts";
 import { formatDurationMs, formatPointsSuffix } from "../../model/format.ts";
-import { localizedMessage } from "../../model/locale.ts";
 import { normalizeTurnLabel } from "../../../shared/turn-label.ts";
-import type {
-  LineAnnotation,
-  ProjectedSourceCall,
-  ProjectedSourceLine,
-  SourceContent as ProjectedSourceContent,
-  SourceContentNode as ProjectedSourceNode,
-  SourceCallSummary,
-} from "../../../record/annotated-source.ts";
 
-function projectedLineTone(line: ProjectedSourceLine): SourceLineTone | undefined {
-  const outcomes = line.annotations.flatMap((annotation) => annotationOutcome(annotation));
-  if (line.annotations.some(annotationIsGateFailure)) return "gate-fail";
+function sourceLocation(location: { readonly file: string; readonly line: number } | undefined): string {
+  return location === undefined ? "unmapped" : `${location.file}:${location.line}`;
+}
+
+function sourceOutcome<BlobRef>(annotation: AttemptSourceDisplayAnnotation<BlobRef>): string[] {
+  switch (annotation.kind) {
+    case "send":
+      return [];
+    case "assertion-site":
+      if (annotation.entry.state !== "available") return ["unavailable"];
+      switch (annotation.entry.entry.result.state) {
+        case "matched":
+          return ["passed"];
+        case "mismatched":
+          return ["failed"];
+        case "errored":
+          return ["errored"];
+        case "unavailable":
+        case "not-applicable":
+          return ["unavailable"];
+      }
+  }
+}
+
+function isGateFailure<BlobRef>(annotation: AttemptSourceDisplayAnnotation<BlobRef>): boolean {
+  return annotation.kind === "assertion-site" &&
+    annotation.roles.includes("gate") &&
+    annotation.entry.state === "available" &&
+    annotation.entry.entry.result.gate === "failed";
+}
+
+/** Restore source-line status from role-tagged sites of current Assertion entries. */
+function projectedLineTone<BlobRef>(line: AttemptSourceDisplayLine<BlobRef>): SourceLineTone | undefined {
+  const outcomes = line.annotations.flatMap(sourceOutcome);
+  if (line.annotations.some(isGateFailure)) return "gate-fail";
   if (outcomes.some((outcome) => outcome === "failed" || outcome === "errored")) return "soft-fail";
-  if (outcomes.some((outcome) => outcome === "unavailable" || outcome.startsWith("notReached"))) return "unavailable";
+  if (outcomes.some((outcome) => outcome === "unavailable" || outcome === "skipped")) return "unavailable";
   if (outcomes.some((outcome) => outcome === "passed" || outcome === "scored")) return "passed";
   return line.annotations.some((annotation) => annotation.kind === "send") ? "send" : undefined;
 }
 
-function annotationNodes(annotation: LineAnnotation, key: string): ReportNode[] {
-  if (annotation.kind === "fact") return factNodes(annotation.fact, key);
-  if (annotation.kind === "factUse") return factUseNodes(annotation.use, key);
-  const send = annotation.send;
+function sourceToneClass(outcome: string, gate = false): string {
+  if (outcome === "passed" || outcome === "scored" || outcome === "matched") return "niceeval-tone-good";
+  if (
+    outcome === "unavailable" ||
+    outcome === "not-applicable" ||
+    outcome === "skipped" ||
+    outcome === "unsupported" ||
+    outcome === "invalid"
+  ) return "niceeval-tone-na";
+  return gate ? "niceeval-tone-bad" : "niceeval-tone-warn";
+}
+
+function sourceAssertionDetail<BlobRef>(
+  annotation: Extract<AttemptSourceDisplayAnnotation<BlobRef>, { readonly kind: "assertion-site" }>,
+  location: string,
+): string {
+  const parts = [`roles: ${annotation.roles.join(", ")}`, assertionDetail(annotation.entry, location)];
+  for (const detail of annotation.details ?? []) {
+    parts.push(`${detail.label}: ${summaryText(detail.value)}`);
+  }
+  return parts.join(" · ");
+}
+
+function assertionNodes<BlobRef>(
+  annotation: Extract<AttemptSourceDisplayAnnotation<BlobRef>, { readonly kind: "assertion-site" }>,
+  key: string,
+  location: string,
+): ReportNode[] {
+  const entry = annotation.entry;
+  const outcome = entry.state === "available" ? entry.entry.result.state : entry.state;
   return [
-    <Text key={key}>
-      {[send.status, send.durationMs === undefined ? undefined : formatDurationMs(send.durationMs)]
-        .filter((part): part is string => part !== undefined)
-        .join(" · ")}
+    <Text key={`${key}:head`} className={`niceeval-source-assertion ${sourceToneClass(outcome, isGateFailure(annotation))}`}>
+      {`Assertion ${assertionKey(entry)} [${entry.entry.entryId}] · ${annotation.roles.join(" + ")} · ${assertionCriterion(entry)} ${outcome}`}
+    </Text>,
+    <Text key={`${key}:body`} className="niceeval-source-assertion-body">
+      {sourceAssertionDetail(annotation, location)}
     </Text>,
   ];
 }
 
-function annotationOutcome(annotation: LineAnnotation): string[] {
-  if (annotation.kind === "send") return [];
-  return [annotation.kind === "fact" ? annotation.fact.outcome : annotation.use.outcome];
+function annotationNodes<BlobRef>(
+  annotation: AttemptSourceDisplayAnnotation<BlobRef>,
+  key: string,
+  fallback?: { readonly file: string; readonly line: number },
+): ReportNode[] {
+  const location = sourceLocation(fallback);
+  switch (annotation.kind) {
+    case "assertion-site":
+      return assertionNodes(annotation, key, location);
+    case "send":
+      return [
+        <Text key={key}>
+          {[annotation.status, annotation.durationMs === undefined ? undefined : formatDurationMs(annotation.durationMs)]
+            .filter((part): part is string => part !== undefined)
+            .join(" · ")}
+        </Text>,
+      ];
+  }
 }
 
-function annotationIsGateFailure(annotation: LineAnnotation): boolean {
-  return annotation.kind === "factUse" && annotation.use.useKind === "verdict" && annotation.use.outcome === "failed";
+/** One coordinate renders an Assertion entry once, with all of its roles. */
+function mergeAssertionSites<BlobRef>(
+  annotations: readonly AttemptSourceDisplayAnnotation<BlobRef>[],
+): readonly AttemptSourceDisplayAnnotation<BlobRef>[] {
+  const out: AttemptSourceDisplayAnnotation<BlobRef>[] = [];
+  const indexes = new Map<string, number>();
+  for (const annotation of annotations) {
+    if (annotation.kind !== "assertion-site") {
+      out.push(annotation);
+      continue;
+    }
+    const entryId = String(annotation.entry.entry.entryId);
+    const index = indexes.get(entryId);
+    if (index === undefined) {
+      indexes.set(entryId, out.length);
+      out.push(annotation);
+      continue;
+    }
+    const existing = out[index];
+    if (existing === undefined || existing.kind !== "assertion-site") continue;
+    const roles = [...new Set([...existing.roles, ...annotation.roles])];
+    const [firstRole, ...otherRoles] = roles;
+    if (firstRole === undefined) continue;
+    const details = [...(existing.details ?? []), ...(annotation.details ?? [])].filter(
+      (detail, detailIndex, all) => all.findIndex((candidate) =>
+        candidate.label === detail.label && candidate.value === detail.value
+      ) === detailIndex,
+    );
+    out[index] = {
+      ...existing,
+      roles: [firstRole, ...otherRoles],
+      ...(existing.sourceOrder === undefined || annotation.sourceOrder === undefined
+        ? {}
+        : { sourceOrder: Math.min(existing.sourceOrder, annotation.sourceOrder) }),
+      ...(details.length > 0 ? { details } : {}),
+    };
+  }
+  return out;
 }
 
-function sourceCallSummaryText(summary: SourceCallSummary): string {
+function sourceCallSummaryText(summary: AttemptSourceDisplaySummary): string {
   const parts = [
     `${summary.checks} checks`,
     `${summary.passed} ✓`,
@@ -86,27 +195,27 @@ function sourceCallSummaryText(summary: SourceCallSummary): string {
   return parts.join(" · ");
 }
 
-function projectedCallTone(
-  call: ProjectedSourceCall,
+function projectedCallTone<BlobRef>(
+  call: AttemptSourceDisplayCall<BlobRef>,
 ): import("../../definition/primitives/source-view.tsx").SourceCallContent["tone"] {
   let gateFailed = false;
   let softFailed = false;
-  const visitAnnotations = (annotations: readonly LineAnnotation[]) => {
-    for (const annotation of annotations) {
-      if (annotationIsGateFailure(annotation)) gateFailed = true;
-      if (annotationOutcome(annotation).some((outcome) => outcome === "failed" || outcome === "errored")) softFailed = true;
+  const visitAnnotations = (annotations: readonly AttemptSourceDisplayAnnotation<BlobRef>[]) => {
+    for (const annotation of mergeAssertionSites(annotations)) {
+      if (isGateFailure(annotation)) gateFailed = true;
+      if (sourceOutcome(annotation).some((outcome) => outcome === "failed" || outcome === "errored")) softFailed = true;
     }
   };
-  const visitCalls = (calls: readonly ProjectedSourceCall[]) => {
+  const visitCalls = (calls: readonly AttemptSourceDisplayCall<BlobRef>[]) => {
     for (const child of calls) visitCall(child);
   };
-  const visitNode = (node: ProjectedSourceNode) => {
+  const visitNode = (node: AttemptSourceDisplayNode<BlobRef>) => {
     for (const line of node.lines) {
       visitAnnotations(line.annotations);
       visitCalls(line.calls);
     }
   };
-  const visitCall = (candidate: ProjectedSourceCall) => {
+  const visitCall = (candidate: AttemptSourceDisplayCall<BlobRef>) => {
     if (candidate.target.kind === "source") visitNode(candidate.target.node);
     else {
       if (candidate.target.kind === "unavailable") visitAnnotations(candidate.target.annotations);
@@ -122,7 +231,9 @@ function projectedCallTone(
   return "passed";
 }
 
-function projectedCallContent(call: ProjectedSourceCall): import("../../definition/primitives/source-view.tsx").SourceCallContent {
+function projectedCallContent<BlobRef>(
+  call: AttemptSourceDisplayCall<BlobRef>,
+): import("../../definition/primitives/source-view.tsx").SourceCallContent {
   const tone = projectedCallTone(call);
   if (call.target.kind === "source") {
     return {
@@ -147,23 +258,27 @@ function projectedCallContent(call: ProjectedSourceCall): import("../../definiti
   };
 }
 
-function projectedBlockContent(node: ProjectedSourceNode): import("../../definition/primitives/source-view.tsx").SourceBlockContent {
+function annotationEarnedPoints<BlobRef>(annotation: AttemptSourceDisplayAnnotation<BlobRef>): number | undefined {
+  if (annotation.kind !== "assertion-site" || !annotation.roles.includes("score")) return undefined;
+  const contribution = annotation.entry.entry.result.score;
+  return contribution.state === "earned" ? contribution.earned : undefined;
+}
+
+function projectedBlockContent<BlobRef>(node: AttemptSourceDisplayNode<BlobRef>): SourceBlockContent {
   return {
     path: node.file,
     lines: node.lines.map((line): SourceLine => {
-      const details = line.annotations.flatMap((annotation, index) => annotationNodes(annotation, `${node.file}:${line.line}:${index}`));
+      const fallback = { file: node.file, line: line.line };
+      const annotations = mergeAssertionSites(line.annotations);
+      const details = annotations.flatMap((annotation, index) => annotationNodes(annotation, `${node.file}:${line.line}:${index}`, fallback));
       const calls = line.calls.map(projectedCallContent);
-      const points = line.annotations.reduce((sum, annotation) => {
-        if (annotation.kind === "factUse" && annotation.use.useKind === "score" && annotation.use.outcome === "scored") return sum + annotation.use.earned;
-        return sum;
-      }, 0);
-      const hasPoints = line.annotations.some((annotation) =>
-        annotation.kind === "factUse" && annotation.use.useKind === "score" && annotation.use.outcome === "scored"
-      );
+      const points = annotations.reduce((sum, annotation) => sum + (annotationEarnedPoints(annotation) ?? 0), 0);
+      const hasPoints = annotations.some((annotation) => annotationEarnedPoints(annotation) !== undefined);
+      const tone = projectedLineTone({ ...line, annotations: [...annotations] });
       return {
         number: line.line,
         text: line.text,
-        ...(projectedLineTone(line) !== undefined ? { tone: projectedLineTone(line) } : {}),
+        ...(tone !== undefined ? { tone } : {}),
         ...(hasPoints ? { pill: formatPointsSuffix(points) } : {}),
         ...(line.aborted ? { aborted: true } : {}),
         ...(details.length > 0 ? { details } : {}),
@@ -282,16 +397,20 @@ export function embedConversationInSource(
   return { source: embeddedSource, conversation: remainingConversation };
 }
 
-/** AnnotatedSourceResult 的完整调用树到 SourceView Content；不再做裁行或展开决策。 */
-export function projectedSourceContent(
-  data: ProjectedSourceContent | null,
-  locator?: import("../../../record/locator.ts").AttemptLocator,
+/**
+ * Existing source-page adapter. Its input is a temporary pure display value;
+ * a later assertion-source projector will supply it without changing this
+ * renderer or turning Verdict/Score into line-local observations.
+ */
+export function projectedSourceContent<BlobRef>(
+  data: AttemptSourceDisplayInput<BlobRef> | null,
+  locator?: AttemptLocator,
 ): SourceContent | null {
   if (data === null) return null;
-  const unmapped: ReportNode[] = [
-    ...data.unmapped.facts.flatMap((fact, index) => factNodes(fact, `unmapped:fact${index}`)),
-    ...data.unmapped.uses.flatMap((use, index) => factUseNodes(use, `unmapped:use${index}`)),
-  ];
+  // Unmapped items have no coordinate, so merging them would invent a shared site.
+  const unmapped = data.unmapped.flatMap((annotation, index) =>
+    annotationNodes(annotation, `unmapped:${annotation.kind}:${index}`),
+  );
   return {
     spine: projectedBlockContent(data.spine),
     detached: data.detached.map(projectedBlockContent),
@@ -300,40 +419,189 @@ export function projectedSourceContent(
   };
 }
 
-export function attemptAssertionsContent(data: AttemptAssertionsData | null): TableContent | null {
-  if (data === null || (data.factResults.length === 0 && data.factUses.length === 0)) return null;
-  const rows: TableContentRow[] = [];
-  for (const [index, fact] of data.factResults.entries()) {
-    rows.push({
-      key: `fact:${fact.factId}:${index}`,
-      cells: {
-        kind: { kind: "text", text: "Fact" },
-        key: { kind: "text", text: fact.factId },
-        location: { kind: "text", text: sourceLocation(fact.producerLoc) },
-        outcome: { kind: "text", text: fact.outcome },
-        detail: { kind: "text", text: factDetail(fact) },
-      },
-    });
+function assertionKey<BlobRef>(entry: AssertionEntryReadV1<BlobRef>): string {
+  const { label, key } = entry.entry.display;
+  if (label !== undefined && key !== undefined && label !== key) return `${label} · ${key}`;
+  return label ?? key ?? entry.entry.entryId;
+}
+
+function assertionCriterion<BlobRef>(entry: AssertionEntryReadV1<BlobRef>): string {
+  const criterion = entry.entry.criterion;
+  if ("id" in criterion && typeof criterion.id === "string") return criterion.id;
+  if ("name" in criterion && typeof criterion.name === "string") return criterion.name;
+  return "unrecognized criterion";
+}
+
+function assertionOutcome<BlobRef>(entry: AssertionEntryReadV1<BlobRef>): string {
+  return entry.state === "available"
+    ? entry.entry.result.state
+    : `${entry.state} · ${entry.reason}`;
+}
+
+function scoreContributionDetail<BlobRef>(entry: AssertionEntryReadV1<BlobRef>): string {
+  const contribution = entry.entry.result.score;
+  switch (contribution.state) {
+    case "not-scored":
+      return "not scored";
+    case "earned":
+      return `earned ${contribution.earned} / ${contribution.points}`;
+    case "unavailable":
+      return `score unavailable · ${contribution.reason}`;
   }
-  for (const [index, use] of data.factUses.entries()) {
+}
+
+function assertionDetail<BlobRef>(entry: AssertionEntryReadV1<BlobRef>, source = "unmapped"): string {
+  const coverage = entry.entry.coverage;
+  const result = entry.entry.result;
+  const parts = [
+    `criterion: ${assertionCriterion(entry)}`,
+    `source: ${source}`,
+    ...(entry.entry.display.groupPath.length > 0 ? [`group: ${entry.entry.display.groupPath.join(" / ")}`] : []),
+    `coverage: ${coverage.state}`,
+    ...(coverage.state === "complete" ? [] : [coverage.reason]),
+    ...(result.state === "matched" ? [] : [`reason: ${result.reason}`]),
+    scoreContributionDetail(entry),
+    ...(entry.entry.limitations.length > 0 ? [`limitations: ${entry.entry.limitations.length}`] : []),
+  ];
+  return parts.join(" · ");
+}
+
+function assertionSourceLocation<BlobRef>(
+  data: AttemptAssertionsData<BlobRef>,
+  entry: AssertionEntryReadV1<BlobRef>,
+): string {
+  const sites = data.sites?.filter((candidate) => candidate.entryId === entry.entry.entryId) ?? [];
+  if (sites.length === 0) return "unmapped";
+  return sites
+    .map((site) => `${sourceLocation(site.location)} (${site.roles.join(", ")})`)
+    .join(", ");
+}
+
+function scoreDetail(score: ScoreProjectionV1): string {
+  switch (score.state) {
+    case "complete":
+      return `earned ${score.earned}`;
+    case "partial":
+      return `earned ${score.earned} · ${score.reasons.join(", ")}`;
+    case "unavailable":
+      return score.reasons.join(", ");
+  }
+}
+
+function projectionDetail<Value>(entry: AttemptSlotProjectedEntry<Value>): string {
+  if (entry.state !== "attachment-result") {
+    switch (entry.state) {
+      case "excluded":
+        return "excluded by the selected sample";
+      case "not-recorded":
+        return "no persisted Attempt is available";
+      case "core-invalid":
+        return "the selected Attempt core is invalid";
+    }
+  }
+  switch (entry.attachment.state) {
+    case "available":
+      return "available";
+    case "unavailable":
+      return "the Attachment is unavailable";
+    case "migration-required":
+      return `migration required · ${entry.attachment.command}`;
+    case "migration-unavailable":
+      return `migration unavailable · ${entry.attachment.reason}`;
+    case "unsupported":
+      return `unsupported schema · ${entry.attachment.schemaId}`;
+    case "invalid":
+      return "invalid Attachment payload";
+  }
+}
+
+function projectionState<Value>(entry: AttemptSlotProjectedEntry<Value>): string {
+  return entry.state === "attachment-result" ? entry.attachment.state : entry.state;
+}
+
+function projectionRow<Value>(kind: string, entry: AttemptSlotProjectedEntry<Value>): TableContentRow {
+  return {
+    key: `${kind.toLowerCase()}:projection`,
+    cells: {
+      kind: { kind: "text", text: kind },
+      key: { kind: "text", text: "attempt" },
+      location: { kind: "text", text: "attempt" },
+      outcome: { kind: "text", text: projectionState(entry) },
+      detail: { kind: "text", text: projectionDetail(entry) },
+    },
+  };
+}
+
+export function attemptAssertionsContent<BlobRef>(data: AttemptAssertionsData<BlobRef> | null): TableContent | null {
+  if (data === null) return null;
+  const rows: TableContentRow[] = [];
+  if (data.verdict.state === "attachment-result" && data.verdict.attachment.state === "available") {
     rows.push({
-      key: `use:${use.key ?? use.label ?? index}:${index}`,
+      key: "verdict",
       cells: {
-        kind: { kind: "text", text: "Fact use" },
-        key: { kind: "text", text: factUseKey(use) },
-        location: { kind: "text", text: sourceLocation(use.consumerLoc) },
-        outcome: { kind: "text", text: use.outcome },
-        detail: { kind: "text", text: factUseDetail(use) },
+        kind: { kind: "text", text: "Verdict" },
+        key: { kind: "text", text: "attempt" },
+        location: { kind: "text", text: "attempt" },
+        outcome: { kind: "text", text: data.verdict.attachment.value },
+        detail: { kind: "text", text: "four-state Verdict" },
       },
     });
+  } else {
+    rows.push(projectionRow("Verdict", data.verdict));
+  }
+
+  if (data.entries.state === "attachment-result" && data.entries.attachment.state === "available") {
+    if (data.entries.attachment.value.length === 0) {
+      rows.push({
+        key: "assertions:empty",
+        cells: {
+          kind: { kind: "text", text: "Assertions" },
+          key: { kind: "text", text: "attempt" },
+          location: { kind: "text", text: "attempt" },
+          outcome: { kind: "text", text: "recorded" },
+          detail: { kind: "text", text: "no Assertion entries" },
+        },
+      });
+    }
+    for (const [index, entry] of data.entries.attachment.value.entries()) {
+      const source = assertionSourceLocation(data, entry);
+      const groupPath = entry.entry.display.groupPath.join(" / ");
+      rows.push({
+        key: `assertion:${entry.entry.entryId}:${index}`,
+        cells: {
+          kind: { kind: "text", text: "Assertion" },
+          key: { kind: "text", text: assertionKey(entry) },
+          location: { kind: "text", text: source === "unmapped" ? (groupPath || "attempt") : `${source}${groupPath ? ` · ${groupPath}` : ""}` },
+          outcome: { kind: "text", text: assertionOutcome(entry) },
+          detail: { kind: "text", text: assertionDetail(entry, source) },
+        },
+      });
+    }
+  } else {
+    rows.push(projectionRow("Assertions", data.entries));
+  }
+
+  if (data.score !== undefined && data.score.state === "attachment-result" && data.score.attachment.state === "available") {
+    rows.push({
+      key: "score",
+      cells: {
+        kind: { kind: "text", text: "Score" },
+        key: { kind: "text", text: "attempt" },
+        location: { kind: "text", text: "attempt" },
+        outcome: { kind: "text", text: data.score.attachment.value.state },
+        detail: { kind: "text", text: scoreDetail(data.score.attachment.value) },
+      },
+    });
+  } else if (data.score !== undefined) {
+    rows.push(projectionRow("Score", data.score));
   }
   return {
     columns: [
       { key: "kind", header: "Kind" },
       { key: "key", header: "Key" },
-      { key: "location", header: "Producer / consumer" },
-      { key: "outcome", header: localizedMessage("attemptAssertions.outcome") },
-      { key: "detail", header: localizedMessage("attemptAssertions.detail") },
+      { key: "location", header: "Scope" },
+      { key: "outcome", header: "State" },
+      { key: "detail", header: "Detail" },
     ],
     rows,
   };
@@ -510,75 +778,6 @@ function conversationEntryOf(reply: AttemptConversationReply): ConversationEntry
       return { kind: "compaction", preview: reply.reason ?? "context compacted" };
   }
 }
-
-function sourceLocation(loc: { readonly file: string; readonly line: number } | undefined): string {
-  return loc === undefined ? "unmapped" : `${loc.file}:${loc.line}`;
-}
-
-function factToneClass(outcome: string, gate = false): string {
-  if (outcome === "passed" || outcome === "scored") return "niceeval-tone-good";
-  if (outcome === "unavailable" || outcome.startsWith("notReached")) return "niceeval-tone-na";
-  return gate ? "niceeval-tone-bad" : "niceeval-tone-warn";
-}
-
-function factDetail(fact: EvaluationFactResult): string {
-  const parts = [`producer: ${sourceLocation(fact.producerLoc)}`];
-  if (fact.dependencyFactIds.length > 0) parts.push(`depends on: ${fact.dependencyFactIds.join(", ")}`);
-  if (fact.outcome === "scored") parts.push(`score: ${fact.normalizedScore}`);
-  if ("reason" in fact) parts.push(`reason: ${summaryText(fact.reason)}`);
-  if (fact.outcome === "errored") parts.push(`error: ${fact.error.code}: ${summaryText(fact.error.message)}`);
-  if (fact.expected !== undefined) parts.push(`expected: ${summaryText(fact.expected)}`);
-  if (fact.received !== undefined) parts.push(`received: ${summaryText(fact.received)}`);
-  if (fact.explanation !== undefined) parts.push(`explanation: ${summaryText(fact.explanation)}`);
-  if (fact.evidence !== undefined) parts.push(`evidence: ${summaryText(fact.evidence)}`);
-  return parts.join(" · ");
-}
-
-function factUseKey(use: FactUseResult): string {
-  if (use.key !== undefined) return use.key;
-  if (use.useKind === "score") return use.label;
-  return use.label ?? use.method;
-}
-
-function factUseDetail(use: FactUseResult): string {
-  const parts = [`consumer: ${sourceLocation(use.consumerLoc)}`];
-  if (use.useKind === "verdict") {
-    parts.push(`Fact: ${use.target.factId}`);
-    if (use.target.kind === "score") parts.push(`at least: ${use.target.atLeast}`);
-  } else if (use.input.kind === "direct") {
-    parts.push(`direct: ${formatPointsSuffix(use.input.earned)}`);
-  } else {
-    parts.push(`Fact: ${use.input.factId} / max ${use.input.max}`);
-  }
-  if (use.useKind === "score" && use.outcome === "scored") parts.push(`earned: ${formatPointsSuffix(use.earned)}`);
-  if ("reason" in use) parts.push(`reason: ${summaryText(use.reason)}`);
-  if (use.outcome === "errored") parts.push(`error: ${use.error.code}: ${summaryText(use.error.message)}`);
-  return parts.join(" · ");
-}
-
-function factNodes(fact: EvaluationFactResult, key: string): ReportNode[] {
-  return [
-    <Text key={`${key}:head`} className={`niceeval-source-assertion ${factToneClass(fact.outcome)}`}>
-      {`Fact ${fact.name} [${fact.factId}] · ${fact.factKind} ${fact.outcome}`}
-    </Text>,
-    <Text key={`${key}:body`} className="niceeval-source-assertion-body">
-      {factDetail(fact)}
-    </Text>,
-  ];
-}
-
-function factUseNodes(use: FactUseResult, key: string): ReportNode[] {
-  const gate = use.useKind === "verdict" && use.outcome === "failed";
-  return [
-    <Text key={`${key}:head`} className={`niceeval-source-assertion ${factToneClass(use.outcome, gate)}`}>
-      {`Fact use ${factUseKey(use)} · ${use.useKind} ${use.outcome}`}
-    </Text>,
-    <Text key={`${key}:body`} className="niceeval-source-assertion-body">
-      {factUseDetail(use)}
-    </Text>,
-  ];
-}
-
 
 export function attemptConversationContent(data: AttemptConversationData | null): ConversationContent | null {
   if (data === null) return null;

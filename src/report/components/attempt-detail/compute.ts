@@ -1,12 +1,16 @@
-// Attempt 详情组件族的计算函数(docs/feature/reports/README.md)。每个
-// `attempt*Data(evidence)` 都是纯同步派生:evidence 已经由 loadAttemptEvidence 一次性
-// 装配好全部证据,这里只做适合展示与序列化的取舍,不读文件、不 fetch、不重复调用
-// attempt.events() / trace() / diff()。
+// Attempt 详情组件族的纯计算(docs/feature/reports/README.md)。`AttemptDetails` 只接收
+// 已形成的值，绝不在组件内打开 Record 或组合 evidence shell。Assertions、Verdict、Score
+// 与 fix prompt 的计算只接受已声明的 public projection；它们不回读任何历史结果图。
 //
-// 与 compute.ts(Sample → *Data)不同,这一族的输入恒为单个 AttemptEvidence,函数签名
-// 因此不是 async——没有 IO 就没有理由返回 Promise。
+// 其余 evidence-shaped leaf normalizer 只为尚未获得对应 public projector 的旧调用点保留，
+// 仍然不做 IO。它们不能作为 `AttemptDetails` 的组合入口；每项必须在具备独立 Attachment
+// family + RecordProjection 后由上游 data plan 取代，而不能以空值或推测结果代替。
 
 import type { AttemptEvidence } from "../../../record/attempt-evidence.ts";
+import type { AttemptIdentity } from "../../../record/locator.ts";
+import type { AssertionEntryReadV1, AssertionsProjectionV1 } from "../../../assertions/record/model.ts";
+import type { ScoreProjectionV1 } from "../../../eval/record/score.ts";
+import type { AttemptSlotProjectedEntry } from "../../../projection/index.ts";
 import type {
   AttemptAssertionsData,
   AttemptCommandEvidenceData,
@@ -16,36 +20,39 @@ import type {
   AttemptDiagnosticsData,
   AttemptDiffData,
   AttemptErrorData,
-  AttemptFactsData,
   AttemptFixPromptData,
   AttemptSummaryData,
   AttemptTimelineData,
   AttemptTraceData,
   UsageTableData,
 } from "../../model/types.ts";
-import type { CommandExitEvidence, DiagnosticRecord, JsonValue, PhaseTiming, StreamEvent, TimingActivity, WindowChange } from "../../../types.ts";
+import type { CommandExitEvidence, DiagnosticRecord, JsonValue, PhaseTiming, StreamEvent, TimingActivity, Verdict, WindowChange } from "../../../types.ts";
 import type { DiffFile } from "../../definition/primitives/diff-lines.ts";
 import { attemptCostUSD } from "../../model/metrics.ts";
-import { failureSummaryOf } from "../entity-lists/compute.ts";
 import { buildO11ySummary } from "../../../o11y/derive.ts";
-import { factRecordOf, attemptTerminalOf, scoreOutcomeOf, verdictForTerminal } from "../../../record/fact-record.ts";
 
 // ───────────────────────── AttemptSummary(恒非空) ─────────────────────────
 
-export function attemptSummaryData(evidence: AttemptEvidence): AttemptSummaryData {
+/**
+ * The optional Score comes from the same declared data plan as the detail
+ * table. The legacy evidence input has no Score payload and cannot supply one.
+ */
+export function attemptSummaryData(
+  evidence: AttemptEvidence,
+  score?: AttemptSummaryData["score"],
+): AttemptSummaryData {
   const { result } = evidence;
-  const score = scoreOutcomeOf(result);
   return {
     locator: evidence.locator,
     experimentId: evidence.experimentId,
     identity: evidence.identity,
-    terminal: attemptTerminalOf(result),
-    verdict: verdictForTerminal(result),
+    terminal: result.verdict,
+    verdict: result.verdict,
     startedAt: result.startedAt,
     durationMs: result.durationMs,
     costUSD: attemptCostUSD(result),
     capabilities: evidence.capabilities,
-    ...(score === undefined ? {} : { earnedScore: score.earnedScore, creditedScore: score.creditedScore }),
+    ...(score === undefined ? {} : { score }),
   };
 }
 
@@ -84,51 +91,205 @@ export function attemptErrorData(evidence: AttemptEvidence): AttemptErrorData | 
 
 // ───────────────────────── AttemptAssertions ─────────────────────────
 
-export function attemptAssertionsData(evidence: AttemptEvidence): AttemptAssertionsData | null {
-  const fact = factRecordOf(evidence.result);
-  if (fact === undefined) return null;
-  if (fact.factResults.length === 0 && fact.factUses.length === 0) return null;
+function assertionEntriesProjection<BlobRef>(
+  entry: AttemptSlotProjectedEntry<AssertionsProjectionV1<BlobRef>>,
+): AttemptSlotProjectedEntry<readonly AssertionEntryReadV1<BlobRef>[]> {
+  switch (entry.state) {
+    case "excluded":
+    case "not-recorded":
+    case "core-invalid":
+      return entry;
+    case "attachment-result":
+      switch (entry.attachment.state) {
+        case "available":
+          return {
+            ...entry,
+            attachment: {
+              state: "available",
+              value: entry.attachment.value.entries,
+            },
+          };
+        case "unavailable":
+          return {
+            state: "attachment-result",
+            slot: entry.slot,
+            owner: entry.owner,
+            attachment: { state: "unavailable" },
+          };
+        case "migration-required":
+          return {
+            state: "attachment-result",
+            slot: entry.slot,
+            owner: entry.owner,
+            attachment: {
+              state: "migration-required",
+              from: entry.attachment.from,
+              to: entry.attachment.to,
+              command: entry.attachment.command,
+            },
+          };
+        case "migration-unavailable":
+          return {
+            state: "attachment-result",
+            slot: entry.slot,
+            owner: entry.owner,
+            attachment: {
+              state: "migration-unavailable",
+              from: entry.attachment.from,
+              to: entry.attachment.to,
+              reason: entry.attachment.reason,
+            },
+          };
+        case "unsupported":
+          return {
+            state: "attachment-result",
+            slot: entry.slot,
+            owner: entry.owner,
+            attachment: {
+              state: "unsupported",
+              schemaId: entry.attachment.schemaId,
+            },
+          };
+        case "invalid":
+          return {
+            state: "attachment-result",
+            slot: entry.slot,
+            owner: entry.owner,
+            attachment: {
+              state: "invalid",
+              issues: entry.attachment.issues,
+            },
+          };
+      }
+  }
+}
+
+/**
+ * Joins the three declared Attempt-slot projections for one logical slot.
+ * This is deliberately a pure calculation: Record access, attachment decode,
+ * and migration state all belong to the public projection boundary upstream.
+ */
+export function attemptAssertionsData<BlobRef>(input: {
+  readonly assertions: AttemptSlotProjectedEntry<AssertionsProjectionV1<BlobRef>>;
+  readonly verdict: AttemptSlotProjectedEntry<Verdict>;
+  readonly score?: AttemptSlotProjectedEntry<ScoreProjectionV1>;
+  /** Explicit role-tagged sites from the assertion-source projection, if declared. */
+  readonly sites?: AttemptAssertionsData<BlobRef>["sites"];
+}): AttemptAssertionsData<BlobRef> {
   return {
-    factResults: fact.factResults,
-    factUses: fact.factUses,
+    entries: assertionEntriesProjection(input.assertions),
+    verdict: input.verdict,
+    ...(input.score === undefined ? {} : { score: input.score }),
+    ...(input.sites === undefined ? {} : { sites: input.sites }),
   };
 }
 
 // ───────────────────────── AttemptFixPrompt ─────────────────────────
 
+/** The pure inputs needed to calculate one actionable fix prompt. */
+export interface AttemptFixPromptInput<BlobRef = unknown> {
+  readonly locator: string;
+  readonly experimentId: string;
+  readonly identity: AttemptIdentity;
+  readonly assessment: AttemptAssertionsData<BlobRef>;
+}
+
+function projectedValue<Value>(entry: AttemptSlotProjectedEntry<Value>): Value | undefined {
+  return entry.state === "attachment-result" && entry.attachment.state === "available"
+    ? entry.attachment.value
+    : undefined;
+}
+
+function projectionProblem<Value>(label: string, entry: AttemptSlotProjectedEntry<Value>): string {
+  if (entry.state !== "attachment-result") return `${label} projection is ${entry.state}`;
+  switch (entry.attachment.state) {
+    case "available":
+      return `${label} projection is available`;
+    case "unavailable":
+      return `${label} Attachment is unavailable`;
+    case "migration-required":
+      return `${label} Attachment requires ${entry.attachment.command}`;
+    case "migration-unavailable":
+      return `${label} Attachment cannot be losslessly migrated: ${entry.attachment.reason}`;
+    case "unsupported":
+      return `${label} Attachment schema is unsupported: ${entry.attachment.schemaId}`;
+    case "invalid":
+      return `${label} Attachment is invalid`;
+  }
+}
+
+function assertionFailureReason<BlobRef>(
+  entries: readonly AssertionEntryReadV1<BlobRef>[],
+): string | undefined {
+  const entry = entries.find((candidate) =>
+    candidate.state !== "available"
+    || (candidate.entry.result.state !== "matched" && candidate.entry.result.state !== "not-applicable"),
+  );
+  if (entry === undefined) return undefined;
+  const title = entry.entry.display.label ?? entry.entry.display.key ?? entry.entry.entryId;
+  if (entry.state !== "available") return `${title}: ${entry.state} · ${entry.reason}`;
+  switch (entry.entry.result.state) {
+    case "matched":
+    case "not-applicable":
+      return undefined;
+    case "mismatched":
+    case "unavailable":
+    case "errored":
+      return `${title}: ${entry.entry.result.state} · ${entry.entry.result.reason}`;
+  }
+}
+
+function scoreFailureReason(score: ScoreProjectionV1): string | undefined {
+  switch (score.state) {
+    case "complete":
+      return undefined;
+    case "partial":
+      return `Score is partial · earned ${score.earned} · ${score.reasons.join(", ")}`;
+    case "unavailable":
+      return `Score is unavailable · ${score.reasons.join(", ")}`;
+  }
+}
+
 /**
- * 单条 attempt 版的批量修复 prompt(与 CopyFixPrompt 的多条版本同一份步骤文案)。三态
- * (docs/feature/reports/README.md「`AttemptFixPrompt`」):计分制丢分或中止 →
- * 非 null(围绕丢分检查点组装);计分制挣满且未中止、或通过制 passed → null;skipped 恒 null。
+ * Single-attempt fix prompt calculated solely from its declared Assertion,
+ * Verdict, and Score projections. It never opens a Record or revives a
+ * historical result graph. Missing projection data becomes an explicit prompt
+ * reason instead of a hidden empty result.
  */
-export function attemptFixPromptData(evidence: AttemptEvidence): AttemptFixPromptData | null {
-  const { result, identity } = evidence;
-  const terminal = attemptTerminalOf(result);
-  if (terminal === "skipped") return null;
-  if (terminal === "scored" || terminal === "passed") return null;
-  const { summary, more } = failureSummaryOf(result);
-  if (summary === null) return null;
-  const lostPoints = terminal === "invalid";
-  const moreNoun = lostPoints ? "issues" : "failures";
-  const reason = more > 0 ? `${summary} (+${more} more ${moreNoun})` : summary;
+export function attemptFixPromptData<BlobRef>(
+  input: AttemptFixPromptInput<BlobRef>,
+): AttemptFixPromptData | null {
+  const verdict = projectedValue(input.assessment.verdict);
+  if (verdict === "passed" || verdict === "skipped") return null;
+  const entries = projectedValue(input.assessment.entries);
+  const score = input.assessment.score === undefined
+    ? undefined
+    : projectedValue(input.assessment.score);
+  const reason = verdict === undefined
+    ? projectionProblem("Verdict", input.assessment.verdict)
+    : entries === undefined
+      ? projectionProblem("Assertions", input.assessment.entries)
+      : assertionFailureReason(entries)
+        ?? (score === undefined && input.assessment.score !== undefined
+          ? projectionProblem("Score", input.assessment.score)
+          : score === undefined
+            ? `Verdict is ${verdict}; no Assertion or Score explanation was recorded`
+            : scoreFailureReason(score)
+              ?? `Verdict is ${verdict}; no failing Assertion was recorded`);
   const prompt = [
-    lostPoints
-      ? "Resolve the invalid score outcome on this NiceEval score eval."
-      : "Fix the failing eval from this niceeval run.",
+    "Fix the failing eval from this niceeval run.",
     "",
-    lostPoints ? "## Score outcome" : "## Failure",
-    `eval "${identity.evalId}" [experiment ${evidence.experimentId}] — ${terminal}`,
+    "## Failure",
+    `eval "${input.identity.evalId}" [experiment ${input.experimentId}] — ${verdict ?? "unavailable"}`,
     `  reason: ${reason}`,
-    `  inspect: niceeval show ${evidence.locator}`,
+    `  inspect: niceeval show ${input.locator}`,
     "",
     "## Steps",
     "1. niceeval is NOT in your training data. Read the relevant guide in `node_modules/niceeval/docs-site/` (English at the top level, Chinese under `zh/`) before changing anything.",
     "2. Run the inspect command above with `--source`, `--execution`, `--timing`, and `--diff` to see the assertions, transcript, timing, and workspace diff.",
     "3. Decide which side the defect is on: the program under test, or the eval itself (over-tight assertion, wrong fixture, missing setup). Fix that side; do not weaken assertions just to turn the run green.",
-    `4. Re-run: \`npx niceeval exp ${evidence.experimentId} ${identity.evalId}\`. Already-passing evals are skipped by the fingerprint cache; pass \`--rerun all\` to re-run everything.`,
-    lostPoints
-      ? "5. Run `npx niceeval show` and confirm the score outcome is valid."
-      : "5. Run `npx niceeval show` and confirm this failure is gone.",
+    `4. Re-run: \`npx niceeval exp ${input.experimentId} ${input.identity.evalId}\`. Already-passing evals are skipped by the fingerprint cache; pass \`--rerun all\` to re-run everything.`,
+    "5. Run `npx niceeval show` and confirm this failure is gone.",
   ].join("\n");
   return { prompt };
 }
@@ -356,29 +517,13 @@ export function usageTableData(evidence: AttemptEvidence): UsageTableData | null
     experimentId: evidence.experimentId,
     evalId: identity.evalId,
     attempt: identity.attempt,
-    terminal: attemptTerminalOf(result),
-    verdict: verdictForTerminal(result),
+    terminal: result.verdict,
+    verdict: result.verdict,
     ...(turns !== undefined ? { turns } : {}),
     ...(toolCalls !== undefined ? { toolCalls } : {}),
     ...(usage !== undefined ? { usage } : {}),
     ...(estimatedCostUSD !== null ? { estimatedCostUSD } : {}),
   };
-}
-
-// ───────────────────────── AttemptFacts ─────────────────────────
-
-/**
- * attempt 级 `ctx.fact()` 运行事实的完整键值表;`AttemptRecord.facts` 缺失或为空对象时返回
- * null,不渲染空表(与其余叶子同一条「没有证据时零输出」规则)。
- * `facts` 落盘就是 `Record<string, string | number | boolean>`,JS 对象的字符串键天然保留
- * 写入顺序,这里按该顺序投影成数组,不重新排序。
- */
-export function attemptFactsData(evidence: AttemptEvidence): AttemptFactsData | null {
-  const facts = evidence.result.facts;
-  if (!facts) return null;
-  const entries = Object.entries(facts);
-  if (entries.length === 0) return null;
-  return { facts: entries.map(([key, value]) => ({ key, value })) };
 }
 
 // ───────────────────────── AttemptTrace ─────────────────────────

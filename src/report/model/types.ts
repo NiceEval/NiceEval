@@ -5,7 +5,6 @@
 
 import type { AttemptHandle, Sample, SampleCoverage, SampleIssue, SampleMissing, Run } from "../../record/types.ts";
 import type { AttemptIdentity, AttemptLocator } from "../../record/locator.ts";
-import type { AttemptEvidenceCapabilities } from "../../record/attempt-evidence.ts";
 import type {
   AttemptError,
   DiagnosticRecord,
@@ -20,8 +19,9 @@ import type {
   Usage,
   Verdict,
 } from "../../types.ts";
-import type { EvaluationFactResult } from "../../assertions/types.ts";
-import type { FactUseResult, AttemptTerminal } from "../../record/fact-record.ts";
+import type { AssertionEntryReadV1 } from "../../assertions/record/model.ts";
+import type { ScoreProjectionV1 } from "../../eval/record/score.ts";
+import type { AttemptSlotProjectedEntry } from "../../projection/index.ts";
 import type { DiffFile } from "../definition/primitives/diff-lines.ts";
 import type { CalloutGroup } from "../definition/primitives/callouts-logic.ts";
 import type { LocalizedText, ReportLocale } from "./locale.ts";
@@ -493,8 +493,8 @@ export interface AttemptListItem {
   agent: string;
   /** 该 Attempt 所属 Eval 的定义期题型；渲染面据此区分不适用读数与缺失读数。 */
   evaluationKind: "pass" | "score";
-  /** Fact score attempts retain their exact terminal state for renderers/JSON. */
-  terminal: AttemptTerminal;
+  /** The four-state Verdict is the only terminal status rendered or serialized here. */
+  terminal: Verdict;
   verdict: Verdict;
   /**
    * 该轮的单行结果摘要,已按断言摘要契约折好:failed 取主失败断言摘要,
@@ -612,10 +612,17 @@ export interface ExperimentDetailsData {
 
 // ───────────────────────── Attempt 详情组件族 ─────────────────────────
 //
-// 11 个叶子组件的 data 契约(docs/feature/reports/README.md)。每个都由
-// 同名 `attempt*Data(evidence: AttemptEvidence)` 同步派生,不读文件、不 fetch——
-// loadAttemptEvidence 已经一次性装配好全部证据。`AttemptSummary` 恒非空;其余在对应
-// 能力位为空时函数返回 null,两面渲染为空输出。
+// 11 个叶子组件的 data 契约(docs/feature/reports/README.md)。它们只接收已经形成的
+// 投影或 Calculation 值，不能持有 Record reader、路径或 evidence shell。`AttemptSummary`
+// 恒非空；其它叶子由上游投影明确给出可用值或数据状态。
+
+/** Pure availability flags supplied by the declared detail-data plan. */
+export interface AttemptDetailCapabilities {
+  readonly source: boolean;
+  readonly execution: boolean;
+  readonly timing: boolean;
+  readonly diff: boolean;
+}
 
 /** `AttemptSummary` 的 data:身份、verdict、时间与成本——恒非空。 */
 export interface AttemptSummaryData {
@@ -623,17 +630,15 @@ export interface AttemptSummaryData {
   /** 展示归属；不参与 locator 的 `{ runId, evalId, attempt }` 哈希。 */
   experimentId: string;
   identity: AttemptIdentity;
-  /** Exact Fact score terminal; `verdict` is only the four-way compatibility projection. */
-  terminal: AttemptTerminal;
+  /** The one public Attempt status is the four-state Verdict. */
+  terminal: Verdict;
   verdict: Verdict;
   startedAt?: string;
   durationMs: number;
   costUSD: number | null;
-  capabilities: AttemptEvidenceCapabilities;
-  /** Score outcome's diagnostic raw total; never used for aggregation. */
-  earnedScore?: number;
-  /** Score outcome's aggregation value: invalid is 0, unavailable/errored/skipped are null. */
-  creditedScore?: number | null;
+  capabilities: AttemptDetailCapabilities;
+  /** Independent Score projection; absent only when the detail plan did not request it. */
+  score?: AttemptSlotProjectedEntry<ScoreProjectionV1>;
 }
 
 /**
@@ -650,12 +655,123 @@ export interface AttemptErrorData extends AttemptError {
 }
 
 /**
- * `AttemptAssertions` 保留组件名，但数据只包含 Fact producer 与 Fact use consumer。
+ * `AttemptAssertions` is an entirely pure join of three Attempt-slot
+ * RecordProjections. The attachment-result state remains visible so missing,
+ * unsupported, and invalid data cannot be presented as a passing attempt.
  */
-export interface AttemptAssertionsData {
-  factResults: readonly EvaluationFactResult[];
-  factUses: readonly FactUseResult[];
+export interface AttemptAssertionsData<BlobRef = unknown> {
+  /** Assertions attachment, projected to sealed entries in declaration order. */
+  entries: AttemptSlotProjectedEntry<readonly AssertionEntryReadV1<BlobRef>[]>;
+  /** The independent four-state Verdict attachment. */
+  verdict: AttemptSlotProjectedEntry<Verdict>;
+  /** Score attachment is absent only when the report did not request Score. */
+  score?: AttemptSlotProjectedEntry<ScoreProjectionV1>;
+  /**
+   * Optional source-origin sites for Assertion rows. Assertions v1 has no
+   * source relationship, so a data plan must declare the owner that can
+   * provide these role-tagged sites instead of guessing one location.
+   */
+  sites?: readonly AttemptAssertionSourceSite[];
 }
+
+/** One role-tagged source site associated with one durable Assertion entry. */
+export interface AttemptAssertionSourceSite {
+  readonly entryId: string;
+  readonly location: SourceLoc;
+  readonly roles: readonly [AttemptSourceAssertionRole, ...AttemptSourceAssertionRole[]];
+}
+
+/**
+ * Temporary pure input for the existing source display adapter. This is not a
+ * RecordAttachment schema, a projector declaration, or a stable source API:
+ * the future Attempt-owned assertion-source relationship owns that contract.
+ * It only preserves the current display while the owner is implemented.
+ */
+export interface AttemptSourceDisplayInput<BlobRef = unknown> {
+  readonly spine: AttemptSourceDisplayNode<BlobRef>;
+  readonly detached: readonly AttemptSourceDisplayNode<BlobRef>[];
+  /** Assertion sites/send annotations that have no resolvable source line. */
+  readonly unmapped: readonly AttemptSourceDisplayAnnotation<BlobRef>[];
+}
+
+export interface AttemptSourceDisplayNode<BlobRef = unknown> {
+  readonly file: string;
+  readonly sha256: string;
+  readonly lines: readonly AttemptSourceDisplayLine<BlobRef>[];
+}
+
+export interface AttemptSourceDisplayLine<BlobRef = unknown> {
+  readonly line: number;
+  readonly text: string;
+  readonly annotations: readonly AttemptSourceDisplayAnnotation<BlobRef>[];
+  readonly calls: readonly AttemptSourceDisplayCall<BlobRef>[];
+  readonly aborted?: true;
+}
+
+/** Summary is formed by the source projection, not recomputed in the view. */
+export interface AttemptSourceDisplaySummary {
+  readonly checks: number;
+  readonly passed: number;
+  readonly failed: number;
+  readonly unavailable: number;
+  readonly points?: { readonly earned: number; readonly available: number };
+  readonly aborted: boolean;
+}
+
+export interface AttemptSourceDisplayCall<BlobRef = unknown> {
+  readonly summary: AttemptSourceDisplaySummary;
+  readonly open: boolean;
+  readonly target:
+    | { readonly kind: "source"; readonly node: AttemptSourceDisplayNode<BlobRef> }
+    | {
+        readonly kind: "package";
+        readonly package: string;
+        readonly calls: readonly AttemptSourceDisplayCall<BlobRef>[];
+      }
+    | {
+        readonly kind: "unavailable";
+        readonly file: string;
+        readonly line?: number;
+        readonly annotations: readonly AttemptSourceDisplayAnnotation<BlobRef>[];
+        readonly calls: readonly AttemptSourceDisplayCall<BlobRef>[];
+      };
+}
+
+/** The role(s) on a source coordinate for one Assertion entry. */
+export type AttemptSourceAssertionRole =
+  | "declaration"
+  | "threshold"
+  | "score"
+  | "gate"
+  | "optional"
+  | "stop";
+
+/**
+ * One displayed Assertion site. Multiple roles at the same coordinate are
+ * intentionally one item, so the view does not invent duplicate events. The
+ * entry is an already-joined display value; it is not the shape the future
+ * assertion-source Attachment will persist.
+ */
+export interface AttemptSourceAssertionSite<BlobRef = unknown> {
+  readonly kind: "assertion-site";
+  readonly entry: AssertionEntryReadV1<BlobRef>;
+  readonly roles: readonly [AttemptSourceAssertionRole, ...AttemptSourceAssertionRole[]];
+  readonly sourceOrder?: number;
+  /** Extra already-renderable source-owner detail; no storage schema is implied. */
+  readonly details?: readonly { readonly label: string; readonly value: string }[];
+}
+
+export interface AttemptSourceSendSite {
+  readonly kind: "send";
+  readonly label: string;
+  readonly status: "completed" | "failed" | "waiting";
+  readonly durationMs?: number;
+  readonly sourceOrder?: number;
+}
+
+export type AttemptSourceDisplayAnnotation<BlobRef = unknown> =
+  | AttemptSourceAssertionSite<BlobRef>
+  | AttemptSourceSendSite;
 
 /** `AttemptFixPrompt` 的 data:单条 attempt 的复制修复 prompt;passed/skipped 或无可操作失败时 null。 */
 export interface AttemptFixPromptData {
@@ -737,22 +853,13 @@ export interface UsageTableData {
   experimentId: string;
   evalId: string;
   attempt: number;
-  /** Exact score terminal; verdict remains the compatibility projection for tallies. */
-  terminal: AttemptTerminal;
+  /** The four-state Verdict is the identity status for this usage row. */
+  terminal: Verdict;
   verdict: Verdict;
   turns?: number;
   toolCalls?: number;
   usage?: Usage;
   estimatedCostUSD?: number;
-}
-
-/**
- * `AttemptFacts` 的 data:attempt 作用域 `ctx.fact()` 上报的运行事实完整键值表
- * (见 docs/feature/record/architecture.md#facts运行事实)，按落盘的 key 插入顺序排列。
- * `AttemptRecord.facts` 缺失或为空对象时整个 data 为 null,不渲染空表。
- */
-export interface AttemptFactsData {
-  facts: { key: string; value: string | number | boolean }[];
 }
 
 /** `AttemptTrace` 的 data:不与 runner 节点合并的原始 OTel span 列表;没有 trace 时 null。 */

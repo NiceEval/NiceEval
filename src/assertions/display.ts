@@ -1,12 +1,19 @@
-// Fact/use display projections shared by CLI, report, and feedback surfaces.
+// Format-neutral projections for sealed Assertion, Verdict, and Score data.
+// Consumers must pass the exact attachment-derived values they hold; this
+// module never reconstructs details from a historical result graph.
 
-import type {
-  EvaluationFactResult,
-  PrimaryFactSummary,
-  ScoreFactAttemptOutcome,
-  ScoreFactUseResult,
-  VerdictFactUseResult,
-} from "./types.ts";
+import { defineAssertionsProjectorV1 } from "./record/attachment.ts";
+import type { ThirdPartyCriterionRegistryV1 } from "./record/codec.ts";
+import type { AssertionEntryReadV1, AssertionsProjectionV1 } from "./record/model.ts";
+import { defineScoreProjectorV1, type ScoreProjectionV1 } from "../eval/record/score.ts";
+import { defineVerdictProjectorV1, type VerdictStateV1 } from "../eval/record/verdict.ts";
+import type { RecordBlobRef } from "../record/attachment/index.ts";
+import {
+  attemptSlotProjection,
+  defineRecordAttachmentProjector,
+  type RecordProjection,
+} from "../projection/index.ts";
+import type { Verdict } from "../shared/types.ts";
 
 const SUMMARY_TEXT_MAX_CHARS = 240;
 
@@ -32,8 +39,18 @@ function shrinkTo(text: string, target: number): string {
   return text.length <= target ? text : `${text.slice(0, Math.max(0, target - 1))}…`;
 }
 
-/** Compact feedback text for one causal Fact/use. */
-export function compactFactSummary(summary: PrimaryFactSummary): string {
+/** The portable fields required for a compact Assertion line. */
+export interface CompactAssertionSummary {
+  readonly title: string;
+  readonly matcher?: string;
+  readonly expected?: string;
+  readonly received?: string;
+  readonly reason?: string;
+  readonly additionalFailures: number;
+}
+
+/** Compact feedback text for one sealed Assertion result. */
+export function compactAssertionSummary(summary: CompactAssertionSummary): string {
   const parts = [summary.title];
   if (summary.matcher !== undefined) parts.push(summary.matcher);
   if (summary.expected !== undefined) parts.push(`expected ${summary.expected}`);
@@ -43,118 +60,155 @@ export function compactFactSummary(summary: PrimaryFactSummary): string {
   return parts.join(" · ");
 }
 
-/** Preserve the Fact/use identity while fitting a terminal feedback budget. */
-export function fitCompactFactSummary(summary: PrimaryFactSummary, maxChars: number): string {
+/** Preserve Assertion identity while fitting a terminal feedback budget. */
+export function fitCompactAssertionSummary(summary: CompactAssertionSummary, maxChars: number): string {
   const budget = Math.max(24, Math.floor(maxChars));
-  let full = compactFactSummary(summary);
+  let full = compactAssertionSummary(summary);
   if (full.length <= budget) return full;
-  let fitted: PrimaryFactSummary = {
+  let fitted: CompactAssertionSummary = {
     ...summary,
     title: shrinkTo(summary.title, Math.max(24, summary.title.length - (full.length - budget))),
   };
-  full = compactFactSummary(fitted);
+  full = compactAssertionSummary(fitted);
   if (full.length <= budget) return full;
   if (fitted.matcher !== undefined) {
     fitted = { ...fitted, matcher: shrinkTo(fitted.matcher, Math.max(16, fitted.matcher.length - (full.length - budget))) };
-    full = compactFactSummary(fitted);
+    full = compactAssertionSummary(fitted);
     if (full.length <= budget) return full;
   }
   return shrinkTo(full, budget);
 }
 
-/** A compact, format-neutral projection of a native Fact/use graph. */
-export interface FactDisplaySummary {
+/** A compact, format-neutral projection of sealed evaluation data. */
+export interface AssertionDisplaySummary {
   readonly text: string;
   readonly more: number;
 }
 
-type FactUse = VerdictFactUseResult | ScoreFactUseResult;
-
-function factUseId(use: FactUse): string | undefined {
-  return use.useKind === "verdict"
-    ? use.target.factId
-    : use.input.kind === "fact"
-      ? use.input.factId
-      : undefined;
+function entryTitle<BlobRef>(entry: AssertionEntryReadV1<BlobRef>): string {
+  return entry.entry.display.label ?? entry.entry.display.key ?? entry.entry.entryId;
 }
 
-function factUseTitle(use: FactUse): string {
-  return use.useKind === "score" ? use.label : use.label ?? use.key ?? use.method;
-}
-
-function factUseDetail(use: FactUse): string | undefined {
-  if (use.outcome === "errored") return `${use.error.code}: ${summaryText(use.error.message)}`;
-  if (use.outcome === "unavailable" || use.outcome === "notApplicable" || use.outcome.startsWith("notReached")) {
-    return summaryText((use as { readonly reason: string }).reason);
+function entryDetail<BlobRef>(entry: AssertionEntryReadV1<BlobRef>): string | undefined {
+  if (entry.state !== "available") return entry.reason;
+  const result = entry.entry.result;
+  switch (result.state) {
+    case "matched":
+      return undefined;
+    case "mismatched":
+    case "unavailable":
+    case "errored":
+    case "not-applicable":
+      return result.reason;
   }
-  return undefined;
+}
+
+function scoreSummary(score: ScoreProjectionV1): AssertionDisplaySummary {
+  switch (score.state) {
+    case "complete":
+      return { text: summaryText(`score complete · earned ${score.earned}`), more: 0 };
+    case "partial":
+      return {
+        text: summaryText(`score partial · earned ${score.earned} · ${score.reasons[0]}`),
+        more: score.reasons.length - 1,
+      };
+    case "unavailable":
+      return {
+        text: summaryText(`score unavailable · ${score.reasons[0]}`),
+        more: score.reasons.length - 1,
+      };
+  }
 }
 
 /**
- * One-line summary shared by report lists, `show --history`, and CLI history.
- * Every phrase names a Fact, a use, or the score terminal in the graph.
+ * One-line Assertion/Score summary for consumers that have current sealed
+ * attachment payloads. Entry-local decode faults stay local; no missing or
+ * unavailable source becomes a passed assertion or zero score.
  */
-export function factDisplaySummary(input: {
-  readonly factResults: readonly EvaluationFactResult[];
-  readonly factUses: readonly FactUse[];
-  readonly scoreResult?: ScoreFactAttemptOutcome;
-}): FactDisplaySummary | undefined {
-  const score = input.scoreResult;
-  if (score !== undefined && score.status !== "scored") {
-    const first = score.status === "errored"
-      ? score.errors[0]?.error.message ?? score.issues[0]?.reason
-      : score.status === "invalid" || score.status === "unavailable"
-        ? score.issues[0]?.kind === "error"
-          ? score.issues[0].error.message
-          : score.issues[0]?.reason
-        : score.reason;
-    const count = score.status === "errored"
-      ? score.errors.length + score.issues.length
-      : score.status === "invalid" || score.status === "unavailable"
-        ? score.issues.length
-        : 1;
+export function assertionDisplaySummary<BlobRef>(input: {
+  readonly entries: readonly AssertionEntryReadV1<BlobRef>[];
+  readonly verdict: Verdict;
+  readonly score?: ScoreProjectionV1;
+}): AssertionDisplaySummary | undefined {
+  if (input.score !== undefined && input.score.state !== "complete") return scoreSummary(input.score);
+
+  const problems = input.entries.filter((entry) =>
+    entry.state !== "available" || (
+      entry.entry.result.state !== "matched" && entry.entry.result.state !== "not-applicable"
+    )
+  );
+  if (problems.length > 0) {
+    const first = problems[0]!;
     return {
-      text: summaryText([
-        score.status,
-        `earned ${score.earnedScore}`,
-        `credited ${score.creditedScore === null ? "unavailable" : score.creditedScore}`,
-        first,
-      ].filter((part): part is string => part !== undefined).join(" · ")),
-      more: Math.max(0, count - 1),
+      text: summaryText([entryTitle(first), first.state === "available" ? first.entry.result.state : first.state, entryDetail(first)]
+        .filter((part): part is string => part !== undefined)
+        .join(" · ")),
+      more: problems.length - 1,
     };
   }
 
-  const problemUses = input.factUses
-    .filter((use) => use.outcome !== "passed" && use.outcome !== "scored" && use.outcome !== "notApplicable")
-    .sort((left, right) => left.sourceOrder - right.sourceOrder);
-  if (problemUses.length > 0) {
-    const first = problemUses[0]!;
-    return {
-      text: summaryText([factUseTitle(first), first.outcome, factUseDetail(first)].filter((part): part is string => part !== undefined).join(" · ")),
-      more: problemUses.length - 1,
-    };
-  }
+  if (input.score !== undefined) return scoreSummary(input.score);
+  return input.verdict === "passed" ? undefined : { text: input.verdict, more: 0 };
+}
 
-  const consumed = new Set(input.factUses.map(factUseId).filter((id): id is string => id !== undefined));
-  const problemFacts = input.factResults
-    .filter((fact) => consumed.has(fact.factId) && (fact.outcome === "unavailable" || fact.outcome === "errored" || fact.outcome.startsWith("notReached")))
-    .sort((left, right) => left.sourceOrder - right.sourceOrder);
-  if (problemFacts.length > 0) {
-    const first = problemFacts[0]!;
-    const detail = first.outcome === "errored"
-      ? `${first.error.code}: ${first.error.message}`
-      : (first as { readonly reason: string }).reason;
-    return { text: summaryText([first.name, first.outcome, detail].join(" · ")), more: problemFacts.length - 1 };
-  }
+/**
+ * The neutral Attempt-slot declarations needed by any display surface. Report
+ * authors include these in a RecordProjection plan; this helper neither opens
+ * a Record nor couples the result to a runner-specific evidence object.
+ */
+export interface AssertionDisplayProjectionsV1 {
+  readonly entries: RecordProjection<
+    "attempt-slot",
+    AssertionsProjectionV1<RecordBlobRef>
+  >;
+  readonly verdict: RecordProjection<"attempt-slot", VerdictStateV1>;
+  readonly score: RecordProjection<"attempt-slot", ScoreProjectionV1>;
+}
 
-  if (score?.status === "scored") {
-    return { text: summaryText(`scored · earned ${score.earnedScore} · credited ${score.creditedScore}`), more: 0 };
-  }
+export function defineAssertionDisplayProjectionsV1(
+  registry: ThirdPartyCriterionRegistryV1,
+): AssertionDisplayProjectionsV1 {
+  const assertions = defineAssertionsProjectorV1(registry);
+  const verdict = defineVerdictProjectorV1();
+  const score = defineScoreProjectorV1();
+  return Object.freeze({
+    entries: attemptSlotProjection(
+      defineRecordAttachmentProjector({
+        attachment: assertions.family,
+        project: assertions.project,
+      }),
+    ),
+    verdict: attemptSlotProjection(
+      defineRecordAttachmentProjector({
+        attachment: verdict.family,
+        project: verdict.project,
+      }),
+    ),
+    score: attemptSlotProjection(
+      defineRecordAttachmentProjector({
+        attachment: score.family,
+        project: score.project,
+      }),
+    ),
+  });
+}
 
-  const successfulScores = input.factResults
-    .flatMap((fact) => fact.factKind === "score" && fact.outcome === "scored" && consumed.has(fact.factId) ? [fact] : [])
-    .sort((left, right) => left.sourceOrder - right.sourceOrder);
-  if (successfulScores.length === 0) return undefined;
-  const first = successfulScores[0]!;
-  return { text: summaryText(`${first.name} · score ${first.normalizedScore}`), more: successfulScores.length - 1 };
+/**
+ * Result-only consumers can still report the durable Verdict and structured
+ * execution reason. They intentionally cannot invent Assertion or Score
+ * detail before their input is migrated to attachment projections.
+ */
+export function verdictDisplaySummary(input: {
+  readonly verdict: Verdict;
+  readonly error?: { readonly code: string; readonly message: string };
+  readonly skipReason?: string;
+}): AssertionDisplaySummary | undefined {
+  if (input.verdict === "passed") return undefined;
+  if (input.verdict === "errored" && input.error !== undefined) {
+    return { text: summaryText(`${input.error.code} · ${input.error.message}`), more: 0 };
+  }
+  if (input.verdict === "skipped" && input.skipReason !== undefined) {
+    return { text: summaryText(input.skipReason), more: 0 };
+  }
+  return { text: input.verdict, more: 0 };
 }
