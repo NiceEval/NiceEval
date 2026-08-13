@@ -124,9 +124,16 @@ test("view 重建项目模块、配置与 Record，失败时保留 last-good exe
         timeoutMs: 15_000,
         label: "current config import failure",
       });
-      const configUnavailable = await fetch(origin!);
-      expect(configUnavailable.status).toBe(503);
-      expect(await configUnavailable.text()).toContain("current target unavailable");
+      const configUnavailable = await pollUntil(
+        async () => {
+          const response = await fetch(origin!);
+          if (response.status !== 503) return undefined;
+          const body = await response.text();
+          return body.includes("current target unavailable") ? body : undefined;
+        },
+        { timeoutMs: 15_000, intervalMs: 100, label: "current config unavailable response" },
+      );
+      expect(configUnavailable).toContain("current target unavailable");
 
       await writeFile(configPath, liveConfig, "utf8");
       await pollUntil(
