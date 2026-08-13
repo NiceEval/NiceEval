@@ -6,4 +6,5 @@ export default defineConfig({
     "zh-CN": "e2e：OpenAI response converter 真实兼容性",
   },
   timeoutMs: 120_000,
+  maxConcurrency: 4,
 });

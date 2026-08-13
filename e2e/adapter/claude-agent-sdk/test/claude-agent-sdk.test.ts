@@ -35,15 +35,14 @@ function requireLiveSecrets(): void {
   }
 }
 
-async function latestAttemptLocator(): Promise<string> {
-  const history = await niceeval.run(["show", EVAL_ID, "--history"]);
-  expect(history.exitCode, history.diagnostic()).toBe(0);
-  const latest = history.stdout.split("\n").filter((line) => line.includes("@")).at(-1);
-  expect(latest, `${EVAL_ID} has no public history row`).toBeDefined();
-  expect(latest).toContain("passed");
-  const locator = latest!.match(/@\S+/)?.[0];
-  expect(locator, `history row has no public locator: ${latest}`).toBeDefined();
-  return locator!;
+function latestAttemptLocator(): string {
+  const evalEvent = runReceipt.ndjson<ExpEvent>().find(
+    (event): event is ExpEvalEvent =>
+      "event" in event && event.event === "eval" && event.evalId === EVAL_ID,
+  );
+  expect(evalEvent, runReceipt.diagnostic()).toMatchObject({ verdict: "passed" });
+  expect(evalEvent?.locator, runReceipt.diagnostic()).toMatch(/^@/);
+  return evalEvent!.locator!;
 }
 
 beforeAll(async () => {
@@ -76,7 +75,7 @@ beforeAll(async () => {
   });
 
   expect(runReceipt.exitCode, runReceipt.diagnostic()).toBe(0);
-  locator = await latestAttemptLocator();
+  locator = latestAttemptLocator();
 }, 14 * 60_000);
 
 it("真实 Claude Agent SDK converter 的 Eval 以通过 verdict 完成", () => {
@@ -101,11 +100,6 @@ it("真实 Claude Agent SDK converter 的 Eval 以通过 verdict 完成", () => 
 });
 
 it("show --execution 读回 Claude Agent SDK converter 的代表性证据", async () => {
-  const attemptJson = await niceeval.run(["show", locator, "--json"]);
-  expect(attemptJson.exitCode, attemptJson.diagnostic()).toBe(0);
-  expect(attemptJson.stdout).toContain("session_id");
-  expect(attemptJson.stdout).toContain(EVAL_ID);
-
   const execution = await niceeval.run(["show", locator, "--execution"]);
   expect(execution.exitCode, execution.diagnostic()).toBe(0);
   expect(execution.stdout).toContain("TOOL · Bash");

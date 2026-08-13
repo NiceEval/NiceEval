@@ -12,7 +12,8 @@ decoder 或 projection runtime 作为第二套真相。
 ### 1. 真实运行与公开选择
 
 - `exp` 完成后取得公开 receipt / locator；测试不把目录项当成功收据。
-- `show --run`、`show --latest` 与精确 Attempt locator 选择可区分的本轮结果。
+- 不带 locator 或 `--run` 的 `show` 读取全部 project-current 结果；`show --run` 与精确 Attempt locator 读取具名历史事实。
+- 当前身份变化后，旧结果从不带选择项的 `show` 消失，但仍能通过完整 Run ID 读取。
 - 未完成、损坏或需要迁移的 Record 只有在 CLI 能稳定制造并返回公开诊断时才自动化；
   物理 marker、envelope、lock 与 family schema 不属于产品 E2E。
 - 机器调用方用 `show --json` 读回，不直接打开 `.niceeval/` 文件。
@@ -35,11 +36,11 @@ decoder 或 projection runtime 作为第二套真相。
 
 ```text
 niceeval show --run <runId>
-niceeval show --latest
+niceeval show
 niceeval show @<AttemptLocator>
 niceeval show @<AttemptLocator> --json
 niceeval view --run <runId>
-niceeval view --latest
+niceeval view
 ```
 
 - text、JSON、HTTP 与浏览器使用同一 Report，公开 identity、数值、分母、状态和 issues 一致。
@@ -65,7 +66,7 @@ niceeval view --latest
 
 ### report-project-current
 
-`report-project-current.test.ts` 验证项目输入未变时复用 current 结果；Eval source 改变后，下一次 `exp` 重建结果。验收只走公开 history / show。
+`report-project-current.test.ts` 验证不带选择项的 `show` 累积全部身份仍匹配的 Run。Eval source 改变后，旧结果从当前 Sample 消失；下一次 `exp` 产生匹配的新结果。验收只走公开 receipt / show，并确认 `--latest` 已移除。
 
 ### report-config-reload
 
@@ -81,7 +82,7 @@ niceeval view --latest
 
 ### report-show-json
 
-`report-show.test.ts` 验证 locator、latest、human 与 JSON 公开读回。
+`report-show.test.ts` 验证 locator、project-current、human 与 JSON 公开读回。
 
 ### report-source-snapshot
 

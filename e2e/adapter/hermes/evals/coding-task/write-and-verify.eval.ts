@@ -1,5 +1,5 @@
 import { defineEval } from "niceeval";
-import { includes, satisfies } from "niceeval/expect";
+import { includes, jsonMatch, satisfies, toolMatch } from "niceeval/expect";
 
 const WRITE_MARKER = "niceeval-hermes-tool-input-914";
 
@@ -14,14 +14,18 @@ export default defineEval({
     );
     await turn.succeeded().orStop();
     await t.group("写入 notes.txt,再串行 shell 读回来", () => {
-      t.calledTool("file_write", {
-        input: { path: /notes\.txt/, content: new RegExp(WRITE_MARKER) },
-        status: "completed",
-      });
-      t.calledTool("shell", {
-        input: { command: /cat\s+notes\.txt/ },
-        status: "completed",
-      });
+      t.calledTool(
+        toolMatch("file_write", {
+          input: jsonMatch({ path: /notes\.txt/, content: new RegExp(WRITE_MARKER) }),
+          status: "completed",
+        }),
+      );
+      t.calledTool(
+        toolMatch("shell", {
+          input: jsonMatch({ command: /cat\s+notes\.txt/ }),
+          status: "completed",
+        }),
+      );
       t.check(
         turn.toolCalls,
         satisfies(

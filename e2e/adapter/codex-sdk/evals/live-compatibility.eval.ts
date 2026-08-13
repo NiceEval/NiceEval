@@ -1,5 +1,5 @@
 import { defineEval } from "niceeval";
-import { isDefined, satisfies, includes } from "niceeval/expect";
+import { includes, isDefined, jsonMatch, satisfies, toolMatch } from "niceeval/expect";
 
 function requiredEnv(name: string): string {
   const value = process.env[name];
@@ -30,19 +30,14 @@ export default defineEval({
     t.check(first.message, includes(marker));
 
     // The public converter supplies the canonical shell identity and the paired
-    // completed result from the unmodified command_execution ThreadItem.
-    first.calledTool("shell", {
-      input: (input) =>
-        typeof input === "object" &&
-        input !== null &&
-        !Array.isArray(input) &&
-        (typeof (input as Record<string, unknown>)["command"] === "string"
-          ? new RegExp(marker).test(
-              (input as Record<string, unknown>)["command"] as string,
-            )
-          : new RegExp(marker).test(JSON.stringify(input) ?? "")),
-      status: "completed",
-    });
+    // completed result from the unmodified command_execution ThreadItem. The
+    // marker regex keeps the containment check without depending on quoting.
+    first.calledTool(
+      toolMatch("shell", {
+        input: jsonMatch({ command: new RegExp(marker) }),
+        status: "completed",
+      }),
+    );
     t.check(
       first.events,
       satisfies<typeof first.events>(

@@ -8,5 +8,5 @@ export default defineConfig({
   // One real provider session has two sequential SDK queries; leave room for
   // the native CLI while keeping the outer owned process bounded.
   timeoutMs: 12 * 60_000,
-  maxConcurrency: 1,
+  maxConcurrency: 4,
 });

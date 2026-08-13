@@ -14,7 +14,7 @@
 //    两轮各自的工具调用可能巧合落在同一个 item 号上,call ID 在这条会话的累积事件流里发生
 //    碰撞,导致按 call ID 配对结果与调用错位(同类问题见 evals/mcp.eval.ts 的说明)。
 import { defineEval } from "niceeval";
-import { excludes, includes } from "niceeval/expect";
+import { excludes, includes, satisfies, toolMatch } from "niceeval/expect";
 
 const relPath = "niceeval-e2e-coding-task.txt";
 const oldMarker = "niceeval-e2e-old-914";
@@ -37,32 +37,42 @@ export default defineEval({
     await turn.succeeded().orStop();
 
     await t.group("文件变更事件已归一,调用与结果配对", () => {
-      t.calledTool("file_edit", {
-        input: (input) =>
-          typeof input === "object" &&
-          input !== null &&
-          !Array.isArray(input) &&
-          (typeof (input as Record<string, unknown>)["path"] === "string"
-            ? new RegExp(relPath).test(
-                (input as Record<string, unknown>)["path"] as string,
-              )
-            : new RegExp(relPath).test(JSON.stringify(input) ?? "")),
-        status: "completed",
-      });
+      t.calledTool(
+        toolMatch("file_edit", {
+          input: satisfies(
+            "file_edit 入参引用 relPath",
+            (input) =>
+              typeof input === "object" &&
+              input !== null &&
+              !Array.isArray(input) &&
+              (typeof (input as Record<string, unknown>)["path"] === "string"
+                ? new RegExp(relPath).test(
+                    (input as Record<string, unknown>)["path"] as string,
+                  )
+                : new RegExp(relPath).test(JSON.stringify(input) ?? "")),
+          ),
+          status: "completed",
+        }),
+      );
     });
     await t.group("shell 调用已归一,调用与结果配对", () => {
-      t.calledTool("shell", {
-        input: (input) =>
-          typeof input === "object" &&
-          input !== null &&
-          !Array.isArray(input) &&
-          (typeof (input as Record<string, unknown>)["command"] === "string"
-            ? new RegExp(cmdMarker).test(
-                (input as Record<string, unknown>)["command"] as string,
-              )
-            : new RegExp(cmdMarker).test(JSON.stringify(input) ?? "")),
-        status: "completed",
-      });
+      t.calledTool(
+        toolMatch("shell", {
+          input: satisfies(
+            "shell 入参引用 cmdMarker",
+            (input) =>
+              typeof input === "object" &&
+              input !== null &&
+              !Array.isArray(input) &&
+              (typeof (input as Record<string, unknown>)["command"] === "string"
+                ? new RegExp(cmdMarker).test(
+                    (input as Record<string, unknown>)["command"] as string,
+                  )
+                : new RegExp(cmdMarker).test(JSON.stringify(input) ?? "")),
+          ),
+          status: "completed",
+        }),
+      );
     });
 
     t.check(turn.message, includes(cmdMarker));

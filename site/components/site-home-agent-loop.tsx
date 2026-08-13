@@ -72,8 +72,8 @@ function segmentPath(index: number) {
 }
 
 // 「Agent 也是用户」区块：左侧是四段弧带箭头组成的循环图（评估→诊断→定位→优化），
-// 右侧终端按当前步骤展示对应输出。自动轮播的手感与 Setup 一致：进入视口才转，
-// 悬停暂停，点击只把倒计时清零——绿色弧带沿环推进，本身就是在演示这个循环。
+// 右侧终端按当前步骤展示对应输出。环进入视口后才推进，悬停暂停，点击只把倒计时清零。
+// 这里的自动推进直接解释循环顺序，不承担装饰作用。
 export default function AgentLoop({ t, locale }: { t: Dictionary; locale: Locale }) {
   const [activeStep, setActiveStep] = useState(0);
   const [resetKey, setResetKey] = useState(0);

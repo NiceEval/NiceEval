@@ -63,7 +63,7 @@ await assertStaticSiteWorksOffline("./report-site", attemptRoute);
 pnpm exec niceeval show --run <baseline-run> --run <candidate-run> --page comparison
 ```
 
-`--latest` 的验收按 Experiment 分组：每个目标 Experiment 恰好得到最后完成的一个 Run。目标组没有完成 Run 必须返回 `sample-latest-unavailable`；任一候选排序核心无效必须返回 `sample-latest-indeterminate`，不能跳过坏数据。
+不带 locator 或 `--run` 的 `show` 以当前项目目标为准：扫描全部 published Run，保留每个身份仍匹配的 slot，不按时间缩成最后一个 Run。身份过期或无法验证的候选不进入当前 Sample；没有匹配结果时形成空 Sample。完整 `--run` 仍能读取历史 Run。
 
 ## Record 与 Report 验收点
 

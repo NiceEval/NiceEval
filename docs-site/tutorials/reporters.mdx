@@ -38,7 +38,7 @@ Use those `runIds` to select a Sample in a later step. Do not treat the feedback
 
 A custom Reporter receives the data that the current process makes available. Use it for a destination not covered by JUnit or an existing integration. Keep its work bounded: reporter failure should be reported clearly without changing the persisted facts that a later Report reads.
 
-When the Invocation finishes, inspect the resulting current data through an explicit Run selection or the named latest policy:
+When the Invocation finishes, use its receipt's Run IDs to inspect the resulting historical facts:
 
 ```sh
 npx niceeval show --run <runId>

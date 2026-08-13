@@ -9,11 +9,15 @@ AI SDK 应用按被测边界接入：应用部署为 HTTP 服务时用 `uiMessag
 | HTTP 返回 AI SDK `generateText` / `streamText` 结果形状 | `turnFromAiSdk(result)` |
 
 `uiMessageStreamAgent` 管理 SSE reducer、全量历史重发和 tool approval 改写重发，适用于 AI SDK `useChat` 后端。
+UI Message Stream 不携带 command 分类。Endpoint owner 如需可信的工具负断言与 command 断言，可以传
+`projectToolCommand({ name, input })`，逐笔返回 `commandProjection(...)`、
+`notCommandProjection()` 或 `undefined`。`undefined` 会如实保持 actions coverage partial。
+NiceEval 不会从工具名或 input 猜测分类。
 
 `approval-requested` 表示模型已经宣布一条逻辑工具调用，但副作用尚未执行。
 因此等待审批的 Turn 先公开一次 `operation.started`，随后公开
 `input.requested`，不公开 `operation.finished`。批准后的 resume 只补同一 call
-ID 的 completed/output；拒绝只补 rejected 且没有 output。重发历史不得重复
+ID 的 completed/output；拒绝的 `tool-output-denied` 只补 rejected 且没有 output。重发历史不得重复
 start，同一会话的新 user send 则重置本条消息的增量簿记。
 
 `turnFromAiSdk` 从 step content、tool call ID、tool result、approval part 与聚合 usage 构造 `Turn`。

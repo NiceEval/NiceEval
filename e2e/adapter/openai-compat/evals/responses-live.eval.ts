@@ -1,6 +1,6 @@
 // owner: docs/engineering/testing/e2e/adapter/openai-compat.md#responses-live
 import { defineEval } from "niceeval";
-import { satisfies } from "niceeval/expect";
+import { satisfies, toolMatch } from "niceeval/expect";
 export default defineEval({
   description:
     "真实 Response 保留强制 function_call 的 call_id/name/arguments 与 usage",
@@ -9,18 +9,22 @@ export default defineEval({
       "run the one-request Responses compatibility check",
     );
     await turn.succeeded().orStop();
-    turn.calledTool("lookup_live_responses_fixture", {
-      input: (input) =>
-        typeof input === "object" &&
-        input !== null &&
-        !Array.isArray(input) &&
-        Object.is(
-          (input as Record<string, unknown>)["marker"],
-          "responses-live-20260809",
+    turn.calledTool(
+      toolMatch("lookup_live_responses_fixture", {
+        input: satisfies(
+          "arguments 保留 marker responses-live-20260809",
+          (input) =>
+            typeof input === "object" &&
+            input !== null &&
+            !Array.isArray(input) &&
+            Object.is(
+              (input as Record<string, unknown>)["marker"],
+              "responses-live-20260809",
+            ),
         ),
-      status: "pending",
-      count: 1,
-    });
+        status: "pending",
+      }),
+    );
     t.check(
       turn.events,
       satisfies<typeof turn.events>(

@@ -92,7 +92,7 @@ Eval 数量服从 case，而不是统一矩阵。一个现有 Eval 无法稳定�
 功能 Repo 使用签入的确定性 Agent / backend fixture，证明对应功能域的行为。
 确定性 Adapter Repo 使用公开协议的本地故障端，证明 NiceEval 官方 Adapter 自己拥有的 transport 与错误处理。
 Live Adapter Repo 使用真实 SDK、CLI 或 provider，只证明该上游入口的兼容性。
-三者可以共用 Testkit，但不共享 package graph、fixture、secret、结果根或昂贵 evidence。
+三者可以共用 Testkit，但不共享 package graph、fixture、secret、结果根或运行 evidence。
 功能 Journey 不放进 `adapter/ai-sdk`；Adapter Repo 调用 `exp` / `show` 也不获得 CLI 或 Report 的矩阵所有权。
 
 live Adapter 不承担产品可靠性。确定性 UI Message Stream counterpart 负责产品语义并通过重复运行接管门；live 断言协议身份与关系。
@@ -134,9 +134,9 @@ e2e/adapter/
 | 测试 | 证明 | Lane |
 |---|---|---|
 | UI Message Stream 本地 fixture | NiceEval 自有 transport、断流、超时、错误分类和 cleanup | PR |
-| Live SDK / CLI / provider | 上游真实事件形状、鉴权、usage、session、工具身份和版本兼容 | main / nightly / release |
+| Live SDK / CLI / provider | 上游真实事件形状、鉴权、usage、session、工具身份和版本兼容 | 可信同仓 PR / main / nightly / release |
 
-本地 fixture 不能替代 live 兼容性；低成本 live 检查也不能替代可控错误注入。NiceEval 自有的协议语义矩阵默认留在
+本地 fixture 不能替代 live 兼容性；live 检查也不能替代可控错误注入。NiceEval 自有的协议语义矩阵默认留在
 确定性 UI Message Stream E2E；只有它无法稳定穷举或区分的纯归一算法，才登记最小 Unit 例外。Live Repo 只取有区分力的真实兼容性代表。
 
 Adapter E2E 至少检查：实际执行了期望 Eval、最终 verdict、公开 readback 中的协议身份、usage / session 等本 adapter 独有事实，
@@ -172,7 +172,7 @@ Runner Repo 使用确定性本地 Agent 产生可区分的 plan、dispatch、car
 这些命题不依赖真实 provider 身份，因此不能借用 `adapter/ai-sdk` 或 `adapter/codex-cli` 的运行结果。
 
 `--dry` 与 `accept` 同样归 Runner Repo。相关 Journey 先完整运行自己的初始 Experiment，再修改 Eval 或被导入源码模块。
-随后检查 human / JSON dry plan，执行 `accept @<locator>`。latest-only current view 必须证明新 Run 通过 reference Member 指向同一
+随后检查 human / JSON dry plan，执行 `accept @<locator>`。再用 accept 收据中的 Run ID 明确读取，证明新 Run 通过 reference Member 指向同一
 immutable Attempt；公开读回还要确认 verdict / evidence 未被复制或改写，采用原因由 membership provenance 表达。
 
 accepted action 不是未来 eligibility grant；后续 dry 仍独立执行当前 reuse policy。不得用手写 manifest 或预置 `.niceeval`
@@ -218,8 +218,8 @@ E2E 必须由原生测试 runner 按文件与标题发现；无法按标题选�
 
 新增、接管或实质修改确定性 owner 时，还必须通过[可靠性：重复运行](../README.md#可靠性重复运行)的全新副本、同副本连续运行、
 默认并行与单项重跑组合。任一次意外失败都不合格；测试级 retry 不得把失败改写成通过。
-真实 provider live owner 做一次已明确授权的真实运行与公开读回；完整重复矩阵会放大付费调用且不能证明 provider 确定性，
-只有另获明确调用次数 / 成本授权时才运行。
+真实 provider live owner 随常规全量 E2E 完成真实运行与公开读回。provider 随机性不能证明确定性，
+因此 live Repo 不用重复 takeover 承担确定性可靠性门。
 
 本地、Docker 与 GitHub Actions 见 [Execution](execution.md)。
 

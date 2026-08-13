@@ -40,6 +40,8 @@ export default defineExperiment({
   sandbox: lifecycleSandbox,
   evals: ["interrupt"],
   attempts: 2,
+  // Reuse is observable only when attempt 2 starts after attempt 1 releases the sandbox.
+  // Suite files remain parallel; this experiment intentionally serializes its two consumers.
   maxConcurrency: 1,
   sandboxReuse: true,
   setup: async (ctx) => {

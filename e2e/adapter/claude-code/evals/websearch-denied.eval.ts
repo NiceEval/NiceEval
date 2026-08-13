@@ -13,8 +13,8 @@ export default defineEval({
     await turn.succeeded().orStop();
 
     await t.group("denied 之后 WebSearch/WebFetch 从未被调用", () => {
-      t.calledTool("web_search", { count: 0 });
-      t.calledTool("web_fetch", { count: 0 });
+      t.notCalledTool("web_search");
+      t.notCalledTool("web_fetch");
     });
   },
 });

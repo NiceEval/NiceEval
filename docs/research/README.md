@@ -18,6 +18,7 @@
 | Git、Cargo、Deno、pnpm、OpenTofu 与 kubectl | [复杂 CLI 测试体系对照](cli-testing/README.md) |
 | Vite、Vitest 与 Playwright | [框架工具自身的 E2E 对照](framework-e2e/README.md) |
 | TanStack Table、TanStack Charts 与 NiceEval Reports | [Headless 内核、双面呈现与渐进增强](tanstack-table-charts.md) |
+| Vercel `design.md` 与 NiceEval Reports | [读者任务、证据构图与视觉验收](vercel-report-websites.md) |
 | Harbor 与 Docker / Agent Sandbox 框架 | [容器启动、keeper、命令执行与 DinD 进程模型](docker-sandbox-process-models.md) |
 | Eve 与 NiceEval-Eval 回归题 | [断言 DX、有序行为与逐项断言审视](eve-assertion-dx.md) |
 | Eve、smevals、Ori Eval 与评估生态 | [断言 API、语法与作者 DX 横向研究](assertion-api-dx/README.md) |

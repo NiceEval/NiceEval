@@ -212,17 +212,16 @@ export const zhCN = {
     "      --teardown   强杀后补收尾:只对选中的实验各执行一次 teardown(不派发\n" +
     "        attempt、不跑 setup);与 eval id 前缀组合是用法错误\n" +
     "  niceeval accept @<locator>...           接受明确列出的历史结果\n" +
-    "  niceeval show (--latest | --run <run-id>...)       在终端渲染 Report\n" +
-    "      --run <run-id> 可重复且按完整 id 去重;不接受前缀或猜测\n" +
-    "      --latest 为每个目标 Experiment 选一个已发布 Run;--experiment <id>\n" +
-    "        可重复且只能与 --latest 合用\n" +
+    "  niceeval show [--run <run-id>...]                 在终端渲染 Report\n" +
+    "      默认 show 读取所有符合当前项目身份的结果;--experiment <id> 可重复收窄目标\n" +
+    "      --run <run-id> 可重复，只审计完整历史 id;不接受前缀或猜测\n" +
     "      --record <root> 指定实际 Record root(默认 .niceeval/record)\n" +
     "      --report overview(或省略)使用内建 overview;--page <route> 选择精确\n" +
     "        Report route;--json 输出单份 Report show 文档\n" +
     "  niceeval list                            列出发现到的 eval\n" +
     "  niceeval session list [--all] [实验前缀]  查询 Session(只读)\n" +
     "  niceeval session show <sessionId>         查看一个 Session(只读)\n" +
-    "  niceeval view (--latest | --run <run-id>...) [--out 目录] [--port n] [--no-open]\n" +
+    "  niceeval view [--run <run-id>...] [--out 目录] [--port n] [--no-open]\n" +
     "      与 show 共用 Record 选择和内建 overview;live 模式只绑定 loopback,\n" +
     "      Record 变化时重新形成固定 ReportExecution\n" +
     "      --out <目录> 只导出一份完整静态站,不启动 server\n" +

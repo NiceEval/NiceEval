@@ -211,8 +211,8 @@ takeover summary 写入 source snapshot 的相对路径、字节数、SHA-256 �
 每份 receipt 绑定该 digest；矩阵核验六个观察标签、copy ID、attempt、唯一 invocation ID 与 cleanup 终态。
 测试级 retry 不参与这项验收；任一次意外失败都说明自动化 owner 尚未成立。
 
-真实 provider live owner 每次变更只做一次已明确授权的真实兼容性运行与公开 readback；它不以 provider 随机性承担 takeover
-重复门。需要对 live Repo 跑完整 takeover 时，必须另外取得明确调用次数 / 成本授权。
+真实 provider live owner 随常规全量 E2E 完成真实兼容性运行与公开 readback；它不以 provider 随机性承担 takeover
+重复门。
 
 ## Adapter Repo
 
@@ -254,7 +254,7 @@ UI Message Stream backend 固定版本和响应，可进入 PR；真实 provider
 5. 无密钥 Repo 能在 PR lane 运行，live Repo 缺 secret 时启动前明确失败；
 6. 标成 `regression` 的历史 bug case 能杀死对应旧实现；只能证明相似风险的 case 不挂该 commit；
 7. 被替代旧测试在同批删除。
-8. 新确定性 owner 通过[可靠性接管门](../README.md#可靠性重复运行)；live owner按上文完成一次获授权真实运行，完整 takeover 另行授权。
+8. 新确定性 owner 通过[可靠性接管门](../README.md#可靠性重复运行)；live owner 按上文随常规全量 E2E 真实运行。
 
 选择[不自动化](../README.md#不自动化)时不创建测试文件、空场景 Repo 或伪 owner，也不进入本节 Repo 准入。
 该变更只在 PR / release 的 Test impact 保存本次 AI 真实验收收据。

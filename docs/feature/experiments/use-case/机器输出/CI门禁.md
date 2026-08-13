@@ -22,7 +22,7 @@ niceeval 不需要专门的 CI 档——日志页给人看,默认的人读文本
    需要 JSON 汇总交给自建看板时，归档 receipt，再以明确 Run 建立 Sample 并运行 `show --json`。
 5. JUnit 交给平台做测试注解；完整业务数据以 Record 为准。
 
-退出码与 JUnit 是原 Runner 进程当时形成的交付物。之后发布的新 Run 可能改变下一次 `--latest` 选择，但不会追溯改写已经结束进程的退出状态或已归档 JUnit；已发布 Run 没有受支持的编辑 API。
+退出码与 JUnit 是原 Runner 进程当时形成的交付物。之后发布且身份仍匹配的新 Run 会加入下一次不带选择项的 `show` Sample，但不会追溯改写已经结束进程的退出状态或已归档 JUnit；已发布 Run 没有受支持的编辑 API。
 
 ## 边界
 

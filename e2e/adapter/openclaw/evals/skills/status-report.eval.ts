@@ -1,5 +1,5 @@
 import { defineEval } from "niceeval";
-import { equals, includes, satisfies } from "niceeval/expect";
+import { equals, includes, jsonMatch, satisfies, toolMatch } from "niceeval/expect";
 const SKILL_DIR = ".agents/skills";
 const SKILL_NAME = "niceeval-status-report";
 const DECOY_NAME = "niceeval-decoy";
@@ -27,10 +27,14 @@ export default defineEval({
       ),
     );
     await t.group("选择痕迹:读取目标 Skill 的稳定路径，未读取 decoy", () => {
-      turn.calledTool("shell", {
-        input: { command: new RegExp(`${SKILL_DIR}/${SKILL_NAME}/SKILL\\.md`) },
-        status: "completed",
-      });
+      turn.calledTool(
+        toolMatch("shell", {
+          input: jsonMatch({
+            command: new RegExp(`${SKILL_DIR}/${SKILL_NAME}/SKILL\\.md`),
+          }),
+          status: "completed",
+        }),
+      );
       t.check(
         turn.toolCalls,
         satisfies(

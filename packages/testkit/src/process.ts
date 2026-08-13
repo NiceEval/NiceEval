@@ -313,6 +313,22 @@ export class ProcessReceipt {
     }
     return terminal.receipt;
   }
+
+  /** Strictly decode the public Eval conclusion events from `niceeval exp --json`. */
+  expEvalEvents(): ExpEvalEvent[] {
+    const events = this.ndjson<unknown>();
+    const evalEvents: ExpEvalEvent[] = [];
+    for (const event of events) {
+      if (!isRecord(event) || event.event !== "eval") continue;
+      if (!isExpEvalEvent(event)) {
+        throw new Error(
+          `expEvalEvents(): stdout contains an invalid Eval event\n\n${this.diagnostic()}`,
+        );
+      }
+      evalEvents.push(event);
+    }
+    return evalEvents;
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -340,6 +356,23 @@ function isExpStartEvent(value: unknown): value is ExpStartEvent {
     !isNonNegativeIntegerRecord(value.experimentConcurrency)
   ) return false;
   return true;
+}
+
+function isExpEvalEvent(value: unknown): value is ExpEvalEvent {
+  if (!isRecord(value) || value.event !== "eval") return false;
+  if (typeof value.locator !== "string") return false;
+  if (typeof value.evalId !== "string" || typeof value.experimentId !== "string") return false;
+  if (!isNonNegativeInteger(value.attempts)) return false;
+  if (
+    value.verdict !== "passed" &&
+    value.verdict !== "failed" &&
+    value.verdict !== "errored" &&
+    value.verdict !== "skipped"
+  ) return false;
+  if (value.reason === "early_exit") {
+    return isNonNegativeInteger(value.planned) && isNonNegativeInteger(value.unstarted);
+  }
+  return isNonNegativeInteger(value.passed);
 }
 
 function isReceiptEvent(value: unknown): value is Record<string, unknown> {

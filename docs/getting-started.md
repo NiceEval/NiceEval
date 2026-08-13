@@ -52,17 +52,19 @@ pnpm exec niceeval view --run <run-id>
 目录；不要读取其中的内部结构，也不要从应用代码 import Record reader / writer。`show` 和
 `view` 由内部 Report host 读取它，不从目录时间猜测“最近结果”，也不在浏览器内读取文件。
 
-若要选择每个 Experiment 最后完成的 Run，使用：
+要查看所有仍匹配当前项目源码与配置的结果，使用：
 
 ~~~sh
-pnpm exec niceeval show --latest
+pnpm exec niceeval show
 ~~~
 
-`--latest` 只考虑带 `completedAt` 的 Run。没有完成 Run 时，改用明确的 `--run`。
+不带 locator 或 `--run` 的 `show` 会读取默认 Record 中全部 published Run，再按当前 Experiment、Eval、attempt ordinal、evaluation kind、input identity 与 config identity 过滤。旧结果不会被删除；需要审计不再匹配的历史结果时，使用 receipt 中的完整 `--run`。
 
 ## 读懂状态
 
-Sample 保留完整分母。样本状态（Sample slot state）说明每个 slot 是下列哪一种：
+Sample 保留 selection 已建立的完整分母：`--run` 使用具名 Run 的完整 expected slots，默认
+`project-current` 只把身份仍匹配当前目标的 slots 纳入 Sample。样本状态（Sample slot state）说明每个
+已选 slot 是下列哪一种：
 
 | 状态 | 含义 |
 |---|---|

@@ -205,7 +205,7 @@ interface ProcessResult {
 ## 隔离与证据复用
 
 - 每个 Repo 执行在新的副本中；重试也使用新副本。
-- 一个单边界 E2E Repo 可以在 `beforeAll` 生成一次昂贵证据，随后只读测试并行消费。
+- 一个单边界 E2E Repo 可以在 `beforeAll` 生成一次共享证据，随后只读测试并行消费。
 - 会写入 Record 的验证必须获得自己的独立 Record root 或独立 Repo，并固定所读 Sample selection，不能靠文件调用顺序保护共享状态。
 - 会改配置或 fixture 的 mutation 必须发生在该测试的私有副本，并以新进程消费；禁止修改共享
   `niceeval.config.ts` 后在 `finally` 写回，因为崩溃、并行与 watcher 都会泄漏中间状态。
@@ -222,8 +222,8 @@ sandbox lease 或同等公开收据。只有父进程 PID 消失不能证明没�
 三个全新副本检查随机漂移；同一副本连续两次检查残留；Repo 默认并行检查顺序依赖；单项重跑检查独立身份。
 这几类运行缺一不可，不能用测试级 retry 把一次意外失败改写成通过。
 
-真实 provider live owner 只做一次已明确授权的兼容性运行；完整接管矩阵需要另行授权调用次数 / 成本，不能用 provider
-随机性充当产品可靠性证明。
+真实 provider live owner 随常规全量 E2E 频繁运行；provider 随机性不能充当确定性产品可靠性证明，
+因此 live Repo 不用重复 takeover 证明确定性。
 
 可靠性接管门只比较稳定语义。动态 ID、临时端口和 duration 可以变化；Verdict、实体关系、公开错误分类和资源终态必须相同。
 无法通过接管门的自动化不得降级断言、增加固定 sleep 或改成 mock 核心算法，应按[不自动化](README.md#不自动化)处理。

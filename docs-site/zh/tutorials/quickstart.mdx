@@ -21,8 +21,8 @@ description: "安装 NiceEval，写三个文件，10 分钟内对你自己的应
   </Step>
   <Step title="查看结果">
     ```bash
-    pnpm exec niceeval show --latest         # 每个 Experiment 的最后完成 Run
-    pnpm exec niceeval view --latest         # 网页查看同一份 Sample
+    pnpm exec niceeval show         # 当前项目全部仍有效的结果
+    pnpm exec niceeval view         # 网页查看同一份 Sample
     ```
   </Step>
 </Steps>
@@ -96,8 +96,8 @@ export default defineEval({
 
 ```bash
 pnpm exec niceeval exp my-agent   # 跑起来
-pnpm exec niceeval show --latest --experiment my-agent  # 在终端读最后完成的 Run
-pnpm exec niceeval view --latest --experiment my-agent  # 在网页查看同一份 Sample
+pnpm exec niceeval show --experiment my-agent  # 在终端读全部仍有效的结果
+pnpm exec niceeval view --experiment my-agent  # 在网页查看同一份 Sample
 ```
 
 到这里第一条评估用例已经跑通。

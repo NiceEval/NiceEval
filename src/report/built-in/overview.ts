@@ -127,8 +127,8 @@ function selectionLabel(sample: AnalysisSample): string {
     return "Selection policy: explicit runs";
   }
   return sample.selection.experimentIds === "all"
-    ? "Selection policy: latest run for every determinable experiment"
-    : "Selection policy: latest run for selected experiments";
+    ? "Selection policy: all results matching the current project"
+    : "Selection policy: all results matching selected current experiments";
 }
 
 function slotStateMeaning(state: SlotState): string {

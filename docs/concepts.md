@@ -232,7 +232,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 |---|---|---|---|
 | 分析选择请求 | `AnalysisSelectionRequest` | 选择哪些已发布 Run 的纯配置，不携带 reader 或 I/O 能力 | [Sample](feature/sample/library.md#analysis-selection) |
 | 分析样本 | `AnalysisSample` | 从已发布 Run 形成的 portable core-only 选择，保留完整 expected-slot 分母 | [Sample](feature/sample/README.md) |
-| 分析选择（内部） | Analysis selection | CLI host 从明确 Run 或具名 latest policy 形成纯 AnalysisSample 的只读过程；作者通过 `show` / `view` 选择 | [Sample](feature/sample/README.md) |
+| 分析选择（内部） | Analysis selection | CLI host 从明确 Run，或从身份匹配当前项目的全部结果形成纯 AnalysisSample；作者通过 `show` / `view` 选择 | [Sample](feature/sample/README.md) |
 | 执行沿用计划 | `ExecutionReusePlan` | reuse policy 把当前 `ExecutionTarget` 的每个 Slot 穷尽判为 reuse 或 gap | [Cache](feature/experiments/cache.md#公开形状) |
 | 执行缺口 | Execution gap | 当前目标中没有可复用 Attempt、必须交给 planner/scheduler 执行的 slot；不是 Record 状态 | [Cache](feature/experiments/cache.md#错误与缺口作用域) |
 | 收窄 | Narrowing | 在既有 `AnalysisSample` 上显式排除范围，不重新读取 Record | [Sample](feature/sample/library.md#构造入口) |

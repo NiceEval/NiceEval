@@ -5,7 +5,7 @@
 ## 要回答的问题
 
 1. **查得到吗**：能否找出落后的 Experiment、失败的 Eval 和关键执行事实；不存在的信息是否明确说查不到。
-2. **走的路对吗**：是否使用 `show/view --run|--latest → --page`，而不是递归翻 `.niceeval/record` 私有文件。
+2. **走的路对吗**：是否直接使用 `show/view`，或使用 `--run → --page`，而不是递归翻 `.niceeval/record` 私有文件。
 3. **文档起作用了吗**：是否从随包索引进入当前 Record、Sample、Reports 和 CLI 契约，而不是凭旧版 Results 记忆猜 history/locator 命令。
 
 ## Fixture
@@ -22,7 +22,7 @@ fixture 还应含有有区分度的 usage、timing、conversation、tool 与 dia
 
 | 题型 | 例 | 公开链路 |
 |---|---|---|
-| 总览 | 哪些 Experiment 需要补跑 | `show --latest` 的 coverage/diagnostic 页面 |
+| 总览 | 哪些 Experiment 需要补跑 | `show` 的 coverage/diagnostic 页面 |
 | 横向比较 | 两个方案的通过率与成本谁更好 | 重复 `--run` 后的 comparison page |
 | 多跳定位 | 某 Eval 失败的直接断言是什么 | `show --run` → 已计划 Attempt route |
 | 深挖 | 失败 Attempt 使用了哪些工具、何时换方案 | 同一 Sample 内的 conversation/tool page |
@@ -31,7 +31,7 @@ fixture 还应含有有区分度的 usage、timing、conversation、tool 与 dia
 示例命令：
 
 ```sh
-niceeval show --latest --experiment compare --page overview
+niceeval show --experiment compare --page overview
 niceeval show --run <baseline> --run <candidate> --page comparison
 niceeval show --run <runId> --page attempt-<attemptId>
 ```
@@ -49,7 +49,7 @@ Attempt route 必须来自已计划页面索引；不能用独立 Attempt select
 ## 归因
 
 - 路径正确但答案错误：页面缺少事实、状态表达有歧义，或 Report Calculation 有问题。
-- 不知道重复 `--run`、`--latest --experiment` 或参数化 page：CLI 帮助和随包文档的导航问题。
+- 不知道重复 `--run`、当前项目命令的 `--experiment` 或参数化 page：CLI 帮助和随包文档的导航问题。
 - 大量翻私有文件：公开 CLI 未交付所需信息；不能把这种绕路写成推荐方案。
 - 把 unavailable/unsupported/invalid 当零：Report 状态表达或 agent 理解问题。
 

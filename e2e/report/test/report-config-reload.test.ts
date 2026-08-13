@@ -53,7 +53,7 @@ test("view 重建项目模块、配置与 Record，失败时保留 last-good exe
       await writeFile(configPath, liveConfig, "utf8");
 
       const view = niceeval.start(
-        ["view", "--latest", "--host", "127.0.0.1", "--port", "0", "--no-open"],
+        ["view", "--host", "127.0.0.1", "--port", "0", "--no-open"],
         { timeoutMs: 60_000 },
       );
       const startup = await waitForOutput(view, "stdout", /http:\/\/127\.0\.0\.1:\d+\//, {
@@ -167,18 +167,21 @@ test("view 重建项目模块、配置与 Record，失败时保留 last-good exe
       const retained = await pollUntil(
         async () => {
           const response = await fetch(origin!);
-          if (response.status !== 200) return undefined;
+          if (
+            response.status !== 200
+            || response.headers.get("x-niceeval-last-rebuild-problem") !== "1"
+          ) return undefined;
           const body = await response.text();
           return body.includes("REPORT_FIRST")
             && body.includes("INDIRECT_SECOND")
             && body.includes("SLOTS_4")
-            && body.includes("BROKEN_REPORT")
+            && body.includes("niceeval-last-rebuild-problem")
             ? body
             : undefined;
         },
         { timeoutMs: 15_000, intervalMs: 100, label: "broken report retains last-good execution" },
       );
-      expect(retained).toContain("BROKEN_REPORT");
+      expect(retained).toContain("niceeval-last-rebuild-problem");
 
       await writeFile(reportPath, report.replace("REPORT_FIRST", "REPORT_RECOVERED"), "utf8");
       const recovered = await pollUntil(

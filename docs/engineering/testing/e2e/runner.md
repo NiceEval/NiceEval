@@ -21,7 +21,7 @@
 
 ### runner-history-dedup
 
-同一 Eval 的两次 `--rerun all` 必须形成两条不同的 origin Attempt identity。之后默认 carry 的 latest-only current view 必须仍指向最近一次强制运行的 locator；它不能为 carry 复制新的公开 Attempt locator。
+同一 Eval 的两次 `--rerun all` 必须形成两条不同的 origin Attempt identity。之后默认 carry 不能复制新的公开 Attempt locator。不带 locator 或 `--run` 的 `show` 必须列出全部身份仍匹配的 Run，包括两次 origin Run 与 carry Run。
 
 ### runner-accept-reanchor
 
@@ -31,8 +31,7 @@ Human `--dry` 对 identity gap 必须关联具名差异原因、旧 Attempt 的 
 `niceeval accept @<locator>`。JSON `--dry` 只稳定验收 total / reused、slot state 和 readback locator / verdict；format、version
 与私有容器形状不是本 Journey 的契约。
 
-accept 在新 Run 写入 reference Member，locator 仍是同一 source Attempt identity，不生成或改写 Attempt。latest-only current view
-必须指向这个 adoption Run；公开读回保留源 Attempt 的 verdict / evidence，采用原因由 membership provenance 表达。
+accept 在新 Run 写入 reference Member，locator 仍是同一 source Attempt identity，不生成或改写 Attempt。用户用返回的 Run ID 执行 `show --run`，公开读回保留源 Attempt 的 verdict / evidence，采用原因由 membership provenance 表达。
 
 `accepted` 只解释该 Run 当时为何采用这个 Attempt，不是未来 eligibility grant。后续 `--dry` 仍按当前 eligibility 重新判断；原来的 identity
 gap 不会因为历史上执行过 accept 而被静默改成 carried。

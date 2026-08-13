@@ -96,7 +96,7 @@ export default defineEval({
 ```bash
 npx niceeval exp my-agent        # run every eval under this experiment
 npx niceeval exp my-agent refund # only run those whose ID starts with refund
-npx niceeval view --latest --experiment my-agent  # inspect results in the local viewer
+npx niceeval view --experiment my-agent  # inspect results in the local viewer
 ```
 
 **What a successful run looks like**: the terminal shows a live dashboard where the completed and queued counts update in place; failures, errors, and warnings stay in the output. When the run finishes, it prints the summary and receipt. You can use a receipt Run ID with `npx niceeval view --run <runId>` to inspect each eval's per-turn inputs, events, and assertion details.

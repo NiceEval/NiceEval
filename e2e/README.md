@@ -40,6 +40,7 @@ pnpm e2e verify-release --plan /tmp/release-plan.json --candidate /tmp/niceeval-
 
 # 默认模式依次 plan → pack 一次 candidate → 按需 build 一次 Testkit → 运行
 pnpm e2e --lane pr
+pnpm e2e --lane main
 pnpm e2e --repo report -- --run test/report.test.ts
 pnpm e2e --repo report -- --run test/report.browser.spec.ts -t "打开"
 ```
@@ -50,7 +51,7 @@ Testkit 没有单独的 tarball 参数。它是同仓库的私有测试工具，
 
 - `plan` 只读 manifest，不 pack、不安装、不读取 secret。
 - `run` 在临时副本依次执行 capability preflight、install、injection attestation、browser preflight、test、artifact collection 与 cleanup。
-- 选择使用 `--lane`、`--repo`、`--diff-path`、`--no-diff` 和 capability；不存在旧 `group` 参数。Release 入口固定传 `--no-diff`，不依赖 checkout 是否干净来决定完整矩阵。
+- 选择使用 `--lane`、`--repo`、`--diff-path`、`--no-diff` 和 capability；不存在旧 `group` 参数。CI 固定传 `--no-diff`，不依赖 checkout 是否干净来决定完整矩阵。
 - 显式 `--repo` 不受 `--diff-path` 过滤；candidate 的 `bin/`、`dist/`、package-runtime/reference/docs 输入、root pack 配置或共享 runner 改动会 fail-open 选择整条 lane。
 - 默认入口只生成一次 plan；run 只接收该 plan 的精确 Repo ID 集。local diff 同时含 tracked 与未忽略 untracked 路径。
 - 测试非零退出归 regression；安装、注入、artifact 或 cleanup 失败归 infra；缺 runtime、Docker daemon、browser 或 declared secret 归 configuration；根 signal 归 cancelled。Adapter 不用 exit 75 或日志正则猜分类。

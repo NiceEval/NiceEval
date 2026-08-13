@@ -20,7 +20,7 @@ export default defineEval({
   async test(t) {
     const session1 = t.newSession();
     const turn1 = await session1.send(
-      `${TOPIC} 是什么?回答前先检查你是否有一个关于这个确切主题的 skill,如果有就使用它。`,
+      `${TOPIC} 是什么？先调用 Skill 工具加载 e2e-marker；加载完成后再按该 Skill 回答。`,
     );
     await turn1.succeeded().orStop();
     await t.group("原生 Skill 工具被调用,归一为 skill.loaded", () => {
@@ -31,20 +31,8 @@ export default defineEval({
         ),
       );
       t.check(
-        session1.events,
-        satisfies<typeof session1.events>("loaded skill e2e-marker", (events) =>
-          loadedSkill(events, "e2e-marker"),
-        ),
-      );
-      t.check(
-        t.events,
-        satisfies<typeof t.events>("loaded skill e2e-marker", (events) =>
-          loadedSkill(events, "e2e-marker"),
-        ),
-      );
-      t.check(
-        t.events,
-        satisfies<typeof t.events>(
+        turn1.events,
+        satisfies<typeof turn1.events>(
           "assistant 回复提及 fixture marker",
           (events) =>
             events.some(

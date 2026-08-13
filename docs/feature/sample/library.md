@@ -32,8 +32,10 @@ interface AnalysisSample {
 它不包含 reader、路径、文件句柄、callback 或延迟查询。宿主关闭资源 Scope 后，
 Report callback 仍可读取这个自包含值。
 
-`runs` 按 RunId 排序。`slots` 按 RunId、SlotId 排序，每个 expected SlotId 恰好一项。
-`denominator` 等于非 excluded slot 数；`slots.length` 始终保留收窄前的完整框架。
+`runs` 按 RunId 排序。`slots` 按 RunId、SlotId 排序，每个由 selection 建立的 expected
+SlotId 恰好一项。`explicit-runs` 使用每个具名 Run 的完整 expected slots；
+`project-current` 只把身份仍匹配当前目标的 slots 纳入 Sample。`denominator` 等于非 excluded slot 数；
+`slots.length` 始终保留纯 narrowing 前的 selection 框架。
 
 Slot 是下列穷尽联合：
 
@@ -68,7 +70,6 @@ const narrowed = narrowAnalysisSample(sample, selector);
 
 ## 内部 selection
 
-CLI host 以 frozen Record view 执行 explicit/latest selection，并在同一 Scope 内完成所需
-projection I/O。它不会把 reader、selection function 或 live handle 暴露给 Report 作者。
-需要选择运行时，用户调用 `niceeval show` / `niceeval view` 的 locator、`--run` 或
-`--latest`，而不是从 Library 打开 Record。
+CLI host 以 frozen Record view 执行 `explicit-runs` 或 `project-current` selection，并在同一 Scope 内完成所需 projection I/O。它不会把 reader、selection function 或 live handle 暴露给 Report 作者。
+
+不带 locator 或 `--run` 的 `niceeval show` / `niceeval view` 使用当前项目身份保留全部匹配结果。locator 与 `--run` 用于读取指定历史事实；用户不从 Library 打开 Record。

@@ -1,6 +1,6 @@
 # Reports CLI
 
-`show`、`view` 与 `view --out` 使用同一条 Record→Sample→Report execution 管线。一次 execution 读取一个 frozen candidate set，形成完整分母与全部 requested projections，然后成为不再访问 Record 的 immutable value。
+`show`、`view` 与 `view --out` 使用同一条 Record→Sample→Report execution 管线。一次 execution 读取一个 frozen candidate set，形成该 selection 的完整分母与全部 requested projections，然后成为不再访问 Record 的 immutable value。
 
 本机 `view` 可以长期观察输入变化，但每次成功 rebuild 都发布一个新的固定 execution；它不修改旧 execution。
 
@@ -16,26 +16,27 @@ niceeval view [selection] [report options] --out <directory>
 |---|---|
 | `--record <root>` | 选择实际 Record root；省略时使用 `<cwd>/.niceeval/record`。 |
 | `--run <run-id>` | 可重复；使用 explicit analysis selection。 |
-| `--latest` | 使用 latest analysis selection。 |
-| `--experiment <id>` | 仅与 `--latest` 合用时给出完整目标集合。 |
+| `--experiment <id>` | 可重复；按完整 ExperimentId 收窄不带 locator 或 `--run` 的当前项目目标。 |
 | `--report <module>` | 选择内建 Report 或受信任的 Report module。 |
 | `--page <route>` | 选择一个已经展开的 exact route。 |
 | `--port <port>` | `view` 监听端口；默认 4173，只绑定 loopback。 |
 | `--no-open` | 阻止 `view` 自动打开浏览器。 |
 
-`--run` 与 `--latest` 二选一，至少给出一个。多选 Run 或 Experiment 时重复对应 flag，不接受逗号列表。
+不传 locator 与 `--run` 时，`show` / `view` 规划当前项目身份，并扫描默认 Record 中全部 published Run。只有 Experiment、Eval、attempt ordinal、evaluation kind、input identity 与 config identity 仍匹配当前目标的 slot 才进入 `project-current` Sample。选择不会按时间缩成最后一个 Run，也不会写回 Record。
 
-不存在的 Run、空目标集合、任一目标 Experiment 没有 published Run、未知 route 或尚未展开的参数化 route 都是用法错误。命令不会猜测“最近的任意结果”。
+`--experiment` 使用完整 ExperimentId 收窄当前目标，不能与 `--run` 合用。`--run` 可重复，用于审计指定历史 Run；它不要求结果仍匹配当前项目身份。多值 flag 不接受逗号列表。
 
-旧 Record major 在执行选择或装载 Report 前以 `record-migration-required` 停止，并提示用户运行 `niceeval migrate`。
+不存在的 Run、未知 Experiment、未知 route 或尚未展开的参数化 route 都是用法错误。没有结果匹配当前项目时，不带选择项的命令形成空 Sample；它不会拿过期结果补位。
+
+`exp` 与不带 `--record` 的 `show` / `view` 默认使用同一个 `<cwd>/.niceeval/record`。只有主动读取其它 Record root 时才传该选项。旧 Record major 在执行选择或装载 Report 前以 `record-migration-required` 停止，并提示用户运行 `niceeval migrate`。
 
 ## `niceeval show`
 
 ```sh
 niceeval show --run 01H... --report ./reports/summary.ts
 niceeval show --run 01H... --run 01J... --page /comparison
-niceeval show --latest --experiment checkout --page /overview
-niceeval show --latest --json
+niceeval show --experiment checkout --page /overview
+niceeval show --json
 ```
 
 `show` 构造一次 `ReportExecution`，再从 closed semantic report tree 渲染 terminal text。`--json` 输出 exact `niceeval.report-show/v1`：
@@ -54,7 +55,7 @@ Host 只显示每个 input 的 complete/partial 与 problem IDs，不替作者�
 ## `niceeval view`
 
 ```sh
-niceeval view --latest --report ./reports/summary.ts --port 4400
+niceeval view --report ./reports/summary.ts --port 4400
 niceeval view --run 01H... --page /attempts/attempt-01h... --no-open
 ```
 
@@ -79,7 +80,7 @@ web renderer 与 `show` 从同一棵 semantic tree 读取。图表、颜色与�
 ## `niceeval view --out`
 
 ```sh
-niceeval view --latest --report ./reports/summary.ts --out ./report-site
+niceeval view --report ./reports/summary.ts --out ./report-site
 niceeval view --run 01H... --out ./shared-site --no-open
 ```
 

@@ -49,13 +49,13 @@ test("show 从一次固定 ReportExecution 呈现内建与自定义报告", asyn
       expect(junit).toContain("<failure");
       expect(junit).toContain("<error");
 
-      const overview = await niceeval.run(["show", "--latest", "--record", ".niceeval/record"]);
+      const overview = await niceeval.run(["show"]);
       expect(overview.exitCode, overview.diagnostic()).toBe(0);
       expect(overview.stdout).toContain("Sample: 1 run(s), 3 slot(s)");
       expect(overview.stdout).toContain("No slot problems");
 
       const attempt = await niceeval.run(
-        ["show", failed.locator!, "--record", ".niceeval/record"],
+        ["show", failed.locator!],
       );
       expect(attempt.exitCode, attempt.diagnostic()).toBe(0);
       expect(attempt.stdout).toContain("Attempt overview");
@@ -67,13 +67,13 @@ test("show 从一次固定 ReportExecution 呈现内建与自定义报告", asyn
       expect(attempt.stdout).not.toContain("unavailable input verdict");
 
       const attemptJson = await niceeval.run(
-        ["show", failed.locator!, "--record", ".niceeval/record", "--json"],
+        ["show", failed.locator!, "--json"],
       );
       expect(attemptJson.exitCode, attemptJson.diagnostic()).toBe(0);
       expect(attemptJson.json<ShowDocument>().format).toBe("niceeval.report-show/v1");
 
       const shown = await niceeval.run(
-        ["show", "--latest", "--record", ".niceeval/record", "--json"],
+        ["show", "--json"],
       );
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
       const document = shown.json<ShowDocument>();
@@ -82,9 +82,6 @@ test("show 从一次固定 ReportExecution 呈现内建与自定义报告", asyn
       const custom = await niceeval.run(
         [
           "show",
-          "--latest",
-          "--record",
-          ".niceeval/record",
           "--report",
           "./reports/site.ts",
           "--page",

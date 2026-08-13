@@ -103,6 +103,14 @@
     },
     "rejectedCliFlags": [
       {
+        "flag": "--latest",
+        "roots": [
+          "docs-site/zh"
+        ],
+        "use": "不带 locator 或 --run 的 niceeval show / view 读取当前项目结果；历史审计使用 --run <run-id>",
+        "why": "show / view 已移除时间排序选择，公开站继续展示会让用户复制出未知选项"
+      },
+      {
         "flag": "--strict",
         "roots": [
           "docs-site/zh"

@@ -4,7 +4,7 @@ sidebarTitle: "查看结果"
 description: "用 show 或 view 从已发布的 Record 选择 Sample，并查看固定的 ReportExecution。"
 ---
 
-运行结束后，从已发布的 Record 选择要看的 Run。`show` 在终端显示结果，`view` 在本机显示网页。两条命令使用同一条数据路径：
+运行结束后，`show` 在终端显示结果，`view` 在本机显示网页。两条命令默认从 `exp` 写入的 `.niceeval/record` 读取，不需要传 `--record`，并使用同一条数据路径：
 
 ```text
 opaque Record + CLI selector
@@ -28,13 +28,13 @@ Sample 决定比较范围和分母。projector 只解释一个明确 owner 的�
 npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
 ```
 
-也可以选择每个 Experiment 最后完成的 Run：
+要查看所有仍匹配当前项目源码与配置的结果，直接运行 `show`。`--experiment` 可按完整 ID 收窄当前项目目标：
 
 ```sh
-npx niceeval show --latest --experiment checkout
+npx niceeval show --experiment checkout
 ```
 
-`--run` 使用 `explicit-runs`。`--latest` 使用 `latest-runs`，只考虑已发布的 Run。需要查看特定 Run 时，使用完整 `--run` ID。
+不带 locator 或 `--run` 的命令使用 `project-current`：它扫描全部已发布 Run，保留身份仍匹配的所有结果，不按时间只留最后一条。源码或配置变化后，过期结果不会进入当前 Sample；它们没有被删除，仍可使用完整 `--run` ID 查看。
 
 ## 在终端查看
 
@@ -42,7 +42,7 @@ npx niceeval show --latest --experiment checkout
 
 ```sh
 npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --page /
-npx niceeval show --latest --experiment checkout --json
+npx niceeval show --experiment checkout --json
 ```
 
 `--json` 输出同一份 execution 的页面、计算、投影摘要和问题。它不建立另一条取数路径。
@@ -50,16 +50,16 @@ npx niceeval show --latest --experiment checkout --json
 ## 在浏览器查看
 
 ```sh
-npx niceeval view --latest --experiment checkout --no-open
+npx niceeval view --experiment checkout --no-open
 ```
 
 `view` 的每次成功 rebuild 都构造一份新的固定 `ReportExecution`，再替换正在显示的 revision。Report、配置、主题或 Record 的变化触发下一次 rebuild；失败时保留 last-good execution，并显示这次 rebuild 的问题。
 
-页面打开、导航和刷新不会让已经固定的 execution 偷偷重读 Record。需要看到新发布的 Run 时，让 `view` 完成下一次 rebuild，或重新运行命令。
+页面打开、导航和刷新不会让已经固定的 execution 偷偷重读 Record。需要看到新发布的 Run 时，让 `view` 完成下一次 rebuild，或重新运行命令。需要读取其它 Record root 时才显式传 `--record <root>`。
 
 ## 读懂分母与 Attachment 状态
 
-Sample 保留 Run 的完整 expected-slot 分母。一个 slot 可能是：
+`--run` 选择的 Sample 保留具名 Run 的完整 expected-slot 分母；`project-current` 则只把身份仍匹配当前目标的 slots 纳入 Sample。在 selection 已建立的框架内，一个 slot 可能是：
 
 | 状态 | 含义 |
 | --- | --- |
@@ -70,7 +70,7 @@ Sample 保留 Run 的完整 expected-slot 分母。一个 slot 可能是：
 
 页面和 Calculation 还会显示请求的 Attachment 状态。`unavailable` 表示没有该 Attachment；`migration-required` 或 `migration-unavailable` 表示需要处理历史 schema；`unsupported` 表示当前功能不认识它；`invalid` 表示 envelope、payload 或 blob 无效。
 
-这些是数据状态，不会缩小 Sample 分母。未请求的坏 Attachment 不影响无关页面。每个 Calculation 自己定义业务 `observed` 与 `denominator`，不能从读到多少个 Attachment 推测。
+这些是数据状态，不会在 selection 之后偷偷缩小 Sample 分母。未请求的坏 Attachment 不影响无关页面。每个 Calculation 自己定义业务 `observed` 与 `denominator`，不能从读到多少个 Attachment 推测。
 
 ## Record 的发布边界
 

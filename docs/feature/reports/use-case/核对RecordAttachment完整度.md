@@ -4,9 +4,9 @@
 
 ## 选择固定分母
 
-    niceeval show --latest --report ./reports/command-checks.ts --page /coverage
+    niceeval show --run <run-id> --report ./reports/command-checks.ts --page /coverage
 
-`--latest` 选择每个 Experiment 的最新 published Run。`AnalysisSample` 随后保留每个 expected slot，因此这张页的分母在 Calculation 开始前已经固定为 100。该分母只是 Sample-wide 的 slot denominator；页面上显示的 `observed` / `denominator` 由 Calculation value 返回。
+`--run` 选择 receipt 中的一个固定 Run。`AnalysisSample` 随后保留它的每个 expected slot，因此这张页的分母在 Calculation 开始前已经固定为 100。该分母只是 Sample-wide 的 slot denominator；页面上显示的 `observed` / `denominator` 由 Calculation value 返回。
 
 ## 声明 `commands.checked` projection
 

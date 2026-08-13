@@ -5,7 +5,7 @@
 // Eval 只从标准事件流读取结果。
 
 import { defineEval } from "niceeval";
-import { isDefined, satisfies, includes } from "niceeval/expect";
+import { includes, isDefined, jsonMatch, satisfies, toolMatch } from "niceeval/expect";
 
 function requiredInjectedValue(name: string): string {
   const value = process.env[name];
@@ -40,11 +40,13 @@ export default defineEval({
     );
     await first.succeeded().orStop();
     first
-      .calledTool("shell", {
-        input: { command },
-        status: "completed",
-        count: 1,
-      })
+      .calledTool(
+        toolMatch("shell", {
+          input: jsonMatch({ command }),
+          status: "completed",
+        }),
+        { count: 1 },
+      )
       .label("shell command");
     t.check(first.usage?.inputTokens, positive("first.usage.inputTokens"));
     t.check(first.usage?.outputTokens, positive("first.usage.outputTokens"));
@@ -60,7 +62,7 @@ export default defineEval({
     );
     await resumed.succeeded().orStop();
     t.check(resumed.message, includes(sentinel));
-    resumed.calledTool("shell", { count: 0 });
+    resumed.notCalledTool("shell");
     t.check(
       resumed.usage?.inputTokens,
       positive("resumed.usage.inputTokens"),

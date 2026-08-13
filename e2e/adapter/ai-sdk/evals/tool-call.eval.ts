@@ -2,7 +2,7 @@
 // `useChat` backend calls get_weather by its bare tool name (not an MCP-style
 // namespaced name), paired with its result by call id; calculate is untouched (反例).
 import { defineEval } from "niceeval";
-import { satisfies } from "niceeval/expect";
+import { jsonMatch, satisfies, toolMatch } from "niceeval/expect";
 
 export default defineEval({
   description:
@@ -12,7 +12,11 @@ export default defineEval({
     await turn.succeeded().orStop();
 
     await t.group("裸工具名调用 + 结果配对", () => {
-      t.calledTool("get_weather", { input: { city: /北京/ } });
+      t.calledTool(
+        toolMatch("get_weather", {
+          input: jsonMatch({ city: /北京/ }),
+        }),
+      );
       t.check(
         t.events,
         satisfies<typeof t.events>(
@@ -27,6 +31,6 @@ export default defineEval({
         ),
       );
     });
-    t.calledTool("calculate", { count: 0 });
+    t.notCalledTool("calculate");
   },
 });

@@ -27,9 +27,6 @@ test("custom report Journey：固定执行可导出、导航并热重载静态�
       const exported = await niceeval.run(
         [
           "view",
-          "--latest",
-          "--record",
-          ".niceeval/record",
           "--report",
           "./reports/site.ts",
           "--out",
@@ -44,9 +41,6 @@ test("custom report Journey：固定执行可导出、导航并热重载静态�
       const view = niceeval.start(
         [
           "view",
-          "--latest",
-          "--record",
-          ".niceeval/record",
           "--report",
           "./reports/site.ts",
           "--host",

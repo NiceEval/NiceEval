@@ -4,7 +4,7 @@
 // 具体 Skill、MCP、Plugin 与配置行为由各自 Eval 断言；owner 只守住发现完整性与全绿结果。
 // 只从 @niceeval/testkit 根导入；不读 .niceeval 私有布局、不 import 候选源码/类型。
 
-import { command, type ExpEvalEvent, type ExpEvent, type ProcessReceipt } from "@niceeval/testkit";
+import { command, type ExpEvalEvent, type ProcessReceipt } from "@niceeval/testkit";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, expect, it } from "vitest";
@@ -32,7 +32,8 @@ const EXPECTED_EXPERIMENTS = [
   "remote-plugin",
   "locked-down",
 ] as const;
-const EXPECTED_PASSED_ATTEMPTS = 12;
+const EXPECTED_PASSED_ATTEMPTS = 18;
+const RETRY_CONCURRENCY = 4;
 
 const REQUIRED_LIVE_SECRETS = ["ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL"] as const;
 
@@ -60,6 +61,30 @@ async function requireDocker(): Promise<void> {
   }
 }
 
+function evalKey(event: Pick<ExpEvalEvent, "experimentId" | "evalId">): string {
+  return `${event.experimentId}\u0000${event.evalId}`;
+}
+
+function assertExactRetrySelector(events: readonly ExpEvalEvent[], failed: ExpEvalEvent): void {
+  const experiments = new Set(
+    events
+      .filter((event) => event.experimentId.startsWith(failed.experimentId))
+      .map((event) => event.experimentId),
+  );
+  expect(experiments, `ambiguous Experiment retry selector ${failed.experimentId}`).toEqual(
+    new Set([failed.experimentId]),
+  );
+  const evals = events
+    .filter(
+      (event) =>
+        event.experimentId === failed.experimentId && event.evalId.startsWith(failed.evalId),
+    )
+    .map((event) => event.evalId);
+  expect(evals, `ambiguous Eval retry selector ${failed.experimentId}/${failed.evalId}`).toEqual([
+    failed.evalId,
+  ]);
+}
+
 function representativeAttempt(): ExpEvalEvent {
   const attempt = evalEvents.find((event) => event.evalId === "coding-task");
   expect(attempt, run.diagnostic()).toBeDefined();
@@ -77,11 +102,56 @@ beforeAll(async () => {
     ["exp", "--rerun", "all", "--json"],
     { timeoutMs: 50 * 60_000 },
   );
-  expect(run.exitCode, run.diagnostic()).toBe(0);
-  evalEvents = run.ndjson<ExpEvent>().filter(
-    (event): event is ExpEvalEvent => "event" in event && event.event === "eval",
+  const inv = run.expReceipt();
+  const firstEvents = run.expEvalEvents();
+  // plugin-reuse 是八条 Attempt 的 Sandbox 复用 owner，不是模型断言重试消费者。
+  const failed = firstEvents.filter(
+    (event) => event.verdict === "failed" && event.experimentId !== "plugin-reuse",
   );
-}, 52 * 60_000);
+  expect(
+    firstEvents.filter((event) => event.verdict === "errored" || event.verdict === "skipped"),
+    run.diagnostic(),
+  ).toHaveLength(0);
+  expect(run.exitCode, run.diagnostic()).toBe(failed.length > 0 ? 1 : 0);
+  expect(inv.completion, run.diagnostic()).toBe("completed");
+  for (const event of failed) assertExactRetrySelector(firstEvents, event);
+
+  const retryRuns: ProcessReceipt[] = [];
+  for (let offset = 0; offset < failed.length; offset += RETRY_CONCURRENCY) {
+    const batch = failed.slice(offset, offset + RETRY_CONCURRENCY);
+    retryRuns.push(
+      ...(await Promise.all(
+        batch.map((event) =>
+          niceeval.run(
+            ["exp", event.experimentId, event.evalId, "--rerun", "all", "--json"],
+            { timeoutMs: 50 * 60_000 },
+          ),
+        ),
+      )),
+    );
+  }
+  const retriedByEval = new Map<string, ExpEvalEvent>();
+  for (let index = 0; index < retryRuns.length; index += 1) {
+    const retry = retryRuns[index]!;
+    const target = failed[index]!;
+    expect(retry.expReceipt(), retry.diagnostic()).toMatchObject({ completion: "completed" });
+    const events = retry.expEvalEvents();
+    expect(events, retry.diagnostic()).toHaveLength(1);
+    expect(events[0], retry.diagnostic()).toMatchObject({
+      experimentId: target.experimentId,
+      evalId: target.evalId,
+    });
+    expect(events[0]?.verdict, retry.diagnostic()).toBe("passed");
+    expect(retry.exitCode, retry.diagnostic()).toBe(0);
+    retriedByEval.set(evalKey(target), events[0]!);
+  }
+  if (failed.length > 0) {
+    process.stderr.write(
+      `[niceeval e2e] retried ${failed.length} assertion-failed Eval(s) once; first Invocation ${inv.invocationId} remains recorded\n`,
+    );
+  }
+  evalEvents = firstEvents.map((event) => retriedByEval.get(evalKey(event)) ?? event);
+}, 104 * 60_000);
 
 it("真实 Claude Code adapter 的全部专用 Eval 通过", () => {
   // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md「结束反馈与

@@ -1,11 +1,15 @@
 import { defineExperiment } from "niceeval";
-import { uiMessageStreamAgent } from "niceeval/adapter";
+import { notCommandProjection, uiMessageStreamAgent } from "niceeval/adapter";
 import { DEFAULT_MODEL } from "../src/backend/models.ts";
 import { AI_SDK_BASE_URL } from "../src/topology.ts";
 
 const agent = uiMessageStreamAgent({
   name: "ai-sdk-ui-message-stream",
   url: `${AI_SDK_BASE_URL}/api/chat`,
+  projectToolCommand: ({ name }) =>
+    name === "get_weather" || name === "calculate"
+      ? notCommandProjection()
+      : undefined,
 });
 
 // 单一实验:仓库全部三条 Eval 共用同一个 uiMessageStreamAgent。
