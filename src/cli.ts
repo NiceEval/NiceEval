@@ -2207,7 +2207,7 @@ interface ReportCliRequest {
     };
   readonly reportSelection: ReportSelection;
   readonly themeSelection: ThemeSelection;
-  readonly page?: ReportRoute;
+  readonly page?: string;
 }
 
 /**
@@ -2239,7 +2239,7 @@ function parseReportCliRequest(input: {
     throw usageError(`Invalid --record root: ${root.left.code}.\n`);
   }
 
-  const page = parseReportRoute(input.flags.page);
+  const page = input.flags.page;
   const evidenceReports = [
     input.flags.source !== undefined ? "--source" : undefined,
     input.flags.execution ? "--execution" : undefined,
@@ -2839,18 +2839,46 @@ function stringIssues(value: unknown): readonly string[] {
 
 function requireKnownReportPage(
   execution: ReportExecution,
-  page: ReportRoute | undefined,
-): Effect.Effect<void, CliUsageError> {
-  if (page === undefined || execution.pages.some((candidate) => candidate.route === page)) {
-    return Effect.void;
-  }
-  const available = execution.pages
-    .flatMap((candidate) => candidate.route === undefined ? [] : [candidate.route])
-    .sort()
-    .join(", ");
+  page: string | undefined,
+): Effect.Effect<ReportRoute | undefined, CliUsageError> {
+  if (page === undefined) return Effect.succeed(undefined);
+  const resolved = resolveShowPage(execution, page);
+  if (resolved !== undefined) return Effect.succeed(resolved);
+  const available = availableShowPageIds(execution).join(", ");
   return Effect.fail(usageError(
-    `Unknown Report route "${page}". Available routes: ${available || "none"}.\n`,
+    `page "${page}" not found\n  Available pages: ${available || "none"}\n`,
   ));
+}
+
+function resolveShowPage(
+  execution: ReportExecution,
+  page: string,
+): ReportRoute | undefined {
+  const byId = execution.pages.find((candidate) => candidate.pageId === page && candidate.route !== undefined);
+  if (byId?.route !== undefined) return byId.route;
+  const routeText = page.startsWith("/") ? page : `/${page}`;
+  const parsed = reportRoute(routeText);
+  if (Either.isRight(parsed)) {
+    const byRoute = execution.pages.find((candidate) => candidate.route === parsed.right);
+    if (byRoute?.route !== undefined) return byRoute.route;
+  }
+  return undefined;
+}
+
+function availableShowPageIds(execution: ReportExecution): readonly string[] {
+  const ids = new Set<string>();
+  for (const page of execution.pages) {
+    if (!isNavigableShowPage(page)) continue;
+    ids.add(page.pageId);
+  }
+  return Object.freeze([...ids].sort());
+}
+
+function isNavigableShowPage(page: ReportExecution["pages"][number]): boolean {
+  if (page.route === undefined) return false;
+  if (page.pageId === "attempt" || page.pageId === "experiment") return false;
+  const rest = page.route.replace(/^\//, "");
+  return rest === "" || rest === page.pageId;
 }
 
 const cliReportConsole = Object.freeze({
@@ -2880,7 +2908,7 @@ function runShowCommand(
       : parsed;
     const inputs = yield* loadCliReportInputs(request);
     const execution = yield* executeCliReport(request, inputs);
-    yield* requireKnownReportPage(execution, request.page);
+    const page = yield* requireKnownReportPage(execution, request.page);
     if (flags.json) {
       const envelope = publicShowEnvelope(request, flags, execution);
       yield* Effect.sync(() => {
@@ -2890,7 +2918,8 @@ function runShowCommand(
     }
     yield* showReport({
       execution,
-      ...(request.page === undefined ? {} : { page: request.page }),
+      ...(page === undefined ? {} : { page }),
+      ...(flags.report === undefined ? {} : { reportFlag: flags.report }),
     }).pipe(
       Effect.provideService(ReportConsole, cliReportConsole),
       Effect.mapError((error) => cliFailure("render Report show output", error)),
@@ -2911,7 +2940,7 @@ function runViewCommand(
     });
     const initialInputs = yield* loadCliReportInputs(request);
     const initial = yield* executeCliReport(request, initialInputs);
-    yield* requireKnownReportPage(initial, request.page);
+    const page = yield* requireKnownReportPage(initial, request.page);
 
     if (flags.out !== undefined) {
       if (flags.out.trim() === "") {
@@ -2950,7 +2979,7 @@ function runViewCommand(
       host,
       port,
     }).pipe(Effect.mapError((error) => cliFailure("open report view", error)));
-    const urls = server.urls.map((url) => request.page === undefined ? url : new URL(request.page, url).toString());
+    const urls = server.urls.map((baseUrl) => page === undefined ? baseUrl : new URL(page, baseUrl).toString());
     const url = urls[0]!;
     if (!isLoopbackViewHost(host)) {
       yield* writeStderr(

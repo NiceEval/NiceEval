@@ -189,7 +189,7 @@ function defineClassicReport(definition: ClassicReportDefinition): Report {
           inputs: context.inputs,
         });
         return renderClassicTree({
-          title: page.title,
+          title: page.id === primaryClassicPageId(definition) ? definition.title : page.title,
           tree: await page.render(sample),
           sample,
         });
@@ -210,6 +210,13 @@ function defineClassicReport(definition: ClassicReportDefinition): Report {
     }),
   );
   return report;
+}
+
+function primaryClassicPageId(definition: ClassicReportDefinition): string | undefined {
+  for (const page of definition.pages) {
+    if (isClassicPageDefinition(page)) return page.id;
+  }
+  return undefined;
 }
 
 function classicReportId(definition: ClassicReportDefinition): string {

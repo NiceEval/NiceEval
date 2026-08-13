@@ -51,6 +51,7 @@ export interface ShowReportInput {
   readonly execution: ReportExecution;
   readonly format?: "text" | "json";
   readonly page?: ReportRoute;
+  readonly reportFlag?: string;
 }
 
 /**
@@ -72,7 +73,7 @@ export function showReport(
 /** A deterministic text projection shared by terminal callers and Node views. */
 export function renderReportExecutionText(input: ShowReportInput): string {
   const { execution } = input;
-  const pages = selectedPages(execution.pages, input.page);
+  const pages = selectedShowPages(execution.pages, input.page);
   if (isEvidenceTextPresentation(pages) || isClassicDashboardPresentation(pages)) {
     const width = terminalColumns();
     const dashboard = pages
@@ -80,10 +81,13 @@ export function renderReportExecutionText(input: ShowReportInput): string {
         ? [renderEvidenceOrDashboardDocument(page.document, width).join("\n")]
         : [])
       .join("\n\n");
+    const others = input.page === undefined
+      ? otherPagesFooter(execution.pages, pages[0], input.reportFlag)
+      : "";
     const problems = execution.problemTable.length === 0
       ? ""
       : `\n\n${problemLines(execution).join("\n")}`;
-    return `${dashboard}${problems}\n`;
+    return `${dashboard}${others}${problems}\n`;
   }
   const lines = [
     `Report ${visibleText(execution.reportId)}`,
@@ -201,6 +205,44 @@ function selectedPages(
     throw new PageSelectionError();
   }
   return Object.freeze([...selected].sort(comparePages));
+}
+
+function selectedShowPages(
+  pages: readonly ReportPageResult[],
+  page: ReportRoute | undefined,
+): readonly ReportPageResult[] {
+  if (page !== undefined) {
+    return selectedPages(pages, page);
+  }
+  const rendered = pages.filter((candidate) => candidate.state === "rendered" && candidate.route !== undefined);
+  const primary = rendered.find((candidate) => candidate.route === "/") ?? rendered[0];
+  return primary === undefined ? Object.freeze([]) : Object.freeze([primary]);
+}
+
+function otherPagesFooter(
+  pages: readonly ReportPageResult[],
+  current: ReportPageResult | undefined,
+  reportFlag: string | undefined,
+): string {
+  const others = pages.filter((page) =>
+    page !== current
+    && page.route !== undefined
+    && page.pageId !== current?.pageId
+    && page.pageId !== "attempt"
+    && page.pageId !== "experiment"
+    && (page.route.replace(/^\//, "") === "" || page.route.replace(/^\//, "") === page.pageId)
+  );
+  if (others.length === 0) return "";
+  const report = reportFlag === undefined ? "" : ` --report ${reportFlag}`;
+  const lines = [
+    "",
+    "Other pages:",
+    ...[...others].sort((left, right) => compareUtf8(left.pageId, right.pageId)).map((page) => {
+      const title = page.state === "rendered" ? page.document.title : page.pageId;
+      return `  ${page.pageId}   ${title}   niceeval show${report} --page ${page.pageId}`;
+    }),
+  ];
+  return `\n${lines.join("\n")}`;
 }
 
 class PageSelectionError extends Error {}
@@ -384,7 +426,6 @@ function renderClassicBlockText(block: ReportBlock, width: number): string[] {
   switch (block.type) {
     case "hero":
       return [
-        ...(block.title === undefined ? [] : wrapTerminal(visibleText(block.title), width)),
         ...wrapTerminal(visibleText(block.description), width),
         ...block.links.flatMap((link) =>
           wrapTerminal(
@@ -487,14 +528,45 @@ function renderSummaryText(
   block: Extract<ReportBlock, { readonly type: "summary" }>,
   width: number,
 ): string[] {
-  return unicodeBox(
-    "Summary",
-    [
-      `Last run: ${formatLastRunAt(block.lastRunAt)}`,
-      ...block.metrics.map((metric) => `${visibleText(metric.label)}: ${formatDashboardDisplay(metric)}`),
-    ],
-    width,
-  );
+  const byKey = new Map(block.metrics.map((metric) => [metric.key, metric]));
+  const runCount = byKey.get("experiments")?.coverage?.total;
+  const lastRun = formatLastRunAt(block.lastRunAt);
+  const passRate = byKey.get("passRate");
+  const experiments = byKey.get("experiments");
+  const evals = byKey.get("evals");
+  const attempts = byKey.get("attempts");
+  const evalResults = byKey.get("evalResults");
+  const totalCost = byKey.get("totalCost");
+  const costCoverage = totalCost?.coverage;
+  const costNote = costCoverage !== undefined && costCoverage.samples < costCoverage.total
+    ? `Cost available for ${costCoverage.samples}/${costCoverage.total} attempts`
+    : undefined;
+  const col = Math.max(18, Math.floor((width - 2) / 3));
+  const row = (
+    left: string,
+    mid: string,
+    right: string,
+  ) => `${padTerminal(left, col)}${padTerminal(mid, col)}${right}`;
+  return [
+    `Last run ${lastRun}${typeof runCount === "number" ? ` · composed from ${runCount} runs` : ""}`,
+    "",
+    row("Pass rate", "Experiments", "Evals"),
+    row(
+      passRate === undefined ? "—" : visibleText(passRate.display),
+      experiments === undefined ? "—" : visibleText(experiments.display),
+      evals === undefined ? "—" : visibleText(evals.display),
+    ),
+    "",
+    row("Attempts", "Eval results", "Total cost"),
+    row(
+      attempts === undefined ? "—" : visibleText(attempts.display),
+      evalResults === undefined ? "—" : visibleText(evalResults.display),
+      totalCost === undefined ? "—" : visibleText(totalCost.display),
+    ),
+    ...(costNote === undefined ? [] : [`${" ".repeat(col * 2)}${costNote}`]),
+    "",
+    `Last run · ${lastRun}`,
+  ];
 }
 
 function renderRankedBarsText(block: ReportRankedBars, width: number): string[] {
@@ -540,9 +612,11 @@ function compareRankedBarPoints(
 }
 
 function barLabel(point: ReportRankedBars["points"][number]): string {
-  return point.series.length === 0
+  const raw = point.series.length === 0 || point.series === "all"
     ? visibleText(point.label)
     : `${visibleText(point.label)} · ${visibleText(point.series)}`;
+  const slash = raw.lastIndexOf("/");
+  return slash >= 0 ? raw.slice(slash + 1) : raw;
 }
 
 interface RankedBarScale {

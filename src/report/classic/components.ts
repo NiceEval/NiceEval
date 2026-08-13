@@ -424,7 +424,7 @@ function experimentTableRows(sample: Sample): ReportTreeTableRows {
           key: attempt.attemptId ?? `${unit.experimentId}/${unit.evalId}/${attempt.attempt}`,
           kind: "attempt",
           depth: 2,
-          label: `attempt ${attempt.attempt}`,
+          label: attemptRowLabel(attempt),
           ...(attempt.target === undefined
             ? {}
             : { target: attemptTarget(attempt.target.locator) }),
@@ -522,7 +522,11 @@ function evalResultCounts(units: readonly ClassicEvalUnit[]): {
     }
   }
   return Object.freeze({
-    display: `${passed} passed / ${failed} failed / ${errored} errored`,
+    display: [
+      `${passed} passed`,
+      `${failed} failed`,
+      ...(errored > 0 ? [`${errored} errored`] : []),
+    ].join(" · "),
     samples: passed + failed + errored,
   });
 }
@@ -546,6 +550,12 @@ function groupUnitsByExperiment(
   return Object.freeze(
     [...groups.entries()].sort((left, right) => compareText(left[0], right[0])),
   );
+}
+
+function attemptRowLabel(attempt: Sample["attempts"][number]): string {
+  const mark = attempt.verdict === "passed" ? "✓" : attempt.verdict === "failed" || attempt.verdict === "errored" ? "✗" : "·";
+  const locator = attempt.target?.locator ?? `attempt ${attempt.attempt}`;
+  return `${mark} ${locator}`;
 }
 
 function experimentLabel(sample: Sample, experimentId: string): string {
