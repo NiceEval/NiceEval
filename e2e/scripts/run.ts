@@ -25,6 +25,7 @@ import { parseArgs } from "node:util";
 import { discoverAllRepos, repoRootDir, e2eRootDir, GROUPS, type DiscoveredRepo, type Group } from "./discovery.ts";
 import { buildCandidateTarball, verifyInjection, type CandidateTarball } from "./injection.ts";
 import { buildChildEnv } from "./secrets.ts";
+import { buildTestkitPackage, injectTestkitDirectory, verifyInstalledTestkit, type TestkitPackage } from "./testkit.ts";
 
 const EX_TEMPFAIL = 75;
 
@@ -35,16 +36,18 @@ const EX_TEMPFAIL = 75;
 interface Cli {
   repoIds: string[];
   group?: Group;
+  /** Native runner args forwarded verbatim after `--` to the selected repo's command. */
+  passthrough: string[];
 }
 
 function parseCli(argv: string[]): Cli {
-  const { values } = parseArgs({
+  const { values, positionals } = parseArgs({
     args: argv,
     options: {
       repo: { type: "string", multiple: true, default: [] },
       group: { type: "string" },
     },
-    allowPositionals: false,
+    allowPositionals: true,
     strict: true,
   });
 
@@ -53,7 +56,18 @@ function parseCli(argv: string[]): Cli {
     throw new Error(`--group must be one of ${GROUPS.join("|")}, got "${group}"`);
   }
 
-  return { repoIds: (values.repo as string[]) ?? [], group: group as Group | undefined };
+  const passthrough = positionals as string[];
+  if (passthrough.length > 0 && !argv.includes("--")) {
+    throw new Error(
+      `unexpected positional argument(s): ${passthrough.join(" ")} — pass native runner args after \`--\` (e.g. pnpm e2e --repo report -- <args>)`,
+    );
+  }
+
+  return {
+    repoIds: (values.repo as string[]) ?? [],
+    group: group as Group | undefined,
+    passthrough,
+  };
 }
 
 function selectRepos(all: DiscoveredRepo[], cli: Cli): DiscoveredRepo[] {
@@ -205,6 +219,8 @@ interface AttemptResult {
   timedOut: boolean;
   injectionOk: boolean;
   injectionReason?: string;
+  testkitOk?: boolean;
+  testkitReason?: string;
 }
 
 async function runRepoOnce(
@@ -213,12 +229,24 @@ async function runRepoOnce(
   scratchRoot: string,
   allSecretNames: ReadonlySet<string>,
   attemptLabel: string,
+  command: string[],
+  testkit: TestkitPackage | undefined,
 ): Promise<AttemptResult> {
   const copyDir = join(scratchRoot, "runs", repo.manifest.id, attemptLabel);
   await mkdir(copyDir, { recursive: true });
 
   await copyRepoIsolated(repo.dir, copyDir);
   await pointAtCandidateTarball(copyDir, candidate.path);
+
+  const wantsTestkit = repo.manifest.harness?.testkit === true;
+  if (wantsTestkit) {
+    if (testkit === undefined) {
+      throw new Error(
+        `${repo.manifest.id} declares harness.testkit but no Testkit snapshot was built — internal orchestrator error`,
+      );
+    }
+    await injectTestkitDirectory(copyDir, testkit);
+  }
 
   // Each repo self-roots as its own workspace (empty `packages: []` in its
   // pnpm-workspace.yaml, README §2.1) and declares its own `allowBuilds` there — that's
@@ -239,7 +267,7 @@ async function runRepoOnce(
 
   const childEnv = buildChildEnv(process.env, allSecretNames, repo.manifest.secrets);
   const timeoutMs = repo.manifest.timeoutMinutes * 60_000;
-  const outcome = await runWithTimeout(repo.manifest.command, copyDir, childEnv, timeoutMs);
+  const outcome = await runWithTimeout(command, copyDir, childEnv, timeoutMs);
 
   // Regardless of pass/fail/timeout — the isolated copy is deleted once this function
   // returns, so this is the only chance to hand evidence back to the real repo directory
@@ -258,12 +286,22 @@ async function runRepoOnce(
     injectionReason = `could not read isolated copy's pnpm-lock.yaml: ${(err as Error).message}`;
   }
 
+  let testkitOk: boolean | undefined;
+  let testkitReason: string | undefined;
+  if (wantsTestkit && testkit !== undefined) {
+    const verdict = verifyInstalledTestkit(copyDir, testkit);
+    testkitOk = verdict.ok;
+    if (!verdict.ok) testkitReason = verdict.reason;
+  }
+
   return {
     exitCode: outcome.exitCode,
     signal: outcome.signal,
     timedOut: outcome.timedOut,
     injectionOk,
     injectionReason,
+    testkitOk,
+    testkitReason,
   };
 }
 
@@ -278,6 +316,9 @@ function classify(a: AttemptResult): { category: Category; detail: string } {
   }
   if (!a.injectionOk) {
     return { category: "infra", detail: `injection verification failed: ${a.injectionReason}` };
+  }
+  if (a.testkitOk === false) {
+    return { category: "infra", detail: `testkit injection verification failed: ${a.testkitReason}` };
   }
   if (a.exitCode === 0) {
     return { category: "pass", detail: "clean pass" };
@@ -302,14 +343,16 @@ async function runRepoWithRetry(
   candidate: CandidateTarball,
   scratchRoot: string,
   allSecretNames: ReadonlySet<string>,
+  command: string[],
+  testkit: TestkitPackage | undefined,
 ): Promise<RepoResult> {
-  const first = await runRepoOnce(repo, candidate, scratchRoot, allSecretNames, "attempt-1");
+  const first = await runRepoOnce(repo, candidate, scratchRoot, allSecretNames, "attempt-1", command, testkit);
 
   if (first.exitCode === EX_TEMPFAIL) {
     console.log(
       `[e2e] ${repo.manifest.id}: exit ${EX_TEMPFAIL} (EX_TEMPFAIL) — retrying once with a fresh isolated copy`,
     );
-    const second = await runRepoOnce(repo, candidate, scratchRoot, allSecretNames, "attempt-2");
+    const second = await runRepoOnce(repo, candidate, scratchRoot, allSecretNames, "attempt-2", command, testkit);
     const c = classify(second);
     return { id: repo.manifest.id, group: repo.manifest.group, exitCode: second.exitCode, category: c.category, detail: c.detail, attempts: 2 };
   }
@@ -370,14 +413,35 @@ async function main(): Promise<void> {
       return;
     }
 
+    if (cli.passthrough.length > 0 && selected.length !== 1) {
+      throw new Error(
+        `native runner args (${cli.passthrough.join(" ")}) require exactly one selected repo — use --repo <id> (selected ${selected.length})`,
+      );
+    }
+
     const allSecretNames = new Set<string>();
     for (const r of repos) for (const s of r.manifest.secrets) allSecretNames.add(s);
+
+    // Only when a selected consumer declares harness.testkit: clean-build the
+    // private workspace Testkit into a scratch snapshot. The shared
+    // packages/testkit/dist is never read, written or removed.
+    let testkit: TestkitPackage | undefined;
+    const testkitWanted = selected.some((r) => r.manifest.harness?.testkit === true);
+    if (testkitWanted) {
+      console.log(`[e2e] building private @niceeval/testkit snapshot into scratch (shared dist untouched) ...`);
+      testkit = await buildTestkitPackage(root, join(scratchRoot, "testkit"));
+      console.log(`[e2e] testkit snapshot: ${testkit.path}`);
+    }
 
     // c-g. Isolated copy, install, inject env, spawn, verify, retry-on-75 — per repo.
     const results: RepoResult[] = [];
     for (const repo of selected) {
       console.log(`\n[e2e] === ${repo.manifest.id} (${repo.manifest.group}) ===`);
-      results.push(await runRepoWithRetry(repo, candidate, scratchRoot, allSecretNames));
+      const command = [...repo.manifest.command, ...cli.passthrough];
+      if (cli.passthrough.length > 0) {
+        console.log(`[e2e] native runner args passthrough: ${cli.passthrough.join(" ")}`);
+      }
+      results.push(await runRepoWithRetry(repo, candidate, scratchRoot, allSecretNames, command, testkit));
     }
 
     // h. Aggregate.

@@ -1,6 +1,9 @@
 # examples/ 不属于本仓库的 monorepo —— 每个 example 是独立 npm 项目(自带 package.json,
 # 依赖发布版 niceeval),不作为本 workspace 的成员。
-packages: []
+# packages/ 只装内部私有包(当前仅 @niceeval/testkit),不进发布产物;e2e/ 各仓库用自己的
+# 空 packages: [] 自成 workspace root,不受本声明影响。
+packages:
+  - "packages/*"
 
 allowBuilds:
   braintrust: false

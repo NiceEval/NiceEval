@@ -21,6 +21,10 @@ export interface RepoRequires {
   memoryGB?: number;
 }
 
+export interface RepoHarness {
+  testkit?: boolean;
+}
+
 export interface RepoManifest {
   id: string;
   group: Group;
@@ -29,6 +33,7 @@ export interface RepoManifest {
   secrets: string[];
   artifacts: string[];
   requires?: RepoRequires;
+  harness?: RepoHarness;
 }
 
 export interface DiscoveredRepo {
@@ -156,6 +161,23 @@ function validateManifest(raw: unknown, source: string): ValidateResult {
     }
   }
 
+  let harness: RepoHarness | undefined;
+  if (r.harness !== undefined) {
+    if (typeof r.harness !== "object" || r.harness === null || Array.isArray(r.harness)) {
+      errors.push(`${source}: "harness" must be an object when present, got ${JSON.stringify(r.harness)}`);
+    } else {
+      const h = r.harness as Record<string, unknown>;
+      harness = {};
+      if (h.testkit !== undefined) {
+        if (typeof h.testkit !== "boolean") {
+          errors.push(`${source}: "harness.testkit" must be a boolean, got ${JSON.stringify(h.testkit)}`);
+        } else {
+          harness.testkit = h.testkit;
+        }
+      }
+    }
+  }
+
   if (errors.length > 0) return { ok: false, errors };
 
   return {
@@ -168,6 +190,7 @@ function validateManifest(raw: unknown, source: string): ValidateResult {
       secrets: r.secrets as string[],
       artifacts: r.artifacts as string[],
       requires,
+      harness,
     },
   };
 }
