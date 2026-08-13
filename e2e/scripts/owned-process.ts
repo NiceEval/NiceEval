@@ -22,6 +22,8 @@ export interface OwnedProcessOptions {
   timeoutMs?: number;
   /** Stops a command that has already started and prevents a new one from starting. */
   abortSignal?: AbortSignal;
+  /** Prefix each streamed line without changing captured stdout/stderr. */
+  streamPrefix?: string;
 }
 
 export interface OwnedProcessResult {
@@ -147,6 +149,8 @@ class ActiveOwnedProcess {
   private groupCleanupDetail: string;
   private readonly groupSignalsSent: NodeJS.Signals[] = [];
   private killAttempted = false;
+  private stdoutAtLineStart = true;
+  private stderrAtLineStart = true;
 
   constructor(
     private readonly child: ChildProcess,
@@ -155,6 +159,7 @@ class ActiveOwnedProcess {
     private readonly stream: boolean,
     private readonly graceMs: number,
     private readonly processGroupOwned: boolean,
+    private readonly streamPrefix?: string,
   ) {
     const pid = child.pid;
     // `detached: true` creates a new POSIX session/process group whose id is
@@ -175,12 +180,12 @@ class ActiveOwnedProcess {
       child.stdout?.on("data", (chunk: Buffer | string) => {
         const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
         this.stdout += text;
-        if (stream) process.stdout.write(text);
+        if (stream) process.stdout.write(this.prefixedChunk(text, "stdout"));
       });
       child.stderr?.on("data", (chunk: Buffer | string) => {
         const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
         this.stderr += text;
-        if (stream) process.stderr.write(text);
+        if (stream) process.stderr.write(this.prefixedChunk(text, "stderr"));
       });
     }
 
@@ -194,6 +199,16 @@ class ActiveOwnedProcess {
       // finish only after the owned-group postcondition below.
       void this.finishAfterLeaderClose(exitCode, signal);
     });
+  }
+
+  private prefixedChunk(text: string, channel: "stdout" | "stderr"): string {
+    if (this.streamPrefix === undefined || text.length === 0) return text;
+    const atLineStart = channel === "stdout" ? this.stdoutAtLineStart : this.stderrAtLineStart;
+    const prefix = `[${this.streamPrefix}] `;
+    const transformed = `${atLineStart ? prefix : ""}${text.replace(/\n(?!$)/g, `\n${prefix}`)}`;
+    if (channel === "stdout") this.stdoutAtLineStart = text.endsWith("\n");
+    else this.stderrAtLineStart = text.endsWith("\n");
+    return transformed;
   }
 
   requestTermination(signal: NodeJS.Signals, cause: OwnedTermination): void {
@@ -450,6 +465,7 @@ export class OwnedProcessSupervisor {
       options.stream ?? true,
       this.graceMs,
       processGroupOwned,
+      options.streamPrefix,
     );
     this.active.add(active);
 

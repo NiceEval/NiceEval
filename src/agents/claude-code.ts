@@ -265,7 +265,9 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
       if (config?.maxTurns != null) args.push("--max-turns", String(config.maxTurns));
       if (ctx.flags.webResearch) args.push("--allowedTools", "WebSearch,WebFetch");
       if (ctx.session.id) args.push("--resume", ctx.session.id);
-      args.push(input.text);
+      // --allowedTools is variadic in Claude Code. Terminate option parsing so the
+      // positional prompt cannot be consumed as one more allowed tool name.
+      args.push("--", input.text);
 
       const apiKey = getApiKey();
       const env: globalThis.Record<string, string> = {

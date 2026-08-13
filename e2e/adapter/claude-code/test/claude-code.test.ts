@@ -32,8 +32,8 @@ const EXPECTED_EXPERIMENTS = [
   "remote-plugin",
   "locked-down",
 ] as const;
-const EXPECTED_PASSED_ATTEMPTS = 18;
-const RETRY_CONCURRENCY = 4;
+// websearch-denied 同时跑在 coding 正例与 locked-down deny 反例上。
+const EXPECTED_PASSED_ATTEMPTS = 19;
 
 const REQUIRED_LIVE_SECRETS = ["ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL"] as const;
 
@@ -65,15 +65,10 @@ function evalKey(event: Pick<ExpEvalEvent, "experimentId" | "evalId">): string {
   return `${event.experimentId}\u0000${event.evalId}`;
 }
 
-function assertExactRetrySelector(events: readonly ExpEvalEvent[], failed: ExpEvalEvent): void {
-  const experiments = new Set(
-    events
-      .filter((event) => event.experimentId.startsWith(failed.experimentId))
-      .map((event) => event.experimentId),
-  );
-  expect(experiments, `ambiguous Experiment retry selector ${failed.experimentId}`).toEqual(
-    new Set([failed.experimentId]),
-  );
+function assertExactRetryEvalSelector(events: readonly ExpEvalEvent[], failed: ExpEvalEvent): void {
+  // Experiment selectors prefer an exact ID before considering path-prefix
+  // families. Eval selectors intentionally use bare prefixes, so only the
+  // Eval selector needs a preflight ambiguity check before spending a retry.
   const evals = events
     .filter(
       (event) =>
@@ -104,30 +99,31 @@ beforeAll(async () => {
   );
   const inv = run.expReceipt();
   const firstEvents = run.expEvalEvents();
-  // plugin-reuse 是八条 Attempt 的 Sandbox 复用 owner，不是模型断言重试消费者。
+  // plugin-reuse 是八条 Attempt 的 Sandbox 复用 owner，不能用二次运行替换它的首次并发结果。
+  // 其余 live provider 任务只对模型断言失败补跑一次；setup、timeout、I/O error 与
+  // skipped 都是基础设施/生命周期故障，不能用后续绿色覆盖。
   const failed = firstEvents.filter(
     (event) => event.verdict === "failed" && event.experimentId !== "plugin-reuse",
   );
   expect(
-    firstEvents.filter((event) => event.verdict === "errored" || event.verdict === "skipped"),
+    firstEvents.filter(
+      (event) => event.verdict === "errored" || event.verdict === "skipped",
+    ),
     run.diagnostic(),
   ).toHaveLength(0);
   expect(run.exitCode, run.diagnostic()).toBe(failed.length > 0 ? 1 : 0);
   expect(inv.completion, run.diagnostic()).toBe("completed");
-  for (const event of failed) assertExactRetrySelector(firstEvents, event);
+  for (const event of failed) assertExactRetryEvalSelector(firstEvents, event);
 
+  // 补跑 Invocation 继续写同一个保留证据的 Record；Record 是单写者，所以同 Repo
+  // 必须串行。主 Invocation 内的 Attempt 并发和跨 Repo batch 并发不受影响。
   const retryRuns: ProcessReceipt[] = [];
-  for (let offset = 0; offset < failed.length; offset += RETRY_CONCURRENCY) {
-    const batch = failed.slice(offset, offset + RETRY_CONCURRENCY);
+  for (const event of failed) {
     retryRuns.push(
-      ...(await Promise.all(
-        batch.map((event) =>
-          niceeval.run(
-            ["exp", event.experimentId, event.evalId, "--rerun", "all", "--json"],
-            { timeoutMs: 50 * 60_000 },
-          ),
-        ),
-      )),
+      await niceeval.run(
+        ["exp", event.experimentId, event.evalId, "--rerun", "all", "--json"],
+        { timeoutMs: 50 * 60_000 },
+      ),
     );
   }
   const retriedByEval = new Map<string, ExpEvalEvent>();

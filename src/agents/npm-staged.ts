@@ -6,7 +6,7 @@ import { mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
 import { pathToFileURL } from "node:url";
-import { Effect } from "effect";
+import { Cause, Effect, Exit } from "effect";
 import { t } from "../i18n/index.ts";
 import { shellQuote } from "../sandbox/shell.ts";
 import type { Sandbox } from "../sandbox/types.ts";
@@ -452,7 +452,7 @@ export function createNpmCliInstaller(opts: NpmCliInstallerOptions): {
       revision: opts.identity.revision,
       inputs: { agent: opts.identity.agent, version: opts.identity.version, bin: opts.bin },
     },
-    (sandbox, context) => Effect.runPromise(
+    (sandbox, context) => Effect.runPromiseExit(
       checkNpmCliEffect(sandbox, {
         bin: opts.bin,
         expectedVersion: opts.identity.version,
@@ -470,7 +470,13 @@ export function createNpmCliInstaller(opts: NpmCliInstallerOptions): {
             )),
       ),
       { signal: context.signal },
-    ),
+    ).then((exit) => {
+      if (Exit.isSuccess(exit)) return;
+      // `runPromise` wraps a typed Effect failure in FiberFailure. The Ensure
+      // loop must see the original command-exit value so a version miss takes
+      // the install path instead of being misclassified as a broken probe.
+      throw Cause.squash(exit.cause);
+    }),
   );
   const installer: Extract<AgentInstaller, { installMode: "staged" }> & DockerfileAgentCacheSafeInstaller = {
     [AGENT_DOCKERFILE_CACHE_SAFE]: true,

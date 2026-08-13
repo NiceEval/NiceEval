@@ -1,6 +1,7 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "package",
+  "batch": "host-1",
   "areas": ["package"],
   "lanes": ["pr", "main", "nightly", "release"],
   "executor": { "kind": "host" },

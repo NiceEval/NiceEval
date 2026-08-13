@@ -46,4 +46,4 @@ Roadmap 与 Feature、Design 候选共用 [Feature Design Package](../_template/
 - [Experiment Pilot 抽样](experiment-pilot-sampling/README.md) —— 用共同 Eval ID、固定 seed 与 non-final coverage 运行可复现小样本
 - [具名 Experiment 族](experiment-families/README.md) —— 用 keyed record 在一个文件中声明多个稳定 Experiment ID
 - [Fixture 内容命令](sandbox-fixture-content/README.md) —— 把本地内容登记、稳定 command identity 与 Sandbox 传输收成一个 prepare 糖
-- [Eval E2E Verdict 期望](e2e-eval-verdict-expectations/README.md) —— 用 Repo-local 薄封装减少 Vitest 机械样板，不把测试期望注解进 Eval 产品定义
+- [Eval E2E Verdict Policy](e2e-eval-verdict-expectations/README.md) —— 用 Repo-local typed policy 统一首次结果、live retry 与终局验收，不把测试期望注解进 Eval 产品定义
