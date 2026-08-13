@@ -63,6 +63,7 @@ import {
   deriveDiffData,
 } from "../assertions/diff.ts";
 import { createAgentWorkspaceDiff } from "../assertions/workspace-diff.ts";
+import { assertAgentWorkspaceDiffRecordableV1 } from "../assertions/record/diff.ts";
 import { createDirectAgentSandbox } from "./direct-agent-sandbox.ts";
 import { createSandboxCommandTarget, SandboxCommandExitError } from "../sandbox/operations.ts";
 import { inheritSandboxCapabilities } from "../sandbox/backend.ts";
@@ -1875,6 +1876,12 @@ async function runAttemptBody(
           windows: diffWindows,
           policy: ledger.attribution,
         });
+        // Diff is supplemental unless an Assertion declared it required. Check
+        // the exact durable v1 representation here, while the shared late
+        // state can still become unavailable. Discovering the Record JSON
+        // limit only during publication would abort the whole Run after all
+        // Attempts had already settled.
+        assertAgentWorkspaceDiffRecordableV1(document);
         state.late.diff = Object.freeze({
           state: "available" as const,
           document,

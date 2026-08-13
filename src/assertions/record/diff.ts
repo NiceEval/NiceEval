@@ -180,6 +180,18 @@ function assertDiffPayloadFitsRecordJsonLimit(
 }
 
 /**
+ * Checks the exact v1 Record representation while the Runner can still treat
+ * an oversized supplemental diff as unavailable. Waiting until Evaluation
+ * publication would turn one optional evidence failure into a fatal Run-wide
+ * write error after every Attempt has already settled.
+ */
+export function assertAgentWorkspaceDiffRecordableV1(
+  value: AgentWorkspaceDiff,
+): void {
+  assertDiffPayloadFitsRecordJsonLimit(encodeAgentWorkspaceDiffDocumentV1(value));
+}
+
+/**
  * Captures the exact frozen semantic object held by post-run evaluators. The
  * no-blob v1 representation is intentionally small enough for normal ledger
  * exports; a future adjacent schema may move endpoint text into this owner's
