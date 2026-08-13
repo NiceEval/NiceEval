@@ -45,6 +45,17 @@ import {
   timingEvidenceReport,
 } from "./report/built-in/execution.ts";
 import { sourceEvidenceReport } from "./report/built-in/source.ts";
+import { publicLeaderboardReport } from "./report/built-in/leaderboard.ts";
+import {
+  calculationValue,
+  renderShowJson,
+  buildShowSample,
+  type ShowJson,
+  type ShowJsonView,
+} from "./show/json.ts";
+import type { LeaderboardShowJson } from "./report/built-in/leaderboard.ts";
+import type { SourceShowJson } from "./report/built-in/source.ts";
+import type { PublicTimingJson } from "./report/built-in/execution.ts";
 import { reportRoute, type ReportRoute } from "./report/author/identity.ts";
 import type { Report } from "./report/author/model.ts";
 import {
@@ -341,7 +352,7 @@ const FLAG_OPTIONS = {
   tag: { type: "string" },
   /** 额外写一份 JUnit XML 报告到指定路径,供 CI 消费。 */
   junit: { type: "string" },
-  /** `exp` 命令专用:stdout 上单一有序的 NDJSON 事件流；`--dry --json` 输出单个 JSON 计划文档。`show` 命令专用:机器面数据信封，与 `--report` 互斥；`niceeval.report-show/v1` 只给内部 host / static 使用。 */
+  /** `exp` 命令专用:stdout 上单一有序的 NDJSON 事件流；`--dry --json` 输出单个 JSON 计划文档。`show` 命令专用:`niceeval.show` 数据信封，与 `--report` 互斥；`niceeval.report-show/v1` 只给内部 host / static 使用。 */
   json: { type: "boolean" },
   /** `docker profile doctor` 专用：启动受限 DinD 容器并运行内层容器。 */
   smoke: { type: "boolean" },
@@ -2313,7 +2324,7 @@ function parseReportCliRequest(input: {
       throw usageError("niceeval show --source requires one current Record Attempt locator.\n");
     }
     const parsedLocator = parseCurrentAttemptLocator(locator);
-    const report = sourceEvidenceReport();
+    const report = sourceEvidenceReport(sourceEvidenceOptions(input.flags.source, input.flags.json));
     return Object.freeze({
       command: input.command,
       cwd: input.cwd,
@@ -2385,6 +2396,112 @@ function parseReportCliRequest(input: {
     themeSelection: theme,
     ...(page === undefined ? {} : { page }),
   });
+}
+
+function sourceEvidenceOptions(source: Flags["source"], json = false): {
+  readonly mode: "default" | "full" | "file";
+  readonly file?: string;
+} {
+  if (source === "full") return Object.freeze({ mode: "full" as const });
+  if (typeof source === "string") return Object.freeze({ mode: "file" as const, file: source });
+  return Object.freeze({ mode: json ? "full" as const : "default" as const });
+}
+
+function publicShowJsonRequest(request: ReportCliRequest): ReportCliRequest {
+  if (request.reportSelection.kind === "fixed") return request;
+  return Object.freeze({
+    ...request,
+    reportSelection: Object.freeze({
+      kind: "fixed" as const,
+      report: publicLeaderboardReport,
+    }),
+  });
+}
+
+function publicShowEnvelope(
+  request: ReportCliRequest,
+  flags: Flags,
+  execution: ReportExecution,
+): ShowJson {
+  const view = publicShowView(request, flags);
+  const sample = buildShowSample({
+    resultsRoot: request.rootPath,
+    experiments: publicShowExperiments(view, execution),
+  });
+  switch (view) {
+    case "source":
+      return Object.freeze({
+        format: "niceeval.show" as const,
+        schemaVersion: 1 as const,
+        view,
+        sample,
+        data: calculationValue<SourceShowJson>(execution, "source-json") ?? {
+          locator: request.target.kind === "attempt" ? `@${request.target.attemptId}` : "@unknown",
+          source: null,
+          unavailable: "source calculation unavailable",
+        },
+      });
+    case "timing":
+      return Object.freeze({
+        format: "niceeval.show" as const,
+        schemaVersion: 1 as const,
+        view,
+        sample,
+        data: calculationValue<PublicTimingJson>(execution, "timing-json") ?? {
+          kind: "attempt" as const,
+          locator: request.target.kind === "attempt" ? `@${request.target.attemptId}` : "@unknown",
+          durationMs: null,
+          phases: Object.freeze([]),
+        },
+      });
+    case "leaderboard":
+      return Object.freeze({
+        format: "niceeval.show" as const,
+        schemaVersion: 1 as const,
+        view,
+        sample,
+        data: calculationValue<LeaderboardShowJson>(execution, "leaderboard") ?? {
+          experiments: Object.freeze([]),
+          passRate: null,
+          evals: 0,
+          attempts: 0,
+        },
+      });
+    default:
+      return Object.freeze({
+        format: "niceeval.show" as const,
+        schemaVersion: 1 as const,
+        view,
+        sample,
+        data: Object.freeze({
+          locator: request.target.kind === "attempt" ? `@${request.target.attemptId}` : undefined,
+        }),
+      });
+  }
+}
+
+function publicShowView(request: ReportCliRequest, flags: Flags): ShowJsonView {
+  if (flags.source !== undefined) return "source";
+  if (flags.timing !== undefined) return "timing";
+  if (flags.execution) return "execution";
+  if (request.target.kind === "attempt") return "attempt";
+  return "leaderboard";
+}
+
+function publicShowExperiments(view: ShowJsonView, execution: ReportExecution): readonly string[] {
+  if (view === "leaderboard") {
+    const data = calculationValue<LeaderboardShowJson>(execution, "leaderboard");
+    if (data !== undefined) return data.experiments.map((row) => row.experimentId);
+  }
+  if (view === "source") {
+    const data = calculationValue<SourceShowJson>(execution, "source-json");
+    if (data?.source !== null && data?.source !== undefined) return [data.source.experimentId];
+  }
+  const selection = execution.sample.selection;
+  if (selection.policy === "project-current" && selection.experimentIds !== "all") {
+    return selection.experimentIds;
+  }
+  return Object.freeze([]);
 }
 
 function executionEvidenceOptions(flags: Flags): { readonly grep?: string } {
@@ -2754,16 +2871,25 @@ function runShowCommand(
   flags: Flags,
 ) {
   return Effect.gen(function* () {
-    const request = yield* Effect.try({
+    const parsed = yield* Effect.try({
       try: () => parseReportCliRequest({ command: "show", cwd, positionals, flags }),
       catch: (cause) => cliFailure("parse show arguments", cause),
     });
+    const request = flags.json
+      ? publicShowJsonRequest(parsed)
+      : parsed;
     const inputs = yield* loadCliReportInputs(request);
     const execution = yield* executeCliReport(request, inputs);
     yield* requireKnownReportPage(execution, request.page);
+    if (flags.json) {
+      const envelope = publicShowEnvelope(request, flags, execution);
+      yield* Effect.sync(() => {
+        process.stdout.write(renderShowJson(envelope));
+      });
+      return 0;
+    }
     yield* showReport({
       execution,
-      ...(flags.json ? { format: "json" as const } : {}),
       ...(request.page === undefined ? {} : { page: request.page }),
     }).pipe(
       Effect.provideService(ReportConsole, cliReportConsole),

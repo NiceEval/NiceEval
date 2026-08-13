@@ -73,11 +73,11 @@ export function showReport(
 export function renderReportExecutionText(input: ShowReportInput): string {
   const { execution } = input;
   const pages = selectedPages(execution.pages, input.page);
-  if (isClassicDashboardPresentation(pages)) {
+  if (isEvidenceTextPresentation(pages) || isClassicDashboardPresentation(pages)) {
     const width = terminalColumns();
     const dashboard = pages
       .flatMap((page) => page.state === "rendered"
-        ? [renderClassicDashboardDocument(page.document, width).join("\n")]
+        ? [renderEvidenceOrDashboardDocument(page.document, width).join("\n")]
         : [])
       .join("\n\n");
     const problems = execution.problemTable.length === 0
@@ -343,6 +343,23 @@ function isClassicDashboardPresentation(
 ): boolean {
   return pages.length > 0
     && pages.every((page) => page.state === "rendered" && page.document.presentation === "classic-dashboard");
+}
+
+function isEvidenceTextPresentation(
+  pages: readonly ReportPageResult[],
+): boolean {
+  return pages.length > 0
+    && pages.every((page) => page.state === "rendered" && page.document.presentation === "evidence-text");
+}
+
+function renderEvidenceOrDashboardDocument(document: ReportDocument, width: number): string[] {
+  if (document.presentation === "evidence-text") {
+    return document.children.flatMap((block) => {
+      if (block.type === "code-block") return block.value.split("\n");
+      return renderClassicBlockText(block, width);
+    });
+  }
+  return renderClassicDashboardDocument(document, width);
 }
 
 /** The classic surface deliberately contains no terminal control sequences, including when NO_COLOR is absent. */

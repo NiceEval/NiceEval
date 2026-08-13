@@ -19,6 +19,7 @@ import {
   type UsageView,
 } from "../../o11y/record/family-projectors.ts";
 import {
+  defineCalculation,
   definePage,
   defineReport,
   reportComponentId,
@@ -49,6 +50,37 @@ const executionInputs = reportInputs({
 const timingEvidenceInputs = reportInputs({
   timing: attemptSlotProjection(attemptTimingProjector),
 });
+
+const PUBLIC_TIMING_PHASES = [
+  "sandbox.queue",
+  "sandbox.create",
+  "sandbox.prepare",
+  "agent.ensure",
+  "workspace.baseline",
+  "agent.setup",
+  "telemetry.configure",
+  "eval.run",
+  "workspace.diff",
+  "assertions.evaluate",
+  "telemetry.collect",
+  "agent.teardown",
+  "sandbox.cleanup",
+  "sandbox.stop",
+] as const;
+
+type PublicTimingPhase = (typeof PUBLIC_TIMING_PHASES)[number];
+
+export interface PublicTimingPhaseRow {
+  readonly name: PublicTimingPhase;
+  readonly durationMs: number;
+}
+
+export interface PublicTimingJson {
+  readonly kind: "attempt";
+  readonly locator: string;
+  readonly durationMs: number | null;
+  readonly phases: readonly PublicTimingPhaseRow[];
+}
 
 type ExecutionInputs = {
   readonly conversation: ProjectedSample<"attempt-slot", ConversationView>;
@@ -107,15 +139,23 @@ export const defaultExecutionEvidenceReport = executionEvidenceReport();
  */
 export function timingEvidenceReport(input: TimingEvidenceReportOptions = {}): Report {
   const mode = input.mode ?? "summary";
+  const timingJson = defineCalculation({
+    id: Either.getOrThrow(reportComponentId("timing-json")),
+    inputs: timingEvidenceInputs,
+    completeness: "allow-partial",
+    calculate: ({ sample, inputs }) => publicTimingJson(sample.slots, inputs.timing),
+  });
   const page = definePage({
     id: Either.getOrThrow(reportComponentId("timing-evidence")),
     route: Either.getOrThrow(reportRoute("/")),
     inputs: timingEvidenceInputs,
     completeness: "allow-partial",
-    render: ({ inputs }) => timingEvidenceDocument(inputs.timing, mode),
+    calculations: { timingJson },
+    render: ({ calculations }) => timingEvidenceDocument(calculations.timingJson, mode),
   });
   return defineReport({
     id: Either.getOrThrow(reportId("timing-evidence")),
+    calculations: { timingJson },
     pages: [page],
   });
 }
@@ -123,30 +163,123 @@ export function timingEvidenceReport(input: TimingEvidenceReportOptions = {}): R
 export const defaultTimingEvidenceReport = timingEvidenceReport();
 
 function timingEvidenceDocument(
-  timing: ProjectedSample<"attempt-slot", AttemptTimingView>,
-  mode: "summary" | "full",
+  result:
+    | { readonly state: "available"; readonly value: PublicTimingJson }
+    | { readonly state: "data-unavailable" | "execution-failed"; readonly problemIds: readonly number[] },
+  _mode: "summary" | "full",
 ) {
-  const timingBySlot = entriesBySlot(timing);
-  const slots = timing.sample.slots;
+  if (result.state !== "available") {
+    return reportDocument({
+      title: "Attempt timing",
+      presentation: "evidence-text",
+      children: [reportCodeBlock({
+        value: "phase timing unavailable (this result was not produced by a runner with phase timing)",
+      })],
+    });
+  }
   return reportDocument({
     title: "Attempt timing",
-    children: slots.length === 0
-      ? [reportStatus({
-        tone: "warning",
-        label: "The selected sample has no Slots to display",
-      })]
-      : slots.map((slot) => reportSection({
-        heading: `Slot ${slot.runId}/${slot.slotId}`,
-        children: [
-          slotStateBlock(slot),
-          ...projectionBlocks(
-            "Timing",
-            timingBySlot.get(slotKey(slot)),
-            (view) => timingBlocks(view, mode),
-          ),
-        ],
-      })),
+    presentation: "evidence-text",
+    children: [reportCodeBlock({
+      value: renderPublicTimingText(result.value),
+    })],
   });
+}
+
+function publicTimingJson(
+  slots: readonly AnalysisSlot[],
+  timing: ProjectedSample<"attempt-slot", AttemptTimingView>,
+): PublicTimingJson {
+  const included = slots.find((slot) => slot.state === "included");
+  const locator = included === undefined ? "@unknown" : `@${included.attempt.attemptId}`;
+  const view = included === undefined
+    ? undefined
+    : availableTimingView(timing, included.runId, included.slotId);
+  const phases = view === undefined ? [] : publicPhasesFromTiming(view);
+  const durationMs = view === undefined
+    ? null
+    : phases.reduce((sum, phase) => sum + phase.durationMs, 0);
+  return Object.freeze({
+    kind: "attempt" as const,
+    locator,
+    durationMs: phases.length === 0 ? null : durationMs,
+    phases,
+  });
+}
+
+function availableTimingView(
+  timing: ProjectedSample<"attempt-slot", AttemptTimingView>,
+  runId: string,
+  slotId: AnalysisSlot["slotId"],
+): AttemptTimingView | undefined {
+  for (const entry of timing.entries) {
+    if (
+      entry.state === "attachment-result"
+      && entry.slot.runId === runId
+      && entry.slot.slotId === slotId
+      && entry.attachment.state === "available"
+    ) {
+      return entry.attachment.value;
+    }
+  }
+  return undefined;
+}
+
+function publicPhasesFromTiming(view: AttemptTimingView): readonly PublicTimingPhaseRow[] {
+  const rows: PublicTimingPhaseRow[] = [];
+  const seen = new Set<string>();
+  for (const interval of view.intervals) {
+    if (interval.parentIntervalId !== null) continue;
+    const name = publicPhaseName(interval.phase, interval.label);
+    if (name === undefined || seen.has(name)) continue;
+    seen.add(name);
+    rows.push(Object.freeze({ name, durationMs: interval.durationMs }));
+  }
+  return Object.freeze(rows);
+}
+
+function publicPhaseName(phase: string, label: string): PublicTimingPhase | undefined {
+  if (isPublicTimingPhase(label)) return label;
+  switch (phase) {
+    case "sandbox.prepare":
+      return "sandbox.prepare";
+    case "agent.ensure":
+      return "agent.ensure";
+    case "eval.run":
+      return "eval.run";
+    case "assertion.evaluate":
+      return "assertions.evaluate";
+    case "attempt.teardown":
+      return "agent.teardown";
+    default:
+      return undefined;
+  }
+}
+
+function isPublicTimingPhase(value: string): value is PublicTimingPhase {
+  return (PUBLIC_TIMING_PHASES as readonly string[]).includes(value);
+}
+
+function renderPublicTimingText(value: PublicTimingJson): string {
+  if (value.phases.length === 0) {
+    return `${value.locator}\n\nphase timing unavailable (this result was not produced by a runner with phase timing)`;
+  }
+  const lines = [
+    value.locator,
+    "",
+    `total ${formatTimingDuration(value.durationMs)}`,
+    "",
+    ...value.phases.map((phase) =>
+      `${phase.name.padEnd(22)}${formatTimingDuration(phase.durationMs)}`
+    ),
+  ];
+  return lines.join("\n");
+}
+
+function formatTimingDuration(value: number | null): string {
+  if (value === null) return "—";
+  if (value < 1000) return `${Math.round(value)}ms`;
+  return `${(value / 1000).toFixed(2)}s`;
 }
 
 function executionEvidenceDocument(

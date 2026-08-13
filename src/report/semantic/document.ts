@@ -43,8 +43,8 @@ export type ReportInline =
 export interface ReportDocument {
   readonly title: string;
   readonly children: readonly ReportBlock[];
-  /** Opts into the host-owned classic dashboard presentation without a second renderer. */
-  readonly presentation?: "classic-dashboard";
+  /** Host-owned presentation profile. Not a second data or render truth. */
+  readonly presentation?: "classic-dashboard" | "evidence-text";
   /** States whether classic metadata came from the current declaration or a partial selection. */
   readonly metadataOrigin?: "current-declaration" | "partial";
 }
@@ -536,7 +536,11 @@ function validateDocument(
       "metadataOrigin",
     ]);
     validateString(field(record, "title"), state, pathFor(path, "title"));
-    if (hasField(record, "presentation") && field(record, "presentation") !== "classic-dashboard") {
+    if (
+      hasField(record, "presentation")
+      && field(record, "presentation") !== "classic-dashboard"
+      && field(record, "presentation") !== "evidence-text"
+    ) {
       issue(state, "shape", pathFor(path, "presentation"), "the document presentation is not recognized");
     }
     if (

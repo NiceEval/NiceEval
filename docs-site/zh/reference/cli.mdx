@@ -166,7 +166,7 @@ E2B template name 与 Vercel snapshot ID 是 Provider 管理的任意字符串�
 | `--orphans` | boolean | `sandbox list` 专用:核对强杀(`SIGKILL` / 断电)路径留下的无主沙箱实例(docker + e2b;vercel 无按元数据检索实例的通道,不参与)。只读,不清理;销毁走 `niceeval sandbox prune`。 |
 | `--tag` | string | 只运行带有该 tag 的 eval(见 `defineEval` 的 `tags`)。 |
 | `--junit` | string | 额外写一份 JUnit XML 报告到指定路径,供 CI 消费。 |
-| `--json` | boolean | `exp` 命令专用:stdout 上单一有序的 NDJSON 事件流；`--dry --json` 输出单个 JSON 计划文档。`show` 命令专用:机器面数据信封，与 `--report` 互斥；`niceeval.report-show/v1` 只给内部 host / static 使用。 |
+| `--json` | boolean | `exp` 命令专用:stdout 上单一有序的 NDJSON 事件流；`--dry --json` 输出单个 JSON 计划文档。`show` 命令专用:`niceeval.show` 数据信封，与 `--report` 互斥；`niceeval.report-show/v1` 只给内部 host / static 使用。 |
 | `--smoke` | boolean | `docker profile doctor` 专用：启动受限 DinD 容器并运行内层容器。 |
 | `--out` | string | `view` 命令专用:把结果查看器静态导出到指定目录。 |
 | `--port` | number | `view` 命令专用:指定本地服务器监听端口。 |
