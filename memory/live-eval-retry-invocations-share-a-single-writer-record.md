@@ -17,3 +17,7 @@ Repo batch 之间可以并行，单个 `niceeval exp` 内部的 Attempt 也可�
 修法只把罕见的失败补跑 Invocation 按首轮事件顺序串行；主 Invocation 内部并发、不同 Repo
 batch 并发和所有首轮运行均保持不变。不要通过忽略 `RecordWriterBusy`、另建未纳入 locator
 链的临时 Record，或并行后重试 writer 冲突来伪造绿色。
+
+同一规则也适用于 Claude Code 等其它 live Adapter owner：只有 `verdict: failed` 表示模型输出
+没有达到断言，允许精确补跑一次；`errored`、`skipped`、超时、setup 或 I/O 故障必须保留为
+失败。否则补跑会同时掩盖基础设施根因，并可能因共享 Record 的并发 writer 再制造二次故障。
