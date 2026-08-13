@@ -1,4 +1,3 @@
-import type { Sample } from "niceeval/record";
 import {
   Bars,
   Col,
@@ -9,6 +8,7 @@ import {
   Section,
   aggregate,
   costUSD,
+  defineComponent,
   defineReport,
   experiment,
   passRate,
@@ -24,8 +24,17 @@ const logo = `data:image/svg+xml,${encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#1f6feb"/><text x="32" y="40" text-anchor="middle" font-size="22" fill="white" font-family="sans-serif">MB</text></svg>',
 )}`;
 
-async function classicOverview(sample: Sample) {
-  const leaderboard = await aggregate(sample, {
+const MemoryBenchHero = defineComponent(() => (
+  <Hero
+    title="MemoryBench Classic"
+    logo={{ src: logo, alt: "MemoryBench Classic" }}
+    description="Deterministic 0.12 classic report: Hero, SampleSummary, leaderboard Bars, ExperimentScatter, and ExperimentTable."
+    links={[{ label: "NiceEval", href: "https://github.com/NiceEval/NiceEval" }]}
+  />
+));
+
+const Leaderboard = defineComponent(async (_props, ctx) => {
+  const leaderboard = await aggregate(ctx.scope, {
     by: { experiment },
     values: { passRate, costUSD },
   });
@@ -34,25 +43,26 @@ async function classicOverview(sample: Sample) {
   );
 
   return (
+    <Bars
+      points={ranked}
+      x="experiment"
+      y="passRate"
+      sort={{ field: "passRate", direction: "desc" }}
+      layout="horizontal"
+    />
+  );
+});
+
+function classicOverview() {
+  return (
     <Col>
-      <Hero
-        title="MemoryBench Classic"
-        logo={{ src: logo, alt: "MemoryBench Classic" }}
-        description="Deterministic 0.12 classic report: Hero, SampleSummary, leaderboard Bars, ExperimentScatter, and ExperimentTable."
-        links={[{ label: "NiceEval", href: "https://github.com/NiceEval/NiceEval" }]}
-      />
+      <MemoryBenchHero />
       <SampleSummary />
       <Section title={{ en: "Leaderboard", "zh-CN": "排行榜" }}>
-        <Bars
-          points={ranked}
-          x="experiment"
-          y="passRate"
-          sort={{ field: "passRate", direction: "desc" }}
-          layout="horizontal"
-        />
+        <Leaderboard />
       </Section>
-      <ExperimentScatter input={sample} />
-      <ExperimentTable input={sample} />
+      <ExperimentScatter />
+      <ExperimentTable />
     </Col>
   );
 }
