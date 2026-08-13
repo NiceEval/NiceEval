@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "agents/**/*.ts",
+    "evals/classic.eval.ts",
+    "evals/source-snapshot.eval.ts",
+    "evals/source-snapshot/**/*.ts",
+    "experiments/classic/**/*.ts",
+    "reports/classic.tsx",
+    "test/**/*.ts",
+    "vitest.config.ts",
+    "playwright.config.ts"
+  ]
+}

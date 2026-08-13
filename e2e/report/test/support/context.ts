@@ -1,4 +1,4 @@
-import { createE2EContext, type ArtifactStageEntry } from "@niceeval/testkit";
+import { createE2EContext, type ArtifactStageEntry } from "./testkit.ts";
 import { join, resolve } from "node:path";
 
 export const CLASSIC_EXPERIMENTS = ["classic/baseline", "classic/memory-a", "classic/memory-b"] as const;

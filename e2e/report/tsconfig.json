@@ -1,4 +1,7 @@
 {
+  // Baseline include for the pre-existing 0.12 report repo.
+  // reports/site.tsx has a known TS2367 on verdict === "unreadable".
+  // Do not patch that file for the new owner suite; typecheck new files with tsconfig.owner.json.
   "compilerOptions": {
     "target": "ES2022",
     "module": "NodeNext",

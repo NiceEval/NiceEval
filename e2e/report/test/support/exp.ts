@@ -1,4 +1,4 @@
-import { only } from "@niceeval/testkit";
+import { only } from "./testkit.ts";
 
 export interface ExpEvalEvent {
   event: "eval";

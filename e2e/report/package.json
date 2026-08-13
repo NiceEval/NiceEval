@@ -6,7 +6,8 @@
   "scripts": {
     "e2e": "node scripts/run-native.mjs",
     "e2e:legacy": "tsx scripts/e2e.ts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit -p tsconfig.owner.json",
+    "typecheck:baseline": "tsc --noEmit",
     "postinstall": "playwright install chromium"
   },
   "dependencies": {

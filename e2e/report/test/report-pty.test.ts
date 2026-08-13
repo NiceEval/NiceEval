@@ -3,7 +3,7 @@
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { runPty } from "@niceeval/testkit";
+import { runPty } from "./support/testkit.ts";
 import { expect, test } from "vitest";
 import { PINNED_ENV, PTY_ENV, reportCaseArtifacts, reportE2E } from "./support/context.ts";
 import { expectBoxed, expectPlain } from "./support/frames.ts";
