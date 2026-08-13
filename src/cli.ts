@@ -20,6 +20,7 @@ import { browsableExperimentPaths, evalPrefixPredicate, matchExperimentSelector 
 import type { JsonValue } from "./shared/types.ts";
 import { runEvals, type AgentRun } from "./runner/run.ts";
 import { planProjectTarget, type ProjectTargetPlan } from "./runner/fingerprint.ts";
+import { loadProjectCurrent } from "./runner/project-current.ts";
 import {
   makeRecordRoot,
   AttemptIdSchema,
@@ -275,14 +276,12 @@ export interface Flags {
   history: boolean;
   usage: boolean;
   stats: boolean;
-  /** `show` / `view` 命令专用：`--experiment` 可重复；只与 `--latest` 共同形成目标集合。 */
+  /** `show` / `view` 命令专用：默认读取当前项目结果时，按完整 ExperimentId 收窄目标。 */
   experiment?: string[];
   /** `show` / `view` / `accept` / `sandbox enter|list|stop` 共用:记录根目录(`.niceeval` 之外的另一个根,如 `publish` 产出的发布根)。 */
   record?: string;
   /** `show` / `view` 命令专用：`--run` 可重复；按完整 RunId 去重。 */
   run?: string[];
-  /** `show` / `view` 命令专用：按 Experiment 选择其 latest published Run。 */
-  latest: boolean;
   report?: string;
   page?: string;
   theme?: string;
@@ -359,14 +358,12 @@ const FLAG_OPTIONS = {
   usage: { type: "boolean" },
   /** 实现收敛占位；目标公开 CLI 不提供隐式跨 Run 统计。 */
   stats: { type: "boolean" },
-  /** `show` / `view` 命令专用：选择 latest policy 的完整 ExperimentId；可重复，不接受前缀或逗号列表。 */
+  /** `show` / `view` 命令专用：按完整 ExperimentId 收窄当前项目结果；可重复，不接受前缀或逗号列表。 */
   experiment: { type: "string", multiple: true },
   /** `show` / `view` / `accept` / `sandbox enter|list|stop` 共用:指定实际 Record root;CLI 不补接 `.niceeval/record` 或其它后缀。 */
   record: { type: "string" },
   /** `show` / `view` 可重复传入 `--run`;每次按完整 RunId 增加一个显式 Run,重复 identity 去重。 */
   run: { type: "string", multiple: true },
-  /** `show` / `view` 命令专用：按每个完整 ExperimentId 选择 latest published Run；与 `--run` 二选一。 */
-  latest: { type: "boolean" },
   /** `show` / `view` 命令专用：内建 `overview` 或受信任的 Report module 路径。 */
   report: { type: "string" },
   /** `show` / `view` 命令专用：内建 Theme 或受信任的闭合 Theme module 路径。 */
@@ -568,7 +565,6 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
     experiment: values.experiment as string[] | undefined,
     record: values.record as string | undefined,
     run: values.run as string[] | undefined,
-    latest: values.latest === true,
     report: values.report as string | undefined,
     page: values.page as string | undefined,
     theme: values.theme as string | undefined,
@@ -785,7 +781,6 @@ function firstViewerOnlyFlag(flags: Flags): { flag: string; command: string } | 
   if (flags.theme !== undefined) return { flag: "--theme", command: VIEW };
   if (flags.page !== undefined) return { flag: "--page", command: BOTH };
   if (flags.run !== undefined) return { flag: "--run", command: VIEW };
-  if (flags.latest) return { flag: "--latest", command: BOTH };
   if (flags.out !== undefined) return { flag: "--out", command: VIEW };
   if (flags.port !== undefined) return { flag: "--port", command: VIEW };
   if (flags.open !== undefined) return { flag: "--open", command: VIEW };
@@ -829,7 +824,6 @@ function firstRecordMaintenanceUnsupportedFlag(flags: Flags): string | undefined
     ["--stats", flags.stats],
     ["--experiment", flags.experiment],
     ["--run", flags.run],
-    ["--latest", flags.latest],
     ["--report", flags.report],
     ["--page", flags.page],
     ["--theme", flags.theme],
@@ -890,7 +884,6 @@ function parseAcceptLocators(positionals: string[], flags: Flags): string[] {
     ["--stats", flags.stats],
     ["--experiment", flags.experiment],
     ["--run", flags.run],
-    ["--latest", flags.latest],
     ["--report", flags.report],
     ["--page", flags.page],
     ["--theme", flags.theme],
@@ -1019,7 +1012,6 @@ export function firstExperimentRenameUnsupportedFlag(flags: Flags): string | und
     ["--experiment", flags.experiment],
     ["--record", flags.record],
     ["--run", flags.run],
-    ["--latest", flags.latest],
     ["--report", flags.report],
     ["--page", flags.page],
     ["--theme", flags.theme],
@@ -2084,6 +2076,10 @@ interface ReportCliRequest {
       readonly selection: AnalysisSelectionRequest;
     }
     | {
+      readonly kind: "project-current";
+      readonly experimentIds?: readonly ExperimentId[];
+    }
+    | {
       readonly kind: "attempt";
       readonly attemptId: AttemptId;
     };
@@ -2135,8 +2131,8 @@ function parseReportCliRequest(input: {
     if (input.positionals.length !== 1) {
       throw usageError("niceeval show --execution requires exactly one current Record Attempt locator.\n");
     }
-    if (input.flags.latest || runs.length > 0 || input.flags.experiment !== undefined) {
-      throw usageError("niceeval show --execution uses its Attempt locator as the only selection; remove --latest, --run, and --experiment.\n");
+    if (runs.length > 0 || input.flags.experiment !== undefined) {
+      throw usageError("niceeval show --execution uses its Attempt locator as the only selection; remove --run and --experiment.\n");
     }
     if (input.flags.report !== undefined) {
       throw usageError("niceeval show --execution selects its built-in execution Report; remove --report.\n");
@@ -2162,8 +2158,8 @@ function parseReportCliRequest(input: {
     if (input.positionals.length !== 1) {
       throw usageError("niceeval show --timing requires exactly one current Record Attempt locator.\n");
     }
-    if (input.flags.latest || runs.length > 0 || input.flags.experiment !== undefined) {
-      throw usageError("niceeval show --timing uses its Attempt locator as the only selection; remove --latest, --run, and --experiment.\n");
+    if (runs.length > 0 || input.flags.experiment !== undefined) {
+      throw usageError("niceeval show --timing uses its Attempt locator as the only selection; remove --run and --experiment.\n");
     }
     if (input.flags.report !== undefined) {
       throw usageError("niceeval show --timing selects its built-in timing Report; remove --report.\n");
@@ -2192,8 +2188,8 @@ function parseReportCliRequest(input: {
     if (input.positionals.length !== 1) {
       throw usageError("niceeval show --source requires exactly one current Record Attempt locator.\n");
     }
-    if (input.flags.latest || runs.length > 0 || input.flags.experiment !== undefined) {
-      throw usageError("niceeval show --source uses its Attempt locator as the only selection; remove --latest, --run, and --experiment.\n");
+    if (runs.length > 0 || input.flags.experiment !== undefined) {
+      throw usageError("niceeval show --source uses its Attempt locator as the only selection; remove --run and --experiment.\n");
     }
     if (input.flags.report !== undefined) {
       throw usageError("niceeval show --source selects its built-in source Report; remove --report.\n");
@@ -2219,18 +2215,18 @@ function parseReportCliRequest(input: {
   if (input.positionals.length > 0) {
     if (input.positionals.length !== 1) {
       throw usageError(
-        `niceeval ${input.command} accepts one exact Attempt locator, or a --run/--latest selection.\n`,
+        `niceeval ${input.command} accepts one exact Attempt locator, the default current-project selection, or --run.\n`,
       );
     }
-    if (input.flags.latest || runs.length > 0 || input.flags.experiment !== undefined) {
+    if (runs.length > 0 || input.flags.experiment !== undefined) {
       throw usageError(
-        `niceeval ${input.command} uses its Attempt locator as the only selection; remove --latest, --run, and --experiment.\n`,
+        `niceeval ${input.command} uses its Attempt locator as the only selection; remove --run and --experiment.\n`,
       );
     }
     const locator = input.positionals[0];
     if (locator === undefined || !locator.startsWith("@")) {
       throw usageError(
-        `niceeval ${input.command} selects Record data only with an exact @<current-AttemptId> locator, --run, or --latest.\n`,
+        `niceeval ${input.command} selects Record data only with an exact @<current-AttemptId> locator, --run, or no selector for current-project results.\n`,
       );
     }
     const attemptId = parseCurrentAttemptLocator(locator);
@@ -2248,28 +2244,27 @@ function parseReportCliRequest(input: {
     });
   }
 
-  if (input.flags.latest && runs.length > 0) {
-    throw usageError("--latest and --run are mutually exclusive; choose exactly one selection policy.\n");
-  }
-  if (!input.flags.latest && runs.length === 0) {
-    throw usageError("niceeval show/view requires exactly one of --latest or one or more --run <run-id>.\n");
-  }
-  if (!input.flags.latest && input.flags.experiment !== undefined) {
-    throw usageError("--experiment only combines with --latest; it cannot narrow explicit --run selection.\n");
+  if (runs.length > 0 && input.flags.experiment !== undefined) {
+    throw usageError("--experiment narrows the default current-project selection; it cannot combine with explicit --run.\n");
   }
 
   const report = reportSelection(input.cwd, input.flags.report);
   const theme = themeSelection(input.cwd, input.flags.theme);
-  const selection = input.flags.latest
-    ? latestSelection(input.flags.experiment)
-    : explicitSelection(runs);
+  const target = runs.length > 0
+    ? Object.freeze({ kind: "selection" as const, selection: explicitSelection(runs) })
+    : Object.freeze({
+        kind: "project-current" as const,
+        ...(input.flags.experiment === undefined
+          ? {}
+          : { experimentIds: uniqueExactExperimentIds(input.flags.experiment) }),
+      });
 
   return Object.freeze({
     command: input.command,
     cwd: input.cwd,
     root: root.right,
     rootPath,
-    target: Object.freeze({ kind: "selection" as const, selection }),
+    target,
     reportSelection: report,
     themeSelection: theme,
     ...(page === undefined ? {} : { page }),
@@ -2376,22 +2371,6 @@ function explicitSelection(values: readonly string[]): AnalysisSelectionRequest 
   });
 }
 
-function latestSelection(values: readonly string[] | undefined): AnalysisSelectionRequest {
-  if (values === undefined) {
-    return Object.freeze({ policy: "latest-runs", input: Object.freeze({}) });
-  }
-  const experimentIds = uniqueExactExperimentIds(values);
-  const [first, ...rest] = experimentIds;
-  if (first === undefined) {
-    throw usageError("--experiment requires one or more complete ExperimentId values.\n");
-  }
-  const nonEmptyExperimentIds: readonly [ExperimentId, ...ExperimentId[]] = [first, ...rest];
-  return Object.freeze({
-    policy: "latest-runs",
-    input: Object.freeze({ experimentIds: nonEmptyExperimentIds }),
-  });
-}
-
 function uniqueExactRunIds(values: readonly string[]): readonly RunId[] {
   const result: RunId[] = [];
   const seen = new Set<string>();
@@ -2439,6 +2418,7 @@ function parseCurrentAttemptLocator(value: string): AttemptId {
 interface LoadedCliReportInputs {
   readonly report: Report;
   readonly theme: ThemeDefinition;
+  readonly projectCurrentSelection?: AnalysisSelectionRequest;
   /** Record, config, and every statically discovered author module input. */
   readonly watchInputs: readonly string[];
 }
@@ -2450,17 +2430,35 @@ interface LoadedCliReportInputs {
  */
 function loadCliReportInputs(request: ReportCliRequest): Effect.Effect<LoadedCliReportInputs, CliFailure> {
   return Effect.gen(function* () {
+    const projectCurrent = request.target.kind === "project-current"
+      ? yield* cliEffect("load current project target", loadProjectCurrent(request.cwd, {
+          ...(request.target.experimentIds === undefined
+            ? {}
+            : { experiments: request.target.experimentIds }),
+          freshImport: true,
+        }))
+      : undefined;
     const configured = yield* cliEffect(
       "load trusted Report config",
       loadTrustedReportConfig(request.cwd),
     );
     const selectedReport = yield* reportFromSelection(request.reportSelection, configured.report);
     const selectedTheme = yield* themeFromSelection(request.themeSelection, configured.theme);
+    const projectCurrentSelection = projectCurrent === undefined
+      ? undefined
+      : Object.freeze({
+          policy: "project-current" as const,
+          input: Object.freeze({
+            target: projectCurrent.target,
+          }),
+        });
     return Object.freeze({
       report: selectedReport.value,
       theme: selectedTheme.value,
+      ...(projectCurrentSelection === undefined ? {} : { projectCurrentSelection }),
       watchInputs: uniqueWatchInputs([
         request.rootPath,
+        ...(projectCurrent?.watchInputs ?? []),
         ...configured.watchInputs,
         ...selectedReport.watchInputs,
         ...selectedTheme.watchInputs,
@@ -2513,24 +2511,21 @@ function uniqueWatchInputs(paths: readonly string[]): readonly string[] {
   return Object.freeze([...new Set(paths.map((path) => resolvePath(path)))].sort());
 }
 
-function executeCliReport(request: ReportCliRequest, report: Report) {
+function executeCliReport(request: ReportCliRequest, inputs: LoadedCliReportInputs) {
   const execution = request.target.kind === "attempt"
     ? executeReportForAttemptFromRecord({
       root: request.root,
       attemptId: request.target.attemptId,
-      report,
+      report: inputs.report,
     })
     : executeReportFromRecord({
       root: request.root,
-      selection: request.target.selection,
-      report,
+      selection: request.target.kind === "selection"
+        ? request.target.selection
+        : inputs.projectCurrentSelection!,
+      report: inputs.report,
     });
-  return execution.pipe(
-    Effect.mapError(reportExecutionFailure),
-    Effect.flatMap((completed) => request.target.kind === "selection" && completed.sample.runs.length === 0
-      ? Effect.fail(emptyReportSelectionFailure(request.target.selection))
-      : Effect.succeed(completed)),
-  );
+  return execution.pipe(Effect.mapError(reportExecutionFailure));
 }
 
 function reportExecutionFailure(error: unknown): CliFailure {
@@ -2545,8 +2540,6 @@ function reportExecutionFailure(error: unknown): CliFailure {
       return usageError(`Attempt "${stringProperty(error, "attemptId") ?? "unknown"}" was not found in the selected Record.\n`);
     case "sample-attempt-ambiguous":
       return usageError(`Attempt "${stringProperty(error, "attemptId") ?? "unknown"}" is ambiguous in the selected Record.\n`);
-    case "sample-latest-indeterminate":
-      return usageError("--latest could not determine a published Run for the current Record. Repair the Record or select exact --run values.\n");
     case "record-migration-required":
       return usageError("record-migration-required\nRun: niceeval migrate\n");
     case "record-bootstrap-invalid":
@@ -2564,15 +2557,6 @@ function stringProperty(value: unknown, key: string): string | undefined {
   if (typeof value !== "object" || value === null) return undefined;
   const candidate = Reflect.get(value, key);
   return typeof candidate === "string" ? candidate : undefined;
-}
-
-function emptyReportSelectionFailure(selection: AnalysisSelectionRequest): CliUsageError {
-  const scope = selection.policy === "latest-runs"
-    ? selection.input.experimentIds === undefined
-      ? "--latest"
-      : "--latest with --experiment"
-    : "--run";
-  return usageError(`No published Runs matched ${scope} in the selected Record.\n`);
 }
 
 function requireKnownReportPage(
@@ -2614,7 +2598,7 @@ function runShowCommand(
       catch: (cause) => cliFailure("parse show arguments", cause),
     });
     const inputs = yield* loadCliReportInputs(request);
-    const execution = yield* executeCliReport(request, inputs.report);
+    const execution = yield* executeCliReport(request, inputs);
     yield* requireKnownReportPage(execution, request.page);
     yield* showReport({
       execution,
@@ -2639,7 +2623,7 @@ function runViewCommand(
       catch: (cause) => cliFailure("parse view arguments", cause),
     });
     const initialInputs = yield* loadCliReportInputs(request);
-    const initial = yield* executeCliReport(request, initialInputs.report);
+    const initial = yield* executeCliReport(request, initialInputs);
     yield* requireKnownReportPage(initial, request.page);
 
     if (flags.out !== undefined) {
@@ -2697,7 +2681,7 @@ function runViewCommand(
 function rebuildReportView(request: ReportCliRequest) {
   return Effect.gen(function* () {
     const inputs = yield* loadCliReportInputs(request);
-    const execution = yield* executeCliReport(request, inputs.report);
+    const execution = yield* executeCliReport(request, inputs);
     yield* requireKnownReportPage(execution, request.page);
     return Object.freeze({
       kind: "execution" as const,

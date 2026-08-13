@@ -11,6 +11,8 @@ import type {
 } from "./types.ts";
 
 export const LOGICAL_COMMAND_NORMALIZER: LogicalCommandNormalizer = "logical-command/v1";
+export const UNCLASSIFIED_TOOL_ACTIONS_REASON =
+  "The source protocol did not classify every tool operation as command or not-command.";
 
 type OpaqueOriginalCommandInvocation = Extract<OriginalCommandInvocation, { readonly state: "opaque" }>;
 
@@ -57,7 +59,7 @@ export function unclassifiedToolActionsCoverage(
     ? {
         actions: {
           status: "partial",
-          reason: "The source protocol did not classify every tool operation as command or not-command.",
+          reason: UNCLASSIFIED_TOOL_ACTIONS_REASON,
         },
       }
     : undefined;

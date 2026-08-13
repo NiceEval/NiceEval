@@ -31,16 +31,6 @@ test("真实 OpenAI Chat Completion 一次请求以通过 verdict 完成", () =>
 });
 
 test("show --execution 读回 OpenAI Chat Completion 的代表性证据", async () => {
-  const history = await showOpenAiLiveEvidence(evidence, [
-    evidence.evalId,
-    "--exp",
-    evidence.experimentId,
-    "--history",
-  ]);
-  expect(history.exitCode, history.diagnostic()).toBe(0);
-  expect(history.stdout).toContain("passed");
-  expect(history.stdout).toContain("@");
-
   const execution = await showOpenAiLiveEvidence(evidence, [
     evidence.evalEvent.locator!,
     "--execution",

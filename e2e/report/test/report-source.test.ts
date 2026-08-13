@@ -40,7 +40,7 @@ test("show --source 从本轮 Record 呈现入口与导入断言快照", async (
       );
 
       const shown = await niceeval.run(
-        ["show", attempt.locator!, "--record", ".niceeval/record", "--source"],
+        ["show", attempt.locator!, "--source"],
       );
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
       expect(shown.stdout).toContain("evals/source-snapshot.eval.ts");

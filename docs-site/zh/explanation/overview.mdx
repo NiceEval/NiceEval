@@ -39,10 +39,13 @@ writer 写完一个 Run 的 Core 与 Attachments 后，最后创建 `complete`�
 
 ## Sample 决定比较范围
 
-用户用 locator、`--run` 或 `--latest` 选择 Run。内部 host 从 frozen Record 形成可以独立
+用户用不带 locator 或 `--run` 的命令选择身份仍匹配当前项目的全部结果，或用 locator、`--run` 选择历史事实。内部 host 从 frozen Record 形成可以独立
 显示的纯 `AnalysisSample`；reader 与 live handle 不属于公开 API。
 
-Sample 保留完整 expected-slot 分母。每个 slot 都是 `included`、`not-recorded`、`core-invalid` 或 `excluded`。选择只读取 Core，不能因为某个业务 Attachment 有问题而悄悄缩小分母。
+`project-current` 扫描全部 published Run，并读取 Evaluation 与 Eligibility identity 事实。
+只有 Experiment、Eval、attempt ordinal、evaluation kind、input identity 和 config identity 仍匹配当前项目的 slots 才会进入 Sample；选择不按时间只留一个 Run。
+
+`--run` 选择保留具名 Run 的完整 expected-slot 分母；`project-current` 则以匹配的 slots 建立当前分母。每个已选 slot 都是 `included`、`not-recorded`、`core-invalid` 或 `excluded`。selection 建立框架后，其它业务 Attachment 的问题不能再悄悄缩小分母。
 
 ## Projection 与 Report 组织已选事实
 
@@ -54,7 +57,7 @@ Sample 保留完整 expected-slot 分母。每个 slot 都是 `included`、`not-
 
 ## 交付报告
 
-`niceeval show --latest` 在终端显示报告。`niceeval view --latest` 在本机显示网页。`niceeval view --latest --out <目录>` 导出自包含静态报告站；也可以把 `--latest` 换成一个或多个明确 `--run`。
+`niceeval show` 在终端显示报告。`niceeval view` 在本机显示网页。`niceeval view --out <目录>` 导出自包含静态报告站；需要固定历史范围时可以传一个或多个明确 `--run`。
 
 静态报告站只消费导出时完成的 `ReportExecution`。浏览器不读取源 Record。发布步骤见[发布静态报告](/zh/tutorials/publish-report)。
 

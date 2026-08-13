@@ -13,7 +13,7 @@ Repo ID 是 `adapter/codex-cli`；manifest 声明 `areas: ["adapter", "sandbox"]
 | 本地 Skills | 同时安装 status report / release note / decoy 三个互斥 Skill；两条正调各自证明只读取目标 `SKILL.md`、采用目标独有 marker 且未读取其它 Skill。Codex 没有原生 Skill 工具，两条路径都以 `notEvent("skill.loaded")` 守住“不伪造加载事件”的反例 |
 | Repo Skill | 从钉定 Git commit 只选择 `calibre`；安装文件进入 `.agents/skills/`，Codex 读取后采用远程命令约定且不伪造 `skill.loaded` |
 | MCP | stdio 与远程 HTTP 两种形态的 `[mcp_servers.<name>]` 都能被调用；反例断言未挂载的 server `notCalledTool` |
-| Plugins 与 hook 信任 | marketplace 安装的 Plugin 行为可观察，其 hook 在 bypass 信任姿态下确实生效——hook 注入/捕获行为在事件流或输出中留下证据，不是被静默跳过；声明 `sandboxReuse` 时同一沙箱的第二条 Attempt 安装收敛——同名不同出处的残留 marketplace 注册被替换为声明出处、Plugin 按声明重装，不因残留状态报错 |
+| Plugins 与 hook 信任 | marketplace 安装的 Plugin 行为可观察，其 hook 在 bypass 信任姿态下确实生效——hook 注入/捕获行为在事件流或输出中留下证据，不是被静默跳过；`sandboxReuse` 以四路并发运行两波 Attempt，复用波次安装收敛——同名不同出处的残留 marketplace 注册被替换为声明出处、Plugin 按声明重装，不因残留状态报错 |
 | configFile | 如 `web_search = "disabled"` 生效后，反例断言 `notCalledTool` 的 `web_search` |
 | 会话 | thread started 事件的 session ID 续接 `codex exec resume`，第二轮能引用首轮事实 |
 | usage 与实际模型 | usage 逐轮到位；实际模型从 Codex session 侧写核对，不只信请求参数 |

@@ -8,14 +8,14 @@
 ## 目标命令
 
 ```sh
-# 本地默认：无密钥 PR 集合
+# 本地默认：无密钥集合；根目录 `.env` 可让显式可信 lane 运行全量
 pnpm e2e --lane pr
 
 # 按 Repo / 原生测试参数收窄
 pnpm e2e --repo report
 pnpm e2e --repo report -- --run test/exported-targets.test.ts
 
-# 显式 live；缺 secret 在 prepare 前一次列清
+# 全量 E2E；缺 secret 在 prepare 前一次列清
 pnpm e2e --lane main --repo adapter/codex-cli
 
 # 本地无密钥 adapter protocol / transport / fault；与 live Repo 分开选择
@@ -86,8 +86,8 @@ snapshot（如需要）与场景源 snapshot，再保留以下可审查 receipt�
 所有运行必须得到相同语义 Verdict 与实体关系；动态 ID、临时端口和 duration 不要求逐字相同。
 接管运行禁用测试级 retry，任一次意外失败都不合格。普通 lane 的 Infrastructure retry 不能替代这份可靠性证据。
 
-真实 provider live owner 不进入这套重复矩阵：每次新增或实质修改做一次已明确授权的真实运行，并完成 `show` / history /
-execution 等公开 readback。只有用户另外授权明确调用次数 / 成本时才对 live Repo 执行 takeover；provider 随机性不能充当产品可靠性证据。
+真实 provider live owner 不进入这套重复矩阵：每次新增或实质修改都通过常规全量 E2E 完成真实运行和 `show` / history /
+execution 等公开 readback。provider 随机性不能充当确定性产品可靠性证据，因此 live Repo 不用重复 takeover 证明 provider 确定性。
 
 source snapshot 包含会进入副本的未忽略 untracked 文件。runner 拒绝 symlink 与特殊文件。
 summary 写入按相对路径、字节数和 SHA-256 排序所得的文件清单与总 digest。
@@ -177,16 +177,22 @@ backend、container 与 browser 都必须登记 owned handle；`finally` 做有�
 
 | 触发 | Lane | Secret | 内容 |
 |---|---|---|---|
-| 本地默认 / `pull_request` | `pr` | 无 | unit、CLI、Runner、Report、Package、本地 host / Docker fixture |
-| `push main` | `main` | GitHub Environment | PR 全集 + 低成本 live Adapter 兼容性检查 |
-| `schedule` | `nightly` | GitHub Environment | 全 adapter、sandbox、lifecycle、平台代表 |
-| release preflight | `release` | GitHub Environment | 精确待发布 tarball + 确定性 blocking 矩阵 + live 结果或 AI 真实验收 |
-| `workflow_dispatch` | 显式 | 按 environment | 单 Repo / lane 复现 |
+| 本地默认 | `pr` | 无 | 无密钥功能与确定性 Adapter Repo |
+| 同仓可信 `pull_request` | `main` | 仓库级 Actions secrets | 当前 PR checkout 的全部 E2E Repo |
+| Fork / Dependabot `pull_request` | `pr` | 无 | 无密钥功能与确定性 Adapter Repo |
+| `push main` | `main` | 仓库级 Actions secrets | 全部 E2E Repo |
+| `schedule` | `nightly` | 仓库级 Actions secrets | 全部 E2E Repo |
+| release preflight | `release` | 仓库级 Actions secrets + release Environment | 精确待发布 tarball + 确定性 blocking 矩阵 + live 结果或 AI 真实验收 |
+| `workflow_dispatch` | 显式 | pr 无密钥；其它 lane 使用仓库级 Actions secrets + 同名 Environment | 单 Repo / lane 复现 |
 
-Fork 与同仓 PR 使用同一无密钥门禁。禁止用 `pull_request_target` 让 PR 代码接触 secret。
+同仓 PR 只有在 `head.repo.full_name` 等于当前仓库且 PR 作者不是 Dependabot 时才进入可信 `main` lane。
+这项边界明确采用“仓库写权限即 secret 信任”：PR 代码可以主动外传已经取得的凭据，runner 的变量过滤和 artifact 脱敏不能阻止外传。
+Fork 与 Dependabot 固定进入无密钥 `pr` lane。禁止用 `pull_request_target` 或 `workflow_run` 让不可信 PR 代码接触 secret。
+
 可信 lane 的 workflow 只能显式引用已登记的 secret 白名单；禁止 `toJSON(secrets)` 或其它全量枚举。
 Repo manifest 声明了白名单外的名称时，在注入前失败，不动态读取其它仓库 secret。
-任何会实际调用付费模型的 live 验收、批量 Adapter 矩阵或整批重跑，都必须先取得用户明确批准；lane 选择与 secret 可用不构成授权。
+
+整个 E2E portfolio 都可以频繁全量运行。成本、Docker、provider 类型和矩阵规模不构成降频或省略 owner 的理由。
 
 ## GitHub Actions 形状
 
@@ -209,8 +215,8 @@ Workflow 只准备 Node / pnpm / Docker / browser、下发矩阵、缓存 store 
 Cache key 至少区分 pnpm 版本、OS / 架构和 Docker image digest。包管理器 store 依赖自身内容寻址；PR 不使用会把
 其它候选测试文件带回来的宽泛 restore key。Nightly 定期跑 cold cell，防止日常 cache 掩盖缺失依赖或镜像初始化问题。
 
-PR path filter 来自 manifest `paths`，只是省时提示。显式 `--repo` 永远不受 diff filter 排除。
-plan 无法可靠取得 diff、共享 runner/package 入口变化或 manifest 自身变化时，执行该 lane 全集。
+GitHub Actions 固定向 plan 传 `--no-diff`，因此每次执行所选 lane 全集。显式 `--repo` 只用于人工单 Repo 复现。
+manifest `paths` 与 diff filter 只保留给本地诊断选择，不参与线上完整验收。
 候选包的以下输入变化也执行整条 lane：
 
 - `bin/**`、`scripts/package-runtime/**`、`scripts/generate-reference.ts`、`INDEX.md` 与 `INDEX.template.md`；
@@ -218,7 +224,7 @@ plan 无法可靠取得 diff、共享 runner/package 入口变化或 manifest �
 - root `.npmrc`、`.npmignore`、`.gitignore`、自动纳入文件、pnpm 配置、package metadata 与 root tsconfig。
 
 本地 diff 同时读取 tracked 改动和未忽略 untracked 路径。多个显式 Repo 中有任一不属于 lane 时，plan 失败，不能静默删掉它。
-Release 固定传 `--no-diff`，不用 path filter；`--no-diff` 与显式 `--diff-path` / `--diff` 同时出现时属于配置错误。
+CI 固定传 `--no-diff`，不用 path filter；`--no-diff` 与显式 `--diff-path` / `--diff` 同时出现时属于配置错误。
 
 ## Docker
 
@@ -243,6 +249,7 @@ Docker cgroup 的 `cpu.max`、`memory.max`、`memory.swap.max` 与 `pids.max` �
 - 同一 checkout 的独立根 E2E invocation 可以并发启动；只有会触发共享 `prepare` 写入的 candidate `pnpm pack` 生命周期按 canonical checkout 的跨进程 lease 局部串行，计划、Testkit snapshot、隔离 Repo 与 run 阶段继续并发；
 - lease 位于 OS 临时控制目录而不进入待打包文件。正常退出、失败或取消都会释放；进程崩溃留下的 lease fail-closed 并报出精确人工删除路径，绝不靠超时或不安全删除让两个 pack 同时写入；
 - 无密钥 host Repo 可按 CPU 并行，每个 Repo 独立副本；
+- CI E2E matrix 使用 4 vCPU Blacksmith runner，场景的全局 attempt 并发统一为 4，使每个并发 attempt 对应一个 vCPU；
 - Repo 内保留 Vitest / Playwright 的默认文件级并行；短命控制文件、结果根、项目副本与资源名按 case 隔离；
 - 使用 Docker backend 的 Repo 按 runner CPU / memory 设置 `max-parallel`；
 - live provider 按 provider / account 建 concurrency group，避免同一配额互相制造 429；

@@ -4,59 +4,58 @@ sidebarTitle: "Overview"
 description: "Learn how an Experiment, Record, Sample, and Report compose an eval that can be viewed and shared."
 ---
 
-NiceEval gives clear ownership to evaluation definitions, execution, current data, and reports. You define evals and Experiments, then the Runner executes them. Once the directory is quiescent, the current data lives in an editable Record. Viewing and sharing select a Sample from the Record, then form ReportInput.
+NiceEval gives clear ownership to evaluation definitions, execution, durable facts, and reports. You define Evals and Experiments, then the Runner executes them. Complete Runs are published to a Record. Viewing and sharing select a Sample from that Record, project the required facts, and produce a Report.
 
 ```text
 Eval and Experiment
         ↓
 Runner
         ↓
-Record
-        ↓
-Sample
-        ↓
-ReportInput
-        ↓
-show, view, or a static report site
+opaque Record
+        ↓  CLI internal selection
+AnalysisSample
+        ↓  official opaque projector
+ProjectedSample → Report → immutable ReportExecution
+                                  ├─ show
+                                  ├─ view
+                                  └─ static export
 ```
 
 ## How an eval runs
 
 An Eval defines a task, assertions, and needed Fixtures. An Experiment selects Evals and declares the Agent, model, concurrency, budget, and other run conditions. An Adapter connects the system under test; a Sandbox provides an isolated place to execute work.
 
-The Runner creates one Run for every selected Experiment. A Run lists its expected slots, which define the denominator for that run. Each slot adopts at most one Attempt.
+The Runner creates one Run for every selected Experiment. A Run lists its expected slots, which define the denominator for that run. Each slot has at most one Member.
 
-| Member | Meaning |
-| --- | --- |
-| `executed` | This Run actually executed the Attempt. |
-| `carried` | The planner adopted an eligible existing Attempt. |
-| `accepted` | An operator explicitly adopted an existing Attempt. |
+A Member identifies the Attempt occupying its slot. An Attempt is `origin` when it belongs to its current slot; it is `reference` when a Member adopts an Attempt from another Run. An Attempt is stored once in its origin Run, and a Member that refers to it does not copy business facts.
 
-An Attempt always retains the `origin` where it actually ran. Adoption does not copy business values; a later read sees the Attempt channel's current values.
+## Record stores published facts
 
-## Record is an editable fact dataset
+A Record lives in `.niceeval/record/`. It is an opaque, portable fact dataset that can be copied as a whole or put in Git. Application code does not read its internal structure or write its files.
 
-A Record lives in `.niceeval/record/`. People and tools read or write it only while the directory is quiescent. Business values such as Verdicts, Usage, assertions, and diagnostics live in named owner-local channels. That allows channel-level reading and user edits after the directory settles.
+Its Core stores Runs, Members, Attempts, and their exact relationships. Business facts such as Verdicts, Usage, assertions, and diagnostics live in owner-local Attachments.
 
-A Record does not retain an edit history. Validation of structure, paths, identities, and references exists only to detect contradictory data.
-
-On read, an unknown or retired channel becomes `unsupported` only at that channel. A requested invalid channel fails; an uncollected `unavailable` channel is neither `unsupported` nor `invalid`. Durable collection completeness and current decoding completeness remain separate.
+After a writer finishes a Run's Core and Attachments, it creates `complete`. A directory without that marker is not a published fact; readers ignore it and report an `incomplete-run` warning. Run another Invocation to produce a different result.
 
 ## Sample determines comparison scope
 
-A viewer must select explicit Runs or use the named `latest` policy. A Sample builds its denominator from a Run's expected slots and marks each item `included`, `not-recorded`, `invalid`, or `excluded`.
+Without a locator or `--run`, `show` and `view` select every result whose identity still matches the current project. A locator or `--run` selects historical facts. The internal host forms a pure `AnalysisSample` from the frozen Record; a reader or live handle is not public API.
 
-That lets a Report honestly show missing members, core problems, and excluded items instead of counting only the slots that have values. See [Viewing Results](/tutorials/viewing-results) for selection rules.
+The `project-current` selection scans every published Run. Using Evaluation and Eligibility identity facts, it keeps every slot whose Experiment, Eval, attempt ordinal, evaluation kind, input identity, and config identity still match the current project. It does not select one Run by time.
 
-## A Report receives ReportInput only
+An explicit `--run` selection preserves each named Run's complete expected-slot denominator; `project-current` establishes its current denominator from matching slots. Each selected slot is `included`, `not-recorded`, `core-invalid`, or `excluded`. After selection establishes that framework, a problem in another business Attachment cannot silently shrink it.
 
-A Report runtime does not read disk. First, a Sample selects core data and its denominator. Then a ReportPlan lists facts, and the one composition adapter builds ReportInput. The Report computes and generates pages once from that input.
+## Projections and Reports organize selected facts
 
-Every Page and Calculation declares its facts and completeness requirement. Partial values show their observed count and full denominator. `unavailable`, `unsupported`, and `invalid` remain visible.
+The official opaque projector turns internal facts into typed views. A Projection aligns those values with the Sample to form a `ProjectedSample`. Calculations use those values for pass rates, costs, or diagnostic distributions; Pages and PageFamilies organize them into report pages.
+
+One Report produces one immutable `ReportExecution`. It retains no reader, path, or deferred I/O. `show`, `view`, and static export consume that execution only.
+
+When `view` detects a change, it builds the next execution. Only a complete rebuild replaces the result on screen; a failed rebuild keeps the last-good execution and shows the problem.
 
 ## Deliver a Report
 
-`niceeval show --latest` presents one `ReportExecution` in the terminal. `niceeval view --latest` presents the same data path locally in a browser. `niceeval view --latest --out <directory>` produces a self-contained static report site with the exact built-in runtime, every page, host data, downloads, and manifest. Replace `--latest` with one or more explicit `--run` values when needed.
+`niceeval show` presents a Report in the terminal. `niceeval view` presents it locally in a browser. `niceeval view --out <directory>` produces a self-contained static report site. Pass one or more explicit `--run` values when you need a fixed historical scope.
 
 A static report site opens offline. Its browser reads only the export directory, never the network or source Record. See [Publish a Static Report](/tutorials/publish-report) for publishing steps.
 

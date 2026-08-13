@@ -10,14 +10,13 @@ export {
   narrowAnalysisSampleHandle,
   selectAnalysisSample,
   selectExplicitRuns,
-  selectLatestRuns,
+  selectProjectCurrent,
 } from "./analysis.ts";
 
 export type {
   AnalysisBaseSlot,
   AnalysisSampleCodecError,
   AnalysisLimitExceededError,
-  AnalysisLatestIndeterminateError,
   AnalysisRun,
   AnalysisRunInvalidError,
   AnalysisRunNotFoundError,
@@ -36,7 +35,9 @@ export type {
   ExperimentId,
   ExplicitRunsAnalysisInput,
   IncludedAnalysisSlot,
-  LatestRunsAnalysisInput,
+  ProjectCurrentAnalysisInput,
+  ProjectCurrentEvalInput,
+  ProjectCurrentExperimentInput,
   NonEmptyRecordIssues,
   NotRecordedAnalysisSlot,
   RecordAttemptRef,

@@ -4,7 +4,7 @@
 // operation.finished. Denying produces a rejected result with no tool output ever having
 // existed — the reverse guard below rules out "execute first, ask forgiveness later".
 import { defineEval } from "niceeval";
-import { equals, satisfies } from "niceeval/expect";
+import { equals, satisfies, toolMatch } from "niceeval/expect";
 export default defineEval({
   description:
     "审批请求(approval-requested)会阻塞执行直到给出答复;approve 恢复为 completed,deny 则为 rejected 且从未产生工具结果",
@@ -37,11 +37,13 @@ export default defineEval({
         },
       ),
     );
-    draft.calledTool("calculate", { status: "pending", count: 1 });
+    draft.calledTool(toolMatch("calculate", { status: "pending" }), {
+      count: 1,
+    });
     t.requireInputRequest({ action: "calculate" });
     const approved = await t.respond("approve");
     approved.succeeded();
-    t.calledTool("calculate", { status: "completed" });
+    t.calledTool(toolMatch("calculate", { status: "completed" }));
     t.check(
       t.events,
       satisfies<typeof t.events>(
@@ -77,12 +79,14 @@ export default defineEval({
         },
       ),
     );
-    denied.calledTool("calculate", { status: "pending", count: 1 });
+    denied.calledTool(toolMatch("calculate", { status: "pending" }), {
+      count: 1,
+    });
     denied.requireInputRequest({ action: "calculate" });
     const turn = await denied.respond("deny");
     t.check(turn.status, equals("completed"));
-    denied.calledTool("calculate", { status: "rejected" });
-    denied.calledTool("calculate", { status: "completed", count: 0 });
+    denied.calledTool(toolMatch("calculate", { status: "rejected" }));
+    denied.notCalledTool(toolMatch("calculate", { status: "completed" }));
     t.check(
       denied.events,
       satisfies<typeof denied.events>(

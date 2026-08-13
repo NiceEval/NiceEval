@@ -1,5 +1,5 @@
 import { defineEval } from "niceeval";
-import { pattern, satisfies } from "niceeval/expect";
+import { jsonMatch, pattern, satisfies, toolMatch } from "niceeval/expect";
 
 export default defineEval({
   description: "coding 任务工具轨:写文件 + shell 读回,归一进标准事件流",
@@ -11,12 +11,16 @@ export default defineEval({
     );
     await turn.succeeded().orStop();
     await t.group("写入 notes.txt,再串行 shell 读回来", () => {
-      t.calledTool("file_write", {
-        input: { path: /notes\.txt/, content: /niceeval e2e ok/ },
-      });
-      t.calledTool("shell", {
-        input: { command: /cat\s+notes\.txt/ },
-      });
+      t.calledTool(
+        toolMatch("file_write", {
+          input: jsonMatch({ path: /notes\.txt/, content: /niceeval e2e ok/ }),
+        }),
+      );
+      t.calledTool(
+        toolMatch("shell", {
+          input: jsonMatch({ command: /cat\s+notes\.txt/ }),
+        }),
+      );
       t.check(
         turn.toolCalls,
         satisfies(

@@ -13,8 +13,9 @@ Record 是 `.niceeval/record/` 下可携带、可进入 Git 的 opaque 目录。
 
 ## Report callback 收到 AnalysisSample
 
-Report 的 Calculation、Page 与 PageFamily callback 收到一份纯 `AnalysisSample`。它保存每个
-expected slot 和完整分母，不包含路径、reader、文件句柄或延迟 I/O：
+Report 的 Calculation、Page 与 PageFamily callback 收到一份纯 `AnalysisSample`。它保存
+selection 已建立的每个 expected slot 和完整分母，不包含路径、reader、文件句柄或延迟 I/O。
+`--run` 使用具名 Run 的完整 expected slots；`project-current` 只把身份仍匹配当前目标的 slots 纳入 Sample：
 
 | 状态 | 含义 |
 | --- | --- |

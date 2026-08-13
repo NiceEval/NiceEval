@@ -34,10 +34,12 @@ import type {
 } from "../record/reader/types.ts";
 import {
   evaluationsAttachmentFamily,
-  evaluationsAttachmentName,
   ExperimentIdSchema,
   type ExperimentId,
 } from "../eval/experiment-id.ts";
+import {
+  eligibilityAttachmentFamilyV1,
+} from "../eval/record/eligibility.ts";
 
 export type { RecordAttemptRef } from "../record/model/core.ts";
 export type {
@@ -68,8 +70,23 @@ export interface ExplicitRunsAnalysisInput {
   readonly runIds: readonly [RunId, ...RunId[]];
 }
 
-export interface LatestRunsAnalysisInput {
-  readonly experimentIds?: readonly [ExperimentId, ...ExperimentId[]];
+export interface ProjectCurrentEvalInput {
+  readonly id: string;
+  readonly resultConfigHash: string;
+  readonly fingerprint: string;
+  readonly evaluationKind: "pass" | "score";
+}
+
+export interface ProjectCurrentExperimentInput {
+  readonly id: string;
+  readonly attempts: number;
+  readonly evals: readonly ProjectCurrentEvalInput[];
+}
+
+export interface ProjectCurrentAnalysisInput {
+  readonly target: {
+    readonly experiments: readonly ProjectCurrentExperimentInput[];
+  };
 }
 
 /** A portable request. It deliberately carries neither a reader nor a callback. */
@@ -79,8 +96,8 @@ export type AnalysisSelectionRequest =
       readonly input: ExplicitRunsAnalysisInput;
     }
   | {
-      readonly policy: "latest-runs";
-      readonly input: LatestRunsAnalysisInput;
+      readonly policy: "project-current";
+      readonly input: ProjectCurrentAnalysisInput;
     };
 
 export type AnalysisSelectionSummary =
@@ -89,7 +106,7 @@ export type AnalysisSelectionSummary =
       readonly runIds: readonly RunId[];
     }
   | {
-      readonly policy: "latest-runs";
+      readonly policy: "project-current";
       readonly experimentIds: readonly ExperimentId[] | "all";
       readonly selectedRunIds: readonly RunId[];
     };
@@ -177,11 +194,6 @@ export interface AnalysisRunInvalidError {
   readonly issues: NonEmptyRecordIssues;
 }
 
-export interface AnalysisLatestIndeterminateError {
-  readonly code: "sample-latest-indeterminate";
-  readonly issues: NonEmptyRecordIssues;
-}
-
 export interface AnalysisLimitExceededError {
   readonly code: "sample-limit-exceeded";
   readonly limit: "selected-runs" | "slots";
@@ -193,7 +205,6 @@ export type AnalysisSelectionError =
   | AnalysisSelectionInvalidError
   | AnalysisRunNotFoundError
   | AnalysisRunInvalidError
-  | AnalysisLatestIndeterminateError
   | AnalysisLimitExceededError;
 
 export interface AnalysisSampleCodecError {
@@ -204,6 +215,8 @@ export interface AnalysisSampleCodecError {
 
 const MAX_SELECTED_RUNS = 4_096;
 const MAX_SLOTS = 250_000;
+const CURRENT_INPUT_IDENTITY_DOMAIN = "niceeval.input/fingerprint-v1";
+const CURRENT_CONFIG_IDENTITY_DOMAIN = "niceeval.config/identity-v1";
 
 interface AnalysisHandleBinding {
   readonly reader: RecordReader<RecordReaderReadError>;
@@ -221,14 +234,14 @@ interface NormalizedExplicitSelection {
   readonly runIds: readonly RunId[];
 }
 
-interface NormalizedLatestSelection {
-  readonly policy: "latest-runs";
-  readonly experimentIds: readonly ExperimentId[] | "all";
+interface NormalizedProjectCurrentSelection {
+  readonly policy: "project-current";
+  readonly target: ProjectCurrentAnalysisInput["target"];
 }
 
 type NormalizedSelection =
   | NormalizedExplicitSelection
-  | NormalizedLatestSelection;
+  | NormalizedProjectCurrentSelection;
 
 const handleBindings = new WeakMap<AnalysisSampleHandle, AnalysisHandleBinding>();
 
@@ -312,18 +325,21 @@ export function selectExplicitRuns(
   });
 }
 
-/** Narrow entry point for the latest completed Run of each Experiment. */
-export function selectLatestRuns(
+/** Narrow entry point for results whose durable identities match the project target. */
+export function selectProjectCurrent(
   reader: RecordReader<RecordReaderReadError>,
-  input: LatestRunsAnalysisInput,
+  input: ProjectCurrentAnalysisInput,
 ): Effect.Effect<AnalysisSampleHandle, AnalysisSelectionError | RecordReaderReadError> {
   return Effect.suspend(() => {
-    const experimentIds = normalizeLatestExperimentIds(input);
-    return Either.isLeft(experimentIds)
-      ? Effect.fail(experimentIds.left)
+    const normalized = normalizeProjectCurrentInput(input);
+    return Either.isLeft(normalized)
+      ? Effect.fail(normalized.left)
       : selectNormalizedAnalysisSample(
         reader,
-        Object.freeze({ policy: "latest-runs", experimentIds: experimentIds.right }),
+        Object.freeze({
+          policy: "project-current",
+          target: normalized.right.target,
+        }),
       );
   });
 }
@@ -427,14 +443,17 @@ function selectNormalizedAnalysisSample(
         const sample = yield* materializeAnalysisSample(reader, port, summary, runs);
         return makeHandle(reader, port, sample);
       }
-      const runs = yield* selectLatestRunsFromPort(reader, port, selection.experimentIds);
+      const sample = yield* selectProjectCurrentFromPort(reader, port, selection);
       const summary: AnalysisSelectionSummary = Object.freeze({
-        policy: "latest-runs",
-        experimentIds: selection.experimentIds,
-        selectedRunIds: Object.freeze(runs.map((run) => run.runId)),
+        policy: "project-current",
+        experimentIds: selection.target.experiments.map((experiment) => experiment.id),
+        selectedRunIds: Object.freeze(sample.runs.map((run) => run.runId)),
       });
-      const sample = yield* materializeAnalysisSample(reader, port, summary, runs);
-      return makeHandle(reader, port, sample);
+      return makeHandle(
+        reader,
+        port,
+        makeAnalysisSample(summary, sample.runs, sample.slots),
+      );
     });
   });
 }
@@ -460,91 +479,186 @@ function selectExplicitRunsFromPort(
   });
 }
 
-function selectLatestRunsFromPort(
+interface ProjectCurrentMatch {
+  readonly run: FrozenRecordRun;
+  readonly slotId: SlotId;
+  readonly attempt: RecordAttemptRef;
+  readonly relation: "origin" | "reference";
+}
+
+interface ProjectCurrentMatches {
+  readonly byRun: Map<RunId, { run: FrozenRecordRun; slots: ProjectCurrentMatch[] }>;
+  slotCount: number;
+}
+
+interface ProjectCurrentExperimentIndex {
+  readonly attempts: number;
+  readonly evals: ReadonlyMap<string, ProjectCurrentEvalInput>;
+}
+
+function selectProjectCurrentFromPort(
   reader: object,
   port: FrozenRecordReaderPort,
-  experimentIds: readonly ExperimentId[] | "all",
-): Effect.Effect<readonly FrozenRecordRun[], AnalysisSelectionError | RecordReaderReadError> {
-  const requestedExperimentIds = experimentIds === "all"
-    ? undefined
-    : new Set<ExperimentId>(experimentIds);
+  selection: NormalizedProjectCurrentSelection,
+): Effect.Effect<
+  { readonly runs: readonly AnalysisRun[]; readonly slots: readonly AnalysisSlot[] },
+  AnalysisSelectionError | RecordReaderReadError
+> {
+  const targets = new Map<string, ProjectCurrentExperimentIndex>(
+    selection.target.experiments.map((experiment) => [
+      experiment.id,
+      Object.freeze({
+        attempts: experiment.attempts,
+        evals: new Map(experiment.evals.map((evaluation) =>
+          [evaluation.id, evaluation] as const
+        )),
+      }),
+    ]),
+  );
   return Stream.runFoldEffect(
     port.candidates(reader),
-    new Map<ExperimentId, FrozenRecordRun>(),
-    (latestByExperiment, candidate) =>
-      collectLatestCandidate(
+    { byRun: new Map(), slotCount: 0 } satisfies ProjectCurrentMatches,
+    (matches, candidate) =>
+      collectProjectCurrentCandidate(
         reader,
         port,
-        requestedExperimentIds,
-        latestByExperiment,
+        targets,
+        matches,
         candidate,
       ),
   ).pipe(
-    Effect.map((latestByExperiment) =>
-      Object.freeze(
-        [...latestByExperiment.values()].sort((left, right) =>
-          compareCanonicalIdentity(left.runId, right.runId)),
-      ),
-    ),
+    Effect.flatMap((matches) => materializeProjectCurrentMatches(matches)),
   );
 }
 
-function collectLatestCandidate(
+function collectProjectCurrentCandidate(
   reader: object,
   port: FrozenRecordReaderPort,
-  requestedExperimentIds: ReadonlySet<ExperimentId> | undefined,
-  latestByExperiment: Map<ExperimentId, FrozenRecordRun>,
+  targets: ReadonlyMap<string, ProjectCurrentExperimentIndex>,
+  matches: ProjectCurrentMatches,
   candidate: RecordCoreRead<FrozenRecordRun>,
 ): Effect.Effect<
-  Map<ExperimentId, FrozenRecordRun>,
+  ProjectCurrentMatches,
   AnalysisSelectionError | RecordReaderReadError
 > {
   return Effect.gen(function* () {
-    if (candidate.state === "missing") {
-      return yield* Effect.fail(
-        latestIndeterminate(singleRecordIssue("record-schema-invalid", ["runs"])),
-      );
-    }
-    if (candidate.state === "core-invalid") {
-      return yield* Effect.fail(latestIndeterminate(candidate.issues));
-    }
+    // Project-current is a conservative filter. A candidate whose Core or
+    // identity facts cannot be proved contributes nothing, but does not hide
+    // a different Run whose durable identities do match.
+    if (candidate.state !== "available") return matches;
     const attachment = yield* port.readRunAttachment(
       reader,
       candidate.value,
       evaluationsAttachmentFamily,
     );
-    if (attachment.state !== "available") {
-      return yield* Effect.fail(
-        latestIndeterminate(
-          singleRecordIssue(
-            "record-schema-invalid",
-            ["attachments", evaluationsAttachmentName, attachment.state],
-          ),
-        ),
-      );
-    }
+    if (attachment.state !== "available") return matches;
     const experimentId = attachment.value.payload.experimentId;
-    if (
-      requestedExperimentIds !== undefined
-      && !requestedExperimentIds.has(experimentId)
-    ) {
-      return latestByExperiment;
-    }
-    const previous = latestByExperiment.get(experimentId);
-    if (previous === undefined) {
-      if (latestByExperiment.size >= MAX_SELECTED_RUNS) {
-        return yield* Effect.fail(
-          selectionLimit("selected-runs", latestByExperiment.size + 1),
+    const target = targets.get(experimentId);
+    if (target === undefined) return matches;
+    const expectedSlots = new Set(candidate.value.expectedSlots);
+    if (expectedSlots.size !== candidate.value.expectedSlots.length) return matches;
+
+    const matchedSlots: ProjectCurrentMatch[] = [];
+
+    for (const evaluation of attachment.value.payload.evaluations) {
+      const evalTarget = target.evals.get(evaluation.evalId);
+      if (
+        evalTarget === undefined
+        || evalTarget.evaluationKind !== evaluation.evaluationKind
+      ) continue;
+      for (const slot of evaluation.slots) {
+        if (
+          slot.attempt >= target.attempts
+          || !expectedSlots.has(slot.slotId)
+        ) continue;
+        const member = yield* port.member(reader, candidate.value, slot.slotId);
+        if (
+          member.state !== "available"
+          || member.value.slotId !== slot.slotId
+        ) continue;
+        const attempt = yield* port.attempt(reader, member.value.attempt);
+        if (
+          attempt.state !== "available"
+          || attempt.value.originRunId !== member.value.attempt.originRunId
+          || attempt.value.attemptId !== member.value.attempt.attemptId
+        ) continue;
+        const eligibility = yield* port.readAttemptAttachment(
+          reader,
+          attempt.value,
+          eligibilityAttachmentFamilyV1,
         );
+        if (eligibility.state !== "available") continue;
+        const facts = eligibility.value.payload;
+        if (
+          facts.inputIdentity.domain !== CURRENT_INPUT_IDENTITY_DOMAIN
+          || facts.inputIdentity.value !== evalTarget.fingerprint
+          || facts.configIdentity.domain !== CURRENT_CONFIG_IDENTITY_DOMAIN
+          || facts.configIdentity.value !== evalTarget.resultConfigHash
+        ) continue;
+        matchedSlots.push(Object.freeze({
+          run: candidate.value,
+          slotId: slot.slotId,
+          attempt: copyAttemptRef(member.value.attempt),
+          relation: attempt.value.originRunId === candidate.value.runId
+            ? "origin"
+            : "reference",
+        }));
       }
-      latestByExperiment.set(experimentId, candidate.value);
-      return latestByExperiment;
     }
-    if (isLaterRun(candidate.value, previous)) {
-      latestByExperiment.set(experimentId, candidate.value);
+    if (matchedSlots.length === 0) return matches;
+    const previous = matches.byRun.get(candidate.value.runId);
+    if (previous === undefined && matches.byRun.size >= MAX_SELECTED_RUNS) {
+      return yield* Effect.fail(selectionLimit("selected-runs", matches.byRun.size + 1));
     }
-    return latestByExperiment;
+    const nextSlotCount = matches.slotCount
+      - (previous?.slots.length ?? 0)
+      + matchedSlots.length;
+    if (nextSlotCount > MAX_SLOTS) {
+      return yield* Effect.fail(selectionLimit("slots", nextSlotCount));
+    }
+    matches.byRun.set(candidate.value.runId, {
+      run: candidate.value,
+      slots: matchedSlots,
+    });
+    matches.slotCount = nextSlotCount;
+    return matches;
   });
+}
+
+function materializeProjectCurrentMatches(
+  matches: ProjectCurrentMatches,
+): Effect.Effect<
+  { readonly runs: readonly AnalysisRun[]; readonly slots: readonly AnalysisSlot[] },
+  AnalysisLimitExceededError
+> {
+  const runs: AnalysisRun[] = [];
+  const slots: AnalysisSlot[] = [];
+  for (const [runId, bucket] of [...matches.byRun].sort(([left], [right]) =>
+    compareCanonicalIdentity(left, right)
+  )) {
+    const runSlots = [...bucket.slots].sort((left, right) =>
+      compareCanonicalIdentity(left.slotId, right.slotId)
+    );
+    runs.push(Object.freeze({
+      runId,
+      startedAt: bucket.run.startedAt,
+      completedAt: bucket.run.completedAt,
+      expectedSlots: Object.freeze(runSlots.map((entry) => entry.slotId)),
+    }));
+    for (const entry of runSlots) {
+      slots.push(Object.freeze({
+        runId,
+        slotId: entry.slotId,
+        state: "included",
+        relation: entry.relation,
+        attempt: entry.attempt,
+      }));
+    }
+  }
+  return Effect.succeed(Object.freeze({
+    runs: Object.freeze(runs),
+    slots: Object.freeze(slots),
+  }));
 }
 
 function materializeAnalysisSample(
@@ -655,14 +769,17 @@ function normalizeSelectionRequest(
       ? Either.left(runIds.left)
       : Either.right(Object.freeze({ policy, runIds: runIds.right }));
   }
-  if (policy === "latest-runs") {
-    const experimentIds = normalizeLatestExperimentIds(valueAt(input, "input"));
-    return Either.isLeft(experimentIds)
-      ? Either.left(experimentIds.left)
-      : Either.right(Object.freeze({ policy, experimentIds: experimentIds.right }));
+  if (policy === "project-current") {
+    const normalized = normalizeProjectCurrentInput(valueAt(input, "input"));
+    return Either.isLeft(normalized)
+      ? Either.left(normalized.left)
+      : Either.right(Object.freeze({
+          policy,
+          target: normalized.right.target,
+        }));
   }
   return Either.left(
-    selectionInvalid("request.policy", "must be explicit-runs or latest-runs"),
+    selectionInvalid("request.policy", "must be explicit-runs or project-current"),
   );
 }
 
@@ -690,40 +807,82 @@ function normalizeExplicitRunIds(
     : Either.right(Object.freeze(normalized));
 }
 
-function normalizeLatestExperimentIds(
+function normalizeProjectCurrentInput(
   input: unknown,
-): Either.Either<readonly ExperimentId[] | "all", AnalysisSelectionError> {
-  if (!isExactObject(input, ["experimentIds"])) {
-    return Either.left(selectionInvalid("input", "may contain only experimentIds"));
+): Either.Either<{
+  readonly target: ProjectCurrentAnalysisInput["target"];
+}, AnalysisSelectionError> {
+  if (!isExactObject(input, ["target"]) || !hasOwnProperty(input, "target")) {
+    return Either.left(selectionInvalid("input", "must contain exactly target"));
   }
-  if (!hasOwnProperty(input, "experimentIds")) return Either.right("all");
-  const encodedExperimentIds = valueAt(input, "experimentIds");
-  if (!Array.isArray(encodedExperimentIds) || encodedExperimentIds.length === 0) {
-    return Either.left(selectionInvalid("input.experimentIds", "must be a non-empty array when present"));
+  const rawTarget = valueAt(input, "target");
+  if (typeof rawTarget !== "object" || rawTarget === null) {
+    return Either.left(selectionInvalid("input.target", "must be a project target object"));
   }
-  const experimentIds: ExperimentId[] = [];
-  for (let index = 0; index < encodedExperimentIds.length; index += 1) {
-    const experimentId = decodeExperimentId(
-      encodedExperimentIds[index],
-      ["input", "experimentIds", String(index)],
-    );
-    if (Either.isLeft(experimentId)) {
-      return Either.left(selectionInvalid(`input.experimentIds.${index}`, experimentId.left.reason));
+  const encodedExperiments = Reflect.get(rawTarget, "experiments");
+  if (!Array.isArray(encodedExperiments) || encodedExperiments.length === 0) {
+    return Either.left(selectionInvalid("input.target.experiments", "must be a non-empty array"));
+  }
+  const experiments: ProjectCurrentExperimentInput[] = [];
+  const seenExperiments = new Set<string>();
+  for (let experimentIndex = 0; experimentIndex < encodedExperiments.length; experimentIndex += 1) {
+    const rawExperiment = encodedExperiments[experimentIndex];
+    if (typeof rawExperiment !== "object" || rawExperiment === null) {
+      return Either.left(selectionInvalid(`input.target.experiments.${experimentIndex}`, "must be an object"));
     }
-    experimentIds.push(experimentId.right);
+    const id = Reflect.get(rawExperiment, "id");
+    const attempts = Reflect.get(rawExperiment, "attempts");
+    const rawEvals = Reflect.get(rawExperiment, "evals");
+    const decodedId = decodeExperimentId(id, ["input", "target", "experiments", String(experimentIndex), "id"]);
+    if (Either.isLeft(decodedId)) {
+      return Either.left(selectionInvalid(`input.target.experiments.${experimentIndex}.id`, decodedId.left.reason));
+    }
+    if (seenExperiments.has(decodedId.right)) {
+      return Either.left(selectionInvalid("input.target.experiments", "must contain unique ExperimentIds"));
+    }
+    if (!Number.isSafeInteger(attempts) || (attempts as number) < 1) {
+      return Either.left(selectionInvalid(`input.target.experiments.${experimentIndex}.attempts`, "must be a positive integer"));
+    }
+    if (!Array.isArray(rawEvals) || rawEvals.length === 0) {
+      return Either.left(selectionInvalid(`input.target.experiments.${experimentIndex}.evals`, "must be a non-empty array"));
+    }
+    const evals: ProjectCurrentEvalInput[] = [];
+    const seenEvals = new Set<string>();
+    for (let evalIndex = 0; evalIndex < rawEvals.length; evalIndex += 1) {
+      const rawEval = rawEvals[evalIndex];
+      if (typeof rawEval !== "object" || rawEval === null) {
+        return Either.left(selectionInvalid(`input.target.experiments.${experimentIndex}.evals.${evalIndex}`, "must be an object"));
+      }
+      const evalId = Reflect.get(rawEval, "id");
+      const resultConfigHash = Reflect.get(rawEval, "resultConfigHash");
+      const fingerprint = Reflect.get(rawEval, "fingerprint");
+      const evaluationKind = Reflect.get(rawEval, "evaluationKind");
+      if (typeof evalId !== "string" || evalId.length === 0 || evalId.includes("\u0000") || seenEvals.has(evalId)) {
+        return Either.left(selectionInvalid(`input.target.experiments.${experimentIndex}.evals.${evalIndex}.id`, "must be a unique non-empty EvalId"));
+      }
+      if (typeof resultConfigHash !== "string" || resultConfigHash.length === 0) {
+        return Either.left(selectionInvalid(`input.target.experiments.${experimentIndex}.evals.${evalIndex}.resultConfigHash`, "must be non-empty"));
+      }
+      if (typeof fingerprint !== "string" || fingerprint.length === 0) {
+        return Either.left(selectionInvalid(`input.target.experiments.${experimentIndex}.evals.${evalIndex}.fingerprint`, "must be non-empty"));
+      }
+      if (evaluationKind !== "pass" && evaluationKind !== "score") {
+        return Either.left(selectionInvalid(`input.target.experiments.${experimentIndex}.evals.${evalIndex}.evaluationKind`, "must be pass or score"));
+      }
+      seenEvals.add(evalId);
+      evals.push(Object.freeze({ id: evalId, resultConfigHash, fingerprint, evaluationKind }));
+    }
+    seenExperiments.add(decodedId.right);
+    experiments.push(Object.freeze({
+      id: decodedId.right,
+      attempts: attempts as number,
+      evals: Object.freeze(evals.sort((left, right) => left.id.localeCompare(right.id))),
+    }));
   }
-  const normalized = sortedUnique(experimentIds);
-  return normalized.length > MAX_SELECTED_RUNS
-    ? Either.left(selectionLimit("selected-runs", normalized.length))
-    : Either.right(Object.freeze(normalized));
-}
-
-function isLaterRun(candidate: FrozenRecordRun, current: FrozenRecordRun): boolean {
-  return candidate.completedAt > current.completedAt
-    || (
-      candidate.completedAt === current.completedAt
-      && compareCanonicalIdentity(candidate.runId, current.runId) > 0
-    );
+  const target = Object.freeze({
+    experiments: Object.freeze(experiments.sort((left, right) => left.id.localeCompare(right.id))),
+  });
+  return Either.right(Object.freeze({ target }));
 }
 
 function runNotFound(runId: RunId): AnalysisRunNotFoundError {
@@ -735,12 +894,6 @@ function runInvalid(
   issues: NonEmptyRecordIssues,
 ): AnalysisRunInvalidError {
   return Object.freeze({ code: "sample-run-invalid", runId, issues: copyIssues(issues) });
-}
-
-function latestIndeterminate(
-  issues: NonEmptyRecordIssues,
-): AnalysisLatestIndeterminateError {
-  return Object.freeze({ code: "sample-latest-indeterminate", issues: copyIssues(issues) });
 }
 
 function selectionLimit(
@@ -801,9 +954,9 @@ function decodeSelectionSummary(
     };
     return Either.right(Object.freeze(selection));
   }
-  if (policy === "latest-runs") {
+  if (policy === "project-current") {
     if (!isExactObject(input, ["policy", "experimentIds", "selectedRunIds"])) {
-      return Either.left(codecError(path, "latest selection must contain policy, experimentIds, and selectedRunIds"));
+      return Either.left(codecError(path, "project-current selection must contain policy, experimentIds, and selectedRunIds"));
     }
     const encodedExperimentIds = valueAt(input, "experimentIds");
     let experimentIds: readonly ExperimentId[] | "all";
@@ -829,14 +982,14 @@ function decodeSelectionSummary(
     );
     if (Either.isLeft(selectedRunIds)) return Either.left(selectedRunIds.left);
     const selection: AnalysisSelectionSummary = {
-      policy: "latest-runs",
+      policy: "project-current",
       experimentIds,
       selectedRunIds: selectedRunIds.right,
     };
     return Either.right(Object.freeze(selection));
   }
   return Either.left(
-    codecError([...path, "policy"], "must be explicit-runs or latest-runs"),
+    codecError([...path, "policy"], "must be explicit-runs or project-current"),
   );
 }
 
@@ -1239,7 +1392,7 @@ function copySelectionSummary(selection: AnalysisSelectionSummary): AnalysisSele
     ? "all"
     : Object.freeze(sortedUnique(selection.experimentIds));
   const summary: AnalysisSelectionSummary = {
-    policy: "latest-runs",
+    policy: "project-current",
     experimentIds,
     selectedRunIds: Object.freeze(sortedUnique(selection.selectedRunIds)),
   };

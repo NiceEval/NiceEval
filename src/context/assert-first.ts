@@ -59,6 +59,7 @@ import {
   type ToolMatchQuantifier,
 } from "../assertions/match.ts";
 import { buildO11ySummary, deriveRunFacts, deriveScopedLogicalToolOccurrences } from "../o11y/derive.ts";
+import { UNCLASSIFIED_TOOL_ACTIONS_REASON } from "../o11y/command-projection.ts";
 import { captureLoc, type SourceRegistry } from "../source-loc.ts";
 import { lastAssistantText, RunSession, SessionManager, type SessionDeps } from "./session.ts";
 import { EvalSkipped } from "./control-flow.ts";
@@ -435,7 +436,14 @@ function normalizeCalledToolOptions(value: CalledToolOptions | undefined): ToolM
 
 function toolScopeCoverageReason(snapshot: ToolScopeSnapshot): string | undefined {
   const actions = snapshot.coverage.actions;
-  if (actions.status !== "complete") {
+  // Missing command/not-command classification limits commandMatch(), not the
+  // completeness of the already captured tool occurrence set. Tool name/input/
+  // lifecycle counts remain decidable; commandMatch itself retains unavailable
+  // evidence when an occurrence has no command projection.
+  if (
+    actions.status !== "complete"
+    && actions.reason !== UNCLASSIFIED_TOOL_ACTIONS_REASON
+  ) {
     return `scope-actions-${actions.status}:${actions.reason}`;
   }
   if (snapshot.orphanFinishes.length > 0) {

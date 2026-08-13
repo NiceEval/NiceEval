@@ -2,7 +2,7 @@
 // Context7 Plugin。它自带匿名可用的远程 MCP；调用 Plugin 命名空间内的工具就是
 // "native plugin 安装真的把内容接线进了运行中的 agent"的行为证据，不只检查安装清单。
 import { defineEval } from "niceeval";
-import { includes, satisfies } from "niceeval/expect";
+import { includes, jsonMatch, satisfies, toolMatch } from "niceeval/expect";
 
 export default defineEval({
   description:
@@ -18,9 +18,14 @@ export default defineEval({
     );
     await turn.succeeded().orStop();
 
-    t.calledTool("mcp__plugin_context7_context7__resolve-library-id", {
-      input: { libraryName: "react", query: "React useState documentation" },
-    }).label('"mcp__plugin_context7_context7__resolve-library-id" input');
+    t.calledTool(
+      toolMatch("mcp__plugin_context7_context7__resolve-library-id", {
+        input: jsonMatch({
+          libraryName: "react",
+          query: "React useState documentation",
+        }),
+      }),
+    ).label('"mcp__plugin_context7_context7__resolve-library-id" input');
     t.check(turn.message, includes("/reactjs/react.dev"));
   },
 });

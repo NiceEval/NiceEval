@@ -51,19 +51,6 @@ async function waitForHealth(url: string, timeoutMs: number): Promise<void> {
   }
 }
 
-async function latestAttemptLocator(evalId: string): Promise<string> {
-  const history = await niceeval.run(["show", evalId, "--history"]);
-  expect(history.exitCode, history.diagnostic()).toBe(0);
-  const lines = history.stdout.split("\n").filter((line) => line.includes("@"));
-  expect(lines.length, `${evalId} has no public attempt in show --history`).toBeGreaterThan(0);
-
-  const latest = lines.at(-1)!;
-  expect(latest).toContain("passed");
-  const locator = latest.match(/@\S+/)?.[0];
-  expect(locator, `${evalId} history line has no public locator: ${latest}`).toBeDefined();
-  return locator!;
-}
-
 it("真实 AI SDK adapter 运行结果经过公开 CLI 读回", async () => {
   requireLiveSecrets();
   rmSync(".niceeval", { recursive: true, force: true });
@@ -98,7 +85,7 @@ it("真实 AI SDK adapter 运行结果经过公开 CLI 读回", async () => {
       // 事件逐一断言，live provider 故障不会冒充通过。
       const inv = run.expReceipt();
       expect(inv.completion, run.diagnostic()).toBe("completed");
-      expect(inv.runIds, run.diagnostic()).toHaveLength(EXPECTED_EVALS.length);
+      expect(inv.runIds, run.diagnostic()).toHaveLength(1);
       for (const evalId of EXPECTED_EVALS) {
         const evalEvent = events.find(
           (event): event is ExpEvalEvent =>
@@ -115,7 +102,13 @@ it("真实 AI SDK adapter 运行结果经过公开 CLI 读回", async () => {
 
       const locators = new Map<string, string>();
       for (const evalId of EXPECTED_EVALS) {
-        locators.set(evalId, await latestAttemptLocator(evalId));
+        const evalEvent = events.find(
+          (event): event is ExpEvalEvent =>
+            "event" in event && event.event === "eval" && event.evalId === evalId,
+        );
+        expect(evalEvent, run.diagnostic()).toMatchObject({ verdict: "passed" });
+        expect(evalEvent?.locator, run.diagnostic()).toMatch(/^@/);
+        locators.set(evalId, evalEvent!.locator!);
       }
 
       // outcome：execution 是适配器收到的公开投影；工具名、入参和 OTel 节点

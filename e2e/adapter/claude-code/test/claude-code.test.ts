@@ -32,7 +32,7 @@ const EXPECTED_EXPERIMENTS = [
   "remote-plugin",
   "locked-down",
 ] as const;
-const EXPECTED_PASSED_ATTEMPTS = 12;
+const EXPECTED_PASSED_ATTEMPTS = 18;
 
 const REQUIRED_LIVE_SECRETS = ["ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL"] as const;
 

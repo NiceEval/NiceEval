@@ -11,7 +11,7 @@ portable Record
           ├─ analysis selection（只读 Core）
           ▼
 AnalysisSampleHandle
-  .sample = complete expected-slot framework
+  .sample = selection-established expected-slot framework
   capability = same frozen reader view
           │
           ├─ RecordProjection declarations

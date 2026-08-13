@@ -17,6 +17,21 @@ interface ExpEvent {
 
 interface ShowOverview {
   format: "niceeval.report-show/v1";
+  sample: {
+    selection:
+      | {
+          policy: "project-current";
+          experimentIds: "all" | string[];
+          selectedRunIds: string[];
+        }
+      | {
+          policy: "explicit-runs";
+          runIds: string[];
+        };
+    runCount: number;
+    slotCount: number;
+    denominator: number;
+  };
 }
 
 test("项目未变时复用结果，Eval 源码变化后重新执行并读回新结果", async () => {
@@ -34,10 +49,28 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
           initialRun.diagnostic(),
         ),
       ).toMatchObject({ event: "eval", evalId: "source-snapshot", verdict: "passed" });
+      const initialRunId = only(
+        initialRun.expReceipt().runIds,
+        () => true,
+        initialRun.diagnostic(),
+      );
 
-      const initialShow = await niceeval.run(["show", "--latest", "--json"]);
+      const initialShow = await niceeval.run(["show", "--json"]);
       expect(initialShow.exitCode, initialShow.diagnostic()).toBe(0);
-      expect(initialShow.json<ShowOverview>().format).toBe("niceeval.report-show/v1");
+      const initialDocument = initialShow.json<ShowOverview>();
+      expect(initialDocument).toMatchObject({
+        format: "niceeval.report-show/v1",
+        sample: {
+          selection: {
+            policy: "project-current",
+            selectedRunIds: [initialRunId],
+          },
+          runCount: 1,
+          slotCount: 1,
+          denominator: 1,
+        },
+      });
+      expect(initialDocument.sample.selection.experimentIds).toEqual(["main", "source"]);
 
       const unchangedRun = await niceeval.run(["exp", "source", "--json"]);
       expect(unchangedRun.exitCode, unchangedRun.diagnostic()).toBe(0);
@@ -49,6 +82,23 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
           unchangedRun.diagnostic(),
         ),
       ).toMatchObject({ event: "start", reused: 1 });
+      const unchangedRunId = only(
+        unchangedRun.expReceipt().runIds,
+        () => true,
+        unchangedRun.diagnostic(),
+      );
+
+      const accumulatedShow = await niceeval.run(["show", "--json"]);
+      expect(accumulatedShow.exitCode, accumulatedShow.diagnostic()).toBe(0);
+      expect(accumulatedShow.json<ShowOverview>().sample).toMatchObject({
+        selection: {
+          policy: "project-current",
+          selectedRunIds: [initialRunId, unchangedRunId].sort(),
+        },
+        runCount: 2,
+        slotCount: 2,
+        denominator: 2,
+      });
 
       const evalPath = join(projectRoot, "evals", "source-snapshot.eval.ts");
       const evalSource = await readFile(evalPath, "utf8");
@@ -59,11 +109,35 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
         "utf8",
       );
 
-      const staleShow = await niceeval.run(["show", "--latest", "--json"]);
+      const staleShow = await niceeval.run(["show", "--json"]);
       expect(staleShow.exitCode, staleShow.diagnostic()).toBe(0);
-      // --latest 只读已发布 Record，不按工作区源码重新校验指纹；源码变化要等下一次
-      // exp 的 reuse plan 才体现为重新派发（reports cli.md「共同选择项」）。
-      expect(staleShow.json<ShowOverview>().format).toBe("niceeval.report-show/v1");
+      expect(staleShow.json<ShowOverview>()).toMatchObject({
+        format: "niceeval.report-show/v1",
+        sample: {
+          selection: {
+            policy: "project-current",
+            selectedRunIds: [],
+          },
+          runCount: 0,
+          slotCount: 0,
+          denominator: 0,
+        },
+      });
+
+      const staleHistory = await niceeval.run(["show", "--run", initialRunId, "--json"]);
+      expect(staleHistory.exitCode, staleHistory.diagnostic()).toBe(0);
+      expect(staleHistory.json<ShowOverview>()).toMatchObject({
+        format: "niceeval.report-show/v1",
+        sample: {
+          selection: {
+            policy: "explicit-runs",
+            runIds: [initialRunId],
+          },
+          runCount: 1,
+          slotCount: 1,
+          denominator: 1,
+        },
+      });
 
       const changedRun = await niceeval.run(["exp", "source", "--json"]);
       expect(changedRun.exitCode, changedRun.diagnostic()).toBe(0);
@@ -82,10 +156,30 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
           changedRun.diagnostic(),
         ),
       ).toMatchObject({ event: "eval", evalId: "source-snapshot", verdict: "passed" });
+      const changedRunId = only(
+        changedRun.expReceipt().runIds,
+        () => true,
+        changedRun.diagnostic(),
+      );
 
-      const refreshedShow = await niceeval.run(["show", "--latest", "--json"]);
+      const refreshedShow = await niceeval.run(["show", "--json"]);
       expect(refreshedShow.exitCode, refreshedShow.diagnostic()).toBe(0);
-      expect(refreshedShow.json<ShowOverview>().format).toBe("niceeval.report-show/v1");
+      expect(refreshedShow.json<ShowOverview>()).toMatchObject({
+        format: "niceeval.report-show/v1",
+        sample: {
+          selection: {
+            policy: "project-current",
+            selectedRunIds: [changedRunId],
+          },
+          runCount: 1,
+          slotCount: 1,
+          denominator: 1,
+        },
+      });
+
+      const removedLatest = await niceeval.run(["show", "--latest"]);
+      expect(removedLatest.exitCode, removedLatest.diagnostic()).not.toBe(0);
+      expect(removedLatest.stderr).toContain("Unknown option '--latest'");
     },
   );
 });

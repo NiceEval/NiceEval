@@ -6,5 +6,5 @@ export default defineConfig({
     en: "e2e: Codex SDK converter live compatibility",
   },
   timeoutMs: 12 * 60_000,
-  maxConcurrency: 1,
+  maxConcurrency: 4,
 });

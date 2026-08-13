@@ -14,9 +14,10 @@ AnalysisSample（纯值）
 Report Calculation / Page
 ```
 
-`AnalysisSample` 保存 selected Run、完整 expected SlotId 分母、Member / Attempt 精确引用，
-以及 `included`、`not-recorded`、`core-invalid`、`excluded` 四态。它不写回 Record，
-不包含路径、文件句柄或延迟读取能力。
+`AnalysisSample` 保存 selection 已建立的 Run / Slot 分母、Member / Attempt 精确引用，
+以及 `included`、`not-recorded`、`core-invalid`、`excluded` 四态。`explicit-runs` 保留具名
+Run 的完整 expected SlotId；`project-current` 的框架只包含身份仍匹配当前目标的 slot。
+Sample 不写回 Record，也不包含路径、文件句柄或延迟读取能力。
 
 ## Selection 与 reuse planning 分开
 
@@ -24,8 +25,7 @@ Report Calculation / Page
 “当前 ExecutionTarget 的哪些 Slot 可以沿用，哪些是 gap”。Report 不接收 execution gap，
 planner 也不把历史 Sample 的 `not-recorded` 当成待执行任务。
 
-CLI 内建 `explicit-runs` 与 `latest-runs` 两种 selection。Core 不保存 ExperimentId，
-所以 latest 所需分组来自官方 typed Attachment。它们是 CLI 行为，不是公开 reader API。
+CLI 内建 `explicit-runs` 与 `project-current` 两种 selection。前者读取具名历史 Run；后者把当前项目目标与既有 Evaluation、Eligibility 事实比较，并保留全部仍匹配的 Run slot。输入或配置身份已经变化的结果不进入当前 Sample，但仍能通过 `--run` 审计。selection 只读 Record，不迁移或改写历史事实。
 
 ## 公开值边界
 

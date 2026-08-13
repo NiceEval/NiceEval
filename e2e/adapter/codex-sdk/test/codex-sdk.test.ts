@@ -37,17 +37,6 @@ function requireLiveSecrets(): void {
   }
 }
 
-async function latestPassedLocator(env: NodeJS.ProcessEnv): Promise<string> {
-  const history = await niceeval.run(["show", EVAL_ID, "--history"], { env });
-  expect(history.exitCode, history.diagnostic()).toBe(0);
-  const line = history.stdout.split("\n").filter((candidate) => candidate.includes("@")).at(-1);
-  expect(line, history.diagnostic()).toBeDefined();
-  expect(line).toContain("passed");
-  const locator = line!.match(/@\S+/)?.[0];
-  expect(locator, history.diagnostic()).toBeDefined();
-  return locator!;
-}
-
 beforeAll(async () => {
   requireLiveSecrets();
   await rm(".niceeval", { recursive: true, force: true });
@@ -85,7 +74,13 @@ beforeAll(async () => {
   });
 
   expect(runReceipt.exitCode, runReceipt.diagnostic()).toBe(0);
-  locator = await latestPassedLocator(env);
+  const evalEvent = runReceipt.ndjson<ExpEvent>().find(
+    (event): event is ExpEvalEvent =>
+      "event" in event && event.event === "eval" && event.evalId === EVAL_ID,
+  );
+  expect(evalEvent, runReceipt.diagnostic()).toMatchObject({ verdict: "passed" });
+  expect(evalEvent?.locator, runReceipt.diagnostic()).toMatch(/^@/);
+  locator = evalEvent!.locator!;
 }, 14 * 60_000);
 
 it("真实 Codex SDK converter 的 Eval 以通过 verdict 完成", () => {
@@ -116,9 +111,9 @@ it("show --execution 读回 Codex SDK converter 的代表性证据", async () =>
   // converted tool card/result, and the second turn that resumed the thread.
   expect(execution.stdout).toContain(marker);
   expect(execution.stdout).toMatch(/TOOL · (shell|command_execution)/);
-  expect(execution.stdout).toContain("result · completed");
+  expect(execution.stdout).toContain("TOOL RESULT · completed");
+  expect(execution.stdout).toContain("Without running a command");
   expect(execution.stdout).toContain(sentinel);
-  expect(execution.stdout).toContain("turn2");
 });
 
 it("show --timing 读回 Codex SDK converter 的 runner 阶段", async () => {

@@ -5,7 +5,7 @@
 // retained as session history, and usage remains visible on the returned Turn.
 
 import { defineEval } from "niceeval";
-import { isDefined, satisfies, includes } from "niceeval/expect";
+import { includes, isDefined, jsonMatch, satisfies, toolMatch } from "niceeval/expect";
 
 export const DIRECT_MARKER = "AI_SDK_DIRECT_E2E_7F31";
 
@@ -24,11 +24,13 @@ export default defineEval({
     );
     await first.succeeded().orStop();
     first
-      .calledTool("remember_marker", {
-        input: { marker: DIRECT_MARKER },
-        status: "completed",
-        count: 1,
-      })
+      .calledTool(
+        toolMatch("remember_marker", {
+          input: jsonMatch({ marker: DIRECT_MARKER }),
+          status: "completed",
+        }),
+        { count: 1 },
+      )
       .label('"remember_marker" input');
     t.check(first.usage?.inputTokens, positive("first.usage.inputTokens"));
     t.check(first.usage?.outputTokens, positive("first.usage.outputTokens"));

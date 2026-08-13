@@ -45,7 +45,7 @@
    成功的 `t.send()` 至少证明 `eval.run` 与首轮 turn。只有确实声明并执行 setup 的 Adapter 才要求 `agent.setup`。Adapter owner 不再于 timing test 内重跑 `--execution`，也不用 execution 文本反推 Skill 或 tracing。不能用另一个 Adapter 或 Report Repo 的 `--timing` 通过代替本 Adapter。
    trace 只作时间与结构证据，从不参与判分——判分断言永远只读事件流（见[Observability](../../../../observability.md)）。
 
-一次昂贵的 live 运行可在 `beforeAll` 中生产冻结 evidence，再由 verdict、execution 与 timing 三个独立 test 只读共用；按标题单项运行时 `beforeAll` 仍必须现场产生本轮 evidence。第 2 步是唯一的 Eval 判分断言：第 3、4 步只验收公开投影与 telemetry 机制，绝不反过来给事件流评分。
+一次 live 运行可在 `beforeAll` 中生产冻结 evidence，再由 verdict、execution 与 timing 三个独立 test 只读共用；按标题单项运行时 `beforeAll` 仍必须现场产生本轮 evidence。第 2 步是唯一的 Eval 判分断言：第 3、4 步只验收公开投影与 telemetry 机制，绝不反过来给事件流评分。
 测试正文遵守 [E2E 总纲](../README.md#单边界-e2e)与[测试 Architecture](../../architecture.md#单文件可读性契约)。
 
 ## Live 官方 Adapter 兼容性
@@ -106,7 +106,7 @@ Eval 可以使用公开 Assertion API 判定协议事实，但完整 Assertion�
 
 Live 运行出现结构化外部故障时不判 pass。可以由同一 candidate、同一上游版本的 AI 通过真实生产入口完成兼容性验收；
 PR Test impact 保存动作、公开观察和未守护风险。Live 结果与 AI 真实验收都没有时，该兼容性状态是“未证明”。
-任何会实际调用付费模型的 live 验收、批量 Adapter 矩阵或整批重跑，都必须先取得用户明确批准；选择 lane 不代表取得授权。
+整个 Adapter E2E portfolio 都可以频繁全量运行；成本、Docker 与 provider 类型不构成降频理由。
 
 ## 上游 SDK 版本
 

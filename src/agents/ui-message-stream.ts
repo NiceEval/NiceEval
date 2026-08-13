@@ -30,7 +30,7 @@ import { defineAgent } from "../define.ts";
 import { makeSendFailure } from "../context/send-failures.ts";
 import { normalizeExternalCause } from "../shared/external-cause.ts";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
-import type { Agent, AgentContext, AgentTracing, EvidenceCoverage, InputResponse, JsonValue, SpanMapper, StreamEvent, TurnInput } from "../types.ts";
+import type { Agent, AgentContext, AgentTracing, CommandProjection, EvidenceCoverage, InputResponse, JsonValue, SpanMapper, StreamEvent, TurnInput } from "../types.ts";
 import { createSessionSlot } from "./session-slot.ts";
 import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
 
@@ -201,7 +201,11 @@ interface ReportedState {
  * (resume 轮只报新增的后缀)。停在 approval-requested 的调用先报 started,
  * 因此它在审批轮是 pending;裁决后的续跑轮只补 finished,落成 completed 或 rejected。
  */
-function deriveTurnEvents(message: UIMessageLike, reported: ReportedState): StreamEvent[] {
+function deriveTurnEvents(
+  message: UIMessageLike,
+  reported: ReportedState,
+  projectToolCommand: UiMessageStreamAgentOptions["projectToolCommand"],
+): StreamEvent[] {
   const events: StreamEvent[] = [];
   let fullText = "";
   for (const part of message.parts) {
@@ -216,7 +220,17 @@ function deriveTurnEvents(message: UIMessageLike, reported: ReportedState): Stre
     const input = (part.input ?? null) as JsonValue;
     const start = () => {
       if (reported.startedCalls.has(callId)) return;
-      events.push({ type: "operation.started", operationId: callId, operation: { kind: "tool", name, input } });
+      const command = projectToolCommand?.({ name, input });
+      events.push({
+        type: "operation.started",
+        operationId: callId,
+        operation: {
+          kind: "tool",
+          name,
+          input,
+          ...(command === undefined ? {} : { command }),
+        },
+      });
       reported.startedCalls.add(callId);
     };
     if (part.state === "output-available") {
@@ -227,7 +241,10 @@ function deriveTurnEvents(message: UIMessageLike, reported: ReportedState): Stre
       start();
       events.push({ type: "operation.finished", operationId: callId, kind: "tool", output: part.errorText, status: "failed" });
       reported.finishedCalls.add(callId);
-    } else if (part.state === "approval-responded" && part.approval?.approved === false) {
+    } else if (
+      part.state === "output-denied" ||
+      (part.state === "approval-responded" && part.approval?.approved === false)
+    ) {
       // 拒绝的调用从没真正执行,协议里不会再有它的任何帧 —— 在裁决落地的这一轮合成。
       start();
       events.push({ type: "operation.finished", operationId: callId, kind: "tool", status: "rejected" });
@@ -254,6 +271,11 @@ export interface UiMessageStreamAgentOptions {
   headers?: globalThis.Record<string, string> | ((ctx: AgentContext) => globalThis.Record<string, string>);
   /** 除 `messages` 外并入请求体的字段,如 `(ctx) => ({ model: ctx.model })`(undefined 字段序列化时自动丢弃)。 */
   body?: (ctx: AgentContext) => globalThis.Record<string, JsonValue | undefined>;
+  /**
+   * 由 endpoint owner 逐笔把逻辑工具调用分类为 command 或 not-command。
+   * 未知调用返回 undefined 并保持 actions coverage partial；NiceEval 不按名称或 input 猜测。
+   */
+  projectToolCommand?: (tool: Readonly<{ name: string; input: JsonValue }>) => CommandProjection | undefined;
   /**
    * 拒绝审批时随 `approval-responded` 带出的理由。应用/SDK 会把它作为模型看到的工具结果
    * 文本 —— 写清楚「不要重试」能明显降低模型原样重发同一调用的概率(实测)。
@@ -484,7 +506,7 @@ function uiMessageStreamSendEffect(
             : { startedCalls: new Set(), finishedCalls: new Set(), textLen: 0 };
           prepared.bookkeeping.reported = reported;
           return {
-            events: deriveTurnEvents(finalMessage, reported),
+            events: deriveTurnEvents(finalMessage, reported, options.projectToolCommand),
             request: finalMessage.parts.find(isApprovalRequested),
           };
         },

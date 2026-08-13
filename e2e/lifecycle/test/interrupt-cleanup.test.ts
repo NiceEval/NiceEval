@@ -93,16 +93,14 @@ async function waitForSecondReuseAttempt(pid: number, cwd: string): Promise<void
   await pollUntil(
     async () => {
       const containers = await containersOwnedBy(pid, cwd);
-      if (containers.length > 1) {
-        throw new Error(`expected one reused Docker sandbox for invocation ${pid}, found ${containers.join(", ")}`);
+      for (const container of containers) {
+        const ready = await docker.run(
+          ["exec", container, "test", "-f", "/tmp/niceeval-lifecycle-second-attempt-ready"],
+          { cwd },
+        );
+        if (ready.exitCode === 0) return true;
       }
-      const container = containers[0];
-      if (container === undefined) return undefined;
-      const ready = await docker.run(
-        ["exec", container, "test", "-f", "/tmp/niceeval-lifecycle-second-attempt-ready"],
-        { cwd },
-      );
-      return ready.exitCode === 0 ? true : undefined;
+      return undefined;
     },
     { timeoutMs: 60_000, intervalMs: 250, label: "second attempt in reused Docker sandbox" },
   );

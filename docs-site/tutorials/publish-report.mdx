@@ -4,10 +4,12 @@ sidebarTitle: "Publish a Static Report"
 description: "Use view --out to export a self-contained report site that opens offline and is separate from its source Record."
 ---
 
-`niceeval view --latest --out <directory>`, or an explicit `niceeval view --run <id> --out <directory>`, selects a core-only Sample from a quiescent Record, builds ReportInput as planned, executes the Report once, and writes a self-contained static site. It is the only export path for sharing results.
+`niceeval view --out <directory>`, or explicit `niceeval view --run <id> --out <directory>`, selects published Runs.
+The internal host forms a pure `AnalysisSample`, projects the facts declared by the Report, and exports one completed `ReportExecution`.
+This is the export path for sharing results.
 
 ```sh
-npx niceeval view --latest --experiment checkout \
+npx niceeval view --experiment checkout \
   --out ./report-site \
   --no-open
 ```
@@ -22,23 +24,40 @@ npx niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY \
 
 ## Select the scope before exporting
 
-`--run` and `--latest` form the Sample first. A Sample preserves the full expected-slot denominator and its `included`, `not-recorded`, `invalid`, and `excluded` states.
+Without a locator or `--run`, the command selects every matching result by current-project identity.
+`--run` selects named historical Runs.
+Both forms create a Sample first.
+A Sample preserves the selected slots' denominator and `included`, `not-recorded`, `core-invalid`, and `excluded` states.
 
-The Report requests the facts it needs through its plan and uses them to build one fixed `ReportInput`. An unrequested channel does not affect the export. A requested invalid channel shows its named issue and fails that export.
+A Report reads only the RecordProjection it declares.
+An unrequested bad Attachment does not affect the export.
+A requested recorded-data problem appears in the built-in problems surface instead of disappearing from the denominator.
+
+## What prevents export
+
+`unavailable`, `migration-required`, `migration-unavailable`, `unsupported`, `invalid`, and partial collection are recorded-data problems.
+They can be exported, but pages must show the problem.
+
+A projector or author-callback defect, an invalid semantic document, or a route conflict is an execution problem.
+Any execution problem stops static export, so NiceEval never publishes a half-successful report.
 
 ## What the export directory contains
 
 A successful directory includes:
 
-- Every planned page and parameterized page.
-- The current host data each page needs.
-- The exporter's exact built-in runtime, base styles, and fonts.
+- Every fixed page and PageFamily-expanded page.
+- The host data each page needs.
 - Already-produced downloads.
-- A `StaticAssetManifest` that exhaustively lists those files.
+- The manifest and the exporter's built-in runtime.
+- A final `complete` marker.
 
-The browser reads only the export directory. It does not access the network or source Record, and it does not need a later NiceEval installation. Before sharing the directory with a colleague or static host, open it in an offline browser to confirm its pages and downloads work.
+The browser reads only the export directory.
+It does not access the network or source Record, and it does not need a later NiceEval installation.
+Before sharing the directory with a colleague or static host, open it in an offline browser to confirm its pages and downloads work.
 
-The target directory must not exist. The command never replaces or deletes an existing directory. To update a deployment, export to a new directory and let the hosting platform switch versions.
+The target directory must not exist.
+The command never replaces or deletes an existing directory.
+To update a deployment, export to a new directory and let the hosting platform switch versions.
 
 ## Generate it in CI
 
@@ -46,13 +65,13 @@ Run evals, then export in the same job:
 
 ```sh
 npx niceeval exp ci --json
-npx niceeval view --latest --experiment ci --out ./report-site --no-open
+npx niceeval view --experiment ci --out ./report-site --no-open
 ```
 
-The final JSON line from the first command is its receipt. To pin the export to that Invocation, read its `runIds` and use `view --run <runId>` instead.
+The final JSON line from the first command is its receipt.
+To pin the export to that Invocation, read its `runIds` and use `view --run <runId>` instead.
 
 ## Publish the directory
 
-Give `./report-site` to your hosting provider as the static-site directory. Do not point the platform build at a source Record; it only needs to deploy the already generated directory.
-
-Deploy that directory with your hosting provider's normal static-site workflow.
+Give `./report-site` to your hosting provider as the static-site directory.
+Do not point the platform build at a source Record; it only needs to deploy the already generated directory.

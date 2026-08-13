@@ -29,9 +29,6 @@ test("view --out 从一份固定 ReportExecution 导出带完成标识的静态�
       const exported = await niceeval.run(
         [
           "view",
-          "--latest",
-          "--record",
-          ".niceeval/record",
           "--report",
           "./reports/site.ts",
           "--out",
@@ -53,8 +50,6 @@ test("view --out 从一份固定 ReportExecution 导出带完成标识的静态�
         [
           "view",
           failed.locator!,
-          "--record",
-          ".niceeval/record",
           "--out",
           "attempt-export",
           "--no-open",

@@ -8,7 +8,8 @@ Repo ID 是 `adapter/ai-sdk`；manifest 声明 `areas: ["adapter"]`、live lanes
 
 ## 被测面
 
-- `uiMessageStreamAgent(options)`：SSE reducer、全量历史重建、tool approval 改写重发。
+- `uiMessageStreamAgent(options)`：SSE reducer、全量历史重建、tool approval 改写重发；被测 endpoint
+  对注册的 `get_weather` / `calculate` 逐笔提供 `notCommandProjection()`，未知工具保持未分类。
 
 ## Eval 闭环
 

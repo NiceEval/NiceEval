@@ -1,7 +1,7 @@
 ---
 title: "NiceEval CLI: Commands, Flags, and Exit Codes"
 sidebarTitle: "CLI"
-description: "Reference for NiceEval commands, flags, and exit codes, including explicit Record and Run selection for reports."
+description: "Reference for NiceEval commands, flags, and exit codes, including current-project and historical Report selection."
 ---
 
 The [NiceEval](https://niceeval.com/) CLI discovers, runs, and reviews evals. Running evals follows an experiment-first model: **`exp` selects a checked-in run configuration**. Positional arguments after the experiment narrow by eval ID prefix. Put agents, models, and flags in `experiments/`, not in temporary CLI arguments.
@@ -21,10 +21,10 @@ The [NiceEval](https://niceeval.com/) CLI discovers, runs, and reviews evals. Ru
   <Card title="npx niceeval clean" icon="trash">
     Deletes the temporary Record directory left by one named writer. It never deletes a completed Run or Attempt.
   </Card>
-  <Card title="npx niceeval show --run | --latest" icon="terminal">
-    Runs a terminal Report. `explicit-runs` or `latest-runs` forms the AnalysisSample.
+  <Card title="npx niceeval show [--run]" icon="terminal">
+    Runs a terminal Report. Without a locator or `--run`, it reads current-project results; an exact Attempt locator or Run ID audits history.
   </Card>
-  <Card title="npx niceeval view --run | --latest" icon="eye">
+  <Card title="npx niceeval view" icon="eye">
     Opens a web view for one fixed ReportExecution. End and rerun it to read an edited Record.
   </Card>
 </CardGroup>
@@ -108,12 +108,12 @@ The CLI accepts only the flags below. Any other flag is an error and exits nonze
 | `--orphans` | boolean | `sandbox list` only. Reads unowned Sandboxes left by a hard stop; it does not clean them. |
 | `--tag` | string | Runs only evals with the tag declared by `defineEval`. |
 | `--junit` | string | Writes an additional JUnit XML file for CI. |
-| `--json` | boolean | For `exp`, writes one ordered NDJSON stream to stdout; for `show`, writes the already computed ReportExecution host data and status. |
+| `--json` | boolean | For `exp`, writes one ordered NDJSON stream to stdout. For `show`, emits the `niceeval.report-show/v1` document for the already computed ReportExecution and does not open a second data path. |
 | `--smoke` | boolean | `docker profile doctor` only. Starts a constrained DinD container and runs an inner container. |
 | `--out` | string | `view` only. Exports a static report site to this directory. |
 | `--port` | number | `view` only. Chooses the local server port. |
 | `--host` | string | `view` only. Chooses the listening address. Omit it to listen on all addresses and print local and LAN URLs. |
-| `--record` | string | For `show`, `view`, `accept`, and `sandbox enter`, `list`, or `stop`: selects the actual Record root. The CLI does not append `.niceeval/record` or another suffix. |
+| `--record` | string | For `show`, `view`, `accept`, and `sandbox enter`, `list`, or `stop`: selects the actual Record root. Use it with `show` or `view` only to read another Record root. The CLI does not append `.niceeval/record` or another suffix. |
 | `--run` | string | Repeat for `show` or `view` to add one explicit complete Run ID. Duplicate identities are removed. |
 | `--report` | string | `show` and `view` only. Replaces their shared default Report with the file's default `defineReport(...)` export. |
 | `--page` | string | `show` and `view` only. Selects a planned page. An unknown page ID is a usage error and lists available page IDs. |
@@ -126,9 +126,7 @@ The CLI accepts only the flags below. Any other flag is an error and exits nonze
 | `--open` / `--no-open` | boolean | `view` only. Opens a browser automatically after startup by default. |
 | `--help` | boolean | Prints help and exits. |
 | `--version` | boolean | Prints the installed NiceEval version and exits. |
-| `--latest` | boolean | `show` and `view` only. Selects one completed Run per target Experiment using the stable Sample latest policy. It conflicts with `--run`. |
-| `--experiment` | string | Repeat for `show` and `view`. With `--latest`, it defines target Experiments; with `--run`, it narrows the selected Sample by complete identity. |
-| `--eval` | string | `show` and `view` only. Narrows an already selected Sample by complete eval identity. |
+| `--experiment` | string | Repeat for `show` and `view` to narrow current-project results by complete Experiment ID. It cannot combine with explicit `--run`. |
 
 ## `list`
 
@@ -169,33 +167,45 @@ See [Runner · Reporter](/explanation/runner#reporter) for choosing an output. S
 ## `view`
 
 ```bash
-npx niceeval view --latest
+npx niceeval view
 npx niceeval view --run 01H...
+npx niceeval view @01H...
 ```
 
-This opens the local Record viewer. It shares `show`'s default Report and explicit selection: it creates a core-only AnalysisSample with `explicit-runs` or `latest-runs` on a quiescent Record, then reads only the channels requested by the ReportPlan.
+This opens the local Record viewer. It shares `show`'s default Report and selection rules. Without a locator or `--run`, it reads every result whose identity still matches the current project from the default Record. An exact `@<AttemptLocator>` shows that Attempt's default overview. `--run` reads named historical Runs. The internal host then projects the needed facts and executes one Report.
 
-A previous local execution can leave `carried` or `accepted` Members for slots that reused an Attempt. These are adoption facts, not a rerun state. The same AnalysisSample does not reselect a moving head. `--experiment`, `--eval`, and `--record` narrow the same way for both hosts.
+A previous local execution can leave `reference` Members for slots that adopted an existing Attempt. These are adoption facts, not a rerun state. The same `AnalysisSample` does not reselect while a page is loading. `--experiment` narrows current-project results by complete ID. Use `--record` only when you intentionally read another Record root.
 
 ## `show`
 
 ```bash
-npx niceeval show --latest
+npx niceeval show
 npx niceeval show --run 01H...
 npx niceeval show --run 01H... --run 01J...
+npx niceeval show @01H...
+npx niceeval show @01H... --source
+npx niceeval show @01H... --execution
+npx niceeval show @01H... --timing
+npx niceeval show @01H... --timing=full
 npx niceeval show --run 01H... --page attempt-0123456789ABCDEFGHJKMNPQRS
 npx niceeval show --run 01H... --report ./reports/summary.ts --page overview
 ```
 
-`show` is the terminal Report entry point for people and coding agents. It accepts no fuzzy positional selection: choose exactly one of `--run` and `--latest`. An Attempt detail is a parameterized page inside the projected AnalysisSample, not another selector.
+`show` is the terminal Report entry point for people and coding agents. It accepts no fuzzy positional selection. An exact `@<AttemptLocator>` shows that Attempt's Evaluation identity, evaluation kind, four-state Verdict, assertions, and applicable Score by default.
 
-Repeat `--run` to read only those explicit Runs. `--latest` picks the final completed Run for each target Experiment using completion time and Run identity. `--latest --experiment <id>` defines the target set; without `--experiment`, the target set comes from readable Run core data. An empty target set, an Experiment without a completed Run, or an unreadable candidate sort key fails explicitly rather than guessing a recent result. Select an unfinished Run explicitly with `--run`.
+Add `--source`, `--execution`, or `--timing` to inspect its dedicated evidence surface. `--timing` shows a compact phase tree by default. `--timing=full` adds interval identity, parent, and offset. These three surfaces are mutually exclusive and each requires one exact Attempt locator.
 
-After selection, `show` freezes a ReportPlan, reads only its declared channels, and runs the Report once. Requested `unavailable`, `unsupported`, `partial`, or `invalid` channel states remain visible. Unknown or damaged channels that the current page did not request do not affect it. See [Viewing Results](/tutorials/viewing-results) for the full contract.
+Without a locator or `--run`, `show` plans current-project identity and scans every published Run in the default Record. It includes only slots whose Experiment, Eval, attempt ordinal, evaluation kind, input identity, and config identity still match the current project. It does not retain only one Run by time. When no result matches, it shows an empty Sample. Stale results remain available through a complete `--run` ID.
 
-`view --latest --out <directory>` (or an explicit `--run`) prerenders the same ReportExecution as a self-contained static site. The target directory must not exist. NiceEval validates every page, download, and static asset path before publishing the complete directory in one rename. It does not give a user Report a Record or blob path.
+Repeat `--run` to read only explicit historical Runs. Repeat `--experiment <id>` to narrow current-project results by complete Experiment ID; it cannot combine with `--run`. `exp`, `show`, and `view` use the same `.niceeval/record` by default when `--record` is absent.
 
-The command holds the reader lease only while it forms the AnalysisSample, ReportPlan, and ReportInput, then releases it. ReportExecution uses only memory after that point. Editing a quiescent Record or Report module changes a later command, not a running local view or static export.
+`project-current` changes only Report selection. It does not migrate the Record or change its version.
+
+After selection, `show` reads the Projection declared by the Report and forms one `ReportExecution`. Requested `unavailable`, `migration-required`, `unsupported`, `partial`, or `invalid` Attachment states remain visible. An unknown or damaged Attachment that the current page did not request does not affect it. `show --json` emits the same execution as `niceeval.report-show/v1`. See [Viewing Results](/tutorials/viewing-results) for the full contract.
+
+`view --out <directory>` (or an explicit `--run`) prerenders the same ReportExecution as a self-contained static site. The target directory must not exist. NiceEval validates every page, download, and static asset path before publishing the complete directory in one rename. It does not give a user Report a Record or blob path.
+
+The command completes the needed Projection and Report execution while it holds the sample handle. The returned ReportExecution no longer accesses the Record. A running `view` builds a new fixed execution on change. It replaces the current revision on success and retains the last-good execution on failure. Static export consumes only a completed execution.
 
 ## `--early-exit` and `--strict`
 

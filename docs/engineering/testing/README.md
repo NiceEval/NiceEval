@@ -91,7 +91,7 @@ niceeval 的测试体系采用“真实用户 Journey + 原生结果断言”。
 确定性自动化 owner 禁止测试级 retry；任一次意外失败、retry 后转绿、默认并行失败或遗留资源都属于可靠性失败。
 
 真实 Provider 不承担确定性产品可靠性。确定性协议 counterpart 通过上述接管门；live Adapter 只断言稳定协议事实。
-每次新增或实质修改 live owner 做一次已明确授权的真实运行与公开读回；完整接管矩阵只有另获明确调用次数 / 成本授权时才跑。
+每次新增或实质修改 live owner 都由常规全量 E2E 完成真实运行与公开读回。live Repo 不用重复 takeover 证明 provider 确定性。
 结构化外部故障不算 pass，可由同一 candidate 的 AI 真实兼容性验收替代；两者都没有时状态是“未证明”。
 
 ## 不自动化
@@ -140,11 +140,11 @@ pnpm e2e --repo report -- --run test/exported-targets.test.ts
 pnpm e2e --lane main --repo adapter/codex-cli
 ```
 
-- PR lane 无密钥，运行 unit、CLI、Runner、Report、Package 与确定性 host / Docker Repo；
-- main 跑 PR 全集和低成本真实 Adapter 兼容性检查；nightly 跑完整 Adapter、Sandbox 与 Lifecycle；
+- 同仓可信 PR 使用 main lane 和最小 secret 白名单运行全部 E2E；Fork 与 Dependabot 使用无密钥 pr lane；
+- main、nightly 与 release 都运行各自声明的完整 Repo 集，不按 diff、成本、Docker 或 provider 类型降频；
 - release 先生成最终 tarball，验收通过后发布同一字节与 digest；
 - workflow 只负责 checkout、运行时、矩阵、cache 和 artifact，选择、注入、executor、重试和失败分类都在根 runner；
-- 不使用 `pull_request_target` 执行 PR 代码并读取 secret。
+- 不使用 `pull_request_target` 或 `workflow_run` 让不可信 PR 代码读取 secret。
 
 Unit 总量是退化护栏，不是行命中率目标。`pnpm test` 报告的 Tests 数不得超过 200；Testkit 不设独立 Unit 套件。
 `test.each` 展开的每个 case 都计入。不能把独立命题合并进一个大测试规避上限，也不为接近上限而补测。

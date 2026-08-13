@@ -7,7 +7,7 @@
 // 断言双重把关:(a) 行为痕迹——真的用 shell 读过 skill 文件;(b) 结果痕迹——落盘内容确实
 // 采用了 skill 里那条只存在于该文件、模型不可能凭空猜到的约定标记。
 import { defineEval } from "niceeval";
-import { includes, satisfies } from "niceeval/expect";
+import { includes, satisfies, toolMatch } from "niceeval/expect";
 const SKILL_DIR = ".agents/skills";
 const SKILL_NAME = "niceeval-status-report";
 const OTHER_SKILLS = ["niceeval-release-note", "niceeval-decoy"] as const;
@@ -24,10 +24,9 @@ export default defineEval({
       t.check(installed.stdout, includes(SKILL_NAME));
     });
     const turn = await t.send(
-      `Check whether this repository has a skill or guide file about writing a "status report" file ` +
-        `before you answer — look under ${SKILL_DIR}/ if such a directory exists. ` +
-        `Then create a file named ${relPath} that is a status report saying "all systems nominal", ` +
-        `following whatever convention you found.`,
+      `Use shell commands to read ${SKILL_DIR}/${SKILL_NAME}/SKILL.md. ` +
+        `Then create ${relPath} as a status report saying "all systems nominal", following only that convention. ` +
+        `Before finishing, use a shell command to print ${relPath} and verify that it exists and contains the required marker.`,
     );
     await turn.succeeded().orStop();
     t.check(
@@ -43,35 +42,44 @@ export default defineEval({
       ),
     );
     await t.group("行为痕迹:真的用 shell 读过这个 skill 的文件", () => {
-      turn.calledTool("shell", {
-        input: (input) =>
-          typeof input === "object" &&
-          input !== null &&
-          !Array.isArray(input) &&
-          (typeof (input as Record<string, unknown>)["command"] === "string"
-            ? new RegExp(`${SKILL_DIR}/${SKILL_NAME}`).test(
-                (input as Record<string, unknown>)["command"] as string,
-              )
-            : new RegExp(`${SKILL_DIR}/${SKILL_NAME}`).test(
-                JSON.stringify(input) ?? "",
-              )),
-        status: "completed",
-      });
+      turn.calledTool(
+        toolMatch("shell", {
+          input: satisfies(
+            `shell 入参引用 ${SKILL_DIR}/${SKILL_NAME}`,
+            (input) =>
+              typeof input === "object" &&
+              input !== null &&
+              !Array.isArray(input) &&
+              (typeof (input as Record<string, unknown>)["command"] === "string"
+                ? new RegExp(`${SKILL_DIR}/${SKILL_NAME}`).test(
+                    (input as Record<string, unknown>)["command"] as string,
+                  )
+                : new RegExp(`${SKILL_DIR}/${SKILL_NAME}`).test(
+                    JSON.stringify(input) ?? "",
+                  )),
+          ),
+          status: "completed",
+        }),
+      );
       for (const other of OTHER_SKILLS) {
-        turn.calledTool("shell", {
-          input: (input) =>
-            typeof input === "object" &&
-            input !== null &&
-            !Array.isArray(input) &&
-            (typeof (input as Record<string, unknown>)["command"] === "string"
-              ? new RegExp(`${SKILL_DIR}/${other}`).test(
-                  (input as Record<string, unknown>)["command"] as string,
-                )
-              : new RegExp(`${SKILL_DIR}/${other}`).test(
-                  JSON.stringify(input) ?? "",
-                )),
-          count: 0,
-        });
+        turn.notCalledTool(
+          toolMatch("shell", {
+            input: satisfies(
+              `shell 入参未引用 ${SKILL_DIR}/${other}`,
+              (input) =>
+                typeof input === "object" &&
+                input !== null &&
+                !Array.isArray(input) &&
+                (typeof (input as Record<string, unknown>)["command"] === "string"
+                  ? new RegExp(`${SKILL_DIR}/${other}`).test(
+                      (input as Record<string, unknown>)["command"] as string,
+                    )
+                  : new RegExp(`${SKILL_DIR}/${other}`).test(
+                      JSON.stringify(input) ?? "",
+                    )),
+            ),
+          }),
+        );
       }
       // Codex 没有原生 Skill 工具；真实读取成立时仍不得伪造 Claude 式 skill.loaded。
       t.check(

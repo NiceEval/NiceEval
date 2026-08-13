@@ -6,4 +6,5 @@ export default defineConfig({
     "zh-CN": "e2e：公共 SDK converter 确定性场景",
   },
   timeoutMs: 60_000,
+  maxConcurrency: 4,
 });

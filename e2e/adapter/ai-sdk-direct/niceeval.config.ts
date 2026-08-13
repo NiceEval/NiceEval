@@ -6,4 +6,5 @@ export default defineConfig({
     en: "e2e: in-process AI SDK Direct Agent",
   },
   timeoutMs: 90_000,
+  maxConcurrency: 4,
 });

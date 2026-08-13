@@ -37,7 +37,7 @@ npx niceeval exp compare-models   # renders a side-by-side report for every mode
 
 Each configuration stays in its own file, which makes naming, diffing, and review straightforward. The directory structure itself explains which files belong to the same comparison.
 
-By default, `niceeval show` / `view` follow the same boundary: only experiments in the same folder go into one cost vs. end-to-end pass rate chart and experiment table; different folders are shown separately.
+By default, `niceeval show` and `view` compare Experiments in the current result scope; no extra grouping field is needed.
 
 When one cell's result looks off and you need to reproduce it in isolation, run just that cell by its full id (`group/filename`) instead of the whole group:
 
@@ -76,11 +76,11 @@ api-validation   claude-code             pass@3 = 1/3 (33%)    mean 41s
 Beyond pass rate, you should also compare mean time, tokens, cost, and failure types.
 
 ```bash
-npx niceeval show --latest --experiment models
-npx niceeval view --latest --experiment models
+npx niceeval show --experiment models
+npx niceeval view --experiment models
 ```
 
-Each Experiment uses its own `evals` selection to choose evals. Use `--latest --experiment <id>` to select the final completed Run for each named Experiment before you compare them.
+Each Experiment uses its own `evals` selection to choose evals. The default current-project selection keeps every published slot whose identity still matches the current project. Use `--experiment <complete-id>` to narrow the current-project target before you compare it.
 
 ## Design advice
 

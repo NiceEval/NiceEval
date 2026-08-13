@@ -175,8 +175,7 @@ const report = defineReport({ id, calculations, pages });
 // niceeval view --record <root> --run <run-id> --out <target>
 ```
 
-`--record`、`--run` / `--latest` 与 `--out` 在 CLI 调用处可见。内部 host 在 frozen
-reader Scope 内完成 selection、Attachment I/O 与作者 graph，形成 immutable
+不带 locator 或 `--run` 的命令、`--run`、可选的 `--record` 与 `--out` 在 CLI 调用处可见。默认 Record root 与 `exp` 一致；只有读取其它 root 才需要 `--record`。内部 host 在 frozen reader Scope 内完成 selection、Attachment I/O 与作者 graph，形成 immutable
 `ReportExecution`。包不导出 reader、selection handle 或 `executeReport()` 给应用 host。
 
 Record 不提供局部 edit/delete、mirror、proof、revision 或防伪 API。业务演进通过新的 RecordAttachment schema 与相邻 migration 进入；已发布 Run 不再修改。
@@ -227,7 +226,7 @@ Record 不提供局部 edit/delete、mirror、proof、revision 或防伪 API。�
 | 返回对象 | 词根指向哪个领域对象 |
 | 正交选项 | 哪些约束不属于基础方式，不进入判别字段 |
 
-`AnalysisSample.selection.policy` 是上层 ABI，不版本化。内建 identity 是 `explicit-runs` 与 `latest-runs`，输入分别由自己的具名类型承载。durable RecordAttachment identity 仍保留版本。不要在 `AnalysisSample` 上另造 currentness 字段，也不要把 execution `reuse | gap` 混进同一个 slot 联合。
+`AnalysisSample.selection.policy` 是上层 ABI，不版本化。内建 identity 是 `explicit-runs` 与 `project-current`，输入分别由自己的具名类型承载。`project-current` 比较当前项目目标与已有 Eligibility identity，并保留全部匹配结果；它不是按时间排序的模式。durable RecordAttachment identity 仍保留版本。不要把 execution `reuse | gap` 混进同一个 slot 联合。
 
 正交约束必须写成独立字段，但前提是它对应明确用户旅途。
 adoption、rename 或其它出处事实留在 Run-owned RecordAttachment，不进入 Member 核心，也不膨胀成组合选择模式。
