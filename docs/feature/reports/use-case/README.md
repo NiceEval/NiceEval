@@ -7,4 +7,4 @@
 - [分享静态报告站](分享静态报告站.md)：导出断网可读的自包含目录。
 - [制作可访问页面](制作可访问页面.md)：让文字、表格和网页具有相同事实与状态。
 
-每个用例都从一个 frozen `RecordReader` 开始。先形成 `AnalysisSampleHandle`，再由 Report 的静态数据声明形成穷尽 `ProjectedSample` 与 immutable `ReportExecution`；Report callback 不反向打开 Record。
+每个用例都从 CLI 已选定的 opaque Record / Run 开始。内部 host 形成 `AnalysisSample`，再由 Report 的静态数据声明形成穷尽 `ProjectedSample` 与 immutable `ReportExecution`；Report callback 看不到 reader，也不反向打开 Record。

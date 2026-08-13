@@ -143,7 +143,7 @@ E2E 文件从上到下保持同一信息顺序：
 ## 复用设施预算
 
 跨 Repo 的稳定机械能力由内部 [官方 Testkit](testkit.md) 承载。它是根 workspace 成员，但场景 Repo 只在隔离副本中
-消费本次 runner 生成的内容寻址 tgz；不通过 workspace link 或 checkout 路径运行。能力是否上移按机械契约的消费者判断，不能因为
+消费本次 runner 生成的 invocation-local 不可发布 directory snapshot；不通过 workspace link 或源 checkout 路径运行。能力是否上移按机械契约的消费者判断，不能因为
 功能与 Adapter 属于不同 Repo 集合，就复制两份 process 或严格 JSON 实现。
 
 共享设施只允许拥有机械能力：

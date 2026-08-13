@@ -37,8 +37,8 @@ src/
 │
 ├─ o11y/                    # transcript 归一化 → 标准事件流;OTLP 接收与归一;派生事实与成本
 ├─ runner/                  # 调度(有界并发 / 首过即停 / 预算)、发现、指纹缓存、reporters
-├─ record/                  # Record Format 的读写面(唯一碰磁盘布局的地方)
-├─ report/                  # 报告积木:指标 × 计算函数 × 双面组件(text 面 / web 面)
+├─ record/                  # 内部 Record 读写面(唯一碰磁盘布局的地方，不公开子路径)
+├─ report/                  # 公开作者 DSL + 内部 host；持久化执行能力不对作者开放
 ├─ show/                    # 终端宿主      └─ view/  网页宿主(两个宿主共用 report/)
 │
 └─ cli.ts                   # CLI 入口
@@ -71,7 +71,7 @@ Sandbox acquire、Sandbox lifecycle、Agent ensure、作者执行和逆序 final
 
 | 层 | 长期承诺 | 允许怎样变化 | Effect 的角色 |
 |---|---|---|---|
-| Record capability | 打开 current Core、冻结已完成 Run、读写 Attachment、clean 与 migrate | 不随 Assertions、Plugin 或 Report 增加业务方法 | 组合文件、maintenance lock、writer lock、Scope 与 typed I/O failure |
+| 内部 Record capability | 打开 current Core、冻结已完成 Run、读写 Attachment、clean 与 migrate | 不随 Assertions、Plugin 或 Report 增加业务方法，也不形成公开 package API | 组合文件、maintenance lock、writer lock、Scope 与 typed I/O failure |
 | Record Core | Record identity、Run/Slot 分母、Attempt origin/reference 与完成标识 | owner、reference、path、完成判断或 Core shape 改变时发布新 major | `RecordCoreRead.core-invalid` 是成功 ADT，不伪装成 I/O error |
 | RecordAttachment schema | 一个 owner-local payload 的精确 shape 与语义 | 发布相邻 schema 与 migration policy | 在不可信边界精确解码，Stream 不逃出 Scope |
 | RecordAttachment projection | 一个 owner 的一份 Attachment 到 typed view | typed view 改变时发布新 projector/API | unavailable、migration-required、migration-unavailable、unsupported 与 invalid 保持成功 ADT |
@@ -159,7 +159,7 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 diff 采集：
     Assertions、Score、Evaluation 与 provenance aggregate。generic writer 只验证 Core、Attachment closure 和引用，
     最后创建 Run 完成标识并返回窄 `InvocationReceipt`。
 
-    Report 不参与采集或落盘。show/view 先形成 `AnalysisSampleHandle`，再按 Report 声明读取 Attachment 并产生 typed projection；Calculation 和 Page 只消费这些自包含值。一次 `ReportExecution` 同时服务终端、本机页面或静态导出。
+    Report 不参与采集或落盘。show/view 的内部 host 先形成 `AnalysisSample`，再按 Report 声明读取 Attachment 并产生 typed projection；Calculation 和 Page 只消费这些自包含值。一次 `ReportExecution` 同时服务终端、本机页面或静态导出。
 13. **退出码。
     ** 有 `failed` Verdict 或 `errored` Verdict → 非零退出；报告里两者分开列，供 CI 判红和诊断。
 

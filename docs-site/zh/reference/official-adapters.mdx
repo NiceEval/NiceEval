@@ -94,9 +94,11 @@ import { defineExperiment } from "niceeval";
 import { codexAgent } from "niceeval/adapter";
 import { dockerSandbox } from "niceeval/sandbox";
 
+const memorySpace = "memorybench-nowledge";
+
 export default defineExperiment({
   agent: codexAgent({
-    env: { NMEM_SPACE: "memorybench-nowledge" },
+    env: { NMEM_SPACE: memorySpace },
     mcpServers: [
       { name: "browser", command: "npx", args: ["-y", "@anthropic/mcp-browser"] },
       { name: "team-memory", url: "https://mem.example.com/mcp/", headers: { Authorization: `Bearer ${process.env.MEM_API_KEY}` } },
@@ -110,6 +112,7 @@ export default defineExperiment({
     ],
     configFile: "configs/codex/no-web.toml",
   }),
+  flags: { memorySpace },
   model: "gpt-5.4",
   sandbox: dockerSandbox({ source: { type: "image", image: "node:24-slim" } }),
 });

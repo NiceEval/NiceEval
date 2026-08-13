@@ -7,8 +7,6 @@
 RecordAttachment adapter 把该值转换为版本化 Attachment。官方事实与第三方事实共用这条 SPI；官方只多一枚私有
 `niceeval.*` namespace authority。
 
-## 核心心智
-
 ```text
 普通领域 API
   → occurrence-local producer lifecycle

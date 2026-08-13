@@ -7,12 +7,11 @@ description: "用 show 或 view 从已发布的 Record 选择 Sample，并查看
 运行结束后，从已发布的 Record 选择要看的 Run。`show` 在终端显示结果，`view` 在本机显示网页。两条命令使用同一条数据路径：
 
 ```text
-RecordReader + AnalysisSelectionRequest
+opaque Record + CLI selector
+                  ↓ internal host
+             AnalysisSample
                   ↓
-          AnalysisSampleHandle
-             ├─ .sample → AnalysisSample
-             ↓
-       RecordAttachment projector
+       official opaque projector
                   ↓
            ProjectedSample → ReportExecution
                             ↙         ↘

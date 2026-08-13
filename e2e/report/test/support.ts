@@ -1,6 +1,5 @@
-import { randomUUID } from "node:crypto";
-import type { ProjectCopyStagingOptions } from "@niceeval/testkit";
-import { isAbsolute, join, normalize, resolve, sep } from "node:path";
+import { createE2EContext, type ArtifactStageEntry } from "@niceeval/testkit";
+import { join, resolve } from "node:path";
 
 /**
  * 每个 owner 自己在这个副本内写入 `.niceeval`；这里仅声明副本生命周期和
@@ -9,76 +8,34 @@ import { isAbsolute, join, normalize, resolve, sep } from "node:path";
 export const reportProjectCopy = {
   from: process.cwd(),
   prefix: "niceeval-e2e-report-",
-  omitTopLevel: [".niceeval", "evidence", "node_modules", "site-export", "test", "test-results"],
+  omitTopLevel: [".e2e-artifacts", ".niceeval", "evidence", "node_modules", "site-export", "test", "test-results"],
   links: [{ from: resolve("node_modules"), to: "node_modules", type: "dir" }],
 } as const;
 
-type ProcessWithLocalInvocation = NodeJS.Process & {
-  __niceevalE2eLocalArtifactInvocationId?: string;
-};
+/**
+ * Report Repo 共享的 E2E context：所有 case 共用一个 context 实例，
+ * 各自通过 reportE2E.case 声明 artifact entry 与完整 argv/readiness/expected。
+ */
+export const reportE2E = createE2EContext({
+  repoId: "report",
+  project: reportProjectCopy,
+  commands: {
+    niceeval: [join(process.cwd(), "node_modules", ".bin", "niceeval")],
+  },
+});
 
-const processWithLocalInvocation = process as ProcessWithLocalInvocation;
-const localInvocationId = processWithLocalInvocation.__niceevalE2eLocalArtifactInvocationId ??=
-  `local-${process.pid}-${randomUUID()}`;
-
-function assertSafePathSegment(value: string, label: string): string {
-  if (
-    !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(value) ||
-    /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(value)
-  ) {
-    throw new Error(`${label} must be one safe path segment`);
-  }
-  return value;
-}
-
-function assertCanonicalRelativeDirectory(value: string): string {
-  if (value.length === 0 || isAbsolute(value) || value.includes("\\") || value.includes("\0")) {
-    throw new Error("artifact extra directory must be a canonical relative path");
-  }
-  const canonical = normalize(value);
-  if (
-    canonical !== value ||
-    canonical === "." ||
-    canonical === ".." ||
-    canonical.startsWith(`..${sep}`) ||
-    isAbsolute(canonical)
-  ) {
-    throw new Error("artifact extra directory must stay within the case namespace");
-  }
-  return canonical;
-}
-
-function invocationIdForArtifactNamespace(): string {
-  const injected = process.env.NICEEVAL_E2E_INVOCATION_ID;
-  if (injected === undefined || injected.length === 0) return localInvocationId;
-  return assertSafePathSegment(injected, "NICEEVAL_E2E_INVOCATION_ID");
-}
-
-const invocationId = invocationIdForArtifactNamespace();
-
-export function reportArtifactStaging(
-  caseName: string,
-  extraDirectories: readonly string[] = [],
-): ProjectCopyStagingOptions {
-  const safeCaseName = assertSafePathSegment(caseName, "artifact caseName");
-  const safeExtraDirectories = extraDirectories.map(assertCanonicalRelativeDirectory);
-  const namespace = join("evidence", invocationId, safeCaseName);
-  return {
-    stageArtifacts: {
-      destinationRoot: process.cwd(),
-      entries: [
-        {
-          source: ".niceeval",
-          target: join(namespace, ".niceeval"),
-          optional: true,
-        },
-        ...safeExtraDirectories.map((directory) => ({
-          source: directory,
-          target: join(namespace, directory),
-          optional: true,
-        })),
-      ],
-      collision: "error",
-    },
-  };
+/**
+ * report 特有 artifact entry：固定收集 `.niceeval`，附加目录由各 case owner
+ * 显式声明（例如静态导出或 JUnit 输出）。target 相对 case namespace，由
+ * createE2EContext 统一铺到 `.e2e-artifacts/<invocation>/<case>/` 下。
+ */
+export function reportCaseArtifacts(extraDirectories: readonly string[] = []): readonly ArtifactStageEntry[] {
+  return [
+    { source: ".niceeval", target: ".niceeval", optional: true },
+    ...extraDirectories.map((directory) => ({
+      source: directory,
+      target: directory,
+      optional: true,
+    })),
+  ];
 }

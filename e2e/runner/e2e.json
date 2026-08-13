@@ -10,5 +10,5 @@
   "secrets": [],
   "requires": { "runtimes": ["node>=22"] },
   "paths": ["e2e/runner/**", "src/runner/**", "src/sample/**", "src/record/**", "src/show/**"],
-  "artifacts": [".niceeval/**"]
+  "artifacts": [".e2e-artifacts/**"]
 }

@@ -6,6 +6,10 @@ Record 只保存已经发布的运行事实。它冻结身份、owner、精确�
 Record 不包办执行、沿用、分析或报告。Assert-first API、Plugin、reuse planning、
 Calculation 与页面可以演进，不因此扩张 Record Core。
 
+本页的精确 layout 是 NiceEval 内部实现契约。外部只把 portable Record 当作 opaque
+目录整体携带，并通过 CLI 与 Report 观察；文件名、envelope、完成标识、reader / writer
+类型和 migration registry 都不构成第三方读取内部结构或生产协议。
+
 ## 两个物理边界
 
 | 边界 | 内容 | 是否携带与进 Git |
@@ -13,8 +17,8 @@ Calculation 与页面可以演进，不因此扩张 Record Core。
 | portable Record | `record.json`、已完成 Run、Core 与 Attachment closure | 可以整体复制或纳入 Git |
 | local operation state | session、maintenance lock、writer lock 与 cache | 不属于 Record；不复制、不分享、不进 Git |
 
-默认 portable root 是 `<project>/.niceeval/record/`。Library 的 `root` 参数表示实际
-Record root。
+默认 portable root 是 `<project>/.niceeval/record/`。内部 Library 的 `root` 参数表示实际
+Record root；公开命令用 `--record` 选择这个整体目录。
 
 锁由平台为同一个 canonical root 协调。它们只协调善意的 NiceEval 进程，不构成 hostile
 filesystem 的安全边界。

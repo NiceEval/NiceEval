@@ -1,6 +1,9 @@
-# Record Library
+# Record 内部 Library
 
-Record Library 提供五类 Effect-native 能力：打开 current reader、定义并读取 typed
+本页约束 NiceEval runner、CLI 与 Report host 的内部持久化 API。包不导出
+`niceeval/record`；应用代码不得以这里的类型、函数或磁盘 shape 作为集成协议。
+
+内部 Record Library 提供五类 Effect-native 能力：打开 current reader、定义并读取 typed
 RecordAttachment、在 Scope 内写完并发布 Run、删除未完成 Run，以及显式迁移旧格式。
 
 普通 reader 不包含跨 Core major decoder。旧 Core decoder、Core converter 与

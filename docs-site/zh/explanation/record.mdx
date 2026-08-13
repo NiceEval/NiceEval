@@ -7,7 +7,9 @@ description: "理解 Record Core、RecordAttachment、完成标识，以及从�
 import { RecordShape } from '/snippets/diagram-record-shape.jsx';
 import { RecordEvolution } from '/snippets/diagram-record-evolution.jsx';
 
-Record 是 `.niceeval/record/` 下可携带的运行事实集。它只包含完整发布的 Run。一个 Run 写完所有内容后，最后创建 `complete`；发布后，writer 不再修改它。
+Record 是 `.niceeval/record/` 下可携带、可进入 Git 的 opaque 运行事实集。可以整体复制它，
+也可以把它交给 `show`、`view`、`clean` 与 `migrate`；应用代码不解析或写入其中的文件，
+也不 import Record reader / writer。一个 Run 发布后不再修改。
 
 <RecordShape />
 
@@ -26,22 +28,21 @@ Member 表示一个 expected slot 被哪个 Attempt 占据。Attempt 在自己�
 查看或生成报告时，数据沿一条固定链路前进：
 
 ```text
-RecordReader + AnalysisSelectionRequest
-                  ↓
-          AnalysisSampleHandle
-             ├─ .sample → AnalysisSample（纯值）
-             └─ 仍可读取已选 Attachment
-                  ↓
-       RecordAttachment projector
+opaque Record + CLI selector
+                  ↓ internal host
+            AnalysisSample（纯值）
+                  ↓ official projector declarations
                   ↓
            ProjectedSample → Report
                   ↓
      immutable ReportExecution → show / view / static export
 ```
 
-`AnalysisSelectionRequest` 只决定选择哪些已发布的 Run。`AnalysisSampleHandle` 绑定那次 reader 的冻结视图；它的 `.sample` 是关闭 reader 后仍可显示和收窄的 `AnalysisSample`。Sample 保留完整 expected-slot 分母，并标出 `included`、`not-recorded`、`core-invalid` 与 `excluded`。
+用户用 locator、`--run` 或 `--latest` 决定选择哪些已发布 Run。内部 host 形成纯
+`AnalysisSample`；它保留完整 expected-slot 分母，并标出 `included`、`not-recorded`、
+`core-invalid` 与 `excluded`，但不暴露 reader 或恢复 I/O 的能力。
 
-`RecordAttachment projector` 只把一个明确 owner 的一个 Attachment 解释成 typed view。Projection 将它与 Sample 的每一个逻辑位置对齐，形成 `ProjectedSample`。Report 再用投影结果计算并组织页面，得到一次不可变的 `ReportExecution`。
+官方 opaque projector 把内部 Attachment 形成 typed view。Projection 将它与 Sample 的每一个逻辑位置对齐，形成 `ProjectedSample`。Report 再用投影结果计算并组织页面，得到一次不可变的 `ReportExecution`。
 
 ## 变化停在正确的层
 
@@ -54,6 +55,6 @@ RecordReader + AnalysisSelectionRequest
 ## 下一步
 
 - [查看结果](/zh/tutorials/viewing-results)：选择 Sample，并查看 `show` 与 `view` 的结果。
-- [读取 Record 数据](/zh/reference/results-data)：使用 `AnalysisSelectionRequest`、Sample 和 Projection。
+- [结果数据 API](/zh/reference/results-data)：在 Report 中使用 Sample 和官方 Projection。
 - [报告 API](/zh/reference/report-components)：定义 Projection、Calculation、Page 与 Report。
 - [发布静态报告](/zh/tutorials/publish-report)：分享一个已完成的 `ReportExecution`。

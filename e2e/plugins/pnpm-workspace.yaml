@@ -1,0 +1,8 @@
+packages: []
+allowBuilds:
+  '@parcel/watcher': false
+  cpu-features: false
+  esbuild: true
+  msgpackr-extract: false
+  protobufjs: false
+  ssh2: false

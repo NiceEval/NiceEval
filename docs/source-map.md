@@ -33,11 +33,11 @@ Record、analysis selection、reuse planning 和 Reports 正在采用新的边�
 
 | 目标契约 owner | 重构边界 |
 |---|---|
-| [Record](feature/record/README.md) | `src/record/` 需要实现 current-format reader、maintenance/writer locks、fixed RecordAttachment envelope、RecordAttachment projector、完成标识发布与 explicit migration。不要以旧 Graph/Store/journal 或现有内部布局推导公开协议。 |
-| [AnalysisSample](feature/sample/README.md) | `src/sample/index.ts` 需要以 frozen `RecordReader` 和 analysis selection 形成完整分母与四态 slot。 |
+| [Record](feature/record/README.md) | `src/record/` 实现内部 current-format reader、maintenance/writer locks、fixed RecordAttachment envelope、完成标识发布与 explicit migration。外部只把目录当作 opaque 资产。 |
+| [AnalysisSample](feature/sample/README.md) | `src/sample/analysis.ts` 由内部 host 以 frozen reader 和 analysis selection 形成完整分母与四态 slot；公开只导出纯值、codec 与 narrowing。 |
 | [Reuse planning](feature/experiments/cache.md) | Runner 需要从 ProjectTarget、ExecutionTarget、`RecordWriteSession.view` 与具名 policy 形成 reuse/gap；planner 只接收 gaps。 |
-| [Reports](feature/reports/README.md) | `src/report/` 需要只消费自包含 `ReportExecution`；owner access、Attachment projection 与 bytes 读取留在 reader / Projection 边界。 |
-| [Reports CLI](feature/reports/README.md) | `src/show/` 与 `src/view/` 需要通过 `AnalysisSampleHandle` 和 `ReportExecution` 选择、呈现和 export。 |
+| [Reports](feature/reports/README.md) | `src/report/index.ts` 是唯一公开作者入口；内部 host 消费自包含 `ReportExecution`，owner access、Attachment projection 与 bytes 读取不公开。 |
+| [Reports CLI](feature/reports/README.md) | `src/show/`、`src/view/` 与 `src/report/host/` 通过内部 selection handle 和 `ReportExecution` 选择、呈现和 export。 |
 | [静态 export](feature/reports/README.md#自包含静态-export) | `src/view/` 与 `src/report/` 需要写出页面、宿主数据、精确 runtime 和资源清单。 |
 
 这里列出的路径是改造入口，不是对新格式模块名称的承诺。实现时以对应 Feature 文档的 owner、输入和不变量为准。

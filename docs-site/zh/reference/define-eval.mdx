@@ -53,6 +53,14 @@ sandbox?: SandboxLayer;
 这道题贡献的 Sandbox 声明层。省略等价于空 command-only layer，不提供隐式 template。
 每个实际 Eval x Experiment 配对必须恰好一方提供 template-bearing layer。
 
+#### `plugins`
+
+```ts
+plugins?: readonly PluginInstance<"eval">[];
+```
+
+Explicit, immutable Eval Plugin occurrences; no directory inheritance exists.
+
 #### `judge`
 
 ```ts

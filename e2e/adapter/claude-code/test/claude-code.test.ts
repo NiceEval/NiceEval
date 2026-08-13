@@ -4,10 +4,10 @@
 // 具体 Skill、MCP、Plugin 与配置行为由各自 Eval 断言；owner 只守住发现完整性与全绿结果。
 // 只从 @niceeval/testkit 根导入；不读 .niceeval 私有布局、不 import 候选源码/类型。
 
-import { command, type ExpEvalEvent, type ExpEvent } from "@niceeval/testkit";
+import { command, type ExpEvalEvent, type ExpEvent, type ProcessReceipt } from "@niceeval/testkit";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
-import { expect, it } from "vitest";
+import { beforeAll, expect, it } from "vitest";
 
 const EXPECTED_EVALS = [
   "coding-task",
@@ -37,6 +37,8 @@ const EXPECTED_PASSED_ATTEMPTS = 12;
 const REQUIRED_LIVE_SECRETS = ["ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL"] as const;
 
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
+let run!: ProcessReceipt;
+let evalEvents!: ExpEvalEvent[];
 
 function requireLiveSecrets(): void {
   const missing = REQUIRED_LIVE_SECRETS.filter((name) => !process.env[name]);
@@ -58,27 +60,36 @@ async function requireDocker(): Promise<void> {
   }
 }
 
-it("真实 Claude Code adapter 的全部专用 Eval 通过", async () => {
+function representativeAttempt(): ExpEvalEvent {
+  const attempt = evalEvents.find((event) => event.evalId === "coding-task");
+  expect(attempt, run.diagnostic()).toBeDefined();
+  expect(attempt?.locator, run.diagnostic()).toBeTruthy();
+  return attempt!;
+}
+
+beforeAll(async () => {
   requireLiveSecrets();
   await requireDocker();
 
   rmSync(".niceeval", { recursive: true, force: true });
 
-  const run = await niceeval.run(
+  run = await niceeval.run(
     ["exp", "--rerun", "all", "--json"],
     { timeoutMs: 50 * 60_000 },
   );
   expect(run.exitCode, run.diagnostic()).toBe(0);
-  const events = run.ndjson<ExpEvent>();
+  evalEvents = run.ndjson<ExpEvent>().filter(
+    (event): event is ExpEvalEvent => "event" in event && event.event === "eval",
+  );
+}, 52 * 60_000);
+
+it("真实 Claude Code adapter 的全部专用 Eval 通过", () => {
   // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md「结束反馈与
   // receipt」）：completion 与 runIds（每个 Experiment 一个 Run）；成败由下面带身份的
   // eval 事件精确断言，不从 receipt 猜计数。
   const inv = run.expReceipt();
   expect(inv.completion, run.diagnostic()).toBe("completed");
   expect(inv.runIds, run.diagnostic()).toHaveLength(EXPECTED_EXPERIMENTS.length);
-  const evalEvents = events.filter(
-    (event): event is ExpEvalEvent => "event" in event && event.event === "eval",
-  );
 
   expect(new Set(evalEvents.map((event) => event.evalId))).toEqual(new Set(EXPECTED_EVALS));
   expect(new Set(evalEvents.map((event) => event.experimentId))).toEqual(new Set(EXPECTED_EXPERIMENTS));
@@ -88,5 +99,21 @@ it("真实 Claude Code adapter 的全部专用 Eval 通过", async () => {
   }
   const totalPassed = evalEvents.reduce((sum, event) => sum + (event.passed ?? 0), 0);
   expect(totalPassed, run.diagnostic()).toBe(EXPECTED_PASSED_ATTEMPTS);
+});
 
-}, 52 * 60_000);
+it("show --execution 读回 Claude Code 的代表性工具证据", async () => {
+  const attempt = representativeAttempt();
+  const execution = await niceeval.run(["show", attempt.locator!, "--execution"]);
+  expect(execution.exitCode, execution.diagnostic()).toBe(0);
+  expect(execution.stdout).toContain("notes.txt");
+  expect(execution.stdout).toContain("niceeval-e2e-marker-alpha-926");
+});
+
+it("show --timing 读回 Claude Code 的 runner 阶段", async () => {
+  const attempt = representativeAttempt();
+  const timing = await niceeval.run(["show", attempt.locator!, "--timing"]);
+  expect(timing.exitCode, timing.diagnostic()).toBe(0);
+  expect(timing.stdout, timing.diagnostic()).toContain("eval.run");
+  expect(timing.stdout, timing.diagnostic()).toContain("agent.setup");
+  expect(timing.stdout, timing.diagnostic()).toMatch(/turn\s+turn1\b/);
+});

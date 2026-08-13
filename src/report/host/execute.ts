@@ -1,5 +1,5 @@
 import { Effect, Either } from "effect";
-import { projectAnalysisSample } from "../../projection/index.ts";
+import { projectAnalysisSample } from "../../projection/runtime.ts";
 import type { ProjectionCoverage } from "../../projection/coverage.ts";
 import type {
   ProjectedSample,
@@ -14,7 +14,7 @@ import type {
   AnalysisSampleHandle,
   RunId,
   SlotId,
-} from "../../analysis/index.ts";
+} from "../../sample/analysis.ts";
 import {
   reportCalculationDescriptor,
   reportDataPlanDescriptor,

@@ -8,7 +8,7 @@
 // 并发 register 会死锁,整进程串行化 namespaced import。
 
 import * as NodeModule from "node:module";
-import { register } from "tsx/esm/api";
+import { register, type NamespacedUnregister } from "tsx/esm/api";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 let generation = 0;
@@ -195,45 +195,88 @@ function isModuleNotFound(cause: unknown): boolean {
   return code === "ERR_MODULE_NOT_FOUND" || code === "MODULE_NOT_FOUND";
 }
 
+export interface FreshImportGeneration {
+  /** Import an entry into this generation's one shared namespaced module graph. */
+  import(absPath: string): Promise<{ default?: unknown }>;
+  /** Unregister the namespace and unblock the next generation exactly once. */
+  close(): Promise<void>;
+}
+
+async function importFromNamespace(
+  ns: NamespacedUnregister,
+  absPath: string,
+): Promise<{ default?: unknown }> {
+  const url = pathToFileURL(absPath).href;
+  const imported = (await ns.import(url, url)) as { default?: unknown };
+  const wrapped = imported.default;
+  if (
+    typeof wrapped === "object" && wrapped !== null &&
+    Object.hasOwn(wrapped, "default") &&
+    (wrapped as { __esModule?: unknown }).__esModule === true
+  ) {
+    return wrapped as { default?: unknown };
+  }
+  return imported;
+}
+
+/**
+ * Open one fresh project module graph. All imports in the generation share
+ * module identity; close releases both tsx and canonical runtime hooks.
+ */
+export async function createFreshImportGeneration(): Promise<FreshImportGeneration> {
+  let releaseQueue!: () => void;
+  const turn = new Promise<void>((resolve) => { releaseQueue = resolve; });
+  const previous = chain;
+  chain = previous.then(() => turn, () => turn);
+  await previous;
+
+  const namespace = `niceeval-fresh-${++generation}`;
+  let ns: NamespacedUnregister | undefined;
+  let unregisterCanonicalRuntimeResolution: UnregisterCanonicalRuntimeResolution =
+    async () => undefined;
+  try {
+    ns = register({ namespace });
+    unregisterCanonicalRuntimeResolution = registerCanonicalRuntimeResolution(namespace);
+  } catch (cause) {
+    releaseQueue();
+    throw cause;
+  }
+
+  let closed = false;
+  return {
+    import: (absPath) => {
+      if (closed || ns === undefined) {
+        return Promise.reject(new Error("fresh import generation is closed"));
+      }
+      return importFromNamespace(ns, absPath);
+    },
+    close: async () => {
+      if (closed) return;
+      closed = true;
+      const active = ns;
+      ns = undefined;
+      try {
+        await unregisterCanonicalRuntimeResolution();
+      } finally {
+        try {
+          await active?.unregister();
+        } finally {
+          releaseQueue();
+        }
+      }
+    },
+  };
+}
+
 /**
  * 装载 abs 路径的模块,其子图(项目内相对 import)全部是新实例。
  * parentURL 取自身 file URL——namespaced import 要求显式 parent。
  */
 export async function freshImportModule(absPath: string): Promise<{ default?: unknown }> {
-  const run = async (): Promise<{ default?: unknown }> => {
-    const namespace = `niceeval-fresh-${++generation}`;
-    const ns = register({ namespace });
-    let unregisterCanonicalRuntimeResolution: UnregisterCanonicalRuntimeResolution =
-      async () => undefined;
-    const url = pathToFileURL(absPath).href;
-    try {
-      unregisterCanonicalRuntimeResolution = registerCanonicalRuntimeResolution(namespace);
-      const imported = (await ns.import(url, url)) as { default?: unknown };
-      // tsx 在 CJS 宿主里装载 ESM 风格的 TypeScript 时会把模块命名空间再包成
-      // `{ default: { __esModule: true, default: ... } }`。普通 dynamic import 没有这一层；
-      // fresh 与普通装载必须交给 discovery / config / report 相同的命名空间形状。
-      const wrapped = imported.default;
-      if (
-        typeof wrapped === "object" && wrapped !== null &&
-        Object.hasOwn(wrapped, "default") &&
-        (wrapped as { __esModule?: unknown }).__esModule === true
-      ) {
-        return wrapped as { default?: unknown };
-      }
-      return imported;
-    } finally {
-      try {
-        await unregisterCanonicalRuntimeResolution();
-      } finally {
-        await ns.unregister();
-      }
-    }
-  };
-  const next = chain.then(run, run);
-  // 不让上游失败打断队列;吞掉以便后续调用仍能挂上。
-  chain = next.then(
-    () => undefined,
-    () => undefined,
-  );
-  return next;
+  const fresh = await createFreshImportGeneration();
+  try {
+    return await fresh.import(absPath);
+  } finally {
+    await fresh.close();
+  }
 }

@@ -6,7 +6,6 @@ import { Effect, Cause, Data, Deferred, Either, Exit, Option } from "effect";
 import { probeJudgeEffect } from "../assertions/judge.ts";
 import { t } from "../i18n/index.ts";
 import { cacheKey, planProjectTarget } from "./fingerprint.ts";
-import { agentInstallPlansForRun } from "./config-identity.ts";
 import { OtelReceiverPool } from "../o11y/otlp/turn-otel.ts";
 import {
   errorFromThrown,
@@ -43,7 +42,7 @@ import { attemptOrigin, artifactPrepareTimingHook, createRunTimingRecorder, runO
 import { buildFailureOrigin, startSandboxBuilds } from "../sandbox/build-coordinator.ts";
 import { ArtifactPrepareCoordinator } from "../agents/provisioner.ts";
 import { collectBuildPreparation, toBuildPreparation } from "./build-preparation.ts";
-import { digestOf, type BuildKey } from "../sandbox/identity.ts";
+import type { BuildKey } from "../sandbox/identity.ts";
 import { firstLine, getEnv } from "../util.ts";
 import { recordFact, type FactValue } from "../shared/facts.ts";
 import { runReporter, emitReporterEvent, scopeReporter, summarize } from "./report.ts";
@@ -69,6 +68,7 @@ import { registerExperimentTeardown, unregisterExperimentTeardown } from "./expe
 import { cleanupCallback } from "./cleanup-timeout.ts";
 import { resolveAttemptTimeout } from "./timeout.ts";
 import { hostname } from "node:os";
+import { linkPluginLifecycles, type GroupPluginContext } from "../plugin/contracts.ts";
 import {
   isOrphanedTeardownRegistration,
   readTeardownRegistrationsEffect,
@@ -94,10 +94,15 @@ import {
   prepareRunnerRecordReuse,
 } from "./record.ts";
 import { bindRunnerRunObservabilityDiagnosticsV1 } from "../o11y/record/runner-producer.ts";
+import { sandboxReusePoolDescriptor } from "./sandbox-reuse.ts";
 
 export class RunModeConflictError extends Data.TaggedError("RunModeConflictError")<{
   readonly keepSandbox: NonNullable<RunOptions["keepSandbox"]>;
   readonly conflictingExperimentIds: readonly string[];
+  readonly conflictingEvalGroups: readonly {
+    readonly experimentId: string | undefined;
+    readonly evalGroupId: string;
+  }[];
   readonly message: string;
 }> {}
 
@@ -109,7 +114,6 @@ function feedbackIdentity(a: Attempt): AttemptRef {
 function feedbackWho(a: Attempt): string {
   return runWho({ agentName: a.run.agent.name, model: a.run.model, experimentId: a.run.experimentId });
 }
-
 function attemptIdentityKey(
   experimentId: string | undefined,
   agentName: string,
@@ -126,28 +130,11 @@ function attemptGroupKey(run: AgentRun, evalId: string): string {
 function reuseResultRequiresRetirement(result: EvalResult): boolean {
   return result.error?.code === "timeout" ||
     result.error?.code === "agent-send-failed" ||
+    result.error?.code === "plugin-resource-prepare-failed" ||
     result.diagnostics?.some((diagnostic) => diagnostic.code === "teardown-failed") === true;
 }
 
 export type { AgentRun, RunOptions } from "./types.ts";
-
-type SandboxReusePoolScope =
-  | { readonly _tag: "Shared" }
-  | { readonly _tag: "Eval"; readonly evalId: string };
-
-/** 复用池只按物理 Sandbox 与物理 lifecycle 分组；prepare commands 在每次 lease 后重放。 */
-export function sandboxReusePoolKey(input: {
-  readonly providerPlan: JsonValue;
-  readonly agentInstalls: readonly JsonValue[];
-  readonly scope: SandboxReusePoolScope;
-}): string {
-  return digestOf({
-    version: 1,
-    providerPlan: input.providerPlan,
-    agentInstalls: [...input.agentInstalls],
-    scope: input.scope,
-  });
-}
 
 /** Only declared, configured capabilities are prechecked. A missing model or
  * key is an ordinary consumed-Fact unavailable outcome and does no network I/O. */
@@ -214,19 +201,39 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // 两种 ownership 不能同时成立；在 carry planning/build/provider 等任何资源动作之前
   // 拒绝，避免产生“已登记 kept 但 pool finalizer 又销毁”的假现场。
   if (opts.keepSandbox !== undefined) {
+    const conflictingEvalGroups = [...new Map(opts.agentRuns.flatMap((run) =>
+      selectedEvalsForRun(opts.evals, run)
+        .filter((evalDef) => evalDef.evalGroup !== undefined)
+        .map((evalDef) => {
+          const value = Object.freeze({
+            experimentId: run.experimentId,
+            evalGroupId: evalDef.evalGroup!.id,
+          });
+          return [JSON.stringify([value.experimentId, value.evalGroupId]), value] as const;
+        }))
+      ).values()];
     const conflictingExperiments = [...new Set(
       opts.agentRuns
-        .filter((run) => run.sandboxReuse)
+        .filter((run) =>
+          run.sandboxReuse || conflictingEvalGroups.some((group) => group.experimentId === run.experimentId)
+        )
         .map((run) => run.experimentId),
     )];
-    if (conflictingExperiments.length > 0) {
+    if (conflictingExperiments.length > 0 || conflictingEvalGroups.length > 0) {
       throw new RunModeConflictError({
         keepSandbox: opts.keepSandbox,
         conflictingExperimentIds: Object.freeze(conflictingExperiments),
+        conflictingEvalGroups: Object.freeze(conflictingEvalGroups),
         message:
-          `--keep-sandbox cannot be combined with sandboxReuse: true ` +
-          `(experiments: ${conflictingExperiments.map((id) => JSON.stringify(id)).join(", ")}). ` +
-          "Drop --keep-sandbox or use an experiment that does not reuse sandboxes.",
+          `--keep-sandbox cannot be combined with reusable Sandbox ownership` +
+          `${conflictingExperiments.length === 0
+            ? ""
+            : ` (experiments: ${conflictingExperiments.map((id) => JSON.stringify(id)).join(", ")})`}` +
+          `${conflictingEvalGroups.length === 0
+            ? ""
+            : ` (Eval Groups: ${conflictingEvalGroups.map(({ experimentId, evalGroupId }) =>
+              `${JSON.stringify(experimentId)} / ${JSON.stringify(evalGroupId)}`).join(", ")})`}. ` +
+          "Drop --keep-sandbox or select only fresh, ungrouped Evals.",
       });
     }
   }
@@ -249,6 +256,20 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     resolvedJudgesByKey,
     plannedFingerprints,
   } = targetPlan;
+
+  // Plugin link produces one effective immutable AgentRun per source Run. All
+  // runtime work after physical planning must consume that same linked value.
+  const effectiveRunBySource = new Map<AgentRun, AgentRun>();
+  for (const prepared of preparedPairsByKey.values()) {
+    const prior = effectiveRunBySource.get(prepared.sourceRun);
+    if (prior !== undefined && prior !== prepared.run) {
+      throw new Error(`Plugin link produced inconsistent effective runs for Experiment ${JSON.stringify(prepared.sourceRun.experimentId)}.`);
+    }
+    effectiveRunBySource.set(prepared.sourceRun, prepared.run);
+  }
+  const effectiveAgentRuns = Object.freeze(opts.agentRuns.map((sourceRun) =>
+    effectiveRunBySource.get(sourceRun) ?? sourceRun));
+  opts = { ...opts, agentRuns: effectiveAgentRuns };
 
   const reuse = yield* prepareRunnerRecordReuse({
     evals: opts.evals,
@@ -321,19 +342,69 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     preparedPlansByRun.set(prepared.run, plans);
   }
 
-  // 展开 attempts
-  // 外层按「round」(run index)迭代,内层按 eval 迭代:同一 key 的第 i+1 次 attempt 排在
-  // 所有 eval 的第 i 次之后,earlyExit 开启时第 0 轮通过的 eval,其后续轮大多还没入池就被跳过。
-  // 注意这只是省钱的吞吐优化,不是正确性前提 —— 即便同 key 的 attempt 同时在飞,
-  // 首个通过会 abort 同 key 其余 attempt,且它们的结果被下面的去重检查丢弃,不会重复计入。
+  // 展开 attempts。每个 Eval Group 是一条按规范化 Eval ID 稳定串行的 lane；每个未分组 Eval 是一条
+  // attempt-major lane。先按 lane 深度铺成全 Invocation 的 wave，保证任一 lane 的下一槽位
+  // 都不会排到其它 lane 的首槽位之前。carried 槽位先从 lane 删除，不占 wave 也不触发 Sandbox。
   const attempts: Attempt[] = [];
-  for (const run of opts.agentRuns) {
+  const groupedPredecessors = new WeakMap<Attempt, Promise<void>>();
+  const groupedReleases = new WeakMap<Attempt, () => void>();
+  const groupedTails = new Map<AgentRun, Map<string, Promise<void>>>();
+  const dispatchWaveNumbers = new WeakMap<Attempt, number>();
+  type SchedulingSlot = {
+    readonly run: AgentRun;
+    readonly i: number;
+    readonly evalDef: ReturnType<typeof selectedEvalsForRun>[number];
+  };
+  const lanes: SchedulingSlot[][] = [];
+  for (const run of effectiveAgentRuns) {
     // selectedEvalIds 已由 CLI 在构造 AgentRun 时对候选 eval 各求值一次算好(见
     // eval-selection.ts 的 resolveExperimentEvals());这里只按 resolved id 取 eval,
     // 不重新调用用户谓词(见 docs/feature/record/architecture.md「selectedEvalIds」)。
     const evals = selectedEvalsForRun(opts.evals, run);
-    for (let i = 0; i < run.attempts; i++) {
-      for (const evalDef of evals) {
+    const grouped = new Map<string, Array<(typeof evals)[number]>>();
+    for (const evalDef of evals) {
+      if (evalDef.evalGroup === undefined) continue;
+      grouped.set(evalDef.evalGroup.id, [...(grouped.get(evalDef.evalGroup.id) ?? []), evalDef]);
+    }
+    const addedGroups = new Set<string>();
+    for (const evalDef of evals) {
+      if (evalDef.evalGroup === undefined) {
+        lanes.push([...Array(run.attempts).keys()].map((i) => ({ run, i, evalDef })));
+        continue;
+      }
+      if (addedGroups.has(evalDef.evalGroup.id)) continue;
+      addedGroups.add(evalDef.evalGroup.id);
+      const groupEvals = grouped.get(evalDef.evalGroup.id) ?? [];
+      lanes.push(groupEvals
+        .toSorted((left, right) => left.id.localeCompare(right.id))
+        .flatMap((groupEval) => [...Array(run.attempts).keys()].map((i) => ({ run, i, evalDef: groupEval }))));
+    }
+  }
+  const runnableLanes = lanes
+    .map((lane) => lane.filter(({ run, i, evalDef }) =>
+      !carriedAttemptsByKey.get(cacheKey(run, evalDef.id))?.has(i)))
+    .filter((lane) => lane.length > 0);
+  // LPT 仍作为 wave 内的稳定 tie-breaker：关键路径较长的 Experiment 先入同一波，但每一波
+  // 最多只给每条 lane 一个新机会，不能再把整条长 Run 堆到其它 Group 前面。
+  const runnableCountByRun = new Map<AgentRun, number>();
+  for (const lane of runnableLanes) {
+    const run = lane[0]!.run;
+    runnableCountByRun.set(run, (runnableCountByRun.get(run) ?? 0) + lane.length);
+  }
+  const rounds = (run: AgentRun): number => {
+    const width = Math.min(run.maxConcurrency ?? opts.maxConcurrency, opts.maxConcurrency);
+    return Math.ceil((runnableCountByRun.get(run) ?? 0) / width);
+  };
+  runnableLanes.sort((left, right) => rounds(right[0]!.run) - rounds(left[0]!.run));
+  const slots: Array<SchedulingSlot & { readonly wave: number }> = [];
+  const waveCount = Math.max(0, ...runnableLanes.map((lane) => lane.length));
+  for (let wave = 0; wave < waveCount; wave += 1) {
+    for (const lane of runnableLanes) {
+      const slot = lane[wave];
+      if (slot !== undefined) slots.push({ ...slot, wave });
+    }
+  }
+  for (const { run, i, evalDef, wave } of slots) {
         const carryKey = cacheKey(run, evalDef.id);
         // 携带以 attempt 为粒度:只跳过这个具体序号确实被携入的那些(见 fingerprint.ts 的
         // `carriedAttemptsByKey`),不是"这个组合有过携入就跳过前 N 个"——attempts:5 里若只有
@@ -347,6 +418,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         const prepared = preparedPairsByKey.get(cacheKey(run, evalDef.id));
         if (prepared === undefined) {
           throw new Error(`Missing prepared Sandbox plan for ${JSON.stringify(cacheKey(run, evalDef.id))}.`);
+        }
+        if (prepared.run !== run) {
+          throw new Error(
+            `Plugin effective Run invariant failed for ${JSON.stringify(cacheKey(run, evalDef.id))}.`,
+          );
         }
         const configHash = plannedConfigHashes.get(cacheKey(run, evalDef.id));
         if (configHash === undefined) {
@@ -363,7 +439,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         if (sandboxPlansByEval === undefined) {
           throw new Error(`Missing Experiment plan map for ${JSON.stringify(run.experimentId)}.`);
         }
-        attempts.push({
+        const attempt: Attempt = {
           evalDef,
           run,
           attempt: i,
@@ -373,33 +449,48 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           judge: resolvedJudgesByKey.get(carryKey),
           plan: prepared.plan,
           sandboxPlansByEval,
-        });
-      }
-    }
+        };
+        attempts.push(attempt);
+        dispatchWaveNumbers.set(attempt, wave);
+        if (evalDef.evalGroup !== undefined) {
+          let tails = groupedTails.get(run);
+          if (tails === undefined) groupedTails.set(run, (tails = new Map()));
+          const predecessor = tails.get(evalDef.evalGroup.id) ?? Promise.resolve();
+          let release!: () => void;
+          const settled = new Promise<void>((resolve) => { release = resolve; });
+          groupedPredecessors.set(attempt, predecessor);
+          groupedReleases.set(attempt, release);
+          tails.set(evalDef.evalGroup.id, settled);
+        }
   }
 
-  // 派发顺序:瓶颈优先(docs/runner.md「派发顺序:瓶颈优先,追求最小总墙钟时间」)。
-  // 单次 attempt 耗时未知且假设同批内大致均匀,轮次数(该 run 的 attempt 数 / 有效并发宽度,
-  // 向上取整)就是耗时的代理指标——把 identical-machine 调度的 LPT 规则推广到 moldable job
-  // 场景:轮次多的 run 是关键路径瓶颈,让它先抢到并发位,总时长才接近瓶颈自身的串行耗时,
-  // 而不是「瓶颈耗时 + 排在它前面的其它 run 先跑完的耗时」。只在建 attempt 列表时算一次,
-  // 不随 earlyExit / fail-fast / budget 实际提前收尾而重算(动态调整不值得为一个尽力而为的
-  // 启发式引入)。只重排派发顺序,不改两级信号量本身;结果仍按发现顺序输出(见下方 sort)。
-  {
-    const byRun = new Map<AgentRun, Attempt[]>();
-    for (const a of attempts) {
-      let group = byRun.get(a.run);
-      if (!group) byRun.set(a.run, (group = []));
-      group.push(a);
+  // wave N+1 只有在 wave N 的每条槽位都至少拿到过一次全局并发位（或在此前确定不派发）
+  // 后才可排队。这样不依赖 Effect Semaphore 的内部唤醒顺序，也不会让同一 lane 的后续槽位
+  // 持续重排到其它 Group / 未分组 Eval 的首槽位之前。
+  const dispatchWaveReady = new WeakMap<Attempt, Promise<void>>();
+  const dispatchWaveArrive = new WeakMap<Attempt, () => void>();
+  const attemptsByWave = new Map<number, Attempt[]>();
+  for (const attempt of attempts) {
+    const wave = dispatchWaveNumbers.get(attempt)!;
+    attemptsByWave.set(wave, [...(attemptsByWave.get(wave) ?? []), attempt]);
+  }
+  let previousWave = Promise.resolve();
+  for (const wave of [...attemptsByWave.keys()].sort((left, right) => left - right)) {
+    const members = attemptsByWave.get(wave)!;
+    let remaining = members.length;
+    let resolveWave!: () => void;
+    const settled = new Promise<void>((resolve) => { resolveWave = resolve; });
+    for (const attempt of members) {
+      dispatchWaveReady.set(attempt, previousWave);
+      let arrived = false;
+      dispatchWaveArrive.set(attempt, () => {
+        if (arrived) return;
+        arrived = true;
+        remaining -= 1;
+        if (remaining === 0) resolveWave();
+      });
     }
-    const rounds = (run: AgentRun, count: number): number => {
-      const width = Math.min(run.maxConcurrency ?? opts.maxConcurrency, opts.maxConcurrency);
-      return Math.ceil(count / width);
-    };
-    const groups = [...byRun.entries()];
-    groups.sort((a, b) => rounds(b[0], b[1].length) - rounds(a[0], a[1].length));
-    attempts.length = 0;
-    for (const [, group] of groups) attempts.push(...group);
+    previousWave = settled;
   }
 
   // 预检 judge:验证 API key + 端点可达,避免跑完 agent 才发现 judge 不通。
@@ -547,7 +638,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   const runningEvals = [...runningIds].map((id) => ({ id }));
   const shape: InvocationShape = {
     evals: runningEvals.length,
-    configs: opts.agentRuns.length,
+    configs: effectiveAgentRuns.length,
     totalAttempts: attempts.length,
     maxConcurrency: opts.maxConcurrency,
     runIds,
@@ -576,7 +667,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     reporters.push({
       reporter: scopeReporter(r, ids, {
         evals: [...ids].filter((id) => runningIds.has(id)).length,
-        configs: opts.agentRuns.length,
+        configs: effectiveAgentRuns.length,
         totalAttempts: scopedRuns,
         maxConcurrency: opts.maxConcurrency,
         runIds,
@@ -656,18 +747,25 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   const sandboxSem = yield* Effect.makeSemaphore(opts.maxConcurrency);
   // 相同 provider physical identity 共享一个按需池；不从 AgentRun 重选 template。
   const reusePools = new Map<AgentRun, Map<string, ReusableSandboxPool>>();
+  // A physical Sandbox number is Run-wide, not pool-local: distinct Eval
+  // Groups may materialize identical provider plans concurrently and must not
+  // both report `reuseSandbox: 1` for different instances.
+  const reuseSandboxNumbers = new Map<AgentRun, number>();
+  const nextReuseSandboxNumber = (run: AgentRun): number => {
+    const next = (reuseSandboxNumbers.get(run) ?? 0) + 1;
+    reuseSandboxNumbers.set(run, next);
+    return next;
+  };
   type ReusePoolSelection =
     | { readonly _tag: "Fresh" }
     | { readonly _tag: "Reuse"; readonly pool: ReusableSandboxPool };
   const reusePoolKeyOf = (a: Attempt): string | undefined => {
-    if (!a.run.sandboxReuse || a.run.agent.kind !== "sandbox" || a.plan._tag !== "Sandbox") return undefined;
-    return sandboxReusePoolKey({
-      providerPlan: a.plan.providerPlan.identity,
-      agentInstalls: [...agentInstallPlansForRun(a.run)],
-      scope: a.plan.pair.hasEvalLifecycleHooks
-        ? { _tag: "Eval", evalId: a.evalDef.id }
-        : { _tag: "Shared" },
-    });
+    return sandboxReusePoolDescriptor({
+      run: a.run,
+      evalId: a.evalDef.id,
+      ...(a.evalDef.evalGroup === undefined ? {} : { evalGroupId: a.evalDef.evalGroup.id }),
+      plan: a.plan,
+    })?.key;
   };
   const acquiredReuseAttempts = new WeakSet<Attempt>();
   const authorizedReuseAttempts = new WeakSet<Attempt>();
@@ -696,12 +794,36 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     let pool = bySpec.get(key);
     if (!pool) {
       // 物理 Sandbox lifecycle 不属于任一 Attempt；反馈与事实落到所属 Experiment 的 Run。
-      const setupContext = makeExperimentHookContext(a.run, "sandbox.create");
-      const capacity = Math.max(1, Math.min(opts.maxConcurrency, a.run.maxConcurrency ?? opts.maxConcurrency));
+      const experimentContext = makeExperimentHookContext(a.run, "sandbox.create");
+      const setupContext = {
+        ...experimentContext,
+        ...(a.evalDef.evalGroup === undefined ? {} : { evalGroup: {
+          id: a.evalDef.evalGroup.id,
+          definitionHash: a.evalDef.evalGroup.definitionHash,
+        } }),
+      };
+      const capacity = a.evalDef.evalGroup === undefined
+        ? Math.max(1, Math.min(opts.maxConcurrency, a.run.maxConcurrency ?? opts.maxConcurrency))
+        : 1;
+      const materializationOwnerId = a.evalDef.evalGroup === undefined
+        ? a.plan.pair.evalId
+        : JSON.stringify(["eval-group", a.run.experimentId, a.evalDef.evalGroup.id]);
+      const groupPluginContext: GroupPluginContext | undefined = a.evalDef.evalGroup === undefined
+        ? undefined
+        : {
+            experimentId: a.run.experimentId,
+            evalGroupId: a.evalDef.evalGroup.id,
+            signal: setupContext.signal,
+            progress: setupContext.progress,
+            diagnostic: setupContext.diagnostic,
+            fact: (key, value) => recordExperimentFact(a.run.experimentId, key, value),
+          };
       pool = new ReusableSandboxPool(a.plan, capacity, {
         progress: setupContext.progress,
         diagnostic: setupContext.diagnostic,
-      }, setupContext, liveSandboxRuntimeServices, a.run.agent.kind === "sandbox" ? a.run.agent : undefined, runTiming);
+      }, setupContext, liveSandboxRuntimeServices, a.run.agent.kind === "sandbox" ? a.run.agent : undefined, runTiming, materializationOwnerId, () => nextReuseSandboxNumber(a.run),
+      a.evalDef.evalGroup === undefined ? Object.freeze([]) : linkPluginLifecycles(a.evalDef.evalGroup.plugins ?? [], "group"),
+      groupPluginContext);
       bySpec.set(key, pool);
       return pool.managed().pipe(Effect.map((managed) => ({ _tag: "Reuse", pool: managed }) as const));
     }
@@ -723,7 +845,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   //    租约(跨 Invocation 共用、min-N 收紧)。裸 run(没有 experimentId、没有可共享的名额域)
   //    就只有这一层,不产生任何跨进程协调。
   const gateLocalSems = new Map<AgentRun, Effect.Semaphore>();
-  for (const run of opts.agentRuns) {
+  for (const run of effectiveAgentRuns) {
     if (run.maxConcurrency !== undefined) {
       gateLocalSems.set(
         run,
@@ -875,6 +997,14 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       const existing = dedupeIndex.get(input.dedupeKey);
       if (existing) {
         existing.count = (existing.count ?? 1) + 1;
+        // 同一运行级事实会随着未派发槽位增加而得到更精确的上下文。反馈 reducer
+        // 已经采用最新 data；持久 Run 诊断也必须同样更新，不能把最初的 0 永久写死。
+        if (input.data !== undefined || input.command !== undefined) {
+          existing.context = {
+            ...(input.data ?? {}),
+            ...(input.command !== undefined ? { command: input.command } : {}),
+          };
+        }
         return;
       }
     }
@@ -1266,7 +1396,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // 自愈是「选中实验」的启动期职责，不是首个派发 attempt 的副作用：全携带使 attempts 为空时，
   // 仍必须补上上一进程强杀遗留的收尾。无 teardown 的新定义无法安全补执行，交由 CLI 提醒。
   const recoveredExperimentIds = new Set<string>();
-  for (const run of opts.agentRuns) {
+  for (const run of effectiveAgentRuns) {
     if (!run.experimentId || !run.teardown || recoveredExperimentIds.has(run.experimentId)) continue;
     recoveredExperimentIds.add(run.experimentId);
     yield* recoverOrphanedTeardownRegistration(run, run.experimentId);
@@ -1474,6 +1604,125 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       who: feedbackWho(a),
     });
     reportHaltNotice(gate);
+  };
+
+  /**
+   * Eval Group 的不可用策略只约束同一台物理 Sandbox 的后续槽位；它不复用通用
+   * dispatch-halted 语义，也绝不把「本来没开始」的槽位伪造成 EvalResult。Group lane
+   * 已按规范化 Eval ID 串行，所以 gate 只需同步镜像：前一槽位释放 predecessor 后，下一
+   * 槽位在任何 Build / Sandbox 动作前就能看见它。其它 Group 和其它 Experiment 没有共享它。
+   */
+  interface EvalGroupUnavailableGate {
+    readonly experimentId: string | undefined;
+    readonly displayExperimentId: string;
+    readonly groupId: string;
+    readonly onUnavailable: "stop-group" | "replace-sandbox";
+    readonly dedupeKey: string;
+    readonly failuresByPhase: Map<"sandbox.create" | "sandbox.prepare" | "sandbox.reset", number>;
+    stopped: boolean;
+    unstarted: number;
+    /** Physical stage is more precise than the closed public LifecyclePhase vocabulary. */
+    stage: "sandbox.create" | "sandbox.prepare" | "sandbox.reset";
+    /** Durable diagnostic origin stays within the public lifecycle vocabulary. */
+    phase: LifecyclePhase;
+    message: string;
+  }
+  const evalGroupUnavailableGates = new Map<string, EvalGroupUnavailableGate>();
+  const evalGroupUnavailableGateOf = (a: Attempt): EvalGroupUnavailableGate | undefined => {
+    const group = a.evalDef.evalGroup;
+    if (group === undefined) return undefined;
+    const key = JSON.stringify([a.run.experimentId ?? a.run.agent.name, a.run.agent.name, group.id]);
+    let gate = evalGroupUnavailableGates.get(key);
+    if (gate === undefined) {
+      gate = {
+        experimentId: a.run.experimentId,
+        displayExperimentId: a.run.experimentId ?? a.run.agent.name,
+        groupId: group.id,
+        onUnavailable: group.onUnavailable,
+        dedupeKey: `eval-group-unavailable:${a.run.experimentId ?? a.run.agent.name}|${group.id}`,
+        failuresByPhase: new Map(),
+        stopped: false,
+        unstarted: 0,
+        stage: "sandbox.create",
+        phase: "sandbox.create",
+        message: "",
+      };
+      evalGroupUnavailableGates.set(key, gate);
+    }
+    return gate;
+  };
+  // 预建 gate 和 stop-halt 一样避免「上一槽位刚刚失败、下一槽位已开始等」的换对象竞态。
+  for (const a of attempts) evalGroupUnavailableGateOf(a);
+  const reportEvalGroupUnavailable = (gate: EvalGroupUnavailableGate): void => {
+    const message = `Eval Group ${JSON.stringify(gate.groupId)} is unavailable at ${gate.stage}: ${gate.message}`;
+    const data = {
+      experimentId: gate.displayExperimentId,
+      evalGroupId: gate.groupId,
+      onUnavailable: gate.onUnavailable,
+      phase: gate.stage,
+      unstarted: gate.unstarted,
+    } as const;
+    reportDiagnostic({
+      key: gate.dedupeKey,
+      code: "eval-group-unavailable",
+      severity: "error",
+      message,
+      data,
+    });
+    recordExperimentDiagnostic({
+      experimentId: gate.experimentId,
+      code: "eval-group-unavailable",
+      level: "error",
+      message,
+      phase: gate.phase,
+      data,
+      dedupeKey: gate.dedupeKey,
+    });
+  };
+  /**
+   * stop-group 首次物理失败即封住后续 slot。replace-sandbox 留一次机会给**下一** slot；
+   * 池的 retire/create 路径完成替换，绝不回跑已经付出成本的 Attempt。同一 lifecycle
+   * 阶段第二次失败说明替换也不可用，此时收束该 Group。
+   */
+  const recordEvalGroupPhysicalFailure = (
+    a: Attempt,
+    phase: "sandbox.create" | "sandbox.prepare" | "sandbox.reset",
+    error: unknown,
+  ): void => {
+    const gate = evalGroupUnavailableGateOf(a);
+    if (gate === undefined || gate.stopped) return;
+    const failures = (gate.failuresByPhase.get(phase) ?? 0) + 1;
+    gate.failuresByPhase.set(phase, failures);
+    const mustStop = gate.onUnavailable === "stop-group" || failures >= 2;
+    if (!mustStop) {
+      reportDiagnostic({
+        key: `eval-group-replacing-sandbox:${gate.displayExperimentId}|${gate.groupId}|${phase}`,
+        code: "eval-group-replacing-sandbox",
+        severity: "warning",
+        message:
+          `Eval Group ${JSON.stringify(gate.groupId)} will replace its physical Sandbox before a later slot ` +
+          `after ${phase} failed: ${firstLine(error instanceof Error ? error.message : String(error))}`,
+        data: { experimentId: gate.displayExperimentId, evalGroupId: gate.groupId, phase, onUnavailable: gate.onUnavailable },
+      });
+      return;
+    }
+    gate.stopped = true;
+    gate.stage = phase;
+    gate.phase = phase === "sandbox.reset" ? "sandbox.cleanup" : phase;
+    gate.message = firstLine(error instanceof Error ? error.message : String(error));
+    reportEvalGroupUnavailable(gate);
+  };
+  const accountEvalGroupUnavailable = (a: Attempt, gate: EvalGroupUnavailableGate): void => {
+    gate.unstarted += 1;
+    cancelReuseAttempt(a);
+    // No result, no replacement: this slot never crossed the dispatch boundary.
+    reportAttemptLifecycle({
+      type: "attempt:early-exit",
+      at: Date.now(),
+      identity: feedbackIdentity(a),
+      who: feedbackWho(a),
+    });
+    reportEvalGroupUnavailable(gate);
   };
 
   const lockIdentity = { pid: process.pid, host: currentHost };
@@ -2089,6 +2338,9 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               cancelReuseAttempt(a, true);
               const declaration = attemptFailureDeclaration(a.run.classifyFailure, "sandbox.create", leased.error);
               if (declaration) closeHaltGate(a, declaration);
+              // This Attempt did start its physical acquisition and is therefore recorded below
+              // as an errored result. The Group policy only decides what a later slot may do.
+              recordEvalGroupPhysicalFailure(a, "sandbox.create", leased.error);
             }
             const failedBeforeDispatch = blockedError ?? leaseError;
             // A Record Attempt is allocated only after runAttemptEffect has
@@ -2155,6 +2407,12 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             if (lease) {
               // Attempt 的 Eval/Agent 收尾已在 runAttemptEffect 内完成；reset 失败会淘汰实例，
               // 本条结果如实保留，后续派发创建替代实例。
+              // Only the typed plugin resource prepare code carries physical-resource
+              // unavailability. An author SandboxLayer prepare command can also fail at
+              // `sandbox.prepare`, but it must not retire a pool or trip this Group gate.
+              if (evaluated.error?.code === "plugin-resource-prepare-failed") {
+                recordEvalGroupPhysicalFailure(a, "sandbox.prepare", new Error(evaluated.error.message));
+              }
               const mustRetire = reuseResultRequiresRetirement(evaluated);
               yield* lease.commit(mustRetire ? { _tag: "Retire" } : { _tag: "Reset" });
             }
@@ -2163,6 +2421,13 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               executed: failedBeforeDispatch === undefined,
             });
             }));
+            // Reset/finalizer failures belong to the physical Group instance and
+            // only affect later slots; they never rewrite the sealed Attempt.
+            if (poolSelection._tag === "Reuse") {
+              for (const failure of poolSelection.pool.drainRuntimeFailures()) {
+                recordEvalGroupPhysicalFailure(a, failure.stage, failure.error);
+              }
+            }
             const { result, executed } = completed;
             // A blocked Slot has no origin Attempt and remains an explicit
             // Record gap. A completed execution writes its exact origin plus
@@ -2276,8 +2541,10 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         // 独占串行 provider(如 local):同一 provider 名的所有 attempt 共享一把 permit=1 的锁,
         // 包在全局位之外(见上面 exclusiveSemFor 的注释)。
         const exclusiveSem = exclusiveSemFor(a.plan);
+        const arriveAtDispatchWave = dispatchWaveArrive.get(a)!;
         const dispatch = withGlobalSlot(haltAwait(a), (slot) =>
           Effect.gen(function* () {
+            arriveAtDispatchWave();
             // 拿到位子的这一刻再问一次闸:排在独占 provider 锁 / 实验闸本地信号量上的那段等待
             // 不在上面的竞速覆盖范围里(竞速只包全局位),闸可能正是在那段时间落下的。
             if (checkDispatchHalt(a).halted) return { kind: "recheck" } as const;
@@ -2309,6 +2576,14 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         // 许可链的循环外壳:撞锁挂起的用例解决后从 ① 重新走一遍(实验闸名额与全局位都要
         // 重新取,不能拿着别人在等的名额干等)。
         const pipeline = Effect.gen(function* () {
+          // Group predecessor has settled before this pipeline begins. A physical failure in
+          // that predecessor therefore gates this still-queued slot before build, a provider
+          // acquire, resource materialization, or a global dispatch permit.
+          const unavailable = evalGroupUnavailableGateOf(a);
+          if (unavailable?.stopped) {
+            accountEvalGroupUnavailable(a, unavailable);
+            return;
+          }
           // ⓪ 逐 BuildKey 放行:只等本 eval 引用的那几个 key,不引用任何 key 的 attempt
           // 立刻进入许可链。等在这里不占全局并发位,慢构建因此不挡住同批别的 eval。
           const pairKey = cacheKey(a.run, a.evalDef.id);
@@ -2334,23 +2609,36 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             yield* outcome.window;
           }
         });
+        const waveReady = dispatchWaveReady.get(a) ?? Promise.resolve();
+        const wavePipeline = Effect.promise(() => waveReady).pipe(Effect.flatMap(() => pipeline));
+        const predecessor = groupedPredecessors.get(a);
+        const orderedPipeline = predecessor === undefined
+          ? wavePipeline
+          : Effect.promise(() => predecessor).pipe(Effect.flatMap(() => wavePipeline));
         // 实验级 teardown 结算:每个 attempt 收尾(含被 preflight 跳过、被中断的、被用例锁
         // 被 preflight 跳过、被中断的)都从身份集合移除；最后一个触发 ExperimentDef.teardown。ensuring
         // 在中断路径同样执行，重复 finalizer 也不会让状态下溢。
         const withExpLifecycle =
           !a.run.setup && !a.run.teardown
-            ? pipeline
-            : pipeline.pipe(
+            ? orderedPipeline
+            : orderedPipeline.pipe(
                 Effect.ensuring(settleExperimentAttempt(a).pipe(Effect.orDie)),
               );
-        if (!caseState) return withExpLifecycle;
         // 用例锁释放:这个 key 的全部 attempt(真实派发的与被 late-carry 跳过的)都 settle 后
         // 删锁,与上面的实验级 teardown 计数同一种「逐 attempt 收尾时递减,归零触发」模式,
         // 挂在最外层确保晚于实验级 teardown 计数结算(docs「用例全部 attempt 收尾(含沙箱销毁)
         // 后删除自己的锁」)。
-        return withExpLifecycle.pipe(
-          Effect.ensuring(releaseCaseLockIfDone(caseState, a.attempt)),
+        const withCaseLifecycle = !caseState
+          ? withExpLifecycle
+          : withExpLifecycle.pipe(
+              Effect.ensuring(releaseCaseLockIfDone(caseState, a.attempt)),
+            );
+        const withWaveLifecycle = withCaseLifecycle.pipe(
+          Effect.ensuring(Effect.sync(arriveAtDispatchWave)),
         );
+        if (predecessor === undefined) return withWaveLifecycle;
+        const releaseSuccessor = groupedReleases.get(a)!;
+        return withWaveLifecycle.pipe(Effect.ensuring(Effect.sync(releaseSuccessor)));
       },
       { concurrency: opts.maxConcurrency, discard: true },
     ).pipe(
@@ -2502,7 +2790,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // Experiment 此刻都已经收尾(sweepExperimentTeardowns 已经等过),严格早于下面的
   // invocation:summary——Record 已在上面封口；这个事件只给非持久化的 reporter 消费。
   const invocationExperimentIds = new Set(
-    opts.agentRuns.map((r) => r.experimentId).filter((id): id is string => id !== undefined),
+    effectiveAgentRuns.map((r) => r.experimentId).filter((id): id is string => id !== undefined),
   );
   const runTimings = runTiming.finalize();
   for (const experimentId of invocationExperimentIds) {

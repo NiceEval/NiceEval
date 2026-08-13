@@ -1,22 +1,18 @@
 // owner: docs/engineering/testing/e2e/adapter/sdk-converters.md#claude-sdk-stream-deterministic
 
-import { join } from "node:path";
-import { command, type ExpEvalEvent, type ExpEvent, withProjectCopy } from "@niceeval/testkit";
+import type { ExpEvalEvent, ExpEvent } from "@niceeval/testkit";
 import { expect, test } from "vitest";
-import { sdkConverterArtifactStaging, sdkConverterProjectCopy } from "./support.ts";
+import { sdkConverterE2E, sdkConverterRecordArtifacts } from "./support.ts";
 
 const EXPERIMENT_ID = "claude-sdk-stream";
 const EVAL_ID = "claude-sdk-stream";
-const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
 
 test("createClaudeSdkEventStream 的锁定上游帧经 Experiment 和公开 CLI 确定性读回", async () => {
-  await withProjectCopy(
-    sdkConverterProjectCopy,
-    async ({ root }) => {
-      const run = await niceeval.run(
-        ["exp", EXPERIMENT_ID, "--rerun", "all", "--json"],
-        { cwd: root },
-      );
+  await sdkConverterE2E.case(
+    "claude-sdk-stream",
+    sdkConverterRecordArtifacts,
+    async ({ commands: { niceeval } }) => {
+      const run = await niceeval.run(["exp", EXPERIMENT_ID, "--rerun", "all", "--json"]);
       expect(run.exitCode, run.diagnostic()).toBe(0);
       const events = run.ndjson<ExpEvent>();
       // The terminal stream event is the Record v1 InvocationReceipt; it carries
@@ -40,7 +36,7 @@ test("createClaudeSdkEventStream 的锁定上游帧经 Experiment 和公开 CLI 
 
       // receipt 的 runId 驱动公开读回(adapter/README.md「Live 验收说明」第 3 步)：
       // 运行已发布为完整 Run、slot included，selection 精确指向本轮 receipt。
-      const shown = await niceeval.run(["show", "--run", receipt.runIds[0]!, "--json"], { cwd: root });
+      const shown = await niceeval.run(["show", "--run", receipt.runIds[0]!, "--json"]);
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
       const selection = shown
         .json<{ sample: { selection: { runIds: readonly string[] } } }>()
@@ -50,14 +46,19 @@ test("createClaudeSdkEventStream 的锁定上游帧经 Experiment 和公开 CLI 
 
       // locator 驱动的公开读回：Attempt 的断言评估证据(含 Eval 内的工具/identity
       // 断言)已经随 Run 落盘，并通过 `show @<locator> --source` 可公开读回。
-      const source = await niceeval.run(["show", evalEvent!.locator!, "--source"], { cwd: root });
+      const source = await niceeval.run(["show", evalEvent!.locator!, "--source"]);
       expect(source.exitCode, source.diagnostic()).toBe(0);
       expect(source.stdout).toContain("Assertions: available");
+
+      const timing = await niceeval.run(["show", evalEvent!.locator!, "--timing"]);
+      expect(timing.exitCode, timing.diagnostic()).toBe(0);
+      expect(timing.stdout, timing.diagnostic()).toContain("eval.run");
+      expect(timing.stdout, timing.diagnostic()).toMatch(/turn\s+turn1\b/);
 
       // locator 驱动的真实执行读回(adapter/README.md「Live 验收说明」第 3 步)：
       // execution 页是「适配器收到了什么」的用户可见投影，逐项断言每个真实
       // marker 与工具身份落在公开读面上。
-      const execution = await niceeval.run(["show", evalEvent!.locator!, "--execution"], { cwd: root });
+      const execution = await niceeval.run(["show", evalEvent!.locator!, "--execution"]);
       expect(execution.exitCode, execution.diagnostic()).toBe(0);
       expect(execution.stdout).toContain("claude-sdk-assistant-marker");
       expect(execution.stdout).toMatch(/TOOL · (shell|Bash)/);
@@ -65,6 +66,5 @@ test("createClaudeSdkEventStream 的锁定上游帧经 Experiment 和公开 CLI 
       expect(execution.stdout).toContain("TOOL · Write");
       expect(execution.stdout).toContain("rejected");
     },
-    sdkConverterArtifactStaging("claude-sdk-stream"),
   );
 });

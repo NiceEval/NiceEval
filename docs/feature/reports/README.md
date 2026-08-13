@@ -1,13 +1,13 @@
 # Reports：把 AnalysisSample 变成可交付视图
 
-Reports 把 [`AnalysisSample`](../sample/README.md) 与按需读取的 `RecordAttachment` 变成终端输出、热重载页面或可分享的静态站。它负责 projection 之后的计算与呈现，不拥有评估事实。
+Reports 把 [`AnalysisSample`](../sample/README.md) 与官方 opaque projection 变成终端输出、热重载页面或可分享的静态站。它负责 projection 之后的计算与呈现，不拥有评估事实。
 
 ```text
-RecordReader
-    │ analysis selection
+opaque Record
+    │ CLI 内部 selection / projection
     ▼
-AnalysisSampleHandle
-    │ RecordProjection declarations
+AnalysisSample
+    │ niceeval/report declarations
     ▼
 ProjectedSample
     │ Calculation + Page / PageFamily
@@ -21,7 +21,7 @@ immutable ReportExecution
 ## 核心心智
 
 - analysis selection 决定成员范围与 Sample-wide slot denominator；
-- `RecordAttachmentProjector` 把一个 owner 的一份 payload 形成 typed view；
+- 官方 projector 把内部 Attachment 形成作者可消费的 typed view；作者不能定义 raw family reader；
 - Calculation 跨 owner 聚合，例如通过率、成本或诊断分布；`observed` 与 `denominator` 由 Calculation value 自己返回；
 - Page 与 PageFamily 把这些结果包装成闭合语义树；
 - host 把同一棵树渲染成 text、web 或 static HTML。
@@ -32,7 +32,8 @@ immutable ReportExecution
 
 Report 作者用 `attemptSlotProjection(projector)`、`selectedRunProjection(projector)` 或 `attemptOriginRunProjection(projector)` 声明数据。然后用 `defineCalculation`、`definePage`、`definePageFamily` 和 `defineDownload` 包装结果。
 
-作者看不到 reader、path、owner lookup、compiled plan 或 route expansion。宿主从 definition 与 Sample 在 I/O 前闭合全部投影依赖，每个投影最多执行一次。
+作者只从 `niceeval/report` 导入 Report DSL、Theme、官方 projector、声明 constructor 与必要的纯数据类型。
+作者看不到 reader、path、raw family/value、owner lookup、compiled plan 或 route expansion。宿主从 definition 与 Sample 在 I/O 前闭合全部投影依赖，每个投影最多执行一次。
 
 projected values 可以展开动态页面：
 

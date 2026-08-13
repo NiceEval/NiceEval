@@ -1,7 +1,7 @@
 # Observability —— 运行反馈、持久观测与 Reports
 
 Observability 有两条边界。运行中的反馈只服务当前进程。停稳后的业务观测写入 Record 的
-owner-local RecordAttachment。Reader、AnalysisSample 与 Report 只消费后一条边界。
+owner-local RecordAttachment。内部 reader 与 projection host 形成 AnalysisSample / typed view，Report 只消费后一条边界。
 
 本页是 Observability 领域的唯一入口。七个官方 owner-specific Attachment family 的精确 durable schema、限制、
 seal 和读取语义唯一由
@@ -21,7 +21,7 @@ Adapter / Sandbox / Runner
             owner-local RecordAttachment
                          │
                          ▼
-  RecordReader → neutral projector → AnalysisSample → Calculation → Report
+  internal reader / projector → AnalysisSample → Calculation → Report
 ```
 
 终端进度、心跳、活动行与临时计数不进入 Record。进程退出后，只有已发布 Run 内的

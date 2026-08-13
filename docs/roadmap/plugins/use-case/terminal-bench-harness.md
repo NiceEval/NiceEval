@@ -4,7 +4,7 @@
 
 terminal-bench 的 Experiment 不拥有 Sandbox template。238 道 Eval 各自声明 folder-local 起点:226 道是 Dockerfile,12 道是 Docker Compose。同一个 Codex Experiment 因此会 link 出大量 provider / template 不同的 Eval × Experiment pair。
 
-这证明 Plugin 不能在 Run 级只为 Sandbox contribution 或 requirement 求值一次。一个公共 harness 条件必须逐 pair 接入:
+这证明 Plugin 不能在 Run 级只为 Sandbox contribution 求值一次。一个公共 harness 条件必须逐 pair 接入:
 
 ```ts
 export default defineExperiment({
@@ -17,13 +17,12 @@ export default defineExperiment({
 
 `terminalBenchHarness()` 可以表达所有题共同成立、且不改变起点的条件:
 
-- 对每个 completed pair plan 验证封闭的 typed platform / requested plan 字段;
 - 在两个作者 layer 之后追加轻量 command-only 检查命令;
 - 把实际 provider family、执行身份与 harness revision 写入声明过的 Attempt Attachment;
 - 给错误和 diagnostic 附 `contributionSource`;
 - 让 Codex 与 Oracle 两个 Experiment 复用同一组 harness 观测规则。
 
-每个 pair 的实得 template、provider 与 requirement 结果留在该 Eval 的 plan / fingerprint manifest,不能提升成“一整份 Run 都是 Compose”或“一整份 Run 都是 Dockerfile”的假事实。
+每个 pair 的实得 template、provider 与 Plugin provenance 留在该 Eval 的 plan / fingerprint manifest,不能提升成“一整份 Run 都是 Compose”或“一整份 Run 都是 Dockerfile”的假事实。
 
 ## Oracle 不是 Plugin
 

@@ -36,13 +36,14 @@ import type {
 } from "../types.ts";
 import type { JsonValue, Verdict } from "../../shared/types.ts";
 import { evalConclusionRows, type EvalConclusionRow } from "./eval-conclusions.ts";
+import type { CommandPlan } from "../command-plan.ts";
 
 /** `ExpEvent`/`ExpPlanDocument` 的 `format`/`schemaVersion` —— 只在破坏性形状变更时递增
  *  (见 cli.md「事件与计划文档的 TypeScript 形状」)。 */
 const EXP_STREAM_FORMAT = "niceeval.exp";
 const EXP_PLAN_FORMAT = "niceeval.exp-plan";
 const SCHEMA_VERSION = 1;
-const EXP_PLAN_SCHEMA_VERSION = 3;
+const EXP_PLAN_SCHEMA_VERSION = 4;
 
 /** 连续无永久事件多久才追加一条 `progress` 心跳(cli.md「机器怎么读:--json」:「连续 30 秒
  *  没有这些永久事件,才追加一条 progress 心跳」——两者合并前分别是 30s/60s,统一取 30s)。 */
@@ -443,6 +444,7 @@ function lifecyclePhaseField(value: JsonValue | undefined): LifecyclePhase | und
     case "sandbox.create":
     case "sandbox.prepare":
     case "sandbox.prepare.eval":
+    case "sandbox.prepare.group":
     case "sandbox.prepare.experiment":
     case "agent.ensure":
     case "workspace.baseline":
@@ -625,6 +627,7 @@ export interface JsonPlanDispatch {
 export interface JsonPlanRow {
   experimentId: string;
   evalId: string;
+  evalGroupId?: string;
   /** 命中缓存指纹,本次不会派发新 attempt。 */
   reused: boolean;
   /** previous-result 历史结果。`acceptance: legacy-locator` 表示旧 locator 不符合当前命令语法，不能接受。 */
@@ -654,6 +657,8 @@ export interface JsonPlanInput {
    *  场景的展示规则,这里与 human/agent 既有的 dry 预览取同一个近似口径:最大值)。 */
   attempts: number;
   matrix: readonly JsonPlanRow[];
+  /** 只在 `--dry --commands` 出现；普通 `--dry --json` 仍只给选择/carry 矩阵。 */
+  commandPlan?: CommandPlan;
 }
 
 /**
@@ -671,5 +676,6 @@ export function renderJsonPlanDocument(input: JsonPlanInput): string {
     attempts: input.attempts,
     reused,
     matrix: input.matrix,
+    ...(input.commandPlan === undefined ? {} : { commandPlan: input.commandPlan }),
   })}\n`;
 }

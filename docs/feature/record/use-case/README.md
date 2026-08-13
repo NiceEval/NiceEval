@@ -4,7 +4,7 @@
 
 | 用户目标 | 进入 |
 |---|---|
-| 让 Runner 或第三方 producer 发布一轮完整 Run | [发布完整 Run](发布完整运行.md) |
+| 让内部 Runner / 官方 producer 发布一轮完整 Run | [发布完整 Run](发布完整运行.md) |
 | 给持久能力选择 RecordAttachment、projector 或 Record major | [选择正确的演进边界](未来功能不扩张核心格式.md) |
 | 调整 Assertion evaluator、Plugin 或 Report 而不扩张 Core | [上层变化不改持久格式](上层变化不改持久格式.md) |
 | 理解 source、conversation 与 timing 等运行事实怎样落盘 | [RecordAttachment 怎样保存运行事实](RecordAttachment怎样保存运行事实.md) |

@@ -34,6 +34,11 @@ import {
 } from "../../report/model/panel.ts";
 import { charDisplayWidth, padDisplay, padStartDisplay, stringWidth } from "../../report/model/text-layout.ts";
 import type {
+  CommandPlan,
+  CommandPlanLane,
+  CommandPlanStep,
+} from "../command-plan.ts";
+import type {
   ActiveAttempt,
   ActiveExperimentHook,
   ActiveLockWait,
@@ -684,6 +689,7 @@ function phaseLabel(phase: LifecyclePhase): string {
       return t("feedback.phase.sandboxCreate");
     case "sandbox.prepare":
     case "sandbox.prepare.eval":
+    case "sandbox.prepare.group":
     case "sandbox.prepare.experiment":
       return t("feedback.phase.sandboxPrepare");
     case "agent.ensure":
@@ -1146,6 +1152,7 @@ function createPlainRenderer(io: FeedbackIO): FeedbackRenderer {
 export interface HumanDryPlanRow {
   experimentId: string;
   evalId: string;
+  evalGroupId?: string;
   /** 本行计划内的 attempt 总数；混合 `attempts` 的多个 Experiment 不共用 input 的最大值。 */
   attempts?: number;
   /** 该用例正被另一条并行 Invocation 持锁运行(见 docs/feature/experiments/architecture.md
@@ -1216,19 +1223,177 @@ export function renderHumanDryPlan(input: HumanDryPlanInput): string {
     );
   }
   const idWidth = Math.max(0, ...input.rows.map((row) => stringWidth(row.experimentId)));
-  const evalWidth = Math.max(0, ...input.rows.map((row) => stringWidth(row.evalId)));
+  const evalLabel = (row: HumanDryPlanRow): string => row.evalGroupId === undefined
+    ? row.evalId
+    : `${row.evalId} [group ${row.evalGroupId}]`;
+  const evalWidth = Math.max(0, ...input.rows.map((row) => stringWidth(evalLabel(row))));
   for (const row of input.rows) {
-    const base = `${row.experimentId}${" ".repeat(idWidth - stringWidth(row.experimentId) + 2)}${row.evalId}`;
+    const label = evalLabel(row);
+    const base = `${row.experimentId}${" ".repeat(idWidth - stringWidth(row.experimentId) + 2)}${label}`;
     // 行尾恒有一个标注:要派发的行逐条给门的原因词,全部携带的行标 carried,
     // 正被别人持锁的行沿用既有的 locked(它回答的是「本次会不会自己跑」,不是哪道门)。
     const suffix = row.locked
       ? t("feedback.human.lockedRowSuffix")
       : dryPlanReasonSuffix(row.dispatch, row.prior, row.carried, row.attempts ?? input.attempts);
-    lines.push(`${base}${" ".repeat(evalWidth - stringWidth(row.evalId) + 3)}${suffix}`);
+    lines.push(`${base}${" ".repeat(evalWidth - stringWidth(label) + 3)}${suffix}`);
   }
   const previousResultBlocks = renderPreviousResultDeltaGroups(input);
   if (previousResultBlocks.length > 0) lines.push("", ...previousResultBlocks);
   return `${lines.join("\n")}\n`;
+}
+
+export interface HumanCommandPlanOptions {
+  readonly isTTY?: boolean;
+  readonly noColor?: string;
+  readonly width?: number;
+}
+
+function commandPlanOwner(step: CommandPlanStep): string {
+  if (step.owner === undefined) return "";
+  return ` · ${step.owner.kind}:${step.owner.id}${step.owner.index === undefined ? "" : `#${step.owner.index}`}`;
+}
+
+function commandPlanExact(step: CommandPlanStep): string {
+  const command = step.command;
+  if (command === undefined) return "exact command unavailable";
+  const operation = command.kind === "argv"
+    ? `argv: ${JSON.stringify([command.executable, ...command.args])}`
+    : `shell: ${JSON.stringify(command.script)}`;
+  const options = [
+    command.cwd === undefined ? undefined : `cwd=${JSON.stringify(command.cwd)}`,
+    command.user === undefined ? undefined : `user=${JSON.stringify(command.user)}`,
+    command.timeoutMs === undefined ? undefined : `timeoutMs=${command.timeoutMs}`,
+    command.envKeys === undefined ? undefined : `envKeys=${JSON.stringify(command.envKeys)}`,
+  ].filter((value): value is string => value !== undefined);
+  const redactions = step.redactions === undefined
+    ? ""
+    : ` · redacted=${step.redactions.join(",")}`;
+  return `${operation}${options.length === 0 ? "" : ` · ${options.join(" · ")}`}${redactions}`;
+}
+
+function commandPlanStepLine(step: CommandPlanStep): string {
+  const label = step.label === undefined ? "" : ` · ${step.label}`;
+  const condition = step.condition === undefined ? "" : ` · if ${step.condition.summary}`;
+  const detail = step.truth === "exact"
+    ? commandPlanExact(step)
+    : step.truth === "conditional"
+      ? "conditional branches"
+      : step.truth === "opaque"
+        ? `opaque — ${step.reason?.summary ?? "runtime callback"}`
+        : `no commands${step.reason === undefined ? "" : ` — ${step.reason.summary}`}`;
+  const mark = step.truth === "exact" ? "→" : step.truth === "conditional" ? "?" : step.truth === "opaque" ? "◇" : "·";
+  return `${mark} ${step.phase}${commandPlanOwner(step)}${label} · ${detail}${condition}`;
+}
+
+/** 保留 JSON string 内的连续空格与转义，不用会折叠空白的 prose wrapper。 */
+function hardWrapCommandPlanLine(text: string, width: number, continuation = "  "): string[] {
+  const max = Math.max(4, width);
+  const lines: string[] = [];
+  let line = "";
+  let used = 0;
+  const flush = (): void => {
+    lines.push(line);
+    line = continuation;
+    used = stringWidth(continuation);
+  };
+  for (const ch of text) {
+    const charWidth = charDisplayWidth(ch.codePointAt(0)!);
+    if (used > 0 && used + charWidth > max) flush();
+    line += ch;
+    used += charWidth;
+  }
+  lines.push(line);
+  return lines;
+}
+
+function pushCommandPlanLine(
+  target: PanelRow[],
+  text: string,
+  contentWidth: number,
+  continuation = "  ",
+): void {
+  target.push({ kind: "line", text: hardWrapCommandPlanLine(text, contentWidth, continuation).join("\n") });
+}
+
+function renderCommandPlanSteps(
+  target: PanelRow[],
+  steps: readonly CommandPlanStep[],
+  contentWidth: number,
+  indent: string,
+): void {
+  for (const step of steps) {
+    const prefix = `${indent}${commandPlanStepLine(step)}`;
+    pushCommandPlanLine(target, prefix, contentWidth, `${indent}  `);
+    if ((step.children?.length ?? 0) > 0) {
+      renderCommandPlanSteps(target, step.children!, contentWidth, `${indent}  `);
+    }
+  }
+}
+
+function commandPlanLaneLabel(lane: CommandPlanLane): string {
+  const ordering = lane.ordering === "serial-normalized-eval-id"
+    ? "serial · normalized Eval ID, then attempt"
+    : "no guaranteed slot order";
+  if (lane.kind !== "sandbox-reuse") return `lane ${lane.kind}:${lane.id} · ${ordering}`;
+  const scope = lane.scope.kind === "shared" ? "shared" : `eval:${lane.scope.evalId}`;
+  return `lane sandbox-reuse:${scope}@${lane.id.slice(-12)} · ${ordering}`;
+}
+
+/**
+ * `--dry --commands` 的人读投影。矩阵仍先输出；本面板只呈现保证的局部顺序，不给并发 lane
+ * 编造全局序号。TTY 画区域框，NO_COLOR / 非 TTY / 窄终端按全仓 panel 契约退化为 plain。
+ */
+export function renderHumanCommandPlan(plan: CommandPlan, options: HumanCommandPlanOptions): string {
+  const capability = panelCapability({
+    isTTY: options.isTTY,
+    noColor: options.noColor,
+    width: options.width,
+  });
+  const contentWidth = panelContentWidth(capability.width, capability.mode);
+  const rows: PanelRow[] = [];
+  pushCommandPlanLine(
+    rows,
+    "Guaranteed order is per lane. Different experiments and lanes may interleave at runtime; conditional dispatches may never start.",
+    contentWidth,
+  );
+  for (const experiment of plan.experiments) {
+    rows.push({ kind: "divider", title: `EXPERIMENT ${experiment.experimentId}` });
+    renderCommandPlanSteps(rows, experiment.beforeLanes, contentWidth, "");
+    for (const lane of experiment.lanes) {
+      pushCommandPlanLine(rows, commandPlanLaneLabel(lane), contentWidth);
+      const physical = lane.physicalLifecycleTemplate;
+      if (physical !== undefined) {
+        pushCommandPlanLine(rows, "  physical lifecycle template · each physical instance", contentWidth, "    ");
+        pushCommandPlanLine(rows, "    enter", contentWidth, "      ");
+        renderCommandPlanSteps(rows, physical.enter, contentWidth, "      ");
+        pushCommandPlanLine(rows, "    exit", contentWidth, "      ");
+        renderCommandPlanSteps(rows, physical.exit, contentWidth, "      ");
+      }
+      for (const slot of lane.slots) {
+        if (slot.action === "carried") {
+          pushCommandPlanLine(
+            rows,
+            `  slot ${slot.evalId} #${slot.attempt} · carried · no commands`,
+            contentWidth,
+            "    ",
+          );
+          continue;
+        }
+        pushCommandPlanLine(
+          rows,
+          `  slot ${slot.evalId} #${slot.attempt} · dispatch · if ${slot.activation?.summary ?? "admitted"}`,
+          contentWidth,
+          "    ",
+        );
+        renderCommandPlanSteps(rows, slot.steps, contentWidth, "    ");
+      }
+    }
+    renderCommandPlanSteps(rows, experiment.afterLanes, contentWidth, "");
+  }
+  const meta = plan.completeness === "complete"
+    ? "COMPLETE"
+    : `PARTIAL · ${plan.opaqueCount} opaque · ${plan.redactedCount} redacted`;
+  return `${renderPanel({ title: "COMMAND PLAN", meta, rows, width: capability.width, mode: capability.mode }).join("\n")}\n`;
 }
 
 /** previous-result 行逐条列出历史 locator；接受命令永远只影响这一条结果，不按 selector 聚合。 */

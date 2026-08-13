@@ -16,7 +16,11 @@ import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
 import { t } from "../i18n/index.ts";
 import { DEFAULT_CLAUDE_CODE_CLI_VERSION, AGENT_BASELINE_RECIPE_REVISION } from "./coding-cli-versions.ts";
 import { assertMcpServers, isHttpMcp, mcpManifestEntries } from "./mcp.ts";
-import { runPostSetupHooks, runPreTeardownHooks } from "./post-setup.ts";
+import {
+  registerAgentLifecycleHookCommands,
+  runPostSetupHooks,
+  runPreTeardownHooks,
+} from "./post-setup.ts";
 import { createNpmCliInstaller, resolveAgentBinEffect } from "./npm-staged.ts";
 import type { Agent, AgentSetupManifest, McpServer, Sandbox, SkillSpec, TurnEvidenceCoverage } from "../types.ts";
 import type { SandboxCommand } from "../sandbox/commands.ts";
@@ -69,6 +73,11 @@ export interface ClaudeCodeConfig {
    */
   baseUrl?: string;
   /**
+   * Extra process environment for Claude Code. Values stay private runtime data and do not enter carry identity.
+   * Mirror behavior-changing non-secret values into Experiment flags or the owning Plugin identity.
+   */
+  env?: Readonly<globalThis.Record<string, string>>;
+  /**
    * 最多跑几个 tool-use 轮次(→ `--max-turns`)。
    * 控制评估用例成本上限;省略时用 CLI 原生默认(无限制)。
    */
@@ -78,14 +87,14 @@ export interface ClaudeCodeConfig {
    * stdio 形态写 command(可带 args / env);Streamable HTTP 形态写 url(可带 headers,
    * 逐字进请求头),落成 { "type": "http", "url": …, "headers": … } 条目。
    */
-  mcpServers?: McpServer[];
+  mcpServers?: readonly McpServer[];
   /**
    * 装进 Sandbox 的 Skill(本地目录/文件,或 repo + 可钉 ref + 可选启用集)。
    * 落在 project 级 `.claude/skills/<name>/`,claude CLI 原生发现。
    */
-  skills?: SkillSpec[];
+  skills?: readonly SkillSpec[];
   /** Claude Code 原生 Plugin(先连 Marketplace,再从中装指定 Plugin)。 */
-  plugins?: ClaudeCodePluginSpec[];
+  plugins?: readonly ClaudeCodePluginSpec[];
   /**
    * 一份完整的 Claude Code `settings.json`(官方格式)在本地项目里的路径 —— 相对运行
    * niceeval 的项目根(含 `niceeval.config.ts` 的目录)解析,不是 Sandbox 内路径;只接受
@@ -101,7 +110,7 @@ export interface ClaudeCodeConfig {
    * 「安装产物就位后才能跑」的过程动作。抛错按基础设施错误计(attempt errored)。
    * 见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」。
    */
-  postSetup?: SandboxCommand[];
+  postSetup?: readonly SandboxCommand[];
   /**
    * 与 `postSetup` 成对的收尾 Hook:按 `postSetup` 的逆序语义,在 agent 自己的 teardown 步骤
    * 之前执行(LIFO 镜像 —— `postSetup` 跑在 agent 安装之后,`preTeardown` 就跑在 agent 收尾
@@ -109,12 +118,14 @@ export interface ClaudeCodeConfig {
    * 按 teardown-failed 诊断收束。
    * 见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」。
    */
-  preTeardown?: SandboxCommand[];
+  preTeardown?: readonly SandboxCommand[];
 }
 
 export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
   const getApiKey = () => config?.apiKey ?? requireEnv("ANTHROPIC_API_KEY");
   const getBaseUrl = () => config?.baseUrl ?? getEnv("ANTHROPIC_BASE_URL");
+  const agentEnv = Object.freeze({ ...(config?.env ?? {}) });
+  const agentEnvSensitiveValues = Object.freeze(Object.values(agentEnv));
   const { ensure, installer } = createNpmCliInstaller({
       identity: {
         agent: "claude-code",
@@ -125,7 +136,7 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
       bin: "claude",
   });
 
-  return defineSandboxAgent({
+  return registerAgentLifecycleHookCommands(defineSandboxAgent({
     name: "claude-code",
     // 官方 adapter:transcript 经生命周期 fixture 验证,全通道 complete。
     evidenceCoverage: completeEvidenceCoverage,
@@ -258,6 +269,7 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
 
       const apiKey = getApiKey();
       const env: globalThis.Record<string, string> = {
+        ...agentEnv,
         ANTHROPIC_API_KEY: apiKey,
         // Eval runs must not silently change CLI version after the sandbox artifact was built.
         DISABLE_AUTOUPDATER: "1",
@@ -268,7 +280,7 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
 
       const res = await sb.runCommand(claudeBin, args, {
         env,
-        sensitiveValues: [apiKey],
+        sensitiveValues: [apiKey, ...agentEnvSensitiveValues],
         stream: true,
         signal,
       });
@@ -315,8 +327,9 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
         catch: (cause) => cause,
       });
     })), { signal: ctx.signal }),
-  });
+  }), config?.postSetup, config?.preTeardown);
 }
+
 
 /**
  * 先按 `marketplace.name` 建立 Marketplace 连接(同名只连一次,add 后回读注册列表校验

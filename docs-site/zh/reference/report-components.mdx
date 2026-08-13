@@ -3,11 +3,11 @@ title: "报告 API"
 description: "RecordProjection、Calculation、Page、ReportExecution 与静态导出的公开边界。"
 ---
 
-Report 作者声明需要哪些 `RecordProjection`，再把投影结果和计算结果包装成页面或下载。作者不接收 `RecordReader`、路径或磁盘字段。
+Report 作者只从 `niceeval/report` 声明需要哪些 `RecordProjection`，再把投影结果和计算结果包装成页面或下载。作者不接收 reader、路径、raw Attachment 或磁盘字段。
 
 ```text
-AnalysisSampleHandle
-        ↓  RecordProjection declarations
+AnalysisSample
+        ↓  opaque RecordProjection declarations
 ProjectedSample
         ↓  Calculation / Page / PageFamily / Download
 immutable ReportExecution
@@ -18,7 +18,7 @@ immutable ReportExecution
 
 ## 声明 RecordProjection
 
-`RecordAttachment projector` 固定解释一个明确 owner 的一个 Attachment family。Report 用三个 constructor 声明逻辑访问：
+NiceEval 提供的 opaque projector 固定形成一种 typed view。Report 用三个 constructor 声明逻辑访问；作者不能定义 raw family/projector：
 
 | constructor | 对齐方式 |
 | --- | --- |
@@ -93,16 +93,13 @@ export default defineReport({
 
 `defineReport` 验证 ID 与组件引用。Page、PageFamily 和 Download 只能引用同一个 Report 已注册的 Calculation。页面 route 与下载路径必须通过对应 constructor 创建，避免输出冲突。
 
-## 执行一次 Report
+## 由 show / view 执行 Report
 
-```ts
-const execution = yield* executeReport({
-  sampleHandle,
-  report,
-});
-```
+应用代码不调用 Report host。`niceeval show`、`niceeval view` 与 `view --out` 的内部 host
+选择 Run、执行 projection 与作者 graph，并形成不可变、自包含的 `ReportExecution`。
+包不导出 `niceeval/report/host`、`niceeval/report/host/node` 或 `executeReport()`。
 
-`ReportExecution` 是不可变、自包含的进程内值。它包含 Sample、projection 摘要、Calculation、family、页面、下载项与 problem table，但不包含 reader、路径、Scope、callback 或 projector token。
+`ReportExecution` 包含 Sample、projection 摘要、Calculation、family、页面、下载项与 problem table，但不包含 reader、路径、Scope、callback 或 projector token。
 
 每个 projection、Calculation、PageFamily、页面实例与 Download 在同一 execution 中最多执行一次。`show`、`view` 与 `exportStaticReport` 只消费完成后的 execution。
 
@@ -119,6 +116,6 @@ const execution = yield* executeReport({
 
 ## 相关页面
 
-- [读取 Record 数据](/zh/reference/results-data)：选择 Sample 并形成 `ProjectedSample`。
+- [结果数据 API](/zh/reference/results-data)：在 Report callback 中消费 Sample 与 `ProjectedSample`。
 - [编写自定义报告](/zh/tutorials/custom-reports)：从投影写出一个实际 Report。
 - [发布静态报告](/zh/tutorials/publish-report)：导出并分享固定 execution。

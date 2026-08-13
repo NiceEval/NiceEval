@@ -196,10 +196,10 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| Record | Record | `.niceeval/record/` 中带完成标识的 Run、Core 与 RecordAttachment 组成的 portable 事实集 | [Record](feature/record/README.md) |
+| Record | Record | `.niceeval/record/` 中可整体复制、进入 Git，并只由 CLI / Report 解释的 opaque portable 事实集 | [Record](feature/record/README.md) |
 | maintenance lock | maintenance lock | reader/writer 取得 shared；migration 取得 exclusive 的跨进程维护锁 | [Record](feature/record/architecture.md#reader锁与-effect) |
-| Record reader | `RecordReader` | 只打开 current Core major，并冻结当时已完成 Run 集合的 scoped view | [Record library](feature/record/library.md#reader) |
-| Record write session | `RecordWriteSession` | 读取 frozen history、写入 Run draft 并最后创建完成标识的 Scope-bound 能力 | [Record library](feature/record/library.md#write-session) |
+| Record reader（内部） | `RecordReader` | CLI / runner 内部只打开 current Core major，并冻结当时已完成 Run 集合的 scoped view；不从包导出 | [Record library](feature/record/library.md#reader) |
+| Record write session（内部） | `RecordWriteSession` | runner 内部读取 frozen history、写入 Run draft并最后创建完成标识的 Scope-bound 能力；不从包导出 | [Record library](feature/record/library.md#write-session) |
 | Run | Run | 一个带完成标识的 immutable 运行单位；expected SlotId 定义分析分母 | [Record](feature/record/architecture.md#完成标识与局部隔离) |
 | Run 完成标识 | Run completion marker | writer 最后创建的 zero-byte `complete`；只表示写入结束，不是 hash 或完整性证明 | [Record](feature/record/architecture.md#durable-record-布局) |
 | 未完成 Run | Incomplete Run | 没有完成标识的中断写入；不是 Record 事实，只产生 warning 并可由 `niceeval clean` 删除 | [Record CLI](feature/record/cli.md#clean) |
@@ -215,7 +215,6 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Record 附件 schema identity | `RecordAttachmentSchemaId` | 冻结 Attachment payload 的精确 shape 与语义 | [Record](feature/record/architecture.md#三个演进边界) |
 | Record 附件 migration | RecordAttachment migration | Attachment owner 提供的相邻 `vN → vN+1` converter 或明确不可迁移声明 | [Record](feature/record/architecture.md#migration-definition) |
 | 中立 Record 附件 projector | neutral RecordAttachmentProjector | 只把一个明确 owner 的 available Attachment 变为 typed view；不聚合、不选择 Run、不读另一 family | [Observability Attachments](feature/record/architecture/observability-attachments.md) |
-| 评估类型附件 | Evaluations Attachment | Run-owned `niceeval.evaluations/v1`；保存 Slot、Eval 与 `pass | score` | [Record](feature/record/architecture.md#内建-attachment) |
 | 源码快照 | Sources snapshot | origin Run-owned `niceeval.sources/v1`；保存当时 source closure 的 manifest 与 own blobs | [Sources manifest](feature/record/architecture.md#sources-manifest) |
 | 源码项 | source item | Sources snapshot 中由非数组 `SourceItemId`、canonical project-relative path、SHA-256 与 own blob 标识的一项源码 | [Sources manifest](feature/record/architecture.md#sources-manifest) |
 | 断言源码位置 | Assertion source site | Attempt-owned source-sites 中，一个 Assertions `entryId` 的 role-tagged runtime source site 与 occurrence | [Source sites](feature/assertions/architecture/source-sites.md) |
@@ -230,8 +229,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 |---|---|---|---|
 | 分析选择请求 | `AnalysisSelectionRequest` | 选择哪些已发布 Run 的纯配置，不携带 reader 或 I/O 能力 | [Sample](feature/sample/library.md#analysis-selection) |
 | 分析样本 | `AnalysisSample` | 从已发布 Run 形成的 portable core-only 选择，保留完整 expected-slot 分母 | [Sample](feature/sample/README.md) |
-| 分析样本句柄 | `AnalysisSampleHandle` | 将 AnalysisSample 绑定到同一个 frozen Record view、允许继续按需读取的 scoped capability | [Sample](feature/sample/README.md) |
-| 分析选择 | Analysis selection | 从明确 Run 或具名 latest policy 形成 AnalysisSampleHandle 的只读过程 | [Sample](feature/sample/README.md) |
+| 分析选择（内部） | Analysis selection | CLI host 从明确 Run 或具名 latest policy 形成纯 AnalysisSample 的只读过程；作者通过 `show` / `view` 选择 | [Sample](feature/sample/README.md) |
 | 执行沿用计划 | `ExecutionReusePlan` | reuse policy 把当前 `ExecutionTarget` 的每个 Slot 穷尽判为 reuse 或 gap | [Cache](feature/experiments/cache.md#公开形状) |
 | 执行缺口 | Execution gap | 当前目标中没有可复用 Attempt、必须交给 planner/scheduler 执行的 slot；不是 Record 状态 | [Cache](feature/experiments/cache.md#错误与缺口作用域) |
 | 收窄 | Narrowing | 在既有 `AnalysisSample` 上显式排除范围，不重新读取 Record | [Sample](feature/sample/library.md#构造入口) |
@@ -271,15 +269,8 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 具名 Experiment 族 | Experiment family (`defineExperiments`) | 用一个 keyed record 展开多个普通 Experiment；文件路径与 key 共同形成稳定 ID | [具名 Experiment 族](roadmap/experiment-families/README.md) |
 | Fixture 内容命令 | Fixture content command (`putFixture`) | 把本地内容登记、digest-backed identity 与 `putContent` 组成一个普通 prepare command | [Fixture 内容命令](roadmap/sandbox-fixture-content/README.md) |
 | Agent Judge | Agent Judge | 作为 Assertion evaluator 运行的独立 Agent；调查证据后返回 measurement、理由与引用，不拥有 Verdict 或 score policy | [Agent-as-Judge](roadmap/agent-as-judge/README.md) |
-| Eval 序列 | Sequence (`defineSequence`) | 引用现有 Eval ID，并要求从第一步开始按声明顺序真实执行的文件派生定义 | [有序 Eval 序列](roadmap/ordered-sequences/README.md) |
-| Sandbox 复用组 | Sandbox reuse group | `evals/` 中显式声明必须共用一台活跃 Sandbox 的 Eval 集合；选中即生效，组外 Attempt 保持 fresh | [分组 Sandbox 复用](roadmap/sandbox-reuse-groups/README.md) |
-| Plugin | Plugin | 挂在 Eval、Experiment 或 Sandbox Group 上的不可变条件蓝图；组合既有 owner contribution，不选择 Agent 或建立新运行时 | [Plugins](roadmap/plugins/README.md) |
-| Agent 扩展 | Agent extension (`AgentExtension`) | 由 nominal protocol 标识、交给已选 Agent receiver 规范化的 opaque 能力声明；可来自 Agent factory 或 Plugin | [Plugin Library](roadmap/plugins/library.md#agentextension统一直配与-plugin) |
-| Agent 扩展协议 | Agent extension protocol | 以 opaque token object identity 定义 payload 契约和静态兼容性的协议；展示 name 不承担兼容匹配 | [Plugin Architecture](roadmap/plugins/architecture.md#agentextension-protocol-与-receiver) |
-| Agent 扩展 receiver | Agent extension receiver | 由 Agent factory 绑定，接受明确 protocol、合并 base／Plugin contribution，并产出安全投影和分阶段 Agent 计划的 Adapter 组件 | [Plugin Architecture](roadmap/plugins/architecture.md#agentextension-protocol-与-receiver) |
-| 已连接 Agent 计划 | `LinkedAgentPlan` | `RunAgentPlan` 与 Eval 的 pair delta 经 receiver 规范化并组合后形成的完整 desired state，拥有 provision、configure、lifecycle 与 dispose 阶段 | [Plugin Architecture](roadmap/plugins/architecture.md#完整-desired-state-与-managed-overlay) |
-| Hosted Agent Hook | Hosted Agent Hook | 由 NiceEval host 在每 Attempt 和逻辑 Send 边界执行的只读 Hook；不同于 Agent runtime 自己执行的原生 Hook | [Plugin Lifecycle](roadmap/plugins/lifecycle.md#hosted-send-hook) |
-| Agent 原生 Hook | Agent-native Hook | 通过 receiver-specific extension 写入 Agent 官方配置，并由 Codex、Claude 等 Agent runtime 自己执行的声明式 Hook | [Plugin Lifecycle](roadmap/plugins/lifecycle.md#agent-原生-hook) |
+| Eval Group | Eval Group (`defineEvalGroup`) | 由无业务顺序的 Eval 闭集组成；Runner 按规范化 Eval ID 串行复用一台物理 Sandbox，不同 Group 可以并行 | [Eval Group](roadmap/eval-groups/README.md) |
+| Plugin | Plugin | 带稳定身份的生命周期组合语法；组合既有 owner 的 setup/teardown，不选择 Agent 或建立新运行时 | [Plugins](roadmap/plugins/README.md) |
 
 ## 禁用写法
 

@@ -1,92 +1,74 @@
 ---
-title: "读取 Record 数据"
+title: "在 Report 中读取结果数据"
 sidebarTitle: "结果数据 API"
-description: "从 frozen RecordReader 选择 AnalysisSample，并用 RecordAttachment projector 形成 ProjectedSample。"
+description: "通过 niceeval/report 的 AnalysisSample 与官方 opaque projector 声明读取结果。"
 ---
 
-`Record` 是 `.niceeval/record/` 下的持久事实集，只包含完整发布的 Run。Core 保存 Run、Member 与 Attempt 的关系；业务事实保存为 owner-local 的 `RecordAttachment`。
+Record 是 `.niceeval/record/` 下可携带、可进入 Git 的 opaque 目录。应用代码不读取内部结构或写入
+其中的文件，也不 import Record reader / writer。选择运行和执行 projection 由 `niceeval show`
+与 `niceeval view` 的内部 host 完成。
 
-这页说明数据边界。要在终端或浏览器中查看结果，请阅读[查看结果](/zh/tutorials/viewing-results)。要定义页面和计算，请阅读[报告 API](/zh/reference/report-components)。
+要在终端或浏览器中查看结果，请阅读[查看结果](/zh/tutorials/viewing-results)。要定义页面和
+计算，请阅读[报告 API](/zh/reference/report-components)。
 
-## 用 AnalysisSelectionRequest 选择 Run
+## Report callback 收到 AnalysisSample
 
-打开 reader 后，把纯 `AnalysisSelectionRequest` 单独传给 `selectAnalysisSample`。请求不携带路径、callback 或 I/O capability。
-
-```ts
-const sampleHandle = yield* selectAnalysisSample(reader, {
-  policy: "explicit-runs",
-  input: {
-    runIds: [runId],
-  },
-});
-
-const sample = sampleHandle.sample;
-```
-
-`explicit-runs` 选择精确 Run。`latest-runs` 使用 Run-owned Evaluations Attachment，为目标 Experiment 选择最后完成的 Run：
-
-```ts
-const sampleHandle = yield* selectAnalysisSample(reader, {
-  policy: "latest-runs",
-  input: {
-    experimentIds: ["checkout"],
-  },
-});
-```
-
-两种选择都只使用传入 reader 的 frozen 视图。之后完成的 Run 不会混进既有 Sample。未完成的 Run 也不会进入候选集合。
-
-## AnalysisSampleHandle 与 AnalysisSample
-
-`AnalysisSampleHandle` 是 live capability，绑定创建它的 reader。它的 `.sample` 是纯 `AnalysisSample`；reader 关闭后仍可显示或收窄它，但不能从 pure Sample 恢复 Attachment I/O。
-
-```text
-AnalysisSampleHandle
-  ├─ .sample → AnalysisSample（纯值）
-  └─ projectAnalysisSample(...) → ProjectedSample（reader 存活时）
-```
-
-Sample 保存每个 expected slot，并保留完整分母：
+Report 的 Calculation、Page 与 PageFamily callback 收到一份纯 `AnalysisSample`。它保存每个
+expected slot 和完整分母，不包含路径、reader、文件句柄或延迟 I/O：
 
 | 状态 | 含义 |
 | --- | --- |
-| `included` | 有合法 Member，且能读取它精确引用的 Attempt。 |
+| `included` | 有合法 Member，指向精确 Attempt。 |
 | `not-recorded` | expected slot 没有 Member。 |
 | `core-invalid` | Member、Attempt 或核心引用不能可靠读取。 |
-| `excluded` | 调用方在既有 Sample 上排除了该项。 |
+| `excluded` | host 在已有 Sample 上明确排除了该项。 |
 
-## 用 projector 读取 Attachment
+作者可以从 `niceeval/report` 导入必要的 Sample / identity 类型，也可以对已有 Sample 使用纯
+`narrowAnalysisSample`。这些值不能恢复 Record I/O。
 
-`RecordAttachment projector` 固定解释一个 owner 类型和一个 Attachment family。Projection 把这个 typed view 与 Sample 对齐：
+## 用官方 projector 声明数据
+
+Report 作者选择 NiceEval 提供的 opaque projector，再声明它怎样与 Sample 对齐：
 
 ```ts
-const projected = yield* projectAnalysisSample({
-  sampleHandle,
-  projection: attemptSlotProjection(verdictProjector),
-});
+import {
+  attemptSlotProjection,
+  selectedRunProjection,
+  evaluationsProjector,
+  verdictProjector,
+} from "niceeval/report";
+
+const verdicts = attemptSlotProjection(verdictProjector);
+const evaluations = selectedRunProjection(evaluationsProjector);
 ```
 
-`attemptSlotProjection` 对每个 slot 形成 entry。`attemptOriginRunProjection` 仍对每个 slot 形成 entry，但读取其 Attempt 的 origin Run Attachment。`selectedRunProjection` 对每个 selected Run 形成 entry。
+`attemptSlotProjection` 对每个 slot 形成 entry。`attemptOriginRunProjection` 仍对每个 slot
+形成 entry，但使用 Attempt 的 origin Run。`selectedRunProjection` 对每个 selected Run
+形成 entry。
 
-前两种 entry 保留 `excluded`、`not-recorded`、`core-invalid` 与 `attachment-result`。因此十个 slot 引用同一个 Attempt 时，结果仍有十条按 slot 对齐的 entry。
+作者不能定义 raw Attachment family/projector，不能接收 payload 或 blob capability，也不能
+直接调用 projection runtime。需要新的持久事实时，由 NiceEval 提供新的高层 projector 或
+未来独立设计的 Eval / Experiment / Plugin 能力。
 
-## Attachment 读取状态
+## Projection 结果保持穷尽
 
-Attachment 读取状态是成功数据，不会改变 Sample 的 Core 状态：
+前两种 slot projection 保留 `excluded`、`not-recorded`、`core-invalid` 与
+`attachment-result`。Attachment result 再表达：
 
 | 状态 | 含义 |
 | --- | --- |
-| `available` | payload 已由 family 解码，并可被 projector 解释。 |
-| `unavailable` | owner 没有这个 Attachment。 |
-| `migration-required` | 已知旧 schema 有完整相邻 converter 链。 |
-| `migration-unavailable` | 已知 schema 不能无损形成当前值。 |
-| `unsupported` | family 或 schema 不被当前功能认识。 |
-| `invalid` | envelope、payload、blob 或 schema decode 无效。 |
+| `available` | 官方 projector 已形成 typed value。 |
+| `unavailable` | owner 没有请求的事实。 |
+| `migration-required` | 需要运行 `niceeval migrate`。 |
+| `migration-unavailable` | 历史事实不能无损形成当前值。 |
+| `unsupported` | 当前 NiceEval 不认识该事实版本。 |
+| `invalid` | 已记录的数据无法可靠解释。 |
 
-真实 I/O、权限和关闭的 reader 仍是 Effect failure。projector callback 的意外 throw 是 defect，不会伪装成 `invalid`。
+这些是 Report 可显示的数据状态，不会改变 Sample 的 Core 状态。I/O、权限、reader Scope 与
+raw schema errors 留在内部 host；公开作者面只收到自包含值和结构化 Report problem。
 
 ## 相关页面
 
-- [Record](/zh/explanation/record)：理解 Core、Attachment 与演进边界。
-- [查看结果](/zh/tutorials/viewing-results)：用 `show` 与 `view` 选择并查看 Sample。
+- [Record](/zh/explanation/record)：理解为什么 Record 是 opaque 产品资产。
+- [查看结果](/zh/tutorials/viewing-results)：用 `show` 与 `view` 选择结果。
 - [报告 API](/zh/reference/report-components)：消费 `ProjectedSample` 并生成 Report。

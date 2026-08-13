@@ -21,16 +21,16 @@ Roadmap 与 Feature、Design 候选共用 [Feature Design Package](../_template/
 - [原生 LLM Judge Runtime](llm-judge-runtime/README.md) —— 统一判分配方、规范化材料、Provider、多模态与静态判分图
 - [Adapters](adapters/README.md) —— Cursor Agent SDK、vm0 与其它适配器接入
 - [结果携带与 Sandbox 复用反馈](reuse-feedback/README.md) —— 消除 `reused` 一词两义，并补齐 Sandbox 复用的运行级反馈
-- [分组 Sandbox 复用](sandbox-reuse-groups/README.md) —— Eval 侧显式列出必须共用 Sandbox 的成员，选中即生效，组外 Attempt 保持 fresh 并行
+- [Eval 选择](eval-selection/README.md) —— Experiment 与 CLI 共用声明式过滤语义，Eval Group 保持封闭成员集
+- [Eval Group](eval-groups/README.md) —— 按规范化 Eval ID 串行复用至多一台 Sandbox，组间并行
 - [Sandbox 默认停驻与回收](sandbox-retention/README.md) —— 失败类 Sandbox 的有界停驻、明确销毁、持久管理与安全 GC
 - [Docker 执行配置](docker-profiles/README.md) —— 官方 Docker Sandbox 的可验证执行 profile、rootless privileged 单容器 DinD、跨进程硬配额与故障回收
 - [Provider Cache 生命周期](materialization-cache/README.md) —— 让 NiceEval 创建的 provider cache 可盘点、可解释并可安全回收
 - [注入凭据的转写脱敏](credential-redaction/README.md) —— 已知凭据值的精确替换
 - [Prepare 阶段瞬时失败自愈](prepare-transient-retry/README.md) —— 内置 prepare 命令的瞬时重试
-- [有序 Eval 序列](ordered-sequences/README.md) —— 用独立 Sequence 声明现有 Eval 的顺序、完整重新执行与执行 lineage
-- [Plugins](plugins/README.md) —— 组合 Eval／Experiment 条件，并以统一 AgentExtension 给已选 Agent 安装 Skill、MCP、原生 Plugin 与 Hook
-- [RecordAttachment adapter SPI](record-attachment-authoring/README.md) —— 让领域 SDK 用 sealed value、opaque installation 与 owner-specific binding 连接同一中立写入核
-- [Record → Analysis → Report](record-analysis-report/README.md) —— 用一套 Record 子系统连接写入、snapshot、Analysis 与 Report，并把产品心智收成三层
+- [Plugins](plugins/README.md) —— 在 Eval、Experiment 与 Eval Group 上组合带稳定身份的生命周期
+- [RecordAttachment adapter SPI](record-attachment-authoring/README.md) —— 领域 SDK 用 sealed value、opaque installation 与 owner-specific binding 连接中立写入核
+- [Record → Analysis → Report](record-analysis-report/README.md) —— 普通用户通过领域 API 进入 Analysis 与 Report 的三层心智
 - [Docker Image](docker-image/README.md) —— 用统一 `dockerImage()` 声明预制镜像或按内容构建的镜像
 - [Chart 语义内核与报告交互控制器](report-chart-kernel/README.md) —— 双面语义模型、精确值 HTML、键盘焦点与 Table 渐进增强
 - [Assertion 作者面](assertion-authoring/README.md) —— 用 Fact 分离 matcher、判定、控制流与计分，并统一 scope、command 和 Sandbox 检查

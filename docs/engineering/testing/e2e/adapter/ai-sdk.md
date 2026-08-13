@@ -32,5 +32,5 @@ Repo ID 是 `adapter/ai-sdk`；manifest 声明 `areas: ["adapter"]`、live lanes
 - **CLI 读回**：对通过 attempt 的 `show --execution` 执行树出现不带命名空间的工具名调用节点与入参，节点带 span 时间注释；通用默认报告与 JUnit 格式不由本 Repo 重复验收。
 - **OTel 写入**：被测应用接入官方 `@ai-sdk/otel` 集成（`src/backend/otel.ts`）。span 按 `src/topology.ts` 的固定 endpoint 发到 `niceeval.config.ts` 的 `telemetry.port`。
 - **OTel 生命周期**：UI stream 关闭 HTTP response 前显式 `forceFlush()`，进程终结时 `shutdown()` provider。验收不用固定延时竞速 BatchSpanProcessor。
-- **OTel 读回**：执行树的时间注释证明写入成立。`show --timing` 的 per-turn 子树必须与事件调用靠显式 correlation 对齐；断裂按协议回归判红。
+- **Timing 读回**：独立 `show --timing` owner 证明该 Adapter 的 `eval.run` 与首轮 turn 可读。该 owner 不再重复 execution 或 raw OTLP 的展示断言。
 - OTel 只生成 trace，不成为事件出处。判分断言仍只读事件流；本仓库承担矩阵中 direct-agent telemetry 路径的证明。
