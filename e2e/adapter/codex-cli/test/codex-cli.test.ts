@@ -4,16 +4,16 @@
 // 再从公开 CLI 读回 Eval、attempt、execution 与 timing。
 // 只从 @niceeval/testkit 根导入；不读 .niceeval 私有布局、不 import 候选源码/类型。
 
-import { command, type ExpEvalEvent, type ExpEvent } from "@niceeval/testkit";
+import { command, type ExpEvalEvent, type ProcessReceipt } from "@niceeval/testkit";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 
-// baseline/configfile/mcp/skill 都在首个通过 attempt 后 early-exit；其余实验才跑完整计划。
+// 每条 Eval 的首轮只有一个 Attempt；只有结构化 verdict=failed 才由本测试另起一次 Invocation。
 const EXPECTED_PASSED_ATTEMPTS = 17;
 // 每个 Experiment 产生一个 Run（docs/feature/experiments/cli.md「结束反馈与 receipt」）；
-// 除 plugin-reuse 外每条 Eval 在首个通过 attempt 后由 earlyExit 省略剩余 attempt。
 const EXPECTED_EXPERIMENTS = 7;
+const RETRY_CONCURRENCY = 4;
 
 const REQUIRED_LIVE_SECRETS = [
   "CODEX_API_KEY",
@@ -42,6 +42,30 @@ async function requireDocker(): Promise<void> {
   }
 }
 
+function evalKey(event: Pick<ExpEvalEvent, "experimentId" | "evalId">): string {
+  return `${event.experimentId}\u0000${event.evalId}`;
+}
+
+function assertExactRetrySelector(events: readonly ExpEvalEvent[], failed: ExpEvalEvent): void {
+  const experiments = new Set(
+    events
+      .filter((event) => event.experimentId.startsWith(failed.experimentId))
+      .map((event) => event.experimentId),
+  );
+  expect(experiments, `ambiguous Experiment retry selector ${failed.experimentId}`).toEqual(
+    new Set([failed.experimentId]),
+  );
+  const evals = events
+    .filter(
+      (event) =>
+        event.experimentId === failed.experimentId && event.evalId.startsWith(failed.evalId),
+    )
+    .map((event) => event.evalId);
+  expect(evals, `ambiguous Eval retry selector ${failed.experimentId}/${failed.evalId}`).toEqual([
+    failed.evalId,
+  ]);
+}
+
 it("真实 Codex CLI adapter 在 Docker sandbox 中的运行结果经过公开 CLI 读回", async () => {
   requireLiveSecrets();
   await requireDocker();
@@ -53,21 +77,60 @@ it("真实 Codex CLI adapter 在 Docker sandbox 中的运行结果经过公开 C
   const run = await niceeval.run(["exp", "--rerun", "all", "--json"], {
     timeoutMs: 44 * 60_000,
   });
-  expect(run.exitCode, run.diagnostic()).toBe(0);
   // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md「结束反馈与
   // receipt」）：completion 与 runIds（每个 Experiment 一个 Run）。成败由下面带身份的
   // eval 事件精确断言，不从 receipt 猜计数。
   const inv = run.expReceipt();
   expect(inv.completion, run.diagnostic()).toBe("completed");
   expect(inv.runIds, run.diagnostic()).toHaveLength(EXPECTED_EXPERIMENTS);
-  // eval 事件是中间的身份事件：identity / verdict / attempts 在此精确断言。early-exit
-  // 触发的 eval 只带 planned/unstarted/reason，不带 passed；跑满的 eval 则 passed ===
-  // attempts。early-exit 的代表 attempt 是首条通过的那一次，每次贡献一个 passed attempt。
-  const evalEvents = run
-    .ndjson<ExpEvent>()
-    .filter(
-      (event): event is ExpEvalEvent => "event" in event && event.event === "eval",
+  // eval 事件是中间的身份事件：identity / verdict / attempts 在此精确断言。
+  const firstEvents = run.expEvalEvents();
+  // plugin-reuse 是八条 Attempt 的 Sandbox 复用 owner，不是模型断言重试消费者。
+  const failed = firstEvents.filter(
+    (event) => event.verdict === "failed" && event.experimentId !== "plugin-reuse",
+  );
+  expect(
+    firstEvents.filter((event) => event.verdict === "errored" || event.verdict === "skipped"),
+    run.diagnostic(),
+  ).toHaveLength(0);
+  expect(run.exitCode, run.diagnostic()).toBe(failed.length > 0 ? 1 : 0);
+  for (const event of failed) assertExactRetrySelector(firstEvents, event);
+
+  const retryRuns: ProcessReceipt[] = [];
+  for (let offset = 0; offset < failed.length; offset += RETRY_CONCURRENCY) {
+    const batch = failed.slice(offset, offset + RETRY_CONCURRENCY);
+    retryRuns.push(
+      ...(await Promise.all(
+        batch.map((event) =>
+          niceeval.run(
+            ["exp", event.experimentId, event.evalId, "--rerun", "all", "--json"],
+            { timeoutMs: 44 * 60_000 },
+          ),
+        ),
+      )),
     );
+  }
+  const retriedByEval = new Map<string, ExpEvalEvent>();
+  for (let index = 0; index < retryRuns.length; index += 1) {
+    const retry = retryRuns[index]!;
+    const target = failed[index]!;
+    expect(retry.expReceipt(), retry.diagnostic()).toMatchObject({ completion: "completed" });
+    const events = retry.expEvalEvents();
+    expect(events, retry.diagnostic()).toHaveLength(1);
+    expect(events[0], retry.diagnostic()).toMatchObject({
+      experimentId: target.experimentId,
+      evalId: target.evalId,
+    });
+    expect(events[0]?.verdict, retry.diagnostic()).toBe("passed");
+    expect(retry.exitCode, retry.diagnostic()).toBe(0);
+    retriedByEval.set(evalKey(target), events[0]!);
+  }
+  if (failed.length > 0) {
+    process.stderr.write(
+      `[niceeval e2e] retried ${failed.length} assertion-failed Eval(s) once; first Invocation ${inv.invocationId} remains recorded\n`,
+    );
+  }
+  const evalEvents = firstEvents.map((event) => retriedByEval.get(evalKey(event)) ?? event);
   const totalPassed = evalEvents.reduce(
     (sum, event) => sum + (event.reason === "early_exit" ? 1 : (event.passed ?? 0)),
     0,
@@ -116,4 +179,4 @@ it("真实 Codex CLI adapter 在 Docker sandbox 中的运行结果经过公开 C
     "execution tree missing remote HTTP MCP call (deepwiki.read_wiki_structure)",
   ).toBe(true);
   expect(mcpExecution.stdout).not.toContain("weather.get_weather");
-}, 46 * 60_000);
+}, 92 * 60_000);

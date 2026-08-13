@@ -18,7 +18,6 @@ export default defineExperiment({
   model: "gpt-5.6-luna",
   sandbox,
   evals: ["skill", "skill-release-note"],
-  attempts: 2,
-  earlyExit: true,
+  attempts: 1,
   budget: 3,
 });

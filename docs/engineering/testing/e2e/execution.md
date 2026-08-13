@@ -258,10 +258,21 @@ Docker cgroup 的 `cpu.max`、`memory.max`、`memory.swap.max` 与 `pids.max` �
 
 ## 重试
 
-只有结构化确认的 infrastructure 失败可以在**新副本**重试一次，例如 provider 明确 429 / 5xx、网络断开、GitHub runner 或
-Docker daemon 故障。以下情况不重试：断言失败、测试超时、parse 失败、cleanup 失败、缺 secret / runtime。
+根 runner 只有在结构化确认 infrastructure 失败时，才可以在**新副本**重试一次，例如 provider 明确 429 / 5xx、网络断开、
+GitHub runner 或 Docker daemon 故障。测试超时、parse 失败、cleanup 失败、缺 secret / runtime 不重试。
 
-重试摘要保留第一次失败，不能只展示最终绿色；同一个断言第二次碰巧过仍需标记 flaky regression。
+真实模型兼容性 Repo 另有一条显式的 Eval 级容错：
+
+- 被重试的 Experiment 固定 `attempts: 1`；
+- 首轮 `niceeval exp --json` 完整结束后，测试读取公开 `eval` 事件；
+- 只有 `verdict: "failed"` 才对精确 Experiment/Eval 配对另起一次 `exp --rerun all` Invocation；
+- `passed`、`errored`、`skipped`、中断和不完整 Invocation 都不重试，第二轮也不递归；
+- 两次 Invocation、receipt 与 Attempt 全部保留，并在 CI 日志标出 retry 后通过。
+
+这不是 Vitest / Playwright retry，也不能计入确定性 owner 的可靠性接管。
+验证 Sandbox reuse 等刻意运行多条 Attempt 的生命周期 owner 不使用这项容错。
+
+重试摘要保留第一次失败，不能只展示最终绿色；同一个断言第二次碰巧过仍需标记 flaky。
 Owner 接管运行完全禁用重试。普通 lane retry 后转绿也不能计入可靠性验收。
 
 候选注入失败要再分一层。runner 没把指定 tarball 注入进去，或 digest / 实际 executable 身份不一致，属于 harness failure。
