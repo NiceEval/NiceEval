@@ -1,8 +1,9 @@
 import { defineExperiment } from "niceeval";
-import { deterministicAgent } from "../agents/deterministic.ts";
+import { runnerAgent } from "../agents/live.ts";
 
 export default defineExperiment({
   description: "history identity deduplication",
-  agent: deterministicAgent,
+  agent: runnerAgent,
+  model: "gpt-5.6-luna",
   evals: ["suite/"],
 });

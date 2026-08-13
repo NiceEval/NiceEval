@@ -40,7 +40,7 @@ export default defineExperiment({
   sandbox: lifecycleSandbox,
   evals: ["interrupt"],
   attempts: 2,
-  maxConcurrency: 1,
+  maxConcurrency: 4,
   sandboxReuse: true,
   setup: async (ctx) => {
     const child = spawn(process.execPath, ["fixtures/backend.mjs", infoPath], {

@@ -138,7 +138,7 @@ jobs:
   release-e2e:
     name: release e2e (${{ matrix.id }})
     needs: prepare-release
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 150
     environment: release
     strategy:

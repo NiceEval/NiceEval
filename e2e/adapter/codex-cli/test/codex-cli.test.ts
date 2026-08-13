@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { expect, it } from "vitest";
 
 // baseline/configfile/mcp/skill 都在首个通过 attempt 后 early-exit；其余实验才跑完整计划。
-const EXPECTED_PASSED_ATTEMPTS = 11;
+const EXPECTED_PASSED_ATTEMPTS = 17;
 // 每个 Experiment 产生一个 Run（docs/feature/experiments/cli.md「结束反馈与 receipt」）；
 // 除 plugin-reuse 外每条 Eval 在首个通过 attempt 后由 earlyExit 省略剩余 attempt。
 const EXPECTED_EXPERIMENTS = 7;

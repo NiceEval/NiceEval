@@ -249,6 +249,7 @@ Docker cgroup 的 `cpu.max`、`memory.max`、`memory.swap.max` 与 `pids.max` �
 - 同一 checkout 的独立根 E2E invocation 可以并发启动；只有会触发共享 `prepare` 写入的 candidate `pnpm pack` 生命周期按 canonical checkout 的跨进程 lease 局部串行，计划、Testkit snapshot、隔离 Repo 与 run 阶段继续并发；
 - lease 位于 OS 临时控制目录而不进入待打包文件。正常退出、失败或取消都会释放；进程崩溃留下的 lease fail-closed 并报出精确人工删除路径，绝不靠超时或不安全删除让两个 pack 同时写入；
 - 无密钥 host Repo 可按 CPU 并行，每个 Repo 独立副本；
+- CI E2E matrix 使用 4 vCPU Blacksmith runner，场景的全局 attempt 并发统一为 4，使每个并发 attempt 对应一个 vCPU；
 - Repo 内保留 Vitest / Playwright 的默认文件级并行；短命控制文件、结果根、项目副本与资源名按 case 隔离；
 - 使用 Docker backend 的 Repo 按 runner CPU / memory 设置 `max-parallel`；
 - live provider 按 provider / account 建 concurrency group，避免同一配额互相制造 429；

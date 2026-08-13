@@ -23,6 +23,6 @@ Repo ID 是 `adapter/claude-code`；manifest 声明 `areas: ["adapter"]`、live 
 - `coding` Experiment 选中本仓库的 coding task 与 session-resume；验收脚本列全 Claude Code 协议 Eval ID。
 - `skill` Experiment 在同一个 agent 上安装三个 Skill：marker 与 checklist 分别验证目标 `loadedSkill` 和其它 Skill 未加载，`skill-unused` 验证不相关普通对话一个也不加载。
 - `repo-skill` 从 `CorrectRoadH/skills` 的固定 commit 安装 `calibre`，专用 Eval 核对安装位置、`skill.loaded` 与命令内容。
-- `plugin` 与 `plugin-reuse` 都从 Anthropic 官方 marketplace 安装 `context7`；前者证明远程 MCP 可调用，后者证明复用同一沙箱时两条 Attempt 仍都能调用正确工具。
+- `plugin` 与 `plugin-reuse` 都从 Anthropic 官方 marketplace 安装 `context7`；前者证明远程 MCP 可调用，后者以四路并发运行两波 Attempt，证明复用沙箱时仍都能调用正确工具。
 - `remote-plugin` 从 Anthropic 官方远程 marketplace 安装 `frontend-design`，专用 Eval 核对缓存文件与带 Plugin 命名空间的 `skill.loaded`。
 - owner test 只从 `exp --json` 收据核对预期 Experiment / Eval 完整发现、每条 Attempt 全部通过与 JUnit 无错误；Skill、MCP、Plugin 和配置的具体行为只在各自专用 Eval 中断言，不重复匹配 `show` 的展示文本。

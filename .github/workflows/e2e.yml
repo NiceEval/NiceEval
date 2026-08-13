@@ -46,7 +46,7 @@ concurrency:
 jobs:
   prepare:
     name: prepare e2e
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 30
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
@@ -217,7 +217,7 @@ jobs:
     name: e2e (${{ matrix.id }})
     needs: prepare
     if: needs.prepare.outputs.has-jobs == 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 150
     # 同仓可信 PR 不挂 Environment；push / schedule / dispatch 的可信 lane
     # 才挂同名 Environment。两者都只注入 manifest 声明的仓库级 secret。
@@ -419,7 +419,7 @@ jobs:
     name: e2e gate
     needs: [prepare, e2e]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - name: Require the complete selected matrix
         env:

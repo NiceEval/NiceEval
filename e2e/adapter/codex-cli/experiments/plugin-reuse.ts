@@ -1,6 +1,6 @@
 // Plugin 安装收敛 × Sandbox 复用(docs/engineering/testing/e2e/adapter/codex-cli.md 的
-// Plugins 行)。一个沙箱依次承接两条 attempt:workdir 回到题间重置点,$HOME 带着上一条
-// attempt 的 marketplace 注册与插件安装进场,agent setup 每条 attempt 重跑一次。
+// Plugins 行)。四个沙箱并发承接八条 attempt；第二波复用第一波的沙箱，workdir 回到
+// 题间重置点，$HOME 带着上一条 attempt 的 marketplace 注册与插件安装进场。
 //
 // 残留由 preTeardown 种下:本条 attempt 的证据收完之后,把同名 marketplace 改注册成同一个
 // 仓库的浮动 ref。codex 把「同名、来源字符串不同」的 add 直接判错
@@ -49,9 +49,9 @@ export default defineExperiment({
   model: "gpt-5.6-luna",
   sandbox,
   evals: ["plugin-hook"],
-  attempts: 2,
+  attempts: 8,
   sandboxReuse: true,
-  // 两条 attempt 必须落在同一个沙箱上,残留才成立(复用契约:maxConcurrency > 1 时不保证谁与谁共用)。
-  maxConcurrency: 1,
+  // 并发宽度与 CI runner 的 4 vCPU 对齐；八条 attempt 保证每个并发槽都有复用波次。
+  maxConcurrency: 4,
   budget: 4,
 });

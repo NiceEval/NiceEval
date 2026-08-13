@@ -100,7 +100,7 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
 
     const currentEvidence = await niceeval.run(["show", newLocator, "--execution"]);
     expect(currentEvidence.exitCode, currentEvidence.diagnostic()).toBe(0);
-    expect(currentEvidence.stdout).toContain("runner-fixture-ok");
+    expect(currentEvidence.stdout).toContain("runner-live-ok");
 
     // An accepted action explains this Run's membership; it is deliberately
     // not a future eligibility grant for the immutable source Attempt.
