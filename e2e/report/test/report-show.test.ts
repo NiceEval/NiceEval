@@ -33,7 +33,7 @@ test("exp classic → show text and public niceeval.show JSON", async () => {
       expect(event.locator.startsWith("@")).toBe(true);
     }
 
-    const shown = await niceeval.run(["show", "--report", "./reports/classic.tsx"], {
+    const shown = await niceeval.run(["show"], {
       env: PINNED_ENV,
     });
     expect(shown.exitCode, shown.diagnostic()).toBe(0);

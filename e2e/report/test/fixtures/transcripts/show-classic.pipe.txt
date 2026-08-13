@@ -112,5 +112,5 @@ classic/baseline         —       classic-{{duration}}33.3%   100 tokens
 (2 more columns not shown)
 
 Other pages:
-  attempts   Attempts   niceeval show --report ./reports/classic.tsx --page attempts
-  traces     Traces     niceeval show --report ./reports/classic.tsx --page traces
+  attempts   Attempts   niceeval show --page attempts
+  traces     Traces     niceeval show --page traces

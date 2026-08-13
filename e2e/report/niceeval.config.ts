@@ -1,4 +1,5 @@
 import { defineConfig } from "niceeval";
+import classicReport from "./reports/classic.tsx";
 
 // results only asserts mechanism (disk format, openRecord() parity, --json
 // parity, --junit folding) — no judge config needed (docs/engineering/testing/e2e/README.md §7).
@@ -7,6 +8,7 @@ import { defineConfig } from "niceeval";
 // estimatedCostUSD assertions in scripts/verify-format.ts don't depend on niceeval's vendored
 // price snapshot (src/o11y/prices.json) having an entry for this proxy-only model id.
 export default defineConfig({
+  report: classicReport,
   name: { en: "results E2E", "zh-CN": "results E2E" },
   timeoutMs: 60_000,
   pricing: {
