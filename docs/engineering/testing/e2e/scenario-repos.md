@@ -205,7 +205,7 @@ capture 中的 groupCleanup 写入这次探测、所发信号与确认终态。�
 
 隔离是可靠性的必要条件，但不等于可靠性已经成立。
 新增、接管或实质修改 owner 时，使用根 `takeover` 入口固定 candidate、checkout、Testkit 与 source snapshot。
-确定性 owner 还要在三个全新副本、同一已安装副本连续两次、所属 Repo 默认并行和文件 / 标题单项运行中全部通过。
+确定性 owner 还要在三个彼此隔离的副本、同一已安装副本连续两次、所属 Repo 默认并行和文件 / 标题单项运行中全部通过。
 
 takeover summary 写入 source snapshot 的相对路径、字节数、SHA-256 清单和总 digest。
 每份 receipt 绑定该 digest；矩阵核验六个观察标签、copy ID、attempt、唯一 invocation ID 与 cleanup 终态。
