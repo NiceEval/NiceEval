@@ -1,10 +1,12 @@
 node_modules/
+.e2e-artifacts/
 .niceeval/
 site-export/
+test-results/
+playwright-report/
 main.ndjson
 main.xml
 fail.xml
 error.xml
 logs/
 *.log
-.env

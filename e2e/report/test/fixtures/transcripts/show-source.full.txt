@@ -1,0 +1,27 @@
+{{locator:classic/baseline:source-snapshot}} · source-snapshot · classic/baseline · passed
+
+evals/source-snapshot.eval.ts
+1   import { defineEval } from "niceeval";
+2   import { equals } from "niceeval/expect";
+3   import { checkImportedSnapshot } from "./source-snapshot/assertions.ts";
+4   
+5   const ENTRY_SNAPSHOT = "ENTRY_SNAPSHOT_BEFORE";
+6   
+7   export default defineEval({
+8     description: "source-snapshot: entry and imported assertion must freeze at… (+10 more chars)
+9   
+10    async test(t) {
+11✓     t.check(ENTRY_SNAPSHOT, equals(ENTRY_SNAPSHOT));
+12      checkImportedSnapshot(t);
+  ↳ evals/source-snapshot/assertions.ts · 1 checks · 1 ✓ · 0 ✗
+  │ evals/source-snapshot/assertions.ts
+  │ ... 7 lines
+  │ 8   export function checkImportedSnapshot(t: TestContext): void {
+  │ 9     const snapshot = "IMPORTED_ASSERTION_SNAPSHOT_BEFORE";
+  │ 10✓   t.check(snapshot, equals(snapshot));
+  │ 11  }
+13    },
+14  });
+
+2 checks · 2 passed · 0 failed
+full eval source: .niceeval/classic_baseline/{{timestamp}}/source-snapshot/a0/sources.json

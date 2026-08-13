@@ -5,14 +5,14 @@
     "pnpm",
     "e2e"
   ],
-  "timeoutMinutes": 10,
-  "secrets": [
-    "OPENAI_API_KEY",
-    "OPENAI_BASE_URL",
-    "NICEEVAL_JUDGE_KEY",
-    "NICEEVAL_JUDGE_BASE"
-  ],
+  "timeoutMinutes": 15,
+  "harness": {
+    "testkit": true
+  },
+  "secrets": [],
   "artifacts": [
+    ".e2e-artifacts/**",
+    "test-results/**",
     ".niceeval/**",
     "site-export/**",
     "main.xml",

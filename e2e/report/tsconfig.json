@@ -3,7 +3,7 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "lib": ["ES2023"],
+    "lib": ["ES2023", "DOM"],
     "types": ["node"],
     "strict": true,
     "esModuleInterop": true,
@@ -13,5 +13,15 @@
     "noEmit": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["niceeval.config.ts", "agents", "evals", "experiments", "scripts", "reports"]
+  "include": [
+    "niceeval.config.ts",
+    "agents",
+    "evals",
+    "experiments",
+    "scripts",
+    "reports",
+    "test",
+    "vitest.config.ts",
+    "playwright.config.ts"
+  ]
 }
