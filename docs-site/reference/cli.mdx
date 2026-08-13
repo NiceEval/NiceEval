@@ -31,17 +31,7 @@ The [NiceEval](https://niceeval.com/) CLI discovers, runs, and reviews evals. Ru
 
 ## Output language
 
-NiceEval localizes its CLI and runtime copy. Set a stable language in `niceeval.config.ts`, which is especially useful for CI logs:
-
-```ts
-import { defineConfig } from "niceeval";
-
-export default defineConfig({
-  locale: "en",
-});
-```
-
-When `locale` is absent, NiceEval checks `LC_ALL`, `LC_MESSAGES`, and then `LANG`. A value beginning with `zh` selects `zh-CN`; every other value selects `en`; no value defaults to `zh-CN`. This changes terminal and runtime copy only. It does not change machine fields in results JSON or translate LLM Judge prompts.
+CLI and runtime copy is English. That affects terminal and runtime text only. It does not change machine fields in results JSON or translate LLM Judge prompts. The browser `niceeval view` has its own English and Chinese switch.
 
 ## `npx niceeval exp [path|config] [id-prefix...]`
 
@@ -215,9 +205,9 @@ The command completes the needed Projection and Report execution while it holds 
 
 ## Environment variables hold credentials only
 
-Attempt count, timeout, concurrency, budget, Judge model and endpoint, and interface language are configuration. NiceEval reads them only from CLI flags, files under `experiments/`, and `niceeval.config.ts`, in that precedence order. They do not have an environment-variable route.
+Attempt count, timeout, concurrency, budget, and Judge model and endpoint are configuration. NiceEval reads them only from CLI flags, files under `experiments/`, and `niceeval.config.ts`, in that precedence order. They do not have an environment-variable route.
 
-Use environment variables for credentials, such as API keys and provider tokens, and terminal behavior such as `NO_COLOR` and the system locale. Each Agent, Sandbox, or Judge reads only its named variable. NiceEval loads `.env` from the current working directory without overriding an already present environment variable. See [Configuration and Environment Variables](/tutorials/configuration) for the full list.
+Use environment variables for credentials, such as API keys and provider tokens, and terminal behavior such as `NO_COLOR`. Each Agent, Sandbox, or Judge reads only its named variable. NiceEval loads `.env` from the current working directory without overriding an already present environment variable. See [Configuration and Environment Variables](/tutorials/configuration) for the full list.
 
 ## Exit codes
 

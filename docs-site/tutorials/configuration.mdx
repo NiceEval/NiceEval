@@ -1,15 +1,15 @@
 ---
 title: "Put configuration and secrets where they belong"
 sidebarTitle: "Config & environment"
-description: "Which layer of code holds attempts, timeout, concurrency, judge, and locale — and which environment variables carry API keys and provider tokens."
+description: "Which layer of code holds attempts, timeout, concurrency, and judge — and which environment variables carry API keys and provider tokens."
 ---
 
 Values in [NiceEval](https://niceeval.com/) have exactly two homes:
 
-- **Configuration lives in code** — CLI flags, experiment files under `experiments/`, and `niceeval.config.ts` at the root. How many attempts, how long before timeout, how much concurrency, which judge model, which report to show by default, which interface language: all of it lives here, with no environment variable counterpart.
-- **Secrets live in environment variables** — API keys and provider tokens, plus facts like `NO_COLOR` and the system language that describe *which terminal you are printing to*.
+- **Configuration lives in code** — CLI flags, experiment files under `experiments/`, and `niceeval.config.ts` at the root. How many attempts, how long before timeout, how much concurrency, which judge model, which report to show by default: all of it lives here, with no environment variable counterpart.
+- **Secrets live in environment variables** — API keys and provider tokens, plus facts like `NO_COLOR` that describe *which terminal you are printing to*.
 
-So every value has exactly one source. What `niceeval exp --dry` prints is what actually takes effect; no environment variable is quietly changing it behind your back.
+So every value has exactly one source. What `niceeval exp --dry` prints is what actually takes effect; no environment variable is quietly changing it behind your back. CLI and runtime copy is English; the browser view has its own English and Chinese switch.
 
 ## Configuration: pick the layer by how long the value should last
 
@@ -45,7 +45,6 @@ export default defineExperiment({
 import { defineConfig } from "niceeval";
 
 export default defineConfig({
-  locale: "en",
   judge: { model: "gpt-5.4-mini" },
   maxConcurrency: 4,
   timeoutMs: 300_000,
@@ -57,7 +56,6 @@ export default defineConfig({
 | Field | What it does |
 | --- | --- |
 | `name` | Project name shown at the top of `niceeval view`; can be given per language |
-| `locale` | Language of CLI and runtime copy (`"en"` / `"zh-CN"`). Use it to keep CI logs in one language |
 | `report` | Default report definition, loaded by a bare `show` / `view` (see [custom reports](/tutorials/custom-reports#set-it-as-the-project-default)) |
 | `judge` | Default judge configuration: `model`, `baseUrl`, `apiKeyEnv` |
 | `workspace` | Workspace root uploaded into the sandbox |
@@ -87,7 +85,6 @@ These are all the environment variables NiceEval reads. Each agent, sandbox, and
 | `VERCEL_TEAM_ID` | `vercelSandbox()` | |
 | `VERCEL_PROJECT_ID` | `vercelSandbox()` | |
 | `NO_COLOR` | CLI output | When set, no colors and no box drawing |
-| `LC_ALL` / `LC_MESSAGES` / `LANG` | CLI copy | System language, which decides the default interface language; `config.locale` wins |
 
 To keep the judge's key under a different variable name, point at it from the config:
 
@@ -139,7 +136,6 @@ NICEEVAL_JUDGE_KEY=sk-...
 | `NICEEVAL_TIMEOUT` | `--timeout`, or `timeoutMs` on an experiment / config |
 | `NICEEVAL_BUDGET` | `--budget`, or `budget` on an experiment |
 | `NICEEVAL_MAX_CONCURRENCY` | `--max-concurrency`, or `maxConcurrency` in config |
-| `NICEEVAL_LANG` / `NICEEVAL_LOCALE` | `locale` in config |
 | `NICEEVAL_JUDGE_MODEL` | `judge.model` in config or on an eval |
 | `NICEEVAL_JUDGE_BASE` | `judge.baseUrl` in config or on an eval |
 | `NICEEVAL_OTLP_HOST` / `NICEEVAL_OTLP_PORT` | `telemetry: { host, port }` in config |
@@ -159,6 +155,6 @@ The judge also no longer borrows a key from `CODEX_API_KEY` / `OPENAI_API_KEY` o
     Which values belong to one concrete run.
   </Card>
   <Card title="CI integration" icon="circle-play" href="/tutorials/ci-integration">
-    Passing secrets and pinning log language in CI.
+    Passing secrets in CI.
   </Card>
 </CardGroup>

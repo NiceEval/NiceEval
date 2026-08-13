@@ -1,5 +1,3 @@
-import type { Messages } from "./zh-CN.ts";
-
 export const en = {
   "agent.installFailed": "Install failed: {{key}}\n{{tail}}",
   "agent.unknown": "Unknown agent \"{{name}}\". Registered agents: {{known}}.",
@@ -46,6 +44,8 @@ export const en = {
   "bub.checkpointRestoreFailed": "bub checkpoint restore failed, falling back to a full install: {{error}}",
   "bub.installFailed": "bub install failed after {{attempts}} attempts:\n{{tail}}",
   "bub.setupNotRun": "bub adapter setup() has not run in this sandbox (missing home/workspace info). The runner must call setup before send.",
+  "e2b.listNextItemsNotArray":
+    "e2b Sandbox.list() paginator nextItems() returned a non-array ({{type}}), not the SandboxInfo[] promised by the SDK type contract",
   "checkpoint.emptyTar": "checkpoint: tar is empty (paths: {{paths}})",
   "checkpoint.archiveFailed": "checkpoint archive failed (exit {{exitCode}}): {{detail}}",
   "checkpoint.restoreFailed": "checkpoint restore failed (exit {{exitCode}}): {{detail}}",
@@ -275,6 +275,7 @@ export const en = {
   "cli.eval.noMatchHintExperiment": "Hint: \"{{pattern}}\" is an experiment{{kind}}; you probably meant: niceeval exp {{pattern}}\n",
   "cli.eval.noMatchKnown": "Discovered {{count}} evals: {{evals}}\n",
   "cli.exp.agentModelFlagUnsupported": "experiment runs do not support --agent / --model. Add or copy an experiment file and change its model instead.\n",
+  "cli.exp.forceUnsupported": "experiment runs do not support --force; use --rerun all.\n",
   "cli.exp.viewerFlagUnsupported": "`{{flag}}` only applies to niceeval {{command}}, not niceeval exp.\n",
   "cli.exp.teardownNoEvalPatterns":
     "--teardown selects experiments only; it does not run any eval, so eval id patterns are not allowed with it. Use `niceeval exp <experiment path> --teardown`.\n",
@@ -521,6 +522,8 @@ export const en = {
     "fix: make /tmp writable for the run user (`chmod 1777 /tmp` in the image, or pick an image/user that does not mount /tmp read-only), then rerun — finished attempts carry over.",
   "assertions.evaluationError": "assertion evaluation error: {{error}}",
   "assertions.scoreInvalid": "t.score({{label}}, {{n}}) is invalid; points must be a non-negative finite number (n >= 0).",
+  "session.rerunOriginal": "rerun the original command",
+  "session.nextRerunOriginal": "NEXT rerun the original command",
   "session.fileFallback": "[file]",
   "session.tools": "{{count}} tools",
   "session.turn.primary": "turn {{turn}}",
@@ -534,4 +537,7 @@ export const en = {
   "vercel.rotated": "[VercelSandbox] session rotated after {{seconds}}s -> {{sessionId}}",
   "vercel.userUnsupported":
     'the Vercel Sandbox provider only supports { user: "root" } (mapped to sudo: true) at the command level, got { user: "{{user}}" }. Use a container provider (docker / e2b) for other identities.',
-} satisfies Messages;
+} as const;
+
+export type MessageKey = keyof typeof en;
+export type Messages = globalThis.Record<MessageKey, string>;

@@ -41,6 +41,7 @@
 - niceeval 是 beta。API、CLI 与契约按理想形态设计，不以兼容旧习惯为默认约束。
 - `docs/` 是已定稿的目标契约，不是当前代码说明书。代码尚未实现目标时，修代码或记录实现任务，不把文档降格成当前实现。
 - 保持 core 中立。具体边界以 [`docs/architecture.md`](docs/architecture.md) 为准。
+- CLI 与 Node runtime 保留 `t(key, vars)` 与 message keys，当前只提供英语 catalog。不要加回 CLI 中文 catalog、`Config.locale`、系统 locale 探测，或 CLI 为读 locale 而预加载配置。浏览器 `view` 保留中英 catalog 与语言切换，不要删、不要和 CLI catalog 混用。
 - 公共 API、可观察行为或文档变更时，沿对应目录入口完成同步与验证；测试命令以 `package.json` 和局部入口文档为准。
 - `src/report/**` 是仓库里唯一的预编译运行时面。修改后，在用 CLI 或 workspace/link 下游验收前先运行 `pnpm run build:report`；下游已经开着 `niceeval view` 时还要重启进程。`view` 不监听或代编译 `niceeval` 依赖自身；pnpm 的 `Already up to date` 只表示依赖安装状态，不表示 `dist/report/**` 已与源码同步。
 - 代码验证放进 `src/**/*.test.ts(x)` 或 `test/unit/`，统一复用 `pnpm test`。文档与文档站规则分别放进 `lint/docs/**/*.lint.ts`、`lint/docs-site/**/*.lint.ts`，统一复用 `pnpm lint`；不把文档 lint 命名成测试。pre-push 只调用这个统一 lint 入口，不维护第二份检查清单。

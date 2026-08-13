@@ -7,7 +7,7 @@ niceeval 不需要专门的 CI 档——日志页给人看,默认的人读文本
 
 ## 全流程
 
-1. 门禁命令钉报告路径；日志语言在 `niceeval.config.ts` 里用 `locale: "en"` 锁定,不在命令行传 env 变量:
+1. 门禁命令钉报告路径:
 
    ```sh
    niceeval exp ci --junit ./niceeval-junit.xml

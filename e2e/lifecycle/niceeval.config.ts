@@ -1,3 +1,3 @@
 import { defineConfig } from "niceeval";
 
-export default defineConfig({ locale: "en", timeoutMs: 120_000, maxConcurrency: 4 });
+export default defineConfig({ timeoutMs: 120_000, maxConcurrency: 4 });

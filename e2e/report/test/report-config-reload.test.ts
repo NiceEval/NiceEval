@@ -13,8 +13,8 @@ function withLiveViewConfig(config: string): string {
     'import { defineConfig } from "niceeval";\nimport report from "./reports/config-reload.ts";\nimport alternateReport from "./reports/config-reload-alternate.ts";\nimport theme from "./themes/config-reload.ts";',
   );
   if (imported === config) throw new Error("report fixture config no longer has its defineConfig import");
-  const configured = imported.replace('  locale: "en",', '  locale: "en",\n  report,\n  theme,');
-  if (configured === imported) throw new Error("report fixture config no longer has its locale field");
+  const configured = imported.replace("  timeoutMs: 60_000,", "  report,\n  theme,\n  timeoutMs: 60_000,");
+  if (configured === imported) throw new Error("report fixture config no longer has its timeoutMs field");
   return configured;
 }
 

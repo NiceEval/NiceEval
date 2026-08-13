@@ -7,6 +7,7 @@
 
 import { Sandbox as E2BSdkSandbox, CommandExitError, NotFoundError, RateLimitError } from "e2b";
 import { randomUUID } from "node:crypto";
+import { t } from "../i18n/index.ts";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type {
@@ -333,9 +334,7 @@ async function fetchNextItemsWithRetry(
     try {
       const items = await paginator.nextItems();
       if (!Array.isArray(items)) {
-        throw new Error(
-          `e2b Sandbox.list() 分页器 nextItems() 返回了非数组(${typeof items}),不是 SDK 类型契约里的 SandboxInfo[]`,
-        );
+        throw new Error(t("e2b.listNextItemsNotArray", { type: typeof items }));
       }
       return items;
     } catch (e) {

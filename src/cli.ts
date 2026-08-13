@@ -12,7 +12,6 @@ import { hostname } from "node:os";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve as resolvePath } from "node:path";
-import { pathToFileURL } from "node:url";
 import { parseArgs as nodeParseArgs } from "node:util";
 import { Data, Effect, Either, Schema } from "effect";
 import { discoverEvals, discoverExperiments } from "./runner/discover.ts";
@@ -127,8 +126,7 @@ import {
   renderHumanCommandPlan,
   computeExitCode,
 } from "./runner/feedback/index.ts";
-import { setConfiguredLocale, t } from "./i18n/index.ts";
-import type { MessageKey } from "./i18n/zh-CN.ts";
+import { t, type MessageKey } from "./i18n/index.ts";
 import { formatThrown, upsertManagedBlock } from "./util.ts";
 import {
   SessionTracker,
@@ -1210,22 +1208,6 @@ function loadDotenv(cwd: string): Effect.Effect<void, CliFailure> {
   );
 }
 
-/**
- * 界面语言只从 `defineConfig({ locale })` 来,所以每条命令(含不依赖 config 的 show / view)
- * 都要在派发前看一眼配置。这里刻意宽容:没有配置文件、或配置本身有错时静默回到系统 locale
- * 判定——语言是装饰性设置,不该让 `niceeval show` 因为一个坏 config 打不开结果;真正需要
- * config 的命令随后走 loadConfig,由它报出完整错误(模块缓存让这次装载不重复付出代价)。
- */
-function applyConfiguredLocale(cwd: string): Effect.Effect<void> {
-  const path = join(cwd, "niceeval.config.ts");
-  if (!existsSync(path)) return Effect.void;
-  return cliPromise("load configured locale", () => import(pathToFileURL(path).href)).pipe(
-    Effect.tap((mod) => Effect.sync(() => setConfiguredLocale((mod as { default?: Config }).default?.locale))),
-    // 交给后续 loadConfig 报错;这里不抢在语言还没定下来时打印任何东西。
-    Effect.catchAll(() => Effect.void),
-  );
-}
-
 function loadConfig(cwd: string): Effect.Effect<Config, CliFailure> {
   return Effect.gen(function* () {
     const { loadConfigFile } = (yield* cliPromise("load config module", () => import("./load-config.ts"))) as {
@@ -1602,7 +1584,7 @@ function runEvaluationCommand(
         return 1;
       }
       if (flags.force) {
-        yield* writeStderr("experiment 运行不支持 --force；请使用 --rerun all。\n");
+        yield* writeStderr(t("cli.exp.forceUnsupported"));
         return 1;
       }
       const viewerFlag = firstViewerOnlyFlag(flags);
@@ -2741,7 +2723,6 @@ export const cliProgram = (interruption?: CliInterruptionOwnership) => Effect.ge
   // Session / Docker profile queries must remain config-free read paths.
   if (command !== "session" && command !== "docker") {
     yield* loadDotenv(cwd);
-    yield* applyConfiguredLocale(cwd);
   }
 
   if (flags.help) {
