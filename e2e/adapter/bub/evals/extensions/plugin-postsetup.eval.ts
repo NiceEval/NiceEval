@@ -2,7 +2,9 @@ import { defineEval } from "niceeval";
 import {
   commandSucceeded,
   includes,
+  jsonMatch,
   satisfies,
+  toolMatch,
 } from "niceeval/expect";
 import { REPLY_DIRECTIVE, SKIP_BUILD_NOTE } from "../shared.ts";
 const POSTSETUP_ORDER_LOG = "/tmp/niceeval-bub-postsetup-order.log";
@@ -30,10 +32,12 @@ export default defineEval({
     await turn.succeeded().orStop();
     // Bub 会在工具完成后自动追问“继续任务”；模型可能不再逐字复述 stdout。协议证据应落在
     // 同一笔已完成的工具调用及其结果上，不能把最终措辞当成 pythonPlugins 契约。
-    turn.calledTool("shell", {
-      input: /cowsay\.get_output_string/,
-      status: "completed",
-    });
+    turn.calledTool(
+      toolMatch("shell", {
+        input: jsonMatch(/cowsay\.get_output_string/),
+        status: "completed",
+      }),
+    );
     t.check(
       turn.events,
       satisfies<typeof turn.events>(

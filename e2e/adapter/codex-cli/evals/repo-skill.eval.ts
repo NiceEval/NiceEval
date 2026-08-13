@@ -1,5 +1,5 @@
 import { defineEval } from "niceeval";
-import { equals, includes, satisfies } from "niceeval/expect";
+import { equals, includes, satisfies, toolMatch } from "niceeval/expect";
 const SKILL_NAME = "calibre";
 const SKILL_PATH = `.agents/skills/${SKILL_NAME}/SKILL.md`;
 const DECOY_SKILL_PATH = ".agents/skills/niceeval-decoy/SKILL.md";
@@ -20,30 +20,39 @@ export default defineEval({
         "novel.epub to novel.azw3. Do not run the conversion or create files.",
     );
     await turn.succeeded().orStop();
-    turn.calledTool("shell", {
-      input: (input) =>
-        typeof input === "object" &&
-        input !== null &&
-        !Array.isArray(input) &&
-        (typeof (input as Record<string, unknown>)["command"] === "string"
-          ? new RegExp(SKILL_PATH).test(
-              (input as Record<string, unknown>)["command"] as string,
-            )
-          : new RegExp(SKILL_PATH).test(JSON.stringify(input) ?? "")),
-      status: "completed",
-    });
-    turn.calledTool("shell", {
-      input: (input) =>
-        typeof input === "object" &&
-        input !== null &&
-        !Array.isArray(input) &&
-        (typeof (input as Record<string, unknown>)["command"] === "string"
-          ? new RegExp(DECOY_SKILL_PATH).test(
-              (input as Record<string, unknown>)["command"] as string,
-            )
-          : new RegExp(DECOY_SKILL_PATH).test(JSON.stringify(input) ?? "")),
-      count: 0,
-    });
+    turn.calledTool(
+      toolMatch("shell", {
+        input: satisfies(
+          "shell 入参引用 calibre SKILL_PATH",
+          (input) =>
+            typeof input === "object" &&
+            input !== null &&
+            !Array.isArray(input) &&
+            (typeof (input as Record<string, unknown>)["command"] === "string"
+              ? new RegExp(SKILL_PATH).test(
+                  (input as Record<string, unknown>)["command"] as string,
+                )
+              : new RegExp(SKILL_PATH).test(JSON.stringify(input) ?? "")),
+        ),
+        status: "completed",
+      }),
+    );
+    turn.notCalledTool(
+      toolMatch("shell", {
+        input: satisfies(
+          "shell 入参未引用 decoy SKILL_PATH",
+          (input) =>
+            typeof input === "object" &&
+            input !== null &&
+            !Array.isArray(input) &&
+            (typeof (input as Record<string, unknown>)["command"] === "string"
+              ? new RegExp(DECOY_SKILL_PATH).test(
+                  (input as Record<string, unknown>)["command"] as string,
+                )
+              : new RegExp(DECOY_SKILL_PATH).test(JSON.stringify(input) ?? "")),
+        ),
+      }),
+    );
     t.check(
       turn.events,
       satisfies<typeof turn.events>("no skill.loaded event", (events) =>

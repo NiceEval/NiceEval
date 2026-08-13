@@ -15,6 +15,6 @@ export default defineEval({
         "If you cannot search the web, say so explicitly instead of guessing.",
     );
     await turn.succeeded().orStop();
-    t.calledTool("web_search", { count: 0 });
+    t.notCalledTool("web_search");
   },
 });

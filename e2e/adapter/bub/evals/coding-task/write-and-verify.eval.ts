@@ -1,5 +1,5 @@
 import { defineEval } from "niceeval";
-import { pattern, satisfies } from "niceeval/expect";
+import { jsonMatch, pattern, satisfies, toolMatch } from "niceeval/expect";
 
 import { REPLY_DIRECTIVE, SKIP_BUILD_NOTE } from "../shared.ts";
 
@@ -20,9 +20,11 @@ export default defineEval({
     await turn.succeeded().orStop();
 
     await t.group("写入 notes.txt,再串行 shell 读回来验证", () => {
-      t.calledTool("file_write", {
-        input: { path: /notes\.txt/ },
-      });
+      t.calledTool(
+        toolMatch("file_write", {
+          input: jsonMatch({ path: /notes\.txt/ }),
+        }),
+      );
       t.calledTool("shell");
       t.check(
         turn.toolCalls,

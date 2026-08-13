@@ -392,6 +392,15 @@ body?: (ctx: AgentContext) => globalThis.Record<string, JsonValue | undefined>;
 
 除 `messages` 外并入请求体的字段,如 `(ctx) => ({ model: ctx.model })`(undefined 字段序列化时自动丢弃)。
 
+#### `projectToolCommand`
+
+```ts
+projectToolCommand?: (tool: Readonly<{ name: string; input: JsonValue }>) => CommandProjection | undefined;
+```
+
+由 endpoint owner 逐笔把逻辑工具调用分类为 command 或 not-command。
+未知调用返回 undefined 并保持 actions coverage partial；NiceEval 不按名称或 input 猜测。
+
 #### `denyReason`
 
 ```ts

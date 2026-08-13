@@ -42,23 +42,6 @@ async function requireDocker(): Promise<void> {
   }
 }
 
-async function attemptLines(evalId: string): Promise<string[]> {
-  const history = await niceeval.run(["show", evalId, "--history"]);
-  expect(history.exitCode, history.diagnostic()).toBe(0);
-  return history.stdout.split("\n").filter((line) => line.includes("@"));
-}
-
-async function latestAttemptLocator(evalId: string): Promise<string> {
-  const lines = await attemptLines(evalId);
-  expect(lines.length, `${evalId} has no public attempt in show --history`).toBeGreaterThan(0);
-
-  const latest = lines.at(-1)!;
-  expect(latest, `${evalId} latest attempt is not passed: ${latest}`).toContain("passed");
-  const locator = latest.match(/@\S+/)?.[0];
-  expect(locator, `${evalId} history line has no public locator: ${latest}`).toBeDefined();
-  return locator!;
-}
-
 it("真实 Codex CLI adapter 在 Docker sandbox 中的运行结果经过公开 CLI 读回", async () => {
   requireLiveSecrets();
   await requireDocker();
@@ -92,7 +75,13 @@ it("真实 Codex CLI adapter 在 Docker sandbox 中的运行结果经过公开 C
   expect(totalPassed, run.diagnostic()).toBe(EXPECTED_PASSED_ATTEMPTS);
   expect(evalEvents.filter((event) => event.verdict !== "passed"), run.diagnostic()).toHaveLength(0);
 
-  const codingTaskLocator = await latestAttemptLocator("coding-task");
+  const locatorFor = (evalId: string): string => {
+    const event = evalEvents.find((candidate) => candidate.evalId === evalId);
+    expect(event, run.diagnostic()).toMatchObject({ verdict: "passed" });
+    expect(event?.locator, run.diagnostic()).toMatch(/^@/);
+    return event!.locator!;
+  };
+  const codingTaskLocator = locatorFor("coding-task");
 
   // outcome：execution 是适配器收到的公开投影。TOOL 卡片头是原始未归一化名
   //（command_execution / file_change），canonical 名 shell / file_edit 也可能出现；
@@ -114,7 +103,7 @@ it("真实 Codex CLI adapter 在 Docker sandbox 中的运行结果经过公开 C
   expect(timing.stdout).toMatch(/turn\s+turn1\b/);
 
   // MCP 反例也要穿透到 CLI 读回：stdio 与远程 HTTP 调用存在，未挂载的 weather 不出现。
-  const mcpLocator = await latestAttemptLocator("mcp");
+  const mcpLocator = locatorFor("mcp");
   const mcpExecution = await niceeval.run(["show", mcpLocator, "--execution"]);
   expect(mcpExecution.exitCode, mcpExecution.diagnostic()).toBe(0);
   expect(

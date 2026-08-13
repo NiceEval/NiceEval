@@ -48,28 +48,6 @@ async function requireDocker(): Promise<void> {
   }
 }
 
-async function attemptLines(evalId: string, experimentId?: string): Promise<string[]> {
-  const history = await niceeval.run([
-    "show",
-    evalId,
-    ...(experimentId === undefined ? [] : ["--exp", experimentId]),
-    "--history",
-  ]);
-  expect(history.exitCode, history.diagnostic()).toBe(0);
-  return history.stdout.split("\n").filter((line) => line.includes("@"));
-}
-
-async function latestAttemptLocator(evalId: string, experimentId?: string): Promise<string> {
-  const lines = await attemptLines(evalId, experimentId);
-  expect(lines.length, `${evalId} has no public attempt in show --history`).toBeGreaterThan(0);
-
-  const latest = lines.at(-1)!;
-  expect(latest, `${evalId} latest attempt is not passed: ${latest}`).toContain("passed");
-  const locator = latest.match(/@\S+/)?.[0];
-  expect(locator, `${evalId} history line has no public locator: ${latest}`).toBeDefined();
-  return locator!;
-}
-
 /** `show --execution` 的 TOOL 卡把每笔调用的 input 作为独立块公开展示。 */
 function toolInputOccurrences(execution: string, marker: string): number {
   const lines = execution.split("\n");
@@ -117,7 +95,10 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
 
   const locators: Record<string, string> = {};
   for (const evalId of BASELINE_EVALS) {
-    locators[evalId] = await latestAttemptLocator(evalId);
+    const event = evalEvents.find((candidate) => candidate.evalId === evalId);
+    expect(event, run.diagnostic()).toMatchObject({ verdict: "passed" });
+    expect(event?.locator, run.diagnostic()).toMatch(/^@/);
+    locators[evalId] = event!.locator!;
   }
 
   // outcome：execution 是适配器收到的公开投影。TOOL 卡片头是原始未归一化名

@@ -33,15 +33,14 @@ function requireLiveSecrets(): void {
   }
 }
 
-async function latestAttemptLocator(): Promise<string> {
-  const history = await niceeval.run(["show", EVAL_ID, "--history"]);
-  expect(history.exitCode, history.diagnostic()).toBe(0);
-  const latest = history.stdout.split("\n").filter((line) => line.includes("@")).at(-1);
-  expect(latest, `${EVAL_ID} has no public history row`).toBeDefined();
-  expect(latest).toContain("passed");
-  const locator = latest!.match(/@\S+/)?.[0];
-  expect(locator, `history row has no public locator: ${latest}`).toBeDefined();
-  return locator!;
+function latestAttemptLocator(): string {
+  const evalEvent = runReceipt.ndjson<ExpEvent>().find(
+    (event): event is ExpEvalEvent =>
+      "event" in event && event.event === "eval" && event.evalId === EVAL_ID,
+  );
+  expect(evalEvent, runReceipt.diagnostic()).toMatchObject({ verdict: "passed" });
+  expect(evalEvent?.locator, runReceipt.diagnostic()).toMatch(/^@/);
+  return evalEvent!.locator!;
 }
 
 beforeAll(async () => {
@@ -64,7 +63,7 @@ beforeAll(async () => {
   });
 
   expect(runReceipt.exitCode, runReceipt.diagnostic()).toBe(0);
-  locator = await latestAttemptLocator();
+  locator = latestAttemptLocator();
 }, 14 * 60_000);
 
 it("真实 aiSdkAgent 的 Eval 以通过 verdict 完成", () => {

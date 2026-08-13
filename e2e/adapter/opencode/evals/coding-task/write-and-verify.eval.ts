@@ -1,5 +1,5 @@
 import { defineEval } from "niceeval";
-import { includes, satisfies } from "niceeval/expect";
+import { includes, satisfies, toolMatch } from "niceeval/expect";
 
 const TOOL_PAYLOAD = "niceeval-opencode-tool-input-907";
 
@@ -15,18 +15,28 @@ export default defineEval({
     await turn.succeeded().orStop();
     await t.group("写入 notes.txt,再串行 shell 读回来", () => {
       // marker 同时必须在两个工具输入中出现，能杀死「只留工具名/路径、丢掉实际参数」的归一。
-      t.calledTool("file_write", {
-        input: (input) =>
-          typeof input === "string"
-            ? new RegExp(TOOL_PAYLOAD).test(input)
-            : new RegExp(TOOL_PAYLOAD).test(JSON.stringify(input) ?? ""),
-      });
-      t.calledTool("shell", {
-        input: (input) =>
-          typeof input === "string"
-            ? new RegExp(TOOL_PAYLOAD).test(input)
-            : new RegExp(TOOL_PAYLOAD).test(JSON.stringify(input) ?? ""),
-      });
+      t.calledTool(
+        toolMatch("file_write", {
+          input: satisfies(
+            "file_write 入参包含 TOOL_PAYLOAD",
+            (input) =>
+              typeof input === "string"
+                ? new RegExp(TOOL_PAYLOAD).test(input)
+                : new RegExp(TOOL_PAYLOAD).test(JSON.stringify(input) ?? ""),
+          ),
+        }),
+      );
+      t.calledTool(
+        toolMatch("shell", {
+          input: satisfies(
+            "shell 入参包含 TOOL_PAYLOAD",
+            (input) =>
+              typeof input === "string"
+                ? new RegExp(TOOL_PAYLOAD).test(input)
+                : new RegExp(TOOL_PAYLOAD).test(JSON.stringify(input) ?? ""),
+          ),
+        }),
+      );
       // 两个工具调用必须按 file_write → shell 的顺序出现,shell 读回才证明文件已写好。
       t.check(
         turn.events,

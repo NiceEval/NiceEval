@@ -4,7 +4,7 @@
 // 三者的 completed 状态本身就是 tool_use.id / tool_result.tool_use_id 配对成立的证据
 // (配对失败会体现为 status 卡在别的值,或事件流出现 failed 状态的 operation.finished)。
 import { defineEval } from "niceeval";
-import { includes, isTrue, satisfies } from "niceeval/expect";
+import { includes, isTrue, jsonMatch, satisfies, toolMatch } from "niceeval/expect";
 
 const MARKER_A = "niceeval-e2e-marker-alpha-926";
 const MARKER_B = "niceeval-e2e-marker-beta-926";
@@ -24,12 +24,14 @@ export default defineEval({
     t.succeeded();
 
     await t.group("file 与 shell 工具事件均已出现且状态为 completed", () => {
-      t.calledTool("file_write", { status: "completed" });
-      t.calledTool("file_edit", { status: "completed" });
-      t.calledTool("shell", {
-        input: { command: /notes\.txt/ },
-        status: "completed",
-      });
+      t.calledTool(toolMatch("file_write", { status: "completed" }));
+      t.calledTool(toolMatch("file_edit", { status: "completed" }));
+      t.calledTool(
+        toolMatch("shell", {
+          input: jsonMatch({ command: /notes\.txt/ }),
+          status: "completed",
+        }),
+      );
       t.check(
         t.events,
         satisfies<typeof t.events>(
