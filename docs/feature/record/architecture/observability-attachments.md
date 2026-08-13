@@ -203,6 +203,11 @@ capture-failed 与 capture-interrupted 只说明哪个稳定 capture stage 没�
 原始异常文字。unknown provider event、无法安全归一的输入与被上限拒收的新项分别使用
 unsupported-input、text-truncated 或 collection-cap-reached。
 
+timing bridge 遇到 raw epoch / OTLP、不可证的 owner-clock domain，或 owner / phase / label / ref 不匹配时，不形成
+interval。重复、冲突 span 同样拒绝。以上情况使用 `unsupported-input`、target `timing-interval` 合并 omitted count。
+timing collector 自身失败或中断才分别使用 `capture-failed` / `capture-interrupted` 与 stage `timing-capture`。
+这些原因不能互换。
+
 ### 可选跨 family reference
 
 cross-family ref 没有 owner id、RunId、path 或 blob ref。它只能在当前 Record owner 下指向一个
@@ -603,9 +608,17 @@ type RunTimingAttachmentV1 = {
 label 是 StableLabel。它描述同一 stable phase 内的中立细分，例如 turn 或 command，不含 provider
 名字、raw span 名、raw OTLP attribute 或 command text。outcome 为 unknown 时 collection 必须 partial。
 
-decoder 拒绝负数、非安全整数、重复 intervalId、缺失 parent 与 parent cycle。parent 只能指向当前
-owner 的 timing Attachment。parent 的开始不得晚于 child，且 child 结束不得晚于 parent 结束。
-它不从目录 mtime、终端文本、raw OTLP 或任意 epoch 猜测 interval。
+decoder 拒绝负数、非安全整数、`startOffsetMs + durationMs` 不是 safe integer、重复 intervalId、缺失 parent 与
+parent cycle。所有 end 比较都先执行 checked safe-integer addition。parent 只能指向当前 owner 的 timing Attachment。
+parent 的开始不得晚于 child，且 child 结束不得晚于 parent 结束。它不从目录 mtime、终端文本、raw OTLP 或任意
+epoch 猜测 interval。
+
+每个 owner 只有一个 owner-bound timing collector。coordinator 与 in-process OTel bridge 都向它提交 capture input。
+bridge 必须在事件发生时证明 exact owner 和同一枚 owner-monotonic clock capability，还要提供稳定 phase / label 与
+capture-time refs。
+
+bridge 不持有 writable definition，也不能从 exporter epoch 事后重建 offset。collector 负责合并输入，追加 partial
+limitation，并检查 identity / parent containment。owner finalizer 结束后，它一次 seal timing payload。
 
 ## diagnostics
 
@@ -735,8 +748,10 @@ line 与 column 都从 1 开始计数。
 
 ### 收集和冻结顺序
 
-1. Attempt collector 在实际工作期间收集五类 observation。
-2. Attempt 的全部 finalizer 停稳后，collector 停止接收新项并冻结五份 Attempt payload。
+1. Attempt collectors 在实际工作期间收集五类 observation；唯一 timing collector 接收 coordinator 与受限 OTel bridge
+   输入。
+2. Attempt 的全部 finalizer 停稳后，各 collector 停止接收新项并冻结五份 Attempt payload；timing 即使没有 interval
+   也冻结 complete-empty payload。
 3. Run teardown 停稳后，Run collector 停止接收新项并冻结 timing 与 diagnostics。
 4. ObservabilityRecordContractV1 联合验证所有冻结 payload。
 5. coordinator 把已验证的 typed Attachment write 交给 generic Record writer。
@@ -755,7 +770,7 @@ contract 必须在 generic writer 开始任何 official observability write 前�
 - entity identity、array order、每个 family 的上限和 local relation 合法；
 - command manifest 在对应 result 之前已登记，且 stdout/stderr closure 完整；
 - usage 没有 aggregate 或价格表字段；
-- timing parent tree 合法；
+- timing end 经过 checked safe-integer addition，且 parent tree 合法；
 - diagnostics 的 cause、context、redaction 与 SourceItem frame 合法；
 - 每个 direct cross-family ref 在同一 owner 下存在、唯一且 type 匹配。
 
@@ -834,9 +849,14 @@ RecordWriteError，不能被 contract 吞掉。
 每个 projector 只解释一份 available Attachment。它不选择 Run、读取另一份 family、重建 denominator、
 聚合或重新判定结果。commands projector 唯一负责把 inline/blob storage 统一为相同的 text view。
 
-计数、observed／denominator、command success、duration、critical path、diagnostic grouping 和跨
+计数、observed／denominator、command success、owner-local observed timing window、diagnostic grouping 和跨
 family join 都属于 Calculation。Calculation 必须声明每份 projection 和 completeness policy。它不能用
 一个 attachment 的 transport coverage 或物理 entry 数推导逻辑 Sample denominator。
+
+timing v1 非空值最多支持 checked
+`max(startOffsetMs + durationMs) - min(startOffsetMs)` observed window。complete-empty 产生 explicit empty，
+不是 `0`；partial nonempty 可以保留 window 与 limitations。v1 没有 designated root 或完整因果边，不能据此声称
+Attempt 总耗时、critical path 或跨 Attempt aggregate。
 
 官方 Report 与第三方 Report 都只能通过最终选定的公共 Record-to-Report 数据面使用这些 public
 projector。official status 不授予额外 reader、legacy event 文件、private evidence 或 raw provider

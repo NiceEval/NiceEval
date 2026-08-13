@@ -7,53 +7,59 @@
 报告作者只使用普通函数、普通结果值和按显示形状命名的组件：
 
 ```text
-静态 PageDefinition
-  → Sample / AttemptEvidence
-  → 普通 TypeScript 函数
-  → 可序列化 Result
-  → text / web 组件
+静态 Report
+  → reportInputs 声明有限 projections
+  → defineCalculation 调用普通 TypeScript 函数
+  → ordinary closed value / ReportCalculationResult
+  → Page 的 closed semantic tree
 ```
 
-```tsx
-export default defineReport(async (sample) => {
-  const performance = await aggregate(sample, {
-    by: { agent },
-    values: { passRate, costUSD },
-  });
+```ts
+import { Either } from "effect";
 
-  return (
-    <Page title="Quality and cost">
-      <Scatter
-        points={performance}
-        x="costUSD"
-        y="passRate"
-        point="agent"
-      />
-      <Table rows={performance} />
-    </Page>
-  );
+const inputs = reportInputs({
+  verdicts: attemptSlotProjection(verdictProjector),
+});
+
+const quality = defineCalculation({
+  id: Either.getOrThrow(reportComponentId("quality")),
+  inputs,
+  completeness: "allow-partial",
+  calculate: ({ sample, inputs }) =>
+    deriveQuality(sample, inputs.verdicts),
+});
+
+const overview = definePage({
+  id: Either.getOrThrow(reportComponentId("overview")),
+  route: Either.getOrThrow(reportRoute("/")),
+  calculations: { quality },
+  render: ({ calculations }) => renderQuality(calculations.quality),
+});
+
+export default defineReport({
+  id: Either.getOrThrow(reportId("quality")),
+  calculations: { quality },
+  pages: [overview],
 });
 ```
 
 ## 正确性
 
-`rollup()` 产生 Calculation，`aggregate()` 负责题内与跨题两级聚合。
- MetricValue 强制携带 value、samples、total、basis 与 refs。
-
-无法表达为单 Attempt 标量的算法留在报告旁，但通过 `metricValue()` 与 `evidenceRow()` 交出可追溯结果。
+Calculation 的公式使用普通函数，返回值没有 JSON 或 codec 约束。声称某个值具有完整度或统计口径时，作者定义具名
+结果类型，并显式携带 observed、denominator、state、issues 与 refs；Page 不从 transport coverage 猜这些字段。
 
 ## 复用
 
-实体投影使用 `toAttemptRows()`、`toExperimentRows()` 等立即转换。
-动态区块是普通函数；多页报告静态声明 pages。
- Attempt 详情是 `input: "attempt"` 的参数化 page。
+实体投影由 `reportInputs()` 在 author callback 前闭合。可复用转换是普通函数；多页报告静态声明 pages。
+Attempt 详情使用 PageFamily 从已经形成的 projected / calculated values 展开。
 
-只有新增显示形状时才定义双面 renderer。
- renderer 接已经计算好的普通值，不读取 Sample、Record 或 artifact。
+Page 返回 closed semantic tree。只有产品新增一种 `ReportBlock` variant 时才扩展 renderer；terminal、web 与 static 必须
+同时支持。renderer 接已经形成的 tree，不读取 Sample、Record 或 artifact。
 
 ## 取舍
 
-这套形状比 PLAN-2 少三个公开运行协议，但保留 PLAN-2 追求的两级聚合、涵盖范围、证据与双面一致。
-代价是 page render 成为粗粒度求值边界，跨 page 共享计算依赖内部透明缓存，而不是公开依赖图。
+这套形状比 PLAN-2 少三个公开运行协议，但保留 PLAN-2 追求的涵盖范围、证据与双面一致。
+代价是 Calculation 之间没有公开依赖图；需要共享的多阶段算法必须收进一个纯函数或一个 Calculation。相同 projection
+declaration 的物理读取可由 host 去重，但次数与 cache hit 不成为作者语义。
 
 完整产品契约见 [Reports](../../../feature/reports/README.md)。

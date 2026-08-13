@@ -6,6 +6,10 @@ converter 的完整契约仍由 [RecordAttachment 作者 API](../record-attachme
 `niceeval/record` 是作者面，`niceeval/record/host` 是 authority 更强的 host 子路径。子路径只隔离导出权限；两者
 仍使用同一套 Record storage、validators、locks、snapshot generations 与 writer kernel。
 
+`RecordAttachmentDefinition` 描述 owner、版本族、current 与相邻 migration。`ctx.record()` 接受的是 current
+payload；读取 `available` 后得到的 `RecordAttachmentValue` 才是 payload 与 own blob closure 的不可变自包含实例。
+两者都不是整个 Record。
+
 ## Record host runtime
 
 `niceeval/record/host` 只向 application 与 CLI host 提供 root runtime。所有 facet 都有 package-minted nominal
@@ -23,6 +27,23 @@ interface RecordInvocationAccess extends RecordSnapshotSource {
     use: (session: RecordWriteSession) => Effect.Effect<A, E, R>,
   ) => Effect.Effect<A, E | RecordOpenError | RecordWriteError, R>;
 }
+
+type RecordMigrationPlanning = () => Effect.Effect<
+  RecordMigrationPlan,
+  RecordMigrationPlanError,
+  never
+>;
+
+type RecordMigrationExecution = (input: {
+  readonly plan: RecordMigrationPlan;
+  readonly authorization:
+    | { readonly state: "git-restore-point" }
+    | { readonly state: "accept-data-loss" };
+}) => Effect.Effect<
+  RecordMigrationReceipt,
+  RecordMigrationError,
+  never
+>;
 
 interface RecordMaintenanceAccess {
   readonly inspect: RecordMaintenanceInspect;
@@ -49,6 +70,10 @@ declare const openRecordAccessRuntime: (input: {
 
 `openRecordAccessRuntime()` 只绑定 canonical root 与本地资源。真正读取、写入或维护发生在 facet 的 child Scope；
 outer runtime 空闲时不持有 maintenance lease。
+
+runtime 已绑定 root、filesystem、lock authority 与 installed registry，因此 `planMigration()` 不再接收另一个 root，
+`migrate()` 也只接受由同一 runtime mint 的 opaque plan。plan 绑定的 root snapshot、registry 或 Git inspection 变化后，
+execution 返回 `record-migration-plan-stale`；调用者不能把另一个 runtime 的 plan 结构性拼进来。
 
 `RecordInvocationAccess` 是写入加 snapshot 的强 facet。Invocation 可以在 write session 内用 `session.view` 做 reuse
 planning，也可以在 session 关闭后通过继承的 `withSnapshot()` 打开 fresh view。
@@ -136,9 +161,9 @@ declare function executeRelationAssembler<Inputs, Cell>(input: {
 host 在调用 assembler 前核对 SameSample identity，返回后核对完整 population。unmatched、ambiguous、input
 state 与 relation coverage 是成功值中的数据，不能靠少返回 cell 缩小分母。
 
-Derivation 使用普通函数。普通 UI 值可以是任意 TypeScript value；声称为 metric、coverage 或 evidence 的值必须
-由 PLAN-5 的受约束 constructor 形成，并携带数值、样本数、总数、basis、refs 与缺口。聚合组件不接受未包装的 number
-冒充完整读数。
+Derivation 使用普通函数，并返回普通 TypeScript value。值若声称具有统计或完整度口径，其具名 shape 必须显式携带
+observed、denominator、state、issues 与 refs。host 不从 Projection coverage 猜业务分母，也不要求不存在的 metric
+constructor。
 
 ## Report 的 consumer-local input manifest
 

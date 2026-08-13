@@ -24,6 +24,11 @@ _Avoid_: Runner serialization, Generic metadata
 它不表示某个应用已经信任它，也不授予事实生产者写入权。
 _Avoid_: Attachment registration, Writable family
 
+**RecordAttachment value**:
+一个 Record owner 下某份 RecordAttachment definition 的不可变事实实例。它包含该版本的 payload 与自有材料，
+不是整个 Record，也不是 Analysis 派生值。
+_Avoid_: Record value, Fact value
+
 **RecordAttachment installation**:
 一个应用明确选择并信任哪些 RecordAttachment definitions 来解释和迁移事实。它不授权任何 producer
 写入，也不从 producer 声明或历史 bytes 隐式推导。
@@ -80,19 +85,14 @@ _Avoid_: Recomputed verdict, Latest claim
 slots 或分母。
 _Avoid_: Latest grading, Analysis selection
 
-**Physical fact package**:
-由一个事实权威为一个 Record owner 在同一不可拆 seal transaction 中冻结的 durable facts；它保存
-bounded capture algebra、blob closure 与 join anchors，不按某个 Report 想看到的列预先拆分。
-_Avoid_: Report table, Logical view, One field per Attachment
-
 **Local projection**:
-在同一 frozen Record view 中，将一份 owner-local package 解释为一个或多个 typed views。它不读取
-第二份 package，也不建立跨包关系。
+在同一 frozen Record view 中，将一份 owner-local RecordAttachment value 解释为 typed view。它不读取
+第二份 Attachment，也不建立跨 Attachment 关系。
 _Avoid_: Joined view, Report model
 
 **Fact relation**:
-在一个 Analysis scope 内，使用 exact owner 与 durable anchors 把多份 local projections 对齐到
-logical slots 的结构关系。它不根据数值容差判定 agreement 或 authority。
+在一个 Analysis scope 内，使用 exact owner 与 durable anchors 把多份 local projections 对齐到 logical slots 的
+结构关系。它不根据数值容差判定 agreement 或 authority。
 _Avoid_: Heuristic join, Metric result
 
 **Derivation**:

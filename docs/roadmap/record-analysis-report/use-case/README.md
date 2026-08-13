@@ -8,10 +8,13 @@
   official Attachment write。
 - [文件差异](文件差异.md) —— frozen workspace diff 怎样同时服务 Assertion evaluator 与独立
   `niceeval.diff` Attachment。
-- [第三方事实扩展](第三方事实扩展.md) —— `com.example.*` definition 怎样通过公开 facade 进入同一个 command
-  kernel，并验证官方事实没有特权 bypass。
+- [官方 OTel Timing](官方OTelTiming.md) —— `niceeval.timing/v1` 怎样定义、采集、写入、逐 slot 分析并交给 Report。
+- [第三方事实扩展](第三方事实扩展.md) —— `com.example.*` definition 怎样定义 v1 / v2、显式迁移并复用同一 Analysis
+  与 Report 面。
+- [宿主写后读取与显式迁移](宿主写后读取与显式迁移.md) —— application / CLI host 怎样复用同一 root runtime，同时
+  保持 writer、fresh snapshot 与 maintenance 的锁边界。
 
-三篇用例共同核对以下证明：
+这些用例共同核对以下证明：
 
 | 可核对项 | 期望 |
 |---|---|

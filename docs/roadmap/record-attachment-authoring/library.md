@@ -7,32 +7,28 @@
 简单 JSON 是 `ctx.record()` 的零 blob 调用形状。它不另有 definition、registry、writer、reader
 或 migration primitive。Blob-backed payload 使用同一个 definition 与同一个写入命令。
 
+本页代码块中的 `definition`、`payloadV1Schema`、`currentPayload` 与 `toV2()` 只说明参数位置和类型流。
+具体领域 name、payload 字段、producer 与 Report 组合全部放在 [Use Case](use-case/README.md)。
+
 ## 定义一个完整版本族
 
 一个 definition 在一次调用中固定 owner、name、从 `v1` 起连续的所有版本、最大 current 版本、
 每版的 Schema 与 blob projection，以及每条相邻 edge。
 
 ```ts
-import { Effect, Schema } from "effect";
+import { Effect } from "effect";
 import { defineRecordAttachment } from "niceeval/record";
 
-export const gpuEnergy = defineRecordAttachment({
+export const definition = defineRecordAttachment({
   owner: "attempt",
-  name: "com.example.gpu-energy",
+  name: "com.example.measurement",
   versions: {
     v1: {
-      schema: Schema.Struct({
-        joules: Schema.Number,
-        source: Schema.Literal("device-estimate"),
-      }),
+      schema: payloadV1Schema,
       blobRefs: () => [] as const,
     },
     v2: {
-      schema: Schema.Struct({
-        joules: Schema.Number,
-        source: Schema.Literal("device-estimate"),
-        uncertainty: Schema.NullOr(Schema.Number),
-      }),
+      schema: payloadV2Schema,
       blobRefs: () => [] as const,
     },
   },
@@ -41,19 +37,14 @@ export const gpuEnergy = defineRecordAttachment({
     v1: {
       to: v2,
       migrate: (source, target) =>
-        Effect.succeed(
-          target.value({
-            ...source.payload,
-            uncertainty: null,
-          }),
-        ),
+        Effect.succeed(target.value(toV2(source.payload))),
     },
   }),
 });
 ```
 
-此 definition 自动形成 `com.example.gpu-energy/v1` 与
-`com.example.gpu-energy/v2`。作者不能输入 `schemaId`，也不能另行拼出单版本 definition、
+此 definition 自动形成 `com.example.measurement/v1` 与
+`com.example.measurement/v2`。作者不能输入 `schemaId`，也不能另行拼出单版本 definition、
 family、edge 或 write。
 
 version key 使用 canonical `v[1-9][0-9]*`；`v0`、`v01`、负数与小数都非法。keys 必须从 `v1`
@@ -294,11 +285,11 @@ Run 或 Attempt。
 
 ```ts
 import { defineConfig } from "niceeval";
-import { gpuEnergy } from "./gpu-energy.js";
+import { definition } from "./record-attachments.js";
 
 export default defineConfig({
   recordAttachments: {
-    install: [gpuEnergy],
+    install: [definition],
   },
 });
 ```
@@ -310,18 +301,14 @@ Experiment 与 Experiment Plugin 只可 grant Run-owned definition。
 
 ```ts
 import { defineEval } from "niceeval";
-import { gpuEnergy } from "./gpu-energy.js";
+import { definition } from "./record-attachments.js";
 
 export default defineEval({
   recordAttachments: {
-    write: [gpuEnergy],
+    write: [definition],
   },
   async test(ctx) {
-    await ctx.record(gpuEnergy, {
-      joules: await measureGpuEnergy(),
-      source: "device-estimate",
-      uncertainty: null,
-    });
+    await ctx.record(definition, currentPayload);
   },
 });
 ```
@@ -431,17 +418,14 @@ type RunRecordContext<
 import { Stream } from "effect";
 import { recordBlobSource } from "niceeval/record";
 
-await ctx.record(commandLog, (blobs) => {
-  const stdout = blobs.add(
+await ctx.record(blobBackedDefinition, (blobs) => {
+  const output = blobs.add(
     recordBlobSource(Stream.fromIterable([new Uint8Array([79, 75])])),
   );
 
   return {
-    payload: {
-      command: "check",
-      stdout: stdout.ref,
-    },
-    blobs: [stdout] as const,
+    payload: makePayload(output.ref),
+    blobs: [output] as const,
   };
 });
 ```
@@ -563,11 +547,11 @@ value。writer definition 不能由 reader capability 反推。
 ```ts
 const state = yield* view.readAttemptAttachment(
   attempt,
-  gpuEnergy.reader,
+  definition.reader,
 );
 
 if (state.state === "available") {
-  const joules = state.value.payload.joules;
+  const payload = state.value.payload;
 }
 ```
 
@@ -586,9 +570,9 @@ projector 是 reader value 的独立 consumer。它既不是 definition，也没
 ```ts
 import { defineRecordAttachmentProjector } from "niceeval/projection";
 
-export const gpuEnergyProjector = defineRecordAttachmentProjector({
-  attachment: gpuEnergy.reader,
-  project: (value) => value.payload.joules,
+export const measurementProjector = defineRecordAttachmentProjector({
+  attachment: definition.reader,
+  project: ({ payload }) => toMeasurementView(payload),
 });
 ```
 
@@ -701,6 +685,25 @@ failure，也不会由普通 read 或 CLI 自动补写事实。migration plan、
 `defineRecordAttachment()` compiler，随后经过相同的 application registry、write grant、context lease、
 generic writer、reader 与 migration orchestration。
 
+package source 使用同一 compiler 的私有 overload。`namespaceAuthority` 字段与 token 都不进入公共声明：
+
+```ts
+// package-private declarations; neither capability is exported
+declare const niceevalRecordAttachmentNamespaceTypeId: unique symbol;
+
+interface NiceEvalRecordAttachmentNamespaceAuthority {
+  readonly [niceevalRecordAttachmentNamespaceTypeId]: true;
+}
+
+declare const niceevalRecordAttachmentNamespace:
+  NiceEvalRecordAttachmentNamespaceAuthority;
+```
+
+私有 overload 在与 public input 相同的 `owner`、`name`、`versions`、`current` 与 `migrations` 之外，额外要求这枚
+package-minted authority。第三方仍调用只有一个参数的 public overload。即使动态 JavaScript 添加同名字段，也无法伪造
+token identity；`niceeval.*` name 会在 compiler 边界同步拒绝。这个私有 overload 只放开 namespace，不放开
+schema、closure、grant、owner 或 writer 校验。具体 official family 的 definition 属于对应 Use Case，不在本页枚举。
+
 公共包不导出 writable official definition，也没有 `official: true`、namespace authority 或 self-allowlist
 token。官方事实只暴露只读 reader 与 projector capability：
 
@@ -725,6 +728,11 @@ projector 分离，因此项目也不能借某个 projector 替换、扩张或�
 第三方给 `defineRecordAttachment()` 传入 `niceeval.*` name 会同步得到
 `RecordAttachmentDefinitionError`。官方与第三方的差异止于这个私有 namespace construction boundary，
 不延伸为 writer、reader、closure 或 migration 特权。
+
+完整 official timing 值、capture 与 Report 路径见
+[官方 OTel Timing](../record-analysis-report/use-case/官方OTelTiming.md)。
+第三方 definition、current write、v1 → v2 migration、Analysis 与 Report 的组合见
+[用户自定义 GPU 能耗事实](../record-analysis-report/use-case/第三方事实扩展.md)。
 
 ## 相关契约
 

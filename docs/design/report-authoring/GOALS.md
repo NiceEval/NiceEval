@@ -23,8 +23,8 @@
   每个读数格保留有效样本数、涵盖总数和它涵盖的全部 attempt 引用。
 - **一份声明同时出 text 与 web 两面。**
   只有一面能读的能力不进作者面。
-- **计算结果是可序列化普通数据。**
-  浏览器包不含磁盘读取、结果根或查询引擎。
+- **Calculation 结果是进程内普通值。**
+  ReportExecution 的 closed semantic tree 才进入 renderer；浏览器包不含磁盘读取、结果根或查询引擎。
 - **自由度可枚举。**
   报告树是声明式结构，不是能求值的表达式语言。
 - **作者不必等库。**
@@ -36,11 +36,11 @@
 
 ### 正确性
 
-1. 两级聚合是默认行为：同一 experiment × eval 的多个 attempt 先折成题级值，再跨题折成终值。
-   作者不写任何东西也得到这个权重。
+1. 两级聚合由可复用的具名纯函数明确实现：同一 experiment × eval 的多个 attempt 先折成题级值，再跨题折成终值。
+   Report host 不按 entry 数或 transport coverage 猜这个权重。
 2. 「测不了」（读数返回 `null`）与「没跑到」（涵盖缺口）在同一张表里区分得开。
 3. 跨 Run 计算先按 Record 的 attempt 身份键去重。
-4. 计算失败与缺数据严格分开：代码抛错让 page render 失败，不伪装成测不了。
+4. 计算失败与缺数据严格分开：Calculation callback defect 形成 execution failure，不伪装成测不了。
 
 ### 可追溯
 
@@ -57,19 +57,19 @@
 ### 一致性
 
 11. 同一个读数在图、表与摘要里同值。
-12. 单位、优化方向与格式化等数值语义只随 Calculation 声明一次；双语 label 只在组件呈现面声明一次，不进入 MetricValue。
+12. 单位、优化方向与格式化等数值语义只在具名 Calculation value 中声明一次；双语 label 留在组件呈现面。
 13. 同一个维度值在一页里恒定一个颜色。
 
 ### 扩展性
 
-14. 作者与官方使用同一套 `rollup()`、`aggregate()` 与证据结果构造器。
+14. 作者与官方使用同一套 projection、Calculation 与 closed semantic components。
 15. 新增一种渲染形状要有判据，不能因为「这个数据源画出来长得不一样」就加原语。
 
 ### 交付
 
 16. web 面无 JavaScript 即完整可读；浏览器包不引入查询引擎或运行时依赖。
-17. 异步与 IO 只发生在 page render；可达数百 MB 的 diff 按需读取，不进 renderer。
-18. 相同输入与同一版本产出字节级稳定的 JSON。
+17. 异步与 I/O 只发生在 host input phase；作者 Calculation、Page 与 renderer 只消费 closed values。
+18. 相同 semantic tree 与同一 renderer 版本产出字节级稳定的静态输出。
 
 ---
 

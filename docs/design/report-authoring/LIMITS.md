@@ -112,24 +112,24 @@ SQL 在「灵活提问」这条上明显赢，在 [GOALS](GOALS.md) 的正确性
 
 ---
 
-# 候选项 4：普通值转换 + 静态 page
+# 候选项 5：普通值转换 + 静态 page
 
 ## 产品特性
 
-page render 直接接收 Sample 或 AttemptEvidence，调用普通函数后把具体结果值交给组件。
-两级聚合与证据由少量公共组合器保障。
+`reportInputs()` 在作者 callback 前闭合 Sample-aligned projections；Calculation 调用普通纯函数并把具体结果值交给
+Page。聚合口径与 refs 由领域自己的具名结果类型保留。
 
 ## 当前支持
 
-- 普通 TypeScript 直接表达异步、并行、join、排序与复用。
+- 普通 TypeScript 直接表达 join、排序、公式组合与复用；I/O 停在 host input phase。
 - 组件属性按值的角色命名，调用点可见 `rows`、`points` 与 `attempt`。
-- 静态 page 清单保留导航、逐页惰性求值和失败隔离。
-- 官方与用户 Calculation 走同一个 `rollup()` / `aggregate()`。
+- 静态 Page / Calculation 清单保留导航、一次执行和失败隔离。
+- 官方与用户都用 `reportInputs()`、`defineCalculation()` 与普通结果值。
 
 ## 当前不支持
 
 - 不提供细粒度的公开查询依赖图；跨 page 自动共享不是作者语义。
-- 报告旁复杂算法的公式仍需单独测试，证据构造器只保证结果可追溯。
+- 报告旁复杂算法的公式仍需单独验证；具名结果类型只保证口径、issues 与 refs 不被省略。
 
 详见 [PLAN-5](PLAN-5/README.md)。
 

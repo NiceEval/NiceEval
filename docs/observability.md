@@ -87,6 +87,10 @@ conversation collector 使用，却不是持久格式。持久 conversation 只�
 OTel GenAI 语义可帮助 Adapter 在内存中识别操作与时间。它不是 Record payload，也不让
 niceeval.timing/v1 保存 raw OTLP、span attribute 或 provider 名称。
 
+OTel bridge 只在事件发生时把 span 绑定到 exact Attempt、同一枚 verified owner-monotonic clock、稳定 phase / label
+与 capture-time refs。它不在事后从 epoch 推回 owner offset，也不持有 writable definition。无法同时证明这些条件的
+span 不形成 interval，并让 timing collection 以 `unsupported-input` 保持 partial。
+
 ### 每个 Agent 一个薄 mapper
 
 每个 Adapter 把自己的协议输入映射到同一组 conversation、usage 与 timing capture 调用。
@@ -114,13 +118,15 @@ usage 保存原子 observation，而非 Attempt 总计。token bucket、一个 r
 provider-observed cost 各自是一项 observation。cost 以 canonical decimal string、provider 与
 currency 保存。
 
-总 token、cache ratio、价格表估算、FX、跨币种汇总、命令成功、总耗时、critical path、
+总 token、cache ratio、价格表估算、FX、跨币种汇总、命令成功、owner-local observed timing window、
 diagnostic 分组与跨 family join 都是 Calculation。它们必须显式声明所需 projection、完整度策略、
-observed 与逻辑 Sample denominator，不能回写 Record。
+observed 与逻辑 Sample denominator，不能回写 Record。`niceeval.timing/v1` 没有 designated root 或完整因果边，
+所以它不能单独证明 Attempt 总耗时或 critical path。需要这些读数时，必须先发布能证明它们的新事实契约。
 
 每个 timing Attachment 有自己的 owner-monotonic clock。Run offset 与 Attempt offset 不能相减或
 拼接。interval 保存稳定 phase、稳定 label、startOffsetMs、durationMs、可选 parent 与终态。
-raw epoch、OTLP span、span attribute 与 provider 名称都不落盘。
+decoder 还验证 `startOffsetMs + durationMs` 是 non-negative safe integer。raw epoch、OTLP span、span
+attribute 与 provider 名称都不落盘。
 
 ### 用量与成本：token / 计费
 
@@ -129,9 +135,10 @@ Calculation 的输入和输出。缺少 provider cost 不得用估算金额冒�
 
 ### OTLP traces-统一瀑布图
 
-OTLP 可以补充本次进程的时间采集。持久瀑布图只从 normalized timing interval 投影形成。
-无法归属到明确 Run 或 Attempt 的 span 只可形成局部 diagnostic，不得加入任一 owner 的 usage、
-duration 或 timing tree。
+OTLP 可以通过 in-process bridge 补充本次进程的时间采集。bridge 在 span start/end 时使用同一个 owner clock 采样，
+而不是把 exporter 中的 epoch timestamp 当作 offset。持久瀑布图只从 normalized timing interval 投影形成。
+无法归属到 exact Run / Attempt、clock domain 不可证、phase / label 不稳定或 refs 不精确的 span，不得加入任一 owner
+的 usage、duration 或 timing tree；它使对应 timing collection partial。
 
 ## owner-local identity 与组合读取
 
@@ -148,10 +155,14 @@ reference 在同一 owner 下恰有一个 target，且 family、entity kind 与 
 
 ## seal、发布与失败
 
-Attempt 的全部 finalizer 停稳后，官方 producer 才冻结该 Attempt 的五份 Attachment。Run teardown
+Attempt 的全部 finalizer 停稳后，唯一 owner-bound timing collector 与其它官方 collector 才冻结该 Attempt 的五份
+Attachment。OTel bridge 只向这个 timing collector 提交受限 capture input，不能直接写 Record。Run teardown
 停稳后，才冻结 Run 的 timing 与 diagnostics。随后 coordinator 让
 ObservabilityRecordContractV1 对全部 owner、identity、collection、跨 family reference 与 SourceItem
 frame 联合验证。
+
+官方实际执行的 Attempt 即使没有 timing interval，也写 complete-empty timing payload；这不是 duration 为零。安全
+interval 有缺口时写 partial limitation。只有历史 Record 或第三方 producer 未写该 family 时才是 unavailable。
 
 generic Record writer 仍只验证 Core、typed Attachment、owner-local blob closure 与精确 Core
 reference。它不知道官方 observability 名称或业务规则。联合验证或任一普通写入失败时，Run 不创建
@@ -167,8 +178,10 @@ unavailable。
 available Attachment 变为自包含 typed view。commands projector 在此处统一 inline 与 blob，因而
 consumer 看不到二者的物理差异。
 
-一个 projector 不汇总计数、命令成功、耗时、critical path、成本或 diagnostic 分组，也不读取另一
-family。需要这些结果的作者同时声明多个 projection，再由 Calculation 显式组合。
+一个 projector 不汇总计数、命令成功、observed timing window、成本或 diagnostic 分组，也不读取另一
+family。需要这些结果的作者同时声明所需 projection，再由 Calculation 显式组合。当前 timing v1 的普通纯函数可以
+按 slot 计算 `max(startOffsetMs + durationMs) - min(startOffsetMs)`；它不能把该观测区间升级成总耗时或 critical
+path。
 
 官方 Report 与第三方 Report 都通过最终选定的公共 Record-to-Report 数据面消费这些 family。
 官方页面没有私有 reader、legacy evidence bridge 或额外数据权限。
@@ -202,4 +215,6 @@ mapper，也不访问 provider、网络或当前 worktree。
 - [Projection](feature/projection/README.md) —— owner access 与穷尽读取结果。
 - [Record → Report 设计地图](design/record-to-report-stack.md) —— 各层决策、依赖与合法组合，
   不构成当前契约。
+- [官方 OTel Timing Use Case](roadmap/record-analysis-report/use-case/官方OTelTiming.md)
+  —— definition、capture、write、Projection、Calculation 与 Report 的完整语法。
 - [Assertions 证据](feature/assertions/architecture/evidence.md) —— evidence 完整度怎样影响断言。

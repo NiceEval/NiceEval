@@ -444,6 +444,11 @@
       "why": "同一个宽泛名称会把 host root capability、分权 facet 与 owner-local producer context 误解成万能 client"
     },
     {
+      "term": "Record value",
+      "use": "写 RecordAttachment value；Record 表示完整的已发布事实集",
+      "why": "用户定义和提交的是 owner-local RecordAttachment，不是整个 Record 的值"
+    },
+    {
       "term": "inspectFact",
       "use": "RecordReader.readRunAttachment / readAttemptAttachment",
       "why": "读取必须绑定明确 owner 与 typed RecordAttachment family"

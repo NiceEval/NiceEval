@@ -11,3 +11,5 @@
 - [写入 blob-backed 事实](Blob写入.md) —— 用 blob builder 创建 owner-local closure。
 - [安装、读取与投影事实](读取投影.md) —— 显式安装 family，并处理 reader 与 projector 的穷尽状态。
 - [演进、迁移与保留历史事实](演进并迁移自定义事实.md) —— 用相邻 converter 或 unavailable edge 迁移已安装的 family。
+- [自定义事实从 v1 写到 Report](../../record-analysis-report/use-case/第三方事实扩展.md) —— 把 definition、current write、
+  显式 migration、Analysis 与 Report 放在一条完整路径中。

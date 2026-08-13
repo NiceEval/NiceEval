@@ -90,10 +90,10 @@ definition。中立写入核不会消除事实权威。
 | Selection | 固定 Run、logical slots 与 Sample-wide denominator | frozen view → `AnalysisSampleHandle` | package decode、reuse planning |
 | Projection | 解释一个明确 owner 的一个 Attachment family | live handle + `RecordProjection` → closed `ProjectedSample` | 跨 package join、聚合 |
 | Relations | 用 durable anchors 对齐多份 closed projections | SameSample projections → exhaustive relation cells | heuristic agreement、metric |
-| Derivation | 计算 metric、coverage 与 evidence value | closed projection / relation values → ordinary constrained values | Record I/O、页面呈现 |
+| Derivation | 计算带明确口径的业务值 | closed projection / relation values → ordinary closed values | Record I/O、页面呈现 |
 
-这四步共享一份 Sample identity。Projection 不重新开 snapshot；Relations 拒绝来自不同 Sample 的输入；Derivation
-不能用未包装的 number 冒充带 coverage 的 metric。
+这四步共享一份 Sample identity。Projection 不重新开 snapshot；Relations 拒绝来自不同 Sample 的输入。Derivation
+若返回统计读数，其普通结果类型必须保留 observed、denominator、state、issues 与 refs。
 
 PLAN-1 让领域 package 自己解释 relation edge 与 cardinality。host 只验证输入同源、population 对齐与输出穷尽；
 领域 package 必须保留 unmatched、ambiguous 与 input state。
@@ -106,8 +106,8 @@ host-owned problem inventory。Page、Calculation 的输入阶段之后及 rende
 这不是 Projection PLAN-2。普通 Analysis 脚本仍能根据已经读取的值决定下一次 direct call；Report callback 内没有
 这种逃生口，因此 Report 自己仍能提供一次 execution、输入去重与不可关闭 problems surface。
 
-Calculation 在文件组织上属于 Report definition，在语义上属于 Analysis 的 Derivation seam。它形成 metric、
-coverage 或 evidence 时必须返回 PLAN-5 的受约束形状；Page 只决定怎样呈现该值。
+Calculation 在文件组织上属于 Report definition，在语义上属于 Analysis 的 Derivation seam。它调用普通纯函数并
+返回普通 closed value；Page 只决定怎样呈现该值和 `ReportCalculationResult` 的状态。
 
 ## 不变量
 

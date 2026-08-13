@@ -76,20 +76,27 @@ PLAN-4，默认写法同 PLAN-2，官方数据源答不了时才落到 SQL：
 <Table source={sql`select … from attempts …`} />
 ```
 
-PLAN-5，在 page render 中调用普通聚合函数：
+PLAN-5，用静态 input、普通 Calculation 与 Page 组合：
 
-```tsx
-export default defineReport(async (sample) => {
-  const rows = await aggregate(sample, {
-    by: { agent },
-    values: { passRate, costUSD },
-  });
+```ts
+import { Either } from "effect";
 
-  return <Table rows={rows} />;
+const performance = defineCalculation({
+  id: Either.getOrThrow(reportComponentId("performance")),
+  inputs: reportInputs({ verdicts, usage }),
+  completeness: "allow-partial",
+  calculate: ({ sample, inputs }) => derivePerformance(sample, inputs),
+});
+
+const overview = definePage({
+  id: Either.getOrThrow(reportComponentId("overview")),
+  route: Either.getOrThrow(reportRoute("/")),
+  calculations: { performance },
+  render: ({ calculations }) => renderPerformance(calculations.performance),
 });
 ```
 
-四段代码的差别不在长度，在于**谁承担了容易写错的那部分**。
+五段代码的差别不在长度，在于**谁承担了容易写错的那部分**。
 
 | 写法 | 谁决定两级聚合 | 谁保住证据下钻 | 谁给数值语义与显示文案 |
 |---|---|---|---|
@@ -97,6 +104,7 @@ export default defineReport(async (sample) => {
 | PLAN-2 | `Measure.perEval` / `acrossEvals` | Source 折 `Cell` 时 | Measure 声明数值语义，Component 声明文案 |
 | PLAN-3 | 作者的 `group by` 层数 | 作者的 `array_agg` | 查询旁边的第二张表 |
 | PLAN-4 | 两者各一份 | 数据源必然、SQL 可选 | 两者各一份 |
+| PLAN-5 | reusable pure Calculation function | 具名结果值的 refs 与 Sample-aligned rows | Calculation value 声明数值语义，semantic block 声明文案 |
 
 PLAN-3 那段 SQL 少写一层 `with per_eval`，得到的仍是一个像通过率的数，只是重试多的题悄悄拿到了更大权重。
 这类错误没有类型系统拦得住。

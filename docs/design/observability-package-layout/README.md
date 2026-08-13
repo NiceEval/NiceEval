@@ -3,8 +3,8 @@
 本决策比较 Observability facts 在 RecordAttachment 中的物理切分。它不改变 Record Core、owner、
 locator、closure 或 migration 公理，也不按 Report 想显示的列反向设计持久层。
 
-本决策只提供 layout-specific state，不拥有通用 Projection API。Projection 的参数化读取结果允许两个决策
-独立比较；Receipt、representation 与 physical package kind 只存在于 PLAN-2 的 state 参数中。
+本决策只比较 durable layout，不拥有通用 Projection API。当前 `RecordProjection` / `ProjectedSample` 可以消费
+PLAN-1 的独立 Attachment family；Receipt、representation 与 physical package kind 只存在于未采用的 PLAN-2。
 
 - [Goals](GOALS.md)
 - [Limits](LIMITS.md)

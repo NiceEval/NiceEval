@@ -10,6 +10,10 @@ root identity、缓存与生命周期语义。
 具体形态是：写入、snapshot 读取与 maintenance migration 有三个分权调用面，但不各自实现 Record。它们在同一个
 root runtime、validators、lock authority 与 durable kernel 上会合。
 
+用户不会定义整个 Record。可扩展的最小事实单位是 `RecordAttachmentDefinition`；producer 为当前 Run 或 Attempt
+提交 current payload，reader 在 `available` 状态取得不可变 `RecordAttachmentValue`。Record 只负责把这些值按
+owner、版本与发布生命周期保存为同一份事实集。
+
 ## 核心心智
 
 ```text
@@ -27,6 +31,19 @@ Record                    Analysis                         Report
 
 Sample、Projection、Relations 与 Derivation 是 Analysis 内部的四个步骤，不是四层产品心智。用户只需先问：
 事实是否已经进入 Record、Analysis 怎样解释它、Report 怎样呈现解释结果。
+
+## 一条事实的五个动作
+
+```text
+define versioned Attachment
+  → grant + write current payload
+  → install + explicit migrate
+  → project + derive closed values
+  → declare Report inputs + render
+```
+
+官方 timing 与第三方 GPU facts 都走这五个动作。它们共享 definition compiler、command kernel、reader、projector
+与 migration orchestration；官方只多一枚 package-private namespace authority 与内部 Effect facade。
 
 ## 一套 Record 子系统，三种 host capability
 
@@ -47,15 +64,13 @@ Invocation 再从 write session 派生 Attempt 或 Run owner-local context。第
 | 决策 | 采用 | 本方向取得的保证 |
 |---|---|---|
 | [Record access runtime](../../design/record-runtime/DECISION.md) | [PLAN-2](../../design/record-runtime/PLAN-2/README.md) | 同一 root 的资源 owner、facets、generation 与 verified-read cache 统一 |
+| [Observability package layout](../../design/observability-package-layout/DECISION.md) | [PLAN-1](../../design/observability-package-layout/PLAN-1/README.md) | 七个 logical family 各自拥有明确 value、collector 与相邻 migration |
 | [Projection API](../../design/projection-api/DECISION.md) | [PLAN-1](../../design/projection-api/PLAN-1/README.md) | 普通 TypeScript / Effect direct call；一个调用返回一个 closed `ProjectedSample` |
 | [Relations API](../../design/relations-api/DECISION.md) | [PLAN-1](../../design/relations-api/PLAN-1/README.md) | package-owned pure assembler；host 只守同一 Sample 与穷尽 population |
 | [Report authoring](../../design/report-authoring/DECISION.md) | [PLAN-5](../../design/report-authoring/PLAN-5/README.md) | static page、普通函数、普通结果值与按显示形状命名的组件 |
 
 Report 的 `reportInputs()` 是这个 consumer 自己的有限输入清单。它不把 Projection 升级成静态 graph：没有公共
 node、edge、`dependsOn`、graph brand、全图调度或任意 Analysis 程序的闭包保证。
-
-[Observability package layout](../../design/observability-package-layout/README.md) 不由本方向裁决。物理 family
-布局与三层心智、root runtime 和中立写入核彼此正交。
 
 ## 范围
 
@@ -65,7 +80,7 @@ node、edge、`dependsOn`、graph brand、全图调度或任意 Analysis 程序�
 - 从 write session 关闭到 fresh Analysis snapshot 的固定时序；
 - Analysis 内 selection、Projection、Relations 与 Derivation 的责任边界；
 - Report 专属静态 input manifest 与 closed author callback；
-- Assertions evidence、File Diff、Assertions 与第三方事实共用写入核的完整用例；
+- official OTel timing、Assertions evidence、File Diff、Assertions 与第三方事实共用写入核的完整用例；
 - verified-read cache、ExecutionReusePlan 与 migration 的分权。
 
 本方向不重新定义 [`RecordAttachment` 作者 API](../record-attachment-authoring/README.md)，也不决定某个领域应有
@@ -77,4 +92,4 @@ graph 或第二套 Report 查询语言。
 - [Library](library.md) —— runtime facets、Projection direct call、Relations 与 Report handoff。
 - [Architecture](architecture.md) —— 每层责任、共享内核、能力边界与中立性不变量。
 - [Lifecycle](lifecycle.md) —— Invocation 写入、fresh snapshot、Analysis、Report 与显式 migration 时序。
-- [Use Case](use-case/README.md) —— Assertions evidence、File Diff、Assertions 与第三方事实怎样进入同一 Record。
+- [Use Case](use-case/README.md) —— official timing、第三方事实、写后读取与既有领域事实的完整语法。

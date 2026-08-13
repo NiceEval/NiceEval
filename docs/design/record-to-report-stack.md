@@ -23,18 +23,18 @@ Record storage ─→ Record access runtime / FrozenRecordView ─┬─→ reus
                                                             │
 Record Core ── selection ──→ Sample（固定 population）──────┤
       │                                                     │
-      └─ RecordAttachment + layout ─→ package access ───────┤
+      └─ RecordAttachment + layout ─→ typed family access ──┤
                                                             ▼
 Projection API（在 live handle 上读取并单包解释）
   ↓ closed Sample-aligned local views
 Relations API（跨包结构关系决策）
   ↓ closed exhaustive relation values
 Derivation（普通纯函数基线）
-  ↓ metric / coverage / evidence values
+  ↓ ordinary closed values（显式保留口径、coverage、issues 与 refs）
 Report authoring（已裁决：static page + ordinary values）
 ```
 
-Sample 与 package access 是在 Projection 汇合的两条输入。Sample 决定 population，物理 layout 决定怎样
+Sample 与 typed family access 是在 Projection 汇合的两条输入。Sample 决定 population，durable layout 决定怎样
 读取 owner package；任何一支都不能独自形成 Report rows。
 
 Reuse planning 与 Report 是两个消费目的，不是两套 Record。它们共用 `FrozenRecordView` 的 Core、Attachment
@@ -48,7 +48,7 @@ cache 生命周期。
 |---|---|---|
 | Record Core | [Feature](../feature/record/README.md) | portable Core、owner 与读取公理已经固定 |
 | Record access runtime | [Design Decision](record-runtime/DECISION.md) | 已为 Roadmap 采纳 PLAN-2，统一 root authority、generations 与 verified cache |
-| Observability layout | [Design Decision](observability-package-layout/README.md) | 七 family 与 physical packages 是互斥持久布局 |
+| Observability layout | [Design Decision](observability-package-layout/DECISION.md) | 已为 Roadmap 采纳 PLAN-1；七个 logical family 各自拥有 definition 与 migration |
 | Sample | [Feature](../feature/sample/README.md) | selection、四态与 frozen denominator 已固定；fluent/callback 只是语法 |
 | Projection | [Design Decision](projection-api/DECISION.md) | 已为 Roadmap 采纳 PLAN-1 direct call；Report 只静态闭合自己的 manifest |
 | Relations | [Design Decision](relations-api/DECISION.md) | 已为 Roadmap 采纳 PLAN-1 pure assembler，并保留穷尽 population |
@@ -57,8 +57,8 @@ cache 生命周期。
 
 ## 合法组合
 
-定稿组合是 Record runtime PLAN-2 × Projection PLAN-1 × Relations PLAN-1 × ordinary Derivation × Report
-PLAN-5。下表继续说明候选之间的结构约束，不把未采用组合写成产品契约。
+定稿组合是 Record runtime PLAN-2 × Observability layout PLAN-1 × Projection PLAN-1 × Relations PLAN-1 ×
+ordinary Derivation × Report PLAN-5。下表继续说明候选之间的结构约束，不把未采用组合写成产品契约。
 
 | 上下层组合 | 是否合法 | 原因 |
 |---|---|---|
@@ -72,7 +72,7 @@ PLAN-5。下表继续说明候选之间的结构约束，不把未采用组合�
 ## Attempt detail 的 owner routing
 
 1. Sample 用 Core 选择 logical slots，并查找 exact Attempt 与 origin Run。
-2. Projection 按公开 `RecordProjection` declaration 读取 Assertions、Verdict、Score、Sources、OTel 等 owner package。
+2. Projection 按公开 `RecordProjection` declaration 读取 Assertions、Verdict、Score、Sources、Timing 等 owner package。
 3. Relations 用 durable anchors 对齐 send、operation、assertion 与 source site；没有 anchor 就保留 unmatched。
 4. 普通 Derivation 形成 `AttemptDetailsInput`、coverage 与 evidence values。
 5. 参数化 Page 的 render 取得这些 ordinary closed values；官方 standard page 不使用私有 reader 或 legacy evidence。
