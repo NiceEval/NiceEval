@@ -1,7 +1,7 @@
 // owner: e2e/report show DX — complete exp → show text + public niceeval.show JSON
 // rerun: pnpm e2e --repo report -- --run test/report-show.test.ts
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import {
@@ -12,7 +12,7 @@ import {
 import { CLASSIC_EXPERIMENTS, PINNED_ENV, reportCaseArtifacts, reportE2E } from "./support/context.ts";
 import { classicExpFacts } from "./support/exp.ts";
 import { assertPublicShowJson } from "./support/show-json.ts";
-import { expectTranscript, toTranscriptTemplate } from "./support/transcript.ts";
+import { expectTranscript, requiredTranscript, toTranscriptTemplate } from "./support/transcript.ts";
 
 test("exp classic → show text and public niceeval.show JSON", async () => {
   await reportE2E.case("show", { artifacts: reportCaseArtifacts() }, async ({ paths: { projectRoot }, commands: { niceeval } }) => {
@@ -59,14 +59,13 @@ test("exp classic → show text and public niceeval.show JSON", async () => {
     const locators = Object.fromEntries(
       facts.evals.map((event) => [`${event.experimentId}:${event.evalId}`, event.locator]),
     );
+    const bindings = { locators, runIds: facts.runIds };
     const fixturePath = join(import.meta.dirname, "fixtures", "transcripts", "show-classic.pipe.txt");
     if (process.env.NICEEVAL_CAPTURE_TRANSCRIPTS === "1") {
       mkdirSync(join(import.meta.dirname, "fixtures", "transcripts"), { recursive: true });
-      writeFileSync(fixturePath, toTranscriptTemplate(shown.stdout, { locators }), "utf8");
+      writeFileSync(fixturePath, toTranscriptTemplate(shown.stdout, bindings), "utf8");
     }
-    const fixture = tryReadTranscript("show-classic.pipe.txt");
-    expect(fixture, "checked-in show-classic.pipe.txt transcript").toBeDefined();
-    expectTranscript(shown.stdout, fixture!, { locators });
+    expectTranscript(shown.stdout, requiredTranscript(import.meta.dirname, "show-classic.pipe.txt"), bindings);
     expect(projectRoot.length).toBeGreaterThan(0);
   });
 });
@@ -78,12 +77,4 @@ function expectedEvalKeys(): string[][] {
 
 function memoryFromExperiment(experimentId: string) {
   return classicMemoryOf({ memory: experimentId.split("/").at(-1) });
-}
-
-function tryReadTranscript(name: string): string | undefined {
-  try {
-    return readFileSync(join(import.meta.dirname, "fixtures", "transcripts", name), "utf8");
-  } catch {
-    return undefined;
-  }
 }

@@ -6,7 +6,7 @@ import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { expect, test } from "@playwright/test";
-import { pollUntil, waitForOutput } from "./support/testkit.ts";
+import { pollUntil, waitForOutput } from "@niceeval/testkit";
 import { expectNoHorizontalOverflow, followVisibleLink } from "./support/browser.ts";
 import { PINNED_ENV, reportCaseArtifacts, reportE2E } from "./support/context.ts";
 

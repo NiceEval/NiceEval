@@ -1,5 +1,5 @@
+import { createE2EContext, type ArtifactStageEntry } from "@niceeval/testkit";
 import { join, resolve } from "node:path";
-import { createE2EContext, type ArtifactStageEntry } from "./testkit.ts";
 
 export const CLASSIC_EXPERIMENTS = ["classic/baseline", "classic/memory-a", "classic/memory-b"] as const;
 
@@ -43,3 +43,11 @@ export const PINNED_ENV = {
   LC_ALL: "en_US.UTF-8",
   LANGUAGE: "en",
 } as const;
+
+/** Parent often has NO_COLOR=1. Testkit merge drops undefined env keys. */
+export const PTY_ENV: NodeJS.ProcessEnv = {
+  ...PINNED_ENV,
+  TERM: "dumb",
+  NO_COLOR: undefined,
+  FORCE_COLOR: undefined,
+};

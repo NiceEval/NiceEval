@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { expect } from "vitest";
 import {
   DURATION_TOKEN,
@@ -9,6 +11,10 @@ import {
   countSeams,
   listSeams,
 } from "./seams.ts";
+
+export function requiredTranscript(fromDir: string, name: string): string {
+  return readFileSync(join(fromDir, "fixtures", "transcripts", name), "utf8");
+}
 
 /** Turn a live stdout into a checked-in template. Only named seams are rewritten. */
 export function toTranscriptTemplate(stdout: string, bindings: SeamBindings): string {
@@ -65,6 +71,9 @@ export function expectTranscript(actual: string, template: string, bindings: Sea
   );
   expect(audit.actual.duration, "duration seam audit: every actual duration token must be a named template seam").toBe(
     audit.template.duration,
+  );
+  expect(audit.actual.runId, "runId seam audit: every actual run id must be a named template seam").toBe(
+    audit.template.runId,
   );
 }
 

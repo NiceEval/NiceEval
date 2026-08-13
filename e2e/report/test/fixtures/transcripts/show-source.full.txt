@@ -24,4 +24,4 @@ evals/source-snapshot.eval.ts
 14  });
 
 2 checks · 2 passed · 0 failed
-full eval source: .niceeval/classic_baseline/{{timestamp}}/source-snapshot/a0/sources.json
+full eval source: .niceeval/classic_baseline/{{runId}}/source-snapshot/a0/sources.json

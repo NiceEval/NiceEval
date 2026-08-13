@@ -8,7 +8,7 @@ import { expect, test } from "vitest";
 import { PINNED_ENV, reportCaseArtifacts, reportE2E } from "./support/context.ts";
 import { classicExpFacts } from "./support/exp.ts";
 import { assertPublicShowJson } from "./support/show-json.ts";
-import { expectTranscript, toTranscriptTemplate } from "./support/transcript.ts";
+import { expectTranscript, requiredTranscript, toTranscriptTemplate } from "./support/transcript.ts";
 
 test("show --source keeps runtime BEFORE after copy source is rewritten", async () => {
   await reportE2E.case("source", { artifacts: reportCaseArtifacts() }, async ({ paths: { projectRoot }, commands: { niceeval } }) => {
@@ -42,15 +42,13 @@ test("show --source keeps runtime BEFORE after copy source is rewritten", async 
     expect(shown.stdout).not.toContain("ENTRY_SNAPSHOT_AFTER");
     expect(shown.stdout).not.toContain("IMPORTED_ASSERTION_SNAPSHOT_AFTER");
 
-    const locators = { "classic/baseline:source-snapshot": locator };
+    const bindings = { locators: { "classic/baseline:source-snapshot": locator }, runIds: facts.runIds };
     const fixturePath = join(import.meta.dirname, "fixtures", "transcripts", "show-source.full.txt");
     if (process.env.NICEEVAL_CAPTURE_TRANSCRIPTS === "1") {
       mkdirSync(join(import.meta.dirname, "fixtures", "transcripts"), { recursive: true });
-      writeFileSync(fixturePath, toTranscriptTemplate(shown.stdout, { locators }), "utf8");
+      writeFileSync(fixturePath, toTranscriptTemplate(shown.stdout, bindings), "utf8");
     }
-    const fixture = await readFile(fixturePath, "utf8").catch(() => undefined);
-    expect(fixture, "checked-in show-source.full.txt transcript").toBeDefined();
-    expectTranscript(shown.stdout, fixture!, { locators });
+    expectTranscript(shown.stdout, requiredTranscript(import.meta.dirname, "show-source.full.txt"), bindings);
 
     const json = await niceeval.run(["show", locator, "--source", "--json"], { env: PINNED_ENV });
     expect(json.exitCode, json.diagnostic()).toBe(0);

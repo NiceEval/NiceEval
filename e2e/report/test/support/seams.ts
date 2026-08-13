@@ -22,7 +22,7 @@ export interface SeamBindings {
 
 export const DURATION_TOKEN = /(?:\d+m(?:\s+\d+(?:\.\d+)?)?s|\d+(?:\.\d+)?(?:ms|s))/;
 export const TIMESTAMP_TOKEN =
-  /(?:(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}, \d{4}, \d{1,2}:\d{2}(?:\s*[AP]M)?|\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-[a-z0-9]+|\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?)/;
+  /(?:(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}, \d{4}, \d{1,2}:\d{2}(?:\s*[AP]M)?|\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?)/;
 export const LOCATOR_TOKEN = /@[0-9A-HJKMNP-TV-Z]{13}/;
 export const RUN_ID_TOKEN = /[0-9A-Za-z._:-]{8,}/;
 
@@ -58,7 +58,7 @@ export function auditSeams(template: string, bindings: SeamBindings, actual: str
     bindings: bindingsCounts,
     actual: {
       locator: countMatches(actual, LOCATOR_TOKEN),
-      runId: 0,
+      runId: countBoundOccurrences(actual, bindings.runIds ?? []),
       timestamp: countMatches(actual, TIMESTAMP_TOKEN),
       duration: countMatches(actual, DURATION_TOKEN),
     },
@@ -67,4 +67,19 @@ export function auditSeams(template: string, bindings: SeamBindings, actual: str
 
 function countMatches(text: string, token: RegExp): number {
   return text.match(new RegExp(token, "g"))?.length ?? 0;
+}
+
+function countBoundOccurrences(text: string, values: readonly string[]): number {
+  let count = 0;
+  for (const value of [...values].sort((a, b) => b.length - a.length)) {
+    if (value.length === 0) continue;
+    let from = 0;
+    while (from < text.length) {
+      const index = text.indexOf(value, from);
+      if (index < 0) break;
+      count += 1;
+      from = index + value.length;
+    }
+  }
+  return count;
 }

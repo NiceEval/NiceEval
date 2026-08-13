@@ -1,4 +1,4 @@
-import { only } from "./testkit.ts";
+import { only } from "@niceeval/testkit";
 
 export interface ExpEvalEvent {
   event: "eval";
@@ -19,6 +19,7 @@ export interface ExpResultEvent {
 export interface ClassicExpFacts {
   readonly evals: readonly ExpEvalEvent[];
   readonly result: ExpResultEvent | undefined;
+  readonly runIds: readonly string[];
   locator(experimentId: string, evalId: string): string;
 }
 
@@ -60,9 +61,13 @@ export function classicExpFacts(stdout: string): ClassicExpFacts {
   const events = parseObjects(stdout);
   const evals = events.filter(isEvalEvent);
   const result = events.find(isResultEvent);
+  const runIds = (result?.snapshots ?? [])
+    .map((snapshot) => snapshot.split("/").filter((part) => part.length > 0).at(-1))
+    .filter((part): part is string => typeof part === "string" && part.length > 0);
   return {
     evals,
     result,
+    runIds,
     locator(experimentId, evalId) {
       return only(
         evals,
