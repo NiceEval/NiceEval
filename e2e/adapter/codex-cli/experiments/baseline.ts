@@ -7,6 +7,7 @@ import { sandbox } from "../sandbox.ts";
 const agent = codexAgent({
   apiKey: process.env.CODEX_API_KEY,
   baseUrl: process.env.CODEX_BASE_URL,
+  configFile: "configs/web-search-live.toml",
 });
 
 export default defineExperiment({
