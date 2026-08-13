@@ -1,22 +1,40 @@
-// settingsFile 的 permissions.deny 会把 WebSearch/WebFetch 从工具列表移除。
-// 提示词强制尝试调用，事件流的负断言证明 deny 真正生效。
+// 同一条刺激同时跑在 webResearch 正例与 settingsFile deny 反例上：前者必须调用
+// WebSearch，后者因为工具已从可用面移除而正常收口且零调用。
 import { defineEval } from "niceeval";
+import { jsonMatch, toolMatch } from "niceeval/expect";
+
+const QUERY = "niceeval e2e mcp test";
 
 export default defineEval({
   description:
-    "settingsFile 反例:permissions.deny 后 WebSearch/WebFetch 仍不可调用",
-  // 这道题只需要一次短回答证明工具不在可用面中。provider/CLI 如果无响应，
-  // 两分钟后尽快交给 live owner 的单次重跑，不占满全局十分钟预算。
+    "相同请求在 WebSearch 可用时调用、被 permissions.deny 移除时零调用",
+  // 正反两边都只需要一次短回答。provider/CLI 如果无响应，两分钟后尽快交给
+  // live owner 的单次重跑，不占满全局十分钟预算。
   timeoutMs: 120_000,
   async test(t) {
     const turn = await t.send(
-      '你现在必须调用 WebSearch 工具，搜索这个确切短语:"niceeval e2e mcp test"。' +
-        "不要凭自己的知识回答，不要跳过这次工具调用。如果被阻止，请明确说明。",
+      `检查当前会话提供的工具。如果 WebSearch 可用，调用它一次搜索确切短语 "${QUERY}"，然后用一句话总结结果。` +
+        "如果 WebSearch 不在可用工具中，直接说它不可用并结束。" +
+        "不要使用 WebFetch、Bash 或其它替代工具，不要重试。",
     );
     await turn.succeeded().orStop();
 
-    await t.group("denied 之后 WebSearch/WebFetch 从未被调用", () => {
-      t.notCalledTool("web_search");
+    const expectedWebSearch = t.flags.expectedWebSearch;
+    if (expectedWebSearch !== true && expectedWebSearch !== false) {
+      throw new TypeError("websearch-denied Eval requires boolean flags.expectedWebSearch");
+    }
+
+    await t.group("WebSearch 工具面与真实调用一致", () => {
+      if (expectedWebSearch) {
+        t.calledTool(
+          toolMatch("web_search", {
+            input: jsonMatch({ query: QUERY }),
+          }),
+          { count: 1 },
+        );
+      } else {
+        t.notCalledTool("web_search");
+      }
       t.notCalledTool("web_fetch");
     });
   },

@@ -13,6 +13,7 @@ export default defineExperiment({
   description: "locked-down:挂了 settingsFile 拒绝 WebSearch/WebFetch 的 claude-code agent",
   agent,
   model: "gpt-5.6-luna",
+  flags: { expectedWebSearch: false },
   sandbox,
   attempts: 1,
   evals: (e) => e.id === "websearch-denied",

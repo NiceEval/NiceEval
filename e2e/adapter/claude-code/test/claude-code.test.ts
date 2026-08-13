@@ -32,7 +32,8 @@ const EXPECTED_EXPERIMENTS = [
   "remote-plugin",
   "locked-down",
 ] as const;
-const EXPECTED_PASSED_ATTEMPTS = 18;
+// websearch-denied 同时跑在 coding 正例与 locked-down deny 反例上。
+const EXPECTED_PASSED_ATTEMPTS = 19;
 const RETRY_CONCURRENCY = 4;
 
 const REQUIRED_LIVE_SECRETS = ["ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL"] as const;
