@@ -25,3 +25,4 @@
 | agent-eval、Agent SDK、Eve 与 OTel | [Adapter 接入、事件协议与遥测生态](adapters/README.md) |
 | Vercel agent-eval `ExperimentConfig` | [Experiment 运行矩阵设计参照](experiments/README.md) |
 | LLM tracing、事件历史、内容寻址与可验证存储 | [Record 相似系统研究](record-systems/README.md) |
+| Langfuse、MLflow、W&B、Phoenix 与 ClearML | [运行写入、分析与报告作者面](eval-platform-authoring/README.md) |
