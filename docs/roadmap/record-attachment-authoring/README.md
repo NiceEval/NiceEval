@@ -49,6 +49,7 @@ carry／reuse 的历史 Attempt 不重新打开 producer。历史 Attachment 是
 - 普通 Eval／Experiment 作者只配置或调用领域 SDK，例如 `gpuEnergy({ meter })`。
 - 领域 SDK 作者定义 sealed domain value、RecordAttachment adapter、owner-specific binding 与领域 Analysis API。
 - Record host 显式安装 SDK 导出的 opaque installation；Plugin mount 不自动安装 migration trust。
+- Application maintainer 从 `niceeval/record/host` 取得 scoped maintenance facet，显式 plan、authorize 与 migrate。
 - Analysis 作者调用 SDK 的 `projectGpuEnergy()` 等领域函数，并保留 denominator、穷尽状态、issues 与 refs。
 - Report 作者只声明 SDK 导出的领域 input，并消费 closed values；Report callback 不取得 reader 或 migration。
 - Assertions、Diff、OTel Timing 与其它内建功能使用不导出的 official adapter 和同形 binding。

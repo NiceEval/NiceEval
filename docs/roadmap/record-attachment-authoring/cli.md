@@ -59,6 +59,10 @@ niceeval migrate [--record <root>] [--config <path>] [--yes]
 `--config` 显式选择形成 application registry 的 NiceEval config。省略时沿用项目 config resolution；`--record` 只选择
 实际 Record root，不暗示 converter package、安装位置或安全级别。
 
+CLI 对 config 做配置求值，将所得 `recordAttachments` 原样传给 `openRecordAccessRuntime({ root, recordAttachments })`。随后只调用
+同一个 maintenance facet 的 `planMigration()`、`authorizeMigration()` 与 `migrate()`；它没有第二套 CLI-only planner、
+registry 或 converter executor。
+
 preflight 输出每份 Attachment 的 owner、name、from、to 与状态：
 
 ```text
@@ -128,9 +132,17 @@ state，因此确定性、不读取 clock/random/environment/network/filesystem 
 非交互调用只有显式 `--yes` 才继续。`--yes` 只表示用户确认自己承担备份责任，不创建 backup、rollback、shadow copy、
 output directory 或 migration history，也不能把 unavailable edge 变成 converter。
 
+交互确认和 `--yes` 形成的是 `RecordMigrationAuthorizationDecision`。CLI 必须把 decision 与 exact opaque plan 交给
+`authorizeMigration()`，取得 plan-bound nominal authorization；它不能直接构造 authorization token，也不能把一个
+授权复用于下一次 plan。
+
 converter failure、I/O failure、defect、kill 或 interruption 留下 `migration.in-progress`。此后普通 open、plan 与
 migrate 都 fail closed 为 `record-migration-interrupted`；用户必须从 preflight 给出的 Git commit 或自己的备份恢复，
 不能直接重跑、删除 sentinel 或猜测中间版本。
+
+成功输出逐 family 区分 `migrated`、`already-current`、`preserved-migration-unavailable` 与
+`preserved-unsupported`。只有 target bytes、最终 `record.json`、sentinel 删除和目录 sync 全部完成后，CLI 才能呈现
+success receipt。
 
 ## Producer 被删除以后
 

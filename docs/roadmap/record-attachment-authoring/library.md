@@ -47,6 +47,134 @@ const adapter = defineRecordAttachmentAdapter({
 });
 ```
 
+`versions` 中的每一项都是完整 definition。`migrations` callback 收到相同 definition 的 typed token，并且必须为
+每个非 current version 返回恰好一条相邻 edge。通用形状如下：
+
+```ts
+import { Effect, Either, Stream } from "effect";
+
+declare const recordBlobRefTypeId: unique symbol;
+
+interface RecordBlobRef {
+  readonly [recordBlobRefTypeId]: typeof recordBlobRefTypeId;
+}
+
+type DeepReadonly<Value> =
+  Value extends RecordBlobRef ? Value
+    : Value extends readonly (infer Item)[] ? readonly DeepReadonly<Item>[]
+    : Value extends object ? {
+        readonly [Key in keyof Value]: DeepReadonly<Value[Key]>;
+      }
+    : Value;
+
+type RecordAttachmentPayloadSnapshot<Payload> = DeepReadonly<Payload>;
+
+interface RecordBlobHandleInvalid {
+  readonly code: "record-blob-handle-invalid";
+  readonly reason: "foreign-ref" | "unknown-ref";
+}
+
+interface RecordBlobSource<E> {
+  readonly stream: Stream.Stream<Uint8Array, E, never>;
+}
+
+interface RecordBlobDraft<E> {
+  readonly ref: RecordBlobRef;
+  readonly source: RecordBlobSource<E>;
+}
+
+type RecordBlobDrafts = readonly RecordBlobDraft<unknown>[];
+
+type RecordBlobErrors<Blobs extends RecordBlobDrafts> =
+  Blobs[number] extends RecordBlobDraft<infer E> ? E : never;
+
+interface RecordAttachmentBlobBuilder {
+  readonly add: <E>(source: RecordBlobSource<E>) => RecordBlobDraft<E>;
+}
+
+interface RecordAttachmentBlobBuild<
+  Payload,
+  Blobs extends RecordBlobDrafts,
+> {
+  readonly payload: Payload;
+  readonly blobs: Blobs;
+}
+
+interface RecordAttachmentValue<Payload> {
+  readonly payload: RecordAttachmentPayloadSnapshot<Payload>;
+  readonly blobs: {
+    readonly refs: () => readonly RecordBlobRef[];
+    readonly bytes: (
+      ref: RecordBlobRef,
+    ) => Either.Either<Uint8Array, RecordBlobHandleInvalid>;
+  };
+}
+
+declare const recordAttachmentVersionTokenTypeId: unique symbol;
+declare const recordAttachmentTargetResultTypeId: unique symbol;
+
+interface RecordAttachmentVersionToken<Owner, Payload> {
+  readonly [recordAttachmentVersionTokenTypeId]: {
+    readonly owner: Owner;
+    readonly payload: Payload;
+  };
+}
+
+interface RecordAttachmentTargetResult<Owner, E> {
+  readonly [recordAttachmentTargetResultTypeId]: {
+    readonly owner: Owner;
+    readonly error: E;
+  };
+}
+
+interface RecordAttachmentMigrationTarget<Owner, Payload> {
+  readonly value: (
+    payload: Payload,
+  ) => RecordAttachmentTargetResult<Owner, never>;
+  readonly create: <const Blobs extends RecordBlobDrafts>(
+    build: (
+      blobs: RecordAttachmentBlobBuilder,
+    ) => RecordAttachmentBlobBuild<Payload, Blobs>,
+  ) => RecordAttachmentTargetResult<
+    Owner,
+    RecordBlobErrors<Blobs>
+  >;
+}
+
+type RecordAttachmentAdjacentMigration<Owner, From, To, E> =
+  | {
+      readonly to: RecordAttachmentVersionToken<Owner, To>;
+      readonly migrate: (
+        source: RecordAttachmentValue<From>,
+        target: RecordAttachmentMigrationTarget<Owner, To>,
+      ) => Effect.Effect<
+        RecordAttachmentTargetResult<Owner, E>,
+        E,
+        never
+      >;
+      readonly unavailable?: never;
+    }
+  | {
+      readonly to: RecordAttachmentVersionToken<Owner, To>;
+      readonly unavailable: {
+        readonly reason: string;
+      };
+      readonly migrate?: never;
+    };
+```
+
+`RecordAttachmentPayloadSnapshot` 是 exact decoded、package-owned、deep-frozen 的 plain data。`blobs` 只包含该
+Attachment 自己的 closure。`RecordAttachmentTargetResult` 是只能由 host 消费的 opaque target 值，不是 writer、draft、
+path 或提交 capability。
+
+`RecordBlobSource<E>` 可以流式失败，但其 Effect requirements 固定为 `never`；`migrate` 本身同样固定为 `R = never`。
+SDK 必须在领域 open／seal 阶段取得 clock、network、device 或其它服务，再把 sealed source 交给 adapter。installation
+因此不携带 Layer，maintenance runtime 也不会暗中补一个 converter environment。
+
+`migrate` 的成功值必须由当前 edge 的 `target.value()` 或 `target.create()` 产生。若 source 的版本语义不能无损形成
+next version，SDK 返回 `unavailable` edge；它不能返回 guessed payload。完整 chain 中任一 edge unavailable 时，planner
+不会先执行可用的前半链，而是保留 exact source bytes，并形成 `migration-unavailable`。
+
 `adapt` 只接收 sealed domain value 与 current target。它不采集事实，不读取 clock、network、root、path、owner lease
 或另一个 Attachment。`project` 只解释已经 materialize 的 current value；它不选择 Sample、建立关系或聚合。
 
@@ -99,7 +227,7 @@ adapt: (value, target) =>
 file name、blob key、JSON、native bytes 或手写 ref overload。builder 为本次 adaptation mint refs，并要求 payload 的
 `blobRefs`、显式 `blobs` 与捕获的 sources 完全相等。missing、extra、duplicate 或 foreign ref 都是 closure failure。
 
-current target 返回 opaque write。adapter 无法直接交给 draft，也不能选择 owner、name 或 schemaId。
+current target 返回 opaque target result。adapter 无法直接交给 draft，也不能选择 owner、name 或 schemaId。
 
 ## plain-data snapshot
 

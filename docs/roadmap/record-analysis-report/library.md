@@ -23,6 +23,265 @@ interface RecordInvocationAccess extends RecordSnapshotSource {
   ) => Effect.Effect<A, E | RecordOpenError | RecordWriteError, R>;
 }
 
+type NonEmptyReadonlyArray<A> = readonly [A, ...A[]];
+
+interface RecordAttachmentHostConfig {
+  readonly install: readonly RecordAttachmentInstallation[];
+}
+
+type RecordMigrationGitSafety =
+  | { readonly state: "git-restore-point"; readonly commit: string }
+  | { readonly state: "not-git-worktree" }
+  | { readonly state: "root-outside-worktree" }
+  | {
+      readonly state: "portable-root-dirty";
+      readonly entries: readonly string[];
+    };
+
+type RecordMigrationAttachmentPlan =
+  | {
+      readonly state: "current";
+      readonly owner: "run" | "attempt";
+      readonly name: string;
+      readonly schemaId: string;
+      readonly count: number;
+    }
+  | {
+      readonly state: "migrate";
+      readonly owner: "run" | "attempt";
+      readonly name: string;
+      readonly from: string;
+      readonly to: string;
+      readonly edges: NonEmptyReadonlyArray<{
+        readonly from: string;
+        readonly to: string;
+      }>;
+      readonly count: number;
+    }
+  | {
+      readonly state: "migration-unavailable";
+      readonly owner: "run" | "attempt";
+      readonly name: string;
+      readonly from: string;
+      readonly to: string;
+      readonly blockedAt: {
+        readonly from: string;
+        readonly to: string;
+      };
+      readonly reason: string;
+      readonly count: number;
+    }
+  | {
+      readonly state: "unsupported";
+      readonly owner: "run" | "attempt";
+      readonly name: string;
+      readonly schemaId: string;
+      readonly count: number;
+    };
+
+type RecordMigrationCorePlan =
+  | { readonly state: "current"; readonly format: string }
+  | {
+      readonly state: "migrate";
+      readonly from: string;
+      readonly to: string;
+      readonly edges: NonEmptyReadonlyArray<{
+        readonly from: string;
+        readonly to: string;
+      }>;
+    };
+
+interface RecordMigrationPlanSummary<State extends "needed" | "not-needed"> {
+  readonly state: State;
+  readonly root: string;
+  readonly git: RecordMigrationGitSafety;
+  readonly core: RecordMigrationCorePlan;
+  readonly attachments: readonly RecordMigrationAttachmentPlan[];
+}
+
+declare const recordMigrationPlanTypeId: unique symbol;
+
+type RecordMigrationPlan =
+  | {
+      readonly [recordMigrationPlanTypeId]: typeof recordMigrationPlanTypeId;
+      readonly state: "needed";
+      readonly summary: RecordMigrationPlanSummary<"needed">;
+    }
+  | {
+      readonly [recordMigrationPlanTypeId]: typeof recordMigrationPlanTypeId;
+      readonly state: "not-needed";
+      readonly summary: RecordMigrationPlanSummary<"not-needed">;
+    };
+
+// Planner 的 state 由 summary 内容唯一决定：
+// needed iff core 或至少一个 Attachment 的 state 是 "migrate"；
+// 否则 core 必须是 "current"，且所有 Attachment 只能是
+// "current" | "migration-unavailable" | "unsupported"，plan 为 not-needed。
+
+type RecordMigrationAuthorizationDecision =
+  | { readonly state: "use-git-restore-point" }
+  | { readonly state: "accept-data-loss" };
+
+declare const recordMigrationAuthorizationTypeId: unique symbol;
+
+type RecordMigrationAuthorization =
+  | {
+      readonly [recordMigrationAuthorizationTypeId]:
+        typeof recordMigrationAuthorizationTypeId;
+      readonly state: "git-restore-point";
+      readonly commit: string;
+    }
+  | {
+      readonly [recordMigrationAuthorizationTypeId]:
+        typeof recordMigrationAuthorizationTypeId;
+      readonly state: "accept-data-loss";
+    };
+
+type RecordMigrationAttachmentReceipt =
+  | {
+      readonly state: "already-current";
+      readonly owner: "run" | "attempt";
+      readonly name: string;
+      readonly schemaId: string;
+      readonly count: number;
+    }
+  | {
+      readonly state: "migrated";
+      readonly owner: "run" | "attempt";
+      readonly name: string;
+      readonly from: string;
+      readonly to: string;
+      readonly edges: NonEmptyReadonlyArray<{
+        readonly from: string;
+        readonly to: string;
+      }>;
+      readonly count: number;
+    }
+  | {
+      readonly state: "preserved-migration-unavailable";
+      readonly owner: "run" | "attempt";
+      readonly name: string;
+      readonly from: string;
+      readonly to: string;
+      readonly reason: string;
+      readonly count: number;
+    }
+  | {
+      readonly state: "preserved-unsupported";
+      readonly owner: "run" | "attempt";
+      readonly name: string;
+      readonly schemaId: string;
+      readonly count: number;
+    };
+
+type RecordMigrationReceipt =
+  | {
+      readonly state: "not-needed";
+      readonly plan: RecordMigrationPlanSummary<"not-needed">;
+      readonly authorization: { readonly state: "not-required" };
+      readonly attachments: readonly RecordMigrationAttachmentReceipt[];
+    }
+  | {
+      readonly state: "migrated";
+      readonly plan: RecordMigrationPlanSummary<"needed">;
+      readonly authorization:
+        | { readonly state: "git-restore-point"; readonly commit: string }
+        | { readonly state: "accept-data-loss" };
+      readonly attachments: readonly RecordMigrationAttachmentReceipt[];
+    };
+
+type RecordMigrationAuthorizationError =
+  | {
+      readonly code: "record-migration-git-restore-point-unavailable";
+      readonly git: Exclude<
+        RecordMigrationGitSafety,
+        { readonly state: "git-restore-point" }
+      >;
+    }
+  | { readonly code: "record-migration-plan-not-actionable" };
+
+type RecordHostOperationError =
+  | { readonly code: "record-runtime-closed" }
+  | { readonly code: "record-root-invalid" }
+  | {
+      readonly code: "record-io-error" | "record-permission-denied";
+      readonly operation: string;
+      readonly path: string;
+    }
+  | {
+      readonly code: "record-maintenance-busy";
+      readonly requested: "shared" | "exclusive";
+    }
+  | {
+      readonly code: "record-git-command-failed";
+      readonly operation:
+        | "locate-worktree"
+        | "read-head"
+        | "inspect-status";
+    };
+
+type RecordMigrationSourceIssue =
+  | { readonly code: "record-core-invalid" }
+  | {
+      readonly code: "record-attachment-invalid";
+      readonly owner: "run" | "attempt";
+      readonly name: string;
+      readonly schemaId: string;
+      readonly reason: "payload" | "closure" | "path";
+    };
+
+type RecordCoreMigrationPlanIssue =
+  | {
+      readonly code: "record-core-migration-edge-missing";
+      readonly from: string;
+      readonly to: string;
+    }
+  | {
+      readonly code: "record-core-migration-source-unsupported";
+      readonly format: string;
+    };
+
+type RecordAccessRuntimeOpenError =
+  | {
+      readonly code: "record-attachment-installation-invalid";
+      readonly index: number;
+    }
+  | {
+      readonly code: "record-attachment-adapter-definition-invalid";
+      readonly owner: "run" | "attempt";
+      readonly name: string;
+      readonly issues: NonEmptyReadonlyArray<string>;
+    }
+  | {
+      readonly code: "record-attachment-registry-conflict";
+      readonly owner: "run" | "attempt";
+      readonly name: string;
+    };
+
+type RecordMigrationPlanError =
+  | RecordHostOperationError
+  | { readonly code: "record-migration-interrupted" }
+  | { readonly code: "record-migration-source-invalid"; readonly issues: NonEmptyReadonlyArray<RecordMigrationSourceIssue> }
+  | { readonly code: "record-core-migration-plan-invalid"; readonly issues: NonEmptyReadonlyArray<RecordCoreMigrationPlanIssue> };
+
+type RecordMigrationError =
+  | RecordHostOperationError
+  | { readonly code: "record-migration-interrupted" }
+  | { readonly code: "record-migration-plan-stale" }
+  | { readonly code: "record-migration-authorization-invalid" }
+  | {
+      readonly code: "record-core-migration-step-failed";
+      readonly from: string;
+      readonly to: string;
+    }
+  | {
+      readonly code: "record-attachment-migration-step-failed";
+      readonly owner: "run" | "attempt";
+      readonly name: string;
+      readonly from: string;
+      readonly to: string;
+    };
+
 interface RecordMaintenanceAccess {
   readonly inspect: RecordMaintenanceInspect;
   readonly clean: RecordClean;
@@ -31,12 +290,28 @@ interface RecordMaintenanceAccess {
     RecordMigrationPlanError,
     never
   >;
-  readonly migrate: (input: {
-    readonly plan: RecordMigrationPlan;
-    readonly authorization:
-      | { readonly state: "git-restore-point" }
-      | { readonly state: "accept-data-loss" };
-  }) => Effect.Effect<
+  readonly authorizeMigration: (input: {
+    readonly plan: Extract<RecordMigrationPlan, { readonly state: "needed" }>;
+    readonly decision: RecordMigrationAuthorizationDecision;
+  }) => Either.Either<
+    RecordMigrationAuthorization,
+    RecordMigrationAuthorizationError
+  >;
+  readonly migrate: (input:
+    | {
+        readonly plan: Extract<
+          RecordMigrationPlan,
+          { readonly state: "not-needed" }
+        >;
+      }
+    | {
+        readonly plan: Extract<
+          RecordMigrationPlan,
+          { readonly state: "needed" }
+        >;
+        readonly authorization: RecordMigrationAuthorization;
+      }
+  ) => Effect.Effect<
     RecordMigrationReceipt,
     RecordMigrationError,
     never
@@ -51,16 +326,36 @@ interface RecordAccessRuntime {
 
 declare const openRecordAccessRuntime: (input: {
   readonly root: RecordRoot;
+  readonly recordAttachments: RecordAttachmentHostConfig;
 }) => Effect.Effect<
   RecordAccessRuntime,
   RecordAccessRuntimeOpenError,
   Scope.Scope | RecordFileSystem | RecordMaintenanceLock |
-    RecordWriterLock | RecordEntropy
+    RecordWriterLock | RecordEntropy | RecordGit
 >;
 ```
 
 runtime 绑定 canonical root、filesystem、lock authority、installed registry、generation allocator 与本地 verified-read
 cache。真实 read、write 与 maintenance 发生在 facet child Scope；outer runtime 空闲时不持 lease。
+
+`recordAttachments.install` 是 application 明确信任的第三方 opaque installations。runtime open 时把它们与固定的
+official installations 编译成 immutable registry；Plugin mount、Record bytes 与 Layer 都不能隐式增加 family。
+
+`niceeval/record/host` 同时导出 `makeRecordRoot`、`NodeRecordHostLive` 和上述 plan／authorization／receipt／error types。
+application 在最外层 `Effect.provide(NodeRecordHostLive)`，内部不启动第二个 Effect runtime。
+
+`RecordMigrationPlan` 是 package-minted、root/runtime-affine 的 opaque 值。private state 绑定 source fingerprint、exact
+installation identities、完整相邻 graph、Git inspection 与 source validation。只有 `summary` 可序列化；复制 JSON
+不能恢复 plan。authorization 也由同一 facet 针对 exact needed plan mint，不能伪造或用于另一个 runtime。
+
+plan state 不做启发式判断：当且仅当 Core 是 `migrate`，或至少一个 Attachment family 是 `migrate` 时，plan 才是
+`needed`。若 Core 是 `current`，并且所有 family 都是 `current | migration-unavailable | unsupported`，plan 必须是
+`not-needed`；后两态保留 exact source 并进入 receipt，不会单独触发 rewrite。混合 plan 中只要另一个 Core／family 可迁移，
+整体仍是 `needed`，不可迁移与不支持的 family 继续按 preserved state 返回。
+
+`not-needed` plan 不要求 authorization。needed plan 必须先经过 `authorizeMigration()`；API 不根据 Git 状态自动选择
+`accept-data-loss`。成功 receipt 只在 target bytes、最终 `record.json`、sentinel 删除与目录 sync 全部完成后返回。
+sentinel 创建后的 failure、defect 或 interruption不返回 receipt，并保留 fail-closed 状态。
 
 `RecordInvocationAccess` 可以在 write session 内用 `session.view` 做 reuse planning，并在 session 关闭后通过继承的
 `withSnapshot()` 打开 fresh reader。`RecordReader` 是完整 `FrozenRecordView`，也是 `selectAnalysisSample()` 的精确
@@ -234,18 +529,20 @@ declare const executeReport: (input: {
 
 declare const executeReportFromRecord: (input: {
   readonly root: RecordRoot;
+  readonly recordAttachments: RecordAttachmentHostConfig;
   readonly selection: AnalysisSelectionRequest;
   readonly report?: Report;
 }) => Effect.Effect<
   ReportExecution,
-  RecordReaderOpenError | AnalysisSelectionError |
+  RecordAccessRuntimeOpenError | RecordReaderOpenError | AnalysisSelectionError |
     ReportExecutionError,
   RecordFileSystem | RecordMaintenanceLock
 >;
 ```
 
-`executeReportFromRecord()` 是默认 application／CLI 的一次性组合入口。它用 `Effect.scoped()` 打开 reader，完成 selection
-与 `executeReport()`，再关闭 reader。已有 `RecordAccessRuntime` 的 host 使用 `withSnapshot()` 与第一种入口，不另开 root。
+`executeReportFromRecord()` 是默认 application／CLI 的一次性组合入口。它用相同 `recordAttachments` 编译读取 registry，
+再于 `Effect.scoped()` 中打开 reader、完成 selection 与 `executeReport()`。已有 `RecordAccessRuntime` 的 host 使用
+`withSnapshot()` 与第一种入口，不另开 root。
 
 两条入口形成同一种 `ReportExecution`。它不含 reader、handle、Scope、path、callback 或延迟 I/O；`show`、`view` 与
 static export 只消费这个 closed value。

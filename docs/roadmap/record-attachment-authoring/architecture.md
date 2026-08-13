@@ -201,6 +201,7 @@ SDK 的领域 Analysis API 必须保留 Sample denominator、每 slot 状态、i
 config installs opaque installation
   → registry validates adapter identity and complete graph
   → plan exact-matches stored owner/name/schema
+  → explicit decision mints exact-plan authorization
   → exclusive maintenance lock + sentinel
   → adjacent converter + target
   → shared validators
@@ -209,6 +210,9 @@ config installs opaque installation
 
 converter 只读取 exact materialized source 与自己的 blob closure，并通过下一版本 target 形成 opaque write。它没有 root、
 clock、network、current Eval、Plugin、collector 或 writer context。普通 read、write、Analysis 与 Report 不运行 converter。
+
+plan 与 authorization 都由同一个 maintenance facet mint。plan 绑定 exact runtime、source snapshot、installation identities
+与 Git inspection；authorization 绑定 exact needed plan。结构相同的对象、另一 plan、另一 runtime 或下一进程都无效。
 
 ## official 与第三方
 

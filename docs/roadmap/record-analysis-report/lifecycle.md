@@ -3,7 +3,7 @@
 ## Invocation 到 Report
 
 ```text
-openRecordAccessRuntime(root)
+openRecordAccessRuntime(root, recordAttachments)
   │
   ├─ invocation.withWriteSession
   │    ├─ session.view → reuse planning → ExecutionReusePlan
@@ -104,6 +104,7 @@ CLI 的 `executeReportFromRecord()` 只是 open reader → selection → `execut
 maintenance.planMigration
   → exact-match installed opaque capabilities
   → build root-bound plan
+  → maintenance.authorizeMigration(exact plan, explicit decision)
   → exclusive maintenance lock
   → create migration.in-progress
   → run adjacent converters

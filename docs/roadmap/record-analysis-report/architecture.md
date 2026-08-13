@@ -38,11 +38,11 @@ writer。领域 SDK 拥有两道边界：
 ## 一套 substrate，不是一把万能 client
 
 ```text
-openRecordAccessRuntime(root)
+openRecordAccessRuntime(root, recordAttachments)
   ├─ snapshots ───── withSnapshot ─────► Analysis / Report host
   ├─ invocation ──── withWriteSession ─► Invocation coordination
   │                                      └─ host-internal owner leases
-  └─ maintenance ─── plan / migrate ───► maintenance host
+  └─ maintenance ─── plan / authorize / migrate ───► maintenance host
 ```
 
 三种 facet 共享 canonical root、runtime registry、lock authority、generation allocator、verified cache 与 validators，但不

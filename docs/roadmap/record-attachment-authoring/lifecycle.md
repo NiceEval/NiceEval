@@ -157,5 +157,6 @@ Run 在全部 Attempt references、Run bindings、aggregate contract 与 portabl
 reader 在 frozen snapshot 中 materialize Attachment；projector只解释 immutable available value。两者不打开 producer
 Scope，也不调用 adapter `adapt`。
 
-migration 在 exclusive maintenance Scope 中运行 adjacent converter。它只持 source value 与 target builder；不能回到
-producer lifecycle、重新 open meter、读取当前宿主运行条件或发布新 owner。
+migration host 先形成 opaque plan，再根据 application 的 explicit decision mint exact-plan authorization。执行在
+exclusive maintenance Scope 中运行 adjacent converter。converter 只持 source value 与 target builder；不能回到 producer
+lifecycle、重新 open meter、读取当前宿主运行条件或发布新 owner。

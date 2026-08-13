@@ -56,7 +56,7 @@ Eval、Experiment 与 Hook context 不暴露 Record 方法、write grant 或 ver
 |---|---|---|
 | `RecordSnapshotSource` | 在 child Scope 内取得 fresh `RecordReader` | Analysis／Report host |
 | `RecordInvocationAccess` | snapshot 能力，加 `withWriteSession()` | Invocation coordination |
-| `RecordMaintenanceAccess` | inspect、clean、plan migration 与 migrate | maintenance CLI／host |
+| `RecordMaintenanceAccess` | inspect、clean、plan、plan-bound authorization 与 migrate | maintenance CLI／host |
 
 Invocation 从 write session 为每个 mounted binding 派生 host-internal owner lease。adapter binding 与 official binding 都
 提交同一 canonical command；producer 从不拿 root runtime。

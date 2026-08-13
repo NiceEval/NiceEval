@@ -175,9 +175,13 @@ const report = defineReport({ id, calculations, pages });
 // niceeval view --record <root> --run <run-id> --out <target>
 ```
 
-`--record`、`--run` / `--latest` 与 `--out` 在 CLI 调用处可见。内部 host 在 frozen
-reader Scope 内完成 selection、Attachment I/O 与作者 graph，形成 immutable
-`ReportExecution`。包不导出 reader、selection handle 或 `executeReport()` 给应用 host。
+`--record`、`--run` / `--latest` 与 `--out` 在 CLI 调用处可见。host 在 frozen reader Scope 内完成 selection、
+Attachment I/O 与作者 graph，形成 immutable `ReportExecution`。根入口与普通 consumer 子路径不导出 reader、
+selection handle 或 `executeReport()`。
+
+需要组合 CLI 或 application main 的代码只能从 host-only 子路径导入 scoped facade，例如
+`niceeval/record/host` 与 `niceeval/report/host`。这些入口不会进入 Report 作者 callback；callback-bound
+`RecordReader` 与 `AnalysisSampleHandle` 也不能逃出 Scope。普通 Eval、Analysis 与 Report consumer 不使用 host 子路径。
 
 Record 不提供局部 edit/delete、mirror、proof、revision 或防伪 API。业务演进通过新的 RecordAttachment schema 与相邻 migration 进入；已发布 Run 不再修改。
 

@@ -29,6 +29,21 @@ Record host 对某个 opaque RecordAttachment adapter 的读取与显式 migrati
 producer binding 或当前 owner 的生命周期能力。
 _Avoid_: Plugin discovery, Producer registration
 
+**Record migration plan**:
+一次只读 preflight 对 exact Record snapshot、installed trust 与恢复条件形成的不可伪造迁移计划。它列出将迁移、保留或
+无法解释的全部 family，但本身不授权写入。
+_Avoid_: Migration config, Dry-run output
+
+**Record migration authorization**:
+application maintainer 针对一份 exact Record migration plan 作出显式恢复风险决定后，由 maintenance host mint 的一次性
+authority。它不能跨 plan、runtime 或进程复用。
+_Avoid_: Yes flag, Migration option
+
+**Record migration receipt**:
+Record migration durable 完成后的不可变结果，逐 family 说明 migrated、already current 或 preserved。失败或中断不产出
+receipt。
+_Avoid_: Migration log, Plan summary
+
 **RecordAdapter binding**:
 把一个 RecordAttachment adapter 与一个具名 producer behavior 绑定到 exact Run 或 Attempt occurrence 的声明。
 它为每个实际执行 owner 建立 total producer obligation，不是普通代码可选调用的 writer capability。
