@@ -109,3 +109,8 @@ _Avoid_: Heuristic join, Metric result
 从 Sample-aligned facts 或 relations 计算指标、coverage 与领域模型的可选责任。只有 host 管理其
 dependency、去重或局部失败时，它才是独立 runtime layer。
 _Avoid_: Projection, Page loader
+
+**Report component**:
+Report 中消费 closed projected／derived values 的 Calculation、Page 或显示形状。它不读取 Record，
+也不充当 Analysis API。
+_Avoid_: Analysis component, Record component

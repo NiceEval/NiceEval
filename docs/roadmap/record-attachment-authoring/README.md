@@ -80,4 +80,4 @@ Analysis 与 Report 只接收领域命名的 projection declaration。
 - [Architecture](architecture.md) —— authority、identity、中立 kernel、Plugin occurrence 与 official 边界。
 - [Lifecycle](lifecycle.md) —— total obligation、Scope、seal／release、poison 与 publication。
 - [CLI](cli.md) —— installation registry、显式 migration、Git 恢复点与 sentinel。
-- [Use Case](use-case/README.md) —— 不同领域怎样包装 SPI；完整 GPU 与 OTel 场景留在各自用例。
+- [Use Case](use-case/README.md) —— 官方 OTel 与用户 GPU 扩展两套纵向用例，以及 SPI 的机械切片。

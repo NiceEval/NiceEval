@@ -1,4 +1,4 @@
-# 官方 OTel Timing 从采集到 Report
+# 主用例一：官方 OTel Timing 从采集到 Report
 
 这是 `niceeval.timing/v1` 的端到端 Use Case，不是通用 Library。adapter、binding、Projection 与 Report
 的公共语法分别以 [RecordAttachment adapter SPI](../../record-attachment-authoring/library.md)、
@@ -20,8 +20,52 @@ Agent／Adapter tracing API
 OTel 是采集输入，不是持久事实权威。Record 中唯一的 timing 事实是 collector 封口后写入的
 `niceeval.timing/v1`。raw OTLP、epoch timestamp、span attribute、provider 名称与 exporter provenance 都不落盘。
 
-普通用户只启用 Agent／Adapter 已有的 tracing 集成，例如 AI SDK 的 `aiSdkOtel()`。用户不持有 Timing adapter、
-collector 或 Record capability。
+## 0. 普通用户怎样启用 OTel
+
+普通用户只启用 Agent／Adapter 已有的 tracing 集成。以 AI SDK 为例，OTel 配在 Agent 定义上；`generate()` 把 NiceEval
+提供的 per-Attempt telemetry 原样交给 AI SDK：
+
+```ts
+// agents/assistant.ts
+import { generateText } from "ai";
+import { aiSdkAgent } from "niceeval/adapter";
+import { aiSdkOtel } from "niceeval/adapter/otel";
+
+export const assistant = aiSdkAgent({
+  name: "assistant",
+  tracing: aiSdkOtel(),
+  generate: ({ messages, model, signal, telemetry }) =>
+    generateText({
+      model: resolveModel(model),
+      messages,
+      abortSignal: signal,
+      telemetry,
+    }),
+});
+```
+
+Experiment 仍只选择 Agent 与 Eval：
+
+```ts
+export default defineExperiment({
+  agent: assistant,
+  evals: ["coding/"],
+});
+```
+
+用户不持有 Timing adapter、collector、installation 或 Record capability。`aiSdkOtel()` 只是官方采集入口；后续写入、
+Analysis 与内建 Report 都由官方 package 接管。
+
+## 官方 package 提供哪些消费面
+
+| 消费者 | 使用的 official surface | 不应做什么 |
+|---|---|---|
+| 普通 Analysis script | `projectTiming()`、`deriveObservedWindows()` | 不 import projector、schema 或 reader |
+| Relations／其它 Analysis | closed `ProjectedSample` 与 exact refs | 不按数组位置或时间邻近猜 join |
+| 内建 Report | `timingByAttempt` + 同一个 `deriveObservedWindows()` | 不复制一份 Report-only 公式 |
+| `show`／`view`／static export | official Analysis value 或同一 `ReportExecution` | 不直接解码 Timing Attachment |
+
+因此“官方”不只表示 NiceEval 写 schema；它也表示 NiceEval 拥有从采集、领域 Analysis 到内建 Report 组件的整条消费契约。
 
 ## 1. 官方 package 定义什么值
 
@@ -72,13 +116,15 @@ const payload = {
 `RecordAttachmentValue<AttemptTimingAttachmentV1>`。它包含 v1 payload 与自己的空 blob closure；它仍只是一份
 Attempt-owned Attachment value。
 
-package 内部保留 projector；公共包只导出后文的领域 projection declaration 与 `projectTiming()`，不导出 adapter、
-namespace authority、raw projector、installation 或 binding：
+package 内部只保留 raw projector：
 
 ```ts
 const attemptTimingProjector =
   attemptTimingRecord.projector;
 ```
+
+official Analysis surface 只导出后文的 `timingByAttempt`、`projectTiming()` 与 `deriveObservedWindows()`。
+它不导出 adapter、namespace authority、raw projector、installation 或 binding。
 
 ## 2. OTel span 怎样进入唯一 collector
 
@@ -161,12 +207,13 @@ generic sink。
 v1 是当前版本，暂时没有历史 edge，所以 migration graph 明确为 `() => ({})`。以后发布 v2 时必须在同一 adapter
 中增加相邻 edge；普通 write 与 read 不会提前或隐式迁移。
 
-## 4. 普通 Analysis 怎样读取和计算
+## 4. 官方 Analysis surface 怎样被其它层消费
 
-SDK 把 public projector 绑定到 Attempt slot access，并导出领域函数：
+official Timing analysis module 把 package-private projector 绑定到 Attempt slot access，并公开领域 declaration、直接读取
+函数与纯 Derivation：
 
 ```ts
-// analysis/timing-analysis.ts
+// niceeval official timing analysis module
 import type {
   AnalysisSlotRef,
   CoreInvalidAnalysisSlot,
@@ -191,15 +238,23 @@ export const projectTiming = (sampleHandle) =>
     sampleHandle,
     projection: timingByAttempt,
   });
+```
+
+普通 Analysis script 只消费这些 official exports：
+
+```ts
+import {
+  deriveObservedWindows,
+  projectTiming,
+} from "niceeval/analysis";
 
 const projected = yield* projectTiming(sampleHandle);
-
 const windows = deriveObservedWindows(projected);
 ```
 
-本用例把 `deriveObservedWindows()` 放在 application 的 `analysis/timing-analysis.ts`，普通 Analysis 与 Report 都
-import 这一个纯函数。下面先固定该 module 的输入输出签名，函数体遵守随后七条规则。它不读 Record，也不依赖
-Report。它返回应用自有的普通 closed value，而不是调用
+`deriveObservedWindows()` 由 official Timing analysis module 拥有，普通 Analysis 与内建 Report 都 import 这一个纯
+函数。下面固定其输入输出签名；函数体遵守随后七条规则。它不读 Record，也不依赖 Report。它返回普通 closed value，
+而不是调用
 `metricValue()`、`evidenceRow()` 或另一个 runtime：
 
 ```ts
@@ -288,10 +343,10 @@ export declare const deriveObservedWindows: (
 这个 bounding window 不等于 interval duration 之和。v1 没有 designated root 或完整因果边，因而不能从这棵 parent tree
 声称 Attempt 总耗时或 critical path，也不能跨 Attempt 自动求平均。
 
-## 5. Report 怎样消费同一个纯函数
+## 5. 官方 Report 组件怎样消费同一个纯函数
 
-Report 只静态声明同一个 projection。Calculation 直接复用 `deriveObservedWindows()`；普通 Analysis 与 Report 不维护
-两份公式。
+official Report package 静态声明同一个 projection。Calculation 直接复用 `deriveObservedWindows()`；普通 Analysis、
+内建 Report、`show`、`view` 与 static export 不维护第二份公式。
 
 ```ts
 import { Either } from "effect";
@@ -309,11 +364,11 @@ import {
 import {
   deriveObservedWindows,
   timingByAttempt,
-} from "../analysis/timing-analysis.js";
+} from "niceeval/analysis";
 
 const inputs = reportInputs({ timing: timingByAttempt });
 
-const observedWindows = defineCalculation({
+export const observedWindows = defineCalculation({
   id: Either.getOrThrow(reportComponentId("observed-windows")),
   inputs,
   completeness: "allow-partial",
@@ -321,7 +376,7 @@ const observedWindows = defineCalculation({
     deriveObservedWindows(inputs.timing),
 });
 
-const timingPage = definePage({
+export const timingPage = definePage({
   id: Either.getOrThrow(reportComponentId("timing")),
   route: Either.getOrThrow(reportRoute("/timing")),
   calculations: { observedWindows },
@@ -381,6 +436,9 @@ export default defineReport({
   pages: [timingPage],
 });
 ```
+
+这两个 official Report 组件属于 NiceEval 内建 Report 组合，不要求普通用户在项目里重写。`show` 可以消费同一个 closed
+Analysis value；`view` 与 static export 消费同一个 `ReportExecution`，所以终端、网页和导出站不会各算一套 timing。
 
 Report host 仍会在内建 problems surface 保留 unavailable、migration、unsupported、invalid 与 callback defect。
 页面能选择怎样显示 Calculation value，但不能把这些问题从 `ReportExecution` 删除，也不能在 render callback 中重新

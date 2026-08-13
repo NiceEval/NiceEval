@@ -95,7 +95,7 @@ Report 的 `reportInputs()` 只保存 consumer 自己的有限 input declaration
 - total producer obligation 与 fresh Analysis snapshot；
 - Analysis selection、Projection、Relations 与 Derivation；
 - Report input manifest 与 closed author callback；
-- OTel Timing、Assertions、Diff 与第三方 GPU 的完整领域用例；
+- 官方 OTel Timing 与用户 GPU 扩展两套完整纵向用例；Assertions 与 Diff 作为官方领域变体；
 - verified-read cache、reuse planning 与 migration 的分权。
 
 本方向不增加通用 context extension、Record event log、managed Derivation graph 或第二套 Report 查询语言。
@@ -105,4 +105,4 @@ Report 的 `reportInputs()` 只保存 consumer 自己的有限 input declaration
 - [Library](library.md) —— runtime facets、adapter handoff、Analysis direct call 与 Report input。
 - [Architecture](architecture.md) —— 三层责任、能力边界、中立 kernel 与不变量。
 - [Lifecycle](lifecycle.md) —— binding、write session、fresh snapshot、Report 与显式 migration 时序。
-- [Use Case](use-case/README.md) —— official 与 third-party facts 的完整语法。
+- [Use Case](use-case/README.md) —— 官方能力与用户扩展两套完整语法，以及共用的 host lifecycle 切片。
