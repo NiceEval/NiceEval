@@ -124,16 +124,24 @@ test("view 重建项目模块、配置与 Record，失败时保留 last-good exe
         timeoutMs: 15_000,
         label: "current config import failure",
       });
-      const configUnavailable = await pollUntil(
+      const retainedAfterConfigFailure = await pollUntil(
         async () => {
           const response = await fetch(origin!);
-          if (response.status !== 503) return undefined;
+          if (
+            response.status !== 200
+            || response.headers.get("x-niceeval-last-rebuild-problem") !== "1"
+          ) return undefined;
           const body = await response.text();
-          return body.includes("current target unavailable") ? body : undefined;
+          return body.includes("REPORT_FIRST")
+            && body.includes("INDIRECT_SECOND")
+            && body.includes("#654321")
+            && body.includes("niceeval-last-rebuild-problem")
+            ? body
+            : undefined;
         },
-        { timeoutMs: 15_000, intervalMs: 100, label: "current config unavailable response" },
+        { timeoutMs: 15_000, intervalMs: 100, label: "config failure retains last-good execution" },
       );
-      expect(configUnavailable).toContain("current target unavailable");
+      expect(retainedAfterConfigFailure).toContain("niceeval-last-rebuild-problem");
 
       await writeFile(configPath, liveConfig, "utf8");
       await pollUntil(
