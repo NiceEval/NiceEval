@@ -7,15 +7,15 @@ import { sandbox } from "../sandbox.ts";
 const agent = codexAgent({
   apiKey: process.env.CODEX_API_KEY,
   baseUrl: process.env.CODEX_BASE_URL,
-  configFile: "configs/web-search-live.toml",
+  configFile: "configs/shell-enabled.toml",
 });
 
 export default defineExperiment({
-  description: "codex-cli 基线闭环:coding 工具轨 / web search / 会话续接 / usage 与实际模型",
+  description: "codex-cli 基线闭环:coding 工具轨 / configFile / 会话续接 / usage 与实际模型",
   agent,
   model: "gpt-5.6-luna",
   sandbox,
-  flags: { webSearch: true },
+  flags: { shellTool: true },
   evals: ["coding-task", "configfile", "session", "usage"],
   attempts: 1,
   budget: 3,

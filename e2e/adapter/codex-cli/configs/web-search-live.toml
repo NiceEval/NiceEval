@@ -1,3 +1,0 @@
-# configFile 正调显式打开 Codex 的联网检索工具；与 no-web-search.toml 组成同 Eval A/B。
-# 不依赖 CLI 默认 mode，避免 Codex 版本、权限姿态或 provider 默认值变化让正调失去工具。
-web_search = "live"
