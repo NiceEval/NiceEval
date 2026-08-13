@@ -57,8 +57,12 @@ export function planSite(
         path: "index.html",
         contentType: "text/html; charset=utf-8",
         content: root === undefined
-          ? renderHtml(renderReportExecutionText({ execution }), theme)
-          : renderHtml({ document: root.document, route: root.route, theme }),
+          ? renderReportHtml({
+              text: renderReportExecutionText({ execution }),
+              locale: execution.locale,
+              theme,
+            })
+          : renderHtml({ document: root.document, route: root.route, locale: execution.locale, theme }),
       }),
     ]),
   });

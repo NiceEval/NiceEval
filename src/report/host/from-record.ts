@@ -18,6 +18,7 @@ import {
 } from "../../projection/attempt-selection.ts";
 import defaultOverviewReport from "../built-in/overview.ts";
 import type { Report } from "../author/model.ts";
+import type { ClassicLocale, ClassicSelectionOrigin } from "../classic/index.ts";
 import type { ReportExecution } from "../execution/model.ts";
 import { executeReport, type ReportExecutionError } from "./execute.ts";
 
@@ -48,6 +49,9 @@ export function executeReportFromRecord(input: {
   readonly selection: AnalysisSelectionRequest;
   /** Omit for the built-in closed semantic overview. */
   readonly report?: Report;
+  /** Private host input. Never stored on AnalysisSample. */
+  readonly selectionOrigin?: ClassicSelectionOrigin;
+  readonly locale?: ClassicLocale;
 }): Effect.Effect<
   ReportExecution,
   ExecuteReportFromRecordError,
@@ -60,6 +64,8 @@ export function executeReportFromRecord(input: {
       return yield* executeReport({
         sampleHandle,
         report: input.report ?? defaultOverviewReport,
+        ...(input.selectionOrigin === undefined ? {} : { selectionOrigin: input.selectionOrigin }),
+        ...(input.locale === undefined ? {} : { locale: input.locale }),
       });
     }),
   );
@@ -75,6 +81,9 @@ export function executeReportForAttemptFromRecord(input: {
   readonly locator: AttemptLocator;
   /** Omit for the built-in closed semantic overview. */
   readonly report?: Report;
+  /** Private host input. Never stored on AnalysisSample. */
+  readonly selectionOrigin?: ClassicSelectionOrigin;
+  readonly locale?: ClassicLocale;
 }): Effect.Effect<
   ReportExecution,
   ExecuteReportForAttemptFromRecordError,
@@ -90,6 +99,8 @@ export function executeReportForAttemptFromRecord(input: {
       return yield* executeReport({
         sampleHandle,
         report: input.report ?? defaultOverviewReport,
+        ...(input.selectionOrigin === undefined ? {} : { selectionOrigin: input.selectionOrigin }),
+        ...(input.locale === undefined ? {} : { locale: input.locale }),
       });
     }),
   );

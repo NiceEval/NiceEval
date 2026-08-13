@@ -1,13 +1,13 @@
 import { defineExperiment } from "niceeval";
 import { deterministicAgent } from "../agents/deterministic.ts";
 
-const agent = deterministicAgent("report-fixture", 0.02);
-
 export default defineExperiment({
-  description: "main:签入确定性 Agent 生成 passed/failed/errored 三态证据",
-  agent,
+  description: "classic-companion:用不均匀 Attempt 数证明 passRate 按 Eval 等权",
+  agent: deterministicAgent("report-fixture-companion", 0.01),
   model: "report-fixture-v1",
   labels: { line: "codex" },
   flags: { memory: "baseline" },
-  evals: ["tool-call", "deliberate-fail", "deliberate-error"],
+  attempts: 3,
+  maxConcurrency: 1,
+  evals: ["deliberate-fail"],
 });

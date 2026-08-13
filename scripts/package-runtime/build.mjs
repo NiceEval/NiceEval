@@ -29,6 +29,8 @@ const PUBLIC_ENTRIES = [
   ["./projection", "projection/index.ts"],
   ["./report", "report/index.ts"],
   ["./report/built-in", "report/built-in/index.tsx"],
+  ["./report/jsx-runtime", "report/jsx-runtime.ts"],
+  ["./report/jsx-dev-runtime", "report/jsx-dev-runtime.ts"],
 ];
 
 function isRuntimeSource(file) {

@@ -4,8 +4,31 @@ import {
   type ReportDownloadPath,
   type ReportRoute,
 } from "../author/identity.ts";
+import { isPortableSegment } from "../../record/model/identifiers.ts";
 
 export type ReportScalar = null | boolean | number | string;
+
+/** Targets stay declarative: a renderer chooses a safe local URL without I/O. */
+export type ReportLinkTarget =
+  | { readonly kind: "route"; readonly route: ReportRoute }
+  | { readonly kind: "download"; readonly path: ReportDownloadPath }
+  | { readonly kind: "external"; readonly href: string }
+  | { readonly kind: "attempt"; readonly locator: string };
+
+/** A bounded coverage receipt attached to a visible aggregate, never inferred by a host. */
+export interface ReportCoverage {
+  readonly basis: "eval";
+  readonly samples: number;
+  readonly total: number;
+}
+
+/** A scalar with its author-provided display and optional availability receipt. */
+export interface ReportDisplayValue {
+  readonly value: ReportScalar;
+  readonly display: string;
+  readonly unit?: string;
+  readonly coverage?: ReportCoverage;
+}
 
 export type ReportInline =
   | { readonly type: "text"; readonly value: string }
@@ -14,14 +37,16 @@ export type ReportInline =
   | {
       readonly type: "link";
       readonly label: readonly ReportInline[];
-      readonly target:
-        | { readonly kind: "route"; readonly route: ReportRoute }
-        | { readonly kind: "download"; readonly path: ReportDownloadPath };
+      readonly target: ReportLinkTarget;
     };
 
 export interface ReportDocument {
   readonly title: string;
   readonly children: readonly ReportBlock[];
+  /** Opts into the host-owned classic dashboard presentation without a second renderer. */
+  readonly presentation?: "classic-dashboard";
+  /** States whether classic metadata came from the current declaration or a partial selection. */
+  readonly metadataOrigin?: "current-declaration" | "partial";
 }
 
 export type ReportBlock =
@@ -32,7 +57,12 @@ export type ReportBlock =
   | ReportMetric
   | ReportStatus
   | ReportCode
-  | ReportChart;
+  | ReportChart
+  | ReportHero
+  | ReportSummary
+  | ReportRankedBars
+  | ReportScatter
+  | ReportTreeTable;
 
 export interface ReportSection {
   readonly type: "section";
@@ -94,6 +124,80 @@ export interface ReportChart {
   }[];
 }
 
+/** A declarative dashboard introduction. Its links are deliberately external-only. */
+export interface ReportHero {
+  readonly type: "hero";
+  readonly description: string;
+  readonly links: readonly {
+    readonly label: string;
+    readonly target: Extract<ReportLinkTarget, { readonly kind: "external" }>;
+  }[];
+}
+
+export interface ReportSummary {
+  readonly type: "summary";
+  readonly lastRunAt: number | null;
+  readonly metrics: readonly ({
+    readonly key: string;
+    readonly label: string;
+  } & ReportDisplayValue)[];
+}
+
+export interface ReportRankedBars {
+  readonly type: "ranked-bars";
+  readonly title: string;
+  readonly layout: "horizontal";
+  readonly points: readonly {
+    readonly key: string;
+    readonly label: string;
+    readonly series: string;
+    readonly value: number | null;
+    readonly display: string;
+    readonly coverage: ReportCoverage;
+  }[];
+  readonly better: "higher" | "lower";
+}
+
+export interface ReportScatter {
+  readonly type: "scatter";
+  readonly title: string;
+  readonly xLabel: string;
+  readonly yLabel: string;
+  readonly connect: boolean;
+  readonly series: readonly {
+    readonly label: string;
+    readonly points: readonly {
+      readonly key: string;
+      readonly x: number | null;
+      readonly y: number | null;
+      readonly xDisplay: string;
+      readonly yDisplay: string;
+      readonly target?: ReportLinkTarget;
+    }[];
+  }[];
+}
+
+export type ReportTreeRowKind = "experiment" | "eval" | "attempt";
+export type ReportTreeCell = ReportScalar | ReportDisplayValue;
+
+export interface ReportTreeTable {
+  readonly type: "tree-table";
+  readonly caption: string;
+  readonly columns: readonly {
+    readonly key: string;
+    readonly label: string;
+    readonly align?: "start" | "end";
+  }[];
+  readonly rows: readonly {
+    readonly key: string;
+    readonly kind: ReportTreeRowKind;
+    readonly depth: 0 | 1 | 2;
+    readonly label: string;
+    readonly target?: ReportLinkTarget;
+    readonly cells: Readonly<Record<string, ReportTreeCell>>;
+  }[];
+}
+
 export const REPORT_DOCUMENT_NODES_MAX = 20_000;
 export const REPORT_DOCUMENT_DEPTH_MAX = 32;
 
@@ -129,10 +233,14 @@ const MAX_ISSUES = 64;
 export function reportDocument(input: {
   readonly title: string;
   readonly children: readonly ReportBlock[];
+  readonly presentation?: ReportDocument["presentation"];
+  readonly metadataOrigin?: ReportDocument["metadataOrigin"];
 }): ReportDocument {
   return Object.freeze({
     title: input.title,
     children: freezeArray(input.children),
+    ...(input.presentation === undefined ? {} : { presentation: input.presentation }),
+    ...(input.metadataOrigin === undefined ? {} : { metadataOrigin: input.metadataOrigin }),
   });
 }
 
@@ -152,16 +260,12 @@ export function reportEmphasis(
 
 export function reportLink(input: {
   readonly label: readonly ReportInline[];
-  readonly target:
-    | { readonly kind: "route"; readonly route: ReportRoute }
-    | { readonly kind: "download"; readonly path: ReportDownloadPath };
+  readonly target: ReportLinkTarget;
 }): ReportInline {
   return Object.freeze({
     type: "link" as const,
     label: freezeArray(input.label),
-    target: input.target.kind === "route"
-      ? Object.freeze({ kind: "route" as const, route: input.target.route })
-      : Object.freeze({ kind: "download" as const, path: input.target.path }),
+    target: cloneLinkTarget(input.target),
   });
 }
 
@@ -279,6 +383,93 @@ export function reportChart(input: {
   });
 }
 
+export function reportHero(input: {
+  readonly description: string;
+  readonly links: readonly ReportHero["links"][number][];
+}): ReportHero {
+  return Object.freeze({
+    type: "hero" as const,
+    description: input.description,
+    links: Object.freeze(input.links.map((link) => Object.freeze({
+      label: link.label,
+      target: Object.freeze({ kind: "external" as const, href: link.target.href }),
+    }))),
+  });
+}
+
+export function reportSummary(input: {
+  readonly lastRunAt: number | null;
+  readonly metrics: readonly (ReportSummary["metrics"][number])[];
+}): ReportSummary {
+  return Object.freeze({
+    type: "summary" as const,
+    lastRunAt: input.lastRunAt,
+    metrics: Object.freeze(input.metrics.map((metric) => Object.freeze({
+      key: metric.key,
+      label: metric.label,
+      ...cloneDisplayValue(metric),
+    }))),
+  });
+}
+
+export function reportRankedBars(input: Omit<ReportRankedBars, "type">): ReportRankedBars {
+  return Object.freeze({
+    type: "ranked-bars" as const,
+    title: input.title,
+    layout: input.layout,
+    points: Object.freeze(input.points.map((point) => Object.freeze({
+      key: point.key,
+      label: point.label,
+      series: point.series,
+      value: point.value,
+      display: point.display,
+      coverage: cloneCoverage(point.coverage),
+    }))),
+    better: input.better,
+  });
+}
+
+export function reportScatter(input: Omit<ReportScatter, "type">): ReportScatter {
+  return Object.freeze({
+    type: "scatter" as const,
+    title: input.title,
+    xLabel: input.xLabel,
+    yLabel: input.yLabel,
+    connect: input.connect,
+    series: Object.freeze(input.series.map((series) => Object.freeze({
+      label: series.label,
+      points: Object.freeze(series.points.map((point) => Object.freeze({
+        key: point.key,
+        x: point.x,
+        y: point.y,
+        xDisplay: point.xDisplay,
+        yDisplay: point.yDisplay,
+        ...(point.target === undefined ? {} : { target: cloneLinkTarget(point.target) }),
+      }))),
+    }))),
+  });
+}
+
+export function reportTreeTable(input: Omit<ReportTreeTable, "type">): ReportTreeTable {
+  return Object.freeze({
+    type: "tree-table" as const,
+    caption: input.caption,
+    columns: Object.freeze(input.columns.map((column) => Object.freeze({
+      key: column.key,
+      label: column.label,
+      ...(column.align === undefined ? {} : { align: column.align }),
+    }))),
+    rows: Object.freeze(input.rows.map((row) => Object.freeze({
+      key: row.key,
+      kind: row.kind,
+      depth: row.depth,
+      label: row.label,
+      ...(row.target === undefined ? {} : { target: cloneLinkTarget(row.target) }),
+      cells: cloneTreeCells(row.cells),
+    }))),
+  });
+}
+
 /**
  * Performs exact-shape and relational checks without rendering or evaluating
  * author callbacks. Supplying a closure additionally verifies semantic links.
@@ -331,8 +522,21 @@ function validateDocument(
     return;
   }
   try {
-    exactFields(record, ["title", "children"], state, path);
+    exactFields(record, ["title", "children", "presentation", "metadataOrigin"], state, path, [
+      "presentation",
+      "metadataOrigin",
+    ]);
     validateString(field(record, "title"), state, pathFor(path, "title"));
+    if (hasField(record, "presentation") && field(record, "presentation") !== "classic-dashboard") {
+      issue(state, "shape", pathFor(path, "presentation"), "the document presentation is not recognized");
+    }
+    if (
+      hasField(record, "metadataOrigin") &&
+      field(record, "metadataOrigin") !== "current-declaration" &&
+      field(record, "metadataOrigin") !== "partial"
+    ) {
+      issue(state, "shape", pathFor(path, "metadataOrigin"), "the document metadata origin is not recognized");
+    }
     forEachArray(field(record, "children"), state, pathFor(path, "children"), (child, index) =>
       validateBlock(child, state, pathFor(pathFor(path, "children"), index), depth + 1)
     );
@@ -387,13 +591,13 @@ function validateBlock(
         validateTable(record, state, path);
         break;
       case "metric":
-        exactFields(record, ["type", "label", "value", "unit"], state, path);
+        exactFields(record, ["type", "label", "value", "unit"], state, path, ["unit"]);
         validateString(field(record, "label"), state, pathFor(path, "label"));
         validateScalar(field(record, "value"), state, pathFor(path, "value"));
         optionalString(record, "unit", state, path);
         break;
       case "status":
-        exactFields(record, ["type", "tone", "label", "detail"], state, path);
+        exactFields(record, ["type", "tone", "label", "detail"], state, path, ["detail"]);
         if (!isTone(field(record, "tone"))) {
           issue(state, "shape", pathFor(path, "tone"), "status tone is not recognized");
         }
@@ -405,12 +609,27 @@ function validateBlock(
         }
         break;
       case "code-block":
-        exactFields(record, ["type", "value", "language"], state, path);
+        exactFields(record, ["type", "value", "language"], state, path, ["language"]);
         validateString(field(record, "value"), state, pathFor(path, "value"));
         optionalString(record, "language", state, path);
         break;
       case "chart":
         validateChart(record, state, path);
+        break;
+      case "hero":
+        validateHero(record, state, path);
+        break;
+      case "summary":
+        validateSummary(record, state, path);
+        break;
+      case "ranked-bars":
+        validateRankedBars(record, state, path);
+        break;
+      case "scatter":
+        validateScatter(record, state, path);
+        break;
+      case "tree-table":
+        validateTreeTable(record, state, path);
         break;
       default:
         issue(state, "shape", pathFor(path, "type"), "the block type is not part of ReportDocument");
@@ -475,7 +694,7 @@ function validateTable(
     if (columnRecord === undefined) {
       return;
     }
-    exactFields(columnRecord, ["key", "label", "align"], state, columnPath);
+    exactFields(columnRecord, ["key", "label", "align"], state, columnPath, ["align"]);
     const key = field(columnRecord, "key");
     if (typeof key !== "string" || key.length === 0) {
       issue(state, "table", pathFor(columnPath, "key"), "a table column key must be a non-empty string");
@@ -551,6 +770,361 @@ function validateChart(
   });
 }
 
+function validateHero(
+  record: Record<string, unknown>,
+  state: ValidationState,
+  path: readonly (string | number)[],
+): void {
+  exactFields(record, ["type", "description", "links"], state, path);
+  validateString(field(record, "description"), state, pathFor(path, "description"));
+  forEachArray(field(record, "links"), state, pathFor(path, "links"), (link, index) => {
+    const linkPath = pathFor(pathFor(path, "links"), index);
+    const linkRecord = plainRecord(link, state, linkPath);
+    if (linkRecord === undefined) return;
+    exactFields(linkRecord, ["label", "target"], state, linkPath);
+    validateString(field(linkRecord, "label"), state, pathFor(linkPath, "label"));
+    validateExternalTarget(field(linkRecord, "target"), state, pathFor(linkPath, "target"));
+  });
+}
+
+function validateSummary(
+  record: Record<string, unknown>,
+  state: ValidationState,
+  path: readonly (string | number)[],
+): void {
+  exactFields(record, ["type", "lastRunAt", "metrics"], state, path);
+  validateEpochMillisOrNull(field(record, "lastRunAt"), state, pathFor(path, "lastRunAt"));
+  const keys = new Set<string>();
+  forEachArray(field(record, "metrics"), state, pathFor(path, "metrics"), (metric, index) => {
+    const metricPath = pathFor(pathFor(path, "metrics"), index);
+    const metricRecord = plainRecord(metric, state, metricPath);
+    if (metricRecord === undefined) return;
+    exactFields(
+      metricRecord,
+      ["key", "label", "value", "display", "unit", "coverage"],
+      state,
+      metricPath,
+      ["unit", "coverage"],
+    );
+    const key = field(metricRecord, "key");
+    if (typeof key !== "string" || key.length === 0) {
+      issue(state, "shape", pathFor(metricPath, "key"), "a summary metric key must be a non-empty string");
+    } else if (keys.has(key)) {
+      issue(state, "shape", pathFor(metricPath, "key"), "summary metric keys must be unique");
+    } else {
+      keys.add(key);
+      validateString(key, state, pathFor(metricPath, "key"));
+    }
+    validateString(field(metricRecord, "label"), state, pathFor(metricPath, "label"));
+    validateDisplayValue(metricRecord, state, metricPath);
+  });
+}
+
+function validateRankedBars(
+  record: Record<string, unknown>,
+  state: ValidationState,
+  path: readonly (string | number)[],
+): void {
+  exactFields(record, ["type", "title", "layout", "points", "better"], state, path);
+  validateString(field(record, "title"), state, pathFor(path, "title"));
+  if (field(record, "layout") !== "horizontal") {
+    issue(state, "chart", pathFor(path, "layout"), "ranked bars require horizontal layout");
+  }
+  if (field(record, "better") !== "higher" && field(record, "better") !== "lower") {
+    issue(state, "chart", pathFor(path, "better"), "ranked bars better must be higher or lower");
+  }
+  const keys = new Set<string>();
+  forEachArray(field(record, "points"), state, pathFor(path, "points"), (point, index) => {
+    const pointPath = pathFor(pathFor(path, "points"), index);
+    const pointRecord = plainRecord(point, state, pointPath);
+    if (pointRecord === undefined) return;
+    exactFields(
+      pointRecord,
+      ["key", "label", "series", "value", "display", "coverage"],
+      state,
+      pointPath,
+    );
+    const key = field(pointRecord, "key");
+    if (typeof key !== "string" || key.length === 0) {
+      issue(state, "chart", pathFor(pointPath, "key"), "a ranked-bar point key must be a non-empty string");
+    } else if (keys.has(key)) {
+      issue(state, "chart", pathFor(pointPath, "key"), "ranked-bar point keys must be unique");
+    } else {
+      keys.add(key);
+      validateString(key, state, pathFor(pointPath, "key"));
+    }
+    validateString(field(pointRecord, "label"), state, pathFor(pointPath, "label"));
+    validateString(field(pointRecord, "series"), state, pathFor(pointPath, "series"));
+    validateNullableFiniteNumber(field(pointRecord, "value"), state, pathFor(pointPath, "value"));
+    validateString(field(pointRecord, "display"), state, pathFor(pointPath, "display"));
+    validateCoverage(field(pointRecord, "coverage"), state, pathFor(pointPath, "coverage"));
+  });
+}
+
+function validateScatter(
+  record: Record<string, unknown>,
+  state: ValidationState,
+  path: readonly (string | number)[],
+): void {
+  exactFields(record, ["type", "title", "xLabel", "yLabel", "connect", "series"], state, path);
+  validateString(field(record, "title"), state, pathFor(path, "title"));
+  validateString(field(record, "xLabel"), state, pathFor(path, "xLabel"));
+  validateString(field(record, "yLabel"), state, pathFor(path, "yLabel"));
+  if (typeof field(record, "connect") !== "boolean") {
+    issue(state, "chart", pathFor(path, "connect"), "scatter connect must be a boolean");
+  }
+  const seriesLabels = new Set<string>();
+  forEachArray(field(record, "series"), state, pathFor(path, "series"), (series, index) => {
+    const seriesPath = pathFor(pathFor(path, "series"), index);
+    const seriesRecord = plainRecord(series, state, seriesPath);
+    if (seriesRecord === undefined) return;
+    exactFields(seriesRecord, ["label", "points"], state, seriesPath);
+    const label = field(seriesRecord, "label");
+    if (typeof label !== "string" || label.length === 0) {
+      issue(state, "chart", pathFor(seriesPath, "label"), "a scatter series label must be a non-empty string");
+    } else if (seriesLabels.has(label)) {
+      issue(state, "chart", pathFor(seriesPath, "label"), "scatter series labels must be unique");
+    } else {
+      seriesLabels.add(label);
+      validateString(label, state, pathFor(seriesPath, "label"));
+    }
+    const pointKeys = new Set<string>();
+    forEachArray(field(seriesRecord, "points"), state, pathFor(seriesPath, "points"), (point, pointIndex) => {
+      const pointPath = pathFor(pathFor(seriesPath, "points"), pointIndex);
+      const pointRecord = plainRecord(point, state, pointPath);
+      if (pointRecord === undefined) return;
+      exactFields(
+        pointRecord,
+        ["key", "x", "y", "xDisplay", "yDisplay", "target"],
+        state,
+        pointPath,
+        ["target"],
+      );
+      const key = field(pointRecord, "key");
+      if (typeof key !== "string" || key.length === 0) {
+        issue(state, "chart", pathFor(pointPath, "key"), "a scatter point key must be a non-empty string");
+      } else if (pointKeys.has(key)) {
+        issue(state, "chart", pathFor(pointPath, "key"), "scatter point keys must be unique within a series");
+      } else {
+        pointKeys.add(key);
+        validateString(key, state, pathFor(pointPath, "key"));
+      }
+      validateNullableFiniteNumber(field(pointRecord, "x"), state, pathFor(pointPath, "x"));
+      validateNullableFiniteNumber(field(pointRecord, "y"), state, pathFor(pointPath, "y"));
+      validateString(field(pointRecord, "xDisplay"), state, pathFor(pointPath, "xDisplay"));
+      validateString(field(pointRecord, "yDisplay"), state, pathFor(pointPath, "yDisplay"));
+      if (hasField(pointRecord, "target")) {
+        validateLinkTarget(field(pointRecord, "target"), state, pathFor(pointPath, "target"));
+      }
+    });
+  });
+}
+
+function validateTreeTable(
+  record: Record<string, unknown>,
+  state: ValidationState,
+  path: readonly (string | number)[],
+): void {
+  exactFields(record, ["type", "caption", "columns", "rows"], state, path);
+  validateString(field(record, "caption"), state, pathFor(path, "caption"));
+  const columnKeys = validateTreeColumns(field(record, "columns"), state, pathFor(path, "columns"));
+  const rowKeys = new Set<string>();
+  let hasExperiment = false;
+  let hasEval = false;
+  forEachArray(field(record, "rows"), state, pathFor(path, "rows"), (row, index) => {
+    const rowPath = pathFor(pathFor(path, "rows"), index);
+    const rowRecord = plainRecord(row, state, rowPath);
+    if (rowRecord === undefined) return;
+    exactFields(
+      rowRecord,
+      ["key", "kind", "depth", "label", "target", "cells"],
+      state,
+      rowPath,
+      ["target"],
+    );
+    const key = field(rowRecord, "key");
+    if (typeof key !== "string" || key.length === 0) {
+      issue(state, "table", pathFor(rowPath, "key"), "a tree-table row key must be a non-empty string");
+    } else if (rowKeys.has(key)) {
+      issue(state, "table", pathFor(rowPath, "key"), "tree-table row keys must be unique");
+    } else {
+      rowKeys.add(key);
+      validateString(key, state, pathFor(rowPath, "key"));
+    }
+    const kind = field(rowRecord, "kind");
+    const depth = field(rowRecord, "depth");
+    if (!isTreeRowKind(kind)) {
+      issue(state, "table", pathFor(rowPath, "kind"), "a tree-table row kind is not recognized");
+    }
+    if (depth !== 0 && depth !== 1 && depth !== 2) {
+      issue(state, "table", pathFor(rowPath, "depth"), "a tree-table row depth must be 0, 1, or 2");
+    }
+    if (isTreeRowKind(kind) && (depth === 0 || depth === 1 || depth === 2) && treeDepthForKind(kind) !== depth) {
+      issue(state, "table", rowPath, "tree-table row kind and depth must describe Experiment, Eval, or Attempt hierarchy");
+    }
+    if (depth === 0) {
+      hasExperiment = true;
+      hasEval = false;
+    } else if (depth === 1) {
+      if (!hasExperiment) {
+        issue(state, "table", rowPath, "an Eval row must follow an Experiment row");
+      }
+      hasEval = true;
+    } else if (depth === 2 && !hasEval) {
+      issue(state, "table", rowPath, "an Attempt row must follow an Eval row");
+    }
+    validateString(field(rowRecord, "label"), state, pathFor(rowPath, "label"));
+    if (hasField(rowRecord, "target")) {
+      validateLinkTarget(field(rowRecord, "target"), state, pathFor(rowPath, "target"));
+    }
+    validateTreeCells(field(rowRecord, "cells"), columnKeys, state, pathFor(rowPath, "cells"));
+  });
+}
+
+function validateTreeColumns(
+  value: unknown,
+  state: ValidationState,
+  path: readonly (string | number)[],
+): ReadonlySet<string> {
+  const keys = new Set<string>();
+  forEachArray(value, state, path, (column, index) => {
+    const columnPath = pathFor(path, index);
+    const columnRecord = plainRecord(column, state, columnPath);
+    if (columnRecord === undefined) return;
+    exactFields(columnRecord, ["key", "label", "align"], state, columnPath, ["align"]);
+    const key = field(columnRecord, "key");
+    if (typeof key !== "string" || key.length === 0) {
+      issue(state, "table", pathFor(columnPath, "key"), "a tree-table column key must be a non-empty string");
+    } else if (keys.has(key)) {
+      issue(state, "table", pathFor(columnPath, "key"), "tree-table column keys must be unique");
+    } else {
+      keys.add(key);
+      validateString(key, state, pathFor(columnPath, "key"));
+    }
+    validateString(field(columnRecord, "label"), state, pathFor(columnPath, "label"));
+    if (hasField(columnRecord, "align") && field(columnRecord, "align") !== "start" && field(columnRecord, "align") !== "end") {
+      issue(state, "table", pathFor(columnPath, "align"), "a tree-table column alignment must be start or end");
+    }
+  });
+  return keys;
+}
+
+function validateTreeCells(
+  value: unknown,
+  columnKeys: ReadonlySet<string>,
+  state: ValidationState,
+  path: readonly (string | number)[],
+): void {
+  const cells = plainRecord(value, state, path);
+  if (cells === undefined) return;
+  const keys = Object.keys(cells);
+  if (keys.length !== columnKeys.size || keys.some((key) => !columnKeys.has(key))) {
+    issue(state, "table", path, "tree-table row cells must exactly match the columns");
+  }
+  for (const key of keys) {
+    validateTreeCell(field(cells, key), state, pathFor(path, key));
+  }
+}
+
+function validateTreeCell(
+  value: unknown,
+  state: ValidationState,
+  path: readonly (string | number)[],
+): void {
+  if (value === null || typeof value === "boolean" || typeof value === "number" || typeof value === "string") {
+    validateScalar(value, state, path);
+    return;
+  }
+  const record = plainRecord(value, state, path);
+  if (record === undefined) return;
+  exactFields(record, ["value", "display", "unit", "coverage"], state, path, ["unit", "coverage"]);
+  validateDisplayValue(record, state, path);
+}
+
+function validateDisplayValue(
+  record: Record<string, unknown>,
+  state: ValidationState,
+  path: readonly (string | number)[],
+): void {
+  validateScalar(field(record, "value"), state, pathFor(path, "value"));
+  validateString(field(record, "display"), state, pathFor(path, "display"));
+  optionalString(record, "unit", state, path);
+  if (hasField(record, "coverage")) {
+    validateCoverage(field(record, "coverage"), state, pathFor(path, "coverage"));
+  }
+}
+
+function validateCoverage(
+  value: unknown,
+  state: ValidationState,
+  path: readonly (string | number)[],
+): void {
+  const record = plainRecord(value, state, path);
+  if (record === undefined) return;
+  exactFields(record, ["basis", "samples", "total"], state, path);
+  if (field(record, "basis") !== "eval") {
+    issue(state, "shape", pathFor(path, "basis"), "coverage basis must be eval");
+  }
+  const samples = field(record, "samples");
+  const total = field(record, "total");
+  validateCount(samples, state, pathFor(path, "samples"));
+  validateCount(total, state, pathFor(path, "total"));
+  if (isCount(samples) && isCount(total) && samples > total) {
+    issue(state, "shape", path, "coverage samples cannot exceed total");
+  }
+}
+
+function validateNullableFiniteNumber(
+  value: unknown,
+  state: ValidationState,
+  path: readonly (string | number)[],
+): void {
+  if (value === null) return;
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    issue(state, "number", path, "this semantic field must be a finite number or null");
+  }
+}
+
+function validateEpochMillisOrNull(
+  value: unknown,
+  state: ValidationState,
+  path: readonly (string | number)[],
+): void {
+  if (value === null) return;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    issue(state, "number", path, "lastRunAt must be a non-negative safe Unix-epoch millisecond value or null");
+  }
+}
+
+function validateCount(
+  value: unknown,
+  state: ValidationState,
+  path: readonly (string | number)[],
+): void {
+  if (!isCount(value)) {
+    issue(state, "number", path, "a coverage count must be a non-negative safe integer");
+  }
+}
+
+function isCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isTreeRowKind(value: unknown): value is ReportTreeRowKind {
+  return value === "experiment" || value === "eval" || value === "attempt";
+}
+
+function treeDepthForKind(kind: ReportTreeRowKind): 0 | 1 | 2 {
+  switch (kind) {
+    case "experiment":
+      return 0;
+    case "eval":
+      return 1;
+    case "attempt":
+      return 2;
+  }
+}
+
 function validateLinkTarget(
   value: unknown,
   state: ValidationState,
@@ -581,7 +1155,83 @@ function validateLinkTarget(
     }
     return;
   }
-  issue(state, "link", pathFor(path, "kind"), "a link target must be a route or download");
+  if (kind === "external") {
+    validateExternalTargetRecord(record, state, path);
+    return;
+  }
+  if (kind === "attempt") {
+    exactFields(record, ["kind", "locator"], state, path);
+    const locator = field(record, "locator");
+    if (!isAttemptLocator(locator)) {
+      issue(
+        state,
+        "link",
+        pathFor(path, "locator"),
+        "an attempt link must use the exact @<AttemptId> locator form",
+      );
+    } else {
+      validateString(locator, state, pathFor(path, "locator"));
+    }
+    return;
+  }
+  issue(
+    state,
+    "link",
+    pathFor(path, "kind"),
+    "a link target must be a route, download, external https URL, or attempt",
+  );
+}
+
+function validateExternalTarget(
+  value: unknown,
+  state: ValidationState,
+  path: readonly (string | number)[],
+): void {
+  const record = plainRecord(value, state, path);
+  if (record === undefined) return;
+  if (field(record, "kind") !== "external") {
+    issue(state, "link", pathFor(path, "kind"), "a hero link target must be an external https URL");
+    return;
+  }
+  validateExternalTargetRecord(record, state, path);
+}
+
+function validateExternalTargetRecord(
+  record: Record<string, unknown>,
+  state: ValidationState,
+  path: readonly (string | number)[],
+): void {
+  exactFields(record, ["kind", "href"], state, path);
+  const href = field(record, "href");
+  if (!isExternalHttpsHref(href)) {
+    issue(
+      state,
+      "link",
+      pathFor(path, "href"),
+      "an external link must be an absolute https URL",
+    );
+    return;
+  }
+  validateString(href, state, pathFor(path, "href"));
+}
+
+function isExternalHttpsHref(value: unknown): value is string {
+  if (typeof value !== "string" || value.length === 0 || /[\s\u0000-\u001f\u007f-\u009f]/.test(value)) {
+    return false;
+  }
+  if (!/^https:\/\//i.test(value)) {
+    return false;
+  }
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && url.hostname.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+function isAttemptLocator(value: unknown): value is string {
+  return typeof value === "string" && value.startsWith("@") && isPortableSegment(value.slice(1));
 }
 
 function enterNode(
@@ -644,15 +1294,17 @@ function exactFields(
   allowed: readonly string[],
   state: ValidationState,
   path: readonly (string | number)[],
+  optional: readonly string[] = [],
 ): void {
   const allowedFields = new Set(allowed);
+  const optionalFields = new Set(optional);
   for (const key of Object.keys(record)) {
     if (!allowedFields.has(key)) {
       issue(state, "shape", pathFor(path, key), "this field is not part of ReportDocument");
     }
   }
   for (const key of allowed) {
-    if (!hasField(record, key) && key !== "unit" && key !== "detail" && key !== "language" && key !== "align") {
+    if (!hasField(record, key) && !optionalFields.has(key)) {
       issue(state, "shape", pathFor(path, key), "a required semantic field is missing");
     }
   }
@@ -800,6 +1452,8 @@ function cloneDocument(document: ReportDocument): ReportDocument {
   return Object.freeze({
     title: document.title,
     children: Object.freeze(document.children.map(cloneBlock)),
+    ...(document.presentation === undefined ? {} : { presentation: document.presentation }),
+    ...(document.metadataOrigin === undefined ? {} : { metadataOrigin: document.metadataOrigin }),
   });
 }
 
@@ -864,6 +1518,31 @@ function cloneBlock(block: ReportBlock): ReportBlock {
           ),
         ),
       });
+    case "hero":
+      return reportHero({ description: block.description, links: block.links });
+    case "summary":
+      return reportSummary({ lastRunAt: block.lastRunAt, metrics: block.metrics });
+    case "ranked-bars":
+      return reportRankedBars({
+        title: block.title,
+        layout: block.layout,
+        points: block.points,
+        better: block.better,
+      });
+    case "scatter":
+      return reportScatter({
+        title: block.title,
+        xLabel: block.xLabel,
+        yLabel: block.yLabel,
+        connect: block.connect,
+        series: block.series,
+      });
+    case "tree-table":
+      return reportTreeTable({
+        caption: block.caption,
+        columns: block.columns,
+        rows: block.rows,
+      });
   }
 }
 
@@ -881,9 +1560,54 @@ function cloneInline(inline: ReportInline): ReportInline {
       return Object.freeze({
         type: "link" as const,
         label: Object.freeze(inline.label.map(cloneInline)),
-        target: Object.freeze({ ...inline.target }),
+        target: cloneLinkTarget(inline.target),
       });
   }
+}
+
+function cloneLinkTarget(target: ReportLinkTarget): ReportLinkTarget {
+  switch (target.kind) {
+    case "route":
+      return Object.freeze({ kind: "route" as const, route: target.route });
+    case "download":
+      return Object.freeze({ kind: "download" as const, path: target.path });
+    case "external":
+      return Object.freeze({ kind: "external" as const, href: target.href });
+    case "attempt":
+      return Object.freeze({ kind: "attempt" as const, locator: target.locator });
+  }
+}
+
+function cloneCoverage(coverage: ReportCoverage): ReportCoverage {
+  return Object.freeze({
+    basis: coverage.basis,
+    samples: coverage.samples,
+    total: coverage.total,
+  });
+}
+
+function cloneDisplayValue(value: ReportDisplayValue): ReportDisplayValue {
+  return Object.freeze({
+    value: value.value,
+    display: value.display,
+    ...(value.unit === undefined ? {} : { unit: value.unit }),
+    ...(value.coverage === undefined ? {} : { coverage: cloneCoverage(value.coverage) }),
+  });
+}
+
+function cloneTreeCells(
+  cells: Readonly<Record<string, ReportTreeCell>>,
+): Readonly<Record<string, ReportTreeCell>> {
+  const copy: Record<string, ReportTreeCell> = Object.create(null) as Record<string, ReportTreeCell>;
+  for (const key of Object.keys(cells)) {
+    const cell = cells[key]!;
+    copy[key] = isReportDisplayValue(cell) ? cloneDisplayValue(cell) : cell;
+  }
+  return Object.freeze(copy);
+}
+
+function isReportDisplayValue(value: ReportTreeCell): value is ReportDisplayValue {
+  return typeof value === "object" && value !== null;
 }
 
 function cloneRow(

@@ -67,6 +67,8 @@ export type ReportExecutionValueError =
 /** A completed, self-contained Report result with no reader, callback, or path capability. */
 export interface ReportExecution {
   readonly reportId: ReportId;
+  /** Host presentation locale; never persisted back into Record data. */
+  readonly locale: "en" | "zh-CN";
   readonly sample: AnalysisSample;
   readonly projections: readonly ReportProjectionSummary[];
   readonly calculations: readonly ReportCalculationExecutionResult[];
@@ -86,6 +88,7 @@ const encoder = new TextEncoder();
  */
 export function reportExecution(input: {
   readonly reportId: ReportId;
+  readonly locale?: "en" | "zh-CN";
   readonly sample: AnalysisSample;
   readonly projections?: readonly ReportProjectionSummary[];
   readonly calculations?: readonly ReportCalculationExecutionResult[];
@@ -119,6 +122,7 @@ export function reportExecution(input: {
 
     const execution = Object.freeze({
       reportId: input.reportId,
+      locale: input.locale ?? "en",
       sample: freezeSample(input.sample),
       projections,
       calculations,

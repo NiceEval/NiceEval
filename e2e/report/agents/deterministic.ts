@@ -5,7 +5,7 @@ import type { Agent } from "niceeval/adapter";
  * The Report Repo's backend fixture. It emits one stable assistant message and never
  * reads environment variables or contacts a provider.
  */
-export function deterministicAgent(name: string): Agent {
+export function deterministicAgent(name: string, costUSD = 0.01): Agent {
   return defineAgent({
     name,
     evidenceCoverage: completeEvidenceCoverage,
@@ -15,6 +15,12 @@ export function deterministicAgent(name: string): Agent {
       const operationId = "report-write-1";
       return {
         status: "completed",
+        usage: {
+          inputTokens: 10,
+          outputTokens: 5,
+          requests: 1,
+          costUSD,
+        },
         events: [
           {
             type: "operation.started",

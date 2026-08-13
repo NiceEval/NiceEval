@@ -1,22 +1,95 @@
 ---
 title: "报告 API"
-description: "RecordProjection、Calculation、Page、ReportExecution 与静态导出的公开边界。"
+description: "classic facade 的 defineReport、defineComponent、受控 JSX 组件与 aggregate/passRate，以及低层 projection API 的公开边界。"
 ---
 
-Report 作者只从 `niceeval/report` 声明需要哪些 `RecordProjection`，再把投影结果和计算结果包装成页面或下载。作者不接收 reader、路径、raw Attachment 或磁盘字段。
+Report 作者只从 `niceeval/report` 导入公开入口。classic facade 是默认作者面：`defineReport({ title, pages })` 与函数式 `defineComponent`、受控 JSX。它是 0.12.1 时期 MemoryBench 使用的公开形状（0.12.1-style MemoryBench classic surface），这个身份如实说明，不承诺与旧版本运行结果完全兼容。低层 projection API 继续存在，供自定义投影与计算使用。作者不接收 reader、路径、raw Attachment 或磁盘字段。
 
 ```text
-AnalysisSample
-        ↓  opaque RecordProjection declarations
-ProjectedSample
-        ↓  Calculation / Page / PageFamily / Download
+Record
+    ↓ 固定 projection plan / RecordProjection declarations
+深冻结 ClassicSample / ProjectedSample
+    ↓ defineComponent 受控 JSX / Calculation / Page / PageFamily / Download
+closed semantic validation
+    ↓
 immutable ReportExecution
         ├─ show
         ├─ view revision
         └─ static export
 ```
 
-## 声明 RecordProjection
+## Classic facade
+
+### defineReport 与 defineComponent
+
+```tsx
+import { defineComponent, defineReport } from "niceeval/report";
+
+const Leaderboard = defineComponent(async (_props, ctx) => {
+  const rows = await aggregate(ctx.scope, {
+    by: { condition, memory },
+    values: { passRate },
+  });
+  return <Bars points={rows} x="condition" y="passRate" layout="horizontal" />;
+});
+
+export default defineReport({
+  title: "Memory 条件对比",
+  pages: [{
+    id: "report",
+    title: "报告",
+    render: () => <Col><Leaderboard /></Col>,
+  }],
+});
+```
+
+`defineComponent` 接受同步或 async 渲染函数。渲染函数读取 `ctx.scope`，即 host 一次投影后构造的深冻结 `ClassicSample`。`defineReport` 的 classic overload 只声明 `title` 与页面列表；页面 `render` 返回受控 JSX 树。
+
+已有 React 报告可以保留 `jsx: "react-jsx"`；NiceEval 接收 React element，但仍只展开受控组件。不想引入 React runtime 时，在报告项目的 `tsconfig.json` 同时设置 `jsx: "react-jsx"` 与 `jsxImportSource: "niceeval/report"`，即可使用 NiceEval 随包 JSX runtime。两条路径生成同一棵 classic element tree。
+
+### 受控 JSX 边界
+
+组件树只接受内置组件、`defineComponent` 产物与 `Fragment`。子节点可以是数组、string、number 或 null。它拒绝原生 tag、任意未包装组件、`head`、script、style、font、worker、WASM、raw HTML 与自定义 text / web 双面 renderer。
+
+trusted module 本身不是沙箱。NiceEval 只保证组件拿不到 reader、Effect、Record root / path 与 append-I/O capability。
+
+### 内置组件
+
+| 组件 | 职责 |
+| --- | --- |
+| `Col` | 纵向布局容器，按声明顺序排列子块。 |
+| `Hero` | 页首摘要块；链接只接受绝对 https，NiceEval 只序列化 href，不 fetch。 |
+| `SampleSummary` | 当前 Sample 概况：实验、Eval、attempt 与 coverage。 |
+| `Bars` | 柱状图；`layout="horizontal"` 呈现横向柱状图。 |
+| `ExperimentScatter` | 按 Experiment 的散点。 |
+| `ExperimentTable` | 实验级读数表。 |
+
+### aggregate 与 passRate
+
+```ts
+type AggregationSubject = {
+  readonly experimentId: string;
+  readonly evalId: string;
+  readonly run: { readonly experiment?: {
+    readonly labels?: Readonly<Record<string, string | number>>;
+    readonly flags?: Readonly<Record<string, JsonValue>>;
+  } };
+};
+
+type GroupFunction = (subject: AggregationSubject) => string;
+```
+
+`aggregate(ctx.scope, { by, values })` 在 Eval 级分组，返回带稳定身份的 `rows`。`passRate` 是严格两级分母：每个 (experiment, eval) 单元先对 attempts 取均值，passed = 1、failed / errored = 0；再把单元值跨 Eval 等权平均。skipped / missing 不进入分子，也不伪造值；coverage 显式显示缺口，缺失 cost / timing 不补 0。
+
+### metadata 来源
+
+`ClassicSample` 的 metadata 标注来源，不读取当前项目声明填充历史数据。`project-current` 使用完整 current-declaration profile，并显示 `metadataOrigin: "current-declaration"`。`--run` 的 explicit-runs 在 Record 没有 durable profile 时，metadata 是 unknown / partial，experiment id 回退为 id / unknown，并给出一条结构化 notice。
+
+## 低层 projection API
+
+需要自定义投影与计算的作者继续使用低层 API。它与 classic facade 共享同一个 `ReportExecution` 路径。
+
+### 声明 RecordProjection
 
 NiceEval 提供的 opaque projector 固定形成一种 typed view。Report 用三个 constructor 声明逻辑访问；作者不能定义 raw family/projector：
 
@@ -37,7 +110,7 @@ const inputs = reportInputs({ verdicts, evaluations });
 
 `reportInputs` 固定输入 key 与其 projection 的类型。host 在执行任何 Record I/O 前闭合这组依赖，并让每个 projection 至多执行一次。
 
-## 定义 Calculation 和页面
+### 定义 Calculation 和页面
 
 Calculation 只从静态声明的 projection 派生业务值。它自己返回业务 `observed` 与 `denominator`；host 不会从 coverage 或 entry 数量猜测统计口径。
 
@@ -60,9 +133,9 @@ const passRate = defineCalculation({
 
 `unavailable`、`migration-required`、`migration-unavailable`、`unsupported`、`invalid` 与 partial collection 都是 recorded-data problem。callback 的意外 throw 属于 execution problem，两者不能互相替代。
 
-Page 返回闭合的 `ReportDocument` 语义树。它不是 HTML、React element 或另一套文本输出。PageFamily 只能根据已投影或已计算的内存值展开 route，不能在展开时追加 Attachment I/O。
+Page 返回闭合的 `ReportDocument` 语义树，不是任意 HTML、DOM 或 React element。PageFamily 只能根据已投影或已计算的内存值展开 route，不能在展开时追加 Attachment I/O。
 
-## 组合一个 Report
+### 组合一个 Report
 
 ```ts
 const overview = definePage({
@@ -99,7 +172,7 @@ export default defineReport({
 选择 Run、执行 projection 与作者 graph，并形成不可变、自包含的 `ReportExecution`。
 包不导出 `niceeval/report/host`、`niceeval/report/host/node` 或 `executeReport()`。
 
-`ReportExecution` 包含 Sample、projection 摘要、Calculation、family、页面、下载项与 problem table，但不包含 reader、路径、Scope、callback 或 projector token。
+`ReportExecution` 包含 Sample、projection 摘要、Calculation、family、页面、下载项与 problem table，但不包含 reader、路径、Scope、callback 或 projector token。classic facade 与低层 API 的页面都来自同一个 `ReportExecution`；terminal JSON、live view 与静态站消费同一份 execution。
 
 每个 projection、Calculation、PageFamily、页面实例与 Download 在同一 execution 中最多执行一次。`show`、`view` 与 `exportStaticReport` 只消费完成后的 execution。
 
@@ -117,5 +190,5 @@ export default defineReport({
 ## 相关页面
 
 - [结果数据 API](/zh/reference/results-data)：在 Report callback 中消费 Sample 与 `ProjectedSample`。
-- [编写自定义报告](/zh/tutorials/custom-reports)：从投影写出一个实际 Report。
+- [编写自定义报告](/zh/tutorials/custom-reports)：用 classic facade 写出一个实际 Report。
 - [发布静态报告](/zh/tutorials/publish-report)：导出并分享固定 execution。

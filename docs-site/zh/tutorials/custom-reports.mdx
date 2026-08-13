@@ -1,82 +1,97 @@
 ---
 title: "编写自定义报告"
-description: "声明 RecordProjection，把投影结果组织成 Calculation、页面和一次固定的 ReportExecution。"
+description: "用 classic facade 的 defineReport 与 defineComponent 声明受控 JSX 报告，从一次固定的 ReportExecution 得到终端、页面与静态站。"
 ---
 
-自定义 Report 不接收 Record 路径，也不在页面 render 时临时查数据。先声明所需的 `RecordProjection`，再定义 Calculation、Page、PageFamily 或 Download：
+自定义报告用 classic facade 编写：`defineReport({ title, pages })` 声明页面，函数式 `defineComponent` 声明组件，受控 JSX 只允许内置组件与 `defineComponent` 产物。它是 0.12.1 时期 MemoryBench 使用的公开作者面形状，这个身份如实说明，不承诺与旧版本运行结果完全兼容。它不接收 Record 路径，也不在页面 render 时临时查数据。
+
+迁移旧 React 报告时可以继续使用 `jsx: "react-jsx"`。新报告若不想依赖 React runtime，可再设置 `jsxImportSource: "niceeval/report"`，使用 NiceEval 随包的受控 JSX runtime；下面的组件写法无需改变。
 
 ```text
-AnalysisSample
-        ↓
-official opaque projector → ProjectedSample
-        ↓
-Report → immutable ReportExecution
+Record
+    ↓ 固定 projection plan（evaluation plan / verdict / usage / timing）
+深冻结 ClassicSample
+    ↓ defineComponent 展开受控 JSX
+immutable ReportExecution
           ↙       ↓       ↘
         show     view    export
 ```
 
-## 先选择官方 projector
+## 声明组件
 
-NiceEval 内部负责把运行事实写入 Record，并提供形成 typed view 的官方 opaque projector。
-Report 作者只选择这些 projector，不能定义 raw Attachment family 或读取 payload。
+组件读取 `ctx.scope`，即 host 一次投影后形成的深冻结只读样本。用 `aggregate` 分组并计算 `passRate`：
 
-```ts
-const verdicts = attemptSlotProjection(verdictProjector);
-const assertions = attemptSlotProjection(assertionsProjector);
+```tsx
+import {
+  Bars,
+  Col,
+  ExperimentScatter,
+  ExperimentTable,
+  Hero,
+  SampleSummary,
+  aggregate,
+  defineComponent,
+  defineReport,
+  passRate,
+} from "niceeval/report";
+import type { AggregationSubject, GroupFunction } from "niceeval/report";
 
-const inputs = reportInputs({ verdicts, assertions });
-```
+const condition: GroupFunction = (subject) =>
+  String(subject.run.experiment?.labels?.line ?? subject.experimentId);
 
-每个 projection 都有明确 owner 和访问方式。`attemptSlotProjection` 保留 Sample 的每个 slot；`selectedRunProjection` 只对 selected Run 读取；`attemptOriginRunProjection` 为每个 slot 读取其 Attempt 的 origin Run。
+const memory: GroupFunction = (subject: AggregationSubject) =>
+  String(subject.run.experiment?.flags?.memory ?? "unknown");
 
-Report 不在 callback 中打开 Record，也不能通过 pure `AnalysisSample` 恢复 I/O。
+const Leaderboard = defineComponent(async (_props, ctx) => {
+  const rows = await aggregate(ctx.scope, {
+    by: { condition, memory },
+    values: { passRate },
+  });
 
-## 定义计算
-
-Calculation 使用静态声明的 inputs。它返回领域值，而不是让 host 推导通过率或分母。
-
-```ts
-const passRate = defineCalculation({
-  id: Either.getOrThrow(reportComponentId("pass-rate")),
-  inputs,
-  completeness: "allow-partial",
-  calculate: ({ sample, inputs }) =>
-    calculatePassRate(sample, inputs.verdicts, inputs.assertions),
+  return (
+    <Bars
+      points={rows}
+      x="condition"
+      y="passRate"
+      color="memory"
+      layout="horizontal"
+    />
+  );
 });
 ```
 
-选择 `allow-partial` 时，callback 能看到 `ProjectedSample`、coverage 和 issues。结果必须保留自己的业务分母与完整度。选择 `require-complete` 时，只要必需数据不完整，callback 不会执行。
+`aggregate` 的 `by` 在 Eval 级分组，不会把同一道题的 attempts 拆开。`passRate` 是严格两级分母：每个 (experiment, eval) 单元先对 attempts 取均值，再把单元值跨 Eval 等权平均；skipped 与 missing 不进入分子，coverage 显式显示缺口。
 
-## 定义页面和 Report
+## 声明页面与报告
 
-```ts
-const overview = definePage({
-  id: Either.getOrThrow(reportComponentId("overview")),
-  route: Either.getOrThrow(reportRoute("/")),
-  calculations: { passRate },
-  render: ({ calculations }) =>
-    reportDocument({
-      title: "Summary",
-      children: [
-        reportMetric({
-          label: "Pass rate",
-          value:
-            calculations.passRate.state === "available"
-              ? calculations.passRate.value.rate
-              : null,
-        }),
-      ],
-    }),
-});
+页面用 `defineReport` 装配：`render` 返回受控 JSX 树，数据读取都在组件里完成。
 
+```tsx
 export default defineReport({
-  id: Either.getOrThrow(reportId("quality")),
-  calculations: { passRate },
-  pages: [overview],
+  title: "Memory 条件对比",
+  pages: [{
+    id: "report",
+    title: "报告",
+    render: () => (
+      <Col>
+        <Hero
+          description="对比不同 memory 条件在同一批题目上的通过率。"
+          links={[{
+            label: "项目仓库",
+            href: "https://github.com/example/memorybench",
+          }]}
+        />
+        <SampleSummary />
+        <Leaderboard />
+        <ExperimentScatter />
+        <ExperimentTable />
+      </Col>
+    ),
+  }],
 });
 ```
 
-Page 返回闭合的语义 document，而不是 React、HTML 或文件路径。要为每个 Assertion、Turn 或 diagnostics category 增加详情页时，使用 `definePageFamily`。实例、route 和 document 只能从已经投影或计算出的内存值展开。
+受控 JSX 不是 raw React 或 DOM。原生 tag、未包装组件、`head`、script、style、font、worker、WASM 与 raw HTML 都会在装载或校验阶段被拒绝。`Hero` 的外链只接受绝对 https 地址；NiceEval 只把 href 序列化进页面，不代为请求。
 
 ## 设成项目默认
 
@@ -99,18 +114,22 @@ recorded-data problem 不会改变 Sample 分母：
 - `migration-required`、`migration-unavailable` 与 `unsupported` 表示历史 schema 不能按当前需要读取；
 - `invalid` 或 partial collection 表示记录的数据不完整。
 
-这些问题由内建 problems surface 显示。`allow-partial` consumer 可以展示可用值；`require-complete` consumer 形成 `data-unavailable`。
+这些问题由内建 problems surface 显示。缺失的 cost 与 timing 保持缺失，不会补成 0。`aggregate` 分组缺少字段时按 unknown 处理，不读取当前项目声明来填充历史数据。
 
 projector、Calculation 或页面 callback 抛错，以及非法 document 或 route conflict，属于 execution problem。`show` 与 `view` 显示问题并保留其它页面；静态导出不会发布这一份 execution。
 
 ## 运行和发布
 
 ```sh
-npx niceeval show --run <run-id> --report ./reports/quality.ts
-npx niceeval view --run <run-id> --report ./reports/quality.ts --no-open
-npx niceeval view --run <run-id> --report ./reports/quality.ts --out ./quality-site
+npx niceeval show --report ./reports/quality.ts
+npx niceeval view --report ./reports/quality.ts --no-open
+npx niceeval view --report ./reports/quality.ts --out ./quality-site
 ```
 
 `show`、`view` 与 `--out` 都选择 Sample、执行同一个 Report，并得到固定 `ReportExecution`。`view` 后续的成功 rebuild 会产生下一份 execution；失败时保留 last-good execution。
 
-`--out` 必须指向不存在的目录。详情见[发布静态报告](/zh/tutorials/publish-report)和[报告 API](/zh/reference/report-components)。
+`--out` 必须指向不存在的目录。详情见[发布静态报告](/zh/tutorials/publish-report)。
+
+## 低层 projection API
+
+需要自定义投影或计算时，低层 projection API 继续存在：用 `RecordProjection` 声明数据，用 `defineCalculation`、`definePage`、`definePageFamily` 与 `defineDownload` 包装结果。两条路径共享同一个 `ReportExecution`。见[报告 API](/zh/reference/report-components)与[结果数据 API](/zh/reference/results-data)。

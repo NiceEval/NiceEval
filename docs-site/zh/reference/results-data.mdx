@@ -11,6 +11,12 @@ Record 是 `.niceeval/record/` 下可携带、可进入 Git 的 opaque 目录。
 要在终端或浏览器中查看结果，请阅读[查看结果](/zh/tutorials/viewing-results)。要定义页面和
 计算，请阅读[报告 API](/zh/reference/report-components)。
 
+## Classic facade 读取深冻结样本
+
+classic facade 的组件经 `ctx.scope` 读取深冻结的 `ClassicSample`。它是 host 按固定 projection plan 一次投影后构造的只读样本，不携带 reader、路径或延迟 I/O。`aggregate(ctx.scope, { by, values })` 在 Eval 级分组，`passRate` 按两级分母计算并显式呈现 coverage。
+
+`ClassicSample` 的 metadata 标注来源。`project-current` 使用完整 current-declaration profile，显示 `metadataOrigin: "current-declaration"` 与 current-not-historical notice。`--run` 的 explicit-runs 在 Record 没有 durable profile 时，metadata 是 unknown / partial，experiment id 回退为 id / unknown，并给出一条结构化 notice。历史数据不读取当前项目声明，也不与当前项目字段混合。
+
 ## Report callback 收到 AnalysisSample
 
 Report 的 Calculation、Page 与 PageFamily callback 收到一份纯 `AnalysisSample`。它保存

@@ -1,0 +1,11 @@
+import { defineExperiment } from "niceeval";
+import { deterministicAgent } from "../agents/deterministic.ts";
+
+export default defineExperiment({
+  description: "classic-baseline:为排行榜与散点提供第二条确定性系列",
+  agent: deterministicAgent("report-fixture-baseline", 0.03),
+  model: "report-fixture-v1",
+  labels: { line: "bub" },
+  flags: { memory: "baseline" },
+  evals: ["deliberate-fail"],
+});

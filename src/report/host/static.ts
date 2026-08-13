@@ -132,6 +132,7 @@ function staticFiles(
           bytes: encoder.encode(renderReportHtml({
             document: page.document,
             route: page.route,
+            locale: execution.locale,
             theme,
           })),
         }));
@@ -144,6 +145,7 @@ function staticFiles(
           path: "index.html",
           bytes: encoder.encode(renderReportHtml({
             text: renderReportExecutionText({ execution }),
+            locale: execution.locale,
             theme,
           })),
         }));
@@ -161,6 +163,7 @@ function staticFiles(
         path: "_niceeval/problems/index.html",
         bytes: encoder.encode(renderReportHtml({
           text: renderReportExecutionProblemsText(execution),
+          locale: execution.locale,
           theme,
         })),
       }));

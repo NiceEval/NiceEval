@@ -25,6 +25,8 @@ niceeval view [selection] [report options] --out <directory>
 
 不传 locator 与 `--run` 时，`show` / `view` 规划当前项目身份，并扫描默认 Record 中全部 published Run。只有 Experiment、Eval、attempt ordinal、evaluation kind、input identity 与 config identity 仍匹配当前目标的 slot 才进入 `project-current` Sample。选择不会按时间缩成最后一个 Run，也不会写回 Record。
 
+`project-current` 的 classic facade 用完整 current-declaration profile 填充 metadata，并显示 `metadataOrigin: "current-declaration"`。`--run` 走 explicit-runs：Record 没有 durable profile 时 metadata 是 unknown / partial，experiment id 回退为 id / unknown，并给出一条结构化 notice。两条路径都不读取当前项目声明填充历史数据，也不与当前项目字段混合。
+
 `--experiment` 使用完整 ExperimentId 收窄当前目标，不能与 `--run` 合用。`--run` 可重复，用于审计指定历史 Run；它不要求结果仍匹配当前项目身份。多值 flag 不接受逗号列表。
 
 不存在的 Run、未知 Experiment、未知 route 或尚未展开的参数化 route 都是用法错误。没有结果匹配当前项目时，不带选择项的命令形成空 Sample；它不会拿过期结果补位。
@@ -67,7 +69,7 @@ niceeval show --json
 - Calculation results、family summaries、页面与 bounded problem table；
 - Download 的 path / mediaType / byteLength / SHA-256 metadata。
 
-它不创建第二条 projection 或计算路径，不输出 Download raw bytes。
+它不创建第二条 projection 或计算路径，不输出 Download raw bytes。classic facade 与低层 API 的页面都来自同一个 `ReportExecution`；terminal JSON 与 live view 消费同一份 execution。
 Host 只显示每个 input 的 complete/partial 与 problem IDs，不替作者公式猜 observed/denominator。通过率等业务统计只有在 Calculation value 自己提供时才显示。unavailable、unsupported、invalid 与 execution-failed 必须保留状态及 problem reference，不能替换成零、空字符串或省略行。
 
 没有 `--page` 时 JSON 按 route 输出全部 pages；有 `--page` 时只输出 exact 选中页，但 sample / projection coverage、calculations、families、download metadata 与 problems 仍保留。arrays 与 keys 使用 canonical order，stdout 为 UTF-8 canonical JSON。Broken pipe 是正常 CLI 退出，其它 console failure 是 typed error，interruption 保持 Cause。
@@ -191,7 +193,7 @@ niceeval view --run 01H... --out ./shared-site --no-open
 
 `--out` 不启动 watcher 或长期 server。它构造一个固定 `ReportExecution`，穷尽全部 PageFamily instances、routes、downloads 与 semantic trees，再导出自包含静态站。
 
-export 只写这个 execution 的既有结果、当前 host-data、downloads、manifest 与内建精确 runtime。Report module 不能注入任意 script、style、font、worker、WASM、网络 URL、DOM 或文件 path。
+export 只写这个 execution 的既有结果、当前 host-data、downloads、manifest 与内建精确 runtime。Report module 不能注入任意 script、style、font、worker、WASM、DOM 或文件 path。Hero 外链是唯一 URL 输入，只接受绝对 https；export 只把 href 序列化进页面，不 fetch，站内核心内容不依赖任何 URL 才能显示。
 
 执行顺序：
 

@@ -53,6 +53,16 @@ import type {
   ReportDownloadFile,
 } from "../author/model.ts";
 import {
+  buildClassicSample,
+  isClassicReport,
+  partialClassicSelectionOrigin,
+  renderClassicPage,
+  resolveClassicLocale,
+  type ClassicProjectedInputs,
+  type ClassicSample,
+  type ClassicSelectionOrigin,
+} from "../classic/index.ts";
+import {
   REPORT_DOWNLOAD_FILE_BYTES_MAX,
   REPORT_DOWNLOAD_FILES_MAX,
   REPORT_PAGES_MAX,
@@ -246,6 +256,9 @@ type DownloadBuildOutcome = DownloadBuild | DownloadLimit;
 export function executeReport(input: {
   readonly sampleHandle: AnalysisSampleHandle;
   readonly report: Report;
+  /** Private host input. Never stored on AnalysisSample. */
+  readonly selectionOrigin?: ClassicSelectionOrigin;
+  readonly locale?: "en" | "zh-CN";
 }): Effect.Effect<ReportExecution, ReportExecutionError, never> {
   return Effect.gen(function* () {
     const compiled = yield* compileReportEffect(input.report);
@@ -268,6 +281,14 @@ export function executeReport(input: {
       AnyReportCalculation,
       ReportCalculationExecutionResult
     >();
+    const classicSample = isClassicReport(input.report)
+      ? buildClassicSample({
+        sample: bound.sample,
+        projections: classicProjectedInputs(compiled, projectionOutcomes),
+        selectionOrigin: input.selectionOrigin ?? partialClassicSelectionOrigin(),
+        locale: resolveClassicLocale(input.locale),
+      })
+      : undefined;
     for (const calculation of compiled.calculations) {
       const prepared = yield* Effect.sync(() =>
         prepareInputs({
@@ -297,6 +318,8 @@ export function executeReport(input: {
           projectionOutcomes,
           calculationResults,
           problems,
+          report: input.report,
+          classicSample,
         });
         pages.push(page);
       } else {
@@ -346,6 +369,7 @@ export function executeReport(input: {
 
     return yield* finalizeExecution({
       compiled,
+      locale: resolveClassicLocale(input.locale),
       sample: bound.sample,
       projectionOutcomes,
       calculationResults,
@@ -561,7 +585,9 @@ function executeFixedPage(input: {
     ReportCalculationExecutionResult
   >;
   readonly problems: ProblemCollector;
-}): Effect.Effect<PageIntermediate, never, never> {
+  readonly report: Report;
+  readonly classicSample?: ClassicSample;
+}): Effect.Effect<PageIntermediate, ReportAuthoringInvalid, never> {
   return Effect.gen(function* () {
     const prepared = yield* Effect.sync(() =>
       prepareComponentInputs({
@@ -580,6 +606,22 @@ function executeFixedPage(input: {
     });
     if (blocked !== undefined) {
       return blocked;
+    }
+
+    if (input.classicSample !== undefined) {
+      const classicSample = input.classicSample;
+      const document = yield* renderClassicPageEffect({
+        report: input.report,
+        pageId: input.descriptor.id,
+        sample: classicSample,
+      });
+      return {
+        kind: "candidate" as const,
+        pageId: input.descriptor.id,
+        route: input.descriptor.route,
+        document,
+        problemIds: prepared.dataProblemIds,
+      };
     }
 
     const context = yield* Effect.sync(() =>
@@ -1241,6 +1283,55 @@ function invokeCallback<Value>(input: {
   );
 }
 
+function renderClassicPageEffect(input: {
+  readonly report: Report;
+  readonly pageId: ReportComponentId;
+  readonly sample: ClassicSample;
+}): Effect.Effect<ReportDocument, ReportAuthoringInvalid, never> {
+  return Effect.tryPromise({
+    try: async () =>
+      freezeReportDocument(
+        await renderClassicPage({
+          report: input.report,
+          pageId: input.pageId,
+          sample: input.sample,
+        }),
+      ),
+    catch: (cause) =>
+      Object.freeze({
+        code: "report-definition-invalid" as const,
+        issues: Object.freeze([
+          cause instanceof Error ? cause.message : "classic JSX was rejected",
+        ]),
+      }),
+  });
+}
+
+function classicProjectedInputs(
+  compiled: CompiledReport,
+  outcomes: ReadonlyMap<CompiledProjection, ProjectionOutcome>,
+): ClassicProjectedInputs {
+  return Object.freeze({
+    evaluationPlan: projectedValue(compiled, outcomes, "evaluation-plan"),
+    verdict: projectedValue(compiled, outcomes, "verdict"),
+    timing: projectedValue(compiled, outcomes, "timing"),
+    usage: projectedValue(compiled, outcomes, "usage"),
+  });
+}
+
+function projectedValue(
+  compiled: CompiledReport,
+  outcomes: ReadonlyMap<CompiledProjection, ProjectionOutcome>,
+  key: string,
+) {
+  const projection = compiled.projections.find((candidate) => candidate.inputKey === key);
+  if (projection === undefined) {
+    return undefined;
+  }
+  const outcome = outcomes.get(projection);
+  return outcome?.state === "projected" ? outcome.value : undefined;
+}
+
 function collectInstances(
   value: Iterable<unknown>,
   priorPageCount: number,
@@ -1519,6 +1610,25 @@ function routeLinks(document: ReportDocument): readonly ReportRoute[] {
       case "metric":
       case "code-block":
       case "chart":
+      case "hero":
+      case "summary":
+      case "ranked-bars":
+        return;
+      case "scatter":
+        for (const series of block.series) {
+          for (const point of series.points) {
+            if (point.target?.kind === "route") {
+              routes.push(point.target.route);
+            }
+          }
+        }
+        return;
+      case "tree-table":
+        for (const row of block.rows) {
+          if (row.target?.kind === "route") {
+            routes.push(row.target.route);
+          }
+        }
         return;
     }
   };
@@ -1528,6 +1638,7 @@ function routeLinks(document: ReportDocument): readonly ReportRoute[] {
 
 function finalizeExecution(input: {
   readonly compiled: CompiledReport;
+  readonly locale: "en" | "zh-CN";
   readonly sample: AnalysisSample;
   readonly projectionOutcomes: ReadonlyMap<CompiledProjection, ProjectionOutcome>;
   readonly calculationResults: ReadonlyMap<
@@ -1558,6 +1669,7 @@ function finalizeExecution(input: {
     });
     const execution = reportExecution({
       reportId: input.compiled.graph.id,
+      locale: input.locale,
       sample: input.sample,
       projections,
       calculations,

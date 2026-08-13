@@ -14,18 +14,25 @@ AnalysisSampleHandle
   .sample = selection-established expected-slot framework
   capability = same frozen reader view
           │
-          ├─ RecordProjection declarations
+          ├─ classic facade：固定 projection plan
+          │   （evaluation plan / verdict / usage / timing）
+          ├─ RecordProjection declarations（低层 API）
           ▼
 ProjectedSample（exhaustive logical entries + coverage + Attachment states）
           │
+          ├─ 深冻结 ClassicSample + defineComponent 展开受控 JSX
           ├─ Calculation（跨 owner 派生）
           ├─ Page / PageFamily / Download（包装结果）
+          ▼
+closed semantic validation
           ▼
 ReportExecution（host-owned、immutable、self-contained）
           ├─ show
           ├─ one fixed view revision
           └─ static export
 ```
+
+classic facade 与低层 projection API 是同一个管线的两个作者入口。facade 声明固定 projection plan，host 只投影一次，构造深冻结 `ClassicSample`，再展开受控 JSX；展开结果与低层页面的输出汇入同一个 closed semantic validation 与 `ReportExecution`。不存在第二套数据面或渲染面。
 
 这条链包含三种不同派生：
 
@@ -99,7 +106,23 @@ Host 在作者 callback 之前汇总 recorded-data problems，并在 callback �
 
 作者看不到 reader、root、Scope、Effect、owner lookup、compiled plan、route-expansion receipt 或 staging。`ReportDefinition`、`ReportPlan`、`ReportInput`、binding、matrix、prepare、materialize 都不进入 public API、作者签名、教程或 Concepts。
 
-这些 callback 的参数缩窄不是 JavaScript security boundary。受信任 module 仍可 import `node:fs` 或读 env。当前契约不提供 untrusted Report 的沙箱。
+这些 callback 的参数缩窄不是 JavaScript security boundary。受信任 module 仍可 import `node:fs` 或读 env。当前契约不提供 untrusted Report 的沙箱。NiceEval 只保证 classic 组件拿不到 reader、Effect、Record root / path 与 append-I/O capability。
+
+## Classic facade 数据面
+
+facade 的固定 projection plan 声明 evaluation plan、verdict、usage 与 timing 四条官方投影。host 对 Sample 投影一次，构造深冻结 `ClassicSample`，再展开 `defineComponent` 的受控 JSX 树。
+
+展开结果是树而不是数据访问：组件读取 `ctx.scope` 的时间在 projection 之后，I/O 已经闭合。`aggregate` 从 `ClassicSample` 的已投影值分组，不再请求新的 Attachment。组件树与低层页面的输出进入同一个 closed validation，形成同一个 `ReportExecution`；terminal JSON、live view 与 static export 消费同一份 execution。
+
+### selection-origin
+
+`ClassicSample` 的 metadata 携带 `metadataOrigin` 标注出处，host 不读取当前项目声明来填充历史数据：
+
+- project-current 使用完整 current-declaration profile，metadata 完整并显示 `metadataOrigin: "current-declaration"`；
+- explicit-runs（`--run`）在 Record 没有 durable profile 时，metadata 是 unknown / partial，experiment id 回退为 id / unknown，并给出一条结构化 notice；
+- 两条路径都不与当前项目字段混合。
+
+durable profile attachment 属于 future 边界。本契约不新增它，也不改 Record。
 
 ## Calculation 与分母
 
@@ -114,13 +137,17 @@ state:       partial
 
 `allow-partial` 可以显示 `20 / 100 · partial`，但不能把 20 改写成完整总体。
 
+facade 的 `passRate` 是严格两级分母。第一级在每个 (experiment, eval) 单元内对 attempts 取均值，passed = 1、failed / errored = 0；skipped / missing 不进入分子，也不伪造值，coverage 显式显示缺口。第二级把单元级值跨 Eval 等权平均，得到分组行与总值；行与总值都携带 observed / denominator / coverage。
+
 `sample.denominator` 与 `coverage.sample.denominator` 只是 Sample-wide 的 slot denominator，不因 Attachment 状态改变。它不是所有 Calculation 的业务 denominator。每个 Calculation 的 `observed` 与 `denominator` 都是作者返回的 domain value；host 不从 transport coverage、entry 数或 access count 推导它们。
 
 ## Closed semantic tree 与路径
 
-Page 输出闭合的 `ReportDocument` ADT，不是任意 JSON、HTML、React DOM、CSS 或用户 renderer。Web、terminal 与 static 从同一棵树派生；没有平行 `textAlternative`。
+classic facade 的受控 JSX 与低层页面 API 都汇入闭合的 `ReportDocument` ADT，不是任意 JSON、HTML、React DOM、CSS 或用户 renderer。Web、terminal 与 static 从同一棵树派生；没有平行 `textAlternative`。
 
-精确树形状验证之外，host 验证 number、Unicode、table keys、chart 长度、cycle、深度、nodes、strings 与 route/download links。HTML 按 context escape，terminal 把控制字符转成可见文本；不存在 raw HTML 逃逸口。
+树包含 Hero、summary、`ranked-bars`、scatter 与 `tree-table` 节点。`tree-table` 表达 Experiment → Eval → Attempt 层级；Attempt 行保留公开 locator target，由 host 按呈现面解释，不声明额外详情页面。
+
+精确树形状验证之外，host 验证 number、Unicode、table keys、chart 长度、ranked-bars / scatter 的 finite 数值、cycle、深度、nodes、strings 与 link target。Hero 外链只接受绝对 https，host 只序列化不 fetch；http、javascript、data、file 与 relative 拒绝。缺失 cost / timing 保持 null，不补 0。HTML 按 context escape，terminal 把控制字符转成可见文本；不存在 raw HTML 逃逸口。
 
 Semantic route 与 filesystem path 分开。Route / download constructor 固定 lowercase ASCII grammar；static host 把 author route 映射到 `a/b/index.html`，再从当前页面 output path 计算相对 href。所有 author outputs 与 host files 进入同一 collision set。
 
@@ -184,6 +211,9 @@ Recorded-data problems 可导出；任一 execution problem 整体不发布。�
 - ProjectedSample 穷尽 logical entries；physical optimization 不进入结果语义。
 - data problem、execution problem、typed failure、defect 与 interruption 不互相冒充。
 - 作者只声明数据与包装结果，不理解 host 编译机械。
+- classic facade 与低层 API 汇入同一个 closed validation 与 `ReportExecution`；不存在第二套数据或渲染真相。
+- `ClassicSample` 深冻结且 metadata 携带 `metadataOrigin` 标注出处；history 数据不与当前项目字段混合。
+- Hero 外链只接受绝对 https，host 只序列化不 fetch；缺失 cost / timing 不补 0。
 - 每个 ReportExecution immutable，所有 declaration / consumer 最多执行一次。
 - 热重载发布新 revision，不修改旧 execution。
 - web / text / static 从同一 closed semantic tree 与 host-owned problems 派生。

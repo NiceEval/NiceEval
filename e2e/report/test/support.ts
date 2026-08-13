@@ -21,6 +21,7 @@ export const reportE2E = createE2EContext({
   project: reportProjectCopy,
   commands: {
     niceeval: [join(process.cwd(), "node_modules", ".bin", "niceeval")],
+    tsc: [join(process.cwd(), "node_modules", ".bin", "tsc")],
   },
 });
 

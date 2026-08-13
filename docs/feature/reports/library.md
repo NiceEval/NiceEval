@@ -24,7 +24,141 @@ CLI / Node runtime
 
 Report 作者只理解两件事：需要哪些 `RecordProjection`，以及怎样把 projected values / derived values 包装成页面或下载。作者 callback 看不到 `RecordReader`、root、Scope、Effect、path、owner lookup、compiled plan 或 route expansion。
 
-## 最小作者调用面
+## Classic facade
+
+`niceeval/report` 的公开作者面是 classic facade，即 0.12.1 时期 MemoryBench 消费的形状。这个名字是诚实身份，不承诺完整旧 runtime 兼容；需要自定义投影或计算的作者继续使用下文低层 projection API。两条路径共享同一个 `ReportExecution`。
+
+```ts
+import {
+  Bars,
+  Col,
+  ExperimentScatter,
+  ExperimentTable,
+  Hero,
+  SampleSummary,
+  aggregate,
+  defineComponent,
+  defineReport,
+  passRate,
+} from "niceeval/report";
+import type { AggregationSubject, GroupFunction } from "niceeval/report";
+```
+
+### defineReport classic overload
+
+```ts
+declare const defineReport: (definition: {
+  readonly title: LocalizedText;
+  readonly pages: readonly {
+    readonly id: string;
+    readonly title: LocalizedText;
+    readonly render: () => ClassicElement;
+  }[];
+}) => Report;
+```
+
+`render` 返回受控 JSX 树。需要读取 Sample 的组件在 `defineComponent` 里经 `ctx.scope` 取数，页面只负责装配。
+
+已有 React 报告可以保留 `jsx: "react-jsx"`；NiceEval 会接收 React 产出的 element，但仍拒绝原生 DOM 与未包装组件。不想引入 React runtime 的报告可在自己的 `tsconfig.json` 使用 `jsx: "react-jsx"` 与 `jsxImportSource: "niceeval/report"`，改走包内受控 JSX runtime。两种写法形成同一棵 classic element tree。
+
+### defineComponent 与 ctx.scope
+
+```ts
+declare const defineComponent: <Props = {}>(
+  render: (
+    props: Props,
+    context: { readonly scope: ClassicSample },
+  ) => ClassicElement | Promise<ClassicElement>,
+) => ClassicComponent;
+```
+
+`defineComponent` 接受同步或 async 渲染函数。渲染函数读取 `context.scope`，即 host 一次投影后构造的深冻结 `ClassicSample`。async 函数在 projection 完成后由 host 展开并等待。
+
+```tsx
+const Leaderboard = defineComponent(async (_props, ctx) => {
+  const rows = await aggregate(ctx.scope, {
+    by: { condition, memory },
+    values: { passRate },
+  });
+  return <Bars points={rows} x="condition" y="passRate" layout="horizontal" />;
+});
+```
+
+### 受控 JSX 边界
+
+组件树只接受内置组件、`defineComponent` 返回值与 `Fragment`；子节点可以是数组、string、number 或 null。它拒绝：
+
+- 原生 tag（`div`、`span` 等）与任意 unbranded component；
+- `head`、script、style、font、worker、WASM 与 raw HTML；
+- 自定义 text / web 双面 renderer 与平行 `textAlternative`；
+- reader-backed Sample、Record root、path 与 Effect 值。
+
+trusted TS module 本身不是 sandbox；module 仍可以 import `node:fs` 或读 env。NiceEval 只保证 classic 组件拿不到 reader、Effect、Record root / path 与 append-I/O capability。
+
+### 内置组件
+
+| 组件 | 职责 |
+| --- | --- |
+| `Col` | 纵向布局容器，按声明顺序排列子块。 |
+| `Hero` | 页首摘要块；`description` 与 `links`。链接只接受绝对 https，host 只序列化 href，不 fetch。 |
+| `SampleSummary` | 当前 Sample 概况：实验、Eval、attempt 与 coverage。 |
+| `Bars` | 柱状图；`layout="horizontal"` 呈现横向柱状图，points 来自 `aggregate` 行。 |
+| `ExperimentScatter` | 按 Experiment 的散点。 |
+| `ExperimentTable` | 实验级读数表。 |
+
+### aggregate 与 passRate
+
+```ts
+type AggregationSubject = {
+  readonly experimentId: string;
+  readonly evalId: string;
+  readonly run: {
+    readonly experiment?: {
+      readonly labels?: Readonly<Record<string, string | number>>;
+      readonly flags?: Readonly<Record<string, JsonValue>>;
+    };
+  };
+};
+
+type GroupFunction = (subject: AggregationSubject) => string;
+
+declare const aggregate: (
+  scope: ClassicSample,
+  options: {
+    readonly by: Readonly<Record<string, GroupFunction>>;
+    readonly values: Readonly<Record<string, Calculation>>;
+  },
+) => Promise<readonly AggregateRow[]>;
+```
+
+`AggregationSubject` 携带 `experimentId`、`evalId` 与对应 run 的声明字段。`GroupFunction` 从这些字段取分组值；缺少的字段按 unknown 处理，不读当前项目声明。`aggregate` 的 `by` 在 Eval 级分组，不能把同一道题的 attempts 拆开。
+
+`passRate` 是严格两级分母的官方 Calculation：
+
+- 第一级：每个 (experiment, eval) 单元内，attempt 判定取均值，passed = 1、failed / errored = 0；
+- skipped / missing 不进入分子，也不伪造值；coverage 显式显示缺口；
+- 第二级：单元级值跨 Eval 等权平均，得到分组行与总值；
+- 每行返回 observed / denominator / coverage，缺失不得改写成 0。
+
+### 固定 projection plan 与同一执行路径
+
+classic facade 先声明固定 projection plan：evaluation plan、verdict、usage 与 timing。host 只投影一次，构造深冻结 `ClassicSample`，再展开组件。
+
+展开结果进入同一个 closed semantic validation，形成同一个 `ReportExecution`，show、view 与 static export 只消费它。terminal JSON、live 与静态站因此是同一份 execution；facade 不是第二套数据或渲染真相。
+
+### selection-origin
+
+`ClassicSample` 的 metadata 携带 `metadataOrigin` 标注出处，不读取当前项目声明来填充历史数据：
+
+- project-current：使用完整 current-declaration profile，并显示 `metadataOrigin: "current-declaration"`；
+- explicit-runs（`--run`）：Record 没有 durable profile 时 metadata 是 unknown / partial，experiment id 回退为 id / unknown，并给出一条结构化 notice；
+- 两种情况都不与当前项目字段混合。
+
+本契约不新增 durable profile attachment，也不改 Record；future durable profile 属于边界，不是当前承诺。
+
+## 低层 projection API 作者调用面
+
+低层 projection API 继续存在，与 classic facade 共享同一个 `ReportExecution` 路径。它保留 `RecordProjection` 声明、Calculation 与 Page / PageFamily / Download，供需要自定义投影与计算的作者使用。
 
 ```ts
 import { Effect, Either } from "effect";
@@ -138,6 +272,8 @@ declare const defineReport: (definition: {
 ```
 
 `defineReport` 校验 ID 唯一性，并验证 Page / PageFamily / Download 引用的 Calculation object 都在同一个 Report 的 `calculations` 中注册。引用按 object identity，不按 string lookup；作者不能在 callback 中动态增加 Calculation 或 I/O。
+
+这是低层 overload。classic overload（`{ title, pages }`）在 [Classic facade](#classic-facade) 一节定义；两种 overload 的结果都进入同一个 closed validation 与 `ReportExecution` 路径。
 
 ### Completeness
 
@@ -398,7 +534,7 @@ Static link 不直接写 semantic `/a/b`。Host codec 从当前页面 output 的
 
 ## Closed semantic report tree
 
-页面返回闭合语义树，不返回任意 JSON、HTML、DOM、React element、CSS 或 parallel `textAlternative`。
+classic facade 的受控 JSX 与低层页面 API 都汇入同一棵闭合语义树。树不接受任意 JSON、HTML、DOM、React element、CSS 或 parallel `textAlternative`。
 
 ```ts
 type ReportScalar = null | boolean | number | string;
@@ -428,7 +564,12 @@ type ReportBlock =
   | ReportMetric
   | ReportStatus
   | ReportCode
-  | ReportChart;
+  | ReportChart
+  | ReportHero
+  | ReportSummary
+  | ReportRankedBars
+  | ReportScatter
+  | ReportTreeTable;
 
 interface ReportSection { readonly type: "section"; readonly heading: string; readonly children: readonly ReportBlock[]; }
 interface ReportParagraph { readonly type: "paragraph"; readonly children: readonly ReportInline[]; }
@@ -450,19 +591,89 @@ interface ReportChart {
   readonly categories: readonly string[];
   readonly series: readonly { readonly label: string; readonly values: readonly (number | null)[] }[];
 }
+
+interface ReportHero {
+  readonly type: "hero";
+  readonly description: string;
+  readonly links: readonly {
+    readonly label: string;
+    readonly target: { readonly kind: "external"; readonly href: string };
+  }[];
+}
+interface ReportSummary {
+  readonly type: "summary";
+  readonly lastRunAt: number | null;
+  readonly metrics: readonly ({
+    readonly key: string;
+    readonly label: string;
+  } & ReportDisplayValue)[];
+}
+interface ReportRankedBars {
+  readonly type: "ranked-bars";
+  readonly title: string;
+  readonly layout: "horizontal";
+  readonly points: readonly {
+    readonly key: string;
+    readonly label: string;
+    readonly series: string;
+    readonly value: number | null;
+    readonly display: string;
+    readonly coverage: ReportCoverage;
+  }[];
+  readonly better: "higher" | "lower";
+}
+interface ReportScatter {
+  readonly type: "scatter";
+  readonly title: string;
+  readonly xLabel: string;
+  readonly yLabel: string;
+  readonly connect: boolean;
+  readonly series: readonly {
+    readonly label: string;
+    readonly points: readonly {
+      readonly key: string;
+      readonly x: number | null;
+      readonly y: number | null;
+      readonly xDisplay: string;
+      readonly yDisplay: string;
+      readonly target?: ReportLinkTarget;
+    }[];
+  }[];
+}
+interface ReportTreeTable {
+  readonly type: "tree-table";
+  readonly caption: string;
+  readonly columns: readonly {
+    readonly key: string;
+    readonly label: string;
+    readonly align?: "start" | "end";
+  }[];
+  readonly rows: readonly {
+    readonly key: string;
+    readonly kind: "experiment" | "eval" | "attempt";
+    readonly depth: 0 | 1 | 2;
+    readonly label: string;
+    readonly target?: ReportLinkTarget;
+    readonly cells: Readonly<Record<string, ReportScalar | ReportDisplayValue>>;
+  }[];
+}
 ```
+
+`ReportHero`、`ReportSummary`、`ReportRankedBars`、`ReportScatter` 与 `ReportTreeTable` 对应 classic facade 的内置组件；低层 API 可以直接构造它们。`ReportTreeTable` 表达 Experiment → Eval → Attempt 的层级，Attempt 行以 `{ kind: "attempt", locator: "@…" }` target 保留公开 locator 导航语义，不凭空声明另一套详情页面。
 
 精确树形状之外还必须做 relational validation：
 
 - number 全部 finite；
 - string 只含 Unicode scalar values；
 - table column key 非空唯一，row keys 与 columns 恰好相等；
-- chart series 长度与 categories 相等；
+- chart series 长度与 categories 相等；ranked-bars 与 scatter 的非 null 数值全部 finite；
+- hero links 的 href 只接受绝对 https；http、javascript、data、file 与 relative 拒绝；
+- 缺失 cost / timing 保持 null，不补 0；
 - route / download link 必须存在于本 execution 的 closure；
 - depth、node、string 与 bytes limits 在 active recursion stack 中执行；
 - HTML 按 context escape，terminal 把控制字符转成可见文本；renderer 穷尽 union，未知节点类型返回 unsupported。
 
-Web、terminal 与 static text 都从同一棵树派生。Chart 的 label、categories 与 series 足以形成 table/text；颜色、hover 与图形不能承载唯一语义。通过率等统计口径必须由 Calculation value 自己定义；host 不替作者公式猜 `observed` / `denominator`。
+Web、terminal 与 static text 都从同一棵树派生。Bars 的 label、categories 与 series，以及 scatter 的 points，足以形成 table/text；颜色、hover 与图形不能承载唯一语义。通过率等统计口径由 `passRate` 或 Calculation value 自己定义；host 不替作者公式猜 `observed` / `denominator`。
 
 ## 数据问题、执行问题与不可隐藏 surface
 

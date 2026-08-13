@@ -25,6 +25,7 @@ import type { JsonValue } from "./shared/types.ts";
 import { runEvals, type AgentRun } from "./runner/run.ts";
 import { planProjectTarget, type ProjectTargetPlan } from "./runner/fingerprint.ts";
 import { loadProjectCurrent } from "./runner/project-current.ts";
+import type { ProjectCurrentTarget } from "./runner/project-target.ts";
 import {
   makeRecordRoot,
   RunIdSchema,
@@ -46,6 +47,10 @@ import {
 import { sourceEvidenceReport } from "./report/built-in/source.ts";
 import { reportRoute, type ReportRoute } from "./report/author/identity.ts";
 import type { Report } from "./report/author/model.ts";
+import {
+  currentDeclarationSelectionOrigin,
+  type ClassicSelectionOrigin,
+} from "./report/classic/index.ts";
 import type { ReportExecution } from "./report/execution/model.ts";
 import {
   executeReportForAttemptFromRecord,
@@ -2526,6 +2531,9 @@ interface LoadedCliReportInputs {
   readonly report: Report;
   readonly theme: ThemeDefinition;
   readonly projectCurrentSelection?: AnalysisSelectionRequest;
+  /** Private classic envelope. Never copied onto AnalysisSample. */
+  readonly selectionOrigin?: ClassicSelectionOrigin;
+  readonly locale?: "en" | "zh-CN";
   /** Record, config, and every statically discovered author module input. */
   readonly watchInputs: readonly string[];
 }
@@ -2563,6 +2571,10 @@ function loadCliReportInputs(request: ReportCliRequest): Effect.Effect<LoadedCli
       report: selectedReport.value,
       theme: selectedTheme.value,
       ...(projectCurrentSelection === undefined ? {} : { projectCurrentSelection }),
+      ...(projectCurrent === undefined
+        ? {}
+        : { selectionOrigin: classicOriginFromProjectCurrent(projectCurrent.target) }),
+      locale: "en",
       watchInputs: uniqueWatchInputs([
         request.rootPath,
         ...(projectCurrent?.watchInputs ?? []),
@@ -2624,6 +2636,8 @@ function executeCliReport(request: ReportCliRequest, inputs: LoadedCliReportInpu
       root: request.root,
       locator: request.target.locator,
       report: inputs.report,
+      ...(inputs.selectionOrigin === undefined ? {} : { selectionOrigin: inputs.selectionOrigin }),
+      ...(inputs.locale === undefined ? {} : { locale: inputs.locale }),
     })
     : executeReportFromRecord({
       root: request.root,
@@ -2631,8 +2645,26 @@ function executeCliReport(request: ReportCliRequest, inputs: LoadedCliReportInpu
         ? request.target.selection
         : inputs.projectCurrentSelection!,
       report: inputs.report,
+      ...(inputs.selectionOrigin === undefined ? {} : { selectionOrigin: inputs.selectionOrigin }),
+      ...(inputs.locale === undefined ? {} : { locale: inputs.locale }),
     });
   return execution.pipe(Effect.mapError(reportExecutionFailure));
+}
+
+function classicOriginFromProjectCurrent(target: ProjectCurrentTarget): ClassicSelectionOrigin {
+  return currentDeclarationSelectionOrigin(
+    target.experiments.map((experiment) =>
+      Object.freeze({
+        experimentId: experiment.id,
+        agent: experiment.agent,
+        ...(experiment.model === undefined ? {} : { model: experiment.model }),
+        ...(experiment.reasoningEffort === undefined ? {} : { reasoningEffort: experiment.reasoningEffort }),
+        flags: experiment.flags,
+        ...(experiment.labels === undefined ? {} : { labels: experiment.labels }),
+        ...(experiment.description === undefined ? {} : { description: experiment.description }),
+      }),
+    ),
+  );
 }
 
 function reportExecutionFailure(error: unknown): CliFailure {
@@ -2651,6 +2683,14 @@ function reportExecutionFailure(error: unknown): CliFailure {
       return usageError(`Attempt locator "${stringProperty(error, "locator") ?? "unknown"}" was not found in the selected Record.\n`);
     case "sample-attempt-locator-ambiguous":
       return usageError(`Attempt locator "${stringProperty(error, "locator") ?? "unknown"}" is ambiguous in the selected Record.\n`);
+    case "report-definition-invalid": {
+      const issues = stringIssues(error);
+      return usageError(
+        issues.length === 0
+          ? "report-definition-invalid\n"
+          : `report-definition-invalid\n${issues.join("\n")}\n`,
+        );
+    }
     case "record-migration-required":
       return usageError("record-migration-required\nRun: niceeval migrate\n");
     case "record-bootstrap-invalid":
@@ -2668,6 +2708,13 @@ function stringProperty(value: unknown, key: string): string | undefined {
   if (typeof value !== "object" || value === null) return undefined;
   const candidate = Reflect.get(value, key);
   return typeof candidate === "string" ? candidate : undefined;
+}
+
+function stringIssues(value: unknown): readonly string[] {
+  if (typeof value !== "object" || value === null) return [];
+  const candidate = Reflect.get(value, "issues");
+  if (!Array.isArray(candidate)) return [];
+  return candidate.filter((issue): issue is string => typeof issue === "string");
 }
 
 function requireKnownReportPage(

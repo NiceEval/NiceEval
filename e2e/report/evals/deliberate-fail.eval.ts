@@ -7,6 +7,8 @@ export default defineEval({
   description: "deliberate-fail:确定性失败断言",
 
   async test(t) {
+    const turn = await t.send("report fixture failure");
+    await turn.succeeded().orStop();
     t.check(1 + 1, equals(3));
   },
 });

@@ -145,6 +145,26 @@
         "types": "./dist/report/built-in/index.d.cts",
         "default": "./dist/report/built-in/index.cjs"
       }
+    },
+    "./report/jsx-runtime": {
+      "import": {
+        "types": "./dist/report/jsx-runtime.d.mts",
+        "default": "./dist/report/jsx-runtime.mjs"
+      },
+      "require": {
+        "types": "./dist/report/jsx-runtime.d.cts",
+        "default": "./dist/report/jsx-runtime.cjs"
+      }
+    },
+    "./report/jsx-dev-runtime": {
+      "import": {
+        "types": "./dist/report/jsx-dev-runtime.d.mts",
+        "default": "./dist/report/jsx-dev-runtime.mjs"
+      },
+      "require": {
+        "types": "./dist/report/jsx-dev-runtime.d.cts",
+        "default": "./dist/report/jsx-dev-runtime.cjs"
+      }
     }
   },
   "files": [

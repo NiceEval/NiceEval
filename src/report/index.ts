@@ -8,7 +8,6 @@ export {
   defineDownload,
   definePage,
   definePageFamily,
-  defineReport,
   reportComponentId,
   reportDownloadPath,
   reportId,
@@ -18,6 +17,35 @@ export {
   reportRoute,
   reportRouteFromKeys,
 } from "./author/index.ts";
+
+export {
+  Bars,
+  Col,
+  ExperimentScatter,
+  ExperimentTable,
+  Hero,
+  SampleSummary,
+  aggregate,
+  defineComponent,
+  defineReport,
+  passRate,
+  Fragment,
+  jsx,
+  jsxs,
+} from "./classic/index.ts";
+export type {
+  AggregationSubject,
+  ClassicComponent,
+  ClassicComponentContext,
+  ClassicLocale,
+  ClassicReportDefinition,
+  ClassicReportPageDefinition,
+  ClassicSample,
+  ClassicSelectionOrigin,
+  GroupFunction,
+  LocalizedText,
+  MetricValue,
+} from "./classic/index.ts";
 
 export type {
   AnyReportCalculation,
