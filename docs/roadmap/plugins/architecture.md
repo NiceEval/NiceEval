@@ -253,21 +253,26 @@ Run-owned document 只允许真正被整份 Run 共享的 Experiment mount。Att
 `niceeval.plugin-provenance/v1`：它只参与 selected demand cohort 与 plan manifest，不能借一个 group row 把 slot、
 pair、provider、template 或 cohort 提升成 Run-wide 事实。
 
-每个 owner 的一个 attachment family 至多出现一次。`niceeval.plugin-provenance/v1` 是 framework package-private
-definition；Plugin 自己声明的 family 也遵守同一限制。duplicate family identity 或 duplicate owner write 是 typed
-conflict，即使 payload 字节相同。
+每个 owner 的一个 attachment family 至多出现一次。`niceeval.plugin-provenance/v1` 使用 framework package-private
+adapter 与 binding；领域 SDK 自己声明的 family 也遵守同一限制。duplicate family identity 或 duplicate binding 是 typed
+conflict，即使最终领域值相同。
 
-## 声明的 attachment write grant
+## owner-specific adapter binding
 
-blueprint 的 `recordAttachments.write` 是其唯一的 Record write grant 声明。link 按中立
-[producer write grant](../record-attachment-authoring/library.md#producer-write-grant) 为每个 linked occurrence 建立独立
-grant，并把 exact opaque definition object 与 mount、owner、occurrence identity 绑定。runtime context 只能消费这个
-occurrence grant 中的 definition；它看不到 owner-wide 合并 allowlist，也不能接收 name、schemaId、路径或 raw JSON。
+领域 SDK 只在 Plugin owner fragment 的 `recordAdapters.attempt`／`recordAdapters.run` 声明
+[owner-specific binding](../record-attachment-authoring/library.md#owner-specific-binding)。link 把 exact adapter object、mount、
+owner、occurrence identity 与 behavior identity 绑定；host 从它推导 occurrence-local internal grant。runtime callback 看不到
+grant、definition、owner-wide allowlist、name、schemaId、路径或 raw JSON。
 
-两个 occurrences 声明相同 `(owner, name)` 时，即使 definition object 不同，link 也在资源创建前失败。grant membership
-用 exact object identity；durable 与 duplicate identity 则用 owner/name，这两个判断不能互相替代。
+两个 occurrences 声明相同 `(owner, name)` 时，即使 adapter object 不同，link 也在资源创建前失败。internal grant
+membership 用 exact object identity；durable 与 duplicate identity 则用 owner/name，这两个判断不能互相替代。
 
-Eval lifecycle 只能在其 Attempt 尚未封口时写 Attempt owner；Experiment lifecycle 只能在 Run 尚未封口时写 Run owner。Group 没有 runtime write context。closed、wrong-owner、undeclared 与 duplicate 都是具名 failure，既不改写已有 Attachment，也不退回开放持久化存储。
+Experiment mount 同时贡献 Run 与 Attempt binding 时，必须形成独立的 Run occurrence 与 pair／Attempt occurrence；二者不共享
+session、grant、accepted events 或 behavior identity。Eval fragment 只接受 Attempt binding，Group 没有 Record owner。
+
+每个 mounted binding 对每个 actual owner 承担 total producer obligation。open／seal／release、adaptation 与 canonical command
+任一步没有 accepted once 都令 owner 失败；正常 empty、partial 与 unavailable 由 sealed domain value 表达，不退回可选 write
+或开放持久化入口。
 
 ## Hash、manifest 与 contribution refs
 
@@ -275,9 +280,9 @@ Experiment attachment、fragment 与 Agent extension 的 Run-owned 行为进入 
 
 Agent extension 使用前文 `RunAgentProjection + PairAgentDelta` 的两层投影。pair fingerprint 不重复登记已经包含在 `configHash` 内的 Run 值。每个 hash input 有配套 manifest 投影；同一个值不以 options、Plugin identity、flag 或 receiver projection 多次登记。
 
-Plugin provenance 的 `contributionRefs` 只由框架在 generic writer 完整写入 attachment 后发出的 accepted event，或在
-owner fragment / receiver projection 被 link 接受后 mint。attachment 的调用、reservation、payload capture 与局部 blob
-写入都不是 accepted contribution。它的上下文不可混用：
+Plugin provenance 的 `contributionRefs` 只由框架在 adapter command 完整 accepted 后发出的 event，或在 owner fragment／
+receiver projection 被 link 接受后 mint。binding open、reservation、领域采集、adaptation 与局部 blob 写入都不是
+accepted contribution。它的上下文不可混用：
 
 - Run entry 只能引用 Run attachment、Experiment flags／labels／Run lifecycle 或 Run receiver projection。
 - Eval Attempt entry 只能引用 Attempt attachment、Eval fragment 或 Attempt receiver projection。
@@ -288,18 +293,19 @@ Hosted Hook 总是 Attempt-local，不得出现在 Run entry。反过来，Exper
 它没有 raw path、blob ref、payload 或任意 JSON 形态，也不能作为未声明 capability 的写入凭据。它只是对已接受
 contribution 的有界审计索引，不是第二份 payload 或绕过 owner-local closure 的引用表。
 
-framework 在 external Plugin grants 关闭并 drain 后聚合这些 events。随后它使用 package-private official
-definition、显式 built-in write grant 与同一个 owner context 写 `niceeval.plugin-provenance`。
+framework 在 external Plugin bindings seal／release、adapt 并 drain 后聚合这些 events。随后它使用 package-private official
+adapter 与 built-in owner binding 写 `niceeval.plugin-provenance`。
 
 这条路径不直接操作 draft，不走 Plugin sink，也不把 provenance 自己的 accepted event 递归收回本次 document。
-公共面只导出 typed reader / projector；official definition 不公开，以免外部 producer 伪造 framework provenance。
+公共面只导出领域 projector；official adapter、binding 与 installation 都不公开，以免外部 producer 伪造 framework provenance。
 
 requirements 本身进入 manifest；它验证的 completed plan 依所属 owner 进入 identity。credential value 与默认 selector 不进 hash；显式 credential revision 才表达行为代次。
 
 ## 显式 migration registry
 
-Plugin Attachment definition 自己拥有全部版本、相邻 converter 与 unavailable edge。应用通过 config 显式安装
-`recordAttachments.install` 中的整份 definition；registry 以 owner、name 与 schema identity 去重，不接收外部 edge。
+Plugin Attachment adapter 自己拥有全部版本、相邻 converter 与 unavailable edge。SDK 只导出领域命名的 opaque
+installation；应用通过 config 显式放进 `recordAttachments.install`。registry 以 owner、name 与 schema identity 去重，
+不接收 adapter、writable definition 或外部 edge。
 
 `niceeval migrate` 只遍历此时提供的 registry。它不从 Record bytes 推断 package 名并 import Plugin，也不调用 factory、requirements、hook、receiver lifecycle 或 runtime binding。converter 是 trusted extension：`Effect` 的 requirement 为 `never` 只限制依赖注入，并不构成 JavaScript sandbox。
 

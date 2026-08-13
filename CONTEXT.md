@@ -15,34 +15,44 @@ reference、gap、未派发与已完成 outcome，并在最后请求发布完整
 _Avoid_: Runner core, Record runtime
 
 **Record adaptation**:
-把某个领域已经封口的事实转换成该领域拥有的版本化 RecordAttachment。schema 版本与 migration
-停在这里；事实生产者和消费者都不构造版本化 document。
+把某个领域已经封口的事实转换成该领域拥有的版本化 RecordAttachment，并把可读 Attachment 投影回领域 view。
+schema 版本与 migration 停在这里；事实生产者和消费者都不构造版本化 document。
 _Avoid_: Runner serialization, Generic metadata
 
-**RecordAttachment definition**:
-一个事实 family 对 owner、name、全部 schema 版本、current 版本与相邻 migration policy 的完整声明。
-它不表示某个应用已经信任它，也不授予事实生产者写入权。
-_Avoid_: Attachment registration, Writable family
+**RecordAttachment adapter**:
+领域 SDK 对 sealed domain value、版本化 Attachment family、相邻 migration 与 typed projection 的完整适配声明。
+它不是 live writer，也不表示应用已经安装它或某个 producer 已经挂载。
+_Avoid_: Record API, Attachment writer
+
+**RecordAttachment installation**:
+Record host 对某个 opaque RecordAttachment adapter 的读取与显式 migration 信任。它不能反推出 writable adapter、
+producer binding 或当前 owner 的生命周期能力。
+_Avoid_: Plugin discovery, Producer registration
+
+**RecordAdapter binding**:
+把一个 RecordAttachment adapter 与一个具名 producer behavior 绑定到 exact Run 或 Attempt occurrence 的声明。
+它为每个实际执行 owner 建立 total producer obligation，不是普通代码可选调用的 writer capability。
+_Avoid_: Write grant, Context extension
+
+**Total producer obligation**:
+一个已挂载 RecordAdapter binding 对每个实际执行 owner 恰好产出一份 sealed domain value，或令该 owner 失败的义务。
+正常的 empty、partial 与 unavailable 必须成为领域值，不能靠不写 Attachment 表示。
+_Avoid_: Optional write, Best-effort telemetry
 
 **RecordAttachment value**:
 一个 Record owner 下某份 RecordAttachment definition 的不可变事实实例。它包含该版本的 payload 与自有材料，
 不是整个 Record，也不是 Analysis 派生值。
 _Avoid_: Record value, Fact value
 
-**RecordAttachment installation**:
-一个应用明确选择并信任哪些 RecordAttachment definitions 来解释和迁移事实。它不授权任何 producer
-写入，也不从 producer 声明或历史 bytes 隐式推导。
-_Avoid_: Attachment write registration, Plugin discovery
-
-**RecordAttachment write grant**:
-一个 linked producer occurrence 被允许提交的 exact RecordAttachment definitions 集合。它不安装 migration，
-不跨 occurrence 共享，也不包含当前 owner 的实际生命周期能力。
-_Avoid_: Application registry, Owner-wide allowlist
+**Record adapter internal grant**:
+host 从 owner-specific binding 推导出的内部 exact adapter 集合。它不出现在 Eval、Experiment、Plugin callback 或
+TestContext，也不安装 migration 或跨 occurrence 共享。
+_Avoid_: Public producer API, Owner-wide allowlist
 
 **Record context lease**:
-当前 Run 或 Attempt 在开放生命周期内实际接纳 RecordAttachment command 的 owner-local authority。它不跨
-owner、session 或封口边界。
-_Avoid_: Record writer, Global attachment context
+host 在当前 Run 或 Attempt 的开放生命周期内接纳 canonical RecordAttachment command 的内部 authority。它不进入
+领域 SDK callback，也不跨 owner、session 或封口边界。
+_Avoid_: Record writer, Eval context
 
 **Record access runtime**:
 一个 host operation 内为 canonical Record root 管理 snapshot generations、lock authority 与本地 verified

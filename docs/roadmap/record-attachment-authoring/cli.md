@@ -1,31 +1,36 @@
-# RecordAttachment 作者 API —— CLI
+# RecordAttachment adapter SPI —— CLI
 
 ## Application-installed world
 
-第三方 definition 只有经 application config 的 `install` 集合才进入普通读取与 migration registry：
+第三方 adapter 只有经 application config 安装其 opaque installation capability，才进入普通读取与 migration
+registry：
 
 ```ts
 import { defineConfig } from "niceeval";
-import { agentTrace, gpuEnergy } from "./record-attachments.ts";
+import {
+  agentTraceRecordInstallation,
+  gpuEnergyRecordInstallation,
+} from "./record-installations.ts";
 
 export default defineConfig({
   recordAttachments: {
-    install: [agentTrace, gpuEnergy],
+    install: [agentTraceRecordInstallation, gpuEnergyRecordInstallation],
   },
 });
 ```
 
-NiceEval CLI 另固定安装当前版本自己的 package-private built-in definitions。它们经过同一 registry compiler，但公共
-config 不取得 writable official definition 或 namespace authority。
+`install` 元素是 `RecordAttachmentInstallation`，不是 adapter 或 writable definition。NiceEval CLI 另固定安装当前
+版本的 package-private official installations。它们经过同一 registry compiler，但公共 config 不取得 official
+adapter 或 namespace authority。
 
 下列内容都不是 registry 输入：
 
-- Eval、Experiment 或 Plugin 的 `recordAttachments.write`；
+- Plugin 的 owner-specific RecordAdapter bindings；
 - 历史 link、manifest、provenance 或 Record bytes 中的 name / schemaId；
 - Plugin factory、hook、Sandbox、Agent receiver 或 Report；
 - package metadata、网络索引或按 name 推断的 dynamic import。
 
-因此 `install` 表示应用愿意执行并信任普通 JavaScript definition / converter。它不授予 producer 写权限，也不是
+因此 `install` 表示应用愿意执行并信任普通 JavaScript adapter / converter。它不挂载 producer，也不是
 第三方代码 sandbox。
 
 ## 读取不会隐式迁移
@@ -72,18 +77,18 @@ Unsupported and preserved
 plan 绑定 canonical root snapshot、installed registry identity、完整 migration graph 与 Git inspection。任一输入变化后，
 执行返回 `record-migration-plan-stale`，不能把旧 plan 用到新 bytes 或新 converter 上。
 
-## Config 与 definition validation
+## Config 与 installation validation
 
 CLI 在取得 maintenance lock、创建 sentinel 或写 portable bytes 前完成：
 
 1. import config；
-2. 验证每项是 genuine opaque definition；
-3. 按 `(owner, name)` 拒绝重复 definition objects；
+2. 验证每项是 genuine opaque installation；
+3. 按 `(owner, name)` 拒绝重复 installations；
 4. 验证所有 `vN` 连续、current 为最大版本；
 5. 验证每个非 current version 恰有一个 adjacent migrate / unavailable edge；
 6. exact-match Record 中每份 known Attachment 的 source schema 与 closure。
 
-config throw、reserved namespace、伪造 definition、重复 owner/name、missing / extra / skip / reverse edge 或 invalid source
+config throw、reserved namespace、伪造 installation、重复 owner/name、missing / extra / skip / reverse edge 或 invalid source
 都以零 portable write 失败。CLI 不把这些错误延迟到某个 converter 已经执行后。
 
 ## Converter 与 target write
@@ -129,31 +134,33 @@ migrate 都 fail closed 为 `record-migration-interrupted`；用户必须从 pre
 
 ## Producer 被删除以后
 
-producer 与 definition 的 lifecycle 可以分开。删除已经不再运行的 Eval / Plugin 后，项目可保留一个只导出 definition
-的 package 与 application install：
+producer binding 与 installation 的 lifecycle 可以分开。删除已经不再运行的 Eval / Plugin 后，项目可保留一个只导出
+opaque installation 的历史 package：
 
 ```ts
 import { defineConfig } from "niceeval";
-import { gpuEnergy } from "@example/niceeval-record-history";
+import {
+  gpuEnergyRecordInstallation,
+} from "@example/niceeval-record-history";
 
 export default defineConfig({
-  recordAttachments: { install: [gpuEnergy] },
+  recordAttachments: { install: [gpuEnergyRecordInstallation] },
 });
 ```
 
 这允许 reader 继续解释历史 current facts，也允许 `niceeval migrate` 执行 family-owned edges；不会复活 producer、调用
-Plugin factory 或授予任何新 write grant。definition package 不再可用时，unknown bytes 保持 `unsupported` 且原样保留。
+Plugin factory 或构造 binding。installation package 不再可用时，unknown bytes 保持 `unsupported` 且原样保留。
 
 ## 反馈与错误
 
 | code / state | 含义 | 下一步 |
 |---|---|---|
-| `record-attachment-definition-invalid` | installed definition 或 graph 非法 | 修正 config / definition；尚未写磁盘 |
-| `record-attachment-registry-conflict` | 两个 objects 声明相同 `(owner, name)` | 只安装唯一 owning definition |
+| `record-attachment-adapter-definition-invalid` | installed adapter graph 非法 | 修正 SDK / config；尚未写磁盘 |
+| `record-attachment-registry-conflict` | 两个 installations 声明相同 `(owner, name)` | 只安装唯一 owning capability |
 | `record-migration-plan-stale` | root、registry 或 Git inspection 已变化 | 重新运行 preflight |
 | `attachment-migration-required` | known old schema 有完整 converter chain | 显式运行 `niceeval migrate` |
 | `attachment-migration-unavailable` | graph 明确不能无损形成 current | 保留 bytes；使用旧 consumer 或发布新事实 |
 | `record-attachment-migration-step-failed` | 某 family / edge converter 或 target blob 失败 | 从 Git / 备份恢复；修正 extension 后重新从恢复点开始 |
 | `record-migration-interrupted` | sentinel 表示 root 处于不可确认的中间状态 | 从 Git / 备份恢复；勿直接重跑 |
-| `RecordAttachmentRead.unsupported` | 当前 application 未安装 definition / schema | 安装可信 owning package；其它 facts 继续可用 |
+| `RecordAttachmentRead.unsupported` | 当前 application 未安装 owning adapter / schema | 安装可信 installation；其它 facts 继续可用 |
 | `RecordAttachmentRead.invalid` | envelope、payload、plain data、ref、blob 或 closure 无效 | 检查该 Attachment；其它 facts 继续可用 |

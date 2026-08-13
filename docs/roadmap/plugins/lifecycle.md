@@ -17,14 +17,18 @@ Plugin 不建立自己的运行时。它只把声明接到三个既有 owner：
 Experiment host lifecycle 仍是独立 Run scope：
 
 ```text
-Experiment author setup
+Run owner open / reserve mounted adapter obligations
+  → Run adapter bindings open
+  → Experiment author setup
   → Experiment plugins[] 的 experiment.setup
   → all selected Eval pairs
   → Experiment plugins[] 的 experiment.teardown（reverse）
   → Experiment author teardown
+  → Run bindings seal / release（reverse）
+  → sealed domain values adapt / canonical commands accepted
 ```
 
-每个 Plugin occurrence 每 Run 至多执行一次。它与每 Attempt 的 `hostedAgentHooks` 次数不同：Experiment Plugin 同时声明两者时，`setup`／`teardown` 仍只包住整份 Run，Hosted Hook 则包住每条真实派发的 Attempt。
+每个 Plugin occurrence 每 Run 至多执行一次。它与每 Attempt 的 `hostedAgentHooks` 次数不同：Experiment Plugin 同时声明两者时，`setup`／`teardown` 仍只包住整份 Run，Hosted Hook 则包住每条真实派发的 Attempt。reuse plan 若不创建新 Run owner，就不打开 binding；一旦创建 mounted owner，即使领域上没有可观测数据，也必须封口 explicit state。
 
 ## 从 link 到 Agent dispose
 
@@ -44,7 +48,8 @@ factory activation 与 pure link 不读取 asset、不求值 credential；本地
 真实派发的 Attempt 使用修正后的嵌套关系：
 
 ```text
-Sandbox create / existing sandbox.setup
+Attempt owner open / reserve mounted adapter obligations
+  → Sandbox create / existing sandbox.setup
   → template-owner SandboxLayer prepare chain
   → LinkedAgentPlan provision / ensure
   → receiver.configure(full desired state)
@@ -53,9 +58,12 @@ Sandbox create / existing sandbox.setup
       acquire Agent lifetime; register Agent teardown before setup
   → receiver.afterConfigure
       register beforeAgentTeardown before entering the node
+  → Attempt adapter bindings open
   → Hosted Attempt before
   → Eval body / logical sends
   → Hosted Attempt after
+  → Attempt bindings seal / release（reverse）
+  → sealed domain values adapt / canonical commands accepted
   → receiver.beforeAgentTeardown
   → Agent teardown
   → receiver-private managed overlay dispose
@@ -135,25 +143,31 @@ Agent 原生 Hook 只能由 receiver-specific extension 声明，例如 `codexNa
 
 原生 Hook 的文件、credential 与注册项属于 managed overlay，必须参与完整 desired-state 收敛。原生 Hook 失败按 Adapter 已有的 Agent 执行／setup failure 语义报告，不创建 `plugin.native-hook.*` 平行 phase。
 
-## Record write 时点
+## RecordAdapter producer 时点
 
-Plugin 只能经 blueprint 已声明的 [producer write grant](../record-attachment-authoring/library.md#producer-write-grant) 写入：
+普通 Plugin callback 与 Hosted Hook context 没有 Record 方法。领域 SDK 通过 Plugin fragment 静态挂载
+[owner-specific RecordAdapter binding](../record-attachment-authoring/library.md#owner-specific-binding)：
 
-| callback | 可写 owner | 封口边界 |
+| fragment | binding owner | 封口边界 |
 |---|---|---|
-| Eval／Experiment Hosted Hook | 当前 Attempt | Attempt Record draft 封口前。 |
-| Experiment `setup`／`teardown` | 当前 Run | Run Record draft 封口前。 |
-| Group | 无 | Group 没有 runtime write context。 |
+| Eval `recordAdapters.attempt` | 当前 pair／Attempt | hooks／body 结束后 seal／release，再 adapt。 |
+| Experiment `recordAdapters.attempt` | 当前 pair／Attempt | 每个 pair 独立 occurrence；不复用 Run session。 |
+| Experiment `recordAdapters.run` | 当前 Run | Experiment setup 前 acquire，teardown 后 seal／release。 |
+| Group | 无 | Group 没有 Record owner，不接受 binding。 |
 
-每个 runtime context 只取得自己的 occurrence-local grant。一个 owner + family 的第一次调用原子取得 reservation，第二次稳定返回中立 duplicate failure。
+每个 mounted binding 在 owner open 时原子 reserve family 并登记 pending producer。它对每个 actual owner 必须形成恰好一个
+sealed domain value；正常 empty、partial 与 unavailable 都是领域值。missing、duplicate、open／seal／release 或 adaptation
+failure 都加入 owner failure，不能靠“不写”继续发布。
 
 owner seal 依次完成三步：
 
-1. 关闭 external occurrence grants，再 drain tracked commands；
-2. framework 根据成功 accepted events 写完 Plugin provenance，并关闭 built-in grants；
+1. seal／release external bindings，将 sealed values 交给 adapter，再 drain canonical commands；
+2. framework 根据成功 accepted events 通过 built-in provenance binding 产值并 adapt；
 3. 原子停止 owner-wide admission，再 drain 到静止。
 
-closed、wrong-owner、undeclared、payload、closure 与 blob failure 不降级为 diagnostic，更不会改写已有 Attachment。完整并发、封口与中断语义见 [RecordAttachment Lifecycle](../record-attachment-authoring/lifecycle.md)。
+Effect v3 finalizer 自身的 error 为 `never`；host 必须把 release 的完整 `Exit`／`Cause` 收进 owner lifecycle aggregation，
+不能只 log。adapter、schema、closure、blob 或 durable write failure 同样不降级为 diagnostic，更不会改写已有 Attachment。
+完整并发、封口与中断语义见 [RecordAttachment Lifecycle](../record-attachment-authoring/lifecycle.md)。
 
 ## Sandbox resource 时序
 

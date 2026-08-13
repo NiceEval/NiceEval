@@ -1,36 +1,39 @@
 # Record → Analysis → Report —— Architecture
 
-## 三层依赖方向
+## 依赖方向
 
 ```text
-domain producer
-      │
-      ▼
-Record ───────── frozen view ─────────► Analysis ── closed values ──► Report
- facts + lifecycle                         │                            │
-                                          ├─ selection                 ├─ pages
-                                          ├─ projection                ├─ components
-                                          ├─ relations                 └─ renderers
-                                          └─ derivation
+domain API → sealed value → RecordAttachment adapter → Record
+                                                     │ frozen view
+                                                     ▼
+                                                  Analysis
+                                                     │ closed values
+                                                     ▼
+                                                   Report
 ```
 
-依赖只向右。Analysis 不把派生指标写回 Record；Report 不绕过 Analysis 读取 package；Record 不认识通过率、关系图或
+依赖只向右。Analysis 不把派生指标写回 Record；Report 不绕过 Analysis 读取 package；Record 不认识通过率、GPU 汇总或
 页面组件。
 
-## Record 屏蔽机制，不屏蔽事实状态
+## 每层屏蔽什么
 
-Record 对上层屏蔽 durable layout、path、locks、snapshot generation、schema decode、blob closure 与 commit 顺序。
-它不能把这些机制的结果压成 `undefined` 或空数组。
+Record 屏蔽 durable layout、path、locks、snapshot generation、schema decode、blob closure 与 commit 顺序。它不屏蔽
+owner、schema identity、读取六态、incomplete warning 或 migration 要求。
 
-上层必须看见：
+Analysis 屏蔽 reader lifecycle、owner lookup、decode 与跨 package 的机械对齐。它不屏蔽 Sample denominator、每 slot
+状态、unmatched／ambiguous、coverage、issues 或 refs。
 
-- exact owner 与 schema identity；
-- available、unavailable、migration-required、migration-unavailable、unsupported 与 invalid；
-- incomplete Run warning 与 typed I/O / permission failure；
-- 一个 view 所属的固定 snapshot generation。
+Report 屏蔽 Record I/O、migration、重新采证与 renderer 机制。它不屏蔽 host problems、数值口径、coverage 与下钻引用。
 
-普通 read/write 不自动 migrate。`migration-required` 是数据状态；只有 maintenance facet 能执行 converter 与 durable
-commit。
+## 领域 API 在 Record 之上
+
+普通作者调用 `t.check`、`t.sandbox.*`、tracing 配置或 third-party Plugin。他们不声明 Attachment family，也不取得 owner
+writer。领域 SDK 拥有两道边界：
+
+1. producer lifecycle 把多次领域 input 封成一份 sealed value；
+2. RecordAttachment adapter 把 sealed value 纯转换为 current payload，并把 available payload 投影回领域 view。
+
+这两道边界不能合并。collector 可以有资源、clock 或 provider；adapter 必须纯、确定且不读取宿主运行条件。
 
 ## 一套 substrate，不是一把万能 client
 
@@ -38,84 +41,95 @@ commit。
 openRecordAccessRuntime(root)
   ├─ snapshots ───── withSnapshot ─────► Analysis / Report host
   ├─ invocation ──── withWriteSession ─► Invocation coordination
-  │                                      └─ owner-local ctx.record
+  │                                      └─ host-internal owner leases
   └─ maintenance ─── plan / migrate ───► maintenance host
 ```
 
-三种 facet 共享 canonical root、runtime registry、lock authority、generation allocator、verified material cache 与
-底层 validators。它们不共享调用权限；nominal capability 决定谁能发起哪一种 operation。
+三种 facet 共享 canonical root、runtime registry、lock authority、generation allocator、verified cache 与 validators，但不
+共享调用权限。
 
-Invocation facet 继承 snapshot 能力，但官方 Invocation→Report 路径不在 write session 内直接分析刚发布的事实。
-它先关闭 writer，再开 fresh snapshot，避免延长 exclusive writer lock，也避免把 draft 混进分析分母。
+Invocation 的 `session.view` 只做 reuse planning。本次新发布的 Run 要在 write session 关闭后，通过 fresh snapshot 才能
+进入 Analysis。这样不会延长 exclusive writer lock，也不会把 draft 混入分母。
 
 ## 两种 cache 不合并
 
-| 名称 | 回答什么 | 是否公开 | owner |
-|---|---|---|---|
-| verified-read cache | exact envelope、payload bytes 与完整 blob closure 是否已经验证 | 否；hit、miss、大小与 eviction 不可观察 | Record runtime |
-| reuse planning | 当前 ExecutionTarget 的某个 Slot 是否可采用历史 Attempt | 是；形成 `ExecutionReusePlan` | Experiment domain |
+| 名称 | 回答什么 | owner |
+|---|---|---|
+| verified-read cache | exact envelope、payload 与 blob closure 是否已验证 | Record runtime；物理 hit 不可观察 |
+| reuse planning | 当前 ExecutionTarget 的 Slot 能否采用历史 Attempt | Experiment domain；形成公开 `ExecutionReusePlan` |
 
-verified-read cache 不能缓存 Run enumeration、path 到 current content 的映射、owner handle、read state、draft、lease 或
-migration 中间态。reuse planning 不能直接访问该 cache，也不能把 cache hit 当作事实可采用的理由。
+verified cache 不缓存 Run enumeration、draft、lease、read state 或 migration intermediate。reuse planner 不能把 cache hit
+当作可采用证据。
 
 ## 中立写入核
 
 ```text
-Assertions adapter ── package-private ctx.recordEffect ─┐
-File Diff adapter ─── package-private ctx.recordEffect ──┤
-third-party author ── public ctx.record ─────────────────┘
-                                                        │
-                                                        ▼
-      admission → reservation → snapshot → closure → poison-on-failure → sink → publication
+Assertions binding ─┐
+Diff binding ───────┤
+Timing binding ─────┼─ total obligation → sealed value → adapter target
+GPU SDK binding ────┘                                      │
+                                                           ▼
+              admission → reservation → snapshot → closure → tracked command
+                         → poison-on-failure → sink → publication
 ```
 
-中立性只承诺机械路径相同，不承诺 schema、owner、领域 adapter 或 authority 相同。
-
-| 维度 | Evidence / Assertions | File Diff | 第三方事实 |
+| 维度 | Assertions／Evidence | File Diff | third-party GPU |
 |---|---|---|---|
-| durable family | `niceeval.assertions`；Evidence 是 entry material | `niceeval.diff` | reverse-domain `com.example.*` |
-| owner | Attempt | Attempt | definition 声明的 Attempt 或 Run |
-| domain adapter | Assertions package | Sandbox / Evaluation adapter | 第三方 package |
-| writable definition | package-private official definition | package-private official definition | public opaque definition |
-| facade | `ctx.recordEffect()` | `ctx.recordEffect()` | `ctx.record()` |
-| command kernel | 同一套 | 同一套 | 同一套 |
+| durable family | `niceeval.assertions` | `niceeval.diff` | `com.example.gpu-energy` |
+| domain API | `t.check`／scoped Assertions | `t.sandbox.fileChanged`／automatic diff | `gpuEnergy({ meter })` |
+| adapter | package-private official | package-private official | SDK-private reverse-domain |
+| binding | package-private Attempt | package-private Attempt | Plugin Attempt |
+| total obligation | actual Attempt 一份 | actual Attempt 一份 | mounted actual Attempt 一份 |
+| command kernel | 相同 | 相同 | 相同 |
 
-official definition 仍是私有的。第三方不能使用 `niceeval.*` namespace，也不能把 official reader 当成 writable
-definition。中立写入核不会消除事实权威。
+中立性只承诺机械路径相同，不承诺 namespace、schema、领域算法或 installation authority 相同。official adapter 也没有 raw
+draft 或 parallel facade。
 
-## Analysis 是一层，内部有四步
+## Plugin 双 occurrence
 
-| 步骤 | 责任 | 输入 → 输出 | 不负责 |
-|---|---|---|---|
-| Selection | 固定 Run、logical slots 与 Sample-wide denominator | frozen view → `AnalysisSampleHandle` | package decode、reuse planning |
-| Projection | 解释一个明确 owner 的一个 Attachment family | live handle + `RecordProjection` → closed `ProjectedSample` | 跨 package join、聚合 |
-| Relations | 用 durable anchors 对齐多份 closed projections | SameSample projections → exhaustive relation cells | heuristic agreement、metric |
-| Derivation | 计算带明确口径的业务值 | closed projection / relation values → ordinary closed values | Record I/O、页面呈现 |
+Experiment Plugin 的一个 mount 可以贡献 Run 与 Attempt bindings，但 link 必须拆开：
 
-这四步共享一份 Sample identity。Projection 不重新开 snapshot；Relations 拒绝来自不同 Sample 的输入。Derivation
-若返回统计读数，其普通结果类型必须保留 observed、denominator、state、issues 与 refs。
+```text
+mount provenance
+  ├─ Run occurrence: recordAdapters.run
+  └─ pair/Attempt occurrence: recordAdapters.attempt
+```
 
-PLAN-1 让领域 package 自己解释 relation edge 与 cardinality。host 只验证输入同源、population 对齐与输出穷尽；
-领域 package 必须保留 unmatched、ambiguous 与 input state。
+两者分别拥有 exact internal grant、behavior identity、Scope、open／closed state、accepted events 与 seal barrier。Hosted
+Hooks 属于 Attempt occurrence；setup／teardown 属于 Run occurrence。Group 没有 Record owner。
+
+## Analysis 内部四步
+
+| 步骤 | 输入 → 输出 | 不负责 |
+|---|---|---|
+| Selection | frozen view → `AnalysisSampleHandle` | package decode、reuse planning |
+| Projection | live handle + SDK declaration → closed domain `ProjectedSample` | 跨 package join、聚合 |
+| Relations | same-Sample projections → exhaustive relation cells | heuristic agreement、metric |
+| Derivation | closed projections／relations → ordinary closed values | Record I/O、页面呈现 |
+
+四步共享 Sample identity。Projection 不重新开 snapshot；Relations 拒绝不同 Sample；Derivation 的统计结果保留 observed、
+denominator、state、issues 与 refs。
+
+SDK 可以把 private projector 包装成 `projectGpuEnergy()` 等领域 API。隐藏 schema 与 reader，不等于可以丢掉 host-owned
+read states 或 Sample population。
 
 ## Report 只静态约束自己的读取
 
-Report definition 用 `reportInputs()` 列出自身需要的有限 projections。Report host 在 callback 前执行它们，并形成
-host-owned problem inventory。Page、Calculation 的输入阶段之后及 renderer 都只消费 closed values。
+Report definition 用 `reportInputs()` 声明有限领域 inputs。Report host 在 callback 前执行 Projection，形成 closed values
+与不可删除 problem inventory。
 
-这不是 Projection PLAN-2。普通 Analysis 脚本仍能根据已经读取的值决定下一次 direct call；Report callback 内没有
-这种逃生口，因此 Report 自己仍能提供一次 execution、输入去重与不可关闭 problems surface。
-
-Calculation 在文件组织上属于 Report definition，在语义上属于 Analysis 的 Derivation seam。它调用普通纯函数并
-返回普通 closed value；Page 只决定怎样呈现该值和 `ReportCalculationResult` 的状态。
+Calculation 在文件上属于 Report，在语义上位于 Analysis Derivation seam。它调用普通纯函数。Page 只呈现 calculation
+result，不打开 Record、不迁移、不重新采证，也不把 Report result 写成第二份 Record。
 
 ## 不变量
 
-1. 一个 Analysis execution 的 selection 与所有 Projection 使用同一 snapshot generation。
-2. `RecordWriteSession.view` 只服务 reuse planning；新发布的 Run 只在 write session 关闭后的 fresh snapshot 可见。
-3. producer 只能提交 exact write grant 中的 definition，并且只能写当前 owner。
-4. 一个 Attachment 的 blob ref 只能指向自己的 closure；Assertions evidence 不能借用 Diff 的 blob/path/ref。
-5. Report author callback 不能取得 reader、root runtime、maintenance facet 或 writable definition。
-6. host-owned read states、migration problems 与 execution problems 不能被页面过滤掉。
-7. Relation output 少一个 population cell 是 typed output error，不是较小分母。
-8. Report render 不重新采证、不迁移 Record，也不把 Report result 写成第二份 Record。
+1. 普通 `TestContext`、Plugin Hook context 与 Eval／Experiment definition 没有 Record command 或 write grant。
+2. 一个 actual owner 的每个 mounted binding accepted exactly once 或令 owner 失败。
+3. producer session 只住在 binding child Scope；carry／reuse 不打开它。
+4. binding behavior identity 与 schema identity 分离，并进入正确 fingerprint、manifest 与 provenance。
+5. 一个 Analysis execution 的 selection 与所有 Projection 使用同一 snapshot generation。
+6. 新发布 Run 只在 write session 关闭后的 fresh snapshot 可见。
+7. 一个 Attachment 的 blob ref 只能引用自己的 closure。
+8. Report callback 不能取得 reader、root runtime、Sample handle、maintenance 或 adapter。
+9. host-owned read states、migration problems 与 execution problems 不能被页面过滤掉。
+10. official facts 使用同形 adapter binding；官方特权止于 namespace construction 与 installation package owner。

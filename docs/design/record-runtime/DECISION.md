@@ -27,4 +27,4 @@ authority、generation allocator 或 verified material。调用者若自行拼�
 
 - 三种 facets、锁与 cache：[Roadmap Library](../../roadmap/record-analysis-report/library.md)。
 - Invocation→Report 时序：[Roadmap Lifecycle](../../roadmap/record-analysis-report/lifecycle.md)。
-- producer authoring authority：[RecordAttachment 作者 API](../../roadmap/record-attachment-authoring/README.md)。
+- domain adapter authority：[RecordAttachment adapter SPI](../../roadmap/record-attachment-authoring/README.md)。

@@ -151,10 +151,13 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 diff 采集：
 11. **收尾与留存。
     ** finally 里按 `SandboxAgent.teardown` → 两层作者 layer 已登记 cleanup(按全局准备顺序逆序)→ Provider finalizer 的顺序收尾。
     收尾只能追加 diagnostic event，不改已经形成的 Verdict；随后按留存决策销毁或留存沙箱(`--keep-sandbox`,见 [Sandbox · 留存](feature/sandbox/architecture.md#留存keep与注册表))。
-12. **写 Record 与返回 receipt。
+12. **经领域 adapter binding 写 Record，并返回 receipt。
     ** coordinator 把 ExecutionTarget、reuse intents 与 executed outcomes 交给内部 `EvaluationRecordContract`。reuse 与 explicit adoption 形成 reference Member，实际执行形成新 Attempt 及唯一 origin anchor；形成原因写入 Membership Provenance Attachment。
 
-    领域 contract 验证 Assertions、Score、Evaluation 与 provenance aggregate。generic writer 只验证 Core、Attachment closure 和引用，最后创建 Run 完成标识。全部结束后返回窄 `InvocationReceipt`。
+    每个 mounted owner-specific binding 先把领域值封口，再由 RecordAttachment adapter 做纯 adaptation。host 从 binding
+    推导内部 grant、reservation 与 tracked command；普通 `TestContext` 没有 Record 方法。领域 contract 验证
+    Assertions、Score、Evaluation 与 provenance aggregate。generic writer 只验证 Core、Attachment closure 和引用，
+    最后创建 Run 完成标识并返回窄 `InvocationReceipt`。
 
     Report 不参与采集或落盘。show/view 先形成 `AnalysisSampleHandle`，再按 Report 声明读取 Attachment 并产生 typed projection；Calculation 和 Page 只消费这些自包含值。一次 `ReportExecution` 同时服务终端、本机页面或静态导出。
 13. **退出码。

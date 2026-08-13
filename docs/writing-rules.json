@@ -440,7 +440,7 @@
     },
     {
       "term": "Record SDK",
-      "use": "按语境写 Record 子系统、RecordAccessRuntime、RecordSnapshotSource、RecordInvocationAccess、RecordMaintenanceAccess 或 ctx.record()",
+      "use": "按语境写领域 SDK、RecordAttachment adapter SPI、RecordAccessRuntime、RecordSnapshotSource、RecordInvocationAccess 或 RecordMaintenanceAccess",
       "why": "同一个宽泛名称会把 host root capability、分权 facet 与 owner-local producer context 误解成万能 client"
     },
     {

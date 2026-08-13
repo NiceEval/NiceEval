@@ -198,6 +198,35 @@ yield* exportStaticReport({ execution, out: target });
 
 Record 不提供局部 edit/delete、mirror、proof、revision 或防伪 API。业务演进通过新的 RecordAttachment schema 与相邻 migration 进入；已发布 Run 不再修改。
 
+### 领域 API 与 Record adapter SPI 分开
+
+普通 Eval 作者调用领域 API，不提交 Record command。一个 GPU SDK 的典型调用点是：
+
+```ts
+export default defineEval({
+  plugins: [
+    gpuEnergy({
+      meter: nvmlEnergyMeter({ device: 0 }),
+    }),
+  ],
+  async test(t) {
+    await t.send("完成任务");
+  },
+});
+```
+
+schema、version、migration、owner 与 projection 属于领域 SDK 的 `niceeval/record/adapter` SPI。SDK 用
+`defineRecordAttachmentAdapter()` 声明适配器，再用 owner-specific binding 把一个 producer lifecycle 接上它。
+普通 `TestContext`、Plugin Hook context 与 Eval／Experiment definition 不增加 `record()`、write grant 或通用
+service locator。
+
+`defineRecordAttachmentAdapter()` 返回可签入、可组合的静态声明；它不打开 Record，也不是当前 owner 的 live
+capability。`defineAttemptRecordAdapterBinding()` 与 `defineRunRecordAdapterBinding()` 同样返回 link declaration。
+只有 host 在 actual owner Scope 中解释 binding，并推导内部 grant、reservation 与 tracked command。
+
+完整调用点评审必须分别展示两种身份：普通消费者只看到领域名；SDK 作者才看到 adapter SPI。把低层调用藏到同一示例
+的注释里不算隔离，因为消费者仍会被迫理解它。
+
 ## 可观察的选择差异必须进入公开形状
 
 实现步骤不进名字，但会改变用户决策的选择差异不是实现细节。

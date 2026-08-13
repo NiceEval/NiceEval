@@ -11,6 +11,9 @@ interface EvalPluginFragment {
   readonly sandbox?: SandboxLayer<"command-only", SandboxLayerScope>;
   readonly agentExtensions?: readonly AgentExtension[];
   readonly hostedAgentHooks?: HostedAgentHooks;
+  readonly recordAdapters?: {
+    readonly attempt?: readonly AttemptRecordAdapterBinding[];
+  };
 }
 
 interface ExperimentPluginFragment {
@@ -23,6 +26,10 @@ interface ExperimentPluginFragment {
   readonly teardown?: ExperimentHook;
   readonly agentExtensions?: readonly AgentExtension[];
   readonly hostedAgentHooks?: HostedAgentHooks;
+  readonly recordAdapters?: {
+    readonly attempt?: readonly AttemptRecordAdapterBinding[];
+    readonly run?: readonly RunRecordAdapterBinding[];
+  };
 }
 
 interface GroupPluginFragment {
@@ -240,7 +247,7 @@ type SendHookExit =
   | { readonly kind: "interrupted"; readonly failure: AttemptFailureInfo };
 ```
 
-`beforeSend`／`afterSend` 包住一次逻辑 `t.send()`；Adapter 的全部物理 retry 位于其中，因此两者每次逻辑 send 各运行一次。context 只读暴露 Attempt／Session identity、session ordinal、send ordinal、输入摘要、`AbortSignal`、diagnostic 与 occurrence-local `record()`；它不能替换 prompt、Session 或 Turn。逐 token／逐 retry 观测继续读取标准 events／retry diagnostics。
+`beforeSend`／`afterSend` 包住一次逻辑 `t.send()`；Adapter 的全部物理 retry 位于其中，因此两者每次逻辑 send 各运行一次。context 只读暴露 Attempt／Session identity、session ordinal、send ordinal、输入摘要、`AbortSignal` 与 diagnostic；它没有 Record command，也不能替换 prompt、Session 或 Turn。逐 token／逐 retry 观测继续读取标准 events／retry diagnostics。
 
 `AttemptHookExit` 同样是 `completed | failed | before-hook-failed | interrupted` 的穷尽联合；`completed` 只表示基础设施生命周期完成，不取代 Verdict。所有 after 看到相同 immutable primary exit；某个 after 自己失败只进入 teardown aggregation，不改写后续 after 的输入。
 
@@ -274,55 +281,52 @@ receiver 显式列出接受的 token，并由 Agent factory 携带；不使用 `
 
 Plugin package、第三方 protocol 与 receiver 都是 application-trusted ESM code。NiceEval 只保证内建 receiver 的 redaction、纯 `resolve` 与资源纪律，不宣称验证或隔离恶意第三方实现。
 
-## 声明 occurrence-local write grant
+## 领域 SDK 声明 owner-specific binding
 
-每个 Plugin 要写 Record 时，先在 blueprint 中列出 [RecordAttachment producer write grant](../record-attachment-authoring/library.md#producer-write-grant)。`write` 引用一个完整、多版本 definition，而不是携带 name、schemaId、文件路径或外部 migration edge：
+普通 Plugin 不声明持久化能力。领域 SDK 若要把自己的 sealed value 接入 Record，在 owner fragment 中挂
+[RecordAdapter binding](../record-attachment-authoring/library.md#owner-specific-binding)。adapter 与 binding 保持
+package-private；SDK consumer 只看到领域 Plugin factory：
 
 ```ts
-export const candidateRuntime = definePlugin({
+const candidateRuntimeBinding = (options: CandidateRuntimeOptions) =>
+  defineRunRecordAdapterBinding({
+    adapter: candidateRuntimeRecordAdapter,
+    behaviorIdentity: { probeRevision: options.probeRevision },
+    open: ({ signal }) => openCandidateProbe({ signal }),
+    seal: (session, { exit, signal }) =>
+      sealCandidateProbe(session, { exit, signal }),
+    release: (session, { exit }) =>
+      releaseCandidateProbe(session, { exit }),
+  });
+
+export const candidateRuntime = definePlugin<CandidateRuntimeOptions>({
   name: "dev.niceeval.candidate-runtime",
   behaviorRevision: "1",
-  recordAttachments: {
-    write: [candidateRuntimeObservation],
-  },
   experiment(options: CandidateRuntimeOptions) {
-    return { identity: { version: options.version } };
-  },
-});
-```
-
-blueprint 的 `recordAttachments.write` 为每个 linked occurrence 形成独立 grant，不是 application migration registry，也不自动写入。Plugin 的 `behaviorRevision` 与 existing identity 继续描述 producer 行为；current Attachment presence requirement 由 reuse contract 另行声明。两个 occurrence 即使引用不同 definition objects，只要 `(owner, name)` 相同，link 也在创建资源前返回带双方 provenance 的 typed conflict。
-
-## runtime write context
-
-已 link 的 lifecycle context 直接组合中立 owner-local `record()`；不存在 `PluginRecordContext` 或 Plugin writer：
-
-```ts
-const candidateRuntime = definePlugin({
-  name: "dev.niceeval.candidate-runtime",
-  behaviorRevision: "1",
-  recordAttachments: { write: [candidateRuntimeObservation] },
-  experiment() {
     return {
-      async teardown(ctx) {
-        const version = await probeCandidateRuntime();
-        await ctx.record(candidateRuntimeObservation, { version });
+      identity: { probeRevision: options.probeRevision },
+      recordAdapters: {
+        run: [candidateRuntimeBinding(options)],
       },
     };
   },
 });
 ```
 
-`ctx.record()` 的 direct payload、blob builder、eager reservation、tracked command 与错误联合以中立 [Library](../record-attachment-authoring/library.md#owner-local-record-context) 为单源。Plugin 不包装第二种 write，也不增加 `plugin-record-*` 平行错误词表。只有 generic writer 完整成功后形成的 accepted event 才能进入 framework provenance。
+`candidateRuntimeRecordAdapter` 不导出。application 若要读取或迁移历史事实，只显式安装 SDK 另外导出的 opaque
+`candidateRuntimeRecordInstallation`；安装不挂载 producer。host 为每个 linked occurrence 由 exact adapter 推导独立
+internal grant，不把 writer 放进 lifecycle context。
 
-| mount | 可写 owner | 封口边界 |
+| mount | binding owner | producer 生命周期 |
 |---|---|---|
-| Eval Hosted Hook | 当前 Attempt | Attempt 的 Record draft 封口前。 |
-| Experiment Hosted Hook | 当前 Attempt | Attempt 的 Record draft 封口前。 |
-| Experiment `setup` / `teardown` | 当前 Run | Run 的 Record draft 封口前。 |
-| Group | 无 | Group 没有 runtime context。 |
+| Eval fragment `recordAdapters.attempt` | 当前 pair／Attempt | actual Attempt open 后 acquire，hooks／body 后 seal／release。 |
+| Experiment fragment `recordAdapters.attempt` | 当前 pair／Attempt | 每个 pair 独立 occurrence，不与 Run binding 共用 session。 |
+| Experiment fragment `recordAdapters.run` | 当前 Run | Experiment setup 前 acquire，teardown 后 seal／release。 |
+| Group | 无 | Group 没有 Record owner，不接受 binding。 |
 
-wrong-owner 与 undeclared 在 TypeScript 入口尽量不可表达；动态 JavaScript、类型断言、duplicate 或错误时序仍得到中立 RecordAttachment command failure。没有开放 JSON 回退入口。
+同一 Experiment Plugin 同时声明 Attempt 与 Run binding 时，link 必须建立两个 authority 独立的 occurrences。每个 mounted
+binding 对每个 actual owner 都是 total producer obligation；missing、duplicate、open／seal／release／adaptation 或 durable
+write failure 都令 owner 失败。正常 empty、partial 与 unavailable 必须封在领域值里。没有 callback write 或开放 JSON 回退入口。
 
 ## Requirements、identity 与冲突
 
@@ -363,6 +367,10 @@ export const pnpm = definePlugin({
 
 ## migration registry / Layer
 
-Plugin package 导出自己的完整 definition；应用通过 `defineConfig({ recordAttachments: { install: [definition] } })` 安装并信任它。family-owned edge、converter、blob target、`R = never` 与 Git 恢复点以中立 [Library](../record-attachment-authoring/library.md) 和 [CLI](../record-attachment-authoring/cli.md) 为单源。
+Plugin package 只导出领域命名的 opaque `RecordAttachmentInstallation`。应用通过
+`defineConfig({ recordAttachments: { install: [candidateRuntimeRecordInstallation] } })` 显式安装并信任它。family-owned edge、
+converter、blob target、`R = never` 与 Git 恢复点以中立 [Library](../record-attachment-authoring/library.md) 和
+[CLI](../record-attachment-authoring/cli.md) 为单源。
 
-Plugin blueprint 的 `write` grant 不隐式安装 migration。删除 Plugin producer 后，应用可以只保留 definition import 与 config registration；`niceeval migrate` 不运行 factory、Hook、lifecycle 或 receiver。
+Plugin mount 不隐式安装 migration。删除 Plugin producer 后，应用可以只保留 installation import 与 config registration；
+`niceeval migrate` 不运行 factory、Hook、lifecycle 或 receiver。

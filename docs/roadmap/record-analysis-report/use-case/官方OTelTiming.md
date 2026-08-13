@@ -1,12 +1,13 @@
 # 官方 OTel Timing 从采集到 Report
 
-这是 `niceeval.timing/v1` 的端到端 Use Case，不是通用 Library。definition、write grant、Projection 与 Report
-的公共语法分别以 [RecordAttachment Library](../../record-attachment-authoring/library.md)、
+这是 `niceeval.timing/v1` 的端到端 Use Case，不是通用 Library。adapter、binding、Projection 与 Report
+的公共语法分别以 [RecordAttachment adapter SPI](../../record-attachment-authoring/library.md)、
 [Record → Analysis → Report Library](../library.md) 和 [Reports Library](../../../feature/reports/library.md) 为单源；
 本页只把这些语法代入官方 timing。
 
 ```text
-in-process OTel span
+Agent／Adapter tracing API
+  → in-process OTel span
   → verified Attempt owner clock bridge
   → sole owner-bound timing collector
   → niceeval.timing/v1 payload
@@ -19,14 +20,17 @@ in-process OTel span
 OTel 是采集输入，不是持久事实权威。Record 中唯一的 timing 事实是 collector 封口后写入的
 `niceeval.timing/v1`。raw OTLP、epoch timestamp、span attribute、provider 名称与 exporter provenance 都不落盘。
 
+普通用户只启用 Agent／Adapter 已有的 tracing 集成，例如 AI SDK 的 `aiSdkOtel()`。用户不持有 Timing adapter、
+collector 或 Record capability。
+
 ## 1. 官方 package 定义什么值
 
-官方 package 在 package-private source 中调用同一个 `defineRecordAttachment()` compiler。它只多一枚不导出的
-namespace authority；schema、plain-data、closure、owner、grant 与 migration 校验完全相同。
+官方 package 在 package-private source 中调用同一个 `defineRecordAttachmentAdapter()` compiler。它只多一枚不导出的
+namespace authority；schema、plain-data、closure、owner、binding 与 migration 校验完全相同。
 
 ```ts
-// package-private; definition 与 namespace authority 均不导出
-const attemptTimingDefinition = defineRecordAttachment({
+// package-private; adapter 与 namespace authority 均不导出
+const attemptTimingRecord = defineRecordAttachmentAdapter({
   namespaceAuthority: niceevalRecordAttachmentNamespace,
   owner: "attempt",
   name: "niceeval.timing",
@@ -38,6 +42,9 @@ const attemptTimingDefinition = defineRecordAttachment({
   },
   current: "v1",
   migrations: () => ({}),
+  adapt: (timing, target) =>
+    Effect.succeed(target.value(timing)),
+  project: ({ payload }) => payload,
 });
 ```
 
@@ -65,19 +72,18 @@ const payload = {
 `RecordAttachmentValue<AttemptTimingAttachmentV1>`。它包含 v1 payload 与自己的空 blob closure；它仍只是一份
 Attempt-owned Attachment value。
 
-公共包只导出只读 projector，不导出 writable definition、namespace authority 或 official write grant：
+package 内部保留 projector；公共包只导出后文的领域 projection declaration 与 `projectTiming()`，不导出 adapter、
+namespace authority、raw projector、installation 或 binding：
 
 ```ts
-export const attemptTimingProjector = defineRecordAttachmentProjector({
-  attachment: attemptTimingDefinition.reader,
-  project: ({ payload }) => payload,
-});
+const attemptTimingProjector =
+  attemptTimingRecord.projector;
 ```
 
 ## 2. OTel span 怎样进入唯一 collector
 
 Attempt coordinator 创建一枚 nominal owner-clock capability 和唯一 timing collector。OTel bridge 是该 collector 的
-package-private adapter，不是另一个 writer，也不持有 `attemptTimingDefinition` 或 `ctx.recordEffect()`。
+package-private capture adapter，不是 Record writer，也不持有 `attemptTimingRecord` 或 owner lease。
 
 下面的 `captureOtelStart()` / `captureOtelEnd()` 表示 package 内 adapter seam，不是公共作者 API：
 
@@ -126,22 +132,24 @@ bridge 只接受同时满足以下条件的输入：
 拒绝原因只进入既有 closed limitation，不把 raw span、异常文字或 provider metadata 写入 payload。已经验证的安全
 interval 仍被保留，因此 partial 不等于 unavailable。
 
-## 3. 封口并写入 Record
+## 3. official binding 封口并写入 Record
 
-全部 Attempt finalizer 停稳后，唯一 collector 停止接收输入，检查 interval identity、checked safe-integer end、parent
-containment 与 collection，然后形成一个 payload。built-in timing occurrence 对这个 owner 恰好提交一次 command：
+official Timing 通过同形 Attempt binding 建立 total obligation：
 
 ```ts
-const sealedTiming = yield* attemptTimingCollector.seal();
-
-yield* ctx.recordEffect(
-  attemptTimingDefinition,
-  sealedTiming,
-);
+const attemptTimingBinding = defineAttemptRecordAdapterBinding({
+  adapter: attemptTimingRecord,
+  behaviorIdentity: timingCollectorBehaviorIdentity,
+  open: openAttemptTimingCollector,
+  seal: sealAttemptTimingCollector,
+  release: releaseAttemptTimingCollector,
+});
 ```
 
-`ctx.recordEffect()` 只是不丢失 Effect error / defect / interruption 的内建 facade。它与第三方 `ctx.record()` 进入
-同一个 admission、reservation、plain-data snapshot、closure validation、tracked command、poison 与 generic sink。
+collector 在 Agent ready 后 acquire，在全部 `afterAttempt` 停稳后停止接收输入。它检查 interval identity、checked
+safe-integer end、parent containment 与 collection，形成一份 sealed Timing value，再 release。host 随后调用 adapter
+adaptation，并进入与第三方相同的 reservation、plain-data snapshot、closure validation、tracked command、poison 与
+generic sink。
 
 每个官方实际执行的 Attempt 都写 timing：
 
@@ -150,12 +158,12 @@ yield* ctx.recordEffect(
 - 无法形成 exact safe payload、联合 contract 失败或 generic write 失败时，Run 不发布 complete marker。
 - 只有历史 Record 或第三方 producer 从未写过该 family 时，读取才是 `unavailable`。
 
-v1 是当前版本，暂时没有历史 edge，所以 migration graph 明确为 `() => ({})`。以后发布 v2 时必须在同一 definition
+v1 是当前版本，暂时没有历史 edge，所以 migration graph 明确为 `() => ({})`。以后发布 v2 时必须在同一 adapter
 中增加相邻 edge；普通 write 与 read 不会提前或隐式迁移。
 
 ## 4. 普通 Analysis 怎样读取和计算
 
-Analysis 先把 public projector 绑定到 Attempt slot access，再在同一 `AnalysisSampleHandle` 上执行 direct Projection：
+SDK 把 public projector 绑定到 Attempt slot access，并导出领域函数：
 
 ```ts
 // analysis/timing-analysis.ts
@@ -168,7 +176,6 @@ import type {
 } from "niceeval/analysis";
 import {
   attemptSlotProjection,
-  attemptTimingProjector,
   projectAnalysisSample,
   type AttemptTimingView,
   type ProjectedRecordAttachmentResult,
@@ -179,10 +186,13 @@ export const timingByAttempt = attemptSlotProjection(
   attemptTimingProjector,
 );
 
-const projected = yield* projectAnalysisSample({
-  sampleHandle,
-  projection: timingByAttempt,
-});
+export const projectTiming = (sampleHandle) =>
+  projectAnalysisSample({
+    sampleHandle,
+    projection: timingByAttempt,
+  });
+
+const projected = yield* projectTiming(sampleHandle);
 
 const windows = deriveObservedWindows(projected);
 ```
@@ -389,4 +399,4 @@ Report host 仍会在内建 problems surface 保留 unavailable、migration、un
 | 已知未来旧版 | migration-required | 不运行 converter | problems 提示显式 `niceeval migrate` |
 
 这条路径证明的中立性是：official timing 与第三方事实共享同一个机械 substrate；它不表示第三方可以取得
-`niceeval.*` namespace、official definition 或 Attempt collector 的领域 authority。
+`niceeval.*` namespace、official adapter 或 Attempt collector 的领域 authority。

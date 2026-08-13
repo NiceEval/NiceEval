@@ -7,101 +7,117 @@ openRecordAccessRuntime(root)
   │
   ├─ invocation.withWriteSession
   │    ├─ session.view → reuse planning → ExecutionReusePlan
-  │    ├─ gaps → Attempt execution
-  │    │           └─ owner context → ctx.record / ctx.recordEffect
+  │    ├─ gaps → actual Attempt owner
+  │    │           ├─ reserve mounted binding families
+  │    │           ├─ producer open / seal / release
+  │    │           ├─ sealed domain values → adapters
+  │    │           └─ canonical commands → sealed Attempt
+  │    ├─ Run bindings → sealed Run values → adapters
   │    ├─ publish complete Runs
   │    └─ close writer + shared maintenance lease
   │
   └─ invocation.withSnapshot
        ├─ mint fresh generation
        ├─ selection → AnalysisSampleHandle
-       ├─ direct Projection calls
+       ├─ SDK domain Projection calls
        ├─ Relations + Derivation
-       ├─ Report manifest → Page / renderer closed inputs
+       ├─ Report inputs → Page / renderer closed values
        └─ close snapshot; ReportExecution remains self-contained
 ```
 
-写会话和分析 snapshot 不重叠。`publish` 不刷新 `session.view`，也不让 draft 进入旧 generation。只有关闭 write
-session 后创建的新 snapshot 才能看到本次发布的 Run。
+write session 与 Analysis snapshot 不重叠。`publish` 不刷新 `session.view`；只有 session 关闭后的 fresh snapshot 能看到
+本次 Run。
 
 ## 锁与 Scope
 
-| Operation | 锁顺序 | Scope 结束时 |
+| operation | 锁顺序 | Scope 结束时 |
 |---|---|---|
-| `withWriteSession()` | shared maintenance → exclusive writer | flush / poison 判定完成，释放 writer 与 maintenance lease |
-| `withSnapshot()` | shared maintenance | generation 关闭，owner handles 失效，释放 maintenance lease |
+| `withWriteSession()` | shared maintenance → exclusive writer | drain bindings／commands，释放 writer 与 maintenance lease |
+| `withSnapshot()` | shared maintenance | 关闭 generation 与 owner handles，释放 maintenance lease |
 | `migrate()` | exclusive maintenance | sentinel 与 durable commit 收束后释放 |
 
-outer `RecordAccessRuntime` 不长期持有任何 lease。只要没有活跃 child Scope，maintenance operation 就能取得 exclusive
-lock；长寿 runtime 或 verified-read cache 不能成为 migration busy 原因。
+outer runtime 不长期持 lease。长寿 runtime 与 verified cache 不成为 migration busy 原因。
 
-## Owner-local 写入
+## Attempt producer 时序
 
-一个 producer occurrence 的生命周期固定为：
+actual gap Attempt 才执行：
 
 ```text
-link exact definitions
-  → reserve owner/name
-  → mint owner-local context lease
-  → submit tracked record commands
-  → wait until every command settles
-  → validate domain aggregate contract
-  → seal owner
-  → publish complete Run
+owner open + reserve + pending obligations
+  → Agent ready
+  → bindings open in linked order
+  → beforeAttempt hooks
+  → Eval body / sends
+  → afterAttempt hooks
+  → bindings seal and release in reverse order
+  → sealed values adapt
+  → canonical commands drain
+  → domain aggregate validates
+  → Attempt seals
 ```
 
-`ctx.record()` 返回 Promise，`ctx.recordEffect()` 返回 Effect-native operation。两者观察同一个 tracked command；
-Promise facade 不创建第二个 runtime 或 detached fiber。
+一个 producer open、seal、release 各一次。session 只住在该 Attempt 的 child Scope。seal 接收穷尽 primary exit；release
+失败会阻止 adaptation。正常采集缺口形成领域 explicit state，不能靠 missing Attachment 继续发布。
 
-admission 在 command 开始前核对 owner、exact grant 与 open lease。command 接受后发生的 schema、plain-data、blob
-closure 或 durable write failure 会 poison owner；捕获 rejection 不能让该 Run 继续发布。
+Effect 3.22.1 的 finalizer error 固定为 `never`。host 捕获 release 的完整 `Exit`／`Cause` 并写入 owner failure
+aggregation，再让 finalizer 自身收束为 `never`。typed failure、defect 与 interruption不能只 log 或折叠成 unavailable。
 
-## Assertions、Evidence 与 Diff 的时序
+carry／reuse 不打开 producer session，也不写新 Attachment。
 
-Sandbox / runner 先形成一次 frozen workspace diff 语义值。diff Assertion evaluator 与 File Diff adapter 消费同一
-值，避免“判定看到 A、Record 保存 B”。
+## Assertions、Evidence 与 Diff
 
-Assertions producer 在 declaration order 中冻结 subject、evidence、coverage、limitations 与 sealed result。
-bounded evidence 直接进入 Assertions payload；较大 evidence 进入 `niceeval.assertions` 自己的 blob closure。
+Sandbox／runner 先形成 frozen workspace diff 领域值。diff Assertion evaluator 与 File Diff adapter 消费同一值，避免判定
+与持久事实漂移。
 
-File Diff 与 Assertions 是两个独立 Attachment command。whole-Attempt aggregate contract 在发布前核对二者是否
-一致；Assertions 中的 diff material 只保存 `schemaId` 与 preview，不持有另一个 Attachment 的 blob/path/ref。
+Assertions collector 按 declaration order 封口 subject、evidence、coverage、limitations 与 result。bounded evidence
+进入 Assertions payload；较大材料进入 Assertions 自有 blob closure。Diff 与 Assertions 是两个 official bindings，
+各自承担 total obligation。
 
-## Analysis snapshot 内部时序
+whole-Attempt aggregate 在 publication 前核对二者一致性。Assertions 的 diff material 只保存 schema identity 与
+preview，不借用 Diff 的 blob/path/ref。
 
-一次 `withSnapshot()` mint 一个 generation，整个 Analysis 都停留在这个 callback：
+## Run producer 时序
+
+Run owner open 时登记 `recordAdapters.run` obligations。Run sessions 在 Experiment setup 前 acquire，在 teardown 后
+seal／release。Run domain values adaptation、aggregate validation、Attempt references 与 portable writes 全部成功后，
+writer 才创建 `complete`。
+
+Experiment Plugin 的 Attempt binding属于另一个 pair occurrence；它不会复用 Run session 或 grant。
+
+## Analysis snapshot
+
+一次 `withSnapshot()` mint 一个 generation，整个 Analysis 停留在 callback：
 
 1. selection 固定 selected Runs、logical slots 与 denominator；
-2. `projectAnalysisSample()` 按需读取 package，但复用同一个 view；
-3. Relations 只消费已经 closed 的 ProjectedSample；
-4. Derivation 只消费 closed projections / relations；
-5. Report host 执行自己的静态 manifest，并把 closed values 交给 author callbacks；
-6. callback 完成后关闭 generation，`ReportExecution` 不保留任何 Record capability。
+2. SDK 领域 API 在同一 handle 上执行 Projection；
+3. Relations 只消费 closed same-Sample projections；
+4. Derivation 只消费 closed projections／relations；
+5. Report host 执行静态 input manifest，再调用 author callbacks；
+6. callback 完成后关闭 generation，`ReportExecution` 不保留 Record capability。
 
-普通脚本可以根据第 2 步结果决定另一次 projection。Report manifest 必须在 author callback 前闭合，callback 不能
-追加 I/O。
+普通 Analysis 脚本可以根据已读值决定下一次 projection。Report input 必须在 callback 前闭合，callback 不能追加 I/O。
 
 ## 显式 migration
 
 ```text
 maintenance.planMigration
-  → exact-match installed definitions
-  → build opaque plan
-  → acquire exclusive maintenance lock
+  → exact-match installed opaque capabilities
+  → build root-bound plan
+  → exclusive maintenance lock
   → create migration.in-progress
   → run adjacent converters
-  → reuse generic schema / plain-data / closure validators
+  → shared schema / plain-data / closure validators
   → durable commit
   → remove and sync sentinel
 ```
 
-普通 read 返回 `migration-required` 或 `migration-unavailable`，不会调用 converter。普通 write 也不改写旧 family。
-File Diff 与 Assertions definition 各自拥有相邻 migration；v1 不预先建立 Evaluation migration group。
+普通 read 返回 `migration-required` 或 `migration-unavailable`。producer binding、Analysis 与 Report 都不调用 converter。
+Plugin mount 也不自动安装或迁移。
 
-若 future Diff migration 还必须改写 Assertions 中的 schema 指示，采用该 schema 前必须定义 migration group。该契约
-要完整说明 authority、成员映射、原子提交与失败；缺少契约时明确返回 migration-unavailable。
+若一个未来 migration 必须原子改写多个 families，采用前必须另定义 migration group 的 authority、成员映射与 commit
+语义。缺少契约时明确 `migration-unavailable`，不靠 callback 顺序模拟事务。
 
 ## 热重载
 
-`niceeval view` 每次 rebuild 都开独立 `withSnapshot()`。成功的新 `ReportExecution` 原子替换 last-good；失败时保留
-last-good。last-good 不持有 lease、reader 或 generation，因此不会阻止 writer 或 migration。
+`niceeval view` 每次 rebuild 都开独立 `withSnapshot()`。成功的新 `ReportExecution` 原子替换 last-good；失败保留
+last-good。last-good 不持 lease、reader 或 generation，因此不会阻止 writer 或 migration。

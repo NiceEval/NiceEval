@@ -206,8 +206,11 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Member | Member | 一个 Run Slot 对精确 Attempt 的引用；不保存采用原因 | [Record](feature/record/architecture.md#core-v1) |
 | Attempt | Attempt | 一次实际执行的稳定身份；只存放在 origin Run，后续采用不复制 | [Record](feature/record/architecture.md#core-v1) |
 | Record 附件 | `RecordAttachment` | 一个 Run 或 Attempt owner 下具名、schema-identified 的 immutable payload closure | [Record](feature/record/architecture.md#recordattachment) |
-| Record 附件定义 | `RecordAttachmentDefinition` | 一次声明 owner、全部连续 schema 版本、current 与完整相邻 migration 图的 opaque family identity；不自动授予写权限 | [RecordAttachment 作者 API](roadmap/record-attachment-authoring/README.md) |
-| Record 附件值 | `RecordAttachmentValue` | 一个 owner 下某份定义的不可变事实实例；包含该版本的 payload 与自有材料，不表示整个 Record | [RecordAttachment 作者 API](roadmap/record-attachment-authoring/library.md#读取与-projector) |
+| Record 附件适配器 | `RecordAttachmentAdapter` | 领域 SDK 对 sealed domain value、连续 schema family、相邻 migration 与 typed projection 的 opaque 适配声明；不是 live writer | [RecordAttachment adapter SPI](roadmap/record-attachment-authoring/README.md) |
+| Record 附件安装能力 | `RecordAttachmentInstallation` | SDK 交给 Record host 的 opaque 读取与显式 migration 信任；不能反推 writable adapter 或 producer binding | [RecordAttachment adapter SPI](roadmap/record-attachment-authoring/library.md#installation-只授予读取与迁移信任) |
+| Record adapter binding | `RecordAdapterBinding` | 把一个 RecordAttachment adapter 与 producer behavior 绑定到 exact Run 或 Attempt occurrence 的声明 | [RecordAttachment adapter SPI](roadmap/record-attachment-authoring/library.md#owner-specific-binding) |
+| 完整生产义务 | total producer obligation | 已挂载 binding 对每个实际执行 owner 恰好产出一份 sealed domain value，或令该 owner 失败；不是可选写入机会 | [RecordAttachment adapter 生命周期](roadmap/record-attachment-authoring/lifecycle.md) |
+| Record 附件值 | `RecordAttachmentValue` | 一个 owner 下某份定义的不可变事实实例；包含该版本的 payload 与自有材料，不表示整个 Record | [RecordAttachment adapter SPI](roadmap/record-attachment-authoring/library.md#projection-与领域-analysis-api) |
 | Record 附件 envelope | `RecordAttachmentEnvelopeV1` | 保存 name 与 schemaId | [Record](feature/record/architecture.md#recordattachment) |
 | Record 附件 schema identity | `RecordAttachmentSchemaId` | 冻结 Attachment payload 的精确 shape 与语义 | [Record](feature/record/architecture.md#三个演进边界) |
 | Record 附件 migration | RecordAttachment migration | Attachment owner 提供的相邻 `vN → vN+1` converter 或明确不可迁移声明 | [Record](feature/record/architecture.md#migration-definition) |

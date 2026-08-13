@@ -1,15 +1,14 @@
-# RecordAttachment 作者 API —— Use Case
+# RecordAttachment adapter SPI —— Use Case
 
 契约单源始终在 [README](../README.md)、[Library](../library.md)、[Architecture](../architecture.md)、
-[Lifecycle](../lifecycle.md) 与 [CLI](../cli.md)。用例只做搭配与叙事，不复制定义。
+[Lifecycle](../lifecycle.md) 与 [CLI](../cli.md)。用例只展示领域 SDK 怎样包装 SPI；普通 consumer 不调用 Record API。
 
-- [Eval 写入 Attempt 自定义事实](定义并写入自定义事实.md) —— 在 Eval occurrence 中保存零 blob 的运行观测。
-- [Experiment 生命周期写入 Run 事实](实验生命周期事实.md) —— 用 setup 与 teardown 为一份 Run 写入两个不同事实。
-- [Plugin occurrence 的窄写入权](Plugin事实.md) —— 对比 Eval Plugin、Experiment Plugin 与 Group，并保留框架 provenance。
-- [交接 Sandbox、Agent 与 Adapter 观测](观测交接.md) —— 让资源与适配边界交回事实，不扩大为泛化 writer。
-- [内建子功能写入官方事实](内建事实.md) —— 让内建 producer 经过私有 definition 与领域 adapter 复用同一中立路径。
-- [写入 blob-backed 事实](Blob写入.md) —— 用 blob builder 创建 owner-local closure。
-- [安装、读取与投影事实](读取投影.md) —— 显式安装 family，并处理 reader 与 projector 的穷尽状态。
-- [演进、迁移与保留历史事实](演进并迁移自定义事实.md) —— 用相邻 converter 或 unavailable edge 迁移已安装的 family。
-- [自定义事实从 v1 写到 Report](../../record-analysis-report/use-case/第三方事实扩展.md) —— 把 definition、current write、
-  显式 migration、Analysis 与 Report 放在一条完整路径中。
+- [领域 SDK 定义并生产自定义事实](定义并写入自定义事实.md) —— 对比 SDK adapter 与普通 Eval 调用面。
+- [Experiment 生命周期事实](实验生命周期事实.md) —— Run binding 怎样形成 total obligation。
+- [Plugin 的 Run／Attempt binding](Plugin事实.md) —— 同一 mount 怎样拆成两个 authority 独立 occurrence。
+- [交接 Sandbox、Agent 与 Adapter 观测](观测交接.md) —— 资源只交回领域 observation，不取得 Record capability。
+- [内建事实](内建事实.md) —— official Assertions、Diff、Timing 怎样复用同形 binding。
+- [Blob-backed 事实](Blob写入.md) —— adapter target 怎样建立 owner-local blob closure。
+- [安装、读取与领域投影](读取投影.md) —— opaque installation 与 SDK-owned Analysis API。
+- [演进并显式迁移](演进并迁移自定义事实.md) —— 相邻 converter、unavailable edge 与 CLI。
+- [第三方 GPU 完整路径](../../record-analysis-report/use-case/第三方事实扩展.md) —— Plugin、bracketed meter、v1→v2、Analysis 与 Report。

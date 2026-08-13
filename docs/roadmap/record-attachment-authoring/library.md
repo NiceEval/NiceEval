@@ -1,25 +1,26 @@
-# RecordAttachment 作者 API —— Library
+# RecordAttachment adapter SPI —— Library
 
-`niceeval/record` 为自定义运行事实提供一个定义入口：
-`defineRecordAttachment()`。它编译一个完整、opaque 的多版本 definition；同一个 definition
-再分别用于 application install、producer write grant 与 owner-local `ctx.record()`。
+`niceeval/record/adapter` 是领域 SDK 与 NiceEval 内建 adapter 的低层 SPI。普通 Eval、Experiment、Plugin consumer、
+Analysis 与 Report 不从这个子路径导入。
 
-简单 JSON 是 `ctx.record()` 的零 blob 调用形状。它不另有 definition、registry、writer、reader
-或 migration primitive。Blob-backed payload 使用同一个 definition 与同一个写入命令。
+本页只定义通用语法。完整 GPU、OTel、Assertions 与 File Diff 代码分别位于
+[Use Case](../record-analysis-report/use-case/README.md)。
 
-本页代码块中的 `definition`、`payloadV1Schema`、`currentPayload` 与 `toV2()` 只说明参数位置和类型流。
-具体领域 name、payload 字段、producer 与 Report 组合全部放在 [Use Case](use-case/README.md)。
+## 定义 RecordAttachment adapter
 
-## 定义一个完整版本族
+一个 adapter 同时声明：
 
-一个 definition 在一次调用中固定 owner、name、从 `v1` 起连续的所有版本、最大 current 版本、
-每版的 Schema 与 blob projection，以及每条相邻 edge。
+- sealed domain value 怎样适配为 current payload；
+- owner、reverse-domain name、从 `v1` 起连续的 schema family；
+- 每版完整 blob closure projection；
+- 每条相邻 migration 或明确 unavailable edge；
+- available current value 怎样投影为 SDK 的 typed domain view。
 
 ```ts
 import { Effect } from "effect";
-import { defineRecordAttachment } from "niceeval/record";
+import { defineRecordAttachmentAdapter } from "niceeval/record/adapter";
 
-export const definition = defineRecordAttachment({
+const adapter = defineRecordAttachmentAdapter({
   owner: "attempt",
   name: "com.example.measurement",
   versions: {
@@ -37,707 +38,293 @@ export const definition = defineRecordAttachment({
     v1: {
       to: v2,
       migrate: (source, target) =>
-        Effect.succeed(target.value(toV2(source.payload))),
+        Effect.succeed(target.value(toPayloadV2(source.payload))),
     },
   }),
+  adapt: (value: SealedMeasurement, target) =>
+    Effect.succeed(target.value(toCurrentPayload(value))),
+  project: ({ payload }) => toMeasurementView(payload),
 });
 ```
 
-此 definition 自动形成 `com.example.measurement/v1` 与
-`com.example.measurement/v2`。作者不能输入 `schemaId`，也不能另行拼出单版本 definition、
-family、edge 或 write。
+`adapt` 只接收 sealed domain value 与 current target。它不采集事实，不读取 clock、network、root、path、owner lease
+或另一个 Attachment。`project` 只解释已经 materialize 的 current value；它不选择 Sample、建立关系或聚合。
 
-version key 使用 canonical `v[1-9][0-9]*`；`v0`、`v01`、负数与小数都非法。keys 必须从 `v1`
-逐一连续到 current，不能靠 object insertion order 或字符串排序定义相邻关系。
+version key 必须是连续的 canonical `v[1-9][0-9]*`，`current` 必须是最大版本。每个非 current 版本恰好声明一个相邻
+edge；不能缺边、跳边、倒序、分叉或从外部 registry 拼 edge。TypeScript 对 literal keys 保留穷尽推断，runtime
+compiler 对 dynamic JavaScript 执行同样校验。
 
-公共作者面不导出 `defineJsonRecordAttachment()`、`defineRecordAttachmentFamily()`、
-`defineRecordAttachmentMigration()`、`makeRecordAttachmentWrite()` 或同类拼装件。它们只在
-`defineRecordAttachment()` compiler 与中立写入核内部存在。
+非法声明同步抛出稳定的 `RecordAttachmentAdapterDefinitionError`，并在任何 Record、Sandbox、Agent 或 owner 资源
+创建前失败。公共 compiler 拒绝 `niceeval.*`；官方 overload 额外要求 package-private namespace token。
 
-`blobRefs(payload)` 是该版本 payload 的完整 closure projection。它按 payload 出现顺序返回全部
-`RecordBlobRef`；零 blob 版本明确返回 `[] as const`。它不是可省略的优化提示。
+## 三种 opaque capability
 
-### 类型形状
-
-以下类型展示 `defineRecordAttachment()` 的推断边界。`ValidCurrent`、`NextVersion` 与
-`CompleteAdjacentMigrations` 是编译器从 literal version keys 导出的类型运算，不是作者可调用的
-构造器。
+adapter 返回值只暴露三项不能互相反推的 capability：
 
 ```ts
-import type { Effect, Schema } from "effect";
-
-type RecordAttachmentOwner = "attempt" | "run";
-type VersionKey = `v${number}`;
-
-declare const recordAttachmentDefinitionTypeId: unique symbol;
-declare const recordAttachmentReaderTypeId: unique symbol;
-declare const recordAttachmentVersionTokenTypeId: unique symbol;
-declare const recordBlobRefTypeId: unique symbol;
-
-interface RecordBlobRef {
-  readonly [recordBlobRefTypeId]: typeof recordBlobRefTypeId;
-}
-
-interface RecordAttachmentReader<
-  Owner extends RecordAttachmentOwner,
-  Payload,
-> {
-  readonly [recordAttachmentReaderTypeId]: {
+interface RecordAttachmentAdapter<Owner, DomainValue, View> {
+  readonly installation: RecordAttachmentInstallation;
+  readonly projector: RecordAttachmentProjector<Owner, View>;
+  readonly [recordAttachmentAdapterTypeId]: {
     readonly owner: Owner;
-    readonly payload: Payload;
+    readonly domainValue: DomainValue;
   };
 }
+```
 
-interface RecordAttachmentDefinition<
-  Owner extends RecordAttachmentOwner,
-  CurrentPayload,
-  CurrentBlobRefs extends readonly RecordBlobRef[],
-> {
-  readonly reader: RecordAttachmentReader<Owner, CurrentPayload>;
-  readonly [recordAttachmentDefinitionTypeId]: {
-    readonly owner: Owner;
-    readonly currentPayload: CurrentPayload;
-    readonly currentBlobRefs: CurrentBlobRefs;
-  };
-}
+- `installation` 只供 application／maintenance host 安装读取与 migration trust；
+- `projector` 只供 SDK 内部构造领域 Analysis API；
+- exact adapter object 只供 SDK 构造 owner-specific binding。
 
-interface RecordAttachmentVersionToken<Key extends VersionKey, Payload> {
-  readonly [recordAttachmentVersionTokenTypeId]: {
-    readonly key: Key;
-    readonly payload: Payload;
-  };
-}
+`installation` 不能构造 binding，`projector` 不能反推 adapter，普通 consumer 也拿不到 writable definition。
 
-type AttachmentVersions = Readonly<
-  Record<
-    VersionKey,
-    {
-      readonly schema: Schema.Schema.AnyNoContext;
-      readonly blobRefs: (payload: never) => readonly RecordBlobRef[];
-    }
-  >
->;
+## current target 与 blob closure
 
-type PayloadAt<
-  Versions extends AttachmentVersions,
-  Key extends keyof Versions,
-> = Versions[Key] extends {
-  readonly schema: infer S extends Schema.Schema.AnyNoContext;
-}
-  ? Schema.Schema.Type<S>
-  : never;
+zero-blob adapter 使用 `target.value(payload)`。blob-backed adapter 使用 `target.create(builder)`：
 
-type BlobRefsAt<
-  Versions extends AttachmentVersions,
-  Key extends keyof Versions,
-> = Versions[Key] extends {
-  readonly blobRefs: (...arguments_: never[]) => infer Refs extends readonly RecordBlobRef[];
-}
-  ? Refs
-  : never;
-
-type VersionKeys<Versions extends AttachmentVersions> = Extract<
-  keyof Versions,
-  VersionKey
->;
-
-type VersionNumber<Key extends VersionKey> = Key extends `v${infer Number extends number}`
-  ? Number
-  : never;
-
-type BuildTuple<
-  Number extends number,
-  Result extends readonly unknown[] = [],
-> = Result["length"] extends Number
-  ? Result
-  : BuildTuple<Number, [...Result, unknown]>;
-
-type Increment<Number extends number> = [...BuildTuple<Number>, unknown]["length"];
-
-type VersionRange<
-  Last extends number,
-  Next extends number = 1,
-> = Last extends 0
-  ? never
-  : Next extends Last
-    ? `v${Next}`
-    : `v${Next}` | VersionRange<Last, Increment<Next>>;
-
-type HasExactContinuousVersions<
-  Versions extends AttachmentVersions,
-  Last extends number,
-> = [VersionKeys<Versions>] extends [VersionRange<Last>]
-  ? [VersionRange<Last>] extends [VersionKeys<Versions>]
-    ? true
-    : false
-  : false;
-
-type ValidCurrent<
-  Versions extends AttachmentVersions,
-  Current extends VersionKeys<Versions>,
-> = HasExactContinuousVersions<Versions, VersionNumber<Current>> extends true
-  ? Current
-  : never;
-
-type NextVersion<
-  Versions extends AttachmentVersions,
-  From extends VersionKeys<Versions>,
-> = Extract<`v${Increment<VersionNumber<From>>}`, VersionKeys<Versions>>;
-
-type VersionTokens<Versions extends AttachmentVersions> = {
-  readonly [Key in keyof Versions]: RecordAttachmentVersionToken<
-    Key & VersionKey,
-    PayloadAt<Versions, Key>
-  >;
-};
-
-type RecordAttachmentMigration<
-  Owner extends RecordAttachmentOwner,
-  From,
-  To,
-  ConvertE,
-  BlobE,
-> = (
-  source: RecordAttachmentValue<From>,
-  target: RecordAttachmentMigrationTarget<Owner, To>,
-) => Effect.Effect<RecordAttachmentMigrationWrite<Owner, BlobE>, ConvertE, never>;
-
-type CompleteAdjacentMigrations<
-  Owner extends RecordAttachmentOwner,
-  Versions extends AttachmentVersions,
-  Current extends VersionKeys<Versions>,
-> = {
-  readonly [From in Exclude<VersionKeys<Versions>, Current>]:
-    | {
-        readonly to: VersionTokens<Versions>[NextVersion<Versions, From>];
-        readonly migrate: RecordAttachmentMigration<
-          Owner,
-          PayloadAt<Versions, From>,
-          PayloadAt<Versions, NextVersion<Versions, From>>,
-          unknown,
-          unknown
-        >;
-        readonly unavailable?: never;
-      }
-    | {
-        readonly to: VersionTokens<Versions>[NextVersion<Versions, From>];
-        readonly unavailable: { readonly reason: string };
-        readonly migrate?: never;
+```ts
+adapt: (value, target) =>
+  Effect.succeed(
+    target.create((blobs) => {
+      const output = blobs.add(value.bytes);
+      return {
+        payload: toPayload(value, output.ref),
+        blobs: [output] as const,
       };
-};
-
-declare function defineRecordAttachment<
-  const Owner extends RecordAttachmentOwner,
-  const Name extends string,
-  const Versions extends AttachmentVersions,
-  const Current extends VersionKeys<Versions>,
->(input: {
-  readonly owner: Owner;
-  readonly name: Name;
-  readonly versions: Versions;
-  readonly current: Current;
-  readonly migrations: (
-    tokens: VersionTokens<Versions>,
-  ) => CompleteAdjacentMigrations<Owner, Versions, Current>;
-} & (ValidCurrent<Versions, Current> extends never ? never : unknown)): RecordAttachmentDefinition<
-  Owner,
-  PayloadAt<Versions, Current>,
-  BlobRefsAt<Versions, Current>
->;
+    }),
+  ),
 ```
 
-实际公开声明保留每条 `migrate` 的 `ConvertE` 与 `BlobE` 推断；上面的 `unknown` 只把映射表的
-形状压缩在一个可读代码块中。`RecordAttachmentMigrationWrite` 是 target 返回的 opaque 值，
-没有公开 constructor。
+`value.bytes` 必须是 SDK 在领域边界构造的 `RecordBlobSource<BlobE>`，其内容由 Effect `Stream` 提供。没有 raw path、
+file name、blob key、JSON、native bytes 或手写 ref overload。builder 为本次 adaptation mint refs，并要求 payload 的
+`blobRefs`、显式 `blobs` 与捕获的 sources 完全相等。missing、extra、duplicate 或 foreign ref 都是 closure failure。
 
-对于 literal TypeScript 输入，类型检查拒绝缺少或多出的 edge、错误 entry key、非相邻 `to` token、
-错误 source/target payload，或不是最大版本的 `current`。这层类型运算是作者 DX，不宣称对任意大的
-十进制 `N` 做无界算术证明；类型验收至少固定包含 `v1`、`v2`、完整的 `v1` 到 `v10`、wrong target、
-missing edge 与 wrong payload。runtime compiler 才是任意 `vN` 与 dynamic JavaScript 的最终权威。
+current target 返回 opaque write。adapter 无法直接交给 draft，也不能选择 owner、name 或 schemaId。
 
-动态 JavaScript 不因绕过 TypeScript 而获得宽松定义。编译器同步检查 own fields、name、owner、
-每个 `vN` key、numeric 连续性、最大 current 与迁移表。它按数值处理 version，所以 `v10` 紧接
-`v9`，不会按字符串顺序误判。它还验证 callback 返回的 key set、token identity 与 `to` 的唯一相邻关系。
+## plain-data snapshot
 
-任一非法定义同步 `throw` 同一个稳定错误类型：
-
-```ts
-declare class RecordAttachmentDefinitionError extends Error {
-  readonly name: "RecordAttachmentDefinitionError";
-  readonly code: "record-attachment-definition-invalid";
-  readonly issues: readonly RecordAttachmentDefinitionIssue[];
-}
-```
-
-`issues` 只包含 bounded 的定义问题，例如 reserved namespace、非法 name、非连续版本、错误 current、
-错误 migration key 或 target、缺失 edge、重复 edge、无效 Schema/`blobRefs` 形状。`migrations` callback
-本身无法形成定义时也归入此错误；不向调用者暴露不稳定的任意 exception message。
-
-`blobRefs` 是否真的穷尽某一实际 payload 的 refs 在写入和 migration target 验证。缺 ref、多 ref、重复 ref
-或非本次 builder mint 的 ref 都是 closure failure，而不是定义阶段猜测。
-
-## install 与 write 是两项独立授权
-
-### Application install
-
-application 只在配置中安装它信任的完整 definition。安装提供 reader 与显式 migration；它不写入任何
-Run 或 Attempt。
-
-```ts
-import { defineConfig } from "niceeval";
-import { definition } from "./record-attachments.js";
-
-export default defineConfig({
-  recordAttachments: {
-    install: [definition],
-  },
-});
-```
-
-### Producer write grant
-
-producer 在自己声明处取得 write grant。Eval 与 Eval Plugin 只可 grant Attempt-owned definition；
-Experiment 与 Experiment Plugin 只可 grant Run-owned definition。
-
-```ts
-import { defineEval } from "niceeval";
-import { definition } from "./record-attachments.js";
-
-export default defineEval({
-  recordAttachments: {
-    write: [definition],
-  },
-  async test(ctx) {
-    await ctx.record(definition, currentPayload);
-  },
-});
-```
-
-`defineConfig()` 没有 `recordAttachments.write`，producer 没有 `recordAttachments.install`。
-两处字段不能互换、不能由其中一处隐式补齐另一处，也不决定 reuse presence requirement 或 producer behavior
-identity。
-
-### Identity
-
-write grant 以 exact definition object identity 判断。结构相同的对象、复制出的 phantom brand 与类型断言
-都不是 grant。link 与 application registry 的冲突则以 `(owner, name)` 判断：同一位置不能安装或 link
-两个同 owner/name 的 definition，即使它们是不同 object 或含不同版本。durable identity 始终是
-`(owner, name, vN)`。
-
-每次 link 还形成独立的 occurrence provenance identity。相同 definition 可以在彼此独立的 owner / link 中被
-多个 Eval、Experiment 或 Plugin occurrence grant；同一 owner link 内仍按 `(owner, name)` 冲突。它们的
-provenance 不因共享 definition object 而合并。详见
-[Architecture](architecture.md)。
-
-## 以 `ctx.record()` 提交事实
-
-Eval、Experiment、Plugin 作者都使用同形的 Promise surface。宿主按 owner 提供相应 context，类型只接受
-该 context 的 write grant 中的 exact definition。
-
-### Owner-local record context
-
-```ts
-type CurrentPayload<Definition> = Definition extends RecordAttachmentDefinition<
-  infer _Owner,
-  infer Payload,
-  infer _BlobRefs
->
-  ? Payload
-  : never;
-
-type CurrentBlobRefs<Definition> = Definition extends RecordAttachmentDefinition<
-  infer _Owner,
-  infer _Payload,
-  infer BlobRefs
->
-  ? BlobRefs
-  : never;
-
-type ZeroBlobDefinition<Definition> = CurrentBlobRefs<Definition> extends readonly []
-  ? Definition
-  : never;
-
-type RecordBlobDrafts = readonly RecordBlobDraft<unknown>[];
-
-type RecordBlobErrors<Blobs extends RecordBlobDrafts> =
-  Blobs[number] extends RecordBlobDraft<infer BlobE> ? BlobE : never;
-
-interface RecordAttachmentBlobBuild<
-  Payload,
-  Blobs extends RecordBlobDrafts,
-> {
-  readonly payload: Payload;
-  readonly blobs: Blobs;
-}
-
-interface RecordAttachmentContext<
-  Owner extends RecordAttachmentOwner,
-  Allowed extends RecordAttachmentDefinition<
-    Owner,
-    unknown,
-    readonly RecordBlobRef[]
-  >,
-> {
-  record<Definition extends Allowed>(
-    definition: ZeroBlobDefinition<Definition>,
-    payload: CurrentPayload<Definition>,
-  ): Promise<void>;
-
-  record<
-    Definition extends Allowed,
-    const Blobs extends RecordBlobDrafts,
-  >(
-    definition: Definition,
-    build: (
-      blobs: RecordAttachmentBlobBuilder,
-    ) => RecordAttachmentBlobBuild<CurrentPayload<Definition>, Blobs>,
-  ): Promise<void>;
-}
-
-type AttemptRecordContext<
-  Allowed extends RecordAttachmentDefinition<
-    "attempt",
-    unknown,
-    readonly RecordBlobRef[]
-  >,
-> = RecordAttachmentContext<"attempt", Allowed>;
-
-type RunRecordContext<
-  Allowed extends RecordAttachmentDefinition<
-    "run",
-    unknown,
-    readonly RecordBlobRef[]
-  >,
-> = RecordAttachmentContext<"run", Allowed>;
-```
-
-直接 payload overload 只适用于 current `blobRefs` 静态声明为 `readonly []` 的 definition。runtime 仍会
-确认实际 projection 是空的。任何可能有 blob 的 payload 都必须选择 builder overload。
-
-```ts
-import { Stream } from "effect";
-import { recordBlobSource } from "niceeval/record";
-
-await ctx.record(blobBackedDefinition, (blobs) => {
-  const output = blobs.add(
-    recordBlobSource(Stream.fromIterable([new Uint8Array([79, 75])])),
-  );
-
-  return {
-    payload: makePayload(output.ref),
-    blobs: [output] as const,
-  };
-});
-```
-
-```ts
-import type { Stream } from "effect";
-
-declare const recordBlobSourceTypeId: unique symbol;
-declare const recordBlobDraftTypeId: unique symbol;
-
-interface RecordBlobSource<BlobE> {
-  readonly [recordBlobSourceTypeId]: { readonly error: BlobE };
-}
-
-declare function recordBlobSource<BlobE>(
-  stream: Stream.Stream<Uint8Array, BlobE, never>,
-): RecordBlobSource<BlobE>;
-
-interface RecordAttachmentBlobBuilder {
-  readonly add: <BlobE>(source: RecordBlobSource<BlobE>) => RecordBlobDraft<BlobE>;
-}
-
-interface RecordBlobDraft<BlobE> {
-  readonly ref: RecordBlobRef;
-  readonly [recordBlobDraftTypeId]: { readonly error: BlobE };
-}
-```
-
-`add()` 为本次 command mint 新 ref，并由 builder 捕获 source。作者只能从 Effect `Stream` 创建
-`RecordBlobSource`；没有 raw attachment name、path、file name、blob key、JSON、`Uint8Array` 或 bytes
-overload。build 返回的 `blobs` 显式携带每个 draft 的 `BlobE`；payload 只能引用本次 builder 给出的 `ref`，
-而 `blobRefs`、`blobs` 与 builder 捕获的 sources 必须三方完全相等。missing、extra、duplicate 或 foreign
-draft 都是 closure failure。
-
-### 同一 turn 接受 command
-
-`ctx.record()` 在返回 Promise 前、同一个 JavaScript turn 中完成四项动作：
-
-1. 检查 context lease 仍 open、definition 的 owner 正确且它是该 occurrence 的 exact write grant。
-2. 取得 `(owner, name)` reservation；同一 owner 后续调用立即是 duplicate。
-3. 对 payload 做 Schema encode、package-owned snapshot capture 与 closure 预检查。
-4. 向 owner 注册可追踪 command，再返回代表异步 blob I/O 与 generic writer 的 Promise。
-
-reservation 永不释放。即使第一个 command 随后失败，也不能用第二个 payload 替换它。
-owner 封口等待所有已注册 command；漏掉 `await` 不会越过封口屏障。
-
-Open 期间任一个 command 的 typed failure、defect 或 interruption 都 poison owner。作者对 returned Promise
-调用 `catch` 只能观察失败，不能撤销 owner 的失败状态或令 seal 成功。closed lease 的调用返回
-`record-attachment-context-closed`，不会重新打开 owner。完整的状态与封口顺序见
-[Lifecycle](lifecycle.md)。
-
-### payload snapshot 的 plain-data 边界
-
-编码后的 payload 必须属于不可变 plain-data algebra：
-
-```text
-PlainData ::= null
-            | boolean
-            | finite number
-            | string
-            | readonly PlainData[]
-            | plain record<string, PlainData>
-            | package-minted RecordBlobRef
-```
-
-plain record 只允许 own enumerable string keys，且原型必须是 `Object.prototype` 或 `null`。guard 拒绝
-`undefined`、function、symbol、非有限 number、Date、Map、Set、typed array、class instance 与任何非标准
-object prototype。Blob ref 是唯一允许的 opaque object，并保持 package mint 的 exact identity。
-
-package 不 mutation 或 freeze 作者传入的对象。每次 command 都按下列顺序形成独立 snapshot：
+每次 current adaptation 与 migration target 都执行：
 
 ```text
 Schema encode → package-owned clone → Schema decode → plain-data guard → deep freeze
 ```
 
-clone 保留 minted ref 的 identity，不依赖它的可枚举字段重建 capability。因而作者稍后 mutation 输入，或把
-同一输入传给另一个 consumer，都不会改变已接受的 payload。
+plain-data algebra 是：
 
-### Promise facade、Effect kernel 与错误边界
-
-公开 `ctx.record()` 返回 Promise，内部只有一个在宿主 `Scope` 中运行的 Effect-native command。Eval、
-Experiment、Plugin 的 Promise facade 都适配这个 command；内建 producer 直接使用同一个 Effect adapter，
-不拥有另一条 writer 语义。
-
-Effect 3.22.1 的 `Effect.runPromise` 签名只接收 `Effect<A, E, never>`。
-宿主在已经 provide services 并建立 `Effect.scoped` 的最外层 Promise 边界运行一次。
-
-`record()`、generic writer、blob Stream 与 migration orchestration 内部都不调用 nested
-`Effect.runPromise`、`runPromiseExit` 或 `runSync`。可能 reject 的作者 Promise callback 只在进入 Effect
-的边界用 `Effect.tryPromise({ try: (signal) => ..., catch: (error) => ... })` 适配一次。
-
-作者可观察的 command rejection 是具名错误。它们带稳定 `code` 与 bounded safe context：
-
-```ts
-type RecordAttachmentRecordError =
-  | { readonly code: "record-attachment-context-closed" }
-  | { readonly code: "record-attachment-wrong-owner" }
-  | { readonly code: "record-attachment-undeclared" }
-  | { readonly code: "record-attachment-duplicate" }
-  | RecordAttachmentPayloadInvalid
-  | RecordAttachmentClosureInvalid
-  | RecordWriteError;
+```text
+null | boolean | finite number | string
+readonly PlainData[]
+plain record<string, PlainData>
+package-minted RecordBlobRef
 ```
 
-blob builder overload 还保留 `RecordBlobErrors<Blobs>` 中的 source failure；它不会被改写成 payload 或 closure
-invalid。Promise 本身不编码 rejection type，但 definition、command kernel 与 host failure folding 仍能辨认对应的
-blob producer。
+guard 拒绝 `undefined`、function、symbol、非有限 number、Date、Map、Set、typed array、class instance 与自定义
+prototype。package 不 freeze 或 mutation SDK 传入的对象；它拥有独立 snapshot。Blob ref 是唯一允许的 opaque object，
+clone 必须保留其 exact identity。
 
-`RecordAttachmentPayloadInvalid` 包含 Schema 或 plain-data failure；
-`RecordAttachmentClosureInvalid` 包含 missing、extra、duplicate 或 illegal ref。原始 exception、
-filesystem detail、stack 与 secret 不进入这些值。callback throw 是 defect，fiber cancellation 保留 Effect
-Cause；两者不伪装成 payload、closure 或 typed writer error。
+## installation 只授予读取与迁移信任
 
-## 读取与 projector
-
-application 安装 definition 后，frozen Record view 用只读 reader capability 读取相应 owner 的 current
-value。writer definition 不能由 reader capability 反推。
+Record host 显式安装 SDK 导出的领域命名 capability：
 
 ```ts
-const state = yield* view.readAttemptAttachment(
-  attempt,
-  definition.reader,
-);
+import { defineConfig } from "niceeval";
+import { measurementRecordInstallation } from "@example/measurement/record";
 
-if (state.state === "available") {
-  const payload = state.value.payload;
-}
-```
-
-读取成功状态是 `available`、`unavailable`、`migration-required`、`migration-unavailable`、
-`unsupported` 或 `invalid`。形成 `available` 前，payload 已 exact decode、通过 plain-data guard、
-deep-freeze，且全部 own blobs 已 materialize 为只读 snapshot。I/O、permission 与 closed reader 留在
-`RecordReadError` typed Effect channel。
-
-普通 read 从不自动迁移。current definition 遇到可达旧版本时返回 `migration-required`；遇到显式
-unavailable edge 时返回 `migration-unavailable`；未安装或未知 family 保留 bytes 并返回 `unsupported`。
-只有 [CLI](cli.md#命令) 的显式 migration 使用 application install 的完整 graph。
-
-projector 是 reader value 的独立 consumer。它既不是 definition，也没有 write grant、application install
-权或 migration authority。
-
-```ts
-import { defineRecordAttachmentProjector } from "niceeval/projection";
-
-export const measurementProjector = defineRecordAttachmentProjector({
-  attachment: definition.reader,
-  project: ({ payload }) => toMeasurementView(payload),
+export default defineConfig({
+  recordAttachments: {
+    install: [measurementRecordInstallation],
+  },
 });
 ```
 
-## 相邻 migration
+`install` 的元素类型是 `RecordAttachmentInstallation`，不是 adapter 或 writable definition。安装允许 reader 解释
+family，并允许 maintenance 执行 adapter 自有的相邻 migration。它不挂载 producer、不形成 binding，也不补齐 reuse
+presence requirement。
 
-`migrate` 的 source 是已 exact decode、完整 materialize 的旧 version value。它只读 source payload 与
-own blob closure；它没有 Record root、path、clock、network、current Eval、Plugin 或 Agent context。
+Plugin mount 不自动安装。producer package 从项目移除后，application 仍可保留 installation 来读取和迁移历史事实。
+CLI 不从 Record bytes、Plugin provenance、package metadata 或网络按 name 动态发现 adapter。
+
+## owner-specific binding
+
+binding 把 exact adapter、producer behavior identity 与一个 owner lifecycle 组合成 link declaration。它不是 live
+capability，也不向 callback 提供 writer。
 
 ```ts
-import type { Either } from "effect";
+import {
+  defineAttemptRecordAdapterBinding,
+  defineRunRecordAdapterBinding,
+} from "niceeval/record/adapter";
 
-declare const recordAttachmentMigrationWriteTypeId: unique symbol;
+const attemptBinding = defineAttemptRecordAdapterBinding({
+  adapter,
+  behaviorIdentity,
+  open: ({ attempt, signal }) => openProducer({ attempt, signal }),
+  seal: (session, { attempt, exit, signal }) =>
+    sealProducer(session, { attempt, exit, signal }),
+  release: (session, { attempt, exit }) =>
+    releaseProducer(session, { attempt, exit }),
+});
 
-interface RecordAttachmentMigrationWrite<
-  Owner extends RecordAttachmentOwner,
-  BlobE,
-> {
-  readonly [recordAttachmentMigrationWriteTypeId]: {
-    readonly owner: Owner;
-    readonly blobError: BlobE;
+const runBinding = defineRunRecordAdapterBinding({
+  adapter: runAdapter,
+  behaviorIdentity,
+  open: ({ run, signal }) => openRunProducer({ run, signal }),
+  seal: (session, { run, exit, signal }) =>
+    sealRunProducer(session, { run, exit, signal }),
+  release: (session, { run, exit }) =>
+    releaseRunProducer(session, { run, exit }),
+});
+```
+
+`attempt` 与 `run` 是领域可见的 nominal execution identity，不是 Record owner ref、path、lease 或 writer。三项 callback
+都是 Effect-native，requirement 固定为 `never`。SDK 连接可能 reject 的 Promise provider 时，只在 provider 边界用
+`Effect.tryPromise` 适配一次。
+
+概念形状如下；实际类型保留各 callback 的 typed error：
+
+```ts
+interface AttemptRecordAdapterBindingInput<Session, DomainValue, OpenE, SealE, ReleaseE> {
+  readonly adapter: RecordAttachmentAdapter<"attempt", DomainValue, unknown>;
+  readonly behaviorIdentity: Readonly<Record<string, JsonValue>>;
+  readonly open: (
+    context: AttemptProducerOpenContext,
+  ) => Effect.Effect<Session, OpenE, never>;
+  readonly seal: (
+    session: Session,
+    context: AttemptProducerSealContext,
+  ) => Effect.Effect<DomainValue, SealE, never>;
+  readonly release: (
+    session: Session,
+    context: AttemptProducerReleaseContext,
+  ) => Effect.Effect<void, ReleaseE, never>;
+}
+```
+
+一个无需资源的 producer 也使用同一形状：`open` 返回 immutable unit session，`seal` 形成领域值，`release` 成功结束。
+这避免另建 optional write 或 Promise writer。
+
+## Plugin owner fragment
+
+Plugin fragment 按 owner 明确挂载 binding：
+
+```ts
+interface EvalPluginFragment {
+  readonly recordAdapters?: {
+    readonly attempt?: readonly AttemptRecordAdapterBinding[];
   };
 }
 
-type RecordAttachmentPayloadSnapshot<Value> = Value extends RecordBlobRef
-  ? Value
-  : Value extends readonly (infer Item)[]
-    ? readonly RecordAttachmentPayloadSnapshot<Item>[]
-    : Value extends object
-      ? {
-          readonly [Key in keyof Value]: RecordAttachmentPayloadSnapshot<
-            Value[Key]
-          >;
-        }
-      : Value;
-
-type RecordBlobHandleInvalid = {
-  readonly code: "record-blob-handle-invalid";
-};
-
-interface RecordAttachmentBlobs {
-  readonly refs: () => readonly RecordBlobRef[];
-  readonly bytes: (
-    ref: RecordBlobRef,
-  ) => Either.Either<Uint8Array, RecordBlobHandleInvalid>;
-}
-
-interface RecordAttachmentValue<Payload> {
-  readonly payload: RecordAttachmentPayloadSnapshot<Payload>;
-  readonly blobs: RecordAttachmentBlobs;
-}
-
-interface RecordAttachmentMigrationTarget<
-  Owner extends RecordAttachmentOwner,
-  Payload,
-> {
-  readonly value: (
-    payload: Payload,
-  ) => RecordAttachmentMigrationWrite<Owner, never>;
-
-  readonly create: <const Blobs extends RecordBlobDrafts>(
-    build: (
-      blobs: RecordAttachmentBlobBuilder,
-    ) => RecordAttachmentBlobBuild<Payload, Blobs>,
-  ) => RecordAttachmentMigrationWrite<Owner, RecordBlobErrors<Blobs>>;
+interface ExperimentPluginFragment {
+  readonly recordAdapters?: {
+    readonly attempt?: readonly AttemptRecordAdapterBinding[];
+    readonly run?: readonly RunRecordAdapterBinding[];
+  };
 }
 ```
 
-`target.value()` 与 `target.create()` 走同一 Schema encode、owned clone、decode、plain-data guard、
-deep-freeze 与 blob-closure validator。`value()` 因而只适合 projection 为空的 target；有 ref 的 target
-使用 `create()` mint 新 ref。旧 ref、raw key 与 storage path 不能冒充 target ref。
+Experiment mount 共享一份 mount provenance，但 link 成两个 authority 独立的 occurrence：Run occurrence 持有 `run`
+bindings，pair／Attempt occurrence 持有 `attempt` bindings。两边有各自 exact internal grant、open／closed 状态、
+accepted events 与 behavior identity。Group 没有 owner，不接受 binding。
 
-每条 converter 的 Effect requirement 固定为 `never`：
+Hosted Hook context 保持只读，不增加 Record 方法。普通 Eval 与 Experiment definition 也没有 `recordAdapters`；第三方
+事实通过领域 Plugin 或 NiceEval 自己拥有的内建 adapter 进入。
+
+## total producer obligation
+
+mounted binding 对每个 actual owner 是完整生产义务：
+
+1. owner open 时按 `(owner, name)` reserve family，并登记 pending tracked producer；
+2. producer lifecycle 必须形成恰好一个 sealed domain value；
+3. host 调用 adapter `adapt` 并提交 canonical RecordAttachment command；
+4. command 只能 accepted once 或令 owner 失败。
+
+未产值、重复 binding、open／seal／release failure、defect、interruption与 adaptation failure 都不能降级为
+Attachment 缺席。schema／plain-data／closure failure 与 durable write failure 也会令 owner 失败。正常无数据由领域值
+表达 explicit empty、partial 或 unavailable。
+
+binding behavior identity 进入其 owner 的 fingerprint、manifest 与 Plugin provenance。Attempt binding 进入 Eval pair
+identity；Run binding 进入 Run identity。schema identity 只解释持久 payload，不能替代 producer behavior identity。
+
+## Effect v3 release failure
+
+仓库使用 Effect 3.22.1。`Effect.acquireRelease` 的 finalizer error 固定为 `never`，因此 host 不能假装 release 的 typed
+failure 会自动从 Scope 传播。
+
+host 在 owner child Scope 中持有 session，把 seal 与 release 的完整 `Exit`／`Cause` 收入 owner lifecycle
+aggregation。finalizer 登记 failure 后自身收束为 `Effect<void, never, ...>`。typed failure、defect 与 interruption
+保持可区分；它们不只写日志，也不被改成领域 unavailable。
+
+内部不调用 nested `Effect.runPromise*`，不创建 detached fiber 或第二 runtime。公开领域 SDK 若提供 Promise API，只在
+最外层宿主 facade 启动 Effect。
+
+## Projection 与领域 Analysis API
+
+adapter 的 projector 只在 Attachment 为 `available` 时解释 current value。SDK 用它构造领域命名 API：
 
 ```ts
-type RecordAttachmentMigration<Owner, From, To, ConvertE, BlobE> = (
-  source: RecordAttachmentValue<From>,
-  target: RecordAttachmentMigrationTarget<Owner, To>,
-) => Effect.Effect<RecordAttachmentMigrationWrite<Owner, BlobE>, ConvertE, never>;
+const measurementByAttempt = attemptSlotProjection(adapter.projector);
+
+export const projectMeasurement = (sampleHandle: AnalysisSampleHandle) =>
+  projectAnalysisSample({
+    sampleHandle,
+    projection: measurementByAttempt,
+  });
 ```
 
-`ConvertE` 是 converter 用 `Effect.fail` 表达的具名失败；`BlobE` 来自 target blob Stream。orchestration
-分别接收两者，再以 family 与 edge identity 收口为
-`record-attachment-migration-step-failed`。它不把 author error 原样写入 portable data 或 CLI JSON。
+SDK 可以导出 `projectMeasurement()` 与领域命名的 Report input declaration，但不导出 adapter、writable definition 或
+raw reader。返回值必须保留 Analysis Sample denominator、每 slot 穷尽状态、issues、refs 与
+`migration-required | migration-unavailable | unsupported | invalid`，不能降成 available values 数组。
 
-callback throw 或 `Effect.die` 保持 defect，fiber cancellation 保持 Effect Cause，二者都不是 migration
-step failure。`R = never` 表示 converter 不请求 NiceEval Effect service；它不是 JavaScript sandbox。clock、
-random、environment、network、filesystem 与 ambient mutable state 都违反 determinism 作者契约，即使闭包
-技术上能够访问它们。
+projector 不执行 migration。普通 Analysis／Report 看到 known old family 时得到 `migration-required`，由 maintenance
+host 显式迁移。
 
-不能无损迁移的 edge 使用同一个 token 关系明确声明：
+## 相邻 migration
+
+converter 只接收 exact decoded source value 与下一版本 target：
 
 ```ts
 migrations: ({ v1, v2 }) => ({
   v1: {
     to: v2,
-    unavailable: {
-      reason: "v1 did not record the measurement interval",
-    },
+    migrate: (source, target) =>
+      Effect.succeed(target.value(toV2(source.payload))),
   },
 })
 ```
 
-`migrate` 与 `unavailable` 是穷尽联合，不能同时出现。后者是 settled read state，不是 converter
-failure，也不会由普通 read 或 CLI 自动补写事实。migration plan、sentinel 与恢复语义由
-[Architecture](architecture.md) 和 [CLI](cli.md) 定义。
+target 的 `value()`／`create()` 复用 current adaptation 的 Schema、plain-data 与 closure validators。converter 没有
+Record root、clock、network、environment、当前 Eval、Plugin 或 producer session。requirement 为 `never` 只约束
+Effect dependency，不构成 JavaScript sandbox；确定性仍是 SDK 作者契约。
 
-## 官方 definition 只读暴露
-
-`niceeval.*` 只由 package-private namespace authority 构造。它调用与第三方完全相同的
-`defineRecordAttachment()` compiler，随后经过相同的 application registry、write grant、context lease、
-generic writer、reader 与 migration orchestration。
-
-package source 使用同一 compiler 的私有 overload。`namespaceAuthority` 字段与 token 都不进入公共声明：
+不能无损迁移的 edge 明确声明：
 
 ```ts
-// package-private declarations; neither capability is exported
-declare const niceevalRecordAttachmentNamespaceTypeId: unique symbol;
-
-interface NiceEvalRecordAttachmentNamespaceAuthority {
-  readonly [niceevalRecordAttachmentNamespaceTypeId]: true;
+v1: {
+  to: v2,
+  unavailable: {
+    reason: "v1 did not retain the required measurement interval",
+  },
 }
-
-declare const niceevalRecordAttachmentNamespace:
-  NiceEvalRecordAttachmentNamespaceAuthority;
 ```
 
-私有 overload 在与 public input 相同的 `owner`、`name`、`versions`、`current` 与 `migrations` 之外，额外要求这枚
-package-minted authority。第三方仍调用只有一个参数的 public overload。即使动态 JavaScript 添加同名字段，也无法伪造
-token identity；`niceeval.*` name 会在 compiler 边界同步拒绝。这个私有 overload 只放开 namespace，不放开
-schema、closure、grant、owner 或 writer 校验。具体 official family 的 definition 属于对应 Use Case，不在本页枚举。
+`migrate` 与 `unavailable` 是穷尽联合。普通 read 不执行 converter；CLI 只使用 application 显式安装的完整 graph。
 
-公共包不导出 writable official definition，也没有 `official: true`、namespace authority 或 self-allowlist
-token。官方事实只暴露只读 reader 与 projector capability：
+## official namespace 与中立性
 
-```ts
-import type { RecordAttachmentProjector } from "niceeval/projection";
+官方 adapter 调用同一个 compiler、binding、total obligation、target、validators、tracked command、poison、reader 与
+migration orchestration。差异只在：
 
-export declare const usageAttachmentReader: RecordAttachmentReader<
-  "attempt",
-  UsageAttachment
->;
+- package-private constructor 持有 `niceeval.*` namespace token；
+- official adapter、binding 与 installation 不导出；
+- official installation 由产品组合层固定提供。
 
-export declare const usageProjector: RecordAttachmentProjector<
-  "attempt",
-  UsageView
->;
-```
-
-`usageAttachmentReader` 不能传给 `recordAttachments.write` 或 `ctx.record()`。这让第三方无法把官方
-family 加入自己的 write grant；内建 producer 仍以私有 definition 取得显式内部 grant。definition 与
-projector 分离，因此项目也不能借某个 projector 替换、扩张或写入官方 durable shape。
-
-第三方给 `defineRecordAttachment()` 传入 `niceeval.*` name 会同步得到
-`RecordAttachmentDefinitionError`。官方与第三方的差异止于这个私有 namespace construction boundary，
-不延伸为 writer、reader、closure 或 migration 特权。
-
-完整 official timing 值、capture 与 Report 路径见
-[官方 OTel Timing](../record-analysis-report/use-case/官方OTelTiming.md)。
-第三方 definition、current write、v1 → v2 migration、Analysis 与 Report 的组合见
-[用户自定义 GPU 能耗事实](../record-analysis-report/use-case/第三方事实扩展.md)。
+官方不保留 parallel Effect facade、raw draft、schema bypass 或 owner-wide writer。公共包只导出领域 projector／Analysis
+API。第三方无法伪造 official namespace，官方也不能绕过中立机械路径。
 
 ## 相关契约
 
-- [README](README.md) —— definition、install、write 与 lease 的四权分离。
-- [Architecture](architecture.md) —— identity、occurrence isolation、generic kernel 与官方 namespace。
-- [Lifecycle](lifecycle.md) —— reservation、tracked command、poison 与封口。
-- [CLI](cli.md) —— installed registry、显式 migration、sentinel 与恢复。
-- [Record Library](../../feature/record/library.md) —— frozen value、blob snapshot 与底层 Record errors。
+- [README](README.md) —— 身份、三种 capability 与普通领域 API 心智。
+- [Architecture](architecture.md) —— authority、identity、canonical command 与官方中立性。
+- [Lifecycle](lifecycle.md) —— total obligation、Scope、失败与 publication。
+- [CLI](cli.md) —— installation registry、migration plan 与恢复语义。
+- [Record → Analysis → Report](../record-analysis-report/README.md) —— 三层组合与完整领域用例。
