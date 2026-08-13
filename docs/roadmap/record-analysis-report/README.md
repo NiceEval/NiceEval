@@ -54,7 +54,7 @@ Eval、Experiment 与 Hook context 不暴露 Record 方法、write grant 或 ver
 
 | facet | 能做什么 | 谁持有 |
 |---|---|---|
-| `RecordSnapshotSource` | 在 child Scope 内取得 frozen snapshot | Analysis／Report host |
+| `RecordSnapshotSource` | 在 child Scope 内取得 fresh `RecordReader` | Analysis／Report host |
 | `RecordInvocationAccess` | snapshot 能力，加 `withWriteSession()` | Invocation coordination |
 | `RecordMaintenanceAccess` | inspect、clean、plan migration 与 migrate | maintenance CLI／host |
 
@@ -94,7 +94,7 @@ Report 的 `reportInputs()` 只保存 consumer 自己的有限 input declaration
 - sealed domain value → adapter binding → canonical command；
 - total producer obligation 与 fresh Analysis snapshot；
 - Analysis selection、Projection、Relations 与 Derivation；
-- Report input manifest 与 closed author callback；
+- Report input manifest、host 读取入口与 closed author callback；
 - 官方 OTel Timing 与用户 GPU 扩展两套完整纵向用例；Assertions 与 Diff 作为官方领域变体；
 - verified-read cache、reuse planning 与 migration 的分权。
 
@@ -102,7 +102,7 @@ Report 的 `reportInputs()` 只保存 consumer 自己的有限 input declaration
 
 ## 入口
 
-- [Library](library.md) —— runtime facets、adapter handoff、Analysis direct call 与 Report input。
+- [Library](library.md) —— runtime facets、adapter handoff、Analysis direct call、Report input 与精确执行入口。
 - [Architecture](architecture.md) —— 三层责任、能力边界、中立 kernel 与不变量。
 - [Lifecycle](lifecycle.md) —— binding、write session、fresh snapshot、Report 与显式 migration 时序。
 - [Use Case](use-case/README.md) —— 官方能力与用户扩展两套完整语法，以及共用的 host lifecycle 切片。

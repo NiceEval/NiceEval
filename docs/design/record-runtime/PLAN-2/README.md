@@ -4,8 +4,8 @@ application/CLI host 为 canonical Record root 建立一个 outer `RecordAccessR
 registry、private snapshot generation allocator、lock authority 与 exact-content verified cache，但不长期持有
 maintenance lease。
 
-业务 consumer 不接收 runtime。host 从同一 underlying identity 取得不同 nominal facets，再把
-`FrozenRecordView` 或更窄 capability 交给 reuse planning、Analysis 与 Report execution。
+业务 consumer 不接收 runtime。host 从同一 underlying identity 取得不同 nominal facets。write session 把
+`FrozenRecordView` 交给 reuse planning；snapshot callback 把完整 `RecordReader` 交给 Analysis selection 与 Report host。
 
 ## Host facets
 
@@ -18,7 +18,7 @@ declare const recordMaintenanceAccessTypeId: unique symbol;
 interface RecordSnapshotSource {
   readonly [recordSnapshotSourceTypeId]: typeof recordSnapshotSourceTypeId;
   readonly withSnapshot: <A, E, R>(
-    use: (view: FrozenRecordView) => Effect.Effect<A, E, R>,
+    use: (reader: RecordReader) => Effect.Effect<A, E, R>,
   ) => Effect.Effect<A, E | RecordOpenError | RecordReadError, R>;
 }
 
@@ -68,6 +68,9 @@ execution 都不得取得任何 facet。
 随后 mint 一个 runtime-private generation，再冻结 Run membership、warnings 与 owner handles。callback 结束后
 释放 lease 并关闭 generation。
 
+`RecordReader` 是完整 `FrozenRecordView`，也是 `selectAnalysisSample()` 的精确输入。它只在 callback 内交给 host；
+Analysis 作者与 Report callback 只收到 reader-bound handle 或 closed projected values。
+
 `withWriteSession` 按 shared maintenance → exclusive writer 的固定顺序取锁，并自行 mint
 `session.view` generation。它不接受调用方已有 view。publish 不刷新任何 generation，也不把 draft 加入 view。
 
@@ -99,7 +102,7 @@ RecordAccessRuntime
   │    session.view → reuse planning → gaps → Attempt execution → publish
   │    close：释放 writer + maintenance
   └─ withSnapshot
-       new FrozenRecordView → Analysis → Projection → ReportExecution
+       new RecordReader → AnalysisSampleHandle → Projection → ReportExecution
        close：释放 maintenance；ReportExecution 保持普通自包含值
 ```
 

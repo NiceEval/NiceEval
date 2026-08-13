@@ -30,7 +30,7 @@
 - [交接 Sandbox、Agent 与 Adapter 观测](观测交接.md)
 - [Blob-backed 事实](Blob写入.md)
 - [安装、读取与领域投影](读取投影.md)
-- [演进并显式迁移](演进并迁移自定义事实.md)
+- [演进并显式迁移](演进并迁移自定义事实.md) —— 从 Report 的 `migration-required` 到 CLI migration 与 fresh execution。
 
 契约单源始终在 [README](../README.md)、[Library](../library.md)、[Architecture](../architecture.md)、
 [Lifecycle](../lifecycle.md) 与 [CLI](../cli.md)。

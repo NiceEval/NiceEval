@@ -18,8 +18,8 @@ openRecordAccessRuntime(root)
   │
   └─ invocation.withSnapshot
        ├─ mint fresh generation
-       ├─ selection → AnalysisSampleHandle
-       ├─ SDK domain Projection calls
+       ├─ RecordReader → selectAnalysisSample() → AnalysisSampleHandle
+       ├─ executeReport() → declared domain Projections
        ├─ Relations + Derivation
        ├─ Report inputs → Page / renderer closed values
        └─ close snapshot; ReportExecution remains self-contained
@@ -96,6 +96,7 @@ Experiment Plugin 的 Attempt binding属于另一个 pair occurrence；它不会
 6. callback 完成后关闭 generation，`ReportExecution` 不保留 Record capability。
 
 普通 Analysis 脚本可以根据已读值决定下一次 projection。Report input 必须在 callback 前闭合，callback 不能追加 I/O。
+CLI 的 `executeReportFromRecord()` 只是 open reader → selection → `executeReport()` 的一次性组合入口，不建立第二条读路径。
 
 ## 显式 migration
 
@@ -113,6 +114,10 @@ maintenance.planMigration
 
 普通 read 返回 `migration-required` 或 `migration-unavailable`。producer binding、Analysis 与 Report 都不调用 converter。
 Plugin mount 也不自动安装或迁移。
+
+迁移前形成的 `ReportExecution` 保持原状态。成功删除 sentinel 后，host 必须开新的 snapshot 并重新执行 Report；只有这份
+新 execution 能看见 current Attachment。converter、durable I/O 或 interruption 失败会保留 sentinel，后续 open fail
+closed，用户从 Git restore point 或自己的备份恢复。
 
 若一个未来 migration 必须原子改写多个 families，采用前必须另定义 migration group 的 authority、成员映射与 commit
 语义。缺少契约时明确 `migration-unavailable`，不靠 callback 顺序模拟事务。

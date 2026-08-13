@@ -35,7 +35,9 @@ Record。
 ## 两套主用例共用的 Host 切片
 
 [宿主写后读取与显式迁移](宿主写后读取与显式迁移.md)只解释 writer、fresh snapshot、lock、cache 与 maintenance
-顺序。它是两套主用例共同依赖的 host lifecycle，不是普通作者的第三套用法。
+顺序。它还固定 `RecordReader → AnalysisSampleHandle → executeReport() → ReportExecution` 的读取链，以及
+`migration-required → niceeval migrate → fresh ReportExecution` 的迁移链。它是两套主用例共同依赖的 host lifecycle，
+不是普通作者的第三套用法。
 
 ## 机械中立性的核对项
 

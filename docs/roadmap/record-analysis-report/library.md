@@ -13,7 +13,7 @@
 ```ts
 interface RecordSnapshotSource {
   readonly withSnapshot: <A, E, R>(
-    use: (view: FrozenRecordView) => Effect.Effect<A, E, R>,
+    use: (reader: RecordReader) => Effect.Effect<A, E, R>,
   ) => Effect.Effect<A, E | RecordOpenError | RecordReadError, R>;
 }
 
@@ -63,7 +63,8 @@ runtime 绑定 canonical root、filesystem、lock authority、installed registry
 cache。真实 read、write 与 maintenance 发生在 facet child Scope；outer runtime 空闲时不持 lease。
 
 `RecordInvocationAccess` 可以在 write session 内用 `session.view` 做 reuse planning，并在 session 关闭后通过继承的
-`withSnapshot()` 打开 fresh view。
+`withSnapshot()` 打开 fresh reader。`RecordReader` 是完整 `FrozenRecordView`，也是 `selectAnalysisSample()` 的精确
+输入；它只存在于 host callback，不进入 Analysis 或 Report 作者 API。
 
 ## Producer 只提交 sealed domain value
 
@@ -209,6 +210,45 @@ const summary = defineCalculation({
 
 Page 只消费 closed calculation value。Report host 无条件保留 Sample denominator、Attachment read states、coverage、
 migration hints 与 execution problems。callback 不能删除这些 problems，也不能取得 Sample handle、reader 或 maintenance。
+
+## Report host 的精确读取入口
+
+已经持有 snapshot 的 host 在 reader Scope 内调用：
+
+```ts
+const sampleHandle = yield* selectAnalysisSample(reader, selection);
+const execution = yield* executeReport({ sampleHandle, report });
+```
+
+两个签名固定为：
+
+```ts
+declare const executeReport: (input: {
+  readonly sampleHandle: AnalysisSampleHandle;
+  readonly report: Report;
+}) => Effect.Effect<
+  ReportExecution,
+  ReportExecutionError,
+  never
+>;
+
+declare const executeReportFromRecord: (input: {
+  readonly root: RecordRoot;
+  readonly selection: AnalysisSelectionRequest;
+  readonly report?: Report;
+}) => Effect.Effect<
+  ReportExecution,
+  RecordReaderOpenError | AnalysisSelectionError |
+    ReportExecutionError,
+  RecordFileSystem | RecordMaintenanceLock
+>;
+```
+
+`executeReportFromRecord()` 是默认 application／CLI 的一次性组合入口。它用 `Effect.scoped()` 打开 reader，完成 selection
+与 `executeReport()`，再关闭 reader。已有 `RecordAccessRuntime` 的 host 使用 `withSnapshot()` 与第一种入口，不另开 root。
+
+两条入口形成同一种 `ReportExecution`。它不含 reader、handle、Scope、path、callback 或延迟 I/O；`show`、`view` 与
+static export 只消费这个 closed value。
 
 ## Capability 可见性
 

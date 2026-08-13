@@ -118,6 +118,18 @@ read states 或 Sample population。
 Report definition 用 `reportInputs()` 声明有限领域 inputs。Report host 在 callback 前执行 Projection，形成 closed values
 与不可删除 problem inventory。
 
+```text
+RecordSnapshotSource.withSnapshot
+  → RecordReader
+  → selectAnalysisSample()
+  → AnalysisSampleHandle
+  → executeReport()
+  → ReportExecution
+```
+
+`RecordReader` 只属于 host callback。`AnalysisSampleHandle` 只活到 `executeReport()` 返回；Report 作者只声明
+`RecordProjection`，不会取得 reader 或 handle。相同 declaration 在一次 execution 内最多读取一次。
+
 Calculation 在文件上属于 Report，在语义上位于 Analysis Derivation seam。它调用普通纯函数。Page 只呈现 calculation
 result，不打开 Record、不迁移、不重新采证，也不把 Report result 写成第二份 Record。
 
