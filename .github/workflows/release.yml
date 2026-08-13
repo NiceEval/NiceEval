@@ -149,6 +149,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Resolve dependency cache inputs
+        id: dependency-cache
+        env:
+          REPO_DIRS_JSON: ${{ toJSON(matrix.dirs) }}
+        run: |
+          set -euo pipefail
+          {
+            echo 'paths<<EOF'
+            echo 'pnpm-lock.yaml'
+            while IFS= read -r repo_dir; do
+              lockfile="e2e/${repo_dir}/pnpm-lock.yaml"
+              test -f "$lockfile"
+              echo "$lockfile"
+            done < <(jq -r '.[]' <<< "$REPO_DIRS_JSON")
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
 
@@ -157,6 +174,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+          cache-dependency-path: ${{ steps.dependency-cache.outputs.paths }}
 
       - name: Install orchestrator dependencies
         run: pnpm install --frozen-lockfile

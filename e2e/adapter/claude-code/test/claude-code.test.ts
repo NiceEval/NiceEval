@@ -65,15 +65,10 @@ function evalKey(event: Pick<ExpEvalEvent, "experimentId" | "evalId">): string {
   return `${event.experimentId}\u0000${event.evalId}`;
 }
 
-function assertExactRetrySelector(events: readonly ExpEvalEvent[], failed: ExpEvalEvent): void {
-  const experiments = new Set(
-    events
-      .filter((event) => event.experimentId.startsWith(failed.experimentId))
-      .map((event) => event.experimentId),
-  );
-  expect(experiments, `ambiguous Experiment retry selector ${failed.experimentId}`).toEqual(
-    new Set([failed.experimentId]),
-  );
+function assertExactRetryEvalSelector(events: readonly ExpEvalEvent[], failed: ExpEvalEvent): void {
+  // Experiment selectors prefer an exact ID before considering path-prefix
+  // families. Eval selectors intentionally use bare prefixes, so only the
+  // Eval selector needs a preflight ambiguity check before spending a retry.
   const evals = events
     .filter(
       (event) =>
@@ -114,7 +109,7 @@ beforeAll(async () => {
   ).toHaveLength(0);
   expect(run.exitCode, run.diagnostic()).toBe(failed.length > 0 ? 1 : 0);
   expect(inv.completion, run.diagnostic()).toBe("completed");
-  for (const event of failed) assertExactRetrySelector(firstEvents, event);
+  for (const event of failed) assertExactRetryEvalSelector(firstEvents, event);
 
   const retryRuns: ProcessReceipt[] = [];
   for (let offset = 0; offset < failed.length; offset += RETRY_CONCURRENCY) {
