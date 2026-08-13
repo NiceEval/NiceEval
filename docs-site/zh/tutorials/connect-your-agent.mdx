@@ -54,9 +54,11 @@ export default defineAgent({
 
 最小示例先使用固定 URL。需要按环境传入 URL 时，使用下文的[参数传递方式](#实验-flag)。`send` 的完整契约（`TurnInput` / `AgentContext` / `Turn` 各字段）见 [Adapter](/zh/explanation/adapter)。
 
-即使 Agent runtime 和评估用例位于同一个代码库，也应通过像前端用户一样调用接口，也不要把 `fetch` 换成进程内函数调用，因为
+如果被测对象是独立的 HTTP 服务，即使服务代码和评估用例位于同一个代码库，也应通过线上实际使用的 HTTP 接口调用，不要把本例的 `fetch` 换成进程内函数调用，因为
 - **代码内部调用不是用户走的那条链路。** HTTP 层、序列化、中间件、流式传输全被绕过，评估用例通过不代表线上行为正确。
 - **Adapter 无法复用于其它部署环境。** HTTP Adapter 只需更换 `baseUrl`，即可连接本地、预发或生产环境（见下文两个 Experiment 文件）。进程内调用依赖当前代码库。
+
+如果 Agent 只提供 SDK、函数或 CLI，就在 `send` 中直接调用对应入口。保留前面相同的输入、取消信号和 `Turn` 返回形状；不要为了套用 HTTP 示例额外搭一个并不存在的服务。
 
 **2. 实验**
 
