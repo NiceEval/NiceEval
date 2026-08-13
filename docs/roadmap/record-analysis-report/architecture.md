@@ -1,182 +1,240 @@
-# Record → Analysis → Report —— Architecture
+# Architecture
+
+本架构保留 Record 的不可变事实、frozen Sample、verified cache 与静态交付能力，同时把 RecordAttachment authoring 从公共 API
+移回平台内部。
 
 ## 依赖方向
 
 ```text
-domain API → sealed value → RecordAttachment adapter → Record
-                                                     │ frozen view
-                                                     ▼
-                                                  Analysis
-                                                     │ closed values
-                                                     ▼
-                                                   Report
+普通 Eval
+  └─ domain Plugin / registered Capture token
+       └─ Capture host
+            ├─ total obligation
+            ├─ producer identity
+            └─ fixed Metric / Score / Artifact command
+                    ↓
+              internal Record kernel
+                    ↓ frozen Record view
+              Analysis field executor
+                    ↓ MetricValue / closed rows
+              Report callback
+                    ↓ closed semantic tree
+              terminal / Web / static renderer
 ```
 
-依赖只向右。Analysis 不把派生指标写回 Record；Report 不绕过 Analysis 读取 package；Record 不认识通过率、GPU 汇总或
-页面组件。
+上层不能反向取得下层 capability：
 
-## 每层屏蔽什么
+- Report 不能取得 Analysis projection 或 Record reader。
+- Analysis 不能取得 Capture capability 或 Record writer。
+- Capture callback 不能取得 Record root、path、schema version 或 migration authority。
+- Plugin mount 不能安装 converter 或扩大 Record 可读 family。
 
-Record 屏蔽 durable layout、path、locks、snapshot generation、schema decode、blob closure 与 commit 顺序。它不屏蔽
-owner、schema identity、读取六态、incomplete warning 或 migration 要求。
+## 四种 identity
 
-Analysis 屏蔽 reader lifecycle、owner lookup、decode 与跨 package 的机械对齐。它不屏蔽 Sample denominator、每 slot
-状态、unmatched／ambiguous、coverage、issues 或 refs。
-
-Report 屏蔽 Record I/O、migration、重新采证与 renderer 机制。它不屏蔽 host problems、数值口径、coverage 与下钻引用。
-
-## 领域 API 在 Record 之上
-
-普通作者调用 `t.check`、`t.sandbox.*`、tracing 配置或 third-party Plugin。他们不声明 Attachment family，也不取得 owner
-writer。领域 SDK 拥有两道边界：
-
-1. producer lifecycle 把多次领域 input 封成一份 sealed value；
-2. RecordAttachment adapter 把 sealed value 纯转换为 current payload，并把 available payload 投影回领域 view。
-
-这两道边界不能合并。collector 可以有资源、clock 或 provider；adapter 必须纯、确定且不读取宿主运行条件。
-
-## 一套 substrate，不是一把万能 client
-
-```text
-openRecordAccessRuntime(root, recordAttachments)
-  ├─ snapshots ───── withSnapshot ─────► Analysis / Report host
-  ├─ invocation ──── withWriteSession ─► Invocation coordination
-  │                                      └─ host-internal owner leases
-  └─ maintenance ─── plan / authorize / migrate ───► maintenance host
-```
-
-三种 facet 共享 canonical root、runtime registry、lock authority、generation allocator、verified cache 与 validators，但不
-共享调用权限。
-
-Invocation 的 `session.view` 只做 reuse planning。本次新发布的 Run 要在 write session 关闭后，通过 fresh snapshot 才能
-进入 Analysis。这样不会延长 exclusive writer lock，也不会把 draft 混入分母。
-
-## 两种 cache 不合并
-
-| 名称 | 回答什么 | owner |
-|---|---|---|
-| verified-read cache | exact envelope、payload 与 blob closure 是否已验证 | Record runtime；物理 hit 不可观察 |
-| reuse planning | 当前 ExecutionTarget 的 Slot 能否采用历史 Attempt | Experiment domain；形成公开 `ExecutionReusePlan` |
-
-verified cache 不缓存 Run enumeration、draft、lease、read state 或 migration intermediate。reuse planner 不能把 cache hit
-当作可采用证据。
-
-## 中立写入核
-
-```text
-Assertions binding ─┐
-Diff binding ───────┤
-Timing binding ─────┼─ total obligation → sealed value → adapter target
-GPU SDK binding ────┘                                      │
-                                                           ▼
-              admission → reservation → snapshot → closure → tracked command
-                         → poison-on-failure → sink → publication
-```
-
-| 维度 | Assertions／Evidence | File Diff | third-party GPU |
+| identity | 回答的问题 | 何时固定 | 不能替代什么 |
 |---|---|---|---|
-| durable family | `niceeval.assertions` | `niceeval.diff` | `com.example.gpu-energy` |
-| domain API | `t.check`／scoped Assertions | `t.sandbox.fileChanged`／automatic diff | `gpuEnergy({ meter })` |
-| adapter | package-private official | package-private official | SDK-private reverse-domain |
-| binding | package-private Attempt | package-private Attempt | Plugin Attempt |
-| total obligation | actual Attempt 一份 | actual Attempt 一份 | mounted actual Attempt 一份 |
-| command kernel | 相同 | 相同 | 相同 |
+| Fact definition identity | 事实是什么 | package definition load | producer behavior |
+| Producer identity | 谁用哪一种行为产生 | Eval / Plugin mount | fact identity、领域 label |
+| Attempt identity | 哪次实际执行拥有事实 | Invocation planning | logical slot |
+| Analysis field identity | 按什么口径解释事实 | Analysis module load | Report column label |
 
-中立性只承诺机械路径相同，不承诺 namespace、schema、领域算法或 installation authority 相同。official adapter 也没有 raw
-draft 或 parallel facade。
+Report row identity 由 nominal population identity 与完整 grouping coordinate 形成。显示顺序、format、limit 或 locale 不参与 row
+identity。
 
-## Plugin 双 occurrence
+## Fixed envelope model
 
-Experiment Plugin 的一个 mount 可以贡献 Run 与 Attempt bindings，但 link 必须拆开：
+Record 内部拥有固定 envelope schema：
 
-```text
-mount provenance
-  ├─ Run occurrence: recordAdapters.run
-  └─ pair/Attempt occurrence: recordAdapters.attempt
+```ts
+interface FixedFactEnvelopeV1<Definition, Payload> {
+  readonly kind: "metric" | "score" | "artifact" | OfficialFactKind;
+  readonly definition: CanonicalDefinitionSnapshot<Definition>;
+  readonly definitionFingerprint: string;
+  readonly producer: ProducerIdentitySnapshot;
+  readonly owner: AttemptId | RunId;
+  readonly sealedAt: string;
+  readonly payload: Payload;
+  readonly evidence: readonly EvidenceRef[];
+}
 ```
 
-两者分别拥有 exact internal grant、behavior identity、Scope、open／closed state、accepted events 与 seal barrier。Hosted
-Hooks 属于 Attempt occurrence；setup／teardown 属于 Run occurrence。Group 没有 Record owner。
+第三方 definition 决定 envelope 内受限 token 的名字和值，不决定 durable document shape。NiceEval 拥有：
 
-## Analysis 内部四步与公开字段
+- envelope schema version；
+- canonical encoding 与 blob closure；
+- 相邻 converter；
+- current decoder 与 generic inspector；
+- migration plan、publication 与 receipt。
 
-| 步骤 | 输入 → 输出 | 不负责 |
-|---|---|---|
-| Selection | frozen view → `AnalysisSampleHandle` | package decode、reuse planning |
-| Projection | live handle + SDK declaration → closed domain `ProjectedSample` | 跨 package join、聚合 |
-| Relations | same-Sample projections → exhaustive relation cells | heuristic agreement、metric |
-| Derivation | closed projections／relations → ordinary closed values | Record I/O、页面呈现 |
+领域 package 拥有：
 
-四步共享 Sample identity。Projection 不重新开 snapshot；Relations 拒绝不同 Sample；Derivation 的统计结果保留 observed、
-denominator、state、issues 与 refs。
+- fact definition identity 与纯数据 snapshot；
+- Producer identity；
+- Capture 逻辑；
+- Analysis fields、producer compatibility 与跨 ID bridge。
 
-SDK 可以把 private projector 包装进 `gpuSource`、`gpuEnergyJoules` 与 `analyzeGpuEnergy()` 等领域 API。fields 位于
-nominal `AnalysisPopulation`；population 是类型与运行期 identity，不是 `"attempt-slot"` 之类字符串 grain。相同
-population 的 fields 才能直接组合；跨 population 只能由 Analysis SDK 通过具名 `AnalysisRelation` 形成目标
-population 上的新 field。Report 不调用 relation，也不自动寻找 join path。
+application 不拥有 executable schema、converter 或 installation。
 
-字段 descriptor 与本次执行值分开。Measure 静态声明 reduction、denominator、unit、format、better 与 evidence policy。
-materialized `MetricValue` 才携带 value、state、observed／denominator、issues 与 refs。Dimension 同样只静态声明分类与
-missingness policy，具体缺失是本次 row cell 的穷尽状态。
+## Capture state machine
 
-`AnalysisPopulation` 的 aligned rows 只能由 package-minted builder 形成。field materializer 对每个 member 恰好产生一
-行；少行、重复 identity、foreign identity 或依赖顺序的输出是具名 execution problem，不是 measure missingness。
-隐藏 schema 与 reader，不等于可以丢掉 host-owned read states 或 Sample population。
-
-## Report 编译有限 Analysis 闭包
-
-Report definition 通过 `aggregate()` 与 Page／PageFamily 引用有限 Analysis fields。`aggregate()` 只建立 typed
-`ReportData` declaration，不读取 Record、不返回 Promise，也不是普通数组。Report host 在任何 Page callback 前编译
-字段依赖、执行 Projection／Analysis materialization，并形成不可删除 problem inventory。
+每个 actual Attempt 打开时，host 从 Eval definition 与 mounted Plugins 收集 Capture tokens，并建立 pending obligations：
 
 ```text
-RecordSnapshotSource.withSnapshot
-  → RecordReader
-  → selectAnalysisSample()
-  → AnalysisSampleHandle
-  → compile finite ReportData dependency closure
-  → project / materialize each declaration at most once
-  → expand Page / PageFamily from closed rows
-  → executeReport()
-  → ReportExecution
+declared
+  → pending
+      ├─ seal available / empty / unavailable / failed → accepted
+      └─ duplicate / foreign / late / invalid          → violated
+
+Attempt close:
+  pending  → violated
+  accepted → publish candidate
 ```
 
-`RecordReader` 只属于 host callback。`AnalysisSampleHandle` 只活到 `executeReport()` 返回；Report 作者只声明
-Dimension、Measure 与 component descriptor，不会取得 projection、reader 或 handle。相同 projection 与 field-set
-materializer 在一次 execution 内至多执行一次。
+只有全部 required obligations accepted，且 optional obligations 没有 contract violation，Attempt 才能进入 publish candidate。
+`required: false` 的 explicit failed 可以保存为事实；未封口从来不是 normal missing。
 
-依赖闭包是一张只包含本次 `analyze({ fields })` 或 ReportData 的有限 DAG。cycle、population mismatch 与 field identity
-collision 在 Record I/O 前拒绝；callback 不能在 materialization 后返回新的 `ReportData` 或追加依赖。它不是全程序、
-动态或任意运行时扩张的 Derivation graph。
+host 对一次 seal 执行以下原子步骤：
 
-Page 只呈现 closed rows，不打开 Record、不迁移、不重新采证，也不把 Report result 写成第二份 Record。Report 可以在
-materialize 后改变显示顺序、截断与格式，但不能因此缩小 population、重算 `MetricValue` 或改变 denominator。
+1. 验证 token 属于当前 Attempt。
+2. 验证 obligation 仍是 pending。
+3. 验证 definition fingerprint、producer identity、state 与 bounded payload。
+4. 规范化 Evidence refs 与 Artifact blobs。
+5. 形成 fixed envelope command。
+6. 把 obligation 标为 accepted。
 
-## Report 身份与下钻闭合
+任何步骤失败都不留下 accepted obligation。Attempt publication barrier 同时等待 Plugin release 与所有 obligations 的最终状态。
 
-`ReportData` 的每行拥有 opaque `ReportRowKey`。`aggregate()` 用 nominal population identity 与完整 grouping
-coordinate 形成 key；measure、sort、limit 与 format 都不参与。`Bars`、`Table` 与 `Scatter` 使用该 key，不回退数组
-index，也不允许显示 label 替换身份。
+## Metric coordinate completeness
 
-PageFamily 只作为 `defineReport.pages` 的顶层 declaration。family 的 `target(key)` 绑定 family object identity；route
-key 来自声明为 stable identity 的 Dimension，不使用 opaque aggregate key 或数组下标。compile 先验证 family 已列入
-Report，materialization 再验证 key 唯一、instance 存在且 route 无冲突。
+Metric seal 是一个有限 coordinate set，不是 append stream。
 
-Evidence 默认下钻只有在一个 `MetricValue` 恰好一个 ref、Report 为该 evidence kind 显式声明唯一 PageFamily、对应
-instance 存在时才形成。否则 exact refs 与 coverage 仍保留，但没有链接。组件不能隐式增加 Page、projection 或 target。
+```text
+Metric definition labels
+       ↓
+complete coordinate tuple
+       ↓ unique within bundle
+available | empty | unavailable | failed
+```
 
-## 不变量
+声明 expected coordinates 时，host 验证集合相等；未声明时，host 只验证实际 coordinate 唯一且符合 definition。后者不能产生
+“缺少 gpu-1”之类推论，因为系统没有 nominal device set。
 
-1. 普通 `TestContext`、Plugin Hook context 与 Eval／Experiment definition 没有 Record command 或 write grant。
-2. 一个 actual owner 的每个 mounted binding accepted exactly once 或令 owner 失败。
-3. producer session 只住在 binding child Scope；carry／reuse 不打开它。
-4. binding behavior identity 与 schema identity 分离，并进入正确 fingerprint、manifest 与 provenance。
-5. 一个 Analysis execution 的 selection 与所有 Projection 使用同一 snapshot generation。
-6. 新发布 Run 只在 write session 关闭后的 fresh snapshot 可见。
-7. 一个 Attachment 的 blob ref 只能引用自己的 closure。
-8. Report callback 不能取得 reader、root runtime、Sample handle、maintenance 或 adapter。
-9. host-owned read states、migration problems 与 execution problems 不能被页面过滤掉。
-10. official facts 使用同形 adapter binding；官方特权止于 namespace construction 与 installation package owner。
-11. 一个 `aggregate()` 只能组合同一 nominal population 的 fields；Report 不执行 heuristic join。
-12. Report 的 display-only sort／limit／format 不改变 `ReportRowKey`、`MetricValue` 或 denominator。
-13. 自定义 Report component 只组合既有 semantic primitives；新增 primitive 必须同时定义 terminal、Web 与 static face。
+这种边界阻止 Metric 变成任意事件隧道。需要 span、command、conversation 或 file diff 时，应使用对应官方事实；复杂第三方材料
+进入 Artifact。
+
+## Score atomicity
+
+Score 的一次 evaluator invocation 对整个 rubric bundle 原子提交。required rubric 不能靠 absent 表示 empty 或 failed。
+Evidence refs 属于各 rubric result 或 bundle failure，复杂 explanation 自身保存在 Evidence / Artifact。
+
+Attempt 发布后不会追加 Score。历史重分析只运行新的 Analysis fields；未来 post-hoc 持久判分必须引入新的 immutable Assessment
+Run owner，并显式引用旧 Attempt 与 frozen Evidence。
+
+## Frozen read path
+
+一个 host operation 对一个 canonical root 打开一个 `RecordAccessRuntime`：
+
+```text
+RecordAccessRuntime
+  ├─ invocation facet   → frozen reuse view + scoped write session
+  ├─ snapshot facet     → fresh frozen view for Analysis / Report
+  └─ maintenance facet  → inspect + plan + authorize + migrate
+```
+
+Capture write session 关闭后，Analysis / Report host 必须取得 fresh frozen view。它不能沿用写前 reader，也不能在 Report execution
+中自动刷新。
+
+verified cache 只缓存 exact content identity 对应的已验证 Core、fixed envelope 与 blob。它不缓存 live reader、Capture token、
+Report callback 或 migration authority。
+
+## Analysis execution
+
+Analysis field graph 由 nominal descriptors 构成：
+
+```text
+frozen Sample
+  → fixed envelope readers
+  → local typed facts
+  → package-owned relations
+  → Dimension / Measure
+  → MetricValue
+```
+
+每个 field 必须绑定一个 nominal population。跨 population 需要具名 relation；没有 relation 时拒绝组合，不做 heuristic join。
+
+Metric Measure 的 reduction 顺序固定为：
+
+```text
+coordinate cells within Attempt
+  → Attempt value
+  → attempts within logical slot
+  → value across logical slots
+```
+
+每一段都保留状态、observed、denominator、issues 与 refs。一个 scalar 不能在丢失这些信息后重新包装成 `MetricValue`。
+
+## Report execution
+
+Report 选择 data-dependent callback 与 requested-page isolation，因此不在 callback 前编译整份 Report。
+
+```text
+request Page
+  → create restricted ReportSample
+  → run Page callback once
+       → aggregate A: compile A field DAG, execute, cache, return closed rows
+       → branch on closed rows
+       → aggregate B: compile B field DAG, execute, cache, return closed rows
+  → close semantic tree
+  → render terminal / Web / static
+```
+
+同一次 `ReportExecution` 的 cache key 包含：
+
+- frozen Sample identity；
+- nominal population identity；
+- exact field descriptor 与 dependency identity；
+- producer policy；
+- Analysis executor version。
+
+它不使用公开字符串 ID 单独作为 cache key。不同 execution 不共享这项保证。
+
+Page callback 与 component callback 都只运行一次，不存在 discovery dry-run。未请求 Page 的 dependency error 不影响当前 Page；
+static export 通过同一次 execution 枚举目标 Pages，因此仍可跨 Page 复用 field results。
+
+## Closed semantic tree
+
+Report callback 结束时，以下对象都不能进入 `ReportExecution`：
+
+- `ReportSample`；
+- Record reader 或 root path；
+- Promise、Effect、Stream 或 callback；
+- Analysis field executor；
+- Capture token 或 Producer config secret。
+
+闭合树只含 serializable semantic nodes、closed rows、MetricValue、refs、routes 与 problems。terminal、Web 和 static renderer 不能
+重新查询数据或重算指标。
+
+## Migration boundary
+
+平台 converter 只升级 Record Core 与固定 envelopes。unknown future envelope 必须把 exact bytes 与完整 blob closure 无损带到
+新 snapshot；做不到时整个 migration fail closed，source snapshot 保持不变。
+
+第三方 package 消失后，generic definition snapshot、Metric / Score values 与 Artifact 仍可由平台检查、显示和迁移。package
+特有 Analysis field 只有恢复 package，或 import exact-compatible pure definition 后才可执行。
+
+历史数据修复使用追加的具名 correction 或新 fact identity，不原地改已发布事实，也不伪装成 schema migration。
+
+## Invariants
+
+1. 普通作者 API 不出现 Record writer、schema version、converter、installation 或 projection。
+2. 一个 Capture token 只属于一个 Eval / Plugin declaration graph。
+3. 每个 actual Attempt 的 obligation 恰好 accepted once，或 Attempt 失败。
+4. Fact definition identity 与 Producer identity 分离。
+5. Metric coordinate 与 Score rubric 都有硬上限，不能承载任意事件。
+6. Artifact 内容不自动进入 Analysis schema。
+7. Analysis 决定 population、denominator、missing 与 rollup；Report 只呈现结果。
+8. ReportSample 不能枚举 raw facts 或改变 population。
+9. 每个 Page / component instance 在一次 execution 中最多执行一次。
+10. renderer 只消费闭合 semantic tree。
+11. migration 不能部分发布，也不能执行第三方 converter。
+12. official facts 与 third-party facts 共用内部 kernel；官方特权止于固定 namespace 与 envelope ownership。

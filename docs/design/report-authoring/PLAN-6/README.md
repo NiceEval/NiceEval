@@ -1,4 +1,6 @@
-# PLAN-6（推荐）：静态 Analysis fields + descriptor components
+# PLAN-6：静态 Analysis fields + descriptor components
+
+> 本方案已被 [PLAN-7](../PLAN-7/README.md) 替代；保留本文用于说明全局静态闭包的取舍。
 
 **相关文档**：[README](../README.md) · [GOALS](../GOALS.md) · [LIMITS](../LIMITS.md) · [DECISION](../DECISION.md)
 

@@ -1,62 +1,94 @@
 # 决策
 
-**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md)
+**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md) · [PLAN-7](PLAN-7/README.md)
 
 ## 裁决
 
-采纳 [PLAN-6](PLAN-6/README.md)。
+采纳 [PLAN-7](PLAN-7/README.md)。
 
-作者面是“nominal Analysis fields + static `ReportData` + descriptor components + static Page／PageFamily”。
+作者面是 nominal Analysis fields、受限 `ReportSample`、`await aggregate(sample, ...)`、普通 async component 与 closed
+semantic components。
 
-- Analysis SDK 在 `AnalysisPopulation` 上定义 `Dimension` 与 `Measure`；跨 population 必须先定义具名 relation。
-- `aggregate({ by, values })` 只组合同一 population fields，返回 typed declaration，不返回 Promise 或普通数组。
-- host 在 Page callback 前编译本次有限依赖闭包，每个 projection／field materializer 至多执行一次。
-- `MetricValue` 保留 value、state、observed／denominator、issues、refs、unit、format 与 better；组件不重算口径。
-- `ReportData` row 拥有与显示顺序无关的 opaque key；PageFamily target 绑定 family object identity。
-- Page 与 component callback 只组合 descriptor／closed row，不取得 Sample、projection、reader、Effect 或 migration。
-- custom component 只组合已有 semantic primitives；新增 primitive 必须同时定义 terminal、Web 与 static face。
+- Analysis package 在 nominal population 上定义 Dimension、Measure 与具名 relation。
+- `aggregate(sample, { by, values })` 只组合同一 population fields，并返回 closed typed rows。
+- `ReportSample` 不枚举 raw Run / Attempt，不读 Record，不调用 projection，也不改变 population。
+- 每次 `aggregate()` 调用编译自己的有限 field DAG；同一次 execution 按 exact field identity memoize。
+- Page / component callback 每个 instance 只执行一次，不 dry-run。
+- callback 可以依据 closed rows 分支，再调用另一组 `aggregate()`。
+- `MetricValue` 保留 value、state、observed / denominator、issues、refs、unit、format、better 与 producer compatibility。
+- callback 完成后只留下 closed semantic tree，供 terminal、Web 与 static face 共用。
+- custom component 只组合既有 primitives；新增 primitive 必须同时定义三种 face 与无 JavaScript 降级。
 
 ## 不可能三角
 
-任意 render-time I/O、执行前依赖闭包与零声明阶段不能同时成立。选择保留后两项，明确放弃第一项：
+普通 data-dependent JavaScript callback 无法同时满足：
+
+1. callback 只执行一次，并可根据已算结果分支；
+2. callback 前预编译整份 Report 的全部依赖；
+3. 只执行请求 Page，并隔离其它 Page 的失败。
+
+选择保留第 1、3 项，放弃第 2 项：
 
 ```text
-descriptor definition
-  → compile finite dependency closure
-  → once-per-execution projection + Analysis materialization
-  → PageFamily expansion + semantic tree closure
+request Page
+  → run callback once
+      → aggregate A: compile + execute finite field DAG
+      → optional branch
+      → aggregate B: compile + execute finite field DAG
+  → close semantic tree
+  → render
 ```
 
-Report module 是可信代码而不是安全沙箱，但 NiceEval 作者 API 不授予 I/O capability。materialization callback 不能返回新
-`ReportData` 或扩张依赖。
+这是从 PLAN-6 翻转的关键点。whole-report precompile 不是保留 0.12.1 DX 的必要条件；field-level identity、within-execution cache、
+frozen Sample 与 closed output 已足以保留数据正确性和交付边界。
 
-## 为什么替换 PLAN-5
+## 为什么替换 PLAN-6
 
-PLAN-5 守住了 closed input 与 renderer 边界，却把内部 projection manifest、Calculation registration、completeness、
-branded id、状态分支和重复 wiring 暴露给普通 Report 作者。GPU 一项指标就要手写 join、group、denominator、Page 与
-semantic table，说明 host 的复杂度被转嫁给了每个 application。
+PLAN-6 把 `aggregate()` 变成 static `ReportData` declaration，并要求 callback 只组合 descriptors。它守住全局预编译，却产生三项
+作者成本：
 
-PLAN-6 保留 PLAN-5 的执行内核，在其上增加 nominal fields 与 `ReportData` compiler。它恢复 0.12.1 的业务词汇、调用
-形状与阅读成本，但不恢复 `await aggregate(sample, ...)`、普通数组加工或 `ctx.scope` 动态读取。
+- 调用形状偏离普通 async TypeScript；
+- rows 不能在 callback 中检查或用于数据依赖分支；
+- 为了提前知道全部依赖，Page 定义必须承担额外 declaration protocol。
+
+PLAN-7 保留 PLAN-6 的 Analysis fields、MetricValue、stable identity 与 once-per-execution cache。renderer input 仍然 closed，
+依赖发现在实际 `aggregate()` call 发生，而不是 whole-report definition phase。
 
 ## 为什么仍否决其它方案
 
-- PLAN-1 按领域问题增加组件，双面实现和 props 会随问题数增长。
-- PLAN-2 允许 Source 自行 async compute，依赖无法在 Page 前闭合；Source／data 双入口也增加作者运行协议。
-- PLAN-3 把两级聚合、coverage 与 refs 交还给每条 SQL。
-- PLAN-4 让同一报告出现两套读取与计算入口，较弱路径会成为事实标准。
-- PLAN-5 的底层模型继续作为内部实现材料；公共 Report 作者面采用 PLAN-6。
+- PLAN-1 的专用组件数与用户问题数共同增长。
+- PLAN-2 的通用 async Source 没有统一 population、denominator 与 Evidence contract。
+- PLAN-3 把聚合层数、missing 与 refs 交给每条 SQL。
+- PLAN-4 让较弱 SQL 路径成为事实标准，并维持两套读取语义。
+- PLAN-5 的 projection / Calculation plumbing 继续作为内部实现材料，不作为普通作者 API。
+- PLAN-6 的 static field compiler 继续作为局部 `aggregate()` executor 的实现材料，不再支配 Page authoring protocol。
+
+## 确定性边界
+
+硬保证只到一次 `ReportExecution`：
+
+- 每个 Page / component instance 最多执行一次；
+- 所有 field reads 绑定同一 frozen Sample；
+- cache key 使用 nominal descriptor / dependency identity；
+- 同一次 execution 的 terminal、Web 与 static face 消费同一 closed tree；
+- static export 可以跨本次枚举的 Page instances 复用 field results。
+
+不同 execution 不承诺 cache reuse。普通 callback 的跨 execution 纯度是 trusted-author contract；provenance 保存 Report module
+fingerprint、Sample identity、selection 与 host version。若产品要求不信任作者时仍机械确定，应新增 restricted declaration /
+isolate，而不是削弱普通 callback。
 
 ## 契约落点
 
-- 五类角色与三层扩展边界：[Record → Analysis → Report Authoring](../../roadmap/record-analysis-report/authoring.md)。
-- constructor、聚合算法、失败与 host 入口：[Record → Analysis → Report Library](../../roadmap/record-analysis-report/library.md)。
-- dependency closure、identity 与路由：[Record → Analysis → Report Architecture](../../roadmap/record-analysis-report/architecture.md)。
-- 完整官方／第三方语法：[Record → Analysis → Report Use Cases](../../roadmap/record-analysis-report/use-case/README.md)。
+- 三层总纲：[Capture → Analysis → Report](../../roadmap/record-analysis-report/README.md)。
+- Capture、Analysis 与 Report API：[Library](../../roadmap/record-analysis-report/library.md)。
+- 角色与扩展边界：[Authoring](../../roadmap/record-analysis-report/authoring.md)。
+- 执行与 cache：[Architecture](../../roadmap/record-analysis-report/architecture.md)。
+- 端到端语法：[Use Case](../../roadmap/record-analysis-report/use-case/README.md)。
 
 ## 风险与明确牺牲
 
-- `ReportData` 不是数组；任意数据加工要变成 Analysis field 或 display-only component option。
-- Analysis 存在一张有限 DAG，但只编译当前请求；不是全程序、动态或 callback 可扩张的 graph。
-- NiceEval 自有 JSX runtime 让 CLI 零配置，但独立 `tsc`／编辑器要使用 package report preset 或 `jsxImportSource`。
-- 普通用户不能注册任意 visual primitive；这换来 terminal、Web 与 static 不会分裂。
+- host 无法在 callback 前展示整份 Report 的完整 dependency inventory。
+- 未请求 Page 的 dependency error 延迟到该 Page 执行。
+- trusted callback 可能读取时钟、随机数或网络，因此跨 execution 不承诺逐字节相同。
+- closed rows 的 display-only JavaScript 处理不能由 TypeScript 完全证明不改变业务口径。
+- 普通用户不能注册任意 visual primitive；这换来 terminal、Web 与 static 不分裂。

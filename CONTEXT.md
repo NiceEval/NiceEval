@@ -14,23 +14,18 @@ _Avoid_: Record execution, Attempt writer
 reference、gap、未派发与已完成 outcome，并在最后请求发布完整 Runs。
 _Avoid_: Runner core, Record runtime
 
-**Record adaptation**:
-把某个领域已经封口的事实转换成该领域拥有的版本化 RecordAttachment，并把可读 Attachment 投影回领域 view。
-schema 版本与 migration 停在这里；事实生产者和消费者都不构造版本化 document。
-_Avoid_: Runner serialization, Generic metadata
+**Capture definition**:
+第三方用 `MetricDefinition`、`ScoreDefinition` 或 `ArtifactDefinition` 声明事实含义的受限纯数据定义。
+它不携带 Record schema、writer、converter、projection 或 host authority。
+_Avoid_: Record schema, Generic event
 
-**RecordAttachment adapter**:
-领域 SDK 对 sealed domain value、版本化 Attachment family、相邻 migration 与 typed projection 的完整适配声明。
-它不是 live writer，也不表示应用已经安装它或某个 producer 已经挂载。
-_Avoid_: Record API, Attachment writer
-
-**RecordAttachment installation**:
-Record host 对某个 opaque RecordAttachment adapter 的读取与显式 migration 信任。它不能反推出 writable adapter、
-producer binding 或当前 owner 的生命周期能力。
-_Avoid_: Plugin discovery, Producer registration
+**Producer identity**:
+Capture 在运行前固定的 producer ID、behavior version 与 canonical config fingerprint。
+它说明事实怎样产生；Metric 或 Score identity 说明事实是什么，两者不能互相替代。
+_Avoid_: Source label, Plugin name
 
 **Record migration plan**:
-一次只读 preflight 对 exact Record snapshot、installed trust 与恢复条件形成的不可伪造迁移计划。它列出将迁移、保留或
+一次只读 preflight 对 exact Record snapshot、平台 converter set 与恢复条件形成的不可伪造迁移计划。它列出将迁移、保留或
 无法解释的全部 family，但本身不授权写入。
 _Avoid_: Migration config, Dry-run output
 
@@ -44,14 +39,14 @@ Record migration durable 完成后的不可变结果，逐 family 说明 migrate
 receipt。
 _Avoid_: Migration log, Plan summary
 
-**RecordAdapter binding**:
-把一个 RecordAttachment adapter 与一个具名 producer behavior 绑定到 exact Run 或 Attempt occurrence 的声明。
-它为每个实际执行 owner 建立 total producer obligation，不是普通代码可选调用的 writer capability。
-_Avoid_: Write grant, Context extension
+**Capture obligation**:
+把一个 Capture definition 与 Producer identity 绑定到实际 Attempt 的预注册义务。
+它对每个 actual Attempt 恰好封口一次，不是无声明字符串写入或可选 writer capability。
+_Avoid_: RecordAdapter binding, Write grant
 
 **Total producer obligation**:
-一个已挂载 RecordAdapter binding 对每个实际执行 owner 恰好产出一份 sealed domain value，或令该 owner 失败的义务。
-正常的 empty、partial 与 unavailable 必须成为领域值，不能靠不写 Attachment 表示。
+一个已注册 Capture obligation 对每个实际 Attempt 恰好产出 available、empty、unavailable 或 failed seal 的义务。
+未封口、重复、foreign 或 late seal 是 producer contract violation；合法零值不能与 missing 合并。
 _Avoid_: Optional write, Best-effort telemetry
 
 **RecordAttachment value**:
@@ -59,10 +54,10 @@ _Avoid_: Optional write, Best-effort telemetry
 不是整个 Record，也不是 Analysis 派生值。
 _Avoid_: Record value, Fact value
 
-**Record adapter internal grant**:
-host 从 owner-specific binding 推导出的内部 exact adapter 集合。它不出现在 Eval、Experiment、Plugin callback 或
-TestContext，也不安装 migration 或跨 occurrence 共享。
-_Avoid_: Public producer API, Owner-wide allowlist
+**Capture internal grant**:
+host 从 Attempt 的 Capture obligations 推导出的内部 exact envelope command 集合。
+它不出现在 Eval、Experiment、Plugin callback 或 TestContext，也不授予 migration 或任意 Attachment 写入。
+_Avoid_: Public Record API, Owner-wide allowlist
 
 **Record context lease**:
 host 在当前 Run 或 Attempt 的开放生命周期内接纳 canonical RecordAttachment command 的内部 authority。它不进入
@@ -138,11 +133,12 @@ _Avoid_: Group callback, Report field
 refs 只存在于 materialized MetricValue。
 _Avoid_: Report calculation, Numeric column
 
-**Report data declaration**:
-由 `aggregate()` 等作者 API 形成的静态 typed dependency declaration。它不是 Promise、数组或 render-time query handle。
-_Avoid_: Report rows, Data source
+**Report sample**:
+Page callback 获得的受限 `ReportSample`。它绑定 frozen Sample identity、选择说明与整体问题摘要，
+但不能枚举 raw Run／Attempt、读取 Record、调用 projection 或改变 population。
+_Avoid_: AnalysisSampleHandle, Record reader
 
 **Report component**:
-Report 中纯组合 `ReportData` 与既有 semantic primitives 的 descriptor component。它不读取 Record、不定义业务 measure，
-也不充当 Analysis API。
+Report 中组合 closed Analysis rows 与既有 semantic primitives 的 component。它不读取 Record、不定义业务 measure，
+也不改变 denominator。
 _Avoid_: Analysis component, Record component

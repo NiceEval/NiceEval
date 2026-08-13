@@ -2,8 +2,9 @@
 
 ## 裁决
 
-为 [Record → Analysis → Report Roadmap](../../roadmap/record-analysis-report/README.md) 采纳
-[PLAN-1](PLAN-1/README.md)：七个 owner-specific logical family 各自成为一份 durable RecordAttachment。
+为 [Capture → Analysis → Report Roadmap](../../roadmap/record-analysis-report/README.md) 采纳
+[PLAN-1](PLAN-1/README.md)：七个官方 owner-specific logical family 各自成为一份 durable RecordAttachment。第三方扩展使用
+平台固定的 Metric、Score 与 Artifact envelopes，不获得新增 family 的权限。
 
 这是 Roadmap 目标的选型裁决。该方向被产品采用前，当前
 [Observability Feature](../../observability.md) 仍是唯一当前契约；Design Decision 不自行替换 Feature。
@@ -12,7 +13,7 @@
 
 - definition、current payload、相邻 migration 与实际写入对象一一对应，作者可以明确指出写入哪个值；
 - conversation、commands、usage、timing 与 diagnostics 的 migration blast radius 彼此独立；
-- official 与第三方都能使用同一套 RecordAttachment definition、writer、reader 与 projector 内核；
+- 官方 families 与第三方固定 envelopes 共用同一个 writer、reader、验证与迁移内核，但不共用公开 Attachment authoring API；
 - `ProjectedSample` 只保留既有 Attachment 六态，不增加 Receipt、representation selection 或 fallback；
 - OTel 作为唯一 timing collector 的受限 capture transport，不要求 raw OTLP 成为第二份 durable authority。
 

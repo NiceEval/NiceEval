@@ -206,14 +206,12 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Member | Member | 一个 Run Slot 对精确 Attempt 的引用；不保存采用原因 | [Record](feature/record/architecture.md#core-v1) |
 | Attempt | Attempt | 一次实际执行的稳定身份；只存放在 origin Run，后续采用不复制 | [Record](feature/record/architecture.md#core-v1) |
 | Record 附件 | `RecordAttachment` | 一个 Run 或 Attempt owner 下具名、schema-identified 的 immutable payload closure | [Record](feature/record/architecture.md#recordattachment) |
-| Record 附件适配器 | `RecordAttachmentAdapter` | 领域 SDK 对 sealed domain value、连续 schema family、相邻 migration 与 typed projection 的 opaque 适配声明；不是 live writer | [RecordAttachment adapter SPI](roadmap/record-attachment-authoring/README.md) |
-| Record 附件安装能力 | `RecordAttachmentInstallation` | SDK 交给 Record host 的 opaque 读取与显式 migration 信任；不能反推 writable adapter 或 producer binding | [RecordAttachment adapter SPI](roadmap/record-attachment-authoring/library.md#installation-只授予读取与迁移信任) |
-| Record migration plan | `RecordMigrationPlan` | 对 exact root snapshot、installed capabilities 与 Git safety 做只读 preflight 后形成的 opaque plan；summary 可展示，不能重建 executable plan | [Record → Analysis → Report Library](roadmap/record-analysis-report/library.md#record-host-runtime) |
-| Record migration authorization | `RecordMigrationAuthorization` | maintenance host 根据 explicit decision 为 exact needed plan mint 的 nominal authority；不能跨 plan、runtime 或进程复用 | [Record → Analysis → Report Library](roadmap/record-analysis-report/library.md#record-host-runtime) |
-| Record migration receipt | `RecordMigrationReceipt` | durable migration 完成后逐 family 说明 migrated、already-current 或 preserved 的 immutable outcome；失败与中断不产生 | [Record → Analysis → Report Library](roadmap/record-analysis-report/library.md#record-host-runtime) |
-| Record adapter binding | `RecordAdapterBinding` | 把一个 RecordAttachment adapter 与 producer behavior 绑定到 exact Run 或 Attempt occurrence 的声明 | [RecordAttachment adapter SPI](roadmap/record-attachment-authoring/library.md#owner-specific-binding) |
-| 完整生产义务 | total producer obligation | 已挂载 binding 对每个实际执行 owner 恰好产出一份 sealed domain value，或令该 owner 失败；不是可选写入机会 | [RecordAttachment adapter 生命周期](roadmap/record-attachment-authoring/lifecycle.md) |
-| Record 附件值 | `RecordAttachmentValue` | 一个 owner 下某份定义的不可变事实实例；包含该版本的 payload 与自有材料，不表示整个 Record | [RecordAttachment adapter SPI](roadmap/record-attachment-authoring/library.md#projection-与领域-analysis-api) |
+| Capture definition | Capture definition | `MetricDefinition`、`ScoreDefinition` 或 `ArtifactDefinition` 的受限纯数据定义；说明事实含义，不携带 Record authority | [Capture → Analysis → Report](roadmap/record-analysis-report/library.md#capture-definitions) |
+| Producer identity | Producer identity | 运行前固定的 producer ID、behavior version 与 canonical config fingerprint；说明事实怎样产生，不替代事实 identity | [Capture → Analysis → Report](roadmap/record-analysis-report/library.md#producer-identity) |
+| Capture obligation | Capture obligation | 已注册 Capture 对每个实际 Attempt 恰好封口一次的义务；漏封、重复、foreign 与 late seal 都是 producer contract violation | [Capture → Analysis → Report](roadmap/record-analysis-report/library.md#capture-obligation) |
+| Record migration plan | `RecordMigrationPlan` | 对 exact root snapshot、平台 converter 与 Git safety 做只读 preflight 后形成的 opaque plan；summary 可展示，不能重建 executable plan | [Capture → Analysis → Report CLI](roadmap/record-analysis-report/cli.md) |
+| Record migration authorization | `RecordMigrationAuthorization` | maintenance host 根据 explicit decision 为 exact needed plan mint 的 nominal authority；不能跨 plan、runtime 或进程复用 | [Capture → Analysis → Report CLI](roadmap/record-analysis-report/cli.md) |
+| Record migration receipt | `RecordMigrationReceipt` | durable migration 完成后逐固定信封说明 migrated、already-current 或 preserved 的 immutable outcome；失败与中断不产生 | [Capture → Analysis → Report CLI](roadmap/record-analysis-report/cli.md) |
 | Record 附件 envelope | `RecordAttachmentEnvelopeV1` | 保存 name 与 schemaId | [Record](feature/record/architecture.md#recordattachment) |
 | Record 附件 schema identity | `RecordAttachmentSchemaId` | 冻结 Attachment payload 的精确 shape 与语义 | [Record](feature/record/architecture.md#三个演进边界) |
 | Record 附件 migration | RecordAttachment migration | Attachment owner 提供的相邻 `vN → vN+1` converter 或明确不可迁移声明 | [Record](feature/record/architecture.md#migration-definition) |
@@ -241,9 +239,10 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| 报告 | `Report` | `defineReport` 返回的作者定义；组合静态 `ReportData`、Page／PageFamily 与 semantic components | [Record → Analysis → Report](roadmap/record-analysis-report/README.md) |
+| 报告 | `Report` | `defineReport` 返回的作者定义；每个 Page callback 从受限 `ReportSample` 取得 Analysis rows，并返回闭合 semantic tree | [Capture → Analysis → Report](roadmap/record-analysis-report/README.md) |
+| 报告样本 | `ReportSample` | 绑定 frozen Sample identity、选择说明与整体问题摘要的受限 handle；不能枚举 raw Attempt、读取 Record 或改变 population | [Capture → Analysis → Report](roadmap/record-analysis-report/library.md#reportsample) |
 | （历史）报告计算 | Report Calculation | PLAN-5 的 projection 派生注册；目标作者面改用 Analysis Measure 与 `aggregate()`，新文档不再使用该术语 | [Report authoring decision](design/report-authoring/DECISION.md) |
-| 页 | Report Page | 从静态 `ReportData`／closed rows 形成 closed semantic document 的呈现单位 | [Report authoring](roadmap/record-analysis-report/authoring.md) |
+| 页 | Report Page | callback 从受限 `ReportSample` 取得 closed rows，并形成 closed semantic document 的呈现单位 | [Report authoring](roadmap/record-analysis-report/authoring.md) |
 | 报告执行 | `ReportExecution` | 一次 immutable、自包含的 Report 结果；show、view revision 与 static export 共同消费 | [Reports](feature/reports/README.md) |
 | 静态报告 | Static report | 无网络、无源 Record、带精确 runtime 的自包含目录 | [Reports architecture](feature/reports/README.md#自包含静态-export) |
 
@@ -260,14 +259,13 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| Record 访问运行时 | `RecordAccessRuntime` | 在一个 host operation 内统一 canonical root、snapshot generations、lock authority 与本地 verified-read cache，并 mint 分权 facets | [Record → Analysis → Report](roadmap/record-analysis-report/README.md) |
-| 分析 | Analysis | 在同一 frozen Record view 上固定分母、解释事实、建立关系并派生 closed values；不写 Record 或渲染页面 | [Record → Analysis → Report](roadmap/record-analysis-report/README.md) |
-| Analysis population | `AnalysisPopulation` | 带 nominal identity、稳定 row identity 与穷尽规则的一组 Analysis members；grain 只是解释文字，不是字符串兼容协议 | [Record → Analysis → Report Library](roadmap/record-analysis-report/library.md#analysis-作者面) |
-| Analysis dimension | `Dimension` | 属于一个 nominal population、用于分组或稳定标识的 typed field；不执行跨 population join | [Record → Analysis → Report Library](roadmap/record-analysis-report/library.md#在-population-上定义-fields) |
-| Analysis measure | `Measure` | 属于一个 nominal population，并一次声明 rollup、denominator、数值与 evidence policy 的 typed field | [Record → Analysis → Report Library](roadmap/record-analysis-report/library.md#在-population-上定义-fields) |
-| Analysis relation | `AnalysisRelation` | 由领域 SDK 拥有、把一个 population 穷尽对齐到另一个 population 的具名纯关系；Report 不自动寻路 | [Record → Analysis → Report Library](roadmap/record-analysis-report/library.md#定义-population-与-relation) |
-| Report 数据声明 | `ReportData` | `aggregate()` 等作者 API 形成的静态 typed declaration；不是 Promise、数组或可在 render 时追加 I/O 的查询句柄 | [Record → Analysis → Report Library](roadmap/record-analysis-report/library.md#report-作者面) |
-| Report 行身份 | `ReportRowKey` | 由 nominal population identity 与完整 group coordinate 形成的 opaque 行身份；不受排序、截断或格式影响 | [Record → Analysis → Report Architecture](roadmap/record-analysis-report/architecture.md#report-身份与下钻闭合) |
+| Record 访问运行时 | `RecordAccessRuntime` | 在一个 host operation 内统一 canonical root、snapshot generations、lock authority 与本地 verified-read cache，并 mint 分权 facets | [Capture → Analysis → Report](roadmap/record-analysis-report/README.md) |
+| 分析 | Analysis | 在同一 frozen Record view 上固定分母、解释事实、建立关系并派生 closed values；不写 Record 或渲染页面 | [Capture → Analysis → Report](roadmap/record-analysis-report/README.md) |
+| Analysis population | `AnalysisPopulation` | 带 nominal identity、稳定 row identity 与穷尽规则的一组 Analysis members；grain 只是解释文字，不是字符串兼容协议 | [Capture → Analysis → Report Library](roadmap/record-analysis-report/library.md#analysis-fields) |
+| Analysis dimension | `Dimension` | 属于一个 nominal population、用于分组或稳定标识的 typed field；不执行跨 population join | [Capture → Analysis → Report Library](roadmap/record-analysis-report/library.md#custom-dimensionmeasure-与-relation) |
+| Analysis measure | `Measure` | 属于一个 nominal population，并一次声明 rollup、denominator、数值与 Evidence policy 的 typed field | [Capture → Analysis → Report Library](roadmap/record-analysis-report/library.md#metric-measure) |
+| Analysis relation | `AnalysisRelation` | 由领域 SDK 拥有、把一个 population 穷尽对齐到另一个 population 的具名纯关系；Report 不自动寻路 | [Capture → Analysis → Report Library](roadmap/record-analysis-report/library.md#custom-dimensionmeasure-与-relation) |
+| Report 行身份 | `ReportRowKey` | 由 nominal population identity 与完整 group coordinate 形成的 opaque 行身份；不受排序、截断或格式影响 | [Capture → Analysis → Report Architecture](roadmap/record-analysis-report/architecture.md#四种-identity) |
 | 可重评分 Eval | Replayable Eval | 用独立 execution 与 grading definition 保存完整多轮证据，并允许只对 sealed Execution graph 重新评分 | [可重评分 Eval](roadmap/replayable-grading/README.md) |
 | Execution graph | Execution graph | 保存一次 replayable Agent 执行的 Observation、Provenance、Ref manifest 与 ExecutionOutcome 的 sealed graph | [Replayable Architecture](roadmap/replayable-grading/architecture.md#两个-plane) |
 | Grading | Grading | 一个 GradingDefinition 对一份 sealed Execution graph 产生新的不可变 grading claim 与结果 graph | [Replayable Architecture](roadmap/replayable-grading/architecture.md#gradingrun-与-gradedsample) |

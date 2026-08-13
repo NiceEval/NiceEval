@@ -14,18 +14,18 @@
 | `ExactValueRows` | `projectChartWeb` | 所有 channel 的精确值、missing、coverage、refs、可服务链接 | tooltip 状态、像素命中逻辑 |
 | `EnhancementPayload` | `projectChartWeb` | point key、focus 顺序、几何、tooltip rows、exact row key、href | source row、MetricValue、refs object、计算函数 |
 
-`compileChart` 的签名只有已经 materialize 的作者 props，返回 `{ model, projection }`。
+`compileChart` 的签名只接受 closed 作者 props，返回 `{ model, projection }`。
 它没有 `TextContext`、`WebContext`、theme 或页级 visual keyset。
 它可以调用作者提供的纯 `pointTarget(row)`，因为返回值仍是宿主无关、由 PageFamily `target()` mint 的
 `ReportTarget`。
 
-## 上游 ReportData 边界
+## 上游 closed rows 边界
 
-Report 作者给 Evidence chart 的 `points` 是静态 `ReportData<Population, Row>`。Report host 先按
-[Record → Analysis → Report](../record-analysis-report/architecture.md#report-编译有限-analysis-闭包) 编译并 materialize
-fields，再把 closed rows 交给 `compileChart`。Chart 不取得 `ReportData` compiler、projection 或 Sample handle。
+Report 作者给 Evidence chart 的 `points` 是 `aggregate()` 返回的 `readonly ClosedReportRow<Row>[]`。`aggregate()` 按
+[Capture → Analysis → Report](../record-analysis-report/architecture.md#report-execution) 局部执行 fields，再把 closed rows
+交给 `compileChart`。Chart 不取得 field executor、projection 或 `ReportSample`。
 
-每个 materialized Report row 已有 opaque `ReportRowKey`。Chart 必须沿用该 key；显示字段、声明顺序、sort、limit 与
+每个 closed Report row 已有 opaque `ReportRowKey`。Chart 必须沿用该 key；显示字段、声明顺序、sort、limit 与
 format 都不能重建身份。外部静态 scalar rows 不属于 Analysis，可以继续直传数组，但每行必须显式提供唯一、非空且
 稳定的 `key`；不提供时 definition invalid，不能回退 index。
 
@@ -56,8 +56,8 @@ interface ChartAxisDeclaration {
   label?: LocalizedText;
 }
 
-interface ChartProps<Population, Row extends object> {
-  points?: ReportData<Population, Row> | readonly ExternalPoint[];
+interface ChartProps<Row extends object> {
+  points?: readonly ClosedReportRow<Row>[] | readonly ExternalPoint[];
   label: LocalizedText;
   description?: LocalizedText;
   axes?: readonly ChartAxisDeclaration[];
@@ -93,9 +93,9 @@ interface SeriesCommon<Row extends object> {
   shape?: "circle" | "square" | "diamond";
 }
 
-interface EvidenceSeriesProps<Population, Row extends object>
+interface EvidenceSeriesProps<Row extends object>
   extends SeriesCommon<Row> {
-  points?: ReportData<Population, Row>;
+  points?: readonly ClosedReportRow<Row>[];
   external?: false;
   pointTarget?: (row: ClosedReportRow<Row>) => ReportTarget | undefined;
 }
@@ -107,8 +107,8 @@ interface ExternalSeriesProps<Row extends ExternalPoint>
   pointTarget?: never;
 }
 
-type SeriesProps<Population, Row extends object> =
-  | EvidenceSeriesProps<Population, Row>
+type SeriesProps<Row extends object> =
+  | EvidenceSeriesProps<Row>
   | ExternalSeriesProps<ExternalPoint>;
 
 interface ChartSeriesOverride {
@@ -135,17 +135,13 @@ interface ChartCompilation {
   projection: ChartProjectionOptions;
 }
 
-type MaterializedChartProps<Props> =
-  MaterializeReportDeclarations<Props>;
-
-declare function compileChart<Props extends ChartProps<unknown, object>>(
-  props: MaterializedChartProps<Props>,
+declare function compileChart<Props extends ChartProps<object>>(
+  props: Props,
 ): ChartCompilation;
 ```
 
-`ChartProps`／`SeriesProps` 是公开 declaration shape；作者传 `ReportData`，不会取得
-`MaterializedReportRows`。`MaterializedChartProps` 与 `compileChart` 属 host 内部，只有有限 dependency closure 完成后才
-存在。
+`ChartProps`／`SeriesProps` 是公开 shape；作者传 closed rows，不会取得 field executor。`compileChart` 属 semantic component
+内部，只在 `aggregate()` 已返回 rows 后运行。
 
 `compileChart` 为 layout、legend、tooltip 与 grid 填入默认值，但不把 width 或 height 换成像素。
 `projection.locale` 是作者可选的 locale override，不是已经本地化的字符串。
@@ -298,7 +294,7 @@ index fallback；`pointLabel` 只是可见 channel。
 point key 对 series id、identity kind 与 identity value 做带长度的无歧义编码，不是字符串直接拼接。
 compiler 验证全图唯一；重排、exact row、focus、tooltip 与链接都使用这个 key。
 
-Evidence series 的 rows 来自 `ReportData`，x/y 读数字段要求 `MetricValue`。每个 channel 保存自己的 MetricValue，因此 x
+Evidence series 的 rows 来自 `aggregate()`，x/y 读数字段要求 `MetricValue`。每个 channel 保存自己的 MetricValue，因此 x
 与 y 的 coverage 和 refs 不会被合并成 row-level 证据。
 
 便利组件只有恰好一个 evidence-bearing measure channel 时才尝试默认 point target。该 `MetricValue` 还必须恰好含一个
@@ -755,9 +751,9 @@ interface TablePresentationProps {
   className?: string;
 }
 
-interface ReportDataTableProps<Population, Row extends object>
+interface AnalysisTableProps<Row extends object>
   extends TablePresentationProps {
-  rows: ReportData<Population, Row>;
+  rows: readonly ClosedReportRow<Row>[];
   columns?: readonly TableColumn<Row>[];
   subRows?: never;
   search?: TableSearch;
@@ -809,8 +805,8 @@ type TableComponentBase = Pick<
 >;
 
 type TableComponent = TableComponentBase & {
-  <Population, Row extends object>(
-    props: ReportDataTableProps<Population, Row>,
+  <Row extends object>(
+    props: AnalysisTableProps<Row>,
   ): ReportNode;
   <Row extends object, K extends TableSubRowsKey<Row>>(
     props: NestedTableProps<Row, K>,
@@ -829,12 +825,12 @@ Nested overload 必须排在 flat overload 前，且 flat props 用 `subRows?: n
 因此 `subRows` 不能同时出现在 columns 或 sort 中，variant-only field 也不能伪装成所有层级共有的可见列。
 `ReportComponent<TableRuntimeProps>` 的宽调用签名不能和泛型 overload 相交；`TableComponentBase` 只保留 faces metadata 与 displayName。
 
-`ReportDataTableProps` 是 Analysis-backed 的作者路径。host materialize declaration 时把每行固有的 `ReportRowKey` 放入
+`AnalysisTableProps` 是 Analysis-backed 的作者路径。`aggregate()` 把每行固有的 `ReportRowKey` 放入
 `rowIdentity.keys`；搜索、排序、可见列和格式选择只能重排行，不能重建或替换这些 keys。
 
 `FlatTableProps`／`NestedTableProps` 是 presentation-only literal 路径。它们只用于作者手写的静态 scalar／
 `LocalizedText` rows，不接受 `MetricValue`、evidence refs 或 `ReportTarget`，也不冒充 Analysis population。需要指标、
-coverage 或下钻时必须先形成 `ReportData`。
+coverage 或下钻时必须先通过 `aggregate()` 形成 closed rows。
 
 mapped discriminated union 让 `field: K` 对应的 `sortValue` 参数精确为 `Row[K]`，不是所有字段值的 union。
 shorthand 与复杂列都只接受可见 string key。
@@ -884,7 +880,7 @@ null 或 missing rank 在升序和降序中始终位于末尾；相等 rank 始�
 public Table 不提供 `features`、`initialState`、`rowKey`、`expanded`、multi-sort、`better`、`hidden` 或列级 `label`。
 它也不提供通用 accessor、display/group column、renderer callback 或 controlled `state/onStateChange`。
 
-`ReportData` rows 始终透传 `ReportRowKey`。presentation-only literal rows 才在当前 Table render instance 内按结构
+Analysis-backed closed rows 始终透传 `ReportRowKey`。presentation-only literal rows 才在当前 Table render instance 内按结构
 occurrence 得到 opaque key；该 key 不承诺跨 remount、重新装载或构建的 identity。
 同一个对象出现在两个 parent 下是两个合法 occurrence，不共享展开状态。
 重新装载或 remount 后折叠状态重置为全部展开；public API 不提供持久化、deep link 或 live patch 契约。

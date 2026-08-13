@@ -11,15 +11,22 @@ CLI 的命令与 flag 另见 [CLI](cli.md)，但沿用同一条调用点清晰�
 API 应让第一次使用它的人在调用处看出“这一步要什么、会发生什么、得到什么”：
 
 ```ts
-import { attemptSlotProjection, reportInputs, verdictProjector } from "niceeval/report";
+const energyCapture = defineMetricCapture({
+  metric: gpuEnergyMetric,
+  producer: nvmlProducer,
+  required: false,
+});
 
-const verdicts = attemptSlotProjection(verdictProjector);
-const inputs = reportInputs({ verdicts });
+const gpuEnergyJoules = metricMeasure(gpuEnergyMetric, energyRollup);
+
+const rows = await aggregate(sample, {
+  by: { agent },
+  values: { gpuEnergyJoules },
+});
 ```
 
-`attemptSlotProjection` 表明作者声明的是按 Sample slot 对齐的官方投影；`reportInputs`
-只形成可签入的数据声明，不打开 Record 或启动 host。持久化读取由 `show` / `view` 的内部 host
-完成，不进入公开 Library 调用点。
+三个调用点分别说清事实定义与 producer、Analysis 口径和 Report 分组。普通作者不会看到 Record、projection、converter 或
+installation；持久化读取由 `show` / `view` 的内部 host 完成。
 
 清晰优先于简短，但长度不是清晰的替代品。
 名字变长若能消除相邻 API 的实质歧义，就保留必要词；模块、参数和返回类型已经表达的信息不重复。
@@ -80,7 +87,7 @@ const inputs = reportInputs({ verdicts });
 
 | 角色 | 命名 | 例子 |
 |---|---|---|
-| 从单条 Attempt 取值并两级聚合 | 名词性 Calculation 值 | `passRate`、`costUSD` |
+| 从固定事实按声明口径聚合 | 名词性 Measure 值 | `passRate`、`costUSD`、`gpuEnergyJoules` |
 | 按 AnalysisSample 分组计算 | 准确计算动词 | `aggregate(sample, options)` |
 | 立即投影成显示结果 | `toX` | `toAttemptRows(attempts)` |
 | 复杂算法的结果构造器 | 结果名 | `metricValue(...)`、`evidenceRow(...)` |
@@ -168,7 +175,7 @@ getSampleSummary(...);      // 差：get 没增加可观察语义
 Record root 与选择属于 CLI 调用点；Report 作者只声明 definition：
 
 ```ts
-const report = defineReport({ id, calculations, pages });
+const report = defineReport({ id, pages });
 
 // host boundary
 // niceeval show --record <root> --run <run-id>
@@ -184,9 +191,10 @@ const report = defineReport({ id, calculations, pages });
 `niceeval/record/host` 与 `niceeval/report/host`。这些入口不会进入 Report 作者 callback；callback-bound
 `RecordReader` 与 `AnalysisSampleHandle` 也不能逃出 Scope。普通 Eval、Analysis 与 Report consumer 不使用 host 子路径。
 
-Record 不提供局部 edit/delete、mirror、proof、revision 或防伪 API。业务演进通过新的 RecordAttachment schema 与相邻 migration 进入；已发布 Run 不再修改。
+Record 不提供局部 edit/delete、mirror、proof、revision 或防伪 API。平台固定信封的表示升级通过 `niceeval migrate` 完成；事实
+含义改变时发布新的 Metric / Score identity。已发布 Run 不再修改。
 
-### 领域 API 与 Record adapter SPI 分开
+### 领域 API 与内部 Record 分开
 
 普通 Eval 作者调用领域 API，不提交 Record command。一个 GPU SDK 的典型调用点是：
 
@@ -203,17 +211,15 @@ export default defineEval({
 });
 ```
 
-schema、version、migration、owner 与 projection 属于领域 SDK 的 `niceeval/record/adapter` SPI。SDK 用
-`defineRecordAttachmentAdapter()` 声明适配器，再用 owner-specific binding 把一个 producer lifecycle 接上它。
-普通 `TestContext`、Plugin Hook context 与 Eval／Experiment definition 不增加 `record()`、write grant 或通用
+领域 SDK 通过 `niceeval/capture` 定义 fixed Metric、Score 或 Artifact，再用 Capture token 固定 Producer identity 与 total
+obligation。普通 `TestContext`、Plugin Hook context 与 Eval / Experiment definition 不增加 `record()`、write grant 或通用
 service locator。
 
-`defineRecordAttachmentAdapter()` 返回可签入、可组合的静态声明；它不打开 Record，也不是当前 owner 的 live
-capability。`defineAttemptRecordAdapterBinding()` 与 `defineRunRecordAdapterBinding()` 同样返回 link declaration。
-只有 host 在 actual owner Scope 中解释 binding，并推导内部 grant、reservation 与 tracked command。
+`defineMetric()`、`defineScore()` 与 `defineArtifact()` 返回受限纯数据定义，不打开 Record。`defineMetricCapture()` 等函数把 definition
+与 producer 绑定成预注册 token；只有 host 在 actual Attempt Scope 中把 token 解释成内部 fixed-envelope command。
 
-完整调用点评审必须分别展示两种身份：普通消费者只看到领域名；SDK 作者才看到 adapter SPI。把低层调用藏到同一示例
-的注释里不算隔离，因为消费者仍会被迫理解它。
+完整调用点评审必须分别展示两种身份：普通消费者只看到领域 Plugin；SDK 作者看到 Capture definition 与 Analysis fields。任何一侧
+都不看到 Record schema、converter、installation 或 raw projection。
 
 ## 可观察的选择差异必须进入公开形状
 

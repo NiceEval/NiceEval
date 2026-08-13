@@ -47,9 +47,6 @@ interface RecordAccessRuntime {
 
 declare const openRecordAccessRuntime: (input: {
   readonly root: RecordRoot;
-  readonly recordAttachments: {
-    readonly install: readonly RecordAttachmentInstallation[];
-  };
 }) => Effect.Effect<
   RecordAccessRuntime,
   RecordAccessRuntimeOpenError,
@@ -62,8 +59,8 @@ declare const openRecordAccessRuntime: (input: {
 它不读取 portable Record，也不在无 lease 时保留 current-format 或 sentinel 判断。每个子操作取得自己的 locks
 后，才执行完整 open 与 operation-specific bootstrap。
 
-`recordAttachments.install` 显式提供 application 信任的第三方 opaque capabilities。runtime open 时将它们与固定的
-official installations 编译成 immutable registry；Layer、Plugin mount、Record bytes 与 dynamic import 不能补充 family。
+runtime 使用 NiceEval 版本内建的 immutable Record registry。第三方 Capture 只产生固定 Metric、Score 或 Artifact envelope，
+不能从 application config、Layer、Plugin mount、Record bytes 或 dynamic import 补充 family、decoder 或 converter。
 plan 与 authorization 都是该 runtime mint 的 nominal、root-affine capabilities，不能交给另一个 runtime 执行。
 
 facets 有 package-minted nominal identity，不能结构性伪造或由弱 facet 转成强 facet。Report host 只持

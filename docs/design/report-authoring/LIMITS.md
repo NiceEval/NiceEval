@@ -1,12 +1,12 @@
 # 约束与候选方案
 
-**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md) · [DECISION](DECISION.md)
+**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md) · [PLAN-7](PLAN-7/README.md) · [DECISION](DECISION.md)
 
 ---
 
 ## 目的
 
-记下四类候选作者面各自能做什么、做不到什么，以及它们共同撞上的那几堵墙。
+记下各类候选作者面能做什么、做不到什么，以及它们共同撞上的那几堵墙。
 裁决在 [DECISION](DECISION.md)，这里只写现状。
 
 ---
@@ -164,6 +164,38 @@ Analysis SDK 在 nominal population 上导出 Dimension 与 Measure。Report 作
 内核上增加作者友好的字段与组件 compiler，把内部 plumbing 从每份业务 Report 中移除。
 
 详见 [PLAN-6](PLAN-6/README.md)。
+
+---
+
+# 候选项 7：受限 ReportSample + 运行时局部 field DAG
+
+## 产品特性
+
+Page / component callback 获得受限 `ReportSample`，通过 `await aggregate(sample, { by, values })` 执行 Analysis fields。
+每次 aggregate 局部编译有限 DAG，并返回 closed typed rows。
+
+## 当前支持
+
+- 恢复 0.12.1 的普通 async callback、rows 与 `Bars` / `Table` / `Scatter` 调用心智；
+- callback 可以依据已经计算的 rows 分支，再请求另一组 fields；
+- `ReportSample` 不枚举 raw facts，不允许改变 population；
+- Measure 继续拥有 denominator、三段 rollup、producer policy、issues 与 refs；
+- 同一次 execution 按 exact field identity memoize；
+- callback 完成后仍形成 closed semantic tree，renderer 不查询数据。
+
+## 当前不支持
+
+- callback 前整份 Report 的全局依赖编译；
+- 未请求 Page 的 dependency error 提前暴露；
+- 不信任普通 JavaScript callback 时的跨 execution 机械确定性；
+- Report 内定义新 population、业务 Measure 或 raw query。
+
+## 直接影响
+
+这套方案明确选择 data-dependent callback 与 requested-page isolation。它把依赖闭包从 whole-report definition phase 移到每次
+`aggregate()` 调用，同时保留 closed renderer boundary。
+
+详见 [PLAN-7](PLAN-7/README.md)。
 
 # 共通限制
 

@@ -1,7 +1,8 @@
 # PLAN-1（推荐）：runtime direct projection calls
 
-作者先用三种 logical-access factory 构造 `RecordProjection`，再在普通 TypeScript / Effect 控制流中调用唯一的
-direct execution primitive。host 在调用发生时读取，并返回 closed `ProjectedSample`。
+Analysis host 实现先用三种 logical-access factory 构造 `RecordProjection`，再在普通 TypeScript / Effect 控制流中调用唯一的
+direct execution primitive。host 在调用发生时读取，并返回 closed `ProjectedSample`。这些 factory 与 primitive 是内部 seam，
+不从 `niceeval/analysis` 或 `niceeval/report` 导出。
 
 ```ts
 const assertionsByAttempt = attemptSlotProjection(assertionsProjector);
@@ -34,7 +35,7 @@ declare const selectedRunProjection: <Value>(
 ) => RecordProjection<"selected-run", Value>;
 ```
 
-公开执行面只有：
+内部执行面只有：
 
 ```ts
 declare const projectAnalysisSample: <
@@ -58,8 +59,9 @@ declare const projectAnalysisSample: <
 依赖可以由普通控制流动态决定。host 可以按 declaration identity 做 execution-local memoization，但不能在 I/O 前
 声称知道任意 Analysis 程序的完整 projection closure，也不能按未来调用提供全图预算或预取。
 
-Report 可以用自己的 `reportInputs()` 枚举一个 consumer-local 的有限 declaration 集合。这个清单没有公共 node、
-edge、`dependsOn`、graph brand 或全图调度保证，因此不把通用 Projection API 变成 PLAN-2。
+Report 不取得这些 declarations。它通过受限 `ReportSample` 请求 Analysis fields；host 在每次 `aggregate()` 中把 field 所需
+projections 编译为 consumer-local 的有限执行闭包。这个闭包没有公共 node、edge、`dependsOn` 或 graph brand，因此不把
+Projection API 变成 PLAN-2。
 
 输出对全部 logical slots 穷尽对齐。excluded、not-recorded 与 core-invalid 不读 Attachment。
 included 保留 exact owner，也保留完整的 Attachment 六态。
@@ -84,10 +86,10 @@ throw 是 defect，interruption 保持 Cause；两者都不能伪装成 Attachme
 - P1：按 owner locator 去重读取，但复制成十个 slot entries。
 - P2：只为 included entry 读取 Attachment，并原样保留其它 Sample states。
 - P3：普通控制流可以在运行中跳过 Sources；host 因而不承诺预知任意 Analysis 闭包。
-- P4：Report manifest 可预列自己的 finite declarations，但不获得通用 graph guarantee。
+- P4：Report 的一次 `aggregate()` 只触发所请求 fields 的 finite declarations，不获得通用 graph guarantee。
 
 ## Limits 与扩展
 
 单 package closure、entry count、同一 generation 内的并发读取与 execution budget 由 Record 和 Projection limits
-共同约束。第三方只通过 typed `RecordAttachmentProjector`、三种 factory 与唯一 direct primitive 扩展；不能注册
-reader callback。官方 API 不提供 `projectGraph`。
+共同约束。普通第三方不扩展 Attachment projector；领域 SDK 通过固定 Metric、Score、Artifact definitions 与 Analysis fields
+扩展。内部 host 不能注册 reader callback，公共 API 也不提供 `projectGraph`。

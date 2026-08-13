@@ -1,91 +1,100 @@
-# Record → Report 设计地图
+# Capture → Analysis → Report 设计地图
 
-这是一张跨决策地图，不是 Design Decision。它没有自己的 PLAN，因为组合关系本身没有额外的互斥选择。
-各层只有在存在独立目标、稳定 seam 与真实互斥方案时才单独开题。
+这是一张跨决策地图，不是新的产品层。已经定稿的公共契约见
+[Capture → Analysis → Report Roadmap](../roadmap/record-analysis-report/README.md)；本页只说明公共三层怎样落到内部 seam。
 
-已经定稿的组合契约见 [Record → Analysis → Report Roadmap](../roadmap/record-analysis-report/README.md)。产品对外只用
-三层心智；本页继续展开 Analysis 内部 seam，方便定位各项 Design Decision。
-
-## 对外三层心智
+## 对外只有三层
 
 ```text
-Record ──► Analysis ──► Report
-事实       解释事实       呈现解释结果
+Capture                         Analysis                         Report
+定义并提交 Metric/Score/Artifact  定义 Dimension/Measure/Relation  用 aggregate 取 closed rows 并呈现
 ```
 
-Sample、Projection、Relations 与 Derivation 都在 Analysis 内。它们拥有不同 correctness seam，但不是要求普通
-用户先记住的四层产品模型。
+普通插件作者不接触 Record，Report 作者也不接触 Projection、reader 或 migration。Record 是 NiceEval 的内部持久化边界；
+Sample、Projection 与 Relations 是 Analysis 执行所依赖的内部 correctness seams，不是第四、第五套用户 SDK。
 
-## 依赖方向
+## 内部依赖方向
 
 ```text
-Record storage ─→ Record access runtime / FrozenRecordView ─┬─→ reuse planning → ExecutionReusePlan
-                                                            │
-Record Core ── selection ──→ Sample（固定 population）──────┤
-      │                                                     │
-      └─ RecordAttachment + layout ─→ typed family access ──┤
-                                                            ▼
-Projection API（在 live handle 上读取并单包解释）
-  ↓ closed Sample-aligned local views
-Relations API（跨包结构关系决策）
-  ↓ closed exhaustive relation values
-Derivation（普通纯函数基线）
-  ↓ ordinary closed values（显式保留口径、coverage、issues 与 refs）
-Report authoring（已裁决：static page + ordinary values）
+Capture definitions + registered producer
+  ↓ total obligations（available / unavailable / failed / unsealed）
+fixed Metric / Score / Artifact envelopes
+  ↓ platform-owned Record writer + adjacent converters
+Record snapshot + frozen Sample population
+  ↓ internal Projection + Relations
+Analysis fields（Dimension / Measure / Relation）
+  ↓ await aggregate(reportSample, request)
+closed typed rows（MetricValue / issues / refs / stable row key）
+  ↓ Bars / Table / Scatter / semantic components
+closed semantic tree
+  ↓ terminal / Web / static hosts
 ```
 
-Sample 与 typed family access 是在 Projection 汇合的两条输入。Sample 决定 population，durable layout 决定怎样
-读取 owner package；任何一支都不能独自形成 Report rows。
+这条方向不可反转：Report 不能读取 Record；Analysis 不能写事实；Capture 不能决定聚合口径或展示形状。
 
-Reuse planning 与 Report 是两个消费目的，不是两套 Record。它们共用 `FrozenRecordView` 的 Core、Attachment
-decoder 与 projector；前者形成当前 target 的 reuse/gap，后者形成历史 Sample 与 closed projections。
-[Record access runtime](record-runtime/DECISION.md) 已为 Roadmap 选择统一 root runtime、generation 与 verified
-cache 生命周期。
+## 每层屏蔽什么
 
-## 各层为什么这样落文档
-
-| 层 | 文档形态 | 理由 |
+| 公共层 | 作者看到 | 被屏蔽的细节 |
 |---|---|---|
-| Record Core | [Feature](../feature/record/README.md) | portable Core、owner 与读取公理已经固定 |
-| Record access runtime | [Design Decision](record-runtime/DECISION.md) | 已为 Roadmap 采纳 PLAN-2，统一 root authority、generations 与 verified cache |
-| Observability layout | [Design Decision](observability-package-layout/DECISION.md) | 已为 Roadmap 采纳 PLAN-1；七个 logical family 各自拥有 definition 与 migration |
-| Sample | [Feature](../feature/sample/README.md) | selection、四态与 frozen denominator 已固定；fluent/callback 只是语法 |
-| Projection | [Design Decision](projection-api/DECISION.md) | 已为 Roadmap 采纳 PLAN-1 direct call；Report 只静态闭合自己的 manifest |
-| Relations | [Design Decision](relations-api/DECISION.md) | 已为 Roadmap 采纳 PLAN-1 pure assembler，并保留穷尽 population |
-| Derivation | 已采用普通函数形态 | managed graph 会重开失败隔离与共享执行契约，不能为目录对称擅自新增 |
-| Report | [既有 Decision](report-authoring/DECISION.md) | 已采纳 static page + ordinary values，不建立第二门查询语言 |
+| Capture | `defineMetric` / `defineScore` / `defineArtifact`、producer、typed token、`seal` | Record package、owner layout、lock、cache、generation、编码与迁移 |
+| Analysis | `Dimension` / `Measure` / `Relation`、三段 reduction、`MetricValue`、`analyze` | Attachment traversal、slot join、decoder、snapshot lease |
+| Report | 受限 `ReportSample`、`await aggregate()`、closed rows、语义组件 | Projection manifest、Calculation registration、branded ids、Record reader、renderer 差异 |
 
-## 合法组合
+## 内部设计决策
 
-定稿组合是 Record runtime PLAN-2 × Observability layout PLAN-1 × Projection PLAN-1 × Relations PLAN-1 ×
-ordinary Derivation × Report PLAN-5。下表继续说明候选之间的结构约束，不把未采用组合写成产品契约。
-
-| 上下层组合 | 是否合法 | 原因 |
+| seam | 采用的设计 | 对公共 API 的影响 |
 |---|---|---|
-| 任一 layout × 任一 Projection PLAN | 合法 | `LayoutState` 参数隔离候选专属读取状态 |
-| 任一 Projection PLAN × 任一 Relations PLAN | 合法 | Relations 只消费 closed local views |
-| Relations × ordinary Derivation × report PLAN-5 | 合法 | Report 只消费普通结果值 |
-| managed Derivation × 当前 report PLAN-5 | 非法 | 它新增 host dependency、去重与局部失败语义，必须重开 report-authoring |
-| lazy Relations query × 当前任一 Relations PLAN | 非法 | lazy filter/group/Measure 已越过结构关系进入 Derivation |
-| Report 直接读取 Record/package | 非法 | 绕过 Sample denominator、Projection 状态与官方无特权边界 |
+| Record runtime | [PLAN-2](record-runtime/PLAN-2/README.md) | 单 root authority、generation 与 verified cache 全部留在 host 内 |
+| durable layout | [PLAN-1](observability-package-layout/PLAN-1/README.md) | 平台固定 Metric/Score/Artifact envelopes，并拥有 converter 链 |
+| Projection | [PLAN-1](projection-api/PLAN-1/README.md) | direct projection 只供 Analysis/host 实现；Report 不获得 projection handle |
+| Relations | [PLAN-1](relations-api/PLAN-1/README.md) | 跨包关系先形成 closed、穷尽的 Analysis value |
+| Report | [PLAN-7](report-authoring/PLAN-7/README.md) | callback 只拿受限 sample；每次 `aggregate` 编译运行时局部 field DAG |
+
+这些方案的组合不是把五层都公开。它们分别守住存储、读取、关系与执行正确性，最后折叠成三套按角色划分的作者 API。
+
+## 为什么 Report 选择运行时局部 DAG
+
+Report 作者需要依据已经得到的 rows 决定后续显示或取数，因此保留普通 async callback：
+
+```tsx
+const overview = definePage({
+  id: "overview",
+  route: "/",
+  render: async ({ sample }) => {
+    const rows = await aggregate(sample, {
+      by: { agent },
+      values: { passRate, costUSD },
+    });
+
+    return <Bars rows={rows} x="agent" y="passRate" />;
+  },
+});
+```
+
+每次 `aggregate` 只为本次请求编译有限 field DAG，并在同一 execution 内按 exact field identity memoize。callback 返回后，
+host 才冻结 semantic tree。这样保留 0.12.1 的业务 DX，同时守住 population、denominator、evidence、requested-page
+isolation 与多 renderer 同义；放弃的是 callback 执行前预编译整份 Report 的所有依赖。
 
 ## Attempt detail 的 owner routing
 
-1. Sample 用 Core 选择 logical slots，并查找 exact Attempt 与 origin Run。
-2. Projection 按公开 `RecordProjection` declaration 读取 Assertions、Verdict、Score、Sources、Timing 等 owner package。
-3. Relations 用 durable anchors 对齐 send、operation、assertion 与 source site；没有 anchor 就保留 unmatched。
-4. 普通 Derivation 形成 `AttemptDetailsInput`、coverage 与 evidence values。
-5. 参数化 Page 的 render 取得这些 ordinary closed values；官方 standard page 不使用私有 reader 或 legacy evidence。
+1. Sample 用 Record Core 选择 logical slots，并绑定 exact Attempt 与 origin Run。
+2. 内部 Projection 解码 Metric、Score、Artifact 与官方运行事实。
+3. Relations 用 durable anchors 对齐 assertion、operation、source site 与 artifact；没有 anchor 就保留 unmatched。
+4. Analysis field 形成带 coverage、issues 与 refs 的 closed rows。
+5. 参数化 Page 用稳定 row key 与 refs 形成详情 route；官方与用户 Report 都不取得私有 reader。
 
-## 旧复合设计迁移索引
+## 扩展归属
 
-| 原 record-to-report-dx 内容 | 新归属 |
-|---|---|
-| PLAN-1 static closure | Projection PLAN-2；derive 与 consumer-local failure 属于 managed Derivation |
-| PLAN-2 dynamic reads / pure joins | Projection PLAN-1 / Relations PLAN-1；loader 边界链接 report-authoring PLAN-5 |
-| PLAN-3 structural relations | Relations PLAN-2；filter、group、Measure 与 planner isolation 会重开 Derivation |
-| PLAN-4 三层或四层 | report-authoring 的历史理由；runtime 层数由真实 guarantee 决定 |
-| PLAN-5 inventory / lifecycle | observability-package-layout PLAN-2 |
-| PLAN-5 static projection graph | projection-api PLAN-2 |
-| PLAN-5 relation builder | relations-api PLAN-2 |
-| 原 C1～C14 | C1/C5 → Sample；C2/C6/C9/C10 → Projection；C13 → Relations；C3/C4/C7/C8/C12 → report-authoring；C11/C14 → layout 与 reader limits |
+| 想扩展什么 | 应该做什么 | 不应该做什么 |
+|---|---|---|
+| 新的数值或状态事实 | 定义 Metric 或 Score，并注册 Capture producer | 自定义 Record Attachment schema |
+| 大文本、diff、trace、SQL query/result | 定义 Artifact；需要数值判分时另定义 Score/Metric | 把任意 JSON 塞入 Metric attributes |
+| 新分组、公式或跨事实关系 | 增加 Analysis Dimension / Measure / Relation | 在 Report 里手写 Record join 与 denominator |
+| 新表格、图表或详情页 | 组合 `aggregate` 与既有 semantic components | 在 renderer 中重新查询数据 |
+| 新 host primitive | 修改 NiceEval core，并同时定义 terminal、Web 与 static face | 由普通插件注册带任意执行权限的 renderer |
+
+## 演进与迁移
+
+定义兼容演进保持相同 definition identity；语义变化创建新的 Metric/Score/Artifact id。持久化 schema 的 converter 由平台随版本
+发布，并且只能相邻、纯函数、确定性地转换。打开 snapshot 时必须先完成完整 converter 链；缺步、歧义、校验失败或未知新版本一律
+fail closed。应用配置不安装 converter，也不执行历史第三方代码。

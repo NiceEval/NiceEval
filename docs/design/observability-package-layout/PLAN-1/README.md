@@ -1,6 +1,6 @@
-# PLAN-1：七个逻辑 Observability families
+# PLAN-1：七个官方逻辑 Observability families
 
-七个 owner-specific entries 继续作为独立 RecordAttachment family。每个 family 拥有自己的 schema、limit、
+七个官方 owner-specific entries 继续作为独立 RecordAttachment family。每个 family 拥有自己的 schema、limit、
 collection state 与 owner-local migration。
 
 ## 契约
@@ -22,7 +22,7 @@ collection state 与 owner-local migration。
   `ProjectedSample`；本方案不产生 capture-expectation。
 - Report 需要 operation 的 usage、timing 与 conversation 时，分别投影对应 family，再交给
   Relations；不能把数组位置或时间邻近当 join evidence。
-- 新 family 可以独立增加，不改变 Record major。
+- 新官方 family 只能由 NiceEval core 增加，不改变 Record major。普通第三方使用固定 Metric、Score 或 Artifact envelope。
 
 OTel 是 timing collector 的一种内存输入，不是 `niceeval.timing/v1` 中的 durable source。只有已经绑定 exact
 owner、经过验证的 owner-clock domain、稳定 phase / label 与 capture-time anchor 的输入才能形成 interval。
@@ -63,5 +63,6 @@ unavailable、migration-required、migration-unavailable、unsupported 与 inval
 
 ## Limits 与扩展
 
-每个 family 独立声明 payload、items 与 closure bounds。新增事实权威时可以新增 family；合并旧 families
-需要新的跨 family maintenance 设计，不能使用 owner-local converter 假装原子迁移。
+每个 family 独立声明 payload、items 与 closure bounds。新增官方事实权威时，NiceEval core 可以新增 family；普通第三方不得
+注册 family、schema 或 converter。合并旧 families 需要新的跨 family maintenance 设计，不能使用 owner-local converter 假装
+原子迁移。

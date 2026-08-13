@@ -1,6 +1,6 @@
 # 目标与要求
 
-**相关文档**：[README](README.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md) · [DECISION](DECISION.md)
+**相关文档**：[README](README.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md) · [PLAN-7](PLAN-7/README.md) · [DECISION](DECISION.md)
 
 ---
 
@@ -23,9 +23,9 @@
   每个读数格保留有效样本数、涵盖总数和它涵盖的全部 attempt 引用。
 - **一份声明同时出 text 与 web 两面。**
   只有一面能读的能力不进作者面。
-- **Analysis materialization 是进程内 closed values。**
-  `ReportData` 只声明依赖；`ReportExecution` 的 closed semantic tree 才进入 renderer。浏览器包不含磁盘读取、结果根或
-  查询引擎。
+- **Analysis execution 只返回进程内 closed values。**
+  `aggregate()` 通过受限 `ReportSample` 请求 fields；`ReportExecution` 的 closed semantic tree 才进入 renderer。浏览器包不含
+  磁盘读取、结果根或查询引擎。
 - **自由度可枚举。**
   报告树是声明式结构，不是能求值的表达式语言。
 - **作者不必等库。**
@@ -63,13 +63,14 @@
 
 ### 扩展性
 
-14. 作者与官方使用同一套 Analysis fields、`ReportData` compiler 与 closed semantic components。
+14. 作者与官方使用同一套 Analysis fields、`aggregate()` executor 与 closed semantic components。
 15. 新增一种渲染形状要有判据，不能因为「这个数据源画出来长得不一样」就加原语。
 
 ### 交付
 
 16. web 面无 JavaScript 即完整可读；浏览器包不引入查询引擎或运行时依赖。
-17. 异步与 I/O 只发生在 host input phase；作者 component、Page 与 renderer 只消费 descriptors／closed values。
+17. 事实 I/O 只通过 `aggregate()` 的 host executor 发生；Page / component callback 只取得受限 `ReportSample` 与 closed rows，
+    renderer 只消费 closed semantic tree。
 18. 相同 semantic tree 与同一 renderer 版本产出字节级稳定的静态输出。
 
 ---

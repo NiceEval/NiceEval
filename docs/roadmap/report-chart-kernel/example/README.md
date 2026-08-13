@@ -5,28 +5,28 @@
 
 ## 最短写法
 
-Analysis-backed Table 直接接静态 `ReportData` declaration：
+Analysis-backed Table 直接接 `aggregate()` 返回的 closed rows：
 
 ```tsx
 import { Table, aggregate } from "niceeval/report";
 import { agent, costUSD, passRate } from "niceeval/analysis";
 
-const performance = aggregate({
-  by: { agent },
-  values: { passRate, costUSD },
-});
+export async function PerformanceTable({ sample }: { sample: ReportSample }) {
+  const performance = await aggregate(sample, {
+    by: { agent },
+    values: { passRate, costUSD },
+  });
 
-export function PerformanceTable() {
   return <Table rows={performance} />;
 }
 ```
 
-host 在 Page callback 前 materialize fields；Table 透传每行的 `ReportRowKey`，并逐 channel 保留 `MetricValue`。
-省略 `columns` 时按 declaration 的稳定字段顺序显示。
+`aggregate()` 局部执行 fields；Table 透传每行的 `ReportRowKey`，并逐 channel 保留 `MetricValue`。
+省略 `columns` 时按请求字段的稳定顺序显示。
 不传 `search` 或 `sort` 就不建立对应浏览状态，也不输出无用 controller payload。
 
 下面的普通数组示例只演示 presentation-only literal rows。它们不表示 Analysis 结果，不携带 `MetricValue`、coverage、
-evidence 或 `ReportTarget`；真实评测指标必须先形成 `ReportData`。
+evidence 或 `ReportTarget`；真实评测指标必须先由 `aggregate()` 形成 closed rows。
 
 ## 自定义列、搜索与排序
 
@@ -151,7 +151,7 @@ export function ResultTreeTable() {
 
 初始状态总是全部展开。
 presentation-only nested rows 的折叠只属于当前 Table 实例；API 不要求 `rowKey`，也不公开 `expanded` 或
-`onExpandedChange`。`ReportData` 走另一条 overload，并始终使用固有 `ReportRowKey`。
+`onExpandedChange`。Analysis-backed closed rows 走另一条 overload，并始终使用固有 `ReportRowKey`。
 页面重新装载或组件 remount 后回到全部展开。
 
 ## 先统一映射输入
@@ -196,7 +196,7 @@ const rows = apiNodes.map(toReportRow);
 ```
 
 这类映射只适用于与 Analysis 无关的 presentation-only literal input。Analysis-backed 数据整理必须定义
-Dimension／Measure，并让 `aggregate()` 形成 `ReportData`。Table renderer 不取数、不重新聚合，也不通过 accessor
+Dimension／Measure，并让 `aggregate()` 形成 closed rows。Table renderer 不取数、不重新聚合，也不通过 accessor
 callback 隐藏评测口径。
 
 ## 不同 schema 的子表

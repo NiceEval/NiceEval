@@ -2,7 +2,7 @@
 
 ## 裁决
 
-为 [Record → Analysis → Report Roadmap](../../roadmap/record-analysis-report/README.md) 采纳
+为 [Capture → Analysis → Report Roadmap](../../roadmap/record-analysis-report/README.md) 采纳
 [PLAN-1](PLAN-1/README.md)：领域 package 用 pure assembler 解释关系，host 验证 SameSample 输入与穷尽 population。
 
 这是 Roadmap 目标的选型裁决。该方向被产品采用前，产品没有独立的公共 Relations authoring contract；本裁决不能

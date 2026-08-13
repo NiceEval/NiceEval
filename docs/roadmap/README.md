@@ -29,8 +29,7 @@ Roadmap 与 Feature、Design 候选共用 [Feature Design Package](../_template/
 - [注入凭据的转写脱敏](credential-redaction/README.md) —— 已知凭据值的精确替换
 - [Prepare 阶段瞬时失败自愈](prepare-transient-retry/README.md) —— 内置 prepare 命令的瞬时重试
 - [Plugins](plugins/README.md) —— 在 Eval、Experiment 与 Eval Group 上组合带稳定身份的生命周期
-- [RecordAttachment adapter SPI](record-attachment-authoring/README.md) —— 领域 SDK 用 sealed value、opaque installation 与 owner-specific binding 连接中立写入核
-- [Record → Analysis → Report](record-analysis-report/README.md) —— 普通用户通过领域 API 进入 Analysis 与 Report 的三层心智
+- [Capture → Analysis → Report](record-analysis-report/README.md) —— 用户定义固定事实、比较口径与报告呈现；Record 与 migration 保持平台内部
 - [Docker Image](docker-image/README.md) —— 用统一 `dockerImage()` 声明预制镜像或按内容构建的镜像
 - [Chart 语义内核与报告交互控制器](report-chart-kernel/README.md) —— 双面语义模型、精确值 HTML、键盘焦点与 Table 渐进增强
 - [Assertion 作者面](assertion-authoring/README.md) —— 用 Fact 分离 matcher、判定、控制流与计分，并统一 scope、command 和 Sandbox 检查

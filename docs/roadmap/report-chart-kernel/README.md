@@ -101,7 +101,7 @@ SVG、精确值表与增强 payload 来自同一次 web 投影。
 Evidence 与未包装的 external scalar 共用数值轴时，作者必须声明具名 axis 及其 `format`。
 axis 是 unit、format、better 与 bounds 的共同语义 owner，external scalar 不会被包装成伪 MetricValue。
 
-`ReportData` evidence series 的读数字段必须是 `MetricValue`，并逐 channel 保留 refs 与 coverage。
+Analysis-backed closed rows 的读数字段必须是 `MetricValue`，并逐 channel 保留 refs 与 coverage。
 point target 只来自具名 evidence family 的条件式默认值，或 object-bound `pointTarget`。
 `external` series 只接 JSON scalar，没有 Attempt refs，也不能声明 `pointTarget`。
 
@@ -123,7 +123,7 @@ point target 只来自具名 evidence family 的条件式默认值，或 object-
 | 全图只有一种证据模式 | 每个 series 独立声明 EvidenceRow 或 `external` |
 | 字段名拼接 SVG 可访问名 | `Chart` 与便利组件必填 `label` |
 
-`Dataset` 只作为内核规范化 rows 的内部类型；普通报告作者用 `ReportData` 输入 Evidence 图表，external series 才传带
+`Dataset` 只作为内核规范化 rows 的内部类型；普通报告作者用 `aggregate()` 返回的 closed rows 输入 Evidence 图表，external series 才传带
 显式 stable `key` 的 scalar rows。
 NiceEval 内建图表、官方报告、类型测试和文档示例都使用目标写法。
 

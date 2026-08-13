@@ -1,130 +1,194 @@
-# Record → Analysis → Report —— Lifecycle
+# Lifecycle
 
-## Invocation 到 Report
+本页固定 Capture、Analysis、Report 与 migration 的资源时序。公开类型见 [Library](library.md)。
+
+## 一次 fresh Attempt
 
 ```text
-openRecordAccessRuntime(root, recordAttachments)
-  │
-  ├─ invocation.withWriteSession
-  │    ├─ session.view → reuse planning → ExecutionReusePlan
-  │    ├─ gaps → actual Attempt owner
-  │    │           ├─ reserve mounted binding families
-  │    │           ├─ producer open / seal / release
-  │    │           ├─ sealed domain values → adapters
-  │    │           └─ canonical commands → sealed Attempt
-  │    ├─ Run bindings → sealed Run values → adapters
-  │    ├─ publish complete Runs
-  │    └─ close writer + shared maintenance lease
-  │
-  └─ invocation.withSnapshot
-       ├─ mint fresh generation
-       ├─ RecordReader → selectAnalysisSample() → AnalysisSampleHandle
-       ├─ compile ReportData → finite Analysis field closure
-       ├─ unique Projections + Relations + field materializers
-       ├─ materialized rows → Page / PageFamily / renderer
-       └─ close snapshot; ReportExecution remains self-contained
+Invocation planning
+  → resolve Eval + Plugin occurrences
+  → freeze Capture definitions and Producer identities
+  → open Attempt Scope
+      → register obligations as pending
+      → acquire Plugin child resources
+      → execute test
+      → domain SDK seals each obligation exactly once
+      → release Plugin child resources
+      → verify no pending obligation remains
+      → validate fixed envelopes and blob closure
+  → close Attempt Scope
+  → publish Attempt only after every barrier succeeds
 ```
 
-write session 与 Analysis snapshot 不重叠。`publish` 不刷新 `session.view`；只有 session 关闭后的 fresh snapshot 能看到
-本次 Run。
+### 次数
 
-## 锁与 Scope
+| 动作 | 每个 actual Attempt 的次数 |
+|---|---:|
+| Capture token registration | 每个声明 token 一次 |
+| producer resource acquire | 每个 mounted occurrence 一次 |
+| seal | 每个 obligation 恰好一次 |
+| producer release | 每个成功 acquire 的 occurrence 一次 |
+| Attempt publication | 最多一次 |
 
-| operation | 锁顺序 | Scope 结束时 |
+完整 carried Attempt 不重新打开 Scope，不运行 Plugin，也不重新 seal。历史事实是否满足新 target 的 reuse policy，由 reuse planning
+单独裁决。
+
+## Setup、test 与 release
+
+Capture producer 可以在 setup 前读取初始值，在 release 前读取终值：
+
+```text
+Plugin eval setup
+  → read initial value
+  → t.send / test activity
+Plugin eval release
+  → read final value
+  → seal obligation
+  → release device handle
+```
+
+SDK 必须在 acquire 资源前登记可执行 cleanup。test 抛错后仍运行 release；producer 可以封口 `failed`，但不能把异常吞成 missing。
+
+release 出现以下情况时 Attempt 失败：
+
+- required obligation explicit failed；
+- 任何 obligation 未封口；
+- 重复或 late seal；
+- coordinate / rubric 不完整；
+- blob closure 写入失败；
+- cleanup 破坏了 publication barrier。
+
+`required: false` 只允许 explicit failed / unavailable 成为可分析事实，不允许 producer 不履行 obligation。
+
+## 同一个 SDK 挂载多次
+
+每个 Plugin occurrence 拥有独立 Producer identity 与 Capture token occurrence：
+
+```ts
+plugins: [
+  gpuEnergy({ meter: nvmlEnergyMeter({ device: 0 }) }),
+  gpuEnergy({ meter: nvmlEnergyMeter({ device: 1 }) }),
+]
+```
+
+SDK 必须通过 labels 或不同 Metric identity 让 coordinate 集合保持唯一。两个 occurrence 不能向同一个 obligation seal，也不能靠
+调用顺序区分 producer。
+
+## Invocation 写后读取
+
+```text
+open RecordAccessRuntime
+  → snapshot facet: freeze reuse-planning view
+  → invocation facet: open write session
+      → execute gaps
+      → publish complete Runs
+  → close write session
+  → snapshot facet: open fresh Analysis view
+      → build frozen Sample
+      → execute Analysis / Report
+  → close Analysis view
+  → close RecordAccessRuntime
+```
+
+写后 Report 不复用写前 frozen view。fresh Analysis view 只在 write session 完全释放后打开，因此不会与自己的写锁形成死锁，也
+不会漏掉刚发布的 Run。
+
+## Analysis call
+
+```text
+analyze(sample, fields)
+  → bind exact frozen Sample
+  → validate one nominal population or explicit relations
+  → compile requested field DAG
+  → reject cycle / identity collision / producer mismatch
+  → read fixed envelopes through host readers
+  → calculate Dimension and Measure values
+  → return closed rows with MetricValue and refs
+```
+
+同一次 Analysis execution 对 exact field dependency identity 去重。一个 call 的失败不改写 Record；`unsupported`、`unavailable`、
+`invalid` 与 `missing` 形成不同 issue / state。
+
+## Report request
+
+```text
+show / view / static request
+  → select frozen Sample
+  → create ReportExecution
+  → resolve requested Page instance
+  → call Page render once with ReportSample
+      → aggregate A
+          → compile A field DAG
+          → calculate or reuse cached results
+          → return closed rows
+      → optional branch on rows
+      → optional aggregate B
+      → compose semantic nodes
+  → validate closed tree
+  → render requested face
+  → release Record view and execution cache
+```
+
+Page callback 不做 discovery run。调用几次 `aggregate()`，就闭合几张本次实际需要的有限 DAG。相同 field dependency 在同一次
+execution 中只计算一次。
+
+### 本机 view
+
+每次页面请求可以建立新的 `ReportExecution`。不同请求不承诺共享 field cache；它们各自冻结 Sample，并在页面完成后释放资源。
+
+### Static export
+
+static export 在一次 `ReportExecution` 中枚举目标 Page 与 PageFamily instances：
+
+```text
+freeze one Sample
+  → enumerate target pages
+  → execute each instance once
+  → share exact field cache across instances
+  → close every semantic tree
+  → publish target directory atomically
+```
+
+任一目标 Page 失败时，不发布半成品目录。已经生成的临时内容留在 host 临时目录并按失败 cleanup 规则删除。
+
+## Migration
+
+```text
+niceeval migrate
+  → obtain maintenance lock
+  → freeze exact source snapshot
+  → inspect Core + all fixed envelopes + blob closure
+  → build opaque plan
+  → print plan and release lock
+
+niceeval migrate --yes
+  → obtain maintenance lock
+  → revalidate exact plan identity
+  → create recovery point
+  → run platform converters in staging snapshot
+  → carry unknown envelopes and blobs byte-for-byte
+  → validate complete staged snapshot
+  → atomically publish
+  → write receipt
+```
+
+计划与授权只对 exact source snapshot 有效。source 改变后必须重新 plan。无法无损携带 unknown envelope 或 blob closure 时，
+staging 失败，source 不变，也不产出 receipt。
+
+迁移不加载领域 package converter。package 缺失只影响 typed Analysis；generic Metric / Score / Artifact 仍可迁移和检查。
+
+## Failure ownership
+
+| 失败 | owner | 后果 |
 |---|---|---|
-| `withWriteSession()` | shared maintenance → exclusive writer | drain bindings／commands，释放 writer 与 maintenance lease |
-| `withSnapshot()` | shared maintenance | 关闭 generation 与 owner handles，释放 maintenance lease |
-| `migrate()` | exclusive maintenance | sentinel 与 durable commit 收束后释放 |
+| Capture definition 不合法 | definition load | Eval / Plugin 无法进入 planning |
+| producer contract violation | Attempt | Attempt 不发布 |
+| optional producer explicit failed | Capture fact | Attempt 可结束；Analysis 保留 failed state |
+| field cycle / population mismatch | Analysis request | 该 Analysis / Page 失败 |
+| Page callback 失败 | Page instance | 其它 Page 可继续；static export 整体不发布 |
+| renderer 失败 | requested face | closed tree 保留为诊断输入；不改 Record |
+| migration preflight 失败 | plan | 不产生 authorization |
+| converter / validation 失败 | staging snapshot | source 不变，不产出 receipt |
 
-outer runtime 不长期持 lease。长寿 runtime 与 verified cache 不成为 migration busy 原因。
-
-## Attempt producer 时序
-
-actual gap Attempt 才执行：
-
-```text
-owner open + reserve + pending obligations
-  → Agent ready
-  → bindings open in linked order
-  → beforeAttempt hooks
-  → Eval body / sends
-  → afterAttempt hooks
-  → bindings seal and release in reverse order
-  → sealed values adapt
-  → canonical commands drain
-  → domain aggregate validates
-  → Attempt seals
-```
-
-一个 producer open、seal、release 各一次。session 只住在该 Attempt 的 child Scope。seal 接收穷尽 primary exit；release
-失败会阻止 adaptation。正常采集缺口形成领域 explicit state，不能靠 missing Attachment 继续发布。
-
-Effect 3.22.1 的 finalizer error 固定为 `never`。host 捕获 release 的完整 `Exit`／`Cause` 并写入 owner failure
-aggregation，再让 finalizer 自身收束为 `never`。typed failure、defect 与 interruption不能只 log 或折叠成 unavailable。
-
-carry／reuse 不打开 producer session，也不写新 Attachment。
-
-## Assertions、Evidence 与 Diff
-
-Sandbox／runner 先形成 frozen workspace diff 领域值。diff Assertion evaluator 与 File Diff adapter 消费同一值，避免判定
-与持久事实漂移。
-
-Assertions collector 按 declaration order 封口 subject、evidence、coverage、limitations 与 result。bounded evidence
-进入 Assertions payload；较大材料进入 Assertions 自有 blob closure。Diff 与 Assertions 是两个 official bindings，
-各自承担 total obligation。
-
-whole-Attempt aggregate 在 publication 前核对二者一致性。Assertions 的 diff material 只保存 schema identity 与
-preview，不借用 Diff 的 blob/path/ref。
-
-## Run producer 时序
-
-Run owner open 时登记 `recordAdapters.run` obligations。Run sessions 在 Experiment setup 前 acquire，在 teardown 后
-seal／release。Run domain values adaptation、aggregate validation、Attempt references 与 portable writes 全部成功后，
-writer 才创建 `complete`。
-
-Experiment Plugin 的 Attempt binding属于另一个 pair occurrence；它不会复用 Run session 或 grant。
-
-## Analysis snapshot
-
-一次 `withSnapshot()` mint 一个 generation，整个 Analysis 停留在 callback：
-
-1. selection 固定 selected Runs、logical slots 与 denominator；
-2. `analyze({ fields })` 或 ReportData 编译本次请求的有限 Analysis dependency closure；
-3. SDK 领域 Projection 在同一 handle 上至多执行一次；
-4. Relations 只消费 closed same-Sample projections，field materializer 只形成 aligned rows；
-5. Page／PageFamily callback 只消费 materialized closed rows，不能返回新 `ReportData`；
-6. semantic tree 闭合后关闭 generation，`ReportExecution` 不保留 Record capability。
-
-普通 Analysis 脚本可以根据已读值决定下一次 `analyze()`。一个 Report 的 `ReportData` dependencies 必须在 callback 前
-闭合，callback 不能追加 I/O。
-CLI 的 `executeReportFromRecord()` 只是 open reader → selection → `executeReport()` 的一次性组合入口，不建立第二条读路径。
-
-## 显式 migration
-
-```text
-maintenance.planMigration
-  → exact-match installed opaque capabilities
-  → build root-bound plan
-  → maintenance.authorizeMigration(exact plan, explicit decision)
-  → exclusive maintenance lock
-  → create migration.in-progress
-  → run adjacent converters
-  → shared schema / plain-data / closure validators
-  → durable commit
-  → remove and sync sentinel
-```
-
-普通 read 返回 `migration-required` 或 `migration-unavailable`。producer binding、Analysis 与 Report 都不调用 converter。
-Plugin mount 也不自动安装或迁移。
-
-迁移前形成的 `ReportExecution` 保持原状态。成功删除 sentinel 后，host 必须开新的 snapshot 并重新执行 Report；只有这份
-新 execution 能看见 current Attachment。converter、durable I/O 或 interruption 失败会保留 sentinel，后续 open fail
-closed，用户从 Git restore point 或自己的备份恢复。
-
-若一个未来 migration 必须原子改写多个 families，采用前必须另定义 migration group 的 authority、成员映射与 commit
-语义。缺少契约时明确 `migration-unavailable`，不靠 callback 顺序模拟事务。
-
-## 热重载
-
-`niceeval view` 每次 rebuild 都开独立 `withSnapshot()`。成功的新 `ReportExecution` 原子替换 last-good；失败保留
-last-good。last-good 不持 lease、reader 或 generation，因此不会阻止 writer 或 migration。
+失败不能跨层伪装：Capture failure 不是 Analysis missing，Analysis defect 不是 Report empty state，renderer failure 也不改变
+MetricValue。

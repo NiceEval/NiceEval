@@ -2,7 +2,7 @@
 
 ## 裁决
 
-为 [Record → Analysis → Report Roadmap](../../roadmap/record-analysis-report/README.md) 采纳
+为 [Capture → Analysis → Report Roadmap](../../roadmap/record-analysis-report/README.md) 采纳
 [PLAN-2](PLAN-2/README.md)：一个 canonical Record root 由同一个 `RecordAccessRuntime` 管理，并向 host mint
 snapshot、invocation 与 maintenance facets。
 
@@ -27,4 +27,4 @@ authority、generation allocator 或 verified material。调用者若自行拼�
 
 - 三种 facets、锁与 cache：[Roadmap Library](../../roadmap/record-analysis-report/library.md)。
 - Invocation→Report 时序：[Roadmap Lifecycle](../../roadmap/record-analysis-report/lifecycle.md)。
-- domain adapter authority：[RecordAttachment adapter SPI](../../roadmap/record-attachment-authoring/README.md)。
+- 领域事实写入边界：[Capture → Analysis → Report](../../roadmap/record-analysis-report/architecture.md)。
