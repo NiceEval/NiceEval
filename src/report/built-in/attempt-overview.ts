@@ -17,6 +17,10 @@ import {
   type Verdict,
 } from "../../projection/index.ts";
 import {
+  attemptDiagnosticsProjector,
+  type AttemptDiagnosticsView,
+} from "../../o11y/record/family-projectors.ts";
+import {
   definePage,
   defineReport,
   reportComponentId,
@@ -50,6 +54,7 @@ const attemptOverviewInputs = reportInputs({
   assertions: attemptSlotProjection(assertionsProjector),
   verdict: attemptSlotProjection(verdictProjector),
   score: attemptSlotProjection(scoreProjector),
+  diagnostics: attemptSlotProjection(attemptDiagnosticsProjector),
 });
 
 type AttemptSlotEntry<Value> = ProjectedSample<
@@ -73,6 +78,7 @@ interface AttemptOverviewInputs {
   readonly assertions: ProjectedSample<"attempt-slot", AssertionsSourceProjection>;
   readonly verdict: ProjectedSample<"attempt-slot", Verdict>;
   readonly score: ProjectedSample<"attempt-slot", Score>;
+  readonly diagnostics: ProjectedSample<"attempt-slot", AttemptDiagnosticsView>;
 }
 
 interface AttemptOverviewSlot {
@@ -81,6 +87,7 @@ interface AttemptOverviewSlot {
   readonly assertions: ProjectedRecordAttachmentResult<AssertionsSourceProjection> | undefined;
   readonly verdict: ProjectedRecordAttachmentResult<Verdict>;
   readonly score: ProjectedRecordAttachmentResult<Score> | undefined;
+  readonly diagnostics: ProjectedRecordAttachmentResult<AttemptDiagnosticsView> | undefined;
 }
 
 /**
@@ -128,6 +135,7 @@ function assembleAttemptOverviewSlots(
 ): readonly AttemptOverviewSlot[] {
   const assertionsBySlot = entriesBySlot(inputs.assertions);
   const scoreBySlot = entriesBySlot(inputs.score);
+  const diagnosticsBySlot = entriesBySlot(inputs.diagnostics);
   const plansByRun = new Map<string, EvaluationPlanEntry>();
   for (const entry of inputs["evaluation-plan"].entries) {
     plansByRun.set(entry.run.runId, entry);
@@ -143,6 +151,7 @@ function assembleAttemptOverviewSlots(
       assertions: attachmentForSlot(assertionsBySlot.get(key)),
       verdict: entry.attachment,
       score: attachmentForSlot(scoreBySlot.get(key)),
+      diagnostics: attachmentForSlot(diagnosticsBySlot.get(key)),
     }));
   }
   return Object.freeze(slots);
@@ -181,6 +190,7 @@ function attemptOverviewSlotBlock(input: AttemptOverviewSlot): ReportBlock {
         heading: "Verdict",
         children: verdictBlocks(input.verdict),
       }),
+      ...executionErrorBlocks(input.diagnostics),
       reportSection({
         heading: "Assertions",
         children: assertionBlocks(input.assertions),
@@ -191,6 +201,32 @@ function attemptOverviewSlotBlock(input: AttemptOverviewSlot): ReportBlock {
       }),
     ],
   });
+}
+
+function executionErrorBlocks(
+  diagnostics: ProjectedRecordAttachmentResult<AttemptDiagnosticsView> | undefined,
+): readonly ReportBlock[] {
+  if (diagnostics?.state !== "available") return [];
+  const errors = diagnostics.value.diagnostics.filter(
+    (diagnostic) => diagnostic.kind === "execution-error",
+  );
+  if (errors.length === 0) return [];
+  return [reportSection({
+    heading: "Execution error",
+    children: [reportTable({
+      caption: "Execution errors",
+      columns: [
+        { key: "code", label: "Code" },
+        { key: "phase", label: "Phase" },
+        { key: "summary", label: "Summary" },
+      ],
+      rows: errors.map((error) => ({
+        code: error.code,
+        phase: error.phase,
+        summary: error.summary,
+      })),
+    })],
+  })];
 }
 
 function identityBlocks(

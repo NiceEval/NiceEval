@@ -32,7 +32,7 @@
 | ---------------- | ----------------------- | --------------------------------------------------------------- |
 | 正常             | 断言通过的 Eval         | 按 Eval 级折叠后退出 `0`                                        |
 | deliberate-fail  | 断言必然不通过的 Eval   | Attempt 的 Verdict 为 `failed`，进程非零退出                          |
-| deliberate-error | 必然产生执行错误的 Eval | 执行错误通道事件 支撑 Attempt 的 `errored` Verdict，进程非零退出，且与 `failed` 判然有别 |
+| deliberate-error | `sandbox.prepare` 在 Context 建立前确定性失败 | Run 仍完整发布，Attempt 为 `errored`，`show @<locator>` 显示阶段、退出码与摘要，所有输出不含 `[object Object]`，且进程非零退出、与 `failed` 判然有别 |
 
 ### 缓存
 

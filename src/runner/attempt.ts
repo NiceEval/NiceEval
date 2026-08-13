@@ -36,6 +36,7 @@ import {
 import {
   AssertionAuthoringClosedError,
 } from "../assertions/api.ts";
+import { createAssertionsRuntime } from "../assertions/runtime.ts";
 import type {
   AssertionStopError,
   AssertionsRuntime,
@@ -445,6 +446,29 @@ export function runAttemptEffect<
       log(`${u.message}${suffix}`);
     },
     diagnostic: recordDiagnostic,
+  };
+
+  const sealExecutionError = (): Effect.Effect<
+    SealedAttemptAssertions,
+    import("../assertions/api.ts").AssertionSealError,
+    SealRequirements
+  > => {
+    const runtime = liveAssertions ?? (evalDef.evaluationKind === "score"
+      ? createAssertionsRuntime({ evaluationKind: "score" })
+      : createAssertionsRuntime({ evaluationKind: "pass" }));
+    if (liveAssertions === undefined) {
+      // Sandbox acquire/prepare may fail before TestContext exists. It is still
+      // an executed Attempt, so seal its empty assertion set with the same
+      // execution-error terminal used by failures after Context construction.
+      liveAssertions = runtime;
+      sourceCapture.attachAssertions(runtime);
+    }
+    return sealAttemptAssertions(runtime, { execution: "errored" }).pipe(
+      Effect.tap(() => Effect.sync(() => {
+        assertionsSealed = true;
+      })),
+      Effect.tap((sealed) => onSealedEvaluation?.(sealed) ?? Effect.void),
+    );
   };
 
   // 同时保留最近 20 条进度消息,timeout 时嵌入 error 字段方便定位卡在哪一步。
@@ -1084,18 +1108,21 @@ export function runAttemptEffect<
               ...(evalDef.evaluationKind === "score" ? { scoreResult: scoreFactOutcomeForAttemptError(error) } : {}),
               ...(commands.length > 0 ? { commands: [...commands] } : {}),
             };
-            if (liveAssertions === undefined) return Effect.succeed(fallback);
-            return sealAttemptAssertions(liveAssertions, {
-              execution: "errored",
-            }).pipe(
-              Effect.tap(() => Effect.sync(() => {
-                assertionsSealed = true;
-              })),
-              Effect.tap((sealed) => onSealedEvaluation?.(sealed) ?? Effect.void),
-              Effect.map((sealed) => withSealedAssertions(fallback, sealed)),
-              Effect.catchAll(() => Effect.succeed(fallback)),
-            );
+            return Effect.succeed(fallback);
           }),
+    ),
+    // A prepare/setup failure can be caught by runAttemptBody before a real
+    // TestContext exists. In that case the scoped body returns an errored
+    // value successfully, so catchAllCause above never runs. Enforce the
+    // Record boundary as an output postcondition: every executed errored
+    // Attempt owns one sealed (possibly empty) assertion result.
+    Effect.flatMap((result) =>
+      assertionsSealed || result.verdict !== "errored"
+        ? Effect.succeed(result)
+        : sealExecutionError().pipe(
+            Effect.map((sealed) => withSealedAssertions(result, sealed)),
+            Effect.catchAll(() => Effect.succeed(result)),
+          ),
     ),
     Effect.map((result) =>
       !timedOut || timeoutSealedAssertions === undefined
