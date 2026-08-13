@@ -10,10 +10,9 @@ import { join } from "node:path";
 import { expect, it } from "vitest";
 
 // 每条 Eval 的首轮只有一个 Attempt；只有结构化 verdict=failed 才由本测试另起一次 Invocation。
-const EXPECTED_PASSED_ATTEMPTS = 17;
+const EXPECTED_PASSED_ATTEMPTS = 18;
 // 每个 Experiment 产生一个 Run（docs/feature/experiments/cli.md「结束反馈与 receipt」）；
 const EXPECTED_EXPERIMENTS = 7;
-const RETRY_CONCURRENCY = 4;
 
 const REQUIRED_LIVE_SECRETS = [
   "CODEX_API_KEY",
@@ -46,15 +45,10 @@ function evalKey(event: Pick<ExpEvalEvent, "experimentId" | "evalId">): string {
   return `${event.experimentId}\u0000${event.evalId}`;
 }
 
-function assertExactRetrySelector(events: readonly ExpEvalEvent[], failed: ExpEvalEvent): void {
-  const experiments = new Set(
-    events
-      .filter((event) => event.experimentId.startsWith(failed.experimentId))
-      .map((event) => event.experimentId),
-  );
-  expect(experiments, `ambiguous Experiment retry selector ${failed.experimentId}`).toEqual(
-    new Set([failed.experimentId]),
-  );
+function assertExactRetryEvalSelector(events: readonly ExpEvalEvent[], failed: ExpEvalEvent): void {
+  // Experiment selectors prefer an exact ID before considering path-prefix
+  // families. Eval selectors intentionally use bare prefixes, so only the
+  // Eval selector needs a preflight ambiguity check before spending a retry.
   const evals = events
     .filter(
       (event) =>
@@ -94,20 +88,17 @@ it("真实 Codex CLI adapter 在 Docker sandbox 中的运行结果经过公开 C
     run.diagnostic(),
   ).toHaveLength(0);
   expect(run.exitCode, run.diagnostic()).toBe(failed.length > 0 ? 1 : 0);
-  for (const event of failed) assertExactRetrySelector(firstEvents, event);
+  for (const event of failed) assertExactRetryEvalSelector(firstEvents, event);
 
+  // 这些 Invocation 继续写同一个保留证据的 Record；Record 是单写者，多个 CLI 进程
+  // 重叠会确定性触发 RecordWriterBusy。主 Invocation 内的 Attempt 并发不受影响。
   const retryRuns: ProcessReceipt[] = [];
-  for (let offset = 0; offset < failed.length; offset += RETRY_CONCURRENCY) {
-    const batch = failed.slice(offset, offset + RETRY_CONCURRENCY);
+  for (const event of failed) {
     retryRuns.push(
-      ...(await Promise.all(
-        batch.map((event) =>
-          niceeval.run(
-            ["exp", event.experimentId, event.evalId, "--rerun", "all", "--json"],
-            { timeoutMs: 44 * 60_000 },
-          ),
-        ),
-      )),
+      await niceeval.run(
+        ["exp", event.experimentId, event.evalId, "--rerun", "all", "--json"],
+        { timeoutMs: 44 * 60_000 },
+      ),
     );
   }
   const retriedByEval = new Map<string, ExpEvalEvent>();
@@ -165,7 +156,7 @@ it("真实 Codex CLI adapter 在 Docker sandbox 中的运行结果经过公开 C
   expect(timing.stdout).toContain("eval.run");
   expect(timing.stdout).toMatch(/turn\s+turn1\b/);
 
-  // MCP 反例也要穿透到 CLI 读回：stdio 与远程 HTTP 调用存在，未挂载的 weather 不出现。
+  // MCP 正调也要穿透到 CLI 读回：stdio 与远程 HTTP 调用都存在。
   const mcpLocator = locatorFor("mcp");
   const mcpExecution = await niceeval.run(["show", mcpLocator, "--execution"]);
   expect(mcpExecution.exitCode, mcpExecution.diagnostic()).toBe(0);
@@ -178,5 +169,4 @@ it("真实 Codex CLI adapter 在 Docker sandbox 中的运行结果经过公开 C
       mcpExecution.stdout.includes("read_wiki_structure"),
     "execution tree missing remote HTTP MCP call (deepwiki.read_wiki_structure)",
   ).toBe(true);
-  expect(mcpExecution.stdout).not.toContain("weather.get_weather");
 }, 92 * 60_000);

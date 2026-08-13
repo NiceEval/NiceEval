@@ -36,6 +36,7 @@ import {
 import {
   AssertionAuthoringClosedError,
 } from "../assertions/api.ts";
+import { createAssertionsRuntime } from "../assertions/runtime.ts";
 import type {
   AssertionStopError,
   AssertionsRuntime,
@@ -1097,6 +1098,26 @@ export function runAttemptEffect<
             );
           }),
     ),
+    // A physical Attempt can fail before its TestContext exists (for example,
+    // an Agent ensure/setup failure). It still needs one sealed Assert-first
+    // result so Record can publish the errored origin instead of replacing the
+    // useful setup error with runner-record-attempt-invalid. No authoring
+    // runtime exists on this path, so create the Attempt's sole empty runtime
+    // and seal it only after the scoped execution has finished.
+    Effect.flatMap((result) => {
+      if (assertionsSealed || liveAssertions !== undefined) return Effect.succeed(result);
+      const runtime = evalDef.evaluationKind === "score"
+        ? createAssertionsRuntime({ evaluationKind: "score" })
+        : createAssertionsRuntime({ evaluationKind: "pass" });
+      liveAssertions = runtime;
+      return sealAttemptAssertions(runtime, { execution: "errored" }).pipe(
+        Effect.tap(() => Effect.sync(() => {
+          assertionsSealed = true;
+        })),
+        Effect.tap((sealed) => onSealedEvaluation?.(sealed) ?? Effect.void),
+        Effect.map((sealed) => withSealedAssertions(result, sealed)),
+      );
+    }),
     Effect.map((result) =>
       !timedOut || timeoutSealedAssertions === undefined
         ? result

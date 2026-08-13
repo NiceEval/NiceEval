@@ -1,0 +1,4 @@
+# configFile 反调移除 Codex 的 exec_command/write_stdin 工具。
+# Adapter 生成层拥有 model / provider / MCP / telemetry 等保留键，不在本文件重复声明。
+[features]
+shell_tool = false

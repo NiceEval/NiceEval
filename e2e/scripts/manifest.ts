@@ -2,7 +2,7 @@
 //
 // Contract: docs/engineering/testing/e2e/scenario-repos.md「Repo Manifest」.
 // This is the stable contract between the root orchestrator and every e2e
-// repo: schemaVersion/id/areas/lanes/executor/command/timeoutMinutes/secrets/
+// repo: schemaVersion/id/batch/areas/lanes/executor/command/timeoutMinutes/secrets/
 // requires/harness/paths/artifacts. Unknown fields are rejected, never
 // ignored, and there is no legacy `group` compatibility. `harness.testkit:
 // true` is the only true source of Testkit consumption intent — scenario
@@ -11,7 +11,7 @@
 
 import { posix } from "node:path";
 
-export const SCHEMA_VERSION = 1 as const;
+export const SCHEMA_VERSION = 2 as const;
 
 export const AREAS = [
   "eval",
@@ -35,6 +35,9 @@ export type Platform = (typeof PLATFORMS)[number];
 export const BROWSERS = ["chromium", "firefox", "webkit"] as const;
 export type Browser = (typeof BROWSERS)[number];
 
+/** Opaque, explicit CI co-placement key. It does not imply capabilities. */
+export type BatchId = string;
+
 /** The root runner currently executes scenario commands on the host only. */
 export type Executor = { kind: "host" };
 
@@ -52,8 +55,9 @@ export interface RepoHarness {
 }
 
 export interface E2ERepoManifest {
-  schemaVersion: 1;
+  schemaVersion: 2;
   id: string;
+  batch: BatchId;
   areas: readonly Area[];
   lanes: readonly Lane[];
   executor: Executor;
@@ -73,6 +77,7 @@ export type ManifestParseResult =
 const TOP_LEVEL_FIELDS = new Set([
   "schemaVersion",
   "id",
+  "batch",
   "areas",
   "lanes",
   "executor",
@@ -156,6 +161,11 @@ export function isCanonicalRelativePath(value: string): boolean {
   );
 }
 
+/** Stable and directly reusable in matrix, artifact, and diagnostic ids. */
+export function isCanonicalBatchId(value: string): boolean {
+  return /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(value);
+}
+
 function isCanonicalArtifactDirectory(value: string): boolean {
   return isCanonicalRelativePath(value) && !/[\[\]{}*?]/.test(value);
 }
@@ -210,6 +220,12 @@ export function parseManifest(raw: unknown, source: string): ManifestParseResult
   if (typeof raw.id !== "string" || !isCanonicalRelativePath(raw.id)) {
     errors.push(
       `${source}: "id" must be a canonical contained relative path (for example "adapter/ai-sdk"), got ${JSON.stringify(raw.id)}`,
+    );
+  }
+
+  if (typeof raw.batch !== "string" || !isCanonicalBatchId(raw.batch)) {
+    errors.push(
+      `${source}: "batch" must be a canonical lowercase placement id (for example "host-1"), got ${JSON.stringify(raw.batch)}`,
     );
   }
 
@@ -358,6 +374,7 @@ export function parseManifest(raw: unknown, source: string): ManifestParseResult
     manifest: {
       schemaVersion: SCHEMA_VERSION,
       id: raw.id as string,
+      batch: raw.batch as BatchId,
       areas: raw.areas as readonly Area[],
       lanes: raw.lanes as readonly Lane[],
       executor,

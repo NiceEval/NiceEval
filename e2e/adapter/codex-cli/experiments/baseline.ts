@@ -7,14 +7,16 @@ import { sandbox } from "../sandbox.ts";
 const agent = codexAgent({
   apiKey: process.env.CODEX_API_KEY,
   baseUrl: process.env.CODEX_BASE_URL,
+  configFile: "configs/shell-enabled.toml",
 });
 
 export default defineExperiment({
-  description: "codex-cli 基线闭环:coding 任务工具轨 / 会话续接 / usage 与实际模型",
+  description: "codex-cli 基线闭环:coding 工具轨 / configFile / 会话续接 / usage 与实际模型",
   agent,
   model: "gpt-5.6-luna",
   sandbox,
-  evals: ["coding-task", "session", "usage"],
+  flags: { shellTool: true },
+  evals: ["coding-task", "configfile", "session", "usage"],
   attempts: 1,
   budget: 3,
 });

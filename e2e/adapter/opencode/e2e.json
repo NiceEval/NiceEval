@@ -1,6 +1,7 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "adapter/opencode",
+  "batch": "docker-1",
   "areas": ["adapter", "sandbox"],
   "lanes": ["main", "nightly", "release"],
   "executor": { "kind": "host" },

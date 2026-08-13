@@ -30,6 +30,7 @@ function formatExecutor(executor: E2ERepoManifest["executor"]): string {
 function printRepo(repo: DiscoveredRepo): void {
   const { manifest } = repo;
   console.log(`- ${manifest.id}  [${manifest.areas.join(", ")}]`);
+  console.log(`    batch:    ${manifest.batch}`);
   console.log(`    lanes:    ${manifest.lanes.join(", ")}`);
   console.log(`    executor: ${formatExecutor(manifest.executor)}`);
   console.log(`    command:  ${manifest.command.join(" ")}`);
@@ -38,6 +39,7 @@ function printRepo(repo: DiscoveredRepo): void {
 
 interface MatrixEntry {
   id: string;
+  batch: E2ERepoManifest["batch"];
   dir: string;
   areas: E2ERepoManifest["areas"];
   lanes: E2ERepoManifest["lanes"];
@@ -49,6 +51,7 @@ interface MatrixEntry {
 function toMatrixEntry(repo: DiscoveredRepo, e2eRoot: string): MatrixEntry {
   return {
     id: repo.manifest.id,
+    batch: repo.manifest.batch,
     dir: relative(e2eRoot, repo.dir),
     areas: repo.manifest.areas,
     lanes: repo.manifest.lanes,

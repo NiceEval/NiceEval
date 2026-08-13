@@ -99,14 +99,14 @@ jobs:
         run: |
           set -euo pipefail
           plan_path="${RUNNER_TEMP}/release-plan.json"
-          pnpm e2e plan --lane release --no-diff --json > "$plan_path"
+          pnpm e2e plan --lane release --no-diff --batch --json > "$plan_path"
           if ! jq -e 'type == "array" and length > 0' "$plan_path" >/dev/null; then
             echo "::error::release lane 必须产生非空 Repo 计划"
             cat "$plan_path" || true
             exit 1
           fi
           echo "matrix=$(jq -c '.' "$plan_path")" >> "$GITHUB_OUTPUT"
-          echo "[release] planned $(jq 'length' "$plan_path") blocking Repo(s)"
+          echo "[release] planned $(jq '[.[].repoIds[]] | length' "$plan_path") blocking Repo(s) in $(jq 'length' "$plan_path") batch(es)"
 
       - name: Pack exact versioned candidate once
         id: pack
@@ -149,6 +149,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Resolve dependency cache inputs
+        id: dependency-cache
+        env:
+          REPO_DIRS_JSON: ${{ toJSON(matrix.dirs) }}
+        run: |
+          set -euo pipefail
+          {
+            echo 'paths<<EOF'
+            echo 'pnpm-lock.yaml'
+            while IFS= read -r repo_dir; do
+              lockfile="e2e/${repo_dir}/pnpm-lock.yaml"
+              test -f "$lockfile"
+              echo "$lockfile"
+            done < <(jq -r '.[]' <<< "$REPO_DIRS_JSON")
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
 
@@ -157,18 +174,35 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+          cache-dependency-path: ${{ steps.dependency-cache.outputs.paths }}
 
       - name: Install orchestrator dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Resolve cell manifests
+        id: cell
+        env:
+          REPO_IDS_JSON: ${{ toJSON(matrix.repoIds) }}
+          REPO_DIRS_JSON: ${{ toJSON(matrix.dirs) }}
+        run: |
+          set -euo pipefail
+          manifests_file="${RUNNER_TEMP}/release-cell-manifests.json"
+          jq -n \
+            --argjson ids "$REPO_IDS_JSON" \
+            --argjson dirs "$REPO_DIRS_JSON" \
+            'if ($ids | length) != ($dirs | length) or ($ids | length) == 0 then error("invalid release cell repo mapping") else [range(0; $ids | length) | {id: $ids[.], manifest: ("e2e/" + $dirs[.] + "/e2e.json")}] end' \
+            > "$manifests_file"
+          echo "manifests-file=${manifests_file}" >> "$GITHUB_OUTPUT"
+          echo "[release] cell ${{ matrix.id }}: $(jq -r '[.[].id] | join(", ")' "$manifests_file")"
+
       - name: Set up Python
-        if: contains(toJSON(matrix.requires), 'python')
+        if: contains(toJSON(matrix.requires.runtimes), '"python"') || contains(toJSON(matrix.requires.runtimes), '"python>=')
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Set up Playwright browsers
-        if: contains(toJSON(matrix.requires), 'chromium') || contains(toJSON(matrix.requires), 'firefox') || contains(toJSON(matrix.requires), 'webkit')
+        if: contains(matrix.requires.browsers, 'chromium') || contains(matrix.requires.browsers, 'firefox') || contains(matrix.requires.browsers, 'webkit')
         env:
           BROWSERS_JSON: ${{ toJSON(matrix.requires.browsers) }}
         run: |
@@ -199,7 +233,7 @@ jobs:
 
       - name: Inject declared release secrets
         env:
-          MANIFEST: e2e/${{ matrix.dir }}/e2e.json
+          MANIFESTS_FILE: ${{ steps.cell.outputs.manifests-file }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
           BUB_API_BASE: ${{ secrets.BUB_API_BASE }}
@@ -226,9 +260,12 @@ jobs:
             "OPENAI_API_KEY",
             "OPENAI_BASE_URL",
           ]);
-          const manifest = JSON.parse(fs.readFileSync(process.env.MANIFEST, "utf8"));
+          const cells = JSON.parse(fs.readFileSync(process.env.MANIFESTS_FILE, "utf8"));
+          const declared = [...new Set(cells.flatMap(({ manifest }) =>
+            JSON.parse(fs.readFileSync(manifest, "utf8")).secrets
+          ))];
           const lines = [];
-          for (const name of manifest.secrets) {
+          for (const name of declared) {
             if (!allowed.has(name)) throw new Error(`${name} is not in the release secret allowlist`);
             const value = process.env[name];
             if (typeof value !== "string" || value.length === 0) continue;
@@ -248,21 +285,31 @@ jobs:
           echo "safe=$safe" >> "$GITHUB_OUTPUT"
           echo "artifact-root=${RUNNER_TEMP}/niceeval-release-e2e/${safe}" >> "$GITHUB_OUTPUT"
 
-      - name: Run blocking release Repo
+      - name: Run blocking release Repo batch
         env:
           ARTIFACT_ROOT: ${{ steps.paths.outputs.artifact-root }}
           CANDIDATE: ${{ steps.candidate.outputs.path }}
-          REPO_ID: ${{ matrix.id }}
+          REPO_IDS_JSON: ${{ toJSON(matrix.repoIds) }}
+          REPO_CONCURRENCY: ${{ matrix.repoConcurrency }}
         run: |
           set -euo pipefail
           mkdir -p "$ARTIFACT_ROOT"
-          pnpm e2e run --candidate "$CANDIDATE" --repo "$REPO_ID" --artifact-root "$ARTIFACT_ROOT"
+          mapfile -t repo_ids < <(jq -r '.[]' <<< "$REPO_IDS_JSON")
+          repo_args=()
+          for repo_id in "${repo_ids[@]}"; do
+            repo_args+=(--repo "$repo_id")
+          done
+          pnpm e2e run \
+            --candidate "$CANDIDATE" \
+            "${repo_args[@]}" \
+            --repo-concurrency "$REPO_CONCURRENCY" \
+            --artifact-root "$ARTIFACT_ROOT"
 
       - name: Redact release secrets in receipts
         if: always()
         env:
           ARTIFACT_ROOT: ${{ steps.paths.outputs.artifact-root }}
-          MANIFEST: e2e/${{ matrix.dir }}/e2e.json
+          MANIFESTS_FILE: ${{ steps.cell.outputs.manifests-file }}
         run: |
           set -euo pipefail
           [ -d "$ARTIFACT_ROOT" ] || exit 0
@@ -270,8 +317,11 @@ jobs:
           const fs = require("fs");
           const path = require("path");
           const root = process.env.ARTIFACT_ROOT;
-          const manifest = JSON.parse(fs.readFileSync(process.env.MANIFEST, "utf8"));
-          const replacements = manifest.secrets
+          const cells = JSON.parse(fs.readFileSync(process.env.MANIFESTS_FILE, "utf8"));
+          const declared = [...new Set(cells.flatMap(({ manifest }) =>
+            JSON.parse(fs.readFileSync(manifest, "utf8")).secrets
+          ))];
+          const replacements = declared
             .map((name) => ({ name, value: process.env[name] }))
             .filter(({ value }) => typeof value === "string" && value.length > 0);
           function walk(dir, files = []) {
