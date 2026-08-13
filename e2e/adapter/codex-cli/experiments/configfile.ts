@@ -13,6 +13,7 @@ export default defineExperiment({
   agent,
   model: "gpt-5.6-luna",
   sandbox,
+  flags: { webSearch: false },
   evals: ["configfile"],
   attempts: 1,
   budget: 3,

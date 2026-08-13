@@ -1,20 +1,28 @@
-// 协议行为:configFile——原生 Codex config.toml(`web_search = "disabled"`)生效后,
-// 反例断言 `calledTool("web_search")` 的调用计数为零(见
-// docs/engineering/testing/e2e/adapter/codex-cli.md)。
-//
-// 提示词选一个正常情况下大概率会触发内置联网检索的问题(近期时事),证明的是"配置真的关闭
-// 了这个工具",而不是"模型这轮恰好没想用"。
+// 协议行为:configFile——同一个 Eval 分别由 baseline 与 configfile Experiment 运行。
+// 两边使用完全相同的 prompt；只有 configFile 与显式 webSearch flag 不同，因此正调会调用
+// web_search，disabled 反例会正常完成且不产生该工具调用。
 import { defineEval } from "niceeval";
+import { toolMatch } from "niceeval/expect";
 
 export default defineEval({
   description:
-    'configFile 反例:web_search = "disabled" 生效后,同样的提示词也调不到 web_search',
+    'configFile 正反对照:相同 prompt 在 baseline 调用 web_search，在 disabled 配置下不调用',
   async test(t) {
     const turn = await t.send(
-      "Search the web for the most recent news headline about OpenAI, then summarize it in one sentence. " +
-        "If you cannot search the web, say so explicitly instead of guessing.",
+      "You must use the web_search tool to find the most recent news headline about OpenAI, " +
+        "then summarize it in one sentence. If web_search is unavailable, say so immediately " +
+        "instead of guessing or retrying.",
     );
     await turn.succeeded().orStop();
-    t.notCalledTool("web_search");
+
+    if (t.flags.webSearch === true) {
+      t.calledTool(toolMatch("web_search", { status: "completed" }));
+      return;
+    }
+    if (t.flags.webSearch === false) {
+      t.notCalledTool("web_search");
+      return;
+    }
+    throw new Error("configfile Eval requires boolean flags.webSearch");
   },
 });

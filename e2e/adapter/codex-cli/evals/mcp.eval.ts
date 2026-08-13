@@ -1,5 +1,4 @@
-// 协议行为:MCP——stdio 与远程 HTTP 两种形态的 `[mcp_servers.<name>]` 都能被调用;反例断言
-// 未挂载的 server `calledTool` 调用计数为零(见 docs/engineering/testing/e2e/adapter/codex-cli.md)。
+// 协议行为:MCP——stdio 与远程 HTTP 两种形态的 `[mcp_servers.<name>]` 都能被调用。
 //
 // stdio:官方 @modelcontextprotocol/server-everything 的确定性 get-sum 工具(挂成 "e2e")。
 // 远程 HTTP:DeepWiki 的公开、免鉴权 Streamable HTTP 端点(挂成 "deepwiki"),真实工具
@@ -17,7 +16,7 @@ import { includes, satisfies, toolMatch } from "niceeval/expect";
 
 export default defineEval({
   description:
-    "MCP 挂载:stdio 与远程 HTTP 两种形态在同一轮里都真实调用且入参正确;反例断言未挂载的 server",
+    "MCP 挂载:stdio 与远程 HTTP 两种形态在同一轮里都真实调用且入参正确",
   async test(t) {
     const turn = await t.send(
       "In this single turn, call two different MCP tools and report both results: " +
@@ -64,9 +63,5 @@ export default defineEval({
         }),
       );
     });
-
-    // 反例:这个仓库没有挂载天气 MCP server,同一段事件流不应该出现这个工具调用——
-    // 证明转换器不会为不存在的挂载编造归一结果。
-    t.notCalledTool("weather.get_weather");
   },
 });

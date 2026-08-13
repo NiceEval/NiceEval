@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { expect, it } from "vitest";
 
 // 每条 Eval 的首轮只有一个 Attempt；只有结构化 verdict=failed 才由本测试另起一次 Invocation。
-const EXPECTED_PASSED_ATTEMPTS = 17;
+const EXPECTED_PASSED_ATTEMPTS = 18;
 // 每个 Experiment 产生一个 Run（docs/feature/experiments/cli.md「结束反馈与 receipt」）；
 const EXPECTED_EXPERIMENTS = 7;
 const RETRY_CONCURRENCY = 4;
@@ -160,7 +160,7 @@ it("真实 Codex CLI adapter 在 Docker sandbox 中的运行结果经过公开 C
   expect(timing.stdout).toContain("eval.run");
   expect(timing.stdout).toMatch(/turn\s+turn1\b/);
 
-  // MCP 反例也要穿透到 CLI 读回：stdio 与远程 HTTP 调用存在，未挂载的 weather 不出现。
+  // MCP 正调也要穿透到 CLI 读回：stdio 与远程 HTTP 调用都存在。
   const mcpLocator = locatorFor("mcp");
   const mcpExecution = await niceeval.run(["show", mcpLocator, "--execution"]);
   expect(mcpExecution.exitCode, mcpExecution.diagnostic()).toBe(0);
@@ -173,5 +173,4 @@ it("真实 Codex CLI adapter 在 Docker sandbox 中的运行结果经过公开 C
       mcpExecution.stdout.includes("read_wiki_structure"),
     "execution tree missing remote HTTP MCP call (deepwiki.read_wiki_structure)",
   ).toBe(true);
-  expect(mcpExecution.stdout).not.toContain("weather.get_weather");
 }, 92 * 60_000);

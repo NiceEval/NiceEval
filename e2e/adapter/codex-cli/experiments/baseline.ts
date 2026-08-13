@@ -10,11 +10,12 @@ const agent = codexAgent({
 });
 
 export default defineExperiment({
-  description: "codex-cli 基线闭环:coding 任务工具轨 / 会话续接 / usage 与实际模型",
+  description: "codex-cli 基线闭环:coding 工具轨 / web search / 会话续接 / usage 与实际模型",
   agent,
   model: "gpt-5.6-luna",
   sandbox,
-  evals: ["coding-task", "session", "usage"],
+  flags: { webSearch: true },
+  evals: ["coding-task", "configfile", "session", "usage"],
   attempts: 1,
   budget: 3,
 });
