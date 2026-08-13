@@ -44,6 +44,57 @@ _Avoid_: Record writer, Global attachment context
 read cache 的 root-affine capability substrate。它不属于 durable Record，也不是自动刷新的 reader。
 _Avoid_: Record connection, Record runtime, Live Record reader
 
+## Roadmap 领域
+
+**Admission health**:
+每条 fresh slot 在 Agent 进入前，对一个 producer occurrence 做一次健康裁决，并把结果写进 Run-owned
+receipt。它不是 Assertion、Verdict 或跨 Attempt 缓存。
+_Avoid_: Plugin health, Health Assertion
+
+**State cohort**:
+由 State Provider 颁发身份的一条持久状态 lineage；它约束 Checkpoint、Region 与 schema 的共同归属。
+作者字符串不能构造或冒充 Cohort 身份。
+_Avoid_: State label, Shared folder
+
+**State checkpoint**:
+State cohort 内由 Provider 发布的 immutable exact 状态点。Comparable 状态必须带内容摘要，恢复和提交
+都引用精确 Checkpoint，不选择 head 或当前值。
+_Avoid_: Latest state, Mutable snapshot
+
+**Eval trajectory**:
+由源码路径确定身份、用显式依赖组成的 Eval DAG。一个执行可以跨多个 immutable Run segment 暂停和恢复，
+但只能从同一 execution 的 exact State checkpoint 延续可比性。
+_Avoid_: Eval Group, Mutable workflow run
+
+**Workspace access evidence**:
+可信 Sandbox producer 归因给 Agent 进程树的逻辑文件操作集合。它不保存 raw syscall 数量，也不等同于
+JSON 文本里出现过某个路径。
+_Avoid_: Path mention, Agent diff
+
+**Discovery boundary**:
+一个显式目录入口拥有的递归 Eval discovery 范围。父级扫描抵达该入口后停止向内发现，并保留 root、
+entry 与截止原因供 CLI 解释。
+_Avoid_: Ignore glob, Discovery filter
+
+**Reuse explanation**:
+一项 frozen execution plan action 自带的同源理由与 exact prior locator。它不重新读取 Record 或再次判断
+reuse eligibility。
+_Avoid_: Reuse guess, Cache reason
+
+**Pricing profile**:
+带内容身份与 coverage 的价格规则集合，只供 Report Calculation 投影成本。它不覆盖 Record 中的 observed
+usage 或 cost。
+_Avoid_: Record repricing, Mutable price table
+
+**Experiment display name**:
+Experiment 的人类可读标签；它与 description、Experiment identity 分离，不参与 reuse、选择或去重。
+_Avoid_: Experiment alias, Short ID
+
+**Record inventory**:
+一次 frozen Record view 上按 canonical Run ID 枚举的只读库存。它不构造 AnalysisSample、不选最新结果，
+也不按时间排序。
+_Avoid_: Latest runs, Recovery sample
+
 ## 分析与报告
 
 **Analysis scope**:

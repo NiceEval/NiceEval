@@ -70,12 +70,21 @@ docs/
 │   └── reports/                         一次 execution、show/view 与静态导出
 │
 ├── roadmap/                             已定稿、尚未采用为当前契约的方向
+│   ├── admission-health/                Agent 进入前的 producer occurrence 健康探测
 │   ├── agent-as-judge/                  用独立 Agent 调查证据并执行 Judge Assertion
 │   ├── assertion-authoring/             Assertion-first 作者面、Verdict 与 score、统一 Match
+│   ├── cost-projections/                由 Report Calculation 形成可审计成本投影
+│   ├── discovery-boundaries/            目录入口拥有的递归发现边界
+│   ├── eval-trajectories/               依赖 DAG 的 exact Checkpoint 暂停与恢复
+│   ├── experiment-display-names/        不参与 identity 的 Experiment 人类展示名
 │   ├── replayable-grading/              多轮 Execution 与 Grading 分离、Record 重评分
 │   ├── experiment-pilot-sampling/       共同题集、固定 seed 与 non-final Pilot
 │   ├── experiment-families/             keyed record 展开稳定 Experiment ID
+│   ├── git-checkout-isolation/          `checkout()` 的 commit closure 与隔离边界
+│   ├── run-handoff-and-inventory/       精确 Run 交接与只读 Record 库存
 │   ├── sandbox-fixture-content/         identity-aware Fixture 内容 prepare 命令
+│   ├── state/                           provider-issued Cohort 与 exact Checkpoint
+│   ├── workspace-access-evidence/       Agent Workspace 文件操作证据与 Assertion
 │   ├── llm-judge-runtime/               原生 LLM Judge 配方、材料、Provider 与判分图
 │   ├── multi-agent/                     多 Agent Eval 场景
 │   ├── eval-selection/                  Experiment 与 CLI 的统一 Eval 过滤语义
