@@ -351,7 +351,7 @@ function outputFor(
   outcome: LogicalToolOccurrenceDeriveOptions["outcome"],
 ): LogicalToolOccurrence["output"] {
   if (occurrence.finished !== undefined && !occurrence.ambiguous) return occurrence.finished.output;
-  if (outcome === "waiting") {
+  if (outcome !== undefined && !occurrence.ambiguous) {
     return Object.freeze({ state: "unavailable" as const, reason: "tool-output-pending" });
   }
   return Object.freeze({ state: "unavailable" as const, reason: "tool-output-missing-lifecycle-evidence" });
@@ -368,7 +368,10 @@ function lifecycleFor(
       finish: occurrence.finished.position,
     };
   }
-  if (outcome === "waiting" && !occurrence.ambiguous) {
+  // A trustworthy Turn outcome closes the response boundary, not every external tool call.
+  // A visible, unambiguous start without a finish is therefore a pending call. Only a
+  // genuinely partial stream (no outcome) or an ambiguous pairing remains opaque.
+  if (outcome !== undefined && !occurrence.ambiguous) {
     return { state: "available", status: "pending" };
   }
   return {

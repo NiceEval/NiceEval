@@ -11,10 +11,6 @@ import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
 
 const COMPLETE = Object.freeze({ status: "complete" as const });
 const NO_DATA = Object.freeze({ status: "unavailable" as const, reason: "OpenAI response conversion does not populate Turn.data." });
-const SYNTHETIC_STATUS = Object.freeze({
-  status: "partial" as const,
-  reason: "The converter maps a returned response to completed and does not observe the full request lifecycle.",
-});
 
 export const chatCompletionEvidenceCoverage: EvidenceCoverage = Object.freeze({
   events: Object.freeze({
@@ -27,7 +23,7 @@ export const chatCompletionEvidenceCoverage: EvidenceCoverage = Object.freeze({
   }),
   messages: COMPLETE,
   usage: COMPLETE,
-  status: SYNTHETIC_STATUS,
+  status: COMPLETE,
   data: NO_DATA,
 });
 
@@ -42,7 +38,7 @@ export const responsesEvidenceCoverage: EvidenceCoverage = Object.freeze({
   }),
   messages: COMPLETE,
   usage: COMPLETE,
-  status: SYNTHETIC_STATUS,
+  status: COMPLETE,
   data: NO_DATA,
 });
 
