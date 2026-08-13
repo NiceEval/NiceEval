@@ -37,8 +37,6 @@ export interface EvalManifest {
   plan?: JsonValue;
   /** Pair-owned Eval/Group/Experiment Plugin occurrence and provenance surface. */
   plugins?: globalThis.Record<string, JsonValue>;
-  /** Selected physical resource envelope surface, frozen before carry planning. */
-  resources?: globalThis.Record<string, JsonValue>;
   source: globalThis.Record<string, string>;
   data: globalThis.Record<string, string>;
 }
@@ -64,9 +62,6 @@ export function parseRunManifests(raw: unknown): RunManifests {
       ...(entry.plan === undefined ? {} : { plan: entry.plan }),
       ...(typeof entry.plugins === "object" && entry.plugins !== null && !Array.isArray(entry.plugins)
         ? { plugins: entry.plugins as globalThis.Record<string, JsonValue> }
-        : {}),
-      ...(typeof entry.resources === "object" && entry.resources !== null && !Array.isArray(entry.resources)
-        ? { resources: entry.resources as globalThis.Record<string, JsonValue> }
         : {}),
       source: (typeof entry.source === "object" && entry.source !== null ? entry.source : {}) as globalThis.Record<string, string>,
       data: (typeof entry.data === "object" && entry.data !== null ? entry.data : {}) as globalThis.Record<string, string>,

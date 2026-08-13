@@ -25,13 +25,6 @@ import { createNpmCliInstaller, resolveAgentBinEffect } from "./npm-staged.ts";
 import type { Agent, AgentSetupManifest, McpServer, Sandbox, SkillSpec, TurnEvidenceCoverage } from "../types.ts";
 import type { SandboxCommand } from "../sandbox/commands.ts";
 import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
-import {
-  agentExtensionsProjection,
-  receiverExtensionsFor,
-  type AgentExtension,
-  type PluginAgentReceiver,
-} from "../plugin/contracts.ts";
-import { claudeCodeExtensionPayload } from "../plugin/agent-extensions.ts";
 
 // ───────────────────────────────────────────────────────────────────────────
 // Claude Code 的 agent adapter(沙箱型)。
@@ -129,14 +122,6 @@ export interface ClaudeCodeConfig {
 }
 
 export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
-  return claudeCodeAgentWithExtensions(config, Object.freeze([]));
-}
-
-function claudeCodeAgentWithExtensions(
-  baseConfig: ClaudeCodeConfig | undefined,
-  extensions: readonly AgentExtension<"claude-code">[],
-): Agent {
-  const config = mergeClaudeCodePluginExtensions(baseConfig, extensions);
   const getApiKey = () => config?.apiKey ?? requireEnv("ANTHROPIC_API_KEY");
   const getBaseUrl = () => config?.baseUrl ?? getEnv("ANTHROPIC_BASE_URL");
   const agentEnv = Object.freeze({ ...(config?.env ?? {}) });
@@ -151,24 +136,11 @@ function claudeCodeAgentWithExtensions(
       bin: "claude",
   });
 
-  const receiver: PluginAgentReceiver = Object.freeze({
-    id: "claude-code",
-    compose: (_agent: Agent, next: readonly AgentExtension<any>[]) => {
-      const accepted = receiverExtensionsFor(receiver, next) as readonly AgentExtension<"claude-code">[];
-      return claudeCodeAgentWithExtensions(baseConfig, Object.freeze([...extensions, ...accepted]));
-    },
-    projection: (next: readonly AgentExtension<any>[]) => {
-      const accepted = receiverExtensionsFor(receiver, next) as readonly AgentExtension<"claude-code">[];
-      return agentExtensionsProjection(Object.freeze([...extensions, ...accepted]));
-    },
-  });
-
   return registerAgentLifecycleHookCommands(defineSandboxAgent({
     name: "claude-code",
     // 官方 adapter:transcript 经生命周期 fixture 验证,全通道 complete。
     evidenceCoverage: completeEvidenceCoverage,
     spanMapper: mapClaudeCodeSpans,
-    pluginReceiver: receiver,
     ensure,
     installers: [installer],
 
@@ -358,51 +330,6 @@ function claudeCodeAgentWithExtensions(
   }), config?.postSetup, config?.preTeardown);
 }
 
-/** Adapter-local composition: core never parses Claude Code native config. */
-function mergeClaudeCodePluginExtensions(
-  base: ClaudeCodeConfig | undefined,
-  extensions: readonly AgentExtension<"claude-code">[],
-): ClaudeCodeConfig | undefined {
-  if (extensions.length === 0) return base;
-  const skills = [...(base?.skills ?? [])];
-  const plugins = [...(base?.plugins ?? [])];
-  const mcpServers = [...(base?.mcpServers ?? [])];
-  const postSetup = [...(base?.postSetup ?? [])];
-  const preTeardown = [...(base?.preTeardown ?? [])];
-  const env: globalThis.Record<string, string> = { ...(base?.env ?? {}) };
-  let settingsFile = base?.settingsFile;
-  for (const extension of extensions) {
-    const fragment = claudeCodeExtensionPayload(extension);
-    skills.push(...(fragment.skills ?? []));
-    plugins.push(...(fragment.plugins ?? []));
-    mcpServers.push(...(fragment.mcpServers ?? []));
-    postSetup.push(...(fragment.postSetup ?? []));
-    preTeardown.push(...(fragment.preTeardown ?? []));
-    for (const [key, value] of Object.entries(fragment.env ?? {})) {
-      const existing = env[key];
-      if (existing !== undefined && existing !== value) {
-        throw new TypeError(`Claude Code AgentExtension conflicts on env ${JSON.stringify(key)}.`);
-      }
-      env[key] = value;
-    }
-    if (fragment.settingsFile !== undefined) {
-      if (settingsFile !== undefined && settingsFile !== fragment.settingsFile) {
-        throw new TypeError("Claude Code AgentExtensions cannot declare different settingsFile values.");
-      }
-      settingsFile = fragment.settingsFile;
-    }
-  }
-  return Object.freeze({
-    ...(base ?? {}),
-    ...(skills.length === 0 ? {} : { skills: Object.freeze(skills) }),
-    ...(plugins.length === 0 ? {} : { plugins: Object.freeze(plugins) }),
-    ...(mcpServers.length === 0 ? {} : { mcpServers: Object.freeze(mcpServers) }),
-    ...(postSetup.length === 0 ? {} : { postSetup: Object.freeze(postSetup) }),
-    ...(preTeardown.length === 0 ? {} : { preTeardown: Object.freeze(preTeardown) }),
-    ...(Object.keys(env).length === 0 ? {} : { env: Object.freeze(env) }),
-    ...(settingsFile === undefined ? {} : { settingsFile }),
-  });
-}
 
 /**
  * 先按 `marketplace.name` 建立 Marketplace 连接(同名只连一次,add 后回读注册列表校验

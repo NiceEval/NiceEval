@@ -68,6 +68,7 @@ import { registerExperimentTeardown, unregisterExperimentTeardown } from "./expe
 import { cleanupCallback } from "./cleanup-timeout.ts";
 import { resolveAttemptTimeout } from "./timeout.ts";
 import { hostname } from "node:os";
+import { linkPluginLifecycles, type GroupPluginContext } from "../plugin/contracts.ts";
 import {
   isOrphanedTeardownRegistration,
   readTeardownRegistrationsEffect,
@@ -448,7 +449,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           judge: resolvedJudgesByKey.get(carryKey),
           plan: prepared.plan,
           sandboxPlansByEval,
-          ...(prepared.resourceEnvelope === undefined ? {} : { resourceEnvelope: prepared.resourceEnvelope }),
         };
         attempts.push(attempt);
         dispatchWaveNumbers.set(attempt, wave);
@@ -808,10 +808,22 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       const materializationOwnerId = a.evalDef.evalGroup === undefined
         ? a.plan.pair.evalId
         : JSON.stringify(["eval-group", a.run.experimentId, a.evalDef.evalGroup.id]);
+      const groupPluginContext: GroupPluginContext | undefined = a.evalDef.evalGroup === undefined
+        ? undefined
+        : {
+            experimentId: a.run.experimentId,
+            evalGroupId: a.evalDef.evalGroup.id,
+            signal: setupContext.signal,
+            progress: setupContext.progress,
+            diagnostic: setupContext.diagnostic,
+            fact: (key, value) => recordExperimentFact(a.run.experimentId, key, value),
+          };
       pool = new ReusableSandboxPool(a.plan, capacity, {
         progress: setupContext.progress,
         diagnostic: setupContext.diagnostic,
-      }, setupContext, liveSandboxRuntimeServices, a.run.agent.kind === "sandbox" ? a.run.agent : undefined, runTiming, materializationOwnerId, a.resourceEnvelope, () => nextReuseSandboxNumber(a.run));
+      }, setupContext, liveSandboxRuntimeServices, a.run.agent.kind === "sandbox" ? a.run.agent : undefined, runTiming, materializationOwnerId, () => nextReuseSandboxNumber(a.run),
+      a.evalDef.evalGroup === undefined ? Object.freeze([]) : linkPluginLifecycles(a.evalDef.evalGroup.plugins ?? [], "group"),
+      groupPluginContext);
       bySpec.set(key, pool);
       return pool.managed().pipe(Effect.map((managed) => ({ _tag: "Reuse", pool: managed }) as const));
     }
@@ -2378,11 +2390,9 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                             sandbox: lease.sandbox,
                             reuseSandbox: lease.reuseSandbox,
                             reuseOrdinal: lease.reuseOrdinal,
-                            ...(lease.resources === undefined ? {} : { resources: lease.resources }),
                           },
                         }
                       : {}),
-                    ...(a.resourceEnvelope === undefined ? {} : { resourceEnvelope: a.resourceEnvelope }),
                     // 止损闸的消费点:attempt 封口读终局失败的空间轴。scope 经这条**封口回执**
                     // 到达调度器,不走错误通道向上传播——attempt fiber 的 E 保持 never,`errored`
                     // 仍是 eval runner 的合法结果而不是调度失败(architecture.md「Effect 边界」)。

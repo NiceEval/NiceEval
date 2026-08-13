@@ -18,6 +18,10 @@ import {
 import type { JsonValue } from "../shared/types.ts";
 import type { SandboxHook } from "./types.ts";
 import { Data, Effect } from "effect";
+import {
+  pluginLifecycleProjection,
+  type LinkedPluginLifecycle,
+} from "../plugin/contracts.ts";
 
 export interface SandboxLayerDeclarationSite {
   readonly file: string;
@@ -178,6 +182,12 @@ export interface SandboxLayerFingerprintProjection {
   readonly commands: readonly SandboxCommandFingerprint[];
   /** 有 hook 时才出现，避免把回调实现或闭包写入 record。 */
   readonly lifecycle?: readonly SandboxLifecycleFingerprint[];
+  readonly plugins?: JsonValue;
+}
+
+export interface LinkedSandboxPluginLifecycle {
+  readonly owner: SandboxLayerOwnerRef;
+  readonly lifecycle: LinkedPluginLifecycle;
 }
 
 export interface LinkedSandboxPair {
@@ -192,6 +202,8 @@ export interface LinkedSandboxPair {
   /** 物理实例生命周期:template owner 在前,另一 layer 在后。回调不进 record,但保留 marker。 */
   readonly setupHooks: readonly SandboxHook[];
   readonly teardownHooks: readonly SandboxHook[];
+  /** Physical lifecycle plugins, in flattened SandboxLayer order. */
+  readonly pluginLifecycles: readonly LinkedSandboxPluginLifecycle[];
   /** Eval 自己声明 lifecycle 时实例不得跨 Eval 共用。 */
   readonly hasEvalLifecycleHooks: boolean;
   readonly evalGroupId?: string;
@@ -238,6 +250,9 @@ export function sandboxLayerIdentityFor(
       : { _tag: "CommandOnly" },
     commands,
     ...(lifecycle === undefined || lifecycle.length === 0 ? {} : { lifecycle }),
+    ...(linked.pluginLifecycles.filter((entry) => entry.owner.kind === ownerKind).length === 0
+      ? {}
+      : { plugins: pluginLifecycleProjection(linked.pluginLifecycles.filter((entry) => entry.owner.kind === ownerKind).map((entry) => entry.lifecycle)) }),
   };
 }
 
@@ -486,11 +501,42 @@ function linkSandboxPair(
     commands: linked.commands,
     setupHooks: Object.freeze([...templateOwner.state.setupHooks, ...otherOwners.flatMap((owner) => owner.state.setupHooks)]),
     teardownHooks: Object.freeze([...templateOwner.state.teardownHooks, ...otherOwners.flatMap((owner) => owner.state.teardownHooks)]),
+    pluginLifecycles: Object.freeze([]),
     hasEvalLifecycleHooks: [templateOwner, ...otherOwners].some((owner) => owner.owner.kind === "eval" && owner.state.setupHooks.length + owner.state.teardownHooks.length > 0),
     ...([templateOwner, ...otherOwners].find((owner) => owner.owner.kind === "eval-group") === undefined
       ? {}
       : { evalGroupId: [templateOwner, ...otherOwners].find((owner) => owner.owner.kind === "eval-group")!.owner.id }),
     fingerprint,
+  });
+}
+
+/** @internal Attach automatically projected Plugin sandbox fragments after author layer linking. */
+export function attachSandboxPluginLifecycles(
+  pair: LinkedSandboxLayerPair,
+  byOwner: Readonly<Partial<Record<SandboxLayerOwnerRef["kind"], readonly LinkedPluginLifecycle[]>>>,
+): LinkedSandboxLayerPair {
+  if (pair.kind === "direct") return pair;
+  const ownerOrder: readonly SandboxLayerOwnerRef["kind"][] = pair.templateOwner.kind === "eval"
+    ? ["eval", "experiment"]
+    : pair.templateOwner.kind === "eval-group"
+      ? ["eval-group", "experiment", "eval"]
+      : ["experiment", "eval-group", "eval"];
+  const entries = Object.freeze(ownerOrder.flatMap((kind) => (byOwner[kind] ?? []).map((lifecycle) => Object.freeze({
+    owner: kind === "eval"
+      ? Object.freeze({ kind, id: pair.evalId })
+      : kind === "eval-group"
+        ? Object.freeze({ kind, id: pair.evalGroupId! })
+        : Object.freeze({ kind, id: pair.experimentId }),
+    lifecycle,
+  }))));
+  if (entries.length === 0) return pair;
+  return Object.freeze({
+    ...pair,
+    pluginLifecycles: entries,
+    fingerprint: Object.freeze({
+      ...pair.fingerprint,
+      plugins: pluginLifecycleProjection(entries.map((entry) => entry.lifecycle)),
+    }),
   });
 }
 

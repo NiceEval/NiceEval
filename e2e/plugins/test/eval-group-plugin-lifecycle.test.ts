@@ -9,16 +9,15 @@ interface ExpPlanDocument {
   readonly total: number;
   readonly reused: number;
   readonly plugins: readonly {
-    readonly owner: string;
+    readonly scope: string;
     readonly name: string;
     readonly contributions: readonly string[];
-  }[];
-  readonly resources: readonly {
-    readonly demands: readonly { readonly scope: string }[];
   }[];
   readonly commandPlan?: {
     readonly experiments: readonly {
       readonly lanes: readonly {
+        readonly beforeSlots?: readonly { readonly phase: string }[];
+        readonly afterSlots?: readonly { readonly phase: string }[];
         readonly physicalLifecycleTemplate?: {
           readonly enter: readonly { readonly phase: string }[];
           readonly exit: readonly { readonly phase: string }[];
@@ -29,7 +28,7 @@ interface ExpPlanDocument {
   };
 }
 
-test("Eval Group Plugin 标识整组，Eval resource 共享物理生命周期但逐成员准备", async () => {
+test("Eval Group、Sandbox 与 Eval Plugin 各自遵守共享实例的生命周期", async () => {
   await e2e.case("group-owner-lifecycle", async ({ paths, commands: { niceeval } }) => {
     const stableEnv = { ...process.env, PLUGIN_GROUP_VARIANT: "stable" };
     const run = await niceeval.run(["exp", "group-plugin", "--rerun", "all", "--json"], {
@@ -45,22 +44,24 @@ test("Eval Group Plugin 标识整组，Eval resource 共享物理生命周期但
 
     const events = lifecycleEvents(paths.projectRoot);
     expect(events.map((event) => event.kind)).toEqual([
-      "resource.materialize",
-      "resource.prepare",
-      "resource.prepare",
+      "group.plugin.setup",
+      "group.plugin.setup",
+      "sandbox.plugin.setup",
+      "sandbox.plugin.setup",
+      "eval.plugin.setup",
       "agent.send",
-      "resource.prepare",
-      "resource.prepare",
+      "eval.plugin.teardown",
+      "eval.plugin.setup",
       "agent.send",
-      "resource.release",
+      "eval.plugin.teardown",
+      "sandbox.plugin.teardown",
+      "sandbox.plugin.teardown",
+      "group.plugin.teardown",
+      "group.plugin.teardown",
     ]);
-    expect(events[0]).toMatchObject({ markers: ["group", "01-first", "02-second"] });
-    expect(events.filter((event) => event.kind === "resource.prepare").map((event) => event.evalId)).toEqual([
-      "group-plugin/01-first",
-      "group-plugin/01-first",
-      "group-plugin/02-second",
-      "group-plugin/02-second",
-    ]);
+    expect(events.filter((event) => event.kind === "group.plugin.setup").map((event) => event.marker)).toEqual(["stable", "second"]);
+    expect(events.filter((event) => event.kind === "group.plugin.teardown").map((event) => event.marker)).toEqual(["second", "stable"]);
+    expect(new Set(events.filter((event) => event.kind === "sandbox.plugin.setup").map((event) => event.physicalId)).size).toBe(1);
     expect(events.filter((event) => event.kind === "agent.send")).toHaveLength(2);
 
     const same = await niceeval.run(["exp", "group-plugin", "--dry", "--json"], {
@@ -84,21 +85,26 @@ test("Eval Group Plugin 标识整组，Eval resource 共享物理生命周期但
       reused: 0,
     });
     expect(changedPlan.plugins).toContainEqual(expect.objectContaining({
-      owner: "group",
-      name: "e2e.group-lifecycle",
-      contributions: ["identity", "sandbox-commands", "sandbox-resource"],
+      scope: "group",
+      name: "e2e.lifecycle",
+      contributions: ["lifecycle"],
     }));
-    expect(changedPlan.resources).toHaveLength(1);
-    expect(changedPlan.resources[0]!.demands.map((demand) => demand.scope)).toEqual(["group", "eval", "eval"]);
 
     const commands = await niceeval.run(["exp", "group-plugin", "--dry", "--commands", "--json"], {
       env: { ...process.env, PLUGIN_GROUP_VARIANT: "changed" },
     });
     expect(commands.exitCode, commands.diagnostic()).toBe(0);
-    const commandPlan = commands.json<ExpPlanDocument>().commandPlan!;
-    const lane = commandPlan.experiments[0]!.lanes[0]!;
-    expect(lane.physicalLifecycleTemplate!.enter.map((step) => step.phase)).toContain("plugin.resource.materialize");
-    expect(lane.slots[0]!.steps.map((step) => step.phase)).toContain("plugin.resource.prepare");
-    expect(lane.physicalLifecycleTemplate!.exit.map((step) => step.phase)).toContain("plugin.resource.release");
+    const lane = commands.json<ExpPlanDocument>().commandPlan!.experiments[0]!.lanes[0]!;
+    expect(lane.beforeSlots!.map((step) => step.phase)).toEqual([
+      "plugin.lifecycle.setup",
+      "plugin.lifecycle.setup",
+    ]);
+    expect(lane.physicalLifecycleTemplate!.enter.map((step) => step.phase)).toContain("plugin.lifecycle.setup");
+    expect(lane.slots[0]!.steps.map((step) => step.phase)).toContain("plugin.lifecycle.setup");
+    expect(lane.physicalLifecycleTemplate!.exit.map((step) => step.phase)).toContain("plugin.lifecycle.teardown");
+    expect(lane.afterSlots!.map((step) => step.phase)).toEqual([
+      "plugin.lifecycle.teardown",
+      "plugin.lifecycle.teardown",
+    ]);
   });
 });

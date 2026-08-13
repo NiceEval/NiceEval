@@ -90,7 +90,6 @@ export function defineSandboxAgent(def: SandboxAgentDef): SandboxAgent {
     spanMapper: def.spanMapper,
     send: def.send,
     classifySendFailure: def.classifySendFailure,
-    pluginReceiver: def.pluginReceiver,
     teardown: def.teardown,
   };
 }

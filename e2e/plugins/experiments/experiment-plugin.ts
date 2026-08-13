@@ -1,14 +1,14 @@
 import { defineExperiment } from "niceeval";
 import { pluginAgent, pluginSandbox } from "../agents/deterministic.ts";
 import { appendPluginLifecycleEvent } from "../fixtures/events.ts";
-import { experimentLifecycle } from "../plugins/lifecycle.ts";
+import { lifecycle } from "../plugins/lifecycle.ts";
 
 export default defineExperiment({
   agent: pluginAgent,
   sandbox: pluginSandbox,
   evals: ["experiment-plugin"],
   maxConcurrency: 1,
-  plugins: [experimentLifecycle({ variant: "instrumented" })],
+  plugins: [lifecycle({ marker: "experiment-a" }), lifecycle({ marker: "experiment-b" })],
   setup: (context) => appendPluginLifecycleEvent({
     kind: "experiment.author.setup",
     experimentId: context.experimentId,

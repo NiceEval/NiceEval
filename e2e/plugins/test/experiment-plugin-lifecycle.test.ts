@@ -20,11 +20,23 @@ test("Experiment Plugin 生命周期只包围一次整场实验", async () => {
     expect(events.map((event) => event.kind)).toEqual([
       "experiment.author.setup",
       "experiment.plugin.setup",
+      "experiment.plugin.setup",
+      "sandbox.plugin.setup",
+      "sandbox.plugin.setup",
       "agent.send",
+      "sandbox.plugin.teardown",
+      "sandbox.plugin.teardown",
+      "sandbox.plugin.setup",
+      "sandbox.plugin.setup",
       "agent.send",
+      "sandbox.plugin.teardown",
+      "sandbox.plugin.teardown",
+      "experiment.plugin.teardown",
       "experiment.plugin.teardown",
       "experiment.author.teardown",
     ]);
+    expect(events.filter((event) => event.kind === "experiment.plugin.setup").map((event) => event.marker)).toEqual(["experiment-a", "experiment-b"]);
+    expect(events.filter((event) => event.kind === "experiment.plugin.teardown").map((event) => event.marker)).toEqual(["experiment-b", "experiment-a"]);
     expect(events.filter((event) => event.kind === "agent.send").map((event) => event.evalId)).toEqual([
       "experiment-plugin/01-first",
       "experiment-plugin/02-second",

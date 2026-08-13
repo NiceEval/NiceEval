@@ -36,21 +36,6 @@ export const pluginAgent = defineSandboxAgent({
       throw new Error("Plugin fixture requires an Experiment, Eval, and Attempt identity.");
     }
 
-    if (experimentId !== "experiment-plugin") {
-      const marker = evalId.split("/").at(-1);
-      if (marker === undefined) throw new Error(`Could not derive Plugin marker from ${JSON.stringify(evalId)}.`);
-      if (ctx.evalGroup !== undefined) {
-        await ctx.sandbox.runShellOrThrow(
-          "test -f /tmp/niceeval-plugin-group-command",
-          { signal: ctx.signal },
-        );
-      }
-      await ctx.sandbox.runShellOrThrow(
-        `test -f /tmp/niceeval-plugin-command-${marker}`,
-        { signal: ctx.signal },
-      );
-    }
-
     appendPluginLifecycleEvent({
       kind: "agent.send",
       experimentId,

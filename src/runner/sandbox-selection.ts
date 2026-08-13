@@ -5,6 +5,7 @@ import { Data, Effect } from "effect";
 import { digestOf } from "../sandbox/identity.ts";
 import {
   linkSandboxLayers,
+  attachSandboxPluginLifecycles,
   type LinkedSandboxLayerPair,
   type SandboxLayerLinkError,
   type SandboxLayerPairInput,
@@ -28,14 +29,6 @@ import {
   PluginLinkError,
   type PluginPairLink,
 } from "../plugin/link.ts";
-import {
-  createSelectedResourceEnvelope,
-  ResourceEnvelopeConflictError,
-  type ResourcePhysicalCohort,
-  type SelectedResourceDemand,
-  type SelectedResourceEnvelope,
-} from "../plugin/resource-runtime.ts";
-import { sandboxReusePoolDescriptor } from "./sandbox-reuse.ts";
 
 export interface LinkedRunPair {
   readonly key: string;
@@ -59,8 +52,6 @@ export interface PreparedRunPair {
   readonly plan: LinkedRunPlan;
   readonly identity: ReturnType<typeof linkedRunRecordIdentity>;
   readonly plugin: PluginPairLink;
-  /** Frozen before carry: selected demand envelope for this actual physical cohort. */
-  readonly resourceEnvelope?: SelectedResourceEnvelope;
 }
 
 export class SandboxRunPlanningInvariantError extends Data.TaggedError(
@@ -93,8 +84,7 @@ export type SandboxRunPlanningError =
   | SandboxPhysicalPlanningError
   | SandboxRunPlanningInvariantError
   | SandboxRunPairDuplicateError
-  | PluginLinkError
-  | ResourceEnvelopeConflictError;
+  | PluginLinkError;
 
 export interface SandboxRunPlanningOptions {
   readonly keepSandbox?: "failed" | "all";
@@ -134,37 +124,6 @@ function linkedOwnerKey(pair: LinkedSandboxLayerPair): string {
  * position. Group members share one; ordinary fresh pairs intentionally do
  * not, even when their provider template happens to be identical.
  */
-function resourceCohortFor(entry: Omit<PreparedRunPair, "resourceEnvelope">): ResourcePhysicalCohort | undefined {
-  if (entry.plan._tag === "Direct") return undefined;
-  const physical = digestOf(entry.plan.providerPlan.identity);
-  const experimentId = entry.run.experimentId;
-  const descriptor = sandboxReusePoolDescriptor({
-    run: entry.run,
-    evalId: entry.evalDef.id,
-    ...(entry.evalDef.evalGroup === undefined ? {} : { evalGroupId: entry.evalDef.evalGroup.id }),
-    plan: entry.plan,
-  });
-  if (descriptor?.scope.kind === "eval-group") {
-    return Object.freeze({
-      kind: "eval-group" as const,
-      id: JSON.stringify(["eval-group", experimentId, descriptor.key]),
-      physical,
-    });
-  }
-  if (descriptor !== undefined) {
-    return Object.freeze({
-      kind: "sandbox-reuse" as const,
-      id: JSON.stringify(["sandbox-reuse", experimentId, descriptor.key]),
-      physical,
-    });
-  }
-  return Object.freeze({
-    kind: "fresh-pair" as const,
-    id: JSON.stringify(["fresh-pair", experimentId, entry.evalDef.id, physical]),
-    physical,
-  });
-}
-
 /** 纯 link：全矩阵聚合错误，不读 provider 文件，不做网络或资源操作。 */
 export function linkRunSandboxes(
   evals: readonly DiscoveredEval[],
@@ -321,12 +280,17 @@ export function linkRunSandboxes(
         }));
       }
       ownersByKey.set(ownerKey, remaining);
+      const pairWithPlugins = attachSandboxPluginLifecycles(pair, {
+        experiment: owner.plugin.sandboxLifecycles.experiment,
+        "eval-group": owner.plugin.sandboxLifecycles.group,
+        eval: owner.plugin.sandboxLifecycles.eval,
+      });
       linked.push(Object.freeze({
         key: owner.key,
         sourceRun: owner.sourceRun,
         run: owner.run,
         evalDef: owner.evalDef,
-        pair,
+        pair: pairWithPlugins,
         plugin: owner.plugin,
         authorBaseDirs: owner.authorBaseDirs,
       }));
@@ -423,69 +387,7 @@ export function prepareRunSandboxes(
           }
           groupPlans.set(key, physical);
         }
-        const cohorts = new Map<string, {
-          cohort: ResourcePhysicalCohort;
-          demands: SelectedResourceDemand[];
-          groupDemandKeys: Set<string>;
-        }>();
-        const cohortByPair = new Map<PreparedRunPair, ResourcePhysicalCohort>();
-        for (const entry of prepared) {
-          const cohort = resourceCohortFor(entry);
-          if (cohort === undefined) {
-            if (entry.plugin.resources.length > 0) {
-              return Effect.fail(new SandboxRunPlanningInvariantError({
-                code: "sandbox.run-planning-invariant",
-                message:
-                  `Plugin resources require a physical Sandbox, but Eval ${JSON.stringify(entry.evalDef.id)} ` +
-                  `in Experiment ${JSON.stringify(entry.run.experimentId)} uses a direct Agent plan.`,
-              }));
-            }
-            continue;
-          }
-          cohortByPair.set(entry, cohort);
-          let bucket = cohorts.get(cohort.id);
-          if (bucket === undefined) {
-            bucket = { cohort, demands: [], groupDemandKeys: new Set() };
-            cohorts.set(cohort.id, bucket);
-          }
-          for (const linked of entry.plugin.resources) {
-            if (linked.scope === "group") {
-              const groupDemandKey = JSON.stringify([
-                linked.occurrence.provenance.owner.id,
-                linked.occurrence.provenance.owner.position,
-                linked.position,
-              ]);
-              if (bucket.groupDemandKeys.has(groupDemandKey)) continue;
-              bucket.groupDemandKeys.add(groupDemandKey);
-            }
-            bucket.demands.push(Object.freeze({
-              pairKey: entry.key,
-              evalId: entry.evalDef.id,
-              experimentId: entry.run.experimentId,
-              linked,
-            }));
-          }
-        }
-        const envelopes = new Map<string, SelectedResourceEnvelope>();
-        try {
-          for (const { cohort, demands } of cohorts.values()) {
-            envelopes.set(cohort.id, createSelectedResourceEnvelope(cohort, Object.freeze([...demands])));
-          }
-        } catch (error) {
-          if (error instanceof ResourceEnvelopeConflictError) return Effect.fail(error);
-          throw error;
-        }
-        return Effect.succeed(Object.freeze(prepared.map((entry) => {
-          const cohort = cohortByPair.get(entry);
-          const resourceEnvelope = cohort === undefined ? undefined : envelopes.get(cohort.id);
-          if (cohort !== undefined && resourceEnvelope === undefined) {
-            throw new Error(`Missing selected resource envelope for physical cohort ${JSON.stringify(cohort.id)}.`);
-          }
-          return Object.freeze({
-            ...entry,
-            ...(resourceEnvelope === undefined ? {} : { resourceEnvelope }),
-          });
-        })));
+        return Effect.succeed(Object.freeze(prepared));
       },
     ),
   );

@@ -1,10 +1,10 @@
-// owner: docs/roadmap/plugins/library.md#sandbox-resource
+// owner: docs/roadmap/plugins/library.md#eval-lifecycle
 
 import type { ExpEvalEvent, ExpEvent } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { e2e, lifecycleEvents } from "./helpers.ts";
 
-test("Eval Plugin resource 随每个 fresh Attempt 获取、准备并释放", async () => {
+test("多个 Eval Plugin 与 Sandbox Plugin 按 fresh Attempt 和物理实例运行", async () => {
   await e2e.case("eval-owner-lifecycle", async ({ paths, commands: { niceeval } }) => {
     const run = await niceeval.run(["exp", "eval-plugin", "--rerun", "all", "--json"], {
       timeoutMs: 180_000,
@@ -19,19 +19,36 @@ test("Eval Plugin resource 随每个 fresh Attempt 获取、准备并释放", as
 
     const events = lifecycleEvents(paths.projectRoot);
     expect(events.map((event) => event.kind)).toEqual([
-      "resource.materialize",
-      "resource.prepare",
+      "sandbox.plugin.setup",
+      "sandbox.plugin.setup",
+      "eval.plugin.setup",
+      "eval.plugin.setup",
+      "eval.plugin.setup",
       "agent.send",
-      "resource.release",
-      "resource.materialize",
-      "resource.prepare",
+      "eval.plugin.teardown",
+      "eval.plugin.teardown",
+      "eval.plugin.teardown",
+      "sandbox.plugin.teardown",
+      "sandbox.plugin.teardown",
+      "sandbox.plugin.setup",
+      "sandbox.plugin.setup",
+      "eval.plugin.setup",
+      "eval.plugin.setup",
+      "eval.plugin.setup",
       "agent.send",
-      "resource.release",
+      "eval.plugin.teardown",
+      "eval.plugin.teardown",
+      "eval.plugin.teardown",
+      "sandbox.plugin.teardown",
+      "sandbox.plugin.teardown",
     ]);
-    expect(events.filter((event) => event.kind === "resource.prepare").map((event) => event.attempt)).toEqual([0, 1]);
-    expect(events.filter((event) => event.kind === "resource.materialize").map((event) => event.markers)).toEqual([
-      ["owner"],
-      ["owner"],
+    expect(events.filter((event) => event.kind === "eval.plugin.setup").map((event) => [event.attempt, event.marker])).toEqual([
+      [0, "default"], [0, "owner-a"], [0, "owner-b"],
+      [1, "default"], [1, "owner-a"], [1, "owner-b"],
+    ]);
+    expect(events.filter((event) => event.kind === "eval.plugin.teardown").map((event) => [event.attempt, event.marker])).toEqual([
+      [0, "owner-b"], [0, "owner-a"], [0, "default"],
+      [1, "owner-b"], [1, "owner-a"], [1, "default"],
     ]);
   });
 });

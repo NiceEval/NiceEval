@@ -8,8 +8,8 @@ export type JsonValue =
   | number
   | boolean
   | null
-  | JsonValue[]
-  | { [key: string]: JsonValue };
+  | readonly JsonValue[]
+  | { readonly [key: string]: JsonValue };
 
 /**
  * JSON 值的递归匹配小语言。对象是深度部分匹配，数组逐项精确匹配；RegExp 与谓词可出现在

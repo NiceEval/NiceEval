@@ -19,6 +19,7 @@ import {
   sandboxReusePoolDescriptor,
   type SandboxReusePoolDescriptor,
 } from "./sandbox-reuse.ts";
+import type { LinkedPluginLifecycle } from "../plugin/contracts.ts";
 
 export interface CommandPlanOwner {
   readonly kind: "eval" | "eval-group" | "experiment" | "agent" | "provider";
@@ -82,6 +83,8 @@ export type CommandPlanLane =
       readonly kind: "eval-group";
       readonly ordering: "serial-normalized-eval-id";
       readonly scope?: never;
+      readonly beforeSlots: readonly CommandPlanStep[];
+      readonly afterSlots: readonly CommandPlanStep[];
       /** Applied independently to every replacement instance used by this capacity-one lane. */
       readonly physicalLifecycleTemplate?: CommandPlanPhysicalLifecycleTemplate;
     });
@@ -429,27 +432,21 @@ function sandboxLifecycleHooks(
   ));
 }
 
-function pluginResourceSteps(
-  pair: PreparedRunPair,
-  phase: "materialize" | "prepare" | "release",
+function pluginLifecycleSteps(
+  lifecycles: readonly LinkedPluginLifecycle[],
+  phase: "setup" | "teardown",
+  owner: CommandPlanOwner,
   condition?: SandboxCommandPlanCondition,
 ): readonly CommandPlanStep[] {
-  const envelope = pair.resourceEnvelope;
-  if (envelope === undefined) return [];
-  const owner: CommandPlanOwner = {
-    kind: "provider",
-    id: pair.plan._tag === "Sandbox" ? pair.plan.providerPlan.provider : "physical-sandbox",
-  };
-  return envelope.entries.map((entry) => opaque(
-    `plugin.resource.${phase}`,
-    `plugin-resource-${phase}-callback`,
-    `Plugin resource ${entry.receiver}@${entry.behaviorRevision} ${phase} callback is Effect-managed and opaque`,
-    {
-      owner,
-      label: `${entry.receiver}@${entry.behaviorRevision}`,
-      ...(condition === undefined ? {} : { condition }),
-    },
-  ));
+  const ordered = phase === "teardown" ? [...lifecycles].reverse() : lifecycles;
+  return ordered
+    .filter((entry) => phase === "setup" ? entry.hasSetup : entry.hasTeardown)
+    .map((entry) => opaque(
+      `plugin.lifecycle.${phase}`,
+      `plugin-lifecycle-${phase}-callback`,
+      `Plugin ${entry.name} (${entry.instanceKey}) ${phase} callback is opaque`,
+      { owner, label: `${entry.name}:${entry.instanceKey}`, ...(condition === undefined ? {} : { condition }) },
+    ));
 }
 
 function physicalBefore(pair: PreparedRunPair, shared: boolean): readonly CommandPlanStep[] {
@@ -463,7 +460,12 @@ function physicalBefore(pair: PreparedRunPair, shared: boolean): readonly Comman
       { owner: provider, ...(shared ? { condition: SHARED_INSTANCE_AVAILABLE } : {}) },
     ),
     ...sandboxLifecycleHooks(pair, "setup", shared ? SHARED_INSTANCE_AVAILABLE : undefined),
-    ...pluginResourceSteps(pair, "materialize", shared ? SHARED_INSTANCE_AVAILABLE : undefined),
+    ...pluginLifecycleSteps(
+      pair.plan.pair.pluginLifecycles.map((entry) => entry.lifecycle),
+      "setup",
+      provider,
+      shared ? SHARED_INSTANCE_AVAILABLE : undefined,
+    ),
     opaque(
       "sandbox.baseline-anchor",
       "provider-baseline-anchor",
@@ -477,7 +479,12 @@ function physicalAfter(pair: PreparedRunPair, shared: boolean): readonly Command
   if (pair.plan._tag !== "Sandbox") return [];
   const provider: CommandPlanOwner = { kind: "provider", id: pair.plan.providerPlan.provider };
   return [
-    ...pluginResourceSteps(pair, "release", shared ? SHARED_INSTANCE_AVAILABLE : undefined),
+    ...pluginLifecycleSteps(
+      pair.plan.pair.pluginLifecycles.map((entry) => entry.lifecycle),
+      "teardown",
+      provider,
+      shared ? SHARED_INSTANCE_AVAILABLE : undefined,
+    ),
     ...sandboxLifecycleHooks(pair, "teardown", shared ? SHARED_INSTANCE_AVAILABLE : undefined),
     opaque(
       "sandbox.finalize",
@@ -503,8 +510,8 @@ function attemptBody(pair: PreparedRunPair, shared: boolean): readonly CommandPl
           { owner: provider, condition: SHARED_INSTANCE_AVAILABLE },
         )]
       : []),
-    ...pluginResourceSteps(pair, "prepare"),
     ...prepareSteps(pair),
+    ...pluginLifecycleSteps(pair.plugin.evalLifecycles, "setup", evalOwner),
     ...ensureSteps(pair),
     ...(pair.plan._tag === "Sandbox"
       ? [opaque(
@@ -522,6 +529,7 @@ function attemptBody(pair: PreparedRunPair, shared: boolean): readonly CommandPl
       { owner: evalOwner },
     ),
     ...agentTeardownSteps(pair, agentOwner),
+    ...pluginLifecycleSteps(pair.plugin.evalLifecycles, "teardown", evalOwner),
     ...(pair.plan._tag === "Sandbox"
       ? [opaque(
           "sandbox.cleanup",
@@ -654,6 +662,12 @@ function laneFor(rows: readonly RowWithPair[], spec: CommandPlanLaneSpec): Comma
     kind: "eval-group",
     id: spec.id,
     ordering: "serial-normalized-eval-id",
+    beforeSlots: hasDispatch
+      ? pluginLifecycleSteps(first.pair.plugin.groupLifecycles, "setup", { kind: "eval-group", id: spec.id }, DISPATCH_MAY_NOT_RUN)
+      : [],
+    afterSlots: hasDispatch
+      ? pluginLifecycleSteps(first.pair.plugin.groupLifecycles, "teardown", { kind: "eval-group", id: spec.id }, DISPATCH_MAY_NOT_RUN)
+      : [],
     ...(hasDispatch ? { physicalLifecycleTemplate: physicalLifecycleTemplate(first.pair) } : {}),
     slots,
   };
@@ -673,7 +687,7 @@ function experimentLifecycle(
       { owner },
     );
   }
-  const callback = side === "setup" ? pair.run.setup : pair.run.teardown;
+  const callback = side === "setup" ? pair.sourceRun.setup : pair.sourceRun.teardown;
   return callback === undefined
     ? knownNoCommand(`experiment.${side}`, "hook-omitted", `Experiment has no ${side} callback`, { owner })
     : opaque(
@@ -733,9 +747,15 @@ export function assembleCommandPlan(input: AssembleCommandPlanInput): CommandPla
     experiments.push({
       experimentId,
       activation: hasDispatch ? "conditional" : "inactive",
-      beforeLanes: [experimentLifecycle(representative, "setup", hasDispatch)],
+      beforeLanes: [
+        experimentLifecycle(representative, "setup", hasDispatch),
+        ...(hasDispatch ? pluginLifecycleSteps(representative.plugin.experimentLifecycles, "setup", { kind: "experiment", id: experimentId }, DISPATCH_MAY_NOT_RUN) : []),
+      ],
       lanes,
-      afterLanes: [experimentLifecycle(representative, "teardown", hasDispatch)],
+      afterLanes: [
+        ...(hasDispatch ? pluginLifecycleSteps(representative.plugin.experimentLifecycles, "teardown", { kind: "experiment", id: experimentId }, DISPATCH_MAY_NOT_RUN) : []),
+        experimentLifecycle(representative, "teardown", hasDispatch),
+      ],
     });
   }
 
@@ -745,9 +765,11 @@ export function assembleCommandPlan(input: AssembleCommandPlanInput): CommandPla
     const groups = [
       experiment.beforeLanes,
       ...experiment.lanes.flatMap((lane) => [
+        ...(lane.kind === "eval-group" ? [lane.beforeSlots] : []),
         lane.physicalLifecycleTemplate?.enter ?? [],
         ...lane.slots.map((slot) => slot.steps),
         lane.physicalLifecycleTemplate?.exit ?? [],
+        ...(lane.kind === "eval-group" ? [lane.afterSlots] : []),
       ]),
       experiment.afterLanes,
     ];

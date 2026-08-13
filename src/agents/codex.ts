@@ -38,13 +38,6 @@ import {
 } from "../context/send-failures.ts";
 import { normalizeExternalCause } from "../shared/external-cause.ts";
 import type { FailureClass } from "../shared/failure-class.ts";
-import {
-  agentExtensionsProjection,
-  receiverExtensionsFor,
-  type AgentExtension,
-  type PluginAgentReceiver,
-} from "../plugin/contracts.ts";
-import { codexExtensionPayload } from "../plugin/agent-extensions.ts";
 
 // ───────────────────────────────────────────────────────────────────────────
 // OpenAI Codex CLI 的 agent adapter(沙箱型)。
@@ -272,14 +265,6 @@ function codexPlatformPackage(
 }
 
 export function codexAgent(config?: CodexConfig): Agent {
-  return codexAgentWithExtensions(config, Object.freeze([]));
-}
-
-function codexAgentWithExtensions(
-  baseConfig: CodexConfig | undefined,
-  extensions: readonly AgentExtension<"codex">[],
-): Agent {
-  const config = mergeCodexPluginExtensions(baseConfig, extensions);
   const getApiKey = () => config?.apiKey ?? requireEnv("CODEX_API_KEY");
   const getBaseUrl = () => config?.baseUrl ?? getEnv("CODEX_BASE_URL");
   // PATH 是 Sandbox 受管变量,在 factory 构造时(link/配置校验期)同步拒绝,不留到 setup()
@@ -308,25 +293,12 @@ function codexAgentWithExtensions(
       },
   });
 
-  const receiver: PluginAgentReceiver = Object.freeze({
-    id: "codex",
-    compose: (_agent: Agent, next: readonly AgentExtension<any>[]) => {
-      const accepted = receiverExtensionsFor(receiver, next) as readonly AgentExtension<"codex">[];
-      return codexAgentWithExtensions(baseConfig, Object.freeze([...extensions, ...accepted]));
-    },
-    projection: (next: readonly AgentExtension<any>[]) => {
-      const accepted = receiverExtensionsFor(receiver, next) as readonly AgentExtension<"codex">[];
-      return agentExtensionsProjection(Object.freeze([...extensions, ...accepted]));
-    },
-  });
-
   return registerAgentLifecycleHookCommands(defineSandboxAgent({
     name: "codex",
     // 官方 adapter:transcript 经生命周期 fixture 验证,全通道 complete。
     evidenceCoverage: completeEvidenceCoverage,
     spanMapper: mapCodexSpans,
     classifySendFailure: classifyCodexSendFailure,
-    pluginReceiver: receiver,
     ensure,
     installers: [installer],
 
@@ -570,52 +542,6 @@ function codexAgentWithExtensions(
       };
     },
   }), config?.postSetup, config?.preTeardown);
-}
-
-/** Adapter-local composition: config values stay native, core only sees receiver projection. */
-function mergeCodexPluginExtensions(
-  base: CodexConfig | undefined,
-  extensions: readonly AgentExtension<"codex">[],
-): CodexConfig | undefined {
-  if (extensions.length === 0) return base;
-  const skills = [...(base?.skills ?? [])];
-  const plugins = [...(base?.plugins ?? [])];
-  const mcpServers = [...(base?.mcpServers ?? [])];
-  const postSetup = [...(base?.postSetup ?? [])];
-  const preTeardown = [...(base?.preTeardown ?? [])];
-  const env: globalThis.Record<string, string> = { ...(base?.env ?? {}) };
-  let configFile = base?.configFile;
-  for (const extension of extensions) {
-    const fragment = codexExtensionPayload(extension);
-    skills.push(...(fragment.skills ?? []));
-    plugins.push(...(fragment.plugins ?? []));
-    mcpServers.push(...(fragment.mcpServers ?? []));
-    postSetup.push(...(fragment.postSetup ?? []));
-    preTeardown.push(...(fragment.preTeardown ?? []));
-    for (const [key, value] of Object.entries(fragment.env ?? {})) {
-      const existing = env[key];
-      if (existing !== undefined && existing !== value) {
-        throw new TypeError(`Codex AgentExtension conflicts on env ${JSON.stringify(key)}.`);
-      }
-      env[key] = value;
-    }
-    if (fragment.configFile !== undefined) {
-      if (configFile !== undefined && configFile !== fragment.configFile) {
-        throw new TypeError("Codex AgentExtensions cannot declare different configFile values.");
-      }
-      configFile = fragment.configFile;
-    }
-  }
-  return Object.freeze({
-    ...(base ?? {}),
-    ...(skills.length === 0 ? {} : { skills: Object.freeze(skills) }),
-    ...(plugins.length === 0 ? {} : { plugins: Object.freeze(plugins) }),
-    ...(mcpServers.length === 0 ? {} : { mcpServers: Object.freeze(mcpServers) }),
-    ...(postSetup.length === 0 ? {} : { postSetup: Object.freeze(postSetup) }),
-    ...(preTeardown.length === 0 ? {} : { preTeardown: Object.freeze(preTeardown) }),
-    ...(Object.keys(env).length === 0 ? {} : { env: Object.freeze(env) }),
-    ...(configFile === undefined ? {} : { configFile }),
-  });
 }
 
 /** 把 Codex JSONL 的高频原始帧收敛成 dashboard 当前行的一条短 detail。 */

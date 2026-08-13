@@ -690,7 +690,7 @@ function renderCurrentDryPlan(input: {
   const lines = [
     `plan: ${input.totalAttempts} attempts · ${input.evals} evals × ${input.configs} configs · runs ${input.attempts}`,
     ...(reused === 0 ? [] : [`reuse: ${reused}/${input.totalAttempts} exact current Record attempts`]),
-    `plugins: ${input.pluginAudit.occurrences.length} occurrences · ${input.pluginAudit.resourceEnvelopes.length} physical resource envelopes`,
+    `plugins: ${input.pluginAudit.occurrences.length} lifecycle occurrences`,
   ];
   for (const row of input.rows) {
     const reusedAttempts = row.slots.filter((slot) => slot.state === "reused").map((slot) => slot.attempt);
@@ -719,7 +719,6 @@ function renderCurrentDryPlan(input: {
 
 interface CurrentDryPluginAudit {
   readonly occurrences: readonly JsonValue[];
-  readonly resourceEnvelopes: readonly JsonValue[];
 }
 
 function renderCurrentDryPlanJson(input: {
@@ -743,7 +742,6 @@ function renderCurrentDryPlanJson(input: {
     reused,
     matrix: input.rows,
     plugins: input.pluginAudit.occurrences,
-    resources: input.pluginAudit.resourceEnvelopes,
     ...(input.commandPlan === undefined ? {} : { commandPlan: input.commandPlan }),
   })}\n`;
 }
@@ -1921,18 +1919,13 @@ function runEvaluationCommand(
           })
         : undefined;
       const occurrenceAudits = new Map<string, JsonValue>();
-      const resourceAudits = new Map<string, JsonValue>();
       for (const pair of targetPlan.preparedPairsByKey.values()) {
         for (const occurrence of pair.plugin.occurrences) {
           occurrenceAudits.set(JSON.stringify(occurrence.audit), occurrence.audit);
         }
-        if (pair.resourceEnvelope !== undefined) {
-          resourceAudits.set(pair.resourceEnvelope.cohort.id, pair.resourceEnvelope.projection);
-        }
       }
       const pluginAudit: CurrentDryPluginAudit = Object.freeze({
         occurrences: Object.freeze([...occurrenceAudits.values()]),
-        resourceEnvelopes: Object.freeze([...resourceAudits.values()]),
       });
       const input = {
         totalAttempts,

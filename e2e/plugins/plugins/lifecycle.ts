@@ -1,111 +1,49 @@
-import { Effect } from "effect";
-import { definePlugin, defineSandboxResource } from "niceeval/plugin";
-import { sandboxLayer, shell } from "niceeval/sandbox";
+import { definePlugin } from "niceeval/plugin";
 import { appendPluginLifecycleEvent } from "../fixtures/events.ts";
 
-type ResourceDemand = {
-  readonly marker: string;
-};
-
-type ResourceHandle = {
-  readonly markers: readonly string[];
-};
-
-function errorFrom(cause: unknown): Error {
-  return cause instanceof Error ? cause : new Error(String(cause));
-}
-
-const lifecycleResource = defineSandboxResource<"docker", ResourceDemand, ResourceHandle>({
-  receiver: "docker",
-  behaviorRevision: "1",
-  demand: ({ marker }) => ({ marker }),
-  materialize: (demands, context) => Effect.sync(() => {
-    const markers = demands.map((demand) => demand.marker);
-    appendPluginLifecycleEvent({
-      kind: "resource.materialize",
-      markers,
-      physicalId: context.physicalId,
-    });
-    return Object.freeze({ markers: Object.freeze(markers) });
-  }),
-  prepare: (_handle, demand, context) => Effect.gen(function* () {
-    appendPluginLifecycleEvent({
-      kind: "resource.prepare",
-      marker: demand.marker,
-      experimentId: context.experimentId,
-      evalId: context.evalId,
-      attempt: context.attempt,
-      physicalId: context.physicalId,
-    });
-    yield* Effect.tryPromise({
-      try: () => context.sandbox.writeText(`/tmp/niceeval-plugin-resource-${demand.marker}`, "ready"),
-      catch: errorFrom,
-    });
-  }),
-  release: (handle, context) => Effect.sync(() => {
-    appendPluginLifecycleEvent({
-      kind: "resource.release",
-      markers: handle.markers,
-      physicalId: context.physicalId,
-    });
-  }),
-});
-
-export const experimentLifecycle = definePlugin<{ readonly variant: string }>({
-  name: "e2e.experiment-lifecycle",
-  behaviorRevision: "1",
-  instanceKey: ({ variant }) => variant,
-  experiment: ({ variant }) => ({
-    identity: { variant },
-    flags: { pluginScope: "experiment", variant },
-    setup: (context) => appendPluginLifecycleEvent({
-      kind: "experiment.plugin.setup",
-      experimentId: context.experimentId,
-      selectedEvalIds: context.selectedEvalIds,
-    }),
-    teardown: (context) => appendPluginLifecycleEvent({
-      kind: "experiment.plugin.teardown",
-      experimentId: context.experimentId,
-      selectedEvalIds: context.selectedEvalIds,
-    }),
-  }),
-});
-
-export const evalLifecycle = definePlugin<{ readonly marker: string }>({
-  name: "e2e.eval-lifecycle",
-  behaviorRevision: "1",
+export const lifecycle = definePlugin<{ readonly marker: string }>({
+  name: "e2e.lifecycle",
+  behaviorRevision: "2",
   instanceKey: ({ marker }) => marker,
+  experiment: ({ marker }) => ({
+    identity: { marker },
+    setup: (context) => appendPluginLifecycleEvent({ kind: "experiment.plugin.setup", marker, experimentId: context.experimentId }),
+    teardown: (context) => appendPluginLifecycleEvent({ kind: "experiment.plugin.teardown", marker, experimentId: context.experimentId }),
+  }),
+  group: ({ marker }) => ({
+    identity: { marker },
+    setup: (context) => appendPluginLifecycleEvent({ kind: "group.plugin.setup", marker, experimentId: context.experimentId, evalGroupId: context.evalGroupId }),
+    teardown: (context) => appendPluginLifecycleEvent({ kind: "group.plugin.teardown", marker, experimentId: context.experimentId, evalGroupId: context.evalGroupId }),
+  }),
+  sandbox: ({ marker }) => ({
+    identity: { marker },
+    setup: (sandbox, context) => appendPluginLifecycleEvent({ kind: "sandbox.plugin.setup", marker, physicalId: sandbox.sandboxId, experimentId: context.experimentId }),
+    teardown: (sandbox, context) => appendPluginLifecycleEvent({ kind: "sandbox.plugin.teardown", marker, physicalId: sandbox.sandboxId, experimentId: context.experimentId }),
+  }),
   eval: ({ marker }) => ({
     identity: { marker },
-    resources: [lifecycleResource({ marker })],
-    sandbox: sandboxLayer().prepare(
-      shell(
-        `test -f /tmp/niceeval-plugin-resource-${marker} && ` +
-        `printf '%s' ready > /tmp/niceeval-plugin-command-${marker}`,
-      ),
-    ),
+    setup: (context) => appendPluginLifecycleEvent({ kind: "eval.plugin.setup", marker, experimentId: context.experimentId, evalId: context.evalId, attempt: context.attempt }),
+    teardown: (context) => appendPluginLifecycleEvent({ kind: "eval.plugin.teardown", marker, experimentId: context.experimentId, evalId: context.evalId, attempt: context.attempt }),
   }),
 });
 
 /** Proves the no-option family sugar: its stable instance key is `default`. */
-export const defaultEvalIdentity = definePlugin({
-  name: "e2e.default-eval-identity",
+export const defaultEvalLifecycle = definePlugin({
+  name: "e2e.default-eval-lifecycle",
   behaviorRevision: "1",
-  eval: () => ({ identity: { fixture: "default" } }),
+  eval: () => ({
+    setup: (context) => appendPluginLifecycleEvent({ kind: "eval.plugin.setup", marker: "default", evalId: context.evalId, attempt: context.attempt }),
+    teardown: (context) => appendPluginLifecycleEvent({ kind: "eval.plugin.teardown", marker: "default", evalId: context.evalId, attempt: context.attempt }),
+  }),
 });
 
-export const groupLifecycle = definePlugin<{ readonly variant: string }>({
-  name: "e2e.group-lifecycle",
+export const evalOnlyLifecycle = definePlugin<{ readonly marker: string }>({
+  name: "e2e.eval-only-lifecycle",
   behaviorRevision: "1",
-  instanceKey: ({ variant }) => variant,
-  group: ({ variant }) => ({
-    identity: { variant },
-    resources: [lifecycleResource({ marker: "group" })],
-    sandbox: sandboxLayer().prepare(
-      shell(
-        "test -f /tmp/niceeval-plugin-resource-group && " +
-        "printf '%s' ready > /tmp/niceeval-plugin-group-command",
-      ),
-    ),
+  instanceKey: ({ marker }) => marker,
+  eval: ({ marker }) => ({
+    identity: { marker },
+    setup: (context) => appendPluginLifecycleEvent({ kind: "eval.plugin.setup", marker, evalId: context.evalId, attempt: context.attempt }),
+    teardown: (context) => appendPluginLifecycleEvent({ kind: "eval.plugin.teardown", marker, evalId: context.evalId, attempt: context.attempt }),
   }),
 });

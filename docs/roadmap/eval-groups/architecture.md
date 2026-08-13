@@ -13,12 +13,11 @@ Group entry 导入 Eval factory 的原始返回对象；同一次 namespaced mod
 ## Sandbox link 与兼容性
 
 每个实际 Eval × Experiment pair 仍独立完成三层 Sandbox link 和 Provider planning。
-同一 Group 的成员必须得到相同的物理 Provider identity、Agent install plan 与 selected
-resource envelope。任何不一致在创建 Provider 资源前聚合成 `eval-group-incompatible`。
+同一 Group 的成员必须得到相同的物理 Provider identity、Agent install plan 与 Sandbox
+Plugin lifecycle identity。任何不一致在创建 Provider 资源前聚合成 `eval-group-incompatible`。
 
-Group 是物理 cohort，也是 Group Plugin 的显式声明位置。Runner 把每个 Group Plugin
-occurrence 的 demand 与所有 selected Eval Plugin demand 冻结成同一个 envelope，随后由该
-Group 的物理 Sandbox materialize。两类 demand 不按 payload 去重。
+Group 是物理 cohort，也是 Group Plugin 的显式声明位置。Group lifecycle 跨 replacement
+保持一次；每个 occurrence 的 Sandbox lifecycle 则随实际物理实例重新执行。
 
 ## 调度
 

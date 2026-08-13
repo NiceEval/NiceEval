@@ -1,41 +1,22 @@
-// Zero-resource Plugin linker. It evaluates no plugin callbacks: every
-// occurrence was normalized by definePlugin() at author construction time.
-
 import { Data } from "effect";
 import { relative, sep } from "node:path";
 import type { AgentRun, DiscoveredEval, ExperimentHookContext } from "../runner/types.ts";
 import type { JsonValue } from "../shared/types.ts";
-import { sandboxLayer, sandboxLayerStateOf, type SandboxLayer } from "../sandbox/layer.ts";
-import { sandboxLayerDefinitionIdentity } from "../sandbox/link.ts";
-import { stableJson } from "../sandbox/identity.ts";
+import type { SandboxLayer } from "../sandbox/layer.ts";
 import {
-  agentExtensionDataOf,
-  agentExtensionsProjection,
-  isPluginInstance,
-  pluginInstanceDataOf,
-  receiverExtensionsFor,
-  sandboxResourceDemandDataOf,
-  type AgentExtension,
+  linkPluginLifecycles,
+  pluginLifecycleProjection,
+  projectPluginLifecycles,
+  type LinkedPluginLifecycle,
   type PluginInstance,
-  type PluginInstanceData,
-  type PluginOwner,
-  type SandboxResourceDemand,
+  type PluginScope,
 } from "./contracts.ts";
 
-export type PluginLinkIssueCode =
-  | "plugin-instance-invalid"
-  | "plugin-owner-unsupported"
-  | "plugin-pair-instance-conflict"
-  | "plugin-agent-receiver-unsupported"
-  | "plugin-fragment-conflict";
+export type PluginLinkIssueCode = "plugin-instance-invalid" | "plugin-owner-unsupported" | "plugin-pair-instance-conflict";
 
 export interface PluginOccurrenceProvenance {
-  readonly attachment: PluginOwner;
-  readonly owner: {
-    readonly id: string;
-    readonly source: string;
-    readonly position: number;
-  };
+  readonly attachment: PluginScope;
+  readonly owner: { readonly id: string; readonly source: string; readonly position: number };
 }
 
 export interface LinkedPluginOccurrence {
@@ -47,16 +28,8 @@ export interface LinkedPluginOccurrence {
   readonly audit: JsonValue;
 }
 
-export interface LinkedPluginResourceDemand {
-  readonly demand: SandboxResourceDemand;
-  readonly scope: "eval" | "group";
-  /** Position within this Plugin fragment's resources array. */
-  readonly position: number;
-  readonly receiver: string;
-  readonly behaviorRevision: string;
-  readonly projection: JsonValue;
-  readonly occurrence: LinkedPluginOccurrence;
-}
+/** Kept empty during the resource-envelope removal so runner planning stays source-compatible. */
+export interface LinkedPluginResourceDemand { readonly _removed?: never }
 
 export interface PluginPairLink {
   readonly evalLayer?: SandboxLayer;
@@ -64,7 +37,14 @@ export interface PluginPairLink {
   readonly experimentLayer?: SandboxLayer;
   readonly occurrences: readonly LinkedPluginOccurrence[];
   readonly resources: readonly LinkedPluginResourceDemand[];
-  /** Pair-only canonical behavior, including Eval / Group provenance. */
+  readonly experimentLifecycles: readonly LinkedPluginLifecycle[];
+  readonly groupLifecycles: readonly LinkedPluginLifecycle[];
+  readonly evalLifecycles: readonly LinkedPluginLifecycle[];
+  readonly sandboxLifecycles: Readonly<{
+    readonly experiment: readonly LinkedPluginLifecycle[];
+    readonly group: readonly LinkedPluginLifecycle[];
+    readonly eval: readonly LinkedPluginLifecycle[];
+  }>;
   readonly pairProjection: JsonValue;
 }
 
@@ -72,6 +52,7 @@ export interface PreparedPluginRun {
   readonly sourceRun: AgentRun;
   readonly run: AgentRun;
   readonly experimentOccurrences: readonly LinkedPluginOccurrence[];
+  readonly experimentLifecycles: readonly LinkedPluginLifecycle[];
 }
 
 export interface PluginLinkIssue {
@@ -88,16 +69,12 @@ export class PluginLinkError extends Data.TaggedError("PluginLinkError")<{
   readonly message: string;
 }> {}
 
-function sourceLabel(path: string): string {
-  return relative(process.cwd(), path).split(sep).join("/") || ".";
-}
-
 function pluginError(issues: readonly PluginLinkIssue[]): PluginLinkError {
   const frozen = Object.freeze(issues.map((issue) => Object.freeze({ ...issue, actions: Object.freeze([...issue.actions]) })));
   return new PluginLinkError({
     code: "plugin.link-failed",
     issues: frozen,
-    message: `Plugin link failed for ${frozen.length} occurrence${frozen.length === 1 ? "" : "s"}. No Sandbox or resource was created.`,
+    message: `Plugin link failed for ${frozen.length} occurrence${frozen.length === 1 ? "" : "s"}. No Sandbox was created.`,
   });
 }
 
@@ -105,379 +82,144 @@ export function pluginLinkErrorFromIssues(issues: readonly PluginLinkIssue[]): P
   return pluginError(issues);
 }
 
-function ownerFragment<Owner extends PluginOwner>(data: PluginInstanceData, owner: Owner): PluginInstanceData[Owner] {
-  return data[owner];
+function sourceLabel(path: string): string {
+  return relative(process.cwd(), path).split(sep).join("/") || ".";
 }
 
-function occurrenceProjection(
-  data: PluginInstanceData,
-  owner: PluginOwner,
-  provenance: PluginOccurrenceProvenance,
-): JsonValue {
-  const fragment = ownerFragment(data, owner);
-  if (fragment === undefined) throw new TypeError(`Plugin ${data.name} has no ${owner} fragment.`);
-  const resources = owner === "eval" || owner === "group"
-    ? ((fragment as NonNullable<PluginInstanceData["eval"] | PluginInstanceData["group"]>).resources ?? []).map((demand) => {
-        const resource = sandboxResourceDemandDataOf(demand);
-        return Object.freeze({
-          receiver: resource.receiver,
-          behaviorRevision: resource.behaviorRevision,
-          demand: resource.projection,
-        });
-      })
-    : [];
-  return Object.freeze({
-    name: data.name,
-    instanceKey: data.instanceKey,
-    behaviorRevision: data.behaviorRevision,
-    attachment: provenance.attachment,
-    owner: provenance.owner,
-    ...(fragment.identity === undefined ? {} : { identity: fragment.identity }),
-    ...(owner === "experiment" && (fragment as NonNullable<PluginInstanceData["experiment"]>).flags !== undefined
-      ? { flags: (fragment as NonNullable<PluginInstanceData["experiment"]>).flags }
-      : {}),
-    ...((owner === "eval" || owner === "experiment" || owner === "group") && (fragment as { readonly sandbox?: SandboxLayer<"command-only"> }).sandbox !== undefined
-      ? { sandbox: sandboxLayerDefinitionIdentity((fragment as { readonly sandbox: SandboxLayer<"command-only"> }).sandbox) }
-      : {}),
-    ...(resources.length === 0 ? {} : { resources: Object.freeze(resources) }),
-  }) as unknown as JsonValue;
-}
-
-function occurrenceAudit(
-  data: PluginInstanceData,
-  owner: PluginOwner,
-  provenance: PluginOccurrenceProvenance,
-): JsonValue {
-  const fragment = ownerFragment(data, owner);
-  if (fragment === undefined) throw new TypeError(`Plugin ${data.name} has no ${owner} fragment.`);
-  const contributions: string[] = [];
-  if (fragment.identity !== undefined) contributions.push("identity");
-  if ((fragment as { readonly flags?: unknown }).flags !== undefined) contributions.push("flags");
-  if ((fragment as { readonly labels?: unknown }).labels !== undefined) contributions.push("labels");
-  if ((fragment as { readonly sandbox?: unknown }).sandbox !== undefined) contributions.push("sandbox-commands");
-  if ((fragment as { readonly setup?: unknown; readonly teardown?: unknown }).setup !== undefined ||
-    (fragment as { readonly setup?: unknown; readonly teardown?: unknown }).teardown !== undefined) {
-    contributions.push("experiment-lifecycle");
-  }
-  const extensions = (fragment as { readonly agentExtensions?: readonly AgentExtension[] }).agentExtensions ?? [];
-  if (extensions.length > 0) contributions.push("agent-extension");
-  const demands = (fragment as { readonly resources?: readonly SandboxResourceDemand[] }).resources ?? [];
-  if (demands.length > 0) contributions.push("sandbox-resource");
-  const receivers = new Set<string>();
-  for (const extension of extensions) receivers.add(agentExtensionDataOf(extension).receiver);
-  for (const demand of demands) receivers.add(sandboxResourceDemandDataOf(demand).receiver);
-  return Object.freeze({
-    owner,
-    ownerSource: provenance.owner,
-    name: data.name,
-    instanceKey: data.instanceKey,
-    behaviorRevision: data.behaviorRevision,
-    contributions: Object.freeze(contributions),
-    receivers: Object.freeze([...receivers].sort()),
-  }) as unknown as JsonValue;
-}
-
-function collectOwnerOccurrences(
-  owner: PluginOwner,
-  plugins: readonly PluginInstance[] | undefined,
+function occurrences(
+  lifecycles: readonly LinkedPluginLifecycle[],
+  scope: PluginScope,
   ownerId: string,
   sourcePath: string,
-  experimentId: string,
-  evalId: string | undefined,
-): { readonly occurrences: readonly LinkedPluginOccurrence[]; readonly issues: readonly PluginLinkIssue[] } {
-  const occurrences: LinkedPluginOccurrence[] = [];
-  const issues: PluginLinkIssue[] = [];
-  for (const [position, plugin] of (plugins ?? []).entries()) {
-    if (!isPluginInstance(plugin)) {
-      issues.push({
-        code: "plugin-instance-invalid",
-        experimentId,
-        ...(evalId === undefined ? {} : { evalId }),
-        message: `${owner} plugin at position ${position} for ${JSON.stringify(ownerId)} was not made by definePlugin().`,
-        actions: ["Construct plugin occurrences through definePlugin(...)(options)."],
-      });
-      continue;
-    }
-    const data = pluginInstanceDataOf(plugin);
-    if (ownerFragment(data, owner) === undefined) {
-      issues.push({
-        code: "plugin-owner-unsupported",
-        experimentId,
-        ...(evalId === undefined ? {} : { evalId }),
-        message: `Plugin ${JSON.stringify(data.name)} does not support ${owner} attachment.`,
-        actions: [`Declare a ${owner} callback on the plugin family or remove this attachment.`],
-      });
-      continue;
-    }
-    const provenance: PluginOccurrenceProvenance = Object.freeze({
-      attachment: owner,
-      owner: Object.freeze({ id: ownerId, source: sourceLabel(sourcePath), position }),
+): readonly LinkedPluginOccurrence[] {
+  return Object.freeze(lifecycles.map((lifecycle) => {
+    const provenance = Object.freeze({
+      attachment: scope,
+      owner: Object.freeze({ id: ownerId, source: sourceLabel(sourcePath), position: lifecycle.arrayPosition }),
     });
-    occurrences.push(Object.freeze({
-      name: data.name,
-      instanceKey: data.instanceKey,
-      behaviorRevision: data.behaviorRevision,
+    const projection = Object.freeze({
+      scope,
+      name: lifecycle.name,
+      instanceKey: lifecycle.instanceKey,
+      behaviorRevision: lifecycle.behaviorRevision,
+      identity: lifecycle.identity,
+      arrayPosition: lifecycle.arrayPosition,
+      hasSetup: lifecycle.hasSetup,
+      hasTeardown: lifecycle.hasTeardown,
+    }) as JsonValue;
+    return Object.freeze({
+      name: lifecycle.name,
+      instanceKey: lifecycle.instanceKey,
+      behaviorRevision: lifecycle.behaviorRevision,
       provenance,
-      projection: occurrenceProjection(data, owner, provenance),
-      audit: occurrenceAudit(data, owner, provenance),
-    }));
+      projection,
+      audit: Object.freeze({
+        scope,
+        name: lifecycle.name,
+        instanceKey: lifecycle.instanceKey,
+        behaviorRevision: lifecycle.behaviorRevision,
+        identity: lifecycle.identity,
+        arrayPosition: lifecycle.arrayPosition,
+        hasSetup: lifecycle.hasSetup,
+        hasTeardown: lifecycle.hasTeardown,
+        ownerSource: provenance.owner,
+        contributions: ["lifecycle"],
+      }) as JsonValue,
+    });
+  }));
+}
+
+async function runTeardowns(
+  lifecycles: readonly LinkedPluginLifecycle[],
+  activated: number,
+  context: ExperimentHookContext,
+): Promise<void> {
+  const failures: unknown[] = [];
+  for (const lifecycle of lifecycles.slice(0, activated).reverse()) {
+    if (lifecycle.teardown === undefined) continue;
+    try { await (lifecycle.teardown as (ctx: ExperimentHookContext) => void | Promise<void>)(context); }
+    catch (error) { failures.push(error); }
   }
-  return Object.freeze({ occurrences: Object.freeze(occurrences), issues: Object.freeze(issues) });
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) throw new AggregateError(failures, "Experiment Plugin teardown failed.");
 }
 
-function fragmentsFor<Owner extends PluginOwner>(
-  plugins: readonly PluginInstance[] | undefined,
-  owner: Owner,
-): readonly NonNullable<PluginInstanceData[Owner]>[] {
-  const fragments: NonNullable<PluginInstanceData[Owner]>[] = [];
-  for (const plugin of plugins ?? []) {
-    if (!isPluginInstance(plugin)) continue;
-    const fragment = pluginInstanceDataOf(plugin)[owner];
-    if (fragment !== undefined) fragments.push(fragment);
-  }
-  return Object.freeze(fragments);
-}
-
-function appendCommandOnlyLayers(
-  authorLayer: SandboxLayer | undefined,
-  fragments: readonly { readonly sandbox?: SandboxLayer<"command-only"> }[],
-): SandboxLayer | undefined {
-  if (!fragments.some((fragment) => fragment.sandbox !== undefined)) return authorLayer;
-  let layer = authorLayer ?? sandboxLayer();
-  for (const fragment of fragments) {
-    if (fragment.sandbox === undefined) continue;
-    for (const command of sandboxLayerStateOf(fragment.sandbox).commands) layer = layer.prepare(command.command);
-  }
-  return layer;
-}
-
-function sameJson(left: JsonValue, right: JsonValue): boolean {
-  return stableJson(left) === stableJson(right);
-}
-
-function mergeJsonRecord(
-  base: Readonly<globalThis.Record<string, JsonValue>>,
-  additions: readonly Readonly<globalThis.Record<string, JsonValue>>[],
-  label: string,
-): Readonly<globalThis.Record<string, JsonValue>> {
-  const result: globalThis.Record<string, JsonValue> = { ...base };
-  for (const addition of additions) {
-    for (const [key, value] of Object.entries(addition)) {
-      if (Object.hasOwn(result, key) && !sameJson(result[key]!, value)) {
-        throw new TypeError(`Plugin ${label} conflicts with an existing value for ${JSON.stringify(key)}.`);
-      }
-      result[key] = value;
-    }
-  }
-  return Object.freeze(result);
-}
-
-function mergeLabels(
-  base: Readonly<globalThis.Record<string, string | number>> | undefined,
-  additions: readonly Readonly<globalThis.Record<string, string | number>>[],
-): Readonly<globalThis.Record<string, string | number>> | undefined {
-  if (base === undefined && additions.length === 0) return undefined;
-  const result: globalThis.Record<string, string | number> = { ...(base ?? {}) };
-  for (const addition of additions) {
-    for (const [key, value] of Object.entries(addition)) {
-      if (Object.hasOwn(result, key) && result[key] !== value) {
-        throw new TypeError(`Plugin label conflicts with an existing value for ${JSON.stringify(key)}.`);
-      }
-      result[key] = value;
-    }
-  }
-  return Object.freeze(result);
-}
-
-function composeExperimentLifecycle(
-  author: AgentRun,
-  fragments: readonly NonNullable<PluginInstanceData["experiment"]>[],
-): Pick<AgentRun, "setup" | "teardown"> {
-  const setupHooks = [author.setup, ...fragments.map((fragment) => fragment.setup)].filter((hook): hook is NonNullable<typeof hook> => hook !== undefined);
-  const teardownHooks = [...fragments.map((fragment) => fragment.teardown).filter((hook): hook is NonNullable<typeof hook> => hook !== undefined).reverse(), author.teardown]
-    .filter((hook): hook is NonNullable<typeof hook> => hook !== undefined);
-  const setup = setupHooks.length === 0
-    ? undefined
-    : async (context: ExperimentHookContext): Promise<void> => {
-        for (const hook of setupHooks) await hook(context);
-      };
-  const teardown = teardownHooks.length === 0
-    ? undefined
-    : async (context: ExperimentHookContext): Promise<void> => {
-        const failures: unknown[] = [];
-        for (const hook of teardownHooks) {
-          try {
-            await hook(context);
-          } catch (error) {
-            failures.push(error);
-          }
-        }
-        if (failures.length === 1) throw failures[0];
-        if (failures.length > 1) throw new AggregateError(failures, "Experiment Plugin teardown failed.");
-      };
-  return Object.freeze({ ...(setup === undefined ? {} : { setup }), ...(teardown === undefined ? {} : { teardown }) });
-}
-
-/** Prepare the Experiment portion once, before physical link/planning. */
 export function preparePluginRun(run: AgentRun): PreparedPluginRun {
-  const occurrenceResult = collectOwnerOccurrences(
-    "experiment",
-    run.plugins as readonly PluginInstance[] | undefined,
-    run.experimentId,
-    run.experimentSourcePath,
-    run.experimentId,
-    undefined,
-  );
-  if (occurrenceResult.issues.length > 0) throw pluginError(occurrenceResult.issues);
-  const fragments = fragmentsFor(run.plugins as readonly PluginInstance[] | undefined, "experiment");
-  const extensions = Object.freeze(fragments.flatMap((fragment) => fragment.agentExtensions ?? []));
-  let agent = run.agent;
-  let extensionProjection: JsonValue = Object.freeze([]) as unknown as JsonValue;
-  if (extensions.length > 0) {
-    const receiver = agent.pluginReceiver;
-    if (receiver === undefined) {
-      throw pluginError([{
-        code: "plugin-agent-receiver-unsupported",
-        experimentId: run.experimentId,
-        message: `Agent ${JSON.stringify(agent.name)} does not support Experiment Plugin AgentExtensions.`,
-        actions: ["Use an adapter with the matching receiver, such as codexAgent() or claudeCodeAgent()."],
-      }]);
-    }
-    try {
-      const accepted = receiverExtensionsFor(receiver, extensions);
-      extensionProjection = receiver.projection(accepted);
-      agent = receiver.compose(agent, accepted);
-    } catch (error) {
-      throw pluginError([{
-        code: "plugin-agent-receiver-unsupported",
-        experimentId: run.experimentId,
-        message: error instanceof Error ? error.message : String(error),
-        actions: ["Attach only receiver-branded extensions accepted by this Agent."],
-      }]);
-    }
+  let lifecycles: readonly LinkedPluginLifecycle[];
+  try {
+    lifecycles = linkPluginLifecycles(run.plugins as readonly PluginInstance<"experiment">[], "experiment");
+  } catch (error) {
+    throw pluginError([{ code: "plugin-owner-unsupported", experimentId: run.experimentId, message: String(error), actions: ["Attach each plugin only to a scope it declares."] }]);
   }
-  const flags = mergeJsonRecord(run.flags, fragments.flatMap((fragment) => fragment.flags === undefined ? [] : [fragment.flags]), "flags");
-  const labels = mergeLabels(run.labels, fragments.flatMap((fragment) => fragment.labels === undefined ? [] : [fragment.labels]));
-  const lifecycle = composeExperimentLifecycle(run, fragments);
-  const pluginBehavior = Object.freeze({
-    version: 1,
-    occurrences: occurrenceResult.occurrences.map((occurrence) => occurrence.projection),
-    ...(extensions.length === 0 ? {} : { agentExtensions: extensionProjection }),
-  }) as JsonValue;
-  const effective = Object.freeze({
-    ...run,
-    agent,
-    flags,
-    ...(labels === undefined ? {} : { labels }),
-    ...lifecycle,
-    pluginBehavior,
-  }) as AgentRun;
-  return Object.freeze({ sourceRun: run, run: effective, experimentOccurrences: occurrenceResult.occurrences });
+  const linkedOccurrences = occurrences(lifecycles, "experiment", run.experimentId, run.experimentSourcePath);
+  const authorSetup = run.setup;
+  const authorTeardown = run.teardown;
+  let activated = 0;
+  const setup = authorSetup === undefined && lifecycles.every((entry) => entry.setup === undefined)
+    ? undefined
+    : async (context: ExperimentHookContext): Promise<void> => {
+        if (authorSetup !== undefined) await authorSetup(context);
+        for (const lifecycle of lifecycles) {
+          activated += 1;
+          if (lifecycle.setup !== undefined) await (lifecycle.setup as (ctx: ExperimentHookContext) => void | Promise<void>)(context);
+        }
+      };
+  const teardown = authorTeardown === undefined && lifecycles.every((entry) => entry.teardown === undefined)
+    ? undefined
+    : async (context: ExperimentHookContext): Promise<void> => {
+        let pluginFailure: unknown;
+        try { await runTeardowns(lifecycles, activated, context); } catch (error) { pluginFailure = error; }
+        try { if (authorTeardown !== undefined) await authorTeardown(context); }
+        catch (error) { if (pluginFailure === undefined) throw error; throw new AggregateError([pluginFailure, error], "Experiment teardown failed."); }
+        if (pluginFailure !== undefined) throw pluginFailure;
+      };
+  const pluginBehavior = Object.freeze({ version: 1, lifecycles: pluginLifecycleProjection(lifecycles) }) as JsonValue;
+  const effective = Object.freeze({ ...run, ...(setup === undefined ? {} : { setup }), ...(teardown === undefined ? {} : { teardown }), pluginBehavior }) as AgentRun;
+  return Object.freeze({ sourceRun: run, run: effective, experimentOccurrences: linkedOccurrences, experimentLifecycles: lifecycles });
 }
 
-/** Link all three owner sides for one Eval × Experiment pair. */
-export function linkPluginPair(
-  evalDef: DiscoveredEval,
-  preparedRun: PreparedPluginRun,
-): PluginPairLink {
-  const run = preparedRun.run;
-  const evalResult = collectOwnerOccurrences(
-    "eval",
-    evalDef.plugins as readonly PluginInstance[] | undefined,
-    evalDef.id,
-    evalDef.sourcePath,
-    run.experimentId,
-    evalDef.id,
-  );
-  const groupResult = evalDef.evalGroup === undefined
-    ? Object.freeze({ occurrences: Object.freeze([]) as readonly LinkedPluginOccurrence[], issues: Object.freeze([]) as readonly PluginLinkIssue[] })
-    : collectOwnerOccurrences(
-        "group",
-        evalDef.evalGroup.plugins as readonly PluginInstance[] | undefined,
-        evalDef.evalGroup.id,
-        evalDef.evalGroup.sourcePath,
-        run.experimentId,
-        evalDef.id,
-      );
-  const issues: PluginLinkIssue[] = [...evalResult.issues, ...groupResult.issues];
-  const occurrences = [...preparedRun.experimentOccurrences, ...groupResult.occurrences, ...evalResult.occurrences];
-  const keys = new Map<string, LinkedPluginOccurrence>();
-  for (const occurrence of occurrences) {
-    const key = JSON.stringify([occurrence.name, occurrence.instanceKey]);
-    const prior = keys.get(key);
-    if (prior !== undefined) {
-      issues.push({
-        code: "plugin-pair-instance-conflict",
-        experimentId: run.experimentId,
-        evalId: evalDef.id,
-        message: `Plugin (${JSON.stringify(occurrence.name)}, ${JSON.stringify(occurrence.instanceKey)}) appears more than once in this Eval × Experiment pair (${prior.provenance.attachment} and ${occurrence.provenance.attachment}).`,
-        actions: ["Keep one occurrence for each (name, instanceKey) in a pair."],
-      });
-    } else keys.set(key, occurrence);
-  }
-  if (issues.length > 0) throw pluginError(issues);
-
-  const evalFragments = fragmentsFor(evalDef.plugins as readonly PluginInstance[] | undefined, "eval");
-  const groupFragments = evalDef.evalGroup === undefined
-    ? Object.freeze([]) as readonly NonNullable<PluginInstanceData["group"]>[]
-    : fragmentsFor(evalDef.evalGroup.plugins as readonly PluginInstance[] | undefined, "group");
-  const experimentFragments = fragmentsFor(run.plugins as readonly PluginInstance[] | undefined, "experiment");
-  const resources: LinkedPluginResourceDemand[] = [];
-  const appendResources = (
-    scope: "eval" | "group",
-    fragments: readonly (NonNullable<PluginInstanceData["eval"]> | NonNullable<PluginInstanceData["group"]>)[],
-    linkedOccurrences: readonly LinkedPluginOccurrence[],
-  ): void => {
-    for (let i = 0; i < fragments.length; i++) {
-      const fragment = fragments[i]!;
-      const occurrence = linkedOccurrences[i]!;
-      for (const [position, demand] of (fragment.resources ?? []).entries()) {
-        const data = sandboxResourceDemandDataOf(demand);
-        resources.push(Object.freeze({
-          demand,
-          scope,
-          position,
-          receiver: data.receiver,
-          behaviorRevision: data.behaviorRevision,
-          projection: data.projection,
-          occurrence,
-        }));
-      }
+export function linkPluginPair(evalDef: DiscoveredEval, preparedRun: PreparedPluginRun): PluginPairLink {
+  try {
+    const evalLifecycles = linkPluginLifecycles(evalDef.plugins as readonly PluginInstance<"eval">[], "eval");
+    const groupLifecycles = evalDef.evalGroup === undefined
+      ? Object.freeze([]) as readonly LinkedPluginLifecycle[]
+      : linkPluginLifecycles(evalDef.evalGroup.plugins ?? [], "group");
+    const experimentSandbox = projectPluginLifecycles(preparedRun.run.plugins ?? [], "sandbox");
+    const groupSandbox = evalDef.evalGroup === undefined
+      ? Object.freeze([]) as readonly LinkedPluginLifecycle[]
+      : projectPluginLifecycles(evalDef.evalGroup.plugins ?? [], "sandbox");
+    const evalSandbox = projectPluginLifecycles(evalDef.plugins, "sandbox");
+    const sandboxKeys = new Set<string>();
+    for (const lifecycle of [...experimentSandbox, ...groupSandbox, ...evalSandbox]) {
+      const key = JSON.stringify([lifecycle.name, lifecycle.instanceKey]);
+      if (sandboxKeys.has(key)) throw new TypeError(`Duplicate sandbox plugin occurrence (${JSON.stringify(lifecycle.name)}, ${JSON.stringify(lifecycle.instanceKey)}).`);
+      sandboxKeys.add(key);
     }
-  };
-  appendResources("group", groupFragments, groupResult.occurrences);
-  appendResources("eval", evalFragments, evalResult.occurrences);
-  const pairProjection = Object.freeze({
-    version: 1,
-    occurrences: occurrences.map((occurrence) => occurrence.projection),
-    ...(resources.length === 0
-      ? {}
-      : { ownResourceDemand: resources.map((resource) => Object.freeze({
-          receiver: resource.receiver,
-          behaviorRevision: resource.behaviorRevision,
-          scope: resource.scope,
-          demand: resource.projection,
-          plugin: resource.occurrence.projection,
-        })) }),
-  }) as JsonValue;
-  return Object.freeze({
-    evalLayer: appendCommandOnlyLayers(evalDef.sandbox, evalFragments),
-    ...(evalDef.evalGroup === undefined
-      ? {}
-      : { groupLayer: appendCommandOnlyLayers(evalDef.evalGroup.sandbox, groupFragments) }),
-    experimentLayer: appendCommandOnlyLayers(run.sandbox, experimentFragments),
-    occurrences: Object.freeze(occurrences),
-    resources: Object.freeze(resources),
-    pairProjection,
-  });
+    if (preparedRun.run.agent.kind === "direct" && sandboxKeys.size > 0) {
+      throw new TypeError("Plugin sandbox lifecycle requires a Sandbox Agent and a physical Sandbox plan.");
+    }
+    const evalOccurrences = occurrences(evalLifecycles, "eval", evalDef.id, evalDef.sourcePath);
+    const groupOccurrences = evalDef.evalGroup === undefined
+      ? Object.freeze([]) as readonly LinkedPluginOccurrence[]
+      : occurrences(groupLifecycles, "group", evalDef.evalGroup.id, evalDef.evalGroup.sourcePath);
+    const all = Object.freeze([...preparedRun.experimentOccurrences, ...groupOccurrences, ...evalOccurrences]);
+    return Object.freeze({
+      evalLayer: evalDef.sandbox,
+      ...(evalDef.evalGroup === undefined ? {} : { groupLayer: evalDef.evalGroup.sandbox }),
+      experimentLayer: preparedRun.run.sandbox,
+      occurrences: all,
+      resources: Object.freeze([]),
+      experimentLifecycles: preparedRun.experimentLifecycles,
+      groupLifecycles,
+      evalLifecycles,
+      sandboxLifecycles: Object.freeze({ experiment: experimentSandbox, group: groupSandbox, eval: evalSandbox }),
+      pairProjection: Object.freeze({ version: 1, occurrences: all.map((entry) => entry.projection) }) as JsonValue,
+    });
+  } catch (error) {
+    throw pluginError([{ code: "plugin-owner-unsupported", experimentId: preparedRun.run.experimentId, evalId: evalDef.id, message: String(error), actions: ["Attach each plugin only to a scope it declares, without duplicates in one scope."] }]);
+  }
 }
 
-/** Useful for configHash construction without exposing AgentExtension payload. */
 export function pluginBehaviorProjection(run: AgentRun): JsonValue {
-  return run.pluginBehavior ?? (Object.freeze([]) as unknown as JsonValue);
-}
-
-/** Defensive assertion for callers that only need receiver behavior details. */
-export function extensionReceiverOf(extension: AgentExtension): string {
-  return agentExtensionDataOf(extension).receiver;
+  return run.pluginBehavior ?? Object.freeze([]);
 }

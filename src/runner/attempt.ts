@@ -14,14 +14,6 @@ import type { ConcurrencySlot } from "../context/send-retry.ts";
 import { unregisterSandbox } from "../sandbox/registry.ts";
 import { CLEANUP_TIMEOUT_MS, cleanupCallback } from "./cleanup-timeout.ts";
 import { resolveAttemptTimeout, type TimeoutSource } from "./timeout.ts";
-import {
-  materializeSelectedPluginResources,
-  PluginResourceMaterializeError,
-  PluginResourcePrepareError,
-  type MaterializedPluginResources,
-  type SelectedResourceEnvelope,
-} from "../plugin/resource-runtime.ts";
-import type { SandboxResourceTiming } from "../plugin/contracts.ts";
 import { SandboxCommandTimeoutError } from "../sandbox/deadline.ts";
 import { ExperimentFatalError } from "../shared/failure-class.ts";
 import type { ExternalCause } from "../shared/external-cause.ts";
@@ -83,6 +75,7 @@ import type { SandboxCleanupCommand, SandboxCommandContext } from "../sandbox/co
 import { sandboxLayerIdentityFor } from "../sandbox/link.ts";
 import { agentInstallPlansForRun } from "./config-identity.ts";
 import { recordFact, type FactValue } from "../shared/facts.ts";
+import { linkPluginLifecycles, type EvalPluginContext } from "../plugin/contracts.ts";
 import { createSourceRegistry, type SourceRegistry } from "../source-loc.ts";
 import {
   createRunnerAttemptSourceCapture,
@@ -212,10 +205,7 @@ export interface RunAttemptEffectOptions<SealRequirements = never> {
     sandbox: Sandbox;
     reuseSandbox: number;
     reuseOrdinal: number;
-    resources?: MaterializedPluginResources;
   };
-  /** Selected before carry; fresh physical Sandbox materializes this once. */
-  resourceEnvelope?: SelectedResourceEnvelope;
 }
 
 export function runAttemptEffect<
@@ -235,7 +225,6 @@ export function runAttemptEffect<
     onFailureClass,
     onSealedEvaluation,
     reusedSandbox,
-    resourceEnvelope,
   }: RunAttemptEffectOptions<SealRequirements>,
 ) {
   const config = opts.config;
@@ -462,20 +451,6 @@ export function runAttemptEffect<
     // 是否消费这条 detail（human 展示，JSON 不消费 lifecycle detail）。
     reportAttemptLifecycle({ type: "attempt:progress", at: Date.now(), identity, detail });
   };
-  const recordResourceTiming = (input: SandboxResourceTiming): void => {
-    if (input.key.trim() === "" || input.label.trim() === "" || !Number.isFinite(input.durationMs) || input.durationMs < 0) {
-      throw new Error("Sandbox resource timing requires non-empty key/label and a finite non-negative durationMs.");
-    }
-    const durationMs = Math.max(0, input.durationMs);
-    recorder.child({
-      key: input.key,
-      label: redactSensitiveText(input.label, sensitiveValues),
-      startOffsetMs: Math.max(0, recorder.offsetNow() - durationMs),
-      durationMs,
-      ...(input.failed ? { failed: true as const } : {}),
-    });
-  };
-
   /**
    * ── attempt 总超时的硬边界(P1)──
    * 上限是「整个 attempt(setup+agent+脚本+评分)」的,不是 docker 单条命令的。
@@ -674,38 +649,6 @@ export function runAttemptEffect<
       if (run.agent.kind !== "sandbox") log(t("runner.useDirectAgent"));
 
       const commandTarget = createSandboxCommandTarget(sandbox);
-      // The selected resource envelope is frozen before carry planning. A
-      // reused physical Sandbox owns its handles in the pool entry; a fresh
-      // one acquires them in this Attempt Scope. In both cases only an actual
-      // dispatched Attempt prepares its own demand(s), before commands/Agent.
-      const resources = reusedSandbox?.resources ?? (resourceEnvelope === undefined
-        ? undefined
-        : yield* materializeSelectedPluginResources({
-          envelope: resourceEnvelope,
-          sandbox,
-          signal,
-          feedback: { diagnostic: scopedFeedback.diagnostic },
-          progress: scopedFeedback.progress,
-          fact: (key, value) => recordFact(facts, key, value),
-          timing: recordResourceTiming,
-        }));
-      if (resources !== undefined) {
-        enterPhase("sandbox.prepare");
-        yield* resources.prepare({
-          sandbox,
-          signal,
-          physicalId: sandbox.sandboxId,
-          evalId: evalDef.id,
-          ...(evalDef.evalGroup === undefined ? {} : { evalGroupId: evalDef.evalGroup.id }),
-          experimentId: run.experimentId,
-          attempt,
-          progress: scopedFeedback.progress,
-          diagnostic: scopedFeedback.diagnostic,
-          fact: (key, value) => recordFact(facts, key, value),
-          timing: recordResourceTiming,
-        });
-      }
-
       // ── tracing ──────────────────────────────────────────────────────────────────
       // sandbox.otlpHost:
       //   string → provider 承诺该 hostname 可访问宿主 receiver
@@ -1317,30 +1260,6 @@ export function errorFromThrown(
   phase: LifecyclePhase | undefined,
   deadline?: { timeoutMs: number; source: TimeoutSource },
 ): AttemptError {
-  if (e instanceof PluginResourceMaterializeError) {
-    return {
-      code: "plugin-resource-materialize-failed",
-      message: e.message,
-      origin: attemptOrigin("sandbox.create"),
-      ...(e.cause.stack ? { stack: e.cause.stack } : {}),
-      cause: { name: e.cause.name, message: e.cause.message },
-    };
-  }
-  if (e instanceof PluginResourcePrepareError) {
-    return {
-      code: "plugin-resource-prepare-failed",
-      message: e.message,
-      // Resource prepare always runs at the resource-before-command boundary.
-      // Do not inherit a later author command phase when this typed failure is
-      // caught through an enclosing Scope.
-      origin: attemptOrigin("sandbox.prepare"),
-      ...(e.cause.stack ? { stack: e.cause.stack } : {}),
-      cause: {
-        name: e.cause.name,
-        message: e.cause.message,
-      },
-    };
-  }
   if (isSendFailure(e)) {
     const detail = e.cause === undefined ? undefined : describeExternalCause(e.cause);
     return {
@@ -1581,6 +1500,18 @@ async function runAttemptBody(
   const commandTarget = createSandboxCommandTarget(sandbox);
   /** agent.setup 时点已走到(未声明 setup 也置位)——agent.teardown 的触发条件(成对触发规则)。 */
   let agentSetupReached = false;
+  const evalPluginLifecycles = linkPluginLifecycles(evalDef.plugins, "eval");
+  let activatedEvalPlugins = 0;
+  const evalPluginContext: EvalPluginContext = {
+    experimentId: run.experimentId,
+    evalId: evalDef.id,
+    attempt,
+    ...(evalDef.evalGroup === undefined ? {} : { evalGroupId: evalDef.evalGroup.id }),
+    signal,
+    progress: feedback.progress,
+    diagnostic: feedback.diagnostic,
+    fact,
+  };
   // Only the Assert-first runtime is registered with the outer Scope. The
   // body requests its single seal after gathering non-authoring evidence.
   let assertionState: AssertFirstContextState | undefined;
@@ -1646,6 +1577,13 @@ async function runAttemptBody(
         }
       }
 
+      for (const lifecycle of evalPluginLifecycles) {
+        activatedEvalPlugins += 1;
+        if (lifecycle.setup !== undefined) {
+          await (lifecycle.setup as (context: EvalPluginContext) => void | Promise<void>)(evalPluginContext);
+        }
+      }
+
       // 两侧作者的环境准备完成后，Runner 统一执行 Agent ensure；adapter setup 只能写运行时
       // 配置/凭据，不能自行安装或跳过 probe → install → recheck 循环。
       if (run.agent.kind === "sandbox") {
@@ -1676,6 +1614,15 @@ async function runAttemptBody(
         ? undefined
         : { include: [...evalDef.diff.include], ignore: [...evalDef.diff.ignore] });
       registerLedger(ledger);
+    }
+
+    if (!usesSandbox) {
+      for (const lifecycle of evalPluginLifecycles) {
+        activatedEvalPlugins += 1;
+        if (lifecycle.setup !== undefined) {
+          await (lifecycle.setup as (context: EvalPluginContext) => void | Promise<void>)(evalPluginContext);
+        }
+      }
     }
 
     // agent 自己的 lifecycle:装 CLI、写 config(每个沙箱一次,不在每轮 send 里)。
@@ -2131,6 +2078,23 @@ async function runAttemptBody(
           }
         })
         .catch(() => {});
+    }
+    for (const lifecycle of evalPluginLifecycles.slice(0, activatedEvalPlugins).reverse()) {
+      if (lifecycle.teardown === undefined) continue;
+      try {
+        await Effect.runPromise(cleanupCallback(() =>
+          (lifecycle.teardown as (context: EvalPluginContext) => void | Promise<void>)({
+            ...evalPluginContext,
+            signal: AbortSignal.timeout(CLEANUP_TIMEOUT_MS),
+          })
+        ));
+      } catch (error) {
+        feedback.diagnostic({
+          code: "plugin-lifecycle-teardown-failed",
+          level: "warning",
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
     // Agent teardown 是 Promise author 边界内最后一步；作者 cleanup / Provider Case
     // 都由外层 Effect Scope finalizer 接管。

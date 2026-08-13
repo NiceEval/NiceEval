@@ -11,7 +11,6 @@ import type { AttemptRef, MaybePromise, SandboxCommandTarget, StableSandboxComma
 import type { RegisteredSandboxContent } from "../sandbox/content.ts";
 import type { SendFailureClassifier } from "../context/send-failures.ts";
 import type { SessionSlot } from "./session-slot.ts";
-import type { PluginAgentReceiver } from "../plugin/contracts.ts";
 
 export type { SessionSlot } from "./session-slot.ts";
 
@@ -411,12 +410,6 @@ interface AgentBase {
    * 执行体时序见 docs/feature/error-classification/architecture.md。
    */
   classifySendFailure?: SendFailureClassifier;
-  /**
-   * Adapter-owned composition boundary for receiver-branded Plugin extensions.
-   * It is deliberately opaque to the runner: core checks the receiver id and
-   * asks this object to compose a new Agent without parsing native config.
-   */
-  readonly pluginReceiver?: PluginAgentReceiver;
 }
 
 // ───────────────────────── Agent Ensure / Installer ─────────────────────────
@@ -596,8 +589,6 @@ export interface SandboxAgentDef {
   send(input: TurnInput, ctx: SandboxAgentContext): Promise<Turn>;
   /** 可选 send 执行失败分类器:见 `Agent.classifySendFailure`。 */
   classifySendFailure?: SendFailureClassifier;
-  /** Adapter-private receiver used by `niceeval/plugin` extensions. */
-  pluginReceiver?: PluginAgentReceiver;
   /** Sandbox 销毁前的清理,当且仅当本 attempt 走到过 `setup` 时点才执行(`setup` 抛错不豁免),
    * 在 finally 里跑一次。 */
   teardown?: AgentTeardown;

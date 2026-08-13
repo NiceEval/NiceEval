@@ -45,7 +45,7 @@ export interface ExperimentRunInfo {
   flags?: globalThis.Record<string, JsonValue>;
   /** 报告归类标注(ExperimentDef.labels 原样投影);不透传运行时,不参与可比性配置。 */
   labels?: globalThis.Record<string, string | number>;
-  /** Credential-free Experiment Plugin and AgentExtension behavior projection. */
+  /** Credential-free Plugin lifecycle behavior projection. */
   plugins?: JsonValue;
   attempts: number;
   earlyExit: boolean;
@@ -1319,8 +1319,6 @@ export interface Attempt {
   readonly plan: LinkedRunPlan;
   /** 同一 Experiment 本次选中 Eval 的完整 plan 映射；run.json 不从当前 pair 猜全局默认值。 */
   readonly sandboxPlansByEval: Readonly<globalThis.Record<string, JsonValue>>;
-  /** Frozen selected resource envelope for this pair's physical Sandbox cohort. */
-  readonly resourceEnvelope?: import("../plugin/resource-runtime.ts").SelectedResourceEnvelope;
   /**
    * 构造 fresh attempt plan 时即算好的 Attempt 定位符(不是完成后写回):由 invocation 的
    * 预分配 runId 与 attempt 身份派生,贯穿执行、留存登记与落盘——登记项、run 收尾反馈与

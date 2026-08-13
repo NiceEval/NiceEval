@@ -120,7 +120,6 @@ export function manifestDeltas(
     ...faceDeltas("config", historical.config ?? {}, current.config ?? {}, serializeValue),
     ...planDelta(historical, current),
     ...faceDeltas("plugins", historical.plugins ?? {}, current.plugins ?? {}, serializeValue),
-    ...faceDeltas("resources", historical.resources ?? {}, current.resources ?? {}, serializeValue),
     ...faceDeltas("source", historical.source ?? {}, current.source ?? {}, shortHash),
     ...faceDeltas("data", historical.data ?? {}, current.data ?? {}, shortHash),
   ];
