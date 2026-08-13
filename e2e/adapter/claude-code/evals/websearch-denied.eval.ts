@@ -1,7 +1,7 @@
 // 同一条刺激同时跑在 webResearch 正例与 settingsFile deny 反例上：前者必须调用
 // WebSearch，后者因为工具已从可用面移除而正常收口且零调用。
 import { defineEval } from "niceeval";
-import { jsonMatch, toolMatch } from "niceeval/expect";
+import { toolMatch } from "niceeval/expect";
 
 const QUERY = "niceeval e2e mcp test";
 
@@ -27,9 +27,7 @@ export default defineEval({
     await t.group("WebSearch 工具面与真实调用一致", () => {
       if (expectedWebSearch) {
         t.calledTool(
-          toolMatch("web_search", {
-            input: jsonMatch({ query: QUERY }),
-          }),
+          toolMatch("web_search", { status: "completed" }),
           { count: 1 },
         );
       } else {

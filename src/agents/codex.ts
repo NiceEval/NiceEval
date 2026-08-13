@@ -318,6 +318,17 @@ export function codexAgent(config?: CodexConfig): Agent {
         });
       }
 
+      // Codex 把 Plugin 的声明态写在 config.toml、安装体写在 cache。必须在覆盖用户配置前
+      // 同时摘掉两边：覆盖后 `plugin list` 已看不见旧声明，旧安装体却仍会影响下一次 add
+      // 的版本选择。先完整收敛，再写本 Attempt 的唯一配置层。
+      if (config?.plugins?.length) {
+        const plugins = config.plugins;
+        yield* Effect.tryPromise({
+          try: () => resetPluginState(sb, plugins),
+          catch: (cause) => cause,
+        });
+      }
+
       // model 归属:实验决定(ctx.model);省略时不写 model 行,交给 codex CLI 原生默认,
       // 不在 adapter 里硬编码一个会过期的模型名。
       const modelLine = ctx.model ? `model = "${ctx.model}"\n` : "";
@@ -424,7 +435,7 @@ export function codexAgent(config?: CodexConfig): Agent {
         );
       }
       if (config?.plugins?.length) {
-        manifest.nativePlugins = await installPlugins(sb, config.plugins);
+        manifest.nativePlugins = await installPluginsFromResetState(sb, config.plugins);
       }
       if (config?.mcpServers?.length) {
         // manifest 只记「挂了哪个 server、怎么连」;env / headers 里可能有 token,不落盘。
@@ -616,20 +627,44 @@ export async function installPlugins(
   sb: Sandbox,
   plugins: readonly CodexPluginSpec[],
 ): Promise<NonNullable<AgentSetupManifest["nativePlugins"]>> {
-  const connected = new Set<string>();
-  const out: NonNullable<AgentSetupManifest["nativePlugins"]> = [];
+  await resetPluginState(sb, plugins);
+  return installPluginsFromResetState(sb, plugins);
+}
 
-  // 摘除顺序固定「先卸完全部同名插件、后摘 marketplace」:marketplace 注册一摘,`codex plugin list`
-  // 就不再列出挂在它名下的安装(真机核对 codex-cli 0.146.0),残留的那份从此定位不到。
-  // 整体先于安装循环执行,多个插件共用一个 marketplace 时第二个插件的残留才摘得到。
+/**
+ * 在 config.toml 仍保留上一条 Attempt 的 Plugin 声明时清理声明态与安装体。
+ * setup 必须先调用它再覆盖 config；直接调用 installPlugins() 时也走同一收敛入口。
+ */
+async function resetPluginState(
+  sb: Sandbox,
+  plugins: readonly CodexPluginSpec[],
+): Promise<void> {
+  // 摘除顺序固定「先卸完全部同名插件、后摘 marketplace」:marketplace 注册一摘,
+  // `codex plugin list` 就不再列出挂在它名下的安装(真机核对 codex-cli 0.146.0),
+  // 残留的那份从此定位不到。多个插件共用一个 marketplace 时只需摘一次注册。
   for (const plugin of plugins) {
     await removeInstalledPlugins(sb, plugin.name);
   }
 
+  const marketplaces = new Set<string>();
+  for (const plugin of plugins) {
+    if (marketplaces.has(plugin.marketplace.name)) continue;
+    await dropRegisteredMarketplace(sb, plugin.marketplace.name);
+    marketplaces.add(plugin.marketplace.name);
+  }
+}
+
+/** 安装阶段只接受已经由 resetPluginState() 收敛过的 Sandbox。 */
+async function installPluginsFromResetState(
+  sb: Sandbox,
+  plugins: readonly CodexPluginSpec[],
+): Promise<NonNullable<AgentSetupManifest["nativePlugins"]>> {
+  const connected = new Set<string>();
+  const out: NonNullable<AgentSetupManifest["nativePlugins"]> = [];
+
   for (const plugin of plugins) {
     const { marketplace } = plugin;
     if (!connected.has(marketplace.name)) {
-      await dropRegisteredMarketplace(sb, marketplace.name);
       const refFlag = marketplace.ref ? ` --ref ${shared.shellQuote(marketplace.ref)}` : "";
       // --sparse 只影响拉取速度,不影响装出来的内容;manifest 不记录它。
       const sparseFlags = (marketplace.sparse ?? [])

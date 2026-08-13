@@ -37,6 +37,12 @@ codex 的 marketplace 注册状态分两半:`config.toml` 的 `[marketplaces.<na
   验证:MemoryBench `dev-e2b/codex-e2b--nowledge`(复用 1 泳道 × 3 attempts,判据是第 2、3 条的
   agent setup)。
 
+2026-08-13 补充：同样的可见性断裂也影响 Plugin 卸载。若 Adapter 先覆盖
+`config.toml` 再调用 `plugin list`，旧 `[plugins.*]` 声明已经消失，旧 cache 安装无法被列出；
+不同版本目录可能继续参与 active version 选择。Codex Adapter 因此把完整清理前移到配置覆盖
+之前：先按仍可见的旧声明卸同名 Plugin，再摘 marketplace，之后才写本 Attempt 的配置并安装。
+marketplace 的无条件 remove 规则不变。
+
 适用场景:任何「CLI 状态分两半、一半被我们整层重写」的收敛都别信单边回读;
 摘除类命令能容忍不存在时,无条件执行 + 让后继的建设性命令当权威失败面,比「先查再摘」可靠。
 关联:[[native-plugin-marketplace-name-not-caller-assignable]]、[[codex-plugin-list-json-shape-guessed-wrong]]。
