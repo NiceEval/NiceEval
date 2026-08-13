@@ -26,6 +26,7 @@ import type { AttemptLocator } from "../record/locator.ts";
 import type { RecordAttachmentWrite } from "../record/attachment/index.ts";
 import type { SealedAttemptAssertions } from "../assertions/api.ts";
 import type { CurrentReusedAttemptReadback } from "./reuse-readback.ts";
+import type { PluginInstance, PluginOnUnavailable } from "../plugin/contracts.ts";
 // Report 的公开子路径是独立预编译单元；这里依赖作者 API 的公开 aggregate，避免把
 // host implementation 或旧的 JSX renderer type 拉回 runner 边界。
 import type { Report } from "../report/index.ts";
@@ -44,6 +45,8 @@ export interface ExperimentRunInfo {
   flags?: globalThis.Record<string, JsonValue>;
   /** 报告归类标注(ExperimentDef.labels 原样投影);不透传运行时,不参与可比性配置。 */
   labels?: globalThis.Record<string, string | number>;
+  /** Credential-free Plugin lifecycle behavior projection. */
+  plugins?: JsonValue;
   attempts: number;
   earlyExit: boolean;
   timeoutMs?: number;
@@ -87,6 +90,7 @@ export type LifecyclePhase =
   | "sandbox.create" // provider 物化沙箱实例(共享构建不在这里,它在 Run 级 activity)
   | "sandbox.prepare" // 两层作者 layer 的 prepare 链
   | "sandbox.prepare.eval" // 仅错误/诊断归因,不单列计时
+  | "sandbox.prepare.group" // Eval Group 作者与 Plugin command 的错误/诊断归因
   | "sandbox.prepare.experiment" // 仅错误/诊断归因,不单列计时
   | "agent.ensure" // Runner 的 probe → 缺失才 install → 同一 probe 复检
   | "workspace.baseline" // 变更分类账锚点(runner 私有 git ledger 首笔 commit)
@@ -687,6 +691,8 @@ export interface EvalAuthorFields {
    * 每个实际 Eval x Experiment 配对必须恰好一方提供 template-bearing layer。
    */
   sandbox?: SandboxLayer;
+  /** Explicit, immutable Eval Plugin occurrences; no directory inheritance exists. */
+  plugins?: readonly PluginInstance<"eval">[];
   /** 声明 Judge capability；true 继承 Experiment/Config，对象同时声明并覆盖它们。 */
   judge?: JudgeDeclaration;
   /** 覆盖 / 追加项目级 Config.reporters,只对这一条评估用例生效。 */
@@ -708,7 +714,10 @@ export interface EvalAuthorFields {
 type EvalTestReturn = void | Promise<void> | Effect.Effect<void, unknown, never>;
 
 /** 作者输入：id 归 discovery、evaluationKind 归 factory、configHash 归 planning，作者都不能填写。 */
-export type EvalInput = EvalAuthorFields & {
+export type EvalInput<
+  Sandbox extends SandboxLayer | undefined = SandboxLayer | undefined,
+> = Omit<EvalAuthorFields, "sandbox"> & {
+  sandbox?: Sandbox;
   id?: IdComesFromFilePath;
   evaluationKind?: EvaluationKindComesFromFactory;
   configHash?: ConfigHashComesFromPlanning;
@@ -716,7 +725,10 @@ export type EvalInput = EvalAuthorFields & {
 };
 
 /** 计分制作者输入，只有 test 的上下文不同。 */
-export type ScoreEvalInput = EvalAuthorFields & {
+export type ScoreEvalInput<
+  Sandbox extends SandboxLayer | undefined = SandboxLayer | undefined,
+> = Omit<EvalAuthorFields, "sandbox"> & {
+  sandbox?: Sandbox;
   id?: IdComesFromFilePath;
   evaluationKind?: EvaluationKindComesFromFactory;
   configHash?: ConfigHashComesFromPlanning;
@@ -724,14 +736,17 @@ export type ScoreEvalInput = EvalAuthorFields & {
 };
 
 /** Factory 完成默认归一后的 Eval 字段；Definition 不再复用作者输入的 optional 半状态。 */
-export interface EvalDefinitionFields {
+export interface EvalDefinitionFields<
+  Sandbox extends SandboxLayer | undefined = SandboxLayer | undefined,
+> {
   readonly description?: string;
   readonly tags: readonly string[];
   /**
    * 保留“作者省略”和“作者显式声明空 layer”的来源差异：Direct Agent 只允许前者，
    * Sandbox link 则把省略侧视为 command-only。不能在 factory 阶段补成 sandboxLayer()。
    */
-  readonly sandbox?: SandboxLayer;
+  readonly sandbox?: Sandbox;
+  readonly plugins: readonly PluginInstance<"eval">[];
   readonly judge?: JudgeDeclaration;
   readonly reporters: readonly Reporter[];
   readonly timeoutMs?: number;
@@ -743,23 +758,56 @@ export interface EvalDefinitionFields {
 }
 
 /** Factory 产物保留精确 evaluationKind / context，并带模块私有品牌，不能由对象字面量伪造。 */
-
-export interface EvalDefinition<Kind extends EvaluationKind, Context> extends EvalDefinitionFields {
+export interface EvalDefinition<
+  Kind extends EvaluationKind,
+  Context,
+  Sandbox extends SandboxLayer | undefined = SandboxLayer | undefined,
+> extends EvalDefinitionFields<Sandbox> {
   readonly evaluationKind: Kind;
   test(t: Context): EvalTestReturn;
   readonly [EVAL_DEFINITION]: true;
 }
 
 export type AnyEvalDefinition =
-  | EvalDefinition<"pass", TestContext>
-  | EvalDefinition<"score", ScoreTestContext>;
+  | EvalDefinition<"pass", TestContext, SandboxLayer | undefined>
+  | EvalDefinition<"score", ScoreTestContext, SandboxLayer | undefined>;
+
+const EVAL_GROUP_DEFINITION: unique symbol = Symbol("niceeval.evalGroupDefinition");
+
+/** A group member must not own a Sandbox template or instance lifecycle. Runtime discovery revalidates this. */
+export type EvalGroupMemberSandbox = SandboxLayer<"command-only", "prepare-only"> | undefined;
+export type EvalGroupMember =
+  | EvalDefinition<"pass", TestContext, EvalGroupMemberSandbox>
+  | EvalDefinition<"score", ScoreTestContext, EvalGroupMemberSandbox>;
+export interface EvalGroupInput<Sandbox extends SandboxLayer | undefined = SandboxLayer | undefined> {
+  readonly evals: readonly [EvalGroupMember, ...EvalGroupMember[]];
+  readonly sandbox?: Sandbox;
+  /** Required physical-instance policy when a grouped Sandbox becomes unavailable. */
+  readonly onUnavailable: PluginOnUnavailable;
+  readonly plugins?: readonly PluginInstance<"group">[];
+}
+export interface EvalGroupDefinition extends EvalGroupInput {
+  readonly [EVAL_GROUP_DEFINITION]: true;
+}
+export function brandEvalGroupDefinition(value: EvalGroupInput): EvalGroupDefinition {
+  Object.defineProperty(value, EVAL_GROUP_DEFINITION, { value: true });
+  return Object.freeze(value) as EvalGroupDefinition;
+}
+export function isEvalGroupDefinition(value: unknown): value is EvalGroupDefinition {
+  return typeof value === "object" && value !== null &&
+    (value as { readonly [EVAL_GROUP_DEFINITION]?: unknown })[EVAL_GROUP_DEFINITION] === true;
+}
 
 /** @internal 唯一写入 Definition 私有品牌的构造辅助；不从公共入口导出。 */
-export function brandEvalDefinition<Kind extends EvaluationKind, Context>(
-  value: EvalDefinitionFields & { evaluationKind: Kind; test(t: Context): EvalTestReturn },
-): EvalDefinition<Kind, Context> {
+export function brandEvalDefinition<
+  Kind extends EvaluationKind,
+  Context,
+  Sandbox extends SandboxLayer | undefined,
+>(
+  value: EvalDefinitionFields<Sandbox> & { evaluationKind: Kind; test(t: Context): EvalTestReturn },
+): EvalDefinition<Kind, Context, Sandbox> {
   Object.defineProperty(value, EVAL_DEFINITION, { value: true });
-  return Object.freeze(value) as EvalDefinition<Kind, Context>;
+  return Object.freeze(value) as EvalDefinition<Kind, Context, Sandbox>;
 }
 
 /** Definition 之后由 discovery 一次性补齐的不可变事实。 */
@@ -786,6 +834,19 @@ export interface DiscoveredEvalFacts {
    * 同一文件里多个 eval(数组默认导出)共享同一份引用——哈希与内容天然相同,不重复读盘。
    */
   readonly source: CapturedEvalSource;
+  /** @internal Original factory object, used only for Eval Group identity resolution. */
+  readonly definition: AnyEvalDefinition;
+  /** Eval Group planning facts, present only for discovered group members. */
+  readonly evalGroup?: {
+    readonly id: string;
+    readonly evalIds: readonly string[];
+    readonly definitionHash: string;
+    readonly sandbox?: SandboxLayer;
+    readonly onUnavailable: PluginOnUnavailable;
+    readonly plugins: readonly PluginInstance<"group">[];
+    readonly sourcePath: string;
+    readonly baseDir: string;
+  };
 }
 
 /** discovery 保留 factory 的 evaluationKind 判别、私有品牌与对应 test context。 */
@@ -831,6 +892,9 @@ export interface ExperimentHookContext extends ScopedFeedback {
    */
   fact(key: string, value: string | number | boolean): void;
 }
+
+/** Shared lifecycle callback shape for author and Experiment Plugin hooks. */
+export type ExperimentHook = (ctx: ExperimentHookContext) => void | Promise<void>;
 
 /** Experiment 作者自行选择的字段；不包含路径 id 与 factory 品牌。 */
 export interface ExperimentAuthorFields {
@@ -884,6 +948,8 @@ export interface ExperimentAuthorFields {
    * 每个配对恰好一方提供 template-bearing layer。
    */
   sandbox?: SandboxLayer;
+  /** Explicit Experiment Plugin occurrences, normalized by defineExperiment(). */
+  plugins?: readonly PluginInstance<"experiment">[];
   /** 同一 Run 内复用沙箱；这种运行与历史携带双向隔离。 */
   sandboxReuse?: boolean;
   /**
@@ -919,14 +985,14 @@ export interface ExperimentAuthorFields {
    * 函数体不进 fingerprint,改了钩子逻辑用 `--rerun all` 明确全部重跑。
    * 见 docs/feature/experiments/architecture.md「实验级生命周期」。
    */
-  setup?: (ctx: ExperimentHookContext) => void | Promise<void>;
+  setup?: ExperimentHook;
   /**
    * 实验级生命周期钩子对的 teardown 侧:本实验全部 attempt 收尾后执行(运行被中断也执行),
    * 当且仅当 setup 时点走到过——setup 抛错不豁免(半初始化现场同样要扫尾,teardown 对可能
    * 未赋值的闭包变量做防御),未声明 setup 不影响触发;一个 attempt 都不派发则跳过。
    * 抛错或超 30s 清理上限只记运行级 diagnostic(`experiment-teardown-failed`),不改判定。
    */
-  teardown?: (ctx: ExperimentHookContext) => void | Promise<void>;
+  teardown?: ExperimentHook;
 }
 
 /** 作者输入：id 只能由发现阶段从文件路径推导。 */
@@ -949,12 +1015,13 @@ export interface ExperimentDefinition {
   readonly timeoutMs?: number;
   /** 省略本身是 link 阶段需要的来源事实，不能在 Definition 中归一成显式空 layer。 */
   readonly sandbox?: SandboxLayer;
+  readonly plugins: readonly PluginInstance<"experiment">[];
   readonly sandboxReuse: boolean;
   readonly budget?: number;
   readonly maxConcurrency?: number;
   readonly classifyFailure?: AttemptFailureClassifier;
-  readonly setup?: (ctx: ExperimentHookContext) => void | Promise<void>;
-  readonly teardown?: (ctx: ExperimentHookContext) => void | Promise<void>;
+  readonly setup?: ExperimentHook;
+  readonly teardown?: ExperimentHook;
   readonly [EXPERIMENT_DEFINITION]: true;
 }
 
@@ -1102,6 +1169,10 @@ export interface AgentRun {
   readonly earlyExit: boolean;
   /** Experiment 的作者 layer；省略在 link 输入归一为 command-only。 */
   readonly sandbox?: SandboxLayer;
+  /** Experiment Plugin occurrences carried into zero-resource pair link. */
+  readonly plugins?: readonly PluginInstance<"experiment">[];
+  /** Canonical, credential-free Experiment Plugin behavior projection. */
+  readonly pluginBehavior?: JsonValue;
   readonly sandboxReuse?: boolean;
   /** Experiment 声明的 judge 覆盖；与 Eval/Config 的逐字段解析在 pair 规划期完成。 */
   readonly judge?: JudgeConfig;
@@ -1137,8 +1208,8 @@ export interface AgentRun {
   /** 实验级生命周期钩子对(来自 ExperimentDef.setup / .teardown):setup 整场至多一次,
    *  调度器 memoize 执行;teardown 在全部 attempt 收尾后执行,当且仅当 setup 时点走到过
    *  (语义见 ExperimentDef 对应字段)。 */
-  readonly setup?: (ctx: ExperimentHookContext) => void | Promise<void>;
-  readonly teardown?: (ctx: ExperimentHookContext) => void | Promise<void>;
+  readonly setup?: ExperimentHook;
+  readonly teardown?: ExperimentHook;
   /** 实验声明的失败分类器(来自 ExperimentDef.classifyFailure):turn 链上排在 adapter 之前,
    *  生命周期链上排在抛出点声明之后;产出的空间轴由止损闸在 attempt 封口消费。 */
   readonly classifyFailure?: AttemptFailureClassifier;

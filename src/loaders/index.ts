@@ -22,6 +22,36 @@ interface LoaderCapture {
   readonly data: Set<string>;
   readonly criteria: Set<string>;
   readonly private: Set<string>;
+  /** Source module -> registrations made while that module was evaluated. */
+  readonly origins: Map<string, LoaderCaptureBuckets>;
+  /** No usable caller frame: discovery conservatively attributes these to all entries. */
+  readonly unattributed: LoaderCaptureBuckets;
+}
+
+interface LoaderCaptureBuckets {
+  readonly data: Set<string>;
+  readonly criteria: Set<string>;
+  readonly private: Set<string>;
+}
+
+type LoaderCaptureBucketName = "data" | "criteria" | "private";
+
+/**
+ * Internal discovery provenance. A shared helper is evaluated only once in a
+ * fresh module graph, so discovery uses its source module to copy these paths
+ * to every Eval entry that statically imports that helper.
+ */
+export interface LoaderCaptureOrigin {
+  readonly sourcePath: string;
+  readonly paths: readonly string[];
+  readonly criteriaPaths: readonly string[];
+  readonly privatePaths: readonly string[];
+}
+
+export interface LoaderCapturePaths {
+  readonly paths: readonly string[];
+  readonly criteriaPaths: readonly string[];
+  readonly privatePaths: readonly string[];
 }
 
 let activeCapture: LoaderCapture | undefined;
@@ -34,12 +64,21 @@ let activeCapture: LoaderCapture | undefined;
  */
 export async function captureLoadedFiles<T>(
   load: () => Promise<T>,
-): Promise<{ value: T; paths: string[]; criteriaPaths: string[]; privatePaths: string[] }> {
+): Promise<{
+  value: T;
+  paths: string[];
+  criteriaPaths: string[];
+  privatePaths: string[];
+  origins: readonly LoaderCaptureOrigin[];
+  unattributed: LoaderCapturePaths;
+}> {
   const previous = activeCapture;
   const capture: LoaderCapture = {
     data: new Set<string>(),
     criteria: new Set<string>(),
     private: new Set<string>(),
+    origins: new Map<string, LoaderCaptureBuckets>(),
+    unattributed: newBuckets(),
   };
   activeCapture = capture;
   try {
@@ -49,10 +88,65 @@ export async function captureLoadedFiles<T>(
       paths: [...capture.data].sort(),
       criteriaPaths: [...capture.criteria].sort(),
       privatePaths: [...capture.private].sort(),
+      origins: Object.freeze([...capture.origins.entries()]
+        .map(([sourcePath, buckets]) => Object.freeze({
+          sourcePath,
+          paths: Object.freeze([...buckets.data].sort()),
+          criteriaPaths: Object.freeze([...buckets.criteria].sort()),
+          privatePaths: Object.freeze([...buckets.private].sort()),
+        }))
+        .sort((left, right) => left.sourcePath.localeCompare(right.sourcePath))),
+      unattributed: Object.freeze({
+        paths: Object.freeze([...capture.unattributed.data].sort()),
+        criteriaPaths: Object.freeze([...capture.unattributed.criteria].sort()),
+        privatePaths: Object.freeze([...capture.unattributed.private].sort()),
+      }),
     };
   } finally {
     activeCapture = previous;
   }
+}
+
+function newBuckets(): LoaderCaptureBuckets {
+  return {
+    data: new Set<string>(),
+    criteria: new Set<string>(),
+    private: new Set<string>(),
+  };
+}
+
+/** Best-effort source ownership for a public loader call, without exposing it as an API. */
+function loaderCallerPath(): string | undefined {
+  const stack = new Error().stack;
+  if (stack === undefined) return undefined;
+  const self = resolve(fileURLToPath(import.meta.url));
+  for (const line of stack.split("\n").slice(1)) {
+    const match = line.match(/(?:file:\/\/)?(\/.*?):\d+:\d+/);
+    if (match?.[1] === undefined) continue;
+    let candidate: string;
+    try {
+      candidate = line.includes("file://") ? fileURLToPath(`file://${match[1]}`) : match[1];
+    } catch {
+      continue;
+    }
+    const absolute = resolve(candidate);
+    if (absolute !== self) return absolute;
+  }
+  return undefined;
+}
+
+function registerCapturePath(bucket: LoaderCaptureBucketName, absolute: string): void {
+  const capture = activeCapture;
+  if (capture === undefined) return;
+  capture[bucket].add(absolute);
+  const caller = loaderCallerPath();
+  if (caller === undefined) {
+    capture.unattributed[bucket].add(absolute);
+    return;
+  }
+  const buckets = capture.origins.get(caller) ?? newBuckets();
+  capture.origins.set(caller, buckets);
+  buckets[bucket].add(absolute);
 }
 
 // 两种入参在这里归一成一个绝对路径,登记与指纹因此天然等价:字符串按项目根(进程 cwd)解析,
@@ -61,7 +155,7 @@ export async function captureLoadedFiles<T>(
 function resolvedPath(path: string | URL): string {
   const absolute = typeof path === "string" ? resolve(process.cwd(), path) : fromFileUrl(path);
   if (!activeCapture) throw new Error(t("loaders.outsideDiscovery", { path: String(path) }));
-  activeCapture.data.add(absolute);
+  registerCapturePath("data", absolute);
   return absolute;
 }
 
@@ -186,8 +280,7 @@ async function registerGlobPatterns(
     const key = bucket === "private" ? "loaders.privateNoMatch" : "loaders.criteriaNoMatch";
     throw new Error(t(key, { patterns: missing.join(" "), root }));
   }
-  const target = bucket === "private" ? capture.private : capture.criteria;
-  for (const path of relativePaths) target.add(resolve(root, path));
+  for (const path of relativePaths) registerCapturePath(bucket, resolve(root, path));
   return relativePaths;
 }
 

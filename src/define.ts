@@ -6,7 +6,10 @@ import type {
   DirectAgentDef,
   Config,
   EvalInput,
+  EvalGroupDefinition,
+  EvalGroupInput,
   EvalDefinition,
+  EvalDefinitionFields,
   ExperimentDefinition,
   ExperimentInput,
   SandboxAgent,
@@ -16,7 +19,12 @@ import type {
   TestContext,
   JsonValue,
 } from "./types.ts";
-import { brandEvalDefinition, brandExperimentDefinition } from "./types.ts";
+import {
+  brandEvalDefinition,
+  brandEvalGroupDefinition,
+  brandExperimentDefinition,
+  isEvalDefinition,
+} from "./types.ts";
 import { t } from "./i18n/index.ts";
 import {
   customProviderSandbox,
@@ -26,10 +34,38 @@ import {
 } from "./sandbox/layer.ts";
 import { Either, Schema } from "effect";
 import { assertEvidenceCoverage } from "./assertions/coverage.ts";
+import { isPluginInstance, pluginInstanceDataOf, type PluginInstance, type PluginOwner } from "./plugin/contracts.ts";
 
 // 发现期必须区分 defineScoreEval 的真正产物与运行时手写 `{ evaluationKind: "score" }` 的裸对象。
 // WeakSet 是模块私有来源证明；Definition 本身另有 types.ts 的私有 symbol 品牌供类型层使用。
 const definedScoreEvals = new WeakSet<object>();
+
+/** Define a closed set of real Eval definitions sharing one physical Sandbox. */
+export function defineEvalGroup<const Sandbox extends SandboxLayer | undefined>(
+  input: EvalGroupInput<Sandbox>,
+): EvalGroupDefinition {
+  if (!Array.isArray(input.evals) || input.evals.length === 0) {
+    throw new TypeError("defineEvalGroup evals must be a non-empty array of defineEval()/defineScoreEval() definitions.");
+  }
+  input.evals.forEach((member, index) => {
+    if (!isEvalDefinition(member)) {
+      throw new TypeError(
+        `defineEvalGroup evals[${index}] must be the object returned by defineEval() or defineScoreEval().`,
+      );
+    }
+  });
+  assertSandboxLayer(input.sandbox, "defineEvalGroup");
+  if (input.onUnavailable !== "stop-group" && input.onUnavailable !== "replace-sandbox") {
+    throw new TypeError("defineEvalGroup onUnavailable must be \"stop-group\" or \"replace-sandbox\".");
+  }
+  const [first, ...rest] = input.evals;
+  return brandEvalGroupDefinition({
+    evals: Object.freeze([first, ...rest]),
+    onUnavailable: input.onUnavailable,
+    ...(input.sandbox ? { sandbox: input.sandbox } : {}),
+    ...(input.plugins === undefined ? {} : { plugins: normalizePlugins(input.plugins, "defineEvalGroup plugins", "group") }),
+  });
+}
 
 /** @internal 仅供 discoverEvals 验证 score 题型来源。 */
 export function isDefinedScoreEval(value: object): boolean {
@@ -76,7 +112,9 @@ export function defineAgent(def: DirectAgentDef): DirectAgent {
 }
 
 /** 会话型 eval(通过制:一个 eval 折叠成一分)。禁止提供 id —— 从路径推导。 */
-export function defineEval(def: EvalInput): EvalDefinition<"pass", TestContext> {
+export function defineEval<
+  const Sandbox extends SandboxLayer | undefined = undefined,
+>(def: EvalInput<Sandbox>): EvalDefinition<"pass", TestContext, Sandbox> {
   if (Object.hasOwn(def, "id")) {
     throw new Error(t("define.evalIdRejected"));
   }
@@ -97,9 +135,11 @@ export function defineEval(def: EvalInput): EvalDefinition<"pass", TestContext> 
  * 计分制 eval:Fact verdict uses 与 Fact score uses 可以读取同一份证据；正常返回由 Runner
  * 自动关闭计分收集器。字段与 `defineEval` 同形，禁止提供 id，由发现期推导。
  */
-export function defineScoreEval(
-  def: ScoreEvalInput,
-): EvalDefinition<"score", ScoreTestContext> {
+export function defineScoreEval<
+  const Sandbox extends SandboxLayer | undefined = undefined,
+>(
+  def: ScoreEvalInput<Sandbox>,
+): EvalDefinition<"score", ScoreTestContext, Sandbox> {
   if (Object.hasOwn(def, "id")) {
     throw new Error(t("define.scoreEvalIdRejected"));
   }
@@ -152,14 +192,18 @@ export function defineExperiment(def: ExperimentInput): ExperimentDefinition {
     earlyExit: def.earlyExit ?? false,
     evals: Array.isArray(def.evals) ? Object.freeze([...def.evals]) : (def.evals ?? "*"),
     sandboxReuse: def.sandboxReuse === true,
+    plugins: normalizePlugins(def.plugins ?? [], "defineExperiment plugins", "experiment"),
   });
 }
 
-function normalizeEvalFields(def: EvalInput | ScoreEvalInput) {
+function normalizeEvalFields<
+  const Sandbox extends SandboxLayer | undefined,
+>(def: EvalInput<Sandbox> | ScoreEvalInput<Sandbox>): EvalDefinitionFields<Sandbox> {
   return {
     ...(def.description !== undefined ? { description: def.description } : {}),
     tags: Object.freeze([...(def.tags ?? [])]),
     ...(def.sandbox !== undefined ? { sandbox: def.sandbox } : {}),
+    plugins: normalizePlugins(def.plugins ?? [], "defineEval plugins", "eval"),
     ...(def.judge !== undefined ? { judge: def.judge } : {}),
     reporters: Object.freeze([...(def.reporters ?? [])]),
     ...(def.timeoutMs !== undefined ? { timeoutMs: def.timeoutMs } : {}),
@@ -169,6 +213,21 @@ function normalizeEvalFields(def: EvalInput | ScoreEvalInput) {
       ignore: Object.freeze([...(def.diff?.ignore ?? [])]),
     }),
   };
+}
+
+function normalizePlugins<Owner extends PluginOwner>(
+  value: readonly PluginInstance<Owner>[],
+  label: string,
+  owner: Owner,
+): readonly PluginInstance<Owner>[] {
+  if (!Array.isArray(value)) throw new TypeError(`${label} must be an array.`);
+  return Object.freeze(value.map((plugin, index) => {
+    if (!isPluginInstance(plugin)) throw new TypeError(`${label}[${index}] must be created by definePlugin().`);
+    if (pluginInstanceDataOf(plugin)[owner] === undefined) {
+      throw new TypeError(`${label}[${index}] does not support ${owner} attachment.`);
+    }
+    return plugin;
+  }));
 }
 
 function isJsonValue(value: unknown): value is JsonValue {
@@ -232,6 +291,6 @@ export function defineConfig(config: Config): Config {
  */
 export function defineSandbox(
   def: CustomProviderSandboxOptions,
-): SandboxLayer<"template-bearing"> {
+): SandboxLayer<"template-bearing", "prepare-only"> {
   return customProviderSandbox(def);
 }

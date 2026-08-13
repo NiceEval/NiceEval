@@ -120,6 +120,8 @@ export interface SessionDeps {
   evalId?: string;
   /** 当前 Attempt 引用；与 setup/teardown 拿到的 AgentContext 保持同一身份。 */
   attempt?: AgentContext["attempt"];
+  /** 当前 Eval Group 身份；未分组 Eval 省略。 */
+  evalGroup?: AgentContext["evalGroup"];
   model?: string;
   reasoningEffort?: string;
   flags: globalThis.Record<string, JsonValue>;
@@ -319,6 +321,7 @@ export class SessionManager {
         signal: this.deps.signal,
         evalId: this.deps.evalId,
         attempt: this.deps.attempt,
+        evalGroup: this.deps.evalGroup,
         model: this.deps.model,
         reasoningEffort: this.deps.reasoningEffort,
         flags: this.deps.flags,

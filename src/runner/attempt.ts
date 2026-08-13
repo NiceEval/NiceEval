@@ -75,6 +75,7 @@ import type { SandboxCleanupCommand, SandboxCommandContext } from "../sandbox/co
 import { sandboxLayerIdentityFor } from "../sandbox/link.ts";
 import { agentInstallPlansForRun } from "./config-identity.ts";
 import { recordFact, type FactValue } from "../shared/facts.ts";
+import { linkPluginLifecycles, type EvalPluginContext } from "../plugin/contracts.ts";
 import { createSourceRegistry, type SourceRegistry } from "../source-loc.ts";
 import {
   createRunnerAttemptSourceCapture,
@@ -459,7 +460,6 @@ export function runAttemptEffect<
     // 是否消费这条 detail（human 展示，JSON 不消费 lifecycle detail）。
     reportAttemptLifecycle({ type: "attempt:progress", at: Date.now(), identity, detail });
   };
-
   /**
    * ── attempt 总超时的硬边界(P1)──
    * 上限是「整个 attempt(setup+agent+脚本+评分)」的,不是 docker 单条命令的。
@@ -658,7 +658,6 @@ export function runAttemptEffect<
       if (run.agent.kind !== "sandbox") log(t("runner.useDirectAgent"));
 
       const commandTarget = createSandboxCommandTarget(sandbox);
-
       // ── tracing ──────────────────────────────────────────────────────────────────
       // sandbox.otlpHost:
       //   string → provider 承诺该 hostname 可访问宿主 receiver
@@ -1496,6 +1495,10 @@ async function runAttemptBody(
     reasoningEffort: run.reasoningEffort,
     flags: run.flags,
     experimentId: run.experimentId,
+    ...(evalDef.evalGroup === undefined ? {} : { evalGroup: {
+      id: evalDef.evalGroup.id,
+      definitionHash: evalDef.evalGroup.definitionHash,
+    } }),
     session: createAgentSession(),
     telemetry,
     progress: feedback.progress,
@@ -1508,6 +1511,18 @@ async function runAttemptBody(
   const commandTarget = createSandboxCommandTarget(sandbox);
   /** agent.setup 时点已走到(未声明 setup 也置位)——agent.teardown 的触发条件(成对触发规则)。 */
   let agentSetupReached = false;
+  const evalPluginLifecycles = linkPluginLifecycles(evalDef.plugins, "eval");
+  let activatedEvalPlugins = 0;
+  const evalPluginContext: EvalPluginContext = {
+    experimentId: run.experimentId,
+    evalId: evalDef.id,
+    attempt,
+    ...(evalDef.evalGroup === undefined ? {} : { evalGroupId: evalDef.evalGroup.id }),
+    signal,
+    progress: feedback.progress,
+    diagnostic: feedback.diagnostic,
+    fact,
+  };
   // Only the Assert-first runtime is registered with the outer Scope. The
   // body requests its single seal after gathering non-authoring evidence.
   let assertionState: AssertFirstContextState | undefined;
@@ -1528,7 +1543,9 @@ async function runAttemptBody(
         for (const entry of linked.commands) {
           const ownerPhase = entry.owner.kind === "eval"
             ? "sandbox.prepare.eval"
-            : "sandbox.prepare.experiment";
+            : entry.owner.kind === "eval-group"
+              ? "sandbox.prepare.group"
+              : "sandbox.prepare.experiment";
           enterPhase(ownerPhase);
           const label = `${entry.owner.kind}#${entry.index}`;
           const startedAt = recorder.offsetNow();
@@ -1539,6 +1556,10 @@ async function runAttemptBody(
           if (node) recorder.pushParent(node);
           const cleanupContext: Omit<SandboxCommandContext, "onCleanup"> = {
             phase: "prepare",
+            ...(evalDef.evalGroup === undefined ? {} : { evalGroup: {
+              id: evalDef.evalGroup.id,
+              definitionHash: evalDef.evalGroup.definitionHash,
+            } }),
             owner: entry.owner,
             attempt: { id: `${run.experimentId}/${evalDef.id}`, index: attempt },
             signal,
@@ -1564,6 +1585,13 @@ async function runAttemptBody(
               recorder.popParent();
             }
           }
+        }
+      }
+
+      for (const lifecycle of evalPluginLifecycles) {
+        activatedEvalPlugins += 1;
+        if (lifecycle.setup !== undefined) {
+          await (lifecycle.setup as (context: EvalPluginContext) => void | Promise<void>)(evalPluginContext);
         }
       }
 
@@ -1597,6 +1625,15 @@ async function runAttemptBody(
         ? undefined
         : { include: [...evalDef.diff.include], ignore: [...evalDef.diff.ignore] });
       registerLedger(ledger);
+    }
+
+    if (!usesSandbox) {
+      for (const lifecycle of evalPluginLifecycles) {
+        activatedEvalPlugins += 1;
+        if (lifecycle.setup !== undefined) {
+          await (lifecycle.setup as (context: EvalPluginContext) => void | Promise<void>)(evalPluginContext);
+        }
+      }
     }
 
     // agent 自己的 lifecycle:装 CLI、写 config(每个沙箱一次,不在每轮 send 里)。
@@ -1651,6 +1688,10 @@ async function runAttemptBody(
       sandbox,
       evalId: evalDef.id,
       attempt: { id: evalDef.id, index: attempt },
+      ...(evalDef.evalGroup === undefined ? {} : { evalGroup: {
+        id: evalDef.evalGroup.id,
+        definitionHash: evalDef.evalGroup.definitionHash,
+      } }),
       model: run.model,
       reasoningEffort: run.reasoningEffort,
       flags: run.flags,
@@ -2048,6 +2089,23 @@ async function runAttemptBody(
           }
         })
         .catch(() => {});
+    }
+    for (const lifecycle of evalPluginLifecycles.slice(0, activatedEvalPlugins).reverse()) {
+      if (lifecycle.teardown === undefined) continue;
+      try {
+        await Effect.runPromise(cleanupCallback(() =>
+          (lifecycle.teardown as (context: EvalPluginContext) => void | Promise<void>)({
+            ...evalPluginContext,
+            signal: AbortSignal.timeout(CLEANUP_TIMEOUT_MS),
+          })
+        ));
+      } catch (error) {
+        feedback.diagnostic({
+          code: "plugin-lifecycle-teardown-failed",
+          level: "warning",
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
     // Agent teardown 是 Promise author 边界内最后一步；作者 cleanup / Provider Case
     // 都由外层 Effect Scope finalizer 接管。
@@ -2447,6 +2505,7 @@ export function experimentRunInfo(
     ...(run.reasoningEffort !== undefined ? { reasoningEffort: run.reasoningEffort } : {}),
     ...(Object.keys(run.flags).length > 0 ? { flags: run.flags } : {}),
     ...(run.labels !== undefined && Object.keys(run.labels).length > 0 ? { labels: run.labels } : {}),
+    ...(run.pluginBehavior === undefined ? {} : { plugins: run.pluginBehavior }),
     attempts: run.attempts,
     earlyExit: run.earlyExit,
     ...(runLevelTimeoutMs !== undefined ? { timeoutMs: runLevelTimeoutMs } : {}),

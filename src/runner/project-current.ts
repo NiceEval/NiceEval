@@ -98,6 +98,7 @@ export function loadProjectCurrent(
           model: experiment.model,
           reasoningEffort: experiment.reasoningEffort,
           flags: experiment.flags ?? {},
+          plugins: experiment.plugins,
           attempts: experiment.attempts ?? 1,
           earlyExit: experiment.earlyExit ?? false,
           sandbox: experiment.sandbox,

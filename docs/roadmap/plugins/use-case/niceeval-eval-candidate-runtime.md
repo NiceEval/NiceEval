@@ -39,7 +39,7 @@ export default defineExperiment({
 - `candidateVersion` flag 与报告 label;
 - physical Sandbox setup 写入候选工作区并执行就绪检查;
 - Node / pnpm / Docker / Compose 版本的已声明 typed Run Attachment；
-- 对 requested Docker access、资源与 runtime profile 的 typed planning requirements;
+- 把 requested Docker access、资源与 runtime profile 写进 identity，并用 command-only 检查完成态 Sandbox;
 - 静态 candidate identity、setup provenance 与 contribution refs。
 
 这样同一个插件可用于 stable、previous 与 canary 三格;每个 Experiment link 出独立 instance,不会共享 setup 状态或 Record write capability。
@@ -60,4 +60,4 @@ Sandbox template      → candidateHarnessSandbox({ version, runtime })
 候选运行条件与验收   → plugins: [candidateRuntime({ version, runtime })]
 ```
 
-插件 requirement 可以核对 template completed plan 是否满足候选 Runtime,但不能反过来修改 template 让它“碰巧兼容”。
+插件可以检查 template 完成后的 Sandbox 实例，但不能反过来修改 template 让它“碰巧兼容”。V1 不提供通用 planning requirement 求解器。

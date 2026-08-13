@@ -98,6 +98,8 @@ export const en = {
   "cli.dry.unit.configs": "configs",
   "cli.dry.affects": "affects {{evals}} · {{ids}}",
   "cli.dry.acceptHint": "accept:  {{command}}",
+  "cli.commands.requiresDryExp":
+    "error: --commands is only valid as `niceeval exp <selection> --dry --commands`; it cannot be used alone or with exp list / rename / --teardown.\n",
   "cli.accept.choiceHeader": "previous-result  {{selector}}{{change}}  ({{evals}} evals)\n",
   "cli.accept.prompt": "  reuse these results? [y/N] ",
   "cli.accept.nothingToAccept":
@@ -235,7 +237,7 @@ export const en = {
     "Flags:\n" +
     "  --attempts n  --max-concurrency n  --max-build-concurrency n  --timeout ms\n" +
     "  --budget usd  --tag t\n" +
-    "  --early-exit / --no-early-exit  --rerun[=failed|all]  --dry\n" +
+    "  --early-exit / --no-early-exit  --rerun[=failed|all]  --dry  --commands\n" +
     "  --json  (machine feed: NDJSON on stdout; default is human text)\n" +
     "  --junit path  --out dir  --port n  --open / --no-open  -h, --help  -v, --version\n\n" +
     "Positional args only select which evals to run (id prefixes); which agent and\n" +

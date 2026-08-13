@@ -105,6 +105,7 @@ export interface AssertFirstContextDeps {
   readonly sandbox: Sandbox;
   readonly evalId?: string;
   readonly attempt?: import("../types.ts").AgentContext["attempt"];
+  readonly evalGroup?: import("../types.ts").AgentContext["evalGroup"];
   readonly model?: string;
   readonly reasoningEffort?: string;
   readonly flags: globalThis.Record<string, JsonValue>;
@@ -1498,6 +1499,7 @@ export function createAssertFirstEvalContext(
     sandbox: deps.sandbox,
     evalId: deps.evalId,
     attempt: deps.attempt,
+    evalGroup: deps.evalGroup,
     model: deps.model,
     reasoningEffort: deps.reasoningEffort,
     flags: deps.flags,

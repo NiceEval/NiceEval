@@ -127,6 +127,7 @@ npx niceeval exp prompts/concise
 | `maxConcurrency` | 这一格配置的并发上限 |
 | `sharedState` | 跨 Invocation 共享 checkpoint 的独占 key。只协调状态，不提供存储 |
 | `sandbox` | 一条 `SandboxLayer`。具体 factory 一次声明 provider 原生 template，并可链 `.prepare()` / `.setup()` / `.teardown()` |
+| `plugins` | 显式附着的 NiceEval Plugin occurrence；把一套 identity、flags、Sandbox 命令、生命周期或 Agent Extension 作为完整条件复用 |
 | `setup` | 实验级 Hook：整个实验只跑一次、在你自己的机器上执行，启动全部 Attempt 共享的服务（见下） |
 | `teardown` | 与 `setup` 成对的实验级 Hook：全部 Attempt 收尾后执行一次，当且仅当 `setup` 的时点已经走到（见下） |
 

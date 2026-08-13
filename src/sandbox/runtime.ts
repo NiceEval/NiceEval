@@ -1093,6 +1093,50 @@ function runTeardownHooks(
   );
 }
 
+const activatedSandboxPluginCounts = new WeakMap<object, number>();
+
+function runSandboxPluginSetups(
+  input: SandboxRuntimeMaterializeInput,
+  owned: MaterializedSandboxCase,
+): Effect.Effect<void, unknown> {
+  return Effect.forEach(
+    input.plan.pair.pluginLifecycles,
+    (entry, index) => {
+      activatedSandboxPluginCounts.set(owned, index + 1);
+      const setup = entry.lifecycle.setup;
+      if (setup === undefined) return Effect.void;
+      return Effect.tryPromise({
+        try: () => Promise.resolve((setup as (sandbox: Sandbox, context: SandboxHookContext) => void | Promise<void>)(owned.sandbox, input.hookContext)),
+        catch: (cause) => cause,
+      });
+    },
+    { discard: true },
+  );
+}
+
+function runSandboxPluginTeardowns(
+  input: SandboxRuntimeMaterializeInput,
+  owned: MaterializedSandboxCase,
+): Effect.Effect<void> {
+  const count = activatedSandboxPluginCounts.get(owned) ?? 0;
+  return Effect.forEach(
+    input.plan.pair.pluginLifecycles.slice(0, count).reverse(),
+    (entry) => {
+      const teardown = entry.lifecycle.teardown;
+      if (teardown === undefined) return Effect.void;
+      const cleanupContext = { ...input.hookContext, signal: AbortSignal.timeout(CLEANUP_TIMEOUT_MS) };
+      return cleanupCallback(() => (teardown as (sandbox: Sandbox, context: SandboxHookContext) => void | Promise<void>)(owned.sandbox, cleanupContext)).pipe(
+        Effect.catchAll((cause) => Effect.sync(() => input.feedback.diagnostic({
+          code: "plugin-lifecycle-teardown-failed",
+          level: "warning",
+          message: cause instanceof Error ? cause.message : String(cause),
+        }))),
+      );
+    },
+    { discard: true },
+  );
+}
+
 function reportReleaseFailure(
   input: SandboxRuntimeMaterializeInput,
   owned: MaterializedSandboxCase,
@@ -1134,7 +1178,8 @@ function releaseOwned(input: SandboxRuntimeMaterializeInput, owned: Materialized
   const releaseWithDiagnostic = release.pipe(
     Effect.catchAll((cause) => reportReleaseFailure(input, owned, cause)),
   );
-  return runTeardownHooks(input.plan.pair.teardownHooks, owned.sandbox, input.hookContext).pipe(
+  return runSandboxPluginTeardowns(input, owned).pipe(
+    Effect.zipRight(runTeardownHooks(input.plan.pair.teardownHooks, owned.sandbox, input.hookContext)),
     Effect.ensuring(releaseWithDiagnostic),
   );
 }
@@ -1218,6 +1263,9 @@ export function materializeSandboxRunPlan(
         owned.sandbox,
         input.hookContext,
       ).pipe(Effect.mapError((cause) => runtimeFailure(context, "sandbox.materialization-failed", cause)))),
+      Effect.tap((owned) => runSandboxPluginSetups(input, owned).pipe(
+        Effect.mapError((cause) => runtimeFailure(context, "sandbox.materialization-failed", cause)),
+      )),
     ),
   );
 }

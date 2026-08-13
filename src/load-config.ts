@@ -34,8 +34,9 @@ export async function loadConfigFile(
   } catch (e) {
     // 全局 tsx hook 能装载 config.ts，但 Node ESM 在某些项目形态下会让它的静态
     // import 回落原生 loader；config 一旦 import 了 Report .tsx 就报
-    // ERR_UNKNOWN_FILE_EXTENSION。只对这个装载能力错误补一层 tsx hook
-    // 重试，用户模块自己抛错时不重放副作用。
+    // ERR_UNKNOWN_FILE_EXTENSION。只对普通一次性装载的能力错误补一层 tsx hook
+    // 重试，用户模块自己抛错时不重放副作用。fresh 装载不能退回 canonical URL：
+    // 它可能已被 view 启动时缓存，从而用上一代成功配置掩盖当前损坏。
     if (!options?.freshImport && needsAdditionalTsxLoader(e)) {
       const url = pathToFileURL(path).href;
       register();
@@ -43,14 +44,6 @@ export async function loadConfigFile(
       // config 图可能进入 CJS package，tsx 在 Node builtin URL 上传播 namespace query
       // 会把 node:util 误当文件读取。query 只击穿上一次失败的入口 cache。
       mod = (await import(`${url}?niceeval-config=${Date.now()}`)) as { default?: Config };
-    // vitest 的 vite-node 等环境可能不认 namespaced register;退化普通 import
-    // (失去变更重载,不失去功能)。仍失败才是真错误。
-    } else if (options?.freshImport) {
-      try {
-        mod = (await import(pathToFileURL(path).href)) as { default?: Config };
-      } catch {
-        throw e instanceof Error ? e : new Error(String(e));
-      }
     } else {
       throw e;
     }

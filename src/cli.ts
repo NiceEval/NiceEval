@@ -17,6 +17,7 @@ import { parseArgs as nodeParseArgs } from "node:util";
 import { Data, Effect, Either, Schema } from "effect";
 import { discoverEvals, discoverExperiments } from "./runner/discover.ts";
 import { browsableExperimentPaths, evalPrefixPredicate, matchExperimentSelector } from "./shared/aggregate.ts";
+import type { JsonValue } from "./shared/types.ts";
 import { runEvals, type AgentRun } from "./runner/run.ts";
 import { planProjectTarget, type ProjectTargetPlan } from "./runner/fingerprint.ts";
 import { loadProjectCurrent } from "./runner/project-current.ts";
@@ -122,6 +123,8 @@ import {
   createNodeInputGuardStdin,
   createHumanRenderer,
   createJsonRenderer,
+  assembleCommandPlan,
+  renderHumanCommandPlan,
   computeExitCode,
 } from "./runner/feedback/index.ts";
 import { setConfiguredLocale, t } from "./i18n/index.ts";
@@ -238,6 +241,7 @@ export interface Flags {
   timeout?: number;
   earlyExit?: boolean;
   dry: boolean;
+  commands: boolean;
   force: boolean;
   rerun?: "failed" | "all";
   budget?: number;
@@ -370,6 +374,8 @@ const FLAG_OPTIONS = {
   teardown: { type: "boolean" },
   /** 只打印本次会匹配到的 eval × 运行配置,不实际执行(人读文本或 `--json` 单文档,见「机器怎么读:--json」)。 */
   dry: { type: "boolean" },
+  /** `exp --dry` 专用：追加 Sandbox 与 Plugin 生命周期命令计划。 */
+  commands: { type: "boolean" },
   /** `sandbox prune` 专用:除 orphan 外也销毁 unverified 实例;`exp` 明确拒绝此 flag,重跑失败项或全部项请用 `--rerun` / `--rerun all`。 */
   force: { type: "boolean" },
   /** `exp` 命令专用:重新运行失败项(裸写/failed)或全部项(all),不改变长期指纹。 */
@@ -534,6 +540,7 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
     port: numberFlag("port", values.port as string | undefined),
     host: values.host as string | undefined,
     dry: values.dry === true,
+    commands: values.commands === true,
     force: values.force === true,
     rerun: values.rerun === true ? (rerunMode ?? "failed") : undefined,
     earlyExit: values["no-early-exit"] === true ? false : values["early-exit"] === true ? true : undefined,
@@ -601,6 +608,8 @@ interface CurrentDryPlanSlot {
 interface CurrentDryPlanRow {
   readonly experimentId: string;
   readonly evalId: string;
+  readonly evalGroupId?: string;
+  readonly evalGroupIndex?: number;
   readonly slots: readonly CurrentDryPlanSlot[];
   readonly readbacks: readonly CurrentReuseReadbackSnapshot[];
   readonly locked?: boolean;
@@ -670,12 +679,14 @@ function renderCurrentDryPlan(input: {
   readonly configs: number;
   readonly attempts: number;
   readonly rows: readonly CurrentDryPlanRow[];
+  readonly pluginAudit: CurrentDryPluginAudit;
 }): string {
   const reused = input.rows.reduce((total, row) =>
     total + row.slots.filter((slot) => slot.state === "reused").length, 0);
   const lines = [
     `plan: ${input.totalAttempts} attempts · ${input.evals} evals × ${input.configs} configs · runs ${input.attempts}`,
     ...(reused === 0 ? [] : [`reuse: ${reused}/${input.totalAttempts} exact current Record attempts`]),
+    `plugins: ${input.pluginAudit.occurrences.length} lifecycle occurrences`,
   ];
   for (const row of input.rows) {
     const reusedAttempts = row.slots.filter((slot) => slot.state === "reused").map((slot) => slot.attempt);
@@ -702,12 +713,18 @@ function renderCurrentDryPlan(input: {
   return `${lines.join("\n")}\n`;
 }
 
+interface CurrentDryPluginAudit {
+  readonly occurrences: readonly JsonValue[];
+}
+
 function renderCurrentDryPlanJson(input: {
   readonly totalAttempts: number;
   readonly evals: number;
   readonly configs: number;
   readonly attempts: number;
   readonly rows: readonly CurrentDryPlanRow[];
+  readonly pluginAudit: CurrentDryPluginAudit;
+  readonly commandPlan?: ReturnType<typeof assembleCommandPlan>;
 }): string {
   const reused = input.rows.reduce((total, row) =>
     total + row.slots.filter((slot) => slot.state === "reused").length, 0);
@@ -720,6 +737,8 @@ function renderCurrentDryPlanJson(input: {
     attempts: input.attempts,
     reused,
     matrix: input.rows,
+    plugins: input.pluginAudit.occurrences,
+    ...(input.commandPlan === undefined ? {} : { commandPlan: input.commandPlan }),
   })}\n`;
 }
 
@@ -1750,6 +1769,7 @@ function runEvaluationCommand(
           model: experiment.model,
           reasoningEffort: experiment.reasoningEffort,
           flags: experiment.flags ?? {},
+          plugins: experiment.plugins,
           attempts: flags.attempts ?? experiment.attempts ?? 1,
           earlyExit: flags.earlyExit ?? experiment.earlyExit ?? false,
           sandbox: experiment.sandbox,
@@ -1854,20 +1874,72 @@ function runEvaluationCommand(
           Effect.map((lock) => lock !== undefined && !isCaseLockExpired(lock, now)),
         ),
       ), { concurrency: "unbounded" });
-      const rowsWithLocks = Object.freeze(rows.map((row, index) => Object.freeze({
-        ...row,
-        ...(lockedFlags[index] ? { locked: true } : {}),
-      })));
+      const evalGroupsByEvalId = new Map(evals.flatMap((evalDef) =>
+        evalDef.evalGroup === undefined ? [] : [[evalDef.id, {
+          ...evalDef.evalGroup,
+          index: evalDef.evalGroup.evalIds.indexOf(evalDef.id),
+        }] as const]
+      ));
+      const rowsWithLocks = Object.freeze(rows.map((row, index) => {
+        const evalGroup = evalGroupsByEvalId.get(row.evalId);
+        return Object.freeze({
+          ...row,
+          ...(evalGroup === undefined ? {} : {
+            evalGroupId: evalGroup.id,
+            evalGroupIndex: evalGroup.index,
+          }),
+          ...(lockedFlags[index] ? { locked: true } : {}),
+        });
+      }));
+      const commandPlan = flags.commands
+        ? assembleCommandPlan({
+            rows: rowsWithLocks.map((row) => ({
+              experimentId: row.experimentId,
+              evalId: row.evalId,
+              ...(row.evalGroupId === undefined ? {} : {
+                evalGroupId: row.evalGroupId,
+                evalGroupIndex: row.evalGroupIndex,
+              }),
+              attempts: Math.max(0, ...row.slots.map((slot) => slot.attempt + 1)),
+              dispatch: [{
+                attempts: row.slots
+                  .filter((slot) => slot.state === "gap")
+                  .map((slot) => slot.attempt),
+              }],
+            })),
+            preparedPairsByKey: targetPlan.preparedPairsByKey,
+          })
+        : undefined;
+      const occurrenceAudits = new Map<string, JsonValue>();
+      for (const pair of targetPlan.preparedPairsByKey.values()) {
+        for (const occurrence of pair.plugin.occurrences) {
+          occurrenceAudits.set(JSON.stringify(occurrence.audit), occurrence.audit);
+        }
+      }
+      const pluginAudit: CurrentDryPluginAudit = Object.freeze({
+        occurrences: Object.freeze([...occurrenceAudits.values()]),
+      });
       const input = {
         totalAttempts,
         evals: uniqueEvalIds.size,
         configs: agentRuns.length,
         attempts: Math.max(1, ...agentRuns.map((run) => run.attempts)),
         rows: rowsWithLocks,
+        pluginAudit,
+        ...(commandPlan === undefined ? {} : { commandPlan }),
       };
-      yield* writeStdout(outputForm === "json"
-        ? renderCurrentDryPlanJson(input)
-        : renderCurrentDryPlan(input));
+      if (outputForm === "json") {
+        yield* writeStdout(renderCurrentDryPlanJson(input));
+      } else {
+        yield* writeStdout(renderCurrentDryPlan(input));
+        if (commandPlan !== undefined) {
+          yield* writeStdout(renderHumanCommandPlan(commandPlan, {
+            isTTY: process.stdout.isTTY,
+            noColor: process.env.NO_COLOR,
+            width: process.stdout.columns,
+          }));
+        }
+      }
       return 0;
     }
 
@@ -2679,6 +2751,14 @@ export const cliProgram = (interruption?: CliInterruptionOwnership) => Effect.ge
   if (flags.version) {
     yield* writeStdout((yield* packageVersion()) + "\n");
     return 0;
+  }
+
+  if (
+    flags.commands &&
+    (command !== "exp" || !flags.dry || flags.teardown || positionals[0] === "list" || positionals[0] === "rename")
+  ) {
+    yield* writeStderr(t("cli.commands.requiresDryExp"));
+    return 1;
   }
 
   if (command === "docker") return yield* runDockerCommand(positionals, flags);
