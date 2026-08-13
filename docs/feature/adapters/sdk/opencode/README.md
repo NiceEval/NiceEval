@@ -35,6 +35,8 @@ const agent = openCodeAgent({
 
 stdout 拿不到完整工具轨迹时，Adapter 用 `opencode export <sessionID>` 补读会话侧写；两者都缺则返回空事件并声明负断言不可信，不从最终文本猜测调用过程。
 
+OpenCode 原生 `skill` 工具的 `name` 入参归一为单个 `skill.loaded`。该调用不再重复记为普通工具 operation；Skill 正选与反选断言只读标准事件流。
+
 Skills 落到 `.agents/skills/<name>/`，并写发现指引进 `AGENTS.md`。
  OpenCode 不接受 Claude/Codex 的 `mcpServers` 或原生 `plugins` 字段。
 

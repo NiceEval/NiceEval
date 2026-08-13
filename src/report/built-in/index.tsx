@@ -16,7 +16,9 @@ export {
 } from "./source.ts";
 export {
   defaultExecutionEvidenceReport,
+  defaultTimingEvidenceReport,
   executionEvidenceReport,
+  timingEvidenceReport,
 } from "./execution.ts";
 export {
   defaultSandboxHistoryReport,

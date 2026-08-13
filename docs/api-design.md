@@ -11,26 +11,15 @@ CLI 的命令与 flag 另见 [CLI](cli.md)，但沿用同一条调用点清晰�
 API 应让第一次使用它的人在调用处看出“这一步要什么、会发生什么、得到什么”：
 
 ```ts
-import { Effect, Either } from "effect";
+import { attemptSlotProjection, reportInputs, verdictProjector } from "niceeval/report";
 
-const sample = yield* Effect.scoped(
-  Effect.gen(function* () {
-    const reader = yield* openRecordReader({ root });
-    const handle = yield* selectExplicitRuns(reader, { runIds });
-    const narrowed = narrowAnalysisSample(handle.sample, {
-      slotIds: securitySlotIds,
-    });
-
-    if (Either.isLeft(narrowed)) {
-      return yield* Effect.fail(narrowed.left);
-    }
-
-    return narrowed.right;
-  }),
-);
+const verdicts = attemptSlotProjection(verdictProjector);
+const inputs = reportInputs({ verdicts });
 ```
 
-`openRecordReader` 表明它在当前 Effect Scope 打开 frozen 读取面，`selectExplicitRuns` 返回绑定该读取面的 `AnalysisSampleHandle`，`narrowAnalysisSample` 只收窄 `handle.sample` 这个既有内存值。名字不需要重复文件扫描或集合遍历步骤。
+`attemptSlotProjection` 表明作者声明的是按 Sample slot 对齐的官方投影；`reportInputs`
+只形成可签入的数据声明，不打开 Record 或启动 host。持久化读取由 `show` / `view` 的内部 host
+完成，不进入公开 Library 调用点。
 
 清晰优先于简短，但长度不是清晰的替代品。
 名字变长若能消除相邻 API 的实质歧义，就保留必要词；模块、参数和返回类型已经表达的信息不重复。
@@ -58,7 +47,7 @@ const sample = yield* Effect.scoped(
 | 角色 | 命名形态 | 例子 |
 |---|---|---|
 | 执行动作或产生副作用 | 动词短语 | `exportStaticReport`、`runEvals` |
-| 打开、加载或读取外部资源 | `openX` / `loadX` / `readX` | `openRecordReader`、`loadYaml` |
+| 打开、加载或读取外部资源 | `openX` / `loadX` / `readX` | `loadYaml`；内部 `openRecordReader` 不属于公开 API |
 | 创建普通运行时值 | `createX` | `createAgentSession`、`createTurnHandle` |
 | 声明并校验定义 | `defineX` | `defineEval`、`defineExperiment` |
 | 返回逻辑视图或派生值 | 结果名或准确的计算动词 | `estimateCost` |
@@ -153,7 +142,7 @@ getSampleSummary(...);      // 差：get 没增加可观察语义
 | 返回对象 | “得到的是哪一种对象” | 返回对象本身 | 返回对象是稳定领域实体，调用者把它作为整体继续传递 |
 | 被选成员 | “挑出了哪些成员” | 被直接选择的成员 | 成员集合本身就是公开结果，没有更高层领域对象 |
 
-返回 `AnalysisSampleHandle` 的一组 selection 函数若采用返回对象视角，名字和类型都以单数 AnalysisSample 为中心；Run、Attempt 等成员只用于说明选择维度。
+内部 selection 若采用返回对象视角，名字和类型都以单数 AnalysisSample 为中心；Run、Attempt 等成员只用于说明选择维度。这条命名规则不使 reader-bound handle 获得公开资格。
 若采用成员视角，就必须整组改用成员的单复数，不能一个名字指 AnalysisSample、另一个名字指 Runs，再靠表面对称掩盖差别。
 
 名词性纯查询可以采用任一视角，但名词短语必须准确指向所得结果：返回对象视角按单数领域对象命名，成员视角按成员集合命名。
@@ -176,25 +165,19 @@ getSampleSummary(...);      // 差：get 没增加可观察语义
 
 ## Record 与 Report 的调用形状
 
-Record root、选择与静态 Report target 都必须在调用点可见：
+Record root 与选择属于 CLI 调用点；Report 作者只声明 definition：
 
 ```ts
-const execution = yield* Effect.scoped(
-  Effect.gen(function* () {
-    const reader = yield* openRecordReader({ root });
-    const handle = yield* selectExplicitRuns(reader, { runIds });
-    return yield* executeReport({ sampleHandle: handle, report });
-  }),
-);
+const report = defineReport({ id, calculations, pages });
 
-yield* exportStaticReport({ execution, out: target });
+// host boundary
+// niceeval show --record <root> --run <run-id>
+// niceeval view --record <root> --run <run-id> --out <target>
 ```
 
-`openRecordReader` 接收实际 Record root，不暗中补路径。`selectExplicitRuns` 把 reader 绑定成 Scope-bound `AnalysisSampleHandle`。
-
-`executeReport` 在 handle 仍活时完成全部 Attachment I/O 与作者 graph，形成 immutable `ReportExecution`。Report 定义、renderer、view 与 export runtime 不接收 reader 或路径。
-
-用户代码只在一次 `executeReport()` 中运行。每个 projection、Calculation 与 consumer 各执行至多一次。静态 export 只写 execution 的既有结果与内建 runtime。
+`--record`、`--run` / `--latest` 与 `--out` 在 CLI 调用处可见。内部 host 在 frozen
+reader Scope 内完成 selection、Attachment I/O 与作者 graph，形成 immutable
+`ReportExecution`。包不导出 reader、selection handle 或 `executeReport()` 给应用 host。
 
 Record 不提供局部 edit/delete、mirror、proof、revision 或防伪 API。业务演进通过新的 RecordAttachment schema 与相邻 migration 进入；已发布 Run 不再修改。
 
@@ -220,15 +203,15 @@ Record 不提供局部 edit/delete、mirror、proof、revision 或防伪 API。�
 
 | 形状 | 使用条件 |
 |---|---|
-| `record.operation()` | 操作只导航或读取 Record 已有核心与 RecordAttachment |
-| `operation(reader)` 从 `niceeval/sample` 导出 | 操作根据 frozen `RecordReader` 形成 `AnalysisSampleHandle`，并引入具名 analysis policy 与分母判断 |
+| 内部 `record.operation()` | NiceEval 自身导航或读取 Record Core 与 RecordAttachment；不形成公开子路径 |
+| 内部 `operation(reader)` | CLI host 根据 frozen reader 形成 AnalysisSample，并引入具名 selection policy 与分母判断 |
 | `sample.operation()` | 操作依赖既有 `AnalysisSample` 语义，且仍返回或观察同一领域对象 |
 | `sample.pipe(operator())` | 多个不可变转换需要顺序组合，并共享 `AnalysisSample → AnalysisSample` 形状 |
 
 “方法更短”或“自由函数更函数式”都不是理由。
 若操作跨越领域层，模块归属应让这个边界在 import 和调用点可见。
-按此规则，从 Record 形成 `AnalysisSampleHandle` 的官方 selection 属于 `niceeval/sample` 的自由函数。
-`selectExplicitRuns(reader, input)` 与 `selectLatestRuns(reader, input)` 不长在 Record 上，也不能退化成传 root 字符串的隐式读取。
+按此规则，从 Record 形成 AnalysisSample 的 selection 属于内部 Sample/host 边界；公开用户
+通过 CLI selector 使用它，不把 root 字符串或 reader 暴露进 Library。
 
 ## 选择函数与判别字段共用语义词根
 
@@ -309,12 +292,12 @@ makeEval({ ... });    // 差：make 没说明定义、验证还是执行
 ### 打开事实与读取文件
 
 ```ts
-const reader = yield* openRecordReader({ root }); // 好：打开当前 Scope 拥有的 frozen 读取面
+const reader = yield* openRecordReader({ root }); // 内部：准确表达 frozen 读取面
 getResults(root);                                 // 差：Results 指代不明，get 也没交代资源边界
 loadRecord(root);                                 // 差：若返回 reader，load 会错误暗示已经完整读入
 ```
 
-`open` 与 `load` 的差别是可观察契约，不是措辞喜好。
+`open` 与 `load` 的差别仍约束内部 API，但不会让该能力自动成为公开 package export。
 
 ### 导出与复制
 

@@ -13,13 +13,15 @@ import {
 } from "@niceeval/testkit";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { expect, it } from "vitest";
+import { beforeAll, expect, it } from "vitest";
 import { DIRECT_MARKER } from "../evals/direct-agent.eval.ts";
 
 const EVAL_ID = "direct-agent";
 const REQUIRED_LIVE_SECRETS = ["OPENAI_API_KEY", "OPENAI_BASE_URL"] as const;
 const niceevalBin = join(process.cwd(), "node_modules", ".bin", "niceeval");
 const niceeval = command([niceevalBin]);
+let runReceipt!: ProcessReceipt;
+let locator!: string;
 
 function requireLiveSecrets(): void {
   const missing = REQUIRED_LIVE_SECRETS.filter((name) => !process.env[name]);
@@ -42,7 +44,7 @@ async function latestAttemptLocator(): Promise<string> {
   return locator!;
 }
 
-it("真实 aiSdkAgent 结果经过公开 CLI 完整读回", async () => {
+beforeAll(async () => {
   requireLiveSecrets();
   await rm(".niceeval", { recursive: true, force: true });
 
@@ -50,43 +52,53 @@ it("真实 aiSdkAgent 结果经过公开 CLI 完整读回", async () => {
     const privateHome = join(tempRoot, "home");
     await mkdir(privateHome, { recursive: true });
 
-    let runReceipt: ProcessReceipt | undefined;
-    await withProcess(
+    runReceipt = await withProcess(
       [niceevalBin, "exp", "--rerun", "all", "--json"],
       {
         processGroup: true,
         timeoutMs: 13 * 60_000,
         env: { HOME: privateHome },
       },
-      async (running) => {
-        runReceipt = await running.done;
-        expect(runReceipt.exitCode, runReceipt.diagnostic()).toBe(0);
-        const events = runReceipt.ndjson<ExpEvent>();
-        // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md）：
-        // completion 与 runIds；成败由带身份的 eval 事件精确断言，不让 live provider
-        // 故障冒充通过，也不在 receipt 上断言计数。
-        const inv = runReceipt.expReceipt();
-        expect(inv.completion, runReceipt.diagnostic()).toBe("completed");
-        expect(inv.runIds, runReceipt.diagnostic()).toHaveLength(1);
-        const evalEvent = events.find(
-          (event): event is ExpEvalEvent =>
-            "event" in event && event.event === "eval" && event.evalId === EVAL_ID,
-        );
-        expect(evalEvent, runReceipt.diagnostic()).toBeDefined();
-        expect(evalEvent).toMatchObject({
-          event: "eval",
-          evalId: EVAL_ID,
-          verdict: "passed",
-          attempts: 1,
-        });
-      },
+      async (running) => await running.done,
     );
-    expect(runReceipt).toBeDefined();
   });
 
-  const locator = await latestAttemptLocator();
+  expect(runReceipt.exitCode, runReceipt.diagnostic()).toBe(0);
+  locator = await latestAttemptLocator();
+}, 14 * 60_000);
+
+it("真实 aiSdkAgent 的 Eval 以通过 verdict 完成", () => {
+  const events = runReceipt.ndjson<ExpEvent>();
+  // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md）：
+  // completion 与 runIds；成败由带身份的 eval 事件精确断言，不让 live provider
+  // 故障冒充通过，也不在 receipt 上断言计数。
+  const inv = runReceipt.expReceipt();
+  expect(inv.completion, runReceipt.diagnostic()).toBe("completed");
+  expect(inv.runIds, runReceipt.diagnostic()).toHaveLength(1);
+  const evalEvent = events.find(
+    (event): event is ExpEvalEvent =>
+      "event" in event && event.event === "eval" && event.evalId === EVAL_ID,
+  );
+  expect(evalEvent, runReceipt.diagnostic()).toBeDefined();
+  expect(evalEvent).toMatchObject({
+    event: "eval",
+    evalId: EVAL_ID,
+    verdict: "passed",
+    attempts: 1,
+  });
+});
+
+it("show --execution 读回 aiSdkAgent 的代表性工具证据", async () => {
   const execution = await niceeval.run(["show", locator, "--execution"]);
   expect(execution.exitCode, execution.diagnostic()).toBe(0);
   expect(execution.stdout).toContain("remember_marker");
   expect(execution.stdout).toContain(DIRECT_MARKER);
-}, 14 * 60_000);
+});
+
+it("show --timing 读回 aiSdkAgent 的 runner 阶段", async () => {
+  const timing = await niceeval.run(["show", locator, "--timing"]);
+  expect(timing.exitCode, timing.diagnostic()).toBe(0);
+  expect(timing.stdout, timing.diagnostic()).toContain("eval.run");
+  expect(timing.stdout, timing.diagnostic()).toMatch(/turn\s+turn1\b/);
+
+});

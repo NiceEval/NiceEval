@@ -14,7 +14,7 @@
   },
   "paths": ["e2e/report/**", "package.json", "pnpm-lock.yaml", "e2e/scripts/**"],
   "artifacts": [
-    "evidence/**",
+    ".e2e-artifacts/**",
     "test-results/**"
   ]
 }

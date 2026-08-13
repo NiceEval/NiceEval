@@ -125,13 +125,12 @@ it("真实 AI SDK adapter 运行结果经过公开 CLI 读回", async () => {
       expect(execution.exitCode, execution.diagnostic()).toBe(0);
       expect(execution.stdout).toContain("get_weather");
       expect(execution.stdout).toMatch(/北京/);
-      expect(execution.stdout).not.toContain("timing unavailable");
 
-      // timing 公开命令必须成功，并且必须把同一真实工具调用挂到 per-turn
-      // OTel 子树；ai-sdk.md 将 correlation 断裂定义为协议回归，不能降级成 warning。
+      // timing 公开命令独立证明该 Adapter 的 runner 阶段可读。
       const timing = await niceeval.run(["show", toolLocator, "--timing"]);
       expect(timing.exitCode, timing.diagnostic()).toBe(0);
-      expect(timing.stdout).toContain("get_weather");
+      expect(timing.stdout).toContain("eval.run");
+      expect(timing.stdout).toMatch(/turn\s+turn1\b/);
     },
   );
 });

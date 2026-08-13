@@ -44,18 +44,18 @@ Run 全部内容 flush 后，writer 最后创建零字节 `complete` 完成标�
 ### 查看与导出
 
 ~~~text
-RecordReader
+opaque Record
   ↓
 analysis selection
   ↓
-AnalysisSampleHandle
+AnalysisSample
   ↓ Report declarations
 ReportExecution
   ↓
 show / view / static export
 ~~~
 
-`show` 与 `view` 使用持有 shared maintenance lease 的 frozen `RecordReader`，可以和 writer 并发。它们先由 analysis selection 形成 `AnalysisSampleHandle`，宿主再按 Report 声明闭合数据依赖，形成一次 immutable `ReportExecution`。
+`show` 与 `view` 的内部 host 使用持有 shared maintenance lease 的 frozen reader，可以和 writer 并发。它先由 analysis selection 形成纯 `AnalysisSample`，再按 Report 声明闭合数据依赖，形成一次 immutable `ReportExecution`。reader 与 selection handle 不从包导出。
 
 Reports runtime 从不打开 Record path，也不自行读取 Attachment bytes。
 
@@ -75,7 +75,7 @@ Reports runtime 从不打开 Record path，也不自行读取 Attachment bytes�
 
 持久化的业务事实由 Runner 分别写入 Run 或 Attempt RecordAttachment。终端与 `--json` 可以显示这些事实的当前摘要，但不得从反馈文本反向形成 Record 数据。
 
-`exp --json` 的最后一条机器输出是 receipt。调用方以进程退出状态和该 receipt 判断调用是否结束，再以 `runIds` 读取业务数据。
+`exp --json` 的最后一条机器输出是 receipt。调用方以进程退出状态和该 receipt 判断调用是否结束，再用 `show --json` 与 `runIds` 读取业务数据。
 
 ## 运行时与中断
 

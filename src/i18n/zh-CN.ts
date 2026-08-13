@@ -96,6 +96,8 @@ export const zhCN = {
   "cli.dry.unit.configs": "个运行配置",
   "cli.dry.affects": "影响 {{evals}} · {{ids}}",
   "cli.dry.acceptHint": "accept:  {{command}}",
+  "cli.commands.requiresDryExp":
+    "error: --commands 只用于 `niceeval exp <选择> --dry --commands`;它不能单独使用,也不能用于 exp list / rename / --teardown。\n",
   "cli.accept.choiceHeader": "previous-result  {{selector}}{{change}}  ({{evals}} 条 eval)\n",
   "cli.accept.prompt": "  复用这些结果吗? [y/N] ",
   "cli.accept.nothingToAccept":
@@ -231,7 +233,7 @@ export const zhCN = {
     "标志:\n" +
     "  --attempts n  --max-concurrency n  --max-build-concurrency n  --timeout ms\n" +
     "  --budget usd  --tag t\n" +
-    "  --early-exit / --no-early-exit  --rerun[=failed|all]  --dry  --keep-sandbox[=failed|all]\n" +
+    "  --early-exit / --no-early-exit  --rerun[=failed|all]  --dry  --commands  --keep-sandbox[=failed|all]\n" +
     "  --json  (机器面:stdout 上的 NDJSON 事件流;默认是人读文本)\n" +
     "  --junit path  --out dir  --port n  --open / --no-open  -h, --help  -v, --version\n\n" +
     "位置参数只选「跑哪些 eval」(id 前缀);对着哪个 agent、怎么跑来自 experiments/ 与\n" +

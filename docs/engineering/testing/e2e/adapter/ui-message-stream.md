@@ -65,7 +65,7 @@ AI SDK 公共 `UIMessageChunk` 类型约束的 approval stream 证明 NiceEval �
 - Vitest 保留默认文件级并行；不使用共享 `beforeAll`、固定端口、mutex、文件顺序或
   `maxConcurrency: 1`。
 - **CLI 读回**：`show` 默认报告列出本仓库全部协议 Eval 与 verdict；正常 SSE 与 approval attempt 的 `show --execution` 分别显示 fixture 文案，以及 completed / rejected 工具生命周期。
-- **OTel**：本地 fixture 不接 OTel，执行树显示 timing unavailable；事件流断言照常通过。
+- **Timing**：本地 fixture 不接 OTel；每个 transport owner 从 `show --timing` 读回 runner 阶段，不从 execution 文本反推 telemetry。
 
 ## 与 live AI SDK 的边界
 

@@ -12,6 +12,22 @@ invocation 的 scratch snapshot，再把该 snapshot 作为本地目录依赖只
 隔离副本。它不先变成 tarball，也不获得发布 artifact 或独立重新执行承诺。
 场景源不声明 workspace 或本地路径，避免绕开根 runner。
 
+## E2E case context
+
+`createE2EContext()` 是对已有项目副本、进程和 artifact staging 原语的中立组合。Repo context
+只保存冻结的 source / invocation 身份，`case()` 每次创建独占可写 `projectRoot`。调用方显式提供
+项目复制策略和具名命令前缀；Testkit 不知道 `niceeval`、`.niceeval`、Experiment、producer 或 candidate。
+Repo `sourceRoot` 与 `project.from` 是两个身份：前者承载 runner 注入的 staging root，后者可指向 Repo 内的 fixture 子目录。
+
+case 中的 `commands.<name>.run/start` 固定使用该 case 的 cwd，调用点不能替换 `cwd` 或 `processGroup`。
+`start` 登记的进程在正文结束后按逆序回收，然后才暂存 artifact 并删除项目副本；多个失败按
+`body → process cleanup → staging → project cleanup` 的顺序聚合。完整 argv、readiness 和 expected 仍留在测试正文。
+
+正式 runner 同时注入 `NICEEVAL_E2E_INVOCATION_ID` 与隔离 Repo 副本内的
+`NICEEVAL_E2E_ARTIFACT_STAGING_ROOT`。context 只能写这个 staging root 的 invocation/case namespace，再由
+manifest collector 携带到 durable root；它不获得 durable root。直接调试没有注入时使用系统临时目录，
+不回退到 source checkout。
+
 ## 项目与身份
 
 源码位于 `packages/testkit/`，是根 `pnpm-workspace.yaml` 的 `packages/*` 成员。根 workspace、根 lockfile 与根

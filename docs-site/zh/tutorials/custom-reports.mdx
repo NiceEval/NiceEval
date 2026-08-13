@@ -6,18 +6,19 @@ description: "声明 RecordProjection，把投影结果组织成 Calculation、�
 自定义 Report 不接收 Record 路径，也不在页面 render 时临时查数据。先声明所需的 `RecordProjection`，再定义 Calculation、Page、PageFamily 或 Download：
 
 ```text
-AnalysisSampleHandle
+AnalysisSample
         ↓
-RecordAttachment projector → ProjectedSample
+official opaque projector → ProjectedSample
         ↓
 Report → immutable ReportExecution
           ↙       ↓       ↘
         show     view    export
 ```
 
-## 先准备 Attachment projector
+## 先选择官方 projector
 
-运行方负责把运行事实写成 typed `RecordAttachment`。Report 只消费已经定义好的 Attachment family，并用 `RecordAttachment projector` 把 payload 变成报告需要的 view。
+NiceEval 内部负责把运行事实写入 Record，并提供形成 typed view 的官方 opaque projector。
+Report 作者只选择这些 projector，不能定义 raw Attachment family 或读取 payload。
 
 ```ts
 const verdicts = attemptSlotProjection(verdictProjector);

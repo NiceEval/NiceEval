@@ -51,7 +51,6 @@ export type FingerprintSourceCache = Map<string, Effect.Effect<string, Fingerpri
 export function createFingerprintSourceCache(): FingerprintSourceCache {
   return new Map();
 }
-
 function messageOf(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
@@ -167,8 +166,10 @@ function fingerprintPreparedPair(
         Effect.map(cachedContentHash(path, sourceCache), (digest) => [relative(process.cwd(), path), digest] as const),
       { concurrency: "unbounded" },
     );
+    const plugins = Object.freeze({ pair: pair.plugin.pairProjection });
     const payload = {
       evaluationAlgorithm: EVALUATION_ALGORITHM,
+      plugins,
       configHash,
       pairPlan: pair.identity,
       source,
@@ -176,6 +177,12 @@ function fingerprintPreparedPair(
         id: evalDef.id,
         tags: evalDef.tags ?? [],
         metadata: evalDef.metadata ?? {},
+        ...(evalDef.evalGroup === undefined ? {} : { group: {
+          id: evalDef.evalGroup.id,
+          evalIds: [...evalDef.evalGroup.evalIds],
+          definitionHash: evalDef.evalGroup.definitionHash,
+          onUnavailable: evalDef.evalGroup.onUnavailable,
+        } }),
       },
       loaderData,
     // 没登记判据树的 eval 完全不带这个键:空数组也会改变 payload 的字节,让所有存量结果
@@ -194,6 +201,7 @@ function fingerprintPreparedPair(
         coverageVersion: FINGERPRINT_COVERAGE_VERSION,
         config: Object.freeze(Object.fromEntries(configIdentityPaths(identity))),
         plan: pair.identity,
+        plugins,
         source: Object.freeze(Object.fromEntries(source.map(([path, content]) => [path, hashText(content)]))),
         data: Object.freeze(Object.fromEntries([
           ...loaderData.map(([path, content]) => [path, hashText(content)]),

@@ -11,11 +11,10 @@ Eval 与 Experiment
         ↓
 Runner
         ↓
-Record
-        ↓  AnalysisSelectionRequest
-AnalysisSampleHandle
-        ├─ .sample → AnalysisSample
-        ↓  RecordAttachment projector
+opaque Record
+        ↓  CLI internal selection
+AnalysisSample
+        ↓  official opaque projector
 ProjectedSample → Report → immutable ReportExecution
                                   ├─ show
                                   ├─ view
@@ -32,19 +31,22 @@ Member 表示这个 slot 被哪个 Attempt 占据。Attempt 的 `origin` 与当�
 
 ## Record 保存已发布的事实
 
-Record 位于 `.niceeval/record/`。Record Core 保存 Run、Member、Attempt 与它们的精确关系。Verdict、Usage、断言与诊断等业务事实保存在 owner-local 的具名 `RecordAttachment` 中。
+Record 位于 `.niceeval/record/`。它可以整体复制或进入 Git，但应用代码不读取其中的内部结构。
+内部 Core 保存 Run、Member、Attempt 与精确关系；Verdict、Usage、断言与诊断等业务事实
+保存在 owner-local Attachment 中。
 
 writer 写完一个 Run 的 Core 与 Attachments 后，最后创建 `complete`。没有这个标识的目录不是已发布事实；reader 忽略它，并给出 `incomplete-run` warning。需要不同结果时，运行新的 Invocation，生成新的 Run。
 
 ## Sample 决定比较范围
 
-`AnalysisSelectionRequest` 从一次 frozen `RecordReader` 选择明确 Run，或按具名 latest policy 选择 Run。它返回 `AnalysisSampleHandle`；`.sample` 是可以独立显示的纯 `AnalysisSample`。
+用户用 locator、`--run` 或 `--latest` 选择 Run。内部 host 从 frozen Record 形成可以独立
+显示的纯 `AnalysisSample`；reader 与 live handle 不属于公开 API。
 
 Sample 保留完整 expected-slot 分母。每个 slot 都是 `included`、`not-recorded`、`core-invalid` 或 `excluded`。选择只读取 Core，不能因为某个业务 Attachment 有问题而悄悄缩小分母。
 
 ## Projection 与 Report 组织已选事实
 
-`RecordAttachment projector` 解释一个明确 owner 的一个 Attachment。Projection 将读取结果与 Sample 对齐，形成 `ProjectedSample`。Calculation 用这些值计算通过率、成本或诊断分布；Page 与 PageFamily 再把结果组织成报告页面。
+官方 opaque projector 把内部事实形成 typed view。Projection 将结果与 Sample 对齐，形成 `ProjectedSample`。Calculation 用这些值计算通过率、成本或诊断分布；Page 与 PageFamily 再把结果组织成报告页面。
 
 一次 Report 形成一份不可变的 `ReportExecution`。它不保留 reader、路径或延迟 I/O。`show`、`view` 与静态导出只消费这份 execution。
 

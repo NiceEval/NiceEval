@@ -47,13 +47,18 @@ stdio 形态的 MCP 写成 `[mcp_servers.<name>]` 的 `command`/`args`/`env`；H
 `env` 为每次 Codex CLI 进程追加 env var。首轮 `codex exec` 与后续 `codex exec resume` 使用同一份声明；Codex 启动的 Session Hook、MCP 动态 header 与命令子进程都从该进程继承。
 
 ```ts
+const memorySpace = "memorybench-nowledge";
 const agent = codexAgent({
-  env: { NMEM_SPACE: "memorybench-nowledge" },
+  env: { NMEM_SPACE: memorySpace },
 });
 ```
 
 env var 只经 Sandbox 命令 options 注入，不拼进 shell 文本，也不进入安装 manifest。Adapter 把全部声明值按潜在敏感值登记；timing、execution 与错误证据落盘前会脱敏。
 `CODEX_API_KEY` 仍由 `apiKey` 或宿主同名 env var 提供，Adapter 的鉴权值替换 `env` 里的同名键。
+
+env value 不进入 carry 身份。`NMEM_SPACE` 这类会改变被测行为的非敏感值还要写进
+`defineExperiment({ flags: { memorySpace }, ... })`，或写进所属 Plugin identity。token 与 API key
+只放在私有 env 通道；单独轮换凭据不会让旧结果失效。
 
 唯一的例外是 `PATH`：它是 Sandbox 受管变量，`env` 里出现 `PATH` 键在 `codexAgent()` 调用时同步报错，不留到 setup 才发现值被静默丢弃。需要扩展 PATH 时改用 Sandbox factory 的 `pathPrepend`（见 [Sandbox · PATH：受管变量与 pathPrepend](../../../sandbox/library.md#path受管变量与-pathprepend)）。
 

@@ -39,14 +39,13 @@
 2. **断言调用存在且入参正确**：Eval 内的判分断言只读标准事件流（`Turn.events`）——工具调用以该协议的真实名字出现（MCP 命名、不带命名空间的工具名）、调用与结果按 call ID 配对、HITL 产生 `input.requested`、usage 逐轮到位。
    - 工具断言**连名带参**：`t.calledTool("mcp__demo-tools__get_weather", { input: { city: "Brooklyn" } })`。名字对但参数被丢弃或改写，同样是归一 bug，入参保真是协议路径的一部分（`ToolMatch` 的深度部分匹配见[Assertions · 作用域断言](../../../../feature/assertions/library/scoped-assertions.md#匹配条件的字段全集)）。
    - 支持负断言的协议同时验证反例（`notCalledTool`）；证据不完整的协议在文档里写明负断言边界，不从最终文本猜测过程。
-3. **经 CLI 展示核验接收完整性**：仓库验收脚本用 receipt 的 Run ID 执行 `niceeval show --run <runId>`。默认报告列出本仓库每条 Eval 的 id 与 verdict，并与同一命令的 `--json` 口径一致。再从已计划页面索引选择一个通过 Attempt 的 execution route：执行树就是「适配器收到了什么」的用户可见投影，第 2 步断言过的调用应全部出现，TOOL 卡片的 `input` 块也应保留入参。
-   适配器有没有正常接收到各种信息，以 CLI 展示为断言面——这一条断言穿透整条链（归一 → 落盘 → 读取面 → 渲染），一次真实运行同时验收协议路径和 CLI 读面。
-   断言边界见[总则 · 公开读回](../README.md#公开读回)。
-4. **核验 OTel 写入**：调用是否写入 OTel 同样以已计划 Report page 断言。execution 页的时间注释回答「有没有写入」（声明 tracing 面的适配器节点带 span 时间，未声明的显示 timing unavailable）；timing 页的 OTel 子树回答「写成了什么」（model/tool span 与层级）。
-   span 与事件的对应靠显式 correlation（`gen_ai.tool.call.id` 这类 GenAI 语义约定属性）成立、不靠名字猜——correlation 断裂的可见症状就是节点退回 timing unavailable。
+3. **用一条代表证据核验 execution 投影**：每个 Adapter Repo 从本轮 Eval event 直接取一个通过 Attempt 的 locator，在独立 test 中执行 `niceeval show @locator --execution`。只断言一个能区分该协议投影是否可达的工具或入参 sentinel；工具、Skill、session 和 usage 的完整正反矩阵留在 Eval，不再由 CLI 文本重复评分。
+4. **每个 Adapter 独立核验 timing**：同一个通过 Attempt 由另一个 test 执行 `niceeval show @locator --timing`。Runner 在 OTel 之前就会写入该 Attempt **实际跨过**的 owner-monotonic 阶段 interval。
+
+   成功的 `t.send()` 至少证明 `eval.run` 与首轮 turn。只有确实声明并执行 setup 的 Adapter 才要求 `agent.setup`。Adapter owner 不再于 timing test 内重跑 `--execution`，也不用 execution 文本反推 Skill 或 tracing。不能用另一个 Adapter 或 Report Repo 的 `--timing` 通过代替本 Adapter。
    trace 只作时间与结构证据，从不参与判分——判分断言永远只读事件流（见[Observability](../../../../observability.md)）。
 
-第 2 步是唯一的 Eval 判分断言：只读 `Turn.events`。第 3 至 5 步是原生测试文件的终态、readback 与资源/遥测机制断言，绝不反过来给事件流评分；两者都在该 Repo 的所有权边界内。
+一次昂贵的 live 运行可在 `beforeAll` 中生产冻结 evidence，再由 verdict、execution 与 timing 三个独立 test 只读共用；按标题单项运行时 `beforeAll` 仍必须现场产生本轮 evidence。第 2 步是唯一的 Eval 判分断言：第 3、4 步只验收公开投影与 telemetry 机制，绝不反过来给事件流评分。
 测试正文遵守 [E2E 总纲](../README.md#单边界-e2e)与[测试 Architecture](../../architecture.md#单文件可读性契约)。
 
 ## Live 官方 Adapter 兼容性
@@ -103,8 +102,7 @@ Plugin、Subagent、OTel 或该协议独有的失败面按实际能力取有区�
 也不由根 runner 注入共享 Eval / profile。
 
 Eval 可以使用公开 Assertion API 判定协议事实，但完整 Assertion、Context、Judge 与 Sandbox assertion 契约由
-[Eval 功能 Repo](../eval.md)验收一次。Adapter 调用 `show --execution` / `--timing` 只证明协议 evidence 经公开读面可达，不接管
-Report 的格式和 flag 矩阵。一个协议 case 缺少证据时，在对应 Adapter Repo 增加本地 Eval，不把需求扩散到其它 Adapter。
+[Eval 功能 Repo](../eval.md)验收一次。Adapter 的代表性 `show --execution` 只证明协议 evidence 经公开读面可达；每个 Adapter 的 `show --timing` 拥有它自己的 tracing 配置、mapper 和 correlation 结果。它们都不接管 Report 的格式与 flag 矩阵。一个协议 case 缺少判分证据时，在对应 Adapter Repo 增加本地 Eval，不向 CLI 文本断言或其它 Adapter 扩散。
 
 Live 运行出现结构化外部故障时不判 pass。可以由同一 candidate、同一上游版本的 AI 通过真实生产入口完成兼容性验收；
 PR Test impact 保存动作、公开观察和未守护风险。Live 结果与 AI 真实验收都没有时，该兼容性状态是“未证明”。

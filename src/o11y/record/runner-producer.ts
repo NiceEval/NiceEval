@@ -705,6 +705,7 @@ function commandManifestPhaseV1(
       return "attempt.setup";
     case "sandbox.prepare":
     case "sandbox.prepare.eval":
+    case "sandbox.prepare.group":
     case "sandbox.prepare.experiment":
       return "sandbox.prepare";
     case "agent.ensure":
@@ -1574,6 +1575,7 @@ function attemptTimingProjectionV1(
       return Object.freeze({ phase: "attempt.setup" as const, label });
     case "sandbox.prepare":
     case "sandbox.prepare.eval":
+    case "sandbox.prepare.group":
     case "sandbox.prepare.experiment":
       return Object.freeze({ phase: "sandbox.prepare" as const, label });
     case "agent.ensure":
@@ -1774,6 +1776,7 @@ function attemptDiagnosticPhaseV1(
       return "attempt.setup";
     case "sandbox.prepare":
     case "sandbox.prepare.eval":
+    case "sandbox.prepare.group":
     case "sandbox.prepare.experiment":
       return "sandbox.prepare";
     case "agent.ensure":

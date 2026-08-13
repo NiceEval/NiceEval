@@ -441,3 +441,4 @@ export function acceptLocators(input: AcceptLocatorsOptions) {
 export function acceptLocator(input: AcceptLocatorOptions) {
   return withAcceptCompatibility(acceptLocatorV1(input));
 }
+

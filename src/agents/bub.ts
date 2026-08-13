@@ -10,7 +10,11 @@ import {
 } from "./skills.ts";
 import { mapBubSpans } from "../o11y/otlp/mappers/bub.ts";
 import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
-import { runPostSetupHooks, runPreTeardownHooks } from "./post-setup.ts";
+import {
+  registerAgentLifecycleHookCommands,
+  runPostSetupHooks,
+  runPreTeardownHooks,
+} from "./post-setup.ts";
 import type { Agent, AgentSetupManifest, SkillSpec, TurnEvidenceCoverage } from "../types.ts";
 import type { SandboxCommand } from "../sandbox/commands.ts";
 import { createHash, randomUUID } from "node:crypto";
@@ -158,7 +162,7 @@ export function bubAgent(config?: BubConfig): Agent {
   // sandboxId → { home, workspace }; persists values detected in setup() so send() can use them.
   const sessionInfo = new Map<string, { home: string; workspace: string }>();
 
-  return defineSandboxAgent({
+  return registerAgentLifecycleHookCommands(defineSandboxAgent({
     name: "bub",
     ensure: { identity, probe },
     installers: [{
@@ -310,7 +314,7 @@ export function bubAgent(config?: BubConfig): Agent {
         ...(turnEvidenceCoverage === undefined ? {} : { evidenceCoverage: turnEvidenceCoverage }),
       };
     },
-  });
+  }), config?.postSetup, config?.preTeardown);
 }
 
 export default bubAgent();

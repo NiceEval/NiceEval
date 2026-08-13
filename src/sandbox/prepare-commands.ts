@@ -8,10 +8,13 @@ import { createHash } from "node:crypto";
 import { posix } from "node:path";
 import {
   defineSandboxCommand,
+  definePlannedSandboxCommand,
+  sandboxCommandPlanOf,
   sandboxCommandIdentityOf,
   type SandboxCommandContext,
   type SandboxCommandIdentity,
   type SandboxCommandIdentityValue,
+  type SandboxCommandPlanNode,
   type SandboxCommandTarget,
   type StableSandboxCommand,
 } from "./commands.ts";
@@ -315,7 +318,25 @@ class InstallToolRecheckError extends Error {
  */
 export function installTool(options: InstallToolOptions): StableSandboxCommand {
   const normalized = normalizeInstallToolOptions(options);
-  return defineSandboxCommand(
+  const probePlan: SandboxCommandPlanNode = sandboxCommandPlanOf(normalized.probe) ?? {
+    truth: "opaque",
+    reason: {
+      code: "custom-stable-command",
+      summary: "custom probe callback; commands are only known when it runs",
+    },
+  };
+  const installPlan: SandboxCommandPlanNode = sandboxCommandPlanOf(normalized.install) ?? {
+    truth: "opaque",
+    reason: {
+      code: "custom-stable-command",
+      summary: "custom installer callback; commands are only known when it runs",
+    },
+  };
+  const probeMiss = Object.freeze({
+    code: "probe-miss",
+    summary: `${normalized.tool} probe exits non-zero`,
+  });
+  return definePlannedSandboxCommand(
     {
       id: "niceeval.sandbox.install-tool",
       revision: "1",
@@ -337,6 +358,15 @@ export function installTool(options: InstallToolOptions): StableSandboxCommand {
       if (await probeTool(normalized.probe, sandbox, context) === "miss") {
         throw new InstallToolRecheckError(normalized.tool);
       }
+    },
+    {
+      truth: "conditional",
+      label: `installTool(${JSON.stringify(normalized.tool)})`,
+      children: [
+        { ...probePlan, label: "probe" },
+        { ...installPlan, label: "install", condition: probeMiss },
+        { ...probePlan, label: "recheck", condition: probeMiss },
+      ],
     },
   );
 }

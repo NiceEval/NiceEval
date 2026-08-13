@@ -12,9 +12,9 @@ e2e/
 ├── cli/                    # argv、机器输出、失败分类与缓存
 ├── runner/                 # carry、history 与确定性调度
 ├── package/                # ESM、CJS、exports 与外部 cwd
-├── record/                 # 公开 niceeval/record 写读边界
 ├── report/                 # show、view、导出与浏览器 Journey
 ├── lifecycle/              # signal、资源终结与下一消费者
+├── migrate/                # 可替换 producer 与当前 candidate 的持久化交接脚手架
 ├── adapter/
 │   ├── local-protocol/     # 无密钥 transport 与可控故障
 │   └── <id>/               # 每个真实 SDK / CLI / provider 一个 live Repo

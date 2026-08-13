@@ -82,6 +82,12 @@ function coerceArgs(value: unknown): JsonValue {
   return normalizeJsonValue(value, {});
 }
 
+function loadedSkillName(input: JsonValue): string | undefined {
+  return input && typeof input === "object" && !Array.isArray(input)
+    ? str((input as globalThis.Record<string, unknown>)["name"])
+    : undefined;
+}
+
 /**
  * 从 stdout / export 的 JSONL(或夹杂日志的文本)里抽出 JSON 对象行。
  */
@@ -184,6 +190,11 @@ export function parseOpenCodeTranscript(raw: string | undefined): ParsedTranscri
           str(get(part, "id")) ??
           str(get(data, "id")) ??
           nextSynthId();
+        const skill = name.toLowerCase() === "skill" ? loadedSkillName(input) : undefined;
+        if (skill !== undefined) {
+          events.push({ type: "skill.loaded", skill, operationId: callId });
+          continue;
+        }
         if (!str(get(part, "callID")) && !str(get(part, "callId")) && !str(get(part, "id"))) {
           pending.push(callId);
         }
@@ -271,13 +282,19 @@ export function parseOpenCodeTranscript(raw: string | undefined): ParsedTranscri
               } else if (pType === "tool" || pType === "tool_use") {
                 const name = str(get(p, "tool")) ?? str(get(p, "name")) ?? "unknown";
                 const callId = str(get(p, "callID")) ?? str(get(p, "id")) ?? nextSynthId();
+                const input = coerceArgs(get(get(p, "state"), "input") ?? get(p, "input"));
+                const skill = name.toLowerCase() === "skill" ? loadedSkillName(input) : undefined;
+                if (skill !== undefined) {
+                  events.push({ type: "skill.loaded", skill, operationId: callId });
+                  continue;
+                }
                 events.push({
                   type: "operation.started",
                   operationId: callId,
                   operation: {
                     kind: "tool",
                     name,
-                    input: coerceArgs(get(get(p, "state"), "input") ?? get(p, "input")),
+                    input,
                     tool: normalizeToolName(name),
                     command: commandProjectionForOpenCodeTool(name),
                   },

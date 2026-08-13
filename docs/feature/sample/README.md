@@ -1,65 +1,46 @@
-# Sample：从已发布 Run 形成分析分母
+# Sample：Report 消费的冻结分析分母
 
-[Record](../record/README.md) 保存 immutable Run。Analysis selection 从 frozen `RecordReader` 选择 Run，形成 Scope-bound `AnalysisSampleHandle`；其中的 `.sample` 是可以离线消费的纯 `AnalysisSample`。
+[Record](../record/README.md) 保存 immutable Run。CLI 的内部 host 从 opaque Record 选择 Run，
+形成一份纯 `AnalysisSample`，再交给 Report 作者 callback。应用代码不能取得 Record reader、
+selection handle，或用 Sample 重新打开持久化 I/O。
 
 ```text
-AnalysisSelectionRequest + RecordReader
-                  │
-                  ▼
-           AnalysisSampleHandle
-             │             │
-             │ live        └─ .sample：关闭 reader 后仍可显示的纯值
-             ▼
-       Record Projection
+opaque Record
+    │ internal selection
+    ▼
+AnalysisSample（纯值）
+    │ official projection declarations
+    ▼
+Report Calculation / Page
 ```
 
-`AnalysisSample` 不写回 Record。它保存 selected Run、完整 expected SlotId 分母、Member/Attempt 精确引用及 included、not-recorded、core-invalid、excluded 四态。
+`AnalysisSample` 保存 selected Run、完整 expected SlotId 分母、Member / Attempt 精确引用，
+以及 `included`、`not-recorded`、`core-invalid`、`excluded` 四态。它不写回 Record，
+不包含路径、文件句柄或延迟读取能力。
 
 ## Selection 与 reuse planning 分开
 
-Analysis selection 回答“分析哪些已发布 Run”。reuse planning 回答“当前 ExecutionTarget 的哪些 Slot 可以沿用，哪些是 gap”。
+内部 analysis selection 回答“这次 Report 分析哪些已发布 Run”。reuse planning 回答
+“当前 ExecutionTarget 的哪些 Slot 可以沿用，哪些是 gap”。Report 不接收 execution gap，
+planner 也不把历史 Sample 的 `not-recorded` 当成待执行任务。
 
-```text
-RecordReader ── analysis selection ──→ AnalysisSampleHandle
+CLI 内建 `explicit-runs` 与 `latest-runs` 两种 selection。Core 不保存 ExperimentId，
+所以 latest 所需分组来自官方 typed Attachment。它们是 CLI 行为，不是公开 reader API。
 
-RecordWriteSession.view ── reuse planning ──→ ExecutionReusePlan
-```
+## 公开值边界
 
-Report 不接收 execution gap，planner 也不把历史 Sample 的 not-recorded 当成待执行任务。
+`niceeval/report` 与 `niceeval/analysis` 只公开 immutable Sample 值、稳定 identity、codec、
+纯 narrowing 与 selection summary 类型。作者可以在 callback 中读取或收窄已有 Sample，
+但不能自行选择 Record、读取 raw Attachment，或构造一个带 I/O 能力的 handle。
 
-## 内建 selection
-
-- `explicit-runs`：精确选择调用方给出的 RunId；
-- `latest-runs`：使用 Run-owned Evaluation/Provenance Attachment，为目标 Experiment 选择最后完成的 Run。
-
-Core 不保存 ExperimentId，因此 latest 所需业务分组来自 typed Attachment，而不是偷偷扩张 RunDocument。旧 Attachment 需要 migration 时，latest 返回具名 selection error；explicit selection 和其它 Core 读取仍可运行。
-
-复杂自定义策略可以用 Record/Projection API 计算 RunId，再调用 explicit selection。v1 不公开一个可以绕过 Library 分母构造规则的 Sample builder。
-
-## Frozen 读取
-
-reference Member 保留源 Attempt 引用。origin Run 进入 dependency closure，但不因此进入 selected Runs 或分析分母。
-
-一次 selection 不会自动看见并发刚完成的 Run。重新打开 reader 后才能得到新 snapshot。未完成 Run 从未进入 reader candidates，因此不会出现在 Sample。
-
-RecordAttachment 的 unavailable、migration-required、migration-unavailable、unsupported 或 invalid 不自动改变 Slot 的 Core state。Projection 使用仍存活的 `AnalysisSampleHandle` 按需读取 Attachment；pure `.sample` 不能重新打开 I/O。
-
-## 范围
-
-Sample 包含：
-
-- explicit/latest selection；
-- expected SlotId 完整分母；
-- included、not-recorded、core-invalid、excluded 四态；
-- pure narrowing；
-- pure `AnalysisSample` 与 live `AnalysisSampleHandle` 的能力边界。
-
-Sample 不包含 reuse planning、writer、业务 Calculation、Report 页面或可持久化 Sample 文件。
+RecordAttachment 的 unavailable、migration-required、migration-unavailable、unsupported 或
+invalid 不自动改变 Slot 的 Core state。内部 projection runtime 把这些状态投影为
+Report 可穷尽处理的纯结果。
 
 ## 入口
 
-- [Library](library.md) —— selection、handle、Sample shape 与 narrowing。
-- [局部执行后的分析](use-case/partial-rerun.md) —— origin/reference 怎样进入同一分母。
-- [收窄样本](use-case/收窄样本.md) —— 怎样显式排除成员。
-- [Projection](../projection/README.md) —— 怎样读取 selected owner 的 RecordAttachment。
+- [Library](library.md) —— 公开纯值、codec 与 narrowing。
+- [局部执行后的分析](use-case/partial-rerun.md) —— origin / reference 怎样进入同一分母。
+- [收窄样本](use-case/收窄样本.md) —— 怎样显式排除已有 Sample 的成员。
+- [Projection](../projection/README.md) —— Report 怎样声明官方 typed projection。
 - [Reuse planning](../experiments/cache.md) —— 当前目标怎样形成 reuse 与 gap。

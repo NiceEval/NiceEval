@@ -55,7 +55,7 @@ niceeval 的测试体系采用“真实用户 Journey + 原生结果断言”。
 
 | 风险 | 默认主 owner | 允许的 Unit 例外 |
 |---|---|---|
-| 公共 Library API、公开 Record 格式 | 安装后 package API 的单边界 E2E | E2E 无法穷举的非法输入或算法矩阵 |
+| 公共 Library API、opaque Record 的 CLI / Report 行为 | 安装后 package API 或 Report Repo 的单边界 E2E | E2E 无法穷举的非法输入或算法矩阵 |
 | Eval、Context 与公开 Assertion 契约 | Eval 场景 Repo | 无法由真实 Eval 稳定区分的纯算法矩阵 |
 | 选择、聚合、归一、schema | 对应用户结果的 Journey 或单边界 E2E | 具名错误算法的最小等价类 |
 | 安装、exports、外部 cwd、CJS / ESM | Package 场景 Repo | 无 |

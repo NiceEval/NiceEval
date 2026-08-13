@@ -37,6 +37,7 @@ Repo ID 是 `adapter/bub`；manifest 声明 `areas: ["adapter", "sandbox"]`、li
 - 工具名是 tape JSONL 归一后的 `file_write` / `file_edit` / `shell`。
 - coding Eval 的提示词复用本仓库 `evals/shared.ts` 的 `SKIP_BUILD_NOTE` / `REPLY_DIRECTIVE` 免责声明。bub 的系统提示自带 Next.js build 指引与 channel 应答策略，不声明这两条会污染协议断言。
 - `ci` Experiment 选中本仓库的 coding、Skill、plugin / postSetup、会话和 usage Eval；原生验收脚本列全协议 Eval ID，防止少发现/少运行后假绿。
-- **CLI 读回**：`show` 默认报告列出本仓库 Eval 与 verdict；对通过 attempt 的 `show --execution` 执行树出现工具调用节点，节点带 span 时间注释。
-- **OTel**：adapter 的 `tracing.env` 注入标准 `OTEL_*` 进程变量（OTLP/protobuf），执行树的时间注释就是写入成立的展示证明；`show --timing` 的 OTel 子树挂出经 mapper 归一的 model / tool span。
+- **Eval 结果**：原生验收分别核对当前版与 legacy 版的通过数、未通过数；工具、Skill 与 plugin 细节由 Eval 判分。
+- **Execution**：独立 `show --execution` test 只读回 coding Eval 的代表性工具证据。
+- **Timing**：adapter 的 `tracing.env` 仍注入标准 `OTEL_*` 进程变量（OTLP/protobuf）。独立 `show --timing` test 对当前版与 legacy 版分别读回 runner 阶段，不在同一 owner 里重复 execution 断言。
   span mapper 只影响瀑布图——判分断言仍只读 tape 归一的事件流。

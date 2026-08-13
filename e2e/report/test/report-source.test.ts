@@ -1,11 +1,11 @@
 // owner: docs/engineering/testing/e2e/report.md#report-source-snapshot
 // rerun: pnpm e2e --repo report -- --run test/report-source.test.ts
 
-import { command, only, withProjectCopy } from "@niceeval/testkit";
+import { only } from "@niceeval/testkit";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { reportArtifactStaging, reportProjectCopy } from "./support.ts";
+import { reportCaseArtifacts, reportE2E } from "./support.ts";
 
 interface ExpEvent {
   event: string;
@@ -13,13 +13,12 @@ interface ExpEvent {
   locator?: string;
 }
 
-const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
-
 test("show --source 从本轮 Record 呈现入口与导入断言快照", async () => {
-  await withProjectCopy(
-    reportProjectCopy,
-    async ({ root }) => {
-      const run = await niceeval.run(["exp", "source", "--rerun", "all", "--json"], { cwd: root });
+  await reportE2E.case(
+    "source",
+    { artifacts: reportCaseArtifacts() },
+    async ({ paths: { projectRoot }, commands: { niceeval } }) => {
+      const run = await niceeval.run(["exp", "source", "--rerun", "all", "--json"]);
       expect(run.exitCode, run.diagnostic()).toBe(0);
       const attempt = only(
         run.ndjson<ExpEvent>(),
@@ -27,8 +26,8 @@ test("show --source 从本轮 Record 呈现入口与导入断言快照", async (
         run.diagnostic(),
       );
 
-      const entryPath = join(root, "evals", "source-snapshot.eval.ts");
-      const assertionPath = join(root, "evals", "source-snapshot", "assertions.ts");
+      const entryPath = join(projectRoot, "evals", "source-snapshot.eval.ts");
+      const assertionPath = join(projectRoot, "evals", "source-snapshot", "assertions.ts");
       const entry = await readFile(entryPath, "utf8");
       const assertions = await readFile(assertionPath, "utf8");
       expect(entry).toContain("ENTRY_SNAPSHOT_BEFORE");
@@ -42,7 +41,6 @@ test("show --source 从本轮 Record 呈现入口与导入断言快照", async (
 
       const shown = await niceeval.run(
         ["show", attempt.locator!, "--record", ".niceeval/record", "--source"],
-        { cwd: root },
       );
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
       expect(shown.stdout).toContain("evals/source-snapshot.eval.ts");
@@ -52,6 +50,5 @@ test("show --source 从本轮 Record 呈现入口与导入断言快照", async (
       expect(shown.stdout).not.toContain("ENTRY_SNAPSHOT_AFTER");
       expect(shown.stdout).not.toContain("IMPORTED_ASSERTION_SNAPSHOT_AFTER");
     },
-    reportArtifactStaging("source"),
   );
 });

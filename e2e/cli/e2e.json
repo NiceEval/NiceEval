@@ -10,7 +10,6 @@
   "secrets": [],
   "paths": ["e2e/cli/**", "package.json", "pnpm-lock.yaml", "e2e/scripts/**"],
   "artifacts": [
-    ".niceeval/**",
-    "junit/**"
+    ".e2e-artifacts/**"
   ]
 }

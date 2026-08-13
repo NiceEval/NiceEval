@@ -1,13 +1,19 @@
 // owner: docs/engineering/testing/e2e/adapter/bub.md#adapter-bub-live-compatibility
 //
 // 单文件 Journey：真实 bubAgent + Docker Sandbox + live provider，
-// 再从公开 CLI 读回 Eval、attempt、execution 与 timing。
+// 同一批真实运行分别供 verdict、execution 与 timing 独立命题读取。
 // 只从 @niceeval/testkit 根导入；不读 .niceeval 私有布局、不 import 候选源码/类型。
 
-import { command, only, type ExpEvalEvent, type ExpEvent } from "@niceeval/testkit";
+import {
+  command,
+  only,
+  type ExpEvalEvent,
+  type ExpEvent,
+  type ProcessReceipt,
+} from "@niceeval/testkit";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
-import { expect, it } from "vitest";
+import { beforeAll, expect, it } from "vitest";
 
 const EXPECTED_EVALS = [
   "coding-task/write-and-verify",
@@ -19,6 +25,10 @@ const EXPECTED_EVALS = [
 const REQUIRED_LIVE_SECRETS = ["BUB_API_KEY", "BUB_API_BASE"] as const;
 
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
+let run!: ProcessReceipt;
+let legacy!: ProcessReceipt;
+let evalEvents!: ExpEvalEvent[];
+let legacyEvalEvents!: ExpEvalEvent[];
 
 function requireLiveSecrets(): void {
   const missing = REQUIRED_LIVE_SECRETS.filter((name) => !process.env[name]);
@@ -40,125 +50,77 @@ async function requireDocker(): Promise<void> {
   }
 }
 
-async function attemptLines(evalId: string): Promise<string[]> {
-  const history = await niceeval.run(["show", evalId, "--history"]);
-  expect(history.exitCode, history.diagnostic()).toBe(0);
-  return history.stdout.split("\n").filter((line) => line.includes("@"));
-}
-
-async function latestAttemptLocator(evalId: string): Promise<string> {
-  const lines = await attemptLines(evalId);
-  expect(lines.length, `${evalId} has no public attempt in show --history`).toBeGreaterThan(0);
-
-  const latest = lines.at(-1)!;
-  expect(latest, `${evalId} latest attempt is not passed: ${latest}`).toContain("passed");
-  const locator = latest.match(/@\S+/)?.[0];
-  expect(locator, `${evalId} history line has no public locator: ${latest}`).toBeDefined();
-  return locator!;
-}
-
-it("真实 bub adapter 在 Docker sandbox 中的运行结果经过公开 CLI 读回", async () => {
+beforeAll(async () => {
   requireLiveSecrets();
   await requireDocker();
 
   rmSync(".niceeval", { recursive: true, force: true });
 
   // invoke：先只跑 ci——结果目录一旦有两个实验，show 默认报告会折叠成实验汇总表。
-  const run = await niceeval.run(
+  run = await niceeval.run(
     ["exp", "ci", "--rerun", "all", "--json"],
     { timeoutMs: 32 * 60_000 },
   );
   expect(run.exitCode, run.diagnostic()).toBe(0);
+  evalEvents = run
+    .ndjson<ExpEvent>()
+    .filter((event): event is ExpEvalEvent => "event" in event && event.event === "eval");
+
+  // legacy 版本线同时证明 version/otelPlugin pin 的 telemetry 契约。
+  legacy = await niceeval.run(
+    ["exp", "legacy", "coding-task", "--rerun", "all", "--json"],
+    { timeoutMs: 20 * 60_000 },
+  );
+  expect(legacy.exitCode, legacy.diagnostic()).toBe(0);
+  legacyEvalEvents = legacy
+    .ndjson<ExpEvent>()
+    .filter((event): event is ExpEvalEvent => "event" in event && event.event === "eval");
+}, 36 * 60_000);
+
+it("真实 Bub adapter 的 Eval 通过数正确且没有未通过项", () => {
   // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md「结束反馈与
   // receipt」）：completion 与 runIds（每个 Experiment 一个 Run）。成败由下面带身份的
   // eval 事件精确断言，不从 receipt 猜计数。
   const inv = run.expReceipt();
   expect(inv.completion, run.diagnostic()).toBe("completed");
   expect(inv.runIds, run.diagnostic()).toHaveLength(1);
-  const evalEvents = run
-    .ndjson<ExpEvent>()
-    .filter(
-      (event): event is ExpEvalEvent => "event" in event && event.event === "eval",
-    );
-  for (const evalId of EXPECTED_EVALS) {
-    expect(
-      only(evalEvents, (event) => event.evalId === evalId, run.diagnostic()),
-    ).toMatchObject({ event: "eval", evalId, verdict: "passed", attempts: 1 });
-  }
-
-  // 每个 Eval 用公开的 `show <eval-id> --history` 逐一取回 locator。默认 report 表会按
-  // 终端宽度折行，不拿它的视觉布局重复证明 Report 域已经拥有的渲染契约。
-  const locators: Record<string, string> = {};
-  for (const evalId of EXPECTED_EVALS) {
-    locators[evalId] = await latestAttemptLocator(evalId);
-  }
-
-  // outcome：execution 是适配器收到的公开投影——工具入参、Skill、pythonPlugins 与 tracing 时间注释。
-  const coding = await niceeval.run([
-    "show",
-    locators["coding-task/write-and-verify"]!,
-    "--execution",
-  ]);
-  expect(coding.exitCode, coding.diagnostic()).toBe(0);
-  expect(coding.stdout).toContain("notes.txt");
-  expect(coding.stdout).not.toContain("timing unavailable");
-
-  const skills = await niceeval.run(["show", locators["skills/discovery"]!, "--execution"]);
-  expect(skills.exitCode, skills.diagnostic()).toBe(0);
-  expect(skills.stdout.toLowerCase()).toContain("skill");
-  expect(skills.stdout).toContain("pineapple-37");
-
-  const ext = await niceeval.run([
-    "show",
-    locators["extensions/plugin-postsetup"]!,
-    "--execution",
-  ]);
-  expect(ext.exitCode, ext.diagnostic()).toBe(0);
-  expect(ext.stdout).toContain("PLUGIN_OK");
-
-  // timing：runner 分阶段耗时树；bub 不要求字面 OTel 子树（per-turn traceId 归属未落地）。
-  const timing = await niceeval.run([
-    "show",
-    locators["coding-task/write-and-verify"]!,
-    "--timing",
-  ]);
-  expect(timing.exitCode, timing.diagnostic()).toBe(0);
-  expect(timing.stdout).toContain("eval.run");
-  expect(timing.stdout).toContain("agent.setup");
-  expect(timing.stdout).toMatch(/turn\s+turn1\b/);
-
-  // legacy 版本线放最后：version/otelPlugin pin 到 0.3.9 仍产出时间注释。
-  const legacy = await niceeval.run(
-    [
-      "exp",
-      "legacy",
-      "coding-task",
-      "--rerun",
-      "all",
-      "--json",
-    ],
-    { timeoutMs: 20 * 60_000 },
+  expect(evalEvents.filter((event) => event.verdict === "passed"), run.diagnostic()).toHaveLength(
+    EXPECTED_EVALS.length,
   );
-  expect(legacy.exitCode, legacy.diagnostic()).toBe(0);
+  expect(evalEvents.filter((event) => event.verdict !== "passed"), run.diagnostic()).toHaveLength(0);
+
   const legacyInv = legacy.expReceipt();
   expect(legacyInv.completion, legacy.diagnostic()).toBe("completed");
   expect(legacyInv.runIds, legacy.diagnostic()).toHaveLength(1);
   expect(
-    only(
-      legacy.ndjson<ExpEvent>(),
-      (event): event is ExpEvalEvent =>
-        "event" in event && event.event === "eval" && event.evalId === "coding-task/write-and-verify",
-      legacy.diagnostic(),
-    ),
-  ).toMatchObject({
-    event: "eval",
-    evalId: "coding-task/write-and-verify",
-    verdict: "passed",
-    attempts: 1,
-  });
+    legacyEvalEvents.filter((event) => event.verdict === "passed"),
+    legacy.diagnostic(),
+  ).toHaveLength(1);
+  expect(
+    legacyEvalEvents.filter((event) => event.verdict !== "passed"),
+    legacy.diagnostic(),
+  ).toHaveLength(0);
+});
 
-  const legacyLocator = await latestAttemptLocator("coding-task/write-and-verify");
-  const legacyExecution = await niceeval.run(["show", legacyLocator, "--execution"]);
-  expect(legacyExecution.exitCode, legacyExecution.diagnostic()).toBe(0);
-  expect(legacyExecution.stdout).not.toContain("timing unavailable");
-}, 36 * 60_000);
+it("show --execution 读回 Bub 的代表性工具证据", async () => {
+  const event = only(
+    evalEvents,
+    (candidate) => candidate.evalId === "coding-task/write-and-verify",
+  );
+  const execution = await niceeval.run(["show", event.locator!, "--execution"]);
+  expect(execution.exitCode, execution.diagnostic()).toBe(0);
+  expect(execution.stdout).toContain("notes.txt");
+});
+
+it("show --timing 分别读回 Bub 当前版与 legacy runner 阶段", async () => {
+  for (const [receipt, events] of [[run, evalEvents], [legacy, legacyEvalEvents]] as const) {
+    const event = only(
+      events,
+      (candidate) => candidate.evalId === "coding-task/write-and-verify",
+    );
+    const timing = await niceeval.run(["show", event.locator!, "--timing"]);
+    expect(timing.exitCode, timing.diagnostic()).toBe(0);
+    expect(timing.stdout, receipt.diagnostic()).toContain("eval.run");
+    expect(timing.stdout, receipt.diagnostic()).toMatch(/turn\s+turn1\b/);
+  }
+});

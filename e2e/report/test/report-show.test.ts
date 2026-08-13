@@ -1,11 +1,11 @@
 // owner: docs/engineering/testing/e2e/report.md#report-show-json
 // rerun: pnpm e2e --repo report -- --run test/report-show.test.ts
 
-import { command, only, withProjectCopy } from "@niceeval/testkit";
+import { only } from "@niceeval/testkit";
 import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { reportArtifactStaging, reportProjectCopy } from "./support.ts";
+import { reportCaseArtifacts, reportE2E } from "./support.ts";
 
 interface ExpEvent {
   event: string;
@@ -18,16 +18,14 @@ interface ShowDocument {
   format: string;
 }
 
-const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
-
 test("show 从一次固定 ReportExecution 呈现内建与自定义报告", async () => {
-  await withProjectCopy(
-    reportProjectCopy,
-    async ({ root }) => {
-      await mkdir(join(root, "junit"), { recursive: true });
+  await reportE2E.case(
+    "show",
+    { artifacts: reportCaseArtifacts(["junit"]) },
+    async ({ paths: { projectRoot }, commands: { niceeval } }) => {
+      await mkdir(join(projectRoot, "junit"), { recursive: true });
       const run = await niceeval.run(
         ["exp", "main", "--rerun", "all", "--json", "--junit", "junit/main.xml"],
-        { cwd: root },
       );
       expect(run.exitCode, run.diagnostic()).not.toBe(0);
       expect(run.stderr).toBe("");
@@ -47,18 +45,17 @@ test("show 从一次固定 ReportExecution 呈现内建与自定义报告", asyn
         run.diagnostic(),
       );
       expect(failed.locator, run.diagnostic()).toBeTruthy();
-      const junit = await readFile(join(root, "junit", "main.xml"), "utf8");
+      const junit = await readFile(join(projectRoot, "junit", "main.xml"), "utf8");
       expect(junit).toContain("<failure");
       expect(junit).toContain("<error");
 
-      const overview = await niceeval.run(["show", "--latest", "--record", ".niceeval/record"], { cwd: root });
+      const overview = await niceeval.run(["show", "--latest", "--record", ".niceeval/record"]);
       expect(overview.exitCode, overview.diagnostic()).toBe(0);
       expect(overview.stdout).toContain("Sample: 1 run(s), 3 slot(s)");
       expect(overview.stdout).toContain("No slot problems");
 
       const attempt = await niceeval.run(
         ["show", failed.locator!, "--record", ".niceeval/record"],
-        { cwd: root },
       );
       expect(attempt.exitCode, attempt.diagnostic()).toBe(0);
       expect(attempt.stdout).toContain("Attempt overview");
@@ -71,14 +68,12 @@ test("show 从一次固定 ReportExecution 呈现内建与自定义报告", asyn
 
       const attemptJson = await niceeval.run(
         ["show", failed.locator!, "--record", ".niceeval/record", "--json"],
-        { cwd: root },
       );
       expect(attemptJson.exitCode, attemptJson.diagnostic()).toBe(0);
       expect(attemptJson.json<ShowDocument>().format).toBe("niceeval.report-show/v1");
 
       const shown = await niceeval.run(
         ["show", "--latest", "--record", ".niceeval/record", "--json"],
-        { cwd: root },
       );
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
       const document = shown.json<ShowDocument>();
@@ -95,12 +90,10 @@ test("show 从一次固定 ReportExecution 呈现内建与自定义报告", asyn
           "--page",
           "/",
         ],
-        { cwd: root },
       );
       expect(custom.exitCode, custom.diagnostic()).toBe(0);
       expect(custom.stdout).toContain("Report fixture");
       expect(custom.stdout).toContain("Fixture copy block");
     },
-    reportArtifactStaging("show", ["junit"]),
   );
 });

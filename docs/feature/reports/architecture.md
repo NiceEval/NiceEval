@@ -137,7 +137,7 @@ Semantic route 与 filesystem path 分开。Route / download constructor 固定 
 
 ## Effect 边界与精确 Tags
 
-Record / Analysis / Projection / Report 内部一路返回 Effect。`executeReport` 使用 selection handle 中已有的 frozen capability，R 是 `never`。`showReport` 只要求 `ReportConsole`；static export 只要求 `ReportFileSystem`。Node 热重载是独立 scoped host service，位于 `niceeval/report/host/node`。
+Record / Analysis / Projection / Report host 内部一路返回 Effect。内部 `executeReport` 使用 selection handle 中已有的 frozen capability，R 是 `never`。`showReport` 只要求 `ReportConsole`；static export 只要求 `ReportFileSystem`。Node 热重载是内部 scoped host service，不形成公开 package 子路径。
 
 Library 不调用 `Effect.runPromise`，也不建立私有 runtime。CLI / application main 只在外层调用一次 `Effect.runPromiseExit`。
 
@@ -157,7 +157,7 @@ keep last-good   atomically replace
 show problem     current revision
 ```
 
-Node ESM 模块缓存与 watcher 的具体处理是 `niceeval/report/host/node` 的实现责任，本契约只声明行为：
+Node ESM 模块缓存与 watcher 的具体处理是内部 Node host 的实现责任，本契约只声明行为：
 
 - 每次 rebuild 产生一份新的 fixed `ReportExecution`；
 - 完整成功后才替换 current revision 与 watcher closure；

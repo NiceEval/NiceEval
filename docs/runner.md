@@ -6,9 +6,9 @@ Runner 把已求值的 Experiment 变成完整发布的 Record Run。它负责�
 
 Experiment 配置先进入 Runner。Runner 建立 Run 与 expected slots，执行或采用 Attempt，并写入 owner-local RecordAttachment。
 
-随后 analysis selection 从 frozen reader 形成 `AnalysisSampleHandle`；宿主按 Report 声明闭合数据依赖，形成一次 immutable `ReportExecution`。Reports runtime 只消费 `ReportExecution`。
+随后内部 analysis selection 从 frozen reader 形成纯 `AnalysisSample`；宿主按 Report 声明闭合数据依赖，形成一次 immutable `ReportExecution`。Reports runtime 只消费 `ReportExecution`。
 
-Runner 不为页面准备聚合结果，不向 receipt 复制 Verdict、locator、用量、费用或计数。页面和脚本按 receipt 的 `runIds` 重新打开 reader。
+Runner 不为页面准备聚合结果，不向 receipt 复制 Verdict、locator、用量、费用或计数。页面和机器调用方按 receipt 的 `runIds` 通过 `show` / `view` 读取结果。
 
 ## Run、Member 与 Attempt
 

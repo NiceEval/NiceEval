@@ -6,13 +6,24 @@
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { command, type ExpEvalEvent, type ExpEvent, withProcess, withTempDir } from "@niceeval/testkit";
-import { expect, it } from "vitest";
+import {
+  command,
+  type ExpEvalEvent,
+  type ExpEvent,
+  type ProcessReceipt,
+  withProcess,
+  withTempDir,
+} from "@niceeval/testkit";
+import { beforeAll, expect, it } from "vitest";
 
 const EVAL_ID = "bash-session";
 const REQUIRED_LIVE_SECRETS = ["ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL"] as const;
 const niceevalBin = join(process.cwd(), "node_modules", ".bin", "niceeval");
 const niceeval = command([niceevalBin]);
+let marker!: string;
+let sentinel!: string;
+let runReceipt!: ProcessReceipt;
+let locator!: string;
 
 function requireLiveSecrets(): void {
   const missing = REQUIRED_LIVE_SECRETS.filter((name) => !process.env[name]);
@@ -35,18 +46,18 @@ async function latestAttemptLocator(): Promise<string> {
   return locator!;
 }
 
-it("真实 Claude Agent SDK converter 结果经过公共 CLI 完整读回", async () => {
+beforeAll(async () => {
   requireLiveSecrets();
 
-  const marker = `niceeval-claude-sdk-bash-${randomUUID()}`;
-  const sentinel = `niceeval-claude-sdk-session-${randomUUID()}`;
+  marker = `niceeval-claude-sdk-bash-${randomUUID()}`;
+  sentinel = `niceeval-claude-sdk-session-${randomUUID()}`;
 
   await withTempDir("niceeval-claude-agent-sdk-", async (tempRoot) => {
     const privateHome = join(tempRoot, "home");
     const workspace = join(tempRoot, "workspace");
     await Promise.all([mkdir(privateHome, { recursive: true }), mkdir(workspace, { recursive: true })]);
 
-    await withProcess(
+    runReceipt = await withProcess(
       [niceevalBin, "exp", "--rerun", "all", "--json"],
       {
         processGroup: true,
@@ -60,32 +71,36 @@ it("真实 Claude Agent SDK converter 结果经过公共 CLI 完整读回", asyn
           NICEEVAL_CLAUDE_AGENT_SDK_SENTINEL: sentinel,
         },
       },
-      async (handle) => {
-        const receipt = await handle.done;
-        expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
-        const events = receipt.ndjson<ExpEvent>();
-        // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md）：
-        // completion 与 runIds；成败由带身份的 eval 事件精确断言，live provider
-        // 故障不会冒充通过。
-        const inv = receipt.expReceipt();
-        expect(inv.completion, receipt.diagnostic()).toBe("completed");
-        expect(inv.runIds, receipt.diagnostic()).toHaveLength(1);
-        const evalEvent = events.find(
-          (event): event is ExpEvalEvent =>
-            "event" in event && event.event === "eval" && event.evalId === EVAL_ID,
-        );
-        expect(evalEvent, receipt.diagnostic()).toBeDefined();
-        expect(evalEvent).toMatchObject({
-          event: "eval",
-          evalId: EVAL_ID,
-          verdict: "passed",
-          attempts: 1,
-        });
-      },
+      async (handle) => await handle.done,
     );
   });
 
-  const locator = await latestAttemptLocator();
+  expect(runReceipt.exitCode, runReceipt.diagnostic()).toBe(0);
+  locator = await latestAttemptLocator();
+}, 14 * 60_000);
+
+it("真实 Claude Agent SDK converter 的 Eval 以通过 verdict 完成", () => {
+  const events = runReceipt.ndjson<ExpEvent>();
+  // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md）：
+  // completion 与 runIds；成败由带身份的 eval 事件精确断言，live provider
+  // 故障不会冒充通过。
+  const inv = runReceipt.expReceipt();
+  expect(inv.completion, runReceipt.diagnostic()).toBe("completed");
+  expect(inv.runIds, runReceipt.diagnostic()).toHaveLength(1);
+  const evalEvent = events.find(
+    (event): event is ExpEvalEvent =>
+      "event" in event && event.event === "eval" && event.evalId === EVAL_ID,
+  );
+  expect(evalEvent, runReceipt.diagnostic()).toBeDefined();
+  expect(evalEvent).toMatchObject({
+    event: "eval",
+    evalId: EVAL_ID,
+    verdict: "passed",
+    attempts: 1,
+  });
+});
+
+it("show --execution 读回 Claude Agent SDK converter 的代表性证据", async () => {
   const attemptJson = await niceeval.run(["show", locator, "--json"]);
   expect(attemptJson.exitCode, attemptJson.diagnostic()).toBe(0);
   expect(attemptJson.stdout).toContain("session_id");
@@ -95,4 +110,12 @@ it("真实 Claude Agent SDK converter 结果经过公共 CLI 完整读回", asyn
   expect(execution.exitCode, execution.diagnostic()).toBe(0);
   expect(execution.stdout).toContain("TOOL · Bash");
   expect(execution.stdout).toContain(marker);
-}, 14 * 60_000);
+});
+
+it("show --timing 读回 Claude Agent SDK converter 的 runner 阶段", async () => {
+  const timing = await niceeval.run(["show", locator, "--timing"]);
+  expect(timing.exitCode, timing.diagnostic()).toBe(0);
+  expect(timing.stdout, timing.diagnostic()).toContain("eval.run");
+  expect(timing.stdout, timing.diagnostic()).toMatch(/turn\s+turn1\b/);
+
+});

@@ -12,6 +12,7 @@ const agent = codexAgent({
       ref: "74c5f3cad7e7f2d6d1c35aea79ad2a1a1b5ac54e",
       skills: ["calibre"],
     },
+    { kind: "local", path: "skills/niceeval-decoy", name: "niceeval-decoy" },
   ],
 });
 
