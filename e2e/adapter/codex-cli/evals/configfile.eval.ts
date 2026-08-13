@@ -9,9 +9,10 @@ export default defineEval({
     'configFile 正反对照:相同 prompt 在 baseline 调用 web_search，在 disabled 配置下不调用',
   async test(t) {
     const turn = await t.send(
-      "You must use the web_search tool to find the most recent news headline about OpenAI, " +
-        "then summarize it in one sentence. If web_search is unavailable, say so immediately " +
-        "instead of guessing or retrying.",
+      "Inspect the tools actually available in this session. If web_search is present, you must " +
+        "call it once to find the most recent news headline about OpenAI, then summarize it in " +
+        "one sentence. If web_search is absent, do not try substitutes or retry; say it is " +
+        "unavailable immediately.",
     );
     await turn.succeeded().orStop();
 

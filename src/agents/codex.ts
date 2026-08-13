@@ -246,6 +246,7 @@ function codexAcceptance(
  */
 function codexPlatformPackage(
   platform: AgentArtifactPlatform,
+  version: string,
 ): { spec: string; binPath: string } | undefined {
   const target =
     platform.os === "linux" && platform.arch === "x64"
@@ -259,10 +260,16 @@ function codexPlatformPackage(
             : undefined;
   if (target === undefined) return undefined;
   return {
-    spec: `@openai/codex@${DEFAULT_CODEX_CLI_VERSION}-${target.suffix}`,
+    spec: `@openai/codex@${version}-${target.suffix}`,
     binPath: `vendor/${target.triple}/bin/codex`,
   };
 }
+
+// Codex 0.144.1 会把「hook 命令已正常退出、随后写 stdin 撞 BrokenPipe」误判成 hook
+// 失败并丢掉 stdout。0.146.0 的官方 command runner 已忽略这个竞态；配置 Plugin 时必须
+// 选择包含该修复的 CLI。未配置 Plugin 的官方基线仍保持当前已发布版本，避免引用尚未发布
+// 的 Docker/E2B 制品。
+const CODEX_PLUGIN_HOOK_SAFE_CLI_VERSION = "0.146.0";
 
 export function codexAgent(config?: CodexConfig): Agent {
   const getApiKey = () => config?.apiKey ?? requireEnv("CODEX_API_KEY");
@@ -277,20 +284,26 @@ export function codexAgent(config?: CodexConfig): Agent {
   // 不同 run/resume 轮拿到不同 Space。值不进入 shell 或 manifest，只交给 command options。
   const agentEnv = Object.freeze({ ...(config?.env ?? {}) });
   const agentEnvSensitiveValues = Object.freeze(Object.values(agentEnv));
+  const cliVersion = config?.plugins?.length
+    ? CODEX_PLUGIN_HOOK_SAFE_CLI_VERSION
+    : DEFAULT_CODEX_CLI_VERSION;
+  const cliRecipeRevision = config?.plugins?.length
+    ? "plugin-hook-safe-r1"
+    : String(AGENT_BASELINE_RECIPE_REVISION.codex);
   const { ensure, installer } = createNpmCliInstaller({
-      identity: {
-        agent: "codex",
-        version: DEFAULT_CODEX_CLI_VERSION,
-        revision: String(AGENT_BASELINE_RECIPE_REVISION.codex),
-      },
-      packageName: "@openai/codex",
-      bin: "codex",
-      platformPackage: codexPlatformPackage,
-      progress: {
-        checking: `checking Codex CLI ${DEFAULT_CODEX_CLI_VERSION}`,
-        installing: `installing official OpenAI Codex CLI ${DEFAULT_CODEX_CLI_VERSION}`,
-        ready: `Codex CLI ${DEFAULT_CODEX_CLI_VERSION} ready`,
-      },
+    identity: {
+      agent: "codex",
+      version: cliVersion,
+      revision: cliRecipeRevision,
+    },
+    packageName: "@openai/codex",
+    bin: "codex",
+    platformPackage: (platform) => codexPlatformPackage(platform, cliVersion),
+    progress: {
+      checking: `checking Codex CLI ${cliVersion}`,
+      installing: `installing official OpenAI Codex CLI ${cliVersion}`,
+      ready: `Codex CLI ${cliVersion} ready`,
+    },
   });
 
   return registerAgentLifecycleHookCommands(defineSandboxAgent({

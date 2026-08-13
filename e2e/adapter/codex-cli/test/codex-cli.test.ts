@@ -13,7 +13,6 @@ import { expect, it } from "vitest";
 const EXPECTED_PASSED_ATTEMPTS = 18;
 // 每个 Experiment 产生一个 Run（docs/feature/experiments/cli.md「结束反馈与 receipt」）；
 const EXPECTED_EXPERIMENTS = 7;
-const RETRY_CONCURRENCY = 4;
 
 const REQUIRED_LIVE_SECRETS = [
   "CODEX_API_KEY",
@@ -91,18 +90,15 @@ it("真实 Codex CLI adapter 在 Docker sandbox 中的运行结果经过公开 C
   expect(run.exitCode, run.diagnostic()).toBe(failed.length > 0 ? 1 : 0);
   for (const event of failed) assertExactRetryEvalSelector(firstEvents, event);
 
+  // 这些 Invocation 继续写同一个保留证据的 Record；Record 是单写者，多个 CLI 进程
+  // 重叠会确定性触发 RecordWriterBusy。主 Invocation 内的 Attempt 并发不受影响。
   const retryRuns: ProcessReceipt[] = [];
-  for (let offset = 0; offset < failed.length; offset += RETRY_CONCURRENCY) {
-    const batch = failed.slice(offset, offset + RETRY_CONCURRENCY);
+  for (const event of failed) {
     retryRuns.push(
-      ...(await Promise.all(
-        batch.map((event) =>
-          niceeval.run(
-            ["exp", event.experimentId, event.evalId, "--rerun", "all", "--json"],
-            { timeoutMs: 44 * 60_000 },
-          ),
-        ),
-      )),
+      await niceeval.run(
+        ["exp", event.experimentId, event.evalId, "--rerun", "all", "--json"],
+        { timeoutMs: 44 * 60_000 },
+      ),
     );
   }
   const retriedByEval = new Map<string, ExpEvalEvent>();

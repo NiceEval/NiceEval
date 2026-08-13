@@ -15,16 +15,25 @@
 - 当前 session rollout 文件存在，但没有 `NICEEVAL_HOOK_SENTINEL_926` developer message；
 - 失败不只发生在复用波次，不能只用 marketplace/plugin 旧状态解释。
 
-## 已排除与尚未定论
+## 已排除与根因
 
 这不是 Eval selector、模型回复或插件安装文件断言的问题；放宽 sentinel 断言会丢掉
 “hook 真实执行”的契约。也不能仅凭 CI 时序认定为 CPU/并发压力。
 
 同日用官方 Codex CLI 0.144.1、相同 fixture 与固定 Git commit，在隔离的临时
 `CODEX_HOME` 做了两组 16 路并行最小复现：一组 local marketplace，一组 Git
-marketplace。两组共 32 次 SessionStart 全部进入 session。该反证说明单纯“0.144.1
-一定漏 hook”或“并发一定触发”都不成立；Docker/live provider/Runner 生命周期的组合条件
-仍需由后续 CI 与更窄实验裁决。
+marketplace。两组共 32 次 SessionStart 全部进入 session。这个结果只说明竞态在本机没有
+命中，不能反证竞态不存在。
+
+对比 OpenAI Codex 官方源码 tag `rust-v0.144.1` 与 `rust-v0.146.0` 后确认根因在
+`codex-rs/hooks/src/engine/command_runner.rs`：0.144.1 启动 hook 子进程后向其 stdin 写
+SessionStart JSON；若 `echo` 已先正常退出，写入返回 `BrokenPipe`，旧实现会 kill/封口为失败，
+已经产生的 stdout 因而不会进入模型上下文。CI 高负载扩大了这个很窄的时序窗口。0.146.0
+明确只忽略 `ErrorKind::BrokenPipe`，其它 stdin 写错误仍失败，正好修复这条竞态。
+
+NiceEval 因此在配置 `plugins` 时选择 Codex CLI 0.146.0；未配置 Plugin 的官方预制基线仍用
+已经发布的 0.144.1，由 staged installer 只给 Plugin 场景补齐修复版本。不能把 fixture 改成
+先读 stdin 再 `echo` 来规避：那只让测试避开竞态，真实第三方 hook 仍会丢。
 
 ## 同批确认的独立 Adapter bug
 
@@ -34,6 +43,5 @@ active version 选择。修法是：在覆盖配置前按旧声明先卸同名 P
 marketplace，然后写新配置并安装声明版本。这修复复用收敛，但不能拿来解释独立新沙箱的
 SessionStart 缺失。
 
-后续若 CI 仍漏 hook，应保留 standalone hook 执行 owner，并从公开执行证据比较失败/成功
-时的有效 config、hook discovery 与进程启动结果；不要把 assertion-failed 当 setup retry，
-也不要把 timeout/模型成功当作 hook 成功。
+保留 standalone hook 执行 owner，并从公开执行证据比较有效 config、hook discovery 与进程
+启动结果；不要把 assertion-failed 当 setup retry，也不要把 timeout/模型成功当作 hook 成功。

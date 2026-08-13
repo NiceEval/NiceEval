@@ -267,6 +267,8 @@ GitHub runner 或 Docker daemon 故障。测试超时、parse 失败、cleanup �
 - 首轮 `niceeval exp --json` 完整结束后，测试读取公开 `eval` 事件；
 - 只有 `verdict: "failed"` 才对精确 Experiment/Eval 配对另起一次 `exp --rerun all` Invocation；
 - `passed`、`errored`、`skipped`、中断和不完整 Invocation 都不重试，第二轮也不递归；
+- 同一 Repo 的补跑继续写同一个 Record，因此多个补跑 Invocation 串行执行；不能用并行 CLI 进程
+  制造 `RecordWriterBusy`。主 Invocation 内部与不同 Repo batch 仍按各自并发配置运行；
 - 两次 Invocation、receipt 与 Attempt 全部保留，并在 CI 日志标出 retry 后通过。
 
 这不是 Vitest / Playwright retry，也不能计入确定性 owner 的可靠性接管。
