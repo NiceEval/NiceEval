@@ -5,7 +5,7 @@
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities) source("../");
 
-/* 站点观感与产品面同源:令牌值抄 DESIGN.md 的单源主题 basalt(src/report/theme.ts),
+/* 站点观感与产品面同源:令牌值抄 DESIGN.md 的单源主题 basalt(src/report/host/theme.ts),
    短名与 src/view/styles.css 的宿主 chrome 对齐。站点只有暗色一套,不做浅色切换。 */
 :root {
   color-scheme: dark;
@@ -60,7 +60,6 @@ html {
 body {
   margin: 0;
   min-width: 320px;
-  /* eval-deck 的倾斜卡片旋转后会超出版心，裁掉溢出避免出现横向滚动条。 */
   overflow-x: clip;
   background: var(--bg);
   color: var(--text);
@@ -336,8 +335,8 @@ h1 {
   position: absolute;
   z-index: 1;
   inset: 0 0 auto;
-  height: 36px;
-  background: linear-gradient(var(--panel), transparent);
+  height: 1px;
+  background: var(--line);
   pointer-events: none;
 }
 
@@ -571,6 +570,10 @@ h1 {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
   .term-cursor,
   .term-dot {
     animation: none;
@@ -584,34 +587,25 @@ h1 {
 .strip {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(28px, 4vw, 64px);
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
-  background: var(--panel);
 }
 
 .strip article {
-  min-height: 190px;
-  padding: 32px 24px;
-  border-left: 1px solid var(--line);
-}
-
-.strip article:last-child {
-  border-right: 1px solid var(--line);
+  min-height: 168px;
+  padding: 34px 0 38px;
 }
 
 .strip span {
-  display: inline-grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border: 1px solid var(--line-strong);
-  color: var(--text);
+  color: var(--soft);
+  font-family: var(--font-mono);
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
-  font-weight: 600;
 }
 
 .strip h2 {
-  margin: 48px 0 0;
+  margin: 22px 0 0;
   font-size: 30px;
   font-weight: 600;
   letter-spacing: 0;
@@ -640,12 +634,10 @@ h1 {
 }
 
 .eyebrow {
-  margin: 0 0 16px;
-  color: var(--soft);
-  font-size: 12px;
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 14px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
 }
 
 .setup h2,
@@ -676,8 +668,8 @@ h1 {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 14px;
-  border: 1px solid var(--line);
+  padding: 10px 0 10px 14px;
+  border-left: 2px solid transparent;
   background: transparent;
   color: var(--muted);
   font-size: 14px;
@@ -690,93 +682,26 @@ h1 {
 }
 
 .deck-switch button.active {
-  border-color: var(--line-strong);
+  border-left-color: var(--text);
   color: var(--text);
 }
 
 .deck-tag {
   flex-shrink: 0;
-  color: var(--muted);
-  font-size: 10.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
+  color: var(--soft);
+  font-family: var(--font-mono);
+  font-size: 11px;
   white-space: nowrap;
 }
 
 .eval-deck {
   position: relative;
-  margin-top: 14px;
+  margin-top: 0;
 }
 
 .setup-card {
   display: grid;
   gap: 18px;
-  padding: 22px;
-  border: 1px solid var(--line-strong);
-  /* 卡片会互相叠放，背景必须不透明，否则后排代码会透过前排卡片。 */
-  background: var(--panel);
-}
-
-.deck-card {
-  /* 换卡走一条带轻微回弹的慢曲线，让"抽到最前面"这个动作看得清；遮罩同节奏淡入淡出。 */
-  transition: transform 720ms cubic-bezier(0.3, 1.12, 0.35, 1);
-}
-
-.deck-card.active {
-  position: relative;
-  z-index: 3;
-}
-
-/* 后排卡片盖满整个 deck(高度跟随前排卡)，倾斜露出边角，整卡可点。 */
-.deck-card:not(.active) {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  cursor: pointer;
-}
-
-/* 遮罩挂在所有卡上、只改 opacity：卡片升到前排时暗色是淡出的，而不是瞬间消失。 */
-.deck-card::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: color-mix(in srgb, var(--bg) 62%, transparent);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 720ms ease;
-}
-
-.deck-card:not(.active)::after {
-  opacity: 1;
-}
-
-.deck-card:not(.active):hover::after {
-  opacity: 0.7;
-}
-
-.deck-card.deck-pos-1 {
-  z-index: 2;
-  transform: rotate(3deg) translate(24px, -22px) scale(0.975);
-}
-
-.deck-card.deck-pos-2 {
-  z-index: 1;
-  transform: rotate(-2.4deg) translate(-22px, -12px) scale(0.955);
-}
-
-.deck-card.deck-pos-1:hover {
-  transform: rotate(3.4deg) translate(26px, -30px) scale(0.98);
-}
-
-.deck-card.deck-pos-2:hover {
-  transform: rotate(-2.8deg) translate(-24px, -20px) scale(0.96);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .deck-card,
-  .deck-card::after {
-    transition-duration: 1ms;
-  }
 }
 
 .setup-card-head {
@@ -801,14 +726,12 @@ h1 {
   text-overflow: ellipsis;
 }
 
-.pill {
-  justify-self: start;
-  padding: 2px 9px;
-  border: 1px solid var(--line);
+.run-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--good);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  font-size: 12px;
 }
 
 .setup-panel {
@@ -834,16 +757,17 @@ h1 {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 1px 14px;
+  padding: 1px 14px 1px 12px;
+  border-left: 2px solid transparent;
 }
 
 /* 断言行与回复行只用左缘 2px 竖条区分身份,不铺底色:竖条是信息,不是装饰。 */
 .code-line.assertion {
-  box-shadow: inset 2px 0 0 var(--good);
+  border-left-color: var(--good);
 }
 
 .code-line.reply {
-  box-shadow: inset 2px 0 0 var(--accent);
+  border-left-color: var(--accent);
 }
 
 /* 整行都是点击区域，跟 view 里 transcript 行(summary.ts-row)一致——不是只有右边那颗按钮。 */
@@ -942,10 +866,9 @@ h1 {
 }
 
 .code-note-role {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
   color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 10px;
 }
 
 .eval-more {
@@ -1244,7 +1167,7 @@ h1 {
   right: 30px;
   width: 54%;
   height: 70px;
-  box-shadow: inset 4px 0 0 var(--good);
+  border-left: 4px solid var(--good);
 }
 
 .blog-card-art span:nth-child(3) {
@@ -1252,7 +1175,7 @@ h1 {
   bottom: 42px;
   width: 36%;
   height: 42px;
-  box-shadow: inset 4px 0 0 var(--bad);
+  border-left: 4px solid var(--bad);
 }
 
 .blog-card-copy {
@@ -1260,11 +1183,9 @@ h1 {
 }
 
 .post-kicker {
-  color: var(--soft);
-  font-size: 12px;
+  color: var(--muted);
+  font-size: 13px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
 }
 
 .blog-card h2 {
@@ -1343,7 +1264,7 @@ h1 {
   left: 56px;
   width: 48%;
   height: 86px;
-  box-shadow: inset 4px 0 0 var(--good);
+  border-left: 4px solid var(--good);
 }
 
 .article-mark span:nth-child(3) {
@@ -1358,7 +1279,7 @@ h1 {
   bottom: 32px;
   width: 34%;
   height: 28px;
-  box-shadow: inset 4px 0 0 var(--accent);
+  border-left: 4px solid var(--accent);
 }
 
 .article-body {
@@ -1604,12 +1525,17 @@ h1 {
 
   .strip {
     grid-template-columns: 1fr;
+    gap: 0;
   }
 
   .strip article,
   .strip article:last-child {
     min-height: 150px;
-    border-right: 1px solid var(--line);
+    padding: 28px 0;
+  }
+
+  .strip article + article {
+    border-top: 1px solid var(--line);
   }
 
   .strip h2 {
@@ -1635,23 +1561,6 @@ h1 {
   .setup h2,
   .loop h2 {
     font-size: 40px;
-  }
-
-  .setup-card {
-    padding: 18px;
-  }
-
-  /* 窄屏收紧倾斜幅度，避免后排卡片顶出视口造成横向滚动。
-     最高的卡片(内容行数多)旋转后包围盒横向增量最大，取它在 375px 视口下的实测值定死这两个平移量，
-     留出的余量对更矮的卡片自然只多不少。 */
-  .deck-card.deck-pos-1,
-  .deck-card.deck-pos-1:hover {
-    transform: rotate(1.4deg) translate(3px, -10px) scale(0.98);
-  }
-
-  .deck-card.deck-pos-2,
-  .deck-card.deck-pos-2:hover {
-    transform: rotate(-1.1deg) translate(-3px, -6px) scale(0.965);
   }
 
   .eval-code {
