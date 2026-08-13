@@ -178,7 +178,7 @@ jobs:
           echo "[release] cell ${{ matrix.id }}: $(jq -r '[.[].id] | join(", ")' "$manifests_file")"
 
       - name: Set up Python
-        if: contains(matrix.requires.runtimes, 'python>=3.11')
+        if: contains(toJSON(matrix.requires.runtimes), '"python"') || contains(toJSON(matrix.requires.runtimes), '"python>=')
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
