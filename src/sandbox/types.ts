@@ -29,6 +29,11 @@ export type SandboxRuntime = "node20" | "node24";
 export interface SandboxHookContext extends ScopedFeedback {
   /** 运行计划中已解析的实验 id；生命周期 hook 不在脱离 Experiment 的上下文执行。 */
   readonly experimentId: string;
+  /** 当前物理 Sandbox 归属的 Eval Group；未分组 Sandbox 省略。 */
+  readonly evalGroup?: {
+    readonly id: string;
+    readonly definitionHash: string;
+  };
   /** 当前 Invocation 的中止信号；物理 Sandbox 生命周期不从某条 Attempt 借用信号。 */
   readonly signal: AbortSignal;
   /**

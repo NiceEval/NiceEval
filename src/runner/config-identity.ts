@@ -25,6 +25,8 @@ export interface ConfigIdentity {
   readonly model: DeclaredConfigValue<string>;
   readonly reasoningEffort: DeclaredConfigValue<string>;
   readonly flags: Readonly<globalThis.Record<string, JsonValue>>;
+  /** Credential-free Experiment Plugin and receiver behavior. */
+  readonly plugins: JsonValue;
   readonly sandboxReuse: boolean;
   /** Experiment 作者 layer 身份；物理 provider plan 属于逐 Eval fingerprint，不进入 Run 级身份。 */
   readonly sandboxLayer: JsonValue;
@@ -96,6 +98,7 @@ function freezeConfigIdentity(identity: ConfigIdentity): ConfigIdentity {
     model: Object.freeze(identity.model),
     reasoningEffort: Object.freeze(identity.reasoningEffort),
     flags: freezeJson({ ...identity.flags }),
+    plugins: freezeJson(identity.plugins),
     sandboxLayer: freezeJson(identity.sandboxLayer),
     judge: identity.judge._tag === "Unconfigured"
       ? Object.freeze({ _tag: "Unconfigured" as const })
@@ -173,6 +176,7 @@ export function configIdentityForRun(
     model: declaredString(run.model),
     reasoningEffort: declaredString(run.reasoningEffort),
     flags: run.flags,
+    plugins: run.pluginBehavior ?? [],
     sandboxReuse: run.sandboxReuse ?? false,
     sandboxLayer: sandboxLayerIdentityFor(plan.pair, "experiment"),
     judge: judgeIdentity(judge),
@@ -192,6 +196,7 @@ export function configIdentityFromResult(result: EvalResult): ConfigIdentity | u
     model: declaredString(result.model),
     reasoningEffort: declaredString(exp.reasoningEffort),
     flags: exp.flags ?? {},
+    plugins: exp.plugins ?? [],
     sandboxReuse: exp.sandboxReuse ?? false,
     sandboxLayer: exp.sandboxLayer,
     judge: judgeIdentity(exp.judge),
@@ -213,6 +218,7 @@ function flatten(identity: ConfigIdentity): Map<string, JsonValue> {
   putDeclared("reasoningEffort", identity.reasoningEffort);
   put("sandboxReuse", identity.sandboxReuse);
   for (const [key, value] of Object.entries(identity.flags)) put(`flags.${key}`, value);
+  put("plugins", identity.plugins);
   put("sandboxLayer", identity.sandboxLayer);
   if (identity.judge._tag === "Configured") {
   putDeclared("judge.model", identity.judge.model);
@@ -288,10 +294,11 @@ export function counterfactualConfigIdentity(
     } else delete flags[key];
   }
   let sandboxLayer = current.sandboxLayer;
+  let plugins = current.plugins;
   let judge = current.judge;
   let agentInstalls = current.agentInstalls;
-  const rollbackGroups: readonly ("sandboxLayer" | "judge" | "agentInstalls")[] = [
-    "sandboxLayer", "judge", "agentInstalls",
+  const rollbackGroups: readonly ("sandboxLayer" | "plugins" | "judge" | "agentInstalls")[] = [
+    "sandboxLayer", "plugins", "judge", "agentInstalls",
   ];
   for (const group of rollbackGroups) {
     const paths = [...differing].filter((selector) =>
@@ -299,6 +306,7 @@ export function counterfactualConfigIdentity(
     );
     if (paths.length === 0 || !paths.every((selector) => accepted.has(selector))) continue;
     if (group === "sandboxLayer") sandboxLayer = historical.sandboxLayer;
+    else if (group === "plugins") plugins = historical.plugins;
     else if (group === "judge") judge = historical.judge;
     else agentInstalls = historical.agentInstalls;
   }
@@ -309,6 +317,7 @@ export function counterfactualConfigIdentity(
       ? historical.reasoningEffort
       : current.reasoningEffort,
     flags,
+    plugins,
     sandboxReuse: accepted.has("config:sandboxReuse") ? historical.sandboxReuse : current.sandboxReuse,
     sandboxLayer,
     judge,

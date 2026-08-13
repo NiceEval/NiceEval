@@ -1,0 +1,4 @@
+.niceeval/
+.e2e-artifacts/
+junit.xml
+node_modules/

@@ -1,29 +1,21 @@
-// niceeval/analysis owns the public AnalysisSample selection surface. The
-// legacy sample module remains package-private while Record and Report move to
-// their finalized boundaries.
+// niceeval/analysis exposes only immutable analysis values and codecs. Record
+// selection and reader-bound handles belong to the internal Report host.
 export {
   decodeAnalysisSample,
   encodeAnalysisSample,
   ExperimentIdSchema,
   narrowAnalysisSample,
-  narrowAnalysisSampleHandle,
-  selectAnalysisSample,
-  selectExplicitRuns,
-  selectLatestRuns,
 } from "../sample/analysis.ts";
 
 export type {
   AnalysisBaseSlot,
   AnalysisSampleCodecError,
   AnalysisLimitExceededError,
-  AnalysisLatestIndeterminateError,
   AnalysisRun,
   AnalysisRunInvalidError,
   AnalysisRunNotFoundError,
   AnalysisSample,
-  AnalysisSampleHandle,
   AnalysisSampleSelector,
-  AnalysisSelectionError,
   AnalysisSelectionInvalidError,
   AnalysisSelectionRequest,
   AnalysisSelectionSummary,
@@ -39,12 +31,7 @@ export type {
   NonEmptyRecordIssues,
   NotRecordedAnalysisSlot,
   RecordAttemptRef,
-  RecordHandleInvalid,
-  RecordIoError,
   RecordIssue,
-  RecordPermissionError,
-  RecordReadError,
-  RecordReaderClosed,
   RunId,
   SlotId,
   UtcMillis,

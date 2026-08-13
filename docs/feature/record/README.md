@@ -3,6 +3,11 @@
 Record 是 `<project>/.niceeval/record/` 中可携带、可进入 Git 的运行事实集。它保存带完成
 标识的 Run、这些 Run 的导航关系，以及 producer 写入的具名 `RecordAttachment`。
 
+对产品用户，Record 是一个 opaque 目录：可以整体复制、进入 Git，并交给 `niceeval exp`、
+`show`、`view`、`clean` 与 `migrate`，但不通过 `niceeval/record` 读取内部结构或写入。
+下面的 Core、Attachment、reader、writer 与物理布局都是 NiceEval 内部持久化不变量，
+用于约束实现演进，不是第三方 producer / consumer 的格式协议。
+
 没有完成标识的 Run directory 不是 Record 事实。reader 不读取、不展示也不复用它，只返回
 `incomplete-run` warning；用户可以用 `niceeval clean` 删除。
 
@@ -78,7 +83,7 @@ unknown Attachment 保留原 bytes，并始终返回 `unsupported`。
 为 `record-migration-interrupted`。Git 或用户备份提供恢复点，Record 不另存副本、
 rollback、`out` directory 或 compat reader。
 
-## 能力边界
+## 内部能力边界
 
 `RecordReader` 与 `RecordWriteSession.view` 都是在 Effect Scope 内冻结的
 `FrozenRecordView`。它包含 runs、run、attempt 与 Attachment read；它们使用同一个
@@ -111,9 +116,9 @@ writer 只验证 Core、owner、typed Attachment、完整 closure 与精确引�
 
 - [Architecture](architecture.md) —— Core、Attachment closure、完成标识、锁和 migration 不变量。
 - [Sources manifest](architecture.md#sources-manifest) —— Run-owned source item、path、digest 与 own blob。
-- [Library](library.md) —— Effect API、frozen view、draft、typed projection 与 migration builder。
+- [内部 Library](library.md) —— runner / Report host 使用的 Effect API、frozen view、draft、typed projection 与 migration builder。
 - [CLI](cli.md) —— `show`、`view`、`exp`、`clean` 与 `migrate`。
-- [发布完整 Run](use-case/发布完整运行.md) —— producer 怎样写入并留下完成标识。
+- [发布完整 Run](use-case/发布完整运行.md) —— 内部 producer 怎样写入并留下完成标识。
 - [上层变化如何停在上层](use-case/上层变化不改持久格式.md) —— Assert-first 与算法边界。
 - [选择正确的演进边界](use-case/未来功能不扩张核心格式.md) —— Attachment、projector 与 Record major 的选择规则。
 - [多个 Attempt 怎样共用源码快照](use-case/多个Attempt怎样共用源码快照.md) —— origin Run source ownership。

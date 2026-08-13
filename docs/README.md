@@ -78,11 +78,11 @@ docs/
 │   ├── sandbox-fixture-content/         identity-aware Fixture 内容 prepare 命令
 │   ├── llm-judge-runtime/               原生 LLM Judge 配方、材料、Provider 与判分图
 │   ├── multi-agent/                     多 Agent Eval 场景
-│   ├── ordered-sequences/               现有 Eval 的有序执行、完整重放与 lineage
-│   ├── record-attachment-authoring/      中立 RecordAttachment definition、owner context 与显式 migration registry
+│   ├── eval-selection/                  Experiment 与 CLI 的统一 Eval 过滤语义
+│   ├── eval-groups/                     按封闭成员集组织的组内 Sandbox 复用与组间并行
+│   ├── record-attachment-authoring/      已退役 raw Record 作者方案与永久边界结论
 │   ├── sandbox-retention/                失败类 Sandbox 的有界停驻、明确销毁与安全 GC
 │   ├── materialization-cache/            Provider cache 的需求、库存、归因与安全回收
-│   ├── sandbox-reuse-groups/            Eval 侧强制复用组与组外并行
 │   └── prepare-transient-retry/         prepare 网络瞬时失败的 attempt 内自愈候选
 │
 ├── design/                              需要对比候选方案的架构 / 技术决策

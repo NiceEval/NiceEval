@@ -10,10 +10,11 @@ import {
   type SandboxRuntimeServices,
 } from "../sandbox/runtime.ts";
 import type { JsonValue, Sandbox, SandboxAgent, SandboxHookContext, SandboxReuseCapability, ScopedFeedback } from "../types.ts";
-import { CLEANUP_TIMEOUT_MS } from "./cleanup-timeout.ts";
+import { CLEANUP_TIMEOUT_MS, cleanupCallback } from "./cleanup-timeout.ts";
 import { createChangeLedger, type ChangeLedger } from "./ledger.ts";
 import { firstLine, formatThrown } from "../util.ts";
-import { Effect, Either, Exit, Scope } from "effect";
+import { Cause, Effect, Either, Exit, Scope } from "effect";
+import type { GroupPluginContext, LinkedPluginLifecycle } from "../plugin/contracts.ts";
 
 export interface ReusableSandboxLease {
   readonly sandbox: Sandbox;
@@ -26,6 +27,12 @@ export interface ReusableSandboxLease {
 export type ReusableLeaseRelease =
   | { readonly _tag: "Reset" }
   | { readonly _tag: "Retire" };
+
+/** A post-attempt physical lifecycle failure observed after its result sealed. */
+export interface ReusableSandboxPoolRuntimeFailure {
+  readonly stage: "sandbox.reset";
+  readonly error: Error;
+}
 
 type EntryLifecycle =
   | { readonly _tag: "Idle" }
@@ -62,8 +69,14 @@ export class ReusableSandboxPool {
   private readonly waiters: Array<() => void> = [];
   private creating = 0;
   private stopped = false;
+  private readonly runtimeFailures: ReusableSandboxPoolRuntimeFailure[] = [];
+  /** Provider 可观察的物理 owner；Group 池不能随首个未携入成员改用另一个 Eval ID。 */
+  private readonly materializationOwnerId: string;
   /** 本次 Run 内的 Sandbox 编号计数器;淘汰的实例不让号,编号在结果里永远指向同一个实例。 */
   private created = 0;
+  private groupPluginSetupStarted = false;
+  private groupPluginSetupError: unknown;
+  private activatedGroupPlugins = 0;
 
   constructor(
     private readonly plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>,
@@ -73,7 +86,13 @@ export class ReusableSandboxPool {
     private readonly runtimeServices: SandboxRuntimeServices = liveSandboxRuntimeServices,
     private readonly agent?: SandboxAgent,
     private readonly runTiming?: import("./timing.ts").RunTimingRecorder,
-  ) {}
+    materializationOwnerId?: string,
+    private readonly nextReuseSandboxNumber?: () => number,
+    private readonly groupPlugins: readonly LinkedPluginLifecycle[] = Object.freeze([]),
+    private readonly groupPluginContext?: GroupPluginContext,
+  ) {
+    this.materializationOwnerId = materializationOwnerId ?? plan.pair.evalId;
+  }
 
   /** 把整座池登记进调用方 Scope；Invocation 中断与正常结束走同一条 stop finalizer。 */
   managed(): Effect.Effect<this, never, Scope.Scope> {
@@ -158,7 +177,28 @@ export class ReusableSandboxPool {
         concurrency: "unbounded",
         discard: true,
       });
+      if (this.groupPluginContext !== undefined) {
+        yield* Effect.forEach(
+          this.groupPlugins.slice(0, this.activatedGroupPlugins).reverse(),
+          (entry) => entry.teardown === undefined
+            ? Effect.void
+            : cleanupCallback(() => (entry.teardown as (context: GroupPluginContext) => void | Promise<void>)({
+                ...this.groupPluginContext!,
+                signal: AbortSignal.timeout(CLEANUP_TIMEOUT_MS),
+              })).pipe(Effect.catchAll((cause) => Effect.sync(() => this.feedback.diagnostic({
+                code: "plugin-lifecycle-teardown-failed",
+                level: "warning",
+                message: cause instanceof Error ? cause.message : String(cause),
+              })))),
+          { discard: true },
+        );
+      }
     });
+  }
+
+  /** Drained by the scheduler after the lease Scope sealed the prior result. */
+  drainRuntimeFailures(): readonly ReusableSandboxPoolRuntimeFailure[] {
+    return Object.freeze(this.runtimeFailures.splice(0));
   }
 
   private create(
@@ -167,6 +207,20 @@ export class ReusableSandboxPool {
     buildLocators: ReadonlyMap<BuildKey, JsonValue>,
   ): Effect.Effect<Entry, Error | import("../sandbox/runtime.ts").SandboxRuntimeMaterializationError> {
     return Effect.gen(this, function* () {
+      if (this.groupPluginSetupError !== undefined) return yield* Effect.fail(this.groupPluginSetupError as Error);
+      if (!this.groupPluginSetupStarted && this.groupPluginContext !== undefined) {
+        this.groupPluginSetupStarted = true;
+        const setup = yield* Effect.exit(Effect.forEach(this.groupPlugins, (entry, index) => {
+          this.activatedGroupPlugins = index + 1;
+          return entry.setup === undefined
+            ? Effect.void
+            : externalPromise(() => Promise.resolve((entry.setup as (context: GroupPluginContext) => void | Promise<void>)(this.groupPluginContext!)));
+        }, { discard: true }));
+        if (Exit.isFailure(setup)) {
+          this.groupPluginSetupError = Cause.squash(setup.cause);
+          return yield* Effect.fail(this.groupPluginSetupError as Error);
+        }
+      }
       const capabilities = sandboxRuntimeCapabilities(this.plan);
       if (capabilities.reuse._tag === "Unsupported") {
         return yield* Effect.fail(new Error(
@@ -179,7 +233,7 @@ export class ReusableSandboxPool {
       const entryScope = yield* Scope.make();
       const materialized = yield* Scope.extend(materializeSandboxRunPlan({
         plan: this.plan,
-        evalId: this.plan.pair.evalId,
+        evalId: this.materializationOwnerId,
         deadline,
         feedback: this.feedback,
         signal: this.setupContext.signal,
@@ -233,13 +287,15 @@ export class ReusableSandboxPool {
           `sandboxReuse cannot use the "${capabilities.provider}" sandbox after baseline setup: ${afterSetup.reason}`,
         ));
       }
-      this.created += 1;
+      const reuseSandbox = this.nextReuseSandboxNumber === undefined
+        ? ++this.created
+        : this.nextReuseSandboxNumber();
       return {
         sandbox,
         scope: entryScope,
         lifetime,
         ledger,
-        reuseSandbox: this.created,
+        reuseSandbox,
         ordinal: 0,
         lifecycle: { _tag: "Idle" } satisfies EntryLifecycle,
       };
@@ -280,6 +336,7 @@ export class ReusableSandboxPool {
         } else if (entry.lifecycle._tag !== "Retired") {
           const reset = yield* Effect.either(externalPromise(() => entry.ledger.resetToAnchor()));
           if (Either.isLeft(reset)) {
+            this.runtimeFailures.push(Object.freeze({ stage: "sandbox.reset", error: reset.left }));
             this.feedback.diagnostic({
               code: "sandbox-reset-failed",
               level: "warning",

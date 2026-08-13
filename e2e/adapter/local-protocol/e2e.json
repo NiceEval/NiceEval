@@ -15,5 +15,5 @@
     "pnpm-lock.yaml",
     "e2e/scripts/**"
   ],
-  "artifacts": [".niceeval/**", "junit/**"]
+  "artifacts": [".e2e-artifacts/**", "junit/**"]
 }

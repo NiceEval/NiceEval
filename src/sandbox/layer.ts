@@ -46,8 +46,10 @@ import type { DockerProfileRuntimeBinding } from "./docker-profile/runtime.ts";
 import { dindSupervisorRevision } from "./dind-supervisor.ts";
 
 export type SandboxLayerKind = "template-bearing" | "command-only";
+export type SandboxLayerLifecycle = "prepare-only" | "instance-lifecycle";
 
 const SANDBOX_LAYER: unique symbol = Symbol("niceeval.sandbox.layer");
+const SANDBOX_LAYER_LIFECYCLE: unique symbol = Symbol("niceeval.sandbox.layer.lifecycle");
 const SANDBOX_LAYERS = new WeakSet<object>();
 const SANDBOX_LAYER_STATES = new WeakMap<object, SandboxLayerState>();
 const SANDBOX_TEMPLATE_PLANNERS = new WeakMap<object, SandboxTemplatePlanner>();
@@ -59,11 +61,15 @@ const SANDBOX_PROVIDER_PLAN: unique symbol = Symbol("niceeval.sandbox.provider-p
 const DOCKERFILE_PROVIDER_PLANNER_REVISION = "dockerfile-4";
 const DOCKER_IMAGE_PROVIDER_REVISION = "docker-image-3";
 
-export interface SandboxLayer<Kind extends SandboxLayerKind = SandboxLayerKind> {
+export interface SandboxLayer<
+  Kind extends SandboxLayerKind = SandboxLayerKind,
+  Lifecycle extends SandboxLayerLifecycle = SandboxLayerLifecycle,
+> {
   readonly [SANDBOX_LAYER]: Kind;
-  prepare(command: SandboxCommand): SandboxLayer<Kind>;
-  setup(hook: SandboxHook): SandboxLayer<Kind>;
-  teardown(hook: SandboxHook): SandboxLayer<Kind>;
+  readonly [SANDBOX_LAYER_LIFECYCLE]: Lifecycle;
+  prepare(command: SandboxCommand): SandboxLayer<Kind, Lifecycle>;
+  setup(hook: SandboxHook): SandboxLayer<Kind, "instance-lifecycle">;
+  teardown(hook: SandboxHook): SandboxLayer<Kind, "instance-lifecycle">;
 }
 
 export interface DockerComposeSandboxOptions {
@@ -479,16 +485,16 @@ export interface BuiltinSandboxPlannerServices {
 export interface BuiltinSandboxFactories {
   readonly dockerComposeSandbox: (
     options: DockerComposeSandboxOptions,
-  ) => SandboxLayer<"template-bearing">;
+  ) => SandboxLayer<"template-bearing", "prepare-only">;
   readonly dockerfileSourceLayer: (
     options: DockerfileSourceOptions,
-  ) => SandboxLayer<"template-bearing">;
+  ) => SandboxLayer<"template-bearing", "prepare-only">;
   readonly dockerImageSourceLayer: (
     options: DockerImageSourceOptions,
-  ) => SandboxLayer<"template-bearing">;
-  readonly e2bSandbox: (options: E2BSandboxOptions) => SandboxLayer<"template-bearing">;
-  readonly vercelSandbox: (options: VercelSandboxOptions) => SandboxLayer<"template-bearing">;
-  readonly localSandbox: (options?: LocalSandboxOptions) => SandboxLayer<"template-bearing">;
+  ) => SandboxLayer<"template-bearing", "prepare-only">;
+  readonly e2bSandbox: (options: E2BSandboxOptions) => SandboxLayer<"template-bearing", "prepare-only">;
+  readonly vercelSandbox: (options: VercelSandboxOptions) => SandboxLayer<"template-bearing", "prepare-only">;
+  readonly localSandbox: (options?: LocalSandboxOptions) => SandboxLayer<"template-bearing", "prepare-only">;
 }
 
 export interface CommandOnlySandboxLayerState {
@@ -509,7 +515,10 @@ export interface TemplateBearingSandboxLayerState {
 export type SandboxLayerState<Kind extends SandboxLayerKind = SandboxLayerKind> =
   Kind extends "command-only" ? CommandOnlySandboxLayerState : TemplateBearingSandboxLayerState;
 
-type SandboxLayerRuntime<Kind extends SandboxLayerKind> = SandboxLayer<Kind>;
+type SandboxLayerRuntime<
+  Kind extends SandboxLayerKind,
+  Lifecycle extends SandboxLayerLifecycle = SandboxLayerLifecycle,
+> = SandboxLayer<Kind, Lifecycle>;
 
 function freezeJson(value: JsonValue): JsonValue {
   if (value === null || typeof value !== "object") return value;
@@ -1084,9 +1093,15 @@ function providerPlanningError(
   });
 }
 
-function createLayer(state: CommandOnlySandboxLayerState): SandboxLayer<"command-only">;
-function createLayer(state: TemplateBearingSandboxLayerState): SandboxLayer<"template-bearing">;
-function createLayer(state: SandboxLayerState): SandboxLayer {
+function createLayer<Lifecycle extends SandboxLayerLifecycle>(
+  state: CommandOnlySandboxLayerState,
+  lifecycle: Lifecycle,
+): SandboxLayer<"command-only", Lifecycle>;
+function createLayer<Lifecycle extends SandboxLayerLifecycle>(
+  state: TemplateBearingSandboxLayerState,
+  lifecycle: Lifecycle,
+): SandboxLayer<"template-bearing", Lifecycle>;
+function createLayer(state: SandboxLayerState, lifecycle: SandboxLayerLifecycle): SandboxLayer {
   const frozenCommands = Object.freeze([...state.commands]);
   const setupHooks = Object.freeze([...state.setupHooks]);
   const teardownHooks = Object.freeze([...state.teardownHooks]);
@@ -1097,42 +1112,43 @@ function createLayer(state: SandboxLayerState): SandboxLayer {
     prepare(command: SandboxCommand): SandboxLayer {
       const declaration = sandboxCommandDeclarationOf(command);
       return frozenState.kind === "command-only"
-        ? createLayer({ kind: "command-only", commands: [...frozenCommands, declaration], setupHooks, teardownHooks })
+        ? createLayer({ kind: "command-only", commands: [...frozenCommands, declaration], setupHooks, teardownHooks }, lifecycle)
         : createLayer({
             kind: "template-bearing",
             template: frozenState.template,
             commands: [...frozenCommands, declaration],
             setupHooks,
             teardownHooks,
-          });
+          }, lifecycle);
     },
     setup(hook: SandboxHook): SandboxLayer {
       if (typeof hook !== "function") throw new TypeError("sandbox setup hook must be a function");
       return frozenState.kind === "command-only"
-        ? createLayer({ kind: "command-only", commands: frozenCommands, setupHooks: [...setupHooks, hook], teardownHooks })
-        : createLayer({ kind: "template-bearing", template: frozenState.template, commands: frozenCommands, setupHooks: [...setupHooks, hook], teardownHooks });
+        ? createLayer({ kind: "command-only", commands: frozenCommands, setupHooks: [...setupHooks, hook], teardownHooks }, "instance-lifecycle")
+        : createLayer({ kind: "template-bearing", template: frozenState.template, commands: frozenCommands, setupHooks: [...setupHooks, hook], teardownHooks }, "instance-lifecycle");
     },
     teardown(hook: SandboxHook): SandboxLayer {
       if (typeof hook !== "function") throw new TypeError("sandbox teardown hook must be a function");
       return frozenState.kind === "command-only"
-        ? createLayer({ kind: "command-only", commands: frozenCommands, setupHooks, teardownHooks: [...teardownHooks, hook] })
-        : createLayer({ kind: "template-bearing", template: frozenState.template, commands: frozenCommands, setupHooks, teardownHooks: [...teardownHooks, hook] });
+        ? createLayer({ kind: "command-only", commands: frozenCommands, setupHooks, teardownHooks: [...teardownHooks, hook] }, "instance-lifecycle")
+        : createLayer({ kind: "template-bearing", template: frozenState.template, commands: frozenCommands, setupHooks, teardownHooks: [...teardownHooks, hook] }, "instance-lifecycle");
     },
-  } as SandboxLayerRuntime<SandboxLayerKind>;
+  } as SandboxLayerRuntime<SandboxLayerKind, SandboxLayerLifecycle>;
   Object.defineProperty(layer, SANDBOX_LAYER, { value: frozenState.kind });
+  Object.defineProperty(layer, SANDBOX_LAYER_LIFECYCLE, { value: lifecycle });
   SANDBOX_LAYERS.add(layer);
   SANDBOX_LAYER_STATES.set(layer, frozenState);
   return Object.freeze(layer);
 }
 
-export function sandboxLayer(): SandboxLayer<"command-only"> {
-  return createLayer({ kind: "command-only", commands: [], setupHooks: [], teardownHooks: [] });
+export function sandboxLayer(): SandboxLayer<"command-only", "prepare-only"> {
+  return createLayer({ kind: "command-only", commands: [], setupHooks: [], teardownHooks: [] }, "prepare-only");
 }
 
 /** @internal Provider factory 用它一次性绑定纯数据声明与 Effect planner。 */
 export function defineSandboxTemplate(
   definition: SandboxTemplateDefinition,
-): SandboxLayer<"template-bearing"> {
+): SandboxLayer<"template-bearing", "prepare-only"> {
   const provider = nonEmptyString(definition.provider, "sandbox template.provider");
   const kind = nonEmptyString(definition.kind, "sandbox template.kind");
   const declaration = Object.freeze({
@@ -1148,7 +1164,7 @@ export function defineSandboxTemplate(
     leakGate: freezeLeakGate(definition.leakGate),
   });
   SANDBOX_TEMPLATE_PLANNERS.set(declaration, definition.plan);
-  return createLayer({ kind: "template-bearing", template: declaration, commands: [], setupHooks: [], teardownHooks: [] });
+  return createLayer({ kind: "template-bearing", template: declaration, commands: [], setupHooks: [], teardownHooks: [] }, "prepare-only");
 }
 
 function sharedScheduling(laneKey: string, recommendedConcurrency: number): SandboxProviderScheduling {
@@ -2059,7 +2075,7 @@ export const localSandbox = LIVE_FACTORIES.localSandbox;
  * 统一的单容器 Docker factory。Docker access用判别联合选择显式socket、raw DinD或managed DinD；
  * 宿主路径/profile只保存到私有runtime binding。本函数不连接Docker，provider接线由后续层负责。
  */
-export function dockerSandbox(options: DockerSandboxOptions): SandboxLayer<"template-bearing"> {
+export function dockerSandbox(options: DockerSandboxOptions): SandboxLayer<"template-bearing", "prepare-only"> {
   assertRecord(options, "dockerSandbox options");
   assertOnlyKeys(
     options,
@@ -2112,7 +2128,7 @@ export function dockerSandbox(options: DockerSandboxOptions): SandboxLayer<"temp
 
 export function customProviderSandbox(
   options: CustomProviderSandboxOptions,
-): SandboxLayer<"template-bearing"> {
+): SandboxLayer<"template-bearing", "prepare-only"> {
   assertRecord(options, "defineSandbox options");
   assertOnlyKeys(
     options,
@@ -2172,7 +2188,7 @@ export function customProviderSandbox(
 
 export function defineSandboxCase(
   options: CustomCaseSandboxOptions,
-): SandboxLayer<"template-bearing"> {
+): SandboxLayer<"template-bearing", "prepare-only"> {
   assertRecord(options, "defineSandboxCase options");
   assertOnlyKeys(options, ["identity", "targetPlatform", "services", "materialize"], "defineSandboxCase options");
   if (typeof options.materialize !== "function") {

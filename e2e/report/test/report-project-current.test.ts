@@ -2,13 +2,11 @@
 // regression: 052b13bb (design: memory/current-result-single-state-ruling.md)
 // rerun: pnpm e2e --repo report -- --run test/report-project-current.test.ts
 
-import { command, only, withProjectCopy } from "@niceeval/testkit";
+import { only } from "@niceeval/testkit";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { reportArtifactStaging, reportProjectCopy } from "./support.ts";
-
-const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
+import { reportCaseArtifacts, reportE2E } from "./support.ts";
 
 interface ExpEvent {
   event: string;
@@ -22,13 +20,11 @@ interface ShowOverview {
 }
 
 test("项目未变时复用结果，Eval 源码变化后重新执行并读回新结果", async () => {
-  await withProjectCopy(
-    reportProjectCopy,
-    async ({ root }) => {
-      const initialRun = await niceeval.run(
-        ["exp", "source", "--rerun", "all", "--json"],
-        { cwd: root },
-      );
+  await reportE2E.case(
+    "project-current",
+    { artifacts: reportCaseArtifacts() },
+    async ({ paths: { projectRoot }, commands: { niceeval } }) => {
+      const initialRun = await niceeval.run(["exp", "source", "--rerun", "all", "--json"]);
       expect(initialRun.exitCode, initialRun.diagnostic()).toBe(0);
       expect(initialRun.expReceipt()).toMatchObject({ completion: "completed" });
       expect(
@@ -39,11 +35,11 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
         ),
       ).toMatchObject({ event: "eval", evalId: "source-snapshot", verdict: "passed" });
 
-      const initialShow = await niceeval.run(["show", "--latest", "--json"], { cwd: root });
+      const initialShow = await niceeval.run(["show", "--latest", "--json"]);
       expect(initialShow.exitCode, initialShow.diagnostic()).toBe(0);
       expect(initialShow.json<ShowOverview>().format).toBe("niceeval.report-show/v1");
 
-      const unchangedRun = await niceeval.run(["exp", "source", "--json"], { cwd: root });
+      const unchangedRun = await niceeval.run(["exp", "source", "--json"]);
       expect(unchangedRun.exitCode, unchangedRun.diagnostic()).toBe(0);
       expect(unchangedRun.expReceipt()).toMatchObject({ completion: "completed" });
       expect(
@@ -54,7 +50,7 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
         ),
       ).toMatchObject({ event: "start", reused: 1 });
 
-      const evalPath = join(root, "evals", "source-snapshot.eval.ts");
+      const evalPath = join(projectRoot, "evals", "source-snapshot.eval.ts");
       const evalSource = await readFile(evalPath, "utf8");
       expect(evalSource).toContain("ENTRY_SNAPSHOT_BEFORE");
       await writeFile(
@@ -63,13 +59,13 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
         "utf8",
       );
 
-      const staleShow = await niceeval.run(["show", "--latest", "--json"], { cwd: root });
+      const staleShow = await niceeval.run(["show", "--latest", "--json"]);
       expect(staleShow.exitCode, staleShow.diagnostic()).toBe(0);
       // --latest 只读已发布 Record，不按工作区源码重新校验指纹；源码变化要等下一次
       // exp 的 reuse plan 才体现为重新派发（reports cli.md「共同选择项」）。
       expect(staleShow.json<ShowOverview>().format).toBe("niceeval.report-show/v1");
 
-      const changedRun = await niceeval.run(["exp", "source", "--json"], { cwd: root });
+      const changedRun = await niceeval.run(["exp", "source", "--json"]);
       expect(changedRun.exitCode, changedRun.diagnostic()).toBe(0);
       expect(changedRun.expReceipt()).toMatchObject({ completion: "completed" });
       expect(
@@ -87,10 +83,9 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
         ),
       ).toMatchObject({ event: "eval", evalId: "source-snapshot", verdict: "passed" });
 
-      const refreshedShow = await niceeval.run(["show", "--latest", "--json"], { cwd: root });
+      const refreshedShow = await niceeval.run(["show", "--latest", "--json"]);
       expect(refreshedShow.exitCode, refreshedShow.diagnostic()).toBe(0);
       expect(refreshedShow.json<ShowOverview>().format).toBe("niceeval.report-show/v1");
     },
-    reportArtifactStaging("project-current"),
   );
 });

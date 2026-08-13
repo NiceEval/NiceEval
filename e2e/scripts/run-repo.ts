@@ -225,8 +225,16 @@ export interface RunRepoOptions {
   keepWorkdir?: boolean;
 }
 
-function withInvocationId(env: NodeJS.ProcessEnv, invocationId: string): NodeJS.ProcessEnv {
-  return { ...env, NICEEVAL_E2E_INVOCATION_ID: invocationId };
+function withInvocationContext(
+  env: NodeJS.ProcessEnv,
+  invocationId: string,
+  copyDir: string,
+): NodeJS.ProcessEnv {
+  return {
+    ...env,
+    NICEEVAL_E2E_INVOCATION_ID: invocationId,
+    NICEEVAL_E2E_ARTIFACT_STAGING_ROOT: join(copyDir, ".e2e-artifacts"),
+  };
 }
 
 function cancelledStage(stage: StageName, detail: string): StageReceipt {
@@ -295,9 +303,10 @@ export async function runRepo(
     durableCandidatePath = await materializeCandidateArtifact(durableArtifactRoot, candidate);
     const setupInvocationId = randomUUID();
     invocationIds.push(setupInvocationId);
-    const preflightEnv = withInvocationId(
+    const preflightEnv = withInvocationContext(
       buildChildEnv(process.env, allSecretNames, repo.manifest.secrets),
       setupInvocationId,
+      copyDir,
     );
 
     if (isExecutionCancelled(execution)) {
@@ -365,7 +374,11 @@ export async function runRepo(
 
               // --- install ---
               const installCmd = ["pnpm", "install", "--no-frozen-lockfile"] as const;
-              const installEnv = withInvocationId(buildChildEnv(process.env, allSecretNames, []), setupInvocationId);
+              const installEnv = withInvocationContext(
+                buildChildEnv(process.env, allSecretNames, []),
+                setupInvocationId,
+                copyDir,
+              );
               const installCapture = await runCommand(installCmd, copyDir, installEnv, 30 * 60_000, execution);
               const installOk =
                 installCapture.exitCode === 0 &&
@@ -466,9 +479,10 @@ export async function runRepo(
                         }
                         const invocationId = randomUUID();
                         invocationIds.push(invocationId);
-                        const childEnv = withInvocationId(
+                        const childEnv = withInvocationContext(
                           buildChildEnv(process.env, allSecretNames, repo.manifest.secrets),
                           invocationId,
+                          copyDir,
                         );
                         const testCapture = await runCommand(testCmd, copyDir, childEnv, timeoutMs, execution);
                         testExitCode = testCapture.exitCode;

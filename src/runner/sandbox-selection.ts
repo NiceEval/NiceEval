@@ -5,6 +5,7 @@ import { Data, Effect } from "effect";
 import { digestOf } from "../sandbox/identity.ts";
 import {
   linkSandboxLayers,
+  attachSandboxPluginLifecycles,
   type LinkedSandboxLayerPair,
   type SandboxLayerLinkError,
   type SandboxLayerPairInput,
@@ -21,12 +22,22 @@ import {
 } from "../sandbox/plan.ts";
 import { selectedEvalsForRun } from "./eval-selection.ts";
 import type { AgentRun, DiscoveredEval, SandboxRunInfo } from "./types.ts";
+import {
+  linkPluginPair,
+  pluginLinkErrorFromIssues,
+  preparePluginRun,
+  PluginLinkError,
+  type PluginPairLink,
+} from "../plugin/link.ts";
 
 export interface LinkedRunPair {
   readonly key: string;
+  /** Original caller run; effective Plugin composition is held in `run`. */
+  readonly sourceRun: AgentRun;
   readonly run: AgentRun;
   readonly evalDef: DiscoveredEval;
   readonly pair: LinkedSandboxLayerPair;
+  readonly plugin: PluginPairLink;
   readonly authorBaseDirs: {
     readonly eval: string;
     readonly experiment: string;
@@ -35,16 +46,21 @@ export interface LinkedRunPair {
 
 export interface PreparedRunPair {
   readonly key: string;
+  readonly sourceRun: AgentRun;
   readonly run: AgentRun;
   readonly evalDef: DiscoveredEval;
   readonly plan: LinkedRunPlan;
   readonly identity: ReturnType<typeof linkedRunRecordIdentity>;
+  readonly plugin: PluginPairLink;
 }
 
 export class SandboxRunPlanningInvariantError extends Data.TaggedError(
   "SandboxRunPlanningInvariantError",
 )<{
-  readonly code: "sandbox.run-planning-invariant";
+  readonly code:
+    | "sandbox.run-planning-invariant"
+    | "eval-group-sandbox-reuse-conflict"
+    | "eval-group-incompatible";
   readonly message: string;
 }> {}
 
@@ -67,7 +83,8 @@ export type SandboxRunPlanningError =
   | SandboxLayerLinkError
   | SandboxPhysicalPlanningError
   | SandboxRunPlanningInvariantError
-  | SandboxRunPairDuplicateError;
+  | SandboxRunPairDuplicateError
+  | PluginLinkError;
 
 export interface SandboxRunPlanningOptions {
   readonly keepSandbox?: "failed" | "all";
@@ -80,7 +97,9 @@ function physicalCapabilityRequirements(
   options: SandboxRunPlanningOptions,
 ): readonly SandboxPhysicalCapabilityRequirement[] {
   const requirements: SandboxPhysicalCapabilityRequirement[] = [];
-  if (run.sandboxReuse === true) requirements.push(Object.freeze({ _tag: "Reuse" }));
+  if (run.sandboxReuse === true || evalDef.evalGroup !== undefined) {
+    requirements.push(Object.freeze({ _tag: "Reuse" }));
+  }
   if (options.keepSandbox !== undefined) requirements.push(Object.freeze({ _tag: "Retention" }));
   const timeoutMs = run.timeoutMs ?? evalDef.timeoutMs ?? options.configTimeoutMs;
   if (timeoutMs !== undefined) {
@@ -100,27 +119,55 @@ function linkedOwnerKey(pair: LinkedSandboxLayerPair): string {
   return JSON.stringify([pair.experimentId, pair.evalId, pair.agentName]);
 }
 
+/**
+ * A cohort names the actual physical lifecycle, never an author declaration
+ * position. Group members share one; ordinary fresh pairs intentionally do
+ * not, even when their provider template happens to be identical.
+ */
 /** 纯 link：全矩阵聚合错误，不读 provider 文件，不做网络或资源操作。 */
 export function linkRunSandboxes(
   evals: readonly DiscoveredEval[],
   runs: readonly AgentRun[],
 ): Effect.Effect<
   readonly LinkedRunPair[],
-  SandboxLayerLinkError | SandboxRunPlanningInvariantError | SandboxRunPairDuplicateError
+  SandboxLayerLinkError | SandboxRunPlanningInvariantError | SandboxRunPairDuplicateError | PluginLinkError
 > {
   const records: Array<Readonly<{
     input: SandboxLayerPairInput;
     ownerKey: string;
     key: string;
+    sourceRun: AgentRun;
     run: AgentRun;
     evalDef: DiscoveredEval;
+    plugin: PluginPairLink;
     authorBaseDirs: {
       readonly eval: string;
+      readonly "eval-group"?: string;
       readonly experiment: string;
     };
   }>> = [];
 
-  for (const run of runs) {
+  const pluginRuns = new Map<AgentRun, ReturnType<typeof preparePluginRun>>();
+  const pluginIssues: import("../plugin/link.ts").PluginLinkIssue[] = [];
+  for (const sourceRun of runs) {
+    try {
+      pluginRuns.set(sourceRun, preparePluginRun(sourceRun));
+    } catch (error) {
+      if (error instanceof PluginLinkError) pluginIssues.push(...error.issues);
+      else throw error;
+    }
+  }
+  if (pluginIssues.length > 0) return Effect.fail(pluginLinkErrorFromIssues(pluginIssues));
+
+  for (const sourceRun of runs) {
+    const pluginRun = pluginRuns.get(sourceRun);
+    if (pluginRun === undefined) {
+      return Effect.fail(new SandboxRunPlanningInvariantError({
+        code: "sandbox.run-planning-invariant",
+        message: "Plugin run preparation omitted a discovered AgentRun.",
+      }));
+    }
+    const run = pluginRun.run;
     const { experimentId, experimentBaseDir, experimentSourcePath } = run;
     if (experimentId === undefined || experimentBaseDir === undefined || experimentSourcePath === undefined) {
       return Effect.fail(new SandboxRunPlanningInvariantError({
@@ -128,16 +175,37 @@ export function linkRunSandboxes(
         message: "Sandbox planning requires completed Experiment discovery facts: id, baseDir, and sourcePath.",
       }));
     }
-    for (const evalDef of selectedEvalsForRun(evals, run)) {
+    for (const evalDef of selectedEvalsForRun(evals, sourceRun)) {
+      if (evalDef.evalGroup !== undefined && run.sandboxReuse === true) {
+        return Effect.fail(new SandboxRunPlanningInvariantError({
+          code: "eval-group-sandbox-reuse-conflict",
+          message: `Experiment ${JSON.stringify(experimentId)} selects Eval Group ${JSON.stringify(evalDef.evalGroup.id)} while declaring sandboxReuse: true. Eval Groups own reuse; remove sandboxReuse.`,
+        }));
+      }
+      let plugin: PluginPairLink;
+      try {
+        plugin = linkPluginPair(evalDef, pluginRun);
+      } catch (error) {
+        if (error instanceof PluginLinkError) {
+          pluginIssues.push(...error.issues);
+          continue;
+        }
+        throw error;
+      }
       const input: SandboxLayerPairInput = {
         eval: {
           id: evalDef.id,
-          layer: evalDef.sandbox,
+          layer: plugin.evalLayer,
           declaredAt: { file: evalDef.sourcePath },
         },
+        ...(evalDef.evalGroup === undefined ? {} : { group: {
+          id: evalDef.evalGroup.id,
+          layer: plugin.groupLayer,
+          declaredAt: { file: evalDef.evalGroup.sourcePath },
+        } }),
         experiment: {
           id: experimentId,
-          layer: run.sandbox,
+          layer: plugin.experimentLayer,
           declaredAt: { file: experimentSourcePath },
         },
         agent: { kind: run.agent.kind, name: run.agent.name },
@@ -146,12 +214,20 @@ export function linkRunSandboxes(
         input,
         ownerKey: JSON.stringify([experimentId, evalDef.id, run.agent.name]),
         key: runPairKey(experimentId, evalDef.id),
+        sourceRun,
         run,
         evalDef,
-        authorBaseDirs: Object.freeze({ eval: evalDef.baseDir, experiment: experimentBaseDir }),
+        plugin,
+        authorBaseDirs: Object.freeze({
+          eval: evalDef.baseDir,
+          ...(evalDef.evalGroup === undefined ? {} : { "eval-group": evalDef.evalGroup.baseDir }),
+          experiment: experimentBaseDir,
+        }),
       }));
     }
   }
+
+  if (pluginIssues.length > 0) return Effect.fail(pluginLinkErrorFromIssues(pluginIssues));
 
   const occurrences = new Map<string, { experimentId: string; evalId: string; count: number }>();
   for (const { key, input } of records) {
@@ -204,11 +280,18 @@ export function linkRunSandboxes(
         }));
       }
       ownersByKey.set(ownerKey, remaining);
+      const pairWithPlugins = attachSandboxPluginLifecycles(pair, {
+        experiment: owner.plugin.sandboxLifecycles.experiment,
+        "eval-group": owner.plugin.sandboxLifecycles.group,
+        eval: owner.plugin.sandboxLifecycles.eval,
+      });
       linked.push(Object.freeze({
         key: owner.key,
+        sourceRun: owner.sourceRun,
         run: owner.run,
         evalDef: owner.evalDef,
-        pair,
+        pair: pairWithPlugins,
+        plugin: owner.plugin,
         authorBaseDirs: owner.authorBaseDirs,
       }));
     }
@@ -233,6 +316,28 @@ export function prepareRunSandboxes(
   services: SandboxPlanningServices = liveSandboxPlanningServices(),
   options: SandboxRunPlanningOptions = {},
 ): Effect.Effect<readonly PreparedRunPair[], SandboxRunPlanningError> {
+  if (options.keepSandbox !== undefined) {
+    const conflicts = runs.flatMap((run) => selectedEvalsForRun(evals, run)
+      .filter((evalDef) => evalDef.evalGroup !== undefined)
+      .map((evalDef) => ({
+        experimentId: run.experimentId,
+        evalGroupId: evalDef.evalGroup!.id,
+      })));
+    const unique = [...new Map(conflicts.map((entry) => [
+      JSON.stringify([entry.experimentId, entry.evalGroupId]),
+      entry,
+    ])).values()];
+    if (unique.length > 0) {
+      return Effect.fail(new SandboxRunPlanningInvariantError({
+        code: "sandbox.run-planning-invariant",
+        message:
+          `--keep-sandbox cannot be combined with Eval Group reuse ` +
+          `(${unique.map(({ experimentId, evalGroupId }) =>
+            `${JSON.stringify(experimentId)} / ${JSON.stringify(evalGroupId)}`).join(", ")}). ` +
+          "Drop --keep-sandbox or select only ungrouped Evals.",
+      }));
+    }
+  }
   return Effect.flatMap(linkRunSandboxes(evals, runs), (linkedPairs) =>
     Effect.flatMap(
       planLinkedRuns(linkedPairs.map(({ pair, authorBaseDirs, run, evalDef }) => ({
@@ -240,7 +345,7 @@ export function prepareRunSandboxes(
         authorBaseDirs,
         requirements: physicalCapabilityRequirements(run, evalDef, options),
       })), services),
-      (planned) => {
+      (planned): Effect.Effect<readonly PreparedRunPair[], SandboxRunPlanningError> => {
         const linkedByPair = new Map(linkedPairs.map((linked) => [linkedOwnerKey(linked.pair), linked]));
         const prepared: PreparedRunPair[] = [];
         for (const { pair, plan } of planned) {
@@ -253,10 +358,12 @@ export function prepareRunSandboxes(
           }
           prepared.push(Object.freeze({
             key: linked.key,
+            sourceRun: linked.sourceRun,
             run: linked.run,
             evalDef: linked.evalDef,
             plan,
             identity: linkedRunRecordIdentity(plan),
+            plugin: linked.plugin,
           }));
         }
         if (prepared.length !== linkedPairs.length) {
@@ -264,6 +371,21 @@ export function prepareRunSandboxes(
             code: "sandbox.run-planning-invariant",
             message: `Physical planner returned ${prepared.length} of ${linkedPairs.length} linked pairs.`,
           }));
+        }
+        const groupPlans = new Map<string, string>();
+        for (const entry of prepared) {
+          const group = entry.evalDef.evalGroup;
+          if (group === undefined || entry.plan._tag !== "Sandbox") continue;
+          const key = JSON.stringify([entry.run.experimentId, group.id]);
+          const physical = digestOf(entry.plan.providerPlan.identity);
+          const previous = groupPlans.get(key);
+          if (previous !== undefined && previous !== physical) {
+            return Effect.fail(new SandboxRunPlanningInvariantError({
+              code: "eval-group-incompatible",
+              message: `Eval Group ${JSON.stringify(group.id)} has different physical Sandbox plans across its selected members in Experiment ${JSON.stringify(entry.run.experimentId)}. Split the group by compatible template/provider identity.`,
+            }));
+          }
+          groupPlans.set(key, physical);
         }
         return Effect.succeed(Object.freeze(prepared));
       },

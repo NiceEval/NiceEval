@@ -5,7 +5,20 @@
     "docs-site/zh"
   ],
   "publicApiExamples": {
-    "$why": "公开示例必须与 Assertion-first 双模式作者面同步。每个入口调用时直接登记一条 Assertion；handle 只配置该 entry，绝不产生第二条。",
+    "$why": "公开示例必须与 Assertion-first 双模式作者面及 Report 边界同步。每个入口调用时直接登记一条 Assertion；handle 只配置该 entry，绝不产生第二条。",
+    "recordReportBoundary": {
+      "$why": "Record 是可复制的 opaque 目录，不是供应用代码解析或写入的公开 Library。Report 作者只依赖 niceeval/report；持久化选择、reader、writer、迁移注册与 host 执行属于内部实现。",
+      "publicAuthorEntry": "niceeval/report",
+      "publicObservation": [
+        "niceeval show",
+        "niceeval view"
+      ],
+      "internalPackagePaths": [
+        "niceeval/record",
+        "niceeval/report/host",
+        "niceeval/report/host/node"
+      ]
+    },
     "assertionFirstContract": {
       "domainModel": {
         "subject": "subject 是 Assertion 调用时读取的显式 value，或 receiver 选择的 scope snapshot。",

@@ -192,6 +192,7 @@ export function createTimingRecorder(now: () => number = () => performance.now()
       if (
         phase === "agent.run" ||
         phase === "sandbox.prepare.eval" ||
+        phase === "sandbox.prepare.group" ||
         phase === "sandbox.prepare.experiment"
       ) return;
       close();

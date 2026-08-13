@@ -1,11 +1,11 @@
 // owner: docs/engineering/testing/e2e/report.md#report-static-export
 // rerun: pnpm e2e --repo report -- --run test/report-export.test.ts
 
-import { command, only, withProjectCopy } from "@niceeval/testkit";
+import { only } from "@niceeval/testkit";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { reportArtifactStaging, reportProjectCopy } from "./support.ts";
+import { reportCaseArtifacts, reportE2E } from "./support.ts";
 
 interface ExpEvent {
   event: string;
@@ -13,13 +13,12 @@ interface ExpEvent {
   locator?: string;
 }
 
-const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
-
 test("view --out 从一份固定 ReportExecution 导出带完成标识的静态站", async () => {
-  await withProjectCopy(
-    reportProjectCopy,
-    async ({ root }) => {
-      const run = await niceeval.run(["exp", "main", "--rerun", "all", "--json"], { cwd: root });
+  await reportE2E.case(
+    "export",
+    { artifacts: reportCaseArtifacts(["site-export", "attempt-export"]) },
+    async ({ paths: { projectRoot }, commands: { niceeval } }) => {
+      const run = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
       expect(run.exitCode, run.diagnostic()).not.toBe(0);
       const failed = only(
         run.ndjson<ExpEvent>(),
@@ -39,16 +38,15 @@ test("view --out 从一份固定 ReportExecution 导出带完成标识的静态�
           "site-export",
           "--no-open",
         ],
-        { cwd: root },
       );
       expect(exported.exitCode, exported.diagnostic()).toBe(0);
 
-      const index = await readFile(join(root, "site-export", "index.html"), "utf8");
+      const index = await readFile(join(projectRoot, "site-export", "index.html"), "utf8");
       expect(index).toContain("Report fixture");
       expect(index).toContain("Slot denominator");
       expect(index).toContain("Fixture copy block");
 
-      const complete = await stat(join(root, "site-export", "_niceeval", "complete"));
+      const complete = await stat(join(projectRoot, "site-export", "_niceeval", "complete"));
       expect(complete.size).toBe(0);
 
       const attemptExport = await niceeval.run(
@@ -61,18 +59,16 @@ test("view --out 从一份固定 ReportExecution 导出带完成标识的静态�
           "attempt-export",
           "--no-open",
         ],
-        { cwd: root },
       );
       expect(attemptExport.exitCode, attemptExport.diagnostic()).toBe(0);
 
-      const attemptIndex = await readFile(join(root, "attempt-export", "index.html"), "utf8");
+      const attemptIndex = await readFile(join(projectRoot, "attempt-export", "index.html"), "utf8");
       expect(attemptIndex).toContain("Attempt overview");
       expect(attemptIndex).toContain("Verdict: failed");
       expect(attemptIndex).toContain("Assertions");
 
-      const attemptComplete = await stat(join(root, "attempt-export", "_niceeval", "complete"));
+      const attemptComplete = await stat(join(projectRoot, "attempt-export", "_niceeval", "complete"));
       expect(attemptComplete.size).toBe(0);
     },
-    reportArtifactStaging("export", ["site-export", "attempt-export"]),
   );
 });

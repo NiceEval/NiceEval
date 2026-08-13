@@ -48,7 +48,9 @@ pnpm exec niceeval show --run <run-id>
 pnpm exec niceeval view --run <run-id>
 ~~~
 
-默认 Record root 为 `<project>/.niceeval/record/`。`show` 和 `view` 通过 Record reader、analysis selection 和 Report 宿主读取它。它们不从目录时间猜测“最近结果”，也不在浏览器内读取 Record 文件。
+默认 Record root 为 `<project>/.niceeval/record/`。它是可整体复制或进入 Git 的 opaque
+目录；不要读取其中的内部结构，也不要从应用代码 import Record reader / writer。`show` 和
+`view` 由内部 Report host 读取它，不从目录时间猜测“最近结果”，也不在浏览器内读取文件。
 
 若要选择每个 Experiment 最后完成的 Run，使用：
 
@@ -89,7 +91,8 @@ export 包含页面、组件宿主数据、精确 runtime、下载项和资源�
 
 ## 接进 CI
 
-在 CI 中运行同一条 `niceeval exp` 命令。进程退出状态结合 Invocation completion 和 Verdict；机器调用方可使用 `--json` 获取当前进程反馈与最后的 receipt，再按 `runIds` 读取需要的事实。
+在 CI 中运行同一条 `niceeval exp` 命令。进程退出状态结合 Invocation completion 和 Verdict；
+机器调用方使用 `show --json` 读取已停稳结果，不打开 Record 私有文件或 reader API。
 
 ## 接着读
 

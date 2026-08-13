@@ -1,4 +1,5 @@
 node_modules/
+.e2e-artifacts/
 .niceeval/
 site-export/
 main.ndjson

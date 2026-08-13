@@ -125,6 +125,7 @@ npx niceeval exp list --json
 | `--page` | string | `show` / `view` 命令专用:选择报告的初始页;`show` 渲染该页并在尾部附其余页索引,`view` 以它作初始路由。未命中的页 id 按用法错误退出并列出可用页 id。 |
 | `--teardown` | boolean | `exp` 命令专用:补齐被强杀打断的实验级 teardown——只对选中的实验各执行一次 teardown(新进程语义),不派发 attempt、不跑 setup;没有遗留登记也照常执行。与 eval 前缀位置参数组合是用法错误。 |
 | `--dry` | boolean | 只打印本次会匹配到的 eval × 运行配置,不实际执行(人读文本或 `--json` 单文档,见「机器怎么读:--json」)。 |
+| `--commands` | boolean | `exp --dry` 专用：追加 Sandbox 与 Plugin 生命周期命令计划。 |
 | `--force` | boolean | `sandbox prune` 专用:除 orphan 外也销毁 unverified 实例;`exp` 明确拒绝此 flag,重跑失败项或全部项请用 `--rerun` / `--rerun all`。 |
 | `--rerun` | boolean | `exp` 命令专用:重新运行失败项(裸写/failed)或全部项(all),不改变长期指纹。 |
 | `--early-exit` / `--no-early-exit` | boolean | 某个 eval 的一次 attempt 通过后,停止该 eval 剩余的 attempts;省略默认关(`attempts` 默认跑满、测完整通过率)。 |
@@ -179,7 +180,7 @@ npx niceeval view --run 01H...
 npx niceeval view @01H...
 ```
 
-打开本地记录查看器。它和 `show` 共用同一份默认 Report 和明确选择：精确 `@<AttemptLocator>` 显示该 Attempt 的默认概览；`--run` 或 `--latest` 从已发布的 Record 形成 `AnalysisSampleHandle`。随后命令投影所需 RecordAttachment，并执行一次 Report。
+打开本地记录查看器。它和 `show` 共用同一份默认 Report 和明确选择：精确 `@<AttemptLocator>` 显示该 Attempt 的默认概览；`--run` 或 `--latest` 从已发布的 opaque Record 形成纯 AnalysisSample。随后内部 host 投影所需事实，并执行一次 Report。
 
 此前的局部执行可能让部分 slot 以 `reference` 采用已有 Attempt。这些是当时的采用事实，不是补跑状态。同一份 `AnalysisSample` 不按可变 head 重选。`--experiment`、`--eval` 和 `--record` 对两种宿主的收窄一致。
 
@@ -192,11 +193,15 @@ npx niceeval show --run 01H... --run 01J...
 npx niceeval show @01H...
 npx niceeval show @01H... --source
 npx niceeval show @01H... --execution
+npx niceeval show @01H... --timing
+npx niceeval show @01H... --timing=full
 npx niceeval show --run 01H... --page attempt-0123456789ABCDEFGHJKMNPQRS
 npx niceeval show --run 01H... --report ./reports/summary.ts --page overview
 ```
 
-`show` 是终端报告入口，适合人直接阅读，也适合 coding agent 在上下文窗口里逐级下钻。它不接受模糊的位置选择。精确 `@<AttemptLocator>` 默认显示该 Attempt 的 Evaluation identity、evaluation kind、四态 Verdict、Assertions 和适用的 Score；加 `--source` 或 `--execution` 查看专用证据面。
+`show` 是终端报告入口，适合人直接阅读，也适合 coding agent 在上下文窗口里逐级下钻。它不接受模糊的位置选择。精确 `@<AttemptLocator>` 默认显示该 Attempt 的 Evaluation identity、evaluation kind、四态 Verdict、Assertions 和适用的 Score。
+
+加 `--source`、`--execution` 或 `--timing` 可查看对应的专用证据面。`--timing` 默认显示精简阶段树；`--timing=full` 还显示 interval identity、parent 和 offset。三种证据面互斥，并且都要求一个精确 Attempt 定位符。
 
 `--run` 可重复，只读取这些显式 Run；`--latest` 对每个目标 Experiment 按完成时间和 Run identity 的稳定规则各选择一个。`--latest --experiment <id>` 定义目标集合；不带 `--experiment` 时目标来自可读 Run 核心。目标集合为空、任一目标没有已发布 Run，或任一候选 Run 的排序核心损坏都明确失败，不缩小比较组去猜“最近一次”。Record 只包含完整发布的 Run。
 

@@ -1,5 +1,8 @@
-// niceeval/report is the Report authoring surface. Execution is deliberately
-// separate at niceeval/report/host.
+// niceeval/report is the complete public Report authoring surface. Persisted
+// Record selection and execution remain internal to the CLI host.
+export * from "../analysis/index.ts";
+export * from "../projection/index.ts";
+
 export {
   defineCalculation,
   defineDownload,
@@ -100,3 +103,19 @@ export type {
   ReportProblemTableEntry,
   ReportRecordedDataProblem,
 } from "./execution/problems.ts";
+
+export {
+  basalt,
+  chalk,
+  defineTheme,
+} from "./host/theme.ts";
+export type {
+  ReportTheme,
+  ThemeColor,
+  ThemeDefinition,
+  ThemeFontSize,
+  ThemeFontTokens,
+  ThemeHex,
+  ThemeRadius,
+  ThemeSeries,
+} from "./host/theme.ts";

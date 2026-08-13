@@ -21,7 +21,11 @@ import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
 import { t } from "../i18n/index.ts";
 import { DEFAULT_CODEX_CLI_VERSION, AGENT_BASELINE_RECIPE_REVISION } from "./coding-cli-versions.ts";
 import { assertMcpServers, isHttpMcp, mcpManifestEntries } from "./mcp.ts";
-import { runPostSetupHooks, runPreTeardownHooks } from "./post-setup.ts";
+import {
+  registerAgentLifecycleHookCommands,
+  runPostSetupHooks,
+  runPreTeardownHooks,
+} from "./post-setup.ts";
 import { createNpmCliInstaller } from "./npm-staged.ts";
 import type { Agent, AgentSetupManifest, McpServer, Sandbox, SkillSpec, TurnEvidenceCoverage } from "../types.ts";
 import type { SandboxCommand } from "../sandbox/commands.ts";
@@ -78,7 +82,7 @@ export interface CodexPluginSpec {
      * (codex 的 `--sparse` 必须带路径参数、可重复):大仓库只取插件所需路径,省略或空数组即全量 clone。
      * 只影响拉取速度,不影响装出来的内容;manifest 不记录它。
      */
-    sparse?: string[];
+    sparse?: readonly string[];
   };
   /** Marketplace 中的 Plugin 名。 */
   name: string;
@@ -95,6 +99,8 @@ export interface CodexConfig {
    * 值只经 Sandbox command options 传入，不拼进 shell 文本或写入 setup manifest，并全部按
    * 潜在敏感值从 timing / execution / error 证据中脱敏。`CODEX_API_KEY` 仍由 `apiKey` 或
    * 宿主同名环境变量提供，Adapter 的鉴权值会覆盖这里的同名键。
+   * env value 不进入 carry 身份。会改变被测行为的非敏感值必须同时声明在 Experiment flags
+   * 或所属 Plugin identity；只轮换凭据不会让旧结果失效。
    * `PATH` 是 Sandbox 受管变量，不接受经这里声明——出现即在 factory 构造时报错，改用
    * Sandbox factory 的 `pathPrepend`（见 docs/feature/sandbox/library.md）。
    */
@@ -104,15 +110,15 @@ export interface CodexConfig {
    * stdio 形态(command/args/env)写 [mcp_servers.<name>] 的 command 行;
    * Streamable HTTP 形态(url/headers)写 url 行,headers 进 [mcp_servers.<name>.http_headers] 子表。
    */
-  mcpServers?: McpServer[];
+  mcpServers?: readonly McpServer[];
   /**
    * 装进 Sandbox 的 Skill(本地目录/文件,或 repo + 可钉 ref + 可选启用集)。
    * 落在 `.agents/skills/<name>/`,并写一段发现指引进 AGENTS.md —— codex 没有 Claude Code 那种
    * 原生 Skill 工具,只把文件装进去它不会自己去读(见 memory/codex-no-native-skill-tool.md)。
    */
-  skills?: SkillSpec[];
+  skills?: readonly SkillSpec[];
   /** Codex 原生 Plugin(先连 Marketplace,再从中装指定 Plugin)。 */
-  plugins?: CodexPluginSpec[];
+  plugins?: readonly CodexPluginSpec[];
   /**
    * 一份完整的 Codex `config.toml`(官方 TOML 格式)在本地项目里的路径 —— 相对运行
    * niceeval 的项目根(含 `niceeval.config.ts` 的目录)解析,不是 Sandbox 内路径;只接受
@@ -129,7 +135,7 @@ export interface CodexConfig {
    * 「安装产物就位后才能跑」的过程动作。抛错按基础设施错误计(attempt errored)。
    * 见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」。
    */
-  postSetup?: SandboxCommand[];
+  postSetup?: readonly SandboxCommand[];
   /**
    * 与 `postSetup` 成对的收尾 Hook:按 `postSetup` 的逆序语义,在 agent 自己的 teardown 步骤
    * 之前执行(LIFO 镜像 —— `postSetup` 跑在 agent 安装之后,`preTeardown` 就跑在 agent 收尾
@@ -137,7 +143,7 @@ export interface CodexConfig {
    * 按 teardown-failed 诊断收束。
    * 见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」。
    */
-  preTeardown?: SandboxCommand[];
+  preTeardown?: readonly SandboxCommand[];
 }
 
 const CODEX_CAPACITY_CODES = new Set([
@@ -287,7 +293,7 @@ export function codexAgent(config?: CodexConfig): Agent {
       },
   });
 
-  return defineSandboxAgent({
+  return registerAgentLifecycleHookCommands(defineSandboxAgent({
     name: "codex",
     // 官方 adapter:transcript 经生命周期 fixture 验证,全通道 complete。
     evidenceCoverage: completeEvidenceCoverage,
@@ -319,6 +325,10 @@ export function codexAgent(config?: CodexConfig): Agent {
         ? ""
         : `model_reasoning_effort = "${ctx.reasoningEffort}"\n`;
       const base = getBaseUrl();
+      // 自定义 endpoint 常从项目的私有环境注入。它仍是 Codex 的真实运行配置，但不能因
+      // Adapter 用 heredoc 写 config.toml 而进入 command/timing/error 证据；一旦在这里登记，
+      // Attempt 最终封口也会清掉随后 hook 或 CLI 错误里回显的同一值。
+      const providerSensitiveValues = base ? [base] : [];
 
       const topLevel = base
         ? modelLine + `model_provider = "s2a"\n` + effortLine
@@ -337,6 +347,7 @@ export function codexAgent(config?: CodexConfig): Agent {
             sb,
             "~/.codex/config.toml",
             providerTable ? `${topLevel}\n${providerTable}` : topLevel,
+            { sensitiveValues: providerSensitiveValues },
           ),
           catch: (cause) => cause,
         });
@@ -355,7 +366,7 @@ export function codexAgent(config?: CodexConfig): Agent {
           yield* Effect.tryPromise({
             try: (signal) => sb.runShell(
               `cat >> ~/.codex/config.toml <<'NICEEVAL_PROVIDER_EOF'\n\n${providerTable}NICEEVAL_PROVIDER_EOF\n`,
-              { signal },
+              { signal, sensitiveValues: providerSensitiveValues },
             ),
             catch: (cause) => cause,
           });
@@ -530,7 +541,7 @@ export function codexAgent(config?: CodexConfig): Agent {
         ...(turnEvidenceCoverage === undefined ? {} : { evidenceCoverage: turnEvidenceCoverage }),
       };
     },
-  });
+  }), config?.postSetup, config?.preTeardown);
 }
 
 /** 把 Codex JSONL 的高频原始帧收敛成 dashboard 当前行的一条短 detail。 */

@@ -2,7 +2,6 @@
 // exercises only the public author DSL: a Calculation, a fixed Page, and a
 // PageFamily over the already-selected Sample.
 import { Either } from "effect";
-import type { SlotId } from "niceeval/analysis";
 import {
   defineCalculation,
   definePage,
@@ -21,6 +20,7 @@ import {
   reportRouteFromKeys,
   reportStatus,
   reportText,
+  type SlotId,
 } from "niceeval/report";
 import { siteCopyBlock } from "./site-copy-block.ts";
 

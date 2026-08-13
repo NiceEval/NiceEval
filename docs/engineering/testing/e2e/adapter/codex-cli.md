@@ -25,5 +25,5 @@ Repo ID 是 `adapter/codex-cli`；manifest 声明 `areas: ["adapter", "sandbox"]
 - `skill` Experiment 把三个 Skill 一起装进同一个 agent。status report 与 release note 两条 Eval 各自要求只读取目标文件；decoy 只作为反选哨兵，任一正调读到它都会判红。
 - `repo-skill` 从 `CorrectRoadH/skills` 的固定 commit 安装 `calibre`；专用 Eval 核对安装位置、真实读取行为与命令内容。
 - `show --page attempts` 逐条核验两类 ID，防止少发现/少运行后假绿。
-- **CLI 读回**：`show` 默认报告列出本仓库 Eval 与 verdict；对通过 attempt 的 `show --execution` 执行树出现命令与文件工具调用节点，节点带 span 时间注释。
-- **OTel**：adapter 的 `tracing.configure` 写入 `config.toml` 的 `[otel]` 块，执行树的时间注释就是写入成立的展示证明。`show --timing` 的 OTel 子树以 tool / model 角色挂出 span——专属 mapper 归一到 canonical GenAI 语义约定的展示结果，与事件的对应靠显式 call ID correlation 成立，不靠名字猜。
+- **CLI 读回**：代表性 `show --execution` 只验收 coding 工具与入参投影。Codex 没有原生 `skill.loaded`；本地与 Repo Skill 的目标读取、其它 Skill 未读取以及零 `skill.loaded` 反例全部留在 Eval 事件断言中。
+- **Timing**：独立 `show --timing` owner 读回 Codex CLI 实际跨过的 runner 阶段。`tracing.configure` 仍属 Adapter 运行契约，但本 owner 不从 execution 文本或未持久的 raw OTLP 反推它。

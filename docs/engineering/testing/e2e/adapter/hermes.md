@@ -17,5 +17,6 @@ Repo ID 是 `adapter/hermes`；manifest 声明 `areas: ["adapter", "sandbox"]`�
 ## 仓库验收
 
 - `ci` Experiment 选中本仓库的 coding、Skill、会话与 usage Eval；原生验收脚本列全 Hermes 协议 Eval ID，防止少发现/少运行后假绿。
-- **CLI 读回**：`show` 成绩单列出本仓库 Eval 与 verdict；对通过 attempt 的 `show --execution` 执行树读回带区分力入参的文件与 shell 工具节点，以及所选 Skill，且不出现 decoy。
-- **OTel**：无原生 OTel 时执行树显示 timing unavailable；事件流断言照常通过。
+- **Eval 结果**：原生验收只断言通过数与未通过数。工具入参、Skill 正选与 decoy 反选都由对应 Eval 的标准事件断言判分。
+- **Execution**：独立 `show --execution` test 只读回 coding Eval 的代表性工具入参 sentinel，不重复判定 Skill。
+- **Timing**：独立 `show --timing` test 验收 Hermes 的阶段树，不在该 owner 内重复 execution 断言。

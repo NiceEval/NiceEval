@@ -4,22 +4,17 @@ Calculation 把已经形成的 `ProjectedSample` 变成跨 owner 读数。它不
 
 ## 声明
 
-作者先定义 typed `RecordAttachmentProjector`，再用 `RecordProjection` 声明 logical access：
+作者选择官方 typed projector，再用 `RecordProjection` 声明 logical access：
 
 ```ts
-const checkedProjector = defineRecordAttachmentProjector({
-  attachment: commandsCheckedAttachment,
-  project: ({ payload }) => checkedViewFrom(payload),
-});
-
-const checked = attemptSlotProjection(checkedProjector);
+const commands = attemptSlotProjection(attemptCommandsProjector);
 
 const checkedCount = defineCalculation({
   id: Either.getOrThrow(reportComponentId("checked-count")),
-  inputs: reportInputs({ checked }),
+  inputs: reportInputs({ commands }),
   completeness: "allow-partial",
   calculate({ sample, inputs }) {
-    return calculateCheckedCount(sample, inputs.checked);
+    return calculateCheckedCount(sample, inputs.commands);
   },
 });
 ```

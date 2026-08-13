@@ -48,8 +48,8 @@ export interface ReportTheme {
   readonly radius?: ThemeRadius;
 }
 
-// Preserve the cross-loader identity used by existing Theme author modules.
-const THEME_DEFINITION = Symbol.for("@niceeval/report/host/node/ThemeDefinition");
+// Keep one public cross-loader identity for Theme author modules.
+const THEME_DEFINITION = Symbol.for("@niceeval/report/ThemeDefinition");
 
 /** An exact product of defineTheme, recognized across fresh Node loader revisions. */
 export interface ThemeDefinition extends ReportTheme {
