@@ -44,6 +44,12 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
   const threadOptions = {
     workingDirectory: workspaceFromTest(),
     skipGitRepoCheck: true,
+    // GitHub-hosted runners do not permit Codex CLI's Linux bubblewrap
+    // network namespace setup. This consumer already runs in a dedicated
+    // temporary workspace and asks the model for one fixed local command, so
+    // the SDK must not add its own nested host sandbox here.
+    sandboxMode: "danger-full-access" as const,
+    approvalPolicy: "never" as const,
     model: ctx.model ?? "gpt-5.4",
   };
   const thread = ctx.session.id === undefined

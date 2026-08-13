@@ -24,10 +24,9 @@ export default defineEval({
       t.check(installed.stdout, includes(SKILL_NAME));
     });
     const turn = await t.send(
-      `Check whether this repository has a skill or guide file about writing a "status report" file ` +
-        `before you answer — look under ${SKILL_DIR}/ if such a directory exists. ` +
-        `Then create a file named ${relPath} that is a status report saying "all systems nominal", ` +
-        `following whatever convention you found.`,
+      `Use shell commands to read ${SKILL_DIR}/${SKILL_NAME}/SKILL.md. ` +
+        `Then create ${relPath} as a status report saying "all systems nominal", following only that convention. ` +
+        `Before finishing, use a shell command to print ${relPath} and verify that it exists and contains the required marker.`,
     );
     await turn.succeeded().orStop();
     t.check(

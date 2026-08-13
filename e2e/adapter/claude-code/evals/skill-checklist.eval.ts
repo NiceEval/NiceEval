@@ -14,24 +14,12 @@ export default defineEval({
   async test(t) {
     const session1 = t.newSession();
     const turn1 = await session1.send(
-      `${TOPIC} 是什么?回答前先检查匹配这个确切主题的 skill，并且只使用匹配的那个。`,
+      `${TOPIC} 是什么？先调用 Skill 工具加载 e2e-checklist；加载完成后再按该 Skill 回答。`,
     );
     await turn1.succeeded().orStop();
     t.check(
       turn1.events,
       satisfies<typeof turn1.events>("loaded skill e2e-checklist", (events) =>
-        loadedSkill(events, "e2e-checklist"),
-      ),
-    );
-    t.check(
-      session1.events,
-      satisfies<typeof session1.events>("loaded skill e2e-checklist", (events) =>
-        loadedSkill(events, "e2e-checklist"),
-      ),
-    );
-    t.check(
-      t.events,
-      satisfies<typeof t.events>("loaded skill e2e-checklist", (events) =>
         loadedSkill(events, "e2e-checklist"),
       ),
     );

@@ -2132,6 +2132,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                     buildLocators,
                     runTiming,
                     parentSignal: attemptSignal,
+                    invocationSignal: opts.signal,
                     ...(lease
                       ? {
                           reusedSandbox: {

@@ -52,7 +52,8 @@ async function requireDocker(): Promise<void> {
 function toolInputOccurrences(execution: string, marker: string): number {
   const lines = execution.split("\n");
   return lines.filter((line, index) =>
-    line.trim() === "input" && lines.slice(index + 1, index + 5).join("\n").includes(marker),
+    line.trim().toLowerCase() === "input" &&
+    lines.slice(index + 1, index + 5).join("\n").includes(marker),
   ).length;
 }
 

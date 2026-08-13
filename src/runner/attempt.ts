@@ -173,8 +173,16 @@ export interface RunAttemptEffectOptions<SealRequirements = never> {
   readonly buildLocators: ReadonlyMap<string, JsonValue>;
   /** Invocation 级 Run timing，供 Dockerfile Agent 派生镜像 lookup/build 观测。 */
   readonly runTiming?: import("./timing.ts").RunTimingRecorder;
-  /** 父级调度器的中断信号；测试直调时省略。 */
+  /**
+   * Attempt 的协作取消信号；可同时包含 Invocation 取消、earlyExit sibling
+   * 取消等来源。测试直调时省略。
+   */
   parentSignal?: AbortSignal;
+  /**
+   * 只代表整个 Invocation 的外部取消。与 parentSignal 分开保存，避免把
+   * earlyExit 的 Attempt-local abort 升级成 Ctrl+C / exit 130。
+   */
+  invocationSignal?: AbortSignal;
   /** 每次跨入一个新 `LifecyclePhase` 边界时同步回调一次(与下面的 `enterPhase` 同一调用点,见
    *  该函数)。run.ts 用它在本地跟踪「这个 attempt 目前所在的阶段」,好在 attempt 失败/errored
    *  时把 phase 塞进 `reportFailure()`(见 sink.ts 的 `FailureInput.phase`)—— 到那时
@@ -219,6 +227,7 @@ export function runAttemptEffect<
     buildLocators,
     runTiming,
     parentSignal,
+    invocationSignal,
     onPhase,
     concurrencySlot,
     onFailureClass,
@@ -1055,10 +1064,12 @@ export function runAttemptEffect<
     // body 自己已兜了 agent 执行错;这里兜的是资源获取 / Sample 层的意外(起沙箱失败等)。
     // 中断【不】吞:此时 Sample 已跑完 release(容器已停),把中断继续上抛,让 forEach 整体停掉,
     // 否则会把中断「恢复」成一条 errored 结果、并让后续 attempt 继续起 —— 那就停不下来了。
-    // `timeoutTo` 已在内层把自己的中断消费成 onTimeout 的成功值，因此这里的 Cause interrupt
-    // 仍是外层 fiber 取消（即使 parent AbortSignal 尚未同步）的权威信号，不能只看 parentSignal。
+    // `timeoutTo` 已在内层把自己的中断消费成 onTimeout 的成功值。这里不能仅凭 Cause 中含
+    // interrupt 就升级成整批取消：earlyExit 也会中断 losing attempt 的 fiber。整个 Invocation
+    // 是否取消只由 invocationSignal 裁决；其它中断在本 attempt 内封成 errored，随后由调度器
+    // 的 earlyExit 去重分支丢弃。兄弟 fiber 的真实 defect 仍由它自己的 Cause 向外传播。
     Effect.catchAllCause((cause) =>
-      Cause.isInterrupted(cause) || isAttemptAborted(parentSignal)
+      isAttemptAborted(invocationSignal)
         ? Effect.interrupt
         : Effect.suspend(() => {
             // 资源获取 / Sample 层的意外(起沙箱失败、provisioning 的确定性配置死因)同样是终局

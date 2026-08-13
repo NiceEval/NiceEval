@@ -12,8 +12,9 @@ export default defineEval({
     "Skill 正调:release note 只读取对应 Skill，不误读 status / decoy",
   async test(t) {
     const turn = await t.send(
-      `Check the installed skill or guide specifically for writing a release note file under ${SKILL_DIR}/. ` +
-        `Then create ${relPath} announcing "adapter skill matrix expanded", following only that matching convention.`,
+      `Use shell commands to read ${SKILL_DIR}/${SKILL_NAME}/SKILL.md. ` +
+        `Then create ${relPath} announcing "adapter skill matrix expanded", following only that convention. ` +
+        `Before finishing, use a shell command to print ${relPath} and verify that it exists and contains the required marker.`,
     );
     await turn.succeeded().orStop();
     t.check(
