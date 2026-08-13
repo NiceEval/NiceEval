@@ -173,7 +173,13 @@ export const durationMs: ClassicCalculation = Object.freeze({
 export const costUSD: ClassicCalculation = Object.freeze({
   id: "costUSD",
   compute: (units: readonly ClassicEvalUnit[]): MetricValue =>
-    meanMetric(units, "costUSD", { unit: "USD", better: "lower" }),
+    meanMetric(units, "costUSD", { unit: "$", better: "lower" }),
+});
+
+export const tokens: ClassicCalculation = Object.freeze({
+  id: "tokens",
+  compute: (units: readonly ClassicEvalUnit[]): MetricValue =>
+    meanMetric(units, "tokens", { unit: "tokens", better: "lower" }),
 });
 
 export const passRate: ClassicCalculation = Object.freeze({
@@ -204,7 +210,7 @@ export const passRate: ClassicCalculation = Object.freeze({
       samples: values.length,
       total: units.length,
       basis: "eval",
-      unit: "ratio",
+      unit: "%",
       better: "higher",
       bounds: { min: 0, max: 1 },
       refs,

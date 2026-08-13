@@ -1,4 +1,4 @@
-import { formatMetricValue } from "./format.ts";
+import { formatMetricValue, verdictMark } from "./format.ts";
 import { isMetricValue, type MetricValue } from "./metric.ts";
 import type { ClassicVerdict } from "./sample.ts";
 
@@ -51,8 +51,10 @@ export function formatCellText(cell: Cell | null | undefined): string {
       return "—";
     case "text":
       return cell.detail === undefined ? cell.text : `${cell.text}\n  ${cell.detail}`;
-    case "locator":
-      return cell.locator;
+    case "locator": {
+      const mark = cell.verdict === undefined ? "" : `${verdictMark(cell.verdict)} `;
+      return `${mark}${cell.locator}`;
+    }
     case "summary":
       return cell.more !== undefined && cell.more > 0 ? `${cell.text} +${cell.more} more` : cell.text;
     case "score":

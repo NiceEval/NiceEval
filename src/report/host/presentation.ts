@@ -11,27 +11,21 @@ import type { ReportExecution } from "../execution/model.ts";
 import type { ReportProblem, ReportProblemTableEntry } from "../execution/problems.ts";
 import type {
   ReportBlock,
-  ReportCoverage,
-  ReportDisplayValue,
   ReportDocument,
   ReportInline,
   ReportLinkTarget,
-  ReportRankedBars,
   ReportScalar,
-  ReportScatter,
-  ReportTreeCell,
-  ReportTreeTable,
 } from "../semantic/document.ts";
 import type { ReportRoute } from "../author/identity.ts";
 import {
-  dataBoxBorder,
-  dataBoxMode,
-  dataBoxRow,
   panelCapabilityOf,
-  renderPanel,
   type PanelMode,
 } from "../model/panel.ts";
-import { padDisplay, stringWidth } from "../model/text-layout.ts";
+import { indentBlock, renderAlignedRows } from "../model/text-layout.ts";
+import {
+  renderClassicBlockText as renderClassicDashboardBlockText,
+  renderClassicDashboardDocument,
+} from "./classic-text.ts";
 
 /** Failure to write a completed Report presentation to its host console. */
 export interface ReportConsoleError {
@@ -94,7 +88,8 @@ export function renderReportExecutionText(input: ShowReportInput): string {
     const problems = execution.problemTable.length === 0
       ? ""
       : `\n\n${problemLines(execution).join("\n")}`;
-    return `${dashboard}${others}${problems}\n`;
+    const trailing = isEvidenceTextPresentation(pages) || capability.mode === "boxed" ? "\n\n" : "\n";
+    return `${dashboard}${others}${problems}${trailing}`;
   }
   const lines = [
     `Report ${visibleText(execution.reportId)}`,
@@ -241,15 +236,14 @@ function otherPagesFooter(
   );
   if (others.length === 0) return "";
   const report = reportFlag === undefined ? "" : ` --report ${reportFlag}`;
-  const lines = [
-    "",
-    "Other pages:",
-    ...[...others].sort((left, right) => compareUtf8(left.pageId, right.pageId)).map((page) => {
-      const title = page.state === "rendered" ? page.document.title : page.pageId;
-      return `  ${page.pageId}   ${title}   niceeval show${report} --page ${page.pageId}`;
-    }),
-  ];
-  return `\n${lines.join("\n")}`;
+  const table = renderAlignedRows(
+    others.map((page) => [
+      page.pageId,
+      page.state === "rendered" ? page.document.title : page.pageId,
+      `niceeval show${report} --page ${page.pageId}`,
+    ]),
+  );
+  return `\n\nOther pages:\n${indentBlock(table, "  ")}`;
 }
 
 class PageSelectionError extends Error {}
@@ -409,7 +403,7 @@ function renderEvidenceOrDashboardDocument(
   if (document.presentation === "evidence-text") {
     return document.children.flatMap((block) => {
       if (block.type === "code-block") return block.value.split("\n");
-      return renderClassicBlockText(block, width, mode);
+      return renderClassicDashboardBlockText(block, { width, mode, sectionBoxedDepth: 0 });
     });
   }
   return renderClassicDashboardDocument(document, width, mode);
@@ -434,165 +428,11 @@ function columnsFromEnv(): number {
   return Number.isSafeInteger(columns) ? Math.max(40, columns) : 80;
 }
 
-function renderClassicDashboardDocument(
-  document: ReportDocument,
-  width: number,
-  mode: PanelMode,
-): string[] {
-  const siteLike = document.children.some(isSiteBlock);
-  const lines = siteLike ? [] : [truncateTerminal(visibleText(document.title), width)];
-  for (const block of document.children) {
-    const rendered = renderClassicBlockText(block, width, mode);
-    if (rendered.length === 0) continue;
-    if (lines.length > 0) lines.push("");
-    lines.push(...rendered);
-  }
-  return lines;
-}
 
-function isSiteBlock(block: ReportBlock): boolean {
-  return block.type === "grid"
-    || block.type === "stat"
-    || block.type === "cell-table"
-    || (block.type === "section" && (block.meta !== undefined || block.children.some(isSiteBlock)));
-}
 
 function renderClassicBlockText(block: ReportBlock, width: number, mode: PanelMode): string[] {
-  switch (block.type) {
-    case "hero":
-      return [
-        ...wrapTerminal(visibleText(block.description), width),
-        ...block.links.flatMap((link) =>
-          wrapTerminal(
-            `${visibleText(link.label)} (${linkTargetText(link.target)})`,
-            width,
-          )
-        ),
-      ];
-    case "section":
-      return renderSectionText(block, width, mode);
-    case "summary":
-      return renderSummaryText(block, width);
-    case "ranked-bars":
-      return renderRankedBarsText(block, width);
-    case "scatter":
-      return renderScatterText(block, width);
-    case "tree-table":
-      return renderTreeTableText(block, width);
-    case "grid":
-      return renderGridText(block, width, mode);
-    case "stat":
-      return [block.label, block.value];
-    case "cell-table":
-      return renderCellTableText(block, width, mode);
-    default:
-      return renderBlockText(block, "");
-  }
-}
-
-function renderSectionText(
-  block: Extract<ReportBlock, { readonly type: "section" }>,
-  width: number,
-  mode: PanelMode,
-): string[] {
-  const nested: Array<{ title: string; meta?: string }> = [];
-  const bodyParts: string[] = [];
-  for (const child of block.children) {
-    if (child.type === "section") {
-      nested.push({
-        title: child.heading,
-        ...(child.meta === undefined ? {} : { meta: child.meta }),
-      });
-      const nestedBody = child.children.flatMap((inner) => renderClassicBlockText(inner, width, mode));
-      if (nestedBody.length > 0) bodyParts.push(nestedBody.join("\n"));
-      continue;
-    }
-    const rendered = renderClassicBlockText(child, width, mode);
-    if (rendered.length > 0) bodyParts.push(rendered.join("\n"));
-  }
-  const body = bodyParts.join("\n\n");
-  return renderPanel({
-    title: block.heading,
-    ...(block.meta === undefined ? {} : { meta: block.meta }),
-    rows: [
-      ...nested.map((section) => ({
-        kind: "divider" as const,
-        title: section.title,
-        ...(section.meta === undefined ? {} : { meta: section.meta }),
-      })),
-      ...(body.length > 0 ? [{ kind: "line" as const, text: body }] : []),
-    ],
-    width,
-    mode,
-  });
-}
-
-function renderGridText(
-  block: Extract<ReportBlock, { readonly type: "grid" }>,
-  width: number,
-  mode: PanelMode,
-): string[] {
-  const cells = block.cells.map((cell) => {
-    if (cell.type === "stat") return [cell.label, cell.value];
-    return renderClassicBlockText(cell, width, mode);
-  });
-  if (cells.length === 0) return [];
-  const boxed = dataBoxMode(mode, width) === "boxed";
-  const columns = cells.length >= 4 ? 2 : Math.min(2, cells.length);
-  const separator = " │ ";
-  const budget = Math.max(1, width - separator.length * (columns - 1));
-  const base = Math.floor(budget / columns);
-  const planned = Array.from({ length: columns }, (_, index) =>
-    Math.max(1, base + (index < budget - base * columns ? 1 : 0)),
-  );
-  const fitted = planned.map((plannedWidth, column) => {
-    const widest = cells.reduce((max, cell, index) => {
-      if (index % columns !== column) return max;
-      return Math.max(max, ...cell.map((line) => stringWidth(line)), 1);
-    }, 1);
-    return Math.min(plannedWidth, widest);
-  });
-  const lines: string[] = [];
-  for (let start = 0; start < cells.length; start += columns) {
-    const row = cells.slice(start, start + columns);
-    const widths = fitted.slice(0, row.length);
-    if (boxed && start > 0) {
-      lines.push(dataBoxBorder("rule", fitted.slice(0, columns), false, row.length));
-    } else if (!boxed && start > 0) {
-      lines.push("");
-    }
-    const height = Math.max(...row.map((cell) => cell.length), 1);
-    for (let lineIndex = 0; lineIndex < height; lineIndex += 1) {
-      const parts = row.map((cell, column) => padDisplay(cell[lineIndex] ?? "", widths[column] ?? 1));
-      lines.push(boxed ? dataBoxRow(parts, false) : parts.join("   "));
-    }
-  }
-  return lines;
-}
-
-function renderCellTableText(
-  block: Extract<ReportBlock, { readonly type: "cell-table" }>,
-  width: number,
-  mode: PanelMode,
-): string[] {
-  const boxed = dataBoxMode(mode, width) === "boxed";
-  const columns = block.columns;
-  const displayRows = [
-    Object.fromEntries(columns.map((column) => [column, column])),
-    ...block.rows.map((row) => row.cells),
-  ];
-  const widths = columns.map((column) =>
-    Math.max(1, ...displayRows.map((row) => stringWidth(row[column] ?? ""))),
-  );
-  const lines: string[] = [];
-  displayRows.forEach((row, index) => {
-    if (boxed && index === 1) {
-      lines.push(dataBoxBorder("rule", widths, false));
-    }
-    const parts = columns.map((column, columnIndex) => padDisplay(row[column] ?? "", widths[columnIndex]!));
-    lines.push(boxed ? dataBoxRow(parts, false) : parts.join("   "));
-  });
-  return lines;
+  const rendered = renderClassicDashboardBlockText(block, { width, mode, sectionBoxedDepth: 0 });
+  return rendered.length > 0 ? rendered : renderBlockText(block, "");
 }
 
 function renderBlockText(block: ReportBlock, indent: string): string[] {
@@ -667,427 +507,6 @@ function renderBlockText(block: ReportBlock, indent: string): string[] {
   }
 }
 
-function renderSummaryText(
-  block: Extract<ReportBlock, { readonly type: "summary" }>,
-  width: number,
-): string[] {
-  const byKey = new Map(block.metrics.map((metric) => [metric.key, metric]));
-  const runCount = byKey.get("experiments")?.coverage?.total;
-  const lastRun = formatLastRunAt(block.lastRunAt);
-  const passRate = byKey.get("passRate");
-  const experiments = byKey.get("experiments");
-  const evals = byKey.get("evals");
-  const attempts = byKey.get("attempts");
-  const evalResults = byKey.get("evalResults");
-  const totalCost = byKey.get("totalCost");
-  const costCoverage = totalCost?.coverage;
-  const costNote = costCoverage !== undefined && costCoverage.samples < costCoverage.total
-    ? `Cost available for ${costCoverage.samples}/${costCoverage.total} attempts`
-    : undefined;
-  const col = Math.max(18, Math.floor((width - 2) / 3));
-  const row = (
-    left: string,
-    mid: string,
-    right: string,
-  ) => `${padTerminal(left, col)}${padTerminal(mid, col)}${right}`;
-  return [
-    `Last run ${lastRun}${typeof runCount === "number" ? ` · composed from ${runCount} runs` : ""}`,
-    "",
-    row("Pass rate", "Experiments", "Evals"),
-    row(
-      passRate === undefined ? "—" : visibleText(passRate.display),
-      experiments === undefined ? "—" : visibleText(experiments.display),
-      evals === undefined ? "—" : visibleText(evals.display),
-    ),
-    "",
-    row("Attempts", "Eval results", "Total cost"),
-    row(
-      attempts === undefined ? "—" : visibleText(attempts.display),
-      evalResults === undefined ? "—" : visibleText(evalResults.display),
-      totalCost === undefined ? "—" : visibleText(totalCost.display),
-    ),
-    ...(costNote === undefined ? [] : [`${" ".repeat(col * 2)}${costNote}`]),
-    "",
-    `Last run · ${lastRun}`,
-  ];
-}
-
-function renderRankedBarsText(block: ReportRankedBars, width: number): string[] {
-  const points = [...block.points].sort((left, right) => compareRankedBarPoints(left, right, block.better));
-  const labelWidth = Math.max(
-    12,
-    Math.min(
-      30,
-      points.reduce((maximum, point) => Math.max(maximum, terminalLength(barLabel(point))), 0),
-    ),
-  );
-  const barWidth = Math.min(30, Math.max(10, width - labelWidth - 44));
-  const scale = rankedBarScale(points.map((point) => point.value));
-  const lines = [
-    `${visibleText(block.title)} · ${block.better === "higher" ? "higher" : "lower"} is better`,
-  ];
-  for (const point of points) {
-    const label = padTerminal(truncateTerminal(barLabel(point), labelWidth), labelWidth);
-    const coverage = formatCoverage(point.coverage);
-    if (point.value === null) {
-      lines.push(`${label}  ${"░".repeat(barWidth)} ${visibleText(point.display)} · ${coverage}`);
-      continue;
-    }
-    const percent = rankedBarPercent(point.value, scale);
-    const filled = percent <= 0 ? 0 : Math.max(1, Math.round((barWidth * percent) / 100));
-    const bar = `${"█".repeat(filled)}${"░".repeat(Math.max(0, barWidth - filled))}`;
-    const displayed = visibleText(point.display);
-    lines.push(`${label}  ${bar} ${displayed} · ${coverage}`);
-  }
-  return lines.map((line) => truncateTerminal(line, width));
-}
-
-function compareRankedBarPoints(
-  left: ReportRankedBars["points"][number],
-  right: ReportRankedBars["points"][number],
-  better: ReportRankedBars["better"],
-): number {
-  if (left.value === null && right.value === null) return compareUtf8(left.key, right.key);
-  if (left.value === null) return 1;
-  if (right.value === null) return -1;
-  const order = better === "higher" ? right.value - left.value : left.value - right.value;
-  return order === 0 ? compareUtf8(left.key, right.key) : order;
-}
-
-function barLabel(point: ReportRankedBars["points"][number]): string {
-  const raw = point.series.length === 0 || point.series === "all"
-    ? visibleText(point.label)
-    : `${visibleText(point.label)} · ${visibleText(point.series)}`;
-  const slash = raw.lastIndexOf("/");
-  return slash >= 0 ? raw.slice(slash + 1) : raw;
-}
-
-interface RankedBarScale {
-  readonly mode: "fraction" | "percent" | "relative";
-  readonly maximum: number;
-  readonly minimum: number;
-}
-
-function rankedBarScale(values: readonly (number | null)[]): RankedBarScale {
-  const numbers = values.filter((value): value is number => value !== null);
-  const maximum = numbers.length === 0 ? 1 : Math.max(...numbers);
-  const minimum = numbers.length === 0 ? 0 : Math.min(...numbers);
-  if (minimum >= 0 && maximum <= 1) return { mode: "fraction", maximum: 1, minimum: 0 };
-  if (minimum >= 0 && maximum <= 100) return { mode: "percent", maximum: 100, minimum: 0 };
-  return { mode: "relative", maximum, minimum };
-}
-
-function rankedBarPercent(value: number, scale: RankedBarScale): number {
-  if (scale.mode === "fraction") return clamp(value * 100, 0, 100);
-  if (scale.mode === "percent") return clamp(value, 0, 100);
-  if (scale.maximum === scale.minimum) return 100;
-  return clamp(((value - scale.minimum) / (scale.maximum - scale.minimum)) * 100, 0, 100);
-}
-
-function renderScatterText(block: ReportScatter, width: number): string[] {
-  const plotWidth = Math.max(24, Math.min(64, width - 12));
-  const plotHeight = 10;
-  const plotted = block.series.flatMap((series, seriesIndex) =>
-    series.points
-      .filter((point) => point.x !== null && point.y !== null)
-      .map((point) => ({
-        point,
-        seriesIndex,
-        symbol: scatterSymbol(seriesIndex),
-      }))
-  );
-  const xValues = plotted.map(({ point }) => point.x!);
-  const yValues = plotted.map(({ point }) => point.y!);
-  const xRange = numericRange(xValues);
-  const yRange = numericRange(yValues);
-  const grid = Array.from({ length: plotHeight }, () => Array.from({ length: plotWidth }, () => " "));
-
-  if (block.connect) {
-    block.series.forEach((series, seriesIndex) => {
-      const coordinates = series.points
-        .filter((point) => point.x !== null && point.y !== null)
-        .map((point) => scatterCoordinate(point.x!, point.y!, xRange, yRange, plotWidth, plotHeight));
-      for (let index = 1; index < coordinates.length; index += 1) {
-        const previous = coordinates[index - 1];
-        const current = coordinates[index];
-        if (previous !== undefined && current !== undefined) drawAsciiLine(grid, previous, current);
-      }
-      void seriesIndex;
-    });
-  }
-
-  for (const entry of plotted) {
-    const coordinate = scatterCoordinate(entry.point.x!, entry.point.y!, xRange, yRange, plotWidth, plotHeight);
-    grid[coordinate.y]![coordinate.x] = entry.symbol;
-  }
-
-  const yAxisWidth = Math.max(8, terminalLength(formatAxisNumber(yRange.maximum)));
-  const lines = [
-    visibleText(block.title),
-    `x: ${visibleText(block.xLabel)} · y: ${visibleText(block.yLabel)}${block.connect ? " · connected" : ""}`,
-  ];
-  for (let row = 0; row < plotHeight; row += 1) {
-    const value = yRange.maximum - ((yRange.maximum - yRange.minimum) * row) / Math.max(1, plotHeight - 1);
-    const label = row === 0 || row === plotHeight - 1 || row === Math.floor(plotHeight / 2)
-      ? padTerminal(formatAxisNumber(value), yAxisWidth, "start")
-      : " ".repeat(yAxisWidth);
-    lines.push(`${label} │${grid[row]!.join("")}│`);
-  }
-  lines.push(`${" ".repeat(yAxisWidth)} └${"─".repeat(plotWidth)}┘`);
-  lines.push(
-    `${" ".repeat(yAxisWidth + 2)}${formatAxisNumber(xRange.minimum)} ${visibleText(block.xLabel)} ${formatAxisNumber(xRange.maximum)}`,
-  );
-  lines.push(`Key: ${block.series.map((series, index) => `${scatterSymbol(index)}=${visibleText(series.label)}`).join(", ")}`);
-  for (const [seriesIndex, series] of block.series.entries()) {
-    for (const point of series.points) {
-      const target = point.target === undefined ? "" : ` → ${linkTargetText(point.target)}`;
-      lines.push(
-        `  ${scatterSymbol(seriesIndex)} ${visibleText(point.key)}: x=${visibleText(point.xDisplay)}, y=${visibleText(point.yDisplay)}${target}`,
-      );
-    }
-  }
-  return lines.map((line) => truncateTerminal(line, width));
-}
-
-interface NumericRange {
-  readonly minimum: number;
-  readonly maximum: number;
-}
-
-function numericRange(values: readonly number[]): NumericRange {
-  if (values.length === 0) return { minimum: 0, maximum: 1 };
-  const minimum = Math.min(...values);
-  const maximum = Math.max(...values);
-  if (minimum === maximum) {
-    const delta = minimum === 0 ? 1 : Math.abs(minimum) * 0.1;
-    return { minimum: minimum - delta, maximum: maximum + delta };
-  }
-  return { minimum, maximum };
-}
-
-function scatterCoordinate(
-  x: number,
-  y: number,
-  xRange: NumericRange,
-  yRange: NumericRange,
-  width: number,
-  height: number,
-): { readonly x: number; readonly y: number } {
-  return {
-    x: clamp(Math.round(((x - xRange.minimum) / (xRange.maximum - xRange.minimum)) * (width - 1)), 0, width - 1),
-    y: clamp(Math.round(((yRange.maximum - y) / (yRange.maximum - yRange.minimum)) * (height - 1)), 0, height - 1),
-  };
-}
-
-function drawAsciiLine(
-  grid: string[][],
-  from: { readonly x: number; readonly y: number },
-  to: { readonly x: number; readonly y: number },
-): void {
-  let x = from.x;
-  let y = from.y;
-  const deltaX = Math.abs(to.x - from.x);
-  const deltaY = -Math.abs(to.y - from.y);
-  const directionX = from.x < to.x ? 1 : -1;
-  const directionY = from.y < to.y ? 1 : -1;
-  let error = deltaX + deltaY;
-  while (true) {
-    if (grid[y]![x] === " ") grid[y]![x] = ".";
-    if (x === to.x && y === to.y) return;
-    const doubled = 2 * error;
-    if (doubled >= deltaY) {
-      error += deltaY;
-      x += directionX;
-    }
-    if (doubled <= deltaX) {
-      error += deltaX;
-      y += directionY;
-    }
-  }
-}
-
-function scatterSymbol(index: number): string {
-  const symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  return symbols[index] ?? "*";
-}
-
-function formatAxisNumber(value: number): string {
-  const absolute = Math.abs(value);
-  if (absolute >= 1_000 || (absolute > 0 && absolute < 0.01)) return value.toExponential(2);
-  return value.toFixed(absolute < 10 ? 2 : 1).replace(/\.0+$/, "").replace(/(\.\d*[1-9])0+$/, "$1");
-}
-
-function renderTreeTableText(block: ReportTreeTable, width: number): string[] {
-  if (width < 120) {
-    return renderNarrowTreeTableText(block, width);
-  }
-  const headers = ["Hierarchy", ...block.columns.map((column) => visibleText(column.label))];
-  const rows = block.rows.map((row) => [
-    treeRowLabel(row),
-    ...block.columns.map((column) => formatTreeCell(row.cells[column.key]!)),
-  ]);
-  const alignments = ["start" as const, ...block.columns.map((column) => column.align ?? "start")];
-  return [visibleText(block.caption), ...unicodeTable(headers, rows, alignments, width)];
-}
-
-function renderNarrowTreeTableText(block: ReportTreeTable, width: number): string[] {
-  const lines = [visibleText(block.caption)];
-  for (const [index, row] of block.rows.entries()) {
-    if (index > 0) lines.push("");
-    lines.push(...wrapTerminal(treeRowLabel(row), width));
-    for (const column of block.columns) {
-      lines.push(...wrapTerminal(
-        `  ${visibleText(column.label)}: ${formatTreeCell(row.cells[column.key]!)}`,
-        width,
-      ));
-    }
-  }
-  return lines;
-}
-
-function treeRowLabel(row: ReportTreeTable["rows"][number]): string {
-  const kind = row.kind === "experiment" ? "Experiment" : row.kind === "eval" ? "Eval" : "Attempt";
-  return `${"  ".repeat(row.depth)}${kind} · ${visibleText(row.label)}`;
-}
-
-function formatTreeCell(value: ReportTreeCell): string {
-  if (typeof value !== "object" || value === null) {
-    return value === null ? "—" : scalarText(value);
-  }
-  return formatDashboardDisplay(value);
-}
-
-function unicodeTable(
-  headers: readonly string[],
-  rows: readonly (readonly string[])[],
-  alignments: readonly ("start" | "end")[],
-  width: number,
-): string[] {
-  if (headers.length === 0) return [];
-  const structuralWidth = headers.length * 3 + 1;
-  const available = Math.max(headers.length * 4, width - structuralWidth);
-  const widths = headers.map((header, index) => {
-    const content = rows.reduce((maximum, row) => Math.max(maximum, terminalLength(row[index] ?? "")), terminalLength(header));
-    const maximum = header === "Record" ? 37 : index === 0 ? 32 : 28;
-    const minimum = header === "Record"
-      ? 37
-      : index === 0
-      ? 26
-      : header === "Model" || header === "Agent"
-      ? 6
-      : header === "Pass rate"
-      ? 7
-      : header === "Tokens"
-      ? 3
-      : header === "Cost"
-      ? 6
-      : 4;
-    return Math.min(maximum, Math.max(minimum, content));
-  });
-  const minima = headers.map((header, index) => header === "Record"
-    ? 37
-    : index === 0
-    ? 26
-    : header === "Model" || header === "Agent"
-    ? 6
-    : header === "Pass rate"
-    ? 7
-    : header === "Tokens"
-    ? 3
-    : header === "Cost"
-    ? 6
-    : 4);
-  while (widths.reduce((sum, value) => sum + value, 0) > available) {
-    let candidate = -1;
-    for (let index = 0; index < widths.length; index += 1) {
-      if (widths[index]! > minima[index]! && (candidate === -1 || widths[index]! > widths[candidate]!)) {
-        candidate = index;
-      }
-    }
-    if (candidate === -1) break;
-    widths[candidate] = widths[candidate]! - 1;
-  }
-  const border = (left: string, join: string, right: string) =>
-    `${left}${widths.map((columnWidth) => "─".repeat(columnWidth + 2)).join(join)}${right}`;
-  const rowLine = (values: readonly string[]) =>
-    `│${values.map((value, index) => ` ${padTerminal(truncateTerminal(value ?? "", widths[index]!), widths[index]!, alignments[index] ?? "start")} `).join("│")}│`;
-  return [
-    border("┌", "┬", "┐"),
-    rowLine(headers),
-    border("├", "┼", "┤"),
-    ...rows.flatMap((row, index) => index === 0 ? [rowLine(row)] : [border("├", "┼", "┤"), rowLine(row)]),
-    border("└", "┴", "┘"),
-  ];
-}
-
-function unicodeBox(title: string, content: readonly string[], width: number): string[] {
-  const innerWidth = Math.max(20, width - 2);
-  const label = truncateTerminal(` ${visibleText(title)} `, innerWidth);
-  return [
-    `┌${label}${"─".repeat(Math.max(0, innerWidth - terminalLength(label)))}┐`,
-    ...content.map((line) => `│${padTerminal(truncateTerminal(line, innerWidth), innerWidth)}│`),
-    `└${"─".repeat(innerWidth)}┘`,
-  ];
-}
-
-function formatLastRunAt(value: number | null): string {
-  if (value === null) return "—";
-  const date = new Date(value);
-  return Number.isNaN(date.valueOf()) ? "—" : date.toISOString();
-}
-
-function formatDashboardDisplay(value: ReportDisplayValue): string {
-  const display = visibleText(value.display);
-  const coverage = value.coverage === undefined ? "" : ` · ${formatCoverage(value.coverage)}`;
-  return `${display}${coverage}`;
-}
-
-function formatCoverage(coverage: ReportCoverage): string {
-  return `coverage ${coverage.samples}/${coverage.total} ${coverage.basis}`;
-}
-
-function clamp(value: number, minimum: number, maximum: number): number {
-  return Math.min(maximum, Math.max(minimum, value));
-}
-
-function terminalLength(value: string): number {
-  return Array.from(value).length;
-}
-
-function truncateTerminal(value: string, width: number): string {
-  if (terminalLength(value) <= width) return value;
-  if (width <= 1) return "…";
-  return `${Array.from(value).slice(0, Math.max(0, width - 1)).join("")}…`;
-}
-
-function padTerminal(value: string, width: number, align: "start" | "end" = "start"): string {
-  const padding = Math.max(0, width - terminalLength(value));
-  return align === "end" ? `${" ".repeat(padding)}${value}` : `${value}${" ".repeat(padding)}`;
-}
-
-function wrapTerminal(value: string, width: number): string[] {
-  if (value.length === 0) return [""];
-  const words = value.split(/\s+/);
-  const lines: string[] = [];
-  let line = "";
-  for (const word of words) {
-    if (terminalLength(word) > width) {
-      if (line.length > 0) lines.push(line);
-      lines.push(truncateTerminal(word, width));
-      line = "";
-      continue;
-    }
-    const next = line.length === 0 ? word : `${line} ${word}`;
-    if (terminalLength(next) > width && line.length > 0) {
-      lines.push(line);
-      line = word;
-    } else {
-      line = next;
-    }
-  }
-  if (line.length > 0) lines.push(line);
-  return lines;
-}
 
 function renderInlineText(children: readonly ReportInline[]): string {
   return children.map((child) => {

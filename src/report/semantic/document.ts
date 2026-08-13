@@ -162,6 +162,8 @@ export interface ReportHero {
     readonly label: string;
     readonly target: Extract<ReportLinkTarget, { readonly kind: "external" }>;
   }[];
+  readonly lastRunAt?: number | null;
+  readonly runCount?: number;
 }
 
 export interface ReportSummary {
@@ -459,6 +461,8 @@ export function reportHero(input: {
   readonly logo?: ReportHero["logo"];
   readonly description: string;
   readonly links: readonly ReportHero["links"][number][];
+  readonly lastRunAt?: number | null;
+  readonly runCount?: number;
 }): ReportHero {
   return Object.freeze({
     type: "hero" as const,
@@ -469,6 +473,8 @@ export function reportHero(input: {
       label: link.label,
       target: Object.freeze({ kind: "external" as const, href: link.target.href }),
     }))),
+    ...(input.lastRunAt === undefined ? {} : { lastRunAt: input.lastRunAt }),
+    ...(input.runCount === undefined ? {} : { runCount: input.runCount }),
   });
 }
 
@@ -908,7 +914,7 @@ function validateHero(
   state: ValidationState,
   path: readonly (string | number)[],
 ): void {
-  exactFields(record, ["type", "title", "logo", "description", "links"], state, path, ["title", "logo"]);
+  exactFields(record, ["type", "title", "logo", "description", "links", "lastRunAt", "runCount"], state, path, ["title", "logo", "lastRunAt", "runCount"]);
   if (hasField(record, "title")) {
     validateString(field(record, "title"), state, pathFor(path, "title"));
   }
@@ -1716,6 +1722,8 @@ function cloneBlock(block: ReportBlock): ReportBlock {
         ...(block.logo === undefined ? {} : { logo: block.logo }),
         description: block.description,
         links: block.links,
+        ...(block.lastRunAt === undefined ? {} : { lastRunAt: block.lastRunAt }),
+        ...(block.runCount === undefined ? {} : { runCount: block.runCount }),
       });
     case "summary":
       return reportSummary({ lastRunAt: block.lastRunAt, metrics: block.metrics });

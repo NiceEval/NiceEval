@@ -115,12 +115,13 @@ export function renderPresentedSource(
   width: number,
 ): string {
   const header = `${presented.locator} · ${presented.evalId} · ${presented.experimentId} · ${presented.verdict}`;
+  const summary =
+    `${presented.summary.checks} checks · ${presented.summary.passed} passed · ${presented.summary.failed} failed` +
+    (presented.summary.unavailable > 0 ? ` · ${presented.summary.unavailable} unavailable` : "");
   const blocks = [
     header,
     renderSourceFile(presented.spine, presented.callsByLine, "", width),
-    `${presented.summary.checks} checks · ${presented.summary.passed} passed · ${presented.summary.failed} failed` +
-      (presented.summary.unavailable > 0 ? ` · ${presented.summary.unavailable} unavailable` : ""),
-    `full eval source: ${presented.artifactPath}`,
+    `${summary}\nfull eval source: ${presented.artifactPath}`,
   ];
   return blocks.join("\n\n");
 }
@@ -173,9 +174,17 @@ function projectFile(
   const selected = mode === "file"
     ? node.lines
     : selectSourceLines(node.lines, isSpine ? 3 : 2, isSpine ? 8 : 4);
+  const trimmed = [...selected];
+  while (trimmed.length > 0) {
+    const last = trimmed[trimmed.length - 1]!;
+    if (last.text.length > 0 || last.annotations.length > 0 || last.calls.length > 0) {
+      break;
+    }
+    trimmed.pop();
+  }
   return Object.freeze({
     file: node.file.path,
-    lines: selected.map((line) => Object.freeze({
+    lines: trimmed.map((line) => Object.freeze({
       line: line.line,
       text: line.text,
       glyph: lineGlyph(line.annotations, entries),

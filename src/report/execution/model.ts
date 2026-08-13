@@ -330,7 +330,6 @@ function copyPages(
         throw invalid(`${path}.state`, "a Page result state is not recognized");
     }
   });
-  copied.sort(comparePages);
   return Object.freeze(copied);
 }
 
@@ -538,22 +537,6 @@ function assertDistinctComponents<
     }
     ids.add(value[key]);
   }
-}
-
-function comparePages(left: ReportPageResult, right: ReportPageResult): number {
-  const leftRoute = left.route;
-  const rightRoute = right.route;
-  if (leftRoute !== undefined && rightRoute !== undefined) {
-    const routeComparison = compareText(leftRoute, rightRoute);
-    return routeComparison === 0 ? compareText(left.pageId, right.pageId) : routeComparison;
-  }
-  if (leftRoute !== undefined) {
-    return -1;
-  }
-  if (rightRoute !== undefined) {
-    return 1;
-  }
-  return compareText(left.pageId, right.pageId);
 }
 
 function compareText(left: string, right: string): number {

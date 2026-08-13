@@ -513,7 +513,7 @@ export function defineReport<Calculations extends object = {}>(definition: {
   const report = Object.freeze({
     id,
     calculations: calculations.object,
-    pages: Object.freeze([...pages].sort(compareComponent)),
+    pages: Object.freeze([...pages]),
     downloads: Object.freeze([...downloads].sort(compareComponent)),
     [reportTypeId]: (): void => undefined,
   }) as Report;

@@ -425,8 +425,7 @@ function compileReport(report: Report): CompiledReport {
           ? {}
           : { inputs: compilePlan(descriptor.inputs, descriptor.id) }),
       });
-    })
-    .sort((left, right) => compareText(left.descriptor.id, right.descriptor.id));
+    });
 
   const downloads = graph.downloads
     .map((download) => {

@@ -1,35 +1,33 @@
 import {
+  costUSD,
   foldEvalVerdict,
-  meanMetric,
   passRate,
   totalAttempts,
 } from "./aggregate.ts";
 import {
   coverageFromMetric,
-  displayFromMetric,
+  formatInstant,
   formatMetricDisplay,
   formatRatio,
-  formatRunRange,
-  formatUsd,
 } from "./format.ts";
+import { experimentTableContent } from "./experiment-table.ts";
 import { defineComponent, evaluateClassicTree, Fragment, jsx } from "./jsx.ts";
 import { resolveLocalizedText, type LocalizedText } from "./localize.ts";
 import { isMetricValue, metricNumeric, type MetricValue } from "./metric.ts";
-import { classicAttemptTarget, classicExperimentTarget } from "./routes.ts";
+import { classicExperimentTarget } from "./routes.ts";
 import type { ClassicEvalUnit, Sample } from "./sample.ts";
 import {
   reportCellTable,
   reportCodeBlock,
   reportGrid,
   reportHero,
+  reportParagraph,
   reportRankedBars,
   reportScatter,
   reportSection,
   reportStat,
-  reportSummary,
-  reportTreeTable,
+  reportText,
   type ReportBlock,
-  type ReportDisplayValue,
 } from "../semantic/document.ts";
 import { cellFromUnknown, formatCellText, isCell, type Cell } from "./cell.ts";
 import type { AttemptEvidence, AttemptSummaryData, CopyBlockContent } from "./attempt.ts";
@@ -107,6 +105,8 @@ export const Hero = defineComponent<ClassicHeroProps>((props, ctx) => {
       ? ""
       : resolveLocalizedText(props.description, ctx.scope.locale),
     links,
+    lastRunAt: ctx.scope.latestRunAt,
+    runCount: ctx.scope.runCount,
   });
 });
 Hero.displayName = "Hero";
@@ -142,9 +142,13 @@ export interface ClassicStatProps {
 }
 
 export const Stat = defineComponent<ClassicStatProps>((props, ctx) => {
+  const value = statDisplay(props.value, ctx.scope.locale);
+  const detail = props.detail === undefined
+    ? undefined
+    : resolveLocalizedText(props.detail, ctx.scope.locale);
   return reportStat({
     label: resolveLocalizedText(props.label, ctx.scope.locale),
-    value: statDisplay(props.value, ctx.scope.locale),
+    value: detail === undefined ? value : `${value}\n${detail}`,
     ...(props.tone === undefined ? {} : { tone: props.tone }),
   });
 });
@@ -249,7 +253,7 @@ function metricNumericFromUnknown(value: unknown): number | null {
   return null;
 }
 
-export const SampleSummary = defineComponent<{ readonly input?: Sample }>((props, ctx): ReportBlock => {
+export const SampleSummary = defineComponent<{ readonly input?: Sample }>((props, ctx) => {
   const scope = props.input ?? ctx.scope;
   const experiments = new Set(scope.units.map((unit) => unit.experimentId));
   const scoredAttempts = scope.attempts.filter((attempt) =>
@@ -257,77 +261,48 @@ export const SampleSummary = defineComponent<{ readonly input?: Sample }>((props
   );
   const overall = passRate.compute(scope.units);
   const results = evalResultCounts(scope.units);
-  const totalCost = totalAttempts(scope.units, "costUSD", { unit: "USD", better: "lower" });
-  return reportSummary({
-    lastRunAt: scope.latestRunAt,
-    metrics: [
-      {
-        key: "passRate",
-        label: localize(scope, { en: "Pass rate", "zh-CN": "通过率" }),
-        ...displayFromMetric(overall),
-      },
-      {
-        key: "experiments",
-        label: localize(scope, { en: "Experiments", "zh-CN": "实验" }),
-        value: experiments.size,
-        display: String(experiments.size),
-        coverage: Object.freeze({
-          basis: "eval" as const,
-          samples: experiments.size,
-          total: experiments.size,
+  const totalCost = totalAttempts(scope.units, "costUSD", { unit: "$", better: "lower" });
+  const costNote = totalCost.samples < totalCost.total
+    ? `Cost available for ${totalCost.samples}/${totalCost.total} attempts`
+    : undefined;
+  const lastRun = scope.latestRunAt === null
+    ? undefined
+    : reportParagraph([
+      reportText(`Last run · ${formatInstant(scope.latestRunAt, scope.locale)}`),
+    ]);
+  return [
+    reportGrid({
+      cells: [
+        reportStat({
+          label: localize(scope, { en: "Pass rate", "zh-CN": "通过率" }),
+          value: formatMetricDisplay(overall),
         }),
-      },
-      {
-        key: "evals",
-        label: localize(scope, { en: "Evals", "zh-CN": "题目" }),
-        value: scope.units.length,
-        display: String(scope.units.length),
-        coverage: Object.freeze({
-          basis: "eval" as const,
-          samples: scope.units.length,
-          total: scope.units.length,
+        reportStat({
+          label: localize(scope, { en: "Experiments", "zh-CN": "实验" }),
+          value: String(experiments.size),
         }),
-      },
-      {
-        key: "attempts",
-        label: localize(scope, { en: "Attempts", "zh-CN": "尝试" }),
-        value: scoredAttempts.length,
-        display: String(scoredAttempts.length),
-        coverage: Object.freeze({
-          basis: "eval" as const,
-          samples: scoredAttempts.length,
-          total: scope.attempts.length,
+        reportStat({
+          label: localize(scope, { en: "Evals", "zh-CN": "题目" }),
+          value: String(scope.units.length),
         }),
-      },
-      {
-        key: "evalResults",
-        label: localize(scope, { en: "Eval results", "zh-CN": "题目结果" }),
-        value: results.display,
-        display: results.display,
-        coverage: Object.freeze({
-          basis: "eval" as const,
-          samples: results.samples,
-          total: scope.units.length,
+        reportStat({
+          label: localize(scope, { en: "Attempts", "zh-CN": "尝试" }),
+          value: String(scoredAttempts.length),
         }),
-      },
-      {
-        key: "totalCost",
-        label: localize(scope, { en: "Total cost", "zh-CN": "总成本" }),
-        ...displayFromMetric(totalCost),
-      },
-      {
-        key: "runRange",
-        label: localize(scope, { en: "Run range", "zh-CN": "运行区间" }),
-        value: scope.latestRunAt,
-        display: formatRunRange(scope.earliestRunAt, scope.latestRunAt, scope.runCount),
-        coverage: Object.freeze({
-          basis: "eval" as const,
-          samples: scope.runCount,
-          total: scope.runCount,
+        reportStat({
+          label: localize(scope, { en: "Eval results", "zh-CN": "题目结果" }),
+          value: results.display,
         }),
-      },
-    ],
-  });
+        reportStat({
+          label: localize(scope, { en: "Total cost", "zh-CN": "总成本" }),
+          value: costNote === undefined
+            ? formatMetricDisplay(totalCost)
+            : `${formatMetricDisplay(totalCost)}\n${costNote}`,
+        }),
+      ],
+    }),
+    ...(lastRun === undefined ? [] : [lastRun]),
+  ];
 });
 SampleSummary.displayName = "SampleSummary";
 
@@ -369,15 +344,22 @@ export interface ClassicScatterProps {
 
 export const ExperimentScatter = defineComponent<ClassicScatterProps>((props, ctx): ReportBlock => {
   const scope = props.input ?? ctx.scope;
-  const points = experimentPoints(scope);
+  const connect = Object.values(scope.profiles).some((profile) => profile.labels?.line !== undefined);
+  const grouped = new Map<string, ReturnType<typeof experimentPoints>[number][]>();
+  for (const point of experimentPoints(scope)) {
+    const series = scatterSeriesKey(scope, point.experimentId);
+    const existing = grouped.get(series);
+    if (existing === undefined) grouped.set(series, [point]);
+    else existing.push(point);
+  }
   return reportScatter({
     title: localize(scope, { en: "Experiments", "zh-CN": "实验" }),
-    xLabel: localize(scope, { en: "Cost", "zh-CN": "成本" }),
-    yLabel: localize(scope, { en: "Pass rate", "zh-CN": "通过率" }),
-    connect: true,
-    series: [
+    xLabel: "costUSD",
+    yLabel: "passRate",
+    connect,
+    series: [...grouped.entries()].sort((left, right) => compareText(left[0], right[0])).map(([label, points]) =>
       Object.freeze({
-        label: localize(scope, { en: "Experiments", "zh-CN": "实验" }),
+        label,
         points: points.map((point) =>
           Object.freeze({
             key: point.experimentId,
@@ -391,7 +373,7 @@ export const ExperimentScatter = defineComponent<ClassicScatterProps>((props, ct
           }),
         ),
       }),
-    ],
+    ),
   });
 });
 ExperimentScatter.displayName = "ExperimentScatter";
@@ -402,43 +384,19 @@ export interface ClassicTableProps {
 
 export const ExperimentTable = defineComponent<ClassicTableProps>((props, ctx): ReportBlock => {
   const scope = props.input ?? ctx.scope;
-  return reportTreeTable({
-    caption: localize(scope, { en: "Experiments", "zh-CN": "实验" }),
-    columns: [
+  const content = experimentTableContent(scope);
+  return reportCellTable({
+    columns: content.columns.map((column) => column.header),
+    rows: content.rows.map((row) =>
       Object.freeze({
-        key: "model",
-        label: localize(scope, { en: "Model", "zh-CN": "模型" }),
+        key: row.key,
+        cells: Object.freeze(
+          Object.fromEntries(
+            content.columns.map((column) => [column.header, row.cells[column.key] ?? "—"]),
+          ),
+        ),
       }),
-      Object.freeze({
-        key: "agent",
-        label: localize(scope, { en: "Agent", "zh-CN": "Agent" }),
-      }),
-      Object.freeze({
-        key: "avgTime",
-        label: localize(scope, { en: "Avg time", "zh-CN": "平均耗时" }),
-        align: "end" as const,
-      }),
-      Object.freeze({
-        key: "passRate",
-        label: localize(scope, { en: "Pass rate", "zh-CN": "通过率" }),
-        align: "end" as const,
-      }),
-      Object.freeze({
-        key: "tokens",
-        label: localize(scope, { en: "Tokens", "zh-CN": "Tokens" }),
-        align: "end" as const,
-      }),
-      Object.freeze({
-        key: "cost",
-        label: localize(scope, { en: "Cost", "zh-CN": "成本" }),
-        align: "end" as const,
-      }),
-      Object.freeze({
-        key: "record",
-        label: localize(scope, { en: "Record", "zh-CN": "记录" }),
-      }),
-    ],
-    rows: experimentTableRows(scope),
+    ),
   });
 });
 ExperimentTable.displayName = "ExperimentTable";
@@ -513,136 +471,27 @@ function stringField(row: ClassicAggregatePoint, key: string): string {
   return typeof value === "string" ? value : "";
 }
 
+function scatterSeriesKey(sample: Sample, experimentId: string): string {
+  const profile = sample.profiles[experimentId];
+  const line = profile?.labels?.line;
+  if (line !== undefined) return String(line);
+  return profile?.agent && profile.agent.length > 0 ? profile.agent : "unknown";
+}
+
 function experimentPoints(sample: Sample): readonly {
   readonly experimentId: string;
   readonly passRate: ReturnType<typeof passRate.compute>;
-  readonly costUSD: ReturnType<typeof totalAttempts>;
+  readonly costUSD: ReturnType<typeof costUSD.compute>;
 }[] {
   return Object.freeze(
     groupUnitsByExperiment(sample).map(([experimentId, units]) =>
       Object.freeze({
         experimentId,
         passRate: passRate.compute(units),
-        costUSD: totalAttempts(units, "costUSD", { unit: "USD", better: "lower" }),
+        costUSD: costUSD.compute(units),
       }),
     ),
   );
-}
-
-function experimentTableRows(sample: Sample): ReportTreeTableRows {
-  const rows: ReportTreeTableRows[number][] = [];
-  for (const [experimentId, units] of groupUnitsByExperiment(sample)) {
-    const profile = sample.profiles[experimentId] ?? units[0]?.subject.run.experiment;
-    const experimentTarget = classicExperimentTarget(experimentId);
-    rows.push({
-      key: experimentId,
-      kind: "experiment",
-      depth: 0,
-      label: experimentId,
-      ...(experimentTarget === undefined ? {} : { target: experimentTarget }),
-      cells: groupCells(
-        units,
-        profile,
-        experimentId,
-      ),
-    });
-    for (const unit of units) {
-      const unitProfile = sample.profiles[unit.experimentId] ?? unit.subject.run.experiment;
-      rows.push({
-        key: `${unit.experimentId}/${unit.evalId}`,
-        kind: "eval",
-        depth: 1,
-        label: unit.evalId,
-        cells: groupCells(
-          [unit],
-          unitProfile,
-          unit.subject.run.runId,
-        ),
-      });
-      for (const attempt of unit.attempts) {
-        const record = attempt.target?.locator ?? attempt.runId;
-        rows.push({
-          key: attempt.attemptId ?? `${unit.experimentId}/${unit.evalId}/${attempt.attempt}`,
-          kind: "attempt",
-          depth: 2,
-          label: attemptRowLabel(attempt),
-          ...(attempt.attemptId === undefined
-            ? {}
-            : { target: classicAttemptTarget(attempt.attemptId) }),
-          cells: Object.freeze({
-            model: profileField(unitProfile?.model),
-            agent: profileField(unitProfile?.agent),
-            avgTime: observedNumber(attempt.durationMs, "ms"),
-            passRate: attemptPassRate(attempt.verdict),
-            tokens: observedNumber(attempt.tokens, "tokens"),
-            cost: observedNumber(attempt.costUSD, "USD"),
-            record,
-          }),
-        });
-      }
-    }
-  }
-  return Object.freeze(rows);
-}
-
-type ReportTreeTableRows = Parameters<typeof reportTreeTable>[0]["rows"];
-
-function groupCells(
-  units: readonly ClassicEvalUnit[],
-  profile: { readonly agent?: string; readonly model?: string } | undefined,
-  record: string,
-): Readonly<Record<string, ReportDisplayValue | string | number | null>> {
-  return Object.freeze({
-    model: profileField(profile?.model),
-    agent: profileField(profile?.agent),
-    avgTime: displayFromMetric(meanMetric(units, "durationMs", { unit: "ms", better: "lower" })),
-    passRate: displayFromMetric(passRate.compute(units)),
-    tokens: displayFromMetric(totalAttempts(units, "tokens", { better: "lower" })),
-    cost: displayFromMetric(totalAttempts(units, "costUSD", { unit: "USD", better: "lower" })),
-    record,
-  });
-}
-
-function attemptPassRate(verdict: Sample["attempts"][number]["verdict"]): ReportDisplayValue {
-  if (verdict === "passed") {
-    return Object.freeze({
-      value: 1,
-      display: formatRatio(1),
-      unit: "ratio",
-      coverage: Object.freeze({ basis: "eval" as const, samples: 1, total: 1 }),
-    });
-  }
-  if (verdict === "failed" || verdict === "errored") {
-    return Object.freeze({
-      value: 0,
-      display: formatRatio(0),
-      unit: "ratio",
-      coverage: Object.freeze({ basis: "eval" as const, samples: 1, total: 1 }),
-    });
-  }
-  return Object.freeze({
-    value: null,
-    display: "—",
-    unit: "ratio",
-    coverage: Object.freeze({ basis: "eval" as const, samples: 0, total: 1 }),
-  });
-}
-
-function observedNumber(value: number | null, unit: string): ReportDisplayValue {
-  return Object.freeze({
-    value,
-    display: value === null ? "—" : unit === "USD" ? formatUsd(value) : unit === "ms" ? `${Math.round(value)}ms` : String(value),
-    ...(unit === "tokens" ? {} : { unit }),
-    coverage: Object.freeze({
-      basis: "eval" as const,
-      samples: value === null ? 0 : 1,
-      total: 1,
-    }),
-  });
-}
-
-function profileField(value: string | undefined): string {
-  return value && value.length > 0 ? value : "unknown";
 }
 
 function evalResultCounts(units: readonly ClassicEvalUnit[]): {
@@ -687,12 +536,6 @@ function groupUnitsByExperiment(
   return Object.freeze(
     [...groups.entries()].sort((left, right) => compareText(left[0], right[0])),
   );
-}
-
-function attemptRowLabel(attempt: Sample["attempts"][number]): string {
-  const mark = attempt.verdict === "passed" ? "✓" : attempt.verdict === "failed" || attempt.verdict === "errored" ? "✗" : "·";
-  const locator = attempt.target?.locator ?? `attempt ${attempt.attempt}`;
-  return `${mark} ${locator}`;
 }
 
 function localize(sample: Sample, value: LocalizedText): string {

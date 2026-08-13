@@ -10,6 +10,7 @@ export {
   meanMetric,
   passRate,
   rollup,
+  tokens,
   totalAttempts,
 } from "./aggregate.ts";
 export type {
