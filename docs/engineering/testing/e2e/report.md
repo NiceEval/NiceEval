@@ -76,7 +76,11 @@ niceeval view
 
 ### report-execution-evidence
 
-`report-execution.test.ts` 通过 `show --execution` 与 `show --timing` 验证已停稳执行证据。
+`report-execution.test.ts` 通过 `show --execution` 验证已停稳执行证据。
+
+### report-timing
+
+`report-timing.test.ts` 验证 `show --timing` 只公开稳定的阶段身份；阶段耗时可以存在，也可以明确不可用。
 
 ### report-static-export
 
@@ -84,7 +88,13 @@ niceeval view
 
 ### report-show-json
 
-`report-show.test.ts` 验证 locator、project-current、human 与 JSON 公开读回。
+`report-show.test.ts` 验证不带选项的 `show` 装载项目默认 Report，
+并检查 locator、project-current、human 与 JSON 公开读回。
+
+### report-author-dx
+
+`report-author.test.ts` 在安装候选包的消费仓库中先 typecheck 0.12 classic Report，
+再通过真实 `exp → show` 验证同一份作者源码可由生产 CLI 装载。
 
 ### report-source-snapshot
 
@@ -93,3 +103,14 @@ niceeval view
 ### report-browser-journey
 
 `report.browser.spec.ts` 通过真实 href、HTTP、可访问身份与可见内容验证浏览器 Journey。
+
+### report-classic-browser-journey
+
+`report-classic.browser.spec.ts` 以 0.12 classic Report 验证 static export 与 live view 的链接闭包、
+单页 Report 缺少 experiment PageFamily 时散点无链接退化、
+桌面和移动端可读性，以及可访问的折叠控件。
+
+### report-terminal-dx
+
+`report-pty.test.ts` 在真实 PTY 中逐字验收 0.12 Section 框线和页面导航；pipe 与 `NO_COLOR`
+输出保持无框。动态 locator、Run ID、时间戳与时长只能经具名 transcript seam 变化。

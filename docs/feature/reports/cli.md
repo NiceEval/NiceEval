@@ -67,7 +67,7 @@ niceeval show --json
 
 公开 `show --report` 与 `show --json` 互斥：报告树表达「怎么看」，`--json` 表达「是什么」。两者同时出现时，命令在任何 Record I/O 或报告装载之前以 i18n 用法错误退出。
 
-`--json` 单独使用时输出 `niceeval.show` 数据信封（`view` 为 leaderboard / attempt / source / timing 等），不是 classic 报告树。`niceeval.report-show/v1` 只给内部 host 与 static export 使用，不再是公开 show 机器面。
+`--json` 单独使用时输出 `niceeval.show` 数据信封（`view` 为 leaderboard / attempt / source / timing 等），而不是 classic 报告树。公开 show 的机器面只有 `niceeval.show`；`niceeval.report-show/v1` 只给内部 host 与 static export 使用。
 
 `--report` 的 text 面与 live view、static export 消费同一份 `ReportExecution`。Host 只显示每个 input 的 complete/partial 与 problem IDs，不替作者公式猜 observed/denominator。通过率等业务统计只有在 Calculation value 自己提供时才显示。unavailable、unsupported、invalid 与 execution-failed 必须保留状态及 problem reference，不能替换成零、空字符串或省略行。
 

@@ -32,7 +32,8 @@ ReportExecution（host-owned、immutable、self-contained）
           └─ static export
 ```
 
-classic facade 与低层 projection API 是同一个管线的两个作者入口。facade 声明固定 projection plan，host 只投影一次，构造深冻结 `Sample`，再经同一条 fixed-page callback 调用 `page.render(sample)`；展开结果与低层页面的输出汇入同一个 closed semantic validation 与 `ReportExecution`。`classic-dashboard` 只是 presentation profile。不存在第二套数据面或渲染面。
+classic facade 与低层 projection API 是同一个管线的两个作者入口。facade 声明固定 projection plan，host 只投影一次，构造深冻结 `Sample`，再经同一条 fixed-page callback 调用 `page.render(sample)`。
+展开结果与低层页面的输出汇入同一个 closed semantic validation 与 `ReportExecution`。`classic-dashboard` 只是 presentation profile，不存在第二套数据面或渲染面。
 
 这条链包含三种不同派生：
 
@@ -148,6 +149,8 @@ classic facade 的受控 JSX 与低层页面 API 都汇入闭合的 `ReportDocum
 树包含 Hero、summary、`ranked-bars`、scatter 与 `tree-table` 节点。`tree-table` 表达 Experiment → Eval → Attempt 层级；Attempt 行保留公开 locator target，由 host 按呈现面解释，不声明额外详情页面。
 
 精确树形状验证之外，host 验证 number、Unicode、table keys、chart 长度、ranked-bars / scatter 的 finite 数值、cycle、深度、nodes、strings 与 link target。Hero 外链只接受绝对 https，host 只序列化不 fetch；http、javascript、data、file 与 relative 拒绝。缺失 cost / timing 保持 null，不补 0。HTML 按 context escape，terminal 把控制字符转成可见文本；不存在 raw HTML 逃逸口。
+
+inline link 必须属于同一 execution closure。scatter point 与 tree-table row 的合法 route target 是可选实体导航：目标 route 未展开时删除 target 并退化为纯展示；已展开但随后失效时仍沿反向依赖传播失败。
 
 Semantic route 与 filesystem path 分开。Route / download constructor 固定 lowercase ASCII grammar；static host 把 author route 映射到 `a/b/index.html`，再从当前页面 output path 计算相对 href。所有 author outputs 与 host files 进入同一 collision set。
 

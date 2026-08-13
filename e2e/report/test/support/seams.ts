@@ -24,7 +24,6 @@ export const DURATION_TOKEN = /(?:\d+m(?:\s+\d+(?:\.\d+)?)?s|\d+(?:\.\d+)?(?:ms|
 export const TIMESTAMP_TOKEN =
   /(?:(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}, \d{4}, \d{1,2}:\d{2}(?:\s*[AP]M)?|\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?)/;
 export const LOCATOR_TOKEN = /@[0-9A-HJKMNP-TV-Z]{13}/;
-export const RUN_ID_TOKEN = /[0-9A-Za-z._:-]{8,}/;
 
 export function listSeams(template: string): SeamToken[] {
   const tokens: SeamToken[] = [];
@@ -83,4 +82,3 @@ function countBoundOccurrences(text: string, values: readonly string[]): number 
   }
   return count;
 }
-

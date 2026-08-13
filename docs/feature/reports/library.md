@@ -26,7 +26,7 @@ Report 作者只理解两件事：需要哪些 `RecordProjection`，以及怎样
 
 ## Classic facade
 
-`niceeval/report` 的公开作者面是 0.12 经典面。MemoryBench 的 classic.tsx 使用 `render(sample)`，不要求 `defineComponent` 或 `ctx.scope`。需要自定义投影或计算的作者继续使用下文低层 projection API。两条路径共享同一个 `ReportExecution`。
+`niceeval/report` 的公开作者面是 0.12 经典面。页面 `render(sample)` 可以直接组合内置组件；可复用业务组件使用 `defineComponent((props, ctx) => ...)`，并从 `ctx.scope` 取得当前 Sample。需要自定义投影或计算的作者继续使用下文低层 projection API。两条路径共享同一个 `ReportExecution`。
 
 ```ts
 import type { Sample } from "niceeval/record";
@@ -40,6 +40,7 @@ import {
   Section,
   aggregate,
   costUSD,
+  defineComponent,
   defineReport,
   experiment,
   passRate,
@@ -88,6 +89,21 @@ async function classicOverview(sample: Sample) {
 }
 ```
 
+可复用业务组件沿用 0.12 的 compose 形态。`ctx.scope` 是当前页面的深冻结 Sample，
+因此组件可以聚合数据并继续返回受控组件树：
+
+```tsx
+const Leaderboard = defineComponent(async (_props, ctx) => {
+  const rows = await aggregate(ctx.scope, {
+    by: { experiment },
+    values: { passRate },
+  });
+  return <Bars points={rows} x="experiment" y="passRate" layout="horizontal" />;
+});
+
+const overview = () => <Col><Leaderboard /></Col>;
+```
+
 ### 受控 JSX 边界
 
 组件树只接受内置组件与 `Fragment`；子节点可以是数组、string、number 或 null。它拒绝：
@@ -108,13 +124,13 @@ trusted TS module 本身不是 sandbox；module 仍可以 import `node:fs` 或�
 | `Hero` | 页首摘要块；`title`、`logo`、`description` 与 `links`。链接只接受绝对 https；logo 只接受绝对 https 或 `data:image`。host 只序列化，不 fetch。 |
 | `SampleSummary` | 当前 Sample 概况：实验、Eval、attempt 与 coverage。 |
 | `Bars` | 柱状图；`layout="horizontal"` 呈现横向柱状图，points 来自 `aggregate` 行。 |
-| `ExperimentScatter` | 按 Experiment 的散点；`input={sample}` 传入同一份闭合 Sample。点链到已展开的 experiment 页。 |
-| `ExperimentTable` | 实验级读数表；`input={sample}` 传入同一份闭合 Sample。实验行链到已展开的 experiment 页。 |
+| `ExperimentScatter` | 按 Experiment 的散点；`input={sample}` 传入同一份闭合 Sample。对应 experiment 页已展开时点可下钻，否则保持纯图形。 |
+| `ExperimentTable` | 实验级读数表；`input={sample}` 传入同一份闭合 Sample。 |
 | `Grid` / `Stat` / `Table` | 排版原语：格网、读数格、单元格表。 |
 | `SampleNotices` / `CopyBlock` | 选择提示与可复制文本。 |
 | `AttemptSummary` / `AttemptAssessment` | Attempt 详情页组合件。 |
 
-`standardExperimentPage` 与 `standardAttemptPage` 是 PageFamily：分别按 Sample 里已有的 experiment id 与 attempt locator 展开固定 route。experiment 页的 render 收到按该 experiment 收窄后的闭合 Sample；attempt 页收到闭合 `AttemptEvidence`。它们不进入主导航。`ExperimentTable` / `ExperimentScatter` 写出的 href 指向这些已经展开的 route，static export 与 live view 共用同一份 `index.html` 路径。
+`standardExperimentPage` 与 `standardAttemptPage` 是 PageFamily：分别按 Sample 里已有的 experiment id 与 attempt locator 展开固定 route。experiment 页的 render 收到按该 experiment 收窄后的闭合 Sample；attempt 页收到闭合 `AttemptEvidence`。它们不进入主导航。`ExperimentScatter` 只在对应 experiment route 已由当前 Report 展开时写出 href；单页 Report 不声明该 PageFamily 时散点仍正常呈现，但没有链接。static export 与 live view 共用同一份 `index.html` 路径。
 
 ### aggregate、passRate、costUSD 与 experiment
 
@@ -685,7 +701,8 @@ interface ReportTreeTable {
 - chart series 长度与 categories 相等；ranked-bars 与 scatter 的非 null 数值全部 finite；
 - hero links 的 href 只接受绝对 https；http、javascript、data、file 与 relative 拒绝；
 - 缺失 cost / timing 保持 null，不补 0；
-- route / download link 必须存在于本 execution 的 closure；
+- inline route / download link 必须存在于本 execution 的 closure；
+- scatter point 与 tree-table row 的 route 是可选实体导航：route 已展开时保留，未展开时删除 target 并继续呈现；非法 target 仍拒绝；
 - depth、node、string 与 bytes limits 在 active recursion stack 中执行；
 - HTML 按 context escape，terminal 把控制字符转成可见文本；renderer 穷尽 union，未知节点类型返回 unsupported。
 

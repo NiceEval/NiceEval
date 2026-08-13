@@ -496,5 +496,3 @@ export function experimentTableContent(sample: Sample): ExperimentTableContent {
     rows: items.flatMap((item) => flattenRows(experimentRow(item, columns), columns, 0)),
   };
 }
-
-

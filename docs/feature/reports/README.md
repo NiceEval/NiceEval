@@ -1,6 +1,7 @@
 # Reports：把运行结果变成可交付视图
 
-Reports 把 Record 中的运行结果变成终端输出、热重载页面或可分享的静态站。公开作者面是 0.12 经典面：`defineReport({ title, pages })`、`render(sample)`、`aggregate` / `passRate` / `costUSD` / `experiment`、`Section`、带 `title` / `logo` 的 `Hero`，以及 `input={sample}`。`Sample` 类型从 `niceeval/record` 导入。MemoryBench 的 classic.tsx 不要求 `defineComponent` 或 `ctx.scope`。低层 projection API 继续存在，供需要自定义投影与计算的作者使用。
+Reports 把 Record 中的运行结果变成终端输出、热重载页面或可分享的静态站。公开作者面是 0.12 经典面：`defineReport({ title, pages })`、`render(sample)` 与 `defineComponent((props, ctx) => ...)`。
+它还包括 `aggregate` / `passRate` / `costUSD` / `experiment`、`Section`、带 `title` / `logo` 的 `Hero`，以及组件内的 `ctx.scope`。`Sample` 类型从 `niceeval/record` 导入；内置组件既可使用当前 scope，也可由 `input={sample}` 显式指定。低层 projection API 继续存在，供需要自定义投影与计算的作者使用。
 
 ```text
 opaque Record

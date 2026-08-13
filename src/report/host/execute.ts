@@ -95,6 +95,7 @@ import {
   type ReportDocument,
   type ReportInline,
 } from "../semantic/document.ts";
+import { resolveOptionalRouteTargets } from "../semantic/optional-navigation.ts";
 
 /** A Report or its private author descriptors did not come from NiceEval. */
 export interface ReportAuthoringInvalid {
@@ -1450,7 +1451,9 @@ function validateCandidateDocument(
   | { readonly state: "invalid" }
   | { readonly state: "limit"; readonly error: ReportLimitExceeded } {
   try {
-    const validation = validateReportDocument(document, { routes, downloads });
+    const frozen = freezeReportDocument(document);
+    const resolved = resolveOptionalRouteTargets(frozen, routes);
+    const validation = validateReportDocument(resolved, { routes, downloads });
     const limit = reportDocumentLimit(validation);
     if (limit !== undefined) {
       return Object.freeze({ state: "limit" as const, error: limit });
@@ -1458,13 +1461,17 @@ function validateCandidateDocument(
     if (!validation.valid) {
       return Object.freeze({ state: "invalid" as const });
     }
-    const frozen = freezeReportDocument(document);
     return Object.freeze({
       state: "valid" as const,
-      document: frozen,
-      routes: Object.freeze(routeLinks(frozen)),
+      document: resolved,
+      routes: Object.freeze(routeLinks(resolved)),
     });
   } catch {
+    const validation = validateReportDocument(document);
+    const limit = reportDocumentLimit(validation);
+    if (limit !== undefined) {
+      return Object.freeze({ state: "limit" as const, error: limit });
+    }
     return Object.freeze({ state: "invalid" as const });
   }
 }
@@ -1520,6 +1527,9 @@ function routeLinks(document: ReportDocument): readonly ReportRoute[] {
       case "list":
         block.items.forEach((item) => item.forEach(visitBlock));
         return;
+      case "grid":
+        block.cells.forEach(visitBlock);
+        return;
       case "status":
         block.detail?.forEach(visitInline);
         return;
@@ -1530,6 +1540,8 @@ function routeLinks(document: ReportDocument): readonly ReportRoute[] {
       case "hero":
       case "summary":
       case "ranked-bars":
+      case "stat":
+      case "cell-table":
         return;
       case "scatter":
         for (const series of block.series) {

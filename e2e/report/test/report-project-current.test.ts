@@ -16,28 +16,6 @@ interface ExpEvent {
   reused?: number;
 }
 
-interface ShowLeaderboard {
-  format: "niceeval.show";
-  schemaVersion: 1;
-  view: "leaderboard";
-  sample: {
-    resultsRoot: string;
-    experiments: string[];
-    fresh: boolean;
-  };
-  data: {
-    experiments: readonly {
-      experimentId: string;
-      passRate: number | null;
-      costUSD: number | null;
-      evals: number;
-    }[];
-    passRate: number | null;
-    evals: number;
-    attempts: number;
-  };
-}
-
 test("项目未变时复用结果，Eval 源码变化后重新执行并读回新结果", async () => {
   await reportE2E.case(
     "project-current",
