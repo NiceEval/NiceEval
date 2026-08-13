@@ -43,11 +43,3 @@ export const PINNED_ENV = {
   LC_ALL: "en_US.UTF-8",
   LANGUAGE: "en",
 } as const;
-
-/** Parent often has NO_COLOR=1. Testkit merge drops undefined env keys. */
-export const PTY_ENV: NodeJS.ProcessEnv = {
-  ...PINNED_ENV,
-  TERM: "dumb",
-  NO_COLOR: undefined,
-  FORCE_COLOR: undefined,
-};

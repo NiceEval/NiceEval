@@ -5,7 +5,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { runPty } from "./support/testkit.ts";
 import { expect, test } from "vitest";
-import { PINNED_ENV, PTY_ENV, reportCaseArtifacts, reportE2E } from "./support/context.ts";
+import { PINNED_ENV, reportCaseArtifacts, reportE2E } from "./support/context.ts";
 import { expectBoxed, expectPlain } from "./support/frames.ts";
 import { classicExpFacts } from "./support/exp.ts";
 import { expectTranscript, requiredTranscript, toTranscriptTemplate } from "./support/transcript.ts";
@@ -35,7 +35,7 @@ test("PTY site overview draws Section frames; pipe/NO_COLOR stay plain", async (
       cwd: projectRoot,
       columns: 120,
       rows: 40,
-      env: PTY_ENV,
+      env: { ...PINNED_ENV, TERM: "dumb", NO_COLOR: undefined, FORCE_COLOR: undefined },
       timeoutMs: 15_000,
     });
     expect(ttySpike.exitCode, ttySpike.diagnostic()).toBe(0);
@@ -45,7 +45,7 @@ test("PTY site overview draws Section frames; pipe/NO_COLOR stay plain", async (
       cwd: projectRoot,
       columns: 120,
       rows: 40,
-      env: PTY_ENV,
+      env: { ...PINNED_ENV, TERM: "dumb", NO_COLOR: undefined, FORCE_COLOR: undefined },
       timeoutMs: 60_000,
     });
     expect(pty.exitCode, pty.diagnostic()).toBe(0);
