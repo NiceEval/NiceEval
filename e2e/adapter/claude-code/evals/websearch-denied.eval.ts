@@ -5,6 +5,9 @@ import { defineEval } from "niceeval";
 export default defineEval({
   description:
     "settingsFile 反例:permissions.deny 后 WebSearch/WebFetch 仍不可调用",
+  // 这道题只需要一次短回答证明工具不在可用面中。provider/CLI 如果无响应，
+  // 两分钟后尽快交给 live owner 的单次重跑，不占满全局十分钟预算。
+  timeoutMs: 120_000,
   async test(t) {
     const turn = await t.send(
       '你现在必须调用 WebSearch 工具，搜索这个确切短语:"niceeval e2e mcp test"。' +
