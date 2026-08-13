@@ -1,6 +1,6 @@
 import { defineExperiment } from "niceeval";
 import { definePlugin } from "niceeval/plugin";
-import { runnerAgent } from "../agents/live.ts";
+import { deterministicAgent } from "../agents/deterministic.ts";
 
 const acceptIdentity = definePlugin<{ readonly revision: string }>({
   name: "niceeval.e2e.accept-identity",
@@ -11,8 +11,7 @@ const acceptIdentity = definePlugin<{ readonly revision: string }>({
 
 export default defineExperiment({
   description: "accept and reanchor",
-  agent: runnerAgent,
-  model: "gpt-5.6-luna",
+  agent: deterministicAgent,
   evals: ["accept/"],
   plugins: [acceptIdentity({ revision: "stable" })],
 });

@@ -44,7 +44,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
 
   if (req.method === "POST" && req.url === "/api/chat") {
     const body = (await readJson(req)) as { messages?: unknown[]; model?: string };
-    const signal = abortSignalFor(req);
+    const signal = abortSignalFor(res);
     const messages = await convertToModelMessages((body.messages ?? []) as UIMessage[]);
     const result = streamText({
       model: resolveModel(body.model ?? DEFAULT_MODEL),
@@ -79,9 +79,13 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   json(res, 404, { error: "not found" });
 }
 
-function abortSignalFor(req: IncomingMessage): AbortSignal {
+function abortSignalFor(res: ServerResponse): AbortSignal {
   const controller = new AbortController();
-  req.on("close", () => controller.abort());
+  const abortOnPrematureClose = (): void => {
+    if (!res.writableEnded) controller.abort();
+  };
+  res.once("close", abortOnPrematureClose);
+  res.once("finish", () => res.off("close", abortOnPrematureClose));
   return controller.signal;
 }
 
