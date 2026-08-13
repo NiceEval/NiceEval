@@ -30,7 +30,7 @@ import { parseArgs } from "node:util";
 
 import { discoverAllRepos, e2eRootDir, repoRootDir } from "./discovery.ts";
 import { readCandidateTarball } from "./injection.ts";
-import { buildTestkitPackage } from "./testkit.ts";
+import { buildTestkitPackage, verifyTestkitSnapshot } from "./testkit.ts";
 import { selectRepos } from "./plan.ts";
 import { LANES, type Lane } from "./manifest.ts";
 import { appendNativeArgs, materializeCandidateArtifact, runRepo, type RepoRunResult } from "./run-repo.ts";
@@ -58,6 +58,7 @@ interface Cli {
   artifactRoot: string | undefined;
   nativeArgs: string[];
   keepWorkdir: boolean;
+  repoConcurrency: number;
 }
 
 function splitNativeArgs(argv: readonly string[]): { optionArgs: readonly string[]; nativeArgs: string[] } {
@@ -78,6 +79,7 @@ export function parseRunCli(argv: readonly string[]): Cli {
       "artifact-root": { type: "string" },
       "diff-path": { type: "string", multiple: true },
       "keep-workdir": { type: "boolean", default: false },
+      "repo-concurrency": { type: "string", default: "1" },
     },
     allowPositionals: false,
     strict: true,
@@ -96,6 +98,14 @@ export function parseRunCli(argv: readonly string[]): Cli {
   const diffPaths = Array.isArray(values["diff-path"])
     ? values["diff-path"].filter((value): value is string => typeof value === "string")
     : [];
+  const concurrencyValue = values["repo-concurrency"];
+  if (typeof concurrencyValue !== "string" || !/^\d+$/.test(concurrencyValue)) {
+    throw new Error(`--repo-concurrency must be a positive integer, got ${JSON.stringify(concurrencyValue)}`);
+  }
+  const repoConcurrency = Number(concurrencyValue);
+  if (!Number.isSafeInteger(repoConcurrency) || repoConcurrency < 1) {
+    throw new Error(`--repo-concurrency must be a positive integer, got ${JSON.stringify(concurrencyValue)}`);
+  }
   return {
     repoIds,
     lane: typeof laneValue === "string" ? (laneValue as Lane) : undefined,
@@ -107,7 +117,41 @@ export function parseRunCli(argv: readonly string[]): Cli {
       : undefined,
     nativeArgs,
     keepWorkdir: values["keep-workdir"] === true,
+    repoConcurrency,
   };
+}
+
+async function runRepoPool<T>(
+  items: readonly T[],
+  concurrency: number,
+  execution: E2EExecutionControl,
+  run: (item: T, index: number) => Promise<RepoRunResult>,
+): Promise<RepoRunResult[]> {
+  const ordered: Array<RepoRunResult | undefined> = Array.from({ length: items.length });
+  const unexpectedFailures: Array<{ index: number; error: unknown }> = [];
+  let nextIndex = 0;
+  const worker = async (): Promise<void> => {
+    while (!isExecutionCancelled(execution)) {
+      const index = nextIndex;
+      if (index >= items.length) return;
+      nextIndex += 1;
+      const item = items[index];
+      if (item === undefined) return;
+      try {
+        ordered[index] = await run(item, index);
+      } catch (error) {
+        unexpectedFailures.push({ index, error });
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
+  if (unexpectedFailures.length > 0) {
+    throw new AggregateError(
+      unexpectedFailures.map(({ error }) => error),
+      `${unexpectedFailures.length} repo worker(s) failed unexpectedly after all started repos settled`,
+    );
+  }
+  return ordered.filter((result): result is RepoRunResult => result !== undefined);
 }
 
 // ---------------------------------------------------------------------------
@@ -282,24 +326,29 @@ export async function main(
 
       const allSecretNames = new Set<string>();
       for (const r of repos) for (const s of r.manifest.secrets) allSecretNames.add(s);
+      const activeScratchRoot = scratchRoot;
+      const activeArtifactRoot = artifactRoot;
 
-      for (const repo of selected) {
-        if (isExecutionCancelled(execution)) break;
+      console.log(`[e2e] repo concurrency: ${Math.min(cli.repoConcurrency, selected.length)}`);
+      results.push(...await runRepoPool(selected, cli.repoConcurrency, execution, async (repo) => {
         console.log(`\n[e2e] === ${repo.manifest.id} ===`);
         const result = await runRepo(
           repo,
           candidate,
-          scratchRoot,
-          artifactRoot,
+          activeScratchRoot,
+          activeArtifactRoot,
           allSecretNames,
           cli.nativeArgs,
           testkit,
-          { execution, keepWorkdir: cli.keepWorkdir },
+          { execution, keepWorkdir: cli.keepWorkdir, logPrefix: `e2e:${repo.manifest.id}` },
         );
         console.log(`[e2e] ${repo.manifest.id}: artifactDir=${result.artifactDir}`);
         console.log(`[e2e] ${repo.manifest.id}: receiptPath=${result.receiptPath}`);
-        results.push(result);
-        if (result.category === "cancelled") break;
+        return result;
+      }));
+      if (testkit !== undefined) {
+        await verifyTestkitSnapshot(testkit);
+        console.log(`[e2e] Testkit snapshot sha256:${testkit.digest} unchanged after all repos settled`);
       }
     }
   } catch (err) {

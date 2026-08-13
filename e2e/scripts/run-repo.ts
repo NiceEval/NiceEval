@@ -194,6 +194,7 @@ export async function runCommand(
   env: NodeJS.ProcessEnv,
   timeoutMs: number,
   execution: E2EExecutionControl,
+  streamPrefix?: string,
 ): Promise<CommandCapture> {
   const result = await execution.supervisor.run(command, {
     cwd,
@@ -202,6 +203,7 @@ export async function runCommand(
     stream: true,
     timeoutMs,
     abortSignal: execution.abortSignal,
+    streamPrefix,
   });
   return commandCapture(result);
 }
@@ -223,6 +225,8 @@ export interface RunRepoOptions {
   sourceSnapshotDigest?: string;
   /** Retain this isolated repo copy for explicit local diagnosis. */
   keepWorkdir?: boolean;
+  /** Prefix streamed install/test output when multiple repos share one runner. */
+  logPrefix?: string;
 }
 
 function withInvocationContext(
@@ -379,7 +383,14 @@ export async function runRepo(
                 setupInvocationId,
                 copyDir,
               );
-              const installCapture = await runCommand(installCmd, copyDir, installEnv, 30 * 60_000, execution);
+              const installCapture = await runCommand(
+                installCmd,
+                copyDir,
+                installEnv,
+                30 * 60_000,
+                execution,
+                options.logPrefix,
+              );
               const installOk =
                 installCapture.exitCode === 0 &&
                 !installCapture.timedOut &&
@@ -484,7 +495,14 @@ export async function runRepo(
                           invocationId,
                           copyDir,
                         );
-                        const testCapture = await runCommand(testCmd, copyDir, childEnv, timeoutMs, execution);
+                        const testCapture = await runCommand(
+                          testCmd,
+                          copyDir,
+                          childEnv,
+                          timeoutMs,
+                          execution,
+                          options.logPrefix,
+                        );
                         testExitCode = testCapture.exitCode;
                         const testOk =
                           testCapture.exitCode === 0 &&
