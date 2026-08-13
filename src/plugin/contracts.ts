@@ -121,7 +121,9 @@ function normalizeJson(value: unknown, path: string, ancestors = new WeakSet<obj
   ancestors.add(value);
   try {
     if (Array.isArray(value)) {
-      return Object.freeze(value.map((item, index) => normalizeJson(item, `${path}[${index}]`, ancestors))) as JsonValue;
+      const normalized: JsonValue[] = value.map((item, index) => normalizeJson(item, `${path}[${index}]`, ancestors));
+      Object.freeze(normalized);
+      return normalized;
     }
     if (!isPlainRecord(value)) throw new TypeError(`${path} must contain only plain JSON objects.`);
     return Object.freeze(Object.fromEntries(
@@ -269,7 +271,9 @@ export function projectPluginLifecycles<Scope extends PluginScope>(
 }
 
 export function pluginLifecycleProjection(lifecycles: readonly LinkedPluginLifecycle[]): JsonValue {
-  return lifecycles.map(({ scope, name, behaviorRevision, instanceKey, identity, arrayPosition, hasSetup, hasTeardown }) => ({
+  const projection: JsonValue[] = lifecycles.map(({ scope, name, behaviorRevision, instanceKey, identity, arrayPosition, hasSetup, hasTeardown }) => ({
     scope, name, behaviorRevision, instanceKey, identity, arrayPosition, hasSetup, hasTeardown,
   }));
+  Object.freeze(projection);
+  return projection;
 }

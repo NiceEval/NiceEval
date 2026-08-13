@@ -6,7 +6,7 @@ const acceptIdentity = definePlugin<{ readonly revision: string }>({
   name: "niceeval.e2e.accept-identity",
   behaviorRevision: "1",
   instanceKey: ({ revision }) => revision,
-  experiment: ({ revision }) => ({ identity: { revision } }),
+  experiment: ({ revision }) => ({ identity: { revision }, setup: () => {} }),
 });
 
 export default defineExperiment({

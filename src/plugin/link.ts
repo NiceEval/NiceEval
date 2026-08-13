@@ -221,5 +221,8 @@ export function linkPluginPair(evalDef: DiscoveredEval, preparedRun: PreparedPlu
 }
 
 export function pluginBehaviorProjection(run: AgentRun): JsonValue {
-  return run.pluginBehavior ?? Object.freeze([]);
+  if (run.pluginBehavior !== undefined) return run.pluginBehavior;
+  const empty: JsonValue[] = [];
+  Object.freeze(empty);
+  return empty;
 }
