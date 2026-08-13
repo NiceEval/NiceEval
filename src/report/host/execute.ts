@@ -53,13 +53,9 @@ import type {
   ReportDownloadFile,
 } from "../author/model.ts";
 import {
-  buildClassicSample,
-  isClassicReport,
+  bindClassicHost,
   partialClassicSelectionOrigin,
-  renderClassicPage,
   resolveClassicLocale,
-  type ClassicProjectedInputs,
-  type ClassicSample,
   type ClassicSelectionOrigin,
 } from "../classic/index.ts";
 import {
@@ -281,14 +277,10 @@ export function executeReport(input: {
       AnyReportCalculation,
       ReportCalculationExecutionResult
     >();
-    const classicSample = isClassicReport(input.report)
-      ? buildClassicSample({
-        sample: bound.sample,
-        projections: classicProjectedInputs(compiled, projectionOutcomes),
-        selectionOrigin: input.selectionOrigin ?? partialClassicSelectionOrigin(),
-        locale: resolveClassicLocale(input.locale),
-      })
-      : undefined;
+    bindClassicHost(bound.sample, {
+      selectionOrigin: input.selectionOrigin ?? partialClassicSelectionOrigin(),
+      locale: resolveClassicLocale(input.locale),
+    });
     for (const calculation of compiled.calculations) {
       const prepared = yield* Effect.sync(() =>
         prepareInputs({
@@ -318,8 +310,6 @@ export function executeReport(input: {
           projectionOutcomes,
           calculationResults,
           problems,
-          report: input.report,
-          classicSample,
         });
         pages.push(page);
       } else {
@@ -585,8 +575,6 @@ function executeFixedPage(input: {
     ReportCalculationExecutionResult
   >;
   readonly problems: ProblemCollector;
-  readonly report: Report;
-  readonly classicSample?: ClassicSample;
 }): Effect.Effect<PageIntermediate, ReportAuthoringInvalid, never> {
   return Effect.gen(function* () {
     const prepared = yield* Effect.sync(() =>
@@ -606,22 +594,6 @@ function executeFixedPage(input: {
     });
     if (blocked !== undefined) {
       return blocked;
-    }
-
-    if (input.classicSample !== undefined) {
-      const classicSample = input.classicSample;
-      const document = yield* renderClassicPageEffect({
-        report: input.report,
-        pageId: input.descriptor.id,
-        sample: classicSample,
-      });
-      return {
-        kind: "candidate" as const,
-        pageId: input.descriptor.id,
-        route: input.descriptor.route,
-        document,
-        problemIds: prepared.dataProblemIds,
-      };
     }
 
     const context = yield* Effect.sync(() =>
@@ -1261,75 +1233,21 @@ function failedDownload(input: {
 }
 
 function invokeCallback<Value>(input: {
-  readonly callback: () => Value;
+  readonly callback: () => Value | Promise<Value>;
   readonly problems: ProblemCollector;
   readonly problem: Omit<ReportExecutionProblem, "category">;
 }): Effect.Effect<CallbackOutcome<Value>, never, never> {
-  return Effect.sync(input.callback).pipe(
-    Effect.map((value): CallbackOutcome<Value> =>
-      Object.freeze({ state: "succeeded" as const, value })
-    ),
-    // This boundary deliberately converts only author defects. Typed failures
-    // do not exist in synchronous author callbacks, and interruption remains a
-    // Cause rather than a Report problem.
-    Effect.catchAllDefect(() =>
-      Effect.succeed(
-        Object.freeze({
-          state: "failed" as const,
-          problemId: input.problems.execution(input.problem),
-        }),
-      ),
-    ),
-  );
-}
-
-function renderClassicPageEffect(input: {
-  readonly report: Report;
-  readonly pageId: ReportComponentId;
-  readonly sample: ClassicSample;
-}): Effect.Effect<ReportDocument, ReportAuthoringInvalid, never> {
   return Effect.tryPromise({
-    try: async () =>
-      freezeReportDocument(
-        await renderClassicPage({
-          report: input.report,
-          pageId: input.pageId,
-          sample: input.sample,
-        }),
-      ),
-    catch: (cause) =>
-      Object.freeze({
-        code: "report-definition-invalid" as const,
-        issues: Object.freeze([
-          cause instanceof Error ? cause.message : "classic JSX was rejected",
-        ]),
-      }),
-  });
-}
-
-function classicProjectedInputs(
-  compiled: CompiledReport,
-  outcomes: ReadonlyMap<CompiledProjection, ProjectionOutcome>,
-): ClassicProjectedInputs {
-  return Object.freeze({
-    evaluationPlan: projectedValue(compiled, outcomes, "evaluation-plan"),
-    verdict: projectedValue(compiled, outcomes, "verdict"),
-    timing: projectedValue(compiled, outcomes, "timing"),
-    usage: projectedValue(compiled, outcomes, "usage"),
-  });
-}
-
-function projectedValue(
-  compiled: CompiledReport,
-  outcomes: ReadonlyMap<CompiledProjection, ProjectionOutcome>,
-  key: string,
-) {
-  const projection = compiled.projections.find((candidate) => candidate.inputKey === key);
-  if (projection === undefined) {
-    return undefined;
-  }
-  const outcome = outcomes.get(projection);
-  return outcome?.state === "projected" ? outcome.value : undefined;
+    try: async () => await input.callback(),
+    catch: () => input.problems.execution(input.problem),
+  }).pipe(
+    Effect.match({
+      onFailure: (problemId): CallbackOutcome<Value> =>
+        Object.freeze({ state: "failed" as const, problemId }),
+      onSuccess: (value): CallbackOutcome<Value> =>
+        Object.freeze({ state: "succeeded" as const, value }),
+    }),
+  );
 }
 
 function collectInstances(

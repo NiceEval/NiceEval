@@ -341,7 +341,7 @@ const FLAG_OPTIONS = {
   tag: { type: "string" },
   /** 额外写一份 JUnit XML 报告到指定路径,供 CI 消费。 */
   junit: { type: "string" },
-  /** `exp` 运行在 stdout 输出单一有序的 NDJSON 事件流；`exp --dry` 与 `debug` 输出各自的单个 JSON 计划文档。`show` 输出同一 ReportExecution 的宿主数据与状态，不打开第二条取数路径。 */
+  /** `exp` 命令专用:stdout 上单一有序的 NDJSON 事件流；`--dry --json` 输出单个 JSON 计划文档。`show` 命令专用:机器面数据信封，与 `--report` 互斥；`niceeval.report-show/v1` 只给内部 host / static 使用。 */
   json: { type: "boolean" },
   /** `docker profile doctor` 专用：启动受限 DinD 容器并运行内层容器。 */
   smoke: { type: "boolean" },
@@ -2212,6 +2212,9 @@ function parseReportCliRequest(input: {
   const unsupported = reportUnsupportedFlag(input.command, input.flags);
   if (unsupported !== undefined) {
     throw usageError(`niceeval ${input.command} does not accept ${unsupported}.\n`);
+  }
+  if (input.command === "show" && input.flags.json && input.flags.report !== undefined) {
+    throw usageError(t("cli.show.jsonReportConflict", { report: input.flags.report }));
   }
   const runs = input.flags.run ?? [];
 

@@ -3,7 +3,7 @@ import {
   reportText,
   type ReportBlock,
 } from "../semantic/document.ts";
-import type { ClassicSample } from "./sample.ts";
+import type { Sample } from "./sample.ts";
 
 const classicElementTypeId: unique symbol = Symbol("@niceeval/report/classic-element");
 const classicComponentTypeId: unique symbol = Symbol("@niceeval/report/classic-component");
@@ -12,7 +12,7 @@ const REACT_TRANSITIONAL_ELEMENT = Symbol.for("react.transitional.element");
 const REACT_FRAGMENT = Symbol.for("react.fragment");
 
 export interface ClassicComponentContext {
-  readonly scope: ClassicSample;
+  readonly scope: Sample;
 }
 
 export interface ClassicComponent<Props = object> {

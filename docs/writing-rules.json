@@ -14,14 +14,14 @@
   "publicApiExamples": {
     "$why": "公开示例必须与 Assertion-first 双模式作者面及 Report 边界同步。每个入口调用时直接登记一条 Assertion；handle 只配置该 entry，绝不产生第二条。",
     "recordReportBoundary": {
-      "$why": "Record 是可复制的 opaque 目录，不是供应用代码解析或写入的公开 Library。Report 作者只依赖 niceeval/report；持久化选择、reader、writer、迁移注册与 host 执行属于内部实现。",
+      "$why": "Record 目录仍是 opaque 资产。Report 作者从 niceeval/report 写页面，并从 niceeval/record 只导入 Sample 类型缝；持久化选择、reader、writer、迁移注册与 host 执行属于内部实现。",
       "publicAuthorEntry": "niceeval/report",
+      "publicTypeSeam": "niceeval/record Sample",
       "publicObservation": [
         "niceeval show",
         "niceeval view"
       ],
       "internalPackagePaths": [
-        "niceeval/record",
         "niceeval/report/host",
         "niceeval/report/host/node"
       ]

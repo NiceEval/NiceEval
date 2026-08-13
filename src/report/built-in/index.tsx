@@ -28,3 +28,11 @@ export {
   defaultSandboxHistoryReport,
   sandboxHistoryReport,
 } from "./sandbox-history.ts";
+export {
+  standardAttemptPage,
+  standardAttemptsPage,
+  standardAttemptsRender,
+  standardExperimentPage,
+  standardExperimentRender,
+  standardTracesPage,
+} from "./standard.ts";

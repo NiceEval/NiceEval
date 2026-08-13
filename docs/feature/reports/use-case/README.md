@@ -2,7 +2,7 @@
 
 本目录按用户目标说明如何组合 bound analysis selection、`RecordProjection`、Calculation 和页面。类型与字段的唯一出处在 [Library](../library.md)，命令选项的唯一出处在 [CLI](../cli.md)。
 
-多数报告任务走 [classic facade](../library.md#classic-facade)：`defineReport({ title, pages })`、`defineComponent` 与受控 JSX 组件。本目录的叶子用低层 projection API 展示需要自定义投影与计算的路径；低层 API 继续存在，两条路径共享同一个 `ReportExecution`。
+多数报告任务走 [classic facade](../library.md#classic-facade)：`defineReport({ title, pages })`、`render(sample)` 与受控 JSX。本目录的叶子用低层 projection API 展示需要自定义投影与计算的路径；低层 API 继续存在，两条路径共享同一个 `ReportExecution`。
 
 - [比较质量与成本](比较质量与成本.md)：在固定分母上比较多个 Run。
 - [审阅一次 Run 怎样采用结果](审阅一次Run怎样采用结果.md)：从 Run ID 核对 membership provenance，再沿 locator 下钻 immutable Attempt。

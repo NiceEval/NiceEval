@@ -10,9 +10,12 @@ import {
 import {
   definePage,
   defineReport as defineLowLevelReport,
+  isReportPage,
+  isReportPageFamily,
   reportInputs,
   type Report,
   type ReportCalculationSet,
+  type NonEmptyReportDataPlan,
   type ReportDownload,
   type ReportPage,
   type ReportPageFamily,
@@ -32,26 +35,31 @@ import {
   type ReportBlock,
   type ReportDocument,
 } from "../semantic/document.ts";
+import { classicSampleFromProjectedInputs } from "./from-context.ts";
 import { evaluateClassicTree } from "./jsx.ts";
 import { isLocalizedText, resolveLocalizedText, type LocalizedText } from "./localize.ts";
 import { CLASSIC_SELECTION_PROFILE_UNAVAILABLE } from "./origin.ts";
-import type { ClassicSample } from "./sample.ts";
+import type { Sample } from "./sample.ts";
+
+export type ClassicPageRender = (
+  sample: Sample,
+) => unknown | Promise<unknown>;
 
 export interface ClassicReportPageDefinition {
   readonly id: string;
   readonly title: LocalizedText;
-  readonly render: () => unknown;
+  readonly render: ClassicPageRender;
 }
 
 export interface ClassicReportDefinition {
   readonly title: LocalizedText;
-  readonly pages: readonly ClassicReportPageDefinition[];
+  readonly pages: readonly (ClassicReportPageDefinition | ReportPage | ReportPageFamily)[];
 }
 
 export interface ClassicCompiledPage {
   readonly id: ReportComponentId;
   readonly title: LocalizedText;
-  readonly render: () => unknown;
+  readonly render: ClassicPageRender;
 }
 
 export interface ClassicReportContents {
@@ -61,7 +69,7 @@ export interface ClassicReportContents {
 
 const classicContentsByReport = new WeakMap<object, ClassicReportContents>();
 
-const classicDataPlan = reportInputs({
+export const classicDataPlan: NonEmptyReportDataPlan = reportInputs({
   "evaluation-plan": selectedRunProjection(evaluationPlanProjector),
   verdict: attemptSlotProjection(verdictProjector),
   timing: attemptSlotProjection(attemptTimingProjector),
@@ -93,24 +101,28 @@ export function classicReportContents(report: Report): ClassicReportContents | u
   return classicContentsByReport.get(report);
 }
 
-export async function renderClassicPage(input: {
-  readonly report: Report;
-  readonly pageId: ReportComponentId;
-  readonly sample: ClassicSample;
+export function renderClassicDocument(input: {
+  readonly title: LocalizedText;
+  readonly tree: unknown;
+  readonly sample: Sample;
 }): Promise<ReportDocument> {
-  const contents = classicContentsByReport.get(input.report);
-  if (contents === undefined) {
-    throw new TypeError("a classic Report must be created by the classic defineReport overload");
-  }
-  const page = contents.pages.find((candidate) => candidate.id === input.pageId);
-  if (page === undefined) {
-    throw new TypeError("a classic Page is missing from its Report");
-  }
-  const children = await evaluateClassicTree(page.render(), {
+  return renderClassicTree({
+    title: input.title,
+    tree: input.tree,
+    sample: input.sample,
+  });
+}
+
+async function renderClassicTree(input: {
+  readonly title: LocalizedText;
+  readonly tree: unknown;
+  readonly sample: Sample;
+}): Promise<ReportDocument> {
+  const children = await evaluateClassicTree(input.tree, {
     scope: input.sample,
   });
   return reportDocument({
-    title: resolveLocalizedText(contents.title, input.sample.locale),
+    title: resolveLocalizedText(input.title, input.sample.locale),
     presentation: "classic-dashboard",
     metadataOrigin: input.sample.metadataOrigin,
     children: withSelectionNotice(input.sample, children),
@@ -118,7 +130,7 @@ export async function renderClassicPage(input: {
 }
 
 function withSelectionNotice(
-  sample: ClassicSample,
+  sample: Sample,
   children: readonly ReportBlock[],
 ): readonly ReportBlock[] {
   if (sample.metadataOrigin !== "partial") {
@@ -140,9 +152,17 @@ function defineClassicReport(definition: ClassicReportDefinition): Report {
   }
   const seen = new Set<string>();
   const compiledPages: ClassicCompiledPage[] = [];
-  const pages: ReportPage[] = [];
+  const pages: Array<ReportPage | ReportPageFamily> = [];
 
   for (const [index, page] of definition.pages.entries()) {
+    if (isReportPage(page) || isReportPageFamily(page)) {
+      if (seen.has(page.id)) {
+        throw new TypeError("classic Report page IDs must be unique");
+      }
+      seen.add(page.id);
+      pages.push(page);
+      continue;
+    }
     if (!isClassicPageDefinition(page)) {
       throw new TypeError("every classic Report page must declare id, title, and render");
     }
@@ -163,8 +183,16 @@ function defineClassicReport(definition: ClassicReportDefinition): Report {
       route,
       inputs: classicDataPlan,
       completeness: "allow-partial",
-      render: () => {
-        throw new TypeError("a classic Page must be executed by the classic Report host");
+      render: async (context) => {
+        const sample = classicSampleFromProjectedInputs({
+          sample: context.sample,
+          inputs: context.inputs,
+        });
+        return renderClassicTree({
+          title: page.title,
+          tree: await page.render(sample),
+          sample,
+        });
       },
     }));
   }
@@ -185,9 +213,10 @@ function defineClassicReport(definition: ClassicReportDefinition): Report {
 }
 
 function classicReportId(definition: ClassicReportDefinition): string {
-  const first = definition.pages[0];
-  if (first !== undefined && /^[a-z0-9][a-z0-9_-]*$/.test(first.id)) {
-    return first.id;
+  for (const page of definition.pages) {
+    if (isClassicPageDefinition(page) && /^[a-z0-9][a-z0-9_-]*$/.test(page.id)) {
+      return page.id;
+    }
   }
   return "classic";
 }
@@ -208,7 +237,11 @@ export function isClassicReportDefinition(value: unknown): value is ClassicRepor
   if ("id" in value && isReportId(value.id)) {
     return false;
   }
-  return Array.isArray(value.pages) && value.pages.every(isClassicPageDefinition);
+  return Array.isArray(value.pages) && value.pages.every(isClassicOrCompiledPage);
+}
+
+function isClassicOrCompiledPage(value: unknown): boolean {
+  return isClassicPageDefinition(value) || isReportPage(value) || isReportPageFamily(value);
 }
 
 function isClassicPageDefinition(value: unknown): value is ClassicReportPageDefinition {

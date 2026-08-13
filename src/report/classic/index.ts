@@ -1,4 +1,12 @@
-export { aggregate, foldEvalVerdict, meanMetric, passRate, totalAttempts } from "./aggregate.ts";
+export {
+  aggregate,
+  costUSD,
+  experiment,
+  foldEvalVerdict,
+  meanMetric,
+  passRate,
+  totalAttempts,
+} from "./aggregate.ts";
 export type {
   AggregateRow,
   ClassicCalculation,
@@ -12,26 +20,33 @@ export {
   ExperimentTable,
   Hero,
   SampleSummary,
+  Section,
 } from "./components.ts";
 export type {
   ClassicBarsProps,
   ClassicColProps,
+  ClassicHeroLogo,
   ClassicHeroProps,
+  ClassicSectionProps,
 } from "./components.ts";
 
 export {
   defineReport,
   isClassicReport,
   classicReportContents,
-  renderClassicPage,
   isClassicReportDefinition,
+  renderClassicDocument,
 } from "./define.ts";
 export type {
   ClassicCompiledPage,
+  ClassicPageRender,
   ClassicReportContents,
   ClassicReportDefinition,
   ClassicReportPageDefinition,
 } from "./define.ts";
+
+export { bindClassicHost, classicHostBinding } from "./host.ts";
+export type { ClassicHostBinding } from "./host.ts";
 
 export {
   defineComponent,
@@ -81,4 +96,5 @@ export type {
   ClassicRunView,
   ClassicSample,
   ClassicVerdict,
+  Sample,
 } from "./sample.ts";

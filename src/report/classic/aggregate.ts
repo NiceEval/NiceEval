@@ -1,5 +1,5 @@
 import { metricValue, type MetricValue } from "./metric.ts";
-import type { AggregationSubject, ClassicEvalUnit, ClassicSample } from "./sample.ts";
+import type { AggregationSubject, ClassicEvalUnit, Sample } from "./sample.ts";
 
 export type GroupFunction = (subject: AggregationSubject) => string;
 
@@ -8,7 +8,14 @@ export interface ClassicCalculation {
   readonly compute: (units: readonly ClassicEvalUnit[]) => MetricValue;
 }
 
-export type AggregateRow = Readonly<Record<string, string | MetricValue>>;
+export type AggregateRow<
+  Groups extends Readonly<Record<string, GroupFunction>> = Readonly<Record<string, GroupFunction>>,
+  Values extends Readonly<Record<string, ClassicCalculation>> = Readonly<Record<string, ClassicCalculation>>,
+> = {
+  readonly [Key in keyof Groups]: string;
+} & {
+  readonly [Key in keyof Values]: MetricValue;
+};
 
 const RESERVED_VALUE_KEY = "refs";
 
@@ -16,13 +23,16 @@ const RESERVED_VALUE_KEY = "refs";
  * Groups already-projected Eval units, then runs each named Calculation.
  * Grouping is Eval-equal: attempts are never a grouping grain.
  */
-export async function aggregate(
-  sample: ClassicSample,
+export async function aggregate<
+  const Groups extends Readonly<Record<string, GroupFunction>>,
+  const Values extends Readonly<Record<string, ClassicCalculation>>,
+>(
+  sample: Sample,
   spec: {
-    readonly by: Readonly<Record<string, GroupFunction>>;
-    readonly values: Readonly<Record<string, ClassicCalculation>>;
+    readonly by: Groups;
+    readonly values: Values;
   },
-): Promise<readonly AggregateRow[]> {
+): Promise<readonly AggregateRow<Groups, Values>[]> {
   const byEntries = ownFunctions(spec.by, "by");
   const valueEntries = ownCalculations(spec.values, "values");
   const byKeys = new Set(byEntries.map(([key]) => key));
@@ -57,7 +67,7 @@ export async function aggregate(
     }
   }
 
-  const rows: AggregateRow[] = [];
+  const rows: Array<AggregateRow<Groups, Values>> = [];
   for (const group of groups.values()) {
     const row: Record<string, string | MetricValue> = Object.create(null) as Record<
       string,
@@ -69,7 +79,7 @@ export async function aggregate(
     for (const [key, calculation] of valueEntries) {
       row[key] = calculation.compute(group.units);
     }
-    rows.push(Object.freeze(row));
+    rows.push(Object.freeze(row) as AggregateRow<Groups, Values>);
   }
 
   rows.sort((left, right) => compareRows(left, right, byEntries.map(([key]) => key)));
@@ -80,6 +90,15 @@ export async function aggregate(
  * Attempt mean inside one (experimentId, evalId), then equal weight across
  * Eval units. passed=1, failed/errored=0; skipped and missing do not fabricate.
  */
+export const experiment: GroupFunction = (subject) => subject.experimentId;
+Object.defineProperty(experiment, "name", { value: "experiment" });
+
+export const costUSD: ClassicCalculation = Object.freeze({
+  id: "costUSD",
+  compute: (units: readonly ClassicEvalUnit[]): MetricValue =>
+    meanMetric(units, "costUSD", { unit: "USD", better: "lower" }),
+});
+
 export const passRate: ClassicCalculation = Object.freeze({
   id: "passRate",
   compute: (units: readonly ClassicEvalUnit[]): MetricValue => {
@@ -316,8 +335,8 @@ function ownCalculations(
 }
 
 function compareRows(
-  left: AggregateRow,
-  right: AggregateRow,
+  left: Readonly<Record<string, string | MetricValue>>,
+  right: Readonly<Record<string, string | MetricValue>>,
   keys: readonly string[],
 ): number {
   for (const key of keys) {

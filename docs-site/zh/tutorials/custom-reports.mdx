@@ -1,27 +1,28 @@
 ---
 title: "编写自定义报告"
-description: "用 classic facade 的 defineReport 与 defineComponent 声明受控 JSX 报告，从一次固定的 ReportExecution 得到终端、页面与静态站。"
+description: "用 defineReport 与 render(sample) 声明受控 JSX 报告，从一次固定的 ReportExecution 得到终端、页面与静态站。"
 ---
 
-自定义报告用 classic facade 编写：`defineReport({ title, pages })` 声明页面，函数式 `defineComponent` 声明组件，受控 JSX 只允许内置组件与 `defineComponent` 产物。它是 0.12.1 时期 MemoryBench 使用的公开作者面形状，这个身份如实说明，不承诺与旧版本运行结果完全兼容。它不接收 Record 路径，也不在页面 render 时临时查数据。
+自定义报告用 0.12 经典面编写：`defineReport({ title, pages })` 声明页面，`render(sample)` 读取闭合样本并返回受控 JSX。它不接收 Record 路径，也不在页面 render 时临时查数据。`Sample` 类型从 `niceeval/record` 导入。
 
 迁移旧 React 报告时可以继续使用 `jsx: "react-jsx"`。新报告若不想依赖 React runtime，可再设置 `jsxImportSource: "niceeval/report"`，使用 NiceEval 随包的受控 JSX runtime；下面的组件写法无需改变。
 
 ```text
 Record
     ↓ 固定 projection plan（evaluation plan / verdict / usage / timing）
-深冻结 ClassicSample
-    ↓ defineComponent 展开受控 JSX
+深冻结 Sample
+    ↓ page.render(sample) 展开受控 JSX
 immutable ReportExecution
           ↙       ↓       ↘
         show     view    export
 ```
 
-## 声明组件
+## 声明页面
 
-组件读取 `ctx.scope`，即 host 一次投影后形成的深冻结只读样本。用 `aggregate` 分组并计算 `passRate`：
+页面函数接收 host 一次投影后形成的深冻结 `Sample`。用 `aggregate` 分组并计算 `passRate` 与 `costUSD`：
 
 ```tsx
+import type { Sample } from "niceeval/record";
 import {
   Bars,
   Col,
@@ -29,67 +30,56 @@ import {
   ExperimentTable,
   Hero,
   SampleSummary,
+  Section,
   aggregate,
-  defineComponent,
+  costUSD,
   defineReport,
+  experiment,
   passRate,
 } from "niceeval/report";
-import type { AggregationSubject, GroupFunction } from "niceeval/report";
 
-const condition: GroupFunction = (subject) =>
-  String(subject.run.experiment?.labels?.line ?? subject.experimentId);
-
-const memory: GroupFunction = (subject: AggregationSubject) =>
-  String(subject.run.experiment?.flags?.memory ?? "unknown");
-
-const Leaderboard = defineComponent(async (_props, ctx) => {
-  const rows = await aggregate(ctx.scope, {
-    by: { condition, memory },
-    values: { passRate },
+async function overview(sample: Sample) {
+  const rows = await aggregate(sample, {
+    by: { experiment },
+    values: { passRate, costUSD },
   });
 
   return (
-    <Bars
-      points={rows}
-      x="condition"
-      y="passRate"
-      color="memory"
-      layout="horizontal"
-    />
+    <Col>
+      <Hero
+        title="Memory 条件对比"
+        description="对比不同 memory 条件在同一批题目上的通过率。"
+        links={[{
+          label: "项目仓库",
+          href: "https://github.com/example/memorybench",
+        }]}
+      />
+      <SampleSummary />
+      <Section title="排行榜">
+        <Bars
+          points={rows}
+          x="experiment"
+          y="passRate"
+          layout="horizontal"
+        />
+      </Section>
+      <ExperimentScatter input={sample} />
+      <ExperimentTable input={sample} />
+    </Col>
   );
+}
+
+export default defineReport({
+  title: "Memory 条件对比",
+  pages: [{
+    id: "overview",
+    title: "总览",
+    render: overview,
+  }],
 });
 ```
 
 `aggregate` 的 `by` 在 Eval 级分组，不会把同一道题的 attempts 拆开。`passRate` 是严格两级分母：每个 (experiment, eval) 单元先对 attempts 取均值，再把单元值跨 Eval 等权平均；skipped 与 missing 不进入分子，coverage 显式显示缺口。
-
-## 声明页面与报告
-
-页面用 `defineReport` 装配：`render` 返回受控 JSX 树，数据读取都在组件里完成。
-
-```tsx
-export default defineReport({
-  title: "Memory 条件对比",
-  pages: [{
-    id: "report",
-    title: "报告",
-    render: () => (
-      <Col>
-        <Hero
-          description="对比不同 memory 条件在同一批题目上的通过率。"
-          links={[{
-            label: "项目仓库",
-            href: "https://github.com/example/memorybench",
-          }]}
-        />
-        <SampleSummary />
-        <Leaderboard />
-        <ExperimentScatter />
-        <ExperimentTable />
-      </Col>
-    ),
-  }],
-});
-```
 
 受控 JSX 不是 raw React 或 DOM。原生 tag、未包装组件、`head`、script、style、font、worker、WASM 与 raw HTML 都会在装载或校验阶段被拒绝。`Hero` 的外链只接受绝对 https 地址；NiceEval 只把 href 序列化进页面，不代为请求。
 

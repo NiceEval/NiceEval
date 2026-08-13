@@ -1,15 +1,15 @@
 ---
 title: "报告 API"
-description: "classic facade 的 defineReport、defineComponent、受控 JSX 组件与 aggregate/passRate，以及低层 projection API 的公开边界。"
+description: "classic facade 的 defineReport、render(sample)、受控 JSX 组件与 aggregate/passRate/costUSD，以及低层 projection API 的公开边界。"
 ---
 
-Report 作者只从 `niceeval/report` 导入公开入口。classic facade 是默认作者面：`defineReport({ title, pages })` 与函数式 `defineComponent`、受控 JSX。它是 0.12.1 时期 MemoryBench 使用的公开形状（0.12.1-style MemoryBench classic surface），这个身份如实说明，不承诺与旧版本运行结果完全兼容。低层 projection API 继续存在，供自定义投影与计算使用。作者不接收 reader、路径、raw Attachment 或磁盘字段。
+Report 作者从 `niceeval/report` 导入公开入口，并从 `niceeval/record` 导入 `Sample` 类型。classic facade 是默认作者面：`defineReport({ title, pages })` 与 `render(sample)`。MemoryBench 不要求 `defineComponent` 或 `ctx.scope`。低层 projection API 继续存在，供自定义投影与计算使用。作者不接收 reader、路径、raw Attachment 或磁盘字段。
 
 ```text
 Record
     ↓ 固定 projection plan / RecordProjection declarations
-深冻结 ClassicSample / ProjectedSample
-    ↓ defineComponent 受控 JSX / Calculation / Page / PageFamily / Download
+深冻结 Sample / ProjectedSample
+    ↓ page.render(sample) / Calculation / Page / PageFamily / Download
 closed semantic validation
     ↓
 immutable ReportExecution
@@ -20,36 +20,37 @@ immutable ReportExecution
 
 ## Classic facade
 
-### defineReport 与 defineComponent
+### defineReport 与 render(sample)
 
 ```tsx
-import { defineComponent, defineReport } from "niceeval/report";
+import type { Sample } from "niceeval/record";
+import { aggregate, defineReport, experiment, passRate } from "niceeval/report";
 
-const Leaderboard = defineComponent(async (_props, ctx) => {
-  const rows = await aggregate(ctx.scope, {
-    by: { condition, memory },
+async function overview(sample: Sample) {
+  const rows = await aggregate(sample, {
+    by: { experiment },
     values: { passRate },
   });
-  return <Bars points={rows} x="condition" y="passRate" layout="horizontal" />;
-});
+  return <Col><Bars points={rows} x="experiment" y="passRate" layout="horizontal" /></Col>;
+}
 
 export default defineReport({
   title: "Memory 条件对比",
   pages: [{
-    id: "report",
+    id: "overview",
     title: "报告",
-    render: () => <Col><Leaderboard /></Col>,
+    render: overview,
   }],
 });
 ```
 
-`defineComponent` 接受同步或 async 渲染函数。渲染函数读取 `ctx.scope`，即 host 一次投影后构造的深冻结 `ClassicSample`。`defineReport` 的 classic overload 只声明 `title` 与页面列表；页面 `render` 返回受控 JSX 树。
+`defineReport` 的 classic overload 只声明 `title` 与页面列表；页面 `render(sample)` 接收深冻结 `Sample` 并返回受控 JSX 树。
 
 已有 React 报告可以保留 `jsx: "react-jsx"`；NiceEval 接收 React element，但仍只展开受控组件。不想引入 React runtime 时，在报告项目的 `tsconfig.json` 同时设置 `jsx: "react-jsx"` 与 `jsxImportSource: "niceeval/report"`，即可使用 NiceEval 随包 JSX runtime。两条路径生成同一棵 classic element tree。
 
 ### 受控 JSX 边界
 
-组件树只接受内置组件、`defineComponent` 产物与 `Fragment`。子节点可以是数组、string、number 或 null。它拒绝原生 tag、任意未包装组件、`head`、script、style、font、worker、WASM、raw HTML 与自定义 text / web 双面 renderer。
+组件树只接受内置组件与 `Fragment`。子节点可以是数组、string、number 或 null。它拒绝原生 tag、任意未包装组件、`head`、script、style、font、worker、WASM、raw HTML 与自定义 text / web 双面 renderer。
 
 trusted module 本身不是沙箱。NiceEval 只保证组件拿不到 reader、Effect、Record root / path 与 append-I/O capability。
 
@@ -58,11 +59,12 @@ trusted module 本身不是沙箱。NiceEval 只保证组件拿不到 reader、E
 | 组件 | 职责 |
 | --- | --- |
 | `Col` | 纵向布局容器，按声明顺序排列子块。 |
-| `Hero` | 页首摘要块；链接只接受绝对 https，NiceEval 只序列化 href，不 fetch。 |
+| `Section` | 带标题的块。 |
+| `Hero` | 页首摘要块；可写 `title` 与 `logo`。链接只接受绝对 https，NiceEval 只序列化 href，不 fetch。 |
 | `SampleSummary` | 当前 Sample 概况：实验、Eval、attempt 与 coverage。 |
 | `Bars` | 柱状图；`layout="horizontal"` 呈现横向柱状图。 |
-| `ExperimentScatter` | 按 Experiment 的散点。 |
-| `ExperimentTable` | 实验级读数表。 |
+| `ExperimentScatter` | 按 Experiment 的散点；传入 `input={sample}`。 |
+| `ExperimentTable` | 实验级读数表；传入 `input={sample}`。 |
 
 ### aggregate 与 passRate
 
@@ -79,11 +81,11 @@ type AggregationSubject = {
 type GroupFunction = (subject: AggregationSubject) => string;
 ```
 
-`aggregate(ctx.scope, { by, values })` 在 Eval 级分组，返回带稳定身份的 `rows`。`passRate` 是严格两级分母：每个 (experiment, eval) 单元先对 attempts 取均值，passed = 1、failed / errored = 0；再把单元值跨 Eval 等权平均。skipped / missing 不进入分子，也不伪造值；coverage 显式显示缺口，缺失 cost / timing 不补 0。
+`aggregate(sample, { by, values })` 在 Eval 级分组，返回带稳定身份的 `rows`。`experiment` 按 experimentId 分组。`passRate` 与 `costUSD` 使用严格两级分母：每个 (experiment, eval) 单元先对 attempts 取均值，passed = 1、failed / errored = 0；再把单元值跨 Eval 等权平均。skipped / missing 不进入分子，也不伪造值；coverage 显式显示缺口，缺失 cost / timing 不补 0。
 
 ### metadata 来源
 
-`ClassicSample` 的 metadata 标注来源，不读取当前项目声明填充历史数据。`project-current` 使用完整 current-declaration profile，并显示 `metadataOrigin: "current-declaration"`。`--run` 的 explicit-runs 在 Record 没有 durable profile 时，metadata 是 unknown / partial，experiment id 回退为 id / unknown，并给出一条结构化 notice。
+`Sample` 的 metadata 标注来源，不读取当前项目声明填充历史数据。`project-current` 使用完整 current-declaration profile，并显示 `metadataOrigin: "current-declaration"`。`--run` 的 explicit-runs 在 Record 没有 durable profile 时，metadata 是 unknown / partial，experiment id 回退为 id / unknown，并给出一条结构化 notice。
 
 ## 低层 projection API
 

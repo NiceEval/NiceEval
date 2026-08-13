@@ -63,16 +63,15 @@ niceeval show @91ddc61b-ae96-4a23-8578-ddc1b83306dc
 niceeval show --json
 ```
 
-`show` 构造一次 `ReportExecution`，再从 closed semantic report tree 渲染 terminal text。`--json` 输出 exact `niceeval.report-show/v1`：
+`show` 构造一次 `ReportExecution`，再从 closed semantic report tree 渲染 terminal text。
 
-- sample 摘要与每个 projection input 的 coverage；
-- Calculation results、family summaries、页面与 bounded problem table；
-- Download 的 path / mediaType / byteLength / SHA-256 metadata。
+公开 `show --report` 与 `show --json` 互斥：报告树表达「怎么看」，`--json` 表达「是什么」。两者同时出现时，命令在任何 Record I/O 或报告装载之前以 i18n 用法错误退出。
 
-它不创建第二条 projection 或计算路径，不输出 Download raw bytes。classic facade 与低层 API 的页面都来自同一个 `ReportExecution`；terminal JSON 与 live view 消费同一份 execution。
-Host 只显示每个 input 的 complete/partial 与 problem IDs，不替作者公式猜 observed/denominator。通过率等业务统计只有在 Calculation value 自己提供时才显示。unavailable、unsupported、invalid 与 execution-failed 必须保留状态及 problem reference，不能替换成零、空字符串或省略行。
+`--json` 单独使用时输出内建切片的数据信封，不是 classic 报告树。`niceeval.report-show/v1` 只给内部 host 与 static export 使用，不再是 classic owner。
 
-没有 `--page` 时 JSON 按 route 输出全部 pages；有 `--page` 时只输出 exact 选中页，但 sample / projection coverage、calculations、families、download metadata 与 problems 仍保留。arrays 与 keys 使用 canonical order，stdout 为 UTF-8 canonical JSON。Broken pipe 是正常 CLI 退出，其它 console failure 是 typed error，interruption 保持 Cause。
+`--report` 的 text 面与 live view、static export 消费同一份 `ReportExecution`。Host 只显示每个 input 的 complete/partial 与 problem IDs，不替作者公式猜 observed/denominator。通过率等业务统计只有在 Calculation value 自己提供时才显示。unavailable、unsupported、invalid 与 execution-failed 必须保留状态及 problem reference，不能替换成零、空字符串或省略行。
+
+Broken pipe 是正常 CLI 退出，其它 console failure 是 typed error，interruption 保持 Cause。
 
 `show` 完成后退出，不 watch。
 

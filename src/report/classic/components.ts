@@ -3,7 +3,6 @@ import {
   meanMetric,
   passRate,
   totalAttempts,
-  type AggregateRow,
 } from "./aggregate.ts";
 import {
   coverageFromMetric,
@@ -13,14 +12,15 @@ import {
   formatRunRange,
   formatUsd,
 } from "./format.ts";
-import { defineComponent, Fragment, jsx } from "./jsx.ts";
+import { defineComponent, evaluateClassicTree, Fragment, jsx } from "./jsx.ts";
 import { resolveLocalizedText, type LocalizedText } from "./localize.ts";
-import { isMetricValue, metricNumeric } from "./metric.ts";
-import type { ClassicEvalUnit, ClassicSample } from "./sample.ts";
+import { isMetricValue, metricNumeric, type MetricValue } from "./metric.ts";
+import type { ClassicEvalUnit, Sample } from "./sample.ts";
 import {
   reportHero,
   reportRankedBars,
   reportScatter,
+  reportSection,
   reportSummary,
   reportTreeTable,
   type ReportBlock,
@@ -28,7 +28,14 @@ import {
   type ReportLinkTarget,
 } from "../semantic/document.ts";
 
+export interface ClassicHeroLogo {
+  readonly src: string;
+  readonly alt: LocalizedText;
+}
+
 export interface ClassicHeroProps {
+  readonly title?: LocalizedText;
+  readonly logo?: ClassicHeroLogo;
   readonly description?: LocalizedText;
   readonly links?: readonly {
     readonly label: LocalizedText;
@@ -36,8 +43,16 @@ export interface ClassicHeroProps {
   }[];
 }
 
+export interface ClassicSectionProps {
+  readonly title: LocalizedText;
+  readonly meta?: LocalizedText;
+  readonly children?: unknown;
+}
+
+export type ClassicAggregatePoint = Readonly<Record<string, string | MetricValue>>;
+
 export interface ClassicBarsProps {
-  readonly points: readonly AggregateRow[];
+  readonly points: readonly ClassicAggregatePoint[];
   readonly x: string;
   readonly y: string;
   readonly color?: string;
@@ -69,7 +84,18 @@ export const Hero = defineComponent<ClassicHeroProps>((props, ctx) => {
       target: Object.freeze({ kind: "external" as const, href: link.href }),
     });
   });
+  const title = props.title === undefined
+    ? undefined
+    : resolveLocalizedText(props.title, ctx.scope.locale);
+  const logo = props.logo === undefined
+    ? undefined
+    : Object.freeze({
+      src: requireLogoSrc(props.logo.src),
+      alt: resolveLocalizedText(props.logo.alt, ctx.scope.locale),
+    });
   return reportHero({
+    ...(title === undefined ? {} : { title }),
+    ...(logo === undefined ? {} : { logo }),
     description: props.description === undefined
       ? ""
       : resolveLocalizedText(props.description, ctx.scope.locale),
@@ -78,8 +104,17 @@ export const Hero = defineComponent<ClassicHeroProps>((props, ctx) => {
 });
 Hero.displayName = "Hero";
 
-export const SampleSummary = defineComponent((_props, ctx): ReportBlock => {
-  const { scope } = ctx;
+export const Section = defineComponent<ClassicSectionProps>(async (props, ctx) => {
+  const children = await evaluateClassicTree(props.children, ctx);
+  return reportSection({
+    heading: resolveLocalizedText(props.title, ctx.scope.locale),
+    children,
+  });
+});
+Section.displayName = "Section";
+
+export const SampleSummary = defineComponent<{ readonly input?: Sample }>((props, ctx): ReportBlock => {
+  const scope = props.input ?? ctx.scope;
   const experiments = new Set(scope.units.map((unit) => unit.experimentId));
   const scoredAttempts = scope.attempts.filter((attempt) =>
     attempt.verdict === "passed" || attempt.verdict === "failed" || attempt.verdict === "errored"
@@ -192,16 +227,21 @@ export const Bars = defineComponent<ClassicBarsProps>((props, ctx): ReportBlock 
 });
 Bars.displayName = "Bars";
 
-export const ExperimentScatter = defineComponent((_props, ctx): ReportBlock => {
-  const points = experimentPoints(ctx.scope);
+export interface ClassicScatterProps {
+  readonly input?: Sample;
+}
+
+export const ExperimentScatter = defineComponent<ClassicScatterProps>((props, ctx): ReportBlock => {
+  const scope = props.input ?? ctx.scope;
+  const points = experimentPoints(scope);
   return reportScatter({
-    title: localize(ctx.scope, { en: "Experiments", "zh-CN": "实验" }),
-    xLabel: localize(ctx.scope, { en: "Cost", "zh-CN": "成本" }),
-    yLabel: localize(ctx.scope, { en: "Pass rate", "zh-CN": "通过率" }),
-    connect: false,
+    title: localize(scope, { en: "Experiments", "zh-CN": "实验" }),
+    xLabel: localize(scope, { en: "Cost", "zh-CN": "成本" }),
+    yLabel: localize(scope, { en: "Pass rate", "zh-CN": "通过率" }),
+    connect: true,
     series: [
       Object.freeze({
-        label: localize(ctx.scope, { en: "Experiments", "zh-CN": "实验" }),
+        label: localize(scope, { en: "Experiments", "zh-CN": "实验" }),
         points: points.map((point) =>
           Object.freeze({
             key: point.experimentId,
@@ -217,47 +257,66 @@ export const ExperimentScatter = defineComponent((_props, ctx): ReportBlock => {
 });
 ExperimentScatter.displayName = "ExperimentScatter";
 
-export const ExperimentTable = defineComponent((_props, ctx): ReportBlock => {
+export interface ClassicTableProps {
+  readonly input?: Sample;
+}
+
+export const ExperimentTable = defineComponent<ClassicTableProps>((props, ctx): ReportBlock => {
+  const scope = props.input ?? ctx.scope;
   return reportTreeTable({
-    caption: localize(ctx.scope, { en: "Experiments", "zh-CN": "实验" }),
+    caption: localize(scope, { en: "Experiments", "zh-CN": "实验" }),
     columns: [
       Object.freeze({
         key: "model",
-        label: localize(ctx.scope, { en: "Model", "zh-CN": "模型" }),
+        label: localize(scope, { en: "Model", "zh-CN": "模型" }),
       }),
       Object.freeze({
         key: "agent",
-        label: localize(ctx.scope, { en: "Agent", "zh-CN": "Agent" }),
+        label: localize(scope, { en: "Agent", "zh-CN": "Agent" }),
       }),
       Object.freeze({
         key: "avgTime",
-        label: localize(ctx.scope, { en: "Avg time", "zh-CN": "平均耗时" }),
+        label: localize(scope, { en: "Avg time", "zh-CN": "平均耗时" }),
         align: "end" as const,
       }),
       Object.freeze({
         key: "passRate",
-        label: localize(ctx.scope, { en: "Pass rate", "zh-CN": "通过率" }),
+        label: localize(scope, { en: "Pass rate", "zh-CN": "通过率" }),
         align: "end" as const,
       }),
       Object.freeze({
         key: "tokens",
-        label: localize(ctx.scope, { en: "Tokens", "zh-CN": "Tokens" }),
+        label: localize(scope, { en: "Tokens", "zh-CN": "Tokens" }),
         align: "end" as const,
       }),
       Object.freeze({
         key: "cost",
-        label: localize(ctx.scope, { en: "Cost", "zh-CN": "成本" }),
+        label: localize(scope, { en: "Cost", "zh-CN": "成本" }),
         align: "end" as const,
       }),
       Object.freeze({
         key: "record",
-        label: localize(ctx.scope, { en: "Record", "zh-CN": "记录" }),
+        label: localize(scope, { en: "Record", "zh-CN": "记录" }),
       }),
     ],
-    rows: experimentTableRows(ctx.scope),
+    rows: experimentTableRows(scope),
   });
 });
 ExperimentTable.displayName = "ExperimentTable";
+
+function requireLogoSrc(src: string): string {
+  if (!isAllowedLogoSrc(src)) {
+    throw new TypeError("Hero logo src must be an absolute https URL or a data:image payload");
+  }
+  return src;
+}
+
+function isAllowedLogoSrc(src: string): boolean {
+  if (/^data:image\/[a-z0-9.+-]+[;,]/i.test(src)) {
+    return true;
+  }
+  return isAbsoluteHttps(src);
+}
 
 function isAbsoluteHttps(href: string): boolean {
   try {
@@ -269,9 +328,9 @@ function isAbsoluteHttps(href: string): boolean {
 }
 
 function sortPoints(
-  points: readonly AggregateRow[],
+  points: readonly ClassicAggregatePoint[],
   sort: ClassicBarsProps["sort"],
-): readonly AggregateRow[] {
+): readonly ClassicAggregatePoint[] {
   if (sort === undefined) {
     return Object.freeze([...points]);
   }
@@ -298,7 +357,7 @@ function sortPoints(
 }
 
 function firstMetricBetter(
-  points: readonly AggregateRow[],
+  points: readonly ClassicAggregatePoint[],
   field: string,
 ): "higher" | "lower" | undefined {
   for (const point of points) {
@@ -310,12 +369,12 @@ function firstMetricBetter(
   return undefined;
 }
 
-function stringField(row: AggregateRow, key: string): string {
+function stringField(row: ClassicAggregatePoint, key: string): string {
   const value = row[key];
   return typeof value === "string" ? value : "";
 }
 
-function experimentPoints(sample: ClassicSample): readonly {
+function experimentPoints(sample: Sample): readonly {
   readonly experimentId: string;
   readonly passRate: ReturnType<typeof passRate.compute>;
   readonly costUSD: ReturnType<typeof totalAttempts>;
@@ -331,7 +390,7 @@ function experimentPoints(sample: ClassicSample): readonly {
   );
 }
 
-function experimentTableRows(sample: ClassicSample): ReportTreeTableRows {
+function experimentTableRows(sample: Sample): ReportTreeTableRows {
   const rows: ReportTreeTableRows[number][] = [];
   for (const [experimentId, units] of groupUnitsByExperiment(sample)) {
     const profile = sample.profiles[experimentId] ?? units[0]?.subject.run.experiment;
@@ -403,7 +462,7 @@ function groupCells(
   });
 }
 
-function attemptPassRate(verdict: ClassicSample["attempts"][number]["verdict"]): ReportDisplayValue {
+function attemptPassRate(verdict: Sample["attempts"][number]["verdict"]): ReportDisplayValue {
   if (verdict === "passed") {
     return Object.freeze({
       value: 1,
@@ -473,7 +532,7 @@ function attemptTarget(locator: string): Extract<ReportLinkTarget, { readonly ki
 }
 
 function groupUnitsByExperiment(
-  sample: ClassicSample,
+  sample: Sample,
 ): readonly (readonly [string, readonly ClassicEvalUnit[]])[] {
   const groups = new Map<string, ClassicEvalUnit[]>();
   for (const unit of sample.units) {
@@ -489,7 +548,7 @@ function groupUnitsByExperiment(
   );
 }
 
-function experimentLabel(sample: ClassicSample, experimentId: string): string {
+function experimentLabel(sample: Sample, experimentId: string): string {
   const profile = sample.profiles[experimentId];
   const line = profile?.labels?.line;
   if (typeof line === "string" && line.length > 0) {
@@ -502,7 +561,7 @@ function experimentLabel(sample: ClassicSample, experimentId: string): string {
   return experimentId.split("/").pop() || experimentId;
 }
 
-function localize(sample: ClassicSample, value: LocalizedText): string {
+function localize(sample: Sample, value: LocalizedText): string {
   return resolveLocalizedText(value, sample.locale);
 }
 

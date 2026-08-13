@@ -367,10 +367,22 @@ function renderClassicBlockText(block: ReportBlock, width: number): string[] {
   switch (block.type) {
     case "hero":
       return [
+        ...(block.title === undefined ? [] : wrapTerminal(visibleText(block.title), width)),
         ...wrapTerminal(visibleText(block.description), width),
         ...block.links.flatMap((link) =>
-          wrapTerminal(`${visibleText(link.label)}: ${linkTargetText(link.target)}`, width)
+          wrapTerminal(
+            `${visibleText(link.label)} (${linkTargetText(link.target)})`,
+            width,
+          )
         ),
+      ];
+    case "section":
+      return [
+        ...wrapTerminal(visibleText(block.heading), width),
+        ...block.children.flatMap((child) => {
+          const rendered = renderClassicBlockText(child, width);
+          return rendered.length === 0 ? [] : ["", ...rendered];
+        }),
       ];
     case "summary":
       return renderSummaryText(block, width);

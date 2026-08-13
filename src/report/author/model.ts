@@ -53,7 +53,7 @@ export type ReportDataPlan<Shape extends object = object> = DataPlan<
 >;
 
 type EmptyReportDataPlan = DataPlan<object, "empty">;
-type NonEmptyReportDataPlan = DataPlan<object, "non-empty">;
+export type NonEmptyReportDataPlan = DataPlan<object, "non-empty">;
 
 export type ReportDataShape<Plan extends ReportDataPlan> =
   Plan extends DataPlan<infer Shape, DataPlanCardinality> ? Shape : never;
@@ -320,7 +320,7 @@ export function definePage<Calculations extends object = {}>(definition: {
   readonly calculations?: Calculations & CalculationSetCheck<Calculations>;
   readonly render: (
     context: ReportComponentContext<undefined, Calculations>,
-  ) => ReportDocument;
+  ) => ReportDocument | Promise<ReportDocument>;
 }): ReportPage;
 export function definePage<
   Inputs extends NonEmptyReportDataPlan,
@@ -333,7 +333,7 @@ export function definePage<
   readonly calculations?: Calculations & CalculationSetCheck<Calculations>;
   readonly render: (
     context: ReportComponentContext<Inputs, Calculations>,
-  ) => ReportDocument;
+  ) => ReportDocument | Promise<ReportDocument>;
 }): ReportPage;
 export function definePage(definition: unknown): ReportPage {
   const fields = fieldsOnly(
@@ -761,11 +761,11 @@ function requireDownload(value: unknown): ReportDownload {
   return value as ReportDownload;
 }
 
-function isReportPage(value: unknown): value is ReportPage {
+export function isReportPage(value: unknown): value is ReportPage {
   return typeof value === "object" && value !== null && pageContentsByPage.has(value);
 }
 
-function isReportPageFamily(value: unknown): value is ReportPageFamily {
+export function isReportPageFamily(value: unknown): value is ReportPageFamily {
   return typeof value === "object" && value !== null && familyContentsByFamily.has(value);
 }
 

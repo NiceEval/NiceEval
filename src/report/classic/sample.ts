@@ -55,10 +55,11 @@ export interface ClassicEvalUnit {
 }
 
 /**
- * A deep-frozen, callback-free projection of the four official classic
- * attachments. Author callbacks receive this value as `ctx.scope`.
+ * Closed, callback-free Sample for classic `render(sample)`.
+ * Host builds it from the declared classic projection plan before any page
+ * callback runs. It has no reader, path, or Record I/O capability.
  */
-export interface ClassicSample {
+export interface Sample {
   readonly metadataOrigin: ClassicMetadataOrigin;
   readonly locale: ClassicLocale;
   readonly runCount: number;
@@ -69,6 +70,9 @@ export interface ClassicSample {
   readonly units: readonly ClassicEvalUnit[];
   readonly attempts: readonly ClassicAttemptRow[];
 }
+
+/** @internal Implementation name. Public author type is `Sample`. */
+export type ClassicSample = Sample;
 
 export function classicAttemptTarget(attemptId: AttemptId): ClassicAttemptTarget {
   return Object.freeze({

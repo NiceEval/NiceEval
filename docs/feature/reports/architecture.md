@@ -20,7 +20,7 @@ AnalysisSampleHandle
           ▼
 ProjectedSample（exhaustive logical entries + coverage + Attachment states）
           │
-          ├─ 深冻结 ClassicSample + defineComponent 展开受控 JSX
+          ├─ 深冻结 Sample + page.render(sample) 展开受控 JSX
           ├─ Calculation（跨 owner 派生）
           ├─ Page / PageFamily / Download（包装结果）
           ▼
@@ -32,7 +32,7 @@ ReportExecution（host-owned、immutable、self-contained）
           └─ static export
 ```
 
-classic facade 与低层 projection API 是同一个管线的两个作者入口。facade 声明固定 projection plan，host 只投影一次，构造深冻结 `ClassicSample`，再展开受控 JSX；展开结果与低层页面的输出汇入同一个 closed semantic validation 与 `ReportExecution`。不存在第二套数据面或渲染面。
+classic facade 与低层 projection API 是同一个管线的两个作者入口。facade 声明固定 projection plan，host 只投影一次，构造深冻结 `Sample`，再经同一条 fixed-page callback 调用 `page.render(sample)`；展开结果与低层页面的输出汇入同一个 closed semantic validation 与 `ReportExecution`。`classic-dashboard` 只是 presentation profile。不存在第二套数据面或渲染面。
 
 这条链包含三种不同派生：
 
@@ -110,13 +110,13 @@ Host 在作者 callback 之前汇总 recorded-data problems，并在 callback �
 
 ## Classic facade 数据面
 
-facade 的固定 projection plan 声明 evaluation plan、verdict、usage 与 timing 四条官方投影。host 对 Sample 投影一次，构造深冻结 `ClassicSample`，再展开 `defineComponent` 的受控 JSX 树。
+facade 的固定 projection plan 声明 evaluation plan、verdict、usage 与 timing 四条官方投影。host 对 Sample 投影一次，构造深冻结 `Sample`，再调用 `page.render(sample)` 展开受控 JSX 树。
 
-展开结果是树而不是数据访问：组件读取 `ctx.scope` 的时间在 projection 之后，I/O 已经闭合。`aggregate` 从 `ClassicSample` 的已投影值分组，不再请求新的 Attachment。组件树与低层页面的输出进入同一个 closed validation，形成同一个 `ReportExecution`；terminal JSON、live view 与 static export 消费同一份 execution。
+展开结果是树而不是数据访问：`render(sample)` 的时间在 projection 之后，I/O 已经闭合。`aggregate` 从这份已投影值分组，不再请求新的 Attachment。组件树与低层页面的输出进入同一个 closed validation，形成同一个 `ReportExecution`；show 文本、live view 与 static export 消费同一份 execution。公开 `show --json` 与 `--report` 互斥；`niceeval.report-show/v1` 只给内部 host / static 使用。
 
 ### selection-origin
 
-`ClassicSample` 的 metadata 携带 `metadataOrigin` 标注出处，host 不读取当前项目声明来填充历史数据：
+`Sample` 的 metadata 携带 `metadataOrigin` 标注出处，host 不读取当前项目声明来填充历史数据：
 
 - project-current 使用完整 current-declaration profile，metadata 完整并显示 `metadataOrigin: "current-declaration"`；
 - explicit-runs（`--run`）在 Record 没有 durable profile 时，metadata 是 unknown / partial，experiment id 回退为 id / unknown，并给出一条结构化 notice；
@@ -212,7 +212,7 @@ Recorded-data problems 可导出；任一 execution problem 整体不发布。�
 - data problem、execution problem、typed failure、defect 与 interruption 不互相冒充。
 - 作者只声明数据与包装结果，不理解 host 编译机械。
 - classic facade 与低层 API 汇入同一个 closed validation 与 `ReportExecution`；不存在第二套数据或渲染真相。
-- `ClassicSample` 深冻结且 metadata 携带 `metadataOrigin` 标注出处；history 数据不与当前项目字段混合。
+- `Sample` 深冻结且 metadata 携带 `metadataOrigin` 标注出处；history 数据不与当前项目字段混合。
 - Hero 外链只接受绝对 https，host 只序列化不 fetch；缺失 cost / timing 不补 0。
 - 每个 ReportExecution immutable，所有 declaration / consumer 最多执行一次。
 - 热重载发布新 revision，不修改旧 execution。

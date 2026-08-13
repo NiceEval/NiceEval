@@ -25,9 +25,12 @@ export {
   ExperimentTable,
   Hero,
   SampleSummary,
+  Section,
   aggregate,
+  costUSD,
   defineComponent,
   defineReport,
+  experiment,
   passRate,
   Fragment,
   jsx,
@@ -37,6 +40,8 @@ export type {
   AggregationSubject,
   ClassicComponent,
   ClassicComponentContext,
+  ClassicHeroLogo,
+  ClassicHeroProps,
   ClassicLocale,
   ClassicReportDefinition,
   ClassicReportPageDefinition,
@@ -45,6 +50,7 @@ export type {
   GroupFunction,
   LocalizedText,
   MetricValue,
+  Sample,
 } from "./classic/index.ts";
 
 export type {

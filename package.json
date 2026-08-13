@@ -126,6 +126,16 @@
         "default": "./dist/projection/index.cjs"
       }
     },
+    "./record": {
+      "import": {
+        "types": "./dist/record/public.d.mts",
+        "default": "./dist/record/public.mjs"
+      },
+      "require": {
+        "types": "./dist/record/public.d.cts",
+        "default": "./dist/record/public.cjs"
+      }
+    },
     "./report": {
       "import": {
         "types": "./dist/report/index.d.mts",

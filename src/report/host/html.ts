@@ -135,10 +135,16 @@ function renderHero(
   block: Extract<ReportBlock, { readonly type: "hero" }>,
   route: ReportRoute,
 ): string {
+  const logo = block.logo === undefined
+    ? ""
+    : `<img class="niceeval-report__hero-logo" src="${escapeHtml(block.logo.src)}" alt="${escapeHtml(block.logo.alt)}" />`;
+  const title = block.title === undefined
+    ? ""
+    : `<h1 class="niceeval-report__hero-title">${escapeHtml(block.title)}</h1>`;
   const links = block.links.length === 0
     ? ""
     : `<nav class="niceeval-report__hero-links" aria-label="Report links"><ul>${block.links.map((link) => `<li><a ${reportLinkAttributes(route, link.target)}>${escapeHtml(link.label)}</a></li>`).join("")}</ul></nav>`;
-  return `<section class="niceeval-report__hero"><p>${escapeHtml(block.description)}</p>${links}</section>`;
+  return `<section class="niceeval-report__hero">${logo}${title}<p>${escapeHtml(block.description)}</p>${links}</section>`;
 }
 
 function renderSummary(block: Extract<ReportBlock, { readonly type: "summary" }>): string {
@@ -686,6 +692,20 @@ body {
   padding: clamp(1.25rem, 3vw, 2rem);
   border: 1px solid var(--niceeval-color-border-strong, #343434);
   background: var(--niceeval-color-surface-subtle, #111111);
+}
+
+.niceeval-report__hero-logo {
+  display: block;
+  width: 3rem;
+  height: 3rem;
+  margin-bottom: 1rem;
+  object-fit: contain;
+}
+
+.niceeval-report__hero-title {
+  margin: 0 0 0.75rem;
+  font-size: clamp(1.35rem, 3vw, 2rem);
+  font-weight: 650;
 }
 
 .niceeval-report__hero > p {

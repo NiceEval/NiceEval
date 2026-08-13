@@ -94,7 +94,7 @@ export interface ReportPageDescriptor extends ReportComponentReferences {
   readonly kind: "page";
   readonly id: ReportComponentId;
   readonly route: ReportRoute;
-  readonly render: (context: ReportHostContext) => ReportDocument;
+  readonly render: (context: ReportHostContext) => ReportDocument | Promise<ReportDocument>;
 }
 
 export interface ReportPageFamilyDescriptor extends ReportComponentReferences {
@@ -103,7 +103,9 @@ export interface ReportPageFamilyDescriptor extends ReportComponentReferences {
   readonly instances: (context: ReportHostContext) => Iterable<unknown>;
   readonly key: (instance: unknown) => ReportInstanceKey;
   readonly route: (instance: unknown) => ReportRoute;
-  readonly render: (context: ReportHostContext & { readonly instance: unknown }) => ReportDocument;
+  readonly render: (
+    context: ReportHostContext & { readonly instance: unknown },
+  ) => ReportDocument | Promise<ReportDocument>;
 }
 
 export interface ReportDownloadDescriptor extends ReportComponentReferences {
@@ -200,8 +202,8 @@ function pageDescriptor(
     id: page.id,
     route: page.route,
     ...componentReferences(contents),
-    render: (context: ReportHostContext): ReportDocument =>
-      invoke(contents.render, context) as ReportDocument,
+    render: (context: ReportHostContext): ReportDocument | Promise<ReportDocument> =>
+      invoke(contents.render, context) as ReportDocument | Promise<ReportDocument>,
   });
 }
 
@@ -219,8 +221,10 @@ function pageFamilyDescriptor(
       invoke(contents.key, instance) as ReportInstanceKey,
     route: (instance: unknown): ReportRoute =>
       invoke(contents.route, instance) as ReportRoute,
-    render: (context: ReportHostContext & { readonly instance: unknown }): ReportDocument =>
-      invoke(contents.render, context) as ReportDocument,
+    render: (
+      context: ReportHostContext & { readonly instance: unknown },
+    ): ReportDocument | Promise<ReportDocument> =>
+      invoke(contents.render, context) as ReportDocument | Promise<ReportDocument>,
   });
 }
 

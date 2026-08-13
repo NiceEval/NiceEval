@@ -127,6 +127,11 @@ export interface ReportChart {
 /** A declarative dashboard introduction. Its links are deliberately external-only. */
 export interface ReportHero {
   readonly type: "hero";
+  readonly title?: string;
+  readonly logo?: {
+    readonly src: string;
+    readonly alt: string;
+  };
   readonly description: string;
   readonly links: readonly {
     readonly label: string;
@@ -384,11 +389,15 @@ export function reportChart(input: {
 }
 
 export function reportHero(input: {
+  readonly title?: string;
+  readonly logo?: ReportHero["logo"];
   readonly description: string;
   readonly links: readonly ReportHero["links"][number][];
 }): ReportHero {
   return Object.freeze({
     type: "hero" as const,
+    ...(input.title === undefined ? {} : { title: input.title }),
+    ...(input.logo === undefined ? {} : { logo: Object.freeze({ src: input.logo.src, alt: input.logo.alt }) }),
     description: input.description,
     links: Object.freeze(input.links.map((link) => Object.freeze({
       label: link.label,
@@ -775,7 +784,13 @@ function validateHero(
   state: ValidationState,
   path: readonly (string | number)[],
 ): void {
-  exactFields(record, ["type", "description", "links"], state, path);
+  exactFields(record, ["type", "title", "logo", "description", "links"], state, path, ["title", "logo"]);
+  if (hasField(record, "title")) {
+    validateString(field(record, "title"), state, pathFor(path, "title"));
+  }
+  if (hasField(record, "logo")) {
+    validateHeroLogo(field(record, "logo"), state, pathFor(path, "logo"));
+  }
   validateString(field(record, "description"), state, pathFor(path, "description"));
   forEachArray(field(record, "links"), state, pathFor(path, "links"), (link, index) => {
     const linkPath = pathFor(pathFor(path, "links"), index);
@@ -785,6 +800,37 @@ function validateHero(
     validateString(field(linkRecord, "label"), state, pathFor(linkPath, "label"));
     validateExternalTarget(field(linkRecord, "target"), state, pathFor(linkPath, "target"));
   });
+}
+
+function validateHeroLogo(
+  value: unknown,
+  state: ValidationState,
+  path: readonly (string | number)[],
+): void {
+  const record = plainRecord(value, state, path);
+  if (record === undefined) {
+    return;
+  }
+  exactFields(record, ["src", "alt"], state, path);
+  const src = field(record, "src");
+  if (typeof src !== "string" || !isAllowedHeroLogoSrc(src)) {
+    issue(state, "shape", pathFor(path, "src"), "hero logo src must be an absolute https URL or a data:image payload");
+    return;
+  }
+  validateString(src, state, pathFor(path, "src"));
+  validateString(field(record, "alt"), state, pathFor(path, "alt"));
+}
+
+function isAllowedHeroLogoSrc(src: string): boolean {
+  if (/^data:image\/[a-z0-9.+-]+[;,]/i.test(src)) {
+    return true;
+  }
+  try {
+    const url = new URL(src);
+    return url.protocol === "https:" && url.hostname.length > 0;
+  } catch {
+    return false;
+  }
 }
 
 function validateSummary(
@@ -1519,7 +1565,12 @@ function cloneBlock(block: ReportBlock): ReportBlock {
         ),
       });
     case "hero":
-      return reportHero({ description: block.description, links: block.links });
+      return reportHero({
+        ...(block.title === undefined ? {} : { title: block.title }),
+        ...(block.logo === undefined ? {} : { logo: block.logo }),
+        description: block.description,
+        links: block.links,
+      });
     case "summary":
       return reportSummary({ lastRunAt: block.lastRunAt, metrics: block.metrics });
     case "ranked-bars":

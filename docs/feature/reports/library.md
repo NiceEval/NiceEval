@@ -26,9 +26,10 @@ Report 作者只理解两件事：需要哪些 `RecordProjection`，以及怎样
 
 ## Classic facade
 
-`niceeval/report` 的公开作者面是 classic facade，即 0.12.1 时期 MemoryBench 消费的形状。这个名字是诚实身份，不承诺完整旧 runtime 兼容；需要自定义投影或计算的作者继续使用下文低层 projection API。两条路径共享同一个 `ReportExecution`。
+`niceeval/report` 的公开作者面是 0.12 经典面。MemoryBench 的 classic.tsx 使用 `render(sample)`，不要求 `defineComponent` 或 `ctx.scope`。需要自定义投影或计算的作者继续使用下文低层 projection API。两条路径共享同一个 `ReportExecution`。
 
 ```ts
+import type { Sample } from "niceeval/record";
 import {
   Bars,
   Col,
@@ -36,12 +37,13 @@ import {
   ExperimentTable,
   Hero,
   SampleSummary,
+  Section,
   aggregate,
-  defineComponent,
+  costUSD,
   defineReport,
+  experiment,
   passRate,
 } from "niceeval/report";
-import type { AggregationSubject, GroupFunction } from "niceeval/report";
 ```
 
 ### defineReport classic overload
@@ -52,41 +54,43 @@ declare const defineReport: (definition: {
   readonly pages: readonly {
     readonly id: string;
     readonly title: LocalizedText;
-    readonly render: () => ClassicElement;
+    readonly render: (sample: Sample) => ClassicElement | Promise<ClassicElement>;
   }[];
 }) => Report;
 ```
 
-`render` 返回受控 JSX 树。需要读取 Sample 的组件在 `defineComponent` 里经 `ctx.scope` 取数，页面只负责装配。
+`render(sample)` 接收 host 一次投影后构造的深冻结 `Sample`，返回受控 JSX 树。`Sample` 类型从 `niceeval/record` 导入；它没有 reader、path 或 Record I/O。
 
 已有 React 报告可以保留 `jsx: "react-jsx"`；NiceEval 会接收 React 产出的 element，但仍拒绝原生 DOM 与未包装组件。不想引入 React runtime 的报告可在自己的 `tsconfig.json` 使用 `jsx: "react-jsx"` 与 `jsxImportSource: "niceeval/report"`，改走包内受控 JSX runtime。两种写法形成同一棵 classic element tree。
 
-### defineComponent 与 ctx.scope
-
-```ts
-declare const defineComponent: <Props = {}>(
-  render: (
-    props: Props,
-    context: { readonly scope: ClassicSample },
-  ) => ClassicElement | Promise<ClassicElement>,
-) => ClassicComponent;
-```
-
-`defineComponent` 接受同步或 async 渲染函数。渲染函数读取 `context.scope`，即 host 一次投影后构造的深冻结 `ClassicSample`。async 函数在 projection 完成后由 host 展开并等待。
-
 ```tsx
-const Leaderboard = defineComponent(async (_props, ctx) => {
-  const rows = await aggregate(ctx.scope, {
-    by: { condition, memory },
-    values: { passRate },
+async function classicOverview(sample: Sample) {
+  const rows = await aggregate(sample, {
+    by: { experiment },
+    values: { passRate, costUSD },
   });
-  return <Bars points={rows} x="condition" y="passRate" layout="horizontal" />;
-});
+  return (
+    <Col>
+      <Hero
+        title="MemoryBench Classic"
+        logo={{ src: logo, alt: "MemoryBench Classic" }}
+        description="Hero, SampleSummary, leaderboard Bars, ExperimentScatter, and ExperimentTable."
+        links={[{ label: "NiceEval", href: "https://github.com/NiceEval/NiceEval" }]}
+      />
+      <SampleSummary />
+      <Section title={{ en: "Leaderboard", "zh-CN": "排行榜" }}>
+        <Bars points={rows} x="experiment" y="passRate" layout="horizontal" />
+      </Section>
+      <ExperimentScatter input={sample} />
+      <ExperimentTable input={sample} />
+    </Col>
+  );
+}
 ```
 
 ### 受控 JSX 边界
 
-组件树只接受内置组件、`defineComponent` 返回值与 `Fragment`；子节点可以是数组、string、number 或 null。它拒绝：
+组件树只接受内置组件与 `Fragment`；子节点可以是数组、string、number 或 null。它拒绝：
 
 - 原生 tag（`div`、`span` 等）与任意 unbranded component；
 - `head`、script、style、font、worker、WASM 与 raw HTML；
@@ -100,13 +104,14 @@ trusted TS module 本身不是 sandbox；module 仍可以 import `node:fs` 或�
 | 组件 | 职责 |
 | --- | --- |
 | `Col` | 纵向布局容器，按声明顺序排列子块。 |
-| `Hero` | 页首摘要块；`description` 与 `links`。链接只接受绝对 https，host 只序列化 href，不 fetch。 |
+| `Section` | 带标题的块。 |
+| `Hero` | 页首摘要块；`title`、`logo`、`description` 与 `links`。链接只接受绝对 https；logo 只接受绝对 https 或 `data:image`。host 只序列化，不 fetch。 |
 | `SampleSummary` | 当前 Sample 概况：实验、Eval、attempt 与 coverage。 |
 | `Bars` | 柱状图；`layout="horizontal"` 呈现横向柱状图，points 来自 `aggregate` 行。 |
-| `ExperimentScatter` | 按 Experiment 的散点。 |
-| `ExperimentTable` | 实验级读数表。 |
+| `ExperimentScatter` | 按 Experiment 的散点；`input={sample}` 传入同一份闭合 Sample。 |
+| `ExperimentTable` | 实验级读数表；`input={sample}` 传入同一份闭合 Sample。 |
 
-### aggregate 与 passRate
+### aggregate、passRate、costUSD 与 experiment
 
 ```ts
 type AggregationSubject = {
@@ -122,8 +127,10 @@ type AggregationSubject = {
 
 type GroupFunction = (subject: AggregationSubject) => string;
 
+declare const experiment: GroupFunction;
+
 declare const aggregate: (
-  scope: ClassicSample,
+  sample: Sample,
   options: {
     readonly by: Readonly<Record<string, GroupFunction>>;
     readonly values: Readonly<Record<string, Calculation>>;
@@ -131,7 +138,7 @@ declare const aggregate: (
 ) => Promise<readonly AggregateRow[]>;
 ```
 
-`AggregationSubject` 携带 `experimentId`、`evalId` 与对应 run 的声明字段。`GroupFunction` 从这些字段取分组值；缺少的字段按 unknown 处理，不读当前项目声明。`aggregate` 的 `by` 在 Eval 级分组，不能把同一道题的 attempts 拆开。
+`AggregationSubject` 携带 `experimentId`、`evalId` 与对应 run 的声明字段。`experiment` 按 `experimentId` 分组。`GroupFunction` 从这些字段取分组值；缺少的字段按 unknown 处理，不读当前项目声明。`aggregate` 的 `by` 在 Eval 级分组，不能把同一道题的 attempts 拆开。
 
 `passRate` 是严格两级分母的官方 Calculation：
 
@@ -140,15 +147,17 @@ declare const aggregate: (
 - 第二级：单元级值跨 Eval 等权平均，得到分组行与总值；
 - 每行返回 observed / denominator / coverage，缺失不得改写成 0。
 
+`costUSD` 用同一套两级分母聚合已投影成本；缺失成本保持 null，不补 0。
+
 ### 固定 projection plan 与同一执行路径
 
-classic facade 先声明固定 projection plan：evaluation plan、verdict、usage 与 timing。host 只投影一次，构造深冻结 `ClassicSample`，再展开组件。
+classic facade 先声明固定 projection plan：evaluation plan、verdict、usage 与 timing。host 只投影一次，构造深冻结 `Sample`，再经同一条 fixed-page callback 调用 `page.render(sample)`。
 
-展开结果进入同一个 closed semantic validation，形成同一个 `ReportExecution`，show、view 与 static export 只消费它。terminal JSON、live 与静态站因此是同一份 execution；facade 不是第二套数据或渲染真相。
+展开结果进入同一个 closed semantic validation，形成同一个 `ReportExecution`，show、view 与 static export 只消费它。`classic-dashboard` 只是 presentation profile；facade 不是第二套数据或渲染真相。
 
 ### selection-origin
 
-`ClassicSample` 的 metadata 携带 `metadataOrigin` 标注出处，不读取当前项目声明来填充历史数据：
+`Sample` 的 metadata 携带 `metadataOrigin` 标注出处，不读取当前项目声明来填充历史数据：
 
 - project-current：使用完整 current-declaration profile，并显示 `metadataOrigin: "current-declaration"`；
 - explicit-runs（`--run`）：Record 没有 durable profile 时 metadata 是 unknown / partial，experiment id 回退为 id / unknown，并给出一条结构化 notice；
@@ -273,7 +282,7 @@ declare const defineReport: (definition: {
 
 `defineReport` 校验 ID 唯一性，并验证 Page / PageFamily / Download 引用的 Calculation object 都在同一个 Report 的 `calculations` 中注册。引用按 object identity，不按 string lookup；作者不能在 callback 中动态增加 Calculation 或 I/O。
 
-这是低层 overload。classic overload（`{ title, pages }`）在 [Classic facade](#classic-facade) 一节定义；两种 overload 的结果都进入同一个 closed validation 与 `ReportExecution` 路径。
+这是低层 overload。classic overload（`{ title, pages }`，`render(sample)`）在 [Classic facade](#classic-facade) 一节定义；两种 overload 的结果都进入同一个 closed validation 与 `ReportExecution` 路径。
 
 ### Completeness
 
@@ -594,6 +603,8 @@ interface ReportChart {
 
 interface ReportHero {
   readonly type: "hero";
+  readonly title?: string;
+  readonly logo?: { readonly src: string; readonly alt: string };
   readonly description: string;
   readonly links: readonly {
     readonly label: string;

@@ -234,8 +234,8 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
 | 报告 | `Report` | `defineReport` 返回的作者定义；classic facade 用 `{title, pages}` 声明，低层 projection API 用 `{id, calculations, pages, downloads}` 声明 | [Reports](feature/reports/README.md) |
-| 经典面 | Classic surface | 0.12.1 时期 MemoryBench 消费的公开作者面：`defineReport({title, pages})` 与 `defineComponent`、受控 JSX 组件；不承诺完整旧 runtime 兼容 | [Reports library](feature/reports/library.md#classic-facade) |
-| 经典样本 | `ClassicSample` | facade 一次 projection 后由 host 构造的深冻结只读样本；组件经 `ctx.scope` 读取，不携带 reader 或 I/O 能力 | [Reports library](feature/reports/library.md#classic-facade) |
+| 经典面 | Classic surface | 0.12 MemoryBench 消费的公开作者面：`defineReport({title, pages})`、`render(sample)` 与受控 JSX；不要求 `defineComponent` 或 `ctx.scope` | [Reports library](feature/reports/library.md#classic-facade) |
+| 样本 | `Sample` | facade 一次 projection 后由 host 构造的深冻结只读样本；页面 `render(sample)` 读取，不携带 reader 或 I/O 能力；类型从 `niceeval/record` 导入 | [Reports library](feature/reports/library.md#classic-facade) |
 | 计算 | Report Calculation | 从已声明 projection 形成派生值；通过率、成本与诊断分布都属于这一层 | [Reports](feature/reports/README.md) |
 | 页 | Report Page | 从已声明数据或 Calculation 形成 closed semantic document 的呈现单位 | [Reports](feature/reports/README.md) |
 | 报告执行 | `ReportExecution` | 一次 immutable、自包含的 Report 结果；show、view revision 与 static export 共同消费 | [Reports](feature/reports/README.md) |

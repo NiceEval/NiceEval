@@ -1,6 +1,6 @@
 # Reports：把运行结果变成可交付视图
 
-Reports 把 Record 中的运行结果变成终端输出、热重载页面或可分享的静态站。公开作者面是经典面（classic facade），即 0.12.1 时期 MemoryBench 消费的 `defineReport({ title, pages })` 与 `defineComponent` 形状。它诚实命名为 0.12.1-style MemoryBench classic surface，不承诺完整旧 runtime 兼容；低层 projection Report API 继续存在，供需要自定义投影与计算的作者使用。
+Reports 把 Record 中的运行结果变成终端输出、热重载页面或可分享的静态站。公开作者面是 0.12 经典面：`defineReport({ title, pages })`、`render(sample)`、`aggregate` / `passRate` / `costUSD` / `experiment`、`Section`、带 `title` / `logo` 的 `Hero`，以及 `input={sample}`。`Sample` 类型从 `niceeval/record` 导入。MemoryBench 的 classic.tsx 不要求 `defineComponent` 或 `ctx.scope`。低层 projection API 继续存在，供需要自定义投影与计算的作者使用。
 
 ```text
 opaque Record
@@ -11,8 +11,8 @@ AnalysisSample
     │  （evaluation plan / verdict / usage / timing）
     └─ 低层 projection API：RecordProjection 声明
     ▼
-深冻结 ClassicSample / ProjectedSample
-    │ defineComponent 受控 JSX / Calculation 与 Page 包装
+深冻结 Sample / ProjectedSample
+    │ page.render(sample) → 受控 JSX → 闭合 ReportDocument
     ▼
 closed semantic validation
     ▼
@@ -24,9 +24,9 @@ immutable ReportExecution
 
 ## 核心心智
 
-- 经典面（classic facade）是唯一公开作者入口的默认形状：`defineReport({ title, pages })`、函数式 `defineComponent` 与受控 JSX 组件；
-- facade 先声明固定 projection plan，host 只投影一次，构造深冻结 `ClassicSample` 并展开组件；
-- 展开结果仍进入同一个 closed semantic validation 与 `ReportExecution`，show、view 与 static export 只消费它，不存在第二套数据或渲染真相；
+- 经典面是唯一公开作者入口的默认形状：`defineReport({ title, pages })`、`render(sample)` 与受控 JSX；
+- facade 先声明固定 projection plan，host 只投影一次，构造深冻结 `Sample`，再调用 `page.render(sample)`；
+- 展开结果进入同一个 closed semantic validation 与 `ReportExecution`，show、view 与 static export 只消费它，不存在第二套数据或渲染真相；`classic-dashboard` 只是 presentation profile；
 - 受控 JSX 不是 raw React / DOM：原生 tag、任意 unbranded component、head、script / style / font / worker / WASM、raw HTML 与自定义 text / web 双面 renderer 都拒绝；
 - 低层 projection API 继续存在：作者用 `RecordProjection` 声明数据，用 `defineCalculation`、`definePage`、`definePageFamily`、`defineDownload` 包装结果；
 - trusted TS module 本身不是 sandbox；NiceEval 只保证不授予 reader、Effect、Record root / path 与 append-I/O capability。
@@ -35,7 +35,7 @@ immutable ReportExecution
 
 ## 作者只声明数据与包装结果
 
-classic facade 作者从 `niceeval/report` 导入 `defineReport`、`defineComponent`、内置组件与 `aggregate` / `passRate`。组件经 `ctx.scope` 读取深冻结 `ClassicSample`，不接触 reader、path、root 或 Effect。
+classic facade 作者从 `niceeval/report` 导入 `defineReport`、内置组件与 `aggregate` / `passRate` / `costUSD` / `experiment`，并从 `niceeval/record` 导入 `Sample` 类型。页面 `render(sample)` 读取这份深冻结样本，不接触 reader、path、root 或 Effect。
 
 低层投影作者从同一入口导入 `RecordProjection` factory、`defineCalculation`、`definePage`、`definePageFamily` 与 `defineDownload`。作者看不到 reader、path、raw family/value、owner lookup、compiled plan 或 route expansion。宿主从 definition 与 Sample 在 I/O 前闭合全部投影依赖，每个投影最多执行一次。
 
@@ -69,7 +69,7 @@ static export 先预检，再写出完整 closure，最后写入完成标记。�
 
 Reports 包含：
 
-- classic facade：`defineReport({ title, pages })`、函数式 `defineComponent`、受控 JSX、内置组件与 `aggregate` / `passRate`；
+- classic facade：`defineReport({ title, pages })`、`render(sample)`、受控 JSX、内置组件与 `aggregate` / `passRate` / `costUSD` / `experiment`；
 - 低层 typed `RecordProjection` declarations、穷尽 `ProjectedSample` 与一次 unique projection；
 - Calculation、fixed Page、value-dependent PageFamily 与 Download；
 - closed semantic report tree（含 Hero、summary、柱状图、散点与 Experiment / Eval / Attempt 层级导航）；

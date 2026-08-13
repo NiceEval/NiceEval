@@ -27,6 +27,7 @@ const PUBLIC_ENTRIES = [
   ["./loaders", "loaders/index.ts"],
   ["./analysis", "analysis/index.ts"],
   ["./projection", "projection/index.ts"],
+  ["./record", "record/public.ts"],
   ["./report", "report/index.ts"],
   ["./report/built-in", "report/built-in/index.tsx"],
   ["./report/jsx-runtime", "report/jsx-runtime.ts"],
