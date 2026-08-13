@@ -116,11 +116,14 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   // 两笔工具调用都以 marker 为输入；这同时证明参数没有在归一、落盘或 readback 时丢失。
   expectToolInputReadback(execution.stdout, TOOL_PAYLOAD, 2);
 
-  // usage Eval 的两个 t.send() 都有独立的正 token 数；execution 的两个 turn 头必须各自可读。
+  // usage Eval 的两个 t.send() 都形成独立 request observation，且输入、输出 token 均为正数。
+  // Conversation 会按 adapter session 聚合，不能把一次 send 等同于一个展示层 Turn 卡片。
   const usageExecution = await niceeval.run(["show", locators["usage/tokens"]!, "--execution"]);
   expect(usageExecution.exitCode, usageExecution.diagnostic()).toBe(0);
-  expect(usageExecution.stdout).toMatch(/turn1\s+·\s+completed[^\n]*\btok\b/);
-  expect(usageExecution.stdout).toMatch(/turn2\s+·\s+completed[^\n]*\btok\b/);
+  expect(usageExecution.stdout).toMatch(/Turn 1\s+·\s+completed/i);
+  expect(usageExecution.stdout.match(/opencode \| request \| model request/g)).toHaveLength(2);
+  expect(usageExecution.stdout).toMatch(/opencode \| token-bucket \| input: [1-9]\d* token\(s\)/);
+  expect(usageExecution.stdout).toMatch(/opencode \| token-bucket \| output: [1-9]\d* token\(s\)/);
   expect(
     execution.stdout.includes("shell") ||
       execution.stdout.includes("bash") ||
@@ -173,7 +176,10 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   expect(goEvents.filter((event) => event.verdict === "passed"), goRun.diagnostic()).toHaveLength(1);
   expect(goEvents.filter((event) => event.verdict !== "passed"), goRun.diagnostic()).toHaveLength(0);
 
-  const goLocator = await latestAttemptLocator(GO_EVAL, "go");
+  const goEvent = goEvents.find((event) => event.evalId === GO_EVAL);
+  expect(goEvent, goRun.diagnostic()).toMatchObject({ verdict: "passed" });
+  expect(goEvent?.locator, goRun.diagnostic()).toMatch(/^@/);
+  const goLocator = goEvent!.locator!;
   const goExecution = await niceeval.run(["show", goLocator, "--execution"]);
   expect(goExecution.exitCode, goExecution.diagnostic()).toBe(0);
   expect(goExecution.stdout).toContain("opencode export");
