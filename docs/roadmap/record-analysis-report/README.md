@@ -21,10 +21,21 @@ Record adapter → Record  →   选范围、投影、关联、计算    →    
 | 层 | 输入 | 输出 | 屏蔽什么 | 必须保留什么 |
 |---|---|---|---|---|
 | Record | sealed domain value 或 canonical root | immutable Run、Attempt、Attachment 与 frozen view | path、layout、锁、generation、blob closure、verified cache | owner、schema identity、读取六态、migration 要求、出处 |
-| Analysis | 同一 frozen view 上的已发布事实 | 领域 projected values、关系、metric、coverage 与 evidence | reader、decode、owner lookup、跨 package 机械对齐 | Sample 分母、每 slot 状态、issues、refs、unmatched／ambiguous |
-| Report | closed projected／derived values | terminal、web 与 static export 共用的闭合语义树 | Record I/O、迁移、重新采证、renderer 内部机制 | host problems、数值口径、coverage 与下钻引用 |
+| Analysis | 同一 frozen view 上的已发布事实 | nominal population 上的 Dimension、Measure、关系、coverage 与 evidence | reader、decode、owner lookup、跨 package 机械对齐 | Sample 分母、每 row 状态、issues、refs、unmatched／ambiguous |
+| Report | 同一 population 的 Analysis fields | typed `ReportData` 与 terminal、web、static export 共用的闭合语义树 | Record I/O、迁移、projection plumbing、renderer 内部机制 | host problems、数值口径、coverage 与下钻引用 |
 
 Selection、Projection、Relations 与 Derivation 是 Analysis 内部步骤，不是四层额外产品心智。
+
+## 三层各自怎样扩展
+
+| 想做什么 | 扩展单位 | 作者看到的入口 |
+|---|---|---|
+| 保存一种新事实 | RecordAttachment adapter + producer-facing domain API | 普通 Eval 只调用领域 Plugin／配置 |
+| 增加分组、指标或跨事实关系 | `AnalysisPopulation`、`Dimension`、`Measure`、`AnalysisRelation` | Analysis script 用 `analyze()`；Report 只 import fields |
+| 增加页面、图表或复合组件 | `aggregate()`、Page／PageFamily、semantic primitives | `ReportData` + `Bars`／`Table`／`Scatter` |
+
+三层不等于三类人。普通 Eval 作者、领域 SDK 的 Record 作者、Analysis 作者、application maintainer 与 Report 作者拥有
+不同 import surface 和 authority；完整分工见 [Authoring 与扩展边界](authoring.md)。
 
 ## 普通用户只与领域 API 交互
 
@@ -67,8 +78,8 @@ Invocation 从 write session 为每个 mounted binding 派生 host-internal owne
 SDK 定义 adapter + 领域 API
   → owner-specific binding 生产 sealed value
   → host 显式安装 opaque installation，并按需显式 migrate
-  → SDK 领域 projection + pure derivation
-  → Report 声明领域 input + render closed value
+  → SDK 定义 population 上的 Dimension / Measure
+  → Report 用 aggregate + semantic component 组合 closed value
 ```
 
 official Timing 与 third-party GPU 都走这五步。官方只多一枚 package-private namespace authority 与固定的
@@ -82,9 +93,10 @@ installation package owner；它没有 parallel writer 或 raw draft bypass。
 | [Observability package layout](../../design/observability-package-layout/DECISION.md) | [PLAN-1](../../design/observability-package-layout/PLAN-1/README.md) | 七个 logical family 各自拥有 adapter 与 migration |
 | [Projection API](../../design/projection-api/DECISION.md) | [PLAN-1](../../design/projection-api/PLAN-1/README.md) | direct call 返回 closed `ProjectedSample`；SDK 再包装领域 API |
 | [Relations API](../../design/relations-api/DECISION.md) | [PLAN-1](../../design/relations-api/PLAN-1/README.md) | package-owned pure assembler 与穷尽 population |
-| [Report authoring](../../design/report-authoring/DECISION.md) | [PLAN-5](../../design/report-authoring/PLAN-5/README.md) | static page、普通函数、普通结果值与显示形状组件 |
+| [Report authoring](../../design/report-authoring/DECISION.md) | [PLAN-6](../../design/report-authoring/PLAN-6/README.md) | static Analysis fields、typed `ReportData` 与 descriptor components |
 
-Report 的 `reportInputs()` 只保存 consumer 自己的有限 input declarations。它不把 Projection 升级成通用静态 graph。
+Report 作者不声明 projection manifest 或 Calculation registration。host 从 `ReportData` 收集本次需要的有限 Analysis
+fields，编译依赖闭包并在 Page／PageFamily 展开前 materialize。它不是全程序、动态或可由 callback 扩张的 graph。
 
 ## 范围
 
@@ -93,16 +105,18 @@ Report 的 `reportInputs()` 只保存 consumer 自己的有限 input declaration
 - 一个 root runtime 下的 snapshot、invocation 与 maintenance facets；
 - sealed domain value → adapter binding → canonical command；
 - total producer obligation 与 fresh Analysis snapshot；
-- Analysis selection、Projection、Relations 与 Derivation；
-- Report input manifest、host 读取入口与 closed author callback；
+- Analysis selection、Projection、Relations、nominal population、Dimension 与 Measure；
+- ReportData dependency closure、host 读取入口与 closed descriptor callback；
 - 官方 OTel Timing 与用户 GPU 扩展两套完整纵向用例；Assertions 与 Diff 作为官方领域变体；
 - verified-read cache、reuse planning 与 migration 的分权。
 
-本方向不增加通用 context extension、Record event log、managed Derivation graph 或第二套 Report 查询语言。
+本方向不增加通用 context extension、Record event log、全程序／动态 Derivation graph 或第二套 Report 查询语言。本次
+`analyze({ fields })` 或 Report 引用的 fields 仍形成一张有限、静态 dependency DAG。
 
 ## 入口
 
-- [Library](library.md) —— runtime facets、adapter handoff、Analysis direct call、Report input 与精确执行入口。
+- [Library](library.md) —— runtime facets、adapter handoff、Analysis fields、ReportData 与精确执行入口。
 - [Architecture](architecture.md) —— 三层责任、能力边界、中立 kernel 与不变量。
+- [Authoring](authoring.md) —— 五类角色、每层怎样自定义与扩展，以及不可能三角的裁决。
 - [Lifecycle](lifecycle.md) —— binding、write session、fresh snapshot、Report 与显式 migration 时序。
 - [Use Case](use-case/README.md) —— 官方能力与用户扩展两套完整语法，以及共用的 host lifecycle 切片。

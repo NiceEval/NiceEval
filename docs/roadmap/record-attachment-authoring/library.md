@@ -387,21 +387,37 @@ aggregation。finalizer 登记 failure 后自身收束为 `Effect<void, never, .
 
 ## Projection 与领域 Analysis API
 
-adapter 的 projector 只在 Attachment 为 `available` 时解释 current value。SDK 用它构造领域命名 API：
+adapter 的 projector 只在 Attachment 为 `available` 时解释 current value。SDK 把它作为 private dependency 收进
+Analysis fields：
 
 ```ts
 const measurementByAttempt = attemptSlotProjection(adapter.projector);
 
-export const projectMeasurement = (sampleHandle: AnalysisSampleHandle) =>
-  projectAnalysisSample({
-    sampleHandle,
-    projection: measurementByAttempt,
-  });
+const measurementFields = defineAnalysisFields({
+  id: "com.example.measurement",
+  population: logicalSlots,
+  dependencies: { measurement: measurementByAttempt },
+  materialize: ({ population, dependencies }) =>
+    population.rows((slot) =>
+      measurementCells(slot, dependencies.measurement.at(slot.key)),
+    ),
+});
+
+export const measurementValue = measurementFields.measure({
+  id: "measurement-value",
+  cell: "value",
+  rollup: logicalSlotRollup({ withinEval: mean, acrossEvals: mean }),
+  denominator: allLogicalSlots,
+  evidence: allDenominatorAttemptRefs,
+});
+
+export const analyzeMeasurement = (sampleHandle: AnalysisSampleHandle) =>
+  analyze({ sampleHandle, fields: { value: measurementValue } });
 ```
 
-SDK 可以导出 `projectMeasurement()` 与领域命名的 Report input declaration，但不导出 adapter、writable definition 或
-raw reader。返回值必须保留 Analysis Sample denominator、每 slot 穷尽状态、issues、refs 与
-`migration-required | migration-unavailable | unsupported | invalid`，不能降成 available values 数组。
+SDK 导出领域 Dimension／Measure 与 `analyzeMeasurement()`。它不导出 projection declaration、adapter、writable
+definition 或 raw reader。fields 必须保留 Analysis Sample denominator、每 slot 穷尽状态、issues 与 refs。
+它们也要保留 `migration-required | migration-unavailable | unsupported | invalid`，不能降成 available values 数组。
 
 projector 不执行 migration。普通 Analysis／Report 看到 known old family 时得到 `migration-required`，由 maintenance
 host 显式迁移。

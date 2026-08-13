@@ -66,7 +66,7 @@ SVG、精确值表与增强 payload 来自同一次 web 投影。
 <Chart
   points={performance}
   label={{ en: "Quality and cost", "zh-CN": "质量与成本" }}
-  description={{ en: "Attempt-weighted metrics", "zh-CN": "按 Attempt 加权" }}
+  description={{ en: "Evaluation-weighted metrics", "zh-CN": "按 Eval 加权" }}
   axes={[
     { id: "cost", channel: "x", unit: "$", format: "currency", better: "lower" },
     { id: "quality", channel: "y", unit: "%", format: "percent", better: "higher" },
@@ -77,7 +77,7 @@ SVG、精确值表与增强 payload 来自同一次 web 投影。
     mark="scatter"
     x="costUSD"
     y="passRate"
-    point="experiment"
+    pointLabel="experiment"
     by="agent"
     xAxis="cost"
     yAxis="quality"
@@ -101,7 +101,8 @@ SVG、精确值表与增强 payload 来自同一次 web 投影。
 Evidence 与未包装的 external scalar 共用数值轴时，作者必须声明具名 axis 及其 `format`。
 axis 是 unit、format、better 与 bounds 的共同语义 owner，external scalar 不会被包装成伪 MetricValue。
 
-EvidenceRow series 的读数字段必须是 `MetricValue`，并保留 refs、coverage 与 `ReportTarget`。
+`ReportData` evidence series 的读数字段必须是 `MetricValue`，并逐 channel 保留 refs 与 coverage。
+point target 只来自具名 evidence family 的条件式默认值，或 object-bound `pointTarget`。
 `external` series 只接 JSON scalar，没有 Attempt refs，也不能声明 `pointTarget`。
 
 `Scatter`、`Line`、`Bars` 与 `Area` 继续是单 series 的便利入口。
@@ -116,13 +117,14 @@ EvidenceRow series 的读数字段必须是 `MetricValue`，并保留 refs、cov
 |---|---|
 | `Chart data={dataset}` | `Chart points={rows}` |
 | `Chart x="cost" y="score"` | 每个 `Series` 声明 `x` 与 `y` |
-| `Series points="experiment"` | `Series point="experiment"` |
+| `Series points="experiment"` | `Series pointLabel="experiment"`；身份仍来自 `ReportRowKey` |
 | `Series point="circle"` | `Series shape="circle"` |
 | 所有 series 共用一份 Dataset | series 继承 `Chart.points` 或自带 `points` |
 | 全图只有一种证据模式 | 每个 series 独立声明 EvidenceRow 或 `external` |
 | 字段名拼接 SVG 可访问名 | `Chart` 与便利组件必填 `label` |
 
-`Dataset` 只作为内核规范化 rows 的内部类型；普通报告作者用 points 输入图表。
+`Dataset` 只作为内核规范化 rows 的内部类型；普通报告作者用 `ReportData` 输入 Evidence 图表，external series 才传带
+显式 stable `key` 的 scalar rows。
 NiceEval 内建图表、官方报告、类型测试和文档示例都使用目标写法。
 
 ## 初始一致性
@@ -188,7 +190,8 @@ Table 不增加 `TableModel`。
 `sortValue` 是构建期纯投影，不是通用 accessor；它不能读取整行、改变 Cell、coverage 或 refs。
 
 公开 API 不提供 controlled state、row model、算法注册表、display/group column 或 renderer callback。
-计算列与分组继续在 page 中用普通函数完成，浏览状态由静态 HTML 上的 controller 局部拥有。
+业务计算列、分组与 population narrowing 必须先定义 Analysis fields。Table 只做显示排序、可见列与格式选择；浏览状态
+由静态 HTML 上的 controller 局部拥有。
 
 web renderer 为每个 row 与 column 输出稳定 key，并在服务端生成 locale 对应的 sort rank 与 search token。
 controller 以 `TableViewState` 纯计算可见 row key，不读取 `textContent`，也不把当前 DOM 顺序当成状态。
@@ -222,8 +225,8 @@ query 非空时只显示直接命中的 rows 及其 ancestors，不因 parent �
 - web scene、键盘焦点和 pointer 命中点。
 - EvidenceRow、`external`、missing、locale 与静态导出 fixture。
 
-`defineRenderer` 永远独立，不导出 `ChartModel`、`WebScene` 或投影 hook。
-自定义 heatmap 等显示形状继续自行提供 text、web 与可访问行为，不能宣称继承 Chart 内核保证。
+目标作者面不再导出 `defineRenderer`。普通自定义 component 只组合已有 primitives；新 heatmap 等显示形状必须作为
+NiceEval core primitive 同时提供 terminal、Web、static 与可访问行为，不能通过 renderer plugin 绕过。
 
 公开自定义 mark 需要单独的插件契约与兼容承诺，不在本主题预埋半公开入口。
 

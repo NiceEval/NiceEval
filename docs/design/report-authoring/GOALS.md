@@ -1,6 +1,6 @@
 # 目标与要求
 
-**相关文档**：[README](README.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [DECISION](DECISION.md)
+**相关文档**：[README](README.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md) · [DECISION](DECISION.md)
 
 ---
 
@@ -23,8 +23,9 @@
   每个读数格保留有效样本数、涵盖总数和它涵盖的全部 attempt 引用。
 - **一份声明同时出 text 与 web 两面。**
   只有一面能读的能力不进作者面。
-- **Calculation 结果是进程内普通值。**
-  ReportExecution 的 closed semantic tree 才进入 renderer；浏览器包不含磁盘读取、结果根或查询引擎。
+- **Analysis materialization 是进程内 closed values。**
+  `ReportData` 只声明依赖；`ReportExecution` 的 closed semantic tree 才进入 renderer。浏览器包不含磁盘读取、结果根或
+  查询引擎。
 - **自由度可枚举。**
   报告树是声明式结构，不是能求值的表达式语言。
 - **作者不必等库。**
@@ -40,7 +41,7 @@
    Report host 不按 entry 数或 transport coverage 猜这个权重。
 2. 「测不了」（读数返回 `null`）与「没跑到」（涵盖缺口）在同一张表里区分得开。
 3. 跨 Run 计算先按 Record 的 attempt 身份键去重。
-4. 计算失败与缺数据严格分开：Calculation callback defect 形成 execution failure，不伪装成测不了。
+4. 计算失败与缺数据严格分开：Analysis materializer defect／problem 形成 execution failure／problem，不伪装成测不了。
 
 ### 可追溯
 
@@ -57,18 +58,18 @@
 ### 一致性
 
 11. 同一个读数在图、表与摘要里同值。
-12. 单位、优化方向与格式化等数值语义只在具名 Calculation value 中声明一次；双语 label 留在组件呈现面。
+12. 单位、优化方向与格式化等数值语义只在具名 Measure 中声明一次；双语 label 留在组件呈现面。
 13. 同一个维度值在一页里恒定一个颜色。
 
 ### 扩展性
 
-14. 作者与官方使用同一套 projection、Calculation 与 closed semantic components。
+14. 作者与官方使用同一套 Analysis fields、`ReportData` compiler 与 closed semantic components。
 15. 新增一种渲染形状要有判据，不能因为「这个数据源画出来长得不一样」就加原语。
 
 ### 交付
 
 16. web 面无 JavaScript 即完整可读；浏览器包不引入查询引擎或运行时依赖。
-17. 异步与 I/O 只发生在 host input phase；作者 Calculation、Page 与 renderer 只消费 closed values。
+17. 异步与 I/O 只发生在 host input phase；作者 component、Page 与 renderer 只消费 descriptors／closed values。
 18. 相同 semantic tree 与同一 renderer 版本产出字节级稳定的静态输出。
 
 ---
@@ -76,7 +77,7 @@
 ## 不是本 doc 的目标
 
 - **读数口径本身。**
-  `passRate` 怎么算、超时怎么记删失，归 [读数与维度](../../feature/reports/README.md)。
+  `passRate` 怎么算、超时怎么记删失，归 [Analysis Measure](../../roadmap/record-analysis-report/library.md#在-population-上定义-fields)。
 - **Sample 选择。**
   哪些 attempt 进入这次比较，归 [Sample](../../feature/sample/README.md)。
 - **主题与 CSS。**

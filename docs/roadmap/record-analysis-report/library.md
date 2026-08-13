@@ -416,7 +416,7 @@ export default defineConfig({
 `install` 只接受 `RecordAttachmentInstallation`。它允许 reader 与 maintenance 使用 adapter family，不允许构造 binding。
 Plugin mount 不自动安装，普通 read 不自动 migrate。
 
-## Analysis 的 Projection kernel
+## 领域 SDK 内部的 Projection kernel
 
 领域 SDK 可以用 adapter 私有 projector 构造以下通用 declarations：
 
@@ -434,7 +434,7 @@ declare const selectedRunProjection: <Value>(
 ) => RecordProjection<"selected-run", Value>;
 ```
 
-PLAN-1 的唯一公开执行 primitive 仍是：
+Projection SPI 保留低层执行 primitive，供 Analysis compiler 与领域 SDK 集成：
 
 ```ts
 declare const projectAnalysisSample: <Access, Value>(input: {
@@ -446,65 +446,367 @@ declare const projectAnalysisSample: <Access, Value>(input: {
 >;
 ```
 
-领域 SDK 对普通 Analysis 再包装领域名：
+领域 SDK 把 declaration 收进 fields，不把 projection executor 导出给普通 Analysis：
 
 ```ts
-export const projectMeasurement = (sampleHandle: AnalysisSampleHandle) =>
-  projectAnalysisSample({
-    sampleHandle,
-    projection: measurementByAttempt,
-  });
+const measurementByAttempt = attemptSlotProjection(
+  adapter.projector,
+);
+
+const measurementFields = defineAnalysisFields({
+  id: "com.example.measurement",
+  population: logicalSlots,
+  dependencies: { measurement: measurementByAttempt },
+  materialize: ({ population, dependencies }) =>
+    population.rows((slot) =>
+      measurementCells(slot, dependencies.measurement.at(slot.key)),
+    ),
+});
+
+export const measurementValue = measurementFields.measure({
+  id: "measurement-value",
+  cell: "value",
+  rollup: logicalSlotRollup({ withinEval: mean, acrossEvals: mean }),
+  denominator: allLogicalSlots,
+  evidence: allDenominatorAttemptRefs,
+});
+
+export const analyzeMeasurement = (sampleHandle: AnalysisSampleHandle) =>
+  analyze({ sampleHandle, fields: { value: measurementValue } });
 ```
 
-SDK 不导出 adapter、raw reader 或 versioned payload。领域 projected value 必须保留 Sample identity、denominator、每 slot
-穷尽状态、issues 与 refs。`migration-required | migration-unavailable | unsupported | invalid` 不能被隐藏。
+SDK 不导出 adapter、raw reader、versioned payload、`measurementByAttempt` 或 `projectAnalysisSample()`。field materializer
+必须保留 Sample identity、denominator、每 slot 穷尽状态、issues 与 refs。
+`migration-required | migration-unavailable | unsupported | invalid` 不能被隐藏。
 
-## Relations 与 Derivation
+## Analysis 作者面
 
-Relations 只消费同一 Sample 的 closed projections：
+Analysis SDK 的公开扩展单位不是 projection 字符串，而是 nominal population 上的 fields：
 
 ```ts
-declare function defineRelationAssembler<Inputs, Cell>(input: {
-  readonly inputs: ProjectionShape<Inputs>;
-  readonly assemble: (
-    inputs: SameSample<Inputs>,
-  ) => ExhaustiveRelationValue<Cell>;
-}): RelationAssemblerDefinition<Inputs, Cell>;
+declare const AnalysisPopulationType: unique symbol;
+declare const AnalysisFieldType: unique symbol;
+
+interface AnalysisPopulation<Id extends string, Member> {
+  readonly id: Id;
+  readonly [AnalysisPopulationType]: (member: Member) => Member;
+}
+
+interface Dimension<Population, Value> {
+  readonly id: string;
+  readonly [AnalysisFieldType]: {
+    readonly population: Population;
+    readonly role: "dimension";
+    readonly value: Value;
+  };
+}
+
+interface Measure<Population, Value> {
+  readonly id: string;
+  readonly [AnalysisFieldType]: {
+    readonly population: Population;
+    readonly role: "measure";
+    readonly value: Value;
+  };
+}
+
+interface AnalysisRelation<From, To> {
+  readonly id: string;
+  readonly from: From;
+  readonly to: To;
+}
 ```
 
-host 在调用前验证 SameSample identity，返回后验证完整 population。unmatched、ambiguous、input state 与 relation
-coverage 是成功值中的数据，不能少返回 cell 缩小分母。
+`Id` 与 symbol 共同形成 nominal identity；`id` 只用于诊断与静态输出，不允许两个独立 constructor 因字符串相同而互相
+兼容。grain 只作解释文字，例如“每个 logical slot 一行”。
 
-Derivation 是普通纯函数。若结果声称具有统计或完整度口径，其 shape 必须显式携带 observed、denominator、state、issues
-与 refs。host 不猜业务分母，也不要求通用 metric constructor。
-
-## Report 的领域 input manifest
-
-`reportInputs()` 保存一个 Report 自己需要的有限 declarations。SDK 可以导出领域命名 input：
+### 定义 population 与 relation
 
 ```ts
-const inputs = reportInputs({
-  measurement: measurementByAttempt,
+declare const defineAnalysisPopulation: <
+  const Id extends string,
+  Dependencies extends AnalysisDependencyShape,
+  Member,
+>(input: {
+  readonly id: Id;
+  readonly dependencies: Dependencies;
+  readonly materialize: (context: {
+    readonly sample: AnalysisSample;
+    readonly dependencies: MaterializedAnalysisDependencies<Dependencies>;
+    readonly members: AnalysisPopulationMembersBuilder<Id, Member>;
+  }) => AnalysisPopulationMembers<Id, Member>;
+}) => AnalysisPopulation<Id, Member>;
+
+interface AnalysisPopulationMembersBuilder<Id extends string, Member> {
+  readonly from: <Source>(
+    source: readonly Source[],
+    options: {
+      readonly key: (source: Source) => string;
+      readonly value: (source: Source) => Member;
+    },
+  ) => AnalysisPopulationMembers<Id, Member>;
+}
+
+declare const defineAnalysisRelation: <From, To, Dependencies>(input: {
+  readonly id: string;
+  readonly from: From;
+  readonly to: To;
+  readonly dependencies: Dependencies;
+  readonly assemble: (context: {
+    readonly from: MaterializedPopulation<From>;
+    readonly dependencies: MaterializedAnalysisDependencies<Dependencies>;
+    readonly rows: AnalysisRelationRowsBuilder<From, To>;
+  }) => ExhaustiveAnalysisRelation<From, To>;
+}) => AnalysisRelation<From, To>;
+```
+
+`members.from()` 对 stable key 做非空、唯一与确定性校验。Relation 仍遵守既有 same-Sample 规则：它必须穷尽 source
+population，并显式返回 matched、unmatched、ambiguous 与 input-state cells。它不按数组位置、数值容差或最近时间猜
+关系。
+
+### 在 population 上定义 fields
+
+字段 materializer 只能通过 materialized population 的 `rows()` 形成 aligned rows：
+
+```ts
+type AnalysisFieldCell<Value, Issue, Ref> =
+  | {
+      readonly state: "value";
+      readonly value: Value;
+      readonly issues: readonly Issue[];
+      readonly refs: readonly Ref[];
+    }
+  | {
+      readonly state: "empty";
+      readonly issues: readonly Issue[];
+      readonly refs: readonly Ref[];
+    }
+  | {
+      readonly state: "missing";
+      readonly reason: string;
+      readonly issues: readonly Issue[];
+      readonly refs: readonly Ref[];
+    }
+  | {
+      readonly state: "invalid";
+      readonly issues: NonEmptyReadonlyArray<Issue>;
+      readonly refs: readonly Ref[];
+    };
+
+interface MaterializedPopulation<Population> {
+  readonly rows: <Row>(
+    materialize: (member: AnalysisPopulationMember<Population>) => Row,
+  ) => AnalysisRows<Population, Row>;
+}
+
+declare const defineAnalysisFields: <
+  Population,
+  Dependencies extends AnalysisDependencyShape,
+  Row extends Readonly<Record<string, AnalysisFieldCell<unknown, unknown, unknown>>>,
+>(input: {
+  readonly id: string;
+  readonly population: Population;
+  readonly dependencies: Dependencies;
+  readonly materialize: (context: {
+    readonly population: MaterializedPopulation<Population>;
+    readonly dependencies: MaterializedAnalysisDependencies<Dependencies>;
+  }) => AnalysisRows<Population, Row>;
+}) => AnalysisFieldSet<Population, Row>;
+```
+
+`population.rows(callback)` 对 population 的每个 member 恰好调用一次，并保留 package-minted row identity。作者不能先
+filter 一份数组再冒充完整 population。少行、重复 identity、foreign identity 或依赖 iteration order 的 row 是
+`AnalysisExecutionProblem`，与合法的 `empty`／`missing` cell 分开。
+
+`dependencies` 可以接领域 SDK 私有的 projection declaration、同 population field set，以及经显式 relation 对齐后的
+field。它不能接 runtime branch、reader、Effect 或在 callback 中发现的新依赖。
+
+field set 再把具名 cell 导出成 Dimension 或 Measure：
+
+```ts
+interface AnalysisFieldSet<Population, Row> {
+  readonly dimension: <Key extends keyof Row & string>(input: {
+    readonly id: string;
+    readonly cell: Key;
+    readonly missing: DimensionMissingPolicy<Row[Key]>;
+    readonly stableIdentity?: boolean;
+  }) => Dimension<Population, AnalysisCellValue<Row[Key]>>;
+
+  readonly measure: <Key extends keyof Row & string>(input: {
+    readonly id: string;
+    readonly cell: Key;
+    readonly rollup: MeasureRollup<Population, AnalysisCellValue<Row[Key]>>;
+    readonly denominator: MeasureDenominator<Population, Row[Key]>;
+    readonly evidence: MeasureEvidencePolicy<Population, Row[Key]>;
+    readonly unit?: string;
+    readonly format?: MetricFormat;
+    readonly better?: "higher" | "lower";
+  }) => Measure<Population, AnalysisCellValue<Row[Key]>>;
+}
+```
+
+`stableIdentity: true` 只允许 value 在该 population 内非空、唯一且跨相同事实重建稳定的 Dimension。它可作为
+PageFamily route key；普通 group label 不能冒充 identity。
+
+Measure 的 descriptor 只保存 policy。`MeasureRollup` 明确 population 的评测分区与 attempt dedupe key，并声明
+`withinEval` 和 `acrossEvals` reducer。`MeasureDenominator` 决定哪些 member 进入 denominator；
+`MeasureEvidencePolicy` 决定哪些 member refs 随结果保留。本次 value、state、observed、denominator、issues 与 refs 只出现在 materialized
+`MetricValue`，不复制到 descriptor。
+
+### 直接执行 Analysis fields
+
+普通 Analysis script 的唯一 field executor 是：
+
+```ts
+declare const analyze: <Fields extends AnalysisFieldShape>(input: {
+  readonly sampleHandle: AnalysisSampleHandle;
+  readonly fields: Fields & SamePopulationFields<Fields>;
+}) => Effect.Effect<
+  AnalysisExecution<Fields>,
+  AnalysisCompileError | RecordReadError | ProjectionLimitError
+>;
+
+interface AnalysisExecution<Fields extends AnalysisFieldShape> {
+  readonly rows: MaterializedAnalysisRows<Fields>;
+  readonly problems: readonly AnalysisExecutionProblem[];
+}
+```
+
+local constructor validation 失败抛出带 `AnalysisDefinitionIssue[]` 的 `AnalysisDefinitionError`，令可信 module load 失败。
+
+跨 descriptor 的 cycle、population mismatch 与 field identity collision 由 compiler 在任何 Record I/O 前返回
+`AnalysisCompileError`。materialization 的 population／row 违约进入 closed `AnalysisExecutionProblem`；Attachment 六态
+仍是 row cell 与 host problem。
+
+底层 I/O／permission／decode transport failure 保持 `RecordReadError`，不能伪装成 measure missingness。
+
+compiler 只闭合本次 `analyze({ fields })` 请求的有限 DAG。相同 projection、relation 与 field-set materializer 在一次
+execution 中至多执行一次；它不预编译全程序，也不允许 callback 在 materialization 后追加依赖。
+
+## Report 作者面
+
+Report 作者只组合同一 nominal population 上的 Dimension 与 Measure：
+
+```ts
+declare const aggregate: <
+  Population,
+  const By extends Readonly<Record<string, Dimension<Population, unknown>>>,
+  const Values extends Readonly<Record<string, Measure<Population, unknown>>>,
+>(input: {
+  readonly by: By;
+  readonly values: Values;
+}) => ReportData<Population, AggregateRow<Population, By, Values>>;
+
+interface ReportData<Population, Row> {
+  readonly population: Population;
+  readonly [ReportDataType]: Row;
+}
+
+type AggregateRow<Population, By, Values> = {
+  readonly [ReportRowKeyType]: ReportRowKey;
+} & {
+  readonly [Key in keyof By]: MaterializedDimensionValue<By[Key]>;
+} & {
+  readonly [Key in keyof Values]: MaterializedMetricValue<Values[Key]>;
+};
+```
+
+`ReportData` 是静态 declaration，不是 Promise、数组或 iterable。它不能 `await`，没有 `.map()`／`.filter()`／
+`.toSorted()`。需要改变 population 或 metric 口径时定义 Analysis field；`Bars`／`Table`／`Scatter` 的 `sort`、`limit`
+与显示格式只在 materialization 后改变可见结果。
+
+### aggregate 的固定算法
+
+1. type 与 runtime nominal identity 都要求 `by`／`values` 属于同一个 population；不自动执行 relation。
+2. materialize 该 population、fields 与穷尽 cells；dimension 的 missing／invalid 形成显式 coordinate，不静默删 row。
+3. 按完整 dimension coordinate 分组；同一 measure 按自己的 rollup basis 去重 Attempt，再先执行 `withinEval`，后执行
+   `acrossEvals`。不能把所有 Attempt 摊平后直接平均。
+4. denominator policy 对完整 population members 计数；`observed` 只数产生数值的 cells。`empty`、`missing` 与
+   `invalid` 不伪装成零，也不能靠删除 member 缩小 denominator。
+5. evidence policy 合并所有 denominator members 的 refs，包括合法 empty／null 读数对应的 Attempt；issues 保留产出方与
+   field identity。多个 measure channel 各自保留 coverage 与 refs，不提前取交集或并集。
+6. reducer 使用 checked finite arithmetic。overflow、`NaN` 或 infinity 形成 invalid issue 与 `value: null`；空集合也是
+   `null`，从不补零。
+7. row key 由 population identity 与完整 canonical dimension coordinate 形成。measure、sort、limit 与 format 不参与。
+
+内建 `condition`、`memory`、`passRate`、`costUSD` 与 GPU SDK 的 `gpuEnergyJoules` 都属于 built-in `logicalSlots`
+population。`passRate` 与 `gpuEnergyJoules` 各自声明两级 rollup，因而组合到一张表时仍先折同一 eval 的重复 Attempt，再
+跨 eval 折叠；添加 GPU measure 不会改变质量或成本的权重。
+
+### Page、component 与 PageFamily
+
+```tsx
+const leaderboard = aggregate({
+  by: { condition, memory },
+  values: { passRate, costUSD, gpuEnergyJoules },
+});
+
+const Leaderboard = defineComponent(() => (
+  <Bars
+    points={leaderboard}
+    x="condition"
+    y="passRate"
+    color="memory"
+    sort={{ field: "passRate", direction: "desc" }}
+    layout="horizontal"
+  />
+));
+
+export default defineReport({
+  id: "memorybench",
+  pages: [{
+    id: "overview",
+    route: "/",
+    render: () => <Leaderboard />,
+  }],
 });
 ```
 
-Report host 在 Page、Calculation 或 renderer callback 前执行同一个 Projection kernel。manifest 不是通用 graph；没有公开
-node、edge、scheduler 或 runtime branch。
+字符串 id／route 由 constructor 内部验证；Report 作者不使用 branded constructor 或 `Either`。`defineComponent()` 与
+Page `render` 只组合 descriptor，不取得 Sample、projection、reader、Effect 或 Calculation state。
 
-Calculation 只调用普通领域函数：
+PageFamily 的精确形状是：
 
 ```ts
-const summary = defineCalculation({
-  id: summaryId,
-  inputs,
-  completeness: "allow-partial",
-  calculate: ({ inputs }) =>
-    deriveMeasurement(inputs.measurement),
+declare const definePageFamily: <Population, Row, Key>(input: {
+  readonly id: string;
+  readonly data: ReportData<Population, Row>;
+  readonly key: ReportDataIdentityDimension<Population, Row, Key>;
+  readonly route: (key: Key) => string;
+  readonly render: (input: { readonly key: Key; readonly row: ClosedReportRow<Row> }) => ReportNode;
+}) => PageFamily<Row, Key>;
+
+interface PageFamily<Row, Key> {
+  readonly target: (key: Key) => ReportTarget;
+}
+```
+
+family 必须显式列入 `defineReport.pages`。compiler 按 family object identity 验证 target，不从 route string 查找；
+materialization 验证 key 唯一、instance 存在且 route 无冲突。key 必须来自 stable identity Dimension，不使用 opaque
+`ReportRowKey` 或数组 index。
+
+Report 可以显式声明 evidence family：
+
+```ts
+export default defineReport({
+  id: "memorybench",
+  pages: [overview, attemptDetailsPageFamily],
+  evidence: { attempt: attemptDetailsPageFamily },
 });
 ```
 
-Page 只消费 closed calculation value。Report host 无条件保留 Sample denominator、Attachment read states、coverage、
-migration hints 与 execution problems。callback 不能删除这些 problems，也不能取得 Sample handle、reader 或 maintenance。
+默认链接只在 `MetricValue` 恰好一个 ref、该 ref kind 有唯一显式 family、对应 instance 存在时形成。否则保留 exact
+refs 与 coverage，但不生成 target。多个 refs 不任选一个；组件不暗中注册 Page 或 projection。
+
+`Bars`、`Table` 与 `Scatter` 使用每行固有的 `ReportRowKey`，不以显示字段或声明 index 代替身份。每个 measure channel
+分别消费 value、state、unit、format、better、observed／denominator、issues 与 refs。
+
+Report TSX 使用 `niceeval/report` 自有 JSX runtime。CLI loader 自动应用；独立 `tsc`／编辑器需要 extend package 的
+report tsconfig preset，或声明 `/** @jsxImportSource niceeval/report */`。runtime 只接受 semantic primitives 与纯
+custom components，不接受 DOM intrinsic，也不进入 closed `ReportExecution`。
+
+普通 `defineComponent()` 只能组合既有 primitives。新增真正 `ReportBlock`／Chart mark 必须同时定义 terminal、Web 与
+static face，不属于普通 renderer plugin。
 
 ## Report host 的精确读取入口
 
@@ -547,6 +849,14 @@ declare const executeReportFromRecord: (input: {
 两条入口形成同一种 `ReportExecution`。它不含 reader、handle、Scope、path、callback 或延迟 I/O；`show`、`view` 与
 static export 只消费这个 closed value。
 
+Report definition 的 local id／route／component shape invalid 令 trusted module load 失败。dependency cycle、population
+mismatch、field identity collision 或未注册 PageFamily target 在任何 Projection I/O 前成为 `ReportExecutionError`。
+
+materialization 后发现的 aligned-row、family instance 或 route collision 进入 execution problem inventory；static export
+对 missing／duplicate target fail closed。
+
+Attachment 领域缺失仍是 `MetricValue` state／host problem，不伪装成 compiler failure。
+
 ## Capability 可见性
 
 | 调用者 | 可见 | 明确不可见 |
@@ -554,8 +864,8 @@ static export 只消费这个 closed value。
 | 普通 Eval／Experiment／Plugin consumer | 领域 Plugin、meter、`t.check`、`t.sandbox.*` | adapter、grant、lease、versioned payload、Record command |
 | 领域 SDK 作者 | `/record/adapter`、schema／migration、sealed adaptation、owner binding | root、raw writer、owner-wide allowlist |
 | Record／maintenance host | runtime facet、opaque installation、migration plan | writable adapter、producer session、owner lease |
-| Analysis 作者 | 领域 projection API、closed values、穷尽状态 | definition、reader、schema、blob closure |
-| Report 作者 | 领域 Report input、closed summary、host problems | Sample handle、reader、migration、writer |
+| Analysis 作者 | population、relation、Dimension／Measure、`analyze()`、closed rows | writer、schema、blob closure、renderer |
+| Report 作者 | Analysis fields、`ReportData`、Page／PageFamily、host problems | projection、Sample handle、reader、migration、writer |
 | 内建 adapter 作者 | package-private official adapter 与同形 binding | raw draft bypass |
 
 ## 中立性不变量

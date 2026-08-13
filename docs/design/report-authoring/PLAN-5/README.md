@@ -1,6 +1,9 @@
-# PLAN-5（推荐）：普通值转换 + 静态 page
+# PLAN-5（历史）：普通值转换 + 静态 page
 
 **相关文档**：[README](../README.md) · [GOALS](../GOALS.md) · [LIMITS](../LIMITS.md) · [DECISION](../DECISION.md)
+
+> 后续裁决改采 [PLAN-6](../PLAN-6/README.md)。本篇保留当时为何选择 closed input／static Page 的历史推导；
+> 目标 Report 作者面采用 PLAN-6，不公开 `reportInputs()`、`defineCalculation()` 与 branded constructor。
 
 ## 裁决形状
 

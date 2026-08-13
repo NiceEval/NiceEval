@@ -50,8 +50,10 @@ carry／reuse 的历史 Attempt 不重新打开 producer。历史 Attachment 是
 - 领域 SDK 作者定义 sealed domain value、RecordAttachment adapter、owner-specific binding 与领域 Analysis API。
 - Record host 显式安装 SDK 导出的 opaque installation；Plugin mount 不自动安装 migration trust。
 - Application maintainer 从 `niceeval/record/host` 取得 scoped maintenance facet，显式 plan、authorize 与 migrate。
-- Analysis 作者调用 SDK 的 `projectGpuEnergy()` 等领域函数，并保留 denominator、穷尽状态、issues 与 refs。
-- Report 作者只声明 SDK 导出的领域 input，并消费 closed values；Report callback 不取得 reader 或 migration。
+- Analysis 作者调用 SDK 的 `analyzeGpuEnergy()`；Report 作者 import `gpuSource`、`gpuEnergyJoules` 等 fields。
+  两种入口都保留 denominator、穷尽状态、issues 与 refs。
+- Report 作者只组合 SDK 导出的 Analysis Dimension／Measure 与 `ReportData`；Report callback 不取得 projection、reader
+  或 migration。
 - Assertions、Diff、OTel Timing 与其它内建功能使用不导出的 official adapter 和同形 binding。
 
 ## 范围
@@ -71,7 +73,7 @@ collector 累积并封口；Record 不是 append log。
 本目标的 public export map 不包含 `defineJsonRecordAttachment`、`makeRecordAttachmentWrite`、
 `RecordAttachmentWrite` 或 draft `.record()`。这些机制只可留在 Record package 内部，作为 adapter command kernel 的
 实现材料；它们不是 adapter SPI 的替代入口。raw projector constructor 同样只属于 `/record/adapter` 的 SDK 边界，
-Analysis 与 Report 只接收领域命名的 projection declaration。
+Analysis SDK 可以接收领域命名的 projection declaration；Report 只接收 SDK 导出的 Dimension／Measure。
 
 ## 入口
 

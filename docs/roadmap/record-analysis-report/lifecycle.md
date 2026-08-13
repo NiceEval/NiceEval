@@ -19,9 +19,9 @@ openRecordAccessRuntime(root, recordAttachments)
   └─ invocation.withSnapshot
        ├─ mint fresh generation
        ├─ RecordReader → selectAnalysisSample() → AnalysisSampleHandle
-       ├─ executeReport() → declared domain Projections
-       ├─ Relations + Derivation
-       ├─ Report inputs → Page / renderer closed values
+       ├─ compile ReportData → finite Analysis field closure
+       ├─ unique Projections + Relations + field materializers
+       ├─ materialized rows → Page / PageFamily / renderer
        └─ close snapshot; ReportExecution remains self-contained
 ```
 
@@ -89,13 +89,14 @@ Experiment Plugin 的 Attempt binding属于另一个 pair occurrence；它不会
 一次 `withSnapshot()` mint 一个 generation，整个 Analysis 停留在 callback：
 
 1. selection 固定 selected Runs、logical slots 与 denominator；
-2. SDK 领域 API 在同一 handle 上执行 Projection；
-3. Relations 只消费 closed same-Sample projections；
-4. Derivation 只消费 closed projections／relations；
-5. Report host 执行静态 input manifest，再调用 author callbacks；
-6. callback 完成后关闭 generation，`ReportExecution` 不保留 Record capability。
+2. `analyze({ fields })` 或 ReportData 编译本次请求的有限 Analysis dependency closure；
+3. SDK 领域 Projection 在同一 handle 上至多执行一次；
+4. Relations 只消费 closed same-Sample projections，field materializer 只形成 aligned rows；
+5. Page／PageFamily callback 只消费 materialized closed rows，不能返回新 `ReportData`；
+6. semantic tree 闭合后关闭 generation，`ReportExecution` 不保留 Record capability。
 
-普通 Analysis 脚本可以根据已读值决定下一次 projection。Report input 必须在 callback 前闭合，callback 不能追加 I/O。
+普通 Analysis 脚本可以根据已读值决定下一次 `analyze()`。一个 Report 的 `ReportData` dependencies 必须在 callback 前
+闭合，callback 不能追加 I/O。
 CLI 的 `executeReportFromRecord()` 只是 open reader → selection → `executeReport()` 的一次性组合入口，不建立第二条读路径。
 
 ## 显式 migration

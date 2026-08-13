@@ -98,7 +98,7 @@ mount provenance
 两者分别拥有 exact internal grant、behavior identity、Scope、open／closed state、accepted events 与 seal barrier。Hosted
 Hooks 属于 Attempt occurrence；setup／teardown 属于 Run occurrence。Group 没有 Record owner。
 
-## Analysis 内部四步
+## Analysis 内部四步与公开字段
 
 | 步骤 | 输入 → 输出 | 不负责 |
 |---|---|---|
@@ -110,28 +110,60 @@ Hooks 属于 Attempt occurrence；setup／teardown 属于 Run occurrence。Group
 四步共享 Sample identity。Projection 不重新开 snapshot；Relations 拒绝不同 Sample；Derivation 的统计结果保留 observed、
 denominator、state、issues 与 refs。
 
-SDK 可以把 private projector 包装成 `projectGpuEnergy()` 等领域 API。隐藏 schema 与 reader，不等于可以丢掉 host-owned
-read states 或 Sample population。
+SDK 可以把 private projector 包装进 `gpuSource`、`gpuEnergyJoules` 与 `analyzeGpuEnergy()` 等领域 API。fields 位于
+nominal `AnalysisPopulation`；population 是类型与运行期 identity，不是 `"attempt-slot"` 之类字符串 grain。相同
+population 的 fields 才能直接组合；跨 population 只能由 Analysis SDK 通过具名 `AnalysisRelation` 形成目标
+population 上的新 field。Report 不调用 relation，也不自动寻找 join path。
 
-## Report 只静态约束自己的读取
+字段 descriptor 与本次执行值分开。Measure 静态声明 reduction、denominator、unit、format、better 与 evidence policy。
+materialized `MetricValue` 才携带 value、state、observed／denominator、issues 与 refs。Dimension 同样只静态声明分类与
+missingness policy，具体缺失是本次 row cell 的穷尽状态。
 
-Report definition 用 `reportInputs()` 声明有限领域 inputs。Report host 在 callback 前执行 Projection，形成 closed values
-与不可删除 problem inventory。
+`AnalysisPopulation` 的 aligned rows 只能由 package-minted builder 形成。field materializer 对每个 member 恰好产生一
+行；少行、重复 identity、foreign identity 或依赖顺序的输出是具名 execution problem，不是 measure missingness。
+隐藏 schema 与 reader，不等于可以丢掉 host-owned read states 或 Sample population。
+
+## Report 编译有限 Analysis 闭包
+
+Report definition 通过 `aggregate()` 与 Page／PageFamily 引用有限 Analysis fields。`aggregate()` 只建立 typed
+`ReportData` declaration，不读取 Record、不返回 Promise，也不是普通数组。Report host 在任何 Page callback 前编译
+字段依赖、执行 Projection／Analysis materialization，并形成不可删除 problem inventory。
 
 ```text
 RecordSnapshotSource.withSnapshot
   → RecordReader
   → selectAnalysisSample()
   → AnalysisSampleHandle
+  → compile finite ReportData dependency closure
+  → project / materialize each declaration at most once
+  → expand Page / PageFamily from closed rows
   → executeReport()
   → ReportExecution
 ```
 
 `RecordReader` 只属于 host callback。`AnalysisSampleHandle` 只活到 `executeReport()` 返回；Report 作者只声明
-`RecordProjection`，不会取得 reader 或 handle。相同 declaration 在一次 execution 内最多读取一次。
+Dimension、Measure 与 component descriptor，不会取得 projection、reader 或 handle。相同 projection 与 field-set
+materializer 在一次 execution 内至多执行一次。
 
-Calculation 在文件上属于 Report，在语义上位于 Analysis Derivation seam。它调用普通纯函数。Page 只呈现 calculation
-result，不打开 Record、不迁移、不重新采证，也不把 Report result 写成第二份 Record。
+依赖闭包是一张只包含本次 `analyze({ fields })` 或 ReportData 的有限 DAG。cycle、population mismatch 与 field identity
+collision 在 Record I/O 前拒绝；callback 不能在 materialization 后返回新的 `ReportData` 或追加依赖。它不是全程序、
+动态或任意运行时扩张的 Derivation graph。
+
+Page 只呈现 closed rows，不打开 Record、不迁移、不重新采证，也不把 Report result 写成第二份 Record。Report 可以在
+materialize 后改变显示顺序、截断与格式，但不能因此缩小 population、重算 `MetricValue` 或改变 denominator。
+
+## Report 身份与下钻闭合
+
+`ReportData` 的每行拥有 opaque `ReportRowKey`。`aggregate()` 用 nominal population identity 与完整 grouping
+coordinate 形成 key；measure、sort、limit 与 format 都不参与。`Bars`、`Table` 与 `Scatter` 使用该 key，不回退数组
+index，也不允许显示 label 替换身份。
+
+PageFamily 只作为 `defineReport.pages` 的顶层 declaration。family 的 `target(key)` 绑定 family object identity；route
+key 来自声明为 stable identity 的 Dimension，不使用 opaque aggregate key 或数组下标。compile 先验证 family 已列入
+Report，materialization 再验证 key 唯一、instance 存在且 route 无冲突。
+
+Evidence 默认下钻只有在一个 `MetricValue` 恰好一个 ref、Report 为该 evidence kind 显式声明唯一 PageFamily、对应
+instance 存在时才形成。否则 exact refs 与 coverage 仍保留，但没有链接。组件不能隐式增加 Page、projection 或 target。
 
 ## 不变量
 
@@ -145,3 +177,6 @@ result，不打开 Record、不迁移、不重新采证，也不把 Report resul
 8. Report callback 不能取得 reader、root runtime、Sample handle、maintenance 或 adapter。
 9. host-owned read states、migration problems 与 execution problems 不能被页面过滤掉。
 10. official facts 使用同形 adapter binding；官方特权止于 namespace construction 与 installation package owner。
+11. 一个 `aggregate()` 只能组合同一 nominal population 的 fields；Report 不执行 heuristic join。
+12. Report 的 display-only sort／limit／format 不改变 `ReportRowKey`、`MetricValue` 或 denominator。
+13. 自定义 Report component 只组合既有 semantic primitives；新增 primitive 必须同时定义 terminal、Web 与 static face。

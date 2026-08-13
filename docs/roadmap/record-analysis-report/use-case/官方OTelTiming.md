@@ -1,8 +1,8 @@
 # 主用例一：官方 OTel Timing 从采集到 Report
 
-这是 `niceeval.timing/v1` 的端到端 Use Case，不是通用 Library。adapter、binding、Projection 与 Report
+这是 `niceeval.timing/v1` 的端到端 Use Case，不是通用 Library。adapter、binding、Analysis fields 与 Report
 的公共语法分别以 [RecordAttachment adapter SPI](../../record-attachment-authoring/library.md)、
-[Record → Analysis → Report Library](../library.md) 和 [Reports Library](../../../feature/reports/library.md) 为单源；
+[Record → Analysis → Report Library](../library.md) 和 [Authoring](../authoring.md) 为单源；
 本页只把这些语法代入官方 timing。
 
 ```text
@@ -13,8 +13,8 @@ Agent／Adapter tracing API
   → niceeval.timing/v1 payload
   → generic RecordAttachment command
   → attempt-slot Projection
-  → deriveObservedWindows()
-  → Report Calculation / Page
+  → observedWindowMs Measure
+  → aggregate / Report Page
 ```
 
 OTel 是采集输入，不是持久事实权威。Record 中唯一的 timing 事实是 collector 封口后写入的
@@ -60,9 +60,9 @@ Analysis 与内建 Report 都由官方 package 接管。
 
 | 消费者 | 使用的 official surface | 不应做什么 |
 |---|---|---|
-| 普通 Analysis script | `projectTiming()`、`deriveObservedWindows()` | 不 import projector、schema 或 reader |
-| Relations／其它 Analysis | closed `ProjectedSample` 与 exact refs | 不按数组位置或时间邻近猜 join |
-| 内建 Report | `timingByAttempt` + 同一个 `deriveObservedWindows()` | 不复制一份 Report-only 公式 |
+| 普通 Analysis script | `analyzeTiming()` | 不 import projector、schema 或 reader |
+| Relations／其它 Analysis | official timing fields 与 exact refs | 不按数组位置或时间邻近猜 join |
+| 内建 Report | `observedWindowMs` Measure | 不复制一份 Report-only 公式 |
 | `show`／`view`／static export | official Analysis value 或同一 `ReportExecution` | 不直接解码 Timing Attachment |
 
 因此“官方”不只表示 NiceEval 写 schema；它也表示 NiceEval 拥有从采集、领域 Analysis 到内建 Report 组件的整条消费契约。
@@ -123,7 +123,7 @@ const attemptTimingProjector =
   attemptTimingRecord.projector;
 ```
 
-official Analysis surface 只导出后文的 `timingByAttempt`、`projectTiming()` 与 `deriveObservedWindows()`。
+official Analysis surface 只导出后文的 `timingState`、`observedWindowMs` 与 `analyzeTiming()`。
 它不导出 adapter、namespace authority、raw projector、installation 或 binding。
 
 ## 2. OTel span 怎样进入唯一 collector
@@ -209,8 +209,8 @@ v1 是当前版本，暂时没有历史 edge，所以 migration graph 明确为 
 
 ## 4. 官方 Analysis surface 怎样被其它层消费
 
-official Timing analysis module 把 package-private projector 绑定到 Attempt slot access，并公开领域 declaration、直接读取
-函数与纯 Derivation：
+official Timing analysis module 把 package-private projector 绑定到 Attempt slot access，再公开领域 fields 与 direct
+Analysis function。raw projection 不是 consumer surface：
 
 ```ts
 // niceeval official timing analysis module
@@ -223,39 +223,18 @@ import type {
 } from "niceeval/analysis";
 import {
   attemptSlotProjection,
-  projectAnalysisSample,
   type AttemptTimingView,
   type ProjectedRecordAttachmentResult,
   type ProjectedSample,
 } from "niceeval/projection";
 
-export const timingByAttempt = attemptSlotProjection(
+const timingByAttempt = attemptSlotProjection(
   attemptTimingProjector,
 );
-
-export const projectTiming = (sampleHandle) =>
-  projectAnalysisSample({
-    sampleHandle,
-    projection: timingByAttempt,
-  });
 ```
 
-普通 Analysis script 只消费这些 official exports：
-
-```ts
-import {
-  deriveObservedWindows,
-  projectTiming,
-} from "niceeval/analysis";
-
-const projected = yield* projectTiming(sampleHandle);
-const windows = deriveObservedWindows(projected);
-```
-
-`deriveObservedWindows()` 由 official Timing analysis module 拥有，普通 Analysis 与内建 Report 都 import 这一个纯
-函数。下面固定其输入输出签名；函数体遵守随后七条规则。它不读 Record，也不依赖 Report。它返回普通 closed value，
-而不是调用
-`metricValue()`、`evidenceRow()` 或另一个 runtime：
+`deriveObservedWindows()` 由 official Timing analysis module 拥有，field materializer 调用这一个纯函数。下面固定其
+输入输出签名；函数体遵守随后七条规则。它不读 Record，也不依赖 Report：
 
 ```ts
 type TimingIntervalId = AttemptTimingView["intervals"][number]["intervalId"];
@@ -322,7 +301,7 @@ interface ObservedTimingWindows {
   readonly refs: readonly TimingWindowRef[];
 }
 
-export declare const deriveObservedWindows: (
+declare const deriveObservedWindows: (
   projected: ProjectedSample<"attempt-slot", AttemptTimingView>,
 ) => ObservedTimingWindows;
 ```
@@ -340,109 +319,125 @@ export declare const deriveObservedWindows: (
    interval IDs。
 7. 任一非 excluded 数据缺口使整体 state 为 partial；complete-empty 本身不制造问题。
 
-这个 bounding window 不等于 interval duration 之和。v1 没有 designated root 或完整因果边，因而不能从这棵 parent tree
-声称 Attempt 总耗时或 critical path，也不能跨 Attempt 自动求平均。
-
-## 5. 官方 Report 组件怎样消费同一个纯函数
-
-official Report package 静态声明同一个 projection。Calculation 直接复用 `deriveObservedWindows()`；普通 Analysis、
-内建 Report、`show`、`view` 与 static export 不维护第二份公式。
+同一个 module 再把纯结果包装成 `logicalSlots` population 上的 fields：
 
 ```ts
-import { Either } from "effect";
-import {
-  defineCalculation,
-  definePage,
-  defineReport,
-  reportComponentId,
-  reportDocument,
-  reportId,
-  reportInputs,
-  reportMetric,
-  reportRoute,
-} from "niceeval/report";
-import {
-  deriveObservedWindows,
-  timingByAttempt,
-} from "niceeval/analysis";
-
-const inputs = reportInputs({ timing: timingByAttempt });
-
-export const observedWindows = defineCalculation({
-  id: Either.getOrThrow(reportComponentId("observed-windows")),
-  inputs,
-  completeness: "allow-partial",
-  calculate: ({ inputs }) =>
-    deriveObservedWindows(inputs.timing),
-});
-
-export const timingPage = definePage({
-  id: Either.getOrThrow(reportComponentId("timing")),
-  route: Either.getOrThrow(reportRoute("/timing")),
-  calculations: { observedWindows },
-  render: ({ calculations }) => {
-    const result = calculations.observedWindows;
-
-    if (result.state !== "available") {
-      return reportDocument({
-        title: "Timing",
-        children: [{
-          type: "status",
-          tone: "negative",
-          label: "Timing calculation unavailable",
-        }],
-      });
-    }
-
-    const value = result.value;
-    return reportDocument({
-      title: "Timing",
-      children: [
-        reportMetric({
-          label: "Observed slots",
-          value: `${value.observed}/${value.denominator}`,
-        }),
-        {
-          type: "status",
-          tone: value.state === "complete" ? "positive" : "warning",
-          label: value.state,
-        },
-        {
-          type: "table",
-          caption: "Observed timing window by logical slot",
-          columns: [
-            { key: "slot", label: "Slot" },
-            { key: "attempt", label: "Attempt" },
-            { key: "state", label: "State" },
-            { key: "windowMs", label: "Window (ms)", align: "end" },
-            { key: "intervals", label: "Intervals" },
-          ],
-          rows: value.rows.map((row) => ({
-            slot: `${row.slot.runId}/${row.slot.slotId}`,
-            attempt: row.attempt?.attemptId ?? null,
-            state: row.state,
-            windowMs: row.observedWindowMs,
-            intervals: row.refs.flatMap((ref) => ref.intervalIds).join(", "),
-          })),
-        },
-      ],
-    });
+const timingFields = defineAnalysisFields({
+  id: "niceeval.timing",
+  population: logicalSlots,
+  dependencies: { timing: timingByAttempt },
+  materialize: ({ population, dependencies }) => {
+    const windows = deriveObservedWindows(dependencies.timing);
+    return population.rows((slot) => timingWindowCells(
+      slot,
+      windows.rowsBySlot.get(slot.key),
+    ));
   },
 });
 
+export const timingState = timingFields.dimension({
+  id: "timing-state",
+  cell: "state",
+  missing: "explicit-state",
+});
+
+export const observedWindowMs = timingFields.measure({
+  id: "observed-window-ms",
+  cell: "observedWindowMs",
+  rollup: logicalSlotRollup({
+    withinEval: mean,
+    acrossEvals: mean,
+  }),
+  denominator: allLogicalSlots,
+  evidence: allDenominatorAttemptRefs,
+  unit: "ms",
+  format: "duration",
+  better: "lower",
+});
+
+export const analyzeTiming = (sampleHandle) =>
+  analyze({
+    sampleHandle,
+    fields: {
+      state: timingState,
+      window: observedWindowMs,
+    },
+  });
+```
+
+`allLogicalSlots` 保留完整 denominator；mean 只折 observed numeric cells。因此 partial execution 可以同时保留 observed
+window 与 `observed/denominator`，不会把缺口从分母删除。complete-empty 是 `empty` cell，不是 `0ms`。checked arithmetic
+失败形成 invalid issue 与 `value: null`。
+
+普通 Analysis script 只消费 official field executor：
+
+```ts
+import { analyzeTiming } from "niceeval/analysis";
+
+const timing = yield* analyzeTiming(sampleHandle);
+```
+
+这个 bounding window 不等于 interval duration 之和。v1 没有 designated root 或完整因果边，因而不能从这棵 parent tree
+声称 Attempt 总耗时或 critical path，也不能跨 Attempt 自动求平均。
+
+## 5. 官方 Report 组件怎样消费同一个 Measure
+
+official Report package 与第三方 Report 使用完全相同的 `aggregate + component` 作者面：
+
+```tsx
+/** @jsxImportSource niceeval/report */
+import {
+  Bars,
+  Table,
+  aggregate,
+  attemptDetailsPageFamily,
+  defineComponent,
+  defineReport,
+} from "niceeval/report";
+import {
+  evalId,
+  observedWindowMs,
+} from "niceeval/analysis";
+
+const timingByEval = aggregate({
+  by: { eval: evalId },
+  values: { observedWindowMs },
+});
+
+export const TimingOverview = defineComponent(() => (
+  <>
+    <Bars
+      points={timingByEval}
+      x="eval"
+      y="observedWindowMs"
+      sort={{ field: "observedWindowMs", direction: "desc" }}
+      layout="horizontal"
+    />
+    <Table rows={timingByEval} />
+  </>
+));
+
+const timingPage = {
+  id: "timing",
+  route: "/timing",
+  render: () => <TimingOverview />,
+};
+
 export default defineReport({
-  id: Either.getOrThrow(reportId("timing")),
-  calculations: { observedWindows },
-  pages: [timingPage],
+  id: "timing",
+  pages: [timingPage, attemptDetailsPageFamily],
+  evidence: { attempt: attemptDetailsPageFamily },
 });
 ```
 
-这两个 official Report 组件属于 NiceEval 内建 Report 组合，不要求普通用户在项目里重写。`show` 可以消费同一个 closed
-Analysis value；`view` 与 static export 消费同一个 `ReportExecution`，所以终端、网页和导出站不会各算一套 timing。
+Report 只 import `evalId` 与 `observedWindowMs` fields，不 import `timingByAttempt` 或
+`deriveObservedWindows()`。host 从 `timingByEval` 编译依赖闭包，复用同一 official field materializer；普通 Analysis、
+内建 Report、`show`、`view` 与 static export 不维护第二份公式。
 
-Report host 仍会在内建 problems surface 保留 unavailable、migration、unsupported、invalid 与 callback defect。
-页面能选择怎样显示 Calculation value，但不能把这些问题从 `ReportExecution` 删除，也不能在 render callback 中重新
-打开 Record、导入 OTLP 或执行 migration。
+`Bars` 与 `Table` 消费同一 `MetricValue`，并保留 partial、unit、format、observed／denominator、issues 与 refs。
+`attemptDetailsPageFamily` 显式进入 pages 与 evidence map；多个 refs 不会任选一个下钻。Report host 仍保留 unavailable、
+migration、unsupported、invalid 与 callback defect，Page 不能删除 problems，也不能重新打开 Record、导入 OTLP 或执行
+migration。
 
 ## 完整路径的可核对断言
 

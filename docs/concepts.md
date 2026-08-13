@@ -241,9 +241,9 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| 报告 | `Report` | `defineReport` 返回的作者定义；只声明所需数据、Calculation 与 Page / PageFamily / Download 展示 | [Reports](feature/reports/README.md) |
-| 计算 | Report Calculation | 从已声明 projection 形成派生值；通过率、成本与诊断分布都属于这一层 | [Reports](feature/reports/README.md) |
-| 页 | Report Page | 从已声明数据或 Calculation 形成 closed semantic document 的呈现单位 | [Reports](feature/reports/README.md) |
+| 报告 | `Report` | `defineReport` 返回的作者定义；组合静态 `ReportData`、Page／PageFamily 与 semantic components | [Record → Analysis → Report](roadmap/record-analysis-report/README.md) |
+| （历史）报告计算 | Report Calculation | PLAN-5 的 projection 派生注册；目标作者面改用 Analysis Measure 与 `aggregate()`，新文档不再使用该术语 | [Report authoring decision](design/report-authoring/DECISION.md) |
+| 页 | Report Page | 从静态 `ReportData`／closed rows 形成 closed semantic document 的呈现单位 | [Report authoring](roadmap/record-analysis-report/authoring.md) |
 | 报告执行 | `ReportExecution` | 一次 immutable、自包含的 Report 结果；show、view revision 与 static export 共同消费 | [Reports](feature/reports/README.md) |
 | 静态报告 | Static report | 无网络、无源 Record、带精确 runtime 的自包含目录 | [Reports architecture](feature/reports/README.md#自包含静态-export) |
 
@@ -262,6 +262,12 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 |---|---|---|---|
 | Record 访问运行时 | `RecordAccessRuntime` | 在一个 host operation 内统一 canonical root、snapshot generations、lock authority 与本地 verified-read cache，并 mint 分权 facets | [Record → Analysis → Report](roadmap/record-analysis-report/README.md) |
 | 分析 | Analysis | 在同一 frozen Record view 上固定分母、解释事实、建立关系并派生 closed values；不写 Record 或渲染页面 | [Record → Analysis → Report](roadmap/record-analysis-report/README.md) |
+| Analysis population | `AnalysisPopulation` | 带 nominal identity、稳定 row identity 与穷尽规则的一组 Analysis members；grain 只是解释文字，不是字符串兼容协议 | [Record → Analysis → Report Library](roadmap/record-analysis-report/library.md#analysis-作者面) |
+| Analysis dimension | `Dimension` | 属于一个 nominal population、用于分组或稳定标识的 typed field；不执行跨 population join | [Record → Analysis → Report Library](roadmap/record-analysis-report/library.md#在-population-上定义-fields) |
+| Analysis measure | `Measure` | 属于一个 nominal population，并一次声明 rollup、denominator、数值与 evidence policy 的 typed field | [Record → Analysis → Report Library](roadmap/record-analysis-report/library.md#在-population-上定义-fields) |
+| Analysis relation | `AnalysisRelation` | 由领域 SDK 拥有、把一个 population 穷尽对齐到另一个 population 的具名纯关系；Report 不自动寻路 | [Record → Analysis → Report Library](roadmap/record-analysis-report/library.md#定义-population-与-relation) |
+| Report 数据声明 | `ReportData` | `aggregate()` 等作者 API 形成的静态 typed declaration；不是 Promise、数组或可在 render 时追加 I/O 的查询句柄 | [Record → Analysis → Report Library](roadmap/record-analysis-report/library.md#report-作者面) |
+| Report 行身份 | `ReportRowKey` | 由 nominal population identity 与完整 group coordinate 形成的 opaque 行身份；不受排序、截断或格式影响 | [Record → Analysis → Report Architecture](roadmap/record-analysis-report/architecture.md#report-身份与下钻闭合) |
 | 可重评分 Eval | Replayable Eval | 用独立 execution 与 grading definition 保存完整多轮证据，并允许只对 sealed Execution graph 重新评分 | [可重评分 Eval](roadmap/replayable-grading/README.md) |
 | Execution graph | Execution graph | 保存一次 replayable Agent 执行的 Observation、Provenance、Ref manifest 与 ExecutionOutcome 的 sealed graph | [Replayable Architecture](roadmap/replayable-grading/architecture.md#两个-plane) |
 | Grading | Grading | 一个 GradingDefinition 对一份 sealed Execution graph 产生新的不可变 grading claim 与结果 graph | [Replayable Architecture](roadmap/replayable-grading/architecture.md#gradingrun-与-gradedsample) |

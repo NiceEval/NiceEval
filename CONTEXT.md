@@ -125,7 +125,24 @@ _Avoid_: Heuristic join, Metric result
 dependency、去重或局部失败时，它才是独立 runtime layer。
 _Avoid_: Projection, Page loader
 
+**Analysis population**:
+带 nominal identity、稳定 row identity 与穷尽规则的一组 Analysis members。grain 只是人读说明，不是字符串兼容协议。
+_Avoid_: Result table, Grain string
+
+**Analysis dimension**:
+属于一个 Analysis population、用于分组或稳定标识的 typed field。它不能跨 population 自动 join。
+_Avoid_: Group callback, Report field
+
+**Analysis measure**:
+属于一个 Analysis population，并声明 rollup、denominator、数值与 evidence policy 的 typed field。本次 value、coverage 与
+refs 只存在于 materialized MetricValue。
+_Avoid_: Report calculation, Numeric column
+
+**Report data declaration**:
+由 `aggregate()` 等作者 API 形成的静态 typed dependency declaration。它不是 Promise、数组或 render-time query handle。
+_Avoid_: Report rows, Data source
+
 **Report component**:
-Report 中消费 closed projected／derived values 的 Calculation、Page 或显示形状。它不读取 Record，
+Report 中纯组合 `ReportData` 与既有 semantic primitives 的 descriptor component。它不读取 Record、不定义业务 measure，
 也不充当 Analysis API。
 _Avoid_: Analysis component, Record component

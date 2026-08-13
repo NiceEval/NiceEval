@@ -7,8 +7,8 @@
 [官方 OTel Timing 完整路径](../../record-analysis-report/use-case/官方OTelTiming.md)展示 NiceEval package 怎样同时拥有：
 
 - `niceeval.timing` 的 sealed value、adapter 与 Attempt binding；
-- official `timingByAttempt`、`projectTiming()` 与 `deriveObservedWindows()`；
-- 内建 Report 的 Calculation／Page，以及 `show`、`view`、static export 的复用消费。
+- package-private `timingByAttempt` 与 `deriveObservedWindows()`，以及公开 `observedWindowMs`、`analyzeTiming()`；
+- 内建 Analysis fields 与 ReportData／Page，以及 `show`、`view`、static export 的复用消费。
 
 [内建事实](内建事实.md)、[Assertions 与 Evidence](../../record-analysis-report/use-case/断言与证据.md)和
 [File Diff](../../record-analysis-report/use-case/文件差异.md)是同一官方路径的领域变体，不建立第二种 official writer。
@@ -19,8 +19,8 @@
 
 - SDK 定义 sealed value、adapter、binding、opaque installation 与 Analysis exports；
 - 普通 Eval 只挂 `gpuEnergy({ meter })`；
-- Analysis script 调用 `projectGpuEnergy()` 与 `deriveGpuEnergy()`；
-- Report 作者用 `gpuEnergyByAttempt` 和同一个 Derivation 编写 Calculation／Page 组件。
+- Analysis script 调用 `analyzeGpuEnergy()`；Report import `gpuSource` 与 `gpuEnergyJoules`；
+- Report 作者用 `gpuEnergyJoules` 等 Analysis fields 编写 `aggregate()`／Page／纯组合组件。
 
 下面的文档是这套用户扩展路径的机械切片，方便实现时按边界查阅；它们不是更多套作者模型：
 

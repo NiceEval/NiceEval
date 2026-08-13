@@ -1,5 +1,10 @@
 # Reports：把 AnalysisSample 变成可交付视图
 
+> 本目录的 Projection／Calculation 作者 API 已被
+> [Report authoring PLAN-6](../../design/report-authoring/PLAN-6/README.md) 的目标契约替换。
+> 本目录保留为迁移输入；后续实现与文档提升以
+> [Record → Analysis → Report](../../roadmap/record-analysis-report/README.md) 为准。
+
 Reports 把 [`AnalysisSample`](../sample/README.md) 与官方 opaque projection 变成终端输出、热重载页面或可分享的静态站。它负责 projection 之后的计算与呈现，不拥有评估事实。
 
 ```text

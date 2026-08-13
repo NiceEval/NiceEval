@@ -14,9 +14,23 @@
 | `ExactValueRows` | `projectChartWeb` | 所有 channel 的精确值、missing、coverage、refs、可服务链接 | tooltip 状态、像素命中逻辑 |
 | `EnhancementPayload` | `projectChartWeb` | point key、focus 顺序、几何、tooltip rows、exact row key、href | source row、MetricValue、refs object、计算函数 |
 
-`compileChart` 的签名只有作者 props，返回 `{ model, projection }`。
+`compileChart` 的签名只有已经 materialize 的作者 props，返回 `{ model, projection }`。
 它没有 `TextContext`、`WebContext`、theme 或页级 visual keyset。
-它可以调用作者提供的纯 `pointTarget(row)`，因为返回值仍是宿主无关的 `ReportTarget`。
+它可以调用作者提供的纯 `pointTarget(row)`，因为返回值仍是宿主无关、由 PageFamily `target()` mint 的
+`ReportTarget`。
+
+## 上游 ReportData 边界
+
+Report 作者给 Evidence chart 的 `points` 是静态 `ReportData<Population, Row>`。Report host 先按
+[Record → Analysis → Report](../record-analysis-report/architecture.md#report-编译有限-analysis-闭包) 编译并 materialize
+fields，再把 closed rows 交给 `compileChart`。Chart 不取得 `ReportData` compiler、projection 或 Sample handle。
+
+每个 materialized Report row 已有 opaque `ReportRowKey`。Chart 必须沿用该 key；显示字段、声明顺序、sort、limit 与
+format 都不能重建身份。外部静态 scalar rows 不属于 Analysis，可以继续直传数组，但每行必须显式提供唯一、非空且
+稳定的 `key`；不提供时 definition invalid，不能回退 index。
+
+公开 DSL 使用 `pointLabel` channel 表达可见点名；它只影响 label，不影响 `ReportRowKey`。旧 `point` 字段不进入目标契约。
+`pointTarget` 只能返回某个已列入 Report 的 PageFamily object 所 mint 的 target，不接受直接 route string。
 
 ## 公开 closed-mark DSL
 
@@ -26,7 +40,9 @@
 ```ts
 type ChartMark = "line" | "bar" | "area" | "scatter";
 type ExternalScalar = string | number | boolean | null;
-type ExternalPoint = Readonly<Record<string, ExternalScalar>>;
+type ExternalPoint = Readonly<Record<string, ExternalScalar>> & {
+  readonly key: string;
+};
 
 interface ChartAxisDeclaration {
   id: string;
@@ -40,8 +56,8 @@ interface ChartAxisDeclaration {
   label?: LocalizedText;
 }
 
-interface ChartProps<Row extends object> {
-  points?: readonly Row[];
+interface ChartProps<Population, Row extends object> {
+  points?: ReportData<Population, Row> | readonly ExternalPoint[];
   label: LocalizedText;
   description?: LocalizedText;
   axes?: readonly ChartAxisDeclaration[];
@@ -61,10 +77,9 @@ interface ChartProps<Row extends object> {
 interface SeriesCommon<Row extends object> {
   id: string;
   mark: ChartMark;
-  points?: readonly Row[];
   x: keyof Row & string;
   y: keyof Row & string;
-  point?: keyof Row & string;
+  pointLabel?: keyof Row & string;
   by?: keyof Row & string;
   value?: string;
   xAxis?: string;
@@ -78,21 +93,23 @@ interface SeriesCommon<Row extends object> {
   shape?: "circle" | "square" | "diamond";
 }
 
-interface EvidenceSeriesProps<Row extends EvidenceRow>
+interface EvidenceSeriesProps<Population, Row extends object>
   extends SeriesCommon<Row> {
+  points?: ReportData<Population, Row>;
   external?: false;
-  pointTarget?: (row: Row) => ReportTarget | undefined;
+  pointTarget?: (row: ClosedReportRow<Row>) => ReportTarget | undefined;
 }
 
 interface ExternalSeriesProps<Row extends ExternalPoint>
   extends SeriesCommon<Row> {
+  points?: readonly Row[];
   external: true;
   pointTarget?: never;
 }
 
-type SeriesProps<Row extends object> =
-  | EvidenceSeriesProps<Row & EvidenceRow>
-  | ExternalSeriesProps<Row & ExternalPoint>;
+type SeriesProps<Population, Row extends object> =
+  | EvidenceSeriesProps<Population, Row>
+  | ExternalSeriesProps<ExternalPoint>;
 
 interface ChartSeriesOverride {
   hidden?: boolean;
@@ -118,10 +135,17 @@ interface ChartCompilation {
   projection: ChartProjectionOptions;
 }
 
-declare function compileChart<Row extends object>(
-  props: ChartProps<Row>,
+type MaterializedChartProps<Props> =
+  MaterializeReportDeclarations<Props>;
+
+declare function compileChart<Props extends ChartProps<unknown, object>>(
+  props: MaterializedChartProps<Props>,
 ): ChartCompilation;
 ```
+
+`ChartProps`／`SeriesProps` 是公开 declaration shape；作者传 `ReportData`，不会取得
+`MaterializedReportRows`。`MaterializedChartProps` 与 `compileChart` 属 host 内部，只有有限 dependency closure 完成后才
+存在。
 
 `compileChart` 为 layout、legend、tooltip 与 grid 填入默认值，但不把 width 或 height 换成像素。
 `projection.locale` 是作者可选的 locale override，不是已经本地化的字符串。
@@ -154,7 +178,7 @@ external scalar 由 axis metadata 格式化，但不会获得 samples、total、
 category axis 不要求 unit 或 format。
 
 `Series.value` 只在 `by` 存在时选择一个分组值。
-它不声明读数、unit、format、better 或 bounds，也不进入 point channel。
+它不声明读数、unit、format、better 或 bounds，也不进入 pointLabel channel。
 
 `Chart.series[id]` 在 child 声明后应用，只能改变 `hidden`、`label`、`line` 与 `shape`。
 未知 id 失败；override 不能改 rows、字段、证据模式、axis、stack 或 point target。
@@ -168,7 +192,7 @@ category axis 不要求 unit 或 format。
 
 ```ts
 type ChartScalar = string | number | boolean;
-type ChartChannel = "x" | "y" | "point" | "series";
+type ChartChannel = "x" | "y" | "pointLabel" | "series";
 
 type ChartChannelValue =
   | {
@@ -206,8 +230,8 @@ type ChartSemanticExtent =
     };
 
 interface ChartPointIdentity {
-  kind: "field" | "key" | "index";
-  value: ChartScalar;
+  kind: "report-row" | "external-key";
+  value: ReportRowKey | string;
 }
 
 interface ChartAxisModel {
@@ -228,7 +252,6 @@ interface ChartPointModel {
   identity: ChartPointIdentity;
   declarationIndex: number;
   channels: Readonly<Record<ChartChannel, ChartChannelValue | undefined>>;
-  rowRefs: readonly AttemptLocator[];
   target?: ReportTarget;
   visualIdentity?: VisualIdentityToken;
   drawable: boolean;
@@ -269,20 +292,24 @@ interface ChartModel {
 }
 ```
 
-row identity 按唯一顺序选择：显式 `point` 字段、非空 scalar `row.key`、series 内的声明 index。
-index fallback 只承诺在相同静态 rows 顺序下稳定；需要跨重排保持身份的作者必须声明 `point`。
+Evidence row identity 只使用上游 `ReportRowKey`。external row identity 只使用显式非空 scalar `row.key`。没有 field 或
+index fallback；`pointLabel` 只是可见 channel。
 
 point key 对 series id、identity kind 与 identity value 做带长度的无歧义编码，不是字符串直接拼接。
 compiler 验证全图唯一；重排、exact row、focus、tooltip 与链接都使用这个 key。
 
-EvidenceRow series 要求每行有 `refs`，x/y 读数字段要求 `MetricValue`。
-每个 channel 保存自己的 MetricValue，因此 x 与 y 的 coverage 和 refs 不会被合并成第一组证据。
+Evidence series 的 rows 来自 `ReportData`，x/y 读数字段要求 `MetricValue`。每个 channel 保存自己的 MetricValue，因此 x
+与 y 的 coverage 和 refs 不会被合并成 row-level 证据。
 
-默认 point target 只在 `rowRefs` 恰好含一个 locator 时生成 attempt target。
-作者的 `pointTarget(row)` 可以改写它；compiler 保存函数返回的 `ReportTarget`，不保存函数或 source row。
+便利组件只有恰好一个 evidence-bearing measure channel 时才尝试默认 point target。该 `MetricValue` 还必须恰好含一个
+locator，Report 必须为其 evidence kind 显式声明唯一 PageFamily，且对应 family instance 存在。否则各 channel 原样保留
+refs，不生成 target，也不跨 channel 合并或任选 locator。
+
+作者的 `pointTarget(row)` 只能返回已注册 PageFamily 的 object-bound target；compiler 保存该 `ReportTarget`，不保存函数
+或 source row。缺失 family、missing key、duplicate instance 或 route collision 形成具名 execution problem。
 
 External series 只允许 JSON scalar。
-它的 `rowRefs` 恒为空、target 始终省略，也不能借另一个 evidence series 的 point key 获得下钻。
+它的 channel 没有 `MetricValue` 或 refs，target 始终省略，也不能借另一个 evidence series 的 point key 获得下钻。
 
 缺失 row 仍生成 `ChartPointModel`，`drawable` 为 false，并进入 exact-value rows。
 线段是否跨过缺失点只由 `connectNulls` 决定，不能把 missing 改成零。
@@ -728,6 +755,15 @@ interface TablePresentationProps {
   className?: string;
 }
 
+interface ReportDataTableProps<Population, Row extends object>
+  extends TablePresentationProps {
+  rows: ReportData<Population, Row>;
+  columns?: readonly TableColumn<Row>[];
+  subRows?: never;
+  search?: TableSearch;
+  sort?: TableSort<Row>;
+}
+
 interface FlatTableProps<Row extends object>
   extends TablePresentationProps {
   rows: readonly Row[];
@@ -750,6 +786,14 @@ interface NestedTableProps<
 
 interface TableRuntimeProps extends TablePresentationProps {
   rows: readonly object[];
+  rowIdentity:
+    | {
+        kind: "report-data";
+        keys: readonly ReportRowKey[];
+      }
+    | {
+        kind: "presentation-occurrence";
+      };
   columns?: readonly unknown[];
   subRows?: string;
   search?: TableSearch;
@@ -765,10 +809,13 @@ type TableComponentBase = Pick<
 >;
 
 type TableComponent = TableComponentBase & {
+  <Population, Row extends object>(
+    props: ReportDataTableProps<Population, Row>,
+  ): ReportNode;
   <Row extends object, K extends TableSubRowsKey<Row>>(
     props: NestedTableProps<Row, K>,
-  ): ReactNode;
-  <Row extends object>(props: FlatTableProps<Row>): ReactNode;
+  ): ReportNode;
+  <Row extends object>(props: FlatTableProps<Row>): ReportNode;
 };
 
 export const Table = TableImplementation as unknown as TableComponent;
@@ -781,6 +828,13 @@ Nested overload 必须排在 flat overload 前，且 flat props 用 `subRows?: n
 `TableVisibleKey<Row, K>` 只保留所有 union 分支共有的 string key，并排除 child field。
 因此 `subRows` 不能同时出现在 columns 或 sort 中，variant-only field 也不能伪装成所有层级共有的可见列。
 `ReportComponent<TableRuntimeProps>` 的宽调用签名不能和泛型 overload 相交；`TableComponentBase` 只保留 faces metadata 与 displayName。
+
+`ReportDataTableProps` 是 Analysis-backed 的作者路径。host materialize declaration 时把每行固有的 `ReportRowKey` 放入
+`rowIdentity.keys`；搜索、排序、可见列和格式选择只能重排行，不能重建或替换这些 keys。
+
+`FlatTableProps`／`NestedTableProps` 是 presentation-only literal 路径。它们只用于作者手写的静态 scalar／
+`LocalizedText` rows，不接受 `MetricValue`、evidence refs 或 `ReportTarget`，也不冒充 Analysis population。需要指标、
+coverage 或下钻时必须先形成 `ReportData`。
 
 mapped discriminated union 让 `field: K` 对应的 `sortValue` 参数精确为 `Row[K]`，不是所有字段值的 union。
 shorthand 与复杂列都只接受可见 string key。
@@ -825,12 +879,13 @@ collator options 是 `{ usage: "sort", sensitivity: "base", numeric: true, ignor
 null 或 missing rank 在升序和降序中始终位于末尾；相等 rank 始终按各 sibling set 的声明顺序保持稳定。
 
 `sortValue` 不能改变显示 Cell、MetricValue、coverage、refs 或 field identity。
-跨字段排序或计算列先在 page 中用普通函数产生显式字段。
+跨字段业务排序或计算列先在 Analysis 中定义显式 Dimension／Measure。Table 只接受单字段 display sort token。
 
 public Table 不提供 `features`、`initialState`、`rowKey`、`expanded`、multi-sort、`better`、`hidden` 或列级 `label`。
 它也不提供通用 accessor、display/group column、renderer callback 或 controlled `state/onStateChange`。
 
-普通 rows 在当前 Table render instance 内按结构 occurrence 得到 opaque key；该 key 不承诺跨 remount、重新装载或构建的 identity。
+`ReportData` rows 始终透传 `ReportRowKey`。presentation-only literal rows 才在当前 Table render instance 内按结构
+occurrence 得到 opaque key；该 key 不承诺跨 remount、重新装载或构建的 identity。
 同一个对象出现在两个 parent 下是两个合法 occurrence，不共享展开状态。
 重新装载或 remount 后折叠状态重置为全部展开；public API 不提供持久化、deep link 或 live patch 契约。
 
@@ -1043,13 +1098,11 @@ fixture 分别在 `en`、`zh-CN`、两组 dimensionPins、固定 light/dark them
 72-point fixture 验收 scatter 与 line；matrix fixture 验收 bar 与 area。
 两者合起来穷尽 closed mark、band axis、正负 stack 与 horizontal layout。
 
-## `defineRenderer`
+## Renderer 扩展不是普通插件
 
-`defineRenderer` 继续从 `niceeval/report/extension` 独立导出。
-它只承诺已计算普通值、text/web 双面、assets、dimensions 和现有 render context。
+目标作者面不再从 `niceeval/report/extension` 导出 `defineRenderer`。普通 application／领域 SDK 通过
+`defineComponent()` 纯组合已有 semantic primitives。
 
-内部 Chart 类型不从 `niceeval/report` 或 `niceeval/report/extension` 导出。
-自定义 renderer 不能传入 `ChartModel`、调用 web projector、追加 scene node 或注册 Chart mark。
-
-这个边界让 Chart 内核可以在不扩大公共兼容面的前提下演进。
-它也诚实说明自定义 heatmap 必须自行提供精确值、键盘行为、证据链接和双面一致性。
+内部 Chart 类型不从 `niceeval/report` 导出。新增 heatmap、mark 或其它真正 primitive 属 NiceEval core 契约变更。
+它必须同时提供 terminal、Web 与 static face、exact values、无 JavaScript 降级、键盘行为、证据链接和稳定 identity；不能用
+一个只实现 web 的 renderer plugin 绕过。

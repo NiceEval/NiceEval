@@ -4,11 +4,11 @@
 
 | 主用例 | 谁拥有领域能力 | 普通入口 | Analysis 消费 | Report 消费 |
 |---|---|---|---|---|
-| [官方能力：OTel Timing](官方OTelTiming.md) | NiceEval official package | Agent／Adapter tracing，例如 `aiSdkOtel()` | 官方 `timingByAttempt`、`projectTiming()` 与 `deriveObservedWindows()` | 官方 Calculation／Page；`show`、`view` 与 static export 复用同一结果 |
-| [用户扩展：GPU 能耗](第三方事实扩展.md) | 第三方领域 SDK 与 application | `gpuEnergy({ meter })` Plugin | SDK 导出 `gpuEnergyByAttempt`、`projectGpuEnergy()` 与 `deriveGpuEnergy()` | 用户用这些领域 export 编写自己的 Calculation／Page |
+| [官方能力：OTel Timing](官方OTelTiming.md) | NiceEval official package | Agent／Adapter tracing，例如 `aiSdkOtel()` | 官方 timing fields 与 `analyze()` | 官方 `ReportData`／Page；`show`、`view` 与 static export 复用同一结果 |
+| [用户扩展：GPU 能耗](第三方事实扩展.md) | 第三方领域 SDK 与 application | `gpuEnergy({ meter })` Plugin | SDK 导出 `gpuSource`、`gpuEnergyJoules` 与 direct Analysis surface | 用户用这些 fields 编写 `aggregate()`／Page／component |
 
-这里的“组件”专指 Report 的 Calculation、Page 或显示形状。Analysis 不建立另一套组件系统：它只提供领域 projection
-declaration、直接读取函数与纯 Derivation。
+这里的“组件”只指 Report 的纯组合 component 或 semantic primitive。Analysis 不建立另一套组件系统：它提供 nominal
+population、Dimension、Measure、Relation 与 `analyze()`；Report 不接触其 projection dependencies。
 
 两套主用例遵守同一分层：
 
@@ -17,8 +17,8 @@ declaration、直接读取函数与纯 Derivation。
   → owner-specific producer binding
   → sealed domain value
   → RecordAttachment adapter / Record
-  → 领域 projection + pure derivation
-  → Report Calculation / Page
+  → 领域 population + fields
+  → aggregate + Report component / Page
 ```
 
 两条路径只有 authority 与发布方式不同。official adapter、binding 与 installation 由 NiceEval package 私有持有；第三方 adapter

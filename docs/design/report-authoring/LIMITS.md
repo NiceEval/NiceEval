@@ -1,6 +1,6 @@
 # 约束与候选方案
 
-**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [DECISION](DECISION.md)
+**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md) · [DECISION](DECISION.md)
 
 ---
 
@@ -132,6 +132,38 @@ Page。聚合口径与 refs 由领域自己的具名结果类型保留。
 - 报告旁复杂算法的公式仍需单独验证；具名结果类型只保证口径、issues 与 refs 不被省略。
 
 详见 [PLAN-5](PLAN-5/README.md)。
+
+---
+
+# 候选项 6：静态 Analysis fields + descriptor components
+
+## 产品特性
+
+Analysis SDK 在 nominal population 上导出 Dimension 与 Measure。Report 作者用 `aggregate({ by, values })` 形成静态
+`ReportData`，再交给 `Bars`、`Table`、`Scatter` 或纯组合组件。host 从 descriptor 编译本次有限依赖闭包，在 Page
+展开前一次 materialize。
+
+## 当前支持
+
+- 恢复 `aggregate + 显示形状` 的业务心智，同时不恢复 render-time I/O；
+- 两级聚合、denominator、evidence 与数值语义由 Measure 一次声明；
+- 同一 nominal population 的第三方 fields 可以直接进入官方组件；
+- `ReportRowKey`、PageFamily object target 与显式 evidence family 保持身份和下钻闭合；
+- Report 作者不接触 projection、input manifest、Calculation registration、Effect 或 branded id。
+
+## 当前不支持
+
+- `ReportData` 不是普通数组，不能任意 `.map()`／`.toSorted()`；
+- population narrowing 与新业务公式必须回到 Analysis；
+- 普通插件不能增加新的 host primitive；
+- 自有 JSX runtime 的独立 TypeScript 工具链需要 report preset 或 `jsxImportSource`。
+
+## 直接影响
+
+这套方案承认一张只包含本次请求的有限 dependency DAG，但不建立动态或全程序 graph。它在 PLAN-5 的 closed execution
+内核上增加作者友好的字段与组件 compiler，把内部 plumbing 从每份业务 Report 中移除。
+
+详见 [PLAN-6](PLAN-6/README.md)。
 
 # 共通限制
 
