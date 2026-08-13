@@ -18,6 +18,7 @@ import {
 
 interface ReleasePlanEntry {
   id: string;
+  repoIds: readonly string[];
 }
 
 interface ReceiptCandidate {
@@ -76,19 +77,24 @@ async function readPlan(planPath: string): Promise<ReleasePlanEntry[]> {
     throw new Error(`could not parse release plan ${planPath}: ${error instanceof Error ? error.message : String(error)}`);
   }
   if (!Array.isArray(raw) || raw.length === 0) {
-    throw new Error("release plan must be a non-empty JSON array emitted by `pnpm e2e plan --lane release --json`");
+    throw new Error("release plan must be a non-empty JSON array emitted by `pnpm e2e plan --lane release --batch --json`");
   }
   const ids = new Set<string>();
   const entries: ReleasePlanEntry[] = [];
   for (const entry of raw) {
     if (typeof entry !== "object" || entry === null || Array.isArray(entry) || typeof (entry as { id?: unknown }).id !== "string") {
-      throw new Error("release plan contains an entry without a string id");
+      throw new Error("release plan contains an entry without a string cell id");
     }
-    const id = (entry as { id: string }).id;
-    if (id.length === 0) throw new Error("release plan contains an empty repo id");
-    if (ids.has(id)) throw new Error(`release plan contains duplicate repo id ${JSON.stringify(id)}`);
-    ids.add(id);
-    entries.push({ id });
+    const cell = entry as { id: string; repoIds?: unknown };
+    if (cell.id.length === 0) throw new Error("release plan contains an empty cell id");
+    if (!Array.isArray(cell.repoIds) || cell.repoIds.length === 0 || !cell.repoIds.every((id) => typeof id === "string" && id.length > 0)) {
+      throw new Error(`release plan cell ${JSON.stringify(cell.id)} must contain non-empty string repoIds`);
+    }
+    for (const id of cell.repoIds as string[]) {
+      if (ids.has(id)) throw new Error(`release plan contains duplicate repo id ${JSON.stringify(id)}`);
+      ids.add(id);
+    }
+    entries.push({ id: cell.id, repoIds: cell.repoIds as string[] });
   }
   return entries;
 }
@@ -211,7 +217,7 @@ export interface ReleaseVerification {
 
 export async function verifyRelease(cli: VerifyReleaseCli): Promise<ReleaseVerification> {
   const plan = await readPlan(cli.planPath);
-  const expectedIds = new Set(plan.map((entry) => entry.id));
+  const expectedIds = new Set(plan.flatMap((entry) => entry.repoIds));
   const receiptRoot = await assertRealDirectory(cli.receiptRoot, "release receipt root");
   const candidate = readCandidateTarball(cli.candidatePath);
   const metadata = await readPackagedMetadata(cli.candidatePath);

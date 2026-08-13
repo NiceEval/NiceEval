@@ -10,7 +10,7 @@ import { relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
 import { discoverAllRepos, e2eRootDir, type DiscoveredRepo } from "./discovery.ts";
-import { LANES, type Area, type Executor, type Lane, type RepoRequires } from "./manifest.ts";
+import { LANES, type Area, type BatchId, type Executor, type Lane, type RepoRequires } from "./manifest.ts";
 
 export interface SelectionOptions {
   /** When omitted, run.ts keeps its historical all-lanes behavior. */
@@ -28,6 +28,8 @@ export interface PlanEntry {
   id: string;
   /** Exact scenario repos executed by this cell. */
   repoIds: readonly string[];
+  /** Opaque manifest placement key shared by every Repo in this cell. */
+  batch: BatchId;
   /** Backward-compatible singleton directory; absent for a multi-repo cell. */
   dir?: string;
   /** Paths relative to e2e/, in the same order as repoIds. */
@@ -49,8 +51,8 @@ export interface PlanCli {
   /** Explicitly disable both supplied and implicit working-tree path filtering. */
   noDiff: boolean;
   capability?: string;
-  /** Pack adapter repos into cells of at most this size; omitted means singleton cells. */
-  adapterBatchSize?: number;
+  /** Group selected repos by their explicit manifest batch placement key. */
+  batch: boolean;
   json: boolean;
 }
 
@@ -235,18 +237,6 @@ function valueAsStrings(value: unknown): string[] {
   return typeof value === "string" ? [value] : [];
 }
 
-function parsePositiveInteger(value: unknown, option: string): number | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value !== "string" || !/^\d+$/.test(value)) {
-    throw new Error(`${option} must be a positive integer, got ${JSON.stringify(value)}`);
-  }
-  const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || parsed < 1) {
-    throw new Error(`${option} must be a positive integer, got ${JSON.stringify(value)}`);
-  }
-  return parsed;
-}
-
 function parseLane(value: unknown): Lane {
   if (value === undefined) return "pr";
   if (typeof value !== "string" || !(LANES as readonly string[]).includes(value)) {
@@ -265,7 +255,7 @@ export function parsePlanCli(argv: readonly string[]): PlanCli {
       diff: { type: "string", multiple: true },
       "no-diff": { type: "boolean", default: false },
       capability: { type: "string" },
-      "adapter-batch-size": { type: "string" },
+      batch: { type: "boolean", default: false },
       json: { type: "boolean", default: false },
     },
     allowPositionals: false,
@@ -286,7 +276,7 @@ export function parsePlanCli(argv: readonly string[]): PlanCli {
     diffPaths: diffPaths.length > 0 ? diffPaths : undefined,
     noDiff,
     capability,
-    adapterBatchSize: parsePositiveInteger(values["adapter-batch-size"], "--adapter-batch-size"),
+    batch: values.batch === true,
     json: values.json === true,
   };
 }
@@ -296,6 +286,7 @@ function singletonEntry(repo: DiscoveredRepo, root: string): PlanEntry {
   return {
     id: repo.manifest.id,
     repoIds: [repo.manifest.id],
+    batch: repo.manifest.batch,
     dir,
     dirs: [dir],
     executor: repo.manifest.executor,
@@ -311,7 +302,14 @@ function mergedRequires(entries: readonly PlanEntry[]): RepoRequires | undefined
   if (requirements.length === 0) return undefined;
   const runtimes = [...new Set(requirements.flatMap((requirement) => requirement.runtimes ?? []))];
   const browsers = [...new Set(requirements.flatMap((requirement) => requirement.browsers ?? []))];
-  const platforms = [...new Set(requirements.flatMap((requirement) => requirement.platforms ?? []))];
+  const platformSets = requirements
+    .flatMap((requirement) => requirement.platforms === undefined ? [] : [new Set(requirement.platforms)]);
+  const platforms = platformSets.length === 0
+    ? []
+    : [...platformSets[0]!].filter((platform) => platformSets.slice(1).every((allowed) => allowed.has(platform)));
+  if (platformSets.length > 0 && platforms.length === 0) {
+    throw new Error("E2E batch has no host platform accepted by every Repo");
+  }
   return {
     ...(requirements.some((requirement) => requirement.docker === true) ? { docker: true } : {}),
     ...(requirements.some((requirement) => requirement.externalNetwork === true) ? { externalNetwork: true } : {}),
@@ -321,65 +319,57 @@ function mergedRequires(entries: readonly PlanEntry[]): RepoRequires | undefined
   };
 }
 
-function adapterBatch(entries: readonly PlanEntry[], index: number): PlanEntry {
+function repoBatch(entries: readonly PlanEntry[], index: number): PlanEntry {
   const executors = new Set(entries.map((entry) => JSON.stringify(entry.executor)));
   if (executors.size !== 1 || entries[0] === undefined) {
-    throw new Error(`adapter batch ${index + 1} requires one shared executor`);
+    throw new Error(`E2E batch ${index + 1} requires one shared executor`);
   }
-  const id = `adapter-batch-${index + 1}`;
+  const batches = new Set(entries.map((entry) => entry.batch));
+  if (batches.size !== 1) throw new Error(`E2E batch ${index + 1} contains multiple placement ids`);
+  const batch = entries[0].batch;
+  const id = `repo-batch-${batch}`;
   const requires = mergedRequires(entries);
   return {
     id,
     repoIds: entries.flatMap((entry) => entry.repoIds),
+    batch,
     dirs: entries.flatMap((entry) => entry.dirs),
     executor: entries[0].executor,
     capabilities: [...new Set(entries.flatMap((entry) => entry.capabilities))],
     shard: id,
-    repoConcurrency: entries.length,
+    repoConcurrency: entries.reduce((sum, entry) => sum + entry.repoIds.length, 0),
     ...(requires === undefined ? {} : { requires }),
   };
 }
 
 /**
- * Pack I/O-bound adapter repos onto fewer runners while spreading Docker-heavy
- * repos across cells. The original plan remains authoritative and is checked
- * after packing so batching cannot add, omit, or duplicate a repo.
+ * Pack independent E2E repos by their explicit manifest placement key. The
+ * original plan remains authoritative and is checked after packing so
+ * batching cannot add, omit, or duplicate a repo.
  */
-export function batchAdapterEntries(entries: readonly PlanEntry[], maxBatchSize: number): PlanEntry[] {
-  if (!Number.isSafeInteger(maxBatchSize) || maxBatchSize < 1) {
-    throw new Error(`adapter batch size must be a positive integer, got ${maxBatchSize}`);
-  }
-  const adapters = entries.filter((entry) => entry.capabilities.includes("adapter"));
-  if (adapters.length <= 1) return [...entries];
+export function batchEntries(entries: readonly PlanEntry[]): PlanEntry[] {
+  if (entries.length <= 1) return [...entries];
 
-  const nonAdapters = entries.filter((entry) => !entry.capabilities.includes("adapter"));
-  const batchCount = Math.ceil(adapters.length / maxBatchSize);
-  const groups = Array.from({ length: batchCount }, () => [] as PlanEntry[]);
-  const dockerFirst = [
-    ...adapters.filter((entry) => entry.requires?.docker === true),
-    ...adapters.filter((entry) => entry.requires?.docker !== true),
-  ];
-  for (const entry of dockerFirst) {
-    const eligible = groups
-      .map((group, index) => ({ group, index }))
-      .filter(({ group }) => group.length < maxBatchSize)
-      .sort((left, right) => left.group.length - right.group.length || left.index - right.index);
-    const target = eligible[0];
-    if (target === undefined) throw new Error(`could not place adapter repo ${entry.id} into a batch`);
-    target.group.push(entry);
+  const groups = new Map<BatchId, PlanEntry[]>();
+  for (const entry of entries) {
+    const group = groups.get(entry.batch) ?? [];
+    group.push(entry);
+    groups.set(entry.batch, group);
   }
-
-  const packed = [
-    ...nonAdapters,
-    ...groups.map((group, index) => adapterBatch(group, index)),
-  ].sort((left, right) => left.id.localeCompare(right.id));
+  const packed = [...groups.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([, group], index) => repoBatch(group, index));
+  const selectedRepoIds = new Set(entries.flatMap((entry) => entry.repoIds));
+  for (const entry of packed) {
+    if (selectedRepoIds.has(entry.id)) throw new Error(`E2E batch id collides with Repo id ${JSON.stringify(entry.id)}`);
+  }
   const before = entries.flatMap((entry) => entry.repoIds).sort();
   const after = packed.flatMap((entry) => entry.repoIds).sort();
   if (before.length !== new Set(before).size || after.length !== new Set(after).size) {
-    throw new Error("E2E plan contains duplicate repo ids before or after adapter batching");
+    throw new Error("E2E plan contains duplicate repo ids before or after batching");
   }
   if (JSON.stringify(before) !== JSON.stringify(after)) {
-    throw new Error("adapter batching changed the selected E2E repo-id set");
+    throw new Error("batching changed the selected E2E repo-id set");
   }
   return packed;
 }
@@ -388,12 +378,12 @@ export function makePlan(
   repos: readonly DiscoveredRepo[],
   root: string,
   options: SelectionOptions,
-  adapterBatchSize?: number,
+  batch = false,
 ): PlanEntry[] {
   const entries = selectRepos(repos, options)
     .map((repo) => singletonEntry(repo, root))
     .sort((left, right) => left.id.localeCompare(right.id));
-  return adapterBatchSize === undefined ? entries : batchAdapterEntries(entries, adapterBatchSize);
+  return batch ? batchEntries(entries) : entries;
 }
 
 function printHumanPlan(entries: readonly PlanEntry[], lane: Lane): void {
@@ -434,7 +424,7 @@ export function resolvePlan(argv: readonly string[]): ResolvedPlan {
         diffPaths,
         capability: cli.capability,
       },
-      cli.adapterBatchSize,
+      cli.batch,
     ),
   };
 }
