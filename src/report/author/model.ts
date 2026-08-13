@@ -373,7 +373,7 @@ export function definePageFamily<Instance, Calculations extends object = {}>(
       context: ReportComponentContext<undefined, Calculations> & {
         readonly instance: Instance;
       },
-    ) => ReportDocument;
+    ) => ReportDocument | Promise<ReportDocument>;
   },
 ): ReportPageFamily;
 export function definePageFamily<
@@ -394,7 +394,7 @@ export function definePageFamily<
     context: ReportComponentContext<Inputs, Calculations> & {
       readonly instance: Instance;
     },
-    ) => ReportDocument;
+    ) => ReportDocument | Promise<ReportDocument>;
 }): ReportPageFamily;
 export function definePageFamily(definition: unknown): ReportPageFamily {
   const fields = fieldsOnly(

@@ -6,3 +6,4 @@
  * writer, or disk layout.
  */
 export type { Sample } from "../report/classic/sample.ts";
+export type { AttemptEvidence } from "../report/classic/attempt.ts";

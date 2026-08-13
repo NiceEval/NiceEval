@@ -99,6 +99,7 @@ export function buildClassicSample(input: {
             runId: subjectRun.runId,
             startedAt: subjectRun.startedAt,
             completedAt: subjectRun.completedAt,
+            ...(profile?.agent === undefined ? {} : { agent: profile.agent }),
             ...(profile === undefined ? {} : { experiment: experimentView(profile) }),
           }),
         }),

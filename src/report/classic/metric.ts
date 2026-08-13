@@ -1,9 +1,15 @@
-export type MetricBasis = "eval";
+export type MetricBasis = "eval" | "attempt" | "run" | "pair";
 export type MetricBetter = "higher" | "lower";
+export type MetricFormat =
+  | "number"
+  | "percent"
+  | "duration"
+  | "currency"
+  | { readonly kind: "custom"; readonly format: (value: number, locale: string) => string };
 
 export interface MetricBounds {
-  readonly min: number;
-  readonly max: number;
+  readonly min?: number;
+  readonly max?: number;
 }
 
 /**
@@ -16,6 +22,7 @@ export interface MetricValue {
   readonly total: number;
   readonly basis: MetricBasis;
   readonly unit?: string;
+  readonly format?: MetricFormat;
   readonly better?: MetricBetter;
   readonly bounds?: MetricBounds;
   readonly refs: readonly string[];
@@ -27,6 +34,7 @@ export function metricValue(input: {
   readonly total: number;
   readonly basis?: MetricBasis;
   readonly unit?: string;
+  readonly format?: MetricFormat;
   readonly better?: MetricBetter;
   readonly bounds?: MetricBounds;
   readonly refs?: readonly string[];
@@ -50,6 +58,7 @@ export function metricValue(input: {
     total: input.total,
     basis: input.basis ?? "eval",
     ...(input.unit === undefined ? {} : { unit: input.unit }),
+    ...(input.format === undefined ? {} : { format: input.format }),
     ...(input.better === undefined ? {} : { better: input.better }),
     ...(input.bounds === undefined ? {} : { bounds: Object.freeze({ ...input.bounds }) }),
     refs,
@@ -65,7 +74,7 @@ export function isMetricValue(value: unknown): value is MetricValue {
     (candidate.value === null || typeof candidate.value === "number")
     && typeof candidate.samples === "number"
     && typeof candidate.total === "number"
-    && candidate.basis === "eval"
+    && (candidate.basis === "eval" || candidate.basis === "attempt" || candidate.basis === "run" || candidate.basis === "pair")
     && Array.isArray(candidate.refs)
   );
 }

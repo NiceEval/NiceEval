@@ -9,6 +9,7 @@ import {
 } from "../../projection/index.ts";
 import {
   definePage,
+  definePageFamily,
   defineReport as defineLowLevelReport,
   isReportPage,
   isReportPageFamily,
@@ -28,6 +29,11 @@ import {
   type ReportComponentId,
   type ReportId,
 } from "../author/identity.ts";
+import type { AttemptEvidence } from "./attempt.ts";
+import {
+  classicAttemptInstanceKey,
+  classicAttemptRoute,
+} from "./routes.ts";
 import {
   reportDocument,
   reportStatus,
@@ -45,11 +51,29 @@ export type ClassicPageRender = (
   sample: Sample,
 ) => unknown | Promise<unknown>;
 
-export interface ClassicReportPageDefinition {
+export type ClassicAttemptPageRender = (
+  attempt: AttemptEvidence,
+) => unknown | Promise<unknown>;
+
+export interface ClassicSamplePageDefinition {
   readonly id: string;
   readonly title: LocalizedText;
+  readonly input?: "sample";
+  readonly navigation?: boolean;
   readonly render: ClassicPageRender;
 }
+
+export interface ClassicAttemptPageDefinition {
+  readonly id: string;
+  readonly title: LocalizedText;
+  readonly input: "attempt";
+  readonly navigation: false;
+  readonly render: ClassicAttemptPageRender;
+}
+
+export type ClassicReportPageDefinition =
+  | ClassicSamplePageDefinition
+  | ClassicAttemptPageDefinition;
 
 export interface ClassicReportDefinition {
   readonly title: LocalizedText;
@@ -171,6 +195,36 @@ function defineClassicReport(definition: ClassicReportDefinition): Report {
     }
     seen.add(page.id);
     const componentId = Either.getOrThrow(reportComponentId(page.id));
+    if (page.input === "attempt") {
+      const renderAttempt = page.render;
+      compiledPages.push(Object.freeze({
+        id: componentId,
+        title: page.title,
+        render: async (sample: Sample) => renderAttempt(firstAttemptEvidence(sample)),
+      }));
+      pages.push(definePageFamily({
+        id: componentId,
+        inputs: classicDataPlan,
+        completeness: "allow-partial",
+        instances: (context) =>
+          classicSampleFromProjectedInputs({
+            sample: context.sample,
+            inputs: context.inputs,
+          }).attempts.filter((attempt) => attempt.attemptId !== undefined),
+        key: (attempt) => classicAttemptInstanceKey(attempt.attemptId!),
+        route: (attempt) => classicAttemptRoute(attempt.attemptId!),
+        render: async ({ instance, sample, inputs }) => {
+          const closed = classicSampleFromProjectedInputs({ sample, inputs });
+          const evidence = attemptEvidenceFromRow(closed, instance);
+          return renderClassicTree({
+            title: page.title,
+            tree: await renderAttempt(evidence),
+            sample: closed,
+          });
+        },
+      }));
+      continue;
+    }
     const route = Either.getOrThrow(reportRoute(index === 0 ? "/" : `/${page.id}`));
     const compiled = Object.freeze({
       id: componentId,
@@ -252,12 +306,51 @@ function isClassicOrCompiledPage(value: unknown): boolean {
 }
 
 function isClassicPageDefinition(value: unknown): value is ClassicReportPageDefinition {
-  return (
-    isPlainObject(value)
-    && typeof value.id === "string"
-    && isLocalizedText(value.title)
-    && typeof value.render === "function"
-  );
+  if (
+    !isPlainObject(value)
+    || typeof value.id !== "string"
+    || !isLocalizedText(value.title)
+    || typeof value.render !== "function"
+  ) {
+    return false;
+  }
+  if (value.input === "attempt") {
+    return value.navigation === false;
+  }
+  return value.input === undefined || value.input === "sample";
+}
+
+function firstAttemptEvidence(sample: Sample): AttemptEvidence {
+  const first = sample.attempts.find((attempt) => attempt.target !== undefined || attempt.attemptId !== undefined);
+  if (first === undefined) {
+    return Object.freeze({
+      locator: "@unknown",
+      experimentId: "unknown",
+      evalId: "unknown",
+      result: Object.freeze({
+        verdict: "unreadable" as const,
+        assertions: Object.freeze([]),
+      }),
+    });
+  }
+  return attemptEvidenceFromRow(sample, first);
+}
+
+function attemptEvidenceFromRow(
+  sample: Sample,
+  attempt: Sample["attempts"][number],
+): AttemptEvidence {
+  return Object.freeze({
+    locator: attempt.target?.locator ?? attempt.attemptId ?? "@unknown",
+    experimentId: attempt.experimentId,
+    evalId: attempt.evalId,
+    result: Object.freeze({
+      verdict: attempt.verdict ?? "unreadable",
+      assertions: Object.freeze([]),
+      durationMs: attempt.durationMs,
+      costUSD: attempt.costUSD,
+    }),
+  });
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

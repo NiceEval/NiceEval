@@ -91,7 +91,8 @@ function renderBlock(block: ReportBlock, route: ReportRoute, headingLevel: numbe
   switch (block.type) {
     case "section": {
       const level = Math.min(headingLevel, 6);
-      return `<section class="niceeval-report__section"><h${level}>${escapeHtml(block.heading)}</h${level}>${block.children.map((child) => renderBlock(child, route, level + 1)).join("")}</section>`;
+      const meta = block.meta === undefined ? "" : `<p class="niceeval-report__section-meta">${escapeHtml(block.meta)}</p>`;
+      return `<section class="niceeval-report__section"><h${level}>${escapeHtml(block.heading)}</h${level}>${meta}${block.children.map((child) => renderBlock(child, route, level + 1)).join("")}</section>`;
     }
     case "paragraph":
       return `<p class="niceeval-report__paragraph">${renderInlines(block.children, route)}</p>`;
@@ -123,6 +124,17 @@ function renderBlock(block: ReportBlock, route: ReportRoute, headingLevel: numbe
       return renderScatter(block, route);
     case "tree-table":
       return renderTreeTable(block, route);
+    case "grid":
+      return `<div class="niceeval-report__grid">${block.cells.map((cell) => renderBlock(cell, route, headingLevel)).join("")}</div>`;
+    case "stat":
+      return `<dl class="niceeval-report__stat"><div><dt>${escapeHtml(block.label)}</dt><dd>${escapeHtml(block.value)}</dd></div></dl>`;
+    case "cell-table": {
+      const headings = block.columns.map((column) => `<th scope="col">${escapeHtml(column)}</th>`).join("");
+      const rows = block.rows.map((row) =>
+        `<tr>${block.columns.map((column) => `<td>${escapeHtml(row.cells[column] ?? "—")}</td>`).join("")}</tr>`
+      ).join("");
+      return `<div class="niceeval-report__table-wrap"><table class="niceeval-report__table"><thead><tr>${headings}</tr></thead><tbody>${rows}</tbody></table></div>`;
+    }
   }
 }
 

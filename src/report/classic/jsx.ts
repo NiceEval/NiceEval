@@ -181,6 +181,9 @@ function isClassicDashboardBlock(value: unknown): value is ReportBlock {
     case "ranked-bars":
     case "scatter":
     case "tree-table":
+    case "grid":
+    case "stat":
+    case "cell-table":
       return true;
     default:
       return false;

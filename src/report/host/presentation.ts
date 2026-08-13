@@ -23,6 +23,15 @@ import type {
   ReportTreeTable,
 } from "../semantic/document.ts";
 import type { ReportRoute } from "../author/identity.ts";
+import {
+  dataBoxBorder,
+  dataBoxMode,
+  dataBoxRow,
+  panelCapabilityOf,
+  renderPanel,
+  type PanelMode,
+} from "../model/panel.ts";
+import { padDisplay, stringWidth } from "../model/text-layout.ts";
 
 /** Failure to write a completed Report presentation to its host console. */
 export interface ReportConsoleError {
@@ -75,15 +84,13 @@ export function renderReportExecutionText(input: ShowReportInput): string {
   const { execution } = input;
   const pages = selectedShowPages(execution.pages, input.page);
   if (isEvidenceTextPresentation(pages) || isClassicDashboardPresentation(pages)) {
-    const width = terminalColumns();
+    const capability = terminalCapability();
     const dashboard = pages
       .flatMap((page) => page.state === "rendered"
-        ? [renderEvidenceOrDashboardDocument(page.document, width).join("\n")]
+        ? [renderEvidenceOrDashboardDocument(page.document, capability.width, capability.mode).join("\n")]
         : [])
       .join("\n\n");
-    const others = input.page === undefined
-      ? otherPagesFooter(execution.pages, pages[0], input.reportFlag)
-      : "";
+    const others = otherPagesFooter(execution.pages, pages[0], input.reportFlag);
     const problems = execution.problemTable.length === 0
       ? ""
       : `\n\n${problemLines(execution).join("\n")}`;
@@ -394,35 +401,63 @@ function isEvidenceTextPresentation(
     && pages.every((page) => page.state === "rendered" && page.document.presentation === "evidence-text");
 }
 
-function renderEvidenceOrDashboardDocument(document: ReportDocument, width: number): string[] {
+function renderEvidenceOrDashboardDocument(
+  document: ReportDocument,
+  width: number,
+  mode: PanelMode,
+): string[] {
   if (document.presentation === "evidence-text") {
     return document.children.flatMap((block) => {
       if (block.type === "code-block") return block.value.split("\n");
-      return renderClassicBlockText(block, width);
+      return renderClassicBlockText(block, width, mode);
     });
   }
-  return renderClassicDashboardDocument(document, width);
+  return renderClassicDashboardDocument(document, width, mode);
 }
 
-/** The classic surface deliberately contains no terminal control sequences, including when NO_COLOR is absent. */
-function terminalColumns(): number {
+function terminalCapability(): { mode: PanelMode; width: number } {
+  const stdout = typeof process === "undefined" ? undefined : process.stdout;
+  const columns = typeof stdout?.columns === "number" && stdout.columns > 0
+    ? stdout.columns
+    : columnsFromEnv();
+  return panelCapabilityOf({
+    isTTY: stdout?.isTTY,
+    noColor: typeof process === "undefined" ? undefined : process.env.NO_COLOR,
+    width: columns,
+  });
+}
+
+function columnsFromEnv(): number {
   const raw = typeof process === "undefined" ? undefined : process.env.COLUMNS;
   if (raw === undefined || !/^[1-9][0-9]*$/.test(raw)) return 80;
   const columns = Number(raw);
   return Number.isSafeInteger(columns) ? Math.max(40, columns) : 80;
 }
 
-function renderClassicDashboardDocument(document: ReportDocument, width: number): string[] {
-  const lines = [truncateTerminal(visibleText(document.title), width)];
+function renderClassicDashboardDocument(
+  document: ReportDocument,
+  width: number,
+  mode: PanelMode,
+): string[] {
+  const siteLike = document.children.some(isSiteBlock);
+  const lines = siteLike ? [] : [truncateTerminal(visibleText(document.title), width)];
   for (const block of document.children) {
-    const rendered = renderClassicBlockText(block, width);
+    const rendered = renderClassicBlockText(block, width, mode);
     if (rendered.length === 0) continue;
-    lines.push("", ...rendered);
+    if (lines.length > 0) lines.push("");
+    lines.push(...rendered);
   }
   return lines;
 }
 
-function renderClassicBlockText(block: ReportBlock, width: number): string[] {
+function isSiteBlock(block: ReportBlock): boolean {
+  return block.type === "grid"
+    || block.type === "stat"
+    || block.type === "cell-table"
+    || (block.type === "section" && (block.meta !== undefined || block.children.some(isSiteBlock)));
+}
+
+function renderClassicBlockText(block: ReportBlock, width: number, mode: PanelMode): string[] {
   switch (block.type) {
     case "hero":
       return [
@@ -435,13 +470,7 @@ function renderClassicBlockText(block: ReportBlock, width: number): string[] {
         ),
       ];
     case "section":
-      return [
-        ...wrapTerminal(visibleText(block.heading), width),
-        ...block.children.flatMap((child) => {
-          const rendered = renderClassicBlockText(child, width);
-          return rendered.length === 0 ? [] : ["", ...rendered];
-        }),
-      ];
+      return renderSectionText(block, width, mode);
     case "summary":
       return renderSummaryText(block, width);
     case "ranked-bars":
@@ -450,9 +479,120 @@ function renderClassicBlockText(block: ReportBlock, width: number): string[] {
       return renderScatterText(block, width);
     case "tree-table":
       return renderTreeTableText(block, width);
+    case "grid":
+      return renderGridText(block, width, mode);
+    case "stat":
+      return [block.label, block.value];
+    case "cell-table":
+      return renderCellTableText(block, width, mode);
     default:
       return renderBlockText(block, "");
   }
+}
+
+function renderSectionText(
+  block: Extract<ReportBlock, { readonly type: "section" }>,
+  width: number,
+  mode: PanelMode,
+): string[] {
+  const nested: Array<{ title: string; meta?: string }> = [];
+  const bodyParts: string[] = [];
+  for (const child of block.children) {
+    if (child.type === "section") {
+      nested.push({
+        title: child.heading,
+        ...(child.meta === undefined ? {} : { meta: child.meta }),
+      });
+      const nestedBody = child.children.flatMap((inner) => renderClassicBlockText(inner, width, mode));
+      if (nestedBody.length > 0) bodyParts.push(nestedBody.join("\n"));
+      continue;
+    }
+    const rendered = renderClassicBlockText(child, width, mode);
+    if (rendered.length > 0) bodyParts.push(rendered.join("\n"));
+  }
+  const body = bodyParts.join("\n\n");
+  return renderPanel({
+    title: block.heading,
+    ...(block.meta === undefined ? {} : { meta: block.meta }),
+    rows: [
+      ...nested.map((section) => ({
+        kind: "divider" as const,
+        title: section.title,
+        ...(section.meta === undefined ? {} : { meta: section.meta }),
+      })),
+      ...(body.length > 0 ? [{ kind: "line" as const, text: body }] : []),
+    ],
+    width,
+    mode,
+  });
+}
+
+function renderGridText(
+  block: Extract<ReportBlock, { readonly type: "grid" }>,
+  width: number,
+  mode: PanelMode,
+): string[] {
+  const cells = block.cells.map((cell) => {
+    if (cell.type === "stat") return [cell.label, cell.value];
+    return renderClassicBlockText(cell, width, mode);
+  });
+  if (cells.length === 0) return [];
+  const boxed = dataBoxMode(mode, width) === "boxed";
+  const columns = cells.length >= 4 ? 2 : Math.min(2, cells.length);
+  const separator = " │ ";
+  const budget = Math.max(1, width - separator.length * (columns - 1));
+  const base = Math.floor(budget / columns);
+  const planned = Array.from({ length: columns }, (_, index) =>
+    Math.max(1, base + (index < budget - base * columns ? 1 : 0)),
+  );
+  const fitted = planned.map((plannedWidth, column) => {
+    const widest = cells.reduce((max, cell, index) => {
+      if (index % columns !== column) return max;
+      return Math.max(max, ...cell.map((line) => stringWidth(line)), 1);
+    }, 1);
+    return Math.min(plannedWidth, widest);
+  });
+  const lines: string[] = [];
+  for (let start = 0; start < cells.length; start += columns) {
+    const row = cells.slice(start, start + columns);
+    const widths = fitted.slice(0, row.length);
+    if (boxed && start > 0) {
+      lines.push(dataBoxBorder("rule", fitted.slice(0, columns), false, row.length));
+    } else if (!boxed && start > 0) {
+      lines.push("");
+    }
+    const height = Math.max(...row.map((cell) => cell.length), 1);
+    for (let lineIndex = 0; lineIndex < height; lineIndex += 1) {
+      const parts = row.map((cell, column) => padDisplay(cell[lineIndex] ?? "", widths[column] ?? 1));
+      lines.push(boxed ? dataBoxRow(parts, false) : parts.join("   "));
+    }
+  }
+  return lines;
+}
+
+function renderCellTableText(
+  block: Extract<ReportBlock, { readonly type: "cell-table" }>,
+  width: number,
+  mode: PanelMode,
+): string[] {
+  const boxed = dataBoxMode(mode, width) === "boxed";
+  const columns = block.columns;
+  const displayRows = [
+    Object.fromEntries(columns.map((column) => [column, column])),
+    ...block.rows.map((row) => row.cells),
+  ];
+  const widths = columns.map((column) =>
+    Math.max(1, ...displayRows.map((row) => stringWidth(row[column] ?? ""))),
+  );
+  const lines: string[] = [];
+  displayRows.forEach((row, index) => {
+    if (boxed && index === 1) {
+      lines.push(dataBoxBorder("rule", widths, false));
+    }
+    const parts = columns.map((column, columnIndex) => padDisplay(row[column] ?? "", widths[columnIndex]!));
+    lines.push(boxed ? dataBoxRow(parts, false) : parts.join("   "));
+  });
+  return lines;
 }
 
 function renderBlockText(block: ReportBlock, indent: string): string[] {
@@ -520,7 +660,10 @@ function renderBlockText(block: ReportBlock, indent: string): string[] {
     case "ranked-bars":
     case "scatter":
     case "tree-table":
-      return renderClassicBlockText(block, 80).map((line) => `${indent}${line}`);
+    case "grid":
+    case "stat":
+    case "cell-table":
+      return renderClassicBlockText(block, 80, "plain").map((line) => `${indent}${line}`);
   }
 }
 

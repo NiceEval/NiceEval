@@ -14,14 +14,20 @@ import {
   definePageFamily,
   reportComponentId,
   reportInputs,
-  reportInstanceKeyFromRecordId,
   reportRoute,
-  reportRouteFromKeys,
 } from "../author/index.ts";
 import { classicDataPlan } from "../classic/define.ts";
 import { classicSampleFromProjectedInputs } from "../classic/from-context.ts";
 import { ExperimentTable } from "../classic/components.ts";
 import { evaluateClassicTree } from "../classic/jsx.ts";
+import {
+  classicAttemptInstanceKey,
+  classicAttemptRoute,
+  classicExperimentIds,
+  classicExperimentInstanceKey,
+  classicExperimentRoute,
+  narrowClassicSampleToExperiment,
+} from "../classic/routes.ts";
 import type { ClassicAttemptRow, Sample } from "../classic/sample.ts";
 import {
   reportDocument,
@@ -53,8 +59,9 @@ export async function standardExperimentRender(sample: Sample): Promise<ReportDo
   const children = await evaluateClassicTree(ExperimentTable({ input: sample }), {
     scope: sample,
   });
+  const experimentId = sample.units[0]?.experimentId;
   return reportDocument({
-    title: "Experiment",
+    title: experimentId === undefined ? "Experiment" : experimentId,
     presentation: "classic-dashboard",
     metadataOrigin: sample.metadataOrigin,
     children,
@@ -67,12 +74,29 @@ export const standardAttemptsPage = {
   render: async (sample: Sample) => ExperimentTable({ input: sample }),
 };
 
-export const standardExperimentPage = {
-  id: "experiment",
-  title: "Experiment",
-  navigation: false as const,
-  render: async (sample: Sample) => ExperimentTable({ input: sample }),
-};
+/**
+ * Experiment detail family: one instance per experiment id already on the
+ * closed Sample. Render receives that experiment's narrowed Sample.
+ */
+export const standardExperimentPage = definePageFamily({
+  id: Either.getOrThrow(reportComponentId("experiment")),
+  inputs: classicDataPlan,
+  completeness: "allow-partial",
+  instances: (context) =>
+    classicExperimentIds(classicSampleFromProjectedInputs({
+      sample: context.sample,
+      inputs: context.inputs,
+    })),
+  key: classicExperimentInstanceKey,
+  route: classicExperimentRoute,
+  render: async ({ instance, sample, inputs }) =>
+    standardExperimentRender(
+      narrowClassicSampleToExperiment(
+        classicSampleFromProjectedInputs({ sample, inputs }),
+        instance,
+      ),
+    ),
+});
 
 export const standardTracesPage = definePage({
   id: Either.getOrThrow(reportComponentId("traces")),
@@ -85,6 +109,7 @@ export const standardTracesPage = definePage({
   }), inputs.conversation),
 });
 
+/** Attempt detail family: one instance per recorded locator / attempt id. */
 export const standardAttemptPage = definePageFamily({
   id: Either.getOrThrow(reportComponentId("attempt")),
   inputs: classicDataPlan,
@@ -93,21 +118,11 @@ export const standardAttemptPage = definePageFamily({
     classicSampleFromProjectedInputs({
       sample: context.sample,
       inputs: context.inputs,
-    }).attempts.filter((attempt): attempt is ClassicAttemptRow & { readonly attemptId: NonNullable<ClassicAttemptRow["attemptId"]> } =>
-      attempt.attemptId !== undefined
-    ),
-  key: (attempt) =>
-    reportInstanceKeyFromRecordId({
-      kind: "attempt",
-      value: attempt.attemptId,
-    }),
-  route: (attempt) =>
-    Either.getOrThrow(reportRouteFromKeys([
-      reportInstanceKeyFromRecordId({
-        kind: "attempt",
-        value: attempt.attemptId,
-      }),
-    ])),
+    }).attempts.filter((attempt): attempt is ClassicAttemptRow & {
+      readonly attemptId: NonNullable<ClassicAttemptRow["attemptId"]>;
+    } => attempt.attemptId !== undefined),
+  key: (attempt) => classicAttemptInstanceKey(attempt.attemptId),
+  route: (attempt) => classicAttemptRoute(attempt.attemptId),
   render: ({ instance, sample, inputs }) =>
     attemptDocument(
       instance,

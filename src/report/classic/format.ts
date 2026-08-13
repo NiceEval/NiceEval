@@ -1,11 +1,45 @@
 import type { ReportCoverage, ReportDisplayValue } from "../semantic/document.ts";
-import type { MetricValue } from "./metric.ts";
+import type { MetricFormat, MetricValue } from "./metric.ts";
 
 export function formatRatio(value: number | null): string {
   if (value === null) {
     return "—";
   }
-  return `${(value * 100).toFixed(1)}%`;
+  return `${trimTrailingZeros(Math.round(value * 1000) / 10)}%`;
+}
+
+export function formatMetricValue(
+  value: number | null,
+  unit?: string,
+  format?: MetricFormat,
+): string {
+  if (value === null) {
+    return "—";
+  }
+  if (format !== undefined && typeof format === "object" && format.kind === "custom") {
+    return format.format(value, "en");
+  }
+  const resolved = format === "percent"
+    ? "%"
+    : format === "currency"
+      ? "$"
+      : format === "duration"
+        ? "ms"
+        : unit;
+  if (resolved === "%" || resolved === "ratio") {
+    return formatRatio(value);
+  }
+  if (resolved === "USD" || resolved === "$") {
+    return formatUsd(value);
+  }
+  if (resolved === "ms") {
+    return `${Math.round(value)}ms`;
+  }
+  return resolved === undefined || resolved.length === 0 ? String(value) : `${value} ${resolved}`;
+}
+
+function trimTrailingZeros(value: number): string {
+  return String(value).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
 }
 
 export function formatMetricDisplay(metric: MetricValue): string {

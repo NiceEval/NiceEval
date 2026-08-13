@@ -13,6 +13,7 @@ export interface ClassicRunView {
   readonly runId: RunId;
   readonly startedAt: UtcMillis;
   readonly completedAt: UtcMillis;
+  readonly agent?: string;
 }
 
 export interface ClassicExperimentView {
@@ -28,6 +29,7 @@ export interface AggregationSubject {
   readonly experimentId: string;
   readonly evalId: string;
   readonly run: ClassicRunView & {
+    readonly agent?: string;
     readonly experiment?: ClassicExperimentView;
   };
 }

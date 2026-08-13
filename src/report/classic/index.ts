@@ -1,34 +1,75 @@
 export {
   aggregate,
+  agent,
   costUSD,
+  durationMs,
+  evalId,
   experiment,
   foldEvalVerdict,
+  mean,
   meanMetric,
   passRate,
+  rollup,
   totalAttempts,
 } from "./aggregate.ts";
 export type {
   AggregateRow,
+  Calculation,
   ClassicCalculation,
   GroupFunction,
+  Reducer,
+  RollupCalculation,
+  RollupOptions,
 } from "./aggregate.ts";
 
 export {
+  AttemptAssessment,
+  AttemptSummary,
   Bars,
   Col,
+  CopyBlock,
   ExperimentScatter,
   ExperimentTable,
+  Grid,
   Hero,
+  SampleNotices,
   SampleSummary,
   Section,
+  Stat,
+  Table,
 } from "./components.ts";
 export type {
   ClassicBarsProps,
+  ClassicCellTableProps,
   ClassicColProps,
+  ClassicGridProps,
   ClassicHeroLogo,
   ClassicHeroProps,
   ClassicSectionProps,
+  ClassicStatProps,
+  CopyBlockProps,
+  StatTone,
 } from "./components.ts";
+
+export { formatCellText } from "./cell.ts";
+export type { Cell, VerdictCounts } from "./cell.ts";
+
+export {
+  toAttemptFixPrompt,
+  toAttemptListRows,
+  toAttemptSummary,
+  toSummaryItems,
+} from "./conversions.ts";
+
+export { formatMetricValue } from "./format.ts";
+
+export type {
+  AttemptEvidence,
+  AttemptListItem,
+  AttemptSummaryData,
+  CopyBlockContent,
+  SampleSummaryContent,
+} from "./attempt.ts";
 
 export {
   defineReport,
@@ -69,7 +110,7 @@ export {
 export type { ClassicLocale, LocalizedText } from "./localize.ts";
 
 export { metricValue, isMetricValue } from "./metric.ts";
-export type { MetricBasis, MetricBetter, MetricBounds, MetricValue } from "./metric.ts";
+export type { MetricBasis, MetricBetter, MetricBounds, MetricFormat, MetricValue } from "./metric.ts";
 
 export {
   CLASSIC_SELECTION_PROFILE_UNAVAILABLE,

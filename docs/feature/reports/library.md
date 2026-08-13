@@ -108,8 +108,13 @@ trusted TS module 本身不是 sandbox；module 仍可以 import `node:fs` 或�
 | `Hero` | 页首摘要块；`title`、`logo`、`description` 与 `links`。链接只接受绝对 https；logo 只接受绝对 https 或 `data:image`。host 只序列化，不 fetch。 |
 | `SampleSummary` | 当前 Sample 概况：实验、Eval、attempt 与 coverage。 |
 | `Bars` | 柱状图；`layout="horizontal"` 呈现横向柱状图，points 来自 `aggregate` 行。 |
-| `ExperimentScatter` | 按 Experiment 的散点；`input={sample}` 传入同一份闭合 Sample。 |
-| `ExperimentTable` | 实验级读数表；`input={sample}` 传入同一份闭合 Sample。 |
+| `ExperimentScatter` | 按 Experiment 的散点；`input={sample}` 传入同一份闭合 Sample。点链到已展开的 experiment 页。 |
+| `ExperimentTable` | 实验级读数表；`input={sample}` 传入同一份闭合 Sample。实验行链到已展开的 experiment 页。 |
+| `Grid` / `Stat` / `Table` | 排版原语：格网、读数格、单元格表。 |
+| `SampleNotices` / `CopyBlock` | 选择提示与可复制文本。 |
+| `AttemptSummary` / `AttemptAssessment` | Attempt 详情页组合件。 |
+
+`standardExperimentPage` 与 `standardAttemptPage` 是 PageFamily：分别按 Sample 里已有的 experiment id 与 attempt locator 展开固定 route。experiment 页的 render 收到按该 experiment 收窄后的闭合 Sample；attempt 页收到闭合 `AttemptEvidence`。它们不进入主导航。`ExperimentTable` / `ExperimentScatter` 写出的 href 指向这些已经展开的 route，static export 与 live view 共用同一份 `index.html` 路径。
 
 ### aggregate、passRate、costUSD 与 experiment
 

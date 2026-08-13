@@ -1,21 +1,83 @@
-import { metricValue, type MetricValue } from "./metric.ts";
+import { metricValue, type MetricBetter, type MetricFormat, type MetricValue } from "./metric.ts";
+import type { ClassicAttemptHandle } from "./attempt.ts";
 import type { AggregationSubject, ClassicEvalUnit, Sample } from "./sample.ts";
 
 export type GroupFunction = (subject: AggregationSubject) => string;
+
+export interface Reducer {
+  (values: readonly number[]): number | null;
+  readonly name: string;
+}
+
+export interface RollupOptions {
+  readonly withinEval?: Reducer;
+  readonly acrossEvals?: Reducer;
+  readonly unit?: string;
+  readonly better?: MetricBetter;
+  readonly bounds?: { readonly min?: number; readonly max?: number };
+  readonly format?: MetricFormat;
+}
+
+export interface RollupCalculation {
+  readonly kind: "rollup";
+  readonly withinEval: Reducer;
+  readonly acrossEvals: Reducer;
+  readonly unit?: string;
+  readonly better?: MetricBetter;
+  readonly bounds?: { readonly min?: number; readonly max?: number };
+  readonly format?: MetricFormat;
+  readonly value: (attempt: ClassicAttemptHandle) => number | null | Promise<number | null>;
+}
 
 export interface ClassicCalculation {
   readonly id: string;
   readonly compute: (units: readonly ClassicEvalUnit[]) => MetricValue;
 }
 
+export type Calculation = ClassicCalculation | RollupCalculation;
+
 export type AggregateRow<
   Groups extends Readonly<Record<string, GroupFunction>> = Readonly<Record<string, GroupFunction>>,
-  Values extends Readonly<Record<string, ClassicCalculation>> = Readonly<Record<string, ClassicCalculation>>,
+  Values extends Readonly<Record<string, Calculation>> = Readonly<Record<string, Calculation>>,
 > = {
   readonly [Key in keyof Groups]: string;
 } & {
   readonly [Key in keyof Values]: MetricValue;
 };
+
+function defineReducer(name: string, reduce: (values: readonly number[]) => number | null): Reducer {
+  const fn = ((values: readonly number[]) => {
+    if (values.length === 0) return null;
+    return reduce(values);
+  }) as Reducer;
+  Object.defineProperty(fn, "name", { value: name });
+  return fn;
+}
+
+export const mean: Reducer = defineReducer("mean", (values) => {
+  let sum = 0;
+  for (const value of values) sum += value;
+  return sum / values.length;
+});
+
+export function rollup(
+  value: (attempt: ClassicAttemptHandle) => number | null | Promise<number | null>,
+  options: RollupOptions = {},
+): RollupCalculation {
+  if (typeof value !== "function") {
+    throw new TypeError("rollup requires a value(attempt) function");
+  }
+  return Object.freeze({
+    kind: "rollup" as const,
+    withinEval: options.withinEval ?? mean,
+    acrossEvals: options.acrossEvals ?? mean,
+    ...(options.unit === undefined ? {} : { unit: options.unit }),
+    ...(options.better === undefined ? {} : { better: options.better }),
+    ...(options.bounds === undefined ? {} : { bounds: options.bounds }),
+    ...(options.format === undefined ? {} : { format: options.format }),
+    value,
+  });
+}
 
 const RESERVED_VALUE_KEY = "refs";
 
@@ -25,7 +87,7 @@ const RESERVED_VALUE_KEY = "refs";
  */
 export async function aggregate<
   const Groups extends Readonly<Record<string, GroupFunction>>,
-  const Values extends Readonly<Record<string, ClassicCalculation>>,
+  const Values extends Readonly<Record<string, Calculation>>,
 >(
   sample: Sample,
   spec: {
@@ -77,7 +139,7 @@ export async function aggregate<
       row[key] = label;
     }
     for (const [key, calculation] of valueEntries) {
-      row[key] = calculation.compute(group.units);
+      row[key] = await computeCalculation(calculation, group.units);
     }
     rows.push(Object.freeze(row) as AggregateRow<Groups, Values>);
   }
@@ -92,6 +154,21 @@ export async function aggregate<
  */
 export const experiment: GroupFunction = (subject) => subject.experimentId;
 Object.defineProperty(experiment, "name", { value: "experiment" });
+
+export const evalId: GroupFunction = (subject) => subject.evalId;
+Object.defineProperty(evalId, "name", { value: "evalId" });
+
+export const agent: GroupFunction = (subject) =>
+  subject.run.agent
+  ?? subject.run.experiment?.agent
+  ?? "unknown";
+Object.defineProperty(agent, "name", { value: "agent" });
+
+export const durationMs: ClassicCalculation = Object.freeze({
+  id: "durationMs",
+  compute: (units: readonly ClassicEvalUnit[]): MetricValue =>
+    meanMetric(units, "durationMs", { unit: "ms", better: "lower" }),
+});
 
 export const costUSD: ClassicCalculation = Object.freeze({
   id: "costUSD",
@@ -314,24 +391,104 @@ function ownFunctions(
 }
 
 function ownCalculations(
-  value: Readonly<Record<string, ClassicCalculation>>,
+  value: Readonly<Record<string, Calculation>>,
   label: string,
-): readonly (readonly [string, ClassicCalculation])[] {
+): readonly (readonly [string, Calculation])[] {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new TypeError(`aggregate ${label} must be a plain object`);
   }
-  const entries: Array<readonly [string, ClassicCalculation]> = [];
+  const entries: Array<readonly [string, Calculation]> = [];
   for (const [key, candidate] of Object.entries(value)) {
-    if (
-      typeof candidate !== "object"
-      || candidate === null
-      || typeof candidate.compute !== "function"
-    ) {
+    if (!isCalculation(candidate)) {
       throw new TypeError(`aggregate ${label}.${key} must be a classic Calculation`);
     }
     entries.push(Object.freeze([key, candidate]));
   }
   return Object.freeze(entries);
+}
+
+function isCalculation(value: unknown): value is Calculation {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const candidate = value as Calculation;
+  if ("compute" in candidate && typeof candidate.compute === "function") {
+    return true;
+  }
+  return "kind" in candidate
+    && candidate.kind === "rollup"
+    && typeof candidate.value === "function";
+}
+
+async function computeCalculation(
+  calculation: Calculation,
+  units: readonly ClassicEvalUnit[],
+): Promise<MetricValue> {
+  if (isRollupCalculation(calculation)) {
+    return computeRollup(calculation, units);
+  }
+  return calculation.compute(units);
+}
+
+function isRollupCalculation(value: Calculation): value is RollupCalculation {
+  return "kind" in value && value.kind === "rollup";
+}
+
+async function computeRollup(
+  calculation: RollupCalculation,
+  units: readonly ClassicEvalUnit[],
+): Promise<MetricValue> {
+  const evalValues: number[] = [];
+  const refs: string[] = [];
+  for (const unit of units) {
+    const attemptValues: number[] = [];
+    for (const attempt of unit.attempts) {
+      const handle = attemptHandle(attempt);
+      if (handle === undefined) {
+        continue;
+      }
+      refs.push(handle.locator);
+      const scored = await calculation.value(handle);
+      if (scored !== null && Number.isFinite(scored)) {
+        attemptValues.push(scored);
+      }
+    }
+    const folded = calculation.withinEval(attemptValues);
+    if (folded !== null && Number.isFinite(folded)) {
+      evalValues.push(folded);
+    }
+  }
+  return metricValue({
+    value: calculation.acrossEvals(evalValues),
+    samples: evalValues.length,
+    total: units.length,
+    basis: "eval",
+    ...(calculation.unit === undefined ? {} : { unit: calculation.unit }),
+    ...(calculation.format === undefined ? {} : { format: calculation.format }),
+    ...(calculation.better === undefined ? {} : { better: calculation.better }),
+    ...(calculation.bounds === undefined ? {} : { bounds: calculation.bounds }),
+    refs,
+  });
+}
+
+function attemptHandle(
+  attempt: ClassicEvalUnit["attempts"][number],
+): ClassicAttemptHandle | undefined {
+  const locator = attempt.target?.locator ?? attempt.attemptId;
+  if (locator === undefined) {
+    return undefined;
+  }
+  return Object.freeze({
+    locator,
+    experimentId: attempt.experimentId,
+    evalId: attempt.evalId,
+    result: Object.freeze({
+      verdict: attempt.verdict ?? "unreadable",
+      assertions: Object.freeze([]),
+      durationMs: attempt.durationMs,
+      costUSD: attempt.costUSD,
+    }),
+  });
 }
 
 function compareRows(

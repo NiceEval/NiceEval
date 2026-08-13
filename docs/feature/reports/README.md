@@ -69,7 +69,8 @@ static export 先预检，再写出完整 closure，最后写入完成标记。�
 
 Reports 包含：
 
-- classic facade：`defineReport({ title, pages })`、`render(sample)`、受控 JSX、内置组件与 `aggregate` / `passRate` / `costUSD` / `experiment`；
+- classic facade：`defineReport({ title, pages })`、`render(sample)`、受控 JSX、内置组件与 `aggregate` / `passRate` / `costUSD` / `experiment` / `rollup`；
+- `standardExperimentPage` / `standardAttemptPage`：按 experiment id 与 attempt locator 展开的可导航详情页；
 - 低层 typed `RecordProjection` declarations、穷尽 `ProjectedSample` 与一次 unique projection；
 - Calculation、fixed Page、value-dependent PageFamily 与 Download；
 - closed semantic report tree（含 Hero、summary、柱状图、散点与 Experiment / Eval / Attempt 层级导航）；

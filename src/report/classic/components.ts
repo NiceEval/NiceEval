@@ -15,18 +15,25 @@ import {
 import { defineComponent, evaluateClassicTree, Fragment, jsx } from "./jsx.ts";
 import { resolveLocalizedText, type LocalizedText } from "./localize.ts";
 import { isMetricValue, metricNumeric, type MetricValue } from "./metric.ts";
+import { classicAttemptTarget, classicExperimentTarget } from "./routes.ts";
 import type { ClassicEvalUnit, Sample } from "./sample.ts";
 import {
+  reportCellTable,
+  reportCodeBlock,
+  reportGrid,
   reportHero,
   reportRankedBars,
   reportScatter,
   reportSection,
+  reportStat,
   reportSummary,
   reportTreeTable,
   type ReportBlock,
   type ReportDisplayValue,
-  type ReportLinkTarget,
 } from "../semantic/document.ts";
+import { cellFromUnknown, formatCellText, isCell, type Cell } from "./cell.ts";
+import type { AttemptEvidence, AttemptSummaryData, CopyBlockContent } from "./attempt.ts";
+import { copyBlockText } from "./attempt.ts";
 
 export interface ClassicHeroLogo {
   readonly src: string;
@@ -108,10 +115,139 @@ export const Section = defineComponent<ClassicSectionProps>(async (props, ctx) =
   const children = await evaluateClassicTree(props.children, ctx);
   return reportSection({
     heading: resolveLocalizedText(props.title, ctx.scope.locale),
+    ...(props.meta === undefined ? {} : { meta: resolveLocalizedText(props.meta, ctx.scope.locale) }),
     children,
   });
 });
 Section.displayName = "Section";
+
+export interface ClassicGridProps {
+  readonly children?: unknown;
+}
+
+export const Grid = defineComponent<ClassicGridProps>(async (props, ctx) => {
+  const cells = await evaluateClassicTree(props.children, ctx);
+  return reportGrid({ cells });
+});
+Grid.displayName = "Grid";
+
+export type StatTone = "neutral" | "positive" | "negative" | "warning";
+
+export interface ClassicStatProps {
+  readonly label: LocalizedText;
+  readonly value: Cell | LocalizedText | number | null;
+  readonly detail?: LocalizedText;
+  readonly tone?: StatTone;
+  readonly className?: string;
+}
+
+export const Stat = defineComponent<ClassicStatProps>((props, ctx) => {
+  return reportStat({
+    label: resolveLocalizedText(props.label, ctx.scope.locale),
+    value: statDisplay(props.value, ctx.scope.locale),
+    ...(props.tone === undefined ? {} : { tone: props.tone }),
+  });
+});
+Stat.displayName = "Stat";
+
+export interface ClassicCellTableProps {
+  readonly rows: readonly (Readonly<Record<string, unknown>> & { readonly key?: string })[];
+  readonly columns: readonly string[];
+  readonly className?: string;
+  readonly sort?: string;
+  readonly searchable?: boolean;
+}
+
+export const Table = defineComponent<ClassicCellTableProps>((props) => {
+  const rows = sortTableRows(props.rows, props.sort);
+  return reportCellTable({
+    columns: props.columns,
+    rows: rows.map((row, index) => {
+      const cells: Record<string, string> = {};
+      for (const column of props.columns) {
+        cells[column] = formatCellText(cellFromUnknown(row[column]));
+      }
+      return Object.freeze({
+        key: typeof row.key === "string" ? row.key : `row-${index}`,
+        cells: Object.freeze(cells),
+      });
+    }),
+  });
+});
+Table.displayName = "Table";
+
+export const SampleNotices = defineComponent(() => null);
+SampleNotices.displayName = "SampleNotices";
+
+export interface CopyBlockProps {
+  readonly content: CopyBlockContent;
+}
+
+export const CopyBlock = defineComponent<CopyBlockProps>((props) =>
+  reportSection({
+    heading: "Copy",
+    children: [reportCodeBlock({ value: copyBlockText(props.content) })],
+  })
+);
+CopyBlock.displayName = "CopyBlock";
+
+export const AttemptSummary = defineComponent<{ readonly data: AttemptSummaryData }>((props) =>
+  reportSection({
+    heading: props.data.locator,
+    children: [
+      reportStat({ label: "Experiment", value: props.data.experimentId }),
+      reportStat({ label: "Eval", value: props.data.evalId }),
+      reportStat({ label: "Verdict", value: props.data.verdict }),
+    ],
+  })
+);
+AttemptSummary.displayName = "AttemptSummary";
+
+export const AttemptAssessment = defineComponent<{ readonly attempt: AttemptEvidence }>((props) =>
+  reportSection({
+    heading: "Assessment",
+    children: [
+      reportStat({
+        label: "Verdict",
+        value: props.attempt.result.verdict ?? "unknown",
+      }),
+    ],
+  })
+);
+AttemptAssessment.displayName = "AttemptAssessment";
+
+function statDisplay(value: ClassicStatProps["value"], locale: Sample["locale"]): string {
+  if (value === null) return "—";
+  if (typeof value === "number") return new Intl.NumberFormat(locale).format(value);
+  if (isCell(value)) return formatCellText(value);
+  return resolveLocalizedText(value, locale);
+}
+
+function sortTableRows(
+  rows: ClassicCellTableProps["rows"],
+  sort: string | undefined,
+): ClassicCellTableProps["rows"] {
+  if (sort === undefined) return rows;
+  return Object.freeze(
+    [...rows].sort((left, right) => {
+      const leftValue = metricNumericFromUnknown(left[sort]);
+      const rightValue = metricNumericFromUnknown(right[sort]);
+      if (leftValue === null && rightValue === null) return 0;
+      if (leftValue === null) return 1;
+      if (rightValue === null) return -1;
+      return rightValue - leftValue;
+    }),
+  );
+}
+
+function metricNumericFromUnknown(value: unknown): number | null {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (isCell(value) && value.kind === "metric") return value.metric.value;
+  if (typeof value === "object" && value !== null && "value" in value && typeof value.value === "number") {
+    return value.value;
+  }
+  return null;
+}
 
 export const SampleSummary = defineComponent<{ readonly input?: Sample }>((props, ctx): ReportBlock => {
   const scope = props.input ?? ctx.scope;
@@ -249,6 +385,9 @@ export const ExperimentScatter = defineComponent<ClassicScatterProps>((props, ct
             y: metricNumeric(point.passRate),
             xDisplay: formatMetricDisplay(point.costUSD),
             yDisplay: formatMetricDisplay(point.passRate),
+            ...(classicExperimentTarget(point.experimentId) === undefined
+              ? {}
+              : { target: classicExperimentTarget(point.experimentId) }),
           }),
         ),
       }),
@@ -394,15 +533,17 @@ function experimentTableRows(sample: Sample): ReportTreeTableRows {
   const rows: ReportTreeTableRows[number][] = [];
   for (const [experimentId, units] of groupUnitsByExperiment(sample)) {
     const profile = sample.profiles[experimentId] ?? units[0]?.subject.run.experiment;
+    const experimentTarget = classicExperimentTarget(experimentId);
     rows.push({
       key: experimentId,
       kind: "experiment",
       depth: 0,
-      label: experimentLabel(sample, experimentId),
+      label: experimentId,
+      ...(experimentTarget === undefined ? {} : { target: experimentTarget }),
       cells: groupCells(
         units,
         profile,
-        units[0]?.subject.run.runId ?? experimentId,
+        experimentId,
       ),
     });
     for (const unit of units) {
@@ -425,9 +566,9 @@ function experimentTableRows(sample: Sample): ReportTreeTableRows {
           kind: "attempt",
           depth: 2,
           label: attemptRowLabel(attempt),
-          ...(attempt.target === undefined
+          ...(attempt.attemptId === undefined
             ? {}
-            : { target: attemptTarget(attempt.target.locator) }),
+            : { target: classicAttemptTarget(attempt.attemptId) }),
           cells: Object.freeze({
             model: profileField(unitProfile?.model),
             agent: profileField(unitProfile?.agent),
@@ -531,10 +672,6 @@ function evalResultCounts(units: readonly ClassicEvalUnit[]): {
   });
 }
 
-function attemptTarget(locator: string): Extract<ReportLinkTarget, { readonly kind: "attempt" }> {
-  return Object.freeze({ kind: "attempt" as const, locator });
-}
-
 function groupUnitsByExperiment(
   sample: Sample,
 ): readonly (readonly [string, readonly ClassicEvalUnit[]])[] {
@@ -556,19 +693,6 @@ function attemptRowLabel(attempt: Sample["attempts"][number]): string {
   const mark = attempt.verdict === "passed" ? "✓" : attempt.verdict === "failed" || attempt.verdict === "errored" ? "✗" : "·";
   const locator = attempt.target?.locator ?? `attempt ${attempt.attempt}`;
   return `${mark} ${locator}`;
-}
-
-function experimentLabel(sample: Sample, experimentId: string): string {
-  const profile = sample.profiles[experimentId];
-  const line = profile?.labels?.line;
-  if (typeof line === "string" && line.length > 0) {
-    const memory = profile.flags?.memory;
-    if (typeof memory === "string" && memory.length > 0 && memory !== "baseline") {
-      return `${line}+${memory}`;
-    }
-    return line;
-  }
-  return experimentId.split("/").pop() || experimentId;
 }
 
 function localize(sample: Sample, value: LocalizedText): string {

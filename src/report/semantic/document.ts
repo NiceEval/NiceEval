@@ -62,12 +62,37 @@ export type ReportBlock =
   | ReportSummary
   | ReportRankedBars
   | ReportScatter
-  | ReportTreeTable;
+  | ReportTreeTable
+  | ReportGrid
+  | ReportStat
+  | ReportCellTable;
 
 export interface ReportSection {
   readonly type: "section";
   readonly heading: string;
+  readonly meta?: string;
   readonly children: readonly ReportBlock[];
+}
+
+export interface ReportGrid {
+  readonly type: "grid";
+  readonly cells: readonly ReportBlock[];
+}
+
+export interface ReportStat {
+  readonly type: "stat";
+  readonly label: string;
+  readonly value: string;
+  readonly tone?: "neutral" | "positive" | "negative" | "warning";
+}
+
+export interface ReportCellTable {
+  readonly type: "cell-table";
+  readonly columns: readonly string[];
+  readonly rows: readonly {
+    readonly key: string;
+    readonly cells: Readonly<Record<string, string>>;
+  }[];
 }
 
 export interface ReportParagraph {
@@ -276,12 +301,53 @@ export function reportLink(input: {
 
 export function reportSection(input: {
   readonly heading: string;
+  readonly meta?: string;
   readonly children: readonly ReportBlock[];
 }): ReportSection {
   return Object.freeze({
     type: "section" as const,
     heading: input.heading,
+    ...(input.meta === undefined ? {} : { meta: input.meta }),
     children: freezeArray(input.children),
+  });
+}
+
+export function reportGrid(input: {
+  readonly cells: readonly ReportBlock[];
+}): ReportGrid {
+  return Object.freeze({
+    type: "grid" as const,
+    cells: freezeArray(input.cells),
+  });
+}
+
+export function reportStat(input: {
+  readonly label: string;
+  readonly value: string;
+  readonly tone?: ReportStat["tone"];
+}): ReportStat {
+  return Object.freeze({
+    type: "stat" as const,
+    label: input.label,
+    value: input.value,
+    ...(input.tone === undefined ? {} : { tone: input.tone }),
+  });
+}
+
+export function reportCellTable(input: {
+  readonly columns: readonly string[];
+  readonly rows: readonly {
+    readonly key: string;
+    readonly cells: Readonly<Record<string, string>>;
+  }[];
+}): ReportCellTable {
+  return Object.freeze({
+    type: "cell-table" as const,
+    columns: freezeArray(input.columns),
+    rows: Object.freeze(input.rows.map((row) => Object.freeze({
+      key: row.key,
+      cells: Object.freeze({ ...row.cells }),
+    }))),
   });
 }
 
@@ -572,11 +638,29 @@ function validateBlock(
     const type = field(record, "type");
     switch (type) {
       case "section":
-        exactFields(record, ["type", "heading", "children"], state, path);
+        exactFields(record, ["type", "heading", "meta", "children"], state, path, ["meta"]);
         validateString(field(record, "heading"), state, pathFor(path, "heading"));
+        optionalString(record, "meta", state, path);
         forEachArray(field(record, "children"), state, pathFor(path, "children"), (child, index) =>
           validateBlock(child, state, pathFor(pathFor(path, "children"), index), depth + 1)
         );
+        break;
+      case "grid":
+        exactFields(record, ["type", "cells"], state, path);
+        forEachArray(field(record, "cells"), state, pathFor(path, "cells"), (child, index) =>
+          validateBlock(child, state, pathFor(pathFor(path, "cells"), index), depth + 1)
+        );
+        break;
+      case "stat":
+        exactFields(record, ["type", "label", "value", "tone"], state, path, ["tone"]);
+        validateString(field(record, "label"), state, pathFor(path, "label"));
+        validateString(field(record, "value"), state, pathFor(path, "value"));
+        if (hasField(record, "tone") && !isTone(field(record, "tone"))) {
+          issue(state, "shape", pathFor(path, "tone"), "stat tone is not recognized");
+        }
+        break;
+      case "cell-table":
+        validateCellTable(record, state, path);
         break;
       case "paragraph":
         exactFields(record, ["type", "children"], state, path);
@@ -691,6 +775,42 @@ function validateInline(
   } finally {
     state.active.delete(record);
   }
+}
+
+function validateCellTable(
+  record: Record<string, unknown>,
+  state: ValidationState,
+  path: readonly (string | number)[],
+): void {
+  exactFields(record, ["type", "columns", "rows"], state, path);
+  const columns = arrayValue(field(record, "columns"), state, pathFor(path, "columns"));
+  const keys = new Set<string>();
+  if (columns !== undefined) {
+    columns.forEach((column, index) => {
+      if (typeof column !== "string" || column.length === 0) {
+        issue(state, "table", pathFor(pathFor(path, "columns"), index), "a cell-table column must be a non-empty string");
+        return;
+      }
+      if (keys.has(column)) {
+        issue(state, "table", pathFor(pathFor(path, "columns"), index), "cell-table columns must be unique");
+        return;
+      }
+      keys.add(column);
+      validateString(column, state, pathFor(pathFor(path, "columns"), index));
+    });
+  }
+  forEachArray(field(record, "rows"), state, pathFor(path, "rows"), (row, index) => {
+    const rowPath = pathFor(pathFor(path, "rows"), index);
+    const rowRecord = plainRecord(row, state, rowPath);
+    if (rowRecord === undefined) return;
+    exactFields(rowRecord, ["key", "cells"], state, rowPath);
+    validateString(field(rowRecord, "key"), state, pathFor(rowPath, "key"));
+    const cells = plainRecord(field(rowRecord, "cells"), state, pathFor(rowPath, "cells"));
+    if (cells === undefined) return;
+    for (const key of Object.keys(cells)) {
+      validateString(field(cells, key), state, pathFor(pathFor(rowPath, "cells"), key));
+    }
+  });
 }
 
 function validateTable(
@@ -1513,7 +1633,29 @@ function cloneBlock(block: ReportBlock): ReportBlock {
       return Object.freeze({
         type: "section" as const,
         heading: block.heading,
+        ...(block.meta === undefined ? {} : { meta: block.meta }),
         children: Object.freeze(block.children.map(cloneBlock)),
+      });
+    case "grid":
+      return Object.freeze({
+        type: "grid" as const,
+        cells: Object.freeze(block.cells.map(cloneBlock)),
+      });
+    case "stat":
+      return Object.freeze({
+        type: "stat" as const,
+        label: block.label,
+        value: block.value,
+        ...(block.tone === undefined ? {} : { tone: block.tone }),
+      });
+    case "cell-table":
+      return Object.freeze({
+        type: "cell-table" as const,
+        columns: freezeArray(block.columns),
+        rows: Object.freeze(block.rows.map((row) => Object.freeze({
+          key: row.key,
+          cells: Object.freeze({ ...row.cells }),
+        }))),
       });
     case "paragraph":
       return Object.freeze({
