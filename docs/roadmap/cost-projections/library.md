@@ -219,6 +219,9 @@ type CostCoverageReason =
       readonly limitations: readonly ObservabilityLimitationV1[];
     };
 
+`CostCoverageReason.slot` 是 `AnalysisSlotRef`，同时包含 exact `runId` 与 `slotId`。
+因此当前项目多 Run Sample 与重复 `--run` 的显式多 Run Sample 都不会把同名 Slot 合并。
+
 interface CostProjectionKnown {
   readonly state: "available" | "partial";
   readonly basis: Exclude<CostBasis, "unavailable">;

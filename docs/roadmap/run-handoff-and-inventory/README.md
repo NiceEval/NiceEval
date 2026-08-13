@@ -20,7 +20,17 @@ Run 在 writer 最后创建 `complete` 标识时发布。
 Invocation 和 Record 不建立跨 Run 的事务；receipt 只收集各自已经发布的 Run ID。
 
 每个 published Run 都必须有 Run-owned `niceeval.run-provenance/v1`。
-它保存该 Run 的 `invocationId`，并且不参与 membership、Analysis selection 或 reuse planning。
+它使用下列封闭 payload 保存该 Run 的 `invocationId`，并且不参与 membership、Analysis selection 或 reuse planning：
+
+```ts
+interface RunProvenanceV1 {
+  readonly schema: "niceeval.run-provenance/v1";
+  readonly invocationId: string;
+}
+```
+
+`invocationId` 必须是 1 至 255 bytes 的 UTF-8 字符串，且与 terminal receipt 的 exact value 相等。
+payload 没有时间、selector、Experiment、Run ID 或自由扩展字段；Attachment owner 已由 Run 位置给出。
 Record 库存把这个 Attachment 的读取状态显式交付，因此强杀后的 Run 能与 Invocation 对上。
 
 本方向只处理两项 DX：
@@ -192,7 +202,7 @@ type RecordInventoryEntry =
   | {
       readonly kind: "core-invalid";
       readonly candidateRunId?: RunId;
-      readonly issues: readonly RecordInventoryCoreIssue[];
+      readonly issues: NonEmptyIssues<RecordInventoryCoreIssue>;
     };
 
 interface RecordInventoryProblem {
