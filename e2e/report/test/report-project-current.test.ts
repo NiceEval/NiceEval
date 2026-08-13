@@ -7,6 +7,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { reportCaseArtifacts, reportE2E } from "./support.ts";
+import { assertPublicShowJson } from "./support/show-json.ts";
 
 interface ExpEvent {
   event: string;
@@ -15,22 +16,25 @@ interface ExpEvent {
   reused?: number;
 }
 
-interface ShowOverview {
-  format: "niceeval.report-show/v1";
+interface ShowLeaderboard {
+  format: "niceeval.show";
+  schemaVersion: 1;
+  view: "leaderboard";
   sample: {
-    selection:
-      | {
-          policy: "project-current";
-          experimentIds: "all" | string[];
-          selectedRunIds: string[];
-        }
-      | {
-          policy: "explicit-runs";
-          runIds: string[];
-        };
-    runCount: number;
-    slotCount: number;
-    denominator: number;
+    resultsRoot: string;
+    experiments: string[];
+    fresh: boolean;
+  };
+  data: {
+    experiments: readonly {
+      experimentId: string;
+      passRate: number | null;
+      costUSD: number | null;
+      evals: number;
+    }[];
+    passRate: number | null;
+    evals: number;
+    attempts: number;
   };
 }
 
@@ -57,20 +61,14 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
 
       const initialShow = await niceeval.run(["show", "--json"]);
       expect(initialShow.exitCode, initialShow.diagnostic()).toBe(0);
-      const initialDocument = initialShow.json<ShowOverview>();
-      expect(initialDocument).toMatchObject({
-        format: "niceeval.report-show/v1",
-        sample: {
-          selection: {
-            policy: "project-current",
-            selectedRunIds: [initialRunId],
-          },
-          runCount: 1,
-          slotCount: 1,
-          denominator: 1,
-        },
+      const initialDocument = assertPublicShowJson(initialShow.json());
+      expect(initialDocument.view).toBe("leaderboard");
+      expect(initialDocument.sample.experiments).toEqual(["source"]);
+      expect(initialDocument.data).toMatchObject({
+        experiments: [{ experimentId: "source", evals: 1 }],
+        evals: 1,
+        attempts: 1,
       });
-      expect(initialDocument.sample.selection.experimentIds).toEqual(["main", "source"]);
 
       const unchangedRun = await niceeval.run(["exp", "source", "--json"]);
       expect(unchangedRun.exitCode, unchangedRun.diagnostic()).toBe(0);
@@ -90,14 +88,13 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
 
       const accumulatedShow = await niceeval.run(["show", "--json"]);
       expect(accumulatedShow.exitCode, accumulatedShow.diagnostic()).toBe(0);
-      expect(accumulatedShow.json<ShowOverview>().sample).toMatchObject({
-        selection: {
-          policy: "project-current",
-          selectedRunIds: [initialRunId, unchangedRunId].sort(),
-        },
-        runCount: 2,
-        slotCount: 2,
-        denominator: 2,
+      const accumulatedDocument = assertPublicShowJson(accumulatedShow.json());
+      expect(accumulatedDocument.view).toBe("leaderboard");
+      expect(accumulatedDocument.sample.experiments).toEqual(["source"]);
+      expect(accumulatedDocument.data).toMatchObject({
+        experiments: [{ experimentId: "source", evals: 1 }],
+        evals: 1,
+        attempts: 2,
       });
 
       const evalPath = join(projectRoot, "evals", "source-snapshot.eval.ts");
@@ -111,32 +108,25 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
 
       const staleShow = await niceeval.run(["show", "--json"]);
       expect(staleShow.exitCode, staleShow.diagnostic()).toBe(0);
-      expect(staleShow.json<ShowOverview>()).toMatchObject({
-        format: "niceeval.report-show/v1",
-        sample: {
-          selection: {
-            policy: "project-current",
-            selectedRunIds: [],
-          },
-          runCount: 0,
-          slotCount: 0,
-          denominator: 0,
-        },
+      const staleDocument = assertPublicShowJson(staleShow.json());
+      expect(staleDocument.view).toBe("leaderboard");
+      expect(staleDocument.sample.experiments).toEqual([]);
+      expect(staleDocument.data).toMatchObject({
+        experiments: [],
+        passRate: null,
+        evals: 0,
+        attempts: 0,
       });
 
       const staleHistory = await niceeval.run(["show", "--run", initialRunId, "--json"]);
       expect(staleHistory.exitCode, staleHistory.diagnostic()).toBe(0);
-      expect(staleHistory.json<ShowOverview>()).toMatchObject({
-        format: "niceeval.report-show/v1",
-        sample: {
-          selection: {
-            policy: "explicit-runs",
-            runIds: [initialRunId],
-          },
-          runCount: 1,
-          slotCount: 1,
-          denominator: 1,
-        },
+      const staleHistoryDocument = assertPublicShowJson(staleHistory.json());
+      expect(staleHistoryDocument.view).toBe("leaderboard");
+      expect(staleHistoryDocument.sample.experiments).toEqual(["source"]);
+      expect(staleHistoryDocument.data).toMatchObject({
+        experiments: [{ experimentId: "source", evals: 1 }],
+        evals: 1,
+        attempts: 1,
       });
 
       const changedRun = await niceeval.run(["exp", "source", "--json"]);
@@ -164,18 +154,16 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
 
       const refreshedShow = await niceeval.run(["show", "--json"]);
       expect(refreshedShow.exitCode, refreshedShow.diagnostic()).toBe(0);
-      expect(refreshedShow.json<ShowOverview>()).toMatchObject({
-        format: "niceeval.report-show/v1",
-        sample: {
-          selection: {
-            policy: "project-current",
-            selectedRunIds: [changedRunId],
-          },
-          runCount: 1,
-          slotCount: 1,
-          denominator: 1,
-        },
+      const refreshedDocument = assertPublicShowJson(refreshedShow.json());
+      expect(refreshedDocument.view).toBe("leaderboard");
+      expect(refreshedDocument.sample.experiments).toEqual(["source"]);
+      expect(refreshedDocument.data).toMatchObject({
+        experiments: [{ experimentId: "source", evals: 1 }],
+        evals: 1,
+        attempts: 1,
       });
+      expect(initialRunId).not.toBe(unchangedRunId);
+      expect(changedRunId).not.toBe(unchangedRunId);
 
       const removedLatest = await niceeval.run(["show", "--latest"]);
       expect(removedLatest.exitCode, removedLatest.diagnostic()).not.toBe(0);

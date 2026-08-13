@@ -1,4 +1,5 @@
 // owner: docs/engineering/testing/e2e/report.md#report-execution-evidence
+// show --timing public phase contract is owned by test/report-timing.test.ts.
 // rerun: pnpm e2e --repo report -- --run test/report-execution.test.ts
 
 import { only } from "@niceeval/testkit";
@@ -35,30 +36,6 @@ test("show --execution 呈现本轮 conversation 与工具入参", async () => {
       expect(shown.stdout).toContain("report-execution-sentinel-914");
       expect(shown.stdout).toMatch(/\bconversation\b/i);
       expect(shown.stdout).toMatch(/\bcompleted\b/i);
-    },
-  );
-});
-
-test("show --timing 呈现本轮的阶段树", async () => {
-  await reportE2E.case(
-    "timing",
-    { artifacts: reportCaseArtifacts() },
-    async ({ commands: { niceeval } }) => {
-      const run = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
-      expect(run.exitCode, run.diagnostic()).not.toBe(0);
-
-      const toolCall = only(
-        run.ndjson<ExpEvent>(),
-        (event) => event.event === "eval" && event.evalId === "tool-call" && event.locator !== undefined,
-        run.diagnostic(),
-      );
-      const shown = await niceeval.run(
-        ["show", toolCall.locator!, "--timing"],
-      );
-      expect(shown.exitCode, shown.diagnostic()).toBe(0);
-      expect(shown.stdout).toContain("eval.run");
-      expect(shown.stdout).toContain("agent.send");
-      expect(shown.stdout).toMatch(/turn\s+turn1\b/);
     },
   );
 });
