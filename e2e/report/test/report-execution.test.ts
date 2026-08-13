@@ -26,7 +26,7 @@ test("show --execution 呈现本轮 conversation 与工具入参", async () => {
       );
 
       const shown = await niceeval.run(
-        ["show", toolCall.locator!, "--record", ".niceeval/record", "--execution"],
+        ["show", toolCall.locator!, "--execution"],
       );
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
       expect(shown.stdout).toContain("Deterministic report fixture response.");
@@ -53,7 +53,7 @@ test("show --timing 呈现本轮的阶段树", async () => {
         run.diagnostic(),
       );
       const shown = await niceeval.run(
-        ["show", toolCall.locator!, "--record", ".niceeval/record", "--timing"],
+        ["show", toolCall.locator!, "--timing"],
       );
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
       expect(shown.stdout).toContain("eval.run");

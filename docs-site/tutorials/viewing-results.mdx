@@ -1,16 +1,28 @@
 ---
 title: "View NiceEval Results"
 sidebarTitle: "Viewing Results"
-description: "Use show or view to select a Sample from a quiescent Record and inspect a fixed ReportInput."
+description: "Use show or view to select a Sample from published Records and inspect a fixed ReportExecution."
 ---
 
-After a run completes, select the Run you want to inspect from a quiescent Record. `show` presents it in the terminal, while `view` serves it locally in a browser. Both commands use the same path:
+After a run finishes, `show` presents results in the terminal and `view` presents them locally in a browser.
+Both commands read the `.niceeval/record` written by `exp` by default, so you do not need `--record`.
+They use the same data path:
 
 ```text
-Record reader → Sample → ReportInput → show or view
+opaque Record + CLI selector
+                  ↓ internal host
+             AnalysisSample
+                  ↓
+       official opaque projector
+                  ↓
+           ProjectedSample → ReportExecution
+                            ↙         ↘
+                          show        view
 ```
 
-The Sample determines the comparison scope and denominator. ReportInput carries the Sample state, requested channels, and completeness into a Report. A Report does not read files directly.
+A Sample determines the comparison scope and denominator.
+A projector interprets one RecordAttachment for one explicit owner.
+A Report organizes projected values into one immutable `ReportExecution` and does not read files directly.
 
 ## Select Runs to inspect
 
@@ -20,56 +32,76 @@ Select one explicit Run:
 npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
 ```
 
-Or select the final completed Run for each target Experiment:
+To view every result that still matches the current project's source and configuration, run `show` directly.
+`--experiment` narrows the current-project target by a complete ID:
 
 ```sh
-npx niceeval show --latest --experiment checkout
+npx niceeval show --experiment checkout
 ```
 
-The latest policy considers completed Runs only. To inspect an unfinished Run, pass its complete ID with `--run`.
+Without a locator or `--run`, the command uses `project-current`.
+It scans every published Run and keeps every slot whose Experiment, Eval, attempt ordinal, evaluation kind, input identity, and config identity still match the current project.
+It does not choose one Run by time.
+After source or configuration changes, stale results leave the current Sample but are not deleted.
+Use a complete `--run` ID to audit those historical results.
 
 ## Inspect results in the terminal
 
-`show` renders the default Report's text content. Supplying a page or Report still creates ReportInput from the same Sample.
+`show` renders the default Report as text.
+Supplying a page or custom Report still creates one execution from the same selection.
 
 ```sh
-npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --page overview
-npx niceeval show --latest --experiment checkout --json
+npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --page /
+npx niceeval show --experiment checkout --json
 ```
 
-`--json` writes calculated page data and status; it does not open a second data path. To inspect one Attempt, select a planned Attempt page inside the selected Sample:
-
-```sh
-npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY \
-  --page attempt-01J8ZK3M6P4T7V9X2C5N8QW0RY
-```
+`--json` emits the `niceeval.report-show/v1` document for the same execution.
+It includes pages, calculations, projection summaries, and problems.
+It does not create another data path.
 
 ## Inspect results in the browser
 
 ```sh
-npx niceeval view --latest --experiment checkout --no-open
+npx niceeval view --experiment checkout --no-open
 ```
 
-The local server serves one fixed ReportInput. Later file edits do not change its pages. After editing a Record or Report, end the command and run `view` again.
+Each successful `view` rebuild creates a new fixed `ReportExecution` and replaces the revision on screen.
+Changes to the Report, configuration, theme, or Record trigger the next rebuild.
+A failed rebuild keeps the last-good execution and shows the problem.
 
-## Read denominators and channel states
+Opening, navigating, or refreshing a page does not reread the Record behind a fixed execution.
+To see a newly published Run, let `view` finish a rebuild or run the command again.
+Pass `--record <root>` only when you explicitly need to read another Record root.
 
-A Sample preserves a Run's complete expected-slot denominator. Each slot can be:
+## Read denominators and Attachment states
+
+An explicit `--run` Sample preserves each named Run's complete expected-slot denominator; `project-current` first materializes only slots whose identities still match the current target.
+Within the framework established by selection, each slot can be:
 
 | State | Meaning |
 | --- | --- |
 | `included` | It has a valid Member and readable Attempt. |
 | `not-recorded` | A planned slot has no Member. |
-| `invalid` | The Member, Attempt, or core reference has a problem. |
+| `core-invalid` | The Member, Attempt, or core reference cannot be read reliably. |
 | `excluded` | This selection excluded it. |
 
-Pages and Calculations also show the state of requested channels. `unavailable` means the channel was not collected or does not apply; `unsupported` means the reader does not support it; `invalid` shows a named issue and fails the request that depends on it. A partial reading must show its observed count, denominator, and a `partial` marker.
+Pages and Calculations also show requested Attachment states.
+`unavailable` means the Attachment is absent.
+`migration-required` or `migration-unavailable` means historical schemas need attention.
+`unsupported` means the current feature does not recognize it.
+`invalid` means its envelope, payload, or blob is invalid.
 
-## Reread after an edit
+These data states do not silently shrink the Sample denominator after selection.
+An unrequested bad Attachment does not affect an unrelated page.
+Each Calculation defines its own business `observed` and `denominator`; it cannot infer them from Attachment counts.
 
-A Record is an editable fact dataset. When the directory is quiescent, you can edit a Verdict, Usage, or another channel value. Run `show` or `view` again after the edit; the new AnalysisSample reads the edited fact.
+## Record publication boundary
 
-On a single Record root, the Runner, an active reader, the export phase that selects a Sample and builds ReportInput, and manual editing are mutually exclusive. Once the reader releases the Record, Report execution and site writing can continue because they no longer access it.
+A Record stores published facts only.
+Published Runs are immutable. Run a new Invocation to create a different result.
+
+A directory without `complete` does not belong to a Sample.
+The reader freezes the visible set of published Runs, so a Run completed afterward appears only after reopening the reader.
 
 ## Next steps
 

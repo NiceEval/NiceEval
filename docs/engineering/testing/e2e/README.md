@@ -172,7 +172,7 @@ Runner Repo 使用确定性本地 Agent 产生可区分的 plan、dispatch、car
 这些命题不依赖真实 provider 身份，因此不能借用 `adapter/ai-sdk` 或 `adapter/codex-cli` 的运行结果。
 
 `--dry` 与 `accept` 同样归 Runner Repo。相关 Journey 先完整运行自己的初始 Experiment，再修改 Eval 或被导入源码模块。
-随后检查 human / JSON dry plan，执行 `accept @<locator>`。latest-only current view 必须证明新 Run 通过 reference Member 指向同一
+随后检查 human / JSON dry plan，执行 `accept @<locator>`。再用 accept 收据中的 Run ID 明确读取，证明新 Run 通过 reference Member 指向同一
 immutable Attempt；公开读回还要确认 verdict / evidence 未被复制或改写，采用原因由 membership provenance 表达。
 
 accepted action 不是未来 eligibility grant；后续 dry 仍独立执行当前 reuse policy。不得用手写 manifest 或预置 `.niceeval`

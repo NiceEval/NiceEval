@@ -7,8 +7,8 @@ description: "理解当前报告宿主的固定样式，以及为什么 Report �
 当前 Record/Reports 契约不提供 `--theme`，也不装载任意主题文件。`show`、本机 `view` 与静态 export 消费同一份 `ReportExecution`；网页外壳由当前 NiceEval exporter 的内建 runtime、基础样式和字体完整提供。
 
 ```sh
-niceeval view --latest
-niceeval view --latest --report ./reports/site.ts --out ./report-site
+niceeval view
+niceeval view --report ./reports/site.ts --out ./report-site
 ```
 
 ## Report 可以控制什么

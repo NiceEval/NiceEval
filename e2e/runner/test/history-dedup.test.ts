@@ -83,8 +83,10 @@ test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt",
     expect(carriedReceipt).toMatchObject({ completion: "completed" });
     expect(carriedReceipt.runIds).toHaveLength(1);
 
-    const current = await niceeval.run(["show", "--latest", "--json"]);
+    const current = await niceeval.run(["show", "--json"]);
     expect(current.exitCode, current.diagnostic()).toBe(0);
+    expect(current.stdout).toContain(first.expReceipt().runIds[0]!);
+    expect(current.stdout).toContain(forced.expReceipt().runIds[0]!);
     expect(current.stdout).toContain(carriedReceipt.runIds[0]!);
     const forcedEvidence = await niceeval.run(["show", forcedLocator, "--execution"]);
     expect(forcedEvidence.exitCode, forcedEvidence.diagnostic()).toBe(0);

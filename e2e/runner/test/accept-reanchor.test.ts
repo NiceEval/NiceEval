@@ -94,9 +94,9 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
     // the immutable source Attempt identity instead of manufacturing an Attempt.
     expect(newLocator).toBe(oldLocator);
 
-    const acceptedCurrent = await niceeval.run(["show", "--latest", "--json"]);
-    expect(acceptedCurrent.exitCode, acceptedCurrent.diagnostic()).toBe(0);
-    expect(acceptedCurrent.stdout).toContain(acceptedRunId);
+    const acceptedHistory = await niceeval.run(["show", "--run", acceptedRunId, "--json"]);
+    expect(acceptedHistory.exitCode, acceptedHistory.diagnostic()).toBe(0);
+    expect(acceptedHistory.stdout).toContain(acceptedRunId);
 
     const currentEvidence = await niceeval.run(["show", newLocator, "--execution"]);
     expect(currentEvidence.exitCode, currentEvidence.diagnostic()).toBe(0);

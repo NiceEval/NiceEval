@@ -3,7 +3,6 @@
 
 import { Data, Effect } from "effect";
 import { loadConfigFile } from "../load-config.ts";
-import { matchExperimentSelector } from "../shared/aggregate.ts";
 import { discoverEvals, discoverExperiments, type DiscoveryError } from "./discover.ts";
 import { resolveExperimentEvals } from "./eval-selection.ts";
 import {
@@ -29,7 +28,7 @@ export interface LoadedProjectCurrent {
 
 /** Project-current config loading is the only Promise boundary in this module. */
 export class ProjectCurrentLoadError extends Data.TaggedError("ProjectCurrentLoadError")<{
-  readonly stage: "config";
+  readonly stage: "config" | "selection";
   readonly message: string;
 }> {}
 
@@ -63,16 +62,28 @@ export function loadProjectCurrent(
     const config = yield* loadProjectConfig(cwd, discoveryOptions);
     const evals = yield* discoverEvals(cwd, discoveryOptions);
     const experiments = yield* discoverExperiments(cwd, discoveryOptions);
+    const selectors = options.experiments === undefined
+      ? []
+      : Array.isArray(options.experiments) ? options.experiments : [options.experiments];
+    const availableIds = new Set(experiments.map((entry) => entry.id));
+    for (const selector of selectors) {
+      if (!availableIds.has(selector)) {
+        return yield* Effect.fail(new ProjectCurrentLoadError({
+          stage: "selection",
+          message: `Unknown current project Experiment ${JSON.stringify(selector)}.`,
+        }));
+      }
+    }
+    const selectedIds = selectors.length === 0
+      ? availableIds
+      : new Set(selectors);
+    if (selectedIds.size === 0) {
+      return yield* Effect.fail(new ProjectCurrentLoadError({
+        stage: "selection",
+        message: "The current project has no Experiments to show.",
+      }));
+    }
     const runs = yield* Effect.sync((): AgentRun[] => {
-      const selectors = options.experiments === undefined
-        ? []
-        : Array.isArray(options.experiments) ? options.experiments : [options.experiments];
-      const selectedIds = selectors.length === 0
-        ? new Set(experiments.map((entry) => entry.id))
-        : new Set(selectors.flatMap((selector) => matchExperimentSelector(
-            experiments.map((entry) => entry.id),
-            selector,
-          )));
       const selectedRuns: AgentRun[] = [];
       for (const experiment of experiments) {
         if (!selectedIds.has(experiment.id)) continue;
@@ -108,12 +119,24 @@ export function loadProjectCurrent(
       }
       return selectedRuns;
     });
+    if (runs.length === 0) {
+      return yield* Effect.fail(new ProjectCurrentLoadError({
+        stage: "selection",
+        message: "The current project target contains no runnable Experiments.",
+      }));
+    }
     const plan: ProjectTargetPlan = yield* planProjectTarget(
       evals,
       runs,
       config.timeoutMs,
       { configJudge: config.judge },
     );
+    if (plan.target.experiments.length === 0) {
+      return yield* Effect.fail(new ProjectCurrentLoadError({
+        stage: "selection",
+        message: "The current project target contains no Eval results to show.",
+      }));
+    }
     return {
       target: plan.target,
       watchInputs: Object.freeze([

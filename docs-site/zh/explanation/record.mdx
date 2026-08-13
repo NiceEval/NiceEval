@@ -38,7 +38,7 @@ opaque Record + CLI selector
      immutable ReportExecution → show / view / static export
 ```
 
-用户用 locator、`--run` 或 `--latest` 决定选择哪些已发布 Run。内部 host 形成纯
+用户用不带 locator 或 `--run` 的命令选择身份仍匹配当前项目的结果，或用 locator、`--run` 选择历史事实。内部 host 形成纯
 `AnalysisSample`；它保留完整 expected-slot 分母，并标出 `included`、`not-recorded`、
 `core-invalid` 与 `excluded`，但不暴露 reader 或恢复 I/O 的能力。
 

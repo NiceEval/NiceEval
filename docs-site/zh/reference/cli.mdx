@@ -21,8 +21,8 @@ description: "NiceEval CLI 参考：exp、show、view、init、list 和 clean �
   <Card title="npx niceeval clean" icon="trash">
     删除明确 writer 留下的 Record 临时目录，不删除正式 Run 或 Attempt。
   </Card>
-  <Card title="npx niceeval show @定位符 | --run | --latest" icon="terminal">
-    在终端执行报告。精确 Attempt 定位符显示默认概览，Run 选择形成 `AnalysisSample`。
+  <Card title="npx niceeval show [--run]" icon="terminal">
+    在终端执行报告。不带 locator 或 `--run` 的命令读取当前项目结果；精确 Attempt 定位符或 Run ID 用于审计历史。
   </Card>
   <Card title="npx niceeval view" icon="eye">
     打开固定 ReportExecution 的网页结果。选择与 `show` 相同；要看编辑后的 Record，结束后重新运行。
@@ -117,10 +117,9 @@ npx niceeval exp list --json
 | `--out` | string | `view` 命令专用:把结果查看器静态导出到指定目录。 |
 | `--port` | number | `view` 命令专用:指定本地服务器监听端口。 |
 | `--host` | string | `view` 命令专用:指定 loopback 监听地址；拒绝公网或局域网地址。 |
-| `--experiment` | string[] | `show` / `view` 命令专用：选择 latest policy 的完整 ExperimentId；可重复，不接受前缀或逗号列表。 |
+| `--experiment` | string[] | `show` / `view` 命令专用：按完整 ExperimentId 收窄当前项目结果；可重复，不接受前缀或逗号列表。 |
 | `--record` | string | `show` / `view` / `accept` / `sandbox enter\|list\|stop` 共用:指定实际 Record root;CLI 不补接 `.niceeval/record` 或其它后缀。 |
 | `--run` | string[] | `show` / `view` 可重复传入 `--run`;每次按完整 RunId 增加一个显式 Run,重复 identity 去重。 |
-| `--latest` | boolean | `show` / `view` 命令专用：按每个完整 ExperimentId 选择 latest published Run；与 `--run` 二选一。 |
 | `--report` | string | `show` / `view` 命令专用：内建 `overview` 或受信任的 Report module 路径。 |
 | `--page` | string | `show` / `view` 命令专用:选择报告的初始页;`show` 渲染该页并在尾部附其余页索引,`view` 以它作初始路由。未命中的页 id 按用法错误退出并列出可用页 id。 |
 | `--teardown` | boolean | `exp` 命令专用:补齐被强杀打断的实验级 teardown——只对选中的实验各执行一次 teardown(新进程语义),不派发 attempt、不跑 setup;没有遗留登记也照常执行。与 eval 前缀位置参数组合是用法错误。 |
@@ -174,19 +173,19 @@ npx niceeval exp compare --junit ./artifacts/niceeval-junit.xml
 ## `view`
 
 ```bash
-npx niceeval view --latest
+npx niceeval view
 npx niceeval view --run 01H...
 npx niceeval view @01H...
 ```
 
-打开本地记录查看器。它和 `show` 共用同一份默认 Report 和明确选择：精确 `@<AttemptLocator>` 显示该 Attempt 的默认概览；`--run` 或 `--latest` 从已发布的 opaque Record 形成纯 AnalysisSample。随后内部 host 投影所需事实，并执行一次 Report。
+打开本地记录查看器。它和 `show` 共用默认 Report 与选择规则。不带 locator 或 `--run` 的命令从默认 Record 读取所有身份仍匹配当前项目的结果；精确 `@<AttemptLocator>` 显示该 Attempt 的默认概览；`--run` 读取指定历史 Run。随后内部 host 投影所需事实，并执行一次 Report。
 
-此前的局部执行可能让部分 slot 以 `reference` 采用已有 Attempt。这些是当时的采用事实，不是补跑状态。同一份 `AnalysisSample` 不按可变 head 重选。`--experiment`、`--eval` 和 `--record` 对两种宿主的收窄一致。
+此前的局部执行可能让部分 slot 以 `reference` 采用已有 Attempt。这些是当时的采用事实，不是补跑状态。同一份 `AnalysisSample` 不会在页面请求时重新选择。`--experiment` 可按完整 ID 收窄当前项目目标；`--record` 只在主动读取其它 Record root 时使用。
 
 ## `show`
 
 ```bash
-npx niceeval show --latest
+npx niceeval show
 npx niceeval show --run 01H...
 npx niceeval show --run 01H... --run 01J...
 npx niceeval show @01H...
@@ -202,11 +201,13 @@ npx niceeval show --run 01H... --report ./reports/summary.ts --page overview
 
 加 `--source`、`--execution` 或 `--timing` 可查看对应的专用证据面。`--timing` 默认显示精简阶段树；`--timing=full` 还显示 interval identity、parent 和 offset。三种证据面互斥，并且都要求一个精确 Attempt 定位符。
 
-`--run` 可重复，只读取这些显式 Run；`--latest` 对每个目标 Experiment 按完成时间和 Run identity 的稳定规则各选择一个。`--latest --experiment <id>` 定义目标集合；不带 `--experiment` 时目标来自可读 Run 核心。目标集合为空、任一目标没有已发布 Run，或任一候选 Run 的排序核心损坏都明确失败，不缩小比较组去猜“最近一次”。Record 只包含完整发布的 Run。
+不带 locator 或 `--run` 的 `show` 规划当前项目身份，并扫描默认 Record 中全部 published Run。只有 Experiment、Eval、Attempt 序号、evaluation kind、input identity 与 config identity 仍匹配的 slot 才进入 Sample；命令不会按时间只留一个 Run。没有匹配结果时显示空 Sample，过期结果仍可用完整 `--run` 读取。
+
+`--run` 可重复，只读取这些显式历史 Run。`--experiment <id>` 可重复，按完整 ExperimentId 收窄当前项目目标，不能与 `--run` 合用。`exp`、不带 `--record` 的 `show` 与 `view` 默认使用同一个 `.niceeval/record`。
 
 选择完成后，`show` 用已选 handle 读取 Report 声明的 Projection，并形成一次 `ReportExecution`。请求的 Attachment 为 unavailable、migration-required、unsupported、partial 或 invalid 时，命令会原样显示状态；未请求的未知或损坏 Attachment 不影响当前页面。完整契约见[查看结果](/zh/tutorials/viewing-results)。
 
-`view --latest --out <目录>`（或显式 `--run`）使用同一份 ReportExecution 预渲染自包含静态站。目标目录必须不存在；全部页面、下载项与静态资产路径先通过校验。写完全部文件后，exporter 最后创建 `complete` marker。导出过程不会把 Record 路径或 blob 路径交给用户 Report。
+`view --out <目录>`（或显式 `--run`）使用同一份 ReportExecution 预渲染自包含静态站。目标目录必须不存在；全部页面、下载项与静态资产路径先通过校验。写完全部文件后，exporter 最后创建 `complete` marker。导出过程不会把 Record 路径或 blob 路径交给用户 Report。
 
 命令在持有 sample handle 时完成所需 Projection 和 Report execution。返回的 ReportExecution 不再访问 Record。运行中的 `view` 对变化构造新的固定 execution；成功后替换当前 revision，失败保留 last-good execution。静态 export 只消费已经完成的 execution。
 

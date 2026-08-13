@@ -1,92 +1,76 @@
 ---
-title: "Read Record Data"
+title: "Read Result Data in a Report"
 sidebarTitle: "Results Data API"
-description: "Project a core-only AnalysisSample from a quiescent Record, then read facts through a ReportPlan."
+description: "Declare result reads with AnalysisSample and NiceEval's official opaque projectors from niceeval/report."
 ---
 
-A `Record` is an editable fact dataset under `.niceeval/record/`. It stores Runs, Members, Attempts, and their named channels. Read and write it only while the directory is quiescent. A separate projector decides analysis scope or execution reuse.
+A Record is an opaque, portable directory under `.niceeval/record/` that can be copied or put in Git.
+Application code does not read its internal structure, write its files, or import a Record reader or writer.
+The internal hosts for `niceeval show` and `niceeval view` select Runs and run projections.
 
-This page explains the data boundary. To inspect results in the terminal or browser, read [Viewing Results](/tutorials/viewing-results). To define pages and calculations, read [Write a Custom Report](/tutorials/custom-reports).
+To inspect results in a terminal or browser, see [Viewing Results](/tutorials/viewing-results).
+To define pages and calculations, see [Report Components API](/reference/report-components).
 
-## Open a quiescent Record
+## Report callbacks receive `AnalysisSample`
 
-The library receives the actual Record root and does not append `.niceeval` or `record`. Open a reader, then form an `AnalysisSample` with a named analysis projector.
+Calculation, Page, and PageFamily callbacks receive a pure `AnalysisSample`.
+It holds every expected slot in the framework established by selection and its complete denominator, with no path, reader, file handle, or deferred I/O.
+`--run` uses each named Run's complete expected slots; `project-current` materializes only slots whose identities still match the current target:
 
-```ts
-import { openRecordReader } from "niceeval/record";
-import { projectExplicitRuns, projectLatestRuns } from "niceeval/sample";
-
-let sample: AnalysisSample;
-{
-  await using reader = await openRecordReader({
-    root: ".niceeval/record",
-  });
-
-  sample = await projectExplicitRuns(reader, {
-    runIds: ["01J8ZK3M6P4T7V9X2C5N8QW0RY"],
-  });
-}
-```
-
-You can also use the named `latest-runs` analysis selection. It selects the final completed Run for each matching Experiment; project unfinished Runs explicitly by ID.
-
-```ts
-let latest: AnalysisSample;
-{
-  await using reader = await openRecordReader({ root: ".niceeval/record" });
-  latest = await projectLatestRuns(reader, {
-    experimentIds: ["checkout"],
-  });
-}
-```
-
-Every read uses the files as they exist when it runs. If a user edits a Verdict, Usage, or another channel after the directory is quiescent, a later ReportInput construction reads the edited value. `AnalysisSample` stores core data, its denominator, and projection provenance only.
-
-## Core data relationships
-
-```text
-Run expected slots
-        ↓
-Member: executed | carried | accepted
-        ↓
-Attempt and its named channels
-```
-
-- A Run's `expectedSlots` define the denominator.
-- A slot has at most one Member. `executed` means this Run ran the Attempt; `carried` and `accepted` adopt an existing Attempt.
-- An Attempt retains the `origin` where it actually ran. Adoption does not copy Verdict, Usage, or diagnostics.
-- Reasons for carrying and accepting belong to the Run's `niceeval.actions` channel and link the slot and Attempt.
-
-Record validation of structure, paths, identities, and references rejects contradictory data. It does not retain edit history.
-
-## Channel read states
-
-Business values live in named channels, such as Verdict, Eligibility, Usage, and diagnostics. A channel's durable collection completeness and its current decoding completeness are separate facts.
-
-| State | Meaning | Caller behavior |
-| --- | --- | --- |
-| `read` | A value was read; collection or decoding can still be partial. | Preserve completeness and issue information. |
-| `unavailable` | It was declared but not collected, or it does not apply. | Show the reason. |
-| `unsupported` | The current reader does not support the channel. | Affect only content that depends on it. |
-| `invalid` | A requested channel file or value is invalid. | Fail with its named issues. |
-
-An unknown or retired channel is `unsupported` at that channel only. `unavailable`, `unsupported`, and `invalid` cannot replace one another. An unrequested channel does not block an unrelated read.
-
-## From AnalysisSample to ReportInput
-
-An `AnalysisSample` is an explicit in-memory projection and does not write back to the Record. It preserves every expected slot and represents scope with these states:
-
-| AnalysisSample state | Meaning |
+| State | Meaning |
 | --- | --- |
-| `included` | It has a valid Member and can read that Member's adopted Attempt. |
+| `included` | A valid Member points to one exact Attempt. |
 | `not-recorded` | The expected slot has no Member. |
-| `invalid` | The Member, Attempt, or core reference has a problem. |
-| `excluded` | A caller excluded it from an existing AnalysisSample. |
+| `core-invalid` | The Member, Attempt, or core reference cannot be read reliably. |
+| `excluded` | The host explicitly excluded this item from an existing Sample. |
 
-Reports turn an AnalysisSample into `ReportInput` through the facts they require. ReportInput is an ordinary in-process value that retains the denominator, membership states, channel read states, and issues. A Report consumes it; it never reads a path or interprets files itself.
+Authors can import the needed Sample and identity types from `niceeval/report`.
+They can also apply pure `narrowAnalysisSample` to an existing Sample.
+Those values cannot restore Record I/O.
+
+## Declare data with an official projector
+
+Report authors choose an opaque projector supplied by NiceEval, then declare how it aligns with a Sample:
+
+```ts
+import {
+  attemptSlotProjection,
+  selectedRunProjection,
+  evaluationsProjector,
+  verdictProjector,
+} from "niceeval/report";
+
+const verdicts = attemptSlotProjection(verdictProjector);
+const evaluations = selectedRunProjection(evaluationsProjector);
+```
+
+`attemptSlotProjection` creates one entry for every slot.
+`attemptOriginRunProjection` also creates one entry per slot, but uses the Attempt's origin Run.
+`selectedRunProjection` creates one entry for every selected Run.
+
+Authors cannot define raw Attachment families or projectors, receive payload or blob capabilities, or call the projection runtime directly.
+When a Report needs a new durable fact, NiceEval must supply a higher-level projector or a future Eval, Experiment, or Plugin capability.
+
+## Projection results remain exhaustive
+
+The first two slot projections preserve `excluded`, `not-recorded`, `core-invalid`, and `attachment-result`.
+An attachment result then expresses:
+
+| State | Meaning |
+| --- | --- |
+| `available` | The official projector formed a typed value. |
+| `unavailable` | The owner did not request this fact. |
+| `migration-required` | The current value requires `niceeval migrate`. |
+| `migration-unavailable` | Historical facts cannot form the current value without loss. |
+| `unsupported` | The current NiceEval does not recognize this fact version. |
+| `invalid` | Recorded data cannot be interpreted reliably. |
+
+These are Report-visible data states. They do not change the Sample's Core state.
+I/O, permissions, reader Scope, and raw schema errors remain inside the host.
+Public authors receive only self-contained values and structured Report problems.
 
 ## Related pages
 
-- [Viewing Results](/tutorials/viewing-results): Select Samples with `show` and `view`.
-- [Rerun and Carry Results](/tutorials/rerun-and-cache): Understand `carried`, `accepted`, and `niceeval.actions`.
-- [Report Components API](/reference/report-components): Review public Report capabilities.
+- [Architecture Overview](/explanation/overview): Learn why a Record is an opaque product asset.
+- [Viewing Results](/tutorials/viewing-results): Select results with `show` and `view`.
+- [Report Components API](/reference/report-components): Consume `ProjectedSample` and create a Report.

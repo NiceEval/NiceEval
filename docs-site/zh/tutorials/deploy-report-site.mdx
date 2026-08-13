@@ -4,10 +4,10 @@ sidebarTitle: "部署报告站"
 description: "将 view --out 生成的自包含目录部署到任意静态托管服务。"
 ---
 
-先用明确的 `niceeval view --latest --out` 或 `niceeval view --run <id> --out` 生成报告站，再部署该目录。报告站已经含有页面、宿主数据、下载项、内建精确 runtime 和 manifest；托管平台无需读取源 Record，也无需执行 NiceEval。
+先用明确的 `niceeval view --out` 或 `niceeval view --run <id> --out` 生成报告站，再部署该目录。报告站已经含有页面、宿主数据、下载项、内建精确 runtime 和 manifest；托管平台无需读取源 Record，也无需执行 NiceEval。
 
 ```sh
-npx niceeval view --latest --experiment checkout \
+npx niceeval view --experiment checkout \
   --out ./report-site \
   --no-open
 ```
@@ -25,14 +25,14 @@ npx niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY \
 一个静态托管流程通常有三步：
 
 1. 运行 Experiment，并保留最后的 receipt。
-2. 用明确 Run 或明确 latest policy 运行 `view --out`。
+2. 用当前项目结果或明确 Run 运行 `view --out`。
 3. 将输出目录交给静态托管服务。
 
 GitHub Actions 的构建任务示例：
 
 ```yaml
 - name: 生成报告站
-  run: npx niceeval view --latest --experiment checkout --out ./report-site --no-open
+  run: npx niceeval view --experiment checkout --out ./report-site --no-open
 
 - name: 上传静态站点目录
   uses: actions/upload-pages-artifact@v3

@@ -63,14 +63,14 @@ Neither output owns the Record. The quiescent Record's named channels retain the
 
 ## Inspect after the run
 
-After the Runner ends, inspect the result with an explicit Run selection:
+After the Runner ends, inspect a historical result with an explicit Run selection:
 
 ```sh
 npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
 npx niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --no-open
 ```
 
-Both `show` and `view` project an AnalysisSample before they form one fixed `ReportInput`. If a user edits the quiescent Record, end the viewer and run it again to read the edited values.
+Without a locator or `--run`, `show` and `view` read every slot whose identity still matches the current project. A locator or `--run` reads named historical facts. The internal host forms a pure `AnalysisSample`, projects the facts declared by the Report, and produces a fixed `ReportExecution`. Published Runs are immutable; another view creates a new selection and execution.
 
 ## Completion status
 

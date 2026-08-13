@@ -53,7 +53,7 @@ test("view 重建项目模块、配置与 Record，失败时保留 last-good exe
       await writeFile(configPath, liveConfig, "utf8");
 
       const view = niceeval.start(
-        ["view", "--latest", "--host", "127.0.0.1", "--port", "0", "--no-open"],
+        ["view", "--host", "127.0.0.1", "--port", "0", "--no-open"],
         { timeoutMs: 60_000 },
       );
       const startup = await waitForOutput(view, "stdout", /http:\/\/127\.0\.0\.1:\d+\//, {
