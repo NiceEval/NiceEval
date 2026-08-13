@@ -44,14 +44,15 @@ admission  endpoint/primary isolated  6 unstarted slots
 {"type":"admission-health","runId":"01J...","slotId":"s1","occurrence":"com.example.agent/endpoint@v1#primary","state":"not-run","reason":"occurrence-isolated"}
 ```
 
-| 退出码 | 含义 |
+| 结果 | `niceeval exp` 退出行为 |
 |---|---|
-| `0` | 所有运行过的健康探测为 `healthy`，且 Eval 结果没有失败或执行错误 |
-| `1` | 健康均通过，但至少一条 Attempt 得到 `failed` Verdict |
-| `2` | argv、selector 或 admission declaration 无法形成计划 |
-| `3` | 至少一条探测不健康、超时、抛错或隔离了 slot；或有 `errored` Verdict |
+| 所有探测为 `healthy`，Invocation 完整且没有 `failed` / `errored` | `0` |
+| 探测不健康、超时、抛错或隔离了 slot；或有 `failed` / `errored` | `1` |
+| argv、selector 或 admission declaration 无法建立 Invocation | `1` |
+| 未捕获崩溃 / 受控中断 | `2` / `130` |
 
-退出码不把 `unhealthy` 伪装成 Eval `failed`。机器调用方应读取 Run receipt 取得每个 slot 的原因。
+本方向继承 [CLI 的统一 `niceeval exp` 退出码](../../cli.md#退出码)，不新增 admission 专用状态码。
+退出码 `1` 不把 `unhealthy` 伪装成 Eval `failed`；机器调用方读取 Run receipt 取得每个 slot 的原因。
 
 ## 并发与审计边界
 

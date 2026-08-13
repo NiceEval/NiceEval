@@ -50,16 +50,18 @@ cohort、schema、region、checkpoint，并只在可比较 ref 上带 `contentDi
 {"type":"state-commit","runId":"01J...","commitId":"cm_2P...","expectedPredecessor":null,"newCheckpoint":null,"fencing":"unknown","status":"indeterminate"}
 ```
 
-| 退出码 | 含义 |
+| 结果 | `niceeval exp` 退出行为 |
 |---|---|
-| `0` | state lifecycle 确定完成，且没有 Eval `failed` 或 `errored` |
-| `1` | state lifecycle 确定完成，但至少一条 Eval 为 `failed` |
-| `2` | argv、state declaration 或 opaque identity 无法形成计划 |
-| `3` | 任一封闭 State failure、restore / commit / Scope 收尾失败，或 commit 不能确定 |
+| state lifecycle 确定完成，且没有 Eval `failed` / `errored` | `0` |
+| Eval `failed` / `errored`，或任一受控 State failure、restore / commit / Scope 收尾失败、commit 不能确定 | `1` |
+| argv、state declaration 或 opaque identity 无法建立 Invocation | `1` |
+| 未捕获崩溃 / 受控中断 | `2` / `130` |
 
 commit `indeterminate` 时，CLI 先发起同一 `commitId`、同一完整 `expectedPredecessor`、同一 fence 的 reconciliation。
-只有得到 accepted receipt 才能继续；`not-committed` 与 `StateCommitIndeterminate` 都以退出码 `3` 停止，不自动提交
+只有得到 accepted receipt 才能继续；`not-committed` 与 `StateCommitIndeterminate` 都以退出码 `1` 停止，不自动提交
 新的 checkpoint。
+
+本方向继承 [CLI 的统一 `niceeval exp` 退出码](../../cli.md#退出码)，不新增 State 专用状态码。
 
 ## 并发与审计边界
 

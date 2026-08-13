@@ -106,9 +106,11 @@ sealed Run 的 membership provenance 保存 frozen slot 决定与最终 outcome�
 | 情况 | dry | 执行 |
 |---|---:|---:|
 | 成功形成 plan；其中有 execute Slot | 0 | 沿用 Runner 的完成状态 |
-| selector、配置、policy 或 frozen view 无法形成 plan | 2 | 2 |
+| selector、配置、policy 或 frozen view 无法形成 plan | 1 | 1 |
 | 执行后有 failed、errored 或 incomplete | 不适用 | 1 |
 | 进程中断 | 130 | 130 |
+
+未捕获崩溃使用 `2`。本方向继承 [CLI 的统一 `niceeval exp` 退出码](../../cli.md#退出码)，不新增 reuse 专用状态码。
 
 历史 Attachment 不可用、无法迁移、不支持或 invalid 时，plan 形成带真实 issue 的 `execute` Slot。
 它不能降级为 `no-source-run`，也不能回扫更旧 Run。

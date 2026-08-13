@@ -133,6 +133,7 @@ JSON 不包含完整访问流、原始 namespace 路径、未命中的普通文�
 | best-effort Assertion unavailable | 沿既有 Assertion / Verdict 规则 | 不产生专用退出码 |
 
 dry 展示静态 collection 要求，并对 required 核对已声明 Provider capability；它不启动 collector、不读取 live Sandbox，也不把“计划可展示”描述成“完整 evidence 已取得”。
+正式 `niceeval exp` 继承 [CLI 的统一退出码](../../cli.md#退出码)：上述受控执行错误为 `1`，未捕获崩溃为 `2`，中断为 `130`；本方向不新增 access 专用状态码。
 
 ## 并发与审计
 

@@ -197,7 +197,7 @@ interface CostProjectionCoverage {
 
 type CostCoverageReason =
   | {
-      readonly slotId: SlotId;
+      readonly slot: AnalysisSlotRef;
       readonly subject: BillableSubject | null;
       readonly code:
         | "usage-not-recorded"
@@ -213,7 +213,7 @@ type CostCoverageReason =
         | "observed-cost-other-currency";
     }
   | {
-      readonly slotId: SlotId;
+      readonly slot: AnalysisSlotRef;
       readonly subject: BillableSubject | null;
       readonly code: "usage-collection-partial";
       readonly limitations: readonly ObservabilityLimitationV1[];

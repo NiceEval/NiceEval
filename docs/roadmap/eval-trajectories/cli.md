@@ -120,9 +120,11 @@ type TrajectoryHandoffEvent =
 |---|---|
 | `0` | segment 完成且没有 `failed` Verdict，或在 planned breakpoint 干净暂停 |
 | `1` | segment 有 `failed` Verdict；可前进时仍会给出 handoff |
-| `2` | argv、exact trajectory ID、breakpoint 或 locator 无效，零 Run 写入 |
-| `3` | `errored`、dirty、cleanup / isolation failure、commit indeterminate、state receipt 不可用，或未带 `--debug` 的 debug 路径 |
+| `1` | argv、exact trajectory ID、breakpoint 或 locator 无效，零 Run 写入 |
+| `1` | `errored`、dirty、cleanup / isolation failure、commit indeterminate、state receipt 不可用，或未带 `--debug` 的 debug 路径 |
 | `130` | 受控 interruption 已封口本段；只有干净交接时才带 handoff |
+
+未捕获崩溃使用 `2`。本方向继承 [CLI 的统一 `niceeval exp` 退出码](../../cli.md#退出码)，不新增 Trajectory 专用状态码。
 
 第一次 SIGINT 请求 controlled interruption：停止尚未开始的 node，等待已开始 node 到其 Scope 边界，并完成已签发
 commit ID 的 reconciliation。第二次 SIGINT 交给宿主终止进程；没有已封口 Run 或 handoff 的承诺。
