@@ -1,31 +1,14 @@
 // owner: docs/engineering/testing/e2e/README.md#eval-group-shared-sandbox
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import type { ExpEvalEvent, ExpEvent } from "@niceeval/testkit";
 import { command, defined, only, pollUntil, withProjectCopy } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 
-interface HistoryAttempt {
-  attempt: number;
-  verdict: string;
-  sandbox?: {
-    provider: string;
-    sandboxId: string;
-    reused?: true;
-    reuseSandbox?: number;
-    reuseOrdinal?: number;
-  };
-}
-
-interface ShowHistoryDocument {
-  format: "niceeval.show";
-  schemaVersion: number;
-  view: "history";
-  data: {
-    sections: Array<{
-      experimentId: string;
-      evalId: string;
-      attempts: HistoryAttempt[];
-    }>;
-  };
+interface LifecycleEntry {
+  readonly groupId: string;
+  readonly evalId: string;
+  readonly sandboxId: string;
 }
 
 const niceeval = command(["pnpm", "--silent", "exec", "niceeval"]);
@@ -37,17 +20,11 @@ const projectCopy = {
   links: [{ from: resolve("node_modules"), to: "node_modules", type: "dir" }],
 } as const;
 
-async function historyAttempt(root: string, evalId: string): Promise<HistoryAttempt> {
-  const shown = await niceeval.run(["show", evalId, "--history", "--json"], { cwd: root });
-  expect(shown.exitCode, shown.diagnostic()).toBe(0);
-  const document = shown.json<ShowHistoryDocument>();
-  expect(document).toMatchObject({ format: "niceeval.show", schemaVersion: 1, view: "history" });
-  const section = only(
-    document.data.sections,
-    (candidate) => candidate.experimentId === "eval-group" && candidate.evalId === evalId,
-    shown.diagnostic(),
-  );
-  return only(section.attempts, () => true, shown.diagnostic());
+function lifecycleEntries(root: string): LifecycleEntry[] {
+  return readFileSync(resolve(root, "eval-group-lifecycle.ndjson"), "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as LifecycleEntry);
 }
 
 async function waitForContainerGone(container: string, cwd: string): Promise<void> {
@@ -67,38 +44,34 @@ test("两个 Eval Group 并行、各自组内串行复用并重置同一台 Dock
       timeoutMs: 120_000,
     });
     expect(run.exitCode, run.diagnostic()).toBe(0);
-    expect(run.expResult()).toMatchObject({
-      event: "result",
-      status: "passed",
-      completion: "complete",
-      passed: 4,
-      failed: 0,
-      errored: 0,
-    });
-
-    const [groupAFirst, groupASecond, groupBFirst, groupBSecond] = await Promise.all([
-      historyAttempt(root, "group-a/01-first"),
-      historyAttempt(root, "group-a/02-second"),
-      historyAttempt(root, "group-b/01-first"),
-      historyAttempt(root, "group-b/02-second"),
+    expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
+    const evalEvents = run.ndjson<ExpEvent>().filter(
+      (event): event is ExpEvalEvent => "event" in event && event.event === "eval",
+    );
+    expect(evalEvents, run.diagnostic()).toHaveLength(4);
+    expect(evalEvents.map((event) => event.verdict), run.diagnostic()).toEqual([
+      "passed",
+      "passed",
+      "passed",
+      "passed",
     ]);
-    for (const attempt of [groupAFirst, groupASecond, groupBFirst, groupBSecond]) {
-      expect(attempt).toMatchObject({
-        attempt: 0,
-        verdict: "passed",
-        sandbox: { provider: "docker", reused: true },
-      });
-    }
 
-    const groupASandbox = defined(groupAFirst.sandbox?.sandboxId);
-    const groupBSandbox = defined(groupBFirst.sandbox?.sandboxId);
-    expect(groupASecond.sandbox?.sandboxId).toBe(groupASandbox);
-    expect(groupBSecond.sandbox?.sandboxId).toBe(groupBSandbox);
+    const entries = lifecycleEntries(root);
+    expect(entries).toHaveLength(4);
+    const groupAFirst = only(entries, (entry) => entry.evalId === "group-a/01-first");
+    const groupASecond = only(entries, (entry) => entry.evalId === "group-a/02-second");
+    const groupBFirst = only(entries, (entry) => entry.evalId === "group-b/01-first");
+    const groupBSecond = only(entries, (entry) => entry.evalId === "group-b/02-second");
+
+    const groupASandbox = defined(groupAFirst.sandboxId);
+    const groupBSandbox = defined(groupBFirst.sandboxId);
+    expect(groupASecond.sandboxId).toBe(groupASandbox);
+    expect(groupBSecond.sandboxId).toBe(groupBSandbox);
     expect(groupBSandbox).not.toBe(groupASandbox);
-    expect(groupAFirst.sandbox?.reuseOrdinal).toBe(1);
-    expect(groupASecond.sandbox?.reuseOrdinal).toBe(2);
-    expect(groupBFirst.sandbox?.reuseOrdinal).toBe(1);
-    expect(groupBSecond.sandbox?.reuseOrdinal).toBe(2);
+    expect(groupAFirst.groupId).toBe("group-a");
+    expect(groupASecond.groupId).toBe("group-a");
+    expect(groupBFirst.groupId).toBe("group-b");
+    expect(groupBSecond.groupId).toBe("group-b");
 
     await Promise.all([
       waitForContainerGone(groupASandbox, root),

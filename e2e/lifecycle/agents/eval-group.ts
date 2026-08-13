@@ -1,3 +1,4 @@
+import { appendFileSync } from "node:fs";
 import { completeEvidenceCoverage, defineSandboxAgent } from "niceeval/adapter";
 import { shell } from "niceeval/sandbox";
 
@@ -66,7 +67,13 @@ export const evalGroupAgent = defineSandboxAgent({
     const member = evalId.slice(groupId.length + 1);
     const quotedGroup = JSON.stringify(groupId);
     const identity = await ctx.sandbox.runShellOrThrow("cat /etc/hostname", { signal: ctx.signal });
-    ctx.fact("eval-group.container", identity.stdout.trim());
+    const sandboxId = identity.stdout.trim();
+    ctx.fact("eval-group.container", sandboxId);
+    appendFileSync(
+      "eval-group-lifecycle.ndjson",
+      `${JSON.stringify({ groupId, evalId, sandboxId })}\n`,
+      "utf8",
+    );
 
     if (member === "01-first") {
       if (firstMemberArrivals.has(groupId)) {
