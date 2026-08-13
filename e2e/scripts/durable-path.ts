@@ -96,7 +96,14 @@ async function createDeclaredDurableRoot(declaredRoot: string, label: string): P
     const next = join(current, part);
     let stat = await lstatOrUndefined(next);
     if (stat === undefined) {
-      await mkdir(next);
+      try {
+        await mkdir(next);
+      } catch (error) {
+        // Parallel repo runs can converge on a shared canonical parent such
+        // as artifactRoot/adapter. EEXIST is safe only after the lstat below
+        // proves the winner created the real directory we expected.
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      }
       stat = await lstat(next);
     }
     assertRealDirectoryStat(stat, next, label);
@@ -132,7 +139,11 @@ async function walkBelowPhysicalRoot(
     const next = join(current, part);
     let stat = await lstatOrUndefined(next);
     if (stat === undefined && createMissing) {
-      await mkdir(next);
+      try {
+        await mkdir(next);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      }
       stat = await lstat(next);
     }
     if (stat === undefined) throw new Error(`${label} directory is missing: ${next}`);

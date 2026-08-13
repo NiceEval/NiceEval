@@ -24,14 +24,21 @@ export interface SelectionOptions {
 }
 
 export interface PlanEntry {
+  /** Stable matrix-cell identity. Singleton cells retain the repo id. */
   id: string;
-  /** Path relative to e2e/, suitable for a matrix job's checkout. */
-  dir: string;
+  /** Exact scenario repos executed by this cell. */
+  repoIds: readonly string[];
+  /** Backward-compatible singleton directory; absent for a multi-repo cell. */
+  dir?: string;
+  /** Paths relative to e2e/, in the same order as repoIds. */
+  dirs: readonly string[];
   executor: Executor;
-  /** Manifest areas are the stable capability vocabulary. */
+  /** Union of the cell's manifest areas; manifests remain the source of truth. */
   capabilities: readonly Area[];
-  /** One discovered repo is one executable matrix shard. */
+  /** Stable diagnostic shard identity. */
   shard: string;
+  /** Number of isolated repos the root runner may execute concurrently. */
+  repoConcurrency: number;
   requires?: RepoRequires;
 }
 
@@ -42,6 +49,8 @@ export interface PlanCli {
   /** Explicitly disable both supplied and implicit working-tree path filtering. */
   noDiff: boolean;
   capability?: string;
+  /** Pack adapter repos into cells of at most this size; omitted means singleton cells. */
+  adapterBatchSize?: number;
   json: boolean;
 }
 
@@ -226,6 +235,18 @@ function valueAsStrings(value: unknown): string[] {
   return typeof value === "string" ? [value] : [];
 }
 
+function parsePositiveInteger(value: unknown, option: string): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !/^\d+$/.test(value)) {
+    throw new Error(`${option} must be a positive integer, got ${JSON.stringify(value)}`);
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    throw new Error(`${option} must be a positive integer, got ${JSON.stringify(value)}`);
+  }
+  return parsed;
+}
+
 function parseLane(value: unknown): Lane {
   if (value === undefined) return "pr";
   if (typeof value !== "string" || !(LANES as readonly string[]).includes(value)) {
@@ -244,6 +265,7 @@ export function parsePlanCli(argv: readonly string[]): PlanCli {
       diff: { type: "string", multiple: true },
       "no-diff": { type: "boolean", default: false },
       capability: { type: "string" },
+      "adapter-batch-size": { type: "string" },
       json: { type: "boolean", default: false },
     },
     allowPositionals: false,
@@ -264,21 +286,114 @@ export function parsePlanCli(argv: readonly string[]): PlanCli {
     diffPaths: diffPaths.length > 0 ? diffPaths : undefined,
     noDiff,
     capability,
+    adapterBatchSize: parsePositiveInteger(values["adapter-batch-size"], "--adapter-batch-size"),
     json: values.json === true,
   };
 }
 
-export function makePlan(repos: readonly DiscoveredRepo[], root: string, options: SelectionOptions): PlanEntry[] {
-  return selectRepos(repos, options)
-    .map((repo) => ({
-      id: repo.manifest.id,
-      dir: relative(root, repo.dir),
-      executor: repo.manifest.executor,
-      capabilities: repo.manifest.areas,
-      shard: repo.manifest.id,
-      ...(repo.manifest.requires === undefined ? {} : { requires: repo.manifest.requires }),
-    }))
+function singletonEntry(repo: DiscoveredRepo, root: string): PlanEntry {
+  const dir = relative(root, repo.dir);
+  return {
+    id: repo.manifest.id,
+    repoIds: [repo.manifest.id],
+    dir,
+    dirs: [dir],
+    executor: repo.manifest.executor,
+    capabilities: repo.manifest.areas,
+    shard: repo.manifest.id,
+    repoConcurrency: 1,
+    ...(repo.manifest.requires === undefined ? {} : { requires: repo.manifest.requires }),
+  };
+}
+
+function mergedRequires(entries: readonly PlanEntry[]): RepoRequires | undefined {
+  const requirements = entries.flatMap((entry) => entry.requires === undefined ? [] : [entry.requires]);
+  if (requirements.length === 0) return undefined;
+  const runtimes = [...new Set(requirements.flatMap((requirement) => requirement.runtimes ?? []))];
+  const browsers = [...new Set(requirements.flatMap((requirement) => requirement.browsers ?? []))];
+  const platforms = [...new Set(requirements.flatMap((requirement) => requirement.platforms ?? []))];
+  return {
+    ...(requirements.some((requirement) => requirement.docker === true) ? { docker: true } : {}),
+    ...(requirements.some((requirement) => requirement.externalNetwork === true) ? { externalNetwork: true } : {}),
+    ...(platforms.length === 0 ? {} : { platforms }),
+    ...(runtimes.length === 0 ? {} : { runtimes }),
+    ...(browsers.length === 0 ? {} : { browsers }),
+  };
+}
+
+function adapterBatch(entries: readonly PlanEntry[], index: number): PlanEntry {
+  const executors = new Set(entries.map((entry) => JSON.stringify(entry.executor)));
+  if (executors.size !== 1 || entries[0] === undefined) {
+    throw new Error(`adapter batch ${index + 1} requires one shared executor`);
+  }
+  const id = `adapter-batch-${index + 1}`;
+  const requires = mergedRequires(entries);
+  return {
+    id,
+    repoIds: entries.flatMap((entry) => entry.repoIds),
+    dirs: entries.flatMap((entry) => entry.dirs),
+    executor: entries[0].executor,
+    capabilities: [...new Set(entries.flatMap((entry) => entry.capabilities))],
+    shard: id,
+    repoConcurrency: entries.length,
+    ...(requires === undefined ? {} : { requires }),
+  };
+}
+
+/**
+ * Pack I/O-bound adapter repos onto fewer runners while spreading Docker-heavy
+ * repos across cells. The original plan remains authoritative and is checked
+ * after packing so batching cannot add, omit, or duplicate a repo.
+ */
+export function batchAdapterEntries(entries: readonly PlanEntry[], maxBatchSize: number): PlanEntry[] {
+  if (!Number.isSafeInteger(maxBatchSize) || maxBatchSize < 1) {
+    throw new Error(`adapter batch size must be a positive integer, got ${maxBatchSize}`);
+  }
+  const adapters = entries.filter((entry) => entry.capabilities.includes("adapter"));
+  if (adapters.length <= 1) return [...entries];
+
+  const nonAdapters = entries.filter((entry) => !entry.capabilities.includes("adapter"));
+  const batchCount = Math.ceil(adapters.length / maxBatchSize);
+  const groups = Array.from({ length: batchCount }, () => [] as PlanEntry[]);
+  const dockerFirst = [
+    ...adapters.filter((entry) => entry.requires?.docker === true),
+    ...adapters.filter((entry) => entry.requires?.docker !== true),
+  ];
+  for (const entry of dockerFirst) {
+    const eligible = groups
+      .map((group, index) => ({ group, index }))
+      .filter(({ group }) => group.length < maxBatchSize)
+      .sort((left, right) => left.group.length - right.group.length || left.index - right.index);
+    const target = eligible[0];
+    if (target === undefined) throw new Error(`could not place adapter repo ${entry.id} into a batch`);
+    target.group.push(entry);
+  }
+
+  const packed = [
+    ...nonAdapters,
+    ...groups.map((group, index) => adapterBatch(group, index)),
+  ].sort((left, right) => left.id.localeCompare(right.id));
+  const before = entries.flatMap((entry) => entry.repoIds).sort();
+  const after = packed.flatMap((entry) => entry.repoIds).sort();
+  if (before.length !== new Set(before).size || after.length !== new Set(after).size) {
+    throw new Error("E2E plan contains duplicate repo ids before or after adapter batching");
+  }
+  if (JSON.stringify(before) !== JSON.stringify(after)) {
+    throw new Error("adapter batching changed the selected E2E repo-id set");
+  }
+  return packed;
+}
+
+export function makePlan(
+  repos: readonly DiscoveredRepo[],
+  root: string,
+  options: SelectionOptions,
+  adapterBatchSize?: number,
+): PlanEntry[] {
+  const entries = selectRepos(repos, options)
+    .map((repo) => singletonEntry(repo, root))
     .sort((left, right) => left.id.localeCompare(right.id));
+  return adapterBatchSize === undefined ? entries : batchAdapterEntries(entries, adapterBatchSize);
 }
 
 function printHumanPlan(entries: readonly PlanEntry[], lane: Lane): void {
@@ -289,7 +404,8 @@ function printHumanPlan(entries: readonly PlanEntry[], lane: Lane): void {
   console.log(`${entries.length} e2e shard(s) selected for lane ${lane}:\n`);
   for (const entry of entries) {
     console.log(`- ${entry.id}  [${entry.capabilities.join(", ")}]  executor=host`);
-    console.log(`    dir: ${entry.dir}  shard: ${entry.shard}`);
+    console.log(`    repos: ${entry.repoIds.join(", ")}  concurrency: ${entry.repoConcurrency}`);
+    console.log(`    dirs: ${entry.dirs.join(", ")}  shard: ${entry.shard}`);
   }
 }
 
@@ -309,12 +425,17 @@ export function resolvePlan(argv: readonly string[]): ResolvedPlan {
   const diffPaths = cli.noDiff ? undefined : cli.diffPaths ?? tryReadDiffPaths(resolve(e2eRoot, ".."));
   return {
     cli,
-    entries: makePlan(repos, e2eRoot, {
-      lane: cli.lane,
-      repoIds: cli.repoIds,
-      diffPaths,
-      capability: cli.capability,
-    }),
+    entries: makePlan(
+      repos,
+      e2eRoot,
+      {
+        lane: cli.lane,
+        repoIds: cli.repoIds,
+        diffPaths,
+        capability: cli.capability,
+      },
+      cli.adapterBatchSize,
+    ),
   };
 }
 

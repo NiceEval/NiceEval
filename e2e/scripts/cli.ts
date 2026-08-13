@@ -58,6 +58,7 @@ Commands:
 Root run options:
   --repo <id>          Select a repository (repeatable)
   --lane <lane>        Select a manifest lane
+  --repo-concurrency N Run up to N selected repositories concurrently
   --keep-workdir       Retain the isolated scratch tree for local diagnosis
   --help, -h           Print this help without planning, packing, or running
 
@@ -101,7 +102,12 @@ export async function executeDefault(
   const selected = await dependencies.plan(selectionArgs);
   if (selected.length === 0) return false;
   const candidate = await dependencies.pack(dependencies.candidatePath);
-  await dependencies.run(buildDefaultRunArgs(candidate.path, selected.map((entry) => entry.id), nativeArgs, keepWorkdir));
+  await dependencies.run(buildDefaultRunArgs(
+    candidate.path,
+    selected.flatMap((entry) => entry.repoIds),
+    nativeArgs,
+    keepWorkdir,
+  ));
   return true;
 }
 
