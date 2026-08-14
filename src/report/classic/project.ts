@@ -1,5 +1,4 @@
-import type { AnalysisRun, AnalysisSample, AnalysisSlot, SlotId } from "../../analysis/index.ts";
-import type { EvaluationPlanView } from "../../eval/record/evaluation-plan.ts";
+import type { AnalysisRun, AnalysisSample, AnalysisSlot } from "../../analysis/index.ts";
 import type { EvaluationKind } from "../../eval/record/evaluation.ts";
 import type { Score } from "../../eval/record/score.ts";
 import type {
@@ -9,6 +8,7 @@ import type {
 import type { ProjectedRecordAttachmentResult } from "../../projection/attachment-result.ts";
 import type { ProjectedSample, ProjectionAccess } from "../../projection/model.ts";
 import type { Verdict } from "../../shared/types.ts";
+import type { ClassicIdentityMap } from "./identity.ts";
 import type { ClassicLocale } from "./localize.ts";
 import type { ClassicExperimentProfile, ClassicSelectionOrigin } from "./origin.ts";
 import {
@@ -24,7 +24,6 @@ import {
 } from "./sample.ts";
 
 export interface ClassicProjectedInputs {
-  readonly evaluationPlan?: ProjectedSample<ProjectionAccess, unknown>;
   readonly verdict?: ProjectedSample<ProjectionAccess, unknown>;
   readonly score?: ProjectedSample<ProjectionAccess, unknown>;
   readonly timing?: ProjectedSample<ProjectionAccess, unknown>;
@@ -33,6 +32,7 @@ export interface ClassicProjectedInputs {
 
 export function buildClassicSample(input: {
   readonly sample: AnalysisSample;
+  readonly identities: ClassicIdentityMap;
   readonly projections: ClassicProjectedInputs;
   readonly selectionOrigin: ClassicSelectionOrigin;
   readonly locale: ClassicLocale;
@@ -40,7 +40,6 @@ export function buildClassicSample(input: {
   const profiles = profileIndex(input.selectionOrigin);
   const runs = Object.freeze(input.sample.runs.map(classicRunView));
   const runsById = new Map(runs.map((run) => [run.runId, run]));
-  const plans = selectedRunIndex(input.projections.evaluationPlan);
   const verdicts = attemptSlotIndex(input.projections.verdict);
   const scores = attemptSlotIndex(input.projections.score);
   const timings = attemptSlotIndex(input.projections.timing);
@@ -58,19 +57,18 @@ export function buildClassicSample(input: {
     }
     const run = runsById.get(slot.runId);
     if (run === undefined) {
-      continue;
+      throw new TypeError("a classic Sample slot must belong to a selected run");
     }
-    const plan = plans.get(slot.runId);
-    const coordinate = plan === undefined ? undefined : coordinateForSlot(plan, slot.slotId);
-    if (coordinate === undefined) {
-      continue;
+    const identity = input.identities.get(slotKey(slot.runId, slot.slotId));
+    if (identity === undefined) {
+      throw new TypeError("classic Sample construction requires the prevalidated identity map");
     }
-    const key = unitKey(coordinate.experimentId, coordinate.evalId);
+    const key = unitKey(identity.experimentId, identity.evalId);
     const existing = units.get(key);
     const group = existing ?? {
-      experimentId: coordinate.experimentId,
-      evalId: coordinate.evalId,
-      evaluationKind: coordinate.kind,
+      experimentId: identity.experimentId,
+      evalId: identity.evalId,
+      evaluationKind: identity.kind,
       attempts: [],
     };
     if (existing === undefined) {
@@ -79,10 +77,10 @@ export function buildClassicSample(input: {
     group.attempts.push(projectAttempt({
       slot,
       run,
-      experimentId: coordinate.experimentId,
-      evalId: coordinate.evalId,
-      attempt: coordinate.attempt,
-      evaluationKind: coordinate.kind,
+      experimentId: identity.experimentId,
+      evalId: identity.evalId,
+      attempt: identity.attempt,
+      evaluationKind: identity.kind,
       verdict: asVerdict(verdicts.get(slotKey(slot.runId, slot.slotId))),
       score: asScore(scores.get(slotKey(slot.runId, slot.slotId))),
       timing: asTiming(timings.get(slotKey(slot.runId, slot.slotId))),
@@ -210,21 +208,6 @@ function profileIndex(
   return new Map(origin.profiles.map((profile) => [profile.experimentId, profile]));
 }
 
-function selectedRunIndex(
-  projected: ProjectedSample<ProjectionAccess, unknown> | undefined,
-): ReadonlyMap<string, ProjectedRecordAttachmentResult<unknown>> {
-  const index = new Map<string, ProjectedRecordAttachmentResult<unknown>>();
-  if (projected === undefined || !isSelectedRunSample(projected)) {
-    return index;
-  }
-  for (const entry of projected.entries) {
-    if (entry.state === "attachment-result") {
-      index.set(entry.run.runId, entry.attachment);
-    }
-  }
-  return index;
-}
-
 function attemptSlotIndex(
   projected: ProjectedSample<ProjectionAccess, unknown> | undefined,
 ): ReadonlyMap<string, ProjectedRecordAttachmentResult<unknown>> {
@@ -240,49 +223,10 @@ function attemptSlotIndex(
   return index;
 }
 
-function isSelectedRunSample(
-  value: ProjectedSample<ProjectionAccess, unknown>,
-): value is ProjectedSample<"selected-run", unknown> {
-  return value.access === "selected-run";
-}
-
 function isAttemptSlotSample(
   value: ProjectedSample<ProjectionAccess, unknown>,
 ): value is ProjectedSample<"attempt-slot", unknown> {
   return value.access === "attempt-slot";
-}
-
-function coordinateForSlot(
-  attachment: ProjectedRecordAttachmentResult<unknown>,
-  slotId: SlotId,
-): {
-  readonly experimentId: string;
-  readonly evalId: string;
-  readonly attempt: number;
-  readonly kind: EvaluationKind;
-} | undefined {
-  if (attachment.state !== "available" || !isEvaluationPlanView(attachment.value)) {
-    return undefined;
-  }
-  const coordinate = attachment.value.coordinateForSlot(slotId);
-  if (coordinate === undefined) {
-    return undefined;
-  }
-  return Object.freeze({
-    experimentId: coordinate.experimentId,
-    evalId: coordinate.evalId,
-    attempt: coordinate.attempt,
-    kind: coordinate.kind,
-  });
-}
-
-function isEvaluationPlanView(value: unknown): value is EvaluationPlanView {
-  return (
-    typeof value === "object"
-    && value !== null
-    && "coordinateForSlot" in value
-    && typeof value.coordinateForSlot === "function"
-  );
 }
 
 function asVerdict(attachment: ProjectedRecordAttachmentResult<unknown> | undefined): Verdict | undefined {

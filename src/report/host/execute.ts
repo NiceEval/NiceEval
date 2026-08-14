@@ -65,6 +65,10 @@ import {
   type ClassicSelectionOrigin,
 } from "../classic/index.ts";
 import {
+  classicIdentityInputKeys,
+  prepareClassicIdentities,
+} from "../classic/identity.ts";
+import {
   REPORT_DOWNLOAD_FILE_BYTES_MAX,
   REPORT_DOWNLOAD_FILES_MAX,
   REPORT_PAGES_MAX,
@@ -131,6 +135,7 @@ interface CompiledDataPlan {
     readonly key: string;
     readonly projection: CompiledProjection;
   }[];
+  readonly identityKeys: ReadonlySet<string>;
 }
 
 interface CompiledCalculation {
@@ -174,6 +179,7 @@ type ProjectionOutcome =
 interface PreparedInputs {
   readonly inputs: ReportHostInputs;
   readonly partial: boolean;
+  readonly identityIncomplete: boolean;
   readonly dataProblemIds: readonly ReportProblemId[];
   readonly projectionProblemIds: readonly ReportProblemId[];
 }
@@ -320,6 +326,7 @@ export function executeReport(input: {
           outcomes: projectionOutcomes,
           consumerId: calculation.descriptor.id,
           problems,
+          sample: bound.sample,
         })
       );
       const result = yield* executeCalculation({
@@ -432,6 +439,7 @@ function compileReport(report: Report): CompiledReport {
       consumerId,
       projections,
       projectionsByIdentity,
+      identityKeys: classicIdentityInputKeys(plan),
     });
     plans.set(plan, compiled);
     return compiled;
@@ -486,6 +494,7 @@ function compileDataPlan(input: {
   readonly consumerId: ReportComponentId;
   readonly projections: CompiledProjection[];
   readonly projectionsByIdentity: Map<object, CompiledProjection>;
+  readonly identityKeys: ReadonlySet<string>;
 }): CompiledDataPlan {
   const declarations = input.descriptor.declarations.map((declaration) => {
     const identity = declaration.projection as object;
@@ -506,7 +515,10 @@ function compileDataPlan(input: {
     }
     return Object.freeze({ key: declaration.key, projection });
   });
-  return Object.freeze({ declarations: Object.freeze(declarations) });
+  return Object.freeze({
+    declarations: Object.freeze(declarations),
+    identityKeys: input.identityKeys,
+  });
 }
 
 function executeProjection(input: {
@@ -616,6 +628,15 @@ function executeCalculation(input: {
       }),
     );
   }
+  if (prepared.identityIncomplete) {
+    return Effect.succeed(
+      Object.freeze({
+        state: "data-unavailable" as const,
+        calculationId: calculation.descriptor.id,
+        problemIds: requireProblemIds(problemIds),
+      }),
+    );
+  }
   if (calculation.descriptor.completeness === "require-complete" && prepared.partial) {
     return Effect.succeed(
       Object.freeze({
@@ -676,6 +697,7 @@ function executeFixedPage(input: {
         plan: input.inputs,
         outcomes: input.projectionOutcomes,
         problems: input.problems,
+        sample: input.sample,
       })
     );
     const blocked = blockedPage({
@@ -748,6 +770,7 @@ function executePageFamily(input: {
         plan: input.inputs,
         outcomes: input.projectionOutcomes,
         problems: input.problems,
+        sample: input.sample,
       })
     );
     const blocked = blockedFamily({
@@ -949,6 +972,7 @@ function executeDownload(input: {
         plan: input.inputs,
         outcomes: input.projectionOutcomes,
         problems: input.problems,
+        sample: input.sample,
       })
     );
     const blocked = blockedDownload({
@@ -1002,6 +1026,7 @@ function prepareComponentInputs(input: {
   readonly plan?: CompiledDataPlan;
   readonly outcomes: ReadonlyMap<CompiledProjection, ProjectionOutcome>;
   readonly problems: ProblemCollector;
+  readonly sample: AnalysisSample;
 }): PreparedInputs {
   if (input.references.inputs === undefined) {
     return emptyPreparedInputs();
@@ -1014,6 +1039,7 @@ function prepareComponentInputs(input: {
     outcomes: input.outcomes,
     consumerId: input.consumerId,
     problems: input.problems,
+    sample: input.sample,
   });
 }
 
@@ -1022,6 +1048,7 @@ function prepareInputs(input: {
   readonly outcomes: ReadonlyMap<CompiledProjection, ProjectionOutcome>;
   readonly consumerId: ReportComponentId;
   readonly problems: ProblemCollector;
+  readonly sample: AnalysisSample;
 }): PreparedInputs {
   const values: Record<string, ProjectedSample<ProjectionAccess, unknown>> = Object.create(null) as Record<
     string,
@@ -1030,6 +1057,7 @@ function prepareInputs(input: {
   const dataProblemIds: ReportProblemId[] = [];
   const projectionProblemIds: ReportProblemId[] = [];
   let partial = false;
+  let identityIncomplete = false;
 
   for (const declaration of input.plan.declarations) {
     const outcome = input.outcomes.get(declaration.projection);
@@ -1050,6 +1078,32 @@ function prepareInputs(input: {
     if (outcome.requirementProblemId !== undefined) {
       projectionProblemIds.push(outcome.requirementProblemId);
       partial = true;
+      continue;
+    }
+    if (input.plan.identityKeys.has(declaration.key)) {
+      const preparation = prepareClassicIdentities(input.sample, outcome.value);
+      if (preparation.state === "defect") {
+        projectionProblemIds.push(input.problems.execution({
+          code: "projection-callback-defect",
+          consumerId: input.consumerId,
+          summary: "the classic identity prevalidation failed",
+        }));
+        partial = true;
+        continue;
+      }
+      if (preparation.state === "incomplete") {
+        identityIncomplete = true;
+        partial = true;
+        for (const gap of preparation.gaps) {
+          dataProblemIds.push(input.problems.add(recordedProblem({
+            code: gap.code,
+            consumerId: input.consumerId,
+            inputKey: declaration.key,
+            slotId: gap.slotId,
+            runId: gap.runId,
+          })));
+        }
+      }
       continue;
     }
     for (const [index, entry] of outcome.value.entries.entries()) {
@@ -1078,6 +1132,7 @@ function prepareInputs(input: {
   return Object.freeze({
     inputs: Object.freeze(values),
     partial,
+    identityIncomplete,
     dataProblemIds: uniqueProblemIds(dataProblemIds),
     projectionProblemIds: uniqueProblemIds(projectionProblemIds),
   });
@@ -1087,6 +1142,7 @@ function emptyPreparedInputs(): PreparedInputs {
   return Object.freeze({
     inputs: Object.freeze({}) as ReportHostInputs,
     partial: false,
+    identityIncomplete: false,
     dataProblemIds: Object.freeze([]),
     projectionProblemIds: Object.freeze([]),
   });
@@ -1253,6 +1309,14 @@ function blockedPage(input: {
       problemIds: allProblems,
     });
   }
+  if (input.prepared.identityIncomplete) {
+    return failedPage({
+      state: "data-unavailable",
+      pageId: input.pageId,
+      route: input.route,
+      problemIds: allProblems,
+    });
+  }
   if (input.completeness === "require-complete" && input.prepared.partial) {
     return failedPage({
       state: "data-unavailable",
@@ -1275,6 +1339,14 @@ function blockedFamily(input: {
   ]);
   if (input.prepared.projectionProblemIds.length > 0) {
     return failedFamily({ familyId: input.familyId, problemIds: allProblems });
+  }
+  if (input.prepared.identityIncomplete) {
+    return Object.freeze({
+      state: "data-unavailable" as const,
+      familyId: input.familyId,
+      instanceCount: 0,
+      problemIds: requireProblemIds(allProblems),
+    });
   }
   if (input.completeness === "require-complete" && input.prepared.partial) {
     return Object.freeze({
@@ -1299,6 +1371,13 @@ function blockedDownload(input: {
   if (input.prepared.projectionProblemIds.length > 0) {
     return failedDownload({
       state: "execution-failed",
+      downloadId: input.downloadId,
+      problemIds: allProblems,
+    });
+  }
+  if (input.prepared.identityIncomplete) {
+    return failedDownload({
+      state: "data-unavailable",
       downloadId: input.downloadId,
       problemIds: allProblems,
     });

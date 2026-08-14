@@ -47,6 +47,7 @@ import {
   type ReportDocument,
 } from "../semantic/document.ts";
 import { classicSampleFromProjectedInputs } from "./from-context.ts";
+import { markClassicIdentityInput } from "./identity.ts";
 import { evaluateClassicTree } from "./jsx.ts";
 import { isLocalizedText, resolveLocalizedText, type LocalizedText } from "./localize.ts";
 import { classicAttemptLocator, type Sample } from "./sample.ts";
@@ -104,6 +105,7 @@ export const classicDataPlan: NonEmptyReportDataPlan = reportInputs({
   timing: attemptSlotProjection(attemptTimingProjector),
   usage: attemptSlotProjection(attemptUsageProjector),
 });
+markClassicIdentityInput(classicDataPlan, "evaluation-plan");
 
 export function defineReport(definition: ClassicReportDefinition): Report;
 export function defineReport<Calculations extends object = {}>(definition: {

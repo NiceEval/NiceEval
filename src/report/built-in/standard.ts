@@ -2,13 +2,12 @@ import { Either } from "effect";
 import {
   attemptConversationProjector,
   attemptSlotProjection,
-  evaluationPlanProjector,
-  selectedRunProjection,
   verdictProjector,
   type ConversationView,
   type ProjectedRecordAttachmentResult,
   type ProjectedSample,
 } from "../../projection/index.ts";
+import { reportEvaluationPlanProjection } from "../evaluation-projections.ts";
 import {
   definePage,
   definePageFamily,
@@ -23,6 +22,7 @@ import {
 } from "../classic/define.ts";
 import { scoreStatus } from "../classic/aggregate.ts";
 import { classicSampleFromProjectedInputs } from "../classic/from-context.ts";
+import { markClassicIdentityInput } from "../classic/identity.ts";
 import {
   Col,
   ExperimentScatter,
@@ -58,10 +58,11 @@ const niceevalLink = Object.freeze({
 });
 
 const tracesInputs = reportInputs({
-  "evaluation-plan": selectedRunProjection(evaluationPlanProjector),
+  "evaluation-plan": reportEvaluationPlanProjection,
   verdict: attemptSlotProjection(verdictProjector),
   conversation: attemptSlotProjection(attemptConversationProjector),
 });
+markClassicIdentityInput(tracesInputs, "evaluation-plan");
 
 export async function standardAttemptsRender(sample: Sample): Promise<ReportDocument> {
   const children = await evaluateClassicTree(ExperimentTable({ input: sample }), {
