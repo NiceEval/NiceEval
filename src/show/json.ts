@@ -57,7 +57,10 @@ export type ShowJson =
       readonly data: ShowJsonCalculationData<PublicAttemptEvidenceJson>;
     })
   | (ShowJsonBase & { readonly view: "source"; readonly data: SourceShowJson })
-  | (ShowJsonBase & { readonly view: "timing"; readonly data: PublicTimingJson })
+  | (ShowJsonBase & {
+      readonly view: "timing";
+      readonly data: ShowJsonCalculationData<PublicTimingJson>;
+    })
   | (ShowJsonBase & {
       readonly view: "execution";
       readonly data: ShowJsonCalculationData<PublicExecutionEvidenceJson>;

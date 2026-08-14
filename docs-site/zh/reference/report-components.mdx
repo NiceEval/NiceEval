@@ -24,7 +24,14 @@ immutable ReportExecution
 
 ```tsx
 import type { Sample } from "niceeval/record";
-import { aggregate, defineReport, experiment, passRate } from "niceeval/report";
+import {
+  aggregate,
+  Bars,
+  Col,
+  defineReport,
+  experiment,
+  passRate,
+} from "niceeval/report";
 
 async function overview(sample: Sample) {
   const rows = await aggregate(sample, {

@@ -34,6 +34,7 @@ import {
   type AggregationSubject,
   type GroupFunction,
   type SlotId,
+  rollup,
 } from "niceeval/report";
 import { siteCopyBlock } from "./site-copy-block.ts";
 
@@ -78,6 +79,34 @@ const FixtureLeaderboard = defineComponent(async (_props, ctx) => {
 });
 FixtureLeaderboard.displayName = "FixtureLeaderboard";
 
+const fixtureLocaleMetric = rollup(
+  () => 1,
+  {
+    format: {
+      kind: "custom",
+      format: (value, locale) => locale === "zh-CN"
+        ? `本地化自定义读数：${value.toFixed(1)}`
+        : `Localized custom reading: ${value.toFixed(1)}`,
+    },
+  },
+);
+
+const FixtureLocaleMetric = defineComponent(async (_props, ctx) => {
+  const points = await aggregate(ctx.scope, {
+    by: { experiment: fixtureGroup },
+    values: { fixtureLocaleMetric },
+  });
+  return (
+    <Bars
+      points={points}
+      x="experiment"
+      y="fixtureLocaleMetric"
+      layout="horizontal"
+    />
+  );
+});
+FixtureLocaleMetric.displayName = "FixtureLocaleMetric";
+
 const authorApi = {
   id: "author-api",
   title: "Author API",
@@ -93,6 +122,7 @@ const authorApi = {
         </Section>
         <SampleSummary input={sample} />
         <FixtureLeaderboard />
+        <FixtureLocaleMetric />
         <ExperimentScatter input={sample} />
         <ExperimentTable input={sample} />
       </Col>

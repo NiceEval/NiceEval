@@ -284,6 +284,18 @@ npx niceeval show --run 01H... --report ./reports/summary.ts --page overview
 每个证据字段都保留自己的状态，只有 available 才带 value。NiceEval 不会用 `null`、零、空集合或
 虚构 locator 冒充事实。`--grep` 可以筛人读 execution 文本，但不能裁剪 `--json` 证据。
 
+`show @<AttemptLocator> --timing --json` 输出 `view: "timing"`。
+它的 `data` 使用 Calculation envelope。
+
+available 时，`data` 带 `inputState`、`problemIds` 和
+`value: { kind, locator, durationMs, phases }`。`data-unavailable` 与 `execution-failed` 不带 value。
+
+缺少 timing 输入时，人读面写 `phase timing unavailable`。Calculation 或 projection 失败时，
+人读面写 `timing calculation/projection failed`。
+
+available timing view 没有公开 phase 时，结果仍是 available，并使用 `durationMs: null` 与
+`phases: []`。人读面写 `no public phase timing recorded`。`niceeval.show` 的 `schemaVersion` 仍为 `1`。
+
 单个 `--run` 用于核对这一轮的 expected-slot 分母与 membership；多个 `--run` 用同一表形状比较多个固定历史边界。即使两个 Run 指向同一个 Attempt，它们也可能分别由实际执行、自动沿用或人工采用形成。`exp --json` 最后一条 receipt 的 `runIds` 是机器稳定出口；TTY 完成反馈也显示 Run ID。`accept` 的成功反馈会显示新 Run ID，但这行人读文本不是 JSON receipt 或自动化输入契约。
 
 内建 `run-membership-overview` 固定使用 `reportId: "run-membership-overview"`、`pageId: "run-membership"` 和 route `/`。

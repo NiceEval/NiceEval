@@ -84,6 +84,11 @@ declare const defineReport: (definition: {
 classic 的 page / Section 标题、Hero 的 title / description / link label 与 logo alt 都接受
 `LocalizedText`。闭合 `ReportDocument` 保存已经选定 locale 的 string，不保留作者声明的两种文本。
 
+`rollup` 的 custom `format(value, locale)` 也在闭合树生成 display 时收到当前 `Sample.locale`。
+`Stat`、`Table`、`SampleSummary`、`Bars`、`ExperimentScatter` 与 `ExperimentTable` 都只允许它本地化
+display string。原始数值、coverage、row identity、route 与状态保持同构。
+浏览器切换语言不会再次执行 callback。
+
 已有 React 报告可以保留 `jsx: "react-jsx"`；NiceEval 会接收 React 产出的 element，但仍拒绝原生 DOM 与未包装组件。不想引入 React runtime 的报告可在自己的 `tsconfig.json` 使用 `jsx: "react-jsx"` 与 `jsxImportSource: "niceeval/report"`，改走包内受控 JSX runtime。两种写法形成同一棵 classic element tree。
 
 ```tsx

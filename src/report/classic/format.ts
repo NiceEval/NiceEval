@@ -47,12 +47,13 @@ export function formatMetricValue(
   value: number | null,
   unit?: string,
   format?: MetricFormat,
+  locale = "en",
 ): string {
   if (value === null) {
     return "—";
   }
   if (format !== undefined && typeof format === "object" && format.kind === "custom") {
-    return format.format(value, "en");
+    return format.format(value, locale);
   }
   const resolved = format === "percent"
     ? "%"
@@ -68,8 +69,8 @@ function trimTrailingZeros(value: number): string {
   return String(value).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
 }
 
-export function formatMetricDisplay(metric: MetricValue): string {
-  return formatMetricValue(metric.value, metric.unit, metric.format);
+export function formatMetricDisplay(metric: MetricValue, locale?: string): string {
+  return formatMetricValue(metric.value, metric.unit, metric.format, locale);
 }
 
 export function formatUsd(value: number): string {
@@ -132,10 +133,10 @@ export function coverageFromMetric(metric: MetricValue): ReportCoverage {
   });
 }
 
-export function displayFromMetric(metric: MetricValue): ReportDisplayValue {
+export function displayFromMetric(metric: MetricValue, locale?: string): ReportDisplayValue {
   return Object.freeze({
     value: metric.value,
-    display: formatMetricDisplay(metric),
+    display: formatMetricDisplay(metric, locale),
     ...(metric.unit === undefined ? {} : { unit: metric.unit }),
     coverage: coverageFromMetric(metric),
   });

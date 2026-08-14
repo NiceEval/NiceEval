@@ -1,6 +1,6 @@
 import { Either } from "effect";
 import { encodeAttemptLocator } from "../../attempt-locator.ts";
-import type { AnalysisSlot } from "../../analysis/index.ts";
+import type { AnalysisSlot, IncludedAnalysisSlot } from "../../analysis/index.ts";
 import {
   attemptSlotProjection,
   type ProjectedRecordAttachmentResult,
@@ -157,7 +157,7 @@ export function timingEvidenceReport(input: TimingEvidenceReportOptions = {}): R
   const timingJson = defineCalculation({
     id: Either.getOrThrow(reportComponentId("timing-json")),
     inputs: timingEvidenceInputs,
-    completeness: "allow-partial",
+    completeness: "require-complete",
     calculate: ({ sample, inputs }) => publicTimingJson(sample.slots, inputs.timing),
   });
   const page = definePage({
@@ -166,11 +166,8 @@ export function timingEvidenceReport(input: TimingEvidenceReportOptions = {}): R
     inputs: timingEvidenceInputs,
     completeness: "allow-partial",
     calculations: { timingJson },
-    render: ({ calculations, inputs }) => timingEvidenceDocument(
-      calculations.timingJson,
-      firstAvailableTimingView(inputs.timing),
-      mode,
-    ),
+    render: ({ calculations, inputs }) =>
+      timingEvidenceDocument(calculations.timingJson, inputs.timing, mode),
   });
   return defineReport({
     id: Either.getOrThrow(reportId("timing-evidence")),
@@ -185,24 +182,30 @@ function timingEvidenceDocument(
   result:
     | { readonly state: "available"; readonly value: PublicTimingJson }
     | { readonly state: "data-unavailable" | "execution-failed"; readonly problemIds: readonly number[] },
-  view: AttemptTimingView | undefined,
+  timing: ProjectedSample<"attempt-slot", AttemptTimingView>,
   mode: "summary" | "full",
 ) {
-  if (result.state !== "available") {
-    return reportDocument({
-      title: "Attempt timing",
-      presentation: "evidence-text",
-      children: [reportCodeBlock({
-        value: "phase timing unavailable (this result was not produced by a runner with phase timing)",
-      })],
-    });
+  switch (result.state) {
+    case "data-unavailable":
+      return timingEvidenceTextDocument("phase timing unavailable");
+    case "execution-failed":
+      return timingEvidenceTextDocument("timing calculation/projection failed");
+    case "available":
+      return reportDocument({
+        title: "Attempt timing",
+        presentation: "evidence-text",
+        children: [reportCodeBlock({
+          value: renderPublicTimingText(result.value, firstAvailableTimingView(timing), mode),
+        })],
+      });
   }
+}
+
+function timingEvidenceTextDocument(value: string) {
   return reportDocument({
     title: "Attempt timing",
     presentation: "evidence-text",
-    children: [reportCodeBlock({
-      value: renderPublicTimingText(result.value, view, mode),
-    })],
+    children: [reportCodeBlock({ value })],
   });
 }
 
@@ -219,21 +222,37 @@ function publicTimingJson(
   slots: readonly AnalysisSlot[],
   timing: ProjectedSample<"attempt-slot", AttemptTimingView>,
 ): PublicTimingJson {
-  const included = slots.find((slot) => slot.state === "included");
-  const locator = included === undefined ? "@unknown" : encodeAttemptLocator(included.attempt.attemptId);
-  const view = included === undefined
-    ? undefined
-    : availableTimingView(timing, included.runId, included.slotId);
-  const phases = view === undefined ? [] : publicPhasesFromTiming(view);
-  const durationMs = view === undefined
-    ? null
-    : phases.reduce((sum, phase) => sum + phase.durationMs, 0);
+  const included = requireSingleIncludedTimingSlot(slots);
+  const view = requireAvailableTimingView(timing, included);
+  const phases = publicPhasesFromTiming(view);
+  const durationMs = phases.reduce((sum, phase) => sum + phase.durationMs, 0);
   return Object.freeze({
     kind: "attempt" as const,
-    locator,
+    locator: encodeAttemptLocator(included.attempt.attemptId),
     durationMs: phases.length === 0 ? null : durationMs,
     phases,
   });
+}
+
+function requireSingleIncludedTimingSlot(
+  slots: readonly AnalysisSlot[],
+): IncludedAnalysisSlot {
+  const included = slots.filter((slot): slot is IncludedAnalysisSlot => slot.state === "included");
+  if (included.length !== 1) {
+    throw new Error("timing calculation requires exactly one included Slot");
+  }
+  return included[0]!;
+}
+
+function requireAvailableTimingView(
+  timing: ProjectedSample<"attempt-slot", AttemptTimingView>,
+  slot: IncludedAnalysisSlot,
+): AttemptTimingView {
+  const view = availableTimingView(timing, slot.runId, slot.slotId);
+  if (view === undefined) {
+    throw new Error("timing calculation requires an available timing view for its included Slot");
+  }
+  return view;
 }
 
 function availableTimingView(
@@ -295,7 +314,7 @@ function renderPublicTimingText(
   mode: "summary" | "full",
 ): string {
   if (value.phases.length === 0) {
-    return `${value.locator}\n\nphase timing unavailable (this result was not produced by a runner with phase timing)`;
+    return `${value.locator}\n\nno public phase timing recorded`;
   }
   const lines = [value.locator, "", `total ${formatTimingDuration(value.durationMs)}`, ""];
   const roots = view === undefined

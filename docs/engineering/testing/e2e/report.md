@@ -90,10 +90,16 @@ niceeval view
 execution JSON 必须保留 identity、Evaluation coordinate、assistant / tool-call conversation、commands、
 usage、timing、diagnostics 与每项证据状态。`--grep` 不能裁剪机器证据。
 
-`--timing` 人读面只公开阶段身份或明确不可用。`--timing --json` 必须是 `niceeval.show` 且
-`view` 为 `timing`。`data` 必须带 `kind`、attempt `locator`、`durationMs` 和 `phases` 数组。
-`durationMs` 是数值或 null，不能补 0。具名阶段必须出现，或 JSON 带明确 unavailable 状态；不能退化成
-缺 `view` 或 `data: { locator }`。人读面与 JSON 的 unavailable / 具名阶段必须一致，不断言具体耗时数值。
+当前真实 Runner 会产生 timing attachment，因此 owner 守护 available 的 `--timing` 结果。
+`--timing --json` 必须是 `niceeval.show`、`schemaVersion: 1` 与 `view: "timing"`。
+它的 `data` 精确为
+`{ state: "available", inputState: "complete", problemIds: [], value: { kind, locator, durationMs, phases } }`。
+text 与 JSON 都必须包含 `eval.run` 和 `assertions.evaluate`。不接受任意状态、`status`、`reason` 或未包装的 value。
+
+`data-unavailable` 仍服从通用 Calculation 语义，人读面写 `phase timing unavailable`；
+`execution-failed` 表示 timing calculation/projection failed。公开 `niceeval/record` 没有 writer，当前无法
+从公开入口稳定制造缺 timing attachment，所以 `data-unavailable` 未自动化。未守护风险是未来 writer 或
+Runner 变化可能只影响这个缺附件分支；available shape 由本 owner 守护。
 
 ### report-static-export
 
@@ -121,7 +127,9 @@ Attempt JSON 必须公开 Calculation 状态、canonical identity、Evaluation�
 `report.browser.spec.ts` 从真实候选包执行 `exp → view --out → niceeval view → browser`。
 
 经典 Report 的 oracle 是 package chrome、Hero、主读数、图表可访问表、Experiment hierarchy、筛选、
-原生 disclosure、同 URL 详情 dialog、焦点恢复和双语切换。自定义 Report 验证真实 HTTP、普通 href、
+原生 disclosure、同 URL 详情 dialog、焦点恢复和双语切换。双语切换的最后一次点击必须获胜。
+owner 用公开 HTTP 头 `x-niceeval-report-fragment` 与 `x-niceeval-report-locale` 在浏览器里扣住
+并乱序放行 fragment 响应，再断言可见语言与 `aria-pressed`。自定义 Report 验证真实 HTTP、普通 href、
 详情导航与热重载。
 
 自定义 Report 还用安装后的公开作者 API 形成一个页面：`niceeval/record` 的 type-only Sample、
@@ -130,7 +138,9 @@ classic `defineReport`、package JSX runtime、`aggregate` 与经典组件。这
 
 作者页按真实下游的组合方式定义自有 `defineComponent`，从 `ctx.scope` 聚合 Bars，并同时渲染
 `ExperimentScatter` 与 `ExperimentTable`。它还用 `SampleNotices input={sample}` 在 Section 内呈现 explicit-run
-的 partial selection，并断言页面只有一条该 warning。owner 因此守护组件导出、上下文、旧显式 input、host 去重与层级导航，不只守护 TSX loader。
+的 partial selection，并断言页面只有一条该 warning。自定义 metric 的 display 随 locale 切换，底层
+`aria-valuenow` 保持不变。owner 因此守护组件导出、上下文、旧显式 input、host 去重与层级导航，不只守护
+TSX loader。
 
 禁 JavaScript 的 `file:` 页面必须保留 static export 的内容、表格与原生 disclosure。移动 viewport 的
 文档不能横向溢出。owner 不依赖私有 selector、computed style、像素或 golden。

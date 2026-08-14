@@ -1,4 +1,6 @@
 // owner: docs/engineering/testing/e2e/report.md#report-execution-evidence
+// kill: inverse = unwrap timing JSON to bare PublicTimingJson; outcome = the
+// expected Calculation envelope fails before any phase assertion can pass.
 // rerun: pnpm e2e --repo report -- --run test/report-execution.test.ts
 
 import { only } from "@niceeval/testkit";
@@ -12,27 +14,26 @@ interface ExpEvent {
 }
 
 interface TimingPhase {
-  name?: unknown;
-  durationMs?: unknown;
-}
-
-interface TimingData {
-  locator?: unknown;
-  unavailable?: unknown;
-  state?: unknown;
-  status?: unknown;
-  kind?: unknown;
-  reason?: unknown;
-  durationMs?: unknown;
-  phases?: unknown;
+  readonly name: string;
+  readonly durationMs: number;
 }
 
 interface TimingShowDocument {
-  format?: unknown;
-  view?: unknown;
-  sample?: unknown;
-  problemTable?: unknown;
-  data?: TimingData;
+  readonly format: "niceeval.show";
+  readonly schemaVersion: 1;
+  readonly view: "timing";
+  readonly problemTable: readonly unknown[];
+  readonly data: {
+    readonly state: "available";
+    readonly inputState: "complete";
+    readonly problemIds: readonly number[];
+    readonly value: {
+      readonly kind: "attempt";
+      readonly locator: string;
+      readonly durationMs: number | null;
+      readonly phases: readonly TimingPhase[];
+    };
+  };
 }
 
 interface ExecutionEvidence<Value> {
@@ -202,7 +203,7 @@ test("show --execution 呈现本轮 conversation 与工具入参", async () => {
   );
 });
 
-test("show --timing 只公开阶段身份或明确不可用", async () => {
+test("show --timing 在当前真实 Runner 中公开可用阶段 timing", async () => {
   await reportE2E.case(
     "timing",
     { artifacts: reportCaseArtifacts() },
@@ -219,64 +220,37 @@ test("show --timing 只公开阶段身份或明确不可用", async () => {
         ["show", toolCall.locator!, "--timing"],
       );
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
-      const textUnavailable = /phase timing unavailable/i.test(shown.stdout);
-      const textNamedPhase = shown.stdout.match(
-        /\b(?:eval\.run|sandbox\.[a-z]+|agent\.[a-z]+|assertions\.[a-z]+|telemetry\.[a-z]+|workspace\.[a-z]+)\b/,
-      );
-      expect(
-        textUnavailable || textNamedPhase !== null,
-        shown.stdout,
-      ).toBe(true);
+      expect(shown.stdout).toContain("eval.run");
+      expect(shown.stdout).toContain("assertions.evaluate");
 
       const json = await niceeval.run(
         ["show", toolCall.locator!, "--timing", "--json"],
       );
       expect(json.exitCode, json.diagnostic()).toBe(0);
       const document = json.json<TimingShowDocument>();
-      const receipt = JSON.stringify(document);
-      expect(document.format, receipt).toBe("niceeval.show");
-      expect(document.view, receipt).toBe("timing");
-      expect(document.data, receipt).toEqual(expect.any(Object));
-      expect(Array.isArray(document.problemTable), receipt).toBe(true);
-      const data = document.data!;
-      expect(Object.keys(data).sort(), receipt).not.toEqual(["locator"]);
-      expect(typeof data.kind, receipt).toBe("string");
-      expect(String(data.kind).length, receipt).toBeGreaterThan(0);
-      expect(data.locator, receipt).toBe(toolCall.locator);
-      expect("durationMs" in data, receipt).toBe(true);
-      expect(
-        data.durationMs === null || typeof data.durationMs === "number",
-        receipt,
-      ).toBe(true);
-      expect(Array.isArray(data.phases), receipt).toBe(true);
-      const phases = data.phases as TimingPhase[];
-      const named = phases.filter((phase) => typeof phase.name === "string" && phase.name.length > 0);
-      const jsonUnavailable = isExplicitUnavailable(data);
-      expect(
-        named.length > 0 || jsonUnavailable,
-        `timing JSON must expose named phases or an explicit unavailable status: ${receipt}`,
-      ).toBe(true);
-      expect(jsonUnavailable, receipt).toBe(textUnavailable);
-      if (named.length > 0) {
-        expect(textNamedPhase, shown.stdout).not.toBeNull();
-        const names = named.map((phase) => phase.name);
-        expect(names, receipt).toEqual(expect.arrayContaining(["eval.run", "assertions.evaluate"]));
-        for (const phase of named) {
-          expect(typeof phase.name, receipt).toBe("string");
-          if (!("durationMs" in phase) || phase.durationMs === undefined || phase.durationMs === null) {
-            continue;
-          }
-          expect(typeof phase.durationMs, receipt).toBe("number");
-        }
-      }
+      expect(document).toMatchObject({
+        format: "niceeval.show",
+        schemaVersion: 1,
+        view: "timing",
+        problemTable: [],
+      });
+      expect(document.data).toEqual({
+        state: "available",
+        inputState: "complete",
+        problemIds: [],
+        value: {
+          kind: "attempt",
+          locator: toolCall.locator,
+          durationMs: expect.any(Number),
+          phases: expect.arrayContaining([
+            { name: "eval.run", durationMs: expect.any(Number) },
+            { name: "assertions.evaluate", durationMs: expect.any(Number) },
+          ]),
+        },
+      });
+      expect(document.data.value.phases.map((phase) => phase.name)).toEqual(
+        expect.arrayContaining(["eval.run", "assertions.evaluate"]),
+      );
     },
   );
 });
-
-function isExplicitUnavailable(data: TimingData): boolean {
-  const markers = [data.unavailable, data.state, data.status, data.kind, data.reason];
-  return markers.some((value) => {
-    if (value === true) return true;
-    return typeof value === "string" && /unavail/i.test(value);
-  });
-}

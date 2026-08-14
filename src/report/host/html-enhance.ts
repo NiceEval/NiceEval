@@ -31,6 +31,12 @@
  * never by localized labels. A visible [data-niceeval-direct-page] is
  * replaced from payload.html (or the navigation entry for the current
  * route) without changing the URL.
+ *
+ * Language clicks are latest-intent-wins. Each click records the desired
+ * locale and a monotonic request generation. Only that generation may apply
+ * a fragment or commit. Clicking the already-committed locale still advances
+ * the generation so an in-flight response cannot commit. Failed requests
+ * keep the last committed locale, URL, and live context.
  */
 
 export const REPORT_FRAGMENT_HEADER = "x-niceeval-report-fragment";
@@ -48,6 +54,8 @@ export const REPORT_ENHANCE_SCRIPT = `
   const revision = revisionMeta ? Number(revisionMeta.getAttribute("content")) : -1;
   const root = document.documentElement;
   let locale = root.getAttribute("lang") === "zh-CN" ? "zh-CN" : "en";
+  let desiredLocale = locale;
+  let localeGeneration = 0;
   let trigger = null;
 
   const copyFor = (next) => hostCopy[next] || hostCopy.en;
@@ -310,7 +318,7 @@ export const REPORT_ENHANCE_SCRIPT = `
     return true;
   };
 
-  const fetchLocale = async (nextLocale) => {
+  const fetchLocale = async (nextLocale, isCurrent) => {
     if (revision < 0 || location.protocol === "file:") return null;
     try {
       const headers = {
@@ -319,12 +327,14 @@ export const REPORT_ENHANCE_SCRIPT = `
         [localeHeader]: nextLocale,
       };
       const response = await fetch(location.href, { headers });
+      if (!isCurrent()) return null;
       if (response.status === 409) {
         window.location.reload();
         return null;
       }
       if (!response.ok) return null;
       const payload = await response.json();
+      if (!isCurrent()) return null;
       if (payload.revision !== revision) {
         window.location.reload();
         return null;
@@ -337,27 +347,32 @@ export const REPORT_ENHANCE_SCRIPT = `
 
   const commitLocale = (nextLocale) => {
     locale = nextLocale;
+    desiredLocale = nextLocale;
     root.setAttribute("lang", nextLocale);
     setPressed(nextLocale);
     applyHostChrome(nextLocale);
   };
 
   const switchLocale = async (nextLocale) => {
+    desiredLocale = nextLocale;
+    const generation = ++localeGeneration;
+    const isCurrent = () => generation === localeGeneration && desiredLocale === nextLocale;
     if (nextLocale === locale) {
       setPressed(nextLocale);
       return;
     }
     const embedded = parseEmbeddedLocale(nextLocale);
-    if (embedded && applyNavigation(embedded)) {
+    if (embedded && isCurrent() && applyNavigation(embedded)) {
       commitLocale(nextLocale);
       return;
     }
     const staticHtml = parseEmbeddedDocument(nextLocale);
-    if (staticHtml && applyStaticDocument(staticHtml)) {
+    if (staticHtml && isCurrent() && applyStaticDocument(staticHtml)) {
       commitLocale(nextLocale);
       return;
     }
-    const payload = await fetchLocale(nextLocale);
+    const payload = await fetchLocale(nextLocale, isCurrent);
+    if (!isCurrent()) return;
     if (payload && applyNavigation(payload)) commitLocale(nextLocale);
   };
 

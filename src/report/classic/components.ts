@@ -171,14 +171,14 @@ export interface ClassicCellTableProps {
   readonly searchable?: boolean;
 }
 
-export const Table = defineComponent<ClassicCellTableProps>((props) => {
+export const Table = defineComponent<ClassicCellTableProps>((props, ctx) => {
   const rows = sortTableRows(props.rows, props.sort);
   return reportCellTable({
     columns: props.columns,
     rows: rows.map((row, index) => {
       const cells: Record<string, string> = {};
       for (const column of props.columns) {
-        cells[column] = formatCellText(cellFromUnknown(row[column]));
+        cells[column] = formatCellText(cellFromUnknown(row[column]), ctx.scope.locale);
       }
       return Object.freeze({
         key: typeof row.key === "string" ? row.key : `row-${index}`,
@@ -291,7 +291,7 @@ AttemptAssessment.displayName = "AttemptAssessment";
 function statDisplay(value: ClassicStatProps["value"], locale: Sample["locale"]): string {
   if (value === null) return "—";
   if (typeof value === "number") return new Intl.NumberFormat(locale).format(value);
-  if (isCell(value)) return formatCellText(value);
+  if (isCell(value)) return formatCellText(value, locale);
   return resolveLocalizedText(value, locale);
 }
 
@@ -349,13 +349,13 @@ export const SampleSummary = defineComponent<{ readonly input?: Sample }>((props
           ? []
           : [reportStat({
             label: localize(scope, { en: "Pass rate", "zh-CN": "通过率" }),
-            value: formatMetricDisplay(overall),
+            value: formatMetricDisplay(overall, scope.locale),
           })]),
         ...(composition === "pass"
           ? []
           : [reportStat({
             label: localize(scope, { en: "Total score", "zh-CN": "总分" }),
-            value: formatMetricDisplay(score),
+            value: formatMetricDisplay(score, scope.locale),
           })]),
         reportStat({
           label: localize(scope, { en: "Experiments", "zh-CN": "实验" }),
@@ -379,8 +379,8 @@ export const SampleSummary = defineComponent<{ readonly input?: Sample }>((props
         reportStat({
           label: localize(scope, { en: "Total cost", "zh-CN": "总成本" }),
           value: costNote === undefined
-            ? formatMetricDisplay(totalCost)
-            : `${formatMetricDisplay(totalCost)}\n${costNote}`,
+            ? formatMetricDisplay(totalCost, scope.locale)
+            : `${formatMetricDisplay(totalCost, scope.locale)}\n${costNote}`,
         }),
       ],
     }),
@@ -415,7 +415,7 @@ export const Bars = defineComponent<ClassicBarsProps>((props, ctx): ReportBlock 
         label,
         series,
         value,
-        display: isMetricValue(metric) ? formatMetricDisplay(metric) : formatRatio(value),
+        display: isMetricValue(metric) ? formatMetricDisplay(metric, ctx.scope.locale) : formatRatio(value),
         coverage: isMetricValue(metric)
           ? coverageFromMetric(metric)
           : Object.freeze({ basis: "eval" as const, samples: value === null ? 0 : 1, total: 1 }),
@@ -471,8 +471,8 @@ function experimentScatter(scope: Sample, reading: "passRate" | "totalScore"): R
             key: point.experimentId,
             x: metricNumeric(point.costUSD),
             y: metricNumeric(point[reading]),
-            xDisplay: formatMetricDisplay(point.costUSD),
-            yDisplay: formatMetricDisplay(point[reading]),
+            xDisplay: formatMetricDisplay(point.costUSD, scope.locale),
+            yDisplay: formatMetricDisplay(point[reading], scope.locale),
             ...(classicExperimentTarget(point.experimentId) === undefined
               ? {}
               : { target: classicExperimentTarget(point.experimentId) }),

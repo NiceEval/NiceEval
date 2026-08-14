@@ -2474,7 +2474,7 @@ function publicShowEnvelope(
         view,
         sample,
         problemTable,
-        data: requireCalculationValue<PublicTimingJson>(execution, "timing-json"),
+        data: calculationData<PublicTimingJson>(execution, "timing-json"),
       });
     case "leaderboard":
       return Object.freeze({

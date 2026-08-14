@@ -43,7 +43,7 @@ export function isCell(value: unknown): value is Cell {
   return typeof value === "object" && value !== null && "kind" in value && typeof (value as Cell).kind === "string";
 }
 
-export function formatCellText(cell: Cell | null | undefined): string {
+export function formatCellText(cell: Cell | null | undefined, locale?: string): string {
   if (cell == null) return "—";
   switch (cell.kind) {
     case "notApplicable":
@@ -68,7 +68,7 @@ export function formatCellText(cell: Cell | null | undefined): string {
       }
       return cell.verdict ?? "—";
     case "metric":
-      return formatMetricValue(cell.metric.value, cell.metric.unit, cell.metric.format);
+      return formatMetricValue(cell.metric.value, cell.metric.unit, cell.metric.format, locale);
     case "composition": {
       const parts = cell.segments
         .filter((segment) => segment.count > 0)

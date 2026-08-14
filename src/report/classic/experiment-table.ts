@@ -592,11 +592,12 @@ function flattenRows(
   row: TableContentRow,
   columns: readonly ColumnSpec[],
   rootKey: string,
+  locale: Sample["locale"],
   parentKey?: string,
 ): ExperimentTableRow[] {
   const cells: Record<string, string> = {};
   for (const column of columns) {
-    cells[column.key] = formatCellText(row.cells[column.key]);
+    cells[column.key] = formatCellText(row.cells[column.key], locale);
   }
   const key = parentKey === undefined
     ? rootKey
@@ -610,7 +611,7 @@ function flattenRows(
       ...(parentKey === undefined ? {} : { parentKey }),
       cells,
     },
-    ...(row.subRows ?? []).flatMap((child) => flattenRows(child, columns, rootKey, key)),
+    ...(row.subRows ?? []).flatMap((child) => flattenRows(child, columns, rootKey, locale, key)),
   ];
 }
 
@@ -623,6 +624,8 @@ export function experimentTableContent(sample: Sample): ExperimentTableContent {
       header: column.header,
       align: column.better === undefined ? "left" : "right",
     })),
-    rows: items.flatMap((item) => flattenRows(experimentRow(item, columns), columns, item.experimentId)),
+    rows: items.flatMap((item) =>
+      flattenRows(experimentRow(item, columns), columns, item.experimentId, sample.locale)
+    ),
   };
 }

@@ -114,6 +114,21 @@ Attempt view 另外公开 `assertions`、`verdict` 与 `score`。pass evaluation
 `unavailable`、`migration-required`、`migration-unavailable`、`unsupported`、`invalid` 或
 `not-applicable`。命令不能用 `null`、零、空数组或 `@unknown` 伪造可用事实。
 
+### Timing JSON
+
+`show @<AttemptLocator> --timing --json` 固定输出 `view: "timing"`。它的 `data` 是
+`ShowJsonCalculationData<PublicTimingJson>`，而不是未包装的 timing value。`available` 时，`data` 包含
+`inputState`、`problemIds` 与 `value: { kind, locator, durationMs, phases }`；value 内不另建
+`status` 或 `reason`。
+
+缺少完整 timing 输入时，`data` 是 `data-unavailable`，人读面显示 `phase timing unavailable`。
+Calculation 或 projection 失败时，`data` 是 `execution-failed`，人读面明确显示
+`timing calculation/projection failed`。这两种状态都没有 `value`。
+
+已经得到 available timing view、但没有可公开 phase 时，结果仍是 `available`，并使用
+`durationMs: null` 与 `phases: []`；人读面显示 `no public phase timing recorded`。它不把这种
+空映射说成附件缺失。当前 `niceeval.show` 的 `schemaVersion: 1` 与 Record v1 均不变。
+
 精确 Attempt 必须唯一对齐一个 included Slot 与它在 Evaluation Plan 中的 coordinate；对齐丢失会让
 命令失败，而不是猜 identity。`--grep` 只影响 execution 的人读呈现；与 `--json` 合用时不得裁剪上述
 机器证据。
@@ -227,6 +242,9 @@ Record canonical ID 不能直接拼 route：Report 作者必须用 `reportInstan
 
 页面顶部由 package-owned NiceEval 品牌 chrome 和英语、简体中文语言控件组成。控件只选择当前
 `ViewRevisionClosure` 中对应 locale 的正文；它不改变 Sample、业务数值、route、详情 target 或 selection。
+live 语言点击按最后一次点击获胜。后一次点击会作废仍在途中的 fragment 响应。
+即使这次点击回到已经提交的语言，前一次响应也不得写入页面。
+请求失败时保留上次成功提交的语言、URL、tab、焦点、disclosure 与筛选。
 
 Hero 显示作者声明的 logo、标题、说明与外链。页面随后显示 Sample metadata、coverage、问题状态和主读数，
 再以 `Bars`、`ExperimentScatter` 与 `ExperimentTable` 呈现相同的闭合业务数据。具名 Bars series 以与柱体
