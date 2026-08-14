@@ -12,11 +12,13 @@
 
 ## 为什么研究这些产品
 
-NiceEval 需要回答三组连续问题：
+NiceEval 需要回答五组连续问题：
 
-1. 一次运行结束后，用户怎样找到并看懂 Run、Attempt、事件、评价与 Evidence。
-2. 多次运行怎样筛选、对齐、分组和比较，missing、partial 与 unsupported 怎样显现。
-3. 已完成的计算怎样进入 Table、Chart、Page、静态站和终端，而不丢失分母、问题面与复核路径。
+1. 运行结束后，用户怎样通过 `niceeval show`、`niceeval view` 或静态导出进入结果，而不是打开 `.niceeval/` 检查内部文件。
+2. 用户怎样找到并看懂 Run、Attempt、事件、评价与 Evidence，并从人读摘要下钻到精确事实。
+3. 多次运行怎样筛选、对齐、分组和比较，missing、partial 与 unsupported 怎样显现。
+4. 已完成的计算怎样进入 Table、Chart、Page、静态站和终端，而不丢失分母、问题面与复核路径。
+5. 功能、查询和呈现持续演进时，怎样保持持久 schema 稳定；确实无法兼容时，怎样通过显式 `niceeval migrate` 升级。
 
 入选对象至少对其中一组问题提供真实产品面。
 只提供存储、hash、proof、lease 或 GC 机制的系统不属于本方向。
@@ -47,6 +49,28 @@ NiceEval 需要回答三组连续问题：
 - Phoenix 主页面之外，另有 [Evaluator 可观察性](arize-phoenix/evaluator-observability.md)。
 
 这些拆分分别来自 MLflow、W&B 与 Phoenix 自己的产品边界，不表示其它产品也应具有相同层次。
+
+## 用户从哪里查看结果
+
+本轮平台都通过产品 UI、查询 API 或 SDK 提供 Run、Trace、Experiment 与 Report。
+普通用户不需要理解数据库表、对象存储布局或服务端 migration 表。
+
+NiceEval 对应的受支持入口是：
+
+```console
+niceeval show
+niceeval show --run <run-id>
+niceeval view
+niceeval view --run <run-id>
+niceeval view --out ./report-site
+```
+
+`<project>/.niceeval/record/` 是可整体复制、进入 Git 并交给 CLI 的 portable Record root。
+它对产品用户保持 opaque；用户不通过文件管理器、JSON 工具或 `niceeval/record` API 阅读内部结构。
+
+`--record <root>` 只选择另一个完整 Record root，不把其目录布局变成用户接口。
+CLI 负责识别版本、验证完成状态、形成 Sample、运行 Analysis 并呈现 Report。
+规范入口见 [Record](../../feature/record/README.md) 与 [Reports CLI](../../feature/reports/cli.md)。
 
 ## Record 怎样展示
 
@@ -112,6 +136,46 @@ Vercel `design.md` 研究的是官方报告、比较、benchmark、数据叙事�
 
 NiceEval 借鉴的是读者任务、证据构图和视觉验收，不采用 Vercel 品牌外壳、Geist、固定网格或 CSS API。
 
+## 怎样防止功能演进牵动 schema
+
+外部平台普遍拥有少量稳定写入对象，由平台升级自己的 store。
+用户增加 metric 名字、score、tag、artifact 或 dashboard 配置时，通常不发布一套新的持久格式。
+
+NiceEval 需要把同样的稳定性变成明确门槛：
+
+| 变化 | 默认处理 | 是否改变持久 schema |
+|---|---|---|
+| 新增 Table、Chart、Page、排序或视觉样式 | 从已有 Analysis 结果重新呈现 | 否 |
+| 新增查询、聚合、分组或格式化 | 发布新的 Analysis field、Calculation 或 projector | 否 |
+| 作者 API、matcher 或算法重构，持久语义不变 | 更新代码；必要时更新 behavior identity | 否 |
+| 新增可映射到既有事实信封的 Metric、Score 或 Artifact | 在既有信封内发布新 identity | 否 |
+| Attachment payload、blob ref 或 closure 的 shape 或语义改变 | 发布相邻 Attachment schema | 是，只改变该 Attachment |
+| Record owner、引用、Core shape 或完成判断改变 | 发布新的 Record major | 是，且必须单独裁决 |
+
+新增功能必须先证明现有事实不能表达它，才能讨论新的 durable schema。
+“新页面需要一个字段”或“查询代码更方便”都不是修改磁盘格式的理由。
+
+这张门槛表只总结研究对 NiceEval 的约束。
+唯一契约仍见 [Record 的演进矩阵](../../feature/record/README.md) 与 [上层变化不改持久格式](../../feature/record/use-case/上层变化不改持久格式.md)。
+
+## migrate 是最后手段
+
+`niceeval migrate` 不是每次功能升级后的例行步骤，也不用于重算 Report、修正 evaluator 判断或把旧事实解释成新含义。
+只要 current reader 仍能正确读取原 bytes，新功能就应直接重做 Analysis 与 Report，不迁移 Record。
+
+只有同时满足以下条件时才进入 migrate：
+
+1. 已发布的 durable schema 确实必须改变，不能由新 projector、Calculation、Report 或新事实 identity 表达。
+2. 用户请求 current schema 时，现有 bytes 已不能按 current 契约直接使用。
+3. NiceEval 拥有从旧版本到 current 的完整相邻转换链，并能无损保留 identity、Evidence refs 与 blob closure。
+4. 用户先运行只读 `niceeval migrate` 查看 exact plan，再显式运行 `niceeval migrate --yes`。
+
+普通 `show` 和 `view` 不静默改写 Record。
+存在完整无损转换链时，它们返回 `migration-required` 并提示 migrate；没有无损转换时返回 `migration-unavailable`，保留旧 bytes，也不反复提示命令。
+
+历史错误使用追加 correction 或新 fact identity 表达，不能伪装成 schema migration。
+完整命令与失败边界见 [Record CLI](../../feature/record/cli.md#migrate)。
+
 ## 对 NiceEval 的研究判断
 
 外部产品没有共同使用 Record → Analysis → Report 这套词。
@@ -126,6 +190,9 @@ Analysis     选择、对齐、聚合，并显式处理缺测和问题面
     ↓
 Report       用同一语义结果产生终端、Web 与静态交付面
 ```
+
+用户只通过 CLI、终端输出、Web 页面和静态报告站消费这条链路。
+`.niceeval/record` 是内部 substrate 的 portable root，不是第四个阅读界面。
 
 这张映射只存在于本方向入口。
 单个产品页继续使用 Trace、Run、Task、Dataset、Experiment、Workspace、Dashboard 等原生概念。
