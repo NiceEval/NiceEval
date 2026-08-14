@@ -161,7 +161,7 @@ reset 语义、寿命确认与污染诊断见 [Sandbox 复用](reuse.md)。
 
 ## 命令计划怎样投影这条时序
 
-`niceeval debug <experiment> <eval>` 直接消费 link 与 physical planning 的完成态，把本页时序投影为 Experiment → lane → slot。它不读取 fingerprint、Record、reuse 或 carry。装配器拥有生命周期语义；human 的 `COMMAND PLAN` 框和 JSON 的 `commandPlan` 只投影同一棵树，不能各自重排节点。
+`niceeval debug <experiment> <eval>` 直接消费 link 与 physical planning 的完成态，把本页时序投影为 Experiment → lane → slot。它不读取 fingerprint、Record、reuse 或 carry。装配器拥有生命周期语义；human 的逐节点 `COMMAND PLAN` 区域框和 JSON 的 `commandPlan` 只投影同一棵树，不能各自重排节点。
 
 它只声明运行器能保证的偏序：fresh Eval 与 `sandboxReuse` lane 都不保证 slot 顺序，也不生成全局序号。Eval Group lane 按规范化 Eval ID、再按 Attempt index 串行。Group 选择只保留命中的成员；作者数组位置没有业务顺序语义。
 

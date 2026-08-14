@@ -49,6 +49,31 @@ Eval selector 只能在 Experiment 自己的 `evals` 封闭范围内匹配。选
 - Experiment、Group、Eval Plugin lifecycle 与 Sandbox Plugin lifecycle；
 - author hook、prepare、Agent ensure/setup/teardown、test、cleanup 与 Provider finalizer。
 
+TTY 人读输出不把整棵树放入一个总框。总览、Experiment、lane、slot 与每个 lifecycle step 都分别使用全仓统一的圆角区域框；各框按计划顺序堆叠，框内列出 position、owner、label、template、命令或不可检查原因、条件与脱敏项。这样每个 Plugin occurrence 和每条 Shell 都有自己的可复制边界：
+
+```text
+╭─ COMMAND PLAN ───────────────────── PARTIAL · 8 opaque · 2 redacted ─╮
+│ Guaranteed order is per lane.                                        │
+╰──────────────────────────────────────────────────────────────────────╯
+
+╭─ sandbox.materialize ─────────────────────────────────────── OPAQUE ─╮
+│ position: lane eval-group:group · physical lifecycle template enter  │
+│ owner: provider:docker                                               │
+│ template: docker:image                                               │
+│ template owner: experiment:suite/one                                 │
+│ configured locator: exact · image="node@sha256:cd849..."             │
+│ reason: provider materialization is a runtime operation              │
+╰──────────────────────────────────────────────────────────────────────╯
+
+╭─ sandbox.prepare ──────────────────────────────────────────── EXACT ─╮
+│ position: lane eval-group:group · slot group/first #0                │
+│ owner: eval:group/first                                              │
+│ command: shell "printf fixture-ready"                                │
+╰──────────────────────────────────────────────────────────────────────╯
+```
+
+非 TTY、`NO_COLOR` 或过窄终端按同一 Panel 契约逐框降级为无框的标题与正文；节点、字段和顺序不变。`--json` 不携带框线，继续输出同一棵计划树的机器形状。
+
 可声明的 `shell()` / `command()` 展开为具体命令；不能安全检查的 callback 标为 `opaque`。Direct Agent 显式显示没有 Sandbox 或 template，而不是省略 materialize 阶段。
 
 每个真实 `sandbox.materialize` 节点还显示 template owner、provider、kind 与 configured locator。`Exact` 只表示逐字复述作者配置的非秘密起点。它不保证 image tag 已固定为 digest、远端资源或 Dockerfile / Compose 内容已冻结，也不代表 BuildKey 或最终实例字节。

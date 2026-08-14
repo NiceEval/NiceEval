@@ -86,6 +86,27 @@ npx niceeval debug compare/codex memory/commit0 --json
 
 评估在 Group 内时，只选择这个成员不会把同组其它成员加回计划，但输出仍保留一次 Group lifecycle 包裹。人读输出只显示 `COMMAND PLAN`；`--json` 输出单个 `niceeval.debug-plan/v1` 文档。
 
+TTY 中，总览、Experiment、lane、slot 和每个 lifecycle step 都分别使用与 `show` 相同的圆角区域框，不会把整棵树放入一个总框。每条 Shell、每个 Plugin occurrence 和每个没有命令或只能运行期确定的阶段都有自己的框：
+
+```text
+╭─ sandbox.materialize ─────────────────────────────────────── OPAQUE ─╮
+│ position: lane eval-group:group · physical lifecycle template enter  │
+│ owner: provider:docker                                               │
+│ template: docker:image                                               │
+│ template owner: experiment:suite/one                                 │
+│ configured locator: exact · image="node@sha256:cd849..."             │
+│ reason: provider materialization is a runtime operation              │
+╰──────────────────────────────────────────────────────────────────────╯
+
+╭─ sandbox.prepare ──────────────────────────────────────────── EXACT ─╮
+│ position: lane eval-group:group · slot group/first #0                │
+│ owner: eval:group/first                                              │
+│ command: shell "printf fixture-ready"                                │
+╰──────────────────────────────────────────────────────────────────────╯
+```
+
+管道、`NO_COLOR` 或过窄终端逐框降级成无框标题与正文，内容和顺序不变。`--json` 不包含框线。
+
 Sandbox materialize 节点会显示 template owner、provider、kind 和安全的 configured locator。`Exact` 只代表原样显示作者配置，不代表 image tag、远端内容或最终实例已经冻结；URL 凭据、query 与 fragment 会脱敏，env value、credential、stdin、build arg value 和 custom identity 不输出。
 
 `debug` 不执行运行期 setup、test、teardown、ensure、materialize 或 finalizer，也不创建 Invocation、Run、Record、锁、Sandbox 或 build。它会加载 `.env` 和受信任定义，并执行 Experiment 的选择 predicate。Provider planner 也可能读取文件、调用只读 CLI，或查询 Docker control plane 和远端 API。
