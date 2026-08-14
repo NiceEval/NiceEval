@@ -2791,7 +2791,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       // Missing Members remain missing, while membership-provenance records why
       // each pending gap was interrupted. This never manufactures an Attempt
       // for budget/early-exit/unstarted Slots.
-      if (interrupted) recordCoordinator.markInterrupted();
+      if (interrupted) yield* recordCoordinator.markInterrupted();
       // These diagnostics are already settled and keyed by exact Experiment /
       // AgentRun identity. Bind them only at the final Runner → Record
       // boundary; the invocation-wide Run timing tree deliberately remains

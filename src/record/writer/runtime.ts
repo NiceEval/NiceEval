@@ -86,6 +86,7 @@ import {
 } from "./attachment-payload.ts";
 import {
   recordAttachmentEncodeError,
+  recordDraftAttemptDiscardInvalid,
   recordDraftHandleInvalid,
   recordDraftStateError,
   recordWriteSessionInvalid,
@@ -851,6 +852,72 @@ function createAttempt(
       return makeAttemptHandle(attempt);
     }),
   );
+}
+
+/**
+ * @internal Runner-only rollback for an identity reserved before producer
+ * work. It removes exactly the named provisional origin from an unpublished
+ * draft; ordinary Record authors do not receive this capability on the draft
+ * handle or through the public Record facade.
+ */
+export function discardRecordAttemptDraft(
+  handle: RecordAttemptDraft,
+): Effect.Effect<void, RecordWriteError> {
+  return Effect.suspend(() => {
+    const attempt = attemptStates.get(handle);
+    if (attempt === undefined) return Effect.fail(recordDraftHandleInvalid());
+    const draft = attempt.draft;
+    return Effect.uninterruptible(
+      mutate(
+        draft,
+        "discard-attempt",
+        draft.mutex.withPermits(1)(Effect.gen(function* () {
+          yield* assertAttemptIdentity(attempt, handle);
+          if (draft.state !== "open") {
+            return yield* Effect.fail(stateErrorFor("discard-attempt", draft.state));
+          }
+          if (draft.attemptsById.get(attempt.attemptId) !== attempt) {
+            return yield* Effect.fail(
+              recordDraftAttemptDiscardInvalid("attempt-invalid"),
+            );
+          }
+          const member = draft.members.get(attempt.slotId);
+          if (
+            member === undefined
+            || member.reference !== undefined
+            || member.document.attempt.originRunId !== draft.runId
+            || member.document.attempt.attemptId !== attempt.attemptId
+          ) {
+            return yield* Effect.fail(
+              recordDraftAttemptDiscardInvalid("member-invalid"),
+            );
+          }
+          if (attempt.attachmentNames.size !== 0) {
+            return yield* Effect.fail(
+              recordDraftAttemptDiscardInvalid("attachments-present"),
+            );
+          }
+
+          const discarded = yield* draft.session.fileSystem.discardDraftAttempt({
+            root: draft.session.root,
+            runId: draft.runId,
+            slotId: attempt.slotId,
+            attemptId: attempt.attemptId,
+          });
+          if (discarded.state === "skipped-complete") {
+            return yield* Effect.fail(
+              recordDraftAttemptDiscardInvalid("run-published"),
+            );
+          }
+
+          draft.attemptsById.delete(attempt.attemptId);
+          draft.members.delete(attempt.slotId);
+          attempt.handle = undefined;
+          attemptStates.delete(handle);
+        })),
+      ),
+    );
+  });
 }
 
 function referenceAttempt(

@@ -20,6 +20,60 @@ interface ExpEvent {
   evalId?: string;
   verdict?: string;
 }
+type ReportScalar = null | boolean | number | string;
+interface RunMembershipShow {
+  readonly format: "niceeval.report-show/v1";
+  readonly reportId: string;
+  readonly sample: {
+    readonly selection: { readonly policy: string; readonly runIds?: readonly string[] };
+    readonly runCount: number;
+    readonly slotCount: number;
+    readonly denominator: number;
+  };
+  readonly pages: readonly {
+    readonly state: string;
+    readonly pageId: string;
+    readonly document?: {
+      readonly children: readonly {
+        readonly type: string;
+        readonly caption?: string;
+        readonly columns?: readonly { readonly key: string }[];
+        readonly rows?: readonly Readonly<Record<string, ReportScalar>>[];
+      }[];
+    };
+  }[];
+}
+const membershipColumns = [
+  "runId",
+  "slotId",
+  "slotState",
+  "memberRelation",
+  "sourceAttemptLocator",
+  "membershipState",
+  "membershipOutcome",
+  "verdictState",
+  "verdict",
+] as const;
+
+function runMembershipRows(
+  shown: RunMembershipShow,
+  diagnostic: string,
+): readonly Readonly<Record<string, ReportScalar>>[] {
+  const page = only(
+    shown.pages,
+    (candidate) => candidate.state === "rendered" && candidate.pageId === "run-membership",
+    diagnostic,
+  );
+  return only(
+    page.document?.children ?? [],
+    (block) =>
+      block.type === "table" &&
+      block.caption === "Run membership" &&
+      block.columns?.map((column) => column.key).join("\u0000") === membershipColumns.join("\u0000") &&
+      block.rows !== undefined,
+    diagnostic,
+  ).rows!;
+}
 const binary = join(process.cwd(), "node_modules", ".bin", "niceeval");
 const niceeval = command([binary]);
 const docker = command(["docker"]);
@@ -138,7 +192,8 @@ test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源
         // receipt 只承载 Invocation 级完成事实(见 docs/feature/experiments/cli.md「结束反馈与
         // receipt」)：completion。中断前完成的 attempt 由带身份的 eval 事件断言；不读 Record
         // 内部细节，也不在 receipt 上断言计数。
-        expect(interrupted.expReceipt(), interrupted.diagnostic()).toMatchObject({
+        const interruptedReceipt = interrupted.expReceipt();
+        expect(interruptedReceipt, interrupted.diagnostic()).toMatchObject({
           completion: "interrupted",
         });
         expect(
@@ -158,6 +213,49 @@ test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源
             interrupted.diagnostic(),
           ),
         ).toMatchObject({ status: "done" });
+
+        const interruptedRunId = only(
+          interruptedReceipt.runIds,
+          () => true,
+          interrupted.diagnostic(),
+        );
+        const shown = await niceeval.run(
+          ["show", "--run", interruptedRunId, "--json"],
+          { cwd: root },
+        );
+        expect(shown.exitCode, shown.diagnostic()).toBe(0);
+        const membership = shown.json<RunMembershipShow>();
+        expect(membership).toMatchObject({
+          format: "niceeval.report-show/v1",
+          reportId: "run-membership-overview",
+          sample: {
+            selection: { policy: "explicit-runs", runIds: [interruptedRunId] },
+            runCount: 1,
+            slotCount: 2,
+            denominator: 2,
+          },
+        });
+        const rows = runMembershipRows(membership, shown.diagnostic());
+        expect(rows).toHaveLength(2);
+        expect(only(rows, (row) => row.slotState === "included", shown.diagnostic())).toMatchObject({
+          runId: interruptedRunId,
+          slotState: "included",
+          memberRelation: "origin",
+          membershipState: "available",
+          membershipOutcome: "executed",
+          verdictState: "available",
+          verdict: "passed",
+        });
+        expect(only(rows, (row) => row.slotState === "not-recorded", shown.diagnostic())).toMatchObject({
+          runId: interruptedRunId,
+          slotState: "not-recorded",
+          memberRelation: null,
+          sourceAttemptLocator: null,
+          membershipState: "available",
+          membershipOutcome: "interrupted",
+          verdictState: "not-read",
+          verdict: null,
+        });
 
         return {
           invocationPid,

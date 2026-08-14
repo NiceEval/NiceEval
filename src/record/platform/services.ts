@@ -64,6 +64,10 @@ export type RecordIncompleteRunDelete =
   | { readonly state: "missing" }
   | { readonly state: "skipped-complete" };
 
+export type RecordDraftAttemptDiscard =
+  | { readonly state: "discarded" }
+  | { readonly state: "skipped-complete" };
+
 /**
  * Portable Record file operations only. Lock files and other live operation
  * state are intentionally owned by the separate lease services below.
@@ -105,6 +109,18 @@ export interface RecordFileSystemService {
   readonly createCompleteMarker: (
     input: { readonly root: RecordRoot; readonly runId: string },
   ) => Effect.Effect<void, RecordFileSystemError>;
+
+  /**
+   * Removes exactly one provisional origin from an unpublished Run. The
+   * platform rechecks the publication marker immediately before removing the
+   * Member and Attempt paths; it never exposes a generic Record rm primitive.
+   */
+  readonly discardDraftAttempt: (input: {
+    readonly root: RecordRoot;
+    readonly runId: string;
+    readonly slotId: string;
+    readonly attemptId: string;
+  }) => Effect.Effect<RecordDraftAttemptDiscard, RecordFileSystemError>;
 
   readonly migrationSentinelPresent: (
     root: RecordRoot,

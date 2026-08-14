@@ -49,7 +49,10 @@ import {
 import { makeRecordRoot, type RecordRootConstructionError } from "../record/platform/root.ts";
 import type { RecordReaderReadError } from "../record/reader/errors.ts";
 import { openRecordReader } from "../record/reader/runtime.ts";
-import { openRecordWriteSession } from "../record/writer/runtime.ts";
+import {
+  discardRecordAttemptDraft,
+  openRecordWriteSession,
+} from "../record/writer/runtime.ts";
 import type {
   OpenRecordWriteSessionError,
   OpenRecordWriteSessionRequirements,
@@ -373,8 +376,11 @@ export interface RunnerRecordCoordinator<AttachmentError, AttachmentRequirements
   ) => Effect.Effect<RunnerRecordAttempt | undefined, never, AttachmentRequirements>;
   /** A gap that did not start has no Member, but remains explainable at publication. */
   readonly markNotDispatched: (attempt: Attempt) => void;
-  /** Never-started gaps remain empty; reserved interruption keeps the whole draft incomplete. */
-  readonly markInterrupted: () => void;
+  /** Discards unfinished reservations, then records every remaining gap as interrupted. */
+  readonly markInterrupted: () => Effect.Effect<
+    void,
+    RunnerRecordWriteError<AttachmentError>
+  >;
   /** Writes one membership-provenance Attachment per target Run, then seals it. */
   readonly publish: (
     completedAt: number,
@@ -1167,16 +1173,41 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
       }
     };
 
-    const markInterrupted = (): void => {
+    const markInterrupted = (): Effect.Effect<
+      void,
+      RunnerRecordWriteError<AttachmentError>
+    > => Effect.gen(function* () {
       interruptionObserved = true;
-      for (const recordRun of byRun.values()) {
-        for (const [slotId, state] of recordRun.gapActions) {
-          if (state === "pending") {
-            recordRun.gapActions.set(slotId, "interrupted");
-          }
-        }
-      }
-    };
+      yield* Effect.forEach(
+        [...byRun.values()],
+        (recordRun) => Effect.forEach(
+          [...recordRun.gapActions],
+          ([slotId, state]): Effect.Effect<
+            void,
+            RunnerRecordWriteError<AttachmentError>
+          > => {
+            if (state === "pending") {
+              return Effect.sync(() => {
+                recordRun.gapActions.set(slotId, "interrupted");
+              });
+            }
+            if (state !== "reserved" && state !== "sealed") return Effect.void;
+            const active = recordRun.attempts.get(slotId);
+            if (active === undefined || active.completed) {
+              return Effect.fail(attemptInvalid());
+            }
+            return discardRecordAttemptDraft(active.draft).pipe(
+              Effect.tap(() => Effect.sync(() => {
+                recordRun.attempts.delete(slotId);
+                recordRun.gapActions.set(slotId, "interrupted");
+              })),
+            );
+          },
+          { concurrency: 1, discard: true },
+        ),
+        { concurrency: 1, discard: true },
+      );
+    });
 
     const membershipActionsFor = (
       recordRun: RunnerRecordRun<AttachmentError, AttachmentRequirements>,

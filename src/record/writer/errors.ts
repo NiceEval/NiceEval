@@ -18,9 +18,20 @@ export interface RecordDraftHandleInvalid {
   readonly code: "record-draft-handle-invalid";
 }
 
+/** A provisional Attempt could not be safely removed from its open draft. */
+export interface RecordDraftAttemptDiscardInvalid {
+  readonly code: "record-draft-attempt-discard-invalid";
+  readonly reason:
+    | "attempt-invalid"
+    | "member-invalid"
+    | "attachments-present"
+    | "run-published";
+}
+
 export type RecordDraftOperation =
   | "record"
   | "create-attempt"
+  | "discard-attempt"
   | "reference"
   | "publish";
 
@@ -65,6 +76,15 @@ export function recordWriteSessionInvalid(): RecordWriteSessionInvalid {
 
 export function recordDraftHandleInvalid(): RecordDraftHandleInvalid {
   return draftHandleInvalid;
+}
+
+export function recordDraftAttemptDiscardInvalid(
+  reason: RecordDraftAttemptDiscardInvalid["reason"],
+): RecordDraftAttemptDiscardInvalid {
+  return Object.freeze({
+    code: "record-draft-attempt-discard-invalid" as const,
+    reason,
+  });
 }
 
 export function recordDraftStateError(input: {

@@ -44,6 +44,7 @@ import {
   recordPortablePath,
   type RecordBackupState,
   type RecordDirectoryEntry,
+  type RecordDraftAttemptDiscard,
   type RecordFileSystemService,
   type RecordIncompleteRunDelete,
   type RecordMaintenanceLockHandle,
@@ -717,6 +718,82 @@ const nodeFileSystem: RecordFileSystemService = {
         mode: "exclusive",
       }),
     ),
+
+  discardDraftAttempt: ({ root, runId, slotId, attemptId }) =>
+    Effect.gen(function* () {
+      const runPath = yield* resolvePortablePath(
+        recordPortablePath(root, "runs", runId),
+        true,
+      );
+      const runKind = yield* pathKindAt(runPath);
+      if (runKind !== "directory") {
+        return yield* Effect.fail(
+          new RecordPathTypeInvalid({
+            code: "record-path-type-invalid",
+            path: runPath,
+            expected: "directory",
+            actual: runKind,
+          }),
+        );
+      }
+
+      const memberPath = yield* resolvePortablePath(
+        recordPortablePath(root, "runs", runId, "members", `${slotId}.json`),
+        true,
+      );
+      const attemptPath = yield* resolvePortablePath(
+        recordPortablePath(root, "runs", runId, "attempts", attemptId),
+        true,
+      );
+      const memberKind = yield* pathKindAt(memberPath);
+      if (memberKind !== "file") {
+        return yield* Effect.fail(
+          new RecordPathTypeInvalid({
+            code: "record-path-type-invalid",
+            path: memberPath,
+            expected: "file",
+            actual: memberKind,
+          }),
+        );
+      }
+      const attemptKind = yield* pathKindAt(attemptPath);
+      if (attemptKind !== "directory") {
+        return yield* Effect.fail(
+          new RecordPathTypeInvalid({
+            code: "record-path-type-invalid",
+            path: attemptPath,
+            expected: "directory",
+            actual: attemptKind,
+          }),
+        );
+      }
+
+      // Keep the publication check adjacent to the first removal. The writer
+      // lock plus the draft mutex prevent a same-process publish from racing
+      // this operation; the platform check is the final durable guard.
+      const completePath = yield* resolvePortablePath(
+        recordPortablePath(root, "runs", runId, "complete"),
+        true,
+      );
+      if ((yield* pathKindAt(completePath)) !== "missing") {
+        return { state: "skipped-complete" } satisfies RecordDraftAttemptDiscard;
+      }
+
+      // A partial failure still leaves an unpublished Run without `complete`;
+      // the writer marks its draft failed and maintenance later removes the
+      // whole incomplete Run. It must never continue to publication.
+      yield* Effect.tryPromise({
+        try: () => unlink(memberPath),
+        catch: (cause) => fileSystemError("remove-path", memberPath, cause),
+      });
+      yield* syncDirectoryAt(dirname(memberPath));
+      yield* Effect.tryPromise({
+        try: () => rm(attemptPath, { recursive: true, force: false }),
+        catch: (cause) => fileSystemError("remove-path", attemptPath, cause),
+      });
+      yield* syncDirectoryAt(dirname(attemptPath));
+      return { state: "discarded" } satisfies RecordDraftAttemptDiscard;
+    }),
 
   migrationSentinelPresent: (root) =>
     Effect.map(

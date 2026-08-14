@@ -22,6 +22,7 @@ import type {
 } from "../reader/errors.ts";
 import type {
   RecordAttachmentEncodeError,
+  RecordDraftAttemptDiscardInvalid,
   RecordDraftHandleInvalid,
   RecordDraftStateError,
   RecordWriteSessionInvalid,
@@ -43,6 +44,7 @@ export type RecordWriteError =
   | RecordWriterClosed
   | RecordWriteSessionInvalid
   | RecordDraftStateError
+  | RecordDraftAttemptDiscardInvalid
   | RecordDraftHandleInvalid
   | RecordReferenceInvalid
   | RecordCoreInvalid
