@@ -212,7 +212,7 @@ export const en = {
     "  niceeval exp [path|experiment] [eval-id-prefix…]    run experiments\n" +
     "  niceeval exp list [experiment-prefix]               list runnable configs (no dispatch)\n" +
     "  niceeval exp rename <oldId> <newId>                 rebind terminal results from old to new id\n" +
-    "      --dry   preview without writing; --json   one JSON document\n" +
+    "      --dry   preview without writing; --record <root>   select the actual Record root; --json   one JSON document\n" +
     "      --teardown   recover a killed run: run only the selected experiments'\n" +
     "        teardown (no attempts, no setup); combining it with eval id prefixes is an error\n" +
     "  niceeval accept @<locator>...                      accept explicit historical results\n" +
@@ -276,6 +276,7 @@ export const en = {
   "cli.eval.noMatchKnown": "Discovered {{count}} evals: {{evals}}\n",
   "cli.exp.agentModelFlagUnsupported": "experiment runs do not support --agent / --model. Add or copy an experiment file and change its model instead.\n",
   "cli.exp.forceUnsupported": "experiment runs do not support --force; use --rerun all.\n",
+  "cli.check.recordUnsupported": "`--record` only applies to niceeval exp, not niceeval check.\n",
   "cli.exp.viewerFlagUnsupported": "`{{flag}}` only applies to niceeval {{command}}, not niceeval exp.\n",
   "cli.exp.teardownNoEvalPatterns":
     "--teardown selects experiments only; it does not run any eval, so eval id patterns are not allowed with it. Use `niceeval exp <experiment path> --teardown`.\n",
@@ -357,7 +358,6 @@ export const en = {
   "feedback.human.diffHint": "Diff:    niceeval show {{locator}} --diff",
   "feedback.human.evalHint": "Eval:    niceeval show {{locator}} --source",
   "feedback.human.exampleLocator": "e.g. {{locator}}",
-  "feedback.human.failureFacts": "facts ×{{count}}",
   "feedback.human.failuresHeader": "FAILURES",
   "feedback.human.failuresSoFar": "{{count}} so far",
   "feedback.human.failuresTotalKinds": "{{total}} total · {{kinds}} kinds",

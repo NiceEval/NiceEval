@@ -463,58 +463,58 @@
     },
     {
       "term": "FactRequirement",
-      "use": "RecordAttachment definition 与 RecordProjection",
-      "why": "Record 没有 Fact 领域模型；持久 payload、typed projection 与 Report 计算由不同层拥有"
+      "use": "NiceEval 固定 Attachment contract 与 AnalysisInput",
+      "why": "Record 没有 Fact 领域模型；持久 payload、统计投影与 Report 闭合值由不同层拥有"
     },
     {
       "term": "Record SDK",
-      "use": "按语境写领域 SDK、RecordAttachment adapter SPI、RecordAccessRuntime、RecordSnapshotSource、RecordInvocationAccess 或 RecordMaintenanceAccess",
-      "why": "同一个宽泛名称会把 host root capability、分权 facet 与 owner-local producer context 误解成万能 client"
+      "use": "按语境写 Record current facet、maintenance facet、fixed collector 或 Analysis Host",
+      "why": "同一个宽泛名称会把 ordinary reader、迁移能力与 owner-local collector 误解成万能 client"
     },
     {
       "term": "Record value",
-      "use": "写 RecordAttachment value；Record 表示完整的已发布事实集",
-      "why": "用户定义和提交的是 owner-local RecordAttachment，不是整个 Record 的值"
+      "use": "写完整 Record，或 NiceEval internal validated Attachment snapshot",
+      "why": "完整已发布事实集与 owner-local internal snapshot 的能力边界不同"
     },
     {
       "term": "inspectFact",
-      "use": "RecordReader.readRunAttachment / readAttemptAttachment",
-      "why": "读取必须绑定明确 owner 与 typed RecordAttachment family"
+      "use": "由 AnalysisInput 或 DomainView 请求的 internal fixed Attachment read",
+      "why": "读取必须绑定明确 owner 与静态 definition，不能开放为任意事实查询"
     },
     {
       "term": "defineJsonFact",
-      "use": "producer 用 defineJsonRecordAttachment 定义 payload；Projection 定义 typed view",
-      "why": "持久 schema 与内存 projection 是两个边界，不能由一个 Fact helper 混成同一契约"
+      "use": "NiceEval internal 用 defineRecordValue.json() 或 jsonWithBlobRefs()；producer 调用 fixed collector",
+      "why": "持久 definition 与内存投影是两个边界，应用作者不能定义 durable payload"
     },
     {
       "term": "ctx.fact",
-      "use": "使用 producer-owned typed RecordAttachment capability",
-      "why": "运行时记录必须经过 owner 与精确 schema，不能由通用上下文写入无类型 JSON"
+      "use": "使用 producer-owned fixed collector input",
+      "why": "运行时持久化必须经过 owner 与静态 definition，不能由通用上下文写入无类型 JSON"
     },
     {
       "term": "RecordChannel",
-      "use": "RecordAttachment",
-      "why": "落盘数据不是 FIFO、Stream 或通信通道；Attachment 直接表达它附着于 Run 或 Attempt"
+      "use": "fixed Attachment family",
+      "why": "落盘数据不是 FIFO、Stream 或通信通道；fixed family 直接表达它附着于 Run 或 Attempt"
     },
     {
       "term": "ChannelProjectorId",
-      "use": "RecordAttachmentSchemaId 是 durable identity；projector 使用 package-private definition identity",
-      "why": "projector 是代码中的 typed adapter，不需要第二个持久公共版本号"
+      "use": "property token id、TS field、durableKey 或 AnalysisInput.id——按实际角色写",
+      "why": "内部定义身份、内存字段、JSON 键和统计投影身份彼此独立，不能合成一个通用 ID"
     },
     {
       "term": "ChannelDescriptorSchemaId",
-      "use": "固定 RecordAttachmentEnvelopeV1；payload 使用 RecordAttachmentSchemaId",
-      "why": "Record v1 的 Attachment envelope 已闭合，不维护独立 descriptor schema 代际"
+      "use": "固定 envelope 的 family 与 numeric schemaVersion",
+      "why": "family identity 与版本分开，不能再造 descriptor schema 代际"
     },
     {
       "term": "descriptorSchemaId",
-      "use": "RecordAttachmentEnvelopeV1 的 name 与 schemaId；collection 留在 payload",
-      "why": "descriptor registry 会把一个 owner-local Attachment 拆成多余版本层"
+      "use": "Attachment envelope 的 family 与 numeric schemaVersion；collection 留在 payload",
+      "why": "动态 descriptor table 会把一个 owner-local Attachment 拆成多余版本层"
     },
     {
       "term": "ProjectionRead",
-      "use": "RecordAttachmentRead 或 ProjectedSample",
-      "why": "一个名字不能同时表达磁盘 Attachment 状态与 Sample-aligned projection 结果"
+      "use": "Sample 的 input result 或闭合 DomainView",
+      "why": "一个名字不能同时表达 internal Attachment read 与 Sample-aligned projection 结果"
     },
     {
       "term": "ReportPlan",

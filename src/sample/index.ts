@@ -1,53 +1,18 @@
-// The Sample module is the internal implementation home of the public
-// analysis capability. It intentionally exposes no legacy Record graph or
-// snapshot-selection bridge.
-
+// Internal home of the scoped Sample capability.  Selection is issued by
+// RecordHostSDK and is intentionally not a portable or compatibility API.
 export {
-  decodeAnalysisSample,
-  encodeAnalysisSample,
-  ExperimentIdSchema,
-  narrowAnalysisSample,
-  narrowAnalysisSampleHandle,
-  selectAnalysisSample,
-  selectExplicitRuns,
-  selectProjectCurrent,
-} from "./analysis.ts";
+  decodeSampleSnapshot,
+  decodeSampleSnapshotEither,
+  encodeSampleSnapshot,
+  narrowSample,
+  openSample,
+} from "./capability.ts";
 
 export type {
-  AnalysisBaseSlot,
-  AnalysisSampleCodecError,
-  AnalysisLimitExceededError,
-  AnalysisRun,
-  AnalysisRunInvalidError,
-  AnalysisRunNotFoundError,
-  AnalysisSample,
-  AnalysisSampleHandle,
-  AnalysisSampleSelector,
-  AnalysisSelectionError,
-  AnalysisSelectionInvalidError,
-  AnalysisSelectionRequest,
-  AnalysisSelectionSummary,
-  AnalysisSlot,
-  AnalysisSlotRef,
-  AttemptId,
-  CoreInvalidAnalysisSlot,
-  ExcludedAnalysisSlot,
-  ExperimentId,
-  ExplicitRunsAnalysisInput,
-  IncludedAnalysisSlot,
-  ProjectCurrentAnalysisInput,
-  ProjectCurrentEvalInput,
-  ProjectCurrentExperimentInput,
-  NonEmptyRecordIssues,
-  NotRecordedAnalysisSlot,
-  RecordAttemptRef,
-  RecordHandleInvalid,
-  RecordIoError,
-  RecordIssue,
-  RecordPermissionError,
-  RecordReadError,
-  RecordReaderClosed,
-  RunId,
-  SlotId,
-  UtcMillis,
-} from "./analysis.ts";
+  SampleClosedError,
+  Sample,
+  SampleCoverage,
+  SampleSelector,
+  SampleSnapshot,
+  SampleSnapshotCodecError,
+} from "../analysis/contracts.ts";

@@ -1,48 +1,26 @@
-import { Either } from "effect";
 import {
-  defineCalculation,
-  definePage,
   defineReport,
-  reportComponentId,
-  reportDocument,
-  reportId,
-  reportInputs,
-  reportRoute,
-  reportStatus,
+  Stack,
+  Text,
+  type PlainPageDefinition,
 } from "niceeval/report";
+import type { Sample, SampleSnapshot } from "niceeval/analysis";
 import { configReloadContent } from "./config-reload-content.ts";
 
-const sampleInputs = reportInputs({});
-
-const selectedSlotCount = defineCalculation({
-  id: Either.getOrThrow(reportComponentId("alternate-slot-count")),
-  inputs: sampleInputs,
-  calculate: ({ sample }) => sample.slots.length,
-});
-
-const page = definePage({
-  id: Either.getOrThrow(reportComponentId("alternate-report")),
-  route: Either.getOrThrow(reportRoute("/")),
-  calculations: { selectedSlotCount },
-  render: ({ calculations }) => {
-    const count = calculations.selectedSlotCount;
-    return reportDocument({
-      title: "Alternate config fixture",
-      children: count.state === "available"
-        ? [
-          reportStatus({ tone: "neutral", label: "CONFIG_SECOND" }),
-          ...configReloadContent(count.value),
-        ]
-        : [reportStatus({
-          tone: "negative",
-          label: "Selected slot count is unavailable",
-        })],
-    });
-  },
-});
-
 export default defineReport({
-  id: Either.getOrThrow(reportId("config-reload-alternate")),
-  calculations: { selectedSlotCount },
-  pages: [page],
+  title: "Alternate config fixture",
+  pages: [
+    {
+      id: "alternate-report",
+      path: "/",
+      title: "Alternate config fixture",
+      load: (sample: Sample): SampleSnapshot => sample.snapshot,
+      render: (snapshot: SampleSnapshot) => Stack({
+        children: [
+          Text({ value: "CONFIG_SECOND" }),
+          configReloadContent(snapshot.slots.length),
+        ],
+      }),
+    } satisfies PlainPageDefinition<SampleSnapshot>,
+  ],
 });

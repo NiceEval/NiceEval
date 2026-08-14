@@ -11,53 +11,64 @@
 | 区域 | 职责 |
 |---|---|
 | `src/cli.ts` | argv、命令分派、信号与退出状态。 |
-| `runner/` | 发现、调度、Sandbox 生命周期和 Invocation receipt。 |
-| `record/` | writer、reader、RecordAttachment 读取与数据规范化。 |
-| `sample/` | Run 选择、分母和 slot 状态。 |
-| `report/` | ReportExecution、Calculation 和渲染。 |
-| `show/`、`view/` | 终端、本机网页和静态 export 宿主。 |
+| `experimentHost` | `exp`、`--dry` 与 `accept` 的发现、计划、运行和采用操作。 |
+| `recordHost` | Record 的打开、创建、封口、clean 与 migrate 操作。 |
+| `analysisHost` | 由已打开 reader 和选择签发 Scope-bound Sample。 |
+| `reportHost` | Report execution、show、serve 与 export。 |
+| `runner/`、`record/reader/` | 各自 Host 后的内部调度和读取实现，不是 CLI 直连面。 |
 
-`src/cli.ts` 只做 argv 读取、工作目录确定、命令分派、进程信号接线和退出码交付。它不定义 Record 文件语义，不计算报告读数，也不把终端文本当作业务事实。
+`src/cli.ts` 只做 argv 读取、工作目录确定、Host 调用、进程信号接线和退出码交付。它不定义
+Record 文件语义，不计算报告读数，也不把终端文本当作业务事实。CLI 不直接构造 Runner、reader、
+Sample、页面或物理路径。
 
 ## 三条数据路径
 
 ### 运行
 
-~~~text
+```text
 argv
   ↓
-Experiment discovery and scheduling
+experimentHost.plan / run
   ↓
-RecordWriteSession
+Runner（Host 内部）→ recordHost.createRun
   ↓ validate + flush
 complete marker
   ↓
 InvocationReceipt
-~~~
+```
 
-`exp` 为每个选中的 Experiment 建立 Run 和 expected slots。Runner 把 Attempt 的业务事实写到 owner-local RecordAttachment，并用 Member 把 slot 连接到精确 Attempt。
+`exp` 为每个选中的 Experiment 建立 Run 和 expected slots。CLI 只调用 `experimentHost`；Host
+内部的 Runner 再使用 `recordHost` 封口 Attempt 的固定事实，并用 Member 把 slot 连接到精确
+Attempt。
 
-reuse 与 explicit adoption 形成 reference Member，实际执行形成 origin Attempt。采用原因写入 `niceeval.membership-provenance`。
+reuse 与 explicit adoption 形成 reference Member，实际执行形成 origin Attempt。Member 的 action
+说明采用或执行的原因；它不是单独的 durable family。
 
-Run 全部内容 flush 后，writer 最后创建零字节 `complete` 完成标识。命令只返回 `InvocationReceipt`；调用方按 receipt 的 `runIds` 从已发布 Record 读取 Verdict、用量、耗时和详情。
+Run 全部内容 flush 后，writer 最后创建零字节 `complete` 完成标识。命令只返回
+`InvocationReceipt`。调用方按 receipt 的 `runIds` 从已发布 Record 读取 Verdict、用量、耗时和详情。
 
 ### 查看与导出
 
-~~~text
+```text
 opaque Record
   ↓
-analysis selection
+recordHost.openRead
   ↓
-AnalysisSample
-  ↓ Report declarations
-ReportExecution
+analysisHost.openSample
+  ↓ aggregate / query
+ClosedRows / SemanticFrame / DomainView
+  ↓ reportHost.execute
+ReportExecution / ClosedReportTree
   ↓
 show / view / static export
-~~~
+```
 
-`show` 与 `view` 的内部 host 使用持有 shared maintenance lease 的 frozen reader，可以和 writer 并发。它先由 analysis selection 形成纯 `AnalysisSample`，再按 Report 声明闭合数据依赖，形成一次 immutable `ReportExecution`。reader 与 selection handle 不从包导出。
+`show` 与 `view` 只调用 `reportHost`。Report Host 在内部按需进入 Record Host 的 reader Scope，
+再由 Analysis Host 签发 Sample；它根据 Page 的 `load`、`render` 和组件回调闭合有限数据依赖，
+形成一次 immutable `ReportExecution`。reader 与 selection handle 不从包导出，也不会成为 Report
+作者输入。
 
-Reports runtime 从不打开 Record path，也不自行读取 Attachment bytes。
+Report runtime 从不打开 Record path，也不自行读取 family bytes。它只消费 Analysis 交付的闭合结果。
 
 `--run` 映射到 `explicit-runs` analysis selection。不带 locator 或 `--run` 的 `show` / `view` 使用 `project-current`，从默认 Record 的全部 Run 中保留身份仍匹配当前项目的结果。CLI 不按目录名、时间或显示文本猜测对象，也不改写历史 Run。`view --out` 写出自包含站点；浏览器只读取站点自己的文件。
 
@@ -65,7 +76,9 @@ Reports runtime 从不打开 Record path，也不自行读取 Attachment bytes�
 
 中断发生在完成标识创建前时，不发布该 Run。reader 忽略它的目录并给出 `incomplete-run` warning；用户用 `niceeval clean` 删除。Record 没有按 orphan 猜测的 clean、局部 edit 或 delete 命令。
 
-`niceeval migrate --record <root>` 取得 exclusive maintenance lease，并把已知可迁移的 source major 原地转换到 current major。普通命令遇到 source major 时只返回 `record-migration-required`。
+`niceeval migrate --record <root>` 通过 `recordHost.maintenance()` 取得 exclusive maintenance lease，
+并把已知可迁移的 source major 原地转换到 current major。普通 Record open 遇到可迁移的 source
+major 时返回 `record-migration-required` 并指向这条命令；它不是某个 family 的读取状态。
 
 迁移没有 compat read、output root 或 rollback command。Git 与用户备份负责回退。
 
@@ -73,7 +86,8 @@ Reports runtime 从不打开 Record path，也不自行读取 Attachment bytes�
 
 一次 Invocation 的 TTY 面板、NDJSON progress 和诊断只服务当前进程。它们可替换、合并或丢弃，不能成为 Record 的持久化协议。
 
-持久化的业务事实由 Runner 分别写入 Run 或 Attempt RecordAttachment。终端与 `--json` 可以显示这些事实的当前摘要，但不得从反馈文本反向形成 Record 数据。
+持久化的业务事实由 Experiment Host 内部的 Runner 写入 Record Core 或五个固定 family。终端与
+`--json` 可以显示这些事实的当前摘要，但不得从反馈文本反向形成 Record 数据。
 
 `exp --json` 的最后一条机器输出是 receipt。调用方以进程退出状态和该 receipt 判断调用是否结束，再用 `show --json` 与 `runIds` 读取业务数据。
 

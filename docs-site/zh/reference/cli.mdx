@@ -169,11 +169,11 @@ npx niceeval view --run 01H...
 npx niceeval view @01H...
 ```
 
-打开本地记录查看器。它和 `show` 共用默认 Report 与选择规则。不带 locator 或 `--run` 的命令从默认 Record 读取所有身份仍匹配当前项目的结果；精确 `@<AttemptLocator>` 显示该 Attempt 的默认概览；`--run` 读取指定历史 Run。随后内部 host 投影所需事实，并执行一次 Report。
+打开本地结果查看器。它和 `show` 共用默认 Report 与选择规则。不带 locator 或 `--run` 的命令读取所有身份仍匹配当前项目的结果；精确 `@<AttemptLocator>` 显示该 Attempt 的默认概览；`--run` 读取指定历史 Run。NiceEval 随后形成 Sample、取得 Report 所需的闭合分析值，并执行一次 Report。
 
 没有显式 `--report` 时，`--run` 使用内建 `run-membership-overview`，精确 locator 使用 `attempt-overview`。`project-current` 才使用配置里的 Report，并在没有配置时回退到通用 `default-overview`。显式 `--report` 始终优先。Config 仍会为 Theme 和 `view` rebuild 加载；这里只说明配置里的 Report 不参与显式 Run 的默认选择。
 
-此前的局部执行可能让部分 slot 以 `reference` 采用已有 Attempt。这些是当时的采用事实，不是补跑状态。同一份 `AnalysisSample` 不会在页面请求时重新选择。`--experiment` 可按完整 ID 收窄当前项目目标；`--record` 只在主动读取其它 Record root 时使用。
+此前的局部执行可能让部分 slot 以 `reference` 采用已有 Attempt。这些是当时的采用事实，不是补跑状态。同一份 `Sample` 不会在页面请求时重新选择。`--experiment` 可按完整 ID 收窄当前项目目标；`--record` 只在主动读取另一份结果集时使用。
 
 ## `show`
 
@@ -196,7 +196,7 @@ npx niceeval show --run 01H... --report ./reports/summary.ts --page overview
 
 不带 locator 或 `--run` 的 `show` 规划当前项目身份，并扫描默认 Record 中全部 published Run。只有 Experiment、Eval、Attempt 序号、evaluation kind、input identity 与 config identity 仍匹配的 slot 才进入 Sample；命令不会按时间只留一个 Run。没有匹配结果时显示空 Sample，过期结果仍可用完整 `--run` 读取。
 
-`--run` 可重复，只读取这些显式历史 Run。`--experiment <id>` 可重复，按完整 ExperimentId 收窄当前项目目标，不能与 `--run` 合用。`exp`、不带 `--record` 的 `show` 与 `view` 默认使用同一个 `.niceeval/record`。
+`--run` 可重复，只读取这些显式历史 Run。`--experiment <id>` 可重复，按完整 ExperimentId 收窄当前项目目标，不能与 `--run` 合用。`exp`、不带 `--record` 的 `show` 与 `view` 默认使用同一份结果集。
 
 单个 `--run` 用于核对这一轮的 expected-slot 分母与 membership；多个 `--run` 用同一表形状比较多个固定历史边界。即使两个 Run 指向同一个 Attempt，它们也可能分别由实际执行、自动沿用或人工采用形成。`exp --json` 最后一条 receipt 的 `runIds` 是机器稳定出口；TTY 完成反馈也显示 Run ID。`accept` 的成功反馈会显示新 Run ID，但这行人读文本不是 JSON receipt 或自动化输入契约。
 
@@ -210,13 +210,13 @@ npx niceeval show --run 01H... --report ./reports/summary.ts --page overview
 
 单 Run 和多 Run 都按 `runId`、`slotId` 排序；表在排序后最多显示 200 rows，并显示省略数量。
 
-`membershipOutcome` 来自公开 projector，值为 `carried`、`accepted`、`executed`、`not-dispatched` 或 `interrupted`。它不是持久 payload 的 raw `action` 字段。内建表是 bounded summary；已知 Attempt 的身份与证据用 `show @<AttemptLocator>` 下钻，需要其它 Run 字段时显式选择自定义 Report。
+`membershipOutcome` 是内建报告给出的来源结果，值为 `carried`、`accepted`、`executed`、`not-dispatched` 或 `interrupted`。它用于说明本次位置如何得到结果。内建表是 bounded summary；已知 Attempt 的身份与证据用 `show @<AttemptLocator>` 下钻，需要其它 Run 字段时显式选择自定义 Report。
 
-选择完成后，`show` 用已选 handle 读取 Report 声明的 Projection，并形成一次 `ReportExecution`。请求的 Attachment 为 unavailable、migration-required、unsupported、partial 或 invalid 时，命令会原样显示状态；未请求的未知或损坏 Attachment 不影响当前页面。完整契约见[查看结果](/zh/tutorials/viewing-results)。
+选择完成后，`show` 用 Sample 执行 Report 所使用的 Measure 和领域视图，并形成一次 `ReportExecution`。`partial`、`unsupported`、`failed` 等 Analysis 状态会随结果显示；未使用的数据问题不影响当前页面。完整契约见[查看结果](/zh/tutorials/viewing-results)。
 
-`view --out <目录>`（或显式 `--run`）使用同一份 ReportExecution 预渲染自包含静态站。目标目录必须不存在；全部页面、下载项与静态资产路径先通过校验。写完全部文件后，exporter 最后创建 `complete` marker。导出过程不会把 Record 路径或 blob 路径交给用户 Report。
+`view --out <目录>`（或显式 `--run`）使用同一份 ReportExecution 预渲染自包含静态站。目标目录必须不存在；全部页面、下载项与静态资产路径先通过校验。导出完成后，站点即可独立查看。导出过程不会把底层结果存储交给用户 Report。
 
-命令在持有 sample handle 时完成所需 Projection 和 Report execution。返回的 ReportExecution 不再访问 Record。运行中的 `view` 对变化构造新的固定 execution；成功后替换当前 revision，失败保留 last-good execution。静态 export 只消费已经完成的 execution。
+命令在 Sample 可用时完成所需 Analysis 操作和 Report execution。返回的 ReportExecution 不再访问已发布结果。运行中的 `view` 对变化构造新的固定 execution；成功后替换当前 revision，失败保留 last-good execution。静态 export 只消费已经完成的 execution。
 
 ## `--early-exit`
 
@@ -237,4 +237,4 @@ npx niceeval show --run 01H... --report ./reports/summary.ts --page overview
 | `2` | 运行时崩溃（未捕获异常），CLI 顶层捕获后退出。 |
 | `130` | 收到中断信号（Ctrl-C / SIGTERM）后退出。 |
 
-CI 的退出码直接来自 Pass Eval 的 Boolean conditions 与最终 Verdict；JUnit 使用同一份 sealed projection。
+CI 的退出码直接来自 Pass Eval 的 Boolean conditions 与最终 Verdict；JUnit 使用同一份已封口的断言结果。

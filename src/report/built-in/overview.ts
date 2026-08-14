@@ -1,236 +1,139 @@
-import { Either } from "effect";
-import { encodeAttemptLocator } from "../../attempt-locator.ts";
-import type { AnalysisSample, AnalysisSlot } from "../../analysis/index.ts";
+import type { Sample, SampleSnapshot } from "../../analysis/index.ts";
 import {
-  definePage,
+  Callout,
   defineReport,
-  reportComponentId,
-  reportId,
-  reportRoute,
+  Stack,
+  Stat,
+  Table,
+  Text,
+  type PlainPageDefinition,
+  type Report,
 } from "../author/index.ts";
 import {
-  reportDocument,
-  reportMetric,
-  reportSection,
-  reportStatus,
-  reportTable,
-  reportText,
-  type ReportBlock,
-} from "../semantic/index.ts";
+  loadBuiltInSummaryRows,
+  type BuiltInSummaryRows,
+} from "./analysis-values.ts";
 
 const RUN_ROWS_MAX = 200;
 const ATTEMPT_ROWS_MAX = 200;
-const SLOT_ISSUES_MAX = 200;
-const ISSUES_PER_SLOT_MAX = 4;
 
-const slotStates = ["included", "not-recorded", "core-invalid", "excluded"] as const;
-type SlotState = (typeof slotStates)[number];
+interface OverviewPageInput {
+  readonly snapshot: SampleSnapshot;
+  readonly metrics: BuiltInSummaryRows;
+}
 
-export const overviewPage = definePage({
-  id: Either.getOrThrow(reportComponentId("overview")),
-  route: Either.getOrThrow(reportRoute("/")),
-  render: ({ sample }) => overviewDocument(sample),
-});
+const overviewPage = {
+  id: "overview",
+  path: "/",
+  title: "Overview",
+  load: async (sample: Sample): Promise<OverviewPageInput> => Object.freeze({
+    snapshot: sample.snapshot,
+    metrics: await loadBuiltInSummaryRows(sample),
+  }),
+  render: overviewNode,
+} satisfies PlainPageDefinition<OverviewPageInput>;
 
-/** The zero-configuration Report for one selected AnalysisSample. */
-export const defaultOverviewReport = defineReport({
-  id: Either.getOrThrow(reportId("default-overview")),
+/** The default project-current report over Analysis-owned MetricValues. */
+export const defaultOverviewReport: Report = defineReport({
+  title: "NiceEval overview",
   pages: [overviewPage],
 });
 
-/** A short named form for callers that prefer a named built-in import. */
+/** Stable built-in token target for an explicit `--report overview`. */
 export const overview = defaultOverviewReport;
 
 export default defaultOverviewReport;
 
-function overviewDocument(sample: AnalysisSample) {
-  const stateCounts = countSlotStates(sample.slots);
-  const issueBlocks = slotIssueBlocks(sample.slots);
-  const visibleRuns = sample.runs.slice(0, RUN_ROWS_MAX);
-  const omittedRuns = sample.runs.length - visibleRuns.length;
-  const includedAttempts = sample.slots.filter((slot) => slot.state === "included");
-  const visibleAttempts = includedAttempts.slice(0, ATTEMPT_ROWS_MAX);
-  const omittedAttempts = includedAttempts.length - visibleAttempts.length;
+function overviewNode(input: OverviewPageInput) {
+  const { coverage, runs, selection, slots } = input.snapshot;
+  const metrics = input.metrics[0];
+  const included = slots.filter((slot) => slot.state === "included");
+  const visibleRuns = runs.slice(0, RUN_ROWS_MAX);
+  const visibleAttempts = included.slice(0, ATTEMPT_ROWS_MAX);
 
-  return reportDocument({
-    title: "NiceEval overview",
+  return Stack({
     children: [
-      reportMetric({ label: "Selected runs", value: sample.runs.length }),
-      reportMetric({ label: "Slot denominator", value: sample.denominator }),
-      reportMetric({ label: "Expected slots", value: sample.slots.length }),
-      reportSection({
-        heading: "Selected runs",
-        children: [
-          reportStatus({
-            tone: "neutral",
-            label: selectionLabel(sample),
-          }),
-          reportTable({
-            caption: "Selected runs",
-            columns: [
-              { key: "run", label: "Run" },
-              { key: "expectedSlots", label: "Expected slots", align: "end" },
-              { key: "completedAt", label: "Completed at (ms)", align: "end" },
-            ],
-            rows: visibleRuns.map((run) => ({
-              run: run.runId,
-              expectedSlots: run.expectedSlots.length,
-              completedAt: run.completedAt,
-            })),
-          }),
-          ...(omittedRuns === 0
-            ? []
-            : [reportStatus({
-              tone: "warning",
-              label: `${omittedRuns} selected run(s) omitted from this bounded table`,
-            })]),
+      Text({ value: selectionLabel(selection) }),
+      ...(metrics === undefined
+        ? [unavailableCallout("No aggregate MetricValue was produced for this Sample.")]
+        : [
+          Stat({ label: "Pass rate", value: metrics.passRate }),
+          Stat({ label: "Mean latency", value: metrics.meanLatencyMs }),
+          Stat({ label: "Tool failure rate", value: metrics.toolFailureRate }),
+        ]),
+      Table({
+        caption: "Sample coverage",
+        columns: [
+          { key: "field", label: "Field" },
+          { key: "value", label: "Value", align: "end" },
+        ],
+        rows: [
+          { field: "Frame slots", value: coverage.frameTotal },
+          { field: "Selected slots", value: coverage.selected },
+          { field: "Included slots", value: coverage.included },
+          { field: "Not recorded", value: coverage.notRecorded },
+          { field: "Core invalid", value: coverage.coreInvalid },
+          { field: "Excluded", value: coverage.excluded },
         ],
       }),
-      reportSection({
-        heading: "Slot states",
-        children: [
-          reportTable({
-            caption: "Slot denominator by state",
-            columns: [
-              { key: "state", label: "State" },
-              { key: "slots", label: "Slots", align: "end" },
-              { key: "denominator", label: "In denominator", align: "end" },
-              { key: "meaning", label: "Meaning" },
-            ],
-            rows: slotStates.map((state) => ({
-              state,
-              slots: stateCounts[state],
-              denominator: state === "excluded" ? 0 : stateCounts[state],
-              meaning: slotStateMeaning(state),
-            })),
-          }),
+      Table({
+        caption: "Selected Runs",
+        columns: [
+          { key: "runId", label: "Run" },
+          { key: "expectedSlots", label: "Expected slots", align: "end" },
+          { key: "completedAt", label: "Completed at (ms)", align: "end" },
         ],
+        rows: visibleRuns.map((run) => ({
+          runId: run.runId,
+          expectedSlots: run.expectedSlots.length,
+          completedAt: run.completedAt,
+        })),
       }),
-      reportSection({
-        heading: "Included Attempts",
-        children: [
-          reportTable({
-            caption: "Included Attempts",
-            columns: [
-              { key: "locator", label: "Locator" },
-              { key: "run", label: "Selected Run" },
-              { key: "slot", label: "Slot" },
-            ],
-            rows: visibleAttempts.map((slot) => ({
-              locator: encodeAttemptLocator(slot.attempt.attemptId),
-              run: slot.runId,
-              slot: slot.slotId,
-            })),
-          }),
-          ...(omittedAttempts === 0
-            ? []
-            : [reportStatus({
-              tone: "warning",
-              label: `${omittedAttempts} included Attempt(s) omitted from this bounded table`,
-            })]),
+      ...(runs.length === visibleRuns.length
+        ? []
+        : [omittedCallout("selected Run", runs.length - visibleRuns.length)]),
+      Table({
+        caption: "Included Attempts",
+        columns: [
+          { key: "locator", label: "Attempt" },
+          { key: "originRunId", label: "Origin Run" },
+          { key: "runId", label: "Selected Run" },
+          { key: "slotId", label: "Slot" },
+          { key: "relation", label: "Member relation" },
         ],
+        rows: visibleAttempts.map((slot) => ({
+          locator: slot.attempt.locator,
+          originRunId: slot.attempt.originRunId,
+          runId: slot.runId,
+          slotId: slot.slotId,
+          relation: slot.relation,
+        })),
       }),
-      reportSection({
-        heading: "Slot problems",
-        children: issueBlocks,
-      }),
+      ...(included.length === visibleAttempts.length
+        ? []
+        : [omittedCallout("included Attempt", included.length - visibleAttempts.length)]),
     ],
   });
 }
 
-function countSlotStates(slots: readonly AnalysisSlot[]): Readonly<Record<SlotState, number>> {
-  const counts: Record<SlotState, number> = {
-    included: 0,
-    "not-recorded": 0,
-    "core-invalid": 0,
-    excluded: 0,
-  };
-  for (const slot of slots) {
-    counts[slot.state] += 1;
-  }
-  return Object.freeze(counts);
+function selectionLabel(selection: SampleSnapshot["selection"]): string {
+  return selection.selectedRunIds.length === 0
+    ? "Selection: empty"
+    : `Selection: ${selection.selectedRunIds.length} sealed Run(s)`;
 }
 
-function selectionLabel(sample: AnalysisSample): string {
-  if (sample.selection.policy === "explicit-runs") {
-    return "Selection policy: explicit runs";
-  }
-  return sample.selection.experimentIds === "all"
-    ? "Selection policy: all results matching the current project"
-    : "Selection policy: all results matching selected current experiments";
-}
-
-function slotStateMeaning(state: SlotState): string {
-  switch (state) {
-    case "included":
-      return "A published Member and its referenced Attempt are available.";
-    case "not-recorded":
-      return "The expected Slot has no published Member.";
-    case "core-invalid":
-      return "Record Core could not establish a reliable Member or Attempt.";
-    case "excluded":
-      return "Explicitly narrowed out of the sample denominator.";
-  }
-}
-
-function slotIssueBlocks(slots: readonly AnalysisSlot[]): readonly ReportBlock[] {
-  const problems = slots.filter((slot) => slot.state !== "included");
-  if (problems.length === 0) {
-    return [reportStatus({
-      tone: "positive",
-      label: "No slot problems in this sample",
-    })];
-  }
-
-  const visible = problems.slice(0, SLOT_ISSUES_MAX);
-  const blocks: ReportBlock[] = visible.map((slot) =>
-    reportStatus({
-      tone: slotTone(slot),
-      label: `${slot.state}: ${slot.runId}/${slot.slotId}`,
-      detail: [reportText(slotDetail(slot))],
-    })
-  );
-  const omitted = problems.length - visible.length;
-  if (omitted > 0) {
-    blocks.push(reportStatus({
-      tone: "warning",
-      label: `${omitted} additional slot problem(s) omitted from this bounded list`,
-    }));
-  }
-  return Object.freeze(blocks);
-}
-
-function slotTone(slot: Exclude<AnalysisSlot, { readonly state: "included" }>): "neutral" | "warning" | "negative" {
-  switch (slot.state) {
-    case "not-recorded":
-      return "warning";
-    case "core-invalid":
-      return "negative";
-    case "excluded":
-      return "neutral";
-  }
-}
-
-function slotDetail(slot: Exclude<AnalysisSlot, { readonly state: "included" }>): string {
-  switch (slot.state) {
-    case "not-recorded":
-      return "No Member was published for this expected Slot.";
-    case "core-invalid":
-      return issueDetail(slot.issues);
-    case "excluded":
-      return slot.base.state === "core-invalid"
-        ? `Excluded from the denominator; underlying state is core-invalid: ${issueDetail(slot.base.issues)}`
-        : `Excluded from the denominator; underlying state is ${slot.base.state}.`;
-  }
-}
-
-function issueDetail(issues: readonly { readonly code: string; readonly path: readonly string[] }[]): string {
-  const visible = issues.slice(0, ISSUES_PER_SLOT_MAX).map((issue) => {
-    const path = issue.path.length === 0 ? "Record Core" : issue.path.join("/");
-    return `${issue.code} at ${path}`;
+function omittedCallout(kind: string, count: number) {
+  return Callout({
+    tone: "warning",
+    title: "Bounded summary",
+    children: [Text({ value: `${count} additional ${kind}(s) omitted.` })],
   });
-  const omitted = issues.length - visible.length;
-  return omitted === 0
-    ? visible.join("; ")
-    : `${visible.join("; ")}; ${omitted} additional issue(s)`;
+}
+
+function unavailableCallout(message: string) {
+  return Callout({
+    tone: "warning",
+    title: "Analysis result unavailable",
+    children: [Text({ value: message })],
+  });
 }

@@ -1,121 +1,145 @@
 ---
 title: "报告 API"
-description: "RecordProjection、Calculation、Page、ReportExecution 与静态导出的公开边界。"
+description: "用 Measure、Page、组件与闭合执行结果编写可在终端、网页和静态站显示的报告。"
 ---
 
-Report 作者只从 `niceeval/report` 声明需要哪些 `RecordProjection`，再把投影结果和计算结果包装成页面或下载。作者不接收 reader、路径、raw Attachment 或磁盘字段。
+Report 只负责展示。先在 Analysis 定义统计口径，再在 Page 或组件中取得闭合结果。Report 作者不读取结果文件、不注册持久数据类型，也不处理迁移或存储路径。
 
 ```text
-AnalysisSample
-        ↓  opaque RecordProjection declarations
-ProjectedSample
-        ↓  Calculation / Page / PageFamily / Download
-immutable ReportExecution
-        ├─ show
-        ├─ view revision
-        └─ static export
+已发布的运行结果
+        ↓
+Analysis：Measure + aggregate() / query()
+        ↓
+ClosedRows / MetricValue / DomainView
+        ↓
+Report：Page + component
+        ↓
+ReportExecution → show / view / static export
 ```
 
-## 声明 RecordProjection
+## 先定义统计口径
 
-NiceEval 提供的 opaque projector 固定形成一种 typed view。Report 用三个 constructor 声明逻辑访问；作者不能定义 raw family/projector：
-
-| constructor | 对齐方式 |
-| --- | --- |
-| `attemptSlotProjection(projector)` | 对 Sample 的每个 slot 形成 entry，并读取它精确引用的 Attempt Attachment。 |
-| `attemptOriginRunProjection(projector)` | 对每个 slot 形成 entry，并读取该 Attempt 的 origin Run Attachment。 |
-| `selectedRunProjection(projector)` | 对每个 selected Run 形成 entry，并读取该 Run Attachment。 |
-
-前两种访问不会丢掉 `excluded`、`not-recorded` 或 `core-invalid` slot。相同 Attempt 被多个 slot 引用时，公开结果仍按 slot 对齐。
+`niceeval/analysis` 提供 NiceEval 已发布的输入。作者用 `defineMeasure()` 明确总体、归并方式、分母和缺失策略；不需要额外的输入注册步骤。
 
 ```ts
-const verdicts = attemptSlotProjection(verdictProjector);
-const evaluations = selectedRunProjection(evaluationsProjector);
+import {
+  allLogicalSlots,
+  attemptPassed,
+  defineDimension,
+  defineMeasure,
+  latestCompletedAttempt,
+  logicalSlots,
+  oneValue,
+  partial,
+  ratio,
+  retainContributingEvidence,
+} from "niceeval/analysis";
 
-const inputs = reportInputs({ verdicts, evaluations });
-```
+export const experiment = defineDimension({
+  id: "example.experiment",
+  population: logicalSlots,
+  value: slot => slot.experimentId,
+});
 
-`reportInputs` 固定输入 key 与其 projection 的类型。host 在执行任何 Record I/O 前闭合这组依赖，并让每个 projection 至多执行一次。
-
-## 定义 Calculation 和页面
-
-Calculation 只从静态声明的 projection 派生业务值。它自己返回业务 `observed` 与 `denominator`；host 不会从 coverage 或 entry 数量猜测统计口径。
-
-```ts
-const passRate = defineCalculation({
-  id: Either.getOrThrow(reportComponentId("pass-rate")),
-  inputs,
-  completeness: "allow-partial",
-  calculate: ({ sample, inputs }) =>
-    calculatePassRate(sample, inputs.verdicts, inputs.evaluations),
+export const passRate = defineMeasure({
+  id: "example.pass-rate",
+  population: logicalSlots,
+  input: attemptPassed,
+  withinAttempt: oneValue<boolean>(),
+  withinSlot: latestCompletedAttempt<boolean>(),
+  acrossSlots: ratio(),
+  denominator: allLogicalSlots(),
+  missing: partial(),
+  evidence: retainContributingEvidence(),
+  unit: "ratio",
+  format: "percent",
+  better: "higher",
 });
 ```
 
-直接消费 projection 的 Calculation、Page、PageFamily 和 Download 必须选择完整度：
+`MetricValue` 会保留数值、状态、实际贡献数、固定分母、问题和证据引用。不要先取出未包装的 number，再在 Report 中重新计算或包装它。
 
-| 选择 | 行为 |
-| --- | --- |
-| `allow-partial` | callback 收到完整的 `ProjectedSample`、coverage 与 issues，可以显示部分结果。 |
-| `require-complete` | 必需数据不完整时不调用 callback，result 是 `data-unavailable`。 |
+## 在 Page 或组件中读取闭合值
 
-`unavailable`、`migration-required`、`migration-unavailable`、`unsupported`、`invalid` 与 partial collection 都是 recorded-data problem。callback 的意外 throw 属于 execution problem，两者不能互相替代。
-
-Page 返回闭合的 `ReportDocument` 语义树。它不是 HTML、React element 或另一套文本输出。PageFamily 只能根据已投影或已计算的内存值展开 route，不能在展开时追加 Attachment I/O。
-
-## 组合一个 Report
+`aggregate()` 适合按维度形成表格或图表行。它在 Page 或复合组件取得的 `Sample` 上运行，并返回可直接交给 `Table`、`Bars`、`Line` 或 `Scatter` 的 `ClosedRows`。
 
 ```ts
-const overview = definePage({
-  id: Either.getOrThrow(reportComponentId("overview")),
-  route: Either.getOrThrow(reportRoute("/")),
-  calculations: { passRate },
-  render: ({ calculations }) =>
-    reportDocument({
-      title: "Summary",
-      children: [
-        reportMetric({
-          label: "Pass rate",
-          value:
-            calculations.passRate.state === "available"
-              ? calculations.passRate.value.rate
-              : null,
-        }),
-      ],
-    }),
+import {
+  aggregate,
+  Bars,
+  defineComponent,
+  defineReport,
+  Grid,
+  Table,
+} from "niceeval/report";
+import { experiment, passRate } from "./quality-measures.ts";
+
+const Comparison = defineComponent(async (_props, { sample }) => {
+  const rows = await aggregate(sample, {
+    by: { experiment },
+    values: { passRate },
+  });
+
+  return Grid({
+    children: [
+      Bars({ points: rows, x: "experiment", y: "passRate" }),
+      Table({ rows, caption: "各实验的通过率" }),
+    ],
+  });
 });
 
 export default defineReport({
-  id: Either.getOrThrow(reportId("summary")),
-  calculations: { passRate },
-  pages: [overview],
+  title: "质量概览",
+  pages: [
+    {
+      id: "overview",
+      path: "/",
+      title: "概览",
+      render: () => Comparison({}),
+    },
+  ],
 });
 ```
 
-`defineReport` 验证 ID 与组件引用。Page、PageFamily 和 Download 只能引用同一个 Report 已注册的 Calculation。页面 route 与下载路径必须通过对应 constructor 创建，避免输出冲突。
+需要完整的表格请求或一个领域视图时，从 `niceeval/analysis` 导入 `query()`。例如，`attemptEvidenceView` 会返回已关闭的证据视图；它不会把读取器或原始运行数据交给组件。
 
-## 由 show / view 执行 Report
+## 组件的两种形态
 
-应用代码不调用 Report host。`niceeval show`、`niceeval view` 与 `view --out` 的内部 host
-选择 Run、执行 projection 与作者 graph，并形成不可变、自包含的 `ReportExecution`。
-包不导出 `niceeval/report/host`、`niceeval/report/host/node` 或 `executeReport()`。
+复合组件在执行期间取得 `Sample`，再组合已有组件。上例的 `Comparison` 就是这种形态。
 
-`ReportExecution` 包含 Sample、projection 摘要、Calculation、family、页面、下载项与 problem table，但不包含 reader、路径、Scope、callback 或 projector token。
+新显示原语同时提供文字面和网页面。可选的 `resolve()` 是唯一可以异步取得闭合值的阶段；`text` 与 `web` 读取同一个结果。
 
-每个 projection、Calculation、PageFamily、页面实例与 Download 在同一 execution 中最多执行一次。`show`、`view` 与 `exportStaticReport` 只消费完成后的 execution。
+```ts
+import {
+  defineComponent,
+  Stat,
+  Text,
+  type MetricValue,
+} from "niceeval/report";
 
-| 情况 | `show` / `view` | 静态导出 |
-| --- | --- | --- |
-| recorded-data problem | 显示问题，并保留其它成功内容。 | 可以导出，问题必须可见。 |
-| execution problem | 保留其它成功页面，并显示问题。 | 不导出。 |
+const PassRateState = defineComponent({
+  text: ({ value }: { readonly value: MetricValue }) =>
+    Text({ value: `通过率状态：${value.state}` }),
+  web: ({ value }) => Stat({ label: "通过率", value }),
+});
+```
 
-## view 与静态导出
+两个面都只能返回 NiceEval 的语义节点。不要返回 DOM、原始 HTML、浏览器副作用或另一套独立的文字结果。
 
-`view` 每次 rebuild 构造新的固定 `ReportExecution`。完整成功后才替换当前 revision；失败保留 last-good execution，并显示 bounded rebuild problem。
+## 页面、参数和路由
 
-静态导出只写一份已经完成的 execution。它先验证 semantic tree、route、下载项与 execution problems，再写出页面、host-data、downloads、manifest 和内建 runtime。所有内容写完后，最后写入 `complete` marker。
+`defineReport({ pages })` 是唯一的报告定义入口。普通 Page 可直接在 `render(sample)` 中读取闭合结果；需要一组详情地址时，在同一个 Page 上提供 `params`、`load` 和 `render`。`params.enumerate(sample)` 给静态导出列出全部实例，`load` 可以通过 `context.evidence(locator)` 取得一个闭合证据视图。
+
+Page 的 `id` 用于诊断和稳定顺序，`path` 是用户访问的基础地址。参数化 Page 必须设置 `navigation: false`，并让 `encode()` 与 `decode()` 规范往返。Report 在调用作者回调前检查页面定义、ID 与普通路径；实例化后再检查参数路由和下载路径冲突。
+
+## 执行与问题
+
+`show`、`view` 和静态导出在 Sample 仍可用时执行 Page 与组件，随后只保留不可变的 `ReportExecution`。它包含已完成的页面、下载项和问题；不包含可以再次读取结果的能力。
+
+Analysis 问题会保留在 `MetricValue`、`ClosedRows` 和领域视图中。回调抛错、参数不合法、语义树不合法或路由冲突则成为 execution problem。`show` 和 `view` 继续显示其它成功页面；静态导出遇到 execution problem 不发布站点。
 
 ## 相关页面
 
-- [结果数据 API](/zh/reference/results-data)：在 Report callback 中消费 Sample 与 `ProjectedSample`。
-- [编写自定义报告](/zh/tutorials/custom-reports)：从投影写出一个实际 Report。
+- [结果数据 API](/zh/reference/results-data)：选择已发布的 Analysis 输入，并读取闭合结果。
+- [编写自定义报告](/zh/tutorials/custom-reports)：从 Measure 写出一个实际 Report。
 - [发布静态报告](/zh/tutorials/publish-report)：导出并分享固定 execution。

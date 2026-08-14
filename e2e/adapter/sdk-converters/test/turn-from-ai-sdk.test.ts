@@ -47,11 +47,14 @@ test("turnFromAiSdk 的真实 AI SDK seam 经 Experiment 和公开 CLI 确定性
       expect(selection.runIds, shown.diagnostic()).toEqual([receipt.runIds[0]!]);
       expect(shown.stdout, shown.diagnostic()).toContain('"included"');
 
-      // locator 驱动的公开读回：Attempt 的断言评估证据(含 Eval 内的工具/identity
-      // 断言)已经随 Run 落盘，并通过 `show @<locator> --source` 可公开读回。
+      // locator 驱动的公开 source 读回：本轮 Eval 的 immutable source snapshot
+      // 必须标出 recorded source、source availability，并呈现源码内容。
       const source = await niceeval.run(["show", evalEvent.locator, "--source"]);
       expect(source.exitCode, source.diagnostic()).toBe(0);
-      expect(source.stdout).toContain("Assertions: available");
+      expect(source.stdout).toContain("Recorded source: evals/turn-from-ai-sdk.eval.ts");
+      expect(source.stdout).toContain("Sources");
+      expect(source.stdout).toContain("available");
+      expect(source.stdout).toContain("export default defineEval({");
 
       const timing = await niceeval.run(["show", evalEvent.locator, "--timing"]);
       expect(timing.exitCode, timing.diagnostic()).toBe(0);

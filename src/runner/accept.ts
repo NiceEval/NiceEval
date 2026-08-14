@@ -7,28 +7,27 @@ import { Effect } from "effect";
 
 import type { SandboxPlanningServices } from "../sandbox/plan.ts";
 import {
-  type AdoptionProjectInputV1,
-  type AdoptionProjectV1,
-  type CurrentAdoptionTargetV1,
-  ExplicitAdoptionErrorV1,
-  type ExplicitAdoptionOpenErrorV1,
-  type ExplicitAdoptionReadErrorV1,
-  type ExplicitAdoptionMemberV1,
-  type ExplicitAdoptionRunPlanV1,
-  type ExplicitAdoptionRunReceiptV1,
-  type ResolvedAdoptionAttemptV1,
-  adoptionRecordRootV1,
-  adoptionStartedAtV1,
-  buildExplicitAdoptionRunPlanV1,
-  commitExplicitAdoptionRunPlansV1,
-  createExplicitAdoptionInvocationIdV1,
-  loadAdoptionProjectV1,
-  mapExplicitAdoptionCommitFailureV1,
-  prepareCurrentAdoptionTargetV1,
-  prepareExplicitAdoptionMemberV1,
-  resolveExplicitAttemptLocatorV1,
-  withAdoptionReaderV1,
-  withAdoptionWriteSessionV1,
+  type AdoptionProjectInput,
+  type AdoptionProject,
+  type CurrentAdoptionTarget,
+  ExplicitAdoptionError,
+  type ExplicitAdoptionOpenError,
+  type ExplicitAdoptionReadError,
+  type ExplicitAdoptionMember,
+  type ExplicitAdoptionRunPlan,
+  type ExplicitAdoptionRunReceipt,
+  type ResolvedAdoptionAttempt,
+  adoptionRecordRoot,
+  adoptionStartedAt,
+  buildExplicitAdoptionRunPlan,
+  commitExplicitAdoptionRunPlans,
+  createExplicitAdoptionInvocationId,
+  loadAdoptionProject,
+  prepareCurrentAdoptionTarget,
+  prepareExplicitAdoptionMember,
+  resolveExplicitAttemptLocator,
+  withAdoptionCommitScope,
+  withAdoptionReader,
 } from "./adoption.ts";
 import type {
   Config,
@@ -83,7 +82,7 @@ export interface AcceptedAttempt {
   readonly fingerprint: string;
 }
 
-export interface AcceptedAttemptPreviewV1 {
+export interface AcceptedAttemptPreview {
   readonly locator: string;
   readonly sourceLocator: string;
   readonly experimentId: string;
@@ -92,35 +91,35 @@ export interface AcceptedAttemptPreviewV1 {
   readonly fingerprint: string;
 }
 
-export interface AcceptPreflightV1 {
-  readonly groups: readonly AcceptPreflightGroupV1[];
+export interface AcceptPreflight {
+  readonly groups: readonly AcceptPreflightGroup[];
 }
 
 /** All native Record v1 failures before/while the formal publication runs. */
-export type AcceptNativeErrorV1 =
-  | ExplicitAdoptionOpenErrorV1;
+export type AcceptNativeError =
+  | ExplicitAdoptionOpenError;
 
-interface AcceptPreflightGroupV1 {
-  readonly target: CurrentAdoptionTargetV1;
-  readonly members: readonly ExplicitAdoptionMemberV1[];
-  readonly plan: ExplicitAdoptionRunPlanV1;
+interface AcceptPreflightGroup {
+  readonly target: CurrentAdoptionTarget;
+  readonly members: readonly ExplicitAdoptionMember[];
+  readonly plan: ExplicitAdoptionRunPlan;
 }
 
-interface AcceptSourceGroupV1 {
+interface AcceptSourceGroup {
   readonly experimentId: string;
-  readonly sources: readonly ResolvedAdoptionAttemptV1[];
+  readonly sources: readonly ResolvedAdoptionAttempt[];
 }
 
 function explicitError(
-  code: ExplicitAdoptionErrorV1["code"],
+  code: ExplicitAdoptionError["code"],
   message: string,
-): ExplicitAdoptionErrorV1 {
-  return new ExplicitAdoptionErrorV1(code, message);
+): ExplicitAdoptionError {
+  return new ExplicitAdoptionError(code, message);
 }
 
-function assertUniqueLocatorsV1(
+function assertUniqueLocators(
   locators: readonly string[],
-): Effect.Effect<void, ExplicitAdoptionErrorV1> {
+): Effect.Effect<void, ExplicitAdoptionError> {
   return Effect.sync(() => {
     const seen = new Set<string>();
     for (const locator of locators) {
@@ -144,10 +143,10 @@ function assertUniqueLocatorsV1(
   );
 }
 
-function groupAcceptSourcesV1(
-  sources: readonly ResolvedAdoptionAttemptV1[],
-): readonly AcceptSourceGroupV1[] {
-  const grouped = new Map<string, ResolvedAdoptionAttemptV1[]>();
+function groupAcceptSources(
+  sources: readonly ResolvedAdoptionAttempt[],
+): readonly AcceptSourceGroup[] {
+  const grouped = new Map<string, ResolvedAdoptionAttempt[]>();
   for (const source of sources) {
     const group = grouped.get(source.originExperimentId);
     if (group === undefined) {
@@ -167,32 +166,32 @@ function groupAcceptSourcesV1(
  * supplies either a reader or the one write-session view; this keeps all
  * locators, source facts and target planning in one immutable Record view.
  */
-function prepareAcceptPreflightV1(input: {
-  readonly view: Parameters<typeof resolveExplicitAttemptLocatorV1>[0];
-  readonly project: AdoptionProjectV1;
+function prepareAcceptPreflight(input: {
+  readonly reader: Parameters<typeof resolveExplicitAttemptLocator>[0];
+  readonly project: AdoptionProject;
   readonly locators: readonly string[];
-  readonly startedAt: Parameters<typeof prepareCurrentAdoptionTargetV1>[0]["startedAt"];
+  readonly startedAt: Parameters<typeof prepareCurrentAdoptionTarget>[0]["startedAt"];
   readonly operatorReason?: string;
-}): Effect.Effect<AcceptPreflightV1, ExplicitAdoptionReadErrorV1> {
+}): Effect.Effect<AcceptPreflight, ExplicitAdoptionReadError> {
   return Effect.gen(function* () {
-    yield* assertUniqueLocatorsV1(input.locators);
+    yield* assertUniqueLocators(input.locators);
     const sources = yield* Effect.forEach(
       input.locators,
-      (locator) => resolveExplicitAttemptLocatorV1(input.view, locator),
+      (locator) => resolveExplicitAttemptLocator(input.reader, locator),
       { concurrency: 1 },
     );
     const groups = yield* Effect.forEach(
-      groupAcceptSourcesV1(sources),
+      groupAcceptSources(sources),
       (sourceGroup) => Effect.gen(function* () {
-        const target = yield* prepareCurrentAdoptionTargetV1({
+        const target = yield* prepareCurrentAdoptionTarget({
           project: input.project,
           experimentId: sourceGroup.experimentId,
           startedAt: input.startedAt,
         });
         const members = yield* Effect.forEach(
           sourceGroup.sources,
-          (source) => prepareExplicitAdoptionMemberV1({
-            view: input.view,
+          (source) => prepareExplicitAdoptionMember({
+            reader: input.reader,
             target,
             source,
             evalId: source.originEvalId,
@@ -203,7 +202,7 @@ function prepareAcceptPreflightV1(input: {
           }),
           { concurrency: 1 },
         );
-        const plan = yield* buildExplicitAdoptionRunPlanV1({
+        const plan = yield* buildExplicitAdoptionRunPlan({
           intent: "accept",
           target,
           members,
@@ -221,9 +220,9 @@ function prepareAcceptPreflightV1(input: {
   });
 }
 
-function projectAcceptPreviewV1(
-  preflight: AcceptPreflightV1,
-): readonly AcceptedAttemptPreviewV1[] {
+function projectAcceptPreview(
+  preflight: AcceptPreflight,
+): readonly AcceptedAttemptPreview[] {
   return Object.freeze(preflight.groups.flatMap((group) =>
     group.members.map((member) => Object.freeze({
       locator: member.locator,
@@ -235,12 +234,12 @@ function projectAcceptPreviewV1(
     }))));
 }
 
-function receiptsForAcceptV1(input: {
+function receiptsForAccept(input: {
   readonly invocationId: string;
   readonly locators: readonly string[];
-  readonly preflight: AcceptPreflightV1;
-  readonly receipts: readonly ExplicitAdoptionRunReceiptV1[];
-}): Effect.Effect<readonly AcceptedAttempt[], ExplicitAdoptionErrorV1> {
+  readonly preflight: AcceptPreflight;
+  readonly receipts: readonly ExplicitAdoptionRunReceipt[];
+}): Effect.Effect<readonly AcceptedAttempt[], ExplicitAdoptionError> {
   return Effect.gen(function* () {
     if (input.receipts.length !== input.preflight.groups.length) {
       return yield* Effect.fail(explicitError(
@@ -248,21 +247,53 @@ function receiptsForAcceptV1(input: {
         "Explicit adoption publication returned a receipt for an unexpected target Run set.",
       ));
     }
+    const receiptsByExperiment = new Map<string, ExplicitAdoptionRunReceipt>();
+    for (const receipt of input.receipts) {
+      if (receiptsByExperiment.has(receipt.experimentId)) {
+        return yield* Effect.fail(explicitError(
+          "adoption-provenance-invalid",
+          "Explicit adoption publication returned duplicate target-Experiment receipts.",
+        ));
+      }
+      receiptsByExperiment.set(receipt.experimentId, receipt);
+    }
     const byLocator = new Map<string, AcceptedAttempt>();
-    for (const [groupIndex, group] of input.preflight.groups.entries()) {
-      const receipt = input.receipts[groupIndex];
+    for (const group of input.preflight.groups) {
+      const receipt = receiptsByExperiment.get(group.target.experimentId);
       if (receipt === undefined || receipt.members.length !== group.members.length) {
         return yield* Effect.fail(explicitError(
           "adoption-provenance-invalid",
           "Explicit adoption publication returned incomplete Member receipts.",
         ));
       }
-      for (const [memberIndex, member] of group.members.entries()) {
-        const memberReceipt = receipt.members[memberIndex];
-        if (memberReceipt === undefined) {
+      const membersByLocator = new Map<string, ExplicitAdoptionRunReceipt["members"][number]>();
+      for (const memberReceipt of receipt.members) {
+        if (membersByLocator.has(memberReceipt.locator)) {
           return yield* Effect.fail(explicitError(
             "adoption-provenance-invalid",
-            "Explicit adoption publication omitted an accepted Member receipt.",
+            "Explicit adoption publication returned duplicate Member receipt locators.",
+          ));
+        }
+        membersByLocator.set(memberReceipt.locator, memberReceipt);
+      }
+      for (const member of group.members) {
+        const memberReceipt = membersByLocator.get(member.locator);
+        if (
+          memberReceipt === undefined ||
+          memberReceipt.locator !== member.locator ||
+          memberReceipt.slotId !== member.target.slotId ||
+          memberReceipt.sourceRunId !== member.source.origin.runId ||
+          memberReceipt.attemptId !== member.source.attempt.attemptId
+        ) {
+          return yield* Effect.fail(explicitError(
+            "adoption-provenance-invalid",
+            "Explicit adoption publication returned a Member receipt with mismatched identity provenance.",
+          ));
+        }
+        if (byLocator.has(member.locator)) {
+          return yield* Effect.fail(explicitError(
+            "adoption-provenance-invalid",
+            "Explicit adoption publication reused one locator across target Members.",
           ));
         }
         byLocator.set(member.locator, Object.freeze({
@@ -273,6 +304,12 @@ function receiptsForAcceptV1(input: {
           sourceLocator: member.locator,
           fingerprint: member.target.inputIdentity.value,
         }));
+      }
+      if (membersByLocator.size !== group.members.length) {
+        return yield* Effect.fail(explicitError(
+          "adoption-provenance-invalid",
+          "Explicit adoption publication returned an unexpected Member receipt.",
+        ));
       }
     }
     const ordered: AcceptedAttempt[] = [];
@@ -290,7 +327,7 @@ function receiptsForAcceptV1(input: {
   });
 }
 
-function projectInputV1(input: AcceptLocatorsOptions): AdoptionProjectInputV1 {
+function projectInput(input: AcceptLocatorsOptions): AdoptionProjectInput {
   return {
     cwd: input.cwd,
     ...(input.config === undefined ? {} : { config: input.config }),
@@ -306,17 +343,17 @@ function projectInputV1(input: AcceptLocatorsOptions): AdoptionProjectInputV1 {
  * Effect-native, reader-only acceptance planning. It opens only the shared
  * reader lease and creates neither a writer lock nor a Run.
  */
-export function planAcceptLocatorsV1(
+export function planAcceptLocators(
   input: AcceptLocatorsOptions,
 ) {
   return Effect.gen(function* () {
-    const root = yield* adoptionRecordRootV1(input);
-    const startedAt = yield* adoptionStartedAtV1(input.now);
-    const project = yield* loadAdoptionProjectV1(projectInputV1(input));
-    const preflight = yield* withAdoptionReaderV1({
+    const root = yield* adoptionRecordRoot(input);
+    const startedAt = yield* adoptionStartedAt(input.now);
+    const project = yield* loadAdoptionProject(projectInput(input));
+    const preflight = yield* withAdoptionReader({
       root,
-      use: (view) => prepareAcceptPreflightV1({
-        view,
+      use: (reader) => prepareAcceptPreflight({
+        reader,
         project,
         locators: input.locators,
         startedAt,
@@ -325,27 +362,27 @@ export function planAcceptLocatorsV1(
           : { operatorReason: input.operatorReason }),
       }),
     });
-    return projectAcceptPreviewV1(preflight);
+    return projectAcceptPreview(preflight);
   });
 }
 
 /**
  * Effect-native formal acceptance. A reader preflight happens first; then one
- * scoped RecordWriteSession freezes a second view, repeats the entire
- * preflight, and only then publishes reference-only target Runs.
+ * scoped Host read session repeats the entire preflight and publishes
+ * reference-only target Runs through createReferenceRun.
  */
-export function acceptLocatorsV1(
+export function acceptLocators(
   input: AcceptLocatorsOptions,
 ) {
   return Effect.gen(function* () {
-    const root = yield* adoptionRecordRootV1(input);
-    const startedAt = yield* adoptionStartedAtV1(input.now);
-    const projectInput = projectInputV1(input);
-    const previewProject = yield* loadAdoptionProjectV1(projectInput);
-    yield* withAdoptionReaderV1({
+    const root = yield* adoptionRecordRoot(input);
+    const startedAt = yield* adoptionStartedAt(input.now);
+    const resolvedProjectInput = projectInput(input);
+    const previewProject = yield* loadAdoptionProject(resolvedProjectInput);
+    yield* withAdoptionReader({
       root,
-      use: (view) => prepareAcceptPreflightV1({
-        view,
+      use: (reader) => prepareAcceptPreflight({
+        reader,
         project: previewProject,
         locators: input.locators,
         startedAt,
@@ -355,15 +392,15 @@ export function acceptLocatorsV1(
       }),
     });
 
-    const invocationId = yield* createExplicitAdoptionInvocationIdV1();
-    return yield* withAdoptionWriteSessionV1({
+    const invocationId = yield* createExplicitAdoptionInvocationId();
+    return yield* withAdoptionCommitScope({
       root,
-      use: (session) => Effect.gen(function* () {
+      use: (reader) => Effect.gen(function* () {
         // Discovery and target planning are deliberately refreshed while the
-        // writer lock owns this frozen Record view.
-        const project = yield* loadAdoptionProjectV1(projectInput);
-        const preflight = yield* prepareAcceptPreflightV1({
-          view: session.view,
+        // Host reader keeps SelectedAttemptRefs live for the reference write.
+        const project = yield* loadAdoptionProject(resolvedProjectInput);
+        const preflight = yield* prepareAcceptPreflight({
+          reader,
           project,
           locators: input.locators,
           startedAt,
@@ -371,11 +408,12 @@ export function acceptLocatorsV1(
             ? {}
             : { operatorReason: input.operatorReason }),
         });
-        const receipts = yield* commitExplicitAdoptionRunPlansV1(
-          session,
+        const receipts = yield* commitExplicitAdoptionRunPlans(
+          reader,
+          root,
           preflight.groups.map((group) => group.plan),
-        ).pipe(Effect.mapError(mapExplicitAdoptionCommitFailureV1));
-        return yield* receiptsForAcceptV1({
+        );
+        return yield* receiptsForAccept({
           invocationId,
           locators: input.locators,
           preflight,
@@ -387,8 +425,8 @@ export function acceptLocatorsV1(
 }
 
 /** One-item native convenience without reconstructing a legacy result object. */
-export function acceptLocatorV1(input: AcceptLocatorOptions) {
-  return acceptLocatorsV1({ ...input, locators: [input.locator] }).pipe(
+export function acceptLocator(input: AcceptLocatorOptions) {
+  return acceptLocators({ ...input, locators: [input.locator] }).pipe(
     Effect.flatMap((receipts) => {
       const [receipt] = receipts;
       return receipt === undefined
@@ -399,45 +437,4 @@ export function acceptLocatorV1(input: AcceptLocatorOptions) {
         : Effect.succeed(receipt);
     }),
   );
-}
-
-function acceptCompatibilityCode(error: ExplicitAdoptionErrorV1): AcceptFailureCode {
-  switch (error.code) {
-    case "adoption-locator-malformed":
-      return "malformed-locator";
-    case "adoption-locator-not-found":
-    case "adoption-locator-ambiguous":
-      return "locator-not-found";
-    case "adoption-batch-locator-duplicate":
-    case "adoption-target-member-duplicate":
-      return "duplicate-accept-member";
-    case "adoption-target-planning-failed":
-    case "adoption-target-experiment-not-found":
-      return "planning-failed";
-    case "adoption-source-verdict-ineligible":
-    case "adoption-source-eligibility-unavailable":
-    case "adoption-source-verdict-unavailable":
-    case "adoption-duration-domain-mismatch":
-    case "adoption-timeout-exceeded":
-      return "accept-ineligible";
-    default:
-      return "batch-mismatch";
-  }
-}
-
-function withAcceptCompatibility<A, E, R>(effect: Effect.Effect<A, E, R>) {
-  return effect.pipe(
-    Effect.mapError((error) => error instanceof ExplicitAdoptionErrorV1
-      ? new AcceptError(acceptCompatibilityCode(error), error.message)
-      : error),
-  );
-}
-
-/** Current CLI compatibility adapter; it is intentionally the outermost layer. */
-export function acceptLocators(input: AcceptLocatorsOptions) {
-  return withAcceptCompatibility(acceptLocatorsV1(input));
-}
-
-export function acceptLocator(input: AcceptLocatorOptions) {
-  return withAcceptCompatibility(acceptLocatorV1(input));
 }

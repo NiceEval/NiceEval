@@ -88,7 +88,7 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
         ".niceeval/record",
       ]);
       expect(shownRun.exitCode, shownRun.diagnostic()).toBe(0);
-      expect(shownRun.stdout).toContain("Sample: 1 run(s), 1 slot(s)");
+      expect(shownRun.stdout).toContain("Sample: 1 included / 1 slot(s) · 1 selected");
 
       const shownAttempt = await niceeval.run([
         "show",

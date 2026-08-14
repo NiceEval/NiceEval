@@ -24,8 +24,12 @@ membership：`a` 成为 `included` 的 origin，`b` 成为 `included` 的 refere
 expected Slot 是 `not-recorded`；源 Attempt 缺失、引用身份不匹配或重复身份时是 `core-invalid`。
 Analysis 不回扫另一个 Run 寻找替代 Attempt。
 
-`project-current` 形成另一种 Selection：它只保留仍与当前目标身份匹配的 Slot。两种选择都只读 sealed
-Run，且不会因新 Run 封口或当前项目变化而修改已经签发的 Sample。
+`project-current` 形成另一种 Selection。CLI 把当前目标的 experiment/eval/Slot execution identity
+digest 交给 Analysis，后者只保留仍与这些 digest 匹配的 Slot。不匹配的 Slot 成为
+`excluded` / `identity-mismatch`。它们仍留在 coverage 里，但不再进入 selected 分母。
+
+两种选择都只读 sealed Run。已经签发的 Sample 不会因新 Run 封口或当前项目变化而改写。显式
+`--run` 不走这道当前 identity 收窄。
 
 ## coverage 与收窄
 

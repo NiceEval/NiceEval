@@ -37,6 +37,10 @@ export async function proveSdkConverterOwner(options: {
   experimentId: string;
   evalId: string;
   caseName: string;
+  source: {
+    file: string;
+    content: string;
+  };
   executionMarkers: readonly string[];
 }): Promise<void> {
   await sdkConverterE2E.case(
@@ -78,11 +82,14 @@ export async function proveSdkConverterOwner(options: {
       expect(selection.runIds, shown.diagnostic()).toEqual([receipt.runIds[0]!]);
       expect(shown.stdout, shown.diagnostic()).toContain('"included"');
 
-      // locator 驱动的公开读回：Attempt 的断言评估证据(含 Eval 内的工具/identity
-      // 断言)已经随 Run 落盘，并通过 `show @<locator> --source` 可公开读回。
+      // locator 驱动的公开 source 读回：本轮 Eval 的 immutable source snapshot
+      // 必须标出 recorded source、source availability，并呈现指定源码片段。
       const source = await niceeval.run(["show", evalEvent!.locator, "--source"]);
       expect(source.exitCode, source.diagnostic()).toBe(0);
-      expect(source.stdout).toContain("Assertions: available");
+      expect(source.stdout).toContain(`Recorded source: ${options.source.file}`);
+      expect(source.stdout).toContain("Sources");
+      expect(source.stdout).toContain("available");
+      expect(source.stdout).toContain(options.source.content);
 
       // 同一 Attempt 仍带 runner 自己记录的实际阶段 timing。只读公开页面，既不
       // 新跑 Experiment，也不把 timing 反过来当作协议事件的判分依据。这些 direct

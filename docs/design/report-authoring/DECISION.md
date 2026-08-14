@@ -77,13 +77,12 @@ PLAN-7 保留 PLAN-6 的 Analysis fields、MetricValue、stable identity 与 onc
 fingerprint、Sample identity、selection 与 host version。若产品要求不信任作者时仍机械确定，应新增 restricted declaration /
 isolate，而不是削弱普通 callback。
 
-## 契约落点
+## 当前契约落点
 
-- 三层总纲：[Capture → Analysis → Report](../../roadmap/record-analysis-report/README.md)。
-- Capture、Analysis 与 Report API：[Library](../../roadmap/record-analysis-report/library.md)。
-- 角色与扩展边界：[Authoring](../../roadmap/record-analysis-report/authoring.md)。
-- 执行与 cache：[Architecture](../../roadmap/record-analysis-report/architecture.md)。
-- 端到端语法：[Use Case](../../roadmap/record-analysis-report/use-case/README.md)。
+- 三层总纲：[Record → Analysis → Report](../../feature/record-report/README.md)。
+- 统计口径与闭合值：[Analysis Library](../../feature/analysis/library.md)。
+- Report 作者 API：[Report Library](../../feature/reports/library.md)。
+- 执行与闭合边界：[Report Architecture](../../feature/reports/architecture.md)。
 
 ## 风险与明确牺牲
 

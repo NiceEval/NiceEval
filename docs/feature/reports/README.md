@@ -8,11 +8,10 @@ Sample
   ▼
 closed rows / domain views / MetricValue
   │
-  ├─ neutral components
-  │  Table / Bars / Line / Scatter / Stat
-  │
-  └─ domain components
-     AttemptDetails / TraceViewer / Conversation / DiffView
+  ├─ rows → Table
+  ├─ points → Bars / Line / Scatter
+  ├─ MetricValue → Stat
+  └─ closed domain view → compose component or dual-face primitive
   │
   ▼
 defineReport({ pages })
@@ -26,7 +25,11 @@ ClosedReportTree
 
 ## 作者心智
 
-Report 作者不读取 Record、不定义总体或分母，也不接触迁移、文件路径或 Analysis executor。Page 与复合组件在执行期间拿到受限 Sample；它们调用 aggregate() 或 query()，得到 rows、MetricValue 和领域视图等闭合值。
+Report 作者不读取 Record、不定义总体或分母，也不接触迁移、文件路径或 Analysis executor。Page 与复合组件在执行期间拿到受限 Sample；它们先调用 aggregate() 或 query()，再把 rows、MetricValue 和领域视图等闭合值交给组件。
+
+`niceeval/report` 是作者 API。`niceeval/report/host` 是公开、受支持的高级 Host composition SDK，供 CLI、替代
+CLI / Web host 或深度应用集成执行、呈现、提供 view 和导出闭合 Report。普通 Report 作者不导入 Host entry，
+也不会取得 Record reader、loader、watcher 或 renderer。
 
 defineReport({ pages }) 是唯一的报告定义入口。普通 Page 使用 load? 和 render；需要一组详情地址的 Page 使用 params、load 和 render。params.enumerate(sample) 是静态导出的完整实例清单，不会在浏览器地址栏临时制造另一份数据读取。
 
@@ -63,15 +66,16 @@ const ModelComparison = defineComponent(async (_props, { sample }) => {
 | Table | rows | 否 |
 | Bars / Line / Scatter | points | 否 |
 | Stat | MetricValue | 否 |
-| Grid / Stack / Callout | children 或 items | 否 |
-| Conversation | turns | 只理解闭合会话形状 |
-| Waterfall | nodes | 只理解闭合时序形状 |
-| SourceView | source view | 只理解闭合源码形状 |
-| DiffView | files | 只理解闭合文件差异 |
-| TraceViewer | trace | 是；只接收闭合 TraceView |
-| AttemptDetails | evidence | 是；只接收闭合 AttemptEvidence |
+| Grid / Stack / Callout | children | 否 |
+| 复合组件 | 已闭合 rows、MetricValue 或领域视图 | 只读取作者显式传入的闭合值 |
+| 双面原语 | 求值后的闭合值 | text 与 web 同步读取同一个值 |
 
-中立组件不知道数据来自 aggregate()、query()、业务数组还是外部服务。领域组件可以理解 NiceEval 身份，但不得接收 reader、文件路径、惰性 callback、Promise、Stream 或任何未关闭的 Analysis capability。
+中立组件不知道数据来自 aggregate()、query()、业务数组还是外部服务。它们不接收、也不依赖 Analysis 的查询外层对象：表格只读 rows，图形只读 points，Stat 只读完整 MetricValue。需要解释领域视图时，作者用 defineComponent() 先把它转成同一组语义节点；组件不得接收 reader、文件路径、惰性 callback、Promise、Stream 或未关闭的 Analysis capability。
+
+内建 Attempt overview 也遵守这条规则：它只请求闭合的 Attempt Evidence 与 Attempt Observability，按 canonical
+locator 显式对齐。Evidence 显示 Core outcome、由权威 fold 得到的 Verdict 和 Assertions；`AttemptTrace` 显示
+Observability 的 command、diagnostic 和其公开文本。缺 entry 或 duplicate locator 作为对齐状态显示，不能按
+数组位置配对。Report 不读取 Record，也不重算 Verdict。
 
 ## MetricValue
 
@@ -92,16 +96,18 @@ defineReport({
       title: "Attempt",
       navigation: false,
       params: attemptParams,
-      load: (_sample, params, context) => context.evidence(params.locator),
-      render: attempt => <AttemptDetails attempt={attempt} />,
+      load: async (_sample, params, context) => await context.evidence(params.locator),
+      render: evidence => <EvidenceSummary evidence={evidence} />,
     },
   ],
 });
 ```
 
+`EvidenceSummary` 是作者用 `defineComponent()` 定义的组件；它只接收 `context.evidence()` 已关闭的值。
+
 show 未指定 --page 时执行全部普通页面；指定 route 时只执行目标 Page instance。view 同样只为被打开的 route 执行实例。静态导出必须调用每个参数化 Page 的 enumerate(sample)，再闭合全部普通页面和全部列出的实例。
 
-一个 Page instance 的 load、render、复合组件和原语 `resolve()` 在同一份 ReportExecution 中最多执行一次。执行结束后只留下 ClosedReportTree；Sample、reader、Promise、callback 和字段执行器不会进入 renderer。
+一个 Page instance 的 load、render、复合组件和原语 `resolve()` 在同一份 ReportExecution 中最多执行一次。`context.evidence(locator)` 异步走同一条 Analysis DomainView 请求，只惰性读取属于当前 Sample 的那个 Attempt，并返回闭合 Evidence。执行结束后只留下 ClosedReportTree；Sample、reader、Promise、callback 和字段执行器不会进入 renderer。
 
 ## 范围
 

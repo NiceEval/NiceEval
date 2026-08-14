@@ -2,12 +2,11 @@
 
 ## 裁决
 
-为 [Capture → Analysis → Report Roadmap](../../roadmap/record-analysis-report/README.md) 采纳
+旧统一 Runtime 方案曾采纳
 [PLAN-2](PLAN-2/README.md)：一个 canonical Record root 由同一个 `RecordAccessRuntime` 管理，并向 host mint
 snapshot、invocation 与 maintenance facets。
 
-这是 Roadmap 目标的选型裁决。该方向被产品采用前，[Record Feature](../../feature/record/README.md) 仍是唯一当前
-契约；Design Decision 不自行替换 Feature。
+这是被独立 Record Host 与 Coordination SDK 取代的历史选型裁决，不构成当前公共 API。
 
 ## 为什么选择 PLAN-2
 
@@ -23,8 +22,8 @@ snapshot、invocation 与 maintenance facets。
 authority、generation allocator 或 verified material。调用者若自行拼接多个 open，就会重新承担 cache identity、
 锁顺序与 fresh snapshot 的协调责任。
 
-## 契约落点
+## 当前契约落点
 
-- 三种 facets、锁与 cache：[Roadmap Library](../../roadmap/record-analysis-report/library.md)。
-- Invocation→Report 时序：[Roadmap Lifecycle](../../roadmap/record-analysis-report/lifecycle.md)。
-- 领域事实写入边界：[Capture → Analysis → Report](../../roadmap/record-analysis-report/architecture.md)。
+- Record Host、惰性读取与写会话：[Record Library](../../feature/record/library.md)。
+- lease 与并行调度边界：[三层总览](../../feature/record-report/README.md)。
+- durable layout 与提交点：[Record Architecture](../../feature/record/architecture.md)。

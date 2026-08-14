@@ -1,45 +1,51 @@
+/**
+ * The Report author entry contains only direct Pages and semantic component
+ * constructors. Record projections, calculations, legacy execution-bound components, and
+ * legacy Page factories intentionally do not cross this boundary.
+ */
 export {
-  reportComponentId,
-  reportDownloadPath,
-  reportId,
-  reportInstanceKey,
-  reportInstanceKeyFromRecordId,
-  reportRoute,
-  reportRouteFromKeys,
-} from "./identity.ts";
-
-export type {
-  ReportComponentId,
-  ReportDownloadPath,
-  ReportId,
-  ReportInstanceKey,
-  ReportPathIssue,
-  ReportRoute,
-} from "./identity.ts";
-
-export {
-  defineCalculation,
-  defineDownload,
-  definePage,
-  definePageFamily,
   defineReport,
-  reportInputs,
-} from "./model.ts";
+} from "../definition.ts";
 
 export type {
-  AnyReportCalculation,
+  PageDefinition,
+  PageEvidence,
+  PageLoad,
+  PageLoadContext,
+  PageParams,
+  PageRender,
+  EvidenceLocator,
+  ParameterizedPageDefinition,
+  PlainPageDefinition,
   Report,
-  ReportCalculation,
-  ReportCalculationResults,
-  ReportCalculationSet,
-  ReportCompleteness,
-  ReportComponentContext,
-  ReportDataPlan,
-  ReportDataShape,
-  ReportDataState,
-  ReportDownload,
-  ReportDownloadFile,
-  ReportPage,
-  ReportPageFamily,
-  ReportProjectedValues,
-} from "./model.ts";
+  ReportDefinition,
+} from "../definition.ts";
+
+export {
+  Bars,
+  Callout,
+  defineComponent,
+  Download,
+  Grid,
+  Line,
+  Scatter,
+  Stack,
+  Stat,
+  Table,
+  Text,
+} from "../components.ts";
+
+export type {
+  ChartAxisKey,
+  ChartDimensionKey,
+  ChartProps,
+  ComponentFaces,
+  ComposeContext,
+  DownloadFile,
+  PageContext,
+  ReportComponent,
+  ResolveContext,
+  TableColumn,
+  TextContext,
+  WebContext,
+} from "../components.ts";

@@ -4,7 +4,7 @@ sidebarTitle: "Reporter 上报"
 description: "使用 Reporter、JUnit 和 receipt 把当前 Invocation 的信息交给外部系统，同时保持 Record 的所有权边界。"
 ---
 
-Reporter 面向当前 Invocation。它可以把当前运行的结果发送到外部观察或分析系统，但它不拥有 Record，也不能替代 Record 的 reader、writer 或 RecordAttachment。
+Reporter 面向当前 Invocation。它可以把当前运行的结果发送到外部观察或分析系统，但它不拥有已发布结果，也不能替代之后的 `show`、`view` 或 Report。
 
 ```text
 当前 Invocation
@@ -13,8 +13,8 @@ Reporter 面向当前 Invocation。它可以把当前运行的结果发送到外
     ├─ --junit → CI 平台文件
     └─ receipt → invocationId 与 runIds
 
-停稳 Record
-    └─ Run、Member、Attempt 与业务 RecordAttachment
+已发布结果
+    └─ Run、Member、Attempt 与可查看的运行事实
 ```
 
 ## Reporter 适合什么
@@ -24,7 +24,7 @@ Reporter 面向当前 Invocation。它可以把当前运行的结果发送到外
 Reporter 不能：
 
 - 把外部系统的数据当作 Record 的业务值；
-- 用外部上报替代 Verdict、Usage、断言或诊断 Attachment；
+- 用外部上报替代 Verdict、用量、断言或诊断；
 - 让后续 `show`、`view` 或静态报告从外部系统取数；
 - 从外部系统把结果写回 Record。
 

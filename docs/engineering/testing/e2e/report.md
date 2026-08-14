@@ -2,7 +2,7 @@
 
 本域验证安装后的候选包完成 `exp → show / view / export` Journey。Record 目录是 CLI 产生的
 opaque 产品资产；测试不 import Record reader / writer，不扫描物理布局，也不复制 selection、
-decoder 或 projection runtime 作为第二套真相。
+decoder 或 Analysis / Report Host 实现作为第二套真相。
 
 它由 `e2e/report/` 承担，manifest repo ID 是 `report`。Repo 使用最小真实 Experiment 产生
 本轮结果，再只通过 CLI、HTTP、浏览器与 `niceeval/report` 作者 DSL 观察。
@@ -20,15 +20,16 @@ decoder 或 projection runtime 作为第二套真相。
 
 ### 2. Report 作者面
 
-- 自定义 Report 只从 `niceeval/report` 导入 Calculation、Page / PageFamily、Download、Theme、
-  官方 opaque projectors、projection declaration constructors 与必要的纯值类型。
+- 自定义 Report 只从 `niceeval/report` 导入 `defineReport({ pages })`、`defineComponent`、中立组件、
+  Download 与必要的纯值类型；它从 `niceeval/analysis` 导入已发布的定义、`aggregate()` 与 `query()`。
 - 作者不能 import `niceeval/record`、`niceeval/report/host` 或 host/node。
-  作者也看不到 reader、root、Scope、Effect、path、raw family/value、owner lookup 或 direct projection runtime。
-- `attemptSlotProjection`、`attemptOriginRunProjection` 与 `selectedRunProjection` 保持 Sample
-  对齐；PageFamily 只能从已经投影或计算的内存值展开 route。
-- `allow-partial` 保留可用结果和具名问题；`require-complete` 形成 data-unavailable。
-- 同一个 projection、Calculation、Page instance、PageFamily 与 Download 在一次 execution 中
-  最多执行一次；页面返回 closed semantic document。
+  作者也看不到 reader、root、Scope、Effect、path、raw family value、owner lookup 或查询执行器。
+- Page 与组件只拿 Host-issued Sample，调用 `aggregate()` / `query()` 后消费 `ClosedRows`、
+  `SemanticFrame`、`DomainView` 与完整 `MetricValue`。它们不能读取或构造持久事实。
+- 参数化 Page 必须同时定义 `params.encode`、`params.decode`、`params.enumerate`、load 和 render。
+  详情 route 从同一个规范 key 形成；静态导出只使用 enumerate 列出的实例。
+- 同一个 Page instance 的 load、render、复合组件、原语 `resolve` 与 Download 在一次 execution 中
+  最多执行一次；页面返回闭合语义文档。
 
 ### 3. show、view 与机器出口
 

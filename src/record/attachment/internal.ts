@@ -3,24 +3,17 @@
  * module. It is deliberately not re-exported by `attachment/index.ts`.
  */
 export {
-  defineBuiltinJsonRecordAttachment,
-  defineRecordAttachmentRegistry,
-  isJsonRecordAttachmentDefinition,
-  isRecordAttachmentFamily,
-  isRecordAttachmentRegistry,
-  isRecordAttachmentValue,
-  makeRecordAttachmentValue,
+  isRecordBlobRef,
+  makeFixedAttachmentWriteSpec,
+  makeFixedRecordAttachmentWrite,
+  makeFixedRecordAttachmentValue,
   makeRecordBlobRef,
-  recordAttachmentFamilyCurrentDefinition,
-  recordAttachmentFamilyOwner,
-  recordAttachmentRegistryFamily,
-  recordAttachmentValueDefinition,
   recordAttachmentWriteContents,
-  resolveRecordAttachmentMigration,
-  runRecordAttachmentMigration,
 } from "./runtime.ts";
 
 export type {
-  RecordAttachmentMaterializedBlob,
+  FixedMaterializedAttachment,
   RecordAttachmentWriteContents,
 } from "./runtime.ts";
+
+export type { RecordAttachmentMaterializedBlob } from "./types.ts";

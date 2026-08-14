@@ -116,7 +116,6 @@ export interface AssertFirstContextDeps {
   readonly telemetry?: import("../types.ts").Telemetry;
   readonly otel?: import("../o11y/otlp/turn-otel.ts").AgentOtelChannel;
   readonly feedback?: import("../types.ts").ScopedFeedback;
-  readonly fact?: (key: string, value: string | number | boolean) => void;
   readonly onSendActive?: (active: boolean) => void;
   readonly ledgerHooks?: import("./session.ts").SessionDeps["ledgerHooks"];
   readonly timingNow?: import("./session.ts").SessionDeps["timingNow"];
@@ -1518,7 +1517,6 @@ export function createAssertFirstEvalContext(
     telemetry: deps.telemetry,
     otel: deps.otel,
     feedback: deps.feedback,
-    fact: deps.fact,
     onSendActive: deps.onSendActive,
     timingNow: deps.timingNow,
     onTurn: deps.onTurn,

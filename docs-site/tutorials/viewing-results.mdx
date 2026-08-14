@@ -4,60 +4,92 @@ sidebarTitle: "Viewing Results"
 description: "Use show or view to select a Sample from published Records and inspect a fixed ReportExecution."
 ---
 
-After a run finishes, `show` presents results in the terminal and `view` presents them locally in a browser.
-Both commands read the `.niceeval/record` written by `exp` by default, so you do not need `--record`.
-They use the same data path:
+After a run finishes, start with these two commands. Both read results published by `exp` by default, so you do not need `--record`:
 
-```text
-opaque Record + CLI selector
-                  ↓ internal host
-             AnalysisSample
-                  ↓
-       official opaque projector
-                  ↓
-           ProjectedSample → ReportExecution
-                            ↙         ↘
-                          show        view
+```sh
+npx niceeval show  # View every matching result for the current project in the terminal
+npx niceeval view  # View the same results in a browser
 ```
 
-A Sample determines the comparison scope and denominator.
-A projector interprets one RecordAttachment for one explicit owner.
-A Report organizes projected values into one immutable `ReportExecution` and does not read files directly.
+`show` and `view` read the same published results; they differ only in where they present them. Use `--run` when you need to specify a Run. See [the evaluation and reporting path](/explanation/overview) to understand how Record, Sample, and Report organize data.
 
 ## Select Runs to inspect
 
 Select one explicit Run:
 
 ```sh
-npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
+npx niceeval show --run 7b8d2ea4-b840-4870-9840-f85a436a5527
 ```
 
-To view every result that still matches the current project's source and configuration, run `show` directly.
-`--experiment` narrows the current-project target by a complete ID:
+For a normal run, read the Run ID from the final `receipt` in `exp --json`. TTY completion feedback shows the same ID:
+
+```json
+{"type":"receipt","receipt":{"invocationId":"11c8fc15-8a9b-49a0-bb93-68205b52ffab","runIds":["7b8d2ea4-b840-4870-9840-f85a436a5527"],"startedAt":"2026-08-14T10:00:00.000Z","completedAt":"2026-08-14T10:01:00.000Z","completion":"completed"}}
+```
+
+`accept` shows the newly created Run ID and the unchanged Attempt locator in its success feedback. That feedback is for an operator to copy, not a JSON receipt or stable regular-expression interface.
+
+To view every result that still matches the current project's source and configuration, run `show` directly. `--experiment` narrows the current-project target by complete ID:
 
 ```sh
 npx niceeval show --experiment checkout
 ```
 
-Without a locator or `--run`, the command uses `project-current`.
-It scans every published Run and keeps every slot whose Experiment, Eval, attempt ordinal, evaluation kind, input identity, and config identity still match the current project.
-It does not choose one Run by time.
-After source or configuration changes, stale results leave the current Sample but are not deleted.
-Use a complete `--run` ID to audit those historical results.
+Without a locator or `--run`, the command uses `project-current`. It scans every published Run and keeps all results whose identities still match. It does not keep only the most recent Run. After source or configuration changes, stale results leave the current Sample but are not deleted. Use a complete `--run` ID to inspect them.
 
 ## Inspect results in the terminal
 
-`show` renders the default Report as text.
-Supplying a page or custom Report still creates one execution from the same selection.
+`show` presents the default Report as text. An explicit `--run` uses the built-in `run-membership-overview` by default. Current-project results without a selector use the configured Report, or the generic overview when none is configured. Supplying a Page or custom Report still builds one execution from the same selection.
 
 ```sh
 npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --page /
 npx niceeval show --experiment checkout --json
 ```
 
-`--json` emits the `niceeval.report-show/v1` document for the same execution.
-It includes pages, calculations, projection summaries, and problems.
-It does not create another data path.
+`--json` emits pages, Measure results, and problems from that same execution. It does not create another data path.
+
+Here is terminal output for a manually accepted result. `reference` means this Run refers to the source Attempt. `accepted` means this Run's membership provenance recorded a manual acceptance:
+
+```text
+Report run-membership-overview
+Sample: 1 run(s), 1 slot(s)
+
+Page /
+  Run membership overview
+  Run membership
+  Run | Slot | Slot state | Member relation | Source Attempt | Membership state | Membership outcome | Verdict state | Verdict
+  7b8d2ea4-b840-4870-9840-f85a436a5527 | slot-00b400bd-ba81-4850-8803-09ba802896e5 | included | reference | @91ddc61b-ae96-4a23-8578-ddc1b83306dc | available | accepted | available | passed
+  [neutral] Omitted rows: 0
+  [neutral] Unmatched membership actions: 0
+
+Problems
+  none
+```
+
+With `--json` on the same command, the related row uses stable keys:
+
+```json
+{
+  "memberRelation": "reference",
+  "membershipOutcome": "accepted",
+  "membershipState": "available",
+  "runId": "7b8d2ea4-b840-4870-9840-f85a436a5527",
+  "slotId": "slot-00b400bd-ba81-4850-8803-09ba802896e5",
+  "slotState": "included",
+  "sourceAttemptLocator": "@91ddc61b-ae96-4a23-8578-ddc1b83306dc",
+  "verdict": "passed",
+  "verdictState": "available"
+}
+```
+
+A Run answers how a result entered this run. An Attempt answers what that result recorded. Continue through the locator to inspect the same immutable Attempt:
+
+```sh
+npx niceeval show @91ddc61b-ae96-4a23-8578-ddc1b83306dc
+npx niceeval show @91ddc61b-ae96-4a23-8578-ddc1b83306dc --execution
+```
+
+The first command shows Attempt identity, Verdict, Assertions, and Score. The second shows execution evidence. Neither rewrites the source Attempt or treats the adopting Run's provenance as Attempt facts.
 
 ## Inspect results in the browser
 
@@ -65,43 +97,30 @@ It does not create another data path.
 npx niceeval view --experiment checkout --no-open
 ```
 
-Each successful `view` rebuild creates a new fixed `ReportExecution` and replaces the revision on screen.
-Changes to the Report, configuration, theme, or Record trigger the next rebuild.
-A failed rebuild keeps the last-good execution and shows the problem.
+Every successful `view` rebuild constructs a new fixed `ReportExecution`, then replaces the version on screen. Changes to the Report, configuration, theme, or published results trigger the next rebuild. A failed rebuild keeps the previous usable execution and shows that rebuild's problem.
 
-Opening, navigating, or refreshing a page does not reread the Record behind a fixed execution.
-To see a newly published Run, let `view` finish a rebuild or run the command again.
-Pass `--record <root>` only when you explicitly need to read another Record root.
+Opening, navigating, or refreshing a page does not let a fixed execution reread results. To see a newly published Run, let `view` finish its next rebuild or run the command again. Pass `--record <root>` only when you need to read another result set.
 
-## Read denominators and Attachment states
+## Understand denominators and analysis states
 
-An explicit `--run` Sample preserves each named Run's complete expected-slot denominator; `project-current` first materializes only slots whose identities still match the current target.
-Within the framework established by selection, each slot can be:
+A `--run` Sample preserves the complete expected-slot denominator of each named Run. `project-current` includes only slots whose identities still match the current target. Within the framework established by selection, a position can be:
 
 | State | Meaning |
 | --- | --- |
-| `included` | It has a valid Member and readable Attempt. |
-| `not-recorded` | A planned slot has no Member. |
-| `core-invalid` | The Member, Attempt, or core reference cannot be read reliably. |
-| `excluded` | This selection excluded it. |
+| `included` | An analyzable Attempt exists. |
+| `not-recorded` | A planned position has no result. |
+| `core-invalid` | The position's identity or reference cannot be read reliably. |
+| `excluded` | This selection excluded the position. |
 
-Pages and Calculations also show requested Attachment states.
-`unavailable` means the Attachment is absent.
-`migration-required` or `migration-unavailable` means historical schemas need attention.
-`unsupported` means the current feature does not recognize it.
-`invalid` means its envelope, payload, or blob is invalid.
+Pages also show states from Measures and domain views. `partial` means only some members contributed. `unsupported` means the current environment cannot support the required input. `failed` means reading, joining, or aggregation failed. Run `niceeval migrate` before viewing historical results that need migration.
 
-These data states do not silently shrink the Sample denominator after selection.
-An unrequested bad Attachment does not affect an unrelated page.
-Each Calculation defines its own business `observed` and `denominator`; it cannot infer them from Attachment counts.
+These data states do not silently shrink the Sample denominator after selection. A result problem outside an input a page uses does not affect that page. Each Measure defines its own business denominator; it cannot infer it from the number of results read.
 
 ## Record publication boundary
 
-A Record stores published facts only.
-Published Runs are immutable. Run a new Invocation to create a different result.
+A Record stores published facts only. Published Runs are immutable. Run a new Invocation to create a different result.
 
-A directory without `complete` does not belong to a Sample.
-The reader freezes the visible set of published Runs, so a Run completed afterward appears only after reopening the reader.
+Results that are not fully published do not enter a Sample. A selection fixes the set of visible published Runs. A later-completed Run appears only after you run the viewing command again or `view` finishes another rebuild.
 
 ## Next steps
 

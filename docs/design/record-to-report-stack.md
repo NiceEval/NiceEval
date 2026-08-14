@@ -1,7 +1,7 @@
 # Capture → Analysis → Report 设计地图
 
-这是一张跨决策地图，不是新的产品层。已经定稿的公共契约见
-[Capture → Analysis → Report Roadmap](../roadmap/record-analysis-report/README.md)；本页只说明公共三层怎样落到内部 seam。
+这是一张跨决策历史地图，不是新的产品层。当前公共契约见
+[Record → Analysis → Report](../feature/record-report/README.md)；本页只保存形成该边界时比较过的 seam。
 
 ## 对外只有三层
 

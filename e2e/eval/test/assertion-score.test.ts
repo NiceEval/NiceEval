@@ -69,10 +69,12 @@ test("计分 Eval 公开区分 scored、stopped 与 skipped", async () => {
       expect(run.ndjson<ExpEvent>().filter((event) => event.verdict === "failed")).toEqual([]);
       const document = shown.json<{
         sample: { denominator: number };
-        problemTable: readonly unknown[];
+        tree: { pages: readonly { pageId: string; problemIds: readonly number[] }[] };
       }>();
       expect(document.sample.denominator).toBe(8);
-      expect(document.problemTable).toEqual([]);
+      expect(document.tree.pages).toEqual([
+        expect.objectContaining({ pageId: "overview", problemIds: [] }),
+      ]);
     },
   );
 });

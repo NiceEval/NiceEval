@@ -35,6 +35,21 @@ test("show --execution 呈现本轮 conversation 与工具入参", async () => {
       expect(shown.stdout).toContain("report-execution-sentinel-914");
       expect(shown.stdout).toMatch(/\bconversation\b/i);
       expect(shown.stdout).toMatch(/\bcompleted\b/i);
+      expect(shown.stdout).toContain("Trace overview");
+      expect(shown.stdout).toContain("Duration");
+      expect(shown.stdout).toContain("Turns");
+      expect(shown.stdout).toContain("Calls");
+
+      const filtered = await niceeval.run([
+        "show",
+        toolCall.locator!,
+        "--execution",
+        "--grep",
+        "report-execution-sentinel-914",
+      ]);
+      expect(filtered.exitCode, filtered.diagnostic()).toBe(0);
+      expect(filtered.stdout).toContain("Filter · /report-execution-sentinel-914/");
+      expect(filtered.stdout).toContain("report-execution-sentinel-914");
     },
   );
 });

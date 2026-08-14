@@ -91,8 +91,10 @@ Turn receiver 只读取该不可变 Turn。Session receiver 读取该 Session �
 
 ## 版本边界
 
-`ToolMatch`、scoped Assertion、Projection 与 Report 作者 API 都不用 `V1` 或 `V2` 后缀。未来的中高层 breaking change 通过包与 API 升级交付，不要求用户迁移 `.niceeval`。
+`ToolMatch`、scoped Assertion、Analysis 与 Report 作者 API 都不用 `V1` 或 `V2` 后缀。中高层 breaking
+change 通过包与 API 升级交付，不要求用户改写已封口的 Record。
 
-只有 `RecordAttachment` 的持久 schema、迁移边界或跨进程 wire codec 使用版本号。Assertions 的持久 payload 规则见 [Architecture](../architecture.md)。
+只有 `RecordAttachment` 的持久 schema 与跨进程 wire codec 使用版本号。当前 Record v1 是首个支持的
+形状；Assertions 的持久 payload 规则见 [Architecture](../architecture.md)。
 
 Sandbox 专属结果断言见 [断言 Sandbox 结果](../../sandbox/library/asserting-results.md)。

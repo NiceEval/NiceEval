@@ -1,52 +1,63 @@
 ---
 title: "Connect the Current Run to External Systems"
 sidebarTitle: "Reporter Integration"
-description: "Use a Reporter, JUnit, or process feedback to send information from one current Invocation to an external system."
+description: "Use a Reporter, JUnit, and a receipt to send current-Invocation information to an external system while preserving published-result boundaries."
 ---
 
-A Reporter belongs to the current Invocation. It can send information known to that process to an external system. It does not own the Record, select samples, or replace later Report viewing.
+A Reporter belongs to the current Invocation. It can send results from that run to an external observability or analysis system. It does not own published results and cannot replace later `show`, `view`, or Report use.
 
-## Choose the right output
+```text
+Current Invocation
+    ├─ terminal and --json feedback
+    ├─ Reporter → external system
+    ├─ --junit → CI-platform file
+    └─ receipt → invocationId and runIds
 
-| Need | Use |
-| --- | --- |
-| A CI gate | The `niceeval exp` process exit status. |
-| A CI test-results view | `--junit <path>`. |
-| Process feedback for a script | `niceeval exp --json`. |
-| A later view of current data | The final receipt's `runIds` with `show`, `view`, or `view --out`. |
-| A custom external destination | A Reporter attached to the Invocation. |
+Published results
+    └─ Run, Member, Attempt, and inspectable run facts
+```
+
+## What a Reporter is for
+
+Configure a Reporter for the run you want to observe. It handles results visible to the current process. An external system can receive a run summary, Attempt results, or links. To read complete business facts, use the receipt's `runIds` to reopen the published Record.
+
+A Reporter cannot:
+
+- Treat external-system data as a business value in the Record.
+- Replace Verdicts, Usage, assertions, or diagnostics with external reporting.
+- Make later `show`, `view`, or a static Report read from the external system.
+- Write results back into the Record from the external system.
 
 ## Use JUnit in CI
+
+JUnit is the most direct external integration:
 
 ```sh
 npx niceeval exp ci --junit ./artifacts/niceeval-junit.xml
 ```
 
-The file is an external output for the CI platform. The quiescent Record remains the owner of current Verdicts, Usage, assertions, and diagnostics.
+NiceEval writes that file atomically. A CI platform reads it to show annotations and test results. It is an output format for this Invocation, not an owner of Record facts.
 
-## Read current-process feedback
-
-```sh
-npx niceeval exp ci --json
-```
-
-The output is ordered NDJSON. Progress and diagnostic records describe only the current Invocation. The final record is a receipt with its `invocationId`, `runIds`, timing, and completion status.
-
-Use those `runIds` to select a Sample in a later step. Do not treat the feedback stream as a persisted Record protocol.
-
-## Write a custom Reporter
-
-A custom Reporter receives the data that the current process makes available. Use it for a destination not covered by JUnit or an existing integration. Keep its work bounded: reporter failure should be reported clearly without changing the persisted facts that a later Report reads.
-
-When the Invocation finishes, use its receipt's Run IDs to inspect the resulting historical facts:
+## Use JSON and the receipt
 
 ```sh
-npx niceeval show --run <runId>
-npx niceeval view --run <runId> --no-open
+npx niceeval exp checkout --json
 ```
 
-## Keep long-lived data in the Record
+`--json` emits NDJSON for the current process. Its final receipt includes `invocationId`, `runIds`, start time, end time, and completion. External automation can retain the receipt, then use its `runIds` to select a Report to inspect.
 
-The Reporter, JUnit file, and NDJSON stream are outputs for one process. The Record is an editable fact dataset. Its named owner-local channels preserve business values until an authorized writer or user edits them while the directory is quiescent.
+```sh
+npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
+```
 
-For result inspection and static sharing, see [Viewing Results](/tutorials/viewing-results) and [Publish a Static Report](/tutorials/publish-report).
+Do not treat progress or diagnostic records as a long-lived result format. They serve the current Invocation. Complete business facts belong to the published Record.
+
+## Principles for external integration
+
+1. Let external reporting consume only information known to the current Invocation.
+2. Keep credentials in runtime variables, not in output.
+3. Use the exit status for a CI gate.
+4. Use a receipt's `runIds` to connect external workflows with inspectable results.
+5. Use `view --out` to share a report page.
+
+For CI commands and JUnit, see [CI Integration](/tutorials/ci-integration).

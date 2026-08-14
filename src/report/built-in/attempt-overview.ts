@@ -1,112 +1,65 @@
-import { Either } from "effect";
-import { encodeAttemptLocator } from "../../attempt-locator.ts";
+import type { AttemptLocator } from "../../attempt-locator.ts";
 import {
-  assertionsProjector,
-  attemptSlotProjection,
-  evaluationPlanProjector,
-  scoreProjector,
-  selectedRunProjection,
-  verdictProjector,
-  type AssertionSourceEntry,
-  type AssertionSourceResult,
-  type AssertionsSourceProjection,
-  type EvaluationPlanCoordinate,
-  type EvaluationPlanView,
-  type ProjectedRecordAttachmentResult,
-  type ProjectedSample,
-  type Score,
-  type Verdict,
-} from "../../projection/index.ts";
+  attemptEvidenceView,
+  attemptObservabilityView,
+  query,
+  type AttemptEvidenceDomainView,
+  type AttemptObservabilityDomainView,
+  type JsonValue,
+  type Sample,
+  type SampleSnapshot,
+} from "../../analysis/index.ts";
 import {
-  attemptDiagnosticsProjector,
-  type AttemptDiagnosticsView,
-} from "../../o11y/record/family-projectors.ts";
-import {
-  definePage,
+  Callout,
   defineReport,
-  reportComponentId,
-  reportId,
-  reportInputs,
-  reportRoute,
+  Stack,
+  Stat,
+  Table,
+  Text,
+  type PlainPageDefinition,
   type Report,
 } from "../author/index.ts";
 import {
-  reportDocument,
-  reportMetric,
-  reportSection,
-  reportStatus,
-  reportTable,
-  reportText,
-  type ReportBlock,
-} from "../semantic/index.ts";
+  loadBuiltInSummaryRows,
+  type BuiltInSummaryRows,
+} from "./analysis-values.ts";
+import { AttemptTrace } from "./attempt-trace.ts";
+import type { ReportNode, ReportTone } from "../semantic/closed.ts";
 
+const ATTEMPT_ROWS_MAX = 200;
 const ASSERTION_ROWS_MAX = 200;
 
-const assertionResultStates = [
-  "matched",
-  "mismatched",
-  "unavailable",
-  "errored",
-  "not-applicable",
-] as const;
-
-const attemptOverviewInputs = reportInputs({
-  "evaluation-plan": selectedRunProjection(evaluationPlanProjector),
-  assertions: attemptSlotProjection(assertionsProjector),
-  verdict: attemptSlotProjection(verdictProjector),
-  score: attemptSlotProjection(scoreProjector),
-  diagnostics: attemptSlotProjection(attemptDiagnosticsProjector),
-});
-
-type AttemptSlotEntry<Value> = ProjectedSample<
-  "attempt-slot",
-  Value
->["entries"][number];
-type AttemptSlot = Extract<
-  AttemptSlotEntry<unknown>,
-  { readonly state: "attachment-result" }
->["slot"];
-type EvaluationPlanEntry = ProjectedSample<
-  "selected-run",
-  EvaluationPlanView
->["entries"][number];
-
-interface AttemptOverviewInputs {
-  readonly "evaluation-plan": ProjectedSample<
-    "selected-run",
-    EvaluationPlanView
-  >;
-  readonly assertions: ProjectedSample<"attempt-slot", AssertionsSourceProjection>;
-  readonly verdict: ProjectedSample<"attempt-slot", Verdict>;
-  readonly score: ProjectedSample<"attempt-slot", Score>;
-  readonly diagnostics: ProjectedSample<"attempt-slot", AttemptDiagnosticsView>;
+interface AttemptOverviewPageInput {
+  readonly snapshot: SampleSnapshot;
+  readonly metrics: BuiltInSummaryRows;
+  readonly evidence: AttemptEvidenceDomainView;
+  readonly observability: AttemptObservabilityDomainView;
 }
 
-interface AttemptOverviewSlot {
-  readonly slot: AttemptSlot;
-  readonly plan: EvaluationPlanEntry | undefined;
-  readonly assertions: ProjectedRecordAttachmentResult<AssertionsSourceProjection> | undefined;
-  readonly verdict: ProjectedRecordAttachmentResult<Verdict>;
-  readonly score: ProjectedRecordAttachmentResult<Score> | undefined;
-  readonly diagnostics: ProjectedRecordAttachmentResult<AttemptDiagnosticsView> | undefined;
-}
+const attemptOverviewPage = {
+  id: "attempt-overview",
+  path: "/",
+  title: "Attempt overview",
+  load: async (sample: Sample): Promise<AttemptOverviewPageInput> => {
+    const [metrics, evidence, observability] = await Promise.all([
+      loadBuiltInSummaryRows(sample),
+      query(sample, { kind: "domain-view", view: attemptEvidenceView }),
+      query(sample, { kind: "domain-view", view: attemptObservabilityView }),
+    ]);
+    return Object.freeze({ snapshot: sample.snapshot, metrics, evidence, observability });
+  },
+  render: attemptOverviewNode,
+} satisfies PlainPageDefinition<AttemptOverviewPageInput>;
 
 /**
- * A capability-free Attempt overview built with the same public author API as
- * user Reports. It declares every Attachment it reads and receives no Record
- * reader, paths, or private evidence access.
+ * The exact-locator default. The host has already selected the immutable
+ * Attempt through `selectSampleForLocator`; this Report only consumes
+ * the resulting Sample and closed Metrics.
  */
 export function attemptOverviewReport(): Report {
-  const page = definePage({
-    id: Either.getOrThrow(reportComponentId("attempt-overview")),
-    route: Either.getOrThrow(reportRoute("/")),
-    inputs: attemptOverviewInputs,
-    completeness: "allow-partial",
-    render: ({ inputs }) => attemptOverviewDocument(inputs),
-  });
   return defineReport({
-    id: Either.getOrThrow(reportId("attempt-overview")),
-    pages: [page],
+    title: "Attempt overview",
+    pages: [attemptOverviewPage],
   });
 }
 
@@ -115,220 +68,157 @@ export const defaultAttemptOverviewReport = attemptOverviewReport();
 
 export default defaultAttemptOverviewReport;
 
-function attemptOverviewDocument(inputs: AttemptOverviewInputs) {
-  const slots = assembleAttemptOverviewSlots(inputs);
-  return reportDocument({
-    title: "Attempt overview",
-    children: slots.length === 0
-      ? [reportStatus({
-        tone: "warning",
-        label: "No selected Slot has a readable Attempt",
-      })]
-      : [
-        reportMetric({ label: "Selected Attempts", value: slots.length }),
-        ...slots.map(attemptOverviewSlotBlock),
-      ],
+type IncludedAttemptSlot = Extract<SampleSnapshot["slots"][number], { readonly state: "included" }>;
+type AttemptEvidenceEntry = AttemptEvidenceDomainView["entries"][number];
+type AttemptObservabilityEntry = AttemptObservabilityDomainView["entries"][number];
+
+interface LocatorIndex<Entry extends { readonly attempt: { readonly locator: AttemptLocator } }> {
+  readonly entries: ReadonlyMap<AttemptLocator, Entry>;
+  readonly duplicates: ReadonlySet<AttemptLocator>;
+}
+
+type LocatorLookup<Entry> =
+  | { readonly state: "entry"; readonly entry: Entry }
+  | { readonly state: "missing" }
+  | { readonly state: "duplicate" };
+
+function attemptOverviewNode(input: AttemptOverviewPageInput): ReportNode {
+  const attempts = input.snapshot.slots
+    .filter((slot): slot is IncludedAttemptSlot => slot.state === "included")
+    .slice(0, ATTEMPT_ROWS_MAX);
+  const metrics = input.metrics[0];
+  const omitted = input.snapshot.slots.filter((slot) => slot.state === "included").length - attempts.length;
+  const evidence = indexEntries(input.evidence.entries);
+  const observability = indexEntries(input.observability.entries);
+  const locators = uniqueLocators(attempts);
+
+  return Stack({
+    children: [
+      ...(metrics === undefined
+        ? []
+        : [
+          Stat({ label: "Pass rate", value: metrics.passRate }),
+          Stat({ label: "Mean latency", value: metrics.meanLatencyMs }),
+          Stat({ label: "Tool failure rate", value: metrics.toolFailureRate }),
+        ]),
+      Table({
+        caption: "Attempt identity",
+        columns: [
+          { key: "locator", label: "Attempt" },
+          { key: "originRunId", label: "Origin Run" },
+          { key: "runId", label: "Selected Run" },
+          { key: "slotId", label: "Slot" },
+          { key: "relation", label: "Member relation" },
+        ],
+        rows: attempts.map((slot) => ({
+          locator: slot.attempt.locator,
+          originRunId: slot.attempt.originRunId,
+          runId: slot.runId,
+          slotId: slot.slotId,
+          relation: slot.relation,
+        })),
+      }),
+      ...attempts.map((slot) => attemptDetailNode(
+        slot,
+        entryAt(evidence, slot.attempt.locator),
+        entryAt(observability, slot.attempt.locator),
+      )),
+      ...(attempts.length === 0
+        ? [Callout({
+          tone: "warning",
+          title: "No readable Attempt",
+          children: [Text({ value: "The selected Sample has no included Attempt." })],
+        })]
+        : []),
+      ...(omitted === 0
+        ? []
+        : [Callout({
+          tone: "warning",
+          title: "Bounded summary",
+          children: [Text({ value: `${omitted} additional included Attempt(s) omitted.` })],
+        })]),
+      ...locators.map((locator) => AttemptTrace({ locator, mode: "execution" })),
+    ],
   });
 }
 
-function assembleAttemptOverviewSlots(
-  inputs: AttemptOverviewInputs,
-): readonly AttemptOverviewSlot[] {
-  const assertionsBySlot = entriesBySlot(inputs.assertions);
-  const scoreBySlot = entriesBySlot(inputs.score);
-  const diagnosticsBySlot = entriesBySlot(inputs.diagnostics);
-  const plansByRun = new Map<string, EvaluationPlanEntry>();
-  for (const entry of inputs["evaluation-plan"].entries) {
-    plansByRun.set(entry.run.runId, entry);
+function indexEntries<Entry extends { readonly attempt: { readonly locator: AttemptLocator } }>(
+  entries: readonly Entry[],
+): LocatorIndex<Entry> {
+  const byLocator = new Map<AttemptLocator, Entry>();
+  const duplicates = new Set<AttemptLocator>();
+  for (const entry of entries) {
+    const locator = entry.attempt.locator;
+    if (byLocator.has(locator)) {
+      duplicates.add(locator);
+      byLocator.delete(locator);
+      continue;
+    }
+    if (!duplicates.has(locator)) byLocator.set(locator, entry);
   }
-
-  const slots: AttemptOverviewSlot[] = [];
-  for (const entry of inputs.verdict.entries) {
-    if (entry.state !== "attachment-result") continue;
-    const key = slotKey(entry.slot);
-    slots.push(Object.freeze({
-      slot: entry.slot,
-      plan: plansByRun.get(entry.slot.runId),
-      assertions: attachmentForSlot(assertionsBySlot.get(key)),
-      verdict: entry.attachment,
-      score: attachmentForSlot(scoreBySlot.get(key)),
-      diagnostics: attachmentForSlot(diagnosticsBySlot.get(key)),
-    }));
-  }
-  return Object.freeze(slots);
+  return Object.freeze({ entries: byLocator, duplicates });
 }
 
-function entriesBySlot<Value>(
-  projection: ProjectedSample<"attempt-slot", Value>,
-): ReadonlyMap<string, AttemptSlotEntry<Value>> {
-  const entries = new Map<string, AttemptSlotEntry<Value>>();
-  for (const entry of projection.entries) {
-    entries.set(slotKey(entry.slot), entry);
-  }
-  return entries;
+function entryAt<Entry>(
+  index: LocatorIndex<Entry & { readonly attempt: { readonly locator: AttemptLocator } }>,
+  locator: AttemptLocator,
+): LocatorLookup<Entry> {
+  if (index.duplicates.has(locator)) return Object.freeze({ state: "duplicate" as const });
+  const entry = index.entries.get(locator);
+  return entry === undefined
+    ? Object.freeze({ state: "missing" as const })
+    : Object.freeze({ state: "entry" as const, entry });
 }
 
-function slotKey(slot: Pick<AttemptSlot, "runId" | "slotId">): string {
-  return `${slot.runId}\u0000${slot.slotId}`;
+function uniqueLocators(attempts: readonly IncludedAttemptSlot[]): readonly AttemptLocator[] {
+  return Object.freeze([...new Set(attempts.map((slot) => slot.attempt.locator))]);
 }
 
-function attachmentForSlot<Value>(
-  entry: AttemptSlotEntry<Value> | undefined,
-): ProjectedRecordAttachmentResult<Value> | undefined {
-  return entry?.state === "attachment-result" ? entry.attachment : undefined;
-}
-
-function attemptOverviewSlotBlock(input: AttemptOverviewSlot): ReportBlock {
-  const coordinate = evaluationCoordinate(input.slot, input.plan);
-  return reportSection({
-    heading: `Attempt ${encodeAttemptLocator(input.slot.attempt.attemptId)}`,
+function attemptDetailNode(
+  slot: IncludedAttemptSlot,
+  evidence: LocatorLookup<AttemptEvidenceEntry>,
+  observability: LocatorLookup<AttemptObservabilityEntry>,
+): ReportNode {
+  return Callout({
+    tone: attemptTone(evidence),
+    title: `Attempt ${slot.attempt.locator}`,
     children: [
-      reportSection({
-        heading: "Identity",
-        children: identityBlocks(input.slot, input.plan, coordinate),
+      Table({
+        caption: "Attempt detail identity",
+        columns: [
+          { key: "originRunId", label: "Origin Run" },
+          { key: "runId", label: "Selected Run" },
+          { key: "slotId", label: "Slot" },
+          { key: "relation", label: "Member relation" },
+        ],
+        rows: [{
+          originRunId: slot.attempt.originRunId,
+          runId: slot.runId,
+          slotId: slot.slotId,
+          relation: slot.relation,
+        }],
       }),
-      reportSection({
-        heading: coordinate?.kind === "score" ? "Score status" : "Verdict",
-        children: verdictBlocks(input.verdict, input.score, coordinate?.kind),
-      }),
-      ...executionErrorBlocks(input.diagnostics),
-      reportSection({
-        heading: "Assertions",
-        children: assertionBlocks(input.assertions),
-      }),
-      reportSection({
-        heading: "Score",
-        children: scoreBlocks(input.score, coordinate?.kind),
+      evidenceNode(evidence),
+      Table({
+        caption: "Closed view alignment",
+        columns: [
+          { key: "attempt", label: "Attempt" },
+          { key: "evidence", label: "Assertion evidence" },
+          { key: "observability", label: "Observability" },
+        ],
+        rows: [{
+          attempt: slot.attempt.locator,
+          evidence: lookupState(evidence),
+          observability: lookupState(observability),
+        }],
       }),
     ],
   });
 }
 
-function executionErrorBlocks(
-  diagnostics: ProjectedRecordAttachmentResult<AttemptDiagnosticsView> | undefined,
-): readonly ReportBlock[] {
-  if (diagnostics?.state !== "available") return [];
-  const errors = diagnostics.value.diagnostics.filter(
-    (diagnostic) => diagnostic.kind === "execution-error",
-  );
-  if (errors.length === 0) return [];
-  return [reportSection({
-    heading: "Execution error",
-    children: [reportTable({
-      caption: "Execution errors",
-      columns: [
-        { key: "code", label: "Code" },
-        { key: "phase", label: "Phase" },
-        { key: "summary", label: "Summary" },
-      ],
-      rows: errors.map((error) => ({
-        code: error.code,
-        phase: error.phase,
-        summary: error.summary,
-      })),
-    })],
-  })];
-}
-
-function identityBlocks(
-  slot: AttemptSlot,
-  plan: EvaluationPlanEntry | undefined,
-  coordinate: EvaluationPlanCoordinate | undefined,
-): readonly ReportBlock[] {
-  const rows: Array<Readonly<Record<string, string | number>>> = [
-    { field: "Attempt", value: encodeAttemptLocator(slot.attempt.attemptId) },
-    { field: "Origin Run", value: slot.attempt.originRunId },
-    { field: "Selected Run", value: slot.runId },
-    { field: "Slot", value: slot.slotId },
-    { field: "Member relation", value: slot.relation },
-  ];
-  if (coordinate !== undefined) {
-    rows.push(
-      { field: "Experiment", value: coordinate.experimentId },
-      { field: "Eval", value: coordinate.evalId },
-      { field: "Evaluation kind", value: coordinate.kind },
-      { field: "Attempt ordinal", value: coordinate.attempt },
-    );
-  }
-
-  return [
-    reportTable({
-      caption: "Attempt identity",
-      columns: [
-        { key: "field", label: "Field" },
-        { key: "value", label: "Value" },
-      ],
-      rows,
-    }),
-    ...evaluationPlanStatus(slot, plan, coordinate),
-  ];
-}
-
-function evaluationPlanStatus(
-  slot: AttemptSlot,
-  plan: EvaluationPlanEntry | undefined,
-  coordinate: EvaluationPlanCoordinate | undefined,
-): readonly ReportBlock[] {
-  if (plan === undefined) {
-    return [projectionAlignmentStatus("Evaluation identity")];
-  }
-  if (plan.attachment.state !== "available") {
-    return [attachmentStatus("Evaluation identity", plan.attachment)];
-  }
-  if (coordinate === undefined) {
-    return [reportStatus({
-      tone: "negative",
-      label: `Evaluation identity: no coordinate for Slot ${slot.slotId}`,
-    })];
-  }
-  return [reportStatus({
-    tone: "positive",
-    label: "Evaluation identity: available",
-  })];
-}
-
-function evaluationCoordinate(
-  slot: AttemptSlot,
-  plan: EvaluationPlanEntry | undefined,
-): EvaluationPlanCoordinate | undefined {
-  return plan?.attachment.state === "available"
-    ? plan.attachment.value.coordinateForSlot(slot.slotId)
-    : undefined;
-}
-
-function verdictBlocks(
-  verdict: ProjectedRecordAttachmentResult<Verdict>,
-  score: ProjectedRecordAttachmentResult<Score> | undefined,
-  evaluationKind: EvaluationPlanCoordinate["kind"] | undefined,
-): readonly ReportBlock[] {
-  if (verdict.state !== "available") return [attachmentStatus("Verdict", verdict)];
-  if (evaluationKind === "score") {
-    const status = verdict.value === "skipped"
-      ? "skipped"
-      : verdict.value === "errored" || score?.state !== "available" || score.value.state !== "complete"
-        ? "errored"
-        : "scored";
-    return [
-      reportStatus({
-        tone: status === "scored" ? "positive" : status === "skipped" ? "neutral" : "negative",
-        label: `Score status: ${status}`,
-        detail: [reportText("Only scored Attempts participate in score comparison.")],
-      }),
-      reportStatus({
-        tone: "neutral",
-        label: `Historical verdict claim: ${verdict.value}`,
-      }),
-    ];
-  }
-  return [reportStatus({
-    tone: verdictTone(verdict.value),
-    label: `Verdict: ${verdict.value}`,
-    detail: [reportText("Four-state Verdict: passed, failed, errored, or skipped.")],
-  })];
-}
-
-function verdictTone(value: Verdict): "positive" | "neutral" | "negative" {
-  switch (value) {
+function attemptTone(evidence: LocatorLookup<AttemptEvidenceEntry>): ReportTone {
+  if (evidence.state !== "entry" || evidence.entry.state !== "available") return "warning";
+  switch (evidence.entry.detail.verdict) {
     case "passed":
       return "positive";
     case "skipped":
@@ -339,182 +229,125 @@ function verdictTone(value: Verdict): "positive" | "neutral" | "negative" {
   }
 }
 
-function assertionBlocks(
-  assertions: ProjectedRecordAttachmentResult<AssertionsSourceProjection> | undefined,
-): readonly ReportBlock[] {
-  if (assertions === undefined) return [projectionAlignmentStatus("Assertions")];
-  if (assertions.state !== "available") return [attachmentStatus("Assertions", assertions)];
-
-  const entries = assertions.value.entries;
-  const visible = entries.slice(0, ASSERTION_ROWS_MAX);
-  const omitted = entries.length - visible.length;
-  return [
-    reportMetric({ label: "Recorded Assertions", value: entries.length }),
-    reportTable({
-      caption: "Assertion summary",
-      columns: [
-        { key: "result", label: "Result" },
-        { key: "assertions", label: "Assertions", align: "end" },
-      ],
-      rows: assertionResultStates.map((state) => ({
-        result: state,
-        assertions: entries.filter((entry) => entry.entry.result.state === state).length,
-      })),
-    }),
-    ...(entries.length === 0
-      ? [reportStatus({ tone: "neutral", label: "No recorded Assertions" })]
-      : [reportTable({
-        caption: "Assertions",
-        columns: [
-          { key: "assertion", label: "Assertion" },
-          { key: "result", label: "Result" },
-          { key: "gate", label: "Gate" },
-          { key: "score", label: "Score" },
-          { key: "entry", label: "Entry" },
-          { key: "reason", label: "Reason" },
-        ],
-        rows: visible.map(assertionRow),
-      })]),
-    ...(omitted === 0
-      ? []
-      : [reportStatus({
-        tone: "warning",
-        label: `${omitted} additional Assertion(s) omitted from this bounded table`,
-      })]),
-  ];
-}
-
-function assertionRow(entry: AssertionSourceEntry): Readonly<Record<string, string>> {
-  return {
-    assertion: assertionLabel(entry),
-    result: entry.entry.result.state,
-    gate: entry.entry.result.gate,
-    score: assertionScoreLabel(entry.entry.result),
-    entry: assertionEntryState(entry),
-    reason: assertionReason(entry.entry.result),
-  };
-}
-
-function assertionLabel(entry: AssertionSourceEntry): string {
-  const display = entry.entry.display;
-  const label = display.label ?? display.key ?? entry.entry.entryId;
-  return display.groupPath.length === 0 ? label : `${display.groupPath.join(" / ")} / ${label}`;
-}
-
-function assertionScoreLabel(result: AssertionSourceResult): string {
-  switch (result.score.state) {
-    case "not-scored":
-      return "not scored";
-    case "earned":
-      return `${result.score.earned} / ${result.score.points}`;
-    case "unavailable":
-      return `unavailable: ${result.score.reason}`;
-  }
-}
-
-function assertionEntryState(entry: AssertionSourceEntry): string {
-  return entry.state === "available" ? "available" : `${entry.state}: ${entry.reason}`;
-}
-
-function assertionReason(result: AssertionSourceResult): string {
-  return result.state === "matched" ? "—" : result.reason;
-}
-
-function scoreBlocks(
-  score: ProjectedRecordAttachmentResult<Score> | undefined,
-  evaluationKind: EvaluationPlanCoordinate["kind"] | undefined,
-): readonly ReportBlock[] {
-  if (evaluationKind === "pass") {
-    return [
-      reportStatus({
-        tone: "neutral",
-        label: "Score: not applicable for a pass evaluation",
-      }),
-      ...(score === undefined
-        ? [projectionAlignmentStatus("Score")]
-        : score.state === "available"
-          ? scoreValueBlocks(score.value)
-          : [attachmentStatus("Score Attachment", score)]),
-    ];
-  }
-  if (evaluationKind === "score") {
-    if (score === undefined) return [projectionAlignmentStatus("Score")];
-    return score.state === "available"
-      ? scoreValueBlocks(score.value)
-      : [attachmentStatus("Score", score)];
-  }
-  return [
-    reportStatus({
+function evidenceNode(evidence: LocatorLookup<AttemptEvidenceEntry>): ReportNode {
+  if (evidence.state === "missing") {
+    return Callout({
       tone: "warning",
-      label: "Score applicability is unknown because Evaluation kind is unavailable",
-    }),
-    ...(score === undefined
-      ? [projectionAlignmentStatus("Score")]
-      : score.state === "available"
-        ? scoreValueBlocks(score.value)
-        : [attachmentStatus("Score", score)]),
-  ];
-}
-
-function scoreValueBlocks(score: Score): readonly ReportBlock[] {
-  switch (score.state) {
-    case "complete":
-      return [reportStatus({
-        tone: "positive",
-        label: `Score: ${score.earned}`,
-      })];
-    case "partial":
-      return [reportStatus({
-        tone: "warning",
-        label: `Score: partial (${score.earned}; not comparable)`,
-        detail: [reportText(`Reasons: ${score.reasons.join(", ")}`)],
-      })];
-    case "unavailable":
-      return [reportStatus({
-        tone: "warning",
-        label: "Score: unavailable",
-        detail: [reportText(`Reasons: ${score.reasons.join(", ")}`)],
-      })];
+      title: "Attempt evidence missing",
+      children: [Text({ value: "No closed Assertion evidence entry matched this Attempt locator." })],
+    });
   }
-}
-
-function projectionAlignmentStatus(name: string): ReportBlock {
-  return reportStatus({
-    tone: "negative",
-    label: `${name}: projection alignment unavailable`,
+  if (evidence.state === "duplicate") {
+    return Callout({
+      tone: "negative",
+      title: "Attempt evidence ambiguous",
+      children: [Text({ value: "More than one closed Assertion evidence entry matched this Attempt locator." })],
+    });
+  }
+  if (evidence.entry.state !== "available") {
+    return Callout({
+      tone: evidence.entry.state === "failed" ? "negative" : "warning",
+      title: `Attempt evidence: ${evidence.entry.state}`,
+      children: [
+        ...(evidence.entry.state === "failed"
+          ? [Text({ value: evidence.entry.detail })]
+          : [Text({ value: "Assertions could not be closed for this Attempt." })]),
+      ],
+    });
+  }
+  const detail = evidence.entry.detail;
+  const visible = detail.entries.slice(0, ASSERTION_ROWS_MAX);
+  const omitted = detail.entries.length - visible.length;
+  return Callout({
+    tone: "neutral",
+    title: "Closed evidence",
+    children: [
+      Callout({
+        tone: verdictTone(detail.verdict),
+        title: `Verdict: ${detail.verdict}`,
+        children: [
+          Text({ value: `Outcome: ${detail.outcome}` }),
+          Text({ value: "Verdict is derived from this Attempt's Core outcome and verified Assertions." }),
+        ],
+      }),
+      Callout({
+        tone: "neutral",
+        title: "Assertions",
+        children: [
+          Text({ value: `Recorded Assertions: ${detail.entries.length}` }),
+          ...(visible.length === 0
+            ? [Text({ value: "No recorded Assertions." })]
+            : [Table({
+              caption: "Assertions",
+              columns: [
+                { key: "entryId", label: "Entry" },
+                { key: "display", label: "Display" },
+                { key: "result", label: "Result" },
+                { key: "criterion", label: "Criterion" },
+                { key: "coverage", label: "Coverage" },
+                { key: "limitations", label: "Limitations" },
+                { key: "subject", label: "Subject" },
+                { key: "evidence", label: "Evidence" },
+              ],
+              rows: visible.map((entry) => ({
+                entryId: entry.entryId,
+                display: closedJsonText(entry.display),
+                result: closedJsonText(entry.result),
+                criterion: closedJsonText(entry.criterion),
+                coverage: closedJsonText(entry.coverage),
+                limitations: closedJsonText(entry.limitations),
+                subject: closedJsonText(entry.subject),
+                evidence: closedJsonText(entry.evidence),
+              })),
+            })]),
+          ...(omitted === 0
+            ? []
+            : [Text({ value: `${omitted} additional Assertion(s) omitted from this bounded table.` })]),
+          Text({ value: `Assertion source sites: ${detail.sourceSites.length}` }),
+        ],
+      }),
+    ],
   });
 }
 
-function attachmentStatus<Value>(
-  name: string,
-  result: Exclude<ProjectedRecordAttachmentResult<Value>, { readonly state: "available" }>,
-): ReportBlock {
-  switch (result.state) {
-    case "unavailable":
-      return reportStatus({ tone: "warning", label: `${name}: unavailable` });
-    case "migration-required":
-      return reportStatus({
-        tone: "warning",
-        label: `${name}: migration required`,
-        detail: [reportText(`${result.from} → ${result.to}; ${result.command}`)],
-      });
-    case "migration-unavailable":
-      return reportStatus({
-        tone: "warning",
-        label: `${name}: migration unavailable`,
-        detail: [reportText(result.reason)],
-      });
-    case "unsupported":
-      return reportStatus({
-        tone: "warning",
-        label: `${name}: unsupported`,
-        detail: [reportText(result.schemaId)],
-      });
-    case "invalid":
-      return reportStatus({
-        tone: "negative",
-        label: `${name}: invalid`,
-        detail: [reportText(result.issues.map((issue) => issue.code).join(", "))],
-      });
+/**
+ * Assertion payload fields are closed JSON, but their property names are not
+ * Report-semantic fields. Encode them as deterministic public text before
+ * placing them in a semantic table, so a user payload cannot smuggle a
+ * renderer field such as `path` into the Report tree.
+ */
+function closedJsonText(value: JsonValue): string {
+  if (value === null) return "null";
+  if (typeof value === "string") return value;
+  if (typeof value === "boolean" || typeof value === "number") return String(value);
+  if (Array.isArray(value)) return `[${value.map(closedJsonText).join(",")}]`;
+  const record = value as Readonly<Record<string, JsonValue>>;
+  return `{${Object.keys(record)
+    .sort(compareText)
+    .map((key) => `${JSON.stringify(key)}:${closedJsonText(record[key]!)}`)
+    .join(",")}}`;
+}
+
+function compareText(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function lookupState(
+  lookup: LocatorLookup<AttemptEvidenceEntry | AttemptObservabilityEntry>,
+): string {
+  return lookup.state === "entry" ? lookup.entry.state : `${lookup.state} entry`;
+}
+
+function verdictTone(
+  verdict: Extract<AttemptEvidenceEntry, { readonly state: "available" }> ["detail"]["verdict"],
+): ReportTone {
+  switch (verdict) {
+    case "passed":
+      return "positive";
+    case "skipped":
+      return "neutral";
+    case "failed":
+    case "errored":
+      return "negative";
   }
 }

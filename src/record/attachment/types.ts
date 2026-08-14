@@ -1,56 +1,19 @@
-import type { Either, Effect, Schema, Stream } from "effect";
+import type { Either, Stream } from "effect";
+import type { RecordValueDefinition } from "../definition/value.ts";
 import type { RecordAttachmentOwner } from "../model/core.ts";
 import type {
-  RecordAttachmentName,
-  RecordAttachmentSchemaId,
-} from "../model/identifiers.ts";
-import type {
-  RecordAttachmentDefinitionError,
-  RecordAttachmentFamilyError,
-  RecordAttachmentMigrationDefinitionError,
-  RecordAttachmentRegistryError,
-  RecordAttachmentPayloadInvalid,
   RecordAttachmentClosureInvalid,
+  RecordAttachmentDefinitionError,
+  RecordAttachmentIssue,
+  RecordAttachmentPayloadInvalid,
 } from "./errors.ts";
 
-/**
- * The symbols deliberately stay module-private. They make accidental structural
- * manufacture inconvenient at the type boundary; runtime authority lives in the
- * module-private WeakMaps in `runtime.ts`.
- */
-const recordBlobRefTypeId: unique symbol = Symbol(
-  "@niceeval/record/RecordBlobRef",
-);
-const recordBlobSourceTypeId: unique symbol = Symbol(
-  "@niceeval/record/RecordBlobSource",
-);
-const recordAttachmentBlobDraftTypeId: unique symbol = Symbol(
-  "@niceeval/record/RecordAttachmentBlobDraft",
-);
-const recordAttachmentBlobBuilderTypeId: unique symbol = Symbol(
-  "@niceeval/record/RecordAttachmentBlobBuilder",
-);
-const recordAttachmentWriteTypeId: unique symbol = Symbol(
-  "@niceeval/record/RecordAttachmentWrite",
-);
-const recordAttachmentDefinitionTypeId: unique symbol = Symbol(
-  "@niceeval/record/JsonRecordAttachmentDefinition",
-);
-const recordAttachmentFamilyTypeId: unique symbol = Symbol(
-  "@niceeval/record/RecordAttachmentFamily",
-);
-const recordAttachmentMigrationEdgeTypeId: unique symbol = Symbol(
-  "@niceeval/record/RecordAttachmentMigrationEdge",
-);
-const recordAttachmentMigrationTypeId: unique symbol = Symbol(
-  "@niceeval/record/RecordAttachmentMigration",
-);
-const recordAttachmentRegistryTypeId: unique symbol = Symbol(
-  "@niceeval/record/RecordAttachmentRegistry",
-);
-const recordAttachmentValueTypeId: unique symbol = Symbol(
-  "@niceeval/record/RecordAttachmentValue",
-);
+const recordBlobRefTypeId: unique symbol = Symbol("@niceeval/record/RecordBlobRef");
+const recordBlobSourceTypeId: unique symbol = Symbol("@niceeval/record/RecordBlobSource");
+const recordAttachmentBlobDraftTypeId: unique symbol = Symbol("@niceeval/record/RecordAttachmentBlobDraft");
+const recordAttachmentBlobBuilderTypeId: unique symbol = Symbol("@niceeval/record/RecordAttachmentBlobBuilder");
+const recordAttachmentWriteTypeId: unique symbol = Symbol("@niceeval/record/RecordAttachmentWrite");
+const fixedAttachmentWriteSpecTypeId: unique symbol = Symbol("@niceeval/record/FixedAttachmentWriteSpec");
 
 /** @internal Runtime factories need these symbols; WeakMap membership is authority. */
 export const recordAttachmentBlobRefBrand = recordBlobRefTypeId;
@@ -63,17 +26,7 @@ export const recordAttachmentBlobBuilderBrand = recordAttachmentBlobBuilderTypeI
 /** @internal */
 export const recordAttachmentWriteBrand = recordAttachmentWriteTypeId;
 /** @internal */
-export const recordAttachmentDefinitionBrand = recordAttachmentDefinitionTypeId;
-/** @internal */
-export const recordAttachmentFamilyBrand = recordAttachmentFamilyTypeId;
-/** @internal */
-export const recordAttachmentMigrationEdgeBrand = recordAttachmentMigrationEdgeTypeId;
-/** @internal */
-export const recordAttachmentMigrationBrand = recordAttachmentMigrationTypeId;
-/** @internal */
-export const recordAttachmentRegistryBrand = recordAttachmentRegistryTypeId;
-/** @internal */
-export const recordAttachmentValueBrand = recordAttachmentValueTypeId;
+export const fixedAttachmentWriteSpecBrand = fixedAttachmentWriteSpecTypeId;
 
 /** @internal A runtime-only witness for nominal fields. It must never run. */
 export function recordAttachmentTypeWitness<T>(): T {
@@ -85,11 +38,29 @@ export interface RecordBlobRef {
   readonly [recordBlobRefTypeId]: () => void;
 }
 
+/** Static per-owner resource envelope for a fixed family closure. */
+export interface RecordAttachmentBlobBudget {
+  readonly maximumBlobs: number;
+  readonly maximumBlobBytes: number;
+  readonly maximumTotalBytes: number;
+}
+
+/** Bytes are exposed only to the sealed reader/writer materialization boundary. */
+export interface RecordAttachmentMaterializedBlob {
+  readonly ref: RecordBlobRef;
+  readonly bytes: Uint8Array;
+}
+
 /**
- * A source is an Effect Stream capability, never a raw bytes payload. The
- * runtime verifies the exact object created by `makeRecordBlobSource` before a
- * builder can retain it.
+ * Family-owned relation checks that need the exact materialized closure, such
+ * as byte length and digest claims. They cannot be truthfully established by
+ * payload shape validation alone.
  */
+export type RecordAttachmentMaterializedRefine<Payload> = (
+  payload: Payload,
+  blobs: readonly RecordAttachmentMaterializedBlob[],
+) => readonly RecordAttachmentIssue[];
+
 export interface RecordBlobSource<out E, out R> {
   readonly stream: Stream.Stream<Uint8Array, E, R>;
   readonly [recordBlobSourceTypeId]: () => {
@@ -98,22 +69,6 @@ export interface RecordBlobSource<out E, out R> {
   };
 }
 
-/** A definition owns one exact JSON schema and blob projection. */
-export interface JsonRecordAttachmentDefinition<
-  out Owner extends RecordAttachmentOwner,
-  Payload,
-> {
-  readonly owner: Owner;
-  readonly name: RecordAttachmentName;
-  readonly schemaId: RecordAttachmentSchemaId;
-  readonly blobRefs: (payload: Payload) => readonly RecordBlobRef[];
-  readonly [recordAttachmentDefinitionTypeId]: () => {
-    readonly owner: Owner;
-    readonly payload: Payload;
-  };
-}
-
-/** A draft is minted only by the builder that owns its source stream. */
 export interface RecordAttachmentBlobDraft<out E, out R> {
   readonly ref: RecordBlobRef;
   readonly [recordAttachmentBlobDraftTypeId]: () => {
@@ -139,21 +94,16 @@ export type RecordBlobRequirements<Blobs extends RecordBlobDrafts> =
       : never;
 
 export interface RecordAttachmentBlobBuilder {
-  readonly add: <E, R>(
-    source: RecordBlobSource<E, R>,
-  ) => RecordAttachmentBlobDraft<E, R>;
+  readonly add: <E, R>(source: RecordBlobSource<E, R>) => RecordAttachmentBlobDraft<E, R>;
   readonly [recordAttachmentBlobBuilderTypeId]: () => void;
 }
 
-export interface RecordAttachmentBlobBuild<
-  Payload,
-  Blobs extends RecordBlobDrafts,
-> {
+export interface RecordAttachmentBlobBuild<Payload, Blobs extends RecordBlobDrafts> {
   readonly payload: Payload;
   readonly blobs: Blobs;
 }
 
-/** Opaque captured write consumed by the generic Record writer. */
+/** Opaque write captured by a fixed static family owner primitive. */
 export interface RecordAttachmentWrite<
   out Owner extends RecordAttachmentOwner,
   out E,
@@ -166,96 +116,6 @@ export interface RecordAttachmentWrite<
   };
 }
 
-/** The deep-frozen, self-contained part of an available Attachment read. */
-export type RecordAttachmentPayloadSnapshot<Payload> =
-  // Keep primitive brands intact before the object branch. In particular,
-  // Effect/Brand strings must remain their original branded string types.
-  Payload extends null | undefined | string | number | boolean | bigint | symbol
-    ? Payload
-    : // Blob refs are opaque capabilities, not structural payload objects.
-      Payload extends RecordBlobRef
-      ? Payload
-      : Payload extends readonly (infer Item)[]
-        ? readonly RecordAttachmentPayloadSnapshot<Item>[]
-        : Payload extends object
-          ? {
-              readonly [Key in keyof Payload]: RecordAttachmentPayloadSnapshot<
-                Payload[Key]
-              >;
-            }
-          : Payload;
-
-export interface RecordBlobHandleInvalid {
-  readonly code: "record-blob-handle-invalid";
-}
-
-export interface RecordAttachmentBlobs {
-  readonly refs: () => readonly RecordBlobRef[];
-  readonly bytes: (
-    ref: RecordBlobRef,
-  ) => Either.Either<Uint8Array, RecordBlobHandleInvalid>;
-}
-
-/** A materialized value remains usable after the reader Scope has closed. */
-export interface RecordAttachmentValue<out Payload> {
-  readonly payload: RecordAttachmentPayloadSnapshot<Payload>;
-  readonly blobs: RecordAttachmentBlobs;
-  readonly [recordAttachmentValueTypeId]: () => Payload;
-}
-
-/** Current schema plus its complete, adjacent evolution graph. */
-export interface RecordAttachmentFamily<
-  out Owner extends RecordAttachmentOwner,
-  out Payload,
-> {
-  readonly [recordAttachmentFamilyTypeId]: () => {
-    readonly owner: Owner;
-    readonly payload: Payload;
-  };
-}
-
-export interface RecordAttachmentMigrationEdge<
-  out Owner extends RecordAttachmentOwner,
-> {
-  readonly [recordAttachmentMigrationEdgeTypeId]: () => Owner;
-}
-
-export interface RecordAttachmentMigration<
-  out Owner extends RecordAttachmentOwner,
-  out E,
-  out R,
-> extends RecordAttachmentMigrationEdge<Owner> {
-  readonly [recordAttachmentMigrationTypeId]: () => {
-    readonly error: E;
-    readonly requirements: R;
-  };
-}
-
-export interface RecordAttachmentMigrationTarget<
-  Owner extends RecordAttachmentOwner,
-  To,
-> {
-  readonly create: <const Blobs extends RecordBlobDrafts>(
-    build: (
-      blobs: RecordAttachmentBlobBuilder,
-    ) => RecordAttachmentBlobBuild<To, Blobs>,
-  ) => RecordAttachmentWrite<
-    Owner,
-    RecordBlobErrors<Blobs>,
-    RecordBlobRequirements<Blobs>
-  >;
-}
-
-/** A pure lookup registry for the installed Attachment families. */
-export interface RecordAttachmentRegistry {
-  readonly [recordAttachmentRegistryTypeId]: () => void;
-}
-
-export type AnyRecordAttachmentFamily =
-  | RecordAttachmentFamily<"run", unknown>
-  | RecordAttachmentFamily<"attempt", unknown>;
-
-/** JSON-compatible encoded values, with package-minted refs as the sole in-memory exception. */
 export type RecordAttachmentJson =
   | null
   | boolean
@@ -265,80 +125,64 @@ export type RecordAttachmentJson =
   | readonly RecordAttachmentJson[]
   | { readonly [key: string]: RecordAttachmentJson };
 
-/**
- * Definition callbacks only observe a package-owned payload. Bivariance keeps
- * ordinary named interfaces ergonomic when Effect's Struct type is readonly;
- * the definition still stores Schema.Type<S> as its exact public payload type.
- */
 export type RecordAttachmentBlobRefs<Payload> = {
   bivarianceHack(payload: Payload): readonly RecordBlobRef[];
 }["bivarianceHack"];
 
-export type DefineJsonRecordAttachmentInput<
-  Owner extends RecordAttachmentOwner,
-  S extends Schema.Schema.AnyNoContext,
-> = {
+/**
+ * A static owner codec and closure primitive, minted from exactly one
+ * `defineRecordAttachment(...).current.owners[owner]` value. It contains no
+ * lookup, registration, historic decoder, or migration chain.
+ */
+export interface FixedAttachmentWriteSpec<
+  out Owner extends RecordAttachmentOwner,
+  Payload,
+> {
   readonly owner: Owner;
-  readonly name: string;
-  readonly schemaId: string;
-  readonly schema: S;
-  readonly blobRefs: RecordAttachmentBlobRefs<Schema.Schema.Type<S>>;
-};
+  readonly family: string;
+  readonly schemaVersion: number;
+  readonly value: RecordValueDefinition<
+    any,
+    "json-with-blob-refs",
+    RecordBlobRef
+  >;
+  readonly encodePayload: (
+    payload: Payload,
+  ) => Either.Either<RecordAttachmentJson, RecordAttachmentPayloadInvalid>;
+  readonly decodePayload: (
+    input: unknown,
+  ) => Either.Either<Payload, RecordAttachmentPayloadInvalid>;
+  readonly blobRefs: (payload: Payload) => readonly RecordBlobRef[];
+  readonly blobBudget: RecordAttachmentBlobBudget;
+  readonly materializedRefine: RecordAttachmentMaterializedRefine<Payload>;
+  readonly [fixedAttachmentWriteSpecTypeId]: () => {
+    readonly owner: Owner;
+    readonly payload: Payload;
+  };
+}
 
-export type DefineRecordAttachmentMigrationInput<
-  Owner extends RecordAttachmentOwner,
-  From,
-  To,
-  E,
-  R,
-> = {
-  readonly from: JsonRecordAttachmentDefinition<Owner, From>;
-  readonly to: JsonRecordAttachmentDefinition<Owner, To>;
-  readonly convert: (
-    source: RecordAttachmentValue<From>,
-    target: RecordAttachmentMigrationTarget<Owner, To>,
-  ) => Effect.Effect<RecordAttachmentWrite<Owner, E, R>, E, R>;
-};
+export type RecordAttachmentPayloadSnapshot<Payload> =
+  Payload extends null | undefined | string | number | boolean | bigint | symbol
+    ? Payload
+    : Payload extends RecordBlobRef
+      ? Payload
+      : Payload extends readonly (infer Item)[]
+        ? readonly RecordAttachmentPayloadSnapshot<Item>[]
+        : Payload extends object
+          ? { readonly [Key in keyof Payload]: RecordAttachmentPayloadSnapshot<Payload[Key]> }
+          : Payload;
 
-export type DeclareRecordAttachmentMigrationUnavailableInput<
-  Owner extends RecordAttachmentOwner,
-  From,
-  To,
-> = {
-  readonly from: JsonRecordAttachmentDefinition<Owner, From>;
-  readonly to: JsonRecordAttachmentDefinition<Owner, To>;
-  readonly reason: string;
-};
+export interface RecordBlobHandleInvalid {
+  readonly code: "record-blob-handle-invalid";
+}
 
-export type DefineRecordAttachmentFamilyInput<
-  Owner extends RecordAttachmentOwner,
-  Current,
-> = {
-  readonly current: JsonRecordAttachmentDefinition<Owner, Current>;
-  readonly migrations: readonly RecordAttachmentMigrationEdge<Owner>[];
-};
+export interface RecordAttachmentBlobs {
+  readonly refs: () => readonly RecordBlobRef[];
+  readonly bytes: (ref: RecordBlobRef) => Either.Either<Uint8Array, RecordBlobHandleInvalid>;
+}
 
-export type RecordAttachmentMigrationResolution =
-  | { readonly state: "current" }
-  | {
-      readonly state: "migration-required";
-      readonly from: RecordAttachmentSchemaId;
-      readonly to: RecordAttachmentSchemaId;
-      readonly edges: readonly RecordAttachmentMigrationEdge<RecordAttachmentOwner>[];
-    }
-  | {
-      readonly state: "migration-unavailable";
-      readonly from: RecordAttachmentSchemaId;
-      readonly to: RecordAttachmentSchemaId;
-      readonly reason: string;
-    }
-  | { readonly state: "unsupported" };
-
-/** Kept here so public operation signatures retain their stable error unions. */
+/** Kept so internal operation signatures retain their exact error union. */
 export type RecordAttachmentRuntimeErrors =
   | RecordAttachmentDefinitionError
   | RecordAttachmentPayloadInvalid
-  | RecordAttachmentClosureInvalid
-  | RecordAttachmentMigrationDefinitionError
-  | RecordAttachmentFamilyError
-  | RecordAttachmentRegistryError;
+  | RecordAttachmentClosureInvalid;

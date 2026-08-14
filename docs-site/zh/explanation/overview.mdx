@@ -1,69 +1,69 @@
 ---
 title: "NiceEval 的评估与报告路径"
 sidebarTitle: "概览"
-description: "理解 Experiment、Record、AnalysisSample 与 ReportExecution 如何组成一次可查看、可分享的评估。"
+description: "理解 Experiment、Record、Analysis 与 Report 如何组成一次可查看、可分享的评估。"
 ---
 
-NiceEval 把评估定义、运行、持久事实与报告分成清楚的职责。你定义评估用例与 Experiment，Runner 执行它们；完整 Run 发布到 Record；查看和分享从 Record 选择 Sample，再投影所需事实并生成报告。
+NiceEval 把评估定义、运行、已发布结果和报告分成清楚的职责。你定义评估用例与 Experiment，Runner 执行它们；完整 Run 发布到 Record；查看和分享时，Analysis 从选中的结果形成闭合值，Report 再把这些值组织成页面。
 
 ```text
 Eval 与 Experiment
         ↓
 Runner
         ↓
-opaque Record
-        ↓  CLI internal selection
-AnalysisSample
-        ↓  official opaque projector
-ProjectedSample → Report → immutable ReportExecution
-                                  ├─ show
-                                  ├─ view
-                                  └─ static export
+Record：已发布结果
+        ↓  选择范围
+Analysis：Sample + Measure + aggregate() / query()
+        ↓
+ClosedRows / MetricValue / DomainView
+        ↓
+Report → immutable ReportExecution
+              ├─ show
+              ├─ view
+              └─ static export
 ```
 
 ## 评估如何运行
 
 Eval 定义任务、断言和需要的 Fixture。Experiment 选择 Eval，并声明 Agent、模型、并发、预算与其他运行条件。Adapter 连接被测系统；Sandbox 提供隔离的执行位置。
 
-Runner 为每个选中的 Experiment 建立一个 Run。Run 列出本次应有的 slots，因此它定义结果计算的分母。每个 slot 最多有一个 Member。
+Runner 为每个选中的 Experiment 建立一个 Run。Run 列出本次应有的位置，因此它定义结果计算的分母。每个位置最多有一个 Member。
 
-Member 表示这个 slot 被哪个 Attempt 占据。Attempt 的 `origin` 与当前 slot 一致时是 `origin`；采用了其它 Run 的 Attempt 时是 `reference`。Attempt 始终在自己的 origin Run 下保存一次，引用它的 Member 不复制业务事实。
+Member 表示这个位置由哪个 Attempt 占据。Attempt 的 `origin` 与当前位置一致时是 `origin`；采用了其它 Run 的 Attempt 时是 `reference`。采用复用已有结果，不会重新执行这个 Attempt。
 
-## Record 保存已发布的事实
+## Record 保存已发布的结果
 
-Record 位于 `.niceeval/record/`。它可以整体复制或进入 Git，但应用代码不读取其中的内部结构。
-内部 Core 保存 Run、Member、Attempt 与精确关系；Verdict、Usage、断言与诊断等业务事实
-保存在 owner-local Attachment 中。
+Record 是可携带、可复制并可进入 Git 的已发布结果集。应用代码不解析或写入它；通过 `show`、`view`、`clean` 和 `migrate` 操作即可。
 
-writer 写完一个 Run 的 Core 与 Attachments 后，最后创建 `complete`。没有这个标识的目录不是已发布事实；reader 忽略它，并给出 `incomplete-run` warning。需要不同结果时，运行新的 Invocation，生成新的 Run。
+一个 Run 只有完整发布后才可查看或用于后续选择。需要不同结果时，运行新的 Invocation，生成新的 Run；历史结果不会被覆盖。
 
 ## Sample 决定比较范围
 
-用户用不带 locator 或 `--run` 的命令选择身份仍匹配当前项目的全部结果，或用 locator、`--run` 选择历史事实。内部 host 从 frozen Record 形成可以独立
-显示的纯 `AnalysisSample`；reader 与 live handle 不属于公开 API。
+用户用不带 locator 或 `--run` 的命令选择仍匹配当前项目的结果，或用 locator、`--run` 选择历史事实。NiceEval 根据这个选择形成 `Sample`，它保留完整的预期范围和分母，但不允许页面重新选择或重新打开结果。
 
-`project-current` 扫描全部 published Run，并读取 Evaluation 与 Eligibility identity 事实。
-只有 Experiment、Eval、attempt ordinal、evaluation kind、input identity 和 config identity 仍匹配当前项目的 slots 才会进入 Sample；选择不按时间只留一个 Run。
+`project-current` 扫描所有已发布 Run，只保留 Experiment、Eval 和执行身份仍匹配当前项目的位置。它不按时间只留一个 Run。
 
-`--run` 选择保留具名 Run 的完整 expected-slot 分母；`project-current` 则以匹配的 slots 建立当前分母。每个已选 slot 都是 `included`、`not-recorded`、`core-invalid` 或 `excluded`。selection 建立框架后，其它业务 Attachment 的问题不能再悄悄缩小分母。
+`--run` 保留具名 Run 的完整预期范围。每个已选位置都是 `included`、`not-recorded`、`core-invalid` 或 `excluded`。选择建立框架后，缺少分析输入不会悄悄缩小分母。
 
-## Projection 与 Report 组织已选事实
+## Analysis 与 Report 各做什么
 
-官方 opaque projector 把内部事实形成 typed view。Projection 将结果与 Sample 对齐，形成 `ProjectedSample`。Calculation 用这些值计算通过率、成本或诊断分布；Page 与 PageFamily 再把结果组织成报告页面。
+Analysis 负责解释结果。作者用 `defineMeasure()` 声明总体、分组、分母和缺失规则，再用 `aggregate()` 或 `query()` 得到 `ClosedRows`、`MetricValue` 或领域视图。
 
-一次 Report 形成一份不可变的 `ReportExecution`。它不保留 reader、路径或延迟 I/O。`show`、`view` 与静态导出只消费这份 execution。
+Report 负责页面与显示。Page 和组件只消费这些闭合值：表格读取 rows，图表读取 points，统计卡读取完整 value。需要详情地址时，Page 使用 `params`、`load` 和 `render` 列出实例。报告不会重新计算度量或读取结果存储。
 
-`view` 发生变化时会构造下一份 execution。完整 rebuild 才替换正在显示的结果；rebuild 失败会保留 last-good execution，并显示问题。
+一次 Report 形成一份不可变的 `ReportExecution`。它不保留可以再次读取结果的能力。`show`、`view` 与静态导出只消费这份 execution。
+
+`view` 发生变化时会构造下一份 execution。完整 rebuild 才替换正在显示的结果；rebuild 失败会保留上一份可用结果，并显示问题。
 
 ## 交付报告
 
 `niceeval show` 在终端显示报告。`niceeval view` 在本机显示网页。`niceeval view --out <目录>` 导出自包含静态报告站；需要固定历史范围时可以传一个或多个明确 `--run`。
 
-静态报告站只消费导出时完成的 `ReportExecution`。浏览器不读取源 Record。发布步骤见[发布静态报告](/zh/tutorials/publish-report)。
+静态报告站只消费导出时完成的 `ReportExecution`。浏览器不读取源结果。发布步骤见[发布静态报告](/zh/tutorials/publish-report)。
 
 ## 继续阅读
 
-- [Record](/zh/explanation/record)：理解 Core、Attachment 与演进边界。
+- [Record](/zh/explanation/record)：理解已发布结果的边界。
 - [运行器](/zh/explanation/runner)：理解 Invocation、Run 与当前进程反馈。
 - [查看结果](/zh/tutorials/viewing-results)：选择 Sample 并查看报告。
-- [重跑与沿用](/zh/tutorials/rerun-and-cache)：理解 carry 与 accept。
+- [编写自定义报告](/zh/tutorials/custom-reports)：定义 Measure、Page 和组件。

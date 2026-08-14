@@ -7,7 +7,7 @@ import { readFile, stat } from "node:fs/promises";
 import { dirname, extname, join, resolve } from "node:path";
 import { Data, Effect } from "effect";
 import { freshImportModule } from "../../../fresh-import.ts";
-import { isReport, type Report } from "../../author/model.ts";
+import { isReport, type Report } from "../../definition.ts";
 import { isThemeDefinition, type ThemeDefinition } from "../theme.ts";
 
 export type ReportModuleLoadStage = "config" | "report" | "theme";
@@ -260,11 +260,7 @@ function isPlainObject(value: unknown): value is Readonly<Record<string, unknown
 }
 
 function looksLikeReport(value: unknown): boolean {
-  return isPlainObject(value) &&
-    Object.hasOwn(value, "id") &&
-    Object.hasOwn(value, "calculations") &&
-    Object.hasOwn(value, "pages") &&
-    Object.hasOwn(value, "downloads");
+  return isPlainObject(value) && Object.hasOwn(value, "pages");
 }
 
 function isMissing(cause: unknown): boolean {

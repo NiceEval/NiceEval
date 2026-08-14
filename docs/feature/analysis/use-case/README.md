@@ -81,7 +81,7 @@ export const latency = defineMeasure({
 ```
 
 普通 Report 调用只传入 Host 已签发的 Sample 和字段。`aggregate()` 只读取这两个 Measure 需要的
-v1 事实；它不会顺便读取 OTel trace、diff 或 blob。
+current 事实；它不会顺便读取 OTel trace、diff 或 blob。
 
 ```ts
 import { aggregate, type Sample } from "niceeval/analysis";

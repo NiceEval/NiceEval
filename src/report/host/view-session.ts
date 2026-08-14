@@ -1,6 +1,6 @@
 import { Effect, Ref } from "effect";
 import type * as Scope from "effect/Scope";
-import { isReportExecution, type ReportExecution } from "../execution/model.ts";
+import type { ReportExecution } from "../execution/model.ts";
 import { basalt, isThemeDefinition, type ThemeDefinition } from "./theme.ts";
 
 export interface ReportViewRevision {
@@ -61,7 +61,6 @@ export interface ReportViewThemeRebuild {
 }
 
 export type ReportViewRebuild =
-  | ReportExecution
   | ReportViewExecutionRebuild
   | ReportViewThemeRebuild;
 
@@ -174,10 +173,6 @@ function revisionFromRebuild(
   previous: ReportViewRevision,
   rebuilt: ReportViewRebuild,
 ): ReportViewRevision {
-  if (isReportExecution(rebuilt)) {
-    // Legacy bare execution rebuilds keep the prior recoverable watch set.
-    return revision(previous.revision + 1, rebuilt, previous.theme, previous.watchInputs);
-  }
   if (rebuilt.kind === "execution") {
     return revision(
       previous.revision + 1,

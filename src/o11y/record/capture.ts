@@ -1,32 +1,32 @@
 import {
-  isAttemptReferenceTargetV1,
-  isRunReferenceTargetV1,
-  referenceTargetKeyV1,
-  type AttemptObservabilityFamilySchemaIdV1,
-  type AttemptReferenceTargetV1,
-  type AttemptReferencesForFamilyV1,
-  type CommandReferenceTargetV1,
-  type CommandIdV1,
-  type ObservabilityReferenceTargetV1,
-  type RunObservabilityFamilySchemaIdV1,
-  type RunReferenceTargetV1,
-  type RunReferencesForFamilyV1,
+  isAttemptReferenceTarget,
+  isRunReferenceTarget,
+  referenceTargetKey,
+  type AttemptObservabilityFamilySchemaId,
+  type AttemptReferenceTarget,
+  type AttemptReferencesForFamily,
+  type CommandReferenceTarget,
+  type CommandId,
+  type ObservabilityReferenceTarget,
+  type RunObservabilityFamilySchemaId,
+  type RunReferenceTarget,
+  type RunReferencesForFamily,
 } from "./model.ts";
 
 const attemptObservabilityCaptureIdentityTypeId: unique symbol = Symbol(
-  "@niceeval/o11y/AttemptObservabilityCaptureIdentityV1",
+  "@niceeval/o11y/AttemptObservabilityCaptureIdentity",
 );
 const runObservabilityCaptureIdentityTypeId: unique symbol = Symbol(
-  "@niceeval/o11y/RunObservabilityCaptureIdentityV1",
+  "@niceeval/o11y/RunObservabilityCaptureIdentity",
 );
 const attemptObservabilityEntityRefTypeId: unique symbol = Symbol(
-  "@niceeval/o11y/AttemptObservabilityEntityRefV1",
+  "@niceeval/o11y/AttemptObservabilityEntityRef",
 );
 const runObservabilityEntityRefTypeId: unique symbol = Symbol(
-  "@niceeval/o11y/RunObservabilityEntityRefV1",
+  "@niceeval/o11y/RunObservabilityEntityRef",
 );
 const registeredCommandCaptureTypeId: unique symbol = Symbol(
-  "@niceeval/o11y/RegisteredCommandCaptureV1",
+  "@niceeval/o11y/RegisteredCommandCapture",
 );
 
 /**
@@ -34,41 +34,41 @@ const registeredCommandCaptureTypeId: unique symbol = Symbol(
  * from a durable Attempt/Run owner identity: no owner ID, path, or blob handle
  * is ever placed in a cross-family reference.
  */
-export interface AttemptObservabilityCaptureIdentityV1 {
+export interface AttemptObservabilityCaptureIdentity {
   readonly [attemptObservabilityCaptureIdentityTypeId]: () => void;
 }
 
-export interface RunObservabilityCaptureIdentityV1 {
+export interface RunObservabilityCaptureIdentity {
   readonly [runObservabilityCaptureIdentityTypeId]: () => void;
 }
 
 /** The only ref an Attempt capture API may accept from a caller. */
-export interface AttemptObservabilityEntityRefV1 {
+export interface AttemptObservabilityEntityRef {
   readonly [attemptObservabilityEntityRefTypeId]: () => void;
 }
 
 /** The Run equivalent cannot be supplied to an Attempt capture API. */
-export interface RunObservabilityEntityRefV1 {
+export interface RunObservabilityEntityRef {
   readonly [runObservabilityEntityRefTypeId]: () => void;
 }
 
 /** A command result is accepted only through the manifest's registered handle. */
-export interface RegisteredCommandCaptureV1 extends AttemptObservabilityEntityRefV1 {
+export interface RegisteredCommandCapture extends AttemptObservabilityEntityRef {
   readonly [registeredCommandCaptureTypeId]: () => void;
 }
 
-export interface AttemptCapturedObservabilityEntityV1<
-  Target extends AttemptReferenceTargetV1 = AttemptReferenceTargetV1,
+export interface AttemptCapturedObservabilityEntity<
+  Target extends AttemptReferenceTarget = AttemptReferenceTarget,
 > {
-  readonly ref: AttemptObservabilityEntityRefV1;
+  readonly ref: AttemptObservabilityEntityRef;
   /** @internal The collector uses this immutable durable triple while sealing. */
   readonly target: Target;
 }
 
-export interface RunCapturedObservabilityEntityV1<
-  Target extends RunReferenceTargetV1 = RunReferenceTargetV1,
+export interface RunCapturedObservabilityEntity<
+  Target extends RunReferenceTarget = RunReferenceTarget,
 > {
-  readonly ref: RunObservabilityEntityRefV1;
+  readonly ref: RunObservabilityEntityRef;
   /** @internal The collector uses this immutable durable triple while sealing. */
   readonly target: Target;
 }
@@ -76,18 +76,18 @@ export interface RunCapturedObservabilityEntityV1<
 interface CaptureRuntime {
   readonly owner: "attempt" | "run";
   sealed: boolean;
-  readonly targets: Map<string, ObservabilityReferenceTargetV1>;
+  readonly targets: Map<string, ObservabilityReferenceTarget>;
   readonly registeredCommands: Map<string, RegisteredCommandRuntime>;
 }
 
 interface EntityRefRuntime {
   readonly capture: CaptureRuntime;
-  readonly target: ObservabilityReferenceTargetV1;
+  readonly target: ObservabilityReferenceTarget;
 }
 
 interface RegisteredCommandRuntime {
   readonly capture: CaptureRuntime;
-  readonly target: CommandReferenceTargetV1;
+  readonly target: CommandReferenceTarget;
   resultRecorded: boolean;
 }
 
@@ -100,7 +100,7 @@ function isObject(value: unknown): value is object {
   return typeof value === "object" && value !== null;
 }
 
-function freezeTarget<Target extends ObservabilityReferenceTargetV1>(target: Target): Target {
+function freezeTarget<Target extends ObservabilityReferenceTarget>(target: Target): Target {
   return Object.freeze({
     family: target.family,
     kind: target.kind,
@@ -129,41 +129,41 @@ function runEntityRuntime(value: unknown): EntityRefRuntime | undefined {
   return isObject(value) ? runEntityRefs.get(value) : undefined;
 }
 
-export function makeAttemptObservabilityCaptureIdentityV1(): AttemptObservabilityCaptureIdentityV1 {
+export function makeAttemptObservabilityCaptureIdentity(): AttemptObservabilityCaptureIdentity {
   const capture = {
     [attemptObservabilityCaptureIdentityTypeId]: () => undefined,
-  } as AttemptObservabilityCaptureIdentityV1;
+  } as AttemptObservabilityCaptureIdentity;
   const frozen = Object.freeze(capture);
   captures.set(frozen, makeCaptureRuntime("attempt"));
   return frozen;
 }
 
-export function makeRunObservabilityCaptureIdentityV1(): RunObservabilityCaptureIdentityV1 {
+export function makeRunObservabilityCaptureIdentity(): RunObservabilityCaptureIdentity {
   const capture = {
     [runObservabilityCaptureIdentityTypeId]: () => undefined,
-  } as RunObservabilityCaptureIdentityV1;
+  } as RunObservabilityCaptureIdentity;
   const frozen = Object.freeze(capture);
   captures.set(frozen, makeCaptureRuntime("run"));
   return frozen;
 }
 
-export function isAttemptObservabilityCaptureOpenV1(
-  capture: AttemptObservabilityCaptureIdentityV1,
+export function isAttemptObservabilityCaptureOpen(
+  capture: AttemptObservabilityCaptureIdentity,
 ): boolean {
   const runtime = captureRuntime(capture);
   return runtime !== undefined && runtime.owner === "attempt" && !runtime.sealed;
 }
 
-export function isRunObservabilityCaptureOpenV1(
-  capture: RunObservabilityCaptureIdentityV1,
+export function isRunObservabilityCaptureOpen(
+  capture: RunObservabilityCaptureIdentity,
 ): boolean {
   const runtime = captureRuntime(capture);
   return runtime !== undefined && runtime.owner === "run" && !runtime.sealed;
 }
 
 /** Once closed, a capture cannot mint entities, accept refs, or register a result. */
-export function sealAttemptObservabilityCaptureIdentityV1(
-  capture: AttemptObservabilityCaptureIdentityV1,
+export function sealAttemptObservabilityCaptureIdentity(
+  capture: AttemptObservabilityCaptureIdentity,
 ): boolean {
   const runtime = captureRuntime(capture);
   if (runtime === undefined || runtime.owner !== "attempt" || runtime.sealed) return false;
@@ -172,8 +172,8 @@ export function sealAttemptObservabilityCaptureIdentityV1(
 }
 
 /** Once closed, a capture cannot mint entities or accept direct refs. */
-export function sealRunObservabilityCaptureIdentityV1(
-  capture: RunObservabilityCaptureIdentityV1,
+export function sealRunObservabilityCaptureIdentity(
+  capture: RunObservabilityCaptureIdentity,
 ): boolean {
   const runtime = captureRuntime(capture);
   if (runtime === undefined || runtime.owner !== "run" || runtime.sealed) return false;
@@ -181,26 +181,26 @@ export function sealRunObservabilityCaptureIdentityV1(
   return true;
 }
 
-export function mintAttemptObservabilityEntityV1<Target extends AttemptReferenceTargetV1>(
-  capture: AttemptObservabilityCaptureIdentityV1,
+export function mintAttemptObservabilityEntity<Target extends AttemptReferenceTarget>(
+  capture: AttemptObservabilityCaptureIdentity,
   target: Target,
-): AttemptCapturedObservabilityEntityV1<Target> | undefined {
+): AttemptCapturedObservabilityEntity<Target> | undefined {
   const runtime = captureRuntime(capture);
   if (
     runtime === undefined ||
     runtime.owner !== "attempt" ||
     runtime.sealed ||
-    !isAttemptReferenceTargetV1(target)
+    !isAttemptReferenceTarget(target)
   ) {
     return undefined;
   }
   const frozenTarget = freezeTarget(target);
-  const key = referenceTargetKeyV1(frozenTarget);
+  const key = referenceTargetKey(frozenTarget);
   if (runtime.targets.has(key)) return undefined;
 
   const ref = {
     [attemptObservabilityEntityRefTypeId]: () => undefined,
-  } as AttemptObservabilityEntityRefV1;
+  } as AttemptObservabilityEntityRef;
   const frozenRef = Object.freeze(ref);
   runtime.targets.set(key, frozenTarget);
   attemptEntityRefs.set(
@@ -210,26 +210,26 @@ export function mintAttemptObservabilityEntityV1<Target extends AttemptReference
   return Object.freeze({ ref: frozenRef, target: frozenTarget });
 }
 
-export function mintRunObservabilityEntityV1<Target extends RunReferenceTargetV1>(
-  capture: RunObservabilityCaptureIdentityV1,
+export function mintRunObservabilityEntity<Target extends RunReferenceTarget>(
+  capture: RunObservabilityCaptureIdentity,
   target: Target,
-): RunCapturedObservabilityEntityV1<Target> | undefined {
+): RunCapturedObservabilityEntity<Target> | undefined {
   const runtime = captureRuntime(capture);
   if (
     runtime === undefined ||
     runtime.owner !== "run" ||
     runtime.sealed ||
-    !isRunReferenceTargetV1(target)
+    !isRunReferenceTarget(target)
   ) {
     return undefined;
   }
   const frozenTarget = freezeTarget(target);
-  const key = referenceTargetKeyV1(frozenTarget);
+  const key = referenceTargetKey(frozenTarget);
   if (runtime.targets.has(key)) return undefined;
 
   const ref = {
     [runObservabilityEntityRefTypeId]: () => undefined,
-  } as RunObservabilityEntityRefV1;
+  } as RunObservabilityEntityRef;
   const frozenRef = Object.freeze(ref);
   runtime.targets.set(key, frozenTarget);
   runEntityRefs.set(frozenRef, Object.freeze({ capture: runtime, target: frozenTarget }));
@@ -241,13 +241,13 @@ export function mintRunObservabilityEntityV1<Target extends RunReferenceTargetV1
  * different capture, copied object, closed capture, same-family target, or
  * forged type assertion is rejected as `undefined` before payload assembly.
  */
-export function resolveAttemptDirectReferenceV1<
-  SourceFamily extends AttemptObservabilityFamilySchemaIdV1,
+export function resolveAttemptDirectReference<
+  SourceFamily extends AttemptObservabilityFamilySchemaId,
 >(
-  capture: AttemptObservabilityCaptureIdentityV1,
+  capture: AttemptObservabilityCaptureIdentity,
   sourceFamily: SourceFamily,
-  ref: AttemptObservabilityEntityRefV1,
-): AttemptReferencesForFamilyV1<SourceFamily> | undefined {
+  ref: AttemptObservabilityEntityRef,
+): AttemptReferencesForFamily<SourceFamily> | undefined {
   const captureState = captureRuntime(capture);
   const entityState = attemptEntityRuntime(ref);
   if (
@@ -260,17 +260,17 @@ export function resolveAttemptDirectReferenceV1<
   ) {
     return undefined;
   }
-  return freezeTarget(entityState.target) as AttemptReferencesForFamilyV1<SourceFamily>;
+  return freezeTarget(entityState.target) as AttemptReferencesForFamily<SourceFamily>;
 }
 
 /** Same owner/capture validation for the two Run-owned families. */
-export function resolveRunDirectReferenceV1<
-  SourceFamily extends RunObservabilityFamilySchemaIdV1,
+export function resolveRunDirectReference<
+  SourceFamily extends RunObservabilityFamilySchemaId,
 >(
-  capture: RunObservabilityCaptureIdentityV1,
+  capture: RunObservabilityCaptureIdentity,
   sourceFamily: SourceFamily,
-  ref: RunObservabilityEntityRefV1,
-): RunReferencesForFamilyV1<SourceFamily> | undefined {
+  ref: RunObservabilityEntityRef,
+): RunReferencesForFamily<SourceFamily> | undefined {
   const captureState = captureRuntime(capture);
   const entityState = runEntityRuntime(ref);
   if (
@@ -283,7 +283,7 @@ export function resolveRunDirectReferenceV1<
   ) {
     return undefined;
   }
-  return freezeTarget(entityState.target) as RunReferencesForFamilyV1<SourceFamily>;
+  return freezeTarget(entityState.target) as RunReferencesForFamily<SourceFamily>;
 }
 
 /**
@@ -291,10 +291,10 @@ export function resolveRunDirectReferenceV1<
  * separate from `mint...`: a command entity may be represented in a sealed
  * payload only after its manifest has been registered before process launch.
  */
-export function registerCommandCaptureV1(
-  capture: AttemptObservabilityCaptureIdentityV1,
-  entity: AttemptCapturedObservabilityEntityV1<CommandReferenceTargetV1>,
-): RegisteredCommandCaptureV1 | undefined {
+export function registerCommandCapture(
+  capture: AttemptObservabilityCaptureIdentity,
+  entity: AttemptCapturedObservabilityEntity<CommandReferenceTarget>,
+): RegisteredCommandCapture | undefined {
   const captureState = captureRuntime(capture);
   const entityState = attemptEntityRuntime(entity.ref);
   if (
@@ -303,18 +303,18 @@ export function registerCommandCaptureV1(
     captureState.sealed ||
     entityState === undefined ||
     entityState.capture !== captureState ||
-    entityState.target.family !== "niceeval.commands/v1" ||
+    entityState.target.family !== "niceeval.observability" ||
     entityState.target.kind !== "command"
   ) {
     return undefined;
   }
-  const target = entityState.target as CommandReferenceTargetV1;
-  const key = referenceTargetKeyV1(target);
+  const target = entityState.target as CommandReferenceTarget;
+  const key = referenceTargetKey(target);
   if (captureState.registeredCommands.has(key)) return undefined;
   const registered = {
     [attemptObservabilityEntityRefTypeId]: () => undefined,
     [registeredCommandCaptureTypeId]: () => undefined,
-  } as RegisteredCommandCaptureV1;
+  } as RegisteredCommandCapture;
   const frozen = Object.freeze(registered);
   const runtime: RegisteredCommandRuntime = {
     capture: captureState,
@@ -322,27 +322,27 @@ export function registerCommandCaptureV1(
     resultRecorded: false,
   };
   captureState.registeredCommands.set(key, runtime);
-  // RegisteredCommandCaptureV1 extends the ordinary entity ref capability, so
+  // RegisteredCommandCapture extends the ordinary entity ref capability, so
   // it remains usable as a direct cross-family target while the capture is open.
   attemptEntityRefs.set(frozen, entityState);
   registeredCommands.set(frozen, runtime);
   return frozen;
 }
 
-export type CommandResultRegistrationV1 =
+export type CommandResultRegistration =
   | { readonly state: "recorded" }
   | { readonly state: "capture-sealed" }
   | { readonly state: "not-registered" }
-  | { readonly state: "already-recorded"; readonly commandId: CommandIdV1 };
+  | { readonly state: "already-recorded"; readonly commandId: CommandId };
 
 /**
  * Pure state transition shared by the commands collector. The collector maps
  * its result to the public, documented ObservabilityCaptureError union.
  */
-export function recordRegisteredCommandResultV1(
-  capture: AttemptObservabilityCaptureIdentityV1,
-  command: RegisteredCommandCaptureV1,
-): CommandResultRegistrationV1 {
+export function recordRegisteredCommandResult(
+  capture: AttemptObservabilityCaptureIdentity,
+  command: RegisteredCommandCapture,
+): CommandResultRegistration {
   const captureState = captureRuntime(capture);
   const commandState = isObject(command) ? registeredCommands.get(command) : undefined;
   if (
@@ -365,9 +365,9 @@ export function recordRegisteredCommandResultV1(
 }
 
 /** @internal Lets commands map a valid registered handle to its durable ID. */
-export function registeredCommandIdV1(
-  command: RegisteredCommandCaptureV1,
-): CommandIdV1 | undefined {
+export function registeredCommandId(
+  command: RegisteredCommandCapture,
+): CommandId | undefined {
   const runtime = isObject(command) ? registeredCommands.get(command) : undefined;
   return runtime?.target.id;
 }

@@ -1,13 +1,13 @@
 # 多个 Attempt 怎样共用源码快照
 
-源码闭包属于 origin Run 的 `niceeval.sources/v1`。Attempt 不各自复制源码，也不把 host path 或 blob
+源码闭包属于 origin Run 的 `niceeval.sources`。Attempt 不各自复制源码，也不把 host path 或 blob
 ref 写进 Core。
 
 ## 同一个 origin Run
 
 ```text
 Run R1
-├─ niceeval.sources/v1
+├─ niceeval.sources
 │  ├─ SourceItemId manifest
 │  └─ Run-local blobs
 ├─ Attempt A1
@@ -28,14 +28,14 @@ canonical project-relative path、SHA-256 和 own blob 表示当时的内容。�
 ```text
 Run R2 / Member
   → { originRunId: R1, attemptId: A1 }
-  → R1 / niceeval.sources/v1
+  → R1 / niceeval.sources
 ```
 
 R2 采用 A1 时只保存精确 Attempt reference，不复制 A1 或 R1 的 Attachment。source viewer 沿 A1 的
 origin Run 读取，不能改读 R2 或当前 worktree。origin Run 可以进入 reader 的 dependency closure，
 但不因此进入 R2 的逻辑 Sample denominator。
 
-十个 Slot 指向同一个 origin Run 时仍是十条逻辑引用。宿主可以按 owner 与 projection token 去重一次
+十个 Slot 指向同一个 origin Run 时仍是十条逻辑引用。宿主可以按 owner 与固定读取种类去重一次
 物理读取；这个 cache 不会改变每条 Member 的语义。
 
 ## 不建立跨 Run blob pool

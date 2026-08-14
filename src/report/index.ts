@@ -1,107 +1,75 @@
-// niceeval/report is the complete public Report authoring surface. Persisted
-// Record selection and execution remain internal to the CLI host.
-export * from "../analysis/index.ts";
-export * from "../projection/index.ts";
+// `niceeval/report` is the complete public Report authoring surface. aggregate()
+// is intentionally lifted for Page and component callbacks; Sample and other
+// Analysis executors stay in `niceeval/analysis`, while public Host composition
+// remains the separate `niceeval/report/host` entry.
 
 export {
-  defineCalculation,
-  defineDownload,
-  definePage,
-  definePageFamily,
-  defineReport,
-  reportComponentId,
-  reportDownloadPath,
-  reportId,
-  reportInputs,
-  reportInstanceKey,
-  reportInstanceKeyFromRecordId,
-  reportRoute,
-  reportRouteFromKeys,
-} from "./author/index.ts";
+  aggregate,
+  type ClosedRows,
+  type MetricValue,
+} from "../analysis/index.ts";
 
+export {
+  defineReport,
+} from "./definition.ts";
 export type {
-  AnyReportCalculation,
+  EvidenceLocator,
+  PageDefinition,
+  PageEvidence,
+  PageLoad,
+  PageLoadContext,
+  PageParams,
+  PageRender,
+  ParameterizedPageDefinition,
+  PlainPageDefinition,
   Report,
-  ReportCalculation,
-  ReportCalculationResults,
-  ReportCalculationSet,
-  ReportCompleteness,
-  ReportComponentContext,
-  ReportComponentId,
-  ReportDataPlan,
-  ReportDataShape,
-  ReportDataState,
-  ReportDownload,
-  ReportDownloadFile,
-  ReportDownloadPath,
-  ReportId,
-  ReportInstanceKey,
-  ReportPage,
-  ReportPageFamily,
-  ReportPathIssue,
-  ReportProjectedValues,
-  ReportRoute,
-} from "./author/index.ts";
+  ReportDefinition,
+} from "./definition.ts";
+
+export {
+  Bars,
+  Callout,
+  defineComponent,
+  Download,
+  Grid,
+  Line,
+  Scatter,
+  Stack,
+  Stat,
+  Table,
+  Text,
+} from "./components.ts";
+export type {
+  ChartAxisKey,
+  ChartDimensionKey,
+  ChartProps,
+  ComponentFaces,
+  ComposeContext,
+  DownloadFile,
+  PageContext,
+  ReportComponent,
+  ResolveContext,
+  TableColumn,
+  TextContext,
+  WebContext,
+} from "./components.ts";
 
 export {
   REPORT_DOCUMENT_DEPTH_MAX,
   REPORT_DOCUMENT_NODES_MAX,
-  freezeReportDocument,
-  reportChart,
-  reportCode,
-  reportCodeBlock,
-  reportDocument,
-  reportEmphasis,
-  reportLink,
-  reportList,
-  reportMetric,
-  reportParagraph,
-  reportSection,
-  reportStatus,
-  reportTable,
-  reportText,
-  validateReportDocument,
-} from "./semantic/index.ts";
-
-export type {
-  ReportBlock,
-  ReportChart,
-  ReportCode,
-  ReportDocumentClosure,
-  ReportDocumentIssue,
-  ReportDocument,
-  ReportDocumentValidation,
-  ReportInline,
-  ReportList,
-  ReportMetric,
-  ReportParagraph,
-  ReportScalar,
-  ReportSection,
-  ReportStatus,
-  ReportTable,
-} from "./semantic/index.ts";
-
-// Completed execution data is immutable and safe for an author to inspect.
-// Constructors, host callbacks, and scheduling mechanics stay private.
-export type {
-  ReportExecution,
+  REPORT_DOWNLOAD_FILE_BYTES_MAX,
+  REPORT_DOWNLOAD_FILES_MAX,
+  REPORT_PAGES_MAX,
 } from "./execution/model.ts";
 export type {
-  ReportCalculationExecutionResult,
-  ReportCalculationResult,
-  ReportDownloadResult,
-  ReportPageFamilyResult,
+  ReportExecution,
   ReportPageResult,
-  ReportProjectionId,
-  ReportProjectionSummary,
-} from "./execution/results.ts";
+} from "./execution/model.ts";
 export type {
   ReportExecutionProblem,
   ReportProblem,
-  ReportProblemId,
   ReportProblemTable,
   ReportProblemTableEntry,
-  ReportRecordedDataProblem,
 } from "./execution/problems.ts";
 
 export {

@@ -34,21 +34,30 @@ t.sandbox.notInDiff(/console\.log/, { content: "both" });
 
 `notInDiff()` 从不扫描未变化上下文。路径命中或已知 added/removed hunk 命中立即为 mismatch；没有命中但所选内容侧存在 binary 或 oversized elision 时为 unavailable。`content` 未参与的路径判定不因 elision 失去确定性。
 
-Runner 在作者 settle 后只导出并冻结一次无版本的 workspace diff 语义值。Evaluation Record adapter 在写入边界把它编码为 `niceeval.diff/v1` Attempt Attachment。
+Runner 在作者 settle 后只导出并冻结一次 workspace diff 语义值。它是 Assertion evaluator 与 FileChanges collector
+共享的内存输入。封口时 collector 按 Record 的 exact shape 形成 origin Attempt 的
+`niceeval.file-changes` closure；其 envelope 的 `schemaVersion` 是 `1`。它不是另一个 diff schema。
 
-该值含 agent send-window endpoint attribution、有效 include/ignore/default-policy identity、零变化 window，以及每条路径的 absent/text/elided 端点和 added/removed hunks。所有上述 Assertion evaluator 与该 adapter 共享同一冻结值。空变化是可用的空值；采集失败是 unavailable，绝不伪装为空 diff。
+该冻结值保留 agent send-window endpoint attribution、有效 include/ignore/default-policy identity、零变化 window，
+以及判定所需的路径与内容端点。空变化仍是可用的空值；采集失败绝不伪装为空变化。持久化的路径、revision、binary / elided
+内容与 blob 只以 FileChanges 的 exact decoder 为准。Assertion 的 result、coverage 与 Evidence refs 则只封入 Assertions，
+不会复制到 FileChanges。
 
-required 的 diff Assertion 在 unavailable 时使 Verdict errored；optional 的 unavailable 不单独改变 Verdict。没有声明 diff Assertion 时，采集失败只留下 warning 和 unavailable Attachment，不妨碍其他证据继续。超时或中断先把尚未结算的 Assertion 封为 `producer-interrupted`；之后的 best-effort diff 仅供诊断，不重新决定它。
+required 的 diff Assertion 在其证据输入为 `unavailable` 时使 Verdict `errored`；optional 的 `unavailable` 不单独改变 Verdict。
+没有声明 diff Assertion 时，采集失败只在 Observability diagnostics 留下 warning，且 FileChanges 读取如实保留其四态。
+超时或中断先把尚未结算的 Assertion 封为 `producer-interrupted`；之后的 best-effort diff 仅供诊断，不重新决定它。
 
-读取持久化的 typed diff 要通过中立的 RecordAttachment projector：
+持久化的文件变化通过 Analysis 的闭合 DomainView 读取：
 
 ```ts
-import { agentWorkspaceDiffProjector } from "niceeval";
-import { attemptSlotProjection } from "niceeval/projection";
+import { fileChangesView, query } from "niceeval/analysis";
 
-const diffByAttempt = attemptSlotProjection(agentWorkspaceDiffProjector);
+const diffByAttempt = await query(sample, {
+  kind: "domain-view",
+  view: fileChangesView,
+  locator,
+});
 ```
 
-它没有 Report 或官方组件的特权。v1 不预先建立 Evaluation migration group。未来新增官方 diff Attachment schema
-时必须提供逐相邻 converter；若迁移还必须改写 Assertions 中的 schema 指示，则采用该版本前必须完整定义 group
-authority、成员映射、原子提交与失败。缺少这份契约时明确呈现 migration-unavailable，不能独立改写一侧。
+family 读取只使用 `available`、`not-recorded`、`unsupported` 与 `invalid`。这条查询没有 Report 或官方组件的特权，
+也不承担 schema migration；格式演进只由 Record maintenance 的相邻 migration 处理。

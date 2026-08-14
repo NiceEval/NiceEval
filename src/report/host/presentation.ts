@@ -1,21 +1,21 @@
 import { Context, Effect } from "effect";
-import type { AnalysisSelectionSummary } from "../../analysis/index.ts";
+import type { LocalizedText } from "../../shared/types.ts";
 import type {
-  ReportCalculationExecutionResult,
-  ReportDownloadResult,
-  ReportPageFamilyResult,
-  ReportPageResult,
-  ReportProjectionSummary,
-} from "../execution/results.ts";
-import type { ReportExecution } from "../execution/model.ts";
-import type { ReportProblem, ReportProblemTableEntry } from "../execution/problems.ts";
+  ClosedReportPage,
+  ClosedReportTree,
+  ReportExecution,
+} from "../execution/model.ts";
 import type {
-  ReportBlock,
-  ReportDocument,
-  ReportInline,
-  ReportScalar,
-} from "../semantic/document.ts";
-import type { ReportRoute } from "../author/identity.ts";
+  ReportProblemTableEntry,
+} from "../execution/problems.ts";
+import type {
+  AnalysisIssue,
+  EvidenceRef,
+  MeasureFormat,
+  MetricBasis,
+  MetricState,
+  MetricValue,
+} from "../semantic/value.ts";
 
 /** Failure to write a completed Report presentation to its host console. */
 export interface ReportConsoleError {
@@ -43,12 +43,13 @@ export type ReportShowError = ReportConsoleError | ReportShowRenderError;
 export interface ShowReportInput {
   readonly execution: ReportExecution;
   readonly format?: "text" | "json";
-  readonly page?: ReportRoute;
+  /** Exact closed route. The renderer never discovers or executes another one. */
+  readonly page?: string;
 }
 
 /**
- * Presents one already-completed execution. It never reaches back into a
- * Record, invokes Report callbacks, or starts a private Effect runtime.
+ * Presents one already-closed execution. Rendering has no path back to Sample,
+ * Record, author callbacks, or a private Effect runtime.
  */
 export function showReport(
   input: ShowReportInput,
@@ -62,13 +63,15 @@ export function showReport(
   });
 }
 
-/** A deterministic text projection shared by terminal callers and Node views. */
+/** A deterministic terminal projection of one ClosedReportTree. */
 export function renderReportExecutionText(input: ShowReportInput): string {
   const { execution } = input;
-  const pages = selectedPages(execution.pages, input.page);
+  const pages = selectedPages(execution.tree.pages, input.page);
+  const reportTitle = localizedText(execution.report.title ?? execution.report.id);
+  const coverage = execution.sample.coverage;
   const lines = [
-    `Report ${visibleText(execution.reportId)}`,
-    `Sample: ${execution.sample.runs.length} run(s), ${execution.sample.denominator} slot(s)`,
+    `Report ${visibleText(reportTitle)}`,
+    `Sample: ${coverage.included} included / ${coverage.frameTotal} slot(s) · ${coverage.selected} selected`,
   ];
 
   for (const page of pages) {
@@ -77,17 +80,17 @@ export function renderReportExecutionText(input: ShowReportInput): string {
   }
 
   lines.push("");
-  lines.push(...problemLines(execution));
-
+  lines.push(...problemLines(execution.tree));
   return `${lines.join("\n")}\n`;
 }
 
-/** A reserved host-owned surface; author pages cannot suppress these facts. */
+/** A reserved host-owned surface; authored pages cannot suppress these facts. */
 export function renderReportExecutionProblemsText(execution: ReportExecution): string {
+  const reportTitle = localizedText(execution.report.title ?? execution.report.id);
   return `${[
-    `Report ${visibleText(execution.reportId)}`,
+    `Report ${visibleText(reportTitle)}`,
     "",
-    ...problemLines(execution),
+    ...problemLines(execution.tree),
   ].join("\n")}\n`;
 }
 
@@ -102,8 +105,9 @@ function renderText(input: ShowReportInput): Effect.Effect<string, ReportShowRen
 }
 
 /**
- * The JSON envelope intentionally contains only execution-owned data. Download
- * bytes, reader capabilities, callbacks, and filesystem paths never cross it.
+ * JSON is a deterministic, download-byte-free projection of the same closed
+ * tree. It deliberately carries no execution callbacks, Sample capability,
+ * reader, filesystem target, or raw download bytes.
  */
 export function renderReportExecutionJson(
   input: ShowReportInput,
@@ -111,87 +115,111 @@ export function renderReportExecutionJson(
   return Effect.map(reportExecutionShowDocument(input), (document) => `${canonicalJson(document)}\n`);
 }
 
-/** A reusable, closed data projection for JSON or a web shell. */
+/** A reusable deterministic JSON value for the CLI and static host-data file. */
 export function reportExecutionShowDocument(
   input: ShowReportInput,
 ): Effect.Effect<Readonly<Record<string, unknown>>, ReportShowRenderError> {
   return Effect.gen(function* () {
-    const { execution } = input;
-    const pages = yield* selectedPagesEffect(execution.pages, input.page);
+    const pages = yield* selectedPagesEffect(input.execution.tree.pages, input.page);
     const downloads: Readonly<Record<string, unknown>>[] = [];
-    for (const download of sortedDownloads(execution.downloads)) {
+    for (const download of [...input.execution.tree.downloads].sort((left, right) =>
+      compareUtf8(closedDownloadPath(left), closedDownloadPath(right)) || compareUtf8(left.id, right.id)
+    )) {
       downloads.push(yield* downloadShowValue(download));
     }
     return Object.freeze({
       format: "niceeval.report-show/v1",
-      reportId: execution.reportId,
-      pageSelection: input.page ?? null,
-      sample: Object.freeze({
-        selection: selectionShowValue(execution.sample.selection),
-        runCount: execution.sample.runs.length,
-        slotCount: execution.sample.slots.length,
-        denominator: execution.sample.denominator,
+      report: Object.freeze({
+        id: input.execution.report.id,
+        ...(input.execution.report.title === undefined
+          ? {}
+          : { title: jsonLocalizedText(input.execution.report.title) }),
       }),
-      projections: sortedProjections(execution.projections).map((projection) =>
-        Object.freeze({
-          projectionId: projection.projectionId,
-          inputKey: projection.inputKey,
-          coverage: projection.coverage,
-          problemIds: sortedProblemIds(projection.problemIds),
-        })
+      sample: Object.freeze({
+        identity: jsonValue(input.execution.sample.identity),
+        selection: jsonValue(input.execution.sample.selection),
+        coverage: jsonValue(input.execution.sample.coverage),
+        runCount: input.execution.sample.runCount,
+        slotCount: input.execution.sample.slotCount,
+        denominator: input.execution.sample.denominator,
+      }),
+      target: jsonValue(input.execution.target),
+      pageSelection: input.page ?? null,
+      pageSummaries: Object.freeze(
+        [...input.execution.pageSummaries]
+          .sort((left, right) => compareUtf8(left.path, right.path) || compareUtf8(left.pageId, right.pageId))
+          .map((summary) => Object.freeze({
+            pageId: summary.pageId,
+            path: summary.path,
+            kind: summary.kind,
+            instanceCount: summary.instanceCount,
+          })),
       ),
-      calculations: sortedCalculations(execution.calculations).map((calculation) =>
-        Object.freeze({
-          state: calculation.state,
-          calculationId: calculation.calculationId,
-          ...(calculation.state === "available"
-            ? {
-              inputState: calculation.inputState,
-              value: calculation.value,
-            }
-            : {}),
-          problemIds: sortedProblemIds(calculation.problemIds),
-        })
-      ),
-      families: sortedFamilies(execution.families).map((family) =>
-        Object.freeze({
-          state: family.state,
-          familyId: family.familyId,
-          instanceCount: family.instanceCount,
-          problemIds: sortedProblemIds(family.problemIds),
-        })
-      ),
-      pages: pages.map((page) => pageShowValue(page)),
-      downloads: Object.freeze(downloads),
-      problemTable: [...execution.problemTable]
-        .sort((left, right) => left.id - right.id)
-        .map((entry) => problemShowValue(entry)),
+      tree: Object.freeze({
+        pages: Object.freeze(
+          [...pages]
+            .sort(comparePages)
+            .map(pageShowValue),
+        ),
+        downloads: Object.freeze(downloads),
+        problemTable: Object.freeze(
+          [...input.execution.tree.problemTable]
+            .sort((left, right) => Number(left.id) - Number(right.id))
+            .map(problemShowValue),
+        ),
+      }),
     });
   });
 }
 
+function pageShowValue(page: ClosedReportPage): Readonly<Record<string, unknown>> {
+  return Object.freeze({
+    pageId: page.pageId,
+    route: page.route,
+    title: jsonLocalizedText(page.title),
+    node: jsonValue(page.node),
+    problemIds: sortedProblemIds(page.problemIds),
+  });
+}
+
+function downloadShowValue(
+  download: ReportExecution["tree"]["downloads"][number],
+): Effect.Effect<Readonly<Record<string, unknown>>, ReportShowRenderError> {
+  return Effect.map(sha256Hex(download.bytes), (sha256) => Object.freeze({
+    id: download.id,
+    path: closedDownloadPath(download),
+    mediaType: download.mediaType,
+    byteLength: download.bytes.byteLength,
+    sha256,
+  }));
+}
+
+function problemShowValue(entry: ReportProblemTableEntry): Readonly<Record<string, unknown>> {
+  return Object.freeze({
+    id: Number(entry.id),
+    code: entry.code,
+    summary: entry.summary,
+  });
+}
+
 function selectedPages(
-  pages: readonly ReportPageResult[],
-  page: ReportRoute | undefined,
-): readonly ReportPageResult[] {
-  if (page === undefined) {
-    return Object.freeze([...pages].sort(comparePages));
-  }
-  const selected = pages.filter((candidate) => candidate.route === page);
-  if (selected.length === 0) {
-    throw new PageSelectionError();
-  }
+  pages: readonly ClosedReportPage[],
+  route: string | undefined,
+): readonly ClosedReportPage[] {
+  if (route === undefined) return Object.freeze([...pages].sort(comparePages));
+  const selected = pages.filter((candidate) => candidate.route === route);
+  if (selected.length === 0) throw new PageSelectionError();
   return Object.freeze([...selected].sort(comparePages));
 }
 
 class PageSelectionError extends Error {}
 
 function selectedPagesEffect(
-  pages: readonly ReportPageResult[],
-  page: ReportRoute | undefined,
-): Effect.Effect<readonly ReportPageResult[], ReportShowRenderError> {
+  pages: readonly ClosedReportPage[],
+  route: string | undefined,
+): Effect.Effect<readonly ClosedReportPage[], ReportShowRenderError> {
   return Effect.try({
-    try: () => selectedPages(pages, page),
+    try: () => selectedPages(pages, route),
     catch: (error): ReportShowRenderError => ({
       code: "report-show-render-failed",
       operation: error instanceof PageSelectionError ? "page-selection" : "render",
@@ -199,227 +227,399 @@ function selectedPagesEffect(
   });
 }
 
-function pageShowValue(page: ReportPageResult): Readonly<Record<string, unknown>> {
-  return Object.freeze({
-    state: page.state,
-    pageId: page.pageId,
-    ...(page.route === undefined ? {} : { route: page.route }),
-    ...(page.state === "rendered" ? { document: page.document } : {}),
-    problemIds: sortedProblemIds(page.problemIds),
-  });
-}
-
-function downloadShowValue(
-  download: ReportDownloadResult,
-): Effect.Effect<Readonly<Record<string, unknown>>, ReportShowRenderError> {
-  return Effect.gen(function* () {
-    const files: Readonly<Record<string, unknown>>[] = [];
-    if (download.state === "built") {
-      for (const file of [...download.files].sort((left, right) => compareUtf8(left.path, right.path))) {
-        files.push(Object.freeze({
-          path: file.path,
-          mediaType: file.mediaType,
-          byteLength: file.bytes.byteLength,
-          sha256: yield* sha256Hex(file.bytes),
-        }));
-      }
-    }
-    return Object.freeze({
-      state: download.state,
-      downloadId: download.downloadId,
-      ...(download.state === "built" ? { files: Object.freeze(files) } : {}),
-      problemIds: sortedProblemIds(download.problemIds),
-    });
-  });
-}
-
-function problemShowValue(entry: ReportProblemTableEntry): Readonly<Record<string, unknown>> {
-  return Object.freeze({ id: entry.id, problem: entry.problem });
-}
-
-function problemLines(execution: ReportExecution): readonly string[] {
-  if (execution.problemTable.length === 0) {
-    return Object.freeze(["Problems", "  none"]);
-  }
-  return Object.freeze([
-    "Problems",
-    ...[...execution.problemTable]
-      .sort((left, right) => left.id - right.id)
-      .map((entry) => `  [${entry.id}] ${problemText(entry.problem)}`),
-  ]);
-}
-
-function selectionShowValue(selection: AnalysisSelectionSummary): Readonly<Record<string, unknown>> {
-  if (selection.policy === "explicit-runs") {
-    return Object.freeze({
-      policy: selection.policy,
-      runIds: Object.freeze([...selection.runIds].sort(compareUtf8)),
-    });
-  }
-  return Object.freeze({
-    policy: selection.policy,
-    experimentIds: selection.experimentIds === "all"
-      ? "all"
-      : Object.freeze([...selection.experimentIds].sort(compareUtf8)),
-    selectedRunIds: Object.freeze([...selection.selectedRunIds].sort(compareUtf8)),
-  });
+function comparePages(left: ClosedReportPage, right: ClosedReportPage): number {
+  return compareUtf8(left.route, right.route) || compareUtf8(left.pageId, right.pageId);
 }
 
 function sortedProblemIds(ids: readonly number[]): readonly number[] {
-  return Object.freeze([...ids].sort((left, right) => left - right));
+  return Object.freeze([...ids].map(Number).sort((left, right) => left - right));
 }
 
-function sortedDownloads(values: readonly ReportDownloadResult[]): readonly ReportDownloadResult[] {
-  return Object.freeze([...values].sort((left, right) => compareUtf8(left.downloadId, right.downloadId)));
-}
-
-function sortedProjections(values: readonly ReportProjectionSummary[]): readonly ReportProjectionSummary[] {
-  return Object.freeze([...values].sort((left, right) => left.projectionId - right.projectionId));
-}
-
-function sortedCalculations(
-  values: readonly ReportCalculationExecutionResult[],
-): readonly ReportCalculationExecutionResult[] {
-  return Object.freeze([...values].sort((left, right) => compareUtf8(left.calculationId, right.calculationId)));
-}
-
-function sortedFamilies(values: readonly ReportPageFamilyResult[]): readonly ReportPageFamilyResult[] {
-  return Object.freeze([...values].sort((left, right) => compareUtf8(left.familyId, right.familyId)));
-}
-
-function comparePages(left: ReportPageResult, right: ReportPageResult): number {
-  if (left.route !== undefined && right.route !== undefined) {
-    const routeComparison = compareUtf8(left.route, right.route);
-    return routeComparison === 0 ? compareUtf8(left.pageId, right.pageId) : routeComparison;
-  }
-  if (left.route !== undefined) return -1;
-  if (right.route !== undefined) return 1;
-  return compareUtf8(left.pageId, right.pageId);
-}
-
-function renderPageText(page: ReportPageResult): string[] {
-  const route = page.route === undefined ? "(no route)" : page.route;
-  if (page.state !== "rendered") {
-    return [
-      `Page ${visibleText(route)} · ${page.state}`,
-      `  problems: ${page.problemIds.join(", ")}`,
-    ];
-  }
-  return [
-    `Page ${visibleText(route)}`,
-    ...renderDocumentText(page.document),
+function renderPageText(page: ClosedReportPage): readonly string[] {
+  const title = visibleText(localizedText(page.title));
+  const lines = [
+    `Page ${visibleText(page.route)}`,
+    `  ${title}`,
   ];
-}
-
-function renderDocumentText(document: ReportDocument): string[] {
-  const lines = [`  ${visibleText(document.title)}`];
-  for (const block of document.children) {
-    lines.push(...renderBlockText(block, "  "));
+  if (page.problemIds.length > 0) {
+    lines.push(`  problems: ${sortedProblemIds(page.problemIds).map((id) => `#${id}`).join(", ")}`);
   }
+  lines.push(...renderNodeText(page.node, "  ", "text"));
   return lines;
 }
 
-function renderBlockText(block: ReportBlock, indent: string): string[] {
-  switch (block.type) {
-    case "section": {
-      const lines = [`${indent}${visibleText(block.heading)}`];
-      for (const child of block.children) {
-        lines.push(...renderBlockText(child, `${indent}  `));
-      }
-      return lines;
+type RenderFace = "text" | "web";
+
+/**
+ * Text and HTML call this same closed-node reader. An invalid or unknown node
+ * cannot acquire authority at rendering time; it is made visible as unsupported.
+ */
+export function renderNodeText(
+  value: unknown,
+  indent = "",
+  face: RenderFace = "text",
+): readonly string[] {
+  const node = dataRecord(value);
+  if (node === undefined || typeof node.type !== "string") {
+    return Object.freeze([`${indent}[unsupported Report node]`]);
+  }
+  switch (node.type) {
+    case "text":
+      return Object.freeze([`${indent}${visibleText(stringValue(node.value))}`]);
+    case "stack":
+    case "grid":
+      return renderChildrenText(node.children, indent, face);
+    case "callout": {
+      const tone = knownTone(node.tone);
+      const title = node.title === undefined ? "" : ` ${visibleText(localizedUnknownText(node.title))}`;
+      return Object.freeze([
+        `${indent}[${tone}]${title}`,
+        ...renderChildrenText(node.children, `${indent}  `, face),
+      ]);
     }
-    case "paragraph":
-      return [`${indent}${renderInlineText(block.children)}`];
-    case "list": {
-      const lines: string[] = [];
-      for (const [index, item] of block.items.entries()) {
-        const marker = block.ordered ? `${index + 1}. ` : "- ";
-        const rendered = item.flatMap((child) => renderBlockText(child, `${indent}  `));
-        if (rendered.length === 0) {
-          lines.push(`${indent}${marker}`);
-        } else {
-          lines.push(`${indent}${marker}${rendered[0]!.trimStart()}`);
-          lines.push(...rendered.slice(1));
-        }
-      }
-      return lines;
+    case "table":
+      return renderTableText(node, indent);
+    case "bars":
+    case "line":
+    case "scatter":
+      return renderChartText(node, indent);
+    case "stat":
+      return renderStatText(node, indent);
+    case "download":
+      return renderDownloadText(node, indent, face);
+    case "primitive": {
+      const selected = face === "text" ? node.text : node.web;
+      return renderNodeText(selected, indent, face);
     }
-    case "table": {
-      const headings = block.columns.map((column) => visibleText(column.label)).join(" | ");
-      const rows = block.rows.map((row) =>
-        block.columns.map((column) => scalarText(row[column.key]!)).join(" | ")
-      );
-      return [
-        `${indent}${visibleText(block.caption)}`,
-        `${indent}${headings}`,
-        ...rows.map((row) => `${indent}${row}`),
-      ];
-    }
-    case "metric":
-      return [
-        `${indent}${visibleText(block.label)}: ${scalarText(block.value)}${
-          block.unit === undefined ? "" : ` ${visibleText(block.unit)}`
-        }`,
-      ];
-    case "status":
-      return [
-        `${indent}[${block.tone}] ${visibleText(block.label)}${
-          block.detail === undefined ? "" : `: ${renderInlineText(block.detail)}`
-        }`,
-      ];
-    case "code-block":
-      return block.value.split("\n").map((line) => `${indent}${visibleText(line)}`);
-    case "chart": {
-      const lines = [`${indent}${visibleText(block.title)} (${visibleText(block.categoryLabel)})`];
-      for (const series of block.series) {
-        const values = block.categories.map((category, index) =>
-          `${visibleText(category)}=${scalarText(series.values[index] ?? null)}`
-        );
-        lines.push(`${indent}${visibleText(series.label)}: ${values.join(", ")}`);
-      }
-      return lines;
-    }
+    default:
+      return Object.freeze([`${indent}[unsupported Report node: ${visibleText(node.type)}]`]);
   }
 }
 
-function renderInlineText(children: readonly ReportInline[]): string {
-  return children.map((child) => {
-    switch (child.type) {
-      case "text":
-        return visibleText(child.value);
-      case "code":
-        return `\`${visibleText(child.value)}\``;
-      case "emphasis":
-        return `*${renderInlineText(child.children)}*`;
-      case "link":
-        return `${renderInlineText(child.label)} (${visibleText(
-          child.target.kind === "route" ? child.target.route : child.target.path,
-        )})`;
+function renderChildrenText(value: unknown, indent: string, face: RenderFace): readonly string[] {
+  if (!Array.isArray(value)) return Object.freeze([`${indent}[unsupported Report children]`]);
+  return Object.freeze(value.flatMap((child) => renderNodeText(child, indent, face)));
+}
+
+function renderTableText(node: Readonly<Record<string, unknown>>, indent: string): readonly string[] {
+  const columns = tableColumns(node.columns);
+  const caption = node.caption === undefined ? "Table" : localizedUnknownText(node.caption);
+  const lines = [`${indent}${visibleText(caption)}`];
+  if (columns.length === 0) {
+    lines.push(`${indent}  [unsupported table columns]`);
+    return Object.freeze(lines);
+  }
+  lines.push(`${indent}  ${columns.map((column) => visibleText(column.label)).join(" | ")}`);
+  const rows = Array.isArray(node.rows) ? node.rows : [];
+  for (const row of rows) {
+    const record = dataRecord(row);
+    if (record === undefined) {
+      lines.push(`${indent}  [unsupported table row]`);
+      continue;
     }
-  }).join("");
+    lines.push(`${indent}  ${columns.map((column) => visibleText(reportClosedValueText(record[column.key]))).join(" | ")}`);
+  }
+  const issues = analysisIssues(node.issues);
+  if (issues.length > 0) {
+    lines.push(`${indent}  row issues: ${issues.map(analysisIssueText).map(visibleText).join("; ")}`);
+  }
+  return Object.freeze(lines);
 }
 
-function scalarText(value: ReportScalar): string {
-  return typeof value === "string" ? visibleText(value) : String(value);
+function renderChartText(node: Readonly<Record<string, unknown>>, indent: string): readonly string[] {
+  const type = node.type === "bars" ? "Bars" : node.type === "line" ? "Line" : "Scatter";
+  const title = node.title === undefined ? type : localizedUnknownText(node.title);
+  const points = Array.isArray(node.points) ? node.points : [];
+  const preferred = [node.x, node.y, node.color, node.series]
+    .filter((value): value is string => typeof value === "string" && value.length > 0);
+  const fields = orderedPointFields(points, preferred);
+  const lines = [`${indent}${visibleText(title)} (${type})`];
+  if (fields.length === 0) {
+    lines.push(`${indent}  [no text-equivalent points]`);
+    return Object.freeze(lines);
+  }
+  lines.push(`${indent}  ${fields.map(visibleText).join(" | ")}`);
+  for (const point of points) {
+    const record = dataRecord(point);
+    if (record === undefined) {
+      lines.push(`${indent}  [unsupported chart point]`);
+      continue;
+    }
+    lines.push(`${indent}  ${fields.map((field) => visibleText(reportClosedValueText(record[field]))).join(" | ")}`);
+  }
+  const issues = analysisIssues(node.issues);
+  if (issues.length > 0) {
+    lines.push(`${indent}  point issues: ${issues.map(analysisIssueText).map(visibleText).join("; ")}`);
+  }
+  return Object.freeze(lines);
 }
 
-function problemText(problem: ReportProblem): string {
-  if (problem.category === "execution") {
-    return `${problem.code} in ${visibleText(problem.consumerId)}: ${visibleText(problem.summary)}`;
+function renderStatText(node: Readonly<Record<string, unknown>>, indent: string): readonly string[] {
+  const label = localizedUnknownText(node.label);
+  const metric = metricValue(node.value);
+  if (metric === undefined) return Object.freeze([`${indent}${visibleText(label)}: [unsupported metric]`]);
+  return Object.freeze([
+    `${indent}${visibleText(label)}: ${visibleText(reportMetricText(metric))}`,
+    ...metricSupplementText(metric, `${indent}  `),
+  ]);
+}
+
+function renderDownloadText(
+  node: Readonly<Record<string, unknown>>,
+  indent: string,
+  face: RenderFace,
+): readonly string[] {
+  const id = typeof node.id === "string" ? node.id : "[unsupported download]";
+  return Object.freeze([
+    `${indent}Download: ${visibleText(id)}`,
+    ...renderChildrenText(node.children, `${indent}  `, face),
+  ]);
+}
+
+function metricSupplementText(metric: MetricValue, indent: string): readonly string[] {
+  const lines: string[] = [];
+  if (metric.issues.length > 0) {
+    lines.push(`${indent}issues: ${metric.issues.map(analysisIssueText).map(visibleText).join("; ")}`);
   }
-  const owner = problem.slotId ?? problem.runId;
-  const input = problem.inputKey === undefined ? "" : ` input ${visibleText(problem.inputKey)}`;
-  const target = owner === undefined ? "" : ` (${visibleText(owner)})`;
-  if (problem.code === "migration-required") {
-    return `${problem.code}${input}${target}; run niceeval migrate`;
+  if (metric.refs.length > 0) {
+    lines.push(`${indent}evidence: ${metric.refs.map(evidenceRefText).map(visibleText).join(", ")}`);
   }
-  return `${problem.code}${input}${target}`;
+  return Object.freeze(lines);
+}
+
+function problemLines(tree: ClosedReportTree): readonly string[] {
+  if (tree.problemTable.length === 0) return Object.freeze(["Problems", "  none"]);
+  return Object.freeze([
+    "Problems",
+    ...[...tree.problemTable]
+      .sort((left, right) => Number(left.id) - Number(right.id))
+      .map((entry) => `  [${Number(entry.id)}] ${visibleText(reportProblemText(entry))}`),
+  ]);
+}
+
+/** A stable human-readable description shared by terminal and no-JS HTML. */
+export function reportProblemText(problem: ReportProblemTableEntry): string {
+  return `${problem.code}: ${problem.summary}`;
+}
+
+/** A closed download ID is the portable path name beneath `downloads/`. */
+export function closedDownloadPath(download: { readonly id: string }): string {
+  return download.id;
+}
+
+/** Unknown problem codes fail closed as well; only analysis facts are publishable. */
+export function isExecutionReportProblem(problem: ReportProblemTableEntry): boolean {
+  return !problem.code.startsWith("analysis-");
+}
+
+/** Metric output always retains value, denominator, state, issues, and refs. */
+export function reportMetricText(metric: MetricValue): string {
+  const number = metric.value === null ? "—" : String(metric.value);
+  const unit = metric.unit === undefined || metric.unit === "" ? "" : ` ${metric.unit}`;
+  const format = metric.format === undefined ? "" : ` · format ${reportClosedValueText(metric.format)}`;
+  return `${number}${unit} · ${metric.samples} / ${metric.total} ${metric.basis} · ${metric.state}${format}`;
+}
+
+/** Renders scalars and verified closed values without inventing a new metric. */
+export function reportClosedValueText(value: unknown): string {
+  const metric = metricValue(value);
+  if (metric !== undefined) {
+    const issues = metric.issues.length === 0 ? "" : ` · issues: ${metric.issues.map(analysisIssueText).join("; ")}`;
+    const refs = metric.refs.length === 0 ? "" : ` · evidence: ${metric.refs.map(evidenceRefText).join(", ")}`;
+    return `${reportMetricText(metric)}${issues}${refs}`;
+  }
+  if (value === null) return "—";
+  switch (typeof value) {
+    case "boolean":
+    case "number":
+    case "string":
+      return String(value);
+    default:
+      return canonicalJson(value);
+  }
+}
+
+export function analysisIssueText(issue: AnalysisIssue): string {
+  const refs = issue.refs.length === 0 ? "" : ` (${issue.refs.map(evidenceRefText).join(", ")})`;
+  return `${issue.code}: ${issue.message}${refs}`;
+}
+
+export function evidenceRefText(reference: EvidenceRef): string {
+  return canonicalJson(reference.identity);
+}
+
+/** Localized values resolve deterministically: requested English, then UTF-8-first locale. */
+export function localizedText(value: LocalizedText, locale = "en"): string {
+  if (typeof value === "string") return value;
+  const direct = value[locale] ?? value.en;
+  if (direct !== undefined) return direct;
+  const first = Object.keys(value).sort(compareUtf8)[0];
+  return first === undefined ? "" : value[first] ?? "";
+}
+
+export function localizedUnknownText(value: unknown, locale = "en"): string {
+  if (typeof value === "string") return value;
+  const record = dataRecord(value);
+  if (record === undefined) return "[unsupported text]";
+  const direct = typeof record[locale] === "string"
+    ? record[locale]
+    : typeof record.en === "string"
+      ? record.en
+      : undefined;
+  if (direct !== undefined) return direct;
+  const key = Object.keys(record).sort(compareUtf8)[0];
+  return key === undefined || typeof record[key] !== "string" ? "[unsupported text]" : record[key] as string;
+}
+
+/** Renderer-only guard: a validated tree already owns the actual metric contract. */
+export function metricValue(value: unknown): MetricValue | undefined {
+  return isMetricValue(value) ? value : undefined;
+}
+
+function isMetricValue(value: unknown): value is MetricValue {
+  const record = dataRecord(value);
+  return record !== undefined &&
+    (record.value === null || isFiniteNumber(record.value)) &&
+    isMetricState(record.state) &&
+    isNonNegativeInteger(record.samples) &&
+    isNonNegativeInteger(record.total) &&
+    isMetricBasis(record.basis) &&
+    Array.isArray(record.issues) && record.issues.every(isAnalysisIssue) &&
+    Array.isArray(record.refs) && record.refs.every(isEvidenceRef) &&
+    (record.unit === undefined || typeof record.unit === "string") &&
+    (record.format === undefined || isMeasureFormat(record.format)) &&
+    (record.better === undefined || isMetricBetter(record.better)) &&
+    (record.bounds === undefined || isMetricBounds(record.bounds));
+}
+
+function tableColumns(value: unknown): readonly { readonly key: string; readonly label: string }[] {
+  if (!Array.isArray(value)) return Object.freeze([]);
+  const columns: Array<{ readonly key: string; readonly label: string }> = [];
+  for (const candidate of value) {
+    const record = dataRecord(candidate);
+    if (record === undefined || typeof record.key !== "string" || record.key.length === 0) continue;
+    columns.push(Object.freeze({ key: record.key, label: localizedUnknownText(record.label) }));
+  }
+  return Object.freeze(columns);
+}
+
+function orderedPointFields(points: readonly unknown[], preferred: readonly string[]): readonly string[] {
+  const fields = new Set<string>(preferred);
+  for (const point of points) {
+    const record = dataRecord(point);
+    if (record === undefined) continue;
+    for (const key of Object.keys(record)) fields.add(key);
+  }
+  const rest = [...fields].filter((field) => !preferred.includes(field)).sort(compareUtf8);
+  return Object.freeze([...preferred, ...rest]);
+}
+
+function analysisIssues(value: unknown): readonly AnalysisIssue[] {
+  if (!Array.isArray(value)) return Object.freeze([]);
+  return Object.freeze(value.filter(isAnalysisIssue));
+}
+
+function isAnalysisIssue(value: unknown): value is AnalysisIssue {
+  const record = dataRecord(value);
+  return record !== undefined && isAnalysisIssueCode(record.code) &&
+    typeof record.message === "string" && Array.isArray(record.refs) &&
+    record.refs.every(isEvidenceRef);
+}
+
+function isEvidenceRef(value: unknown): value is EvidenceRef {
+  const reference = dataRecord(value);
+  if (reference === undefined) return false;
+  const identity = dataRecord(reference.identity);
+  return identity !== undefined && identity.kind === "attempt" && typeof identity.locator === "string";
+}
+
+function isAnalysisIssueCode(value: unknown): boolean {
+  return value === "missing" || value === "unsupported" || value === "producer-incompatible" ||
+    value === "input-invalid" || value === "reduction-failed" || value === "relation-unmatched";
+}
+
+function isMetricState(value: unknown): value is MetricState {
+  return value === "available" || value === "partial" || value === "empty" ||
+    value === "unsupported" || value === "failed";
+}
+
+function isMetricBasis(value: unknown): value is MetricBasis {
+  return value === "attempt" || value === "eval" || value === "run" || value === "pair" || value === "slot";
+}
+
+function isMetricBetter(value: unknown): value is "higher" | "lower" | "neutral" {
+  return value === "higher" || value === "lower" || value === "neutral";
+}
+
+function isMetricBounds(value: unknown): boolean {
+  const bounds = dataRecord(value);
+  return bounds !== undefined &&
+    (bounds.min === undefined || isFiniteNumber(bounds.min)) &&
+    (bounds.max === undefined || isFiniteNumber(bounds.max));
+}
+
+function isMeasureFormat(value: unknown): value is MeasureFormat {
+  if (typeof value === "string") return true;
+  const format = dataRecord(value);
+  return format !== undefined && typeof format.kind === "string" && format.kind.length > 0 &&
+    (format.options === undefined || isClosedJsonValue(format.options));
+}
+
+function isClosedJsonValue(value: unknown, ancestors: Set<object> = new Set()): boolean {
+  if (value === null || typeof value === "boolean" || typeof value === "string") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value !== "object" || value === null || ancestors.has(value)) return false;
+  ancestors.add(value);
+  try {
+    if (Array.isArray(value)) return value.every((entry) => isClosedJsonValue(entry, ancestors));
+    const record = dataRecord(value);
+    return record !== undefined && Object.values(record).every((entry) => isClosedJsonValue(entry, ancestors));
+  } finally {
+    ancestors.delete(value);
+  }
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function knownTone(value: unknown): string {
+  return value === "positive" || value === "warning" || value === "negative" ? value : "neutral";
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value : "[unsupported text]";
+}
+
+function jsonLocalizedText(value: LocalizedText): unknown {
+  if (typeof value === "string") return value;
+  return Object.freeze(Object.fromEntries(Object.entries(value).sort(([left], [right]) => compareUtf8(left, right))));
+}
+
+/** Makes a JSON-compatible, data-only clone with deterministically ordered keys. */
+export function jsonValue(value: unknown): unknown {
+  if (value === null || typeof value === "boolean" || typeof value === "string") return value;
+  if (typeof value === "number") return Number.isFinite(value) ? value : "[non-finite number]";
+  if (Array.isArray(value)) return Object.freeze(value.map(jsonValue));
+  const record = dataRecord(value);
+  if (record === undefined) return "[unsupported closed value]";
+  const result: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
+  for (const key of Object.keys(record).sort(compareUtf8)) result[key] = jsonValue(record[key]);
+  return Object.freeze(result);
+}
+
+/** Canonical JSON is used for CLI output, evidence identity text, and static manifests. */
+export function canonicalJson(value: unknown): string {
+  return writeJson(value, new Set<object>());
 }
 
 /**
- * Hashing stays in the Effect graph so callers never need an ad-hoc Promise
- * runtime just to render show JSON. Web Crypto keeps this host projection
- * platform-neutral while emitting the required lowercase hexadecimal digest.
+ * Download metadata is deterministic without exposing the raw byte payload.
+ * Keeping this in Effect preserves interruption and typed render failures.
  */
 function sha256Hex(bytes: Uint8Array): Effect.Effect<string, ReportShowRenderError> {
   const subtle = globalThis.crypto?.subtle;
@@ -429,8 +629,6 @@ function sha256Hex(bytes: Uint8Array): Effect.Effect<string, ReportShowRenderErr
       operation: "render",
     });
   }
-  // Copy into an owned ArrayBuffer-backed view: a Report file may originate
-  // from a wider ArrayBufferLike view, while Web Crypto accepts BufferSource.
   const input = new Uint8Array(bytes.byteLength);
   input.set(bytes);
   return Effect.map(
@@ -441,25 +639,11 @@ function sha256Hex(bytes: Uint8Array): Effect.Effect<string, ReportShowRenderErr
         operation: "render",
       }),
     }),
-    (digest) => Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join(""),
+    (digest) => Array.from(
+      new Uint8Array(digest),
+      (byte) => byte.toString(16).padStart(2, "0"),
+    ).join(""),
   );
-}
-
-/** Terminal controls remain visible instead of affecting the user's terminal. */
-function visibleText(value: string): string {
-  return value.replace(/[\u0000-\u001f\u007f-\u009f]/g, (character) =>
-    `\\u${character.codePointAt(0)!.toString(16).padStart(4, "0")}`
-  );
-}
-
-/**
- * Canonical JSON avoids object iteration order and declines values that cannot
- * be represented in JSON. A Calculation is intentionally allowed to carry an
- * arbitrary in-process value, so non-JSON values are represented explicitly
- * rather than changing the execution or throwing during a normal show.
- */
-function canonicalJson(value: unknown): string {
-  return writeJson(value, new Set<object>());
 }
 
 function writeJson(value: unknown, stack: Set<object>): string {
@@ -475,39 +659,41 @@ function writeJson(value: unknown, stack: Set<object>): string {
     case "bigint":
     case "symbol":
     case "function":
-      return JSON.stringify("[non-json value]");
+      return JSON.stringify("[unsupported closed value]");
     case "object":
       break;
   }
-
-  if (stack.has(value)) return JSON.stringify("[cyclic value]");
+  if (stack.has(value)) return JSON.stringify("[cyclic closed value]");
   stack.add(value);
   try {
-    if (Array.isArray(value)) {
-      return `[${value.map((entry) => writeJson(entry, stack)).join(",")}]`;
-    }
-    if (!isPlainDataObject(value)) return JSON.stringify("[non-json value]");
-    const keys = Object.keys(value).sort(compareUtf8);
-    return `{${keys.map((key) => `${JSON.stringify(key)}:${writeJson(value[key], stack)}`).join(",")}}`;
+    if (Array.isArray(value)) return `[${value.map((entry) => writeJson(entry, stack)).join(",")}]`;
+    const record = dataRecord(value);
+    if (record === undefined) return JSON.stringify("[unsupported closed value]");
+    const keys = Object.keys(record).sort(compareUtf8);
+    return `{${keys.map((key) => `${JSON.stringify(key)}:${writeJson(record[key], stack)}`).join(",")}}`;
   } finally {
     stack.delete(value);
   }
 }
 
-function isPlainDataObject(value: object): value is Record<string, unknown> {
-  const prototype = Object.getPrototypeOf(value);
-  if (prototype !== Object.prototype && prototype !== null) return false;
-  for (const key of Reflect.ownKeys(value)) {
-    if (typeof key !== "string") return false;
-    const descriptor = Object.getOwnPropertyDescriptor(value, key);
-    if (descriptor === undefined || !("value" in descriptor)) return false;
+function dataRecord(value: unknown): Readonly<Record<string, unknown>> | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value) || value instanceof Uint8Array) {
+    return undefined;
   }
-  return true;
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return undefined;
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== "string") return undefined;
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor === undefined || !("value" in descriptor)) return undefined;
+  }
+  return value as Readonly<Record<string, unknown>>;
 }
 
 const textEncoder = new TextEncoder();
 
-function compareUtf8(left: string, right: string): number {
+export function compareUtf8(left: string, right: string): number {
+  if (left === right) return 0;
   const leftBytes = textEncoder.encode(left);
   const rightBytes = textEncoder.encode(right);
   const length = Math.min(leftBytes.length, rightBytes.length);
@@ -516,4 +702,11 @@ function compareUtf8(left: string, right: string): number {
     if (difference !== 0) return difference;
   }
   return leftBytes.length - rightBytes.length;
+}
+
+/** Terminal controls remain visible instead of affecting the user's terminal. */
+export function visibleText(value: string): string {
+  return value.replace(/[\u0000-\u001f\u007f-\u009f]/g, (character) =>
+    `\\u${character.codePointAt(0)!.toString(16).padStart(4, "0")}`
+  );
 }

@@ -8,6 +8,10 @@ test("turnFromChatCompletion 零投影接收官方 SDK 的 function 与 custom t
     experimentId: "openai-chat-completion",
     evalId: "openai-chat-completion",
     caseName: "openai-chat-completion",
+    source: {
+      file: "evals/openai-chat-completion.eval.ts",
+      content: "export default defineEval({",
+    },
     executionMarkers: [
       "openai-chat-completion-message-marker",
       "weather_lookup",

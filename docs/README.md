@@ -21,8 +21,9 @@ Design 保存多方案比较与裁决存档，Research 只提供决策输入而�
 | 现在要做什么 | 从哪里开始 |
 |---|---|
 | 建立产品心智 | [Concepts](concepts.md) → [Architecture](architecture.md) |
+| 组合或替代 CLI / Web host | [Architecture](architecture.md#公开-host-composition-sdk) → 对应 Feature Library |
 | 从用户价值审视完整产品范围 | [用户故事地图](user-story.md) |
-| 理解当前数据怎样落盘、只读导航并交给 Sample/Reports | [Record](feature/record/README.md) |
+| 理解当前运行事实怎样经过 Record、Analysis 到 Report | [Record → Analysis → Report](feature/record-report/README.md) |
 | 查什么改动会重跑，或两个 Run 凭什么可比 | [缓存与携带](feature/experiments/cache.md)（eligibility identity 与 domain） |
 | 让记忆库或累积笔记跨 Attempt 延续 | [Sandbox 复用](feature/sandbox/reuse.md) 与 [Sandbox 生命周期](feature/sandbox/lifecycle.md) |
 | 从零理解使用路径 | [Getting Started](getting-started.md) |
@@ -65,8 +66,7 @@ docs/
 │   ├── experiments/                     组织运行配置：defineExperiment
 │   ├── judge/                           裁判模型配置、调用与 unavailable
 │   ├── plugins/                         带稳定身份的生命周期组合语法
-│   ├── projection/                      从 RecordAttachment 形成 typed projection
-│   ├── record/                          已完成 Run、精确引用与具名 RecordAttachment
+│   ├── record/                          已完成 Run、精确引用与固定持久事实
 │   ├── record-report/                   Record → Analysis → Report 三层总览与命令调用路径
 │   ├── reports/                         一次 execution、show/view 与静态导出
 │   ├── sample/                          从 Record 选择 core-only 分母
@@ -82,7 +82,8 @@ docs/
 │   ├── experiment-pilot-sampling/       共同题集、固定 seed 与 non-final Pilot
 │   ├── judge-runtimes/                  Agent Judge 与原生 LLM Judge
 │   ├── multi-agent/                     多 Agent Eval 场景
-│   ├── record-analysis-report/          Capture、Analysis、Report、成本投影与图表语义内核
+│   ├── cost-projections/                基于 Core 与 Observability 的只读成本投影
+│   ├── report-chart-kernel/              中立图表的三面同事实语义内核
 │   ├── record-inventory/                receipt 前中断留下的只读 Record 库存
 │   ├── replayable-grading/              多轮 Execution 与 Grading 分离、Record 重评分
 │   ├── sandbox-materialization/         Docker Image 与 Provider Cache 生命周期
@@ -126,7 +127,7 @@ docs/
 │
 └── 未归入 feature/ 的设计入口
     ├── concepts.md                      术语与心智模型
-    ├── architecture.md                  核心边界:一次运行怎么产生结果
+    ├── architecture.md                  核心边界、一次运行与公开 Host composition SDK
     ├── origin-integration.md            Origin 应用接入
     ├── observability.md                 Observability
     ├── runner.md                        执行引擎

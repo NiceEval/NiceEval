@@ -1,27 +1,48 @@
 import { Schema } from "effect";
 import {
   ATTEMPT_ID_BRAND,
+  ARTIFACT_ID_BRAND,
+  CANONICAL_PROJECT_RELATIVE_PATH_BRAND,
+  EVAL_ID_BRAND,
+  EXECUTION_IDENTITY_DIGEST_BRAND,
+  EXPERIMENT_ID_BRAND,
+  FILE_CHANGE_ID_BRAND,
   isPortableSegment,
+  isCanonicalProjectRelativePath,
+  isRecordDomainIdentity,
   isRecordAttachmentName,
   isRecordAttachmentSchemaId,
   isRecordFormatId,
+  isSha256Digest,
   isUtcMillis,
   RECORD_ATTACHMENT_NAME_BRAND,
   RECORD_ATTACHMENT_SCHEMA_ID_BRAND,
+  RECORD_FORMAT,
   RECORD_FORMAT_ID_BRAND,
-  RECORD_FORMAT_V1,
+  RECORD_SCHEMA_VERSION,
   RECORD_ID_BRAND,
   RUN_ID_BRAND,
+  SHA256_DIGEST_BRAND,
   SLOT_ID_BRAND,
+  SOURCE_ITEM_ID_BRAND,
   UTC_MILLIS_BRAND,
   type AttemptId,
+  type ArtifactId,
+  type CanonicalProjectRelativePath,
+  type EvalId,
+  type ExecutionIdentityDigest,
+  type ExperimentId,
+  type FileChangeId,
   type RecordAttachmentName,
   type RecordAttachmentSchemaId,
+  type RecordFormat,
   type RecordFormatId,
-  type RecordFormatV1,
   type RecordId,
+  type RecordSchemaVersion,
   type RunId,
+  type Sha256Digest,
   type SlotId,
+  type SourceItemId,
   type UtcMillis,
 } from "../model/identifiers.ts";
 
@@ -44,6 +65,59 @@ export const SlotIdSchema: Schema.Schema<SlotId, string> =
 
 export const AttemptIdSchema: Schema.Schema<AttemptId, string> =
   PortableSegmentTextSchema.pipe(Schema.brand(ATTEMPT_ID_BRAND));
+
+const RecordDomainIdentitySchema = Schema.String.pipe(
+  Schema.filter(isRecordDomainIdentity, {
+    identifier: "RecordDomainIdentity",
+    description: "a bounded durable identity without control characters",
+  }),
+);
+
+export const ExperimentIdSchema: Schema.Schema<ExperimentId, string> =
+  RecordDomainIdentitySchema.pipe(Schema.brand(EXPERIMENT_ID_BRAND));
+
+export const EvalIdSchema: Schema.Schema<EvalId, string> =
+  RecordDomainIdentitySchema.pipe(Schema.brand(EVAL_ID_BRAND));
+
+export const ExecutionIdentityDigestSchema: Schema.Schema<
+  ExecutionIdentityDigest,
+  string
+> = Schema.String.pipe(
+  Schema.filter(isSha256Digest, {
+    identifier: "ExecutionIdentityDigest",
+    description: "a lowercase hexadecimal SHA-256 execution identity digest",
+  }),
+  Schema.brand(EXECUTION_IDENTITY_DIGEST_BRAND),
+);
+
+export const Sha256DigestSchema: Schema.Schema<Sha256Digest, string> =
+  Schema.String.pipe(
+    Schema.filter(isSha256Digest, {
+      identifier: "Sha256Digest",
+      description: "a lowercase hexadecimal SHA-256 digest",
+    }),
+    Schema.brand(SHA256_DIGEST_BRAND),
+  );
+
+export const SourceItemIdSchema: Schema.Schema<SourceItemId, string> =
+  PortableSegmentTextSchema.pipe(Schema.brand(SOURCE_ITEM_ID_BRAND));
+
+export const FileChangeIdSchema: Schema.Schema<FileChangeId, string> =
+  PortableSegmentTextSchema.pipe(Schema.brand(FILE_CHANGE_ID_BRAND));
+
+export const ArtifactIdSchema: Schema.Schema<ArtifactId, string> =
+  PortableSegmentTextSchema.pipe(Schema.brand(ARTIFACT_ID_BRAND));
+
+export const CanonicalProjectRelativePathSchema: Schema.Schema<
+  CanonicalProjectRelativePath,
+  string
+> = Schema.String.pipe(
+  Schema.filter(isCanonicalProjectRelativePath, {
+    identifier: "CanonicalProjectRelativePath",
+    description: "a slash-separated project-relative path without dot segments",
+  }),
+  Schema.brand(CANONICAL_PROJECT_RELATIVE_PATH_BRAND),
+);
 
 export const UtcMillisSchema: Schema.Schema<UtcMillis, number> =
   Schema.Number.pipe(
@@ -85,7 +159,10 @@ export const RecordFormatIdSchema: Schema.Schema<RecordFormatId, string> =
     Schema.brand(RECORD_FORMAT_ID_BRAND),
   );
 
-export const RecordFormatV1Schema: Schema.Schema<
-  RecordFormatV1,
-  typeof RECORD_FORMAT_V1
-> = Schema.Literal(RECORD_FORMAT_V1).pipe(Schema.brand(RECORD_FORMAT_ID_BRAND));
+export const RecordSchemaVersionSchema: Schema.Schema<
+  RecordSchemaVersion,
+  typeof RECORD_SCHEMA_VERSION
+> = Schema.Literal(RECORD_SCHEMA_VERSION);
+
+export const RecordFormatSchema: Schema.Schema<RecordFormat, typeof RECORD_FORMAT> =
+  Schema.Literal(RECORD_FORMAT).pipe(Schema.brand(RECORD_FORMAT_ID_BRAND));

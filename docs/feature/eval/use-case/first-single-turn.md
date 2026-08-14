@@ -32,7 +32,8 @@
    带本地文件的一轮用 `t.sendFile(path, text?)`，文件按扩展名推断 MIME、随本轮输入附上。
 
 3. 断言分两类，写在你观察结果的地方：
-   - **作用域断言**（`t.succeeded()`、`t.calledTool(...)`）：调用时直接登记 Boolean Assertion，进入 Attempt Verdict。
+   - **作用域断言**（`t.succeeded()`、`t.calledTool(...)`）：调用时直接登记 Boolean Assertion；封口后它参与
+     Core `outcome`、sealed Assertions 与显式 skip 的 Verdict 读侧折叠。
    - **值断言**（`t.check(value, match)`）：就地对一个具体值登记 Assertion，match 从 `niceeval/expect` 导入（`includes` / `equals` / `matches` / `satisfies` …，全表见[值断言](../../assertions/library/value-assertions.md)）。
       后续代码依赖这个值时 `await handle.orStop()`——不通过就停止当前 continuation。
 

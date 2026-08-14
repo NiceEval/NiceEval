@@ -366,14 +366,6 @@ diagnostic(input: DiagnosticInput): void;
 永久事件,落进 attempt 的 diagnostics 并进各 profile 的永久输出;`dedupeKey` 去重。
 即使 level 为 "error" 也不改变 Turn.status / verdict——无法继续时抛异常。
 
-#### `fact`
-
-```ts
-fact(name: string, value: JsonValue): void;
-```
-
-写入本 Attempt 的 generic custom fact document。name 使用反向域格式且不能以 `niceeval.` 开头；同一 owner/name 只允许写一次，第二次写入是 typed error，不替换也不追加。value 可以是任意 JsonValue。`{ observedAt, value }` 经 JSON.stringify 后最多 65,536 UTF-8 bytes；超限同步抛出 `record-custom-fact-too-large`，且不留下部分文件。不影响 Turn status、verdict、评分或指纹。形状与归属语义见 docs/feature/record/architecture.md。
-
 #### `log`
 
 ```ts

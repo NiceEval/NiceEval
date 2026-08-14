@@ -116,14 +116,54 @@
         "default": "./dist/analysis/index.cjs"
       }
     },
-    "./projection": {
+    "./experiment/host": {
       "import": {
-        "types": "./dist/projection/index.d.mts",
-        "default": "./dist/projection/index.mjs"
+        "types": "./dist/experiment/host/index.d.mts",
+        "default": "./dist/experiment/host/index.mjs"
       },
       "require": {
-        "types": "./dist/projection/index.d.cts",
-        "default": "./dist/projection/index.cjs"
+        "types": "./dist/experiment/host/index.d.cts",
+        "default": "./dist/experiment/host/index.cjs"
+      }
+    },
+    "./coordination/host": {
+      "import": {
+        "types": "./dist/coordination/host/index.d.mts",
+        "default": "./dist/coordination/host/index.mjs"
+      },
+      "require": {
+        "types": "./dist/coordination/host/index.d.cts",
+        "default": "./dist/coordination/host/index.cjs"
+      }
+    },
+    "./record": {
+      "import": {
+        "types": "./dist/record/index.d.mts",
+        "default": "./dist/record/index.mjs"
+      },
+      "require": {
+        "types": "./dist/record/index.d.cts",
+        "default": "./dist/record/index.cjs"
+      }
+    },
+    "./record/host": {
+      "import": {
+        "types": "./dist/record/host/index.d.mts",
+        "default": "./dist/record/host/index.mjs"
+      },
+      "require": {
+        "types": "./dist/record/host/index.d.cts",
+        "default": "./dist/record/host/index.cjs"
+      }
+    },
+    "./analysis/host": {
+      "import": {
+        "types": "./dist/analysis/host.d.mts",
+        "default": "./dist/analysis/host.mjs"
+      },
+      "require": {
+        "types": "./dist/analysis/host.d.cts",
+        "default": "./dist/analysis/host.cjs"
       }
     },
     "./report": {
@@ -134,6 +174,16 @@
       "require": {
         "types": "./dist/report/index.d.cts",
         "default": "./dist/report/index.cjs"
+      }
+    },
+    "./report/host": {
+      "import": {
+        "types": "./dist/report/host/index.d.mts",
+        "default": "./dist/report/host/index.mjs"
+      },
+      "require": {
+        "types": "./dist/report/host/index.d.cts",
+        "default": "./dist/report/host/index.cjs"
       }
     },
     "./report/built-in": {

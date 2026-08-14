@@ -5,7 +5,7 @@ Report 选择要显示的维度和度量，但不定义总体、分母、缺失�
 ## 从 Sample 得到 rows
 
 ```tsx
-import { aggregate, Bars, Table } from "niceeval/report";
+import { aggregate, Bars, defineComponent, Grid, Table } from "niceeval/report";
 import { condition, costUSD, model, passRate } from "niceeval/analysis";
 
 const Overview = defineComponent(async (_props, { sample }) => {
@@ -25,7 +25,7 @@ const Overview = defineComponent(async (_props, { sample }) => {
 
 aggregate() 固定在本次 Sample 上运行。它返回每个分组坐标的闭合 rows，并让每个度量字段保持完整的 MetricValue。相同 Sample 和相同 Analysis 字段在同一份 ReportExecution 中共用结果，不因同一张表和图形同时显示而重算。
 
-高级查询也只能交出闭合 rows 或闭合领域视图。Report 不能从查询结果拿到另一种事实读取能力，不能按显示结果重新选择成员。
+高级表格查询的外层结果属于 Analysis；Report 只把其中的 `.rows` 交给 Table 或图形。领域查询交出闭合领域视图。无论哪种结果，Report 都不能得到另一种事实读取能力，也不能按显示结果重新选择成员。
 
 ## 分母和状态
 

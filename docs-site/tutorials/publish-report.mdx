@@ -4,9 +4,7 @@ sidebarTitle: "Publish a Static Report"
 description: "Use view --out to export a self-contained report site that opens offline and is separate from its source Record."
 ---
 
-`niceeval view --out <directory>`, or explicit `niceeval view --run <id> --out <directory>`, selects published Runs.
-The internal host forms a pure `AnalysisSample`, projects the facts declared by the Report, and exports one completed `ReportExecution`.
-This is the export path for sharing results.
+`niceeval view --out <directory>`, or `niceeval view --run <id> --out <directory>`, selects published Runs. NiceEval forms a `Sample`, gets closed values from the Measures or domain views a Report uses, and exports one completed `ReportExecution`. This is the export path for sharing results.
 
 ```sh
 npx niceeval view --experiment checkout \
@@ -24,40 +22,29 @@ npx niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY \
 
 ## Select the scope before exporting
 
-Without a locator or `--run`, the command selects every matching result by current-project identity.
-`--run` selects named historical Runs.
-Both forms create a Sample first.
-A Sample preserves the selected slots' denominator and `included`, `not-recorded`, `core-invalid`, and `excluded` states.
+Without a locator or `--run`, the command selects every matching result by current-project identity. `--run` selects named historical Runs. Both forms create a Sample first. A Sample preserves the selected slots' denominator and `included`, `not-recorded`, `core-invalid`, and `excluded` states.
 
-A Report reads only the RecordProjection it declares.
-An unrequested bad Attachment does not affect the export.
-A requested recorded-data problem appears in the built-in problems surface instead of disappearing from the denominator.
+A Report reads only the Analysis input it uses. A data problem outside that input does not affect export. A problem that reaches a Measure or domain view appears in the Report instead of disappearing from the denominator.
 
 ## What prevents export
 
-`unavailable`, `migration-required`, `migration-unavailable`, `unsupported`, `invalid`, and partial collection are recorded-data problems.
-They can be exported, but pages must show the problem.
+Analysis states such as `partial`, `unsupported`, and `failed` can be exported, but pages must show completeness and problems. Run `niceeval migrate` before viewing or exporting historical results that need migration.
 
-A projector or author-callback defect, an invalid semantic document, or a route conflict is an execution problem.
-Any execution problem stops static export, so NiceEval never publishes a half-successful report.
+An author callback that throws, an invalid semantic tree, or a route conflict is an execution problem. Any execution problem stops static export, so NiceEval never publishes a half-successful report.
 
 ## What the export directory contains
 
 A successful directory includes:
 
-- Every fixed page and PageFamily-expanded page.
+- Every ordinary Page and every page expanded from a parameterized Page.
 - The host data each page needs.
 - Already-produced downloads.
 - The manifest and the exporter's built-in runtime.
-- A final `complete` marker.
+- The completion information needed for export.
 
-The browser reads only the export directory.
-It does not access the network or source Record, and it does not need a later NiceEval installation.
-Before sharing the directory with a colleague or static host, open it in an offline browser to confirm its pages and downloads work.
+The browser reads only the export directory. It does not access the network or source Record, and it does not need a later NiceEval installation. Before sharing the directory with a colleague or static host, open it in an offline browser to confirm its pages and downloads work.
 
-The target directory must not exist.
-The command never replaces or deletes an existing directory.
-To update a deployment, export to a new directory and let the hosting platform switch versions.
+The target directory must not exist. The command never replaces or deletes an existing directory. To update a deployment, export to a new directory and let the hosting platform switch versions.
 
 ## Generate it in CI
 
@@ -68,10 +55,8 @@ npx niceeval exp ci --json
 npx niceeval view --experiment ci --out ./report-site --no-open
 ```
 
-The final JSON line from the first command is its receipt.
-To pin the export to that Invocation, read its `runIds` and use `view --run <runId>` instead.
+The final JSON line from the first command is its receipt. To pin the export to that Invocation, read its `runIds` and use `view --run <runId>` instead.
 
 ## Publish the directory
 
-Give `./report-site` to your hosting provider as the static-site directory.
-Do not point the platform build at a source Record; it only needs to deploy the already generated directory.
+Give `./report-site` to your hosting provider as the static-site directory. Do not point the platform build at a source Record; it only needs to deploy the already generated directory.

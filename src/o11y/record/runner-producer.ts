@@ -16,96 +16,96 @@ import type {
 } from "../../runner/types.ts";
 import type { Usage } from "../types.ts";
 import {
-  makeAttemptObservabilityCaptureIdentityV1,
-  makeRunObservabilityCaptureIdentityV1,
-  mintAttemptObservabilityEntityV1,
-  mintRunObservabilityEntityV1,
-  recordRegisteredCommandResultV1,
-  registerCommandCaptureV1,
-  registeredCommandIdV1,
-  sealAttemptObservabilityCaptureIdentityV1,
-  sealRunObservabilityCaptureIdentityV1,
-  type AttemptObservabilityCaptureIdentityV1,
-  type AttemptCapturedObservabilityEntityV1,
-  type RegisteredCommandCaptureV1,
-  type RunObservabilityCaptureIdentityV1,
+  makeAttemptObservabilityCaptureIdentity,
+  makeRunObservabilityCaptureIdentity,
+  mintAttemptObservabilityEntity,
+  mintRunObservabilityEntity,
+  recordRegisteredCommandResult,
+  registerCommandCapture,
+  registeredCommandId,
+  sealAttemptObservabilityCaptureIdentity,
+  sealRunObservabilityCaptureIdentity,
+  type AttemptObservabilityCaptureIdentity,
+  type AttemptCapturedObservabilityEntity,
+  type RegisteredCommandCapture,
+  type RunObservabilityCaptureIdentity,
 } from "./capture.ts";
 import {
-  type AttemptDiagnosticV1,
-  type AttemptTimingIntervalV1,
-  type CommandManifestV1,
-  type ConversationItemV1,
-  type ConversationTurnV1,
-  type RunDiagnosticV1,
-  type UsageObservationV1,
+  type AttemptDiagnostic,
+  type AttemptTimingInterval,
+  type CommandManifest,
+  type ConversationItem,
+  type ConversationTurn,
+  type RunDiagnostic,
+  type UsageObservation,
 } from "./families.ts";
 import type {
-  NormalizedCommandObservationCaptureV1,
-  NormalizedCommandStreamCaptureV1,
-  NormalizedAttemptObservabilityCaptureV1,
-  NormalizedRunObservabilityCaptureV1,
+  NormalizedCommandObservationCapture,
+  NormalizedCommandStreamCapture,
+  NormalizedAttemptObservabilityCapture,
+  NormalizedRunObservabilityCapture,
 } from "./family-writers.ts";
 import {
-  MAX_COMMAND_ARGUMENT_BYTES_V1,
-  MAX_COMMAND_ARGUMENTS_V1,
-  MAX_COMMAND_EXECUTABLE_BYTES_V1,
-  MAX_COMMAND_PROJECT_RELATIVE_PATH_BYTES_V1,
-  MAX_COMMAND_SHELL_BYTES_V1,
-  MAX_COMMAND_STREAM_BYTES_V1,
-  MAX_COMMANDS_V1,
-  MAX_CONVERSATION_ITEMS_V1,
-  MAX_CONVERSATION_TEXT_BYTES_V1,
-  MAX_CONVERSATION_TURNS_V1,
-  MAX_DIAGNOSTIC_SUMMARY_BYTES_V1,
-  MAX_DIAGNOSTICS_V1,
-  MAX_TIMING_INTERVALS_V1,
-  MAX_USAGE_OBSERVATIONS_V1,
+  MAX_COMMAND_ARGUMENT_BYTES,
+  MAX_COMMAND_ARGUMENTS,
+  MAX_COMMAND_EXECUTABLE_BYTES,
+  MAX_COMMAND_PROJECT_RELATIVE_PATH_BYTES,
+  MAX_COMMAND_SHELL_BYTES,
+  MAX_COMMAND_STREAM_BYTES,
+  MAX_COMMANDS,
+  MAX_CONVERSATION_ITEMS,
+  MAX_CONVERSATION_TEXT_BYTES,
+  MAX_CONVERSATION_TURNS,
+  MAX_DIAGNOSTIC_SUMMARY_BYTES,
+  MAX_DIAGNOSTICS,
+  MAX_TIMING_INTERVALS,
+  MAX_USAGE_OBSERVATIONS,
 } from "./limits.ts";
 import {
-  compareObservabilityTextV1,
-  compareObservabilityLimitationV1,
-  entityIdFromEntropyV1,
-  makeBoundedSafeTextV1,
-  makeCanonicalDecimalV1,
-  makeCurrencyCodeV1,
-  makeNonNegativeSafeIntegerV1,
-  makePositiveSafeIntegerV1,
-  makeSafeIdentifierV1,
-  makeSourceNativeToolNameV1,
-  makeStableLabelV1,
-  utf8ByteLengthV1,
-  type AttemptReferenceTargetV1,
-  type CommandIdV1,
-  type CommandReferenceTargetV1,
-  type CollectionStageV1,
-  type CollectionTargetV1,
-  type CollectionV1,
-  type DiagnosticIdV1,
-  type IntervalIdV1,
-  type ItemIdV1,
+  compareObservabilityText,
+  compareObservabilityLimitation,
+  entityIdFromEntropy,
+  makeBoundedSafeText,
+  makeCanonicalDecimal,
+  makeCurrencyCode,
+  makeNonNegativeSafeInteger,
+  makePositiveSafeInteger,
+  makeSafeIdentifier,
+  makeSourceNativeToolName,
+  makeStableLabel,
+  utf8ByteLength,
+  type AttemptReferenceTarget,
+  type CommandId,
+  type CommandReferenceTarget,
+  type CollectionStage,
+  type CollectionTarget,
+  type Collection,
+  type DiagnosticId,
+  type IntervalId,
+  type ItemId,
   type NonNegativeSafeInteger,
-  type ObservabilityEntityIdForKindV1,
-  type ObservabilityEntityKindV1,
-  type ObservabilityLimitationV1,
+  type ObservabilityEntityIdForKind,
+  type ObservabilityEntityKind,
+  type ObservabilityLimitation,
   type PositiveSafeInteger,
-  type RunReferenceTargetV1,
+  type RunReferenceTarget,
   type SafeIdentifier,
   type SafeText,
   type SourceNativeToolName,
   type StableLabel,
-  type TurnIdV1,
-  type CallIdV1,
-  type UsageObservationIdV1,
+  type TurnId,
+  type CallId,
+  type UsageObservationId,
 } from "./model.ts";
 
 /**
  * The Runner never exposes raw provider frames to the Record layer. These
  * errors therefore carry only an internal stable code and entity kind.
  */
-export type RunnerObservabilityProducerErrorV1 =
+export type RunnerObservabilityProducerError =
   | {
       readonly code: "runner-observability-entity-id-invalid";
-      readonly kind: ObservabilityEntityKindV1;
+      readonly kind: ObservabilityEntityKind;
     }
   | {
       readonly code: "runner-observability-capture-seal-invalid";
@@ -119,8 +119,8 @@ export type RunnerObservabilityProducerErrorV1 =
     };
 
 function producerEntityIdInvalid(
-  kind: ObservabilityEntityKindV1,
-): RunnerObservabilityProducerErrorV1 {
+  kind: ObservabilityEntityKind,
+): RunnerObservabilityProducerError {
   return Object.freeze({
     code: "runner-observability-entity-id-invalid" as const,
     kind,
@@ -129,72 +129,72 @@ function producerEntityIdInvalid(
 
 function producerCaptureSealInvalid(
   owner: "attempt" | "run",
-): RunnerObservabilityProducerErrorV1 {
+): RunnerObservabilityProducerError {
   return Object.freeze({
     code: "runner-observability-capture-seal-invalid" as const,
     owner,
   });
 }
 
-function producerCaptureMissing(): RunnerObservabilityProducerErrorV1 {
+function producerCaptureMissing(): RunnerObservabilityProducerError {
   return Object.freeze({ code: "runner-observability-capture-missing" as const });
 }
 
-function producerCommandRegistrationInvalid(): RunnerObservabilityProducerErrorV1 {
+function producerCommandRegistrationInvalid(): RunnerObservabilityProducerError {
   return Object.freeze({ code: "runner-observability-command-registration-invalid" as const });
 }
 
 function requiredPositive(value: number): PositiveSafeInteger {
-  const positive = makePositiveSafeIntegerV1(value);
+  const positive = makePositiveSafeInteger(value);
   if (positive !== undefined) return positive;
-  const fallback = makePositiveSafeIntegerV1(1);
+  const fallback = makePositiveSafeInteger(1);
   if (fallback === undefined) throw new Error("One must be a positive safe integer");
   return fallback;
 }
 
 function requiredNonNegative(value: number): NonNegativeSafeInteger {
-  const nonNegative = makeNonNegativeSafeIntegerV1(value);
+  const nonNegative = makeNonNegativeSafeInteger(value);
   if (nonNegative !== undefined) return nonNegative;
-  const fallback = makeNonNegativeSafeIntegerV1(0);
+  const fallback = makeNonNegativeSafeInteger(0);
   if (fallback === undefined) throw new Error("Zero must be a non-negative safe integer");
   return fallback;
 }
 
 /** Coalesces and canonically orders the closed durable limitation union. */
-class RunnerCollectionLimitationsV1 {
+class RunnerCollectionLimitations {
   private readonly captureFailed = new Map<string, {
-    readonly stage: CollectionStageV1;
-    readonly target: CollectionTargetV1;
+    readonly stage: CollectionStage;
+    readonly target: CollectionTarget;
   }>();
   private readonly captureInterrupted = new Map<string, {
-    readonly stage: CollectionStageV1;
-    readonly target: CollectionTargetV1;
+    readonly stage: CollectionStage;
+    readonly target: CollectionTarget;
   }>();
-  private readonly unsupported = new Map<CollectionTargetV1, number>();
-  private readonly redacted = new Map<CollectionTargetV1, number>();
-  private readonly caps = new Map<CollectionTargetV1, {
+  private readonly unsupported = new Map<CollectionTarget, number>();
+  private readonly redacted = new Map<CollectionTarget, number>();
+  private readonly caps = new Map<CollectionTarget, {
     readonly retained: number;
     readonly omittedAtLeast: number;
   }>();
-  private readonly textTruncations: ObservabilityLimitationV1[] = [];
+  private readonly textTruncations: ObservabilityLimitation[] = [];
 
-  addCaptureFailed(stage: CollectionStageV1, target: CollectionTargetV1): void {
+  addCaptureFailed(stage: CollectionStage, target: CollectionTarget): void {
     this.captureFailed.set(`${stage}\u0000${target}`, Object.freeze({ stage, target }));
   }
 
-  addCaptureInterrupted(stage: CollectionStageV1, target: CollectionTargetV1): void {
+  addCaptureInterrupted(stage: CollectionStage, target: CollectionTarget): void {
     this.captureInterrupted.set(`${stage}\u0000${target}`, Object.freeze({ stage, target }));
   }
 
-  addUnsupported(target: CollectionTargetV1, omittedAtLeast = 1): void {
+  addUnsupported(target: CollectionTarget, omittedAtLeast = 1): void {
     this.unsupported.set(target, (this.unsupported.get(target) ?? 0) + omittedAtLeast);
   }
 
-  addRedacted(target: CollectionTargetV1, replacements = 1): void {
+  addRedacted(target: CollectionTarget, replacements = 1): void {
     this.redacted.set(target, (this.redacted.get(target) ?? 0) + replacements);
   }
 
-  addCap(target: CollectionTargetV1, retained: number, omittedAtLeast = 1): void {
+  addCap(target: CollectionTarget, retained: number, omittedAtLeast = 1): void {
     const current = this.caps.get(target);
     this.caps.set(target, Object.freeze({
       retained: Math.max(retained, current?.retained ?? 0),
@@ -203,7 +203,7 @@ class RunnerCollectionLimitationsV1 {
   }
 
   addConversationTextTruncated(
-    itemId: ItemIdV1,
+    itemId: ItemId,
     retainedBytes: NonNegativeSafeInteger,
     omittedBytes: PositiveSafeInteger,
   ): void {
@@ -217,7 +217,7 @@ class RunnerCollectionLimitationsV1 {
   }
 
   addCommandManifestTextTruncated(
-    commandId: CommandIdV1,
+    commandId: CommandId,
     retainedBytes: NonNegativeSafeInteger,
     omittedBytes: PositiveSafeInteger,
   ): void {
@@ -231,7 +231,7 @@ class RunnerCollectionLimitationsV1 {
   }
 
   addCommandStreamTruncated(
-    commandId: CommandIdV1,
+    commandId: CommandId,
     stream: "stdout" | "stderr",
     retainedBytes: NonNegativeSafeInteger,
     omittedBytes: PositiveSafeInteger,
@@ -246,7 +246,7 @@ class RunnerCollectionLimitationsV1 {
   }
 
   addUnsafeCommandControlStripped(
-    commandId: CommandIdV1,
+    commandId: CommandId,
     stream: "stdout" | "stderr",
     strippedCount: number,
   ): void {
@@ -258,8 +258,8 @@ class RunnerCollectionLimitationsV1 {
     }));
   }
 
-  collection(): CollectionV1 {
-    const limitations: ObservabilityLimitationV1[] = [];
+  collection(): Collection {
+    const limitations: ObservabilityLimitation[] = [];
     for (const { stage, target } of this.captureFailed.values()) {
       limitations.push(Object.freeze({
         code: "capture-failed" as const,
@@ -297,7 +297,7 @@ class RunnerCollectionLimitationsV1 {
       }));
     }
     limitations.push(...this.textTruncations);
-    limitations.sort(compareObservabilityLimitationV1);
+    limitations.sort(compareObservabilityLimitation);
     if (limitations.length === 0) {
       return Object.freeze({
         state: "complete" as const,
@@ -309,39 +309,39 @@ class RunnerCollectionLimitationsV1 {
     return Object.freeze({
       state: "partial" as const,
       limitations: Object.freeze([first, ...rest]) as readonly [
-        ObservabilityLimitationV1,
-        ...ObservabilityLimitationV1[],
+        ObservabilityLimitation,
+        ...ObservabilityLimitation[],
       ],
     });
   }
 }
 
-interface RetainedTextV1 {
+interface RetainedText {
   readonly text: SafeText;
   readonly retainedBytes: NonNegativeSafeInteger;
   readonly omittedBytes?: PositiveSafeInteger;
 }
 
 /** Never split a Unicode scalar or retain a non-SafeText source value. */
-function retainSafeTextV1(value: string, maximumBytes: number): RetainedTextV1 | undefined {
-  if (makeBoundedSafeTextV1(value, maximumBytes) !== undefined) {
+function retainSafeText(value: string, maximumBytes: number): RetainedText | undefined {
+  if (makeBoundedSafeText(value, maximumBytes) !== undefined) {
     return Object.freeze({
-      text: makeBoundedSafeTextV1(value, maximumBytes)!,
-      retainedBytes: requiredNonNegative(utf8ByteLengthV1(value)),
+      text: makeBoundedSafeText(value, maximumBytes)!,
+      retainedBytes: requiredNonNegative(utf8ByteLength(value)),
     });
   }
-  const totalBytes = utf8ByteLengthV1(value);
+  const totalBytes = utf8ByteLength(value);
   if (totalBytes <= maximumBytes) return undefined;
 
   let retained = "";
   let retainedBytes = 0;
   for (const scalar of value) {
-    const scalarBytes = utf8ByteLengthV1(scalar);
+    const scalarBytes = utf8ByteLength(scalar);
     if (retainedBytes + scalarBytes > maximumBytes) break;
     retained += scalar;
     retainedBytes += scalarBytes;
   }
-  const safe = makeBoundedSafeTextV1(retained, maximumBytes);
+  const safe = makeBoundedSafeText(retained, maximumBytes);
   const omittedBytes = totalBytes - retainedBytes;
   if (safe === undefined || omittedBytes <= 0) return undefined;
   return Object.freeze({
@@ -351,7 +351,7 @@ function retainSafeTextV1(value: string, maximumBytes: number): RetainedTextV1 |
   });
 }
 
-function jsonSummaryV1(value: unknown): RetainedTextV1 | undefined {
+function jsonSummary(value: unknown): RetainedText | undefined {
   let summary: string | undefined;
   try {
     const encoded = JSON.stringify(value);
@@ -361,10 +361,10 @@ function jsonSummaryV1(value: unknown): RetainedTextV1 | undefined {
   }
   return summary === undefined
     ? undefined
-    : retainSafeTextV1(summary, MAX_CONVERSATION_TEXT_BYTES_V1);
+    : retainSafeText(summary, MAX_CONVERSATION_TEXT_BYTES);
 }
 
-function uuidEntropyBytesV1(uuid: string): Uint8Array | undefined {
+function uuidEntropyBytes(uuid: string): Uint8Array | undefined {
   const hex = uuid.replaceAll("-", "");
   if (!/^[0-9a-f]{32}$/iu.test(hex)) return undefined;
   const bytes = new Uint8Array(16);
@@ -376,65 +376,65 @@ function uuidEntropyBytesV1(uuid: string): Uint8Array | undefined {
   return bytes;
 }
 
-function attemptTargetForEntityV1<Kind extends ObservabilityEntityKindV1>(
+function attemptTargetForEntity<Kind extends ObservabilityEntityKind>(
   kind: Kind,
-  id: ObservabilityEntityIdForKindV1<Kind>,
-): AttemptReferenceTargetV1 {
+  id: ObservabilityEntityIdForKind<Kind>,
+): AttemptReferenceTarget {
   switch (kind) {
     case "turn":
       return Object.freeze({
-        family: "niceeval.conversation/v1" as const,
+        family: "niceeval.observability" as const,
         kind: "turn" as const,
-        id: id as TurnIdV1,
+        id: id as TurnId,
       });
     case "item":
       return Object.freeze({
-        family: "niceeval.conversation/v1" as const,
+        family: "niceeval.observability" as const,
         kind: "item" as const,
-        id: id as ItemIdV1,
+        id: id as ItemId,
       });
     case "call":
       return Object.freeze({
-        family: "niceeval.conversation/v1" as const,
+        family: "niceeval.observability" as const,
         kind: "call" as const,
-        id: id as CallIdV1,
+        id: id as CallId,
       });
     case "command":
       return Object.freeze({
-        family: "niceeval.commands/v1" as const,
+        family: "niceeval.observability" as const,
         kind: "command" as const,
-        id: id as import("./model.ts").CommandIdV1,
+        id: id as import("./model.ts").CommandId,
       });
     case "usage-observation":
       return Object.freeze({
-        family: "niceeval.usage/v1" as const,
+        family: "niceeval.observability" as const,
         kind: "usage-observation" as const,
-        id: id as import("./model.ts").UsageObservationIdV1,
+        id: id as import("./model.ts").UsageObservationId,
       });
     case "interval":
       return Object.freeze({
-        family: "niceeval.timing/v1" as const,
+        family: "niceeval.observability" as const,
         kind: "interval" as const,
-        id: id as IntervalIdV1,
+        id: id as IntervalId,
       });
     case "diagnostic":
       return Object.freeze({
-        family: "niceeval.diagnostics/v1" as const,
+        family: "niceeval.observability" as const,
         kind: "diagnostic" as const,
-        id: id as DiagnosticIdV1,
+        id: id as DiagnosticId,
       });
   }
 }
 
-type AttemptEntityMinterV1 = <Kind extends ObservabilityEntityKindV1>(
+type AttemptEntityMinter = <Kind extends ObservabilityEntityKind>(
   kind: Kind,
-) => Effect.Effect<ObservabilityEntityIdForKindV1<Kind>, RunnerObservabilityProducerErrorV1>;
+) => Effect.Effect<ObservabilityEntityIdForKind<Kind>, RunnerObservabilityProducerError>;
 
 const runnerAttemptObservabilityRuntimeTypeId: unique symbol = Symbol(
-  "@niceeval/o11y/RunnerAttemptObservabilityRuntimeV1",
+  "@niceeval/o11y/RunnerAttemptObservabilityRuntime",
 );
 const runnerCommandCaptureHandleTypeId: unique symbol = Symbol(
-  "@niceeval/o11y/RunnerCommandCaptureHandleV1",
+  "@niceeval/o11y/RunnerCommandCaptureHandle",
 );
 
 /**
@@ -442,222 +442,260 @@ const runnerCommandCaptureHandleTypeId: unique symbol = Symbol(
  * owner/path data and is bound to the final EvalResult only through a private
  * WeakMap below.
  */
-export interface RunnerAttemptObservabilityRuntimeV1 {
+export interface RunnerAttemptObservabilityRuntime {
   readonly [runnerAttemptObservabilityRuntimeTypeId]: () => void;
 }
 
 /** A registered command capability, usable only by Runner's timing wrapper. */
-export interface RunnerCommandCaptureHandleV1 {
+export interface RunnerCommandCaptureHandle {
   readonly [runnerCommandCaptureHandleTypeId]: () => void;
 }
 
-interface CapturedCommandResultV1 {
-  readonly outcome: { readonly kind: "exited"; readonly exitCode: number } | {
-    readonly kind: "terminated";
-    readonly reason: "timeout";
-  };
+interface CapturedCommandResult {
+  readonly outcome:
+    | { readonly kind: "exited"; readonly exitCode: number }
+    | {
+        readonly kind: "terminated";
+        readonly reason: "timeout" | "cancelled" | "transport-lost";
+      }
+    | {
+        readonly kind: "not-started";
+        readonly reason: "spawn-failed" | "cancelled-before-start";
+      };
   readonly stdout: string;
   readonly stderr: string;
 }
 
-interface CapturedCommandRuntimeV1 {
-  readonly commandId: CommandIdV1;
-  readonly registered: RegisteredCommandCaptureV1;
+interface CapturedCommandRuntime {
+  readonly commandId: CommandId;
+  readonly registered: RegisteredCommandCapture;
   readonly phase: LifecyclePhase;
   readonly invocationKind: "argv" | "shell";
   readonly command: string;
   readonly args: readonly string[] | undefined;
   readonly options: unknown;
-  result?: CapturedCommandResultV1;
+  result?: CapturedCommandResult;
 }
 
-interface RunnerAttemptObservabilityRuntimeStateV1 {
-  readonly capture: AttemptObservabilityCaptureIdentityV1;
+interface RunnerAttemptObservabilityRuntimeState {
+  readonly capture: AttemptObservabilityCaptureIdentity;
   readonly providerName: string;
   readonly sensitiveValues: ReadonlySet<string>;
-  readonly commands: CapturedCommandRuntimeV1[];
-  readonly commandLimitations: RunnerCollectionLimitationsV1;
-  readonly usage: UsageObservationV1[];
-  readonly usageLimitations: RunnerCollectionLimitationsV1;
-  failure?: RunnerObservabilityProducerErrorV1;
+  /**
+   * Entity IDs retain UUID entropy, but their leading bytes are monotonic
+   * within one Attempt. Conversation items are serialized in causal sequence
+   * and the fixed schema also requires canonical identity order, so purely
+   * random item IDs would make valid captures fail nondeterministically.
+   */
+  nextEntityOrdinal: number;
+  readonly commands: CapturedCommandRuntime[];
+  readonly commandLimitations: RunnerCollectionLimitations;
+  readonly usage: UsageObservation[];
+  readonly usageLimitations: RunnerCollectionLimitations;
+  failure?: RunnerObservabilityProducerError;
 }
 
-const runnerAttemptRuntimeStatesV1 = new WeakMap<object, RunnerAttemptObservabilityRuntimeStateV1>();
-const runnerAttemptResultStatesV1 = new WeakMap<object, RunnerAttemptObservabilityRuntimeStateV1>();
-const runnerCommandHandleStatesV1 = new WeakMap<object, {
-  readonly runtime: RunnerAttemptObservabilityRuntimeStateV1;
-  readonly command: CapturedCommandRuntimeV1;
+const runnerAttemptRuntimeStates = new WeakMap<object, RunnerAttemptObservabilityRuntimeState>();
+const runnerAttemptResultStates = new WeakMap<object, RunnerAttemptObservabilityRuntimeState>();
+const runnerCommandHandleStates = new WeakMap<object, {
+  readonly runtime: RunnerAttemptObservabilityRuntimeState;
+  readonly command: CapturedCommandRuntime;
 }>();
-const runnerRunDiagnosticsV1 = new WeakMap<object, readonly DiagnosticRecord[]>();
+const runnerRunDiagnostics = new WeakMap<object, readonly DiagnosticRecord[]>();
 
-function runtimeStateV1(
-  runtime: RunnerAttemptObservabilityRuntimeV1,
-): RunnerAttemptObservabilityRuntimeStateV1 | undefined {
-  return runnerAttemptRuntimeStatesV1.get(runtime as object);
+function runtimeState(
+  runtime: RunnerAttemptObservabilityRuntime,
+): RunnerAttemptObservabilityRuntimeState | undefined {
+  return runnerAttemptRuntimeStates.get(runtime as object);
 }
 
-function markRuntimeFailureV1(
-  runtime: RunnerAttemptObservabilityRuntimeStateV1,
-  failure: RunnerObservabilityProducerErrorV1,
+function markRuntimeFailure(
+  runtime: RunnerAttemptObservabilityRuntimeState,
+  failure: RunnerObservabilityProducerError,
 ): void {
   if (runtime.failure === undefined) runtime.failure = failure;
 }
 
-function mintRuntimeEntityV1<Kind extends ObservabilityEntityKindV1>(
-  runtime: RunnerAttemptObservabilityRuntimeStateV1,
+function mintRuntimeEntity<Kind extends ObservabilityEntityKind>(
+  runtime: RunnerAttemptObservabilityRuntimeState,
   kind: Kind,
-): ObservabilityEntityIdForKindV1<Kind> | undefined {
+): ObservabilityEntityIdForKind<Kind> | undefined {
   let uuid: string;
   try {
     uuid = randomUUID();
   } catch {
-    markRuntimeFailureV1(runtime, producerEntityIdInvalid(kind));
+    markRuntimeFailure(runtime, producerEntityIdInvalid(kind));
     return undefined;
   }
-  const bytes = uuidEntropyBytesV1(uuid);
-  const id = bytes === undefined ? undefined : entityIdFromEntropyV1(kind, bytes);
+  const bytes = orderedRuntimeEntityEntropy(runtime, uuid);
+  const id = bytes === undefined ? undefined : entityIdFromEntropy(kind, bytes);
   if (id === undefined) {
-    markRuntimeFailureV1(runtime, producerEntityIdInvalid(kind));
+    markRuntimeFailure(runtime, producerEntityIdInvalid(kind));
     return undefined;
   }
-  const minted = mintAttemptObservabilityEntityV1(
+  const minted = mintAttemptObservabilityEntity(
     runtime.capture,
-    attemptTargetForEntityV1(kind, id),
+    attemptTargetForEntity(kind, id),
   );
   if (minted === undefined) {
-    markRuntimeFailureV1(runtime, producerEntityIdInvalid(kind));
+    markRuntimeFailure(runtime, producerEntityIdInvalid(kind));
     return undefined;
   }
   return id;
 }
 
-function mintRuntimeCommandV1(
-  runtime: RunnerAttemptObservabilityRuntimeStateV1,
+/**
+ * The durable entity suffix remains mostly UUID entropy while a bounded
+ * big-endian ordinal makes creation order lexicographic order. Every v1
+ * Attempt collector has much smaller caps than this counter's range.
+ */
+function orderedRuntimeEntityEntropy(
+  runtime: RunnerAttemptObservabilityRuntimeState,
+  uuid: string,
+): Uint8Array | undefined {
+  const bytes = uuidEntropyBytes(uuid);
+  const ordinal = runtime.nextEntityOrdinal + 1;
+  if (
+    bytes === undefined
+    || !Number.isSafeInteger(ordinal)
+    || ordinal > 0xffff_ffff
+  ) return undefined;
+  runtime.nextEntityOrdinal = ordinal;
+  bytes[0] = (ordinal >>> 24) & 0xff;
+  bytes[1] = (ordinal >>> 16) & 0xff;
+  bytes[2] = (ordinal >>> 8) & 0xff;
+  bytes[3] = ordinal & 0xff;
+  return bytes;
+}
+
+function mintRuntimeCommand(
+  runtime: RunnerAttemptObservabilityRuntimeState,
 ): {
-  readonly commandId: CommandIdV1;
-  readonly entity: AttemptCapturedObservabilityEntityV1<CommandReferenceTargetV1>;
+  readonly commandId: CommandId;
+  readonly entity: AttemptCapturedObservabilityEntity<CommandReferenceTarget>;
 } | undefined {
   let uuid: string;
   try {
     uuid = randomUUID();
   } catch {
-    markRuntimeFailureV1(runtime, producerEntityIdInvalid("command"));
+    markRuntimeFailure(runtime, producerEntityIdInvalid("command"));
     return undefined;
   }
-  const bytes = uuidEntropyBytesV1(uuid);
-  const commandId = bytes === undefined ? undefined : entityIdFromEntropyV1("command", bytes);
+  const bytes = orderedRuntimeEntityEntropy(runtime, uuid);
+  const commandId = bytes === undefined ? undefined : entityIdFromEntropy("command", bytes);
   if (commandId === undefined) {
-    markRuntimeFailureV1(runtime, producerEntityIdInvalid("command"));
+    markRuntimeFailure(runtime, producerEntityIdInvalid("command"));
     return undefined;
   }
-  const entity = mintAttemptObservabilityEntityV1<CommandReferenceTargetV1>(runtime.capture, {
-    family: "niceeval.commands/v1" as const,
+  const entity = mintAttemptObservabilityEntity<CommandReferenceTarget>(runtime.capture, {
+    family: "niceeval.observability" as const,
     kind: "command" as const,
     id: commandId,
   });
   if (entity === undefined) {
-    markRuntimeFailureV1(runtime, producerEntityIdInvalid("command"));
+    markRuntimeFailure(runtime, producerEntityIdInvalid("command"));
     return undefined;
   }
   return Object.freeze({ commandId, entity });
 }
 
-function makeAttemptEntityMinterV1(
-  runtime: RunnerAttemptObservabilityRuntimeStateV1,
+function makeAttemptEntityMinter(
+  runtime: RunnerAttemptObservabilityRuntimeState,
 ): {
-  readonly mint: AttemptEntityMinterV1;
+  readonly mint: AttemptEntityMinter;
   readonly seal: () => boolean;
 } {
   return Object.freeze({
-    mint: <Kind extends ObservabilityEntityKindV1>(kind: Kind) =>
+    mint: <Kind extends ObservabilityEntityKind>(kind: Kind) =>
       Effect.suspend(() => {
         if (runtime.failure !== undefined) return Effect.fail(runtime.failure);
-        const id = mintRuntimeEntityV1(runtime, kind);
+        const id = mintRuntimeEntity(runtime, kind);
         return id === undefined
           ? Effect.fail(runtime.failure ?? producerEntityIdInvalid(kind))
           : Effect.succeed(id);
       }),
-    seal: () => sealAttemptObservabilityCaptureIdentityV1(runtime.capture),
+    seal: () => sealAttemptObservabilityCaptureIdentity(runtime.capture),
   });
 }
 
-type RunObservabilityEntityKindV1 = "interval" | "diagnostic";
+type RunObservabilityEntityKind = "interval" | "diagnostic";
 
-type RunEntityMinterV1 = <Kind extends RunObservabilityEntityKindV1>(
+type RunEntityMinter = <Kind extends RunObservabilityEntityKind>(
   kind: Kind,
-) => Effect.Effect<ObservabilityEntityIdForKindV1<Kind>, RunnerObservabilityProducerErrorV1>;
+) => Effect.Effect<ObservabilityEntityIdForKind<Kind>, RunnerObservabilityProducerError>;
 
-function runTargetForEntityV1<Kind extends RunObservabilityEntityKindV1>(
+function runTargetForEntity<Kind extends RunObservabilityEntityKind>(
   kind: Kind,
-  id: ObservabilityEntityIdForKindV1<Kind>,
-): RunReferenceTargetV1 {
+  id: ObservabilityEntityIdForKind<Kind>,
+): RunReferenceTarget {
   switch (kind) {
     case "interval":
       return Object.freeze({
-        family: "niceeval.timing/v1" as const,
+        family: "niceeval.observability" as const,
         kind: "interval" as const,
-        id: id as IntervalIdV1,
+        id: id as IntervalId,
       });
     case "diagnostic":
       return Object.freeze({
-        family: "niceeval.diagnostics/v1" as const,
+        family: "niceeval.observability" as const,
         kind: "diagnostic" as const,
-        id: id as DiagnosticIdV1,
+        id: id as DiagnosticId,
       });
   }
 }
 
-function mintRunEntityV1<Kind extends RunObservabilityEntityKindV1>(
-  capture: RunObservabilityCaptureIdentityV1,
+function mintRunEntity<Kind extends RunObservabilityEntityKind>(
+  capture: RunObservabilityCaptureIdentity,
   kind: Kind,
-): ObservabilityEntityIdForKindV1<Kind> | undefined {
+): ObservabilityEntityIdForKind<Kind> | undefined {
   let uuid: string;
   try {
     uuid = randomUUID();
   } catch {
     return undefined;
   }
-  const bytes = uuidEntropyBytesV1(uuid);
-  const id = bytes === undefined ? undefined : entityIdFromEntropyV1(kind, bytes);
+  const bytes = uuidEntropyBytes(uuid);
+  const id = bytes === undefined ? undefined : entityIdFromEntropy(kind, bytes);
   if (id === undefined) return undefined;
-  const minted = mintRunObservabilityEntityV1(capture, runTargetForEntityV1(kind, id));
+  const minted = mintRunObservabilityEntity(capture, runTargetForEntity(kind, id));
   return minted === undefined ? undefined : id;
 }
 
-function makeRunEntityMinterV1(
-  capture: RunObservabilityCaptureIdentityV1,
+function makeRunEntityMinter(
+  capture: RunObservabilityCaptureIdentity,
 ): {
-  readonly mint: RunEntityMinterV1;
+  readonly mint: RunEntityMinter;
   readonly seal: () => boolean;
 } {
   return Object.freeze({
-    mint: <Kind extends RunObservabilityEntityKindV1>(kind: Kind) =>
+    mint: <Kind extends RunObservabilityEntityKind>(kind: Kind) =>
       Effect.suspend(() => {
-        const id = mintRunEntityV1(capture, kind);
+        const id = mintRunEntity(capture, kind);
         return id === undefined
           ? Effect.fail(producerEntityIdInvalid(kind))
           : Effect.succeed(id);
       }),
-    seal: () => sealRunObservabilityCaptureIdentityV1(capture),
+    seal: () => sealRunObservabilityCaptureIdentity(capture),
   });
 }
 
 /** Creates one private capture for a real Runner Attempt. */
-export function createRunnerAttemptObservabilityRuntimeV1(input: {
+export function createRunnerAttemptObservabilityRuntime(input: {
   readonly providerName: string;
   readonly sensitiveValues: ReadonlySet<string>;
-}): RunnerAttemptObservabilityRuntimeV1 {
+}): RunnerAttemptObservabilityRuntime {
   const runtime = Object.freeze({
     [runnerAttemptObservabilityRuntimeTypeId]: () => undefined,
-  }) as RunnerAttemptObservabilityRuntimeV1;
-  runnerAttemptRuntimeStatesV1.set(runtime, {
-    capture: makeAttemptObservabilityCaptureIdentityV1(),
+  }) as RunnerAttemptObservabilityRuntime;
+  runnerAttemptRuntimeStates.set(runtime, {
+    capture: makeAttemptObservabilityCaptureIdentity(),
     providerName: input.providerName,
     sensitiveValues: input.sensitiveValues,
+    nextEntityOrdinal: 0,
     commands: [],
-    commandLimitations: new RunnerCollectionLimitationsV1(),
+    commandLimitations: new RunnerCollectionLimitations(),
     usage: [],
-    usageLimitations: new RunnerCollectionLimitationsV1(),
+    usageLimitations: new RunnerCollectionLimitations(),
   });
   return runtime;
 }
@@ -667,18 +705,18 @@ export function createRunnerAttemptObservabilityRuntimeV1(input: {
  * capture. Result shape stays public-contract-neutral; Record later looks up
  * this identity rather than reading an added field.
  */
-export function bindRunnerAttemptObservabilityCaptureV1(
+export function bindRunnerAttemptObservabilityCapture(
   result: EvalResult,
-  runtime: RunnerAttemptObservabilityRuntimeV1,
+  runtime: RunnerAttemptObservabilityRuntime,
 ): void {
-  const state = runtimeStateV1(runtime);
+  const state = runtimeState(runtime);
   if (state === undefined) return;
-  const existing = runnerAttemptResultStatesV1.get(result);
+  const existing = runnerAttemptResultStates.get(result);
   if (existing !== undefined && existing !== state) {
-    markRuntimeFailureV1(state, producerCaptureSealInvalid("attempt"));
+    markRuntimeFailure(state, producerCaptureSealInvalid("attempt"));
     return;
   }
-  runnerAttemptResultStatesV1.set(result, state);
+  runnerAttemptResultStates.set(result, state);
 }
 
 /**
@@ -687,16 +725,16 @@ export function bindRunnerAttemptObservabilityCaptureV1(
  * have no safe per-experiment owner attribution when an invocation has more
  * than one Run.
  */
-export function bindRunnerRunObservabilityDiagnosticsV1(input: {
+export function bindRunnerRunObservabilityDiagnostics(input: {
   readonly run: AgentRun;
   readonly diagnostics: readonly DiagnosticRecord[];
 }): void {
-  runnerRunDiagnosticsV1.set(input.run, Object.freeze([...input.diagnostics]));
+  runnerRunDiagnostics.set(input.run, Object.freeze([...input.diagnostics]));
 }
 
-function commandManifestPhaseV1(
+function commandManifestPhase(
   phase: LifecyclePhase,
-): CommandManifestV1["phase"] | undefined {
+): CommandManifest["phase"] {
   switch (phase) {
     case "sandbox.create":
     case "workspace.baseline":
@@ -718,43 +756,44 @@ function commandManifestPhaseV1(
     case "sandbox.cleanup":
     case "sandbox.suspend":
     case "sandbox.stop":
+    case "experiment.teardown":
+    case "workspace.diff":
+    case "telemetry.collect":
       return "attempt.teardown";
     case "assertions.evaluate":
     case "judge.precheck":
+      return "eval.run";
     case "experiment.setup":
-    case "experiment.teardown":
     case "sandbox.queue":
-    case "workspace.diff":
-    case "telemetry.collect":
-      return undefined;
+      return "attempt.setup";
   }
 }
 
 /** Registers the manifest authority before the wrapped Sandbox call starts. */
-export function captureRunnerCommandStartV1(input: {
-  readonly runtime: RunnerAttemptObservabilityRuntimeV1;
+export function captureRunnerCommandStart(input: {
+  readonly runtime: RunnerAttemptObservabilityRuntime;
   readonly phase: LifecyclePhase;
   readonly invocationKind: "argv" | "shell";
   readonly command: string;
   readonly args?: readonly string[];
   readonly options?: unknown;
-}): RunnerCommandCaptureHandleV1 | undefined {
-  const runtime = runtimeStateV1(input.runtime);
+}): RunnerCommandCaptureHandle | undefined {
+  const runtime = runtimeState(input.runtime);
   if (runtime === undefined) return undefined;
   if (runtime.failure !== undefined) return undefined;
-  if (runtime.commands.length >= MAX_COMMANDS_V1) {
+  if (runtime.commands.length >= MAX_COMMANDS) {
     runtime.commandLimitations.addCap("command-manifest", runtime.commands.length);
     return undefined;
   }
-  const minted = mintRuntimeCommandV1(runtime);
+  const minted = mintRuntimeCommand(runtime);
   if (minted === undefined) return undefined;
   const { commandId } = minted;
-  const registered = registerCommandCaptureV1(runtime.capture, minted.entity);
-  if (registered === undefined || registeredCommandIdV1(registered) !== commandId) {
-    markRuntimeFailureV1(runtime, producerCommandRegistrationInvalid());
+  const registered = registerCommandCapture(runtime.capture, minted.entity);
+  if (registered === undefined || registeredCommandId(registered) !== commandId) {
+    markRuntimeFailure(runtime, producerCommandRegistrationInvalid());
     return undefined;
   }
-  const command: CapturedCommandRuntimeV1 = {
+  const command: CapturedCommandRuntime = {
     commandId,
     registered,
     phase: input.phase,
@@ -766,33 +805,68 @@ export function captureRunnerCommandStartV1(input: {
   runtime.commands.push(command);
   const handle = Object.freeze({
     [runnerCommandCaptureHandleTypeId]: () => undefined,
-  }) as RunnerCommandCaptureHandleV1;
-  runnerCommandHandleStatesV1.set(handle, Object.freeze({ runtime, command }));
+  }) as RunnerCommandCaptureHandle;
+  runnerCommandHandleStates.set(handle, Object.freeze({ runtime, command }));
   return handle;
 }
 
-function commandHandleStateV1(
-  handle: RunnerCommandCaptureHandleV1 | undefined,
-): { readonly runtime: RunnerAttemptObservabilityRuntimeStateV1; readonly command: CapturedCommandRuntimeV1 } | undefined {
-  return handle === undefined ? undefined : runnerCommandHandleStatesV1.get(handle as object);
+function commandHandleState(
+  handle: RunnerCommandCaptureHandle | undefined,
+): { readonly runtime: RunnerAttemptObservabilityRuntimeState; readonly command: CapturedCommandRuntime } | undefined {
+  return handle === undefined ? undefined : runnerCommandHandleStates.get(handle as object);
+}
+
+function acceptRegisteredCommandResult(state: {
+  readonly runtime: RunnerAttemptObservabilityRuntimeState;
+  readonly command: CapturedCommandRuntime;
+}): boolean {
+  const registration = recordRegisteredCommandResult(
+    state.runtime.capture,
+    state.command.registered,
+  );
+  if (registration.state !== "recorded") {
+    markRuntimeFailure(state.runtime, producerCommandRegistrationInvalid());
+    return false;
+  }
+  return true;
+}
+
+function recordTerminalCommandResult(
+  state: {
+    readonly runtime: RunnerAttemptObservabilityRuntimeState;
+    readonly command: CapturedCommandRuntime;
+  },
+  outcome: Exclude<CapturedCommandResult["outcome"], { readonly kind: "exited" }>,
+): void {
+  if (!acceptRegisteredCommandResult(state)) return;
+  state.command.result = Object.freeze({
+    outcome: Object.freeze(outcome),
+    stdout: "",
+    stderr: "",
+  });
 }
 
 /** Records a real returned/CommandExitError result against its prior manifest. */
-export function captureRunnerCommandResultV1(input: {
-  readonly handle: RunnerCommandCaptureHandleV1 | undefined;
+export function captureRunnerCommandResult(input: {
+  readonly handle: RunnerCommandCaptureHandle | undefined;
   readonly exitCode: number;
   readonly stdout: unknown;
   readonly stderr: unknown;
 }): void {
-  const state = commandHandleStateV1(input.handle);
+  const state = commandHandleState(input.handle);
   if (state === undefined) return;
-  const registration = recordRegisteredCommandResultV1(state.runtime.capture, state.command.registered);
-  if (registration.state !== "recorded") {
-    markRuntimeFailureV1(state.runtime, producerCommandRegistrationInvalid());
-    return;
-  }
+  if (!acceptRegisteredCommandResult(state)) return;
   if (!Number.isSafeInteger(input.exitCode) || input.exitCode < -2_147_483_648 || input.exitCode > 2_147_483_647) {
-    state.runtime.commandLimitations.addUnsupported("command-manifest");
+    // A provider value without a valid command result is not a normal exit.
+    // Keep the registered manifest with its explicit transport terminal fact.
+    state.runtime.commandLimitations.addCaptureFailed("command-capture", "command-manifest");
+    state.runtime.commandLimitations.addCaptureFailed("command-capture", "command-stdout");
+    state.runtime.commandLimitations.addCaptureFailed("command-capture", "command-stderr");
+    state.command.result = Object.freeze({
+      outcome: Object.freeze({ kind: "terminated" as const, reason: "transport-lost" as const }),
+      stdout: "",
+      stderr: "",
+    });
     return;
   }
   const stdout = typeof input.stdout === "string" ? input.stdout : "";
@@ -807,61 +881,70 @@ export function captureRunnerCommandResultV1(input: {
 }
 
 /** A command timeout is a real terminal fact, unlike external interruption. */
-export function captureRunnerCommandTimeoutV1(
-  handle: RunnerCommandCaptureHandleV1 | undefined,
+export function captureRunnerCommandTimeout(
+  handle: RunnerCommandCaptureHandle | undefined,
 ): void {
-  const state = commandHandleStateV1(handle);
+  const state = commandHandleState(handle);
   if (state === undefined) return;
-  const registration = recordRegisteredCommandResultV1(state.runtime.capture, state.command.registered);
-  if (registration.state !== "recorded") {
-    markRuntimeFailureV1(state.runtime, producerCommandRegistrationInvalid());
-    return;
-  }
   state.runtime.commandLimitations.addCaptureFailed("command-capture", "command-stdout");
   state.runtime.commandLimitations.addCaptureFailed("command-capture", "command-stderr");
-  state.command.result = Object.freeze({
-    outcome: Object.freeze({ kind: "terminated" as const, reason: "timeout" as const }),
-    stdout: "",
-    stderr: "",
-  });
+  recordTerminalCommandResult(state, Object.freeze({
+    kind: "terminated" as const,
+    reason: "timeout" as const,
+  }));
 }
 
-/** External interruption has no invented command result. */
-export function captureRunnerCommandInterruptedV1(
-  handle: RunnerCommandCaptureHandleV1 | undefined,
+/** A command call interrupted after registration is durably terminal/cancelled. */
+export function captureRunnerCommandInterrupted(
+  handle: RunnerCommandCaptureHandle | undefined,
 ): void {
-  const state = commandHandleStateV1(handle);
+  const state = commandHandleState(handle);
   if (state === undefined) return;
   state.runtime.commandLimitations.addCaptureInterrupted("command-capture", "command-manifest");
+  state.runtime.commandLimitations.addCaptureInterrupted("command-capture", "command-stdout");
+  state.runtime.commandLimitations.addCaptureInterrupted("command-capture", "command-stderr");
+  recordTerminalCommandResult(state, Object.freeze({
+    kind: "terminated" as const,
+    reason: "cancelled" as const,
+  }));
 }
 
-/** A non-terminal transport/spawn failure has no fabricated command outcome. */
-export function captureRunnerCommandCaptureFailedV1(
-  handle: RunnerCommandCaptureHandleV1 | undefined,
+/** Retains a registered command when the provider cannot return a normal result. */
+export function captureRunnerCommandCaptureFailed(
+  handle: RunnerCommandCaptureHandle | undefined,
+  reason: "transport-lost" | "spawn-failed" = "transport-lost",
 ): void {
-  const state = commandHandleStateV1(handle);
+  const state = commandHandleState(handle);
   if (state === undefined) return;
   state.runtime.commandLimitations.addCaptureFailed("command-capture", "command-manifest");
+  state.runtime.commandLimitations.addCaptureFailed("command-capture", "command-stdout");
+  state.runtime.commandLimitations.addCaptureFailed("command-capture", "command-stderr");
+  recordTerminalCommandResult(
+    state,
+    reason === "spawn-failed"
+      ? Object.freeze({ kind: "not-started" as const, reason: "spawn-failed" as const })
+      : Object.freeze({ kind: "terminated" as const, reason: "transport-lost" as const }),
+  );
 }
 
-function usageNonNegativeIntegerV1(value: unknown): NonNegativeSafeInteger | undefined {
-  return typeof value === "number" ? makeNonNegativeSafeIntegerV1(value) : undefined;
+function usageNonNegativeInteger(value: unknown): NonNegativeSafeInteger | undefined {
+  return typeof value === "number" ? makeNonNegativeSafeInteger(value) : undefined;
 }
 
-function canonicalDecimalFromNumberV1(value: unknown): string | undefined {
+function canonicalDecimalFromNumber(value: unknown): string | undefined {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return undefined;
   const source = String(value);
   const plain = source.includes("e") || source.includes("E")
-    ? expandExponentialDecimalV1(source)
+    ? expandExponentialDecimal(source)
     : source;
   if (plain === undefined) return undefined;
   const normalized = plain.includes(".")
     ? plain.replace(/0+$/u, "").replace(/\.$/u, "")
     : plain;
-  return makeCanonicalDecimalV1(normalized);
+  return makeCanonicalDecimal(normalized);
 }
 
-function expandExponentialDecimalV1(value: string): string | undefined {
+function expandExponentialDecimal(value: string): string | undefined {
   const match = /^(\d+)(?:\.(\d+))?[eE]([+-]?\d+)$/u.exec(value);
   if (match === null) return undefined;
   const integer = match[1] ?? "";
@@ -876,20 +959,20 @@ function expandExponentialDecimalV1(value: string): string | undefined {
   return `${digits.slice(0, decimalIndex)}.${digits.slice(decimalIndex)}`;
 }
 
-function appendUsageObservationV1(
-  runtime: RunnerAttemptObservabilityRuntimeStateV1,
-  create: (usageObservationId: UsageObservationIdV1, provider: SafeIdentifier) => UsageObservationV1,
+function appendUsageObservation(
+  runtime: RunnerAttemptObservabilityRuntimeState,
+  create: (usageObservationId: UsageObservationId, provider: SafeIdentifier) => UsageObservation,
 ): void {
-  if (runtime.usage.length >= MAX_USAGE_OBSERVATIONS_V1) {
+  if (runtime.usage.length >= MAX_USAGE_OBSERVATIONS) {
     runtime.usageLimitations.addCap("usage-observation", runtime.usage.length);
     return;
   }
-  const provider = makeSafeIdentifierV1(runtime.providerName);
+  const provider = makeSafeIdentifier(runtime.providerName);
   if (provider === undefined) {
     runtime.usageLimitations.addUnsupported("usage-observation");
     return;
   }
-  const usageObservationId = mintRuntimeEntityV1(runtime, "usage-observation");
+  const usageObservationId = mintRuntimeEntity(runtime, "usage-observation");
   if (usageObservationId === undefined) return;
   runtime.usage.push(create(usageObservationId, provider));
 }
@@ -899,16 +982,16 @@ function appendUsageObservationV1(
  * callback. It never looks at an Attempt aggregate or derives a request from
  * a token count.
  */
-export function captureRunnerTurnUsageV1(
-  runtimeHandle: RunnerAttemptObservabilityRuntimeV1,
+export function captureRunnerTurnUsage(
+  runtimeHandle: RunnerAttemptObservabilityRuntime,
   usage: Usage,
 ): void {
-  const runtime = runtimeStateV1(runtimeHandle);
+  const runtime = runtimeState(runtimeHandle);
   if (runtime === undefined || runtime.failure !== undefined) return;
   const tokenBuckets: readonly [keyof Pick<
     Usage,
     "inputTokens" | "outputTokens" | "cacheReadTokens" | "cacheCreationTokens" | "reasoningTokens"
-  >, Extract<UsageObservationV1, { readonly kind: "token-bucket" }>["bucket"]][] = [
+  >, Extract<UsageObservation, { readonly kind: "token-bucket" }>["bucket"]][] = [
     ["inputTokens", "input"],
     ["outputTokens", "output"],
     ["cacheReadTokens", "cache-read"],
@@ -918,12 +1001,12 @@ export function captureRunnerTurnUsageV1(
   for (const [field, bucket] of tokenBuckets) {
     const raw = usage[field];
     if (raw === undefined) continue;
-    const tokens = usageNonNegativeIntegerV1(raw);
+    const tokens = usageNonNegativeInteger(raw);
     if (tokens === undefined) {
       runtime.usageLimitations.addUnsupported("usage-observation");
       continue;
     }
-    appendUsageObservationV1(runtime, (usageObservationId, provider) => Object.freeze({
+    appendUsageObservation(runtime, (usageObservationId, provider) => Object.freeze({
       usageObservationId,
       provider,
       kind: "token-bucket" as const,
@@ -933,30 +1016,30 @@ export function captureRunnerTurnUsageV1(
     }));
   }
   if (usage.requests !== undefined) {
-    const requests = usageNonNegativeIntegerV1(usage.requests);
+    const requests = usageNonNegativeInteger(usage.requests);
     if (requests === undefined) {
       runtime.usageLimitations.addUnsupported("usage-observation");
     } else {
       for (let request = 0; request < requests; request += 1) {
-        appendUsageObservationV1(runtime, (usageObservationId, provider) => Object.freeze({
+        appendUsageObservation(runtime, (usageObservationId, provider) => Object.freeze({
           usageObservationId,
           provider,
           kind: "request" as const,
           requestKind: "model" as const,
           refs: Object.freeze([]),
         }));
-        if (runtime.usage.length >= MAX_USAGE_OBSERVATIONS_V1) break;
+        if (runtime.usage.length >= MAX_USAGE_OBSERVATIONS) break;
       }
     }
   }
   if (usage.costUSD !== undefined) {
-    const amount = canonicalDecimalFromNumberV1(usage.costUSD);
+    const amount = canonicalDecimalFromNumber(usage.costUSD);
     if (amount === undefined) {
       runtime.usageLimitations.addUnsupported("usage-observation");
     } else {
-      const currency = makeCurrencyCodeV1("USD");
+      const currency = makeCurrencyCode("USD");
       if (currency === undefined) throw new Error("USD must be a CurrencyCode");
-      appendUsageObservationV1(runtime, (usageObservationId, provider) => Object.freeze({
+      appendUsageObservation(runtime, (usageObservationId, provider) => Object.freeze({
         usageObservationId,
         provider,
         kind: "provider-cost" as const,
@@ -968,19 +1051,19 @@ export function captureRunnerTurnUsageV1(
   }
 }
 
-function attemptConversationOutcomeV1(
+function attemptConversationOutcome(
   result: EvalResult,
   sealed: SealedAttemptAssertions,
-): ConversationTurnV1["outcome"] {
+): ConversationTurn["outcome"] {
   if (sealed.evaluation.explicitlySkipped) return "cancelled";
   return result.error === undefined && sealed.evaluation.execution === "completed"
     ? "completed"
     : "failed";
 }
 
-function standardEventUnavailableV1(
+function standardEventUnavailable(
   result: EvalResult,
-  limitations: RunnerCollectionLimitationsV1,
+  limitations: RunnerCollectionLimitations,
 ): boolean {
   if (result.events === undefined) {
     limitations.addCaptureFailed("adapter", "conversation-item");
@@ -992,21 +1075,21 @@ function standardEventUnavailableV1(
   return false;
 }
 
-function safeIdentifierV1(value: string): SafeIdentifier | undefined {
-  return makeSafeIdentifierV1(value);
+function safeIdentifier(value: string): SafeIdentifier | undefined {
+  return makeSafeIdentifier(value);
 }
 
-function sourceNativeToolNameV1(value: string): SourceNativeToolName | undefined {
-  return makeSourceNativeToolNameV1(value);
+function sourceNativeToolName(value: string): SourceNativeToolName | undefined {
+  return makeSourceNativeToolName(value);
 }
 
-function stableLabelV1(value: string): StableLabel | undefined {
-  return makeStableLabelV1(value);
+function stableLabel(value: string): StableLabel | undefined {
+  return makeStableLabel(value);
 }
 
-function eventCannotBePersistedV1(
+function eventCannotBePersisted(
   event: { readonly redacted?: readonly string[]; readonly truncated?: readonly unknown[] },
-  limitations: RunnerCollectionLimitationsV1,
+  limitations: RunnerCollectionLimitations,
 ): boolean {
   if ((event.redacted?.length ?? 0) > 0) {
     limitations.addRedacted("conversation-item", event.redacted!.length);
@@ -1019,26 +1102,26 @@ function eventCannotBePersistedV1(
   return false;
 }
 
-function hasConversationCapacityV1(input: {
+function hasConversationCapacity(input: {
   readonly itemCount: number;
   readonly hasTurn: boolean;
-  readonly limitations: RunnerCollectionLimitationsV1;
+  readonly limitations: RunnerCollectionLimitations;
 }): boolean {
-  if (input.itemCount >= MAX_CONVERSATION_ITEMS_V1) {
+  if (input.itemCount >= MAX_CONVERSATION_ITEMS) {
     input.limitations.addCap("conversation-item", input.itemCount);
     return false;
   }
-  if (!input.hasTurn && input.itemCount >= MAX_CONVERSATION_TURNS_V1) {
+  if (!input.hasTurn && input.itemCount >= MAX_CONVERSATION_TURNS) {
     input.limitations.addCap("conversation-item", input.itemCount);
     return false;
   }
   return true;
 }
 
-function appendConversationTextLimitationV1(
-  item: ConversationItemV1 | undefined,
-  text: RetainedTextV1,
-  limitations: RunnerCollectionLimitationsV1,
+function appendConversationTextLimitation(
+  item: ConversationItem | undefined,
+  text: RetainedText,
+  limitations: RunnerCollectionLimitations,
 ): void {
   if (item !== undefined && text.omittedBytes !== undefined) {
     limitations.addConversationTextTruncated(
@@ -1049,26 +1132,26 @@ function appendConversationTextLimitationV1(
   }
 }
 
-function normalizeConversationV1(input: {
+function normalizeConversation(input: {
   readonly result: EvalResult;
   readonly sealed: SealedAttemptAssertions;
-  readonly mint: AttemptEntityMinterV1;
-  readonly runtime: RunnerAttemptObservabilityRuntimeStateV1;
-}): Effect.Effect<NormalizedAttemptObservabilityCaptureV1["conversation"], RunnerObservabilityProducerErrorV1> {
+  readonly mint: AttemptEntityMinter;
+  readonly runtime: RunnerAttemptObservabilityRuntimeState;
+}): Effect.Effect<NormalizedAttemptObservabilityCapture["conversation"], RunnerObservabilityProducerError> {
   return Effect.gen(function* () {
-    const limitations = new RunnerCollectionLimitationsV1();
-    if (standardEventUnavailableV1(input.result, limitations)) {
+    const limitations = new RunnerCollectionLimitations();
+    if (standardEventUnavailable(input.result, limitations)) {
       return Object.freeze({ collection: limitations.collection(), turns: Object.freeze([]), items: Object.freeze([]) });
     }
 
-    const items: ConversationItemV1[] = [];
-    let turnId: TurnIdV1 | undefined;
-    const openTools = new Map<string, { readonly callId: CallIdV1; readonly turnId: TurnIdV1 }>();
+    const items: ConversationItem[] = [];
+    let turnId: TurnId | undefined;
+    const openTools = new Map<string, { readonly callId: CallId; readonly turnId: TurnId }>();
     const openSubagents = new Map<string, { readonly label: SafeIdentifier }>();
 
-    const ensureTurn = (): Effect.Effect<TurnIdV1 | undefined, RunnerObservabilityProducerErrorV1> => {
+    const ensureTurn = (): Effect.Effect<TurnId | undefined, RunnerObservabilityProducerError> => {
       if (turnId !== undefined) return Effect.succeed(turnId);
-      if (!hasConversationCapacityV1({
+      if (!hasConversationCapacity({
         itemCount: items.length,
         hasTurn: false,
         limitations,
@@ -1083,12 +1166,12 @@ function normalizeConversationV1(input: {
 
     const appendItem = (
       create: (ids: {
-        readonly itemId: ItemIdV1;
-        readonly turnId: TurnIdV1;
+        readonly itemId: ItemId;
+        readonly turnId: TurnId;
         readonly sequence: PositiveSafeInteger;
-      }) => ConversationItemV1,
-    ): Effect.Effect<ConversationItemV1 | undefined, RunnerObservabilityProducerErrorV1> => {
-      if (!hasConversationCapacityV1({
+      }) => ConversationItem,
+    ): Effect.Effect<ConversationItem | undefined, RunnerObservabilityProducerError> => {
+      if (!hasConversationCapacity({
         itemCount: items.length,
         hasTurn: turnId !== undefined,
         limitations,
@@ -1110,10 +1193,10 @@ function normalizeConversationV1(input: {
     };
 
     for (const event of input.result.events ?? []) {
-      if (eventCannotBePersistedV1(event, limitations)) continue;
+      if (eventCannotBePersisted(event, limitations)) continue;
       switch (event.type) {
         case "message": {
-          const text = retainSafeTextV1(event.text, MAX_CONVERSATION_TEXT_BYTES_V1);
+          const text = retainSafeText(event.text, MAX_CONVERSATION_TEXT_BYTES);
           if (text === undefined) {
             limitations.addUnsupported("conversation-item");
             continue;
@@ -1125,7 +1208,7 @@ function normalizeConversationV1(input: {
             text: text.text,
             refs: Object.freeze([]),
           }));
-          appendConversationTextLimitationV1(item, text, limitations);
+          appendConversationTextLimitation(item, text, limitations);
           break;
         }
         case "operation.started": {
@@ -1133,13 +1216,13 @@ function normalizeConversationV1(input: {
             // Conversation is the source-native execution record. Canonical
             // ToolName is useful to runtime assertions, but must never replace
             // or rescue the provider's real identity in durable evidence.
-            const tool = sourceNativeToolNameV1(event.operation.name);
-            const summary = jsonSummaryV1(event.operation.input);
+            const tool = sourceNativeToolName(event.operation.name);
+            const summary = jsonSummary(event.operation.input);
             if (tool === undefined || summary === undefined) {
               limitations.addUnsupported("conversation-item");
               continue;
             }
-            if (!hasConversationCapacityV1({
+            if (!hasConversationCapacity({
               itemCount: items.length,
               hasTurn: turnId !== undefined,
               limitations,
@@ -1156,11 +1239,11 @@ function normalizeConversationV1(input: {
             if (item !== undefined) {
               openTools.set(event.operationId, Object.freeze({ callId, turnId: item.turnId }));
             }
-            appendConversationTextLimitationV1(item, summary, limitations);
+            appendConversationTextLimitation(item, summary, limitations);
             break;
           }
 
-          const label = safeIdentifierV1(event.operation.name);
+          const label = safeIdentifier(event.operation.name);
           if (label === undefined) {
             limitations.addUnsupported("conversation-item");
             continue;
@@ -1170,7 +1253,7 @@ function normalizeConversationV1(input: {
             kind: "subagent" as const,
             state: "started" as const,
             label,
-            summary: makeBoundedSafeTextV1("Subagent started.", MAX_CONVERSATION_TEXT_BYTES_V1)!,
+            summary: makeBoundedSafeText("Subagent started.", MAX_CONVERSATION_TEXT_BYTES)!,
             refs: Object.freeze([]),
           }));
           if (item !== undefined) openSubagents.set(event.operationId, Object.freeze({ label }));
@@ -1179,7 +1262,7 @@ function normalizeConversationV1(input: {
         case "operation.finished": {
           if (event.kind === "tool") {
             const open = openTools.get(event.operationId);
-            const summary = event.output === undefined ? undefined : jsonSummaryV1(event.output);
+            const summary = event.output === undefined ? undefined : jsonSummary(event.output);
             if (open === undefined || summary === undefined) {
               limitations.addUnsupported("conversation-item");
               continue;
@@ -1194,7 +1277,7 @@ function normalizeConversationV1(input: {
               refs: Object.freeze([]),
             }));
             if (item !== undefined) openTools.delete(event.operationId);
-            appendConversationTextLimitationV1(item, summary, limitations);
+            appendConversationTextLimitation(item, summary, limitations);
             break;
           }
 
@@ -1208,9 +1291,9 @@ function normalizeConversationV1(input: {
             kind: "subagent" as const,
             state: event.status,
             label: open.label,
-            summary: makeBoundedSafeTextV1(
+            summary: makeBoundedSafeText(
               event.status === "completed" ? "Subagent completed." : "Subagent failed.",
-              MAX_CONVERSATION_TEXT_BYTES_V1,
+              MAX_CONVERSATION_TEXT_BYTES,
             )!,
             refs: Object.freeze([]),
           }));
@@ -1218,7 +1301,7 @@ function normalizeConversationV1(input: {
           break;
         }
         case "skill.loaded": {
-          const skill = safeIdentifierV1(event.skill);
+          const skill = safeIdentifier(event.skill);
           if (skill === undefined) {
             limitations.addUnsupported("conversation-item");
             continue;
@@ -1235,8 +1318,8 @@ function normalizeConversationV1(input: {
         case "input.requested": {
           const source = event.request.prompt ?? event.request.display;
           const summary = source === undefined
-            ? (event.request.input === undefined ? undefined : jsonSummaryV1(event.request.input))
-            : retainSafeTextV1(source, MAX_CONVERSATION_TEXT_BYTES_V1);
+            ? (event.request.input === undefined ? undefined : jsonSummary(event.request.input))
+            : retainSafeText(source, MAX_CONVERSATION_TEXT_BYTES);
           if (summary === undefined) {
             limitations.addUnsupported("conversation-item");
             continue;
@@ -1249,7 +1332,7 @@ function normalizeConversationV1(input: {
             responseSummary: null,
             refs: Object.freeze([]),
           }));
-          appendConversationTextLimitationV1(item, summary, limitations);
+          appendConversationTextLimitation(item, summary, limitations);
           // StreamEvent has no corresponding response event, so null cannot
           // claim a complete request/response capture.
           limitations.addCaptureFailed("adapter", "conversation-item");
@@ -1257,7 +1340,7 @@ function normalizeConversationV1(input: {
         }
         case "context.injected": {
           const source = event.source;
-          const summary = retainSafeTextV1(event.text, MAX_CONVERSATION_TEXT_BYTES_V1);
+          const summary = retainSafeText(event.text, MAX_CONVERSATION_TEXT_BYTES);
           if (
             summary === undefined ||
             (source !== "system" && source !== "memory" && source !== "skill" && source !== "user")
@@ -1272,13 +1355,13 @@ function normalizeConversationV1(input: {
             summary: summary.text,
             refs: Object.freeze([]),
           }));
-          appendConversationTextLimitationV1(item, summary, limitations);
+          appendConversationTextLimitation(item, summary, limitations);
           break;
         }
         case "error": {
           const redacted = redactSensitiveText(event.message, input.runtime.sensitiveValues);
           if (redacted !== event.message) limitations.addRedacted("conversation-text");
-          const summary = retainSafeTextV1(redacted, MAX_CONVERSATION_TEXT_BYTES_V1);
+          const summary = retainSafeText(redacted, MAX_CONVERSATION_TEXT_BYTES);
           if (summary === undefined) {
             limitations.addUnsupported("conversation-item");
             continue;
@@ -1286,11 +1369,11 @@ function normalizeConversationV1(input: {
           const item = yield* appendItem((ids) => Object.freeze({
             ...ids,
             kind: "conversation-error" as const,
-            code: makeSafeIdentifierV1("stream-error")!,
+            code: makeSafeIdentifier("stream-error")!,
             summary: summary.text,
             refs: Object.freeze([]),
           }));
-          appendConversationTextLimitationV1(item, summary, limitations);
+          appendConversationTextLimitation(item, summary, limitations);
           break;
         }
         // Thinking can contain hidden reasoning, and compaction has no safe
@@ -1306,12 +1389,12 @@ function normalizeConversationV1(input: {
     if (openTools.size > 0 || openSubagents.size > 0) {
       limitations.addUnsupported("conversation-item", openTools.size + openSubagents.size);
     }
-    const turns: readonly ConversationTurnV1[] = turnId === undefined
+    const turns: readonly ConversationTurn[] = turnId === undefined
       ? Object.freeze([])
       : Object.freeze([Object.freeze({
           turnId,
           sequence: requiredPositive(1),
-          outcome: attemptConversationOutcomeV1(input.result, input.sealed),
+          outcome: attemptConversationOutcome(input.result, input.sealed),
           refs: Object.freeze([]),
         })]);
     return Object.freeze({
@@ -1322,19 +1405,26 @@ function normalizeConversationV1(input: {
   });
 }
 
-function commandSafeTextV1(input: {
-  readonly commandId: CommandIdV1;
+function commandSafeText(input: {
+  readonly commandId: CommandId;
   readonly value: string;
   readonly maximumBytes: number;
   readonly target: "command-manifest" | "command-stdout" | "command-stderr";
-  readonly runtime: RunnerAttemptObservabilityRuntimeStateV1;
-}): SafeText | undefined {
+  readonly runtime: RunnerAttemptObservabilityRuntimeState;
+}): SafeText {
   const redacted = redactSensitiveText(input.value, input.runtime.sensitiveValues);
   if (redacted !== input.value) input.runtime.commandLimitations.addRedacted(input.target);
-  const retained = retainSafeTextV1(redacted, input.maximumBytes);
+  const retained = retainSafeText(redacted, input.maximumBytes);
   if (retained === undefined) {
-    input.runtime.commandLimitations.addUnsupported("command-manifest");
-    return undefined;
+    // A registered command must retain its manifest even when a provider text
+    // field cannot be represented safely. The partial collection records the
+    // replacement rather than dropping the command.
+    input.runtime.commandLimitations.addCaptureFailed("command-capture", input.target);
+    const replacement = makeBoundedSafeText("[unavailable]", input.maximumBytes);
+    if (replacement === undefined) {
+      throw new Error("The fixed unavailable command marker must be SafeText");
+    }
+    return replacement;
   }
   if (retained.omittedBytes !== undefined) {
     input.runtime.commandLimitations.addCommandManifestTextTruncated(
@@ -1346,9 +1436,9 @@ function commandSafeTextV1(input: {
   return retained.text;
 }
 
-function isProjectRelativeCommandPathV1(value: string): boolean {
+function isProjectRelativeCommandPath(value: string): boolean {
   return (
-    makeBoundedSafeTextV1(value, MAX_COMMAND_PROJECT_RELATIVE_PATH_BYTES_V1) !== undefined &&
+    makeBoundedSafeText(value, MAX_COMMAND_PROJECT_RELATIVE_PATH_BYTES) !== undefined &&
     value.length > 0 &&
     !value.startsWith("/") &&
     !value.includes("\\") &&
@@ -1357,10 +1447,10 @@ function isProjectRelativeCommandPathV1(value: string): boolean {
   );
 }
 
-function commandWorkingDirectoryV1(
+function commandWorkingDirectory(
   options: unknown,
-  runtime: RunnerAttemptObservabilityRuntimeStateV1,
-): CommandManifestV1["workingDirectory"] {
+  runtime: RunnerAttemptObservabilityRuntimeState,
+): CommandManifest["workingDirectory"] {
   const candidate = options as Partial<Pick<CommandOptions, "cwd">> | undefined;
   const cwd = candidate?.cwd;
   if (cwd === undefined || cwd === ".") return Object.freeze({ kind: "sandbox-default" as const });
@@ -1370,7 +1460,7 @@ function commandWorkingDirectoryV1(
   }
   const redacted = redactSensitiveText(cwd, runtime.sensitiveValues);
   if (redacted !== cwd) runtime.commandLimitations.addRedacted("command-manifest");
-  if (isProjectRelativeCommandPathV1(redacted)) {
+  if (isProjectRelativeCommandPath(redacted)) {
     return Object.freeze({ kind: "project-relative" as const, path: redacted });
   }
   // Absolute, dot-segment and otherwise unsafe cwd values are deliberately
@@ -1379,54 +1469,46 @@ function commandWorkingDirectoryV1(
   return Object.freeze({ kind: "redacted" as const });
 }
 
-function commandManifestV1(
-  command: CapturedCommandRuntimeV1,
-  runtime: RunnerAttemptObservabilityRuntimeStateV1,
-): CommandManifestV1 | undefined {
-  const phase = commandManifestPhaseV1(command.phase);
-  if (phase === undefined) {
-    runtime.commandLimitations.addUnsupported("command-manifest");
-    return undefined;
-  }
-  const workingDirectory = commandWorkingDirectoryV1(command.options, runtime);
+function commandManifest(
+  command: CapturedCommandRuntime,
+  runtime: RunnerAttemptObservabilityRuntimeState,
+): CommandManifest {
+  const phase = commandManifestPhase(command.phase);
+  const workingDirectory = commandWorkingDirectory(command.options, runtime);
   if (command.invocationKind === "shell") {
-    const script = commandSafeTextV1({
+    const script = commandSafeText({
       commandId: command.commandId,
       value: command.command,
-      maximumBytes: MAX_COMMAND_SHELL_BYTES_V1,
+      maximumBytes: MAX_COMMAND_SHELL_BYTES,
       target: "command-manifest",
       runtime,
     });
-    return script === undefined
-      ? undefined
-      : Object.freeze({
-          phase,
-          invocation: Object.freeze({ kind: "shell" as const, command: script }),
-          workingDirectory,
-        });
+    return Object.freeze({
+      phase,
+      invocation: Object.freeze({ kind: "shell" as const, command: script }),
+      workingDirectory,
+    });
   }
-  if ((command.args?.length ?? 0) > MAX_COMMAND_ARGUMENTS_V1) {
+  const sourceArguments = command.args ?? [];
+  if (sourceArguments.length > MAX_COMMAND_ARGUMENTS) {
     runtime.commandLimitations.addUnsupported("command-manifest");
-    return undefined;
   }
-  const executable = commandSafeTextV1({
+  const executable = commandSafeText({
     commandId: command.commandId,
     value: command.command,
-    maximumBytes: MAX_COMMAND_EXECUTABLE_BYTES_V1,
+    maximumBytes: MAX_COMMAND_EXECUTABLE_BYTES,
     target: "command-manifest",
     runtime,
   });
-  if (executable === undefined) return undefined;
   const arguments_: SafeText[] = [];
-  for (const raw of command.args ?? []) {
-    const argument = commandSafeTextV1({
+  for (const raw of sourceArguments.slice(0, MAX_COMMAND_ARGUMENTS)) {
+    const argument = commandSafeText({
       commandId: command.commandId,
       value: raw,
-      maximumBytes: MAX_COMMAND_ARGUMENT_BYTES_V1,
+      maximumBytes: MAX_COMMAND_ARGUMENT_BYTES,
       target: "command-manifest",
       runtime,
     });
-    if (argument === undefined) return undefined;
     arguments_.push(argument);
   }
   return Object.freeze({
@@ -1440,7 +1522,7 @@ function commandManifestV1(
   });
 }
 
-function stripUnsafeCommandControlsV1(value: string): { readonly text: string; readonly count: number } {
+function stripUnsafeCommandControls(value: string): { readonly text: string; readonly count: number } {
   let text = "";
   let count = 0;
   for (const scalar of value) {
@@ -1457,22 +1539,22 @@ function stripUnsafeCommandControlsV1(value: string): { readonly text: string; r
   return Object.freeze({ text, count });
 }
 
-function emptyCommandStreamV1(): NormalizedCommandStreamCaptureV1 {
-  const text = makeBoundedSafeTextV1("", MAX_COMMAND_STREAM_BYTES_V1);
+function emptyCommandStream(): NormalizedCommandStreamCapture {
+  const text = makeBoundedSafeText("", MAX_COMMAND_STREAM_BYTES);
   if (text === undefined) throw new Error("An empty command stream must be SafeText");
   return Object.freeze({ text, totalSafeUtf8Bytes: requiredNonNegative(0) });
 }
 
-function commandStreamV1(input: {
-  readonly commandId: CommandIdV1;
+function commandStream(input: {
+  readonly commandId: CommandId;
   readonly stream: "stdout" | "stderr";
   readonly value: string;
-  readonly runtime: RunnerAttemptObservabilityRuntimeStateV1;
-}): NormalizedCommandStreamCaptureV1 {
+  readonly runtime: RunnerAttemptObservabilityRuntimeState;
+}): NormalizedCommandStreamCapture {
   const target = input.stream === "stdout" ? "command-stdout" as const : "command-stderr" as const;
   const redacted = redactSensitiveText(input.value, input.runtime.sensitiveValues);
   if (redacted !== input.value) input.runtime.commandLimitations.addRedacted(target);
-  const stripped = stripUnsafeCommandControlsV1(redacted);
+  const stripped = stripUnsafeCommandControls(redacted);
   if (stripped.count > 0) {
     input.runtime.commandLimitations.addUnsafeCommandControlStripped(
       input.commandId,
@@ -1480,10 +1562,10 @@ function commandStreamV1(input: {
       stripped.count,
     );
   }
-  const retained = retainSafeTextV1(stripped.text, MAX_COMMAND_STREAM_BYTES_V1);
+  const retained = retainSafeText(stripped.text, MAX_COMMAND_STREAM_BYTES);
   if (retained === undefined) {
     input.runtime.commandLimitations.addCaptureFailed("command-capture", target);
-    return emptyCommandStreamV1();
+    return emptyCommandStream();
   }
   if (retained.omittedBytes !== undefined) {
     input.runtime.commandLimitations.addCommandStreamTruncated(
@@ -1499,48 +1581,60 @@ function commandStreamV1(input: {
   return Object.freeze({ text: retained.text, totalSafeUtf8Bytes });
 }
 
-function normalizeCommandsV1(
-  runtime: RunnerAttemptObservabilityRuntimeStateV1,
-): NormalizedAttemptObservabilityCaptureV1["commands"] {
-  const commands: NormalizedCommandObservationCaptureV1[] = [];
+function normalizeCommands(
+  runtime: RunnerAttemptObservabilityRuntimeState,
+): NormalizedAttemptObservabilityCapture["commands"] {
+  const commands: NormalizedCommandObservationCapture[] = [];
   for (const captured of runtime.commands) {
     if (captured.result === undefined) {
+      // The manifest was registered before the sandbox call. If its normal
+      // result never arrived, retain it with the only accurate fallback: the
+      // transport did not provide a terminal command result.
       runtime.commandLimitations.addCaptureFailed("command-capture", "command-manifest");
+      runtime.commandLimitations.addCaptureFailed("command-capture", "command-stdout");
+      runtime.commandLimitations.addCaptureFailed("command-capture", "command-stderr");
+      recordTerminalCommandResult(
+        Object.freeze({ runtime, command: captured }),
+        Object.freeze({ kind: "terminated" as const, reason: "transport-lost" as const }),
+      );
+    }
+    const result = captured.result;
+    if (result === undefined) {
+      markRuntimeFailure(runtime, producerCommandRegistrationInvalid());
       continue;
     }
-    const manifest = commandManifestV1(captured, runtime);
-    if (manifest === undefined) continue;
-    const stdout = commandStreamV1({
+    const manifest = commandManifest(captured, runtime);
+    const stdout = commandStream({
       commandId: captured.commandId,
       stream: "stdout",
-      value: captured.result.stdout,
+      value: result.stdout,
       runtime,
     });
-    const stderr = commandStreamV1({
+    const stderr = commandStream({
       commandId: captured.commandId,
       stream: "stderr",
-      value: captured.result.stderr,
+      value: result.stderr,
       runtime,
     });
     commands.push(Object.freeze({
       commandId: captured.commandId,
       manifest,
-      result: Object.freeze({ outcome: captured.result.outcome, stdout, stderr }),
+      result: Object.freeze({ outcome: result.outcome, stdout, stderr }),
       refs: Object.freeze([]),
     }));
   }
   return Object.freeze({
     collection: runtime.commandLimitations.collection(),
     commands: Object.freeze(
-      [...commands].sort((left, right) => compareObservabilityTextV1(left.commandId, right.commandId)),
+      [...commands].sort((left, right) => compareObservabilityText(left.commandId, right.commandId)),
     ),
   });
 }
 
-function normalizeUsageV1(input: {
+function normalizeUsage(input: {
   readonly result: EvalResult;
-  readonly runtime: RunnerAttemptObservabilityRuntimeStateV1;
-}): NormalizedAttemptObservabilityCaptureV1["usage"] {
+  readonly runtime: RunnerAttemptObservabilityRuntimeState;
+}): NormalizedAttemptObservabilityCapture["usage"] {
   // EvalResult.usage remains an aggregate for legacy consumers. Only records
   // captured from actual Session onTurn values above enter this family.
   if (input.result.evidenceCoverage.usage.status !== "complete") {
@@ -1556,80 +1650,98 @@ function normalizeUsageV1(input: {
     collection: input.runtime.usageLimitations.collection(),
     observations: Object.freeze(
       [...input.runtime.usage].sort((left, right) =>
-        compareObservabilityTextV1(left.usageObservationId, right.usageObservationId),
+        compareObservabilityText(left.usageObservationId, right.usageObservationId),
       ),
     ),
   });
 }
 
-function attemptTimingProjectionV1(
-  phase: LifecyclePhase,
-): { readonly phase: AttemptTimingIntervalV1["phase"]; readonly label: StableLabel } | undefined {
-  const label = stableLabelV1(phase);
-  if (label === undefined) return undefined;
+type AttemptTimingProjection =
+  | {
+      readonly kind: "attempt";
+      readonly phase: AttemptTimingInterval["phase"];
+      readonly label: StableLabel;
+    }
+  | { readonly kind: "outside-attempt-domain" }
+  | { readonly kind: "unsupported" };
+
+function attemptTimingProjection(phase: string): AttemptTimingProjection {
+  const label = stableLabel(phase);
+  if (label === undefined) return Object.freeze({ kind: "unsupported" as const });
   switch (phase) {
     case "sandbox.create":
     case "workspace.baseline":
     case "agent.setup":
     case "telemetry.configure":
-      return Object.freeze({ phase: "attempt.setup" as const, label });
+    case "sandbox.queue":
+      return Object.freeze({ kind: "attempt" as const, phase: "attempt.setup" as const, label });
     case "sandbox.prepare":
     case "sandbox.prepare.eval":
     case "sandbox.prepare.group":
     case "sandbox.prepare.experiment":
-      return Object.freeze({ phase: "sandbox.prepare" as const, label });
+      return Object.freeze({ kind: "attempt" as const, phase: "sandbox.prepare" as const, label });
     case "agent.ensure":
-      return Object.freeze({ phase: "agent.ensure" as const, label });
+      return Object.freeze({ kind: "attempt" as const, phase: "agent.ensure" as const, label });
     case "eval.run":
-      return Object.freeze({ phase: "eval.run" as const, label });
+      return Object.freeze({ kind: "attempt" as const, phase: "eval.run" as const, label });
     case "assertions.evaluate":
-      return Object.freeze({ phase: "assertion.evaluate" as const, label });
+      return Object.freeze({ kind: "attempt" as const, phase: "assertion.evaluate" as const, label });
     case "agent.teardown":
     case "sandbox.cleanup":
     case "sandbox.suspend":
     case "sandbox.stop":
-      return Object.freeze({ phase: "attempt.teardown" as const, label });
+    case "workspace.diff":
+    case "telemetry.collect":
+      return Object.freeze({ kind: "attempt" as const, phase: "attempt.teardown" as const, label });
     case "judge.precheck":
     case "experiment.setup":
     case "experiment.teardown":
-    case "sandbox.queue":
     case "agent.run":
-    case "workspace.diff":
-    case "telemetry.collect":
-      return undefined;
+      return Object.freeze({ kind: "outside-attempt-domain" as const });
+    default:
+      return Object.freeze({ kind: "unsupported" as const });
   }
 }
 
-function validPhaseDurationV1(value: PhaseTiming): NonNegativeSafeInteger | undefined {
-  return makeNonNegativeSafeIntegerV1(value.durationMs);
+function validPhaseDuration(value: PhaseTiming): NonNegativeSafeInteger | undefined {
+  return makeNonNegativeSafeInteger(value.durationMs);
 }
 
-function timingActivityProjectionV1(
+function timingActivityProjection(
   activity: TimingActivity,
-): { readonly phase: AttemptTimingIntervalV1["phase"]; readonly label: StableLabel } | undefined {
-  const label = stableLabelV1(activity.label);
-  if (label === undefined) return undefined;
-  switch (activity.key) {
+): { readonly phase: AttemptTimingInterval["phase"]; readonly label: StableLabel } | undefined {
+  const phase = (() => {
+    switch (activity.key) {
     case "agent.turn":
-      return Object.freeze({ phase: "agent.send" as const, label });
+      return "agent.send" as const;
     case "sandbox.command":
-      return Object.freeze({ phase: "sandbox.command" as const, label });
+      return "sandbox.command" as const;
     case "sandbox.prepare":
-      return Object.freeze({ phase: "sandbox.prepare" as const, label });
+      return "sandbox.prepare" as const;
+    case "workspace.diff.export":
+      return "attempt.teardown" as const;
     default:
       return undefined;
-  }
+    }
+  })();
+  if (phase === undefined) return undefined;
+  // Runner's activity label is human-facing and can contain spaces or other
+  // SafeText punctuation. v1 persists only StableLabel, so standard activities
+  // retain a stable key when their display label cannot cross that boundary.
+  const label = stableLabel(activity.label) ?? stableLabel(activity.key);
+  if (label === undefined) return undefined;
+  return Object.freeze({ phase, label });
 }
 
-function validTimingActivityStartV1(activity: TimingActivity): NonNegativeSafeInteger | undefined {
-  return makeNonNegativeSafeIntegerV1(activity.startOffsetMs);
+function validTimingActivityStart(activity: TimingActivity): NonNegativeSafeInteger | undefined {
+  return makeNonNegativeSafeInteger(activity.startOffsetMs);
 }
 
-function validTimingActivityDurationV1(activity: TimingActivity): NonNegativeSafeInteger | undefined {
-  return makeNonNegativeSafeIntegerV1(activity.durationMs);
+function validTimingActivityDuration(activity: TimingActivity): NonNegativeSafeInteger | undefined {
+  return makeNonNegativeSafeInteger(activity.durationMs);
 }
 
-function timingSpanContainsV1(input: {
+function timingSpanContains(input: {
   readonly parentStartOffsetMs: NonNegativeSafeInteger;
   readonly parentDurationMs: NonNegativeSafeInteger;
   readonly childStartOffsetMs: NonNegativeSafeInteger;
@@ -1645,48 +1757,66 @@ function timingSpanContainsV1(input: {
   );
 }
 
-function normalizeAttemptTimingV1(input: {
+function normalizeAttemptTiming(input: {
   readonly result: EvalResult;
-  readonly mint: AttemptEntityMinterV1;
-}): Effect.Effect<NormalizedAttemptObservabilityCaptureV1["timing"], RunnerObservabilityProducerErrorV1> {
+  readonly mint: AttemptEntityMinter;
+}): Effect.Effect<NormalizedAttemptObservabilityCapture["timing"], RunnerObservabilityProducerError> {
   return Effect.gen(function* () {
-    const limitations = new RunnerCollectionLimitationsV1();
+    const limitations = new RunnerCollectionLimitations();
     const phases = input.result.phases;
     if (phases === undefined) {
       limitations.addCaptureFailed("timing-capture", "timing-interval");
       return Object.freeze({ collection: limitations.collection(), intervals: Object.freeze([]) });
     }
 
-    const intervals: AttemptTimingIntervalV1[] = [];
+    const intervals: AttemptTimingInterval[] = [];
     const appendActivities = (
       activities: readonly TimingActivity[] | undefined,
       parent: {
-        readonly intervalId: IntervalIdV1;
+        readonly intervalId: IntervalId;
         readonly startOffsetMs: NonNegativeSafeInteger;
+        /** Offset in the Runner's unfiltered phase clock. */
+        readonly sourceStartOffsetMs: NonNegativeSafeInteger;
         readonly durationMs: NonNegativeSafeInteger;
       } | undefined,
       ancestors: ReadonlySet<TimingActivity>,
-    ): Effect.Effect<void, RunnerObservabilityProducerErrorV1> => Effect.gen(function* () {
+    ): Effect.Effect<void, RunnerObservabilityProducerError> => Effect.gen(function* () {
       for (const activity of activities ?? []) {
         if (ancestors.has(activity)) {
           limitations.addUnsupported("timing-interval");
           continue;
         }
-        const projection = timingActivityProjectionV1(activity);
-        const startOffsetMs = validTimingActivityStartV1(activity);
-        const durationMs = validTimingActivityDurationV1(activity);
-        if (projection === undefined || startOffsetMs === undefined || durationMs === undefined) {
+        const projection = timingActivityProjection(activity);
+        const sourceStartOffsetMs = validTimingActivityStart(activity);
+        const durationMs = validTimingActivityDuration(activity);
+        const relativeStartOffsetMs = parent === undefined || sourceStartOffsetMs === undefined
+          ? sourceStartOffsetMs
+          : makeNonNegativeSafeInteger(sourceStartOffsetMs - parent.sourceStartOffsetMs);
+        const translatedStartOffsetMs = parent === undefined || relativeStartOffsetMs === undefined
+          ? relativeStartOffsetMs
+          : makeNonNegativeSafeInteger(parent.startOffsetMs + relativeStartOffsetMs);
+        // A known activity with safe source-clock values remains a fact even
+        // when this parent-relative conversion cannot be proven. Persist its
+        // original interval as a root rather than turning a missing causal
+        // edge into an unsupported-input limitation.
+        const startOffsetMs = translatedStartOffsetMs ?? sourceStartOffsetMs;
+        if (
+          projection === undefined
+          || sourceStartOffsetMs === undefined
+          || startOffsetMs === undefined
+          || durationMs === undefined
+        ) {
           limitations.addUnsupported("timing-interval");
           continue;
         }
-        if (intervals.length >= MAX_TIMING_INTERVALS_V1) {
+        if (intervals.length >= MAX_TIMING_INTERVALS) {
           limitations.addCap("timing-interval", intervals.length);
           continue;
         }
         const intervalId = yield* input.mint("interval");
-        const parentIntervalId = parent === undefined
+        const parentIntervalId = parent === undefined || translatedStartOffsetMs === undefined
           ? null
-          : timingSpanContainsV1({
+          : timingSpanContains({
               parentStartOffsetMs: parent.startOffsetMs,
               parentDurationMs: parent.durationMs,
               childStartOffsetMs: startOffsetMs,
@@ -1694,12 +1824,6 @@ function normalizeAttemptTimingV1(input: {
             })
             ? parent.intervalId
             : null;
-        if (parent !== undefined && parentIntervalId === null) {
-          // Phase and child offsets are independently rounded at the Runner
-          // boundary. When their measured ranges do not prove containment,
-          // retain the factual child as a root rather than inventing a tree.
-          limitations.addUnsupported("timing-interval");
-        }
         intervals.push(Object.freeze({
           intervalId,
           phase: projection.phase,
@@ -1714,26 +1838,40 @@ function normalizeAttemptTimingV1(input: {
         nextAncestors.add(activity);
         yield* appendActivities(
           activity.children,
-          Object.freeze({ intervalId, startOffsetMs, durationMs }),
+          Object.freeze({
+            intervalId,
+            startOffsetMs,
+            sourceStartOffsetMs,
+            durationMs,
+          }),
           nextAncestors,
         );
       }
     });
-    let offset: NonNegativeSafeInteger | undefined = requiredNonNegative(0);
+    // `phases` also carries a few known Run-owned anchors for first-dispatched
+    // work. Keep their raw clock for child translation, but do not let them
+    // create gaps in the Attempt execution-duration clock.
+    let sourceOffset: NonNegativeSafeInteger | undefined = requiredNonNegative(0);
+    let attemptOffset: NonNegativeSafeInteger | undefined = requiredNonNegative(0);
     for (const source of phases) {
-      const duration = validPhaseDurationV1(source);
-      const projection = attemptTimingProjectionV1(source.name);
-      if (duration === undefined || projection === undefined || offset === undefined) {
+      const duration = validPhaseDuration(source);
+      const projection = attemptTimingProjection(source.name);
+      if (
+        duration === undefined
+        || projection.kind === "unsupported"
+        || sourceOffset === undefined
+        || attemptOffset === undefined
+      ) {
         limitations.addUnsupported("timing-interval");
-      } else if (intervals.length >= MAX_TIMING_INTERVALS_V1) {
+      } else if (projection.kind === "attempt" && intervals.length >= MAX_TIMING_INTERVALS) {
         limitations.addCap("timing-interval", intervals.length);
-      } else {
+      } else if (projection.kind === "attempt") {
         const intervalId = yield* input.mint("interval");
         intervals.push(Object.freeze({
           intervalId,
           phase: projection.phase,
           label: projection.label,
-          startOffsetMs: offset,
+          startOffsetMs: attemptOffset,
           durationMs: duration,
           parentIntervalId: null,
           outcome: source.failed ? "failed" as const : "completed" as const,
@@ -1741,14 +1879,23 @@ function normalizeAttemptTimingV1(input: {
         }));
         yield* appendActivities(
           source.children,
-          Object.freeze({ intervalId, startOffsetMs: offset, durationMs: duration }),
+          Object.freeze({
+            intervalId,
+            startOffsetMs: attemptOffset,
+            sourceStartOffsetMs: sourceOffset,
+            durationMs: duration,
+          }),
           new Set(),
         );
       }
-      if (duration === undefined || offset === undefined) {
-        offset = undefined;
+      if (duration === undefined || sourceOffset === undefined || attemptOffset === undefined) {
+        sourceOffset = undefined;
+        attemptOffset = undefined;
       } else {
-        offset = makeNonNegativeSafeIntegerV1(offset + duration);
+        sourceOffset = makeNonNegativeSafeInteger(sourceOffset + duration);
+        if (projection.kind !== "outside-attempt-domain") {
+          attemptOffset = makeNonNegativeSafeInteger(attemptOffset + duration);
+        }
       }
     }
     return Object.freeze({
@@ -1757,16 +1904,16 @@ function normalizeAttemptTimingV1(input: {
       // offsets retain the Runner's actual lifecycle order.
       intervals: Object.freeze(
         [...intervals].sort((left, right) =>
-          compareObservabilityTextV1(left.intervalId, right.intervalId),
+          compareObservabilityText(left.intervalId, right.intervalId),
         ),
       ),
     });
   });
 }
 
-function attemptDiagnosticPhaseV1(
+function attemptDiagnosticPhase(
   origin: TimingOrigin | undefined,
-): AttemptDiagnosticV1["phase"] {
+): AttemptDiagnostic["phase"] {
   if (origin === undefined || origin.scope !== "attempt") return "collection";
   switch (origin.phase) {
     case "sandbox.create":
@@ -1802,52 +1949,52 @@ function attemptDiagnosticPhaseV1(
   }
 }
 
-function normalizeAttemptDiagnosticsV1(input: {
+function normalizeAttemptDiagnostics(input: {
   readonly result: EvalResult;
-  readonly mint: AttemptEntityMinterV1;
-}): Effect.Effect<NormalizedAttemptObservabilityCaptureV1["diagnostics"], RunnerObservabilityProducerErrorV1> {
+  readonly mint: AttemptEntityMinter;
+}): Effect.Effect<NormalizedAttemptObservabilityCapture["diagnostics"], RunnerObservabilityProducerError> {
   return Effect.gen(function* () {
-    const limitations = new RunnerCollectionLimitationsV1();
-    const diagnostics: AttemptDiagnosticV1[] = [];
+    const limitations = new RunnerCollectionLimitations();
+    const diagnostics: AttemptDiagnostic[] = [];
     const append = (
       value: {
         readonly code: string;
         readonly detail: string;
-        readonly kind: AttemptDiagnosticV1["kind"];
+        readonly kind: AttemptDiagnostic["kind"];
         readonly origin?: DiagnosticRecord["origin"];
       },
-    ): Effect.Effect<void, RunnerObservabilityProducerErrorV1> => {
-      const code = makeSafeIdentifierV1(value.code);
+    ): Effect.Effect<void, RunnerObservabilityProducerError> => {
+      const code = makeSafeIdentifier(value.code);
       if (code === undefined) {
         limitations.addUnsupported("diagnostic");
         return Effect.void;
       }
-      const retainedSummary = makeBoundedSafeTextV1(
+      const retainedSummary = makeBoundedSafeText(
         value.detail,
-        MAX_DIAGNOSTIC_SUMMARY_BYTES_V1,
+        MAX_DIAGNOSTIC_SUMMARY_BYTES,
       );
       if (retainedSummary === undefined) {
         limitations.addUnsupported("diagnostic");
       }
-      if (diagnostics.length >= MAX_DIAGNOSTICS_V1) {
+      if (diagnostics.length >= MAX_DIAGNOSTICS) {
         limitations.addCap("diagnostic", diagnostics.length);
         return Effect.void;
       }
       return Effect.map(input.mint("diagnostic"), (diagnosticId) => {
         diagnostics.push(Object.freeze({
-          diagnosticId: diagnosticId as DiagnosticIdV1,
+          diagnosticId: diagnosticId as DiagnosticId,
           kind: value.kind,
           code,
-          phase: attemptDiagnosticPhaseV1(value.origin),
+          phase: attemptDiagnosticPhase(value.origin),
           // The result's one-line detail is already Runner-redacted. Causes,
           // stacks, paths, and arbitrary context remain outside this durable
           // family. An unsafe or oversized detail is deliberately replaced by
           // a generic bounded summary and represented as partial coverage.
-          summary: retainedSummary ?? makeBoundedSafeTextV1(
+          summary: retainedSummary ?? makeBoundedSafeText(
             value.kind === "execution-error"
               ? "Runner recorded an execution error."
               : "Runner recorded an advisory diagnostic.",
-            MAX_DIAGNOSTIC_SUMMARY_BYTES_V1,
+            MAX_DIAGNOSTIC_SUMMARY_BYTES,
           )!,
           causes: Object.freeze([]),
           context: Object.freeze([]),
@@ -1878,16 +2025,16 @@ function normalizeAttemptDiagnosticsV1(input: {
       collection: limitations.collection(),
       diagnostics: Object.freeze(
         [...diagnostics].sort((left, right) =>
-          compareObservabilityTextV1(left.diagnosticId, right.diagnosticId),
+          compareObservabilityText(left.diagnosticId, right.diagnosticId),
         ),
       ),
     });
   });
 }
 
-function runDiagnosticPhaseV1(
+function runDiagnosticPhase(
   origin: TimingOrigin | undefined,
-): RunDiagnosticV1["phase"] {
+): RunDiagnostic["phase"] {
   // Runner's existing experiment diagnostic accumulator predates the
   // owner-local Attachment and represents its lifecycle anchor as an Attempt
   // origin. Its phase is still a real Run fact; no timing-node or provider
@@ -1905,41 +2052,41 @@ function runDiagnosticPhaseV1(
   }
 }
 
-function normalizeRunDiagnosticsV1(input: {
+function normalizeRunDiagnostics(input: {
   readonly diagnostics: readonly DiagnosticRecord[] | undefined;
-  readonly mint: RunEntityMinterV1;
-}): Effect.Effect<NormalizedRunObservabilityCaptureV1["diagnostics"], RunnerObservabilityProducerErrorV1> {
+  readonly mint: RunEntityMinter;
+}): Effect.Effect<NormalizedRunObservabilityCapture["diagnostics"], RunnerObservabilityProducerError> {
   return Effect.gen(function* () {
-    const limitations = new RunnerCollectionLimitationsV1();
+    const limitations = new RunnerCollectionLimitations();
     if (input.diagnostics === undefined) {
       limitations.addCaptureFailed("run-teardown", "diagnostic");
       return Object.freeze({ collection: limitations.collection(), diagnostics: Object.freeze([]) });
     }
 
-    const diagnostics: RunDiagnosticV1[] = [];
+    const diagnostics: RunDiagnostic[] = [];
     for (const source of input.diagnostics) {
-      const code = makeSafeIdentifierV1(source.code);
+      const code = makeSafeIdentifier(source.code);
       if (code === undefined) {
         limitations.addUnsupported("diagnostic");
         continue;
       }
-      const summary = makeBoundedSafeTextV1(source.detail, MAX_DIAGNOSTIC_SUMMARY_BYTES_V1);
+      const summary = makeBoundedSafeText(source.detail, MAX_DIAGNOSTIC_SUMMARY_BYTES);
       if (summary === undefined) limitations.addUnsupported("diagnostic");
-      if (diagnostics.length >= MAX_DIAGNOSTICS_V1) {
+      if (diagnostics.length >= MAX_DIAGNOSTICS) {
         limitations.addCap("diagnostic", diagnostics.length);
         continue;
       }
       const diagnosticId = yield* input.mint("diagnostic");
       diagnostics.push(Object.freeze({
-        diagnosticId: diagnosticId as DiagnosticIdV1,
+        diagnosticId: diagnosticId as DiagnosticId,
         kind: source.level === "error" ? "execution-error" as const : "advisory" as const,
         code,
-        phase: runDiagnosticPhaseV1(source.origin),
-        summary: summary ?? makeBoundedSafeTextV1(
+        phase: runDiagnosticPhase(source.origin),
+        summary: summary ?? makeBoundedSafeText(
           source.level === "error"
             ? "Runner recorded an execution error."
             : "Runner recorded an advisory diagnostic.",
-          MAX_DIAGNOSTIC_SUMMARY_BYTES_V1,
+          MAX_DIAGNOSTIC_SUMMARY_BYTES,
         )!,
         causes: Object.freeze([]),
         context: Object.freeze([]),
@@ -1952,7 +2099,7 @@ function normalizeRunDiagnosticsV1(input: {
       collection: limitations.collection(),
       diagnostics: Object.freeze(
         [...diagnostics].sort((left, right) =>
-          compareObservabilityTextV1(left.diagnosticId, right.diagnosticId),
+          compareObservabilityText(left.diagnosticId, right.diagnosticId),
         ),
       ),
     });
@@ -1963,28 +2110,28 @@ function normalizeRunDiagnosticsV1(input: {
  * Normalizes only facts already sealed by Runner. It never reads legacy
  * result.json, raw transcript/provider data, Report/Sample data, or paths.
  */
-export function createRunnerAttemptObservabilityCaptureV1(input: {
+export function createRunnerAttemptObservabilityCapture(input: {
   readonly result: EvalResult;
   readonly sealed: SealedAttemptAssertions;
 }): Effect.Effect<
-  NormalizedAttemptObservabilityCaptureV1,
-  RunnerObservabilityProducerErrorV1
+  NormalizedAttemptObservabilityCapture,
+  RunnerObservabilityProducerError
 > {
   return Effect.gen(function* () {
-    const runtime = runnerAttemptResultStatesV1.get(input.result);
+    const runtime = runnerAttemptResultStates.get(input.result);
     if (runtime === undefined) return yield* Effect.fail(producerCaptureMissing());
     if (runtime.failure !== undefined) return yield* Effect.fail(runtime.failure);
-    const minter = makeAttemptEntityMinterV1(runtime);
-    const commands = normalizeCommandsV1(runtime);
-    const usage = normalizeUsageV1({ result: input.result, runtime });
-    const conversation = yield* normalizeConversationV1({
+    const minter = makeAttemptEntityMinter(runtime);
+    const commands = normalizeCommands(runtime);
+    const usage = normalizeUsage({ result: input.result, runtime });
+    const conversation = yield* normalizeConversation({
       result: input.result,
       sealed: input.sealed,
       mint: minter.mint,
       runtime,
     });
-    const timing = yield* normalizeAttemptTimingV1({ result: input.result, mint: minter.mint });
-    const diagnostics = yield* normalizeAttemptDiagnosticsV1({ result: input.result, mint: minter.mint });
+    const timing = yield* normalizeAttemptTiming({ result: input.result, mint: minter.mint });
+    const diagnostics = yield* normalizeAttemptDiagnostics({ result: input.result, mint: minter.mint });
     if (runtime.failure !== undefined) return yield* Effect.fail(runtime.failure);
     if (!minter.seal()) return yield* Effect.fail(producerCaptureSealInvalid("attempt"));
     return Object.freeze({
@@ -2004,16 +2151,16 @@ export function createRunnerAttemptObservabilityCaptureV1(input: {
  * attribution. Settled Run diagnostics are bound by run.ts immediately before
  * this same publish boundary.
  */
-export function createRunnerRunObservabilityCaptureV1(input: {
+export function createRunnerRunObservabilityCapture(input: {
   readonly run: AgentRun;
-}): Effect.Effect<NormalizedRunObservabilityCaptureV1, RunnerObservabilityProducerErrorV1> {
+}): Effect.Effect<NormalizedRunObservabilityCapture, RunnerObservabilityProducerError> {
   return Effect.gen(function* () {
-    const capture = makeRunObservabilityCaptureIdentityV1();
-    const minter = makeRunEntityMinterV1(capture);
-    const timingLimitations = new RunnerCollectionLimitationsV1();
+    const capture = makeRunObservabilityCaptureIdentity();
+    const minter = makeRunEntityMinter(capture);
+    const timingLimitations = new RunnerCollectionLimitations();
     timingLimitations.addCaptureFailed("run-teardown", "timing-interval");
-    const diagnostics = yield* normalizeRunDiagnosticsV1({
-      diagnostics: runnerRunDiagnosticsV1.get(input.run),
+    const diagnostics = yield* normalizeRunDiagnostics({
+      diagnostics: runnerRunDiagnostics.get(input.run),
       mint: minter.mint,
     });
     if (!minter.seal()) return yield* Effect.fail(producerCaptureSealInvalid("run"));

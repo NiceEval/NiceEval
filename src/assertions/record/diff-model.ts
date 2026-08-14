@@ -1,29 +1,23 @@
 import {
-  type AgentSendWindowIdentity,
   type AgentWorkspaceDiff,
-  type AgentWorkspaceDiffEndpoint,
-  type AgentWorkspaceDiffHunks,
-  type AgentWorkspaceDiffPolicy,
-  type AgentWorkspaceDiffWindow,
-  type AgentWorkspaceDiffWindowChange,
+  type AgentWorkspaceDiffPolicy as RuntimeAgentWorkspaceDiffPolicy,
 } from "../workspace-diff.ts";
 
-export const AGENT_WORKSPACE_DIFF_SCHEMA_ID_V1 = "niceeval.diff/v1" as const;
-export const AGENT_WORKSPACE_DIFF_ATTRIBUTION_V1 =
+export const AGENT_WORKSPACE_DIFF_ATTRIBUTION =
   "agent-send-window-endpoints/v1" as const;
 
-export interface AgentWorkspaceDiffPolicyV1 {
+export interface AgentWorkspaceDiffPolicy {
   readonly defaultPolicy: "niceeval.sandbox-ledger/default-excludes/v1";
   readonly include: readonly string[];
   readonly ignore: readonly string[];
 }
 
-export interface AgentSendWindowIdentityV1 {
+export interface AgentSendWindowIdentity {
   readonly session?: number;
   readonly turn: number;
 }
 
-export type AgentWorkspaceDiffEndpointV1 =
+export type AgentWorkspaceDiffEndpoint =
   | { readonly state: "absent" }
   | { readonly state: "text"; readonly text: string }
   | {
@@ -32,34 +26,34 @@ export type AgentWorkspaceDiffEndpointV1 =
       readonly bytes?: number;
     };
 
-export interface AgentWorkspaceDiffHunksV1 {
+export interface AgentWorkspaceDiffHunks {
   readonly added: readonly string[];
   readonly removed: readonly string[];
 }
 
-export interface AgentWorkspaceDiffWindowChangeV1 {
+export interface AgentWorkspaceDiffWindowChange {
   readonly path: string;
   readonly status: "added" | "modified" | "deleted";
-  readonly before: AgentWorkspaceDiffEndpointV1;
-  readonly after: AgentWorkspaceDiffEndpointV1;
-  readonly hunks: AgentWorkspaceDiffHunksV1;
+  readonly before: AgentWorkspaceDiffEndpoint;
+  readonly after: AgentWorkspaceDiffEndpoint;
+  readonly hunks: AgentWorkspaceDiffHunks;
 }
 
-export interface AgentWorkspaceDiffWindowV1 {
-  readonly identity: AgentSendWindowIdentityV1;
-  readonly changes: readonly AgentWorkspaceDiffWindowChangeV1[];
+export interface AgentWorkspaceDiffWindow {
+  readonly identity: AgentSendWindowIdentity;
+  readonly changes: readonly AgentWorkspaceDiffWindowChange[];
 }
 
 /** The exact semantic payload persisted by the Attempt-owned diff Attachment. */
-export interface AgentWorkspaceDiffDocumentV1 {
-  readonly attribution: typeof AGENT_WORKSPACE_DIFF_ATTRIBUTION_V1;
-  readonly policy: AgentWorkspaceDiffPolicyV1;
-  readonly windows: readonly AgentWorkspaceDiffWindowV1[];
+export interface AgentWorkspaceDiffDocument {
+  readonly attribution: typeof AGENT_WORKSPACE_DIFF_ATTRIBUTION;
+  readonly policy: AgentWorkspaceDiffPolicy;
+  readonly windows: readonly AgentWorkspaceDiffWindow[];
 }
 
 function encodeEndpoint(
   endpoint: AgentWorkspaceDiffEndpoint,
-): AgentWorkspaceDiffEndpointV1 {
+): AgentWorkspaceDiffEndpoint {
   switch (endpoint.state) {
     case "absent":
       return Object.freeze({ state: "absent" as const });
@@ -75,7 +69,7 @@ function encodeEndpoint(
 }
 
 function decodeEndpoint(
-  endpoint: AgentWorkspaceDiffEndpointV1,
+  endpoint: AgentWorkspaceDiffEndpoint,
 ): AgentWorkspaceDiffEndpoint {
   switch (endpoint.state) {
     case "absent":
@@ -93,15 +87,6 @@ function decodeEndpoint(
 
 function encodeIdentity(
   identity: AgentSendWindowIdentity,
-): AgentSendWindowIdentityV1 {
-  return Object.freeze({
-    ...(identity.session === undefined ? {} : { session: identity.session }),
-    turn: identity.turn,
-  });
-}
-
-function decodeIdentity(
-  identity: AgentSendWindowIdentityV1,
 ): AgentSendWindowIdentity {
   return Object.freeze({
     ...(identity.session === undefined ? {} : { session: identity.session }),
@@ -109,14 +94,23 @@ function decodeIdentity(
   });
 }
 
-function encodeHunks(hunks: AgentWorkspaceDiffHunks): AgentWorkspaceDiffHunksV1 {
+function decodeIdentity(
+  identity: AgentSendWindowIdentity,
+): AgentSendWindowIdentity {
+  return Object.freeze({
+    ...(identity.session === undefined ? {} : { session: identity.session }),
+    turn: identity.turn,
+  });
+}
+
+function encodeHunks(hunks: AgentWorkspaceDiffHunks): AgentWorkspaceDiffHunks {
   return Object.freeze({
     added: Object.freeze([...hunks.added]),
     removed: Object.freeze([...hunks.removed]),
   });
 }
 
-function decodeHunks(hunks: AgentWorkspaceDiffHunksV1): AgentWorkspaceDiffHunks {
+function decodeHunks(hunks: AgentWorkspaceDiffHunks): AgentWorkspaceDiffHunks {
   return Object.freeze({
     added: Object.freeze([...hunks.added]),
     removed: Object.freeze([...hunks.removed]),
@@ -125,7 +119,7 @@ function decodeHunks(hunks: AgentWorkspaceDiffHunksV1): AgentWorkspaceDiffHunks 
 
 function encodeChange(
   change: AgentWorkspaceDiffWindowChange,
-): AgentWorkspaceDiffWindowChangeV1 {
+): AgentWorkspaceDiffWindowChange {
   return Object.freeze({
     path: change.path,
     status: change.status,
@@ -136,7 +130,7 @@ function encodeChange(
 }
 
 function decodeChange(
-  change: AgentWorkspaceDiffWindowChangeV1,
+  change: AgentWorkspaceDiffWindowChange,
 ): AgentWorkspaceDiffWindowChange {
   return Object.freeze({
     path: change.path,
@@ -147,21 +141,21 @@ function decodeChange(
   });
 }
 
-function encodeWindow(window: AgentWorkspaceDiffWindow): AgentWorkspaceDiffWindowV1 {
+function encodeWindow(window: AgentWorkspaceDiffWindow): AgentWorkspaceDiffWindow {
   return Object.freeze({
     identity: encodeIdentity(window.identity),
     changes: Object.freeze(window.changes.map(encodeChange)),
   });
 }
 
-function decodeWindow(window: AgentWorkspaceDiffWindowV1): AgentWorkspaceDiffWindow {
+function decodeWindow(window: AgentWorkspaceDiffWindow): AgentWorkspaceDiffWindow {
   return Object.freeze({
     identity: decodeIdentity(window.identity),
     changes: Object.freeze(window.changes.map(decodeChange)),
   });
 }
 
-function encodePolicy(policy: AgentWorkspaceDiffPolicy): AgentWorkspaceDiffPolicyV1 {
+function encodePolicy(policy: RuntimeAgentWorkspaceDiffPolicy): AgentWorkspaceDiffPolicy {
   return Object.freeze({
     defaultPolicy: "niceeval.sandbox-ledger/default-excludes/v1" as const,
     include: Object.freeze([...policy.include]),
@@ -169,7 +163,7 @@ function encodePolicy(policy: AgentWorkspaceDiffPolicy): AgentWorkspaceDiffPolic
   });
 }
 
-function decodePolicy(policy: AgentWorkspaceDiffPolicyV1): AgentWorkspaceDiffPolicy {
+function decodePolicy(policy: AgentWorkspaceDiffPolicy): RuntimeAgentWorkspaceDiffPolicy {
   return Object.freeze({
     defaultPolicy: "niceeval-default-excludes" as const,
     include: Object.freeze([...policy.include]),
@@ -178,19 +172,19 @@ function decodePolicy(policy: AgentWorkspaceDiffPolicyV1): AgentWorkspaceDiffPol
 }
 
 /** The private producer adapter adds only durable schema identities. */
-export function encodeAgentWorkspaceDiffDocumentV1(
+export function encodeAgentWorkspaceDiffDocument(
   value: AgentWorkspaceDiff,
-): AgentWorkspaceDiffDocumentV1 {
+): AgentWorkspaceDiffDocument {
   return Object.freeze({
-    attribution: AGENT_WORKSPACE_DIFF_ATTRIBUTION_V1,
+    attribution: AGENT_WORKSPACE_DIFF_ATTRIBUTION,
     policy: encodePolicy(value.policy),
     windows: Object.freeze(value.windows.map(encodeWindow)),
   });
 }
 
 /** The reader adapter returns a fresh schema-independent runtime value. */
-export function decodeAgentWorkspaceDiffDocumentV1(
-  value: AgentWorkspaceDiffDocumentV1,
+export function decodeAgentWorkspaceDiffDocument(
+  value: AgentWorkspaceDiffDocument,
 ): AgentWorkspaceDiff {
   return Object.freeze({
     attribution: "agent-send-window-endpoints" as const,

@@ -1,208 +1,230 @@
-import { Either } from "effect";
 import {
-  assembleAttemptSourceTree,
-  assertionSourceSitesProjector,
-  assertionsProjector,
-  attemptOriginRunProjection,
-  attemptSlotProjection,
-  sourcesProjector,
-  type AttemptSourceTreeAssemblyResult,
-  type AttemptSourceTreeNode,
-  type AttemptSourceTreeSlot,
-  type ProjectedRecordAttachmentResult,
-} from "../../projection/index.ts";
+  query,
+  sourcesView,
+  type Sample,
+  type SampleSnapshot,
+  type SourcesDomainDetail,
+  type SourcesDomainView,
+} from "../../analysis/index.ts";
 import {
-  definePage,
+  Callout,
   defineReport,
-  reportComponentId,
-  reportId,
-  reportInputs,
-  reportRoute,
+  Stack,
+  Table,
+  Text,
   type Report,
 } from "../author/index.ts";
-import {
-  reportCodeBlock,
-  reportDocument,
-  reportSection,
-  reportStatus,
-  reportText,
-  type ReportBlock,
-} from "../semantic/index.ts";
 
-const sourceInputs = reportInputs({
-  assertions: attemptSlotProjection(assertionsProjector),
-  "source-sites": attemptSlotProjection(assertionSourceSitesProjector),
-  sources: attemptOriginRunProjection(sourcesProjector),
-});
+const ORIGIN_ROWS_MAX = 500;
+
+type SourcesDomainEntry = SourcesDomainView["entries"][number];
+
+const sourceEvidencePage = {
+  id: "source-evidence",
+  path: "/",
+  title: "Recorded source",
+  load: async (sample: Sample) => Object.freeze({
+    snapshot: sample.snapshot,
+    sources: await query(sample, { kind: "domain-view", view: sourcesView }),
+  }),
+  render: (input: {
+    readonly snapshot: SampleSnapshot;
+    readonly sources: SourcesDomainView;
+  }) => sourceEvidenceNode(input),
+};
 
 /**
- * A normal Author-API Report over the three public source-navigation
- * projections. It never receives a Record reader, path, or source filesystem
- * capability; the captured Run Attachment supplies all displayed text.
+ * Recorded source is a closed, origin-owned DomainView. This page shows
+ * identity navigation and the published source view state.
  */
-export function sourceEvidenceReport(input: { readonly path?: string } = {}): Report {
-  const sourcePath = input.path;
-  const page = definePage({
-    id: Either.getOrThrow(reportComponentId("source-evidence")),
-    route: Either.getOrThrow(reportRoute("/")),
-    inputs: sourceInputs,
-    completeness: "allow-partial",
-    render: ({ inputs }) => sourceEvidenceDocument(
-      assembleAttemptSourceTree({
-        assertions: inputs.assertions,
-        sourceSites: inputs["source-sites"],
-        sources: inputs.sources,
-      }),
-      sourcePath,
-    ),
-  });
+export function sourceEvidenceReport(): Report {
   return defineReport({
-    id: Either.getOrThrow(reportId("source-evidence")),
-    pages: [page],
+    title: "Recorded source",
+    pages: [sourceEvidencePage],
   });
 }
 
-/** A reusable no-filter declaration for hosts that surface recorded source. */
+/** A reusable no-filter declaration for closed recorded source. */
 export const defaultSourceEvidenceReport = sourceEvidenceReport();
 
-function sourceEvidenceDocument(
-  assembly: AttemptSourceTreeAssemblyResult,
-  sourcePath: string | undefined,
-) {
-  if (assembly.state === "input-invalid") {
-    return reportDocument({
-      title: "Recorded source",
-      children: [reportStatus({
-        tone: "negative",
-        label: "Source projection inputs are not aligned",
-        detail: [reportText(assembly.issues.map((issue) => issue.code).join(", "))],
-      })],
-    });
-  }
+export default defaultSourceEvidenceReport;
 
-  const slots = assembly.value.slots.filter(
-    (slot): slot is Extract<AttemptSourceTreeSlot, { readonly state: "attachment-result" }> =>
-      slot.state === "attachment-result",
+function sourceEvidenceNode(input: {
+  readonly snapshot: SampleSnapshot;
+  readonly sources: SourcesDomainView;
+}) {
+  const entries = [...input.sources.entries].sort(compareSourceEntries);
+  const sourcesByLocator = new Map(
+    entries.map((entry) => [entry.attempt.locator, entry] as const),
   );
-  return reportDocument({
-    title: "Recorded source",
-    children: slots.length === 0
-      ? [reportStatus({
-        tone: "warning",
-        label: "No selected Slot has a recorded source attachment result",
-      })]
-      : slots.flatMap((slot) => sourceSlotBlocks(slot, sourcePath)),
+  const included = input.snapshot.slots
+    .filter((slot) => slot.state === "included")
+    .sort((left, right) =>
+      compareUtf8(left.attempt.locator, right.attempt.locator)
+      || compareUtf8(left.runId, right.runId)
+      || compareUtf8(left.slotId, right.slotId)
+    );
+  const origins = included.slice(0, ORIGIN_ROWS_MAX);
+  const omitted = included.length - origins.length;
+  return Stack({
+    children: [
+      Table({
+        caption: "Origin Attempts",
+        columns: [
+          { key: "locator", label: "Attempt" },
+          { key: "originRunId", label: "Origin Run" },
+          { key: "selectedRunId", label: "Selected Run" },
+          { key: "slotId", label: "Slot" },
+          { key: "sourceState", label: "Sources" },
+        ],
+        rows: origins.map((slot) => ({
+          locator: slot.attempt.locator,
+          originRunId: slot.attempt.originRunId,
+          selectedRunId: slot.runId,
+          slotId: slot.slotId,
+          sourceState: sourcesByLocator.get(slot.attempt.locator)?.state ?? "not-recorded",
+        })),
+      }),
+      ...sourceViewMetadata(input.sources),
+      ...entries.flatMap(sourceEntryNodes),
+      ...(omitted === 0
+        ? []
+        : [Callout({
+          tone: "warning",
+          title: "Bounded summary",
+          children: [Text({ value: `Omitted origin Attempts: ${omitted}` })],
+        })]),
+    ],
   });
 }
 
-function sourceSlotBlocks(
-  slot: Extract<AttemptSourceTreeSlot, { readonly state: "attachment-result" }>,
-  sourcePath: string | undefined,
-): readonly ReportBlock[] {
-  const tree = sourceTreeBlocks(slot.tree.roots, sourcePath);
-  return [reportSection({
-    heading: `Slot ${slot.slot.slotId}`,
-    children: [
-      attachmentStatus("Assertions", slot.assertions.attachment),
-      attachmentStatus("Source sites", slot.sourceSites.attachment),
-      attachmentStatus("Sources", slot.sources.attachment),
-      ...(tree.length === 0
-        ? [reportStatus({
-          tone: "warning",
-          label: sourcePath === undefined
-            ? "No source tree could be mapped from this recorded evidence"
-            : `No recorded source matches ${sourcePath}`,
-        })]
-        : tree),
-    ],
-  })];
-}
-
-function attachmentStatus<Value>(
-  name: string,
-  result: ProjectedRecordAttachmentResult<Value>,
-): ReportBlock {
-  switch (result.state) {
-    case "available":
-      return reportStatus({ tone: "positive", label: `${name}: available` });
-    case "unavailable":
-      return reportStatus({ tone: "warning", label: `${name}: unavailable` });
-    case "migration-required":
-      return reportStatus({
-        tone: "warning",
-        label: `${name}: migration required`,
-        detail: [reportText(`${result.from} → ${result.to}; ${result.command}`)],
-      });
-    case "migration-unavailable":
-      return reportStatus({
-        tone: "warning",
-        label: `${name}: migration unavailable`,
-        detail: [reportText(result.reason)],
-      });
-    case "unsupported":
-      return reportStatus({
-        tone: "warning",
-        label: `${name}: unsupported`,
-        detail: [reportText(result.schemaId)],
-      });
-    case "invalid":
-      return reportStatus({
-        tone: "negative",
-        label: `${name}: invalid`,
-        detail: [reportText(result.issues.map((issue) => issue.code).join(", "))],
-      });
+/**
+ * Turns the closed Sources DomainView into ordinary semantic nodes.  The
+ * renderer therefore has no reason to reopen a Record, inspect a worktree, or
+ * make a second query for any presentation face.
+ */
+function sourceEntryNodes(entry: SourcesDomainEntry): readonly ReturnType<typeof Callout>[] {
+  if (entry.state !== "available") {
+    return Object.freeze([Callout({
+      tone: entry.state === "failed" || entry.state === "invalid" ? "negative" : "warning",
+      title: `Sources ${entry.state}: ${entry.attempt.locator}`,
+      children: [Text({ value: unavailableEntryDetail(entry) })],
+    })]);
   }
-}
-
-function sourceTreeBlocks(
-  nodes: readonly AttemptSourceTreeNode[],
-  sourcePath: string | undefined,
-): readonly ReportBlock[] {
-  return nodes.flatMap((node) => sourceTreeNodeBlocks(node, sourcePath));
-}
-
-function sourceTreeNodeBlocks(
-  node: AttemptSourceTreeNode,
-  sourcePath: string | undefined,
-): readonly ReportBlock[] {
-  if (node.kind === "package") {
-    const calls = sourceTreeBlocks(node.calls, sourcePath);
-    return calls.length === 0
-      ? []
-      : [reportSection({
-        heading: `package ${node.package.label}`,
-        children: calls,
-      })];
+  const items = [...entry.detail.items].sort((left, right) =>
+    compareUtf8(left.path, right.path) || compareUtf8(left.sourceItemId, right.sourceItemId)
+  );
+  if (items.length === 0) {
+    return Object.freeze([Callout({
+      tone: "warning",
+      title: `Sources available: ${entry.attempt.locator}`,
+      children: [Text({ value: "The recorded Sources manifest is empty." })],
+    })]);
   }
+  return Object.freeze(items.map((item) => sourceItemNode(entry, item)));
+}
 
-  const calls = node.lines.flatMap((line) => sourceTreeBlocks(line.calls, sourcePath));
-  const matches = sourcePath === undefined || node.file.path === sourcePath;
-  if (!matches && calls.length === 0) return [];
-  return [reportSection({
-    heading: `source ${node.file.path}`,
+function sourceItemNode(
+  entry: SourcesDomainEntry,
+  item: SourcesDomainDetail["items"][number],
+): ReturnType<typeof Callout> {
+  const available = item.content.state === "available";
+  return Callout({
+    tone: available ? "neutral" : "warning",
+    title: `Recorded source: ${item.path}`,
     children: [
-      ...(matches
-        ? [reportCodeBlock({
-          value: node.file.text,
-          language: sourceLanguage(node.file.path),
-        })]
-        : []),
-      reportSection({
-        heading: "calls",
-        children: calls.length === 0
-          ? [reportStatus({ tone: "neutral", label: "No captured calls" })]
-          : calls,
+      Table({
+        caption: "Source attachment",
+        columns: [
+          { key: "attempt", label: "Attempt" },
+          { key: "originRunId", label: "Origin Run" },
+          { key: "sourceItemId", label: "Source item" },
+          { key: "sha256", label: "SHA-256" },
+          { key: "contentState", label: "Content" },
+        ],
+        rows: [{
+          attempt: entry.attempt.locator,
+          originRunId: entry.attempt.originRunId,
+          sourceItemId: item.sourceItemId,
+          sha256: item.sha256,
+          contentState: item.content.state,
+        }],
+      }),
+      Text({
+        value: available
+          ? item.content.text
+          : `Captured source text is ${item.content.state}; no replacement content was synthesized.`,
       }),
     ],
-  })];
+  });
 }
 
-function sourceLanguage(path: string): string | undefined {
-  if (path.endsWith(".tsx")) return "tsx";
-  if (path.endsWith(".ts")) return "ts";
-  if (path.endsWith(".jsx")) return "jsx";
-  if (path.endsWith(".js")) return "js";
-  if (path.endsWith(".json")) return "json";
-  if (path.endsWith(".md")) return "markdown";
-  return undefined;
+function sourceViewMetadata(view: SourcesDomainView): readonly ReturnType<typeof Table>[] {
+  const issueRows = [...view.issues]
+    .sort((left, right) =>
+      compareUtf8(left.code, right.code)
+      || compareUtf8(left.message, right.message)
+      || compareUtf8(evidenceReferences(left.refs), evidenceReferences(right.refs))
+    )
+    .map((issue) => ({
+      code: issue.code,
+      message: issue.message,
+      refs: evidenceReferences(issue.refs),
+    }));
+  const referenceRows = [...view.refs]
+    .sort((left, right) => compareUtf8(left.identity.locator, right.identity.locator))
+    .map((reference) => ({ attempt: reference.identity.locator }));
+  return Object.freeze([
+    ...(issueRows.length === 0
+      ? []
+      : [Table({
+        caption: "Source view issues",
+        columns: [
+          { key: "code", label: "Code" },
+          { key: "message", label: "Message" },
+          { key: "refs", label: "Evidence" },
+        ],
+        rows: issueRows,
+      })]),
+    ...(referenceRows.length === 0
+      ? []
+      : [Table({
+        caption: "Source view evidence",
+        columns: [{ key: "attempt", label: "Attempt" }],
+        rows: referenceRows,
+      })]),
+  ]);
+}
+
+function unavailableEntryDetail(entry: SourcesDomainEntry): string {
+  return entry.state === "failed"
+    ? entry.detail
+    : "No captured source text is available for this Attempt; the recorded Sources state is preserved above.";
+}
+
+function evidenceReferences(
+  refs: readonly { readonly identity: { readonly locator: string } }[],
+): string {
+  return [...refs]
+    .map((reference) => reference.identity.locator)
+    .sort(compareUtf8)
+    .join(", ");
+}
+
+function compareSourceEntries(left: SourcesDomainEntry, right: SourcesDomainEntry): number {
+  return compareUtf8(left.attempt.locator, right.attempt.locator)
+    || compareUtf8(left.attempt.originRunId, right.attempt.originRunId)
+    || compareUtf8(left.state, right.state);
+}
+
+function compareUtf8(left: string, right: string): number {
+  if (left === right) return 0;
+  const leftBytes = new TextEncoder().encode(left);
+  const rightBytes = new TextEncoder().encode(right);
+  const length = Math.min(leftBytes.length, rightBytes.length);
+  for (let index = 0; index < length; index += 1) {
+    const difference = leftBytes[index]! - rightBytes[index]!;
+    if (difference !== 0) return difference;
+  }
+  return leftBytes.length - rightBytes.length;
 }

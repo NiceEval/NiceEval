@@ -1,7 +1,12 @@
 # Analysis Library（分析库）
 
-本页定义 `niceeval/analysis` 的公开契约。Analysis 只读取首个正式 Record v1 协议发布的输入。
-它不接受旧格式、任意 Record 字段、路径、schema 注册或读取器构造器。
+本页定义 `niceeval/analysis` 的公开契约。Analysis 只读取 current Record definition 发布的输入。
+它不接受旧格式、任意 Record 字段、路径、schema object、registration point 或 reader constructor。
+
+`niceeval/analysis` 是普通 Analysis 与 Report 作者的导入面。`niceeval/analysis/host` 则导出公开、受支持的
+高级 Host composition SDK `analysisHost`，其唯一操作是 `openSample()`。CLI、`reportHost` 与替代 host 用它把
+已经由 `recordHost` 打开的 reader 和 selection 封装为 Sample；作者 API、Report callback 与闭合输出都不取得
+Record reader。
 
 完整场景见 [Use cases](use-case/README.md)。层职责见 [Analysis](README.md)。
 
@@ -26,7 +31,7 @@ Population、分母、缺失或 Evidence 规则。
 
 ### 已发布的输入与成员集
 
-`AnalysisInput` 是 NiceEval 根据 Record v1 事实发布的只读投影。它没有公开构造器或 registry。
+`AnalysisInput` 是 NiceEval 根据 current Record 事实发布的只读投影。它没有公开构造器或注册入口。
 作者可以选择一个输入，不能把任意 payload、网络响应、当前文件或当前时间伪装成输入。
 
 ```ts
@@ -44,8 +49,32 @@ declare const attemptLatencyMs: AnalysisInput<LogicalSlot, number>;
 declare const attemptToolFailure: AnalysisInput<LogicalSlot, boolean>;
 ```
 
-`PopulationMembers` 同样由 NiceEval 或领域包发布。它固定一个总体的成员穷尽规则，且不含
-Record reader、路径或原始 payload。
+`AnalysisInput.id` 只标识投影语义。它既不是 Record property token id，也不是 TS field 或 durableKey。
+例如 `attemptLatencyMs` 可以有 `niceeval.analysis.attempt-latency-ms` 这个 input id，同时读取
+`niceeval.observability` 中的多个固定 property。把任何 JSON key 或内部 property token 当成 input id
+都会把 durable format 与统计语义绑在一起。
+
+每个已发布 input 都有 NiceEval package-private binding。它声明 member 要定位的 owner 与所需 fixed Attachment
+definition。它还定义读取失败怎样成为 issue，以及从已验证 payload 得到 input value 的 pure projection。
+这个 binding 不是 public `defineAnalysisInput()`，也不是调用时查找的动态表。
+
+```text
+attemptPassed     → attempt / niceeval.assertions
+attemptLatencyMs  → attempt / niceeval.observability
+DomainViewRequest → its declared owner and fixed Attachment requirements
+```
+
+Host 只在 Measure 或 DomainView 实际需要一个 member 时执行 binding。Sample 以
+`{ owner, package-private attachment definition }` 缓存完整的 lazy read；同一 Scope 中的后续请求复用结果，
+但不会预读没有请求的 family、也不会把 cache 交给 Report。
+
+较早 reader 若不认识 binding 需要的独立 future family，例如 `niceeval.energy`，保留该 family 的磁盘 bytes
+而不解码它。Sample 把这一次 input / view request 形成 `unsupported` 或 `not-available`，不影响不依赖它的
+Measure、Core selection 或闭合 Report 输出。这个局部结果不同于 current catalog family 缺失的
+`not-recorded`，也不同于已知 family 的旧 schemaVersion 所需的 `migration-required`。
+
+`PopulationMembers` 同样由 NiceEval 或领域包发布。它固定一个总体的成员穷尽规则，且不含 Record reader、
+路径或原始 payload。
 
 ```ts
 interface Population<Member> {
@@ -248,6 +277,7 @@ interface ExcludedAnalysisSlot {
   readonly runId: RunId;
   readonly slotId: SlotId;
   readonly base: ActiveAnalysisSlot;
+  readonly reason?: "identity-mismatch";
 }
 
 type AnalysisSlot = ActiveAnalysisSlot | ExcludedAnalysisSlot;
@@ -257,8 +287,36 @@ type AnalysisSlot = ActiveAnalysisSlot | ExcludedAnalysisSlot;
 嵌套另一个 `excluded`。`runs` 按 RunId 排序，`slots` 按 RunId、SlotId 排序。
 
 Host 的 `explicit-runs` 选择保留具名 sealed Run 的全部 expected Slot。`project-current` 只保留
-身份仍匹配当前目标的 Slot。精确 Run 或 Attempt locator 可以形成显式选择或 Evidence 目标，但它
-只是身份，不是打开 Record 的能力。应用代码从不拿到 Record root。
+身份仍匹配当前目标的 Slot。
+
+CLI 把已加载的 definitions 与 target identity 编成具名 `AnalysisCurrentSlotIdentity`。它携带
+experiment、eval 与 execution identity digest。Report Host 不再重新发现项目，也不读物理 Record。
+
+先打开所选 sealed Run 的完整 expected membership，再按 digest 收窄。不匹配的 Slot 进入
+`excluded`，且 `reason` 为 `identity-mismatch`。它们不会静默混进 `coverage.selected` 分母。
+
+显式 `--run` 走 `explicit-runs`。它审计该 Run 的完整 expected membership，不使用当前 identity
+收窄。精确 Run 或 Attempt locator 可以形成显式选择或 Evidence 目标。它只是身份，不是打开 Record
+的能力。应用代码从不拿到 Record root。
+
+```ts
+interface AnalysisCurrentSlotIdentity {
+  readonly experimentId: ExperimentId;
+  readonly evalId: EvalId;
+  readonly executionIdentityDigest: ExecutionIdentityDigest;
+}
+
+type AnalysisSelectionRequest =
+  | {
+      readonly policy: "explicit-runs";
+      readonly runIds: readonly RunId[];
+    }
+  | {
+      readonly policy: "project-current";
+      readonly experimentIds?: readonly ExperimentId[];
+      readonly currentSlots: readonly AnalysisCurrentSlotIdentity[];
+    };
+```
 
 ### Codec 与 narrowing
 
@@ -290,6 +348,8 @@ declare function narrowSample(sample: Sample, selector: SampleSelector): Sample;
 
 `aggregate()` 为普通 Report 直接返回闭合行。它从 by 与 values 推断共同 Population，并在读取事实前
 拒绝 population mismatch、无 Relation 的跨总体组合、identity collision 与无效请求。
+行 identity 由完整、规范化的 Dimension coordinate 构成，不使用截断 hash；Dimension number 必须是
+finite，`NaN` 与 `Infinity` 在形成坐标前即成为 input-invalid 问题。
 
 ```ts
 interface AggregateRequest<By, Values> {
@@ -317,6 +377,7 @@ interface FrameQuery<Member, By, Measures> {
 interface DomainViewQuery<View extends DomainView> {
   readonly kind: "domain-view";
   readonly view: DomainViewRequest<View>;
+  readonly locator?: AttemptLocator;
 }
 
 declare function query<Member, By, Measures>(
@@ -330,8 +391,21 @@ declare function query<View extends DomainView>(
 ): Promise<View>;
 ```
 
-`DomainViewRequest` 的 locator 必须属于 Sample 的选择。Trace、事件、Evidence、file diff 或 blob
-只在相应请求执行时读取；`aggregate()` 从不因它们预加载重内容。
+`DomainViewQuery` 可以带一个精确 `locator`。给出时它必须属于当前 Sample 的 included Attempt，且只请求
+该 Attempt 所需的 Trace、事件、Evidence、file diff 或 blob。没有 locator 的内建概览才请求当前选择的
+全部 included Attempt。每项请求复用同一个 Sample 的 attachment cache；`aggregate()` 从不因它们预加载
+重内容。
+
+`attempt-evidence` 是一个闭合的非表格视图。Sample 在同一次成功读取 `ReadableAttempt` 时取得 Core `outcome`。
+
+它将该 Outcome 和已验证 Assertions 交给权威 fold，形成 detail 的派生 `verdict`。Outcome 是执行终态，Verdict
+是权威 fold 的结果，二者不能互换。
+
+如果 Sample 无法读取该 Attempt 的 Core，entry 明确为 `failed`，并带 `reduction-failed` Evidence issue。Analysis
+不会补出猜测的 outcome 或 verdict。
+
+detail 只含闭合 outcome、verdict、Assertions、source-site 和 material 文本/状态。它绝不含 reader、owner、Scope
+或 blob capability。
 
 ## MetricValue 真值表
 
@@ -361,7 +435,7 @@ interface MetricValue<Value = number> {
 | `available` | 非 null | `samples === total` 且 `total > 0` | 全部预期成员按该 Measure 的规则贡献 |
 | `partial` | 有贡献时非 null；零贡献时为 null | `samples < total` 且 `total > 0` | 每个未贡献成员都有 missing、unsupported 或可恢复的数据问题 |
 | `empty` | null | `samples === total` | Measure 的领域结果合法为空，且没有缺失、unsupported 或失败问题 |
-| `unsupported` | null | 没有可形成结果的 v1 输入 | host 或 producer 未提供该已发布输入，issues 说明能力缺口 |
+| `unsupported` | null | 没有可形成结果的 current 输入 | host / producer 未提供 input，或 reader 不认识它依赖的 future family |
 | `failed` | null | 已贡献数可小于或等于 total | 读取、验证、relation、producer 或 reduction 出现阻断性失败 |
 
 合法零值始终是 `available` 或 `partial` 的 `value: 0`，绝不是 `empty`。`samples` 只数实际贡献
@@ -395,6 +469,7 @@ interface ClosedRows<Row> extends ReadonlyArray<Readonly<Row>> {
   readonly [ClosedRowsTypeId]: true;
   readonly identity: ClosedRowsIdentity;
   readonly issues: readonly AnalysisIssue[];
+  readonly refs: readonly EvidenceRef[];
 }
 
 interface SemanticFrame<By, Measures> {
@@ -403,18 +478,31 @@ interface SemanticFrame<By, Measures> {
   readonly population: PopulationIdentity;
   readonly rows: ClosedRows<SemanticRow<By, Measures>>;
   readonly issues: readonly AnalysisIssue[];
+  readonly refs: readonly EvidenceRef[];
 }
 ```
 
-`SemanticFrame.issues` 与 `rows.issues` 是同一份冻结列表。每一行有稳定 opaque key、已经形成的
-Dimension 坐标，以及完整 `MetricValue` 单元。`ClosedRows` 只能由 Analysis 创建；普通数组即使
-字段形状相同也不是闭合行。排序、limit 或 filter 产生的普通显示数组可以交给组件，却不能重新进入
+`SemanticFrame.issues` 与 `rows.issues` 是同一份冻结列表，`SemanticFrame.refs` 与 `rows.refs` 也是同一份
+去重冻结列表。它们汇总每个 group 与 MetricValue 已产生的 Analysis issues 和 Evidence refs，因而显示层
+过滤 rows 也不能把已闭合的问题从结果中抹去。每一行有稳定 opaque key、已经形成的 Dimension 坐标，
+以及完整 `MetricValue` 单元。
+
+`ClosedRows` 只能由 Analysis 创建；普通数组即使字段形状相同也不是闭合行。
+排序、limit 或 filter 产生的普通显示数组可以交给组件，却不能重新进入
 Analysis 或声称保留原 rows identity。
 
 `DomainView` 也只含稳定 identity、闭合树或时序、issues 与 refs。两种输出都不含 reader、Scope、
-executor、Promise、callback、路径或原始 Record payload。
+executor、Promise、callback、路径、Attachment、blob capability 或原始 Record payload。
+
+需要组合两个 Attempt DomainView 时，消费者按 canonical Attempt locator 建立显式 Map。缺少 entry 或同一
+locator 出现多个 entry 都是可见的闭合对齐状态，不能靠数组位置、展示顺序或“第一个匹配项”推断关联。
 
 ## Host Scope 与失败
+
+`niceeval/analysis/host` 是公开、受支持的高级 Host composition SDK，且只导出 `analysisHost` 的
+`openSample()`。它取得 Record reader 的 package-private adapter，并把 lazy Attachment cache 封装进 Sample。
+`query()` 与 `aggregate()` 仍由作者入口 `niceeval/analysis` 拥有；Report author 不导入 host，也不取得 reader
+或 Attachment。
 
 ```ts
 interface AnalysisHostSDK {
@@ -430,9 +518,9 @@ interface AnalysisSampleClosedError {
 }
 ```
 
-`openSample()` 校验 Selection 属于传入 reader，并固定 Snapshot。它不读取未请求的 Attachment。
-Scope 关闭后，`query()`、`aggregate()` 和 `narrowSample()` 都以 `AnalysisSampleClosedError` 失败；
-实现必须在读取之前检测该状态。闭合输出和 SampleSnapshot 不含 capability，因而不受此错误影响。
+`openSample()` 校验 Selection 属于传入 reader，并固定 Snapshot。它不读取未请求的 Attachment。Scope
+关闭后，`query()`、`aggregate()` 和 `narrowSample()` 都以 `AnalysisSampleClosedError` 失败；实现必须在读取
+之前检测该状态。闭合输出和 SampleSnapshot 不含 capability，因而不受此错误影响。
 
 Analysis executor、缓存与具体执行后端是 Host 实现。它们可以替换，但同一请求必须保持 value、state、
 samples、total、basis、issues 与 refs 相同。

@@ -5,8 +5,7 @@ description: "用 view --out 导出一个可离线打开、与源 Record 脱离�
 ---
 
 `niceeval view --out <目录>` 或显式 `niceeval view --run <id> --out <目录>`
-选择已发布的 Run。内部 host 形成纯 `AnalysisSample`，按 Report 声明投影所需事实，并导出
-一次完成的 `ReportExecution`。这是分享结果的导出路径。
+选择已发布的 Run。NiceEval 形成 `Sample`，按 Report 实际使用的 Measure 或领域视图得到闭合值，并导出一次完成的 `ReportExecution`。这是分享结果的导出路径。
 
 ```sh
 npx niceeval view --experiment checkout \
@@ -26,23 +25,23 @@ npx niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY \
 
 不带 locator 或 `--run` 的命令以当前项目身份选择全部匹配结果；`--run` 选择具名历史 Run。两者都会先形成 Sample。Sample 保留选中 slot 的分母，以及 `included`、`not-recorded`、`core-invalid` 和 `excluded` 状态。
 
-Report 只读取它声明的 `RecordProjection`。未请求的坏 Attachment 不影响导出。请求到的 recorded-data problem 会写进内建 problems surface，而不是悄悄从分母中删除。
+Report 只读取它实际使用的 Analysis 输入。未使用的数据问题不影响导出。已经进入 Measure 或领域视图的问题会显示在报告中，而不是悄悄从分母中删除。
 
 ## 什么会阻止导出
 
-`unavailable`、`migration-required`、`migration-unavailable`、`unsupported`、`invalid` 与 partial collection 都是 recorded-data problem。它们可以被导出，但页面必须显示问题。
+`partial`、`unsupported` 与 `failed` 等 Analysis 状态可以被导出，但页面必须显示完整度和问题。需要迁移的历史结果先运行 `niceeval migrate`，再重新查看或导出。
 
-projector 或作者 callback defect、非法 semantic document、route conflict 等是 execution problem。只要存在 execution problem，静态导出就停止，不发布半份成功报告。
+作者 callback 抛错、非法语义树或路由冲突等是 execution problem。只要存在 execution problem，静态导出就停止，不发布半份成功报告。
 
 ## 导出目录包含什么
 
 成功的目录包括：
 
-- 全部 fixed 和 PageFamily 展开的页面；
+- 全部普通页面和参数化 Page 展开的页面；
 - 页面所需的 host-data；
 - 已经生成的下载项；
 - manifest 与 exporter 内建 runtime；
-- 最后写入的 `complete` marker。
+- 导出所需的完成信息。
 
 浏览器只读取导出目录。它不访问网络、不读取源 Record，也不需要之后安装 NiceEval。把目录交给同事或静态托管服务前，可以在断网浏览器中打开它确认页面与下载项可用。
 

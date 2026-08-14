@@ -1,6 +1,6 @@
 # Report 架构
 
-Report 把固定 Sample 与 Report 定义执行为 immutable、self-contained 的 ReportExecution。它不拥有 Record、事实迁移、总体选择或统计口径。
+Report 把固定 Sample 与 Report 定义执行为 immutable、self-contained 的 ReportExecution。它不拥有 Record、事实迁移、总体选择或统计口径。terminal、Web 和 static renderer 都只消费这同一份 execution；它们不会各自重新执行页面或取数。
 
 ## 依赖方向
 
@@ -80,7 +80,7 @@ Analysis issue 与 execution problem 的边界固定：
 | 定义无效、Analysis 全局 error 或超过限额 | typed error | 不形成 execution。 | 不形成 execution。 |
 | interruption | Effect Cause | 传播并运行 finalizer。 | 传播并运行 finalizer。 |
 
-Host 在树关闭前汇总 Analysis issue，在 callback 边界追加 execution problem。problemTable 是 canonical、稳定排序的去重表；页面和下载结果只保留 problem ID。作者不画问题节点、过滤 rows 或返回空数组，都不能移除内建问题面。
+Host 在本次 execution 中收集每个已完成 Analysis request 的 issue，并在树关闭前把它们汇总；这不依赖作者最后是否把 ClosedRows 或领域视图放进节点。callback 边界追加 execution problem。problemTable 是 canonical、稳定排序的去重表；页面和下载结果只保留 problem ID。作者不画问题节点、过滤 rows、丢弃查询结果或返回空数组，都不能移除内建问题面。
 
 ## 热重载
 

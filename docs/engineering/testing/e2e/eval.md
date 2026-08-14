@@ -4,7 +4,8 @@
 它由 `e2e/eval/` 功能 Repo 承担，使用安装后的 candidate、签入的 Eval / Experiment 和确定性 Direct Agent；只有文件、diff、shell
 或其它 Sandbox evidence 必需时才为对应 case 声明 Sandbox。
 
-每次 Repo invocation 都通过 `niceeval exp --rerun all` 完整生成自己的 `.niceeval`，再从退出码、`show` 或公开 Record API 观察结果。
+每次 Repo invocation 都通过 `niceeval exp --rerun all` 完整生成自己的 `.niceeval`，再从退出码和
+`show` 的公开 Report 输出观察结果。
 不签入预生成结果，不从 Adapter Repo 注入 Eval，也不伪造 `Turn.events`、session 或 Sandbox ledger。某个契约分支需要不同 evidence
 时，直接增加一条目的明确的 Eval。
 
@@ -16,7 +17,7 @@
 | [`#eval-assertion-values`](#eval-assertion-values) | 值 Match 登记 Assertion，并在真实 evidence 上给出 passed Verdict | 单边界 E2E | `e2e/eval/test/assertion-values.test.ts` | PR |
 | [`#eval-assertion-scopes`](#eval-assertion-scopes) | turn、session 与 attempt scope 在真实工具事件上完成断言 | 单边界 E2E | `e2e/eval/test/assertion-scopes.test.ts` | PR |
 | [`#eval-assertion-score`](#eval-assertion-score) | 计分制正常返回自动封口，Assertion 分值贡献、直接给分与空计分写入公开 Record | 单边界 E2E | `e2e/eval/test/assertion-score.test.ts` | PR |
-| [`#eval-assertion-sandbox`](#eval-assertion-sandbox) | Sandbox agent-attributed endpoint diff 与 shell evidence 由公开 Assertion、Record 判定和中立 projector 观察 | 单边界 E2E | `e2e/eval/test/assertion-sandbox.test.ts` | PR |
+| [`#eval-assertion-sandbox`](#eval-assertion-sandbox) | Sandbox agent-attributed endpoint diff 与 shell evidence 由公开 Assertion、Report DomainView 和闭合读回观察 | 单边界 E2E | `e2e/eval/test/assertion-sandbox.test.ts` | PR |
 | [`#eval-assertion-judge-unavailable`](#eval-assertion-judge-unavailable) | 未配置 Judge 时 required Judge Assertion 以 unavailable 使 Attempt errored，且不进入网络路径 | 单边界 E2E | `e2e/eval/test/assertion-judge-unavailable.test.ts` | PR |
 
 ## eval-context
@@ -37,11 +38,16 @@ turn、session 与 attempt scope 必须以同一批真实工具事件完成断�
 
 ## eval-assertion-score
 
-计分制正常返回由 Runner 自动封口。匹配与不匹配的 points Assertion、直接给分写入公开 Record；不匹配只贡献零分且 Verdict 仍为 passed。没有分值贡献时仍有独立 Score Attachment，写入 `complete / earned 0`。即使 Experiment 开启 earlyExit，每个 Score Attempt 仍完整运行。
+计分制正常返回由 Runner 自动封口。匹配与不匹配的 points Assertion、直接给分都可由公开 Report
+读回；不匹配只贡献零分且 Verdict 仍为 passed。没有分值贡献时 Score 仍是完整的零分 outcome，
+由 Assertions 与 Attempt outcome 解释，不另设 durable family。即使 Experiment 开启 earlyExit，
+每个 Score Attempt 仍完整运行。
 
 ## eval-assertion-sandbox
 
-Sandbox Eval 在真实 send window 中产生 modified、added 和 deleted endpoint delta；Eval 用 `changedPaths`、`fileChanged`、`fileDeleted` 与 `notInDiff` 直接登记 post-run Assertion。测试只从候选包取得 `agentWorkspaceDiffProjector` 并经 `attemptSlotProjection` 声明中立读取，不读旧的通用 diff subject 或私有落盘事实。
+Sandbox Eval 在真实 send window 中产生 modified、added 和 deleted endpoint delta；Eval 用
+`changedPaths`、`fileChanged`、`fileDeleted` 与 `notInDiff` 直接登记 post-run Assertion。测试经
+`show` 或 Report 的已发布 DomainView 读取闭合 diff，不读私有落盘、固定 family bytes 或旧的投影声明。
 
 ## eval-assertion-judge-unavailable
 

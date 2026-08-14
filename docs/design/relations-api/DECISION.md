@@ -2,7 +2,7 @@
 
 ## 裁决
 
-为 [Capture → Analysis → Report Roadmap](../../roadmap/record-analysis-report/README.md) 采纳
+为三层分析方案采纳
 [PLAN-1](PLAN-1/README.md)：领域 package 用 pure assembler 解释关系，host 验证 SameSample 输入与穷尽 population。
 
 这是 Roadmap 目标的选型裁决。该方向被产品采用前，产品没有独立的公共 Relations authoring contract；本裁决不能
@@ -21,8 +21,8 @@
 [PLAN-2](PLAN-2/README.md) 能统一验证公共 edge 与 anchor vocabulary，但会限制第三方领域的关系表达，并增加 field、
 anchor version 与 cardinality tokens。当前目标只需要共同的穷尽输出保证，不需要让 host 理解每种 edge。
 
-## 契约落点
+## 当前契约落点
 
-- assembler 与执行入口：[Roadmap Library](../../roadmap/record-analysis-report/library.md)。
-- Relations 在 Analysis 内的职责：[Roadmap Architecture](../../roadmap/record-analysis-report/architecture.md)。
+- Relation 定义与执行入口：[Analysis Library](../../feature/analysis/library.md)。
+- 三层中的 Analysis 职责：[Record → Analysis → Report](../../feature/record-report/README.md)。
 - 共同的穷尽结果约束：[Relations Limits](LIMITS.md)。

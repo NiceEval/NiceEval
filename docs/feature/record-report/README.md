@@ -142,30 +142,30 @@ Query（查询）、`SemanticFrame`（语义数据帧）和 `DomainView`（领�
 作者定义面                                      宿主操作面
 
 "niceeval"                                     "niceeval/experiment/host"
-defineEval() / t.check()                         list / plan / run / accept
+defineEval() / t.check()                         experimentHost.list / plan / run / accept
 Assertion-first（断言优先）                              │
         │                                               │
 "niceeval/analysis"                                    │
 definePopulation / defineMeasure / query                 │
         │                                               │
 "niceeval/report"                              "niceeval/report/host"
-defineReport / defineComponent / aggregate       execute / show / serve / export
+defineReport / defineComponent / aggregate       reportHost.execute / show / serve / export
 Table rows / Bars points / MetricValue
 
 宿主基础能力
-├─ "niceeval/record/host"        openRead / createRun / createReferenceRun / maintenance
-└─ "niceeval/coordination/host"  execution claim / append lease / maintenance lease
+├─ "niceeval/record/host"        recordHost.openRead / createRun / createReferenceRun / maintenance
+└─ "niceeval/coordination/host"  coordinationHost.claimExecution / record leases
 ```
 
 CLI 不经过一个包办所有命令的统一中转层。每条命令直接调用拥有该用例的窄 Host SDK（宿主开发工具包）。Experiment 与 Coordination 是操作 SDK，不是第四、第五个数据层；它们不拥有 Record 事实、Analysis 结果或 Report tree（报告树）。
 
 | owner | Host SDK 入口 | API |
 |---|---|---|
-| Experiment 操作 | `niceeval/experiment/host` | `list()`、`plan()`、`run()`、`accept()` |
-| Coordination 操作 | `niceeval/coordination/host` | `claimExecution()`、`enterRecordRead()`、`enterRecordAppend()`、`enterRecordMaintenance()` |
-| ① Record | `niceeval/record/host` | `openRead()`、`createRun()`、`createReferenceRun()`、`maintenance()` |
-| ② Analysis | `niceeval/analysis/host` | `openSample({ reader, selection })`；`query()` 仍由 `niceeval/analysis` 拥有 |
-| ③ Report | `niceeval/report/host` | `execute()`、`show()`、`serve()`、`export()` |
+| Experiment 操作 | `niceeval/experiment/host` | `experimentHost.list()`、`plan()`、`run()`、`accept()` |
+| Coordination 操作 | `niceeval/coordination/host` | `coordinationHost.claimExecution()`、`enterRecordRead()`、`enterRecordAppend()`、`enterRecordMaintenance()` |
+| ① Record | `niceeval/record/host` | `recordHost.openRead()`、`createRun()`、`createReferenceRun()`、`maintenance()` |
+| ② Analysis | `niceeval/analysis/host` | `analysisHost.openSample({ reader, selection })`；`query()` 仍由 `niceeval/analysis` 拥有 |
+| ③ Report | `niceeval/report/host` | `reportHost.execute()`、`show()`、`serve()`、`export()` |
 
 三层的公开职责不同：
 
@@ -182,7 +182,7 @@ CLI 不经过一个包办所有命令的统一中转层。每条命令直接调�
 ### `niceeval exp list`
 
 ```text
-read  ──▶ Experiment Host SDK：experiments.list()
+read  ──▶ Experiment Host SDK：experimentHost.list()
 write ──▶ 无
 
 不调用 ① Record、② Analysis 或 ③ Report。
@@ -191,7 +191,7 @@ write ──▶ 无
 ### `niceeval exp --dry`
 
 ```text
-read  ──▶ Experiment Host SDK：experiments.plan(request)
+read  ──▶ Experiment Host SDK：experimentHost.plan(request)
               └─▶ ① Record Host SDK：record.openRead()
                      reader.selectRuns(historySelection)
 write ──▶ 无
@@ -202,20 +202,20 @@ write ──▶ 无
 ### `niceeval exp`
 
 ```text
-read  ──▶ Experiment Host SDK：experiments.run(plan)
+read  ──▶ Experiment Host SDK：experimentHost.run(plan)
               └─▶ ① Record Host SDK：record.openRead() 惰性复查 reuse
 write ──▶ ① Record Host SDK：record.createRun(core)
               ├─▶ run.createAttempt(slot)；多个 Attempt 可并行
               ├─▶ Attempt 固定事实写入 API
               └─▶ run.seal(completion)
 
-并发：Coordination SDK 在派发每个 Slot 时 `claimExecution(key)`；不同 Run writer 不互斥。
+并发：Coordination SDK 在派发每个 Slot 时 `coordinationHost.claimExecution(key)`；不同 Run writer 不互斥。
 ```
 
 ### `niceeval accept @<locator>...`
 
 ```text
-read  ──▶ Experiment Host SDK：experiments.accept(request)
+read  ──▶ Experiment Host SDK：experimentHost.accept(request)
               └─▶ ① Record Host SDK：record.openRead()
                      reader.selectRuns(exactLocators)
 write ──▶ ① Record Host SDK：record.createReferenceRun(core)
@@ -231,7 +231,7 @@ write ──▶ ① Record Host SDK：record.createReferenceRun(core)
 read  ──▶ ① Record Host SDK：record.openRead() / reader.selectRuns()
           ② Analysis Host SDK：analysis.openSample({ reader, selection })
              Analysis SDK：aggregate(sample, ...) / query(sample, ...)
-          ③ Report Host SDK：report.execute() / report.show()
+          ③ Report Host SDK：reportHost.execute() / reportHost.show()
 write ──▶ 无
 
 结果：ReportShowOutput（报告显示输出）。
@@ -243,7 +243,7 @@ write ──▶ 无
 read  ──▶ ① Record Host SDK：record.openRead() / reader.selectRuns()
           ② Analysis Host SDK：analysis.openSample({ reader, selection })
              Analysis SDK：aggregate(sample, ...) / query(sample, ...)
-          ③ Report Host SDK：report.execute() / report.serve()
+          ③ Report Host SDK：reportHost.execute() / reportHost.serve()
 write ──▶ 无
 
 每次 rebuild（重建）闭合一棵报告树后关闭惰性 reader；浏览器导航只读闭合树。
@@ -255,7 +255,7 @@ write ──▶ 无
 read  ──▶ ① Record Host SDK：record.openRead() / reader.selectRuns()
           ② Analysis Host SDK：analysis.openSample({ reader, selection })
              Analysis SDK：aggregate(sample, ...) / query(sample, ...)
-          ③ Report Host SDK：report.execute() / report.export()
+          ③ Report Host SDK：reportHost.execute() / reportHost.export()
 write ──▶ ③ Report Host SDK：只写目标静态目录，不写 Record
 
 Record reader 在报告树闭合后关闭，随后才写目标目录。
@@ -264,10 +264,10 @@ Record reader 在报告树闭合后关闭，随后才写目标目录。
 ### `niceeval migrate`
 
 ```text
-read  ──▶ ① Record Host SDK：record.maintenance().inspect()
+read  ──▶ ① Record Host SDK：recordHost.maintenance().inspect()
                          maintenance.planMigrate()
             └─▶ Coordination SDK：释放 maintenance lease 并请求用户授权
-write ──▶ ① Record Host SDK：record.maintenance()
+write ──▶ ① Record Host SDK：recordHost.maintenance()
                          maintenance.applyMigrate()
 
 应用前重新取得 exclusive maintenance lease（独占维护许可），检查 Git、Record、源格式和 NiceEval 版本；计划身份变化时不写盘。应用后按相邻版本原地改写。
@@ -307,16 +307,17 @@ AttemptWriteSession → Run seal → runs/<RunId>/complete
 ```
 
 Record 只保存无法从已有事实重新计算的内容。通过率、均值、排名、denominator（分母）、missing（缺失）汇总、图表点位与页面树都由上层按定义重新形成。
+五个固定 family 名是稳定 identity；下表 Attachment envelope 的 `schemaVersion` 均为 `1`。
 
 ## Record 数据边界
 
 | 数据 | 进入 Record 的方式 | 持久边界 |
 |---|---|---|
-| AssertionResult / Evidence | Assertion producer 自动封口 | 固定 `niceeval.assertions/vN` Attachment 与有界 Evidence refs（证据引用） |
-| OTel | Adapter 或平台 bridge 提交给 Attempt 的固定 collector（采集器） | 固定 `niceeval.observability/vN` Attachment |
-| 文件差异 | Sandbox diff collector（沙箱差异采集器） | 固定 `niceeval.file-changes/vN` Attachment；大型内容进入本 family 的 blob closure |
-| 源码闭包 | Runner 在 origin Run 封口前采集 | 固定 `niceeval.sources/vN` Attachment 与自身 blob closure |
-| 大型文件 | NiceEval 发布的 Artifact collector | 固定 `niceeval.artifacts/vN` Attachment 保存媒体类型、身份与 blob 引用 |
+| AssertionResult / Evidence | Assertion producer 自动封口 | 固定 `niceeval.assertions` Attachment 与有界 Evidence refs（证据引用） |
+| OTel | Adapter 或平台 bridge 提交给 Attempt 的固定 collector（采集器） | 固定 `niceeval.observability` Attachment |
+| 文件差异 | Sandbox diff collector（沙箱差异采集器） | 固定 `niceeval.file-changes` Attachment；大型内容进入本 family 的 blob closure |
+| 源码闭包 | Runner 在 origin Run 封口前采集 | 固定 `niceeval.sources` Attachment 与自身 blob closure |
+| 大型文件 | NiceEval 发布的 Artifact collector | 固定 `niceeval.artifacts` Attachment 保存媒体类型、身份与 blob 引用 |
 
 Adapter 只能向 NiceEval 已发布的 collector 提交合法值，不能借此建立第六种 schema。
 
@@ -324,7 +325,7 @@ Record 固定每个事实族的 payload shape（载荷形状）、owner（所有
 
 ## Migration（迁移）边界
 
-Record 只向上层提供当前 schema。`Record Core v1` 与五个 `family/v1` 是第一版正式协议，当前 migration chain（迁移链）为空。
+Record 只向上层提供当前 schema。`Record Core v1` 与五个 fixed family 的 `schemaVersion: 1` 构成第一版正式协议，当前 migration chain（迁移链）为空。
 
 ```text
 Record v1（第一版正式事实集）

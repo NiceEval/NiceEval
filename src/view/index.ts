@@ -1,5 +1,5 @@
 // View is a thin Node host over an already completed ReportExecution. Record
-// opening, AnalysisSample selection, projection, and report execution belong
+// opening, Sample selection, projection, and report execution belong
 // to the application composition boundary in `cli.ts`.
 
 export {

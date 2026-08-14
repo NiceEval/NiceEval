@@ -54,31 +54,23 @@ interface ReportBlock {
 
 interface RunMembershipShow {
   format: "niceeval.report-show/v1";
-  reportId: string;
   sample: {
     selection: { policy: string; runIds?: string[] };
     runCount: number;
     slotCount: number;
     denominator: number;
   };
-  pages: Array<{
-    state: string;
-    pageId: string;
-    route?: string;
-    document?: { title: string; children: ReportBlock[] };
-  }>;
+  tree: { pages: Array<{ pageId: string; route: string; node: ReportBlock }> };
 }
 
 const RUN_MEMBERSHIP_COLUMN_KEYS = [
   "runId",
   "slotId",
   "slotState",
+  "memberAction",
   "memberRelation",
   "sourceAttemptLocator",
-  "membershipState",
-  "membershipOutcome",
-  "verdictState",
-  "verdict",
+  "evidenceState",
 ] as const;
 
 function reportTables(blocks: ReportBlock[]): ReportTableBlock[] {
@@ -167,18 +159,17 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
     const acceptedShow = acceptedCurrent.json<RunMembershipShow>();
     expect(acceptedShow).toMatchObject({
       format: "niceeval.report-show/v1",
-      reportId: "run-membership-overview",
       sample: {
         selection: { policy: "explicit-runs", runIds: [acceptedRunId] },
         runCount: 1,
         slotCount: 1,
         denominator: 1,
       },
-      pages: [{ state: "rendered", pageId: "run-membership", route: "/" }],
+      tree: { pages: [{ pageId: "run-membership", route: "/" }] },
     });
-    const runMembershipPage = acceptedShow.pages.find((page) => page.pageId === "run-membership");
-    expect(runMembershipPage?.document).toBeDefined();
-    const matchingTables = reportTables(runMembershipPage!.document!.children).filter((table) =>
+    const runMembershipPage = acceptedShow.tree.pages.find((page) => page.pageId === "run-membership");
+    expect(runMembershipPage).toBeDefined();
+    const matchingTables = reportTables([runMembershipPage!.node]).filter((table) =>
       table.columns.map((column) => column.key).join("\u0000") === RUN_MEMBERSHIP_COLUMN_KEYS.join("\u0000")
     );
     expect(matchingTables).toHaveLength(1);
@@ -193,12 +184,10 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
       runId: acceptedRunId,
       slotId: acceptedSlotId,
       slotState: "included",
+      memberAction: "accepted",
       memberRelation: "reference",
       sourceAttemptLocator: oldLocator,
-      membershipState: "available",
-      membershipOutcome: "accepted",
-      verdictState: "available",
-      verdict: "passed",
+      evidenceState: "available",
     });
 
     const currentEvidence = await niceeval.run(["show", newLocator, "--execution"]);

@@ -1,6 +1,10 @@
 # Report Library（报告库）
 
-本页是 Report 的唯一公开 API 契约。Report 作者从 niceeval/report 导入页面、组件和显示原语；Analysis 字段从 niceeval/analysis 导入。Record reader、迁移、SQL、执行器、输出目录和 module loader 都不进入作者面。
+本页是 `niceeval/report` 作者 API 的唯一契约。Report 作者从这个导入面取得页面、组件和显示原语；Analysis
+字段从 `niceeval/analysis` 导入。Record reader、迁移、SQL、执行器、输出目录和 module loader 都不进入作者面。
+
+`niceeval/report/host` 是独立的公开、受支持高级 Host composition SDK。CLI、替代 CLI / Web host 或深度应用
+集成用它执行、呈现、提供 view 或导出闭合 Report；它不是 Report 作者 API，也不把 reader 或 loader 交给作者。
 
 ## 导入面
 
@@ -17,6 +21,7 @@ import {
   Stat,
   Table,
   type MetricValue,
+  type PageEvidence,
 } from "niceeval/report";
 import { query, type Sample } from "niceeval/analysis";
 ```
@@ -37,9 +42,16 @@ const comparison = await query(sample, comparisonRequest);
 const comparisonRows = comparison.rows;
 ```
 
-aggregate() 返回 ClosedRows。每行有稳定 identity、完整分组坐标和每个度量的 MetricValue；整组 rows 还保留 issues。query() 的表格结果也以同样的 rows 交给显示组件。Table、Bars、Line 和 Scatter 只接收 rows 或 points，不能接收查询结果对象本身。
+aggregate() 返回 ClosedRows。整组 rows 有稳定 identity 和 issues；每行有 closed key、完整分组坐标和每个度量的 MetricValue。query() 的表格结果也以同样的 rows 交给显示组件。Table、Bars、Line 和 Scatter 只接收 rows 或 points，不能接收查询结果对象本身。
 
 普通外部数组可以进入中立组件，但没有 Analysis identity、issues 或 Evidence navigation。需要这些语义的值必须先由 aggregate() 或 query() 闭合。
+
+闭合 DomainView 不是 `SemanticFrame` 的替代输入。Table 仍只接收 rows，Bars / Line / Scatter 仍只接收 points，
+Stat 仍只接收完整 MetricValue。
+
+要展示 Attempt 的 Evidence、Verdict 或 Observability，复合组件把已经关闭的视图转换成 Table、Text、Callout 等
+中立节点。两个 DomainView 的 entry 只能按 canonical locator 显式 Map 关联，missing 或 duplicate 都不能退化成
+数组位置关联。
 
 ### MetricValue
 
@@ -58,8 +70,8 @@ interface MetricValue {
   readonly issues: readonly AnalysisIssue[];
   readonly refs: readonly EvidenceRef[];
   readonly unit?: string;
-  readonly format?: MetricFormat;
-  readonly better?: "higher" | "lower";
+  readonly format?: MeasureFormat;
+  readonly better?: "higher" | "lower" | "neutral";
   readonly bounds?: { readonly min?: number; readonly max?: number };
 }
 ```
@@ -142,7 +154,7 @@ declare function defineComponent<Props extends object, Resolved = Props>(
 
 ## Page 与 defineReport()
 
-Page 直接写进 defineReport({ pages })。id 用于诊断和稳定顺序；path 是用户可访问的 base route。
+Page 直接写进 defineReport({ pages })。id 用于诊断和稳定顺序；path 是用户可访问的 base route。没有另一个 Page factory 或 family 定义面。
 
 ```ts
 interface PlainPageDefinition<Input = Sample> {
@@ -159,6 +171,11 @@ interface PlainPageDefinition<Input = Sample> {
     input: Input,
     context: PageContext,
   ) => ReportNode | Promise<ReportNode>;
+}
+
+interface PageLoadContext {
+  readonly page: PageContext;
+  readonly evidence: (locator: EvidenceLocator) => Promise<PageEvidence>;
 }
 
 interface ParameterizedPageDefinition<
@@ -198,6 +215,17 @@ declare function defineReport(options: {
 普通 Page 可以省略 load，此时 render 的输入就是 Sample。参数化 Page 必须同时给出 params、load 和 navigation: false。它的实例 route 是 path 加上 encode(params) 生成的一个 key segment。
 
 ```tsx
+const EvidenceSummary = defineComponent(
+  ({ evidence }: { readonly evidence: PageEvidence }) =>
+    Table({
+      caption: "Evidence",
+      rows: evidence.entries.map(entry => ({
+        attempt: entry.attempt.locator,
+        state: entry.state,
+      })),
+    }),
+);
+
 export default defineReport({
   title: "Experiment report",
   pages: [
@@ -220,14 +248,16 @@ export default defineReport({
       title: "Attempt",
       navigation: false,
       params: attemptParams,
-      load: (_sample, params, context) => context.evidence(params.locator),
-      render: attempt => <AttemptDetails attempt={attempt} />,
+      load: async (_sample, params, context) => await context.evidence(params.locator),
+      render: evidence => <EvidenceSummary evidence={evidence} />,
     },
   ],
 });
 ```
 
-PageLoadContext 只提供闭合领域帮助器，例如按精确 locator 取得 AttemptEvidence。它不提供 Record reader、source、root、迁移或任意路径访问。
+PageLoadContext 只提供闭合领域帮助器，例如异步按精确 locator 取得 Evidence。它通过同一条
+Analysis DomainView 请求验证 locator 属于当前 Sample，并且只读取这一项所需的事实；它不提供 Record
+reader、source、root、迁移或任意路径访问。
 
 ### 路由和参数运行时验证
 
@@ -311,38 +341,47 @@ download x     -> downloads/x
 
 Host 在 Sample 的 Scope 仍存活时执行 Page，随后只保留闭合 execution。
 
+`niceeval/report/host` 的唯一值导出是公开、受支持的 `reportHost`，其 key 精确为 `execute`、`show`、`serve` 与
+`export`。ReportHostSDK 是它的 TypeScript contract。它不导出 loader、renderer、watcher 或 Record reader 的
+可组合内部接口。
+
 ```ts
-interface ReportHostSDK {
-  execute(input: {
-    readonly sample: Sample;
-    readonly report: Report;
-    readonly target: ReportTargetSelection;
-  }): Effect.Effect<ReportExecution, ReportExecutionError, Scope.Scope>;
+type ReportHostExecuteInput =
+  | {
+      readonly root: RecordRoot;
+      readonly locator: AttemptLocator;
+      readonly report?: Report;
+      readonly target?: ReportTargetSelection;
+    }
+  | {
+      readonly root: RecordRoot;
+      readonly selection: AnalysisSelectionRequest;
+      readonly report?: Report;
+      readonly target?: ReportTargetSelection;
+    };
 
-  show(input: {
-    readonly execution: ReportExecution;
-    readonly format?: "text" | "json";
-  }): Effect.Effect<ReportShowOutput, ReportShowError>;
-
-  export(input: {
-    readonly execution: ReportExecution;
-    readonly directory: OutputDirectory;
-  }): Effect.Effect<ReportExportReceipt, ReportExportError>;
-}
+reportHost.execute(input); // Effect<ReportExecution>
+reportHost.show({ execution, format: "text", page: "/" });
+reportHost.serve({ url, host, port, initial, rebuild });
+reportHost.export({ execution, out });
 ```
+
+execute 由 root 与 locator 或 Analysis selection 打开 Record 和 Sample，随后关闭它们，再交出 ReportExecution。show 只读取闭合 execution 的 text 或 JSON。serve 为每个成功 revision 持有一份 execution，export 只写传入的静态 execution。terminal、Web 和 static 从未各自拿到 Sample 或 callback。
 
 同一 ReportExecution 内，某个 Page instance 的 load、render、复合组件和原语 `resolve()` 至多运行一次。相同 Sample identity 与相同 Analysis 字段依赖共用结果缓存。show 和 view 只执行请求页面；静态 execution 运行全部普通页面与全部参数实例。
 
-ReportExecution 按 page id、route 和下载 path 的 UTF-8 bytes 稳定排序。它不包含 reader、root、路径、Scope、callback 或任何可再次读取数据的能力。
+ReportExecution 不包含 reader、root、路径、Scope、callback 或任何可再次读取数据的能力。renderer 读取 `tree`；`pages`、`downloads` 和 `problemTable` 保留执行结果与失败隔离。
 
 ```ts
 interface ReportExecution {
   readonly report: ReportExecutionIdentity;
   readonly sample: ReportSampleSummary;
+  readonly target: ReportTargetSelection;
   readonly pageSummaries: readonly ReportPageSummary[];
   readonly pages: readonly ReportPageResult[];
   readonly downloads: readonly ReportDownloadResult[];
   readonly problemTable: readonly ReportProblemTableEntry[];
+  readonly tree: ClosedReportTree;
 }
 
 type ReportPageResult =
@@ -361,24 +400,18 @@ type ReportPageResult =
     };
 ```
 
-Analysis issue 是可呈现的数据事实。它保留在 MetricValue、领域视图和不可关闭的问题面中，不自动使 Page 失败。load、render、复合组件、`resolve()`、参数处理、树验证、route collision 或下载 collision 失败，则进入 execution problem。show 和 view 保留其它成功 Page；static export 对任一 execution problem fail closed。
+Analysis issue 是可呈现的数据事实。它保留在 MetricValue、ClosedRows、领域视图和不可关闭的问题面中，不自动使 Page 失败。Host 收集本次 execution 已完成的 Analysis 请求；作者过滤 rows、丢弃查询返回值或返回无关节点都不能移除这些问题。load、render、复合组件、`resolve()`、参数处理、树验证、route collision 或下载 collision 失败，则进入 execution problem。show 和 view 保留其它成功 Page；static export 对任一 execution problem fail closed。
 
 ## 内建 Report
 
 NiceEval 的内建 Report 是 Host 提供的普通 Report，不另建作者导入面。它们和自定义 Report 一样，只从
 Sample 取得 NiceEval 已发布的 Analysis input 与闭合领域值，不能取得 Record reader、路径或持久化 raw
-payload。
+payload。默认选择和有界 Run 概览见 [CLI](cli.md#内建-run-概览)；它们仍以 Sample Core、MetricValue、闭合
+Evidence 和问题面为准，而不是创建 Report 自己的持久状态。
 
-一个或多个显式 `--run` 在没有 `--report` 时使用 `run-membership-overview`。它把 Sample Core、Run-owned
-membership provenance 的公开 outcome 与 Attempt Verdict 作为三组独立事实并列显示，不从 Core 猜 provenance，也不从 provenance 猜 Verdict。它的稳定表、值域与截断边界见 [CLI](cli.md#内建-run-membership-概览)。其它 selection 不会因此扩大 Attachment 读取范围。
-
-`defaultSandboxHistoryReport` 使用 all-runs Sample 形成历史视图。它只消费 evaluation plan、Verdict 与
-Sandbox 的已发布 Analysis input，并按 exact origin `(runId, attemptId)` 去重。reference Member 只在同一
-origin 的 Slot coordinate 列表中出现，不复制 Sandbox Attachment。
-
-每个 origin 显示 origin locator、Verdict、provider、source-native sandbox ID 与 fresh／pooled 状态。pooled
-origin 额外显示 sandbox number 与 ordinal。每条 coordinate 显示当前 Run 的 Experiment、Eval 与 Attempt。
-missing coordinate、slot state 与 Attachment read result 留在 Report 的 partial / problems 语义中，不能被聚合成空历史。
+精确 Attempt 的内建 overview 同时消费 Evidence 与 Observability。Evidence 已含 immutable Outcome、权威
+Core + Assertions fold 的 Verdict 及 Assertions；Observability 由 `AttemptTrace` 展示 command 与 diagnostic。
+overview 只组织这些闭合结果，不直接读取 Record 或重新计算 Verdict。
 
 ```ts
 interface ReportExecutionProblem {

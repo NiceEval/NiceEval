@@ -8,6 +8,10 @@ test("createPiAgentEventStream 接收真实 Agent.subscribe 回调并公开成�
     experimentId: "pi-agent-subscribe",
     evalId: "pi-agent-subscribe",
     caseName: "pi-agent-subscribe",
+    source: {
+      file: "evals/pi-agent-subscribe.eval.ts",
+      content: "export default defineEval({",
+    },
     executionMarkers: [
       "pi-agent-subscribe-success-marker",
       "inventory_lookup",

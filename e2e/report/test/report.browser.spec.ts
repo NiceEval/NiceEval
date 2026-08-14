@@ -73,11 +73,35 @@ test("custom report Journey：固定执行可导出、导航并热重载静态�
       await expect(page.getByText("Report fixture", { exact: true }).first()).toBeVisible();
       await expect(page.getByText("Fixture copy block", { exact: true }).first()).toBeVisible();
 
-      const slotLink = page.locator("a").filter({ hasText: "Slot " }).first();
-      await expect(slotLink).toBeVisible();
-      const href = await slotLink.getAttribute("href");
-      expect(href).toBeTruthy();
-      const slotUrl = new URL(href!, page.url()).href;
+      // The current public DSL has parameterized Pages rather than the retired
+      // generic route-link node. Read the codec's visible detail path, then
+      // open that target through a real `view --page` invocation; the root
+      // revision deliberately did not execute this instance.
+      const detailRoute = await page.getByText(/^\/slots\/[a-z0-9][a-z0-9._~-]*$/).first().textContent();
+      expect(detailRoute).toMatch(/^\/slots\/[a-z0-9][a-z0-9._~-]*$/);
+      const detailView = niceeval.start(
+        [
+          "view",
+          "--report",
+          "./reports/site.ts",
+          "--page",
+          detailRoute!,
+          "--host",
+          "127.0.0.1",
+          "--port",
+          "0",
+          "--no-open",
+        ],
+        { timeoutMs: 60_000 },
+      );
+      const detailStartup = await waitForOutput(detailView, "stdout", /http:\/\/127\.0\.0\.1:\d+\//, {
+        timeoutMs: 30_000,
+        label: "parameterized report view URL",
+      });
+      expect(detailStartup).toContain(detailRoute);
+      const detailOrigin = detailStartup.match(/http:\/\/127\.0\.0\.1:\d+\//)?.[0];
+      expect(detailOrigin, detailStartup).toBeDefined();
+      const slotUrl = new URL(detailRoute!, detailOrigin!).href;
       expect((await page.request.get(slotUrl)).status()).toBe(200);
 
       await page.goto(slotUrl);

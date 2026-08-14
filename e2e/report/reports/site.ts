@@ -1,115 +1,103 @@
-// The custom Report used by show, view, and static export. It intentionally
-// exercises only the public author DSL: a Calculation, a fixed Page, and a
-// PageFamily over the already-selected Sample.
-import { Either } from "effect";
+// The custom Report used by show, view, and static export. It exercises the
+// public author DSL directly: plain Pages, neutral components, and one
+// parameterized Page whose instances are the actual slots in this Sample.
 import {
-  defineCalculation,
-  definePage,
-  definePageFamily,
   defineReport,
-  reportComponentId,
-  reportDocument,
-  reportInputs,
-  reportId,
-  reportInstanceKeyFromRecordId,
-  reportLink,
-  reportList,
-  reportMetric,
-  reportParagraph,
-  reportRoute,
-  reportRouteFromKeys,
-  reportStatus,
-  reportText,
-  type SlotId,
+  Stack,
+  Table,
+  Text,
+  type PageParams,
+  type ParameterizedPageDefinition,
+  type PlainPageDefinition,
 } from "niceeval/report";
+import type { Sample, SampleSnapshot } from "niceeval/analysis";
 import { siteCopyBlock } from "./site-copy-block.ts";
 
-const sampleInputs = reportInputs({});
+type SlotParams = Readonly<Record<string, string>> & {
+  readonly slotId: string;
+};
 
-const sampleSummary = defineCalculation({
-  id: Either.getOrThrow(reportComponentId("sample-summary")),
-  inputs: sampleInputs,
-  calculate: ({ sample }) => Object.freeze({
-    runCount: sample.runs.length,
-    slotCount: sample.slots.length,
-    denominator: sample.denominator,
-  }),
-});
-
-const overview = definePage({
-  id: Either.getOrThrow(reportComponentId("overview")),
-  route: Either.getOrThrow(reportRoute("/")),
-  calculations: { sampleSummary },
-  render: ({ sample, calculations }) => {
-    const summary = calculations.sampleSummary;
-    if (summary.state !== "available") {
-      return reportDocument({
-        title: "Report fixture",
-        children: [reportStatus({
-          tone: "negative",
-          label: "Sample summary is unavailable",
-        })],
-      });
-    }
-
-    return reportDocument({
-      title: "Report fixture",
-      children: [
-        reportMetric({ label: "Selected runs", value: summary.value.runCount }),
-        reportMetric({ label: "Selected slots", value: summary.value.slotCount }),
-        reportMetric({ label: "Slot denominator", value: summary.value.denominator }),
-        siteCopyBlock(),
-        reportList({
-          ordered: false,
-          items: sample.slots.map((slot) => [reportParagraph([
-            reportLink({
-              label: [reportText(`Slot ${slot.slotId}`)],
-              target: { kind: "route", route: slotRoute(slot.slotId) },
-            }),
-          ])]),
-        }),
-      ],
-    });
-  },
-});
-
-const slots = definePageFamily({
-  id: Either.getOrThrow(reportComponentId("slots")),
-  instances: ({ sample }) => sample.slots,
-  key: (slot) => slotKey(slot.slotId),
-  route: (slot) => slotRoute(slot.slotId),
-  render: ({ instance }) => reportDocument({
-    title: "Report fixture slot",
-    children: [reportStatus({
-      tone: toneForSlot(instance.state),
-      label: `Slot ${instance.slotId}: ${instance.state}`,
-    })],
-  }),
-});
+/** One codec owns both direct detail routes and static Page enumeration. */
+const slotParams = {
+  encode: (params: SlotParams): string => params.slotId,
+  decode: (key: string): SlotParams => Object.freeze({ slotId: key }),
+  enumerate: (sample: Sample): readonly SlotParams[] =>
+    Object.freeze(sample.snapshot.slots.map((slot) => Object.freeze({
+      slotId: slot.slotId,
+    }))),
+} satisfies PageParams<SlotParams>;
 
 export default defineReport({
-  id: Either.getOrThrow(reportId("report-fixture")),
-  calculations: { sampleSummary },
-  pages: [overview, slots],
+  title: "Report fixture",
+  pages: [
+    {
+      id: "overview",
+      path: "/",
+      title: "Report fixture",
+      load: (sample: Sample): SampleSnapshot => sample.snapshot,
+      render: (snapshot: SampleSnapshot) => Stack({
+        children: [
+          Table({
+            caption: "Sample coverage",
+            columns: [
+              { key: "metric", label: "Metric" },
+              { key: "value", label: "Value", align: "end" },
+            ],
+            rows: [
+              { metric: "Selected runs", value: snapshot.runs.length },
+              { metric: "Selected slots", value: snapshot.slots.length },
+              { metric: "Slot denominator", value: snapshot.coverage.frameTotal },
+            ],
+          }),
+          siteCopyBlock(),
+          Table({
+            caption: "Selected slots",
+            columns: [
+              { key: "slot", label: "Slot" },
+              { key: "state", label: "State" },
+              { key: "detailRoute", label: "Detail route" },
+            ],
+            rows: snapshot.slots.map((slot) => ({
+              slot: `Slot ${slot.slotId}`,
+              state: slot.state,
+              detailRoute: `/slots/${slotParams.encode({ slotId: slot.slotId })}`,
+            })),
+          }),
+        ],
+      }),
+    } satisfies PlainPageDefinition<SampleSnapshot>,
+    {
+      id: "slots",
+      path: "/slots",
+      title: "Report fixture slot",
+      navigation: false,
+      params: slotParams,
+      load: (sample, params) => {
+        const slot = sample.snapshot.slots.find((candidate) => candidate.slotId === params.slotId);
+        if (slot === undefined) throw new Error("the requested Slot is not in this Sample");
+        return slot;
+      },
+      render: (slot) => Stack({
+        children: [
+          Text({ value: `Slot ${slot.slotId}: ${slot.state}` }),
+          Table({
+            caption: "Slot detail",
+            columns: [
+              { key: "slotId", label: "Slot" },
+              { key: "runId", label: "Run" },
+              { key: "state", label: "State" },
+            ],
+            rows: [{
+              slotId: slot.slotId,
+              runId: slot.runId,
+              state: slot.state,
+            }],
+          }),
+        ],
+      }),
+    } satisfies ParameterizedPageDefinition<
+      SlotParams,
+      SampleSnapshot["slots"][number]
+    >,
+  ],
 });
-
-function slotKey(slotId: SlotId) {
-  return reportInstanceKeyFromRecordId({ kind: "slot", value: slotId });
-}
-
-function slotRoute(slotId: SlotId) {
-  return Either.getOrThrow(reportRouteFromKeys([slotKey(slotId)]));
-}
-
-function toneForSlot(state: "included" | "not-recorded" | "core-invalid" | "excluded") {
-  switch (state) {
-    case "included":
-      return "positive" as const;
-    case "not-recorded":
-      return "warning" as const;
-    case "core-invalid":
-      return "negative" as const;
-    case "excluded":
-      return "neutral" as const;
-  }
-}

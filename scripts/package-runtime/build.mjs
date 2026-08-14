@@ -26,10 +26,30 @@ const PUBLIC_ENTRIES = [
   ["./reporters", "runner/reporters/index.ts"],
   ["./loaders", "loaders/index.ts"],
   ["./analysis", "analysis/index.ts"],
-  ["./projection", "projection/index.ts"],
+  ["./experiment/host", "experiment/host/index.ts"],
+  ["./coordination/host", "coordination/host/index.ts"],
+  ["./record", "record/index.ts"],
+  ["./record/host", "record/host/index.ts"],
+  ["./analysis/host", "analysis/host.ts"],
   ["./report", "report/index.ts"],
+  ["./report/host", "report/host/index.ts"],
   ["./report/built-in", "report/built-in/index.tsx"],
 ];
+
+async function assertPublicEntryClosure() {
+  const manifest = JSON.parse(await readFile(join(ROOT, "package.json"), "utf8"));
+  const packageEntries = Object.keys(manifest.exports ?? {}).sort();
+  const facadeEntries = PUBLIC_ENTRIES.map(([entry]) => entry).sort();
+  const missingFacades = packageEntries.filter((entry) => !facadeEntries.includes(entry));
+  const undeclaredFacades = facadeEntries.filter((entry) => !packageEntries.includes(entry));
+  if (missingFacades.length > 0 || undeclaredFacades.length > 0) {
+    throw new Error(
+      "Public package entry closure mismatch: " +
+      `missing facades [${missingFacades.join(", ")}], ` +
+      `undeclared facades [${undeclaredFacades.join(", ")}].`,
+    );
+  }
+}
 
 function isRuntimeSource(file) {
   return (file.endsWith(".ts") || file.endsWith(".tsx")) &&
@@ -267,6 +287,7 @@ async function buildRemarkVendor(outputRoot) {
 }
 
 async function build() {
+  await assertPublicEntryClosure();
   const temp = await mkdtemp(join(tmpdir(), "niceeval-package-runtime-"));
   const outputRoot = join(temp, "dist");
   const rawTypes = join(temp, "types");

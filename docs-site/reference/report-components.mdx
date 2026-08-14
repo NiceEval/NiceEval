@@ -1,178 +1,146 @@
 ---
 title: "Report API"
 sidebarTitle: "Report API"
-description: "Public boundaries for ReportScope, FactRequirement, ReportPlan, ReportInput, single execution, and static export."
+description: "Write Reports for terminal, web, and static sites with Measures, Pages, components, and closed execution results."
 ---
 
-## Fixed call chain
+A Report only handles display. Define statistical meaning in Analysis first, then obtain closed results in a Page or component. A Report author does not read result files, register durable data types, or handle migration or storage paths.
 
-```ts
-let plan: ReportPlan;
-let input: ReportInput;
-{
-  await using record = await openRecordReader({ root });
-  const sample = await projectExplicitRuns(record, { runIds });
-  const scope = createReportScope(sample);
-  plan = definition.plan(scope);
-  input = await buildReportInput({ record, sample, plan });
-}
-
-const execution = executeReport({ definition, plan, input });
+```text
+Published run results
+        ↓
+Analysis: Measure + aggregate() / query()
+        ↓
+ClosedRows / MetricValue / DomainView
+        ↓
+Report: Page + component
+        ↓
+ReportExecution → show / view / static export
 ```
 
-Only `buildReportInput()` receives a `RecordReader`. A Report definition, Calculation, Page, Download, local view, and static runtime receive neither a reader nor a path.
+## Define statistical meaning first
 
-## ReportScope
-
-```ts
-interface ReportScope {
-  readonly provenance: AnalysisProjectionProvenance;
-  readonly runs: readonly AnalysisRun[];
-  readonly slots: readonly AnalysisSlot[];
-}
-```
-
-`runs` exhausts every selected Run. `slots` is the complete core-only denominator and preserves `included`, `not-recorded`, `invalid`, and `excluded`. An included slot has its Attempt ID, origin, locator, and Member kind, but no business facts.
-
-## FactRequirement
+`niceeval/analysis` provides NiceEval's published inputs. Use `defineMeasure()` to make the population, aggregation, denominator, and missing-data policy explicit. No separate input-registration step is needed.
 
 ```ts
-type FactOwner = "run" | "attempt";
+import {
+  allLogicalSlots,
+  attemptPassed,
+  defineDimension,
+  defineMeasure,
+  latestCompletedAttempt,
+  logicalSlots,
+  oneValue,
+  partial,
+  ratio,
+  retainContributingEvidence,
+} from "niceeval/analysis";
 
-interface FactRequirement<Value> {
-  readonly id: string;
-  readonly owner: FactOwner;
-  readonly name: string;
-  readonly source: BuiltInFactSource | CustomJsonFactSource<Value>;
-}
-```
+export const experiment = defineDimension({
+  id: "example.experiment",
+  population: logicalSlots,
+  value: slot => slot.experimentId,
+});
 
-NiceEval exports built-in sources. Define a custom fact with:
-
-```ts
-defineJsonFact({
-  id,
-  owner,
-  name,
-  parse(document) {
-    return value;
-  },
+export const passRate = defineMeasure({
+  id: "example.pass-rate",
+  population: logicalSlots,
+  input: attemptPassed,
+  withinAttempt: oneValue<boolean>(),
+  withinSlot: latestCompletedAttempt<boolean>(),
+  acrossSlots: ratio(),
+  denominator: allLogicalSlots(),
+  missing: partial(),
+  evidence: retainContributingEvidence(),
+  unit: "ratio",
+  format: "percent",
+  better: "higher",
 });
 ```
 
-A custom document is exactly `{ observedAt, value }` with media type `application/json`. One owner/name has one value. Its parser never receives bytes, paths, or blobs. The build phase validates transport only; execution calls a synchronous parser once for each owner and requirement combination.
+A `MetricValue` retains its value, state, actual contributor count, fixed denominator, problems, and evidence references. Do not unwrap a number and then recalculate or wrap it again in a Report.
 
-## ReportPlan
+## Read closed values in a Page or component
 
-```ts
-interface ReportPlan {
-  readonly calculations: readonly Calculation<unknown>[];
-  readonly pages: readonly ReportPage[];
-  readonly downloads: readonly ReportDownload[];
-}
-```
-
-A plan has no top-level facts or resources. Each consumer declares its own inputs. A parameterized page must list every concrete route in the plan.
-
-## ReportInput
+`aggregate()` is for table or chart rows grouped by a Dimension. It runs on the `Sample` that a Page or composite component receives, and returns `ClosedRows` that you can pass directly to `Table`, `Bars`, `Line`, or `Scatter`.
 
 ```ts
-interface ReportInput {
-  readonly scope: ReportScope;
-  readonly sample: AnalysisSample;
-  // The internal fact matrix uses an unexported brand and cannot be indexed by user code.
-}
+import {
+  aggregate,
+  Bars,
+  defineComponent,
+  defineReport,
+  Grid,
+  Table,
+} from "niceeval/report";
+import { experiment, passRate } from "./quality-measures.ts";
 
-interface ReportContext {
-  readonly scope: ReportScope;
-  readonly sample: ReportSample; // Explicitly excludes recordRoot
-}
+const Comparison = defineComponent(async (_props, { sample }) => {
+  const rows = await aggregate(sample, {
+    by: { experiment },
+    values: { passRate },
+  });
+
+  return Grid({
+    children: [
+      Bars({ points: rows, x: "experiment", y: "passRate" }),
+      Table({ rows, caption: "Pass rate by experiment" }),
+    ],
+  });
+});
+
+export default defineReport({
+  title: "Quality overview",
+  pages: [
+    {
+      id: "overview",
+      path: "/",
+      title: "Overview",
+      render: () => Comparison({}),
+    },
+  ],
+});
 ```
 
-Each internal read retains its `ChannelRead` state—`read | unavailable | unsupported | invalid`—and completeness. A consumer receives fact-free context plus `readRun(runId, fact)` and `readAttempt(includedSlot, fact)`, which validate its declared `inputs`. Separate requirement objects cannot reuse an ID.
+For a complete tabular request or a domain view, import `query()` from `niceeval/analysis`. For example, `attemptEvidenceView` returns a closed evidence view. It never gives a component a reader or raw run data.
 
-The context's `sample` is a `ReportSample` projection without `recordRoot`. A Calculation, Page, or Download cannot obtain a Record path from public fields.
+## Two component forms
 
-## Calculation
+A composite component receives a `Sample` while it executes, then combines existing components. `Comparison` above is this kind of component.
+
+A new display primitive provides both a text surface and a web surface. Its optional `resolve()` is the only phase that can retrieve a closed value asynchronously. `text` and `web` then read the same result.
 
 ```ts
-interface Calculation<Value> {
-  readonly id: string;
-  readonly inputs: readonly FactRequirement<ReportJsonValue>[];
-  readonly completeness: "allowPartial" | "requireComplete";
-  evaluate(input: CalculationInput): CalculationValue<Value>;
-}
+import {
+  defineComponent,
+  Stat,
+  Text,
+  type MetricValue,
+} from "niceeval/report";
+
+const PassRateState = defineComponent({
+  text: ({ value }: { readonly value: MetricValue }) =>
+    Text({ value: `Pass-rate state: ${value.state}` }),
+  web: ({ value }) => Stat({ label: "Pass rate", value }),
+});
 ```
 
-A Calculation can read only its inputs. `allowPartial` preserves the complete denominator and actual observed count. `requireComplete` requires both durable collection and decoding to be complete.
+Both surfaces can return only NiceEval semantic nodes. Do not return DOM, raw HTML, browser side effects, or a separate text result.
 
-## Page
+## Pages, parameters, and routes
 
-```ts
-interface ReportPage {
-  readonly id: string;
-  readonly route: ReportRoute;
-  readonly title: string;
-  readonly inputs: readonly FactRequirement<ReportJsonValue>[];
-  readonly calculations: readonly Calculation<unknown>[];
-  render(input: ReportPageInput): ReportPageModel;
-}
+`defineReport({ pages })` is the only Report-definition entry point. An ordinary Page can read closed values directly in `render(sample)`. For a family of detail routes, provide `params`, `load`, and `render` on that same Page. `params.enumerate(sample)` lists every instance for static export. `load` can use `context.evidence(locator)` to obtain a closed evidence view.
 
-interface ReportPageModel {
-  readonly title: string;
-  readonly body: ReportJsonValue;
-  readonly textAlternative: string;
-}
-```
+A Page's `id` supports diagnostics and stable ordering. Its `path` is the base address a user visits. A parameterized Page must set `navigation: false` and make `encode()` and `decode()` round trip canonically. Report validates page definitions, IDs, and ordinary paths before it calls author callbacks. After instantiation, it checks parameter-route and download-path conflicts.
 
-A PageModel is ordinary serializable data. Color, graphics, or interaction cannot replace text, tables, and state descriptions.
+## Execution and problems
 
-## Download
+`show`, `view`, and static export run Pages and components while the Sample is available. They then retain only an immutable `ReportExecution`. It contains completed pages, downloads, and problems. It has no capability to read results again.
 
-```ts
-interface ReportDownload {
-  readonly id: string;
-  readonly path: ReportDownloadPath;
-  readonly mediaType: string;
-  readonly inputs: readonly FactRequirement<ReportJsonValue>[];
-  readonly calculations: readonly Calculation<unknown>[];
-  build(input: ReportDownloadInput): Uint8Array;
-}
-```
+Analysis problems remain in `MetricValue`, `ClosedRows`, and domain views. A callback that throws, invalid parameters, an invalid semantic tree, or a route conflict is an execution problem. `show` and `view` continue to display other successful pages. Static export does not publish a site with an execution problem.
 
-Create a Download path with `defineReportDownloadPath("downloads/...")`. Its bytes are produced completely in the single execution phase and never recomputed during export.
+## Related pages
 
-## ReportExecution
-
-```ts
-interface ReportExecution {
-  readonly plan: ReportPlan;
-  readonly input: ReportInput;
-  readonly calculations: readonly CalculationResult<unknown>[];
-  readonly pages: readonly PageResult[];
-  readonly downloads: readonly DownloadResult[];
-}
-```
-
-Every result distinguishes success, `input-invalid`, and `execution-failed`. `executeReport()` runs every consumer at most once. Local view displays failure locally, while export performs a whole-execution preflight.
-
-Calculation results retain their originating Calculation and correspond one-to-one with plan order.
-
-## StaticAssetManifest
-
-```ts
-interface StaticAssetManifest {
-  readonly routes: readonly {
-    readonly route: ReportRoute;
-    readonly pagePath: StaticOutputPath;
-    readonly hostDataPath: StaticOutputPath;
-  }[];
-  readonly entries: readonly StaticAsset[];
-}
-```
-
-The manifest is always `manifest.json` and does not list itself in `entries`. Every other file has exactly one entry. A static directory contains only already-generated pages, host data, downloads, and the exporter's built-in runtime, base styles, and fonts.
-
-Page and host-data filenames follow plan order. Built-in resources live only under `runtime/`; user downloads live only under `downloads/`. Routes and output paths use canonical ASCII segments of at most 240 bytes. Their comparison key is bytewise ASCII lowercase. NiceEval checks exact/key duplicates and directory-prefix conflicts before creating the temporary directory.
-
-`exportStaticReport({ execution, out })` requires an absent `out`. It never replaces a directory, executes Report code, reads a Record, accesses the network, or looks up an arbitrary user path.
+- [Results Data API](/reference/results-data): Select published Analysis inputs and read closed values.
+- [Write a Custom Report](/tutorials/custom-reports): Write a practical Report from Measures.
+- [Publish a Static Report](/tutorials/publish-report): Export and share a fixed execution.

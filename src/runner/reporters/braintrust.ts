@@ -5,14 +5,28 @@
 
 import type { EvalResult, JsonValue, Reporter } from "../../types.ts";
 import type {
-  AssertionCoverageV1,
-  AssertionEntryReadV1,
-  AssertionLimitationV1,
-  AssertionsProjectionV1,
-  ScoreContributionV1,
+  AssertionCoverage,
+  AssertionEntryRead,
+  AssertionLimitation,
+  AssertionsProjection,
+  ScoreContribution,
 } from "../../assertions/record/model.ts";
-import type { ScoreProjectionV1 } from "../../eval/record/score.ts";
-import type { AttemptSlotProjectedEntry } from "../../projection/index.ts";
+import type { ScoreProjection } from "../../eval/record/score.ts";
+/** Closed assessment rows; this reporter does not reopen Record. */
+type AttemptSlotProjectedEntry<Value> =
+  | { readonly state: "excluded" | "not-recorded" | "core-invalid" }
+  | {
+      readonly state: "attachment-result";
+      readonly attachment:
+        | { readonly state: "available"; readonly value: Value }
+        | { readonly state: "unavailable" | "unsupported" | "invalid" }
+        | {
+            readonly state: "migration-required";
+            readonly from: string;
+            readonly to: string;
+            readonly command?: string;
+          };
+    };
 import type { Verdict } from "../../shared/types.ts";
 import { reportActivity } from "../feedback/sink.ts";
 
@@ -79,9 +93,9 @@ export type BraintrustAssessment =
   | {
       readonly state: "projected";
       /** Exact Report-style public projections, including every data state. */
-      readonly assertions: AttemptSlotProjectedEntry<AssertionsProjectionV1<unknown>>;
+      readonly assertions: AttemptSlotProjectedEntry<AssertionsProjection<unknown>>;
       readonly verdict: AttemptSlotProjectedEntry<Verdict>;
-      readonly score?: AttemptSlotProjectedEntry<ScoreProjectionV1>;
+      readonly score?: AttemptSlotProjectedEntry<ScoreProjection>;
     }
   | {
       readonly state: "not-projected";
@@ -254,29 +268,15 @@ function projectionMetadata<Value>(
         state: "migration-required",
         from: entry.attachment.from,
         to: entry.attachment.to,
-        command: entry.attachment.command,
-      };
-    case "migration-unavailable":
-      return {
-        state: "migration-unavailable",
-        from: entry.attachment.from,
-        to: entry.attachment.to,
-        reason: entry.attachment.reason,
+        ...(entry.attachment.command === undefined ? {} : { command: entry.attachment.command }),
       };
     case "unsupported":
-      return { state: "unsupported", schemaId: entry.attachment.schemaId };
     case "invalid":
-      return {
-        state: "invalid",
-        issues: entry.attachment.issues.map((issue) => ({
-          code: issue.code,
-          path: [...issue.path],
-        })),
-      };
+      return { state: entry.attachment.state };
   }
 }
 
-function assertionMetadata(entries: readonly AssertionEntryReadV1<unknown>[]): JsonValue {
+function assertionMetadata(entries: readonly AssertionEntryRead<unknown>[]): JsonValue {
   const metadata: JsonValue[] = [];
   for (const entry of entries) {
     const display = entry.entry.display;
@@ -298,7 +298,7 @@ function assertionMetadata(entries: readonly AssertionEntryReadV1<unknown>[]): J
   return metadata;
 }
 
-function assertionReason(entry: AssertionEntryReadV1<unknown>): string | undefined {
+function assertionReason(entry: AssertionEntryRead<unknown>): string | undefined {
   if (entry.state !== "available") return entry.reason;
   switch (entry.entry.result.state) {
     case "matched":
@@ -312,7 +312,7 @@ function assertionReason(entry: AssertionEntryReadV1<unknown>): string | undefin
 }
 
 function coverageMetadata(
-  coverage: AssertionCoverageV1,
+  coverage: AssertionCoverage,
 ): globalThis.Record<string, JsonValue> {
   const metadata: globalThis.Record<string, JsonValue> = { state: coverage.state };
   if (coverage.state !== "complete") metadata.reason = coverage.reason;
@@ -320,7 +320,7 @@ function coverageMetadata(
 }
 
 function limitationMetadata(
-  limitation: AssertionLimitationV1,
+  limitation: AssertionLimitation,
 ): globalThis.Record<string, JsonValue> {
   switch (limitation.kind) {
     case "redacted":
@@ -339,7 +339,7 @@ function limitationMetadata(
 }
 
 function scoreContributionMetadata(
-  contribution: ScoreContributionV1,
+  contribution: ScoreContribution,
 ): globalThis.Record<string, JsonValue> {
   switch (contribution.state) {
     case "not-scored":
@@ -359,7 +359,7 @@ function scoreContributionMetadata(
   }
 }
 
-function scoreMetadata(score: ScoreProjectionV1): globalThis.Record<string, JsonValue> {
+function scoreMetadata(score: ScoreProjection): globalThis.Record<string, JsonValue> {
   switch (score.state) {
     case "complete":
       return { state: score.state, earned: score.earned, comparable: score.comparable };

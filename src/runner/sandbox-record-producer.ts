@@ -1,16 +1,38 @@
 import { Either } from "effect";
 
 import {
-  createSandboxAttachmentWrite,
-  type SandboxAttachmentInput,
-  type SandboxAttachmentWriteError,
+  normalizeSandboxCapture,
+  type SandboxCaptureInput,
+  type SandboxCaptureInputError,
 } from "../sandbox/record/attachment.ts";
-import type { RecordAttachmentWrite } from "../record/attachment/index.ts";
 import {
   compareCanonicalIdentity,
   type SlotId,
 } from "../record/model/identifiers.ts";
+import type { AgentWorkspaceDiff } from "../assertions/workspace-diff.ts";
 import type { EvalResult } from "./types.ts";
+
+/**
+ * The exact post-run workspace document is retained outside EvalResult's
+ * public compatibility shape. Assertions and the fixed File Changes producer
+ * therefore consume one frozen capture instead of independently rebuilding a
+ * diff from legacy result fields.
+ */
+const workspaceDiffByResult = new WeakMap<object, AgentWorkspaceDiff>();
+
+export function retainRunnerAttemptWorkspaceDiff(
+  result: EvalResult,
+  document: AgentWorkspaceDiff,
+): EvalResult {
+  workspaceDiffByResult.set(result, document);
+  return result;
+}
+
+export function runnerAttemptWorkspaceDiffForResult(
+  result: EvalResult,
+): AgentWorkspaceDiff | undefined {
+  return workspaceDiffByResult.get(result);
+}
 
 /** A completed origin supplies only the runtime Sandbox fact needed by Record. */
 export interface RunnerSandboxOriginInput {
@@ -31,7 +53,7 @@ export interface RunnerSandboxRecordProducerInvalid {
 export interface RunnerSandboxAttachmentWriteInvalid {
   readonly code: "runner-sandbox-attachment-write-invalid";
   readonly slotId: SlotId;
-  readonly issue: SandboxAttachmentWriteError;
+  readonly issue: SandboxCaptureInputError;
 }
 
 export type RunnerSandboxRecordProducerError =
@@ -39,10 +61,7 @@ export type RunnerSandboxRecordProducerError =
   | RunnerSandboxAttachmentWriteInvalid;
 
 export interface RunnerSandboxWritePlan {
-  readonly attemptWrites: ReadonlyMap<
-    SlotId,
-    RecordAttachmentWrite<"attempt", never, never>
-  >;
+  readonly validatedSlots: readonly SlotId[];
 }
 
 type PlannedSandboxOrigin =
@@ -83,7 +102,7 @@ function producerInvalid(
 
 function attachmentWriteInvalid(
   slotId: SlotId,
-  issue: SandboxAttachmentWriteError,
+  issue: SandboxCaptureInputError,
 ): RunnerSandboxAttachmentWriteInvalid {
   return Object.freeze({
     code: "runner-sandbox-attachment-write-invalid" as const,
@@ -150,7 +169,7 @@ function comparePooledIdentity(left: PooledIdentity, right: PooledIdentity): num
 function sandboxAttachmentInput(
   origin: PlannedSandboxOrigin,
   pooledNumbers: ReadonlyMap<string, number>,
-): Either.Either<SandboxAttachmentInput, RunnerSandboxRecordProducerInvalid> {
+): Either.Either<SandboxCaptureInput, RunnerSandboxRecordProducerInvalid> {
   switch (origin.kind) {
     case "not-used":
       return Either.right(Object.freeze({ state: "not-used" as const }));
@@ -221,16 +240,16 @@ export function createRunnerSandboxWritePlan(
     pooledNumbers.set(identityKey(pooled.provider, pooled.sandboxId), index + 1);
   }
 
-  const attemptWrites = new Map<SlotId, RecordAttachmentWrite<"attempt", never, never>>();
+  const validatedSlots: SlotId[] = [];
   for (const origin of plannedBySlot.values()) {
     const input = sandboxAttachmentInput(origin, pooledNumbers);
     if (Either.isLeft(input)) return Either.left(input.left);
-    const write = createSandboxAttachmentWrite(input.right);
-    if (Either.isLeft(write)) {
-      return Either.left(attachmentWriteInvalid(origin.slotId, write.left));
+    const normalized = normalizeSandboxCapture(input.right);
+    if (Either.isLeft(normalized)) {
+      return Either.left(attachmentWriteInvalid(origin.slotId, normalized.left));
     }
-    attemptWrites.set(origin.slotId, write.right);
+    validatedSlots.push(origin.slotId);
   }
 
-  return Either.right(Object.freeze({ attemptWrites: new Map(attemptWrites) }));
+  return Either.right(Object.freeze({ validatedSlots: Object.freeze(validatedSlots) }));
 }

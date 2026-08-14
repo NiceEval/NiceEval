@@ -2,12 +2,11 @@
 
 ## 裁决
 
-为 [Capture → Analysis → Report Roadmap](../../roadmap/record-analysis-report/README.md) 采纳
+旧投影方案曾采纳
 [PLAN-1](PLAN-1/README.md)：三种 factory 构造 `RecordProjection`，唯一公开执行入口是
 `projectAnalysisSample({ sampleHandle, projection })`。
 
-这是 Roadmap 目标的选型裁决。该方向被产品采用前，[Projection Feature](../../feature/projection/README.md) 仍是
-唯一当前契约；Design Decision 不自行替换 Feature。
+这是被 Analysis capability 取代的历史选型裁决，不构成当前公共 API。
 
 ## 为什么选择 PLAN-1
 
@@ -25,8 +24,7 @@
 Report 的每次 `aggregate()` 会在 host 内部把所请求 Analysis fields 编译成有限执行闭包。这个 runtime-local DAG 不成为
 Report 作者协议，也不会把任意 Analysis 程序变成公共 graph，因此不是 PLAN-2 的旁路实现。
 
-## 契约落点
+## 当前契约落点
 
-- 唯一 direct primitive 与 Report handoff：[Roadmap Library](../../roadmap/record-analysis-report/library.md)。
-- snapshot 与三层边界：[Roadmap Architecture](../../roadmap/record-analysis-report/architecture.md)。
-- 当前 direct API 的完整结果形状：[Projection Feature](../../feature/projection/library.md)。
+- 惰性 Sample、`query()` 与 `aggregate()`：[Analysis Library](../../feature/analysis/library.md)。
+- Record、Analysis 与 Report 的能力边界：[三层总览](../../feature/record-report/README.md)。

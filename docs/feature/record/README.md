@@ -1,86 +1,140 @@
-# Record：已封口运行的持久事实
+# Record（持久事实集）：已封口运行的固定事实
 
-Record 是 `<project>/.niceeval/record/` 中可携带、可复制、可进入 Git 的运行事实集。它保存带完成
-标识的 Run、这些 Run 的导航关系，以及 producer 写入的具名 `RecordAttachment`。它只保存已经发生且已
-封口的事实，不保存当前进程的协调状态、缓存、Analysis 结果或 Report tree。
+Record（持久事实集）是 `<project>/.niceeval/record/` 中可携带、可复制并可进入 Git 的运行事实。
+它保存已封口的 Run（运行）、这些 Run 的导航关系，以及由 NiceEval 收集的 Attachment（附属事实）。
+它不保存进程协调状态、缓存、Analysis（分析层）结果或 Report（报告）树。
 
-对产品用户，Record 是一个 opaque 目录：可以整体复制、进入 Git，并交给 `niceeval exp`、
-`show`、`view`、`clean` 与 `migrate`，但不通过 `niceeval/record` 读取内部结构或写入。
-下面的 Core、Attachment、reader、writer 与物理布局都是 NiceEval 内部持久化不变量，
-用于约束实现演进，不是第三方 producer / consumer 的格式协议。
+对产品用户，Record 是 opaque directory（不透明目录）。用户可以整体复制它、把它放进 Git，并交给
+`niceeval exp`、`show`、`view`、`clean` 与 `migrate`。普通 Eval、Analysis 与 Report 作者既不读取其内部
+布局，也不定义或写入其中的事实。
 
-没有完成标识的 Run directory 不是 Record 事实。reader 不读取、不展示也不复用它，只返回
-`incomplete-run` warning；用户可以用 `niceeval clean` 删除。
+`niceeval/record` 与 `niceeval/record/host` 都导出同一个 `recordHost`。它是公开、受支持的高级 Host
+composition SDK，供 NiceEval CLI、替代 CLI / Web host 或深度应用集成组合 scoped Record I/O。它不让调用方
+直接依赖目录布局，也不把 Record definition、family catalog 或 migration 变成可注册的 durable schema。
 
-Record Core 只保存完整 `attemptId`。面向人的 locator 是上层确定性别名：`@1` 加
-`SHA-256(AttemptId UTF-8)` 前 60 bit 的 12 位大写 Crockford 编码，不写入 Core，也不触发
-迁移。读取时若同一短码命中两个 immutable Attempt，返回 ambiguous，绝不任选。
+一个最小 Record 使用稳定名称加数值版本，而不是把版本写进名称：
 
-Record 不保存 session、锁或 cache。它也不保存作者 API、matcher、执行顺序、沿用算法、
-分析算法或页面模型。
+```json
+// record.json
+{ "format": "niceeval.record", "schemaVersion": 1 }
 
-“只保存事实”不表示内容一定正确，也不表示事实不能由运行时计算产生。Verdict、Score 与
-Eligibility 都可以是已发布事实。判据是：它是否描述当时发生或决定的结果，离线复核是否
-需要它，以及它是否有明确 owner 和 schema identity。
-
-## 新模型
-
-```text
-Experiment Host
-  └─ RunWriteSession
-       ├─ 创建并完成 origin Attempt
-       ├─ 引用已发布的 Attempt
-       └─ seal() ──▶ runs/<RunId>/complete
-
-RecordReadSession
-  └─ selectRuns() ──▶ RecordSelection
-       └─ query 需要时才读取 Run、Attempt、Attachment 与 blob
+// runs/<RunId>/attempts/<AttemptId>/attachments/niceeval.assertions/attachment.json
+{ "family": "niceeval.assertions", "schemaVersion": 1 }
 ```
 
-一个 Record 是多份 immutable Run 的集合。每个 writer 只创建自己的新 RunId，并只修改这个
-Run 目录。不同 writer 因而可以同时追加 Run，不需要全局 writer lock（写入锁）。
-`complete` 是唯一的发布信号：它在全部内容已关闭、flush（刷盘）和校验之后最后排他创建。
-没有 `complete` 的目录不是事实，reader 忽略它，并提示使用 `niceeval clean`。
+`format`（格式身份）和 `family`（附件族身份）保持稳定；`schemaVersion`（数值 schema 版本）表达它们的
+wire shape。`owner`（归属者）决定一份 Attachment 属于 Run 还是 Attempt。
 
-## 固定协议
+```text
+Record
+├─ root Core JSON（核心身份 JSON；不含 blob）
+└─ Run
+   ├─ Core JSON（Run、Slot、Member 与 Attempt）
+   └─ Attachment
+      ├─ payload JSON（可含本 Attachment 的 blob ref）
+      └─ own blobs（只属于这一 owner 和 family）
+```
 
-Record Core 固定 Run、Slot、Member 与 Attempt 的身份和引用。业务事实只落入 NiceEval
-拥有的五个固定 Attachment family（附件族）：
+没有 `complete` 的 Run directory 不是 Record 事实。reader 不读取、不展示也不沿用它，只返回
+`incomplete-run` warning；用户可以用 `niceeval clean` 删除。
 
-| family | owner | 保存的事实 |
+Record Core（核心身份）只保存完整 `attemptId`。面向人的 locator 是上层确定性别名：`@1` 加
+`SHA-256(AttemptId UTF-8)` 前 60 bit 的 12 位大写 Crockford 编码。它不写入 Core，也不触发迁移。
+同一短码命中两个 immutable Attempt 时，读取返回 ambiguous，绝不任选。
+
+Record 不保存 session、锁或 cache。它也不保存作者 API、matcher、执行顺序、沿用算法、分析算法或
+页面模型。判定、计分与准入属于 Assertion、Attempt outcome 或 Analysis，不进入 durable catalog。
+
+每份 `run.json` 都有必填的 `RunDocument.context`。它是随已封口 Run 一次写入的 Core 历史事实：
+`{ experimentId, execution: { agentId, model, reasoningEffort, flags }, labels }`。其中
+`context.experimentId` 必须与 Run 的顶层 `experimentId` 相同；它让离线读取能解释实际 agent、model、
+reasoning effort、声明 flags 与 labels，而不会读取今天的配置。
+
+## 固定定义与当前五个 family
+
+NiceEval 的 package-private（包私有）Record definition（Record 定义）驱动全部 Core 与 Attachment 的编解码、
+读写和校验。`defineRecordProperty`、`defineRecordValue`、`defineRecordCore` 与
+`defineRecordAttachment` 只供 NiceEval 自用，不是应用、Adapter、Plugin 或第三方的 API。
+
+一个 property（属性）同时有 property token id（属性令牌身份）、TS field（TypeScript 字段）和 durableKey
+（持久键）。property input 只接受 `{ id, durableKey, schema }`；TS field 是
+`defineRecordCore` / `defineRecordValue` 的 `properties` map key。三者分别用于内部定义身份、内存对象访问
+和 JSON 键；任何一个都不能代替另一个。
+
+NiceEval current 固定 Attachment catalog 有以下五个 family（附件族）。一个 family 只有一个定义入口；多个 owner
+写在同一 `owners` map，不复制 family 或另立版本名称。
+
+| family | `owners` | 保存的事实 |
 |---|---|---|
-| `niceeval.assertions/v1` | Attempt | AssertionResult、Evidence 与已封口的检查结果 |
-| `niceeval.observability/v1` | Run 或 Attempt | 对话、命令、用量、时间、诊断与 OTel 归一观察 |
-| `niceeval.file-changes/v1` | Attempt | 此次 Attempt 观察到的文件变化 |
-| `niceeval.sources/v1` | origin Run | 当时源码闭包的 manifest 与本 family blob |
-| `niceeval.artifacts/v1` | Run 或 Attempt | 有媒体类型、身份和本 family blob 的大型文件 |
+| `niceeval.assertions` | `{ attempt }` | AssertionResult、Evidence 与已封口的检查结果 |
+| `niceeval.observability` | `{ attempt, run }` | 对话、命令、用量、时间、诊断与 OTel 归一观察 |
+| `niceeval.file-changes` | `{ attempt }` | 此次 Attempt 观察到的文件变化 |
+| `niceeval.sources` | `{ run }` | 当时源码闭包的 manifest 与 own blob |
+| `niceeval.artifacts` | `{ attempt, run }` | 有媒体类型、身份和 own blob 的大型文件 |
 
-Adapter 与 collector 只能提交 NiceEval 提供的固定输入。Record 不提供动态 family、字段、writer
-或 migration（迁移）注册。新增一种不可恢复事实时，由 NiceEval 修改该固定协议并发布版本。
+Adapter 与 collector 只能提交 NiceEval 提供的固定输入。没有调用方可用的 generic definition、family、
+registration point 或 migration registration。此前未保存且不可恢复的事实必须经过 NiceEval 裁决，
+要么扩展既有 family，要么由 NiceEval 增加新的 fixed family definition。它不能成为调用方定义的第三方
+durable family。
 
-每个 Attachment 都是 exact JSON 的 payload 和 owner-local blob closure（归属者局部 blob
-闭包）。blob ref 不能指向另一个 Attachment、另一个 owner 或 root 外路径。读取时，完整
-payload 与 closure 通过校验后才成为可用值。
+NiceEval 也可以在后续 catalog 中加入另一个固定 family，例如 `niceeval.energy`。这只增加该 family 自己的
+definition、`owners` map 与 schemaVersion，不升级 Core。较早 reader 保留它在磁盘上的完整目录和 bytes，
+忽略它并继续读取 Core 与认识的 family；只有请求 energy 的 AnalysisInput 或 DomainView 才得到
+`unsupported` / `not-available`。
 
-## 读取、写入与维护
+Core 的每个 leaf 都是 JSON，禁止 blob ref。Attachment owner value 固定使用 `json-with-blob-refs` leaf；它的
+payload 仍是 exact JSON，只在需要时含 definition 认可的 ref。一个 ref 只能指向同 owner、同 family 下的一份
+own blob。完整 payload 与 closure 校验成功后才形成可用值。
 
-`RecordReadSession` 是 Scope-bound（资源作用域绑定）惰性 reader。它先选择已封口 Run，形成
-只含身份、预期 Slot 和问题的 `RecordSelection`；它不把全部历史 payload 复制进内存。查询需要
-某条 trace、diff 或 Evidence 时，才读取、exact decode（精确解码）并验证对应的内容。
+## current 与 maintenance
 
-`RunWriteSession` 只拥有一个新 Run。它可以并行创建自己的 Attempt，也可以引用在本次读取选择中
-已经发布的 Attempt。`seal()` 拒绝新写入，等待本 Run 的 Attempt 与 collector 停稳，验证 Core、
-引用与五个固定 family，随后以 `complete` 发布。
+内部 definition 有 `current`（当前）与 `maintenance`（维护）两个 facet（分面）。`current` 定义普通
+reader、writer 和固定 family 必须接受的 root、Core 与 Attachment shape。`maintenance` 单独拥有格式
+检查、Git 预检和相邻 schemaVersion 迁移步骤。
 
-普通读取与写入只接受当前格式。受支持的旧 schema 必须通过 `niceeval migrate` 显式迁移。
-迁移只执行 NiceEval 自带的相邻步骤，并在改写历史字节前要求干净且可恢复的 Git 状态。失败或中断
-会留下 `migration.in-progress`；普通访问 fail closed（失败即关闭访问），用户用 Git 完整恢复
-`.niceeval/record` 后重新迁移。v1 只接受 exact v1 bytes；其它格式是 `unsupported-format`。
+普通 `RecordReadSession` 只读取 exact current format，绝不自动改盘。它先选择已封口 Run，形成只含
+身份、预期 Slot 和问题的 `RecordSelection`。查询需要某条 trace、diff 或 Evidence 时，才读取并校验对应
+Attachment。
+
+未来 schemaVersion 变化时，maintenance 只执行固定的相邻步骤，例如 `1 → 2`。兼容性按对象判断：
+
+| 碰到的 bytes | ordinary reader 的动作 |
+|---|---|
+| root 或 Core 的 schemaVersion 不匹配 | 若 maintenance 有相邻步骤，返回 `migration-required`；否则 `unsupported-format`，不形成 session |
+| 已知 fixed family 的旧 schemaVersion | 返回 `migration-required`，普通读取不兼容，必须显式 migrate |
+| 未知的独立 future family | 保留 bytes、忽略该 family，继续读取 Core 和认识的 family |
+| current catalog 中缺少的 family | 在请求它时返回 `not-recorded` |
+| 带 `/vN` 后缀的未发布 family 草案 | `unsupported-format`；它不能伪装为独立 future family |
+
+未知 family 的局部容忍不让 reader 猜测 payload 或 blob closure，也不让 Report 看见原始内容。它只保护可读的
+历史；依赖该 family 的能力保持 `unsupported` / `not-available`，直到使用认识该 definition 的 NiceEval。
+
+## 从 Record 到闭合输出
+
+Analysis Host 用 reader 与 selection 建立 Sample（样本）。某个 `AnalysisInput`（分析输入）或
+`DomainView`（领域视图）请求事实时，Sample 才在自己的 Scope 内惰性读取并缓存所需 Attachment。
+缓存按精确 owner 与内部 fixed definition 区分，不能把一个 Attachment 的 blob 借给另一个 owner。
+
+```text
+AnalysisInput / DomainView
+             │ request one fixed fact
+             ▼
+Sample lazy cache ──▶ package-private Record reader ──▶ validated Attachment
+             │
+             ▼
+ClosedRows / SemanticFrame / DomainView
+             │
+             ▼
+Report（只见闭合值；不见 reader 或 Attachment）
+```
+
+Report 可以呈现闭合结果，却不能取得 reader、Scope、Attachment、blob capability、路径或未解释的
+Record payload。改变指标、页面或显示顺序不改变 Record。
 
 ## 入口
 
-- [Library](library.md) —— Host SDK、Effect 边界、惰性 reader、Run writer、错误与维护 API。
-- [Architecture](architecture.md) —— durable layout、Core、五个 fixed family、closure、发布与迁移不变量。
+- [Library](library.md) —— 公开 Host composition SDK、惰性 reader、Run writer、错误与 maintenance API。
+- [Architecture](architecture.md) —— definition、durable layout、Core、closure、发布与迁移不变量。
 - [Observability Attachment](architecture/observability-attachments.md) —— 单一 Observability family 的精确 payload。
 - [CLI](cli.md) —— `show`、`view`、`exp`、`clean` 与 `migrate` 的反馈。
 - [Use cases](use-case/README.md) —— 并行追加、封口、源码闭包和 Git 恢复的完整路径。

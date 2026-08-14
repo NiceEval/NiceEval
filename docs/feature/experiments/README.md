@@ -19,9 +19,9 @@ experiments/  # 怎么跑 —— 运行矩阵:agent × model × attempts over �
 - **experiment 是可签入的运行配置。**
   比一串临时 CLI flag 可复现:`niceeval exp compare` 永远跑同一组对照。
 - **跨 agent / 跨配置对比是一等公民。**
-  每个实验文件声明一个配置；报告只比较 `AnalysisSample` 已经选好的 Run 与 Attempt，不在页面打开时另选结果。
+  每个实验文件声明一个配置；报告只比较 `Sample` 已经选好的 Run 与 Attempt，不在页面打开时另选结果。
 
-实验文件改名会改变 `experimentId`。需要采用已有 Attempt 时，使用[实验改名与 Run 采用](rename.md)建立 reference Member，并在 membership-provenance 保存 accepted 上下文。
+实验文件改名会改变 `experimentId`。需要采用已有 Attempt 时，使用[实验改名与 Run 采用](rename.md)建立 reference Member；其 Core `accepted` action 与精确引用就是可复核的采用事实。
   目录只组织源码、生成 id 和支持 CLI 前缀选择。
 
 ## 与 Record 的边界
@@ -29,13 +29,30 @@ experiments/  # 怎么跑 —— 运行矩阵:agent × model × attempts over �
 `<project>/.niceeval/record/` 是跨 Invocation、Experiment 与 Run 的 [Record](../record/README.md)。
 Experiment 只提供运行配置；Runner 在一次 Invocation 中为每个选中的 Experiment 建立一个 Run。
 
-当前 Project Target 与本次 policy 先进入 [reuse planning](cache.md)。reuse planning 从 Record 事实得到 `reuse | gap`；planner/scheduler 只执行 gap。局部执行是本次 reuse planning 的结果，Record 不保存“需要补跑”或“当前可复用”。
+一个 Run writer（Run 写入者）只拥有自己新建的 `runs/<RunId>/`。`complete`（完成标记）是这个 Run
+独立的原子发布点。Record 没有全局 writer lock（写入锁）、Invocation 级发布点或全局内存快照。
+
+Coordination（协调）在 Record 外拥有执行去重、`maxConcurrency`、同一 Experiment 的 dispatch claim
+（派发占用）以及 build / lease（构建 / 租约）。这些本地协调状态位于 `.niceeval/`，不随 Record
+复制或进入 Git。Record 只保存已发布 Run 的 durable fact（持久事实）。
+
+当前 Project Target 与本次 policy 先进入 [reuse planning](cache.md)。reuse planning 只从已发布 Run
+得到 `reuse | gap`；planner/scheduler 只执行 gap。局部执行是本次 reuse planning 的结果，Record
+不保存“需要补跑”或“当前可复用”。
 
 Run 的 expected membership 定义本次分母。Member 把每个 slot 连接到一个精确 Attempt；`origin | reference` 由关系派生，executed/carried/accepted 等原因属于 actions provenance。Attempt 永远保留实际执行它的 origin Run。
 因此 locator 始终由同一个完整 `attemptId` 表达，不会因采用动作而改变。
 
-Invocation 有 `invocationId`，用于关联瞬时进度与最终 receipt。Run 关系由 receipt 的 `runIds` 表达；mandatory Run-owned `niceeval.run-provenance/v1` 保存可离线读取的 invocation provenance，但不扩张 Run 核心。
+Invocation 有 `invocationId`，用于关联瞬时进度与最终 receipt。receipt 的 `runIds` 只关联本次已发布
+Run；Run、Member、action 与 reference 仍由 Core 保存，供之后从公开读取面复核。
 一次 Invocation 可以产生零到多个 Run，每个 Run 恰好属于一个 Experiment。
+
+## Host composition boundary
+
+`niceeval/experiment/host` 导出公开、受支持的高级 Host composition SDK `experimentHost`。NiceEval CLI 的
+`exp` 经 `list()`、`plan()` 与 `run()` 组合，`accept` 经 `accept()` 组合；替代 CLI / Web host 或深度应用集成
+也使用同一窄操作面。dispatch claim 与 Record lease 属于 `coordinationHost`，durable Record I/O 属于
+`recordHost`。`defineExperiment` 作者不导入 Host entry，也不能借它重建 Runner、selector 或 adoption 内部状态。
 
 ## `defineExperiment` 的形状
 
@@ -78,7 +95,7 @@ export default defineExperiment({
 ```
 
 `evals` 可以同时选择通过制与计分制 eval。
-题型由 `EvalDescriptor.evaluationKind` 给报告：通过制读 Verdict 的通过率，计分制读 Score Attachment 的
+题型由 `EvalDescriptor.evaluationKind` 给报告：通过制读 Verdict 的通过率，计分制读 sealed Assertions 的
 earned score；两者分别聚合、并排展示，不相加。两种 Eval 的每个 Attempt 都有四态 Verdict，Score Eval
 另有 complete、partial 或 unavailable 的 score state。`points` 只是 Assertion 分值，不是第三种题型。
 计分语义见[计分粒度](../assertions/library/score-points.md)。
@@ -90,10 +107,11 @@ earned score；两者分别聚合、并排展示，不相加。两种 Eval 的�
 
 只给报告归类的值，例如「这格用的记忆机制是 mempal」，写入 `labels`。
 Agent 与 Eval 看不见它，改它不让已有 Attempt 失去采用资格。
-再次运行会以当前 labels 建立新 Run，并通过 reference Member 采用已有 Attempt；形成原因写入 membership provenance。
+再次运行会以当前 labels 建立新 Run，并通过 reference Member 连接已有 Attempt；Core relation、action 与精确 origin 共同说明该成员怎样进入目标 Run。
 
 两者都是实验作者写下的**声明**。
-运行后才存在的值，例如 `setup` 起出的隧道 URL 或服务端报回的版本，两个袋子都不进。它们通过 producer-owned typed Channel 保存为运行观测。
+运行后才存在的值，例如 `setup` 起出的隧道 URL 或服务端报回的版本，两个袋子都不进。只有 NiceEval 已发布的 typed collector 或 Adapter 能力能把语义匹配的运行时观测写入固定的 Observability、FileChanges、Assertions、Sources 或 Artifacts。
+没有已发布 collector 的第三方值不自动持久化，也不能查询。
 
 三个家的判据按场景查[用例手册 · 实验值归属](use-case/实验值归属/)。声明与消费见 [Library · labels 与运行时观测](library.md#labels-与运行时观测)。
 
@@ -102,7 +120,8 @@ Agent 与 Eval 看不见它，改它不让已有 Attempt 失去采用资格。
 什么场景配什么值(跨 eval 累积记忆、给撞限额的实验降速、`attempts` + `earlyExit` 的严格重试等),逐例见[用例手册 · 并发怎么配](use-case/并发/);限制的持有期语义单点在 [Runner · 调度](../../runner.md#调度有界并发)。
 
 `sharedState: { key }` 声明该 Experiment 会恢复、修改并回存一份跨 Invocation 共享的可变状态。
-Runner 在同一项目的协调域内按 `key` 独占整个状态区间。
+Runner 通过同一项目 Coordination 域内的 `key` 独占整个状态区间。同一 Record root 的多个
+Invocation 也使用这条规则；Record 自身不提供这个互斥。
 区间从 Experiment `setup` 与任何 Sandbox lifecycle `setup()` 之前开始，直到所有 Sandbox `teardown()`、Provider finalizer 与 Experiment `teardown` 完成。
 这个字段只提供互斥，不代替 checkpoint 存储、原子提交或强杀恢复。
 

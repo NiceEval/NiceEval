@@ -4,8 +4,6 @@
 export { defineEval, defineScoreEval, defineEvalGroup, defineConfig, defineExperiment } from "./define.ts";
 export type { AssertionEntryId } from "./assertions/identity.ts";
 
-/** Neutral RecordAttachment projector for the Attempt-owned agent workspace diff. */
-export { agentWorkspaceDiffProjector } from "./assertions/record/diff.ts";
 export type {
   AgentSendWindowIdentity,
   AgentWorkspaceDiffEndpoint,

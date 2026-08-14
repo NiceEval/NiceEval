@@ -3,11 +3,23 @@ import { randomBytes } from "node:crypto";
 import { Either, Schema } from "effect";
 
 import { recordAttachmentWriteContents } from "../record/attachment/internal.ts";
+import type { RecordAttachmentWrite } from "../record/attachment/index.ts";
+import {
+  CanonicalProjectRelativePathSchema,
+  SourceItemIdSchema,
+} from "../record/codec/identifiers.ts";
+import { RecordExactParseOptions } from "../record/codec/core.ts";
 import type {
-  RecordAttachmentWrite,
-  RecordBlobRef,
-} from "../record/attachment/index.ts";
-import type { SlotId } from "../record/model/identifiers.ts";
+  CanonicalProjectRelativePath,
+  Sha256Digest,
+  SlotId,
+  SourceItemId,
+} from "../record/model/identifiers.ts";
+import {
+  AssertionSourceSiteSchema,
+  type AssertionSourceSite,
+} from "../record/family/assertions.ts";
+import type { SourcesAttachment } from "../record/family/sources.ts";
 import {
   assertionsRuntimeSourceCaptureSnapshot,
   attachAssertionsRuntimeSourceCapture,
@@ -16,41 +28,15 @@ import {
   type AssertionsRuntimeSourceCaptureSnapshot,
 } from "../assertions/runtime.ts";
 import type { AssertionsRuntime } from "../assertions/api.ts";
+import type { AssertionEntryId } from "../assertions/identity.ts";
 import { captureLoc, type SourceRegistry } from "../source-loc.ts";
 import type { SourceArtifact, SourceLoc, SourcePathFrame } from "../shared/types.ts";
+import { createSourcesAttachmentWrite } from "../sources/attachment.ts";
 import {
-  createAssertionSourceSitesAttachmentWriteV1,
-  createSourcesAttachmentWriteV1,
-} from "../sources/attachment.ts";
-import {
-  CanonicalSourcePathV1Schema,
-  SourcesExactParseOptions,
-  canonicalizeSourceTextV1,
-  isStrictUnicodeTextV1,
+  canonicalizeSourceText,
+  isStrictUnicodeText,
 } from "../sources/codec.ts";
-import type {
-  AssertionSourceOccurrenceV1,
-  AssertionSourceFileFrameV1,
-  AssertionSourceFrameV1,
-  AssertionSourceSendSiteV1,
-  AssertionSourceSiteV1,
-  AssertionSourceSendOccurrenceV1,
-  AssertionSourceSitesEntryV1,
-  AssertionSourceSitesDocumentV1,
-  AssertionSourceTraceV1,
-  CanonicalSourcePathV1,
-  SourcesDocumentV1,
-} from "../sources/model.ts";
-import type {
-  Sha256Digest,
-  SourceFileItemId,
-  SourcePackageItemId,
-} from "../sources/identity.ts";
-import type { AssertionEntryId } from "../assertions/identity.ts";
-import type { AssertionsDocumentOuterV1 } from "../assertions/record/model.ts";
 import type { EvalResult } from "./types.ts";
-
-type AssertionSourceRole = Exclude<AssertionSourceOccurrenceV1["role"], "stop"> | "stop";
 
 interface CapturedSite {
   readonly location: SourceLoc;
@@ -177,8 +163,8 @@ export function createRunnerAttemptSourceCapture(
         site,
         terminal: Object.freeze({
           label: input.label,
-        status: input.failed ? "failed" : "completed",
-        durationMs: input.durationMs,
+          status: input.failed ? "failed" : "completed",
+          durationMs: input.durationMs,
         }),
       }));
     },
@@ -205,23 +191,22 @@ export function createRunnerAttemptSourceCapture(
 export interface RunnerSourceOriginInput {
   readonly slotId: SlotId;
   readonly result: EvalResult;
-  readonly assertions: RecordAttachmentWrite<"attempt", never, never>;
+  /** Minted by the same Assertions producer that will write this Attempt. */
+  readonly assertionEntryIds: readonly AssertionEntryId[];
 }
 
 export interface RunnerSourceWritePlan {
   readonly runWrite: RecordAttachmentWrite<"run", never, never>;
-  readonly attemptWrites: ReadonlyMap<SlotId, RecordAttachmentWrite<"attempt", never, never>>;
+  readonly sourceSitesBySlot: ReadonlyMap<SlotId, readonly AssertionSourceSite[]>;
 }
 
 export interface RunnerSourceProducerInvalid {
   readonly code: "runner-source-producer-invalid";
   readonly reason:
-    | "assertions-closure-invalid"
+    | "origin-slot-duplicate"
     | "sources-write-invalid"
     | "sources-closure-invalid"
-    | "source-sites-write-invalid"
-    | "source-sites-closure-invalid"
-    | "source-sites-join-invalid";
+    | "source-sites-invalid";
 }
 
 function invalid(
@@ -230,47 +215,35 @@ function invalid(
   return Object.freeze({ code: "runner-source-producer-invalid" as const, reason });
 }
 
-function canonicalPath(path: string): CanonicalSourcePathV1 | undefined {
+function canonicalPath(path: string): CanonicalProjectRelativePath | undefined {
   const decoded = Schema.decodeUnknownEither(
-    CanonicalSourcePathV1Schema,
-    SourcesExactParseOptions,
+    CanonicalProjectRelativePathSchema,
+    RecordExactParseOptions,
   )(path);
   return Either.isRight(decoded) ? decoded.right : undefined;
 }
 
 interface SourceSnapshot {
-  readonly path: CanonicalSourcePathV1;
+  readonly path: CanonicalProjectRelativePath;
   readonly text: string;
 }
 
 function sourceSnapshot(value: SourceArtifact): SourceSnapshot | undefined {
   const path = canonicalPath(value.path);
-  if (path === undefined || !isStrictUnicodeTextV1(value.content)) return undefined;
-  return Object.freeze({ path, text: canonicalizeSourceTextV1(value.content) });
+  if (path === undefined || !isStrictUnicodeText(value.content)) return undefined;
+  return Object.freeze({ path, text: canonicalizeSourceText(value.content) });
 }
 
-function stableFileKey(path: CanonicalSourcePathV1): CanonicalSourcePathV1 {
-  return path;
-}
-
-function packageId(): string {
-  return `sp_${randomBytes(10).toString("hex")}`;
-}
-
-function fileId(): string {
-  return `sf_${randomBytes(10).toString("hex")}`;
-}
-
-function sourceFrames(location: SourceLoc): readonly SourcePathFrame[] {
-  return Object.freeze([
-    ...(location.callers ?? []),
-    Object.freeze({
-      kind: "project" as const,
-      file: location.file,
-      line: location.line,
-      ...(location.column === undefined ? {} : { column: location.column }),
-    }),
-  ]);
+function sourceItemId(): SourceItemId {
+  const candidate = `src_${randomBytes(10).toString("hex")}`;
+  const decoded = Schema.decodeUnknownEither(
+    SourceItemIdSchema,
+    RecordExactParseOptions,
+  )(candidate);
+  if (Either.isLeft(decoded)) {
+    throw new Error("Runner generated an invalid Sources item identity");
+  }
+  return decoded.right;
 }
 
 function coordinateFor(
@@ -289,313 +262,167 @@ function coordinateFor(
   return Object.freeze({ line, column: new TextEncoder().encode(before).byteLength + 1 });
 }
 
-interface SourceFileLookup {
-  readonly packageItemId: SourcePackageItemId;
-  readonly fileItemId: SourceFileItemId;
+interface SourceItemLookup {
+  readonly sourceItemId: SourceItemId;
   readonly sha256: Sha256Digest;
   readonly text: string;
 }
 
 interface SourceManifestLookup {
-  readonly packages: Map<string, SourcePackageItemId>;
-  readonly files: Map<CanonicalSourcePathV1, SourceFileLookup>;
+  readonly files: Map<CanonicalProjectRelativePath, SourceItemLookup>;
 }
 
-function manifestLookup(document: SourcesDocumentV1<RecordBlobRef>): SourceManifestLookup {
-  const packages = new Map<string, SourcePackageItemId>();
-  const files = new Map<CanonicalSourcePathV1, SourceFileLookup>();
-  for (const sourcePackage of document.packages) {
-    packages.set(sourcePackage.label, sourcePackage.packageItemId);
-    for (const file of sourcePackage.files) {
-      files.set(stableFileKey(file.path), {
-        packageItemId: sourcePackage.packageItemId,
-        fileItemId: file.fileItemId,
-        sha256: file.sha256,
-        // The producer supplies the exact same canonical text separately.
-        text: "",
-      });
-    }
+function manifestLookup(document: SourcesAttachment): SourceManifestLookup {
+  const files = new Map<CanonicalProjectRelativePath, SourceItemLookup>();
+  for (const item of document.items) {
+    files.set(item.path, {
+      sourceItemId: item.sourceItemId,
+      sha256: item.sha256,
+      // The producer supplies the exact same canonical text separately.
+      text: "",
+    });
   }
-  return Object.freeze({ packages, files });
+  return Object.freeze({ files });
 }
 
-function assertionEntryIds(
-  write: RecordAttachmentWrite<"attempt", never, never>,
-): Either.Either<readonly AssertionEntryId[], RunnerSourceProducerInvalid> {
-  const contents = recordAttachmentWriteContents<
-    "attempt",
-    AssertionsDocumentOuterV1<RecordBlobRef>,
-    never,
-    never
-  >(write);
-  return Either.isLeft(contents)
-    ? Either.left(invalid("assertions-closure-invalid"))
-    : Either.right(Object.freeze(contents.right.payload.entries.map((entry) => entry.entryId)));
-}
-
-function sourceTrace(
-  location: SourceLoc,
-  localFiles: ReadonlyMap<CanonicalSourcePathV1, string>,
+function sourceSite(
+  input: {
+    readonly entryId: AssertionEntryId;
+    readonly sourceOrder: number;
+    readonly role: AssertionSourceSite["role"];
+    readonly location: SourceLoc;
+  },
+  localFiles: ReadonlyMap<CanonicalProjectRelativePath, string>,
   lookup: SourceManifestLookup,
-): AssertionSourceTraceV1 | undefined {
-  const runtimeFrames = sourceFrames(location);
-  const projectIndexes = runtimeFrames
-    .map((frame, index) => frame.kind === "project" ? index : -1)
-    .filter((index) => index >= 0);
-  const first = projectIndexes[0];
-  const last = projectIndexes.at(-1);
-  if (first === undefined || last === undefined) return undefined;
-
-  const durableFrames: AssertionSourceFrameV1[] = [];
-  for (const frame of runtimeFrames.slice(first, last + 1)) {
-    if (frame.kind === "package") {
-      const packageItemId = lookup.packages.get(frame.package);
-      if (packageItemId === undefined) return undefined;
-      durableFrames.push(Object.freeze({ target: Object.freeze({ kind: "package" as const, packageItemId }) }));
-      continue;
-    }
-    const path = canonicalPath(frame.file);
-    if (path === undefined) return undefined;
-    const local = localFiles.get(stableFileKey(path));
-    const sourceFile = lookup.files.get(stableFileKey(path));
-    if (local === undefined || sourceFile === undefined || sourceFile.text !== local) return undefined;
-    const coordinate = coordinateFor(local, frame.line, frame.column);
-    if (coordinate === undefined) return undefined;
-    durableFrames.push(Object.freeze({
-      target: Object.freeze({
-        kind: "file" as const,
-        packageItemId: sourceFile.packageItemId,
-        fileItemId: sourceFile.fileItemId,
-        sha256: sourceFile.sha256,
-      }),
-      coordinate,
-    }));
-  }
-  const firstFrame = durableFrames[0];
-  const lastFrame = durableFrames.at(-1);
-  if (!isSourceFileFrame(firstFrame) || !isSourceFileFrame(lastFrame)) return undefined;
-  if (durableFrames.length === 1) {
-    const singleFrame: [AssertionSourceFileFrameV1] = [firstFrame];
-    return Object.freeze({ frames: Object.freeze(singleFrame) });
-  }
-  const middle = durableFrames.slice(1, -1);
-  const traceFrames: [
-    AssertionSourceFileFrameV1,
-    ...AssertionSourceFrameV1[],
-    AssertionSourceFileFrameV1,
-  ] = [firstFrame, ...middle, lastFrame];
-  return Object.freeze({ frames: Object.freeze(traceFrames) });
-}
-
-function isSourceFileFrame(
-  frame: AssertionSourceFrameV1 | undefined,
-): frame is AssertionSourceFileFrameV1 {
-  return frame?.target.kind === "file";
-}
-
-function traceKey(trace: AssertionSourceTraceV1): string {
-  return JSON.stringify(trace);
-}
-
-function nonEmpty<Value>(
-  values: readonly Value[],
-): readonly [Value, ...Value[]] | undefined {
-  const first = values[0];
-  if (first === undefined) return undefined;
-  const tuple: [Value, ...Value[]] = [first, ...values.slice(1)];
-  return Object.freeze(tuple);
-}
-
-function jointValid(
-  sources: SourcesDocumentV1<RecordBlobRef>,
-  sites: AssertionSourceSitesDocumentV1,
-): boolean {
-  const packages = new Set<string>();
-  const files = new Map<string, string>();
-  for (const sourcePackage of sources.packages) {
-    packages.add(sourcePackage.packageItemId);
-    for (const file of sourcePackage.files) {
-      files.set(`${sourcePackage.packageItemId}\u0000${file.fileItemId}`, file.sha256);
-    }
-  }
-  const validTrace = (trace: AssertionSourceTraceV1): boolean => trace.frames.every((frame) =>
-    frame.target.kind === "package"
-      ? packages.has(frame.target.packageItemId)
-      : files.get(`${frame.target.packageItemId}\u0000${frame.target.fileItemId}`) === frame.target.sha256,
+): AssertionSourceSite | undefined {
+  const path = canonicalPath(input.location.file);
+  if (path === undefined) return undefined;
+  const local = localFiles.get(path);
+  const source = lookup.files.get(path);
+  if (local === undefined || source === undefined || source.text !== local) return undefined;
+  const coordinate = coordinateFor(local, input.location.line, input.location.column);
+  if (coordinate === undefined) return undefined;
+  const decoded = Schema.decodeUnknownEither(
+    AssertionSourceSiteSchema,
+    RecordExactParseOptions,
+  )(
+    Object.freeze({
+      entryId: input.entryId,
+      sourceOrder: input.sourceOrder,
+      role: input.role,
+      sourceItemId: source.sourceItemId,
+      sha256: source.sha256,
+      start: coordinate,
+      end: coordinate,
+    }),
   );
-  return sites.entries.every((entry) => entry.sites.every((site) => validTrace(site.trace)))
-    && sites.sendSites.every((site) => validTrace(site.trace));
+  return Either.isRight(decoded) ? decoded.right : undefined;
+}
+
+function sourceSiteOrder(
+  left: AssertionSourceSite,
+  right: AssertionSourceSite,
+): number {
+  const byEntry = left.entryId.localeCompare(right.entryId);
+  return byEntry === 0 ? left.sourceOrder - right.sourceOrder : byEntry;
+}
+
+function sourceSitesForOrigin(
+  origin: RunnerSourceOriginInput,
+  localFiles: ReadonlyMap<CanonicalProjectRelativePath, string>,
+  lookup: SourceManifestLookup,
+): Either.Either<readonly AssertionSourceSite[], RunnerSourceProducerInvalid> {
+  const capture = sourceCaptureForResult(origin.result);
+  if (capture === undefined || capture.entries.length !== origin.assertionEntryIds.length) {
+    return Either.right(Object.freeze([]));
+  }
+
+  const sourceSites: AssertionSourceSite[] = [];
+  const orders = new Set<number>();
+  for (const [index, entryCapture] of capture.entries.entries()) {
+    const entryId = origin.assertionEntryIds[index];
+    if (entryId === undefined) return Either.left(invalid("source-sites-invalid"));
+    for (const occurrence of entryCapture.occurrences) {
+      if (occurrence.site === undefined) continue;
+      if (orders.has(occurrence.site.sourceOrder)) {
+        return Either.left(invalid("source-sites-invalid"));
+      }
+      orders.add(occurrence.site.sourceOrder);
+      const site = sourceSite({
+        entryId,
+        sourceOrder: occurrence.site.sourceOrder,
+        role: occurrence.role,
+        location: occurrence.site.location,
+      }, localFiles, lookup);
+      if (site !== undefined) sourceSites.push(site);
+    }
+  }
+  sourceSites.sort(sourceSiteOrder);
+  return Either.right(Object.freeze(sourceSites));
 }
 
 /**
- * Builds one Run Sources closure plus one source-sites write per fresh origin.
- * It accepts only snapshots already retained by the Attempt; it never opens a
- * current source file or any legacy graph/store/evidence surface.
+ * Builds one flat Run Sources closure plus semantic source-site joins for
+ * each fresh origin. It uses only bytes retained by the actual Attempt; it
+ * never reopens today's worktree or a legacy result/Report surface.
  */
 export function createRunnerSourceWritePlan(
   origins: readonly RunnerSourceOriginInput[],
-): Either.Either<RunnerSourceWritePlan | undefined, RunnerSourceProducerInvalid> {
-  if (origins.length === 0) return Either.right(undefined);
-
-  const packageLabels = new Set<string>(["project"]);
-  const textsByPath = new Map<CanonicalSourcePathV1, string>();
-  const localBySlot = new Map<SlotId, ReadonlyMap<CanonicalSourcePathV1, string>>();
+): Either.Either<RunnerSourceWritePlan, RunnerSourceProducerInvalid> {
+  const textsByPath = new Map<CanonicalProjectRelativePath, string>();
+  const localBySlot = new Map<SlotId, ReadonlyMap<CanonicalProjectRelativePath, string>>();
 
   for (const origin of origins) {
-    const local = new Map<CanonicalSourcePathV1, string>();
+    if (localBySlot.has(origin.slotId)) {
+      return Either.left(invalid("origin-slot-duplicate"));
+    }
+    const local = new Map<CanonicalProjectRelativePath, string>();
     for (const artifact of origin.result.sources ?? []) {
       const snapshot = sourceSnapshot(artifact);
       if (snapshot === undefined) continue;
-      const key = stableFileKey(snapshot.path);
-      if (!local.has(key)) local.set(key, snapshot.text);
-      if (!textsByPath.has(key)) textsByPath.set(key, snapshot.text);
-    }
-    const capture = sourceCaptureForResult(origin.result);
-    for (const entry of capture?.entries ?? []) {
-      for (const occurrence of entry.occurrences) {
-        for (const frame of occurrence.site === undefined ? [] : sourceFrames(occurrence.site.location)) {
-          if (frame.kind === "package") packageLabels.add(frame.package);
-        }
-      }
-    }
-    for (const send of capture?.sends ?? []) {
-      for (const frame of send.site === undefined ? [] : sourceFrames(send.site.location)) {
-        if (frame.kind === "package") packageLabels.add(frame.package);
-      }
+      if (!local.has(snapshot.path)) local.set(snapshot.path, snapshot.text);
+      if (!textsByPath.has(snapshot.path)) textsByPath.set(snapshot.path, snapshot.text);
     }
     localBySlot.set(origin.slotId, local);
   }
 
-  const packageInputs = [...packageLabels]
-    .sort((left, right) => left.localeCompare(right))
-    .map((label) => ({
-      packageItemId: packageId(),
-      label,
-      files: label === "project"
-        ? [...textsByPath.entries()]
-            .sort(([left], [right]) => left.localeCompare(right))
-            .map(([path, text]) => ({ fileItemId: fileId(), path, text }))
-        : [],
-    }));
-  const sourcesWrite = createSourcesAttachmentWriteV1({ packages: packageInputs });
+  const sourcesWrite = createSourcesAttachmentWrite({
+    items: Object.freeze(
+      [...textsByPath.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([path, text]) => Object.freeze({ sourceItemId: sourceItemId(), path, text })),
+    ),
+  });
   if (Either.isLeft(sourcesWrite)) return Either.left(invalid("sources-write-invalid"));
   const sourceContents = recordAttachmentWriteContents<
     "run",
-    SourcesDocumentV1<RecordBlobRef>,
+    SourcesAttachment,
     never,
     never
   >(sourcesWrite.right);
   if (Either.isLeft(sourceContents)) return Either.left(invalid("sources-closure-invalid"));
 
   const lookup = manifestLookup(sourceContents.right.payload);
-  // Retain the exact persisted canonical bytes beside the immutable manifest
-  // refs. This is producer-only validation state, never an extra Record value.
+  // Retain canonical bytes only in this producer's transient lookup. They let
+  // source sites prove a semantic join, not gain a blob capability.
   for (const [path, text] of textsByPath) {
-    const file = lookup.files.get(path);
-    if (file !== undefined) {
-      lookup.files.set(path, Object.freeze({ ...file, text }));
+    const item = lookup.files.get(path);
+    if (item !== undefined) {
+      lookup.files.set(path, Object.freeze({ ...item, text }));
     }
   }
 
-  const attemptWrites = new Map<SlotId, RecordAttachmentWrite<"attempt", never, never>>();
+  const sourceSitesBySlot = new Map<SlotId, readonly AssertionSourceSite[]>();
   for (const origin of origins) {
-    const entryIds = assertionEntryIds(origin.assertions);
-    if (Either.isLeft(entryIds)) return Either.left(entryIds.left);
-    const capture = sourceCaptureForResult(origin.result);
-    const localFiles = localBySlot.get(origin.slotId) ?? new Map<CanonicalSourcePathV1, string>();
-    const entries: AssertionSourceSitesEntryV1[] = [];
-    if (capture !== undefined && capture.entries.length === entryIds.right.length) {
-      for (const [index, entryCapture] of capture.entries.entries()) {
-        const entryId = entryIds.right[index];
-        if (entryId === undefined) continue;
-        const byTrace = new Map<string, {
-          readonly trace: AssertionSourceTraceV1;
-          readonly occurrences: AssertionSourceOccurrenceV1[];
-        }>();
-        for (const occurrence of entryCapture.occurrences) {
-          if (occurrence.site === undefined) continue;
-          if (occurrence.role === "stop" && occurrence.outcome === undefined) continue;
-          const trace = sourceTrace(occurrence.site.location, localFiles, lookup);
-          if (trace === undefined) continue;
-          let next: AssertionSourceOccurrenceV1;
-          if (occurrence.role === "stop") {
-            const { outcome } = occurrence;
-            if (outcome === undefined) continue;
-            next = Object.freeze({
-              sourceOrder: occurrence.site.sourceOrder,
-              role: "stop" as const,
-              outcome,
-            });
-          } else {
-            next = Object.freeze({ sourceOrder: occurrence.site.sourceOrder, role: occurrence.role });
-          }
-          const key = traceKey(trace);
-          const site = byTrace.get(key) ?? { trace, occurrences: [] };
-          site.occurrences.push(next);
-          byTrace.set(key, site);
-        }
-        const sites: AssertionSourceSiteV1[] = [];
-        for (const site of [...byTrace.values()].sort((left, right) => {
-          const [leftFirst] = left.occurrences;
-          const [rightFirst] = right.occurrences;
-          return (leftFirst?.sourceOrder ?? 0) - (rightFirst?.sourceOrder ?? 0);
-        })) {
-          const occurrences = nonEmpty(site.occurrences);
-          if (occurrences !== undefined) {
-            sites.push(Object.freeze({ trace: site.trace, occurrences }));
-          }
-        }
-        const entrySites = nonEmpty(sites);
-        if (entrySites !== undefined) {
-          entries.push(Object.freeze({ entryId, sites: entrySites }));
-        }
-      }
-    }
-
-    const byTrace = new Map<string, {
-      readonly trace: AssertionSourceTraceV1;
-      readonly occurrences: AssertionSourceSendOccurrenceV1[];
-    }>();
-    for (const send of capture?.sends ?? []) {
-      const trace = sourceTrace(send.site.location, localFiles, lookup);
-      if (trace === undefined) continue;
-      const key = traceKey(trace);
-      const site = byTrace.get(key) ?? { trace, occurrences: [] };
-      site.occurrences.push(Object.freeze({
-        sourceOrder: send.site.sourceOrder,
-        label: send.terminal.label,
-        status: send.terminal.status,
-        durationMs: send.terminal.durationMs,
-      }));
-      byTrace.set(key, site);
-    }
-    const sendSites: AssertionSourceSendSiteV1[] = [];
-    for (const site of [...byTrace.values()].sort((left, right) => {
-      const [leftFirst] = left.occurrences;
-      const [rightFirst] = right.occurrences;
-      return (leftFirst?.sourceOrder ?? 0) - (rightFirst?.sourceOrder ?? 0);
-    })) {
-      const occurrences = nonEmpty(site.occurrences);
-      if (occurrences !== undefined) {
-        sendSites.push(Object.freeze({ trace: site.trace, occurrences }));
-      }
-    }
-    const document: AssertionSourceSitesDocumentV1 = Object.freeze({
-      entries: Object.freeze(entries),
-      sendSites: Object.freeze(sendSites),
-    });
-    if (!jointValid(sourceContents.right.payload, document)) {
-      return Either.left(invalid("source-sites-join-invalid"));
-    }
-    const write = createAssertionSourceSitesAttachmentWriteV1(document);
-    if (Either.isLeft(write)) return Either.left(invalid("source-sites-write-invalid"));
-    const contents = recordAttachmentWriteContents(write.right);
-    if (Either.isLeft(contents)) return Either.left(invalid("source-sites-closure-invalid"));
-    attemptWrites.set(origin.slotId, write.right);
+    const local = localBySlot.get(origin.slotId);
+    if (local === undefined) return Either.left(invalid("origin-slot-duplicate"));
+    const sites = sourceSitesForOrigin(origin, local, lookup);
+    if (Either.isLeft(sites)) return Either.left(sites.left);
+    sourceSitesBySlot.set(origin.slotId, sites.right);
   }
 
   return Either.right(Object.freeze({
     runWrite: sourcesWrite.right,
-    attemptWrites: new Map(attemptWrites),
+    sourceSitesBySlot: new Map(sourceSitesBySlot),
   }));
 }

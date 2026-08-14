@@ -2,12 +2,11 @@
 
 ## 裁决
 
-为 [Capture → Analysis → Report Roadmap](../../roadmap/record-analysis-report/README.md) 采纳
+旧 Observability 拆包方案曾采纳
 [PLAN-1](PLAN-1/README.md)：七个官方 owner-specific logical family 各自成为一份 durable RecordAttachment。第三方扩展使用
 平台固定的 Metric、Score 与 Artifact envelopes，不获得新增 family 的权限。
 
-这是 Roadmap 目标的选型裁决。该方向被产品采用前，当前
-[Observability Feature](../../observability.md) 仍是唯一当前契约；Design Decision 不自行替换 Feature。
+这是固定五类 Attachment catalog 定稿前的历史选型裁决，不构成当前 durable 协议。
 
 ## 为什么选择 PLAN-1
 
@@ -26,8 +25,8 @@ materialize 整份 OTel closure。本 Roadmap 优先选择明确的 owner-local 
 PLAN-1 不声称 `niceeval.timing/v1` 保存 OTel provenance。无法绑定 owner、verified clock domain、稳定 phase 或
 durable anchor 的 span 不进入 interval，并使 timing collection 为 partial。
 
-## 契约落点
+## 当前契约落点
 
-- official timing 端到端语法：[Roadmap use case](../../roadmap/record-analysis-report/use-case/官方OTelTiming.md)。
-- layout 与 capture 边界：[PLAN-1](PLAN-1/README.md)。
-- current timing v1 shape：[Observability Attachments](../../feature/record/architecture/observability-attachments.md#timing)。
+- 固定 catalog 与 owner layout：[Record Architecture](../../feature/record/architecture.md)。
+- timing v1 shape：[Observability Attachments](../../feature/record/architecture/observability-attachments.md#timing)。
+- Analysis 的闭合读取：[Analysis Library](../../feature/analysis/library.md)。

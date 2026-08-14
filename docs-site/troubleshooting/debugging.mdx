@@ -1,38 +1,39 @@
 ---
-title: "Debug Record and Report Problems"
+title: "Debug Result and Report Problems"
 sidebarTitle: "Debugging"
-description: "Use visible errors, Sample states, and channel states to diagnose viewing, rerun, and export problems."
+description: "Use visible errors, Sample states, and rebuild feedback to diagnose viewing, rerun, and export problems."
 ---
 
-Let the Runner, active reader, and manual editor stop before inspecting a quiescent Record. Sample selection and ReportInput construction for an export must also have finished; later Report execution and site writing do not access the Record. Then query an explicit Run instead of guessing from a directory name or time.
+Start by reading the problem through an explicit Run. Do not guess the target from a directory name or time.
 
 ```sh
-npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
-npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY \
-  --page attempt-01J8ZK3M6P4T7V9X2C5N8QW0RY
+npx niceeval show --run <run-id>
+npx niceeval view --run <run-id> --no-open
 ```
 
-## The Record cannot be found or opened
+These commands form a Sample from the same scope and execute the same Report. Confirm that the selection is right before inspecting Measures and problems on the page.
+
+## Results cannot be found or opened
 
 | Visible error | Meaning | Next step |
 | --- | --- | --- |
-| `record-root-missing` | The selected Record root does not exist. | Check the project directory or `--record`. |
-| `record-format-invalid` | The root is not in the `niceeval.record` format. | Point to the correct `.niceeval/record/` directory. |
-| `record-core-invalid` | The root `record.json` or reserved layout is invalid. | Repair the named root file and issue. |
-| `CoreRead.invalid` | The selected Run, Member, or Attempt core is invalid. | Repair the named issue in the Sample or slot. |
+| `record-root-missing` | The selected result set does not exist. | Check the project directory or `--record`. |
+| `record-migration-required` | Published results need migration. | Run `niceeval migrate`. |
+| `record-format-unsupported` | The current NiceEval does not recognize the result format. | Install NiceEval that supports that format. |
+| `core-invalid` | A position's identity or reference cannot be read reliably. | Read the named problem; do not treat it as a missing result. |
 
-Do not replace these errors with an empty result. Repair the named path or file, then read again.
+Published results have no manual-edit repair path. Create a new Run when you need different facts. Run `niceeval clean` to remove incomplete remnants.
 
 ## An expected result is missing from the Sample
 
-A Sample preserves the expected-slot denominator for its Run. Check each slot's state on the page:
+A Sample preserves a Run's expected denominator. Check each position's state on the page:
 
 | State | Meaning | Next step |
 | --- | --- | --- |
-| `included` | The Member and Attempt are readable. | Check the required business channel. |
-| `not-recorded` | An expected slot has no Member. | Check whether the Invocation completed, or rerun that scope. |
-| `invalid` | The Member, Attempt, or reference has a problem. | Repair the named issue; do not treat it as uncollected. |
-| `excluded` | This selection excluded the item. | Check `--experiment`, `--eval`, or another selection condition. |
+| `included` | An analyzable Attempt exists. | Check the Measure or evidence the Report shows. |
+| `not-recorded` | A planned position has no result. | Check whether the Invocation completed, or rerun that scope. |
+| `core-invalid` | The position's identity or reference has a problem. | Address the named problem; do not treat it as uncollected. |
+| `excluded` | This selection excluded the position. | Check `--experiment`, `--eval`, or another selection condition. |
 
 To see what the next run will do, first run:
 
@@ -40,41 +41,37 @@ To see what the next run will do, first run:
 npx niceeval exp checkout --dry
 ```
 
-The output identifies whether each slot executes, is `carried`, or waits for an explicit `accepted` Member. It also explains why adoption conditions are not met.
+The output shows whether every position will execute or adopt an existing Attempt, and lists why carry conditions are not met.
 
-## A channel is unavailable or fails
+## A Measure or detail is incomplete
 
-A channel state affects only the page or Calculation that requested it:
+Measures and domain views bring their own state and problems to a page:
 
 | State | Meaning | Next step |
 | --- | --- | --- |
-| `unavailable` | It was not collected or does not apply. | Check whether that run should collect the channel. |
-| `unsupported` | The current reader does not support the channel. | Use a page that does not need it, or a reader that does. |
-| `invalid` | The requested channel file or content is invalid. | Repair the named descriptor, file, or content. |
-| `partial` | Collection or decoding is incomplete. | Read the observed count, denominator, and issue; do not treat the value as complete. |
+| `partial` | A displayable result exists, but some denominator members did not contribute. | Inspect the problem and denominator; do not treat it as complete. |
+| `empty` | Inputs are complete and the domain result is validly empty. | Confirm that this empty result fits the task. |
+| `unsupported` | The current environment does not support the required input. | Use an environment that supports it, or view a page that does not depend on it. |
+| `failed` | Reading, joining, or aggregation failed. | Read the named problem and fix its cause. |
 
-`unavailable` does not mean `unsupported`, and `unsupported` does not mean `invalid`. A requested invalid channel fails that request. An unrequested channel does not block an unrelated page or export.
+Run `niceeval migrate` before reading historical results that need migration. A Measure problem does not change the Sample's established denominator or prevent unrelated pages from displaying.
 
-## An edit is not visible
+## view does not show new results
 
-`show` and `view` create one fixed ReportInput for a command. If you edit a Verdict, Usage, or another channel after the Record becomes quiescent, end the current viewer and run it again:
+Each successful `view` rebuild publishes a new `ReportExecution`. If a Report, configuration, theme, or result change makes a rebuild fail, the page continues to show the previous usable execution and displays the current problem.
 
-```sh
-npx niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --no-open
-```
-
-Do not run a Runner or active reader while editing. An export holds its reader only while it selects the Sample and creates ReportInput; Report execution and site writing no longer access the Record afterward.
+Fix the rebuild problem, then wait for the next successful rebuild. A page refresh cannot bypass that boundary or make an old execution reread results.
 
 ## JSON has no receipt
 
-`npx niceeval exp <experiment> --json` writes its final receipt only after it successfully creates an Invocation. If input validation fails first, there are no `runIds` to inspect.
+`npx niceeval exp <experiment> --json` writes its final receipt only after it successfully creates an Invocation. If an input error exits before that, there are no `runIds` to inspect.
 
-Correct the Experiment, Eval selection, or command argument and run it again. When it succeeds, use the receipt's `runIds` with `show`, `view`, or `view --out`.
+Correct the Experiment, Eval selection, or command argument, then run it again. On success, use the receipt's `runIds` with `show`, `view`, or `view --out`.
 
 ## A static report site cannot export
 
-`view --out` can export only planned pages, downloads, and assets. A requested invalid channel, missing asset, network URL, bad path, or symbolic link makes the export fail.
+`view --out` exports only one completed `ReportExecution`. Analysis problems can appear in the exported site. An author callback that throws, an invalid semantic tree, or a route conflict stops export.
 
-Correct the error and export again. A successful static directory includes a `StaticAssetManifest` and opens in an offline browser; it does not read the source Record.
+The target directory must not exist. After a failure or interruption, use a new output directory and export again.
 
-See [Viewing Results](/tutorials/viewing-results) and [Publish a Static Report](/tutorials/publish-report) for the full workflows.
+See [Viewing Results](/tutorials/viewing-results) and [Publish a Static Report](/tutorials/publish-report) for the complete workflows.

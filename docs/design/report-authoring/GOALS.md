@@ -78,7 +78,7 @@
 ## 不是本 doc 的目标
 
 - **读数口径本身。**
-  `passRate` 怎么算、超时怎么记删失，归 [Analysis Measure](../../roadmap/record-analysis-report/library.md#在-population-上定义-fields)。
+  `passRate` 怎么算、超时怎么记删失，归 [Analysis Measure](../../feature/analysis/library.md)。
 - **Sample 选择。**
   哪些 attempt 进入这次比较，归 [Sample](../../feature/sample/README.md)。
 - **主题与 CSS。**

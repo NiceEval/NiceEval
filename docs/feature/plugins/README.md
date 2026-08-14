@@ -48,4 +48,4 @@ Experiment、Eval Group 和 Eval 都通过自己的 `plugins` 数组挂载 lifec
 - [Library](library.md) —— `definePlugin`、多 occurrence 与挂载语法。
 - [Architecture](architecture.md) —— 身份、自动 sandbox 投影与边界。
 - [Lifecycle](lifecycle.md) —— 四个 scope 的运行顺序和失败语义。
-- [Capture → Analysis → Report](../../roadmap/record-analysis-report/README.md) —— 领域 Plugin 可以挂载 Capture obligation，但 callback 不取得 Record authority。
+- [Record → Analysis → Report](../record-report/README.md) —— Plugin callback 不取得 Record、Analysis 或 Report Host authority。

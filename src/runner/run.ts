@@ -44,7 +44,6 @@ import { ArtifactPrepareCoordinator } from "../agents/provisioner.ts";
 import { collectBuildPreparation, toBuildPreparation } from "./build-preparation.ts";
 import type { BuildKey } from "../sandbox/identity.ts";
 import { firstLine, getEnv } from "../util.ts";
-import { recordFact, type FactValue } from "../shared/facts.ts";
 import { runReporter, emitReporterEvent, scopeReporter, summarize } from "./report.ts";
 import {
   reportAttemptLifecycle,
@@ -94,7 +93,7 @@ import {
   prepareRunnerRecordReuse,
   type RunnerRecordAttempt,
 } from "./record.ts";
-import { bindRunnerRunObservabilityDiagnosticsV1 } from "../o11y/record/runner-producer.ts";
+import { bindRunnerRunObservabilityDiagnostics } from "../o11y/record/runner-producer.ts";
 import { sandboxReusePoolDescriptor } from "./sandbox-reuse.ts";
 
 export class RunModeConflictError extends Data.TaggedError("RunModeConflictError")<{
@@ -195,7 +194,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   const startedAtMs = Date.now();
   const startedAt = new Date(startedAtMs).toISOString();
   const t0 = startedAtMs;
-  const niceevalRoot = opts.niceevalRoot ?? `${process.cwd()}/.niceeval`;
+  // These roots have deliberately different ownership. `coordinationRoot`
+  // contains only local Runner state; `recordRoot` is the portable fact root
+  // passed unchanged to the Record reader/writer coordinator.
+  const coordinationRoot = opts.coordinationRoot ?? `${process.cwd()}/.niceeval`;
+  const recordRoot = opts.recordRoot;
 
   // `--keep-sandbox` 要把单条 Attempt 的最终现场转交给用户，
   // `sandboxReuse` 则让整个 Invocation 的 pool 继续拥有并在收尾时销毁同一个 Case。
@@ -285,14 +288,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // Coordinator creates draft Runs first, then uses their real `draft.runId`
   // values and the frozen Record view to partition every Slot into reuse/gap.
   const recordCoordinator = yield* openRunnerRecordCoordinator({
-    niceevalRoot,
+    recordRoot,
     startedAt: t0,
     evals: opts.evals,
     runs: opts.agentRuns,
     reuse,
-    ...(opts.recordAttachments === undefined
-      ? {}
-      : { attachments: opts.recordAttachments }),
   });
   // The draft is the only authority for a Run identity. Session, shape and
   // reporters all observe this same mapping; no caller can replace it with a
@@ -627,6 +627,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // inputs remain immutable for the duration of this invocation.
   const attemptOptions: RunOptions<AttachmentError, AttachmentRequirements> = {
     ...opts,
+    coordinationRoot,
     artifactPrepare,
     otelPool,
   };
@@ -817,7 +818,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             signal: setupContext.signal,
             progress: setupContext.progress,
             diagnostic: setupContext.diagnostic,
-            fact: (key, value) => recordExperimentFact(a.run.experimentId, key, value),
           };
       pool = new ReusableSandboxPool(a.plan, capacity, {
         progress: setupContext.progress,
@@ -970,17 +970,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   const experimentDiagnostics = new Map<string, DiagnosticRecord[]>();
   const experimentDedupeIndex = new Map<string, Map<string, DiagnosticRecord>>();
   const experimentCompletedAt = new Map<string, string>();
-  // experiment 作用域 ctx.fact() 的累加器(与 experimentDiagnostics 同一种「按 experimentId 分桶」
-  // 模式):同一实验内后写覆盖先写,与 completedAt 同批在快照封口补写进 RunMeta.facts
-  // (见 docs/feature/record/architecture.md#facts运行事实)。没有 experimentId 的裸 run 没有
-  // Run 可挂,调用直接丢弃(与 recordExperimentDiagnostic 同一条纪律)。
-  const experimentFacts = new Map<string, globalThis.Record<string, FactValue>>();
-  const recordExperimentFact = (experimentId: string | undefined, key: string, value: FactValue): void => {
-    if (!experimentId) return;
-    const facts = experimentFacts.get(experimentId) ?? {};
-    recordFact(facts, key, value);
-    experimentFacts.set(experimentId, facts);
-  };
   const recordExperimentDiagnostic = (input: {
     experimentId: string | undefined;
     code: string;
@@ -1029,8 +1018,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     experimentDiagnostics.set(input.experimentId, list);
   };
   // 强杀后的收尾兜底(docs/feature/experiments/architecture.md「强杀后的收尾兜底」)的磁盘登记
-  // 挂在结果根下,与留存注册表 `.niceeval/sandboxes/` 同一个根(省略时退回 cwd/.niceeval,
-  // 与 attempt.ts 的 niceevalRoot 兜底同一口径)。
+  // 挂在本地协调根下,与留存注册表 `.niceeval/sandboxes/` 同一个根（默认 cwd/.niceeval，
+  // 与 attempt.ts 的 `coordinationRoot` 兜底同一口径）。
   const currentHost = hostname();
   const makeExperimentHookContext = (run: AgentRun, phase: LifecyclePhase): ExperimentHookContext => {
     const experimentId = run.experimentId;
@@ -1065,7 +1054,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           ...(input.dedupeKey !== undefined ? { dedupeKey: input.dedupeKey } : {}),
         });
       },
-      fact: (key, value) => recordExperimentFact(run.experimentId, key, value),
     };
   };
   const replaceSetup = (
@@ -1164,7 +1152,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             yield* unregisterExperimentTeardown(experimentId);
             if (run.experimentId) {
               yield* removeTeardownRegistrationIfPresentEffect(
-                niceevalRoot,
+                coordinationRoot,
                 teardownEntryId(run.experimentId, process.pid),
               ).pipe(Effect.ignore);
             }
@@ -1194,12 +1182,12 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   ): Effect.Effect<void, unknown> => Effect.suspend(() => {
     if (!run.experimentId || !run.teardown) return Effect.void;
     return Effect.gen(function* () {
-      const registrations = yield* readTeardownRegistrationsEffect(niceevalRoot).pipe(
+      const registrations = yield* readTeardownRegistrationsEffect(coordinationRoot).pipe(
         Effect.catchAll(() => Effect.succeed([])),
       );
       for (const { id, entry } of registrations) {
         if (entry.experimentId !== run.experimentId || !isOrphanedTeardownRegistration(entry, currentHost)) continue;
-        const claimed = yield* removeTeardownRegistrationIfPresentEffect(niceevalRoot, id).pipe(
+        const claimed = yield* removeTeardownRegistrationIfPresentEffect(coordinationRoot, id).pipe(
           Effect.catchAll(() => Effect.succeed(false)),
         );
         if (!claimed) continue; // 已被另一个进程抢先删除，义务已被别处接手。
@@ -1231,7 +1219,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               ...(input.dedupeKey !== undefined ? { dedupeKey: input.dedupeKey } : {}),
             });
           },
-          fact: (key, value) => recordExperimentFact(run.experimentId, key, value),
         };
         yield* cleanupCallback(() => run.teardown!(recoveryCtx)).pipe(Effect.matchEffect({
           onSuccess: () => Effect.sync(() => {
@@ -1302,7 +1289,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           // 上一进程的遗留收尾先补做，再原子写入本次登记；两步都先于 setup。
           if (run.teardown && run.experimentId) {
             yield* recoverOrphanedTeardownRegistration(run, experimentId);
-            yield* writeTeardownRegistrationEffect(niceevalRoot, {
+            yield* writeTeardownRegistrationEffect(coordinationRoot, {
               experimentId: run.experimentId,
               selectedEvalIds: run.selectedEvalIds,
               pid: process.pid,
@@ -1849,7 +1836,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           stopWaiting.pipe(Effect.as(true)),
         );
         if (stopped) return;
-        const record = yield* readCaseLockEffect(niceevalRoot, st.experimentId, st.evalId).pipe(
+        const record = yield* readCaseLockEffect(coordinationRoot, st.experimentId, st.evalId).pipe(
           Effect.catchAll(() => Effect.succeed(undefined)),
         );
         if (record === undefined || isCaseLockExpired(record, Date.now())) return;
@@ -1888,13 +1875,13 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         // 接管诊断要报"原持有者是谁",但 acquireCaseLockEffect 只回传 takenOver 布尔值——取锁前先
         // 无副作用地读一眼当前记录(纯尽力而为:极端时序下这份快照可能已经不是真正被接管的
         // 那条记录,但诊断本来就是人读提示,不是判定依据)。
-        const priorHolder = yield* readCaseLockEffect(niceevalRoot, experimentId, evalId).pipe(
+        const priorHolder = yield* readCaseLockEffect(coordinationRoot, experimentId, evalId).pipe(
           Effect.catchAll(() => Effect.succeed(undefined)),
         );
         const giveUp = new AbortController();
         let busyWith: CaseLockRecord | undefined;
         return yield* Effect.uninterruptibleMask((restore) =>
-          restore(acquireCaseLockEffect(niceevalRoot, experimentId, evalId, lockIdentity, {
+          restore(acquireCaseLockEffect(coordinationRoot, experimentId, evalId, lockIdentity, {
             signal: giveUp.signal,
             onWaitStart: (holder) => {
               busyWith = holder;
@@ -1996,7 +1983,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   ): Effect.Effect<GateLeaseEffectClaim, unknown> =>
     Effect.uninterruptibleMask((restore) =>
       restore(acquireGateSlotEffect(
-        niceevalRoot,
+        coordinationRoot,
         experimentId,
         maxConcurrency,
         lockIdentity,
@@ -2782,28 +2769,27 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
 
   // Record publication is the intentionally narrow interruption mask. By this
   // point dispatch has stopped and its Scope/finalizers plus experiment
-  // teardown have settled; only the durable interrupted state, publish marker,
-  // and receipt remain. `uninterruptibleMask` preserves typed failures and
-  // defects from the writer, while preventing a pending cancellation from
-  // splitting that atomic hand-off after some Runs have become readable.
+  // teardown have settled; only durable Run publication and the receipt remain.
+  // The mask preserves typed writer failures, but this is not an Invocation
+  // transaction: SIGINT publication freezes each Run independently, leaving
+  // Runs with unsettled real Attempts incomplete while siblings may seal.
   const receipt = yield* Effect.uninterruptibleMask(() =>
     Effect.gen(function* () {
-      // Missing Members remain missing, while membership-provenance records why
-      // each pending gap was interrupted. This never manufactures an Attempt
-      // for budget/early-exit/unstarted Slots.
-      if (interrupted) recordCoordinator.markInterrupted();
       // These diagnostics are already settled and keyed by exact Experiment /
       // AgentRun identity. Bind them only at the final Runner → Record
       // boundary; the invocation-wide Run timing tree deliberately remains
       // unbound because it cannot be safely attributed to individual Runs.
       for (const run of opts.agentRuns) {
-        bindRunnerRunObservabilityDiagnosticsV1({
+        bindRunnerRunObservabilityDiagnostics({
           run,
           diagnostics: experimentDiagnostics.get(run.experimentId) ?? [],
         });
       }
       const receiptCompletedAtMs = Date.now();
-      const publishedRuns = yield* recordCoordinator.publish(receiptCompletedAtMs);
+      const publishedRuns = yield* recordCoordinator.publish(
+        receiptCompletedAtMs,
+        interrupted ? "interrupted" : "normal",
+      );
       return Object.freeze({
         invocationId: recordCoordinator.reusePlan.target.invocationId,
         runIds: Object.freeze(publishedRuns.map(({ runId }) => String(runId))),
@@ -2831,7 +2817,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       // Only exact current Record readbacks appear in the invocation snapshot.
       reusedAttempts: reusedAttempts.filter((attempt) => attempt.target.experimentId === experimentId),
       diagnostics: experimentDiagnostics.get(experimentId) ?? [],
-      ...(experimentFacts.has(experimentId) ? { facts: experimentFacts.get(experimentId) } : {}),
       // Run 级共享构建时间与 provenance:属于产出它们的 Run;携带条目不继承。
       ...(runTimings !== undefined ? { timings: runTimings } : {}),
       ...(sandboxBuildRecords.length > 0 ? { sandboxBuilds: sandboxBuildRecords } : {}),

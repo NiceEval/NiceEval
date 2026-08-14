@@ -23,7 +23,8 @@ Roadmap 与 Feature、Design 候选共用 [Feature Design Package](../_template/
 - [Experiment Pilot 抽样](experiment-pilot-sampling/README.md) —— 用共同 Eval ID、固定 seed 与 non-final coverage 运行可复现小样本。
 - [Judge Runtimes](judge-runtimes/README.md) —— 收拢 Agent Judge 与原生 LLM Judge 的材料、权限和结果边界。
 - [Multi-Agent](multi-agent/README.md) —— 多 Agent Eval 场景。
-- [Capture → Analysis → Report](record-analysis-report/README.md) —— 用户定义固定事实、比较口径与报告呈现，并包含成本投影和图表语义内核。
+- [成本投影](cost-projections/README.md) —— 从 Core 与 Observability Usage 形成不回写 Record 的闭合成本读数。
+- [Report 图表语义内核](report-chart-kernel/README.md) —— 让 terminal、web 与 static 从同一组闭合图表事实投影。
 - [Record 库存](record-inventory/README.md) —— 盘点 receipt 交付前中断留下的 Run。
 - [可重评分 Eval](replayable-grading/README.md) —— 分离多轮 Execution 与只读 Grading，并对 sealed Record 独立重判。
 - [Sandbox Materialization](sandbox-materialization/README.md) —— 统一 Docker Image 声明与 Provider Cache 生命周期。

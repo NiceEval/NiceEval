@@ -7,7 +7,7 @@ import {
   type RenderReportHtmlInput,
 } from "../report/host/html.ts";
 import { renderReportExecutionText } from "../report/host/presentation.ts";
-import { basalt, type ThemeDefinition } from "../report/host/node/theme.ts";
+import { basalt, type ThemeDefinition } from "../report/host/theme.ts";
 import {
   exportStaticReport,
   type ReportExportError,
@@ -58,7 +58,7 @@ export function planSite(
         contentType: "text/html; charset=utf-8",
         content: root === undefined
           ? renderHtml(renderReportExecutionText({ execution }), theme)
-          : renderHtml({ document: root.document, route: root.route, theme }),
+          : renderHtml({ tree: execution.tree, page: root.tree, theme }),
       }),
     ]),
   });

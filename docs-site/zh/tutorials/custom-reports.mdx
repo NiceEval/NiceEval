@@ -1,82 +1,115 @@
 ---
 title: "编写自定义报告"
-description: "声明 RecordProjection，把投影结果组织成 Calculation、页面和一次固定的 ReportExecution。"
+description: "先定义 Measure，再用 Page 和组件把闭合分析结果组织成可查看、可导出的 Report。"
 ---
 
-自定义 Report 不接收 Record 路径，也不在页面 render 时临时查数据。先声明所需的 `RecordProjection`，再定义 Calculation、Page、PageFamily 或 Download：
+自定义 Report 有三层清楚的职责：已发布运行结果保存已经发生的事；Analysis 定义统计口径；Report 只组织页面和显示。你不需要也不能从页面读取结果文件或注册额外的数据类型。
 
 ```text
-AnalysisSample
+已发布的运行结果
         ↓
-official opaque projector → ProjectedSample
+Analysis：Measure + aggregate() / query()
         ↓
-Report → immutable ReportExecution
-          ↙       ↓       ↘
-        show     view    export
+ClosedRows / MetricValue / DomainView
+        ↓
+Report：Page + component
+        ↓
+ReportExecution → show / view / export
 ```
 
-## 先选择官方 projector
+## 定义一个 Measure
 
-NiceEval 内部负责把运行事实写入 Record，并提供形成 typed view 的官方 opaque projector。
-Report 作者只选择这些 projector，不能定义 raw Attachment family 或读取 payload。
-
-```ts
-const verdicts = attemptSlotProjection(verdictProjector);
-const assertions = attemptSlotProjection(assertionsProjector);
-
-const inputs = reportInputs({ verdicts, assertions });
-```
-
-每个 projection 都有明确 owner 和访问方式。`attemptSlotProjection` 保留 Sample 的每个 slot；`selectedRunProjection` 只对 selected Run 读取；`attemptOriginRunProjection` 为每个 slot 读取其 Attempt 的 origin Run。
-
-Report 不在 callback 中打开 Record，也不能通过 pure `AnalysisSample` 恢复 I/O。
-
-## 定义计算
-
-Calculation 使用静态声明的 inputs。它返回领域值，而不是让 host 推导通过率或分母。
+先在报告模块之外定义可复用的统计口径。下面的度量按实验分组，并将每个逻辑位置的最新完成 Attempt 汇总为通过率。
 
 ```ts
-const passRate = defineCalculation({
-  id: Either.getOrThrow(reportComponentId("pass-rate")),
-  inputs,
-  completeness: "allow-partial",
-  calculate: ({ sample, inputs }) =>
-    calculatePassRate(sample, inputs.verdicts, inputs.assertions),
+// reports/quality-measures.ts
+import {
+  allLogicalSlots,
+  attemptPassed,
+  defineDimension,
+  defineMeasure,
+  latestCompletedAttempt,
+  logicalSlots,
+  oneValue,
+  partial,
+  ratio,
+  retainContributingEvidence,
+} from "niceeval/analysis";
+
+export const experiment = defineDimension({
+  id: "quality.experiment",
+  population: logicalSlots,
+  value: slot => slot.experimentId,
+});
+
+export const passRate = defineMeasure({
+  id: "quality.pass-rate",
+  population: logicalSlots,
+  input: attemptPassed,
+  withinAttempt: oneValue<boolean>(),
+  withinSlot: latestCompletedAttempt<boolean>(),
+  acrossSlots: ratio(),
+  denominator: allLogicalSlots(),
+  missing: partial(),
+  evidence: retainContributingEvidence(),
+  unit: "ratio",
+  format: "percent",
+  better: "higher",
 });
 ```
 
-选择 `allow-partial` 时，callback 能看到 `ProjectedSample`、coverage 和 issues。结果必须保留自己的业务分母与完整度。选择 `require-complete` 时，只要必需数据不完整，callback 不会执行。
+`defineMeasure()` 同时固定输入、分母和缺失语义。不要在页面里从数组长度猜测通过率，也不要先取出未包装的 number 后重新包装成显示值。
 
-## 定义页面和 Report
+## 让组件取得闭合行
+
+复合组件在执行时拿到 `Sample`。用 `aggregate()` 取得 rows 后，直接交给中立的表格和图表组件。
 
 ```ts
-const overview = definePage({
-  id: Either.getOrThrow(reportComponentId("overview")),
-  route: Either.getOrThrow(reportRoute("/")),
-  calculations: { passRate },
-  render: ({ calculations }) =>
-    reportDocument({
-      title: "Summary",
-      children: [
-        reportMetric({
-          label: "Pass rate",
-          value:
-            calculations.passRate.state === "available"
-              ? calculations.passRate.value.rate
-              : null,
-        }),
-      ],
-    }),
+// reports/quality.ts
+import {
+  aggregate,
+  Bars,
+  defineComponent,
+  defineReport,
+  Grid,
+  Table,
+} from "niceeval/report";
+import { experiment, passRate } from "./quality-measures.ts";
+
+const QualityComparison = defineComponent(async (_props, { sample }) => {
+  const rows = await aggregate(sample, {
+    by: { experiment },
+    values: { passRate },
+  });
+
+  return Grid({
+    children: [
+      Bars({ points: rows, x: "experiment", y: "passRate" }),
+      Table({ rows, caption: "实验通过率" }),
+    ],
+  });
 });
 
 export default defineReport({
-  id: Either.getOrThrow(reportId("quality")),
-  calculations: { passRate },
-  pages: [overview],
+  title: "质量报告",
+  pages: [
+    {
+      id: "overview",
+      path: "/",
+      title: "概览",
+      render: () => QualityComparison({}),
+    },
+  ],
 });
 ```
 
-Page 返回闭合的语义 document，而不是 React、HTML 或文件路径。要为每个 Assertion、Turn 或 diagnostics category 增加详情页时，使用 `definePageFamily`。实例、route 和 document 只能从已经投影或计算出的内存值展开。
+`rows` 保留每行的身份、问题和完整 `MetricValue`。`Table` 使用 rows，图表使用 points，`Stat` 使用完整 value。这样终端、网页和静态站显示同一份统计含义。
+
+## 增加详情页或自定义原语
+
+需要一组详情地址时，在同一个 Page 上声明 `params`、`load` 和 `render`。`params.enumerate(sample)` 列出静态导出的全部实例；`load` 可以用 `context.evidence(locator)` 取得一个闭合证据视图。实例的路由只来自已选范围和已关闭的值，不会在浏览器打开页面时重新读取结果。
+
+需要新的显示原语时，`defineComponent()` 同时提供 `text` 和 `web`。可选的 `resolve()` 在两种呈现前计算一次闭合值；两种面随后读取同一个结果。不要用原始 HTML 或只存在于网页的内容替代终端面。
 
 ## 设成项目默认
 
@@ -84,7 +117,7 @@ Page 返回闭合的语义 document，而不是 React、HTML 或文件路径。�
 
 ```ts
 import { defineConfig } from "niceeval";
-import quality from "./reports/quality";
+import quality from "./reports/quality.ts";
 
 export default defineConfig({
   report: quality,
@@ -93,15 +126,9 @@ export default defineConfig({
 
 ## 处理不完整与失败
 
-recorded-data problem 不会改变 Sample 分母：
+Analysis 问题跟随 `MetricValue`、`ClosedRows` 和领域视图进入页面。`partial` 保留可显示的结果及完整分母；`unsupported` 和 `failed` 也保留原因，而不是被当成零或从表格中静默删除。
 
-- `unavailable` 表示 owner 没有请求的 Attachment；
-- `migration-required`、`migration-unavailable` 与 `unsupported` 表示历史 schema 不能按当前需要读取；
-- `invalid` 或 partial collection 表示记录的数据不完整。
-
-这些问题由内建 problems surface 显示。`allow-partial` consumer 可以展示可用值；`require-complete` consumer 形成 `data-unavailable`。
-
-projector、Calculation 或页面 callback 抛错，以及非法 document 或 route conflict，属于 execution problem。`show` 与 `view` 显示问题并保留其它页面；静态导出不会发布这一份 execution。
+作者 callback 抛错、参数不合法、语义树不合法或路由冲突属于 execution problem。`show` 与 `view` 显示其它成功页面；静态导出不会发布包含 execution problem 的站点。
 
 ## 运行和发布
 
@@ -111,6 +138,6 @@ npx niceeval view --run <run-id> --report ./reports/quality.ts --no-open
 npx niceeval view --run <run-id> --report ./reports/quality.ts --out ./quality-site
 ```
 
-`show`、`view` 与 `--out` 都选择 Sample、执行同一个 Report，并得到固定 `ReportExecution`。`view` 后续的成功 rebuild 会产生下一份 execution；失败时保留 last-good execution。
+三条命令都选择同一范围，执行同一份 Report，并得到固定 `ReportExecution`。`view` 后续成功 rebuild 会产生下一份 execution；失败时保留上一份可用结果。
 
 `--out` 必须指向不存在的目录。详情见[发布静态报告](/zh/tutorials/publish-report)和[报告 API](/zh/reference/report-components)。

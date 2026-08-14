@@ -341,14 +341,6 @@ export interface AgentContext {
    */
   diagnostic(input: DiagnosticInput): void;
   /**
-   * 写入本 Attempt 的 generic custom fact document。name 使用反向域格式且不能以 `niceeval.` 开头；
-   * 同一 owner/name 只允许写一次，第二次写入是 typed error，不替换也不追加。value 可以是任意 JsonValue。
-   * `{ observedAt, value }` 经 JSON.stringify 后最多 65,536 UTF-8 bytes；超限同步抛出
-   * `record-custom-fact-too-large`，且不留下部分文件。不影响 Turn status、verdict、评分或指纹。
-   * 形状与归属语义见 docs/feature/record/architecture.md。
-   */
-  fact(key: string, value: string | number | boolean): void;
-  /**
    * `progress({ message: msg })` 的别名,不是第二条通道(见 docs/feature/experiments/cli.md
    * 「Attempt 阶段」)。超时失败时最近若干行会并入结果的 error 信息,方便定位卡在哪一步。
    */
@@ -456,7 +448,7 @@ export type AgentArtifactPlatform =
     };
 
 /**
- * Run 级准备好的锁定制品。digest + 实际 platform 只属于运行 provenance/facts，不进入
+ * Run 级准备好的锁定制品。digest + 实际 platform 只属于运行 provenance，不进入
  * configHash 或 Eval fingerprint；静态 installer identity/revision 与 ProviderPlan target 才是配置身份。
  * 安装时经主 Sandbox 文件 API 上传,不依赖题面网络。
  */
@@ -474,7 +466,7 @@ export type AgentArtifactInstallShape =
   | { readonly kind: "npm-tarball" }
   | { readonly kind: "self-contained"; readonly binPath: string };
 
-/** attempt facts 里 `agent.ensure` 的取值:区分 probe 命中与本次安装。 */
+/** `agent.ensure` 的取值:区分 probe 命中与本次安装。 */
 export type AgentEnsureOutcome = "hit" | "installed";
 
 /**

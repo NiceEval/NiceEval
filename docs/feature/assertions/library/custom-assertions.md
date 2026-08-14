@@ -36,5 +36,6 @@ score.check(reply, similarity).score(5).atLeast(0.8);
 ## 第三方 criterion
 
 第三方 evaluator 可以有自己的 criterion schema，但 Assertions v1 只保存精确的 `{ name, schemaId, data }`。
-它不保存 evaluator 函数、模块对象、闭包或运行时 dependency graph。`schemaId` 未安装或 `data` 无法解码时，
-reader 只把该 entry 标为 `unsupported` 或 `invalid`；同一 Attachment 的其它 entry 继续可读。
+它不保存 evaluator 函数、模块对象、闭包或运行时 dependency graph，也不能由此增加 durable family。`schemaId`
+未安装或 `data` 无法解码时，reader 只把该 entry 标为 `unsupported` 或 `invalid`；同一 Attachment 的其它
+entry 继续可读。

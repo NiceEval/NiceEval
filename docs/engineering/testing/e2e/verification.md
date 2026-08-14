@@ -67,15 +67,20 @@ pnpm exec niceeval show --run <baseline-run> --run <candidate-run> --page compar
 
 ## Record 与 Report 验收点
 
-- CLI 用同一个持有 shared maintenance lease 的 frozen reader Scope 形成 `AnalysisSample` 与 `ReportInput`；同 root writer 可并发发布。Scope 关闭后才形成 execution，本机 view/static export 不再访问 Record。
-- core-only Sample 保留 included、not-recorded、invalid、excluded 的完整分母；被请求的通道四态不折叠成零或空值。
-- Attempt 大内容从 Attempt-owned blob 交付；decoder 只能取得当前 owner 的 bytes，不能得到 Record root 或实际路径。
+- CLI 只进入 `reportHost`；它在内部经 `recordHost.openRead()` 和 `analysisHost.openSample()` 形成
+  Sample。同 root writer 可并发发布；Scope 关闭后才形成 execution，本机 view/static export 不再访问 Record。
+- Sample 保留 included、not-recorded、core-invalid、excluded 的完整分母；被请求 fixed family 的
+  available、not-recorded、unsupported、invalid 四态不折叠成零或空值。
+- Attempt 大内容从 owner-local blob closure 交付；family decoder 只能取得当前 owner 的 bytes，不能得到
+  Record root 或实际路径。
 - 静态 export 的目标必须不存在；任一页面或下载失败时不发布目标。成功目录在断网 Sandbox 实例中只读取 manifest 列出的自有文件。
-- 已发布 Run immutable；外部损坏 channel 时，下一次命令呈现局部 invalid，不修改其它事实，也不建立 revision、history 或迁移结果。
+- 已发布 Run immutable；外部损坏 fixed family 时，下一次命令呈现局部 invalid，不修改其它事实，也不建立 revision、history 或迁移结果。
 
 ## 缓存与补跑
 
-缓存是否沿用由新 Run 的 Core membership 和 Run-owned actions channel 共同观察，不通过跨 Run history 命令推断。真实补跑后显式读取新 Run；reference Member 带 carried/accepted action 时，详情仍显示 Attempt 的原始 origin。
+缓存是否沿用由新 Run 的 Core Member action 与当前 reuse policy 共同观察，不通过跨 Run history 命令
+推断。真实补跑后显式读取新 Run；reference Member 带 carried/accepted action 时，详情仍显示 Attempt
+的原始 origin。
 
 强制补跑的最小链是：
 
@@ -91,6 +96,6 @@ pnpm exec niceeval show --run <new-run-id> --page adoption
 ## 不这样验收
 
 - 不使用已删除的历史、位置 locator、独立 Attempt 或固定切片 flag；详情与切面都是 Report page。
-- 不用后台监看或 session 查询恢复已退出 Invocation；长期事实必须已经进入 Run/Attempt channel。
-- 不让 fixture 重写 core validator、channel decoder 或 Report planner，形成第二套真相依据。
+- 不用后台监看或 session 查询恢复已退出 Invocation；长期事实必须已经进入 Run、Attempt Core 或固定 family。
+- 不让 fixture 重写 Core validator、family decoder 或 Report Host，形成第二套真相依据。
 - 不把多个可独立失败的产品结果放入同一个 Journey；跨域身份接线留在 Journey，单一错误矩阵回到对应 owner。

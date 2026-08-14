@@ -414,12 +414,7 @@ export function materializeDockerfileProviderPlan(
         resolveDockerfileAgentImage(plan, context, locator).pipe(
           Effect.mapError((cause) => runtimeFailure(context, "sandbox.materialization-failed", cause)),
         ),
-        (resolved) => Effect.flatMap(
-          Effect.try({
-            try: () => context.hookContext.fact("agent.image.cache", resolved.status),
-            catch: (cause) => runtimeFailure(context, "sandbox.materialization-failed", cause),
-          }),
-          () => materializationEffect(context, async () => {
+        (resolved) => materializationEffect(context, async () => {
             const { DockerSandbox, classifyProvisionError, reconcileProvision } = await import("./docker.ts");
             const managed = plan.profileBinding === undefined
               ? undefined
@@ -471,7 +466,6 @@ export function materializeDockerfileProviderPlan(
             }
             return wrapSingleSandbox(backend, context, { image: resolved.locator });
           }),
-        ),
       ),
   });
 }
@@ -607,7 +601,6 @@ export function buildDockerfileAgentImageWithServices(
       [request.installer],
       provisioned.operations,
       {
-        fact: () => {},
         coordinator: Option.some(new ArtifactPrepareCoordinator()),
         targetPlatform,
         signal,

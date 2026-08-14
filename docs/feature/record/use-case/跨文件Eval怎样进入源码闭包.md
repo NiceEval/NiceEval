@@ -15,7 +15,7 @@ export default defineEval({
 ```
 
 这条 Eval 的闭包包含 `evals/login.eval.ts` 和 `helpers/grade-login.ts`。Run seal 前，Runner 为闭包内
-每个项目文件写入 `niceeval.sources/v1` 的 `SourceItemId`、canonical project-relative path、SHA-256 和
+每个项目文件写入 `niceeval.sources` 的 `SourceItemId`、canonical project-relative path、SHA-256 和
 own blob。Report 从 Attempt 的 origin Run 查看当时内容，而不是后来修改过的函数。
 
 ## Loader 读取的数据
@@ -45,7 +45,7 @@ file-changes 或 Artifact 事实，不冒充 Sources item。
 source closure identity
   → 判断当前输入变化是否影响 reuse
 
-niceeval.sources/v1
+niceeval.sources
   → 保存已发生运行的离线核对事实
 ```
 

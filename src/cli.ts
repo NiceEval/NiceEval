@@ -18,11 +18,10 @@ import {
   parseAttemptLocator,
   type AttemptLocator,
 } from "./attempt-locator.ts";
-import { discoverEvals, discoverExperiments } from "./runner/discover.ts";
-import { browsableExperimentPaths, evalPrefixPredicate, matchExperimentSelector } from "./shared/aggregate.ts";
+import { browsableExperimentPaths, evalPrefixPredicate } from "./shared/aggregate.ts";
 import type { JsonValue } from "./shared/types.ts";
-import { runEvals, type AgentRun } from "./runner/run.ts";
-import { planProjectTarget, type ProjectTargetPlan } from "./runner/fingerprint.ts";
+import type { AgentRun } from "./runner/run.ts";
+import { experimentHost } from "./experiment/host/index.ts";
 import { loadProjectCurrent } from "./runner/project-current.ts";
 import {
   makeRecordRoot,
@@ -30,11 +29,11 @@ import {
   type RecordRoot,
 } from "./record/index.ts";
 import {
-  ExperimentIdSchema,
   type AnalysisSelectionRequest,
   type ExperimentId,
   type RunId,
 } from "./analysis/index.ts";
+import { ExperimentIdSchema } from "./record/codec/identifiers.ts";
 import { defaultAttemptOverviewReport } from "./report/built-in/attempt-overview.ts";
 import { defaultOverviewReport } from "./report/built-in/overview.ts";
 import { defaultRunMembershipOverviewReport } from "./report/built-in/run-membership-overview.ts";
@@ -44,17 +43,11 @@ import {
 } from "./report/built-in/execution.ts";
 import { sourceEvidenceReport } from "./report/built-in/source.ts";
 import { reportRoute, type ReportRoute } from "./report/author/identity.ts";
-import type { Report } from "./report/author/model.ts";
-import type { ReportExecution } from "./report/execution/model.ts";
-import {
-  executeReportForAttemptFromRecord,
-  executeReportFromRecord,
-  exportStaticReport,
-  openReportViewSession,
-  ReportConsole,
-  ReportFileSystem,
-  showReport,
-} from "./report/host/index.ts";
+import type { Report } from "./report/definition.ts";
+import type { ReportExecution, ReportTargetSelection } from "./report/execution/model.ts";
+import { reportHost } from "./report/host/index.ts";
+import { ReportConsole } from "./report/host/presentation.ts";
+import { ReportFileSystem } from "./report/host/static.ts";
 import {
   basalt,
   chalk,
@@ -66,9 +59,8 @@ import {
   resolveTrustedModulePath,
   type ThemeDefinition,
 } from "./report/host/node.ts";
-import { openViewServer } from "./view/server.ts";
 import { runRecordCliCommand } from "./cli/record.ts";
-import { resolveExperimentEvals, selectedEvalsForRun } from "./runner/eval-selection.ts";
+import { selectedEvalsForRun } from "./runner/eval-selection.ts";
 import { stopAllSandboxes } from "./sandbox/registry.ts";
 import {
   keptSandboxReminderEffect,
@@ -90,11 +82,6 @@ import { drainHeldGateLeasesEffect } from "./runner/gate-lease.ts";
 import { cleanupCallback } from "./runner/cleanup-timeout.ts";
 import { resolveRunTimeout } from "./runner/timeout.ts";
 import {
-  prepareRunnerRecordReuse,
-  withRunnerCurrentReusePreview,
-} from "./runner/record.ts";
-import {
-  projectCurrentReuseReadback,
   type CurrentReuseReadbackSnapshot,
 } from "./runner/reuse-readback.ts";
 import type { ExecutionReusePlanSlot } from "./runner/reuse-plan.ts";
@@ -114,7 +101,6 @@ import type {
 } from "./runner/rename-experiment.ts";
 import { ExperimentRenameError } from "./runner/rename-experiment.ts";
 import { evalLevelStats } from "./shared/verdict.ts";
-import { recordFact } from "./shared/facts.ts";
 import { linkRunSandboxes, recommendedConcurrencyForPreparedPairs } from "./runner/sandbox-selection.ts";
 import { JUnit } from "./runner/reporters/json.ts";
 import {
@@ -170,7 +156,8 @@ export type CliFailure =
 /**
  * Bootstrap owns process signals until an Eval has reached actual dispatch.
  * The CLI claims the Invocation signal synchronously immediately before
- * `runEvals`; it never infers this from argv outside the command dispatcher.
+ * Experiment Host dispatch; it never infers this from argv outside the command
+ * dispatcher.
  */
 export interface CliInterruptionOwnership {
   readonly invocationSignal: AbortSignal;
@@ -578,7 +565,7 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
 /**
  * exp 只接受两类输入:位置参数选「跑哪些 eval」+ 调度/输出/机器出口 flag 选「对着哪个 agent、
  * 怎么跑」。show / view 专属的证据切面(`--source`/`--execution`/`--diff`)、时间轴(`--history`)、
- * Sample 收窄(`--experiment`/`--record`)、报告装载(`--report`/`--page`)、查看器
+ * Sample 收窄(`--experiment`)、报告装载(`--report`/`--page`)、查看器
  * (`--run`/`--out`/`--port`/`--open`)不能被 exp 静默忽略(见 docs/feature/experiments/
  * cli.md「用法错误」)。返回第一个被误用的 flag 及其归属命令(用于报错),没有误用返回 undefined。
  */
@@ -618,11 +605,11 @@ interface CurrentDryPlanRow {
 
 function projectCurrentDryPlan(input: {
   readonly slots: readonly ExecutionReusePlanSlot[];
-  readonly readbacks: readonly import("./runner/reuse-readback.ts").CurrentReuseReadback[];
+  readonly readbacks: readonly CurrentReuseReadbackSnapshot[];
 }): CurrentDryPlan {
   return Object.freeze({
     slots: Object.freeze(input.slots.map(projectCurrentDryPlanSlot)),
-    readbacks: Object.freeze(input.readbacks.map(projectCurrentReuseReadback)),
+    readbacks: Object.freeze([...input.readbacks]),
   });
 }
 
@@ -784,7 +771,6 @@ function firstViewerOnlyFlag(flags: Flags): { flag: string; command: string } | 
   if (flags.usage) return { flag: "--usage", command: SHOW };
   if (flags.stats) return { flag: "--stats", command: SHOW };
   if (flags.experiment !== undefined) return { flag: "--experiment", command: BOTH };
-  if (flags.record !== undefined) return { flag: "--record", command: BOTH };
   if (flags.report !== undefined) return { flag: "--report", command: BOTH };
   if (flags.theme !== undefined) return { flag: "--theme", command: VIEW };
   if (flags.page !== undefined) return { flag: "--page", command: BOTH };
@@ -918,16 +904,9 @@ interface AcceptLocatorResult {
 }
 
 /** 调用 acceptance core；CLI 只负责 cwd/记录根边界、输出与退出码，不重建结果或启动 runner。 */
-function runAcceptCommand(cwd: string, locators: readonly string[], recordRoot: string | undefined): Effect.Effect<void, CliFailure> {
+function runAcceptCommand(cwd: string, locators: readonly string[], recordRoot: string | undefined) {
   return Effect.gen(function* () {
-    const mod = (yield* cliPromise("load acceptance command", () => import("./runner/accept.ts"))) as unknown as {
-      acceptLocators(input: { cwd: string; locators: readonly string[]; recordRoot?: string }): Effect.Effect<
-        readonly AcceptLocatorResult[],
-        unknown,
-        never
-    >;
-  };
-    const results = yield* cliEffect("accept locators", mod.acceptLocators({
+    const results: readonly AcceptLocatorResult[] = yield* cliEffect("accept locators", experimentHost.accept({
       cwd,
       locators,
       ...(recordRoot !== undefined ? { recordRoot } : {}),
@@ -1567,16 +1546,23 @@ function runEvaluationCommand(
   interruption?: CliInterruptionOwnership,
 ) {
   return Effect.gen(function* () {
+    // Keep project-local coordination (sessions, locks, kept sandboxes) separate
+    // from the portable Record root selected by `--record` below.
+    const coordinationRoot = resolvePath(cwd, ".niceeval");
     const config = yield* loadConfig(cwd);
     const maxBuildConcurrency = flags.maxBuildConcurrency ?? config.maxBuildConcurrency ?? 2;
     if (!Number.isInteger(maxBuildConcurrency) || maxBuildConcurrency <= 0) {
       yield* writeStderr(`maxBuildConcurrency must be a positive integer, got ${maxBuildConcurrency}.\n`);
       return 1;
     }
-    const allEvals = yield* cliEffect("discover evals", discoverEvals(cwd));
-    const evals = flags.tag ? allEvals.filter((evalDefinition) => evalDefinition.tags?.includes(flags.tag as string)) : allEvals;
+    let evals: readonly DiscoveredEval[] = Object.freeze([]);
 
     if (command === "list") {
+      const listed = yield* cliEffect("list evals", experimentHost.list({
+        cwd,
+        ...(flags.tag === undefined ? {} : { tag: flags.tag }),
+      }));
+      evals = listed.evals;
       yield* writeStdout(t("cli.list.header", { count: evals.length }));
       for (const evalDefinition of evals) {
         yield* writeStdout(`  ${evalDefinition.id}${evalDefinition.description ? `  — ${evalDefinition.description}` : ""}\n`);
@@ -1597,35 +1583,36 @@ function runEvaluationCommand(
         yield* writeStderr(t("cli.exp.forceUnsupported"));
         return 1;
       }
+      // `--record` selects the fact root for `exp`; `check` has no Record
+      // reader or writer, so accepting it there would silently discard input.
+      if (command === "check" && flags.record !== undefined) {
+        yield* writeStderr(t("cli.check.recordUnsupported"));
+        return 1;
+      }
       const viewerFlag = firstViewerOnlyFlag(flags);
       if (viewerFlag) {
         yield* writeStderr(t("cli.exp.viewerFlagUnsupported", { flag: viewerFlag.flag, command: viewerFlag.command }));
         return 1;
       }
-      const experiments = yield* cliEffect("discover experiments", discoverExperiments(cwd));
       if (command === "exp" && positionals[0] === "list") {
         if (positionals.length > 2) {
           yield* writeStderr("niceeval exp list accepts at most one experiment prefix.\n");
           return 1;
         }
         const selector = positionals[1];
-        const ids = experiments.map((experiment) => experiment.id);
-        const selectedIds = selector === undefined ? new Set(ids) : new Set(matchExperimentSelector(ids, selector));
-        const selected = experiments.filter((experiment) => selectedIds.has(experiment.id));
-        if (selected.length === 0 && selector !== undefined) {
+        const listed = yield* cliEffect("list experiments", experimentHost.list({
+          cwd,
+          ...(flags.tag === undefined ? {} : { tag: flags.tag }),
+          ...(selector === undefined ? {} : { selector }),
+        }));
+        if (listed.selections.length === 0 && selector !== undefined) {
           yield* writeStderr(t("cli.experiment.noMatch", {
             arg: selector,
-            experiments: browsableExperimentPaths(ids).join(", ") || t("cli.none"),
+            experiments: browsableExperimentPaths(listed.experimentIds).join(", ") || t("cli.none"),
           }));
           return 1;
         }
-        const rows = selected.map((experiment) => {
-          const { selectedEvalIds } = resolveExperimentEvals({
-            experimentId: experiment.id,
-            selector: experiment.evals,
-            cliPatterns: [],
-            evals,
-          });
+        const rows = listed.selections.map(({ experiment, selectedEvalIds }) => {
           return {
             experimentId: experiment.id,
             ...(experiment.description !== undefined ? { description: experiment.description } : {}),
@@ -1658,9 +1645,15 @@ function runEvaluationCommand(
       const expArg = positionals[0];
       const extraPatterns = positionals.slice(1);
       experimentSelection = positionals.join(" ") || t("cli.all");
-      availableExperimentPaths = browsableExperimentPaths(experiments.map((experiment) => experiment.id)).join(", ") || t("cli.none");
-      const selectedIds = expArg === undefined ? undefined : new Set(matchExperimentSelector(experiments.map((experiment) => experiment.id), expArg));
-      const selected = selectedIds === undefined ? experiments : experiments.filter((experiment) => selectedIds.has(experiment.id));
+      const listed = yield* cliEffect("select experiments", experimentHost.list({
+        cwd,
+        ...(flags.tag === undefined ? {} : { tag: flags.tag }),
+        ...(expArg === undefined ? {} : { selector: expArg }),
+        ...(extraPatterns.length === 0 ? {} : { evalPatterns: extraPatterns }),
+      }));
+      evals = listed.evals;
+      const selected = listed.selections;
+      availableExperimentPaths = browsableExperimentPaths(listed.experimentIds).join(", ") || t("cli.none");
       if (selected.length === 0) {
         yield* writeStderr(t("cli.experiment.noMatch", {
           arg: expArg ?? t("cli.all"),
@@ -1684,8 +1677,10 @@ function runEvaluationCommand(
       );
       if (orphans) yield* writeStderr(orphans);
       const teardownReminder = yield* orphanedTeardownReminderEffect(
-        resolvePath(cwd, ".niceeval"),
-        new Set(selected.filter((experiment) => experiment.teardown).map((experiment) => experiment.id)),
+        coordinationRoot,
+        new Set(selected
+          .filter(({ experiment }) => experiment.teardown)
+          .map(({ experiment }) => experiment.id)),
         hostname(),
       ).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
       if (teardownReminder) yield* writeStderr(teardownReminder);
@@ -1695,23 +1690,16 @@ function runEvaluationCommand(
           yield* writeStderr(t("cli.exp.teardownNoEvalPatterns"));
           return 1;
         }
-        const niceevalRootForTeardown = resolvePath(cwd, ".niceeval");
+        const niceevalRootForTeardown = coordinationRoot;
         let anyFailed = false;
-        for (const experiment of selected) {
+        for (const { experiment, selectedEvalIds } of selected) {
           if (!experiment.teardown) continue;
-          const { selectedEvalIds } = resolveExperimentEvals({
-            experimentId: experiment.id,
-            selector: experiment.evals,
-            cliPatterns: [],
-            evals,
-          });
           const ctx: ExperimentHookContext = {
             experimentId: experiment.id,
             selectedEvalIds,
             signal: new AbortController().signal,
             progress: () => {},
             diagnostic: (input) => process.stderr.write(`${input.message}\n`),
-            fact: (key, value) => recordFact({}, key, value),
           };
           const registrations = yield* readTeardownRegistrationsEffect(niceevalRootForTeardown).pipe(
             Effect.catchAll(() => Effect.succeed([] as const)),
@@ -1748,14 +1736,8 @@ function runEvaluationCommand(
       }
 
       const experimentScopeIds = new Set<string>();
-      for (const experiment of selected) {
-        const { selectedEvalIds, selectorEvals } = resolveExperimentEvals({
-          experimentId: experiment.id,
-          selector: experiment.evals,
-          cliPatterns: extraPatterns,
-          evals,
-        });
-        for (const evalDefinition of selectorEvals) experimentScopeIds.add(evalDefinition.id);
+      for (const { experiment, selectedEvalIds, selectorEvalIds } of selected) {
+        for (const evalId of selectorEvalIds) experimentScopeIds.add(evalId);
         agentRuns.push({
           agent: experiment.agent,
           model: experiment.model,
@@ -1791,10 +1773,22 @@ function runEvaluationCommand(
         return 1;
       }
     } else {
-      const experiments = yield* cliEffect("discover experiments", discoverExperiments(cwd));
-      const ids = experiments.map((experiment) => experiment.id);
-      const matchedIds = new Set(positionals.flatMap((pattern) => matchExperimentSelector(ids, pattern)));
-      const asExp = experiments.filter((experiment) => matchedIds.has(experiment.id));
+      const listed = yield* cliEffect("list experiments", experimentHost.list({
+        cwd,
+        ...(flags.tag === undefined ? {} : { tag: flags.tag }),
+      }));
+      const selectedByPattern = yield* Effect.all(
+        positionals.map((selector) => cliEffect("select experiments", experimentHost.list({
+          cwd,
+          ...(flags.tag === undefined ? {} : { tag: flags.tag }),
+          selector,
+        }))),
+      );
+      const asExp = [...new Map(
+        selectedByPattern
+          .flatMap((selection) => selection.selections)
+          .map(({ experiment }) => [experiment.id, experiment] as const),
+      ).values()];
       yield* writeStderr(t("cli.run.experimentRequired"));
       if (asExp.length > 0) {
         yield* writeStderr(t("cli.run.experimentRequiredHint", {
@@ -1803,7 +1797,7 @@ function runEvaluationCommand(
         }));
       } else {
         yield* writeStderr(t("cli.run.experimentRequiredKnown", {
-          experiments: experiments.map((experiment) => experiment.id).join(", ") || t("cli.none"),
+          experiments: listed.experimentIds.join(", ") || t("cli.none"),
         }));
       }
       return 1;
@@ -1828,40 +1822,34 @@ function runEvaluationCommand(
       return 0;
     }
 
-    const targetPlan: ProjectTargetPlan = yield* cliEffect(
-      "plan current ProjectTarget",
-      planProjectTarget(evals, agentRuns, config.timeoutMs, {
-        configJudge: config.judge,
-        keepSandbox: flags.keepSandbox,
-      }),
-    );
+    const recordTarget = yield* Effect.try({
+      try: () => parseActualRecordRoot(cwd, flags.record),
+      catch: (cause) => cliFailure("parse experiment Record root", cause),
+    });
+    const experimentPlan = yield* cliEffect("plan Experiment", experimentHost.plan({
+      evals,
+      agentRuns,
+      config,
+      recordRoot: recordTarget.root,
+      ...(flags.rerun === undefined ? {} : { rerun: flags.rerun }),
+      ...(flags.keepSandbox === undefined ? {} : { keepSandbox: flags.keepSandbox }),
+      ...(flags.dry ? { previewStartedAt: Date.now() } : {}),
+    }));
+    const targetPlan = experimentPlan.target;
 
     if (flags.dry) {
-      const reuse = yield* cliEffect("prepare current Record reuse", prepareRunnerRecordReuse({
-        evals,
-        runs: agentRuns,
-        config: { timeoutMs: config.timeoutMs },
-        plannedFingerprints: targetPlan.plannedFingerprints,
-        plannedConfigHashes: targetPlan.plannedConfigHashes,
-        rerun: flags.rerun,
-        keepSandbox: flags.keepSandbox,
-      }));
-      const currentPlan = yield* cliEffect("preview current Record reuse", withRunnerCurrentReusePreview({
-        niceevalRoot: resolvePath(cwd, ".niceeval"),
-        startedAt: Date.now(),
-        evals,
-        runs: agentRuns,
-        reuse,
-        // `readReadbacks` is deliberately consumed and projected before this
-        // callback returns, while the exact frozen Record capability is live.
-        use: ({ reusePlan, readReadbacks }) => readReadbacks().pipe(
-          Effect.map((readbacks) => projectCurrentDryPlan({ slots: reusePlan.slots, readbacks })),
-        ),
-      }));
+      const current = experimentPlan.current;
+      if (current === undefined) {
+        return yield* Effect.fail(cliFailure(
+          "preview Experiment",
+          new Error("Experiment Host did not return the requested dry plan."),
+        ));
+      }
+      const currentPlan = projectCurrentDryPlan(current);
       const rows = currentDryPlanRows(currentPlan);
       const now = Date.now();
       const lockedFlags = yield* Effect.all(rows.map((row) =>
-        readCaseLockEffect(resolvePath(cwd, ".niceeval"), row.experimentId, row.evalId).pipe(
+        readCaseLockEffect(coordinationRoot, row.experimentId, row.evalId).pipe(
           Effect.catchAll(() => Effect.succeed(undefined)),
           Effect.map((lock) => lock !== undefined && !isCaseLockExpired(lock, now)),
         ),
@@ -1952,7 +1940,7 @@ function runEvaluationCommand(
     const renderer = outputForm === "human"
       ? createHumanRenderer({ io, command: commandLabel })
       : createJsonRenderer({ io });
-    const sessionTracker = new SessionTracker(resolvePath(cwd, ".niceeval"));
+    const sessionTracker = new SessionTracker(coordinationRoot);
     const coordinator = createFeedbackCoordinator({
       profile: outputForm,
       renderer,
@@ -2000,7 +1988,7 @@ function runEvaluationCommand(
         },
       },
     });
-    // This synchronous hand-off and the following `runEvals` yield have no
+    // This synchronous hand-off and the following Experiment Host yield have no
     // asynchronous gap. A first signal therefore either interrupts the root
     // before dispatch begins, or aborts this Invocation so it can close its
     // durable interrupted receipt before the CLI returns.
@@ -2010,7 +1998,7 @@ function runEvaluationCommand(
     // Runner remains Effect-native. During graceful dispatch the application
     // edge translates SIGINT into this Invocation signal, letting dispatch
     // settle and the receipt close before the process exits with 130.
-    const receipt = yield* cliEffect("run evaluations", runEvals<never, never>({
+    const receipt = yield* cliEffect("run Experiment", experimentHost.run<never, never>({
       config,
       evals,
       agentRuns,
@@ -2019,7 +2007,8 @@ function runEvaluationCommand(
       maxBuildConcurrency,
       keepSandbox: flags.keepSandbox,
       rerun: flags.rerun,
-      niceevalRoot: resolvePath(cwd, ".niceeval"),
+      coordinationRoot,
+      recordRoot: recordTarget.root,
       session: sessionTracker,
       onCurrentRecordReusePlan: (current) => Effect.sync(() => coordinator.start({
         ...plan,
@@ -2080,6 +2069,22 @@ interface ReportCliRequest {
   readonly page?: ReportRoute;
 }
 
+/** Resolve the CLI's one portable Record target without treating `.niceeval` as Record data. */
+function parseActualRecordRoot(cwd: string, rootText: string | undefined): {
+  readonly root: RecordRoot;
+  readonly rootPath: string;
+} {
+  if (rootText !== undefined && rootText.trim() === "") {
+    throw usageError("--record requires an actual Record root directory.\n");
+  }
+  const rootPath = resolvePath(cwd, rootText ?? ".niceeval/record");
+  const root = makeRecordRoot(rootPath);
+  if (Either.isLeft(root)) {
+    throw usageError(`Invalid --record root: ${root.left.code}.\n`);
+  }
+  return Object.freeze({ root: root.right, rootPath });
+}
+
 /**
  * The CLI validates selection identity before Record I/O. It never turns a
  * prefix, a path, or a directory entry into a Run / Experiment selection.
@@ -2096,15 +2101,7 @@ function parseReportCliRequest(input: {
   }
   const runs = input.flags.run ?? [];
 
-  const rootText = input.flags.record;
-  if (rootText !== undefined && rootText.trim() === "") {
-    throw usageError("--record requires an actual Record root directory.\n");
-  }
-  const rootPath = resolvePath(input.cwd, rootText ?? ".niceeval/record");
-  const root = makeRecordRoot(rootPath);
-  if (Either.isLeft(root)) {
-    throw usageError(`Invalid --record root: ${root.left.code}.\n`);
-  }
+  const { root, rootPath } = parseActualRecordRoot(input.cwd, input.flags.record);
 
   const page = parseReportRoute(input.flags.page);
   const evidenceReports = [
@@ -2137,7 +2134,7 @@ function parseReportCliRequest(input: {
     return Object.freeze({
       command: input.command,
       cwd: input.cwd,
-      root: root.right,
+      root,
       rootPath,
       target: Object.freeze({ kind: "attempt" as const, locator: parsedLocator }),
       reportSelection: Object.freeze({ kind: "fixed" as const, report }),
@@ -2164,7 +2161,7 @@ function parseReportCliRequest(input: {
     return Object.freeze({
       command: input.command,
       cwd: input.cwd,
-      root: root.right,
+      root,
       rootPath,
       target: Object.freeze({ kind: "attempt" as const, locator: parsedLocator }),
       reportSelection: Object.freeze({
@@ -2195,7 +2192,7 @@ function parseReportCliRequest(input: {
     return Object.freeze({
       command: input.command,
       cwd: input.cwd,
-      root: root.right,
+      root,
       rootPath,
       target: Object.freeze({ kind: "attempt" as const, locator: parsedLocator }),
       reportSelection: Object.freeze({ kind: "fixed" as const, report }),
@@ -2225,7 +2222,7 @@ function parseReportCliRequest(input: {
     return Object.freeze({
       command: input.command,
       cwd: input.cwd,
-      root: root.right,
+      root,
       rootPath,
       target: Object.freeze({ kind: "attempt" as const, locator: parsedLocator }),
       reportSelection: input.flags.report === undefined
@@ -2256,7 +2253,7 @@ function parseReportCliRequest(input: {
   return Object.freeze({
     command: input.command,
     cwd: input.cwd,
-    root: root.right,
+    root,
     rootPath,
     target,
     reportSelection: report,
@@ -2360,8 +2357,8 @@ function explicitSelection(values: readonly string[]): AnalysisSelectionRequest 
   }
   const nonEmptyRunIds: readonly [RunId, ...RunId[]] = [first, ...rest];
   return Object.freeze({
-    policy: "explicit-runs",
-    input: Object.freeze({ runIds: nonEmptyRunIds }),
+    policy: "explicit-runs" as const,
+    runIds: nonEmptyRunIds,
   });
 }
 
@@ -2441,9 +2438,10 @@ function loadCliReportInputs(request: ReportCliRequest): Effect.Effect<LoadedCli
       ? undefined
       : Object.freeze({
           policy: "project-current" as const,
-          input: Object.freeze({
-            target: projectCurrent.target,
-          }),
+          currentSlots: projectCurrent.currentSlots,
+          ...(request.target.kind === "project-current" && request.target.experimentIds !== undefined
+            ? { experimentIds: request.target.experimentIds }
+            : {}),
         });
     return Object.freeze({
       report: selectedReport.value,
@@ -2504,19 +2502,38 @@ function uniqueWatchInputs(paths: readonly string[]): readonly string[] {
   return Object.freeze([...new Set(paths.map((path) => resolvePath(path)))].sort());
 }
 
-function executeCliReport(request: ReportCliRequest, inputs: LoadedCliReportInputs) {
+function reportShowTarget(route: ReportRoute | undefined): ReportTargetSelection {
+  return Object.freeze({
+    kind: "show" as const,
+    ...(route === undefined ? {} : { route }),
+  });
+}
+
+function reportViewTarget(route: ReportRoute | undefined): ReportTargetSelection {
+  return Object.freeze({ kind: "view" as const, route: route ?? "/" });
+}
+
+const staticReportTarget: ReportTargetSelection = Object.freeze({ kind: "static" as const });
+
+function executeCliReport(
+  request: ReportCliRequest,
+  inputs: LoadedCliReportInputs,
+  target: ReportTargetSelection,
+) {
   const execution = request.target.kind === "attempt"
-    ? executeReportForAttemptFromRecord({
+    ? reportHost.execute({
       root: request.root,
       locator: request.target.locator,
       report: inputs.report,
+      target,
     })
-    : executeReportFromRecord({
+    : reportHost.execute({
       root: request.root,
       selection: request.target.kind === "selection"
         ? request.target.selection
         : inputs.projectCurrentSelection!,
       report: inputs.report,
+      target,
     });
   return execution.pipe(Effect.mapError(reportExecutionFailure));
 }
@@ -2545,6 +2562,8 @@ function reportExecutionFailure(error: unknown): CliFailure {
       return usageError("record-format-unsupported\nUse a NiceEval version that supports this Record format.\n");
     case "record-migration-interrupted":
       return usageError("record-migration-interrupted\nRestore the Record from Git or a backup before retrying.\n");
+    case "report-route-invalid":
+      return usageError(`Unknown Report route "${stringProperty(error, "route") ?? "unknown"}".\n`);
     default:
       return cliFailure("execute report from Record", error);
   }
@@ -2595,9 +2614,9 @@ function runShowCommand(
       catch: (cause) => cliFailure("parse show arguments", cause),
     });
     const inputs = yield* loadCliReportInputs(request);
-    const execution = yield* executeCliReport(request, inputs);
+    const execution = yield* executeCliReport(request, inputs, reportShowTarget(request.page));
     yield* requireKnownReportPage(execution, request.page);
-    yield* showReport({
+    yield* reportHost.show({
       execution,
       ...(flags.json ? { format: "json" as const } : {}),
       ...(request.page === undefined ? {} : { page: request.page }),
@@ -2619,9 +2638,6 @@ function runViewCommand(
       try: () => parseReportCliRequest({ command: "view", cwd, positionals, flags }),
       catch: (cause) => cliFailure("parse view arguments", cause),
     });
-    const initialInputs = yield* loadCliReportInputs(request);
-    const initial = yield* executeCliReport(request, initialInputs);
-    yield* requireKnownReportPage(initial, request.page);
 
     if (flags.out !== undefined) {
       if (flags.out.trim() === "") {
@@ -2630,10 +2646,15 @@ function runViewCommand(
       if (flags.port !== undefined || flags.host !== undefined || flags.open === true) {
         return yield* Effect.fail(usageError("view --out does not start a server; remove --port, --host, and --open.\n"));
       }
-      const receipt = yield* exportStaticReport({
-        execution: initial,
+      if (request.page !== undefined) {
+        return yield* Effect.fail(usageError("view --out does not accept --page.\n"));
+      }
+      const inputs = yield* loadCliReportInputs(request);
+      const execution = yield* executeCliReport(request, inputs, staticReportTarget);
+      const receipt = yield* reportHost.export({
+        execution,
         out: resolvePath(cwd, flags.out),
-        theme: initialInputs.theme,
+        theme: inputs.theme,
       }).pipe(
         Effect.provideService(ReportFileSystem, makeNodeReportFileSystem()),
         Effect.mapError((error) => staticExportFailure(error, resolvePath(cwd, flags.out!))),
@@ -2642,21 +2663,20 @@ function runViewCommand(
       return 0;
     }
 
+    const initialInputs = yield* loadCliReportInputs(request);
+    const initial = yield* executeCliReport(request, initialInputs, reportViewTarget(request.page));
+    yield* requireKnownReportPage(initial, request.page);
+
     const { host, port } = yield* Effect.try({
       try: () => ({ host: loopbackViewHost(flags.host), port: viewPort(flags.port) }),
       catch: (cause) => cliFailure("parse view server arguments", cause),
     });
-    const session = yield* openReportViewSession({
+    const server = yield* reportHost.serve({
       url: `http://${host.includes(":") ? `[${host}]` : host}:${port}/`,
       theme: initialInputs.theme,
       watchInputs: initialInputs.watchInputs,
       initial: Effect.succeed(initial),
       rebuild: () => rebuildReportView(request),
-    }).pipe(Effect.mapError((error) => cliFailure("open report view session", error)));
-    // Watch set is owned by the session revision; openViewServer only transports
-    // fs.watch hints and replaces them after each successful rebuild.
-    const server = yield* openViewServer({
-      session,
       host,
       port,
     }).pipe(Effect.mapError((error) => cliFailure("open report view", error)));
@@ -2678,7 +2698,7 @@ function runViewCommand(
 function rebuildReportView(request: ReportCliRequest) {
   return Effect.gen(function* () {
     const inputs = yield* loadCliReportInputs(request);
-    const execution = yield* executeCliReport(request, inputs);
+    const execution = yield* executeCliReport(request, inputs, reportViewTarget(request.page));
     yield* requireKnownReportPage(execution, request.page);
     return Object.freeze({
       kind: "execution" as const,

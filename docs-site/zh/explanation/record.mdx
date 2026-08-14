@@ -1,60 +1,50 @@
 ---
-title: "Record：持久事实与报告输入"
+title: "Record：已发布结果"
 sidebarTitle: "Record"
-description: "理解 Record Core、RecordAttachment、完成标识，以及从选择到 ReportExecution 的固定数据路径。"
+description: "理解 Record 如何保存已发布的 Run，以及如何安全地选择、查看和分享结果。"
 ---
 
-import { RecordShape } from '/snippets/diagram-record-shape.jsx';
-import { RecordEvolution } from '/snippets/diagram-record-evolution.jsx';
+Record 是 NiceEval 的已发布结果集。你可以整体复制它、放进 Git，或交给 `show`、`view`、`clean` 与 `migrate`；应用代码不需要也不能解析其中的实现细节。
 
-Record 是 `.niceeval/record/` 下可携带、可进入 Git 的 opaque 运行事实集。可以整体复制它，
-也可以把它交给 `show`、`view`、`clean` 与 `migrate`；应用代码不解析或写入其中的文件，
-也不 import Record reader / writer。一个 Run 发布后不再修改。
+一个 Run 发布后不会修改。重新运行、自动沿用或人工采用都会形成新的 Run，因此历史结果仍可被明确查看和比较。
 
-<RecordShape />
+## Record 保存什么
 
-## Core 保存骨架，Attachment 保存业务事实
+Record 保存每次运行的范围、每个预期位置是否有结果，以及结果实际来自哪个 Attempt。它还保存 NiceEval 收集的断言、诊断、事件、用量、文件变化和来源信息，以便之后在同一份历史结果上查看。
 
-Record Core 保存所有读取者都要理解的关系：Record 身份、Run 的 `expectedSlots`、Member 对 Attempt 的精确引用，以及 Attempt 的 origin。
-
-业务事实属于 owner-local 的 `RecordAttachment`。Run 可以保存 Evaluations、Membership provenance 与 Sources。Attempt 可以保存 Assertions、Verdict、Score 与 Eligibility。一个 Attachment 的问题只影响请求它的功能，不会把其它完整事实变成无效。
-
-Member 表示一个 expected slot 被哪个 Attempt 占据。Attempt 在自己的 origin Run 下只保存一次；另一个 Run 采用它时，Member 只保留精确引用，不复制业务事实。
-
-没有 `complete` 的目录可能短暂留在 `runs/` 下。它不是已发布的 Run，reader 忽略它并返回 `incomplete-run` warning。`session`、锁和 cache 位于 portable Record 外，也不随 Record 复制或分享。
+这些事实由 NiceEval 写入并验证。应用、Adapter 和 Plugin 没有通用接口去添加任意持久数据、注册自定义数据族或改写历史结果。需要新的长期能力时，应使用已有的 NiceEval API，或让 NiceEval 提供相应支持。
 
 ## 从选择到报告
 
 查看或生成报告时，数据沿一条固定链路前进：
 
 ```text
-opaque Record + CLI selector
-                  ↓ internal host
-            AnalysisSample（纯值）
-                  ↓ official projector declarations
-                  ↓
-           ProjectedSample → Report
-                  ↓
-     immutable ReportExecution → show / view / static export
+Record + CLI 选择条件
+        ↓
+Sample：已选范围与分母
+        ↓
+Analysis：Measure + aggregate() / query()
+        ↓
+ClosedRows / MetricValue / DomainView
+        ↓
+Report
+        ↓
+immutable ReportExecution → show / view / static export
 ```
 
-用户用不带 locator 或 `--run` 的命令选择身份仍匹配当前项目的结果，或用 locator、`--run` 选择历史事实。内部 host 形成纯
-`AnalysisSample`；它保留完整 expected-slot 分母，并标出 `included`、`not-recorded`、
-`core-invalid` 与 `excluded`，但不暴露 reader 或恢复 I/O 的能力。
+不带 locator 或 `--run` 的命令选择仍匹配当前项目的结果；使用 locator 或 `--run` 可以查看明确的历史结果。`Sample` 保留完整分母，并标出 `included`、`not-recorded`、`core-invalid` 与 `excluded`，但它不会把底层结果读取能力交给页面。
 
-官方 opaque projector 把内部 Attachment 形成 typed view。Projection 将它与 Sample 的每一个逻辑位置对齐，形成 `ProjectedSample`。Report 再用投影结果计算并组织页面，得到一次不可变的 `ReportExecution`。
+Analysis 只在某个 Measure 或领域视图实际需要时取得相应事实，并将结果关闭为可显示的值。Report 可以呈现这些值，却不能更改历史结果、扩大选择范围或再次读取原始数据。
 
-## 变化停在正确的层
+## 版本与维护
 
-<RecordEvolution />
+NiceEval 负责识别已支持的结果格式。需要迁移时运行 `niceeval migrate`；无法安全解释的历史数据会在依赖它的查看内容中明确显示问题，而不是被猜成空值或零值。
 
-作者 API、matcher 或算法改变时，只要已保存事实的语义不变，磁盘不需要改变。Attachment payload 改变时发布相邻 schema，并通过明确的相邻迁移边处理历史值。只有 Core 的 owner、引用、目录、完成判断或 shape 改变时，才提升 Record major。
-
-普通读取不会自动改写磁盘。需要迁移时运行 `niceeval migrate`；无法无损迁移的 Attachment 保留其历史 bytes，并对请求新值的功能显示不可用。
+写入没有完成的结果不会进入查看范围。可以运行 `niceeval clean` 清理这类未完成的残留，再重新运行受影响的评估。
 
 ## 下一步
 
 - [查看结果](/zh/tutorials/viewing-results)：选择 Sample，并查看 `show` 与 `view` 的结果。
-- [结果数据 API](/zh/reference/results-data)：在 Report 中使用 Sample 和官方 Projection。
-- [报告 API](/zh/reference/report-components)：定义 Projection、Calculation、Page 与 Report。
+- [结果数据 API](/zh/reference/results-data)：在 Report 中使用 Measure 和闭合结果。
+- [报告 API](/zh/reference/report-components)：定义 Page、组件与 Report。
 - [发布静态报告](/zh/tutorials/publish-report)：分享一个已完成的 `ReportExecution`。

@@ -213,7 +213,7 @@ cleanup 使用独立预算与 signal,不复用已经 abort 的前向 signal;clea
 完整 Attempt fingerprint 至少包含:
 
 - template identity、template owner 与 Provider planner revision;
-- 物理 locator、BuildKey、CaseKey 与目标平台;
+- provider physical plan identity、BuildKey、CaseKey 与目标平台；不含每次创建的实例 locator；
 - 固定 layer 顺序;
 - 两个作者 layer 中已登记的 command identity 与 lifecycle owner marker;
 - Agent ensure identity:ensure 声明 identity、配对安装层 identity、payload digest、平台与安装模式;
@@ -234,7 +234,7 @@ reset 或 cleanup 无法恢复已知边界时退休物理实例。
 
 ## 错误语义
 
-下表的 `errored` 是由结构化执行错误通道事件 支撑的 Verdict；它不是 Attempt lifecycle state。受影响的 Attempt 仍只在 `active`、`completed`、`abandoned` 三态中收敛。
+下表的 `errored` 是由结构化 Observability execution diagnostic 支撑的 Verdict；它不是 Attempt lifecycle state。受影响的 Attempt 仍只在 `active`、`completed`、`abandoned` 三态中收敛。
 
 | 失败点 | 结果 |
 |---|---|
@@ -249,7 +249,7 @@ reset 或 cleanup 无法恢复已知边界时退休物理实例。
 | Sandbox lifecycle setup | 形成 `errored` Verdict;已创建的物理实例仍依序运行 teardown 后停止 |
 | Sandbox lifecycle teardown | 追加 warning diagnostic，继续其余 teardown 并停止 provider |
 | command cleanup / Agent teardown | 保留原结果并追加 cleanup 诊断;必要时退休复用周期 |
-| Provider finalizer | 使用独立于 Attempt 的有界 cleanup signal；失败写入 `sandbox-stop-failed` Case cleanup diagnostic channel event 并保留可重试/孤儿认领的资源所有权，不改写原始 Verdict |
+| Provider finalizer | 使用独立于 Attempt 的有界 cleanup signal；失败写入 `sandbox-stop-failed` Case cleanup Observability diagnostic 并保留可重试/孤儿认领的资源所有权，不改写原始 Verdict |
 
 ## 相关阅读
 

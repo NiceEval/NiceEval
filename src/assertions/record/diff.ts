@@ -1,227 +1,200 @@
-import { Either, Schema } from "effect";
+import { createHash, randomUUID } from "node:crypto";
 
+import { Either, Schema, Stream } from "effect";
 import {
-  isCanonicalWorkspaceRelativePath,
-} from "../diff.ts";
-import {
-  agentWorkspaceDiffChangeIsCoherent,
-  type AgentWorkspaceDiff,
-} from "../workspace-diff.ts";
-import {
-  AGENT_WORKSPACE_DIFF_ATTRIBUTION_V1,
-  decodeAgentWorkspaceDiffDocumentV1,
-  encodeAgentWorkspaceDiffDocumentV1,
-  type AgentWorkspaceDiffDocumentV1,
-  type AgentWorkspaceDiffEndpointV1,
-  type AgentWorkspaceDiffHunksV1,
-  type AgentWorkspaceDiffPolicyV1,
-  type AgentWorkspaceDiffWindowChangeV1,
-  type AgentWorkspaceDiffWindowV1,
-} from "./diff-model.ts";
-import {
-  defineRecordAttachmentFamily,
-  encodeJsonRecordAttachmentPayload,
-  makeRecordAttachmentWrite,
+  makeFixedRecordAttachmentWrite,
+  makeRecordBlobSource,
   validateRecordAttachmentWrite,
-  type RecordAttachmentFamily,
-  type RecordAttachmentValue,
+  type RecordAttachmentBlobDraft,
   type RecordAttachmentWrite,
 } from "../../record/attachment/index.ts";
-import { defineBuiltinJsonRecordAttachment } from "../../record/attachment/internal.ts";
-import { defineRecordAttachmentProjector, type RecordAttachmentProjector } from "../../projection/projector.ts";
+import { fileChangesRecordFamily } from "../../record/family/catalog.ts";
 import {
-  RECORD_JSON_MAXIMUM_BYTES,
-} from "../../record/writer/limits.ts";
-import {
-  encodeAttachmentPayloadForStorage,
-  encodeRecordAttachmentJsonBytes,
-} from "../../record/writer/attachment-payload.ts";
+  FileChangesAttachmentSchema,
+  type FileChangesAttachment,
+} from "../../record/family/file-changes.ts";
+import { RecordExactParseOptions } from "../../record/codec/core.ts";
+import { type AgentWorkspaceDiff } from "../workspace-diff.ts";
 
-export const AGENT_WORKSPACE_DIFF_ATTACHMENT_NAME_V1 = "niceeval.diff" as const;
+/**
+ * Adapts the post-run sandbox ledger to the sole Attempt-owned File Changes
+ * family. Send-window grouping and hunks remain runtime evidence; they are
+ * not a second durable attachment schema.
+ */
+export type FileChangesProducerError = {
+  readonly code: "file-changes-attachment-input-invalid";
+};
 
-const PositiveIntegerV1Schema = Schema.Number.pipe(Schema.int(), Schema.positive());
-
-const DiffEndpointV1Schema: Schema.Schema<AgentWorkspaceDiffEndpointV1> = Schema.Union(
-  Schema.Struct({ state: Schema.Literal("absent") }),
-  Schema.Struct({ state: Schema.Literal("text"), text: Schema.String }),
-  Schema.Struct({
-    state: Schema.Literal("elided"),
-    reason: Schema.Literal("binary", "oversized-text"),
-    bytes: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.nonNegative())),
-  }),
-);
-
-const DiffHunksV1Schema: Schema.Schema<AgentWorkspaceDiffHunksV1> = Schema.Struct({
-  added: Schema.Array(Schema.String),
-  removed: Schema.Array(Schema.String),
+const inputInvalid: FileChangesProducerError = Object.freeze({
+  code: "file-changes-attachment-input-invalid" as const,
 });
 
-const DiffWindowChangeV1Schema: Schema.Schema<AgentWorkspaceDiffWindowChangeV1> = Schema.Struct({
-  path: Schema.String.pipe(
-    Schema.filter(isCanonicalWorkspaceRelativePath, {
-      identifier: "AgentWorkspaceDiffPath",
-      description: "a canonical non-empty workspace-relative path",
-    }),
-  ),
-  status: Schema.Literal("added", "modified", "deleted"),
-  before: DiffEndpointV1Schema,
-  after: DiffEndpointV1Schema,
-  hunks: DiffHunksV1Schema,
-});
+function bytes(text: string): Uint8Array {
+  return new TextEncoder().encode(text);
+}
 
-const DiffWindowV1Schema: Schema.Schema<AgentWorkspaceDiffWindowV1> = Schema.Struct({
-  identity: Schema.Struct({
-    session: Schema.optional(PositiveIntegerV1Schema),
-    turn: PositiveIntegerV1Schema,
-  }),
-  changes: Schema.Array(DiffWindowChangeV1Schema),
-});
+function sha256(text: string): string {
+  return createHash("sha256").update(text, "utf8").digest("hex");
+}
 
-const DiffPolicyV1Schema: Schema.Schema<AgentWorkspaceDiffPolicyV1> = Schema.Struct({
-  defaultPolicy: Schema.Literal("niceeval.sandbox-ledger/default-excludes/v1"),
-  include: Schema.Array(Schema.String),
-  ignore: Schema.Array(Schema.String),
-});
+function nextChangeId(): string {
+  return `fc_${randomUUID().replaceAll("-", "")}`;
+}
 
-function documentHasUniqueWindowsAndPaths(document: AgentWorkspaceDiffDocumentV1): boolean {
-  const windows = new Set<string>();
-  for (const window of document.windows) {
-    const key = `${window.identity.session ?? "primary"}\u0000${window.identity.turn}`;
-    if (windows.has(key)) return false;
-    windows.add(key);
-    const paths = new Set<string>();
+function lastChangesByPath(value: AgentWorkspaceDiff): readonly {
+  readonly path: string;
+  readonly status: "added" | "modified" | "deleted";
+  readonly before: (typeof value.windows)[number]["changes"][number]["before"];
+  readonly after: (typeof value.windows)[number]["changes"][number]["after"];
+}[] {
+  const byPath = new Map<string, {
+    readonly path: string;
+    readonly status: "added" | "modified" | "deleted";
+    readonly before: (typeof value.windows)[number]["changes"][number]["before"];
+    readonly after: (typeof value.windows)[number]["changes"][number]["after"];
+  }>();
+  for (const window of value.windows) {
     for (const change of window.changes) {
-      if (
-        !isCanonicalWorkspaceRelativePath(change.path)
-        || !agentWorkspaceDiffChangeIsCoherent(change)
-        || paths.has(change.path)
-      ) return false;
-      paths.add(change.path);
+      byPath.set(change.path, change);
     }
   }
-  return true;
+  return Object.freeze([...byPath.values()].sort((left, right) =>
+    left.path.localeCompare(right.path),
+  ));
 }
 
-export const AgentWorkspaceDiffDocumentV1Schema: Schema.Schema<AgentWorkspaceDiffDocumentV1> =
-  Schema.Struct({
-    attribution: Schema.Literal(AGENT_WORKSPACE_DIFF_ATTRIBUTION_V1),
-    policy: DiffPolicyV1Schema,
-    windows: Schema.Array(DiffWindowV1Schema),
-  }).pipe(
-    Schema.filter(documentHasUniqueWindowsAndPaths, {
-      identifier: "AgentWorkspaceDiffDocument",
-      description: "unique agent send windows with one valid endpoint delta per path",
-    }),
+function collectionFor(
+  changes: readonly {
+    readonly before: { readonly state: string; readonly bytes?: number };
+    readonly after: { readonly state: string; readonly bytes?: number };
+  }[],
+): { readonly state: "complete"; readonly limitations: readonly [] } | {
+  readonly state: "partial";
+  readonly limitations: readonly [{ readonly code: "unsupported-input"; readonly omittedAtLeast: number }];
+} {
+  const unknownLengths = changes.reduce(
+    (count, change) =>
+      count
+      + (change.before.state === "elided" && change.before.bytes === undefined ? 1 : 0)
+      + (change.after.state === "elided" && change.after.bytes === undefined ? 1 : 0),
+    0,
   );
-
-function requireDefinition<Result, Failure>(
-  result: Either.Either<Result, Failure>,
-  message: string,
-): Result {
-  if (Either.isLeft(result)) throw new Error(message);
-  return result.right;
-}
-
-/** Attempt-owned, exact, agent-attributed send-window endpoint document. */
-export const agentWorkspaceDiffAttachmentDefinitionV1 = requireDefinition(
-  defineBuiltinJsonRecordAttachment({
-    owner: "attempt",
-    name: AGENT_WORKSPACE_DIFF_ATTACHMENT_NAME_V1,
-    schemaId: "niceeval.diff/v1",
-    schema: AgentWorkspaceDiffDocumentV1Schema,
-    blobRefs: () => Object.freeze([]),
-  }),
-  "Agent workspace diff v1 RecordAttachment definition must be valid",
-);
-
-/** v1 has no invented future migration edge; adjacent edges appear only with a real next schema. */
-export const agentWorkspaceDiffAttachmentFamilyV1 = requireDefinition(
-  defineRecordAttachmentFamily({
-    current: agentWorkspaceDiffAttachmentDefinitionV1,
-    migrations: [],
-  }),
-  "Agent workspace diff v1 RecordAttachment family must be valid",
-);
-
-const noDiffBlobDraftsV1: readonly [] = Object.freeze([]);
-
-/**
- * The generic writer enforces this limit only after a draft has started to
- * write. Diff is a post-run producer, so reject an oversized canonical
- * payload before it becomes available to Assertions or reaches that writer.
- */
-function assertDiffPayloadFitsRecordJsonLimit(
-  document: AgentWorkspaceDiffDocumentV1,
-): void {
-  const payload = encodeJsonRecordAttachmentPayload(
-    agentWorkspaceDiffAttachmentDefinitionV1,
-    document,
-  );
-  if (Either.isLeft(payload)) {
-    throw new Error("Agent workspace diff v1 payload could not be canonically encoded");
+  if (unknownLengths === 0) {
+    return Object.freeze({ state: "complete" as const, limitations: [] as const });
   }
-  // v1 declares no blobs, so the writer will allocate the same empty key map.
-  // Run the actual storage conversion and serializer here: this is the exact
-  // final `payload.json` byte sequence rather than an estimate of the source
-  // document's size.
-  const storedPayload = encodeAttachmentPayloadForStorage({
-    payload: payload.right,
-    blobKeys: new Map<object, string>(),
+  return Object.freeze({
+    state: "partial" as const,
+    limitations: [
+      Object.freeze({
+        code: "unsupported-input" as const,
+        omittedAtLeast: unknownLengths,
+      }),
+    ] as const,
   });
-  if (Either.isLeft(storedPayload)) {
-    throw new Error("Agent workspace diff v1 payload could not be stored");
-  }
-  const bytes = encodeRecordAttachmentJsonBytes(storedPayload.right).byteLength;
-  if (bytes > RECORD_JSON_MAXIMUM_BYTES) {
-    throw new Error(
-      `Agent workspace diff v1 payload is ${bytes} bytes; Record JSON limit is ${RECORD_JSON_MAXIMUM_BYTES} bytes`,
-    );
-  }
 }
 
 /**
- * Checks the exact v1 Record representation while the Runner can still treat
- * an oversized supplemental diff as unavailable. Waiting until Evaluation
- * publication would turn one optional evidence failure into a fatal Run-wide
- * write error after every Attempt has already settled.
+ * A fixed-family writer. Text revisions receive their own closure blobs;
+ * binary/elided bytes are represented without inventing an external ref.
  */
-export function assertAgentWorkspaceDiffRecordableV1(
-  value: AgentWorkspaceDiff,
-): void {
-  assertDiffPayloadFitsRecordJsonLimit(encodeAgentWorkspaceDiffDocumentV1(value));
-}
-
-/**
- * Captures the exact frozen semantic object held by post-run evaluators. The
- * no-blob v1 representation is intentionally small enough for normal ledger
- * exports; a future adjacent schema may move endpoint text into this owner's
- * own blobs without changing Assertions' reference shape.
- */
-export function createAgentWorkspaceDiffAttachmentWriteV1(
+export function createAgentWorkspaceDiffAttachmentWrite(
   value: AgentWorkspaceDiff,
 ): RecordAttachmentWrite<"attempt", never, never> {
-  const document = encodeAgentWorkspaceDiffDocumentV1(value);
-  assertDiffPayloadFitsRecordJsonLimit(document);
-  const write = makeRecordAttachmentWrite(
-    agentWorkspaceDiffAttachmentFamilyV1,
-    () => Object.freeze({ payload: document, blobs: noDiffBlobDraftsV1 }),
+  const changes = lastChangesByPath(value);
+  const write = makeFixedRecordAttachmentWrite(
+    fileChangesRecordFamily.write,
+    (blobs) => {
+      const drafts: RecordAttachmentBlobDraft<never, never>[] = [];
+      const candidateChanges = changes.map((change) => {
+        const revision = (
+          endpoint: typeof change.before | typeof change.after,
+        ): unknown => {
+          switch (endpoint.state) {
+            case "absent":
+              return null;
+            case "text": {
+              const content = bytes(endpoint.text);
+              const draft = blobs.add(makeRecordBlobSource(Stream.succeed(content)));
+              drafts.push(draft);
+              return Object.freeze({
+                kind: "text" as const,
+                sha256: sha256(endpoint.text),
+                byteLength: content.byteLength,
+                content: draft.ref,
+              });
+            }
+            case "elided":
+              return endpoint.bytes === undefined
+                ? null
+                : Object.freeze({
+                    kind: endpoint.reason === "binary" ? "binary" as const : "elided" as const,
+                    byteLength: endpoint.bytes,
+                  });
+          }
+        };
+
+        const before = revision(change.before);
+        const after = revision(change.after);
+        const missingElidedLength =
+          (change.before.state === "elided" && change.before.bytes === undefined)
+          || (change.after.state === "elided" && change.after.bytes === undefined);
+        return Object.freeze(
+          missingElidedLength
+            ? {
+                changeId: nextChangeId(),
+                path: change.path,
+                kind: "unavailable" as const,
+                before: null,
+                after: null,
+              }
+            : {
+                changeId: nextChangeId(),
+                path: change.path,
+                kind:
+                  change.status === "added"
+                    ? "created" as const
+                    : change.status === "deleted"
+                      ? "deleted" as const
+                      : "modified" as const,
+                before,
+                after,
+              },
+        );
+      });
+      candidateChanges.sort((left, right) => left.changeId.localeCompare(right.changeId));
+      const decoded = Schema.decodeUnknownEither(
+        FileChangesAttachmentSchema,
+        RecordExactParseOptions,
+      )(
+        Object.freeze({
+          collection: collectionFor(changes),
+          changes: Object.freeze(candidateChanges),
+        }),
+      );
+      if (Either.isLeft(decoded)) {
+        throw new Error("File Changes collector produced an invalid fixed-family payload");
+      }
+      return Object.freeze({ payload: decoded.right, blobs: Object.freeze(drafts) });
+    },
   );
   const closure = validateRecordAttachmentWrite(write);
   if (Either.isLeft(closure)) {
-    throw new Error("Agent workspace diff v1 RecordAttachment write was invalid");
+    throw new Error("File Changes collector produced an invalid owner-local closure");
   }
   return write;
 }
 
-/** A neutral typed projector available to scripts and any Report, with no privileged consumer. */
-export const agentWorkspaceDiffProjector: RecordAttachmentProjector<
-  "attempt",
-  AgentWorkspaceDiff
-> = defineRecordAttachmentProjector({
-  attachment: agentWorkspaceDiffAttachmentFamilyV1 as RecordAttachmentFamily<
-    "attempt",
-    AgentWorkspaceDiffDocumentV1
-  >,
-  project: (value: RecordAttachmentValue<AgentWorkspaceDiffDocumentV1>) =>
-    decodeAgentWorkspaceDiffDocumentV1(value.payload),
-});
+/** Preflight preserves the existing Runner call site without defining a schema. */
+export function assertAgentWorkspaceDiffRecordable(value: AgentWorkspaceDiff): void {
+  createAgentWorkspaceDiffAttachmentWrite(value);
+}
+
+/** Pure helper for consumers that already hold an available fixed-family value. */
+export function projectFileChangesAttachment(
+  payload: FileChangesAttachment,
+): FileChangesAttachment {
+  return Object.freeze({
+    collection: payload.collection,
+    changes: Object.freeze([...payload.changes]),
+  });
+}

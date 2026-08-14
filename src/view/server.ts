@@ -1,6 +1,6 @@
 // The Node view host owns transport and watch lifetime only. Its caller has
-// already closed RecordReader -> AnalysisSampleHandle -> executeReport into a
-// fixed execution rebuild; this module never reopens a retired Record graph.
+// already closed Record -> Sample -> Report into a fixed execution rebuild;
+// this module never reopens Record facts.
 
 import { readdirSync, statSync, watch, type FSWatcher } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
@@ -27,7 +27,7 @@ import {
   type ReportViewSessionClosed,
   type ReportViewSession,
 } from "../report/host/view-session.ts";
-import type { ThemeDefinition } from "../report/host/node/theme.ts";
+import type { ThemeDefinition } from "../report/host/theme.ts";
 import type { ViewScanOptions } from "./data.ts";
 import { renderHtml } from "./site.ts";
 
@@ -227,7 +227,7 @@ export function openViewServer<Requirements>(
     if (!isLoopbackHost(host)) {
       return yield* Effect.fail(serverError("open", `view host must be loopback, got ${host}`));
     }
-    const port = options.port ?? 0;
+    const port = options.port ?? 4173;
     if (!Number.isInteger(port) || port < 0 || port > 65_535) {
       return yield* Effect.fail(serverError("open", `view port must be an integer from 0 through 65535, got ${port}`));
     }
@@ -401,8 +401,8 @@ function serveRequest<Requirements>(
             state.current.theme,
           )
           : renderHtml({
-            document: page.document,
-            route: page.route,
+            tree: state.current.execution.tree,
+            page: page.tree,
             theme: state.current.theme,
             hostMetadata: {
               revision: state.current.revision,
@@ -744,8 +744,12 @@ function downloadForPath(
   if (!isReportDownloadPath(path)) return undefined;
   for (const download of execution.downloads) {
     if (download.state !== "built") continue;
-    const file = download.files.find((candidate) => candidate.path === path);
-    if (file !== undefined) return file;
+    if (download.download.id === path) {
+      return {
+        bytes: download.download.bytes,
+        mediaType: download.download.mediaType,
+      };
+    }
   }
   return undefined;
 }

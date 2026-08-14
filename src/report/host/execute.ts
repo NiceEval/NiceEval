@@ -1,1830 +1,1439 @@
-import { Effect, Either } from "effect";
-import { projectAnalysisSample } from "../../projection/runtime.ts";
-import type { ProjectionCoverage } from "../../projection/coverage.ts";
+import { Effect } from "effect";
+import type * as Scope from "effect/Scope";
 import type {
-  ProjectedSample,
-  ProjectionAccess,
-  ProjectionLimitError,
-} from "../../projection/model.ts";
-import type { RecordProjection } from "../../projection/projector.ts";
-import type { RecordReaderReadError } from "../../record/reader/errors.ts";
-import { resolveAnalysisSampleHandle } from "../../sample/analysis.ts";
-import type {
-  AnalysisSample,
-  AnalysisSampleHandle,
-  RunId,
-  SlotId,
-} from "../../sample/analysis.ts";
+  AnalysisRequestError,
+  SampleClosedError,
+  AnalysisIssue,
+  JsonValue,
+  Sample,
+} from "../../analysis/contracts.ts";
 import {
-  reportCalculationDescriptor,
-  reportDataPlanDescriptor,
-  reportDownloadDescriptor,
-  reportGraphDescriptor,
-  reportPageMemberDescriptor,
-  type ReportCalculationDescriptor,
-  type ReportComponentReferences,
-  type ReportDataPlanDescriptor,
-  type ReportDownloadDescriptor,
-  type ReportGraphDescriptor,
-  type ReportHostCalculations,
-  type ReportHostContext,
-  type ReportHostInputs,
-  type ReportPageDescriptor,
-  type ReportPageFamilyDescriptor,
-  type ReportPageMemberDescriptor,
-} from "../author/internal.ts";
+  attemptEvidenceView,
+  query,
+} from "../../analysis/api.ts";
 import {
-  isReportDownloadPath,
-  isReportInstanceKey,
-  isReportRoute,
-  reportStaticPathConflict,
-  staticPathForReportDownload,
-  staticPathForReportRoute,
-  type ReportComponentId,
-  type ReportDownloadPath,
-  type ReportInstanceKey,
-  type ReportRoute,
-} from "../author/identity.ts";
-import type {
-  AnyReportCalculation,
-  Report,
-  ReportDataPlan,
-  ReportDataState,
-  ReportDownloadFile,
-} from "../author/model.ts";
+  assertSampleOpen,
+  captureAnalysisIssues,
+  type AnalysisIssueCapture,
+} from "../../sample/capability.ts";
+import {
+  isReportComponentInvocation,
+  reportComponentDescriptor,
+  type ComposeContext,
+  type PageContext,
+  type ResolveContext,
+} from "../components.ts";
+import {
+  isReport,
+  reportDefinition,
+  type EvidenceLocator,
+  type Report,
+  type PageLoadContext,
+} from "../definition.ts";
+import {
+  freezeClosedReportNode,
+  validateClosedReportNode,
+  type ClosedReportNode,
+} from "../semantic/closed.ts";
+import type { LocalizedText } from "../../shared/types.ts";
 import {
   REPORT_DOWNLOAD_FILE_BYTES_MAX,
   REPORT_DOWNLOAD_FILES_MAX,
   REPORT_PAGES_MAX,
-  reportExecution,
+  freezeReportExecution,
+  reportSampleSummary,
+  reportLimit,
+  type ReportDefinitionInvalid,
   type ReportExecution,
-  type ReportExecutionValueError,
+  type ReportDownloadResult,
   type ReportLimitExceeded,
+  type ReportPageResult,
+  type ReportPageSummary,
+  type ReportRouteInvalid,
+  type ReportTargetSelection,
 } from "../execution/model.ts";
 import {
-  REPORT_PROBLEM_TABLE_MAX,
+  hostStaticPath,
+  routeWithParameterKey,
+  staticPathConflicts,
+  staticPathForDownload,
+  staticPathForRoute,
+  validateDownloadPath,
+  validateParameterKey,
+  validateReportRoute,
+  type ReportStaticPath,
+} from "../execution/paths.ts";
+import {
+  reportProblemIdFor,
   reportProblemTable,
   type ReportExecutionProblem,
   type ReportProblem,
-  type ReportProblemId,
-  type ReportProblemTableError,
-  type ReportRecordedDataProblem,
+  type ReportProblemTable,
 } from "../execution/problems.ts";
-import {
-  reportProjectionId,
-  type ReportCalculationExecutionResult,
-  type ReportCalculationResult,
-  type ReportDownloadResult,
-  type ReportPageFamilyResult,
-  type ReportPageResult,
-  type ReportProjectionId,
-  type ReportProjectionSummary,
-} from "../execution/results.ts";
-import {
-  REPORT_DOCUMENT_DEPTH_MAX,
-  REPORT_DOCUMENT_NODES_MAX,
-  freezeReportDocument,
-  validateReportDocument,
-  type ReportBlock,
-  type ReportDocument,
-  type ReportInline,
-} from "../semantic/document.ts";
 
-/** A Report or its private author descriptors did not come from NiceEval. */
-export interface ReportAuthoringInvalid {
-  readonly code: "report-definition-invalid";
-  readonly issues: readonly string[];
-}
-
-/** Expected failures from the current-process Report host. */
+/** Expected failures that prevent forming any ReportExecution. */
 export type ReportExecutionError =
-  | RecordReaderReadError
-  | ProjectionLimitError
+  | SampleClosedError
+  | AnalysisRequestError
+  | ReportDefinitionInvalid
   | ReportLimitExceeded
-  | ReportAuthoringInvalid
-  | ReportProblemTableError;
+  | ReportRouteInvalid;
 
-interface CompiledProjection {
-  readonly projectionId: ReportProjectionId;
-  readonly inputKey: string;
-  readonly projection: RecordProjection<ProjectionAccess, unknown>;
-  /** The first consumer gives a unique projector defect a stable owner. */
-  readonly consumerId: ReportComponentId;
+type AnalysisExecutionError = SampleClosedError | AnalysisRequestError;
+
+interface PageWork {
+  readonly page: HostPage;
+  readonly route?: string;
+  readonly params?: JsonValue;
+  readonly problems: readonly ReportExecutionProblem[];
 }
 
-interface CompiledDataPlan {
-  readonly declarations: readonly {
-    readonly key: string;
-    readonly projection: CompiledProjection;
-  }[];
+interface PagePlan {
+  readonly work: readonly PageWork[];
+  readonly summaries: readonly ReportPageSummary[];
 }
 
-interface CompiledCalculation {
-  readonly calculation: AnyReportCalculation;
-  readonly descriptor: ReportCalculationDescriptor;
-  readonly inputs: CompiledDataPlan;
-}
-
-interface CompiledPageMember {
-  readonly descriptor: ReportPageMemberDescriptor;
-  readonly inputs?: CompiledDataPlan;
-}
-
-interface CompiledDownload {
-  readonly descriptor: ReportDownloadDescriptor;
-  readonly inputs?: CompiledDataPlan;
-}
-
-interface CompiledReport {
-  readonly graph: ReportGraphDescriptor;
-  readonly calculations: readonly CompiledCalculation[];
-  readonly pages: readonly CompiledPageMember[];
-  readonly downloads: readonly CompiledDownload[];
-  readonly projections: readonly CompiledProjection[];
-}
-
-type ProjectionOutcome =
-  | {
-      readonly state: "projected";
-      readonly value: ProjectedSample<ProjectionAccess, unknown>;
-    }
-  | {
-      readonly state: "execution-failed";
-      readonly problemId: ReportProblemId;
-    };
-
-interface PreparedInputs {
-  readonly inputs: ReportHostInputs;
-  readonly partial: boolean;
-  readonly dataProblemIds: readonly ReportProblemId[];
-  readonly projectionProblemIds: readonly ReportProblemId[];
-}
-
-type CallbackOutcome<Value> =
-  | { readonly state: "succeeded"; readonly value: Value }
-  | { readonly state: "failed"; readonly problemId: ReportProblemId };
-
-interface PageCandidate {
-  readonly kind: "candidate";
-  readonly pageId: ReportComponentId;
-  readonly route: ReportRoute;
-  document: ReportDocument;
-  readonly problemIds: readonly ReportProblemId[];
-  conflictProblemId?: ReportProblemId;
-  semanticProblemId?: ReportProblemId;
+interface RenderedPage {
+  readonly state: "rendered";
+  readonly page: HostPage;
+  readonly route: string;
+  readonly node: ClosedReportNode;
+  readonly downloads: readonly PageDownload[];
+  readonly problems: ReportProblem[];
+  conflicted: boolean;
 }
 
 interface FailedPage {
-  readonly kind: "failed";
-  readonly state: "data-unavailable" | "execution-failed";
-  readonly pageId: ReportComponentId;
-  readonly route?: ReportRoute;
-  readonly problemIds: readonly [ReportProblemId, ...ReportProblemId[]];
+  readonly state: "failed";
+  readonly page: HostPage;
+  readonly route?: string;
+  readonly problems: ReportProblem[];
 }
 
-type PageIntermediate = PageCandidate | FailedPage;
+type PageAttempt = RenderedPage | FailedPage;
 
-interface FamilyIntermediate {
-  readonly familyId: ReportComponentId;
-  readonly state: "expanded" | "data-unavailable" | "execution-failed";
-  readonly instanceCount: number;
-  readonly problemIds: readonly ReportProblemId[];
+interface PageDownload {
+  readonly id: string;
+  readonly mediaType: string;
+  readonly bytes: Uint8Array;
 }
 
-interface BuiltDownload {
-  readonly kind: "built";
-  readonly downloadId: ReportComponentId;
-  readonly files: readonly ReportDownloadFile[];
-  readonly problemIds: readonly ReportProblemId[];
-  conflictProblemId?: ReportProblemId;
+interface DownloadAttempt {
+  readonly id: string;
+  readonly mediaType: string;
+  readonly bytes: Uint8Array;
+  readonly pages: RenderedPage[];
+  readonly problems: ReportProblem[];
+  conflicted: boolean;
 }
 
-interface FailedDownload {
-  readonly kind: "failed";
-  readonly state: "data-unavailable" | "execution-failed";
-  readonly downloadId: ReportComponentId;
-  readonly problemIds: readonly [ReportProblemId, ...ReportProblemId[]];
+type HostCallback = (...arguments_: unknown[]) => unknown;
+
+interface HostReport {
+  readonly title?: LocalizedText;
+  readonly pages: readonly HostPage[];
 }
 
-type DownloadIntermediate = BuiltDownload | FailedDownload;
-
-interface FamilyInstance {
-  readonly instance: unknown;
-  readonly key: ReportInstanceKey;
-  readonly route: ReportRoute;
+interface HostPageBase {
+  readonly id: string;
+  readonly path: string;
+  readonly title: LocalizedText;
+  readonly render: HostCallback;
 }
 
-interface CollectedFamilyInstances {
-  readonly state: "collected";
-  readonly values: readonly unknown[];
+interface HostPlainPage extends HostPageBase {
+  readonly kind: "plain";
+  readonly load?: HostCallback;
 }
 
-interface FamilyInstancesLimit {
-  readonly state: "limit";
-  readonly error: ReportLimitExceeded;
+interface HostPageParams {
+  readonly encode: HostCallback;
+  readonly decode: HostCallback;
+  readonly enumerate: HostCallback;
 }
 
-type FamilyInstancesOutcome = CollectedFamilyInstances | FamilyInstancesLimit;
-
-interface DownloadBuild {
-  readonly state: "built";
-  readonly files: readonly ReportDownloadFile[];
+interface HostParameterizedPage extends HostPageBase {
+  readonly kind: "parameterized";
+  readonly params: HostPageParams;
+  readonly load: HostCallback;
 }
 
-interface DownloadLimit {
-  readonly state: "limit";
-  readonly error: ReportLimitExceeded;
+type HostPage = HostPlainPage | HostParameterizedPage;
+
+type CallbackResult<Value> =
+  | { readonly state: "succeeded"; readonly value: Value }
+  | { readonly state: "failed" };
+
+interface CallbackFailure {
+  readonly kind: "report-callback-failure";
 }
 
-type DownloadBuildOutcome = DownloadBuild | DownloadLimit;
+const callbackFailure: CallbackFailure = Object.freeze({ kind: "report-callback-failure" as const });
+
+type NodeResult =
+  | { readonly state: "resolved"; readonly value: unknown }
+  | { readonly state: "failed"; readonly problem: ReportExecutionProblem };
+
+type ClosedNodeResult =
+  | { readonly state: "resolved"; readonly value: ClosedReportNode }
+  | { readonly state: "failed"; readonly problem: ReportExecutionProblem };
+
+interface NodeResolver {
+  readonly sample: Sample;
+  readonly page: PageContext;
+  readonly capture: AnalysisIssueCapture;
+  readonly active: Set<object>;
+  readonly results: WeakMap<object, NodeResult>;
+  readonly downloads: PageDownload[];
+}
 
 /**
- * Executes a complete in-process Report while the supplied Sample handle is
- * still live. All Record I/O is confined to declared projections; callbacks
- * only receive self-contained projected and calculated values.
+ * Executes exactly the requested Report target while the caller-owned Sample
+ * Scope is live.  It contains no runtime launch: interruption remains an
+ * Effect Cause, while callback failures become isolated execution problems.
  */
 export function executeReport(input: {
-  readonly sampleHandle: AnalysisSampleHandle;
+  readonly sample: Sample;
   readonly report: Report;
-}): Effect.Effect<ReportExecution, ReportExecutionError, never> {
+  readonly target: ReportTargetSelection;
+}): Effect.Effect<ReportExecution, ReportExecutionError, Scope.Scope> {
   return Effect.gen(function* () {
-    const compiled = yield* compileReportEffect(input.report);
-    // Validate even Reports with no projected inputs. A pure or copied Sample
-    // must never be enough to enter the host.
-    const bound = yield* resolveAnalysisSampleHandle(input.sampleHandle);
-    const problems = new ProblemCollector();
-    const projectionOutcomes = new Map<CompiledProjection, ProjectionOutcome>();
-
-    for (const projection of compiled.projections) {
-      const outcome = yield* executeProjection({
-        sampleHandle: input.sampleHandle,
-        projection,
-        problems,
-      });
-      projectionOutcomes.set(projection, outcome);
-    }
-
-    const calculationResults = new Map<
-      AnyReportCalculation,
-      ReportCalculationExecutionResult
-    >();
-    for (const calculation of compiled.calculations) {
-      const prepared = yield* Effect.sync(() =>
-        prepareInputs({
-          plan: calculation.inputs,
-          outcomes: projectionOutcomes,
-          consumerId: calculation.descriptor.id,
-          problems,
-        })
-      );
-      const result = yield* executeCalculation({
-        calculation,
-        sample: bound.sample,
-        prepared,
-        problems,
-      });
-      calculationResults.set(calculation.calculation, result);
-    }
-
-    const pages: PageIntermediate[] = [];
-    const families: FamilyIntermediate[] = [];
-    for (const member of compiled.pages) {
-      if (member.descriptor.kind === "page") {
-        const page = yield* executeFixedPage({
-          descriptor: member.descriptor,
-          inputs: member.inputs,
-          sample: bound.sample,
-          projectionOutcomes,
-          calculationResults,
-          problems,
+    // Make the scope requirement explicit: this host is only legal while the
+    // Sample capability's owning Scope remains open.
+    yield* Effect.scope;
+    const report = yield* readReportDefinition(input.report);
+    yield* assertSampleOpen(input.sample);
+    const capture = yield* captureAnalysisIssues(input.sample);
+    return yield* Effect.ensuring(
+      Effect.gen(function* () {
+        const plan = yield* planPages({ report, sample: input.sample, target: input.target, capture });
+        const attempts = yield* executePagePlan({ sample: input.sample, work: plan.work, capture });
+        const downloads = yield* collectDownloadAttempts(attempts);
+        markOutputConflicts(attempts, downloads, input.target);
+        const problems = allProblems(attempts, downloads, capture.issues());
+        const problemTable = reportProblemTable(problems);
+        const results = materializePageResults(attempts, problemTable);
+        const downloadResults = materializeDownloadResults(downloads, problemTable);
+        return freezeReportExecution({
+          report: Object.freeze({
+            id: reportExecutionId(report.pages),
+            ...(report.title === undefined ? {} : { title: report.title }),
+          }),
+          sample: reportSampleSummary(input.sample.snapshot),
+          target: input.target,
+          pageSummaries: plan.summaries,
+          pages: results,
+          downloads: downloadResults,
+          problemTable,
         });
-        pages.push(page);
-      } else {
-        const family = yield* executePageFamily({
-          descriptor: member.descriptor,
-          inputs: member.inputs,
-          sample: bound.sample,
-          projectionOutcomes,
-          calculationResults,
-          problems,
-          priorPageCount: pages.length,
-        });
-        families.push(family.result);
-        pages.push(...family.pages);
-      }
-
-      if (pages.length > REPORT_PAGES_MAX) {
-        return yield* Effect.fail(reportLimit("pages", REPORT_PAGES_MAX, pages.length));
-      }
-    }
-
-    let downloadFileCount = 0;
-    const downloads: DownloadIntermediate[] = [];
-    for (const download of compiled.downloads) {
-      const result = yield* executeDownload({
-        descriptor: download.descriptor,
-        inputs: download.inputs,
-        sample: bound.sample,
-        projectionOutcomes,
-        calculationResults,
-        problems,
-        priorFileCount: downloadFileCount,
-      });
-      if (result.kind === "built") {
-        downloadFileCount += result.files.length;
-      }
-      downloads.push(result);
-    }
-
-    yield* Effect.sync(() => resolveStaticConflicts(pages, downloads, problems));
-    const documentLimit = yield* Effect.sync(() =>
-      validateDocuments({ pages, downloads, problems })
+      }),
+      Effect.sync(() => capture.close()),
     );
-    if (documentLimit !== undefined) {
-      return yield* Effect.fail(documentLimit);
-    }
-
-    return yield* finalizeExecution({
-      compiled,
-      sample: bound.sample,
-      projectionOutcomes,
-      calculationResults,
-      families,
-      pages,
-      downloads,
-      problems,
-    });
   });
 }
 
-function compileReportEffect(
+function readReportDefinition(
   report: Report,
-): Effect.Effect<CompiledReport, ReportAuthoringInvalid, never> {
+): Effect.Effect<HostReport, ReportDefinitionInvalid> {
   return Effect.try({
-    try: () => compileReport(report),
-    catch: () => reportAuthoringInvalid(),
-  });
-}
-
-function compileReport(report: Report): CompiledReport {
-  const graph = reportGraphDescriptor(report);
-  const projections: CompiledProjection[] = [];
-  const projectionsByIdentity = new Map<object, CompiledProjection>();
-  const plans = new Map<ReportDataPlan, CompiledDataPlan>();
-
-  const compilePlan = (
-    plan: ReportDataPlan,
-    consumerId: ReportComponentId,
-  ): CompiledDataPlan => {
-    const existing = plans.get(plan);
-    if (existing !== undefined) {
-      return existing;
-    }
-    const descriptor = reportDataPlanDescriptor(plan);
-    const compiled = compileDataPlan({
-      descriptor,
-      consumerId,
-      projections,
-      projectionsByIdentity,
-    });
-    plans.set(plan, compiled);
-    return compiled;
-  };
-
-  const calculations = graph.calculationsById
-    .map((calculation) => {
-      const descriptor = reportCalculationDescriptor(calculation);
-      return Object.freeze({
-        calculation,
-        descriptor,
-        inputs: compilePlan(descriptor.inputs, descriptor.id),
-      });
-    })
-    .sort((left, right) => compareText(left.descriptor.id, right.descriptor.id));
-
-  const pages = graph.pages
-    .map((page) => {
-      const descriptor = reportPageMemberDescriptor(page);
-      return Object.freeze({
-        descriptor,
-        ...(descriptor.inputs === undefined
-          ? {}
-          : { inputs: compilePlan(descriptor.inputs, descriptor.id) }),
-      });
-    })
-    .sort((left, right) => compareText(left.descriptor.id, right.descriptor.id));
-
-  const downloads = graph.downloads
-    .map((download) => {
-      const descriptor = reportDownloadDescriptor(download);
-      return Object.freeze({
-        descriptor,
-        ...(descriptor.inputs === undefined
-          ? {}
-          : { inputs: compilePlan(descriptor.inputs, descriptor.id) }),
-      });
-    })
-    .sort((left, right) => compareText(left.descriptor.id, right.descriptor.id));
-
-  return Object.freeze({
-    graph,
-    calculations: Object.freeze(calculations),
-    pages: Object.freeze(pages),
-    downloads: Object.freeze(downloads),
-    projections: Object.freeze(projections),
-  });
-}
-
-function compileDataPlan(input: {
-  readonly descriptor: ReportDataPlanDescriptor;
-  readonly consumerId: ReportComponentId;
-  readonly projections: CompiledProjection[];
-  readonly projectionsByIdentity: Map<object, CompiledProjection>;
-}): CompiledDataPlan {
-  const declarations = input.descriptor.declarations.map((declaration) => {
-    const identity = declaration.projection as object;
-    let projection = input.projectionsByIdentity.get(identity);
-    if (projection === undefined) {
-      const parsed = reportProjectionId(input.projections.length);
-      if (Either.isLeft(parsed)) {
-        throw new Error("Report projection IDs exceeded the supported range");
-      }
-      projection = Object.freeze({
-        projectionId: parsed.right,
-        inputKey: declaration.key,
-        projection: declaration.projection,
-        consumerId: input.consumerId,
-      });
-      input.projections.push(projection);
-      input.projectionsByIdentity.set(identity, projection);
-    }
-    return Object.freeze({ key: declaration.key, projection });
-  });
-  return Object.freeze({ declarations: Object.freeze(declarations) });
-}
-
-function executeProjection(input: {
-  readonly sampleHandle: AnalysisSampleHandle;
-  readonly projection: CompiledProjection;
-  readonly problems: ProblemCollector;
-}): Effect.Effect<ProjectionOutcome, RecordReaderReadError | ProjectionLimitError, never> {
-  return projectAnalysisSample({
-    sampleHandle: input.sampleHandle,
-    projection: input.projection.projection,
-  }).pipe(
-    Effect.map((value): ProjectionOutcome =>
-      Object.freeze({ state: "projected" as const, value })
-    ),
-    Effect.catchAllDefect(() =>
-      Effect.succeed(
-        Object.freeze({
-          state: "execution-failed" as const,
-          problemId: input.problems.execution({
-            code: "projection-callback-defect",
-            consumerId: input.projection.consumerId,
-            summary: "the RecordAttachment projector callback threw",
-          }),
-        }),
-      ),
-    ),
-  );
-}
-
-function executeCalculation(input: {
-  readonly calculation: CompiledCalculation;
-  readonly sample: AnalysisSample;
-  readonly prepared: PreparedInputs;
-  readonly problems: ProblemCollector;
-}): Effect.Effect<ReportCalculationExecutionResult, never, never> {
-  const { calculation, sample, prepared, problems } = input;
-  const problemIds = uniqueProblemIds([
-    ...prepared.dataProblemIds,
-    ...prepared.projectionProblemIds,
-  ]);
-  if (prepared.projectionProblemIds.length > 0) {
-    return Effect.succeed(
-      Object.freeze({
-        state: "execution-failed" as const,
-        calculationId: calculation.descriptor.id,
-        problemIds: requireProblemIds(problemIds),
-      }),
-    );
-  }
-  if (calculation.descriptor.completeness === "require-complete" && prepared.partial) {
-    return Effect.succeed(
-      Object.freeze({
-        state: "data-unavailable" as const,
-        calculationId: calculation.descriptor.id,
-        problemIds: requireProblemIds(problemIds),
-      }),
-    );
-  }
-
-  return invokeCallback({
-    callback: () =>
-      calculation.descriptor.calculate(
-        calculationContext(sample, prepared.inputs),
-      ),
-    problems,
-    problem: {
-      code: "calculation-callback-defect",
-      consumerId: calculation.descriptor.id,
-      summary: "the Calculation callback threw",
+    try: () => {
+      if (!isReport(report)) throw new TypeError("Report was not created by defineReport");
+      return hostReport(reportDefinition(report));
     },
-  }).pipe(
-    Effect.map((outcome): ReportCalculationExecutionResult => {
-      if (outcome.state === "failed") {
-        return Object.freeze({
-          state: "execution-failed" as const,
-          calculationId: calculation.descriptor.id,
-          problemIds: requireProblemIds(uniqueProblemIds([...problemIds, outcome.problemId])),
-        });
-      }
-      return Object.freeze({
-        state: "available" as const,
-        calculationId: calculation.descriptor.id,
-        value: outcome.value,
-        inputState: dataState(prepared.partial),
-        problemIds,
-      });
-    }),
-  );
-}
-
-function executeFixedPage(input: {
-  readonly descriptor: ReportPageDescriptor;
-  readonly inputs?: CompiledDataPlan;
-  readonly sample: AnalysisSample;
-  readonly projectionOutcomes: ReadonlyMap<CompiledProjection, ProjectionOutcome>;
-  readonly calculationResults: ReadonlyMap<
-    AnyReportCalculation,
-    ReportCalculationExecutionResult
-  >;
-  readonly problems: ProblemCollector;
-}): Effect.Effect<PageIntermediate, never, never> {
-  return Effect.gen(function* () {
-    const prepared = yield* Effect.sync(() =>
-      prepareComponentInputs({
-        references: input.descriptor,
-        consumerId: input.descriptor.id,
-        plan: input.inputs,
-        outcomes: input.projectionOutcomes,
-        problems: input.problems,
-      })
-    );
-    const blocked = blockedPage({
-      pageId: input.descriptor.id,
-      route: input.descriptor.route,
-      completeness: input.descriptor.completeness,
-      prepared,
-    });
-    if (blocked !== undefined) {
-      return blocked;
-    }
-
-    const context = yield* Effect.sync(() =>
-      componentContext({
-        sample: input.sample,
-        prepared,
-        references: input.descriptor,
-        calculationResults: input.calculationResults,
-      })
-    );
-    const outcome = yield* invokeCallback({
-      callback: () => input.descriptor.render(context),
-      problems: input.problems,
-      problem: {
-        code: "page-execution-failed",
-        consumerId: input.descriptor.id,
-        summary: "the Page render callback threw",
-      },
-    });
-    if (outcome.state === "failed") {
-      return failedPage({
-        state: "execution-failed",
-        pageId: input.descriptor.id,
-        route: input.descriptor.route,
-        problemIds: uniqueProblemIds([...prepared.dataProblemIds, outcome.problemId]),
-      });
-    }
-    return {
-      kind: "candidate" as const,
-      pageId: input.descriptor.id,
-      route: input.descriptor.route,
-      document: outcome.value,
-      problemIds: prepared.dataProblemIds,
-    };
+    catch: (): ReportDefinitionInvalid => definitionInvalid("Report was not created by defineReport"),
   });
 }
 
-function executePageFamily(input: {
-  readonly descriptor: ReportPageFamilyDescriptor;
-  readonly inputs?: CompiledDataPlan;
-  readonly sample: AnalysisSample;
-  readonly projectionOutcomes: ReadonlyMap<CompiledProjection, ProjectionOutcome>;
-  readonly calculationResults: ReadonlyMap<
-    AnyReportCalculation,
-    ReportCalculationExecutionResult
-  >;
-  readonly problems: ProblemCollector;
-  /** Pages already fixed by earlier canonical Page/PageFamily members. */
-  readonly priorPageCount: number;
-}): Effect.Effect<
-  { readonly result: FamilyIntermediate; readonly pages: readonly PageIntermediate[] },
-  ReportLimitExceeded,
-  never
-> {
-  return Effect.gen(function* () {
-    const prepared = yield* Effect.sync(() =>
-      prepareComponentInputs({
-        references: input.descriptor,
-        consumerId: input.descriptor.id,
-        plan: input.inputs,
-        outcomes: input.projectionOutcomes,
-        problems: input.problems,
-      })
-    );
-    const blocked = blockedFamily({
-      familyId: input.descriptor.id,
-      completeness: input.descriptor.completeness,
-      prepared,
-    });
-    if (blocked !== undefined) {
-      return Object.freeze({ result: blocked, pages: Object.freeze([]) });
-    }
-
-    const context = yield* Effect.sync(() =>
-      componentContext({
-        sample: input.sample,
-        prepared,
-        references: input.descriptor,
-        calculationResults: input.calculationResults,
-      })
-    );
-    const iterable = yield* invokeCallback({
-      callback: () => input.descriptor.instances(context),
-      problems: input.problems,
-      problem: {
-        code: "page-family-instances-defect",
-        consumerId: input.descriptor.id,
-        summary: "the PageFamily instances callback threw",
-      },
-    });
-    if (iterable.state === "failed") {
-      return Object.freeze({
-        result: failedFamily({
-          familyId: input.descriptor.id,
-          problemIds: uniqueProblemIds([...prepared.dataProblemIds, iterable.problemId]),
-        }),
-        pages: Object.freeze([]),
-      });
-    }
-
-    // A family is an arbitrary iterable, so apply the global page budget while
-    // consuming it rather than materializing an unbounded author collection.
-    const collected = yield* invokeCallback({
-      callback: () => collectInstances(iterable.value, input.priorPageCount),
-      problems: input.problems,
-      problem: {
-        code: "page-family-instances-defect",
-        consumerId: input.descriptor.id,
-        summary: "the PageFamily instances callback threw",
-      },
-    });
-    if (collected.state === "failed") {
-      return Object.freeze({
-        result: failedFamily({
-          familyId: input.descriptor.id,
-          problemIds: uniqueProblemIds([...prepared.dataProblemIds, collected.problemId]),
-        }),
-        pages: Object.freeze([]),
-      });
-    }
-    if (collected.value.state === "limit") {
-      return yield* Effect.fail(collected.value.error);
-    }
-    const instances = collected.value.values;
-
-    const bindings: FamilyInstance[] = [];
-    const keys = new Set<string>();
-    for (const instance of instances) {
-      const key = yield* invokeCallback({
-        callback: () => input.descriptor.key(instance),
-        problems: input.problems,
-        problem: {
-          code: "page-family-key-defect",
-          consumerId: input.descriptor.id,
-          summary: "the PageFamily key callback threw or returned an invalid key",
-        },
-      });
-      if (key.state === "failed" || !isReportInstanceKey(key.value)) {
-        const problemId = key.state === "failed"
-          ? key.problemId
-          : input.problems.execution({
-            code: "page-family-key-defect",
-            consumerId: input.descriptor.id,
-            summary: "the PageFamily key callback threw or returned an invalid key",
-          });
-        return Object.freeze({
-          result: failedFamily({
-            familyId: input.descriptor.id,
-            problemIds: uniqueProblemIds([...prepared.dataProblemIds, problemId]),
-          }),
-          pages: Object.freeze([]),
-        });
-      }
-      if (keys.has(key.value)) {
-        const problemId = input.problems.execution({
-          code: "page-family-key-conflict",
-          consumerId: input.descriptor.id,
-          summary: "the PageFamily produced duplicate instance keys",
-        });
-        return Object.freeze({
-          result: failedFamily({
-            familyId: input.descriptor.id,
-            problemIds: uniqueProblemIds([...prepared.dataProblemIds, problemId]),
-          }),
-          pages: Object.freeze([]),
-        });
-      }
-      keys.add(key.value);
-
-      const route = yield* invokeCallback({
-        callback: () => input.descriptor.route(instance),
-        problems: input.problems,
-        problem: {
-          code: "page-family-key-defect",
-          consumerId: input.descriptor.id,
-          summary: "the PageFamily route callback threw or returned an invalid route",
-        },
-      });
-      if (route.state === "failed" || !isReportRoute(route.value)) {
-        const problemId = route.state === "failed"
-          ? route.problemId
-          : input.problems.execution({
-            code: "page-family-key-defect",
-            consumerId: input.descriptor.id,
-            summary: "the PageFamily route callback threw or returned an invalid route",
-          });
-        return Object.freeze({
-          result: failedFamily({
-            familyId: input.descriptor.id,
-            problemIds: uniqueProblemIds([...prepared.dataProblemIds, problemId]),
-          }),
-          pages: Object.freeze([]),
-        });
-      }
-      bindings.push(Object.freeze({ instance, key: key.value, route: route.value }));
-    }
-
-    const pages: PageIntermediate[] = [];
-    for (const binding of bindings) {
-      const rendered = yield* invokeCallback({
-        callback: () =>
-          input.descriptor.render(
-            Object.freeze({ ...context, instance: binding.instance }),
-          ),
-        problems: input.problems,
-        problem: {
-          code: "page-execution-failed",
-          consumerId: input.descriptor.id,
-          summary: "a PageFamily Page render callback threw",
-        },
-      });
-      if (rendered.state === "failed") {
-        pages.push(
-          failedPage({
-            state: "execution-failed",
-            pageId: input.descriptor.id,
-            route: binding.route,
-            problemIds: uniqueProblemIds([...prepared.dataProblemIds, rendered.problemId]),
-          }),
-        );
-      } else {
-        pages.push({
-          kind: "candidate" as const,
-          pageId: input.descriptor.id,
-          route: binding.route,
-          document: rendered.value,
-          problemIds: prepared.dataProblemIds,
-        });
-      }
-    }
-
-    return Object.freeze({
-      result: Object.freeze({
-        state: "expanded" as const,
-        familyId: input.descriptor.id,
-        instanceCount: bindings.length,
-        problemIds: prepared.dataProblemIds,
-      }),
-      pages: Object.freeze(pages),
-    });
-  });
-}
-
-function executeDownload(input: {
-  readonly descriptor: ReportDownloadDescriptor;
-  readonly inputs?: CompiledDataPlan;
-  readonly sample: AnalysisSample;
-  readonly projectionOutcomes: ReadonlyMap<CompiledProjection, ProjectionOutcome>;
-  readonly calculationResults: ReadonlyMap<
-    AnyReportCalculation,
-    ReportCalculationExecutionResult
-  >;
-  readonly problems: ProblemCollector;
-  readonly priorFileCount: number;
-}): Effect.Effect<DownloadIntermediate, ReportLimitExceeded, never> {
-  return Effect.gen(function* () {
-    const prepared = yield* Effect.sync(() =>
-      prepareComponentInputs({
-        references: input.descriptor,
-        consumerId: input.descriptor.id,
-        plan: input.inputs,
-        outcomes: input.projectionOutcomes,
-        problems: input.problems,
-      })
-    );
-    const blocked = blockedDownload({
-      downloadId: input.descriptor.id,
-      completeness: input.descriptor.completeness,
-      prepared,
-    });
-    if (blocked !== undefined) {
-      return blocked;
-    }
-
-    const context = yield* Effect.sync(() =>
-      componentContext({
-        sample: input.sample,
-        prepared,
-        references: input.descriptor,
-        calculationResults: input.calculationResults,
-      })
-    );
-    const built = yield* invokeCallback({
-      callback: () => buildDownloadFiles(input.descriptor.build(context), input.priorFileCount),
-      problems: input.problems,
-      problem: {
-        code: "download-execution-failed",
-        consumerId: input.descriptor.id,
-        summary: "the Download build callback returned invalid files or threw",
-      },
-    });
-    if (built.state === "failed") {
-      return failedDownload({
-        state: "execution-failed",
-        downloadId: input.descriptor.id,
-        problemIds: uniqueProblemIds([...prepared.dataProblemIds, built.problemId]),
-      });
-    }
-    if (built.value.state === "limit") {
-      return yield* Effect.fail(built.value.error);
-    }
-    return {
-      kind: "built" as const,
-      downloadId: input.descriptor.id,
-      files: built.value.files,
-      problemIds: prepared.dataProblemIds,
-    };
-  });
-}
-
-function prepareComponentInputs(input: {
-  readonly references: ReportComponentReferences;
-  readonly consumerId: ReportComponentId;
-  readonly plan?: CompiledDataPlan;
-  readonly outcomes: ReadonlyMap<CompiledProjection, ProjectionOutcome>;
-  readonly problems: ProblemCollector;
-}): PreparedInputs {
-  if (input.references.inputs === undefined) {
-    return emptyPreparedInputs();
+/**
+ * The public definition is branded by the author module.  The Host erases its
+ * generic callback inputs only after checking every field it will invoke. This
+ * keeps arbitrary callback values at the execution boundary rather than
+ * asserting a particular Page generic at the call site.
+ */
+function hostReport(value: unknown): HostReport {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new TypeError("a Report definition must be a direct object");
   }
-  if (input.plan === undefined) {
-    throw new Error("a Report component lost its compiled input plan");
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new TypeError("a Report definition must be a direct object");
   }
-  return prepareInputs({
-    plan: input.plan,
-    outcomes: input.outcomes,
-    consumerId: input.consumerId,
-    problems: input.problems,
-  });
-}
-
-function prepareInputs(input: {
-  readonly plan: CompiledDataPlan;
-  readonly outcomes: ReadonlyMap<CompiledProjection, ProjectionOutcome>;
-  readonly consumerId: ReportComponentId;
-  readonly problems: ProblemCollector;
-}): PreparedInputs {
-  const values: Record<string, ProjectedSample<ProjectionAccess, unknown>> = Object.create(null) as Record<
-    string,
-    ProjectedSample<ProjectionAccess, unknown>
-  >;
-  const dataProblemIds: ReportProblemId[] = [];
-  const projectionProblemIds: ReportProblemId[] = [];
-  let partial = false;
-
-  for (const declaration of input.plan.declarations) {
-    const outcome = input.outcomes.get(declaration.projection);
-    if (outcome === undefined) {
-      throw new Error("a compiled projection did not execute");
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key === "symbol") continue; // defineReport's private brand
+    if (key !== "title" && key !== "pages") {
+      throw new TypeError(`a Report definition has an unknown field: ${key}`);
     }
-    if (outcome.state === "execution-failed") {
-      projectionProblemIds.push(outcome.problemId);
-      partial = true;
-      continue;
-    }
-    Object.defineProperty(values, declaration.key, {
-      value: outcome.value,
-      enumerable: true,
-      writable: false,
-      configurable: false,
-    });
-    for (const entry of outcome.value.entries) {
-      const problem = recordedDataProblem({
-        entry,
-        consumerId: input.consumerId,
-        inputKey: declaration.key,
-      });
-      if (problem !== undefined) {
-        partial = true;
-        dataProblemIds.push(input.problems.add(problem));
-      }
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
+      throw new TypeError(`a Report definition has an unsafe ${key} field`);
     }
   }
-
+  const pages = requiredDataField(value, "pages", "a Report definition");
+  if (!isDataArray(pages) || pages.length === 0) {
+    throw new TypeError("a Report definition needs one or more Pages");
+  }
+  const title = optionalDataField(value, "title");
+  if (title !== undefined && !isLocalizedText(title)) {
+    throw new TypeError("a Report title must be closed localized text");
+  }
+  const normalizedPages = Object.freeze(pages.map((page) => hostPage(page)));
+  assertKnownDefinitionPaths(normalizedPages);
   return Object.freeze({
-    inputs: Object.freeze(values),
-    partial,
-    dataProblemIds: uniqueProblemIds(dataProblemIds),
-    projectionProblemIds: uniqueProblemIds(projectionProblemIds),
+    ...(title === undefined ? {} : { title }),
+    pages: normalizedPages,
   });
 }
 
-function emptyPreparedInputs(): PreparedInputs {
-  return Object.freeze({
-    inputs: Object.freeze({}) as ReportHostInputs,
-    partial: false,
-    dataProblemIds: Object.freeze([]),
-    projectionProblemIds: Object.freeze([]),
-  });
-}
-
-function recordedDataProblem(input: {
-  readonly entry: ProjectedSample<ProjectionAccess, unknown>["entries"][number];
-  readonly consumerId: ReportComponentId;
-  readonly inputKey: string;
-}): ReportRecordedDataProblem | undefined {
-  const location = "slot" in input.entry
-    ? { slotId: input.entry.slot.slotId, runId: input.entry.slot.runId }
-    : { runId: input.entry.run.runId };
-  switch (input.entry.state) {
-    case "excluded":
-      return undefined;
-    case "not-recorded":
-    case "core-invalid":
-      return recordedProblem({
-        code: "unavailable",
-        consumerId: input.consumerId,
-        inputKey: input.inputKey,
-        ...location,
-      });
-    case "attachment-result": {
-      switch (input.entry.attachment.state) {
-        case "available":
-          return undefined;
-        case "unavailable":
-        case "migration-required":
-        case "migration-unavailable":
-        case "unsupported":
-        case "invalid":
-          return recordedProblem({
-            code: input.entry.attachment.state,
-            consumerId: input.consumerId,
-            inputKey: input.inputKey,
-            ...location,
-          });
-      }
-    }
-  }
-}
-
-function recordedProblem(input: {
-  readonly code: ReportRecordedDataProblem["code"];
-  readonly consumerId: ReportComponentId;
-  readonly inputKey: string;
-  readonly slotId?: SlotId;
-  readonly runId?: RunId;
-}): ReportRecordedDataProblem {
-  return Object.freeze({
-    category: "recorded-data" as const,
-    code: input.code,
-    consumerId: input.consumerId,
-    inputKey: input.inputKey,
-    ...(input.slotId === undefined ? {} : { slotId: input.slotId }),
-    ...(input.runId === undefined ? {} : { runId: input.runId }),
-  });
-}
-
-function calculationContext(
-  sample: AnalysisSample,
-  inputs: ReportHostInputs,
-): { readonly sample: AnalysisSample; readonly inputs: ReportHostInputs } {
-  return Object.freeze({ sample, inputs });
-}
-
-function componentContext(input: {
-  readonly sample: AnalysisSample;
-  readonly prepared: PreparedInputs;
-  readonly references: ReportComponentReferences;
-  readonly calculationResults: ReadonlyMap<
-    AnyReportCalculation,
-    ReportCalculationExecutionResult
-  >;
-}): ReportHostContext {
-  return Object.freeze({
-    sample: input.sample,
-    inputs: input.prepared.inputs,
-    calculations: calculationContextValues(input.references, input.calculationResults),
-  });
-}
-
-function calculationContextValues(
-  references: ReportComponentReferences,
-  calculationResults: ReadonlyMap<AnyReportCalculation, ReportCalculationExecutionResult>,
-): ReportHostCalculations {
-  const values: Record<string, ReportCalculationResult<unknown>> = Object.create(null) as Record<
-    string,
-    ReportCalculationResult<unknown>
-  >;
-  for (const key of Object.keys(references.calculations).sort(compareText)) {
-    const calculation = references.calculations[key];
-    if (calculation === undefined) {
-      throw new Error("a Report Calculation mapping lost its value");
-    }
-    const result = calculationResults.get(calculation);
-    if (result === undefined) {
-      throw new Error("a component referenced a Calculation that did not execute");
-    }
-    Object.defineProperty(values, key, {
-      value: callbackCalculationResult(result),
-      enumerable: true,
-      writable: false,
-      configurable: false,
-    });
-  }
-  return Object.freeze(values);
-}
-
-function callbackCalculationResult(
-  result: ReportCalculationExecutionResult,
-): ReportCalculationResult<unknown> {
-  switch (result.state) {
-    case "available":
-      return Object.freeze({
-        state: "available" as const,
-        value: result.value,
-        inputState: result.inputState,
-      });
-    case "data-unavailable":
-      return Object.freeze({
-        state: "data-unavailable" as const,
-        problemIds: result.problemIds,
-      });
-    case "execution-failed":
-      return Object.freeze({
-        state: "execution-failed" as const,
-        problemIds: result.problemIds,
-      });
-  }
-}
-
-function blockedPage(input: {
-  readonly pageId: ReportComponentId;
-  readonly route: ReportRoute;
-  readonly completeness: "allow-partial" | "require-complete" | undefined;
-  readonly prepared: PreparedInputs;
-}): FailedPage | undefined {
-  const allProblems = uniqueProblemIds([
-    ...input.prepared.dataProblemIds,
-    ...input.prepared.projectionProblemIds,
-  ]);
-  if (input.prepared.projectionProblemIds.length > 0) {
-    return failedPage({
-      state: "execution-failed",
-      pageId: input.pageId,
-      route: input.route,
-      problemIds: allProblems,
-    });
-  }
-  if (input.completeness === "require-complete" && input.prepared.partial) {
-    return failedPage({
-      state: "data-unavailable",
-      pageId: input.pageId,
-      route: input.route,
-      problemIds: allProblems,
-    });
-  }
-  return undefined;
-}
-
-function blockedFamily(input: {
-  readonly familyId: ReportComponentId;
-  readonly completeness: "allow-partial" | "require-complete" | undefined;
-  readonly prepared: PreparedInputs;
-}): FamilyIntermediate | undefined {
-  const allProblems = uniqueProblemIds([
-    ...input.prepared.dataProblemIds,
-    ...input.prepared.projectionProblemIds,
-  ]);
-  if (input.prepared.projectionProblemIds.length > 0) {
-    return failedFamily({ familyId: input.familyId, problemIds: allProblems });
-  }
-  if (input.completeness === "require-complete" && input.prepared.partial) {
-    return Object.freeze({
-      state: "data-unavailable" as const,
-      familyId: input.familyId,
-      instanceCount: 0,
-      problemIds: requireProblemIds(allProblems),
-    });
-  }
-  return undefined;
-}
-
-function blockedDownload(input: {
-  readonly downloadId: ReportComponentId;
-  readonly completeness: "allow-partial" | "require-complete" | undefined;
-  readonly prepared: PreparedInputs;
-}): FailedDownload | undefined {
-  const allProblems = uniqueProblemIds([
-    ...input.prepared.dataProblemIds,
-    ...input.prepared.projectionProblemIds,
-  ]);
-  if (input.prepared.projectionProblemIds.length > 0) {
-    return failedDownload({
-      state: "execution-failed",
-      downloadId: input.downloadId,
-      problemIds: allProblems,
-    });
-  }
-  if (input.completeness === "require-complete" && input.prepared.partial) {
-    return failedDownload({
-      state: "data-unavailable",
-      downloadId: input.downloadId,
-      problemIds: allProblems,
-    });
-  }
-  return undefined;
-}
-
-function failedPage(input: {
-  readonly state: "data-unavailable" | "execution-failed";
-  readonly pageId: ReportComponentId;
-  readonly route?: ReportRoute;
-  readonly problemIds: readonly ReportProblemId[];
-}): FailedPage {
-  return Object.freeze({
-    kind: "failed" as const,
-    state: input.state,
-    pageId: input.pageId,
-    ...(input.route === undefined ? {} : { route: input.route }),
-    problemIds: requireProblemIds(input.problemIds),
-  });
-}
-
-function failedFamily(input: {
-  readonly familyId: ReportComponentId;
-  readonly problemIds: readonly ReportProblemId[];
-}): FamilyIntermediate {
-  return Object.freeze({
-    state: "execution-failed" as const,
-    familyId: input.familyId,
-    instanceCount: 0,
-    problemIds: requireProblemIds(input.problemIds),
-  });
-}
-
-function failedDownload(input: {
-  readonly state: "data-unavailable" | "execution-failed";
-  readonly downloadId: ReportComponentId;
-  readonly problemIds: readonly ReportProblemId[];
-}): FailedDownload {
-  return Object.freeze({
-    kind: "failed" as const,
-    state: input.state,
-    downloadId: input.downloadId,
-    problemIds: requireProblemIds(input.problemIds),
-  });
-}
-
-function invokeCallback<Value>(input: {
-  readonly callback: () => Value;
-  readonly problems: ProblemCollector;
-  readonly problem: Omit<ReportExecutionProblem, "category">;
-}): Effect.Effect<CallbackOutcome<Value>, never, never> {
-  return Effect.sync(input.callback).pipe(
-    Effect.map((value): CallbackOutcome<Value> =>
-      Object.freeze({ state: "succeeded" as const, value })
-    ),
-    // This boundary deliberately converts only author defects. Typed failures
-    // do not exist in synchronous author callbacks, and interruption remains a
-    // Cause rather than a Report problem.
-    Effect.catchAllDefect(() =>
-      Effect.succeed(
-        Object.freeze({
-          state: "failed" as const,
-          problemId: input.problems.execution(input.problem),
-        }),
-      ),
-    ),
-  );
-}
-
-function collectInstances(
-  value: Iterable<unknown>,
-  priorPageCount: number,
-): FamilyInstancesOutcome {
-  const values: unknown[] = [];
-  for (const instance of value) {
-    const observed = priorPageCount + values.length + 1;
-    if (observed > REPORT_PAGES_MAX) {
-      return Object.freeze({
-        state: "limit" as const,
-        error: reportLimit("pages", REPORT_PAGES_MAX, observed),
-      });
-    }
-    values.push(instance);
-  }
-  return Object.freeze({ state: "collected" as const, values: Object.freeze(values) });
-}
-
-function buildDownloadFiles(
-  value: Iterable<ReportDownloadFile>,
-  priorFileCount: number,
-): DownloadBuildOutcome {
-  const files: ReportDownloadFile[] = [];
-  const paths = new Set<string>();
-  for (const file of value) {
-    const observed = priorFileCount + files.length + 1;
-    if (observed > REPORT_DOWNLOAD_FILES_MAX) {
-      return Object.freeze({
-        state: "limit" as const,
-        error: reportLimit("download-files", REPORT_DOWNLOAD_FILES_MAX, observed),
-      });
-    }
-    if (typeof file !== "object" || file === null || !isReportDownloadPath(file.path)) {
-      throw new TypeError("a Download file must use a valid ReportDownloadPath");
-    }
-    if (
-      typeof file.mediaType !== "string" ||
-      file.mediaType.length === 0 ||
-      !hasOnlyUnicodeScalars(file.mediaType)
-    ) {
-      throw new TypeError("a Download file must use a non-empty Unicode media type");
-    }
-    if (!(file.bytes instanceof Uint8Array)) {
-      throw new TypeError("a Download file must use Uint8Array bytes");
-    }
-    if (file.bytes.byteLength > REPORT_DOWNLOAD_FILE_BYTES_MAX) {
-      return Object.freeze({
-        state: "limit" as const,
-        error: reportLimit(
-          "download-file-bytes",
-          REPORT_DOWNLOAD_FILE_BYTES_MAX,
-          file.bytes.byteLength,
-        ),
-      });
-    }
-    if (paths.has(file.path)) {
-      throw new TypeError("a Download cannot produce duplicate file paths");
-    }
-    paths.add(file.path);
-    files.push(
-      Object.freeze({
-        path: file.path,
-        mediaType: file.mediaType,
-        bytes: new Uint8Array(file.bytes),
-      }),
-    );
-  }
-  files.sort((left, right) => compareText(left.path, right.path));
-  return Object.freeze({ state: "built" as const, files: Object.freeze(files) });
-}
-
-function resolveStaticConflicts(
-  pages: readonly PageIntermediate[],
-  downloads: readonly DownloadIntermediate[],
-  problems: ProblemCollector,
-): void {
-  const outputs: Array<
-    | { readonly kind: "page"; readonly page: PageCandidate }
-    | { readonly kind: "download"; readonly download: BuiltDownload; readonly path: ReportDownloadPath }
-  > = [];
+function assertKnownDefinitionPaths(pages: readonly HostPage[]): void {
+  const ids = new Set<string>();
+  const plainPaths: ReportStaticPath[] = [];
   for (const page of pages) {
-    if (page.kind === "candidate") {
-      outputs.push({ kind: "page", page });
+    if (ids.has(page.id)) throw new TypeError(`a Report Page id is duplicated: ${page.id}`);
+    ids.add(page.id);
+    if (validateReportRoute(page.path) !== undefined) {
+      throw new TypeError(`a Report Page path is invalid: ${page.path}`);
     }
+    if (!isParameterizedPage(page)) plainPaths.push(staticPathForRoute(page.path));
   }
-  for (const download of downloads) {
-    if (download.kind === "built") {
-      for (const file of download.files) {
-        outputs.push({ kind: "download", download, path: file.path });
-      }
-    }
+  if (staticPathConflicts(plainPaths).length > 0) {
+    throw new TypeError("ordinary Report Page routes have a known static path collision");
   }
+}
 
-  for (let left = 0; left < outputs.length; left += 1) {
-    const current = outputs[left];
-    if (current === undefined) continue;
-    for (let right = left + 1; right < outputs.length; right += 1) {
-      const next = outputs[right];
-      if (next === undefined) continue;
-      const currentPath = current.kind === "page"
-        ? staticPathForReportRoute(current.page.route)
-        : staticPathForReportDownload(current.path);
-      const nextPath = next.kind === "page"
-        ? staticPathForReportRoute(next.page.route)
-        : staticPathForReportDownload(next.path);
-      if (reportStaticPathConflict(currentPath, nextPath) === undefined) {
+function hostPage(value: unknown): HostPage {
+  if (!isPlainDataRecord(value)) {
+    throw new TypeError("a Report Page must be a direct object");
+  }
+  for (const key of Object.keys(value)) {
+    if (!["id", "path", "title", "navigation", "params", "load", "render"].includes(key)) {
+      throw new TypeError(`a Report Page has an unknown field: ${key}`);
+    }
+  }
+  const id = requiredString(value.id, "a Report Page id");
+  const path = requiredString(value.path, "a Report Page path");
+  if (!isLocalizedText(value.title)) {
+    throw new TypeError("a Report Page title must be closed localized text");
+  }
+  const render = requiredCallback(value.render, "a Report Page render callback");
+  if (!Object.hasOwn(value, "params")) {
+    if (Object.hasOwn(value, "navigation") && typeof value.navigation !== "boolean") {
+      throw new TypeError("a plain Report Page navigation field must be boolean");
+    }
+    const load = optionalCallback(value.load, "a plain Report Page load callback");
+    return Object.freeze({
+      kind: "plain" as const,
+      id,
+      path,
+      title: value.title,
+      ...(load === undefined ? {} : { load }),
+      render,
+    });
+  }
+  if (value.navigation !== false) {
+    throw new TypeError("a parameterized Report Page must be non-navigable");
+  }
+  if (!isPlainDataRecord(value.params)) {
+    throw new TypeError("a parameterized Report Page params field must be a direct object");
+  }
+  const params = value.params;
+  for (const key of Object.keys(params)) {
+    if (key !== "encode" && key !== "decode" && key !== "enumerate") {
+      throw new TypeError(`a Page params object has an unknown field: ${key}`);
+    }
+  }
+  return Object.freeze({
+    kind: "parameterized" as const,
+    id,
+    path,
+    title: value.title,
+    params: Object.freeze({
+      encode: requiredCallback(params.encode, "a Page params encode callback"),
+      decode: requiredCallback(params.decode, "a Page params decode callback"),
+      enumerate: requiredCallback(params.enumerate, "a Page params enumerate callback"),
+    }),
+    load: requiredCallback(value.load, "a parameterized Report Page load callback"),
+    render,
+  });
+}
+
+function requiredDataField(value: object, key: string, label: string): unknown {
+  const descriptor = Object.getOwnPropertyDescriptor(value, key);
+  if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
+    throw new TypeError(`${label} is missing a direct ${key} field`);
+  }
+  return descriptor.value;
+}
+
+function optionalDataField(value: object, key: string): unknown {
+  const descriptor = Object.getOwnPropertyDescriptor(value, key);
+  if (descriptor === undefined) return undefined;
+  if (!descriptor.enumerable || !("value" in descriptor)) {
+    throw new TypeError(`a Report definition has an unsafe ${key} field`);
+  }
+  return descriptor.value;
+}
+
+function requiredString(value: unknown, label: string): string {
+  if (typeof value !== "string" || !hasOnlyUnicodeScalars(value)) {
+    throw new TypeError(`${label} must be a Unicode string`);
+  }
+  return value;
+}
+
+function isLocalizedText(value: unknown): value is LocalizedText {
+  if (typeof value === "string") return hasOnlyUnicodeScalars(value);
+  if (!isPlainDataRecord(value)) return false;
+  const entries = Object.entries(value);
+  return entries.length > 0 && entries.every(([locale, text]) =>
+    locale.length > 0 && hasOnlyUnicodeScalars(locale) &&
+    typeof text === "string" && hasOnlyUnicodeScalars(text)
+  );
+}
+
+function requiredCallback(value: unknown, label: string): HostCallback {
+  if (!isHostCallback(value)) throw new TypeError(`${label} must be a function`);
+  return value;
+}
+
+function optionalCallback(value: unknown, label: string): HostCallback | undefined {
+  if (value === undefined) return undefined;
+  return requiredCallback(value, label);
+}
+
+function isHostCallback(value: unknown): value is HostCallback {
+  return typeof value === "function";
+}
+
+function planPages(input: {
+  readonly report: HostReport;
+  readonly sample: Sample;
+  readonly target: ReportTargetSelection;
+  readonly capture: AnalysisIssueCapture;
+}): Effect.Effect<PagePlan, ReportRouteInvalid | ReportLimitExceeded | AnalysisExecutionError, Scope.Scope> {
+  switch (input.target.kind) {
+    case "static":
+      return planStaticPages(input.report.pages, input.sample, input.capture);
+    case "show":
+      return input.target.route === undefined
+        ? Effect.succeed(planPlainPages(input.report.pages))
+        : planRoutePages(input.report.pages, input.target.route, input.capture);
+    case "view":
+      return planRoutePages(input.report.pages, input.target.route, input.capture);
+  }
+}
+
+function planPlainPages(pages: readonly HostPage[]): PagePlan {
+  const work = pages
+    .filter((page) => !isParameterizedPage(page))
+    .map((page) => Object.freeze({ page, route: page.path, problems: Object.freeze([]) }));
+  return Object.freeze({
+    work: Object.freeze(work),
+    summaries: pageSummaries(pages, new Map(work.map((entry) => [entry.page.id, 1]))),
+  });
+}
+
+function planRoutePages(
+  pages: readonly HostPage[],
+  route: string,
+  capture: AnalysisIssueCapture,
+): Effect.Effect<PagePlan, ReportRouteInvalid | AnalysisExecutionError, Scope.Scope> {
+  const invalidRoute = validateReportRoute(route);
+  if (invalidRoute !== undefined) {
+    return Effect.fail(Object.freeze({
+      code: "report-route-invalid" as const,
+      route,
+      reason: invalidRoute.reason,
+    }));
+  }
+  return Effect.gen(function* () {
+    const work: PageWork[] = [];
+    const counts = new Map<string, number>();
+    for (const page of pages) {
+      if (!isParameterizedPage(page)) {
+        if (page.path === route) {
+          work.push(Object.freeze({ page, route, problems: Object.freeze([]) }));
+          counts.set(page.id, 1);
+        }
         continue;
       }
-      markStaticConflict(current, problems);
-      markStaticConflict(next, problems);
+      const key = parameterKeyForRoute(page, route);
+      if (key === undefined) continue;
+      const normalized = yield* normalizeParameterFromKey(page, key, capture);
+      if (normalized.state === "invalid") {
+        work.push(Object.freeze({
+          page,
+          route,
+          problems: Object.freeze([pageProblem("page-params-invalid", page.id, normalized.reason)]),
+        }));
+      } else {
+        work.push(Object.freeze({ page, route, params: normalized.params, problems: Object.freeze([]) }));
+      }
+      counts.set(page.id, 1);
     }
+    if (work.length === 0) {
+      return yield* Effect.fail(Object.freeze({
+        code: "report-route-invalid" as const,
+        route,
+        reason: "the route does not identify a Page in this Report",
+      }));
+    }
+    return Object.freeze({ work: Object.freeze(work), summaries: pageSummaries(pages, counts) });
+  });
+}
+
+function planStaticPages(
+  pages: readonly HostPage[],
+  sample: Sample,
+  capture: AnalysisIssueCapture,
+): Effect.Effect<PagePlan, ReportLimitExceeded | AnalysisExecutionError, Scope.Scope> {
+  return Effect.gen(function* () {
+    const work: PageWork[] = [];
+    const counts = new Map<string, number>();
+    for (const page of pages) {
+      if (!isParameterizedPage(page)) {
+        work.push(Object.freeze({ page, route: page.path, problems: Object.freeze([]) }));
+        counts.set(page.id, 1);
+        yield* assertPageLimit(work.length);
+        continue;
+      }
+      const enumerated = yield* invokeCallback(() => page.params.enumerate(sample), capture);
+      if (enumerated.state === "failed") {
+        work.push(Object.freeze({
+          page,
+          problems: Object.freeze([pageProblem("page-params-invalid", page.id, "params.enumerate() failed")]),
+        }));
+        counts.set(page.id, 0);
+        continue;
+      }
+      const values = collectIterable(enumerated.value, REPORT_PAGES_MAX - work.length);
+      if (values.state === "invalid") {
+        work.push(Object.freeze({
+          page,
+          problems: Object.freeze([pageProblem("page-params-invalid", page.id, values.reason)]),
+        }));
+        counts.set(page.id, 0);
+        continue;
+      }
+      if (values.state === "limit") {
+        return yield* Effect.fail(reportLimit("pages", REPORT_PAGES_MAX, REPORT_PAGES_MAX + 1));
+      }
+      let count = 0;
+      for (const value of values.values) {
+        const normalized = yield* normalizeEnumeratedParameter(page, value, capture);
+        if (normalized.state === "invalid") {
+          work.push(Object.freeze({
+            page,
+            problems: Object.freeze([pageProblem("page-params-invalid", page.id, normalized.reason)]),
+          }));
+        } else {
+          work.push(Object.freeze({
+            page,
+            route: normalized.route,
+            params: normalized.params,
+            problems: Object.freeze([]),
+          }));
+          count += 1;
+        }
+        yield* assertPageLimit(work.length);
+      }
+      counts.set(page.id, count);
+    }
+    return Object.freeze({ work: Object.freeze(work), summaries: pageSummaries(pages, counts) });
+  });
+}
+
+function executePagePlan(input: {
+  readonly sample: Sample;
+  readonly work: readonly PageWork[];
+  readonly capture: AnalysisIssueCapture;
+}): Effect.Effect<readonly PageAttempt[], ReportLimitExceeded | AnalysisExecutionError, Scope.Scope> {
+  return Effect.gen(function* () {
+    const cache = new Map<string, PageAttempt>();
+    const results: PageAttempt[] = [];
+    for (const work of input.work) {
+      const key = `${work.page.id}\u0000${work.route ?? ""}`;
+      const cached = cache.get(key);
+      if (cached !== undefined) {
+        results.push(cached);
+        continue;
+      }
+      const result = yield* executePage({ sample: input.sample, work, capture: input.capture });
+      cache.set(key, result);
+      results.push(result);
+    }
+    return Object.freeze(results);
+  });
+}
+
+function executePage(input: {
+  readonly sample: Sample;
+  readonly work: PageWork;
+  readonly capture: AnalysisIssueCapture;
+}): Effect.Effect<PageAttempt, ReportLimitExceeded | AnalysisExecutionError, Scope.Scope> {
+  const { page, route, problems } = input.work;
+  if (problems.length > 0 || route === undefined) {
+    return Effect.succeed(failedPage(page, route, problems));
+  }
+  return Effect.gen(function* () {
+    const pageContext: PageContext = Object.freeze({ id: page.id, path: route, title: page.title });
+    const loaded = yield* loadPage({
+      page,
+      sample: input.sample,
+      params: input.work.params,
+      pageContext,
+      capture: input.capture,
+    });
+    if (loaded.state === "failed") {
+      return failedPage(page, route, [pageProblem("page-load-failed", page.id, "Page load() failed")]);
+    }
+    const rendered = yield* invokeCallback(() => page.render(loaded.value, pageContext), input.capture);
+    if (rendered.state === "failed") {
+      return failedPage(page, route, [pageProblem("page-render-failed", page.id, "Page render() failed")]);
+    }
+    const resolver: NodeResolver = {
+      sample: input.sample,
+      page: pageContext,
+      capture: input.capture,
+      active: new Set<object>(),
+      results: new WeakMap<object, NodeResult>(),
+      downloads: [],
+    };
+    const resolved = yield* resolveNode(rendered.value, resolver);
+    if (resolved.state === "failed") {
+      return failedPage(page, route, [resolved.problem]);
+    }
+    const validation = validateClosedReportNode(resolved.value);
+    const limit = semanticLimit(validation.nodeCount, validation.issues);
+    if (limit !== undefined) return yield* Effect.fail(limit);
+    if (!validation.valid) {
+      return failedPage(page, route, [pageProblem(
+        "semantic-tree-invalid",
+        page.id,
+        validation.issues[0]?.reason ?? "the Page returned an invalid semantic tree",
+      )]);
+    }
+    const closed = yield* closeNode(resolved.value, page.id);
+    if (closed.state === "failed") return failedPage(page, route, [closed.problem]);
+    return {
+      state: "rendered" as const,
+      page,
+      route,
+      node: closed.value,
+      downloads: Object.freeze([...resolver.downloads]),
+      problems: [],
+      conflicted: false,
+    };
+  });
+}
+
+function loadPage(input: {
+  readonly page: HostPage;
+  readonly sample: Sample;
+  readonly params: JsonValue | undefined;
+  readonly pageContext: PageContext;
+  readonly capture: AnalysisIssueCapture;
+}): Effect.Effect<CallbackResult<unknown>, AnalysisExecutionError, Scope.Scope> {
+  const page = input.page;
+  if (isParameterizedPage(page)) {
+    const params = input.params;
+    if (params === undefined) return Effect.succeed(Object.freeze({ state: "failed" as const }));
+    const load = page.load;
+    return invokeCallback(
+      () => load(input.sample, params, pageLoadContext(input.sample, input.pageContext, input.capture)),
+      input.capture,
+    );
+  }
+  const load = page.load;
+  if (load === undefined) return Effect.succeed(Object.freeze({ state: "succeeded" as const, value: input.sample }));
+  return invokeCallback(
+    () => load(input.sample, undefined, pageLoadContext(input.sample, input.pageContext, input.capture)),
+    input.capture,
+  );
+}
+
+function pageLoadContext(
+  sample: Sample,
+  page: PageContext,
+  capture: AnalysisIssueCapture,
+): PageLoadContext {
+  return Object.freeze({
+    page,
+    evidence: (locator: EvidenceLocator) => capture.run(() => query(sample, {
+      kind: "domain-view",
+      view: attemptEvidenceView,
+      locator,
+    })),
+  });
+}
+
+function resolveNode(
+  value: unknown,
+  resolver: NodeResolver,
+): Effect.Effect<NodeResult, ReportLimitExceeded | AnalysisExecutionError, Scope.Scope> {
+  if (isReportComponentInvocation(value)) return resolveComponent(value, resolver);
+  if (!isPlainDataRecord(value)) {
+    return Effect.succeed(Object.freeze({ state: "resolved" as const, value }));
+  }
+  const cached = resolver.results.get(value);
+  if (cached !== undefined) return Effect.succeed(cached);
+  if (resolver.active.has(value)) {
+    return Effect.succeed(Object.freeze({
+      state: "failed" as const,
+      problem: pageProblem("semantic-tree-invalid", resolver.page.id, "a Page tree cannot contain a cycle"),
+    }));
+  }
+  resolver.active.add(value);
+  return Effect.gen(function* () {
+      const type = value.type;
+      if (type === "download") {
+        const result = yield* resolveDownloadNode(value, resolver);
+        resolver.results.set(value, result);
+        return result;
+      }
+      if (type !== "stack" && type !== "grid" && type !== "callout") {
+        const result: NodeResult = Object.freeze({ state: "resolved" as const, value });
+        resolver.results.set(value, result);
+        return result;
+      }
+      const children = value.children;
+      if (!isDataArray(children)) {
+        const result: NodeResult = Object.freeze({ state: "resolved" as const, value });
+        resolver.results.set(value, result);
+        return result;
+      }
+      const resolvedChildren: unknown[] = [];
+      for (const child of children) {
+        const resolved = yield* resolveNode(child, resolver);
+        if (resolved.state === "failed") return resolved;
+        resolvedChildren.push(resolved.value);
+      }
+      const node = Object.freeze({ ...value, children: Object.freeze(resolvedChildren) });
+      const result: NodeResult = Object.freeze({ state: "resolved" as const, value: node });
+      resolver.results.set(value, result);
+      return result;
+    }).pipe(Effect.ensuring(Effect.sync(() => resolver.active.delete(value))));
+}
+
+function resolveDownloadNode(
+  value: Record<string, unknown>,
+  resolver: NodeResolver,
+): Effect.Effect<NodeResult, ReportLimitExceeded | AnalysisExecutionError, Scope.Scope> {
+  const file = readDownloadFile(value.file);
+  if (file === undefined || !hasExactFields(value, ["type", "file", "children"])) {
+    return Effect.succeed(Object.freeze({
+      state: "failed" as const,
+      problem: pageProblem(
+        "semantic-tree-invalid",
+        resolver.page.id,
+        "a Download node must contain closed file data and semantic children",
+      ),
+    }));
+  }
+  const invalidPath = validateDownloadPath(file.id);
+  if (invalidPath !== undefined) {
+    return Effect.succeed(Object.freeze({
+      state: "failed" as const,
+      problem: pageProblem("download-conflict", resolver.page.id, invalidPath.reason),
+    }));
+  }
+  if (file.bytes.byteLength > REPORT_DOWNLOAD_FILE_BYTES_MAX) {
+    return Effect.fail(reportLimit(
+      "download-file-bytes",
+      REPORT_DOWNLOAD_FILE_BYTES_MAX,
+      file.bytes.byteLength,
+    ));
+  }
+  const children = value.children;
+  if (!isDataArray(children)) {
+    return Effect.succeed(Object.freeze({
+      state: "failed" as const,
+      problem: pageProblem("semantic-tree-invalid", resolver.page.id, "a Download node children field must be an array"),
+    }));
+  }
+  return Effect.gen(function* () {
+    const resolvedChildren: unknown[] = [];
+    for (const child of children) {
+      const resolved = yield* resolveNode(child, resolver);
+      if (resolved.state === "failed") return resolved;
+      resolvedChildren.push(resolved.value);
+    }
+    resolver.downloads.push(file);
+    return Object.freeze({
+      state: "resolved" as const,
+      value: Object.freeze({
+        type: "download" as const,
+        id: file.id,
+        children: Object.freeze(resolvedChildren),
+      }),
+    });
+  });
+}
+
+function readDownloadFile(value: unknown): PageDownload | undefined {
+  if (!isPlainDataRecord(value) || !hasExactFields(value, ["path", "mediaType", "bytes"])) {
+    return undefined;
+  }
+  if (typeof value.path !== "string" || typeof value.mediaType !== "string" ||
+    value.mediaType.length === 0 || !hasOnlyUnicodeScalars(value.mediaType) ||
+    !(value.bytes instanceof Uint8Array)) {
+    return undefined;
+  }
+  return Object.freeze({
+    id: value.path,
+    mediaType: value.mediaType,
+    bytes: new Uint8Array(value.bytes),
+  });
+}
+
+function hasExactFields(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const fields = Object.keys(value);
+  return fields.length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+}
+
+function resolveComponent(
+  invocation: { readonly component: unknown; readonly props: Readonly<Record<string, unknown>> },
+  resolver: NodeResolver,
+): Effect.Effect<NodeResult, ReportLimitExceeded | AnalysisExecutionError, Scope.Scope> {
+  const key = invocation;
+  const cached = resolver.results.get(key);
+  if (cached !== undefined) return Effect.succeed(cached);
+  if (resolver.active.has(key)) {
+    return Effect.succeed(Object.freeze({
+      state: "failed" as const,
+      problem: pageProblem("semantic-tree-invalid", resolver.page.id, "a component tree cannot contain a cycle"),
+    }));
+  }
+  let descriptor: ReturnType<typeof reportComponentDescriptor>;
+  try {
+    descriptor = reportComponentDescriptor(invocation.component);
+  } catch {
+    return Effect.succeed(Object.freeze({
+      state: "failed" as const,
+      problem: pageProblem("component-compose-failed", resolver.page.id, "an unknown Report component was invoked"),
+    }));
+  }
+  resolver.active.add(key);
+  return Effect.gen(function* () {
+      if (descriptor.kind === "compose") {
+        const composed = yield* invokeCallback(() => descriptor.compose(
+          invocation.props,
+          composeContext(resolver),
+        ), resolver.capture);
+        if (composed.state === "failed") {
+          return Object.freeze({
+            state: "failed" as const,
+            problem: pageProblem("component-compose-failed", resolver.page.id, "a component compose() callback failed"),
+          });
+        }
+        const result = yield* resolveNode(composed.value, resolver);
+        resolver.results.set(key, result);
+        return result;
+      }
+      const data = descriptor.resolve === undefined
+        ? Object.freeze({ state: "succeeded" as const, value: invocation.props })
+        : yield* invokeCallback(
+          () => descriptor.resolve!(invocation.props, resolveContext(resolver)),
+          resolver.capture,
+        );
+      if (data.state === "failed" || !isClosedCallbackValue(data.value)) {
+        return Object.freeze({
+          state: "failed" as const,
+          problem: pageProblem("component-resolve-failed", resolver.page.id, "a component resolve() callback failed or returned an unsafe value"),
+        });
+      }
+      const primitive = yield* invokePrimitiveFaces({ descriptor, data: data.value, props: invocation.props, resolver });
+      resolver.results.set(key, primitive);
+      return primitive;
+    }).pipe(Effect.ensuring(Effect.sync(() => resolver.active.delete(key))));
+}
+
+function invokePrimitiveFaces(input: {
+  readonly descriptor: Extract<ReturnType<typeof reportComponentDescriptor>, { readonly kind: "primitive" }>;
+  readonly data: unknown;
+  readonly props: Readonly<Record<string, unknown>>;
+  readonly resolver: NodeResolver;
+}): Effect.Effect<NodeResult, AnalysisExecutionError, Scope.Scope> {
+  return Effect.gen(function* () {
+    const text = yield* invokeCallback(
+      () => input.descriptor.text(input.data, { locale: "en", width: 80 }),
+      input.resolver.capture,
+    );
+    const web = yield* invokeCallback(
+      () => input.descriptor.web(input.data, { locale: "en" }),
+      input.resolver.capture,
+    );
+    const dimensions = input.descriptor.dimensions === undefined
+      ? Object.freeze({ state: "succeeded" as const, value: undefined })
+      : yield* invokeCallback(
+        () => input.descriptor.dimensions!(input.data, input.props),
+        input.resolver.capture,
+      );
+    if (text.state === "failed" || web.state === "failed" || dimensions.state === "failed") {
+      return Object.freeze({
+        state: "failed" as const,
+        problem: pageProblem("component-resolve-failed", input.resolver.page.id, "a primitive face or dimensions callback failed"),
+      });
+    }
+    return Object.freeze({
+      state: "resolved" as const,
+      value: Object.freeze({
+        type: "primitive" as const,
+        text: text.value,
+        web: web.value,
+        ...(dimensions.value === undefined ? {} : { dimensions: dimensions.value }),
+      }),
+    });
+  });
+}
+
+function closeNode(
+  node: unknown,
+  pageId: string,
+): Effect.Effect<ClosedNodeResult, never> {
+  return Effect.try({
+    try: () => freezeClosedReportNode(node),
+    catch: (): ReportExecutionProblem => pageProblem(
+      "semantic-tree-invalid",
+      pageId,
+      "the Page returned a semantic tree that cannot be closed",
+    ),
+  }).pipe(Effect.match({
+    onFailure: (problem): ClosedNodeResult => Object.freeze({ state: "failed" as const, problem }),
+    onSuccess: (value): ClosedNodeResult => Object.freeze({ state: "resolved" as const, value }),
+  }));
+}
+
+function normalizeParameterFromKey(
+  page: HostParameterizedPage,
+  key: string,
+  capture: AnalysisIssueCapture,
+): Effect.Effect<
+  | { readonly state: "normalized"; readonly params: JsonValue }
+  | { readonly state: "invalid"; readonly reason: string },
+  AnalysisExecutionError,
+  Scope.Scope
+> {
+  const invalidKey = validateParameterKey(key);
+  if (invalidKey !== undefined) return Effect.succeed(Object.freeze({ state: "invalid" as const, reason: invalidKey.reason }));
+  return Effect.gen(function* () {
+    const decoded = yield* invokeCallback(() => page.params.decode(key), capture);
+    if (decoded.state === "failed" || !isJsonValue(decoded.value)) {
+      return Object.freeze({ state: "invalid" as const, reason: "params.decode() failed or returned a non-JSON value" });
+    }
+    const encoded = yield* invokeCallback(() => page.params.encode(decoded.value), capture);
+    if (encoded.state === "failed" || typeof encoded.value !== "string" || encoded.value !== key) {
+      return Object.freeze({ state: "invalid" as const, reason: "params encode/decode did not round-trip to the requested key" });
+    }
+    return Object.freeze({ state: "normalized" as const, params: decoded.value });
+  });
+}
+
+function normalizeEnumeratedParameter(
+  page: HostParameterizedPage,
+  value: unknown,
+  capture: AnalysisIssueCapture,
+): Effect.Effect<
+  | { readonly state: "normalized"; readonly params: JsonValue; readonly route: string }
+  | { readonly state: "invalid"; readonly reason: string },
+  AnalysisExecutionError,
+  Scope.Scope
+> {
+  if (!isJsonValue(value)) {
+    return Effect.succeed(Object.freeze({ state: "invalid" as const, reason: "params.enumerate() yielded a non-JSON value" }));
+  }
+  return Effect.gen(function* () {
+    const encoded = yield* invokeCallback(() => page.params.encode(value), capture);
+    if (encoded.state === "failed" || typeof encoded.value !== "string") {
+      return Object.freeze({ state: "invalid" as const, reason: "params.encode() failed or returned a non-string key" });
+    }
+    const normalized = yield* normalizeParameterFromKey(page, encoded.value, capture);
+    if (normalized.state === "invalid") return normalized;
+    const route = routeWithParameterKey(page.path, encoded.value);
+    const invalidRoute = validateReportRoute(route);
+    if (invalidRoute !== undefined) {
+      return Object.freeze({ state: "invalid" as const, reason: invalidRoute.reason });
+    }
+    return Object.freeze({ state: "normalized" as const, params: normalized.params, route });
+  });
+}
+
+function invokeCallback<Value>(
+  callback: () => Value | Promise<Value>,
+  capture?: AnalysisIssueCapture,
+): Effect.Effect<CallbackResult<Value>, AnalysisExecutionError> {
+  return Effect.tryPromise({
+    try: () => {
+      const invoke = () => Promise.resolve().then(callback);
+      return capture === undefined ? invoke() : capture.run(invoke);
+    },
+    catch: callbackError,
+  }).pipe(
+    Effect.map((value): CallbackResult<Value> => Object.freeze({ state: "succeeded" as const, value })),
+    Effect.catchAll((error) => isAnalysisExecutionError(error)
+      ? Effect.fail(error)
+      : Effect.succeed<CallbackResult<Value>>(Object.freeze({ state: "failed" as const }))),
+  );
+}
+
+function callbackError(error: unknown): AnalysisExecutionError | CallbackFailure {
+  return isAnalysisExecutionError(error) ? error : callbackFailure;
+}
+
+function isAnalysisExecutionError(value: unknown): value is AnalysisExecutionError {
+  if (!isPlainDataRecord(value)) return false;
+  if (value.code === "analysis-request-invalid") {
+    return hasExactFields(value, ["code", "reason"]) && typeof value.reason === "string";
+  }
+  if (value.code !== "analysis-sample-closed" || !hasExactFields(value, ["code", "sample"])) {
+    return false;
+  }
+  const sample = value.sample;
+  return isPlainDataRecord(sample) && hasExactFields(sample, ["kind", "id"]) &&
+    sample.kind === "analysis-sample" && typeof sample.id === "string";
+}
+
+function parameterKeyForRoute(
+  page: HostParameterizedPage,
+  route: string,
+): string | undefined {
+  const prefix = page.path === "/" ? "/" : `${page.path}/`;
+  if (!route.startsWith(prefix)) return undefined;
+  const key = route.slice(prefix.length);
+  return key.length > 0 && !key.includes("/") ? key : undefined;
+}
+
+function isParameterizedPage(
+  page: HostPage,
+): page is HostParameterizedPage {
+  return page.kind === "parameterized";
+}
+
+function pageSummaries(
+  pages: readonly HostPage[],
+  counts: ReadonlyMap<string, number>,
+): readonly ReportPageSummary[] {
+  return Object.freeze(pages.map((page) => Object.freeze({
+    pageId: page.id,
+    path: page.path,
+    kind: isParameterizedPage(page) ? "parameterized" as const : "plain" as const,
+    instanceCount: counts.get(page.id) ?? 0,
+  })).sort((left, right) => compareUtf8(left.pageId, right.pageId)));
+}
+
+function failedPage(
+  page: HostPage,
+  route: string | undefined,
+  problems: readonly ReportExecutionProblem[],
+): FailedPage {
+  return Object.freeze({
+    state: "failed" as const,
+    page,
+    ...(route === undefined ? {} : { route }),
+    problems: [...problems],
+  });
+}
+
+function pageProblem(
+  code: ReportExecutionProblem["code"],
+  pageId: string,
+  summary: string,
+): ReportExecutionProblem {
+  return Object.freeze({ category: "execution" as const, code, pageId, summary: safeSummary(summary) });
+}
+
+function collectDownloadAttempts(
+  attempts: readonly PageAttempt[],
+): Effect.Effect<readonly DownloadAttempt[], ReportLimitExceeded> {
+  const byId = new Map<string, DownloadAttempt>();
+  let observed = 0;
+  for (const page of uniquePageAttempts(attempts)) {
+    if (page.state !== "rendered") continue;
+    for (const download of page.downloads) {
+      observed += 1;
+      if (observed > REPORT_DOWNLOAD_FILES_MAX) {
+        return Effect.fail(reportLimit("download-files", REPORT_DOWNLOAD_FILES_MAX, observed));
+      }
+      const existing = byId.get(download.id);
+      if (existing === undefined) {
+        byId.set(download.id, {
+          id: download.id,
+          mediaType: download.mediaType,
+          bytes: download.bytes,
+          pages: [page],
+          problems: [],
+          conflicted: false,
+        });
+        continue;
+      }
+      existing.pages.push(page);
+      markDownloadConflict(
+        existing,
+        `download ${JSON.stringify(download.id)} is declared more than once (exact)`,
+      );
+    }
+  }
+  return Effect.succeed(Object.freeze([...byId.values()].sort((left, right) => compareUtf8(left.id, right.id))));
+}
+
+function markOutputConflicts(
+  attempts: readonly PageAttempt[],
+  downloads: readonly DownloadAttempt[],
+  target: ReportTargetSelection,
+): void {
+  const rendered = attempts.filter((attempt): attempt is RenderedPage => attempt.state === "rendered");
+  const routeOwners = new Map<string, RenderedPage[]>();
+  const downloadOwners = new Map<string, DownloadAttempt>();
+  const paths: ReportStaticPath[] = [];
+
+  for (const page of rendered) {
+    const owners = routeOwners.get(page.route) ?? [];
+    owners.push(page);
+    routeOwners.set(page.route, owners);
+    paths.push(staticPathForRoute(page.route));
+  }
+  for (const download of downloads) {
+    downloadOwners.set(download.id, download);
+    paths.push(staticPathForDownload(download.id));
+  }
+
+  if (target.kind === "static") {
+    if (!routeOwners.has("/")) paths.push(hostStaticPath("index.html"));
+    paths.push(
+      hostStaticPath("_niceeval/execution.json"),
+      hostStaticPath("_niceeval/manifest.json"),
+      hostStaticPath("_niceeval/problems/index.html"),
+      hostStaticPath("_niceeval/runtime.js"),
+      hostStaticPath("_niceeval/complete"),
+    );
+  }
+
+  for (const conflict of staticPathConflicts(paths)) {
+    markStaticPathOwnerConflict(conflict.left, conflict.right, routeOwners, downloadOwners);
+    markStaticPathOwnerConflict(conflict.right, conflict.left, routeOwners, downloadOwners);
   }
 }
 
-function markStaticConflict(
-  output:
-    | { readonly kind: "page"; readonly page: PageCandidate }
-    | { readonly kind: "download"; readonly download: BuiltDownload; readonly path: ReportDownloadPath },
-  problems: ProblemCollector,
+function markStaticPathOwnerConflict(
+  owner: { readonly owner: "route" | "download" | "host"; readonly source: string },
+  other: { readonly owner: "route" | "download" | "host"; readonly source: string },
+  routeOwners: ReadonlyMap<string, readonly RenderedPage[]>,
+  downloadOwners: ReadonlyMap<string, DownloadAttempt>,
 ): void {
-  if (output.kind === "page") {
-    if (output.page.conflictProblemId === undefined) {
-      output.page.conflictProblemId = problems.execution({
-        code: "route-conflict",
-        consumerId: output.page.pageId,
-        summary: "the Page route conflicts with another Report output",
-      });
+  const summary = `${owner.owner} ${JSON.stringify(owner.source)} conflicts with ${other.owner} ${JSON.stringify(other.source)}`;
+  if (owner.owner === "route") {
+    for (const page of uniquePages(routeOwners.get(owner.source) ?? [])) {
+      markPageConflict(page, "route-conflict", summary);
     }
     return;
   }
-  if (output.download.conflictProblemId === undefined) {
-    output.download.conflictProblemId = problems.execution({
-      code: "route-conflict",
-      consumerId: output.download.downloadId,
-      summary: "a Download path conflicts with another Report output",
-    });
+  if (owner.owner === "download") {
+    const download = downloadOwners.get(owner.source);
+    if (download !== undefined) markDownloadConflict(download, summary);
   }
 }
 
-function validateDocuments(input: {
-  readonly pages: readonly PageIntermediate[];
-  readonly downloads: readonly DownloadIntermediate[];
-  readonly problems: ProblemCollector;
-}): ReportLimitExceeded | undefined {
-  const candidates = input.pages.filter(
-    (page): page is PageCandidate => page.kind === "candidate" && page.conflictProblemId === undefined,
-  );
-  const routes = new Set<ReportRoute>(candidates.map((page) => page.route));
-  const downloads = new Set<ReportDownloadPath>();
-  for (const download of input.downloads) {
-    if (download.kind === "built" && download.conflictProblemId === undefined) {
-      for (const file of download.files) {
-        downloads.add(file.path);
-      }
-    }
-  }
-
-  const reverseLinks = new Map<ReportRoute, PageCandidate[]>();
-  const invalidRoutes: ReportRoute[] = [];
-  for (const page of candidates) {
-    const validation = validateCandidateDocument(page.document, routes, downloads);
-    if (validation.state === "limit") {
-      return validation.error;
-    }
-    if (validation.state === "invalid") {
-      markSemanticProblem(page, input.problems);
-      invalidRoutes.push(page.route);
-      continue;
-    }
-    page.document = validation.document;
-    for (const route of validation.routes) {
-      const linked = reverseLinks.get(route);
-      if (linked === undefined) {
-        reverseLinks.set(route, [page]);
-      } else {
-        linked.push(page);
-      }
-    }
-  }
-
-  for (let index = 0; index < invalidRoutes.length; index += 1) {
-    const invalidRoute = invalidRoutes[index];
-    if (invalidRoute === undefined) continue;
-    for (const dependent of reverseLinks.get(invalidRoute) ?? []) {
-      if (dependent.semanticProblemId !== undefined) continue;
-      markSemanticProblem(dependent, input.problems);
-      invalidRoutes.push(dependent.route);
-    }
-  }
-  return undefined;
-}
-
-function validateCandidateDocument(
-  document: ReportDocument,
-  routes: ReadonlySet<ReportRoute>,
-  downloads: ReadonlySet<ReportDownloadPath>,
-):
-  | { readonly state: "valid"; readonly document: ReportDocument; readonly routes: readonly ReportRoute[] }
-  | { readonly state: "invalid" }
-  | { readonly state: "limit"; readonly error: ReportLimitExceeded } {
-  try {
-    const validation = validateReportDocument(document, { routes, downloads });
-    const limit = reportDocumentLimit(validation);
-    if (limit !== undefined) {
-      return Object.freeze({ state: "limit" as const, error: limit });
-    }
-    if (!validation.valid) {
-      return Object.freeze({ state: "invalid" as const });
-    }
-    const frozen = freezeReportDocument(document);
-    return Object.freeze({
-      state: "valid" as const,
-      document: frozen,
-      routes: Object.freeze(routeLinks(frozen)),
-    });
-  } catch {
-    return Object.freeze({ state: "invalid" as const });
+function markDownloadConflict(download: DownloadAttempt, summary: string): void {
+  download.conflicted = true;
+  download.problems.push(Object.freeze({
+    category: "execution" as const,
+    code: "download-conflict" as const,
+    summary: safeSummary(summary),
+  }));
+  for (const page of uniquePages(download.pages)) {
+    markPageConflict(page, "download-conflict", summary);
   }
 }
 
-function reportDocumentLimit(validation: {
-  readonly issues: readonly { readonly code: string; readonly reason: string }[];
-  readonly nodeCount: number;
-}): ReportLimitExceeded | undefined {
-  for (const issue of validation.issues) {
-    if (issue.code !== "limit") continue;
-    if (issue.reason.includes("nodes deep")) {
-      return reportLimit("document-depth", REPORT_DOCUMENT_DEPTH_MAX, REPORT_DOCUMENT_DEPTH_MAX + 1);
-    }
-    return reportLimit("document-nodes", REPORT_DOCUMENT_NODES_MAX, validation.nodeCount);
-  }
-  return undefined;
+function markPageConflict(
+  page: RenderedPage,
+  code: Extract<ReportExecutionProblem["code"], "route-conflict" | "download-conflict">,
+  summary: string,
+): void {
+  page.conflicted = true;
+  page.problems.push(pageProblem(code, page.page.id, summary));
 }
 
-function markSemanticProblem(page: PageCandidate, problems: ProblemCollector): void {
-  if (page.semanticProblemId === undefined) {
-    page.semanticProblemId = problems.execution({
-      code: "semantic-document-invalid",
-      consumerId: page.pageId,
-      summary: "the Page returned an invalid semantic document",
-    });
-  }
+function uniquePages(pages: readonly RenderedPage[]): readonly RenderedPage[] {
+  return [...new Set(pages)];
 }
 
-function routeLinks(document: ReportDocument): readonly ReportRoute[] {
-  const routes: ReportRoute[] = [];
-  const visitInline = (inline: ReportInline): void => {
-    switch (inline.type) {
-      case "text":
-      case "code":
-        return;
-      case "emphasis":
-        inline.children.forEach(visitInline);
-        return;
-      case "link":
-        inline.label.forEach(visitInline);
-        if (inline.target.kind === "route") routes.push(inline.target.route);
-        return;
+function materializePageResults(
+  attempts: readonly PageAttempt[],
+  table: ReportProblemTable,
+): readonly ReportPageResult[] {
+  const results = uniquePageAttempts(attempts).map((attempt): ReportPageResult => {
+    const problemIds = idsFor(table, attempt.problems);
+    if (attempt.state === "rendered" && !attempt.conflicted) {
+      return Object.freeze({
+        state: "rendered" as const,
+        pageId: attempt.page.id,
+        route: attempt.route,
+        tree: Object.freeze({
+          pageId: attempt.page.id,
+          route: attempt.route,
+          title: attempt.page.title,
+          node: attempt.node,
+          problemIds,
+        }),
+        problemIds,
+      });
     }
-  };
-  const visitBlock = (block: ReportBlock): void => {
-    switch (block.type) {
-      case "section":
-        block.children.forEach(visitBlock);
-        return;
-      case "paragraph":
-        block.children.forEach(visitInline);
-        return;
-      case "list":
-        block.items.forEach((item) => item.forEach(visitBlock));
-        return;
-      case "status":
-        block.detail?.forEach(visitInline);
-        return;
-      case "table":
-      case "metric":
-      case "code-block":
-      case "chart":
-        return;
-    }
-  };
-  document.children.forEach(visitBlock);
-  return routes;
-}
-
-function finalizeExecution(input: {
-  readonly compiled: CompiledReport;
-  readonly sample: AnalysisSample;
-  readonly projectionOutcomes: ReadonlyMap<CompiledProjection, ProjectionOutcome>;
-  readonly calculationResults: ReadonlyMap<
-    AnyReportCalculation,
-    ReportCalculationExecutionResult
-  >;
-  readonly families: readonly FamilyIntermediate[];
-  readonly pages: readonly PageIntermediate[];
-  readonly downloads: readonly DownloadIntermediate[];
-  readonly problems: ProblemCollector;
-}): Effect.Effect<ReportExecution, ReportLimitExceeded | ReportProblemTableError, never> {
-  return Effect.gen(function* () {
-    const table = input.problems.table();
-    if (Either.isLeft(table)) {
-      return yield* Effect.fail(table.left);
-    }
-    const projections = projectionSummaries(
-      input.compiled.projections,
-      input.projectionOutcomes,
-      input.sample,
-    );
-    const calculations = input.compiled.calculations.map(({ calculation }) => {
-      const result = input.calculationResults.get(calculation);
-      if (result === undefined) {
-        throw new Error("a Calculation did not retain its execution result");
-      }
-      return result;
-    });
-    const execution = reportExecution({
-      reportId: input.compiled.graph.id,
-      sample: input.sample,
-      projections,
-      calculations,
-      families: input.families.map(familyResult),
-      pages: input.pages.map(pageResult),
-      downloads: input.downloads.map(downloadResult),
-      problemTable: table.right,
-    });
-    if (Either.isLeft(execution)) {
-      if (execution.left.code === "report-limit-exceeded") {
-        return yield* Effect.fail(execution.left);
-      }
-      throw executionInvariant(execution.left);
-    }
-    return execution.right;
-  });
-}
-
-function projectionSummaries(
-  projections: readonly CompiledProjection[],
-  outcomes: ReadonlyMap<CompiledProjection, ProjectionOutcome>,
-  sample: AnalysisSample,
-): readonly ReportProjectionSummary[] {
-  return projections.map((projection) => {
-    const outcome = outcomes.get(projection);
-    if (outcome === undefined) {
-      throw new Error("a compiled projection did not retain its outcome");
-    }
-    return Object.freeze({
-      projectionId: projection.projectionId,
-      inputKey: projection.inputKey,
-      coverage: outcome.state === "projected"
-        ? outcome.value.coverage
-        : failedProjectionCoverage(sample, projection.projection.access),
-      problemIds: outcome.state === "projected"
-        ? Object.freeze([])
-        : Object.freeze([outcome.problemId]),
-    });
-  });
-}
-
-function familyResult(value: FamilyIntermediate): ReportPageFamilyResult {
-  if (value.state === "expanded") {
-    return Object.freeze({
-      state: "expanded" as const,
-      familyId: value.familyId,
-      instanceCount: value.instanceCount,
-      problemIds: value.problemIds,
-    });
-  }
-  return Object.freeze({
-    state: value.state,
-    familyId: value.familyId,
-    instanceCount: value.instanceCount,
-    problemIds: requireProblemIds(value.problemIds),
-  });
-}
-
-function pageResult(value: PageIntermediate): ReportPageResult {
-  if (value.kind === "failed") {
-    return Object.freeze({
-      state: value.state,
-      pageId: value.pageId,
-      ...(value.route === undefined ? {} : { route: value.route }),
-      problemIds: value.problemIds,
-    });
-  }
-  const problemIds = uniqueProblemIds([
-    ...value.problemIds,
-    ...(value.conflictProblemId === undefined ? [] : [value.conflictProblemId]),
-    ...(value.semanticProblemId === undefined ? [] : [value.semanticProblemId]),
-  ]);
-  if (value.conflictProblemId !== undefined || value.semanticProblemId !== undefined) {
     return Object.freeze({
       state: "execution-failed" as const,
-      pageId: value.pageId,
-      route: value.route,
+      pageId: attempt.page.id,
+      ...(attempt.route === undefined ? {} : { route: attempt.route }),
       problemIds: requireProblemIds(problemIds),
     });
-  }
-  return Object.freeze({
-    state: "rendered" as const,
-    pageId: value.pageId,
-    route: value.route,
-    document: value.document,
-    problemIds,
   });
+  return Object.freeze(results.sort((left, right) => {
+    const id = compareUtf8(left.pageId, right.pageId);
+    if (id !== 0) return id;
+    return compareUtf8(left.route ?? "", right.route ?? "");
+  }));
 }
 
-function downloadResult(value: DownloadIntermediate): ReportDownloadResult {
-  if (value.kind === "failed") {
-    return Object.freeze({
-      state: value.state,
-      downloadId: value.downloadId,
-      problemIds: value.problemIds,
-    });
-  }
-  const problemIds = uniqueProblemIds([
-    ...value.problemIds,
-    ...(value.conflictProblemId === undefined ? [] : [value.conflictProblemId]),
-  ]);
-  if (value.conflictProblemId !== undefined) {
+function materializeDownloadResults(
+  attempts: readonly DownloadAttempt[],
+  table: ReportProblemTable,
+): readonly ReportDownloadResult[] {
+  const results = attempts.map((attempt): ReportDownloadResult => {
+    const problemIds = idsFor(table, attempt.problems);
+    if (!attempt.conflicted) {
+      return Object.freeze({
+        state: "built" as const,
+        download: Object.freeze({
+          id: attempt.id,
+          mediaType: attempt.mediaType,
+          bytes: new Uint8Array(attempt.bytes),
+        }),
+      });
+    }
     return Object.freeze({
       state: "execution-failed" as const,
-      downloadId: value.downloadId,
+      downloadId: attempt.id,
       problemIds: requireProblemIds(problemIds),
     });
-  }
-  return Object.freeze({
-    state: "built" as const,
-    downloadId: value.downloadId,
-    files: value.files,
-    problemIds,
   });
+  return Object.freeze(results.sort((left, right) => compareUtf8(
+    left.state === "built" ? left.download.id : left.downloadId,
+    right.state === "built" ? right.download.id : right.downloadId,
+  )));
 }
 
-function failedProjectionCoverage(
-  sample: AnalysisSample,
-  access: ProjectionAccess,
-): ProjectionCoverage {
-  let included = 0;
-  let notRecorded = 0;
-  let coreInvalid = 0;
-  let excluded = 0;
-  for (const slot of sample.slots) {
-    switch (slot.state) {
-      case "included":
-        included += 1;
-        break;
-      case "not-recorded":
-        notRecorded += 1;
-        break;
-      case "core-invalid":
-        coreInvalid += 1;
-        break;
-      case "excluded":
-        excluded += 1;
-        break;
-    }
+function idsFor(table: ReportProblemTable, problems: readonly ReportProblem[]): readonly number[] {
+  return Object.freeze([...new Set(problems.flatMap((problem) => {
+    const id = reportProblemIdFor(table, problem);
+    return id === undefined ? [] : [id];
+  }))].sort((left, right) => left - right));
+}
+
+function requireProblemIds(value: readonly number[]): readonly [number, ...number[]] {
+  const first = value[0];
+  if (first === undefined) {
+    throw new TypeError("a failed Report Page must have a registered problem");
   }
-  const slotAccess = access !== "selected-run";
-  return Object.freeze({
-    sample: Object.freeze({
-      denominator: sample.denominator,
-      totalSlots: sample.slots.length,
-      included,
-      notRecorded,
-      coreInvalid,
-      excluded,
-    }),
-    entries: Object.freeze({
-      total: slotAccess ? sample.slots.length : sample.runs.length,
-      attachmentResult: 0,
-      notRecorded: slotAccess ? notRecorded : 0,
-      coreInvalid: slotAccess ? coreInvalid : 0,
-      excluded: slotAccess ? excluded : 0,
-    }),
-    attachments: Object.freeze({
-      available: 0,
-      unavailable: 0,
-      migrationRequired: 0,
-      migrationUnavailable: 0,
-      unsupported: 0,
-      invalid: 0,
-    }),
-  });
+  return Object.freeze([first, ...value.slice(1)]);
 }
 
-function dataState(partial: boolean): ReportDataState {
-  return Object.freeze({ state: partial ? "partial" as const : "complete" as const });
+function allProblems(
+  pages: readonly PageAttempt[],
+  downloads: readonly DownloadAttempt[],
+  analysisIssues: readonly AnalysisIssue[],
+): readonly ReportProblem[] {
+  return Object.freeze([
+    ...uniquePageAttempts(pages).flatMap((attempt) => attempt.problems),
+    ...downloads.flatMap((attempt) => attempt.problems),
+    ...analysisIssues.map((issue) => Object.freeze({ category: "analysis-issue" as const, issue })),
+  ]);
 }
 
-function uniqueProblemIds(ids: readonly ReportProblemId[]): readonly ReportProblemId[] {
-  const unique: ReportProblemId[] = [];
-  const seen = new Set<number>();
-  for (const id of ids) {
-    if (seen.has(id)) continue;
-    seen.add(id);
-    unique.push(id);
-  }
-  return Object.freeze(unique);
+function uniquePageAttempts(attempts: readonly PageAttempt[]): readonly PageAttempt[] {
+  return [...new Set(attempts)];
 }
 
-function requireProblemIds(
-  ids: readonly ReportProblemId[],
-): readonly [ReportProblemId, ...ReportProblemId[]] {
-  if (ids.length === 0) {
-    throw new Error("a failed Report result must reference a problem");
-  }
-  return Object.freeze([...ids]) as readonly [ReportProblemId, ...ReportProblemId[]];
+function semanticLimit(
+  nodeCount: number,
+  issues: readonly { readonly code: string; readonly reason: string }[],
+): ReportLimitExceeded | undefined {
+  if (!issues.some((issue) => issue.code === "limit")) return undefined;
+  const depth = issues.some((issue) => issue.reason.includes("deep"));
+  return depth
+    ? reportLimit("document-depth", 32, 33)
+    : reportLimit("document-nodes", 20_000, Math.max(20_001, nodeCount));
 }
 
-function reportLimit(
-  limit: ReportLimitExceeded["limit"],
+function composeContext(resolver: NodeResolver): ComposeContext {
+  return Object.freeze({ sample: resolver.sample, page: resolver.page });
+}
+
+function resolveContext(resolver: NodeResolver): ResolveContext {
+  return Object.freeze({ sample: resolver.sample, page: resolver.page });
+}
+
+function assertPageLimit(count: number): Effect.Effect<void, ReportLimitExceeded> {
+  return count > REPORT_PAGES_MAX
+    ? Effect.fail(reportLimit("pages", REPORT_PAGES_MAX, count))
+    : Effect.void;
+}
+
+function collectIterable(
+  value: unknown,
   maximum: number,
-  observedAtLeast: number,
-): ReportLimitExceeded {
-  return Object.freeze({
-    code: "report-limit-exceeded" as const,
-    limit,
-    maximum,
-    observedAtLeast,
-  });
+):
+  | { readonly state: "values"; readonly values: readonly unknown[] }
+  | { readonly state: "invalid"; readonly reason: string }
+  | { readonly state: "limit" } {
+  let iterator: Iterator<unknown>;
+  try {
+    iterator = iteratorFrom(value);
+  } catch {
+    return Object.freeze({ state: "invalid" as const, reason: "params.enumerate() must return an Iterable" });
+  }
+  const values: unknown[] = [];
+  try {
+    while (true) {
+      const next = iterator.next();
+      if (next.done) return Object.freeze({ state: "values" as const, values: Object.freeze(values) });
+      values.push(next.value);
+      if (values.length > maximum) return Object.freeze({ state: "limit" as const });
+    }
+  } catch {
+    return Object.freeze({ state: "invalid" as const, reason: "params.enumerate() iterator failed" });
+  }
 }
 
-function reportAuthoringInvalid(): ReportAuthoringInvalid {
-  return Object.freeze({
-    code: "report-definition-invalid" as const,
-    issues: Object.freeze(["the Report must be created by NiceEval author constructors"]),
-  });
+function iteratorFrom(value: unknown): Iterator<unknown> {
+  if (value === null || (typeof value !== "object" && typeof value !== "function")) {
+    throw new TypeError("an Iterable must be an object");
+  }
+  const method = Reflect.get(value, Symbol.iterator);
+  if (typeof method !== "function") throw new TypeError("an Iterable must expose Symbol.iterator");
+  const iterator = Reflect.apply(method, value, []);
+  if (!isIterator(iterator)) throw new TypeError("Symbol.iterator must return an Iterator");
+  return iterator;
 }
 
-function compareText(left: string, right: string): number {
-  if (left === right) return 0;
-  return left < right ? -1 : 1;
+function isIterator(value: unknown): value is Iterator<unknown> {
+  if (value === null || (typeof value !== "object" && typeof value !== "function")) return false;
+  return typeof Reflect.get(value, "next") === "function";
+}
+
+function isJsonValue(value: unknown): value is JsonValue {
+  const active = new Set<object>();
+  const visit = (candidate: unknown): boolean => {
+    if (candidate === null || typeof candidate === "boolean") return true;
+    if (typeof candidate === "number") return Number.isFinite(candidate);
+    if (typeof candidate === "string") return hasOnlyUnicodeScalars(candidate);
+    if (Array.isArray(candidate)) {
+      if (active.has(candidate)) return false;
+      active.add(candidate);
+      const valid = candidate.every(visit);
+      active.delete(candidate);
+      return valid;
+    }
+    if (!isPlainDataRecord(candidate) || active.has(candidate)) return false;
+    active.add(candidate);
+    const valid = Object.entries(candidate).every(([key, entry]) => hasOnlyUnicodeScalars(key) && visit(entry));
+    active.delete(candidate);
+    return valid;
+  };
+  return visit(value);
+}
+
+function isClosedCallbackValue(value: unknown): boolean {
+  const active = new Set<object>();
+  const visit = (candidate: unknown): boolean => {
+    if (candidate === null || typeof candidate === "boolean") return true;
+    if (typeof candidate === "number") return Number.isFinite(candidate);
+    if (typeof candidate === "string") return hasOnlyUnicodeScalars(candidate);
+    if (typeof candidate === "function" || typeof candidate === "symbol" || typeof candidate === "bigint" || candidate === undefined) {
+      return false;
+    }
+    if (Array.isArray(candidate)) {
+      if (active.has(candidate)) return false;
+      active.add(candidate);
+      const valid = candidate.every(visit);
+      active.delete(candidate);
+      return valid;
+    }
+    if (!isPlainDataRecord(candidate) || active.has(candidate)) return false;
+    active.add(candidate);
+    const valid = Object.entries(candidate).every(([key, entry]) => hasOnlyUnicodeScalars(key) && visit(entry));
+    active.delete(candidate);
+    return valid;
+  };
+  return visit(value);
+}
+
+function isPlainDataRecord(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return false;
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== "string") return false;
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) return false;
+  }
+  return true;
+}
+
+function isDataArray(value: unknown): value is readonly unknown[] {
+  if (!Array.isArray(value)) return false;
+  for (let index = 0; index < value.length; index += 1) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+    if (descriptor === undefined || !("value" in descriptor)) return false;
+  }
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key === "symbol" || (key !== "length" && !isArrayIndex(key))) return false;
+  }
+  return true;
+}
+
+function isArrayIndex(value: string): boolean {
+  if (!/^(?:0|[1-9][0-9]*)$/.test(value)) return false;
+  const index = Number(value);
+  return Number.isSafeInteger(index) && index >= 0 && index < 2 ** 32 - 1;
 }
 
 function hasOnlyUnicodeScalars(value: string): boolean {
   for (let index = 0; index < value.length; index += 1) {
     const code = value.charCodeAt(index);
-    if (code >= 0xd800 && code <= 0xdbff) {
-      const next = value.charCodeAt(index + 1);
-      if (next < 0xdc00 || next > 0xdfff) return false;
-      index += 1;
-    } else if (code >= 0xdc00 && code <= 0xdfff) {
-      return false;
-    }
+    if (code < 0xd800 || code > 0xdfff) continue;
+    if (code >= 0xdc00 || index + 1 >= value.length) return false;
+    const next = value.charCodeAt(index + 1);
+    if (next < 0xdc00 || next > 0xdfff) return false;
+    index += 1;
   }
   return true;
 }
 
-function executionInvariant(error: ReportExecutionValueError): Error {
-  return new Error(`Report host produced an invalid execution: ${error.code}`);
+function definitionInvalid(reason: string): ReportDefinitionInvalid {
+  return Object.freeze({
+    code: "report-definition-invalid" as const,
+    issues: Object.freeze([Object.freeze({ path: Object.freeze(["report"]), reason })]),
+  });
 }
 
-class ProblemCollector {
-  readonly problems: ReportProblem[] = [];
-  private readonly ids = new Map<object, ReportProblemId>();
+function reportExecutionId(pages: readonly HostPage[]): string {
+  const encoded = JSON.stringify(pages.map((page) => [page.id, page.path]));
+  if (encoded === undefined) throw new Error("Report execution identity input must be JSON-serializable");
+  return `report-v1:${encoded}`;
+}
 
-  add(problem: ReportProblem): ReportProblemId {
-    const known = this.ids.get(problem);
-    if (known !== undefined) return known;
-    const id = this.problems.length as ReportProblemId;
-    this.problems.push(problem);
-    this.ids.set(problem, id);
-    return id;
-  }
+function safeSummary(value: string): string {
+  const normalized = hasOnlyUnicodeScalars(value) ? value : "Report callback failed";
+  return normalized.length <= 1_024 ? normalized : `${normalized.slice(0, 1_021)}...`;
+}
 
-  execution(problem: Omit<ReportExecutionProblem, "category">): ReportProblemId {
-    return this.add(
-      Object.freeze({
-        category: "execution" as const,
-        code: problem.code,
-        consumerId: problem.consumerId,
-        summary: problem.summary,
-      }),
-    );
+function compareUtf8(left: string, right: string): number {
+  if (left === right) return 0;
+  const encoder = new TextEncoder();
+  const leftBytes = encoder.encode(left);
+  const rightBytes = encoder.encode(right);
+  const length = Math.min(leftBytes.length, rightBytes.length);
+  for (let index = 0; index < length; index += 1) {
+    const delta = leftBytes[index]! - rightBytes[index]!;
+    if (delta !== 0) return delta;
   }
-
-  table() {
-    if (this.problems.length > REPORT_PROBLEM_TABLE_MAX) {
-      return Either.left({
-        code: "report-problem-table-limit" as const,
-        maximum: REPORT_PROBLEM_TABLE_MAX,
-        observedAtLeast: this.problems.length,
-      });
-    }
-    return reportProblemTable(this.problems);
-  }
+  return leftBytes.length - rightBytes.length;
 }

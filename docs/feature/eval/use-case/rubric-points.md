@@ -33,8 +33,9 @@ export default defineScoreEval({
 });
 ```
 
-每条 Assertion 默认只保存 evaluation、evidence 和 diagnostic。`.score(points)` 使 Boolean matched
-贡献 `points`，mismatched 贡献 `0`；measurement `m` 贡献 `m * points`。
+每条 Assertion 在 `niceeval.assertions` family 的 `schemaVersion: 1` envelope 内封口 evaluation、evidence 和 diagnostic。
+`.score(points)` 将 points 与 earned contribution 封口到同一 entry：Boolean matched 贡献 `points`，
+mismatched 贡献 `0`；measurement `m` 贡献 `m * points`。
 
 ## 用 Judge 给连续分
 
@@ -50,14 +51,14 @@ t.judge.autoevals.closedQA("说明是否讲清动机和风险？", {
 
 measurement 为 `.8` 且 `.score(20)` 时贡献 `+16`。同一个 Judge evaluator 只运行一次，写一条
 AssertionResult。分数无效、不可用或 evaluator error 都保留为 `unavailable` / `errored` 结果；缺少 points
-source 使 Score Attachment 成为 partial 或 unavailable，而非伪造零分。
+source 使 Score 的读侧结果成为 partial 或 unavailable，而非伪造零分。
 
 ## 终态
 
-`test` 正常返回后，Runner 自动封口。Score Attempt 只写 `passed | errored` Verdict；所有 contribution
-可算时为 `passed + complete`，没有计分项时 earned score 为 `0`。measurement 无需 threshold 就能封口；
-`.atLeast(n)` 只增加局部 condition，不改变 contribution 或 Verdict。execution error 或 unavailable
-score source 形成 errored + partial/unavailable。
+`test` 正常返回后，Runner 自动封口。Verdict 由 Core `outcome`、sealed Assertions 与显式 skip 在读侧
+折叠。Score Eval 没有 gate。低分或 `.atLeast(n)` 的局部 condition 不会形成 `failed`，也不改变 contribution
+或 Verdict。所有 contribution 可算时是 `passed + complete`。没有计分项时 earned score 为 `0`。execution
+error 或 unavailable score source 形成 `errored + partial/unavailable`。显式 skip 为 `skipped`，不参加排名。
 
 ## 相关阅读
 

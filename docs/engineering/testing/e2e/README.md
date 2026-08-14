@@ -175,9 +175,10 @@ Runner Repo 使用确定性本地 Agent 产生可区分的 plan、dispatch、car
 
 `--dry` 与 `accept` 同样归 Runner Repo。相关 Journey 先完整运行自己的初始 Experiment，再修改 Eval 或被导入源码模块。
 随后检查 human / JSON dry plan，执行 `accept @<locator>`。再用 accept 收据中的 Run ID 明确读取，证明新 Run 通过 reference Member 指向同一
-immutable Attempt；公开读回还要确认 verdict / evidence 未被复制或改写，采用原因由 membership provenance 表达。
+immutable Attempt；公开读回还要确认 verdict / evidence 未被复制或改写，采用原因由目标 Member action 表达。
 
-accepted action 不是未来 eligibility grant；后续 dry 仍独立执行当前 reuse policy。不得用手写 manifest 或预置 `.niceeval`
+accepted action 只属于目标 Member Core，不是另一份 durable family，也不是未来复用许可；后续 dry
+仍独立执行当前 reuse policy。不得用手写 manifest 或预置 `.niceeval`
 直接从流程中段起跑。
 
 ## Package 与 CLI

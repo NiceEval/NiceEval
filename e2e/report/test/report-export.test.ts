@@ -43,6 +43,20 @@ test("view --out 从一份固定 ReportExecution 导出带完成标识的静态�
       expect(index).toContain("Slot denominator");
       expect(index).toContain("Fixture copy block");
 
+      // The overview exposes each route produced by the one params codec.
+      // Static export must close exactly those Sample slots into detail pages.
+      const detailRoutes = [...new Set(
+        [...index.matchAll(/\/slots\/[a-z0-9][a-z0-9._~-]*/g)].map((match) => match[0]),
+      )];
+      expect(detailRoutes).toHaveLength(3);
+      for (const detailRoute of detailRoutes) {
+        const detail = await readFile(
+          join(projectRoot, "site-export", ...detailRoute.split("/").filter(Boolean), "index.html"),
+          "utf8",
+        );
+        expect(detail).toContain("Report fixture slot");
+      }
+
       const complete = await stat(join(projectRoot, "site-export", "_niceeval", "complete"));
       expect(complete.size).toBe(0);
 
@@ -59,8 +73,9 @@ test("view --out 从一份固定 ReportExecution 导出带完成标识的静态�
 
       const attemptIndex = await readFile(join(projectRoot, "attempt-export", "index.html"), "utf8");
       expect(attemptIndex).toContain("Attempt overview");
-      expect(attemptIndex).toContain("Verdict: failed");
-      expect(attemptIndex).toContain("Assertions");
+      expect(attemptIndex).toContain("0 ratio · 1 / 1 slot");
+      expect(attemptIndex).toContain("Attempt identity");
+      expect(attemptIndex).toContain("Closed evidence");
 
       const attemptComplete = await stat(join(projectRoot, "attempt-export", "_niceeval", "complete"));
       expect(attemptComplete.size).toBe(0);

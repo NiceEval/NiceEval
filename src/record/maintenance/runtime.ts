@@ -1,4 +1,5 @@
 import { Effect, Either, Schema } from "effect";
+import { RecordCoordination } from "../../coordination/record-leases.ts";
 import { RunIdSchema } from "../codec/identifiers.ts";
 import {
   compareCanonicalIdentity,
@@ -8,8 +9,6 @@ import type { RecordIncompleteRunWarning } from "../model/read-state.ts";
 import { recordPortablePath } from "../platform/services.ts";
 import {
   RecordFileSystem,
-  RecordMaintenanceLock,
-  RecordWriterLock,
 } from "../platform/services.ts";
 import {
   RECORD_MAINTENANCE_MAXIMUM_RUNS,
@@ -56,17 +55,16 @@ export function incompleteRunWarnings(
 }
 
 /**
- * Discover only Run directories whose final publication marker is absent.
- * The shared maintenance lock prevents a migration from changing the layout
- * while the bounded snapshot is formed; it intentionally does not acquire the
- * writer lock, so a writer may continue creating an unpublished draft.
+ * Discover incomplete Runs under the exclusive maintenance lease. This keeps
+ * the scan truthful for a following clean/migrate decision and never shares a
+ * lease with portable mutation.
  */
 export const inspectIncompleteRuns: InspectIncompleteRuns = ({ root }) =>
   Effect.scoped(
     Effect.gen(function* () {
       const fileSystem = yield* RecordFileSystem;
-      const maintenanceLock = yield* RecordMaintenanceLock;
-      yield* maintenanceLock.acquireShared(root);
+      const coordination = yield* RecordCoordination;
+      yield* coordination.enterRecordMaintenance(root);
 
       const entries = yield* fileSystem.listDirectory({
         directory: recordPortablePath(root, "runs"),
@@ -118,17 +116,15 @@ function cleanReceipt(input: {
 /**
  * Explicitly remove selected unpublished Run directories. The platform owns
  * the final `complete` recheck; one uninterruptible deletion keeps that check,
- * removal, and its directory sync within the writer-lock lifetime while an
+ * removal, and its directory sync within the maintenance-lease lifetime while an
  * interruption still propagates after the current deletion boundary.
  */
 export const cleanIncompleteRuns: CleanIncompleteRuns = ({ root, runIds }) =>
   Effect.scoped(
     Effect.gen(function* () {
       const fileSystem = yield* RecordFileSystem;
-      const maintenanceLock = yield* RecordMaintenanceLock;
-      const writerLock = yield* RecordWriterLock;
-      yield* maintenanceLock.acquireShared(root);
-      yield* writerLock.acquire(root);
+      const coordination = yield* RecordCoordination;
+      yield* coordination.enterRecordMaintenance(root);
 
       const deleted: RunId[] = [];
       const skipped: RunId[] = [];

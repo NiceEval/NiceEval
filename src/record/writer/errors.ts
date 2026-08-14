@@ -13,6 +13,11 @@ export interface RecordWriteSessionInvalid {
   readonly code: "record-write-session-invalid";
 }
 
+/** One scoped Run session can reserve exactly one new Run directory. */
+export interface RecordRunAlreadyCreated {
+  readonly code: "record-run-already-created";
+}
+
 /** A copied or otherwise non-issued draft capability was supplied internally. */
 export interface RecordDraftHandleInvalid {
   readonly code: "record-draft-handle-invalid";
@@ -55,6 +60,10 @@ const draftHandleInvalid: RecordDraftHandleInvalid = Object.freeze({
   code: "record-draft-handle-invalid",
 });
 
+const runAlreadyCreated: RecordRunAlreadyCreated = Object.freeze({
+  code: "record-run-already-created",
+});
+
 export function recordWriterClosed(): RecordWriterClosed {
   return writerClosed;
 }
@@ -65,6 +74,10 @@ export function recordWriteSessionInvalid(): RecordWriteSessionInvalid {
 
 export function recordDraftHandleInvalid(): RecordDraftHandleInvalid {
   return draftHandleInvalid;
+}
+
+export function recordRunAlreadyCreated(): RecordRunAlreadyCreated {
+  return runAlreadyCreated;
 }
 
 export function recordDraftStateError(input: {

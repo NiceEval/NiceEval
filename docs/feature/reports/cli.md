@@ -2,6 +2,10 @@
 
 show、view 与 view --out 使用同一条 Record → Analysis → Report 管线。每次命令固定一份 Sample，再形成不可变的 ReportExecution；renderer 不会在之后重新读取事实。
 
+CLI 以 `reportHost` 组合这条管线：show 调用 `execute()` 后调用 `show()`，view 调用 `execute()` 后调用
+`serve()`，view --out 调用 `execute()` 后调用 `export()`。`reportHost` 在其边界内经 `recordHost` 打开 Record、
+经 `analysisHost` 签发 Sample；Report author 从不取得 reader。
+
 ## 共同选择项
 
 ```sh
@@ -41,7 +45,7 @@ selector 先决定 Sample，默认 Report 再决定要从这个 Sample 读取哪
 
 `--report overview` 是显式选择通用 `default-overview`，不会改成 `run-membership-overview`。`niceeval.config.ts` 仍是 Theme、source snapshot 与 `view` rebuild 的输入；表中的“内建 Run Report 优先”只表示配置里的 Report 不参与这次默认 Report 决议，不表示命令完全不加载 Config。
 
-`--run` 不是“取最后一次结果”，也不是因为同一命令预计会产生不同答案。Run 是一次固定的 expected-slot 分母与 membership 决定边界；两个 Run 即使引用同一个 immutable Attempt，也可能分别是 `origin`、自动沿用的 `carried`，或人工采用的 `accepted`。因此单个 `--run` 用来回答“这一轮纳入了什么、怎样纳入”，多个 `--run` 用同一表形状比较这些历史边界；已知 Attempt 的业务事实则用 `show @<locator>` 下钻。
+`--run` 不是“取最后一次结果”。每个 Run 固定自己的 expected-slot 分母和 Sample 选择审计；多个 Run 可以用同一表形状比较这些历史边界。已知 immutable Attempt 的详情则用 `show @<locator>` 下钻。
 
 Run ID 有两个公开取得方式：
 
@@ -74,77 +78,28 @@ JSON 不输出下载 raw bytes、Record payload、Sample capability、未执行�
 
 Broken pipe 是正常 CLI 退出。其它 console failure 是 typed error，interruption 保持 Cause。show 完成后退出，不 watch。
 
-### 内建 Run membership 概览
+### 内建 Run 概览
 
-一个或多个 `--run` 在没有显式 `--report` 时使用 `run-membership-overview`。它的固定页面是 `pageId: "run-membership"`、route `/`。页面以 bounded table 对齐 Sample Core、Run-owned membership provenance 与 Attempt Verdict；它不会读取 persisted raw action，也不会把一种事实修正成另一种。
+一个或多个 `--run` 在没有显式 `--report` 时使用 `run-membership-overview`。它的固定页面是 `pageId: "run-membership"`、route `/`。页面把 Sample Core 与已关闭的 Attempt Evidence 并列，既不重新打开 Record，也不建立 Report 自己的持久状态。
 
-稳定表的 column keys 是：
+有界表的稳定列是 `runId`、`slotId`、`slotState`、`memberAction`、`memberRelation`、`sourceAttemptLocator` 和 `evidenceState`。前两项是 row identity；只有 included slot 有 relation 和 locator。`memberAction` 保留 Core 已给出的动作，`evidenceState` 来自同一 Sample 中已关闭的 Evidence 视图。它们分别回答选择与可复核 Evidence，不能互相推导。
 
-| key | 值域与含义 |
-|---|---|
-| `runId` / `slotId` | row identity。单 Run 与多 Run 都按 canonical `runId`、`slotId` 排序。 |
-| `slotState` | `included \| not-recorded \| core-invalid \| excluded`。 |
-| `memberRelation` | 只有 `included` 才是 `origin \| reference`；否则为 `null`。 |
-| `sourceAttemptLocator` | 只有 `included` 才是 `@<locator>`；否则为 `null`。 |
-| `membershipState` | `available \| action-missing \| unavailable \| migration-required \| migration-unavailable \| unsupported \| invalid`。 |
-| `membershipOutcome` | `carried \| accepted \| executed \| not-dispatched \| interrupted`；没有可读或匹配 action 时为 `null`。这是公开 projector 的 outcome，不是 persisted payload 的 raw `action` 字段。 |
-| `verdictState` | `available \| not-read \| unavailable \| migration-required \| migration-unavailable \| unsupported \| invalid`。非 `included` slot 是 `not-read`。 |
-| `verdict` | `passed \| failed \| errored \| skipped`；没有可读 Verdict 时为 `null`。 |
+表最多显示 200 rows，并明确显示 omitted count。它是快速核对固定 Sample 的摘要，不承诺任意规模 Run 的穷尽查询；需要不同字段或更大切片时显式选择自定义 Report，并仍受 Report host limits 约束。自定义 Report 只继承 selection 与 `niceeval.report-show/v1` envelope，不继承这个内建表的列契约。
 
-Membership Attachment 可读、但没有匹配这个 `slotId` 的 action 时显示 `action-missing`。不对应任何 Sample slot 的额外 action 计入确定性的 unmatched count。Attachment 的非 available 状态保持原值，schema、migration 或 issue 详情继续出现在页面与 host problem table；Report 不从 Core 猜 provenance，也不从 provenance 猜 Verdict。
+同一次 execution 的 `--json` 外层仍是 `niceeval.report-show/v1`。页面、下载 metadata 和 canonical problemTable 都从同一 ClosedReportTree 派生。
 
-表在 canonical 排序后最多显示 200 rows，并明确显示 omitted count。它是快速检查 Run membership 的 bounded summary，不承诺任意规模 Run 的穷尽查询；需要不同字段或更大切片时显式选择自定义 Report，并仍受 Report host limits 约束。自定义 Report 只继承 selection 与 `niceeval.report-show/v1` envelope，不继承上面的内建表契约。
+### 内建 Attempt 详情
 
-人读输出示例：
+精确 `show @<locator>` 在没有显式 `--report` 时使用 `attempt-overview`。它按 canonical locator 对齐同一
+Attempt 的闭合 Evidence 与 Observability。
 
-```text
-Report run-membership-overview
-Sample: 1 run(s), 1 slot(s)
+Evidence 公开 immutable `Outcome`、由 Core 加已验证 Assertions 的权威 fold 得到的 `Verdict`，以及 Assertions。
+`AttemptTrace` 公开 command phase、退出码、diagnostic code 与摘要。
 
-Page /
-  Run membership overview
-  Run membership
-  Run | Slot | Slot state | Member relation | Source Attempt | Membership state | Membership outcome | Verdict state | Verdict
-  7b8d2ea4-b840-4870-9840-f85a436a5527 | slot-00b400bd-ba81-4850-8803-09ba802896e5 | included | reference | @1K1P0VJAPVJ12 | available | accepted | available | passed
-  [neutral] Omitted rows: 0
-  [neutral] Unmatched membership actions: 0
+这让 `errored` Attempt 即使在 Context 建立前失败，也能显示其 `sandbox.prepare`、非零 code 和错误摘要。
 
-Problems
-  none
-```
-
-同一次 execution 的 `--json` 外层仍是 `niceeval.report-show/v1`。下列是 `pages[0].tree` 中稳定审计表的相关子树；文案、section 顺序和其它节点可以增加或调整：
-
-```json
-{
-  "caption": "Run membership",
-  "columns": [
-    { "key": "runId", "label": "Run" },
-    { "key": "slotId", "label": "Slot" },
-    { "key": "slotState", "label": "Slot state" },
-    { "key": "memberRelation", "label": "Member relation" },
-    { "key": "sourceAttemptLocator", "label": "Source Attempt" },
-    { "key": "membershipState", "label": "Membership state" },
-    { "key": "membershipOutcome", "label": "Membership outcome" },
-    { "key": "verdictState", "label": "Verdict state" },
-    { "key": "verdict", "label": "Verdict" }
-  ],
-  "rows": [
-    {
-      "memberRelation": "reference",
-      "membershipOutcome": "accepted",
-      "membershipState": "available",
-      "runId": "7b8d2ea4-b840-4870-9840-f85a436a5527",
-      "slotId": "slot-00b400bd-ba81-4850-8803-09ba802896e5",
-      "slotState": "included",
-      "sourceAttemptLocator": "@1K1P0VJAPVJ12",
-      "verdict": "passed",
-      "verdictState": "available"
-    }
-  ],
-  "type": "table"
-}
-```
+Outcome 不是 Verdict。Report 不从 Record 重读或重算任一者。缺 entry 或 duplicate locator 会作为明确的对齐状态
+显示，绝不按数组位置猜测。
 
 ## niceeval view
 

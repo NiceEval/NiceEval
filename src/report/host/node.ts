@@ -28,7 +28,7 @@ export {
   defineTheme,
   isThemeDefinition,
   themeStylesheet,
-} from "./node/theme.ts";
+} from "./theme.ts";
 export type {
   ReportTheme,
   ThemeColor,
@@ -38,7 +38,7 @@ export type {
   ThemeHex,
   ThemeRadius,
   ThemeSeries,
-} from "./node/theme.ts";
+} from "./theme.ts";
 
 export {
   loadTrustedReportConfig,
