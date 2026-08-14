@@ -139,15 +139,9 @@ jobs:
               "pnpm-workspace.yaml",
               ".github/workflows/e2e.yml",
               "docs/engineering/testing/e2e/README.md",
-              "docs/engineering/testing/e2e/report.md",
             ]);
-            const reportWritingBaseline = changed.includes("docs/engineering/testing/e2e/report.md")
-              ? "docs/writing-baseline.json"
-              : undefined;
             const reportOnly = changed.length > 0 && changed.every((path) =>
-              reportOnlyPrefixes.some((prefix) => path.startsWith(prefix)) ||
-              reportOnlyFiles.has(path) ||
-              path === reportWritingBaseline,
+              reportOnlyPrefixes.some((prefix) => path.startsWith(prefix)) || reportOnlyFiles.has(path),
             );
 
             // report owns both report rendering and `show` readback. Its private Testkit and

@@ -46,7 +46,7 @@ show / view 对这份真实结果的可观察行为按 [Show](../../../feature/r
 - **证据切面**：项目配置自定义报告且不含 attempt page 时，不带 `--report` 的 `show @<locator>` 仍显示官方诊断首页；显式 `@<locator> --report <file>` 才进入该报告的 attempt page。`--source` / `--execution` / `--timing` / `--diff` 在真实证据上工作；`--timing` 的有界诊断树与 `--timing=full` 全量展开按契约取样；落盘无 phases 时如实显示 unavailable，不猜。
 - **Sample warnings**：局部补跑、过旧、不可读 Run 形成结构化 warning 且两宿主一致；单个坏 Run 不阻塞其余；零可读结果时 `show` 非零退出、`view` 不启动 server。
 - **Run diagnostics**：真实 Run 的实验域 diagnostic 在两个宿主都按 experiment → Run 来源呈现；直接传入的 Run[] 的自定义报告同样可见，来源、时效、level、message、command 与 count 不被合并或改写。
-- **导出与 server**：`view --out` 导出站与本地 server 对同一页同一语言的报告 HTML、参数化页内容及 artifact 文件逐字节一致；收窄对页面 Sample、参数化页实例与 `artifact/` 证据树同步生效，范围外实例不可达；`attempt/<locator>.html` 无 JavaScript 完整可读；`o11y.json` 永不出站；`sources.json` 出站后仍是 `{path, sha256}[]` 两层去重引用，引用的同 Run `sources/<sha256>.json` 正文必须在 server 与 `--out` 中均可读取且逐字节一致。
+- **导出与 server**：`view --out` 导出站与本地 server 对同一路径逐字节一致；收窄对页面 Sample 与 `artifact/` 证据树同步生效；`attempt/<locator>.html` 无 JavaScript 完整可读；`o11y.json` 永不出站；本地 server 的 attempt 详情路由对完整记录根解析、不受 `--exp` 等收窄限制（与 `show @<locator>` 同一套按记录根语义寻址，`--out` 则只产出收窄内可达 locator 对应的文档）；`sources.json` 出站（server 响应与 `--out` 导出）恒为解引用后的 `{path, content}[]`，不是落盘的两层去重引用格式（先例：[memory/attempt-locator-and-source-dedup](../../../../memory/attempt-locator-and-source-dedup.md)）。
 
 ### 5. 渲染面
 
