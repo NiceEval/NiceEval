@@ -1,6 +1,7 @@
 # 跨文件 Eval 怎样进入源码闭包
 
-Eval 调用项目内另一个文件导出的函数时，入口文件本身不能代表完整执行输入。本地静态 import 递归进入该 Eval 的源码闭包。
+Eval 调用项目内另一个文件导出的函数时，入口文件本身不能代表完整执行输入。静态 local import 与
+NiceEval loader 已读取的项目文件共同形成本次源码闭包。
 
 ## 本地评分函数
 
@@ -13,50 +14,46 @@ export default defineEval({
 });
 ```
 
-这条 Eval 的源码闭包同时包含 `evals/login.eval.ts` 与 `helpers/grade-login.ts`。共享评分函数改变时，所有静态依赖它的 Eval 都形成新的源码闭包 identity。
+这条 Eval 的闭包包含 `evals/login.eval.ts` 和 `helpers/grade-login.ts`。Run seal 前，Runner 为闭包内
+每个项目文件写入 `niceeval.sources/v1` 的 `SourceItemId`、canonical project-relative path、SHA-256 和
+own blob。Report 从 Attempt 的 origin Run 查看当时内容，而不是后来修改过的函数。
 
-Run 发布 `niceeval.sources/v1` 时，为闭包内每个项目文件保存 stable `SourceItemId`、canonical
-project-relative path、digest 与 RecordAttachment-local bytes。Report 从 Attempt 的 origin Run
-查看当时内容，不读取后来修改过的评分函数。
+## Loader 读取的数据
 
-## 通过 loader 读取的数据
-
-发现期通过 `loadText`、`loadYaml` 或 `loadJson` 读入的项目文件也属于源码闭包。修改题面、rubric 或数据集会改变依赖它的 Eval identity。
+发现阶段通过 `loadText`、`loadYaml` 或 `loadJson` 读取的项目文件也属于源码闭包：
 
 ```ts
 const cases = await loadYaml("evals/data/cases.yaml", decodeCases);
 ```
 
-loader 同时给出显式路径和解码边界。它与本地静态 import 一样，可以在运行前形成稳定依赖集合。
+loader 提供显式 path 和 decode boundary，因此 Runner 可以在运行前把它加入稳定依赖集合。题面、rubric
+或数据集变化时，对应 Eval 的 input / behavior identity 会变化；Sources 保存的则是那次运行实际使用的
+事实。
 
-## 不能从静态 closure 猜出的输入
+## 不从静态闭包猜测动态输入
 
-computed `import()`、直接 `fs.readFile()` 和运行时拼出的路径不由静态 import closure 自动证明。直接 `fs` 读取的文件也不进入既有 Eval 源码闭包指纹。
+computed `import()`、直接 `fs.readFile()` 和运行时拼出的路径不由静态 import closure 自动证明。
+需要成为 Eval 输入的项目文件应使用 NiceEval loader。Sandbox 运行期间传输的本地文件进入自己的
+file-changes 或 Artifact 事实，不冒充 Sources item。
 
-需要发现期数据时使用 NiceEval loaders。Sandbox 运行中实际上传的本地文件写入 transfer manifest，并遵守自己的动态 identity 契约。
-
-外部 package 的安装与 resolution identity 不由 Sources RecordAttachment 自行猜测。它属于 input、
-behavior 与 reuse identity 边界；版本文本不能由本用例提升为源码 bytes 证明。runtime trace 中不属于
-source closure 的 frame 也不成为 source-sites 的 project source item。
+外部 package 的安装、resolution 和 provider 行为同样不由 Sources 自行猜测。它们属于 input、behavior
+或 reuse identity，而不是“当前机器上能读取到的源码”。
 
 ## 两个用途保持分层
 
 ```text
-源码闭包 identity
-  → 判断源码变化是否让旧 Attempt 失去沿用资格
+source closure identity
+  → 判断当前输入变化是否影响 reuse
 
 niceeval.sources/v1
-  → 保存当时可离线查看和核对的源码事实
+  → 保存已发生运行的离线核对事实
 ```
 
-Record 只保存 producer 已形成的 source facts，不重新扫描 import，也不判断当前目标能否 reuse。依赖发现和比较语义变化时，由对应 behavior identity owner 更新自己的 domain。
-
-source-sites 只能引用这份 manifest 中的 `SourceItemId` 与 digest。它不能把 host path、package
-file、blob ref 或当前 worktree 位置写入 Attempt payload。
+Record 不重新扫描 import，也不判断新的 Eval 输入能否 reuse 历史 Attempt。source-site 持久导航只以 `SourceItemId`、digest
+和坐标 join origin Run Sources；它不保存 host path、blob ref 或当前 worktree 位置。
 
 ## 相关阅读
 
-- [修改评测源码后只重跑受影响项](../../experiments/use-case/缓存与沿用/修改评测源码.md)
-- [本地测试文件与 transfer manifest](../../eval/use-case/criteria-files.md)
-- [Eval 数据加载](../../eval/library.md)
 - [Sources manifest](../architecture.md#sources-manifest)
+- [多个 Attempt 怎样共用源码快照](多个Attempt怎样共用源码快照.md)
+- [Eval 数据加载](../../eval/library.md)

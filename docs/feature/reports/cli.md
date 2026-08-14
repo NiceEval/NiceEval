@@ -1,8 +1,6 @@
 # Reports CLI
 
-`show`、`view` 与 `view --out` 使用同一条 Record→Sample→Report execution 管线。一次 execution 读取一个 frozen candidate set，形成该 selection 的完整分母与全部 requested projections，然后成为不再访问 Record 的 immutable value。
-
-本机 `view` 可以长期观察输入变化，但每次成功 rebuild 都发布一个新的固定 execution；它不修改旧 execution。
+show、view 与 view --out 使用同一条 Record → Analysis → Report 管线。每次命令固定一份 Sample，再形成不可变的 ReportExecution；renderer 不会在之后重新读取事实。
 
 ## 共同选择项
 
@@ -14,110 +12,121 @@ niceeval view [selection] [report options] --out <directory>
 
 | 选项 | 含义 |
 |---|---|
-| `--record <root>` | 选择实际 Record root；省略时使用 `<cwd>/.niceeval/record`。 |
-| `--run <run-id>` | 可重复；使用 explicit analysis selection。 |
-| `--experiment <id>` | 可重复；按完整 ExperimentId 收窄不带 locator 或 `--run` 的当前项目目标。 |
-| `--report <module>` | 选择内建 Report 或受信任的 Report module。 |
-| `--page <route>` | 选择一个已经展开的 exact route。 |
-| `--port <port>` | `view` 监听端口；默认 4173，只绑定 loopback。 |
-| `--no-open` | 阻止 `view` 自动打开浏览器。 |
+| --record <root> | 选择 Record root；省略时使用 <cwd>/.niceeval/record。 |
+| --run <run-id> | 可重复；精确选择历史 Run。 |
+| --experiment <id> | 可重复；按完整 ExperimentId 收窄当前项目目标。 |
+| --report <module> | 选择内建 Report 或受信任 Report module。 |
+| --page <route> | 选择一个 exact route。 |
+| --port <port> | view 的监听端口；默认 4173，只绑定 loopback。 |
+| --no-open | 阻止 view 自动打开浏览器。 |
+| --json | 让 show 输出固定 JSON。 |
+| --out <directory> | 生成静态站，不启动 watcher 或长期 server。 |
 
-不传 locator 与 `--run` 时，`show` / `view` 规划当前项目身份，并扫描默认 Record 中全部 published Run。只有 Experiment、Eval、attempt ordinal、evaluation kind、input identity 与 config identity 仍匹配当前目标的 slot 才进入 `project-current` Sample。选择不会按时间缩成最后一个 Run，也不会写回 Record。
+不传 locator、--run 或 --experiment 时，命令按当前项目身份形成 Sample。它选择全部匹配的 published Run，不按时间缩成最后一个 Run，也不写回 Record。没有匹配结果时，命令形成空 Sample；度量用自己的 state、samples、total 和 issues 表达结果。
 
-`--experiment` 使用完整 ExperimentId 收窄当前目标，不能与 `--run` 合用。`--run` 可重复，用于审计指定历史 Run；它不要求结果仍匹配当前项目身份。多值 flag 不接受逗号列表。
+--experiment 不能与 --run 合用。多值 flag 不接受逗号列表。未知 Run、未知 Experiment、未知 route、不能规范 decode 的参数 route 和没有 root Page 时省略 --page 都是用法错误。
 
-不存在的 Run、未知 Experiment、未知 route 或尚未展开的参数化 route 都是用法错误。没有结果匹配当前项目时，不带选择项的命令形成空 Sample；它不会拿过期结果补位。
-
-`exp` 与不带 `--record` 的 `show` / `view` 默认使用同一个 `<cwd>/.niceeval/record`。只有主动读取其它 Record root 时才传该选项。旧 Record major 在执行选择或装载 Report 前以 `record-migration-required` 停止，并提示用户运行 `niceeval migrate`。
-
-## `niceeval show`
+## niceeval show
 
 ```sh
 niceeval show --run 01H... --report ./reports/summary.ts
 niceeval show --run 01H... --run 01J... --page /comparison
-niceeval show --experiment checkout --page /overview
+niceeval show --experiment checkout --page /attempt/attempt-01h...
 niceeval show --json
 ```
 
-`show` 构造一次 `ReportExecution`，再从 closed semantic report tree 渲染 terminal text。`--json` 输出 exact `niceeval.report-show/v1`：
+未传 --page 时，show 执行每个普通 Page，并按 route 输出。参数化详情页必须给出 exact route，避免一次终端命令意外枚举无限增长的详情集合。
 
-- sample 摘要与每个 projection input 的 coverage；
-- Calculation results、family summaries、页面与 bounded problem table；
-- Download 的 path / mediaType / byteLength / SHA-256 metadata。
+传 --page 时，show 只执行该 Page instance。它对参数 key 执行 decode 和规范往返检查，再运行该实例的 load、render 和组件树。不存在的实例不会触发事实读取。
 
-它不创建第二条 projection 或计算路径，不输出 Download raw bytes。
-Host 只显示每个 input 的 complete/partial 与 problem IDs，不替作者公式猜 observed/denominator。通过率等业务统计只有在 Calculation value 自己提供时才显示。unavailable、unsupported、invalid 与 execution-failed 必须保留状态及 problem reference，不能替换成零、空字符串或省略行。
+show 的 text 和 JSON 都从同一 ClosedReportTree、下载 metadata 和 problemTable 派生。--json 输出固定的 niceeval.report-show/v1：
 
-没有 `--page` 时 JSON 按 route 输出全部 pages；有 `--page` 时只输出 exact 选中页，但 sample / projection coverage、calculations、families、download metadata 与 problems 仍保留。arrays 与 keys 使用 canonical order，stdout 为 UTF-8 canonical JSON。Broken pipe 是正常 CLI 退出，其它 console failure 是 typed error，interruption 保持 Cause。
+- Report identity、Sample 摘要和所选 target；
+- 普通 Page 与已执行参数实例的 route、状态和闭合树；
+- 页面摘要、下载的 path、mediaType、byteLength 与 SHA-256；
+- canonical problemTable。
 
-`show` 完成后退出，不 watch。
+JSON 不输出下载 raw bytes、Record payload、Sample capability、未执行页面或第二条数据读取路径。arrays 按 canonical order，object key 按 UTF-8 bytes 排序，stdout 是 UTF-8 canonical JSON。
 
-## `niceeval view`
+Broken pipe 是正常 CLI 退出。其它 console failure 是 typed error，interruption 保持 Cause。show 完成后退出，不 watch。
+
+## niceeval view
 
 ```sh
 niceeval view --report ./reports/summary.ts --port 4400
-niceeval view --run 01H... --page /attempts/attempt-01h... --no-open
+niceeval view --run 01H... --page /attempt/attempt-01h... --no-open
 ```
 
-`view` 打开一个 scoped `ReportViewSession`。导航只列出当前成功 revision 已经展开的 routes。
+view 打开 scoped ReportViewSession。没有 --page 时，它打开 root route /；Report 没有 root Page 时，用户必须显式传入 --page。导航只列当前成功 revision 中已经执行且 navigation 为真的普通 Page；详情 route 由页面内已闭合链接进入。
 
-Record canonical ID 不能直接拼 route：Report 作者必须用 `reportInstanceKeyFromRecordId` 与 `reportRouteFromKeys` 形成 lowercase、domain-tagged route。CLI 中的 `attempt-01h...` 是 adapter 输出；Record 详情与页面正文仍显示原 uppercase `AttemptId`。
+Record identity 不能直接拼 route。Page params 的 encode() 负责产生规范小写 key；CLI 只显示该 key，页面正文仍显示领域对象自己的原始 identity。
 
-每个成功 revision 固定包含 Report / Config / Theme source snapshot、core-only `AnalysisSample` 与一个 immutable `ReportExecution`。
+每次成功 rebuild 固定包含 Report、config、theme 的内容快照、Sample 摘要和 immutable ReportExecution。页面打开、HTTP request 与浏览器刷新都不会重新读取事实。
 
-watch 闭集是 Record root、Report module 及其项目内静态 import、Theme module 与 `niceeval.config.ts`。loader 与 watcher 的具体实现属于 Node host，本契约只声明行为：
+| rebuild 结果 | view 行为 |
+|---|---|
+| 新 execution 成功 | 原子替换 current revision，并清除上一条 rebuild problem。 |
+| Page execution problem | 发布新 revision，保留其它成功页面和不可关闭问题面。 |
+| Report module、config、选择、Analysis 或限额错误 | 保留 last-good revision，并显示有界 rebuild summary。 |
+| 仅 theme 变化 | 可复用原 execution，仍发布新的 view revision。 |
 
-- 每次 rebuild 产生一份新的 fixed `ReportExecution`；
-- 完整成功后才替换 current revision，并显示新结果；
-- 失败保留 last-good execution，并显示 bounded rebuild problem；
-- 能形成 exact `ReportExecution` + built-in problems surface 就是成功 revision。Recorded data problem，或已隔离的 projector / author / tree / route execution problem，会发布新 revision 并显式显示；
-- module / config / theme 无法 load、Record / selection global typed error、limit 或 execution envelope 无法形成时，保留 last-good 并产生 bounded rebuild summary。
+watch 输入闭集是 Record root、Report module、其项目内静态 import、Theme module 和 niceeval.config.ts。loader、watcher、server 和 module cache 的实现细节属于 Node host。
 
-HTTP request、页面打开与刷新不触发新的 Record I/O。Record、Report 或影响选择的 Config 变化产生新的 execution；Theme-only 变化可以复用同一个 immutable execution，再发布新的 view revision。
+Web 图形、颜色和交互只能增强已有 tree 的文字、表格、MetricValue 和状态。它们不能更改分母、打开路径或触发新的事实读取。
 
-web renderer 与 `show` 从同一棵 semantic tree 读取。图表、颜色与交互只能增强已有文字、表格、数值和状态，不能改变分母或发起新的 Attachment 读取。
-
-## `niceeval view --out`
+## niceeval view --out
 
 ```sh
 niceeval view --report ./reports/summary.ts --out ./report-site
 niceeval view --run 01H... --out ./shared-site --no-open
 ```
 
-`--out` 不启动 watcher 或长期 server。它构造一个固定 `ReportExecution`，穷尽全部 PageFamily instances、routes、downloads 与 semantic trees，再导出自包含静态站。
+--out 不接受 --page。它建立一份静态 all-pages execution：运行每个普通 Page，调用每个参数化 Page 的 enumerate(sample)，并执行所有枚举出的实例。这样导出目录包含完整的 route 与下载 closure，而不是首个浏览器访问后才逐页补齐的网站。
 
-export 只写这个 execution 的既有结果、当前 host-data、downloads、manifest 与内建精确 runtime。Report module 不能注入任意 script、style、font、worker、WASM、网络 URL、DOM 或文件 path。
+执行完成后 exporter：
 
-执行顺序：
+1. 检查所有闭合页面、route、下载、限额和 execution problem；
+2. 唯一地准备一个此前不存在的目标目录；
+3. 写出 HTML、host-data、downloads、manifest 和内建 runtime；
+4. 在全部文件成功写完后，最后写零字节 complete marker；
+5. sync 目录。
 
-1. preflight execution problems、semantic tree、route、download、limits 与 closure；任一 execution problem 整体不发布；
-2. 向目标目录写出 HTML、host-data、downloads、manifest 与 built-in runtime；
-3. 全部文件写出后，最后写入零字节 `complete` marker，再 sync 目录。
+目标已存在时返回 report-export-target-exists，不删除或替换任何文件。中断或失败可能留下无 complete marker 的目录；Host 提示用户删除后重试。此命令不承诺原子目录发布。
 
-目标已存在返回 `report-export-target-exists`，不删除或替换既有内容。中断或失败可能留下没有 marker 的目录；host 提示用户删除后重试。本契约不承诺原子目录发布。
+生成站点可在断网、禁 JavaScript 的浏览器中打开。浏览器只读取目录内站点文件，不打开 Record、加载 Report module 或请求网络。
 
-生成站点可在断网、禁 JavaScript 的浏览器中打开。浏览器只读取目录内的站点文件，不读取源 Record，也不要求之后安装 NiceEval。Recorded data problems 会成功导出并出现在不可关闭的 host problems 页面。
+MetricValue 的 partial、empty、unsupported 和 failed 会随闭合树与问题面导出。参数、load、render、组件、树或路径冲突等 execution problem 则使整次 export fail closed。
 
-## Attachment 与 consumer 反馈
+## 路由、链接与下载
 
-| 情况 | `show` | `view` | `--out` |
-|---|---|---|---|
-| 未请求的坏 Attachment | 不读取、不影响。 | 不读取、不影响。 | 不读取、不影响。 |
-| requested `unavailable` | 显示不可用。 | 对应 consumer + problems surface 显示。 | 成功导出并显式显示。 |
-| requested `migration-required` | 提示运行 `niceeval migrate`。 | 对应 consumer + problems surface 显示迁移提示。 | 成功导出并显式显示迁移提示。 |
-| requested `migration-unavailable` | 只显示原因，不提示迁移命令。 | 对应 consumer + problems surface 显示原因。 | 成功导出并显式显示原因。 |
-| requested `unsupported` | 显示 schema issue。 | 对应 consumer + problems surface 显示。 | 成功导出并显式显示。 |
-| requested `invalid` | 按 completeness 形成 data-unavailable 或局部结果。 | 发布新 revision并显示问题。 | 成功导出并显式显示。 |
-| consumer/projector defect | 显示 execution-failed。 | 发布新 revision、局部显示并保留其它页面。 | 整体不发布。 |
-| rebuild failure | 不适用。 | 保留最后一个成功 revision。 | 不适用。 |
+--page 接收 Report 声明的 exact route。普通 Page 使用自己的 path；参数化 Page 使用 path 和规范 key 组成的 route。未知或不规范 route 是用法错误，而非浏览器端的补读请求。
 
-`migration-required` 与 `migration-unavailable` 在呈现中不能混淆：只有前者提示运行 `niceeval migrate`；后者表示明确没有无损 converter，只呈现 reason，不能反复提示迁移命令。
+静态页映射、相对链接和下载路径由同一个 Host codec 产生：
 
-命令只把当前 Report definition 声明的 inputs 视为依赖。动态 PageFamily 可以按这些已经形成的 typed values 展开 routes，但不能追加 I/O。
+```text
+/              -> index.html
+/quality       -> quality/index.html
+/attempt/a1    -> attempt/a1/index.html
+download x.csv -> downloads/x.csv
+```
+
+Host 在写出前检查所有 route、downloads、host-data、runtime 与 manifest 的 exact、大小写、前缀、device-name 和长度冲突。页面不得手写静态 href 或文件路径。
+
+## 用户可见失败
+
+| 情况 | 命令结果 |
+|---|---|
+| 定义无效、Analysis 全局 error 或限额超出 | 返回类型化 error，不形成 ReportExecution。 |
+| unknown 或不规范 route | 用法错误，给出可选择的 route 或参数格式。 |
+| MetricValue 有 partial、empty、unsupported 或 failed | 成功呈现状态、issues 和 refs。 |
+| 单个 Page 或组件失败 | show / view 保留其它页面并显示 execution problem。 |
+| 静态 execution 有任一 execution problem | 返回 report-export-execution-problem，不发布完整站点。 |
+| 输出目录已存在 | 返回 report-export-target-exists，不改动目录。 |
+| 写入失败 | 返回 report-export-write-failed，不泄露任意系统路径或内部 cause。 |
 
 ## 相关阅读
 
-- [Reports README](README.md)：范围与心智模型。
-- [Architecture](architecture.md)：静态数据依赖、热重载与 semantic tree。
-- [Library](library.md)：作者 DSL、Effect API 与错误。
-- [Use case](use-case/README.md)：常见任务路径。
+- [Report Library](library.md)：Page、参数、路径、问题和 typed error。
+- [Architecture](architecture.md)：一次 execution、热重载与静态导出。
+- [分享静态报告站](use-case/分享静态报告站.md)：团队分享的完整路径。
+- [制作可访问页面](use-case/制作可访问页面.md)：text、web 与无 JavaScript 阅读。

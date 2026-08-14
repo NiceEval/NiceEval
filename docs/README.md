@@ -56,6 +56,7 @@ docs/
 │
 ├── feature/                             已采用的唯一当前目标契约
 │   ├── adapters/                        连接 AI / Agent；各 SDK 契约见 adapters/sdk/
+│   ├── analysis/                        从 Record 选择事实、定义统计口径并形成闭合结果
 │   ├── assertions/                      检查、作用域、证据与 AssertionResult
 │   ├── compile-time-contracts/          作者输入与派生事实分离:阶段类型、穷尽联合与私有品牌
 │   ├── error-classification/            失败分类两轴词表:turn 级有界重试与 eval/experiment 级停止派发
@@ -66,6 +67,7 @@ docs/
 │   ├── plugins/                         带稳定身份的生命周期组合语法
 │   ├── projection/                      从 RecordAttachment 形成 typed projection
 │   ├── record/                          已完成 Run、精确引用与具名 RecordAttachment
+│   ├── record-report/                   Record → Analysis → Report 三层总览与命令调用路径
 │   ├── reports/                         一次 execution、show/view 与静态导出
 │   ├── sample/                          从 Record 选择 core-only 分母
 │   ├── sandbox/                         隔离运行环境
@@ -81,7 +83,6 @@ docs/
 │   ├── judge-runtimes/                  Agent Judge 与原生 LLM Judge
 │   ├── multi-agent/                     多 Agent Eval 场景
 │   ├── record-analysis-report/          Capture、Analysis、Report、成本投影与图表语义内核
-│   ├── new-record-report/               持久事实、分析与报告呈现的三层 SDK 架构
 │   ├── record-inventory/                receipt 前中断留下的只读 Record 库存
 │   ├── replayable-grading/              多轮 Execution 与 Grading 分离、Record 重评分
 │   ├── sandbox-materialization/         Docker Image 与 Provider Cache 生命周期

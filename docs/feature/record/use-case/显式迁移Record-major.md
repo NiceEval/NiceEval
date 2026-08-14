@@ -1,128 +1,73 @@
-# 显式迁移 Record
+# 显式 migration 与 Git 恢复
 
-本用例说明旧 Record Core 与旧 Attachment 怎样转换到当前安装版本。普通 reader 不自动
-迁移，也不提供跨 Core major compat mode。
+`niceeval.record/v1` 和五个 `/v1` family 是首个支持格式，migration 链为空。本页定义 v1 的
+`migrate` 反馈，以及发布 v2 时必须遵守的恢复边界。
 
-契约单源始终在 [显式 migration](../architecture.md#显式-migration) 与
-[Migration Library](../library.md#clean-与显式-migration)。
+契约单源始终在 [显式 migration 与 Git 恢复](../architecture.md#显式-migration-与-git-恢复) 和
+[Record CLI](../cli.md#migrate)。
 
-## 两种 migration trigger
+## v1 的结果
 
-Core owner、引用、directory、完成判断或 shape 改变时，发布新的 `RecordFormatId`。
-普通命令遇到旧 major 时整体返回 `record-migration-required`。
+对完整 v1 Record，命令不写盘：
 
-某个 Attachment 发布新 schema 时，不改变 Record major。请求 current family 的功能有三种
-结果：
-
-| 旧 Attachment | 读取状态 | migrate 的处理 |
-|---|---|---|
-| 到 current 的相邻边都是 converter | `migration-required` | 转换到 current schema |
-| 路径有 `not-losslessly-migratable` 边 | `migration-unavailable` | 保留 exact old bytes |
-| family 或 schema 未注册 | `unsupported` | 原样保留 |
-
-`migration-unavailable` 是 settled state，不向用户显示 `niceeval migrate` 提示。
-unknown Attachment 不是 migration-unavailable；安装 owning plugin 后才可能变成可识别的
-family。
-
-## 相邻版本链
-
-每个 Core converter 只处理相邻版本：
-
-```text
-niceeval.record/v1 → v2 → v3
+```sh
+niceeval migrate --record .niceeval/record
+# Record is already current: niceeval.record/v1
 ```
 
-每个 Attachment family 的每条相邻边也必须唯一：
+Core 或固定 family 不是支持的 v1 schema 时，命令返回 `unsupported-format`。它不会推测一个旧 layout、
+执行第三方 code、读取当前 worktree，或把非支持 bytes 伪装成可迁移历史。
 
-```text
-niceeval.verdict/v1 → converter → v2
-niceeval.sources/v2 → not-losslessly-migratable → v3
-```
+## 发布 v2 时的要求
 
-禁止跳过中间版本。用户运行一次命令，NiceEval 根据当前安装的 Core 与插件 definitions
-编排完整链。
+发布 `niceeval.record/v2` 或任一个 family `/v2` 时，NiceEval 必须同批提供固定的 v1→v2 migration。
+每一步只处理一个相邻版本，并且只依赖已保存的 Core、payload 和 own blob closure。
 
-每个 Attachment family 的每个相邻边必须提供 converter，或明确声明
-`not-losslessly-migratable`。第三方 converter 由定义该 Attachment 的插件提供。
+迁移可以重新编码 bytes、mint 新 blob ref 或重排 canonical array。它不能：
 
-## Preflight
-
-sentinel 不存在时，命令在任何写入前：
-
-1. exact decode source Core、可识别 Attachment envelope 与完整 closure；
-2. 找到全部 Core 与 Attachment converter 链；
-3. 列出无法无损迁移和 unsupported 的 Attachment；
-4. 验证 ID、owner、引用和 path 仍可表达；
-5. 验证 target identity 与 directory 无冲突；
-6. 检查 Git restore point。
-
-`.niceeval/record` 全部被当前 commit 跟踪且工作区干净时，Git 检查通过。否则命令显示
-风险并要求确认；非交互调用必须传 `--yes`。
-
-preflight 失败不修改任何文件。明确不可无损迁移不是失败：plan 与 receipt 列出它，且成功
-执行后保留原 bytes。
-
-## Closure-aware converter 边界
-
-converter 接收完整 `RecordAttachmentValue<From>`，而不是独立 payload。
-
-source payload 是 package-owned deep-frozen JSON snapshot。converter 不得靠 mutation
-改写它来影响别的 consumer。
-
-它从同步的 `source.blobs.bytes(ref)` 取得已经验证、materialize 的 old bytes。
-错误或伪造 ref 只返回 `Either.left(record-blob-handle-invalid)`。converter 必须把它映射到
-自己的 explicit `E`。
-
-`target.create` 的 builder mint 每个 target ref 与 target bytes。target bytes 仍以写侧
-`RecordBlobSource<E, R>` Stream 提供。
-
-converter 可以：
-
-- 保留 old bytes，但写入新的 target ref；
-- 删除不再需要的 blob；
-- 为 target payload 改名；
-- 转换 blob bytes 后写入新的 target closure。
-
-converter 不能：
-
-- 把 old ref、手写 key 或 path 放进 target payload；
-- 读取当前 Eval 或项目源码来补字段；
+- 读取当前 Eval、项目文件、网络或 provider 补缺失事实；
 - 重新运行 matcher、Assertion evaluator、reuse planning 或 Report；
-- 生成新的业务事实；
-- 更换仍表示同一对象的 RecordId、RunId、SlotId 或 AttemptId。
+- 改写仍表示同一对象的 RecordId、RunId、SlotId 或 AttemptId；
+- 让第三方注册 converter、family 或物理字段。
 
-callback 意外 throw 是 defect。`Effect.fail(e)` 是 explicit typed failure；fiber
-interruption 保留 Cause。`R = never` 仅表示没有 NiceEval Layer requirement，不能证明
-converter 未经 ambient JavaScript API 做 I/O。converter 即使使用 ambient I/O，也不得把
-当前宿主条件伪装成历史事实。第三方 converter 是受信任 extension。
+如果 v1 bytes 不能如实形成 v2，迁移计划必须在写盘前拒绝。它不创建一个半有效 v2，也不把 unknown
+data 默默丢弃。
 
-旧数据缺少新 schema 需要的事实时，target 可以显式表达 legacy unavailable。无法如实
-表达时，edge 声明不可无损迁移；命令保留旧 Attachment，并让 current consumer 收到
-`migration-unavailable`。
+## Git preflight 与执行
 
-unknown 第三方 Attachment 在 owner 仍可表示时原样保留。Core 新模型无法保持它的 owner
-时，preflight 拒绝整次 migration。
+有固定相邻步骤时，maintenance 先确认：
 
-## Sentinel、执行与中断
+1. Record 位于 Git worktree，完整 portable inventory 由 HEAD 跟踪；
+2. 该 inventory 在 index 和 worktree 中干净；
+3. `migration.in-progress` 不存在；
+4. repository、HEAD、Record path、`recordId`、source inventory 和 migration implementation identity
+   仍与计划相同。
 
-第一次修改任何 portable byte 前，命令 exclusive create 并 sync root 下预期零字节的
-`migration.in-progress`。Core migration 和 Attachment-only migration 都遵循此步骤。
+通过后才执行：
 
-随后命令写入并 sync 所有 target Core、Attachment 与 blob bytes。target `record.json`
-始终最后写入并 sync。最后删除并 sync sentinel；只有随后 root 才再次可读。
+```text
+create + sync migration.in-progress
+        ↓
+原地运行固定的相邻步骤
+        ↓
+完整校验 Core、五个 family 和 blob closure
+        ↓
+remove + sync migration.in-progress
+```
 
-sentinel 一旦存在，即使其内容损坏，普通 open、plan 与 migrate 都返回
-`record-migration-interrupted`。命令不会自动 rollback、删除 sentinel、从某个中间 major
-继续，也不会创建 `out` directory 或 compat reader。
+marker 存在时，普通 open、plan 和 migrate 都返回 `migration-interrupted`。它不是进度日志，也不是恢复
+机制。
 
-步骤中断、kill、断电、converter failure 或写入 failure 都留下 sentinel。用户必须从
-preflight 显示的 Git commit 或自己的备份恢复。NiceEval 不另存旧 root、自动 backup 或
-durable migration history。
+## 中断后的唯一恢复路径
 
-成功后 Git diff 是用户核对表示变化的入口。
+NiceEval 不创建 staging、backup、rollback、root replacement 或自己的恢复日志。被 kill、断电、I/O
+failure 或校验失败时，marker 保留，普通读取 fail closed。
+
+用户必须用 Git 把 `.niceeval/record` 的 tracked 与迁移新增内容完整恢复到预检显示的 commit，再重新
+运行 `niceeval migrate`。恢复后由新 preflight 再次判断格式和计划；工具不会从混合字节继续。
 
 ## 相关阅读
 
-- [显式 migration architecture](../architecture.md#显式-migration)
-- [Migration Library](../library.md#clean-与显式-migration)
-- [CLI migrate](../cli.md#migrate)
+- [Record CLI](../cli.md#migrate)
+- [固定 family 与 closure](../architecture.md#五个固定-attachment-family)
+- [源码 Attachment 怎样安全演进](源码Attachment怎样安全演进.md)
