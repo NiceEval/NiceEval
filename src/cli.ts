@@ -14,6 +14,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve as resolvePath } from "node:path";
 import { parseArgs as nodeParseArgs } from "node:util";
 import { Data, Effect, Either, Schema } from "effect";
+import {
+  parseAttemptLocator,
+  type AttemptLocator,
+} from "./attempt-locator.ts";
 import { discoverEvals, discoverExperiments } from "./runner/discover.ts";
 import { browsableExperimentPaths, evalPrefixPredicate, matchExperimentSelector } from "./shared/aggregate.ts";
 import type { JsonValue } from "./shared/types.ts";
@@ -22,9 +26,7 @@ import { planProjectTarget, type ProjectTargetPlan } from "./runner/fingerprint.
 import { loadProjectCurrent } from "./runner/project-current.ts";
 import {
   makeRecordRoot,
-  AttemptIdSchema,
   RunIdSchema,
-  type AttemptId,
   type RecordRoot,
 } from "./record/index.ts";
 import {
@@ -35,6 +37,7 @@ import {
 } from "./analysis/index.ts";
 import { defaultAttemptOverviewReport } from "./report/built-in/attempt-overview.ts";
 import { defaultOverviewReport } from "./report/built-in/overview.ts";
+import { defaultRunMembershipOverviewReport } from "./report/built-in/run-membership-overview.ts";
 import {
   executionEvidenceReport,
   timingEvidenceReport,
@@ -340,7 +343,7 @@ const FLAG_OPTIONS = {
   // 以下旧 show 切片只为实现收敛期间保留解析位置，不属于目标公开 CLI，也不进入参考页。
   /** `show` 专用：按一个 exact Attempt locator 展示已记录的 source snapshot。 */
   source: { type: "boolean" },
-  /** `show @<exact-current-AttemptId> --execution`：从公开 Record projection 呈现该 Attempt 的 transcript、tool 与 command evidence。 */
+  /** `show @<AttemptLocator> --execution`：从公开 Record projection 呈现该 Attempt 的 transcript、tool 与 command evidence。 */
   execution: { type: "boolean" },
   /** `show @<AttemptLocator> --timing[=summary|full]` 专用：从内建 timing Report 读取该 Attempt 的 runner 阶段树。 */
   timing: { type: "boolean" },
@@ -702,9 +705,10 @@ function renderCurrentDryPlan(input: {
         : readback.verdict.state === "available"
           ? readback.verdict.value
           : readback.verdict.state;
-      lines.push(`  source @${readback.source.attemptId} · ${readback.state} · verdict ${verdict}`);
+      const locator = readback.source.locator;
+      lines.push(`  source ${locator} · ${readback.state} · verdict ${verdict}`);
       if (hasIdentityGap && readback.state === "prior") {
-        lines.push(`  accept: niceeval accept @${readback.source.attemptId}`);
+        lines.push(`  accept: niceeval accept ${locator}`);
       }
     }
   }
@@ -2069,7 +2073,7 @@ interface ReportCliRequest {
     }
     | {
       readonly kind: "attempt";
-      readonly attemptId: AttemptId;
+      readonly locator: AttemptLocator;
     };
   readonly reportSelection: ReportSelection;
   readonly themeSelection: ThemeSelection;
@@ -2129,13 +2133,13 @@ function parseReportCliRequest(input: {
     if (locator === undefined) {
       throw usageError("niceeval show --execution requires one current Record Attempt locator.\n");
     }
-    const attemptId = parseCurrentAttemptLocator(locator);
+    const parsedLocator = parseCurrentAttemptLocator(locator);
     return Object.freeze({
       command: input.command,
       cwd: input.cwd,
       root: root.right,
       rootPath,
-      target: Object.freeze({ kind: "attempt" as const, attemptId }),
+      target: Object.freeze({ kind: "attempt" as const, locator: parsedLocator }),
       reportSelection: Object.freeze({ kind: "fixed" as const, report }),
       themeSelection: themeSelection(input.cwd, input.flags.theme),
       ...(page === undefined ? {} : { page }),
@@ -2156,13 +2160,13 @@ function parseReportCliRequest(input: {
     if (locator === undefined) {
       throw usageError("niceeval show --timing requires one current Record Attempt locator.\n");
     }
-    const attemptId = parseCurrentAttemptLocator(locator);
+    const parsedLocator = parseCurrentAttemptLocator(locator);
     return Object.freeze({
       command: input.command,
       cwd: input.cwd,
       root: root.right,
       rootPath,
-      target: Object.freeze({ kind: "attempt" as const, attemptId }),
+      target: Object.freeze({ kind: "attempt" as const, locator: parsedLocator }),
       reportSelection: Object.freeze({
         kind: "fixed" as const,
         report: timingEvidenceReport({ mode: input.flags.timing }),
@@ -2186,14 +2190,14 @@ function parseReportCliRequest(input: {
     if (locator === undefined) {
       throw usageError("niceeval show --source requires one current Record Attempt locator.\n");
     }
-    const attemptId = parseCurrentAttemptLocator(locator);
+    const parsedLocator = parseCurrentAttemptLocator(locator);
     const report = sourceEvidenceReport();
     return Object.freeze({
       command: input.command,
       cwd: input.cwd,
       root: root.right,
       rootPath,
-      target: Object.freeze({ kind: "attempt" as const, attemptId }),
+      target: Object.freeze({ kind: "attempt" as const, locator: parsedLocator }),
       reportSelection: Object.freeze({ kind: "fixed" as const, report }),
       themeSelection: themeSelection(input.cwd, input.flags.theme),
       ...(page === undefined ? {} : { page }),
@@ -2214,16 +2218,16 @@ function parseReportCliRequest(input: {
     const locator = input.positionals[0];
     if (locator === undefined || !locator.startsWith("@")) {
       throw usageError(
-        `niceeval ${input.command} selects Record data only with an exact @<current-AttemptId> locator, --run, or no selector for current-project results.\n`,
+        `niceeval ${input.command} selects Record data only with a canonical @1<12-character-body> locator, --run, or no selector for current-project results.\n`,
       );
     }
-    const attemptId = parseCurrentAttemptLocator(locator);
+    const parsedLocator = parseCurrentAttemptLocator(locator);
     return Object.freeze({
       command: input.command,
       cwd: input.cwd,
       root: root.right,
       rootPath,
-      target: Object.freeze({ kind: "attempt" as const, attemptId }),
+      target: Object.freeze({ kind: "attempt" as const, locator: parsedLocator }),
       reportSelection: input.flags.report === undefined
         ? Object.freeze({ kind: "fixed" as const, report: defaultAttemptOverviewReport })
         : reportSelection(input.cwd, input.flags.report),
@@ -2236,7 +2240,9 @@ function parseReportCliRequest(input: {
     throw usageError("--experiment narrows the default current-project selection; it cannot combine with explicit --run.\n");
   }
 
-  const report = reportSelection(input.cwd, input.flags.report);
+  const report = runs.length > 0 && input.flags.report === undefined
+    ? Object.freeze({ kind: "fixed" as const, report: defaultRunMembershipOverviewReport })
+    : reportSelection(input.cwd, input.flags.report);
   const theme = themeSelection(input.cwd, input.flags.theme);
   const target = runs.length > 0
     ? Object.freeze({ kind: "selection" as const, selection: explicitSelection(runs) })
@@ -2391,16 +2397,15 @@ function uniqueExactExperimentIds(values: readonly string[]): readonly Experimen
   return Object.freeze(result);
 }
 
-/** Current Record locators are exact durable AttemptIds, never historical hash aliases. */
-function parseCurrentAttemptLocator(value: string): AttemptId {
-  if (!value.startsWith("@") || value.length === 1) {
-    throw usageError(`Invalid Attempt locator "${value}": expected @<exact-current-AttemptId>.\n`);
+/** Current Record locators use the strict scheme-1 short alias. */
+function parseCurrentAttemptLocator(value: string): AttemptLocator {
+  const parsed = parseAttemptLocator(value);
+  if (!parsed.valid) {
+    throw usageError(
+      `Invalid Attempt locator "${value}": expected @1 followed by 12 canonical uppercase Crockford characters.\n`,
+    );
   }
-  const decoded = Schema.decodeUnknownEither(AttemptIdSchema)(value.slice(1));
-  if (Either.isLeft(decoded)) {
-    throw usageError(`Invalid Attempt locator "${value}": expected @<exact-current-AttemptId>.\n`);
-  }
-  return decoded.right;
+  return parsed.locator;
 }
 
 interface LoadedCliReportInputs {
@@ -2503,7 +2508,7 @@ function executeCliReport(request: ReportCliRequest, inputs: LoadedCliReportInpu
   const execution = request.target.kind === "attempt"
     ? executeReportForAttemptFromRecord({
       root: request.root,
-      attemptId: request.target.attemptId,
+      locator: request.target.locator,
       report: inputs.report,
     })
     : executeReportFromRecord({
@@ -2528,6 +2533,10 @@ function reportExecutionFailure(error: unknown): CliFailure {
       return usageError(`Attempt "${stringProperty(error, "attemptId") ?? "unknown"}" was not found in the selected Record.\n`);
     case "sample-attempt-ambiguous":
       return usageError(`Attempt "${stringProperty(error, "attemptId") ?? "unknown"}" is ambiguous in the selected Record.\n`);
+    case "sample-attempt-locator-not-found":
+      return usageError(`Attempt locator "${stringProperty(error, "locator") ?? "unknown"}" was not found in the selected Record.\n`);
+    case "sample-attempt-locator-ambiguous":
+      return usageError(`Attempt locator "${stringProperty(error, "locator") ?? "unknown"}" is ambiguous in the selected Record.\n`);
     case "record-migration-required":
       return usageError("record-migration-required\nRun: niceeval migrate\n");
     case "record-bootstrap-invalid":

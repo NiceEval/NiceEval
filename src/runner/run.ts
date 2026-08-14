@@ -92,6 +92,7 @@ import {
 import {
   openRunnerRecordCoordinator,
   prepareRunnerRecordReuse,
+  type RunnerRecordAttempt,
 } from "./record.ts";
 import { bindRunnerRunObservabilityDiagnosticsV1 } from "../o11y/record/runner-producer.ts";
 import { sandboxReusePoolDescriptor } from "./sandbox-reuse.ts";
@@ -2126,6 +2127,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // earlyExit:为每个 key 各建一个 AbortController。某 attempt 通过或 errored 时 abort 它,
   // 让并发进行中的同 key attempt 通过 signal 尽早退出,而不只是等排队的才能被跳过。
   const evalAbortControllers = new Map<string, AbortController>();
+  const recordFatalController = new AbortController();
   for (const a of attempts) {
     if (a.evalDef.evaluationKind === "pass" && a.run.earlyExit && !evalAbortControllers.has(a.key)) {
       evalAbortControllers.set(a.key, new AbortController());
@@ -2243,10 +2245,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           Effect.gen(function* () {
             // 合并全局信号与本 eval 的首过即停信号:任一 abort → 本 attempt 的信号 abort。
             const evalAc = evalAbortControllers.get(a.key);
-            const attemptSignal =
-              evalAc && opts.signal
-                ? AbortSignal.any([opts.signal, evalAc.signal])
-                : (evalAc?.signal ?? opts.signal);
+            const attemptSignal = AbortSignal.any([
+              recordFatalController.signal,
+              ...(evalAc === undefined ? [] : [evalAc.signal]),
+              ...(opts.signal === undefined ? [] : [opts.signal]),
+            ]);
             // BuildKey / CaseKey 已在 Attempt.plan 的 physical completion state 中确定；
             // 这里只把协调器执行结果作为必填运行输入传给 materializer，不回写 Attempt。
             const buildLocators = buildLocatorsByPair.get(cacheKey(a.run, a.evalDef.id)) ?? new Map<BuildKey, JsonValue>();
@@ -2271,14 +2274,41 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                 })();
             const precheckFailure = judgePrecheckFailures.get(cacheKey(a.run, a.evalDef.id));
             const buildFailure = buildFailureByPair.get(cacheKey(a.run, a.evalDef.id));
-            const blockedError: AttemptError | undefined = Option.isSome(setupFailure)
-              ? setupFailure.value
+            let blockedError: AttemptError | undefined = recordFatalController.signal.aborted
+              ? {
+                  code: "record-invocation-fatal",
+                  message: "A prior Record Attempt reservation failed; no further Attempt may start.",
+                  origin: attemptOrigin("sandbox.queue"),
+                }
+              : Option.isSome(setupFailure)
+                ? setupFailure.value
               : precheckFailure !== undefined
                 ? { code: "judge-precheck-failed", message: precheckFailure, origin: attemptOrigin("judge.precheck") }
                 : buildFailure !== undefined
                   ? buildFailure
                   : undefined;
             if (blockedError !== undefined) cancelReuseAttempt(a, true);
+
+            // A scheduler-admitted Attempt owns a durable identity before any
+            // attempt-owned sandbox, Agent, or Eval work begins. Reservation
+            // failure is invocation-fatal at the Record publish gate.
+            const initialPhase: LifecyclePhase = a.run.agent.kind === "sandbox" ? "sandbox.queue" : "eval.run";
+            const reservationAttempted = blockedError === undefined;
+            let reservedRecordAttempt: RunnerRecordAttempt | undefined;
+            if (reservationAttempted) {
+              const reservation = yield* Effect.either(recordCoordinator.reserveAttempt(a));
+              if (Either.isLeft(reservation)) {
+                recordFatalController.abort();
+                blockedError = {
+                  ...errorFromThrown(reservation.left, initialPhase),
+                  code: "record-attempt-reservation-failed",
+                };
+                cancelReuseAttempt(a, true);
+              } else {
+                reservedRecordAttempt = reservation.right;
+                a.locator = reservation.right.locator;
+              }
+            }
 
             yield* reportMutex.withPermits(1)(
               emitReporterEvent(reporters, {
@@ -2297,7 +2327,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             // eval.run,attempt.ts 内部一旦跑到第一个真实边界会用 attempt:phase 立即纠正,见
             // attempt.ts 的 enterPhase)——attempt.ts 自己不再发 attempt:start,只发
             // attempt:phase,避免两处各发一次导致计数翻倍。
-            const initialPhase: LifecyclePhase = a.run.agent.kind === "sandbox" ? "sandbox.queue" : "eval.run";
             reportAttemptLifecycle({
               type: "attempt:start",
               at: Date.now(),
@@ -2343,9 +2372,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               recordEvalGroupPhysicalFailure(a, "sandbox.create", leased.error);
             }
             const failedBeforeDispatch = blockedError ?? leaseError;
-            // A Record Attempt is allocated only after runAttemptEffect has
-            // returned its sealed facts and final executionMs. Thus an
-            // interrupted or blocked Slot cannot leave a fabricated Member.
             const recordedAttempt = a;
             const evaluated = failedBeforeDispatch
               ? ({
@@ -2430,18 +2456,21 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               }
             }
             const { result, executed } = completed;
-            // A blocked Slot has no origin Attempt and remains an explicit
-            // Record gap. A completed execution writes its exact origin plus
-            // Eligibility from final `executionMs`, then exposes @AttemptId.
+            // A never-started blocked Slot has no origin Attempt. A reserved
+            // but unsealed failure keeps its ID in the incomplete draft.
             let locator: string | undefined;
-            if (!executed) {
-              recordCoordinator.markNotDispatched(a);
-            } else {
-              const recordAttempt = yield* recordCoordinator.completeAttemptOrMarkIncomplete(a, result);
-              if (recordAttempt !== undefined) {
-                locator = recordAttempt.locator;
-                result.locator = locator;
+            if (reservedRecordAttempt !== undefined) {
+              locator = reservedRecordAttempt.locator;
+              result.locator = locator;
+              if (executed) {
+                const recordAttempt = yield* recordCoordinator.completeAttemptOrMarkIncomplete(a, result);
+                if (recordAttempt !== undefined) {
+                  locator = recordAttempt.locator;
+                  result.locator = locator;
+                }
               }
+            } else if (!reservationAttempted) {
+              recordCoordinator.markNotDispatched(a);
             }
             // attempt:complete 与上面的 attempt:start 严格一一配对(同一个 body Effect,唯一
             // 出口),覆盖每一个真正跑过 runAttemptEffect 的 attempt(包括之后被下面的并发去重

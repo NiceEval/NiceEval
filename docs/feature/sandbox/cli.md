@@ -53,7 +53,7 @@ niceeval exp local onboarding/tool-first --keep-sandbox=all    # passed 也留,�
 
 ```text
 ╭─ KEPT SANDBOXES ────────────────────────────────────────────────────── 2 kept ─╮
-│ @6ZCNAVRHPQ4D2KG9EFW5TB8167  onboarding/tool-first #1  errored  docker · a3f9c2d1                │
+│ @1VE05BR7061YN  onboarding/tool-first #1  errored  docker · a3f9c2d1                            │
 │            enter: niceeval sandbox enter a3f9c2d1                              │
 │ @30SYZCNAVRHPQ4D2KG9EFW5TB8  onboarding/tool-first #2  failed   docker · b81e07aa                │
 │            enter: niceeval sandbox enter b81e07aa                              │
@@ -63,7 +63,7 @@ niceeval exp local onboarding/tool-first --keep-sandbox=all    # passed 也留,�
 `--json` 在事件流追加 `kept` 事件(与 run 事件同一词表),非 TTY 人读文本在 `NEXT` 里补 `niceeval sandbox stop --all`:
 
 ```json
-{"event":"kept","locator":"@6ZCNAVRHPQ4D2KG9EFW5TB8167","evalId":"onboarding/tool-first","attempt":1,"verdict":"errored","provider":"docker","sandboxId":"a3f9c2d1","enter":"niceeval sandbox enter a3f9c2d1"}
+{"event":"kept","locator":"@1VE05BR7061YN","evalId":"onboarding/tool-first","attempt":1,"verdict":"errored","provider":"docker","sandboxId":"a3f9c2d1","enter":"niceeval sandbox enter a3f9c2d1"}
 ```
 
 每条都给三样东西:Attempt identity、Provider 与实例 id、进入现场的命令。落盘证据从包含它的 Run 参数化页面查看。进入统一走 `niceeval sandbox enter`(见下),不让用户背各家 Provider 的语法;Provider 原生命令记在注册表里供直连。
@@ -147,7 +147,7 @@ A notes/decision-log.md · window turn2
 $ niceeval sandbox list
 ╭─ SANDBOXES ─────────────────────────────────────────────────────────── 2 kept ─╮
 │ ID        PROVIDER  STATE     FROM                                             │
-│ a3f9c2d1  docker    dormant   onboarding/tool-first #1 · errored · @6ZCNAVRHPQ4D2KG9EFW5TB8167   │
+│ a3f9c2d1  docker    dormant   onboarding/tool-first #1 · errored · @1VE05BR7061YN               │
 │           2026-07-14 15:02 · enter: niceeval sandbox enter a3f9c2d1            │
 │ 9f21c07b  vercel    expired   onboarding/tool-first #2 · failed  · @30SYZCNAVRHPQ4D2KG9EFW5TB8   │
 │           expired 2026-07-14 14:36 — remove: niceeval sandbox stop 9f21c07b    │

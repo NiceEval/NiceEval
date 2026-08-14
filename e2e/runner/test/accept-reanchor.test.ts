@@ -24,7 +24,7 @@ interface DryTarget {
   evalId: string;
   slots: Array<{ state: "reused" | "gap" }>;
   readbacks: Array<{
-    source: { attemptId: string };
+    source: { attemptId: string; locator: string };
     verdict: string | { state: string; value?: string };
   }>;
 }
@@ -33,6 +33,74 @@ interface DryPlan {
   total: number;
   reused: number;
   matrix: DryTarget[];
+}
+
+type ReportScalar = null | boolean | number | string;
+
+interface ReportTableBlock {
+  type: "table";
+  caption: string;
+  columns: Array<{ key: string; label: string }>;
+  rows: Array<Record<string, ReportScalar>>;
+}
+
+interface ReportBlock {
+  type: string;
+  children?: ReportBlock[];
+  caption?: string;
+  columns?: Array<{ key: string; label: string }>;
+  rows?: Array<Record<string, ReportScalar>>;
+}
+
+interface RunMembershipShow {
+  format: "niceeval.report-show/v1";
+  reportId: string;
+  sample: {
+    selection: { policy: string; runIds?: string[] };
+    runCount: number;
+    slotCount: number;
+    denominator: number;
+  };
+  pages: Array<{
+    state: string;
+    pageId: string;
+    route?: string;
+    document?: { title: string; children: ReportBlock[] };
+  }>;
+}
+
+const RUN_MEMBERSHIP_COLUMN_KEYS = [
+  "runId",
+  "slotId",
+  "slotState",
+  "memberRelation",
+  "sourceAttemptLocator",
+  "membershipState",
+  "membershipOutcome",
+  "verdictState",
+  "verdict",
+] as const;
+
+function reportTables(blocks: ReportBlock[]): ReportTableBlock[] {
+  const tables: ReportTableBlock[] = [];
+  const visit = (block: ReportBlock): void => {
+    if (
+      block.type === "table" &&
+      block.caption !== undefined &&
+      block.columns !== undefined &&
+      block.rows !== undefined
+    ) {
+      tables.push({
+        type: "table",
+        caption: block.caption,
+        columns: block.columns,
+        rows: block.rows,
+      });
+    }
+    for (const child of block.children ?? []) visit(child);
+  };
+  for (const block of blocks) visit(block);
+  return tables;
 }
 
 test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 verdict/evidence 与审计 provenance", async () => {
@@ -57,7 +125,7 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
     });
     expect(initial.expReceipt()).toMatchObject({ completion: "completed" });
     const oldLocator = initialEval.locator!;
-    expect(oldLocator).toMatch(/^@[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(oldLocator).toMatch(/^@1[0-9A-HJKMNP-TV-Z]{12}$/);
 
     const evalPath = join(root, "evals", "accept", "accept-target.eval.ts");
     const evalSource = readFileSync(evalPath, "utf8");
@@ -78,14 +146,14 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
     expect(changedTarget).toBeDefined();
     expect(changedTarget!.slots.map((slot) => slot.state)).toEqual(["gap"]);
     expect(changedTarget!.readbacks).toHaveLength(1);
-    expect(`@${changedTarget!.readbacks[0]!.source.attemptId}`).toBe(oldLocator);
+    expect(changedTarget!.readbacks[0]!.source.locator).toBe(oldLocator);
     expect(changedTarget!.readbacks[0]!.verdict).toMatchObject({ state: "available", value: "passed" });
 
     const accepted = await niceeval.run(["accept", oldLocator]);
     expect(accepted.exitCode, accepted.diagnostic()).toBe(0);
     expect(accepted.stdout).toContain(`Accepted source Attempt ${oldLocator} into new Run `);
     const acceptedRunMatch = accepted.stdout.match(
-      /into new Run ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\. Result locator remains (@[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\./,
+      /into new Run ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\. Result locator remains (@1[0-9A-HJKMNP-TV-Z]{12})\./,
     );
     expect(acceptedRunMatch, accepted.diagnostic()).not.toBeNull();
     const acceptedRunId = acceptedRunMatch![1]!;
@@ -96,9 +164,42 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
 
     const acceptedCurrent = await niceeval.run(["show", "--run", acceptedRunId, "--json"]);
     expect(acceptedCurrent.exitCode, acceptedCurrent.diagnostic()).toBe(0);
-    expect(acceptedCurrent.stdout).toContain(acceptedRunId);
-    expect(acceptedCurrent.stdout).toContain(oldLocator);
-    expect(acceptedCurrent.stdout).toContain('"action":"accepted"');
+    const acceptedShow = acceptedCurrent.json<RunMembershipShow>();
+    expect(acceptedShow).toMatchObject({
+      format: "niceeval.report-show/v1",
+      reportId: "run-membership-overview",
+      sample: {
+        selection: { policy: "explicit-runs", runIds: [acceptedRunId] },
+        runCount: 1,
+        slotCount: 1,
+        denominator: 1,
+      },
+      pages: [{ state: "rendered", pageId: "run-membership", route: "/" }],
+    });
+    const runMembershipPage = acceptedShow.pages.find((page) => page.pageId === "run-membership");
+    expect(runMembershipPage?.document).toBeDefined();
+    const matchingTables = reportTables(runMembershipPage!.document!.children).filter((table) =>
+      table.columns.map((column) => column.key).join("\u0000") === RUN_MEMBERSHIP_COLUMN_KEYS.join("\u0000")
+    );
+    expect(matchingTables).toHaveLength(1);
+    const acceptedRunRows = matchingTables[0]!.rows.filter((row) => row.runId === acceptedRunId);
+    expect(acceptedRunRows).toHaveLength(1);
+    const acceptedSlotId = acceptedRunRows[0]!.slotId;
+    expect(typeof acceptedSlotId).toBe("string");
+    const acceptedRow = matchingTables[0]!.rows.find((row) =>
+      row.runId === acceptedRunId && row.slotId === acceptedSlotId
+    );
+    expect(acceptedRow).toEqual({
+      runId: acceptedRunId,
+      slotId: acceptedSlotId,
+      slotState: "included",
+      memberRelation: "reference",
+      sourceAttemptLocator: oldLocator,
+      membershipState: "available",
+      membershipOutcome: "accepted",
+      verdictState: "available",
+      verdict: "passed",
+    });
 
     const currentEvidence = await niceeval.run(["show", newLocator, "--execution"]);
     expect(currentEvidence.exitCode, currentEvidence.diagnostic()).toBe(0);
@@ -113,7 +214,7 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
     const nextTarget = nextPlan.matrix.find((row) => row.evalId === "accept/accept-target");
     expect(nextTarget).toBeDefined();
     expect(nextTarget!.slots.map((slot) => slot.state)).toEqual(["gap"]);
-    expect(`@${nextTarget!.readbacks[0]!.source.attemptId}`).toBe(newLocator);
+    expect(nextTarget!.readbacks[0]!.source.locator).toBe(newLocator);
     },
   );
 });

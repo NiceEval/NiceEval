@@ -363,6 +363,23 @@ type ReportPageResult =
 
 Analysis issue 是可呈现的数据事实。它保留在 MetricValue、领域视图和不可关闭的问题面中，不自动使 Page 失败。load、render、复合组件、`resolve()`、参数处理、树验证、route collision 或下载 collision 失败，则进入 execution problem。show 和 view 保留其它成功 Page；static export 对任一 execution problem fail closed。
 
+## 内建 Report
+
+NiceEval 的内建 Report 是 Host 提供的普通 Report，不另建作者导入面。它们和自定义 Report 一样，只从
+Sample 取得 NiceEval 已发布的 Analysis input 与闭合领域值，不能取得 Record reader、路径或持久化 raw
+payload。
+
+一个或多个显式 `--run` 在没有 `--report` 时使用 `run-membership-overview`。它把 Sample Core、Run-owned
+membership provenance 的公开 outcome 与 Attempt Verdict 作为三组独立事实并列显示，不从 Core 猜 provenance，也不从 provenance 猜 Verdict。它的稳定表、值域与截断边界见 [CLI](cli.md#内建-run-membership-概览)。其它 selection 不会因此扩大 Attachment 读取范围。
+
+`defaultSandboxHistoryReport` 使用 all-runs Sample 形成历史视图。它只消费 evaluation plan、Verdict 与
+Sandbox 的已发布 Analysis input，并按 exact origin `(runId, attemptId)` 去重。reference Member 只在同一
+origin 的 Slot coordinate 列表中出现，不复制 Sandbox Attachment。
+
+每个 origin 显示 origin locator、Verdict、provider、source-native sandbox ID 与 fresh／pooled 状态。pooled
+origin 额外显示 sandbox number 与 ordinal。每条 coordinate 显示当前 Run 的 Experiment、Eval 与 Attempt。
+missing coordinate、slot state 与 Attachment read result 留在 Report 的 partial / problems 语义中，不能被聚合成空历史。
+
 ```ts
 interface ReportExecutionProblem {
   readonly category: "execution";

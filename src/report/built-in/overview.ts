@@ -1,4 +1,5 @@
 import { Either } from "effect";
+import { encodeAttemptLocator } from "../../attempt-locator.ts";
 import type { AnalysisSample, AnalysisSlot } from "../../analysis/index.ts";
 import {
   definePage,
@@ -18,6 +19,7 @@ import {
 } from "../semantic/index.ts";
 
 const RUN_ROWS_MAX = 200;
+const ATTEMPT_ROWS_MAX = 200;
 const SLOT_ISSUES_MAX = 200;
 const ISSUES_PER_SLOT_MAX = 4;
 
@@ -46,6 +48,9 @@ function overviewDocument(sample: AnalysisSample) {
   const issueBlocks = slotIssueBlocks(sample.slots);
   const visibleRuns = sample.runs.slice(0, RUN_ROWS_MAX);
   const omittedRuns = sample.runs.length - visibleRuns.length;
+  const includedAttempts = sample.slots.filter((slot) => slot.state === "included");
+  const visibleAttempts = includedAttempts.slice(0, ATTEMPT_ROWS_MAX);
+  const omittedAttempts = includedAttempts.length - visibleAttempts.length;
 
   return reportDocument({
     title: "NiceEval overview",
@@ -99,6 +104,30 @@ function overviewDocument(sample: AnalysisSample) {
               meaning: slotStateMeaning(state),
             })),
           }),
+        ],
+      }),
+      reportSection({
+        heading: "Included Attempts",
+        children: [
+          reportTable({
+            caption: "Included Attempts",
+            columns: [
+              { key: "locator", label: "Locator" },
+              { key: "run", label: "Selected Run" },
+              { key: "slot", label: "Slot" },
+            ],
+            rows: visibleAttempts.map((slot) => ({
+              locator: encodeAttemptLocator(slot.attempt.attemptId),
+              run: slot.runId,
+              slot: slot.slotId,
+            })),
+          }),
+          ...(omittedAttempts === 0
+            ? []
+            : [reportStatus({
+              tone: "warning",
+              label: `${omittedAttempts} included Attempt(s) omitted from this bounded table`,
+            })]),
         ],
       }),
       reportSection({
