@@ -957,6 +957,7 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
     }
 
     let writeFailure: { readonly error: RunnerRecordWriteError<AttachmentError> } | undefined;
+    let interruptionObserved = false;
     const noteWriteFailure = (error: RunnerRecordWriteError<AttachmentError>): void => {
       if (writeFailure === undefined) writeFailure = Object.freeze({ error });
     };
@@ -1167,6 +1168,7 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
     };
 
     const markInterrupted = (): void => {
+      interruptionObserved = true;
       for (const recordRun of byRun.values()) {
         for (const [slotId, state] of recordRun.gapActions) {
           if (state === "pending") {
@@ -1248,7 +1250,15 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
       > =>
         Effect.gen(function* () {
           if (writeFailure !== undefined) return yield* Effect.fail(writeFailure.error);
-          for (const recordRun of byRun.values()) {
+          // A reserved origin already has a Core Member. If SIGINT arrives before
+          // its assertions and final result close, that draft must remain
+          // incomplete rather than publishing a Member without complete Attempt
+          // facts. Independent drafts still take the ordinary publish validation.
+          const publishableRuns = [...byRun.values()].filter((recordRun) =>
+            !interruptionObserved || ![...recordRun.gapActions.values()].some((state) =>
+              state === "reserved" || state === "sealed"
+            ));
+          for (const recordRun of publishableRuns) {
             const runObservabilityCapture = yield* createRunnerRunObservabilityCaptureV1({
               run: recordRun.run,
             });
@@ -1352,7 +1362,7 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
             yield* recordRun.draft.record(provenance.right);
           }
           return yield* Effect.forEach(
-            [...byRun.values()],
+            publishableRuns,
             (recordRun) => recordRun.draft.publish({ completedAt: asUtcMillis(completedAt) }),
             { concurrency: 1 },
           );

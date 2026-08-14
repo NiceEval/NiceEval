@@ -11,6 +11,7 @@ import {
   type ProjectedSample,
   type Verdict,
 } from "../../projection/index.ts";
+import { encodeAttemptLocator } from "../../attempt-locator.ts";
 import { compareCanonicalIdentity } from "../../record/model/identifiers.ts";
 import {
   definePage,
@@ -173,7 +174,7 @@ function rowForSlot(
     slotId: slot.slotId,
     slotState: slot.state,
     memberRelation: slot.state === "included" ? slot.relation : null,
-    sourceAttemptLocator: slot.state === "included" ? `@${slot.attempt.attemptId}` : null,
+    sourceAttemptLocator: slot.state === "included" ? encodeAttemptLocator(slot.attempt.attemptId) : null,
     membershipState,
     membershipOutcome: action?.outcome ?? null,
     verdictState: verdictValue.state,
