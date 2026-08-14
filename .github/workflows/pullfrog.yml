@@ -233,34 +233,38 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       - name: Stage structured review result
-        uses: actions/github-script@v9
-        env:
-          REVIEW_RESULT: ${{ steps.pullfrog.outputs.result }}
-        with:
-          script: |
-            const fs = require("node:fs/promises");
-            const path = require("node:path");
-            // Keep in sync with the publish job and the schema comment above.
-            const REVIEW_RESULT_MAX_UTF8_BYTES = 720_256;
+        # Actions renders this run block to a temporary file before invoking
+        # node, so the full result never crosses an environment, action-input,
+        # or process-argument boundary.
+        shell: node --input-type=commonjs {0}
+        run: |
+          const fs = require("node:fs");
+          const path = require("node:path");
+          // Keep in sync with the publish job and the schema comment above.
+          const REVIEW_RESULT_MAX_UTF8_BYTES = 720_256;
 
-            const raw = process.env.REVIEW_RESULT ?? "";
-            const rawUtf8Bytes = Buffer.byteLength(raw, "utf8");
-            if (rawUtf8Bytes < 1 || rawUtf8Bytes > REVIEW_RESULT_MAX_UTF8_BYTES || raw.includes("\u0000")) {
-              throw new Error("Pullfrog result is empty or exceeds the artifact boundary");
-            }
-            try {
-              JSON.parse(raw);
-            } catch {
-              throw new Error("Pullfrog result must be valid JSON before artifact handoff");
-            }
+          const raw = ${{ toJSON(steps.pullfrog.outputs.result) }};
+          const rawUtf8Bytes = Buffer.byteLength(raw, "utf8");
+          if (rawUtf8Bytes < 1 || rawUtf8Bytes > REVIEW_RESULT_MAX_UTF8_BYTES || raw.includes("\u0000")) {
+            throw new Error("Pullfrog result is empty or exceeds the artifact boundary");
+          }
+          let result;
+          try {
+            result = JSON.parse(raw);
+          } catch {
+            throw new Error("Pullfrog result must be valid JSON before artifact handoff");
+          }
+          if (typeof result?.review_body === "string" && result.review_body.includes("\u0000")) {
+            throw new Error("Pullfrog result review body must not contain NUL");
+          }
 
-            const resultRoot = path.join(process.env.RUNNER_TEMP, "pullfrog-review-result");
-            await fs.mkdir(resultRoot, { recursive: false, mode: 0o700 });
-            await fs.writeFile(path.join(resultRoot, "review.json"), raw, {
-              encoding: "utf8",
-              mode: 0o600,
-              flag: "wx",
-            });
+          const resultRoot = path.join(process.env.RUNNER_TEMP, "pullfrog-review-result");
+          fs.mkdirSync(resultRoot, { recursive: false, mode: 0o700 });
+          fs.writeFileSync(path.join(resultRoot, "review.json"), raw, {
+            encoding: "utf8",
+            mode: 0o600,
+            flag: "wx",
+          });
       - name: Upload structured review result
         uses: actions/upload-artifact@v4
         with:
@@ -346,6 +350,9 @@ jobs:
             }
             if (typeof result?.review_body !== "string") {
               throw new Error("Pullfrog result has no review body");
+            }
+            if (result.review_body.includes("\u0000")) {
+              throw new Error("Pullfrog result review body must not contain NUL");
             }
 
             const reviewBody = result.review_body.replace(/\r\n/g, "\n").trim();
