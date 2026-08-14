@@ -20,7 +20,7 @@ Evidence（证据）
        对应的有界详情
 ```
 
-Analysis package 发布下列类型化 query 定义和字段。它决定总体、分母、缺失、关系与 `MetricValue`，Report 只使用这些定义。
+Analysis package 发布下列类型化 query 定义和字段。它决定总体、分母、缺失、关系与 `MeasureResult`，Report 只使用这些定义。
 
 ```tsx
 import { query } from "niceeval/analysis";

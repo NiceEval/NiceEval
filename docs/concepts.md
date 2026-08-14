@@ -206,6 +206,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Member | Member | 一个 Run Slot 对精确 Attempt 的引用；不保存采用原因 | [Record](feature/record/architecture.md#core-v1) |
 | Attempt | Attempt | 一次实际执行的稳定身份；只存放在 origin Run，后续采用不复制 | [Record](feature/record/architecture.md#core-v1) |
 | Record 附件 | `RecordAttachment` | 一个 Run 或 Attempt owner 下具名、schema-identified 的 immutable payload closure | [Record](feature/record/architecture.md#recordattachment) |
+| 内部 Record 附件定义 | `InternalRecordAttachment<Value>` | NiceEval 内部固定一种官方事实的 nominal definition；声明 ID、owner、基数、当前 typed schema、限制与相邻 migration，不从 package 导出 | [Record Library](roadmap/new-record-report/record/library.md#内部-definition-api) |
 | Capture definition | Capture definition | `MetricDefinition`、`ScoreDefinition` 或 `ArtifactDefinition` 的受限纯数据定义；说明事实含义，不携带 Record authority | [Capture → Analysis → Report](roadmap/record-analysis-report/library.md#capture-definitions) |
 | Producer identity | Producer identity | 运行前固定的 producer ID、behavior version 与 canonical config fingerprint；说明事实怎样产生，不替代事实 identity | [Capture → Analysis → Report](roadmap/record-analysis-report/library.md#producer-identity) |
 | Capture obligation | Capture obligation | 已注册 Capture 对每个实际 Attempt 恰好封口一次的义务；漏封、重复、foreign 与 late seal 都是 producer contract violation | [Capture → Analysis → Report](roadmap/record-analysis-report/library.md#capture-obligation) |
@@ -215,6 +216,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Record 附件 envelope | `RecordAttachmentEnvelopeV1` | 保存 name 与 schemaId | [Record](feature/record/architecture.md#recordattachment) |
 | Record 附件 schema identity | `RecordAttachmentSchemaId` | 冻结 Attachment payload 的精确 shape 与语义 | [Record](feature/record/architecture.md#三个演进边界) |
 | Record 附件 migration | RecordAttachment migration | Attachment owner 提供的相邻 `vN → vN+1` converter 或明确不可迁移声明 | [Record](feature/record/architecture.md#migration-definition) |
+| 内部 Record migration | `InternalRecordMigration<From, To>` | NiceEval 内部拥有的纯 `vN → vN+1` typed converter；maintenance 按版本顺序逐条执行，每一步都验证下一 schema，不加载第三方迁移代码 | [Record Library](roadmap/new-record-report/record/library.md#相邻-migration-操作) |
 | 中立 Record 附件 projector | neutral RecordAttachmentProjector | 只把一个明确 owner 的 available Attachment 变为 typed view；不聚合、不选择 Run、不读另一 family | [Observability Attachments](feature/record/architecture/observability-attachments.md) |
 | 源码快照 | Sources snapshot | origin Run-owned `niceeval.sources/v1`；保存当时 source closure 的 manifest 与 own blobs | [Sources manifest](feature/record/architecture.md#sources-manifest) |
 | 源码项 | source item | Sources snapshot 中由非数组 `SourceItemId`、canonical project-relative path、SHA-256 与 own blob 标识的一项源码 | [Sources manifest](feature/record/architecture.md#sources-manifest) |
@@ -264,13 +266,16 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Record 宿主 SDK | `RecordHostSDK` | 从 `niceeval/record/host` 提供 snapshot、write 与 maintenance 三个分权 facet；锁与 verified-read cache 留在 SDK 实现内部 | [Record Host SDK](roadmap/new-record-report/record/library.md#recordhostsdk) |
 | 分析 | Analysis | 在同一 frozen Record view 上固定分母、解释事实、建立关系并派生 closed values；不写 Record 或渲染页面 | [Capture → Analysis → Report](roadmap/record-analysis-report/README.md) |
 | 分析查询句柄 | `AnalysisQuerySource` | 由 Analysis host 从当前冻结快照签发的 nominal、opaque、Scope-bound 查询能力；它是唯一查询句柄，没有第二种 Sample 句柄，也不暴露 raw Record | [Analysis Library](roadmap/new-record-report/analysis/library.md#analysisquerysource-与-query) |
+| Analysis 输入 | `AnalysisInput` | NiceEval 从当前 Record schema 发布的 nominal、只读 typed input；Measure 作者可以选择但不能构造，也不能取得内部 attachment payload | [Analysis Library](roadmap/new-record-report/analysis/library.md#一个指标怎样从-record-计算出来) |
 | Analysis population | `AnalysisPopulation` | 带 nominal identity、稳定 row identity 与穷尽规则的一组 Analysis members；grain 只是解释文字，不是字符串兼容协议 | [Capture → Analysis → Report Library](roadmap/record-analysis-report/library.md#analysis-fields) |
 | Analysis dimension | `Dimension` | 属于一个 nominal population、用于分组或稳定标识的 typed field；不执行跨 population join | [Capture → Analysis → Report Library](roadmap/record-analysis-report/library.md#custom-dimensionmeasure-与-relation) |
 | Analysis measure | `Measure` | 属于一个 nominal population，并一次声明 rollup、denominator、数值与 Evidence policy 的 typed field | [Capture → Analysis → Report Library](roadmap/record-analysis-report/library.md#metric-measure) |
 | Analysis relation | `AnalysisRelation` | 由领域 SDK 拥有、把一个 population 穷尽对齐到另一个 population 的具名纯关系；Report 不自动寻路 | [Capture → Analysis → Report Library](roadmap/record-analysis-report/library.md#custom-dimensionmeasure-与-relation) |
 | Analysis 执行计划 | `QueryPlan` | 从一次 typed Analysis query 编译出的 engine-neutral 有限计算计划；不包含 SQL、组件 props 或 renderer 配置 | [Analysis 内部执行](roadmap/new-record-report/analysis/library.md#内部边界) |
 | Analysis executor | `AnalysisExecutor` | 执行 `QueryPlan` 并返回完整语义结果的内部计算能力；执行 backend 不拥有 population、denominator 或 missing 口径 | [Analysis 内部执行](roadmap/new-record-report/analysis/library.md#内部边界) |
-| 语义数据帧 | `SemanticFrame` | 携带 population、typed fields、完整 `MetricValue`、问题与 Evidence refs 的闭合表格结果 | [Analysis 输出](roadmap/new-record-report/analysis/library.md#闭合输出) |
+| 事实最小内核 | `Record Kernel` | NiceEval 固定拥有的 Run / Slot / Attempt、owner、reference、completion 与内部 definition registry；不是第三方持久格式扩展点 | [三层总纲](roadmap/new-record-report/README.md#record-是内部可定义外部不可扩展的事实协议) |
+| 度量结果 | `MeasureResult` | `query()` 计算出的闭合 Measure 单元；携带 value、state、observed、denominator、issues 与 Evidence refs，不写回 Record | [Analysis 输出](roadmap/new-record-report/analysis/library.md#闭合输出) |
+| 语义数据帧 | `SemanticFrame` | 携带 population、typed fields、完整 `MeasureResult`、问题与 Evidence refs 的闭合表格结果 | [Analysis 输出](roadmap/new-record-report/analysis/library.md#闭合输出) |
 | 领域视图 | `DomainView` | 为 Trace、Attempt 或 Evidence 诊断任务形成的闭合领域结果；保留树、时序、身份与问题 | [Analysis 输出](roadmap/new-record-report/analysis/library.md#闭合输出) |
 | 官方 Experiment Report | Official Experiment Report | 平台用普通 Page、Table、Chart 与诊断组件组成的已完成 Experiment 查看与比较工作流；不是专用 component primitive | [Report 组合层](roadmap/new-record-report/report/README.md#页面组合) |
 | Report 行身份 | `ReportRowKey` | 由 nominal population identity 与完整 group coordinate 形成的 opaque 行身份；不受排序、截断或格式影响 | [Capture → Analysis → Report Architecture](roadmap/record-analysis-report/architecture.md#四种-identity) |

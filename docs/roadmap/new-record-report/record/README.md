@@ -1,121 +1,103 @@
-# Record（事实持久化层）
+# ① Record（持久事实层）
 
-Record（事实持久化层）保存一次运行已经发生、已经封口且可供离线复核的事实。它不解释统计口径，
-不组织页面，也不决定用户从哪里查看结果。
-
-三层固定为 Record（事实持久化层）→ Analysis（分析层）→ Report（报告层）。
-Record 只回答“发生了什么”。Analysis 决定怎样解释，Report 决定怎样组织并呈现到终端、网页或静态站。
+Record 保存一次运行已经发生、已经封口且可离线复核的事实。它不是面向用户的扩展层：attachment definition（附件定义）、writer（写入器）和 migration（迁移）都由 NiceEval 自己拥有。
 
 ```text
-普通作者、Adapter、领域 SDK
-            │ 受限采集
-            ▼
-Record（事实记录层）──当前 sealed Record──▶ Analysis（分析层）
-```
+NiceEval 内部定义                         对外领域 API
 
-`sealed Record`（已封口的 Record）是唯一可供上层读取的事实集。运行中的写入、未完成目录、
-缓存和本地锁不属于它。Analysis 与 Report 既不观察半写入状态，也不把临时数据当成事实。
+defineInternalRecordAttachment()         Assertion / OTel / event / diff collector
+        │                                           │
+        ▼                                           ▼
+InternalRecordAttachment<Value> ───────▶ owner-bound capture（归属者绑定采集）
+        │
+        ├─ current schema（当前格式）
+        ├─ adjacent migrations（相邻迁移）
+        └─ snapshot projection（快照投影）──▶ AnalysisInput
+```
 
 ## 心智模型
 
-Record 以完整 Run（已完成运行）为发布单位。Run 拥有本次实际执行的 Attempt（一次独立执行），
-并在全部事实通过验证后原子封口。封口后的 Run 不可修改；需要表达新的事实时，写入新的 Run。
+Record 是“由 NiceEval 维护的事实协议”，不是“用户可增加字段的数据库”。固定 Run、Slot、Attempt、owner（归属者）、reference（引用）与 completion（完成标记）的 Record Kernel（事实最小内核）；Assertion、OTel、事件和文件差异再通过统一的内部 attachment 机制附着到 Run 或 Attempt。
 
-Record 不增加一个面向作者的平级层。普通作者只使用 Assertion-first（断言优先） API：在观察到结果时
-直接登记 Assertion（断言）。Assertion runtime（断言运行时）把已完成的 AssertionResult（断言结果）
-交给受限采集面，作者不会获得 writer、文件路径、模式身份或迁移能力。
+这样仍保留 definition（定义）的价值：
 
-每一份 RecordAttachment（Record 附件）都挂在一个精确的 Run 或 Attempt owner（归属者）下。附件带有
-SchemaId（模式身份），它冻结 payload 的 shape（形状）、owner 与语义。相同名字但不同语义必须使用新的
-SchemaId，不能让 reader 用同一身份猜测两种解释。
+- NiceEval 新增一种官方事实时，不必修改通用 writer 的分支逻辑；
+- 每一种事实明确声明 typed schema（类型化格式）、owner、基数和大小限制；
+- schema 必须改变时，由拥有该定义的 NiceEval 模块提供相邻 migration；
+- Analysis 只依赖 NiceEval 发布的稳定 `AnalysisInput`，不读取 attachment payload。
 
-host（宿主）在 seal（封口）前同时绑定 owner、definition（定义）、producer（生产者）与 cardinality（基数）。
-它验证每个声明的采集义务恰好完成一次、所有引用闭合且同属本次运行。任何一项不成立时，Run 不会发布。
+但这些能力不形成公共 SPI（服务提供者接口）。外部 package 不能注册 attachment、converter（转换函数）、物理表或 migration。Adapter 只能通过 NiceEval 已发布的 OTel、event、Artifact 和 diff collector 提交受支持的数据。
 
-## Record Model 与 Record Host SDK
+## Definition 与 Operation
 
-Record Model（Record 数据模型）定义什么能成为已封口事实。`niceeval/record/host` 导出的 Record Host SDK（Record 宿主开发工具包）让 Application Host 安全地打开、写入与维护这些事实。
-
-| 内部边界 | 拥有的对象与规则 | 不拥有的职责 |
+| Record 部分 | 可见性 | 做什么 |
 |---|---|---|
-| Record Model | SchemaId、identity（身份）、已封口事实、RecordAttachment、Artifact 与它们的引用闭包 | 锁、恢复流程、缓存和 Analysis 计算 |
-| Record Host SDK | snapshot（冻结快照）、write（写入）、capture（采集）、maintenance（维护） | 新的产品层、普通作者 API、Analysis 的执行缓存 |
-| SDK 内部实现 | 锁、迁移 staging（暂存区）、恢复与 verified cache（已验证缓存） | 对外 API 或跨层状态容器 |
+| Definition（定义） | NiceEval 内部 | 定义 attachment 的 ID、owner、基数、当前 schema、限制和相邻 migration |
+| Capture operation（采集操作） | 通过领域 API 间接使用 | Assertion、Adapter 与 collector 在当前 Run / Attempt 中提交事实 |
+| Read operation（读取操作） | Record Host SDK | 只读取当前版本、已封口的事实，并向 Analysis 签发输入 |
+| Maintenance operation（维护操作） | Record Host SDK | 按相邻版本逐步迁移，并原子发布当前格式 |
 
-Record Host SDK 服务于事实持久化层，不构成第四层。Application Host 是唯一能够取得其 facet 的对象。
-普通应用、CLI、Adapter 和 Report callback 都不会获得写入 capability，也不会获得 `ProgramStateSDK`、`LockSDK` 或 `niceeval/lock`。
+普通 Eval 作者只使用 Assertion-first（断言优先）API。Adapter 作者使用某个已有 collector；两者都不取得 root writer（根写入器）、Record reader（事实读取器）或 definition registry（定义注册表）。
 
-SDK 的三个 facet（分权能力面）由 Scope（资源作用域）拥有：
+## 内建 Attachment 使用同一机制
 
-| facet | 自动取得的内部资源 | 返回的能力 |
+| 内部 Definition | owner | 典型字段 |
 |---|---|---|
-| `snapshot()` | shared maintenance lock（共享维护锁） | 当前 sealed Record 的冻结快照 |
-| `write()` / `capture()` | shared maintenance lock 与 exclusive writer lock（独占写入锁） | Run draft、Attempt Capture 与原子封口 |
-| `maintenance()` | exclusive maintenance lock（独占维护锁） | 格式检查、迁移、恢复与维护 receipt |
+| Assertions attachment（断言附件） | Attempt | AssertionResult、Evidence refs、完整度 |
+| OTel attachment（可观测性附件） | Attempt / Run | span、event、usage、diagnostic |
+| File diff attachment（文件差异附件） | Attempt | path、change kind、hash、partial / elided 状态 |
+| Artifact attachment（材料附件） | Run / Attempt | media type、大小、完整度和 blob ref |
 
-调用者从不直接 acquire（取得）或 release（释放）锁。Scope finalizer（作用域收尾器）在能力关闭时释放资源；
-普通读取和写入因此不需要也不能协调锁的生命周期。
+这些 definition 共用 Capture、校验、封口、读取与迁移机制。这里的“通用”只表示 NiceEval 内部没有四套特殊 writer，不表示外部可以扩展持久协议。
 
-verified Record cache 由 SDK 内部实现管理。它只保存已按精确内容身份验证的 Core、附件与 Artifact bytes，
-不保存 live writer、Capture、锁或 migration authority（迁移授权）。Analysis execution cache 属于 Analysis，
-不进入 Record Host SDK。
-
-## 数据 family（数据族）
-
-数据 family（数据族）各自拥有明确的 owner、SchemaId 与封口规则。它们共享 Record 的原子发布、
-快照读取和显式迁移机制，却不共享任意可扩张的持久化形状。
-
-| 数据族 | owner | 保存的事实 | 进入方式 |
-|---|---|---|---|
-| Assertions | Attempt | AssertionResult、subject snapshot（对象快照）、Evidence（证据）与完整度 | Assertion runtime 的受限 Capture（采集能力） |
-| Observability | Attempt 或 Run | OTel（OpenTelemetry 可观测性协议）时序、调用、用量与诊断 | 官方 Adapter（适配器）采集面 |
-| Third-party capture | Attempt | Metric（数值事实）、Score（评分事实）或 Artifact（附属材料） | 领域 SDK（软件开发工具包）的已注册 token |
-| File diff | Attempt | 文件身份、变更种类、字节计数、完整度与可选 patch | 官方文件差异采集面 |
-| Artifact | Attempt 或 Run | 大文本、二进制、图片、表格及其它需保留的材料 | 内建数据族或已注册 Artifact token |
-
-Evidence 与 Artifact 都由精确引用连接到所属附件。它们不会成为任意 JSON 袋，也不会让另一附件取得
-本附件的存储路径或可写能力。
-
-### Assertion-first
-
-普通作者在 `t.check(value, match)`、scope 方法或 Judge recipe（裁判配方）处登记 Assertion。handle 只配置同一条
-Assertion，例如 label、threshold 或 score contribution；它不会创建第二条持久化项目。
-
-AssertionResult 保存当时的 subject、evaluator、evaluation、Evidence、限制与封口结果。它不保存 matcher 对象、
-作者回调、未执行代码或当前工作目录。这样作者 API、Adapter 实现和 Analysis 算法可以分别演进，已封口事实仍保持原义。
-
-### OTel、第三方数据与文件差异
-
-OTel 由官方 Adapter 归一为受限 Observability 附件。Adapter 只能提交规范化的 span、事件、用量和诊断输入；
-不能借此选择附件路径、注册 converter（转换器）或扩张持久化信封。
-
-第三方只通过领域 SDK 声明 Metric、Score 或 Artifact definition，并在已注册 token 对应的 Attempt 中封口。
-SDK 可以表达有限标签、固定 rubric（评分维度）、状态和 Evidence 引用。它不能声明任意持久化 JSON schema，
-不能安装自定义 reader，也不能提供 converter。
-
-`file diff`（文件差异）的 metadata（元数据）始终内联。一个小型、完整且为 UTF-8 的单文件 patch 可以内联其文本。
-大型、二进制或多文件差异把材料写入 Artifact 的 blob（字节内容），metadata 保留精确引用。
-
-`partial`（部分采集）表示采集范围或材料不完整，必须携带 limitation（限制原因）。`elided`（明确省略）表示内容按
-保留规则未内联或未保存，同样必须给出原因、受影响文件和已知字节信息。两者不能被空 patch、零字节或不存在的附件掩盖。
-
-## 当前格式与显式迁移
-
-Record runtime（Record 运行时）只向上层提供 current Record（当前格式 Record）的冻结快照。它不会在普通读取时
-执行历史 converter，也不会把旧格式组成类型联合交给 Analysis。
+## 保存边界
 
 ```text
-旧格式 Record ── Application Host `maintenance.migrate()` ──▶ 当前 sealed Record ──▶ Analysis
+sealed Run Core（已封口运行核心）
+├─ Run-owned internal attachment
+└─ Attempt
+   └─ Attempt-owned internal attachment
+      ├─ definition ID + version
+      ├─ producer identity
+      ├─ typed payload（类型化载荷）
+      └─ ArtifactRef ──▶ content-addressed blob（内容寻址材料）
 ```
 
-已知旧格式返回 `migration-required`，并指向 Application Host 的 `maintenance.migrate(request, authorizationPort)`。它先形成计划并释放独占锁，经宿主授权后重新取得锁、检查计划未过期，再原子应用。不存在无损路径时返回
-`migration-unavailable`，保留原始字节并明确说明不能形成当前形状。迁移中断返回
-`migration-interrupted`；普通读取不会猜测、回滚或静默改盘。
+小型结构化字段内联在 attachment payload。大型文本、二进制、图片和多文件 diff 写入 blob，payload 只保存精确引用、媒体类型、大小与完整度。
 
-新 Query、Measure、组件、页面和 renderer（渲染器）不推动 Record 升版。只有无法从既有事实恢复的持久语义、
-附件形状或 Record 发布公理发生变化时，才定义新的 SchemaId 或相邻格式迁移。
+一个 Run 只有在 Core、全部 attachment、Artifact 和引用闭包都验证成功后才原子封口。草稿、锁、verified cache（已验证缓存）和 staging（暂存区）不是持久事实。
+
+## Migration 心智模型
+
+一个内部 definition 只声明相邻迁移：
+
+```text
+v1 ── migration 1→2 ──▶ v2 ── migration 2→3 ──▶ v3 current
+```
+
+Record maintenance 按顺序一次运行一条 migration。每一步先用旧版本 schema 验证输入，运行纯 converter，再用下一版本 schema 验证输出。不能跳过中间版本，也不能在普通读取时临时转换。
+
+整份 Record 的迁移过程是：
+
+1. 从当前 NiceEval 安装版本取得完整内部 definition registry（定义注册表）。
+2. 在 staging 中逐 attachment、逐版本运行相邻 migration。
+3. 验证迁移后的 Core、owner、基数和引用闭包。
+4. 再次检查 root identity（根身份）与计划身份。
+5. 原子发布当前格式；任一步失败都保留旧 Record。
+
+旧版本超过当前 NiceEval 的迁移支持范围，或内部迁移链缺失时，这是 NiceEval 的版本契约错误，不要求用户安装第三方 converter。普通 Analysis 不读取旧 payload；用户只能升级到包含所需迁移的 NiceEval 版本并显式运行 `niceeval migrate`。
+
+## SDK 边界
+
+| 入口 | 面向谁 | 提供什么 |
+|---|---|---|
+| NiceEval internal Record definitions（内部事实定义） | NiceEval 维护者 | attachment 与相邻 migration 定义；不从 package 导出 |
+| Assertion / Adapter collector | Eval 或 Adapter 作者 | 只提交 NiceEval 已支持的领域值 |
+| `niceeval/record/host` | Application Host（应用宿主） | snapshot、write session、maintenance session 与自动锁生命周期 |
+
+Analysis 不读取物理文件或内部 attachment。Record Host SDK 把当前事实投影成 NiceEval 发布的 `AnalysisInput`。Report 不读取 Record，只消费 Analysis 的闭合结果。
 
 ## 入口
 
-- [Library](library.md) —— Record Host SDK、Capture、状态与迁移错误。
-- [Use Case](use-case/README.md) —— 一次 Attempt 如何成为当前 sealed Record。
+- [Library](library.md) —— 内部 definition、领域采集面、Host 读取和逐步迁移 API。
+- [Use Case](use-case/README.md) —— OTel attachment 在 NiceEval 内部升级、写入、读取和迁移的完整路径。

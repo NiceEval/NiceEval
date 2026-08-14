@@ -24,11 +24,20 @@ Analysis query()
 
 Component（组件）、Page（页面）与 renderer（渲染器）同属 Report。组件定义一块结果怎样呈现，页面把若干组件排列成一个阅读任务，Report 把固定页面和 PageFamily（页面族）收成一个可执行的报告定义。三个 renderer 消费同一棵 `ClosedReportTree`，不会形成第四层。
 
+## Definition 与 Operation
+
+| SDK 部分 | API | 做什么 |
+|---|---|---|
+| Component definition（组件定义） | `defineComponent()`、内建 `Table/Bars/TraceViewer` | 声明一块闭合 Analysis 结果怎样显示 |
+| Page definition（页面定义） | `definePage()`、`definePageFamily()`、`defineReport()` | 声明页面、下钻 route 与完整阅读产品 |
+| Execution operation（执行操作） | `report.execute()` | 运行 query 与页面 callback，产生 `ClosedReportTree` |
+| Presentation operation（呈现操作） | `report.show()`、`serve()`、`export()` | 把同一闭合树呈现到终端、Web 或静态站 |
+
 ## 组件子结构
 
 ### 中立组件
 
-中立组件只理解维度、度量、`MetricValue`（度量值）和显示交互。它们的输入是 `SemanticFrame`，不会认识 Run、Attempt、Trace 或 evaluator。
+中立组件只理解维度、度量、`MeasureResult`（度量结果）和显示交互。它们的输入是 `SemanticFrame`，不会认识 Run、Attempt、Trace 或 evaluator。
 
 ```text
 SemanticFrame
@@ -40,7 +49,7 @@ SemanticFrame
    └── Heatmap       两个分类维度的交叉比较
 ```
 
-组件依照 typed field identity（类型化字段身份）取值。`MetricValue` 的 `state`、`observed`、`denominator`、`issues` 和 `refs` 随输入保留；排序、行数限制和颜色只影响显示，不形成新总体，也不重算度量值。
+组件依照 typed field identity（类型化字段身份）取值。`MeasureResult` 的 `state`、`observed`、`denominator`、`issues` 和 `refs` 随输入保留；排序、行数限制和颜色只影响显示，不形成新总体，也不重算度量值。
 
 ### 领域组件
 

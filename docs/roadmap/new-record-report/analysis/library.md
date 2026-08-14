@@ -18,6 +18,7 @@ import {
 
 | 对象 | 公开职责 |
 |---|---|
+| AnalysisInput | NiceEval 发布的只读 typed input；作者只能选择，不能构造 |
 | Population | 声明可分析成员及其稳定成员 identity |
 | Dimension | 在一个总体内给出分组或稳定标识值 |
 | Measure | 声明输入、三段归并、分母、缺失与证据口径 |
@@ -30,14 +31,25 @@ query() 是唯一公开查询名。niceeval/analysis 不导出 analyze() 或 agg
 
 ## 一个指标怎样从 Record 计算出来
 
-Analysis 不枚举 Record 物理表。领域包发布 `AttemptInput`（单次执行输入投影），把一个具名 RecordAttachment 的当前 schema 投影成 Measure（度量）需要的 typed value（类型化值）。
+Analysis 不枚举 Record 物理表。NiceEval 内部把当前 attachment schema 投影成 Measure（度量）需要的 `AnalysisInput`；公共 SDK 只导出已发布的输入句柄，不导出 projector（投影器）或 attachment。
 
 | Analysis input | 从 ① Record 读取什么 | 给 Measure 的值 |
 |---|---|---|
 | `attemptPassed` | Attempt-owned Assertions / Verdict attachment | `boolean` |
 | `attemptLatencyMs` | Attempt-owned OTel attachment 中被该投影采用的 span 时长 | `number`，单位 ms |
-| `metricInput(metricToken)` | 该 token 对应的第三方 Metric envelope | token 声明的数值类型 |
-| `scoreInput(scoreToken)` | 该 token 对应的第三方 Score envelope | token 声明的评分类型 |
+| `attemptToolFailure` | Attempt-owned event attachment 中受支持的 tool failure | `boolean` |
+
+Analysis 作者直接引用 NiceEval 发布的输入：
+
+```ts
+import {
+  attemptPassed,
+  attemptLatencyMs,
+  attemptToolFailure,
+} from "niceeval/analysis/inputs";
+```
+
+这些值是 opaque definition（不透明定义）。作者知道它们给 Measure 的类型和语义，但不能从中取得 Record reader、attachment identity、原始 payload 或磁盘路径。
 
 一个通过率指标先声明完整口径，再由 `query()` 对冻结选择中的多个 Run 计算：
 
@@ -145,7 +157,7 @@ export const condition = defineDimension({
 
 ## Measure
 
-Measure 在一个 Population 上一次声明完整统计口径。它不返回未包装的 number；每次查询都返回带状态、分母、问题和证据引用的 MetricValue。
+Measure 在一个 Population 上一次声明完整统计口径。它不返回未包装的 number；每次查询都返回带状态、分母、问题和证据引用的 MeasureResult。
 
 ```ts
 interface Measure<Member, Value> {
@@ -157,14 +169,18 @@ interface Measure<Member, Value> {
   readonly better?: "higher" | "lower" | "neutral";
 }
 
-interface AttemptInput<Member, Input> {
-  readonly kind: "attempt-input";
+interface AnalysisInput<Member, Input> {
+  readonly kind: "analysis-input";
   readonly population: Population<Member>;
-  readonly id: AttemptInputId;
+  readonly id: AnalysisInputId;
+  readonly [AnalysisInputTypeId]: (_: Input) => Input;
 }
 
-declare const attemptPassed: AttemptInput<LogicalSlot, boolean>;
-declare const attemptLatencyMs: AttemptInput<LogicalSlot, number>;
+declare const attemptPassed: AnalysisInput<LogicalSlot, boolean>;
+
+declare const attemptLatencyMs: AnalysisInput<LogicalSlot, number>;
+
+declare const attemptToolFailure: AnalysisInput<LogicalSlot, boolean>;
 
 interface MeasureOptions<
   Member,
@@ -175,7 +191,7 @@ interface MeasureOptions<
 > {
   readonly id: string;
   readonly population: Population<Member>;
-  readonly input: AttemptInput<Member, Input>;
+  readonly input: AnalysisInput<Member, Input>;
   readonly withinAttempt: WithinAttemptReduction<Input, AttemptValue>;
   readonly withinSlot: WithinSlotReduction<AttemptValue, SlotValue>;
   readonly acrossSlots: AcrossSlotsReduction<SlotValue, Value>;
@@ -199,7 +215,7 @@ declare function defineMeasure<
 ): Measure<Member, Value>;
 ```
 
-AttemptInput 是领域包发布的受控输入描述。它不是通用 Fact API，也没有用户可调用的 fact()、Record access 或 payload 枚举面。
+`AnalysisInput` 的公共类型没有构造器。NiceEval 内部的 `publishAnalysisInput()` 才能绑定 attachment projector；该函数不从 package 导出。用户可以选择已发布输入并定义新的统计口径，但不能借此枚举 attachment、选择任意字段或改变 Record selection（事实选择）。
 
 ### 三段归并
 
@@ -209,7 +225,7 @@ AttemptInput 是领域包发布的受控输入描述。它不是通用 Fact API�
 | withinSlot | 一个 logical slot 的多个 Attempt 值 | 选哪次 Attempt，或怎样合并重试 | state、observed、issues、refs |
 | acrossSlots | 同一分组坐标中的 logical slot 值 | 怎样计算平均值、比例、总和或其它最终读数 | value、state、observed、denominator、issues、refs |
 
-这三个阶段按固定顺序运行。任何阶段都不能把只剩 scalar 的中间值重新包装为完整 MetricValue。
+这三个阶段按固定顺序运行。任何阶段都不能把只剩 scalar 的中间值重新包装为完整 MeasureResult。
 
 标准 reducer 的调用形状如下：
 
@@ -281,7 +297,7 @@ export const latency = defineMeasure({
 });
 ```
 
-attemptPassed 与 attemptLatencyMs 是平台发布的受控输入描述。它们不建立任意持久字段读取能力。
+`attemptPassed`、`attemptLatencyMs` 与 `attemptToolFailure` 是 NiceEval 发布的输入。若缺少某种原始事实或投影，应先演进 NiceEval 的 Record 与 input catalog（输入目录），而不是让项目代码注册新的持久定义。
 
 ## Relation
 
@@ -382,7 +398,7 @@ interface SemanticRow<By, Measures> {
   readonly measures: MeasureValues<Measures>;
 }
 
-interface MetricValue<Value> {
+interface MeasureResult<Value> {
   readonly value: Value | null;
   readonly state:
     | "available"

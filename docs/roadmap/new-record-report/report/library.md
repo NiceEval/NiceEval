@@ -164,7 +164,7 @@ export const ModelComparison = defineComponent(async (_props, { source }) => {
 <Scatter frame={frame} x={duration} y={passRate} color={model} />
 ```
 
-每个 Measure cell 是完整的 `MetricValue`（度量值）。组件使用其 `state`、`observed`、`denominator`、`issues`、`refs`、`unit`、`format` 与 `better`；作者不手动补百分比、单位或分母。
+每个 Measure cell 是完整的 `MeasureResult`（度量结果）。组件使用其 `state`、`observed`、`denominator`、`issues`、`refs`、`unit`、`format` 与 `better`；作者不手动补百分比、单位或分母。
 
 ## 领域组件
 

@@ -4,9 +4,11 @@ Analysis（分析）把冻结样本中的持久事实解释为可比较的统计
 
 Analysis 不写入 Record，也不组织页面或渲染输出。它独占总体、分母、缺失处理、归并、问题和 Evidence（证据）引用的统计口径。
 
+Experiment、Eval、Run、logical Slot 与 Attempt 是 Record Core 提供的领域身份。Analysis 可以把它们声明为 Population member（总体成员）、Dimension 或 Relation 的端点，却不能重新定义这些实体的 owner、生命周期或父子关系。
+
 ## 心智模型
 
-Analysis 的作者声明 Population（总体）、Dimension（维度）、Measure（度量）和 Relation（关系）。这些声明说明哪些成员可比较、怎样分组、怎样归并，以及哪些证据必须随读数保留。
+Analysis 的作者从 NiceEval 发布的 `AnalysisInput`（分析输入）中选择输入，再声明 Population（总体）、Dimension（维度）、Measure（度量）和 Relation（关系）。这些定义说明哪些成员可比较、怎样分组、怎样归并，以及哪些证据必须随读数保留。Analysis 作者不能自行投影 Record attachment。
 
 一次 Query（查询）固定在一个 `AnalysisQuerySource`（分析查询句柄）上。它由 Analysis Host SDK（分析宿主开发工具包）从同一份冻结事实签发，并绑定当前 operation Scope（操作资源作用域）；它不能改变样本成员，也不能读取另一个 Record root。相同输入与相同字段声明因此总是使用同一组预期成员和分母。可显示的选择摘要另存为 `AnalysisSampleSummary`（分析样本摘要），不是第二种查询句柄。
 
@@ -35,11 +37,31 @@ QueryPlan（查询计划）把声明编译为与执行后端无关的有限计�
 | 边界 | 接收或交付的对象 | 约束 |
 |---|---|---|
 | 输入 | 当前 schema 的 AnalysisQuerySource | 句柄已经冻结且绑定 Scope；没有可读字段、Record root、写入会话或迁移权限 |
+| Record 输入 | AnalysisInput | NiceEval 从当前 Record schema 发布的稳定、只读 typed input；不暴露 attachment payload |
 | 语义声明 | Population、Dimension、Measure、Relation | 每个字段有稳定 identity，并说明所属总体 |
 | 表格输出 | SemanticFrame | 每个单元保留 value、state、observed、denominator、issues 和 refs |
 | 诊断输出 | DomainView | 保留领域身份、树或时序、issues 和 refs，不压成通用表格 |
 
 闭合输出不含 reader、Promise、回调、执行器或未解释的 Record 载荷。Report 只能使用这些结果组织页面，不能重新计算度量或缩小分母。
+
+## Definition 与 Operation
+
+| SDK 部分 | API | 做什么 |
+|---|---|---|
+| Record input catalog（事实输入目录） | NiceEval 发布的 `AnalysisInput` | 提供受支持的 Assertion、OTel、事件与文件差异投影；作者只能选择，不能注册 |
+| Semantic definition（统计语义定义） | `definePopulation()`、`defineDimension()`、`defineMeasure()`、`defineRelation()` | 固定总体、分组、归并、分母、缺失和 Evidence 口径 |
+| Query operation（查询操作） | `query()` | 对冻结选择执行定义，返回 `SemanticFrame` 或 `DomainView` |
+
+## Measure 准入规则
+
+`defineMeasure()` 可以表达比例、均值、分位数、总和、计数、评分与其它纯归并，只要定义同时给出：
+
+- 一个 NiceEval 发布的 `AnalysisInput`；
+- 一个明确 Population；
+- withinAttempt、withinSlot、acrossSlots 三段归并；
+- denominator、missing、producer 与 Evidence policy。
+
+当前工作目录、网络响应和当前时间不能直接成为 Measure 输入。若这些值应成为可复核输入，需要先由 NiceEval 把它们设计成官方 Record 事实并发布对应 `AnalysisInput`；项目代码不能临时扩展持久 schema。
 
 ## 为什么不是六层
 
