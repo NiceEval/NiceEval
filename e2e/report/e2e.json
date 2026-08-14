@@ -9,7 +9,10 @@
   "harness": {
     "testkit": true
   },
-  "secrets": [],
+  "secrets": [
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL"
+  ],
   "artifacts": [
     ".e2e-artifacts/**",
     "test-results/**",

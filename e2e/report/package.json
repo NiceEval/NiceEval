@@ -5,6 +5,7 @@
   "description": "report E2E repo — validates on-disk Record format/openRecord() parity/--json/--junit folding, read-face CLI behavior, and show/view rendering (structure, terminal typography, browser visual & interaction) against real attempts (docs/engineering/testing/e2e/report.md).",
   "scripts": {
     "e2e": "node scripts/run-native.mjs",
+    "e2e:prepare": "tsx scripts/prepare.ts",
     "e2e:legacy": "tsx scripts/e2e.ts",
     "typecheck": "tsc --noEmit -p tsconfig.owner.json",
     "typecheck:baseline": "tsc --noEmit",

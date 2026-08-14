@@ -1,6 +1,6 @@
 # E2E CI
 
-E2E 是[测试体系](../README.md)的真实层：真实模型、真实协议、真实沙箱、真实安装与进程，没有离线档、mock 模式或替身分支——模型调用成本不构成设计约束，费用与时长由每个仓库自己的 Experiment 档位（模型、runs、budget、timeout）控制。
+E2E 是[测试体系](../README.md)的产品层：始终使用真实安装、进程、文件系统、CLI 与浏览器。外部集成 profile 使用真实模型、协议和沙箱；功能仓库还可以用确定性 Agent 经公开 CLI 生产有区分力的产品场景，但必须和外部 smoke 分名，不能用脚本化事件冒充 provider 协议已经通过。
 
 niceeval 的 E2E 以**独立测试仓库**为执行与所有权边界。
 每个测试仓库都包含自己的被测应用、直接实例化官方 Agent 工厂的 Experiment、Eval、依赖锁文件、启动脚本和验收脚本；不同仓库之间不共享 Eval factory、profile、应用进程或结果读取代码。
@@ -23,7 +23,7 @@ niceeval 的 E2E 以**独立测试仓库**为执行与所有权边界。
 
 E2E CI 同时证明以下行为：
 
-1. **真实仓库路径**：从安装 niceeval、启动被测应用、发现 `evals/` 与 `experiments/`、执行真实 Agent，到断言、评分、结果落盘和进程退出码，全部通过公开使用面完成。
+1. **真实产品路径**：从安装 niceeval、启动被测应用、发现 `evals/` 与 `experiments/`、执行 Agent，到断言、评分、结果落盘和进程退出码，全部通过公开使用面完成；需要证明外部集成时，该 Agent 也必须是真实官方工厂。
 2. **仓库自治**：一个测试仓库只依赖自己的签入内容、声明的外部服务与注入的 niceeval 候选包。
    删除其它测试仓库或把本仓库复制到独立 checkout，不改变它的行为。
 3. **协议差异显式存在**：SDK 的工具命名、usage、HITL、会话和沙箱能力直接写在对应仓库的 Eval 中，不用共享 profile 把多个真实协议抽象成一套条件分支。
@@ -44,15 +44,15 @@ E2E CI 同时证明以下行为：
 - 不 import 另一个测试仓库，也不 import niceeval 根仓中的 `e2e/shared`、`src/` 或测试辅助源码。
 - 不使用指向父目录的 `file:` / `link:` 依赖。
   待测 niceeval 由执行器通过候选包注入。
-- 不包含 `agents/` 或等价的本地 Adapter 实现层，不调用 `defineDirectAgent`、`defineSandboxAgent`、`driveFrameStream` 或 `from*Events` 拼装 Agent。
-  官方工厂不够用就是产品缺口，不在 E2E 中补胶水。
+- 适配器仓库不包含 `agents/` 或等价的本地 Adapter 实现层，不调用 `defineDirectAgent`、`defineSandboxAgent`、`driveFrameStream` 或 `from*Events` 拼装 Agent；官方工厂不够用就是产品缺口，不在 E2E 中补胶水。
+  `cli` / `report` 功能仓库可以拥有确定性 Agent，但它只能构造已声明的产品状态图，不能复刻某个 SDK 协议或承担对应适配器的验收。
 - `.niceeval/`、服务日志和 JUnit 属于一次运行的临时证据，必须被 ignore，不得成为下一次运行的输入。
 - 从父目录复制到一个临时目录后，仍能在只注入候选包和 secrets 的条件下执行。
 
 “不共享”约束的是运行时代码和测试语义。
 仓库可以遵循同一份书面执行协议，也可以在创建时从模板复制初始骨架；复制后各仓库独立演进，不存在会同时改变整个矩阵行为的共享 factory。
 
-`e2e/` 的布局平铺，目录名就是验收域：`adapter/` 是唯一的多仓库 collection，装已有完整官方 Agent 工厂的适配器仓库（`group` 为 `sdk` / `sandbox`），负责官方适配器的协议验收；`cli/`、`report/` 是直挂在 `e2e/` 下、自带 `e2e.json` 的功能仓库（`group` 分别为 `cli`、`report`），对一次真实运行的产物断言 CLI 行为、落盘格式与渲染面，不测适配器协议路径。
+`e2e/` 的布局平铺，目录名就是验收域：`adapter/` 是唯一的多仓库 collection，装已有完整官方 Agent 工厂的适配器仓库（`group` 为 `sdk` / `sandbox`），负责官方适配器的协议验收；`cli/`、`report/` 是直挂在 `e2e/` 下、自带 `e2e.json` 的功能仓库（`group` 分别为 `cli`、`report`），对公开 CLI 生产的产物断言 CLI 行为、落盘格式与渲染面，不测适配器协议路径。
 物理位置只表达归属，不是仓库身份的一部分——`id` 在全部仓库范围内全局唯一，编排器与 CI 从每个仓库自己的 `e2e.json` 读 `group`，不从目录位置反推分组。
 
 只有事件转换器、尚无完整官方 Agent 工厂的 fixture 放在 `e2e/undo/`。
@@ -77,7 +77,7 @@ E2E CI 同时证明以下行为：
   experiments/                # 直接实例化 niceeval/adapter 官方工厂
 
   scripts/
-    e2e.ts                     # 唯一执行入口（tsx 执行）：准备、启动、运行、验收、清理
+    e2e.ts                     # 唯一执行入口；也可由一个 runner 编排原生测试器：准备、启动、运行、验收、清理
     verify.ts                  # 可选；只包含本仓库的可观察行为断言
 ```
 
@@ -336,14 +336,11 @@ crabbox 只负责远端容量、同步、环境转发、日志/JUnit 收集和�
 一个能力只在真实支持它的仓库中出现。
 中央矩阵不依据 profile 自动删减 Eval；缺少覆盖应表现为域文档覆盖表中的空白，由评审决定补进哪个仓库。
 
-功能仓库（`cli`、`report`）同样使用真实 Agent 与真实模型。
-E2E 矩阵里不存在脚本化 Agent。
+功能仓库（`cli`、`report`）可同时有确定性产品验收和真实 provider smoke。确定性 profile 的 Agent、Run 图与 expected 都由仓库拥有；外部 profile 仍使用真实官方 Agent 与真实模型。
 
-稳定性来自断言对象：只断言一次真实运行的确定性产物，例如 Attempt 集合、退出码、落盘格式、渲染结构与排版；不判断模型输出质量。
-因此，一次真实运行可以支持任意多条确定性断言，覆盖广度不随模型调用次数增长。
+稳定性来自有区分力的证据图和独立 oracle：确定性 profile 锁定 Attempt / Run / Sample 集合、退出码、落盘格式、渲染结构与排版；外部 profile 只锁定协议事实，不判断模型输出质量。每个 profile 一次生产可以支持任意多条断言，覆盖广度不随 Experiment 次数增长。
 
-全部 E2E 仓库都需要真实凭据。
-无凭据环境的验证边界是 `pnpm test`。
+只有声明外部 profile 的运行需要真实凭据。仓库可提供不依赖凭据的定向命令，但 `pnpm e2e` 仍必须执行仓库契约声明的全部 profile；不能因本机无 key 静默跳过 smoke。
 
 缺少完整官方工厂的 SDK 不进入矩阵：fixture 留在 `e2e/undo/`，覆盖缺口记录在[适配器域](adapter/README.md)。
 协议归一的验收只在真实运行里发生，E2E 不用本地 `defineDirectAgent` 把转换器包装成貌似完整的官方适配器；工厂落地前，该 SDK 的协议路径就是显式空白。

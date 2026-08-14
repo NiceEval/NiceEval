@@ -1,16 +1,17 @@
 # 功能域 · 报告与读面
 
-本域回答一个问题：**一次真实运行落盘的结果、对外的机器出口，以及用户在 show / view 里看到的读面与渲染，是否符合公开契约。**
- 它由 `e2e/report/` 仓库承担（group `report`）。
+本域回答一个问题：**一次运行落盘的结果、对外的机器出口，以及用户在 show / view 里看到的读面与渲染，是否符合公开契约。**
+它由 `e2e/report/` 仓库承担（group `report`）；仓库名表示 Report / Record 读面领域，测试按用户入口分在 `test/show/` 与 `test/view/`。
 适配器仓库不复制格式知识，读结果只走公开 Record 读取面。
 
-仓库使用真实 Agent 与真实模型产生结果——真实优先没有例外。
-稳定性来自断言对象：只对这次运行的产物做确定性断言（文件集合、字段形状、口径一致性、渲染结构与排版），不断言模型输出质量。
-一次真实运行产出的证据被下面全部验收组共用，断言条数不增加模型成本。
+仓库有两个分名 profile。确定性产品验收经公开 CLI 运行仓库自有 Agent，生产一份有区分力的冻结 World，证明 Record → Sample → show / view 的完整产品路径；真实 provider smoke 另行证明网关与真实 usage / tracing 能进入同一公开读面。前者不能冒充外部协议验收，后者也不能作为页面 expected 的来源。
+每个 profile 只生产一次证据；同一 profile 的全部验收组消费私有 byte copy，断言条数不增加 Experiment 次数，也不允许消费者修改共享 seed。
+
+确定性 World 至少包含三个完整 Experiment Run，再对其中一个 Experiment 做一次局部补跑。冻结契约分别描述 Record 历史与当前 Sample：历史至少四个 Run、保留每次 Attempt 身份；当前 Sample 仍是三个 Experiment、27 Attempts、19 passed / 8 failed、总成本与成本覆盖率均已知，并能形成三个 scatter 点。该图专门区分“历史仍在但当前水位正确”和“旧 Run 被错误丢弃”，不能退化成只适合截图的单 Run fixture。
 
 ## 验收计划
 
-仓库运行一个小型真实 Experiment，覆盖 passed / failed / errored 三态 attempt，然后对同一份事实逐出口核对：
+仓库先由唯一 prepare 生产冻结 World，再对同一份事实逐出口核对；真实 provider smoke 覆盖 passed / failed / errored 三态以及外部 usage / tracing：
 
 ### 1. 落盘格式
 
@@ -52,6 +53,9 @@ show / view 对这份真实结果的可观察行为按 [Show](../../../feature/r
 
 show 的终端输出与 view 的 HTML 是渲染契约的唯一验收面，对真实产物断言 [Reports](../../../feature/reports/README.md) 声明的呈现行为：
 
+- **分面的验收语言**：show 的领域 reader 对 frame、stat、table、bar、scatter 与 hierarchy 暴露具名语义，断言值所在的确切格子和实体身份；不得先压缩空白再做跨区块 `contains`。PTY 另行逐字符证明少量框线、列宽、折行和尾部空白承诺。view 用 role、accessible name 与真实点击书写用户 Journey，至少覆盖 overview → experiment → 展开层级 → failed attempt → details；class/tag 只可作为无公开语义时的定位实现。完整 transcript 不承担数据语义 oracle。
+- **独立 oracle**：标题、Record / Sample 数量、verdict、成本覆盖、图点、层级和链接来自签入的冻结契约，不从候选的 text、JSON、DOM 或内部计算函数反推 expected。show JSON、终端与浏览器对照的是同一份契约，不互相当答案。
+
 - **零配置用户切片**：从公开 CLI 验收多 `--exp` 对照、`--stats`、`--usage`、attempt 首页 facts、`--grep` 命中/空结果，以及 `--source` 对全通过断言的收纳和对失败断言的展开。
   预期来自本仓库签入的 Eval、公开 Record fixture 与真实运行证据，不 import show renderer、报告原语或数据源生成答案。
 
@@ -69,7 +73,7 @@ show 的终端输出与 view 的 HTML 是渲染契约的唯一验收面，对真
 
 自定义报告验收按用户认识的公开组件族放在 `e2e/report/scripts/report-components/<component-family>.scenarios.ts`。
 每个 scenario 只证明一个可观察行为，场景上方用中文 Given / When / Then 注释交代前提、操作和预期；文件边界不跟随 renderer、data builder 或 CSS 等内部实现拆分。
-场景共享同一次真实 Evidence、每份报告的一次静态导出和一个浏览器进程，不能为了文件隔离重复跑模型或重复导出。
+场景共享同一份对应 profile 的 Evidence、每份报告的一次静态导出和一个浏览器进程，不能为了文件隔离重复跑 Experiment 或重复导出。
 
 渲染断言停在「用户可见规则生效、语义结构正确、交互可达」，不锁颜色值、像素或完整 class 列表。
 class/tag selector 只是找到元素的手段，除非公开文档把它声明成 DOM、可访问性或导出格式契约，否则不能把具体 class/tag 本身写进预期；样式断言也应证明可见布局或交互效果，而不是规定必须由 grid、flex 或某个组件实现。

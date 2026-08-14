@@ -8,6 +8,7 @@ export const reportProjectCopy = {
   prefix: "niceeval-e2e-report-",
   omitTopLevel: [
     ".e2e-artifacts",
+    ".e2e-world",
     ".niceeval",
     "evidence",
     "node_modules",
