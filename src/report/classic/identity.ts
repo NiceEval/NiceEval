@@ -52,6 +52,9 @@ export function prepareClassicIdentities(
   sample: AnalysisSample,
   projected: ProjectedSample<ProjectionAccess, unknown>,
 ): ClassicIdentityPreparation {
+  if (projected.sample !== sample) {
+    return Object.freeze({ state: "defect" as const });
+  }
   const cached = preparationByProjected.get(projected);
   if (cached !== undefined) {
     return cached;
@@ -76,9 +79,10 @@ function computeClassicIdentities(
   sample: AnalysisSample,
   projected: ProjectedSample<ProjectionAccess, unknown>,
 ): ClassicIdentityPreparation {
-  if (!isSelectedRunSample(projected)) {
+  if (projected.sample !== sample || !isSelectedRunSample(projected)) {
     return Object.freeze({ state: "defect" as const });
   }
+  const selectedRunIds = new Set(sample.runs.map((run) => run.runId));
   const plans = new Map<string, ProjectedRecordAttachmentResult<unknown>>();
   for (const entry of projected.entries) {
     plans.set(entry.run.runId, entry.attachment);
@@ -90,7 +94,7 @@ function computeClassicIdentities(
     if (slot.state === "excluded") {
       continue;
     }
-    if (!sample.runs.some((run) => run.runId === slot.runId)) {
+    if (!selectedRunIds.has(slot.runId)) {
       return Object.freeze({ state: "defect" as const });
     }
     const resolved = resolveSlotIdentity(plans.get(slot.runId), slot.runId, slot.slotId);
@@ -109,6 +113,9 @@ function computeClassicIdentities(
       state: "incomplete" as const,
       gaps: Object.freeze(gaps) as readonly [ClassicIdentityGap, ...ClassicIdentityGap[]],
     });
+  }
+  if (identities.size !== sample.denominator) {
+    return Object.freeze({ state: "defect" as const });
   }
   return Object.freeze({
     state: "complete" as const,
@@ -145,33 +152,32 @@ function resolveSlotIdentity(
         gap: Object.freeze({ code: "invalid" as const, runId, slotId }),
       });
     case "available": {
-      if (!isEvaluationPlanView(attachment.value)) {
-        return Object.freeze({
-          kind: "gap" as const,
-          gap: Object.freeze({ code: "invalid" as const, runId, slotId }),
-        });
-      }
-      let coordinate: ReturnType<EvaluationPlanView["coordinateForSlot"]>;
       try {
-        coordinate = attachment.value.coordinateForSlot(slotId);
+        if (!isEvaluationPlanView(attachment.value)) {
+          return Object.freeze({
+            kind: "gap" as const,
+            gap: Object.freeze({ code: "invalid" as const, runId, slotId }),
+          });
+        }
+        const coordinate = attachment.value.coordinateForSlot(slotId);
+        if (coordinate === undefined) {
+          return Object.freeze({
+            kind: "gap" as const,
+            gap: Object.freeze({ code: "invalid" as const, runId, slotId }),
+          });
+        }
+        return Object.freeze({
+          kind: "identity" as const,
+          identity: Object.freeze({
+            experimentId: coordinate.experimentId,
+            evalId: coordinate.evalId,
+            attempt: coordinate.attempt,
+            kind: coordinate.kind,
+          }),
+        });
       } catch {
         return "defect";
       }
-      if (coordinate === undefined) {
-        return Object.freeze({
-          kind: "gap" as const,
-          gap: Object.freeze({ code: "invalid" as const, runId, slotId }),
-        });
-      }
-      return Object.freeze({
-        kind: "identity" as const,
-        identity: Object.freeze({
-          experimentId: coordinate.experimentId,
-          evalId: coordinate.evalId,
-          attempt: coordinate.attempt,
-          kind: coordinate.kind,
-        }),
-      });
     }
   }
 }
