@@ -134,8 +134,10 @@ function sourceEvidenceDocument(
       title: "Recorded source",
       presentation: "evidence-text",
       children: [reportStatus({
-        tone: "warning",
-        label: "Source evidence unavailable for this attempt",
+        tone: "negative",
+        label: result.state === "execution-failed"
+          ? "Source evidence calculation/projection failed"
+          : "Source evidence data unavailable",
       })],
     });
   }

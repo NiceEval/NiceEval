@@ -31,6 +31,7 @@ test("show --source 从本轮 Record 呈现入口与导入断言快照", async (
         (event) => event.event === "eval" && event.evalId === "source-snapshot" && event.locator !== undefined,
         run.diagnostic(),
       );
+      const locator = attempt.locator!;
 
       const entryPath = join(projectRoot, "evals", "source-snapshot.eval.ts");
       const assertionPath = join(projectRoot, "evals", "source-snapshot", "assertions.ts");
@@ -46,7 +47,7 @@ test("show --source 从本轮 Record 呈现入口与导入断言快照", async (
       );
 
       const shown = await niceeval.run(
-        ["show", attempt.locator!, "--source"],
+        ["show", locator, "--source"],
       );
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
       expect(shown.stdout).toContain("evals/source-snapshot.eval.ts");
@@ -60,7 +61,7 @@ test("show --source 从本轮 Record 呈现入口与导入断言快照", async (
       expect(shown.stdout).not.toContain("sources.json");
 
       const json = await niceeval.run(
-        ["show", attempt.locator!, "--source", "--json"],
+        ["show", locator, "--source", "--json"],
       );
       expect(json.exitCode, json.diagnostic()).toBe(0);
       const recordRoot = join(projectRoot, ".niceeval", "record");
@@ -79,6 +80,25 @@ test("show --source 从本轮 Record 呈现入口与导入断言快照", async (
       expect(payload).not.toContain("ENTRY_SNAPSHOT_AFTER");
       expect(payload).not.toContain("IMPORTED_ASSERTION_SNAPSHOT_AFTER");
       expect(payload).not.toContain("@unknown");
+
+      const missingSourceText = await niceeval.run(
+        ["show", locator, "--source=evals/not-captured.ts"],
+      );
+      expect(missingSourceText.exitCode, missingSourceText.diagnostic()).toBe(0);
+      expect(missingSourceText.stdout).toContain(
+        "Captured source file not found in annotated source tree: evals/not-captured.ts",
+      );
+      expect(missingSourceText.stdout).toContain(locator);
+
+      const missingSourceJson = await niceeval.run(
+        ["show", locator, "--source=evals/not-captured.ts", "--json"],
+      );
+      expect(missingSourceJson.exitCode, missingSourceJson.diagnostic()).toBe(0);
+      expect(missingSourceJson.json<ShowDocument>().data).toMatchObject({
+        locator,
+        source: null,
+        unavailable: "Captured source file not found in annotated source tree: evals/not-captured.ts",
+      });
     },
   );
 });

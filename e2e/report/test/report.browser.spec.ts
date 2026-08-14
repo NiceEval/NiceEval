@@ -2,6 +2,7 @@
 // kill:
 // - inverse = switchLocale early-return without advancing locale generation
 // - inverse = custom metric formatters always receive "en" instead of Sample.locale
+// - inverse = hierarchy parent cell omits ordinary <a> when descendants.length > 0
 // rerun: pnpm e2e --repo report -- --run test/report.browser.spec.ts
 //
 // 浏览器 owner 自己完成 exp → view --out → 真正的 niceeval view server → browser，
@@ -90,6 +91,29 @@ test("Report browser Journey：经典界面与自定义报告共用固定执行�
         await expect(page.getByRole("tab", { name: "Attempts" })).toHaveAttribute("aria-selected", "true");
         await expect(page.getByRole("heading", { name: "Attempts", level: 1 })).toBeVisible();
         await page.getByRole("tab", { name: "Report" }).click();
+
+        // kill: inverse = parent cell omits ordinary <a> when descendants exist.
+        // invoke: focus the Experiment parent link, GET its href, then click.
+        // observe: live dialog shows that same already-generated detail route.
+        const hierarchy = page.getByRole("table", { name: "Experiment hierarchy" });
+        const experimentParentLink = hierarchy.getByRole("link", { name: "main", exact: true });
+        await expect(experimentParentLink).toBeVisible();
+        await experimentParentLink.focus();
+        await expect(experimentParentLink).toBeFocused();
+        const experimentHref = await experimentParentLink.getAttribute("href");
+        expect(experimentHref).toBeTruthy();
+        const experimentDetailUrl = new URL(experimentHref!, origin!).href;
+        const experimentDetailPath = new URL(experimentHref!, origin!).pathname;
+        expect((await page.request.get(experimentDetailUrl)).status()).toBe(200);
+        await experimentParentLink.click();
+        const experimentDialog = page.locator("dialog[open]");
+        await expect(experimentDialog).toHaveAttribute("aria-label", "main");
+        await expect(experimentDialog.getByRole("heading", { name: "main", level: 1 })).toBeVisible();
+        await expect(experimentDialog.getByRole("table", { name: "Experiment hierarchy" })).toBeVisible();
+        expect(page.url()).toBe(reportUrl);
+        await experimentDialog.getByRole("button", { name: "Close" }).click();
+        await expect(page.locator("dialog[open]")).toHaveCount(0);
+        await expect(experimentParentLink).toBeFocused();
 
         const mainDisclosure = page.getByRole("button", { name: "main" });
         await mainDisclosure.click();
@@ -192,12 +216,24 @@ test("Report browser Journey：经典界面与自定义报告共用固定执行�
         const noJsContext = await browser!.newContext({ javaScriptEnabled: false });
         try {
           const noJsPage = await noJsContext.newPage();
-          await noJsPage.goto(pathToFileURL(index).href);
+          const noJsIndex = pathToFileURL(index).href;
+          await noJsPage.goto(noJsIndex);
           await expect(noJsPage.getByRole("heading", { name: "NiceEval", level: 1 })).toBeVisible();
           await expect(noJsPage.getByRole("table", { name: "Experiment hierarchy" })).toBeVisible();
+          const noJsHierarchy = noJsPage.getByRole("table", { name: "Experiment hierarchy" });
+          const noJsExperimentLink = noJsHierarchy.getByRole("link", { name: "main", exact: true });
+          await expect(noJsExperimentLink).toBeVisible();
+          const noJsExperimentHref = await noJsExperimentLink.getAttribute("href");
+          expect(noJsExperimentHref).toBeTruthy();
+          const noJsExperimentUrl = new URL(noJsExperimentHref!, noJsIndex);
+          expect(noJsExperimentUrl.pathname.endsWith(experimentDetailPath)).toBe(true);
           const noJsMain = noJsPage.getByRole("button", { name: "main" });
           await noJsMain.click();
           await expect(noJsPage.getByRole("button", { name: "tool-call" })).toBeVisible();
+          await noJsExperimentLink.click();
+          await expect(noJsPage.getByRole("heading", { name: "main", level: 1 })).toBeVisible();
+          await expect(noJsPage.getByRole("table", { name: "Experiment hierarchy" })).toBeVisible();
+          expect(new URL(noJsPage.url()).pathname.endsWith(experimentDetailPath)).toBe(true);
         } finally {
           await noJsContext.close();
         }

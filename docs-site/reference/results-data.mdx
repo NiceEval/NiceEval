@@ -11,6 +11,14 @@ The internal hosts for `niceeval show` and `niceeval view` select Runs and run p
 To inspect results in a terminal or browser, see [Viewing Results](/tutorials/viewing-results).
 To define pages and calculations, see [Report Components API](/reference/report-components).
 
+## Classic Report pages receive a frozen `Sample`
+
+A classic Report page reads a deeply frozen `Sample` through `render(sample)`. The host creates it after applying the fixed classic projection plan once, so it has no reader, path, or deferred I/O. Import the type from `niceeval/record`.
+
+`aggregate(sample, { by, values })` groups at the Eval level. `passRate` and `costUSD` use a strict two-level denominator: each `(experiment, eval)` unit first averages its Attempts, then each Eval unit has equal weight across the group. A passed Attempt counts as 1; failed and errored Attempts count as 0. Skipped or missing Attempts do not fabricate a value, and coverage makes any gap explicit. Missing cost or timing never becomes zero.
+
+The Sample metadata records its source. `project-current` uses the full current-declaration profile and sets `metadataOrigin: "current-declaration"`. With explicit Runs selected through `--run`, a Record without a durable profile yields partial metadata (`metadataOrigin: "partial"`): the experiment ID falls back to `id` or `unknown`, and the Report includes a structured notice. Historical data never reads or mixes in fields from the current project declaration.
+
 ## Report callbacks receive `AnalysisSample`
 
 Calculation, Page, and PageFamily callbacks receive a pure `AnalysisSample`.

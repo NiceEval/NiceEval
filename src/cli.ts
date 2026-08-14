@@ -2512,6 +2512,24 @@ function publicShowEnvelope(
   }
 }
 
+/**
+ * Source JSON is the command's single source-of-truth value for both machine
+ * and text output. An unavailable attachment is represented by an available
+ * Calculation with `source: null`; a non-available Calculation instead means
+ * the selected Attempt no longer aligned with its Report inputs and must fail
+ * the command before either presentation path can hide that distinction.
+ */
+function requireSourceEvidenceCalculation(
+  flags: Flags,
+  execution: ReportExecution,
+): Effect.Effect<void, CliFailure> {
+  if (flags.source === undefined) return Effect.void;
+  return Effect.try({
+    try: () => requireCalculationValue<SourceShowJson>(execution, "source-json"),
+    catch: (cause) => cliFailure("validate source evidence Calculation", cause),
+  }).pipe(Effect.asVoid);
+}
+
 function publicShowView(request: ReportCliRequest, flags: Flags): ShowJsonView {
   if (flags.source !== undefined) return "source";
   if (flags.timing !== undefined) return "timing";
@@ -2985,6 +3003,7 @@ function runShowCommand(
       : parsed;
     const inputs = yield* loadCliReportInputs(request);
     const execution = yield* executeCliReport(request, inputs);
+    yield* requireSourceEvidenceCalculation(flags, execution);
     const page = yield* requireKnownReportPage(execution, request.page);
     if (flags.json) {
       if (usesRunMembershipJson(parsed)) {

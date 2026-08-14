@@ -599,7 +599,7 @@ function renderCellTableHierarchy(
     const descendants = children.get(row.key) ?? [];
     const cells = block.columns.map((column, index) => {
       const label = index === 0 ? row.label ?? row.cells[column] ?? "—" : row.cells[column] ?? "—";
-      const content = index === 0 && descendants.length === 0 && row.target !== undefined
+      const content = index === 0 && row.target !== undefined
         ? `<a ${reportLinkAttributes(ctx, row.target)}>${escapeHtml(label)}</a>`
         : escapeHtml(label);
       return `<span role="cell" class="niceeval-report__hierarchy-cell${index === 0 ? " niceeval-report__hierarchy-cell--label" : ""}">${content}</span>`;
