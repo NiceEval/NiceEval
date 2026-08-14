@@ -54,6 +54,7 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
       expect(errored.exitCode, errored.diagnostic()).toBe(1);
       expect(errored.stderr).toBe("");
       expect(errored.stdout).not.toMatch(/[\x1b\x08]/);
+      expect(errored.stdout).not.toContain("[object Object]");
       const erroredEvents = errored.ndjson<ExpEvent>();
       expect(erroredEvents).toContainEqual(expect.objectContaining({
         event: "eval",
@@ -66,15 +67,41 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
         event: "eval",
         verdict: "failed",
       }));
-      only(
+      const erroredEval = only(
         erroredEvents,
         (event) => "event" in event && event.event === "eval" && event.evalId === "deliberate-error/crash",
         errored.diagnostic(),
       );
-      expect(errored.expReceipt()).toMatchObject({ completion: "completed" });
+      const erroredReceipt = errored.expReceipt();
+      expect(erroredReceipt).toMatchObject({ completion: "completed" });
+      expect(erroredReceipt.runIds).toHaveLength(1);
+      expect(erroredEval.locator).toBeTruthy();
       const erroredJunit = readFileSync(join(root, "junit", "errored.xml"), "utf8");
       expect(erroredJunit).toContain("<error");
       expect(erroredJunit).not.toContain("<failure");
+
+      const shownRun = await niceeval.run([
+        "show",
+        "--run",
+        erroredReceipt.runIds[0]!,
+        "--record",
+        ".niceeval/record",
+      ]);
+      expect(shownRun.exitCode, shownRun.diagnostic()).toBe(0);
+      expect(shownRun.stdout).toContain("Sample: 1 run(s), 1 slot(s)");
+
+      const shownAttempt = await niceeval.run([
+        "show",
+        erroredEval.locator,
+        "--record",
+        ".niceeval/record",
+      ]);
+      expect(shownAttempt.exitCode, shownAttempt.diagnostic()).toBe(0);
+      expect(shownAttempt.stdout).toContain("Verdict: errored");
+      expect(shownAttempt.stdout).toContain("sandbox.prepare");
+      expect(shownAttempt.stdout).toContain("code 17");
+      expect(shownAttempt.stdout).toContain("deliberate pre-context sandbox prepare failure");
+      expect(shownAttempt.stdout).not.toContain("[object Object]");
     },
   );
 });

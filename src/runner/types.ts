@@ -651,9 +651,9 @@ export type ReporterEvent =
 export type EvaluationKind = "pass" | "score";
 
 /** The live Runner derives Pass and Score from one sealed Assert-first entry sequence. */
-export const EVALUATION_ALGORITHM = "assert-first/v1" as const;
+export const EVALUATION_ALGORITHM = "assert-first/v2" as const;
 /** `fact-use/v3` remains only as the historical Record reader/writer bridge. */
-export type EvaluationAlgorithm = typeof EVALUATION_ALGORITHM | "fact-use/v3";
+export type EvaluationAlgorithm = typeof EVALUATION_ALGORITHM | "assert-first/v1" | "fact-use/v3";
 
 /**
  * 作者输入里的派生字段用模块私有诊断类型，而不是 `never`：错误会说明字段属于哪个阶段。
@@ -1090,11 +1090,6 @@ export interface Config {
    * 可传字符串,或按 locale 提供多语言(如 `{ en: "...", "zh-CN": "..." }`),随 view 语言切换。
    */
   name?: LocalizedText;
-  /**
-   * CLI 与运行时文案的界面语言(BCP 47,如 `"en"` / `"zh-CN"`);CI 里想让日志恒定一种语言就写这个。
-   * 省略则按系统 locale(`LC_ALL` / `LC_MESSAGES` / `LANG`)判定,都没有时用 `zh-CN`。
-   */
-  locale?: string;
   /** 上传进 Sandbox 的工作区根目录,省略则用项目根;评估用例的 sandbox 视图从这里起步。 */
   workspace?: string;
   /** 项目级默认 judge 配置(model / baseUrl / apiKeyEnv);EvalDef.judge 可按评估用例覆盖。 */

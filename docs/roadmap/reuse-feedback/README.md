@@ -1,57 +1,54 @@
 # 结果携带与 Sandbox 复用反馈
 
-结果携带与 Sandbox 复用是两套正交机制。
-[缓存与携带](../../feature/experiments/cache.md)复用历史 Attempt 的判定与证据；[Sandbox 复用](../../feature/sandbox/reuse.md)让本次 Invocation 的多条 Attempt 共用运行 Sandbox，但每条 Attempt 仍真实执行。
+## 要解决的 Frog / DX 摩擦
 
-两套机制的行为边界继续由 Feature 契约定义。
-本主题统一结果携带的公开名字，并为 Sandbox 复用定义运行级汇总。
+操作者在预览、运行日志和事后报告里需要回答同一个问题：某个 Slot 为什么携带历史 Attempt，或为什么需要执行。
+如果 CLI、scheduler 和 writer 各自重新读取 Record 并组织理由，三处会给出相互矛盾的答案。
 
-## 结果携带统一叫 `carried`
+另一个常见误读是把结果携带和 Sandbox 复用都叫作 `reused`。
+前者采用历史 Attempt，后者让本次真实执行的 Attempt 共用一台 Sandbox。
+两者必须有不同名字和不同 owner。
 
-所有公开反馈把结果携带称为 `carried`。
-`sandbox.reused` 只表示 Attempt 在共用 Sandbox 中真实执行，两个概念不共享字段名。
+## 核心心智
 
-| 表面 | 目标形状 |
-|---|---|
-| live 面板与结束反馈 | `6 carried` |
-| `niceeval.exp` JSONL | `carried: number` |
-| `niceeval.exp-plan` | 顶层 `carried: number`；矩阵行 `carried: boolean` |
-| Record 读取 API | 保持 `attempt.carried` |
-| Attempt 的 Sandbox 调度事实 | 保持 `sandbox.reused` |
+`project-target/v1` 在一个 frozen Record view 上产生唯一的 `ExecutionReusePlan`。
+计划中每个目标 Slot 只带一项穷尽 action：
 
-字段改名不保留 `reused` 别名。
-`niceeval.exp` 事件流升为 schemaVersion 2，`niceeval.exp-plan` 升为 schemaVersion 4。
-消费方先按版本分流；旧 reducer 收到不支持的版本时报告 `unsupported schemaVersion`，不探测 `reused` 猜版本。
+- `carried` 表示采用一个历史 Attempt。
+- `execute` 表示把这个 Slot 交给 planner/scheduler。
 
-## Sandbox 复用增加运行级汇总
+action、历史 Attempt locator 与解释是同一个 frozen plan slot 的字段。
+任何 Human 输出、JSON 事件、scheduler 输入和 membership provenance 都只投影该字段，不能再次比较资格或重建理由。
+执行沿用说明（Reuse explanation）就是这个 frozen plan slot 给出的同源理由与 prior locator。
 
-Attempt 持久化 `sandbox.reused`、本次 Run 内的 Sandbox 编号和承接序号。
-声明 `sandboxReuse` 的 Experiment 按现有物理复用池提供四个运行级量；Eval Group 按本轮 run 槽位提供同一组计数：
+`carried` 只描述结果携带。
+`sandbox.reused` 只描述本次 Attempt 是否在共用 Sandbox 中真实执行。
 
-| 量 | 口径 |
-|---|---|
-| `active` | 当前可以继续承接 Attempt 的 Sandbox 数 |
-| `created` | 本次 Invocation 完成 Case 就绪并承接首条 Attempt 的 Sandbox 累计数 |
-| `assignments` | 已租借 Sandbox 的 Attempt 累计数；租借后的 prepare 失败或超时仍计入 |
-| `replacements` | ready Sandbox 因 reset、寿命确认或收尾失败退出后，成功为下一未开始槽位建立替代 Sandbox 的累计数 |
+## 范围
 
-live 面板按 Experiment 与 Eval Group 恒定显示 `active`、`created` 与 `assignments`，`replacements` 只在非零时显示。
-结束反馈显示四项最终值。
-多个组不合成一组总数，否则无法判断哪一个组在轮换实例。
-carried、excluded 与 early-exit 槽位不租借 Sandbox，因此不进入 `assignments`。
-替代实例绝不重新派发已经开始的 Attempt。
+本方向包含：
 
-机器输出在既有 `progress` 与 `result` 事件上附加逐 Experiment、逐 group 的 `sandboxReuse` 数组，不增加独立事件。
-数组每项带 `experimentId`、group 身份与四个量；机器面四项恒定存在。
-逐实例承接明细继续归 `niceeval view` / `show`，不进入运行流。
+- 以 `carried` 统一结果携带的 Human、JSON 与持久 provenance 名字；
+- 让 frozen plan 同时拥有 action、完整历史 locator 与解释；
+- 让 `--dry`、运行反馈与 sealed Run 审计同一项计划决定；
+- 为声明 `sandboxReuse` 的 Experiment 与 Eval Group 提供运行级汇总。
 
-`created` 只计成功进入池并承接首条 Attempt 的实例，不再拆就绪失败计数。
-就绪失败沿既有 phase 错误与 diagnostic 反馈，避免汇总复制第二套失败口径。
+本方向不改变 reuse eligibility、source barrier、显式 `accept`、Sandbox 生命周期或重跑 policy。
+它不保存第二份 reuse 事实，也不提供 `--reuse-verify`。
+同一 Eval 连跑两次不能证明没有残留污染；需要该类保证时，作者编写专门 Eval。
 
-## 不在本主题里的问题
+## owner 与公开验收
 
-- 生效并发已经由 Experiments CLI 显示全局出处与逐 Experiment 上限，不在这里重复设计。
-- 留存实例与孤儿分别由 `sandbox list`、`sandbox list --orphans` 回答；本主题不新增 Provider 配额盘点。
-- 不提供 `--reuse-verify`。
-  同一 Eval 连跑两次相同不能证明没有残留污染，不同也可能来自 Agent 随机性；需要验证特定残留风险时，由作者写专门 Eval。
-- 不改变 Sandbox 复用生命周期、题间 reset、Provider 寿命确认或结果携带的六道门。
+`project-target/v1` planner 拥有计划决定。
+Record 拥有已封口的 Attempt、Member 与 membership provenance。
+CLI 只显示冻结决定；Report 只读取已发布 Run。
+
+本方向不新增 Eval Assertion。
+公开行为由真实 `niceeval exp`、`niceeval exp --dry`、`niceeval show` 与 `niceeval view` 旅程验收。
+CLI-only 行为使用真实 CLI/E2E 入口，不以内部 Assertion 代替。
+
+## 入口
+
+- [Library](library.md) —— frozen plan、action、locator 与 provenance 形状。
+- [CLI](cli.md) —— `exp`、`--dry`、JSON、退出码与审计输出。
+- [Architecture](architecture.md) —— 唯一决定链、并发、seal、失败与删除边界。

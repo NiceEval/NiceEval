@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 520" role="img" aria-labelledby="figTitle figDesc">
   <title id="figTitle">Attempt 的 Verdict 与 Score 分工</title>
-  <desc id="figDesc">所有 Attempt 都从已封口 Assertion 得到四态 Verdict。Score Eval 另有 earned score，gate failed 不清空 score，执行错误保留 partial 或 unavailable。</desc>
+  <desc id="figDesc">Pass Attempt 得到四态 Verdict；Score Attempt 正常评分为 passed，无法完成为 errored，并另存 earned score。</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
       <path d="M0 0 L8 4 L0 8 z" fill="#74747b" />
@@ -36,7 +36,7 @@
     </style>
   </defs>
   <rect x="0.5" y="0.5" width="1239" height="519" class="canvas" />
-  <text x="32" y="48" class="title">Attempt 的四态 Verdict 与 Score Attachment</text>
+  <text x="32" y="48" class="title">Attempt 的 Verdict 与 Score Attachment</text>
   <rect x="360.5" y="88.5" width="519" height="102" class="box" />
   <text x="388" y="122" class="label mono">niceeval.assertions/v1</text>
   <text x="388" y="150">sealed entry · criterion · evidence · points</text>
@@ -46,7 +46,7 @@
   <rect x="80.5" y="264.5" width="411" height="112" class="box" />
   <text x="108" y="300" class="label mono">niceeval.verdict/v1</text>
   <text x="108" y="328"><tspan class="good">passed</tspan> · <tspan class="bad">failed</tspan> · errored · skipped</text>
-  <text x="108" y="354" class="note">Pass 与 Score 的每个 Attempt 都有</text>
+  <text x="108" y="354" class="note">raw 四态审计 claim；Score 汇总另取 Analysis status</text>
   <rect x="748.5" y="264.5" width="411" height="112" class="box" />
   <text x="776" y="300" class="label mono">niceeval.score/v1</text>
   <text x="776" y="328">earned score · complete / partial / unavailable</text>
@@ -54,5 +54,5 @@
   <path d="M286 376 V434 H620 V376" class="arrow" />
   <path d="M954 376 V434 H620" class="arrow" />
   <rect x="305.5" y="442.5" width="629" height="48" class="box" />
-  <text x="330" y="472" class="note">gate failed 仍保留 earned score；execution error 不伪造 0，显示 partial 或 unavailable。</text>
+  <text x="330" y="472" class="note">Score 正常低分仍 passed；execution error 不伪造 0，显示 partial 或 unavailable。</text>
 </svg>

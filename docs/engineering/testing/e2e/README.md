@@ -4,6 +4,8 @@
 signal、Sandbox 或下一次消费者。E2E 按流程范围分为 Journey 与单边界。Eval、CLI、Runner、Record、Report、Package 与 Lifecycle 使用
 功能场景 Repo；Adapter 使用另一组 `adapter/<id>` 协议 Repo，包括确定性产品 owner 与 live 兼容性检查。
 
+E2E 是选择自动化时的默认 owner，不是每个 Bug 的修复门禁；TDD 也不是门禁。先按[测试总纲的 Bug 验证裁决](../README.md#bug-修复的验证裁决)决定是否自动化；选择本次 AI 真实验收时，不进入本目录创建或改写 owner。
+
 跨多个公开接缝的完整用户目标由 Journey 拥有；原子公开结果由单边界 E2E 拥有。
 只有两者无法稳定制造、穷举或区分具名错误算法时，才进入 [Unit 例外](../unit/README.md)。
 
@@ -216,7 +218,7 @@ pnpm e2e --repo report -- --run test/exported-targets.test.ts -t "打开 case ta
 
 E2E 必须由原生测试 runner 按文件与标题发现；无法按标题选择的线性脚本不拥有长期测试命题。
 
-新增、接管或实质修改确定性 owner 时，还必须通过[可靠性：重复运行](../README.md#可靠性重复运行)的全新副本、同副本连续运行、
+新增、接管或实质修改确定性 owner 时，还必须通过[可靠性：重复运行](../README.md#可靠性重复运行)的隔离副本、同副本连续运行、
 默认并行与单项重跑组合。任一次意外失败都不合格；测试级 retry 不得把失败改写成通过。
 真实 provider live owner 随常规全量 E2E 完成真实运行与公开读回。provider 随机性不能证明确定性，
 因此 live Repo 不用重复 takeover 承担确定性可靠性门。

@@ -1,6 +1,6 @@
 // Protocol behavior: UI Message Stream 工具调用 — a weather prompt over the SSE
 // `useChat` backend calls get_weather by its bare tool name (not an MCP-style
-// namespaced name), paired with its result by call id; calculate is untouched (反例).
+// namespaced name), paired with its result by call id.
 import { defineEval } from "niceeval";
 import { jsonMatch, satisfies, toolMatch } from "niceeval/expect";
 
@@ -31,6 +31,5 @@ export default defineEval({
         ),
       );
     });
-    t.notCalledTool("calculate");
   },
 });

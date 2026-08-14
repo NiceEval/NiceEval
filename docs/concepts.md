@@ -277,7 +277,17 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Fixture 内容命令 | Fixture content command (`putFixture`) | 把本地内容登记、digest-backed identity 与 `putContent` 组成一个普通 prepare command | [Fixture 内容命令](roadmap/sandbox-fixture-content/README.md) |
 | Agent Judge | Agent Judge | 作为 Assertion evaluator 运行的独立 Agent；调查证据后返回 measurement、理由与引用，不拥有 Verdict 或 score policy | [Agent-as-Judge](roadmap/agent-as-judge/README.md) |
 | Eval Group | Eval Group (`defineEvalGroup`) | 由无业务顺序的 Eval 闭集组成；Runner 按规范化 Eval ID 串行复用一台物理 Sandbox，不同 Group 可以并行 | [Eval Group](roadmap/eval-groups/README.md) |
-| Plugin | Plugin | 带稳定身份的生命周期组合语法；组合既有 owner 的 setup/teardown，不选择 Agent 或建立新运行时 | [Plugins](roadmap/plugins/README.md) |
+| Plugin | Plugin | 挂在 Eval、Experiment 或 Eval Group 上的不可变条件蓝图；组合既有 owner contribution，不选择 Agent 或建立新运行时 | [Plugins](roadmap/plugins/README.md) |
+| 准入健康 | Admission health | 每条 fresh slot 在 Agent 进入前，对 producer occurrence 做一次健康裁决；结果归 Run，不形成 Assertion | [准入健康](roadmap/admission-health/README.md) |
+| 状态 Cohort | State cohort | State Provider 颁发身份的一条持久状态 lineage，约束 Checkpoint、Region 与 schema 的共同归属 | [持久状态](roadmap/state/README.md) |
+| 状态 Checkpoint | State checkpoint | State cohort 内由 Provider 发布的 immutable exact 状态点；Comparable 状态必须带内容摘要 | [持久状态](roadmap/state/README.md) |
+| Eval Trajectory | Eval trajectory | 由源码路径定身份、用显式依赖组成，并能从 exact Checkpoint 跨 immutable Run segment 恢复的 Eval DAG | [Eval Trajectory](roadmap/eval-trajectories/README.md) |
+| Workspace 访问证据 | Workspace access evidence | 可信 Sandbox producer 归因给 Agent 进程树的逻辑文件操作集合 | [Workspace 访问证据](roadmap/workspace-access-evidence/README.md) |
+| 发现边界 | Discovery boundary | 显式目录入口拥有的递归 Eval discovery 范围；父级扫描在入口处停止向内发现 | [发现边界](roadmap/discovery-boundaries/README.md) |
+| 执行沿用说明 | Reuse explanation | frozen execution plan 对某个 slot 的 carried、gap 或 excluded 决策给出的同源理由与 prior locator | [结果携带与 Sandbox 复用反馈](roadmap/reuse-feedback/README.md) |
+| 价格配置 | Pricing profile (`PricingProfile`) | 带内容身份与 coverage、只供 Report Calculation 投影成本的价格规则集合 | [成本投影](roadmap/cost-projections/README.md) |
+| Experiment 展示名 | Experiment display name (`displayName`) | 与 description、Experiment identity 分离且不参与 reuse、选择或去重的人类可读标签 | [Experiment 展示名](roadmap/experiment-display-names/README.md) |
+| Record 库存 | Record inventory | 在 frozen Record view 上按 canonical Run ID 枚举的只读库存；不构造 Sample 或推导最新结果 | [运行交接与 Record 库存](roadmap/run-handoff-and-inventory/README.md) |
 
 ## 禁用写法
 

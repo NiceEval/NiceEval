@@ -80,8 +80,9 @@ fixture、Eval、Experiment、测试文件、项目副本 / 结果根与 owner a
 type Executor = { kind: "host" };
 
 interface E2ERepoManifest {
-  schemaVersion: 1;
+  schemaVersion: 2;
   id: string;
+  batch: string;
   areas: readonly (
     | "eval"
     | "cli"
@@ -114,6 +115,13 @@ interface E2ERepoManifest {
 ```
 
 manifest 不含测试标题、expected、page matrix、历史 bug 或 contract anchor。`paths` 只是选择优化。
+
+`batch` 是必填的 canonical lowercase placement ID，例如 `host-1`、`docker-1` 或 `browser-1`。它只决定 CI 共机分组，
+不表示资源 capability；完整宿主运行条件仍以 `requires` 为唯一真源。
+
+未来同类 Repo 过多时，直接把部分 manifest 改为 `host-2`、`host-3` 等新 ID。planner 会产生额外并行 cell，
+不维护第二份 batch registry。
+
 无法计算 diff 时多跑，不能静默少跑。显式 `--repo <id>` 不受 `--diff-path` 过滤。
 多个显式 Repo 中任一个不在所选 lane 时，命令必须非零退出并列出该 Repo 的可用 lane。
 `requires.runtimes`、`docker`、`browsers`、platform 与 secret 在 test 前有结构化 preflight。
@@ -205,7 +213,7 @@ capture 中的 groupCleanup 写入这次探测、所发信号与确认终态。�
 
 隔离是可靠性的必要条件，但不等于可靠性已经成立。
 新增、接管或实质修改 owner 时，使用根 `takeover` 入口固定 candidate、checkout、Testkit 与 source snapshot。
-确定性 owner 还要在三个全新副本、同一已安装副本连续两次、所属 Repo 默认并行和文件 / 标题单项运行中全部通过。
+确定性 owner 还要在三个彼此隔离的副本、同一已安装副本连续两次、所属 Repo 默认并行和文件 / 标题单项运行中全部通过。
 
 takeover summary 写入 source snapshot 的相对路径、字节数、SHA-256 清单和总 digest。
 每份 receipt 绑定该 digest；矩阵核验六个观察标签、copy ID、attempt、唯一 invocation ID 与 cleanup 终态。

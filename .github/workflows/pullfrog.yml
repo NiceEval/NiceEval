@@ -7,6 +7,7 @@ on:
       prompt:
         type: string
         description: Agent prompt
+        required: true
       name:
         type: string
         description: Run name
@@ -15,20 +16,66 @@ permissions:
   contents: read
 
 jobs:
-  pullfrog:
+  context:
+    name: Validate Pullfrog dispatch target
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      pull_number: ${{ steps.target.outputs.pull_number }}
+    steps:
+      - name: Resolve trusted pull request number
+        id: target
+        uses: actions/github-script@v9
+        env:
+          PULLFROG_DISPATCH: ${{ inputs.prompt }}
+        with:
+          script: |
+            const raw = process.env.PULLFROG_DISPATCH;
+            let payload;
+            try {
+              payload = JSON.parse(raw);
+            } catch {
+              throw new Error("Pullfrog dispatch prompt must be valid JSON");
+            }
+
+            const pullNumber = payload?.event?.issue_number;
+            const dispatchHead = payload?.event?.context?.head_sha;
+            if (payload?.["~pullfrog"] !== true || payload?.event?.is_pr !== true) {
+              throw new Error("Pullfrog dispatch does not identify a pull request event");
+            }
+            if (!Number.isSafeInteger(pullNumber) || pullNumber < 1) {
+              throw new Error("Pullfrog dispatch has an invalid issue_number");
+            }
+            if (typeof dispatchHead !== "string" || !/^[0-9a-f]{40}$/.test(dispatchHead)) {
+              throw new Error("Pullfrog dispatch has an invalid head_sha");
+            }
+
+            await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pullNumber,
+            });
+            core.setOutput("pull_number", String(pullNumber));
+
+  review:
+    name: Inspect pull request
+    needs: context
     runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
+    outputs:
+      result: ${{ steps.pullfrog.outputs.result }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
         with:
           fetch-depth: 1
-      # Keep inspection and reporting in one invocation. On a successful review
-      # with a stable HEAD and an unambiguous marker state, repository instructions
-      # create or edit one marked final-state comment and forbid all other output.
-      - name: Inspect pull request and update final review state
+      # Pullfrog only returns structured review data. A separate job owns the
+      # sole GitHub comment write so create-versus-update is deterministic.
+      - name: Inspect pull request
+        id: pullfrog
         uses: pullfrog/pullfrog@v0
         with:
           prompt: ${{ inputs.prompt }}
@@ -36,5 +83,120 @@ jobs:
           progress_comments: disabled
           push: disabled
           shell: disabled
+          output_schema: |
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["pull_number", "head_sha", "review_body"],
+              "properties": {
+                "pull_number": { "type": "integer", "minimum": 1 },
+                "head_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+                "review_body": { "type": "string", "minLength": 1, "maxLength": 60000 }
+              }
+            }
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+  publish:
+    name: Update final review comment
+    needs: [context, review]
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: read
+    concurrency:
+      group: pullfrog-final-review-${{ needs.context.outputs.pull_number }}
+      cancel-in-progress: false
+    steps:
+      - name: Upsert workflow-owned final review
+        uses: actions/github-script@v9
+        env:
+          PULL_NUMBER: ${{ needs.context.outputs.pull_number }}
+          REVIEW_RESULT: ${{ needs.review.outputs.result }}
+        with:
+          script: |
+            const marker = "<!-- niceeval-pullfrog-final-review-v2 -->";
+            const pullNumber = Number(process.env.PULL_NUMBER);
+            if (!Number.isSafeInteger(pullNumber) || pullNumber < 1) {
+              throw new Error("Trusted pull request number is invalid");
+            }
+
+            let result;
+            try {
+              result = JSON.parse(process.env.REVIEW_RESULT);
+            } catch {
+              throw new Error("Pullfrog result must be valid JSON");
+            }
+            if (result?.pull_number !== pullNumber) {
+              throw new Error("Pullfrog result targets a different pull request");
+            }
+            if (typeof result?.head_sha !== "string" || !/^[0-9a-f]{40}$/.test(result.head_sha)) {
+              throw new Error("Pullfrog result has an invalid head_sha");
+            }
+            if (typeof result?.review_body !== "string") {
+              throw new Error("Pullfrog result has no review body");
+            }
+
+            const reviewBody = result.review_body.replace(/\r\n/g, "\n").trim();
+            if (reviewBody.length < 1 || reviewBody.length > 60000) {
+              throw new Error("Pullfrog review body is empty or too long");
+            }
+            if (reviewBody.split("\n").includes(marker)) {
+              throw new Error("Pullfrog review body must not contain the workflow marker");
+            }
+            const body = `${marker}\n${reviewBody}`;
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const readCurrentPull = () => github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: pullNumber,
+            });
+            const isCurrent = (pull) =>
+              pull.state === "open" && pull.head.sha === result.head_sha;
+
+            const firstRead = (await readCurrentPull()).data;
+            if (!isCurrent(firstRead)) {
+              core.notice("Skipping stale Pullfrog result because the PR head or state changed");
+              return;
+            }
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number: pullNumber,
+              per_page: 100,
+            });
+            const canonical = comments.filter((comment) =>
+              comment.user?.login === "github-actions[bot]" &&
+              String(comment.body ?? "").split(/\r?\n/, 1)[0] === marker
+            );
+            if (canonical.length > 1) {
+              throw new Error("Multiple workflow-owned Pullfrog review comments exist");
+            }
+
+            const finalRead = (await readCurrentPull()).data;
+            if (!isCurrent(finalRead)) {
+              core.notice("Skipping stale Pullfrog result because the PR head or state changed");
+              return;
+            }
+
+            if (canonical.length === 0) {
+              const created = await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: pullNumber,
+                body,
+              });
+              core.info(`Created canonical Pullfrog review comment ${created.data.id}`);
+              return;
+            }
+
+            const updated = await github.rest.issues.updateComment({
+              owner,
+              repo,
+              comment_id: canonical[0].id,
+              body,
+            });
+            core.info(`Updated canonical Pullfrog review comment ${updated.data.id}`);

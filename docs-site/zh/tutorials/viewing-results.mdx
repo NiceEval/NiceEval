@@ -4,21 +4,14 @@ sidebarTitle: "查看结果"
 description: "用 show 或 view 从已发布的 Record 选择 Sample，并查看固定的 ReportExecution。"
 ---
 
-运行结束后，`show` 在终端显示结果，`view` 在本机显示网页。两条命令默认从 `exp` 写入的 `.niceeval/record` 读取，不需要传 `--record`，并使用同一条数据路径：
+运行结束后，通常从这两条命令开始。两条命令默认从 `exp` 写入的 `.niceeval/record` 读取，不需要传 `--record`：
 
-```text
-opaque Record + CLI selector
-                  ↓ internal host
-             AnalysisSample
-                  ↓
-       official opaque projector
-                  ↓
-           ProjectedSample → ReportExecution
-                            ↙         ↘
-                          show        view
+```sh
+npx niceeval show  # 在终端查看当前项目的全部匹配结果
+npx niceeval view  # 在浏览器查看同一批结果
 ```
 
-Sample 决定比较范围和分母。projector 只解释一个明确 owner 的一个 RecordAttachment。Report 将投影结果组织成一次不可变的 `ReportExecution`，不直接读取文件。
+`show` 和 `view` 读取相同的已发布结果，只是呈现位置不同。需要指定某次运行时，用 `--run`；下面说明怎样选择。想了解 Record、Sample 和报告如何组织数据，再读[评估与报告路径](/zh/explanation/overview)。
 
 ## 选择要看的 Run
 

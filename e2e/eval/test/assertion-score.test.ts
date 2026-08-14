@@ -12,7 +12,7 @@ interface ExpEvent {
   verdict?: string;
 }
 
-test("计分 Eval 的两个场景以 passed 终态完成", async () => {
+test("计分 Eval 公开区分 scored、stopped 与 skipped", async () => {
   await evalE2E.case(
     "score",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -42,6 +42,37 @@ test("计分 Eval 的两个场景以 passed 终态完成", async () => {
         evalId: "assertion-score/empty",
         verdict: "passed",
       });
+      const stoppedEvent = only(
+        run.ndjson<ExpEvent>(),
+        (event) =>
+          event.event === "eval" && event.evalId === "assertion-score/stopped" && event.locator !== undefined,
+        run.diagnostic(),
+      );
+      expect(stoppedEvent).toMatchObject({
+        event: "eval",
+        evalId: "assertion-score/stopped",
+        verdict: "passed",
+      });
+      const skippedEvent = only(
+        run.ndjson<ExpEvent>(),
+        (event) =>
+          event.event === "eval" && event.evalId === "assertion-score/skipped" && event.locator !== undefined,
+        run.diagnostic(),
+      );
+      expect(skippedEvent).toMatchObject({
+        event: "eval",
+        evalId: "assertion-score/skipped",
+        verdict: "skipped",
+      });
+      const shown = await niceeval.run(["show", "--json"]);
+      expect(shown.exitCode, shown.diagnostic()).toBe(0);
+      expect(run.ndjson<ExpEvent>().filter((event) => event.verdict === "failed")).toEqual([]);
+      const document = shown.json<{
+        sample: { denominator: number };
+        problemTable: readonly unknown[];
+      }>();
+      expect(document.sample.denominator).toBe(8);
+      expect(document.problemTable).toEqual([]);
     },
   );
 });

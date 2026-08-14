@@ -117,8 +117,6 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   - 同一 Experiment 下一个 eval 声明 `judge`、其余不声明时，`runEvals` 写进 `InvocationShape.configHashes`（继而落进 `run.json`）的值必须与其余 eval 相同。它只取 Run 级 `judge`，不叠加 `experiment > eval > config` 的逐字段求值链（`configIdentityForRun` 默认单层）。
   - 反例：那条 eval 自己的 `result.configHash`（携带判据读 `plannedConfigHashes`）仍按完整求值链算出。它可以与 Run 级值不同——这是刻意的携带正确性（docs/feature/experiments/cache.md「指纹:两个哈希嵌套」），不是要抹平的分叉。
   - 反面回归：曾直接拿 `plannedConfigHashes` 当 Run 级值汇总。任意 eval 声明自己的 `judge` 就让规划期硬抛错，见 memory/config-hash-forks-per-eval-judge-declaration。
-- **界面语言的取值链**：`config.locale` → 系统 locale（`LC_ALL` → `LC_MESSAGES` → `LANG`）→ `zh-CN`。
-  断言面是 `detectLocale(env)` 的返回值：`config.locale` 在场时压过任何系统变量；未声明或无法归一（`C` / `POSIX` / 空串）时逐级回落而不是报错；niceeval 自己的旧变量（`NICEEVAL_LANG` / `NICEEVAL_LOCALE`）在场也不参与。
 - **并发**：全局与实验级上限、全局上限的三层求值与 Provider 推荐值、exclusive Provider 强制串行。
   退避睡眠释放全局槽位，实验级并发限制全程持有。
   `maxConcurrency: 1` 时，前一 Attempt 进入退避区间，下一 Attempt 不得启动。

@@ -1,6 +1,7 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "migrate",
+  "batch": "host-1",
   "areas": ["record"],
   "lanes": ["pr", "main", "nightly", "release"],
   "executor": { "kind": "host" },

@@ -31,17 +31,7 @@ description: "NiceEval CLI 参考：exp、show、view、init、list 和 clean �
 
 ## 输出语言
 
-[NiceEval](https://niceeval.com/) 的 CLI 和运行时文案支持本地化。要固定输出语言（CI 日志尤其需要），写在 `niceeval.config.ts` 里：
-
-```ts
-import { defineConfig } from "niceeval";
-
-export default defineConfig({
-  locale: "en",
-});
-```
-
-没写 `locale` 时按系统 locale 判定，依次看 `LC_ALL`、`LC_MESSAGES`、`LANG`。以 `zh` 开头的值使用 `zh-CN`,其它语言使用 `en`;都没有时默认 `zh-CN`。这只影响终端/runtime 文案,不改变结果 JSON 里的机器字段,也不翻译 LLM judge prompt。
+CLI 与运行时文案是英语。这只影响终端/runtime 文案，不改变结果 JSON 里的机器字段，也不翻译 LLM Judge prompt。浏览器 `niceeval view` 自己提供中英切换。
 
 ## `npx niceeval exp [path|config] [id-prefix...]`
 
@@ -218,9 +208,9 @@ npx niceeval show --run 01H... --report ./reports/summary.ts --page overview
 
 ## 环境变量只放凭据
 
-跑几次、超时、并发、预算、judge 模型和端点、界面语言——这些都是配置，只从 CLI flag、`experiments/` 下的 experiment 文件和 `niceeval.config.ts` 读。优先级从高到低：CLI flag > experiment > `niceeval.config.ts` > 内置默认值。没有对应的环境变量，同一个值不会有第三条来路。
+跑几次、超时、并发、预算、judge 模型和端点——这些都是配置，只从 CLI flag、`experiments/` 下的 experiment 文件和 `niceeval.config.ts` 读。优先级从高到低：CLI flag > experiment > `niceeval.config.ts` > 内置默认值。没有对应的环境变量，同一个值不会有第三条来路。
 
-环境变量留给凭据（API key、provider token）和终端环境（`NO_COLOR`、系统 locale）。每个 agent / sandbox / judge 只认自己那一个变量名，不会在环境里翻找其它 key。启动时自动加载 cwd 下的 `.env`（不覆盖已经存在的环境变量）。完整清单和迁移对照见[配置与环境变量](/zh/tutorials/configuration)。
+环境变量留给凭据（API key、provider token）和终端环境（`NO_COLOR`）。每个 agent / sandbox / judge 只认自己那一个变量名，不会在环境里翻找其它 key。启动时自动加载 cwd 下的 `.env`（不覆盖已经存在的环境变量）。完整清单见[配置与环境变量](/zh/tutorials/configuration)。
 
 ## 退出码
 

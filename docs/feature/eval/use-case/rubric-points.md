@@ -54,10 +54,10 @@ source 使 Score Attachment 成为 partial 或 unavailable，而非伪造零分�
 
 ## 终态
 
-`test` 正常返回后，Runner 自动封口。每个 Attempt 都写四态 Verdict；所有 contribution 可算时 Score
-Attachment 为 `complete`，没有计分项时 earned score 为 `0`。measurement 无需 threshold 就能封口；
-`.atLeast(n)` 只增加局部 condition，不改变 contribution。gate failed 仍保留 earned score；execution
-error 或 unavailable score source 依序形成 partial 或 unavailable。
+`test` 正常返回后，Runner 自动封口。Score Attempt 只写 `passed | errored` Verdict；所有 contribution
+可算时为 `passed + complete`，没有计分项时 earned score 为 `0`。measurement 无需 threshold 就能封口；
+`.atLeast(n)` 只增加局部 condition，不改变 contribution 或 Verdict。execution error 或 unavailable
+score source 形成 errored + partial/unavailable。
 
 ## 相关阅读
 

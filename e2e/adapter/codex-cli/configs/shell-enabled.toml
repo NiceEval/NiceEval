@@ -1,0 +1,4 @@
+# configFile 正调显式保留 Codex 的 shell 工具；与 shell-disabled.toml 组成同 Eval A/B。
+# 使用 0.144.1 已稳定支持的 feature，避免 custom Responses Lite provider 没有 web search。
+[features]
+shell_tool = true

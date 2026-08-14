@@ -91,13 +91,13 @@ test("show --json 经 pipe 仍交付完整文档", async () => {
 });
 ```
 
-没有历史 Bug 的功能测试只写 owner。发现 Bug 后，先加强原 owner；新断言确实能杀死旧实现时，才追加 `regression:`。
+没有历史 Bug 的功能测试只写 owner。发现 Bug 后，先按[测试总纲的验证裁决](README.md#bug-修复的验证裁决)决定是否进入自动化回归；只有选择自动化且新断言确实能杀死旧实现时，才追加 `regression:`。
 若只能证明同类风险而没有 kill 收据，仍只链接 Feature 契约。相关 memory 可以在普通解释注释或 Repo README 中写成
 “相关风险”，但不再发明一行看似可机器追踪、实际没有 kill 资格的 `risk:` 元数据。
 
 ## 历史 Bug 回归
 
-Bug escape 后按顺序处理：
+Bug escape 后先裁决自动化回归或本次 AI 真实验收。选择不自动化时直接修根因，按 PR Test impact 保存公开入口手测和未守护风险，不创建回归 metadata 或伪 owner。选择自动化时按顺序处理：
 
 1. 找本应捕获它的现有 owner；
 2. owner 命题正确但 fixture / 断言无区分力时，修它，不并排建第二套；
@@ -134,7 +134,7 @@ Bug escape 后按顺序处理：
 ## 不自动化的处置
 
 `automation: none` 是一次变更的验收处置，不是长期 owner。
-只有 Journey、单边界 E2E 与 Unit 例外都会违反稳定或可靠要求，依赖无法固定的外部条件，或必须复制生产核心算法时才能选择。
+当没有合格 owner 且不应新增、自动化会违反稳定或可靠要求、依赖无法固定、必须复制生产核心算法，或长期区分收益不足以抵偿维护成本时可以选择。
 
 PR Test impact 按 [PR 模板](../../../.github/PULL_REQUEST_TEMPLATE.md#tests)保存本次验收事实。
 不创建空测试、mock 假 pass 或伪 owner。Docker-in-Docker 的宿主内核、daemon 权限和嵌套网络无法固定时适用本处置。

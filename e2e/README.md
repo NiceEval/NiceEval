@@ -62,7 +62,7 @@ Testkit 没有单独的 tarball 参数。它是同仓库的私有测试工具，
 
 子进程保留 PATH、locale 和 Node/pnpm 等普通变量。未由当前 Repo 声明的 token、key、secret、password、credential、auth、jwt 与数据库连接变量会被剥离。preflight、install 和 test 共用这项策略，receipt 不写值。
 
-`takeover` 固定一次 candidate、checkout/source snapshot 与按需 Testkit build，留下三个新副本、一个同已安装副本连续两次、Repo 默认并行和目标单项的 receipt；它不是 retry。summary 带 source snapshot 的 SHA-256 文件清单，所有 receipt 绑定该 digest，并核验矩阵结构与 cleanup。`verify-release` 只在本地验证非空 plan、receipt 精确集/全 pass、candidate 与保留 tarball digest，以及 package/tag 身份，不发布。保留 tarball 的 root 内祖先 symlink 会被拒绝。
+`takeover` 固定一次 candidate、checkout/source snapshot 与按需 Testkit build，留下三个隔离副本、一个同已安装副本连续两次、Repo 默认并行和目标单项的 receipt；它不是 retry。summary 带 source snapshot 的 SHA-256 文件清单，所有 receipt 绑定该 digest，并核验矩阵结构与 cleanup。`verify-release` 只在本地验证非空 plan、receipt 精确集/全 pass、candidate 与保留 tarball digest，以及 package/tag 身份，不发布。保留 tarball 的 root 内祖先 symlink 会被拒绝。
 
 ## 单项调试
 

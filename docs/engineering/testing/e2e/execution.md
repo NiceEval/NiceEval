@@ -109,9 +109,8 @@ checkout 的 Testkit 源码编译到新的 scratch staging package，并在同�
 - runner 在 install 前后及副本 cleanup 后核对 snapshot digest；任何 mutation 都是 infra。receipt 只保存 version、checkout 相对 source path、snapshot digest 与副本内 installed realpath，全部仅供诊断。durable artifact 与 exact replay
   只属于 NiceEval candidate；重跑时 Testkit 始终来自当时所在 checkout。
 
-功能 Repo 与 Adapter Repo 永远不会混进同一个 matrix cell。`--repo report` 只复制并运行 Report 功能 Repo，不会挑一个
-`adapter/ai-sdk` Repo 来提供“更真实”的模型结果；`--repo adapter/ai-sdk` 也只运行该兼容性项目。可信 CI lane 可把多个
-I/O-bound Adapter Repo 装入一个 4 vCPU cell 并发运行；每个 Repo 仍分别安装、执行、收集 artifact 和 cleanup。
+`--repo report` 只选择 Report Repo，`--repo adapter/ai-sdk` 也只选择该兼容性项目。CI 可按 manifest `batch` 让功能 Repo
+与 Adapter Repo 共用同一 matrix cell，但每个 Repo 仍分别复制、安装、执行、限定 secret、收集 artifact / receipt 和 cleanup。
 
 ## 一次运行
 
@@ -204,13 +203,12 @@ prepare job
              │
              ▼
 matrix jobs：下载同一 candidate.tgz
-  ├─ 功能 Repo：checkout 中 build Testkit；e2e run --candidate … --repo <id>
-  └─ Adapter batch：同一 checkout / Testkit 下并发 run 多个独立 --repo <id>
+  └─ Repo batch：同一 checkout / Testkit 下并发 run 多个独立 --repo <id>
 ```
 
 Workflow 只准备 Node / pnpm / Docker / browser、下发矩阵、缓存 store / image layer、上传 artifact。
 它不自己改 dependency、分类错误、实现重试、决定 expected 或维护另一份 Repo 清单。
-每个 matrix cell 自己上传 receipt、summary、JUnit 与声明附件；Adapter batch 的 artifact root 下仍按 Repo ID 分目录并
+每个 matrix cell 自己上传 receipt、summary、JUnit 与声明附件；Repo batch 的 artifact root 下仍按 Repo ID 分目录并
 保存独立 receipt，batch summary 列全该格 Repo。GitHub 原生汇总 matrix 成败，不再启动一个 job 下载并复述所有 cell 的结果。
 
 Cache key 至少区分 pnpm 版本、OS / 架构和 Docker image digest。包管理器 store 依赖自身内容寻址；PR 不使用会把
@@ -250,10 +248,10 @@ Docker cgroup 的 `cpu.max`、`memory.max`、`memory.swap.max` 与 `pids.max` �
 - 同一 checkout 的独立根 E2E invocation 可以并发启动；只有会触发共享 `prepare` 写入的 candidate `pnpm pack` 生命周期按 canonical checkout 的跨进程 lease 局部串行，计划、Testkit snapshot、隔离 Repo 与 run 阶段继续并发；
 - lease 位于 OS 临时控制目录而不进入待打包文件。正常退出、失败或取消都会释放；进程崩溃留下的 lease fail-closed 并报出精确人工删除路径，绝不靠超时或不安全删除让两个 pack 同时写入；
 - 无密钥 host Repo 可按 CPU 并行，每个 Repo 独立副本；
-- CI E2E matrix 使用 4 vCPU Blacksmith runner。功能 Repo 保持 singleton；I/O-bound Adapter 按最多四个 Repo 装箱，
-  格内并发启动且各 Repo 保留自己的 attempt 并发，因此允许约 8–16 条外部等待同时铺开，不把 vCPU 数当作 I/O 并发上限；
+- CI E2E matrix 使用 4 vCPU Blacksmith runner。所有独立 Repo 按 manifest `batch` 装箱，格内并发启动且各 Repo 保留
+  自己的 file / experiment / attempt 并发；这些 owner 的主要开销是依赖安装、容器启动、浏览器与外部 I/O 等待，不把 vCPU 数当作 I/O 并发上限；
 - Repo 内保留 Vitest / Playwright 的默认文件级并行；短命控制文件、结果根、项目副本与资源名按 case 隔离；
-- Adapter 装箱先分散 Docker-heavy Repo；出现 OOM、daemon 抖动或显著尾延迟时拆分对应 cell，不以升配 CPU 作为默认修法；
+- 出现 OOM、daemon 抖动或显著尾延迟时，把部分 Repo 显式移到 `docker-2`、`host-2` 等新 batch，不以升配 CPU 作为默认修法；
 - live provider 按 provider / account 建 concurrency group，避免同一配额互相制造 429；
 - Lifecycle case 用独立进程组、动态端口和 run ID 核对自己的 orphan，不得因兄弟任务存在就误判；
 - 共享 evidence 只能在冻结后只读并行。无法拥有独立资源的 case 才局部串行，不把整个 Lifecycle 域降为串行。
@@ -269,6 +267,8 @@ GitHub runner 或 Docker daemon 故障。测试超时、parse 失败、cleanup �
 - 首轮 `niceeval exp --json` 完整结束后，测试读取公开 `eval` 事件；
 - 只有 `verdict: "failed"` 才对精确 Experiment/Eval 配对另起一次 `exp --rerun all` Invocation；
 - `passed`、`errored`、`skipped`、中断和不完整 Invocation 都不重试，第二轮也不递归；
+- 同一 Repo 的补跑继续写同一个 Record，因此多个补跑 Invocation 串行执行；不能用并行 CLI 进程
+  制造 `RecordWriterBusy`。主 Invocation 内部与不同 Repo batch 仍按各自并发配置运行；
 - 两次 Invocation、receipt 与 Attempt 全部保留，并在 CI 日志标出 retry 后通过。
 
 这不是 Vitest / Playwright retry，也不能计入确定性 owner 的可靠性接管。
@@ -324,4 +324,4 @@ Release Repo 使用同一 checkout 的私有 Testkit 作为 harness，但只有 
 - 注入身份核验失败与待测包不可消费使用不同失败分类，并保留各自的原始收据。
 - Adapter 与 Report Repo 按 owner 拆成原生测试文件，再按文件和标题分片；不把多个命题压进线性脚本或同一文件。
 - CLI、Runner、Report、Package 与 live Adapter 共用根 runner 的 pack → plan → run → artifact 链；workflow 不复制选择或注入逻辑。
-- 共用 runner 不等于共用 Repo；功能与 Adapter 不混装，Adapter 同格时仍保留各自的依赖安装、结果根、receipt 与 cleanup。
+- 共用 runner 不等于共用 Repo；同 batch 的功能与 Adapter 可以混装，但仍保留各自的依赖安装、secret 白名单、结果根、receipt 与 cleanup。

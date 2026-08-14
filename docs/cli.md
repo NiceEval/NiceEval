@@ -89,6 +89,17 @@ argv、配置或 selector 无法建立 Invocation 时，CLI 输出 `error:` 和 
 
 退出码结合本次 Invocation completion 与已知 Verdict 计算。业务判定来自本次运行已经发布的 Record 数据，不能由终端颜色、进度行或一个宽摘要代替。
 
+`niceeval exp` 只有一份有优先级的退出码契约，Roadmap 功能不得为自己的 failure 另占状态码：
+
+| 优先级 | 退出码 | 条件 |
+|---:|---:|---|
+| 1 | `130` | 收到中断信号；受控收尾可以交付 receipt，但不把中断改写为其它结果。 |
+| 2 | `2` | 未捕获异常或 rejection 使 CLI 无法按受控路径结算。 |
+| 3 | `1` | argv、配置或 selector 未能建立 Invocation；或 Invocation incomplete、required reporter 失败、存在 `failed` / `errored` Verdict 或其它受控执行失败。 |
+| 4 | `0` | Invocation 完整结算，required reporter 成功，且没有 `failed` / `errored` Verdict。 |
+
+同一调用命中多项时取表中更高优先级。功能自己的 receipt、diagnostic 与 typed failure 保存细分原因；退出码不复制第二套领域分类。
+
 有关 budget、首过即停、失败停止派发和细分错误的规则，见 [Runner](runner.md) 与 [执行失败分类](feature/error-classification/README.md)。
 
 ## 相关阅读

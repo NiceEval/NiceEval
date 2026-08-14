@@ -1,6 +1,7 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "adapter/ai-sdk-direct",
+  "batch": "host-1",
   "areas": ["adapter"],
   "lanes": ["main", "nightly", "release"],
   "executor": { "kind": "host" },

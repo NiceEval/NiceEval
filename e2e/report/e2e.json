@@ -1,6 +1,7 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "report",
+  "batch": "browser-1",
   "areas": ["report"],
   "lanes": ["pr", "main", "nightly", "release"],
   "executor": { "kind": "host" },

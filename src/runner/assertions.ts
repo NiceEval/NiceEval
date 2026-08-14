@@ -14,18 +14,20 @@ import type { AgentWorkspaceDiff } from "../assertions/workspace-diff.ts";
 
 function verdictFor(
   evaluation: SealedAssertionEvaluation,
+  evaluationKind: "pass" | "score",
 ): AssertionVerdict {
   if (
     evaluation.execution === "errored"
     || evaluation.assertions.some(
       (assertion) =>
         assertion.required
+        && (evaluationKind === "pass" || assertion.result.score.state !== "not-scored")
         && (assertion.result.state === "unavailable" || assertion.result.state === "errored"),
     )
   ) {
     return Object.freeze({ state: "errored" as const });
   }
-  if (evaluation.assertions.some((assertion) => assertion.result.gate === "failed")) {
+  if (evaluationKind === "pass" && evaluation.assertions.some((assertion) => assertion.result.gate === "failed")) {
     return Object.freeze({ state: "failed" as const });
   }
   return Object.freeze({
@@ -102,7 +104,7 @@ export function sealAttemptAssertions<Kind extends "pass" | "score">(
       entries: sealed.entries,
       evaluation: sealed.evaluation,
       ...(workspaceDiff === undefined ? {} : { workspaceDiff }),
-      verdict: verdictFor(sealed.evaluation),
+      verdict: verdictFor(sealed.evaluation, runtime.evaluationKind),
       ...(runtime.evaluationKind === "score" ? { score: scoreFor(sealed.evaluation) } : {}),
     })),
   );

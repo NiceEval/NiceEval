@@ -1,13 +1,16 @@
 import { defineEval } from "niceeval";
+import { sandboxLayer, shell } from "niceeval/sandbox";
 
-// deliberate-error 实验唯一的 eval:确定性执行错误(未捕获异常),验证 <error> 与 <failure>
-// 判然有别(见 docs/engineering/testing/e2e/cli.md「退出码折叠」、authoring.md 用例六)。
+const PRE_CONTEXT_ERROR = "deliberate pre-context sandbox prepare failure";
+
+// deliberate-error 实验唯一的 eval:在 TestContext / Assertions runtime 建立前确定性失败，
+// 验证这种执行错误仍会封成可发布、可 show 的 errored Attempt。
 export default defineEval({
-  description: "deliberate-error/crash:确定性执行错误(未捕获异常),不依赖远程调用是否成功",
+  description: "deliberate-error/crash:Sandbox prepare 阶段的确定性执行错误",
+  sandbox: sandboxLayer().prepare(
+    shell(`printf '%s\\n' '${PRE_CONTEXT_ERROR}' >&2; exit 17`),
+  ),
   async test() {
-    // 刻意不调用 t.send:errored 判定必须与 Agent/backend 是否可达无关,这里要的是一次纯粹的、
-    // 与网络状态无关的执行错误(抛异常),不是评分失败——见 docs/feature/experiments/library.md
-    // 「要让运行失败,应抛出 typed error;要改变 Verdict,应形成 assertion 结果」。
-    throw new Error("deliberate-error: intentional execution error for E2E exit-code contract verification");
+    throw new Error("pre-context error fixture unexpectedly reached test(t)");
   },
 });

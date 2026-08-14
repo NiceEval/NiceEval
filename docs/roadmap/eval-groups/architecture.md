@@ -16,7 +16,7 @@ Group entry 导入 Eval factory 的原始返回对象；同一次 namespaced mod
 同一 Group 的成员必须得到相同的物理 Provider identity、Agent install plan 与 Sandbox
 Plugin lifecycle identity。任何不一致在创建 Provider 资源前聚合成 `eval-group-incompatible`。
 
-Group 是物理 cohort，也是 Group Plugin 的显式声明位置。Group lifecycle 跨 replacement
+Group 是物理 resource lane，也是 Group Plugin 的显式声明位置。Group lifecycle 跨 replacement
 保持一次；每个 occurrence 的 Sandbox lifecycle 则随实际物理实例重新执行。
 
 ## 调度
@@ -34,4 +34,4 @@ Group 是物理 cohort，也是 Group Plugin 的显式声明位置。Group lifec
 - 同一 Group 同时最多有一条 Attempt 持有 lease。
 - Group lane 的执行顺序只来自规范化 Eval ID，不来自作者数组位置。
 - Group pool key 包含物理 Provider plan、Agent install plan、Experiment 与 Group scope。
-- 结果、锁与 carry 的主键仍是 Eval Attempt；Group 只增加 cohort 与调度上下文。
+- 结果、锁与 carry 的主键仍是 Eval Attempt；Group 只增加 lane、pool 与调度上下文。

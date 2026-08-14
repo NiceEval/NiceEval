@@ -90,7 +90,7 @@ test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt",
     expect(current.stdout).toContain(carriedReceipt.runIds[0]!);
     const forcedEvidence = await niceeval.run(["show", forcedLocator, "--execution"]);
     expect(forcedEvidence.exitCode, forcedEvidence.diagnostic()).toBe(0);
-    expect(forcedEvidence.stdout).toContain("runner-live-ok");
+    expect(forcedEvidence.stdout).toContain("runner-fixture-ok");
     },
   );
 });

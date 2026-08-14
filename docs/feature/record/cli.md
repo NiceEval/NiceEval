@@ -86,6 +86,8 @@ reader 可见。
 
 受控执行错误可以形成完整 `errored` Attempt 并随 Run 发布。进程退出、I/O failure 或
 interruption 发生在完成标识前时，不发布该 Run；以后只产生 incomplete warning。
+对完整 `errored` Attempt 执行 `niceeval show @<locator>` 时，默认 Attempt overview 从
+公开 diagnostics projection 显示稳定错误 code、阶段与安全摘要，不要求先猜测额外证据切面。
 
 完成标识后 fiber 可能还未交付 receipt。CLI 不以 receipt 缺失撤销 durable Run。draft
 进入 `failed` 后不能再写入或重新发布，且 finalizer 不删除其 incomplete directory。

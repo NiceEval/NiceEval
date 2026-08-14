@@ -64,7 +64,7 @@ export interface StageReceipt {
   attempt?: number;
   /**
    * Opaque invocation namespace given to the child command that owns this
-   * stage. In particular, every native test command gets a fresh value even
+   * stage. In particular, every native test command gets a unique value even
    * when a takeover deliberately reuses the same installed copy.
    */
   invocationId?: string;
@@ -84,7 +84,7 @@ export interface RepoReceipt {
   testInvocations: number;
   /** Present for a takeover receipt that intentionally names its isolated copy. */
   copyId?: string;
-  /** Durable receipt scope, such as takeover/fresh-1. */
+  /** Durable receipt scope, such as takeover/isolated-copy-1. */
   runLabel?: string;
   /** Fixed source snapshot digest shared by all takeover observations. */
   sourceSnapshotDigest?: string;

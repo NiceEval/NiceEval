@@ -37,7 +37,7 @@ turn、session 与 attempt scope 必须以同一批真实工具事件完成断�
 
 ## eval-assertion-score
 
-计分制正常返回由 Runner 自动封口。带 points 的 Assertion 与直接给分写入公开 Record；没有分值贡献时仍有独立 Score Attachment，写入 `complete / earned 0`。
+计分制正常返回由 Runner 自动封口。匹配与不匹配的 points Assertion、直接给分写入公开 Record；不匹配只贡献零分且 Verdict 仍为 passed。没有分值贡献时仍有独立 Score Attachment，写入 `complete / earned 0`。即使 Experiment 开启 earlyExit，每个 Score Attempt 仍完整运行。
 
 ## eval-assertion-sandbox
 

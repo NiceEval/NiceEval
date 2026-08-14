@@ -15,7 +15,7 @@ Docker Sandbox 串行运行成员；多个 Group 同时占用 Experiment 的并�
 4. resource release 只释放仍存活的宿主资源，不在 Sandbox 销毁后重复执行容器命令。
 
 因此远端 Git 工作量按实际 Group 数增长，不按 Eval 数增长。具体仓库 URL、revision、凭据与
-目录规则仍属于 MemoryBench；NiceEval core 只负责 resource lifecycle、Group cohort 与调度。
+目录规则仍属于 MemoryBench；NiceEval core 只负责 resource lifecycle、Group lane / pool 与调度。
 
 Remem、Obelisk 等固定版本的文档型 Skill 随 MemoryBench vendored，Plugin identity 包含
 上游 revision。Agent Extension 使用 `kind: "local"` 上传，不在每条 Attempt 重新 clone。
