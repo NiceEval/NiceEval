@@ -160,7 +160,7 @@ The CLI accepts only the flags below. Any other flag is an error and exits nonze
 | `--orphans` | boolean | `sandbox list` only. Reads unowned Sandboxes left by a hard stop; it does not clean them. |
 | `--tag` | string | Runs only evals with the tag declared by `defineEval`. |
 | `--junit` | string | Writes an additional JUnit XML file for CI. |
-| `--json` | boolean | For `exp`, writes one ordered NDJSON stream to stdout. For `show`, emits the `niceeval.report-show/v1` document for the already computed ReportExecution and does not open a second data path. |
+| `--json` | boolean | `exp` writes one ordered NDJSON stream to stdout. `exp --dry` and `debug` each write one JSON plan document. `show` emits the `niceeval.report-show/v1` document for the already computed ReportExecution without opening a second data path. |
 | `--smoke` | boolean | `docker profile doctor` only. Starts a constrained DinD container and runs an inner container. |
 | `--out` | string | `view` only. Exports a static report site to this directory. |
 | `--port` | number | `view` only. Chooses the local server port. |
