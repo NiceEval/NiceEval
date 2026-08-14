@@ -35,6 +35,74 @@ interface DryPlan {
   matrix: DryTarget[];
 }
 
+type ReportScalar = null | boolean | number | string;
+
+interface ReportTableBlock {
+  type: "table";
+  caption: string;
+  columns: Array<{ key: string; label: string }>;
+  rows: Array<Record<string, ReportScalar>>;
+}
+
+interface ReportBlock {
+  type: string;
+  children?: ReportBlock[];
+  caption?: string;
+  columns?: Array<{ key: string; label: string }>;
+  rows?: Array<Record<string, ReportScalar>>;
+}
+
+interface RunMembershipShow {
+  format: "niceeval.report-show/v1";
+  reportId: string;
+  sample: {
+    selection: { policy: string; runIds?: string[] };
+    runCount: number;
+    slotCount: number;
+    denominator: number;
+  };
+  pages: Array<{
+    state: string;
+    pageId: string;
+    route?: string;
+    document?: { title: string; children: ReportBlock[] };
+  }>;
+}
+
+const RUN_MEMBERSHIP_COLUMN_KEYS = [
+  "runId",
+  "slotId",
+  "slotState",
+  "memberRelation",
+  "sourceAttemptLocator",
+  "membershipState",
+  "membershipOutcome",
+  "verdictState",
+  "verdict",
+] as const;
+
+function reportTables(blocks: ReportBlock[]): ReportTableBlock[] {
+  const tables: ReportTableBlock[] = [];
+  const visit = (block: ReportBlock): void => {
+    if (
+      block.type === "table" &&
+      block.caption !== undefined &&
+      block.columns !== undefined &&
+      block.rows !== undefined
+    ) {
+      tables.push({
+        type: "table",
+        caption: block.caption,
+        columns: block.columns,
+        rows: block.rows,
+      });
+    }
+    for (const child of block.children ?? []) visit(child);
+  };
+  for (const block of blocks) visit(block);
+  return tables;
+}
+
 test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 verdict/evidence 与审计 provenance", async () => {
   await runnerE2E.case(
     "accept-reanchor",
@@ -96,9 +164,42 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
 
     const acceptedCurrent = await niceeval.run(["show", "--run", acceptedRunId, "--json"]);
     expect(acceptedCurrent.exitCode, acceptedCurrent.diagnostic()).toBe(0);
-    expect(acceptedCurrent.stdout).toContain(acceptedRunId);
-    expect(acceptedCurrent.stdout).toContain(oldLocator);
-    expect(acceptedCurrent.stdout).toContain('"action":"accepted"');
+    const acceptedShow = acceptedCurrent.json<RunMembershipShow>();
+    expect(acceptedShow).toMatchObject({
+      format: "niceeval.report-show/v1",
+      reportId: "run-membership-overview",
+      sample: {
+        selection: { policy: "explicit-runs", runIds: [acceptedRunId] },
+        runCount: 1,
+        slotCount: 1,
+        denominator: 1,
+      },
+      pages: [{ state: "rendered", pageId: "run-membership", route: "/" }],
+    });
+    const runMembershipPage = acceptedShow.pages.find((page) => page.pageId === "run-membership");
+    expect(runMembershipPage?.document).toBeDefined();
+    const matchingTables = reportTables(runMembershipPage!.document!.children).filter((table) =>
+      table.columns.map((column) => column.key).join("\u0000") === RUN_MEMBERSHIP_COLUMN_KEYS.join("\u0000")
+    );
+    expect(matchingTables).toHaveLength(1);
+    const acceptedRunRows = matchingTables[0]!.rows.filter((row) => row.runId === acceptedRunId);
+    expect(acceptedRunRows).toHaveLength(1);
+    const acceptedSlotId = acceptedRunRows[0]!.slotId;
+    expect(typeof acceptedSlotId).toBe("string");
+    const acceptedRow = matchingTables[0]!.rows.find((row) =>
+      row.runId === acceptedRunId && row.slotId === acceptedSlotId
+    );
+    expect(acceptedRow).toEqual({
+      runId: acceptedRunId,
+      slotId: acceptedSlotId,
+      slotState: "included",
+      memberRelation: "reference",
+      sourceAttemptLocator: oldLocator,
+      membershipState: "available",
+      membershipOutcome: "accepted",
+      verdictState: "available",
+      verdict: "passed",
+    });
 
     const currentEvidence = await niceeval.run(["show", newLocator, "--execution"]);
     expect(currentEvidence.exitCode, currentEvidence.diagnostic()).toBe(0);

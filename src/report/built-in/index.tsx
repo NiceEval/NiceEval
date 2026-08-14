@@ -11,6 +11,10 @@ export {
   attemptOverviewReport,
 } from "./attempt-overview.ts";
 export {
+  defaultRunMembershipOverviewReport,
+  runMembershipOverviewReport,
+} from "./run-membership-overview.ts";
+export {
   defaultSourceEvidenceReport,
   sourceEvidenceReport,
 } from "./source.ts";
