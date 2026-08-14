@@ -1253,10 +1253,10 @@ function commandPlanOwner(step: CommandPlanStep): string | undefined {
   return `owner: ${step.owner.kind}:${step.owner.id}${step.owner.index === undefined ? "" : `#${step.owner.index}`}`;
 }
 
-/** 多行 Shell 保留源码换行与缩进，但不能把控制字符直接写进终端。 */
-function visibleCommandPlanShellLine(line: string): string {
+/** Command-plan 的统一 human sink 不把任何来源的控制字符直接写进终端。 */
+function visibleCommandPlanTerminalText(text: string): string {
   let visible = "";
-  for (const character of line) {
+  for (const character of text) {
     const codePoint = character.codePointAt(0)!;
     if (character === "\t") {
       visible += "\\t";
@@ -1280,8 +1280,7 @@ function commandPlanExact(step: CommandPlanStep): readonly string[] {
       ? [
         `command: shell · ${command.script.split("\n").length} lines`,
         ...command.script.split("\n").map((line) => {
-          const visible = visibleCommandPlanShellLine(line);
-          return visible === "" ? "  │" : `  │ ${visible}`;
+          return line === "" ? "  │" : `  │ ${line}`;
         }),
       ]
       : [`command: shell ${JSON.stringify(command.script)}`];
@@ -1395,11 +1394,12 @@ function renderCommandPlanPanel(
   const contentWidth = panelContentWidth(capability.width, capability.mode);
   const rows: PanelRow[] = [];
   for (const line of lines) {
-    pushCommandPlanLine(rows, line, contentWidth, line.startsWith("  │") ? "  │ " : "  ");
+    const visibleLine = visibleCommandPlanTerminalText(line);
+    pushCommandPlanLine(rows, visibleLine, contentWidth, visibleLine.startsWith("  │") ? "  │ " : "  ");
   }
   return renderPanel({
-    title,
-    ...(meta === undefined ? {} : { meta }),
+    title: visibleCommandPlanTerminalText(title),
+    ...(meta === undefined ? {} : { meta: visibleCommandPlanTerminalText(meta) }),
     rows,
     width: capability.width,
     mode: capability.mode,

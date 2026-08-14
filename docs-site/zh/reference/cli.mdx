@@ -126,6 +126,8 @@ Sandbox materialize 节点会显示 template owner、provider、kind 和安全�
 
 作者提供的本地 path、`file:` URL、Dockerfile file 或 local dir 整项显示 `Opaque`，原路径不会进入输出。只有未配置 `localSandbox.dir` 时的固定 `author-base-dir` 标签可以显示 `Exact`。env value、credential、stdin、build arg value 和 custom identity 不输出。
 
+E2B template name 与 Vercel snapshot ID 是 Provider 管理的任意字符串，因此完整 locator 同样显示 `Opaque`。Human 命令计划在统一终端出口把 C0、C1、ESC、tab 与 carriage return 显示成转义文本，覆盖 template metadata 与 Shell 行。JSON 保留结构化值，并依靠 JSON string escaping。
+
 `debug` 不执行运行期 setup、test、teardown、ensure、materialize 或 finalizer，也不创建 Invocation、Run、Record、锁、Sandbox 或 build。它会加载 `.env` 和受信任定义，并执行 Experiment 的选择 predicate。Provider planner 也可能读取文件、调用只读 CLI，或查询 Docker control plane 和远端 API。
 
 计划把 Experiment 配置的全部 Attempt 列作候选 dispatch。正常运行仍可能因 carry、首过即停或预算而不执行某个 slot。`debug` 只接受可选的 `--json`；其它运行 flag 会按用法错误退出。

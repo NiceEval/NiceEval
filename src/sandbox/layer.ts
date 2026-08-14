@@ -660,6 +660,13 @@ function configuredLocator(
     : { _tag: "Redacted", fields, redactions });
 }
 
+function opaqueConfiguredLocator(code: string, summary: string): SandboxTemplateCommandPlanLocator {
+  return freezeCommandPlanLocator({
+    _tag: "Opaque",
+    reason: { code, summary },
+  });
+}
+
 function configuredDockerImageLocator(image: string): SandboxTemplateCommandPlanLocator {
   const digestSeparator = image.lastIndexOf("@");
   const reference = digestSeparator === -1 ? image : image.slice(0, digestSeparator);
@@ -670,23 +677,17 @@ function configuredDockerImageLocator(image: string): SandboxTemplateCommandPlan
   if (credentialSafeReference) {
     return configuredLocator([{ name: "image", value: image }]);
   }
-  return freezeCommandPlanLocator({
-    _tag: "Opaque",
-    reason: {
-      code: "docker-image-locator-unsafe-to-display",
-      summary: "Docker image locator is omitted because its syntax is not credential-safe to display",
-    },
-  });
+  return opaqueConfiguredLocator(
+    "docker-image-locator-unsafe-to-display",
+    "Docker image locator is omitted because its syntax is not credential-safe to display",
+  );
 }
 
 function configuredPathLocator(): SandboxTemplateCommandPlanLocator {
-  return freezeCommandPlanLocator({
-    _tag: "Opaque",
-    reason: {
-      code: "sandbox-path-locator-unsafe-to-display",
-      summary: "Sandbox path locator is omitted because local paths may expose host filesystem details",
-    },
-  });
+  return opaqueConfiguredLocator(
+    "sandbox-path-locator-unsafe-to-display",
+    "Sandbox path locator is omitted because local paths may expose host filesystem details",
+  );
 }
 
 function configuredLocationField(
@@ -2135,7 +2136,10 @@ export function createBuiltinSandboxFactories(
         kind: "template",
         publishableIdentity: { user: publishedUser, lifetime: plannedLifetime, ...pathPrependIdentityField(pathPrepend) },
         privateFingerprintIdentity: identity,
-        commandPlanLocator: configuredLocator([{ name: "template", value: template }]),
+        commandPlanLocator: opaqueConfiguredLocator(
+          "e2b-template-locator-unsafe-to-display",
+          "E2B template locator is omitted because provider identifiers may contain credentials",
+        ),
         leakGate: { _tag: "None" },
         plan: () => {
           return Effect.succeed(sandboxProviderPlan({
@@ -2171,7 +2175,10 @@ export function createBuiltinSandboxFactories(
         kind: "snapshot",
         publishableIdentity: { lifetime: plannedLifetime, ...pathPrependIdentityField(pathPrepend) },
         privateFingerprintIdentity: identity,
-        commandPlanLocator: configuredLocator([{ name: "snapshotId", value: snapshotId }]),
+        commandPlanLocator: opaqueConfiguredLocator(
+          "vercel-snapshot-locator-unsafe-to-display",
+          "Vercel snapshot locator is omitted because provider identifiers may contain credentials",
+        ),
         leakGate: { _tag: "None" },
         plan: () => {
           return Effect.succeed(sandboxProviderPlan({

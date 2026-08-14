@@ -126,6 +126,8 @@ A Sandbox materialize node shows the template owner, Provider, kind, and a safe 
 
 Author-provided local paths, `file:` URLs, Dockerfile paths, and local directories make the entire locator `Opaque`, without emitting the path. Only the fixed `author-base-dir` label used when `localSandbox.dir` is omitted can be `Exact`. Environment values, credentials, stdin, build-argument values, and custom identities are not emitted.
 
+E2B template names and Vercel snapshot IDs are arbitrary Provider-managed strings, so their complete locators are also `Opaque`. Human command plans render C0, C1, ESC, tab, and carriage-return characters as visible escape text at one terminal boundary, including template metadata and Shell lines. JSON keeps the structured values and relies on JSON string escaping.
+
 `debug` does not run runtime setup, test, teardown, ensure, materialize, or finalizer work. It does not create an Invocation, Run, Record, lease, Sandbox, or build. It loads `.env` and trusted definitions, and evaluates the Experiment selection predicate. A Provider planner may still read files, invoke read-only CLIs, or query the Docker control plane and remote APIs.
 
 The plan lists every Attempt configured by the Experiment as a candidate dispatch. A normal run can still skip a slot because of carry, early exit, or budget. `debug` accepts only its optional `--json`; any other run flag is a usage error.
