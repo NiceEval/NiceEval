@@ -29,7 +29,7 @@ niceeval migrate --record .niceeval/record
 | 带 `/vN` 后缀的未发布 family 草案 | `unsupported-format` | 不推测、也不迁移 |
 
 未知 family 的局部容忍只保护可读的历史。它不能让 reader 解释 payload、验证 blob closure 或把事实交给
-Report。`AnalysisInput` 或 `DomainViewRequest` 依赖该 family 时才返回 `unsupported` / `not-available`。
+Report。`AnalysisInput` 或 `DomainViewRequest` 依赖该 family 时才返回 `unsupported`。
 
 ## future schema 的固定步骤
 

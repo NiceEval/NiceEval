@@ -74,6 +74,13 @@ export type {
   ClosedConversationTurn,
   ClosedDiagnosticRedaction,
   ClosedDiagnosticsDetail,
+  ClosedFileChange,
+  ClosedFileChangeEndpoint,
+  ClosedFileChangeWindow,
+  ClosedFileChangesAttribution,
+  ClosedFileChangesCollection,
+  ClosedFileChangesCollectionLimitation,
+  ClosedFileRevision,
   ClosedSourceFrame,
   ClosedTimingDetail,
   ClosedTimingInterval,
@@ -81,6 +88,7 @@ export type {
   ClosedUsageDetail,
   ClosedUsageObservation,
   FileChangesDomainDetail,
+  FileChangesNet,
   SourcesDomainDetail,
 } from "./domain-view.ts";
 

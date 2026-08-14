@@ -72,10 +72,14 @@ const ModelComparison = defineComponent(async (_props, { sample }) => {
 
 中立组件不知道数据来自 aggregate()、query()、业务数组还是外部服务。它们不接收、也不依赖 Analysis 的查询外层对象：表格只读 rows，图形只读 points，Stat 只读完整 MetricValue。需要解释领域视图时，作者用 defineComponent() 先把它转成同一组语义节点；组件不得接收 reader、文件路径、惰性 callback、Promise、Stream 或未关闭的 Analysis capability。
 
-内建 Attempt overview 也遵守这条规则：它只请求闭合的 Attempt Evidence 与 Attempt Observability，按 canonical
-locator 显式对齐。Evidence 显示 Core outcome、由权威 fold 得到的 Verdict 和 Assertions；`AttemptTrace` 显示
-Observability 的 command、diagnostic 和其公开文本。缺 entry 或 duplicate locator 作为对齐状态显示，不能按
-数组位置配对。Report 不读取 Record，也不重算 Verdict。
+内建 Attempt overview 也遵守这条规则：它只请求闭合的 Attempt Evidence、Attempt Observability 与 File Changes，
+并按 canonical locator 显式对齐。Evidence 显示 Core outcome、由权威 fold 得到的 Verdict 和 Assertions；
+`AttemptTrace` 显示 Observability 的 command、diagnostic 和其公开文本。
+
+File Changes 默认显示按 send 区间排列的 trajectory（轨迹）与 collection。reliable `net` 只能作为摘要或
+`DiffView`（差异视图）的输入；它不是默认替代品。完整空轨迹、partial 的空安全前缀与 `not-recorded` 都显示为
+不同状态，partial limitation 与 `indeterminate` issue 不能被页面隐藏。缺 entry 或 duplicate locator 也作为对齐状态
+显示，不能按数组位置配对。Report 不读取 Record，也不重算 Verdict 或 `net`。
 
 ## MetricValue
 

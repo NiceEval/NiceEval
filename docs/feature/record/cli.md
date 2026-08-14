@@ -47,7 +47,7 @@ root 或 Core schemaVersion 不匹配时，CLI 返回 `migration-required`（有
 不兼容。
 
 未知独立 future family 例外：CLI 保留其 directory、payload 与 blob bytes，跳过解释并继续读取 Core 与
-认识的 family。依赖它的 AnalysisInput 或 DomainView 显示 `unsupported` / `not-available`。带 `/vN` 后缀的
+认识的 family。依赖它的 AnalysisInput 或 DomainView 显示 `unsupported`。带 `/vN` 后缀的
 未发布 family 草案不是这种 future family，仍返回 `unsupported-format`。
 
 读到 `available` 后，payload 已 deep-freeze，blob closure 已验证并 materialize。Analysis 与 Report
@@ -130,7 +130,7 @@ NiceEval 不创建 staging、backup、rollback、root replacement 或恢复日�
 | `record-maintenance-busy` | maintenance 与 reader/writer/clean 冲突 | 关闭占用命令后重试 |
 | `incomplete-run` | Run 没有 `complete` | 有效 Run 继续可用；用 `niceeval clean` 检查 |
 | `not-recorded` | 已封口 owner 没有请求的 fixed family | 让 query 按其 missing policy 处理 |
-| `not-available` / `unsupported` | input 或 view 依赖本版本不认识的 future family | 使用认识该 family 的 NiceEval；其它结果继续可用 |
+| `unsupported` | input 或 view 依赖本版本不认识的 future family | 使用认识该 family 的 NiceEval；其它结果继续可用 |
 | `invalid` | envelope、payload、ref 或 closure 无效 | 检查该 family；其它有效事实继续可用 |
 
 ## Git、复制与分享

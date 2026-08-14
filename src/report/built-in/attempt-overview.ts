@@ -2,9 +2,11 @@ import type { AttemptLocator } from "../../attempt-locator.ts";
 import {
   attemptEvidenceView,
   attemptObservabilityView,
+  fileChangesView,
   query,
   type AttemptEvidenceDomainView,
   type AttemptObservabilityDomainView,
+  type FileChangesDomainView,
   type JsonValue,
   type Sample,
   type SampleSnapshot,
@@ -24,6 +26,7 @@ import {
   type BuiltInSummaryRows,
 } from "./analysis-values.ts";
 import { AttemptTrace } from "./attempt-trace.ts";
+import { FileChangesTrajectory } from "./file-changes.ts";
 import type { ReportNode, ReportTone } from "../semantic/closed.ts";
 
 const ATTEMPT_ROWS_MAX = 200;
@@ -34,6 +37,7 @@ interface AttemptOverviewPageInput {
   readonly metrics: BuiltInSummaryRows;
   readonly evidence: AttemptEvidenceDomainView;
   readonly observability: AttemptObservabilityDomainView;
+  readonly fileChanges: FileChangesDomainView;
 }
 
 const attemptOverviewPage = {
@@ -41,12 +45,13 @@ const attemptOverviewPage = {
   path: "/",
   title: "Attempt overview",
   load: async (sample: Sample): Promise<AttemptOverviewPageInput> => {
-    const [metrics, evidence, observability] = await Promise.all([
+    const [metrics, evidence, observability, fileChanges] = await Promise.all([
       loadBuiltInSummaryRows(sample),
       query(sample, { kind: "domain-view", view: attemptEvidenceView }),
       query(sample, { kind: "domain-view", view: attemptObservabilityView }),
+      query(sample, { kind: "domain-view", view: fileChangesView }),
     ]);
-    return Object.freeze({ snapshot: sample.snapshot, metrics, evidence, observability });
+    return Object.freeze({ snapshot: sample.snapshot, metrics, evidence, observability, fileChanges });
   },
   render: attemptOverviewNode,
 } satisfies PlainPageDefinition<AttemptOverviewPageInput>;
@@ -137,6 +142,7 @@ function attemptOverviewNode(input: AttemptOverviewPageInput): ReportNode {
           title: "Bounded summary",
           children: [Text({ value: `${omitted} additional included Attempt(s) omitted.` })],
         })]),
+      FileChangesTrajectory({ view: input.fileChanges }),
       ...locators.map((locator) => AttemptTrace({ locator, mode: "execution" })),
     ],
   });

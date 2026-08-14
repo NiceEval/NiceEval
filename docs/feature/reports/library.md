@@ -49,9 +49,10 @@ aggregate() 返回 ClosedRows。整组 rows 有稳定 identity 和 issues；每�
 闭合 DomainView 不是 `SemanticFrame` 的替代输入。Table 仍只接收 rows，Bars / Line / Scatter 仍只接收 points，
 Stat 仍只接收完整 MetricValue。
 
-要展示 Attempt 的 Evidence、Verdict 或 Observability，复合组件把已经关闭的视图转换成 Table、Text、Callout 等
-中立节点。两个 DomainView 的 entry 只能按 canonical locator 显式 Map 关联，missing 或 duplicate 都不能退化成
-数组位置关联。
+要展示 Attempt 的 Evidence、Verdict、Observability 或 File Changes，复合组件把已经关闭的视图转换成 Table、Text、
+Callout 等中立节点。三个 DomainView 的 entry 只能按 canonical locator 显式 Map 关联，missing 或 duplicate 都不能
+退化成数组位置关联。File Changes 首先呈现按 send 区间排列的 trajectory；只有 Analysis 已关闭 reliable `net` 时，
+组件才能把它作为摘要或 `DiffView` 输入。
 
 ### MetricValue
 
@@ -409,9 +410,13 @@ Sample 取得 NiceEval 已发布的 Analysis input 与闭合领域值，不能�
 payload。默认选择和有界 Run 概览见 [CLI](cli.md#内建-run-概览)；它们仍以 Sample Core、MetricValue、闭合
 Evidence 和问题面为准，而不是创建 Report 自己的持久状态。
 
-精确 Attempt 的内建 overview 同时消费 Evidence 与 Observability。Evidence 已含 immutable Outcome、权威
-Core + Assertions fold 的 Verdict 及 Assertions；Observability 由 `AttemptTrace` 展示 command 与 diagnostic。
-overview 只组织这些闭合结果，不直接读取 Record 或重新计算 Verdict。
+精确 Attempt 的内建 overview 同时消费 Evidence、Observability 与 File Changes。Evidence 已含 immutable Outcome、
+权威 Core + Assertions fold 的 Verdict 及 Assertions；Observability 由 `AttemptTrace` 展示 command 与 diagnostic。
+
+File Changes 先显示 trajectory 与 collection。仅 reliable `net` 可进入摘要或 `DiffView`；完整空轨迹、partial 的
+空安全前缀和 `not-recorded` 分开显示，partial limitation 与 `indeterminate` issue 不可隐藏。
+
+overview 只组织这些闭合结果，不直接读取 Record 或重新计算 Verdict 或 `net`。
 
 ```ts
 interface ReportExecutionProblem {

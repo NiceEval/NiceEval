@@ -76,9 +76,9 @@ export interface SelectedOwnerRef {
 
 /**
  * The Host exposes the fixed-family states without importing maintenance.
- * A known family with a different numeric version is migration-required;
- * future or slash identities remain unsupported data, never a reader-wide
- * failure.
+ * A reachable older version is migration-required. Any other well-formed,
+ * non-current version remains unsupported data; malformed envelopes and
+ * closures are invalid, never a reader-wide failure.
  */
 export type FixedFamilyRead<Payload> =
   | {

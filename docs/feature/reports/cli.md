@@ -91,10 +91,14 @@ Broken pipe 是正常 CLI 退出。其它 console failure 是 typed error，inte
 ### 内建 Attempt 详情
 
 精确 `show @<locator>` 在没有显式 `--report` 时使用 `attempt-overview`。它按 canonical locator 对齐同一
-Attempt 的闭合 Evidence 与 Observability。
+Attempt 的闭合 Evidence、Observability 与 File Changes。
 
 Evidence 公开 immutable `Outcome`、由 Core 加已验证 Assertions 的权威 fold 得到的 `Verdict`，以及 Assertions。
 `AttemptTrace` 公开 command phase、退出码、diagnostic code 与摘要。
+
+File Changes 默认按 send 区间展示 trajectory 与 collection。Analysis 已给出 reliable `net` 时，overview 可将它
+作为摘要或 `DiffView`（差异视图）使用；端点不连续、未知或结构为 partial 时只显示 `indeterminate` 及其 issue。
+完整空轨迹、partial 的空安全前缀和 `not-recorded` 分开呈现，partial limitation 不可被折叠隐藏。
 
 这让 `errored` Attempt 即使在 Context 建立前失败，也能显示其 `sandbox.prepare`、非零 code 和错误摘要。
 

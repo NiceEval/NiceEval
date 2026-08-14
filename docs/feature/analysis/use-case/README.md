@@ -5,6 +5,7 @@
 
 - [按模型与条件比较多个运行](#按模型与条件比较多个运行) —— 以固定分母比较 pass rate 与 latency。
 - [选择与收窄一个分析范围](selection-and-narrowing.md) —— 显式历史选择、coverage、locator、codec 与 Scope。
+- [审阅 Attempt 的 File Changes 轨迹](#审阅-attempt-的-file-changes-轨迹) —— 惰性关闭 trajectory，再谨慎使用派生 net。
 
 ## 按模型与条件比较多个运行
 
@@ -139,3 +140,30 @@ renderFrame(frame.rows, frame.issues);
 ```
 
 `frame.rows` 与上一个 `aggregate()` 返回的对应行使用同一统计口径。它们不是两套计算结果。
+
+## 审阅 Attempt 的 File Changes 轨迹
+
+文件变化不是聚合度量。已知 locator 后，Report 或 Analysis 作者显式请求其 DomainView；这时才读取该 Attempt 的
+File Changes Attachment。
+
+```ts
+import { fileChangesView, query } from "niceeval/analysis";
+
+const fileChanges = await query(sample, {
+  kind: "domain-view",
+  view: fileChangesView,
+  locator,
+});
+
+renderFileChangesTrajectory(fileChanges);
+```
+
+首次呈现按 send 区间显示 trajectory，而不是按 path 合并。比如 `turn1` 创建 `src/answer.ts`，`turn2` 再修改它时，
+两条变化都保留。只有 DomainView 已给出 reliable `net`，页面才可把它交给摘要或 `DiffView`；`indeterminate`
+只能显示原因，不能被猜成空 diff。
+
+| File Changes 状态 | 页面含义 |
+|---|---|
+| complete 且零变化 | 完整轨迹证明没有 agent 归因的路径变化。 |
+| partial 且安全前缀为空 | 只能说明没有捕获到前缀；limitation 必须可见。 |
+| `not-recorded` | collector 不适用于该 Attempt，不是没有变化。 |

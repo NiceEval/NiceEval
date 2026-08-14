@@ -9,7 +9,7 @@ import {
   createAssertionsAttachmentProducer,
   encodeSealedAssertionEntry,
 } from "../assertions/record/attachment.ts";
-import { createAgentWorkspaceDiffAttachmentWrite } from "../assertions/record/diff.ts";
+import { createFileChangesCaptureAttachmentWrite } from "../assertions/record/diff.ts";
 import type { AssertionsProducerError } from "../assertions/record/producer.ts";
 import {
   makeFixedRecordAttachmentWrite,
@@ -102,7 +102,7 @@ import {
   createRunnerSourceWritePlan,
   type RunnerSourceProducerInvalid,
 } from "./source-producer.ts";
-import { runnerAttemptWorkspaceDiffForResult } from "./sandbox-record-producer.ts";
+import { runnerAttemptFileChangesCaptureForResult } from "./sandbox-record-producer.ts";
 import type {
   AgentRun,
   Attempt,
@@ -1055,10 +1055,10 @@ export function openRunnerRecordCoordinator(input: {
         const observability = yield* attemptObservabilityWrite({ result, sealed });
         yield* active.session.writeAttemptObservability(observability);
 
-        const workspaceDiff = runnerAttemptWorkspaceDiffForResult(result);
-        if (workspaceDiff !== undefined) {
+        const fileChangesCapture = runnerAttemptFileChangesCaptureForResult(result);
+        if (fileChangesCapture !== undefined) {
           yield* active.session.writeFileChanges(
-            createAgentWorkspaceDiffAttachmentWrite(workspaceDiff),
+            createFileChangesCaptureAttachmentWrite(fileChangesCapture),
           );
         }
 

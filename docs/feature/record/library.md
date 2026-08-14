@@ -168,9 +168,14 @@ snapshot；全部 own blob 通过 closure 验证后才可从内存获得 defensi
 缺 key、多 key、重复 key、手写 key、跨 owner ref 或 root 外路径使请求的 Attachment 为 `invalid`。I/O、
 permission 或 materialize failure 仍是 `RecordReadError`。
 
+对 `niceeval.file-changes`，`not-recorded` 只表示 Sandbox 归因采集器不适用于该 Attempt。适用的 collector
+开始后，即使导出失败、中断或达到限额，也会写入带 limitation 的 `collection.state: "partial"` Attachment；完整空轨迹、
+partial 空前缀和 `not-recorded` 因而保持可区分。内部 reader 只把归因策略、collection 与 ordered send 区间
+trajectory（轨迹）交给 Analysis，绝不提供按 path 汇总的 `changes` 或 durable `net`。
+
 已知 family 的旧 schemaVersion 是 `migration-required`，ordinary reader 不做局部兼容读。未知 independent
-future family 则局部容忍：reader 保留它，且继续读取其它事实；依赖它的 input / view 是 `unsupported` 或
-`not-available`。这两种情况不能互换。
+future family 则局部容忍：reader 保留它，且继续读取其它事实；依赖它的 input / view 是 `unsupported`。
+它不同于 `not-recorded` 与 `migration-required`。
 
 ## Reader：RecordReadSession
 
@@ -214,7 +219,7 @@ Run 可以整体进入或整体不进入本次选择；没有 `complete` 的 Run
 selected ref 都是当前 session 签发的 nominal handle（名义句柄）。它们不能靠对象复制、ID 拼接或跨 Scope
 重用。Analysis 的 `AnalysisInput` 或 `DomainViewRequest` 真正需要事实时，package-private adapter 才以
 `{ owner, fixed definition }` 读取并缓存对应 Attachment。请求未知 future family 时，它缓存
-`unsupported` / `not-available`，但不解码磁盘 bytes。verified cache 可以省 I/O，不能成为 absence、
+`unsupported`，但不解码磁盘 bytes。verified cache 可以省 I/O，不能成为 absence、
 candidate set 或 latest 的权威依据。
 
 ## Writer：RunWriteSession

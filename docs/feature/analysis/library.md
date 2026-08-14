@@ -69,7 +69,7 @@ Host 只在 Measure 或 DomainView 实际需要一个 member 时执行 binding�
 但不会预读没有请求的 family、也不会把 cache 交给 Report。
 
 较早 reader 若不认识 binding 需要的独立 future family，例如 `niceeval.energy`，保留该 family 的磁盘 bytes
-而不解码它。Sample 把这一次 input / view request 形成 `unsupported` 或 `not-available`，不影响不依赖它的
+而不解码它。Sample 把这一次 input / view request 形成 `unsupported`，不影响不依赖它的
 Measure、Core selection 或闭合 Report 输出。这个局部结果不同于 current catalog family 缺失的
 `not-recorded`，也不同于已知 family 的旧 schemaVersion 所需的 `migration-required`。
 
@@ -395,6 +395,20 @@ declare function query<View extends DomainView>(
 该 Attempt 所需的 Trace、事件、Evidence、file diff 或 blob。没有 locator 的内建概览才请求当前选择的
 全部 included Attempt。每项请求复用同一个 Sample 的 attachment cache；`aggregate()` 从不因它们预加载
 重内容。
+
+### File Changes DomainView
+
+`fileChangesView` 被请求时才读取目标 Attempt 的 File Changes Attachment。它关闭 attribution、collection 和
+按 send 区间排序的 `windows`，保留 window ID、sequence、change ID、path、端点形态与 collection limitation。
+这份 trajectory 是领域视图的主体；每个 send 区间仍保留自己的数组，也不 materialize 一个持久 patch 或 hunk。
+
+`net` 只是一项 reader 派生值，绝不回写 Attachment。Analysis 仅在 collection 为 complete，且每条重复 path 的
+相邻端点连续可证明、端点没有未知时给出 reliable `net`。端点不连续、`unavailable` revision 或结构为
+`partial` 时，`net` 为 `indeterminate` 并携带对应 issue。consumer 仍取得完整已知 trajectory，不能把安全前缀
+补成净变化。
+
+File Changes family 缺席时，DomainView 保留 `not-recorded`；完整空轨迹与 partial 的空安全前缀仍分别保留自己的
+collection 状态。它们都不是 query 失败，也不等同于 `net` 的 reliable 空结果。
 
 `attempt-evidence` 是一个闭合的非表格视图。Sample 在同一次成功读取 `ReadableAttempt` 时取得 Core `outcome`。
 

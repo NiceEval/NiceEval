@@ -25,6 +25,12 @@ import {
   defaultSourceEvidenceReport,
   sourceEvidenceReport,
 } from "./source.ts";
+import {
+  FileChangesTrajectory,
+} from "./file-changes.ts";
+import type {
+  FileChangesTrajectoryProps,
+} from "./file-changes.ts";
 
 export {
   defaultAttemptOverviewReport,
@@ -41,6 +47,11 @@ export {
   sandboxHistoryReport,
   sourceEvidenceReport,
   timingEvidenceReport,
+  FileChangesTrajectory,
+};
+
+export type {
+  FileChangesTrajectoryProps,
 };
 
 export { default } from "./overview.ts";

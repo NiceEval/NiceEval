@@ -9,29 +9,28 @@ import {
   compareCanonicalIdentity,
   type SlotId,
 } from "../record/model/identifiers.ts";
-import type { AgentWorkspaceDiff } from "../assertions/workspace-diff.ts";
+import type { FileChangesCapture } from "../assertions/record/diff.ts";
 import type { EvalResult } from "./types.ts";
 
 /**
- * The exact post-run workspace document is retained outside EvalResult's
- * public compatibility shape. Assertions and the fixed File Changes producer
- * therefore consume one frozen capture instead of independently rebuilding a
- * diff from legacy result fields.
+ * The fixed Record File Changes capture is deliberately separate from the
+ * Assertion-only late workspace document. It survives normal failure and
+ * interruption without reopening an already sealed Assertion/Verdict.
  */
-const workspaceDiffByResult = new WeakMap<object, AgentWorkspaceDiff>();
+const fileChangesCaptureByResult = new WeakMap<object, FileChangesCapture>();
 
-export function retainRunnerAttemptWorkspaceDiff(
+export function retainRunnerAttemptFileChangesCapture(
   result: EvalResult,
-  document: AgentWorkspaceDiff,
+  capture: FileChangesCapture,
 ): EvalResult {
-  workspaceDiffByResult.set(result, document);
+  fileChangesCaptureByResult.set(result, capture);
   return result;
 }
 
-export function runnerAttemptWorkspaceDiffForResult(
+export function runnerAttemptFileChangesCaptureForResult(
   result: EvalResult,
-): AgentWorkspaceDiff | undefined {
-  return workspaceDiffByResult.get(result);
+): FileChangesCapture | undefined {
+  return fileChangesCaptureByResult.get(result);
 }
 
 /** A completed origin supplies only the runtime Sandbox fact needed by Record. */

@@ -37,12 +37,19 @@ import type {
   ClosedConversationDetail,
   ClosedConversationItem,
   ClosedDiagnosticsDetail,
+  ClosedFileChangesCollectionLimitation,
   ClosedTimingDetail,
   ClosedTraceCollection,
   ClosedUsageDetail,
   FileChangesDomainDetail,
   SourcesDomainDetail,
 } from "./domain-view.ts";
+import {
+  projectFileChangesDomainDetail,
+} from "./file-changes.ts";
+import type {
+  FileChangesProjectionInput,
+} from "./file-changes.ts";
 import type { LogicalSlot } from "./definitions.ts";
 
 /**
@@ -601,30 +608,161 @@ function closeFileChanges(
   payload: RecordAttachmentPayloadSnapshot<FileChangesAttachment>,
   blobs: RecordAttachmentBlobs,
 ): FileChangesDomainDetail {
-  return Object.freeze({
-    collection: closeJson(payload.collection),
-    changes: Object.freeze(payload.changes.map((change) => Object.freeze({
-      changeId: change.changeId,
-      path: change.path,
-      kind: change.kind,
-      before: closeFileRevision(change.before, blobs),
-      after: closeFileRevision(change.after, blobs),
+  return projectFileChangesDomainDetail({
+    attribution: Object.freeze({
+      kind: payload.attribution.kind,
+      policy: Object.freeze({
+        defaultPolicy: payload.attribution.policy.defaultPolicy,
+        include: Object.freeze([...payload.attribution.policy.include]),
+        ignore: Object.freeze([...payload.attribution.policy.ignore]),
+      }),
+    }),
+    collection: closeFileChangesCollection(payload.collection),
+    windows: Object.freeze(payload.windows.map((window) => Object.freeze({
+      windowId: window.windowId,
+      sequence: window.sequence,
+      changes: Object.freeze(window.changes.map((change) => Object.freeze({
+        changeId: change.changeId,
+        path: change.path,
+        kind: change.kind,
+        before: closeFileChangesEndpoint(change.before, blobs),
+        after: closeFileChangesEndpoint(change.after, blobs),
+      }))),
     }))),
+    structuralPartial: hasStructuralFileChangesPartial(payload.collection),
   });
 }
 
-function closeFileRevision(
-  value: RecordAttachmentPayloadSnapshot<FileChangesAttachment>["changes"][number]["before"],
-  blobs: RecordAttachmentBlobs,
-): JsonValue {
-  if (value === null) return null;
-  if (value.kind !== "text") return Object.freeze({ kind: value.kind, byteLength: value.byteLength });
+function closeFileChangesCollection(
+  value: RecordAttachmentPayloadSnapshot<FileChangesAttachment>["collection"],
+): FileChangesProjectionInput["collection"] {
   return Object.freeze({
-    kind: value.kind,
-    sha256: value.sha256,
-    byteLength: value.byteLength,
-    content: value.content === null ? null : closeBlob(value.content, blobs),
+    state: value.state,
+    limitations: Object.freeze(value.limitations.map(closeFileChangesLimitation)),
   });
+}
+
+/**
+ * The snapshot conditional type intentionally erases some Schema union
+ * details. Re-establish the already-validated durable shape while closing it,
+ * rather than letting an unknown limitation escape the DomainView.
+ */
+function closeFileChangesLimitation(
+  limitation: unknown,
+): ClosedFileChangesCollectionLimitation {
+  if (typeof limitation !== "object" || limitation === null || Array.isArray(limitation)) {
+    throw new TypeError("a File Changes collection limitation must be an object");
+  }
+  const value = limitation as Readonly<Record<string, unknown>>;
+  switch (value.code) {
+    case "capture-failed":
+    case "capture-interrupted":
+      if (
+        !isCaptureLimitationStage(value.stage)
+        || !(typeof value.atWindowId === "string" || value.atWindowId === null)
+      ) {
+        throw new TypeError("a File Changes capture limitation has an invalid durable shape");
+      }
+      return Object.freeze({
+        code: value.code,
+        stage: value.stage,
+        atWindowId: value.atWindowId,
+      });
+    case "collection-cap-reached":
+      if (
+        !isFileChangesCapTarget(value.target)
+        || !isPositiveSafeInteger(value.omittedAtLeast)
+        || !(typeof value.atWindowId === "string" || value.atWindowId === null)
+      ) {
+        throw new TypeError("a File Changes cap limitation has an invalid durable shape");
+      }
+      return Object.freeze({
+        code: "collection-cap-reached" as const,
+        target: value.target,
+        omittedAtLeast: value.omittedAtLeast,
+        atWindowId: value.atWindowId,
+      });
+    case "unsupported-input":
+      if (value.target !== "endpoint-metadata" || !isPositiveSafeInteger(value.omittedAtLeast)) {
+        throw new TypeError("a File Changes unsupported-input limitation has an invalid durable shape");
+      }
+      return Object.freeze({
+        code: "unsupported-input" as const,
+        target: "endpoint-metadata" as const,
+        omittedAtLeast: value.omittedAtLeast,
+      });
+    default:
+      throw new TypeError("a File Changes collection limitation has an unknown code");
+  }
+}
+
+function closeFileChangesEndpoint(
+  value: RecordAttachmentPayloadSnapshot<FileChangesAttachment>["windows"][number]["changes"][number]["before"],
+  blobs: RecordAttachmentBlobs,
+): FileChangesProjectionInput["windows"][number]["changes"][number]["before"] {
+  if (value.state === "absent") return Object.freeze({ state: "absent" as const });
+  const revision = value.revision;
+  switch (revision.kind) {
+    case "text":
+      return Object.freeze({
+        state: "present" as const,
+        revision: Object.freeze({
+          kind: "text" as const,
+          sha256: revision.sha256,
+          byteLength: revision.byteLength,
+          content: revision.content.state === "available"
+            ? Object.freeze({ state: "available" as const, content: closeBlob(revision.content.ref, blobs) })
+            : Object.freeze({ state: "omitted" as const, reason: "collection-cap" as const }),
+        }),
+      });
+    case "elided":
+      return Object.freeze({
+        state: "present" as const,
+        revision: Object.freeze({
+          kind: "elided" as const,
+          reason: revision.reason,
+          byteLength: revision.byteLength,
+        }),
+      });
+    case "unavailable":
+      return Object.freeze({
+        state: "present" as const,
+        revision: Object.freeze({ kind: "unavailable" as const, reason: revision.reason }),
+      });
+  }
+}
+
+function hasStructuralFileChangesPartial(
+  collection: RecordAttachmentPayloadSnapshot<FileChangesAttachment>["collection"],
+): boolean {
+  return collection.state === "partial" && collection.limitations
+    .map(closeFileChangesLimitation)
+    .some((limitation) => {
+      switch (limitation.code) {
+        case "capture-failed":
+        case "capture-interrupted":
+        case "unsupported-input":
+          return true;
+        case "collection-cap-reached":
+          return limitation.target === "window" || limitation.target === "change" || limitation.target === "json-byte";
+      }
+    });
+}
+
+function isCaptureLimitationStage(
+  value: unknown,
+): value is "checkpoint" | "export" | "finalizer-export" | "normalize" {
+  return value === "checkpoint" || value === "export" || value === "finalizer-export" || value === "normalize";
+}
+
+function isFileChangesCapTarget(
+  value: unknown,
+): value is "window" | "change" | "content-blob" | "content-byte" | "json-byte" {
+  return value === "window" || value === "change" || value === "content-blob" || value === "content-byte" || value === "json-byte";
+}
+
+function isPositiveSafeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
 
 function closeSources(

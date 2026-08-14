@@ -75,12 +75,17 @@ Analysis issue 与 execution problem 的边界固定：
 | 情况 | 位置 | show / view | static export |
 |---|---|---|---|
 | partial、empty、unsupported 或 failed 的 MetricValue | 数据值及不可关闭问题面 | 显示状态、issues 和 refs。 | 成功写出并显示。 |
+| File Changes 的 partial 或 indeterminate `net` | DomainView 与不可关闭问题面 | 显示 trajectory、collection、limitation 与 issue。 | 成功写出并显示。 |
 | 参数、load、render、组件或树验证失败 | Page execution problem | 隔离该 Page，保留其它成功 Page。 | fail closed。 |
 | route 或下载冲突 | execution problem | 显示问题，保留不冲突 Page。 | fail closed。 |
 | 定义无效、Analysis 全局 error 或超过限额 | typed error | 不形成 execution。 | 不形成 execution。 |
 | interruption | Effect Cause | 传播并运行 finalizer。 | 传播并运行 finalizer。 |
 
 Host 在本次 execution 中收集每个已完成 Analysis request 的 issue，并在树关闭前把它们汇总；这不依赖作者最后是否把 ClosedRows 或领域视图放进节点。callback 边界追加 execution problem。problemTable 是 canonical、稳定排序的去重表；页面和下载结果只保留 problem ID。作者不画问题节点、过滤 rows、丢弃查询结果或返回空数组，都不能移除内建问题面。
+
+Attempt 页面请求 File Changes 时，trajectory 是默认内容。reliable `net` 只能是摘要或 `DiffView` 的补充；它不能替换
+轨迹。完整空轨迹、partial 的空安全前缀和 `not-recorded` 都保留不同的可见状态。partial limitation 与
+`indeterminate` issue 进入同一不可关闭问题面，作者不能通过省略组件移除它们。
 
 ## 热重载
 

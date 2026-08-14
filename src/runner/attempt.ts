@@ -63,7 +63,12 @@ import {
   deriveDiffData,
 } from "../assertions/diff.ts";
 import { createAgentWorkspaceDiff } from "../assertions/workspace-diff.ts";
-import { assertAgentWorkspaceDiffRecordable } from "../assertions/record/diff.ts";
+import {
+  assertFileChangesCaptureRecordable,
+  createEmptyFileChangesCapture,
+  createFileChangesCapture,
+  type FileChangesCapture,
+} from "../assertions/record/diff.ts";
 import { createDirectAgentSandbox } from "./direct-agent-sandbox.ts";
 import { createSandboxCommandTarget, SandboxCommandExitError } from "../sandbox/operations.ts";
 import { inheritSandboxCapabilities } from "../sandbox/backend.ts";
@@ -83,7 +88,7 @@ import {
   retainRunnerAttemptSourceCapture,
   type RunnerAttemptSourceCapture,
 } from "./source-producer.ts";
-import { retainRunnerAttemptWorkspaceDiff } from "./sandbox-record-producer.ts";
+import { retainRunnerAttemptFileChangesCapture } from "./sandbox-record-producer.ts";
 import {
   bindRunnerAttemptObservabilityCapture,
   captureRunnerCommandCaptureFailed,
@@ -345,6 +350,8 @@ export function runAttemptEffect<
   // Effect.timeoutTo 调用点的注释)。
   let timedOut = false;
   let timeoutDiff: DiffArtifact | undefined;
+  let fileChangesCapture: FileChangesCapture | undefined;
+  let timeoutFileChangesCapture: FileChangesCapture | undefined;
   let timeoutSources: SourceArtifact[] | undefined;
   const enterPhase = (phase: LifecyclePhase) => {
     lastPhase = phase;
@@ -783,7 +790,47 @@ export function runAttemptEffect<
           if (run.agent.kind === "sandbox" && liveLedger) {
             const startedAt = recorder.offsetNow();
             const diff = yield* Effect.either(cleanupCallback(() => liveLedger!.exportWindows()));
-            if (Either.isRight(diff)) timeoutDiff = diff.right;
+            if (Either.isRight(diff)) {
+              timeoutDiff = diff.right;
+              let document: AgentWorkspaceDiff | undefined;
+              try {
+                document = createAgentWorkspaceDiff({
+                  windows: diff.right,
+                  policy: liveLedger.attribution,
+                });
+              } catch {
+                timeoutFileChangesCapture = createEmptyFileChangesCapture({
+                  policy: liveLedger.attribution,
+                  limitations: [Object.freeze({
+                    code: "capture-failed" as const,
+                    stage: "normalize" as const,
+                    atWindowId: null,
+                  })],
+                });
+              }
+              if (document !== undefined) {
+                timeoutFileChangesCapture = createFileChangesCapture({
+                  document,
+                  limitations: [Object.freeze({
+                    code: "capture-interrupted" as const,
+                    stage: "finalizer-export" as const,
+                    atWindowId: null,
+                  })],
+                });
+              }
+            } else {
+              timeoutFileChangesCapture = createEmptyFileChangesCapture({
+                policy: liveLedger.attribution,
+                limitations: [Object.freeze({
+                  code: "capture-interrupted" as const,
+                  stage: "finalizer-export" as const,
+                  atWindowId: null,
+                })],
+              });
+            }
+            if (timeoutFileChangesCapture !== undefined) {
+              assertFileChangesCaptureRecordable(timeoutFileChangesCapture);
+            }
             // 沙箱不可用 / 导出挂起到点:如实缺失,不阻塞收尾。
             recorder.record("workspace.diff", recorder.offsetNow() - startedAt);
           }
@@ -927,6 +974,9 @@ export function runAttemptEffect<
             },
             registerLedger: (ledger) => {
               liveLedger = ledger;
+            },
+            retainFileChangesCapture: (capture) => {
+              fileChangesCapture = capture;
             },
             assertFirst,
             registerAssertions: (runtime, state) => {
@@ -1158,8 +1208,11 @@ export function runAttemptEffect<
         redactEvalResultEvidence(completed, sensitiveValues),
         sourceCapture.snapshot(),
       );
-      if (liveAssertionState?.late.diff.state === "available") {
-        retainRunnerAttemptWorkspaceDiff(finalResult, liveAssertionState.late.diff.document);
+      const capture = timedOut
+        ? timeoutFileChangesCapture ?? fileChangesCapture
+        : fileChangesCapture;
+      if (capture !== undefined) {
+        retainRunnerAttemptFileChangesCapture(finalResult, capture);
       }
       bindRunnerAttemptObservabilityCapture(finalResult, observabilityRuntime);
       return finalResult;
@@ -1429,6 +1482,8 @@ interface AttemptResources {
   ) => void;
   /** 变更分类账一建好(workspace.baseline 阶段)就登记回外层(超时收尾段折叠 workspace.diff 用)。 */
   registerLedger: (ledger: ChangeLedger) => void;
+  /** Record capture freezes independently of Assertion late evidence and crosses the Result boundary once. */
+  retainFileChangesCapture: (capture: FileChangesCapture) => void;
   /** The outer Effect boundary owns author execution and the one seal. */
   assertFirst: AssertFirstAttemptBridge<unknown>;
   /** Registers the Attempt-local runtime and its post-run evidence state for scope sealing. */
@@ -1481,6 +1536,7 @@ async function runAttemptBody(
     layerCleanups,
     registerEvidence,
     registerLedger,
+    retainFileChangesCapture,
     assertFirst,
     registerAssertions,
     prepareCoordinator,
@@ -1794,6 +1850,7 @@ async function runAttemptBody(
     if (!skipReason && usesSandbox) enterPhase("workspace.diff");
     let diffWindows: DiffArtifact = [];
     let diffArtifactAvailable = true;
+    let diffExportAvailable = true;
     const captureFailure = state.manager.ledgerCaptureFailure;
     if (captureFailure !== undefined) {
       // `afterSend` is intentionally non-fatal to the completed agent Turn,
@@ -1811,7 +1868,7 @@ async function runAttemptBody(
         ),
       });
     }
-    if (!skipReason && usesSandbox && ledger && captureFailure === undefined) {
+    if (usesSandbox && ledger) {
       const startedAt = recorder.offsetNow();
       const operation = recorder.child(workspaceDiffExportActivity({
         label: "export workspace diff",
@@ -1829,6 +1886,7 @@ async function runAttemptBody(
         if (operation) operation.failed = true;
         if (isBodyInterrupted(signal, parentSignal, isDeadlineTimedOut())) throw diffError;
         diffArtifactAvailable = false;
+        diffExportAvailable = false;
         feedback.diagnostic({
           code: "workspace-diff-unavailable",
           level: "warning",
@@ -1848,41 +1906,73 @@ async function runAttemptBody(
     }
     const diff = deriveDiffData(diffWindows);
     let workspaceDiff: AgentWorkspaceDiff | undefined;
-    if (usesSandbox && ledger && diffArtifactAvailable && !skipReason) {
-      // This is the one export/freeze point. Post-run Assertion closures and
-      // the later Evaluation Record adapter share this exact object; neither
-      // side rebuilds a diff.
-      try {
-        const document = createAgentWorkspaceDiff({
-          windows: diffWindows,
+    if (usesSandbox && ledger) {
+      let document: AgentWorkspaceDiff | undefined;
+      if (diffExportAvailable) {
+        try {
+          document = createAgentWorkspaceDiff({
+            windows: diffWindows,
+            policy: ledger.attribution,
+          });
+        } catch (diffError) {
+          diffArtifactAvailable = false;
+          feedback.diagnostic({
+            code: "workspace-diff-unavailable",
+            level: "warning",
+            message: `workspace diff freeze failed; continuing with command/event evidence: ${firstLine(formatThrown(diffError))}`,
+            data: evidenceDiagnosticData(
+              "freeze",
+              diffError,
+              a.plan._tag === "Sandbox" ? a.plan.providerPlan.provider : undefined,
+            ),
+          });
+        }
+      }
+
+      const limitations = [
+        ...(captureFailure === undefined ? [] : [Object.freeze({
+          code: "capture-failed" as const,
+          stage: "checkpoint" as const,
+          atWindowId: captureFailure.label,
+        })]),
+        ...(!diffExportAvailable ? [Object.freeze({
+          code: "capture-failed" as const,
+          stage: "export" as const,
+          atWindowId: null,
+        })] : []),
+      ];
+      if (document === undefined) {
+        const capture = createEmptyFileChangesCapture({
           policy: ledger.attribution,
+          limitations: [
+            ...limitations,
+            ...(diffExportAvailable ? [Object.freeze({
+              code: "capture-failed" as const,
+              stage: "normalize" as const,
+              atWindowId: null,
+            })] : []),
+          ],
         });
-        // Diff is supplemental unless an Assertion declared it required. Check
-        // the exact durable v1 representation here, while the shared late
-        // state can still become unavailable. Discovering the Record JSON
-        // limit only during publication would abort the whole Run after all
-        // Attempts had already settled.
-        assertAgentWorkspaceDiffRecordable(document);
+        assertFileChangesCaptureRecordable(capture);
+        retainFileChangesCapture(capture);
+      } else {
+        const capture = createFileChangesCapture({ document, limitations });
+        assertFileChangesCaptureRecordable(capture);
+        retainFileChangesCapture(capture);
+      }
+      // A malformed family payload or its blob closure is a producer defect,
+      // not a collector limitation. Keep this outside the collector catches.
+
+      if (!skipReason && diffArtifactAvailable && captureFailure === undefined && document !== undefined) {
         state.late.diff = Object.freeze({
           state: "available" as const,
           document,
         });
         workspaceDiff = document;
-      } catch (diffError) {
-        diffArtifactAvailable = false;
+      } else {
         state.late.diff = Object.freeze({
           state: "unavailable" as const,
           reason: "producer-failed" as const,
-        });
-        feedback.diagnostic({
-          code: "workspace-diff-unavailable",
-          level: "warning",
-          message: `workspace diff freeze failed; continuing with command/event evidence: ${firstLine(formatThrown(diffError))}`,
-          data: evidenceDiagnosticData(
-            "freeze",
-            diffError,
-            a.plan._tag === "Sandbox" ? a.plan.providerPlan.provider : undefined,
-          ),
         });
       }
     } else {

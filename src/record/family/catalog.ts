@@ -45,8 +45,11 @@ import {
   type NiceEvalFamily,
 } from "./common.ts";
 import {
-  FileChangeSchema,
+  FileChangesAttributionSchema,
   FileChangesAttachmentSchema,
+  FileChangesCollectionStateSchema,
+  FileChangesLimits,
+  FileChangesWindowSchema,
   fileChangesAttachmentIntegrityIssues,
   fileChangesBlobRefs,
   type FileChangesAttachment,
@@ -84,11 +87,21 @@ const AttachmentValueLimits: RecordValueLimits = Object.freeze({
   maximumStringUtf8Bytes: 1024 * 1024,
 });
 
+/** File Changes retains up to 10k endpoint pairs, which exceeds the generic family node envelope. */
+const FileChangesAttachmentValueLimits: RecordValueLimits = Object.freeze({
+  ...AttachmentValueLimits,
+  maximumNodes: 500_000,
+});
+
 const FixedBlobBudgets = Object.freeze({
   assertions: Object.freeze({ maximumBlobs: 20_000, maximumBlobBytes: 16 * 1024 * 1024, maximumTotalBytes: 64 * 1024 * 1024 }),
   observabilityAttempt: Object.freeze({ maximumBlobs: 4_000, maximumBlobBytes: 16 * 1024 * 1024, maximumTotalBytes: 64 * 1024 * 1024 }),
   observabilityRun: Object.freeze({ maximumBlobs: 256, maximumBlobBytes: 16 * 1024 * 1024, maximumTotalBytes: 16 * 1024 * 1024 }),
-  fileChanges: Object.freeze({ maximumBlobs: 20_000, maximumBlobBytes: 16 * 1024 * 1024, maximumTotalBytes: 128 * 1024 * 1024 }),
+  fileChanges: Object.freeze({
+    maximumBlobs: FileChangesLimits.maximumBlobs,
+    maximumBlobBytes: FileChangesLimits.maximumBlobBytes,
+    maximumTotalBytes: FileChangesLimits.maximumTotalBlobBytes,
+  }),
   sources: Object.freeze({ maximumBlobs: 20_000, maximumBlobBytes: 16 * 1024 * 1024, maximumTotalBytes: 128 * 1024 * 1024 }),
   artifactsAttempt: Object.freeze({ maximumBlobs: 4_000, maximumBlobBytes: 64 * 1024 * 1024, maximumTotalBytes: 128 * 1024 * 1024 }),
   artifactsRun: Object.freeze({ maximumBlobs: 4_000, maximumBlobBytes: 64 * 1024 * 1024, maximumTotalBytes: 128 * 1024 * 1024 }),
@@ -129,11 +142,12 @@ function defineFixedOwnerValue<
 >(input: {
   readonly properties: Properties;
   readonly schema: Schema.Schema.AnyNoContext;
+  readonly limits?: RecordValueLimits;
 }) {
   return defineRecordValue({
     properties: input.properties,
     leaf: "json-with-blob-refs" as const,
-    limits: AttachmentValueLimits,
+    limits: input.limits ?? AttachmentValueLimits,
     isBlobRef: isRecordBlobRef,
     refine: (value) => currentValueIssues(input.schema, value),
   });
@@ -204,15 +218,20 @@ const runObservabilityProperties = {
 } as const;
 
 const fileChangesProperties = {
+  attribution: defineRecordProperty({
+    id: "niceeval.file-changes.attribution",
+    durableKey: "attribution-data",
+    schema: FileChangesAttributionSchema,
+  }),
   collection: defineRecordProperty({
     id: "niceeval.file-changes.collection",
     durableKey: "collection-data",
-    schema: CollectionStateSchema,
+    schema: FileChangesCollectionStateSchema,
   }),
-  changes: defineRecordProperty({
-    id: "niceeval.file-changes.changes",
-    durableKey: "changes-data",
-    schema: Schema.Array(FileChangeSchema),
+  windows: defineRecordProperty({
+    id: "niceeval.file-changes.windows",
+    durableKey: "windows-data",
+    schema: Schema.Array(FileChangesWindowSchema),
   }),
 } as const;
 
@@ -252,6 +271,7 @@ const runObservabilityOwnerValue = defineFixedOwnerValue({
 const fileChangesOwnerValue = defineFixedOwnerValue({
   properties: fileChangesProperties,
   schema: FileChangesAttachmentSchema,
+  limits: FileChangesAttachmentValueLimits,
 });
 const sourcesOwnerValue = defineFixedOwnerValue({
   properties: sourcesProperties,

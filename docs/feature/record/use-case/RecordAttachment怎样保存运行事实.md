@@ -12,7 +12,7 @@ exact payload。调用方不能追加字段或改变 durable shape，更不能�
 |---|---|---|---|
 | AssertionResult、Evidence 与 sealed result | `niceeval.assertions` | `owners.attempt` | 来自一次实际检查 |
 | 对话、OTel、事件、命令、用量、时间与诊断 | `niceeval.observability` | `owners.attempt` 或 `owners.run` | 由对应 owner 的 collector 封口 |
-| Sandbox 观察到的按路径变化 | `niceeval.file-changes` | Attempt | 是该 Attempt 的执行证据 |
+| Sandbox 观察到的 send 区间文件变化轨迹 | `niceeval.file-changes` | Attempt | 保留 agent 归因、策略与时序 |
 | Eval 与 loader 的源码闭包 | `niceeval.sources` | origin Run | 同 Run 的 Attempt 共用当时源码 |
 | 有媒体类型的大型文件 | `niceeval.artifacts` | `owners.attempt` 或 `owners.run` | 归属由文件生命周期决定 |
 
@@ -21,6 +21,10 @@ Attempt，也不复制任何 Attachment；读取时沿精确 origin Attempt 和 
 
 Observability 与 Artifacts 各有一个 NiceEval internal definition，两个 owner shape 写在同一 `owners` map。
 没有 attempt / run 的重复 family，也没有应用作者可调用的 `defineRecordAttachment`。
+
+File Changes 允许同一路径出现在不同 send 区间。若 agent 在 `turn1` 创建 `src/app.ts`，Eval 在两个 send 之间
+写入它，agent 在 `turn2` 再修改它，两个 send 区间各有一条 `src/app.ts` 变化。同一 send 区间内的变化按
+ASCII path 排序且不重复；这让读侧能保留 agent 的完整轨迹，而不是把 Eval 写入合进文件级摘要。
 
 ## 一个 family 一份完整 closure
 
@@ -71,7 +75,7 @@ owner/family 时读取和验证它。`available` snapshot 包含 deep-frozen pay
 历史 owner 缺少 current catalog 中请求的 family 时返回 `not-recorded`。`invalid` 只影响请求该事实的 query，
 不能把其它 Core 或 family 伪装为失败。已知 family 的旧 schemaVersion 要求显式 migrate，ordinary reader
 不兼容。未知独立 future family 保留在磁盘、跳过解释，不影响 Core 与认识的 family；只有请求它的
-AnalysisInput / DomainView 返回 `unsupported` / `not-available`。带 `/vN` 后缀的未发布 family 草案仍是
+AnalysisInput / DomainView 返回 `unsupported`。带 `/vN` 后缀的未发布 family 草案仍是
 `unsupported-format`。
 
 ## 不能写进 Attachment 的内容

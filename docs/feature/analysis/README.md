@@ -39,6 +39,11 @@ OTel、事件、Evidence、文件差异与 blob 都保持在 Record 中。打开
 Snapshot 不读取它们。只有某个 `AnalysisInput`（分析输入）或 `DomainView`（领域视图）请求它们时，
 Analysis 才在当前 Scope（资源作用域）内读取所需 Attachment（附属事实）。
 
+`fileChangesView` 也只在被 `query()` 请求时惰性读取。它先把归因、采集状态和按 send 区间排序的 trajectory
+（轨迹）关闭为不可变领域值，不把路径折成持久 `net`（净变化）或 hunk。仅当同一路径的相邻归因端点连续可证明、
+所需端点已知且 collection 完整时，Analysis 才能派生 reliable `net`。端点不连续、端点未知或结构为 `partial`
+时，`net` 必为 `indeterminate` 并带 issue；原始轨迹仍可查看。
+
 一次成功读取 `ReadableAttempt` 时，Analysis 会在同一条读取中关闭 immutable Core 的 `outcome`。Attempt
 Evidence 再把该 Outcome 与已验证 Assertions 交给 Eval 的权威 fold，得到派生的四态 `verdict`；`outcome`
 从不等同于 `verdict`。Core 不可用或不可读时，相关 DomainView entry 以 failed 和带 Evidence 引用的问题明确
@@ -49,7 +54,7 @@ Attempt 时读取 `niceeval.observability`，把已验证结果以 `{ owner, fix
 需要相同 input 的 Measure 复用该缓存；它不会预读 Assertions、Sources、Artifacts 或其它 Attempt。
 
 如果已发布的 input 或 DomainView 需要较早 reader 不认识的独立 future family，例如 `niceeval.energy`，
-Sample 不解释该 family 的 bytes。它把这个请求闭合为 `unsupported` / `not-available`，并继续计算不依赖它的
+Sample 不解释该 family 的 bytes。它把这个请求闭合为 `unsupported`，并继续计算不依赖它的
 Measure。未知 family 不把 Core、其它 Attachment 或 Report 的闭合输出变成全局失败。
 
 ```text
@@ -124,6 +129,9 @@ Attachment、blob capability 或未解释的 Record payload。Report 只消费�
 
 例如 Attempt Evidence 的闭合 detail 可以同时携带 `outcome`、派生的 `verdict` 和逐项 Assertions；这些都是
 显示安全的值，不携带 `ReadableAttempt`、owner、reader 或任何 Scope capability。
+
+File Changes 的闭合值同样保留 trajectory、collection 与 issue。`complete` 的零变化、`partial` 的空安全前缀和
+family 缺席的 `not-recorded` 是三个不同结果；Report 不能把后两者显示为“无变化”。
 
 ## 入口
 

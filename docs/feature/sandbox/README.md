@@ -24,7 +24,7 @@ Sandbox 负责创建、准备、复用和留存隔离实例，但它不拥有独
 | 事实 | family 与 owner |
 |---|---|
 | 创建、prepare 与受管命令的历史，计时，诊断，以及 agent 的 conversation / usage | origin Attempt 或 Run 的 `niceeval.observability` |
-| agent 归因的 workdir 文件变化 | origin Attempt 的 `niceeval.file-changes` |
+| agent 归因的 workdir 文件变化轨迹、归因策略与采集状态 | origin Attempt 的 `niceeval.file-changes` |
 | source frame 与可复现输入所需的源码闭包 | origin Run 的 `niceeval.sources` |
 | diff Assertion 的 result、coverage 与 Evidence refs | origin Attempt 的 `niceeval.assertions` |
 | 需要保留的大型、具类型对象 | Attempt 或 Run 的 `niceeval.artifacts` |

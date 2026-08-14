@@ -358,7 +358,7 @@ type AttachmentEnvelope = {
 |---|---|---|---|
 | `niceeval.assertions` | `{ attempt }` | `AssertionsDocument` | Assertion producer 封口 criterion、material、Evidence 与 result |
 | `niceeval.observability` | `{ attempt, run }` | `AttemptObservabilityAttachment` / `RunObservabilityAttachment` | collector 封口对话、命令、用量、时间、诊断与 OTel |
-| `niceeval.file-changes` | `{ attempt }` | `FileChangesAttachment` | Sandbox diff collector 封口按路径变化序列 |
+| `niceeval.file-changes` | `{ attempt }` | `FileChangesAttachment` | Sandbox collector 封口归因策略与 send 区间文件变化轨迹 |
 | `niceeval.sources` | `{ run }` | `SourcesAttachment` | Runner 封口源码闭包 manifest 与 own blobs |
 | `niceeval.artifacts` | `{ attempt, run }` | `ArtifactsAttachment` | artifact collector 封口有类型文件 |
 
@@ -373,28 +373,89 @@ stable family name、numeric schemaVersion、`owners` map、definition 与 colle
 
 ```ts
 type FileChangesAttachment = {
-  readonly collection: CollectionState;
+  readonly attribution: FileChangesAttribution;
+  readonly collection: FileChangesCollectionState;
+  readonly windows: readonly FileChangesWindow[];
+};
+
+type FileChangesAttribution = {
+  readonly kind: "agent-send-window-endpoints";
+  readonly policy: {
+    readonly defaultPolicy: "niceeval.sandbox-ledger/default-excludes/v1";
+    readonly include: readonly FileChangesPolicyEntry[];
+    readonly ignore: readonly FileChangesPolicyEntry[];
+  };
+};
+
+type FileChangesPolicyEntry = string;
+
+type FileChangesCollectionState =
+  | { readonly state: "complete"; readonly limitations: readonly [] }
+  | {
+      readonly state: "partial";
+      readonly limitations: readonly [
+        FileChangesCollectionLimitation,
+        ...FileChangesCollectionLimitation[],
+      ];
+    };
+
+type FileChangesCollectionLimitation =
+  | {
+      readonly code: "capture-failed" | "capture-interrupted";
+      readonly stage: "checkpoint" | "export" | "finalizer-export" | "normalize";
+      readonly atWindowId: FileChangesWindowId | null;
+    }
+  | {
+      readonly code: "collection-cap-reached";
+      readonly target: "window" | "change" | "content-blob" | "content-byte" | "json-byte";
+      readonly omittedAtLeast: PositiveSafeInteger;
+      readonly atWindowId: FileChangesWindowId | null;
+    }
+  | {
+      readonly code: "unsupported-input";
+      readonly target: "endpoint-metadata";
+      readonly omittedAtLeast: PositiveSafeInteger;
+    };
+
+type FileChangesWindow = {
+  readonly windowId: FileChangesWindowId;
+  readonly sequence: PositiveSafeInteger;
   readonly changes: readonly FileChange[];
 };
+
+type FileChangesWindowId =
+  | `turn${PositiveSafeInteger}`
+  | `session${PositiveSafeInteger}/turn${PositiveSafeInteger}`;
 
 type FileChange = {
   readonly changeId: FileChangeId;
   readonly path: CanonicalProjectRelativePath;
-  readonly kind: "created" | "modified" | "deleted" | "unavailable";
-  readonly before: FileRevision | null;
-  readonly after: FileRevision | null;
+  readonly kind: "created" | "modified" | "deleted";
+  readonly before: FileEndpoint;
+  readonly after: FileEndpoint;
 };
+
+type FileEndpoint =
+  | { readonly state: "absent" }
+  | { readonly state: "present"; readonly revision: FileRevision };
 
 type FileRevision =
   | {
       readonly kind: "text";
       readonly sha256: Sha256Digest;
       readonly byteLength: NonNegativeSafeInteger;
-      readonly content: RecordBlobRef | null;
+      readonly content:
+        | { readonly state: "available"; readonly ref: RecordBlobRefPosition }
+        | { readonly state: "omitted"; readonly reason: "collection-cap" };
     }
   | {
-      readonly kind: "binary" | "elided";
+      readonly kind: "elided";
+      readonly reason: "binary" | "oversized-text";
       readonly byteLength: NonNegativeSafeInteger;
+    }
+  | {
+      readonly kind: "unavailable";
+      readonly reason: "unsupported-input" | "capture-failed" | "capture-interrupted";
     };
 
 type ArtifactsAttachment = {
@@ -412,9 +473,51 @@ type Artifact = {
 };
 ```
 
-`changes` 与 `artifacts` 按 identity canonical order 排列且拒绝重复。`unavailable` 表示 collector 已知无法
-形成路径事实；它不把未读取的路径写成空 diff。text content 只有在已保存时才持有 ref；binary 或被大小
-策略省略的 content 不伪造 blob。
+File Changes 的 durable 单位是 send 区间轨迹。每个 send 区间保留自己的路径变化，不按路径汇总。`attribution.kind` 固定为
+`agent-send-window-endpoints`；其 `policy.defaultPolicy` 固定为
+`niceeval.sandbox-ledger/default-excludes/v1`。`include` 与 `ignore` 各自按 canonical identity（规范身份）
+排序且无重复。
+
+`windowId` 必须精确是 `turnN` 或 `sessionN/turnN`，其中每个 N 都从 `1` 开始，同一 ID 只能出现一次。每个
+send 区间内的 `changes` 按 path 的 ASCII 字节序排列，path 不重复；不同 send 区间可以重复同一路径。
+所有 `sequence` 严格递增。仅 `collection.state: "complete"` 要求它们恰为连续的 `1..N`；`partial` 只要求
+严格递增，不能以缺号伪装未捕获的区间。
+
+collector 在 capture freeze（捕获封口）时只 mint 一次 `changeId`，且它在整份 Attachment 中唯一。读取、Analysis
+和 Report 都不得生成、重排或复用它。`created` 必须是 absent → present，`modified` 必须是 present → present，
+`deleted` 必须是 present → absent。`present` 的 revision 可以是完整 text、内容已省略的 `elided`，或无法取得内容的
+`unavailable`；它从不等同于文件不存在。
+
+text revision 的 `content` 要么是带 `RecordBlobRefPosition` 的 `available`，要么是
+`omitted(collection-cap)`。`available` 的 blob ref、SHA-256 与 byteLength 一起进入本 family 的 own closure。
+blob bytes 必须同时匹配 digest 和长度，且每个 ref 仍遵守 Attachment 的双向 closure 规则。
+
+binary 与超过文本上限的 revision 使用 `elided`，携带 `binary` 或 `oversized-text` 原因和 byteLength；这本身是
+完整采集，不能降级 collection。`unavailable` 必须带 `unsupported-input`、`capture-failed` 或
+`capture-interrupted` 原因。
+
+`collection: "complete"` 可以含零变化；它证明完整轨迹中没有 agent 归因的路径变化。`collection: "partial"`
+也可以没有已捕获变化；它只证明安全前缀为空，不能证明没有变化。缺少 Attachment 的 `not-recorded` 只表示
+collector 对该 Attempt 不适用，和前两种空态不同。
+
+File Changes 固定限额如下：
+
+- 最多 256 个 send 区间；每个 send 区间与整份 Attachment 都最多 10,000 个 changes。
+- 一个完整 text revision 与单个 blob 都最多 1 MiB；最多 20,000 个 blobs、总计 128 MiB blob bytes。
+- payload JSON 最多 16 MiB。`include` 与 `ignore` 各最多 256 项，每项最多 4,096 bytes。
+
+collector 先按 `sequence`，再按同一 send 区间内的 ASCII path 处理候选变化。达到任一采集限额时，它不跳过
+当前项去采后面的项：只保存这个确定性的安全前缀，并写入 `collection-cap-reached` limitation。该 limitation
+以 `target`、`omittedAtLeast` 和可空 `atWindowId` 标明边界，collection 必为 `partial`。
+
+capture 失败或中断则以 `capture-failed` 或 `capture-interrupted` 写入 `stage` 与 `atWindowId`。无法支持 endpoint
+metadata 时，使用 `unsupported-input`、`endpoint-metadata` 与 `omittedAtLeast`。partial 的 limitations 非空、按确定
+key 排列且无重复；complete 的 limitations 必为空。
+
+binary 或 oversized text 的既定 `elided` 形态不触发这条截断。policy 超过自身限额不能形成合法 Attachment。
+
+`niceeval.file-changes` 固定使用 numeric schemaVersion `1`。不存在已发布的按 path 汇总格式作为 migration source，
+也不存在 File Changes 独立的前代格式；Record 的首次正式格式没有已发布 predecessor。
 
 ### Sources manifest
 
@@ -509,7 +612,7 @@ schemaVersion `1` 是当前 root / Core 的唯一可读、可写版本。ordinar
 
 未知 family 不是 schemaVersion 不匹配的 known family。它的 stable name 尚未被该 reader 的 catalog 认识，
 所以 reader 没有 payload schema、closure rule 或 projection 可以安全执行。任何 `AnalysisInput` 或
-`DomainViewRequest` 依赖它时，只返回 `unsupported` / `not-available`；其它 Analysis 结果和 Report
+`DomainViewRequest` 依赖它时，只返回 `unsupported`；其它 Analysis 结果和 Report
 闭合输出不受污染。
 
 未来发布 schemaVersion `2` 时，`maintenance` facet 必须提供固定 `1 → 2` step。step 只依赖已保存的

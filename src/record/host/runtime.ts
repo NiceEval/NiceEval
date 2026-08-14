@@ -1847,22 +1847,9 @@ function readPublishedAttempts(
   root: RecordRoot,
   runId: RunId,
 ): Effect.Effect<readonly AttemptDocument[], RecordWriteError> {
-  return Effect.gen(function* () {
-    const entries = orderedEntries(yield* fileSystem.listDirectory({
-      directory: runPath(root, runId, "attempts"),
-      maximumEntries: MAXIMUM_ATTEMPT_ENTRIES,
-    }));
-    const attempts: AttemptDocument[] = [];
-    for (const entry of entries) {
-      if (entry.kind !== "directory") return yield* Effect.fail(coreInvalid());
-      const attemptId = decodeAttemptId(entry.name);
-      if (attemptId === undefined) return yield* Effect.fail(coreInvalid());
-      const document = yield* readAttemptDocument(fileSystem, root, { originRunId: runId, attemptId });
-      if (document === undefined) return yield* Effect.fail(coreInvalid());
-      attempts.push(document);
-    }
-    return Object.freeze(attempts);
-  });
+  return Effect.flatMap(readRunAttempts(fileSystem, root, runId), (attempts) =>
+    attempts === undefined ? Effect.fail(coreInvalid()) : Effect.succeed(attempts),
+  );
 }
 
 function readPublishedMembers(

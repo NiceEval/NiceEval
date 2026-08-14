@@ -225,14 +225,113 @@ export interface AttemptEvidenceDomainDetail {
   readonly sourceSites: readonly JsonValue[];
 }
 
+/** A FileChanges endpoint after its owner-local blob reference has been closed. */
+export type ClosedFileChangeEndpoint =
+  | { readonly state: "absent" }
+  | {
+      readonly state: "present";
+      readonly revision: ClosedFileRevision;
+    };
+
+/** The `available` alternative substitutes display-safe content for a RecordBlobRef. */
+export type ClosedFileRevision =
+  | {
+      readonly kind: "text";
+      readonly sha256: string;
+      readonly byteLength: number;
+      readonly content:
+        | { readonly state: "available"; readonly content: ClosedBlobContent }
+        | { readonly state: "omitted"; readonly reason: "collection-cap" };
+    }
+  | {
+      readonly kind: "elided";
+      readonly reason: "binary" | "oversized-text";
+      readonly byteLength: number;
+    }
+  | {
+      readonly kind: "unavailable";
+      readonly reason: "unsupported-input" | "capture-failed" | "capture-interrupted";
+    };
+
+export type ClosedFileChangesCollectionLimitation =
+  | {
+      readonly code: "capture-failed" | "capture-interrupted";
+      readonly stage: "checkpoint" | "export" | "finalizer-export" | "normalize";
+      readonly atWindowId: string | null;
+    }
+  | {
+      readonly code: "collection-cap-reached";
+      readonly target: "window" | "change" | "content-blob" | "content-byte" | "json-byte";
+      readonly omittedAtLeast: number;
+      readonly atWindowId: string | null;
+    }
+  | {
+      readonly code: "unsupported-input";
+      readonly target: "endpoint-metadata";
+      readonly omittedAtLeast: number;
+    };
+
+export interface ClosedFileChangesCollection {
+  readonly state: "complete" | "partial";
+  readonly limitations: readonly ClosedFileChangesCollectionLimitation[];
+}
+
+export interface ClosedFileChangesAttribution {
+  readonly kind: "agent-send-window-endpoints";
+  readonly policy: {
+    readonly defaultPolicy: "niceeval.sandbox-ledger/default-excludes/v1";
+    readonly include: readonly string[];
+    readonly ignore: readonly string[];
+  };
+}
+
+export interface ClosedFileChange {
+  readonly changeId: string;
+  readonly path: string;
+  readonly kind: "created" | "modified" | "deleted";
+  readonly before: ClosedFileChangeEndpoint;
+  readonly after: ClosedFileChangeEndpoint;
+}
+
+/** One recorded send-window, including an intentional zero-change window. */
+export interface ClosedFileChangeWindow {
+  readonly windowId: string;
+  readonly sequence: number;
+  readonly changes: readonly ClosedFileChange[];
+}
+
+export type FileChangesNet =
+  | {
+      readonly state: "available";
+      readonly kind: "none" | "created" | "modified" | "deleted";
+      readonly before: ClosedFileChangeEndpoint;
+      readonly after: ClosedFileChangeEndpoint;
+    }
+  | {
+      readonly state: "indeterminate";
+      readonly reason:
+        | "collection-partial"
+        | "window-discontinuity"
+        | "endpoint-unavailable"
+        | "endpoint-equality-unprovable";
+    };
+
+/**
+ * The complete, display-safe FileChanges trajectory for one Attempt.  It is
+ * deliberately a domain structure rather than a table frame: windows retain
+ * their temporal order while `paths` gives a separately derived net summary.
+ */
 export interface FileChangesDomainDetail {
-  readonly collection: JsonValue;
-  readonly changes: readonly {
-    readonly changeId: string;
+  readonly attribution: ClosedFileChangesAttribution;
+  readonly collection: ClosedFileChangesCollection;
+  readonly trajectory: readonly ClosedFileChangeWindow[];
+  readonly paths: readonly {
     readonly path: string;
-    readonly kind: string;
-    readonly before: JsonValue;
-    readonly after: JsonValue;
+    readonly changes: readonly {
+      readonly windowId: string;
+      readonly changeId: string;
+    }[];
+    readonly net: FileChangesNet;
   }[];
 }
 

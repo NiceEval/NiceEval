@@ -19,7 +19,7 @@
   │    t.send()                              #   驱动 agent(Adapter 在沙箱里跑 CLI,解析成 events);send 窗口内的变化归因给 agent
   │    断言…                                 #   t.sandbox.fileChanged 等归因断言读 agent 归因增量
   │    t.sandbox.upload* / runShell         # send 窗口外的普通 eval 归因操作
-  → workspace.diff                         # 折叠全部 send 窗口；失败后果由本 Attempt 的证据依赖决定
+  → workspace.diff                         # 冻结全部 send 区间端点轨迹；失败后果由本 Attempt 的证据依赖决定
   → assertions.evaluate → telemetry.collect   # 断言 finalize + Verdict 语义确定(judge 调用在此)、trace 收口
   → Agent runtime teardown                 # finally:agent 收尾先行
   → 已登记 cleanup(全局逆序)               # context.onCleanup() 登记的清理:第二作者 layer 先清,template owner 后清,层内命令逆序
@@ -90,20 +90,23 @@ export default defineEval({
 - **归因排除清单,runner 私有、baseline 时冻结。** 默认在任意目录深度排除 `.git`、`node_modules`、`__pycache__`、Python venv(`*venv*/`)、常见构建输出与包管理器缓存。不排除的话,prepare 命令里一次 `npm install` 或 agent 自建一次 venv 就会让分类账哈希成千上万个依赖文件,后续区间的二进制与缓存变化持续放大 object 库。
 - `diff.ignore` / `diff.include` 使用 workdir 根的 gitignore 风格 glob：无 `/` 的 pattern 匹配任意深度的同名项，含 `/` 的 pattern 从 workdir 根匹配，尾 `/` 表示目录。项目自己的 ignore 规则**不**参与归因判断——被项目 ignore 的文件照常入账。
 - **nested Git repository 不得变成证据盲区。** 私有 ledger 发现索引 mode `160000`（submodule / nested repo 的 gitlink）立即让当前阶段报执行错误，并列出路径与修法：被测 checkout 应直接位于 `workdir` 根；确实不参与评分的 nested repo 应由 `diff.ignore` 整体排除。只打印 Git warning 后继续会让 repo 内普通文件修改从 agent diff 静默消失，禁止这种降级。
-- **agent 归因增量 = 逐区间 delta 序列。** `workspace.diff` 阶段从分类账导出每个 send 区间自己的 before/after。collector 以该冻结输入形成 origin Attempt 的 `FileChanges` closure(契约见 [Record · Architecture](../record/architecture.md))。
-- **不做跨区间压缩。** 区间之间可能夹着 eval 写入，压缩会把 eval 的修改夹带进 agent 的账。「创建又删除」或「改完又改回」也会被压没。文件级摘要(`net` / 触及区间)与 `fileChanged(path)` 读取的最后触及区间终态都是读取面从区间序列派生的视图。agent 区间内发生过的改动不因 eval 事后重写同一路径而被抹掉。
+- **agent 归因增量 = 按 send 区间排列的端点轨迹。** `workspace.diff` 阶段从分类账导出每个 send 区间自己的 before/after。collector 在 capture freeze（捕获封口）时，以此形成 origin Attempt 的 `FileChanges` closure（契约见 [Record · Architecture](../record/architecture.md)）。
+- **不做跨 send 区间压缩。** 区间之间可能夹着 Eval 写入，压缩会把 Eval 的修改夹带进 agent 的账。「创建又删除」或「改完又改回」也会丢失。持久 File Changes 不保存文件级 `net` 或 hunk。`fileChanged(path)` 与可靠的 `net` 都是读取面从轨迹派生的结果；agent 区间内发生过的改动不因 Eval 事后重写同一路径而消失。
 - **导出往返是常数次。** `workspace.diff` 用一条沙箱内命令完成**全部** agent 区间的路径枚举、文本 blob 读取与二进制尺寸统计,结果写进沙箱内的导出文件,宿主经文件通道一次下载并在宿主侧校验。provider 往返数与区间数、文件数都无关,不能退化成逐文件或逐区间的远端调用,也不把大证据灌进命令 stdout 通道。
 - 导出对 Sandbox 侧的全部要求是 git 与 POSIX shell 工具(分类账本身已要求 git),不要求 node、python 等运行时。
-- 单区间上限:最多导出 10,000 个路径、64 MiB 文本 blob 证据,预算只数真正要传输的字节(文本 before/after 实际字节)。
-- 二进制不内联内容、只记字节数,不占预算;超过单文件阈值(1 MiB)的文本按二进制同款处理——记 `status` 与字节数、内容显式省略(`elided`,契约见 [Record · Architecture](../record/architecture.md)),同样不占预算。
-- 尺寸核算先于内容传输。
-- 内容被省略的条目,存在性与 `status` 断言照常成立;内容断言在读取那一刻如实报证据不可用,不静默判过或判败。
 
-导出命令、下载或内容校验失败时不得伪造空区间。
-非 optional 的 diff 消费者存在时，失败使对应 Assertion 的证据输入为 `unavailable`，并据此形成 `errored` Verdict。
-没有 required 消费者时，失败只在 origin Attempt 的 Observability diagnostics 留下
-`workspace-diff-unavailable`；不维护私有 `diff.json`，也不伪造空的 FileChanges。
-Runner 继续用已经取得的命令结果、事件与其它证据完成判定。
+- **固定限额与确定前缀。** 最多保留 256 个 send 区间。每个 send 区间最多 10,000 个 changes，整份 Attachment 也最多 10,000 个 changes。完整 text revision 与单个 blob 最多 1 MiB；最多保留 20,000 个 blobs、128 MiB blob bytes 和 16 MiB payload JSON。归因 policy 的 `include` 与 `ignore` 各最多 256 项，每项最多 4,096 UTF-8 bytes。
+- **固定截断顺序。** collector 先按 send sequence，再按同一 send 区间内 path 的 ASCII 字节序处理。达到任一采集上限时，它停止在第一个放不下的候选，不跳过该项去采后面的项。已捕获的安全前缀连同 `collection-cap-reached` limitation 写成 `partial`。
+- **内容形态不偷换。** 二进制或超过 1 MiB 的 text revision 写为 `elided`，带 `binary` 或 `oversized-text` 原因与 byteLength；这本身是完整采集。content blob 碰到 collection cap 时，text content 写为 `omitted(collection-cap)` 并形成 partial。尺寸在传输前核算。内容被省略时，路径与状态断言仍可确定，依赖文本的断言如实成为 `unavailable`。
+
+File Changes collector 对 Sandbox Attempt 适用时必须封口一个 Attachment。完整空轨迹写
+`collection.state: "complete"`；导出、下载或内容校验失败，以及中断，写带安全前缀（可为空）和 limitation 的
+`collection.state: "partial"`。它们都不能伪装成 `not-recorded` 或空变化。只有 collector 不适用于该
+Attempt 时，family 才不写入并在读取时成为 `not-recorded`。
+
+非 optional 的 diff 消费者需要未取得的部分时，对应 Assertion 的证据输入为 `unavailable`，并据此形成
+`errored` Verdict。没有 required 消费者时，partial File Changes 仍持久保存，并在 origin Attempt 的
+Observability diagnostics 留下安全问题。Runner 继续用已经取得的命令结果、事件与其它证据完成判定。
 
 FileChanges 的持久读取只由 `available`、`not-recorded`、`unsupported` 或 `invalid` 四态表示；I/O 或权限失败在形成读取值前仍是 typed Record read error。
 这条 required / supplemental 分界的单源在 [Assertion 证据与完整性](../assertions/architecture/evidence.md#判定依赖与补充证据)。
@@ -133,7 +136,7 @@ operation 的 label 同样有界、脱敏,由拥有该逻辑工作的 producer �
 
 阶段与时间树口径见 [Phase Timings](../../engineering/benchmark/README.md)。终端与网页都通过 [Reports](../reports/README.md) 请求由 Analysis `query()` 闭合的 Observability DomainView。
 
-核心固定的是这条调用链本身:Case 就绪后先按 owner 顺序执行两层 prepare 命令与 agent.ensure 循环,再打分类账 baseline；`test(t)` 中的普通上传、turn 和判分命令按源码顺序执行。agent diff 只折叠 `send` 区间，区间外写入属于 eval 归因。完整路径见 [Eval 用例 · 沙箱 coding 任务](../eval/use-case/sandbox-coding.md)。
+核心固定的是这条调用链本身:Case 就绪后先按 owner 顺序执行两层 prepare 命令与 agent.ensure 循环,再打分类账 baseline；`test(t)` 中的普通上传、turn 和判分命令按源码顺序执行。agent diff 只保留 `send` 区间轨迹，区间外写入属于 Eval 归因。完整路径见 [Eval 用例 · 沙箱 coding 任务](../eval/use-case/sandbox-coding.md)。
 
 provider 的可写保证不止 `workdir`。
 runner 要在 workdir 外的私有路径放沙箱侧运行时文件——OTLP 采集器、变更分类账——落点是系统临时目录,镜像必须让它对运行用户可写。

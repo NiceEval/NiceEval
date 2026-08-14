@@ -203,7 +203,10 @@ type AssertionLimitationV1 =
 
 `byteLength`、`fieldCount`、`captured`、`knownTotal` 与 `omittedBytes` 都是 finite non-negative integers；preview 最多 8 KiB。coverage 是 entry-owned producer 事实，不是 Record envelope 的字段。`complete` 不允许 limitations；`partial` 至少有一个相符 limitation；`unavailable` 与 `not-applicable` 不伪装成空 evidence。snapshot、preview 与 blob bytes 都先经过 secret/redaction policy，不能携带函数、native bytes 或当前 worktree。
 
-Sandbox diff Assertion 仍可保存实际检查过的路径、摘要和 evidence，但不能借用 FileChanges 的 blob ref。完整 file revision 只属于 FileChanges family；需要同时展示 diff 与 Assertion 的 consumer 由 Analysis 组合两个已验证的固定 family，而不是建立跨 owner ref。
+Sandbox diff Assertion 仍可保存实际检查过的路径、摘要和 evidence，但不能借用 FileChanges 的 blob ref。完整 file revision
+只属于 FileChanges family；该 family 保存按 send 区间排列的端点轨迹，不保存 `net` 或 hunk。需要同时展示 trajectory
+与 Assertion 的 consumer 由 Analysis 组合两个已验证的固定 family，而不是建立跨 owner ref。collector 的 partial
+前缀不能被 Assertion 或 Report 补成完整事实。
 
 scope Assertion 将 call-time vector cut 归一为 snapshot；它不保留一个可在 reader 时打开的 Session、Turn、Conversation 或其它 Attachment ref。
 

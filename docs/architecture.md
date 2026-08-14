@@ -188,10 +188,10 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 diff 采集：
    作者按自己的顺序调 `t.sandbox.writeText` / `writeBytes` / `uploadDirectory`(准备起始文件)与 `t.sandbox.runCommand(..., { cwd })`(手工跑校验命令)。
    `t.send()` 驱动 agent——adapter 在沙箱里跑 CLI、抓 transcript、归一化成标准事件流。
    顺序、次数、要不要对 agent 隐藏某些文件,全部是 `test(t)` 里的普通代码决定;核心不插手,也不预设"先上传什么、后上传什么"这种固定编排。
-7. **折叠 agent 归因增量。
-   ** `test(t)` 跑完后从分类账取得各 send 区间的变更事实，折叠其并集，供
-   `fileChanged` / `notInDiff` 等归因断言的 finalize 与固定 file-changes family 使用。fixture
-   写入和 agent 跑完后手工写入的校验材料都不在其中。
+7. **封口 agent 归因轨迹。
+   ** `test(t)` 跑完后从分类账取得每个 send 区间自己的 before/after 端点，按 send 顺序形成完整轨迹，供
+   `fileChanged` / `notInDiff` 等归因断言的 finalize 与固定 file-changes family 使用。它不把跨 send 区间的
+   路径合成并集、`net` 或 hunk。fixture 写入和 agent 跑完后手工写入的校验材料都不在其中。
 8. **断言求值。
    ** `test(t)` 里写入的作用域断言、值断言与 Judge，连同手工校验命令的结果断言，全部形成结构化 assertion 结果。
 9. **判定。

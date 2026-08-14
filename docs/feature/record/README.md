@@ -68,7 +68,7 @@ NiceEval current 固定 Attachment catalog 有以下五个 family（附件族）
 |---|---|---|
 | `niceeval.assertions` | `{ attempt }` | AssertionResult、Evidence 与已封口的检查结果 |
 | `niceeval.observability` | `{ attempt, run }` | 对话、命令、用量、时间、诊断与 OTel 归一观察 |
-| `niceeval.file-changes` | `{ attempt }` | 此次 Attempt 观察到的文件变化 |
+| `niceeval.file-changes` | `{ attempt }` | 归因策略、采集状态与按 send 区间排序的文件变化轨迹 |
 | `niceeval.sources` | `{ run }` | 当时源码闭包的 manifest 与 own blob |
 | `niceeval.artifacts` | `{ attempt, run }` | 有媒体类型、身份和 own blob 的大型文件 |
 
@@ -80,11 +80,25 @@ durable family。
 NiceEval 也可以在后续 catalog 中加入另一个固定 family，例如 `niceeval.energy`。这只增加该 family 自己的
 definition、`owners` map 与 schemaVersion，不升级 Core。较早 reader 保留它在磁盘上的完整目录和 bytes，
 忽略它并继续读取 Core 与认识的 family；只有请求 energy 的 AnalysisInput 或 DomainView 才得到
-`unsupported` / `not-available`。
+`unsupported`。
 
 Core 的每个 leaf 都是 JSON，禁止 blob ref。Attachment owner value 固定使用 `json-with-blob-refs` leaf；它的
 payload 仍是 exact JSON，只在需要时含 definition 认可的 ref。一个 ref 只能指向同 owner、同 family 下的一份
 own blob。完整 payload 与 closure 校验成功后才形成可用值。
+
+## File Changes：保留按 send 区间的轨迹
+
+`niceeval.file-changes` 的 envelope 固定为
+`{ family: "niceeval.file-changes", schemaVersion: 1 }`。它保存归因策略、采集状态和每个 send 区间的端点变化
+轨迹，不保存文件级 `net`（净变化）、patch 或 hunk。`net` 只在 Analysis 能证明端点连续时形成。
+
+例如，agent 在 `turn1` 创建 `src/answer.ts`，Eval 随后改过该文件，agent 又在 `turn2` 修改它。Attachment 保留两条
+变化：`turn1` 的 `created` 和 `turn2` 的 `modified`。同一路径因此可在不同 send 区间重复出现；把它们合成一条
+路径事实会把 Eval 的中间写入错误归给 agent。
+
+完整采集也可以没有路径变化：send 区间仍按顺序存在，`changes` 可以为空。采集已开始后失败或中断时，Attachment
+保留安全的已捕获前缀并标为 `partial`，不会把它伪装成空变化。只有采集器根本不适用时，这个 fixed family 才缺失并在
+读取时成为 `not-recorded`。
 
 ## current 与 maintenance
 
@@ -96,7 +110,8 @@ reader、writer 和固定 family 必须接受的 root、Core 与 Attachment shap
 身份、预期 Slot 和问题的 `RecordSelection`。查询需要某条 trace、diff 或 Evidence 时，才读取并校验对应
 Attachment。
 
-未来 schemaVersion 变化时，maintenance 只执行固定的相邻步骤，例如 `1 → 2`。兼容性按对象判断：
+Record 的首次正式格式是 schemaVersion `1`，没有已发布 predecessor（前代格式）。未来 schemaVersion 变化时，
+maintenance 只执行固定的相邻步骤，例如 `1 → 2`。兼容性按对象判断：
 
 | 碰到的 bytes | ordinary reader 的动作 |
 |---|---|
@@ -107,7 +122,7 @@ Attachment。
 | 带 `/vN` 后缀的未发布 family 草案 | `unsupported-format`；它不能伪装为独立 future family |
 
 未知 family 的局部容忍不让 reader 猜测 payload 或 blob closure，也不让 Report 看见原始内容。它只保护可读的
-历史；依赖该 family 的能力保持 `unsupported` / `not-available`，直到使用认识该 definition 的 NiceEval。
+历史；依赖该 family 的能力保持 `unsupported`，直到使用认识该 definition 的 NiceEval。
 
 ## 从 Record 到闭合输出
 

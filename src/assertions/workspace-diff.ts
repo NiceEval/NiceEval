@@ -5,7 +5,7 @@ import {
 } from "./diff.ts";
 
 export interface AgentWorkspaceDiffPolicy {
-  readonly defaultPolicy: "niceeval-default-excludes";
+  readonly defaultPolicy: "niceeval.sandbox-ledger/default-excludes/v1";
   readonly include: readonly string[];
   readonly ignore: readonly string[];
 }
@@ -76,6 +76,15 @@ function frozenArray<Value>(items: readonly Value[]): readonly Value[] {
   return Object.freeze([...items]);
 }
 
+/** Durable ordering is ASCII code-unit ordering; locale collation is never evidence ordering. */
+function compareAscii(left: string, right: string): number {
+  return left === right ? 0 : left < right ? -1 : 1;
+}
+
+function canonicalPolicyEntries(entries: readonly string[]): readonly string[] {
+  return frozenArray([...new Set(entries)].sort(compareAscii));
+}
+
 function parseAgentSendWindowIdentity(label: string): AgentSendWindowIdentity {
   const primary = /^turn([1-9][0-9]*)$/.exec(label);
   if (primary !== null) return Object.freeze({ turn: Number(primary[1]) });
@@ -84,6 +93,13 @@ function parseAgentSendWindowIdentity(label: string): AgentSendWindowIdentity {
     return Object.freeze({ session: Number(session[1]), turn: Number(session[2]) });
   }
   throw new Error(`Workspace diff received an invalid agent send window label ${JSON.stringify(label)}`);
+}
+
+/** The durable window id preserves the send identity independently of its attachment sequence. */
+export function agentSendWindowId(identity: AgentSendWindowIdentity): string {
+  return identity.session === undefined
+    ? `turn${identity.turn}`
+    : `session${identity.session}/turn${identity.turn}`;
 }
 
 function endpointFor(
@@ -253,8 +269,8 @@ function elidedEndpointForBoundedHunks(
 function freezePolicy(policy: AgentWorkspaceDiffPolicy): AgentWorkspaceDiffPolicy {
   return Object.freeze({
     defaultPolicy: policy.defaultPolicy,
-    include: frozenArray(policy.include),
-    ignore: frozenArray(policy.ignore),
+    include: canonicalPolicyEntries(policy.include),
+    ignore: canonicalPolicyEntries(policy.ignore),
   });
 }
 
@@ -265,7 +281,7 @@ export function createAgentWorkspaceDiff(input: {
 }): AgentWorkspaceDiff {
   const windows = input.windows.map((window) => {
     const changes = Object.entries(window.changes)
-      .sort(([left], [right]) => left.localeCompare(right))
+      .sort(([left], [right]) => compareAscii(left, right))
       .map(([path, change]) => {
         assertCanonicalWorkspaceRelativePath(path, "workspace diff ledger path");
         let before = endpointFor(change, "before");
@@ -300,7 +316,7 @@ export function agentWorkspaceDiffPaths(
   document: AgentWorkspaceDiff,
 ): readonly string[] {
   return frozenArray(
-    [...new Set(document.windows.flatMap((window) => window.changes.map((change) => change.path)))].sort(),
+    [...new Set(document.windows.flatMap((window) => window.changes.map((change) => change.path)))].sort(compareAscii),
   );
 }
 

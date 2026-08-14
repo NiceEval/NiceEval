@@ -275,10 +275,15 @@ export function readFixedRecordAttachment<
       });
     }
     if (envelope.right.schemaVersion !== input.descriptor.schemaVersion) {
-      // This directory is one of the current fixed families, not an unknown
-      // future sibling. Without a declared, contiguous upgrade path its
-      // non-current bytes are corrupt for this reader and must fail closed.
-      return attachmentInvalid<Payload>(["attachment.json", "schemaVersion"]);
+      // A well-formed envelope for a known family can still carry a version
+      // this reader cannot interpret. Only a reachable older version asks for
+      // migration; all other non-current versions remain local unsupported
+      // data, rather than being misclassified as corrupt bytes.
+      return Object.freeze({
+        state: "unsupported" as const,
+        family: input.descriptor.family,
+        schemaVersion: envelope.right.schemaVersion,
+      });
     }
 
     const payloadDocument = yield* readJson(
