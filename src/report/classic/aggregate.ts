@@ -187,7 +187,10 @@ export const passRate: ClassicCalculation = Object.freeze({
   compute: (units: readonly ClassicEvalUnit[]): MetricValue => {
     const values: number[] = [];
     const refs: string[] = [];
+    let total = 0;
     for (const unit of units) {
+      if (unit.evaluationKind !== "pass") continue;
+      total += 1;
       const scores: number[] = [];
       for (const attempt of unit.attempts) {
         if (attempt.target !== undefined) {
@@ -208,7 +211,7 @@ export const passRate: ClassicCalculation = Object.freeze({
         ? null
         : values.reduce((sum, score) => sum + score, 0) / values.length,
       samples: values.length,
-      total: units.length,
+      total,
       basis: "eval",
       unit: "%",
       better: "higher",
@@ -217,6 +220,60 @@ export const passRate: ClassicCalculation = Object.freeze({
     });
   },
 });
+
+/**
+ * Score Eval primary reading: mean complete earned score within each Eval,
+ * then sum those Eval readings across the scope. Partial, unavailable,
+ * skipped, and errored Attempts are not comparable and stay out.
+ */
+export const totalScore: ClassicCalculation = Object.freeze({
+  id: "totalScore",
+  compute: (units: readonly ClassicEvalUnit[]): MetricValue => {
+    const evalScores: number[] = [];
+    const refs: string[] = [];
+    let total = 0;
+    for (const unit of units) {
+      if (unit.evaluationKind !== "score") continue;
+      total += 1;
+      const attemptScores: number[] = [];
+      for (const attempt of unit.attempts) {
+        if (attempt.target !== undefined) refs.push(attempt.target.locator);
+        if (scoreStatus(attempt) === "scored" && attempt.score?.state === "complete") {
+          attemptScores.push(attempt.score.earned);
+        }
+      }
+      if (attemptScores.length > 0) {
+        evalScores.push(attemptScores.reduce((sum, score) => sum + score, 0) / attemptScores.length);
+      }
+    }
+    return metricValue({
+      value: evalScores.length === 0 ? null : evalScores.reduce((sum, score) => sum + score, 0),
+      samples: evalScores.length,
+      total,
+      basis: "eval",
+      better: "higher",
+      refs,
+    });
+  },
+});
+
+export type ScoringComposition = "pass" | "score" | "mixed";
+export type ScoreStatus = "scored" | "errored" | "skipped";
+
+export function scoringComposition(units: readonly ClassicEvalUnit[]): ScoringComposition {
+  const hasPass = units.some((unit) => unit.evaluationKind === "pass");
+  const hasScore = units.some((unit) => unit.evaluationKind === "score");
+  return hasPass && hasScore ? "mixed" : hasScore ? "score" : "pass";
+}
+
+export function scoreStatus(
+  attempt: ClassicEvalUnit["attempts"][number],
+): ScoreStatus | undefined {
+  if (attempt.evaluationKind !== "score") return undefined;
+  if (attempt.verdict === "skipped") return "skipped";
+  if (attempt.verdict === "errored" || attempt.score?.state !== "complete") return "errored";
+  return "scored";
+}
 
 /** Equal-weight Eval mean of per-Eval attempt means. Missing Attempt values stay out. */
 export function meanMetric(

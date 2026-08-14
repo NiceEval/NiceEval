@@ -10,7 +10,10 @@ export {
   meanMetric,
   passRate,
   rollup,
+  scoreStatus,
+  scoringComposition,
   tokens,
+  totalScore,
   totalAttempts,
 } from "./aggregate.ts";
 export type {
@@ -21,6 +24,8 @@ export type {
   Reducer,
   RollupCalculation,
   RollupOptions,
+  ScoreStatus,
+  ScoringComposition,
 } from "./aggregate.ts";
 
 export {

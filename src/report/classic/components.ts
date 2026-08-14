@@ -2,6 +2,9 @@ import {
   costUSD,
   foldEvalVerdict,
   passRate,
+  scoreStatus,
+  scoringComposition,
+  totalScore,
   totalAttempts,
 } from "./aggregate.ts";
 import {
@@ -255,11 +258,15 @@ function metricNumericFromUnknown(value: unknown): number | null {
 
 export const SampleSummary = defineComponent<{ readonly input?: Sample }>((props, ctx) => {
   const scope = props.input ?? ctx.scope;
+  const composition = scoringComposition(scope.units);
   const experiments = new Set(scope.units.map((unit) => unit.experimentId));
   const scoredAttempts = scope.attempts.filter((attempt) =>
-    attempt.verdict === "passed" || attempt.verdict === "failed" || attempt.verdict === "errored"
+    attempt.evaluationKind === "score"
+      ? scoreStatus(attempt) === "scored" || scoreStatus(attempt) === "errored"
+      : attempt.verdict === "passed" || attempt.verdict === "failed" || attempt.verdict === "errored"
   );
   const overall = passRate.compute(scope.units);
+  const score = totalScore.compute(scope.units);
   const results = evalResultCounts(scope.units);
   const totalCost = totalAttempts(scope.units, "costUSD", { unit: "$", better: "lower" });
   const costNote = totalCost.samples < totalCost.total
@@ -273,10 +280,18 @@ export const SampleSummary = defineComponent<{ readonly input?: Sample }>((props
   return [
     reportGrid({
       cells: [
-        reportStat({
-          label: localize(scope, { en: "Pass rate", "zh-CN": "通过率" }),
-          value: formatMetricDisplay(overall),
-        }),
+        ...(composition === "score"
+          ? []
+          : [reportStat({
+            label: localize(scope, { en: "Pass rate", "zh-CN": "通过率" }),
+            value: formatMetricDisplay(overall),
+          })]),
+        ...(composition === "pass"
+          ? []
+          : [reportStat({
+            label: localize(scope, { en: "Total score", "zh-CN": "总分" }),
+            value: formatMetricDisplay(score),
+          })]),
         reportStat({
           label: localize(scope, { en: "Experiments", "zh-CN": "实验" }),
           value: String(experiments.size),
@@ -290,7 +305,10 @@ export const SampleSummary = defineComponent<{ readonly input?: Sample }>((props
           value: String(scoredAttempts.length),
         }),
         reportStat({
-          label: localize(scope, { en: "Eval results", "zh-CN": "题目结果" }),
+          label: localize(scope, {
+            en: composition === "score" ? "Score results" : "Eval results",
+            "zh-CN": composition === "score" ? "成绩结果" : "题目结果",
+          }),
           value: results.display,
         }),
         reportStat({
@@ -342,8 +360,17 @@ export interface ClassicScatterProps {
   readonly input?: Sample;
 }
 
-export const ExperimentScatter = defineComponent<ClassicScatterProps>((props, ctx): ReportBlock => {
+export const ExperimentScatter = defineComponent<ClassicScatterProps>((props, ctx) => {
   const scope = props.input ?? ctx.scope;
+  const composition = scoringComposition(scope.units);
+  if (composition === "mixed") {
+    return [experimentScatter(scope, "passRate"), experimentScatter(scope, "totalScore")];
+  }
+  return experimentScatter(scope, composition === "score" ? "totalScore" : "passRate");
+});
+ExperimentScatter.displayName = "ExperimentScatter";
+
+function experimentScatter(scope: Sample, reading: "passRate" | "totalScore"): ReportBlock {
   const connect = Object.values(scope.profiles).some((profile) => profile.labels?.line !== undefined);
   const grouped = new Map<string, ReturnType<typeof experimentPoints>[number][]>();
   for (const point of experimentPoints(scope)) {
@@ -353,9 +380,11 @@ export const ExperimentScatter = defineComponent<ClassicScatterProps>((props, ct
     else existing.push(point);
   }
   return reportScatter({
-    title: localize(scope, { en: "Experiments", "zh-CN": "实验" }),
+    title: reading === "totalScore"
+      ? localize(scope, { en: "Scores", "zh-CN": "成绩" })
+      : localize(scope, { en: "Experiments", "zh-CN": "实验" }),
     xLabel: "costUSD",
-    yLabel: "passRate",
+    yLabel: reading,
     connect,
     series: [...grouped.entries()].sort((left, right) => compareText(left[0], right[0])).map(([label, points]) =>
       Object.freeze({
@@ -364,9 +393,9 @@ export const ExperimentScatter = defineComponent<ClassicScatterProps>((props, ct
           Object.freeze({
             key: point.experimentId,
             x: metricNumeric(point.costUSD),
-            y: metricNumeric(point.passRate),
+            y: metricNumeric(point[reading]),
             xDisplay: formatMetricDisplay(point.costUSD),
-            yDisplay: formatMetricDisplay(point.passRate),
+            yDisplay: formatMetricDisplay(point[reading]),
             ...(classicExperimentTarget(point.experimentId) === undefined
               ? {}
               : { target: classicExperimentTarget(point.experimentId) }),
@@ -375,8 +404,7 @@ export const ExperimentScatter = defineComponent<ClassicScatterProps>((props, ct
       }),
     ),
   });
-});
-ExperimentScatter.displayName = "ExperimentScatter";
+}
 
 export interface ClassicTableProps {
   readonly input?: Sample;
@@ -481,6 +509,7 @@ function scatterSeriesKey(sample: Sample, experimentId: string): string {
 function experimentPoints(sample: Sample): readonly {
   readonly experimentId: string;
   readonly passRate: ReturnType<typeof passRate.compute>;
+  readonly totalScore: ReturnType<typeof totalScore.compute>;
   readonly costUSD: ReturnType<typeof costUSD.compute>;
 }[] {
   return Object.freeze(
@@ -488,6 +517,7 @@ function experimentPoints(sample: Sample): readonly {
       Object.freeze({
         experimentId,
         passRate: passRate.compute(units),
+        totalScore: totalScore.compute(units),
         costUSD: costUSD.compute(units),
       }),
     ),
@@ -501,7 +531,17 @@ function evalResultCounts(units: readonly ClassicEvalUnit[]): {
   let passed = 0;
   let failed = 0;
   let errored = 0;
+  let scored = 0;
+  let skipped = 0;
+  const hasPass = units.some((unit) => unit.evaluationKind === "pass");
   for (const unit of units) {
+    if (unit.evaluationKind === "score") {
+      const statuses = unit.attempts.map(scoreStatus).filter((status) => status !== undefined);
+      if (statuses.includes("errored")) errored += 1;
+      else if (statuses.includes("scored")) scored += 1;
+      else skipped += 1;
+      continue;
+    }
     const folded = foldEvalVerdict(unit);
     if (folded === "passed") {
       passed += 1;
@@ -513,11 +553,12 @@ function evalResultCounts(units: readonly ClassicEvalUnit[]): {
   }
   return Object.freeze({
     display: [
-      `${passed} passed`,
-      `${failed} failed`,
+      ...(hasPass ? [`${passed} passed`, `${failed} failed`] : []),
+      ...(scored > 0 ? [`${scored} scored`] : []),
       ...(errored > 0 ? [`${errored} errored`] : []),
+      ...(skipped > 0 ? [`${skipped} skipped`] : []),
     ].join(" · "),
-    samples: passed + failed + errored,
+    samples: passed + failed + scored + errored,
   });
 }
 

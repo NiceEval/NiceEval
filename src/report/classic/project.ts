@@ -1,5 +1,7 @@
 import type { AnalysisRun, AnalysisSample, AnalysisSlot, SlotId } from "../../analysis/index.ts";
 import type { EvaluationPlanView } from "../../eval/record/evaluation-plan.ts";
+import type { EvaluationKind } from "../../eval/record/evaluation.ts";
+import type { Score } from "../../eval/record/score.ts";
 import type {
   AttemptTimingView,
   UsageView,
@@ -24,6 +26,7 @@ import {
 export interface ClassicProjectedInputs {
   readonly evaluationPlan?: ProjectedSample<ProjectionAccess, unknown>;
   readonly verdict?: ProjectedSample<ProjectionAccess, unknown>;
+  readonly score?: ProjectedSample<ProjectionAccess, unknown>;
   readonly timing?: ProjectedSample<ProjectionAccess, unknown>;
   readonly usage?: ProjectedSample<ProjectionAccess, unknown>;
 }
@@ -39,11 +42,13 @@ export function buildClassicSample(input: {
   const runsById = new Map(runs.map((run) => [run.runId, run]));
   const plans = selectedRunIndex(input.projections.evaluationPlan);
   const verdicts = attemptSlotIndex(input.projections.verdict);
+  const scores = attemptSlotIndex(input.projections.score);
   const timings = attemptSlotIndex(input.projections.timing);
   const usages = attemptSlotIndex(input.projections.usage);
   const units = new Map<string, {
     readonly experimentId: string;
     readonly evalId: string;
+    readonly evaluationKind: EvaluationKind;
     readonly attempts: ClassicAttemptRow[];
   }>();
 
@@ -65,6 +70,7 @@ export function buildClassicSample(input: {
     const group = existing ?? {
       experimentId: coordinate.experimentId,
       evalId: coordinate.evalId,
+      evaluationKind: coordinate.kind,
       attempts: [],
     };
     if (existing === undefined) {
@@ -76,7 +82,9 @@ export function buildClassicSample(input: {
       experimentId: coordinate.experimentId,
       evalId: coordinate.evalId,
       attempt: coordinate.attempt,
+      evaluationKind: coordinate.kind,
       verdict: asVerdict(verdicts.get(slotKey(slot.runId, slot.slotId))),
+      score: asScore(scores.get(slotKey(slot.runId, slot.slotId))),
       timing: asTiming(timings.get(slotKey(slot.runId, slot.slotId))),
       usage: asUsage(usages.get(slotKey(slot.runId, slot.slotId))),
     }));
@@ -92,6 +100,7 @@ export function buildClassicSample(input: {
       return Object.freeze({
         experimentId: unit.experimentId,
         evalId: unit.evalId,
+        evaluationKind: unit.evaluationKind,
         subject: Object.freeze({
           experimentId: unit.experimentId,
           evalId: unit.evalId,
@@ -130,7 +139,9 @@ function projectAttempt(input: {
   readonly experimentId: string;
   readonly evalId: string;
   readonly attempt: number;
+  readonly evaluationKind: EvaluationKind;
   readonly verdict?: Verdict;
+  readonly score?: Score;
   readonly timing?: AttemptTimingView;
   readonly usage?: UsageView;
 }): ClassicAttemptRow {
@@ -144,7 +155,9 @@ function projectAttempt(input: {
     startedAt: input.run.startedAt,
     completedAt: input.run.completedAt,
     ...(attemptId === undefined ? {} : { attemptId, target: classicAttemptTarget(attemptId) }),
+    evaluationKind: input.evaluationKind,
     ...(verdict === undefined ? {} : { verdict }),
+    ...(input.score === undefined ? {} : { score: input.score }),
     durationMs: input.timing === undefined ? null : durationMsFromTiming(input.timing),
     costUSD: input.usage === undefined ? null : costUSDFromUsage(input.usage),
     tokens: input.usage === undefined ? null : tokensFromUsage(input.usage),
@@ -242,7 +255,12 @@ function isAttemptSlotSample(
 function coordinateForSlot(
   attachment: ProjectedRecordAttachmentResult<unknown>,
   slotId: SlotId,
-): { readonly experimentId: string; readonly evalId: string; readonly attempt: number } | undefined {
+): {
+  readonly experimentId: string;
+  readonly evalId: string;
+  readonly attempt: number;
+  readonly kind: EvaluationKind;
+} | undefined {
   if (attachment.state !== "available" || !isEvaluationPlanView(attachment.value)) {
     return undefined;
   }
@@ -254,6 +272,7 @@ function coordinateForSlot(
     experimentId: coordinate.experimentId,
     evalId: coordinate.evalId,
     attempt: coordinate.attempt,
+    kind: coordinate.kind,
   });
 }
 
@@ -275,6 +294,29 @@ function asVerdict(attachment: ProjectedRecordAttachmentResult<unknown> | undefi
     return value;
   }
   return undefined;
+}
+
+function asScore(attachment: ProjectedRecordAttachmentResult<unknown> | undefined): Score | undefined {
+  if (attachment?.state !== "available" || !isScore(attachment.value)) {
+    return undefined;
+  }
+  return attachment.value;
+}
+
+function isScore(value: unknown): value is Score {
+  if (typeof value !== "object" || value === null) return false;
+  const state = Reflect.get(value, "state");
+  if (state === "complete") {
+    return typeof Reflect.get(value, "earned") === "number" && Reflect.get(value, "comparable") === true;
+  }
+  if (state === "partial") {
+    return typeof Reflect.get(value, "earned") === "number"
+      && Array.isArray(Reflect.get(value, "reasons"))
+      && Reflect.get(value, "comparable") === false;
+  }
+  return state === "unavailable"
+    && Array.isArray(Reflect.get(value, "reasons"))
+    && Reflect.get(value, "comparable") === false;
 }
 
 function asTiming(

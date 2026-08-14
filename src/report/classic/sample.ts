@@ -1,4 +1,6 @@
 import type { AttemptId, RunId, UtcMillis } from "../../analysis/index.ts";
+import type { EvaluationKind } from "../../eval/record/evaluation.ts";
+import type { Score } from "../../eval/record/score.ts";
 import type { ReportDocument, ReportLinkTarget } from "../semantic/document.ts";
 import type { ClassicLocale } from "./localize.ts";
 import type { ClassicExperimentProfile } from "./origin.ts";
@@ -43,7 +45,9 @@ export interface ClassicAttemptRow {
   readonly completedAt: UtcMillis;
   readonly attemptId?: AttemptId;
   readonly target?: ClassicAttemptTarget;
+  readonly evaluationKind: EvaluationKind;
   readonly verdict?: ClassicVerdict;
+  readonly score?: Score;
   readonly durationMs: number | null;
   readonly costUSD: number | null;
   readonly tokens: number | null;
@@ -52,6 +56,7 @@ export interface ClassicAttemptRow {
 export interface ClassicEvalUnit {
   readonly experimentId: string;
   readonly evalId: string;
+  readonly evaluationKind: EvaluationKind;
   readonly subject: AggregationSubject;
   readonly attempts: readonly ClassicAttemptRow[];
 }

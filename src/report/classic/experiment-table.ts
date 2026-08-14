@@ -2,8 +2,13 @@ import {
   foldEvalVerdict,
   meanMetric,
   passRate,
+  scoreStatus,
+  scoringComposition,
   tokens,
+  totalScore,
   type ClassicCalculation,
+  type ScoreStatus,
+  type ScoringComposition,
 } from "./aggregate.ts";
 import { formatCellText, type Cell } from "./cell.ts";
 import type { MetricValue } from "./metric.ts";
@@ -41,7 +46,10 @@ interface TableContentRow {
 
 interface AttemptItem {
   readonly locator: string;
+  readonly evaluationKind: "pass" | "score";
   readonly verdict: "passed" | "failed" | "errored" | "skipped";
+  readonly score: MetricValue;
+  readonly scoreStatus?: ScoreStatus;
   readonly durationMs: MetricValue;
   readonly costUSD: MetricValue;
   readonly historical: boolean;
@@ -49,8 +57,10 @@ interface AttemptItem {
 
 interface EvalRow {
   readonly evalId: string;
+  readonly evaluationKind: "pass" | "score";
   readonly verdict: "passed" | "failed" | "errored" | "skipped";
   readonly endToEndPassRate: MetricValue;
+  readonly totalScore: MetricValue;
   readonly durationMs: MetricValue;
   readonly costUSD: MetricValue;
   readonly tokens: MetricValue;
@@ -61,8 +71,10 @@ interface ExperimentItem {
   readonly experimentId: string;
   readonly agent: string;
   readonly model?: string;
+  readonly scoring: ScoringComposition;
   readonly evalVerdicts: { passed: number; failed: number; errored: number; skipped: number };
   readonly endToEndPassRate: MetricValue;
+  readonly totalScore: MetricValue;
   readonly durationMs: MetricValue;
   readonly costUSD: MetricValue;
   readonly tokens: MetricValue;
@@ -75,6 +87,7 @@ const HEADER = {
   agent: "Agent",
   durationMs: "Avg. time",
   passRate: "Pass rate",
+  totalScore: "Total score",
   tokens: "Tokens",
   costUSD: "Cost",
   record: "Record",
@@ -136,6 +149,15 @@ function attemptMetricValue(value: number | null, unit: "ms" | "$"): MetricValue
 }
 
 function attemptCells(item: AttemptItem): Record<string, Cell> {
+  if (item.evaluationKind === "score") {
+    return {
+      entity: { kind: "locator", locator: item.locator },
+      totalScore: measureCell(item.score),
+      record: textCell(item.scoreStatus ?? "errored"),
+      durationMs: measureCell(item.durationMs),
+      costUSD: measureCell(item.costUSD),
+    };
+  }
   return {
     entity: {
       kind: "locator",
@@ -146,6 +168,22 @@ function attemptCells(item: AttemptItem): Record<string, Cell> {
     record: { kind: "verdict", verdict: item.verdict },
     durationMs: measureCell(item.durationMs),
     costUSD: measureCell(item.costUSD),
+  };
+}
+
+function scoreStatusCell(attempts: readonly AttemptItem[]): Cell {
+  const counts = { scored: 0, errored: 0, skipped: 0 };
+  for (const attempt of attempts) {
+    const status = attempt.scoreStatus;
+    if (status !== undefined) counts[status] += 1;
+  }
+  return {
+    kind: "composition",
+    segments: [
+      { label: "scored", count: counts.scored },
+      { label: "errored", count: counts.errored },
+      { label: "skipped", count: counts.skipped },
+    ],
   };
 }
 
@@ -187,11 +225,26 @@ function meanCells(cells: readonly MetricValue[], unit?: string): MetricValue {
   };
 }
 
+function sumCells(cells: readonly MetricValue[]): MetricValue {
+  const total = cells.reduce((sum, cell) => sum + cell.total, 0);
+  const samples = cells.reduce((sum, cell) => sum + cell.samples, 0);
+  const values = cells.map((cell) => cell.value).filter((value): value is number => value !== null);
+  return {
+    value: values.length === 0 ? null : values.reduce((sum, value) => sum + value, 0),
+    basis: "eval",
+    samples,
+    total,
+    refs: cells.flatMap((cell) => cell.refs),
+    better: "higher",
+  };
+}
+
 function groupPassRate(evalRows: readonly EvalRow[]): MetricValue {
   const evalMeans: number[] = [];
   let samples = 0;
   let total = 0;
   for (const row of evalRows) {
+    if (row.evaluationKind !== "pass") continue;
     total += row.endToEndPassRate.total;
     samples += row.endToEndPassRate.samples;
     if (row.endToEndPassRate.value !== null) evalMeans.push(row.endToEndPassRate.value);
@@ -232,8 +285,15 @@ function groupMetricValue(evalRows: readonly EvalRow[], cell: MetricValue): Cell
 function evalRow(row: EvalRow, columns: readonly ColumnSpec[], label: string): TableContentRow {
   const bag: Record<string, Cell> = {
     entity: textCell(label),
-    verdict: { kind: "verdict", verdict: row.verdict },
-    record: verdictCell(tallyVerdicts(row.attempts.map((attempt) => attempt.verdict))),
+    ...(row.evaluationKind === "pass"
+      ? {
+        verdict: { kind: "verdict" as const, verdict: row.verdict },
+        record: verdictCell(tallyVerdicts(row.attempts.map((attempt) => attempt.verdict))),
+      }
+      : {
+        totalScore: measureCell(row.totalScore),
+        record: scoreStatusCell(row.attempts),
+      }),
     durationMs: measureCell(row.durationMs),
     costUSD: measureCell(row.costUSD),
   };
@@ -251,7 +311,17 @@ function memberEvalId(member: LeafMember): string {
 }
 
 function groupPrimaryValue(evalRows: readonly EvalRow[]): number | null {
-  return groupPassRate(evalRows).value;
+  const composition = evalRowsComposition(evalRows);
+  if (composition === "mixed") return null;
+  return composition === "score"
+    ? sumCells(evalRows.map((row) => row.totalScore)).value
+    : groupPassRate(evalRows).value;
+}
+
+function evalRowsComposition(evalRows: readonly EvalRow[]): ScoringComposition {
+  const hasPass = evalRows.some((row) => row.evaluationKind === "pass");
+  const hasScore = evalRows.some((row) => row.evaluationKind === "score");
+  return hasPass && hasScore ? "mixed" : hasScore ? "score" : "pass";
 }
 
 function groupTableRow(
@@ -262,15 +332,24 @@ function groupTableRow(
   columns: readonly ColumnSpec[],
 ): TableContentRow {
   const evalRows = members.map((member) => member.row);
+  const composition = evalRowsComposition(evalRows);
   const bag: Record<string, Cell> = {
     entity: identityCell(segment, groupEntityDetail(evalRows.length)),
     durationMs: groupMetricValue(evalRows, meanCells(evalRows.map((row) => row.durationMs), "ms")),
-    passRate: groupMetricValue(evalRows, groupPassRate(evalRows)),
+    ...(composition === "score" ? {} : { passRate: groupMetricValue(evalRows, groupPassRate(evalRows)) }),
+    ...(composition === "pass"
+      ? {}
+      : { totalScore: groupMetricValue(evalRows, sumCells(evalRows.map((row) => row.totalScore))) }),
     tokens: groupMetricValue(evalRows, meanCells(evalRows.map((row) => row.tokens), "tokens")),
     costUSD: groupMetricValue(evalRows, meanCells(evalRows.map((row) => row.costUSD), "$")),
     record: evalRows.length === 0
       ? { kind: "missing", code: "noSamples" }
-      : verdictCell(tallyVerdicts(evalRows.flatMap((row) => row.attempts.map((attempt) => attempt.verdict)))),
+      : composition === "score"
+        ? scoreStatusCell(evalRows.flatMap((row) => row.attempts))
+        : verdictCell(tallyVerdicts(
+          evalRows.filter((row) => row.evaluationKind === "pass")
+            .flatMap((row) => row.attempts.map((attempt) => attempt.verdict)),
+        )),
   };
   return {
     key: `group:${pathKey}`,
@@ -374,10 +453,13 @@ function experimentRow(item: ExperimentItem, columns: readonly ColumnSpec[]): Ta
     model: item.model ? textCell(item.model) : { kind: "notApplicable" },
     agent: textCell(item.agent),
     durationMs: measureCell(item.durationMs),
-    passRate: measureCell(item.endToEndPassRate),
+    ...(item.scoring === "score" ? {} : { passRate: measureCell(item.endToEndPassRate) }),
+    ...(item.scoring === "pass" ? {} : { totalScore: measureCell(item.totalScore) }),
     tokens: measureCell(item.tokens),
     costUSD: measureCell(item.costUSD),
-    record: verdictCell(item.evalVerdicts),
+    record: item.scoring === "score"
+      ? scoreStatusCell(item.evalRows.flatMap((row) => row.attempts))
+      : verdictCell(item.evalVerdicts),
   };
   return {
     key: item.experimentId,
@@ -386,13 +468,18 @@ function experimentRow(item: ExperimentItem, columns: readonly ColumnSpec[]): Ta
   };
 }
 
-function experimentColumns(): ColumnSpec[] {
+function experimentColumns(composition: ScoringComposition): ColumnSpec[] {
   return [
     { key: "entity", header: HEADER.entity },
     { key: "model", header: HEADER.model },
     { key: "agent", header: HEADER.agent },
     { key: "durationMs", better: "lower", header: HEADER.durationMs },
-    { key: "passRate", better: "higher", header: HEADER.passRate },
+    ...(composition === "score"
+      ? []
+      : [{ key: "passRate", better: "higher" as const, header: HEADER.passRate }]),
+    ...(composition === "pass"
+      ? []
+      : [{ key: "totalScore", better: "higher" as const, header: HEADER.totalScore }]),
     { key: "tokens", better: "lower", header: HEADER.tokens },
     { key: "costUSD", better: "lower", header: HEADER.costUSD },
     { key: "record", header: HEADER.record },
@@ -408,7 +495,19 @@ function attemptItem(unit: ClassicEvalUnit, attempt: ClassicEvalUnit["attempts"]
   if (locator === undefined) return undefined;
   return {
     locator,
+    evaluationKind: unit.evaluationKind,
     verdict: attempt.verdict ?? "skipped",
+    score: {
+      value: attempt.score?.state === "complete" && scoreStatus(attempt) === "scored"
+        ? attempt.score.earned
+        : null,
+      basis: "eval",
+      samples: attempt.score?.state === "complete" && scoreStatus(attempt) === "scored" ? 1 : 0,
+      total: unit.evaluationKind === "score" ? 1 : 0,
+      refs: [locator],
+      better: "higher",
+    },
+    ...(unit.evaluationKind === "score" ? { scoreStatus: scoreStatus(attempt) ?? "errored" } : {}),
     durationMs: attemptMetricValue(attempt.durationMs, "ms"),
     costUSD: attemptMetricValue(attempt.costUSD, "$"),
     historical: false,
@@ -419,8 +518,10 @@ function evalItem(unit: ClassicEvalUnit): EvalRow {
   const folded = foldEvalVerdict(unit);
   return {
     evalId: unit.evalId,
+    evaluationKind: unit.evaluationKind,
     verdict: folded ?? "skipped",
     endToEndPassRate: passRate.compute([unit]),
+    totalScore: totalScore.compute([unit]),
     durationMs: meanMetric([unit], "durationMs", { unit: "ms", better: "lower" }),
     costUSD: meanMetric([unit], "costUSD", { unit: "$", better: "lower" }),
     tokens: computeOn([unit], tokens),
@@ -446,8 +547,13 @@ function experimentItems(sample: Sample): ExperimentItem[] {
       experimentId,
       agent: profile?.agent && profile.agent.length > 0 ? profile.agent : "unknown",
       ...(profile?.model === undefined || profile.model.length === 0 ? {} : { model: profile.model }),
-      evalVerdicts: tallyVerdicts(evalRows.flatMap((row) => row.attempts.map((attempt) => attempt.verdict))),
+      scoring: scoringComposition(units),
+      evalVerdicts: tallyVerdicts(
+        evalRows.filter((row) => row.evaluationKind === "pass")
+          .flatMap((row) => row.attempts.map((attempt) => attempt.verdict)),
+      ),
       endToEndPassRate: passRate.compute(units),
+      totalScore: totalScore.compute(units),
       durationMs: meanMetric(units, "durationMs", { unit: "ms", better: "lower" }),
       costUSD: meanMetric(units, "costUSD", { unit: "$", better: "lower" }),
       tokens: computeOn(units, tokens),
@@ -455,8 +561,10 @@ function experimentItems(sample: Sample): ExperimentItem[] {
     });
   }
   items.sort((a, b) => {
-    const left = a.endToEndPassRate.value;
-    const right = b.endToEndPassRate.value;
+    const composition = scoringComposition(sample.units);
+    if (composition === "mixed") return a.experimentId.localeCompare(b.experimentId);
+    const left = composition === "score" ? a.totalScore.value : a.endToEndPassRate.value;
+    const right = composition === "score" ? b.totalScore.value : b.endToEndPassRate.value;
     if (left === null && right === null) return a.experimentId.localeCompare(b.experimentId);
     if (left === null) return 1;
     if (right === null) return -1;
@@ -485,7 +593,7 @@ function flattenRows(
 }
 
 export function experimentTableContent(sample: Sample): ExperimentTableContent {
-  const columns = experimentColumns();
+  const columns = experimentColumns(scoringComposition(sample.units));
   const items = experimentItems(sample);
   return {
     columns: columns.map((column) => ({

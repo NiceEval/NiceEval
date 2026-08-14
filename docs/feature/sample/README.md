@@ -25,7 +25,13 @@ Sample 不写回 Record，也不包含路径、文件句柄或延迟读取能力
 “当前 ExecutionTarget 的哪些 Slot 可以沿用，哪些是 gap”。Report 不接收 execution gap，
 planner 也不把历史 Sample 的 `not-recorded` 当成待执行任务。
 
-CLI 内建 `explicit-runs` 与 `project-current` 两种 selection。前者读取具名历史 Run；后者把当前项目目标与既有 Evaluation、Eligibility 事实比较，并保留全部仍匹配的 Run slot。输入或配置身份已经变化的结果不进入当前 Sample，但仍能通过 `--run` 审计。selection 只读 Record，不迁移或改写历史事实。
+CLI 内建 `explicit-runs` 与 `project-current` 两种 selection。前者读取具名历史 Run；
+后者把当前项目目标与既有 Evaluation、Eligibility 事实比较，并保留全部仍匹配的 Run slot。
+输入或配置身份已经变化的普通结果不进入当前 Sample，但仍能通过 `--run` 审计。
+
+Run-owned Membership Provenance 写明的 `accepted` Member，是操作者对当时 current target
+的人工采用。`project-current` 按该 action 纳入对应 reference，不再要求源 Attempt 的旧
+Eligibility 与当前身份相等。selection 只读 Record，不迁移或改写历史事实。
 
 ## 公开值边界
 

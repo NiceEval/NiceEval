@@ -1,13 +1,13 @@
 import { Either } from "effect";
 import type { AttemptId } from "../../analysis/index.ts";
 import {
-  reportInstanceKey,
   reportInstanceKeyFromRecordId,
   reportRoute,
   reportRouteFromKeys,
   type ReportInstanceKey,
   type ReportRoute,
 } from "../author/index.ts";
+import { reportInstanceKeyFromUtf8 } from "../author/identity.ts";
 import type { ReportLinkTarget } from "../semantic/document.ts";
 import type { Sample } from "./sample.ts";
 
@@ -23,12 +23,8 @@ export function classicExperimentIds(sample: Sample): readonly string[] {
 }
 
 export function classicExperimentInstanceKey(experimentId: string): ReportInstanceKey {
-  const segments = experimentRouteSegments(experimentId);
-  const parsed = reportInstanceKey(`experiment-${segments.join("-")}`);
-  if (Either.isLeft(parsed)) {
-    throw new TypeError(`experiment id ${JSON.stringify(experimentId)} cannot form a Report instance key`);
-  }
-  return parsed.right;
+  experimentRouteSegments(experimentId);
+  return reportInstanceKeyFromUtf8("experiment", experimentId);
 }
 
 /**

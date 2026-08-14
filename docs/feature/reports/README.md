@@ -9,7 +9,7 @@ opaque Record
     ▼
 AnalysisSample
     ├─ classic facade：固定 projection plan
-    │  （evaluation plan / verdict / usage / timing）
+    │  （evaluation plan / verdict / score / usage / timing）
     └─ 低层 projection API：RecordProjection 声明
     ▼
 深冻结 Sample / ProjectedSample
@@ -32,7 +32,10 @@ immutable ReportExecution
 - 低层 projection API 继续存在：作者用 `RecordProjection` 声明数据，用 `defineCalculation`、`definePage`、`definePageFamily`、`defineDownload` 包装结果；
 - trusted TS module 本身不是 sandbox；NiceEval 只保证不授予 reader、Effect、Record root / path 与 append-I/O capability。
 
-通过率不是 Record 字段，也不是 Attachment projector。它由 facade 的 `passRate` 从投影结果按两级分母派生，口径属于官方 Calculation value。
+通过率和总分都不是 Record 字段。facade 的 `passRate` 只聚合 Pass Eval；`totalScore` 对
+Score Eval 先在每道 Eval 内取 complete earned score 的 Attempt 均值，再跨 Eval 求和。
+纯 Score 范围只显示成绩并按总分排序，不把历史 Verdict claim 显示成 passed / failed；
+混合范围并排显示两种主读数。
 
 ## 作者只声明数据与包装结果
 

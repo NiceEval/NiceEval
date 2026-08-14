@@ -20,6 +20,7 @@ import {
   classicDataPlan,
   defineReport as defineClassicReport,
 } from "../classic/define.ts";
+import { scoreStatus } from "../classic/aggregate.ts";
 import { classicSampleFromProjectedInputs } from "../classic/from-context.ts";
 import {
   Col,
@@ -265,7 +266,18 @@ function attemptDocument(attempt: ClassicAttemptRow, sample: Sample): ReportDocu
             rows: [
               { field: "experiment", value: attempt.experimentId },
               { field: "eval", value: attempt.evalId },
-              { field: "verdict", value: attempt.verdict ?? "unknown" },
+              { field: "evaluation", value: attempt.evaluationKind },
+              ...(attempt.evaluationKind === "score"
+                ? [
+                  { field: "score status", value: scoreStatus(attempt) ?? "errored" },
+                  {
+                    field: "score",
+                    value: attempt.score?.state === "complete"
+                      ? attempt.score.earned
+                      : attempt.score?.state ?? "unavailable",
+                  },
+                ]
+                : [{ field: "verdict", value: attempt.verdict ?? "unknown" }]),
               { field: "durationMs", value: attempt.durationMs },
               { field: "costUSD", value: attempt.costUSD },
               { field: "tokens", value: attempt.tokens },

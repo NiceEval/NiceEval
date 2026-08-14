@@ -4,6 +4,7 @@ import {
   attemptTimingProjector,
   attemptUsageProjector,
   evaluationPlanProjector,
+  scoreProjector,
   selectedRunProjection,
   verdictProjector,
 } from "../../projection/index.ts";
@@ -96,6 +97,7 @@ const classicContentsByReport = new WeakMap<object, ClassicReportContents>();
 export const classicDataPlan: NonEmptyReportDataPlan = reportInputs({
   "evaluation-plan": selectedRunProjection(evaluationPlanProjector),
   verdict: attemptSlotProjection(verdictProjector),
+  score: attemptSlotProjection(scoreProjector),
   timing: attemptSlotProjection(attemptTimingProjector),
   usage: attemptSlotProjection(attemptUsageProjector),
 });

@@ -152,11 +152,23 @@ export function reportInstanceKeyFromRecordId(input: {
     throw new TypeError("a Record identity must have a run, attempt, or slot kind");
   }
 
-  const encoded = encodeLowercaseCrockford(input.value);
-  const candidate = `${input.kind}-${encoded}`;
+  return reportInstanceKeyFromUtf8(input.kind, input.value);
+}
+
+/** Package-private adapter for non-Record identities used by built-in families. */
+export function reportInstanceKeyFromUtf8(
+  namespace: string,
+  value: string,
+): ReportInstanceKey {
+  if (identityIssue(namespace, "instance-key") !== undefined || typeof value !== "string") {
+    throw new TypeError("an instance-key namespace and string value are required");
+  }
+
+  const encoded = encodeLowercaseCrockford(value);
+  const candidate = `${namespace}-${encoded}`;
   const parsed = reportInstanceKey(candidate);
   if (Either.isLeft(parsed)) {
-    throw new RangeError("the Record identity is too long to form a Report instance key");
+    throw new RangeError("the identity is too long to form a Report instance key");
   }
   return parsed.right;
 }

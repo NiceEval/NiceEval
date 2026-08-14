@@ -40,6 +40,10 @@ import {
 import {
   eligibilityAttachmentFamilyV1,
 } from "../eval/record/eligibility.ts";
+import {
+  membershipProvenanceAttachmentFamilyV1,
+  type MembershipAcceptedActionV1,
+} from "../eval/record/membership-provenance.ts";
 
 export type { RecordAttemptRef } from "../record/model/core.ts";
 export type {
@@ -557,6 +561,17 @@ function collectProjectCurrentCandidate(
     if (target === undefined) return matches;
     const expectedSlots = new Set(candidate.value.expectedSlots);
     if (expectedSlots.size !== candidate.value.expectedSlots.length) return matches;
+    const provenance = yield* port.readRunAttachment(
+      reader,
+      candidate.value,
+      membershipProvenanceAttachmentFamilyV1,
+    );
+    const acceptedBySlot = new Map<string, MembershipAcceptedActionV1>();
+    if (provenance.state === "available") {
+      for (const action of provenance.value.payload.actions) {
+        if (action.action === "accepted") acceptedBySlot.set(action.slotId, action);
+      }
+    }
 
     const matchedSlots: ProjectCurrentMatch[] = [];
 
@@ -582,19 +597,25 @@ function collectProjectCurrentCandidate(
           || attempt.value.originRunId !== member.value.attempt.originRunId
           || attempt.value.attemptId !== member.value.attempt.attemptId
         ) continue;
-        const eligibility = yield* port.readAttemptAttachment(
-          reader,
-          attempt.value,
-          eligibilityAttachmentFamilyV1,
-        );
-        if (eligibility.state !== "available") continue;
-        const facts = eligibility.value.payload;
-        if (
-          facts.inputIdentity.domain !== CURRENT_INPUT_IDENTITY_DOMAIN
-          || facts.inputIdentity.value !== evalTarget.fingerprint
-          || facts.configIdentity.domain !== CURRENT_CONFIG_IDENTITY_DOMAIN
-          || facts.configIdentity.value !== evalTarget.resultConfigHash
-        ) continue;
+        const accepted = acceptedBySlot.get(slot.slotId);
+        const explicitlyAccepted = accepted !== undefined
+          && accepted.attemptId === member.value.attempt.attemptId
+          && accepted.origin.runId === member.value.attempt.originRunId;
+        if (!explicitlyAccepted) {
+          const eligibility = yield* port.readAttemptAttachment(
+            reader,
+            attempt.value,
+            eligibilityAttachmentFamilyV1,
+          );
+          if (eligibility.state !== "available") continue;
+          const facts = eligibility.value.payload;
+          if (
+            facts.inputIdentity.domain !== CURRENT_INPUT_IDENTITY_DOMAIN
+            || facts.inputIdentity.value !== evalTarget.fingerprint
+            || facts.configIdentity.domain !== CURRENT_CONFIG_IDENTITY_DOMAIN
+            || facts.configIdentity.value !== evalTarget.resultConfigHash
+          ) continue;
+        }
         matchedSlots.push(Object.freeze({
           run: candidate.value,
           slotId: slot.slotId,
