@@ -37,7 +37,7 @@ export function registerAgentLifecycleHookCommands<T extends SandboxAgent>(
   return agent;
 }
 
-/** @internal `--dry --commands` 只读取已登记的声明，不执行 hook。 */
+/** @internal `niceeval debug` 只读取已登记的声明，不执行 hook。 */
 export function agentLifecycleHookCommandsOf(agent: SandboxAgent): AgentLifecycleHookCommands | undefined {
   return lifecycleHookCommands.get(agent);
 }

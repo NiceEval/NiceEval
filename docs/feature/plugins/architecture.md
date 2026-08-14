@@ -25,7 +25,7 @@ Plugin family 在作者构造 Definition 时生成并冻结 occurrence。Link �
 
 数组顺序属于行为身份。相同 `(name, instanceKey)` 在同一个实际 scope 中重复是 link 错误；同一个 family/key 出现在不同 scope 合法。Sandbox fragment 进入物理 plan fingerprint，因此改变它会使旧结果失去精确 carry 资格。
 
-普通 `--dry` 只展示 credential-free lifecycle occurrence。`--dry --commands` 可以用 opaque lifecycle step 表示 callback，但不检查函数体或虚构命令。
+普通 `--dry` 只展示 credential-free lifecycle occurrence。`niceeval debug` 可以用 opaque lifecycle step 表示 callback，但不检查函数体或虚构命令。
 
 ## 自动 Sandbox 投影
 

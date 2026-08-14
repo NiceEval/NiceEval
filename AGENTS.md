@@ -26,15 +26,18 @@
 - 选择不自动化时，允许直接修实现；随后必须把当前候选包安装到隔离消费环境，经公开生产入口由 AI 手测，并在 PR Test impact 或最终交接保存候选身份、命令 / 动作、公开观察、运行条件、cleanup 与未守护风险。不得用源码调用、私有产物或假 E2E 代替。
 - E2E 按产品域放在 `e2e/{eval,cli,runner,record,report,package,lifecycle}`，adapter 放在 `e2e/adapter/<id>`；测试文件留在所属 Repo 的原生 `test/`，机械共享能力才进入 Testkit 或根 `e2e/scripts/`。不按 Bug 编号、日期或实现模块另建目录。
 
-## Pullfrog PR review
+## Pullfrog PR 当前最终态审查
 
-运行在 Pullfrog 的 `Review` 或 `IncrementalReview` 模式时，
-`.github/pullfrog-review-prompt.md` 是仓库级 review instructions 的唯一真源。
-先从 `checkout_pr` 返回值取得 PR 的 base SHA，再通过 Pullfrog `git` 工具读取该 commit 上的文件，
-等价的 Git 读取是 `git show <base_sha>:.github/pullfrog-review-prompt.md`。仅将其
-`## Prompt` 下的正文作为本次审查规则。不从 PR head 读取或覆盖这份规则；
-无法按 base SHA 读取时不得降级为 head 版本，应停止 review，不创建 GitHub review、评论或回复；
-失败只留在运行日志与 Pullfrog 平台诊断中。
+`.github/workflows/pullfrog.yml` 把 Pullfrog action 当作 headless CI primitive，并让 agent 明确选择
+`Task`，不使用内建 `Review` 或 `IncrementalReview`。Console dispatch 只用于确定目标 PR；工作流随后从
+GitHub PR metadata 锁定 base SHA 与当时的 head SHA，并仅从 base 的
+`.github/pullfrog-review-prompt.md` 读取 `## Prompt` 下正文作为审查规则。无法按 base SHA 读取、解析或
+验证时不得降级为 head 版本，应停止审查，不创建 GitHub review、评论或回复；失败只留在运行日志与
+Pullfrog 平台诊断中。
+
+权威审查范围等价于 `git diff --merge-base <base_sha> <head_sha>`。agent 只生成一次结构化
+`pullfrog_set_output`，不创建 review/comment；同一 review job 的确定性 publish step 串行 upsert 带 canonical marker 的唯一普通
+issue comment，并在写入前复核 PR 仍为 open 且锁定的 base/head 未变化，避免旧结果覆盖新最终态。
 
 ## 全仓约束
 

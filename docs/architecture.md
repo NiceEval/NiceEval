@@ -38,7 +38,7 @@ src/
 │                           #   Sandbox 接口、resolve、各 provider
 │
 ├─ o11y/                    # transcript 归一化 → 标准事件流;OTLP 接收与归一;派生事实与成本
-├─ experiment/host/         # experimentHost；公开 Host SDK，供 exp / accept 组合
+├─ experiment/host/         # experimentHost；公开 Host SDK，供 exp / debug / accept 组合
 ├─ runner/                  # experimentHost 后的调度、生命周期、缓存与 receipt 实现
 ├─ coordination/            # coordinationHost；execution claim 与 Record lease 协调
 ├─ record/                  # recordHost；持久布局 owner，definition 与 codec 保持包私有
@@ -91,7 +91,7 @@ Sandbox acquire、Sandbox lifecycle、Agent ensure、作者执行和逆序 final
 
 | 导入面 | Host 操作 | CLI 映射 | 不授予的能力 |
 |---|---|---|---|
-| `niceeval/experiment/host` | `experimentHost.list`、`experimentHost.plan`、`experimentHost.run`、`experimentHost.accept` | `exp` 与 `accept` | 重新拼装 selector、Runner 或 adoption 内部状态 |
+| `niceeval/experiment/host` | `experimentHost.list`、`experimentHost.plan`、具名只读 `experimentHost.debug()`、`experimentHost.run`、`experimentHost.accept` | `exp`、`debug` 与 `accept` | 重新拼装 selector、Runner 或 adoption 内部状态 |
 | `niceeval/coordination/host` | `coordinationHost.claimExecution`、`coordinationHost.enterRecordRead`、`coordinationHost.enterRecordAppend`、`coordinationHost.enterRecordMaintenance` | dispatch claim 与 Record lease | generic lock 或 portable Record writer |
 | `niceeval/record` / `niceeval/record/host` | `recordHost.current.openRead`、`recordHost.current.createRun`、`recordHost.current.createReferenceRun`；`recordHost.maintenance.open` | Record I/O | durable layout、generic Attachment、family 或 migration registration |
 | `niceeval/analysis/host` | `analysisHost.openSample` | Sample 签发 | 作者构造 Sample、注册 AnalysisInput，或让 Report author 取得 Record reader |
@@ -100,6 +100,23 @@ Sandbox acquire、Sandbox lifecycle、Agent ensure、作者执行和逆序 final
 “公开、受支持”只说明这些高层操作可由外部 Host 调用并受契约保护，不把 durable schema 变成开放扩展面。
 Record definition、fixed family catalog 与 migration step factory 仍是 package-private；第三方不能注册 family
 或 migration。五个入口也不组成另一个总管式应用框架：每个入口只拥有表中所属层的操作和资源边界。
+
+`niceeval debug` 有独立的只读命令数据流：
+
+```text
+argv
+  ↓
+experimentHost.debug()
+  ↓
+Host 内部：唯一选择 → link → physical planning
+  ↓
+commandPlan
+  ↓
+terminal / JSON
+```
+
+CLI 只调用 `experimentHost.debug()` 并呈现闭合 commandPlan，不构造或直连 Runner。该 Host 操作不创建
+Invocation、Run、Record、lease、Sandbox 或 build。
 
 Record Core 只证明磁盘导航、引用和 Member action 成立，不证明 Attempt 适合当前算法。固定 family
 只保存各自的不可恢复事实；family 消费方穷尽四态。旧 Record 需要升级时，只有

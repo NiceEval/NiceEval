@@ -6,7 +6,7 @@ on:
     inputs:
       prompt:
         type: string
-        description: Agent prompt
+        description: Pullfrog Console dispatch payload; used only to identify the target PR
         required: true
       name:
         type: string
@@ -17,14 +17,18 @@ permissions:
 
 jobs:
   context:
-    name: Validate Pullfrog dispatch target
+    name: Lock pull request audit context
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       pull-requests: read
     outputs:
       pull_number: ${{ steps.target.outputs.pull_number }}
+      base_sha: ${{ steps.target.outputs.base_sha }}
+      head_sha: ${{ steps.target.outputs.head_sha }}
+      review_prompt_b64: ${{ steps.target.outputs.review_prompt_b64 }}
     steps:
-      - name: Resolve trusted pull request number
+      - name: Resolve locked PR metadata and base review rules
         id: target
         uses: actions/github-script@v9
         env:
@@ -40,45 +44,175 @@ jobs:
             }
 
             const pullNumber = payload?.event?.issue_number;
-            const dispatchHead = payload?.event?.context?.head_sha;
             if (payload?.["~pullfrog"] !== true || payload?.event?.is_pr !== true) {
               throw new Error("Pullfrog dispatch does not identify a pull request event");
             }
             if (!Number.isSafeInteger(pullNumber) || pullNumber < 1) {
               throw new Error("Pullfrog dispatch has an invalid issue_number");
             }
-            if (typeof dispatchHead !== "string" || !/^[0-9a-f]{40}$/.test(dispatchHead)) {
-              throw new Error("Pullfrog dispatch has an invalid head_sha");
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pull = (await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: pullNumber,
+            })).data;
+            if (pull.state !== "open") {
+              throw new Error("Pullfrog dispatch targets a closed pull request");
             }
 
-            await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: pullNumber,
+            const assertSha = (value, name) => {
+              if (typeof value !== "string" || !/^[0-9a-f]{40}$/.test(value)) {
+                throw new Error(`GitHub pull request metadata has an invalid ${name}`);
+              }
+              return value;
+            };
+            // Do not use eventInstructions or an event head SHA from the Console
+            // payload. This GitHub API snapshot is the sole run binding.
+            const baseSha = assertSha(pull.base.sha, "base SHA");
+            const headSha = assertSha(pull.head.sha, "head SHA");
+
+            const source = await github.rest.repos.getContent({
+              owner,
+              repo,
+              path: ".github/pullfrog-review-prompt.md",
+              ref: baseSha,
             });
+            if (Array.isArray(source.data) || source.data.type !== "file" || source.data.encoding !== "base64") {
+              throw new Error("Base pullfrog review prompt is not a readable base64 file");
+            }
+
+            const markdown = Buffer.from(source.data.content, "base64").toString("utf8");
+            const promptHeadings = [...markdown.matchAll(/^## Prompt[ \t]*\r?$/gm)];
+            if (promptHeadings.length !== 1 || promptHeadings[0].index === undefined) {
+              throw new Error("Base pullfrog review prompt must contain exactly one ## Prompt heading");
+            }
+            const prompt = markdown
+              .slice(promptHeadings[0].index + promptHeadings[0][0].length)
+              .replace(/^\r?\n/, "");
+            if (!prompt.trim() || prompt.includes("\u0000")) {
+              throw new Error("Base pullfrog review prompt body is empty or invalid");
+            }
+
+            const placeholders = [
+              "{{PULL_NUMBER}}",
+              "{{BASE_SHA}}",
+              "{{HEAD_SHA}}",
+              "{{AUTHORITATIVE_DIFF_PATH}}",
+            ];
+            for (const placeholder of placeholders) {
+              if (!prompt.includes(placeholder)) {
+                throw new Error(`Base pullfrog review prompt is missing ${placeholder}`);
+              }
+            }
+            const unknownPlaceholders = prompt.match(/\{\{[^{}]+\}\}/g) ?? [];
+            if (unknownPlaceholders.some((placeholder) => !placeholders.includes(placeholder))) {
+              throw new Error("Base pullfrog review prompt contains an unknown workflow placeholder");
+            }
+
+            const reviewPromptB64 = Buffer.from(prompt, "utf8").toString("base64");
+            if (reviewPromptB64.length > 900_000) {
+              throw new Error("Base pullfrog review prompt is too large for a job output");
+            }
+
             core.setOutput("pull_number", String(pullNumber));
+            core.setOutput("base_sha", baseSha);
+            core.setOutput("head_sha", headSha);
+            core.setOutput("review_prompt_b64", reviewPromptB64);
 
   review:
-    name: Inspect pull request
+    name: Inspect locked pull request state
     needs: context
     runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
-    outputs:
-      result: ${{ steps.pullfrog.outputs.result }}
+      pull-requests: write
+    # Keep review output and its sole GitHub write in one job. GitHub may
+    # suppress large structured values when promoting a step output to a job
+    # output, but same-job step outputs retain the exact schema-validated value.
+    concurrency:
+      group: pullfrog-final-review-${{ needs.context.outputs.pull_number }}
+      cancel-in-progress: false
     steps:
-      - name: Checkout code
+      - name: Checkout locked pull request head
         uses: actions/checkout@v6
         with:
-          fetch-depth: 1
-      # Pullfrog only returns structured review data. A separate job owns the
-      # sole GitHub comment write so create-versus-update is deterministic.
-      - name: Inspect pull request
+          ref: ${{ needs.context.outputs.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Materialize authoritative review diff
+        shell: bash
+        env:
+          BASE_SHA: ${{ needs.context.outputs.base_sha }}
+          HEAD_SHA: ${{ needs.context.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+          git cat-file -e "$BASE_SHA^{commit}"
+          git cat-file -e "$HEAD_SHA^{commit}"
+          git diff --merge-base "$BASE_SHA" "$HEAD_SHA" \
+            > "$RUNNER_TEMP/pullfrog-current-state-audit.diff"
+      - name: Build plain current-state audit prompt
+        id: prompt
+        uses: actions/github-script@v9
+        env:
+          PULL_NUMBER: ${{ needs.context.outputs.pull_number }}
+          BASE_SHA: ${{ needs.context.outputs.base_sha }}
+          HEAD_SHA: ${{ needs.context.outputs.head_sha }}
+          REVIEW_PROMPT_B64: ${{ needs.context.outputs.review_prompt_b64 }}
+        with:
+          script: |
+            const fs = require("node:fs/promises");
+            const path = require("node:path");
+
+            const pullNumber = Number(process.env.PULL_NUMBER);
+            const baseSha = process.env.BASE_SHA;
+            const headSha = process.env.HEAD_SHA;
+            if (!Number.isSafeInteger(pullNumber) || pullNumber < 1) {
+              throw new Error("Locked pull request number is invalid");
+            }
+            for (const [name, value] of [["base SHA", baseSha], ["head SHA", headSha]]) {
+              if (typeof value !== "string" || !/^[0-9a-f]{40}$/.test(value)) {
+                throw new Error(`Locked ${name} is invalid`);
+              }
+            }
+
+            const template = Buffer.from(process.env.REVIEW_PROMPT_B64 ?? "", "base64").toString("utf8");
+            if (!template.trim() || template.includes("\u0000")) {
+              throw new Error("Base pullfrog review prompt body is empty or invalid");
+            }
+            const diffPath = path.join(process.env.RUNNER_TEMP, "pullfrog-current-state-audit.diff");
+            const replacements = {
+              "{{PULL_NUMBER}}": String(pullNumber),
+              "{{BASE_SHA}}": baseSha,
+              "{{HEAD_SHA}}": headSha,
+              "{{AUTHORITATIVE_DIFF_PATH}}": diffPath,
+            };
+            let prompt = template;
+            for (const [placeholder, value] of Object.entries(replacements)) {
+              if (!prompt.includes(placeholder)) {
+                throw new Error(`Base pullfrog review prompt is missing ${placeholder}`);
+              }
+              prompt = prompt.replaceAll(placeholder, value);
+            }
+            if (/\{\{[^{}]+\}\}/.test(prompt)) {
+              throw new Error("Plain Pullfrog audit prompt has an unresolved placeholder");
+            }
+
+            const promptPath = path.join(process.env.RUNNER_TEMP, "pullfrog-current-state-audit.md");
+            await fs.writeFile(promptPath, prompt, { encoding: "utf8", mode: 0o600 });
+            core.setOutput("path", promptPath);
+      # The action receives a plain, repository-controlled Task prompt. The
+      # Console JSON stays confined to the context job and is never agent input.
+      - name: Audit locked pull request state
         id: pullfrog
         uses: pullfrog/pullfrog@v0
         with:
-          prompt: ${{ inputs.prompt }}
+          prompt_file: ${{ steps.prompt.outputs.path }}
           model: openai/gpt-5.6-sol
           progress_comments: disabled
           push: disabled
@@ -96,29 +230,26 @@ jobs:
             }
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-
-  publish:
-    name: Update final review comment
-    needs: [context, review]
-    runs-on: ubuntu-latest
-    permissions:
-      issues: write
-      pull-requests: read
-    concurrency:
-      group: pullfrog-final-review-${{ needs.context.outputs.pull_number }}
-      cancel-in-progress: false
-    steps:
       - name: Upsert workflow-owned final review
         uses: actions/github-script@v9
         env:
           PULL_NUMBER: ${{ needs.context.outputs.pull_number }}
-          REVIEW_RESULT: ${{ needs.review.outputs.result }}
+          EXPECTED_BASE_SHA: ${{ needs.context.outputs.base_sha }}
+          EXPECTED_HEAD_SHA: ${{ needs.context.outputs.head_sha }}
+          REVIEW_RESULT: ${{ steps.pullfrog.outputs.result }}
         with:
           script: |
             const marker = "<!-- niceeval-pullfrog-final-review-v2 -->";
             const pullNumber = Number(process.env.PULL_NUMBER);
+            const expectedBaseSha = process.env.EXPECTED_BASE_SHA;
+            const expectedHeadSha = process.env.EXPECTED_HEAD_SHA;
             if (!Number.isSafeInteger(pullNumber) || pullNumber < 1) {
               throw new Error("Trusted pull request number is invalid");
+            }
+            for (const [name, value] of [["base SHA", expectedBaseSha], ["head SHA", expectedHeadSha]]) {
+              if (typeof value !== "string" || !/^[0-9a-f]{40}$/.test(value)) {
+                throw new Error(`Trusted pull request ${name} is invalid`);
+              }
             }
 
             let result;
@@ -130,8 +261,8 @@ jobs:
             if (result?.pull_number !== pullNumber) {
               throw new Error("Pullfrog result targets a different pull request");
             }
-            if (typeof result?.head_sha !== "string" || !/^[0-9a-f]{40}$/.test(result.head_sha)) {
-              throw new Error("Pullfrog result has an invalid head_sha");
+            if (result?.head_sha !== expectedHeadSha) {
+              throw new Error("Pullfrog result does not match the locked pull request head");
             }
             if (typeof result?.review_body !== "string") {
               throw new Error("Pullfrog result has no review body");
@@ -141,7 +272,7 @@ jobs:
             if (reviewBody.length < 1 || reviewBody.length > 60000) {
               throw new Error("Pullfrog review body is empty or too long");
             }
-            if (reviewBody.split("\n").includes(marker)) {
+            if (reviewBody.includes(marker)) {
               throw new Error("Pullfrog review body must not contain the workflow marker");
             }
             const body = `${marker}\n${reviewBody}`;
@@ -154,11 +285,13 @@ jobs:
               pull_number: pullNumber,
             });
             const isCurrent = (pull) =>
-              pull.state === "open" && pull.head.sha === result.head_sha;
+              pull.state === "open" &&
+              pull.base.sha === expectedBaseSha &&
+              pull.head.sha === expectedHeadSha;
 
             const firstRead = (await readCurrentPull()).data;
             if (!isCurrent(firstRead)) {
-              core.notice("Skipping stale Pullfrog result because the PR head or state changed");
+              core.notice("Skipping stale Pullfrog result because the locked PR base, head, or state changed");
               return;
             }
 
@@ -178,7 +311,7 @@ jobs:
 
             const finalRead = (await readCurrentPull()).data;
             if (!isCurrent(finalRead)) {
-              core.notice("Skipping stale Pullfrog result because the PR head or state changed");
+              core.notice("Skipping stale Pullfrog result because the locked PR base, head, or state changed");
               return;
             }
 

@@ -2,7 +2,7 @@
 
 `niceeval` 把命令输入分到运行、读取与恢复三条路径。面向用户的命令和选项由各 Feature 的 CLI 页定义；本页只定义入口模块的责任边界。
 
-- [Experiments CLI](feature/experiments/cli.md) 定义 `exp`、`accept`、机器反馈和 Invocation receipt。
+- [Experiments CLI](feature/experiments/cli.md) 定义 `exp`、`debug`、`accept`、机器反馈和 Invocation receipt。
 - [Record CLI](feature/record/cli.md) 定义 Record root、只读命令、clean 与 migrate。
 - [Reports CLI](feature/reports/README.md) 定义 `show`、`view` 与静态 export 的输入和输出。
 
@@ -11,7 +11,7 @@
 | 区域 | 职责 |
 |---|---|
 | `src/cli.ts` | argv、命令分派、信号与退出状态。 |
-| `experimentHost` | `exp`、`--dry` 与 `accept` 的发现、计划、运行和采用操作。 |
+| `experimentHost` | `exp`、`--dry`、只读 `debug` 与 `accept` 的发现、计划、运行、采用和命令计划操作。 |
 | `recordHost` | Record 的打开、创建、封口、clean 与 migrate 操作。 |
 | `analysisHost` | 由已打开 reader 和选择签发 Scope-bound Sample。 |
 | `reportHost` | Report execution、show、serve 与 export。 |
@@ -46,6 +46,24 @@ reuse 与 explicit adoption 形成 reference Member，实际执行形成 origin 
 
 Run 全部内容 flush 后，writer 最后创建零字节 `complete` 完成标识。命令只返回
 `InvocationReceipt`。调用方按 receipt 的 `runIds` 从已发布 Record 读取 Verdict、用量、耗时和详情。
+
+### 生命周期命令计划
+
+```text
+argv
+  ↓
+experimentHost.debug()
+  ↓
+唯一 Experiment × Eval 选择 → link → physical planning
+  ↓
+commandPlan
+  ↓
+debug terminal / JSON
+```
+
+`niceeval debug` 只调用具名只读 `experimentHost.debug()` 操作。Host 在内部完成发现、选择、link
+与 physical planning；CLI 只接收闭合的 commandPlan，不构造或直连 Runner。该操作不创建
+Invocation、Run、Record、lease、Sandbox 或 build。
 
 ### 查看与导出
 

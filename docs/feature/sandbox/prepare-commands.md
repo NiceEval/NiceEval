@@ -1,7 +1,7 @@
 # 内置 prepare 命令 —— checkout、installTool 与命令计划
 
 `prepare()` 命令每条 Attempt 都重新执行,昂贵动作靠真实检查快速命中;这条 cadence 由[三方准备时序](lifecycle.md)固定。
-本页定义两件事:最常见昂贵动作的官方写法(`checkout()` 与 `installTool()`),以及 `--dry --commands` 怎样在创建任何 Sandbox 前诚实展示它们能证明的命令分支。
+本页定义两件事:最常见昂贵动作的官方写法(`checkout()` 与 `installTool()`),以及 `niceeval debug` 怎样在创建任何 Sandbox 前诚实展示它们能证明的命令分支。
 
 两条内置命令都是 `defineSandboxCommand()` 的封装:检查、缺失时执行、执行后复检一次成型,identity 由纯数据参数构成。
 Runner 与 [SandboxLayer](layers.md) 协议不含任何内置命令专属分支;对框架而言它们就是带稳定 identity 的普通 prepare 命令。
@@ -105,14 +105,14 @@ template 预装只是让 `probe` 首测即命中的一种手段。
 - 缓存服从 reset 与活状态边界:reset 只恢复 workdir,不触碰镜像;Sandbox lifecycle hook 拥有的路径内置命令不写入。
 - 缓存不可用或损坏时按首次执行处理(重新走网络或重装),不产生额外错误类别。
 
-## `--dry --commands` 的可证明边界
+## `niceeval debug` 的可证明边界
 
-`niceeval exp <选择> --dry --commands` 仍按每条 Attempt 展示 prepare，不把 reuse 误写成“命令只执行一次”。复用 lane 另带每台实际实例各自套用的 physical lifecycle template；每个 dispatch slot 仍列出自己的 prepare 与 agent.ensure，carry slot 则明确是 `carried · no commands`。
+`niceeval debug <experiment> <eval>` 按配置的每条 Attempt 展示 prepare。复用 lane 另带每台实际实例各自套用的 physical lifecycle template；每个候选 dispatch slot 都列出自己的 prepare 与 agent.ensure。debug 不读取 carry 计划，正常运行仍可能沿用结果而不派发这些 slot。
 
 命令工厂把执行闭包已经消费的同一份规范化数据私绑到计划：
 
 - `command(executable, args, options)` 精确投影 argv 数组。
-- `shell(script, options)` 精确投影 JSON string 形式的 script。
+- `shell(script, options)` 精确投影 script。单行使用 JSON string；多行在 human 的独立区域框内按原始行显示，并保留缩进、空行与末尾换行。JSON 计划仍保存原始 script string。
 - `installTool()` 投影完整条件树：先运行 `probe` 探测命令；探测未命中才 install，再用同一命令 recheck。子命令若由 `command()` / `shell()` 创建就是 exact；普通 `defineSandboxCommand()` 虽然有稳定 fingerprint identity，仍是 opaque。
 - `checkout()` 的 cache 检查、mirror 修复、动态 workdir 与 Git 分支依赖 live Sandbox 状态，因此整体标为 opaque；计划不把内部实现源码当协议。
 - 普通 `.prepare(async (sandbox) => …)` 与 `defineSandboxCommand(identity, run)` 的 `run` 都标为 opaque。公开 identity 可由作者自行命名，不能拿 id / inputs 猜它会执行什么。

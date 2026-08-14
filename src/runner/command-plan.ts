@@ -1,4 +1,4 @@
-// `niceeval exp --dry --commands` 的纯计划装配器。
+// `niceeval debug <experiment> <eval>` 的纯计划装配器。
 //
 // 它只消费 discovery/link/physical/carry 已经完成的不可变结果，不执行作者回调，也不从
 // Function#toString 或公开 command identity 猜命令。生命周期拓扑在这里组装；human/JSON
@@ -14,6 +14,11 @@ import {
   type SandboxCommandPlanNode,
   type SandboxCommandPlanRedaction,
 } from "../sandbox/commands.ts";
+import {
+  sandboxTemplateCommandPlanLocator,
+  type SandboxTemplateCommandPlanLocator,
+} from "../sandbox/layer.ts";
+import type { LinkedSandboxPluginLifecycle } from "../sandbox/link.ts";
 import { runPairKey, type PreparedRunPair } from "./sandbox-selection.ts";
 import {
   sandboxReusePoolDescriptor,
@@ -32,6 +37,13 @@ export interface CommandPlanReason {
   readonly summary: string;
 }
 
+export interface CommandPlanSandboxTemplate {
+  readonly owner: CommandPlanOwner;
+  readonly provider: string;
+  readonly kind: string;
+  readonly locator: SandboxTemplateCommandPlanLocator;
+}
+
 export interface CommandPlanStep {
   readonly phase: string;
   readonly label?: string;
@@ -39,6 +51,8 @@ export interface CommandPlanStep {
   readonly truth: "exact" | "conditional" | "opaque" | "known-no-command";
   readonly condition?: SandboxCommandPlanCondition;
   readonly reason?: CommandPlanReason;
+  /** Present only on the real Sandbox materialization boundary. */
+  readonly template?: CommandPlanSandboxTemplate;
   readonly redactions?: readonly SandboxCommandPlanRedaction[];
   readonly command?: SandboxCommandPlanCommand;
   readonly children?: readonly CommandPlanStep[];
@@ -143,7 +157,12 @@ function opaque(
   phase: string,
   code: string,
   summary: string,
-  options: { owner?: CommandPlanOwner; label?: string; condition?: SandboxCommandPlanCondition } = {},
+  options: {
+    owner?: CommandPlanOwner;
+    label?: string;
+    condition?: SandboxCommandPlanCondition;
+    template?: CommandPlanSandboxTemplate;
+  } = {},
 ): CommandPlanStep {
   return {
     phase,
@@ -152,6 +171,7 @@ function opaque(
     ...(options.owner === undefined ? {} : { owner: options.owner }),
     ...(options.label === undefined ? {} : { label: options.label }),
     ...(options.condition === undefined ? {} : { condition: options.condition }),
+    ...(options.template === undefined ? {} : { template: options.template }),
   };
 }
 
@@ -449,21 +469,50 @@ function pluginLifecycleSteps(
     ));
 }
 
+function sandboxPluginLifecycleSteps(
+  lifecycles: readonly LinkedSandboxPluginLifecycle[],
+  phase: "setup" | "teardown",
+  condition?: SandboxCommandPlanCondition,
+): readonly CommandPlanStep[] {
+  const ordered = phase === "teardown" ? [...lifecycles].reverse() : lifecycles;
+  return ordered
+    .filter((entry) => phase === "setup" ? entry.lifecycle.hasSetup : entry.lifecycle.hasTeardown)
+    .map(({ lifecycle, owner }) => opaque(
+      `plugin.lifecycle.${phase}`,
+      `plugin-lifecycle-${phase}-callback`,
+      `Plugin ${lifecycle.name} (${lifecycle.instanceKey}) ${phase} callback is opaque`,
+      {
+        owner,
+        label: `${lifecycle.name}:${lifecycle.instanceKey}`,
+        ...(condition === undefined ? {} : { condition }),
+      },
+    ));
+}
+
 function physicalBefore(pair: PreparedRunPair, shared: boolean): readonly CommandPlanStep[] {
   if (pair.plan._tag !== "Sandbox") return [];
   const provider: CommandPlanOwner = { kind: "provider", id: pair.plan.providerPlan.provider };
+  const template = pair.plan.pair.template;
   return [
     opaque(
       "sandbox.materialize",
       "provider-materialization",
       "provider materialization is an internal runtime boundary",
-      { owner: provider, ...(shared ? { condition: SHARED_INSTANCE_AVAILABLE } : {}) },
+      {
+        owner: provider,
+        template: {
+          owner: pair.plan.pair.templateOwner,
+          provider: template.provider,
+          kind: template.kind,
+          locator: sandboxTemplateCommandPlanLocator(template),
+        },
+        ...(shared ? { condition: SHARED_INSTANCE_AVAILABLE } : {}),
+      },
     ),
     ...sandboxLifecycleHooks(pair, "setup", shared ? SHARED_INSTANCE_AVAILABLE : undefined),
-    ...pluginLifecycleSteps(
-      pair.plan.pair.pluginLifecycles.map((entry) => entry.lifecycle),
+    ...sandboxPluginLifecycleSteps(
+      pair.plan.pair.pluginLifecycles,
       "setup",
-      provider,
       shared ? SHARED_INSTANCE_AVAILABLE : undefined,
     ),
     opaque(
@@ -479,10 +528,9 @@ function physicalAfter(pair: PreparedRunPair, shared: boolean): readonly Command
   if (pair.plan._tag !== "Sandbox") return [];
   const provider: CommandPlanOwner = { kind: "provider", id: pair.plan.providerPlan.provider };
   return [
-    ...pluginLifecycleSteps(
-      pair.plan.pair.pluginLifecycles.map((entry) => entry.lifecycle),
+    ...sandboxPluginLifecycleSteps(
+      pair.plan.pair.pluginLifecycles,
       "teardown",
-      provider,
       shared ? SHARED_INSTANCE_AVAILABLE : undefined,
     ),
     ...sandboxLifecycleHooks(pair, "teardown", shared ? SHARED_INSTANCE_AVAILABLE : undefined),
@@ -555,6 +603,17 @@ function attemptBody(pair: PreparedRunPair, shared: boolean): readonly CommandPl
 }
 
 function stepsForDispatch(pair: PreparedRunPair, shared: boolean): readonly CommandPlanStep[] {
+  if (pair.plan._tag === "Direct") {
+    return [
+      knownNoCommand(
+        "sandbox.materialize",
+        "direct-agent",
+        "Direct Agent has no Sandbox or configured Sandbox template",
+        { owner: { kind: "agent", id: pair.run.agent.name } },
+      ),
+      ...attemptBody(pair, false),
+    ];
+  }
   return shared
     ? attemptBody(pair, true)
     : [...physicalBefore(pair, false), ...attemptBody(pair, false), ...physicalAfter(pair, false)];
@@ -704,6 +763,9 @@ function countEvidence(steps: readonly CommandPlanStep[]): { opaque: number; red
   const visit = (step: CommandPlanStep): void => {
     if (step.truth === "opaque") opaqueCount++;
     if ((step.redactions?.length ?? 0) > 0) redactedCount++;
+    if (step.template?.locator._tag === "Redacted") {
+      redactedCount += step.template.locator.redactions.length;
+    }
     for (const child of step.children ?? []) visit(child);
   };
   for (const step of steps) visit(step);

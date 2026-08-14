@@ -92,7 +92,7 @@ export interface StableSandboxCommand extends SandboxCommand {
 }
 
 /**
- * `--dry --commands` 能证明的声明式命令。这里只保存执行闭包已经消费的同一份规范化数据；
+ * `niceeval debug` 能证明的声明式命令。这里只保存执行闭包已经消费的同一份规范化数据；
  * 普通 `defineSandboxCommand(identity, run)` 不会因为 identity 看起来像内建 id 就获得计划。
  */
 export type SandboxCommandPlanRedaction =

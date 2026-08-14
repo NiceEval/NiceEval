@@ -248,7 +248,8 @@ export function projectPluginLifecycles<Scope extends PluginScope>(
   plugins: readonly PluginInstance<any>[],
   scope: Scope,
 ): readonly LinkedPluginLifecycle[] {
-  return Object.freeze(plugins.flatMap((plugin, arrayPosition) => {
+  let projectedPosition = 0;
+  return Object.freeze(plugins.flatMap((plugin) => {
     const data = pluginInstanceDataOf(plugin);
     const fragment = data[scope];
     if (fragment === undefined) return [];
@@ -258,7 +259,7 @@ export function projectPluginLifecycles<Scope extends PluginScope>(
       behaviorRevision: data.behaviorRevision,
       instanceKey: data.instanceKey,
       identity: fragment.identity ?? Object.freeze({}),
-      arrayPosition,
+      arrayPosition: projectedPosition++,
       hasSetup: fragment.setup !== undefined,
       hasTeardown: fragment.teardown !== undefined,
       ...(fragment.setup === undefined ? {} : { setup: fragment.setup }),
@@ -267,10 +268,23 @@ export function projectPluginLifecycles<Scope extends PluginScope>(
   }));
 }
 
+export function pluginLifecycleIdentity(
+  { scope, name, behaviorRevision, instanceKey, identity, arrayPosition, hasSetup, hasTeardown }: LinkedPluginLifecycle,
+): JsonValue {
+  return Object.freeze({
+    scope,
+    name,
+    behaviorRevision,
+    instanceKey,
+    identity,
+    arrayPosition,
+    hasSetup,
+    hasTeardown,
+  });
+}
+
 export function pluginLifecycleProjection(lifecycles: readonly LinkedPluginLifecycle[]): JsonValue {
-  const projection: JsonValue[] = lifecycles.map(({ scope, name, behaviorRevision, instanceKey, identity, arrayPosition, hasSetup, hasTeardown }) => ({
-    scope, name, behaviorRevision, instanceKey, identity, arrayPosition, hasSetup, hasTeardown,
-  }));
+  const projection: JsonValue[] = lifecycles.map(pluginLifecycleIdentity);
   Object.freeze(projection);
   return projection;
 }

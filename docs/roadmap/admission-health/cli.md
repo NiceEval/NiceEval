@@ -17,7 +17,7 @@ ADMISSION DECLARATIONS
 compare/codex  com.example.agent/endpoint@v1  occurrence primary  timeout 5000ms
 ```
 
-它不调用 `probe()`、不启动计时器、不建立 Invocation，也不写 Run。`--dry --commands` 以一个
+它不调用 `probe()`、不启动计时器、不建立 Invocation，也不写 Run。`niceeval debug` 以一个
 `admission-health` phase 标出该动作，但不虚构网络命令。
 
 ## 人读反馈
