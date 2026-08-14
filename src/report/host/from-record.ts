@@ -1,7 +1,7 @@
 import { Effect } from "effect";
+import type { AttemptLocator } from "../../attempt-locator.ts";
 import {
   openRecordReader,
-  type AttemptId,
   type RecordFileSystem,
   type RecordMaintenanceLock,
   type RecordReaderOpenError,
@@ -13,8 +13,8 @@ import {
   type AnalysisSelectionRequest,
 } from "../../sample/analysis.ts";
 import {
-  selectAnalysisSampleForAttempt,
-  type SelectAnalysisSampleForAttemptError,
+  selectAnalysisSampleForLocator,
+  type SelectAnalysisSampleForLocatorError,
 } from "../../projection/attempt-selection.ts";
 import defaultOverviewReport from "../built-in/overview.ts";
 import type { Report } from "../author/model.ts";
@@ -30,7 +30,7 @@ export type ExecuteReportFromRecordError =
 /** Failures from opening one Record and resolving an exact Attempt-owned sample. */
 export type ExecuteReportForAttemptFromRecordError =
   | RecordReaderOpenError
-  | SelectAnalysisSampleForAttemptError
+  | SelectAnalysisSampleForLocatorError
   | ReportExecutionError;
 
 /** The caller supplies the current Record platform; this host never installs Node services. */
@@ -66,13 +66,13 @@ export function executeReportFromRecord(input: {
 }
 
 /**
- * Executes a Report for one exact durable AttemptId without reopening a
+ * Executes a Report for one canonical Attempt locator without reopening a
  * separate evidence reader. Locator resolution yields the same live
  * AnalysisSampleHandle that ordinary projection consumers receive.
  */
 export function executeReportForAttemptFromRecord(input: {
   readonly root: RecordRoot;
-  readonly attemptId: AttemptId;
+  readonly locator: AttemptLocator;
   /** Omit for the built-in closed semantic overview. */
   readonly report?: Report;
 }): Effect.Effect<
@@ -83,9 +83,9 @@ export function executeReportForAttemptFromRecord(input: {
   return Effect.scoped(
     Effect.gen(function* () {
       const reader = yield* openRecordReader({ root: input.root });
-      const sampleHandle = yield* selectAnalysisSampleForAttempt({
+      const sampleHandle = yield* selectAnalysisSampleForLocator({
         reader,
-        attemptId: input.attemptId,
+        locator: input.locator,
       });
       return yield* executeReport({
         sampleHandle,

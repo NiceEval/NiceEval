@@ -1,4 +1,6 @@
 import { Either } from "effect";
+import { encodeAttemptLocator } from "../../attempt-locator.ts";
+import type { AttemptId } from "../../record/index.ts";
 import type { AnalysisSlot, IncludedAnalysisSlot } from "../../analysis/index.ts";
 import {
   attemptSlotProjection,
@@ -72,7 +74,7 @@ interface OriginSlot extends SlotPlan {
 
 interface OriginHistory {
   readonly originRunId: string;
-  readonly attemptId: string;
+  readonly attemptId: AttemptId;
   readonly sandbox: ProjectedRecordAttachmentResult<SandboxView>;
   readonly verdict: AttemptSlotEntry<Verdict> | undefined;
   readonly slots: readonly OriginSlot[];
@@ -80,7 +82,7 @@ interface OriginHistory {
 
 interface MutableOriginHistory {
   readonly originRunId: string;
-  readonly attemptId: string;
+  readonly attemptId: AttemptId;
   readonly sandbox: ProjectedRecordAttachmentResult<SandboxView>;
   readonly verdict: AttemptSlotEntry<Verdict> | undefined;
   readonly slots: OriginSlot[];
@@ -215,8 +217,9 @@ function assembleSandboxHistory(inputs: SandboxHistoryInputs): SandboxHistoryAss
 }
 
 function originHistoryBlocks(origin: OriginHistory): ReportBlock {
+  const locator = encodeAttemptLocator(origin.attemptId);
   return reportSection({
-    heading: `Origin ${origin.originRunId}/${origin.attemptId}`,
+    heading: `Origin ${locator}`,
     children: [
       reportTable({
         caption: "Origin locator",
@@ -224,7 +227,7 @@ function originHistoryBlocks(origin: OriginHistory): ReportBlock {
           { key: "run", label: "Origin Run" },
           { key: "attempt", label: "Attempt" },
         ],
-        rows: [{ run: origin.originRunId, attempt: origin.attemptId }],
+        rows: [{ run: origin.originRunId, attempt: locator }],
       }),
       ...sandboxBlocks(origin.sandbox),
       ...verdictBlocks(origin.verdict),

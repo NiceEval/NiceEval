@@ -3,6 +3,12 @@ import { resolve } from "node:path";
 import { Effect, Either, Schema, Stream } from "effect";
 
 import {
+  encodeAttemptLocator,
+  parseAttemptLocator,
+  type AttemptLocator,
+} from "../attempt-locator.ts";
+import { resolveAttemptLocator } from "../attempt-locator-resolution.ts";
+import {
   type EvaluationsPayloadV1,
   buildEvaluationsPayloadV1,
   evaluationsAttachmentFamilyV1,
@@ -36,7 +42,6 @@ import {
 } from "../eval/record/verdict.ts";
 import { loadConfigFile } from "../load-config.ts";
 import {
-  AttemptIdSchema,
   RunIdSchema,
   SlotIdSchema,
   UtcMillisSchema,
@@ -166,7 +171,13 @@ export interface AdoptionProjectV1 {
 
 export interface ExplicitAttemptLocatorV1 {
   readonly text: string;
+  readonly locator: AttemptLocator;
   readonly attemptId: AttemptId;
+}
+
+interface ParsedExplicitAttemptLocatorV1 {
+  readonly text: string;
+  readonly locator: AttemptLocator;
 }
 
 export interface ResolvedAdoptionAttemptV1 {
@@ -298,29 +309,24 @@ function sameAttemptReference(
 function attemptLocatorFor(
   attemptId: AttemptId,
 ): Effect.Effect<ExplicitAttemptLocatorV1, ExplicitAdoptionErrorV1> {
-  return Effect.succeed(Object.freeze({ text: `@${attemptId}`, attemptId }));
+  const locator = encodeAttemptLocator(attemptId);
+  return Effect.succeed(Object.freeze({ text: locator, locator, attemptId }));
 }
 
-/** Exact v1 locator parsing deliberately does not accept the retired hash locator. */
+/** Strict v1 parser accepts only the current canonical short locator. */
 export function parseExplicitAttemptLocatorV1(
   value: string,
-): Effect.Effect<ExplicitAttemptLocatorV1, ExplicitAdoptionErrorV1> {
-  if (!value.startsWith("@") || value.length === 1 || value.startsWith("@@")) {
+): Effect.Effect<ParsedExplicitAttemptLocatorV1, ExplicitAdoptionErrorV1> {
+  const parsed = parseAttemptLocator(value);
+  if (!parsed.valid) {
     return Effect.fail(
       adoptionError(
         "adoption-locator-malformed",
-        "An explicit adoption locator must be exactly one @ followed by one complete current Record AttemptId.",
+        "An explicit adoption locator must match @1 followed by 12 canonical uppercase Crockford characters.",
       ),
     );
   }
-  return decodeBrandedId(
-    AttemptIdSchema,
-    value.slice(1),
-    "adoption-locator-malformed",
-    "Attempt locator",
-  ).pipe(
-    Effect.map((attemptId) => Object.freeze({ text: value, attemptId })),
-  );
+  return Effect.succeed(Object.freeze({ text: value, locator: parsed.locator }));
 }
 
 /** The public application boundary owns Record-root construction. */
@@ -671,78 +677,42 @@ function sourceCoreInvalid(message: string): ExplicitAdoptionErrorV1 {
   return adoptionError("adoption-source-core-invalid", message);
 }
 
-function sourceReferenceKey(ref: RecordAttemptRef): string {
-  return `${ref.originRunId}${ADOPTION_TARGET_SLOT_SEPARATOR}${ref.attemptId}`;
-}
-
-/** Locates one exact v1 AttemptId by scanning only the frozen Record view. */
+/** Locates one canonical short locator by scanning only the frozen Record view. */
 export function resolveExplicitAttemptLocatorV1(
   view: FrozenRecordView<RecordReaderReadError>,
   text: string,
 ): Effect.Effect<ResolvedAdoptionAttemptV1, ExplicitAdoptionReadErrorV1> {
   return Effect.gen(function* () {
-    const locator = yield* parseExplicitAttemptLocatorV1(text);
-    const port = resolveFrozenRecordReaderPort(view);
-    if (port === undefined) {
-      return yield* Effect.fail(sourceCoreInvalid("The supplied Record view is not an authentic frozen reader."));
-    }
-    yield* port.assertOpen(view);
-    const matches = yield* Stream.runFoldEffect(
-      port.candidates(view),
-      { first: undefined as RecordAttemptRef | undefined, duplicate: false },
-      (found, candidate): Effect.Effect<{
-        readonly first: RecordAttemptRef | undefined;
-        readonly duplicate: boolean;
-      }, RecordReaderReadError> => {
-        // Once a second distinct immutable reference has been observed, the
-        // locator is irredeemably ambiguous. Keep consuming the bounded stream
-        // without retaining or reading any more candidates.
-        if (found.duplicate || candidate.state !== "available") {
-          return Effect.succeed(found);
-        }
-        return Effect.gen(function* () {
-          let first = found.first;
-          let duplicate = false;
-          for (const slotId of candidate.value.expectedSlots) {
-            // Candidate Members are read one at a time: a locator only needs
-            // its first exact reference and an ambiguity bit, never a full
-            // per-Run Member result array.
-            if (duplicate) break;
-            const member = yield* port.member(view, candidate.value, slotId);
-            if (
-              member.state === "available"
-              && member.value.attempt.attemptId === locator.attemptId
-            ) {
-              if (first === undefined) {
-                first = member.value.attempt;
-              } else if (sourceReferenceKey(first) !== sourceReferenceKey(member.value.attempt)) {
-                duplicate = true;
-              }
-            }
-          }
-          return Object.freeze({ first, duplicate });
-        });
-      },
+    const parsed = yield* parseExplicitAttemptLocatorV1(text);
+    const resolved = yield* resolveAttemptLocator(view, parsed.locator).pipe(
+      Effect.mapError((error) => error.code === "attempt-locator-view-invalid"
+        ? sourceCoreInvalid("The supplied Record view is not an authentic frozen reader.")
+        : error),
     );
-    if (matches.first === undefined) {
+    if (resolved.kind === "not-found") {
       return yield* Effect.fail(adoptionError(
         "adoption-locator-not-found",
-        `No published current-Record Attempt matches locator "${locator.text}".`,
+        `No published current-Record Attempt matches locator "${parsed.text}".`,
       ));
     }
-    if (matches.duplicate) {
+    if (resolved.kind === "ambiguous") {
       return yield* Effect.fail(adoptionError(
         "adoption-locator-ambiguous",
-        `Locator "${locator.text}" resolves to more than one immutable Attempt.`,
+        `Locator "${parsed.text}" resolves to more than one immutable Attempt.`,
       ));
     }
-    const ref = matches.first;
+    const ref = resolved.attempt;
     const attempt = yield* view.attempt(ref);
     if (attempt.state !== "available") {
       return yield* Effect.fail(sourceCoreInvalid(
-        `Locator "${locator.text}" points at a missing or invalid source Attempt.`,
+        `Locator "${parsed.text}" points at a missing or invalid source Attempt.`,
       ));
     }
+    const locator = Object.freeze({
+      text: parsed.text,
+      locator: parsed.locator,
+      attemptId: ref.attemptId,
+    });
     return yield* resolveAdoptionAttemptV1(view, attempt.value, locator);
   });
 }

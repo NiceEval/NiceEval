@@ -1,4 +1,9 @@
 import { Effect, Stream } from "effect";
+import type { AttemptLocator } from "../attempt-locator.ts";
+import {
+  resolveAttemptLocator,
+  type AttemptLocatorViewInvalid,
+} from "../attempt-locator-resolution.ts";
 import {
   narrowAnalysisSampleHandle,
   selectExplicitRuns,
@@ -30,6 +35,22 @@ export type SelectAnalysisSampleForAttemptError =
   | AnalysisAttemptNotFoundError
   | AnalysisAttemptAmbiguousError
   | RecordReaderReadError;
+
+export interface AnalysisAttemptLocatorNotFoundError {
+  readonly code: "sample-attempt-locator-not-found";
+  readonly locator: AttemptLocator;
+}
+
+export interface AnalysisAttemptLocatorAmbiguousError {
+  readonly code: "sample-attempt-locator-ambiguous";
+  readonly locator: AttemptLocator;
+}
+
+export type SelectAnalysisSampleForLocatorError =
+  | SelectAnalysisSampleForAttemptError
+  | AnalysisAttemptLocatorNotFoundError
+  | AnalysisAttemptLocatorAmbiguousError
+  | AttemptLocatorViewInvalid;
 
 interface AttemptSampleMatch {
   readonly handle: AnalysisSampleHandle;
@@ -109,6 +130,32 @@ export function selectAnalysisSampleForAttempt(input: {
     }
     return yield* narrowAnalysisSampleHandle(scan.first.handle, {
       slotIds: [scan.first.slotId],
+    });
+  });
+}
+
+/** Resolve one canonical short locator, then retain exact AttemptId selection internally. */
+export function selectAnalysisSampleForLocator(input: {
+  readonly reader: RecordReader<RecordReaderReadError>;
+  readonly locator: AttemptLocator;
+}): Effect.Effect<AnalysisSampleHandle, SelectAnalysisSampleForLocatorError> {
+  return Effect.gen(function* () {
+    const resolved = yield* resolveAttemptLocator(input.reader, input.locator);
+    if (resolved.kind === "not-found") {
+      return yield* Effect.fail<AnalysisAttemptLocatorNotFoundError>({
+        code: "sample-attempt-locator-not-found",
+        locator: input.locator,
+      });
+    }
+    if (resolved.kind === "ambiguous") {
+      return yield* Effect.fail<AnalysisAttemptLocatorAmbiguousError>({
+        code: "sample-attempt-locator-ambiguous",
+        locator: input.locator,
+      });
+    }
+    return yield* selectAnalysisSampleForAttempt({
+      reader: input.reader,
+      attemptId: resolved.attempt.attemptId,
     });
   });
 }

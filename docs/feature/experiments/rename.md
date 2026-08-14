@@ -37,7 +37,7 @@ oldId、newId、当前 identity、差异摘要与操作者采用理由写入目�
 成功输出列出 source locator、oldId、newId、目标 Run 和 `accepted`：
 
 ```text
-@01J8ZK3M6P4T7V9X2C5N8QW0RY  codex -> codex-5.6  accepted
+@1K1P0VJAPVJ12  codex -> codex-5.6  accepted
 ```
 
 `--json` 输出计划或 Invocation receipt，不另定义迁移结果格式。

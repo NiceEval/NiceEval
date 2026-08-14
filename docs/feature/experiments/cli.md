@@ -26,7 +26,7 @@ niceeval exp <experiment-prefix> --dry [--json]
 
 ```text
 PLAN
-compare/codex  memory/commit0  ordinal 0  reuse/carried @01J8ZK3M6P4T7V9X2C5N8QW0RY
+compare/codex  memory/commit0  ordinal 0  reuse/carried @1K1P0VJAPVJ12
 compare/codex  memory/commit0  ordinal 1  gap: identity-mismatch
 ```
 
@@ -35,15 +35,15 @@ reuse planning 先要求受支持的 eligibility schema 与匹配的 `reuseContr
 ## `niceeval accept`
 
 ```sh
-niceeval accept @01J8ZK3M6P4T7V9X2C5N8QW0RY
-niceeval accept @01J8ZK3M6P4T7V9X2C5N8QW0RY @123456789ABCDEFGHJKMNPQRST
+niceeval accept @1K1P0VJAPVJ12
+niceeval accept @1K1P0VJAPVJ12 @1MEMY3VCQ6B5B
 ```
 
 accept 用 `explicit-adoption/v1` 对全部 locator 与当前 target 做完整预检。任一项失败都零业务写入，不能降级成 execution gap。通过后为关联 Experiment 建立 Run，用 reference Member 引用源 Attempt，并在 `niceeval.membership-provenance` 保存 accepted、配置差异、policy identity 与操作者理由；执行事实不复制。
 
 | 错误 | 反馈 |
 |---|---|
-| `malformed-locator` | 要求完整 `@` 加 26 个大写 Crockford 字符 |
+| `malformed-locator` | 要求规范 `@1` 加 12 个大写 Crockford 字符；不接受空白、大小写折叠或旧 `@UUID` |
 | `locator-not-found` | 当前 Record 没有该 Attempt |
 | `accept-ineligible` | 列出 Verdict、timeout、配置或计划的阻断条件 |
 | `duplicate-accept-member` | 指出重复的目标 slot |
@@ -131,4 +131,3 @@ argv、配置发现或 selector 无法形成 Invocation 时，命令以非零状
 - [缓存与携带](cache.md) —— carried / accepted 的资格和写入。
 - [Record CLI](../record/cli.md) —— `show`、locator 与 Record 维护命令。
 - [Record Library](../record/library.md) —— receipt、reader、writer 与通道。
-

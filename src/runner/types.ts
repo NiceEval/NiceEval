@@ -22,7 +22,7 @@ import type {
 } from "../assertions/types.ts";
 import type { ScoreTestContext, TestContext } from "../context/types.ts";
 import type { CapturedEvalSource } from "./eval-source.ts";
-import type { AttemptLocator } from "../record/locator.ts";
+import type { AttemptLocator } from "../attempt-locator.ts";
 import type { RecordAttachmentWrite } from "../record/attachment/index.ts";
 import type { SealedAttemptAssertions } from "../assertions/api.ts";
 import type { CurrentReusedAttemptReadback } from "./reuse-readback.ts";
@@ -397,9 +397,7 @@ export interface EvalResult {
   /** 本 attempt 开始的墙钟时刻(ISO);view 按 eval 粒度展示「何时跑的」。 */
   startedAt?: string;
   /**
-   * 不透明的 Attempt 定位符(`@` 前缀短确定性编码,见 `src/record/locator.ts` 的 AttemptLocator),
-   * 由 {runId, evalId, attempt} 身份元组派生。非携带条目由 writer 在落盘时算出;
-   * 携带条目(`--resume` 合入)原样复制上一轮的值,从不按承载它的新 Run 重算。
+   * 不透明的 Attempt 定位符；由完整 durable AttemptId 确定性派生。
    */
   locator?: string;
   /**
@@ -1319,7 +1317,7 @@ export interface Attempt {
    * 预分配 runId 与 attempt 身份派生,贯穿执行、留存登记与落盘——登记项、run 收尾反馈与
    * result.json 从第一次写入起就用同一个值。裸 run(无 experimentId)不产出。
    */
-  readonly locator?: AttemptLocator;
+  locator?: AttemptLocator;
 }
 
 // ───────────────────────── 反馈 profile / 事件 / reducer 状态 ─────────────────────────
@@ -1455,7 +1453,7 @@ export interface ActiveRunActivity {
  * 解析 `reason` 之外的任何文本就能拼出机器可读的输出。
  */
 export interface FailureDetail {
-  /** Exact current Record locator (`@AttemptId`), never a reconstructed hash locator. */
+  /** Canonical current Record Attempt locator. */
   locator: string;
   identity: AttemptRef;
   who: string;
@@ -1680,7 +1678,7 @@ export type DurableFeedbackEvent =
   | {
       type: "failure";
       at: number;
-      /** Exact writer-issued Record identity (`@AttemptId`). */
+      /** Writer-issued short alias for the exact durable AttemptId. */
       locator: string;
       identity: AttemptRef;
       who: string;

@@ -25,7 +25,7 @@ npx niceeval exp checkout --dry
 
 ```text
 PLAN
-checkout  cart/add-item  ordinal 0  reuse @01J8ZK3M6P4T7V9X2C5N8QW0RY
+checkout  cart/add-item  ordinal 0  reuse @1K1P0VJAPVJ12
 checkout  cart/add-item  ordinal 1  execute: input-identity-changed
 ```
 
@@ -65,7 +65,7 @@ npx niceeval exp checkout --rerun all
 当自动采用条件不满足，但你确认某个已有 Attempt 仍可用时，使用完整 locator：
 
 ```sh
-npx niceeval accept @01J8ZK3M6P4T7V9X2C5N8QW0RY
+npx niceeval accept @1K1P0VJAPVJ12
 ```
 
 `accept` 先检查所有输入，再发布一个以 `reference` 采用该 Attempt 的新 Run。操作者理由、差异和资格写入该 Run 的 `niceeval.membership-provenance/v1` RecordAttachment。它不会修改源 Attempt，也不会复制源 Attempt 的 Attachment 值。

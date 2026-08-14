@@ -20,7 +20,7 @@ interface DryTarget {
   evalId: string;
   slots: Array<{ state: "reused" | "gap" }>;
   readbacks: Array<{
-    source: { attemptId: string };
+    source: { attemptId: string; locator: string };
     verdict: string | { state: string; value?: string };
   }>;
 }
@@ -48,7 +48,7 @@ test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt",
       passed: 1,
     });
     const firstLocator = firstEval.locator!;
-    expect(firstLocator).toMatch(/^@[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(firstLocator).toMatch(/^@1[0-9A-HJKMNP-TV-Z]{12}$/);
 
     const forced = await niceeval.run(["exp", "history", "--rerun", "all", "--json"]);
     expect(forced.exitCode, forced.diagnostic()).toBe(0);
@@ -71,7 +71,7 @@ test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt",
     expect(currentTarget).toBeDefined();
     expect(currentTarget!.slots.map((slot) => slot.state)).toEqual(["reused"]);
     expect(currentTarget!.readbacks).toHaveLength(1);
-    expect(`@${currentTarget!.readbacks[0]!.source.attemptId}`).toBe(forcedLocator);
+    expect(currentTarget!.readbacks[0]!.source.locator).toBe(forcedLocator);
     expect(currentTarget!.readbacks[0]!.verdict).toBe("passed");
 
     const carried = await niceeval.run(["exp", "history", "--json"]);

@@ -12,7 +12,7 @@ interface DryTarget {
   evalId: string;
   slots: Array<{ state: "reused" | "gap" }>;
   readbacks: Array<{
-    source: { attemptId: string };
+    source: { attemptId: string; locator: string };
     verdict: string | { state: string; value?: string };
   }>;
 }
@@ -57,8 +57,8 @@ test("改变一个 Eval 后只重新派发该 identity，未改变的 Eval 继�
     expect(baselineBeta).toMatchObject({ event: "eval", verdict: "passed" });
     const baselineAlphaLocator = baselineAlpha.locator!;
     const baselineBetaLocator = baselineBeta.locator!;
-    expect(baselineAlphaLocator).toMatch(/^@[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
-    expect(baselineBetaLocator).toMatch(/^@[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(baselineAlphaLocator).toMatch(/^@1[0-9A-HJKMNP-TV-Z]{12}$/);
+    expect(baselineBetaLocator).toMatch(/^@1[0-9A-HJKMNP-TV-Z]{12}$/);
 
     const alphaPath = join(root, "evals", "simple", "alpha.eval.ts");
     const alphaSource = readFileSync(alphaPath, "utf8");
@@ -77,7 +77,7 @@ test("改变一个 Eval 后只重新派发该 identity，未改变的 Eval 继�
     expect(changedAlpha).toBeDefined();
     expect(changedAlpha!.slots.map((slot) => slot.state)).toEqual(["gap"]);
     expect(changedAlpha!.readbacks).toHaveLength(1);
-    expect(`@${changedAlpha!.readbacks[0]!.source.attemptId}`).toBe(baselineAlphaLocator);
+    expect(changedAlpha!.readbacks[0]!.source.locator).toBe(baselineAlphaLocator);
     expect(changedAlpha!.readbacks[0]!.verdict).toMatchObject({ state: "available", value: "passed" });
 
     const changedDispatch = await niceeval.run(["exp", "carry", "simple/alpha", "--json"]);
@@ -95,7 +95,7 @@ test("改变一个 Eval 后只重新派发该 identity，未改变的 Eval 继�
     );
     expect(changedAlphaResult).toMatchObject({ event: "eval", verdict: "passed" });
     const changedAlphaLocator = changedAlphaResult.locator!;
-    expect(changedAlphaLocator).toMatch(/^@[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(changedAlphaLocator).toMatch(/^@1[0-9A-HJKMNP-TV-Z]{12}$/);
     expect(changedAlphaLocator).not.toBe(baselineAlphaLocator);
 
     const fullDry = await niceeval.run(["exp", "carry", "--dry", "--json"]);
@@ -106,13 +106,13 @@ test("改变一个 Eval 后只重新派发该 identity，未改变的 Eval 继�
     expect(carriedAlpha).toBeDefined();
     expect(carriedAlpha!.slots.map((slot) => slot.state)).toEqual(["reused"]);
     expect(carriedAlpha!.readbacks).toHaveLength(1);
-    expect(`@${carriedAlpha!.readbacks[0]!.source.attemptId}`).toBe(changedAlphaLocator);
+    expect(carriedAlpha!.readbacks[0]!.source.locator).toBe(changedAlphaLocator);
     expect(carriedAlpha!.readbacks[0]!.verdict).toBe("passed");
     const carriedBeta = fullPlan.matrix.find((row) => row.evalId === "simple/beta");
     expect(carriedBeta).toBeDefined();
     expect(carriedBeta!.slots.map((slot) => slot.state)).toEqual(["reused"]);
     expect(carriedBeta!.readbacks).toHaveLength(1);
-    expect(`@${carriedBeta!.readbacks[0]!.source.attemptId}`).toBe(baselineBetaLocator);
+    expect(carriedBeta!.readbacks[0]!.source.locator).toBe(baselineBetaLocator);
     expect(carriedBeta!.readbacks[0]!.verdict).toBe("passed");
 
     const fullDispatch = await niceeval.run(["exp", "carry", "--json"]);

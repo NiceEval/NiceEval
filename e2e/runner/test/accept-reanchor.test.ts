@@ -24,7 +24,7 @@ interface DryTarget {
   evalId: string;
   slots: Array<{ state: "reused" | "gap" }>;
   readbacks: Array<{
-    source: { attemptId: string };
+    source: { attemptId: string; locator: string };
     verdict: string | { state: string; value?: string };
   }>;
 }
@@ -125,7 +125,7 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
     });
     expect(initial.expReceipt()).toMatchObject({ completion: "completed" });
     const oldLocator = initialEval.locator!;
-    expect(oldLocator).toMatch(/^@[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(oldLocator).toMatch(/^@1[0-9A-HJKMNP-TV-Z]{12}$/);
 
     const evalPath = join(root, "evals", "accept", "accept-target.eval.ts");
     const evalSource = readFileSync(evalPath, "utf8");
@@ -146,14 +146,14 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
     expect(changedTarget).toBeDefined();
     expect(changedTarget!.slots.map((slot) => slot.state)).toEqual(["gap"]);
     expect(changedTarget!.readbacks).toHaveLength(1);
-    expect(`@${changedTarget!.readbacks[0]!.source.attemptId}`).toBe(oldLocator);
+    expect(changedTarget!.readbacks[0]!.source.locator).toBe(oldLocator);
     expect(changedTarget!.readbacks[0]!.verdict).toMatchObject({ state: "available", value: "passed" });
 
     const accepted = await niceeval.run(["accept", oldLocator]);
     expect(accepted.exitCode, accepted.diagnostic()).toBe(0);
     expect(accepted.stdout).toContain(`Accepted source Attempt ${oldLocator} into new Run `);
     const acceptedRunMatch = accepted.stdout.match(
-      /into new Run ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\. Result locator remains (@[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\./,
+      /into new Run ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\. Result locator remains (@1[0-9A-HJKMNP-TV-Z]{12})\./,
     );
     expect(acceptedRunMatch, accepted.diagnostic()).not.toBeNull();
     const acceptedRunId = acceptedRunMatch![1]!;
@@ -214,7 +214,7 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
     const nextTarget = nextPlan.matrix.find((row) => row.evalId === "accept/accept-target");
     expect(nextTarget).toBeDefined();
     expect(nextTarget!.slots.map((slot) => slot.state)).toEqual(["gap"]);
-    expect(`@${nextTarget!.readbacks[0]!.source.attemptId}`).toBe(newLocator);
+    expect(nextTarget!.readbacks[0]!.source.locator).toBe(newLocator);
     },
   );
 });

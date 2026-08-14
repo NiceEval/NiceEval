@@ -1,4 +1,5 @@
 import { Either } from "effect";
+import { encodeAttemptLocator } from "../../attempt-locator.ts";
 import {
   assertionsProjector,
   attemptSlotProjection,
@@ -180,7 +181,7 @@ function attachmentForSlot<Value>(
 function attemptOverviewSlotBlock(input: AttemptOverviewSlot): ReportBlock {
   const coordinate = evaluationCoordinate(input.slot, input.plan);
   return reportSection({
-    heading: `Attempt @${input.slot.attempt.attemptId}`,
+    heading: `Attempt ${encodeAttemptLocator(input.slot.attempt.attemptId)}`,
     children: [
       reportSection({
         heading: "Identity",
@@ -235,7 +236,7 @@ function identityBlocks(
   coordinate: EvaluationPlanCoordinate | undefined,
 ): readonly ReportBlock[] {
   const rows: Array<Readonly<Record<string, string | number>>> = [
-    { field: "Attempt", value: `@${slot.attempt.attemptId}` },
+    { field: "Attempt", value: encodeAttemptLocator(slot.attempt.attemptId) },
     { field: "Origin Run", value: slot.attempt.originRunId },
     { field: "Selected Run", value: slot.runId },
     { field: "Slot", value: slot.slotId },
