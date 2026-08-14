@@ -27,7 +27,9 @@ scatter-point contract. `show` reads the raw frame into named stat, chart,
 table, hierarchy, source, and timing structures; only a four-row PTY witness
 is character-exact. The classic overview mounts `SampleNotices`, so malformed
 Record warnings are exercised by both hosts instead of asserted against an
-undeclared component. `view` uses real Chromium journeys and binds exact values
+undeclared component. Its public navigation id is `overview`; the legacy
+multi-page readback verifies that `show --page` reproduces this id rather than
+the former `report` name. `view` uses real Chromium journeys and binds exact values
 to their DOM roles, table cells, links, disclosures, painted marks, geometry,
 and overflow behavior. Candidate text, JSON, and DOM never generate expected
 values for one another.
