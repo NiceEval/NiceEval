@@ -5,10 +5,10 @@
 // 只从 @niceeval/testkit 根导入；不读 .niceeval 私有布局、不 import 候选源码/类型。
 
 import {
+  assertExpEvalOutcomes,
   command,
   only,
   type ExpEvalEvent,
-  type ExpEvent,
   type ProcessReceipt,
 } from "@niceeval/testkit";
 import { rmSync } from "node:fs";
@@ -21,6 +21,13 @@ const EXPECTED_EVALS = [
   "session/recall",
   "usage/tokens",
 ] as const;
+const EXPECTED_OUTCOMES = EXPECTED_EVALS.map((evalId) => ({
+  experimentId: "ci",
+  evalId,
+  verdict: "passed" as const,
+  attempts: 1,
+  passed: 1,
+}));
 
 const REQUIRED_LIVE_SECRETS = ["BUB_API_KEY", "BUB_API_BASE"] as const;
 
@@ -58,9 +65,7 @@ beforeAll(async () => {
     timeoutMs: 46 * 60_000,
   });
   expect(run.exitCode, run.diagnostic()).toBe(0);
-  evalEvents = run
-    .ndjson<ExpEvent>()
-    .filter((event): event is ExpEvalEvent => "event" in event && event.event === "eval");
+  evalEvents = run.expEvalEvents();
 }, 48 * 60_000);
 
 it("真实 OpenClaw adapter 的 Eval 通过数正确且没有未通过项", () => {
@@ -70,10 +75,11 @@ it("真实 OpenClaw adapter 的 Eval 通过数正确且没有未通过项", () =
   const inv = run.expReceipt();
   expect(inv.completion, run.diagnostic()).toBe("completed");
   expect(inv.runIds, run.diagnostic()).toHaveLength(1);
-  expect(evalEvents.filter((event) => event.verdict === "passed"), run.diagnostic()).toHaveLength(
-    EXPECTED_EVALS.length,
+  assertExpEvalOutcomes(
+    evalEvents,
+    EXPECTED_OUTCOMES,
+    () => run.diagnostic(),
   );
-  expect(evalEvents.filter((event) => event.verdict !== "passed"), run.diagnostic()).toHaveLength(0);
 });
 
 it("show --execution 读回 OpenClaw 的代表性工具证据", async () => {

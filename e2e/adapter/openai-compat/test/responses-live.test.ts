@@ -1,6 +1,7 @@
 // owner: docs/engineering/testing/e2e/adapter/openai-compat.md#responses-live
 
 import { beforeAll, expect, test } from "vitest";
+import { assertExpEvalOutcomes } from "@niceeval/testkit";
 import {
   runOpenAiLiveEvidence,
   showOpenAiLiveEvidence,
@@ -22,12 +23,17 @@ test("真实 OpenAI Responses 一次请求以通过 verdict 完成", () => {
   const receipt = evidence.receipt.expReceipt();
   expect(receipt.completion).toBe("completed");
   expect(receipt.runIds, evidence.receipt.diagnostic()).not.toHaveLength(0);
-  expect(evidence.evalEvent).toMatchObject({
-    evalId: evidence.evalId,
-    experimentId: evidence.experimentId,
-    verdict: "passed",
-    attempts: 1,
-  });
+  assertExpEvalOutcomes(
+    evidence.evalEvents,
+    [{
+      evalId: "responses-live",
+      experimentId: "responses-live",
+      verdict: "passed",
+      attempts: 1,
+      passed: 1,
+    }],
+    () => evidence.receipt.diagnostic(),
+  );
 });
 
 test("show --execution 读回 OpenAI Responses 的代表性证据", async () => {

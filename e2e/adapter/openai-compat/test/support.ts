@@ -3,8 +3,8 @@ import {
   command,
   createE2EContext,
   type ExpEvalEvent,
-  type ExpEvent,
   type ProcessReceipt,
+  only,
 } from "@niceeval/testkit";
 import { expect } from "vitest";
 
@@ -31,6 +31,7 @@ const niceevalShow = command(niceevalBin);
 export interface OpenAiLiveEvidence {
   readonly receipt: ProcessReceipt;
   readonly evalEvent: ExpEvalEvent;
+  readonly evalEvents: readonly ExpEvalEvent[];
   readonly experimentId: string;
   readonly evalId: string;
   readonly executionMarkers: readonly string[];
@@ -62,17 +63,16 @@ export async function runOpenAiLiveEvidence(options: {
         { timeoutMs: 4 * 60_000 },
       );
       expect(run.exitCode, run.diagnostic()).toBe(0);
-      const events = run.ndjson<ExpEvent>();
-      const evalEvent = events.find(
-        (event): event is ExpEvalEvent =>
-          "event" in event && event.event === "eval" && event.evalId === options.evalId,
+      const evalEvents = run.expEvalEvents();
+      const evalEvent = only(
+        evalEvents,
+        (event) => event.evalId === options.evalId,
+        () => run.diagnostic(),
       );
-      if (evalEvent === undefined || evalEvent.locator === undefined) {
-        throw new Error(`live ${options.evalId} eval has no public locator: ${run.diagnostic()}`);
-      }
       evidence = {
         receipt: run,
         evalEvent,
+        evalEvents,
         experimentId: options.experimentId,
         evalId: options.evalId,
         executionMarkers: options.executionMarkers,

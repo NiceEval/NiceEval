@@ -7,9 +7,8 @@
 
 import "dotenv/config";
 import {
+  assertExpEvalOutcomes,
   command,
-  type ExpEvalEvent,
-  type ExpEvent,
   type ProcessReceipt,
   waitForOutput,
   withProcess,
@@ -20,6 +19,13 @@ import { expect, it } from "vitest";
 import { AI_SDK_BASE_URL } from "../src/topology.ts";
 
 const EXPECTED_EVALS = ["tool-call", "hitl-approval", "session-replay"] as const;
+const EXPECTED_OUTCOMES = EXPECTED_EVALS.map((evalId) => ({
+  experimentId: "ci",
+  evalId,
+  verdict: "passed" as const,
+  attempts: 1,
+  passed: 1,
+}));
 const REQUIRED_LIVE_SECRETS = ["OPENAI_API_KEY", "OPENAI_BASE_URL"] as const;
 
 const niceevalBin = join(process.cwd(), "node_modules", ".bin", "niceeval");
@@ -79,36 +85,21 @@ it("真实 AI SDK adapter 运行结果经过公开 CLI 读回", async () => {
         },
       );
       expect(run.exitCode, run.diagnostic()).toBe(0);
-      const events = run.ndjson<ExpEvent>();
+      const evalEvents = assertExpEvalOutcomes(
+        run.expEvalEvents(),
+        EXPECTED_OUTCOMES,
+        () => run.diagnostic(),
+      );
       // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md）：
       // completion 与 runIds；每个 Eval 的 identity/verdict/attempts 由中间 eval
       // 事件逐一断言，live provider 故障不会冒充通过。
       const inv = run.expReceipt();
       expect(inv.completion, run.diagnostic()).toBe("completed");
       expect(inv.runIds, run.diagnostic()).toHaveLength(1);
-      for (const evalId of EXPECTED_EVALS) {
-        const evalEvent = events.find(
-          (event): event is ExpEvalEvent =>
-            "event" in event && event.event === "eval" && event.evalId === evalId,
-        );
-        expect(evalEvent, run.diagnostic()).toBeDefined();
-        expect(evalEvent).toMatchObject({
-          event: "eval",
-          evalId,
-          verdict: "passed",
-          attempts: 1,
-        });
-      }
-
       const locators = new Map<string, string>();
       for (const evalId of EXPECTED_EVALS) {
-        const evalEvent = events.find(
-          (event): event is ExpEvalEvent =>
-            "event" in event && event.event === "eval" && event.evalId === evalId,
-        );
-        expect(evalEvent, run.diagnostic()).toMatchObject({ verdict: "passed" });
-        expect(evalEvent?.locator, run.diagnostic()).toMatch(/^@/);
-        locators.set(evalId, evalEvent!.locator!);
+        const evalEvent = evalEvents.find((event) => event.evalId === evalId)!;
+        locators.set(evalId, evalEvent.locator);
       }
 
       // outcome：execution 是适配器收到的公开投影；工具名、入参和 OTel 节点

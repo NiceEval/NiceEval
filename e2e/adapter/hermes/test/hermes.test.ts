@@ -5,10 +5,9 @@
 // 只从 @niceeval/testkit 根导入；不读 .niceeval 私有布局、不 import 候选源码/类型。
 
 import {
+  assertExpEvalOutcomes,
   createE2EContext,
   only,
-  type ExpEvalEvent,
-  type ExpEvent,
 } from "@niceeval/testkit";
 import { join, resolve } from "node:path";
 import { expect, it } from "vitest";
@@ -19,6 +18,13 @@ const EXPECTED_EVALS = [
   "session/recall",
   "usage/tokens",
 ] as const;
+const EXPECTED_OUTCOMES = EXPECTED_EVALS.map((evalId) => ({
+  experimentId: "ci",
+  evalId,
+  verdict: "passed" as const,
+  attempts: 1,
+  passed: 1,
+}));
 
 const REQUIRED_LIVE_SECRETS = [
   "BUB_API_KEY",
@@ -60,9 +66,11 @@ it("真实 Hermes CLI adapter 完成运行并公开读回工具与 timing 证据
         timeoutMs: 36 * 60_000,
       });
       expect(run.exitCode, run.diagnostic()).toBe(0);
-      const evalEvents = run
-        .ndjson<ExpEvent>()
-        .filter((event): event is ExpEvalEvent => "event" in event && event.event === "eval");
+      const evalEvents = assertExpEvalOutcomes(
+        run.expEvalEvents(),
+        EXPECTED_OUTCOMES,
+        () => run.diagnostic(),
+      );
 
       // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md「结束反馈与
       // receipt」）：completion 与 runIds（每个 Experiment 一个 Run）。成败由下面带身份的
@@ -70,15 +78,6 @@ it("真实 Hermes CLI adapter 完成运行并公开读回工具与 timing 证据
       const inv = run.expReceipt();
       expect(inv.completion, run.diagnostic()).toBe("completed");
       expect(inv.runIds, run.diagnostic()).toHaveLength(1);
-      expect(
-        evalEvents.filter((event) => event.verdict === "passed"),
-        run.diagnostic(),
-      ).toHaveLength(EXPECTED_EVALS.length);
-      expect(
-        evalEvents.filter((event) => event.verdict !== "passed"),
-        run.diagnostic(),
-      ).toHaveLength(0);
-
       const event = only(
         evalEvents,
         (candidate) => candidate.evalId === "coding-task/write-and-verify",

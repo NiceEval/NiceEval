@@ -4,7 +4,7 @@
 // 再从公开 CLI 读回 Eval、attempt、execution 与 timing。
 // 只从 @niceeval/testkit 根导入；不读 .niceeval 私有布局、不 import 候选源码/类型。
 
-import { command, type ExpEvalEvent, type ExpEvent } from "@niceeval/testkit";
+import { assertExpEvalOutcomes, command } from "@niceeval/testkit";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
@@ -14,6 +14,13 @@ const BASELINE_EVALS = [
   "session/recall",
   "usage/tokens",
 ] as const;
+const BASELINE_OUTCOMES = BASELINE_EVALS.map((evalId) => ({
+  experimentId: "ci",
+  evalId,
+  verdict: "passed" as const,
+  attempts: 1,
+  passed: 1,
+}));
 const SKILL_EVAL = "skills/status-report";
 const GO_EVAL = "provider/go-routing";
 
@@ -84,22 +91,16 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   const inv = run.expReceipt();
   expect(inv.completion, run.diagnostic()).toBe("completed");
   expect(inv.runIds, run.diagnostic()).toHaveLength(1);
-  const evalEvents = run
-    .ndjson<ExpEvent>()
-    .filter(
-      (event): event is ExpEvalEvent => "event" in event && event.event === "eval",
-    );
-  expect(evalEvents.filter((event) => event.verdict === "passed"), run.diagnostic()).toHaveLength(
-    BASELINE_EVALS.length,
+  const evalEvents = assertExpEvalOutcomes(
+    run.expEvalEvents(),
+    BASELINE_OUTCOMES,
+    () => run.diagnostic(),
   );
-  expect(evalEvents.filter((event) => event.verdict !== "passed"), run.diagnostic()).toHaveLength(0);
 
   const locators: Record<string, string> = {};
   for (const evalId of BASELINE_EVALS) {
     const event = evalEvents.find((candidate) => candidate.evalId === evalId);
-    expect(event, run.diagnostic()).toMatchObject({ verdict: "passed" });
-    expect(event?.locator, run.diagnostic()).toMatch(/^@/);
-    locators[evalId] = event!.locator!;
+    locators[evalId] = event!.locator;
   }
 
   // outcome：execution 是适配器收到的公开投影。TOOL 卡片头是原始未归一化名
@@ -147,11 +148,17 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   const skillInv = skillRun.expReceipt();
   expect(skillInv.completion, skillRun.diagnostic()).toBe("completed");
   expect(skillInv.runIds, skillRun.diagnostic()).toHaveLength(1);
-  const skillEvents = skillRun.ndjson<ExpEvent>().filter(
-    (event): event is ExpEvalEvent => "event" in event && event.event === "eval",
+  assertExpEvalOutcomes(
+    skillRun.expEvalEvents(),
+    [{
+      experimentId: "skill",
+      evalId: SKILL_EVAL,
+      verdict: "passed",
+      attempts: 1,
+      passed: 1,
+    }],
+    () => skillRun.diagnostic(),
   );
-  expect(skillEvents.filter((event) => event.verdict === "passed"), skillRun.diagnostic()).toHaveLength(1);
-  expect(skillEvents.filter((event) => event.verdict !== "passed"), skillRun.diagnostic()).toHaveLength(0);
 
   // Go 配置独立成线：专用 Eval 用显式 OPENCODE_API_KEY、无自定义 base URL 完成
   // 真实 provider 调用，再从官方 session export 核对 provider 与 API model。
@@ -170,16 +177,20 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   const goInv = goRun.expReceipt();
   expect(goInv.completion, goRun.diagnostic()).toBe("completed");
   expect(goInv.runIds, goRun.diagnostic()).toHaveLength(1);
-  const goEvents = goRun.ndjson<ExpEvent>().filter(
-    (event): event is ExpEvalEvent => "event" in event && event.event === "eval",
+  const goEvents = assertExpEvalOutcomes(
+    goRun.expEvalEvents(),
+    [{
+      experimentId: "go",
+      evalId: GO_EVAL,
+      verdict: "passed",
+      attempts: 1,
+      passed: 1,
+    }],
+    () => goRun.diagnostic(),
   );
-  expect(goEvents.filter((event) => event.verdict === "passed"), goRun.diagnostic()).toHaveLength(1);
-  expect(goEvents.filter((event) => event.verdict !== "passed"), goRun.diagnostic()).toHaveLength(0);
 
   const goEvent = goEvents.find((event) => event.evalId === GO_EVAL);
-  expect(goEvent, goRun.diagnostic()).toMatchObject({ verdict: "passed" });
-  expect(goEvent?.locator, goRun.diagnostic()).toMatch(/^@/);
-  const goLocator = goEvent!.locator!;
+  const goLocator = goEvent!.locator;
   const goExecution = await niceeval.run(["show", goLocator, "--execution"]);
   expect(goExecution.exitCode, goExecution.diagnostic()).toBe(0);
   expect(goExecution.stdout).toContain("opencode export");

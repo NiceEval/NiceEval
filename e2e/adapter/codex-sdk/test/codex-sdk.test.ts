@@ -5,9 +5,9 @@
 // show commands only; it never reads the private .niceeval layout.
 
 import {
+  assertExpEvalOutcomes,
   command,
-  type ExpEvalEvent,
-  type ExpEvent,
+  only,
   type ProcessReceipt,
   withProcess,
   withTempDir,
@@ -74,34 +74,32 @@ beforeAll(async () => {
   });
 
   expect(runReceipt.exitCode, runReceipt.diagnostic()).toBe(0);
-  const evalEvent = runReceipt.ndjson<ExpEvent>().find(
-    (event): event is ExpEvalEvent =>
-      "event" in event && event.event === "eval" && event.evalId === EVAL_ID,
+  const evalEvent = only(
+    runReceipt.expEvalEvents(),
+    (event) => event.evalId === EVAL_ID,
+    () => runReceipt.diagnostic(),
   );
-  expect(evalEvent, runReceipt.diagnostic()).toMatchObject({ verdict: "passed" });
-  expect(evalEvent?.locator, runReceipt.diagnostic()).toMatch(/^@/);
-  locator = evalEvent!.locator!;
+  locator = evalEvent.locator;
 }, 14 * 60_000);
 
 it("真实 Codex SDK converter 的 Eval 以通过 verdict 完成", () => {
-  const events = runReceipt.ndjson<ExpEvent>();
   // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md）：
   // completion 与 runIds；成败由带身份的 eval 事件精确断言，live provider
   // 故障不会冒充通过。
   const inv = runReceipt.expReceipt();
   expect(inv.completion, runReceipt.diagnostic()).toBe("completed");
   expect(inv.runIds, runReceipt.diagnostic()).toHaveLength(1);
-  const evalEvent = events.find(
-    (event): event is ExpEvalEvent =>
-      "event" in event && event.event === "eval" && event.evalId === EVAL_ID,
+  assertExpEvalOutcomes(
+    runReceipt.expEvalEvents(),
+    [{
+      evalId: EVAL_ID,
+      experimentId: "live",
+      verdict: "passed",
+      attempts: 1,
+      passed: 1,
+    }],
+    () => runReceipt.diagnostic(),
   );
-  expect(evalEvent, runReceipt.diagnostic()).toBeDefined();
-  expect(evalEvent).toMatchObject({
-    event: "eval",
-    evalId: EVAL_ID,
-    verdict: "passed",
-    attempts: 1,
-  });
 });
 
 it("show --execution 读回 Codex SDK converter 的代表性证据", async () => {

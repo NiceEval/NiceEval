@@ -1,9 +1,8 @@
 import { createServer } from "node:http";
 import { join, resolve } from "node:path";
 import {
+  assertExpEvalOutcomes,
   createE2EContext,
-  type ExpEvalEvent,
-  type ExpEvent,
   waitForOutput,
 } from "@niceeval/testkit";
 import { expect } from "vitest";
@@ -93,7 +92,6 @@ export async function proveLocalProtocolOwner(kind: OwnerKind): Promise<void> {
             timeoutMs: kind === "timeout" ? 30_000 : 60_000,
           },
         );
-        const events = receipt.ndjson<ExpEvent>();
         // receipt 只承载 Invocation 级完成事实(见 docs/feature/experiments/cli.md「结束反馈与
         // receipt」)：completion 与 runIds。pass/fail 由下面带身份的 eval 事件精确断言，不从
         // receipt 猜成败，也不在 receipt 上断言计数。
@@ -103,18 +101,12 @@ export async function proveLocalProtocolOwner(kind: OwnerKind): Promise<void> {
         // 每个 kind 恰好一个 Experiment / 一个 Eval；eval 事件是中间的身份事件，严格断言
         // evalId / experimentId / verdict / attempts——成功与故障的确定性路径都由此判定。
         const { evalId, verdict } = KIND_EXPECTATIONS[kind];
-        const evalEvent = events.find(
-          (event): event is ExpEvalEvent =>
-            "event" in event && event.event === "eval" && event.evalId === evalId,
+        const evalEvents = assertExpEvalOutcomes(
+          receipt.expEvalEvents(),
+          [{ evalId, experimentId: kind, verdict, attempts: 1 }],
+          () => receipt.diagnostic(),
         );
-        expect(evalEvent, receipt.diagnostic()).toMatchObject({
-          event: "eval",
-          evalId,
-          experimentId: kind,
-          verdict,
-          attempts: 1,
-        });
-        expect(evalEvent?.locator, receipt.diagnostic()).toBeTruthy();
+        const evalEvent = evalEvents[0]!;
         if (verdict === "passed") {
           expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
         } else {
@@ -138,7 +130,7 @@ export async function proveLocalProtocolOwner(kind: OwnerKind): Promise<void> {
         // 必须可从公开 timing 页面读出 Eval 与首轮 Turn。此 direct Agent 没有
         // 声明 setup，runner 不应凭空补一个 agent.setup 阶段。
         const timing = await niceeval.run(
-          ["show", evalEvent!.locator!, "--timing"],
+          ["show", evalEvent!.locator, "--timing"],
         );
         expect(timing.exitCode, timing.diagnostic()).toBe(0);
         expect(timing.stdout, timing.diagnostic()).toContain("eval.run");
