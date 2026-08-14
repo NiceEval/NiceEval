@@ -1649,9 +1649,8 @@ function runDebugCommand(
     const evals = yield* cliEffect("discover evals for lifecycle debug", discoverEvals(cwd));
     const experiments = yield* cliEffect("discover experiments for lifecycle debug", discoverExperiments(cwd));
     const experimentIds = experiments.map((experiment) => experiment.id);
-    const matchedExperimentIds = matchExperimentSelector(experimentIds, experimentSelector);
-    const matchedExperiments = experiments
-      .filter((experiment) => matchedExperimentIds.includes(experiment.id))
+    const matchedExperiments = uniqueExactOrPrefix(experiments, experimentSelector)
+      .slice()
       .sort((left, right) => left.id.localeCompare(right.id));
     if (matchedExperiments.length === 0) {
       yield* writeStderr(t("cli.debug.experimentNoMatch", {

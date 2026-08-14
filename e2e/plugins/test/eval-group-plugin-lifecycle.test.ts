@@ -107,6 +107,7 @@ test("Eval Group、Sandbox 与 Eval Plugin 各自遵守共享实例的生命周�
       evalId: "group-plugin/01-first",
     });
     const lane = debugPlan.commandPlan.experiments[0]!.lanes[0]!;
+    expect(lane.slots).toHaveLength(1);
     expect(lane.beforeSlots!.map((step) => step.phase)).toEqual([
       "plugin.lifecycle.setup",
       "plugin.lifecycle.setup",
