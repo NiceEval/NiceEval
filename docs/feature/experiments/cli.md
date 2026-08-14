@@ -72,6 +72,21 @@ TTY 人读输出不把整棵树放入一个总框。总览、Experiment、lane�
 ╰──────────────────────────────────────────────────────────────────────╯
 ```
 
+多行 Shell 不折成带 `\n` 的单行 JSON 字符串。框内代码区显示原始行数，并用固定 gutter 保留缩进、空行和末尾换行。单行过宽时，续行仍从同一个 gutter 开始；tab、回车、ESC 与其它终端控制字符显示为转义文本：
+
+```text
+╭─ sandbox.prepare ──────────────────────────────────────────────────── EXACT ─╮
+│ position: lane eval:group/first · slot group/first #0                        │
+│ owner: eval:group/first                                                      │
+│ command: shell · 5 lines                                                     │
+│   │ set -eu                                                                  │
+│   │   pnpm install                                                           │
+│   │                                                                          │
+│   │   pnpm test                                                              │
+│   │                                                                          │
+╰──────────────────────────────────────────────────────────────────────────────╯
+```
+
 非 TTY、`NO_COLOR` 或过窄终端按同一 Panel 契约逐框降级为无框的标题与正文；节点、字段和顺序不变。`--json` 不携带框线，继续输出同一棵计划树的机器形状。
 
 可声明的 `shell()` / `command()` 展开为具体命令；不能安全检查的 callback 标为 `opaque`。Direct Agent 显式显示没有 Sandbox 或 template，而不是省略 materialize 阶段。

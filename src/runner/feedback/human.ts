@@ -1253,12 +1253,38 @@ function commandPlanOwner(step: CommandPlanStep): string | undefined {
   return `owner: ${step.owner.kind}:${step.owner.id}${step.owner.index === undefined ? "" : `#${step.owner.index}`}`;
 }
 
+/** 多行 Shell 保留源码换行与缩进，但不能把控制字符直接写进终端。 */
+function visibleCommandPlanShellLine(line: string): string {
+  let visible = "";
+  for (const character of line) {
+    const codePoint = character.codePointAt(0)!;
+    if (character === "\t") {
+      visible += "\\t";
+    } else if (character === "\r") {
+      visible += "\\r";
+    } else if (codePoint < 0x20 || (codePoint >= 0x7f && codePoint <= 0x9f)) {
+      visible += `\\u${codePoint.toString(16).padStart(4, "0")}`;
+    } else {
+      visible += character;
+    }
+  }
+  return visible;
+}
+
 function commandPlanExact(step: CommandPlanStep): readonly string[] {
   const command = step.command;
   if (command === undefined) return ["command: exact command unavailable"];
   const operation = command.kind === "argv"
-    ? `command: argv ${JSON.stringify([command.executable, ...command.args])}`
-    : `command: shell ${JSON.stringify(command.script)}`;
+    ? [`command: argv ${JSON.stringify([command.executable, ...command.args])}`]
+    : command.script.includes("\n")
+      ? [
+        `command: shell · ${command.script.split("\n").length} lines`,
+        ...command.script.split("\n").map((line) => {
+          const visible = visibleCommandPlanShellLine(line);
+          return visible === "" ? "  │" : `  │ ${visible}`;
+        }),
+      ]
+      : [`command: shell ${JSON.stringify(command.script)}`];
   const options = [
     command.cwd === undefined ? undefined : `cwd: ${JSON.stringify(command.cwd)}`,
     command.user === undefined ? undefined : `user: ${JSON.stringify(command.user)}`,
@@ -1266,7 +1292,7 @@ function commandPlanExact(step: CommandPlanStep): readonly string[] {
     command.envKeys === undefined ? undefined : `environment keys: ${JSON.stringify(command.envKeys)}`,
   ].filter((value): value is string => value !== undefined);
   return [
-    operation,
+    ...operation,
     ...options,
     ...(step.redactions === undefined ? [] : [`redacted: ${step.redactions.join(", ")}`]),
   ];
@@ -1368,7 +1394,9 @@ function renderCommandPlanPanel(
 ): string[] {
   const contentWidth = panelContentWidth(capability.width, capability.mode);
   const rows: PanelRow[] = [];
-  for (const line of lines) pushCommandPlanLine(rows, line, contentWidth);
+  for (const line of lines) {
+    pushCommandPlanLine(rows, line, contentWidth, line.startsWith("  │") ? "  │ " : "  ");
+  }
   return renderPanel({
     title,
     ...(meta === undefined ? {} : { meta }),

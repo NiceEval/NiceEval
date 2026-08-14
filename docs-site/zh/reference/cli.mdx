@@ -105,6 +105,21 @@ TTY 中，总览、Experiment、lane、slot 和每个 lifecycle step 都分别�
 ╰──────────────────────────────────────────────────────────────────────╯
 ```
 
+多行 Shell 会在自己的框内显示成带 gutter 的代码区，而不是压成带 `\n` 的单行字符串。缩进、空行、末尾换行和长行续行都会保留；终端控制字符显示为转义文本：
+
+```text
+╭─ sandbox.prepare ──────────────────────────────────────────────────── EXACT ─╮
+│ position: lane eval:group/first · slot group/first #0                        │
+│ owner: eval:group/first                                                      │
+│ command: shell · 5 lines                                                     │
+│   │ set -eu                                                                  │
+│   │   pnpm install                                                           │
+│   │                                                                          │
+│   │   pnpm test                                                              │
+│   │                                                                          │
+╰──────────────────────────────────────────────────────────────────────────────╯
+```
+
 管道、`NO_COLOR` 或过窄终端逐框降级成无框标题与正文，内容和顺序不变。`--json` 不包含框线。
 
 Sandbox materialize 节点会显示 template owner、provider、kind 和安全的 configured locator。`Exact` 只代表原样显示作者配置，不代表 image tag、远端内容或最终实例已经冻结；URL 凭据、query 与 fragment 会脱敏，env value、credential、stdin、build arg value 和 custom identity 不输出。
