@@ -64,8 +64,8 @@ import {
   ScorePayloadV1Schema,
 } from "./score.ts";
 import {
-  createVerdictAttachmentWriteV2,
-  decodeVerdictPayloadV2,
+  createVerdictAttachmentWriteV1,
+  decodeVerdictPayloadV1,
   type VerdictPayloadV1,
   VerdictPayloadV1Schema,
 } from "./verdict.ts";
@@ -633,7 +633,7 @@ export function createEvaluationRecordPlanV1<Error, Requirements>(
       continue;
     }
 
-    const verdict = decodeVerdictPayloadV2(origin.verdict);
+    const verdict = decodeVerdictPayloadV1(origin.verdict);
     if (Either.isLeft(verdict)) {
       issues.push(
         Object.freeze({
@@ -704,7 +704,7 @@ export function createEvaluationRecordPlanV1<Error, Requirements>(
 
   const plannedOrigins: PlannedOriginAttemptV1<Error, Requirements>[] = [];
   for (const origin of preparedAttempts) {
-    const verdictWrite = createVerdictAttachmentWriteV2(origin.verdict);
+    const verdictWrite = createVerdictAttachmentWriteV1(origin.verdict);
     const scoreWrite = origin.score === undefined
       ? undefined
       : createScoreAttachmentWriteV1(origin.score);

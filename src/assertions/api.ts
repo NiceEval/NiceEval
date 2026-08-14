@@ -313,6 +313,7 @@ export interface ScoreBooleanAssertionHandle<out Refined>
   extends AssertionHandleBase {
   readonly kind: "boolean";
   score(points: number): this;
+  orStop(): Promise<Refined>;
 }
 
 export interface PassMeasurementAssertionHandle<
@@ -334,6 +335,9 @@ export interface ScoreMeasurementAssertionHandle<
   readonly kind: "measurement";
   atLeast(value: number): ScoreMeasurementAssertionHandle<true>;
   score(points: number): this;
+  orStop(
+    this: ScoreMeasurementAssertionHandle<true>,
+  ): Promise<number>;
 }
 
 /** A Boolean Assertion that intentionally has no author control-flow operation. */

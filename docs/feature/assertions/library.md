@@ -39,7 +39,7 @@ scope 方法与 Judge recipe 已经登记 Assertion，不能再交给 `check`。
 | `.gate()` | Pass Eval 中有 threshold 或 Boolean result 的 Assertion | 让不满足条件参与四态 Verdict fold。 |
 | `.score(points)` | Score Eval 的已有 Assertion | 让该 entry 按 `points` 贡献 earned score。 |
 | `.ifCovered()` | Usage Assertion | 已声明不可用时投影为 not-applicable。 |
-| `.orStop()` | Pass Eval 的 Boolean 或已 threshold 的 measurement | 等待同一 entry，并停止当前 continuation。 |
+| `.orStop()` | Boolean 或已 threshold 的 measurement | 等待同一 entry，并停止当前 continuation。 |
 
 同一字段重复配置、非法数值、封口后配置与 detached async 配置都是作者错误。
 

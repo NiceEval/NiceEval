@@ -755,7 +755,13 @@ export function foldInvocationEvalStats(
     })),
     ...summary.reusedAttempts.map((readback) => Object.freeze({
       identity: `${readback.target.experimentId}|${readback.target.evalId}`,
-      verdict: readback.verdict,
+      verdict: readback.source.evaluationKind !== "score"
+        ? readback.verdict
+        : readback.score.state === "applicable"
+            && readback.score.attachment.state === "available"
+            && readback.score.attachment.value.state === "complete"
+          ? "passed" as const
+          : "errored" as const,
     })),
   ];
   return evalLevelStats(terminals, (terminal) => terminal.identity);

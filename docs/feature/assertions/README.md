@@ -58,7 +58,7 @@ Attachment 的 framing、`entryId` 唯一性、顺序和边界必须有效。内
 
 两种 Eval 的每个 Attempt 都有四态 Verdict：`passed`、`failed`、`errored` 或 `skipped`。`evaluationKind` 只取 `pass | score`，由 Eval factory 产生并保存在 Run-owned Evaluation Attachment。
 
-Pass Eval 的主要读数是四态 Verdict。Score Eval 同时写入独立的 `niceeval.score/v1` Attachment；它的主要读数是 earned score，Verdict 只说明评分完整完成 (`passed`) 或无法完成 (`errored`)。
+Pass Eval 的主要读数是四态 Verdict。Score Eval 同时写入独立的 `niceeval.score/v1` Attachment；它的主要读数是 earned score。Score Analysis 把完整评分公开为 passed，把显式退出公开为 skipped，把不完整评分公开为 errored；raw Verdict 只作为当时的审计 claim。
 
 `points` 只是 Assertion 的分值或 score 计算单位。低分和零分不会成为 failed；execution error 与 unavailable score source 的完整关系由 [Score Eval](library/score-points.md) 定义。
 
@@ -79,7 +79,7 @@ turn.judge.autoevals.closedQA("回答质量").atLeast(0.8);
 
 `t.check` 只接收 `(value, match)`。scope 方法与 Judge recipe 已经登记同一种 Assertion；handle 只配置该 entry，不能登记第二条检查。
 
-Score Eval 使用 `handle.score(points)` 或 `t.score(points)` 写明贡献。后者仍形成一个 Assertions entry，criterion 为内建 direct-score，而不是不透明的分数旁路。Score 不提供 gate、skip、orStop 或可选 contribution。
+Score Eval 使用 `handle.score(points)` 或 `t.score(points)` 写明贡献。后者仍形成一个 Assertions entry，criterion 为内建 direct-score，而不是不透明的分数旁路。Score 不提供 gate 或 generic optional contribution；它保留 `.orStop()` 控制流 barrier 与 `t.skip(reason)`。
 
 完整字段、封口、边界与 Projection 规则见 [Architecture](architecture.md)。
 

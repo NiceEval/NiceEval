@@ -4,9 +4,9 @@
 
 ## Attempt 摘要
 
-Pass Eval 的区块顺序是 Execution、Verdict、检查项。Score Eval 的区块顺序是 Execution、Verdict、Score、评分项。Score 的主读数是 earned score；Score Verdict 只显示 `passed` 或 `errored`，不把分数重命名成 Pass / Fail。
+Pass Eval 的区块顺序是 Execution、Verdict、检查项。Score Eval 的区块顺序是 Execution、Score status、Score、评分项。Score 的主读数是 earned score；Score status 使用 scored、skipped 或 errored，通用摘要把 scored 映射为 passed。
 
-Score 显示 `complete`、`partial` 或 `unavailable`。partial 显示已知 earned 下界与缺失原因；unavailable 显示原因而不显示 `0`。只有 passed + complete 参与名次或数值选择。
+Score 显示 `complete`、`partial` 或 `unavailable`。partial 显示已知 earned 下界与缺失原因；unavailable 显示原因而不显示 `0`。只有 scored + complete 参与名次或数值选择。raw legacy failed 只在 Attempt 审计详情显示为 historical verdict claim。
 
 ## 单条 Assertion
 

@@ -1,7 +1,6 @@
 import { Schema } from "effect";
 import {
   decodeJsonRecordAttachmentPayload,
-  declareRecordAttachmentMigrationUnavailable,
   defineRecordAttachmentFamily,
   type RecordAttachmentValue,
   type RecordAttachmentWrite,
@@ -26,7 +25,6 @@ import {
 
 export const VERDICT_ATTACHMENT_NAME_V1 = "niceeval.verdict" as const;
 export const VERDICT_ATTACHMENT_SCHEMA_ID_V1 = "niceeval.verdict/v1" as const;
-export const VERDICT_ATTACHMENT_SCHEMA_ID_V2 = "niceeval.verdict/v2" as const;
 
 export const VerdictStateV1Schema = Schema.Literal(
   "passed",
@@ -70,37 +68,8 @@ export const verdictAttachmentFamilyV1 = requireRecordAttachmentCapabilityV1(
   "Verdict v1 RecordAttachment family must be valid",
 );
 
-export const verdictAttachmentDefinitionV2 = requireRecordAttachmentCapabilityV1(
-  defineBuiltinJsonRecordAttachment({
-    owner: "attempt",
-    name: VERDICT_ATTACHMENT_NAME_V1,
-    schemaId: VERDICT_ATTACHMENT_SCHEMA_ID_V2,
-    schema: VerdictPayloadV1Schema,
-    blobRefs: noRecordAttachmentBlobs,
-  }),
-  "Verdict v2 RecordAttachment definition must be valid",
-);
-
-export const verdictAttachmentFamilyV2 = requireRecordAttachmentCapabilityV1(
-  defineRecordAttachmentFamily({
-    current: verdictAttachmentDefinitionV2,
-    migrations: [
-      declareRecordAttachmentMigrationUnavailable({
-        from: verdictAttachmentDefinitionV1,
-        to: verdictAttachmentDefinitionV2,
-        reason: "Score Eval verdict semantics changed from gate-based four-state folding to passed-or-errored scoring",
-      }),
-    ],
-  }),
-  "Verdict v2 RecordAttachment family must be valid",
-);
-
 export function decodeVerdictPayloadV1(input: unknown) {
   return decodeJsonRecordAttachmentPayload(verdictAttachmentDefinitionV1, input);
-}
-
-export function decodeVerdictPayloadV2(input: unknown) {
-  return decodeJsonRecordAttachmentPayload(verdictAttachmentDefinitionV2, input);
 }
 
 /**
@@ -123,26 +92,6 @@ export function foldVerdictV1(input: VerdictFoldInputV1): VerdictStateV1 {
   return input.explicitlySkipped ? "skipped" : "passed";
 }
 
-export function foldVerdictV2(input: {
-  readonly evaluationKind: "pass" | "score";
-  readonly facts: VerdictFoldInputV1;
-}): VerdictStateV1 {
-  const { evaluationKind, facts } = input;
-  if (
-    facts.execution === "errored"
-    || facts.assertions.some((assertion) =>
-      assertion.required
-      && (evaluationKind === "pass" || assertion.result.score.state !== "not-scored")
-      && (assertion.result.state === "unavailable" || assertion.result.state === "errored")
-    )
-  ) {
-    return "errored";
-  }
-  if (evaluationKind === "score") return "passed";
-  if (facts.assertions.some(isGateFailedV1)) return "failed";
-  return facts.explicitlySkipped ? "skipped" : "passed";
-}
-
 export function buildVerdictPayloadV1(
   input: VerdictFoldInputV1,
 ): VerdictPayloadV1 {
@@ -154,12 +103,6 @@ export function createVerdictAttachmentWriteV1(
   payload: VerdictPayloadV1,
 ): RecordAttachmentWrite<"attempt", never, never> {
   return makeNoBlobRecordAttachmentWriteV1(verdictAttachmentFamilyV1, payload);
-}
-
-export function createVerdictAttachmentWriteV2(
-  payload: VerdictPayloadV1,
-): RecordAttachmentWrite<"attempt", never, never> {
-  return makeNoBlobRecordAttachmentWriteV1(verdictAttachmentFamilyV2, payload);
 }
 
 /** Builds the real Attempt-owned write without embedding Score or diagnostics. */
@@ -192,23 +135,6 @@ export function validateVerdictCoherenceV1(input: {
       ]);
 }
 
-export function validateVerdictCoherenceV2(input: {
-  readonly payload: VerdictPayloadV1;
-  readonly fold: VerdictFoldInputV1;
-  readonly evaluationKind: "pass" | "score";
-}): readonly VerdictCoherenceIssueV1[] {
-  const expected = foldVerdictV2({ evaluationKind: input.evaluationKind, facts: input.fold });
-  return input.payload.state === expected
-    ? []
-    : Object.freeze([
-        Object.freeze({
-          code: "verdict-fold-mismatch" as const,
-          expected,
-          actual: input.payload.state,
-        }),
-      ]);
-}
-
 /** A projector needs only the already-decoded exact Verdict state. */
 export function projectVerdictPayloadV1(payload: VerdictPayloadV1): Verdict {
   return payload.state;
@@ -225,6 +151,6 @@ export function projectVerdictAttachmentV1(
 /** The public four-state Verdict view for an Attempt-owned Attachment. */
 export const verdictProjector: RecordAttachmentProjector<"attempt", Verdict> =
   defineRecordAttachmentProjector({
-    attachment: verdictAttachmentFamilyV2,
+    attachment: verdictAttachmentFamilyV1,
     project: projectVerdictAttachmentV1,
   });

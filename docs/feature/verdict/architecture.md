@@ -1,6 +1,6 @@
 # Verdict 与 AssertionResult
 
-Verdict 是 producer 根据题型、sealed Assertion result、execution outcome 和 Pass Eval 的显式 skip 形成的 Attempt-owned `RecordAttachment`。名称是 `niceeval.verdict`，当前 payload schema 是 `niceeval.verdict/v2`；它是独立业务事实，不是 reader 的计算副本。
+Verdict 是 producer 根据一个 Attempt 的 sealed Assertion result、execution outcome 和显式 skip 形成的 Attempt-owned `RecordAttachment`。名称是 `niceeval.verdict`，payload schema 是 `niceeval.verdict/v1`；它是独立业务事实，不是 reader 的计算副本。
 
 ## 四态折叠
 
@@ -23,7 +23,7 @@ Score Eval 在 Verdict 之外写 `niceeval.score/v1`。Attachment 保存 earned 
 
 | 情形 | Verdict | Score Attachment |
 |---|---|---|
-| Score Eval 所有 points contribution 可算，无论匹配多少项 | `passed` | `complete`，保留 earned score。 |
+| 所有 points contribution 可算，gate failed | `failed` | `complete`，保留 earned score。 |
 | execution error 在部分贡献封口后发生 | `errored` | `partial`，保留可审计下界。 |
 | required score source 不可用且没有可审计 earned 数值 | `errored` | `unavailable`，不伪造零分。 |
 | 显式 skip | `skipped`，除非更高优先级条件 | 已封口贡献照实保存，并标明 complete、partial 或 unavailable。 |
@@ -40,7 +40,7 @@ type VerdictPayloadV1 = {
 };
 ```
 
-`niceeval.verdict/v2` 的 exact payload 只有四态 `state`。Pass Eval 可使用四态，Score Eval 只允许 `passed | errored`。Assertion、diagnostic ref、人读摘要与 Score 都属于
+`niceeval.verdict/v1` 的 exact payload 只有四态 `state`。Assertion、diagnostic ref、人读摘要与 Score 都属于
 各自的业务 Attachment，不进入 Verdict。`niceeval.eligibility/v1` 的 exact payload 由
 [Reuse planning](../experiments/cache.md#executiontarget-的形成) 唯一拥有：它的 `reuseContract`、identity 与
 execution duration 是资格领域值，不是 Verdict 字段。

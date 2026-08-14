@@ -44,9 +44,9 @@
   <path d="M620 190 V246 H286" class="arrow" />
   <path d="M620 190 V246 H954" class="arrow" />
   <rect x="80.5" y="264.5" width="411" height="112" class="box" />
-  <text x="108" y="300" class="label mono">niceeval.verdict/v2</text>
+  <text x="108" y="300" class="label mono">niceeval.verdict/v1</text>
   <text x="108" y="328"><tspan class="good">passed</tspan> · <tspan class="bad">failed</tspan> · errored · skipped</text>
-  <text x="108" y="354" class="note">Pass 用四态；Score 只用 passed / errored</text>
+  <text x="108" y="354" class="note">raw 四态审计 claim；Score 汇总另取 Analysis status</text>
   <rect x="748.5" y="264.5" width="411" height="112" class="box" />
   <text x="776" y="300" class="label mono">niceeval.score/v1</text>
   <text x="776" y="328">earned score · complete / partial / unavailable</text>

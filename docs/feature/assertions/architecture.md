@@ -15,7 +15,7 @@ author calls / evaluator internals / producer control flow
                     ↓
           producer evaluates and seals
           ↙         ↓          ↘
-niceeval.assertions/v1  niceeval.assertion-source-sites/v1  niceeval.verdict/v2
+niceeval.assertions/v1  niceeval.assertion-source-sites/v1  niceeval.verdict/v1
              │                  │                     (+ score for Score Eval)
              └──── declared neutral projections ────┘
                               ↓

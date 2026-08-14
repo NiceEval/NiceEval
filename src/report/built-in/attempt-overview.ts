@@ -187,8 +187,8 @@ function attemptOverviewSlotBlock(input: AttemptOverviewSlot): ReportBlock {
         children: identityBlocks(input.slot, input.plan, coordinate),
       }),
       reportSection({
-        heading: "Verdict",
-        children: verdictBlocks(input.verdict),
+        heading: coordinate?.kind === "score" ? "Score status" : "Verdict",
+        children: verdictBlocks(input.verdict, input.score, coordinate?.kind),
       }),
       ...executionErrorBlocks(input.diagnostics),
       reportSection({
@@ -297,8 +297,28 @@ function evaluationCoordinate(
 
 function verdictBlocks(
   verdict: ProjectedRecordAttachmentResult<Verdict>,
+  score: ProjectedRecordAttachmentResult<Score> | undefined,
+  evaluationKind: EvaluationPlanCoordinate["kind"] | undefined,
 ): readonly ReportBlock[] {
   if (verdict.state !== "available") return [attachmentStatus("Verdict", verdict)];
+  if (evaluationKind === "score") {
+    const status = verdict.value === "skipped"
+      ? "skipped"
+      : verdict.value === "errored" || score?.state !== "available" || score.value.state !== "complete"
+        ? "errored"
+        : "scored";
+    return [
+      reportStatus({
+        tone: status === "scored" ? "positive" : status === "skipped" ? "neutral" : "negative",
+        label: `Score status: ${status}`,
+        detail: [reportText("Only scored Attempts participate in score comparison.")],
+      }),
+      reportStatus({
+        tone: "neutral",
+        label: `Historical verdict claim: ${verdict.value}`,
+      }),
+    ];
+  }
   return [reportStatus({
     tone: verdictTone(verdict.value),
     label: `Verdict: ${verdict.value}`,

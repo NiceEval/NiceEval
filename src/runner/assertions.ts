@@ -31,7 +31,7 @@ function verdictFor(
     return Object.freeze({ state: "failed" as const });
   }
   return Object.freeze({
-    state: evaluationKind === "pass" && evaluation.explicitlySkipped ? "skipped" as const : "passed" as const,
+    state: evaluation.explicitlySkipped ? "skipped" as const : "passed" as const,
   });
 }
 

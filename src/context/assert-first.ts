@@ -263,6 +263,7 @@ export type AssertFirstTestContext<Kind extends RuntimeKind> = {
   progress(update: import("../types.ts").ProgressUpdate): void;
   diagnostic(input: import("../types.ts").DiagnosticInput): void;
   log(message: string): void;
+  skip(reason: string): never;
   group<Value>(
     title: string,
     body: () => Value | PromiseLike<Value>,
@@ -284,9 +285,7 @@ export type AssertFirstTestContext<Kind extends RuntimeKind> = {
   maxTokens(max: number): BooleanAssertionHandle<Kind, void>;
   maxCost(usd: number): BooleanAssertionHandle<Kind, void>;
   readonly judge: AssertFirstRootJudge<Kind>;
-} & (Kind extends "score"
-    ? { score(points: number): DirectScoreAssertionHandle }
-    : { skip(reason: string): never });
+} & (Kind extends "score" ? { score(points: number): DirectScoreAssertionHandle } : {});
 
 type AssertionScope = "turn" | "session" | "attempt";
 type ScopeStatus = "completed" | "failed" | "waiting" | "not-started";
@@ -2245,15 +2244,11 @@ export function createAssertFirstEvalContext(
     },
     diagnostic: (input: import("../types.ts").DiagnosticInput) => deps.feedback?.diagnostic(input),
     log: deps.log,
-    ...(deps.evaluationKind === "pass"
-      ? {
-          skip: (reason: string): never => {
-            if (reason.trim() === "") throw new Error("skip() requires a non-empty reason");
-            state.skipReason = reason;
-            throw new EvalSkipped(reason);
-          },
-        }
-      : {}),
+    skip: (reason: string): never => {
+      if (reason.trim() === "") throw new Error("skip() requires a non-empty reason");
+      state.skipReason = reason;
+      throw new EvalSkipped(reason);
+    },
     group: runtime.t.group,
     check: runtime.t.check,
     sandbox: createAssertFirstSandbox({

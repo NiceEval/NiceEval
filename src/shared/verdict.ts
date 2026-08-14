@@ -7,10 +7,27 @@ import type { Verdict } from "./types.ts";
 /** A consumer needs exactly the sealed four-state Verdict. */
 export interface VerdictLike {
   readonly verdict: Verdict;
+  readonly evaluationKind?: "pass" | "score";
+  readonly scoreResult?: {
+    readonly status: "scored" | "invalid" | "unavailable" | "errored" | "skipped";
+  };
 }
 
-/** Reads the durable four-state Verdict without consulting Score. */
+/** Score uses its scoring outcome as the public terminal; Verdict remains the immutable audit claim. */
 export function attemptTerminalOf<T extends VerdictLike>(attempt: T): Verdict {
+  if (attempt.evaluationKind === "score") {
+    switch (attempt.scoreResult?.status) {
+      case "scored":
+        return "passed";
+      case "skipped":
+        return "skipped";
+      case "invalid":
+      case "unavailable":
+      case "errored":
+      case undefined:
+        return "errored";
+    }
+  }
   return attempt.verdict;
 }
 

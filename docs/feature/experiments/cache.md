@@ -70,7 +70,7 @@ type RecordedAttemptClaim =
   | "execution-duration";
 
 interface ComparisonProvenance {
-  readonly attachment: "niceeval.eligibility/v1" | "niceeval.verdict/v2";
+  readonly attachment: "niceeval.eligibility/v1" | "niceeval.verdict/v1";
   readonly recordedClaim: RecordedAttemptClaim;
   readonly sourceState: ComparisonSourceState;
   readonly result: "match" | "mismatch" | "ineligible" | "not-comparable";

@@ -133,7 +133,7 @@ direct-score Assertion entry，返回的 handle 只能配置 key 与 label。
 Score Eval 的每个 Attempt 只有 `passed | errored` Verdict，另有独立 Score Attachment。正常封口
 无论匹配多少项都为 `passed`；execution error 或 unavailable score source 形成 `errored`，Score
 Attachment 成为 partial 或 unavailable，而不是伪造 `0`。没有 contribution 的正常 Attempt 得到
-`earned: 0`。Score 没有 gate、failed、skipped、max、百分比或隐式每项 `+1`。
+`earned: 0`。Score 没有 gate、failed、max、百分比或隐式每项 `+1`；它保留控制流 `.orStop()` 与显式 `t.skip(reason)`，skipped 不参加排名。
 
 题型是定义期事实，进入 `EvalDescriptor.evaluationKind`（`"pass" | "score"`）供报告选择主读数。
 `points` 只在 Score Eval 内表示 Assertion 分值。一个 Experiment 可以同时选择两种题型，但每条 Attempt

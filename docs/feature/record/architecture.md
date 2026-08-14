@@ -210,7 +210,7 @@ bytes。
 | Run | `niceeval.sources/v1` | 当次源码快照、stable source item manifest 与 own blobs |
 | Attempt | `niceeval.assertions/v1` | 规范化 AssertionResult |
 | Attempt | `niceeval.assertion-source-sites/v1` | Assertions `entryId` 到已执行 source site 的导航事实 |
-| Attempt | `niceeval.verdict/v2` | Pass Attempt 的四态 Verdict；Score Attempt 的 passed / errored Verdict |
+| Attempt | `niceeval.verdict/v1` | 所有 Pass/Score Attempt 的四态 Verdict |
 | Attempt | `niceeval.score/v1` | Score Eval 的独立得分 |
 | Attempt | `niceeval.eligibility/v1` | reuse 所需的当时资格事实 |
 | Attempt | `niceeval.conversation/v1` | provider-neutral、用户可见的对话与操作 |

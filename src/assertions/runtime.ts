@@ -902,16 +902,10 @@ class AssertionsRuntimeImplementation {
   }
 
   requestStopBoolean(entry: AssertionEntry): Promise<unknown> {
-    if (this.evaluationKind === "score") {
-      throw new TypeError("orStop() is not available in a Score Eval; scoring cannot stop on a condition");
-    }
     return this.observeStop(entry, this.requestStop(this.stopBoolean(entry)));
   }
 
   requestStopMeasurement(entry: AssertionEntry): Promise<number> {
-    if (this.evaluationKind === "score") {
-      throw new TypeError("orStop() is not available in a Score Eval; scoring cannot stop on a condition");
-    }
     return this.observeStop(entry, this.requestStop(this.stopMeasurement(entry)));
   }
 

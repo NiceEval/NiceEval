@@ -37,6 +37,6 @@ export default defineEval({
 
 `defineScoreEval` 创建 Score Eval。Assertion 默认 record-only；用 `.score(points)` 或 `t.score(points)`
 显式贡献 score。每个 Attempt 只有 `passed | errored` Verdict，并另写 Score Attachment；正常低分或零分仍为
-passed。Score 不声明 gate、max 或百分比。
+passed。Score 不声明 gate、max 或百分比；`.orStop()` 只停止当前 continuation，`t.skip(reason)` 显式退出排名。
 
 详细 API 与完整场景见 [Use cases](use-case/README.md)。

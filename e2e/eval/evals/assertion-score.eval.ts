@@ -31,4 +31,21 @@ const empty = defineScoreEval({
   test() {},
 });
 
-export default { empty, scored };
+const stopped = defineScoreEval({
+  description: "orStop 只停止当前计分 continuation，并保留已得分",
+  async test(t) {
+    t.score(2).label("score before stop");
+    await t.check("actual", equals("expected")).score(3).orStop();
+    t.score(100).label("unreachable score");
+  },
+});
+
+const skipped = defineScoreEval({
+  description: "显式跳过的计分 Eval 不参加排名",
+  test(t) {
+    t.score(9).label("score before skip");
+    t.skip("fixture intentionally does not participate");
+  },
+});
+
+export default { empty, scored, skipped, stopped };

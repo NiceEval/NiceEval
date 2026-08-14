@@ -2,7 +2,7 @@
 
 Score Eval 用 `defineScoreEval` 表达同一次 Attempt 内“做到几成”的读数。`evaluationKind` 只取 `pass` 或 `score`；`points` 是 Assertion 的分值和 score 计算单位，绝不是另一种 Eval kind。
 
-每个 Score Attempt 同时保存二态 [Verdict](../../verdict/architecture.md) 与独立的 `niceeval.score/v1` Attachment。Verdict 只回答评分是否完整结束：`passed` 或 `errored`；Score Attachment 回答已挣到多少分以及该数是否完整。Score Eval 没有 gate、failed 或 skipped。
+每个 Score Attempt 同时保存四态 raw [Verdict](../../verdict/architecture.md) claim 与独立的 `niceeval.score/v1` Attachment。Score Analysis 以 Score、显式 skip 和 execution facts 形成 scored、skipped 或 errored；通用摘要把 scored 映射为 passed。Score Eval 没有 gate，也不把 raw failed 纳入 Score 汇总。
 
 ## points 与贡献
 
@@ -21,7 +21,7 @@ Score Eval 只比较 earned score，没有最低有效性门槛。Boolean mismat
 | 所有 score contribution 可算 | `passed` | `complete`，包括 earned `0`。 |
 | execution error，或 required score source unavailable / errored | `errored` | 已有分数不会删除；状态是 partial 或 unavailable。 |
 
-Score handle 不提供 `.gate()`、`.orStop()` 或 `.optional()`，Score context 不提供 `t.skip()`。这些控制面会制造门槛、条件式 rubric 或不可比较的可选分值。纯 record-only Assertion 的结果不改变 Score Verdict。
+Score handle 不提供 `.gate()` 或 generic `.optional()`。`await handle.orStop()` 只作为控制流 barrier：condition 不满足时正常停止当前 continuation，保留此前已得分并形成 passed；未执行源码不生成 contribution。`t.skip(reason)` 形成 skipped 且不排名。纯 record-only Assertion 的 mismatch 不改变 Score Verdict。
 
 ## complete、partial 与 unavailable
 
@@ -35,7 +35,9 @@ Score handle 不提供 `.gate()`、`.orStop()` 或 `.optional()`，Score context
 
 非贡献 Assertion 的 unavailable 或 errored 不影响 Score Verdict。相反，缺少一个声明过 points 的 required source 绝不折成零。
 
-Report 同时显示 Verdict、earned score 和 score state。`partial` 与 `unavailable` 不与 `0` 混写；只有 `passed + complete` 参与排名或数值选择，`errored` 的已知下界只用于诊断。
+Report 同时显示 Score Analysis status、earned score、score state 与 raw historical Verdict claim。`partial` 与 `unavailable` 不与 `0` 混写；只有 scored + complete 参与排名或数值选择，errored 的已知下界只用于诊断。
+
+Score Definition / rubric identity 是跨结果自动比较的目标约束，但 `niceeval.score/v1` 尚未显式携带它。正式 identity 可用前，Report 保持已有选择行为，不承诺自动比较定义不明的 Score，也不读取 Runner 常量或整个 execution fingerprint 冒充 rubric identity。
 
 ## 作者写法
 
