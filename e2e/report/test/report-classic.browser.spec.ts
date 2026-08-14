@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { expect, test } from "@playwright/test";
 import { pollUntil, waitForOutput } from "./support/testkit.ts";
-import { expectNoHorizontalOverflow, followVisibleLink } from "./support/browser.ts";
+import { expectNoHorizontalOverflow } from "./support/browser.ts";
 import { PINNED_ENV, reportCaseArtifacts, reportE2E } from "./support/context.ts";
 
 const DESKTOP = { width: 1280, height: 800 };
@@ -199,9 +199,7 @@ test("live Journey: live exp → view --out → real niceeval view server", asyn
       await page.setViewportSize(DESKTOP);
       await page.goto(origin!);
       await expect(page.getByRole("heading", { name: /MemoryBench Classic/i }).first()).toBeVisible();
-      await expect(page.getByRole("navigation").or(page.getByRole("link", { name: /Overview|Attempts|Traces/i })).first()).toBeVisible();
-      await followVisibleLink(page, /classic\//);
-      await expect(page.getByText(/classic\//).first()).toBeVisible();
+      await expectPr49ClassicLiveDx(page);
       await expectNoHorizontalOverflow(page);
 
       await page.goto(origin!);
@@ -223,5 +221,45 @@ async function expectAccessibleCollapse(page: import("@playwright/test").Page): 
   if (await disclosure.isVisible()) {
     await disclosure.focus();
     await expect(disclosure).toBeFocused();
+  }
+}
+
+/**
+ * The distinguishing live-view contract carried by PR #49's 0.12 acceptance
+ * owner. Static export keeps its current no-JavaScript route contract; these
+ * assertions only cover the interactive `niceeval view` DX.
+ *
+ * Keep the expectations beside the public action. The original PR hid them
+ * behind a large browser assertion wrapper, which made it hard to see which
+ * product result a failure actually described.
+ */
+async function expectPr49ClassicLiveDx(page: import("@playwright/test").Page): Promise<void> {
+  for (const name of ["Overview", "Attempts", "Traces"] as const) {
+    expect.soft(
+      await page.getByRole("tab", { name, exact: true }).count(),
+      `0.12 navigation exposes one ${name} tab`,
+    ).toBe(1);
+  }
+
+  const experimentTable = page.getByRole("table").filter({
+    has: page.getByRole("columnheader", { name: "Experiment", exact: true }),
+  });
+  expect.soft(await experimentTable.count(), "one experiment hierarchy table").toBe(1);
+  if ((await experimentTable.count()) === 1) {
+    expect.soft(
+      await experimentTable.locator("summary").count(),
+      "0.12 experiment hierarchy uses expandable summaries",
+    ).toBeGreaterThanOrEqual(3);
+  }
+
+  const memoryAPoint = page.getByRole("link", { name: /classic\/memory-a.*costUSD.*passRate/i }).first();
+  expect.soft(await memoryAPoint.count(), "0.12 scatter exposes the memory-a point as a link").toBe(1);
+  if ((await memoryAPoint.count()) === 1) {
+    await memoryAPoint.click();
+    const dialog = page.getByRole("dialog");
+    expect.soft(await dialog.count(), "0.12 scatter drill-down opens an in-page dialog").toBe(1);
+    if ((await dialog.count()) === 1) {
+      await dialog.getByRole("button", { name: "Close", exact: true }).click();
+    }
   }
 }
