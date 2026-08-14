@@ -9,25 +9,23 @@ import {
   command,
   only,
   type ExpEvalEvent,
+  type ExpEvalOutcomeExpectation,
   type ProcessReceipt,
 } from "@niceeval/testkit";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, expect, it } from "vitest";
 
-const EXPECTED_EVALS = [
-  "coding-task/write-and-verify",
-  "skills/discovery",
-  "extensions/plugin-postsetup",
-  "session/recall",
-] as const;
-const EXPECTED_OUTCOMES = EXPECTED_EVALS.map((evalId) => ({
-  experimentId: "ci",
-  evalId,
-  verdict: "passed" as const,
-  attempts: 1,
-  passed: 1,
-}));
+const EXPECTED_OUTCOMES = [
+  // coding task：agent 须写文件，再用 shell 串行读回并满足 usage/cost 约束；期望 passed/1。
+  { experimentId: "ci", evalId: "coding-task/write-and-verify", verdict: "passed", attempts: 1, passed: 1 },
+  // Skill discovery：挂载的 review Skill 须被真实读取并以独有魔法词影响回答；期望 passed/1。
+  { experimentId: "ci", evalId: "skills/discovery", verdict: "passed", attempts: 1, passed: 1 },
+  // Plugin setup：Python 包须进入 Bub tool venv，postSetup 须按声明顺序留下证据；期望 passed/1。
+  { experimentId: "ci", evalId: "extensions/plugin-postsetup", verdict: "passed", attempts: 1, passed: 1 },
+  // session recall：Adapter 管理的同一 session_id 须让第二轮回忆首轮事实；期望 passed/1。
+  { experimentId: "ci", evalId: "session/recall", verdict: "passed", attempts: 1, passed: 1 },
+] as const satisfies readonly ExpEvalOutcomeExpectation[];
 
 const REQUIRED_LIVE_SECRETS = ["BUB_API_KEY", "BUB_API_BASE"] as const;
 
@@ -98,13 +96,16 @@ it("真实 Bub adapter 的 Eval 通过数正确且没有未通过项", () => {
   expect(legacyInv.runIds, legacy.diagnostic()).toHaveLength(1);
   assertExpEvalOutcomes(
     legacyEvalEvents,
-    [{
-      experimentId: "legacy",
-      evalId: "coding-task/write-and-verify",
-      verdict: "passed",
-      attempts: 1,
-      passed: 1,
-    }],
+    [
+      // legacy：旧版/otelPlugin pin 仍须完成同一写文件与 shell 读回闭环，因此期望 passed/1。
+      {
+        experimentId: "legacy",
+        evalId: "coding-task/write-and-verify",
+        verdict: "passed",
+        attempts: 1,
+        passed: 1,
+      },
+    ],
     () => legacy.diagnostic(),
   );
 });

@@ -25,13 +25,16 @@ test("真实 OpenAI Responses 一次请求以通过 verdict 完成", () => {
   expect(receipt.runIds, evidence.receipt.diagnostic()).not.toHaveLength(0);
   assertExpEvalOutcomes(
     evidence.evalEvents,
-    [{
-      evalId: "responses-live",
-      experimentId: "responses-live",
-      verdict: "passed",
-      attempts: 1,
-      passed: 1,
-    }],
+    [
+      // Responses：真实一次请求须调用 fixture 工具并公开读回 marker；因此期望 passed/1。
+      {
+        evalId: "responses-live",
+        experimentId: "responses-live",
+        verdict: "passed",
+        attempts: 1,
+        passed: 1,
+      },
+    ],
     () => evidence.receipt.diagnostic(),
   );
 });

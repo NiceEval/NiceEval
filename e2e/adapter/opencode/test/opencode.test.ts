@@ -4,23 +4,24 @@
 // 再从公开 CLI 读回 Eval、attempt、execution 与 timing。
 // 只从 @niceeval/testkit 根导入；不读 .niceeval 私有布局、不 import 候选源码/类型。
 
-import { assertExpEvalOutcomes, command } from "@niceeval/testkit";
+import {
+  assertExpEvalOutcomes,
+  command,
+  type ExpEvalOutcomeExpectation,
+} from "@niceeval/testkit";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 
-const BASELINE_EVALS = [
-  "coding-task/write-and-verify",
-  "session/recall",
-  "usage/tokens",
-] as const;
-const BASELINE_OUTCOMES = BASELINE_EVALS.map((evalId) => ({
-  experimentId: "ci",
-  evalId,
-  verdict: "passed" as const,
-  attempts: 1,
-  passed: 1,
-}));
+const BASELINE_OUTCOMES = [
+  // coding task：写文件与 shell 读回都须携带可区分参数并归一完成；单次执行期望 passed/1。
+  { experimentId: "ci", evalId: "coding-task/write-and-verify", verdict: "passed", attempts: 1, passed: 1 },
+  // session recall：OpenCode 同一 session 的第二轮须引用首轮事实；一条会话链期望 passed/1。
+  { experimentId: "ci", evalId: "session/recall", verdict: "passed", attempts: 1, passed: 1 },
+  // usage：两个 send 都须产生正的 input/output token；全部断言成立时为 passed/1。
+  { experimentId: "ci", evalId: "usage/tokens", verdict: "passed", attempts: 1, passed: 1 },
+] as const satisfies readonly ExpEvalOutcomeExpectation[];
+const BASELINE_EVALS = BASELINE_OUTCOMES.map((outcome) => outcome.evalId);
 const SKILL_EVAL = "skills/status-report";
 const GO_EVAL = "provider/go-routing";
 
@@ -150,13 +151,16 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   expect(skillInv.runIds, skillRun.diagnostic()).toHaveLength(1);
   assertExpEvalOutcomes(
     skillRun.expEvalEvents(),
-    [{
-      experimentId: "skill",
-      evalId: SKILL_EVAL,
-      verdict: "passed",
-      attempts: 1,
-      passed: 1,
-    }],
+    [
+      // Skill：目标 status-report Skill 须安装、被选择且不误用 decoy；单次专用运行期望 passed/1。
+      {
+        experimentId: "skill",
+        evalId: SKILL_EVAL,
+        verdict: "passed",
+        attempts: 1,
+        passed: 1,
+      },
+    ],
     () => skillRun.diagnostic(),
   );
 
@@ -179,13 +183,16 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   expect(goInv.runIds, goRun.diagnostic()).toHaveLength(1);
   const goEvents = assertExpEvalOutcomes(
     goRun.expEvalEvents(),
-    [{
-      experimentId: "go",
-      evalId: GO_EVAL,
-      verdict: "passed",
-      attempts: 1,
-      passed: 1,
-    }],
+    [
+      // Go routing：真实请求须落到 deepseek-v4-flash 并从官方 export 读回；期望 passed/1。
+      {
+        experimentId: "go",
+        evalId: GO_EVAL,
+        verdict: "passed",
+        attempts: 1,
+        passed: 1,
+      },
+    ],
     () => goRun.diagnostic(),
   );
 

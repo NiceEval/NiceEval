@@ -23,13 +23,16 @@ test("createCodexThreadEventStream 的锁定 ThreadEvent 经 Experiment 和公�
       expect(receipt.runIds, run.diagnostic()).not.toHaveLength(0);
       const evalEvents = assertExpEvalOutcomes(
         run.expEvalEvents(),
-        [{
-          evalId: EVAL_ID,
-          experimentId: EXPERIMENT_ID,
-          verdict: "passed",
-          attempts: 1,
-          passed: 1,
-        }],
+        [
+          // Codex Thread stream：锁定事件须保留 command marker 与 file_change；一次转换期望 passed/1。
+          {
+            evalId: EVAL_ID,
+            experimentId: EXPERIMENT_ID,
+            verdict: "passed",
+            attempts: 1,
+            passed: 1,
+          },
+        ],
         () => run.diagnostic(),
       );
       const evalEvent = evalEvents[0]!;

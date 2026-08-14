@@ -23,13 +23,16 @@ test("turnFromAiSdk 的真实 AI SDK seam 经 Experiment 和公开 CLI 确定性
       expect(receipt.runIds, run.diagnostic()).not.toHaveLength(0);
       const evalEvents = assertExpEvalOutcomes(
         run.expEvalEvents(),
-        [{
-          evalId: EVAL_ID,
-          experimentId: EXPERIMENT_ID,
-          verdict: "passed",
-          attempts: 1,
-          passed: 1,
-        }],
+        [
+          // AI SDK seam：inventory tool 与 approval 事件须按锁定输入归一；一次转换期望 passed/1。
+          {
+            evalId: EVAL_ID,
+            experimentId: EXPERIMENT_ID,
+            verdict: "passed",
+            attempts: 1,
+            passed: 1,
+          },
+        ],
         () => run.diagnostic(),
       );
       const evalEvent = evalEvents[0]!;

@@ -46,10 +46,15 @@ async function assertPortReusable(port: number): Promise<void> {
 
 /** 每个 kind 的 (experiment, eval) 身份与期望终局；五个 owner 文件各取一行。 */
 const KIND_EXPECTATIONS: Readonly<Record<OwnerKind, { evalId: string; verdict: "passed" | "errored" }>> = {
+  // transport：本地协议须完成一次正常 send 并返回匹配内容，所以产品终局应为 passed。
   transport: { evalId: "transport-ok", verdict: "passed" },
+  // approval：pending 工具须经 approve/deny 生命周期正确收束；所有正反断言成立时应为 passed。
   approval: { evalId: "approval-lifecycle", verdict: "passed" },
+  // disconnect：服务端在响应前断开是 Adapter 传输故障，Eval test 无法继续，因此应为 errored。
   disconnect: { evalId: "disconnect", verdict: "errored" },
+  // timeout：服务端故意悬挂直到 send 超时，这是运行错误而非断言失败，因此应为 errored。
   timeout: { evalId: "timeout", verdict: "errored" },
+  // http-error：服务端返回 HTTP 500 会让 send 抛错，属于 Adapter 运行错误，因此应为 errored。
   "http-error": { evalId: "http-error", verdict: "errored" },
 };
 

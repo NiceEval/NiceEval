@@ -54,13 +54,16 @@ export async function proveSdkConverterOwner(options: {
       expect(receipt.runIds, run.diagnostic()).not.toHaveLength(0);
       const evalEvents = assertExpEvalOutcomes(
         run.expEvalEvents(),
-        [{
-          evalId: options.evalId,
-          experimentId: options.experimentId,
-          verdict: "passed",
-          attempts: 1,
-          passed: 1,
-        }],
+        [
+          // 通用 converter owner：锁定输入的协议断言与公开读回须一次全部成立，因此期望 passed/1。
+          {
+            evalId: options.evalId,
+            experimentId: options.experimentId,
+            verdict: "passed",
+            attempts: 1,
+            passed: 1,
+          },
+        ],
         () => run.diagnostic(),
       );
       const evalEvent = evalEvents[0]!;

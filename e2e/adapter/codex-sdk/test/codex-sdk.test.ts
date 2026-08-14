@@ -91,13 +91,16 @@ it("真实 Codex SDK converter 的 Eval 以通过 verdict 完成", () => {
   expect(inv.runIds, runReceipt.diagnostic()).toHaveLength(1);
   assertExpEvalOutcomes(
     runReceipt.expEvalEvents(),
-    [{
-      evalId: EVAL_ID,
-      experimentId: "live",
-      verdict: "passed",
-      attempts: 1,
-      passed: 1,
-    }],
+    [
+      // live compatibility：真实 Thread stream 须保留命令结果并续接 sentinel；单次运行期望 passed/1。
+      {
+        evalId: EVAL_ID,
+        experimentId: "live",
+        verdict: "passed",
+        attempts: 1,
+        passed: 1,
+      },
+    ],
     () => runReceipt.diagnostic(),
   );
 });

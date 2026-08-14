@@ -9,25 +9,23 @@ import {
   command,
   only,
   type ExpEvalEvent,
+  type ExpEvalOutcomeExpectation,
   type ProcessReceipt,
 } from "@niceeval/testkit";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, expect, it } from "vitest";
 
-const EXPECTED_EVALS = [
-  "coding-task/write-and-verify",
-  "skills/status-report",
-  "session/recall",
-  "usage/tokens",
-] as const;
-const EXPECTED_OUTCOMES = EXPECTED_EVALS.map((evalId) => ({
-  experimentId: "ci",
-  evalId,
-  verdict: "passed" as const,
-  attempts: 1,
-  passed: 1,
-}));
+const EXPECTED_OUTCOMES = [
+  // coding task：文件写入与 shell 读回都须以正确参数完成并进入标准事件流；期望 passed/1。
+  { experimentId: "ci", evalId: "coding-task/write-and-verify", verdict: "passed", attempts: 1, passed: 1 },
+  // Skill status：只读取目标 status-report Skill、不误用 decoy，并采用目标约定；期望 passed/1。
+  { experimentId: "ci", evalId: "skills/status-report", verdict: "passed", attempts: 1, passed: 1 },
+  // session recall：同一会话的第二轮须引用首轮事实；一条会话链完成即为 passed/1。
+  { experimentId: "ci", evalId: "session/recall", verdict: "passed", attempts: 1, passed: 1 },
+  // usage：两个 turn 都须产生正的 input/output token；全部断言成立时为 passed/1。
+  { experimentId: "ci", evalId: "usage/tokens", verdict: "passed", attempts: 1, passed: 1 },
+] as const satisfies readonly ExpEvalOutcomeExpectation[];
 
 const REQUIRED_LIVE_SECRETS = ["BUB_API_KEY", "BUB_API_BASE"] as const;
 

@@ -23,13 +23,16 @@ test("createClaudeSdkEventStream 的锁定上游帧经 Experiment 和公开 CLI 
       expect(receipt.runIds, run.diagnostic()).not.toHaveLength(0);
       const evalEvents = assertExpEvalOutcomes(
         run.expEvalEvents(),
-        [{
-          evalId: EVAL_ID,
-          experimentId: EXPERIMENT_ID,
-          verdict: "passed",
-          attempts: 1,
-          passed: 1,
-        }],
+        [
+          // Claude SDK stream：锁定帧须保留 assistant marker 与 Bash 工具轨；一次转换期望 passed/1。
+          {
+            evalId: EVAL_ID,
+            experimentId: EXPERIMENT_ID,
+            verdict: "passed",
+            attempts: 1,
+            passed: 1,
+          },
+        ],
         () => run.diagnostic(),
       );
       const evalEvent = evalEvents[0]!;
