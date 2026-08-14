@@ -15,7 +15,7 @@ NiceEval 把运行事实、分析口径、呈现数据、报告组合与最终�
                                │ Semantic Nodes
 ┌──────────────────────────────┴───────────────────────────────┐
 │ ⑤ 组件                                                      │
-│ Table / Bars / Scatter │ Trace / Attempt / Experiment       │
+│ Table / Bars / Scatter │ Trace / Attempt / Evidence          │
 └──────────────────────────────▲───────────────────────────────┘
                                │
 ┌──────────────────────────────┴───────────────────────────────┐
@@ -64,7 +64,7 @@ Record 是运行时追加、完成后封口的事实账本。Analysis 是 popula
 
 ## 两条呈现路径
 
-Analysis 不把所有数据压成一张表。中立组件与官方领域组件共享同一个 frozen Sample 和 Evidence identity，但消费不同的闭合模型。
+Analysis 不把所有数据压成一张表。中立组件与官方领域组件共享同一个 frozen Sample 和 Evidence identity，但消费不同的闭合模型。已完成 Experiment 的查看与比较由官方 Report 组合这些组件，不成为新的 primitive。
 
 ```text
 Current Record
@@ -72,10 +72,18 @@ Current Record
 Analysis semantic kernel
       ├─ typed query ─────────→ SemanticFrame ─→ Table / Bars / Scatter
       │
-      └─ domain projection ───→ DomainView ────→ Trace / Attempt / Experiment
+      └─ domain projection ───→ DomainView ────→ Trace / Attempt / Evidence
 ```
 
 `SemanticFrame` 是带 population、状态、分母、问题与 Evidence refs 的分析结果。`DomainView` 保留树、时序、身份和复核路径，不能为了复用图表组件而退化成平表。
+
+```text
+Experiment Analysis → SemanticFrame → Table / Bars / Scatter
+                                      ↓
+                            Official Experiment Report
+```
+
+Experiment 是第 ⑥ 层的查看与比较工作流。只有未来独立定义的运行中状态机视图，才可能增加专用 progress component；已完成 Experiment 不使用这一例外。
 
 ## Migration 边界
 
@@ -148,7 +156,8 @@ Record schema、migration converter、执行引擎和 renderer capability 都不
 2. Record 只保存不可重新计算的事实，不保存 Report 派生结果。
 3. Analysis 独占 population、denominator、missing 与 reduction 语义。
 4. scalar 丢失状态、分母或 refs 后，不能重新包装成 `MetricValue`。
-5. 中立组件消费 `SemanticFrame`，官方领域组件消费闭合 `DomainView`。
-6. Report 作者只组合 Analysis fields、closed rows、opaque refs 与 semantic components。
-7. terminal、Web 与 static renderer 消费同一棵闭合语义树。
-8. 新查询和新组件不会要求 Record migration。
+5. 中立组件消费 `SemanticFrame`，Trace、Attempt 与 Evidence 组件消费闭合 `DomainView`。
+6. 已完成 Experiment 由官方 Report 组合 Table、Chart 与诊断组件，不新增 Experiment primitive。
+7. Report 作者只组合 Analysis fields、closed rows、opaque refs 与 semantic components。
+8. terminal、Web 与 static renderer 消费同一棵闭合语义树。
+9. 新查询和新组件不会要求 Record migration。

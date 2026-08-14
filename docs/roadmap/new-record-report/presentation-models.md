@@ -73,7 +73,6 @@ interface MetricValue<Value> {
 type DomainView =
   | TraceView
   | AttemptTimelineView
-  | ExperimentProgressView
   | EvidenceView;
 ```
 
@@ -102,19 +101,7 @@ interface AttemptTimelineView {
 }
 ```
 
-Experiment progress 保留 expected population，而不是只列已经产生结果的成员：
-
-```ts
-interface ExperimentProgressView {
-  readonly type: "experiment-progress";
-  readonly identity: ExperimentIdentity;
-  readonly expected: number;
-  readonly completed: number;
-  readonly failed: number;
-  readonly missing: number;
-  readonly members: readonly ExperimentMemberView[];
-}
-```
+已完成 Experiment 的 expected population、completed、failed 与 missing 是 Analysis 结果。它们进入 `SemanticFrame`，再由第 ⑥ 层官方 Experiment Report 组合 Table、Chart 与诊断组件。Experiment 不因拥有官方页面而成为 `DomainView`。
 
 ## 领域投影 API
 
@@ -138,4 +125,5 @@ Report 作者通常不直接调用领域投影。作者把 opaque identity 或 e
 - `DomainView` 不携带 lazy callback、Promise 或 live handle。
 - renderer 不依据 `refs` 重新运行 Analysis。
 - Trace、Attempt 和 Evidence 不因通用组件存在而强制压平成 rows。
+- 已完成 Experiment 不增加专用 presentation model；它复用 `SemanticFrame` 与已有诊断 `DomainView`。
 - presentation model 不保存为新的权威 Record schema。

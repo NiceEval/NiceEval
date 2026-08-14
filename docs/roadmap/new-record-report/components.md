@@ -60,7 +60,6 @@ API 通过 typed field key 选择编码：
 opaque target / exact refs
    ├─ TraceViewer
    ├─ AttemptTimeline
-   ├─ ExperimentProgress
    └─ EvidenceDrilldown
 ```
 
@@ -71,12 +70,26 @@ Report 作者 API：
 
 <AttemptTimeline attempt={attemptRef} />
 
-<ExperimentProgress experiment={experimentRef} />
-
 <EvidenceDrilldown refs={metric.refs} />
 ```
 
 这些 props 只携带 opaque identity、exact refs 与显示选项。平台在 Report tree 闭合前按身份查找并形成对应 `DomainView`，renderer 不取得领域投影 capability。
+
+## Experiment 不属于 primitive
+
+已完成 Experiment 的比较结果是 `SemanticFrame`，使用中立组件呈现：
+
+```tsx
+<Stack>
+  <Summary values={{ passRate: summary.passRate }} />
+  <Bars points={rows} x={model} y={passRate} />
+  <Table rows={rows} columns={[model, task, passRate]} />
+</Stack>
+```
+
+完整的概览、比较、Attempt 下钻与 Evidence 复核属于第 ⑥ 层官方 Experiment Report。组件层不提供 `ExperimentTable` 或 `ExperimentComparison` primitive。
+
+运行中的 Experiment 若需要 pending、running、retrying 与 completed 状态机，应由独立的 live execution 方向定义。该能力不能借已完成 Experiment 的 Report 名义进入本层。
 
 ## 自定义复合组件
 

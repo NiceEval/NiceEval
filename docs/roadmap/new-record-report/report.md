@@ -18,6 +18,7 @@ Report execution 完成后，只留下闭合语义树。callback、Promise、Sam
 - 调用 typed Analysis query。
 - 组织 Summary、Table、Chart、Trace 与 Evidence。
 - 建立 Page、PageFamily、route 与稳定下钻目标。
+- 提供由中立组件和诊断组件组合成的官方 Experiment Report。
 - 隔离 Page failure。
 - 为 terminal、Web 与 static 生成同一棵闭合语义树。
 
@@ -119,6 +120,29 @@ export default defineReport({
 });
 ```
 
+## 官方 Experiment Report
+
+已完成 Experiment 是第 ⑥ 层的官方查看与比较工作流。它使用普通 `defineReport()`、Page 和组件合同，不增加专用 Experiment primitive。
+
+```text
+Official Experiment Report
+   ├─ Overview Page
+   │    ├─ Summary
+   │    ├─ Bars
+   │    └─ Table
+   ├─ Comparison Page
+   │    ├─ Table
+   │    └─ Scatter
+   └─ Attempt PageFamily
+        ├─ AttemptTimeline
+        ├─ TraceViewer
+        └─ EvidenceDrilldown
+```
+
+Overview 与 Comparison 的 expected population、对齐、missing、partial 和 unsupported 来自 Analysis `SemanticFrame`。Attempt PageFamily 只用 stable identity Dimension 建 route，并通过已有领域组件完成诊断。
+
+没有配置自定义 Report 时，`niceeval show` 与 `niceeval view` 选择平台提供的官方 Experiment Report。自定义 Report 可以复用同一组 Analysis fields 和组件，不会建立第二套实验比较口径。
+
 ## Closed Report Tree
 
 Report execution 的唯一输出是闭合语义树：
@@ -151,4 +175,5 @@ interface ClosedReportTree {
 - 不打开另一个 Record root，也不改变 frozen selection。
 - 不写 SQL 查询 Record 物理表。
 - 不保存新的权威比较表或 Report schema。
+- 不把完整 Experiment 工作流压成一个专用 component。
 - 不允许 renderer 重新执行 callback、Query 或领域 projection。
