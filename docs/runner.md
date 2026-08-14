@@ -54,6 +54,10 @@ Runner 先展开 expected slots，再以全局和 Experiment 范围的并发限�
 
 首过即停、预算耗尽、用户中断和已声明的停止派发条件都保留 expected slot。未派发 slot 没有 Member，因此 Sample 把它显示为 `not-recorded`；Runner 不制造虚构的 Attempt 或 Verdict。
 
+受控用户中断会先停稳 Attempt 与生命周期，再删除尚未完成的 provisional Attempt draft。Runner 随后可发布一个完整 Run：已经完成的 slot 保留 Member，未完成的 expected slot 没有 Member，并在 membership provenance 中标为 `interrupted`。强杀、writer failure 或 rollback failure 仍不发布该 Run。
+
+中断收尾尽力处理全部 provisional draft。若更早已经发生 writer failure，最终诊断优先返回这个首个写入错误；只有没有更早写入错误时才返回 rollback failure。任一种失败都发生在 `complete` 之前，不能继续发布。
+
 运行中发生的短状态、计数和进度只显示给当前进程。Run 或 Attempt 范围的诊断、阶段、计时、用量与其它业务事实写入相应 RecordAttachment。
 
 ## Carry 与 accept

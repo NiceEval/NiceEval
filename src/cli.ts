@@ -365,7 +365,7 @@ const FLAG_OPTIONS = {
   tag: { type: "string" },
   /** 额外写一份 JUnit XML 报告到指定路径,供 CI 消费。 */
   junit: { type: "string" },
-  /** `exp` 命令专用:stdout 上单一有序的 NDJSON 事件流；`--dry --json` 输出单个 JSON 计划文档。`show` 命令专用：普通视图输出 `niceeval.show`；显式 `--run` 的默认 membership Report 输出 `niceeval.report-show/v1`；与 `--report` 互斥。 */
+  /** `exp` 命令专用:stdout 上单一有序的 NDJSON 事件流；`--dry --json` 输出单个 JSON 计划文档。`show` 命令专用：普通视图输出 `niceeval.show`；显式 `--run` 的默认 membership Report 输出 `niceeval.report-show/v1`；与 `--report`、`--page` 互斥。 */
   json: { type: "boolean" },
   /** `docker profile doctor` 专用：启动受限 DinD 容器并运行内层容器。 */
   smoke: { type: "boolean" },
@@ -404,7 +404,7 @@ const FLAG_OPTIONS = {
   report: { type: "string" },
   /** `show` / `view` 命令专用：内建 Theme 或受信任的闭合 Theme module 路径。 */
   theme: { type: "string" },
-  /** `show` / `view` 命令专用:选择报告的初始页;`show` 渲染该页并在尾部附其余页索引,`view` 以它作初始路由。未命中的页 id 按用法错误退出并列出可用页 id。 */
+  /** 人读 `show` / `view` 专用：用 exact route 或已展开的 page id 选择页面；`show --json` 不接受。未命中时按用法错误退出并列出可用 page id。 */
   page: { type: "string" },
   /** `exp` 命令专用:补齐被强杀打断的实验级 teardown——只对选中的实验各执行一次 teardown(新进程语义),不派发 attempt、不跑 setup;没有遗留登记也照常执行。与 eval 前缀位置参数组合是用法错误。 */
   teardown: { type: "boolean" },
@@ -2239,6 +2239,9 @@ function parseReportCliRequest(input: {
   }
   if (input.command === "show" && input.flags.json && input.flags.report !== undefined) {
     throw usageError(t("cli.show.jsonReportConflict", { report: input.flags.report }));
+  }
+  if (input.command === "show" && input.flags.json && input.flags.page !== undefined) {
+    throw usageError("niceeval show --json cannot combine with --page; JSON selects a data view, not a Report page.\n");
   }
   const runs = input.flags.run ?? [];
 

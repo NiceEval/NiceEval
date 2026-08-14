@@ -42,7 +42,6 @@ export interface PresentedSource {
   readonly verdict: string;
   readonly runId: string;
   readonly attempt: number;
-  readonly artifactPath: string;
   readonly spine: PresentedSourceFile;
   readonly calls: readonly PresentedSourceCall[];
   readonly callsByLine: Readonly<Record<number, readonly PresentedSourceCall[]>>;
@@ -102,7 +101,6 @@ export function presentAttemptSource(input: {
     verdict: input.verdict,
     runId: input.runId,
     attempt: input.attempt,
-    artifactPath: displaySourceArtifactPath(input.experimentId, input.runId, input.evalId, input.attempt),
     spine,
     calls,
     summary,
@@ -121,18 +119,9 @@ export function renderPresentedSource(
   const blocks = [
     header,
     renderSourceFile(presented.spine, presented.callsByLine, "", width),
-    `${summary}\nfull eval source: ${presented.artifactPath}`,
+    summary,
   ];
   return blocks.join("\n\n");
-}
-
-export function displaySourceArtifactPath(
-  experimentId: string,
-  runId: string,
-  evalId: string,
-  attempt: number,
-): string {
-  return `.niceeval/${experimentId.replaceAll("/", "_")}/${runId}/${evalId}/a${attempt}/sources.json`;
 }
 
 function presentCalls(

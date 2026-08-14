@@ -55,6 +55,9 @@ test("show --source 从本轮 Record 呈现入口与导入断言快照", async (
       expect(shown.stdout).toContain("Assertions: available");
       expect(shown.stdout).not.toContain("ENTRY_SNAPSHOT_AFTER");
       expect(shown.stdout).not.toContain("IMPORTED_ASSERTION_SNAPSHOT_AFTER");
+      expect(shown.stdout).not.toContain("@unknown");
+      expect(shown.stdout).not.toContain(".niceeval/");
+      expect(shown.stdout).not.toContain("sources.json");
 
       const json = await niceeval.run(
         ["show", attempt.locator!, "--source", "--json"],
@@ -68,6 +71,10 @@ test("show --source 从本轮 Record 呈现入口与导入断言快照", async (
       expect(payload).toContain("IMPORTED_ASSERTION_SNAPSHOT_BEFORE");
       expect(payload).not.toContain("ENTRY_SNAPSHOT_AFTER");
       expect(payload).not.toContain("IMPORTED_ASSERTION_SNAPSHOT_AFTER");
+      expect(payload).not.toContain("@unknown");
+      expect(payload).not.toContain("artifactPath");
+      expect(payload).not.toContain(".niceeval/");
+      expect(payload).not.toContain("sources.json");
     },
   );
 });

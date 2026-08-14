@@ -63,7 +63,7 @@ Reports runtime 从不打开 Record path，也不自行读取 Attachment bytes�
 
 ### 恢复
 
-中断发生在完成标识创建前时，不发布该 Run。reader 忽略它的目录并给出 `incomplete-run` warning；用户用 `niceeval clean` 删除。Record 没有按 orphan 猜测的 clean、局部 edit 或 delete 命令。
+受控 `SIGINT` / `SIGTERM` 会先停止派发并收尾。Runner 删除尚未完成的 provisional Attempt 后，可以发布一个带完整 expected-slot 分母的 Run：已完成 slot 保留 Member，未完成 slot 显示为 `not-recorded` / `interrupted`。强杀、writer failure 或 rollback failure 仍会留下未发布目录；reader 忽略它并给出 `incomplete-run` warning，用户用 `niceeval clean` 删除。
 
 `niceeval migrate --record <root>` 取得 exclusive maintenance lease，并把已知可迁移的 source major 原地转换到 current major。普通命令遇到 source major 时只返回 `record-migration-required`。
 
@@ -81,7 +81,7 @@ Reports runtime 从不打开 Record path，也不自行读取 Attachment bytes�
 
 调度与 Record I/O 使用 Effect 管理有界并发、资源、typed error 与中断；纯选择和状态折叠仍保持普通值。reader、writer lock、文件与流由 Scope 持有，内部调用链不自行启动 Effect runtime。
 
-收到 `SIGINT` 或 `SIGTERM` 后，CLI 请求 Runner 中断。Runner 完成能够完成的收尾，保留已经发布的完整 Run；没有完成标识的未完成目录留给 `niceeval clean` 删除。命令返回 `completion: "interrupted"` 的 receipt；用户中断不是新的 Attempt 业务事实。
+收到 `SIGINT` 或 `SIGTERM` 后，CLI 请求 Runner 中断。Runner 完成能够完成的收尾，并在 rollback 成功时发布已完成事实与 `interrupted` 缺口。命令返回 `completion: "interrupted"` 的 receipt；用户中断不是新的 Attempt 或 Verdict。更早的 writer failure 优先于随后 cleanup failure，任一写入或 rollback failure 都不会发布 Run。
 
 argv、配置或 selector 无法建立 Invocation 时，CLI 输出 `error:` 和 `fix:`，以非零状态结束；此时没有 receipt。
 

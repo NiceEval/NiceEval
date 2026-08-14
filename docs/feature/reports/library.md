@@ -992,7 +992,7 @@ Text 与 JSON 都从同一 semantic tree、problems 与 execution 派生。`show
 
 `showReport({ format: "json" })` 输出一个固定 schema：reportId、pageSelection、sample 摘要、projections、calculations、families、pages 与 problemTable。Download 部分只含 path / mediaType / byteLength / SHA-256 metadata。它不内联 Download bytes，也不输出第二条 projection 路径。
 
-没有 `--page` 时 pages 按 route 输出全部；有 `--page` 时只输出 exact 选中的一页。sample / projections / calculations / family summaries / download metadata 与 problemTable 仍完整。arrays 按 canonical order，object keys 按 UTF-8 bytes 排序，stdout 是 UTF-8 canonical JSON。
+没有 `page` 参数时 pages 按 route 输出全部；传入 `page` 时只输出 exact 选中的一页。sample / projections / calculations / family summaries / download metadata 与 problemTable 仍完整。arrays 按 canonical order，object keys 按 UTF-8 bytes 排序，stdout 是 UTF-8 canonical JSON。这个 library 参数不改变 CLI `niceeval.show` 数据文档；CLI 的 `show --json` 拒绝 `--page`。
 
 Host 只显示每个 input 的 complete/partial 与 problem IDs，不替作者公式猜 `observed` / `denominator`。Broken pipe 是正常 CLI 退出，其它 console failure 是 typed error，interruption 保持 Cause。
 

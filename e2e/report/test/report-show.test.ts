@@ -217,16 +217,30 @@ test("show 从一次固定 ReportExecution 呈现内建与自定义报告", asyn
       expect(document.problemTable).toEqual([]);
 
       const forbidden = await niceeval.run(
-        ["show", "--report", "./reports/site.ts", "--json"],
+        ["show", "--report", "./reports/site.tsx", "--json"],
       );
       expect(forbidden.exitCode, forbidden.diagnostic()).not.toBe(0);
       expect(forbidden.stderr).toContain("--json cannot combine with --report");
+
+      const forbiddenPage = await niceeval.run(
+        [
+          "show",
+          "--json",
+          "--page",
+          "/",
+          "--record",
+          join(projectRoot, "record-that-does-not-exist"),
+        ],
+      );
+      expect(forbiddenPage.exitCode, forbiddenPage.diagnostic()).not.toBe(0);
+      expect(forbiddenPage.stderr).toContain("--json cannot combine with --page");
+      expect(forbiddenPage.stderr).not.toContain("record-bootstrap-invalid");
 
       const custom = await niceeval.run(
         [
           "show",
           "--report",
-          "./reports/site.ts",
+          "./reports/site.tsx",
           "--page",
           "/",
         ],

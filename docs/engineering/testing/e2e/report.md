@@ -20,9 +20,9 @@ decoder 或 projection runtime 作为第二套真相。
 
 ### 2. Report 作者面
 
-- 自定义 Report 只从 `niceeval/report` 导入 Calculation、Page / PageFamily、Download、Theme、
-  官方 opaque projectors、projection declaration constructors 与必要的纯值类型。
-- 作者不能 import `niceeval/record`、`niceeval/report/host` 或 host/node。
+- 自定义 Report 从 `niceeval/report` 导入经典组件、aggregation、Calculation、Page / PageFamily、Download 与 Theme。
+  同一入口也提供官方 opaque projectors、projection declaration constructors 与必要的纯值类型。
+- 经典作者可从 `niceeval/record` type-only 导入闭合的 `Sample` / `AttemptEvidence`；该入口没有 reader、writer 或 path capability。作者不能 import `niceeval/report/host` 或 host/node。
   作者也看不到 reader、root、Scope、Effect、path、raw family/value、owner lookup 或 direct projection runtime。
 - `attemptSlotProjection`、`attemptOriginRunProjection` 与 `selectedRunProjection` 保持 Sample
   对齐；PageFamily 只能从已经投影或计算的内存值展开 route。
@@ -104,6 +104,8 @@ usage、timing、diagnostics 与每项证据状态。`--grep` 不能裁剪机器
 `report-show.test.ts` 验证 locator、project-current、human 与 JSON 公开读回。不带选项的 `show` 在项目
 未配置 Report 时使用 `standard`；`--report` 与 `--json` 互斥。
 
+`show --json --page` 在 Record I/O 前失败；JSON 数据 view 不静默接受或忽略 Report page selector。
+
 普通 pipe 保持无框纯文本。真实 PTY 在固定终端尺寸形成闭合、等宽且包含经典 summary 与
 Experiment table 的框；几何 parser 不拥有业务文案。
 
@@ -112,7 +114,7 @@ Attempt JSON 必须公开 Calculation 状态、canonical identity、Evaluation�
 
 ### report-source-snapshot
 
-`report-source.test.ts` 验证 `show --source` 使用运行时快照，不读取后来修改的工作树内容。
+`report-source.test.ts` 验证 `show --source` 使用运行时快照，不读取后来修改的工作树内容。text / JSON 保留 canonical locator，且不输出 `@unknown`、Record path、`sources.json` 或 `artifactPath`。
 
 ### report-browser-journey
 
@@ -121,6 +123,13 @@ Attempt JSON 必须公开 Calculation 状态、canonical identity、Evaluation�
 经典 Report 的 oracle 是 package chrome、Hero、主读数、图表可访问表、Experiment hierarchy、筛选、
 原生 disclosure、同 URL 详情 dialog、焦点恢复和双语切换。自定义 Report 验证真实 HTTP、普通 href、
 详情导航与热重载。
+
+自定义 Report 还用安装后的公开作者 API 形成一个页面：`niceeval/record` 的 type-only Sample、
+classic `defineReport`、package JSX runtime、`aggregate` 与经典组件。这个页面与低层 Page / PageFamily
+共用同一 execution 和 host。
+
+作者页按真实下游的组合方式定义自有 `defineComponent`，从 `ctx.scope` 聚合 Bars，并同时渲染
+`ExperimentScatter` 与 `ExperimentTable`。owner 因此守护组件导出、上下文和层级导航，不只守护 TSX loader。
 
 禁 JavaScript 的 `file:` 页面必须保留 static export 的内容、表格与原生 disclosure。移动 viewport 的
 文档不能横向溢出。owner 不依赖私有 selector、computed style、像素或 golden。

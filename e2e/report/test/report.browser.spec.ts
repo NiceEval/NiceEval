@@ -148,7 +148,7 @@ test("Report browser Journey：经典界面与自定义报告共用固定执行�
         const exported = await niceeval.run([
           "view",
           "--report",
-          "./reports/site.ts",
+          "./reports/site.tsx",
           "--out",
           "site-export",
           "--no-open",
@@ -161,7 +161,7 @@ test("Report browser Journey：经典界面与自定义报告共用固定执行�
           [
             "view",
             "--report",
-            "./reports/site.ts",
+            "./reports/site.tsx",
             "--host",
             "127.0.0.1",
             "--port",
@@ -181,6 +181,14 @@ test("Report browser Journey：经典界面与自定义报告共用固定执行�
         await page.goto(origin!);
         await expect(page.getByText("Report fixture", { exact: true }).first()).toBeVisible();
         await expect(page.getByText("Fixture copy block", { exact: true }).first()).toBeVisible();
+        const authorApi = page.getByRole("tab", { name: "Author API" });
+        await expect(authorApi).toBeVisible();
+        await authorApi.click();
+        await expect(page.getByRole("heading", { name: "Classic author surface", level: 1 })).toBeVisible();
+        await expect(page.getByRole("figure", { name: "Pass rate(%)" })).toBeVisible();
+        await expect(page.getByRole("figure", { name: "Experiments costUSD × passRate" })).toBeVisible();
+        await expect(page.getByRole("table", { name: "Experiment hierarchy" })).toBeVisible();
+        await page.goto(origin!);
 
         const slotLink = page.locator("a").filter({ hasText: "Slot " }).first();
         await expect(slotLink).toBeVisible();

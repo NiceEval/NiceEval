@@ -55,6 +55,14 @@ npx niceeval exp checkout --json
 
 The receipt identifies this Invocation, its Runs, timing, and completion only. To inspect Verdicts, Usage, diagnostics, or report aggregates, reread the quiescent Record using its `runIds`.
 
+## How a Run publishes
+
+The Runner writes Run core, Members, Attempts, and their RecordAttachments first. It creates the zero-byte `complete` marker only after every durable piece is written. A directory without `complete` never enters a reader, Sample, or reuse. `niceeval clean` removes it.
+
+A graceful `SIGINT` still publishes. The Runner discards unfinished reservations, keeps the completed Members, and marks every remaining gap as `not-recorded` or `interrupted`. The published Run is complete even though it has gaps.
+
+A hard stop, write failure, or rollback failure leaves the Run unpublished. The directory stays incomplete and no `complete` marker appears. A cleanup error cannot replace an earlier writer failure; NiceEval reports the writer failure.
+
 ## Reporter
 
 A Reporter connects only to the current Invocation. It can send information already known to the process to an external system, and `--junit` writes a file for a CI platform to consume.

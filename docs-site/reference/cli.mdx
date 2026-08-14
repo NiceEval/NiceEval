@@ -164,7 +164,7 @@ The CLI accepts only the flags below. Any other flag is an error and exits nonze
 | `--orphans` | boolean | `sandbox list` only. Reads unowned Sandboxes left by a hard stop; it does not clean them. |
 | `--tag` | string | Runs only evals with the tag declared by `defineEval`. |
 | `--junit` | string | Writes an additional JUnit XML file for CI. |
-| `--json` | boolean | For `exp`, writes one ordered NDJSON stream to stdout. For ordinary `show` views, emits one `niceeval.show` data document; the built-in explicit-run membership view emits `niceeval.report-show/v1`. It cannot combine with `--report`. |
+| `--json` | boolean | For `exp`, writes one ordered NDJSON stream to stdout. For `show`, a plain selection emits one `niceeval.show` data document; an explicit `--run` without `--report` emits the default membership Report's `niceeval.report-show/v1` document. It cannot combine with `--page` or `--report`. |
 | `--smoke` | boolean | `docker profile doctor` only. Starts a constrained DinD container and runs an inner container. |
 | `--out` | string | `view` only. Exports a static report site to this directory. |
 | `--port` | number | `view` only. Chooses the local server port. |
@@ -172,7 +172,7 @@ The CLI accepts only the flags below. Any other flag is an error and exits nonze
 | `--record` | string | For `show`, `view`, `accept`, and `sandbox enter`, `list`, or `stop`: selects the actual Record root. Use it with `show` or `view` only to read another Record root. The CLI does not append `.niceeval/record` or another suffix. |
 | `--run` | string | Repeat for `show` or `view` to add one explicit complete Run ID. Duplicate identities are removed. |
 | `--report` | string | `show` and `view` only. Selects built-in `standard` / `overview`, or a trusted Report module. Without it, the project Report wins and an unset project falls back to classic `standard`. |
-| `--page` | string | `show` and `view` only. Selects a planned page. An unknown page ID is a usage error and lists available page IDs. |
+| `--page` | string | Human-readable `show` and `view` only. Selects a page by exact route or an already-expanded page ID. An unknown page ID is a usage error and lists available page IDs. |
 | `--teardown` | boolean | `exp` only. Completes interrupted experiment-level teardown for each selected Experiment without running setup or attempts. |
 | `--dry` | boolean | Prints the eval × run-configuration plan without running it. With `--json`, it emits one JSON plan document. |
 | `--force` | boolean | `sandbox prune` only. Also destroys unverified instances. `exp` rejects it; use `--rerun` or `--rerun all` to run failed or all slots again. |
@@ -268,7 +268,7 @@ After selection, `show` reads the Projection declared by the Report and forms on
 
 For an exact Attempt, `show @<AttemptLocator> --json` emits `view: "attempt"`; adding `--execution` emits `view: "execution"`. Their `data` is the fixed Calculation result. An available result has `state`, `inputState`, `problemIds`, and `value`; `data-unavailable` or `execution-failed` has no `value`. Both values carry the canonical locator, selected and origin Run IDs, Slot ID, member relation, and Evaluation coordinate. Attempt data then carries Assertions, Verdict, applicable Score, conversation, commands, usage, timing, and diagnostics. Execution data carries the same conversation, commands, usage, timing, and diagnostics. Each evidence field preserves its own state and includes a value only when available—NiceEval does not substitute `null`, zero, an empty collection, or an invented locator. `--grep` may filter human execution text, but it does not crop `--json` evidence.
 
-`view --out <directory>` (or an explicit `--run`) prerenders the same ReportExecution as a self-contained static site. The target directory must not exist. NiceEval validates every page, download, and static asset path before publishing the complete directory in one rename. It does not give a user Report a Record or blob path.
+`view --out <directory>` (or an explicit `--run`) prerenders the same ReportExecution as a self-contained static site. The target directory must not exist. NiceEval validates every page, download, and static asset path, writes all files, and creates the `complete` marker last. A failed export may leave a directory without the `complete` marker; remove it before retrying. It does not give a user Report a Record or blob path.
 
 The command completes the needed Projection and Report execution while it holds the sample handle. The returned ReportExecution no longer accesses the Record. A running `view` builds a new fixed execution on change. It replaces the current revision on success and retains the last-good execution on failure. Static export consumes only a completed execution.
 

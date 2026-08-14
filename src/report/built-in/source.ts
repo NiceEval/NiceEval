@@ -213,27 +213,29 @@ function presentSourceInputs(
   readonly locator: string;
   readonly value: PresentedSource;
 } {
+  const selectedSlot = selectedIncludedSourceSlot(inputs.verdict);
+  const locator = encodeAttemptLocator(selectedSlot.attempt.attemptId);
   const assembly = assembleAttemptSourceTree({
     assertions: inputs.assertions,
     sourceSites: inputs["source-sites"],
     sources: inputs.sources,
   });
-  const slot = firstIncludedSourceSlot(assembly);
-  const identity = sourceIdentity(inputs, slot?.slot);
+  const slot = includedSourceSlot(assembly, selectedSlot);
   if (slot === undefined) {
     return Object.freeze({
       state: "unavailable" as const,
-      locator: identity.locator,
-      reason: `Source evidence unavailable for ${identity.locator}; this attempt did not capture sources.`,
+      locator,
+      reason: `Source evidence unavailable for ${locator}; this attempt did not capture sources.`,
     });
   }
   if (slot.sources.attachment.state !== "available") {
     return Object.freeze({
       state: "unavailable" as const,
-      locator: identity.locator,
-      reason: `Source evidence unavailable for ${identity.locator}; this attempt did not capture sources.`,
+      locator,
+      reason: `Source evidence unavailable for ${locator}; this attempt did not capture sources.`,
     });
   }
+  const identity = sourceIdentity(inputs, selectedSlot);
   const presented = presentAttemptSource({
     tree: slot.tree,
     locator: identity.locator,
@@ -258,19 +260,32 @@ function presentSourceInputs(
   });
 }
 
-function firstIncludedSourceSlot(
+function includedSourceSlot(
   assembly: AttemptSourceTreeAssemblyResult,
+  selectedSlot: Extract<AnalysisSlot, { readonly state: "included" }>,
 ): Extract<AttemptSourceTreeSlot, { readonly state: "attachment-result" }> | undefined {
   if (assembly.state !== "assembled") return undefined;
   return assembly.value.slots.find(
     (slot): slot is Extract<AttemptSourceTreeSlot, { readonly state: "attachment-result" }> =>
-      slot.state === "attachment-result",
+      slot.state === "attachment-result"
+      && slot.slot.runId === selectedSlot.runId
+      && slot.slot.slotId === selectedSlot.slotId,
   );
+}
+
+function selectedIncludedSourceSlot(
+  projected: ProjectedSample<"attempt-slot", Verdict>,
+): Extract<AnalysisSlot, { readonly state: "included" }> {
+  const matches = projected.entries.filter((entry) => entry.state === "attachment-result");
+  if (matches.length !== 1 || matches[0]?.state !== "attachment-result") {
+    throw new Error(`Source evidence lost its selected included Slot; got ${matches.length} matches`);
+  }
+  return matches[0].slot;
 }
 
 function sourceIdentity(
   inputs: SourceInputs,
-  slot: AnalysisSlot | undefined,
+  included: Extract<AnalysisSlot, { readonly state: "included" }>,
 ): {
   readonly locator: string;
   readonly evalId: string;
@@ -279,22 +294,24 @@ function sourceIdentity(
   readonly runId: string;
   readonly attempt: number;
 } {
-  const included = slot?.state === "included" ? slot : undefined;
-  const locator = included === undefined ? "@unknown" : encodeAttemptLocator(included.attempt.attemptId);
-  const runId = slot?.runId ?? "unknown";
-  const plan = included === undefined
-    ? undefined
-    : availableSelectedRun(inputs["evaluation-plan"], included.runId)?.coordinateForSlot(included.slotId);
-  const verdict = included === undefined
-    ? "unknown"
-    : availableAttemptSlot(inputs.verdict, included.runId, included.slotId) ?? "unknown";
+  const locator = encodeAttemptLocator(included.attempt.attemptId);
+  const runId = included.runId;
+  const selectedPlan = availableSelectedRun(inputs["evaluation-plan"], included.runId);
+  if (selectedPlan === undefined) {
+    throw new Error("Source evidence lost its selected Run Evaluation Plan");
+  }
+  const plan = selectedPlan.coordinateForSlot(included.slotId);
+  if (plan === undefined) {
+    throw new Error("Source evidence Evaluation Plan does not contain the included Slot");
+  }
+  const verdict = availableAttemptSlot(inputs.verdict, included.runId, included.slotId);
   return Object.freeze({
     locator,
-    evalId: plan?.evalId ?? "unknown",
-    experimentId: plan?.experimentId ?? "unknown",
-    verdict,
+    evalId: plan.evalId,
+    experimentId: plan.experimentId,
+    verdict: verdict ?? "unavailable",
     runId,
-    attempt: plan?.attempt ?? 0,
+    attempt: plan.attempt,
   });
 }
 

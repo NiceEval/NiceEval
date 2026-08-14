@@ -30,7 +30,7 @@ test("view --out 从一份固定 ReportExecution 导出带完成标识的静态�
         [
           "view",
           "--report",
-          "./reports/site.ts",
+          "./reports/site.tsx",
           "--out",
           "site-export",
           "--no-open",

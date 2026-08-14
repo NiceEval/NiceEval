@@ -53,7 +53,9 @@ receipt 只说明本次调用的身份、Run、时间与完成状态。需要 Ve
 
 ## Run 如何发布
 
-Runner 先写 Run Core、Member、Attempt 和它们的 RecordAttachment。所有 durable 内容写完后，最后创建零字节 `complete`。在此之前退出、I/O 失败或中断会留下未完成目录；它不进入 reader、Sample 或 reuse，可用 `niceeval clean` 清理。
+Runner 先写 Run Core、Member、Attempt 和它们的 RecordAttachment。所有 durable 内容写完后，最后创建零字节 `complete`。
+
+受控 `SIGINT` 会停止派发并收尾。Runner 删除尚未完成的 provisional Attempt 后，可以发布一个完整 Run：已完成 slot 保留 Member，未完成 slot 显示为 `not-recorded` / `interrupted`。强杀、writer failure 或 rollback failure 会留下未发布目录；它不进入 reader、Sample 或 reuse，可用 `niceeval clean` 清理。更早的 writer failure 不会被随后 cleanup failure 覆盖。
 
 ## Reporter
 

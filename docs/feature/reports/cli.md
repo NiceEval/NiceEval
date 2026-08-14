@@ -18,7 +18,7 @@ niceeval view [selection] [report options] --out <directory>
 | `--run <run-id>` | 可重复；使用 explicit analysis selection。 |
 | `--experiment <id>` | 可重复；按完整 ExperimentId 收窄不带 locator 或 `--run` 的当前项目目标。 |
 | `--report <standard\|overview\|module>` | 选择 0.12 经典标准 Report、Record 诊断概览或受信任的 Report module。省略时先使用项目配置，项目未配置则使用 `standard`。 |
-| `--page <route>` | 选择一个已经展开的 exact route。 |
+| `--page <route-or-page-id>` | 为人读 `show` 或 `view` 选择一个已经展开的 exact route / page id；不与 `show --json` 合用。 |
 | `--port <port>` | `view` 监听端口；默认 4173。 |
 | `--host <address>` | `view` 监听地址；省略时为 `127.0.0.1`，只写 `--host` 时等价于 `0.0.0.0`。 |
 | `--no-open` | 阻止 `view` 自动打开浏览器。 |
@@ -71,6 +71,8 @@ Experiment scatter、Experiment table 与详情页面。`overview` 是显式选�
 
 公开 `show --report` 与 `show --json` 互斥：报告树表达「怎么看」，`--json` 表达「是什么」。两者同时出现时，命令在任何 Record I/O 或报告装载之前以 i18n 用法错误退出。
 
+`show --page` 只选择人读 Report 页面。`niceeval.show` 与 membership JSON 是数据文档，不是 Report 页面树；`show --json --page` 同样在任何 Record I/O 前以用法错误退出。Library `showReport({ format: "json", page })` 仍可收窄低层 `niceeval.report-show/v1`，不等于 CLI 普通 JSON 支持页面筛选。
+
 普通 selector 的 `--json` 输出 `niceeval.show` 数据信封，而不是 classic 报告树。
 其中 `view` 区分 leaderboard、attempt、source 与 timing 等数据面。
 
@@ -115,6 +117,8 @@ Attempt view 另外公开 `assertions`、`verdict` 与 `score`。pass evaluation
 精确 Attempt 必须唯一对齐一个 included Slot 与它在 Evaluation Plan 中的 coordinate；对齐丢失会让
 命令失败，而不是猜 identity。`--grep` 只影响 execution 的人读呈现；与 `--json` 合用时不得裁剪上述
 机器证据。
+
+Source view 的 text 与 JSON 只公开已选 Attempt 的 canonical locator、Evaluation coordinate 与捕获内容。它不输出 Record path、blob path、`sources.json` 文件名或其它私有布局；source Attachment 不可用时仍保留已知 locator，并返回显式 unavailable。
 
 `--report` 的 text 面与 live view、static export 消费同一份 `ReportExecution`。Host 只显示每个 input 的 complete/partial 与 problem IDs，不替作者公式猜 observed/denominator。通过率等业务统计只有在 Calculation value 自己提供时才显示。unavailable、unsupported、invalid 与 execution-failed 必须保留状态及 problem reference，不能替换成零、空字符串或省略行。
 

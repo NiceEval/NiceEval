@@ -377,10 +377,7 @@ export interface RunnerRecordCoordinator<AttachmentError, AttachmentRequirements
   /** A gap that did not start has no Member, but remains explainable at publication. */
   readonly markNotDispatched: (attempt: Attempt) => void;
   /** Discards unfinished reservations, then records every remaining gap as interrupted. */
-  readonly markInterrupted: () => Effect.Effect<
-    void,
-    RunnerRecordWriteError<AttachmentError>
-  >;
+  readonly markInterrupted: () => Effect.Effect<void, never>;
   /** Writes one membership-provenance Attachment per target Run, then seals it. */
   readonly publish: (
     completedAt: number,
@@ -963,9 +960,14 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
     }
 
     let writeFailure: { readonly error: RunnerRecordWriteError<AttachmentError> } | undefined;
-    let interruptionObserved = false;
     const noteWriteFailure = (error: RunnerRecordWriteError<AttachmentError>): void => {
       if (writeFailure === undefined) writeFailure = Object.freeze({ error });
+    };
+    let interruptionRollbackFailure: { readonly error: RunnerRecordWriteError<AttachmentError> } | undefined;
+    const noteInterruptionRollbackFailure = (error: RunnerRecordWriteError<AttachmentError>): void => {
+      if (interruptionRollbackFailure === undefined) {
+        interruptionRollbackFailure = Object.freeze({ error });
+      }
     };
     const locatorMutex = yield* Effect.makeSemaphore(1);
     const invocationLocators = new Map<AttemptLocator, {
@@ -1173,38 +1175,29 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
       }
     };
 
-    const markInterrupted = (): Effect.Effect<
-      void,
-      RunnerRecordWriteError<AttachmentError>
-    > => Effect.gen(function* () {
-      interruptionObserved = true;
-      yield* Effect.forEach(
-        [...byRun.values()],
-        (recordRun) => Effect.forEach(
-          [...recordRun.gapActions],
-          ([slotId, state]): Effect.Effect<
-            void,
-            RunnerRecordWriteError<AttachmentError>
-          > => {
-            if (state === "pending") {
-              return Effect.sync(() => {
-                recordRun.gapActions.set(slotId, "interrupted");
-              });
-            }
-            if (state !== "reserved" && state !== "sealed") return Effect.void;
-            const active = recordRun.attempts.get(slotId);
-            if (active === undefined || active.completed) {
-              return Effect.fail(attemptInvalid());
-            }
-            return discardRecordAttemptDraft(active.draft).pipe(
-              Effect.tap(() => Effect.sync(() => {
-                recordRun.attempts.delete(slotId);
-                recordRun.gapActions.set(slotId, "interrupted");
-              })),
-            );
-          },
-          { concurrency: 1, discard: true },
-        ),
+    const markInterrupted = (): Effect.Effect<void, never> => Effect.forEach(
+      [...byRun.values()],
+      (recordRun) => Effect.forEach(
+        [...recordRun.gapActions],
+        ([slotId, state]): Effect.Effect<void, never> => {
+          if (state === "pending") {
+            return Effect.sync(() => {
+              recordRun.gapActions.set(slotId, "interrupted");
+            });
+          }
+          if (state !== "reserved" && state !== "sealed") return Effect.void;
+          const active = recordRun.attempts.get(slotId);
+          if (active === undefined || active.completed) {
+            return Effect.sync(() => noteInterruptionRollbackFailure(attemptInvalid()));
+          }
+          return discardRecordAttemptDraft(active.draft).pipe(
+            Effect.tap(() => Effect.sync(() => {
+              recordRun.attempts.delete(slotId);
+              recordRun.gapActions.set(slotId, "interrupted");
+            })),
+            Effect.catchAll((error) => Effect.sync(() => noteInterruptionRollbackFailure(error))),
+          );
+        },
         { concurrency: 1, discard: true },
       );
     });
@@ -1281,15 +1274,10 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
       > =>
         Effect.gen(function* () {
           if (writeFailure !== undefined) return yield* Effect.fail(writeFailure.error);
-          // A reserved origin already has a Core Member. If SIGINT arrives before
-          // its assertions and final result close, that draft must remain
-          // incomplete rather than publishing a Member without complete Attempt
-          // facts. Independent drafts still take the ordinary publish validation.
-          const publishableRuns = [...byRun.values()].filter((recordRun) =>
-            !interruptionObserved || ![...recordRun.gapActions.values()].some((state) =>
-              state === "reserved" || state === "sealed"
-            ));
-          for (const recordRun of publishableRuns) {
+          if (interruptionRollbackFailure !== undefined) {
+            return yield* Effect.fail(interruptionRollbackFailure.error);
+          }
+          for (const recordRun of byRun.values()) {
             const runObservabilityCapture = yield* createRunnerRunObservabilityCaptureV1({
               run: recordRun.run,
             });

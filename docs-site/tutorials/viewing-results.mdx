@@ -47,17 +47,14 @@ Use a complete `--run` ID to audit those historical results.
 
 ## Inspect results in the terminal
 
-`show` renders the default Report as text.
-Supplying a page or custom Report still creates one execution from the same selection.
+`show` renders the default Report as text. An explicit `--run` without `--report` uses the built-in membership Report. Current-project results use the configured project Report; without one, bare `show` falls back to classic `standard`. Supplying a page or custom Report still creates one execution from the same selection.
 
 ```sh
 npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --page /
 npx niceeval show --experiment checkout --json
 ```
 
-`--json` emits the `niceeval.report-show/v1` document for the same execution.
-It includes pages, calculations, projection summaries, and problems.
-It does not create another data path.
+Plain `show --json` emits the `niceeval.show` data envelope for the same execution. It carries view-specific data plus the selection, run and slot counts, sample denominator, and problem table. An explicit `--run` without `--report` keeps the membership Report and emits its `niceeval.report-show/v1` provenance document, the report tree JSON. `--json` cannot combine with `--page` or `--report`. It does not create another data path.
 
 ## Inspect results in the browser
 
@@ -65,9 +62,10 @@ It does not create another data path.
 npx niceeval view --experiment checkout --no-open
 ```
 
-Each successful `view` rebuild creates a new fixed `ReportExecution` and replaces the revision on screen.
+Each successful `view` rebuild constructs and publishes a new revision closure: an en/zh-CN isomorphic pair of fixed `ReportExecution`s over one frozen selection.
 Changes to the Report, configuration, theme, or Record trigger the next rebuild.
-A failed rebuild keeps the last-good execution and shows the problem.
+The English and Chinese views each hold their own execution; the two are isomorphic, so switching language changes presentation text only and never rereads the Record.
+Both executions must succeed before the new revision replaces the last-good one on screen. A failed rebuild keeps the last-good revision and shows the problem.
 
 Opening, navigating, or refreshing a page does not reread the Record behind a fixed execution.
 To see a newly published Run, let `view` finish a rebuild or run the command again.
