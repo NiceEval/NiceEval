@@ -16,9 +16,18 @@ import {
   reportInputs,
   reportRoute,
 } from "../author/index.ts";
-import { classicDataPlan } from "../classic/define.ts";
+import {
+  classicDataPlan,
+  defineReport as defineClassicReport,
+} from "../classic/define.ts";
 import { classicSampleFromProjectedInputs } from "../classic/from-context.ts";
-import { ExperimentTable } from "../classic/components.ts";
+import {
+  Col,
+  ExperimentScatter,
+  ExperimentTable,
+  Hero,
+  SampleSummary,
+} from "../classic/components.ts";
 import { evaluateClassicTree } from "../classic/jsx.ts";
 import {
   classicAttemptInstanceKey,
@@ -37,6 +46,11 @@ import {
   type ReportDocument,
 } from "../semantic/document.ts";
 
+const niceevalLink = Object.freeze({
+  label: "GitHub",
+  href: "https://github.com/NiceEval/NiceEval",
+});
+
 const tracesInputs = reportInputs({
   "evaluation-plan": selectedRunProjection(evaluationPlanProjector),
   verdict: attemptSlotProjection(verdictProjector),
@@ -52,6 +66,21 @@ export async function standardAttemptsRender(sample: Sample): Promise<ReportDocu
     presentation: "classic-dashboard",
     metadataOrigin: sample.metadataOrigin,
     children,
+  });
+}
+
+export function standardOverviewRender(sample: Sample) {
+  return Col({
+    children: [
+      Hero({
+        title: "NiceEval",
+        description: "Evaluation reports for AI agents.",
+        links: [niceevalLink],
+      }),
+      SampleSummary({ input: sample }),
+      ExperimentScatter({ input: sample }),
+      ExperimentTable({ input: sample }),
+    ],
   });
 }
 
@@ -72,6 +101,12 @@ export const standardAttemptsPage = {
   id: "attempts",
   title: "Attempts",
   render: async (sample: Sample) => ExperimentTable({ input: sample }),
+};
+
+export const standardOverviewPage = {
+  id: "report",
+  title: { en: "Report", "zh-CN": "报告" },
+  render: standardOverviewRender,
 };
 
 /**
@@ -129,6 +164,20 @@ export const standardAttemptPage = definePageFamily({
       classicSampleFromProjectedInputs({ sample, inputs }),
     ),
 });
+
+/** The 0.12 zero-configuration Report used by show, view, and the built-in default export. */
+export const standard = defineClassicReport({
+  title: "NiceEval",
+  pages: [
+    standardOverviewPage,
+    standardAttemptsPage,
+    standardTracesPage,
+    standardAttemptPage,
+    standardExperimentPage,
+  ],
+});
+
+export default standard;
 
 function tracesDocument(
   sample: Sample,

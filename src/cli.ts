@@ -40,6 +40,7 @@ import {
 import { defaultAttemptOverviewReport } from "./report/built-in/attempt-overview.ts";
 import { defaultOverviewReport } from "./report/built-in/overview.ts";
 import { defaultRunMembershipOverviewReport } from "./report/built-in/run-membership-overview.ts";
+import { standard } from "./report/built-in/standard.ts";
 import {
   executionEvidenceReport,
   timingEvidenceReport,
@@ -387,7 +388,7 @@ const FLAG_OPTIONS = {
   record: { type: "string" },
   /** `show` / `view` 可重复传入 `--run`;每次按完整 RunId 增加一个显式 Run,重复 identity 去重。 */
   run: { type: "string", multiple: true },
-  /** `show` / `view` 命令专用：内建 `overview` 或受信任的 Report module 路径。 */
+  /** `show` / `view` 命令专用：内建 `standard` / `overview` 或受信任的 Report module 路径。省略时先用项目配置，未配置则用经典 `standard`。 */
   report: { type: "string" },
   /** `show` / `view` 命令专用：内建 Theme 或受信任的闭合 Theme module 路径。 */
   theme: { type: "string" },
@@ -2179,7 +2180,7 @@ type ReportCliCommand = "show" | "view";
 type ReportSelection =
   | { readonly kind: "fixed"; readonly report: Report }
   | { readonly kind: "config" }
-  | { readonly kind: "built-in"; readonly name: "overview" }
+  | { readonly kind: "built-in"; readonly name: "standard" | "overview" }
   | { readonly kind: "module"; readonly path: string };
 
 type ThemeSelection =
@@ -2569,11 +2570,12 @@ function parseReportRoute(value: string | undefined): ReportRoute | undefined {
 
 function reportSelection(cwd: string, value: string | undefined): ReportSelection {
   if (value === undefined) return Object.freeze({ kind: "config" as const });
+  if (value === "standard") return Object.freeze({ kind: "built-in" as const, name: "standard" as const });
   if (value === "overview") return Object.freeze({ kind: "built-in" as const, name: "overview" as const });
   if (isTrustedModulePath(value)) {
     return Object.freeze({ kind: "module" as const, path: resolveTrustedModulePath(cwd, value) });
   }
-  throw usageError("--report accepts built-in overview or an explicit trusted module path.\n");
+  throw usageError("--report accepts built-in standard/overview or an explicit trusted module path.\n");
 }
 
 function themeSelection(cwd: string, value: string | undefined): ThemeSelection {
@@ -2715,11 +2717,14 @@ function reportFromSelection(
       return Effect.succeed(Object.freeze({ value: selection.report, watchInputs: Object.freeze([]) }));
     case "config":
       return Effect.succeed(Object.freeze({
-        value: configured ?? defaultOverviewReport,
+        value: configured ?? standard,
         watchInputs: Object.freeze([]),
       }));
     case "built-in":
-      return Effect.succeed(Object.freeze({ value: defaultOverviewReport, watchInputs: Object.freeze([]) }));
+      return Effect.succeed(Object.freeze({
+        value: selection.name === "standard" ? standard : defaultOverviewReport,
+        watchInputs: Object.freeze([]),
+      }));
     case "module":
       return cliEffect("load trusted Report module", loadTrustedReportModule(selection.path)).pipe(
         Effect.map((loaded) => Object.freeze({ value: loaded.report, watchInputs: loaded.watchInputs })),

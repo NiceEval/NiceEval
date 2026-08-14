@@ -17,7 +17,7 @@ niceeval view [selection] [report options] --out <directory>
 | `--record <root>` | 选择实际 Record root；省略时使用 `<cwd>/.niceeval/record`。 |
 | `--run <run-id>` | 可重复；使用 explicit analysis selection。 |
 | `--experiment <id>` | 可重复；按完整 ExperimentId 收窄不带 locator 或 `--run` 的当前项目目标。 |
-| `--report <module>` | 选择内建 Report 或受信任的 Report module。 |
+| `--report <standard\|overview\|module>` | 选择 0.12 经典标准 Report、Record 诊断概览或受信任的 Report module。省略时先使用项目配置，项目未配置则使用 `standard`。 |
 | `--page <route>` | 选择一个已经展开的 exact route。 |
 | `--port <port>` | `view` 监听端口；默认 4173。 |
 | `--host <address>` | `view` 监听地址；省略时为 `127.0.0.1`，只写 `--host` 时等价于 `0.0.0.0`。 |
@@ -64,6 +64,10 @@ niceeval show --json
 ```
 
 `show` 构造一次 `ReportExecution`，再从 closed semantic report tree 渲染 terminal text。
+
+项目没有配置 `report` 时，不带选项的 `show` 与 `view` 使用 `standard`：经典 Hero、Sample summary、
+Experiment scatter、Experiment table 与详情页面。`overview` 是显式选择的 Record slot 诊断面，
+不会作为零配置用户界面回退。`--report standard` 可按次忽略项目自定义 Report，回到内建经典报告。
 
 公开 `show --report` 与 `show --json` 互斥：报告树表达「怎么看」，`--json` 表达「是什么」。两者同时出现时，命令在任何 Record I/O 或报告装载之前以 i18n 用法错误退出。
 

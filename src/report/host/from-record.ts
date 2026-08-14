@@ -16,7 +16,7 @@ import {
   selectAnalysisSampleForLocator,
   type SelectAnalysisSampleForLocatorError,
 } from "../../projection/attempt-selection.ts";
-import defaultOverviewReport from "../built-in/overview.ts";
+import standard from "../built-in/standard.ts";
 import type { Report } from "../author/model.ts";
 import type { ClassicLocale, ClassicSelectionOrigin } from "../classic/index.ts";
 import type { ReportExecution } from "../execution/model.ts";
@@ -63,7 +63,7 @@ export function executeReportFromRecord(input: {
       const sampleHandle = yield* selectAnalysisSample(reader, input.selection);
       return yield* executeReport({
         sampleHandle,
-        report: input.report ?? defaultOverviewReport,
+        report: input.report ?? standard,
         ...(input.selectionOrigin === undefined ? {} : { selectionOrigin: input.selectionOrigin }),
         ...(input.locale === undefined ? {} : { locale: input.locale }),
       });
@@ -98,7 +98,7 @@ export function executeReportForAttemptFromRecord(input: {
       });
       return yield* executeReport({
         sampleHandle,
-        report: input.report ?? defaultOverviewReport,
+        report: input.report ?? standard,
         ...(input.selectionOrigin === undefined ? {} : { selectionOrigin: input.selectionOrigin }),
         ...(input.locale === undefined ? {} : { locale: input.locale }),
       });

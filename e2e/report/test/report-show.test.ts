@@ -66,6 +66,19 @@ test("exp classic → show text and public niceeval.show JSON", async () => {
       writeFileSync(fixturePath, toTranscriptTemplate(shown.stdout, bindings), "utf8");
     }
     expectTranscript(shown.stdout, requiredTranscript(import.meta.dirname, "show-classic.pipe.txt"), bindings);
+
+    writeFileSync(
+      join(projectRoot, "niceeval.config.ts"),
+      `import { defineConfig } from "niceeval";\n\nexport default defineConfig({\n  locale: "en",\n  timeoutMs: 60_000,\n  maxConcurrency: 4,\n});\n`,
+      "utf8",
+    );
+    const standard = await niceeval.run(["show"], { env: PINNED_ENV });
+    expect(standard.exitCode, standard.diagnostic()).toBe(0);
+    expect(standard.stdout).toContain("NiceEval");
+    expect(standard.stdout).toContain("Pass rate");
+    expect(standard.stdout).toContain("Experiment");
+    expect(standard.stdout).not.toContain("Report default-overview");
+    expect(standard.stdout).not.toContain("Slot denominator");
     expect(projectRoot.length).toBeGreaterThan(0);
   });
 });

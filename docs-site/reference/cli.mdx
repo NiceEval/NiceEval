@@ -171,7 +171,7 @@ The CLI accepts only the flags below. Any other flag is an error and exits nonze
 | `--host` | string | `view` only. Chooses the listening address. Omit it for `127.0.0.1`; bare `--host` listens on `0.0.0.0`. Non-loopback listeners have no authentication or TLS. |
 | `--record` | string | For `show`, `view`, `accept`, and `sandbox enter`, `list`, or `stop`: selects the actual Record root. Use it with `show` or `view` only to read another Record root. The CLI does not append `.niceeval/record` or another suffix. |
 | `--run` | string | Repeat for `show` or `view` to add one explicit complete Run ID. Duplicate identities are removed. |
-| `--report` | string | `show` and `view` only. Replaces their shared default Report with the file's default `defineReport(...)` export. |
+| `--report` | string | `show` and `view` only. Selects built-in `standard` / `overview`, or a trusted Report module. Without it, the project Report wins and an unset project falls back to classic `standard`. |
 | `--page` | string | `show` and `view` only. Selects a planned page. An unknown page ID is a usage error and lists available page IDs. |
 | `--teardown` | boolean | `exp` only. Completes interrupted experiment-level teardown for each selected Experiment without running setup or attempts. |
 | `--dry` | boolean | Prints the eval × run-configuration plan without running it. With `--json`, it emits one JSON plan document. |
@@ -253,6 +253,8 @@ npx niceeval show --run 01H... --report ./reports/summary.ts --page overview
 ```
 
 `show` is the terminal Report entry point for people and coding agents. It accepts no fuzzy positional selection. An exact `@<AttemptLocator>` shows that Attempt's Evaluation identity, evaluation kind, four-state Verdict, assertions, and applicable Score by default.
+
+When the project does not configure `report`, bare `show` uses built-in `standard`: the classic Hero, sample summary, Experiment chart, detail table, and detail pages. `--report overview` explicitly selects Record slot diagnostics; it is not the zero-configuration user interface. `--report standard` bypasses a project Report for one invocation.
 
 Add `--source`, `--execution`, or `--timing` to inspect its dedicated evidence surface. `--timing` shows a compact phase tree by default. `--timing=full` adds interval identity, parent, and offset. These three surfaces are mutually exclusive and each requires one exact Attempt locator.
 

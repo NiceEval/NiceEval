@@ -1,7 +1,6 @@
 // Public built-ins are ordinary author-API Reports over projections and
 // closed semantic documents.
 export {
-  default,
   defaultOverviewReport,
   overview,
   overviewPage,
@@ -29,10 +28,14 @@ export {
   sandboxHistoryReport,
 } from "./sandbox-history.ts";
 export {
+  default,
+  standard,
   standardAttemptPage,
   standardAttemptsPage,
   standardAttemptsRender,
   standardExperimentPage,
   standardExperimentRender,
+  standardOverviewPage,
+  standardOverviewRender,
   standardTracesPage,
 } from "./standard.ts";

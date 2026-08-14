@@ -903,11 +903,14 @@ declare const executeReportFromRecord: (input: {
 >;
 ```
 
-这个入口不自行安装 `NodeRecordLive`，也不提供 Promise facade；应用边界负责为精确的
-`RecordFileSystem | RecordMaintenanceLock` 需求提供自己的 Layer。默认概览 Report 可从
-`niceeval/report/built-in` 的 default export 取得；省略 `report` 时这个组合入口也使用它。它
-显示 selected runs、slot denominator、四种 slot state 与 bounded slot problem list，且只返回
-closed semantic document。
+这个入口不自行安装 `NodeRecordLive`，也不提供 Promise facade。应用边界负责为精确的
+`RecordFileSystem | RecordMaintenanceLock` 需求提供自己的 Layer。
+
+0.12 经典 `standard` Report 可从 `niceeval/report/built-in` 的 default export 取得；省略 `report`
+时这个组合入口也使用它。它显示 Hero、Sample summary、Experiment scatter、Experiment table 与详情页面。
+
+Record slot 诊断面继续以具名 `defaultOverviewReport` / `overview` 导出。显式选择时，它显示 selected runs、
+slot denominator、四种 slot state 与 bounded slot problem list。
 
 ## show
 
