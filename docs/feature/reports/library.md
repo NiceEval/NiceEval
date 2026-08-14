@@ -988,9 +988,9 @@ declare const showReport: (input: {
 }) => Effect.Effect<void, ReportShowError, ReportConsole>;
 ```
 
-Text 与 JSON 都从同一 semantic tree、problems 与 execution 派生。`showReport` 不要求 filesystem、server 或 watcher，也不 watch。
+Text 与 JSON 都从同一 semantic tree、problems 与 execution 派生。`showReport` 不要求 filesystem、server 或 watcher，也不 watch。这里的 library host JSON 是 `niceeval.report-show/v1`；CLI 普通 selector 的 `niceeval.show` data envelope 由 CLI 契约另行定义。
 
-`--json` 输出一个固定 schema：reportId、pageSelection、sample 摘要、projections、calculations、families、pages 与 problemTable。Download 部分只含 path / mediaType / byteLength / SHA-256 metadata。它不内联 Download bytes，也不输出第二条 projection 路径。
+`showReport({ format: "json" })` 输出一个固定 schema：reportId、pageSelection、sample 摘要、projections、calculations、families、pages 与 problemTable。Download 部分只含 path / mediaType / byteLength / SHA-256 metadata。它不内联 Download bytes，也不输出第二条 projection 路径。
 
 没有 `--page` 时 pages 按 route 输出全部；有 `--page` 时只输出 exact 选中的一页。sample / projections / calculations / family summaries / download metadata 与 problemTable 仍完整。arrays 按 canonical order，object keys 按 UTF-8 bytes 排序，stdout 是 UTF-8 canonical JSON。
 

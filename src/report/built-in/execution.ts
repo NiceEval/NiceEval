@@ -152,7 +152,11 @@ export function timingEvidenceReport(input: TimingEvidenceReportOptions = {}): R
     inputs: timingEvidenceInputs,
     completeness: "allow-partial",
     calculations: { timingJson },
-    render: ({ calculations }) => timingEvidenceDocument(calculations.timingJson, mode),
+    render: ({ calculations, inputs }) => timingEvidenceDocument(
+      calculations.timingJson,
+      firstAvailableTimingView(inputs.timing),
+      mode,
+    ),
   });
   return defineReport({
     id: Either.getOrThrow(reportId("timing-evidence")),
@@ -167,7 +171,8 @@ function timingEvidenceDocument(
   result:
     | { readonly state: "available"; readonly value: PublicTimingJson }
     | { readonly state: "data-unavailable" | "execution-failed"; readonly problemIds: readonly number[] },
-  _mode: "summary" | "full",
+  view: AttemptTimingView | undefined,
+  mode: "summary" | "full",
 ) {
   if (result.state !== "available") {
     return reportDocument({
@@ -182,9 +187,18 @@ function timingEvidenceDocument(
     title: "Attempt timing",
     presentation: "evidence-text",
     children: [reportCodeBlock({
-      value: renderPublicTimingText(result.value),
+      value: renderPublicTimingText(result.value, view, mode),
     })],
   });
+}
+
+function firstAvailableTimingView(
+  timing: ProjectedSample<"attempt-slot", AttemptTimingView>,
+): AttemptTimingView | undefined {
+  const included = timing.sample.slots.find((slot) => slot.state === "included");
+  return included === undefined
+    ? undefined
+    : availableTimingView(timing, included.runId, included.slotId);
 }
 
 function publicTimingJson(
@@ -261,20 +275,62 @@ function isPublicTimingPhase(value: string): value is PublicTimingPhase {
   return (PUBLIC_TIMING_PHASES as readonly string[]).includes(value);
 }
 
-function renderPublicTimingText(value: PublicTimingJson): string {
+function renderPublicTimingText(
+  value: PublicTimingJson,
+  view: AttemptTimingView | undefined,
+  mode: "summary" | "full",
+): string {
   if (value.phases.length === 0) {
     return `${value.locator}\n\nphase timing unavailable (this result was not produced by a runner with phase timing)`;
   }
-  const lines = [
-    value.locator,
-    "",
-    `total ${formatTimingDuration(value.durationMs)}`,
-    "",
-    ...value.phases.map((phase) =>
-      `${phase.name.padEnd(22)}${formatTimingDuration(phase.durationMs)}`
-    ),
-  ];
+  const lines = [value.locator, "", `total ${formatTimingDuration(value.durationMs)}`, ""];
+  const roots = view === undefined
+    ? []
+    : view.intervals
+      .filter((interval) => interval.parentIntervalId === null)
+      .sort(compareTimingIntervals);
+  const rootsByPhase = new Map<PublicTimingPhase, AttemptTimingView["intervals"][number]>();
+  for (const root of roots) {
+    const phase = publicPhaseName(root.phase, root.label);
+    if (phase !== undefined && !rootsByPhase.has(phase)) rootsByPhase.set(phase, root);
+  }
+  for (const phase of value.phases) {
+    lines.push(`${phase.name.padEnd(22)}${formatTimingDuration(phase.durationMs)}`);
+    const root = rootsByPhase.get(phase.name);
+    if (root !== undefined && view !== undefined) {
+      lines.push(...renderTimingChildren(view.intervals, root.intervalId, 1, mode));
+    }
+  }
   return lines.join("\n");
+}
+
+function renderTimingChildren(
+  intervals: AttemptTimingView["intervals"],
+  parentIntervalId: string,
+  depth: number,
+  mode: "summary" | "full",
+): readonly string[] {
+  const lines: string[] = [];
+  const children = intervals
+    .filter((interval) => interval.parentIntervalId === parentIntervalId)
+    .sort(compareTimingIntervals);
+  for (const child of children) {
+    const label = timingIntervalLabel(child);
+    const outcome = child.outcome === "completed" ? "" : ` · ${child.outcome}`;
+    const full = mode === "full"
+      ? ` · interval ${child.intervalId} · parent ${parentIntervalId} · start ${formatTimingDuration(child.startOffsetMs)}`
+      : "";
+    lines.push(`${"  ".repeat(depth)}${label}  ${formatTimingDuration(child.durationMs)}${outcome}${full}`);
+    lines.push(...renderTimingChildren(intervals, child.intervalId, depth + 1, mode));
+  }
+  return lines;
+}
+
+function compareTimingIntervals(
+  left: AttemptTimingView["intervals"][number],
+  right: AttemptTimingView["intervals"][number],
+): number {
+  return left.startOffsetMs - right.startOffsetMs || left.intervalId.localeCompare(right.intervalId);
 }
 
 function formatTimingDuration(value: number | null): string {

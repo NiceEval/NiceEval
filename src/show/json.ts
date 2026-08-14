@@ -20,12 +20,19 @@ export interface ShowJsonSample {
   readonly evalPrefix?: string;
   readonly experiments: readonly string[];
   readonly fresh: boolean;
+  /** Additive bridge for consumers that already read ReportExecution sample facts. */
+  readonly selection: ReportExecution["sample"]["selection"];
+  readonly runCount: number;
+  readonly slotCount: number;
+  readonly denominator: number;
 }
 
 interface ShowJsonBase {
   readonly format: "niceeval.show";
   readonly schemaVersion: 1;
   readonly sample: ShowJsonSample;
+  /** Canonical execution problems remain visible without exposing the Report tree. */
+  readonly problemTable: ReadonlyArray<ReportExecution["problemTable"][number]>;
 }
 
 export type ShowJson =
@@ -45,6 +52,7 @@ export function buildShowSample(input: {
   readonly patterns?: readonly string[];
   readonly experiments: readonly string[];
   readonly fresh?: boolean;
+  readonly executionSample: ReportExecution["sample"];
 }): ShowJsonSample {
   return Object.freeze({
     resultsRoot: input.resultsRoot,
@@ -53,6 +61,10 @@ export function buildShowSample(input: {
       : {}),
     experiments: Object.freeze([...input.experiments]),
     fresh: input.fresh === true,
+    selection: input.executionSample.selection,
+    runCount: input.executionSample.runs.length,
+    slotCount: input.executionSample.slots.length,
+    denominator: input.executionSample.denominator,
   });
 }
 

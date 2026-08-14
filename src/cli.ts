@@ -2436,7 +2436,9 @@ function publicShowEnvelope(
   const sample = buildShowSample({
     resultsRoot: request.rootPath,
     experiments: publicShowExperiments(view, execution),
+    executionSample: execution.sample,
   });
+  const problemTable = Object.freeze([...execution.problemTable]);
   switch (view) {
     case "source":
       return Object.freeze({
@@ -2444,6 +2446,7 @@ function publicShowEnvelope(
         schemaVersion: 1 as const,
         view,
         sample,
+        problemTable,
         data: calculationValue<SourceShowJson>(execution, "source-json") ?? {
           locator: request.target.kind === "attempt" ? `@${request.target.attemptId}` : "@unknown",
           source: null,
@@ -2456,6 +2459,7 @@ function publicShowEnvelope(
         schemaVersion: 1 as const,
         view,
         sample,
+        problemTable,
         data: calculationValue<PublicTimingJson>(execution, "timing-json") ?? {
           kind: "attempt" as const,
           locator: request.target.kind === "attempt" ? `@${request.target.attemptId}` : "@unknown",
@@ -2469,6 +2473,7 @@ function publicShowEnvelope(
         schemaVersion: 1 as const,
         view,
         sample,
+        problemTable,
         data: calculationValue<LeaderboardShowJson>(execution, "leaderboard") ?? {
           experiments: Object.freeze([]),
           passRate: null,
@@ -2482,6 +2487,7 @@ function publicShowEnvelope(
         schemaVersion: 1 as const,
         view,
         sample,
+        problemTable,
         data: Object.freeze({
           locator: request.target.kind === "attempt" ? `@${request.target.attemptId}` : undefined,
         }),

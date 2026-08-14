@@ -164,7 +164,7 @@ The CLI accepts only the flags below. Any other flag is an error and exits nonze
 | `--orphans` | boolean | `sandbox list` only. Reads unowned Sandboxes left by a hard stop; it does not clean them. |
 | `--tag` | string | Runs only evals with the tag declared by `defineEval`. |
 | `--junit` | string | Writes an additional JUnit XML file for CI. |
-| `--json` | boolean | `exp` writes one ordered NDJSON stream to stdout. `exp --dry` and `debug` each write one JSON plan document. `show` emits the `niceeval.report-show/v1` document for the already computed ReportExecution without opening a second data path. |
+| `--json` | boolean | For `exp`, writes one ordered NDJSON stream to stdout. For ordinary `show` views, emits one `niceeval.show` data document; the built-in explicit-run membership view emits `niceeval.report-show/v1`. It cannot combine with `--report`. |
 | `--smoke` | boolean | `docker profile doctor` only. Starts a constrained DinD container and runs an inner container. |
 | `--out` | string | `view` only. Exports a static report site to this directory. |
 | `--port` | number | `view` only. Chooses the local server port. |
@@ -264,7 +264,7 @@ Repeat `--run` to read only explicit historical Runs. Repeat `--experiment <id>`
 
 `project-current` changes only Report selection. It does not migrate the Record or change its version.
 
-After selection, `show` reads the Projection declared by the Report and forms one `ReportExecution`. Requested `unavailable`, `migration-required`, `unsupported`, `partial`, or `invalid` Attachment states remain visible. An unknown or damaged Attachment that the current page did not request does not affect it. `show --json` emits the same execution as `niceeval.report-show/v1`. See [Viewing Results](/tutorials/viewing-results) for the full contract.
+After selection, `show` reads the Projection declared by the Report and forms one `ReportExecution`. Requested `unavailable`, `migration-required`, `unsupported`, `partial`, or `invalid` Attachment states remain visible. An unknown or damaged Attachment that the current page did not request does not affect it. Ordinary `show --json` emits `niceeval.show` with view-specific data plus the same selection, run/slot counts, sample denominator, and canonical problem table. Explicit `--run` without `--report` keeps the membership Report's `niceeval.report-show/v1` provenance document. See [Viewing Results](/tutorials/viewing-results) for the full contract.
 
 `view --out <directory>` (or an explicit `--run`) prerenders the same ReportExecution as a self-contained static site. The target directory must not exist. NiceEval validates every page, download, and static asset path before publishing the complete directory in one rename. It does not give a user Report a Record or blob path.
 

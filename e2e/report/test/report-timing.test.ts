@@ -37,6 +37,7 @@ test("show --timing reports public phase identity or unavailable, never locks du
     const unavailable = shown.stdout.includes("phase timing unavailable");
     const named = PUBLIC_PHASES.filter((phase) => shown.stdout.includes(phase));
     expect(unavailable || named.length > 0, shown.stdout).toBe(true);
+    if (!unavailable) expect(shown.stdout, shown.stdout).toMatch(/turn\s+turn1\b/);
 
     const json = await niceeval.run(["show", locator, "--timing", "--json"], { env: PINNED_ENV });
     expect(json.exitCode, json.diagnostic()).toBe(0);

@@ -71,7 +71,14 @@ Experiment scatter、Experiment table 与详情页面。`overview` 是显式选�
 
 公开 `show --report` 与 `show --json` 互斥：报告树表达「怎么看」，`--json` 表达「是什么」。两者同时出现时，命令在任何 Record I/O 或报告装载之前以 i18n 用法错误退出。
 
-普通 selector 的 `--json` 输出 `niceeval.show` 数据信封（`view` 为 leaderboard / attempt / source / timing 等），而不是 classic 报告树。显式 `--run` 且没有 `--report` 时，命令选择内建 membership Report，因此输出同一次 execution 的 `niceeval.report-show/v1`。这个 envelope 也供 live host 与 static export 使用。
+普通 selector 的 `--json` 输出 `niceeval.show` 数据信封，而不是 classic 报告树。
+其中 `view` 区分 leaderboard、attempt、source 与 timing 等数据面。
+
+信封在 view data 之外保留同一次 execution 的 selection、run / slot count、Sample-wide denominator
+与 canonical problem table。已有自动化因此可以核对 Run provenance 和完整度，而无需读取 Report 页面树。
+
+显式 `--run` 且没有 `--report` 时，命令选择内建 membership Report，输出同一次 execution 的
+`niceeval.report-show/v1`。这个 envelope 也供 live host 与 static export 使用。
 
 `--report` 的 text 面与 live view、static export 消费同一份 `ReportExecution`。Host 只显示每个 input 的 complete/partial 与 problem IDs，不替作者公式猜 observed/denominator。通过率等业务统计只有在 Calculation value 自己提供时才显示。unavailable、unsupported、invalid 与 execution-failed 必须保留状态及 problem reference，不能替换成零、空字符串或省略行。
 

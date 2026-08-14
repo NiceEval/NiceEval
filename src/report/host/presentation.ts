@@ -404,7 +404,8 @@ function renderEvidenceOrDashboardDocument(
   if (document.presentation === "evidence-text") {
     return document.children.flatMap((block) => {
       if (block.type === "code-block") return block.value.split("\n");
-      return renderClassicDashboardBlockText(block, { width, mode, sectionBoxedDepth: 0 });
+      const rendered = renderClassicDashboardBlockText(block, { width, mode, sectionBoxedDepth: 0 });
+      return rendered.length > 0 ? rendered : renderBlockText(block, "");
     });
   }
   return renderClassicDashboardDocument(document, width, mode);

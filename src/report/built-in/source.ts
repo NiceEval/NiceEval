@@ -14,6 +14,7 @@ import {
   type AttemptSourceTreeAssemblyResult,
   type AttemptSourceTreeSlot,
   type EvaluationPlanView,
+  type ProjectedRecordAttachmentResult,
   type ProjectedSample,
   type Verdict,
 } from "../../projection/index.ts";
@@ -75,7 +76,10 @@ export function sourceEvidenceReport(input: SourceEvidenceReportOptions = {}): R
     inputs: sourceInputs,
     completeness: "allow-partial",
     calculations: { sourceJson },
-    render: ({ calculations }) => sourceEvidenceDocument(calculations.sourceJson),
+    render: ({ calculations, inputs }) => sourceEvidenceDocument(
+      calculations.sourceJson,
+      options.mode === "default" ? firstAssertionAttachment(inputs.assertions) : undefined,
+    ),
   });
   return defineReport({
     id: Either.getOrThrow(reportId("source-evidence")),
@@ -123,6 +127,7 @@ function sourceEvidenceDocument(
   result:
     | { readonly state: "available"; readonly value: SourceShowJson }
     | { readonly state: "data-unavailable" | "execution-failed"; readonly problemIds: readonly number[] },
+  assertions: ProjectedRecordAttachmentResult<unknown> | undefined,
 ) {
   if (result.state !== "available") {
     return reportDocument({
@@ -149,10 +154,55 @@ function sourceEvidenceDocument(
   return reportDocument({
     title: "Recorded source",
     presentation: "evidence-text",
-    children: [reportCodeBlock({
-      value: renderPresentedSource(value.source, terminalColumns()),
-    })],
+    children: [
+      ...(assertions === undefined ? [] : [attachmentStatus("Assertions", assertions)]),
+      reportCodeBlock({
+        value: renderPresentedSource(value.source, terminalColumns()),
+      }),
+    ],
   });
+}
+
+function firstAssertionAttachment(
+  assertions: SourceInputs["assertions"],
+): ProjectedRecordAttachmentResult<unknown> | undefined {
+  return assertions.entries.find((entry) => entry.state === "attachment-result")?.attachment;
+}
+
+function attachmentStatus(
+  name: string,
+  result: ProjectedRecordAttachmentResult<unknown>,
+) {
+  switch (result.state) {
+    case "available":
+      return reportStatus({ tone: "positive", label: `${name}: available` });
+    case "unavailable":
+      return reportStatus({ tone: "warning", label: `${name}: unavailable` });
+    case "migration-required":
+      return reportStatus({
+        tone: "warning",
+        label: `${name}: migration required`,
+        detail: [reportText(`${result.from} → ${result.to}; ${result.command}`)],
+      });
+    case "migration-unavailable":
+      return reportStatus({
+        tone: "warning",
+        label: `${name}: migration unavailable`,
+        detail: [reportText(result.reason)],
+      });
+    case "unsupported":
+      return reportStatus({
+        tone: "warning",
+        label: `${name}: unsupported`,
+        detail: [reportText(result.schemaId)],
+      });
+    case "invalid":
+      return reportStatus({
+        tone: "negative",
+        label: `${name}: invalid`,
+        detail: [reportText(result.issues.map((issue) => issue.code).join(", "))],
+      });
+  }
 }
 
 function presentSourceInputs(

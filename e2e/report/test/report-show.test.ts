@@ -55,6 +55,11 @@ test("exp classic → show text and public niceeval.show JSON", async () => {
     const document = assertPublicShowJson(json.json());
     expect(document.view).toBe("leaderboard");
     expect(document.sample.experiments.sort()).toEqual([...CLASSIC_EXPERIMENTS].sort());
+    expect(document.sample.denominator).toBe(facts.evals.length);
+    expect(document.sample.slotCount).toBe(facts.evals.length);
+    expect(document.problemTable).toEqual([]);
+    const selectionReceipt = JSON.stringify(document.sample.selection);
+    for (const runId of facts.runIds) expect(selectionReceipt).toContain(runId);
 
     const locators = Object.fromEntries(
       facts.evals.map((event) => [`${event.experimentId}:${event.evalId}`, event.locator]),

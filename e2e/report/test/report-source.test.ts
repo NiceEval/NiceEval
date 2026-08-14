@@ -50,6 +50,11 @@ test("show --source keeps runtime BEFORE after copy source is rewritten", async 
     }
     expectTranscript(shown.stdout, requiredTranscript(import.meta.dirname, "show-source.full.txt"), bindings);
 
+    const compact = await niceeval.run(["show", locator, "--source"], { env: PINNED_ENV });
+    expect(compact.exitCode, compact.diagnostic()).toBe(0);
+    expect(compact.stdout).toContain("Assertions: available");
+    expect(compact.stdout).toContain("ENTRY_SNAPSHOT_BEFORE");
+
     const json = await niceeval.run(["show", locator, "--source", "--json"], { env: PINNED_ENV });
     expect(json.exitCode, json.diagnostic()).toBe(0);
     const document = assertPublicShowJson(json.json());

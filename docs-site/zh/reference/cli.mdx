@@ -268,6 +268,10 @@ npx niceeval show --run 01H... --report ./reports/summary.ts --page overview
 
 `--run` 可重复，只读取这些显式历史 Run。`--experiment <id>` 可重复，按完整 ExperimentId 收窄当前项目目标，不能与 `--run` 合用。`exp`、不带 `--record` 的 `show` 与 `view` 默认使用同一个 `.niceeval/record`。
 
+普通 selector 的 `show --json` 输出一个 `niceeval.show` 文档。`data` 随 leaderboard、attempt、source 或 timing view 变化。
+外层同时保留同一次 execution 的 selection、run / slot count、Sample-wide denominator 与 canonical problem table。
+显式 `--run` 且没有 `--report` 时继续输出 membership Report 的 `niceeval.report-show/v1` provenance 文档。
+
 单个 `--run` 用于核对这一轮的 expected-slot 分母与 membership；多个 `--run` 用同一表形状比较多个固定历史边界。即使两个 Run 指向同一个 Attempt，它们也可能分别由实际执行、自动沿用或人工采用形成。`exp --json` 最后一条 receipt 的 `runIds` 是机器稳定出口；TTY 完成反馈也显示 Run ID。`accept` 的成功反馈会显示新 Run ID，但这行人读文本不是 JSON receipt 或自动化输入契约。
 
 内建 `run-membership-overview` 固定使用 `reportId: "run-membership-overview"`、`pageId: "run-membership"` 和 route `/`。

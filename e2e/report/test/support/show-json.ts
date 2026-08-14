@@ -7,7 +7,12 @@ export interface ShowJsonDocument {
     experiments: string[];
     fresh: boolean;
     evalPrefix?: string;
+    selection: unknown;
+    runCount: number;
+    slotCount: number;
+    denominator: number;
   };
+  problemTable: readonly unknown[];
   data: unknown;
 }
 
@@ -24,6 +29,12 @@ export function asShowJson(value: unknown): ShowJsonDocument {
   }
   if (typeof doc.view !== "string") {
     throw new Error(`show --json missing view: ${JSON.stringify(doc)}`);
+  }
+  if (!Number.isInteger(doc.sample?.denominator) || doc.sample.denominator < 0) {
+    throw new Error(`show --json missing sample denominator: ${JSON.stringify(doc.sample)}`);
+  }
+  if (!Array.isArray(doc.problemTable)) {
+    throw new Error(`show --json missing canonical problem table: ${JSON.stringify(doc)}`);
   }
   return doc;
 }
