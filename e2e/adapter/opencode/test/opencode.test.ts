@@ -56,20 +56,20 @@ async function requireDocker(): Promise<void> {
   }
 }
 
-/** `show --execution` 的 TOOL 卡把每笔调用的 input 作为独立块公开展示。 */
+/** `show --execution` 的 turn ledger 把每笔 TOOL 调用的 input 放进 Content 列。 */
 function toolInputOccurrences(execution: string, marker: string): number {
-  const lines = execution.split("\n");
-  return lines.filter((line, index) =>
-    line.trim().toLowerCase() === "input" &&
-    lines.slice(index + 1, index + 5).join("\n").includes(marker),
-  ).length;
+  return execution.split("\n").filter((line) => {
+    const ledgerRow = /^\s*\d+\s+\|\s+TOOL\s+\|\s+(.*?)\s+\|\s+completed\s+·.*$/.exec(line);
+    return ledgerRow?.[1]?.includes(marker) ?? false;
+  }).length;
 }
 
 function expectToolInputReadback(execution: string, marker: string, expected: number): void {
-  expect(execution).toContain("TOOL");
+  expect(execution).toMatch(/^\s*# \| Event \| Content \| Result$/m);
+  expect(execution).toMatch(/^\s*\d+\s+\|\s+ASSISTANT\s+\|/m);
   expect(
     toolInputOccurrences(execution, marker),
-    `show --execution should expose ${expected} TOOL input block(s) containing ${marker}`,
+    `show --execution should expose ${expected} completed TOOL ledger row(s) containing ${marker}`,
   ).toBe(expected);
 }
 
@@ -104,7 +104,7 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
     locators[evalId] = event!.locator;
   }
 
-  // outcome：execution 是适配器收到的公开投影。TOOL 卡片头是原始未归一化名
+  // outcome：execution 是适配器收到的公开投影。TOOL ledger 行保留原始未归一化名
   //（opencode 的 write / bash），canonical 名 file_write / shell 也可能出现；
   // 工具身份与入参必须穿过归一化、持久化与 CLI 展示。
   const execution = await niceeval.run(["show", locators["coding-task/write-and-verify"]!, "--execution"]);
@@ -117,6 +117,7 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   ).toBe(true);
   // 两笔工具调用都以 marker 为输入；这同时证明参数没有在归一、落盘或 readback 时丢失。
   expectToolInputReadback(execution.stdout, TOOL_PAYLOAD, 2);
+  expect(execution.stdout).toContain("Timing overview");
 
   // usage Eval 的两个 t.send() 都形成独立 request observation，且输入、输出 token 均为正数。
   // Conversation 会按 adapter session 聚合，不能把一次 send 等同于一个展示层 Turn 卡片。
