@@ -128,9 +128,14 @@ jobs:
     permissions:
       id-token: write
       contents: read
+      issues: write
       pull-requests: read
-    outputs:
-      result: ${{ steps.pullfrog.outputs.result }}
+    # Keep review output and its sole GitHub write in one job. GitHub may
+    # suppress large structured values when promoting a step output to a job
+    # output, but same-job step outputs retain the exact schema-validated value.
+    concurrency:
+      group: pullfrog-final-review-${{ needs.context.outputs.pull_number }}
+      cancel-in-progress: false
     steps:
       - name: Checkout locked pull request head
         uses: actions/checkout@v6
@@ -226,25 +231,13 @@ jobs:
             }
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-
-  publish:
-    name: Update final review comment
-    needs: [context, review]
-    runs-on: ubuntu-latest
-    permissions:
-      issues: write
-      pull-requests: read
-    concurrency:
-      group: pullfrog-final-review-${{ needs.context.outputs.pull_number }}
-      cancel-in-progress: false
-    steps:
       - name: Upsert workflow-owned final review
         uses: actions/github-script@v9
         env:
           PULL_NUMBER: ${{ needs.context.outputs.pull_number }}
           EXPECTED_BASE_SHA: ${{ needs.context.outputs.base_sha }}
           EXPECTED_HEAD_SHA: ${{ needs.context.outputs.head_sha }}
-          REVIEW_RESULT: ${{ needs.review.outputs.result }}
+          REVIEW_RESULT: ${{ steps.pullfrog.outputs.result }}
         with:
           script: |
             const marker = "<!-- niceeval-pullfrog-final-review-v2 -->";
