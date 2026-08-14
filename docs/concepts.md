@@ -265,10 +265,10 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Analysis dimension | `Dimension` | 属于一个 nominal population、用于分组或稳定标识的 typed field；不执行跨 population join | [Capture → Analysis → Report Library](roadmap/record-analysis-report/library.md#custom-dimensionmeasure-与-relation) |
 | Analysis measure | `Measure` | 属于一个 nominal population，并一次声明 rollup、denominator、数值与 Evidence policy 的 typed field | [Capture → Analysis → Report Library](roadmap/record-analysis-report/library.md#metric-measure) |
 | Analysis relation | `AnalysisRelation` | 由领域 SDK 拥有、把一个 population 穷尽对齐到另一个 population 的具名纯关系；Report 不自动寻路 | [Capture → Analysis → Report Library](roadmap/record-analysis-report/library.md#custom-dimensionmeasure-与-relation) |
-| Analysis 执行计划 | `QueryPlan` | 从一次 typed Analysis query 编译出的 engine-neutral 有限计算计划；不包含 SQL、组件 props 或 renderer 配置 | [Analysis 语义层](roadmap/new-record-report/analysis-semantics.md#编译输出) |
-| Analysis executor | `AnalysisExecutor` | 执行 `QueryPlan` 并返回完整语义结果的内部计算能力；执行 backend 不拥有 population、denominator 或 missing 口径 | [Analysis 执行层](roadmap/new-record-report/analysis-execution.md) |
-| 语义数据帧 | `SemanticFrame` | 携带 population、typed fields、完整 `MetricValue`、问题与 Evidence refs 的闭合表格结果 | [呈现模型层](roadmap/new-record-report/presentation-models.md#semanticframe) |
-| 领域视图 | `DomainView` | 为 Trace、Attempt 或 Evidence 诊断任务形成的闭合领域结果；保留树、时序、身份与问题 | [呈现模型层](roadmap/new-record-report/presentation-models.md#closed-domainview) |
+| Analysis 执行计划 | `QueryPlan` | 从一次 typed Analysis query 编译出的 engine-neutral 有限计算计划；不包含 SQL、组件 props 或 renderer 配置 | [Analysis 内部执行](roadmap/new-record-report/analysis.md#内部执行) |
+| Analysis executor | `AnalysisExecutor` | 执行 `QueryPlan` 并返回完整语义结果的内部计算能力；执行 backend 不拥有 population、denominator 或 missing 口径 | [Analysis 内部执行](roadmap/new-record-report/analysis.md#内部执行) |
+| 语义数据帧 | `SemanticFrame` | 携带 population、typed fields、完整 `MetricValue`、问题与 Evidence refs 的闭合表格结果 | [Analysis 输出](roadmap/new-record-report/analysis.md#semanticframe) |
+| 领域视图 | `DomainView` | 为 Trace、Attempt 或 Evidence 诊断任务形成的闭合领域结果；保留树、时序、身份与问题 | [Analysis 输出](roadmap/new-record-report/analysis.md#domainview) |
 | 官方 Experiment Report | Official Experiment Report | 平台用普通 Page、Table、Chart 与诊断组件组成的已完成 Experiment 查看与比较工作流；不是专用 component primitive | [Report 组合层](roadmap/new-record-report/report.md#官方-experiment-report) |
 | Report 行身份 | `ReportRowKey` | 由 nominal population identity 与完整 group coordinate 形成的 opaque 行身份；不受排序、截断或格式影响 | [Capture → Analysis → Report Architecture](roadmap/record-analysis-report/architecture.md#四种-identity) |
 | 可重评分 Eval | Replayable Eval | 用独立 execution 与 grading definition 保存完整多轮证据，并允许只对 sealed Execution graph 重新评分 | [可重评分 Eval](roadmap/replayable-grading/README.md) |

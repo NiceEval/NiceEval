@@ -24,7 +24,7 @@ Roadmap 与 Feature、Design 候选共用 [Feature Design Package](../_template/
 - [Judge Runtimes](judge-runtimes/README.md) —— 收拢 Agent Judge 与原生 LLM Judge 的材料、权限和结果边界。
 - [Multi-Agent](multi-agent/README.md) —— 多 Agent Eval 场景。
 - [Capture → Analysis → Report](record-analysis-report/README.md) —— 用户定义固定事实、比较口径与报告呈现，并包含成本投影和图表语义内核。
-- [Record → Analysis → Report 分层架构](new-record-report/README.md) —— 用七层责任边界分开持久事实、分析语义、执行后端、呈现模型、组件、报告与交付。
+- [Record → Analysis → Report → Delivery](new-record-report/README.md) —— 用四层产品边界分开持久事实、结果解释、报告组织与用户交付。
 - [Record 库存](record-inventory/README.md) —— 盘点 receipt 交付前中断留下的 Run。
 - [可重评分 Eval](replayable-grading/README.md) —— 分离多轮 Execution 与只读 Grading，并对 sealed Record 独立重判。
 - [Sandbox Materialization](sandbox-materialization/README.md) —— 统一 Docker Image 声明与 Provider Cache 生命周期。

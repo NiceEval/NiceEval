@@ -81,7 +81,7 @@ docs/
 │   ├── judge-runtimes/                  Agent Judge 与原生 LLM Judge
 │   ├── multi-agent/                     多 Agent Eval 场景
 │   ├── record-analysis-report/          Capture、Analysis、Report、成本投影与图表语义内核
-│   ├── new-record-report/               Record、Analysis、呈现模型、组件、Report 与交付的七层架构
+│   ├── new-record-report/               Record、Analysis、Report 与 Delivery 的四层架构
 │   ├── record-inventory/                receipt 前中断留下的只读 Record 库存
 │   ├── replayable-grading/              多轮 Execution 与 Grading 分离、Record 重评分
 │   ├── sandbox-materialization/         Docker Image 与 Provider Cache 生命周期
