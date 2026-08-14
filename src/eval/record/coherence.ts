@@ -15,7 +15,7 @@ import type { EvaluationAttemptFactsV1 } from "./sealed-assertion.ts";
 import {
   type VerdictCoherenceIssueV1,
   type VerdictPayloadV1,
-  validateVerdictCoherenceV1,
+  validateVerdictCoherenceV2,
 } from "./verdict.ts";
 
 /** One origin Attempt's facts before Record's generic writer owns the writes. */
@@ -174,9 +174,10 @@ export function validateEvaluationRecordCoherenceV1(
       continue;
     }
 
-    for (const issue of validateVerdictCoherenceV1({
+    for (const issue of validateVerdictCoherenceV2({
       payload: attempt.verdict,
       fold: attempt.facts,
+      evaluationKind: evaluation.evaluationKind,
     })) {
       issues.push(
         Object.freeze({

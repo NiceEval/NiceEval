@@ -145,8 +145,8 @@ export interface RunnerRecordReusePreparationInput {
 }
 
 const runnerReuseContract = Object.freeze({
-  domain: "niceeval.reuse/base-v1",
-  value: "project-target/v1",
+  domain: "niceeval.reuse/base-v2",
+  value: "project-target/v2",
 });
 
 /**

@@ -11,7 +11,7 @@ import {
 } from "../eval/record/eligibility.ts";
 import {
   projectVerdictAttachmentV1,
-  verdictAttachmentFamilyV1,
+  verdictAttachmentFamilyV2,
   type VerdictStateV1,
 } from "../eval/record/verdict.ts";
 import type { RecordIssue } from "../record/errors/record-errors.ts";
@@ -60,7 +60,7 @@ export interface ExecutionDurationLimit {
   readonly milliseconds: number;
 }
 
-export type ExecutionComparisonAttachment = "niceeval.eligibility/v1" | "niceeval.verdict/v1";
+export type ExecutionComparisonAttachment = "niceeval.eligibility/v1" | "niceeval.verdict/v2";
 export type ExecutionComparisonSourceState =
   | "available"
   | "unavailable"
@@ -427,7 +427,7 @@ function compareProjectTargetAttemptEligibility(input: {
   const verdictEligible = input.verdict === "passed" || input.verdict === "failed";
   comparisons.push(
     comparison(
-      "niceeval.verdict/v1",
+      "niceeval.verdict/v2",
       "verdict-state",
       "available",
       verdictEligible ? "match" : "ineligible",
@@ -826,7 +826,7 @@ function planTargetSlot(input: {
     const verdictRead = yield* input.port.readAttemptAttachment(
       input.view,
       attempt.value,
-      verdictAttachmentFamilyV1,
+      verdictAttachmentFamilyV2,
     );
     const eligibilityProblem = projectTargetAttachmentProblem(eligibilityRead);
     const verdictProblem = projectTargetAttachmentProblem(verdictRead);
@@ -848,7 +848,7 @@ function planTargetSlot(input: {
           ? []
           : [
               unavailableComparison(
-                "niceeval.verdict/v1",
+                "niceeval.verdict/v2",
                 "verdict-state",
                 verdictProblem,
               ),

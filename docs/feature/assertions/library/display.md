@@ -4,9 +4,9 @@
 
 ## Attempt 摘要
 
-Pass Eval 的区块顺序是 Execution、Verdict、检查项。Score Eval 的区块顺序是 Execution、Verdict、Score、评分项。Score 的主读数是 earned score；Verdict 继续显示 `passed`、`failed`、`errored` 或 `skipped`，不把分数重命名成 Pass / Fail。
+Pass Eval 的区块顺序是 Execution、Verdict、检查项。Score Eval 的区块顺序是 Execution、Verdict、Score、评分项。Score 的主读数是 earned score；Score Verdict 只显示 `passed` 或 `errored`，不把分数重命名成 Pass / Fail。
 
-Score 显示 `complete`、`partial` 或 `unavailable`。partial 显示已知 earned 下界与缺失原因；unavailable 显示原因而不显示 `0`。gate-failed 的 complete score 显示 Verdict `failed` 与仍然 earned 的分数。
+Score 显示 `complete`、`partial` 或 `unavailable`。partial 显示已知 earned 下界与缺失原因；unavailable 显示原因而不显示 `0`。只有 passed + complete 参与名次或数值选择。
 
 ## 单条 Assertion
 

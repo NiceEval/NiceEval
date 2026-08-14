@@ -15,7 +15,7 @@ author calls / evaluator internals / producer control flow
                     ↓
           producer evaluates and seals
           ↙         ↓          ↘
-niceeval.assertions/v1  niceeval.assertion-source-sites/v1  niceeval.verdict/v1
+niceeval.assertions/v1  niceeval.assertion-source-sites/v1  niceeval.verdict/v2
              │                  │                     (+ score for Score Eval)
              └──── declared neutral projections ────┘
                               ↓
@@ -309,9 +309,9 @@ type SealedAssertionResultV1 =
 ```
 
 `points` 与 `earned` 都是 finite non-negative numbers；`earned` 不大于 `points`。Score Eval 汇总每个
-`earned` contribution 得到独立 `niceeval.score/v1` Attachment。gate failed 会让 Verdict 成为 `failed`，但不改写
-已经 sealed 的 earned 值。执行错误或 score source unavailable 则保留已知 contribution，并让 Score Attachment
-成为 partial 或 unavailable；它们不会伪造 0。
+`earned` contribution 得到独立 `niceeval.score/v1` Attachment。Score Eval 没有 gate，正常低分或零分都形成
+`passed + complete`。执行错误或 score source unavailable 保留已知 contribution，并让 Verdict 为 errored、
+Score Attachment 成为 partial 或 unavailable；它们不会伪造 0。
 
 ## 归属、Projection 与演进
 

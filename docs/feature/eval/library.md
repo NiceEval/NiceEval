@@ -36,7 +36,7 @@ export default defineEval({
 `.atLeast(n)`，context 没有 `t.score` 或 handle `.score`。
 
 `defineScoreEval` 创建 Score Eval。Assertion 默认 record-only；用 `.score(points)` 或 `t.score(points)`
-显式贡献 score。每个 Attempt 仍有四态 Verdict，并另写 Score Attachment；gate failed 不清空 earned score。
-Score 不声明 max 或百分比。
+显式贡献 score。每个 Attempt 只有 `passed | errored` Verdict，并另写 Score Attachment；正常低分或零分仍为
+passed。Score 不声明 gate、max 或百分比。
 
 详细 API 与完整场景见 [Use cases](use-case/README.md)。

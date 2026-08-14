@@ -589,14 +589,21 @@ export function postRunBooleanAssertionHandle<
       handle.group(title);
       return view;
     }),
-    optional: descriptor(() => {
-      handle.optional();
-      return view;
-    }),
-    gate: descriptor(() => {
-      handle.gate();
-      return view;
-    }),
+    ...(evaluationKind === "pass"
+      ? (() => {
+          const passHandle = handle as PassBooleanAssertionHandle<Refined>;
+          return {
+            optional: descriptor(() => {
+              passHandle.optional();
+              return view;
+            }),
+            gate: descriptor(() => {
+              passHandle.gate();
+              return view;
+            }),
+          };
+        })()
+      : {}),
     ...(evaluationKind === "score"
       ? (() => {
           if (!isScoreBooleanAssertionHandle(handle)) {
@@ -851,6 +858,9 @@ class AssertionsRuntimeImplementation {
 
   configureOptional(entry: AssertionEntry): void {
     this.assertMutable(entry, "optional()");
+    if (this.evaluationKind === "score") {
+      throw new TypeError("optional() is not available in a Score Eval; every score contribution must be comparable");
+    }
     if (entry.optionalConfigured) throw new Error("An Assertion optional policy is already configured");
     entry.optionalConfigured = true;
     this.recordSourceOccurrence(entry, "optional");
@@ -858,6 +868,9 @@ class AssertionsRuntimeImplementation {
 
   configureGate(entry: AssertionEntry): void {
     this.assertMutable(entry, "gate()");
+    if (this.evaluationKind === "score") {
+      throw new TypeError("gate() is not available in a Score Eval; normal scoring always passes");
+    }
     if (entry.kind === "direct-score") throw new TypeError("A direct-score Assertion cannot be a gate");
     if (entry.kind === "measurement" && entry.threshold === undefined) {
       throw new TypeError("A measurement Assertion requires atLeast() before gate()");
@@ -889,10 +902,16 @@ class AssertionsRuntimeImplementation {
   }
 
   requestStopBoolean(entry: AssertionEntry): Promise<unknown> {
+    if (this.evaluationKind === "score") {
+      throw new TypeError("orStop() is not available in a Score Eval; scoring cannot stop on a condition");
+    }
     return this.observeStop(entry, this.requestStop(this.stopBoolean(entry)));
   }
 
   requestStopMeasurement(entry: AssertionEntry): Promise<number> {
+    if (this.evaluationKind === "score") {
+      throw new TypeError("orStop() is not available in a Score Eval; scoring cannot stop on a condition");
+    }
     return this.observeStop(entry, this.requestStop(this.stopMeasurement(entry)));
   }
 

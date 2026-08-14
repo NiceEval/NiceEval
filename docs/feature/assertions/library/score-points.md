@@ -2,7 +2,7 @@
 
 Score Eval 用 `defineScoreEval` 表达同一次 Attempt 内“做到几成”的读数。`evaluationKind` 只取 `pass` 或 `score`；`points` 是 Assertion 的分值和 score 计算单位，绝不是另一种 Eval kind。
 
-每个 Score Attempt 同时保存四态 [Verdict](../../verdict/architecture.md) 与独立的 `niceeval.score/v1` Attachment。Verdict 回答 Attempt 的 execution、gate 和 skip 终态；Score Attachment 回答已挣到多少分以及该数是否完整。两者不能互相推导。
+每个 Score Attempt 同时保存二态 [Verdict](../../verdict/architecture.md) 与独立的 `niceeval.score/v1` Attachment。Verdict 只回答评分是否完整结束：`passed` 或 `errored`；Score Attachment 回答已挣到多少分以及该数是否完整。Score Eval 没有 gate、failed 或 skipped。
 
 ## points 与贡献
 
@@ -12,18 +12,16 @@ Assertion 默认 record-only。`handle.score(points)` 让一条已登记 Asserti
 
 Score 不声明 max、百分比或隐式每项 `+1`。同一评测的比较单位是相同的 score 规则，而不是一个虚构分母。
 
-## gate 与四态 Verdict
+## 二态 Verdict
 
-Score Eval 的 entry 可以既有 points 又是 gate。points 决定 earned score；gate 决定其 result 是否参与 Verdict fold。这两个事实正交：
+Score Eval 只比较 earned score，没有最低有效性门槛。Boolean mismatched 或 measurement 未达到 `atLeast` 只影响该项贡献，不改变 Verdict；正常封口即使 earned 为 `0` 也为 `passed`。
 
 | 已封口事实 | Verdict | Score Attachment |
 |---|---|---|
-| gate failed，所有贡献可算 | `failed` | `complete`，保留全部 earned score。 |
-| 没有 gate failed，所有贡献可算 | `passed`，除非更高优先级条件 | `complete`。 |
-| 显式 skip，没有更高优先级条件 | `skipped` | 已封口贡献照实保存；未求值部分按 partial 或 unavailable 标示。 |
-| execution error，或 required Assertion unavailable / errored | `errored` | 已有分数不会删除；状态是 partial 或 unavailable。 |
+| 所有 score contribution 可算 | `passed` | `complete`，包括 earned `0`。 |
+| execution error，或 required score source unavailable / errored | `errored` | 已有分数不会删除；状态是 partial 或 unavailable。 |
 
-`.gate()` 只声明 Verdict 条件，不清空 points。`.orStop()` 只停止当前作者 continuation；此前已封口的 contribution 仍保留，未执行代码不补零。
+Score handle 不提供 `.gate()`、`.orStop()` 或 `.optional()`，Score context 不提供 `t.skip()`。这些控制面会制造门槛、条件式 rubric 或不可比较的可选分值。纯 record-only Assertion 的结果不改变 Score Verdict。
 
 ## complete、partial 与 unavailable
 
@@ -31,13 +29,13 @@ Score Eval 的 entry 可以既有 points 又是 gate。points 决定 earned scor
 
 | state | 条件 | `earned` |
 |---|---|---|
-| `complete` | 所有声明的 contribution 都有可计算的 sealed evaluation。gate failed 不影响此状态。 | 一个正式有限数值。 |
+| `complete` | 所有声明的 contribution 都有可计算的 sealed evaluation。 | 一个正式有限数值。 |
 | `partial` | execution 或一个 required score source 使部分贡献不能确定，但至少一项贡献已可审计。 | 已知下界，不可当完整排名值。 |
 | `unavailable` | 无法形成任何可审计的 earned 数值。 | 缺失，并保存具名原因。 |
 
-非贡献 Assertion 的 unavailable 仍由 Verdict 规则处理；它不会把已经完整计算的 score 伪装成 partial。相反，缺少一个声明过 points 的 required source 绝不折成零。
+非贡献 Assertion 的 unavailable 或 errored 不影响 Score Verdict。相反，缺少一个声明过 points 的 required source 绝不折成零。
 
-Report 同时显示 Verdict、earned score 和 score state。`partial` 与 `unavailable` 不与 `0` 混写；gate-failed 的 complete score 也不能被显示成“没有分数”。
+Report 同时显示 Verdict、earned score 和 score state。`partial` 与 `unavailable` 不与 `0` 混写；只有 `passed + complete` 参与排名或数值选择，`errored` 的已知下界只用于诊断。
 
 ## 作者写法
 

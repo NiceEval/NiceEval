@@ -58,9 +58,9 @@ Attachment 的 framing、`entryId` 唯一性、顺序和边界必须有效。内
 
 两种 Eval 的每个 Attempt 都有四态 Verdict：`passed`、`failed`、`errored` 或 `skipped`。`evaluationKind` 只取 `pass | score`，由 Eval factory 产生并保存在 Run-owned Evaluation Attachment。
 
-Pass Eval 的主要读数是 Verdict。Score Eval 同时写入独立的 `niceeval.score/v1` Attachment；它的主要读数是 earned score，而 Verdict 继续准确说明 execution、gate 与 skip 的终态。
+Pass Eval 的主要读数是四态 Verdict。Score Eval 同时写入独立的 `niceeval.score/v1` Attachment；它的主要读数是 earned score，Verdict 只说明评分完整完成 (`passed`) 或无法完成 (`errored`)。
 
-`points` 只是 Assertion 的分值或 score 计算单位。gate failed 会使 Verdict 为 `failed`，却不会抹掉已 earned 的 score；execution error 与 unavailable score source 的完整关系由 [Score Eval](library/score-points.md) 定义。
+`points` 只是 Assertion 的分值或 score 计算单位。低分和零分不会成为 failed；execution error 与 unavailable score source 的完整关系由 [Score Eval](library/score-points.md) 定义。
 
 ## 作者入口
 
@@ -79,7 +79,7 @@ turn.judge.autoevals.closedQA("回答质量").atLeast(0.8);
 
 `t.check` 只接收 `(value, match)`。scope 方法与 Judge recipe 已经登记同一种 Assertion；handle 只配置该 entry，不能登记第二条检查。
 
-Score Eval 使用 `handle.score(points)` 或 `t.score(points)` 写明贡献。后者仍形成一个 Assertions entry，criterion 为内建 direct-score，而不是不透明的分数旁路。需要 Verdict 条件时，Score Eval 显式声明 gate；分数贡献和 gate 是正交事实。
+Score Eval 使用 `handle.score(points)` 或 `t.score(points)` 写明贡献。后者仍形成一个 Assertions entry，criterion 为内建 direct-score，而不是不透明的分数旁路。Score 不提供 gate、skip、orStop 或可选 contribution。
 
 完整字段、封口、边界与 Projection 规则见 [Architecture](architecture.md)。
 
@@ -88,7 +88,7 @@ Score Eval 使用 `handle.score(points)` 或 `t.score(points)` 写明贡献。�
 - [Library](library.md) —— 作者 API 和 handle 配置。
 - [Value assertions](library/value-assertions.md) —— Match 与 refinement。
 - [Scoped assertions](library/scoped-assertions.md) —— scope snapshot、`calledTool`、`notCalledTool` 与 `succeeded`。
-- [Score Eval](library/score-points.md) —— score、gate 与可用性。
+- [Score Eval](library/score-points.md) —— score 与可用性。
 - [Evidence](architecture/evidence.md) —— snapshot、refs 与完整度。
 - [Source sites](architecture/source-sites.md) —— 源码位置、sourceOrder 与导航。
 - [Verdict](../verdict/README.md) —— 每个 Attempt 的四态折叠。

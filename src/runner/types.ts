@@ -651,9 +651,9 @@ export type ReporterEvent =
 export type EvaluationKind = "pass" | "score";
 
 /** The live Runner derives Pass and Score from one sealed Assert-first entry sequence. */
-export const EVALUATION_ALGORITHM = "assert-first/v1" as const;
+export const EVALUATION_ALGORITHM = "assert-first/v2" as const;
 /** `fact-use/v3` remains only as the historical Record reader/writer bridge. */
-export type EvaluationAlgorithm = typeof EVALUATION_ALGORITHM | "fact-use/v3";
+export type EvaluationAlgorithm = typeof EVALUATION_ALGORITHM | "assert-first/v1" | "fact-use/v3";
 
 /**
  * 作者输入里的派生字段用模块私有诊断类型，而不是 `never`：错误会说明字段属于哪个阶段。

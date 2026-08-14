@@ -5,11 +5,9 @@ const scored = defineScoreEval({
   description: "计分制 Assertion 把前置、按检查计分与直接给分写入真实结果",
   async test(t) {
     const turn = await t.send("assertion/score");
-    const completed = turn.succeeded()
+    turn.succeeded()
       .score(1)
-      .gate()
       .label("turn completed");
-    await completed.orStop();
 
     await t.group("计分断言", () => {
       const marker = t.check(turn.message, includes("assertion-score-marker"));
@@ -20,6 +18,9 @@ const scored = defineScoreEval({
 
       marker.score(2).label("reply marker");
       result.score(3).label("fixture data");
+      t.check(turn.message, includes("deliberately-absent"))
+        .score(5)
+        .label("mismatch contributes zero without failing");
       t.score(4).label("deterministic manual points");
     });
   },

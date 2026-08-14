@@ -42,6 +42,9 @@ test("计分 Eval 的两个场景以 passed 终态完成", async () => {
         evalId: "assertion-score/empty",
         verdict: "passed",
       });
+      const shown = await niceeval.run(["show", "--json"]);
+      expect(shown.exitCode, shown.diagnostic()).toBe(0);
+      expect(shown.json<{ sample: { denominator: number } }>().sample.denominator).toBe(4);
     },
   );
 });

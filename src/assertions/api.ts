@@ -312,11 +312,7 @@ export interface PassBooleanAssertionHandle<out Refined>
 export interface ScoreBooleanAssertionHandle<out Refined>
   extends AssertionHandleBase {
   readonly kind: "boolean";
-  /** An unavailable/errored optional entry does not independently error Verdict. */
-  optional(): this;
-  gate(): this;
   score(points: number): this;
-  orStop(): Promise<Refined>;
 }
 
 export interface PassMeasurementAssertionHandle<
@@ -336,14 +332,8 @@ export interface ScoreMeasurementAssertionHandle<
   Thresholded extends boolean = false,
 > extends AssertionHandleBase {
   readonly kind: "measurement";
-  /** An unavailable/errored optional entry does not independently error Verdict. */
-  optional(): this;
   atLeast(value: number): ScoreMeasurementAssertionHandle<true>;
-  gate(this: ScoreMeasurementAssertionHandle<true>): this;
   score(points: number): this;
-  orStop(
-    this: ScoreMeasurementAssertionHandle<true>,
-  ): Promise<number>;
 }
 
 /** A Boolean Assertion that intentionally has no author control-flow operation. */
@@ -357,8 +347,6 @@ interface PostRunPassBooleanAssertionHandle<Refined>
 interface PostRunScoreBooleanAssertionHandle<Refined>
   extends AssertionHandleBase {
   readonly kind: "boolean";
-  optional(): this;
-  gate(): this;
   score(points: number): this;
 }
 

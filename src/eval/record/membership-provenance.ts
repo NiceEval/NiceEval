@@ -82,6 +82,7 @@ export type MembershipAttemptOriginV1 = Schema.Schema.Type<
 export const ComparisonAttachmentV1Schema = Schema.Literal(
   "niceeval.eligibility/v1",
   "niceeval.verdict/v1",
+  "niceeval.verdict/v2",
 );
 
 export type ComparisonAttachmentV1 = Schema.Schema.Type<

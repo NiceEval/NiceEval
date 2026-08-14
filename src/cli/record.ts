@@ -3,7 +3,7 @@ import { Either, Effect, Layer } from "effect";
 import { assertionsAttachmentFamilyV1 } from "../assertions/record/attachment.ts";
 import { evaluationsAttachmentFamilyV1 } from "../eval/record/evaluation.ts";
 import { scoreAttachmentFamilyV1 } from "../eval/record/score.ts";
-import { verdictAttachmentFamilyV1 } from "../eval/record/verdict.ts";
+import { verdictAttachmentFamilyV2 } from "../eval/record/verdict.ts";
 import {
   AttemptPluginProvenanceV1Family,
   RunPluginProvenanceV1Family,
@@ -56,7 +56,7 @@ function requireOfficialAttachmentRegistry() {
     families: [
       assertionsAttachmentFamilyV1,
       evaluationsAttachmentFamilyV1,
-      verdictAttachmentFamilyV1,
+      verdictAttachmentFamilyV2,
       scoreAttachmentFamilyV1,
       RunPluginProvenanceV1Family,
       AttemptPluginProvenanceV1Family,

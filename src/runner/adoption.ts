@@ -31,7 +31,7 @@ import {
 } from "../eval/record/membership-provenance.ts";
 import {
   projectVerdictAttachmentV1,
-  verdictAttachmentFamilyV1,
+  verdictAttachmentFamilyV2,
   type VerdictStateV1,
 } from "../eval/record/verdict.ts";
 import { loadConfigFile } from "../load-config.ts";
@@ -825,7 +825,7 @@ export function readAdoptionVerdictV1(
   view: FrozenRecordView<RecordReaderReadError>,
   source: ResolvedAdoptionAttemptV1,
 ): Effect.Effect<VerdictStateV1, ExplicitAdoptionReadErrorV1> {
-  return view.readAttemptAttachment(source.attempt, verdictAttachmentFamilyV1).pipe(
+  return view.readAttemptAttachment(source.attempt, verdictAttachmentFamilyV2).pipe(
     Effect.flatMap((verdict) => verdict.state === "available"
       ? Effect.succeed(projectVerdictAttachmentV1(verdict.value))
       : Effect.fail(attachmentUnavailable("verdict", verdict))),
@@ -969,7 +969,7 @@ export function prepareExplicitAdoptionMemberV1(input: {
         reason: "explicit-adoption-manual-policy",
       }),
       Object.freeze({
-        attachment: "niceeval.verdict/v1" as const,
+        attachment: "niceeval.verdict/v2" as const,
         recordedClaim: "verdict-state" as const,
         sourceState: "available" as const,
         result: "match" as const,

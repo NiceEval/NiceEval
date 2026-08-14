@@ -705,7 +705,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // 就不触发 earlyExit,回填的差额必须真的重跑,才对得起用户调大 runs 的意图(想看这次是不是
   // 还失败,或想凑够 pass@N 的样本量)。
   for (const readback of reusedAttempts) {
-    if (readback.verdict !== "passed") continue;
+    if (readback.verdict !== "passed" || readback.source.evaluationKind !== "pass") continue;
     const run = runForReusedAttempt(readback);
     passedKeys.add(attemptGroupKey(run, readback.target.evalId));
   }
@@ -2127,7 +2127,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // 让并发进行中的同 key attempt 通过 signal 尽早退出,而不只是等排队的才能被跳过。
   const evalAbortControllers = new Map<string, AbortController>();
   for (const a of attempts) {
-    if (a.run.earlyExit && !evalAbortControllers.has(a.key)) {
+    if (a.evalDef.evaluationKind === "pass" && a.run.earlyExit && !evalAbortControllers.has(a.key)) {
       evalAbortControllers.set(a.key, new AbortController());
     }
   }
@@ -2157,7 +2157,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         const preflight = Effect.gen(function* () {
             // 首过即停:只由 passed 触发(errored 不中止其余样本,见 docs/feature/experiments/
             // architecture.md「调度接口」)。
-            if (a.run.earlyExit && passedKeys.has(a.key)) {
+            if (a.evalDef.evaluationKind === "pass" && a.run.earlyExit && passedKeys.has(a.key)) {
               cancelReuseAttempt(a);
               recordCoordinator.markNotDispatched(a);
               yield* reportMutex.withPermits(1)(
@@ -2487,11 +2487,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               }
             }
 
-            if (result.verdict === "passed") {
+            if (a.evalDef.evaluationKind === "pass" && result.verdict === "passed") {
               passedKeys.add(a.key);
               lastErrorCode.delete(a.key);
               evalAc?.abort(); // 让同 key 并发 attempt 尽早退出
-            } else if (a.run.earlyExit && passedKeys.has(a.key)) {
+            } else if (a.evalDef.evaluationKind === "pass" && a.run.earlyExit && passedKeys.has(a.key)) {
               // 并发情况:同 key 另一个 attempt 已通过后本 attempt 才完成(被 abort 后产出
               // errored),不计入结果。
               return;
