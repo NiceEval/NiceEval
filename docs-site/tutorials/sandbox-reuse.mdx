@@ -14,7 +14,7 @@ When a batch of evals shares the same environment setup — the same toolchain o
 
 Before enabling reuse, understand its cost:
 
-- **Results can still be carried.** When a pair has a stable carry identity and the terminal result matches, NiceEval carries it without creating a Sandbox. Only Attempts that are not carried run in the shared Sandbox. `--rerun` can still force the relevant Attempts to run.
+- **Results can still be carried.** When a pair has a stable carry identity and the terminal result matches, NiceEval carries it without creating a Sandbox. A Sandbox Plugin's attachment owner, name, instance key, behavior revision, declared identity, order, and setup/teardown shape are part of that carry identity, so changing any of them makes the slot fresh. Callback function bodies remain opaque; update the declared identity or use `--rerun all` when their behavior changes. Only Attempts that are not carried run in the shared Sandbox.
 - **An interruption does not roll back external state.** A resumed run is the same trajectory only when cross-attempt state can return to the last terminal commit boundary. Otherwise start a clean cohort.
 - **State outside the workdir remains.** Preparation code must tolerate that state or clean it deliberately. A reused Sandbox is not full isolation.
 - `--keep-sandbox` and `localSandbox()` cannot be combined with `sandboxReuse: true`.

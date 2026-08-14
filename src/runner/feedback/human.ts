@@ -1248,41 +1248,106 @@ export interface HumanCommandPlanOptions {
   readonly width?: number;
 }
 
-function commandPlanOwner(step: CommandPlanStep): string {
-  if (step.owner === undefined) return "";
-  return ` · ${step.owner.kind}:${step.owner.id}${step.owner.index === undefined ? "" : `#${step.owner.index}`}`;
+function commandPlanOwner(step: CommandPlanStep): string | undefined {
+  if (step.owner === undefined) return undefined;
+  return `owner: ${step.owner.kind}:${step.owner.id}${step.owner.index === undefined ? "" : `#${step.owner.index}`}`;
 }
 
-function commandPlanExact(step: CommandPlanStep): string {
+/** Command-plan 的统一 human sink 不把任何来源的控制字符直接写进终端。 */
+function visibleCommandPlanTerminalText(text: string): string {
+  let visible = "";
+  for (const character of text) {
+    const codePoint = character.codePointAt(0)!;
+    if (character === "\t") {
+      visible += "\\t";
+    } else if (character === "\r") {
+      visible += "\\r";
+    } else if (codePoint < 0x20 || (codePoint >= 0x7f && codePoint <= 0x9f)) {
+      visible += `\\u${codePoint.toString(16).padStart(4, "0")}`;
+    } else {
+      visible += character;
+    }
+  }
+  return visible;
+}
+
+function commandPlanExact(step: CommandPlanStep): readonly string[] {
   const command = step.command;
-  if (command === undefined) return "exact command unavailable";
+  if (command === undefined) return ["command: exact command unavailable"];
   const operation = command.kind === "argv"
-    ? `argv: ${JSON.stringify([command.executable, ...command.args])}`
-    : `shell: ${JSON.stringify(command.script)}`;
+    ? [`command: argv ${JSON.stringify([command.executable, ...command.args])}`]
+    : command.script.includes("\n")
+      ? [
+        `command: shell · ${command.script.split("\n").length} lines`,
+        ...command.script.split("\n").map((line) => {
+          return line === "" ? "  │" : `  │ ${line}`;
+        }),
+      ]
+      : [`command: shell ${JSON.stringify(command.script)}`];
   const options = [
-    command.cwd === undefined ? undefined : `cwd=${JSON.stringify(command.cwd)}`,
-    command.user === undefined ? undefined : `user=${JSON.stringify(command.user)}`,
-    command.timeoutMs === undefined ? undefined : `timeoutMs=${command.timeoutMs}`,
-    command.envKeys === undefined ? undefined : `envKeys=${JSON.stringify(command.envKeys)}`,
+    command.cwd === undefined ? undefined : `cwd: ${JSON.stringify(command.cwd)}`,
+    command.user === undefined ? undefined : `user: ${JSON.stringify(command.user)}`,
+    command.timeoutMs === undefined ? undefined : `timeout: ${command.timeoutMs}ms`,
+    command.envKeys === undefined ? undefined : `environment keys: ${JSON.stringify(command.envKeys)}`,
   ].filter((value): value is string => value !== undefined);
-  const redactions = step.redactions === undefined
-    ? ""
-    : ` · redacted=${step.redactions.join(",")}`;
-  return `${operation}${options.length === 0 ? "" : ` · ${options.join(" · ")}`}${redactions}`;
+  return [
+    ...operation,
+    ...options,
+    ...(step.redactions === undefined ? [] : [`redacted: ${step.redactions.join(", ")}`]),
+  ];
 }
 
-function commandPlanStepLine(step: CommandPlanStep): string {
-  const label = step.label === undefined ? "" : ` · ${step.label}`;
-  const condition = step.condition === undefined ? "" : ` · if ${step.condition.summary}`;
+function commandPlanTemplate(step: CommandPlanStep): readonly string[] {
+  const template = step.template;
+  if (template === undefined) return [];
+  const owner = `${template.owner.kind}:${template.owner.id}`;
+  const prefix = [
+    `template: ${template.provider}:${template.kind}`,
+    `template owner: ${owner}`,
+  ];
+  if (template.locator._tag === "Opaque") {
+    return [...prefix, `configured locator: opaque — ${template.locator.reason.summary}`];
+  }
+  const fields = template.locator.fields
+    .map((field) => `${field.name}=${JSON.stringify(field.value)}`)
+    .join(" · ");
+  if (template.locator._tag === "Exact") return [...prefix, `configured locator: exact · ${fields}`];
+  const redacted = template.locator.redactions
+    .map((entry) => `${entry.field}:${entry.parts.join("+")}`)
+    .join(",");
+  return [...prefix, `configured locator: redacted · ${fields}`, `locator redacted: ${redacted}`];
+}
+
+function commandPlanStepMeta(step: CommandPlanStep): string {
+  switch (step.truth) {
+    case "exact":
+      return "EXACT";
+    case "conditional":
+      return "CONDITIONAL";
+    case "opaque":
+      return "OPAQUE";
+    case "known-no-command":
+      return "NO COMMANDS";
+  }
+}
+
+function commandPlanStepLines(step: CommandPlanStep, position: string): readonly string[] {
+  const owner = commandPlanOwner(step);
   const detail = step.truth === "exact"
     ? commandPlanExact(step)
     : step.truth === "conditional"
-      ? "conditional branches"
+      ? [`branches: ${step.children?.length ?? 0} command blocks follow`]
       : step.truth === "opaque"
-        ? `opaque — ${step.reason?.summary ?? "runtime callback"}`
-        : `no commands${step.reason === undefined ? "" : ` — ${step.reason.summary}`}`;
-  const mark = step.truth === "exact" ? "→" : step.truth === "conditional" ? "?" : step.truth === "opaque" ? "◇" : "·";
-  return `${mark} ${step.phase}${commandPlanOwner(step)}${label} · ${detail}${condition}`;
+        ? [`reason: ${step.reason?.summary ?? "runtime callback"}`]
+        : [step.reason === undefined ? "reason: this lifecycle step has no command" : `reason: ${step.reason.summary}`];
+  return [
+    `position: ${position}`,
+    ...(owner === undefined ? [] : [owner]),
+    ...(step.label === undefined ? [] : [`label: ${step.label}`]),
+    ...commandPlanTemplate(step),
+    ...detail,
+    ...(step.condition === undefined ? [] : [`if: ${step.condition.summary}`]),
+  ];
 }
 
 /** 保留 JSON string 内的连续空格与转义，不用会折叠空白的 prose wrapper。 */
@@ -1315,17 +1380,48 @@ function pushCommandPlanLine(
   target.push({ kind: "line", text: hardWrapCommandPlanLine(text, contentWidth, continuation).join("\n") });
 }
 
+interface CommandPlanPanelCapability {
+  readonly width: number;
+  readonly mode: PanelMode;
+}
+
+function renderCommandPlanPanel(
+  title: string,
+  meta: string | undefined,
+  lines: readonly string[],
+  capability: CommandPlanPanelCapability,
+): string[] {
+  const contentWidth = panelContentWidth(capability.width, capability.mode);
+  const rows: PanelRow[] = [];
+  for (const line of lines) {
+    const visibleLine = visibleCommandPlanTerminalText(line);
+    pushCommandPlanLine(rows, visibleLine, contentWidth, visibleLine.startsWith("  │") ? "  │ " : "  ");
+  }
+  return renderPanel({
+    title: visibleCommandPlanTerminalText(title),
+    ...(meta === undefined ? {} : { meta: visibleCommandPlanTerminalText(meta) }),
+    rows,
+    width: capability.width,
+    mode: capability.mode,
+  });
+}
+
 function renderCommandPlanSteps(
-  target: PanelRow[],
+  target: string[][],
   steps: readonly CommandPlanStep[],
-  contentWidth: number,
-  indent: string,
+  position: string,
+  capability: CommandPlanPanelCapability,
 ): void {
   for (const step of steps) {
-    const prefix = `${indent}${commandPlanStepLine(step)}`;
-    pushCommandPlanLine(target, prefix, contentWidth, `${indent}  `);
+    target.push(renderCommandPlanPanel(
+      step.phase,
+      commandPlanStepMeta(step),
+      commandPlanStepLines(step, position),
+      capability,
+    ));
     if ((step.children?.length ?? 0) > 0) {
-      renderCommandPlanSteps(target, step.children!, contentWidth, `${indent}  `);
+      const childPosition = `${position} > ${step.phase}${step.label === undefined ? "" : ` (${step.label})`}`;
+      renderCommandPlanSteps(target, step.children!, childPosition, capability);
     }
   }
 }
@@ -1340,8 +1436,8 @@ function commandPlanLaneLabel(lane: CommandPlanLane): string {
 }
 
 /**
- * `--dry --commands` 的人读投影。矩阵仍先输出；本面板只呈现保证的局部顺序，不给并发 lane
- * 编造全局序号。TTY 画区域框，NO_COLOR / 非 TTY / 窄终端按全仓 panel 契约退化为 plain。
+ * `niceeval debug` 的人读投影。只呈现保证的局部顺序，不给并发 lane 编造全局序号。
+ * TTY 画区域框，NO_COLOR / 非 TTY / 窄终端按全仓 panel 契约退化为 plain。
  */
 export function renderHumanCommandPlan(plan: CommandPlan, options: HumanCommandPlanOptions): string {
   const capability = panelCapability({
@@ -1349,51 +1445,92 @@ export function renderHumanCommandPlan(plan: CommandPlan, options: HumanCommandP
     noColor: options.noColor,
     width: options.width,
   });
-  const contentWidth = panelContentWidth(capability.width, capability.mode);
-  const rows: PanelRow[] = [];
-  pushCommandPlanLine(
-    rows,
-    "Guaranteed order is per lane. Different experiments and lanes may interleave at runtime; conditional dispatches may never start.",
-    contentWidth,
-  );
-  for (const experiment of plan.experiments) {
-    rows.push({ kind: "divider", title: `EXPERIMENT ${experiment.experimentId}` });
-    renderCommandPlanSteps(rows, experiment.beforeLanes, contentWidth, "");
-    for (const lane of experiment.lanes) {
-      pushCommandPlanLine(rows, commandPlanLaneLabel(lane), contentWidth);
-      const physical = lane.physicalLifecycleTemplate;
-      if (physical !== undefined) {
-        pushCommandPlanLine(rows, "  physical lifecycle template · each physical instance", contentWidth, "    ");
-        pushCommandPlanLine(rows, "    enter", contentWidth, "      ");
-        renderCommandPlanSteps(rows, physical.enter, contentWidth, "      ");
-        pushCommandPlanLine(rows, "    exit", contentWidth, "      ");
-        renderCommandPlanSteps(rows, physical.exit, contentWidth, "      ");
-      }
-      for (const slot of lane.slots) {
-        if (slot.action === "carried") {
-          pushCommandPlanLine(
-            rows,
-            `  slot ${slot.evalId} #${slot.attempt} · carried · no commands`,
-            contentWidth,
-            "    ",
-          );
-          continue;
-        }
-        pushCommandPlanLine(
-          rows,
-          `  slot ${slot.evalId} #${slot.attempt} · dispatch · if ${slot.activation?.summary ?? "admitted"}`,
-          contentWidth,
-          "    ",
-        );
-        renderCommandPlanSteps(rows, slot.steps, contentWidth, "    ");
-      }
-    }
-    renderCommandPlanSteps(rows, experiment.afterLanes, contentWidth, "");
-  }
+  const panels: string[][] = [];
   const meta = plan.completeness === "complete"
     ? "COMPLETE"
     : `PARTIAL · ${plan.opaqueCount} opaque · ${plan.redactedCount} redacted`;
-  return `${renderPanel({ title: "COMMAND PLAN", meta, rows, width: capability.width, mode: capability.mode }).join("\n")}\n`;
+  panels.push(renderCommandPlanPanel(
+    "COMMAND PLAN",
+    meta,
+    ["Guaranteed order is per lane. Different experiments and lanes may interleave at runtime; conditional dispatches may never start."],
+    capability,
+  ));
+  for (const experiment of plan.experiments) {
+    panels.push(renderCommandPlanPanel(
+      `EXPERIMENT ${experiment.experimentId}`,
+      experiment.activation.toUpperCase(),
+      ["Contains the lifecycle blocks surrounding every selected lane."],
+      capability,
+    ));
+    renderCommandPlanSteps(panels, experiment.beforeLanes, `experiment ${experiment.experimentId} · before lanes`, capability);
+    for (const lane of experiment.lanes) {
+      const laneLabel = commandPlanLaneLabel(lane);
+      panels.push(renderCommandPlanPanel(
+        laneLabel,
+        lane.ordering === "serial-normalized-eval-id" ? "SERIAL" : "INDEPENDENT",
+        ["Contains the lifecycle blocks for this lane."],
+        capability,
+      ));
+      if (lane.kind === "eval-group" && lane.beforeSlots.length > 0) {
+        renderCommandPlanSteps(
+          panels,
+          lane.beforeSlots,
+          `lane ${lane.kind}:${lane.id} · group lifecycle before slots`,
+          capability,
+        );
+      }
+      const physical = lane.physicalLifecycleTemplate;
+      if (physical !== undefined) {
+        renderCommandPlanSteps(
+          panels,
+          physical.enter,
+          `lane ${lane.kind}:${lane.id} · physical lifecycle template enter · each physical instance`,
+          capability,
+        );
+      }
+      for (const slot of lane.slots) {
+        if (slot.action === "carried") {
+          panels.push(renderCommandPlanPanel(
+            `SLOT ${slot.evalId} #${slot.attempt}`,
+            "CARRIED",
+            ["No lifecycle commands run for this slot."],
+            capability,
+          ));
+          continue;
+        }
+        panels.push(renderCommandPlanPanel(
+          `SLOT ${slot.evalId} #${slot.attempt}`,
+          "DISPATCH",
+          [`if: ${slot.activation?.summary ?? "admitted"}`],
+          capability,
+        ));
+        renderCommandPlanSteps(
+          panels,
+          slot.steps,
+          `lane ${lane.kind}:${lane.id} · slot ${slot.evalId} #${slot.attempt}`,
+          capability,
+        );
+      }
+      if (physical !== undefined) {
+        renderCommandPlanSteps(
+          panels,
+          physical.exit,
+          `lane ${lane.kind}:${lane.id} · physical lifecycle template exit · each physical instance`,
+          capability,
+        );
+      }
+      if (lane.kind === "eval-group" && lane.afterSlots.length > 0) {
+        renderCommandPlanSteps(
+          panels,
+          lane.afterSlots,
+          `lane ${lane.kind}:${lane.id} · group lifecycle after slots`,
+          capability,
+        );
+      }
+    }
+    renderCommandPlanSteps(panels, experiment.afterLanes, `experiment ${experiment.experimentId} · after lanes`, capability);
+  }
+  return `${panels.map((panel) => panel.join("\n")).join("\n\n")}\n`;
 }
 
 /** previous-result 行逐条列出历史 locator；接受命令永远只影响这一条结果，不按 selector 聚合。 */

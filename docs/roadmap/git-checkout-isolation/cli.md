@@ -1,6 +1,6 @@
 # Git 检出隔离 —— CLI
 
-本方向不新增 CLI 命令或 flag。checkout 继续由 niceeval check、niceeval exp、niceeval exp --dry --commands 和 niceeval show 观察。
+本方向不新增 CLI 命令或 flag。checkout 继续由 niceeval check、niceeval exp、niceeval debug 和 niceeval show 观察。
 
 ## 人类输出
 

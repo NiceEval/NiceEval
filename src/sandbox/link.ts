@@ -19,6 +19,7 @@ import type { JsonValue } from "../shared/types.ts";
 import type { SandboxHook } from "./types.ts";
 import { Data, Effect } from "effect";
 import {
+  pluginLifecycleIdentity,
   pluginLifecycleProjection,
   type LinkedPluginLifecycle,
 } from "../plugin/contracts.ts";
@@ -204,8 +205,8 @@ export interface LinkedSandboxPair {
   readonly teardownHooks: readonly SandboxHook[];
   /** Physical lifecycle plugins, in flattened SandboxLayer order. */
   readonly pluginLifecycles: readonly LinkedSandboxPluginLifecycle[];
-  /** Eval 自己声明 lifecycle 时实例不得跨 Eval 共用。 */
-  readonly hasEvalLifecycleHooks: boolean;
+  /** Eval 自己声明 author hook 或 Sandbox Plugin lifecycle 时实例不得跨 Eval 共用。 */
+  readonly hasEvalPhysicalLifecycle: boolean;
   readonly evalGroupId?: string;
   readonly fingerprint: SandboxLayerFingerprintProjection;
 }
@@ -218,6 +219,21 @@ export interface LinkedDirectPair {
 }
 
 export type LinkedSandboxLayerPair = LinkedSandboxPair | LinkedDirectPair;
+
+/** Single owner-aware identity for every physical Sandbox lifecycle cohort. */
+export function sandboxPhysicalLifecycleIdentity(pair: LinkedSandboxLayerPair): JsonValue {
+  if (pair.kind === "direct") return Object.freeze({ kind: "direct" });
+  const author: JsonValue[] = (pair.fingerprint.lifecycle ?? []).map((entry) => ({
+    kind: entry.kind,
+    owner: { kind: entry.owner.kind, id: entry.owner.id },
+    phase: entry.phase,
+    index: entry.index,
+  }));
+  return Object.freeze({
+    author,
+    plugins: pair.fingerprint.plugins ?? [],
+  });
+}
 
 /**
  * 把 linked pair 按作者重新投影成缓存身份。owner id 不进身份；所在文件的 id/源码分别由
@@ -502,7 +518,7 @@ function linkSandboxPair(
     setupHooks: Object.freeze([...templateOwner.state.setupHooks, ...otherOwners.flatMap((owner) => owner.state.setupHooks)]),
     teardownHooks: Object.freeze([...templateOwner.state.teardownHooks, ...otherOwners.flatMap((owner) => owner.state.teardownHooks)]),
     pluginLifecycles: Object.freeze([]),
-    hasEvalLifecycleHooks: [templateOwner, ...otherOwners].some((owner) => owner.owner.kind === "eval" && owner.state.setupHooks.length + owner.state.teardownHooks.length > 0),
+    hasEvalPhysicalLifecycle: [templateOwner, ...otherOwners].some((owner) => owner.owner.kind === "eval" && owner.state.setupHooks.length + owner.state.teardownHooks.length > 0),
     ...([templateOwner, ...otherOwners].find((owner) => owner.owner.kind === "eval-group") === undefined
       ? {}
       : { evalGroupId: [templateOwner, ...otherOwners].find((owner) => owner.owner.kind === "eval-group")!.owner.id }),
@@ -530,12 +546,18 @@ export function attachSandboxPluginLifecycles(
     lifecycle,
   }))));
   if (entries.length === 0) return pair;
+  const plugins: JsonValue[] = entries.map((entry) => ({
+    owner: { kind: entry.owner.kind, id: entry.owner.id },
+    lifecycle: pluginLifecycleIdentity(entry.lifecycle),
+  }));
   return Object.freeze({
     ...pair,
     pluginLifecycles: entries,
+    hasEvalPhysicalLifecycle:
+      pair.hasEvalPhysicalLifecycle || entries.some((entry) => entry.owner.kind === "eval"),
     fingerprint: Object.freeze({
       ...pair.fingerprint,
-      plugins: pluginLifecycleProjection(entries.map((entry) => entry.lifecycle)),
+      plugins,
     }),
   });
 }
