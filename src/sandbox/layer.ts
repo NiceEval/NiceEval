@@ -660,6 +660,25 @@ function configuredLocator(
     : { _tag: "Redacted", fields, redactions });
 }
 
+function configuredDockerImageLocator(image: string): SandboxTemplateCommandPlanLocator {
+  const digestSeparator = image.lastIndexOf("@");
+  const reference = digestSeparator === -1 ? image : image.slice(0, digestSeparator);
+  const digest = digestSeparator === -1 ? undefined : image.slice(digestSeparator + 1);
+  const credentialSafeReference = /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/u.test(reference)
+    && !reference.includes("://")
+    && (digest === undefined || /^sha256:[a-f0-9]{64}$/iu.test(digest));
+  if (credentialSafeReference) {
+    return configuredLocator([{ name: "image", value: image }]);
+  }
+  return freezeCommandPlanLocator({
+    _tag: "Opaque",
+    reason: {
+      code: "docker-image-locator-unsafe-to-display",
+      summary: "Docker image locator is omitted because its syntax is not credential-safe to display",
+    },
+  });
+}
+
 function configuredLocationField(
   name: "context" | "file",
   value: SandboxLocation,
@@ -2003,7 +2022,7 @@ export function createBuiltinSandboxFactories(
           ...pathPrependIdentityField(pathPrepend),
         },
         privateFingerprintIdentity: identity,
-        commandPlanLocator: configuredLocator([{ name: "image", value: image }]),
+        commandPlanLocator: configuredDockerImageLocator(image),
         leakGate: { _tag: "None" },
         plan: () => Effect.map(dockerTargetForProfile(profile), ({ target, profileBinding }) => {
           return sandboxProviderPlan({
