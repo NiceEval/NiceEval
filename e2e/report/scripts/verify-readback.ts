@@ -449,7 +449,7 @@ async function verifyHistoryAndPages(evidence: Evidence): Promise<void> {
   assert.notEqual(mutex.status, 0, "--history --report should be a usage error");
   assert.ok(/mutually exclusive/i.test(mutex.combined), `expected a mutual-exclusion message; got: ${mutex.combined}`);
 
-  // 多页:show 渲染内置的 "report" 页,并在末尾附加一份可复现的其他可导航页面
+  // 多页:show 渲染 classic 报告的 "overview" 页,并在末尾附加一份可复现的其他可导航页面
   // (attempts、traces)索引——附加的命令会把 --record 和位置参数一并带上。这里用
   // "deliberate" 前缀(匹配 2 个 eval)而不是 "tool-call"(恰好匹配 1 个 eval):收窄到单个
   // eval 会让 report 页切换成聚焦单 eval 的 drill-down 视图,那种视图根本没有页面索引——这是
@@ -458,24 +458,24 @@ async function verifyHistoryAndPages(evidence: Evidence): Promise<void> {
   assert.ok(bareShow.includes("Other pages:"), "show should append a page index for the built-in multi-page report");
   assert.ok(bareShow.includes(`niceeval show deliberate --record ${root} --page attempts`), "page index command should reproduce positional args + --record + --page");
   assert.ok(bareShow.includes(`niceeval show deliberate --record ${root} --page traces`), "page index should list the traces page too");
-  assert.ok(!/--page report\b/.test(bareShow), "the page index should not list 'report' as an OTHER page — it's the one currently rendered");
+  assert.ok(!/--page overview\b/.test(bareShow), "the page index should not list 'overview' as an OTHER page — it's the one currently rendered");
 
   const attemptsPage = sh(`pnpm exec niceeval show deliberate --record ${root} --page attempts`);
   assert.ok(attemptsPage.includes("Other pages:"), "--page attempts should append an index of the OTHER pages");
-  assert.ok(attemptsPage.includes(`niceeval show deliberate --record ${root} --page report`), "index from the attempts page should offer report");
+  assert.ok(attemptsPage.includes(`niceeval show deliberate --record ${root} --page overview`), "index from the attempts page should offer overview");
   assert.ok(attemptsPage.includes(`niceeval show deliberate --record ${root} --page traces`), "index from the attempts page should offer traces");
   assert.ok(!/--page attempts\b/.test(attemptsPage.split("Other pages:")[1] ?? ""), "the attempts page's own index should not re-list itself");
 
   const tracesPage = sh(`pnpm exec niceeval show --record ${root} --page traces`);
   assert.ok(tracesPage.includes("Other pages:"), "--page traces should append an index of the OTHER pages");
-  assert.ok(tracesPage.includes("--page report"), "index from the traces page should offer report");
+  assert.ok(tracesPage.includes("--page overview"), "index from the traces page should offer overview");
   assert.ok(tracesPage.includes("--page attempts"), "index from the traces page should offer attempts");
 
   // 未知的 page id:报用法错误并列出可用页面,不会静默回退。
   const badPage = shRaw(`pnpm exec niceeval show --record ${root} --page bogus`);
   assert.notEqual(badPage.status, 0, "--page bogus should be a usage error");
   assert.ok(
-    badPage.combined.includes('page "bogus" not found') && badPage.combined.includes("report, attempts, traces"),
+    badPage.combined.includes('page "bogus" not found') && badPage.combined.includes("overview, attempts, traces"),
     `expected a "page not found" error listing the built-in page ids; got: ${badPage.combined}`,
   );
 }
