@@ -85,6 +85,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import assert from "node:assert/strict";
 import { sh } from "./sh.ts";
+import { readTextStatCell } from "./text-report-reader.ts";
 import type { Evidence } from "./evidence.ts";
 
 const AGENT = {
@@ -118,20 +119,6 @@ function escapeRegExp(s: string): string {
  * 这个函数在做包含检查之前,先把所有连续空白(包括折行产生的换行符)折叠成单个空格。 */
 function looseIncludes(text: string, phrase: string): boolean {
   return text.replace(/\s+/g, " ").includes(phrase);
-}
-
-function extractTextStatValue(text: string, label: string): string | null {
-  const lines = text.split(/\r?\n/);
-  for (const labels of [["Pass rate", "Experiments", "Evals"], ["Attempts", "Eval results", "Total cost"]]) {
-    const column = labels.indexOf(label);
-    if (column < 0) continue;
-    const header = lines.findIndex((line) => labels.every((candidate) => line.includes(candidate)));
-    if (header < 0) return null;
-    const starts = labels.map((candidate) => lines[header]!.indexOf(candidate));
-    const end = starts[column + 1];
-    return lines[header + 1]!.slice(starts[column], end).trim();
-  }
-  return null;
 }
 
 function readSiteFile(evidence: Evidence, ...parts: string[]): string {
@@ -430,10 +417,10 @@ async function verifyTerminalTypography(evidence: Evidence): Promise<void> {
 
   // 内建 standard 现以 SampleSummary(Stat 分行) + Scatter/Table 对比块呈现;
   // 旧 ExperimentList 80 列折行 / CJK Model 列对齐迁到自定义 site 报告场景验收。
-  assert.equal(extractTextStatValue(showReport, "Pass rate"), "33.3%", "text face should bind Pass rate=33.3% to its SampleSummary column");
-  assert.equal(extractTextStatValue(showReport, "Experiments"), "3", "text face should bind Experiments=3 to its SampleSummary column");
-  assert.equal(extractTextStatValue(showReport, "Evals"), "3", "text face should bind Evals=3 to its SampleSummary column");
-  assert.equal(extractTextStatValue(showReport, "Attempts"), "4", "text face should bind Attempts=4 to its SampleSummary column");
+  assert.equal(readTextStatCell(showReport, "Pass rate")?.value, "33.3%", "text face should bind Pass rate=33.3% to its SampleSummary column");
+  assert.equal(readTextStatCell(showReport, "Experiments")?.value, "3", "text face should bind Experiments=3 to its SampleSummary column");
+  assert.equal(readTextStatCell(showReport, "Evals")?.value, "3", "text face should bind Evals=3 to its SampleSummary column");
+  assert.equal(readTextStatCell(showReport, "Attempts")?.value, "4", "text face should bind Attempts=4 to its SampleSummary column");
   assert.ok(showReport.includes("better → upper right"), 'Scatter text face should show the "better -> upper right" hint');
   assert.ok(showReport.includes("2 points missing data"), "Scatter text face should report exactly 2 points missing data");
 
@@ -460,18 +447,18 @@ async function verifyDualRenderParity(evidence: Evidence): Promise<void> {
   const indexHtml = readSiteFile(evidence, "index.html");
   const reportTpl = extractTemplate(indexHtml, "niceeval-report-overview-en");
 
-  const textPassRaw = extractTextStatValue(showText, "Pass rate");
+  const textPassRaw = readTextStatCell(showText, "Pass rate")?.value;
   const textPass = textPassRaw ? /(\d+(?:\.\d+)?)%/.exec(textPassRaw) : null;
   const webPassRaw = extractStatValue(reportTpl, "Pass rate");
   const webPass = webPassRaw ? /(\d+(?:\.\d+)?)%/.exec(webPassRaw) : null;
   assert.ok(textPass && webPass, "couldn't extract Pass rate from both faces");
   assert.equal(textPass![1], webPass![1], `text pass rate (${textPass![1]}%) should equal web SampleSummary (${webPass![1]}%)`);
 
-  assert.equal(extractTextStatValue(showText, "Experiments"), "3", "text SampleSummary Experiments should be 3");
+  assert.equal(readTextStatCell(showText, "Experiments")?.value, "3", "text SampleSummary Experiments should be 3");
   assert.equal(extractStatValue(reportTpl, "Experiments")?.replace(/\D/g, ""), "3", "web SampleSummary Experiments should be 3");
-  assert.equal(extractTextStatValue(showText, "Evals"), "3", "text SampleSummary Evals should be 3");
+  assert.equal(readTextStatCell(showText, "Evals")?.value, "3", "text SampleSummary Evals should be 3");
   assert.equal(extractStatValue(reportTpl, "Evals")?.replace(/\D/g, ""), "3", "web SampleSummary Evals should be 3");
-  assert.equal(extractTextStatValue(showText, "Attempts"), "4", "text SampleSummary Attempts should be 4");
+  assert.equal(readTextStatCell(showText, "Attempts")?.value, "4", "text SampleSummary Attempts should be 4");
   assert.equal(extractStatValue(reportTpl, "Attempts")?.replace(/\D/g, ""), "4", "web SampleSummary Attempts should be 4");
 
   for (const label of ["passed", "failed", "errored"] as const) {

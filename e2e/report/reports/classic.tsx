@@ -4,6 +4,7 @@ import {
   ExperimentScatter,
   ExperimentTable,
   Hero,
+  SampleNotices,
   SampleSummary,
   Section,
   aggregate,
@@ -57,6 +58,7 @@ function classicOverview() {
   return (
     <Col>
       <MemoryBenchHero />
+      <SampleNotices />
       <SampleSummary />
       <Section title={{ en: "Leaderboard", "zh-CN": "排行榜" }}>
         <Leaderboard />

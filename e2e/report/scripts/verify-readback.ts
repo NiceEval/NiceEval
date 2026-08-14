@@ -27,10 +27,11 @@
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import assert from "node:assert/strict";
 import { InfraError } from "./evidence.ts";
 import { sh } from "./sh.ts";
+import { readTextStatCell } from "./text-report-reader.ts";
 import type { Evidence } from "./evidence.ts";
 
 const PROVIDER_FAULT_RE =
@@ -58,6 +59,30 @@ function shRaw(cmd: string): { stdout: string; stderr: string; combined: string;
   const stdout = res.stdout ?? "";
   const stderr = res.stderr ?? "";
   return { stdout, stderr, combined: `${stdout}\n${stderr}`, status: res.status ?? -1 };
+}
+
+function htmlBetween(document: string, start: string, end: string, owner: string): string {
+  const from = document.indexOf(start);
+  const to = from < 0 ? -1 : document.indexOf(end, from + start.length);
+  assert.ok(from >= 0 && to >= 0, `${owner} should contain ${start} … ${end}`);
+  return document.slice(from + start.length, to);
+}
+
+/** Shell pages intentionally differ by live-host bootstrap and by how many page templates they
+ * embed. The public equivalence contract applies to the named report fragment for the same page. */
+function overviewReportFragment(document: string): string {
+  return htmlBetween(
+    document,
+    '<template id="niceeval-report-overview-en">',
+    "</template>",
+    "overview document",
+  );
+}
+
+/** Parameterized pages render their two locale fragments directly in the body. Host bootstrap
+ * stays outside this interval, so this isolates the user-visible report HTML exactly. */
+function parameterizedReportFragment(document: string): string {
+  return htmlBetween(document, "<body>\n", "\n<script>", "parameterized page document");
 }
 
 // ---------------------------------------------------------------------------
@@ -161,7 +186,7 @@ function expectServerDoesNotStart(extraArgs: string[]): Promise<{ exitCode: numb
 // 契约 diff 显式修改这里；若自动跟随候选常量，reader 与 fixture 可以一起错而测试仍然全绿。
 // ---------------------------------------------------------------------------
 
-const FIXTURE_SCHEMA_VERSION = 11;
+const FIXTURE_SCHEMA_VERSION = 15;
 
 function fixtureSnapshotMeta(over: Record<string, unknown>) {
   return {
@@ -175,7 +200,21 @@ function fixtureSnapshotMeta(over: Record<string, unknown>) {
 }
 
 function fixtureResult(over: Record<string, unknown>) {
-  return { attempt: 0, durationMs: 1, assertions: [], ...over };
+  const complete = { status: "complete" as const };
+  return {
+    attempt: 0,
+    durationMs: 1,
+    assertions: [],
+    evidenceCoverage: {
+      events: complete,
+      actions: complete,
+      messages: complete,
+      usage: complete,
+      status: complete,
+      data: complete,
+    },
+    ...over,
+  };
 }
 
 function writeJson(dir: string, filename: string, value: unknown): void {
@@ -300,7 +339,7 @@ async function verifySelectionAndNarrowing(evidence: Evidence): Promise<void> {
 
   // --exp 按路径片段匹配:一个完整的片段可以匹配……
   const expExact = sh(`pnpm exec niceeval show --exp deliberate-fail --record ${root}`);
-  assert.ok(expExact.includes("1 experiment"), "--exp deliberate-fail should narrow to exactly 1 experiment");
+  assert.equal(readTextStatCell(expExact, "Experiments")?.value, "1", "--exp deliberate-fail should bind Experiments=1 to the summary grid");
   assert.ok(!expExact.includes("tool-call"), "--exp deliberate-fail leaked tool-call/main into scope");
 
   // ……但不是完整片段的部分单词则不会匹配,这和上面位置参数的情况不同。
@@ -313,7 +352,7 @@ async function verifySelectionAndNarrowing(evidence: Evidence): Promise<void> {
   assert.ok(expPartial.combined.includes("deliberate-error") && expPartial.combined.includes("deliberate-fail") && expPartial.combined.includes("main"), "no-match message should list the candidate experiment ids");
 
   const expMain = sh(`pnpm exec niceeval show --exp main --record ${root}`);
-  assert.ok(expMain.includes("1 experiment"), "--exp main should narrow to exactly 1 experiment");
+  assert.equal(readTextStatCell(expMain, "Experiments")?.value, "1", "--exp main should bind Experiments=1 to the summary grid");
   assert.ok(!expMain.includes("deliberate"), "--exp main leaked deliberate-* into scope");
 
   // --record 显式 flag(这里的值和默认值一样,但实际验证的是这个 flag 本身)。
@@ -329,8 +368,8 @@ async function verifySelectionAndNarrowing(evidence: Evidence): Promise<void> {
   assert.ok(noMatch.combined.includes(`No results matched: ${bareBody}`), `expected an explicit no-match message; got: ${noMatch.combined}`);
   assert.ok(noMatch.combined.includes("tool-call"), "no-match message should list tool-call as a candidate eval with results");
 
-  // view 这一侧遵循同样的选择规则:--exp / 位置参数收窄对导出的 artifact/ 子集产生的效果,
-  // 和上面 show 报告的结果一致。
+  // view 这一侧用 --exp 验收导出的页面与 artifact/ 子集同步收窄；位置参数的 eval-prefix
+  // 解析已经由上面的 show 黑盒覆盖，不在这里重复同一选择器语义。
   const scratchRoot = mkdtempSync(join(tmpdir(), "niceeval-readback-view-select-"));
   try {
     const mainOut = join(scratchRoot, "main-only");
@@ -338,12 +377,6 @@ async function verifySelectionAndNarrowing(evidence: Evidence): Promise<void> {
     assert.ok(existsSync(join(mainOut, "artifact", "main")), "view --exp main --out should export artifact/main");
     assert.ok(!existsSync(join(mainOut, "artifact", "deliberate-fail")), "view --exp main --out should NOT export artifact/deliberate-fail");
     assert.ok(!existsSync(join(mainOut, "artifact", "deliberate-error")), "view --exp main --out should NOT export artifact/deliberate-error");
-
-    const deliberateOut = join(scratchRoot, "deliberate-only");
-    sh(`pnpm exec niceeval view deliberate --record ${root} --out ${deliberateOut} --no-open`);
-    assert.ok(existsSync(join(deliberateOut, "artifact", "deliberate-fail")), "view deliberate --out (raw prefix) should export artifact/deliberate-fail");
-    assert.ok(existsSync(join(deliberateOut, "artifact", "deliberate-error")), "view deliberate --out (raw prefix) should export artifact/deliberate-error");
-    assert.ok(!existsSync(join(deliberateOut, "artifact", "main")), "view deliberate --out should NOT export artifact/main");
 
     const expBad = shRaw(`pnpm exec niceeval view --exp deliberate --record ${root} --out ${join(scratchRoot, "bad")} --no-open`);
     assert.notEqual(expBad.status, 0, "view --exp deliberate (partial segment) should fail the same way show did");
@@ -460,11 +493,20 @@ async function verifyEvidenceFacets(evidence: Evidence, fixture: ScopeWarningsFi
   // 标注上 send/assertion 标记。
   const passedSource = sh(`pnpm exec niceeval show ${passedLocator} --source --record ${root}`);
   assert.ok(passedSource.includes("evals/tool-call.eval.ts"), "--source should name the eval source file");
-  assert.ok(/\S+\s*·\s*completed\s*·/.test(passedSource), `--source should annotate the t.send() line with the turn's label + status + duration; got:\n${passedSource}`);
   assert.ok(
-    passedSource.includes("assertions: 4 passed"),
-    `a fully-passed source view should collapse the four assertions into one visible summary; got:\n${passedSource}`,
+    /^12✓\s+const turn = await t\.send\(\n\s+completed · \d+(?:\.\d+)?(?:ms|s)$/m.test(passedSource),
+    `--source should bind t.send() to its completed status and duration on the following annotation line; got:\n${passedSource}`,
   );
+  assert.ok(
+    passedSource.includes("5 checks · 5 passed · 0 failed"),
+    `a fully-passed source view should report the exact check tally; got:\n${passedSource}`,
+  );
+  for (const identity of ["turn.succeeded()", 'turn.calledTool("get_stock_price"', "turn.noFailedActions()", "usage?.inputTokens", "usage?.outputTokens"]) {
+    assert.ok(
+      passedSource.split(/\r?\n/).some((line) => /^\d+✓/.test(line) && line.includes(identity)),
+      `a fully-passed source view should bind a passed marker to ${identity}; got:\n${passedSource}`,
+    );
+  }
   assert.ok(
     !passedSource.includes("gate ·"),
     `a fully-passed source view should not expand individual assertion detail rows; got:\n${passedSource}`,
@@ -474,7 +516,8 @@ async function verifyEvidenceFacets(evidence: Evidence, fixture: ScopeWarningsFi
   assert.ok(failedSource.includes("evals/deliberate-fail.eval.ts"), "--source should name deliberate-fail's eval source file");
   assert.ok(failedSource.includes("expected 3") && failedSource.includes("received 2"), "--source should annotate the failing assertion with expected/received");
   assert.ok(
-    failedSource.includes("gate · equals(3)") && failedSource.includes("assertions: 1 gate failed"),
+    /^13✗\s+t\.check\(1 \+ 1, equals\(3\)\);\n\s+gate · equals\(3\) · expected 3 · received 2$/m.test(failedSource) &&
+      failedSource.includes("1 checks · 0 passed · 1 failed"),
     `a failed source view should expose the actionable failed assertion rather than a passed-summary row; got:\n${failedSource}`,
   );
 
@@ -518,7 +561,7 @@ async function verifyEvidenceFacets(evidence: Evidence, fixture: ScopeWarningsFi
   assert.ok(noPhasesFull.includes("phase timing unavailable"), `--timing=full should also say phase timing unavailable, not derive a fake tree; got: ${noPhasesFull}`);
   const fixtureAttempt = sh(`pnpm exec niceeval show ${fixtureLocator} --record ${fixture.root}`);
   assert.ok(
-    fixtureAttempt.includes("facts: fixture.kind=deterministic"),
+    /^fixture\.kind\ndeterministic$/m.test(fixtureAttempt),
     `an attempt fact from the public Results fixture should be visible on the public attempt page; got:\n${fixtureAttempt}`,
   );
 }
@@ -543,7 +586,8 @@ function verifyVisibleSlices(evidence: Evidence): void {
     `two public --exp flags should produce a visible comparison with the first condition as baseline; got:\n${compare}`,
   );
   assert.ok(
-    compare.includes("✗ failed") && compare.includes("! errored"),
+    /^deliberate-fail\s+✗(?:\s+—){4}$/m.test(compare) &&
+      /^deliberate-error(?:\s+—){3}\s+!\s+—$/m.test(compare),
     `comparison output should keep failed and errored visibly distinct; got:\n${compare}`,
   );
 
@@ -555,19 +599,15 @@ function verifyVisibleSlices(evidence: Evidence): void {
       stats.includes("deliberate-error"),
     `--stats should expose the complete real-results scope and its evidence window; got:\n${stats}`,
   );
-  const failedStatsLine = stats.split("\n").find((line) => line.startsWith("deliberate-fail"));
-  const erroredStatsLine = stats.split("\n").find((line) => line.startsWith("deliberate-error"));
-  assert.ok(failedStatsLine, `--stats did not render the deliberate-fail row:\n${stats}`);
-  assert.ok(erroredStatsLine, `--stats did not render the deliberate-error row:\n${stats}`);
   assert.match(
-    failedStatsLine,
-    /✓0\s+✗[1-9]\d*\s+!0/,
-    "the deterministic failed eval should count under failed, not errored",
+    stats,
+    /^deliberate-fail\s+—\s+1 failed\s+—\s+1 failed\nnever passed$/m,
+    "the deliberate-fail row should bind one failed result to the deliberate-fail experiment and total columns",
   );
   assert.match(
-    erroredStatsLine,
-    /✓0\s+✗0\s+![1-9]\d*/,
-    "the deterministic errored eval should count under errored, not failed",
+    stats,
+    /^deliberate-error\s+1 errored\s+—\s+—\s+1\nnever passed\s+errored$/m,
+    "the deliberate-error row should bind one errored result to the deliberate-error experiment and total columns",
   );
 
   const usage = sh(`pnpm exec niceeval show --record ${root} --usage`);
@@ -625,9 +665,8 @@ async function verifyScopeWarnings(fixture: ScopeWarningsFixture): Promise<void>
   // knownEvalIds 里没跑的题渲染成占位行——期望从 fixture 事实推导(缺的是 eval-ghost),
   // 结果列带「当前配置下无结果」文案与可复制补跑命令,不冒充失败也不进警告区。
   assert.ok(board.includes("scratch-partial") && board.includes("eval-ghost"), `expected a placeholder row for the un-run eval-ghost under scratch-partial; got:\n${board}`);
-  // text 面在受控列宽下结果列可能截断长命令(表格通用截断,非占位行特例);
-  // 「可复制补跑命令」的完整断言放在下方 web 面(HTML 不受列宽截断)。
-  assert.ok(board.includes("no results under the current"), `placeholder row should state the no-results copy; got:\n${board}`);
+  // text 面在受控列宽下结果列可能整列隐藏(表格通用截断,非占位行特例);
+  // 「无结果」文案与可复制补跑命令的完整断言放在下方 web 面(HTML 不受列宽截断)。
   // 时效同理不再是警告,且 ↩ 标注只属于同 experiment 内的携带/跨快照拼入——scratch-stale
   // 是自家唯一快照的新执行,跨 experiment 的「谁更旧」在新契约下不标注、不警告:普通行渲染。
   assert.ok(board.includes("scratch-stale"), `scratch-stale should render as a normal experiment; got:\n${board}`);
@@ -675,19 +714,25 @@ async function verifyScopeWarnings(fixture: ScopeWarningsFixture): Promise<void>
 async function verifyExportAndServer(evidence: Evidence): Promise<void> {
   const root = evidence.resultsRoot;
   const mainAttemptRelDir = relative(root, evidence.main.attempts[0]!.attemptDir);
+  const mainRunRelDir = dirname(dirname(mainAttemptRelDir));
   const deliberateFailRelDir = relative(root, evidence.deliberateFail.attempt.attemptDir);
 
-  // --- 全量根目录的本地 server:与 Evidence 已经产出的 --out 导出结果逐字节一致
-  //     (view.md:"本地模式与静态导出共用同一条站点管线... 同一输入下同一路径逐字节一致")。
+  // --- 全量根目录的本地 server:与 Evidence 已经产出的 --out 导出的同页报告 fragment
+  //     逐字节一致(view.md:"同一页同一语言的那块报告 HTML"逐字节一致)。live bootstrap
+  //     和静态站嵌入的其它页 template 属于宿主外壳，不混进报告 fragment 的比较。
   //     既然这个 server 已经启动,且提供的是和 siteExportDir 相同的完整、未收窄的 scope,
-  //     就顺带在它身上验证 o11y 从不被 serve、以及 sources.json 被解引用这两项检查。
+  //     就顺带在它身上验证 o11y 从不被 serve、以及 sources.json 两层引用完整性。
   const fullServer = await startViewServer(["--record", root]);
   try {
     const indexResp = await fetch(`${fullServer.baseUrl}/`);
     assert.equal(indexResp.status, 200, "server should serve / with 200");
     const indexBody = await indexResp.text();
     const exportedIndex = readFileSync(join(evidence.siteExportDir, "index.html"), "utf8");
-    assert.equal(indexBody, exportedIndex, "local server's / response must be byte-identical to the --out export's index.html for the same input");
+    assert.equal(
+      overviewReportFragment(indexBody),
+      overviewReportFragment(exportedIndex),
+      "local server and --out must render byte-identical English overview report fragments",
+    );
 
     // 浏览器使用报告里真实生成的 URL（locator 作为单个 path segment 经 URI 编码）；server
     // 必须按这条编码后的路径命中参数化页，而不是只在测试里用未编码的 `@...` 绕过去。
@@ -699,20 +744,46 @@ async function verifyExportAndServer(evidence: Evidence): Promise<void> {
       join(evidence.siteExportDir, "attempt", `${encodeURIComponent(evidence.main.attempts[0]!.locator)}.html`),
       "utf8",
     );
-    assert.equal(attemptBody, exportedAttempt, "local server's attempt page must be byte-identical to the --out export's for the same locator");
+    assert.equal(
+      parameterizedReportFragment(attemptBody),
+      parameterizedReportFragment(exportedAttempt),
+      "local server and --out must render byte-identical locale fragments for the same attempt",
+    );
 
-    // sources.json 在带外(server 响应)场景下是已解引用的 {path, content}[],绝不是磁盘上
-    // 那种两层 {path, sha256} 引用形式(memory/attempt-locator-and-source-dedup)。
+    // artifact 树保留公开的两层去重格式:sources.json 是 {path, sha256} 引用，正文位于
+    // 同 Run 的 sources/<sha256>.json。两层都必须能从 server 和静态导出读取，且逐字节一致。
     const sourcesResp = await fetch(`${fullServer.baseUrl}/artifact/${mainAttemptRelDir}/sources.json`);
     assert.equal(sourcesResp.status, 200, "server should serve the in-scope attempt's sources.json artifact");
-    const sourcesBody = (await sourcesResp.json()) as { path: string; content?: string; sha256?: string }[];
-    assert.ok(sourcesBody.length > 0, "sources.json should have at least one entry");
-    assert.ok(sourcesBody.every((s) => typeof s.content === "string"), "server-served sources.json entries must carry dereferenced content, not a bare sha256 reference");
-    assert.ok(sourcesBody.every((s) => !("sha256" in s)), "server-served sources.json must not leak the on-disk sha256 reference field");
-
-    // 静态导出文件里也是同样已解引用的形状。
-    const exportedSourcesJson = JSON.parse(readFileSync(join(evidence.siteExportDir, "artifact", mainAttemptRelDir, "sources.json"), "utf8")) as { path: string; content?: string }[];
-    assert.ok(exportedSourcesJson.every((s) => typeof s.content === "string"), "--out export's sources.json must also be dereferenced {path, content}[]");
+    const sourcesText = await sourcesResp.text();
+    const sourcesBody = JSON.parse(sourcesText) as { path?: unknown; sha256?: unknown }[];
+    assert.ok(sourcesBody.length > 0, "sources.json should have at least one source reference");
+    assert.ok(
+      sourcesBody.every((source) =>
+        typeof source.path === "string" &&
+        typeof source.sha256 === "string" &&
+        /^[a-f0-9]{64}$/.test(source.sha256)
+      ),
+      "every sources.json entry must bind a source path to a 64-character sha256",
+    );
+    const exportedSourcesPath = join(evidence.siteExportDir, "artifact", mainAttemptRelDir, "sources.json");
+    assert.equal(
+      sourcesText,
+      readFileSync(exportedSourcesPath, "utf8"),
+      "server and --out must serve byte-identical sources.json references",
+    );
+    for (const source of sourcesBody) {
+      const blobRelPath = join("artifact", mainRunRelDir, "sources", `${source.sha256}.json`);
+      const blobResp = await fetch(`${fullServer.baseUrl}/${blobRelPath}`);
+      assert.equal(blobResp.status, 200, `server should resolve source blob ${source.sha256}`);
+      const blobText = await blobResp.text();
+      const blob = JSON.parse(blobText) as { content?: unknown };
+      assert.equal(typeof blob.content, "string", `source blob ${source.sha256} should carry its content`);
+      assert.equal(
+        blobText,
+        readFileSync(join(evidence.siteExportDir, blobRelPath), "utf8"),
+        `server and --out must serve byte-identical source blob ${source.sha256}`,
+      );
+    }
 
     // o11y.json 无论是不是全量根目录都从不被 serve——这里探测的是某个真实存在 o11y.json 的
     // attempt 的真实已知路径。
@@ -726,8 +797,7 @@ async function verifyExportAndServer(evidence: Evidence): Promise<void> {
   assert.ok(!containsFileNamed(join(evidence.siteExportDir, "artifact"), "o11y.json"), "no o11y.json should ever appear anywhere under a --out export's artifact/ tree");
 
   // --- 收窄后的导出:页面 Scope 和 artifact/ 树一起收窄;scope 之外的 attempt 根本不会生成
-  //     对应的 HTML 文档(和下面收窄后的 SERVER 形成对比,后者依然能解析到它——这是文档记录
-  //     的两条路由之间的差异)。
+  //     对应的 HTML 文档。
   const narrowedOutDir = mkdtempSync(join(tmpdir(), "niceeval-readback-narrowed-out-"));
   try {
     sh(`pnpm exec niceeval view --exp main --record ${root} --out ${narrowedOutDir} --no-open`);
@@ -745,21 +815,21 @@ async function verifyExportAndServer(evidence: Evidence): Promise<void> {
     rmSync(narrowedOutDir, { recursive: true, force: true });
   }
 
-  // --- 收窄后的本地 server:attempt-detail 这条路由无论 --exp 是什么,都会对着完整的 results
-  //     根目录去解析(和 `show @<locator>` 一样是整个 result root 范围内寻址),但是原始的
-  //     artifact/ 文件路由则和上面页面 Scope、--out 导出一样,遵守同样的 --exp 收窄规则——
-  //     两条不同的路由,两条不同的作用域规则,都记录在 view.md 的"导出与 server"这一段里。
+  // --- 收窄后的本地 server 与静态导出遵守同一有效根:范围外的参数化页与 artifact
+  //     都不可达，范围内的页面引用不会断链(view.md「收窄之外的实例不可达」)。
   const narrowedServer = await startViewServer(["--exp", "main", "--record", root]);
   try {
     const outOfScopeAttemptResp = await fetch(
       `${narrowedServer.baseUrl}/attempt/${encodeURIComponent(evidence.deliberateFail.attempt.locator)}.html`,
     );
-    assert.equal(outOfScopeAttemptResp.status, 200, "the attempt-detail route must resolve an out-of-scope locator (full-root addressing) even under --exp main");
-    const outOfScopeAttemptBody = await outOfScopeAttemptResp.text();
-    assert.ok(outOfScopeAttemptBody.includes("deliberate-fail"), "the resolved out-of-scope attempt page should show its real content");
+    assert.equal(
+      outOfScopeAttemptResp.status,
+      404,
+      "the attempt-detail route must not resolve a locator outside the --exp main effective root",
+    );
 
     const outOfScopeArtifactResp = await fetch(`${narrowedServer.baseUrl}/artifact/${deliberateFailRelDir}/sources.json`);
-    assert.equal(outOfScopeArtifactResp.status, 404, "the raw artifact/ file route MUST respect --exp narrowing, unlike the attempt-detail route above");
+    assert.equal(outOfScopeArtifactResp.status, 404, "the raw artifact/ file route must respect --exp narrowing too");
 
     const inScopeArtifactResp = await fetch(`${narrowedServer.baseUrl}/artifact/${mainAttemptRelDir}/events.json`);
     assert.equal(inScopeArtifactResp.status, 200, "the raw artifact/ file route should still serve in-scope attempts normally");
