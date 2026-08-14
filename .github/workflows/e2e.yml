@@ -138,9 +138,7 @@ jobs:
               "pnpm-lock.yaml",
               "pnpm-workspace.yaml",
               ".github/workflows/e2e.yml",
-              "docs/engineering/testing/README.md",
               "docs/engineering/testing/e2e/README.md",
-              "docs/engineering/testing/e2e/report.md",
             ]);
             const reportOnly = changed.length > 0 && changed.every((path) =>
               reportOnlyPrefixes.some((prefix) => path.startsWith(prefix)) || reportOnlyFiles.has(path),
