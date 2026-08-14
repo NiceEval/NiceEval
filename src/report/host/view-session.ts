@@ -2,9 +2,28 @@ import { Effect, Ref } from "effect";
 import type * as Scope from "effect/Scope";
 import { isReportExecution, type ReportExecution } from "../execution/model.ts";
 import { basalt, isThemeDefinition, type ThemeDefinition } from "./theme.ts";
+import {
+  isViewRevisionClosure,
+  type ViewRevisionClosure,
+} from "./view-closure.ts";
 
+/**
+ * A fixed view revision. The legacy single-execution session publishes
+ * revisions without a closure (`closure` omitted); the bilingual closure
+ * session always publishes the validated en + zh-CN pair and keeps the
+ * English execution as a read-only alias.
+ */
 export interface ReportViewRevision {
   readonly revision: number;
+  /**
+   * The validated bilingual closure this revision atomically owns. Omitted
+   * for legacy single-execution revisions, which serve English only.
+   */
+  readonly closure?: ViewRevisionClosure;
+  /**
+   * The fixed English execution of this revision. Closure revisions expose
+   * it as a read-only alias; production view paths must read the closure.
+   */
   readonly execution: ReportExecution;
   /** Theme snapshot for this view revision; it never becomes Report author data. */
   readonly theme: ThemeDefinition;
@@ -65,6 +84,20 @@ export type ReportViewRebuild =
   | ReportViewExecutionRebuild
   | ReportViewThemeRebuild;
 
+/** A successful bilingual rebuild that also replaced the fixed closure. */
+export interface ReportViewClosureRebuild {
+  readonly kind: "execution";
+  readonly closure: ViewRevisionClosure;
+  /** Omit when the previous Theme source snapshot remains current. */
+  readonly theme?: ThemeDefinition;
+  /** Same atomic watch-set rule as an execution rebuild. */
+  readonly watchInputs?: readonly string[];
+}
+
+export type ReportViewClosureRebuildResult =
+  | ReportViewClosureRebuild
+  | ReportViewThemeRebuild;
+
 export interface ReportViewSession<Requirements = never> {
   readonly url: string;
   readonly snapshot: Effect.Effect<ReportViewState, ReportViewSessionClosed>;
@@ -86,6 +119,26 @@ export interface OpenReportViewSessionInput<Requirements = never> {
   readonly rebuild: () => Effect.Effect<ReportViewRebuild, ReportViewRebuildFailure, Requirements>;
 }
 
+export interface OpenReportViewClosureSessionInput<Requirements = never> {
+  readonly url: string;
+  /** The initial Theme source snapshot; basalt is the host default. */
+  readonly theme?: ThemeDefinition;
+  /**
+   * Initial recoverable watch set for the opening revision. A successful
+   * rebuild may replace it atomically with the next loader closure.
+   */
+  readonly watchInputs?: readonly string[];
+  /**
+   * The opening closure must already be validated and complete; no last-good
+   * revision exists yet. A session never re-opens a Record or re-runs author
+   * code for this input, and it never fabricates a closure from one
+   * execution.
+   */
+  readonly initial: Effect.Effect<ViewRevisionClosure, ReportViewOpenError, Requirements>;
+  /** Each invocation publishes a new closure or a Theme-only revision. */
+  readonly rebuild: () => Effect.Effect<ReportViewClosureRebuildResult, ReportViewRebuildFailure, Requirements>;
+}
+
 type SessionCell =
   | { readonly state: "open"; readonly value: ReportViewState }
   | { readonly state: "closed" };
@@ -95,20 +148,72 @@ const closedError: ReportViewSessionClosed = Object.freeze({
 });
 
 /**
- * Builds the immutable-revision state machine used by a Node watcher/server.
- * A successful refresh atomically publishes a new fixed execution and the next
- * recoverable watch set; a typed failed refresh only updates the bounded
- * last-good problem and leaves the prior watch set intact. Defects and
- * interruption intentionally remain in the Effect cause and do not masquerade
- * as a recoverable rebuild result.
+ * Builds the immutable-revision state machine used by a Node watcher/server
+ * over a single fixed ReportExecution. A successful refresh atomically
+ * publishes a new fixed execution and the next recoverable watch set; a typed
+ * failed refresh only updates the bounded last-good problem and leaves the
+ * prior watch set intact. Defects and interruption intentionally remain in
+ * the Effect cause and do not masquerade as a recoverable rebuild result.
  */
 export function openReportViewSession<Requirements>(
   input: OpenReportViewSessionInput<Requirements>,
 ): Effect.Effect<ReportViewSession<Requirements>, ReportViewOpenError, Scope.Scope | Requirements> {
+  return openSession({
+    url: input.url,
+    theme: input.theme,
+    watchInputs: input.watchInputs,
+    initial: input.initial,
+    rebuild: input.rebuild,
+    initialState: (execution, theme, watchInputs) =>
+      executionRevision(0, execution, theme, watchInputs),
+    nextRevision: (previous, rebuilt) =>
+      executionRevisionFromRebuild(previous, rebuilt),
+  });
+}
+
+/**
+ * The bilingual session used by `niceeval view`. Each published revision
+ * atomically owns the validated en + zh-CN closure produced from one frozen
+ * build input set; a failed rebuild keeps the entire last-good revision
+ * (closure, theme, and recoverable watch set) and only replaces the bounded
+ * problem. Theme-only rebuilds reuse the exact closure.
+ */
+export function openReportViewClosureSession<Requirements>(
+  input: OpenReportViewClosureSessionInput<Requirements>,
+): Effect.Effect<ReportViewSession<Requirements>, ReportViewOpenError, Scope.Scope | Requirements> {
+  return openSession({
+    url: input.url,
+    theme: input.theme,
+    watchInputs: input.watchInputs,
+    initial: input.initial,
+    rebuild: input.rebuild,
+    initialState: (closure, theme, watchInputs) =>
+      closureRevision(0, closure, theme, watchInputs),
+    nextRevision: (previous, rebuilt) =>
+      closureRevisionFromRebuild(previous, rebuilt),
+  });
+}
+
+function openSession<Requirements, Seed, Rebuilt>(input: {
+  readonly url: string;
+  readonly theme?: ThemeDefinition;
+  readonly watchInputs?: readonly string[];
+  readonly initial: Effect.Effect<Seed, ReportViewOpenError, Requirements>;
+  readonly rebuild: () => Effect.Effect<Rebuilt, ReportViewRebuildFailure, Requirements>;
+  readonly initialState: (
+    seed: Seed,
+    theme: ThemeDefinition,
+    watchInputs: readonly string[],
+  ) => ReportViewRevision;
+  readonly nextRevision: (
+    previous: ReportViewRevision,
+    rebuilt: Rebuilt,
+  ) => ReportViewRevision;
+}): Effect.Effect<ReportViewSession<Requirements>, ReportViewOpenError, Scope.Scope | Requirements> {
   return Effect.gen(function* () {
     const initial = yield* input.initial;
     const initialState: ReportViewState = Object.freeze({
-      current: revision(0, initial, input.theme ?? basalt, freezeWatchInputs(input.watchInputs)),
+      current: input.initialState(initial, input.theme ?? basalt, freezeWatchInputs(input.watchInputs)),
     });
     const cell = yield* Ref.make<SessionCell>(Object.freeze({ state: "open", value: initialState }));
     const mutex = yield* Effect.makeSemaphore(1);
@@ -126,12 +231,13 @@ export function openReportViewSession<Requirements>(
         return input.rebuild().pipe(
           Effect.flatMap((rebuilt) => {
             const next: ReportViewState = Object.freeze({
-              current: revisionFromRebuild(before.value.current, rebuilt),
+              current: input.nextRevision(before.value.current, rebuilt),
             });
             return Ref.set(cell, Object.freeze({ state: "open", value: next }));
           }),
           Effect.catchAll((failure) => {
-            // Keep last-good execution, theme, and recoverable watch set.
+            // Keep last-good revision (execution/closure, theme, and
+            // recoverable watch set) untouched.
             const next: ReportViewState = Object.freeze({
               current: before.value.current,
               lastProblem: boundedProblem(failure),
@@ -153,12 +259,15 @@ export function openReportViewSession<Requirements>(
   });
 }
 
-function revision(
+function executionRevision(
   revisionNumber: number,
   execution: ReportExecution,
   theme: ThemeDefinition,
   watchInputs: readonly string[],
 ): ReportViewRevision {
+  if (!isReportExecution(execution)) {
+    throw new TypeError("a Report view revision requires a completed ReportExecution");
+  }
   if (!isThemeDefinition(theme)) {
     throw new TypeError("a Report view revision requires a ThemeDefinition from defineTheme");
   }
@@ -170,25 +279,72 @@ function revision(
   });
 }
 
-function revisionFromRebuild(
+function executionRevisionFromRebuild(
   previous: ReportViewRevision,
   rebuilt: ReportViewRebuild,
 ): ReportViewRevision {
   if (isReportExecution(rebuilt)) {
     // Legacy bare execution rebuilds keep the prior recoverable watch set.
-    return revision(previous.revision + 1, rebuilt, previous.theme, previous.watchInputs);
+    return executionRevision(previous.revision + 1, rebuilt, previous.theme, previous.watchInputs);
   }
   if (rebuilt.kind === "execution") {
-    return revision(
+    return executionRevision(
       previous.revision + 1,
       rebuilt.execution,
       rebuilt.theme ?? previous.theme,
       rebuilt.watchInputs ?? previous.watchInputs,
     );
   }
-  return revision(
+  return executionRevision(
     previous.revision + 1,
     previous.execution,
+    rebuilt.theme,
+    rebuilt.watchInputs ?? previous.watchInputs,
+  );
+}
+
+function closureRevision(
+  revisionNumber: number,
+  closure: ViewRevisionClosure,
+  theme: ThemeDefinition,
+  watchInputs: readonly string[],
+): ReportViewRevision {
+  if (!isViewRevisionClosure(closure)) {
+    throw new TypeError("a Report view revision requires a validated ViewRevisionClosure");
+  }
+  if (!isThemeDefinition(theme)) {
+    throw new TypeError("a Report view revision requires a ThemeDefinition from defineTheme");
+  }
+  return Object.freeze({
+    revision: revisionNumber,
+    closure,
+    execution: closure.en,
+    theme,
+    watchInputs: freezeWatchInputs(watchInputs),
+  });
+}
+
+function closureRevisionFromRebuild(
+  previous: ReportViewRevision,
+  rebuilt: ReportViewClosureRebuildResult,
+): ReportViewRevision {
+  const previousClosure = previous.closure;
+  if (previousClosure === undefined) {
+    throw new TypeError("a closure session lost the last-good closure");
+  }
+  if (rebuilt.kind === "execution") {
+    return closureRevision(
+      previous.revision + 1,
+      rebuilt.closure,
+      rebuilt.theme ?? previous.theme,
+      rebuilt.watchInputs ?? previous.watchInputs,
+    );
+  }
+  // Theme-only: the exact validated closure (both locale executions) is
+  // reused untouched; only presentation and the optional watch set change.
+  return closureRevision(
+    previous.revision + 1,
+    previousClosure,
     rebuilt.theme,
     rebuilt.watchInputs ?? previous.watchInputs,
   );

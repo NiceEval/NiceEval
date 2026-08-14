@@ -10,10 +10,12 @@ import { renderReportExecutionText } from "../report/host/presentation.ts";
 import { basalt, type ThemeDefinition } from "../report/host/node/theme.ts";
 import {
   exportStaticReport,
+  exportStaticReportViewClosure,
   type ReportExportError,
   type ReportFileSystem,
   type ReportStaticExportReceipt,
 } from "../report/host/static.ts";
+import type { ViewRevisionClosure } from "../report/host/view-closure.ts";
 import type { ViewScanOptions } from "./data.ts";
 import type { Effect } from "effect";
 
@@ -25,6 +27,12 @@ export interface SiteFile {
 
 export interface SitePlan {
   readonly execution: ReportExecution;
+  /**
+   * The validated bilingual closure a site plan may carry. When present,
+   * publication writes one English canonical page per ordinary route and the
+   * closed zh-CN host data from the same closure.
+   */
+  readonly closure?: ViewRevisionClosure;
   /** A site is fixed to the same closed Theme as its source view revision. */
   readonly theme: ThemeDefinition;
   readonly files: readonly SiteFile[];
@@ -32,6 +40,7 @@ export interface SitePlan {
 
 export interface SitePlanOptions {
   readonly execution?: ReportExecution;
+  readonly closure?: ViewRevisionClosure;
   readonly theme?: ThemeDefinition;
 }
 
@@ -40,7 +49,7 @@ export function planSite(
   options: ViewScanOptions = {},
   site: SitePlanOptions = {},
 ): SitePlan {
-  const execution = site.execution ?? options.execution;
+  const execution = site.execution ?? site.closure?.en ?? options.execution;
   if (execution === undefined) {
     throw new Error("A static Report site requires a completed ReportExecution.");
   }
@@ -51,6 +60,7 @@ export function planSite(
   );
   return Object.freeze({
     execution,
+    ...(site.closure === undefined ? {} : { closure: site.closure }),
     theme,
     files: Object.freeze([
       Object.freeze({
@@ -68,11 +78,18 @@ export function planSite(
   });
 }
 
-/** Publication stays Effect-native and writes the plan's fixed execution once. */
+/**
+ * Publication stays Effect-native. A closure plan writes one English
+ * canonical HTML page per ordinary route plus the closed zh-CN host data; a
+ * single-execution plan keeps the legacy low-level export.
+ */
 export function writeSite(
   plan: SitePlan,
   out: string,
 ): Effect.Effect<ReportStaticExportReceipt, ReportExportError, ReportFileSystem> {
+  if (plan.closure !== undefined) {
+    return exportStaticReportViewClosure({ closure: plan.closure, out, theme: plan.theme });
+  }
   return exportStaticReport({ execution: plan.execution, out, theme: plan.theme });
 }
 

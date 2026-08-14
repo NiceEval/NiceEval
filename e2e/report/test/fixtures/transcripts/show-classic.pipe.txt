@@ -12,7 +12,7 @@ Attempts    Eval results           Total cost
                                    Cost available for 24/27
                                    attempts
 
-Last run · {{timestamp}}
+Run range · {{timestamp}} – {{timestamp}}
 
 Leaderboard
             Pass rate(%){{pad:19}}

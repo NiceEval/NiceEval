@@ -15,7 +15,7 @@ export type {
   ReportViewRequest,
 } from "../report/host/node.ts";
 
-export { exportStaticReport, ReportFileSystem } from "../report/host/static.ts";
+export { exportStaticReport, exportStaticReportViewClosure, ReportFileSystem } from "../report/host/static.ts";
 export type {
   ReportExportError,
   ReportExportExecutionProblem,
@@ -27,9 +27,12 @@ export type {
   ReportStaticExportReceipt,
 } from "../report/host/static.ts";
 
-export { openReportViewSession } from "../report/host/view-session.ts";
+export { openReportViewClosureSession, openReportViewSession } from "../report/host/view-session.ts";
 export type {
+  OpenReportViewClosureSessionInput,
   OpenReportViewSessionInput,
+  ReportViewClosureRebuild,
+  ReportViewClosureRebuildResult,
   ReportViewOpenError,
   ReportViewProblem,
   ReportViewRebuildFailure,
@@ -38,6 +41,12 @@ export type {
   ReportViewSessionClosed,
   ReportViewState,
 } from "../report/host/view-session.ts";
+export { isViewRevisionClosure, makeViewRevisionClosure } from "../report/host/view-closure.ts";
+export type {
+  ReportViewClosureError,
+  ReportViewClosureInvalid,
+  ViewRevisionClosure,
+} from "../report/host/view-closure.ts";
 
 export {
   openViewServer,

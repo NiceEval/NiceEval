@@ -275,11 +275,11 @@ export const SampleSummary = defineComponent<{ readonly input?: Sample }>((props
   const costNote = totalCost.samples < totalCost.total
     ? `Cost available for ${totalCost.samples}/${totalCost.total} attempts`
     : undefined;
-  const lastRun = scope.latestRunAt === null
-    ? undefined
-    : reportParagraph([
-      reportText(`Last run · ${formatInstant(scope.latestRunAt, scope.locale)}`),
-    ]);
+  const runRange = reportParagraph([
+    reportText(
+      `${localize(scope, { en: "Run range", "zh-CN": "运行范围" })} · ${formatRunAt(scope.earliestRunAt, scope.locale)} – ${formatRunAt(scope.latestRunAt, scope.locale)}`,
+    ),
+  ]);
   return [
     reportGrid({
       cells: [
@@ -322,10 +322,14 @@ export const SampleSummary = defineComponent<{ readonly input?: Sample }>((props
         }),
       ],
     }),
-    ...(lastRun === undefined ? [] : [lastRun]),
+    runRange,
   ];
 });
 SampleSummary.displayName = "SampleSummary";
+
+function formatRunAt(value: number | null, locale: Sample["locale"]): string {
+  return value === null ? "—" : formatInstant(value, locale);
+}
 
 export const Bars = defineComponent<ClassicBarsProps>((props, ctx): ReportBlock => {
   const points = sortPoints(props.points, props.sort);
@@ -363,6 +367,12 @@ export interface ClassicScatterProps {
   readonly input?: Sample;
 }
 
+const EXPERIMENT_SCATTER_DIRECTIONS = Object.freeze({
+  costUSD: "lower",
+  passRate: "higher",
+  totalScore: "higher",
+} as const);
+
 export const ExperimentScatter = defineComponent<ClassicScatterProps>((props, ctx) => {
   const scope = props.input ?? ctx.scope;
   const composition = scoringComposition(scope.units);
@@ -387,7 +397,9 @@ function experimentScatter(scope: Sample, reading: "passRate" | "totalScore"): R
       ? localize(scope, { en: "Scores", "zh-CN": "成绩" })
       : localize(scope, { en: "Experiments", "zh-CN": "实验" }),
     xLabel: "costUSD",
+    xBetter: EXPERIMENT_SCATTER_DIRECTIONS.costUSD,
     yLabel: reading,
+    yBetter: EXPERIMENT_SCATTER_DIRECTIONS[reading],
     connect,
     series: [...grouped.entries()].sort((left, right) => compareText(left[0], right[0])).map(([label, points]) =>
       Object.freeze({

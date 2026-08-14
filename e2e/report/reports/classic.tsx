@@ -13,6 +13,7 @@ import {
   experiment,
   passRate,
 } from "niceeval/report";
+import type { GroupFunction } from "niceeval/report";
 import {
   standardAttemptPage,
   standardAttemptsPage,
@@ -34,8 +35,9 @@ const MemoryBenchHero = defineComponent(() => (
 ));
 
 const Leaderboard = defineComponent(async (_props, ctx) => {
+  const memory: GroupFunction = (subject) => String(subject.run.experiment?.flags?.memory ?? "unknown");
   const leaderboard = await aggregate(ctx.scope, {
-    by: { experiment },
+    by: { experiment, memory },
     values: { passRate, costUSD },
   });
   const ranked = [...leaderboard].toSorted(
@@ -47,6 +49,7 @@ const Leaderboard = defineComponent(async (_props, ctx) => {
       points={ranked}
       x="experiment"
       y="passRate"
+      color="memory"
       sort={{ field: "passRate", direction: "desc" }}
       layout="horizontal"
     />

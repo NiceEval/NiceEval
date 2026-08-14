@@ -24,6 +24,25 @@ CLI / Node runtime
 
 Report 作者只理解两件事：需要哪些 `RecordProjection`，以及怎样把 projected values / derived values 包装成页面或下载。作者 callback 看不到 `RecordReader`、root、Scope、Effect、path、owner lookup、compiled plan 或 route expansion。
 
+## Locale 与正文
+
+```ts
+type ReportLocale = "en" | "zh-CN";
+
+type LocalizedText =
+  | string
+  | { readonly en: string; readonly "zh-CN": string };
+```
+
+作者用 `LocalizedText` 声明会随界面语言变化的标题、标签与说明。单个 string 在两个 locale 中
+保持相同。host 在执行 Report 时选定一个 `ReportLocale`，并把所有 `LocalizedText` 转为该 locale 的
+string。classic callback 会从只读 `Sample.locale` 得知本次闭合使用的 locale，但浏览器请求和语言按钮
+不会直接调用 callback；host 会拒绝两种 locale 中发生 route、identity、数值、coverage 或状态分叉的结果。
+
+因此每份 `ReportExecution` 只保存一个 locale 的正文。Sample、数值、coverage、问题、row identity、
+route 与 entity target 不是两份 locale 数据；它们是同一份 execution 的非本地化业务载荷。browser host
+在自己的 `ViewRevisionClosure` 中配对两个 locale execution，具体发布规则见 [Architecture](architecture.md#本地化-execution-与-view-revision)。
+
 ## Classic facade
 
 `niceeval/report` 的公开作者面是 0.12 经典面。页面 `render(sample)` 可以直接组合内置组件；可复用业务组件使用 `defineComponent((props, ctx) => ...)`，并从 `ctx.scope` 取得当前 Sample。需要自定义投影或计算的作者继续使用下文低层 projection API。两条路径共享同一个 `ReportExecution`。
@@ -60,7 +79,10 @@ declare const defineReport: (definition: {
 }) => Report;
 ```
 
-`render(sample)` 接收 host 一次投影后构造的深冻结 `Sample`，返回受控 JSX 树。`Sample` 类型从 `niceeval/record` 导入；它没有 reader、path 或 Record I/O。
+`render(sample)` 接收 host 一次投影后构造的深冻结 `Sample`，返回受控 JSX 树。`Sample` 类型从 `niceeval/record` 导入；它没有 reader、path 或 Record I/O。locale 在 host 创建 execution 时已经选定；`render` 不会因语言切换再次调用。
+
+classic 的 page / Section 标题、Hero 的 title / description / link label 与 logo alt 都接受
+`LocalizedText`。闭合 `ReportDocument` 保存已经选定 locale 的 string，不保留作者声明的两种文本。
 
 已有 React 报告可以保留 `jsx: "react-jsx"`；NiceEval 会接收 React 产出的 element，但仍拒绝原生 DOM 与未包装组件。不想引入 React runtime 的报告可在自己的 `tsconfig.json` 使用 `jsx: "react-jsx"` 与 `jsxImportSource: "niceeval/report"`，改走包内受控 JSX runtime。两种写法形成同一棵 classic element tree。
 
@@ -123,7 +145,7 @@ trusted TS module 本身不是 sandbox；module 仍可以 import `node:fs` 或�
 | `Section` | 带标题的块。 |
 | `Hero` | 页首摘要块；`title`、`logo`、`description` 与 `links`。链接只接受绝对 https；logo 只接受绝对 https 或 `data:image`。host 只序列化，不 fetch。 |
 | `SampleSummary` | 当前 Sample 概况：实验、Eval、attempt 与 coverage。 |
-| `Bars` | 柱状图；`layout="horizontal"` 呈现横向柱状图，points 来自 `aggregate` 行。 |
+| `Bars` | 柱状图；`layout="horizontal"` 呈现横向柱状图，points 来自 `aggregate` 行。`color` 指向的具名 series 形成与柱体纹理、颜色一致的可访问图例。 |
 | `ExperimentScatter` | 按 Experiment 的散点；`input={sample}` 传入同一份闭合 Sample。对应 experiment 页已展开时点可下钻，否则保持纯图形。 |
 | `ExperimentTable` | 实验级读数表；`input={sample}` 传入同一份闭合 Sample。输出显式的 Experiment → group/eval → Attempt 父子拓扑与可选实体 target；终端缩进只是该拓扑的呈现结果。 |
 | `Grid` / `Stat` / `Table` | 排版原语：格网、读数格、单元格表。 |
@@ -860,6 +882,7 @@ interface ReportNavigationItem {
 }
 
 interface ReportExecution {
+  readonly locale: ReportLocale;
   readonly reportId: ReportId;
   readonly sample: AnalysisSample;
   readonly projections: readonly ReportProjectionSummary[];
@@ -872,7 +895,7 @@ interface ReportExecution {
 }
 ```
 
-Execution 不含 reader、root、path、Scope、Stream、callback 或 projector token。Calculation value 以原值保存在同一进程的 execution 中；host 不重新编码、不引入 wire 形状。页面与 download renderer 按 component ID 取回 typed result。
+Execution 不含 reader、root、path、Scope、Stream、callback 或 projector token。它只含 `locale` 选定后的正文，不含另一个 locale 的文档或浏览器 `ViewData`。Calculation value 以原值保存在同一进程的 execution 中；host 不重新编码、不引入 wire 形状。页面与 download renderer 按 component ID 取回 typed result。
 
 `ReportProjectionId` 与 `ReportProblemId` 都是 bounded uint32、从 0 开始连续。Projection IDs 按 canonical declaration traversal 分配；problem IDs 按 stable execution traversal 第一次发现问题的顺序分配。同一 unique projection cache problem 只分配一次。
 
@@ -924,7 +947,6 @@ Library 不调用 `Effect.runPromise`，也不建立私有 runtime。CLI / appli
 const execution = yield* executeReport({ sampleHandle, report });
 
 yield* showReport({ execution });
-yield* exportStaticReport({ execution, out });
 ```
 
 ### 从 current Record 直接执行
@@ -933,7 +955,7 @@ yield* exportStaticReport({ execution, out });
 `AnalysisSampleHandle` 并完成 execution。
 
 `Effect.scoped` 在返回前释放 reader 与其 maintenance lease。返回的 `ReportExecution`
-可以在 Scope 外继续交给 show、view 或 static export。
+可以在 Scope 外继续交给 show，或作为 host 创建 view revision 的输入。
 
 ```ts
 declare const executeReportFromRecord: (input: {
@@ -1005,15 +1027,21 @@ declare const openNodeReportView: (
 >;
 ```
 
+低层 `openNodeReportView` / `openReportViewSession` 保留单个 `ReportExecution` 的 host 组合入口；
+它用于已经闭合为英语 execution 的既有调用方。CLI 的 `niceeval view` 使用新增的
+`openReportViewClosureSession`，其 revision 原子保存通过验证的 `ViewRevisionClosure`，并把英语
+execution 暴露为只读 alias。两种 session 都不接收可由作者构造的浏览器数据对象；没有 closure 的
+legacy revision 只服务英语，也不会伪造简体中文切换。
+
 热重载行为：
 
-- 每次 rebuild 产生一份新的 fixed `ReportExecution`；
-- 完整成功后才替换 current revision，并清除 lastProblem；
-- 失败保留 last-good execution，替换 bounded lastProblem；
-- 每个 revision 仍是固定的一次 `ReportExecution`。热重载因为变化会创建下一份 execution，而不是让同一份 execution 偷偷重读；
+- 每次 rebuild 用同一份 frozen inputs 产生 `en` 与 `zh-CN` execution；
+- 两份 execution 同构后才替换 current revision，并清除 lastProblem；
+- 失败保留 last-good revision，替换 bounded lastProblem；
+- 每份 execution 都是固定值。热重载创建下一组 execution，不让已经发布的 execution 偷偷重读；
 - watch 的输入闭集是 Record root、Report / Theme module 及其静态 import、`niceeval.config.ts`。
 
-`NodeReportViewHost` 是可替换的高层 service。官方 Live Layer 内部组合 watcher、server 与 module loader；父调用者不提供或传入 Worker 的 Record service object。Current-process `executeReport` 仍支持调用方自己的 Record Layers。Node ESM module cache 与 watcher 细节由 host 决定，本契约不指定 Worker、bundler 或 wire 形状。
+HTTP request 与 client interaction 只读取 `ReportViewRevision`。它们不调用 Report callback，也不读取 Record。`NodeReportViewHost` 是可替换的高层 service。官方 Live Layer 内部组合 watcher、server 与 module loader；父调用者不提供或传入 Worker 的 Record service object。Current-process `executeReport` 仍支持调用方自己的 Record Layers。Node ESM module cache 与 watcher 细节由 host 决定，本契约不指定 Worker、bundler 或 wire 形状。
 
 ## Static export
 
@@ -1026,18 +1054,30 @@ declare const exportStaticReport: (input: {
   ReportExportError,
   ReportFileSystem
 >;
+
+declare const exportStaticReportViewClosure: (input: {
+  readonly closure: ViewRevisionClosure;
+  readonly out: AbsoluteDirectoryPath;
+}) => Effect.Effect<
+  ReportStaticExportReceipt,
+  ReportExportError,
+  ReportFileSystem
+>;
 ```
 
-Static exporter 只消费一个已完成 execution：
+`exportStaticReport` 保留单 execution 的低层导出契约。
+CLI 的 `niceeval view --out` 使用 `exportStaticReportViewClosure`。
+它消费一个已验证的 `ViewRevisionClosure`，写出两种 locale 对应的 host data，
+却只为每条 ordinary canonical route 写一份英语 HTML：
 
 1. preflight execution problems、semantic tree、route、download、limits 与 closure；任一 execution problem 整体不发布；
 2. 对这一次 invocation 唯一地 prepare `out`：不存在时创建空目录；
 3. 已存在（包括前次失败留下、没有 `complete` 的目录）在写出首字节前返回 `target-exists`；
-4. 向 `out` 写出 HTML、host-data、downloads、manifest 与 built-in runtime，host files 落在保留 namespace `_niceeval`；
+4. 向 `out` 写出英语 HTML、两种 locale 的 host-data、downloads、manifest 与 built-in runtime，host files 落在保留 namespace `_niceeval`；
 5. 全部文件写出后，最后写入零字节 `complete` marker；
 6. sync 目录后返回 receipt。
 
-Recorded-data problems 可以导出，并由所有页面不可关闭的 built-in problems surface 显示。目标已存在返回 `target-exists`，不删除或替换既有内容。
+禁用 JavaScript 时英语 HTML 已含完整正文、层级与 ordinary href。runtime 只在原页面切换 closure 中的本地化文本，不新建 locale route、复制 canonical route 或读取 Record。Recorded-data problems 可以导出，并由所有页面不可关闭的 built-in problems surface 显示。目标已存在返回 `target-exists`，不删除或替换既有内容。
 
 中断或失败可能留下没有 `complete` marker 的目录。host 以缺失的 marker 识别 incomplete output，提示用户删除后重试。本契约不承诺原子目录发布，也不依赖原生 rename 原语。
 

@@ -61,11 +61,19 @@ export type {
   ViewOptions,
 } from "../../view/server.ts";
 export type {
+  OpenReportViewClosureSessionInput,
   OpenReportViewSessionInput,
+  ReportViewClosureRebuild,
+  ReportViewClosureRebuildResult,
   ReportViewExecutionRebuild,
   ReportViewRebuild,
   ReportViewThemeRebuild,
 } from "./view-session.ts";
+export type {
+  ReportViewClosureError,
+  ReportViewClosureInvalid,
+  ViewRevisionClosure,
+} from "./view-closure.ts";
 
 /** Node host request after its loader/watcher has closed over all live inputs. */
 export type ReportViewRequest = OpenReportViewSessionInput;

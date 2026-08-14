@@ -201,7 +201,11 @@ export interface ReportScatter {
   readonly type: "scatter";
   readonly title: string;
   readonly xLabel: string;
+  /** Direction of improvement for the x metric; renderers must not infer it from a label. */
+  readonly xBetter: "higher" | "lower";
   readonly yLabel: string;
+  /** Direction of improvement for the y metric; renderers must not infer it from a label. */
+  readonly yBetter: "higher" | "lower";
   readonly connect: boolean;
   readonly series: readonly {
     readonly label: string;
@@ -532,7 +536,9 @@ export function reportScatter(input: Omit<ReportScatter, "type">): ReportScatter
     type: "scatter" as const,
     title: input.title,
     xLabel: input.xLabel,
+    xBetter: input.xBetter,
     yLabel: input.yLabel,
+    yBetter: input.yBetter,
     connect: input.connect,
     series: Object.freeze(input.series.map((series) => Object.freeze({
       label: series.label,
@@ -1165,10 +1171,17 @@ function validateScatter(
   state: ValidationState,
   path: readonly (string | number)[],
 ): void {
-  exactFields(record, ["type", "title", "xLabel", "yLabel", "connect", "series"], state, path);
+  exactFields(
+    record,
+    ["type", "title", "xLabel", "xBetter", "yLabel", "yBetter", "connect", "series"],
+    state,
+    path,
+  );
   validateString(field(record, "title"), state, pathFor(path, "title"));
   validateString(field(record, "xLabel"), state, pathFor(path, "xLabel"));
+  validateScatterBetter(field(record, "xBetter"), state, pathFor(path, "xBetter"));
   validateString(field(record, "yLabel"), state, pathFor(path, "yLabel"));
+  validateScatterBetter(field(record, "yBetter"), state, pathFor(path, "yBetter"));
   if (typeof field(record, "connect") !== "boolean") {
     issue(state, "chart", pathFor(path, "connect"), "scatter connect must be a boolean");
   }
@@ -1217,6 +1230,16 @@ function validateScatter(
       }
     });
   });
+}
+
+function validateScatterBetter(
+  value: unknown,
+  state: ValidationState,
+  path: readonly (string | number)[],
+): void {
+  if (value !== "higher" && value !== "lower") {
+    issue(state, "chart", path, "a scatter better direction must be higher or lower");
+  }
 }
 
 function validateTreeTable(
@@ -1866,7 +1889,9 @@ function cloneBlock(block: ReportBlock): ReportBlock {
       return reportScatter({
         title: block.title,
         xLabel: block.xLabel,
+        xBetter: block.xBetter,
         yLabel: block.yLabel,
+        yBetter: block.yBetter,
         connect: block.connect,
         series: block.series,
       });

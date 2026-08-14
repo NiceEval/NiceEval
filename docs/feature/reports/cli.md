@@ -160,7 +160,8 @@ niceeval view --host # 显式监听全部 IPv4 接口
 niceeval view --run 01H... --page /attempts/attempt-01h... --no-open
 ```
 
-`view` 打开一个 scoped `ReportViewSession`。classic 固定 sample pages 按作者声明顺序形成唯一 tablist；tab 的稳定 identity、本地化标题、exact route 与导航可见性来自当前成功 revision 的 `ReportExecution`，不能从 page ID、route 排序或页面 DOM 反推。PageFamily 不进入 tablist，只提供已经闭合的详情 route。
+`view` 打开一个 scoped `ReportViewSession`。每个成功 revision 都是 host 私有的
+`ViewRevisionClosure`，其中有来自同一份 frozen selection、Report、Config 与 Theme closure 的英语和简体中文 execution。classic 固定 sample pages 按作者声明顺序形成唯一 tablist；tab 的稳定 identity、标题、exact route 与导航可见性来自所选 locale 的 `ReportExecution`，不能从 page ID、route 排序或页面 DOM 反推。PageFamily 不进入 tablist，只提供已经闭合的详情 route。
 
 完全省略 `--host` 时，server 只监听 `127.0.0.1`。显式地址交给 Node 绑定；具体 hostname / IP
 只公布该地址，`0.0.0.0` 会公布 `127.0.0.1` 与启动时可见的非 internal IPv4 地址，`::` 则公布
@@ -175,17 +176,34 @@ Record canonical ID 不能直接拼 route：Report 作者必须用 `reportInstan
 
 终端 Experiment Table 为了不让完整 `@AttemptId` 撑宽整张表，只显示带省略号的定宽标签；这是呈现摘要，不是可输入的 prefix locator。详情页、链接目标与需要复制的命令输入仍使用完整 `@AttemptId`。
 
-每个成功 revision 固定包含 Report / Config / Theme source snapshot、core-only `AnalysisSample` 与一个 immutable `ReportExecution`。
+### Classic 页面与语言
+
+页面顶部由 package-owned NiceEval 品牌 chrome 和英语、简体中文语言控件组成。控件只选择当前
+`ViewRevisionClosure` 中对应 locale 的正文；它不改变 Sample、业务数值、route、详情 target 或 selection。
+
+Hero 显示作者声明的 logo、标题、说明与外链。页面随后显示 Sample metadata、coverage、问题状态和主读数，
+再以 `Bars`、`ExperimentScatter` 与 `ExperimentTable` 呈现相同的闭合业务数据。具名 Bars series 以与柱体
+纹理、颜色一致的可访问图例出现。文字与表格必须承载图形
+表达的数值、状态和实体关系。
+
+`ExperimentTable` 的筛选只检查已渲染 hierarchy 的可见文本。匹配的行及其祖先留下；清空条件立即恢复完整
+已渲染 hierarchy。没有匹配项时页面提供可访问的空结果。筛选不会修改 selection、Report execution、route
+或 Record 读取。禁用 JavaScript 时筛选不会隐藏任何行，完整 hierarchy、原生 disclosure 与 href 保持可用。
+
+窄屏按 chrome、Hero、metadata、读数、图形和表格的阅读顺序排布；主读数保持两列卡片，
+横向 Bars 的标签、柱体与数值仍在同一行，其余主要区块单列展开。页面不能横向溢出；宽表只在自己的可访问滚动区域内横向滚动。
+
+每个成功 revision 固定包含 Report / Config / Theme source snapshot、core-only `AnalysisSample`，以及同构的英语和简体中文 `ReportExecution`。
 
 watch 闭集是 Record root、Report module 及其项目内静态 import、Theme module 与 `niceeval.config.ts`。loader 与 watcher 的具体实现属于 Node host，本契约只声明行为：
 
-- 每次 rebuild 产生一份新的 fixed `ReportExecution`；
-- 完整成功后才替换 current revision，并显示新结果；
-- 失败保留 last-good execution，并显示 bounded rebuild problem；
-- 能形成 exact `ReportExecution` + built-in problems surface 就是成功 revision。Recorded data problem，或已隔离的 projector / author / tree / route execution problem，会发布新 revision 并显式显示；
+- 每次 rebuild 在同一份 frozen inputs 上产生英语和简体中文 execution；
+- 两份 execution 同构且完整成功后才替换 current revision，并显示新结果；
+- 失败保留 last-good revision，并显示 bounded rebuild problem；
+- 两种 locale 的 execution 与 built-in problems surface 都能形成时，才是成功 revision。Recorded data problem，或已隔离的 projector / author / tree / route execution problem，会发布新 revision 并显式显示；
 - module / config / theme 无法 load、Record / selection global typed error、limit 或 execution envelope 无法形成时，保留 last-good 并产生 bounded rebuild summary。
 
-HTTP request、页面打开与刷新不触发新的 Record I/O。Record、Report 或影响选择的 Config 变化产生新的 execution；Theme-only 变化可以复用同一个 immutable execution，再发布新的 view revision。
+HTTP request、页面打开、刷新、语言切换、筛选、tab、disclosure 与 dialog 不触发作者 callback 或新的 Record I/O。Record、Report 或影响选择的 Config 变化产生新的 execution；Theme-only 变化可以复用同一组 immutable execution，再发布新的 view revision。
 
 web renderer 与 `show` 从同一棵 semantic tree 读取。图表、颜色与交互只能增强已有文字、表格、数值和状态，不能改变分母或发起新的 Attachment 读取。
 
@@ -200,9 +218,9 @@ niceeval view --report ./reports/summary.ts --out ./report-site
 niceeval view --run 01H... --out ./shared-site --no-open
 ```
 
-`--out` 不启动 watcher 或长期 server。它构造一个固定 `ReportExecution`，穷尽全部 PageFamily instances、routes、downloads 与 semantic trees，再导出自包含静态站。
+`--out` 不启动 watcher 或长期 server。它在同一份 frozen inputs 上构造英语和简体中文 execution，验证同构后形成固定 `ViewRevisionClosure`，穷尽全部 PageFamily instances、routes、downloads 与 semantic trees，再导出自包含静态站。
 
-export 只写这个 execution 的既有结果、当前 host-data、downloads、manifest 与内建精确 runtime。Report module 不能注入任意 script、style、font、worker、WASM、DOM 或文件 path。Hero 外链是唯一 URL 输入，只接受绝对 https；export 只把 href 序列化进页面，不 fetch，站内核心内容不依赖任何 URL 才能显示。
+export 只写这个 closure 的既有结果、当前 host-data、downloads、manifest 与内建精确 runtime。每条 ordinary canonical route 只生成一份英语 HTML；它是无 JavaScript 时的完整页面。runtime 只在原 route 切换到 closure 中的简体中文文本，不生成 locale route 或复制 canonical 页面。Report module 不能注入任意 script、style、font、worker、WASM、DOM 或文件 path。Hero 外链是唯一 URL 输入，只接受绝对 https；export 只把 href 序列化进页面，不 fetch，站内核心内容不依赖任何 URL 才能显示。
 
 执行顺序：
 

@@ -26,14 +26,43 @@ ProjectedSample（exhaustive logical entries + coverage + Attachment states）
           ▼
 closed semantic validation
           ▼
-ReportExecution（host-owned、immutable、self-contained）
-          ├─ show
-          ├─ one fixed view revision
-          └─ static export
+ReportExecution（host-owned、immutable、self-contained、单一 locale）
+          ├─ show（英语）
+          └─ ViewRevisionClosure（host-private、英语 + 简体中文 execution）
+              ├─ one fixed view revision
+              └─ static export
 ```
 
 classic facade 与低层 projection API 是同一个管线的两个作者入口。facade 声明固定 projection plan，host 只投影一次，构造深冻结 `Sample`，再经同一条 fixed-page callback 调用 `page.render(sample)`。
 展开结果与低层页面的输出汇入同一个 closed semantic validation 与 `ReportExecution`。`classic-dashboard` 只是 presentation profile，不存在第二套数据面或渲染面。
+
+## 本地化 execution 与 view revision
+
+每份 `ReportExecution` 只对应一个 locale。它保存已经选择该 locale 的正文、导航标题与 package 文案，
+以及当前 Report 的业务数值、状态、层级与 route；它不保存另一语言的正文，也不保存浏览器专用的数据模型。
+CLI 的文字面使用英语 execution。
+
+browser host 私有的 `ViewRevisionClosure` 绑定同一份 frozen selection、Report、Config 与 Theme
+closure。它在这组输入上分别生成 `en` 与 `zh-CN` 的 `ReportExecution`，并在发布前验证二者同构。
+host 不把这个 closure、locale 配对或构造过程暴露给 Report 作者。
+
+同构验证检查 fixed page 与 PageFamily route 集、导航顺序和可见性、semantic node 形状、层级 row identity、
+实体 target、数值、coverage、状态与 problems。只有 `LocalizedText` 和 package-owned 文案可以随 locale
+变化。任何缺页、route 冲突、业务载荷差异或 callback 失败都使本次 rebuild 失败。
+
+host 只在两份 execution 完成并通过验证后，原子替换 current revision。失败时 current revision 保持
+last-good，页面只增加有界的 rebuild problem；host 不发布单语言、半完成或混合 revision。
+
+HTTP request、页面刷新、语言切换、tab、dialog、disclosure 与表格筛选都只读取当前
+`ViewRevisionClosure`。它们不执行作者 callback，不读取 Record，也不重新计算 Sample、projection、Calculation
+或页面 topology。Record I/O 与作者 callback 只发生在 revision build。
+
+静态导出消费同一份已经闭合的 `ViewRevisionClosure`。每条 ordinary canonical route 只有一份英语 HTML，
+所以禁用 JavaScript 仍有完整页面、层级和详情 href。内建渐进增强可以在原页面切换到 closure 中的简体中文文本，
+但不得新建 locale route、复制 canonical 页面或请求新的业务数据。
+
+浏览器 host 可以采用 0.12 的 chrome、CSS 与机械渐进增强。它不得引入 React `ViewData`、旧
+`Record/data.ts` 或旧 renderer，因为这些路径会形成平行的数据或业务渲染面。
 
 这条链包含三种不同派生：
 
@@ -115,7 +144,7 @@ Host 在作者 callback 之前汇总 recorded-data problems，并在 callback �
 
 facade 的固定 projection plan 声明 evaluation plan、verdict、kind-gated score、usage 与 timing 五条官方投影。Score 对 Pass Eval 为 not-applicable；对 Score Eval 为 required。host 对 Sample 投影一次，构造深冻结 `Sample`，再调用 `page.render(sample)` 展开受控 JSX 树。
 
-展开结果是树而不是数据访问：`render(sample)` 的时间在 projection 之后，I/O 已经闭合。`aggregate` 从这份已投影值分组，不再请求新的 Attachment。组件树与低层页面的输出进入同一个 closed validation，形成同一个 `ReportExecution`；show 文本、live view 与 static export 消费同一份 execution。公开 `show --json` 与 `--report` 互斥；显式 `--run` 的默认 membership Report、live host 与 static export 使用 `niceeval.report-show/v1`。
+展开结果是树而不是数据访问：`render(sample)` 的时间在 projection 之后，I/O 已经闭合。`aggregate` 从这份已投影值分组，不再请求新的 Attachment。组件树与低层页面的输出进入同一个 closed validation，形成单 locale `ReportExecution`；show 消费英语 execution，live view 与 static export 消费同一份 `ViewRevisionClosure`。公开 `show --json` 与 `--report` 互斥；显式 `--run` 的默认 membership Report、live host 与 static export 使用 `niceeval.report-show/v1`。
 
 ### selection-origin
 
@@ -165,7 +194,7 @@ Semantic route 与 filesystem path 分开。Route / download constructor 固定 
 - 每个 projection、Calculation、family、page instance 与 download 最多执行一次；
 - execution 不再持有 callback 或 resource capability。
 
-`ReportExecution` 不含 Record root、reader、Scope、path 或 projector token。show / view / static export 只消费它。
+`ReportExecution` 不含 Record root、reader、Scope、path 或 projector token。show 只消费一个 execution；view 与 static export 只消费已经验证的 `ViewRevisionClosure`，不在请求或浏览器操作期间重建 execution。
 
 ## Effect 边界与精确 Tags
 
@@ -173,14 +202,15 @@ Record / Analysis / Projection / Report host 内部一路返回 Effect。内部 
 
 Library 不调用 `Effect.runPromise`，也不建立私有 runtime。CLI / application main 只在外层调用一次 `Effect.runPromiseExit`。
 
-## 热重载 = 一系列 fixed executions
+## 热重载 = 一系列固定 revision closure
 
 ```text
 watch hint / manual refresh
             │
             ▼
 load exact Report / Config / Theme closure（Node host 负责 loader）
-select + project + calculate + render once
+select + project + calculate + render `en` / `zh-CN`
+validate both executions are isomorphic
             │
      ┌──────┴────────┐
      │ failed        │ succeeded
@@ -191,21 +221,21 @@ show problem     current revision
 
 Node ESM 模块缓存与 watcher 的具体处理是内部 Node host 的实现责任，本契约只声明行为：
 
-- 每次 rebuild 产生一份新的 fixed `ReportExecution`；
-- 完整成功后才替换 current revision 与 watcher closure；
-- 失败保留 last-good execution，并显示 bounded rebuild problem；
-- 每个 revision 仍是固定的一次 `ReportExecution`。热重载因为变化会创建下一份 execution，而不是让同一份 execution 偷偷重读。
+- 每次 rebuild 为同一份 frozen inputs 生成一组新的 locale execution；
+- 两份 execution 完整成功且同构后，才替换 current revision 与 watcher closure；
+- 失败保留 last-good revision，并显示 bounded rebuild problem；
+- 每个 revision 的每份 execution 都固定。热重载创建下一组 execution，不让已经发布的 execution 偷偷重读。
 
 ## Static export
 
-Static exporter 只消费一个已完成 execution：
+Static exporter 只消费一个已完成的 `ViewRevisionClosure`：
 
 1. preflight execution problems、semantic tree、route、download、limits 与 closure；
-2. 在 target 写入 HTML、host-data、downloads、manifest 与 built-in runtime；
+2. 为每条 ordinary canonical route 写一份英语 HTML、host-data、downloads、manifest 与 built-in runtime；
 3. 逐文件写出后，最后写入零字节 `complete` marker；
 4. 返回 receipt。
 
-Recorded-data problems 可导出；任一 execution problem 整体不发布。目标已存在返回 `target-exists`。
+英语 HTML 是禁用 JavaScript 时的完整页面。runtime 只从 closure 中选择简体中文文本；它不创建 locale route，不复制 canonical 页面，也不读取 Record。Recorded-data problems 可导出；任一 execution problem 整体不发布。目标已存在返回 `target-exists`。
 
 中断或失败可能留下没有 marker 的目录。host 以缺失的 `complete` marker 识别 incomplete output，提示用户删除后重试；本契约不承诺原生原子目录发布。
 
@@ -220,6 +250,7 @@ Recorded-data problems 可导出；任一 execution problem 整体不发布。�
 - `Sample` 深冻结且 metadata 携带 `metadataOrigin` 标注出处；history 数据不与当前项目字段混合。
 - Hero 外链只接受绝对 https，host 只序列化不 fetch；缺失 cost / timing 不补 0。
 - 每个 ReportExecution immutable，所有 declaration / consumer 最多执行一次。
-- 热重载发布新 revision，不修改旧 execution。
+- `ViewRevisionClosure` 只在 `en` 与 `zh-CN` execution 同构时发布；失败不修改旧 revision。
+- HTTP request 与 package-owned interaction 只读取 current closure，不执行 callback 或 Record I/O。
 - web / text / static 从同一 closed semantic tree 与 host-owned problems 派生。
 - Sample denominator 不是 Calculation 的业务 denominator；业务口径由 Calculation value 返回。

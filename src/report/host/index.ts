@@ -8,12 +8,25 @@ export type {
 export {
   executeReportForAttemptFromRecord,
   executeReportFromRecord,
+  executeReportViewClosureForAttemptFromRecord,
+  executeReportViewClosureFromRecord,
 } from "./from-record.ts";
 export type {
   ExecuteReportForAttemptFromRecordError,
   ExecuteReportFromRecordError,
   ExecuteReportFromRecordRequirements,
+  ExecuteReportViewClosureForAttemptFromRecordError,
+  ExecuteReportViewClosureFromRecordError,
 } from "./from-record.ts";
+export {
+  isViewRevisionClosure,
+  makeViewRevisionClosure,
+} from "./view-closure.ts";
+export type {
+  ReportViewClosureError,
+  ReportViewClosureInvalid,
+  ViewRevisionClosure,
+} from "./view-closure.ts";
 export type { ReportExecution } from "../execution/model.ts";
 export {
   ReportConsole,
@@ -28,9 +41,12 @@ export type {
   ReportShowRenderError,
   ShowReportInput,
 } from "./presentation.ts";
-export { openReportViewSession } from "./view-session.ts";
+export { openReportViewClosureSession, openReportViewSession } from "./view-session.ts";
 export type {
+  OpenReportViewClosureSessionInput,
   OpenReportViewSessionInput,
+  ReportViewClosureRebuild,
+  ReportViewClosureRebuildResult,
   ReportViewOpenError,
   ReportViewProblem,
   ReportViewRebuildFailure,
@@ -42,7 +58,7 @@ export type {
   ReportViewState,
   ReportViewThemeRebuild,
 } from "./view-session.ts";
-export { exportStaticReport, ReportFileSystem } from "./static.ts";
+export { exportStaticReport, exportStaticReportViewClosure, ReportFileSystem } from "./static.ts";
 export type {
   ReportExportError,
   ReportExportExecutionProblem,

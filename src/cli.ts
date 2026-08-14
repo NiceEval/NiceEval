@@ -67,8 +67,10 @@ import type { ReportExecution } from "./report/execution/model.ts";
 import {
   executeReportForAttemptFromRecord,
   executeReportFromRecord,
-  exportStaticReport,
-  openReportViewSession,
+  executeReportViewClosureForAttemptFromRecord,
+  executeReportViewClosureFromRecord,
+  exportStaticReportViewClosure,
+  openReportViewClosureSession,
   ReportConsole,
   ReportFileSystem,
   showReport,
@@ -2782,6 +2784,30 @@ function executeCliReport(request: ReportCliRequest, inputs: LoadedCliReportInpu
   return execution.pipe(Effect.mapError(reportExecutionFailure));
 }
 
+/**
+ * The view-specific execution path: one scoped reader builds the validated
+ * English + Simplified Chinese closure from the same frozen selection and
+ * handle. `show` keeps the single English `executeCliReport` above.
+ */
+function executeCliReportClosure(request: ReportCliRequest, inputs: LoadedCliReportInputs) {
+  const closure = request.target.kind === "attempt"
+    ? executeReportViewClosureForAttemptFromRecord({
+      root: request.root,
+      locator: request.target.locator,
+      report: inputs.report,
+      ...(inputs.selectionOrigin === undefined ? {} : { selectionOrigin: inputs.selectionOrigin }),
+    })
+    : executeReportViewClosureFromRecord({
+      root: request.root,
+      selection: request.target.kind === "selection"
+        ? request.target.selection
+        : inputs.projectCurrentSelection!,
+      report: inputs.report,
+      ...(inputs.selectionOrigin === undefined ? {} : { selectionOrigin: inputs.selectionOrigin }),
+    });
+  return closure.pipe(Effect.mapError(reportExecutionFailure));
+}
+
 function classicOriginFromProjectCurrent(target: ProjectCurrentTarget): ClassicSelectionOrigin {
   return currentDeclarationSelectionOrigin(
     target.experiments.map((experiment) =>
@@ -2830,6 +2856,15 @@ function reportExecutionFailure(error: unknown): CliFailure {
       return usageError("record-format-unsupported\nUse a NiceEval version that supports this Record format.\n");
     case "record-migration-interrupted":
       return usageError("record-migration-interrupted\nRestore the Record from Git or a backup before retrying.\n");
+    case "report-view-closure-invalid": {
+      const reason = stringProperty(error, "reason") ?? "the English and Simplified Chinese executions are not isomorphic";
+      const path = stringPath(error);
+      return usageError(
+        path === undefined
+          ? `report-view-closure-invalid\n${reason}\n`
+          : `report-view-closure-invalid\n${reason}\n  at ${path}\n`,
+      );
+    }
     default:
       return cliFailure("execute report from Record", error);
   }
@@ -2839,6 +2874,14 @@ function stringProperty(value: unknown, key: string): string | undefined {
   if (typeof value !== "object" || value === null) return undefined;
   const candidate = Reflect.get(value, key);
   return typeof candidate === "string" ? candidate : undefined;
+}
+
+function stringPath(value: unknown): string | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const candidate = Reflect.get(value, "path");
+  if (!Array.isArray(candidate)) return undefined;
+  const segments = candidate.filter((segment): segment is string => typeof segment === "string");
+  return segments.length === 0 ? undefined : segments.join(".");
 }
 
 function stringIssues(value: unknown): readonly string[] {
@@ -2957,8 +3000,8 @@ function runViewCommand(
       catch: (cause) => cliFailure("parse view arguments", cause),
     });
     const initialInputs = yield* loadCliReportInputs(request);
-    const initial = yield* executeCliReport(request, initialInputs);
-    const page = yield* requireKnownReportPage(initial, request.page);
+    const initialClosure = yield* executeCliReportClosure(request, initialInputs);
+    const page = yield* requireKnownReportPage(initialClosure.en, request.page);
 
     if (flags.out !== undefined) {
       if (flags.out.trim() === "") {
@@ -2967,8 +3010,8 @@ function runViewCommand(
       if (flags.port !== undefined || flags.host !== undefined || flags.open === true) {
         return yield* Effect.fail(usageError("view --out does not start a server; remove --port, --host, and --open.\n"));
       }
-      const receipt = yield* exportStaticReport({
-        execution: initial,
+      const receipt = yield* exportStaticReportViewClosure({
+        closure: initialClosure,
         out: resolvePath(cwd, flags.out),
         theme: initialInputs.theme,
       }).pipe(
@@ -2983,11 +3026,11 @@ function runViewCommand(
       try: () => ({ host: viewHost(flags.host), port: viewPort(flags.port) }),
       catch: (cause) => cliFailure("parse view server arguments", cause),
     });
-    const session = yield* openReportViewSession({
+    const session = yield* openReportViewClosureSession({
       url: `http://${host.includes(":") ? `[${host}]` : host}:${port}/`,
       theme: initialInputs.theme,
       watchInputs: initialInputs.watchInputs,
-      initial: Effect.succeed(initial),
+      initial: Effect.succeed(initialClosure),
       rebuild: () => rebuildReportView(request),
     }).pipe(Effect.mapError((error) => cliFailure("open report view session", error)));
     // Watch set is owned by the session revision; openViewServer only transports
@@ -3015,18 +3058,19 @@ function runViewCommand(
 
 /**
  * A watcher signal is only a hint. Every refresh re-reads config plus its
- * fresh author graph and Record before one completed immutable revision is
+ * fresh author graph and Record, then builds the validated English +
+ * Simplified Chinese closure before one completed immutable revision is
  * published with its next recoverable watch set; a typed boundary failure is
- * logged once and leaves last-good execution and the prior watch set.
+ * logged once and leaves the last-good closure and the prior watch set.
  */
 function rebuildReportView(request: ReportCliRequest) {
   return Effect.gen(function* () {
     const inputs = yield* loadCliReportInputs(request);
-    const execution = yield* executeCliReport(request, inputs);
-    yield* requireKnownReportPage(execution, request.page);
+    const closure = yield* executeCliReportClosure(request, inputs);
+    yield* requireKnownReportPage(closure.en, request.page);
     return Object.freeze({
       kind: "execution" as const,
-      execution,
+      closure,
       theme: inputs.theme,
       watchInputs: inputs.watchInputs,
     });

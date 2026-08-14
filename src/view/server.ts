@@ -20,18 +20,26 @@ import {
   renderReportExecutionJson,
   renderReportExecutionProblemsText,
   renderReportExecutionText,
+  type ReportShowRenderError,
 } from "../report/host/presentation.ts";
 import {
-  renderReportDocumentFragment,
   renderReportLiveHtml,
+  renderReportLocaleSwitchPayload,
+  type ReportLiveLocaleRevision,
 } from "../report/host/html.ts";
+import {
+  REPORT_FRAGMENT_HEADER,
+  REPORT_LOCALE_HEADER,
+} from "../report/host/html-enhance.ts";
 import {
   openReportViewSession,
   type OpenReportViewSessionInput,
   type ReportViewOpenError,
   type ReportViewSessionClosed,
   type ReportViewSession,
+  type ReportViewState,
 } from "../report/host/view-session.ts";
+import type { ViewRevisionClosure } from "../report/host/view-closure.ts";
 import type { ThemeDefinition } from "../report/host/node/theme.ts";
 import type { ViewScanOptions } from "./data.ts";
 import { renderHtml } from "./site.ts";
@@ -363,118 +371,219 @@ function serveRequest<Requirements>(
   }
   return session.snapshot.pipe(
     Effect.flatMap((state) => {
+      // Every request reads only the current revision. Closure revisions
+      // select the locale execution as a pure lookup on the validated pair;
+      // legacy single-execution revisions serve their fixed English
+      // execution and honestly reject locale requests they cannot serve.
+      // Language switches keep the exact URL and revision; only the locale
+      // header selects the sibling execution inside the same closure. This
+      // never re-runs author callbacks, re-reads the Record, or mixes two
+      // revisions.
       const headers = Object.freeze({
         "cache-control": "no-store",
         "x-niceeval-report-revision": String(state.current.revision),
         ...(state.lastProblem === undefined ? {} : { "x-niceeval-last-rebuild-problem": "1" }),
       });
-      const hostTextPrefix = state.lastProblem === undefined
-        ? `Revision ${state.current.revision}\n\n`
-        : `Revision ${state.current.revision}\nLast rebuild failed: ${state.lastProblem.summary}\n\n`;
-      if (url.pathname === "/_niceeval/execution.json") {
-        return Effect.flatMap(
-          renderReportExecutionJson({ execution: state.current.execution }),
-          (body) => Effect.sync(() => send(request.response, 200, body, "application/json; charset=utf-8", headers)),
-        );
-      }
-      if (url.pathname === "/_niceeval/problems" || url.pathname === "/_niceeval/problems/") {
-        return Effect.sync(() => send(
-          request.response,
-          200,
-          renderHtml(`${hostTextPrefix}${renderReportExecutionProblemsText(state.current.execution)}`, state.current.theme),
-          "text/html; charset=utf-8",
-          headers,
-        ));
-      }
-      const download = downloadForPath(url.pathname, state.current.execution);
-      if (download !== undefined) {
-        return Effect.sync(() => send(
-          request.response,
-          200,
-          download.bytes,
-          downloadContentType(download.mediaType),
-          {
-            ...headers,
-            "content-disposition": "attachment",
-            "x-content-type-options": "nosniff",
-          },
-        ));
-      }
-      const canonical = canonicalPagePath(url.pathname);
-      if (
-        canonical !== undefined &&
-        canonical !== url.pathname &&
-        pageForPath(canonical, state.current.execution) !== "missing"
-      ) {
-        return Effect.sync(() => redirect(request.response, canonical, headers));
-      }
-      const page = pageForPath(url.pathname, state.current.execution);
-      if (page === "missing") {
-        return Effect.sync(() => sendText(
-          request.response,
-          404,
-          url.pathname.startsWith("/downloads/") ? "download not found" : "page not found",
-          headers,
-        ));
-      }
-      const requestedRevision = request.request.headers["x-niceeval-report-fragment"];
-      if (requestedRevision !== undefined) {
-        if (requestedRevision !== String(state.current.revision)) {
-          return Effect.sync(() => send(
+      const closure = state.current.closure;
+      const requestedLocale = requestLocale(request.request.headers);
+      if (closure === undefined) {
+        // Legacy single-execution session: English only, never faked as a
+        // bilingual closure. A zh-CN request is an honest non-2xx answer.
+        if (requestedLocale === "zh-CN") {
+          return Effect.sync(() => sendText(
             request.response,
-            409,
-            `${JSON.stringify({ revision: state.current.revision })}\n`,
-            "application/json; charset=utf-8",
+            406,
+            "this view revision has no bilingual closure; English is the only locale",
             headers,
           ));
         }
-        if (page === "fallback") {
-          return Effect.sync(() => sendText(request.response, 404, "page fragment not found", headers));
-        }
-        return Effect.sync(() => send(
-          request.response,
-          200,
-          `${JSON.stringify({
-            revision: state.current.revision,
-            title: page.document.title,
-            html: renderReportDocumentFragment({
-              document: page.document,
-              route: page.route,
-              hrefMode: "root",
-            }),
-          })}\n`,
-          "application/json; charset=utf-8",
+        return serveWithExecution(
+          request,
+          url,
+          state.current.execution,
+          state,
           headers,
-        ));
+        );
       }
-      return Effect.sync(() => send(
-        request.response,
-        200,
-        page === "fallback"
-          ? renderHtml(
-            `${hostTextPrefix}${renderReportExecutionText({ execution: state.current.execution })}`,
-            state.current.theme,
-          )
-          : renderReportLiveHtml({
-            title: page.document.title,
-            locale: state.current.execution.locale,
-            revision: state.current.revision,
-            currentRoute: page.route,
-            currentDocument: page.document,
-            navigation: liveNavigation(state.current.execution),
-            theme: state.current.theme,
-            hostMetadata: {
-              ...(state.lastProblem === undefined
-                ? {}
-                : { lastRebuildProblem: state.lastProblem.summary }),
-            },
-          }),
-        "text/html; charset=utf-8",
+      const locale = requestedLocale;
+      const execution = closure[locale];
+      return serveWithExecution(
+        request,
+        url,
+        execution,
+        state,
         headers,
-      ));
+        siblingLocaleRevision(closure, locale, url.pathname),
+      );
     }),
     Effect.catchAll(() => Effect.sync(() => sendText(request.response, 503, "report view session is closed"))),
   );
+}
+
+/** Serves one fixed execution of the current revision; `sibling` embeds the in-place language payload. */
+function serveWithExecution(
+  request: HttpRequest,
+  url: URL,
+  execution: ReportExecution,
+  state: ReportViewState,
+  headers: Readonly<Record<string, string>>,
+  sibling?: ReportLiveLocaleRevision,
+): Effect.Effect<void, ReportShowRenderError> {
+  const hostTextPrefix = state.lastProblem === undefined
+    ? `Revision ${state.current.revision}\n\n`
+    : `Revision ${state.current.revision}\nLast rebuild failed: ${state.lastProblem.summary}\n\n`;
+  if (url.pathname === "/_niceeval/execution.json") {
+    return Effect.flatMap(
+      renderReportExecutionJson({ execution }),
+      (body) => Effect.sync(() => send(request.response, 200, body, "application/json; charset=utf-8", headers)),
+    );
+  }
+  if (url.pathname === "/_niceeval/problems" || url.pathname === "/_niceeval/problems/") {
+    return Effect.sync(() => send(
+      request.response,
+      200,
+      renderHtml(`${hostTextPrefix}${renderReportExecutionProblemsText(execution)}`, state.current.theme),
+      "text/html; charset=utf-8",
+      headers,
+    ));
+  }
+  const download = downloadForPath(url.pathname, execution);
+  if (download !== undefined) {
+    return Effect.sync(() => send(
+      request.response,
+      200,
+      download.bytes,
+      downloadContentType(download.mediaType),
+      {
+        ...headers,
+        "content-disposition": "attachment",
+        "x-content-type-options": "nosniff",
+      },
+    ));
+  }
+  const canonical = canonicalPagePath(url.pathname);
+  if (
+    canonical !== undefined &&
+    canonical !== url.pathname &&
+    pageForPath(canonical, execution) !== "missing"
+  ) {
+    return Effect.sync(() => redirect(request.response, canonical, headers));
+  }
+  const page = pageForPath(url.pathname, execution);
+  if (page === "missing") {
+    return Effect.sync(() => sendText(
+      request.response,
+      404,
+      url.pathname.startsWith("/downloads/") ? "download not found" : "page not found",
+      headers,
+    ));
+  }
+  const requestedRevision = request.request.headers[REPORT_FRAGMENT_HEADER];
+  if (requestedRevision !== undefined) {
+    if (requestedRevision !== String(state.current.revision)) {
+      return Effect.sync(() => send(
+        request.response,
+        409,
+        `${JSON.stringify({ revision: state.current.revision })}\n`,
+        "application/json; charset=utf-8",
+        headers,
+      ));
+    }
+    if (page === "fallback") {
+      return Effect.sync(() => sendText(request.response, 404, "page fragment not found", headers));
+    }
+    // One payload serves both progressive-enhancement consumers: the
+    // locale switch applies the full navigation of the requested locale
+    // (and the current document when the live URL is a direct/family
+    // page), and the dialog click applies the requested page's
+    // title/html. Everything comes from the same execution inside the
+    // current closure; nothing re-reads the Record.
+    return Effect.sync(() => send(
+      request.response,
+      200,
+      `${JSON.stringify(renderReportLocaleSwitchPayload({
+        revision: state.current.revision,
+        locale: execution.locale,
+        title: page.document.title,
+        navigation: liveNavigation(execution),
+        currentRoute: page.route,
+        currentDocument: page.document,
+      }))}\n`,
+      "application/json; charset=utf-8",
+      headers,
+    ));
+  }
+  return Effect.sync(() => send(
+    request.response,
+    200,
+    page === "fallback"
+      ? renderHtml(
+        `${hostTextPrefix}${renderReportExecutionText({ execution })}`,
+        state.current.theme,
+      )
+      : renderReportLiveHtml({
+        title: page.document.title,
+        locale: execution.locale,
+        revision: state.current.revision,
+        currentRoute: page.route,
+        currentDocument: page.document,
+        navigation: liveNavigation(execution),
+        theme: state.current.theme,
+        hostMetadata: {
+          ...(state.lastProblem === undefined
+            ? {}
+            : { lastRebuildProblem: state.lastProblem.summary }),
+        },
+        // The sibling execution from the same closure lets the language
+        // control switch in place without a round trip. Same URL, same
+        // revision; the renderer never touches Record data.
+        ...(sibling === undefined ? {} : { localeRevisions: [sibling] }),
+      }),
+    "text/html; charset=utf-8",
+    headers,
+  ));
+}
+
+/**
+ * The closure's two locales are the only language inputs. The locale header
+ * drives in-place switches on the same URL and revision; anything else is
+ * English.
+ */
+function requestLocale(
+  headers: IncomingMessage["headers"],
+): "en" | "zh-CN" {
+  const raw = headers[REPORT_LOCALE_HEADER];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return value === "zh-CN" ? "zh-CN" : "en";
+}
+
+/**
+ * The already-rendered sibling locale revision of the live URL, so the
+ * embedded language control can swap localized text without a fragment
+ * round trip. A direct/family page (and every fixed page) carries its own
+ * localized document; the switch never leaves the page on the previous
+ * locale.
+ */
+function siblingLocaleRevision(
+  closure: ViewRevisionClosure,
+  locale: "en" | "zh-CN",
+  pathname: string,
+): ReportLiveLocaleRevision {
+  const siblingLocale = locale === "en" ? "zh-CN" as const : "en" as const;
+  const siblingExecution = closure[siblingLocale];
+  const siblingPage = pageForPath(pathname, siblingExecution);
+  const direct = siblingPage !== "missing" && siblingPage !== "fallback";
+  const fallbackTitle = siblingExecution.navigation[0]?.title
+    ?? siblingExecution.pages.find((candidate) => candidate.state === "rendered")?.document.title
+    ?? "NiceEval report";
+  return Object.freeze({
+    locale: siblingLocale,
+    title: direct ? siblingPage.document.title : fallbackTitle,
+    navigation: liveNavigation(siblingExecution),
+    ...(direct
+      ? { currentRoute: siblingPage.route, currentDocument: siblingPage.document }
+      : {}),
+  });
 }
 
 function liveNavigation(

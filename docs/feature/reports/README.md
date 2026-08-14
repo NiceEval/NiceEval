@@ -17,17 +17,18 @@ AnalysisSample
     ▼
 closed semantic validation
     ▼
-immutable ReportExecution
-    ├─ show
-    ├─ view revision
-    └─ static export
+immutable ReportExecution（单一 locale）
+    ├─ show（英语）
+    └─ host-private ViewRevisionClosure（英语 + 简体中文 execution）
+        ├─ view revision
+        └─ static export
 ```
 
 ## 核心心智
 
 - 经典面是唯一公开作者入口的默认形状：`defineReport({ title, pages })`、`render(sample)` 与受控 JSX；
 - facade 先声明固定 projection plan，host 只投影一次，构造深冻结 `Sample`，再调用 `page.render(sample)`；
-- 展开结果进入同一个 closed semantic validation 与 `ReportExecution`，show、view 与 static export 只消费它，不存在第二套数据或渲染真相；`classic-dashboard` 只是 presentation profile；
+- 每份 `ReportExecution` 只承载一个 locale 的正文与业务数据。show 消费英语 execution；浏览器与静态站从同一份 host-owned revision closure 选择对应语言的 execution，不存在第二套数据或渲染真相；`classic-dashboard` 只是 presentation profile；
 - classic 固定 sample pages 的稳定 identity、声明顺序、本地化标题、exact route 与导航可见性随同一份 `ReportExecution` 闭合；PageFamily 只提供详情 route，不进入顶部导航；
 - 受控 JSX 不是 raw React / DOM：原生 tag、任意 unbranded component、head、script / style / font / worker / WASM、raw HTML 与自定义 text / web 双面 renderer 都拒绝；
 - 低层 projection API 继续存在：作者用 `RecordProjection` 声明数据，用 `defineCalculation`、`definePage`、`definePageFamily`、`defineDownload` 包装结果；
@@ -66,17 +67,38 @@ Recorded-data problem 允许成功呈现，并进入不可关闭的 problems sur
 
 classic facade 的固定投影与 `passRate` 沿用同一套状态语义：skipped / missing 不伪造进分子，coverage 显式呈现；缺失 cost / timing 不补 0。
 
+## Classic 浏览器产品
+
+浏览器页面有 package-owned 的 NiceEval 品牌 chrome 与英语、简体中文语言控件。语言切换只选择
+当前 revision 中对应 locale 的既有页面文本。它不改变 Sample、选择结果、业务数值、route 或详情 target。
+
+作者的 `Hero` 位于页面首屏，保留 logo、标题、说明与安全外链。其后显示 Sample metadata、
+coverage、问题状态与主读数；主读数可以包含通过率、总分、成本或时间，但缺失值保持缺失。
+
+经典布局用 `Bars`、`ExperimentScatter` 与 `ExperimentTable` 展示同一份闭合数据。图形不能单独承载
+信息；每个数值、状态与实体关系也必须在文字或表格中可读。`Bars` 有具名 series 时显示与柱体纹理、颜色
+一致的系列图例。表格保留 Experiment → group / Eval → Attempt
+层级，详情仍使用普通 exact-route href。
+
+`ExperimentTable` 的筛选只作用于当前 `ReportExecution` 已渲染的层级。匹配行及其祖先保留，清空
+筛选条件后恢复完整层级；没有匹配项时显示可访问的空结果。筛选不改变 selection、计算、route 或数据读取。
+禁用 JavaScript 时不隐藏任何表格行，完整层级、原生 disclosure 与 href 仍可用。
+
+窄屏页面按 chrome、Hero、metadata、读数、图形与表格的阅读顺序排列；主读数保持两列卡片，
+横向柱状图的每条标签、柱体与数值仍在同一行，其余主要区块单列展开。页面本身不能产生横向溢出；需要额外宽度的表格在自己的可访问滚动区域内
+保持列标题和内容可读。
+
 ## 一次 execution、热重载与静态分享
 
-一个 `ReportExecution` 永远 immutable，每个 projection、Calculation、Page、PageFamily instance 与 Download 最多执行一次。terminal JSON、live view 与 static export 消费同一个 `ReportExecution`。
+一个 `ReportExecution` 永远 immutable，每个 projection、Calculation、Page、PageFamily instance 与 Download 最多执行一次。terminal JSON 消费英语 execution；live view 与 static export 消费同一份冻结 revision closure 中的 locale execution。
 
-`niceeval view` 保留热重载：每次 rebuild 产生一份新的 fixed `ReportExecution`，成功后原子替换 last-good，失败保留 last-good 并显示问题。loader 与 watcher 的具体实现属于 Node host，不进入本契约。
+`niceeval view` 保留热重载：每次 rebuild 在同一份 frozen selection、Report、Config 与 Theme closure 上生成英语和简体中文 execution。两者的结构与非本地化业务载荷同构后，host 才原子替换 last-good revision；失败保留 last-good 并显示问题。精确边界见 [Architecture](architecture.md#本地化-execution-与-view-revision)。
 
 classic live view 把当前 execution 中可导航的固定 sample pages 显示为一个可访问的 tab set；切换 tab 只切换这份 revision 已经渲染的页面。Experiment Table 的 Experiment → group/eval → Attempt 是 closed semantic tree 的显式父子拓扑，live 与 static 共用原生 disclosure。static 禁用 JavaScript 仍能用键盘展开并沿普通 exact-route href 打开详情。
 
 live host 只在 canonical href 之上做渐进增强：点击 Experiment 或 Attempt 可在具名 modal dialog 中呈现同一 revision、同一路由的 `ReportDocument`；关闭后焦点回到触发链接，当前 tab 与展开状态不丢失。直接请求、新标签页与 static export 始终使用同一个 href。revision 变化时 host 不混合旧触发页与新详情页。
 
-static export 先预检，再写出完整 closure，最后写入完成标记。中断可能留下未完成的目录；host 以缺失的完成标记识别并提示删除。本契约不承诺原子目录发布。
+static export 使用同一份 revision closure。每条 ordinary canonical route 只写一份英语 HTML，禁用 JavaScript 时该页面已完整可读；语言控件只在 JavaScript 可用时切换到同一 closure 的简体中文文本，不生成 locale route 或复制 ordinary route。export 先预检，再写出完整 closure，最后写入完成标记。中断可能留下未完成的目录；host 以缺失的完成标记识别并提示删除。本契约不承诺原子目录发布。
 
 ## 范围
 
@@ -93,7 +115,7 @@ Reports 包含：
 Reports 不包含：
 
 - Record 格式、写入、migration、reuse planning 或 analysis selection 算法；
-- 作者注入的任意 script、style、font、worker、WASM、raw HTML 或路径 loader；Hero 外链只接受绝对 https，host 只序列化不 fetch。package-owned live enhancement 只能消费当前 closed execution，不能成为第二套数据或业务 renderer；
+- 作者注入的任意 script、style、font、worker、WASM、raw HTML 或路径 loader；Hero 外链只接受绝对 https，host 只序列化不 fetch。package-owned live enhancement 只能消费当前 revision closure，不能成为第二套数据或业务 renderer；
 - 不受信任 JavaScript module 的安全沙箱；
 - durable Report result、snapshot、revision 或第二种 Record；
 - durable metadata profile attachment；future durable profile 属于边界，不是当前承诺；

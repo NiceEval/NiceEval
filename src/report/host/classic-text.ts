@@ -262,12 +262,6 @@ function axisUnit(field: string): string | undefined {
   return undefined;
 }
 
-function axisBetter(field: string): "higher" | "lower" | undefined {
-  if (field === "costUSD" || field === "durationMs" || field === "tokens") return "lower";
-  if (field === "passRate" || field === "totalScore") return "higher";
-  return undefined;
-}
-
 function axisBounds(field: string): { min?: number; max?: number } | undefined {
   if (field === "passRate") return { min: 0, max: 1 };
   if (field === "costUSD" || field === "durationMs" || field === "tokens") return { min: 0 };
@@ -300,8 +294,8 @@ export function renderScatterText(block: ReportScatter, width: number): string[]
   const plotted = groups.flatMap((group) => group.points);
   const xUnit = axisUnit(block.xLabel);
   const yUnit = axisUnit(block.yLabel);
-  const xBetter = axisBetter(block.xLabel);
-  const yBetter = axisBetter(block.yLabel);
+  const xBetter = block.xBetter;
+  const yBetter = block.yBetter;
   const xDomain = paddedAxisDomain(plotted.map((point) => point.x!), axisBounds(block.xLabel));
   const yDomain = paddedAxisDomain(plotted.map((point) => point.y!), axisBounds(block.yLabel));
 
@@ -353,9 +347,7 @@ export function renderScatterText(block: ReportScatter, width: number): string[]
     y: block.yLabel,
   });
   const blocks: string[] = [plot];
-  if (xBetter !== undefined && yBetter !== undefined) {
-    blocks.push("better → upper right");
-  }
+  blocks.push("better → upper right");
   blocks.push(values);
   const shifts = groups
     .filter((group) => group.connect && group.points.length >= 2)
