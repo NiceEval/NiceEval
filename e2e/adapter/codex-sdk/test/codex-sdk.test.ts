@@ -118,7 +118,9 @@ it("show --execution 读回 Codex SDK converter 的代表性证据", async () =>
       "m",
     ),
   );
-  expect(execution.stdout).toContain(`| ASSISTANT | \`${sentinel}\` |`);
+  expect(execution.stdout).toMatch(
+    new RegExp(`^\\s*\\d+ \\| ASSISTANT \\| ${sentinel} \\|\\s*$`, "m"),
+  );
 });
 
 it("show --timing 读回 Codex SDK converter 的 runner 阶段", async () => {
