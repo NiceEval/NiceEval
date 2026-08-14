@@ -27,4 +27,6 @@ Experiment lifecycle 只在本次 Run 至少有一条 fresh work 时激活。Gro
 
 Sandbox Plugin identity 带 attachment owner 进入物理 lifecycle identity。Eval-owned Sandbox fragment 会隔离普通 reuse pool。同一 Group 的所选成员若 fragment identity 不同，physical planning 在 create 前报 `eval-group-incompatible`，不能用第一个成员的 lifecycle 代表整组。
 
+同一份带 attachment owner 的声明 identity 还进入完整 Attempt fingerprint；owner、name、instance key、behavior revision、声明 identity、顺序或 setup/teardown 形状变化时，历史结果不能 carry。Callback 函数体仍不进入 fingerprint，行为变化需同步更新声明 identity 或显式 `--rerun all`。
+
 Runner 在调用 setup 前先把 occurrence 计入已激活前缀，因此 setup 自身失败也会得到对应 teardown。任一 setup 失败会跳过其后业务阶段；teardown 失败只追加 warning diagnostic，不能跳过剩余 teardown 或底层 finalizer。

@@ -235,6 +235,8 @@ Sandbox 复用池的键只固定物理实例共享所需的输入:
 每条 Attempt 都执行命令,所以池键不包含 prepare command 或「某条命令已经执行」的证据。
 hook callback 的函数体不进入 fingerprint，也不阻断跨 Run carry。Physical lifecycle identity 包含 SandboxLayer author hook marker，以及带 attachment owner 的 Sandbox Plugin identity。
 
+Sandbox Plugin 的 attachment owner、name、instance key、behavior revision、声明 identity、顺序与 setup/teardown 形状同时进入完整 Attempt fingerprint。任一声明身份变化都会让历史结果 carry 失配并产生 fresh slot；callback 函数体仍是 opaque，行为变化时必须同步修改声明 identity 或使用 `--rerun all`。
+
 Eval-owned author hook 或 Sandbox Plugin fragment 会把同一 Run 的物理实例按 eval 隔离，Experiment-owned lifecycle 不会。hook 语义变化后的复验由作者显式执行 `--rerun all`。
 reset 或 cleanup 无法恢复已知边界时退休物理实例。
 
