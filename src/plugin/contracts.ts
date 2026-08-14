@@ -270,10 +270,23 @@ export function projectPluginLifecycles<Scope extends PluginScope>(
   }));
 }
 
+export function pluginLifecycleIdentity(
+  { scope, name, behaviorRevision, instanceKey, identity, arrayPosition, hasSetup, hasTeardown }: LinkedPluginLifecycle,
+): JsonValue {
+  return Object.freeze({
+    scope,
+    name,
+    behaviorRevision,
+    instanceKey,
+    identity,
+    arrayPosition,
+    hasSetup,
+    hasTeardown,
+  });
+}
+
 export function pluginLifecycleProjection(lifecycles: readonly LinkedPluginLifecycle[]): JsonValue {
-  const projection: JsonValue[] = lifecycles.map(({ scope, name, behaviorRevision, instanceKey, identity, arrayPosition, hasSetup, hasTeardown }) => ({
-    scope, name, behaviorRevision, instanceKey, identity, arrayPosition, hasSetup, hasTeardown,
-  }));
+  const projection: JsonValue[] = lifecycles.map(pluginLifecycleIdentity);
   Object.freeze(projection);
   return projection;
 }

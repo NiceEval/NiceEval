@@ -24,6 +24,10 @@ Sandbox create、reset、健康检查或故障退休可能建立替代实例。�
 materialize、release、teardown 与 finalizer 都是“每台实际实例一次”，不是“每个 Group
 文件恰好一次”。同一时刻仍只有一台实例服务 Group 的一条 Attempt。
 
+Group author 与 Plugin lifecycle 围住所选 slots，只执行 selected slice，不要求 CLI 选择自动扩回全组。`--dry --commands` 的 human 和 JSON 都在 `beforeSlots` / `afterSlots` 显示这层包裹；`physicalLifecycleTemplate` 则是每台实际实例一次，不能读成整个 Group lane 只 acquire / finalize 一次。
+
+创建 Group 前，Runner 比较每个所选成员的 provider plan、Agent install 与 owner-aware physical lifecycle identity。任何 Eval-owned Sandbox Plugin fragment 差异都会得到点名两个成员与差异 facet 的 `eval-group-incompatible`，并保持零 Sandbox create。只精确选择一个成员时没有跨成员兼容性问题，仍以 Group lane 运行。
+
 ## carry 与选择
 
 全量 carry 不建立 Sandbox，也不 materialize resource。部分 carry 在规划期冻结 Group demand

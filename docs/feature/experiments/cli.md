@@ -10,6 +10,7 @@ Record 不保存可恢复的 Invocation、live session 或第二套聚合结果�
 niceeval exp [<experiment-prefix>] [<eval-prefix>] [flags]
 niceeval exp list [<experiment-prefix>] [--json]
 niceeval exp <experiment-prefix> --dry [--json]
+niceeval exp <experiment-prefix> <eval-prefix> --dry --commands [--json]
 ```
 
 位置参数先选择 Experiment ID 或路径前缀，再收窄 Eval ID 前缀。它们只能缩小 Experiment 自己的 `evals` 选择，不能把未选中的 Eval 加回计划。
@@ -31,6 +32,32 @@ compare/codex  memory/commit0  ordinal 1  gap: identity-mismatch
 ```
 
 reuse planning 先要求受支持的 eligibility schema 与匹配的 `reuseContract` domain，再比较 input/config identity。缺失、损坏、不支持或 domain 不同都形成带真实 issues 的具名 gap；不会猜成“从未运行”。`--dry` 不建立 Invocation、不写 Record，也不取得 writer lock。
+
+### `--dry --commands`
+
+`--commands` 在 dry matrix 后追加完整的生命周期命令计划。第一个位置参数照常选择 Experiment，后续位置参数选择 Eval，因此可以精确查看一个直接 `Eval × Experiment` 配对，也可以查看 Eval Group 内的一个成员：
+
+```sh
+niceeval exp compare/codex memory/commit0 --dry --commands
+niceeval exp compare/codex memory/commit0 --dry --commands --json
+```
+
+选中 Group 的一个成员不会把同组其它 Eval 加回计划，但该成员仍处于 Group lane，Group author 与 Plugin lifecycle 会围住这次 selected slice。多个成员同时被选择时，只有 provider plan、Agent install 与物理 lifecycle identity 相容才能共用 Group；不相容时在任何 Sandbox create 前以 `eval-group-incompatible` 失败并点名冲突成员。
+
+人读输出和 JSON 都来自同一棵 Experiment → lane → slot 树。下面这些步骤都留在真实包裹位置：
+
+- Experiment、Group、Eval Plugin lifecycle 与 Sandbox Plugin lifecycle；
+- author hook、prepare、Agent ensure/setup/teardown、test、cleanup 与 Provider finalizer。
+
+可声明的 `shell()` / `command()` 展开为具体命令；不能安全检查的 callback 标为 `opaque`。Direct Agent 显式显示没有 Sandbox 或 template，而不是省略 materialize 阶段。
+
+每个真实 `sandbox.materialize` 节点还显示 template owner、provider、kind 与 configured locator。`Exact` 只表示逐字复述作者配置的非秘密起点。它不保证 image tag 已固定为 digest、远端资源或 Dockerfile / Compose 内容已冻结，也不代表 BuildKey 或最终实例字节。
+
+内建 locator 字段是闭合集合：`image`、`context`、`file`、`target`、`workspaceService`、`template`、`snapshotId`、`dir`。URL 的 userinfo、query 与 fragment 会先移除并登记 redaction；custom provider / case 只显示 `Opaque`。build args、env value、credential、stdin 与 custom identity 不进入这个投影。
+
+`--json` 仍输出单个 `niceeval.current-reuse-plan/v1`、`schemaVersion: 1` 文档，只额外带 `commandPlan`。Locator 使用 `_tag: "Exact" | "Redacted" | "Opaque"`。前两种带非空、字段名唯一的 `fields`；`Redacted` 另带只指向已有字段的 `redactions`，`Opaque` 带结构化 `reason`。
+
+Sandbox reuse lane 的 `id` 只是在同一份计划内关联 slot 的 opaque digest。调用方不应按格式拆解它；前缀与跨版本值都不稳定，输出也不会展开 digest 输入。
 
 ## `niceeval accept`
 
@@ -131,4 +158,3 @@ argv、配置发现或 selector 无法形成 Invocation 时，命令以非零状
 - [缓存与携带](cache.md) —— carried / accepted 的资格和写入。
 - [Record CLI](../record/cli.md) —— `show`、locator 与 Record 维护命令。
 - [Record Library](../record/library.md) —— receipt、reader、writer 与通道。
-

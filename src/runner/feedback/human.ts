@@ -1271,6 +1271,24 @@ function commandPlanExact(step: CommandPlanStep): string {
   return `${operation}${options.length === 0 ? "" : ` · ${options.join(" · ")}`}${redactions}`;
 }
 
+function commandPlanTemplate(step: CommandPlanStep): string {
+  const template = step.template;
+  if (template === undefined) return "";
+  const owner = `${template.owner.kind}:${template.owner.id}`;
+  const prefix = ` · configured template ${template.provider}:${template.kind} · owner=${owner}`;
+  if (template.locator._tag === "Opaque") {
+    return `${prefix} · locator=opaque (${template.locator.reason.summary})`;
+  }
+  const fields = template.locator.fields
+    .map((field) => `${field.name}=${JSON.stringify(field.value)}`)
+    .join(" · ");
+  if (template.locator._tag === "Exact") return `${prefix} · exact configured locator · ${fields}`;
+  const redacted = template.locator.redactions
+    .map((entry) => `${entry.field}:${entry.parts.join("+")}`)
+    .join(",");
+  return `${prefix} · redacted configured locator · ${fields} · redacted=${redacted}`;
+}
+
 function commandPlanStepLine(step: CommandPlanStep): string {
   const label = step.label === undefined ? "" : ` · ${step.label}`;
   const condition = step.condition === undefined ? "" : ` · if ${step.condition.summary}`;
@@ -1282,7 +1300,7 @@ function commandPlanStepLine(step: CommandPlanStep): string {
         ? `opaque — ${step.reason?.summary ?? "runtime callback"}`
         : `no commands${step.reason === undefined ? "" : ` — ${step.reason.summary}`}`;
   const mark = step.truth === "exact" ? "→" : step.truth === "conditional" ? "?" : step.truth === "opaque" ? "◇" : "·";
-  return `${mark} ${step.phase}${commandPlanOwner(step)}${label} · ${detail}${condition}`;
+  return `${mark} ${step.phase}${commandPlanOwner(step)}${label}${commandPlanTemplate(step)} · ${detail}${condition}`;
 }
 
 /** 保留 JSON string 内的连续空格与转义，不用会折叠空白的 prose wrapper。 */
@@ -1361,9 +1379,18 @@ export function renderHumanCommandPlan(plan: CommandPlan, options: HumanCommandP
     renderCommandPlanSteps(rows, experiment.beforeLanes, contentWidth, "");
     for (const lane of experiment.lanes) {
       pushCommandPlanLine(rows, commandPlanLaneLabel(lane), contentWidth);
+      if (lane.kind === "eval-group" && lane.beforeSlots.length > 0) {
+        pushCommandPlanLine(rows, "  group lifecycle · before slots", contentWidth, "    ");
+        renderCommandPlanSteps(rows, lane.beforeSlots, contentWidth, "    ");
+      }
       const physical = lane.physicalLifecycleTemplate;
       if (physical !== undefined) {
-        pushCommandPlanLine(rows, "  physical lifecycle template · each physical instance", contentWidth, "    ");
+        pushCommandPlanLine(
+          rows,
+          "  physical lifecycle template · wraps slots leased to each physical instance",
+          contentWidth,
+          "    ",
+        );
         pushCommandPlanLine(rows, "    enter", contentWidth, "      ");
         renderCommandPlanSteps(rows, physical.enter, contentWidth, "      ");
         pushCommandPlanLine(rows, "    exit", contentWidth, "      ");
@@ -1386,6 +1413,10 @@ export function renderHumanCommandPlan(plan: CommandPlan, options: HumanCommandP
           "    ",
         );
         renderCommandPlanSteps(rows, slot.steps, contentWidth, "    ");
+      }
+      if (lane.kind === "eval-group" && lane.afterSlots.length > 0) {
+        pushCommandPlanLine(rows, "  group lifecycle · after slots", contentWidth, "    ");
+        renderCommandPlanSteps(rows, lane.afterSlots, contentWidth, "    ");
       }
     }
     renderCommandPlanSteps(rows, experiment.afterLanes, contentWidth, "");

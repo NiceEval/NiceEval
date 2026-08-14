@@ -53,6 +53,7 @@ const SANDBOX_LAYER_LIFECYCLE: unique symbol = Symbol("niceeval.sandbox.layer.li
 const SANDBOX_LAYERS = new WeakSet<object>();
 const SANDBOX_LAYER_STATES = new WeakMap<object, SandboxLayerState>();
 const SANDBOX_TEMPLATE_PLANNERS = new WeakMap<object, SandboxTemplatePlanner>();
+const SANDBOX_TEMPLATE_COMMAND_PLAN_LOCATORS = new WeakMap<object, SandboxTemplateCommandPlanLocator>();
 const SANDBOX_PROVIDER_BINDINGS = new WeakMap<object, SandboxProviderBinding>();
 const SANDBOX_PROVIDER_PLAN: unique symbol = Symbol("niceeval.sandbox.provider-plan");
 
@@ -303,6 +304,44 @@ export type SandboxLocation =
   | { readonly _tag: "Path"; readonly value: string }
   | { readonly _tag: "Url"; readonly value: string };
 
+export type SandboxTemplateLocatorFieldName =
+  | "image"
+  | "context"
+  | "file"
+  | "target"
+  | "workspaceService"
+  | "template"
+  | "snapshotId"
+  | "dir";
+
+export interface SandboxTemplateLocatorField {
+  readonly name: SandboxTemplateLocatorFieldName;
+  readonly value: string;
+}
+
+export type SandboxTemplateLocatorRedactionPart = "userinfo" | "query" | "fragment";
+
+export interface SandboxTemplateLocatorRedaction {
+  readonly field: SandboxTemplateLocatorFieldName;
+  readonly parts: readonly SandboxTemplateLocatorRedactionPart[];
+}
+
+/** Public command-plan evidence; it is deliberately separate from provider identity and Record data. */
+export type SandboxTemplateCommandPlanLocator =
+  | {
+      readonly _tag: "Exact";
+      readonly fields: readonly [SandboxTemplateLocatorField, ...SandboxTemplateLocatorField[]];
+    }
+  | {
+      readonly _tag: "Redacted";
+      readonly fields: readonly [SandboxTemplateLocatorField, ...SandboxTemplateLocatorField[]];
+      readonly redactions: readonly SandboxTemplateLocatorRedaction[];
+    }
+  | {
+      readonly _tag: "Opaque";
+      readonly reason: { readonly code: string; readonly summary: string };
+    };
+
 /**
  * Discovery 泄题门唯一消费的 provider-neutral 声明。它只描述需要检查的作者输入，
  * 不要求 discovery 解读 provider identity，也不把「缺字段」当作一种状态。
@@ -472,6 +511,8 @@ export interface SandboxTemplateDefinition {
   readonly publishableIdentity: JsonValue;
   /** 影响 template identity 但不得直接进入 link / record 的作者输入。 */
   readonly privateFingerprintIdentity: JsonValue;
+  /** Configured non-secret locator shown only by the explicit command-plan projection. */
+  readonly commandPlanLocator: SandboxTemplateCommandPlanLocator;
   readonly plan: SandboxTemplatePlanner;
   readonly leakGate: SandboxLeakGate;
 }
@@ -542,6 +583,107 @@ function freezeTarget(target: SandboxPlannedTarget): SandboxPlannedTarget {
 
 function freezeLocation(value: SandboxLocation): SandboxLocation {
   return Object.freeze({ _tag: value._tag, value: value.value });
+}
+
+const LOCATOR_REDACTION_PARTS: readonly SandboxTemplateLocatorRedactionPart[] = Object.freeze([
+  "userinfo",
+  "query",
+  "fragment",
+]);
+const LOCATOR_FIELD_NAMES = new Set<SandboxTemplateLocatorFieldName>([
+  "image",
+  "context",
+  "file",
+  "target",
+  "workspaceService",
+  "template",
+  "snapshotId",
+  "dir",
+]);
+
+function freezeCommandPlanLocator(
+  locator: SandboxTemplateCommandPlanLocator,
+): SandboxTemplateCommandPlanLocator {
+  if (locator._tag === "Opaque") {
+    return Object.freeze({
+      _tag: "Opaque",
+      reason: Object.freeze({
+        code: nonEmptyString(locator.reason.code, "sandbox template locator.reason.code"),
+        summary: nonEmptyString(locator.reason.summary, "sandbox template locator.reason.summary"),
+      }),
+    });
+  }
+  if (locator.fields.length === 0) throw new TypeError("sandbox template locator.fields must be non-empty");
+  const names = new Set<SandboxTemplateLocatorFieldName>();
+  const fields = locator.fields.map((field) => {
+    if (!LOCATOR_FIELD_NAMES.has(field.name)) {
+      throw new TypeError(`sandbox template locator field ${JSON.stringify(field.name)} is unsupported`);
+    }
+    if (names.has(field.name)) {
+      throw new TypeError(`sandbox template locator field ${JSON.stringify(field.name)} is duplicated`);
+    }
+    names.add(field.name);
+    return Object.freeze({
+      name: field.name,
+      value: nonEmptyString(field.value, `sandbox template locator.${field.name}`),
+    });
+  }) as unknown as readonly [SandboxTemplateLocatorField, ...SandboxTemplateLocatorField[]];
+  if (locator._tag === "Exact") return Object.freeze({ _tag: "Exact", fields: Object.freeze(fields) });
+  if (locator.redactions.length === 0) {
+    throw new TypeError("redacted sandbox template locator must declare at least one redaction");
+  }
+  const redactedFields = new Set<SandboxTemplateLocatorFieldName>();
+  const redactions = locator.redactions.map((redaction) => {
+    if (!names.has(redaction.field)) {
+      throw new TypeError(`sandbox template locator redaction references missing field ${JSON.stringify(redaction.field)}`);
+    }
+    if (redactedFields.has(redaction.field)) {
+      throw new TypeError(`sandbox template locator redaction for ${JSON.stringify(redaction.field)} is duplicated`);
+    }
+    redactedFields.add(redaction.field);
+    const declared = new Set(redaction.parts);
+    const parts = LOCATOR_REDACTION_PARTS.filter((part) => declared.has(part));
+    if (parts.length !== declared.size || parts.length === 0) {
+      throw new TypeError(`sandbox template locator redaction for ${JSON.stringify(redaction.field)} is invalid`);
+    }
+    return Object.freeze({ field: redaction.field, parts: Object.freeze(parts) });
+  });
+  return Object.freeze({ _tag: "Redacted", fields: Object.freeze(fields), redactions: Object.freeze(redactions) });
+}
+
+function configuredLocator(
+  fields: readonly [SandboxTemplateLocatorField, ...SandboxTemplateLocatorField[]],
+  redactions: readonly SandboxTemplateLocatorRedaction[] = [],
+): SandboxTemplateCommandPlanLocator {
+  return freezeCommandPlanLocator(redactions.length === 0
+    ? { _tag: "Exact", fields }
+    : { _tag: "Redacted", fields, redactions });
+}
+
+function configuredLocationField(
+  name: "context" | "file",
+  value: SandboxLocation,
+): { readonly field: SandboxTemplateLocatorField; readonly redaction?: SandboxTemplateLocatorRedaction } {
+  if (value._tag === "Path") return { field: Object.freeze({ name, value: value.value }) };
+  const url = new URL(value.value);
+  const parts: SandboxTemplateLocatorRedactionPart[] = [];
+  if (url.username !== "" || url.password !== "") {
+    parts.push("userinfo");
+    url.username = "";
+    url.password = "";
+  }
+  if (url.search !== "") {
+    parts.push("query");
+    url.search = "";
+  }
+  if (url.hash !== "") {
+    parts.push("fragment");
+    url.hash = "";
+  }
+  return {
+    field: Object.freeze({ name, value: url.href }),
+    ...(parts.length === 0 ? {} : { redaction: Object.freeze({ field: name, parts: Object.freeze(parts) }) }),
+  };
 }
 
 function freezeLeakGate(value: SandboxLeakGate): SandboxLeakGate {
@@ -1164,6 +1306,10 @@ export function defineSandboxTemplate(
     leakGate: freezeLeakGate(definition.leakGate),
   });
   SANDBOX_TEMPLATE_PLANNERS.set(declaration, definition.plan);
+  SANDBOX_TEMPLATE_COMMAND_PLAN_LOCATORS.set(
+    declaration,
+    freezeCommandPlanLocator(definition.commandPlanLocator),
+  );
   return createLayer({ kind: "template-bearing", template: declaration, commands: [], setupHooks: [], teardownHooks: [] }, "prepare-only");
 }
 
@@ -1496,6 +1642,7 @@ export function createBuiltinSandboxFactories(
         throw new TypeError('dockerComposeSandbox options.build must be "on-demand" or "prebuilt"');
       }
       const file = location(options.file, "dockerComposeSandbox options.file");
+      const fileLocator = configuredLocationField("file", file);
       const workspaceService = nonEmptyString(options.workspaceService, "dockerComposeSandbox options.workspaceService");
       const build = options.build === undefined ? "on-demand" : options.build;
       const user: SandboxExecutionUser = options.user === undefined
@@ -1543,6 +1690,10 @@ export function createBuiltinSandboxFactories(
           ...pathPrependIdentityField(pathPrepend),
         },
         privateFingerprintIdentity: identity,
+        commandPlanLocator: configuredLocator(
+          [fileLocator.field, { name: "workspaceService", value: workspaceService }],
+          fileLocator.redaction === undefined ? [] : [fileLocator.redaction],
+        ),
         leakGate: { _tag: "Compose", file, workspaceService },
         plan: ({ authorBaseDir }) => Effect.flatMap(dockerTarget(), (target) => Effect.gen(function* () {
           const plannedFile = yield* Effect.try({
@@ -1633,6 +1784,7 @@ export function createBuiltinSandboxFactories(
         "dockerSandbox options",
       );
       const context = location(options.context, "dockerSandbox options.source.context");
+      const contextLocator = configuredLocationField("context", context);
       const dockerfile = options.dockerfile === undefined
         ? "Dockerfile"
         : nonEmptyString(options.dockerfile, "dockerSandbox options.source.file");
@@ -1680,6 +1832,14 @@ export function createBuiltinSandboxFactories(
           ...pathPrependIdentityField(pathPrepend),
         },
         privateFingerprintIdentity: identity,
+        commandPlanLocator: configuredLocator(
+          [
+            contextLocator.field,
+            { name: "file", value: dockerfile },
+            ...(targetStage === undefined ? [] : [{ name: "target" as const, value: targetStage }]),
+          ],
+          contextLocator.redaction === undefined ? [] : [contextLocator.redaction],
+        ),
         leakGate: { _tag: "Dockerfile", context, dockerfile },
         plan: ({ authorBaseDir }) => Effect.flatMap(dockerTargetForProfile(profile), ({ target, profileBinding }) => Effect.gen(function* () {
           const plannedContext = yield* Effect.try({
@@ -1843,6 +2003,7 @@ export function createBuiltinSandboxFactories(
           ...pathPrependIdentityField(pathPrepend),
         },
         privateFingerprintIdentity: identity,
+        commandPlanLocator: configuredLocator([{ name: "image", value: image }]),
         leakGate: { _tag: "None" },
         plan: () => Effect.map(dockerTargetForProfile(profile), ({ target, profileBinding }) => {
           return sandboxProviderPlan({
@@ -1940,6 +2101,7 @@ export function createBuiltinSandboxFactories(
         kind: "template",
         publishableIdentity: { user: publishedUser, lifetime: plannedLifetime, ...pathPrependIdentityField(pathPrepend) },
         privateFingerprintIdentity: identity,
+        commandPlanLocator: configuredLocator([{ name: "template", value: template }]),
         leakGate: { _tag: "None" },
         plan: () => {
           return Effect.succeed(sandboxProviderPlan({
@@ -1975,6 +2137,7 @@ export function createBuiltinSandboxFactories(
         kind: "snapshot",
         publishableIdentity: { lifetime: plannedLifetime, ...pathPrependIdentityField(pathPrepend) },
         privateFingerprintIdentity: identity,
+        commandPlanLocator: configuredLocator([{ name: "snapshotId", value: snapshotId }]),
         leakGate: { _tag: "None" },
         plan: () => {
           return Effect.succeed(sandboxProviderPlan({
@@ -2014,6 +2177,10 @@ export function createBuiltinSandboxFactories(
         kind: "directory",
         publishableIdentity: { directory: { _tag: directory._tag }, ...pathPrependIdentityField(pathPrepend) },
         privateFingerprintIdentity: identity,
+        commandPlanLocator: configuredLocator([{
+          name: "dir",
+          value: directory._tag === "AuthorBaseDir" ? "author-base-dir" : directory.value,
+        }]),
         leakGate: { _tag: "None" },
         plan: ({ authorBaseDir }) => {
           const configured = directory._tag === "AuthorBaseDir"
@@ -2161,6 +2328,13 @@ export function customProviderSandbox(
     kind: "custom-provider",
     publishableIdentity: {},
     privateFingerprintIdentity: identity,
+    commandPlanLocator: {
+      _tag: "Opaque",
+      reason: {
+        code: "custom-provider-template",
+        summary: "Custom provider owns its template locator and does not expose it to the command plan",
+      },
+    },
     leakGate: { _tag: "None" },
     plan: () => Effect.succeed(sandboxProviderPlan({
       provider: name,
@@ -2222,6 +2396,13 @@ export function defineSandboxCase(
     kind: "custom-case",
     publishableIdentity: {},
     privateFingerprintIdentity: declarationIdentity,
+    commandPlanLocator: {
+      _tag: "Opaque",
+      reason: {
+        code: "custom-case-template",
+        summary: "Custom Sandbox Case identity is private and has no configured template locator",
+      },
+    },
     leakGate: { _tag: "None" },
     plan: () => Effect.succeed(sandboxProviderPlan({
       provider: "custom-case",
@@ -2245,6 +2426,19 @@ export function defineSandboxCase(
 
 export function sandboxTemplateIdentity(template: SandboxTemplateDeclaration): JsonValue {
   return template.identity;
+}
+
+/** @internal Explicit command-plan projection only; never use this as provider or cache identity. */
+export function sandboxTemplateCommandPlanLocator(
+  template: SandboxTemplateDeclaration,
+): SandboxTemplateCommandPlanLocator {
+  return SANDBOX_TEMPLATE_COMMAND_PLAN_LOCATORS.get(template) ?? Object.freeze({
+    _tag: "Opaque",
+    reason: Object.freeze({
+      code: "sandbox-template-locator-missing",
+      summary: "Sandbox template was not constructed with command-plan locator evidence",
+    }),
+  });
 }
 
 /** physical planner 的唯一 callback 入口；link 不调用本函数。 */

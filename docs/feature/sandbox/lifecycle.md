@@ -165,13 +165,17 @@ reset 语义、寿命确认与污染诊断见 [Sandbox 复用](reuse.md)。
 
 它只声明运行器能保证的偏序：fresh Eval 与 `sandboxReuse` lane 都不保证 slot 顺序，也不生成全局序号。Eval Group lane 按规范化 Eval ID、再按 Attempt index 串行。Group 过滤与 carry 只移除对应 slot；作者数组位置没有业务顺序语义。
 
-fresh slot 把 Case materialize / lifecycle setup、逐 Attempt body、lifecycle teardown / Provider finalizer 放在自己的 steps 内。reuse 与 Group lane 提供 `physicalLifecycleTemplate`。这份模板分别套用到每台实际实例，不对全部 slots 建立统一前后关系。reset 失败、寿命不足或故障退休会换实例并重跑模板；普通 reuse 的多台实例也可能并发存在。
+fresh slot 把 Case materialize / lifecycle setup、逐 Attempt body、lifecycle teardown / Provider finalizer 放在自己的 steps 内。reuse 与 Group lane 提供 `physicalLifecycleTemplate`。这份模板分别套用到每台实际实例，并包住分配给该实例的 slots；它不是整个 lane 只执行一次的统一前后边。reset 失败、寿命不足或故障退休会换实例并重跑模板；普通 reuse 的多台实例也可能并发存在。
 
 dispatch slot 的 activation 仍受 late carry、预算、early-exit、fail-fast、取消与运行期失败影响；静态列出不等于实际执行。carry slot 不跨入任何 lifecycle，固定是 `carried · no commands`。
 
 Sandbox lifecycle hook、test 与 Provider callback 保留其真实位置并标为 opaque。Agent setup / teardown 的 Adapter 内部步骤同样 opaque。内置 Adapter factory 已显式收到的 `postSetup` / `preTeardown` `SandboxCommand` 则在对应子阶段按真实顺序展开。
 
-`shell()` / `command()` 显示 exact 命令与脱敏后的 env key，普通 callback 只显示 opaque。`preTeardown` 按执行契约逆序展开，并标明只有 setup 到达 postSetup 时点后才运行。
+`shell()` / `command()` 显示 exact 命令与脱敏后的 env key，普通 callback 只显示 opaque。`sandbox.materialize` 额外显示 template owner、provider、kind 与安全的 configured locator。
+
+这个 locator 来自 template 声明的私有 command-plan binding，不进入 Record、provider identity 或复用 fingerprint。Direct Agent 显示一个明确的 `known-no-command` materialize 节点。`preTeardown` 按执行契约逆序展开，并标明只有 setup 到达 postSetup 时点后才运行。
+
+Eval Group 的 `beforeSlots` / `afterSlots` 在 human 与 JSON 中都显式呈现 Group Plugin setup / teardown。Sandbox Plugin lifecycle 留在物理模板内；Eval Plugin lifecycle 留在各 dispatch slot 内。三者都按 attachment owner 保留身份，不能因 Plugin 恰好来自同一个 definition 就跨 owner 合并。
 
 把 hook 内的动作挪进 `.prepare()` 只为让预览变 exact 会改变执行频次与资源寿命，禁止这样改语义。
 
@@ -225,11 +229,13 @@ cleanup 使用独立预算与 signal,不复用已经 abort 的前向 signal;clea
 Sandbox 复用池的键只固定物理实例共享所需的输入:
 
 ```text
-(Provider physical plan identity, Agent ensure identity, lifecycle owner marker)
+(Provider physical plan identity, Agent ensure identity, physical lifecycle identity, scope)
 ```
 
 每条 Attempt 都执行命令,所以池键不包含 prepare command 或「某条命令已经执行」的证据。
-hook callback 的函数体不进入 fingerprint，也不阻断跨 Run carry。Eval-owned hook 会把同一 Run 的物理实例按 eval 隔离，Experiment-owned hook 不会；hook 语义变化后的复验由作者显式执行 `--rerun all`。
+hook callback 的函数体不进入 fingerprint，也不阻断跨 Run carry。Physical lifecycle identity 包含 SandboxLayer author hook marker，以及带 attachment owner 的 Sandbox Plugin identity。
+
+Eval-owned author hook 或 Sandbox Plugin fragment 会把同一 Run 的物理实例按 eval 隔离，Experiment-owned lifecycle 不会。hook 语义变化后的复验由作者显式执行 `--rerun all`。
 reset 或 cleanup 无法恢复已知边界时退休物理实例。
 
 ## 错误语义

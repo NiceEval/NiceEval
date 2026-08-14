@@ -70,6 +70,21 @@ npx niceeval exp list --json
 
 默认输出每个配置的 `experimentId`、描述、agent、model、attempts、选中的 eval 数和 labels。`--json` 输出单个 `niceeval.experiments` 文档，并在每项附上完整的 `selectedEvalIds`。
 
+### 查看一个配对的完整 Shell 与 lifecycle
+
+```bash
+npx niceeval exp compare/codex memory/commit0 --dry --commands
+npx niceeval exp compare/codex memory/commit0 --dry --commands --json
+```
+
+第一个位置参数选择 Experiment，第二个按 Eval ID 前缀收窄。命令不会执行 callback 或创建 Sandbox，而是显示 Direct 或 template 起点。
+
+计划包含 Plugin lifecycle、author prepare、Agent ensure/setup/teardown、test、cleanup 与 Provider finalizer。能静态声明的 `shell()` / `command()` 展开为实际命令，普通 callback 标为 `opaque`。
+
+Eval 在 Group 内时，只选择这个成员不会把同组其它成员加回计划，但输出仍保留一次 Group lifecycle 包裹。人读输出显示同一棵树；`--json` 在 `niceeval.current-reuse-plan/v1` 文档中增加 `commandPlan`。
+
+Sandbox materialize 节点会显示 template owner、provider、kind 和安全的 configured locator。`Exact` 只代表原样显示作者配置，不代表 image tag、远端内容或最终实例已经冻结；URL 凭据、query 与 fragment 会脱敏，env value、credential、stdin、build arg value 和 custom identity 不输出。
+
 ## 常用 flags
 
 下表由 CLI 的 flag 解析表生成，表外的 flag 一律按未知 flag 报错并以非零状态退出。**没有**用于选择 Sandbox provider 的 CLI flag，也没有项目级默认 provider。请在 Eval 或 Experiment 上声明 template-bearing `SandboxLayer`，并从 `niceeval/sandbox` 导入下列工厂之一：

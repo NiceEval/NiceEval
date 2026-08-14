@@ -100,6 +100,8 @@ hook 还可经上下文上报绑定当前生命周期的 progress 与 diagnostic
 setup 按声明顺序运行；teardown 按所有 setup 的全局逆序运行。setup 中途失败也仍会进入已登记的 teardown，随后才停止或释放 Provider 资源。
 
 它们附着在配对后的实际 Sandbox 上，不引入 lane、lane id 或可由作者持有的复用池句柄。仅 Experiment 所有的 hook 不改变可共享的物理身份；Eval 所有的 hook 会把该 Eval 的物理生命周期隔离开。
+
+Plugin 自动投影的 Sandbox lifecycle 遵守同一条 owner 规则。Eval-owned fragment 也必须进入物理 lifecycle identity，不能借用另一 Eval 的 first-pair lifecycle。
 command 链只保留原 kind:不能把 command-only layer 变成 template-bearing,也不能给 template-bearing layer 追加第二个起点。
 共享接口不暴露 `.template()`、`.provider()` 或可写 template 属性;起点只能由具体 factory 的 options 声明。
 
