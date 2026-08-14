@@ -151,6 +151,7 @@ export function renderCellTableText(
       rows: block.rows.map((row) => ({
         cells: row.cells,
         depth: row.key.startsWith("coverage:") ? 0 : indentDepth(row.cells[block.columns[0] ?? ""] ?? ""),
+        ...(row.key.startsWith("@") ? { locator: row.key } : {}),
       })),
     },
     {

@@ -173,6 +173,8 @@ downloads。CLI 每次成功启动这种 listener 都在 stderr 警告；使用�
 
 Record canonical ID 不能直接拼 route：Report 作者必须用 `reportInstanceKeyFromRecordId` 与 `reportRouteFromKeys` 形成 lowercase、domain-tagged route。CLI 中的 `attempt-01h...` 是 adapter 输出；Record 详情与页面正文仍显示原 uppercase `AttemptId`。
 
+终端 Experiment Table 为了不让完整 `@AttemptId` 撑宽整张表，只显示带省略号的定宽标签；这是呈现摘要，不是可输入的 prefix locator。详情页、链接目标与需要复制的命令输入仍使用完整 `@AttemptId`。
+
 每个成功 revision 固定包含 Report / Config / Theme source snapshot、core-only `AnalysisSample` 与一个 immutable `ReportExecution`。
 
 watch 闭集是 Record root、Report module 及其项目内静态 import、Theme module 与 `niceeval.config.ts`。loader 与 watcher 的具体实现属于 Node host，本契约只声明行为：

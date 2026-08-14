@@ -36,18 +36,20 @@ const MISSING_MARK = "—";
 const COLUMN_GAP = 3;
 const MIN_TEXT_COLUMN = 8;
 const MIN_IDENTITY_COLUMN = 24;
-/** 0.12 attempt locators were 13-char `@` ids. Longer Record locators must
- *  not widen the identity column or wrap the check-mark off the locator. */
-const LOCATOR_MEASURE_WIDTH = 14;
+/** Keep exact Record identities in the semantic document, but do not let a
+ * full AttemptId dominate the terminal overview's identity column. */
+const LOCATOR_DISPLAY_WIDTH = 14;
 
 function isLocatorCell(cell: string): boolean {
-  return /[✓✗!·]\s+@/.test(cell);
+  return /^\s*(?:[✓✗!·]\s+)?@[A-Za-z0-9._-]+$/.test(cell);
 }
 
-function measuredWidth(cell: string): number {
-  if (!isLocatorCell(cell)) return stringWidth(cell);
-  const indent = cell.length - cell.trimStart().length;
-  return indent + 2 + LOCATOR_MEASURE_WIDTH;
+function compactLocatorCell(cell: string): string {
+  if (!isLocatorCell(cell)) return cell;
+  const locatorStart = cell.indexOf("@");
+  const locator = cell.slice(locatorStart);
+  if (stringWidth(locator) <= LOCATOR_DISPLAY_WIDTH) return cell;
+  return `${cell.slice(0, locatorStart)}${truncateDisplay(locator, LOCATOR_DISPLAY_WIDTH - 1)}…`;
 }
 
 function cellText(row: TextTableRow, key: string): string {
@@ -179,11 +181,17 @@ export function renderTableText(props: TextTableProps, ctx: TextTableContext): s
 
   const header = props.columns.map((column) => column.header);
   const align: ColumnAlign[] = props.columns.map((column) => column.align ?? "left");
-  const body = props.rows.map((row) => props.columns.map((column) => cellText(row, column.key)));
+  const body = props.rows.map((row) =>
+    props.columns.map((column, columnIndex) =>
+      columnIndex === 0 && row.locator !== undefined
+        ? compactLocatorCell(cellText(row, column.key))
+        : cellText(row, column.key)
+    )
+  );
 
   const matrix = [header, ...body];
   const natural = header.map((_, c) =>
-    Math.max(...matrix.map((row) => (c === 0 ? measuredWidth(row[c] ?? "") : stringWidth(row[c] ?? "")))),
+    Math.max(...matrix.map((row) => stringWidth(row[c] ?? ""))),
   );
   const lines = dataBoxMode(ctx.panelMode, ctx.width) === "boxed";
   const outerFrame = lines && ctx.sectionBoxedDepth === 0;
@@ -204,8 +212,8 @@ export function renderTableText(props: TextTableProps, ctx: TextTableContext): s
   return hidden > 0 ? `${table}\n${hiddenColumnsNote(hidden)}` : table;
 }
 
-function padCell(cell: string, width: number, align: ColumnAlign, column: number): string {
-  const used = column === 0 ? measuredWidth(cell) : stringWidth(cell);
+function padCell(cell: string, width: number, align: ColumnAlign): string {
+  const used = stringWidth(cell);
   const gap = width - used;
   if (gap <= 0) return cell;
   return align === "right" ? `${" ".repeat(gap)}${cell}` : `${cell}${" ".repeat(gap)}`;
@@ -219,7 +227,7 @@ function renderFittedRows(
   return rows
     .map((row) =>
       row
-        .map((cell, c) => padCell(cell, widths[c]!, align[c] ?? "left", c))
+        .map((cell, c) => padCell(cell, widths[c]!, align[c] ?? "left"))
         .join("   ")
         .replace(/\s+$/, ""),
     )
