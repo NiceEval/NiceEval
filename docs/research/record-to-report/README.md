@@ -6,7 +6,7 @@
 `record-to-report/` 是 NiceEval 对研究问题的命名，不是外部产品的共同架构。
 每个子目录按研究对象自己的产品模型写作；只有本页把它们映射到 NiceEval。
 
-> 主要观察日期：2026-08-09 至 2026-08-13
+> 主要观察日期：2026-08-09 至 2026-08-14
 >
 > 文档性质：外部产品研究与产品建议，不是 NiceEval 目标契约
 
@@ -34,15 +34,28 @@ NiceEval 需要回答五组连续问题：
 | ClearML | Experiment manager 与 MLOps 平台 | 查看 Task、Event、Artifact、Dashboard 和 Report | Task 事实可以在同一产品中比较并形成报告 | [ClearML](clearml/README.md) |
 | LangSmith | LLM observability、dataset 与 evaluation 平台 | 查看 Trace、Feedback、Dataset 和评测结果 | 同时提供友好的 Messages 视图与原始 Details | [LangSmith](langsmith/README.md) |
 | Braintrust | AI evaluation 与 observability 平台 | 查询 Dataset、Experiment、Span、Feedback 和历史版本 | 运行事实、评价、数据集沿用与实验比较相连 | [Braintrust](braintrust/README.md) |
-| TanStack Table / Charts | Headless 表格与图表内核 | 让应用控制状态、语义模型和最终 renderer | 对应 NiceEval Report 的表格、图表和多媒介投影边界 | [TanStack](tanstack/README.md) |
-| Vercel `design.md` | 报告网站的设计工作流 | 用读者任务、证据关系和真实渲染组织报告页 | 对应 NiceEval Report 的信息架构与视觉验收 | [Vercel](vercel/README.md) |
+| Eve | 本地优先的 agent 与 eval 开发工具 | 执行 eval、写入本地结果目录并可选上报 Braintrust | 把运行时事实与 reporter 投影分开，但缺少正式历史 reader | [Eve](eve/README.md) |
+| Harbor | Agent evaluation 与 RL 工作流框架 | 运行 Job / Trial、保存本地结果并通过 viewer、analyze 与 compare 消费 | Job、Trial 与结果文件形成可重开的实验目录，同时保留版本兼容读取 | [Harbor](harbor/README.md) |
 
 ## 产品目录怎样组织
 
-产品目录不使用统一的 `record.md`、`query.md`、`report.md` 模板。
-产品只有一套紧密相连的公开模型时，用一份 `README.md` 说明完整路径。
+每个入选产品都使用一个产品目录，`README.md` 只负责回答：产品是什么、用户怎样理解它、它有哪些原生对象，以及各研究页从哪里进入。
+具体结构、机制和数据形状不能继续堆在 README 中，至少拆成以下研究页：
 
-产品确有独立产品面时，才按它自己的边界增加页面：
+- `layers.md`：按产品自己的名词说明 layer、component、resource、owner 与引用关系。
+- `execution.md`：说明一次实验怎样发起、调度、执行、写入、完成、失败、重试或恢复。
+- `storage.md`：列出持久数据的具体 type、class、table、file、envelope 或 API resource，并区分权威事实、projection、summary、index 与 cache。
+- `reading-and-comparison.md`：说明历史运行怎样重新打开、查询、筛选、对齐、分组、比较和展示，尤其说明 missing、partial 与 unsupported 怎样显现。
+- `schema-and-migration.md`：说明 schema/version/compatibility/migration 由谁拥有，兼容 reader 怎样工作，升级是否重写用户保存的数据。
+
+这些文件名固定研究问题，不规定外部产品必须具有 NiceEval 的 Record、Analysis 或 Report 分层。
+正文必须服从研究对象自己的心智模型；某个产品没有独立 query 层、只有文件读取，或把数据、运行和呈现组合成另一套资源关系时，就按它实际的产品结构写。
+
+服务端实现未公开时，页面应明确写出可验证边界，不能从 SDK resource 反推数据库表或 migration。
+产品根本不运行实验、不保存结果或不能重新读取历史时，它不属于本方向，不能为了保留索引位置而虚构这些层。
+这类对象只保留一页小型 `README.md` 与 `eligibility.md` 说明证据和迁出判断。
+
+产品确有独立产品面时，可在上述研究页之外按它自己的边界增加页面：
 
 - MLflow 主页面之外，另有 [Tracing 与 Assessment](mlflow/tracing-and-assessments.md)。
 - W&B Models 主页面之外，另有 [W&B Weave](weights-and-biases/weave.md)。
@@ -121,20 +134,8 @@ Langfuse 和 Phoenix 主要提供 Dashboard 与 Experiment compare；MLflow 和 
 这组差异说明“能画图”“有 Dashboard”和“存在可交付 Report”是三个不同承诺。
 产品页分别说明作者使用 UI、代码还是产品内置页面，不把它们统称为报告系统。
 
-### 表格与图表内核
-
-TanStack Table 展示了 headless 状态、row model、算法和 markup 的边界。
-TanStack Charts 展示了 mark、channel、scale、guide、scene 与 renderer 的边界。
-
-NiceEval 不需要复制它们的产品模型，也不直接依赖这些包。
-可吸收的是：语义事实、浏览状态、派生模型和最终媒介不应混在同一个 renderer 中。
-
-### 报告网站
-
-Vercel `design.md` 研究的是官方报告、比较、benchmark、数据叙事页和计算器的设计流程。
-它从读者要判断什么开始，让证据关系决定页面几何，再用真实渲染检查首屏、层级、响应式和可访问性。
-
-NiceEval 借鉴的是读者任务、证据构图和视觉验收，不采用 Vercel 品牌外壳、Geist、固定网格或 CSS API。
+表格、图表内核和报告网站只接手已经完成的语义结果，不拥有 Run、结果持久化或历史迁移。
+TanStack Table / Charts 与 Vercel `design.md` 因此移到独立的 [Report design 研究](../report-design/README.md)，不再作为本方向的产品样本。
 
 ## 怎样防止功能演进牵动 schema
 
@@ -207,6 +208,7 @@ Report       用同一语义结果产生终端、Web 与静态交付面
 - Datomic、KurrentDB、Temporal、Flink、Iceberg、etcd：主要说明历史、stream、snapshot、commit 或 lease。
 - OpenTelemetry 的采集协议与 semantic convention：属于 [Adapter 研究](../adapters/README.md)。
 - Assertion、Scorer 与 Judge 的作者 API：属于 [Assertion 研究](../assertion-api-dx/README.md)。
+- TanStack Table / Charts 与 Vercel `design.md`：只研究已完成结果的呈现，属于 [Report design 研究](../report-design/README.md)。
 
 这些系统可能为其它架构裁决提供局部先例，但不能回答本方向最主要的用户问题：运行事实怎样被看懂、比较并交付成报告。
 

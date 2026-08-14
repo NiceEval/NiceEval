@@ -21,6 +21,7 @@
 | Adapter | agent-eval、Agent SDK、Eve 与 OTel | [Adapter 接入、事件协议与遥测生态](adapters/README.md) |
 | Assertion | Eve、smevals、Ori Eval、Promptfoo、Inspect AI、Braintrust、DeepEval 等 | [断言 API、语法与作者 DX](assertion-api-dx/README.md)；[Eve 回归题研究](eve-assertion-dx.md) |
 | Experiment | Vercel agent-eval `ExperimentConfig` | [Experiment 运行矩阵设计参照](experiments/README.md) |
-| Record → Report | Eval/tracing 平台、Experiment 比较、Dashboard、Table、Chart 与报告网站 | [运行事实怎样被看懂、比较并交付](record-to-report/README.md) |
+| Record → Report | Eval/tracing 平台、实验结果 store、历史查询、Experiment 比较与 Dashboard | [运行事实怎样被保存、看懂、比较并交付](record-to-report/README.md) |
+| Report design | TanStack Table / Charts 与 Vercel `design.md` | [已完成结果怎样进入表格、图表与报告网站](report-design/README.md) |
 | Sandbox | Harbor、Inspect AI、SWE-ReX、SWE-bench 与 Docker Agent | [容器进程模型](docker-sandbox-process-models.md) |
 | Testing | Git、Cargo、Deno、pnpm、OpenTofu、kubectl、Vite、Vitest 与 Playwright | [复杂 CLI 测试体系](cli-testing/README.md)；[框架 E2E](framework-e2e/README.md) |

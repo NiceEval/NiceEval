@@ -290,4 +290,4 @@ payload 不嵌入完整 source row、MetricValue 或 refs object。
 ## 入口
 
 - [Architecture](architecture.md) —— 五类内部形状、所有权、投影与 controller 契约。
-- [TanStack 对照研究](../../research/record-to-report/tanstack/README.md) —— 外部事实、版本风险与取舍依据。
+- [TanStack 对照研究](../../research/report-design/tanstack/README.md) —— 外部事实、版本风险与取舍依据。
