@@ -128,13 +128,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
-      pull-requests: write
-    # Keep review output and its sole GitHub write in one job. GitHub may
-    # suppress large structured values when promoting a step output to a job
-    # output, but same-job step outputs retain the exact schema-validated value.
-    concurrency:
-      group: pullfrog-final-review-${{ needs.context.outputs.pull_number }}
-      cancel-in-progress: false
+      pull-requests: read
     steps:
       - name: Checkout locked pull request head
         uses: actions/checkout@v6
@@ -230,15 +224,68 @@ jobs:
             }
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      - name: Stage structured review result
+        uses: actions/github-script@v9
+        env:
+          REVIEW_RESULT: ${{ steps.pullfrog.outputs.result }}
+        with:
+          script: |
+            const fs = require("node:fs/promises");
+            const path = require("node:path");
+
+            const raw = process.env.REVIEW_RESULT ?? "";
+            if (raw.length < 1 || raw.length > 100_000 || raw.includes("\u0000")) {
+              throw new Error("Pullfrog result is empty or exceeds the artifact boundary");
+            }
+            try {
+              JSON.parse(raw);
+            } catch {
+              throw new Error("Pullfrog result must be valid JSON before artifact handoff");
+            }
+
+            const resultRoot = path.join(process.env.RUNNER_TEMP, "pullfrog-review-result");
+            await fs.mkdir(resultRoot, { recursive: false, mode: 0o700 });
+            await fs.writeFile(path.join(resultRoot, "review.json"), raw, {
+              encoding: "utf8",
+              mode: 0o600,
+              flag: "wx",
+            });
+      - name: Upload structured review result
+        uses: actions/upload-artifact@v4
+        with:
+          name: pullfrog-review-${{ needs.context.outputs.pull_number }}-${{ needs.context.outputs.head_sha }}
+          path: ${{ runner.temp }}/pullfrog-review-result/review.json
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  publish:
+    name: Update final review comment
+    needs: [context, review]
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: read
+    concurrency:
+      group: pullfrog-final-review-${{ needs.context.outputs.pull_number }}
+      cancel-in-progress: false
+    steps:
+      - name: Download structured review result
+        uses: actions/download-artifact@v4
+        with:
+          name: pullfrog-review-${{ needs.context.outputs.pull_number }}-${{ needs.context.outputs.head_sha }}
+          path: ${{ runner.temp }}/pullfrog-review-result-download
       - name: Upsert workflow-owned final review
         uses: actions/github-script@v9
         env:
           PULL_NUMBER: ${{ needs.context.outputs.pull_number }}
           EXPECTED_BASE_SHA: ${{ needs.context.outputs.base_sha }}
           EXPECTED_HEAD_SHA: ${{ needs.context.outputs.head_sha }}
-          REVIEW_RESULT: ${{ steps.pullfrog.outputs.result }}
+          REVIEW_RESULT_ROOT: ${{ runner.temp }}/pullfrog-review-result-download
         with:
           script: |
+            const fs = require("node:fs");
+            const path = require("node:path");
             const marker = "<!-- niceeval-pullfrog-final-review-v2 -->";
             const pullNumber = Number(process.env.PULL_NUMBER);
             const expectedBaseSha = process.env.EXPECTED_BASE_SHA;
@@ -252,9 +299,28 @@ jobs:
               }
             }
 
+            const resultRoot = fs.realpathSync(process.env.REVIEW_RESULT_ROOT);
+            const entries = fs.readdirSync(resultRoot).sort();
+            if (entries.length !== 1 || entries[0] !== "review.json") {
+              throw new Error("Pullfrog result artifact must contain exactly review.json");
+            }
+            const resultPath = path.join(resultRoot, "review.json");
+            const resultStat = fs.lstatSync(resultPath);
+            if (!resultStat.isFile() || resultStat.isSymbolicLink()) {
+              throw new Error("Pullfrog result artifact entry must be a regular file");
+            }
+            if (resultStat.size < 1 || resultStat.size > 100_000) {
+              throw new Error("Pullfrog result artifact is empty or too large");
+            }
+            if (fs.realpathSync(resultPath) !== resultPath) {
+              throw new Error("Pullfrog result artifact escaped its download root");
+            }
+
             let result;
             try {
-              result = JSON.parse(process.env.REVIEW_RESULT);
+              const raw = fs.readFileSync(resultPath, "utf8");
+              if (raw.includes("\u0000")) throw new Error("NUL");
+              result = JSON.parse(raw);
             } catch {
               throw new Error("Pullfrog result must be valid JSON");
             }
