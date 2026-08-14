@@ -5,10 +5,13 @@ import { existsSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { pollUntil, waitForOutput } from "./support/testkit.ts";
 import { expectNoHorizontalOverflow, followVisibleLink } from "./support/browser.ts";
 import { PINNED_ENV, reportCaseArtifacts, reportE2E } from "./support/context.ts";
+import { browserReport } from "./support/browser-report.ts";
+import { CLASSIC_REPORT_CONTRACT } from "./support/classic-report-contract.ts";
+import { classicExpFacts, type ClassicExpFacts, type ExpEvalEvent } from "./support/exp.ts";
 
 const DESKTOP = { width: 1280, height: 800 };
 const MOBILE = { width: 390, height: 844 };
@@ -24,6 +27,7 @@ test("static Journey: live exp → view --out → exported documents", async ({ 
         timeoutMs: 120_000,
       });
       expect(run.exitCode, run.diagnostic()).toBe(1);
+      const facts = classicExpFacts(run.stdout);
 
       const exported = await niceeval.run(
         ["view", "--report", "./reports/classic.tsx", "--out", "site-export", "--no-open"],
@@ -39,6 +43,7 @@ test("static Journey: live exp → view --out → exported documents", async ({ 
       await expect(page.getByRole("heading", { name: /MemoryBench Classic/i }).first()).toBeVisible();
       await expect(page.getByRole("link", { name: "NiceEval" }).first()).toBeVisible();
       await expectNoHorizontalOverflow(page);
+      const attempt = await expectClassicReport(page, facts);
 
       const experimentLink = page.getByRole("link", { name: /classic\// }).first();
       await expect(experimentLink).toBeVisible();
@@ -57,6 +62,15 @@ test("static Journey: live exp → view --out → exported documents", async ({ 
         await page.goto(target.href);
         await expect(page.getByText(/classic\//).first()).toBeVisible();
       }
+
+      // 0.12 writes the percent-encoded route key as the literal filename. A file: URL
+      // decodes that key before lookup, so load the emitted document directly here;
+      // the live Journey below owns the real link-click contract.
+      const attemptTarget = resolveExportedFile(join(projectRoot, "site-export"), attempt.href);
+      expect(existsSync(attemptTarget), `export target for ${attempt.href}`).toBe(true);
+      await page.goto(pathToFileURL(attemptTarget).href);
+      await browserReport(page).attemptDetails().expectSummary(attempt.event);
+      await expectNoHorizontalOverflow(page);
 
       await page.setViewportSize(MOBILE);
       await page.goto(pathToFileURL(indexPath).href);
@@ -77,6 +91,7 @@ test("live Journey: live exp → view --out → real niceeval view server", asyn
         timeoutMs: 120_000,
       });
       expect(run.exitCode, run.diagnostic()).toBe(1);
+      const facts = classicExpFacts(run.stdout);
 
       const exported = await niceeval.run(
         ["view", "--report", "./reports/classic.tsx", "--out", "site-export", "--no-open"],
@@ -120,6 +135,12 @@ test("live Journey: live exp → view --out → real niceeval view server", asyn
       await page.goto(origin!);
       await expect(page.getByRole("heading", { name: /MemoryBench Classic/i }).first()).toBeVisible();
       await expect(page.getByRole("navigation").or(page.getByRole("link", { name: /Overview|Attempts|Traces/i })).first()).toBeVisible();
+      const attempt = await expectClassicReport(page, facts);
+      await attempt.link.click();
+      await browserReport(page).attemptDetails().expectSummary(attempt.event);
+      await expectNoHorizontalOverflow(page);
+
+      await page.goto(origin!);
       await followVisibleLink(page, /classic\//);
       await expect(page.getByText(/classic\//).first()).toBeVisible();
       await expectNoHorizontalOverflow(page);
@@ -132,12 +153,42 @@ test("live Journey: live exp → view --out → real niceeval view server", asyn
   );
 });
 
+async function expectClassicReport(
+  page: Page,
+  facts: ClassicExpFacts,
+): Promise<{ event: ExpEvalEvent; href: string; link: Locator }> {
+  const report = browserReport(page);
+  await report.expectStats(CLASSIC_REPORT_CONTRACT.stats);
+
+  await report.bars(CLASSIC_REPORT_CONTRACT.bars.heading).expectRows(CLASSIC_REPORT_CONTRACT.bars.rows);
+
+  const scatter = report.scatter(CLASSIC_REPORT_CONTRACT.scatter.accessibleName);
+  await scatter.expectAxes(CLASSIC_REPORT_CONTRACT.scatter);
+  await scatter.expectPoints(CLASSIC_REPORT_CONTRACT.scatter.points);
+  await scatter.expectVisualOrder(CLASSIC_REPORT_CONTRACT.scatter);
+
+  const table = report.experimentTable(CLASSIC_REPORT_CONTRACT.experimentTable.headers);
+  await table.expectHeaders();
+  await table.expectExperiments(CLASSIC_REPORT_CONTRACT.experimentTable.experiments);
+  await table.expectAttempts(facts.evals);
+
+  const failedLocator = facts.locator("classic/memory-a", "classic/recall-entity");
+  const failedEvent = facts.evals.find((event) => event.locator === failedLocator);
+  expect(failedEvent, `failed attempt event ${failedLocator}`).toBeDefined();
+  await table.expandPath(["classic/memory-a", "classic (8 evals)", "recall-entity"]);
+  const attemptLink = await table.expectAttemptVisible(failedLocator);
+  await expect(attemptLink).toHaveAttribute("href", new RegExp(`attempt/.+${failedLocator.slice(1)}\\.html$`));
+  const href = await attemptLink.getAttribute("href");
+  expect(href, `attempt target ${failedLocator}`).toBeTruthy();
+  return { event: failedEvent!, href: href!, link: attemptLink };
+}
+
 function resolveExportedFile(exportDir: string, href: string): string {
   const relative = href.split("#")[0] ?? href;
   return join(exportDir, relative.replace(/^\.\//, ""));
 }
 
-async function expectAccessibleCollapse(page: import("@playwright/test").Page): Promise<void> {
+async function expectAccessibleCollapse(page: Page): Promise<void> {
   const disclosure = page.getByRole("button").or(page.locator("summary")).first();
   if ((await disclosure.count()) === 0) return;
   if (await disclosure.isVisible()) {

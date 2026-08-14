@@ -42,74 +42,74 @@ C   classic/memory-b   $0.0090   100%
 
 classic   A → B → C   Pass rate(%) +66.7pt · Cost($) +$0.0050
 
-Experiment               Model   Agent      Avg. time   Pass rate       Tokens
-classic/memory-b         —       classic-{{duration}}100%   238 tokens
-                                 memory
-  classic (8 evals)      —       —{{duration}}100%   238 tokens
-    recall-constraint    —       —{{duration}}—            —
-      ✓ {{locator:classic/memory-b:classic/recall-constraint}}   —       —{{duration}}—            —
-    recall-date          —       —{{duration}}—            —
-      ✓ {{locator:classic/memory-b:classic/recall-date}}   —       —{{duration}}—            —
-    recall-entity        —       —{{duration}}—            —
-      ✓ {{locator:classic/memory-b:classic/recall-entity}}   —       —{{duration}}—            —
-    recall-fact          —       —{{duration}}—            —
-      ✓ {{locator:classic/memory-b:classic/recall-fact}}   —       —{{duration}}—            —
-    recall-multi         —       —{{duration}}—            —
-      ✓ {{locator:classic/memory-b:classic/recall-multi}}   —       —{{duration}}—            —
-    recall-name          —       —{{duration}}—            —
-      ✓ {{locator:classic/memory-b:classic/recall-name}}   —       —{{duration}}—            —
-    recall-procedure     —       —{{duration}}—            —
-      ✓ {{locator:classic/memory-b:classic/recall-procedure}}   —       —{{duration}}—            —
-    tool-note            —       —{{duration}}—            —
-      ✓ {{locator:classic/memory-b:classic/tool-note}}   —       —{{duration}}—            —
-  source-snapshot        —       —{{duration}}—            —
-    ✓ {{locator:classic/memory-b:source-snapshot}}     —       —{{duration}}—            —
-—                        —       —                  —           —            —
-classic/memory-a         —       classic-{{duration}}77.8%   176 tokens
-                                 memory
-  classic (8 evals)      —       —{{duration}}75%   176 tokens
-    recall-constraint    —       —{{duration}}—            —
-      ✓ {{locator:classic/memory-a:classic/recall-constraint}}   —       —{{duration}}—            —
-    recall-date          —       —{{duration}}—            —
-      ✓ {{locator:classic/memory-a:classic/recall-date}}   —       —{{duration}}—            —
-    recall-entity        —       —{{duration}}—            —
-      ✗ {{locator:classic/memory-a:classic/recall-entity}}   —       —{{duration}}—            —
-    recall-fact          —       —{{duration}}—            —
-      ✓ {{locator:classic/memory-a:classic/recall-fact}}   —       —{{duration}}—            —
-    recall-multi         —       —{{duration}}—            —
-      ✗ {{locator:classic/memory-a:classic/recall-multi}}   —       —{{duration}}—            —
-    recall-name          —       —{{duration}}—            —
-      ✓ {{locator:classic/memory-a:classic/recall-name}}   —       —{{duration}}—            —
-    recall-procedure     —       —{{duration}}—            —
-      ✓ {{locator:classic/memory-a:classic/recall-procedure}}   —       —{{duration}}—            —
-    tool-note            —       —{{duration}}—            —
-      ✓ {{locator:classic/memory-a:classic/tool-note}}   —       —{{duration}}—            —
-  source-snapshot        —       —{{duration}}—            —
-    ✓ {{locator:classic/memory-a:source-snapshot}}     —       —{{duration}}—            —
-—                        —       —                  —           —            —
-classic/baseline         —       classic-{{duration}}33.3%   100 tokens
-                                 memory
-  classic (8 evals)      —       —{{duration}}25%   100 tokens
-    recall-constraint    —       —{{duration}}—            —
-      ✗ {{locator:classic/baseline:classic/recall-constraint}}   —       —{{duration}}—            —
-    recall-date          —       —{{duration}}—            —
-      ✗ {{locator:classic/baseline:classic/recall-date}}   —       —{{duration}}—            —
-    recall-entity        —       —{{duration}}—            —
-      ✗ {{locator:classic/baseline:classic/recall-entity}}   —       —{{duration}}—            —
-    recall-fact          —       —{{duration}}—            —
-      ✗ {{locator:classic/baseline:classic/recall-fact}}   —       —{{duration}}—            —
-    recall-multi         —       —{{duration}}—            —
-      ✗ {{locator:classic/baseline:classic/recall-multi}}   —       —{{duration}}—            —
-    recall-name          —       —{{duration}}—            —
-      ✓ {{locator:classic/baseline:classic/recall-name}}   —       —{{duration}}—            —
-    recall-procedure     —       —{{duration}}—            —
-      ✗ {{locator:classic/baseline:classic/recall-procedure}}   —       —{{duration}}—            —
-    tool-note            —       —{{duration}}—            —
-      ✓ {{locator:classic/baseline:classic/tool-note}}   —       —{{duration}}—            —
-  source-snapshot        —       —{{duration}}—            —
-    ✓ {{locator:classic/baseline:source-snapshot}}     —       —{{duration}}—            —
-—                        —       —                  —           —            —
-(2 more columns not shown)
+Experiment               Model      Agent      Avg. time   Pass rate
+classic/memory-b         gpt-5.6-   classic-{{duration}}100%
+                         luna       memory
+  classic (8 evals)      —          —{{duration}}100%
+    recall-constraint    —          —{{duration}}—
+      ✓ {{locator:classic/memory-b:classic/recall-constraint}}   —          —{{duration}}—
+    recall-date          —          —{{duration}}—
+      ✓ {{locator:classic/memory-b:classic/recall-date}}   —          —{{duration}}—
+    recall-entity        —          —{{duration}}—
+      ✓ {{locator:classic/memory-b:classic/recall-entity}}   —          —{{duration}}—
+    recall-fact          —          —{{duration}}—
+      ✓ {{locator:classic/memory-b:classic/recall-fact}}   —          —{{duration}}—
+    recall-multi         —          —{{duration}}—
+      ✓ {{locator:classic/memory-b:classic/recall-multi}}   —          —{{duration}}—
+    recall-name          —          —{{duration}}—
+      ✓ {{locator:classic/memory-b:classic/recall-name}}   —          —{{duration}}—
+    recall-procedure     —          —{{duration}}—
+      ✓ {{locator:classic/memory-b:classic/recall-procedure}}   —          —{{duration}}—
+    tool-note            —          —{{duration}}—
+      ✓ {{locator:classic/memory-b:classic/tool-note}}   —          —{{duration}}—
+  source-snapshot        —          —{{duration}}—
+    ✓ {{locator:classic/memory-b:source-snapshot}}     —          —{{duration}}—
+—                        —          —                  —           —
+classic/memory-a         gpt-5.6-   classic-{{duration}}77.8%
+                         luna       memory
+  classic (8 evals)      —          —{{duration}}75%
+    recall-constraint    —          —{{duration}}—
+      ✓ {{locator:classic/memory-a:classic/recall-constraint}}   —          —{{duration}}—
+    recall-date          —          —{{duration}}—
+      ✓ {{locator:classic/memory-a:classic/recall-date}}   —          —{{duration}}—
+    recall-entity        —          —{{duration}}—
+      ✗ {{locator:classic/memory-a:classic/recall-entity}}   —          —{{duration}}—
+    recall-fact          —          —{{duration}}—
+      ✓ {{locator:classic/memory-a:classic/recall-fact}}   —          —{{duration}}—
+    recall-multi         —          —{{duration}}—
+      ✗ {{locator:classic/memory-a:classic/recall-multi}}   —          —{{duration}}—
+    recall-name          —          —{{duration}}—
+      ✓ {{locator:classic/memory-a:classic/recall-name}}   —          —{{duration}}—
+    recall-procedure     —          —{{duration}}—
+      ✓ {{locator:classic/memory-a:classic/recall-procedure}}   —          —{{duration}}—
+    tool-note            —          —{{duration}}—
+      ✓ {{locator:classic/memory-a:classic/tool-note}}   —          —{{duration}}—
+  source-snapshot        —          —{{duration}}—
+    ✓ {{locator:classic/memory-a:source-snapshot}}     —          —{{duration}}—
+—                        —          —                  —           —
+classic/baseline         gpt-5.6-   classic-{{duration}}33.3%
+                         luna       memory
+  classic (8 evals)      —          —{{duration}}25%
+    recall-constraint    —          —{{duration}}—
+      ✗ {{locator:classic/baseline:classic/recall-constraint}}   —          —{{duration}}—
+    recall-date          —          —{{duration}}—
+      ✗ {{locator:classic/baseline:classic/recall-date}}   —          —{{duration}}—
+    recall-entity        —          —{{duration}}—
+      ✗ {{locator:classic/baseline:classic/recall-entity}}   —          —{{duration}}—
+    recall-fact          —          —{{duration}}—
+      ✗ {{locator:classic/baseline:classic/recall-fact}}   —          —{{duration}}—
+    recall-multi         —          —{{duration}}—
+      ✗ {{locator:classic/baseline:classic/recall-multi}}   —          —{{duration}}—
+    recall-name          —          —{{duration}}—
+      ✓ {{locator:classic/baseline:classic/recall-name}}   —          —{{duration}}—
+    recall-procedure     —          —{{duration}}—
+      ✗ {{locator:classic/baseline:classic/recall-procedure}}   —          —{{duration}}—
+    tool-note            —          —{{duration}}—
+      ✓ {{locator:classic/baseline:classic/tool-note}}   —          —{{duration}}—
+  source-snapshot        —          —{{duration}}—
+    ✓ {{locator:classic/baseline:source-snapshot}}     —          —{{duration}}—
+—                        —          —                  —           —
+(3 more columns not shown)
 
 Other pages:
   attempts   Attempts   niceeval show --page attempts

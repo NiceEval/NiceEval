@@ -9,6 +9,8 @@ import { PINNED_ENV, reportCaseArtifacts, reportE2E } from "./support/context.ts
 import { expectBoxed, expectPlain } from "./support/frames.ts";
 import { classicExpFacts } from "./support/exp.ts";
 import { expectTranscript, requiredTranscript, toTranscriptTemplate } from "./support/transcript.ts";
+import { CLASSIC_REPORT_CONTRACT } from "./support/classic-report-contract.ts";
+import { terminalReport } from "./support/terminal-report.ts";
 
 const SITE_OVERVIEW = ["show", "--report", "./reports/site.tsx", "--page", "overview"] as const;
 
@@ -62,6 +64,27 @@ test("PTY site overview draws Section frames; pipe/NO_COLOR stay plain", async (
       writeFileSync(fixturePath, toTranscriptTemplate(pty.stdout, bindings), "utf8");
     }
     expectTranscript(pty.stdout, requiredTranscript(import.meta.dirname, "show-site-overview.pty.txt"), bindings);
+
+    const classic = await runPty([...niceevalArgv(projectRoot), "show"], {
+      cwd: projectRoot,
+      columns: 180,
+      rows: 60,
+      env: { ...PINNED_ENV, TERM: "dumb", NO_COLOR: undefined, FORCE_COLOR: undefined },
+      timeoutMs: 60_000,
+    });
+    expect(classic.exitCode, classic.diagnostic()).toBe(0);
+    expectBoxed(classic.stdout, classic.diagnostic());
+
+    const report = terminalReport(classic.stdout);
+    report.expectStats(CLASSIC_REPORT_CONTRACT.stats);
+    report.bars(CLASSIC_REPORT_CONTRACT.bars.heading).expectRows(CLASSIC_REPORT_CONTRACT.bars.rows);
+    const scatter = report.scatter(CLASSIC_REPORT_CONTRACT.scatter.accessibleName);
+    scatter.expectAxes(CLASSIC_REPORT_CONTRACT.scatter);
+    scatter.expectPoints(CLASSIC_REPORT_CONTRACT.scatter.points);
+    scatter.expectVisualOrder(CLASSIC_REPORT_CONTRACT.scatter);
+    const table = report.experimentTable(CLASSIC_REPORT_CONTRACT.experimentTable.headers);
+    table.expectExperiments(CLASSIC_REPORT_CONTRACT.experimentTable.experiments);
+    table.expectAttempts(facts.evals);
   });
 });
 
