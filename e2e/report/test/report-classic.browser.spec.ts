@@ -110,8 +110,6 @@ test("live Journey: live exp → view --out → real niceeval view server", asyn
           "view",
           "--report",
           "./reports/classic.tsx",
-          "--host",
-          "127.0.0.1",
           "--port",
           "0",
           "--no-open",
@@ -124,6 +122,68 @@ test("live Journey: live exp → view --out → real niceeval view server", asyn
       });
       const origin = startup.match(/http:\/\/127\.0\.0\.1:\d+\//)?.[0];
       expect(origin, startup).toBeDefined();
+
+      const wildcardView = niceeval.start(
+        [
+          "view",
+          "--report",
+          "./reports/classic.tsx",
+          "--host",
+          "--port",
+          "0",
+          "--no-open",
+        ],
+        { timeoutMs: 60_000, env: PINNED_ENV },
+      );
+      const wildcardWarning = await waitForOutput(
+        wildcardView,
+        "stderr",
+        /without authentication or TLS/i,
+        { timeoutMs: 30_000, label: "non-loopback exposure warning" },
+      );
+      expect(wildcardWarning).toMatch(/reachable client.*report data/i);
+      const wildcardStartup = await waitForOutput(
+        wildcardView,
+        "stdout",
+        /http:\/\/127\.0\.0\.1:\d+\//,
+        { timeoutMs: 30_000, label: "wildcard report view URL" },
+      );
+      const wildcardOrigin = wildcardStartup.match(/http:\/\/127\.0\.0\.1:\d+\//)?.[0];
+      expect(wildcardOrigin, wildcardStartup).toBeDefined();
+
+      const wildcardGet = await page.request.get(wildcardOrigin!);
+      expect(wildcardGet.status()).toBe(200);
+      const wildcardHead = await page.request.head(wildcardOrigin!);
+      expect(wildcardHead.status()).toBe(200);
+      expect(await wildcardHead.body()).toHaveLength(0);
+      const rejectedMethod = await page.request.post(wildcardOrigin!);
+      expect(rejectedMethod.status()).toBe(405);
+      expect(rejectedMethod.headers()["allow"]).toBe("GET, HEAD");
+      const rejectedHost = await page.request.get(wildcardOrigin!, {
+        headers: { host: "rebind.invalid" },
+      });
+      expect(rejectedHost.status()).toBe(421);
+
+      const ipv6View = niceeval.start(
+        [
+          "view",
+          "--report",
+          "./reports/classic.tsx",
+          "--host",
+          "::",
+          "--port",
+          "0",
+          "--no-open",
+        ],
+        { timeoutMs: 60_000, env: PINNED_ENV },
+      );
+      const ipv6Startup = await waitForOutput(ipv6View, "stdout", /http:\/\/\[::1\]:\d+\//, {
+        timeoutMs: 30_000,
+        label: "IPv6 wildcard report view URL",
+      });
+      const ipv6Origin = ipv6Startup.match(/http:\/\/\[::1\]:\d+\//)?.[0];
+      expect(ipv6Origin, ipv6Startup).toBeDefined();
+      expect((await page.request.get(ipv6Origin!)).status()).toBe(200);
 
       await pollUntil(
         async () => {
