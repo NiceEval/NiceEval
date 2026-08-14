@@ -136,6 +136,45 @@ Vercel `design.md` 研究的是官方报告、比较、benchmark、数据叙事�
 
 NiceEval 借鉴的是读者任务、证据构图和视觉验收，不采用 Vercel 品牌外壳、Geist、固定网格或 CSS API。
 
+## 旧 Results schema 为什么反复升版
+
+NiceEval 旧 Results Format 曾用一个全局 `schemaVersion` 同时标识 root、Run、Attempt、assertion、commands、diff、timing、source 与 coverage。
+下面是 v1–v16 的紧凑历史；它解释过去为什么几乎每改一批功能就要改整个格式，不表示这些旧版本仍是目标 Record 契约。
+
+| 版本 | 当时的变化 | 为什么牵动全局 schema |
+|---:|---|---|
+| 1 | `summary.json` 首次加入格式信封和版本识别 | 整份 Results 第一次取得唯一格式身份 |
+| 2 | `ExperimentRunInfo.flags` 改名为 `params` | 核心对象字段名改变，旧 reader 无法按原字段读取 |
+| 3 | `params` 又改回 `flags`，确认 A/B feature flag 语义 | 同一核心字段再次改名，v2 与 v3 无法互读 |
+| 4 | 落盘单位从 Run 改为 Snapshot，并重做目录、`snapshot.json` 与 Attempt `result.json` | owner、目录和提交单位一起改变 |
+| 5 | 加入 Attempt locator；source 从逐 Attempt 内联改为 Snapshot 级 hash 去重引用 | identity 和 source 布局一起改变 |
+| 6 | 自由字符串 `error` 改为结构化 `AttemptError`，并加入有界 diagnostics | Attempt 核心错误形状发生破坏性变化 |
+| 7 | **未作为独立版本出现**；`operation`→`phase` 等 lifecycle 变化最后随 v8 写入 | 开发中的变化被并入下一次升版，数字没有对应 writer 格式 |
+| 8 | assertion outcome、`groupPath`/`loc`、lifecycle、coverage、send diff、publish 消毒等一批变化一起写入 | 多个核心对象和 artifact 同时变化，只能整包拒绝旧 Results |
+| 9 | 四个 `has*` 布尔收敛为统一 artifacts 列表；`o11y.json` 删除可派生摘要 | artifact registry 与权威事实边界也依赖全局版本 |
+| 10 | **未作为独立版本出现**；多文件 source 的 callers、role、entry 约束随 v11 写入 | 设计阶段的编号没有对应 writer 格式 |
+| 11 | Snapshot→Run；加入 Record/Sample identity、Run/Member/Attempt 布局和 source roles/callers | owner、identity、目录和读取模型整体替换 |
+| 12 | `WindowChange.binary` 并入 `elided` | 旧 reader 会把新条目解释成错误的文本变化 |
+| 13 | `TimingNode` 改为开放的 `TimingActivity`；error origin 改为 `TimingOrigin`；Run 加入 timings 与 sandbox provenance | timing owner、引用和 error origin 的判别形状一起变化 |
+| 14 | `coverage` 改名为必填 `evidenceCoverage`，扩为六通道 | 字段改名且变为必填，双向都不能安全省略 |
+| 15 | `commands.json` 的命令调用事实加入必填 `checked` | 单个业务 artifact 的字段变化再次让整份 Results 失效；这是 main 的最后一个旧格式版本 |
+| 16 | **仅存在于未合并的 `polish-assert` 分支**；引入第一版 Fact/use assertion lifecycle 与 Record 形状 | assertion 存储模型整体替换，但没有成为 main 的公开格式 |
+
+完整 commit、日期、分支边界以及后续 v17–v18 证据保存在 [Results schemaVersion 1–18 历史存档](../../../memory/results-schema-version-history.md)。
+另有一次未提交工作树曾短暂把常量推进到 16/17，复核发现 v15 reader 仍可读取后撤销；它也不是公开格式历史。
+
+### 反复升版的结构性原因
+
+旧格式的问题不是缺少迁移命令，而是兼容域划得太大：
+
+- Core identity、目录和原子发布，与 assertion、commands、timing、source 等业务事实共用一个版本。
+- 字段改名、判别形状变化和业务 artifact 增补没有各自的局部 schema；局部变化只能升级全局整数。
+- reader 只接受与自身完全相同的版本；一处变化会让 `show`、carry、诊断和报告一起失去整份历史。
+- 版本数字不表达变化属于哪个 owner 或领域。v7/v10 跳号和 main/branch 重用 v16 都说明整数本身不足以解释兼容关系。
+- 仓库内 fixture 往往同版写、同版读，不能暴露真实项目中旧运行整批不可读和重跑的成本。
+
+所以当前方向不能只是“以后少改一点 schema”。它必须把兼容责任拆开：Record major 只守住 owner、identity、引用、Core shape 和完成判断；业务事实在各自 Attachment family 内使用相邻 schema；上层 Analysis、Query 和 Report 不进入持久格式。旧格式整批失效造成的实际代价见 [升 schemaVersion 会把存量语料整批打成不可携带](../../../memory/schema-bump-invalidates-all-history.md)。
+
 ## 怎样防止功能演进牵动 schema
 
 外部平台普遍拥有少量稳定写入对象，由平台升级自己的 store。
