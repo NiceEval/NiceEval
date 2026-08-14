@@ -13,7 +13,13 @@ interface ExpPlanDocument {
     readonly name: string;
     readonly contributions: readonly string[];
   }[];
-  readonly commandPlan?: {
+}
+
+interface DebugPlanDocument {
+  readonly format: "niceeval.debug-plan/v1";
+  readonly experimentId: string;
+  readonly evalId: string;
+  readonly commandPlan: {
     readonly experiments: readonly {
       readonly lanes: readonly {
         readonly beforeSlots?: readonly { readonly phase: string }[];
@@ -90,11 +96,17 @@ test("Eval Group、Sandbox 与 Eval Plugin 各自遵守共享实例的生命周�
       contributions: ["lifecycle"],
     }));
 
-    const commands = await niceeval.run(["exp", "group-plugin", "--dry", "--commands", "--json"], {
+    const commands = await niceeval.run(["debug", "group-plugin", "group-plugin/01-first", "--json"], {
       env: { ...process.env, PLUGIN_GROUP_VARIANT: "changed" },
     });
     expect(commands.exitCode, commands.diagnostic()).toBe(0);
-    const lane = commands.json<ExpPlanDocument>().commandPlan!.experiments[0]!.lanes[0]!;
+    const debugPlan = commands.json<DebugPlanDocument>();
+    expect(debugPlan).toMatchObject({
+      format: "niceeval.debug-plan/v1",
+      experimentId: "group-plugin",
+      evalId: "group-plugin/01-first",
+    });
+    const lane = debugPlan.commandPlan.experiments[0]!.lanes[0]!;
     expect(lane.beforeSlots!.map((step) => step.phase)).toEqual([
       "plugin.lifecycle.setup",
       "plugin.lifecycle.setup",

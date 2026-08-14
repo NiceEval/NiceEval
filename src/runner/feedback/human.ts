@@ -1358,8 +1358,8 @@ function commandPlanLaneLabel(lane: CommandPlanLane): string {
 }
 
 /**
- * `--dry --commands` 的人读投影。矩阵仍先输出；本面板只呈现保证的局部顺序，不给并发 lane
- * 编造全局序号。TTY 画区域框，NO_COLOR / 非 TTY / 窄终端按全仓 panel 契约退化为 plain。
+ * `niceeval debug` 的人读投影。只呈现保证的局部顺序，不给并发 lane 编造全局序号。
+ * TTY 画区域框，NO_COLOR / 非 TTY / 窄终端按全仓 panel 契约退化为 plain。
  */
 export function renderHumanCommandPlan(plan: CommandPlan, options: HumanCommandPlanOptions): string {
   const capability = panelCapability({

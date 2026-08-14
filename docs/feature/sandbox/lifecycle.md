@@ -161,13 +161,13 @@ reset 语义、寿命确认与污染诊断见 [Sandbox 复用](reuse.md)。
 
 ## 命令计划怎样投影这条时序
 
-`niceeval exp <选择> --dry --commands` 直接消费 link、physical planning 与 carry 的完成态，把本页时序投影为 Experiment → lane → slot。装配器拥有生命周期语义；human 的 `COMMAND PLAN` 框和 JSON 的 `commandPlan` 只投影同一棵树，不能各自重排节点。
+`niceeval debug <experiment> <eval>` 直接消费 link 与 physical planning 的完成态，把本页时序投影为 Experiment → lane → slot。它不读取 fingerprint、Record、reuse 或 carry。装配器拥有生命周期语义；human 的 `COMMAND PLAN` 框和 JSON 的 `commandPlan` 只投影同一棵树，不能各自重排节点。
 
-它只声明运行器能保证的偏序：fresh Eval 与 `sandboxReuse` lane 都不保证 slot 顺序，也不生成全局序号。Eval Group lane 按规范化 Eval ID、再按 Attempt index 串行。Group 过滤与 carry 只移除对应 slot；作者数组位置没有业务顺序语义。
+它只声明运行器能保证的偏序：fresh Eval 与 `sandboxReuse` lane 都不保证 slot 顺序，也不生成全局序号。Eval Group lane 按规范化 Eval ID、再按 Attempt index 串行。Group 选择只保留命中的成员；作者数组位置没有业务顺序语义。
 
 fresh slot 把 Case materialize / lifecycle setup、逐 Attempt body、lifecycle teardown / Provider finalizer 放在自己的 steps 内。reuse 与 Group lane 提供 `physicalLifecycleTemplate`。这份模板分别套用到每台实际实例，并包住分配给该实例的 slots；它不是整个 lane 只执行一次的统一前后边。reset 失败、寿命不足或故障退休会换实例并重跑模板；普通 reuse 的多台实例也可能并发存在。
 
-dispatch slot 的 activation 仍受 late carry、预算、early-exit、fail-fast、取消与运行期失败影响；静态列出不等于实际执行。carry slot 不跨入任何 lifecycle，固定是 `carried · no commands`。
+debug 把配置的全部 attempts 列作候选 dispatch slot。正常运行的 activation 仍受 late carry、预算、early-exit、fail-fast、取消与运行期失败影响；静态列出不等于实际执行。
 
 Sandbox lifecycle hook、test 与 Provider callback 保留其真实位置并标为 opaque。Agent setup / teardown 的 Adapter 内部步骤同样 opaque。内置 Adapter factory 已显式收到的 `postSetup` / `preTeardown` `SandboxCommand` 则在对应子阶段按真实顺序展开。
 

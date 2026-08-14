@@ -1,4 +1,4 @@
-// `niceeval exp --dry --commands` 的纯计划装配器。
+// `niceeval debug <experiment> <eval>` 的纯计划装配器。
 //
 // 它只消费 discovery/link/physical/carry 已经完成的不可变结果，不执行作者回调，也不从
 // Function#toString 或公开 command identity 猜命令。生命周期拓扑在这里组装；human/JSON

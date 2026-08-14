@@ -36,7 +36,6 @@ import type {
 } from "../types.ts";
 import type { JsonValue, Verdict } from "../../shared/types.ts";
 import { evalConclusionRows, type EvalConclusionRow } from "./eval-conclusions.ts";
-import type { CommandPlan } from "../command-plan.ts";
 
 /** `ExpEvent`/`ExpPlanDocument` 的 `format`/`schemaVersion` —— 只在破坏性形状变更时递增
  *  (见 cli.md「事件与计划文档的 TypeScript 形状」)。 */
@@ -657,8 +656,6 @@ export interface JsonPlanInput {
    *  场景的展示规则,这里与 human/agent 既有的 dry 预览取同一个近似口径:最大值)。 */
   attempts: number;
   matrix: readonly JsonPlanRow[];
-  /** 只在 `--dry --commands` 出现；普通 `--dry --json` 仍只给选择/carry 矩阵。 */
-  commandPlan?: CommandPlan;
 }
 
 /**
@@ -676,6 +673,5 @@ export function renderJsonPlanDocument(input: JsonPlanInput): string {
     attempts: input.attempts,
     reused,
     matrix: input.matrix,
-    ...(input.commandPlan === undefined ? {} : { commandPlan: input.commandPlan }),
   })}\n`;
 }

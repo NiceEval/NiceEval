@@ -1,6 +1,7 @@
 // niceeval CLI 入口。执行 eval 必须以 experiment 为单位;位置参数只在 exp 后筛 eval id 前缀。
 //   niceeval check [组|配置] [pattern]  只做发现、选择与 SandboxLayer pure link
 //   niceeval exp [组|配置] [pattern]    跑实验
+//   niceeval debug <配置> <eval>        只规划一个配对的 Sandbox / Plugin lifecycle
 //   niceeval accept @<locator>...       接受多条历史结果并重锚到当前配置
 //   niceeval show [selection]        终端渲染一次固定的 ReportExecution
 //   niceeval list                    只列出发现到的 eval
@@ -101,7 +102,7 @@ import {
   readTeardownRegistrationsEffect,
   removeTeardownRegistrationIfPresentEffect,
 } from "./runner/teardown-registry.ts";
-import type { ExperimentHookContext } from "./runner/types.ts";
+import type { DiscoveredExperiment, ExperimentHookContext } from "./runner/types.ts";
 import type {
   ExperimentRenameBlocked,
   ExperimentRenamePlan,
@@ -112,7 +113,13 @@ import type {
 import { ExperimentRenameError } from "./runner/rename-experiment.ts";
 import { evalLevelStats } from "./shared/verdict.ts";
 import { recordFact } from "./shared/facts.ts";
-import { linkRunSandboxes, recommendedConcurrencyForPreparedPairs } from "./runner/sandbox-selection.ts";
+import {
+  linkRunSandboxes,
+  prepareRunSandboxes,
+  preparedPairsByKey,
+  recommendedConcurrencyForPreparedPairs,
+} from "./runner/sandbox-selection.ts";
+import { liveSandboxPlanningServices } from "./sandbox/plan.ts";
 import { JUnit } from "./runner/reporters/json.ts";
 import {
   resolveOutputForm,
@@ -239,7 +246,6 @@ export interface Flags {
   timeout?: number;
   earlyExit?: boolean;
   dry: boolean;
-  commands: boolean;
   force: boolean;
   rerun?: "failed" | "all";
   budget?: number;
@@ -327,7 +333,7 @@ const FLAG_OPTIONS = {
   tag: { type: "string" },
   /** 额外写一份 JUnit XML 报告到指定路径,供 CI 消费。 */
   junit: { type: "string" },
-  /** `exp` 命令专用:stdout 上单一有序的 NDJSON 事件流；`--dry --json` 输出单个 JSON 计划文档。`show` 命令专用:输出同一 ReportExecution 的宿主数据与状态，不打开第二条取数路径。 */
+  /** `exp` 运行在 stdout 输出单一有序的 NDJSON 事件流；`exp --dry` 与 `debug` 输出各自的单个 JSON 计划文档。`show` 输出同一 ReportExecution 的宿主数据与状态，不打开第二条取数路径。 */
   json: { type: "boolean" },
   /** `docker profile doctor` 专用：启动受限 DinD 容器并运行内层容器。 */
   smoke: { type: "boolean" },
@@ -372,8 +378,6 @@ const FLAG_OPTIONS = {
   teardown: { type: "boolean" },
   /** 只打印本次会匹配到的 eval × 运行配置,不实际执行(人读文本或 `--json` 单文档,见「机器怎么读:--json」)。 */
   dry: { type: "boolean" },
-  /** `exp --dry` 专用：追加 Sandbox 与 Plugin 生命周期命令计划。 */
-  commands: { type: "boolean" },
   /** `sandbox prune` 专用:除 orphan 外也销毁 unverified 实例;`exp` 明确拒绝此 flag,重跑失败项或全部项请用 `--rerun` / `--rerun all`。 */
   force: { type: "boolean" },
   /** `exp` 命令专用:重新运行失败项(裸写/failed)或全部项(all),不改变长期指纹。 */
@@ -402,14 +406,22 @@ function numberFlag(name: string, raw: string | undefined): number | undefined {
   return n;
 }
 
-const CLI_COMMANDS = ["check", "exp", "accept", "show", "list", "view", "clean", "migrate", "init", "run", "sandbox", "session", "docker"] as const;
+const CLI_COMMANDS = ["check", "exp", "debug", "accept", "show", "list", "view", "clean", "migrate", "init", "run", "sandbox", "session", "docker"] as const;
 type CliCommand = (typeof CLI_COMMANDS)[number];
+
+interface ParsedCliArgs {
+  readonly command: CliCommand;
+  readonly positionals: string[];
+  readonly flags: Flags;
+  /** Canonical option names in argv order, after boolean|string normalization. */
+  readonly providedOptions: readonly string[];
+}
 
 function isCliCommand(candidate: string): candidate is CliCommand {
   return CLI_COMMANDS.some((command) => command === candidate);
 }
 
-function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]; flags: Flags } {
+function parseArgs(argv: string[]): ParsedCliArgs {
   if (argv[0] === "--") argv = argv.slice(1);
   if (argv.some((arg) => arg === "--strict" || arg.startsWith("--strict="))) {
     throw usageError(t("cli.flag.strictRemoved"));
@@ -499,10 +511,20 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
 
   let values: globalThis.Record<string, string | boolean | undefined>;
   let rawPositionals: string[];
+  let providedOptions: string[];
   try {
-    const parsed = nodeParseArgs({ args: argv, options: FLAG_OPTIONS, allowPositionals: true, strict: true });
+    const parsed = nodeParseArgs({
+      args: argv,
+      options: FLAG_OPTIONS,
+      allowPositionals: true,
+      strict: true,
+      tokens: true,
+    });
     values = parsed.values as globalThis.Record<string, string | boolean | undefined>;
     rawPositionals = parsed.positionals;
+    providedOptions = parsed.tokens
+      .filter((token): token is Extract<(typeof parsed.tokens)[number], { kind: "option" }> => token.kind === "option")
+      .map((token) => token.name);
   } catch (e) {
     if (e instanceof CliUsageError) throw e;
     throw usageError(t("cli.flag.parseError", { message: e instanceof Error ? e.message : String(e) }));
@@ -538,7 +560,6 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
     port: numberFlag("port", values.port as string | undefined),
     host: values.host as string | undefined,
     dry: values.dry === true,
-    commands: values.commands === true,
     force: values.force === true,
     rerun: values.rerun === true ? (rerunMode ?? "failed") : undefined,
     earlyExit: values["no-early-exit"] === true ? false : values["early-exit"] === true ? true : undefined,
@@ -569,7 +590,7 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
     orphans: values.orphans === true,
     teardown: values.teardown === true,
   };
-  return { command, positionals, flags };
+  return { command, positionals, flags, providedOptions };
 }
 
 /**
@@ -722,7 +743,6 @@ function renderCurrentDryPlanJson(input: {
   readonly attempts: number;
   readonly rows: readonly CurrentDryPlanRow[];
   readonly pluginAudit: CurrentDryPluginAudit;
-  readonly commandPlan?: ReturnType<typeof assembleCommandPlan>;
 }): string {
   const reused = input.rows.reduce((total, row) =>
     total + row.slots.filter((slot) => slot.state === "reused").length, 0);
@@ -736,7 +756,6 @@ function renderCurrentDryPlanJson(input: {
     reused,
     matrix: input.rows,
     plugins: input.pluginAudit.occurrences,
-    ...(input.commandPlan === undefined ? {} : { commandPlan: input.commandPlan }),
   })}\n`;
 }
 
@@ -1555,6 +1574,152 @@ function runRecordMaintenanceCommand(
   });
 }
 
+function agentRunFromExperiment(
+  experiment: DiscoveredExperiment,
+  selectedEvalIds: readonly string[],
+  overrides: Pick<Flags, "attempts" | "earlyExit" | "timeout" | "budget"> = {},
+): AgentRun {
+  return {
+    agent: experiment.agent,
+    model: experiment.model,
+    reasoningEffort: experiment.reasoningEffort,
+    flags: experiment.flags ?? {},
+    plugins: experiment.plugins,
+    attempts: overrides.attempts ?? experiment.attempts ?? 1,
+    earlyExit: overrides.earlyExit ?? experiment.earlyExit ?? false,
+    sandbox: experiment.sandbox,
+    sandboxReuse: experiment.sandboxReuse,
+    judge: experiment.judge,
+    ...resolveRunTimeout(overrides.timeout, experiment.timeoutMs),
+    budget: overrides.budget ?? experiment.budget,
+    selectedEvalIds,
+    experimentId: experiment.id,
+    experimentBaseDir: experiment.baseDir,
+    experimentSourcePath: experiment.sourcePath,
+    description: experiment.description,
+    labels: experiment.labels,
+    maxConcurrency: experiment.maxConcurrency,
+    setup: experiment.setup,
+    teardown: experiment.teardown,
+    classifyFailure: experiment.classifyFailure,
+  };
+}
+
+function uniqueExactOrPrefix<T extends { readonly id: string }>(
+  candidates: readonly T[],
+  selector: string,
+): readonly T[] {
+  const exact = candidates.find((candidate) => candidate.id === selector);
+  return exact === undefined
+    ? candidates.filter((candidate) => candidate.id.startsWith(selector))
+    : [exact];
+}
+
+function renderDebugPlanJson(input: {
+  readonly experimentId: string;
+  readonly evalId: string;
+  readonly commandPlan: ReturnType<typeof assembleCommandPlan>;
+}): string {
+  return `${JSON.stringify({
+    format: "niceeval.debug-plan/v1",
+    schemaVersion: 1,
+    experimentId: input.experimentId,
+    evalId: input.evalId,
+    commandPlan: input.commandPlan,
+  })}\n`;
+}
+
+function runDebugCommand(
+  cwd: string,
+  positionals: readonly string[],
+  flags: Flags,
+): Effect.Effect<number, CliFailure> {
+  return Effect.gen(function* () {
+    if (positionals.length !== 2) {
+      yield* writeStderr(t("cli.debug.usage"));
+      return 1;
+    }
+
+    const [experimentSelector, evalSelector] = positionals as readonly [string, string];
+    const config = yield* loadConfig(cwd);
+    const evals = yield* cliEffect("discover evals for lifecycle debug", discoverEvals(cwd));
+    const experiments = yield* cliEffect("discover experiments for lifecycle debug", discoverExperiments(cwd));
+    const experimentIds = experiments.map((experiment) => experiment.id);
+    const matchedExperimentIds = matchExperimentSelector(experimentIds, experimentSelector);
+    const matchedExperiments = experiments
+      .filter((experiment) => matchedExperimentIds.includes(experiment.id))
+      .sort((left, right) => left.id.localeCompare(right.id));
+    if (matchedExperiments.length === 0) {
+      yield* writeStderr(t("cli.debug.experimentNoMatch", {
+        selector: experimentSelector,
+        candidates: [...experimentIds].sort().join(", ") || t("cli.none"),
+      }));
+      return 1;
+    }
+    if (matchedExperiments.length > 1) {
+      yield* writeStderr(t("cli.debug.experimentAmbiguous", {
+        selector: experimentSelector,
+        candidates: matchedExperiments.map((experiment) => experiment.id).join(", "),
+      }));
+      return 1;
+    }
+
+    const experiment = matchedExperiments[0]!;
+    const { selectorEvals } = resolveExperimentEvals({
+      experimentId: experiment.id,
+      selector: experiment.evals,
+      cliPatterns: [],
+      evals,
+    });
+    const matchedEvals = uniqueExactOrPrefix(selectorEvals, evalSelector)
+      .slice()
+      .sort((left, right) => left.id.localeCompare(right.id));
+    if (matchedEvals.length === 0) {
+      yield* writeStderr(t("cli.debug.evalNoMatch", {
+        selector: evalSelector,
+        experimentId: experiment.id,
+        candidates: selectorEvals.map((evalDef) => evalDef.id).sort().join(", ") || t("cli.none"),
+      }));
+      return 1;
+    }
+    if (matchedEvals.length > 1) {
+      yield* writeStderr(t("cli.debug.evalAmbiguous", {
+        selector: evalSelector,
+        experimentId: experiment.id,
+        candidates: matchedEvals.map((evalDef) => evalDef.id).join(", "),
+      }));
+      return 1;
+    }
+
+    const evalDef = matchedEvals[0]!;
+    const run = agentRunFromExperiment(experiment, [evalDef.id]);
+    const prepared = yield* cliEffect(
+      "plan sandbox lifecycle debug",
+      prepareRunSandboxes(evals, [run], liveSandboxPlanningServices(), {
+        ...(config.timeoutMs === undefined ? {} : { configTimeoutMs: config.timeoutMs }),
+      }),
+    );
+    const commandPlan = assembleCommandPlan({
+      rows: [{
+        experimentId: experiment.id,
+        evalId: evalDef.id,
+        ...(evalDef.evalGroup === undefined ? {} : { evalGroupId: evalDef.evalGroup.id }),
+        attempts: run.attempts,
+        dispatch: [{ attempts: Array.from({ length: run.attempts }, (_, attempt) => attempt) }],
+      }],
+      preparedPairsByKey: preparedPairsByKey(prepared),
+    });
+    yield* writeStdout(flags.json
+      ? renderDebugPlanJson({ experimentId: experiment.id, evalId: evalDef.id, commandPlan })
+      : renderHumanCommandPlan(commandPlan, {
+          isTTY: process.stdout.isTTY,
+          noColor: process.env.NO_COLOR,
+          width: process.stdout.columns,
+        }));
+    return 0;
+  });
+}
+
 function runEvaluationCommand(
   cwd: string,
   command: CliCommand,
@@ -1752,30 +1917,7 @@ function runEvaluationCommand(
           evals,
         });
         for (const evalDefinition of selectorEvals) experimentScopeIds.add(evalDefinition.id);
-        agentRuns.push({
-          agent: experiment.agent,
-          model: experiment.model,
-          reasoningEffort: experiment.reasoningEffort,
-          flags: experiment.flags ?? {},
-          plugins: experiment.plugins,
-          attempts: flags.attempts ?? experiment.attempts ?? 1,
-          earlyExit: flags.earlyExit ?? experiment.earlyExit ?? false,
-          sandbox: experiment.sandbox,
-          sandboxReuse: experiment.sandboxReuse,
-          judge: experiment.judge,
-          ...resolveRunTimeout(flags.timeout, experiment.timeoutMs),
-          budget: flags.budget ?? experiment.budget,
-          selectedEvalIds,
-          experimentId: experiment.id,
-          experimentBaseDir: experiment.baseDir,
-          experimentSourcePath: experiment.sourcePath,
-          description: experiment.description,
-          labels: experiment.labels,
-          maxConcurrency: experiment.maxConcurrency,
-          setup: experiment.setup,
-          teardown: experiment.teardown,
-          classifyFailure: experiment.classifyFailure,
-        });
+        agentRuns.push(agentRunFromExperiment(experiment, selectedEvalIds, flags));
       }
       for (const pattern of extraPatterns) {
         const matches = evalPrefixPredicate([pattern]);
@@ -1879,25 +2021,6 @@ function runEvaluationCommand(
           ...(lockedFlags[index] ? { locked: true } : {}),
         });
       }));
-      const commandPlan = flags.commands
-        ? assembleCommandPlan({
-            rows: rowsWithLocks.map((row) => ({
-              experimentId: row.experimentId,
-              evalId: row.evalId,
-              ...(row.evalGroupId === undefined ? {} : {
-                evalGroupId: row.evalGroupId,
-                evalGroupIndex: row.evalGroupIndex,
-              }),
-              attempts: Math.max(0, ...row.slots.map((slot) => slot.attempt + 1)),
-              dispatch: [{
-                attempts: row.slots
-                  .filter((slot) => slot.state === "gap")
-                  .map((slot) => slot.attempt),
-              }],
-            })),
-            preparedPairsByKey: targetPlan.preparedPairsByKey,
-          })
-        : undefined;
       const occurrenceAudits = new Map<string, JsonValue>();
       for (const pair of targetPlan.preparedPairsByKey.values()) {
         for (const occurrence of pair.plugin.occurrences) {
@@ -1914,19 +2037,11 @@ function runEvaluationCommand(
         attempts: Math.max(1, ...agentRuns.map((run) => run.attempts)),
         rows: rowsWithLocks,
         pluginAudit,
-        ...(commandPlan === undefined ? {} : { commandPlan }),
       };
       if (outputForm === "json") {
         yield* writeStdout(renderCurrentDryPlanJson(input));
       } else {
         yield* writeStdout(renderCurrentDryPlan(input));
-        if (commandPlan !== undefined) {
-          yield* writeStdout(renderHumanCommandPlan(commandPlan, {
-            isTTY: process.stdout.isTTY,
-            noColor: process.env.NO_COLOR,
-            width: process.stdout.columns,
-          }));
-        }
       }
       return 0;
     }
@@ -2721,7 +2836,7 @@ function reportViewRebuildFailure(failure: CliFailure): { readonly summary: stri
 
 export const cliProgram = (interruption?: CliInterruptionOwnership) => Effect.gen(function* () {
   const cwd = process.cwd();
-  const { command, positionals, flags } = yield* Effect.try({
+  const { command, positionals, flags, providedOptions } = yield* Effect.try({
     try: () => parseArgs(process.argv.slice(2)),
     catch: (cause) => cliFailure("parse CLI arguments", cause),
   });
@@ -2740,12 +2855,15 @@ export const cliProgram = (interruption?: CliInterruptionOwnership) => Effect.ge
     return 0;
   }
 
-  if (
-    flags.commands &&
-    (command !== "exp" || !flags.dry || flags.teardown || positionals[0] === "list" || positionals[0] === "rename")
-  ) {
-    yield* writeStderr(t("cli.commands.requiresDryExp"));
-    return 1;
+  if (command === "debug") {
+    const unsupported = providedOptions.find((name) =>
+      name !== "json" && name !== "help" && name !== "version"
+    );
+    if (unsupported !== undefined) {
+      yield* writeStderr(t("cli.debug.flagUnsupported", { flag: `--${unsupported}` }));
+      return 1;
+    }
+    return yield* runDebugCommand(cwd, positionals, flags);
   }
 
   if (command === "docker") return yield* runDockerCommand(positionals, flags);

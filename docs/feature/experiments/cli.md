@@ -10,10 +10,10 @@ Record 不保存可恢复的 Invocation、live session 或第二套聚合结果�
 niceeval exp [<experiment-prefix>] [<eval-prefix>] [flags]
 niceeval exp list [<experiment-prefix>] [--json]
 niceeval exp <experiment-prefix> --dry [--json]
-niceeval exp <experiment-prefix> <eval-prefix> --dry --commands [--json]
+niceeval debug <experiment-selector> <eval-selector> [--json]
 ```
 
-位置参数先选择 Experiment ID 或路径前缀，再收窄 Eval ID 前缀。它们只能缩小 Experiment 自己的 `evals` 选择，不能把未选中的 Eval 加回计划。
+`exp` 的位置参数先选择 Experiment ID 或路径前缀，再用后续 Eval ID 前缀收窄。它们只能缩小 Experiment 自己的 `evals` 选择，不能把未选中的 Eval 加回计划。
 
 ### `exp list`
 
@@ -33,16 +33,16 @@ compare/codex  memory/commit0  ordinal 1  gap: identity-mismatch
 
 reuse planning 先要求受支持的 eligibility schema 与匹配的 `reuseContract` domain，再比较 input/config identity。缺失、损坏、不支持或 domain 不同都形成带真实 issues 的具名 gap；不会猜成“从未运行”。`--dry` 不建立 Invocation、不写 Record，也不取得 writer lock。
 
-### `--dry --commands`
+### `debug`
 
-`--commands` 在 dry matrix 后追加完整的生命周期命令计划。第一个位置参数照常选择 Experiment，后续位置参数选择 Eval，因此可以精确查看一个直接 `Eval × Experiment` 配对，也可以查看 Eval Group 内的一个成员：
+`debug` 独立显示一个 `Eval × Experiment` 配对的生命周期命令计划，不附带 dry matrix、reuse 或 carry。两个 selector 都必须唯一：精确 ID 优先，否则允许唯一前缀；零命中或多命中会在 physical planning 前列出排序后的精确候选。
 
 ```sh
-niceeval exp compare/codex memory/commit0 --dry --commands
-niceeval exp compare/codex memory/commit0 --dry --commands --json
+niceeval debug compare/codex memory/commit0
+niceeval debug compare/codex memory/commit0 --json
 ```
 
-选中 Group 的一个成员不会把同组其它 Eval 加回计划，但该成员仍处于 Group lane，Group author 与 Plugin lifecycle 会围住这次 selected slice。多个成员同时被选择时，只有 provider plan、Agent install 与物理 lifecycle identity 相容才能共用 Group；不相容时在任何 Sandbox create 前以 `eval-group-incompatible` 失败并点名冲突成员。
+Eval selector 只能在 Experiment 自己的 `evals` 封闭范围内匹配。选中 Group 的一个成员不会把同组其它 Eval 加回计划，但该成员仍处于 Group lane，Group author 与 Plugin lifecycle 会围住这次 selected slice。省略的成员不参与 cohort compatibility。
 
 人读输出和 JSON 都来自同一棵 Experiment → lane → slot 树。下面这些步骤都留在真实包裹位置：
 
@@ -55,7 +55,11 @@ niceeval exp compare/codex memory/commit0 --dry --commands --json
 
 内建 locator 字段是闭合集合：`image`、`context`、`file`、`target`、`workspaceService`、`template`、`snapshotId`、`dir`。URL 的 userinfo、query 与 fragment 会先移除并登记 redaction；custom provider / case 只显示 `Opaque`。build args、env value、credential、stdin 与 custom identity 不进入这个投影。
 
-`--json` 仍输出单个 `niceeval.current-reuse-plan/v1`、`schemaVersion: 1` 文档，只额外带 `commandPlan`。Locator 使用 `_tag: "Exact" | "Redacted" | "Opaque"`。前两种带非空、字段名唯一的 `fields`；`Redacted` 另带只指向已有字段的 `redactions`，`Opaque` 带结构化 `reason`。
+`--json` 输出单个 `{ format: "niceeval.debug-plan/v1", schemaVersion: 1, experimentId, evalId, commandPlan }` 文档。它不带 dry matrix、reuse、carry 或 Plugin audit 顶层字段。Locator 使用 `_tag: "Exact" | "Redacted" | "Opaque"`。前两种带非空、字段名唯一的 `fields`；`Redacted` 另带只指向已有字段的 `redactions`，`Opaque` 带结构化 `reason`。
+
+`debug` 不执行 Experiment、Plugin、Sandbox 或 Agent 的运行期 setup、test、teardown、ensure、materialize 或 finalizer，也不创建 Invocation、Run、Record、锁、Sandbox 或 build。它会加载 `.env`、求值受信任定义与 Experiment 的 `evals` predicate；Provider planner 也可以读文件、调用只读 CLI、查询 Docker control plane 或远端 API。NiceEval 保证自己不发起资源变更，但不能保证受信任模块求值或远端服务不产生自身副作用、审计日志或缓存。
+
+计划把 Experiment 配置的全部 attempts 都列成候选 dispatch slot。这不是实际运行保证：正常 `exp` 仍可能因 carry、首过即停、预算、fail-fast 或取消而阻止某个 slot 启动。`debug` 只接受 `--json`；`--help` 与 `--version` 仍由全局 CLI 处理。
 
 Sandbox reuse lane 的 `id` 只是在同一份计划内关联 slot 的 opaque digest。调用方不应按格式拆解它；前缀与跨版本值都不稳定，输出也不会展开 digest 输入。
 
