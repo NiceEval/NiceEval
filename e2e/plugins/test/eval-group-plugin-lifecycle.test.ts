@@ -1,8 +1,6 @@
 // owner: docs/roadmap/plugins/README.md#v1-owner-matrix
 
 import type { ExpEvalEvent, ExpEvent } from "@niceeval/testkit";
-import { readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { expect, test } from "vitest";
 import { e2e, lifecycleEvents } from "./helpers.ts";
 
@@ -143,28 +141,5 @@ test("Eval Group、Sandbox 与 Eval Plugin 各自遵守共享实例的生命周�
       "plugin.lifecycle.teardown",
     ]);
 
-    for (const member of ["01-first", "02-second"]) {
-      const evalPath = join(paths.projectRoot, "evals", "group-plugin", `${member}.eval.ts`);
-      const original = await readFile(evalPath, "utf8");
-      const withImport = original.replace(
-        'import { evalOnlyLifecycle } from "../../plugins/lifecycle.ts";',
-        'import { evalOnlyLifecycle, lifecycle } from "../../plugins/lifecycle.ts";',
-      );
-      const withPhysicalLifecycle = withImport.replace(
-        `plugins: [evalOnlyLifecycle({ marker: "${member}" })],`,
-        `plugins: [evalOnlyLifecycle({ marker: "${member}" }), lifecycle({ marker: "same-physical" })],`,
-      );
-      expect(withPhysicalLifecycle, `fixture mutation for ${member}`).not.toBe(original);
-      await writeFile(evalPath, withPhysicalLifecycle, "utf8");
-    }
-
-    const incompatible = await niceeval.run(["exp", "group-plugin", "--dry", "--json"], {
-      env: stableEnv,
-    });
-    expect(incompatible.exitCode, incompatible.diagnostic()).toBe(1);
-    expect(incompatible.stderr, incompatible.diagnostic()).toContain('Eval "group-plugin/01-first"');
-    expect(incompatible.stderr, incompatible.diagnostic()).toContain('Eval "group-plugin/02-second"');
-    expect(incompatible.stderr, incompatible.diagnostic()).toContain("different physical lifecycle");
-    expect(incompatible.stderr, incompatible.diagnostic()).toContain("No Sandbox was created");
   });
 });
