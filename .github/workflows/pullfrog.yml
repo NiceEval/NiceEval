@@ -128,8 +128,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
-      issues: write
-      pull-requests: read
+      pull-requests: write
     # Keep review output and its sole GitHub write in one job. GitHub may
     # suppress large structured values when promoting a step output to a job
     # output, but same-job step outputs retain the exact schema-validated value.
