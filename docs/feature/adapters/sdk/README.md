@@ -23,4 +23,4 @@
 
 通用扩展调用见 [配置 Coding Agent 扩展](../library/coding-agent-extensions.md)。
 同名 CLI Adapter 与 SDK 转换器是不同接入形态。
-其它候选及不接判据见 [Adapter Roadmap](../../../roadmap/adapters/README.md)。
+其它候选及不接判据见 [Adapter Roadmap](../../../roadmap/README.md#adapter-准入目标)。

@@ -56,45 +56,40 @@ docs/
 │
 ├── feature/                             已采用的唯一当前目标契约
 │   ├── adapters/                        连接 AI / Agent；各 SDK 契约见 adapters/sdk/
-│   ├── compile-time-contracts/          作者输入与派生事实分离:阶段类型、穷尽联合与私有品牌
-│   ├── eval/                            编写 Eval：defineEval
-│   ├── experiments/                     组织运行配置：defineExperiment
-│   ├── error-classification/            失败分类两轴词表:turn 级有界重试与 eval/experiment 级停止派发
-│   ├── sandbox/                         隔离运行环境
-│   ├── state/                           跨 Attempt checkpoint:固定 revision 与滚动序列
 │   ├── assertions/                      检查、作用域、证据与 AssertionResult
+│   ├── compile-time-contracts/          作者输入与派生事实分离:阶段类型、穷尽联合与私有品牌
+│   ├── error-classification/            失败分类两轴词表:turn 级有界重试与 eval/experiment 级停止派发
+│   ├── eval/                            编写 Eval：defineEval
+│   ├── eval-groups/                     按封闭成员集组织的组内 Sandbox 复用与组间并行
+│   ├── experiments/                     组织运行配置：defineExperiment
 │   ├── judge/                           裁判模型配置、调用与 unavailable
-│   ├── verdict/                         Severity、严格模式与四态折叠
+│   ├── plugins/                         带稳定身份的生命周期组合语法
+│   ├── projection/                      从 RecordAttachment 形成 typed projection
 │   ├── record/                          已完成 Run、精确引用与具名 RecordAttachment
+│   ├── reports/                         一次 execution、show/view 与静态导出
 │   ├── sample/                          从 Record 选择 core-only 分母
-│   └── reports/                         一次 execution、show/view 与静态导出
+│   ├── sandbox/                         隔离运行环境
+│   ├── use-case/                        跨功能的完整用户路径
+│   └── verdict/                         Severity、严格模式与四态折叠
 │
 ├── roadmap/                             已定稿、尚未采用为当前契约的方向
 │   ├── admission-health/                Agent 进入前的 producer occurrence 健康探测
-│   ├── agent-as-judge/                  用独立 Agent 调查证据并执行 Judge Assertion
-│   ├── assertion-authoring/             Assertion-first 作者面、Verdict 与 score、统一 Match
-│   ├── cost-projections/                由 Report Calculation 形成可审计成本投影
 │   ├── discovery-boundaries/            目录入口拥有的递归发现边界
 │   ├── eval-trajectories/               依赖 DAG 的 exact Checkpoint 暂停与恢复
-│   ├── experiment-display-names/        不参与 identity 的 Experiment 人类展示名
-│   ├── replayable-grading/              多轮 Execution 与 Grading 分离、Record 重评分
+│   ├── experiment-authoring/             展示名与具名 Experiment 族
 │   ├── experiment-pilot-sampling/       共同题集、固定 seed 与 non-final Pilot
-│   ├── experiment-families/             keyed record 展开稳定 Experiment ID
-│   ├── git-checkout-isolation/          `checkout()` 的 commit closure 与隔离边界
-│   ├── run-handoff-and-inventory/       精确 Run 交接与只读 Record 库存
-│   ├── sandbox-fixture-content/         identity-aware Fixture 内容 prepare 命令
-│   ├── state/                           provider-issued Cohort 与 exact Checkpoint
-│   ├── workspace-access-evidence/       Agent Workspace 文件操作证据与 Assertion
-│   ├── llm-judge-runtime/               原生 LLM Judge 配方、材料、Provider 与判分图
+│   ├── judge-runtimes/                  Agent Judge 与原生 LLM Judge
 │   ├── multi-agent/                     多 Agent Eval 场景
-│   ├── eval-selection/                  Experiment 与 CLI 的统一 Eval 过滤语义
-│   ├── eval-groups/                     按封闭成员集组织的组内 Sandbox 复用与组间并行
-│   ├── plugins/                          带稳定身份的生命周期组合语法
-│   ├── record-analysis-report/           Capture、Analysis 与 Report 的三层 API，以及平台拥有的显式 migration
-│   ├── new-record-report/                Record、Analysis、呈现模型、组件、Report 与交付的七层架构
+│   ├── record-analysis-report/          Capture、Analysis、Report、成本投影与图表语义内核
+│   ├── new-record-report/               Record、Analysis、呈现模型、组件、Report 与交付的七层架构
+│   ├── record-inventory/                receipt 前中断留下的只读 Record 库存
+│   ├── replayable-grading/              多轮 Execution 与 Grading 分离、Record 重评分
+│   ├── sandbox-materialization/         Docker Image 与 Provider Cache 生命周期
+│   ├── sandbox-prepare/                 checkout、Fixture 内容与官方命令瞬时重试
 │   ├── sandbox-retention/                失败类 Sandbox 的有界停驻、明确销毁与安全 GC
-│   ├── materialization-cache/            Provider cache 的需求、库存、归因与安全回收
-│   └── prepare-transient-retry/         prepare 网络瞬时失败的 attempt 内自愈候选
+│   ├── sandbox-reuse-feedback/          Sandbox 物理复用的运行级摘要
+│   ├── state/                           provider-issued Cohort 与 exact Checkpoint
+│   └── workspace-access-evidence/       Agent Workspace 文件操作证据与 Assertion
 │
 ├── design/                              需要对比候选方案的架构 / 技术决策
 │   ├── agent-install-recipe/            Agent 安装配方与底座的组合形态:中间件拆分与支持面

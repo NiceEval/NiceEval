@@ -114,7 +114,7 @@ Adapter 协议矩阵分别只在各自 owner 中验收，不因一次读回而�
 契约。值 matcher、scope、句柄修饰、计分与 unavailable 等价类只在这里展开一次；需要不同事件、session 或 Sandbox 证据时，
 在该 Repo 增加对应 Eval。Adapter Repo 不因同样调用了 `t.calledTool()` 或 `t.session()` 而获得这张矩阵的所有权。
 
-具体 owner 见 [Eval 域](eval.md)。
+具体 owner 见 [Eval 域](eval.md)；首次结果、live retry 与终局验收的 typed expected 见 [Verdict Policy](verdict-policy.md)。
 
 ## Adapter
 

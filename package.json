@@ -155,7 +155,7 @@
     "docs-site/images"
   ],
   "scripts": {
-    "typecheck": "tsc --noEmit && tsc -p docs/roadmap/assertion-authoring/reference/tsconfig.json",
+    "typecheck": "tsc --noEmit && tsc -p docs/feature/assertions/reference/tsconfig.json",
     "lint": "vitest run --project lint-docs --project lint-docs-site && pnpm run docs:validate && pnpm run docs:links",
     "lint:docs": "vitest run --project lint-docs",
     "lint:docs-site": "vitest run --project lint-docs-site && pnpm run docs:validate && pnpm run docs:links",

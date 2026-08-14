@@ -16,34 +16,31 @@ Roadmap 与 Feature、Design 候选共用 [Feature Design Package](../_template/
 
 一个方向出现多个需要正式比较的候选时,移入 [`../design/`](../design/README.md),让每个候选成为独立 `PLAN-N/`。
 
-- [Multi-Agent](multi-agent/README.md) —— 多 agent eval 场景
-- [Agent-as-Judge](agent-as-judge/README.md) —— 用独立 Direct 或 Sandbox Agent 调查证据并执行 Judge Assertion
-- [原生 LLM Judge Runtime](llm-judge-runtime/README.md) —— 统一判分配方、规范化材料、Provider、多模态与静态判分图
-- [Adapters](adapters/README.md) —— Cursor Agent SDK、vm0 与其它适配器接入
-- [结果携带与 Sandbox 复用反馈](reuse-feedback/README.md) —— 消除 `reused` 一词两义，并补齐 Sandbox 复用的运行级反馈
-- [运行交接与 Record 库存](run-handoff-and-inventory/README.md) —— 用精确 Run ID 交接本次发布结果，并盘点 receipt 前中断留下的 Run
-- [Admission Health](admission-health/README.md) —— 在 Agent 进入前验证 producer occurrence，不为不可用资源创建 Attempt
-- [持久状态](state/README.md) —— 用 provider-issued Cohort 与 exact Checkpoint 管理可比较状态
-- [Eval Trajectory](eval-trajectories/README.md) —— 让有依赖的 Eval DAG 按 immutable Run 与 exact Checkpoint 暂停和恢复
-- [Workspace 访问证据](workspace-access-evidence/README.md) —— 采集 Agent 进程树的可信文件操作，并提供 Attempt-scope Assertion
-- [Git checkout 隔离](git-checkout-isolation/README.md) —— 强化 `checkout()` 的 commit closure、凭据与 Agent namespace 边界
-- [发现边界](discovery-boundaries/README.md) —— 让目录入口明确拥有递归发现范围，并由 CLI 解释截止原因
-- [成本投影](cost-projections/README.md) —— 以具内容身份的价格表投影成本，不改写 Record 中的观测事实
-- [Experiment 展示名](experiment-display-names/README.md) —— 为人类视图增加不参与 identity 的稳定名称
-- [Eval 选择](eval-selection/README.md) —— Experiment 与 CLI 共用声明式过滤语义，Eval Group 保持封闭成员集
-- [Eval Group](eval-groups/README.md) —— 按规范化 Eval ID 串行复用至多一台 Sandbox，组间并行
-- [Sandbox 默认停驻与回收](sandbox-retention/README.md) —— 失败类 Sandbox 的有界停驻、明确销毁、持久管理与安全 GC
-- [Docker 执行配置](docker-profiles/README.md) —— 官方 Docker Sandbox 的可验证执行 profile、rootless privileged 单容器 DinD、跨进程硬配额与故障回收
-- [Provider Cache 生命周期](materialization-cache/README.md) —— 让 NiceEval 创建的 provider cache 可盘点、可解释并可安全回收
-- [注入凭据的转写脱敏](credential-redaction/README.md) —— 已知凭据值的精确替换
-- [Prepare 阶段瞬时失败自愈](prepare-transient-retry/README.md) —— 内置 prepare 命令的瞬时重试
-- [Plugins](plugins/README.md) —— 在 Eval、Experiment 与 Eval Group 上声明 owner-scoped Sandbox、Agent 与生命周期条件
-- [Capture → Analysis → Report](record-analysis-report/README.md) —— 用户定义固定事实、比较口径与报告呈现；Record 与 migration 保持平台内部
-- [Docker Image](docker-image/README.md) —— 用统一 `dockerImage()` 声明预制镜像或按内容构建的镜像
-- [Chart 语义内核与报告交互控制器](report-chart-kernel/README.md) —— 双面语义模型、精确值 HTML、键盘焦点与 Table 渐进增强
-- [Assertion 作者面](assertion-authoring/README.md) —— 用 Fact 分离 matcher、判定、控制流与计分，并统一 scope、command 和 Sandbox 检查
-- [可重评分 Eval](replayable-grading/README.md) —— 分离多轮 Execution 与只读 Grading，并对 sealed Record 独立重判
-- [Experiment Pilot 抽样](experiment-pilot-sampling/README.md) —— 用共同 Eval ID、固定 seed 与 non-final coverage 运行可复现小样本
-- [具名 Experiment 族](experiment-families/README.md) —— 用 keyed record 在一个文件中声明多个稳定 Experiment ID
-- [Fixture 内容命令](sandbox-fixture-content/README.md) —— 把本地内容登记、稳定 command identity 与 Sandbox 传输收成一个 prepare 糖
-- [Eval E2E Verdict Policy](e2e-eval-verdict-expectations/README.md) —— 用 Repo-local typed policy 统一首次结果、live retry 与终局验收，不把测试期望注解进 Eval 产品定义
+- [Admission Health](admission-health/README.md) —— 在 Agent 进入前验证 producer occurrence，不为不可用资源创建 Attempt。
+- [发现边界](discovery-boundaries/README.md) —— 让目录入口明确拥有递归发现范围，并由 CLI 解释截止原因。
+- [Eval Trajectory](eval-trajectories/README.md) —— 让有依赖的 Eval DAG 按 immutable Run 与 exact Checkpoint 暂停和恢复。
+- [Experiment Authoring](experiment-authoring/README.md) —— 统一展示名与具名 Experiment 族的身份边界。
+- [Experiment Pilot 抽样](experiment-pilot-sampling/README.md) —— 用共同 Eval ID、固定 seed 与 non-final coverage 运行可复现小样本。
+- [Judge Runtimes](judge-runtimes/README.md) —— 收拢 Agent Judge 与原生 LLM Judge 的材料、权限和结果边界。
+- [Multi-Agent](multi-agent/README.md) —— 多 Agent Eval 场景。
+- [Capture → Analysis → Report](record-analysis-report/README.md) —— 用户定义固定事实、比较口径与报告呈现，并包含成本投影和图表语义内核。
+- [Record → Analysis → Report 分层架构](new-record-report/README.md) —— 用七层责任边界分开持久事实、分析语义、执行后端、呈现模型、组件、报告与交付。
+- [Record 库存](record-inventory/README.md) —— 盘点 receipt 交付前中断留下的 Run。
+- [可重评分 Eval](replayable-grading/README.md) —— 分离多轮 Execution 与只读 Grading，并对 sealed Record 独立重判。
+- [Sandbox Materialization](sandbox-materialization/README.md) —— 统一 Docker Image 声明与 Provider Cache 生命周期。
+- [Sandbox Prepare](sandbox-prepare/README.md) —— 收拢 checkout、Fixture 内容传输与官方命令的瞬时重试。
+- [Sandbox 默认停驻与回收](sandbox-retention/README.md) —— 失败类 Sandbox 的有界停驻、明确销毁、持久管理与安全 GC。
+- [Sandbox 复用反馈](sandbox-reuse-feedback/README.md) —— 补齐 Sandbox 物理复用的运行级摘要。
+- [持久状态](state/README.md) —— 用 provider-issued Cohort 与 exact Checkpoint 管理可比较状态。
+- [Workspace 访问证据](workspace-access-evidence/README.md) —— 采集 Agent 进程树的可信文件操作，并提供 Attempt-scope Assertion。
+
+## Adapter 准入目标
+
+NiceEval 只为拥有稳定程序化驱动面和结构化事件契约的上游提供官方 Adapter。Adapter 必须通过受支持的 CLI、SDK 或 API 驱动，不使用 GUI 自动化或私有逆向接口；已经满足准入条件的对象在 [Adapter SDK](../feature/adapters/sdk/README.md) 定义完整契约。
+
+| 对象 | 准入契约 |
+|---|---|
+| Cursor Agent SDK | 稳定 API 涵盖 session、HITL 与 usage；真实示例证明这些能力；转换器不强制消费方安装完整 SDK 包 |
+| vm0 | 官方接口提供稳定结构化事件与会话恢复契约 |
+
+Alma 只有 GUI 或非公开驱动面，因此不属于官方 Adapter 目标。任何上游都必须先满足同一套受支持接口条件，不能用专属自动化旁路降低准入标准。

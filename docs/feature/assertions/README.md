@@ -91,4 +91,5 @@ Score Eval 使用 `handle.score(points)` 或 `t.score(points)` 写明贡献。�
 - [Score Eval](library/score-points.md) —— score 与可用性。
 - [Evidence](architecture/evidence.md) —— snapshot、refs 与完整度。
 - [Source sites](architecture/source-sites.md) —— 源码位置、sourceOrder 与导航。
+- [Type reference](reference/README.md) —— 可编译的作者类型边界。
 - [Verdict](../verdict/README.md) —— 每个 Attempt 的四态折叠。

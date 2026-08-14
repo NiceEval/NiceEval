@@ -1,4 +1,4 @@
-// owner: docs/roadmap/plugins/library.md#experiment-lifecycle
+// owner: docs/feature/plugins/library.md#experiment-lifecycle
 
 import type { ExpEvalEvent, ExpEvent } from "@niceeval/testkit";
 import { expect, test } from "vitest";

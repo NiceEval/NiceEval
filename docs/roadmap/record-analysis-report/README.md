@@ -145,3 +145,8 @@ renderer plugin。
 - [Lifecycle](lifecycle.md) —— Capture、Analysis、Report 与 migration 的完整时序。
 - [CLI](cli.md) —— `show`、`view`、静态导出和 `niceeval migrate`。
 - [Use Case](use-case/README.md) —— 官方能力与第三方扩展的完整可抄路径。
+
+## 子方向
+
+- [成本投影](analysis/cost/README.md) —— 以具内容身份的价格表形成 Analysis Calculation，不改写 Record 中的观测事实。
+- [Chart 语义内核](report/chart-kernel/README.md) —— 统一终端与 HTML 的图表语义、精确值、键盘焦点和 Table 渐进增强。

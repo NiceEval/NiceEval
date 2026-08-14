@@ -72,4 +72,4 @@ debug checkpoint，不接受松散 identity。
 - [Architecture](architecture.md) —— Run、expected slots、provenance、comparability 与并发边界。
 - [Lifecycle](lifecycle.md) —— start、breakpoint、resume、失败、debug 与受控 interruption。
 - [State](../state/README.md) —— Cohort、Region、exact checkpoint、CAS 与 fence。
-- [Eval Group](../eval-groups/README.md) —— 独立的物理 Sandbox 复用 lane。
+- [Eval Group](../../feature/eval-groups/README.md) —— 独立的物理 Sandbox 复用 lane。

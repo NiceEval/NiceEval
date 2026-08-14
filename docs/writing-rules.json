@@ -146,7 +146,7 @@
           "docs/feature/eval",
           "docs/feature/judge",
           "docs/feature/verdict",
-          "docs/roadmap/assertion-authoring",
+          "docs/feature/assertions",
           "docs-site/zh/explanation",
           "docs-site/zh/tutorials"
         ],
@@ -160,7 +160,7 @@
           "docs/feature/eval",
           "docs/feature/judge",
           "docs/feature/verdict",
-          "docs/roadmap/assertion-authoring",
+          "docs/feature/assertions",
           "docs-site/zh/explanation",
           "docs-site/zh/tutorials"
         ],
@@ -174,7 +174,7 @@
           "docs/feature/eval",
           "docs/feature/judge",
           "docs/feature/verdict",
-          "docs/roadmap/assertion-authoring",
+          "docs/feature/assertions",
           "docs-site/zh/explanation",
           "docs-site/zh/tutorials"
         ],
@@ -188,7 +188,7 @@
           "docs/feature/eval",
           "docs/feature/judge",
           "docs/feature/verdict",
-          "docs/roadmap/assertion-authoring",
+          "docs/feature/assertions",
           "docs-site/zh/explanation",
           "docs-site/zh/tutorials"
         ],
@@ -201,7 +201,7 @@
           "docs/feature/assertions",
           "docs/feature/eval",
           "docs/feature/judge",
-          "docs/roadmap/assertion-authoring",
+          "docs/feature/assertions",
           "docs-site/zh/explanation",
           "docs-site/zh/tutorials"
         ],
@@ -215,7 +215,7 @@
           "docs/feature/eval",
           "docs/feature/judge",
           "docs/feature/verdict",
-          "docs/roadmap/assertion-authoring",
+          "docs/feature/assertions",
           "docs-site/zh/explanation",
           "docs-site/zh/tutorials"
         ],
@@ -228,7 +228,7 @@
           "docs/feature/assertions",
           "docs/feature/eval",
           "docs/feature/judge",
-          "docs/roadmap/assertion-authoring",
+          "docs/feature/assertions",
           "docs-site/zh/explanation",
           "docs-site/zh/tutorials"
         ],
@@ -241,7 +241,7 @@
           "docs/feature/assertions",
           "docs/feature/eval",
           "docs/feature/judge",
-          "docs/roadmap/assertion-authoring",
+          "docs/feature/assertions",
           "docs-site/zh/explanation",
           "docs-site/zh/tutorials"
         ],
@@ -254,7 +254,7 @@
           "docs/feature/assertions",
           "docs/feature/eval",
           "docs/feature/judge",
-          "docs/roadmap/assertion-authoring",
+          "docs/feature/assertions",
           "docs-site/zh/explanation",
           "docs-site/zh/tutorials"
         ],
@@ -267,7 +267,7 @@
           "docs/feature/assertions",
           "docs/feature/eval",
           "docs/feature/judge",
-          "docs/roadmap/assertion-authoring",
+          "docs/feature/assertions",
           "docs-site/zh/explanation",
           "docs-site/zh/tutorials"
         ],
@@ -280,7 +280,7 @@
           "docs/feature/assertions",
           "docs/feature/eval",
           "docs/feature/judge",
-          "docs/roadmap/assertion-authoring",
+          "docs/feature/assertions",
           "docs-site/zh/explanation",
           "docs-site/zh/tutorials"
         ],
@@ -296,7 +296,7 @@
           "docs-site/zh/tutorials",
           "docs/feature/eval/README.md",
           "docs/feature/assertions",
-          "docs/roadmap/assertion-authoring"
+          "docs/feature/assertions"
         ],
         "use": "Score Eval 的已有 Assertion 写 handle.score(n)，直接贡献写 t.score(n)",
         "why": "t.score 严格接收一个 finite 且不小于零的数值，不接 label、value 或 handle"
