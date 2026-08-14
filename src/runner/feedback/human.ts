@@ -1487,12 +1487,6 @@ export function renderHumanCommandPlan(plan: CommandPlan, options: HumanCommandP
           `lane ${lane.kind}:${lane.id} · physical lifecycle template enter · each physical instance`,
           capability,
         );
-        renderCommandPlanSteps(
-          panels,
-          physical.exit,
-          `lane ${lane.kind}:${lane.id} · physical lifecycle template exit · each physical instance`,
-          capability,
-        );
       }
       for (const slot of lane.slots) {
         if (slot.action === "carried") {
@@ -1514,6 +1508,14 @@ export function renderHumanCommandPlan(plan: CommandPlan, options: HumanCommandP
           panels,
           slot.steps,
           `lane ${lane.kind}:${lane.id} · slot ${slot.evalId} #${slot.attempt}`,
+          capability,
+        );
+      }
+      if (physical !== undefined) {
+        renderCommandPlanSteps(
+          panels,
+          physical.exit,
+          `lane ${lane.kind}:${lane.id} · physical lifecycle template exit · each physical instance`,
           capability,
         );
       }

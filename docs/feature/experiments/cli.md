@@ -89,6 +89,8 @@ TTY 人读输出不把整棵树放入一个总框。总览、Experiment、lane�
 
 非 TTY、`NO_COLOR` 或过窄终端按同一 Panel 契约逐框降级为无框的标题与正文；节点、字段和顺序不变。`--json` 不携带框线，继续输出同一棵计划树的机器形状。
 
+Human 的 lane 顺序固定为 Group before-slots → physical enter → slots → physical exit → Group after-slots。Physical teardown 与 Provider finalizer 因而始终列在使用该实例的 slot 工作之后。
+
 可声明的 `shell()` / `command()` 展开为具体命令；不能安全检查的 callback 标为 `opaque`。Direct Agent 显式显示没有 Sandbox 或 template，而不是省略 materialize 阶段。
 
 每个真实 `sandbox.materialize` 节点还显示 template owner、provider、kind 与 configured locator。`Exact` 只表示逐字复述作者配置的非秘密起点。它不保证 image tag 已固定为 digest、远端资源或 Dockerfile / Compose 内容已冻结，也不代表 BuildKey 或最终实例字节。
