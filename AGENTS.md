@@ -36,7 +36,7 @@ GitHub PR metadata 锁定 base SHA 与当时的 head SHA，并仅从 base 的
 Pullfrog 平台诊断中。
 
 权威审查范围等价于 `git diff --merge-base <base_sha> <head_sha>`。agent 只生成一次结构化
-`pullfrog_set_output`，不创建 review/comment；独立 publish job 串行 upsert 带 canonical marker 的唯一普通
+`pullfrog_set_output`，不创建 review/comment；同一 review job 的确定性 publish step 串行 upsert 带 canonical marker 的唯一普通
 issue comment，并在写入前复核 PR 仍为 open 且锁定的 base/head 未变化，避免旧结果覆盖新最终态。
 
 ## 全仓约束
