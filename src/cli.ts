@@ -2453,7 +2453,6 @@ function publicShowEnvelope(
 ): ShowJson {
   const view = publicShowView(request, flags);
   const sample = buildShowSample({
-    resultsRoot: request.rootPath,
     experiments: publicShowExperiments(view, execution),
     executionSample: execution.sample,
   });

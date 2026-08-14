@@ -63,6 +63,13 @@ test("show --source 从本轮 Record 呈现入口与导入断言快照", async (
         ["show", attempt.locator!, "--source", "--json"],
       );
       expect(json.exitCode, json.diagnostic()).toBe(0);
+      const recordRoot = join(projectRoot, ".niceeval", "record");
+      expect(json.stdout).not.toContain(projectRoot);
+      expect(json.stdout).not.toContain(recordRoot);
+      expect(json.stdout).not.toContain("artifactPath");
+      expect(json.stdout).not.toContain(".niceeval/");
+      expect(json.stdout).not.toContain("sources.json");
+
       const document = json.json<ShowDocument>();
       expect(document.format).toBe("niceeval.show");
       expect(document.view).toBe("source");
@@ -72,9 +79,6 @@ test("show --source 从本轮 Record 呈现入口与导入断言快照", async (
       expect(payload).not.toContain("ENTRY_SNAPSHOT_AFTER");
       expect(payload).not.toContain("IMPORTED_ASSERTION_SNAPSHOT_AFTER");
       expect(payload).not.toContain("@unknown");
-      expect(payload).not.toContain("artifactPath");
-      expect(payload).not.toContain(".niceeval/");
-      expect(payload).not.toContain("sources.json");
     },
   );
 });

@@ -20,7 +20,6 @@ export type ShowJsonView =
   | "stats";
 
 export interface ShowJsonSample {
-  readonly resultsRoot: string;
   readonly evalPrefix?: string;
   readonly experiments: readonly string[];
   readonly fresh: boolean;
@@ -70,14 +69,12 @@ export type ShowJson =
   | (ShowJsonBase & { readonly view: "compare"; readonly data: unknown });
 
 export function buildShowSample(input: {
-  readonly resultsRoot: string;
   readonly patterns?: readonly string[];
   readonly experiments: readonly string[];
   readonly fresh?: boolean;
   readonly executionSample: ReportExecution["sample"];
 }): ShowJsonSample {
   return Object.freeze({
-    resultsRoot: input.resultsRoot,
     ...(input.patterns !== undefined && input.patterns.length > 0
       ? { evalPrefix: input.patterns.join(",") }
       : {}),

@@ -21,6 +21,7 @@ import {
   classicAttemptTarget as classicAttemptRouteTarget,
   classicExperimentTarget,
 } from "./routes.ts";
+import { CLASSIC_SELECTION_PROFILE_UNAVAILABLE } from "./origin.ts";
 import { classicAttemptLocator, type ClassicEvalUnit, type Sample } from "./sample.ts";
 import {
   reportCellTable,
@@ -32,8 +33,10 @@ import {
   reportScatter,
   reportSection,
   reportStat,
+  reportStatus,
   reportText,
   type ReportBlock,
+  type ReportStatus,
 } from "../semantic/document.ts";
 import { cellFromUnknown, formatCellText, isCell, type Cell } from "./cell.ts";
 import type { AttemptEvidence, AttemptSummaryData, CopyBlockContent } from "./attempt.ts";
@@ -186,8 +189,67 @@ export const Table = defineComponent<ClassicCellTableProps>((props) => {
 });
 Table.displayName = "Table";
 
-export const SampleNotices = defineComponent(() => null);
+export interface ClassicSampleNoticesProps {
+  /** Explicit Sample retained for classic authors that render a supplied scope. */
+  readonly input?: Sample;
+}
+
+/** Renders the partial-selection warning at the author's chosen position. */
+export const SampleNotices = defineComponent<ClassicSampleNoticesProps>((props, ctx) =>
+  classicSelectionNotice(props.input ?? ctx.scope)
+);
 SampleNotices.displayName = "SampleNotices";
+
+/** The one host-recognized status for an explicit-run Sample without profiles. */
+export function classicSelectionNotice(sample: Sample): ReportStatus | null {
+  if (sample.metadataOrigin !== "partial") {
+    return null;
+  }
+  return reportStatus({
+    tone: "warning",
+    label: CLASSIC_SELECTION_PROFILE_UNAVAILABLE.summary,
+    detail: [reportText(CLASSIC_SELECTION_PROFILE_UNAVAILABLE.code)],
+  });
+}
+
+/**
+ * A classic document may contain the author-selected notice below a Section,
+ * Grid, or List. The host only prepends its mandatory fallback when none exists.
+ */
+export function containsClassicSelectionNotice(blocks: readonly ReportBlock[]): boolean {
+  return blocks.some(containsClassicSelectionNoticeBlock);
+}
+
+function containsClassicSelectionNoticeBlock(block: ReportBlock): boolean {
+  if (isClassicSelectionNoticeBlock(block)) {
+    return true;
+  }
+  switch (block.type) {
+    case "section":
+      return containsClassicSelectionNotice(block.children);
+    case "grid":
+      return containsClassicSelectionNotice(block.cells);
+    case "list":
+      return block.items.some((item) => containsClassicSelectionNotice(item));
+    default:
+      return false;
+  }
+}
+
+function isClassicSelectionNoticeBlock(block: ReportBlock): block is ReportStatus {
+  const detail = block.type === "status" ? block.detail : undefined;
+  if (
+    block.type !== "status"
+    || block.tone !== "warning"
+    || block.label !== CLASSIC_SELECTION_PROFILE_UNAVAILABLE.summary
+    || detail === undefined
+    || detail.length !== 1
+  ) {
+    return false;
+  }
+  const [entry] = detail;
+  return entry?.type === "text" && entry.value === CLASSIC_SELECTION_PROFILE_UNAVAILABLE.code;
+}
 
 export interface CopyBlockProps {
   readonly content: CopyBlockContent;

@@ -11,7 +11,9 @@ import {
   ExperimentScatter,
   ExperimentTable,
   Hero,
+  SampleNotices,
   SampleSummary,
+  Section,
   aggregate,
   defineComponent,
   definePage,
@@ -86,6 +88,9 @@ const authorApi = {
           title="Classic author surface"
           description="Rendered through niceeval/report JSX with a niceeval/record Sample."
         />
+        <Section title="Selection notice">
+          <SampleNotices input={sample} />
+        </Section>
         <SampleSummary input={sample} />
         <FixtureLeaderboard />
         <ExperimentScatter input={sample} />

@@ -51,6 +51,7 @@ export type {
   ClassicGridProps,
   ClassicHeroLogo,
   ClassicHeroProps,
+  ClassicSampleNoticesProps,
   ClassicSectionProps,
   ClassicStatProps,
   CopyBlockProps,

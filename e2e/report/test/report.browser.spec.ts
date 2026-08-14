@@ -20,6 +20,9 @@ test("Report browser Journey：经典界面与自定义报告共用固定执行�
     async ({ paths: { projectRoot }, commands: { niceeval } }) => {
       const run = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
       expect(run.exitCode, run.diagnostic()).not.toBe(0);
+      expect(run.expReceipt()).toMatchObject({ completion: "completed" });
+      expect(run.expReceipt().runIds).toHaveLength(1);
+      const runId = run.expReceipt().runIds[0]!;
 
       await verifyClassicReport();
       await verifyCustomReport();
@@ -147,6 +150,8 @@ test("Report browser Journey：经典界面与自定义报告共用固定执行�
 
         const exported = await niceeval.run([
           "view",
+          "--run",
+          runId,
           "--report",
           "./reports/site.tsx",
           "--out",
@@ -160,6 +165,8 @@ test("Report browser Journey：经典界面与自定义报告共用固定执行�
         const view = niceeval.start(
           [
             "view",
+            "--run",
+            runId,
             "--report",
             "./reports/site.tsx",
             "--host",
@@ -184,7 +191,21 @@ test("Report browser Journey：经典界面与自定义报告共用固定执行�
         const authorApi = page.getByRole("tab", { name: "Author API" });
         await expect(authorApi).toBeVisible();
         await authorApi.click();
-        await expect(page.getByRole("heading", { name: "Classic author surface", level: 1 })).toBeVisible();
+        const authorHeading = page.getByRole("heading", { name: "Classic author surface", level: 1 });
+        await expect(authorHeading).toBeVisible();
+        const selectionNotice = page.getByRole("status").filter({
+          hasText: "selection-profile-unavailable",
+        });
+        await expect(selectionNotice).toHaveCount(1);
+        await expect(selectionNotice).toContainText(
+          "this Report selection does not include a current project declaration profile",
+        );
+        const headingHandle = await authorHeading.elementHandle();
+        if (headingHandle === null) throw new Error("classic author heading disappeared before notice placement check");
+        expect(await selectionNotice.evaluate(
+          (notice, heading) => (heading.compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+          headingHandle,
+        )).toBe(true);
         await expect(page.getByRole("figure", { name: "Pass rate(%)" })).toBeVisible();
         await expect(page.getByRole("figure", { name: "Experiments costUSD × passRate" })).toBeVisible();
         await expect(page.getByRole("table", { name: "Experiment hierarchy" })).toBeVisible();

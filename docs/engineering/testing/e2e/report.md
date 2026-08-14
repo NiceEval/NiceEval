@@ -129,7 +129,8 @@ classic `defineReport`、package JSX runtime、`aggregate` 与经典组件。这
 共用同一 execution 和 host。
 
 作者页按真实下游的组合方式定义自有 `defineComponent`，从 `ctx.scope` 聚合 Bars，并同时渲染
-`ExperimentScatter` 与 `ExperimentTable`。owner 因此守护组件导出、上下文和层级导航，不只守护 TSX loader。
+`ExperimentScatter` 与 `ExperimentTable`。它还用 `SampleNotices input={sample}` 在 Section 内呈现 explicit-run
+的 partial selection，并断言页面只有一条该 warning。owner 因此守护组件导出、上下文、旧显式 input、host 去重与层级导航，不只守护 TSX loader。
 
 禁 JavaScript 的 `file:` 页面必须保留 static export 的内容、表格与原生 disclosure。移动 viewport 的
 文档不能横向溢出。owner 不依赖私有 selector、computed style、像素或 golden。

@@ -25,6 +25,10 @@ import {
   type ReportPageFamily,
 } from "../author/model.ts";
 import {
+  classicSelectionNotice,
+  containsClassicSelectionNotice,
+} from "./components.ts";
+import {
   isReportId,
   reportComponentId,
   reportId,
@@ -39,15 +43,12 @@ import {
 } from "./routes.ts";
 import {
   reportDocument,
-  reportStatus,
-  reportText,
   type ReportBlock,
   type ReportDocument,
 } from "../semantic/document.ts";
 import { classicSampleFromProjectedInputs } from "./from-context.ts";
 import { evaluateClassicTree } from "./jsx.ts";
 import { isLocalizedText, resolveLocalizedText, type LocalizedText } from "./localize.ts";
-import { CLASSIC_SELECTION_PROFILE_UNAVAILABLE } from "./origin.ts";
 import { classicAttemptLocator, type Sample } from "./sample.ts";
 
 export type ClassicPageRender = (
@@ -161,15 +162,12 @@ function withSelectionNotice(
   sample: Sample,
   children: readonly ReportBlock[],
 ): readonly ReportBlock[] {
-  if (sample.metadataOrigin !== "partial") {
+  const notice = classicSelectionNotice(sample);
+  if (notice === null || containsClassicSelectionNotice(children)) {
     return children;
   }
   return Object.freeze([
-    reportStatus({
-      tone: "warning",
-      label: CLASSIC_SELECTION_PROFILE_UNAVAILABLE.summary,
-      detail: [reportText(CLASSIC_SELECTION_PROFILE_UNAVAILABLE.code)],
-    }),
+    notice,
     ...children,
   ]);
 }

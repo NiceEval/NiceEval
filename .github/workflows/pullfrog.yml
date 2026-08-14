@@ -211,13 +211,21 @@ jobs:
           progress_comments: disabled
           push: disabled
           shell: disabled
+          # UTF-8 artifact contract (shared by schema, stage, and publish):
+          # review_body maxLength is 60000 Unicode code points (JSON Schema).
+          # The most verbose legal JSON encoding of one code point is a
+          # surrogate-pair escape (\uHHHH\uLLLL = 12 UTF-8 bytes). The
+          # three-field envelope is bounded by pull_number maximum and the
+          # 40-hex head_sha, and fits in 256 bytes even when pretty-printed.
+          # Stage and publish therefore fail-closed at 60000 * 12 + 256 =
+          # 720256 UTF-8 bytes so any schema-legal result can be published.
           output_schema: |
             {
               "type": "object",
               "additionalProperties": false,
               "required": ["pull_number", "head_sha", "review_body"],
               "properties": {
-                "pull_number": { "type": "integer", "minimum": 1 },
+                "pull_number": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
                 "head_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
                 "review_body": { "type": "string", "minLength": 1, "maxLength": 60000 }
               }
@@ -232,9 +240,12 @@ jobs:
           script: |
             const fs = require("node:fs/promises");
             const path = require("node:path");
+            // Keep in sync with the publish job and the schema comment above.
+            const REVIEW_RESULT_MAX_UTF8_BYTES = 720_256;
 
             const raw = process.env.REVIEW_RESULT ?? "";
-            if (raw.length < 1 || raw.length > 100_000 || raw.includes("\u0000")) {
+            const rawUtf8Bytes = Buffer.byteLength(raw, "utf8");
+            if (rawUtf8Bytes < 1 || rawUtf8Bytes > REVIEW_RESULT_MAX_UTF8_BYTES || raw.includes("\u0000")) {
               throw new Error("Pullfrog result is empty or exceeds the artifact boundary");
             }
             try {
@@ -286,6 +297,9 @@ jobs:
           script: |
             const fs = require("node:fs");
             const path = require("node:path");
+            // Keep in sync with the stage job and the schema comment above.
+            const REVIEW_RESULT_MAX_UTF8_BYTES = 720_256;
+            const REVIEW_BODY_MAX_CODE_POINTS = 60_000;
             const marker = "<!-- niceeval-pullfrog-final-review-v2 -->";
             const pullNumber = Number(process.env.PULL_NUMBER);
             const expectedBaseSha = process.env.EXPECTED_BASE_SHA;
@@ -309,7 +323,7 @@ jobs:
             if (!resultStat.isFile() || resultStat.isSymbolicLink()) {
               throw new Error("Pullfrog result artifact entry must be a regular file");
             }
-            if (resultStat.size < 1 || resultStat.size > 100_000) {
+            if (resultStat.size < 1 || resultStat.size > REVIEW_RESULT_MAX_UTF8_BYTES) {
               throw new Error("Pullfrog result artifact is empty or too large");
             }
             if (fs.realpathSync(resultPath) !== resultPath) {
@@ -335,7 +349,9 @@ jobs:
             }
 
             const reviewBody = result.review_body.replace(/\r\n/g, "\n").trim();
-            if (reviewBody.length < 1 || reviewBody.length > 60000) {
+            let reviewBodyCodePoints = 0;
+            for (const _ of reviewBody) reviewBodyCodePoints += 1;
+            if (reviewBodyCodePoints < 1 || reviewBodyCodePoints > REVIEW_BODY_MAX_CODE_POINTS) {
               throw new Error("Pullfrog review body is empty or too long");
             }
             if (reviewBody.includes(marker)) {

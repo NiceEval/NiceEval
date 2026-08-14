@@ -149,12 +149,15 @@ trusted TS module 本身不是 sandbox；module 仍可以 import `node:fs` 或�
 | `ExperimentScatter` | 按 Experiment 的散点；`input={sample}` 传入同一份闭合 Sample。对应 experiment 页已展开时点可下钻，否则保持纯图形。 |
 | `ExperimentTable` | 实验级读数表；`input={sample}` 传入同一份闭合 Sample。输出显式的 Experiment → group/eval → Attempt 父子拓扑与可选实体 target；终端缩进只是该拓扑的呈现结果。 |
 | `Grid` / `Stat` / `Table` | 排版原语：格网、读数格、单元格表。 |
-| `SampleNotices` / `CopyBlock` | 选择提示与可复制文本。 |
+| `SampleNotices` | 选择提示。默认读取 `ctx.scope`，也接受旧作者使用的 `input={sample}`。partial Sample 输出一条 `selection-profile-unavailable` warning；current-declaration Sample 不输出提示。 |
+| `CopyBlock` | 可复制文本。 |
 | `AttemptSummary` / `AttemptAssessment` | Attempt 详情页组合件。 |
 
 `standardExperimentPage` 与 `standardAttemptPage` 是 PageFamily。它们分别按 Sample 里已有的 experiment id 与 attempt locator 展开固定 route。experiment 页的 render 收到按该 experiment 收窄后的闭合 Sample；attempt 页收到闭合 `AttemptEvidence`。它们不进入主导航。
 
 `ExperimentScatter` 与 `ExperimentTable` 的 target 只在对应 route 已由当前 Report 展开时写出 href。单页 Report 不声明该 PageFamily 时，图表和层级仍正常呈现，但没有链接。static export、直接请求、新标签页与 live dialog 共用同一个 ordinary exact-route href。
+
+partial Sample 的 author tree 已含 `SampleNotices` 时，host 保留它在作者声明的位置。缺少该组件时，host 才在页面前置同一条提示；无论树里是否嵌套 `Section`、`Grid` 或 `List`，页面只有一条该选择提示。
 
 ### aggregate、passRate、costUSD 与 experiment
 
