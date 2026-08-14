@@ -28,9 +28,12 @@ test("show keeps independent pipe output and a short character-exact PTY layout 
       rows: 40,
       env: {
         ...PINNED_ENV,
-        LC_ALL: "zh_CN.UTF-8",
-        LANG: "zh_CN.UTF-8",
-        LANGUAGE: "zh",
+        // GitHub's Ubuntu image guarantees the C UTF-8 locale, but does not
+        // install zh_CN.UTF-8. The report itself supplies the CJK witness;
+        // locale selection must not add a shell warning to the PTY frame.
+        LC_ALL: "C.UTF-8",
+        LANG: "C.UTF-8",
+        LANGUAGE: "C",
         TERM: "xterm-256color",
         NO_COLOR: undefined,
         FORCE_COLOR: undefined,

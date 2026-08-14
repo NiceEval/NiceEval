@@ -17,7 +17,10 @@ import { sh } from "./sh.ts";
 
 const RESULTS_ROOT = ".niceeval";
 const SITE_EXPORT_DIR = "site-export";
-const LOCATOR_RE = /^@[0-9a-z]{8}$/;
+// Public Attempt locator syntax: current scheme `1` followed by the 60-bit,
+// 12-character canonical uppercase Crockford base32 body.
+const LOCATOR_RE = /^@1[0-9A-HJKMNP-TV-Z]{12}$/;
+const LOCATOR_SHAPE = "@1<12 canonical uppercase Crockford base32 chars>";
 const PROVIDER_FAULT_RE =
   /errored.*(429|5\d\d|ECONNREFUSED|ETIMEDOUT)|Insufficient Balance|402|quota|rate.?limit/i;
 
@@ -148,7 +151,7 @@ function readSingleAttempt(experimentId: string, evalId: string): { snapshotDir:
   assert.equal(attemptDirNames.length, 1, `expected exactly 1 attempt directory under ${evalDir}, found ${attemptDirNames.length}: ${attemptDirNames.join(", ")}`);
   const attemptDir = join(evalDir, attemptDirNames[0]!);
   const result = readJson<{ verdict: Verdict; locator?: string }>(join(attemptDir, "result.json"));
-  assert.ok(LOCATOR_RE.test(result.locator ?? ""), `result.json.locator "${result.locator}" in ${attemptDir} doesn't match the @<7 base36 chars> shape`);
+  assert.ok(LOCATOR_RE.test(result.locator ?? ""), `result.json.locator "${result.locator}" in ${attemptDir} doesn't match the ${LOCATOR_SHAPE} shape`);
   return { snapshotDir, attempt: { evalId, verdict: result.verdict, locator: result.locator!, attemptDir } };
 }
 
@@ -190,7 +193,7 @@ export async function produceEvidence(): Promise<Evidence> {
   const mainAttempts: AttemptEvidence[] = mainAttemptDirNames.map((name) => {
     const attemptDir = join(mainEvalDir, name);
     const result = readJson<{ verdict: Verdict; locator?: string }>(join(attemptDir, "result.json"));
-    assert.ok(LOCATOR_RE.test(result.locator ?? ""), `result.json.locator "${result.locator}" in ${attemptDir} doesn't match the @<7 base36 chars> shape`);
+    assert.ok(LOCATOR_RE.test(result.locator ?? ""), `result.json.locator "${result.locator}" in ${attemptDir} doesn't match the ${LOCATOR_SHAPE} shape`);
     return { evalId: "tool-call", verdict: result.verdict, locator: result.locator!, attemptDir };
   });
 

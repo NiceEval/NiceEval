@@ -13,7 +13,7 @@ export default defineReport({
       title: { en: "Overview", "zh-CN": "总览" },
       render: () => (
         <Col>
-          <Section title={{ en: "PTY geometry", "zh-CN": "终端几何" }} meta="fixed 60 columns">
+          <Section title="终端几何" meta="fixed 60 columns">
             <Text>{WRAPPED_CJK_LINE}</Text>
           </Section>
         </Col>
