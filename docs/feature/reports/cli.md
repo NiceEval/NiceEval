@@ -19,7 +19,8 @@ niceeval view [selection] [report options] --out <directory>
 | `--experiment <id>` | 可重复；按完整 ExperimentId 收窄不带 locator 或 `--run` 的当前项目目标。 |
 | `--report <module>` | 选择内建 Report 或受信任的 Report module。 |
 | `--page <route>` | 选择一个已经展开的 exact route。 |
-| `--port <port>` | `view` 监听端口；默认 4173，只绑定 loopback。 |
+| `--port <port>` | `view` 监听端口；默认 4173。 |
+| `--host <address>` | `view` 监听地址；省略时为 `127.0.0.1`，只写 `--host` 时等价于 `0.0.0.0`。 |
 | `--no-open` | 阻止 `view` 自动打开浏览器。 |
 
 不传 locator 与 `--run` 时，`show` / `view` 规划当前项目身份，并扫描默认 Record 中全部 published Run。只有 Experiment、Eval、attempt ordinal、evaluation kind、input identity 与 config identity 仍匹配当前目标的 slot 才进入 `project-current` Sample。选择不会按时间缩成最后一个 Run，也不会写回 Record。
@@ -149,10 +150,21 @@ Problems
 
 ```sh
 niceeval view --report ./reports/summary.ts --port 4400
+niceeval view --host 192.168.0.199
+niceeval view --host # 显式监听全部 IPv4 接口
 niceeval view --run 01H... --page /attempts/attempt-01h... --no-open
 ```
 
 `view` 打开一个 scoped `ReportViewSession`。导航只列出当前成功 revision 已经展开的 routes。
+
+完全省略 `--host` 时，server 只监听 `127.0.0.1`。显式地址交给 Node 绑定；具体 hostname / IP
+只公布该地址，`0.0.0.0` 会公布 `127.0.0.1` 与启动时可见的非 internal IPv4 地址，`::` 则公布
+`[::1]` 与可直接序列化的非 internal IPv6 地址。`--page` 应用到全部公布 URL，但自动打开浏览器只使用第一条。
+
+非 loopback 监听是显式的网络暴露：它没有认证或 TLS，所有网络可达客户端都能读取报告、execution JSON 与
+downloads。CLI 每次成功启动这种 listener 都在 stderr 警告；使用者必须自行保证网络可信。HTTP host 只接受本次
+公布的 authority；只服务 `GET` / `HEAD`，其它 method 返回 `405`。这些限制不授权未来写端点；任何写端点都必须
+重新设计认证与 CSRF 边界。
 
 Record canonical ID 不能直接拼 route：Report 作者必须用 `reportInstanceKeyFromRecordId` 与 `reportRouteFromKeys` 形成 lowercase、domain-tagged route。CLI 中的 `attempt-01h...` 是 adapter 输出；Record 详情与页面正文仍显示原 uppercase `AttemptId`。
 

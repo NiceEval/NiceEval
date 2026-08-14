@@ -170,7 +170,7 @@ E2B template name 与 Vercel snapshot ID 是 Provider 管理的任意字符串�
 | `--smoke` | boolean | `docker profile doctor` 专用：启动受限 DinD 容器并运行内层容器。 |
 | `--out` | string | `view` 命令专用:把结果查看器静态导出到指定目录。 |
 | `--port` | number | `view` 命令专用:指定本地服务器监听端口。 |
-| `--host` | string | `view` 命令专用:指定 loopback 监听地址；拒绝公网或局域网地址。 |
+| `--host` | string | `view` 命令专用:指定监听地址；省略时为 127.0.0.1，只写 `--host` 时为 0.0.0.0。非 loopback 监听无认证或 TLS，会向所有可达客户端暴露报告数据。 |
 | `--experiment` | string[] | `show` / `view` 命令专用：按完整 ExperimentId 收窄当前项目结果；可重复，不接受前缀或逗号列表。 |
 | `--record` | string | `show` / `view` / `accept` / `sandbox enter\|list\|stop` 共用:指定实际 Record root;CLI 不补接 `.niceeval/record` 或其它后缀。 |
 | `--run` | string[] | `show` / `view` 可重复传入 `--run`;每次按完整 RunId 增加一个显式 Run,重复 identity 去重。 |
@@ -230,11 +230,16 @@ npx niceeval exp compare --junit ./artifacts/niceeval-junit.xml
 npx niceeval view
 npx niceeval view --run 01H...
 npx niceeval view @01H...
+npx niceeval view --host 192.168.0.199
 ```
 
 打开本地记录查看器。它和 `show` 共用默认 Report 与选择规则。不带 locator 或 `--run` 的命令从默认 Record 读取所有身份仍匹配当前项目的结果；精确 `@<AttemptLocator>` 显示该 Attempt 的默认概览；`--run` 读取指定历史 Run。随后内部 host 投影所需事实，并执行一次 Report。
 
 没有显式 `--report` 时，`--run` 使用内建 `run-membership-overview`，精确 locator 使用 `attempt-overview`。`project-current` 才使用配置里的 Report，并在没有配置时回退到通用 `default-overview`。显式 `--report` 始终优先。Config 仍会为 Theme 和 `view` rebuild 加载；这里只说明配置里的 Report 不参与显式 Run 的默认选择。
+
+省略 `--host` 时，`view` 只监听 `127.0.0.1`。传入具体 hostname / IP 会显式监听该地址；只写 `--host` 时则监听全部 IPv4 接口。wildcard listener 先打印 loopback URL，再打印可用接口 URL；`--page` 应用到每条 URL，自动打开浏览器只使用第一条。
+
+非 loopback 模式是无认证、无加密的开发服务器。所有网络可达客户端都能读取报告、execution JSON 和 downloads，所以只能在可信网络使用；启动时也会打印同样的警告。server 只接受已公布的 Host authority 与只读 `GET` / `HEAD` 请求；未来写端点必须另行设计认证与 CSRF 边界。
 
 此前的局部执行可能让部分 slot 以 `reference` 采用已有 Attempt。这些是当时的采用事实，不是补跑状态。同一份 `AnalysisSample` 不会在页面请求时重新选择。`--experiment` 可按完整 ID 收窄当前项目目标；`--record` 只在主动读取其它 Record root 时使用。
 

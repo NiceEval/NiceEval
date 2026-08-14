@@ -168,7 +168,7 @@ The CLI accepts only the flags below. Any other flag is an error and exits nonze
 | `--smoke` | boolean | `docker profile doctor` only. Starts a constrained DinD container and runs an inner container. |
 | `--out` | string | `view` only. Exports a static report site to this directory. |
 | `--port` | number | `view` only. Chooses the local server port. |
-| `--host` | string | `view` only. Chooses the listening address. Omit it to listen on all addresses and print local and LAN URLs. |
+| `--host` | string | `view` only. Chooses the listening address. Omit it for `127.0.0.1`; bare `--host` listens on `0.0.0.0`. Non-loopback listeners have no authentication or TLS. |
 | `--record` | string | For `show`, `view`, `accept`, and `sandbox enter`, `list`, or `stop`: selects the actual Record root. Use it with `show` or `view` only to read another Record root. The CLI does not append `.niceeval/record` or another suffix. |
 | `--run` | string | Repeat for `show` or `view` to add one explicit complete Run ID. Duplicate identities are removed. |
 | `--report` | string | `show` and `view` only. Replaces their shared default Report with the file's default `defineReport(...)` export. |
@@ -226,9 +226,14 @@ See [Runner · Reporter](/explanation/runner#reporter) for choosing an output. S
 npx niceeval view
 npx niceeval view --run 01H...
 npx niceeval view @01H...
+npx niceeval view --host 192.168.0.199
 ```
 
 This opens the local Record viewer. It shares `show`'s default Report and selection rules. Without a locator or `--run`, it reads every result whose identity still matches the current project from the default Record. An exact `@<AttemptLocator>` shows that Attempt's default overview. `--run` reads named historical Runs. The internal host then projects the needed facts and executes one Report.
+
+Without `--host`, `view` listens only on `127.0.0.1`. Pass a concrete hostname or IP to opt into that listener, or use bare `--host` for all IPv4 interfaces. A wildcard listener prints a loopback URL followed by the usable interface URLs; `--page` is applied to every printed URL and only the first is opened automatically.
+
+Non-loopback mode is an unauthenticated, unencrypted development server. Every network-reachable client can read the report, execution JSON, and downloads, so use it only on a network you trust. Startup prints the same warning. The server accepts only advertised Host authorities and read-only `GET` / `HEAD` requests; future write endpoints require a separate authentication and CSRF design.
 
 A previous local execution can leave `reference` Members for slots that adopted an existing Attempt. These are adoption facts, not a rerun state. The same `AnalysisSample` does not reselect while a page is loading. `--experiment` narrows current-project results by complete ID. Use `--record` only when you intentionally read another Record root.
 

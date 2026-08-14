@@ -101,7 +101,7 @@ export function openNodeReportView(
   return Effect.flatMap(NodeReportViewHost, (host) => host.open(request));
 }
 
-/** Opens the loopback HTTP and watcher host around caller-supplied fixed rebuilds. */
+/** Opens the HTTP and watcher host around caller-supplied fixed rebuilds; host defaults to loopback. */
 export function openNodeReportViewServer(
   options: ViewOptions,
 ): Effect.Effect<ReportViewServer, NodeViewServerError | ReportViewOpenError, Scope.Scope | NodeReportViewHost> {
