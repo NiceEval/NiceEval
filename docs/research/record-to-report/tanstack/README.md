@@ -213,7 +213,7 @@ NiceEval 的静态 HTML 比普通应用 SSR 更严格：它不依赖 hydration�
 
 ### 已经做对的部分
 
-NiceEval 的[报告组件分层](../feature/reports/README.md)已经区分显示原语、领域组合组件和共用函数。
+NiceEval 的[报告组件分层](../../../feature/reports/README.md)已经区分显示原语、领域组合组件和共用函数。
 报告作者先用普通函数完成聚合和转换，再把 `rows`、`points`、`items` 或 `value` 交给组件。
 
 Table 与 Chart 都不读取 Sample，也不执行 Calculation。
@@ -421,7 +421,7 @@ Chart kernel 与 Table 浏览状态只共享以下跨组件约束：
 - web transient state 只改变阅读方式，不改变 Sample、MetricValue 或 page 结果树。
 - JavaScript 关闭时仍有完整初始 HTML 和可复制的证据入口。
 
-目标契约进入 [Chart 语义内核与报告交互控制器 Roadmap](../roadmap/report-chart-kernel/README.md)。
+目标契约进入 [Chart 语义内核与报告交互控制器 Roadmap](../../../roadmap/report-chart-kernel/README.md)。
 
 ## 验证建议
 

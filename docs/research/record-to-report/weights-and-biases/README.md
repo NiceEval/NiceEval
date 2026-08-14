@@ -1,10 +1,12 @@
-# Weights & Biases：从用户代码写入到同一产品读取
+# Weights & Biases：Run、Artifact、Workspace 与 Report
 
 > 观察日期：2026-08-13
 >
 > 观察对象：Weights & Biases Models 实验跟踪、Public API、Workspace 与 Report
 >
 > 文档性质：外部产品研究与产品建议，不是 NiceEval 目标契约
+
+本页研究 W&B Models。另一套产品面见 [W&B Weave](weave.md)，两者不能因为属于同一品牌就视为同一写入模型。
 
 本文把 W&B 当作一套完整平台：用户代码真实运行，Python SDK 写入 Run，同一产品再查询、比较并展示。
 它不是外接 SQL 后再画图的 BI 工具。
@@ -126,7 +128,7 @@ Report 与 Workspace 代码 API 官方标 Public Preview。
 | Report | 可分享的叙事页，内含 panel grid 与 run set | `ReportData` |
 | Weave | 另一套 LLM trace / eval 产品 | Models 的 Timing 或 Evidence |
 
-## 1. Run 怎样开始、封口并形成稳定身份
+## Run 生命周期与身份
 
 ### 产品事实：身份是项目内唯一的 Run ID
 
@@ -185,7 +187,7 @@ W&B 的稳定身份是「项目内唯一、可 resume 的 Run ID」。
 同一 ID 可以追加 history、改 tags、事后改 config 与 summary。
 因此「封口」表示这次计算结束并同步，不表示该身份上的事实此后不可变。
 
-## 2. 官方事实怎样写入
+## Config、History、Summary、Table 与 Artifact
 
 W&B 没有 NiceEval 意义上的官方 Timing / Usage / Score / Evidence adapter。
 它把「官方」写成 SDK 内建对象与自动采集，把「用户事实」写成同一套 `config` / `log` / artifact 键。
@@ -301,7 +303,7 @@ W&B 的「官方事实」是固定 envelope 上的具名键，外加若干类型
 envelope 是 Run 的 config / history / summary / files / artifacts。
 用户扩展的是键名、值与对象类型，不是一份用户版本化 schema。
 
-## 3. 用户能否增加自定义事实；扩展的是什么
+## 键、值与类型化对象扩展面
 
 ### 产品事实：扩展单位是名字和值，外加类型化对象
 
@@ -354,7 +356,7 @@ Artifact 有版本与 lineage，但版本针对文件集合，不针对「某个
 NiceEval 要求 sealed domain value、family、current adaptation 与显式 migration。
 W&B 让普通作者直接写键。
 
-## 4. 写入 API 是否要求预先决定图表
+## Logging 与可视化的绑定关系
 
 ### 产品事实：默认只写中立键，App 按 key 自动出图
 
@@ -404,7 +406,7 @@ W&B 允许「先写中立键，后在 Workspace 构图」。
 **NiceEval 建议**：领域写入应保持中立 sealed value。
 x 轴、聚合与 Vega preset 属于 Analysis 或 Report，不应成为 producer 义务。
 
-## 5. 读取与分析怎样选择 Run、分母、聚合与缺测
+## Public API、Runset 与 Table 比较
 
 ### 产品事实：Public API 用路径取单个 Run，用 MongoDB 查询取集合
 
@@ -507,7 +509,7 @@ Public API 不提供 `unsupported` 或 per-row coverage 枚举。
 **NiceEval 建议**：不要把采样视图当成事实真源。
 Analysis 应在 frozen view 上穷尽 row 状态，而不是默认 500 点。
 
-## 6. 图表、Dashboard 与 Report 怎样消费分析结果
+## Workspace、Report 与代码生成 API
 
 ### 产品事实：作者同时使用 UI 与代码，二者不是同一稳定契约
 
@@ -579,7 +581,7 @@ Public API 文档甚至建议分析后再 `wandb.init(job_type="analysis")` 写�
 W&B 允许报告作者直接写过滤表达式和聚合函数。
 它没有把 Analysis 收成独立、可复用的 Dimension / Measure 层。
 
-## 7. 历史数据怎样面对 SDK、schema 与产品升级
+## Offline Sync、SDK 与服务端升级
 
 ### 产品事实：SDK 用弃用警告与次版本破坏性变更
 
@@ -641,7 +643,7 @@ W&B 把兼容性放在 SDK 弃用周期和服务端版本配对上。
 **NiceEval 建议**：不要学「事后改 summary」。
 要学的是：客户端破坏性变更必须公开、可预期；服务端升级与用户事实 migration 必须分开。
 
-## 8. 四类作者分别需要理解多少层
+## W&B 的使用者界面
 
 | 作者 | 主路径 | 必须理解 | 不应被迫理解 |
 |---|---|---|---|

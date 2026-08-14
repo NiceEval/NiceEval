@@ -1,4 +1,4 @@
-# Langfuse：运行写入、同一产品读取与展示
+# Langfuse：Observation、Score、Metrics 与 Dashboard
 
 > 观察日期：2026-08-13
 >
@@ -108,7 +108,7 @@ Score 是独立对象。
 它恰好引用 Trace、Observation、Session 或 DatasetRun 之一。
 见 [Scores Data Model](https://langfuse.com/docs/evaluation/scores/data-model)。
 
-## 问题 1：一次 Run、Trace 怎样开始、封口并形成稳定身份
+## Trace、Observation 与 DatasetRun 身份
 
 **产品事实。** Langfuse 没有名为 Run 的公共写入对象。
 运行时身份是 `trace_id` 加 observation `id`。
@@ -162,7 +162,7 @@ Dataset → DatasetItem → DatasetRun → DatasetRunItem(traceId, optional obse
 **研究判断。** 对 NiceEval 来说，Langfuse 的「一次请求」更接近一次 Attempt 内的执行树，而不是一份已发布 Run。
 `flush()` 是进程退出前的发送屏障，不是 Record 的 seal。
 
-## 问题 2：官方 Timing、Usage、Score、Evidence、Artifact 怎样写入
+## Observation、Score、Media 与运行事实
 
 ### Timing
 
@@ -290,7 +290,7 @@ Usage 是 generation 上的名字到数值映射。
 Score 是后补评价对象。
 媒体是内容寻址引用，不是版本化 Attachment family。
 
-## 问题 3：用户扩展的是名字和值、固定 envelope、任意属性，还是版本化 schema
+## Metadata、Usage Details 与 ScoreConfig 扩展面
 
 **产品事实。** 公开扩展主要是「固定外壳上的名字和值」。
 
@@ -345,7 +345,7 @@ Dataset、ScoreConfig 与 Dashboard JSON 各自有对象 schema，但它们不�
 **研究判断。** Langfuse 扩展的是名字和值，外加一层固定 observation / score / media envelope。
 它不是 NiceEval 那种 sealed domain value → 版本化 Attachment → projector。
 
-## 问题 4：写入 API 是否要求用户预先决定图表
+## Instrumentation 与展示的绑定关系
 
 **产品事实。** 写入 API 只保存中立事实。
 `start_as_current_observation`、`usage_details`、`create_score` 与 `LangfuseMedia` 都不接受图表、widget 或 Dashboard 参数。
@@ -357,7 +357,7 @@ Dataset、ScoreConfig 与 Dashboard JSON 各自有对象 schema，但它们不�
 **研究判断。** 写入与展示分离成立。
 分离发生在产品内部：同一平台先存 observation，再让 UI 或 Metrics API 消费。
 
-## 问题 5：读取与分析怎样选择范围、固定分母、分组、聚合，并处理 missing
+## Observations API 与 Metrics API
 
 **产品事实。** 官方读取分成行级与聚合两级。
 
@@ -432,7 +432,7 @@ v2 Metrics 的 view 是 `observations`、`scores-numeric`、`scores-categorical`
 **研究判断。** Metrics API 的 view / dimension / measure / filter 接近 Analysis 的选择与 rollup。
 它不提供 Sample 分母、每 row 状态或 issues。
 
-## 问题 6：图表、Dashboard 与 Report 怎样消费分析结果
+## Custom Dashboard 与 Experiment 比较
 
 **产品事实。** 报告作者主要使用 UI，其次使用同一套 Metrics API。
 
@@ -466,7 +466,7 @@ Home 页本身就是一个 dashboard。
 **研究判断。** Langfuse 的报告作者面是「查询声明 + UI 布局」，不是 typed `ReportData` 组件树。
 代码与 UI 共用 Metrics 查询形状，但不共用一套封闭语义组件。
 
-## 问题 7：历史数据怎样面对 SDK、schema 与产品升级
+## SDK、服务端与历史数据升级
 
 **产品事实。** 升级分成四条独立轨道。
 
@@ -531,7 +531,7 @@ Export 必须从 legacy traces/observations 源切到 enriched observations。
 **研究判断。** Langfuse 的 migration 由平台声明并回填。
 用户不声明 family 级相邻 migration，也不签发一次性 authorization。
 
-## 问题 8：四类作者分别需要理解多少层
+## Langfuse 的使用者界面
 
 **产品事实**按公开入口归纳：
 

@@ -101,11 +101,15 @@ docs/
 │   ├── record-to-report-stack.md         Record 到 Report 的依赖、组合与决策地图
 │
 ├── research/                            带观察日期的外部产品研究，不构成目标契约
-│   ├── ori-eval.md                      Ori Eval、spawn-ori-eval 与 NiceEval 的关系
-│   ├── eve-assertion-dx.md              Eve 断言 DX 与真实回归题的逐项能力审视
-│   ├── adapters/                         Agent 接入、事件协议与 OTel 生态调研
-│   ├── experiments/                      外部 Experiment 运行矩阵参照
-│   └── assertion-api-dx/                评估断言 API、语法与作者 DX 横向研究
+│   ├── ori-eval.md                      Eval authoring：Ori Eval、Skill 与完整评估工作流
+│   ├── adapters/                        Adapter：Agent 接入、事件协议与 OTel 生态
+│   ├── assertion-api-dx/                Assertion：API、语法、评分与作者 DX
+│   ├── eve-assertion-dx.md              Assertion：Eve 与真实回归题
+│   ├── experiments/                     Experiment：外部运行矩阵参照
+│   ├── record-to-report/                Record → Report：运行事实的查看、查询、比较与报告呈现
+│   ├── docker-sandbox-process-models.md Sandbox：容器启动、keeper、命令执行与 DinD
+│   ├── cli-testing/                     Testing：复杂 CLI 的测试体系
+│   └── framework-e2e/                   Testing：框架工具自身的 E2E 体系
 │
 ├── engineering/                         仓库自身的工程机制
 │   ├── _template/                       新工程主题模板

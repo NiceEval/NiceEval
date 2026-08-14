@@ -43,13 +43,13 @@ OTel Timing、Assertion / Evidence、File Diff、Conversation 与 Usage 是 Nice
 
 ## 为什么收口在固定信封
 
-[五个 eval / experiment 平台的横向研究](../../research/eval-platform-authoring/README.md)显示，Langfuse、MLflow、W&B、Phoenix 与
+[Record → Report 外部产品研究](../../research/record-to-report/README.md)显示，Langfuse、MLflow、W&B、Phoenix 与
 ClearML 都由平台拥有少量稳定写入外壳与存储迁移；用户扩展名字、值、Score、Artifact 或显示配置。研究没有找到要求 application
 安装第三方 durable schema、相邻 converter 与 projection 才能写入普通自定义事实的成熟公共先例。
 
 NiceEval 不照搬它们的任意 key-value 面：typed definition、frozen Sample、denominator、missing、Evidence refs 与 closed output
 继续保留。收口的是持久化扩展权，不是用户增加 Metric、Score、Artifact、Analysis field 或 Report component 的能力。具体比较与
-被否决的复杂度见[研究 API 候选](../../research/eval-platform-authoring/api-candidate.md)。
+被否决的复杂度见 [API 候选存档](reference/api-candidate.md)。
 
 ## 最短的用户路径
 

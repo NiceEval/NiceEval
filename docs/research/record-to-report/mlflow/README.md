@@ -1,10 +1,12 @@
-# MLflow：用户代码运行、SDK 写入、同一产品读取与展示
+# MLflow：Tracking、Evaluation 与 Tracking UI
 
 > 观察日期：2026-08-13
 >
 > 观察对象：MLflow Tracking、GenAI Evaluation、Tracing 与 Tracking Store
 >
 > 文档性质：外部产品研究与产品建议，不是 NiceEval 目标契约
+
+本目录另有 [Tracing 与 Assessment](tracing-and-assessments.md)，集中说明 MLflow GenAI Trace、Evaluation Dataset 与 Assessment 的产品边界。
 
 MLflow 是一套完整平台。用户代码真实执行，Python / REST SDK 把参数、指标、artifact、trace 与评估写进同一 Tracking Server。随后同一产品用 `search_runs`、Tracking UI 与评估页读取、比较并展示。它不是外接 SQL 后再画图的 BI 工具。
 
@@ -89,7 +91,7 @@ Tracking Server  ──► Backend Store（SQLite / PostgreSQL / MySQL / MSSQL�
 | `search_runs` DataFrame | 分析读面 | 缺列填 `NaN`/`None`，没有穷尽 coverage 或 issues |
 | Tracking UI / 评估页 | 报告呈现 | UI 从已有 metric/param 推断图表，没有独立 Report 作者层 |
 
-## 1. Run 与 Experiment 怎样开始、封口并形成稳定身份
+## Experiment 与 Run 生命周期
 
 产品事实：组织单位是 Experiment。Experiment 下有多次 Run。Run 是“某段数据科学代码的一次执行”，例如一次 `python train.py`。[TRACK]
 
@@ -133,7 +135,7 @@ def start_run(
 
 研究判断：MLflow 的稳定身份是“服务器分配的 UUID + Experiment 归属”，不是内容哈希。Resume 说明同一 `run_id` 可以继续追加，不是封口后的不可变 revision。
 
-## 2. 官方事实怎样写入
+## Tracking 写入对象
 
 产品事实：官方把一次 Run 上的事实分成几类固定 envelope。作者扩展的是 key 和 value，不是新表或新 schema 版本。[API] [DB]
 
@@ -250,7 +252,7 @@ feedback = mlflow.log_feedback(
 
 产品事实：`assessments` 表把 `value`、`error`、`assessment_metadata` 存成 JSON 文本。`assessment_type` 是 `feedback`、`expectation` 或 `issue`。`valid` 默认为 true。`overrides` 指向被替代的 `assessment_id`。[DB]
 
-## 3. 用户扩展的是什么
+## Param、Metric、Tag 与 Artifact 扩展面
 
 研究判断先写在前面，依据是上一节的公开形状。
 
@@ -272,7 +274,7 @@ feedback = mlflow.log_feedback(
 
 研究判断：MLflow 的默认扩展是“在固定信封里换名字和值”。Assessment 是固定 envelope 加任意 JSON。Artifact 是任意字节。都不是 NiceEval 那种版本化 RecordAttachment family。
 
-## 4. 写入时是否绑定展示
+## Tracking 写入与 UI 展示的绑定关系
 
 产品事实：`log_param`、`log_metric`、`set_tag`、`log_table` 只要求 key、value 和路径。它们不接收 chart type、坐标轴或页面声明。[API] [FLUENT]
 
@@ -288,7 +290,7 @@ feedback = mlflow.log_feedback(
 
 NiceEval 建议：普通领域写入应保持中立。自动出图可以留在官方评估或 Report 层，不要让 `log_metric` 一类 API 带上 chart 参数。
 
-## 5. 读取与分析怎样选 Run、分组、聚合并处理缺失
+## Search Runs 与分析读面
 
 产品事实：官方查询入口是 SQL 风格的 `filter_string`，用于 UI 和 `mlflow.search_runs`。它受 SQL 启发，但不是完整 SQL。明确不支持 `OR`。[SEARCH]
 
@@ -324,7 +326,7 @@ print(best_run.data.metrics)
 
 NiceEval 建议：可以吸收“查询与 UI 共用同一套过滤词”。不要吸收“缺列就变 NaN，由读者心算分母”。
 
-## 6. 图表、比较与报告怎样消费分析结果
+## Tracking UI、评估页与比较
 
 产品事实：Tracking UI 提供 Experiment 级 Run 列表与比较，包括跨 Experiment 比较；按 param / metric 搜索；可视化 metric；下载 artifact 与元数据。[TRACK]
 
@@ -347,7 +349,7 @@ with mlflow.start_run(nested=True, run_name=f"trial_{trial.number}") as child_ru
 
 研究判断：MLflow 的“报告作者”默认就是 Tracking UI 用户，或拿着 `search_runs` DataFrame 写 notebook 的人。展示逻辑住在产品 UI 和用户脚本里，不住在与写入共用的声明对象里。
 
-## 7. 历史数据怎样面对 SDK、schema 与产品升级
+## Tracking Store 与 schema 升级
 
 产品事实：自托管升级步骤是停服务、升级包、若用数据库则跑 schema 迁移、再启动。官方不支持原地热升级。为减少停机，要用滚动替换和负载均衡。[UPGRADE]
 
@@ -373,7 +375,7 @@ mlflow db upgrade <backend-store-url>
 
 研究判断：MLflow 升级的是产品自己的 Tracking schema。用户扩展的名字和值跟着表走，不单独做版本族。升级后 UI 和 `search_runs` 继续按原 key 读。重新分析和报告是再查一次，不是从持久事件重建。
 
-## 8. 四类作者各自看到几层
+## Fluent API、Client、REST 与 UI
 
 | 角色 | 默认入口 | 必须理解的层 | 不必理解的层 |
 | --- | --- | --- | --- |

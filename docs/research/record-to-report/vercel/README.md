@@ -80,7 +80,7 @@ NiceEval 应在 Basalt、Chalk、桌面、窄屏、终端和无 JavaScript 静�
 
 ## 契约落点与下一步证据
 
-已经可以直接定稿的原则进入仓库根 [`DESIGN.md`](../../DESIGN.md)：读者任务、双路径、首屏、单一证据归属、几何选择、表格与图表纪律、连续画布和视觉验收。
+已经可以直接定稿的原则进入仓库根 [`DESIGN.md`](../../../../DESIGN.md)：读者任务、双路径、首屏、单一证据归属、几何选择、表格与图表纪律、连续画布和视觉验收。
 
 本研究不直接扩充 `ReportBlock`。是否需要新的开场、比较、evidence provenance 或布局语义，要先用至少两份真实报告证明现有 section、paragraph、table、metric、status 和 chart 无法表达清楚；否则新增节点只会把视觉模板固化进公开 API。
 

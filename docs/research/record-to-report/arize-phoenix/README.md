@@ -1,10 +1,12 @@
-# Arize Phoenix：用户代码运行、SDK 写入、同一产品读取
+# Arize Phoenix：Trace、Dataset、Experiment 与 Annotation
 
 > 观察日期：2026-08-13
 >
 > 观察对象：Arize Phoenix 开源平台，以及它的官方 Client、OTel 与 Evals SDK
 >
 > 文档性质：外部产品研究与产品建议，不是 NiceEval 目标契约
+
+本页研究 Phoenix 的完整产品模型。Evaluator 自身如何成为可观察 Trace 的重点判断另见 [Evaluator 可观察性](evaluator-observability.md)。
 
 Phoenix 不是外接 SQL 后再画图的 BI 工具。
 用户代码真实执行应用或实验任务。
@@ -118,7 +120,7 @@ Span 是其中一步。Phoenix 经 OTLP 接收这些数据。[HOME] [TRACE-QS]
 | SpanQuery / Filter | Analysis 读取 | 没有 Sample 分母，也没有 Dimension / Measure |
 | Metrics Dashboard / Compare 页 | Report 展示 | 作者不声明 `ReportData` |
 
-## 1. 一次 Run、Trace、Task 或 Experiment 怎样开始、封口并形成稳定身份
+## Trace、Dataset、Task 与 Experiment 身份
 
 ### Trace 与 Span
 
@@ -289,7 +291,7 @@ await runExperiment({
 研究判断：稳定身份是 Dataset 版本、Experiment ID、example ID、OTel trace/span ID。
 Task 本身没有持久身份。
 
-## 2. 官方 Timing、Usage、Score、Evidence、Artifact 怎样写入
+## Span、Annotation 与运行事实
 
 ### Timing
 
@@ -387,7 +389,7 @@ asExperimentEvaluator({
 多模态内容有单独文档。
 本次检查的一手公开面未提供通用 Artifact 仓库。
 
-## 3. 用户能否增加自定义事实；扩展的是什么
+## OpenInference 属性与 Annotation 扩展面
 
 产品事实：用户至少有四条公开扩展缝。
 
@@ -434,7 +436,7 @@ context.with(
 不是版本化 schema。
 Dataset 版本管的是 example 集合，不管自定义字段的代际。
 
-## 4. 写入 API 是否要求用户预先决定图表
+## Tracing 写入与预置展示的绑定关系
 
 产品事实：写 Trace 时，用户写 span 属性，不声明图表。[OTEL-INST] [COST]
 
@@ -451,7 +453,7 @@ Dataset 版本管的是 example 集合，不管自定义字段的代际。
 研究判断：写入大体中立。
 真正绑展示的是 span kind 约定、annotation 名字，以及预置 Dashboard 认识哪些官方键。
 
-## 5. 读取与分析怎样选择、聚合并处理缺失
+## Filter Expression、SpanQuery 与 Experiment Compare
 
 产品事实：分析入口是 Filter Expression 与 `SpanQuery`。
 UI 过滤条与 Python `SpanQuery().where(...)` 共用 span 过滤语言。[FILTER] [EXPORT]
@@ -508,7 +510,7 @@ client.spans.get_spans_dataframe(query=query)
 产品事实：公开面没有 NiceEval 式 Sample 分母。
 选择范围靠 project、时间窗、Dataset 版本、split 与 filter。
 
-## 6. 图表、Dashboard 与 Report 怎样消费分析结果
+## Metrics Dashboard 与 Experiments 视图
 
 产品事实：预置 Metrics Dashboard 自动包含 traces 数量、延迟分位、cost、token、错误与 annotation 均分。[METRICS]
 
@@ -527,7 +529,7 @@ Client 打印的稳定入口是 `datasets/{id}/compare?experimentId={id}`。[EXP
 研究判断：Phoenix 的「报告作者」几乎等于「会用 UI 的人」或「把 DataFrame 拿去别处画图的人」。
 它不是 NiceEval 那种 typed Report 层。
 
-## 7. 历史数据怎样面对 SDK、schema 与产品升级
+## Client、服务端与数据库升级
 
 产品事实：服务端升级说明写在 `MIGRATION.md`。
 v19.x 到 v20.0.0 写明无需操作。[MIG] [20.1.0 Release](https://github.com/Arize-ai/phoenix/releases/tag/arize-phoenix-v20.1.0)
@@ -571,7 +573,7 @@ evaluated = evaluate_experiment(
 研究判断：Phoenix 迁的是服务端表与 SDK 入口。
 它不把用户自定义事实当成版本化 RecordAttachment family。
 
-## 8. 普通应用作者、扩展作者、分析作者和报告作者分别需要理解多少层
+## Phoenix 的使用者界面
 
 | 角色 | 公开入口 | 需要理解的层 | 不必看见的层 |
 |---|---|---|---|

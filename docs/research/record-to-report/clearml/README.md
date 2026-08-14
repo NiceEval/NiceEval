@@ -1,4 +1,4 @@
-# ClearML：用户代码运行、SDK 写入、同一产品读取与展示
+# ClearML：Task、Event、Artifact 与 Report
 
 > 观察日期：2026-08-13
 >
@@ -96,7 +96,7 @@ ClearML 不是外接 SQL 后再画图的 BI 产品。
 **NiceEval 建议。** 对照 ClearML 时，只吸收「用户代码真实运行、同一产品再读」这条闭环。
 不要把它的 Task 直接当成 Record，也不要把 Web Reports 当成 typed `ReportData`。
 
-## 3. 问题 1：一次 Task 怎样开始、封口并形成稳定身份
+## 3. Task 生命周期与身份
 
 ### 3.1 开始
 
@@ -212,7 +212,7 @@ SDK `TaskTypes` 枚举在 v2.1.11 与观察日 `master` 上都没有 `agent`。
 **NiceEval 建议。** Run / Attempt 身份必须在发布后不可复用、不可删改输出。
 复用历史只能走独立 reuse contract，不能作为 `init` 默认行为。
 
-## 4. 问题 2：官方事实怎样写入
+## 4. Logger、Event、Artifact 与运行事实
 
 ClearML 把写入分成自动捕获与显式 report。
 自动捕获在 `Task.init` 之后开始；显式 report 走 `Logger`、`Task.connect*`、`upload_artifact` 与 `OutputModel`。[SDK-OVER] [LOGGER-FUND]
@@ -363,7 +363,7 @@ Logger 的 title / series / iteration 同时是存储键和图表坐标。
 Artifact / Model / Configuration 更接近可再消费的对象。
 资源监视是官方 Timing 的公开替代物，但写法和自定义 scalar 相同。
 
-## 5. 问题 3：用户能否增加自定义事实
+## 5. Task 参数、配置与 Event 扩展面
 
 **产品事实。** 用户扩展走四条已有通道，没有独立的版本化 schema SPI。
 
@@ -408,7 +408,7 @@ User properties 是固定四字段；configuration 是不透明 blob；Logger �
 新事实必须有领域语义、版本族和 total producer obligation。
 ClearML 证明：固定 envelope 足以支撑实验追踪，但撑不住「旧数据按新 schema 再分析」。
 
-## 6. 问题 4：写入 API 是否要求预先决定图表
+## 6. Logger 写入与图表类型的绑定关系
 
 **产品事实。** Logger 写入与展示页签绑定。
 
@@ -444,7 +444,7 @@ metric 的存储键就是图表键。
 图表声明必须留在 Report。
 若把 `title`/`series` 写进持久事实，Analysis 就无法在不改历史的情况下改图。
 
-## 7. 问题 5：读取与分析怎样选择、聚合并处理缺口
+## 7. Task 查询、Event 读取与比较
 
 ### 7.1 选择 Task
 
@@ -545,7 +545,7 @@ API < 2.9 时改读 `execution.parameters`。
 **NiceEval 建议。** Analysis 必须显式选择 Run、固定分母，并保留每行状态、issues 与 refs。
 不要把空字典、`None` 和静默 `0` 当成三种缺口语义。
 
-## 8. 问题 6：图表、Dashboard 与 Report 怎样消费结果
+## 8. Web UI、Dashboard 与 Report
 
 ### 8.1 单 Task 展示
 
@@ -599,7 +599,7 @@ Report 是叙事层，把已画好的 widget 嵌进 Markdown。
 不要吸收「写入即出图」和「报告等于 Markdown + 直播 iframe」。
 NiceEval Report 必须能在不改历史事实的情况下改页面。
 
-## 9. 问题 7：历史数据怎样面对 SDK、schema 与产品升级
+## 9. Server、SDK 与数据升级
 
 ### 9.1 Server 与数据库
 
@@ -663,7 +663,7 @@ Reports 是直播 embed。
 领域 SDK 只声明相邻 converter。
 不要学 ClearML 把「换 Mongo / ES」和「改用户事实含义」混成同一次运维动作。
 
-## 10. 问题 8：四类作者分别看到几层
+## 10. ClearML 的使用者界面
 
 | 角色 | ClearML 里实际看见的入口 | 层数 | 不必理解的东西 |
 | --- | --- | --- | --- |
