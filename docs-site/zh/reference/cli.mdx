@@ -166,7 +166,7 @@ E2B template name 与 Vercel snapshot ID 是 Provider 管理的任意字符串�
 | `--orphans` | boolean | `sandbox list` 专用:核对强杀(`SIGKILL` / 断电)路径留下的无主沙箱实例(docker + e2b;vercel 无按元数据检索实例的通道,不参与)。只读,不清理;销毁走 `niceeval sandbox prune`。 |
 | `--tag` | string | 只运行带有该 tag 的 eval(见 `defineEval` 的 `tags`)。 |
 | `--junit` | string | 额外写一份 JUnit XML 报告到指定路径,供 CI 消费。 |
-| `--json` | boolean | `exp` 命令专用:stdout 上单一有序的 NDJSON 事件流；`--dry --json` 输出单个 JSON 计划文档。`show` 命令专用:`niceeval.show` 数据信封，与 `--report` 互斥；`niceeval.report-show/v1` 只给内部 host / static 使用。 |
+| `--json` | boolean | `exp` 命令专用:stdout 上单一有序的 NDJSON 事件流；`--dry --json` 输出单个 JSON 计划文档。`show` 命令专用：普通视图输出 `niceeval.show`；显式 `--run` 的默认 membership Report 输出 `niceeval.report-show/v1`；与 `--report` 互斥。 |
 | `--smoke` | boolean | `docker profile doctor` 专用：启动受限 DinD 容器并运行内层容器。 |
 | `--out` | string | `view` 命令专用:把结果查看器静态导出到指定目录。 |
 | `--port` | number | `view` 命令专用:指定本地服务器监听端口。 |
@@ -235,7 +235,7 @@ npx niceeval view --host 192.168.0.199
 
 打开本地记录查看器。它和 `show` 共用默认 Report 与选择规则。不带 locator 或 `--run` 的命令从默认 Record 读取所有身份仍匹配当前项目的结果；精确 `@<AttemptLocator>` 显示该 Attempt 的默认概览；`--run` 读取指定历史 Run。随后内部 host 投影所需事实，并执行一次 Report。
 
-没有显式 `--report` 时，`--run` 使用内建 `run-membership-overview`，精确 locator 使用 `attempt-overview`。`project-current` 才使用配置里的 Report，并在没有配置时回退到通用 `default-overview`。显式 `--report` 始终优先。Config 仍会为 Theme 和 `view` rebuild 加载；这里只说明配置里的 Report 不参与显式 Run 的默认选择。
+没有显式 `--report` 时，`--run` 使用内建 `run-membership-overview`，精确 locator 使用 `attempt-overview`。`project-current` 才使用配置里的 Report，并在没有配置时回退到经典 `standard`。显式 `--report` 始终优先。Config 仍会为 Theme 和 `view` rebuild 加载；这里只说明配置里的 Report 不参与显式 Run 的默认选择。
 
 省略 `--host` 时，`view` 只监听 `127.0.0.1`。传入具体 hostname / IP 会显式监听该地址；只写 `--host` 时则监听全部 IPv4 接口。wildcard listener 先打印 loopback URL，再打印可用接口 URL；`--page` 应用到每条 URL，自动打开浏览器只使用第一条。
 

@@ -1,6 +1,11 @@
 import { metricValue, type MetricBetter, type MetricFormat, type MetricValue } from "./metric.ts";
 import type { ClassicAttemptHandle } from "./attempt.ts";
-import type { AggregationSubject, ClassicEvalUnit, Sample } from "./sample.ts";
+import {
+  classicAttemptLocator,
+  type AggregationSubject,
+  type ClassicEvalUnit,
+  type Sample,
+} from "./sample.ts";
 
 export type GroupFunction = (subject: AggregationSubject) => string;
 
@@ -537,7 +542,7 @@ async function computeRollup(
 function attemptHandle(
   attempt: ClassicEvalUnit["attempts"][number],
 ): ClassicAttemptHandle | undefined {
-  const locator = attempt.target?.locator ?? attempt.attemptId;
+  const locator = classicAttemptLocator(attempt);
   if (locator === undefined) {
     return undefined;
   }

@@ -186,6 +186,7 @@ export function reportExecutionShowDocument(
           problemIds: sortedProblemIds(family.problemIds),
         })
       ),
+      navigation: execution.navigation.map((item) => Object.freeze({ ...item })),
       pages: pages.map((page) => pageShowValue(page)),
       downloads: Object.freeze(downloads),
       problemTable: [...execution.problemTable]

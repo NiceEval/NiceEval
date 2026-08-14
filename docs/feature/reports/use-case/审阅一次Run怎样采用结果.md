@@ -10,10 +10,10 @@
 {"type":"receipt","receipt":{"invocationId":"11c8fc15-8a9b-49a0-bb93-68205b52ffab","runIds":["7b8d2ea4-b840-4870-9840-f85a436a5527"],"startedAt":"2026-08-14T10:00:00.000Z","completedAt":"2026-08-14T10:01:00.000Z","completion":"completed"}}
 ```
 
-TTY 完成反馈也显示 Run ID。`niceeval accept @<AttemptId>` 会建立一个新的 Run，并在成功反馈中显示新 Run ID 与保持不变的结果 locator：
+TTY 完成反馈也显示 Run ID。`niceeval accept @<AttemptLocator>` 会建立一个新的 Run，并在成功反馈中显示新 Run ID 与保持不变的结果 locator：
 
 ```text
-Accepted source Attempt @91ddc61b-ae96-4a23-8578-ddc1b83306dc into new Run 7b8d2ea4-b840-4870-9840-f85a436a5527. Result locator remains @91ddc61b-ae96-4a23-8578-ddc1b83306dc.
+Accepted source Attempt @1K1P0VJAPVJ12 into new Run 7b8d2ea4-b840-4870-9840-f85a436a5527. Result locator remains @1K1P0VJAPVJ12.
 ```
 
 `accept` 的这行反馈供操作者复制，不是 JSON receipt 或稳定正则协议。
@@ -38,8 +38,8 @@ niceeval show --run 7b8d2ea4-b840-4870-9840-f85a436a5527 --json
 ## 3. 下钻 immutable Attempt
 
 ```sh
-niceeval show @91ddc61b-ae96-4a23-8578-ddc1b83306dc
-niceeval show @91ddc61b-ae96-4a23-8578-ddc1b83306dc --execution
+niceeval show @1K1P0VJAPVJ12
+niceeval show @1K1P0VJAPVJ12 --execution
 ```
 
 第一个命令读取 Attempt identity、四态 Verdict、Assertions 与适用的 Score；第二个命令读取 execution evidence。两个命令都不会回答另一个 Run 为什么采用它，因为 adoption 属于目标 Run 的 membership provenance。

@@ -115,7 +115,7 @@ Host 在作者 callback 之前汇总 recorded-data problems，并在 callback �
 
 facade 的固定 projection plan 声明 evaluation plan、verdict、kind-gated score、usage 与 timing 五条官方投影。Score 对 Pass Eval 为 not-applicable；对 Score Eval 为 required。host 对 Sample 投影一次，构造深冻结 `Sample`，再调用 `page.render(sample)` 展开受控 JSX 树。
 
-展开结果是树而不是数据访问：`render(sample)` 的时间在 projection 之后，I/O 已经闭合。`aggregate` 从这份已投影值分组，不再请求新的 Attachment。组件树与低层页面的输出进入同一个 closed validation，形成同一个 `ReportExecution`；show 文本、live view 与 static export 消费同一份 execution。公开 `show --json` 与 `--report` 互斥；`niceeval.report-show/v1` 只给内部 host / static 使用。
+展开结果是树而不是数据访问：`render(sample)` 的时间在 projection 之后，I/O 已经闭合。`aggregate` 从这份已投影值分组，不再请求新的 Attachment。组件树与低层页面的输出进入同一个 closed validation，形成同一个 `ReportExecution`；show 文本、live view 与 static export 消费同一份 execution。公开 `show --json` 与 `--report` 互斥；显式 `--run` 的默认 membership Report、live host 与 static export 使用 `niceeval.report-show/v1`。
 
 ### selection-origin
 

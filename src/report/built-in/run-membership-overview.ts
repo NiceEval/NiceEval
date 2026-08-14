@@ -1,4 +1,5 @@
 import { Either } from "effect";
+import { encodeAttemptLocator } from "../../attempt-locator.ts";
 import type { AnalysisSlot } from "../../analysis/index.ts";
 import {
   attemptSlotProjection,

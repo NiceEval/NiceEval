@@ -48,6 +48,7 @@ export interface ReportHtmlHostMetadata {
 }
 
 type ReportLinkTarget = Extract<ReportInline, { readonly type: "link" }>["target"];
+export type ReportHrefMode = "relative" | "root";
 
 /**
  * The sole HTML shell for a fixed Report projection. Author pages render the
@@ -61,9 +62,60 @@ export function renderReportHtml(input: RenderReportHtmlInput): string {
   const title = semantic ? input.document.title : "NiceEval report";
   const metadata = semantic ? renderHostMetadata(input.hostMetadata) : "";
   const content = semantic
-    ? renderDocument(input.document, input.route)
+    ? renderDocument(input.document, input.route, "relative")
     : `<pre class="niceeval-report__text">${escapeHtml(input.text)}</pre>`;
   return `<!doctype html><html lang="${input.locale ?? "en"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)}</title>${metadata}<style>${themeStylesheet(theme)}${REPORT_HTML_STYLESHEET}</style></head><body><main class="niceeval-report">${content}</main></body></html>`;
+}
+
+/** Package-owned fragment renderer used by the live shell for the same closed document. */
+export function renderReportDocumentFragment(input: {
+  readonly document: ReportDocument;
+  readonly route: ReportRoute;
+  readonly hrefMode?: ReportHrefMode;
+}): string {
+  return renderDocument(input.document, input.route, input.hrefMode ?? "relative");
+}
+
+export interface RenderReportLiveHtmlInput {
+  readonly title: string;
+  readonly locale?: "en" | "zh-CN";
+  readonly revision: number;
+  readonly currentRoute: ReportRoute;
+  readonly currentDocument?: ReportDocument;
+  readonly navigation: readonly {
+    readonly pageId: string;
+    readonly title: string;
+    readonly route: ReportRoute;
+    readonly state: "rendered" | "data-unavailable" | "execution-failed";
+    readonly document?: ReportDocument;
+  }[];
+  readonly hostMetadata?: ReportHtmlHostMetadata;
+  readonly theme?: ThemeDefinition;
+}
+
+/** One live shell over fixed documents from the same immutable execution revision. */
+export function renderReportLiveHtml(input: RenderReportLiveHtmlInput): string {
+  const theme = input.theme ?? basalt;
+  const selectedIndex = input.navigation.findIndex((item) => item.route === input.currentRoute);
+  const tabs = input.navigation.map((item, index) => {
+    const selected = index === selectedIndex;
+    return `<button type="button" role="tab" id="niceeval-tab-${index}" aria-controls="niceeval-panel-${index}" aria-selected="${selected}" tabindex="${selected ? "0" : "-1"}" data-niceeval-tab="${index}" data-niceeval-route="/${escapeHtml(staticPathForReportRoute(item.route).posix)}">${escapeHtml(item.title)}</button>`;
+  }).join("");
+  const panels = input.navigation.map((item, index) => {
+    const selected = index === selectedIndex;
+    const body = item.state === "rendered" && item.document !== undefined
+      ? renderDocument(item.document, item.route, "root")
+      : `<article class="niceeval-report__document"><header class="niceeval-report__document-header"><h1>${escapeHtml(item.title)}</h1></header><p role="status">${escapeHtml(`Page ${item.state}`)}</p></article>`;
+    return `<section role="tabpanel" id="niceeval-panel-${index}" aria-labelledby="niceeval-tab-${index}" data-niceeval-panel="${index}"${selected ? "" : " hidden"}>${body}</section>`;
+  }).join("");
+  const direct = selectedIndex < 0 && input.currentDocument !== undefined
+    ? `<section data-niceeval-direct-page>${renderDocument(input.currentDocument, input.currentRoute, "root")}</section>`
+    : "";
+  const metadata = renderHostMetadata({
+    ...input.hostMetadata,
+    revision: input.revision,
+  });
+  return `<!doctype html><html lang="${input.locale ?? "en"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(input.title)}</title>${metadata}<style>${themeStylesheet(theme)}${REPORT_HTML_STYLESHEET}${REPORT_LIVE_STYLESHEET}</style></head><body><main class="niceeval-report niceeval-report--live"><div role="tablist" aria-label="Report pages" class="niceeval-report__tabs">${tabs}</div>${panels}${direct}<dialog class="niceeval-report__dialog" aria-modal="true"><div data-niceeval-dialog-content></div><button type="button" data-niceeval-dialog-close>Close</button></dialog></main><script>${REPORT_LIVE_SCRIPT}</script></body></html>`;
 }
 
 function renderHostMetadata(metadata: ReportHtmlHostMetadata | undefined): string {
@@ -80,25 +132,25 @@ function renderHostMetadata(metadata: ReportHtmlHostMetadata | undefined): strin
   return `${revision}${problem}`;
 }
 
-function renderDocument(document: ReportDocument, route: ReportRoute): string {
+function renderDocument(document: ReportDocument, route: ReportRoute, hrefMode: ReportHrefMode): string {
   const dashboardClass = document.presentation === "classic-dashboard"
     ? " niceeval-report__document--classic-dashboard"
     : "";
-  return `<article class="niceeval-report__document${dashboardClass}"><header class="niceeval-report__document-header"><h1>${escapeHtml(document.title)}</h1></header>${document.children.map((block) => renderBlock(block, route, 2)).join("")}</article>`;
+  return `<article class="niceeval-report__document${dashboardClass}"><header class="niceeval-report__document-header"><h1>${escapeHtml(document.title)}</h1></header>${document.children.map((block) => renderBlock(block, route, 2, hrefMode)).join("")}</article>`;
 }
 
-function renderBlock(block: ReportBlock, route: ReportRoute, headingLevel: number): string {
+function renderBlock(block: ReportBlock, route: ReportRoute, headingLevel: number, hrefMode: ReportHrefMode): string {
   switch (block.type) {
     case "section": {
       const level = Math.min(headingLevel, 6);
       const meta = block.meta === undefined ? "" : `<p class="niceeval-report__section-meta">${escapeHtml(block.meta)}</p>`;
-      return `<section class="niceeval-report__section"><h${level}>${escapeHtml(block.heading)}</h${level}>${meta}${block.children.map((child) => renderBlock(child, route, level + 1)).join("")}</section>`;
+      return `<section class="niceeval-report__section"><h${level}>${escapeHtml(block.heading)}</h${level}>${meta}${block.children.map((child) => renderBlock(child, route, level + 1, hrefMode)).join("")}</section>`;
     }
     case "paragraph":
-      return `<p class="niceeval-report__paragraph">${renderInlines(block.children, route)}</p>`;
+      return `<p class="niceeval-report__paragraph">${renderInlines(block.children, route, hrefMode)}</p>`;
     case "list": {
       const tag = block.ordered ? "ol" : "ul";
-      return `<${tag} class="niceeval-report__list">${block.items.map((item) => `<li>${item.map((child) => renderBlock(child, route, headingLevel)).join("")}</li>`).join("")}</${tag}>`;
+      return `<${tag} class="niceeval-report__list">${block.items.map((item) => `<li>${item.map((child) => renderBlock(child, route, headingLevel, hrefMode)).join("")}</li>`).join("")}</${tag}>`;
     }
     case "table":
       return `<div class="niceeval-report__table-wrap"><table class="niceeval-report__table"><caption>${escapeHtml(block.caption)}</caption><thead><tr>${block.columns.map((column) => `<th scope="col" class="niceeval-report__align-${column.align === "end" ? "end" : "start"}">${escapeHtml(column.label)}</th>`).join("")}</tr></thead><tbody>${block.rows.map((row) => `<tr>${block.columns.map((column) => `<td class="niceeval-report__align-${column.align === "end" ? "end" : "start"}">${escapeHtml(scalarText(row[column.key]!))}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
@@ -108,27 +160,30 @@ function renderBlock(block: ReportBlock, route: ReportRoute, headingLevel: numbe
     }
     case "status": {
       const tone = statusTone(block.tone);
-      return `<p class="niceeval-report__status niceeval-report__status--${tone}" data-tone="${tone}" role="status"><strong>${escapeHtml(block.label)}</strong>${block.detail === undefined ? "" : ` <span class="niceeval-report__status-detail">${renderInlines(block.detail, route)}</span>`}</p>`;
+      return `<p class="niceeval-report__status niceeval-report__status--${tone}" data-tone="${tone}" role="status"><strong>${escapeHtml(block.label)}</strong>${block.detail === undefined ? "" : ` <span class="niceeval-report__status-detail">${renderInlines(block.detail, route, hrefMode)}</span>`}</p>`;
     }
     case "code-block":
       return `<pre class="niceeval-report__code-block"><code${block.language === undefined ? "" : ` data-language="${escapeHtml(block.language)}"`}>${escapeHtml(block.value)}</code></pre>`;
     case "chart":
       return renderChart(block);
     case "hero":
-      return renderHero(block, route);
+      return renderHero(block, route, hrefMode);
     case "summary":
       return renderSummary(block);
     case "ranked-bars":
       return renderRankedBars(block);
     case "scatter":
-      return renderScatter(block, route);
+      return renderScatter(block, route, hrefMode);
     case "tree-table":
-      return renderTreeTable(block, route);
+      return renderTreeTable(block, route, hrefMode);
     case "grid":
-      return `<div class="niceeval-report__grid">${block.cells.map((cell) => renderBlock(cell, route, headingLevel)).join("")}</div>`;
+      return `<div class="niceeval-report__grid">${block.cells.map((cell) => renderBlock(cell, route, headingLevel, hrefMode)).join("")}</div>`;
     case "stat":
       return `<dl class="niceeval-report__stat"><div><dt>${escapeHtml(block.label)}</dt><dd>${escapeHtml(block.value)}</dd></div></dl>`;
     case "cell-table": {
+      if (block.hierarchy === true) {
+        return renderCellTableHierarchy(block, route, hrefMode);
+      }
       const headings = block.columns.map((column) => `<th scope="col">${escapeHtml(column)}</th>`).join("");
       const rows = block.rows.map((row) =>
         `<tr>${block.columns.map((column) => `<td>${escapeHtml(row.cells[column] ?? "—")}</td>`).join("")}</tr>`
@@ -136,6 +191,38 @@ function renderBlock(block: ReportBlock, route: ReportRoute, headingLevel: numbe
       return `<div class="niceeval-report__table-wrap"><table class="niceeval-report__table"><thead><tr>${headings}</tr></thead><tbody>${rows}</tbody></table></div>`;
     }
   }
+}
+
+function renderCellTableHierarchy(
+  block: Extract<ReportBlock, { readonly type: "cell-table" }>,
+  route: ReportRoute,
+  hrefMode: ReportHrefMode,
+): string {
+  const children = new Map<string | undefined, typeof block.rows>();
+  for (const row of block.rows) {
+    const siblings = children.get(row.parentKey) ?? [];
+    children.set(row.parentKey, Object.freeze([...siblings, row]));
+  }
+  const headings = block.columns.map((column) =>
+    `<span role="columnheader">${escapeHtml(column)}</span>`
+  ).join("");
+  const renderRow = (row: typeof block.rows[number]): string => {
+    const descendants = children.get(row.key) ?? [];
+    const cells = block.columns.map((column, index) => {
+      const label = index === 0 ? row.label ?? row.cells[column] ?? "—" : row.cells[column] ?? "—";
+      const content = index === 0 && descendants.length === 0 && row.target !== undefined
+        ? `<a ${reportLinkAttributes(route, row.target, hrefMode)}>${escapeHtml(label)}</a>`
+        : escapeHtml(label);
+      return `<span role="cell" class="niceeval-report__hierarchy-cell${index === 0 ? " niceeval-report__hierarchy-cell--label" : ""}">${content}</span>`;
+    }).join("");
+    const rowContent = `<span role="row" class="niceeval-report__hierarchy-row" data-kind="${escapeHtml(row.kind ?? "item")}">${cells}</span>`;
+    if (descendants.length === 0) return rowContent;
+    const label = row.label ?? row.key;
+    return `<details class="niceeval-report__hierarchy-node"><summary role="button" aria-label="${escapeHtml(label)}">${rowContent}</summary><div role="rowgroup" aria-label="${escapeHtml(`${label} children`)}" class="niceeval-report__hierarchy-children">${descendants.map(renderRow).join("")}</div></details>`;
+  };
+  const roots = children.get(undefined) ?? [];
+  const trailingColumns = Math.max(0, block.columns.length - 1);
+  return `<div class="niceeval-report__table-wrap"><div role="table" aria-label="Experiment hierarchy" class="niceeval-report__hierarchy-table" style="--niceeval-hierarchy-template:minmax(15rem,2fr) repeat(${trailingColumns},minmax(7rem,1fr))"><div role="rowgroup"><div role="row" class="niceeval-report__hierarchy-row niceeval-report__hierarchy-header">${headings}</div></div><div role="rowgroup">${roots.map(renderRow).join("")}</div></div></div>`;
 }
 
 function renderChart(block: Extract<ReportBlock, { readonly type: "chart" }>): string {
@@ -146,6 +233,7 @@ function renderChart(block: Extract<ReportBlock, { readonly type: "chart" }>): s
 function renderHero(
   block: Extract<ReportBlock, { readonly type: "hero" }>,
   route: ReportRoute,
+  hrefMode: ReportHrefMode,
 ): string {
   const logo = block.logo === undefined
     ? ""
@@ -155,7 +243,7 @@ function renderHero(
     : `<h1 class="niceeval-report__hero-title">${escapeHtml(block.title)}</h1>`;
   const links = block.links.length === 0
     ? ""
-    : `<nav class="niceeval-report__hero-links" aria-label="Report links"><ul>${block.links.map((link) => `<li><a ${reportLinkAttributes(route, link.target)}>${escapeHtml(link.label)}</a></li>`).join("")}</ul></nav>`;
+    : `<nav class="niceeval-report__hero-links" aria-label="Report links"><ul>${block.links.map((link) => `<li><a ${reportLinkAttributes(route, link.target, hrefMode)}>${escapeHtml(link.label)}</a></li>`).join("")}</ul></nav>`;
   return `<section class="niceeval-report__hero">${logo}${title}<p>${escapeHtml(block.description)}</p>${links}</section>`;
 }
 
@@ -178,7 +266,7 @@ function renderRankedBars(block: ReportRankedBars): string {
   return `<figure class="niceeval-report__ranked-bars"><figcaption>${escapeHtml(block.title)}<span>${escapeHtml(block.better === "higher" ? "Higher is better" : "Lower is better")}</span></figcaption><ol>${bars}</ol><div class="niceeval-report__table-wrap niceeval-report__dashboard-data"><table class="niceeval-report__table"><caption>Accessible values for ${escapeHtml(block.title)}</caption><thead><tr><th scope="col">Label</th><th scope="col">Series</th><th scope="col" class="niceeval-report__align-end">Value</th><th scope="col" class="niceeval-report__align-end">Coverage</th></tr></thead><tbody>${tableRows}</tbody></table></div></figure>`;
 }
 
-function renderScatter(block: ReportScatter, route: ReportRoute): string {
+function renderScatter(block: ReportScatter, route: ReportRoute, hrefMode: ReportHrefMode): string {
   const plotted = block.series.flatMap((series, seriesIndex) => series.points
     .filter((point) => point.x !== null && point.y !== null)
     .map((point) => ({ point, series, seriesIndex })));
@@ -206,21 +294,21 @@ function renderScatter(block: ReportScatter, route: ReportRoute): string {
       const circle = `<circle class="niceeval-report__scatter-point niceeval-report__scatter-point--${seriesIndex % 6}" cx="${position.x.toFixed(2)}" cy="${position.y.toFixed(2)}" r="5"><title>${escapeHtml(label)}</title></circle>`;
       return point.target === undefined || point.target.kind === "attempt"
         ? circle
-        : `<a ${reportLinkAttributes(route, point.target)} aria-label="${escapeHtml(label)}">${circle}</a>`;
+        : `<a ${reportLinkAttributes(route, point.target, hrefMode)} aria-label="${escapeHtml(label)}">${circle}</a>`;
     }).join("");
     return `${line}${circles}`;
   }).join("");
-  const tableRows = block.series.flatMap((series) => series.points.map((point) => `<tr><th scope="row">${escapeHtml(series.label)} · ${escapeHtml(point.key)}</th><td class="niceeval-report__align-end">${escapeHtml(point.xDisplay)}</td><td class="niceeval-report__align-end">${escapeHtml(point.yDisplay)}</td><td>${point.target === undefined ? "" : point.target.kind === "attempt" ? escapeHtml(linkTargetLabel(point.target)) : `<a ${reportLinkAttributes(route, point.target)}>${escapeHtml(linkTargetLabel(point.target))}</a>`}</td></tr>`)).join("");
+  const tableRows = block.series.flatMap((series) => series.points.map((point) => `<tr><th scope="row">${escapeHtml(series.label)} · ${escapeHtml(point.key)}</th><td class="niceeval-report__align-end">${escapeHtml(point.xDisplay)}</td><td class="niceeval-report__align-end">${escapeHtml(point.yDisplay)}</td><td>${point.target === undefined ? "" : point.target.kind === "attempt" ? escapeHtml(linkTargetLabel(point.target)) : `<a ${reportLinkAttributes(route, point.target, hrefMode)}>${escapeHtml(linkTargetLabel(point.target))}</a>`}</td></tr>`)).join("");
   return `<figure class="niceeval-report__scatter"><figcaption>${escapeHtml(block.title)}<span>${escapeHtml(block.xLabel)} × ${escapeHtml(block.yLabel)}</span></figcaption><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(`${block.title}: ${block.xLabel} by ${block.yLabel}`)}" preserveAspectRatio="xMidYMid meet"><title>${escapeHtml(block.title)}</title><desc>${escapeHtml(`Scatter plot of ${block.yLabel} against ${block.xLabel}. Missing values are listed in the table below.`)}</desc><line class="niceeval-report__scatter-axis" x1="${bounds.left}" y1="${height - bounds.bottom}" x2="${width - bounds.right}" y2="${height - bounds.bottom}"></line><line class="niceeval-report__scatter-axis" x1="${bounds.left}" y1="${bounds.top}" x2="${bounds.left}" y2="${height - bounds.bottom}"></line><text class="niceeval-report__scatter-axis-label" x="${width / 2}" y="${height - 14}" text-anchor="middle">${escapeHtml(block.xLabel)}</text><text class="niceeval-report__scatter-axis-label" x="18" y="${height / 2}" text-anchor="middle" transform="rotate(-90 18 ${height / 2})">${escapeHtml(block.yLabel)}</text>${marks}</svg><ul class="niceeval-report__scatter-legend" aria-label="Series key">${links}</ul><div class="niceeval-report__table-wrap niceeval-report__dashboard-data"><table class="niceeval-report__table"><caption>Accessible values for ${escapeHtml(block.title)}</caption><thead><tr><th scope="col">Point</th><th scope="col" class="niceeval-report__align-end">${escapeHtml(block.xLabel)}</th><th scope="col" class="niceeval-report__align-end">${escapeHtml(block.yLabel)}</th><th scope="col">Link</th></tr></thead><tbody>${tableRows}</tbody></table></div></figure>`;
 }
 
-function renderTreeTable(block: ReportTreeTable, route: ReportRoute): string {
+function renderTreeTable(block: ReportTreeTable, route: ReportRoute, hrefMode: ReportHrefMode): string {
   const headings = block.columns.map((column) => `<th scope="col" class="niceeval-report__align-${column.align === "end" ? "end" : "start"}">${escapeHtml(column.label)}</th>`).join("");
   const rows = block.rows.map((row) => {
     const label = `${treeKindLabel(row.kind)} · ${row.label}`;
     const target = row.target === undefined || row.target.kind === "attempt"
       ? escapeHtml(label)
-      : `<a ${reportLinkAttributes(route, row.target)}>${escapeHtml(label)}</a>`;
+      : `<a ${reportLinkAttributes(route, row.target, hrefMode)}>${escapeHtml(label)}</a>`;
     const cells = block.columns.map((column) => `<td class="niceeval-report__align-${column.align === "end" ? "end" : "start"}">${renderTreeCell(row.cells[column.key]!)}</td>`).join("");
     return `<tr data-kind="${row.kind}" style="--niceeval-tree-depth:${row.depth}"><th scope="row" class="niceeval-report__tree-label">${target}</th>${cells}</tr>`;
   }).join("");
@@ -326,7 +414,7 @@ function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(maximum, Math.max(minimum, value));
 }
 
-function renderInlines(children: readonly ReportInline[], route: ReportRoute): string {
+function renderInlines(children: readonly ReportInline[], route: ReportRoute, hrefMode: ReportHrefMode): string {
   return children.map((child) => {
     switch (child.type) {
       case "text":
@@ -334,9 +422,9 @@ function renderInlines(children: readonly ReportInline[], route: ReportRoute): s
       case "code":
         return `<code class="niceeval-report__inline-code">${escapeHtml(child.value)}</code>`;
       case "emphasis":
-        return `<em>${renderInlines(child.children, route)}</em>`;
+        return `<em>${renderInlines(child.children, route, hrefMode)}</em>`;
       case "link":
-        return `<a ${reportLinkAttributes(route, child.target)}>${renderInlines(child.label, route)}</a>`;
+        return `<a ${reportLinkAttributes(route, child.target, hrefMode)}>${renderInlines(child.label, route, hrefMode)}</a>`;
     }
   }).join("");
 }
@@ -346,20 +434,22 @@ function renderInlines(children: readonly ReportInline[], route: ReportRoute): s
  * serves the same explicit `index.html` paths, so a nested document has one
  * relative href that works identically over HTTP and from a `file://` export.
  */
-function reportHref(sourceRoute: ReportRoute, target: ReportLinkTarget): string {
+function reportHref(sourceRoute: ReportRoute, target: ReportLinkTarget, hrefMode: ReportHrefMode): string {
   switch (target.kind) {
     case "external":
       return isAbsoluteHttps(target.href) ? target.href : "#";
     case "attempt":
-      return isAttemptLocator(target.locator) ? `#/attempt/${target.locator}` : "#";
+      return "#";
     case "route":
       if (!isReportRoute(sourceRoute) || !isReportRoute(target.route)) return "#";
+      if (hrefMode === "root") return `/${staticPathForReportRoute(target.route).posix}`;
       return relativePath(
         staticPathForReportRoute(sourceRoute).segments.slice(0, -1),
         staticPathForReportRoute(target.route).segments,
       );
     case "download":
       if (!isReportRoute(sourceRoute) || !isReportDownloadPath(target.path)) return "#";
+      if (hrefMode === "root") return `/${staticPathForReportDownload(target.path).posix}`;
       return relativePath(
         staticPathForReportRoute(sourceRoute).segments.slice(0, -1),
         staticPathForReportDownload(target.path).segments,
@@ -367,12 +457,13 @@ function reportHref(sourceRoute: ReportRoute, target: ReportLinkTarget): string 
   }
 }
 
-function reportLinkAttributes(sourceRoute: ReportRoute, target: ReportLinkTarget): string {
-  const href = reportHref(sourceRoute, target);
+function reportLinkAttributes(sourceRoute: ReportRoute, target: ReportLinkTarget, hrefMode: ReportHrefMode): string {
+  const href = reportHref(sourceRoute, target, hrefMode);
   const security = target.kind === "external" && href !== "#"
     ? ' target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer"'
     : "";
-  return `href="${escapeHtml(href)}"${security}`;
+  const routeMarker = target.kind === "route" && href !== "#" ? " data-niceeval-report-route" : "";
+  return `href="${escapeHtml(href)}"${routeMarker}${security}`;
 }
 
 function isAbsoluteHttps(value: string): boolean {
@@ -385,10 +476,6 @@ function isAbsoluteHttps(value: string): boolean {
   } catch {
     return false;
   }
-}
-
-function isAttemptLocator(value: string): boolean {
-  return /^@[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value);
 }
 
 function relativePath(fromDirectory: readonly string[], target: readonly string[]): string {
@@ -612,6 +699,55 @@ body {
 .niceeval-report__table tbody th {
   text-align: start;
   vertical-align: top;
+}
+
+.niceeval-report__hierarchy-table {
+  min-width: 52rem;
+  border-top: 1px solid var(--niceeval-color-border-strong, #343434);
+}
+
+.niceeval-report__hierarchy-row {
+  display: grid;
+  grid-template-columns: var(--niceeval-hierarchy-template);
+  align-items: start;
+  border-bottom: 1px solid var(--niceeval-color-border, #262626);
+}
+
+.niceeval-report__hierarchy-header {
+  color: var(--niceeval-color-text, #ededed);
+  font-weight: 600;
+}
+
+.niceeval-report__hierarchy-row > [role="columnheader"],
+.niceeval-report__hierarchy-cell {
+  min-width: 0;
+  padding: 0.8rem 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.niceeval-report__hierarchy-row > :not(:first-child) {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.niceeval-report__hierarchy-node > summary {
+  cursor: pointer;
+  list-style-position: inside;
+}
+
+.niceeval-report__hierarchy-node > summary::marker {
+  color: var(--niceeval-color-text-secondary, #a1a1aa);
+}
+
+.niceeval-report__hierarchy-node > summary > .niceeval-report__hierarchy-row {
+  display: inline-grid;
+  width: calc(100% - 1.5rem);
+  vertical-align: top;
+}
+
+.niceeval-report__hierarchy-children {
+  margin-left: clamp(0.75rem, 2.5vw, 2rem);
+  border-left: 1px solid var(--niceeval-color-border, #262626);
 }
 
 .niceeval-report__align-start {
@@ -960,4 +1096,152 @@ body {
     grid-column: 1 / -1;
   }
 }
+`;
+
+const REPORT_LIVE_STYLESHEET = `
+.niceeval-report__tabs {
+  display: flex;
+  width: min(100%, 72rem);
+  margin: 0 auto 2.5rem;
+  gap: 0.25rem;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--niceeval-color-border, #262626);
+}
+
+.niceeval-report__tabs [role="tab"] {
+  flex: 0 0 auto;
+  padding: 0.7rem 1rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--niceeval-color-text-secondary, #a1a1aa);
+  font: inherit;
+  cursor: pointer;
+}
+
+.niceeval-report__tabs [role="tab"][aria-selected="true"] {
+  border-bottom-color: var(--niceeval-color-accent, #cbd6dc);
+  color: var(--niceeval-color-text, #ededed);
+}
+
+.niceeval-report__dialog {
+  width: min(92vw, 72rem);
+  max-height: 88vh;
+  padding: clamp(1rem, 3vw, 2.5rem);
+  overflow: auto;
+  border: 1px solid var(--niceeval-color-border-strong, #343434);
+  background: var(--niceeval-color-page, #050505);
+  color: var(--niceeval-color-text, #ededed);
+}
+
+.niceeval-report__dialog::backdrop {
+  background: rgb(0 0 0 / 72%);
+}
+
+.niceeval-report__dialog [data-niceeval-dialog-close] {
+  position: sticky;
+  bottom: 0;
+  margin-top: 1.5rem;
+  padding: 0.55rem 0.9rem;
+  border: 1px solid var(--niceeval-color-border-strong, #343434);
+  background: var(--niceeval-color-page-raised, #111);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+`;
+
+const REPORT_LIVE_SCRIPT = `
+(() => {
+  const revisionMeta = document.querySelector('meta[name="niceeval-report-revision"]');
+  const revision = revisionMeta ? Number(revisionMeta.getAttribute("content")) : -1;
+  const tabs = Array.from(document.querySelectorAll('[role="tab"][data-niceeval-tab]'));
+  const panels = Array.from(document.querySelectorAll('[role="tabpanel"][data-niceeval-panel]'));
+  const directPage = document.querySelector('[data-niceeval-direct-page]');
+  const activate = (tab, focus) => {
+    const index = tab.getAttribute("data-niceeval-tab");
+    for (const candidate of tabs) {
+      const selected = candidate === tab;
+      candidate.setAttribute("aria-selected", String(selected));
+      candidate.setAttribute("tabindex", selected ? "0" : "-1");
+    }
+    for (const panel of panels) panel.hidden = panel.getAttribute("data-niceeval-panel") !== index;
+    if (directPage) directPage.hidden = true;
+    if (focus) tab.focus();
+  };
+  tabs.forEach((tab, index) => {
+    tab.addEventListener("click", () => activate(tab, false));
+    tab.addEventListener("keydown", (event) => {
+      let next = index;
+      if (event.key === "ArrowRight") next = (index + 1) % tabs.length;
+      else if (event.key === "ArrowLeft") next = (index - 1 + tabs.length) % tabs.length;
+      else if (event.key === "Home") next = 0;
+      else if (event.key === "End") next = tabs.length - 1;
+      else return;
+      event.preventDefault();
+      activate(tabs[next], true);
+    });
+  });
+  for (const details of document.querySelectorAll('details.niceeval-report__hierarchy-node')) {
+    const summary = details.querySelector(':scope > summary');
+    if (!summary) continue;
+    const sync = () => summary.setAttribute("aria-expanded", String(details.open));
+    sync();
+    details.addEventListener("toggle", sync);
+  }
+  const dialog = document.querySelector('dialog.niceeval-report__dialog');
+  const content = dialog && dialog.querySelector('[data-niceeval-dialog-content]');
+  const close = dialog && dialog.querySelector('[data-niceeval-dialog-close]');
+  let trigger = null;
+  if (dialog && close) {
+    close.addEventListener("click", () => dialog.close());
+    dialog.addEventListener("close", () => {
+      const previous = trigger;
+      trigger = null;
+      if (previous && previous.isConnected) previous.focus();
+    });
+  }
+  document.addEventListener("click", async (event) => {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    const element = event.target instanceof Element ? event.target.closest('a[data-niceeval-report-route]') : null;
+    const href = element && element.getAttribute("href");
+    if (!element || !href || element.getAttribute("target") === "_blank" || !dialog || !content || !close) return;
+    const url = new URL(href, window.location.href);
+    if (url.origin !== window.location.origin) return;
+    const fixedTab = tabs.find((tab) => tab.getAttribute("data-niceeval-route") === url.pathname);
+    event.preventDefault();
+    if (fixedTab) {
+      activate(fixedTab, true);
+      return;
+    }
+    try {
+      const response = await fetch(url.href, {
+        headers: {
+          accept: "application/json",
+          "x-niceeval-report-fragment": String(revision),
+        },
+      });
+      if (response.status === 409) {
+        window.location.reload();
+        return;
+      }
+      if (!response.ok) {
+        window.location.assign(url.href);
+        return;
+      }
+      const payload = await response.json();
+      if (payload.revision !== revision || typeof payload.title !== "string" || typeof payload.html !== "string") {
+        window.location.reload();
+        return;
+      }
+      content.innerHTML = payload.html;
+      dialog.setAttribute("aria-label", payload.title);
+      trigger = element;
+      dialog.showModal();
+      close.focus();
+    } catch {
+      window.location.assign(url.href);
+    }
+  });
+})();
 `;

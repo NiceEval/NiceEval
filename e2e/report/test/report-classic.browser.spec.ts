@@ -2,18 +2,23 @@
 // rerun: pnpm e2e --repo report -- --run test/report-classic.browser.spec.ts
 
 import { existsSync } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { expect, test } from "@playwright/test";
-import { pollUntil, waitForOutput } from "./support/testkit.ts";
 import { expectNoHorizontalOverflow } from "./support/browser.ts";
 import { PINNED_ENV, reportCaseArtifacts, reportE2E } from "./support/context.ts";
+import { pollUntil, waitForOutput } from "./support/testkit.ts";
 
 const DESKTOP = { width: 1280, height: 800 };
 const MOBILE = { width: 390, height: 844 };
+const MEMORY_A = "classic/memory-a";
+const MEMORY_A_GROUP = "classic (8 evals)";
+const RECALL_ENTITY = "classic/recall-entity";
+const RECALL_ENTITY_LABEL = "recall-entity";
+const ATTEMPT_LOCATOR = /^@1[0-9A-HJKMNP-TV-Z]{12}$/;
 
-test("static Journey: live exp → view --out → exported documents", async ({ page }) => {
+test("static Journey: no-JS export preserves hierarchy and canonical detail links", async ({ browser }) => {
   test.setTimeout(180_000);
   await reportE2E.case(
     "browser-static",
@@ -30,90 +35,106 @@ test("static Journey: live exp → view --out → exported documents", async ({ 
         { env: PINNED_ENV, timeoutMs: 60_000 },
       );
       expect(exported.exitCode, exported.diagnostic()).toBe(0);
-      const indexPath = join(projectRoot, "site-export", "index.html");
+      const exportRoot = join(projectRoot, "site-export");
+      const indexPath = join(exportRoot, "index.html");
       expect(existsSync(indexPath)).toBe(true);
       expect(await readFile(indexPath, "utf8")).toContain("MemoryBench Classic");
 
-      await page.setViewportSize(DESKTOP);
-      await page.goto(pathToFileURL(indexPath).href);
-      await expect(page.getByRole("heading", { name: /MemoryBench Classic/i }).first()).toBeVisible();
-      await expect(page.getByRole("link", { name: "NiceEval" }).first()).toBeVisible();
-      await expectNoHorizontalOverflow(page);
+      const context = await browser.newContext({ javaScriptEnabled: false, viewport: DESKTOP });
+      const page = await context.newPage();
+      let attemptLocator = "";
+      try {
+        await test.step("the exported overview is readable without JavaScript", async () => {
+          await page.goto(pathToFileURL(indexPath).href);
+          await expect(page.getByRole("heading", { name: "MemoryBench Classic", exact: true }).first()).toBeVisible();
+          await expect(page.getByRole("link", { name: "NiceEval", exact: true })).toBeVisible();
+          await expectNoHorizontalOverflow(page);
+        });
 
-      const experimentLink = page.getByRole("link", { name: /classic\// }).first();
-      await expect(experimentLink).toBeVisible();
-      const href = await experimentLink.getAttribute("href");
-      expect(href).toBeTruthy();
-      const target = new URL(href!, page.url());
-      if (target.protocol === "file:") {
-        const exported = resolveExportedFile(join(projectRoot, "site-export"), href!);
-        expect(existsSync(exported), `export target for ${href}`).toBe(true);
-        expect(await readFile(exported, "utf8")).toMatch(/classic\//);
-      } else if (target.hash.length > 0) {
-        await page.goto(target.href);
-        await expect(page.getByText(/classic\//).first()).toBeVisible();
-      } else {
-        expect((await page.request.get(target.href)).status()).toBe(200);
-        await page.goto(target.href);
-        await expect(page.getByText(/classic\//).first()).toBeVisible();
+        await test.step("keyboard disclosure exposes the authored experiment hierarchy", async () => {
+          const experiment = page.getByRole("button", { name: new RegExp(`^${escapeRegExp(MEMORY_A)}(?:\\s|$)`) });
+          const group = page.getByRole("button", { name: new RegExp(`^${escapeRegExp(MEMORY_A_GROUP)}(?:\\s|$)`) });
+          const evaluation = page.getByRole("button", { name: new RegExp(`^${RECALL_ENTITY_LABEL}(?:\\s|$)`) });
+          const evaluationChildren = page.getByRole("rowgroup", {
+            name: `${RECALL_ENTITY_LABEL} children`,
+            exact: true,
+          });
+          const attempt = evaluationChildren.getByRole("link", { name: /^@/ });
+
+          await expect(experiment).toBeVisible();
+          await expect(attempt).not.toBeVisible();
+          await experiment.focus();
+          await expect(experiment).toBeFocused();
+          await experiment.press("Enter");
+          await expect(group).toBeVisible();
+          await group.press("Enter");
+          await expect(evaluation).toBeVisible();
+          await evaluation.press("Enter");
+          await expect(attempt).toBeVisible();
+          attemptLocator = (await attempt.textContent())?.trim() ?? "";
+          expect(attemptLocator).toMatch(ATTEMPT_LOCATOR);
+        });
+
+        await test.step("the Attempt href remains a directly navigable static route", async () => {
+          const attempt = page.getByRole("link", { name: attemptLocator, exact: true });
+          const href = await attempt.getAttribute("href");
+          expect(href, "Attempt link must expose its canonical route").toBeTruthy();
+          expect(href).not.toMatch(/^#/);
+          expect(existsSync(resolveExportedFile(exportRoot, href!)), `export target for ${href}`).toBe(true);
+
+          await attempt.click();
+          await expect(page.getByRole("heading", { name: attemptLocator, exact: true })).toBeVisible();
+        });
+
+        await test.step("the no-JS site remains readable on a narrow viewport", async () => {
+          await page.setViewportSize(MOBILE);
+          await page.goto(pathToFileURL(indexPath).href);
+          await expectNoHorizontalOverflow(page);
+        });
+
+        await test.step("missing detail families remove links without removing report data", async () => {
+          const singlePageExport = await niceeval.run(
+            [
+              "view",
+              "--report",
+              "./reports/classic-single-page.tsx",
+              "--out",
+              "single-page-export",
+              "--no-open",
+            ],
+            { env: PINNED_ENV, timeoutMs: 60_000 },
+          );
+          expect(singlePageExport.exitCode, singlePageExport.diagnostic()).toBe(0);
+          const singlePageIndex = join(projectRoot, "single-page-export", "index.html");
+          await page.setViewportSize(DESKTOP);
+          await page.goto(pathToFileURL(singlePageIndex).href);
+          await expect(page.getByRole("heading", { name: "MemoryBench Single Page", exact: true }).first()).toBeVisible();
+          await expect(page.getByText("classic/baseline", { exact: true }).first()).toBeVisible();
+          await expect(page.getByRole("link", { name: /classic\// })).toHaveCount(0);
+          await expectNoHorizontalOverflow(page);
+        });
+      } finally {
+        await context.close();
       }
-
-      await page.setViewportSize(MOBILE);
-      await page.goto(pathToFileURL(indexPath).href);
-      await expectNoHorizontalOverflow(page);
-      await expectAccessibleCollapse(page);
-
-      const singlePageExport = await niceeval.run(
-        [
-          "view",
-          "--report",
-          "./reports/classic-single-page.tsx",
-          "--out",
-          "single-page-export",
-          "--no-open",
-        ],
-        { env: PINNED_ENV, timeoutMs: 60_000 },
-      );
-      expect(singlePageExport.exitCode, singlePageExport.diagnostic()).toBe(0);
-      const singlePageIndex = join(projectRoot, "single-page-export", "index.html");
-      await page.setViewportSize(DESKTOP);
-      await page.goto(pathToFileURL(singlePageIndex).href);
-      await expect(page.getByRole("heading", { name: "MemoryBench Single Page" }).first()).toBeVisible();
-      await expect(page.getByRole("row").filter({ hasText: "classic/baseline" }).first()).toBeVisible();
-      await expect(page.getByRole("link", { name: /classic\// })).toHaveCount(0);
-      await expectNoHorizontalOverflow(page);
     },
   );
 });
 
-test("live Journey: live exp → view --out → real niceeval view server", async ({ page }) => {
+test("live Journey: authored tabs, hierarchy, and detail dialogs preserve context", async ({ page }) => {
   test.setTimeout(180_000);
   await reportE2E.case(
     "browser-live",
-    { artifacts: reportCaseArtifacts(["site-export"]) },
-    async ({ paths: { projectRoot }, commands: { niceeval } }) => {
+    { artifacts: reportCaseArtifacts() },
+    async ({ commands: { niceeval } }) => {
       const run = await niceeval.run(["exp", "classic", "--rerun", "all", "--json"], {
         env: PINNED_ENV,
         timeoutMs: 120_000,
       });
       expect(run.exitCode, run.diagnostic()).toBe(1);
-
-      const exported = await niceeval.run(
-        ["view", "--report", "./reports/classic.tsx", "--out", "site-export", "--no-open"],
-        { env: PINNED_ENV, timeoutMs: 60_000 },
-      );
-      expect(exported.exitCode, exported.diagnostic()).toBe(0);
-      expect((await stat(join(projectRoot, "site-export", "index.html"))).isFile()).toBe(true);
+      let attemptLocator = "";
 
       const view = niceeval.start(
-        [
-          "view",
-          "--report",
-          "./reports/classic.tsx",
-          "--port",
-          "0",
-          "--no-open",
-        ],
+        ["view", "--report", "./reports/classic.tsx", "--port", "0", "--no-open"],
         { timeoutMs: 60_000, env: PINNED_ENV },
       );
       const startup = await waitForOutput(view, "stdout", /http:\/\/127\.0\.0\.1:\d+\//, {
@@ -122,68 +143,6 @@ test("live Journey: live exp → view --out → real niceeval view server", asyn
       });
       const origin = startup.match(/http:\/\/127\.0\.0\.1:\d+\//)?.[0];
       expect(origin, startup).toBeDefined();
-
-      const wildcardView = niceeval.start(
-        [
-          "view",
-          "--report",
-          "./reports/classic.tsx",
-          "--host",
-          "--port",
-          "0",
-          "--no-open",
-        ],
-        { timeoutMs: 60_000, env: PINNED_ENV },
-      );
-      const wildcardWarning = await waitForOutput(
-        wildcardView,
-        "stderr",
-        /without authentication or TLS/i,
-        { timeoutMs: 30_000, label: "non-loopback exposure warning" },
-      );
-      expect(wildcardWarning).toMatch(/reachable client.*report data/i);
-      const wildcardStartup = await waitForOutput(
-        wildcardView,
-        "stdout",
-        /http:\/\/127\.0\.0\.1:\d+\//,
-        { timeoutMs: 30_000, label: "wildcard report view URL" },
-      );
-      const wildcardOrigin = wildcardStartup.match(/http:\/\/127\.0\.0\.1:\d+\//)?.[0];
-      expect(wildcardOrigin, wildcardStartup).toBeDefined();
-
-      const wildcardGet = await page.request.get(wildcardOrigin!);
-      expect(wildcardGet.status()).toBe(200);
-      const wildcardHead = await page.request.head(wildcardOrigin!);
-      expect(wildcardHead.status()).toBe(200);
-      expect(await wildcardHead.body()).toHaveLength(0);
-      const rejectedMethod = await page.request.post(wildcardOrigin!);
-      expect(rejectedMethod.status()).toBe(405);
-      expect(rejectedMethod.headers()["allow"]).toBe("GET, HEAD");
-      const rejectedHost = await page.request.get(wildcardOrigin!, {
-        headers: { host: "rebind.invalid" },
-      });
-      expect(rejectedHost.status()).toBe(421);
-
-      const ipv6View = niceeval.start(
-        [
-          "view",
-          "--report",
-          "./reports/classic.tsx",
-          "--host",
-          "::",
-          "--port",
-          "0",
-          "--no-open",
-        ],
-        { timeoutMs: 60_000, env: PINNED_ENV },
-      );
-      const ipv6Startup = await waitForOutput(ipv6View, "stdout", /http:\/\/\[::1\]:\d+\//, {
-        timeoutMs: 30_000,
-        label: "IPv6 wildcard report view URL",
-      });
-      const ipv6Origin = ipv6Startup.match(/http:\/\/\[::1\]:\d+\//)?.[0];
-      expect(ipv6Origin, ipv6Startup).toBeDefined();
-      expect((await page.request.get(ipv6Origin!)).status()).toBe(200);
 
       await pollUntil(
         async () => {
@@ -198,14 +157,140 @@ test("live Journey: live exp → view --out → real niceeval view server", asyn
 
       await page.setViewportSize(DESKTOP);
       await page.goto(origin!);
-      await expect(page.getByRole("heading", { name: /MemoryBench Classic/i }).first()).toBeVisible();
-      await expectPr49ClassicLiveDx(page);
-      await expectNoHorizontalOverflow(page);
 
-      await page.goto(origin!);
-      await page.setViewportSize(MOBILE);
-      await expectNoHorizontalOverflow(page);
-      await expectAccessibleCollapse(page);
+      const overview = page.getByRole("tab", { name: "Overview", exact: true });
+      const attempts = page.getByRole("tab", { name: "Attempts", exact: true });
+      const traces = page.getByRole("tab", { name: "Traces", exact: true });
+
+      await test.step("authored fixed pages form one accessible tab set", async () => {
+        await expect(page.getByRole("tablist")).toHaveCount(1);
+        await expect(page.getByRole("tab")).toHaveCount(3);
+        await expect(overview).toHaveAttribute("aria-selected", "true");
+        await expect(page.getByRole("heading", { name: "MemoryBench Classic", exact: true }).first()).toBeVisible();
+
+        await overview.focus();
+        await overview.press("ArrowRight");
+        await expect(attempts).toBeFocused();
+        await expect(attempts).toHaveAttribute("aria-selected", "true");
+        await expect(overview).toHaveAttribute("aria-selected", "false");
+        await expect(page.getByRole("heading", { name: "Attempts", exact: true })).toBeVisible();
+
+        await attempts.press("ArrowRight");
+        await expect(traces).toBeFocused();
+        await expect(traces).toHaveAttribute("aria-selected", "true");
+        await expect(page.getByRole("heading", { name: "Conversation traces", exact: true })).toBeVisible();
+
+        await traces.press("Home");
+        await expect(overview).toBeFocused();
+        await expect(overview).toHaveAttribute("aria-selected", "true");
+        await expect(page.getByRole("heading", { name: "MemoryBench Classic", exact: true }).first()).toBeVisible();
+      });
+
+      await test.step("a scatter point opens its canonical Experiment page in a dialog", async () => {
+        const point = page.getByRole("link", {
+          name: new RegExp(`${escapeRegExp(MEMORY_A)};.*costUSD.*passRate`, "i"),
+        }).first();
+        await expect(point).toBeVisible();
+        const href = await point.getAttribute("href");
+        expect(href, "Experiment point must expose its canonical route").toBeTruthy();
+        expect(href).not.toMatch(/^#/);
+        expect((await page.request.get(new URL(href!, page.url()).href)).status()).toBe(200);
+
+        await point.click();
+        const dialog = page.getByRole("dialog", { name: MEMORY_A, exact: true });
+        await expect(dialog).toBeVisible();
+        await expect(dialog.getByRole("heading", { name: MEMORY_A, exact: true })).toBeVisible();
+        await dialog.getByRole("button", { name: "Close", exact: true }).click();
+        await expect(dialog).toBeHidden();
+        await expect(point).toBeFocused();
+        await expect(overview).toHaveAttribute("aria-selected", "true");
+      });
+
+      await test.step("an exact Attempt link opens a dialog and restores expanded context", async () => {
+        const experiment = page.getByRole("button", { name: new RegExp(`^${escapeRegExp(MEMORY_A)}(?:\\s|$)`) });
+        const group = page.getByRole("button", { name: new RegExp(`^${escapeRegExp(MEMORY_A_GROUP)}(?:\\s|$)`) });
+        const evaluation = page.getByRole("button", { name: new RegExp(`^${RECALL_ENTITY_LABEL}(?:\\s|$)`) });
+        const evaluationChildren = page.getByRole("rowgroup", {
+          name: `${RECALL_ENTITY_LABEL} children`,
+          exact: true,
+        });
+        const attempt = evaluationChildren.getByRole("link", { name: /^@/ });
+
+        await expect(experiment).toHaveAttribute("aria-expanded", "false");
+        await expect(attempt).not.toBeVisible();
+        await experiment.click();
+        await expect(experiment).toHaveAttribute("aria-expanded", "true");
+        await expect(group).toBeVisible();
+        await group.click();
+        await expect(group).toHaveAttribute("aria-expanded", "true");
+        await expect(evaluation).toBeVisible();
+        await evaluation.click();
+        await expect(evaluation).toHaveAttribute("aria-expanded", "true");
+        await expect(attempt).toBeVisible();
+        attemptLocator = (await attempt.textContent())?.trim() ?? "";
+        expect(attemptLocator).toMatch(ATTEMPT_LOCATOR);
+
+        const href = await attempt.getAttribute("href");
+        expect(href, "Attempt link must expose its canonical route").toBeTruthy();
+        expect(href).not.toMatch(/^#/);
+        expect((await page.request.get(new URL(href!, page.url()).href)).status()).toBe(200);
+
+        await attempt.click();
+        const dialog = page.getByRole("dialog", { name: attemptLocator, exact: true });
+        await expect(dialog).toBeVisible();
+        await expect(dialog.getByRole("heading", { name: attemptLocator, exact: true })).toBeVisible();
+        await expect(dialog.getByRole("button", { name: "Close", exact: true })).toBeFocused();
+        await page.keyboard.press("Escape");
+        await expect(dialog).toBeHidden();
+        await expect(attempt).toBeFocused();
+        await expect(attempt).toBeVisible();
+        await expect(overview).toHaveAttribute("aria-selected", "true");
+      });
+
+      await test.step("the live report stays readable at desktop and mobile widths", async () => {
+        await expectNoHorizontalOverflow(page);
+        await page.setViewportSize(MOBILE);
+        await expectNoHorizontalOverflow(page);
+      });
+
+      await test.step("the live host keeps its public HTTP boundary", async () => {
+        const wildcardView = niceeval.start(
+          ["view", "--report", "./reports/classic.tsx", "--host", "--port", "0", "--no-open"],
+          { timeoutMs: 60_000, env: PINNED_ENV },
+        );
+        const warning = await waitForOutput(wildcardView, "stderr", /without authentication or TLS/i, {
+          timeoutMs: 30_000,
+          label: "non-loopback exposure warning",
+        });
+        expect(warning).toMatch(/reachable client.*report data/i);
+        const wildcardStartup = await waitForOutput(wildcardView, "stdout", /http:\/\/127\.0\.0\.1:\d+\//, {
+          timeoutMs: 30_000,
+          label: "wildcard report view URL",
+        });
+        const wildcardOrigin = wildcardStartup.match(/http:\/\/127\.0\.0\.1:\d+\//)?.[0];
+        expect(wildcardOrigin, wildcardStartup).toBeDefined();
+
+        expect((await page.request.get(wildcardOrigin!)).status()).toBe(200);
+        const head = await page.request.head(wildcardOrigin!);
+        expect(head.status()).toBe(200);
+        expect(await head.body()).toHaveLength(0);
+        const rejectedMethod = await page.request.post(wildcardOrigin!);
+        expect(rejectedMethod.status()).toBe(405);
+        expect(rejectedMethod.headers()["allow"]).toBe("GET, HEAD");
+        expect((await page.request.get(wildcardOrigin!, { headers: { host: "rebind.invalid" } })).status()).toBe(421);
+
+        const ipv6View = niceeval.start(
+          ["view", "--report", "./reports/classic.tsx", "--host", "::", "--port", "0", "--no-open"],
+          { timeoutMs: 60_000, env: PINNED_ENV },
+        );
+        const ipv6Startup = await waitForOutput(ipv6View, "stdout", /http:\/\/\[::1\]:\d+\//, {
+          timeoutMs: 30_000,
+          label: "IPv6 wildcard report view URL",
+        });
+        const ipv6Origin = ipv6Startup.match(/http:\/\/\[::1\]:\d+\//)?.[0];
+        expect(ipv6Origin, ipv6Startup).toBeDefined();
+        expect((await page.request.get(ipv6Origin!)).status()).toBe(200);
+      });
     },
   );
 });
@@ -215,51 +300,6 @@ function resolveExportedFile(exportDir: string, href: string): string {
   return join(exportDir, relative.replace(/^\.\//, ""));
 }
 
-async function expectAccessibleCollapse(page: import("@playwright/test").Page): Promise<void> {
-  const disclosure = page.getByRole("button").or(page.locator("summary")).first();
-  if ((await disclosure.count()) === 0) return;
-  if (await disclosure.isVisible()) {
-    await disclosure.focus();
-    await expect(disclosure).toBeFocused();
-  }
-}
-
-/**
- * The distinguishing live-view contract carried by PR #49's 0.12 acceptance
- * owner. Static export keeps its current no-JavaScript route contract; these
- * assertions only cover the interactive `niceeval view` DX.
- *
- * Keep the expectations beside the public action. The original PR hid them
- * behind a large browser assertion wrapper, which made it hard to see which
- * product result a failure actually described.
- */
-async function expectPr49ClassicLiveDx(page: import("@playwright/test").Page): Promise<void> {
-  for (const name of ["Overview", "Attempts", "Traces"] as const) {
-    expect.soft(
-      await page.getByRole("tab", { name, exact: true }).count(),
-      `0.12 navigation exposes one ${name} tab`,
-    ).toBe(1);
-  }
-
-  const experimentTable = page.getByRole("table").filter({
-    has: page.getByRole("columnheader", { name: "Experiment", exact: true }),
-  });
-  expect.soft(await experimentTable.count(), "one experiment hierarchy table").toBe(1);
-  if ((await experimentTable.count()) === 1) {
-    expect.soft(
-      await experimentTable.locator("summary").count(),
-      "0.12 experiment hierarchy uses expandable summaries",
-    ).toBeGreaterThanOrEqual(3);
-  }
-
-  const memoryAPoint = page.getByRole("link", { name: /classic\/memory-a.*costUSD.*passRate/i }).first();
-  expect.soft(await memoryAPoint.count(), "0.12 scatter exposes the memory-a point as a link").toBe(1);
-  if ((await memoryAPoint.count()) === 1) {
-    await memoryAPoint.click();
-    const dialog = page.getByRole("dialog");
-    expect.soft(await dialog.count(), "0.12 scatter drill-down opens an in-page dialog").toBe(1);
-    if ((await dialog.count()) === 1) {
-      await dialog.getByRole("button", { name: "Close", exact: true }).click();
-    }
-  }
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

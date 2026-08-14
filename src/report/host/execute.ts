@@ -61,6 +61,7 @@ import {
   bindClassicHost,
   partialClassicSelectionOrigin,
   resolveClassicLocale,
+  resolveLocalizedText,
   type ClassicSelectionOrigin,
 } from "../classic/index.ts";
 import {
@@ -86,6 +87,7 @@ import {
   type ReportCalculationExecutionResult,
   type ReportCalculationResult,
   type ReportDownloadResult,
+  type ReportNavigationItem,
   type ReportPageFamilyResult,
   type ReportPageResult,
   type ReportProjectionId,
@@ -139,6 +141,7 @@ interface CompiledCalculation {
 
 interface CompiledPageMember {
   readonly descriptor: ReportPageMemberDescriptor;
+  readonly declarationIndex: number;
   readonly inputs?: CompiledDataPlan;
 }
 
@@ -446,10 +449,11 @@ function compileReport(report: Report): CompiledReport {
     .sort((left, right) => compareText(left.descriptor.id, right.descriptor.id));
 
   const pages = graph.pages
-    .map((page) => {
+    .map((page, declarationIndex) => {
       const descriptor = reportPageMemberDescriptor(page);
       return Object.freeze({
         descriptor,
+        declarationIndex,
         ...(descriptor.inputs === undefined
           ? {}
           : { inputs: compilePlan(descriptor.inputs, descriptor.id) }),
@@ -1658,7 +1662,13 @@ function routeLinks(document: ReportDocument): readonly ReportRoute[] {
       case "summary":
       case "ranked-bars":
       case "stat":
+        return;
       case "cell-table":
+        for (const row of block.rows) {
+          if (row.target?.kind === "route") {
+            routes.push(row.target.route);
+          }
+        }
         return;
       case "scatter":
         for (const series of block.series) {
@@ -1713,6 +1723,26 @@ function finalizeExecution(input: {
       }
       return result;
     });
+    const pages = input.pages.map(pageResult);
+    const navigation: ReportNavigationItem[] = [];
+    for (const member of input.compiled.pages) {
+      if (member.descriptor.kind !== "page" || member.descriptor.navigation === undefined) continue;
+      const result = pages.find((page) =>
+        page.pageId === member.descriptor.id && page.route === member.descriptor.route
+      );
+      if (result === undefined) {
+        throw new Error("a fixed navigation Page did not retain its execution result");
+      }
+      navigation.push(Object.freeze({
+        kind: "fixed-page" as const,
+        pageId: member.descriptor.id,
+        order: member.declarationIndex,
+        title: resolveLocalizedText(member.descriptor.navigation.title, input.locale),
+        route: member.descriptor.route,
+        visible: member.descriptor.navigation.visible,
+        state: result.state,
+      }));
+    }
     const execution = reportExecution({
       reportId: input.compiled.graph.id,
       locale: input.locale,
@@ -1720,7 +1750,8 @@ function finalizeExecution(input: {
       projections,
       calculations,
       families: input.families.map(familyResult),
-      pages: input.pages.map(pageResult),
+      pages,
+      navigation,
       downloads: input.downloads.map(downloadResult),
       problemTable: table.right,
     });

@@ -159,6 +159,7 @@ export type {
   ReportCalculationExecutionResult,
   ReportCalculationResult,
   ReportDownloadResult,
+  ReportNavigationItem,
   ReportPageFamilyResult,
   ReportPageResult,
   ReportProjectionId,

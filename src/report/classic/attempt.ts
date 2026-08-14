@@ -1,4 +1,4 @@
-import type { ClassicVerdict, Sample } from "./sample.ts";
+import { classicAttemptLocator, type ClassicVerdict, type Sample } from "./sample.ts";
 import type { MetricValue } from "./metric.ts";
 
 export type AttemptLocator = string;
@@ -81,7 +81,7 @@ export function classicAttemptHandleFromRow(
   sample: Sample,
   row: Sample["attempts"][number],
 ): ClassicAttemptHandle | undefined {
-  const locator = row.target?.locator ?? row.attemptId;
+  const locator = classicAttemptLocator(row);
   if (locator === undefined) {
     return undefined;
   }

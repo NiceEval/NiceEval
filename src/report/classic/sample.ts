@@ -1,4 +1,5 @@
 import type { AttemptId, RunId, UtcMillis } from "../../analysis/index.ts";
+import { encodeAttemptLocator } from "../../attempt-locator.ts";
 import type { EvaluationKind } from "../../eval/record/evaluation.ts";
 import type { Score } from "../../eval/record/score.ts";
 import type { ReportDocument, ReportLinkTarget } from "../semantic/document.ts";
@@ -84,8 +85,16 @@ export type ClassicSample = Sample;
 export function classicAttemptTarget(attemptId: AttemptId): ClassicAttemptTarget {
   return Object.freeze({
     kind: "attempt" as const,
-    locator: `@${attemptId}`,
+    locator: encodeAttemptLocator(attemptId),
   });
+}
+
+/** One canonical public locator for any host-built classic Attempt row. */
+export function classicAttemptLocator(
+  attempt: Pick<ClassicAttemptRow, "attemptId" | "target">,
+): string | undefined {
+  return attempt.target?.locator
+    ?? (attempt.attemptId === undefined ? undefined : encodeAttemptLocator(attempt.attemptId));
 }
 
 export function unitKey(experimentId: string, evalId: string): string {

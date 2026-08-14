@@ -58,7 +58,7 @@ Page /
   Run membership overview
   Run membership
   Run | Slot | Slot state | Member relation | Source Attempt | Membership state | Membership outcome | Verdict state | Verdict
-  7b8d2ea4-b840-4870-9840-f85a436a5527 | slot-00b400bd-ba81-4850-8803-09ba802896e5 | included | reference | @91ddc61b-ae96-4a23-8578-ddc1b83306dc | available | accepted | available | passed
+  7b8d2ea4-b840-4870-9840-f85a436a5527 | slot-00b400bd-ba81-4850-8803-09ba802896e5 | included | reference | @1K1P0VJAPVJ12 | available | accepted | available | passed
   [neutral] Omitted rows: 0
   [neutral] Unmatched membership actions: 0
 
@@ -76,7 +76,7 @@ Problems
   "runId": "7b8d2ea4-b840-4870-9840-f85a436a5527",
   "slotId": "slot-00b400bd-ba81-4850-8803-09ba802896e5",
   "slotState": "included",
-  "sourceAttemptLocator": "@91ddc61b-ae96-4a23-8578-ddc1b83306dc",
+  "sourceAttemptLocator": "@1K1P0VJAPVJ12",
   "verdict": "passed",
   "verdictState": "available"
 }
@@ -85,8 +85,8 @@ Problems
 Run 回答“这一轮怎样纳入结果”，Attempt 回答“这份结果记录了什么”。继续沿 locator 查看同一个 immutable Attempt：
 
 ```sh
-npx niceeval show @91ddc61b-ae96-4a23-8578-ddc1b83306dc
-npx niceeval show @91ddc61b-ae96-4a23-8578-ddc1b83306dc --execution
+npx niceeval show @1K1P0VJAPVJ12
+npx niceeval show @1K1P0VJAPVJ12 --execution
 ```
 
 第一个命令显示 Attempt identity、判定、Assertions 与 Score。第二个命令显示 execution evidence。它们不会重写源 Attempt，也不会把采用 Run 的 provenance 冒充 Attempt 事实。

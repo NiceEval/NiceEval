@@ -1,4 +1,5 @@
 import { Either } from "effect";
+import { encodeAttemptLocator } from "../../attempt-locator.ts";
 import type { AnalysisSlot } from "../../analysis/index.ts";
 import {
   assembleAttemptSourceTree,
@@ -229,7 +230,7 @@ function sourceIdentity(
   readonly attempt: number;
 } {
   const included = slot?.state === "included" ? slot : undefined;
-  const locator = included === undefined ? "@unknown" : `@${included.attempt.attemptId}`;
+  const locator = included === undefined ? "@unknown" : encodeAttemptLocator(included.attempt.attemptId);
   const runId = slot?.runId ?? "unknown";
   const plan = included === undefined
     ? undefined

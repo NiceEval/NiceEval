@@ -86,11 +86,18 @@ export interface ReportStat {
   readonly tone?: "neutral" | "positive" | "negative" | "warning";
 }
 
+export type ReportCellTableRowKind = "experiment" | "group" | "eval" | "attempt" | "summary";
+
 export interface ReportCellTable {
   readonly type: "cell-table";
   readonly columns: readonly string[];
+  readonly hierarchy?: true;
   readonly rows: readonly {
     readonly key: string;
+    readonly kind?: ReportCellTableRowKind;
+    readonly label?: string;
+    readonly parentKey?: string;
+    readonly target?: ReportLinkTarget;
     readonly cells: Readonly<Record<string, string>>;
   }[];
 }
@@ -338,16 +345,26 @@ export function reportStat(input: {
 
 export function reportCellTable(input: {
   readonly columns: readonly string[];
+  readonly hierarchy?: true;
   readonly rows: readonly {
     readonly key: string;
+    readonly kind?: ReportCellTableRowKind;
+    readonly label?: string;
+    readonly parentKey?: string;
+    readonly target?: ReportLinkTarget;
     readonly cells: Readonly<Record<string, string>>;
   }[];
 }): ReportCellTable {
   return Object.freeze({
     type: "cell-table" as const,
     columns: freezeArray(input.columns),
+    ...(input.hierarchy === undefined ? {} : { hierarchy: input.hierarchy }),
     rows: Object.freeze(input.rows.map((row) => Object.freeze({
       key: row.key,
+      ...(row.kind === undefined ? {} : { kind: row.kind }),
+      ...(row.label === undefined ? {} : { label: row.label }),
+      ...(row.parentKey === undefined ? {} : { parentKey: row.parentKey }),
+      ...(row.target === undefined ? {} : { target: cloneLinkTarget(row.target) }),
       cells: Object.freeze({ ...row.cells }),
     }))),
   });
@@ -788,7 +805,11 @@ function validateCellTable(
   state: ValidationState,
   path: readonly (string | number)[],
 ): void {
-  exactFields(record, ["type", "columns", "rows"], state, path);
+  exactFields(record, ["type", "columns", "rows", "hierarchy"], state, path, ["hierarchy"]);
+  const hierarchy = field(record, "hierarchy");
+  if (hierarchy !== undefined && hierarchy !== true) {
+    issue(state, "shape", pathFor(path, "hierarchy"), "cell-table hierarchy must be true when present");
+  }
   const columns = arrayValue(field(record, "columns"), state, pathFor(path, "columns"));
   const keys = new Set<string>();
   if (columns !== undefined) {
@@ -805,18 +826,120 @@ function validateCellTable(
       validateString(column, state, pathFor(pathFor(path, "columns"), index));
     });
   }
+  const hierarchyRows: Array<{
+    readonly index: number;
+    readonly key: string;
+    readonly kind: ReportCellTableRowKind;
+    readonly parentKey?: string;
+  }> = [];
+  const rowKeys = new Set<string>();
   forEachArray(field(record, "rows"), state, pathFor(path, "rows"), (row, index) => {
     const rowPath = pathFor(pathFor(path, "rows"), index);
     const rowRecord = plainRecord(row, state, rowPath);
     if (rowRecord === undefined) return;
-    exactFields(rowRecord, ["key", "cells"], state, rowPath);
-    validateString(field(rowRecord, "key"), state, pathFor(rowPath, "key"));
+    exactFields(
+      rowRecord,
+      hierarchy === true ? ["key", "kind", "label", "parentKey", "target", "cells"] : ["key", "cells"],
+      state,
+      rowPath,
+      hierarchy === true ? ["parentKey", "target"] : [],
+    );
+    const rowKey = field(rowRecord, "key");
+    validateString(rowKey, state, pathFor(rowPath, "key"));
+    if (typeof rowKey === "string") {
+      if (rowKeys.has(rowKey)) {
+        issue(state, "table", pathFor(rowPath, "key"), "cell-table row keys must be unique");
+      }
+      rowKeys.add(rowKey);
+    }
+    if (hierarchy === true) {
+      const kind = field(rowRecord, "kind");
+      const label = field(rowRecord, "label");
+      const parentKey = field(rowRecord, "parentKey");
+      if (!isCellTableRowKind(kind)) {
+        issue(state, "table", pathFor(rowPath, "kind"), "a hierarchy row kind is not recognized");
+      }
+      if (parentKey !== undefined) {
+        validateString(parentKey, state, pathFor(rowPath, "parentKey"));
+      }
+      if (typeof label !== "string" || label.length === 0) {
+        issue(state, "table", pathFor(rowPath, "label"), "a hierarchy row label must be a non-empty string");
+      } else {
+        validateString(label, state, pathFor(rowPath, "label"));
+      }
+      if (hasField(rowRecord, "target")) {
+        if (kind !== "experiment" && kind !== "attempt") {
+          issue(state, "table", pathFor(rowPath, "target"), "only Experiment and Attempt hierarchy rows may navigate");
+        }
+        validateLinkTarget(field(rowRecord, "target"), state, pathFor(rowPath, "target"));
+      }
+      if (typeof rowKey === "string" && isCellTableRowKind(kind) && (parentKey === undefined || typeof parentKey === "string")) {
+        hierarchyRows.push({ index, key: rowKey, kind, ...(parentKey === undefined ? {} : { parentKey }) });
+      }
+    }
     const cells = plainRecord(field(rowRecord, "cells"), state, pathFor(rowPath, "cells"));
     if (cells === undefined) return;
     for (const key of Object.keys(cells)) {
       validateString(field(cells, key), state, pathFor(pathFor(rowPath, "cells"), key));
     }
   });
+  if (hierarchy === true) {
+    validateCellTableHierarchy(hierarchyRows, state, pathFor(path, "rows"));
+  }
+}
+
+function isCellTableRowKind(value: unknown): value is ReportCellTableRowKind {
+  return value === "experiment" || value === "group" || value === "eval" || value === "attempt" || value === "summary";
+}
+
+function validateCellTableHierarchy(
+  rows: readonly {
+    readonly index: number;
+    readonly key: string;
+    readonly kind: ReportCellTableRowKind;
+    readonly parentKey?: string;
+  }[],
+  state: ValidationState,
+  path: readonly (string | number)[],
+): void {
+  const byKey = new Map(rows.map((row) => [row.key, row]));
+  const parentKinds: Readonly<Record<Exclude<ReportCellTableRowKind, "experiment">, readonly ReportCellTableRowKind[]>> = {
+    group: ["experiment", "group"],
+    eval: ["experiment", "group"],
+    attempt: ["eval"],
+    summary: ["experiment"],
+  };
+  for (const row of rows) {
+    const rowPath = pathFor(path, row.index);
+    if (row.kind === "experiment") {
+      if (row.parentKey !== undefined) {
+        issue(state, "table", pathFor(rowPath, "parentKey"), "an Experiment hierarchy row cannot have a parent");
+      }
+      continue;
+    }
+    if (row.parentKey === undefined) {
+      issue(state, "table", pathFor(rowPath, "parentKey"), "a non-Experiment hierarchy row must name its parent");
+      continue;
+    }
+    const parent = byKey.get(row.parentKey);
+    if (parent === undefined) {
+      issue(state, "table", pathFor(rowPath, "parentKey"), "a hierarchy row parent must exist in the same table");
+      continue;
+    }
+    if (!parentKinds[row.kind].includes(parent.kind)) {
+      issue(state, "table", pathFor(rowPath, "parentKey"), `a ${row.kind} hierarchy row cannot be parented by ${parent.kind}`);
+    }
+    const seen = new Set<string>([row.key]);
+    let current: typeof parent | undefined = parent;
+    while (current !== undefined) {
+      if (seen.has(current.key)) {
+        issue(state, "cycle", pathFor(rowPath, "parentKey"), "cell-table hierarchy rows must be acyclic");
+        break;
+      }
+      seen.add(current.key);
+      current = current.parentKey === undefined ? undefined : byKey.get(current.parentKey);
+    }
+  }
 }
 
 function validateTable(
@@ -1343,7 +1466,7 @@ function validateLinkTarget(
         state,
         "link",
         pathFor(path, "locator"),
-        "an attempt link must use the exact @<AttemptId> locator form",
+        "an attempt link must use the exact @<AttemptLocator> form",
       );
     } else {
       validateString(locator, state, pathFor(path, "locator"));
@@ -1658,8 +1781,13 @@ function cloneBlock(block: ReportBlock): ReportBlock {
       return Object.freeze({
         type: "cell-table" as const,
         columns: freezeArray(block.columns),
+        ...(block.hierarchy === undefined ? {} : { hierarchy: block.hierarchy }),
         rows: Object.freeze(block.rows.map((row) => Object.freeze({
           key: row.key,
+          ...(row.kind === undefined ? {} : { kind: row.kind }),
+          ...(row.label === undefined ? {} : { label: row.label }),
+          ...(row.parentKey === undefined ? {} : { parentKey: row.parentKey }),
+          ...(row.target === undefined ? {} : { target: cloneLinkTarget(row.target) }),
           cells: Object.freeze({ ...row.cells }),
         }))),
       });

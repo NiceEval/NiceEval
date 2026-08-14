@@ -16,6 +16,22 @@ interface ExpEvent {
   reused?: number;
 }
 
+interface ExplicitRunShow {
+  readonly format: "niceeval.report-show/v1";
+  readonly reportId: "run-membership-overview";
+  readonly sample: {
+    readonly selection: { readonly policy: "explicit-runs"; readonly runIds: readonly string[] };
+    readonly runCount: number;
+    readonly slotCount: number;
+    readonly denominator: number;
+  };
+  readonly pages: readonly {
+    readonly state: string;
+    readonly pageId: string;
+    readonly route?: string;
+  }[];
+}
+
 test("项目未变时复用结果，Eval 源码变化后重新执行并读回新结果", async () => {
   await reportE2E.case(
     "project-current",
@@ -98,13 +114,16 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
 
       const staleHistory = await niceeval.run(["show", "--run", initialRunId, "--json"]);
       expect(staleHistory.exitCode, staleHistory.diagnostic()).toBe(0);
-      const staleHistoryDocument = assertPublicShowJson(staleHistory.json());
-      expect(staleHistoryDocument.view).toBe("leaderboard");
-      expect(staleHistoryDocument.sample.experiments).toEqual(["source"]);
-      expect(staleHistoryDocument.data).toMatchObject({
-        experiments: [{ experimentId: "source", evals: 1 }],
-        evals: 1,
-        attempts: 1,
+      expect(staleHistory.json<ExplicitRunShow>()).toMatchObject({
+        format: "niceeval.report-show/v1",
+        reportId: "run-membership-overview",
+        sample: {
+          selection: { policy: "explicit-runs", runIds: [initialRunId] },
+          runCount: 1,
+          slotCount: 1,
+          denominator: 1,
+        },
+        pages: [{ state: "rendered", pageId: "run-membership", route: "/" }],
       });
 
       const changedRun = await niceeval.run(["exp", "source", "--json"]);

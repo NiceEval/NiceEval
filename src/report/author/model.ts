@@ -174,6 +174,13 @@ interface PageContents extends ComponentContents {
   readonly render: AuthorCallback;
 }
 
+export type ReportPageNavigationTitle = string | Readonly<Record<string, string>>;
+
+export interface ReportPageNavigationDefinition {
+  readonly title: ReportPageNavigationTitle;
+  readonly visible: boolean;
+}
+
 interface PageFamilyContents extends ComponentContents {
   readonly instances: AuthorCallback;
   readonly key: AuthorCallback;
@@ -195,6 +202,7 @@ interface ReportContents {
 const dataPlanContentsByPlan = new WeakMap<object, DataPlanContents>();
 const calculationContentsByCalculation = new WeakMap<object, CalculationContents>();
 const pageContentsByPage = new WeakMap<object, PageContents>();
+const pageNavigationByPage = new WeakMap<object, ReportPageNavigationDefinition>();
 const familyContentsByFamily = new WeakMap<object, PageFamilyContents>();
 const downloadContentsByDownload = new WeakMap<object, DownloadContents>();
 const reportContentsByReport = new WeakMap<object, ReportContents>();
@@ -578,6 +586,27 @@ export function authorInternalPageContents(page: ReportPage): PageContents {
     throw new TypeError("a Page must be created by definePage");
   }
   return contents;
+}
+
+/** @internal Adds classic host navigation metadata without widening the low-level Page author API. */
+export function authorInternalSetPageNavigation(
+  page: ReportPage,
+  navigation: ReportPageNavigationDefinition,
+): void {
+  if (!pageContentsByPage.has(page)) {
+    throw new TypeError("page navigation requires a Page created by definePage");
+  }
+  const title = typeof navigation.title === "string"
+    ? navigation.title
+    : Object.freeze({ ...navigation.title });
+  pageNavigationByPage.set(page, Object.freeze({ title, visible: navigation.visible }));
+}
+
+/** @internal Reads optional classic navigation metadata for one exact fixed Page. */
+export function authorInternalPageNavigation(
+  page: ReportPage,
+): ReportPageNavigationDefinition | undefined {
+  return pageNavigationByPage.get(page);
 }
 
 /** @internal Exact-identity bridge used only by author/internal.ts. */

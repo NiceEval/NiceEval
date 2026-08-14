@@ -125,12 +125,14 @@ trusted TS module 本身不是 sandbox；module 仍可以 import `node:fs` 或�
 | `SampleSummary` | 当前 Sample 概况：实验、Eval、attempt 与 coverage。 |
 | `Bars` | 柱状图；`layout="horizontal"` 呈现横向柱状图，points 来自 `aggregate` 行。 |
 | `ExperimentScatter` | 按 Experiment 的散点；`input={sample}` 传入同一份闭合 Sample。对应 experiment 页已展开时点可下钻，否则保持纯图形。 |
-| `ExperimentTable` | 实验级读数表；`input={sample}` 传入同一份闭合 Sample。 |
+| `ExperimentTable` | 实验级读数表；`input={sample}` 传入同一份闭合 Sample。输出显式的 Experiment → group/eval → Attempt 父子拓扑与可选实体 target；终端缩进只是该拓扑的呈现结果。 |
 | `Grid` / `Stat` / `Table` | 排版原语：格网、读数格、单元格表。 |
 | `SampleNotices` / `CopyBlock` | 选择提示与可复制文本。 |
 | `AttemptSummary` / `AttemptAssessment` | Attempt 详情页组合件。 |
 
-`standardExperimentPage` 与 `standardAttemptPage` 是 PageFamily：分别按 Sample 里已有的 experiment id 与 attempt locator 展开固定 route。experiment 页的 render 收到按该 experiment 收窄后的闭合 Sample；attempt 页收到闭合 `AttemptEvidence`。它们不进入主导航。`ExperimentScatter` 只在对应 experiment route 已由当前 Report 展开时写出 href；单页 Report 不声明该 PageFamily 时散点仍正常呈现，但没有链接。static export 与 live view 共用同一份 `index.html` 路径。
+`standardExperimentPage` 与 `standardAttemptPage` 是 PageFamily。它们分别按 Sample 里已有的 experiment id 与 attempt locator 展开固定 route。experiment 页的 render 收到按该 experiment 收窄后的闭合 Sample；attempt 页收到闭合 `AttemptEvidence`。它们不进入主导航。
+
+`ExperimentScatter` 与 `ExperimentTable` 的 target 只在对应 route 已由当前 Report 展开时写出 href。单页 Report 不声明该 PageFamily 时，图表和层级仍正常呈现，但没有链接。static export、直接请求、新标签页与 live dialog 共用同一个 ordinary exact-route href。
 
 ### aggregate、passRate、costUSD 与 experiment
 
@@ -599,7 +601,10 @@ type ReportBlock =
   | ReportSummary
   | ReportRankedBars
   | ReportScatter
-  | ReportTreeTable;
+  | ReportTreeTable
+  | ReportGrid
+  | ReportStat
+  | ReportCellTable;
 
 interface ReportSection { readonly type: "section"; readonly heading: string; readonly children: readonly ReportBlock[]; }
 interface ReportParagraph { readonly type: "paragraph"; readonly children: readonly ReportInline[]; }
@@ -689,9 +694,32 @@ interface ReportTreeTable {
     readonly cells: Readonly<Record<string, ReportScalar | ReportDisplayValue>>;
   }[];
 }
+
+interface ReportGrid { readonly type: "grid"; readonly cells: readonly ReportBlock[]; }
+interface ReportStat {
+  readonly type: "stat";
+  readonly label: string;
+  readonly value: string;
+  readonly tone?: "neutral" | "positive" | "negative" | "warning";
+}
+interface ReportCellTable {
+  readonly type: "cell-table";
+  readonly columns: readonly string[];
+  readonly hierarchy?: true;
+  readonly rows: readonly {
+    readonly key: string;
+    readonly kind?: "experiment" | "group" | "eval" | "attempt" | "summary";
+    readonly label?: string;
+    readonly parentKey?: string;
+    readonly target?: ReportLinkTarget;
+    readonly cells: Readonly<Record<string, string>>;
+  }[];
+}
 ```
 
-`ReportHero`、`ReportSummary`、`ReportRankedBars`、`ReportScatter` 与 `ReportTreeTable` 对应 classic facade 的内置组件；低层 API 可以直接构造它们。`ReportTreeTable` 表达 Experiment → Eval → Attempt 的层级，Attempt 行以 `{ kind: "attempt", locator: "@…" }` target 保留公开 locator 导航语义，不凭空声明另一套详情页面。
+`ReportHero`、`ReportSummary`、`ReportRankedBars`、`ReportScatter`、`ReportTreeTable` 与 `ReportCellTable` 对应 classic facade 的内置组件。低层 API 可以直接构造它们。
+
+`ExperimentTable` 使用 `ReportCellTable` 的 `hierarchy: true` 形状表达 Experiment → group / Eval → Attempt。每行用稳定 `key`、`parentKey`、`kind` 与 `label` 描述拓扑，renderer 只负责把这份拓扑呈现成 disclosure。Experiment 与 Attempt 行的可选 target 是 execution 求得的 ordinary exact route，不由 renderer 根据 label 或 locator 猜测。
 
 精确树形状之外还必须做 relational validation：
 
@@ -703,6 +731,7 @@ interface ReportTreeTable {
 - 缺失 cost / timing 保持 null，不补 0；
 - inline route / download link 必须存在于本 execution 的 closure；
 - scatter point 与 tree-table row 的 route 是可选实体导航：route 已展开时保留，未展开时删除 target 并继续呈现；非法 target 仍拒绝；
+- hierarchy cell-table 的 row key 全局唯一；非 Experiment 行必须引用已有 parent，父子 kind 必须合法且不得形成环；只有 Experiment / Attempt 行可以携带 route target；
 - depth、node、string 与 bytes limits 在 active recursion stack 中执行；
 - HTML 按 context escape，terminal 把控制字符转成可见文本；renderer 穷尽 union，未知节点类型返回 unsupported。
 
@@ -820,6 +849,16 @@ type ReportDownloadResult =
       readonly problemIds: readonly [ReportProblemId, ...ReportProblemId[]];
     };
 
+interface ReportNavigationItem {
+  readonly kind: "fixed-page";
+  readonly pageId: ReportComponentId;
+  readonly order: number;
+  readonly title: string;
+  readonly route: ReportRoute;
+  readonly visible: boolean;
+  readonly state: ReportPageResult["state"];
+}
+
 interface ReportExecution {
   readonly reportId: ReportId;
   readonly sample: AnalysisSample;
@@ -827,6 +866,7 @@ interface ReportExecution {
   readonly calculations: readonly ReportCalculationExecutionResult[];
   readonly families: readonly ReportPageFamilyResult[];
   readonly pages: readonly ReportPageResult[];
+  readonly navigation: readonly ReportNavigationItem[];
   readonly downloads: readonly ReportDownloadResult[];
   readonly problemTable: readonly ReportProblemTableEntry[];
 }
@@ -834,7 +874,9 @@ interface ReportExecution {
 
 Execution 不含 reader、root、path、Scope、Stream、callback 或 projector token。Calculation value 以原值保存在同一进程的 execution 中；host 不重新编码、不引入 wire 形状。页面与 download renderer 按 component ID 取回 typed result。
 
-`ReportProjectionId` 与 `ReportProblemId` 都是 bounded uint32、从 0 开始连续。Projection IDs 按 canonical declaration traversal 分配；problem IDs 按 stable execution traversal 第一次发现问题的顺序分配。同一 unique projection cache problem 只分配一次。`projections`、`calculations`、`families`、`pages`、`downloads` 分别按 canonical ID / route / path 排序，不能用 object iteration 猜顺序。
+`ReportProjectionId` 与 `ReportProblemId` 都是 bounded uint32、从 0 开始连续。Projection IDs 按 canonical declaration traversal 分配；problem IDs 按 stable execution traversal 第一次发现问题的顺序分配。同一 unique projection cache problem 只分配一次。
+
+`projections`、`calculations`、`families`、`pages`、`downloads` 分别按 canonical ID / route / path 排序，不能用 object iteration 猜顺序。`navigation` 只包含 fixed Page 的显式导航声明。它按作者页面声明顺序冻结 title、exact route、visibility 与 execution state；PageFamily 不进入这张表。
 
 每个 declared projection、Calculation、PageFamily、page instance 与 Download 在一个 execution 中最多执行一次。Author graph 的内部 intermediate values 不持久化，也不进入 Record。
 

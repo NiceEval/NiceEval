@@ -1,6 +1,7 @@
 import type { ReportRoute } from "../author/identity.ts";
 import type {
   ReportBlock,
+  ReportCellTable,
   ReportDocument,
   ReportScatter,
   ReportTreeTable,
@@ -68,6 +69,8 @@ function resolveBlock(
       return resolveScatter(block, routes);
     case "tree-table":
       return resolveTreeTable(block, routes);
+    case "cell-table":
+      return resolveCellTable(block, routes);
     case "paragraph":
     case "table":
     case "metric":
@@ -78,9 +81,31 @@ function resolveBlock(
     case "summary":
     case "ranked-bars":
     case "stat":
-    case "cell-table":
       return block;
   }
+}
+
+function resolveCellTable(
+  block: ReportCellTable,
+  routes: ReadonlySet<ReportRoute>,
+): ReportCellTable {
+  let changed = false;
+  const rows = block.rows.map((row) => {
+    if (row.target?.kind !== "route" || routes.has(row.target.route)) {
+      return row;
+    }
+    changed = true;
+    return Object.freeze({
+      key: row.key,
+      ...(row.kind === undefined ? {} : { kind: row.kind }),
+      ...(row.label === undefined ? {} : { label: row.label }),
+      ...(row.parentKey === undefined ? {} : { parentKey: row.parentKey }),
+      cells: row.cells,
+    });
+  });
+  return changed
+    ? Object.freeze({ ...block, rows: Object.freeze(rows) })
+    : block;
 }
 
 function resolveScatter(

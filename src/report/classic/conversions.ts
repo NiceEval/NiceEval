@@ -6,7 +6,7 @@ import type {
   CopyBlockContent,
   SampleSummaryContent,
 } from "./attempt.ts";
-import type { Sample } from "./sample.ts";
+import { classicAttemptLocator, type Sample } from "./sample.ts";
 
 export async function toSummaryItems(sample: Sample): Promise<SampleSummaryContent> {
   const experiments = new Set(sample.units.map((unit) => unit.experimentId));
@@ -34,7 +34,7 @@ export async function toSummaryItems(sample: Sample): Promise<SampleSummaryConte
 export async function toAttemptListRows(sample: Sample): Promise<readonly AttemptListItem[]> {
   return Object.freeze(
     sample.attempts.flatMap((attempt) => {
-      const locator = attempt.target?.locator ?? attempt.attemptId;
+      const locator = classicAttemptLocator(attempt);
       if (locator === undefined) {
         return [];
       }

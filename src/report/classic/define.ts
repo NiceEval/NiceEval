@@ -10,6 +10,7 @@ import {
   reportScoreProjection,
 } from "../evaluation-projections.ts";
 import {
+  authorInternalSetPageNavigation,
   definePage,
   definePageFamily,
   defineReport as defineLowLevelReport,
@@ -47,7 +48,7 @@ import { classicSampleFromProjectedInputs } from "./from-context.ts";
 import { evaluateClassicTree } from "./jsx.ts";
 import { isLocalizedText, resolveLocalizedText, type LocalizedText } from "./localize.ts";
 import { CLASSIC_SELECTION_PROFILE_UNAVAILABLE } from "./origin.ts";
-import type { Sample } from "./sample.ts";
+import { classicAttemptLocator, type Sample } from "./sample.ts";
 
 export type ClassicPageRender = (
   sample: Sample,
@@ -235,7 +236,7 @@ function defineClassicReport(definition: ClassicReportDefinition): Report {
       render: page.render,
     });
     compiledPages.push(compiled);
-    pages.push(definePage({
+    const fixedPage = definePage({
       id: componentId,
       route,
       inputs: classicDataPlan,
@@ -251,7 +252,12 @@ function defineClassicReport(definition: ClassicReportDefinition): Report {
           sample,
         });
       },
-    }));
+    });
+    authorInternalSetPageNavigation(fixedPage, {
+      title: page.title,
+      visible: page.navigation !== false,
+    });
+    pages.push(fixedPage);
   }
 
   const id = Either.getOrThrow(reportId(classicReportId(definition)));
@@ -344,7 +350,7 @@ function attemptEvidenceFromRow(
   attempt: Sample["attempts"][number],
 ): AttemptEvidence {
   return Object.freeze({
-    locator: attempt.target?.locator ?? attempt.attemptId ?? "@unknown",
+    locator: classicAttemptLocator(attempt) ?? "@unknown",
     experimentId: attempt.experimentId,
     evalId: attempt.evalId,
     result: Object.freeze({

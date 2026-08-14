@@ -14,6 +14,7 @@ import {
   authorInternalDataPlanContents,
   authorInternalDownloadContents,
   authorInternalPageContents,
+  authorInternalPageNavigation,
   authorInternalPageFamilyContents,
   authorInternalPageMemberContents,
   authorInternalReportContents,
@@ -26,6 +27,7 @@ import {
   type ReportDownloadFile,
   type ReportPage,
   type ReportPageFamily,
+  type ReportPageNavigationDefinition,
 } from "./model.ts";
 
 /**
@@ -94,6 +96,7 @@ export interface ReportPageDescriptor extends ReportComponentReferences {
   readonly kind: "page";
   readonly id: ReportComponentId;
   readonly route: ReportRoute;
+  readonly navigation?: ReportPageNavigationDefinition;
   readonly render: (context: ReportHostContext) => ReportDocument | Promise<ReportDocument>;
 }
 
@@ -197,10 +200,12 @@ function pageDescriptor(
   page: ReportPage,
   contents: ReturnType<typeof authorInternalPageContents>,
 ): ReportPageDescriptor {
+  const navigation = authorInternalPageNavigation(page);
   return Object.freeze({
     kind: "page" as const,
     id: page.id,
     route: page.route,
+    ...(navigation === undefined ? {} : { navigation }),
     ...componentReferences(contents),
     render: (context: ReportHostContext): ReportDocument | Promise<ReportDocument> =>
       invoke(contents.render, context) as ReportDocument | Promise<ReportDocument>,

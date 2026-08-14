@@ -17,8 +17,11 @@ import { experimentTableContent } from "./experiment-table.ts";
 import { defineComponent, evaluateClassicTree, Fragment, jsx } from "./jsx.ts";
 import { resolveLocalizedText, type LocalizedText } from "./localize.ts";
 import { isMetricValue, metricNumeric, type MetricValue } from "./metric.ts";
-import { classicExperimentTarget } from "./routes.ts";
-import type { ClassicEvalUnit, Sample } from "./sample.ts";
+import {
+  classicAttemptTarget as classicAttemptRouteTarget,
+  classicExperimentTarget,
+} from "./routes.ts";
+import { classicAttemptLocator, type ClassicEvalUnit, type Sample } from "./sample.ts";
 import {
   reportCellTable,
   reportCodeBlock,
@@ -413,11 +416,33 @@ export interface ClassicTableProps {
 export const ExperimentTable = defineComponent<ClassicTableProps>((props, ctx): ReportBlock => {
   const scope = props.input ?? ctx.scope;
   const content = experimentTableContent(scope);
+  const experimentTargets = new Map(
+    scope.units.flatMap((unit) => {
+      const target = classicExperimentTarget(unit.experimentId);
+      return target === undefined ? [] : [[unit.experimentId, target] as const];
+    }),
+  );
+  const attemptTargets = new Map(
+    scope.attempts.flatMap((attempt) => {
+      if (attempt.attemptId === undefined) return [];
+      const key = classicAttemptLocator(attempt);
+      return [[key, classicAttemptRouteTarget(attempt.attemptId)] as const];
+    }),
+  );
   return reportCellTable({
     columns: content.columns.map((column) => column.header),
+    hierarchy: true,
     rows: content.rows.map((row) =>
       Object.freeze({
         key: row.key,
+        kind: row.kind,
+        label: row.label,
+        ...(row.parentKey === undefined ? {} : { parentKey: row.parentKey }),
+        ...(row.kind === "experiment" && experimentTargets.has(row.sourceKey)
+          ? { target: experimentTargets.get(row.sourceKey)! }
+          : row.kind === "attempt" && attemptTargets.has(row.sourceKey)
+            ? { target: attemptTargets.get(row.sourceKey)! }
+            : {}),
         cells: Object.freeze(
           Object.fromEntries(
             content.columns.map((column) => [column.header, row.cells[column.key] ?? "—"]),

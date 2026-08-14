@@ -29,6 +29,7 @@ import {
   isReportProjectionId,
   type ReportCalculationExecutionResult,
   type ReportDownloadResult,
+  type ReportNavigationItem,
   type ReportPageFamilyResult,
   type ReportPageResult,
   type ReportProjectionSummary,
@@ -74,6 +75,7 @@ export interface ReportExecution {
   readonly calculations: readonly ReportCalculationExecutionResult[];
   readonly families: readonly ReportPageFamilyResult[];
   readonly pages: readonly ReportPageResult[];
+  readonly navigation: readonly ReportNavigationItem[];
   readonly downloads: readonly ReportDownloadResult[];
   readonly problemTable: ReportProblemTable;
   readonly [reportExecutionTypeId]: () => void;
@@ -94,6 +96,7 @@ export function reportExecution(input: {
   readonly calculations?: readonly ReportCalculationExecutionResult[];
   readonly families?: readonly ReportPageFamilyResult[];
   readonly pages?: readonly ReportPageResult[];
+  readonly navigation?: readonly ReportNavigationItem[];
   readonly downloads?: readonly ReportDownloadResult[];
   readonly problemTable: ReportProblemTable;
 }): Either.Either<ReportExecution, ReportExecutionValueError> {
@@ -115,6 +118,7 @@ export function reportExecution(input: {
     const routes = routesFromPages(input.pages ?? []);
     assertStaticClosure(routes, downloads.paths);
     const pages = copyPages(input.pages ?? [], input.problemTable, routes, downloads.paths);
+    const navigation = copyNavigation(input.navigation ?? [], pages);
 
     if (pages.length > REPORT_PAGES_MAX) {
       throw limit("pages", REPORT_PAGES_MAX, pages.length);
@@ -128,6 +132,7 @@ export function reportExecution(input: {
       calculations,
       families,
       pages,
+      navigation,
       downloads: downloads.results,
       problemTable: input.problemTable,
       [reportExecutionTypeId]: (): void => undefined,
@@ -330,6 +335,60 @@ function copyPages(
         throw invalid(`${path}.state`, "a Page result state is not recognized");
     }
   });
+  return Object.freeze(copied);
+}
+
+function copyNavigation(
+  value: readonly ReportNavigationItem[],
+  pages: readonly ReportPageResult[],
+): readonly ReportNavigationItem[] {
+  if (!Array.isArray(value)) {
+    throw invalid("navigation", "navigation must be an array");
+  }
+  const pageIds = new Set<ReportComponentId>();
+  const routes = new Set<ReportRoute>();
+  const orders = new Set<number>();
+  const copied = value.map((item, index) => {
+    const path = `navigation.${index}`;
+    if (typeof item !== "object" || item === null || item.kind !== "fixed-page") {
+      throw invalid(path, "a navigation item must identify a fixed Page");
+    }
+    if (!isReportComponentId(item.pageId) || !isReportRoute(item.route)) {
+      throw invalid(path, "a navigation item must use valid Page identity and route values");
+    }
+    if (!Number.isSafeInteger(item.order) || item.order < 0) {
+      throw invalid(`${path}.order`, "navigation order must be a non-negative safe integer");
+    }
+    if (typeof item.title !== "string" || item.title.length === 0 || !hasOnlyUnicodeScalars(item.title)) {
+      throw invalid(`${path}.title`, "a navigation title must be a non-empty Unicode string");
+    }
+    if (typeof item.visible !== "boolean") {
+      throw invalid(`${path}.visible`, "navigation visibility must be a boolean");
+    }
+    if (item.state !== "rendered" && item.state !== "data-unavailable" && item.state !== "execution-failed") {
+      throw invalid(`${path}.state`, "a navigation state is not recognized");
+    }
+    const page = pages.find((candidate) => candidate.pageId === item.pageId && candidate.route === item.route);
+    if (page === undefined || page.state !== item.state) {
+      throw invalid(path, "a navigation item must reference the matching fixed Page result");
+    }
+    if (pageIds.has(item.pageId) || routes.has(item.route) || orders.has(item.order)) {
+      throw invalid("navigation", "fixed Page navigation identities, routes, and orders must be unique");
+    }
+    pageIds.add(item.pageId);
+    routes.add(item.route);
+    orders.add(item.order);
+    return Object.freeze({
+      kind: "fixed-page" as const,
+      pageId: item.pageId,
+      order: item.order,
+      title: item.title,
+      route: item.route,
+      visible: item.visible,
+      state: item.state,
+    });
+  });
+  copied.sort((left, right) => left.order - right.order);
   return Object.freeze(copied);
 }
 

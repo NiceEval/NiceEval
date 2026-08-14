@@ -135,6 +135,17 @@ export type ReportPageResult =
       readonly problemIds: readonly [ReportProblemId, ...ReportProblemId[]];
     };
 
+/** Fixed-page navigation frozen in author declaration order for one execution. */
+export interface ReportNavigationItem {
+  readonly kind: "fixed-page";
+  readonly pageId: ReportComponentId;
+  readonly order: number;
+  readonly title: string;
+  readonly route: ReportRoute;
+  readonly visible: boolean;
+  readonly state: ReportPageResult["state"];
+}
+
 export type ReportDownloadResult =
   | {
       readonly state: "built";

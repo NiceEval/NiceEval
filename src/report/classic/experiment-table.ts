@@ -12,7 +12,7 @@ import {
 } from "./aggregate.ts";
 import { formatCellText, type Cell } from "./cell.ts";
 import type { MetricValue } from "./metric.ts";
-import type { ClassicEvalUnit, Sample } from "./sample.ts";
+import { classicAttemptLocator, type ClassicEvalUnit, type Sample } from "./sample.ts";
 
 export interface ExperimentTableColumn {
   readonly key: string;
@@ -22,7 +22,10 @@ export interface ExperimentTableColumn {
 
 export interface ExperimentTableRow {
   readonly key: string;
-  readonly depth: number;
+  readonly sourceKey: string;
+  readonly kind: "experiment" | "group" | "eval" | "attempt" | "summary";
+  readonly label: string;
+  readonly parentKey?: string;
   readonly cells: Readonly<Record<string, string>>;
 }
 
@@ -39,6 +42,8 @@ interface ColumnSpec {
 
 interface TableContentRow {
   readonly key: string;
+  readonly kind: ExperimentTableRow["kind"];
+  readonly label: string;
   readonly cells: Readonly<Record<string, Cell>>;
   readonly variant?: string;
   readonly subRows?: readonly TableContentRow[];
@@ -190,6 +195,8 @@ function scoreStatusCell(attempts: readonly AttemptItem[]): Cell {
 function attemptRow(item: AttemptItem, columns: readonly ColumnSpec[]): TableContentRow {
   return {
     key: item.locator,
+    kind: "attempt",
+    label: item.locator,
     cells: projectCells(attemptCells(item), columns),
   };
 }
@@ -299,6 +306,8 @@ function evalRow(row: EvalRow, columns: readonly ColumnSpec[], label: string): T
   };
   return {
     key: row.evalId,
+    kind: "eval",
+    label,
     cells: projectCells(bag, columns),
     subRows: row.attempts.map((a) => attemptRow(a, columns)),
   };
@@ -353,6 +362,8 @@ function groupTableRow(
   };
   return {
     key: `group:${pathKey}`,
+    kind: "group",
+    label: `${segment} (${evalRows.length} evals)`,
     variant: "group",
     cells: projectCells(bag, columns),
     subRows: childRows,
@@ -441,6 +452,8 @@ function coverageRow(item: ExperimentItem, columns: readonly ColumnSpec[]): Tabl
   };
   return {
     key: `coverage:${item.experimentId}`,
+    kind: "summary",
+    label: "Record coverage",
     cells: projectCells(bag, columns),
   };
 }
@@ -463,6 +476,8 @@ function experimentRow(item: ExperimentItem, columns: readonly ColumnSpec[]): Ta
   };
   return {
     key: item.experimentId,
+    kind: "experiment",
+    label: item.experimentId,
     cells: projectCells(bag, columns),
     subRows: members.length > 0 ? [...nested, coverageRow(item, columns)] : nested,
   };
@@ -491,7 +506,7 @@ function computeOn(units: readonly ClassicEvalUnit[], calculation: ClassicCalcul
 }
 
 function attemptItem(unit: ClassicEvalUnit, attempt: ClassicEvalUnit["attempts"][number]): AttemptItem | undefined {
-  const locator = attempt.target?.locator ?? attempt.attemptId;
+  const locator = classicAttemptLocator(attempt);
   if (locator === undefined) return undefined;
   return {
     locator,
@@ -576,19 +591,26 @@ function experimentItems(sample: Sample): ExperimentItem[] {
 function flattenRows(
   row: TableContentRow,
   columns: readonly ColumnSpec[],
-  depth: number,
+  rootKey: string,
+  parentKey?: string,
 ): ExperimentTableRow[] {
   const cells: Record<string, string> = {};
   for (const column of columns) {
-    let text = formatCellText(row.cells[column.key]);
-    if (depth > 0 && column === columns[0] && text !== "—") {
-      text = `${"  ".repeat(depth)}${text}`;
-    }
-    cells[column.key] = text;
+    cells[column.key] = formatCellText(row.cells[column.key]);
   }
+  const key = parentKey === undefined
+    ? rootKey
+    : JSON.stringify([rootKey, row.kind, row.key]);
   return [
-    { key: row.key, depth, cells },
-    ...(row.subRows ?? []).flatMap((child) => flattenRows(child, columns, depth + 1)),
+    {
+      key,
+      sourceKey: row.key,
+      kind: row.kind,
+      label: row.label,
+      ...(parentKey === undefined ? {} : { parentKey }),
+      cells,
+    },
+    ...(row.subRows ?? []).flatMap((child) => flattenRows(child, columns, rootKey, key)),
   ];
 }
 
@@ -601,6 +623,6 @@ export function experimentTableContent(sample: Sample): ExperimentTableContent {
       header: column.header,
       align: column.better === undefined ? "left" : "right",
     })),
-    rows: items.flatMap((item) => flattenRows(experimentRow(item, columns), columns, 0)),
+    rows: items.flatMap((item) => flattenRows(experimentRow(item, columns), columns, item.experimentId)),
   };
 }

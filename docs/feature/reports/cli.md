@@ -39,13 +39,13 @@ selector 先决定 Sample，默认 Report 再决定要从这个 Sample 读取哪
 
 | selector | 没有显式 `--report` | 有显式 `--report` |
 |---|---|---|
-| 不带 selector 的 `project-current` | `niceeval.config.ts` 的 `report`；没有配置时使用 `default-overview` | 显式 Report |
+| 不带 selector 的 `project-current` | `niceeval.config.ts` 的 `report`；没有配置时使用 `standard` | 显式 Report |
 | 一个或多个 `--run` | 内建 `run-membership-overview` | 显式 Report |
-| 精确 `@<AttemptId>` | 内建 `attempt-overview` | 显式 Report |
+| 精确 `@1<12-character-body>` | 内建 `attempt-overview` | 显式 Report |
 
 `--report overview` 是显式选择通用 `default-overview`，不会改成 `run-membership-overview`。`niceeval.config.ts` 仍是 Theme、source snapshot 与 `view` rebuild 的输入；表中的“内建 Run Report 优先”只表示配置里的 Report 不参与这次默认 Report 决议，不表示命令完全不加载 Config。
 
-`--run` 不是“取最后一次结果”，也不是因为同一命令预计会产生不同答案。Run 是一次固定的 expected-slot 分母与 membership 决定边界；两个 Run 即使引用同一个 immutable Attempt，也可能分别是 `origin`、自动沿用的 `carried`，或人工采用的 `accepted`。因此单个 `--run` 用来回答“这一轮纳入了什么、怎样纳入”，多个 `--run` 用同一表形状比较这些历史边界；已知 Attempt 的业务事实则用 `show @<AttemptId>` 下钻。
+`--run` 不是“取最后一次结果”，也不是因为同一命令预计会产生不同答案。Run 是一次固定的 expected-slot 分母与 membership 决定边界；两个 Run 即使引用同一个 immutable Attempt，也可能分别是 `origin`、自动沿用的 `carried`，或人工采用的 `accepted`。因此单个 `--run` 用来回答“这一轮纳入了什么、怎样纳入”，多个 `--run` 用同一表形状比较这些历史边界；已知 Attempt 的业务事实则用 `show @<AttemptLocator>` 下钻。
 
 Run ID 有两个公开取得方式：
 
@@ -59,7 +59,7 @@ niceeval show --run 7b8d2ea4-b840-4870-9840-f85a436a5527
 niceeval show --run 7b8d2ea4-b840-4870-9840-f85a436a5527 --run 91b07bde-e00a-441b-a4c0-cf78c374204a
 niceeval show --run 7b8d2ea4-b840-4870-9840-f85a436a5527 --report ./reports/summary.ts
 niceeval show --experiment checkout --page /overview
-niceeval show @91ddc61b-ae96-4a23-8578-ddc1b83306dc
+niceeval show @1K1P0VJAPVJ12
 niceeval show --json
 ```
 
@@ -71,7 +71,7 @@ Experiment scatter、Experiment table 与详情页面。`overview` 是显式选�
 
 公开 `show --report` 与 `show --json` 互斥：报告树表达「怎么看」，`--json` 表达「是什么」。两者同时出现时，命令在任何 Record I/O 或报告装载之前以 i18n 用法错误退出。
 
-`--json` 单独使用时输出 `niceeval.show` 数据信封（`view` 为 leaderboard / attempt / source / timing 等），而不是 classic 报告树。公开 show 的机器面只有 `niceeval.show`；`niceeval.report-show/v1` 只给内部 host 与 static export 使用。
+普通 selector 的 `--json` 输出 `niceeval.show` 数据信封（`view` 为 leaderboard / attempt / source / timing 等），而不是 classic 报告树。显式 `--run` 且没有 `--report` 时，命令选择内建 membership Report，因此输出同一次 execution 的 `niceeval.report-show/v1`。这个 envelope 也供 live host 与 static export 使用。
 
 `--report` 的 text 面与 live view、static export 消费同一份 `ReportExecution`。Host 只显示每个 input 的 complete/partial 与 problem IDs，不替作者公式猜 observed/denominator。通过率等业务统计只有在 Calculation value 自己提供时才显示。unavailable、unsupported、invalid 与 execution-failed 必须保留状态及 problem reference，不能替换成零、空字符串或省略行。
 
@@ -90,7 +90,7 @@ Broken pipe 是正常 CLI 退出，其它 console failure 是 typed error，inte
 | `runId` / `slotId` | row identity。单 Run 与多 Run 都按 canonical `runId`、`slotId` 排序。 |
 | `slotState` | `included \| not-recorded \| core-invalid \| excluded`。 |
 | `memberRelation` | 只有 `included` 才是 `origin \| reference`；否则为 `null`。 |
-| `sourceAttemptLocator` | 只有 `included` 才是 `@<AttemptId>`；否则为 `null`。 |
+| `sourceAttemptLocator` | 只有 `included` 才是 canonical `@1<12-character-body>`；否则为 `null`。 |
 | `membershipState` | `available \| action-missing \| unavailable \| migration-required \| migration-unavailable \| unsupported \| invalid`。 |
 | `membershipOutcome` | `carried \| accepted \| executed \| not-dispatched \| interrupted`；没有可读或匹配 action 时为 `null`。这是公开 projector 的 outcome，不是 persisted payload 的 raw `action` 字段。 |
 | `verdictState` | `available \| not-read \| unavailable \| migration-required \| migration-unavailable \| unsupported \| invalid`。非 `included` slot 是 `not-read`。 |
@@ -110,7 +110,7 @@ Page /
   Run membership overview
   Run membership
   Run | Slot | Slot state | Member relation | Source Attempt | Membership state | Membership outcome | Verdict state | Verdict
-  7b8d2ea4-b840-4870-9840-f85a436a5527 | slot-00b400bd-ba81-4850-8803-09ba802896e5 | included | reference | @91ddc61b-ae96-4a23-8578-ddc1b83306dc | available | accepted | available | passed
+  7b8d2ea4-b840-4870-9840-f85a436a5527 | slot-00b400bd-ba81-4850-8803-09ba802896e5 | included | reference | @1K1P0VJAPVJ12 | available | accepted | available | passed
   [neutral] Omitted rows: 0
   [neutral] Unmatched membership actions: 0
 
@@ -142,7 +142,7 @@ Problems
       "runId": "7b8d2ea4-b840-4870-9840-f85a436a5527",
       "slotId": "slot-00b400bd-ba81-4850-8803-09ba802896e5",
       "slotState": "included",
-      "sourceAttemptLocator": "@91ddc61b-ae96-4a23-8578-ddc1b83306dc",
+      "sourceAttemptLocator": "@1K1P0VJAPVJ12",
       "verdict": "passed",
       "verdictState": "available"
     }
@@ -160,7 +160,7 @@ niceeval view --host # 显式监听全部 IPv4 接口
 niceeval view --run 01H... --page /attempts/attempt-01h... --no-open
 ```
 
-`view` 打开一个 scoped `ReportViewSession`。导航只列出当前成功 revision 已经展开的 routes。
+`view` 打开一个 scoped `ReportViewSession`。classic 固定 sample pages 按作者声明顺序形成唯一 tablist；tab 的稳定 identity、本地化标题、exact route 与导航可见性来自当前成功 revision 的 `ReportExecution`，不能从 page ID、route 排序或页面 DOM 反推。PageFamily 不进入 tablist，只提供已经闭合的详情 route。
 
 完全省略 `--host` 时，server 只监听 `127.0.0.1`。显式地址交给 Node 绑定；具体 hostname / IP
 只公布该地址，`0.0.0.0` 会公布 `127.0.0.1` 与启动时可见的非 internal IPv4 地址，`::` 则公布
@@ -188,6 +188,10 @@ watch 闭集是 Record root、Report module 及其项目内静态 import、Theme
 HTTP request、页面打开与刷新不触发新的 Record I/O。Record、Report 或影响选择的 Config 变化产生新的 execution；Theme-only 变化可以复用同一个 immutable execution，再发布新的 view revision。
 
 web renderer 与 `show` 从同一棵 semantic tree 读取。图表、颜色与交互只能增强已有文字、表格、数值和状态，不能改变分母或发起新的 Attachment 读取。
+
+Experiment Table 的 Experiment → group/eval → Attempt 父子拓扑也属于这棵 semantic tree。live 与 static 都输出原生、可聚焦的 disclosure；禁用 JavaScript 的 static 页面仍可用键盘展开。实体 target 只有在对应 PageFamily route 已进入当前 execution closure 时才成为普通 href，否则退化为纯展示，不生成死链接或 `#/attempt/...`。
+
+live 中，tabs 与详情 dialog 是 package-owned progressive enhancement。点击 Experiment / Attempt 的 canonical href 时，dialog 呈现同一 revision、同一路由经唯一 web renderer 生成的文档；关闭后焦点、tab 与 disclosure 上下文恢复。直接请求、新标签页和 static export 继续沿相同 href 导航。rebuild 竞争不得把两个 revision 的触发页与详情混合。
 
 ## `niceeval view --out`
 

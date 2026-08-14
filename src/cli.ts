@@ -289,7 +289,7 @@ export interface Flags {
   diff: boolean;
   /** --diff=<路径>(必须 = 连写;空格形式会把路径当 eval id 前缀,按文档如此)。 */
   diffPath?: string;
-  /** `show @<AttemptId> --execution` 专用：JS 正则，只显示命中的 transcript / tool / command evidence。 */
+  /** `show @<AttemptLocator> --execution` 专用：JS 正则，只显示命中的 transcript / tool / command evidence。 */
   grep?: string;
   timing?: "summary" | "full";
   keepSandbox?: "failed" | "all";
@@ -353,7 +353,7 @@ const FLAG_OPTIONS = {
   tag: { type: "string" },
   /** 额外写一份 JUnit XML 报告到指定路径,供 CI 消费。 */
   junit: { type: "string" },
-  /** `exp` 命令专用:stdout 上单一有序的 NDJSON 事件流；`--dry --json` 输出单个 JSON 计划文档。`show` 命令专用:`niceeval.show` 数据信封，与 `--report` 互斥；`niceeval.report-show/v1` 只给内部 host / static 使用。 */
+  /** `exp` 命令专用:stdout 上单一有序的 NDJSON 事件流；`--dry --json` 输出单个 JSON 计划文档。`show` 命令专用：普通视图输出 `niceeval.show`；显式 `--run` 的默认 membership Report 输出 `niceeval.report-show/v1`；与 `--report` 互斥。 */
   json: { type: "boolean" },
   /** `docker profile doctor` 专用：启动受限 DinD 容器并运行内层容器。 */
   smoke: { type: "boolean" },
@@ -370,7 +370,7 @@ const FLAG_OPTIONS = {
   execution: { type: "boolean" },
   /** `show @<AttemptLocator> --timing[=summary|full]` 专用：从内建 timing Report 读取该 Attempt 的 runner 阶段树。 */
   timing: { type: "boolean" },
-  /** `show @<AttemptId> --execution` 专用：JS 正则过滤 retained transcript、tool 与 command evidence。 */
+  /** `show @<AttemptLocator> --execution` 专用：JS 正则过滤 retained transcript、tool 与 command evidence。 */
   grep: { type: "string" },
   // --diff 是布尔;--diff=<路径> 在 parseArgs 前预扫成 diffPath(路径必须 = 连写,
   // 空格形式的下一个 token 仍是位置参数 = eval id 前缀,与文档一致)。
@@ -2419,6 +2419,12 @@ function publicShowJsonRequest(request: ReportCliRequest): ReportCliRequest {
   });
 }
 
+function usesRunMembershipJson(request: ReportCliRequest): boolean {
+  return request.target.kind === "selection"
+    && request.reportSelection.kind === "fixed"
+    && request.reportSelection.report === defaultRunMembershipOverviewReport;
+}
+
 function publicShowEnvelope(
   request: ReportCliRequest,
   flags: Flags,
@@ -2915,6 +2921,13 @@ function runShowCommand(
     const execution = yield* executeCliReport(request, inputs);
     const page = yield* requireKnownReportPage(execution, request.page);
     if (flags.json) {
+      if (usesRunMembershipJson(parsed)) {
+        yield* showReport({ execution, format: "json" }).pipe(
+          Effect.provideService(ReportConsole, cliReportConsole),
+          Effect.mapError((error) => cliFailure("render Report show output", error)),
+        );
+        return 0;
+      }
       const envelope = publicShowEnvelope(request, flags, execution);
       yield* Effect.sync(() => {
         process.stdout.write(renderShowJson(envelope));

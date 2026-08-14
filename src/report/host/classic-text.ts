@@ -141,6 +141,8 @@ export function renderCellTableText(
   block: Extract<ReportBlock, { readonly type: "cell-table" }>,
   ctx: ClassicTextContext,
 ): string[] {
+  const hierarchyDepths = cellTableHierarchyDepths(block);
+  const firstColumn = block.columns[0] ?? "";
   const table = renderTableText(
     {
       columns: block.columns.map((column) => ({
@@ -148,11 +150,22 @@ export function renderCellTableText(
         header: column,
         align: (RIGHT_ALIGNED_HEADERS.has(column) ? "right" : "left") as ColumnAlign,
       })),
-      rows: block.rows.map((row) => ({
-        cells: row.cells,
-        depth: row.key.startsWith("coverage:") ? 0 : indentDepth(row.cells[block.columns[0] ?? ""] ?? ""),
-        ...(row.key.startsWith("@") ? { locator: row.key } : {}),
-      })),
+      rows: block.rows.map((row) => {
+        const hierarchyDepth = hierarchyDepths.get(row.key);
+        return {
+          cells: hierarchyDepth === undefined
+            ? row.cells
+            : indentHierarchyCells(row.cells, firstColumn, hierarchyDepth),
+          depth: row.kind === "summary"
+            ? 0
+            : hierarchyDepth ?? (row.key.startsWith("coverage:") ? 0 : indentDepth(row.cells[firstColumn] ?? "")),
+          ...(row.kind === "attempt"
+            ? { locator: (row.cells[firstColumn] ?? "").trim() }
+            : row.key.startsWith("@")
+              ? { locator: row.key }
+              : {}),
+        };
+      }),
     },
     {
       width: ctx.width,
@@ -161,6 +174,38 @@ export function renderCellTableText(
     },
   );
   return table.length === 0 ? [] : table.split("\n");
+}
+
+function indentHierarchyCells(
+  cells: Readonly<Record<string, string>>,
+  firstColumn: string,
+  depth: number,
+): Readonly<Record<string, string>> {
+  const first = cells[firstColumn];
+  if (depth === 0 || first === undefined || first === "—") return cells;
+  return Object.freeze({ ...cells, [firstColumn]: `${"  ".repeat(depth)}${first}` });
+}
+
+function cellTableHierarchyDepths(
+  block: Extract<ReportBlock, { readonly type: "cell-table" }>,
+): ReadonlyMap<string, number> {
+  if (block.hierarchy !== true) return new Map();
+  const rows = new Map(block.rows.map((row) => [row.key, row]));
+  const depths = new Map<string, number>();
+  const depthFor = (key: string): number => {
+    const known = depths.get(key);
+    if (known !== undefined) return known;
+    const row = rows.get(key);
+    if (row === undefined || row.parentKey === undefined) {
+      depths.set(key, 0);
+      return 0;
+    }
+    const depth = depthFor(row.parentKey) + 1;
+    depths.set(key, depth);
+    return depth;
+  };
+  for (const row of block.rows) depthFor(row.key);
+  return depths;
 }
 
 function indentDepth(cell: string): number {

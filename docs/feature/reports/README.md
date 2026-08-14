@@ -28,6 +28,7 @@ immutable ReportExecution
 - 经典面是唯一公开作者入口的默认形状：`defineReport({ title, pages })`、`render(sample)` 与受控 JSX；
 - facade 先声明固定 projection plan，host 只投影一次，构造深冻结 `Sample`，再调用 `page.render(sample)`；
 - 展开结果进入同一个 closed semantic validation 与 `ReportExecution`，show、view 与 static export 只消费它，不存在第二套数据或渲染真相；`classic-dashboard` 只是 presentation profile；
+- classic 固定 sample pages 的稳定 identity、声明顺序、本地化标题、exact route 与导航可见性随同一份 `ReportExecution` 闭合；PageFamily 只提供详情 route，不进入顶部导航；
 - 受控 JSX 不是 raw React / DOM：原生 tag、任意 unbranded component、head、script / style / font / worker / WASM、raw HTML 与自定义 text / web 双面 renderer 都拒绝；
 - 低层 projection API 继续存在：作者用 `RecordProjection` 声明数据，用 `defineCalculation`、`definePage`、`definePageFamily`、`defineDownload` 包装结果；
 - trusted TS module 本身不是 sandbox；NiceEval 只保证不授予 reader、Effect、Record root / path 与 append-I/O capability。
@@ -71,6 +72,10 @@ classic facade 的固定投影与 `passRate` 沿用同一套状态语义：skipp
 
 `niceeval view` 保留热重载：每次 rebuild 产生一份新的 fixed `ReportExecution`，成功后原子替换 last-good，失败保留 last-good 并显示问题。loader 与 watcher 的具体实现属于 Node host，不进入本契约。
 
+classic live view 把当前 execution 中可导航的固定 sample pages 显示为一个可访问的 tab set；切换 tab 只切换这份 revision 已经渲染的页面。Experiment Table 的 Experiment → group/eval → Attempt 是 closed semantic tree 的显式父子拓扑，live 与 static 共用原生 disclosure。static 禁用 JavaScript 仍能用键盘展开并沿普通 exact-route href 打开详情。
+
+live host 只在 canonical href 之上做渐进增强：点击 Experiment 或 Attempt 可在具名 modal dialog 中呈现同一 revision、同一路由的 `ReportDocument`；关闭后焦点回到触发链接，当前 tab 与展开状态不丢失。直接请求、新标签页与 static export 始终使用同一个 href。revision 变化时 host 不混合旧触发页与新详情页。
+
 static export 先预检，再写出完整 closure，最后写入完成标记。中断可能留下未完成的目录；host 以缺失的完成标记识别并提示删除。本契约不承诺原子目录发布。
 
 ## 范围
@@ -88,7 +93,7 @@ Reports 包含：
 Reports 不包含：
 
 - Record 格式、写入、migration、reuse planning 或 analysis selection 算法；
-- 浏览器端任意 script、style、font、worker、WASM、raw HTML 或路径 loader；Hero 外链只接受绝对 https，host 只序列化不 fetch；
+- 作者注入的任意 script、style、font、worker、WASM、raw HTML 或路径 loader；Hero 外链只接受绝对 https，host 只序列化不 fetch。package-owned live enhancement 只能消费当前 closed execution，不能成为第二套数据或业务 renderer；
 - 不受信任 JavaScript module 的安全沙箱；
 - durable Report result、snapshot、revision 或第二种 Record；
 - durable metadata profile attachment；future durable profile 属于边界，不是当前承诺；

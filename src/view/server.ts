@@ -22,6 +22,10 @@ import {
   renderReportExecutionText,
 } from "../report/host/presentation.ts";
 import {
+  renderReportDocumentFragment,
+  renderReportLiveHtml,
+} from "../report/host/html.ts";
+import {
   openReportViewSession,
   type OpenReportViewSessionInput,
   type ReportViewOpenError,
@@ -413,6 +417,36 @@ function serveRequest<Requirements>(
           headers,
         ));
       }
+      const requestedRevision = request.request.headers["x-niceeval-report-fragment"];
+      if (requestedRevision !== undefined) {
+        if (requestedRevision !== String(state.current.revision)) {
+          return Effect.sync(() => send(
+            request.response,
+            409,
+            `${JSON.stringify({ revision: state.current.revision })}\n`,
+            "application/json; charset=utf-8",
+            headers,
+          ));
+        }
+        if (page === "fallback") {
+          return Effect.sync(() => sendText(request.response, 404, "page fragment not found", headers));
+        }
+        return Effect.sync(() => send(
+          request.response,
+          200,
+          `${JSON.stringify({
+            revision: state.current.revision,
+            title: page.document.title,
+            html: renderReportDocumentFragment({
+              document: page.document,
+              route: page.route,
+              hrefMode: "root",
+            }),
+          })}\n`,
+          "application/json; charset=utf-8",
+          headers,
+        ));
+      }
       return Effect.sync(() => send(
         request.response,
         200,
@@ -421,12 +455,15 @@ function serveRequest<Requirements>(
             `${hostTextPrefix}${renderReportExecutionText({ execution: state.current.execution })}`,
             state.current.theme,
           )
-          : renderHtml({
-            document: page.document,
-            route: page.route,
+          : renderReportLiveHtml({
+            title: page.document.title,
+            locale: state.current.execution.locale,
+            revision: state.current.revision,
+            currentRoute: page.route,
+            currentDocument: page.document,
+            navigation: liveNavigation(state.current.execution),
             theme: state.current.theme,
             hostMetadata: {
-              revision: state.current.revision,
               ...(state.lastProblem === undefined
                 ? {}
                 : { lastRebuildProblem: state.lastProblem.summary }),
@@ -438,6 +475,34 @@ function serveRequest<Requirements>(
     }),
     Effect.catchAll(() => Effect.sync(() => sendText(request.response, 503, "report view session is closed"))),
   );
+}
+
+function liveNavigation(
+  execution: ReportExecution,
+): ReadonlyArray<{
+  readonly pageId: string;
+  readonly title: string;
+  readonly route: ReportRoute;
+  readonly state: "rendered" | "data-unavailable" | "execution-failed";
+  readonly document?: Extract<ReportPageResult, { readonly state: "rendered" }>["document"];
+}> {
+  return execution.navigation
+    .filter((item) => item.visible)
+    .map((item) => {
+      const page = execution.pages.find((candidate) =>
+        candidate.pageId === item.pageId && candidate.route === item.route
+      );
+      if (page === undefined) {
+        throw new Error("a live navigation item lost its fixed Page result");
+      }
+      return Object.freeze({
+        pageId: item.pageId,
+        title: item.title,
+        route: item.route,
+        state: page.state,
+        ...(page.state === "rendered" ? { document: page.document } : {}),
+      });
+    });
 }
 
 function refreshSession<Requirements>(

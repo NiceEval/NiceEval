@@ -16,6 +16,7 @@ import {
   reportInputs,
   reportRoute,
 } from "../author/index.ts";
+import { authorInternalSetPageNavigation } from "../author/model.ts";
 import {
   classicDataPlan,
   defineReport as defineClassicReport,
@@ -38,7 +39,11 @@ import {
   classicExperimentRoute,
   narrowClassicSampleToExperiment,
 } from "../classic/routes.ts";
-import type { ClassicAttemptRow, Sample } from "../classic/sample.ts";
+import {
+  classicAttemptLocator,
+  type ClassicAttemptRow,
+  type Sample,
+} from "../classic/sample.ts";
 import {
   reportDocument,
   reportSection,
@@ -134,7 +139,7 @@ export const standardExperimentPage = definePageFamily({
     ),
 });
 
-export const standardTracesPage = definePage({
+const standardTracesPageDefinition = definePage({
   id: Either.getOrThrow(reportComponentId("traces")),
   route: Either.getOrThrow(reportRoute("/traces")),
   inputs: tracesInputs,
@@ -144,6 +149,11 @@ export const standardTracesPage = definePage({
     inputs,
   }), inputs.conversation),
 });
+authorInternalSetPageNavigation(standardTracesPageDefinition, {
+  title: "Traces",
+  visible: true,
+});
+export const standardTracesPage = standardTracesPageDefinition;
 
 /** Attempt detail family: one instance per recorded locator / attempt id. */
 export const standardAttemptPage = definePageFamily({
@@ -189,7 +199,7 @@ function tracesDocument(
       return [];
     }
     return [Object.freeze({
-      attempt: attempt.target?.locator ?? attempt.attemptId,
+      attempt: classicAttemptLocator(attempt) ?? null,
       eval: attempt.evalId,
       experiment: attempt.experimentId,
       conversation: conversationState(conversations, attempt),

@@ -1,4 +1,5 @@
 import { Either } from "effect";
+import { encodeAttemptLocator } from "../../attempt-locator.ts";
 import type { AnalysisSlot } from "../../analysis/index.ts";
 import {
   attemptSlotProjection,
@@ -191,7 +192,7 @@ function publicTimingJson(
   timing: ProjectedSample<"attempt-slot", AttemptTimingView>,
 ): PublicTimingJson {
   const included = slots.find((slot) => slot.state === "included");
-  const locator = included === undefined ? "@unknown" : `@${included.attempt.attemptId}`;
+  const locator = included === undefined ? "@unknown" : encodeAttemptLocator(included.attempt.attemptId);
   const view = included === undefined
     ? undefined
     : availableTimingView(timing, included.runId, included.slotId);

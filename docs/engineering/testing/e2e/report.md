@@ -68,7 +68,7 @@ niceeval view
 
 ### report-project-current
 
-`report-project-current.test.ts` 验证不带选择项的 `show` 累积全部身份仍匹配的 Run。Eval source 改变后，旧结果从当前 Sample 消失；下一次 `exp` 产生匹配的新结果。验收只走公开 receipt / show，并确认 `--latest` 已移除。
+`report-project-current.test.ts` 验证不带选择项的 `show` 累积全部身份仍匹配的 Run。Eval source 改变后，旧结果从当前 Sample 消失，但具名 `show --run` 仍返回对应 membership Report；下一次 `exp` 产生匹配的新结果。验收只走公开 receipt / show，并确认 `--latest` 已移除。
 
 ### report-config-reload
 
@@ -106,9 +106,12 @@ niceeval view
 
 ### report-classic-browser-journey
 
-`report-classic.browser.spec.ts` 以 0.12 classic Report 验证 static export 与 live view 的链接闭包、
-单页 Report 缺少 experiment PageFamily 时散点无链接退化、
-桌面和移动端可读性，以及可访问的折叠控件。
+`report-classic.browser.spec.ts` 以 0.12 classic Report 走两条公开 Journey：
+
+- static 在 `javaScriptEnabled: false` 的真实浏览器上下文中，用键盘展开具名 Experiment → group/eval → Attempt disclosure；再沿页面自身的 canonical href 打开 exact Attempt 详情。单页 Report 缺少 PageFamily 时只删除链接，不删除报告数据；
+- live 从公开 `exp --json` 产生真实数据，再从具名 Eval 层级读取页面公开的 Attempt locator。它验证作者固定 pages 的 tabs、scatter Experiment dialog、层级 Attempt dialog，以及关闭后的焦点、tab 与展开上下文；同时保留桌面/移动端无页面横向溢出的可读终态。
+
+断言留在 Journey 正文，使用原生 Playwright role、name、可见结果与公开 ARIA 状态。没有 disclosure、tab、dialog 或 target 时必须硬失败；不得用 `expect.soft`、条件跳过、像素/computed style、私有 class/DOM 包装，或另建业务 BrowserReport assertion DSL。Testkit 只负责候选注入、隔离副本、真实 CLI/server 生命周期、等待、artifact 与 cleanup 收据。
 
 ### report-terminal-dx
 
