@@ -679,12 +679,23 @@ function configuredDockerImageLocator(image: string): SandboxTemplateCommandPlan
   });
 }
 
+function configuredPathLocator(): SandboxTemplateCommandPlanLocator {
+  return freezeCommandPlanLocator({
+    _tag: "Opaque",
+    reason: {
+      code: "sandbox-path-locator-unsafe-to-display",
+      summary: "Sandbox path locator is omitted because local paths may expose host filesystem details",
+    },
+  });
+}
+
 function configuredLocationField(
   name: "context" | "file",
   value: SandboxLocation,
-): { readonly field: SandboxTemplateLocatorField; readonly redaction?: SandboxTemplateLocatorRedaction } {
-  if (value._tag === "Path") return { field: Object.freeze({ name, value: value.value }) };
+): { readonly field: SandboxTemplateLocatorField; readonly redaction?: SandboxTemplateLocatorRedaction } | undefined {
+  if (value._tag === "Path") return undefined;
   const url = new URL(value.value);
+  if (url.protocol === "file:") return undefined;
   const parts: SandboxTemplateLocatorRedactionPart[] = [];
   if (url.username !== "" || url.password !== "") {
     parts.push("userinfo");
@@ -1709,10 +1720,12 @@ export function createBuiltinSandboxFactories(
           ...pathPrependIdentityField(pathPrepend),
         },
         privateFingerprintIdentity: identity,
-        commandPlanLocator: configuredLocator(
-          [fileLocator.field, { name: "workspaceService", value: workspaceService }],
-          fileLocator.redaction === undefined ? [] : [fileLocator.redaction],
-        ),
+        commandPlanLocator: fileLocator === undefined
+          ? configuredPathLocator()
+          : configuredLocator(
+              [fileLocator.field, { name: "workspaceService", value: workspaceService }],
+              fileLocator.redaction === undefined ? [] : [fileLocator.redaction],
+            ),
         leakGate: { _tag: "Compose", file, workspaceService },
         plan: ({ authorBaseDir }) => Effect.flatMap(dockerTarget(), (target) => Effect.gen(function* () {
           const plannedFile = yield* Effect.try({
@@ -1851,14 +1864,16 @@ export function createBuiltinSandboxFactories(
           ...pathPrependIdentityField(pathPrepend),
         },
         privateFingerprintIdentity: identity,
-        commandPlanLocator: configuredLocator(
-          [
-            contextLocator.field,
-            { name: "file", value: dockerfile },
-            ...(targetStage === undefined ? [] : [{ name: "target" as const, value: targetStage }]),
-          ],
-          contextLocator.redaction === undefined ? [] : [contextLocator.redaction],
-        ),
+        commandPlanLocator: contextLocator === undefined || options.dockerfile !== undefined
+          ? configuredPathLocator()
+          : configuredLocator(
+              [
+                contextLocator.field,
+                { name: "file", value: dockerfile },
+                ...(targetStage === undefined ? [] : [{ name: "target" as const, value: targetStage }]),
+              ],
+              contextLocator.redaction === undefined ? [] : [contextLocator.redaction],
+            ),
         leakGate: { _tag: "Dockerfile", context, dockerfile },
         plan: ({ authorBaseDir }) => Effect.flatMap(dockerTargetForProfile(profile), ({ target, profileBinding }) => Effect.gen(function* () {
           const plannedContext = yield* Effect.try({
@@ -2196,10 +2211,9 @@ export function createBuiltinSandboxFactories(
         kind: "directory",
         publishableIdentity: { directory: { _tag: directory._tag }, ...pathPrependIdentityField(pathPrepend) },
         privateFingerprintIdentity: identity,
-        commandPlanLocator: configuredLocator([{
-          name: "dir",
-          value: directory._tag === "AuthorBaseDir" ? "author-base-dir" : directory.value,
-        }]),
+        commandPlanLocator: directory._tag === "AuthorBaseDir"
+          ? configuredLocator([{ name: "dir", value: "author-base-dir" }])
+          : configuredPathLocator(),
         leakGate: { _tag: "None" },
         plan: ({ authorBaseDir }) => {
           const configured = directory._tag === "AuthorBaseDir"
