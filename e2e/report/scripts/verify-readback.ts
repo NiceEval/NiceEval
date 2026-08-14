@@ -415,7 +415,7 @@ async function verifyHistoryAndPages(evidence: Evidence): Promise<void> {
   // 2 个 attempt 会原封不动地被 carry forward 进第三份快照。
   const reuseOutput = shExpectZero(`pnpm exec niceeval exp main`);
   // 人读文本的缓存复用摘要行(feedback.human.reuse 文案):"M of N carried in from cache · K to run",
-  // 与收尾摘要的 "(K reused)"。
+  // 与收尾摘要的 "(K reused)" / "(all K reused)"（全部携入时的显式语法）。
   //
   // 断言的是**两个数字一致**,不是某个固定值。携带资格判据里有一条是 `durationMs ≤ resolved
   // timeoutMs`(这里解析到 niceeval.config.ts 的 60s),而这两个 attempt 打的是真实网关——某次慢过
