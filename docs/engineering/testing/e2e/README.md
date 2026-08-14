@@ -293,8 +293,8 @@ GitHub Actions 从仓库描述文件生成 matrix，每个 matrix cell 只运行
 
 | 层级     | 内容                                        | 触发                             |
 | -------- | ------------------------------------------- | -------------------------------- |
-| PR       | SDK 仓库与 `cli`、`report` 功能仓库的便宜档 | pull request、main push          |
-| 路径门禁 | 受影响的真实沙箱仓库                        | sandbox / agent / 对应 repo 改动 |
+| PR       | 改动所属的 E2E 仓库；`report` 同时拥有 `show` 读面 | pull request、main push          |
+| 失败回退 | 无法安全归属的共享编排或产品改动运行完整矩阵      | shared / product 改动            |
 | Nightly  | 完整模型、judge 与 sandbox provider 仓库    | schedule、手动 dispatch          |
 
 每个 cell 总是上传该仓库声明的 JUnit、`.niceeval/` 和服务日志。
