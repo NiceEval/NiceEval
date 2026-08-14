@@ -1,6 +1,8 @@
 // owner: docs/roadmap/plugins/README.md#v1-owner-matrix
 
 import type { ExpEvalEvent, ExpEvent } from "@niceeval/testkit";
+import { readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { expect, test } from "vitest";
 import { e2e, lifecycleEvents } from "./helpers.ts";
 
@@ -25,7 +27,10 @@ interface DebugPlanDocument {
           readonly enter: readonly DebugPlanStep[];
           readonly exit: readonly DebugPlanStep[];
         };
-        readonly slots: readonly { readonly steps: readonly DebugPlanStep[] }[];
+        readonly slots: readonly {
+          readonly evalId: string;
+          readonly steps: readonly DebugPlanStep[];
+        }[];
       }[];
     }[];
   };
@@ -118,7 +123,14 @@ test("Eval Group、Sandbox 与 Eval Plugin 各自遵守共享实例的生命周�
       { kind: "eval-group", id: "group-plugin" },
       { kind: "eval-group", id: "group-plugin" },
     ]);
-    expect(lane.slots[0]!.steps.map((step) => step.phase)).toContain("plugin.lifecycle.setup");
+    expect(lane.slots).toHaveLength(1);
+    expect(lane.slots[0]!.evalId).toBe("group-plugin/01-first");
+    const evalPluginSetups = lane.slots[0]!.steps.filter(
+      (step) => step.phase === "plugin.lifecycle.setup",
+    );
+    expect(evalPluginSetups.map((step) => step.owner)).toEqual([
+      { kind: "eval", id: "group-plugin/01-first" },
+    ]);
     const physicalTeardowns = lane.physicalLifecycleTemplate!.exit.filter(
       (step) => step.phase === "plugin.lifecycle.teardown",
     );
@@ -130,5 +142,29 @@ test("Eval Group、Sandbox 与 Eval Plugin 各自遵守共享实例的生命周�
       "plugin.lifecycle.teardown",
       "plugin.lifecycle.teardown",
     ]);
+
+    for (const member of ["01-first", "02-second"]) {
+      const evalPath = join(paths.projectRoot, "evals", "group-plugin", `${member}.eval.ts`);
+      const original = await readFile(evalPath, "utf8");
+      const withImport = original.replace(
+        'import { evalOnlyLifecycle } from "../../plugins/lifecycle.ts";',
+        'import { evalOnlyLifecycle, lifecycle } from "../../plugins/lifecycle.ts";',
+      );
+      const withPhysicalLifecycle = withImport.replace(
+        `plugins: [evalOnlyLifecycle({ marker: "${member}" })],`,
+        `plugins: [evalOnlyLifecycle({ marker: "${member}" }), lifecycle({ marker: "same-physical" })],`,
+      );
+      expect(withPhysicalLifecycle, `fixture mutation for ${member}`).not.toBe(original);
+      await writeFile(evalPath, withPhysicalLifecycle, "utf8");
+    }
+
+    const incompatible = await niceeval.run(["exp", "group-plugin", "--dry", "--json"], {
+      env: stableEnv,
+    });
+    expect(incompatible.exitCode, incompatible.diagnostic()).toBe(1);
+    expect(incompatible.stderr, incompatible.diagnostic()).toContain('Eval "group-plugin/01-first"');
+    expect(incompatible.stderr, incompatible.diagnostic()).toContain('Eval "group-plugin/02-second"');
+    expect(incompatible.stderr, incompatible.diagnostic()).toContain("different physical lifecycle");
+    expect(incompatible.stderr, incompatible.diagnostic()).toContain("No Sandbox was created");
   });
 });

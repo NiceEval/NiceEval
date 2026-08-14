@@ -225,7 +225,7 @@ export function sandboxPhysicalLifecycleIdentity(pair: LinkedSandboxLayerPair): 
   if (pair.kind === "direct") return Object.freeze({ kind: "direct" });
   const author: JsonValue[] = (pair.fingerprint.lifecycle ?? []).map((entry) => ({
     kind: entry.kind,
-    owner: { kind: entry.owner.kind },
+    owner: { kind: entry.owner.kind, id: entry.owner.id },
     phase: entry.phase,
     index: entry.index,
   }));
@@ -547,7 +547,7 @@ export function attachSandboxPluginLifecycles(
   }))));
   if (entries.length === 0) return pair;
   const plugins: JsonValue[] = entries.map((entry) => ({
-    owner: entry.owner.kind,
+    owner: { kind: entry.owner.kind, id: entry.owner.id },
     lifecycle: pluginLifecycleIdentity(entry.lifecycle),
   }));
   return Object.freeze({
