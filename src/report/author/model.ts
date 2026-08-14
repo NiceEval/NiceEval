@@ -39,7 +39,7 @@ const reportTypeId: unique symbol = Symbol("@niceeval/report/Report");
 type DataPlanCardinality = "empty" | "non-empty";
 type AnyRecordProjection = RecordProjection<any, any>;
 
-interface DataPlan<Shape extends object, Cardinality extends DataPlanCardinality> {
+export interface DataPlan<Shape extends object, Cardinality extends DataPlanCardinality> {
   readonly [reportDataPlanTypeId]: { readonly _Shape: () => Shape };
   readonly [reportDataPlanCardinalityTypeId]: Cardinality;
 }

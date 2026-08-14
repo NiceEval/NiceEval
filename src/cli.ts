@@ -37,18 +37,24 @@ import {
   type ExperimentId,
   type RunId,
 } from "./analysis/index.ts";
-import { defaultAttemptOverviewReport } from "./report/built-in/attempt-overview.ts";
+import {
+  attemptShowJsonReport,
+  defaultAttemptOverviewReport,
+} from "./report/built-in/attempt-overview.ts";
 import { defaultOverviewReport } from "./report/built-in/overview.ts";
 import { defaultRunMembershipOverviewReport } from "./report/built-in/run-membership-overview.ts";
 import { standard } from "./report/built-in/standard.ts";
 import {
   executionEvidenceReport,
+  executionShowJsonReport,
   timingEvidenceReport,
 } from "./report/built-in/execution.ts";
 import { sourceEvidenceReport } from "./report/built-in/source.ts";
 import { publicLeaderboardReport } from "./report/built-in/leaderboard.ts";
 import {
   calculationValue,
+  calculationData,
+  requireCalculationValue,
   renderShowJson,
   buildShowSample,
   type ShowJson,
@@ -57,6 +63,10 @@ import {
 import type { LeaderboardShowJson } from "./report/built-in/leaderboard.ts";
 import type { SourceShowJson } from "./report/built-in/source.ts";
 import type { PublicTimingJson } from "./report/built-in/execution.ts";
+import type {
+  PublicAttemptEvidenceJson,
+  PublicExecutionEvidenceJson,
+} from "./report/built-in/attempt-evidence-json.ts";
 import { reportRoute, type ReportRoute } from "./report/author/identity.ts";
 import type { Report } from "./report/author/model.ts";
 import {
@@ -2255,7 +2265,10 @@ function parseReportCliRequest(input: {
     throw usageError("niceeval show --grep only combines with --execution.\n");
   }
   if (input.flags.execution) {
-    const report = executionEvidenceReport(executionEvidenceOptions(input.flags));
+    const options = executionEvidenceOptions(input.flags);
+    const report = input.flags.json
+      ? executionShowJsonReport(options)
+      : executionEvidenceReport(options);
     if (input.positionals.length !== 1) {
       throw usageError("niceeval show --execution requires exactly one current Record Attempt locator.\n");
     }
@@ -2365,7 +2378,10 @@ function parseReportCliRequest(input: {
       rootPath,
       target: Object.freeze({ kind: "attempt" as const, locator: parsedLocator }),
       reportSelection: input.flags.report === undefined
-        ? Object.freeze({ kind: "fixed" as const, report: defaultAttemptOverviewReport })
+        ? Object.freeze({
+            kind: "fixed" as const,
+            report: input.flags.json ? attemptShowJsonReport() : defaultAttemptOverviewReport,
+          })
         : reportSelection(input.cwd, input.flags.report),
       themeSelection: themeSelection(input.cwd, input.flags.theme),
       ...(page === undefined ? {} : { page }),
@@ -2447,11 +2463,7 @@ function publicShowEnvelope(
         view,
         sample,
         problemTable,
-        data: calculationValue<SourceShowJson>(execution, "source-json") ?? {
-          locator: request.target.kind === "attempt" ? `@${request.target.attemptId}` : "@unknown",
-          source: null,
-          unavailable: "source calculation unavailable",
-        },
+        data: requireCalculationValue<SourceShowJson>(execution, "source-json"),
       });
     case "timing":
       return Object.freeze({
@@ -2460,12 +2472,7 @@ function publicShowEnvelope(
         view,
         sample,
         problemTable,
-        data: calculationValue<PublicTimingJson>(execution, "timing-json") ?? {
-          kind: "attempt" as const,
-          locator: request.target.kind === "attempt" ? `@${request.target.attemptId}` : "@unknown",
-          durationMs: null,
-          phases: Object.freeze([]),
-        },
+        data: requireCalculationValue<PublicTimingJson>(execution, "timing-json"),
       });
     case "leaderboard":
       return Object.freeze({
@@ -2474,24 +2481,32 @@ function publicShowEnvelope(
         view,
         sample,
         problemTable,
-        data: calculationValue<LeaderboardShowJson>(execution, "leaderboard") ?? {
-          experiments: Object.freeze([]),
-          passRate: null,
-          evals: 0,
-          attempts: 0,
-        },
+        data: requireCalculationValue<LeaderboardShowJson>(execution, "leaderboard"),
       });
-    default:
+    case "attempt":
       return Object.freeze({
         format: "niceeval.show" as const,
         schemaVersion: 1 as const,
         view,
         sample,
         problemTable,
-        data: Object.freeze({
-          locator: request.target.kind === "attempt" ? `@${request.target.attemptId}` : undefined,
-        }),
+        data: calculationData<PublicAttemptEvidenceJson>(execution, "attempt-json"),
       });
+    case "execution":
+      return Object.freeze({
+        format: "niceeval.show" as const,
+        schemaVersion: 1 as const,
+        view,
+        sample,
+        problemTable,
+        data: calculationData<PublicExecutionEvidenceJson>(execution, "execution-json"),
+      });
+    case "compare":
+    case "usage":
+    case "diff":
+    case "history":
+    case "stats":
+      throw new Error(`niceeval show JSON view ${view} is not implemented`);
   }
 }
 
@@ -2977,7 +2992,10 @@ function runShowCommand(
         );
         return 0;
       }
-      const envelope = publicShowEnvelope(request, flags, execution);
+      const envelope = yield* Effect.try({
+        try: () => publicShowEnvelope(request, flags, execution),
+        catch: (cause) => cliFailure("assemble show JSON", cause),
+      });
       yield* Effect.sync(() => {
         process.stdout.write(renderShowJson(envelope));
       });

@@ -1,5 +1,6 @@
 import { createE2EContext, type ArtifactStageEntry } from "@niceeval/testkit";
 import { join, resolve } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 
 /**
  * 每个 owner 自己在这个副本内写入 `.niceeval`；这里仅声明副本生命周期和
@@ -21,7 +22,6 @@ export const reportE2E = createE2EContext({
   project: reportProjectCopy,
   commands: {
     niceeval: [join(process.cwd(), "node_modules", ".bin", "niceeval")],
-    tsc: [join(process.cwd(), "node_modules", ".bin", "tsc")],
   },
 });
 
@@ -39,4 +39,44 @@ export function reportCaseArtifacts(extraDirectories: readonly string[] = []): r
       optional: true,
     })),
   ];
+}
+
+/**
+ * Parse every outer terminal frame and reject open, ragged, or malformed
+ * geometry. Business labels stay in the owner; this helper only knows box
+ * drawing structure.
+ */
+export function closedTerminalBoxes(output: string): readonly string[] {
+  const lines = stripVTControlCharacters(output).replace(/\r\n/g, "\n").split("\n");
+  const boxes: string[] = [];
+  for (let start = 0; start < lines.length; start += 1) {
+    const top = lines[start]!;
+    if (!top.startsWith("╭") || !top.endsWith("╮")) continue;
+    const end = lines.findIndex(
+      (line, index) => index > start && line.startsWith("╰") && line.endsWith("╯"),
+    );
+    if (end < 0) throw new Error(`terminal frame at line ${start + 1} has no closing border`);
+    const frame = lines.slice(start, end + 1);
+    const width = top.length;
+    for (const [offset, line] of frame.entries()) {
+      const lineNumber = start + offset + 1;
+      if (line.length !== width) {
+        throw new Error(
+          `terminal frame line ${lineNumber} has width ${line.length}; expected ${width}\n${frame.join("\n")}`,
+        );
+      }
+      const first = line[0];
+      const last = line.at(-1);
+      const closed = (first === "╭" && last === "╮")
+        || (first === "│" && last === "│")
+        || (first === "├" && last === "┤")
+        || (first === "╰" && last === "╯");
+      if (!closed) {
+        throw new Error(`terminal frame line ${lineNumber} has open sides\n${frame.join("\n")}`);
+      }
+    }
+    boxes.push(frame.join("\n"));
+    start = end;
+  }
+  return Object.freeze(boxes);
 }

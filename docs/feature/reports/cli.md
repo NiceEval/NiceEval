@@ -80,6 +80,42 @@ Experiment scatter、Experiment table 与详情页面。`overview` 是显式选�
 显式 `--run` 且没有 `--report` 时，命令选择内建 membership Report，输出同一次 execution 的
 `niceeval.report-show/v1`。这个 envelope 也供 live host 与 static export 使用。
 
+### 精确 Attempt 与 execution JSON
+
+`show @<AttemptLocator> --json` 固定输出 `view: "attempt"`；加 `--execution` 后固定输出
+`view: "execution"`。两者的 `data` 都是 Calculation 结果，而不是从 terminal 页面或 Record 私有文件
+重新拼出的摘要：
+
+```json
+{
+  "state": "available",
+  "inputState": "complete",
+  "problemIds": [],
+  "value": { "kind": "attempt", "identity": {}, "evaluation": {} }
+}
+```
+
+成功结果的 `inputState` 是 `complete | partial`；失败结果只保留
+`state: "data-unavailable" | "execution-failed"` 与 `problemIds`，不提供 `value`。因此调用方不能把
+Calculation 失败误读成空证据。
+
+两种 view 的 value 有以下共同字段：
+
+- `identity` 包含 canonical `locator`、`selectedRunId`、`originRunId`、`slotId` 与 `memberRelation`。
+- `evaluation` 保留 Experiment、Eval、attempt ordinal 与 evaluation kind。
+- `conversation`、`commands`、`usage`、`timing` 与 `diagnostics` 来自同一个 Attempt。
+
+Attempt view 另外公开 `assertions`、`verdict` 与 `score`。pass evaluation 的 Score 是
+`not-applicable`。
+
+每个证据字段都是 `{ state, value? }`。只有 `available` 有 `value`；其它状态保持
+`unavailable`、`migration-required`、`migration-unavailable`、`unsupported`、`invalid` 或
+`not-applicable`。命令不能用 `null`、零、空数组或 `@unknown` 伪造可用事实。
+
+精确 Attempt 必须唯一对齐一个 included Slot 与它在 Evaluation Plan 中的 coordinate；对齐丢失会让
+命令失败，而不是猜 identity。`--grep` 只影响 execution 的人读呈现；与 `--json` 合用时不得裁剪上述
+机器证据。
+
 `--report` 的 text 面与 live view、static export 消费同一份 `ReportExecution`。Host 只显示每个 input 的 complete/partial 与 problem IDs，不替作者公式猜 observed/denominator。通过率等业务统计只有在 Calculation value 自己提供时才显示。unavailable、unsupported、invalid 与 execution-failed 必须保留状态及 problem reference，不能替换成零、空字符串或省略行。
 
 Broken pipe 是正常 CLI 退出，其它 console failure 是 typed error，interruption 保持 Cause。

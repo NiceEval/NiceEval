@@ -7,13 +7,26 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { reportCaseArtifacts, reportE2E } from "./support.ts";
-import { assertPublicShowJson } from "./support/show-json.ts";
 
 interface ExpEvent {
   event: string;
   evalId?: string;
   verdict?: string;
   reused?: number;
+}
+
+interface ShowOverview {
+  readonly format: "niceeval.show";
+  readonly view: string;
+  readonly sample: {
+    readonly experiments: readonly string[];
+  };
+  readonly data: {
+    readonly experiments: readonly { readonly experimentId: string; readonly evals: number }[];
+    readonly passRate?: number | null;
+    readonly evals: number;
+    readonly attempts: number;
+  };
 }
 
 interface ExplicitRunShow {
@@ -55,7 +68,7 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
 
       const initialShow = await niceeval.run(["show", "--json"]);
       expect(initialShow.exitCode, initialShow.diagnostic()).toBe(0);
-      const initialDocument = assertPublicShowJson(initialShow.json());
+      const initialDocument = initialShow.json<ShowOverview>();
       expect(initialDocument.view).toBe("leaderboard");
       expect(initialDocument.sample.experiments).toEqual(["source"]);
       expect(initialDocument.data).toMatchObject({
@@ -82,7 +95,7 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
 
       const accumulatedShow = await niceeval.run(["show", "--json"]);
       expect(accumulatedShow.exitCode, accumulatedShow.diagnostic()).toBe(0);
-      const accumulatedDocument = assertPublicShowJson(accumulatedShow.json());
+      const accumulatedDocument = accumulatedShow.json<ShowOverview>();
       expect(accumulatedDocument.view).toBe("leaderboard");
       expect(accumulatedDocument.sample.experiments).toEqual(["source"]);
       expect(accumulatedDocument.data).toMatchObject({
@@ -102,7 +115,7 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
 
       const staleShow = await niceeval.run(["show", "--json"]);
       expect(staleShow.exitCode, staleShow.diagnostic()).toBe(0);
-      const staleDocument = assertPublicShowJson(staleShow.json());
+      const staleDocument = staleShow.json<ShowOverview>();
       expect(staleDocument.view).toBe("leaderboard");
       expect(staleDocument.sample.experiments).toEqual([]);
       expect(staleDocument.data).toMatchObject({
@@ -151,7 +164,7 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
 
       const refreshedShow = await niceeval.run(["show", "--json"]);
       expect(refreshedShow.exitCode, refreshedShow.diagnostic()).toBe(0);
-      const refreshedDocument = assertPublicShowJson(refreshedShow.json());
+      const refreshedDocument = refreshedShow.json<ShowOverview>();
       expect(refreshedDocument.view).toBe("leaderboard");
       expect(refreshedDocument.sample.experiments).toEqual(["source"]);
       expect(refreshedDocument.data).toMatchObject({

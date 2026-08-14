@@ -1,81 +1,92 @@
 ---
 title: "Write a Custom Report"
 sidebarTitle: "Custom Reports"
-description: "Declare the facts each page needs, then execute once in memory to produce terminal, web, and static-export results."
+description: "Use defineReport and render(sample) to create a controlled JSX Report that produces terminal, web, and static-site output from one fixed execution."
 ---
 
-A custom Report never receives a Record path or looks up data while a page renders. Its fixed flow is:
+Write custom Reports with the 0.12 classic facade. `defineReport({ title, pages })` declares pages, and `render(sample)` reads a closed Sample and returns controlled JSX. It never receives a Record path or looks up data while a page renders. Import the `Sample` type from `niceeval/record`.
+
+Existing React Reports can keep `"jsx": "react-jsx"`. A new Report can avoid a React runtime by also setting `"jsxImportSource": "niceeval/report"` in its `tsconfig.json`. The component code stays the same.
 
 ```text
-core-only Sample → ReportScope → ReportPlan
-                                  ↓
-                              ReportInput
-                                  ↓
-                         ReportExecution (once)
-                           ↙       ↓       ↘
-                         show     view    export
+Record
+    ↓ fixed projection plan (evaluation plan, verdict, kind-gated score, usage, timing)
+frozen Sample
+    ↓ page.render(sample) expands controlled JSX
+immutable ReportExecution
+          ↙       ↓       ↘
+        show     view    export
 ```
 
-## Define required facts
+## Declare pages
 
-Prefer the built-in requirements NiceEval exports. Define a custom JSON fact with `defineJsonFact()` and an explicit owner:
+Place this Report in `reports/quality.tsx`. The page function receives the frozen `Sample` that the host creates after one projection. Use `aggregate` to group data and calculate `passRate` and `costUSD`:
 
-```ts
-import { defineJsonFact } from "niceeval/report";
-
-const attemptEnergy = defineJsonFact({
-  id: "attempt-energy",
-  owner: "attempt",
-  name: "com.example.energy",
-  parse(document) {
-    if (typeof document.value !== "number") {
-      throw new Error("energy must be a number");
-    }
-    return document.value;
-  },
-});
-```
-
-A custom name uses a reverse-domain namespace and cannot start with `niceeval.`. Its parser receives only a validated `{ observedAt, value }` document, never bytes, descriptors, paths, or blobs. It runs once for each owner and requirement combination during execution and must return a JSON value synchronously.
-
-## Plan pages first
-
-`plan(scope)` reads core-only slots only. It can enumerate detail routes by Run, slot, Attempt ID, and locator, but cannot read a Verdict, Usage, or another business value.
-
-```ts
+```tsx
+import type { Sample } from "niceeval/record";
 import {
+  Bars,
+  Col,
+  ExperimentScatter,
+  ExperimentTable,
+  Hero,
+  SampleSummary,
+  Section,
+  aggregate,
+  costUSD,
   defineReport,
-  verdict,
+  experiment,
+  passRate,
 } from "niceeval/report";
 
+async function overview(sample: Sample) {
+  const rows = await aggregate(sample, {
+    by: { experiment },
+    values: { passRate, costUSD },
+  });
+
+  return (
+    <Col>
+      <Hero
+        title="Memory condition comparison"
+        description="Compare pass rates across memory conditions for the same set of tasks."
+        links={[{
+          label: "Project repository",
+          href: "https://github.com/example/memorybench",
+        }]}
+      />
+      <SampleSummary />
+      <Section title="Leaderboard">
+        <Bars
+          points={rows}
+          x="experiment"
+          y="passRate"
+          layout="horizontal"
+        />
+      </Section>
+      <ExperimentScatter input={sample} />
+      <ExperimentTable input={sample} />
+    </Col>
+  );
+}
+
 export default defineReport({
-  id: "quality",
-  plan(scope) {
-    return {
-      calculations: [qualitySummary],
-      pages: [
-        {
-          id: "overview",
-          route: { pathname: "/", parameters: {} },
-          title: "Overview",
-          inputs: [verdict, attemptEnergy],
-          calculations: [qualitySummary],
-          render(input) {
-            return overviewPage(input);
-          },
-        },
-      ],
-      downloads: [],
-    };
-  },
+  title: "Memory condition comparison",
+  pages: [{
+    id: "overview",
+    title: "Overview",
+    render: overview,
+  }],
 });
 ```
 
-Each Page, Calculation, and Download declares its own `inputs`. Execution cannot read an undeclared fact later; the host reports that call as a plan-invalid error.
+`aggregate` groups at Eval granularity, so it does not split Attempts for the same task. `passRate` uses a strict two-level denominator: it first averages Attempts in each `(experiment, eval)` unit, then averages those unit values equally across Evals. Skipped and missing values do not enter the numerator, and coverage shows the gap.
+
+Controlled JSX is not raw React or DOM. Native tags, unwrapped components, `head`, scripts, styles, fonts, workers, WASM, and raw HTML are rejected during loading or validation. `Hero` links must use absolute HTTPS URLs; NiceEval serializes the URL without requesting it.
 
 ## Set it as the project default
 
-Import the definition directly in `niceeval.config.ts`:
+Import the Report in `niceeval.config.ts`. Afterward, `show` and `view` use it when `--report` is absent:
 
 ```ts
 import { defineConfig } from "niceeval";
@@ -86,77 +97,30 @@ export default defineConfig({
 });
 ```
 
-Afterward, `show` and `view` use it when `--report` is absent. Pass `--report standard` for one invocation to use the built-in Report again.
+## Handle incomplete data and failures
 
-## Define a Calculation
+Recorded-data problems do not change the Sample denominator:
 
-```ts
-const qualitySummary = defineCalculation({
-  id: "quality-summary",
-  inputs: [verdict, attemptEnergy],
-  completeness: "allowPartial",
-  evaluate(input) {
-    return calculateQuality(input);
-  },
-});
-```
+- `unavailable` means the owner did not provide the requested Attachment.
+- `migration-required`, `migration-unavailable`, and `unsupported` mean a historical schema cannot be read for the current request.
+- `invalid` or partial collection means the recorded data is incomplete.
 
-`allowPartial` can use successfully read values, but the result must retain the full Sample denominator, observed count, and a partial marker. `requireComplete` can be available only when durable collection and decoding are complete.
+The built-in problems surface shows these conditions. Missing cost and timing stay missing instead of becoming zero. When an aggregation field is absent, `aggregate` uses `unknown` rather than reading the current project declaration to fill historical data.
 
-## Read data from a page
-
-A page can read only its inputs and Calculations:
-
-```ts
-render(input) {
-  const rows = input.report.sample.included.map((slot) => ({
-    locator: slot.locator,
-    verdict: input.readAttempt(slot, verdict),
-    energy: input.readAttempt(slot, attemptEnergy),
-  }));
-
-  return {
-    title: "Overview",
-    body: { rows },
-    textAlternative: renderRowsAsText(rows),
-  };
-}
-```
-
-A page returns structured JSON and a text equivalent, not a React component, script, CSS, or file path. NiceEval's built-in runtime provides the browser host.
-
-## Isolate failures
-
-If page A requests a valid Verdict but page B requests damaged Usage:
-
-- A renders normally.
-- B becomes `input-invalid` with its channel and issues, and local view shows a named error page.
-- Other pages do not reread the Record.
-- Static export does not publish because a planned consumer failed.
-
-When user rendering, a Calculation, or a Download throws, its state is `execution-failed`. It does not pretend to be invalid input.
-
-## Downloads
-
-A Download is also a named consumer. It declares inputs and Calculations, obtains a constrained path through `defineReportDownloadPath("downloads/...")`, and returns a complete `Uint8Array` in the single execution phase. Static export writes those already-produced bytes; it does not run user code again.
-
-## Capability boundaries
-
-A custom Report does not provide:
-
-- Arbitrary browser scripts, styles, fonts, workers, or WASM.
-- Runtime network requests.
-- File-path or blob access from a Report.
-- JSONL, append, or documents larger than 65,536 UTF-8 bytes through generic `ctx.fact()`.
-
-Large text and binary runtime facts use a NiceEval-approved, named Attempt channel and blob. A built-in decoder delivers an ordinary value.
+A projector, Calculation, or Page callback that throws is an execution problem. So are an invalid document and a route conflict. `show` and `view` show the problem while retaining other pages. Static export does not publish that execution.
 
 ## Run and publish
 
 ```sh
-npx niceeval show --run <run-id> --report ./reports/quality.ts
-npx niceeval view --run <run-id> --report ./reports/quality.ts --no-open
-npx niceeval view --run <run-id> --report ./reports/quality.ts --out ./quality-site
+npx niceeval show --report ./reports/quality.tsx
+npx niceeval view --report ./reports/quality.tsx --no-open
+npx niceeval view --report ./reports/quality.tsx --out ./quality-site
 ```
 
-`--out` must point to a directory that does not exist. See [Publish a Static Report](/tutorials/publish-report) and [Report Components API](/reference/report-components) for details.
+`show`, `view`, and `--out` all select a Sample, execute the same Report, and produce a fixed `ReportExecution`. Each successful `view` rebuild produces the next execution. A failed rebuild keeps the last good execution.
+
+`--out` must name a directory that does not exist. See [Publish a Static Report](/tutorials/publish-report) for the export workflow.
+
+## Use the lower-level projection API
+
+Use the lower-level projection API when you need custom projections or Calculations. Declare data with `RecordProjection`, then use `defineCalculation`, `definePage`, `definePageFamily`, and `defineDownload` to package results. Both authoring paths share the same `ReportExecution`. See [Report API](/reference/report-components) and [Results Data API](/reference/results-data).

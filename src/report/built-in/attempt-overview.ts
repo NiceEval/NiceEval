@@ -1,9 +1,6 @@
 import { Either } from "effect";
 import { encodeAttemptLocator } from "../../attempt-locator.ts";
 import {
-  assertionsProjector,
-  attemptSlotProjection,
-  verdictProjector,
   type AssertionSourceEntry,
   type AssertionSourceResult,
   type AssertionsSourceProjection,
@@ -14,16 +11,13 @@ import {
   type Score,
   type Verdict,
 } from "../../projection/index.ts";
+import type { AttemptDiagnosticsView } from "../../o11y/record/family-projectors.ts";
 import {
-  attemptDiagnosticsProjector,
-  type AttemptDiagnosticsView,
-} from "../../o11y/record/family-projectors.ts";
-import {
+  defineCalculation,
   definePage,
   defineReport,
   reportComponentId,
   reportId,
-  reportInputs,
   reportRoute,
   type Report,
 } from "../author/index.ts";
@@ -37,9 +31,10 @@ import {
   type ReportBlock,
 } from "../semantic/index.ts";
 import {
-  reportEvaluationPlanProjection,
-  reportScoreProjection,
-} from "../evaluation-projections.ts";
+  attemptOverviewEvidenceInputs,
+  attemptShowJsonInputs,
+  publicAttemptEvidenceJson,
+} from "./attempt-evidence-json.ts";
 
 const ASSERTION_ROWS_MAX = 200;
 
@@ -51,13 +46,7 @@ const assertionResultStates = [
   "not-applicable",
 ] as const;
 
-const attemptOverviewInputs = reportInputs({
-  "evaluation-plan": reportEvaluationPlanProjection,
-  assertions: attemptSlotProjection(assertionsProjector),
-  verdict: attemptSlotProjection(verdictProjector),
-  score: reportScoreProjection,
-  diagnostics: attemptSlotProjection(attemptDiagnosticsProjector),
-});
+const attemptOverviewInputs = attemptOverviewEvidenceInputs;
 
 type AttemptSlotEntry<Value> = ProjectedSample<
   "attempt-slot",
@@ -98,16 +87,34 @@ interface AttemptOverviewSlot {
  * reader, paths, or private evidence access.
  */
 export function attemptOverviewReport(): Report {
-  const page = definePage({
+  return defineReport({
+    id: Either.getOrThrow(reportId("attempt-overview")),
+    pages: [attemptOverviewPage()],
+  });
+}
+
+/** Exact Attempt JSON uses a complete semantic projection without changing the human Report. */
+export function attemptShowJsonReport(): Report {
+  const attemptJson = defineCalculation({
+    id: Either.getOrThrow(reportComponentId("attempt-json")),
+    inputs: attemptShowJsonInputs,
+    completeness: "allow-partial",
+    calculate: ({ sample, inputs }) => publicAttemptEvidenceJson(sample, inputs),
+  });
+  return defineReport({
+    id: Either.getOrThrow(reportId("attempt-json")),
+    calculations: { attemptJson },
+    pages: [attemptOverviewPage()],
+  });
+}
+
+function attemptOverviewPage() {
+  return definePage({
     id: Either.getOrThrow(reportComponentId("attempt-overview")),
     route: Either.getOrThrow(reportRoute("/")),
     inputs: attemptOverviewInputs,
     completeness: "allow-partial",
     render: ({ inputs }) => attemptOverviewDocument(inputs),
-  });
-  return defineReport({
-    id: Either.getOrThrow(reportId("attempt-overview")),
-    pages: [page],
   });
 }
 

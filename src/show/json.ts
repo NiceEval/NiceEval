@@ -2,6 +2,10 @@ import type { ReportExecution } from "../report/execution/model.ts";
 import type { LeaderboardShowJson } from "../report/built-in/leaderboard.ts";
 import type { SourceShowJson } from "../report/built-in/source.ts";
 import type { PublicTimingJson } from "../report/built-in/execution.ts";
+import type {
+  PublicAttemptEvidenceJson,
+  PublicExecutionEvidenceJson,
+} from "../report/built-in/attempt-evidence-json.ts";
 
 export type ShowJsonView =
   | "leaderboard"
@@ -35,12 +39,30 @@ interface ShowJsonBase {
   readonly problemTable: ReadonlyArray<ReportExecution["problemTable"][number]>;
 }
 
+export type ShowJsonCalculationData<Value> =
+  | {
+      readonly state: "available";
+      readonly inputState: "complete" | "partial";
+      readonly problemIds: readonly number[];
+      readonly value: Value;
+    }
+  | {
+      readonly state: "data-unavailable" | "execution-failed";
+      readonly problemIds: readonly number[];
+    };
+
 export type ShowJson =
   | (ShowJsonBase & { readonly view: "leaderboard"; readonly data: LeaderboardShowJson })
-  | (ShowJsonBase & { readonly view: "attempt"; readonly data: unknown })
+  | (ShowJsonBase & {
+      readonly view: "attempt";
+      readonly data: ShowJsonCalculationData<PublicAttemptEvidenceJson>;
+    })
   | (ShowJsonBase & { readonly view: "source"; readonly data: SourceShowJson })
   | (ShowJsonBase & { readonly view: "timing"; readonly data: PublicTimingJson })
-  | (ShowJsonBase & { readonly view: "execution"; readonly data: unknown })
+  | (ShowJsonBase & {
+      readonly view: "execution";
+      readonly data: ShowJsonCalculationData<PublicExecutionEvidenceJson>;
+    })
   | (ShowJsonBase & { readonly view: "usage"; readonly data: unknown })
   | (ShowJsonBase & { readonly view: "diff"; readonly data: unknown })
   | (ShowJsonBase & { readonly view: "history"; readonly data: unknown })
@@ -78,6 +100,48 @@ export function calculationValue<Value>(
 ): Value | undefined {
   const result = execution.calculations.find((candidate) => candidate.calculationId === calculationId);
   return result?.state === "available" ? result.value as Value : undefined;
+}
+
+export function requireCalculationValue<Value>(
+  execution: ReportExecution,
+  calculationId: string,
+): Value {
+  const result = execution.calculations.find(
+    (candidate) => candidate.calculationId === calculationId,
+  );
+  if (result === undefined) {
+    throw new Error(`Report execution did not produce Calculation ${calculationId}`);
+  }
+  if (result.state !== "available") {
+    throw new Error(
+      `Report Calculation ${calculationId} completed as ${result.state}; inspect problemTable`,
+    );
+  }
+  return result.value as Value;
+}
+
+export function calculationData<Value>(
+  execution: ReportExecution,
+  calculationId: string,
+): ShowJsonCalculationData<Value> {
+  const result = execution.calculations.find(
+    (candidate) => candidate.calculationId === calculationId,
+  );
+  if (result === undefined) {
+    throw new Error(`Report execution did not produce Calculation ${calculationId}`);
+  }
+  if (result.state === "available") {
+    return Object.freeze({
+      state: "available" as const,
+      inputState: result.inputState.state,
+      problemIds: Object.freeze([...result.problemIds]),
+      value: result.value as Value,
+    });
+  }
+  return Object.freeze({
+    state: result.state,
+    problemIds: Object.freeze([...result.problemIds]),
+  });
 }
 
 /** Internal host/static document. Public `show --json` never emits this format. */

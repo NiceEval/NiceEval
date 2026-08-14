@@ -7,11 +7,7 @@ import {
   type ProjectedSample,
 } from "../../projection/index.ts";
 import {
-  attemptCommandsProjector,
-  attemptConversationProjector,
-  attemptDiagnosticsProjector,
   attemptTimingProjector,
-  attemptUsageProjector,
   type AttemptDiagnosticsView,
   type AttemptTimingView,
   type CommandsView,
@@ -40,13 +36,13 @@ import {
   type ReportBlock,
 } from "../semantic/index.ts";
 
-const executionInputs = reportInputs({
-  conversation: attemptSlotProjection(attemptConversationProjector),
-  commands: attemptSlotProjection(attemptCommandsProjector),
-  usage: attemptSlotProjection(attemptUsageProjector),
-  timing: attemptSlotProjection(attemptTimingProjector),
-  diagnostics: attemptSlotProjection(attemptDiagnosticsProjector),
-});
+import {
+  executionEvidenceInputs,
+  executionShowJsonInputs,
+  publicExecutionEvidenceJson,
+} from "./attempt-evidence-json.ts";
+
+const executionInputs = executionEvidenceInputs;
 
 const timingEvidenceInputs = reportInputs({
   timing: attemptSlotProjection(attemptTimingProjector),
@@ -132,6 +128,24 @@ export function executionEvidenceReport(input: ExecutionEvidenceReportOptions = 
 
 /** The built-in execution evidence Report with no private reader capability. */
 export const defaultExecutionEvidenceReport = executionEvidenceReport();
+
+/** JSON keeps the complete execution projection even when text uses --grep. */
+export function executionShowJsonReport(
+  input: ExecutionEvidenceReportOptions = {},
+): Report {
+  const human = executionEvidenceReport(input);
+  const executionJson = defineCalculation({
+    id: Either.getOrThrow(reportComponentId("execution-json")),
+    inputs: executionShowJsonInputs,
+    completeness: "allow-partial",
+    calculate: ({ sample, inputs }) => publicExecutionEvidenceJson(sample, inputs),
+  });
+  return defineReport({
+    id: Either.getOrThrow(reportId("execution-json")),
+    calculations: { executionJson },
+    pages: human.pages,
+  });
+}
 
 /**
  * The dedicated Attempt timing Report. It deliberately declares only the

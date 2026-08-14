@@ -272,6 +272,18 @@ npx niceeval show --run 01H... --report ./reports/summary.ts --page overview
 外层同时保留同一次 execution 的 selection、run / slot count、Sample-wide denominator 与 canonical problem table。
 显式 `--run` 且没有 `--report` 时继续输出 membership Report 的 `niceeval.report-show/v1` provenance 文档。
 
+精确 Attempt 的 `show @<AttemptLocator> --json` 输出 `view: "attempt"`；加 `--execution` 后输出
+`view: "execution"`。两者的 `data` 都是固定 Calculation 的结果。
+
+- 成功时包含 `state`、`inputState`、`problemIds` 与 `value`。
+- `data-unavailable` 或 `execution-failed` 时没有 `value`。
+- 两种 value 都公开 canonical locator、selected/origin Run ID、Slot ID、member relation 与 Evaluation coordinate。
+- Attempt 数据另外包含 Assertions、Verdict、适用的 Score 与完整执行证据。
+- execution 数据包含 conversation、commands、usage、timing 与 diagnostics。
+
+每个证据字段都保留自己的状态，只有 available 才带 value。NiceEval 不会用 `null`、零、空集合或
+虚构 locator 冒充事实。`--grep` 可以筛人读 execution 文本，但不能裁剪 `--json` 证据。
+
 单个 `--run` 用于核对这一轮的 expected-slot 分母与 membership；多个 `--run` 用同一表形状比较多个固定历史边界。即使两个 Run 指向同一个 Attempt，它们也可能分别由实际执行、自动沿用或人工采用形成。`exp --json` 最后一条 receipt 的 `runIds` 是机器稳定出口；TTY 完成反馈也显示 Run ID。`accept` 的成功反馈会显示新 Run ID，但这行人读文本不是 JSON receipt 或自动化输入契约。
 
 内建 `run-membership-overview` 固定使用 `reportId: "run-membership-overview"`、`pageId: "run-membership"` 和 route `/`。

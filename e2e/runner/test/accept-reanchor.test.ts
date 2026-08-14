@@ -69,6 +69,28 @@ interface RunMembershipShow {
   }>;
 }
 
+interface ProjectCurrentShow {
+  format: "niceeval.show";
+  schemaVersion: 1;
+  view: "leaderboard";
+  sample: {
+    selection: {
+      policy: "project-current";
+      experimentIds: string[];
+      selectedRunIds: string[];
+    };
+    runCount: number;
+    slotCount: number;
+    denominator: number;
+  };
+  problemTable: unknown[];
+  data: {
+    experiments: Array<{ experimentId: string; evals: number }>;
+    evals: number;
+    attempts: number;
+  };
+}
+
 const RUN_MEMBERSHIP_COLUMN_KEYS = [
   "runId",
   "slotId",
@@ -200,6 +222,28 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
       verdictState: "available",
       verdict: "passed",
     });
+
+    const current = await niceeval.run(["show", "--json"]);
+    expect(current.exitCode, current.diagnostic()).toBe(0);
+    const currentShow = current.json<ProjectCurrentShow>();
+    expect(currentShow).toMatchObject({
+      format: "niceeval.show",
+      schemaVersion: 1,
+      view: "leaderboard",
+      sample: {
+        runCount: 1,
+        slotCount: 1,
+        denominator: 1,
+      },
+      data: {
+        experiments: [{ experimentId: "accept", evals: 1 }],
+        evals: 1,
+        attempts: 1,
+      },
+    });
+    expect(currentShow.sample.selection.policy).toBe("project-current");
+    expect(currentShow.sample.selection.selectedRunIds).toEqual([acceptedRunId]);
+    expect(currentShow.problemTable).toEqual([]);
 
     const currentEvidence = await niceeval.run(["show", newLocator, "--execution"]);
     expect(currentEvidence.exitCode, currentEvidence.diagnostic()).toBe(0);
