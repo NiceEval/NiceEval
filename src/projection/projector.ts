@@ -4,7 +4,11 @@ import type {
 } from "../record/attachment/index.ts";
 import { recordAttachmentFamilyOwner } from "../record/attachment/internal.ts";
 import type { RecordAttachmentOwner } from "../record/model/core.ts";
-import type { ProjectionAccess } from "./model.ts";
+import type {
+  ProjectedEntry,
+  ProjectedSample,
+  ProjectionAccess,
+} from "./model.ts";
 
 const recordAttachmentProjectorTypeId: unique symbol = Symbol(
   "@niceeval/projection/RecordAttachmentProjector",
@@ -17,6 +21,9 @@ const recordAttachmentProjectorRuntimeTypeId: unique symbol = Symbol(
 );
 const recordProjectionRuntimeTypeId: unique symbol = Symbol(
   "@niceeval/projection/RecordProjectionRuntime",
+);
+const recordProjectionRequirementRuntimeTypeId: unique symbol = Symbol(
+  "@niceeval/projection/RecordProjectionRequirementRuntime",
 );
 
 /**
@@ -98,11 +105,35 @@ interface ProjectionRuntime<Value> {
   readonly declaration: () => RecordProjectionDeclaration<Value>;
 }
 
+export type ProjectionRequirementCode =
+  | "unavailable"
+  | "migration-required"
+  | "migration-unavailable"
+  | "unsupported"
+  | "invalid";
+
+export type ProjectionRequirement =
+  | { readonly state: "required" }
+  | { readonly state: "not-applicable" }
+  | {
+      readonly state: "unresolved";
+      readonly code: ProjectionRequirementCode;
+    };
+
+interface ProjectionRequirementRuntime {
+  readonly dependency: object;
+  readonly resolve: (input: {
+    readonly entries: readonly ProjectedEntry<ProjectionAccess, unknown>[];
+    readonly dependency: ProjectedSample<ProjectionAccess, unknown>;
+  }) => readonly ProjectionRequirement[];
+}
+
 interface PackageRecordProjection<
   Access extends ProjectionAccess,
   Value,
 > extends RecordProjection<Access, Value> {
   readonly [recordProjectionRuntimeTypeId]: ProjectionRuntime<Value>;
+  readonly [recordProjectionRequirementRuntimeTypeId]?: ProjectionRequirementRuntime;
 }
 
 const projectorIdentityByProjector = new WeakMap<object, ProjectorIdentity>();
@@ -216,6 +247,87 @@ export function recordProjectionDeclaration<
   return declaration;
 }
 
+/**
+ * @internal Adds package-owned, per-entry requiredness to a projection. The
+ * dependency remains an exact projection identity so report authoring can
+ * prove the input plan is closed before the host performs Record I/O.
+ */
+export function withProjectionRequirements<
+  Access extends ProjectionAccess,
+  Value,
+  DependencyAccess extends ProjectionAccess,
+  DependencyValue,
+>(input: {
+  readonly projection: RecordProjection<Access, Value>;
+  readonly dependency: RecordProjection<DependencyAccess, DependencyValue>;
+  readonly resolve: (input: {
+    readonly entries: readonly ProjectedEntry<Access, Value>[];
+    readonly dependency: ProjectedSample<DependencyAccess, DependencyValue>;
+  }) => readonly ProjectionRequirement[];
+}): RecordProjection<Access, Value> {
+  const declaration = recordProjectionDeclaration(input.projection);
+  recordProjectionDeclaration(input.dependency);
+  if (typeof input.resolve !== "function") {
+    throw new TypeError("projection requirement resolver must be a synchronous function");
+  }
+
+  const requirementRuntime: ProjectionRequirementRuntime = Object.freeze({
+    dependency: input.dependency as object,
+    resolve: (current: {
+      readonly entries: readonly ProjectedEntry<ProjectionAccess, unknown>[];
+      readonly dependency: ProjectedSample<ProjectionAccess, unknown>;
+    }): readonly ProjectionRequirement[] => {
+      // Exact package-created projection identities are the erased generic
+      // witnesses at this private runtime boundary. The report host verifies
+      // and supplies that exact dependency object before invoking the closure.
+      const requirements = input.resolve({
+        entries: current.entries as readonly ProjectedEntry<Access, Value>[],
+        dependency: current.dependency as ProjectedSample<
+          DependencyAccess,
+          DependencyValue
+        >,
+      });
+      if (requirements.length !== current.entries.length) {
+        throw new Error(
+          "projection requirement resolver must return one state per projected entry",
+        );
+      }
+      return Object.freeze([...requirements]);
+    },
+  });
+  return makeRecordProjectionWithRequirements(
+    input.projection.access,
+    declaration,
+    requirementRuntime,
+  );
+}
+
+/** @internal Returns the exact static dependency for package-owned requiredness. */
+export function projectionRequirementDependency(
+  projection: RecordProjection<ProjectionAccess, unknown>,
+): object | undefined {
+  if (!isPackageRecordProjection(projection)) {
+    throw new TypeError("projection must be created by a projection factory");
+  }
+  return projection[recordProjectionRequirementRuntimeTypeId]?.dependency;
+}
+
+/** @internal Resolves opaque requiredness after both raw projections complete. */
+export function resolveProjectionRequirements(input: {
+  readonly projection: RecordProjection<ProjectionAccess, unknown>;
+  readonly entries: readonly ProjectedEntry<ProjectionAccess, unknown>[];
+  readonly dependency: ProjectedSample<ProjectionAccess, unknown>;
+}): readonly ProjectionRequirement[] | undefined {
+  if (!isPackageRecordProjection(input.projection)) {
+    throw new TypeError("projection must be created by a projection factory");
+  }
+  const runtime = input.projection[recordProjectionRequirementRuntimeTypeId];
+  return runtime?.resolve({
+    entries: input.entries,
+    dependency: input.dependency,
+  });
+}
+
 function makeRecordProjection<Value>(
   access: "attempt-slot",
   declaration: AttemptSlotProjectionDeclaration<Value>,
@@ -239,6 +351,28 @@ function makeRecordProjection<Value>(
     access,
     [recordProjectionTypeId]: (value: Value): Value => value,
     [recordProjectionRuntimeTypeId]: runtime,
+  };
+  const frozenProjection = Object.freeze(projection);
+  projectionIdentityByProjection.set(frozenProjection, Object.freeze({ access }));
+  return frozenProjection;
+}
+
+function makeRecordProjectionWithRequirements<
+  Access extends ProjectionAccess,
+  Value,
+>(
+  access: Access,
+  declaration: RecordProjectionDeclaration<Value>,
+  requirements: ProjectionRequirementRuntime,
+): RecordProjection<Access, Value> {
+  const runtime: ProjectionRuntime<Value> = Object.freeze({
+    declaration: (): RecordProjectionDeclaration<Value> => declaration,
+  });
+  const projection: PackageRecordProjection<Access, Value> = {
+    access,
+    [recordProjectionTypeId]: (value: Value): Value => value,
+    [recordProjectionRuntimeTypeId]: runtime,
+    [recordProjectionRequirementRuntimeTypeId]: requirements,
   };
   const frozenProjection = Object.freeze(projection);
   projectionIdentityByProjection.set(frozenProjection, Object.freeze({ access }));

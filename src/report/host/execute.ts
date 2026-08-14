@@ -6,7 +6,12 @@ import type {
   ProjectionAccess,
   ProjectionLimitError,
 } from "../../projection/model.ts";
-import type { RecordProjection } from "../../projection/projector.ts";
+import {
+  projectionRequirementDependency,
+  resolveProjectionRequirements,
+  type ProjectionRequirement,
+  type RecordProjection,
+} from "../../projection/projector.ts";
 import type { RecordReaderReadError } from "../../record/reader/errors.ts";
 import { resolveAnalysisSampleHandle } from "../../sample/analysis.ts";
 import type {
@@ -154,6 +159,9 @@ type ProjectionOutcome =
   | {
       readonly state: "projected";
       readonly value: ProjectedSample<ProjectionAccess, unknown>;
+      readonly requirements?: readonly ProjectionRequirement[];
+      /** Requiredness could not execute; raw projection coverage remains valid. */
+      readonly requirementProblemId?: ReportProblemId;
     }
   | {
       readonly state: "execution-failed";
@@ -272,6 +280,26 @@ export function executeReport(input: {
         problems,
       });
       projectionOutcomes.set(projection, outcome);
+    }
+    const projectionsByIdentity = new Map<object, CompiledProjection>(
+      compiled.projections.map((projection) => [
+        projection.projection as object,
+        projection,
+      ]),
+    );
+    for (const projection of compiled.projections) {
+      const outcome = projectionOutcomes.get(projection);
+      if (outcome === undefined) {
+        throw new Error("a compiled projection did not execute");
+      }
+      const resolved = yield* resolveProjectionRequirementOutcome({
+        projection,
+        outcome,
+        projectionsByIdentity,
+        outcomes: projectionOutcomes,
+        problems,
+      });
+      projectionOutcomes.set(projection, resolved);
     }
 
     const calculationResults = new Map<
@@ -501,6 +529,66 @@ function executeProjection(input: {
         }),
       ),
     ),
+  );
+}
+
+function resolveProjectionRequirementOutcome(input: {
+  readonly projection: CompiledProjection;
+  readonly outcome: ProjectionOutcome;
+  readonly projectionsByIdentity: ReadonlyMap<object, CompiledProjection>;
+  readonly outcomes: ReadonlyMap<CompiledProjection, ProjectionOutcome>;
+  readonly problems: ProblemCollector;
+}): Effect.Effect<ProjectionOutcome, never, never> {
+  if (input.outcome.state === "execution-failed") {
+    return Effect.succeed(input.outcome);
+  }
+  const dependencyIdentity = projectionRequirementDependency(
+    input.projection.projection,
+  );
+  if (dependencyIdentity === undefined) {
+    return Effect.succeed(input.outcome);
+  }
+  const dependency = input.projectionsByIdentity.get(dependencyIdentity);
+  if (dependency === undefined) {
+    return Effect.die(
+      new Error("a conditional projection lost its static dependency"),
+    );
+  }
+  const dependencyOutcome = input.outcomes.get(dependency);
+  if (dependencyOutcome === undefined) {
+    return Effect.die(new Error("a projection dependency did not execute"));
+  }
+  if (dependencyOutcome.state === "execution-failed") {
+    return Effect.succeed(Object.freeze({
+      state: "projected" as const,
+      value: input.outcome.value,
+      requirementProblemId: dependencyOutcome.problemId,
+    }));
+  }
+  const projected = input.outcome.value;
+  const projectedDependency = dependencyOutcome.value;
+
+  return Effect.sync(() =>
+    resolveProjectionRequirements({
+      projection: input.projection.projection,
+      entries: projected.entries,
+      dependency: projectedDependency,
+    })
+  ).pipe(
+    Effect.map((requirements): ProjectionOutcome => Object.freeze({
+      state: "projected" as const,
+      value: projected,
+      ...(requirements === undefined ? {} : { requirements }),
+    })),
+    Effect.catchAllDefect(() => Effect.succeed(Object.freeze({
+      state: "projected" as const,
+      value: projected,
+      requirementProblemId: input.problems.execution({
+        code: "projection-callback-defect",
+        consumerId: input.projection.consumerId,
+        summary: "the projection requirement callback threw",
+      }),
+    }))),
   );
 }
 
@@ -955,12 +1043,27 @@ function prepareInputs(input: {
       writable: false,
       configurable: false,
     });
-    for (const entry of outcome.value.entries) {
-      const problem = recordedDataProblem({
-        entry,
-        consumerId: input.consumerId,
-        inputKey: declaration.key,
-      });
+    if (outcome.requirementProblemId !== undefined) {
+      projectionProblemIds.push(outcome.requirementProblemId);
+      partial = true;
+      continue;
+    }
+    for (const [index, entry] of outcome.value.entries.entries()) {
+      const requirement = outcome.requirements?.[index];
+      const problem = requirement === undefined || requirement.state === "required"
+        ? recordedDataProblem({
+          entry,
+          consumerId: input.consumerId,
+          inputKey: declaration.key,
+        })
+        : requirement.state === "not-applicable" || entry.state === "excluded"
+          ? undefined
+          : recordedDataProblemAtEntry({
+            entry,
+            code: requirement.code,
+            consumerId: input.consumerId,
+            inputKey: declaration.key,
+          });
       if (problem !== undefined) {
         partial = true;
         dataProblemIds.push(input.problems.add(problem));
@@ -990,19 +1093,16 @@ function recordedDataProblem(input: {
   readonly consumerId: ReportComponentId;
   readonly inputKey: string;
 }): ReportRecordedDataProblem | undefined {
-  const location = "slot" in input.entry
-    ? { slotId: input.entry.slot.slotId, runId: input.entry.slot.runId }
-    : { runId: input.entry.run.runId };
   switch (input.entry.state) {
     case "excluded":
       return undefined;
     case "not-recorded":
     case "core-invalid":
-      return recordedProblem({
+      return recordedDataProblemAtEntry({
         code: "unavailable",
         consumerId: input.consumerId,
         inputKey: input.inputKey,
-        ...location,
+        entry: input.entry,
       });
     case "attachment-result": {
       switch (input.entry.attachment.state) {
@@ -1013,15 +1113,32 @@ function recordedDataProblem(input: {
         case "migration-unavailable":
         case "unsupported":
         case "invalid":
-          return recordedProblem({
+          return recordedDataProblemAtEntry({
             code: input.entry.attachment.state,
             consumerId: input.consumerId,
             inputKey: input.inputKey,
-            ...location,
+            entry: input.entry,
           });
       }
     }
   }
+}
+
+function recordedDataProblemAtEntry(input: {
+  readonly entry: ProjectedSample<ProjectionAccess, unknown>["entries"][number];
+  readonly code: ReportRecordedDataProblem["code"];
+  readonly consumerId: ReportComponentId;
+  readonly inputKey: string;
+}): ReportRecordedDataProblem {
+  const location = "slot" in input.entry
+    ? { slotId: input.entry.slot.slotId, runId: input.entry.slot.runId }
+    : { runId: input.entry.run.runId };
+  return recordedProblem({
+    code: input.code,
+    consumerId: input.consumerId,
+    inputKey: input.inputKey,
+    ...location,
+  });
 }
 
 function recordedProblem(input: {

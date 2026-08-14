@@ -172,7 +172,7 @@ declare const aggregate: (
 
 ### 固定 projection plan 与同一执行路径
 
-classic facade 先声明固定 projection plan：evaluation plan、verdict、usage 与 timing。host 只投影一次，构造深冻结 `Sample`，再经同一条 fixed-page callback 调用 `page.render(sample)`。
+classic facade 先声明固定 projection plan：evaluation plan、verdict、kind-gated score、usage 与 timing。Score 对 Pass Eval 为 not-applicable，对 Score Eval 为 required；Evaluation kind 无法判定时保持 unresolved。host 只投影一次，构造深冻结 `Sample`，再经同一条 fixed-page callback 调用 `page.render(sample)`。
 
 展开结果进入同一个 closed semantic validation，形成同一个 `ReportExecution`，show、view 与 static export 只消费它。`classic-dashboard` 只是 presentation profile；facade 不是第二套数据或渲染真相。
 
@@ -313,7 +313,7 @@ type ReportCompleteness = "allow-partial" | "require-complete";
 
 任何直接消费 `RecordProjection` 的 Calculation、Page、PageFamily 或 Download 都必须显式声明 completeness：
 
-- `require-complete`：任一 required projected input 不完整时不调用作者 callback，形成 `data-unavailable` result。不完整包括 not-recorded、core-invalid、unavailable、migration-required、migration-unavailable、unsupported 与 invalid；
+- `require-complete`：任一 required projected input 不完整时不调用作者 callback，形成 `data-unavailable` result。不完整包括 not-recorded、core-invalid、unavailable、migration-required、migration-unavailable、unsupported 与 invalid。Package-owned dependency 能把对应 logical entry 判为 not-applicable；无法判定则保持 unresolved 并形成 recorded-data problem；
 - `allow-partial`：调用 callback，交付穷尽 `ProjectedSample`、coverage 与 issues；host-owned problems surface 仍保留全部问题；
 - projection callback throw 不是 partial data。Calculation、fixed Page 与 Download 不执行。`allow-partial` PageFamily 仍可收到穷尽 entries，只从成功的 `attachment-result` 展开实例，但 family/execution problem 不可隐藏，零实例也必须可见。static export 对任一 execution problem fail closed；
 - 只消费 `ReportCalculationResult` 的组件总是收到 result union，可以呈现 unavailable，不把它改名为 execution failure。
@@ -753,7 +753,9 @@ interface ReportProblemTableEntry {
 
 `summary` 是固定、bounded 的错误摘要，不携带 payload、secret、Record path 或 raw system cause。Projector 问题在 unique projection cache boundary 只生成一次；logical references 只引用同一个 problem ID。Effect interruption 不编码成 `ReportProblem`。
 
-Host 在作者 callback 之前从完整 Sample / projected results 汇总 recorded-data problems，在 callback 边界再追加 execution problems。唯一 canonical `problemTable` 去重保存问题；projection、Calculation、Page、Family 与 Download results 只保存 problem ID 引用。show、view 与 static renderer 都从这张表生成不可关闭的 built-in problems surface。作者过滤 entries、返回零 instance 或不画 problem node，都不能删除它。
+Host 在作者 callback 之前从完整 Sample / projected results 汇总 applicable recorded-data problems，在 callback 边界再追加 execution problems。Package-owned requiredness dependency 对每条 logical entry 只给出 required、not-applicable 或 unresolved；host 不理解具体 Evaluation kind。Raw projection coverage 保留物理结果，not-applicable 不形成 problem，unresolved 仍形成 problem。
+
+唯一 canonical `problemTable` 去重保存问题；projection、Calculation、Page、Family 与 Download results 只保存 problem ID 引用。show、view 与 static renderer 都从这张表生成不可关闭的 built-in problems surface。作者过滤 entries、返回零 instance 或不画 problem node，都不能删除它。
 
 Recorded-data problems 是可呈现事实，允许形成成功 static export。Projector / author defect、非法 semantic tree 或 route collision 是 execution problem。show/view 可以保留成功页面并显示问题；static export 对任一 execution problem fail closed。
 

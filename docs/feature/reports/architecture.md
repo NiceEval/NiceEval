@@ -15,7 +15,7 @@ AnalysisSampleHandle
   capability = same frozen reader view
           │
           ├─ classic facade：固定 projection plan
-          │   （evaluation plan / verdict / usage / timing）
+          │   （evaluation plan / verdict / kind-gated score / usage / timing）
           ├─ RecordProjection declarations（低层 API）
           ▼
 ProjectedSample（exhaustive logical entries + coverage + Attachment states）
@@ -72,6 +72,8 @@ Host 按 projection declaration identity 执行并缓存至多一次。Projector
 - logical access count；
 - 按 logical entries 统计的 Attachment result states。
 
+Package-owned projection 可以声明另一个同计划 projection 作为静态 requiredness dependency，并为每条 logical entry 给出 required、not-applicable 或 unresolved。Host 只理解这三种中立状态，不理解 Evaluation kind 或 Attachment key。Raw `ProjectionCoverage` 仍描述物理投影结果；completeness 与 problems surface 再应用 requiredness。只有 dependency 明确证明不适用时才忽略缺失数据，dependency 缺失、损坏或无法匹配 Slot 都保持 unresolved。
+
 通过率等业务读数必须由 Calculation value 自己定义 `observed` 与 `denominator`，host 不从 coverage、entry 数或 access count 推导。
 
 ## Completeness 与局部隔离
@@ -111,7 +113,7 @@ Host 在作者 callback 之前汇总 recorded-data problems，并在 callback �
 
 ## Classic facade 数据面
 
-facade 的固定 projection plan 声明 evaluation plan、verdict、usage 与 timing 四条官方投影。host 对 Sample 投影一次，构造深冻结 `Sample`，再调用 `page.render(sample)` 展开受控 JSX 树。
+facade 的固定 projection plan 声明 evaluation plan、verdict、kind-gated score、usage 与 timing 五条官方投影。Score 对 Pass Eval 为 not-applicable；对 Score Eval 为 required。host 对 Sample 投影一次，构造深冻结 `Sample`，再调用 `page.render(sample)` 展开受控 JSX 树。
 
 展开结果是树而不是数据访问：`render(sample)` 的时间在 projection 之后，I/O 已经闭合。`aggregate` 从这份已投影值分组，不再请求新的 Attachment。组件树与低层页面的输出进入同一个 closed validation，形成同一个 `ReportExecution`；show 文本、live view 与 static export 消费同一份 execution。公开 `show --json` 与 `--report` 互斥；`niceeval.report-show/v1` 只给内部 host / static 使用。
 

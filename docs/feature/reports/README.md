@@ -9,7 +9,7 @@ opaque Record
     ▼
 AnalysisSample
     ├─ classic facade：固定 projection plan
-    │  （evaluation plan / verdict / score / usage / timing）
+    │  （evaluation plan / verdict / kind-gated score / usage / timing）
     └─ 低层 projection API：RecordProjection 声明
     ▼
 深冻结 Sample / ProjectedSample
@@ -37,6 +37,10 @@ Score Eval 先在每道 Eval 内取 complete earned score 的 Attempt 均值，�
 纯 Score 范围只显示成绩并按总分排序，不把历史 Verdict claim 显示成 passed / failed；
 混合范围并排显示两种主读数。
 
+Score 投影按每个 Slot 的 Evaluation Plan 判定是否必需：Pass Eval 没有 Score
+Attachment 是不适用，不形成 data problem；Score Eval 缺失或损坏 Score 仍是问题。
+Evaluation kind 无法判定时不猜测为 Pass，Score 的适用性保持 unresolved 并进入 problems surface。
+
 ## 作者只声明数据与包装结果
 
 classic facade 作者从 `niceeval/report` 导入 `defineReport`、内置组件与 `aggregate` / `passRate` / `costUSD` / `experiment`，并从 `niceeval/record` 导入 `Sample` 类型。页面 `render(sample)` 读取这份深冻结样本，不接触 reader、path、root 或 Effect。
@@ -53,7 +57,7 @@ PageFamily 只能从已声明的 projected / calculated 内存值展开 route，
 
 ## 完整度与局部失败
 
-每个直接消费 projection 的低层 Calculation、Page、PageFamily 或 Download 声明 `allow-partial` 或 `require-complete`。未请求的坏 Attachment 不读取也不影响 execution。
+每个直接消费 projection 的低层 Calculation、Page、PageFamily 或 Download 声明 `allow-partial` 或 `require-complete`。未请求或经 package-owned dependency 确认为不适用的坏 Attachment 不影响 execution；依赖无法判定时仍形成问题。
 
 Recorded-data problem 允许成功呈现，并进入不可关闭的 problems surface。它包括 unavailable、migration-required、migration-unavailable、unsupported 与 invalid。projector / 作者 callback defect 是该 consumer 的 execution problem，其它页面继续；static export 对任一 execution problem fail closed。
 

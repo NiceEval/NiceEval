@@ -3,9 +3,6 @@ import { encodeAttemptLocator } from "../../attempt-locator.ts";
 import {
   assertionsProjector,
   attemptSlotProjection,
-  evaluationPlanProjector,
-  scoreProjector,
-  selectedRunProjection,
   verdictProjector,
   type AssertionSourceEntry,
   type AssertionSourceResult,
@@ -39,6 +36,10 @@ import {
   reportText,
   type ReportBlock,
 } from "../semantic/index.ts";
+import {
+  reportEvaluationPlanProjection,
+  reportScoreProjection,
+} from "../evaluation-projections.ts";
 
 const ASSERTION_ROWS_MAX = 200;
 
@@ -51,10 +52,10 @@ const assertionResultStates = [
 ] as const;
 
 const attemptOverviewInputs = reportInputs({
-  "evaluation-plan": selectedRunProjection(evaluationPlanProjector),
+  "evaluation-plan": reportEvaluationPlanProjection,
   assertions: attemptSlotProjection(assertionsProjector),
   verdict: attemptSlotProjection(verdictProjector),
-  score: attemptSlotProjection(scoreProjector),
+  score: reportScoreProjection,
   diagnostics: attemptSlotProjection(attemptDiagnosticsProjector),
 });
 
@@ -430,11 +431,6 @@ function scoreBlocks(
         tone: "neutral",
         label: "Score: not applicable for a pass evaluation",
       }),
-      ...(score === undefined
-        ? [projectionAlignmentStatus("Score")]
-        : score.state === "available"
-          ? scoreValueBlocks(score.value)
-          : [attachmentStatus("Score Attachment", score)]),
     ];
   }
   if (evaluationKind === "score") {

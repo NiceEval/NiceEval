@@ -1,6 +1,7 @@
 import type { AnalysisSample } from "../../analysis/index.ts";
 import type { ProjectedSample, ProjectionAccess } from "../../projection/model.ts";
 import {
+  projectionRequirementDependency,
   recordProjectionDeclaration,
   type RecordProjection,
 } from "../../projection/projector.ts";
@@ -238,6 +239,18 @@ export function reportInputs<const Shape extends object>(
     entries.push(Object.freeze({ key, projection }));
   }
   entries.sort((left, right) => compareText(left.key, right.key));
+
+  const projectionIdentities = new Set<object>(
+    entries.map((entry) => entry.projection as object),
+  );
+  for (const entry of entries) {
+    const dependency = projectionRequirementDependency(entry.projection);
+    if (dependency !== undefined && !projectionIdentities.has(dependency)) {
+      throw new TypeError(
+        `report input ${entry.key} requires its package projection dependency in the same plan`,
+      );
+    }
+  }
 
   const cardinality: ShapeCardinality<Shape> = entries.length === 0
     ? "empty" as ShapeCardinality<Shape>
