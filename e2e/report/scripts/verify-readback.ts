@@ -695,7 +695,10 @@ async function verifyExportAndServer(evidence: Evidence): Promise<void> {
     const attemptResp = await fetch(`${fullServer.baseUrl}/${attemptHref}`);
     assert.equal(attemptResp.status, 200, "server should serve the attempt detail page with 200");
     const attemptBody = await attemptResp.text();
-    const exportedAttempt = readFileSync(join(evidence.siteExportDir, "attempt", `${evidence.main.attempts[0]!.locator}.html`), "utf8");
+    const exportedAttempt = readFileSync(
+      join(evidence.siteExportDir, "attempt", `${encodeURIComponent(evidence.main.attempts[0]!.locator)}.html`),
+      "utf8",
+    );
     assert.equal(attemptBody, exportedAttempt, "local server's attempt page must be byte-identical to the --out export's for the same locator");
 
     // sources.json 在带外(server 响应)场景下是已解引用的 {path, content}[],绝不是磁盘上
@@ -731,11 +734,11 @@ async function verifyExportAndServer(evidence: Evidence): Promise<void> {
     assert.ok(existsSync(join(narrowedOutDir, "artifact", "main")), "narrowed --out should still export the in-scope experiment's artifact tree");
     assert.ok(!existsSync(join(narrowedOutDir, "artifact", "deliberate-fail")), "narrowed --out must not export the out-of-scope experiment's artifact tree");
     assert.ok(
-      !existsSync(join(narrowedOutDir, "attempt", `${evidence.deliberateFail.attempt.locator}.html`)),
+      !existsSync(join(narrowedOutDir, "attempt", `${encodeURIComponent(evidence.deliberateFail.attempt.locator)}.html`)),
       "narrowed --out must not generate an HTML document for an out-of-scope attempt's locator at all",
     );
     assert.ok(
-      existsSync(join(narrowedOutDir, "attempt", `${evidence.main.attempts[0]!.locator}.html`)),
+      existsSync(join(narrowedOutDir, "attempt", `${encodeURIComponent(evidence.main.attempts[0]!.locator)}.html`)),
       "narrowed --out should still generate the in-scope attempt's HTML document",
     );
   } finally {
@@ -766,7 +769,11 @@ async function verifyExportAndServer(evidence: Evidence): Promise<void> {
 
   // --- attempt/<locator>.html 在没有 JavaScript 的情况下也完全可读:去掉所有 <script> 标签,
   //     确认真实的 verdict/assertion 文本依然出现在剩下的标记里。
-  const failedAttemptHtmlPath = join(evidence.siteExportDir, "attempt", `${evidence.deliberateFail.attempt.locator}.html`);
+  const failedAttemptHtmlPath = join(
+    evidence.siteExportDir,
+    "attempt",
+    `${encodeURIComponent(evidence.deliberateFail.attempt.locator)}.html`,
+  );
   const failedAttemptHtml = readFileSync(failedAttemptHtmlPath, "utf8");
   const withoutScripts = failedAttemptHtml.replace(/<script[\s\S]*?<\/script>/gi, "");
   assert.ok(withoutScripts.includes("deliberate-fail"), "attempt HTML with all <script> tags stripped should still show the eval id");

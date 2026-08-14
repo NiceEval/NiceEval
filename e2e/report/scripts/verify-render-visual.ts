@@ -64,7 +64,6 @@ import type { Evidence } from "./evidence.ts";
  * englishLocaleSlice 同款约束):zh-CN 副本默认 `hidden`,不 scope 到这层选择器会在 Playwright
  * 严格模式下因为匹配到两份(en + 隐藏的 zh-CN)而报错。 */
 const EN_SCOPE = '[data-niceeval-locale="en"]';
-const AGENTS = ["results-mechanism", "results-deliberate-fail", "results-deliberate-error"] as const;
 
 const MIME_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -81,7 +80,13 @@ async function serveStaticDir(rootDir: string): Promise<{ baseUrl: string; close
     void (async () => {
       try {
         const url = new URL(req.url ?? "/", "http://localhost");
-        const pathname = url.pathname === "/" ? "/index.html" : decodeURIComponent(url.pathname);
+        const pathname = url.pathname === "/" ? "/index.html" : url.pathname;
+        // Chromium 会在文档未声明 favicon 时自行探测；它不属于 report 资源或水合错误。
+        if (pathname === "/favicon.ico") {
+          res.writeHead(204);
+          res.end();
+          return;
+        }
         const filePath = join(rootDir, pathname);
         if (!filePath.startsWith(rootDir)) {
           res.writeHead(403);
@@ -106,7 +111,7 @@ async function serveStaticDir(rootDir: string): Promise<{ baseUrl: string; close
 }
 
 function attemptFileUrl(evidence: Evidence, locator: string): string {
-  return pathToFileURL(resolve(evidence.siteExportDir, "attempt", `${locator}.html`)).href;
+  return pathToFileURL(resolve(evidence.siteExportDir, "attempt", `${encodeURIComponent(locator)}.html`)).href;
 }
 
 /** 解析 computed color 字符串的 alpha 分量;CSS 里的 `color-mix(in oklch, ...)` 在 Chromium 里
@@ -172,10 +177,12 @@ async function verifyStructuredLayoutNotUaDefault(browser: Browser, evidence: Ev
       "AttemptSummary KPI",
     );
 
-    // deliberateFail 的失败行默认展开，badge 与断言名应处于同一视觉行。
+    // deliberateFail 的失败行默认展开，失败行号标记与源码应处于同一视觉行。
     assertSameVisualRow(
-      await directChildRects(page.locator(`${EN_SCOPE} .niceeval-source-view .niceeval-source-assertion`).first()),
-      "失败断言头",
+      await directChildRects(
+        page.locator(`${EN_SCOPE} details.niceeval-source-line--gate-fail > summary .niceeval-source-line-summary`),
+      ),
+      "失败源码行",
     );
 
     // 换到 main(passed)attempt,复核"conversation/send 区块"这一类:send 行展开区里的回复列表
@@ -302,7 +309,7 @@ async function verifyClickToExpandInteraction(browser: Browser, evidence: Eviden
     const plainLine = page.locator(`${EN_SCOPE} .niceeval-source-view .niceeval-source-line`).first();
     assert.equal(await plainLine.locator("summary").count(), 0, "普通源码行不应具有可展开语义");
     await plainLine.click();
-    const openCountAfterPlainClick = await page.locator(`${EN_SCOPE} details[open]`).count();
+    const openCountAfterPlainClick = await page.locator(`${EN_SCOPE} .niceeval-source-view details[open]`).count();
     assert.equal(openCountAfterPlainClick, 1, "点击普通行不应触发任何 <details> 展开(应仍只有前面手动重新展开的那一条)");
 
     // --- main(passed attempt):send 行与 passed assertion 行的点击展开。
@@ -393,6 +400,9 @@ async function verifyIndexPageLive(browser: Browser, baseUrl: string, evidence: 
   page.on("console", (msg) => {
     if (msg.type() === "error") consoleErrors.push(msg.text());
   });
+  page.on("response", (response) => {
+    if (response.status() >= 400) consoleErrors.push(`HTTP ${response.status()} ${response.url()}`);
+  });
   page.on("pageerror", (err) => consoleErrors.push(String(err)));
   try {
     await page.goto(`${baseUrl}/index.html`, { waitUntil: "networkidle" });
@@ -411,60 +421,58 @@ async function verifyIndexPageLive(browser: Browser, baseUrl: string, evidence: 
     const tabTitles = await topbar.getByRole("tab").allTextContents();
     assert.deepEqual(
       tabTitles,
-      ["Report", "Attempts", "Traces"],
-      "topbar 导航项应等于 standard 报告 navigation !== false 的三张 page,按声明顺序渲染(不是只验证驱动它的数据契约,是真实水合出的 DOM)",
+      ["Overview", "Attempts", "Traces"],
+      "topbar 导航项应等于 classic 报告 navigation !== false 的三张 page,按声明顺序渲染(不是只验证驱动它的数据契约,是真实水合出的 DOM)",
     );
 
     // ExperimentList 的前两个字段在桌面视口横向成栏；具体 CSS 布局机制不属于契约。
     assertSameVisualRow(
-      await directChildRects(page.locator(".niceeval-experiment-summary").first()),
+      await directChildRects(page.locator(".niceeval-table-hierarchy-summary").first()),
       "ExperimentList 摘要",
     );
 
-    // 同一 agent 跨 ExperimentList / AttemptList / MetricScatter 应呈现同一种颜色。class
-    // 只用于定位元素，预期比较的是浏览器实际绘制的颜色，不要求由哪一个散列函数或 class 实现。
-    const reportColors = new Map<string, string>();
-    for (const agent of AGENTS) {
-      const key = page.locator(".niceeval-experiment-agent", { hasText: agent }).first();
-      await key.waitFor({ state: "visible" });
-      reportColors.set(agent, await key.evaluate((el) => getComputedStyle(el).color));
-    }
-    const scatterMain = page.locator(".niceeval-legend-key", { hasText: AGENTS[0] }).first();
+    // Scatter 的同一 series 在实际点标记与 legend swatch 中必须使用同一绘制色；比较的是
+    // 浏览器最终 computed fill，不锁实现 class 或内部颜色 token。
+    const scatter = page.locator("figure.niceeval-chart--scatter");
+    const scatterPoint = scatter.locator('[data-series="scatter:results-mechanism"] .niceeval-chart-dot').first();
+    const scatterLegend = scatter.locator(".niceeval-chart-legend-item", { hasText: "results-mechanism" }).first();
     assert.equal(
-      await scatterMain.evaluate((el) => getComputedStyle(el).color),
-      reportColors.get(AGENTS[0]),
-      `同一 agent "${AGENTS[0]}" 在 MetricScatter 与 ExperimentList 中应呈现同一种颜色`,
+      await scatterPoint.evaluate((el) => getComputedStyle(el).fill),
+      await scatterLegend.locator("path").evaluate((el) => getComputedStyle(el).fill),
+      "results-mechanism 的 Scatter 点与 legend swatch 应呈现同一种颜色",
     );
 
-    await topbar.getByRole("tab", { name: "Attempts" }).click();
-    for (const agent of AGENTS) {
-      const key = page.locator(".niceeval-attempt-agent", { hasText: agent }).first();
-      await key.waitFor({ state: "visible" });
-      assert.equal(
-        await key.evaluate((el) => getComputedStyle(el).color),
-        reportColors.get(agent),
-        `同一 agent "${agent}" 在 AttemptList 与 ExperimentList 中应呈现同一种颜色`,
-      );
-    }
-    await topbar.getByRole("tab", { name: "Report" }).click();
+    const attemptsTab = topbar.getByRole("tab", { name: "Attempts" });
+    await attemptsTab.click();
+    assert.equal(await attemptsTab.getAttribute("aria-selected"), "true");
+    await page.locator("#tab-page-attempts").waitFor({ state: "visible" });
+    await topbar.getByRole("tab", { name: "Overview" }).click();
 
     // 点击失败 attempt 的 locator:触发现场 fetch(attempt 文档)+ dialog,验证端到端工作且
     // dialog 里渲染出来的内容也带着真实的失败细节与状态染色。locator 链接挂在 ExperimentList
     // 每个 experiment 自己的 <details> 折叠区里,默认收起——先展开 deliberate-fail 这一条,
     // 链接才可见可点。
     const failLocator = evidence.deliberateFail.attempt.locator;
-    const experimentEntry = page.locator('details.niceeval-experiment-entry', {
-      has: page.locator('.niceeval-experiment-name[data-sort-value="deliberate-fail"]'),
-    });
-    await experimentEntry.locator("summary.niceeval-experiment-summary").click();
-    const link = experimentEntry.locator(`a.niceeval-locator[href="attempt/${encodeURIComponent(failLocator)}.html"]`);
+    const link = page.locator(`a.niceeval-locator[href="attempt/${encodeURIComponent(failLocator)}.html"]`).first();
+    const collapsedAncestors = link.locator("xpath=ancestor::details");
+    for (let index = 0; index < (await collapsedAncestors.count()); index += 1) {
+      const group = collapsedAncestors.nth(index);
+      if ((await group.getAttribute("open")) === null) await group.locator(":scope > summary").click();
+    }
     await link.click();
     const dialog = page.getByRole("dialog");
     await dialog.waitFor({ state: "visible", timeout: 10_000 });
-    const dialogText = await dialog.innerText();
-    assert.ok(
-      dialogText.includes("expected: 3") && dialogText.includes("received: 2"),
-      "index 页点击失败 attempt 的 locator 后,dialog 里应展示 fetch 回来的真实失败详情",
+    assert.equal(await dialog.locator(".niceeval-source-block-path").innerText(), "evals/deliberate-fail.eval.ts");
+    const failedLine = dialog.locator("details.niceeval-source-line--gate-fail");
+    assert.equal(await failedLine.count(), 1);
+    assert.equal(await failedLine.getAttribute("open"), "");
+    assert.equal(await failedLine.locator(".niceeval-source-gutter-mark").getAttribute("aria-label"), "failed");
+    assert.equal(await failedLine.locator(".niceeval-source-assertion").innerText(), "equals(3) · gate failed");
+    assert.equal(await failedLine.locator(".niceeval-source-assertion-body").innerText(), "expected: 3\nreceived: 2");
+    assert.notEqual(
+      await failedLine.locator(".niceeval-source-assertion").evaluate((el) => getComputedStyle(el).color),
+      await dialog.locator(".niceeval-source-code").first().evaluate((el) => getComputedStyle(el).color),
+      "失败 assertion 的实际绘制颜色应与普通源码文本可区分",
     );
   } finally {
     await page.close();
@@ -473,7 +481,9 @@ async function verifyIndexPageLive(browser: Browser, baseUrl: string, evidence: 
 
 export async function verifyRenderVisual(evidence: Evidence): Promise<void> {
   const { baseUrl, close } = await serveStaticDir(resolve(evidence.siteExportDir));
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({
+    executablePath: process.env.CHROMIUM_EXECUTABLE_PATH || undefined,
+  });
   try {
     await verifyIndexPageLive(browser, baseUrl, evidence);
     await verifyStructuredLayoutNotUaDefault(browser, evidence);

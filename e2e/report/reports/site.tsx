@@ -8,7 +8,13 @@
 // overview 页用嵌套 Section 包 Grid/Stat(toSummaryItems 现算)与 eval×agent 矩阵 Table;scoreboard
 // 页用 aggregate 成绩单与带过滤框的对比 Table。
 import type { AttemptEvidence, Sample } from "niceeval/record";
-import type { AttemptListItem, Cell, MetricValue } from "niceeval/report";
+import type {
+  AttemptListItem,
+  AttemptLocator,
+  Cell,
+  MetricValue,
+  PageDefinition,
+} from "niceeval/report";
 import {
   AttemptAssessment,
   AttemptSummary,
@@ -107,6 +113,7 @@ function attemptListTableRows(
   items: readonly AttemptListItem[],
 ): Array<{
   key: string;
+  eval: Cell;
   entity: Cell;
   verdict: Cell;
   result: Cell;
@@ -115,6 +122,7 @@ function attemptListTableRows(
 }> {
   return items.map((item) => ({
     key: item.locator,
+    eval: { kind: "text", text: item.evalId },
     entity: {
       kind: "locator",
       locator: item.locator,
@@ -224,7 +232,7 @@ async function attemptsRender(sample: Sample) {
       <SampleNotices />
       <Table
         rows={attemptListTableRows(items)}
-        columns={["entity", "verdict", "result", "durationMs", "costUSD"]}
+        columns={["eval", "entity", "verdict", "result", "durationMs", "costUSD"]}
         searchable
       />
     </Col>
@@ -241,6 +249,22 @@ async function reviewRender(attempt: AttemptEvidence) {
     </Col>
   );
 }
+
+const attemptPage: PageDefinition<{ locator: AttemptLocator }, AttemptEvidence> = {
+  id: "attempt",
+  title: { en: "Attempt review", "zh-CN": "Attempt 复核" },
+  navigation: false,
+  params: {
+    encode: ({ locator }) => locator,
+    decode: (key) => ({ locator: key as AttemptLocator }),
+    enumerate: (base) =>
+      base.attempts.flatMap((attempt) =>
+        attempt.locator === undefined ? [] : [{ locator: attempt.locator }],
+      ),
+  },
+  load: (_base, { locator }, ctx) => ctx.evidence(locator),
+  render: reviewRender,
+};
 
 export default defineReport({
   title: { en: "Results E2E · Custom site", "zh-CN": "Results E2E · 自定义站点" },
@@ -260,12 +284,6 @@ export default defineReport({
       title: { en: "Attempts", "zh-CN": "Attempt" },
       render: attemptsRender,
     },
-    {
-      id: "review",
-      title: { en: "Attempt review", "zh-CN": "Attempt 复核" },
-      input: "attempt",
-      navigation: false,
-      render: reviewRender,
-    },
+    attemptPage,
   ],
 });

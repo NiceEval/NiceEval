@@ -19,12 +19,13 @@ export const attemptSourceScenarios: readonly ReportComponentScenario[] = [
         await page.locator(`#tab-page-attempts a.niceeval-locator[href="${href}"]`).click();
         const dialog = page.getByRole("dialog");
         await dialog.waitFor({ state: "visible", timeout: 10_000 });
-        const badLine = dialog.locator("details.niceeval-source-line.niceeval-tone-bad");
+        const badLine = dialog.locator("details.niceeval-source-line.niceeval-source-line--gate-fail");
         assert.equal(await badLine.count(), 1);
+        assert.equal(await badLine.locator(".niceeval-source-gutter-mark").getAttribute("aria-label"), "failed");
         assert.equal(await badLine.getAttribute("open"), "");
-        await badLine.locator("> summary").click();
+        await badLine.locator(":scope > summary").click();
         assert.equal(await badLine.getAttribute("open"), null);
-        await badLine.locator("> summary").click();
+        await badLine.locator(":scope > summary").click();
         assert.equal(await badLine.getAttribute("open"), "");
       } finally {
         await page.close();

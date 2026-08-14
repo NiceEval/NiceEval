@@ -33,7 +33,7 @@ export const siteShellScenarios: readonly ReportComponentScenario[] = [
     // 场景：用户输错自定义报告的 page id。
     // Given：site.tsx 有三张导航页和一张 navigation:false 的 attempt page。
     // When：用户执行 --page bogus。
-    // Then：命令失败且只列公开导航页，不泄漏隐藏的 review page。
+    // Then：命令失败且只列公开导航页，不泄漏隐藏的参数化 attempt page。
     async run({ evidence }) {
       const bad = shRaw(`pnpm exec niceeval show --report ${SITE_REPORT} --record ${evidence.resultsRoot} --page bogus`);
       assert.notEqual(bad.status, 0, "--page bogus 应失败");
@@ -41,7 +41,7 @@ export const siteShellScenarios: readonly ReportComponentScenario[] = [
         bad.combined.includes("Available pages: overview, scoreboard, attempts"),
         `错误应只列公开导航页；got:\n${bad.combined}`,
       );
-      assert.ok(!bad.combined.includes("review"), "隐藏的 attempt-input page 不应出现在候选列表");
+      assert.ok(!/\battempt\b/.test(bad.combined), "隐藏的参数化 attempt page 不应出现在候选列表");
     },
   },
   {
@@ -163,7 +163,7 @@ export const siteShellScenarios: readonly ReportComponentScenario[] = [
   {
     name: "Report shell · 自定义多页按声明顺序导航",
     // 场景：用户定义三张自定义导航页。
-    // Given：site.tsx 的 review page 明确 navigation:false。
+    // Given：site.tsx 的参数化 attempt page 明确 navigation:false。
     // When：浏览器水合顶部导航。
     // Then：只出现 Overview、Scoreboard、Attempts，顺序与报告声明一致。
     async run({ browser, siteBaseUrl }) {

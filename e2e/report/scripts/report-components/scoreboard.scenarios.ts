@@ -16,7 +16,11 @@ export const scoreboardScenarios: readonly ReportComponentScenario[] = [
         `pnpm exec niceeval show --report ${SITE_REPORT} --record ${evidence.resultsRoot} --page scoreboard`,
       );
       assert.ok(out.includes("Exam"));
-      assert.ok(out.includes("/100"), "Scoreboard 应按声明的 fullMarks=100 显示总分");
+      assert.match(
+        out,
+        /^\s*deliberate-fail\s+0 \/ 100\s*$/m,
+        "Scoreboard 应把 deliberate-fail 与声明的 fullMarks=100 绑定在同一行",
+      );
     },
   },
   {

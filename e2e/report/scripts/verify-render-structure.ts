@@ -101,14 +101,11 @@ const ATTEMPT_DETAIL_ORDER = [
   "attempt-summary",
   "attempt-error",
   "attempt-source",
-  "attempt-assertions",
   "attempt-fix-prompt",
-  "attempt-timeline",
-  "attempt-diagnostics",
-  "usage-table",
   "attempt-conversation",
-  "attempt-trace",
-  "attempt-diff",
+  "attempt-timeline",
+  "usage-table",
+  "attempt-diagnostics",
 ];
 
 function escapeRegExp(s: string): string {
@@ -123,12 +120,26 @@ function looseIncludes(text: string, phrase: string): boolean {
   return text.replace(/\s+/g, " ").includes(phrase);
 }
 
+function extractTextStatValue(text: string, label: string): string | null {
+  const lines = text.split(/\r?\n/);
+  for (const labels of [["Pass rate", "Experiments", "Evals"], ["Attempts", "Eval results", "Total cost"]]) {
+    const column = labels.indexOf(label);
+    if (column < 0) continue;
+    const header = lines.findIndex((line) => labels.every((candidate) => line.includes(candidate)));
+    if (header < 0) return null;
+    const starts = labels.map((candidate) => lines[header]!.indexOf(candidate));
+    const end = starts[column + 1];
+    return lines[header + 1]!.slice(starts[column], end).trim();
+  }
+  return null;
+}
+
 function readSiteFile(evidence: Evidence, ...parts: string[]): string {
   return readFileSync(join(evidence.siteExportDir, ...parts), "utf8");
 }
 
 function attemptHtml(evidence: Evidence, locator: string): string {
-  return readSiteFile(evidence, "attempt", `${locator}.html`);
+  return readSiteFile(evidence, "attempt", `${encodeURIComponent(locator)}.html`);
 }
 
 /** attempt/<locator>.html 把两种 locale 作为并列的 `data-niceeval-locale` 包裹 div 一起携带;
@@ -143,9 +154,20 @@ function englishLocaleSlice(html: string): string {
 function attemptBlockOrder(evidence: Evidence, locator: string): string[] {
   const en = englishLocaleSlice(attemptHtml(evidence, locator));
   const blocks: string[] = [];
-  const re = /class="niceeval-report niceeval-((?:attempt-[a-z-]+|usage-table))"/g;
+  const re = /<[a-z]+ class="niceeval-report ([^"]+)"/g;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(en))) blocks.push(m[1]!);
+  while ((m = re.exec(en))) {
+    const classes = m[1]!.split(" ");
+    if (classes.includes("niceeval-attempt-summary")) blocks.push("attempt-summary");
+    else if (classes.includes("niceeval-source-view")) blocks.push("attempt-source");
+    else if (classes.includes("niceeval-copy-block")) blocks.push("attempt-fix-prompt");
+    else if (classes.includes("niceeval-conversation")) blocks.push("attempt-conversation");
+    else if (classes.includes("niceeval-waterfall")) blocks.push("attempt-timeline");
+    else if (classes.includes("niceeval-usage-table")) blocks.push("usage-table");
+    else if (classes.includes("niceeval-callouts")) {
+      blocks.push(blocks.includes("attempt-source") ? "attempt-diagnostics" : "attempt-error");
+    }
+  }
   return blocks;
 }
 
@@ -179,10 +201,10 @@ async function verifyAttemptDetailStructure(evidence: Evidence): Promise<void> {
   //     Summary、Source、Timeline、Usage、Conversation;其余部分没有证据可渲染。
   const mainBlocks = attemptBlockOrder(evidence, mainLocator);
   assertSubsequenceOfCanonicalOrder(mainBlocks, `attempt/${mainLocator}.html (passed)`);
-  for (const must of ["attempt-summary", "attempt-source", "attempt-timeline", "usage-table"]) {
+  for (const must of ["attempt-summary", "attempt-source", "attempt-conversation", "attempt-timeline", "usage-table"]) {
     assert.ok(mainBlocks.includes(must), `passed attempt ${mainLocator} is missing "${must}"`);
   }
-  for (const mustNot of ["attempt-error", "attempt-assertions", "attempt-fix-prompt", "attempt-diagnostics", "attempt-trace", "attempt-diff"]) {
+  for (const mustNot of ["attempt-error", "attempt-fix-prompt", "attempt-diagnostics"]) {
     assert.ok(!mainBlocks.includes(mustNot), `passed attempt ${mainLocator} unexpectedly rendered "${mustNot}" — zero-evidence components must produce zero output, not an empty placeholder block (report.md 结构条)`);
   }
 
@@ -207,23 +229,21 @@ async function verifyAttemptDetailStructure(evidence: Evidence): Promise<void> {
   //     所以它保持为空)。
   const failBlocks = attemptBlockOrder(evidence, failLocator);
   assertSubsequenceOfCanonicalOrder(failBlocks, `attempt/${failLocator}.html (failed)`);
-  for (const must of ["attempt-summary", "attempt-source", "attempt-fix-prompt", "attempt-timeline", "usage-table"]) {
+  for (const must of ["attempt-summary", "attempt-source", "attempt-fix-prompt", "attempt-timeline", "attempt-diagnostics"]) {
     assert.ok(failBlocks.includes(must), `failed attempt ${failLocator} is missing "${must}"`);
   }
-  for (const mustNot of ["attempt-error", "attempt-assertions", "attempt-diagnostics", "attempt-conversation", "attempt-trace", "attempt-diff"]) {
+  for (const mustNot of ["attempt-error", "attempt-conversation", "usage-table"]) {
     assert.ok(!failBlocks.includes(mustNot), `failed attempt ${failLocator} unexpectedly rendered "${mustNot}"`);
   }
 
-  // --- Errored attempt(deliberate-error):在任何 turn 之前就抛出异常 -> 既没有 source
-  //     capability,也没有 assertion(0 条),所以 AttemptAssessment 的兜底(AttemptAssertions)
-  //     本身也是空的——attempt-source 和 attempt-assertions 都不会渲染;渲染的是 AttemptError
-  //     (结构化的异常信息)。
+  // --- Errored attempt(deliberate-error):在任何 turn 之前就抛出异常。源码快照仍然存在，
+  //     但没有 conversation / usage；错误与执行证据缺失分别由前后两个 Callouts 表达。
   const errorBlocks = attemptBlockOrder(evidence, errorLocator);
   assertSubsequenceOfCanonicalOrder(errorBlocks, `attempt/${errorLocator}.html (errored)`);
-  for (const must of ["attempt-summary", "attempt-error", "attempt-fix-prompt", "attempt-timeline", "usage-table"]) {
+  for (const must of ["attempt-summary", "attempt-error", "attempt-source", "attempt-fix-prompt", "attempt-timeline", "attempt-diagnostics"]) {
     assert.ok(errorBlocks.includes(must), `errored attempt ${errorLocator} is missing "${must}"`);
   }
-  for (const mustNot of ["attempt-source", "attempt-assertions", "attempt-diagnostics", "attempt-conversation", "attempt-trace", "attempt-diff"]) {
+  for (const mustNot of ["attempt-conversation", "usage-table"]) {
     assert.ok(!errorBlocks.includes(mustNot), `errored attempt ${errorLocator} unexpectedly rendered "${mustNot}"`);
   }
 
@@ -231,42 +251,43 @@ async function verifyAttemptDetailStructure(evidence: Evidence): Promise<void> {
   //     gate assertion 是确定性的固定事实(equals(1+1, 3) 恒定以同样的方式失败)。
   const failHtml = attemptHtml(evidence, failLocator);
   assert.ok(
-    /<details class="niceeval-source-line niceeval-tone-bad" open="">/.test(failHtml),
+    /<details class="niceeval-source-line niceeval-source-line--gate-fail" open="">/.test(failHtml),
     `${failLocator}'s failing source line should default-open (docs/feature/reports/components/primitives/source-view.md「web 面视觉规范」: 首个失败或警告行默认展开)`,
   );
   assert.ok(failHtml.includes("expected: 3") && failHtml.includes("received: 2"), `${failLocator} web face is missing the expected/received text for its equals(3) assertion`);
-  assert.ok(failHtml.includes('<span class="niceeval-assertion-badge">failed</span>'), `${failLocator} web face is missing the failed assertion badge`);
-  assert.ok(failHtml.includes('<span class="niceeval-assertion-name">equals(3)</span>'), `${failLocator} web face is missing the assertion name`);
+  assert.ok(failHtml.includes("equals(3) · gate failed"), `${failLocator} web face is missing the failed assertion identity and verdict`);
 
   // --- errored attempt 的结构化错误字段(deliberate-error.eval.ts 固定抛出的异常)。
   const errorHtml = attemptHtml(evidence, errorLocator);
-  assert.ok(errorHtml.includes("<dt>phase</dt><dd>eval.run</dd>"), `${errorLocator} web face is missing the structured error's phase field`);
-  assert.ok(errorHtml.includes("<dt>code</dt><dd>unexpected-error</dd>"), `${errorLocator} web face is missing the structured error's code field`);
+  assert.ok(errorHtml.includes('class="niceeval-callout-title">eval.run</span>'), `${errorLocator} web face is missing the structured error's phase field`);
+  assert.ok(errorHtml.includes("unexpected-error: deliberate error for e2e contract testing"), `${errorLocator} web face is missing the structured error's code and message`);
   assert.ok(errorHtml.includes("deliberate error for e2e contract testing"), `${errorLocator} web face is missing the error message`);
 
   // --- locator 链接:report 页的 ExperimentList 和 traces 页的 TraceWaterfall,都会把每一个
   //     真实 attempt 链接到它自己的详情文档。
   const indexHtml = readSiteFile(evidence, "index.html");
   for (const locator of [mainLocator, evidence.main.attempts[1]!.locator, failLocator, errorLocator]) {
-    const href = `attempt/${locator.replace("@", "%40")}.html`;
+    const href = `attempt/${encodeURIComponent(locator)}.html`;
     assert.ok(indexHtml.includes(`href="${href}"`), `index.html has no attempt link for ${locator} (expected href="${href}")`);
   }
 
-  // --- drill-down 命令:show 自己的文本面,在它解释的每个事实旁边都带着可直接复制的证据
-  //     命令,而不只是裸的 locator。
+  // --- show 的官方 attempt 首页直接组合摘要、源码身份、时间轴和诊断；详细断言文本
+  //     仍由显式 --source 切片验收。traces 页链接回同一个官方详情入口。
   const root = evidence.resultsRoot;
   const showFailBare = sh(`pnpm exec niceeval show ${failLocator} --record ${root}`);
-  assert.ok(showFailBare.includes(`niceeval show ${failLocator} --source`), `show ${failLocator}'s bare overview is missing the --source drill-down command`);
-  assert.ok(showFailBare.includes(`niceeval show ${failLocator} --timing`), `show ${failLocator}'s bare overview is missing the --timing drill-down command`);
-  assert.ok(showFailBare.includes("expected: 3") && showFailBare.includes("received: 2"), `show ${failLocator}'s bare overview is missing expected/received text`);
+  assert.ok(showFailBare.includes(`${failLocator} · failed`), `show ${failLocator}'s official attempt page is missing its identity and verdict`);
+  assert.ok(showFailBare.includes("evals/deliberate-fail.eval.ts:13 [gate-fail]"), `show ${failLocator}'s official attempt page is missing its failed source identity`);
+  assert.ok(showFailBare.includes("Execution timeline"), `show ${failLocator}'s official attempt page is missing its timeline`);
+  const showFailSource = sh(`pnpm exec niceeval show ${failLocator} --source --record ${root}`);
+  assert.ok(showFailSource.includes("gate · equals(3) · expected 3 · received 2"), `show ${failLocator} --source is missing expected/received text`);
 
   const showErrorBare = sh(`pnpm exec niceeval show ${errorLocator} --record ${root}`);
-  assert.ok(showErrorBare.includes("phase: eval.run"), `show ${errorLocator}'s bare overview is missing the error's phase`);
+  assert.ok(showErrorBare.includes("eval.run · 1 errors"), `show ${errorLocator}'s bare overview is missing the error's phase and count`);
   assert.ok(showErrorBare.includes("unexpected-error"), `show ${errorLocator}'s bare overview is missing the error's code`);
 
   const tracesText = sh(`pnpm exec niceeval show --record ${root} --page traces`);
   for (const locator of [mainLocator, failLocator, errorLocator]) {
-    assert.ok(tracesText.includes(`niceeval show ${locator} --timing`), `traces page text is missing the --timing drill-down command for ${locator}`);
+    assert.ok(tracesText.includes(`niceeval show ${locator}`), `traces page text is missing the attempt-detail command for ${locator}`);
   }
 }
 
@@ -277,7 +298,8 @@ async function verifyAttemptDetailStructure(evidence: Evidence): Promise<void> {
 
 async function verifyScopeWarningsBrandAndNavigation(evidence: Evidence): Promise<void> {
   const indexHtml = readSiteFile(evidence, "index.html");
-  const reportTpl = extractTemplate(indexHtml, "niceeval-report-report-en");
+  const reportTpl = extractTemplate(indexHtml, "niceeval-report-overview-en");
+  const attemptsTpl = extractTemplate(indexHtml, "niceeval-report-attempts-en");
 
   // --- ScopeWarnings:警告 kind 全集现在只有 unfinished-snapshot / missing-startedAt /
   //     unreadable-snapshot 三种(docs/feature/sample/library.md#警告-kind-全集)——旧的
@@ -295,12 +317,12 @@ async function verifyScopeWarningsBrandAndNavigation(evidence: Evidence): Promis
 
   // --- CopyFixPrompt:deliberate-fail + deliberate-error 恒定是那 2 个失败(main 的两次真实
   //     网关 attempt 恒定都通过)。
-  assert.ok(reportTpl.includes('<summary class="niceeval-copy-block-summary">Fix prompt · 2 failures</summary>'), 'CopyBlock fix-prompt summary should read "Fix prompt · 2 failures"');
+  assert.ok(attemptsTpl.includes('<summary class="niceeval-copy-block-summary">Fix prompt · 2 failures</summary>'), 'Attempts page CopyBlock fix-prompt summary should read "Fix prompt · 2 failures"');
 
   // --- PoweredBy/HeroCard 品牌链接:固定的 href 带 utm 参数,rel="noopener" 但不带
   //     noreferrer,出现在每个 locale 下每个可导航页面上(web 恒含)。
   const brandLinkRe = /<a href="https:\/\/niceeval\.com\/\?utm_source=report&amp;utm_medium=powered-by" target="_blank" rel="noopener">Powered by NiceEval<\/a>/;
-  for (const pageId of ["report", "attempts", "traces"]) {
+  for (const pageId of ["overview", "attempts", "traces"]) {
     for (const locale of ["en", "zh-CN"]) {
       const tpl = extractTemplate(indexHtml, `niceeval-report-${pageId}-${locale}`);
       assert.ok(brandLinkRe.test(tpl), `${pageId}/${locale} template is missing the exact PoweredBy/HeroCard brand link (href with utm_source=report&utm_medium=powered-by, rel="noopener")`);
@@ -336,10 +358,10 @@ async function verifyScopeWarningsBrandAndNavigation(evidence: Evidence): Promis
   const viewData = JSON.parse(dataMatch![1]!) as { report: { pages: Array<{ id: string }>; initialPageId: string } };
   assert.deepEqual(
     viewData.report.pages.map((p) => p.id),
-    ["report", "attempts", "traces"],
+    ["overview", "attempts", "traces"],
     "view data's page list should be exactly the standard report's navigation !== false pages, in declared order, excluding the attempt-input page (report.md 结构条: 导航项与顺序等于报告定义中 navigation !== false 的页,不多不少)",
   );
-  assert.equal(viewData.report.initialPageId, "report", "view data's initial page should be the first navigable page");
+  assert.equal(viewData.report.initialPageId, "overview", "view data's initial page should be the first navigable page");
 }
 
 // ---------------------------------------------------------------------------
@@ -373,7 +395,7 @@ function assertValueDecreasesAsPositionIncreases(ticks: Array<{ pos: number; val
 
 async function verifyMetricScatterStructure(evidence: Evidence): Promise<void> {
   const indexHtml = readSiteFile(evidence, "index.html");
-  const reportTpl = extractTemplate(indexHtml, "niceeval-report-report-en");
+  const reportTpl = extractTemplate(indexHtml, "niceeval-report-overview-en");
   const figureMatch = reportTpl.match(/<figure class="niceeval-report niceeval-chart niceeval-chart--scatter">([\s\S]*?)<\/figure>/);
   assert.ok(figureMatch, "report page is missing the Scatter chart figure");
   const scatter = figureMatch![1]!;
@@ -387,7 +409,7 @@ async function verifyMetricScatterStructure(evidence: Evidence): Promise<void> {
 
   // --- 缺失数据点计数:deliberate-fail/deliberate-error 从不带成本数据(固定事实,见文件
   //     头部说明),所以不管真实的美元金额是多少,这里恒定是 2。
-  assert.ok(scatter.includes("2 points missing data"), "MetricScatter should report exactly 2 points missing data");
+  assert.ok(reportTpl.includes('<p class="niceeval-chart-missing" title="2">2 points missing data</p>'), "MetricScatter should report exactly 2 points missing data");
 
   // --- connect/图例一致性:没有任何 experiment 声明 `line` 标签,所以
   //     ExperimentComparison 的默认 series 是 "agent",connect=false —— 不会有 <polyline>。
@@ -408,17 +430,14 @@ async function verifyTerminalTypography(evidence: Evidence): Promise<void> {
 
   // 内建 standard 现以 SampleSummary(Stat 分行) + Scatter/Table 对比块呈现;
   // 旧 ExperimentList 80 列折行 / CJK Model 列对齐迁到自定义 site 报告场景验收。
-  assert.ok(
-    /Pass rate[\s\S]{0,40}?\d+(?:\.\d+)?%/.test(showReport),
-    "text face should show Pass rate from SampleSummary",
-  );
-  assert.ok(/Experiments[\s\S]{0,20}?3/.test(showReport), "text face should show Experiments=3");
-  assert.ok(/Evals[\s\S]{0,20}?3/.test(showReport), "text face should show Evals=3");
-  assert.ok(/Attempts[\s\S]{0,20}?4/.test(showReport), "text face should show Attempts=4");
+  assert.equal(extractTextStatValue(showReport, "Pass rate"), "33.3%", "text face should bind Pass rate=33.3% to its SampleSummary column");
+  assert.equal(extractTextStatValue(showReport, "Experiments"), "3", "text face should bind Experiments=3 to its SampleSummary column");
+  assert.equal(extractTextStatValue(showReport, "Evals"), "3", "text face should bind Evals=3 to its SampleSummary column");
+  assert.equal(extractTextStatValue(showReport, "Attempts"), "4", "text face should bind Attempts=4 to its SampleSummary column");
   assert.ok(showReport.includes("better → upper right"), 'Scatter text face should show the "better -> upper right" hint');
   assert.ok(showReport.includes("2 points missing data"), "Scatter text face should report exactly 2 points missing data");
 
-  const zhOutput = sh(`NICEEVAL_LANG=zh-CN pnpm exec niceeval show --record ${root}`);
+  const zhOutput = sh(`LC_ALL=zh_CN.UTF-8 pnpm exec niceeval show --record ${root}`);
   assert.ok(zhOutput.includes("通过率") || zhOutput.includes("实验"), "zh-CN locale should render Chinese SampleSummary chrome");
 }
 
@@ -439,19 +458,20 @@ async function verifyDualRenderParity(evidence: Evidence): Promise<void> {
   const root = evidence.resultsRoot;
   const showText = sh(`pnpm exec niceeval show --record ${root}`);
   const indexHtml = readSiteFile(evidence, "index.html");
-  const reportTpl = extractTemplate(indexHtml, "niceeval-report-report-en");
+  const reportTpl = extractTemplate(indexHtml, "niceeval-report-overview-en");
 
-  const textPass = /Pass rate[\s\S]{0,40}?(\d+(?:\.\d+)?)%/.exec(showText);
+  const textPassRaw = extractTextStatValue(showText, "Pass rate");
+  const textPass = textPassRaw ? /(\d+(?:\.\d+)?)%/.exec(textPassRaw) : null;
   const webPassRaw = extractStatValue(reportTpl, "Pass rate");
   const webPass = webPassRaw ? /(\d+(?:\.\d+)?)%/.exec(webPassRaw) : null;
   assert.ok(textPass && webPass, "couldn't extract Pass rate from both faces");
   assert.equal(textPass![1], webPass![1], `text pass rate (${textPass![1]}%) should equal web SampleSummary (${webPass![1]}%)`);
 
-  assert.ok(/Experiments[\s\S]{0,20}?3/.test(showText), "text is missing Experiments=3");
+  assert.equal(extractTextStatValue(showText, "Experiments"), "3", "text SampleSummary Experiments should be 3");
   assert.equal(extractStatValue(reportTpl, "Experiments")?.replace(/\D/g, ""), "3", "web SampleSummary Experiments should be 3");
-  assert.ok(/Evals[\s\S]{0,20}?3/.test(showText), "text is missing Evals=3");
+  assert.equal(extractTextStatValue(showText, "Evals"), "3", "text SampleSummary Evals should be 3");
   assert.equal(extractStatValue(reportTpl, "Evals")?.replace(/\D/g, ""), "3", "web SampleSummary Evals should be 3");
-  assert.ok(/Attempts[\s\S]{0,20}?4/.test(showText), "text is missing Attempts=4");
+  assert.equal(extractTextStatValue(showText, "Attempts"), "4", "text SampleSummary Attempts should be 4");
   assert.equal(extractStatValue(reportTpl, "Attempts")?.replace(/\D/g, ""), "4", "web SampleSummary Attempts should be 4");
 
   for (const label of ["passed", "failed", "errored"] as const) {

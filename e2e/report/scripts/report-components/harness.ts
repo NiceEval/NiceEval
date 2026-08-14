@@ -40,7 +40,9 @@ async function serveStaticDir(rootDir: string): Promise<{ baseUrl: string; close
     void (async () => {
       try {
         const url = new URL(req.url ?? "/", "http://localhost");
-        const pathname = url.pathname === "/" ? "/index.html" : decodeURIComponent(url.pathname);
+        // `view --out` 把参数化 page key 作为 URI 编码后的文件名落盘（例如 `%40...html`）。
+        // URL.pathname 已保留这段编码；再次 decode 会把它变成不存在的 `@...html`。
+        const pathname = url.pathname === "/" ? "/index.html" : url.pathname;
         const filePath = join(rootDir, pathname);
         if (!filePath.startsWith(rootDir)) {
           res.writeHead(403);
@@ -95,7 +97,9 @@ export async function withReportComponentScenarioContext(
     sh(`pnpm exec niceeval view --report ${SITE_REPORT} --record ${evidence.resultsRoot} --page overview --out ${siteOut} --no-open`);
     brandedServer = await serveStaticDir(resolve(brandedOut));
     siteServer = await serveStaticDir(resolve(siteOut));
-    browser = await chromium.launch();
+    browser = await chromium.launch({
+      executablePath: process.env.CHROMIUM_EXECUTABLE_PATH || undefined,
+    });
     await run({
       evidence,
       browser,

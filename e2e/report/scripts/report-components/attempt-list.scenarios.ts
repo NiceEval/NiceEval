@@ -13,15 +13,19 @@ export const attemptListScenarios: readonly ReportComponentScenario[] = [
     // Then：四个公开 locator 全部可见。
     async run({ evidence }) {
       const out = sh(
-        `pnpm exec niceeval show --report ${SITE_REPORT} --record ${evidence.resultsRoot} --page attempts`,
+        `COLUMNS=160 pnpm exec niceeval show --report ${SITE_REPORT} --record ${evidence.resultsRoot} --page attempts`,
       );
       const attempts = [
         ...evidence.main.attempts,
         evidence.deliberateFail.attempt,
         evidence.deliberateError.attempt,
       ];
+      const rows = out.split(/\r?\n/).map((line) => line.trim());
       for (const attempt of attempts) {
-        assert.ok(out.includes(attempt.locator), `Attempts 页缺少 locator ${attempt.locator}`);
+        assert.ok(
+          rows.some((row) => row.startsWith(`${attempt.evalId} `) && row.includes(attempt.locator)),
+          `Attempts 页没有把 eval ${attempt.evalId} 与 locator ${attempt.locator} 绑定在同一行`,
+        );
       }
     },
   },

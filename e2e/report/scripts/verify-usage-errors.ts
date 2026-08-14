@@ -38,7 +38,9 @@ export async function verifyUsageErrors(evidence: Evidence): Promise<void> {
     let cmd = `pnpm exec niceeval show @not-valid --record ${root}`;
     assertMentions(shUsageError(cmd), ["not a valid attempt locator"], cmd);
 
-    cmd = `pnpm exec niceeval show @1nosuch1 --record ${root}`;
+    // 语法合法但索引必定未命中：scheme `1` + 12 位 canonical Crockford base32 body。
+    // 不能用短字符串，否则这里只会再次命中上一格的“locator 语法非法”。
+    cmd = `pnpm exec niceeval show @1000000000000 --record ${root}`;
     assertMentions(shUsageError(cmd), ["No attempt found"], cmd);
 
     cmd = `pnpm exec niceeval show ${locator} tool-call --record ${root}`;
@@ -58,9 +60,9 @@ export async function verifyUsageErrors(evidence: Evidence): Promise<void> {
     assertMentions(shUsageError(cmd), ["--stats"], cmd);
 
     // --- 对照语义(--exp 出现两次以上):每个 --exp 必须恰好命中一个 experiment ---
-    // "deliberate" 是 deliberate-fail 与 deliberate-error 的共同前缀:命中 2 个要列出全部候选。
+    // 顶层 experiment 不支持裸文件名前缀，因此 deliberate 在这份 corpus 中必须明确报零命中。
     cmd = `pnpm exec niceeval show --exp deliberate --exp main --record ${root}`;
-    assertMentions(shUsageError(cmd), ["error:", "fix:", "matched 2 experiments", "deliberate-fail", "deliberate-error"], cmd);
+    assertMentions(shUsageError(cmd), ["No experiment matched --exp deliberate", "deliberate-fail", "deliberate-error"], cmd);
 
     cmd = `pnpm exec niceeval show --exp main --exp nosuch --record ${root}`;
     assertMentions(shUsageError(cmd), ["No experiment matched --exp nosuch"], cmd);
