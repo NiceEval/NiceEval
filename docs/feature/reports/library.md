@@ -594,6 +594,17 @@ Execution 不含 reader、root、path、Scope、Stream、callback 或 projector 
 
 ## Built-in Reports
 
+`niceeval/report/built-in` 导出 `defaultRunMembershipOverviewReport` 与 factory
+`runMembershipOverviewReport()`。这份普通 Report 供一个或多个 explicit Run 形成 bounded
+membership 概览。它声明
+`selectedRunProjection(membershipProvenanceProjector)` 与
+`attemptSlotProjection(verdictProjector)`。CLI 在显式 `--run` 且没有 `--report` 时使用它；其它
+selection 不会因此扩大 Attachment 读取范围。
+
+它的稳定表契约、row 值域与截断边界见 [CLI](cli.md#内建-run-membership-概览)。Report 只读取公开
+projector 的 `MembershipAction.outcome`，不读取 persisted raw action。Core Member、provenance 与
+Verdict 作为三组独立事实并列显示。
+
 `niceeval/report/built-in` 的 `defaultSandboxHistoryReport` 是一份普通、无额外 reader capability 的
 history Report。调用点先用公开的 all-runs Analysis selection 形成 Sample；Report 只声明并消费
 evaluation plan、Verdict 与 Sandbox 三条 public projection。

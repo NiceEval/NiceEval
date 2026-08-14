@@ -1,6 +1,7 @@
 // owner: docs/engineering/testing/e2e/adapter/openai-compat.md#chat-completion-live
 
 import { beforeAll, expect, test } from "vitest";
+import { assertExpEvalOutcomes } from "@niceeval/testkit";
 import {
   runOpenAiLiveEvidence,
   showOpenAiLiveEvidence,
@@ -22,12 +23,20 @@ test("真实 OpenAI Chat Completion 一次请求以通过 verdict 完成", () =>
   const receipt = evidence.receipt.expReceipt();
   expect(receipt.completion).toBe("completed");
   expect(receipt.runIds, evidence.receipt.diagnostic()).not.toHaveLength(0);
-  expect(evidence.evalEvent).toMatchObject({
-    evalId: evidence.evalId,
-    experimentId: evidence.experimentId,
-    verdict: "passed",
-    attempts: 1,
-  });
+  assertExpEvalOutcomes(
+    evidence.evalEvents,
+    [
+      // Chat Completion：真实一次请求须调用 fixture 工具并公开读回 marker；因此期望 passed/1。
+      {
+        evalId: "chat-completion-live",
+        experimentId: "chat-completion-live",
+        verdict: "passed",
+        attempts: 1,
+        passed: 1,
+      },
+    ],
+    () => evidence.receipt.diagnostic(),
+  );
 });
 
 test("show --execution 读回 OpenAI Chat Completion 的代表性证据", async () => {

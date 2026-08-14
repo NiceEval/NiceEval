@@ -35,6 +35,7 @@ import {
 } from "./analysis/index.ts";
 import { defaultAttemptOverviewReport } from "./report/built-in/attempt-overview.ts";
 import { defaultOverviewReport } from "./report/built-in/overview.ts";
+import { defaultRunMembershipOverviewReport } from "./report/built-in/run-membership-overview.ts";
 import {
   executionEvidenceReport,
   timingEvidenceReport,
@@ -2236,7 +2237,9 @@ function parseReportCliRequest(input: {
     throw usageError("--experiment narrows the default current-project selection; it cannot combine with explicit --run.\n");
   }
 
-  const report = reportSelection(input.cwd, input.flags.report);
+  const report = runs.length > 0 && input.flags.report === undefined
+    ? Object.freeze({ kind: "fixed" as const, report: defaultRunMembershipOverviewReport })
+    : reportSelection(input.cwd, input.flags.report);
   const theme = themeSelection(input.cwd, input.flags.theme);
   const target = runs.length > 0
     ? Object.freeze({ kind: "selection" as const, selection: explicitSelection(runs) })

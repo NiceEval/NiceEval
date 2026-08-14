@@ -45,7 +45,12 @@
    成功的 `t.send()` 至少证明 `eval.run` 与首轮 turn。只有确实声明并执行 setup 的 Adapter 才要求 `agent.setup`。Adapter owner 不再于 timing test 内重跑 `--execution`，也不用 execution 文本反推 Skill 或 tracing。不能用另一个 Adapter 或 Report Repo 的 `--timing` 通过代替本 Adapter。
    trace 只作时间与结构证据，从不参与判分——判分断言永远只读事件流（见[Observability](../../../../observability.md)）。
 
-一次 live 运行可在 `beforeAll` 中生产冻结 evidence，再由 verdict、execution 与 timing 三个独立 test 只读共用；按标题单项运行时 `beforeAll` 仍必须现场产生本轮 evidence。第 2 步是唯一的 Eval 判分断言：第 3、4 步只验收公开投影与 telemetry 机制，绝不反过来给事件流评分。
+一次 live 运行可在 `beforeAll` 中生产冻结 evidence，再由 verdict、execution 与 timing 三个独立 test 只读共用。
+按标题单项运行时，`beforeAll` 仍必须现场产生本轮 evidence。
+
+第 2 步是唯一的 Eval 判分断言。第 3、4 步只验收公开投影与 telemetry 机制，绝不反过来给事件流评分。
+Verdict test 在 owner 文件中逐条声明 `(experimentId, evalId, verdict, attempts)` expected matrix。
+它用 Testkit 的 `assertExpEvalOutcomes()` 严格拒绝缺失、额外、重复或终局不符；Testkit 不替 Adapter 选择 expected。
 测试正文遵守 [E2E 总纲](../README.md#单边界-e2e)与[测试 Architecture](../../architecture.md#单文件可读性契约)。
 
 ## Live 官方 Adapter 兼容性
