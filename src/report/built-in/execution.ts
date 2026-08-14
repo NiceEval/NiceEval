@@ -294,11 +294,23 @@ function renderPublicTimingText(
     const phase = publicPhaseName(root.phase, root.label);
     if (phase !== undefined && !rootsByPhase.has(phase)) rootsByPhase.set(phase, root);
   }
+  const rendered = new Set<string>();
   for (const phase of value.phases) {
     lines.push(`${phase.name.padEnd(22)}${formatTimingDuration(phase.durationMs)}`);
     const root = rootsByPhase.get(phase.name);
     if (root !== undefined && view !== undefined) {
-      lines.push(...renderTimingChildren(view.intervals, root.intervalId, 1, mode));
+      rendered.add(root.intervalId);
+      lines.push(...renderTimingChildren(view.intervals, root.intervalId, 1, mode, rendered));
+    }
+  }
+  if (view !== undefined) {
+    // The producer keeps an activity as a factual root when independently
+    // rounded spans cannot prove containment. Do not hide those orphan roots.
+    for (const root of roots) {
+      if (rendered.has(root.intervalId)) continue;
+      lines.push(renderTimingInterval(root, 0, mode));
+      rendered.add(root.intervalId);
+      lines.push(...renderTimingChildren(view.intervals, root.intervalId, 1, mode, rendered));
     }
   }
   return lines.join("\n");
@@ -309,21 +321,30 @@ function renderTimingChildren(
   parentIntervalId: string,
   depth: number,
   mode: "summary" | "full",
+  rendered: Set<string>,
 ): readonly string[] {
   const lines: string[] = [];
   const children = intervals
     .filter((interval) => interval.parentIntervalId === parentIntervalId)
     .sort(compareTimingIntervals);
   for (const child of children) {
-    const label = timingIntervalLabel(child);
-    const outcome = child.outcome === "completed" ? "" : ` · ${child.outcome}`;
-    const full = mode === "full"
-      ? ` · interval ${child.intervalId} · parent ${parentIntervalId} · start ${formatTimingDuration(child.startOffsetMs)}`
-      : "";
-    lines.push(`${"  ".repeat(depth)}${label}  ${formatTimingDuration(child.durationMs)}${outcome}${full}`);
-    lines.push(...renderTimingChildren(intervals, child.intervalId, depth + 1, mode));
+    lines.push(renderTimingInterval(child, depth, mode));
+    rendered.add(child.intervalId);
+    lines.push(...renderTimingChildren(intervals, child.intervalId, depth + 1, mode, rendered));
   }
   return lines;
+}
+
+function renderTimingInterval(
+  interval: AttemptTimingView["intervals"][number],
+  depth: number,
+  mode: "summary" | "full",
+): string {
+  const outcome = interval.outcome === "completed" ? "" : ` · ${interval.outcome}`;
+  const full = mode === "full"
+    ? ` · interval ${interval.intervalId} · parent ${interval.parentIntervalId ?? "root"} · start ${formatTimingDuration(interval.startOffsetMs)}`
+    : "";
+  return `${"  ".repeat(depth)}${timingIntervalLabel(interval)}  ${formatTimingDuration(interval.durationMs)}${outcome}${full}`;
 }
 
 function compareTimingIntervals(
