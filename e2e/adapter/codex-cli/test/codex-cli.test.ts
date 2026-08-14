@@ -4,15 +4,51 @@
 // 再从公开 CLI 读回 Eval、attempt、execution 与 timing。
 // 只从 @niceeval/testkit 根导入；不读 .niceeval 私有布局、不 import 候选源码/类型。
 
-import { command, type ExpEvalEvent, type ProcessReceipt } from "@niceeval/testkit";
+import {
+  assertExpEvalOutcomes,
+  command,
+  only,
+  type ExpEvalEvent,
+  type ExpEvalOutcomeExpectation,
+  type ProcessReceipt,
+} from "@niceeval/testkit";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 
 // 每条 Eval 的首轮只有一个 Attempt；只有结构化 verdict=failed 才由本测试另起一次 Invocation。
-const EXPECTED_PASSED_ATTEMPTS = 18;
-// 每个 Experiment 产生一个 Run（docs/feature/experiments/cli.md「结束反馈与 receipt」）；
-const EXPECTED_EXPERIMENTS = 7;
+const EXPECTED_OUTCOMES = [
+  // coding-task：既有文件修改与 shell 调用都须归一并配对完成；最终单次 Attempt 期望 passed/1。
+  { experimentId: "baseline", evalId: "coding-task", verdict: "passed", attempts: 1 },
+  // configfile 正例：shell-enabled 配置下同一 prompt 必须调用 shell；分支成立时为 passed/1。
+  { experimentId: "baseline", evalId: "configfile", verdict: "passed", attempts: 1 },
+  // session：首轮 thread ID 须捕获，第二轮 exec resume 须回忆事实；一条会话链期望 passed/1。
+  { experimentId: "baseline", evalId: "session", verdict: "passed", attempts: 1 },
+  // usage：每轮 token usage 非空，且 session 侧写中的实际模型正确；一次验证期望 passed/1。
+  { experimentId: "baseline", evalId: "usage", verdict: "passed", attempts: 1 },
+  // configfile 反例：shell-disabled 配置下同一 prompt 不得调用 shell；零调用成立时为 passed/1。
+  { experimentId: "configfile", evalId: "configfile", verdict: "passed", attempts: 1 },
+  // mcp：stdio 求和与远程 DeepWiki 两种 MCP 调用都须出现且入参正确；期望 passed/1。
+  { experimentId: "mcp", evalId: "mcp", verdict: "passed", attempts: 1 },
+  // skill：目标 status-report Skill 须被读取并影响文件内容，且不能伪造 skill.loaded；期望 passed/1。
+  { experimentId: "skill", evalId: "skill", verdict: "passed", attempts: 1 },
+  // skill-release-note：只读取 release-note Skill、不误读 status/decoy，并采用其约定；期望 passed/1。
+  { experimentId: "skill", evalId: "skill-release-note", verdict: "passed", attempts: 1 },
+  // repo-skill：钉定 Git 来源的 Skill 须安装、读取并影响产出；一次完整验证期望 passed/1。
+  { experimentId: "repo-skill", evalId: "repo-skill", verdict: "passed", attempts: 1 },
+  // plugin-hook：Plugin 安装痕迹与 SessionStart hook 侧写证据都须存在；单次安装路径期望 passed/1。
+  { experimentId: "plugin", evalId: "plugin-hook", verdict: "passed", attempts: 1 },
+  // plugin-reuse：四个 Sandbox 的两波共八次复用都须清理冲突残留并重装成功，所以期望 passed/8。
+  { experimentId: "plugin-reuse", evalId: "plugin-hook", verdict: "passed", attempts: 8 },
+] as const satisfies readonly ExpEvalOutcomeExpectation[];
+
+const EXPECTED_EXPERIMENT_COUNT = new Set(
+  EXPECTED_OUTCOMES.map((outcome) => outcome.experimentId),
+).size;
+const EXPECTED_PASSED_ATTEMPTS = EXPECTED_OUTCOMES.reduce(
+  (sum, outcome) => sum + outcome.attempts,
+  0,
+);
 
 const REQUIRED_LIVE_SECRETS = [
   "CODEX_API_KEY",
@@ -76,7 +112,7 @@ it("真实 Codex CLI adapter 在 Docker sandbox 中的运行结果经过公开 C
   // eval 事件精确断言，不从 receipt 猜计数。
   const inv = run.expReceipt();
   expect(inv.completion, run.diagnostic()).toBe("completed");
-  expect(inv.runIds, run.diagnostic()).toHaveLength(EXPECTED_EXPERIMENTS);
+  expect(inv.runIds, run.diagnostic()).toHaveLength(EXPECTED_EXPERIMENT_COUNT);
   // eval 事件是中间的身份事件：identity / verdict / attempts 在此精确断言。
   const firstEvents = run.expEvalEvents();
   // plugin-reuse 是八条 Attempt 的 Sandbox 复用 owner，不是模型断言重试消费者。
@@ -122,18 +158,19 @@ it("真实 Codex CLI adapter 在 Docker sandbox 中的运行结果经过公开 C
     );
   }
   const evalEvents = firstEvents.map((event) => retriedByEval.get(evalKey(event)) ?? event);
+  assertExpEvalOutcomes(evalEvents, EXPECTED_OUTCOMES, () => run.diagnostic());
   const totalPassed = evalEvents.reduce(
     (sum, event) => sum + (event.reason === "early_exit" ? 1 : (event.passed ?? 0)),
     0,
   );
   expect(totalPassed, run.diagnostic()).toBe(EXPECTED_PASSED_ATTEMPTS);
-  expect(evalEvents.filter((event) => event.verdict !== "passed"), run.diagnostic()).toHaveLength(0);
 
   const locatorFor = (evalId: string): string => {
-    const event = evalEvents.find((candidate) => candidate.evalId === evalId);
-    expect(event, run.diagnostic()).toMatchObject({ verdict: "passed" });
-    expect(event?.locator, run.diagnostic()).toMatch(/^@/);
-    return event!.locator!;
+    return only(
+      evalEvents,
+      (event) => event.evalId === evalId,
+      () => run.diagnostic(),
+    ).locator;
   };
   const codingTaskLocator = locatorFor("coding-task");
 

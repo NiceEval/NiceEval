@@ -1,7 +1,7 @@
 # `--json`：让 coding agent 跑、查、改、复验
 
 coding agent 不需要解读 TTY 重绘。
-它需要稳定的 Invocation identity、完整 Attempt locator、按需读取证据的入口，以及最终 receipt。
+它需要稳定的 Invocation identity、规范 Attempt locator、按需读取证据的入口，以及最终 receipt。
 
 `exp --json` 输出当前进程的 NDJSON 反馈，末尾恰好一条 `InvocationReceipt`。
 完整词表见 [CLI · 机器怎么读](../../cli.md#机器怎么读--json)。
@@ -22,7 +22,7 @@ coding agent 不需要解读 TTY 重绘。
 
    `progress` 与 `diagnostic` 服务当前进程；最后一条 `receipt` 是完整 `InvocationReceipt`。
 
-3. 只用完整 locator 展开必要证据：
+3. 只用规范 locator 展开必要证据：
 
    ```sh
    niceeval show --run <runId> --page attempt-01J8ZK3M6P4T7V9X2C5N8QW0RY

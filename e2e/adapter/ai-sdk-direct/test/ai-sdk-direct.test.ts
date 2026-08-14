@@ -4,9 +4,9 @@
 // generateText call, then every observation is read back through public CLI commands.
 
 import {
+  assertExpEvalOutcomes,
   command,
-  type ExpEvalEvent,
-  type ExpEvent,
+  only,
   type ProcessReceipt,
   withProcess,
   withTempDir,
@@ -34,13 +34,12 @@ function requireLiveSecrets(): void {
 }
 
 function latestAttemptLocator(): string {
-  const evalEvent = runReceipt.ndjson<ExpEvent>().find(
-    (event): event is ExpEvalEvent =>
-      "event" in event && event.event === "eval" && event.evalId === EVAL_ID,
+  const evalEvent = only(
+    runReceipt.expEvalEvents(),
+    (event) => event.evalId === EVAL_ID,
+    () => runReceipt.diagnostic(),
   );
-  expect(evalEvent, runReceipt.diagnostic()).toMatchObject({ verdict: "passed" });
-  expect(evalEvent?.locator, runReceipt.diagnostic()).toMatch(/^@/);
-  return evalEvent!.locator!;
+  return evalEvent.locator;
 }
 
 beforeAll(async () => {
@@ -67,24 +66,26 @@ beforeAll(async () => {
 }, 14 * 60_000);
 
 it("真实 aiSdkAgent 的 Eval 以通过 verdict 完成", () => {
-  const events = runReceipt.ndjson<ExpEvent>();
   // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md）：
   // completion 与 runIds；成败由带身份的 eval 事件精确断言，不让 live provider
   // 故障冒充通过，也不在 receipt 上断言计数。
   const inv = runReceipt.expReceipt();
   expect(inv.completion, runReceipt.diagnostic()).toBe("completed");
   expect(inv.runIds, runReceipt.diagnostic()).toHaveLength(1);
-  const evalEvent = events.find(
-    (event): event is ExpEvalEvent =>
-      "event" in event && event.event === "eval" && event.evalId === EVAL_ID,
+  assertExpEvalOutcomes(
+    runReceipt.expEvalEvents(),
+    [
+      // direct-agent：真实 generateText 须执行 remember_marker 工具并保留会话 marker；期望 passed/1。
+      {
+        evalId: EVAL_ID,
+        experimentId: "ci",
+        verdict: "passed",
+        attempts: 1,
+        passed: 1,
+      },
+    ],
+    () => runReceipt.diagnostic(),
   );
-  expect(evalEvent, runReceipt.diagnostic()).toBeDefined();
-  expect(evalEvent).toMatchObject({
-    event: "eval",
-    evalId: EVAL_ID,
-    verdict: "passed",
-    attempts: 1,
-  });
 });
 
 it("show --execution 读回 aiSdkAgent 的代表性工具证据", async () => {

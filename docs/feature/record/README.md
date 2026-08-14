@@ -11,6 +11,10 @@ Record 是 `<project>/.niceeval/record/` 中可携带、可进入 Git 的运行�
 没有完成标识的 Run directory 不是 Record 事实。reader 不读取、不展示也不复用它，只返回
 `incomplete-run` warning；用户可以用 `niceeval clean` 删除。
 
+Record Core 只保存完整 `attemptId`。面向人的 locator 是上层确定性别名：`@1` 加
+`SHA-256(AttemptId UTF-8)` 前 60 bit 的 12 位大写 Crockford 编码，不写入 Core，也不触发
+迁移。读取时若同一短码命中两个 immutable Attempt，返回 ambiguous，绝不任选。
+
 Record 不保存 session、锁或 cache。它也不保存作者 API、matcher、执行顺序、沿用算法、
 分析算法或页面模型。
 

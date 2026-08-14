@@ -4,36 +4,48 @@
 // 具体 Skill、MCP、Plugin 与配置行为由各自 Eval 断言；owner 只守住发现完整性与全绿结果。
 // 只从 @niceeval/testkit 根导入；不读 .niceeval 私有布局、不 import 候选源码/类型。
 
-import { command, type ExpEvalEvent, type ProcessReceipt } from "@niceeval/testkit";
+import {
+  assertExpEvalOutcomes,
+  command,
+  only,
+  type ExpEvalEvent,
+  type ExpEvalOutcomeExpectation,
+  type ProcessReceipt,
+} from "@niceeval/testkit";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, expect, it } from "vitest";
 
-const EXPECTED_EVALS = [
-  "coding-task",
-  "session-resume",
-  "skill-used",
-  "skill-checklist",
-  "skill-unused",
-  "repo-skill",
-  "mcp-tools",
-  "plugin-mcp",
-  "remote-plugin",
-  "websearch-denied",
-] as const;
+const EXPECTED_OUTCOMES = [
+  // coding-task：文件写入、编辑与 shell 调用都须完成；单次基线 Attempt 全部断言成立才是 passed/1。
+  { experimentId: "coding", evalId: "coding-task", verdict: "passed", attempts: 1, passed: 1 },
+  // session-resume：原生 --resume 须带回首轮事实且两轮 usage 可用；一次会话链完成即为 passed/1。
+  { experimentId: "coding", evalId: "session-resume", verdict: "passed", attempts: 1, passed: 1 },
+  // WebSearch 正例：coding 开启 webResearch，必须调用 web_search 且不调用 web_fetch，因此期望 passed/1。
+  { experimentId: "coding", evalId: "websearch-denied", verdict: "passed", attempts: 1, passed: 1 },
+  // skill-used：只加载目标本地 Skill，并在回答中采用其独有 marker；单次正调应为 passed/1。
+  { experimentId: "skill", evalId: "skill-used", verdict: "passed", attempts: 1, passed: 1 },
+  // skill-checklist：只加载 checklist Skill、不误载 marker/decoy；反选断言同时成立才是 passed/1。
+  { experimentId: "skill", evalId: "skill-checklist", verdict: "passed", attempts: 1, passed: 1 },
+  // skill-unused：普通对话不得加载任何已安装 Skill 或调用工具；这个反例成立时仍是 passed/1。
+  { experimentId: "skill", evalId: "skill-unused", verdict: "passed", attempts: 1, passed: 1 },
+  // repo-skill：钉定 Git 来源的 Skill 必须安装、原生加载并影响输出；一次完整验证期望 passed/1。
+  { experimentId: "repo-skill", evalId: "repo-skill", verdict: "passed", attempts: 1, passed: 1 },
+  // mcp-tools：stdio 与 Streamable HTTP 两个 MCP 工具都须以正确入参完成；因此期望 passed/1。
+  { experimentId: "mcp", evalId: "mcp-tools", verdict: "passed", attempts: 1, passed: 1 },
+  // plugin-mcp：官方 Context7 Plugin 的远程 MCP 必须接线并成功调用；单次安装路径期望 passed/1。
+  { experimentId: "plugin", evalId: "plugin-mcp", verdict: "passed", attempts: 1, passed: 1 },
+  // plugin-reuse：四个 Sandbox 承接两波共八次复用，八次都须调用 Context7 成功，所以是 passed/8。
+  { experimentId: "plugin-reuse", evalId: "plugin-mcp", verdict: "passed", attempts: 8, passed: 8 },
+  // remote-plugin：远程 marketplace 文件须安装，随 Plugin 的 Skill 须被加载并完成请求；期望 passed/1。
+  { experimentId: "remote-plugin", evalId: "remote-plugin", verdict: "passed", attempts: 1, passed: 1 },
+  // WebSearch 反例：locked-down settings 禁止 WebSearch/WebFetch，零调用才通过，因此期望 passed/1。
+  { experimentId: "locked-down", evalId: "websearch-denied", verdict: "passed", attempts: 1, passed: 1 },
+] as const satisfies readonly ExpEvalOutcomeExpectation[];
 
-const EXPECTED_EXPERIMENTS = [
-  "coding",
-  "skill",
-  "repo-skill",
-  "mcp",
-  "plugin",
-  "plugin-reuse",
-  "remote-plugin",
-  "locked-down",
-] as const;
-// websearch-denied 同时跑在 coding 正例与 locked-down deny 反例上。
-const EXPECTED_PASSED_ATTEMPTS = 19;
+const EXPECTED_EXPERIMENT_COUNT = new Set(
+  EXPECTED_OUTCOMES.map((outcome) => outcome.experimentId),
+).size;
 
 const REQUIRED_LIVE_SECRETS = ["ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL"] as const;
 
@@ -81,10 +93,11 @@ function assertExactRetryEvalSelector(events: readonly ExpEvalEvent[], failed: E
 }
 
 function representativeAttempt(): ExpEvalEvent {
-  const attempt = evalEvents.find((event) => event.evalId === "coding-task");
-  expect(attempt, run.diagnostic()).toBeDefined();
-  expect(attempt?.locator, run.diagnostic()).toBeTruthy();
-  return attempt!;
+  return only(
+    evalEvents,
+    (event) => event.evalId === "coding-task",
+    () => run.diagnostic(),
+  );
 }
 
 beforeAll(async () => {
@@ -155,16 +168,8 @@ it("真实 Claude Code adapter 的全部专用 Eval 通过", () => {
   // eval 事件精确断言，不从 receipt 猜计数。
   const inv = run.expReceipt();
   expect(inv.completion, run.diagnostic()).toBe("completed");
-  expect(inv.runIds, run.diagnostic()).toHaveLength(EXPECTED_EXPERIMENTS.length);
-
-  expect(new Set(evalEvents.map((event) => event.evalId))).toEqual(new Set(EXPECTED_EVALS));
-  expect(new Set(evalEvents.map((event) => event.experimentId))).toEqual(new Set(EXPECTED_EXPERIMENTS));
-  for (const event of evalEvents) {
-    expect(event.verdict, `${event.experimentId}/${event.evalId} did not pass`).toBe("passed");
-    expect(event.passed, `${event.experimentId}/${event.evalId} lost an attempt`).toBe(event.attempts);
-  }
-  const totalPassed = evalEvents.reduce((sum, event) => sum + (event.passed ?? 0), 0);
-  expect(totalPassed, run.diagnostic()).toBe(EXPECTED_PASSED_ATTEMPTS);
+  expect(inv.runIds, run.diagnostic()).toHaveLength(EXPECTED_EXPERIMENT_COUNT);
+  assertExpEvalOutcomes(evalEvents, EXPECTED_OUTCOMES, () => run.diagnostic());
 });
 
 it("show --execution 读回 Claude Code 的代表性工具证据", async () => {

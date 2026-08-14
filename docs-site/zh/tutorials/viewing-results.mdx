@@ -18,8 +18,16 @@ npx niceeval view  # 在浏览器查看同一批结果
 选择一个明确 Run：
 
 ```sh
-npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
+npx niceeval show --run 7b8d2ea4-b840-4870-9840-f85a436a5527
 ```
+
+普通运行可从 `exp --json` 最后一条 receipt 的 `runIds` 读取 Run ID。TTY 完成反馈也显示相同 ID：
+
+```json
+{"type":"receipt","receipt":{"invocationId":"11c8fc15-8a9b-49a0-bb93-68205b52ffab","runIds":["7b8d2ea4-b840-4870-9840-f85a436a5527"],"startedAt":"2026-08-14T10:00:00.000Z","completedAt":"2026-08-14T10:01:00.000Z","completion":"completed"}}
+```
+
+`accept` 会在成功反馈中显示它建立的新 Run ID 和保持不变的 Attempt locator。这是供操作者复制的人读反馈，不是 JSON receipt 或稳定正则接口。
 
 要查看所有仍匹配当前项目源码与配置的结果，直接运行 `show`。`--experiment` 可按完整 ID 收窄当前项目目标：
 
@@ -31,7 +39,7 @@ npx niceeval show --experiment checkout
 
 ## 在终端查看
 
-`show` 呈现默认 Report 的文字内容。指定页面或自定义 Report 时，命令仍从同一份 selection 建立一次 execution。
+`show` 呈现默认 Report 的文字内容。显式 `--run` 默认使用内建 `run-membership-overview`；不带 selector 的当前项目结果使用配置里的 Report，没有配置时才使用通用 overview。指定页面或自定义 Report 时，命令仍从同一份 selection 建立一次 execution。
 
 ```sh
 npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --page /
@@ -39,6 +47,49 @@ npx niceeval show --experiment checkout --json
 ```
 
 `--json` 输出同一份 execution 的页面、计算、投影摘要和问题。它不建立另一条取数路径。
+
+下面是一条人工采用结果的终端输出。`reference` 表示这个 Run 引用源 Attempt，`accepted` 表示这个 Run 的 membership provenance 记录了人工采用：
+
+```text
+Report run-membership-overview
+Sample: 1 run(s), 1 slot(s)
+
+Page /
+  Run membership overview
+  Run membership
+  Run | Slot | Slot state | Member relation | Source Attempt | Membership state | Membership outcome | Verdict state | Verdict
+  7b8d2ea4-b840-4870-9840-f85a436a5527 | slot-00b400bd-ba81-4850-8803-09ba802896e5 | included | reference | @91ddc61b-ae96-4a23-8578-ddc1b83306dc | available | accepted | available | passed
+  [neutral] Omitted rows: 0
+  [neutral] Unmatched membership actions: 0
+
+Problems
+  none
+```
+
+同一次命令加 `--json` 后，相关 row 使用稳定键：
+
+```json
+{
+  "memberRelation": "reference",
+  "membershipOutcome": "accepted",
+  "membershipState": "available",
+  "runId": "7b8d2ea4-b840-4870-9840-f85a436a5527",
+  "slotId": "slot-00b400bd-ba81-4850-8803-09ba802896e5",
+  "slotState": "included",
+  "sourceAttemptLocator": "@91ddc61b-ae96-4a23-8578-ddc1b83306dc",
+  "verdict": "passed",
+  "verdictState": "available"
+}
+```
+
+Run 回答“这一轮怎样纳入结果”，Attempt 回答“这份结果记录了什么”。继续沿 locator 查看同一个 immutable Attempt：
+
+```sh
+npx niceeval show @91ddc61b-ae96-4a23-8578-ddc1b83306dc
+npx niceeval show @91ddc61b-ae96-4a23-8578-ddc1b83306dc --execution
+```
+
+第一个命令显示 Attempt identity、判定、Assertions 与 Score。第二个命令显示 execution evidence。它们不会重写源 Attempt，也不会把采用 Run 的 provenance 冒充 Attempt 事实。
 
 ## 在浏览器查看
 

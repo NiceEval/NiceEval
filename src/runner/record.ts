@@ -2,6 +2,14 @@ import { resolve as resolvePath } from "node:path";
 import { Effect, Either, Schema } from "effect";
 
 import {
+  encodeAttemptLocator,
+  type AttemptLocator,
+} from "../attempt-locator.ts";
+import {
+  resolveAttemptLocator,
+  type AttemptLocatorViewInvalid,
+} from "../attempt-locator-resolution.ts";
+import {
   EvaluationRecordContractV1,
   buildEligibilityAttachmentWriteV1,
   buildMembershipProvenanceAttachmentWriteV1,
@@ -217,12 +225,14 @@ interface PlannedRunnerRecordRun {
   readonly slotEntries: readonly PlannedRunnerRecordSlot[];
 }
 
-type GapActionState = "pending" | "sealed" | "executed" | "not-dispatched" | "interrupted";
+type GapActionState = "pending" | "reserved" | "sealed" | "executed" | "not-dispatched" | "interrupted";
 
 interface ActiveRunnerRecordAttempt<AttachmentError, AttachmentRequirements> {
   /** Exact logical handle passed through seal and completion for this target Slot. */
   readonly attempt: Attempt;
-  readonly sealed: SealedAttemptAssertions;
+  readonly draft: RecordAttemptDraft;
+  readonly public: RunnerRecordAttempt;
+  sealed?: SealedAttemptAssertions;
   durable?: {
     readonly result: EvalResult;
     readonly origin: EvaluationRecordOriginAttemptInputV1;
@@ -235,7 +245,6 @@ interface ActiveRunnerRecordAttempt<AttachmentError, AttachmentRequirements> {
     >[];
     readonly draft: RecordAttemptDraft;
   };
-  public?: RunnerRecordAttempt;
   completed: boolean;
 }
 
@@ -250,15 +259,15 @@ interface RunnerRecordRun<AttachmentError, AttachmentRequirements> extends Plann
 export interface RunnerRecordAttempt {
   readonly slotId: SlotId;
   readonly attemptId: AttemptId;
-  readonly locator: RecordAttemptLocator;
+  readonly locator: AttemptLocator;
 }
 
-/**
- * Record's public locator is the complete exact durable AttemptId. It is
- * intentionally separate from the historical short-hash `AttemptLocator`
- * brand, whose encoder/decoder must not participate in this path.
- */
-export type RecordAttemptLocator = string;
+export type RecordAttemptLocator = AttemptLocator;
+
+export interface RunnerRecordAttemptLocatorCollision {
+  readonly code: "attempt-locator-collision";
+  readonly locator: AttemptLocator;
+}
 
 export interface RunnerRecordAttemptInvalid {
   readonly code: "runner-record-attempt-invalid";
@@ -307,6 +316,9 @@ export type RunnerRecordWriteError<AttachmentError> =
   | RunnerRecordExecutionDurationInvalid
   | RunnerRecordMembershipStateInvalid
   | RunnerRecordObservabilityContractInvalid
+  | RunnerRecordAttemptLocatorCollision
+  | AttemptLocatorViewInvalid
+  | RecordReaderReadError
   | AttemptEligibilityPayloadBuildErrorV1
   | MembershipProvenancePayloadBuildErrorV1
   | SealedAssertionsOriginEncodingError
@@ -345,19 +357,23 @@ export interface RunnerRecordCoordinator<AttachmentError, AttachmentRequirements
   readonly runIdsByExperiment: ReadonlyMap<string, string>;
   /** Scheduler authority: only these Record-planned slots bypass fresh execution. */
   readonly carriedAttemptsByKey: ReadonlyMap<string, ReadonlySet<number>>;
+  /** Reserves the durable Attempt identity before attempt-owned external work. */
+  readonly reserveAttempt: (
+    attempt: Attempt,
+  ) => Effect.Effect<RunnerRecordAttempt, RunnerRecordWriteError<AttachmentError>>;
   /** Keeps the exact sealed Assert-first result until its real duration is known. */
   readonly noteSealedOrMarkIncomplete: (
     attempt: Attempt,
     sealed: SealedAttemptAssertions,
   ) => Effect.Effect<void, never>;
-  /** Allocates and writes a fresh origin only after its execution result is complete. */
+  /** Completes the already-reserved fresh origin after its execution result is complete. */
   readonly completeAttemptOrMarkIncomplete: (
     attempt: Attempt,
     result: EvalResult,
   ) => Effect.Effect<RunnerRecordAttempt | undefined, never, AttachmentRequirements>;
   /** A gap that did not start has no Member, but remains explainable at publication. */
   readonly markNotDispatched: (attempt: Attempt) => void;
-  /** Interruption never invents a Member for a gap that did not complete. */
+  /** Never-started gaps remain empty; reserved interruption keeps the whole draft incomplete. */
   readonly markInterrupted: () => void;
   /** Writes one membership-provenance Attachment per target Run, then seals it. */
   readonly publish: (
@@ -465,11 +481,6 @@ function nonEmptySlots(
     throw new Error("Runner planned an Eval without Record Slots");
   }
   return Object.freeze([first, ...rest]);
-}
-
-/** The current Record locator is the exact durable AttemptId, not a hash alias. */
-function locatorForAttemptId(attemptId: AttemptId): RecordAttemptLocator {
-  return `@${attemptId}`;
 }
 
 function planRun(input: {
@@ -664,6 +675,10 @@ function previewExecutionTarget(input: {
 
 function attemptInvalid(): RunnerRecordAttemptInvalid {
   return Object.freeze({ code: "runner-record-attempt-invalid" as const });
+}
+
+function locatorCollision(locator: AttemptLocator): RunnerRecordAttemptLocatorCollision {
+  return Object.freeze({ code: "attempt-locator-collision" as const, locator });
 }
 
 function unsealedAttempt(slotId: SlotId): RunnerRecordUnsealedAttempt {
@@ -945,6 +960,11 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
     const noteWriteFailure = (error: RunnerRecordWriteError<AttachmentError>): void => {
       if (writeFailure === undefined) writeFailure = Object.freeze({ error });
     };
+    const locatorMutex = yield* Effect.makeSemaphore(1);
+    const invocationLocators = new Map<AttemptLocator, {
+      readonly originRunId: RunId;
+      readonly attemptId: AttemptId;
+    }>();
 
     const recordRunForAttempt = (
       attempt: Attempt,
@@ -963,6 +983,61 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
       return plan === undefined ? undefined : { recordRun, slotId, plan };
     };
 
+    const reserveAttempt = (
+      attempt: Attempt,
+    ): Effect.Effect<RunnerRecordAttempt, RunnerRecordWriteError<AttachmentError>> =>
+      locatorMutex.withPermits(1)(Effect.gen(function* () {
+        const targetSlot = targetSlotForAttempt(attempt);
+        if (
+          targetSlot === undefined
+          || targetSlot.plan.state !== "gap"
+          || targetSlot.recordRun.gapActions.get(targetSlot.slotId) !== "pending"
+          || targetSlot.recordRun.attempts.has(targetSlot.slotId)
+        ) {
+          return yield* Effect.fail(attemptInvalid());
+        }
+
+        const draft = yield* targetSlot.recordRun.draft.createAttempt({
+          slotId: targetSlot.slotId,
+        });
+        const locator = encodeAttemptLocator(draft.attemptId);
+        const issued: RunnerRecordAttempt = Object.freeze({
+          slotId: targetSlot.slotId,
+          attemptId: draft.attemptId,
+          locator,
+        });
+        targetSlot.recordRun.attempts.set(targetSlot.slotId, {
+          attempt,
+          draft,
+          public: issued,
+          completed: false,
+        });
+        targetSlot.recordRun.gapActions.set(targetSlot.slotId, "reserved");
+
+        const existing = yield* resolveAttemptLocator(session.view, locator);
+        if (existing.kind !== "not-found") {
+          const same = existing.kind === "found"
+            && existing.attempt.originRunId === targetSlot.recordRun.draft.runId
+            && existing.attempt.attemptId === draft.attemptId;
+          if (!same) return yield* Effect.fail(locatorCollision(locator));
+        }
+        const local = invocationLocators.get(locator);
+        if (
+          local !== undefined
+          && (local.originRunId !== targetSlot.recordRun.draft.runId
+            || local.attemptId !== draft.attemptId)
+        ) {
+          return yield* Effect.fail(locatorCollision(locator));
+        }
+        invocationLocators.set(locator, Object.freeze({
+          originRunId: targetSlot.recordRun.draft.runId,
+          attemptId: draft.attemptId,
+        }));
+        return issued;
+      })).pipe(
+        Effect.tapError((error) => Effect.sync(() => noteWriteFailure(error))),
+      );
+
     const noteSealedOrMarkIncomplete = (
       attempt: Attempt,
       sealed: SealedAttemptAssertions,
@@ -971,17 +1046,17 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
       if (
         targetSlot === undefined
         || targetSlot.plan.state !== "gap"
-        || targetSlot.recordRun.gapActions.get(targetSlot.slotId) !== "pending"
-        || targetSlot.recordRun.attempts.has(targetSlot.slotId)
+        || targetSlot.recordRun.gapActions.get(targetSlot.slotId) !== "reserved"
       ) {
         noteWriteFailure(attemptInvalid());
         return;
       }
-      targetSlot.recordRun.attempts.set(targetSlot.slotId, {
-        attempt,
-        sealed,
-        completed: false,
-      });
+      const active = targetSlot.recordRun.attempts.get(targetSlot.slotId);
+      if (active === undefined || active.attempt !== attempt || active.sealed !== undefined) {
+        noteWriteFailure(attemptInvalid());
+        return;
+      }
+      active.sealed = sealed;
       targetSlot.recordRun.gapActions.set(targetSlot.slotId, "sealed");
     });
 
@@ -1005,11 +1080,13 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
         || active === undefined
         || targetSlot.recordRun.gapActions.get(targetSlot.slotId) !== "sealed"
         || active.attempt !== attempt
+        || active.sealed === undefined
         || active.completed
         || !resultMatchesAttempt(result, attempt)
       ) {
         return Effect.fail(attemptInvalid());
       }
+      const sealed = active.sealed;
       const duration = executionDuration(result);
       if (duration === undefined) return Effect.fail(executionDurationInvalid(targetSlot.slotId));
 
@@ -1029,13 +1106,13 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
           input.attachments?.attemptWrites?.({
             attempt,
             result,
-            sealed: active.sealed,
+            sealed,
             sources: Object.freeze([...(result.sources ?? [])]),
           }) ?? [],
         );
         const origin = evaluationRecordOriginInputFromSealedAssertions(
           targetSlot.slotId,
-          active.sealed,
+          sealed,
         );
         if (Either.isLeft(origin)) return yield* Effect.fail(origin.left);
         // This is the only Runner → Record boundary that sees both the sealed
@@ -1044,7 +1121,7 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
         // typed writes without exposing attachment names or paths to Runner.
         const observabilityCapture = yield* createRunnerAttemptObservabilityCaptureV1({
           result,
-          sealed: active.sealed,
+          sealed,
         });
         const observability = createAttemptObservabilityAttachmentWritesV1(
           observabilityCapture,
@@ -1052,26 +1129,17 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
         if (Either.isLeft(observability)) return yield* Effect.fail(observability.left);
         return yield* Effect.uninterruptible(
           Effect.gen(function* () {
-            const draft = yield* targetSlot.recordRun.draft.createAttempt({
-              slotId: targetSlot.slotId,
-            });
-            const issued: RunnerRecordAttempt = Object.freeze({
-              slotId: targetSlot.slotId,
-              attemptId: draft.attemptId,
-              locator: locatorForAttemptId(draft.attemptId),
-            });
             active.durable = Object.freeze({
               result,
               origin: origin.right,
               eligibility: eligibility.right,
               observability: observability.right,
               pluginWrites: Object.freeze([...writes]),
-              draft,
+              draft: active.draft,
             });
-            active.public = issued;
             active.completed = true;
             targetSlot.recordRun.gapActions.set(targetSlot.slotId, "executed");
-            return issued;
+            return active.public;
           }),
         );
       });
@@ -1101,7 +1169,7 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
     const markInterrupted = (): void => {
       for (const recordRun of byRun.values()) {
         for (const [slotId, state] of recordRun.gapActions) {
-          if (state === "pending" || state === "sealed") {
+          if (state === "pending") {
             recordRun.gapActions.set(slotId, "interrupted");
           }
         }
@@ -1129,10 +1197,12 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
 
         const state = recordRun.gapActions.get(slot.slotId) ?? "pending";
         const gap = gapFromPlan(slot);
-        if (state === "sealed") return Either.left(unsealedAttempt(slot.slotId));
+        if (state === "reserved" || state === "sealed") {
+          return Either.left(unsealedAttempt(slot.slotId));
+        }
         if (state === "executed") {
           const active = recordRun.attempts.get(slot.slotId);
-          if (active === undefined || active.public === undefined || !active.completed) {
+          if (active === undefined || !active.completed) {
             return Either.left(membershipStateInvalid(slot.slotId));
           }
           actions.push(Object.freeze({
@@ -1166,6 +1236,7 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
           [key, new Set(attempts)] as const,
         ),
       ),
+      reserveAttempt,
       noteSealedOrMarkIncomplete,
       completeAttemptOrMarkIncomplete,
       markNotDispatched,

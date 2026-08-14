@@ -80,6 +80,33 @@ export interface ExpReceiptEvent {
   readonly receipt: InvocationReceipt;
 }
 
+export type ExpEvalEvent = {
+  readonly event: "eval";
+  readonly locator: string;
+  readonly evalId: string;
+  readonly experimentId: string;
+  readonly verdict: "passed" | "failed" | "errored" | "skipped";
+  readonly attempts: number;
+} & (
+  | { readonly passed: number }
+  | {
+      readonly planned: number;
+      readonly unstarted: number;
+      readonly reason: "early_exit";
+    }
+);
+
+export interface ExpEvalOutcomeExpectation {
+  readonly experimentId: string;
+  readonly evalId: string;
+  readonly verdict: "passed" | "failed" | "errored" | "skipped";
+  readonly attempts: number;
+  readonly passed?: number;
+  readonly reason?: "early_exit";
+  readonly planned?: number;
+  readonly unstarted?: number;
+}
+
 export interface ProcessReceipt {
   argv: Argv;
   cwd: string;
@@ -94,7 +121,14 @@ export interface ProcessReceipt {
   json<T = unknown>(): T;
   ndjson<T = unknown>(): T[];
   expReceipt(): InvocationReceipt;
+  expEvalEvents(): ExpEvalEvent[];
 }
+
+export function assertExpEvalOutcomes(
+  actual: readonly ExpEvalEvent[],
+  expected: readonly ExpEvalOutcomeExpectation[],
+  diagnostic?: string | (() => string),
+): ExpEvalEvent[];
 
 export function runProcess(
   argv: Argv,
@@ -123,10 +157,40 @@ Testkit 直接导出公开原始 `ExpEvent`、`ExpReceiptEvent` 与精确的 `In
 - `completedAt` 未提供时不存在，否则为字符串；
 - `completion` 是 `"completed" | "interrupted" | "failed"`。
 
-`expReceipt()` 返回末行的内层 `InvocationReceipt`。它不检查退出码、不折叠 Verdict 或 Attempt，也不提供 expected 辅助断言。
+`expReceipt()` 返回末行的内层 `InvocationReceipt`。它不检查退出码，也不折叠 Verdict 或 Attempt。
 
 业务 Verdict 和 Attempt 只能从中间的 `event: "eval"` 读取，或按 `receipt.runIds` 读取 Record；receipt 本身不复制这些
-业务事实。需要检查逐 Eval 身份的场景仍直接用 `ndjson<ExpEvent>()` 并在读取 `.event` 前排除末行 `type: "receipt"`。
+业务事实。`expEvalEvents()` 严格解码所有公开 Eval 终局事件，并拒绝字段非法的 Eval event。
+
+`assertExpEvalOutcomes()` 要求调用方在测试文件中逐条提供 `experimentId`、`evalId`、Verdict 与 Attempt 数。
+它严格拒绝缺失、额外、重复身份和字段不符，并可选核对 `passed` 或 `early_exit` 字段。
+Testkit 不生成 expected、不按 exit code 推断 Verdict，也不把 `failed`、`errored` 或 `skipped` 折叠成另一状态。
+
+```ts
+const evalEvents = assertExpEvalOutcomes(
+  run.expEvalEvents(),
+  [
+    {
+      experimentId: "transport",
+      evalId: "transport-ok",
+      verdict: "passed",
+      attempts: 1,
+      passed: 1,
+    },
+    {
+      experimentId: "timeout",
+      evalId: "timeout",
+      verdict: "errored",
+      attempts: 1,
+      passed: 0,
+    },
+  ],
+  () => run.diagnostic(),
+);
+```
+
+expected 数组属于调用方 owner；Testkit 只比较公开原始字段。
+CLI 退出码、`InvocationReceipt.completion`、Run 数与后续 `show` 读回仍在测试正文分别断言。
 
 非零 exit 与 signal 会返回收据，`timedOut` 区分 Testkit timeout 与被测进程自行退出。spawn 本身失败时抛
 `ProcessStartError`，错误携带完整 argv、cwd 与原始 cause；调用方不用猜是产品 exit 还是命令没有启动。

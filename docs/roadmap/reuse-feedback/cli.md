@@ -11,8 +11,8 @@
 
 ```text
 PLAN
-compare/codex  memory/commit0  ordinal 0  carried @01J8ZK3M6P4T7V9X2C5N8QW0RY  eligible
-compare/codex  memory/commit0  ordinal 1  execute @01J8ZK3M6P4T7V9X2C5N8QW0RY  identity-mismatch
+compare/codex  memory/commit0  ordinal 0  carried @1K1P0VJAPVJ12  eligible
+compare/codex  memory/commit0  ordinal 1  execute @1K1P0VJAPVJ12  identity-mismatch
 compare/codex  memory/commit0  ordinal 2  execute  no-prior  source-slot-missing
 ```
 

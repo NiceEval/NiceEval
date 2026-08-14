@@ -1,4 +1,5 @@
 import { compactAssertionSummary, summaryText } from "../../assertions/display.ts";
+import { encodeAttemptLocator } from "../../attempt-locator.ts";
 import type {
   EvaluationFactResult,
   EvalResult,
@@ -65,8 +66,7 @@ export function failureDetailFromResult(result: EvalResult): FailureDetail | und
 
 /**
  * A current Record reuse remains a readback ADT all the way to display. The
- * durable source identity is already exact, so this path neither decodes nor
- * recreates the retired hash locator.
+ * durable source identity is exact; display derives the current short alias.
  */
 export function failureDetailFromCurrentReusedAttempt(
   readback: CurrentReusedAttemptReadback,
@@ -77,7 +77,7 @@ export function failureDetailFromCurrentReusedAttempt(
     ? readback.executionErrors.value[0]
     : undefined;
   return {
-    locator: `@${readback.source.attemptId}`,
+    locator: encodeAttemptLocator(readback.source.attemptId),
     identity: {
       experimentId: readback.target.experimentId,
       evalId: readback.target.evalId,

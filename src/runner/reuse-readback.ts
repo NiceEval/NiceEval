@@ -1,5 +1,6 @@
 import { Effect } from "effect";
 
+import { encodeAttemptLocator } from "../attempt-locator.ts";
 import { attemptDiagnosticsProjector, type AttemptDiagnosticsView } from "../o11y/record/family-projectors.ts";
 import {
   projectRecordAttachmentRead,
@@ -130,6 +131,7 @@ export interface CurrentReuseReadbackPlanInvalid {
  */
 export interface CurrentReusedAttemptSourceSnapshot {
   readonly attemptId: string;
+  readonly locator: string;
   readonly origin: {
     readonly runId: string;
     readonly slotId: string;
@@ -493,6 +495,7 @@ function sourceSnapshotOf(
 ): CurrentReusedAttemptSourceSnapshot {
   return Object.freeze({
     attemptId: String(source.attemptId),
+    locator: encodeAttemptLocator(source.attemptId),
     origin: Object.freeze({
       runId: String(source.origin.runId),
       slotId: String(source.origin.slotId),

@@ -216,7 +216,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 未映射 | `unmapped` | 可读 Assertion 没有可用 source navigation；不改变 Assertion、Verdict 或 Score | [Source sites](feature/assertions/architecture/source-sites.md#局部-unmapped-与-assertion-隔离) |
 | 源码身份迁移组 | Source identity migration group | 同步迁移 Sources item identity 与该 origin Run 全部 source-sites 的相邻 migration unit | [Record Library](feature/record/library.md#source-identity-migration-group) |
 | Invocation receipt | `InvocationReceipt` | 只含 Invocation 身份、Run IDs、时间和完成状态的进程返回值 | [Record library](feature/record/library.md#write-session) |
-| Attempt 定位符 | AttemptLocator | 完整 128-bit `attemptId` 的 26 字符规范大写 Crockford 编码；CLI 写 `@` 加 26 字符 | [Record](feature/record/architecture.md) |
+| Attempt 定位符 | AttemptLocator | 完整 `attemptId` 的人读别名：`@1` 加 SHA-256 前 60 bit 的 12 字符规范大写 Crockford 编码 | [Record](feature/record/architecture.md) |
 
 ### 分析选择与执行沿用
 

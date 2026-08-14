@@ -163,6 +163,8 @@ E2E 文件从上到下保持同一信息顺序：
 - 在断言阶段悄悄修改共享 evidence。
 
 两个 Repo 出现同一稳定机械 parser 后才提取共享实现；领域预期仍留在测试文件。
+Testkit 可以把严格解码后的公开 Eval event 与调用方提供的字面 expected matrix 作逐字段比较；它不得生成矩阵、补默认 Verdict，
+也不得把 CLI 退出码或候选输出转换成 expected。
 项目复制已经被多类会写结果、配置或导出目录的 case 消费，因此 Testkit 接收显式策略 API；调用点仍明确写出复制源、
 排除项和链接策略，不能把 CLI、Runner、Report、Package、Lifecycle 或 Adapter 的领域动作收进 Testkit。
 

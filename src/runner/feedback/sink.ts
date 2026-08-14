@@ -19,7 +19,7 @@ import { t } from "../../i18n/index.ts";
 import type { AttemptLifecycleEvent, AttemptRef, ExperimentHookName, FailureDetail } from "../types.ts";
 import type { Verdict } from "../../shared/types.ts";
 import type { JsonValue } from "../../shared/types.ts";
-import type { AttemptLocator } from "../../record/locator.ts";
+import type { AttemptLocator } from "../../attempt-locator.ts";
 
 /** `sink.diagnostic()` 的输入 —— 与 `DurableFeedbackEvent` 的 "diagnostic" 变体字段一致,
  *  只是省略 `type`/`at`(由 coordinator 补上)。 */
@@ -42,7 +42,7 @@ export interface DiagnosticInput {
 
 /** `sink.failure()` 的输入 —— 与 `DurableFeedbackEvent` 的 "failure" 变体字段一致,只省略
  *  `type`/`at`(由 coordinator 补上)。`locator` 只有在 attempt 挂靠 experiment 时才存在
- *  (writer 发出的精确 `@AttemptId`);调用方(run.ts)只在拿到 locator 之后
+ *  (writer 从精确 AttemptId 派生的短 locator);调用方(run.ts)只在拿到 locator 之后
  *  才应该调用这个函数——没有 locator 的裸 run 不产出这类永久失败通知。 */
 export type FailureInput = FailureDetail;
 
