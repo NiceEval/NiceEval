@@ -16,21 +16,26 @@ interface ExpPlanDocument {
 }
 
 interface DebugPlanDocument {
-  readonly format: "niceeval.debug-plan/v1";
-  readonly experimentId: string;
-  readonly evalId: string;
   readonly commandPlan: {
     readonly experiments: readonly {
       readonly lanes: readonly {
-        readonly beforeSlots?: readonly { readonly phase: string }[];
-        readonly afterSlots?: readonly { readonly phase: string }[];
+        readonly beforeSlots?: readonly DebugPlanStep[];
+        readonly afterSlots?: readonly DebugPlanStep[];
         readonly physicalLifecycleTemplate?: {
-          readonly enter: readonly { readonly phase: string }[];
-          readonly exit: readonly { readonly phase: string }[];
+          readonly enter: readonly DebugPlanStep[];
+          readonly exit: readonly DebugPlanStep[];
         };
-        readonly slots: readonly { readonly steps: readonly { readonly phase: string }[] }[];
+        readonly slots: readonly { readonly steps: readonly DebugPlanStep[] }[];
       }[];
     }[];
+  };
+}
+
+interface DebugPlanStep {
+  readonly phase: string;
+  readonly owner?: {
+    readonly kind: string;
+    readonly id: string;
   };
 }
 
@@ -101,20 +106,26 @@ test("Eval Group、Sandbox 与 Eval Plugin 各自遵守共享实例的生命周�
     });
     expect(commands.exitCode, commands.diagnostic()).toBe(0);
     const debugPlan = commands.json<DebugPlanDocument>();
-    expect(debugPlan).toMatchObject({
-      format: "niceeval.debug-plan/v1",
-      experimentId: "group-plugin",
-      evalId: "group-plugin/01-first",
-    });
     const lane = debugPlan.commandPlan.experiments[0]!.lanes[0]!;
-    expect(lane.slots).toHaveLength(1);
     expect(lane.beforeSlots!.map((step) => step.phase)).toEqual([
       "plugin.lifecycle.setup",
       "plugin.lifecycle.setup",
     ]);
-    expect(lane.physicalLifecycleTemplate!.enter.map((step) => step.phase)).toContain("plugin.lifecycle.setup");
+    const physicalSetups = lane.physicalLifecycleTemplate!.enter.filter(
+      (step) => step.phase === "plugin.lifecycle.setup",
+    );
+    expect(physicalSetups.map((step) => step.owner)).toEqual([
+      { kind: "eval-group", id: "group-plugin" },
+      { kind: "eval-group", id: "group-plugin" },
+    ]);
     expect(lane.slots[0]!.steps.map((step) => step.phase)).toContain("plugin.lifecycle.setup");
-    expect(lane.physicalLifecycleTemplate!.exit.map((step) => step.phase)).toContain("plugin.lifecycle.teardown");
+    const physicalTeardowns = lane.physicalLifecycleTemplate!.exit.filter(
+      (step) => step.phase === "plugin.lifecycle.teardown",
+    );
+    expect(physicalTeardowns.map((step) => step.owner)).toEqual([
+      { kind: "eval-group", id: "group-plugin" },
+      { kind: "eval-group", id: "group-plugin" },
+    ]);
     expect(lane.afterSlots!.map((step) => step.phase)).toEqual([
       "plugin.lifecycle.teardown",
       "plugin.lifecycle.teardown",

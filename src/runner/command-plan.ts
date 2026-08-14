@@ -18,6 +18,7 @@ import {
   sandboxTemplateCommandPlanLocator,
   type SandboxTemplateCommandPlanLocator,
 } from "../sandbox/layer.ts";
+import type { LinkedSandboxPluginLifecycle } from "../sandbox/link.ts";
 import { runPairKey, type PreparedRunPair } from "./sandbox-selection.ts";
 import {
   sandboxReusePoolDescriptor,
@@ -468,6 +469,26 @@ function pluginLifecycleSteps(
     ));
 }
 
+function sandboxPluginLifecycleSteps(
+  lifecycles: readonly LinkedSandboxPluginLifecycle[],
+  phase: "setup" | "teardown",
+  condition?: SandboxCommandPlanCondition,
+): readonly CommandPlanStep[] {
+  const ordered = phase === "teardown" ? [...lifecycles].reverse() : lifecycles;
+  return ordered
+    .filter((entry) => phase === "setup" ? entry.lifecycle.hasSetup : entry.lifecycle.hasTeardown)
+    .map(({ lifecycle, owner }) => opaque(
+      `plugin.lifecycle.${phase}`,
+      `plugin-lifecycle-${phase}-callback`,
+      `Plugin ${lifecycle.name} (${lifecycle.instanceKey}) ${phase} callback is opaque`,
+      {
+        owner,
+        label: `${lifecycle.name}:${lifecycle.instanceKey}`,
+        ...(condition === undefined ? {} : { condition }),
+      },
+    ));
+}
+
 function physicalBefore(pair: PreparedRunPair, shared: boolean): readonly CommandPlanStep[] {
   if (pair.plan._tag !== "Sandbox") return [];
   const provider: CommandPlanOwner = { kind: "provider", id: pair.plan.providerPlan.provider };
@@ -489,10 +510,9 @@ function physicalBefore(pair: PreparedRunPair, shared: boolean): readonly Comman
       },
     ),
     ...sandboxLifecycleHooks(pair, "setup", shared ? SHARED_INSTANCE_AVAILABLE : undefined),
-    ...pluginLifecycleSteps(
-      pair.plan.pair.pluginLifecycles.map((entry) => entry.lifecycle),
+    ...sandboxPluginLifecycleSteps(
+      pair.plan.pair.pluginLifecycles,
       "setup",
-      provider,
       shared ? SHARED_INSTANCE_AVAILABLE : undefined,
     ),
     opaque(
@@ -508,10 +528,9 @@ function physicalAfter(pair: PreparedRunPair, shared: boolean): readonly Command
   if (pair.plan._tag !== "Sandbox") return [];
   const provider: CommandPlanOwner = { kind: "provider", id: pair.plan.providerPlan.provider };
   return [
-    ...pluginLifecycleSteps(
-      pair.plan.pair.pluginLifecycles.map((entry) => entry.lifecycle),
+    ...sandboxPluginLifecycleSteps(
+      pair.plan.pair.pluginLifecycles,
       "teardown",
-      provider,
       shared ? SHARED_INSTANCE_AVAILABLE : undefined,
     ),
     ...sandboxLifecycleHooks(pair, "teardown", shared ? SHARED_INSTANCE_AVAILABLE : undefined),
