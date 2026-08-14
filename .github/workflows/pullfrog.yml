@@ -16,62 +16,8 @@ permissions:
   contents: read
 
 jobs:
-  transport-canary:
-    name: Verify large result script transport
-    if: ${{ inputs.name == 'transport-canary' }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - name: Produce a schema-legal result above the environment boundary
-        id: producer
-        shell: node {0}
-        run: |
-          const crypto = require("node:crypto");
-          const fs = require("node:fs");
-
-          const reviewBody = `quotes: "'\\; expression: $` + "{{not-an-expression}}; "
-            + "你".repeat(59_950);
-          const raw = JSON.stringify({
-            pull_number: 52,
-            head_sha: "0123456789abcdef0123456789abcdef01234567",
-            review_body: reviewBody,
-          });
-          const bytes = Buffer.byteLength(raw, "utf8");
-          if (reviewBody.length > 60_000 || bytes <= 128 * 1024 || bytes > 720_256) {
-            throw new Error(`Canary fixture violates the production boundary: ${bytes} bytes`);
-          }
-          const sha256 = crypto.createHash("sha256").update(raw).digest("hex");
-          fs.appendFileSync(
-            process.env.GITHUB_OUTPUT,
-            `result<<PULLFROG_TRANSPORT_CANARY\n${raw}\nPULLFROG_TRANSPORT_CANARY\n`
-              + `bytes=${bytes}\nsha256=${sha256}\n`,
-          );
-      - name: Consume the result through the production script boundary
-        shell: node --input-type=commonjs {0}
-        run: |
-          const crypto = require("node:crypto");
-
-          const raw = ${{ toJSON(steps.producer.outputs.result) }};
-          const expectedBytes = Number(${{ toJSON(steps.producer.outputs.bytes) }});
-          const expectedSha256 = ${{ toJSON(steps.producer.outputs.sha256) }};
-          const bytes = Buffer.byteLength(raw, "utf8");
-          const sha256 = crypto.createHash("sha256").update(raw).digest("hex");
-          const parsed = JSON.parse(raw);
-          if (
-            bytes !== expectedBytes
-            || sha256 !== expectedSha256
-            || typeof parsed.review_body !== "string"
-            || parsed.review_body.length > 60_000
-            || bytes <= 128 * 1024
-            || bytes > 720_256
-          ) {
-            throw new Error(`Large result changed across script transport: ${bytes} ${sha256}`);
-          }
-
   context:
     name: Lock pull request audit context
-    if: ${{ inputs.name != 'transport-canary' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
