@@ -425,7 +425,7 @@ async function verifyHistoryAndPages(evidence: Evidence): Promise<void> {
   const planned = /(\d+) of (\d+) carried in from cache/.exec(reuseOutput);
   assert.ok(planned, `expected the no-force re-run to print a cache-reuse summary line; got: ${reuseOutput}`);
   assert.equal(planned[2], "2", `the re-run should still plan 2 attempts (attempts:2); got: ${reuseOutput}`);
-  const actual = /\((\d+) reused\)/.exec(reuseOutput);
+  const actual = /\((?:all )?(\d+) reused\)/.exec(reuseOutput);
   assert.ok(actual, `expected the run summary to report a reused count; got: ${reuseOutput}`);
   assert.equal(
     planned[1],
