@@ -91,6 +91,7 @@ docs/
 │   ├── eval-groups/                     按封闭成员集组织的组内 Sandbox 复用与组间并行
 │   ├── plugins/                          带稳定身份的生命周期组合语法
 │   ├── record-analysis-report/           Capture、Analysis 与 Report 的三层 API，以及平台拥有的显式 migration
+│   ├── new-record-report/                Record、Analysis、呈现模型、组件、Report 与交付的七层架构
 │   ├── sandbox-retention/                失败类 Sandbox 的有界停驻、明确销毁与安全 GC
 │   ├── materialization-cache/            Provider cache 的需求、库存、归因与安全回收
 │   └── prepare-transient-retry/         prepare 网络瞬时失败的 attempt 内自愈候选
