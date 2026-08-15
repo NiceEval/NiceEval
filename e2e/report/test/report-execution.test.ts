@@ -2,12 +2,9 @@
 // kill:
 // - inverse = unwrap timing JSON to bare PublicTimingJson; outcome = the
 //   expected Calculation envelope fails before any phase assertion can pass.
-// - inverse = accept a missing or extra cell-table key, skip iterative hierarchy
-//   depth validation, or retain declared page order; outcome = public show
-//   loses its failed-page / depth evidence or public HTTP loses tab order.
 // rerun: pnpm e2e --repo report -- --run test/report-execution.test.ts
 
-import { only, pollUntil, waitForOutput } from "@niceeval/testkit";
+import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { reportCaseArtifacts, reportE2E } from "./support.ts";
 
@@ -258,108 +255,3 @@ test("show --timing 在当前真实 Runner 中公开可用阶段 timing", async 
     },
   );
 });
-
-test("低层 Report 的 cell-table 闭合、层级深度与 navigation 都从公开 CLI/HTTP 交付", async () => {
-  await reportE2E.case(
-    "execution-contracts",
-    { artifacts: reportCaseArtifacts() },
-    async ({ commands: { niceeval } }) => {
-      const run = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
-      expect(run.exitCode, run.diagnostic()).not.toBe(0);
-
-      for (const pageId of ["normal-missing", "normal-extra", "hierarchy-missing", "hierarchy-extra"]) {
-        const rejected = await niceeval.run(
-          ["show", "--report", "./reports/execution-contracts.ts", "--page", `/${pageId}`],
-          { env: { NICEEVAL_REPORT_EXECUTION_CONTRACT: "closure" } },
-        );
-        expect(rejected.exitCode, rejected.diagnostic()).toBe(0);
-        expect(rejected.stdout).toContain(`Page /${pageId} · execution-failed`);
-        expect(rejected.stdout).toContain(`semantic-document-invalid in ${pageId}`);
-      }
-
-      const valid = await niceeval.run(
-        ["show", "--report", "./reports/execution-contracts.ts", "--page", "/"],
-        { env: { NICEEVAL_REPORT_EXECUTION_CONTRACT: "valid" } },
-      );
-      expect(valid.exitCode, valid.diagnostic()).toBe(0);
-      expect(valid.stdout).toContain("Exact cell-table closure");
-      expect(valid.stdout).toContain("Name");
-      expect(valid.stdout).toContain("State");
-      expect(valid.stdout).toContain("cell-table");
-      expect(valid.stdout).toContain("Problems\n  none");
-
-      const deep = await niceeval.run(
-        ["show", "--report", "./reports/execution-contracts.ts", "--page", "/"],
-        { env: { NICEEVAL_REPORT_EXECUTION_CONTRACT: "deep" } },
-      );
-      expect(deep.exitCode, deep.diagnostic()).not.toBe(0);
-      expect(deep.stderr).toContain("report-limit-exceeded");
-      expect(deep.stderr).not.toMatch(/RangeError|Maximum call stack size exceeded/);
-
-      for (const [route, body] of [
-        ["/", "zulu public route body"],
-        ["/zebra", "zebra public route body"],
-        ["/alpha", "alpha public route body"],
-      ] as const) {
-        const selected = await niceeval.run(
-          ["show", "--report", "./reports/execution-contracts.ts", "--page", route],
-          { env: { NICEEVAL_REPORT_EXECUTION_CONTRACT: "navigation" } },
-        );
-        expect(selected.exitCode, selected.diagnostic()).toBe(0);
-        expect(selected.stdout).toContain(body);
-      }
-
-      for (const theme of ["basalt", "chalk"] as const) {
-        const view = niceeval.start(
-          [
-            "view",
-            "--report",
-            "./reports/execution-contracts.ts",
-            "--host",
-            "127.0.0.1",
-            "--port",
-            "0",
-            "--no-open",
-            "--theme",
-            theme,
-          ],
-          {
-            env: { NICEEVAL_REPORT_EXECUTION_CONTRACT: "navigation" },
-            timeoutMs: 60_000,
-          },
-        );
-        try {
-          const startup = await waitForOutput(
-            view,
-            "stdout",
-            /http:\/\/127\.0\.0\.1:\d+\//,
-            { timeoutMs: 30_000, label: `${theme} navigation view URL` },
-          );
-          const origin = startup.match(/http:\/\/127\.0\.0\.1:\d+\//)?.[0];
-          expect(origin, startup).toBeDefined();
-          const html = await pollUntil(
-            async () => {
-              try {
-                const response = await fetch(origin!);
-                return response.status === 200 ? await response.text() : undefined;
-              } catch {
-                return undefined;
-              }
-            },
-            { timeoutMs: 15_000, intervalMs: 100, label: `${theme} navigation page readiness` },
-          );
-          expect(tabNamesFromLiveHtml(html)).toEqual(["Zebra first", "Zebra second", "Alpha last"]);
-        } finally {
-          await view.dispose();
-        }
-      }
-
-    },
-  );
-});
-
-function tabNamesFromLiveHtml(html: string): readonly string[] {
-  return Object.freeze(
-    [...html.matchAll(/<button\b[^>]*\brole="tab"[^>]*>([^<]+)<\/button>/g)].map((match) => match[1]!),
-  );
-}

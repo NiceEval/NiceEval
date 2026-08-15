@@ -396,8 +396,7 @@ test("show 从一次固定 ReportExecution 呈现内建与自定义报告", asyn
 
       for (const family of ["attempt", "experiment"] as const) {
         const ambiguous = await niceeval.run(
-          ["show", "--report", "./reports/execution-contracts.ts", "--page", family],
-          { env: { NICEEVAL_REPORT_EXECUTION_CONTRACT: "page-selection" } },
+          ["show", "--report", "./reports/page-selection.ts", "--page", family],
         );
         expect(ambiguous.exitCode, ambiguous.diagnostic()).not.toBe(0);
         expect(ambiguous.stderr).toContain(`page "${family}" is ambiguous`);
@@ -407,8 +406,7 @@ test("show 从一次固定 ReportExecution 呈现内建与自定义报告", asyn
         expect(ambiguous.stderr).toContain(`/${family}/first (${family})`);
 
         const exactRoute = await niceeval.run(
-          ["show", "--report", "./reports/execution-contracts.ts", "--page", `/${family}/second`],
-          { env: { NICEEVAL_REPORT_EXECUTION_CONTRACT: "page-selection" } },
+          ["show", "--report", "./reports/page-selection.ts", "--page", `/${family}/second`],
         );
         expect(exactRoute.exitCode, exactRoute.diagnostic()).toBe(0);
         expect(exactRoute.stdout).toContain(`Page /${family}/second`);
