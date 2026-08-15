@@ -3,7 +3,7 @@ import { isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CommandOptions, Sandbox } from "../types.ts";
 import { withSandboxIoRetry } from "./io-retry.ts";
-import { withTransferErrors } from "./transfer-errors.ts";
+import { enrichTransferErrors, withTransferErrors } from "./transfer-errors.ts";
 import { successfulCommandResult } from "./operations.ts";
 import {
   providerBoundaryEffect,
@@ -136,11 +136,11 @@ export function normalizeSandboxPaths(sandbox: SandboxProviderBackend, provider:
 /**
  * author facade:Attempt 作者面拿到的那份 Sandbox。所有公开方法都经 executor 作为
  * owner Scope 子 fiber 运行(Scope 关闭统一中断);只有幂等 IO/transfer 使用 Effect 型
- * withSandboxIoRetry,runCommand / runShell / appendLog / stop 一律不重试。路径解析与
- * transfer error 在调用点各做一次、不在两层 facade 间重复包装;provider Promise 叶子
- * 只经 providerBoundaryEffect 适配一次。
+ * withSandboxIoRetry,runCommand / runShell / appendLog / stop 一律不重试。路径解析在
+ * 调用点做一次;provider Promise 叶子只经 providerBoundaryEffect 适配一次,重试分类只
+ * 看到 raw provider 失败,transfer 超时 enrichment 在重试耗尽后做一次(见 transfer-errors.ts)。
  *
- * 文件传输的超时报错在叶子层补齐三要素(操作名 / 对象 / 这是 SDK 往返超时而非 attempt
+ * 文件传输的超时报错在终局失败上补齐三要素(操作名 / 对象 / 这是 SDK 往返超时而非 attempt
  * 预算):provider 各家 SDK 抛的裸超时串没有任何上下文,读到它的人会跑去调 --timeout。
  * 只有超时形态被改写,其它错误原样上抛(见 transfer-errors.ts)。
  */
@@ -188,24 +188,21 @@ export function makeSandboxAuthorFacade(
     },
     writeText: (path, content) => {
       const abs = resolveSandboxPath(sandbox.workdir, path);
-      return executor.run(withSandboxIoRetry(providerBoundaryEffect(() => withTransferErrors(
-        { provider, operation: "writeText", path: abs, bytes: Buffer.byteLength(content) },
-        () => sandbox.writeText(abs, content),
-      ))));
+      return executor.run(withSandboxIoRetry(providerBoundaryEffect(() => sandbox.writeText(abs, content))).pipe(
+        enrichTransferErrors({ provider, operation: "writeText", path: abs, bytes: Buffer.byteLength(content) }),
+      ));
     },
     readBytes: (path) => {
       const abs = resolveSandboxPath(sandbox.workdir, path);
-      return executor.run(withSandboxIoRetry(providerBoundaryEffect(() => withTransferErrors(
-        { provider, operation: "readBytes", path: abs },
-        () => sandbox.readBytes(abs),
-      ))));
+      return executor.run(withSandboxIoRetry(providerBoundaryEffect(() => sandbox.readBytes(abs))).pipe(
+        enrichTransferErrors({ provider, operation: "readBytes", path: abs }),
+      ));
     },
     writeBytes: (path, content) => {
       const abs = resolveSandboxPath(sandbox.workdir, path);
-      return executor.run(withSandboxIoRetry(providerBoundaryEffect(() => withTransferErrors(
-        { provider, operation: "writeBytes", path: abs, bytes: content.byteLength },
-        () => sandbox.writeBytes(abs, content),
-      ))));
+      return executor.run(withSandboxIoRetry(providerBoundaryEffect(() => sandbox.writeBytes(abs, content))).pipe(
+        enrichTransferErrors({ provider, operation: "writeBytes", path: abs, bytes: content.byteLength }),
+      ));
     },
     pathExists: (path) => {
       const abs = resolveSandboxPath(sandbox.workdir, path);
@@ -213,31 +210,27 @@ export function makeSandboxAuthorFacade(
     },
     uploadFile: (source, targetPath) => {
       const abs = resolveSandboxPath(sandbox.workdir, targetPath);
-      return executor.run(withSandboxIoRetry(providerBoundaryEffect(() => withTransferErrors(
-        { provider, operation: "uploadFile", path: abs, localPath: resolveLocalPath(undefined, source) },
-        () => sandbox.uploadFile(source, abs),
-      ))));
+      return executor.run(withSandboxIoRetry(providerBoundaryEffect(() => sandbox.uploadFile(source, abs))).pipe(
+        enrichTransferErrors({ provider, operation: "uploadFile", path: abs, localPath: resolveLocalPath(undefined, source) }),
+      ));
     },
     uploadDirectory: (sourceDir, targetDir, opts) => {
       const base = resolveSandboxPath(sandbox.workdir, targetDir);
-      return executor.run(withSandboxIoRetry(providerBoundaryEffect(() => withTransferErrors(
-        { provider, operation: "uploadDirectory", path: base, localPath: resolveLocalPath(undefined, sourceDir) },
-        () => sandbox.uploadDirectory(sourceDir, base, opts),
-      ))));
+      return executor.run(withSandboxIoRetry(providerBoundaryEffect(() => sandbox.uploadDirectory(sourceDir, base, opts))).pipe(
+        enrichTransferErrors({ provider, operation: "uploadDirectory", path: base, localPath: resolveLocalPath(undefined, sourceDir) }),
+      ));
     },
     downloadFile: (sourcePath, target) => {
       const abs = resolveSandboxPath(sandbox.workdir, sourcePath);
-      return executor.run(withSandboxIoRetry(providerBoundaryEffect(() => withTransferErrors(
-        { provider, operation: "downloadFile", path: abs, localPath: resolveLocalPath(undefined, target) },
-        () => sandbox.downloadFile(abs, target),
-      ))));
+      return executor.run(withSandboxIoRetry(providerBoundaryEffect(() => sandbox.downloadFile(abs, target))).pipe(
+        enrichTransferErrors({ provider, operation: "downloadFile", path: abs, localPath: resolveLocalPath(undefined, target) }),
+      ));
     },
     downloadDirectory: (sourceDir, targetDir, opts) => {
       const base = resolveSandboxPath(sandbox.workdir, sourceDir);
-      return executor.run(withSandboxIoRetry(providerBoundaryEffect(() => withTransferErrors(
-        { provider, operation: "downloadDirectory", path: base, localPath: resolveLocalPath(undefined, targetDir) },
-        () => sandbox.downloadDirectory(base, targetDir, opts),
-      ))));
+      return executor.run(withSandboxIoRetry(providerBoundaryEffect(() => sandbox.downloadDirectory(base, targetDir, opts))).pipe(
+        enrichTransferErrors({ provider, operation: "downloadDirectory", path: base, localPath: resolveLocalPath(undefined, targetDir) }),
+      ));
     },
     stop: () => executor.run(providerBoundaryEffect(() => sandbox.stop())),
     ...(appendLog._tag === "Supported"
