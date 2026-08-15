@@ -204,10 +204,15 @@ function closureStaticFiles(
   const encoder = new TextEncoder();
   const en = closure.en;
   const zhCN = closure["zh-CN"];
+  const zhCNNavigation = staticNavigation(zhCN);
   const zhCNByRoute = new Map<string, ReportHtmlLocaleDocument>();
   for (const page of zhCN.pages) {
     if (page.state === "rendered") {
-      zhCNByRoute.set(page.route, Object.freeze({ locale: zhCN.locale, document: page.document }));
+      zhCNByRoute.set(page.route, Object.freeze({
+        locale: zhCN.locale,
+        document: page.document,
+        ...(zhCNNavigation.length === 0 ? {} : { navigation: zhCNNavigation }),
+      }));
     }
   }
   const zhCNFallback = reportFallbackPage(zhCN);
@@ -216,7 +221,11 @@ function closureStaticFiles(
     theme,
     encoder,
     zhCNByRoute,
-    Object.freeze({ locale: zhCN.locale, document: zhCNFallback.document }),
+    Object.freeze({
+      locale: zhCN.locale,
+      document: zhCNFallback.document,
+      ...(zhCNNavigation.length === 0 ? {} : { navigation: zhCNNavigation }),
+    }),
   ).pipe(
     Effect.flatMap((files) =>
       Effect.flatMap(renderReportExecutionJson({ execution: en }), (enJson) =>

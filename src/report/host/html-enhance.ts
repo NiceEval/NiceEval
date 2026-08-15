@@ -25,6 +25,11 @@
  * title. It must not leave the direct section on the previous locale.
  * Dialog apply reads only title + html; navigation is ignored.
  *
+ * Live language clicks always request the public fragment headers first so
+ * last-click-wins is a public HTTP race. Embedded JSON is only a fallback
+ * when that request cannot complete. file: pages apply a closed template
+ * that carries the localized document and fixed-page navigation together.
+ *
  * Before a locale swap the runtime records the selected tab route, whether
  * the direct section is showing, open hierarchy `data-niceeval-row-key`
  * values, and filter values; after swap it restores by those identities,
@@ -312,8 +317,12 @@ export const REPORT_ENHANCE_SCRIPT = `
     wrap.innerHTML = localizedDocument.html;
     const next = wrap.querySelector(".niceeval-report__document");
     if (!next) return false;
+    const nextNav = wrap.querySelector("[data-niceeval-copy=reportPages]");
+    const currentNav = document.querySelector("[data-niceeval-copy=reportPages]");
+    if (Boolean(currentNav) !== Boolean(nextNav)) return false;
     const snapshot = captureHierarchy(article);
     article.replaceWith(next);
+    if (currentNav && nextNav) currentNav.replaceWith(nextNav);
     document.title = localizedDocument.title;
     bindDisclosures(document);
     bindFilters(document);
@@ -364,6 +373,13 @@ export const REPORT_ENHANCE_SCRIPT = `
       setPressed(nextLocale);
       return;
     }
+    const payload = await fetchLocale(nextLocale, isCurrent);
+    if (!isCurrent()) return;
+    if (payload && applyNavigation(payload)) {
+      commitLocale(nextLocale);
+      return;
+    }
+    if (revision >= 0 && location.protocol !== "file:") return;
     const embedded = parseEmbeddedLocale(nextLocale);
     if (embedded && isCurrent() && applyNavigation(embedded)) {
       commitLocale(nextLocale);
@@ -372,11 +388,7 @@ export const REPORT_ENHANCE_SCRIPT = `
     const staticDocument = parseEmbeddedDocument(nextLocale);
     if (staticDocument && isCurrent() && applyStaticDocument(staticDocument)) {
       commitLocale(nextLocale);
-      return;
     }
-    const payload = await fetchLocale(nextLocale, isCurrent);
-    if (!isCurrent()) return;
-    if (payload && applyNavigation(payload)) commitLocale(nextLocale);
   };
 
   const setPressed = (nextLocale) => {

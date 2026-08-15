@@ -53,12 +53,15 @@ export interface ReportHtmlHostMetadata {
 
 /**
  * Closed document for another locale on the same ordinary route.
- * Static hosts may embed zh-CN here; they must not copy the canonical route.
+ * Static hosts embed every locale document plus that locale's fixed-page
+ * navigation so a file: page can switch both ways without a fragment fetch.
  * Its localized document title travels with its semantic document body.
  */
 export interface ReportHtmlLocaleDocument {
   readonly locale: ReportViewLocale;
   readonly document: ReportDocument;
+  /** Localized fixed-page titles for this locale; omitted when the page has no nav. */
+  readonly navigation?: readonly ReportHtmlNavigationItem[];
 }
 
 /**
@@ -224,6 +227,19 @@ interface PackageCopy {
   readonly experimentHierarchy: string;
   readonly children: (label: string) => string;
   readonly pageState: (state: string) => string;
+  readonly label: string;
+  readonly series: string;
+  readonly value: string;
+  readonly coverage: string;
+  readonly point: string;
+  readonly link: string;
+  readonly hierarchy: string;
+  readonly experiment: string;
+  readonly evalKind: string;
+  readonly attempt: string;
+  readonly coverageValue: (samples: number, total: number, basis: string) => string;
+  readonly scatterAria: (xLabel: string, yLabel: string) => string;
+  readonly scatterDesc: (xLabel: string, yLabel: string) => string;
 }
 
 const PACKAGE_COPY_EN: PackageCopy = Object.freeze({
@@ -248,6 +264,20 @@ const PACKAGE_COPY_EN: PackageCopy = Object.freeze({
   experimentHierarchy: "Experiment hierarchy",
   children: (label: string) => `${label} children`,
   pageState: (state: string) => `Page ${state}`,
+  label: "Label",
+  series: "Series",
+  value: "Value",
+  coverage: "Coverage",
+  point: "Point",
+  link: "Link",
+  hierarchy: "Hierarchy",
+  experiment: "Experiment",
+  evalKind: "Eval",
+  attempt: "Attempt",
+  coverageValue: (samples: number, total: number, basis: string) => `coverage ${samples}/${total} ${basis}`,
+  scatterAria: (xLabel: string, yLabel: string) => `${xLabel} by ${yLabel}`,
+  scatterDesc: (xLabel: string, yLabel: string) =>
+    `Scatter plot of ${yLabel} against ${xLabel}. Missing values are listed in the table below.`,
 });
 
 const PACKAGE_COPY_ZH: PackageCopy = Object.freeze({
@@ -272,6 +302,19 @@ const PACKAGE_COPY_ZH: PackageCopy = Object.freeze({
   experimentHierarchy: "实验层级",
   children: (label: string) => `${label} 的子项`,
   pageState: (state: string) => `页面 ${state}`,
+  label: "标签",
+  series: "系列",
+  value: "数值",
+  coverage: "覆盖",
+  point: "点",
+  link: "链接",
+  hierarchy: "层级",
+  experiment: "实验",
+  evalKind: "题目",
+  attempt: "尝试",
+  coverageValue: (samples: number, total: number, basis: string) => `覆盖 ${samples}/${total} ${basis}`,
+  scatterAria: (xLabel: string, yLabel: string) => `${xLabel} 与 ${yLabel}`,
+  scatterDesc: (xLabel: string, yLabel: string) => `${yLabel} 对 ${xLabel} 的散点图。缺失值列在下方表格中。`,
 });
 
 function packageCopy(locale: ReportViewLocale): PackageCopy {
@@ -296,19 +339,13 @@ export function renderReportHtml(input: RenderReportHtmlInput): string {
     : `<pre class="niceeval-report__text">${escapeHtml(input.text)}</pre>`;
   const localeDocuments = semantic ? input.localeDocuments ?? [] : [];
   const templates = classic
-    ? localeDocuments
-      .filter((item) => item.locale !== locale)
-      .map((item) =>
-        `<template data-niceeval-locale-document="${item.locale}" data-niceeval-locale-title="${escapeHtml(item.document.title)}">${
-          renderDocument(item.document, {
-            route: input.route,
-            hrefMode: "relative",
-            classic: isClassicDocument(item.document),
-            locale: item.locale,
-          })
-        }</template>`
-      )
-      .join("")
+    ? renderLocaleTemplates({
+        locale,
+        document: input.document,
+        navigation: input.navigation ?? [],
+        route: input.route,
+        extras: localeDocuments,
+      })
     : "";
   const styles = `${themeStylesheet(theme)}${REPORT_HTML_STYLESHEET}${classic ? REPORT_CLASSIC_STYLESHEET : ""}`;
   const enhance = classic ? `<script>${REPORT_ENHANCE_SCRIPT}</script>` : "";
@@ -507,6 +544,39 @@ function renderStaticPageLinks(
   return `<nav class="niceeval-report__tabs" aria-label="${escapeHtml(copy.reportPages)}" data-niceeval-copy="reportPages">${links}</nav>`;
 }
 
+/**
+ * Embed every locale's document and that locale's fixed-page nav. The current
+ * English page stays in a template so file: can switch zh-CN → en after the
+ * visible article is replaced.
+ */
+function renderLocaleTemplates(input: {
+  readonly locale: ReportViewLocale;
+  readonly document: ReportDocument;
+  readonly navigation: readonly ReportHtmlNavigationItem[];
+  readonly route: ReportRoute;
+  readonly extras: readonly ReportHtmlLocaleDocument[];
+}): string {
+  const seen = new Set<ReportViewLocale>();
+  const items: readonly ReportHtmlLocaleDocument[] = [
+    { locale: input.locale, document: input.document, navigation: input.navigation },
+    ...input.extras,
+  ];
+  return items.flatMap((item) => {
+    if (seen.has(item.locale)) return [];
+    seen.add(item.locale);
+    const nav = renderStaticPageLinks(input.route, item.navigation ?? [], item.locale);
+    const document = renderDocument(item.document, {
+      route: input.route,
+      hrefMode: "relative",
+      classic: isClassicDocument(item.document),
+      locale: item.locale,
+    });
+    return [
+      `<template data-niceeval-locale-document="${item.locale}" data-niceeval-locale-title="${escapeHtml(item.document.title)}">${nav}${document}</template>`,
+    ];
+  }).join("");
+}
+
 function isClassicDocument(document: ReportDocument): boolean {
   return document.presentation === "classic-dashboard";
 }
@@ -630,7 +700,9 @@ function renderStatValue(value: string, classic: boolean): string {
   if (!classic) return escaped;
   return escaped
     .replace(/(\d+)\s+passed/g, '<span class="niceeval-report__stat-good">$1 passed</span>')
-    .replace(/(\d+)\s+failed/g, '<span class="niceeval-report__stat-bad">$1 failed</span>');
+    .replace(/(\d+)\s+failed/g, '<span class="niceeval-report__stat-bad">$1 failed</span>')
+    .replace(/(\d+)\s+通过/g, '<span class="niceeval-report__stat-good">$1 通过</span>')
+    .replace(/(\d+)\s+失败/g, '<span class="niceeval-report__stat-bad">$1 失败</span>');
 }
 
 function renderCellTableHierarchy(
@@ -751,7 +823,7 @@ function renderSummary(
     ? ""
     : `<div class="niceeval-report__summary-metric"><dt>${escapeHtml(copy.lastRunLabel)}</dt><dd>${escapeHtml(formatLastRunAt(block.lastRunAt))}</dd></div>`;
   const metrics = block.metrics.map((metric) =>
-    `<div class="niceeval-report__summary-metric"><dt>${escapeHtml(metric.label)}</dt><dd>${renderDashboardDisplay(metric)}</dd></div>`
+    `<div class="niceeval-report__summary-metric"><dt>${escapeHtml(metric.label)}</dt><dd>${renderDashboardDisplay(metric, ctx.locale)}</dd></div>`
   ).join("");
   return `<section class="niceeval-report__summary" aria-label="${escapeHtml(copy.summary)}"><h2>${escapeHtml(copy.summary)}</h2><dl>${lastRun}${metrics}</dl></section>`;
 }
@@ -770,13 +842,13 @@ function renderRankedBars(block: ReportRankedBars, ctx: RenderContext): string {
     const seriesIndex = Math.max(0, seriesKeys.indexOf(point.series)) % 6;
     const pattern = seriesPattern(point.series);
     if (!ctx.classic) {
-      return `<li class="niceeval-report__bar${missing ? " niceeval-report__bar--missing" : ""}"><div class="niceeval-report__bar-label"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div><div class="niceeval-report__bar-track" aria-hidden="true"><span class="niceeval-report__bar-fill" style="width:${percent.toFixed(3)}%"></span></div><span class="niceeval-report__bar-coverage">${escapeHtml(formatCoverage(point.coverage))}</span></li>`;
+      return `<li class="niceeval-report__bar${missing ? " niceeval-report__bar--missing" : ""}"><div class="niceeval-report__bar-label"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div><div class="niceeval-report__bar-track" aria-hidden="true"><span class="niceeval-report__bar-fill" style="width:${percent.toFixed(3)}%"></span></div><span class="niceeval-report__bar-coverage">${escapeHtml(formatCoverage(point.coverage, ctx.locale))}</span></li>`;
     }
     const now = missing ? "" : ` aria-valuenow="${escapeHtml(String(point.value))}"`;
     return `<li class="niceeval-report__bar${missing ? " niceeval-report__bar--missing" : ""} niceeval-report__series-${seriesIndex}"><span class="niceeval-report__bar-label" title="${escapeHtml(point.label)}" aria-hidden="true">${escapeHtml(short)}</span><div class="niceeval-report__bar-track"><span role="meter" class="niceeval-report__bar-fill niceeval-report__bar-fill--v${pattern}" aria-label="${escapeHtml(point.label)}" aria-valuemin="${scale.minimum}" aria-valuemax="${scale.maximum}"${now} style="width:${percent.toFixed(3)}%"></span></div><strong class="niceeval-report__bar-value" aria-hidden="true">${escapeHtml(value)}</strong></li>`;
   }).join("");
   const tableRows = points.map((point) =>
-    `<tr><th scope="row">${escapeHtml(point.label)}</th><td>${escapeHtml(point.series)}</td><td class="niceeval-report__align-end">${escapeHtml(point.display)}</td><td class="niceeval-report__align-end">${escapeHtml(formatCoverage(point.coverage))}</td></tr>`
+    `<tr><th scope="row">${escapeHtml(point.label)}</th><td>${escapeHtml(point.series)}</td><td class="niceeval-report__align-end">${escapeHtml(point.display)}</td><td class="niceeval-report__align-end">${escapeHtml(formatCoverage(point.coverage, ctx.locale))}</td></tr>`
   ).join("");
   const hidden = ctx.classic ? " niceeval-report__visually-hidden" : "";
   const copy = packageCopy(ctx.locale);
@@ -789,7 +861,7 @@ function renderRankedBars(block: ReportRankedBars, ctx: RenderContext): string {
         return `<li><span class="niceeval-report__bar-key niceeval-report__series-${seriesIndex} niceeval-report__bar-fill--v${seriesPattern(series)}" aria-hidden="true"></span>${escapeHtml(series)}</li>`;
       }).join("")
     }</ul>`;
-  return `<figure class="niceeval-report__ranked-bars"><figcaption>${escapeHtml(block.title)}<span>${escapeHtml(block.better === "higher" ? copy.higherBetter : copy.lowerBetter)}</span></figcaption><ol>${bars}</ol>${legend}<div class="niceeval-report__table-wrap niceeval-report__dashboard-data${hidden}"><table class="niceeval-report__table"><caption>${escapeHtml(copy.accessibleValues(block.title))}</caption><thead><tr><th scope="col">Label</th><th scope="col">Series</th><th scope="col" class="niceeval-report__align-end">Value</th><th scope="col" class="niceeval-report__align-end">Coverage</th></tr></thead><tbody>${tableRows}</tbody></table></div></figure>`;
+  return `<figure class="niceeval-report__ranked-bars"><figcaption>${escapeHtml(block.title)}<span>${escapeHtml(block.better === "higher" ? copy.higherBetter : copy.lowerBetter)}</span></figcaption><ol>${bars}</ol>${legend}<div class="niceeval-report__table-wrap niceeval-report__dashboard-data${hidden}"><table class="niceeval-report__table"><caption>${escapeHtml(copy.accessibleValues(block.title))}</caption><thead><tr><th scope="col">${escapeHtml(copy.label)}</th><th scope="col">${escapeHtml(copy.series)}</th><th scope="col" class="niceeval-report__align-end">${escapeHtml(copy.value)}</th><th scope="col" class="niceeval-report__align-end">${escapeHtml(copy.coverage)}</th></tr></thead><tbody>${tableRows}</tbody></table></div></figure>`;
 }
 
 function seriesPattern(series: string): 1 | 2 | 3 | 4 {
@@ -888,12 +960,12 @@ function renderScatter(block: ReportScatter, ctx: RenderContext): string {
     )
   ).join("");
   const hidden = ctx.classic ? " niceeval-report__visually-hidden" : "";
-  const aria = `${block.xLabel} by ${block.yLabel}`;
-  return `<figure class="niceeval-report__scatter"><figcaption>${escapeHtml(block.title)}<span>${escapeHtml(block.xLabel)} × ${escapeHtml(block.yLabel)}</span></figcaption><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(aria)}" preserveAspectRatio="xMidYMid meet"><title>${escapeHtml(block.title)}</title><desc>${escapeHtml(`Scatter plot of ${block.yLabel} against ${block.xLabel}. Missing values are listed in the table below.`)}</desc>${grid}${better}<line class="niceeval-report__scatter-axis" x1="${bounds.left}" y1="${
+  const aria = copy.scatterAria(block.xLabel, block.yLabel);
+  return `<figure class="niceeval-report__scatter"><figcaption>${escapeHtml(block.title)}<span>${escapeHtml(block.xLabel)} × ${escapeHtml(block.yLabel)}</span></figcaption><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(aria)}" preserveAspectRatio="xMidYMid meet"><title>${escapeHtml(block.title)}</title><desc>${escapeHtml(copy.scatterDesc(block.xLabel, block.yLabel))}</desc>${grid}${better}<line class="niceeval-report__scatter-axis" x1="${bounds.left}" y1="${
     height - bounds.bottom
   }" x2="${width - bounds.right}" y2="${height - bounds.bottom}"></line><line class="niceeval-report__scatter-axis" x1="${bounds.left}" y1="${bounds.top}" x2="${bounds.left}" y2="${
     height - bounds.bottom
-  }"></line><text class="niceeval-report__scatter-axis-label" x="${width / 2}" y="${height - 8}" text-anchor="middle">${escapeHtml(block.xLabel)}</text><text class="niceeval-report__scatter-axis-label" x="16" y="${height / 2}" text-anchor="middle" transform="rotate(-90 16 ${height / 2})">${escapeHtml(block.yLabel)}</text>${marks}</svg><ul class="niceeval-report__scatter-legend" aria-label="${escapeHtml(copy.seriesKey)}">${links}</ul><div class="niceeval-report__table-wrap niceeval-report__dashboard-data${hidden}"><table class="niceeval-report__table"><caption>${escapeHtml(copy.accessibleValues(block.title))}</caption><thead><tr><th scope="col">Point</th><th scope="col" class="niceeval-report__align-end">${escapeHtml(block.xLabel)}</th><th scope="col" class="niceeval-report__align-end">${escapeHtml(block.yLabel)}</th><th scope="col">Link</th></tr></thead><tbody>${tableRows}</tbody></table></div></figure>`;
+  }"></line><text class="niceeval-report__scatter-axis-label" x="${width / 2}" y="${height - 8}" text-anchor="middle">${escapeHtml(block.xLabel)}</text><text class="niceeval-report__scatter-axis-label" x="16" y="${height / 2}" text-anchor="middle" transform="rotate(-90 16 ${height / 2})">${escapeHtml(block.yLabel)}</text>${marks}</svg><ul class="niceeval-report__scatter-legend" aria-label="${escapeHtml(copy.seriesKey)}">${links}</ul><div class="niceeval-report__table-wrap niceeval-report__dashboard-data${hidden}"><table class="niceeval-report__table"><caption>${escapeHtml(copy.accessibleValues(block.title))}</caption><thead><tr><th scope="col">${escapeHtml(copy.point)}</th><th scope="col" class="niceeval-report__align-end">${escapeHtml(block.xLabel)}</th><th scope="col" class="niceeval-report__align-end">${escapeHtml(block.yLabel)}</th><th scope="col">${escapeHtml(copy.link)}</th></tr></thead><tbody>${tableRows}</tbody></table></div></figure>`;
 }
 
 function axisUnit(field: string): string | undefined {
@@ -911,43 +983,47 @@ function axisBounds(field: string): { min?: number; max?: number } | undefined {
 }
 
 function renderTreeTable(block: ReportTreeTable, ctx: RenderContext): string {
+  const copy = packageCopy(ctx.locale);
   const headings = block.columns.map((column) =>
     `<th scope="col" class="niceeval-report__align-${column.align === "end" ? "end" : "start"}">${escapeHtml(column.label)}</th>`
   ).join("");
   const rows = block.rows.map((row) => {
-    const label = `${treeKindLabel(row.kind)} · ${row.label}`;
+    const label = `${treeKindLabel(row.kind, copy)} · ${row.label}`;
     const target = row.target === undefined || row.target.kind === "attempt"
       ? escapeHtml(label)
       : `<a ${reportLinkAttributes(ctx, row.target)}>${escapeHtml(label)}</a>`;
     const cells = block.columns.map((column) =>
-      `<td class="niceeval-report__align-${column.align === "end" ? "end" : "start"}">${renderTreeCell(row.cells[column.key]!)}</td>`
+      `<td class="niceeval-report__align-${column.align === "end" ? "end" : "start"}">${renderTreeCell(row.cells[column.key]!, ctx.locale)}</td>`
     ).join("");
     return `<tr data-kind="${row.kind}" style="--niceeval-tree-depth:${row.depth}"><th scope="row" class="niceeval-report__tree-label">${target}</th>${cells}</tr>`;
   }).join("");
-  return `<div class="niceeval-report__table-wrap"><table class="niceeval-report__table niceeval-report__tree-table"><caption>${escapeHtml(block.caption)}</caption><thead><tr><th scope="col">Hierarchy</th>${headings}</tr></thead><tbody>${rows}</tbody></table></div>`;
+  return `<div class="niceeval-report__table-wrap"><table class="niceeval-report__table niceeval-report__tree-table"><caption>${escapeHtml(block.caption)}</caption><thead><tr><th scope="col">${escapeHtml(copy.hierarchy)}</th>${headings}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
-function treeKindLabel(kind: ReportTreeTable["rows"][number]["kind"]): string {
+function treeKindLabel(
+  kind: ReportTreeTable["rows"][number]["kind"],
+  copy: PackageCopy,
+): string {
   switch (kind) {
     case "experiment":
-      return "Experiment";
+      return copy.experiment;
     case "eval":
-      return "Eval";
+      return copy.evalKind;
     case "attempt":
-      return "Attempt";
+      return copy.attempt;
   }
 }
 
-function renderTreeCell(value: ReportTreeCell): string {
+function renderTreeCell(value: ReportTreeCell, locale: ReportViewLocale): string {
   if (value === null || typeof value !== "object") return escapeHtml(value === null ? "—" : scalarText(value));
-  return renderDashboardDisplay(value);
+  return renderDashboardDisplay(value, locale);
 }
 
-function renderDashboardDisplay(value: ReportDisplayValue): string {
+function renderDashboardDisplay(value: ReportDisplayValue, locale: ReportViewLocale): string {
   const display = value.display;
   const coverage = value.coverage === undefined
     ? ""
-    : ` <span class="niceeval-report__coverage">${escapeHtml(formatCoverage(value.coverage))}</span>`;
+    : ` <span class="niceeval-report__coverage">${escapeHtml(formatCoverage(value.coverage, locale))}</span>`;
   return `${escapeHtml(display)}${coverage}`;
 }
 
@@ -957,8 +1033,8 @@ function formatLastRunAt(value: number | null): string {
   return Number.isNaN(date.valueOf()) ? "—" : date.toISOString();
 }
 
-function formatCoverage(coverage: ReportCoverage): string {
-  return `coverage ${coverage.samples}/${coverage.total} ${coverage.basis}`;
+function formatCoverage(coverage: ReportCoverage, locale: ReportViewLocale): string {
+  return packageCopy(locale).coverageValue(coverage.samples, coverage.total, coverage.basis);
 }
 
 function linkTargetLabel(target: ReportLinkTarget): string {

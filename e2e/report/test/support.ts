@@ -5,6 +5,7 @@ import {
   type Argv,
   type ArtifactStageEntry,
 } from "@niceeval/testkit";
+import type { Page, Request, Route } from "@playwright/test";
 import { join, resolve } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 
@@ -108,6 +109,55 @@ export async function runReportPty(
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * Hold matching HTTP requests until release(). The owner names the public
+ * URL/header predicate and every expected result; this helper only sequences
+ * fetch → fulfill.
+ */
+export async function holdMatchingRequests(
+  page: Page,
+  match: (request: Request) => boolean,
+): Promise<{
+  readonly firstHeld: Promise<void>;
+  readonly firstDelivered: Promise<void>;
+  readonly release: () => void;
+  readonly dispose: () => Promise<void>;
+}> {
+  let sawFirst: () => void = () => undefined;
+  let released: () => void = () => undefined;
+  let delivered: () => void = () => undefined;
+  const firstHeld = new Promise<void>((resolve) => {
+    sawFirst = resolve;
+  });
+  const releasedGate = new Promise<void>((resolve) => {
+    released = resolve;
+  });
+  const firstDelivered = new Promise<void>((resolve) => {
+    delivered = resolve;
+  });
+  const handler = async (route: Route) => {
+    if (!match(route.request())) {
+      await route.continue();
+      return;
+    }
+    const response = await route.fetch();
+    sawFirst();
+    await releasedGate;
+    await route.fulfill({ response });
+    delivered();
+  };
+  await page.route("**/*", handler);
+  return {
+    firstHeld,
+    firstDelivered,
+    release: () => released(),
+    dispose: async () => {
+      released();
+      await page.unroute("**/*", handler);
+    },
+  };
 }
 
 /**

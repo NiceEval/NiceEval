@@ -4,8 +4,10 @@
 // - inverse = custom metric formatters always receive "en" instead of Sample.locale
 // - inverse = hierarchy parent cell omits ordinary <a> when descendants.length > 0
 // - inverse = static locale document omits its document title, leaving title and body divergent
+// - inverse = static templates omit English or apply only the article, leaving English nav
 // - inverse = recorded-data fallback bypasses the semantic bilingual report shell
 // - inverse = formatCellText renders verdict labels from raw status strings, ignoring locale
+// - inverse = ranked-bar/scatter/tree-table headers stay English in zh-CN
 // - inverse = static classic chrome omits visible fixed-page hrefs
 // rerun: pnpm e2e --repo report -- --run test/report.browser.spec.ts
 //
@@ -16,8 +18,8 @@ import { pollUntil, waitForOutput } from "@niceeval/testkit";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { expect, test, type ElementHandle, type Route } from "@playwright/test";
-import { reportCaseArtifacts, reportE2E } from "./support.ts";
+import { expect, test, type ElementHandle } from "@playwright/test";
+import { holdMatchingRequests, reportCaseArtifacts, reportE2E } from "./support.ts";
 
 test("Report browser Journey：经典界面与自定义报告共用固定执行、导航和热重载", async ({ page }) => {
   test.setTimeout(120_000);
@@ -152,6 +154,9 @@ test("Report browser Journey：经典界面与自定义报告共用固定执行�
         await expect(page.getByRole("term").filter({ hasText: /^通过率$/ })).toBeVisible();
         await expect(page.getByRole("columnheader", { name: "实验", exact: true })).toBeVisible();
         await expect(page.getByRole("columnheader", { name: "平均耗时", exact: true })).toBeVisible();
+        await expect(page.getByRole("img", { name: "costUSD 与 passRate" })).toBeVisible();
+        expect(await page.getByRole("columnheader", { name: "点", exact: true }).count()).toBeGreaterThan(0);
+        expect(await page.getByRole("columnheader", { name: "链接", exact: true }).count()).toBeGreaterThan(0);
 
         // kill: inverse = formatCellText renders verdict labels from raw status
         // strings, ignoring locale. invoke: read the zh-CN execution's
@@ -175,49 +180,24 @@ test("Report browser Journey：经典界面与自定义报告共用固定执行�
         const enHierarchy = page.getByRole("table", { name: "Experiment hierarchy" });
         await expect(enHierarchy.getByRole("cell", { name: "1 passed · 1 failed · 1 errored", exact: true })).toBeVisible();
         await expect(enHierarchy.getByRole("cell", { name: "通过", exact: true })).toHaveCount(0);
+        await expect(page.getByRole("img", { name: "costUSD by passRate" })).toBeVisible();
+        await expect(page.getByRole("columnheader", { name: "点", exact: true })).toHaveCount(0);
 
         // kill: inverse = switchLocale returns on nextLocale === locale without
-        // advancing the request generation. invoke: hold the zh-CN fragment,
-        // click EN, then release. observe: EN stays pressed; the old runtime
-        // commits zh-CN and shows「通过率」.
-        await page.evaluate(() => {
-          for (const script of document.querySelectorAll('script[type="application/json"]')) {
-            script.remove();
-          }
-        });
-        let releaseZhFragment: () => void = () => undefined;
-        const zhFragmentReleased = new Promise<void>((resolve) => {
-          releaseZhFragment = resolve;
-        });
-        let sawZhFragment: () => void = () => undefined;
-        const zhFragmentHeld = new Promise<void>((resolve) => {
-          sawZhFragment = resolve;
-        });
-        let deliveredZhFragment: () => void = () => undefined;
-        const zhFragmentDelivered = new Promise<void>((resolve) => {
-          deliveredZhFragment = resolve;
-        });
-        const holdZhFragment = async (route: Route) => {
-          const headers = route.request().headers();
-          const isZhFragment = headers["x-niceeval-report-fragment"] !== undefined
+        // advancing the request generation. invoke: hold the public zh-CN
+        // fragment headers, click EN, then release. observe: EN stays pressed;
+        // the late fragment does not commit 「通过率」.
+        const holdZhFragment = await holdMatchingRequests(page, (request) => {
+          const headers = request.headers();
+          return headers["x-niceeval-report-fragment"] !== undefined
             && headers["x-niceeval-report-locale"] === "zh-CN";
-          if (!isZhFragment) {
-            await route.continue();
-            return;
-          }
-          const response = await route.fetch();
-          sawZhFragment();
-          await zhFragmentReleased;
-          await route.fulfill({ response });
-          deliveredZhFragment();
-        };
-        await page.route("**/*", holdZhFragment);
+        });
         try {
           await page.getByRole("button", { name: "中文" }).click();
-          await zhFragmentHeld;
+          await holdZhFragment.firstHeld;
           await page.getByRole("button", { name: "EN" }).click();
-          releaseZhFragment();
-          await zhFragmentDelivered;
+          holdZhFragment.release();
+          await holdZhFragment.firstDelivered;
           await page.evaluate(() => new Promise<void>((resolve) => {
             setTimeout(() => setTimeout(resolve, 0), 0);
           }));
@@ -228,7 +208,7 @@ test("Report browser Journey：经典界面与自定义报告共用固定执行�
           await expect(page.getByText("Evaluation reports for AI agents.", { exact: true })).toBeVisible();
           await expect(page.getByText("通过率", { exact: true })).toHaveCount(0);
         } finally {
-          await page.unroute("**/*", holdZhFragment);
+          await holdZhFragment.dispose();
         }
 
         await page.setViewportSize({ width: 390, height: 844 });
@@ -282,6 +262,33 @@ test("Report browser Journey：经典界面与自定义报告共用固定执行�
         } finally {
           await noJsContext.close();
         }
+
+        // kill: inverse = static templates omit English, or apply only the
+        // article and leave English nav. invoke: open the exported index over
+        // file: and click 中文 then EN. observe: body and Report pages nav
+        // switch together both ways.
+        const fileIndex = pathToFileURL(index).href;
+        await page.goto(fileIndex);
+        await expect(page.getByRole("navigation", { name: "Report pages" })).toBeVisible();
+        await expect(page.getByRole("link", { name: "Report", exact: true })).toBeVisible();
+        await expect(page.getByRole("table", { name: "Experiment hierarchy" })).toBeVisible();
+        await page.getByRole("button", { name: "中文" }).click();
+        await expect(page.getByRole("button", { name: "中文" })).toHaveAttribute("aria-pressed", "true");
+        await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
+        await expect(page.getByRole("navigation", { name: "报告页面" })).toBeVisible();
+        await expect(page.getByRole("link", { name: "报告", exact: true })).toBeVisible();
+        await expect(page.getByRole("table", { name: "实验层级" })).toBeVisible();
+        await expect(page.getByRole("columnheader", { name: "实验", exact: true })).toBeVisible();
+        await expect(page.getByRole("img", { name: "costUSD 与 passRate" })).toBeVisible();
+        await expect(page.getByRole("navigation", { name: "Report pages" })).toHaveCount(0);
+        await page.getByRole("button", { name: "EN" }).click();
+        await expect(page.getByRole("button", { name: "EN" })).toHaveAttribute("aria-pressed", "true");
+        await expect(page.locator("html")).toHaveAttribute("lang", "en");
+        await expect(page.getByRole("navigation", { name: "Report pages" })).toBeVisible();
+        await expect(page.getByRole("link", { name: "Report", exact: true })).toBeVisible();
+        await expect(page.getByRole("table", { name: "Experiment hierarchy" })).toBeVisible();
+        await expect(page.getByRole("table", { name: "实验层级" })).toHaveCount(0);
+        await expect(page.getByRole("navigation", { name: "报告页面" })).toHaveCount(0);
       }
 
       async function verifyCustomReport(): Promise<void> {
@@ -319,6 +326,14 @@ test("Report browser Journey：经典界面与自定义报告共用固定执行�
         await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
         await expect(page.getByRole("group", { name: "语言" })).toBeVisible();
         await expect(page.getByText("本地化自定义读数：1.0", { exact: true }).first()).toBeVisible();
+        expect(await page.getByRole("columnheader", { name: "标签", exact: true }).count()).toBeGreaterThan(0);
+        expect(await page.getByRole("columnheader", { name: "覆盖", exact: true }).count()).toBeGreaterThan(0);
+        await page.getByRole("button", { name: "EN" }).click();
+        await expect(page).toHaveTitle("Report fixture");
+        await expect(page.locator("html")).toHaveAttribute("lang", "en");
+        await expect(page.getByRole("group", { name: "Language" })).toBeVisible();
+        await expect(page.getByText("Localized custom reading: 1.0", { exact: true }).first()).toBeVisible();
+        await expect(page.getByText("本地化自定义读数：1.0", { exact: true })).toHaveCount(0);
 
         const fallbackExported = await niceeval.run([
           "view",
@@ -347,6 +362,12 @@ test("Report browser Journey：经典界面与自定义报告共用固定执行�
         await expect(page.getByRole("group", { name: "语言" })).toBeVisible();
         await expect(page.getByRole("heading", { name: "报告数据不可用", level: 1 })).toBeVisible();
         await expect(page.getByRole("heading", { name: "报告问题", level: 2 })).toBeVisible();
+        await page.getByRole("button", { name: "EN" }).click();
+        await expect(page).toHaveTitle("Report data unavailable");
+        await expect(page.locator("html")).toHaveAttribute("lang", "en");
+        await expect(page.getByRole("group", { name: "Language" })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "Report data unavailable", level: 1 })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "Report problems", level: 2 })).toBeVisible();
 
         const browser = page.context().browser();
         expect(browser).not.toBeNull();
@@ -394,11 +415,6 @@ test("Report browser Journey：经典界面与自定义报告共用固定执行�
         await expect(page).toHaveTitle("Report data unavailable");
         await expect(page.getByRole("group", { name: "Language" })).toBeVisible();
         await expect(page.getByRole("heading", { name: "Report data unavailable", level: 1 })).toBeVisible();
-        await page.evaluate(() => {
-          for (const script of document.querySelectorAll('script[type="application/json"]')) {
-            script.remove();
-          }
-        });
         await page.getByRole("button", { name: "中文" }).click();
         expect(page.url()).toBe(fallbackLiveUrl);
         await expect(page).toHaveTitle("报告数据不可用");
