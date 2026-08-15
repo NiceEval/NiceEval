@@ -578,7 +578,7 @@ function coverageRow(
     },
   };
   return {
-    key: `coverage:${item.experimentId}`,
+    key: "coverage",
     kind: "summary",
     label: classicTableCopy(locale, "recordCoverage"),
     cells: projectCells(bag, columns),

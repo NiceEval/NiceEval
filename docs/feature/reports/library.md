@@ -210,7 +210,9 @@ malformed UTF-16 显示为 `utf16-code-units:"..."`。该 wrapper 对反斜线�
 该 seam 用于 standard Report 的标题、Experiment table 与 tree row、scatter label、Traces cell、
 Attempt stat，以及所有 classic Experiment-facing label。
 
-Sample data、profile、grouping、narrowing、semantic identity、key 与 route target 始终携带原始 ID。
+Sample data、profile、grouping、narrowing，以及 package 内连接 target 的 `sourceKey` 始终携带原始
+ID。进入 ReportDocument 的 semantic key 与 route target 使用上面的 v1 digest；文本使用可逆的
+display seam。
 
 旧 static artifact 使用它已有的文件和 href，因此保持 self-contained 且可用。
 新的 show、view 与 static export 只使用 v1 `/experiment-v1/...` namespace。

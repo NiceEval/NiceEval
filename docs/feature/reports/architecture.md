@@ -201,8 +201,10 @@ digest 是 collision-resistant identity。相同 full digest 仍交给既有的
 `page-family-key-conflict` fail-closed 边界。
 
 这条映射不改变 ExperimentId、Record 或通用 route grammar。
-Sample、profile lookup、grouping、narrowing 和 semantic identity 都保留原始 ID。
-只有进入 Report 文本的值经过 display seam。
+Sample、profile lookup、grouping、narrowing 和 PageFamily narrowing 的领域身份都保留原始 ID。
+进入 ReportDocument 的 semantic key 与 route target 使用 v1 digest；进入 Report 文本的值经过
+display seam。连接 target 与原始领域身份的 package-owned `sourceKey` 不进入 ReportDocument。
+
 旧 static artifact 继续使用自身已有的本地文件。新 host 不把旧 `/experiment/...` href 当成 route，
 也不建立 alias。
 
