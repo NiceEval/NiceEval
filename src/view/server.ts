@@ -19,7 +19,6 @@ import type { ReportPageResult } from "../report/execution/results.ts";
 import {
   renderReportExecutionJson,
   renderReportExecutionProblemsText,
-  renderReportExecutionText,
   type ReportShowRenderError,
 } from "../report/host/presentation.ts";
 import {
@@ -27,6 +26,7 @@ import {
   renderReportLocaleSwitchPayload,
   type ReportLiveLocaleRevision,
 } from "../report/host/html.ts";
+import { reportFallbackPage } from "../report/host/fallback.ts";
 import {
   REPORT_FRAGMENT_HEADER,
   REPORT_LOCALE_HEADER,
@@ -478,6 +478,7 @@ function serveWithExecution(
       headers,
     ));
   }
+  const current = page === "fallback" ? reportFallbackPage(execution) : page;
   const requestedRevision = request.request.headers[REPORT_FRAGMENT_HEADER];
   if (requestedRevision !== undefined) {
     if (requestedRevision !== String(state.current.revision)) {
@@ -488,9 +489,6 @@ function serveWithExecution(
         "application/json; charset=utf-8",
         headers,
       ));
-    }
-    if (page === "fallback") {
-      return Effect.sync(() => sendText(request.response, 404, "page fragment not found", headers));
     }
     // One payload serves both progressive-enhancement consumers: the
     // locale switch applies the full navigation of the requested locale
@@ -504,10 +502,10 @@ function serveWithExecution(
       `${JSON.stringify(renderReportLocaleSwitchPayload({
         revision: state.current.revision,
         locale: execution.locale,
-        title: page.document.title,
+        title: current.document.title,
         navigation: liveNavigation(execution),
-        currentRoute: page.route,
-        currentDocument: page.document,
+        currentRoute: current.route,
+        currentDocument: current.document,
       }))}\n`,
       "application/json; charset=utf-8",
       headers,
@@ -516,29 +514,25 @@ function serveWithExecution(
   return Effect.sync(() => send(
     request.response,
     200,
-    page === "fallback"
-      ? renderHtml(
-        `${hostTextPrefix}${renderReportExecutionText({ execution })}`,
-        state.current.theme,
-      )
-      : renderReportLiveHtml({
-        title: page.document.title,
-        locale: execution.locale,
-        revision: state.current.revision,
-        currentRoute: page.route,
-        currentDocument: page.document,
-        navigation: liveNavigation(execution),
-        theme: state.current.theme,
-        hostMetadata: {
-          ...(state.lastProblem === undefined
-            ? {}
-            : { lastRebuildProblem: state.lastProblem.summary }),
-        },
-        // The sibling execution from the same closure lets the language
-        // control switch in place without a round trip. Same URL, same
-        // revision; the renderer never touches Record data.
-        ...(sibling === undefined ? {} : { localeRevisions: [sibling] }),
-      }),
+    renderReportLiveHtml({
+      title: current.document.title,
+      locale: execution.locale,
+      revision: state.current.revision,
+      currentRoute: current.route,
+      currentDocument: current.document,
+      navigation: liveNavigation(execution),
+      theme: state.current.theme,
+      hostMetadata: {
+        ...(state.lastProblem === undefined
+          ? {}
+          : { lastRebuildProblem: state.lastProblem.summary }),
+      },
+      // The sibling execution from the same closure lets the language
+      // control switch in place without a round trip. Same URL, same
+      // revision; the renderer never touches Record data.
+      ...(sibling === undefined ? {} : { localeRevisions: [sibling] }),
+      ...(page === "fallback" ? { forceDirectPage: true } : {}),
+    }),
     "text/html; charset=utf-8",
     headers,
   ));
@@ -572,17 +566,18 @@ function siblingLocaleRevision(
   const siblingLocale = locale === "en" ? "zh-CN" as const : "en" as const;
   const siblingExecution = closure[siblingLocale];
   const siblingPage = pageForPath(pathname, siblingExecution);
-  const direct = siblingPage !== "missing" && siblingPage !== "fallback";
-  const fallbackTitle = siblingExecution.navigation[0]?.title
-    ?? siblingExecution.pages.find((candidate) => candidate.state === "rendered")?.document.title
-    ?? "NiceEval report";
+  const current = siblingPage === "fallback"
+    ? reportFallbackPage(siblingExecution)
+    : siblingPage === "missing"
+    ? undefined
+    : siblingPage;
   return Object.freeze({
     locale: siblingLocale,
-    title: direct ? siblingPage.document.title : fallbackTitle,
+    title: current?.document.title ?? "NiceEval report",
     navigation: liveNavigation(siblingExecution),
-    ...(direct
-      ? { currentRoute: siblingPage.route, currentDocument: siblingPage.document }
-      : {}),
+    ...(current === undefined
+      ? {}
+      : { currentRoute: current.route, currentDocument: current.document }),
   });
 }
 

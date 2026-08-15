@@ -314,6 +314,8 @@ available timing view 没有公开 phase 时，结果仍是 available，并使�
 
 `view --out <目录>`（或显式 `--run`）使用同一份 ReportExecution 预渲染自包含静态站。目标目录必须不存在；全部页面、下载项与静态资产路径先通过校验。写完全部文件后，exporter 最后创建 `complete` marker。导出过程不会把 Record 路径或 blob 路径交给用户 Report。
 
+每个普通 URL 只写一份英语 HTML。切换语言时，页面标题和正文一起切换到同一批已生成的简体中文内容，URL 不变。没有可显示的作者页面时，根页仍显示带语言控件的问题页面；关闭 JavaScript 后也能阅读。
+
 命令在持有 sample handle 时完成所需 Projection 和 Report execution。返回的 ReportExecution 不再访问 Record。运行中的 `view` 对变化构造新的固定 execution；成功后替换当前 revision，失败保留 last-good execution。静态 export 只消费已经完成的 execution。
 
 ## `--early-exit`

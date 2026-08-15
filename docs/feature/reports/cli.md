@@ -240,8 +240,9 @@ Record canonical ID 不能直接拼 route：Report 作者必须用 `reportInstan
 
 ### Classic 页面与语言
 
-页面顶部由 package-owned NiceEval 品牌 chrome 和英语、简体中文语言控件组成。控件只选择当前
-`ViewRevisionClosure` 中对应 locale 的正文；它不改变 Sample、业务数值、route、详情 target 或 selection。
+页面顶部由 package-owned NiceEval 品牌 chrome 和英语、简体中文语言控件组成。控件从当前
+`ViewRevisionClosure` 选择对应 locale 的完整 document，并在同一 route 上原子切换页面标题和正文；它不改变
+Sample、业务数值、详情 target 或 selection。
 live 语言点击按最后一次点击获胜。后一次点击会作废仍在途中的 fragment 响应。
 即使这次点击回到已经提交的语言，前一次响应也不得写入页面。
 请求失败时保留上次成功提交的语言、URL、tab、焦点、disclosure 与筛选。
@@ -259,6 +260,7 @@ Hero 显示作者声明的 logo、标题、说明与外链。页面随后显示 
 横向 Bars 的标签、柱体与数值仍在同一行，其余主要区块单列展开。页面不能横向溢出；宽表只在自己的可访问滚动区域内横向滚动。
 
 每个成功 revision 固定包含 Report / Config / Theme source snapshot、core-only `AnalysisSample`，以及同构的英语和简体中文 `ReportExecution`。
+当没有可渲染的作者页面时，根 route 仍以同一套双语 semantic document 显示 Report problems；host 不得另建 text-only fallback。
 
 watch 闭集是 Record root、Report module 及其项目内静态 import、Theme module 与 `niceeval.config.ts`。loader 与 watcher 的具体实现属于 Node host，本契约只声明行为：
 
@@ -285,7 +287,9 @@ niceeval view --run 01H... --out ./shared-site --no-open
 
 `--out` 不启动 watcher 或长期 server。它在同一份 frozen inputs 上构造英语和简体中文 execution，验证同构后形成固定 `ViewRevisionClosure`，穷尽全部 PageFamily instances、routes、downloads 与 semantic trees，再导出自包含静态站。
 
-export 只写这个 closure 的既有结果、当前 host-data、downloads、manifest 与内建精确 runtime。每条 ordinary canonical route 只生成一份英语 HTML；它是无 JavaScript 时的完整页面。runtime 只在原 route 切换到 closure 中的简体中文文本，不生成 locale route 或复制 canonical 页面。Report module 不能注入任意 script、style、font、worker、WASM、DOM 或文件 path。Hero 外链是唯一 URL 输入，只接受绝对 https；export 只把 href 序列化进页面，不 fetch，站内核心内容不依赖任何 URL 才能显示。
+export 只写这个 closure 的既有结果、当前 host-data、downloads、manifest 与内建精确 runtime。每条 ordinary canonical route 只生成一份英语 HTML；它是无 JavaScript 时的完整页面。runtime 只在原 route 切换到 closure 中的简体中文完整 document，并同步切换页面标题和正文；不生成 locale route 或复制 canonical 页面。
+
+Report module 不能注入任意 script、style、font、worker、WASM、DOM 或文件 path。Hero 外链是唯一 URL 输入，只接受绝对 https；export 只把 href 序列化进页面，不 fetch，站内核心内容不依赖任何 URL 才能显示。
 
 执行顺序：
 
@@ -295,7 +299,7 @@ export 只写这个 closure 的既有结果、当前 host-data、downloads、man
 
 目标已存在返回 `report-export-target-exists`，不删除或替换既有内容。中断或失败可能留下没有 marker 的目录；host 提示用户删除后重试。本契约不承诺原子目录发布。
 
-生成站点可在断网、禁 JavaScript 的浏览器中打开。浏览器只读取目录内的站点文件，不读取源 Record，也不要求之后安装 NiceEval。Recorded data problems 会成功导出并出现在不可关闭的 host problems 页面。
+生成站点可在断网、禁 JavaScript 的浏览器中打开。浏览器只读取目录内的站点文件，不读取源 Record，也不要求之后安装 NiceEval。Recorded data problems 会成功导出并出现在不可关闭的 host problems 页面；即使所有作者页面都 data-unavailable，根页仍使用同一套双语 semantic document。
 
 ## Attachment 与 consumer 反馈
 

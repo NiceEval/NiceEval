@@ -39,6 +39,8 @@ import {
 } from "niceeval/report";
 import { siteCopyBlock } from "./site-copy-block.ts";
 
+const authorApiRoute = Either.getOrThrow(reportRoute("/author-api"));
+
 const overview = definePage({
   id: Either.getOrThrow(reportComponentId("overview")),
   route: Either.getOrThrow(reportRoute("/")),
@@ -49,6 +51,12 @@ const overview = definePage({
       reportMetric({ label: "Selected slots", value: sample.slots.length }),
       reportMetric({ label: "Slot denominator", value: sample.denominator }),
       siteCopyBlock(),
+      reportParagraph([
+        reportLink({
+          label: [reportText("Author API")],
+          target: { kind: "route", route: authorApiRoute },
+        }),
+      ]),
       reportList({
         ordered: false,
         items: sample.slots.map((slot) => [reportParagraph([
@@ -110,7 +118,7 @@ FixtureLocaleMetric.displayName = "FixtureLocaleMetric";
 
 const authorApi = {
   id: "author-api",
-  title: "Author API",
+  title: { en: "Author API", "zh-CN": "作者 API" },
   render(sample: Sample) {
     return (
       <Col>
@@ -152,7 +160,10 @@ const slots = definePageFamily({
 });
 
 export default defineReport({
-  title: "Report fixture",
+  // The first classic page owns the Classic Report document title. Preserve
+  // the fixture's report identity while giving that title a real localized
+  // counterpart for the static closure assertion.
+  title: { en: "Report fixture", "zh-CN": "报告示例" },
   pages: [overview, authorApi, slots],
 });
 

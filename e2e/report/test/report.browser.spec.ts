@@ -3,6 +3,8 @@
 // - inverse = switchLocale early-return without advancing locale generation
 // - inverse = custom metric formatters always receive "en" instead of Sample.locale
 // - inverse = hierarchy parent cell omits ordinary <a> when descendants.length > 0
+// - inverse = static locale document omits its document title, leaving title and body divergent
+// - inverse = recorded-data fallback bypasses the semantic bilingual report shell
 // rerun: pnpm e2e --repo report -- --run test/report.browser.spec.ts
 //
 // 浏览器 owner 自己完成 exp → view --out → 真正的 niceeval view server → browser，
@@ -20,7 +22,7 @@ test("Report browser Journey：经典界面与自定义报告共用固定执行�
 
   await reportE2E.case(
     "browser",
-    { artifacts: reportCaseArtifacts(["site-export", "classic-export"]) },
+    { artifacts: reportCaseArtifacts(["site-export", "classic-export", "fallback-export"]) },
     async ({ paths: { projectRoot }, commands: { niceeval } }) => {
       const run = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
       expect(run.exitCode, run.diagnostic()).not.toBe(0);
@@ -145,7 +147,9 @@ test("Report browser Journey：经典界面与自定义报告共用固定执行�
         expect(page.url()).toBe(reportUrl);
         await expect(page.getByRole("button", { name: "中文" })).toHaveAttribute("aria-pressed", "true");
         await expect(page.getByRole("tablist", { name: "报告页面" })).toBeVisible();
-        await expect(page.getByText("通过率", { exact: true })).toBeVisible();
+        await expect(page.getByRole("term").filter({ hasText: /^通过率$/ })).toBeVisible();
+        await expect(page.getByRole("columnheader", { name: "实验", exact: true })).toBeVisible();
+        await expect(page.getByRole("columnheader", { name: "平均耗时", exact: true })).toBeVisible();
         await page.getByRole("button", { name: "EN" }).click();
         await expect(page.getByRole("button", { name: "EN" })).toHaveAttribute("aria-pressed", "true");
         await expect(page.getByRole("tablist", { name: "Report pages" })).toBeVisible();
@@ -257,6 +261,108 @@ test("Report browser Journey：经典界面与自定义报告共用固定执行�
         expect(exported.exitCode, exported.diagnostic()).toBe(0);
         expect(await readFile(join(projectRoot, "site-export", "index.html"), "utf8")).toContain("Report fixture");
         expect((await stat(join(projectRoot, "site-export", "_niceeval", "complete"))).size).toBe(0);
+
+        // kill: inverse = a static alternate locale contains only article HTML.
+        // invoke: follow the ordinary author-page href, then switch language.
+        // observe: the Chinese semantic body and document title change together.
+        const staticIndex = pathToFileURL(join(projectRoot, "site-export", "index.html")).href;
+        await page.goto(staticIndex);
+        const authorApiStaticLink = page.getByRole("link", { name: "Author API", exact: true });
+        await expect(authorApiStaticLink).toBeVisible();
+        expect(await authorApiStaticLink.getAttribute("href")).toBeTruthy();
+        await authorApiStaticLink.click();
+        await expect(page).toHaveTitle("Report fixture");
+        await expect(page.getByText("Localized custom reading: 1.0", { exact: true }).first()).toBeVisible();
+        await page.getByRole("button", { name: "中文" }).click();
+        await expect(page).toHaveTitle("报告示例");
+        await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
+        await expect(page.getByRole("group", { name: "语言" })).toBeVisible();
+        await expect(page.getByText("本地化自定义读数：1.0", { exact: true }).first()).toBeVisible();
+
+        const fallbackExported = await niceeval.run([
+          "view",
+          "--run",
+          runId,
+          "--report",
+          "./reports/all-data-unavailable.ts",
+          "--out",
+          "fallback-export",
+          "--no-open",
+        ]);
+        expect(fallbackExported.exitCode, fallbackExported.diagnostic()).toBe(0);
+        const fallbackIndex = pathToFileURL(join(projectRoot, "fallback-export", "index.html")).href;
+
+        // kill: inverse = no author page falls through to a text-only English page.
+        // invoke: open the exported root and switch its closed fallback document.
+        // observe: package language chrome, fallback title, and problem body all switch in place.
+        await page.goto(fallbackIndex);
+        await expect(page).toHaveTitle("Report data unavailable");
+        await expect(page.getByRole("group", { name: "Language" })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "Report data unavailable", level: 1 })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "Report problems", level: 2 })).toBeVisible();
+        await page.getByRole("button", { name: "中文" }).click();
+        await expect(page).toHaveTitle("报告数据不可用");
+        await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
+        await expect(page.getByRole("group", { name: "语言" })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "报告数据不可用", level: 1 })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "报告问题", level: 2 })).toBeVisible();
+
+        const browser = page.context().browser();
+        expect(browser).not.toBeNull();
+        const noJsFallbackContext = await browser!.newContext({ javaScriptEnabled: false });
+        try {
+          const noJsFallbackPage = await noJsFallbackContext.newPage();
+          await noJsFallbackPage.goto(fallbackIndex);
+          await expect(noJsFallbackPage).toHaveTitle("Report data unavailable");
+          await expect(noJsFallbackPage.getByRole("group", { name: "Language" })).toBeVisible();
+          await expect(noJsFallbackPage.getByRole("heading", {
+            name: "Report data unavailable",
+            level: 1,
+          })).toBeVisible();
+          await expect(noJsFallbackPage.getByRole("heading", { name: "Report problems", level: 2 })).toBeVisible();
+        } finally {
+          await noJsFallbackContext.close();
+        }
+
+        const fallbackView = niceeval.start(
+          [
+            "view",
+            "--run",
+            runId,
+            "--report",
+            "./reports/all-data-unavailable.ts",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "0",
+            "--no-open",
+          ],
+          { timeoutMs: 60_000 },
+        );
+        const fallbackStartup = await waitForOutput(
+          fallbackView,
+          "stdout",
+          /http:\/\/127\.0\.0\.1:\d+\//,
+          { timeoutMs: 30_000, label: "fallback report view URL" },
+        );
+        const fallbackOrigin = fallbackStartup.match(/http:\/\/127\.0\.0\.1:\d+\//)?.[0];
+        expect(fallbackOrigin, fallbackStartup).toBeDefined();
+        await waitForHttp(fallbackOrigin!, "fallback report view readiness");
+        await page.goto(fallbackOrigin!);
+        const fallbackLiveUrl = page.url();
+        await expect(page).toHaveTitle("Report data unavailable");
+        await expect(page.getByRole("group", { name: "Language" })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "Report data unavailable", level: 1 })).toBeVisible();
+        await page.evaluate(() => {
+          for (const script of document.querySelectorAll('script[type="application/json"]')) {
+            script.remove();
+          }
+        });
+        await page.getByRole("button", { name: "中文" }).click();
+        expect(page.url()).toBe(fallbackLiveUrl);
+        await expect(page).toHaveTitle("报告数据不可用");
+        await expect(page.getByRole("group", { name: "语言" })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "报告数据不可用", level: 1 })).toBeVisible();
 
         const view = niceeval.start(
           [

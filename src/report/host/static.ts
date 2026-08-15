@@ -8,10 +8,13 @@ import type { ReportExecutionProblem } from "../execution/problems.ts";
 import {
   renderReportExecutionJson,
   renderReportExecutionProblemsText,
-  renderReportExecutionText,
   type ReportShowRenderError,
 } from "./presentation.ts";
-import { renderReportHtml } from "./html.ts";
+import {
+  renderReportHtml,
+  type ReportHtmlLocaleDocument,
+} from "./html.ts";
+import { reportFallbackPage } from "./fallback.ts";
 import { basalt, type ThemeDefinition } from "./theme.ts";
 import type { ViewRevisionClosure } from "./view-closure.ts";
 
@@ -200,11 +203,20 @@ function closureStaticFiles(
   const encoder = new TextEncoder();
   const en = closure.en;
   const zhCN = closure["zh-CN"];
-  const zhCNByRoute = new Map<string, { readonly locale: ReportExecution["locale"]; readonly page: ReportExecution["pages"][number] }>();
+  const zhCNByRoute = new Map<string, ReportHtmlLocaleDocument>();
   for (const page of zhCN.pages) {
-    if (page.route !== undefined) zhCNByRoute.set(page.route, { locale: zhCN.locale, page });
+    if (page.state === "rendered") {
+      zhCNByRoute.set(page.route, Object.freeze({ locale: zhCN.locale, document: page.document }));
+    }
   }
-  return renderedStaticFiles(en, theme, encoder, zhCNByRoute).pipe(
+  const zhCNFallback = reportFallbackPage(zhCN);
+  return renderedStaticFiles(
+    en,
+    theme,
+    encoder,
+    zhCNByRoute,
+    Object.freeze({ locale: zhCN.locale, document: zhCNFallback.document }),
+  ).pipe(
     Effect.flatMap((files) =>
       Effect.flatMap(renderReportExecutionJson({ execution: en }), (enJson) =>
         Effect.map(renderReportExecutionJson({ execution: zhCN }), (zhCNJson) => {
@@ -227,10 +239,8 @@ function renderedStaticFiles(
   execution: ReportExecution,
   theme: ThemeDefinition,
   encoder: TextEncoder,
-  localePages?: ReadonlyMap<string, {
-    readonly locale: ReportExecution["locale"];
-    readonly page: ReportExecution["pages"][number];
-  }>,
+  localeDocuments?: ReadonlyMap<string, ReportHtmlLocaleDocument>,
+  fallbackLocaleDocument?: ReportHtmlLocaleDocument,
 ): Effect.Effect<StaticFile[], ReportShowRenderError> {
   return Effect.try({
     try: () => {
@@ -239,8 +249,7 @@ function renderedStaticFiles(
       for (const page of [...execution.pages].sort(comparePages)) {
         if (page.state !== "rendered") continue;
         if (page.route === "/") wroteRootPage = true;
-        const localeEntry = localePages?.get(page.route);
-        const localePage = localeEntry?.page;
+        const localeDocument = localeDocuments?.get(page.route);
         files.push(Object.freeze({
           path: staticPathForReportRoute(page.route).posix,
           bytes: encoder.encode(renderReportHtml({
@@ -248,22 +257,28 @@ function renderedStaticFiles(
             route: page.route,
             locale: execution.locale,
             theme,
-            ...(localeEntry === undefined || localePage === undefined || localePage.state !== "rendered"
+            ...(localeDocument === undefined
               ? {}
-              : { localeDocuments: Object.freeze([{ locale: localeEntry.locale, document: localePage.document }]) }),
+              : { localeDocuments: Object.freeze([localeDocument]) }),
           })),
         }));
       }
-      // An execution may have no rendered author route (for example, every
-      // page is data-unavailable). Preserve a root document in that case so
-      // the built-in problems surface remains reachable in a static host.
+      // An execution may have no rendered root author route (for example,
+      // every page is data-unavailable). Preserve one package-owned semantic
+      // root in the same bilingual closure rather than create a text-only
+      // fallback that the live host cannot share.
       if (!wroteRootPage) {
+        const fallback = reportFallbackPage(execution);
         files.push(Object.freeze({
           path: "index.html",
           bytes: encoder.encode(renderReportHtml({
-            text: renderReportExecutionText({ execution }),
+            document: fallback.document,
+            route: fallback.route,
             locale: execution.locale,
             theme,
+            ...(fallbackLocaleDocument === undefined
+              ? {}
+              : { localeDocuments: Object.freeze([fallbackLocaleDocument]) }),
           })),
         }));
       }

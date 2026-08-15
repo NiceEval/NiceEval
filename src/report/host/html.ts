@@ -48,6 +48,7 @@ export interface ReportHtmlHostMetadata {
 /**
  * Closed document for another locale on the same ordinary route.
  * Static hosts may embed zh-CN here; they must not copy the canonical route.
+ * Its localized document title travels with its semantic document body.
  */
 export interface ReportHtmlLocaleDocument {
   readonly locale: ReportViewLocale;
@@ -106,6 +107,8 @@ export interface RenderReportLiveHtmlInput {
   readonly revision: number;
   readonly currentRoute: ReportRoute;
   readonly currentDocument?: ReportDocument;
+  /** Render the current document as a direct page even when its route has a tab. */
+  readonly forceDirectPage?: boolean;
   readonly navigation: readonly ReportLiveNavigationItem[];
   readonly hostMetadata?: ReportHtmlHostMetadata;
   readonly theme?: ThemeDefinition;
@@ -276,7 +279,7 @@ export function renderReportHtml(input: RenderReportHtmlInput): string {
     ? localeDocuments
       .filter((item) => item.locale !== locale)
       .map((item) =>
-        `<template data-niceeval-locale-document="${item.locale}">${
+        `<template data-niceeval-locale-document="${item.locale}" data-niceeval-locale-title="${escapeHtml(item.document.title)}">${
           renderDocument(item.document, {
             route: input.route,
             hrefMode: "relative",
@@ -376,7 +379,9 @@ export function renderReportLiveHtml(input: RenderReportLiveHtmlInput): string {
   const theme = input.theme ?? basalt;
   const locale = input.locale ?? "en";
   const classic = isClassicLive(input);
-  const selectedIndex = input.navigation.findIndex((item) => item.route === input.currentRoute);
+  const selectedIndex = input.forceDirectPage === true
+    ? -1
+    : input.navigation.findIndex((item) => item.route === input.currentRoute);
   const tabs = renderLiveTabs(input.navigation, selectedIndex);
   const panels = input.navigation.map((item, index) => {
     const selected = index === selectedIndex;

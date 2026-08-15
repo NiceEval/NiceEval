@@ -256,7 +256,9 @@ export const REPORT_ENHANCE_SCRIPT = `
   const parseEmbeddedDocument = (nextLocale) => {
     const template = document.querySelector('template[data-niceeval-locale-document="' + nextLocale + '"]');
     if (!template) return null;
-    return template.innerHTML;
+    const title = template.getAttribute("data-niceeval-locale-title");
+    if (title === null) return null;
+    return { title, html: template.innerHTML };
   };
 
   const htmlForCurrentRoute = (payload) => {
@@ -303,15 +305,16 @@ export const REPORT_ENHANCE_SCRIPT = `
     return true;
   };
 
-  const applyStaticDocument = (html) => {
+  const applyStaticDocument = (localizedDocument) => {
     const article = document.querySelector("main .niceeval-report__document");
-    if (!article || typeof html !== "string") return false;
+    if (!article || !localizedDocument || typeof localizedDocument.html !== "string" || typeof localizedDocument.title !== "string") return false;
     const wrap = document.createElement("div");
-    wrap.innerHTML = html;
+    wrap.innerHTML = localizedDocument.html;
     const next = wrap.querySelector(".niceeval-report__document");
     if (!next) return false;
     const snapshot = captureHierarchy(article);
     article.replaceWith(next);
+    document.title = localizedDocument.title;
     bindDisclosures(document);
     bindFilters(document);
     restoreHierarchy(next, snapshot);
@@ -366,8 +369,8 @@ export const REPORT_ENHANCE_SCRIPT = `
       commitLocale(nextLocale);
       return;
     }
-    const staticHtml = parseEmbeddedDocument(nextLocale);
-    if (staticHtml && isCurrent() && applyStaticDocument(staticHtml)) {
+    const staticDocument = parseEmbeddedDocument(nextLocale);
+    if (staticDocument && isCurrent() && applyStaticDocument(staticDocument)) {
       commitLocale(nextLocale);
       return;
     }
