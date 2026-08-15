@@ -85,9 +85,14 @@ interface ProjectCurrentShow {
   };
   problemTable: unknown[];
   data: {
-    experiments: Array<{ experimentId: string; evals: number }>;
-    evals: number;
-    attempts: number;
+    state: "available";
+    inputState: "complete" | "partial";
+    problemIds: number[];
+    value: {
+      experiments: Array<{ experimentId: string; evals: number }>;
+      evals: number;
+      attempts: number;
+    };
   };
 }
 
@@ -235,11 +240,12 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
         slotCount: 1,
         denominator: 1,
       },
-      data: {
-        experiments: [{ experimentId: "accept", evals: 1 }],
-        evals: 1,
-        attempts: 1,
-      },
+      data: { state: "available", inputState: "complete", problemIds: [] },
+    });
+    expect(currentShow.data.value).toMatchObject({
+      experiments: [{ experimentId: "accept", evals: 1 }],
+      evals: 1,
+      attempts: 1,
     });
     expect(currentShow.sample.selection.policy).toBe("project-current");
     expect(currentShow.sample.selection.selectedRunIds).toEqual([acceptedRunId]);
