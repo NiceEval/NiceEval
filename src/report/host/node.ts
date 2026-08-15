@@ -28,17 +28,14 @@ export {
   defineTheme,
   isThemeDefinition,
   themeStylesheet,
-} from "./theme.ts";
+} from "../theme.ts";
 export type {
   ReportTheme,
   ThemeColor,
   ThemeDefinition,
-  ThemeFontSize,
-  ThemeFontTokens,
   ThemeHex,
-  ThemeRadius,
   ThemeSeries,
-} from "./theme.ts";
+} from "../theme.ts";
 
 export {
   loadTrustedReportConfig,
@@ -62,7 +59,6 @@ export type {
 } from "../../view/server.ts";
 export type {
   OpenReportViewSessionInput,
-  ReportViewExecutionRebuild,
   ReportViewRebuild,
 } from "./view-session.ts";
 

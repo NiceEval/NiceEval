@@ -6,6 +6,7 @@ import type { LocalizedText } from "../../shared/types.ts";
 import type { Verdict } from "../../shared/types.ts";
 import type { MetricValue } from "../../analysis/index.ts";
 import { formatMetricValue, missingText, verdictMark } from "../model/format.ts";
+import { formatCostProjectionCellText, isCostMetricValue } from "../model/pricing.ts";
 import {
   DEFAULT_REPORT_LOCALE,
   localeText,
@@ -129,8 +130,11 @@ export function formatCellText(cell: Cell | null | undefined, locale?: ReportLoc
       return "—";
     }
     case "metric": {
-      const m = cell.metric;
-      return formatMetricValue(m.value, m.unit, m.format, locale ?? DEFAULT_REPORT_LOCALE);
+      if (isCostMetricValue(cell.metric)) {
+        const closed = formatCostProjectionCellText(cell.metric, locale ?? DEFAULT_REPORT_LOCALE);
+        return closed.detail ? `${closed.text}\n  ${closed.detail}` : closed.text;
+      }
+      return formatMetricValue(cell.metric, locale ?? DEFAULT_REPORT_LOCALE);
     }
     default: {
       const _exhaustive: never = cell;

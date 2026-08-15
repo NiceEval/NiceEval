@@ -922,6 +922,7 @@ function makeReadSession(runtime: ReaderRuntime, fileSystem: RecordFileSystemSer
               })),
               runId: originRun.runId,
               experimentId: originRun.experimentId,
+              startedAt: originRun.startedAt,
               context: originRun.context,
             }),
           }),

@@ -9,7 +9,11 @@ import { networkInterfaces } from "node:os";
 import { basename, dirname, resolve } from "node:path";
 import { Effect } from "effect";
 import type * as Scope from "effect/Scope";
-import type { ClosedSiteFile, ClosedSiteRevision } from "../report/execution/model.ts";
+import {
+  closedSiteRevisionData,
+  type ClosedSiteFile,
+  type ClosedSiteRevision,
+} from "../report/execution/model.ts";
 import {
   openReportViewSession,
   type OpenReportViewSessionInput,
@@ -343,7 +347,7 @@ function serveRequest<Requirements>(
       const headers = Object.freeze({
         "cache-control": "no-store",
         "x-niceeval-report-revision": String(state.current.revision),
-        "x-niceeval-report-content-hash": state.current.site.identity.contentHash,
+        "x-niceeval-report-content-hash": closedSiteRevisionData(state.current.site).identity.contentHash,
         ...(state.lastProblem === undefined ? {} : { "x-niceeval-last-rebuild-problem": "1" }),
       });
       // Optional host transport probe. It contains no Report body and does
@@ -355,7 +359,7 @@ function serveRequest<Requirements>(
         const servedIdentity = reportRevisionCookieValue(request.request.headers.cookie);
         return Effect.sync(() => send(request.response, 204, new Uint8Array(), "text/plain; charset=utf-8", {
           ...headers,
-          "x-niceeval-view-stale": servedIdentity === undefined || servedIdentity === state.current.site.identity.contentHash
+          "x-niceeval-view-stale": servedIdentity === undefined || servedIdentity === closedSiteRevisionData(state.current.site).identity.contentHash
             ? "0"
             : "1",
         }));
@@ -380,7 +384,7 @@ function serveRequest<Requirements>(
         resolved.file.path.startsWith("downloads/")
           ? { ...headers, "content-disposition": "attachment", "x-content-type-options": "nosniff" }
           : resolved.file.mediaType.startsWith("text/html;")
-            ? { ...headers, "set-cookie": reportRevisionCookie(state.current.site.identity.contentHash) }
+            ? { ...headers, "set-cookie": reportRevisionCookie(closedSiteRevisionData(state.current.site).identity.contentHash) }
             : headers,
       ));
     }),
@@ -694,19 +698,36 @@ function siteFileForPath(pathname: string, site: ClosedSiteRevision): SitePathLo
   }
   const requested = pathname.slice(1);
   const exact = requested === "" ? "index.html" : requested;
-  const direct = site.files.find((file) => file.path === exact);
+  const revision = closedSiteRevisionData(site);
+  const files = revision.files;
+  const direct = files.find((file) => file.path === exact);
   if (direct !== undefined) return Object.freeze({ state: "file" as const, file: direct });
+
+  // A report may deliberately declare its first Page at /overview (or another
+  // route), so its immutable closure has no root index.html. The advertised
+  // root must still land on that revision's canonical entry route rather than
+  // becoming a host-generated 404 or re-entering Report execution.
+  if (requested === "" && revision.defaultRoute !== undefined) {
+    const entryFile = staticPageFileForRoute(revision.defaultRoute);
+    if (files.some((file) => file.path === entryFile)) {
+      return Object.freeze({ state: "redirect" as const, location: revision.defaultRoute });
+    }
+  }
 
   // Keep direct Page URLs convenient without manufacturing a different body.
   // The redirect selects the exact generated index.html path from this same map.
   const indexPath = requested.endsWith("/")
     ? `${requested}index.html`
     : `${requested}/index.html`;
-  const page = site.files.find((file) => file.path === indexPath);
+  const page = files.find((file) => file.path === indexPath);
   if (page !== undefined) {
     return Object.freeze({ state: "redirect" as const, location: `/${indexPath}` });
   }
   return Object.freeze({ state: "missing" as const });
+}
+
+function staticPageFileForRoute(route: string): string {
+  return route === "/" ? "index.html" : `${route.slice(1)}/index.html`;
 }
 
 function requestUrl(request: IncomingMessage): URL | undefined {

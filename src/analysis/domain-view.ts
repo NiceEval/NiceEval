@@ -1,6 +1,12 @@
 import type { AttemptOutcome } from "../record/model/core.ts";
+import type {
+  ExecutionIdentityDigest,
+  ExperimentId,
+  RunId,
+  UtcMillis,
+} from "../record/model/identifiers.ts";
 import type { VerdictState } from "../eval/record/verdict.ts";
-import type { JsonValue } from "./contracts.ts";
+import type { AnalysisRunExecution, JsonValue } from "./contracts.ts";
 
 /** Fixed, NiceEval-published closed domain projections. */
 export type BuiltinDomainViewKind =
@@ -18,6 +24,18 @@ export type ClosedBlobContent =
 /** Core is closed when Sample successfully resolves a ReadableAttempt. */
 export interface ClosedAttemptCore {
   readonly outcome: AttemptOutcome;
+  /**
+   * Exact historical execution facts from the Attempt's origin Run. They are
+   * deliberately distinct from a LogicalSlot's selected target Run: carried
+   * and accepted members may point at another origin.
+   */
+  readonly origin: {
+    readonly runId: RunId;
+    readonly experimentId: ExperimentId;
+    readonly startedAt: UtcMillis;
+    readonly executionIdentityDigest: ExecutionIdentityDigest;
+    readonly execution: AnalysisRunExecution;
+  };
 }
 
 export interface ClosedTraceCollection {

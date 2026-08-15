@@ -704,10 +704,11 @@ function usageLimitHandle<Kind extends RuntimeKind>(input: {
     evaluate: () => Effect.sync(() => {
       // 预算只认 estimatedCostUSD(价目表估算),never observed usage.costUSD:
       // 两者独立并存,observed 存在也不改变估算口径(见 Usage.costUSD 单向字段契约)。
-      // 估算拿不到(无 model / 查不到价)视同 0,与 token 缺失同口径,不跨语义回退。
+      // 无 model / 无价格 / 无可计价 usage 时 estimate 不存在；缺测不能被当成零成本。
       const actual = input.metric === "tokens"
         ? (input.usage.inputTokens ?? 0) + (input.usage.outputTokens ?? 0)
-        : input.estimatedCostUSD ?? 0;
+        : input.estimatedCostUSD;
+      if (actual === undefined) return unavailableVoid();
       if (actual > input.maximum) return mismatchedVoid();
       return hasCompleteCoverage(input.coverage, "usage")
         ? matchedVoid()
@@ -1856,7 +1857,7 @@ export function createAssertFirstEvalContext(
         metric: "cost",
         maximum: usd,
         usage: turn.usage ?? {},
-        estimatedCostUSD: estimatedCostFor(turn.usage ?? {}),
+        estimatedCostUSD: estimatedCostFor(turn.usage === undefined ? {} : turn.usage),
         coverage,
         snapshot: scopeSnapshot,
       });

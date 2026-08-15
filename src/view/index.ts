@@ -1,5 +1,5 @@
-// View is a thin Node host over an already completed ReportExecution. Record
-// opening, Sample selection, projection, and report execution belong
+// View is a thin Node host over an already closed site revision. Record
+// opening, Sample selection, Analysis, and revision construction belong
 // to the application composition boundary in `cli.ts`.
 
 export {
@@ -18,7 +18,6 @@ export type {
 export { exportStaticReport, ReportFileSystem } from "../report/host/static.ts";
 export type {
   ReportExportError,
-  ReportExportExecutionProblem,
   ReportExportTargetExists,
   ReportFileSystemError,
   ReportFileSystemFailure,
@@ -45,5 +44,5 @@ export {
   type ReportViewServer,
   type ViewOptions,
 } from "./server.ts";
-export { planSite, renderHtml, writeSite, type SiteFile, type SitePlan } from "./site.ts";
+export { planSite, writeSite, type SiteFile, type SitePlan } from "./site.ts";
 export type { ViewScanOptions } from "./data.ts";

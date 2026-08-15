@@ -1,79 +1,113 @@
-/**
- * `niceeval/report` is the complete Report author surface. It keeps the
- * v0.12 vocabulary whose semantics the current Analysis contract can close,
- * while leaving Record readers, revisions, and renderer ownership with Host.
- */
+/** The exact public author surface fixed in docs/feature/reports/library.md. */
 
-export {
-  attemptEvidenceView,
-  attemptLatencyMs,
-  attemptObservabilityView,
-  attemptPassed,
-  attemptTokens,
-  attemptToolFailure,
-  costUSD,
-  fileChangesView,
-  query,
-  sandboxHistoryView,
-  sourcesView,
-  totalCostUSD,
-} from "../analysis/index.ts";
+export { defineReport } from "./definition/report.ts";
 export type {
-  AggregateRequest,
-  AggregateRow,
-  AnalysisIssue,
-  AttemptEvidenceDomainView,
-  AttemptObservabilityDomainView,
-  ClosedRows,
-  Dimension,
-  DomainView,
-  DomainViewQuery,
-  DomainViewRequest,
-  EvidenceRef,
-  FileChangesDomainView,
-  Measure,
-  MeasureFormat,
-  MetricValue,
+  HeadTag,
+  Page,
+  PageContext,
+  PageEvidence,
+  PageLoad,
+  PageLoadContext,
+  PageParams,
+  ParameterizedPage,
+  PlainPage,
+  PricingProfile,
+  ReportDefinition,
+  ReportMeta,
+  ReportMetaPage,
+  ReportShell,
   Sample,
-  SandboxHistoryDomainView,
-  SemanticFrame,
-  SourcesDomainView,
-} from "../analysis/index.ts";
+} from "./definition/report.ts";
+
+export { defineComponent } from "./definition/tree.ts";
+export type {
+  ComponentContext,
+  ComponentFaces,
+  ComposeContext,
+  ReportComponent,
+  ResolveContext,
+  TextContext,
+  WebContext,
+} from "./definition/tree.ts";
 
 export {
   agent,
   aggregate,
   attempt,
-  durationMs,
-  evidenceRow,
   evalId,
   experiment,
   flag,
-  hasMetricValue,
-  isMetricValue,
   label,
-  metricCoverage,
-  metricFacts,
   model,
-  passRate,
   reasoningEffort,
-  sortRowsByMetric,
-  tokens,
-} from "./model/calculation.ts";
+} from "./model/aggregate.ts";
 export type {
   AggregationSubject,
-  EvidenceRow,
   GroupFunction,
-  MetricFacts,
-  ReportAggregateRow,
-  ReportDimension,
-  ReportMeasure,
-} from "./model/calculation.ts";
+} from "./model/aggregate.ts";
 
 export {
-  toEvidenceRows,
+  costUSD,
+  durationMs,
+  evidenceRow,
+  passRate,
+  tokens,
+  totalCostUSD,
+} from "./model/metrics.ts";
+export type { EvidenceRow } from "./model/metrics.ts";
+export type {
+  AnalysisIssue,
+  ClosedRows,
+  CostBasis,
+  CostCoverageReason,
+  CostCoverageReasonCode,
+  CostLedgerEntry,
+  CostMeasure,
+  CostMetricValue,
+  CostProjectionAggregate,
+  CostProjectionKnown,
+  CostProjectionProfile,
+  CostProjectionState,
+  CostProjectionUnavailable,
+  CostProjectionValue,
+  EstimatedRequestCostComponent,
+  EstimatedTokenCostComponent,
+  EvidenceRef,
+  MeasureFormat,
+  MetricState,
+  MetricValue,
+  ObservedCostComponent,
+  ObservedOtherCurrency,
+  ProjectedMoney,
+} from "../analysis/index.ts";
+
+export { definePricingProfile } from "../analysis/index.ts";
+export type {
+  PricedCoverage,
+  PricedCoverageInput,
+  PricingCharge,
+  PricingChargeInput,
+  PricingCoverage,
+  PricingCoverageId,
+  PricingCoverageInput,
+  PricingDisplay,
+  PricingDisplayInput,
+  PricingEffectiveCondition,
+  PricingEffectiveConditionInput,
+  PricingProfileContentIdentity,
+  PricingProfileInput,
+  PricingProvenance,
+  PricingProvenanceInput,
+  PricingSelector,
+  PricingSelectorInput,
+  UnpricedCoverage,
+  UnpricedCoverageInput,
+} from "../analysis/index.ts";
+
+export {
   toAttemptEvidence,
   toAttemptObservability,
+  toEvidenceRows,
   toFileChanges,
   toIssueRows,
   toIssueText,
@@ -82,36 +116,57 @@ export {
   toSources,
 } from "./model/conversions.ts";
 export type { MetricDetailRow } from "./model/conversions.ts";
+export type {
+  AttemptEvidenceDomainView,
+  AttemptObservabilityDomainView,
+  FileChangesDomainView,
+  SandboxHistoryDomainView,
+  SourcesDomainView,
+} from "../analysis/index.ts";
 
 export {
-  formatAxisTick,
-  formatLocalizedText,
-  formatMetricNumber,
-  formatMetricValue,
-  missingText,
-  presentMetric,
-} from "./model/format.ts";
-export type { MetricPresentation } from "./model/format.ts";
+  basalt,
+  chalk,
+  defineTheme,
+} from "./theme.ts";
+export type {
+  ReportTheme,
+  ThemeColor,
+  ThemeDefinition,
+  ThemeHex,
+  ThemeSeries,
+} from "./theme.ts";
 
 export {
-  DEFAULT_REPORT_LOCALE,
-  localizedText,
-  localizedTextEquals,
-  resolveLocalizedText,
-} from "./model/locale.ts";
-export type { LocalizedText, ReportLocale } from "./model/locale.ts";
-
-export {
-  CLASSIC_SERIES_COLORS,
   presentDimension,
   shortestUniqueLabels,
-  stableColorIndex,
-} from "./model/presentation.ts";
+} from "./presentation.ts";
 export type {
   DimensionDeclaration,
   DimensionEncoding,
   PresentedDimension,
-} from "./model/presentation.ts";
+} from "./presentation.ts";
+
+export {
+  formatAxisTick,
+  formatInstant,
+  formatMetricValue,
+  formatTimeDistance,
+  missingText,
+} from "./model/format.ts";
+export type { MetricFormat } from "./model/format.ts";
+export type { Cell, VerdictCounts } from "./definition/cell.tsx";
+
+export {
+  DEFAULT_REPORT_LOCALE,
+  localizedTextEquals,
+  resolveLocalizedText,
+  resolveMetricLabel,
+} from "./model/locale.ts";
+export type {
+  LocalizedText,
+  ReportLocale,
+} from "./model/locale.ts";
 
 export {
   bar,
@@ -123,68 +178,6 @@ export {
   wrapText,
 } from "./model/text-layout.ts";
 export type { ColumnAlign } from "./model/text-layout.ts";
-
-export {
-  DEFAULT_PAGE_ID,
-  DEFAULT_PAGE_TITLE,
-  buildReportMeta,
-  defineReport,
-  isReport,
-  isReportDefinition,
-  resolveReportTitle,
-  reportDefinition,
-  Style,
-} from "./definition.ts";
-export type {
-  DimensionPins,
-  EvidenceLocator,
-  HeadAttributes,
-  HeadAttributeValue,
-  HeadTag,
-  NormalizedPageDefinition,
-  NormalizedParameterizedPageDefinition,
-  NormalizedPlainPageDefinition,
-  NonEmptyArray,
-  PageDefinition,
-  PageEvidence,
-  PageLoad,
-  PageLoadContext,
-  PageParams,
-  PageRender,
-  ParameterizedPageDefinition,
-  PlainPageDefinition,
-  Report,
-  ReportDefinition,
-  ReportMeta,
-  ReportMetaPage,
-  ReportShell,
-  StyleDeclaration,
-  StyleNode,
-  StyleProps,
-} from "./definition.ts";
-
-export {
-  Callout,
-  defineComponent,
-  Download,
-  Stack,
-} from "./components.ts";
-export type {
-  AuthorComposeContext,
-  AuthorResolveContext,
-  ChartAxisKey,
-  ChartDimensionKey,
-  ChartProps,
-  ComponentFaces,
-  ComposeContext,
-  DownloadFile,
-  PageContext,
-  ReportComponent,
-  ResolveContext,
-  TableColumn,
-  TextContext,
-  WebContext,
-} from "./components.ts";
 
 export {
   Area,
@@ -199,124 +192,118 @@ export {
   DiffView,
   Grid,
   Line,
+  Link,
   Markdown,
-  Metric,
   Row,
   Scatter,
   Section,
   Series,
   SourceView,
   Stat,
+  Style,
   Tab,
   Table,
   Tabs,
   Text,
   Waterfall,
-} from "./classic/primitives.ts";
+} from "./definition/primitives.tsx";
 export type {
+  AreaProps,
+  BarsProps,
   BarsSort,
+  CalloutGroup,
   CalloutItem,
-  ClassicChild,
-  ClassicChildren,
-  ClassicChartProps,
-  ClassicNode,
+  CalloutLevel,
+  CalloutsProps,
+  ChartProps,
+  ColProps,
+  CommandEvidenceContent,
   CommandEvidenceItem,
+  CommandEvidenceProps,
+  ConversationContent,
   ConversationEntry,
+  ConversationProps,
+  CopyBlockContent,
+  CopyBlockProps,
+  DiffChange,
+  DiffContent,
   DiffFile,
+  DiffViewProps,
+  GridProps,
   LayoutProps,
-  SourceBlock,
-  TabItem,
-  WaterfallRow,
-} from "./classic/primitives.ts";
+  LineProps,
+  MarkdownProps,
+  RowProps,
+  ScatterProps,
+  SectionProps,
+  SeriesProps,
+  SourceContent,
+  SourceViewProps,
+  StatProps,
+  StyleProps,
+  TabProps,
+  TableProps,
+  TabsProps,
+  TextProps,
+  WaterfallContent,
+  WaterfallNode,
+  WaterfallProps,
+} from "./definition/primitives.tsx";
 
 export {
-  AttemptAssessment,
-  AttemptDetails,
-  AttemptList,
-  AttemptSummary,
-  Comparison,
-  DataList,
-  EvidenceSummary,
-  ExperimentDetails,
-  ExperimentScatter,
-  ExperimentTable,
-  FailureList,
   Hero,
   HeroCard,
-  IssueSummary,
-  MetricSummary,
   PoweredBy,
   RunNotices,
   SampleFixPrompt,
   SampleNotices,
-  SampleOverview,
-  SampleSummary,
-  StabilityOverview,
-} from "./classic/components.ts";
+} from "./components/site-components/index.tsx";
 export type {
-  AttemptDetailsProps,
-  AttemptListProps,
-  ComparisonProps,
-  EvidenceEntry,
-  ExperimentScatterProps,
-  ExperimentTableProps,
+  HeroCardProps,
   HeroLink,
   HeroLogo,
   HeroProps,
-  MetricSummaryItem,
+  RunNoticesProps,
   SampleFixPromptProps,
   SampleNoticesProps,
+} from "./components/site-components/index.tsx";
+
+export {
+  ExperimentScatter,
+  SampleOverview,
+  SampleSummary,
+  StabilityOverview,
+} from "./components/summaries/index.tsx";
+export type {
+  ExperimentScatterProps,
   SampleOverviewProps,
   SampleSummaryProps,
-} from "./classic/components.ts";
+  StabilityOverviewProps,
+} from "./components/summaries/index.tsx";
 
 export {
-  isReportElement,
-} from "./author/element.ts";
+  AttemptList,
+  ExperimentTable,
+  FailureList,
+} from "./components/entity-lists/index.tsx";
 export type {
-  AuthorReportNode,
-  ReportElement,
-} from "./author/element.ts";
+  AttemptListProps,
+  ExperimentTableProps,
+  FailureListProps,
+} from "./components/entity-lists/index.tsx";
 
 export {
-  REPORT_AUTHOR_EXPORT_MANIFEST,
-} from "./author/manifest.ts";
-export type {
-  ReportAuthorExportManifest,
-  ReportAuthorTypeExport,
-  ReportAuthorValueExport,
-} from "./author/manifest.ts";
+  AttemptAssessment,
+  AttemptDetails,
+  AttemptSummary,
+} from "./components/attempt-detail/index.tsx";
+export type { AttemptDetailsProps } from "./components/attempt-detail/index.tsx";
 
-export {
-  REPORT_DOCUMENT_DEPTH_MAX,
-  REPORT_DOCUMENT_NODES_MAX,
-  REPORT_DOWNLOAD_FILE_BYTES_MAX,
-  REPORT_DOWNLOAD_FILES_MAX,
-  REPORT_PAGES_MAX,
-} from "./execution/model.ts";
-export type {
-  ReportExecution,
-  ReportPageResult,
-} from "./execution/model.ts";
-export type {
-  ReportExecutionProblem,
-  ReportProblem,
-  ReportProblemTable,
-  ReportProblemTableEntry,
-} from "./execution/problems.ts";
+export { ExperimentDetails } from "./components/experiment-detail/index.tsx";
+export type { ExperimentDetailsProps } from "./components/experiment-detail/index.tsx";
 
-export {
-  basalt,
-  chalk,
-  defineTheme,
-} from "./host/theme.ts";
 export type {
-  ReportTheme,
-  ThemeColor,
-  ThemeDefinition,
-  ThemeFontSize,
-  ThemeFontTokens,
-  ThemeHex,
-  ThemeRadius,
-  ThemeSeries,
-} from "./host/theme.ts";
+  AttemptDetailTarget,
+  ExperimentDetailTarget,
+  LibraryDetailTarget,
+} from "./library/details.ts";

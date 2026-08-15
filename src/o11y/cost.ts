@@ -70,15 +70,21 @@ export function estimateCost(
   overrides?: globalThis.Record<string, PriceOverride>,
 ): number | undefined {
   if (!model) return undefined;
-  const p = lookupOverride(model, overrides) ?? lookupBuiltin(model);
+  const override = lookupOverride(model, overrides);
+  const p = override === undefined ? lookupBuiltin(model) : override;
   if (!p) return undefined;
+  const hasBillableUsage = usage.inputTokens !== undefined ||
+    usage.outputTokens !== undefined ||
+    usage.cacheReadTokens !== undefined ||
+    usage.cacheCreationTokens !== undefined;
+  if (!hasBillableUsage) return undefined;
   const bucket = (tokens: number | undefined, price: number | undefined, fallback: number): number =>
-    tokens ? tokens * (price ?? fallback) : 0;
+    tokens === undefined ? 0 : tokens * (price === undefined ? fallback : price);
   const usd =
     (bucket(usage.inputTokens, p.in, p.in) +
       bucket(usage.outputTokens, p.out, p.out) +
       bucket(usage.cacheReadTokens, p.cacheRead, p.in) +
       bucket(usage.cacheCreationTokens, p.cacheWrite, p.in)) /
     1e6;
-  return usd > 0 ? usd : undefined;
+  return usd;
 }

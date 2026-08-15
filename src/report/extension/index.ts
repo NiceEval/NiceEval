@@ -1,5 +1,12 @@
-/** Public extension entry for semantic, dual-face classic renderers. */
-export { classicAssetManifest, classicStylesheet } from "./assets.ts";
-export type { ClassicAssetManifest } from "./assets.ts";
-export { defineClassicRenderer, defineRenderer } from "./define.ts";
-export type { ClassicRendererFaces, RendererFaces } from "./define.ts";
+/** Public extension entry for closed, dual-face standard React renderers. */
+export { defineRenderer } from "./define.ts";
+export { isRendererComponent, rendererMetaOf } from "./meta.ts";
+export type { RendererMeta } from "./meta.ts";
+export type { RendererAssetDeclaration } from "./assets.ts";
+export type {
+  RendererFaces,
+  RendererOptions,
+  RendererProps,
+  RendererTextContext,
+  RendererWebContext,
+} from "./types.ts";

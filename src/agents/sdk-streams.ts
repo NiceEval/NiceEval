@@ -324,13 +324,14 @@ export function createPiAgentEventStream(): PiAgentStream {
           }
           const u = event.message?.role === "assistant" ? event.message.usage : undefined;
           if (u) {
+            // pi computes u.cost from its own model price table. That estimate
+            // is not provider-observed billing and must not enter Usage.costUSD.
             usage = {
               inputTokens: (usage?.inputTokens ?? 0) + u.input,
               outputTokens: (usage?.outputTokens ?? 0) + u.output,
               cacheReadTokens: (usage?.cacheReadTokens ?? 0) + u.cacheRead,
               cacheCreationTokens: (usage?.cacheCreationTokens ?? 0) + u.cacheWrite,
               requests: (usage?.requests ?? 0) + 1,
-              costUSD: (usage?.costUSD ?? 0) + u.cost.total,
             };
           }
           break;

@@ -51,6 +51,14 @@ function num(obj: unknown, ...keys: string[]): number {
   return 0;
 }
 
+function optionalNum(obj: unknown, ...keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = get(obj, key);
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+  }
+  return undefined;
+}
+
 function coerceArgs(value: unknown): JsonValue {
   if (typeof value === "string") {
     try {
@@ -85,6 +93,7 @@ export function parseBubTranscript(raw: string | undefined): ParsedTranscript {
   let outputTokens = 0;
   let cacheReadTokens = 0;
   let costUSD = 0;
+  let hasObservedCostUSD = false;
   let requests = 0;
   let compactions = 0;
   let parseSuccess = true;
@@ -107,15 +116,18 @@ export function parseBubTranscript(raw: string | undefined): ParsedTranscript {
     const output = num(usage, "output_tokens", "completion_tokens", "outputTokens");
     let cache = num(usage, "cached_input_tokens", "cache_read_input_tokens", "cacheReadTokens");
     if (cache === 0) cache = num(get(usage, "prompt_tokens_details"), "cached_tokens");
-    const cost = num(usage, "cost");
-    if (rawInput === 0 && output === 0 && cache === 0 && cost === 0) return;
+    const cost = optionalNum(usage, "cost");
+    if (rawInput === 0 && output === 0 && cache === 0 && cost === undefined) return;
     // Chat Completions 口径的 prompt_tokens 含缓存命中,cached_tokens 是其子集;
     // 落互斥桶前扣掉(docs/feature/adapters/sdk/bub/cost.md)
     const input = Math.max(0, rawInput - cache);
     inputTokens += input;
     outputTokens += output;
     cacheReadTokens += cache;
-    costUSD += cost;
+    if (cost !== undefined) {
+      costUSD += cost;
+      hasObservedCostUSD = true;
+    }
     requests += 1;
   };
 
@@ -267,7 +279,7 @@ export function parseBubTranscript(raw: string | undefined): ParsedTranscript {
   const usage: Usage = requests > 0 ? { inputTokens, outputTokens } : {};
   if (cacheReadTokens > 0) usage.cacheReadTokens = cacheReadTokens;
   if (requests > 0) usage.requests = requests;
-  if (costUSD > 0) usage.costUSD = costUSD;
+  if (hasObservedCostUSD) usage.costUSD = costUSD;
 
   return { events, usage, compactions, parseSuccess };
 }

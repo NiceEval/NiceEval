@@ -29,7 +29,7 @@ export interface Usage {
    * token 用量或 OTel span 反推得到)。与顶层 `estimatedCostUSD`(价目表估算)是两个
    * 相互独立的事实,单向字段契约:本字段只存 observed 值;`estimatedCostUSD` 恒等于
    * `estimateCost(model, usage, pricing)` 的估算,即使 observed 存在也照常独立计算——
-   * 两者互不覆盖、互不兜底,不存在 `usage.costUSD ?? estimateCost(...)` 之类的回退。
+   * 两者互不覆盖、互不兜底；observed 值从不替代或触发 estimate。
    */
   costUSD?: number;
 }

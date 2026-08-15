@@ -3,14 +3,15 @@
 //   niceeval exp [组|配置] [pattern]    跑实验
 //   niceeval debug <配置> <eval>        只规划一个配对的 Sandbox / Plugin lifecycle
 //   niceeval accept @<locator>...       接受多条历史结果并重锚到当前配置
-//   niceeval show [selection]        终端渲染一次固定的 ReportExecution
+//   niceeval show [selection]        终端渲染固定 Sample 的一个目标 Page
 //   niceeval list                    只列出发现到的 eval
 //   niceeval clean [--record <root>] [--yes]    删除未完成 Run
 //   niceeval migrate [--record <root>] [--yes]  显式迁移 Record
 
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { hostname } from "node:os";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, readdir, readlink, writeFile } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve as resolvePath } from "node:path";
 import { parseArgs as nodeParseArgs } from "node:util";
@@ -43,10 +44,17 @@ import {
   timingEvidenceReport,
 } from "./report/built-in/execution.ts";
 import { sourceEvidenceReport } from "./report/built-in/source.ts";
-import { renderShowJson } from "./show/json.ts";
-import { reportRoute, type ReportRoute } from "./report/author/identity.ts";
-import type { Report } from "./report/definition.ts";
-import type { ClosedSiteRevision } from "./report/execution/model.ts";
+import type { ReportDefinition } from "./report/definition/report.ts";
+import {
+  closedSiteRevisionData,
+  type ClosedSiteRevision,
+} from "./report/execution/model.ts";
+import {
+  buildReportSiteFromRecord,
+  reportSnapshotIdentityFromRecord,
+} from "./report/host/from-record.ts";
+import { reportDefinitionIdentity } from "./report/host/execute.ts";
+import { validateReportRoute } from "./report/execution/paths.ts";
 import { reportHost } from "./report/host/index.ts";
 import {
   ReportHostProgressObserver,
@@ -54,8 +62,12 @@ import {
   type ReportHostProgressEvent,
   type ReportHostProgressObserverService,
 } from "./report/host/progress.ts";
-import { ReportConsole } from "./report/host/presentation.ts";
-import { ReportFileSystem } from "./report/host/static.ts";
+import {
+  closeStaticThemeStylesheet,
+  ReportFileSystem,
+  REPORT_STATIC_RENDERER,
+  signClosedSiteRevision,
+} from "./report/host/static.ts";
 import {
   basalt,
   chalk,
@@ -88,6 +100,11 @@ import {
 } from "./runner/lock.ts";
 import { drainHeldGateLeasesEffect } from "./runner/gate-lease.ts";
 import { cleanupCallback } from "./runner/cleanup-timeout.ts";
+import {
+  closeReportPageBytes,
+  rethemeClosedReportPageBytes,
+  type ClosedReportPageBytes,
+} from "./view/report-view-cache.ts";
 import { resolveRunTimeout } from "./runner/timeout.ts";
 import {
   type CurrentReuseReadbackSnapshot,
@@ -225,7 +242,10 @@ export function renderCliFailure(failure: CliFailure): string {
 }
 
 function isReportCliOperation(operation: string): boolean {
-  return operation === "execute report from Record" ||
+  return operation === "load trusted Report config" ||
+    operation === "load trusted Report module" ||
+    operation === "load trusted Theme module" ||
+    operation === "execute report from Record" ||
     operation === "render Report show output" ||
     operation === "open report view session" ||
     operation === "open report view" ||
@@ -334,7 +354,7 @@ const FLAG_OPTIONS = {
   tag: { type: "string" },
   /** 额外写一份 JUnit XML 报告到指定路径,供 CI 消费。 */
   junit: { type: "string" },
-  /** `exp` 运行在 stdout 输出单一有序的 NDJSON 事件流；`exp --dry` 与 `debug` 输出各自的单个 JSON 计划文档。`show` 输出同一 ReportExecution 的宿主数据与状态，不打开第二条取数路径。 */
+  /** `exp` 运行在 stdout 输出单一有序的 NDJSON 事件流；`exp --dry` 与 `debug` 输出各自的单个 JSON 计划文档。`show` 输出 Host 拥有的内建或自定义单目标机器文档，不形成完整站点或打开第二条取数路径。 */
   json: { type: "boolean" },
   /** `docker profile doctor` 专用：启动受限 DinD 容器并运行内层容器。 */
   smoke: { type: "boolean" },
@@ -2114,7 +2134,7 @@ function runEvaluationCommand(
 type ReportCliCommand = "show" | "view";
 
 type ReportSelection =
-  | { readonly kind: "fixed"; readonly report: Report }
+  | { readonly kind: "fixed"; readonly report: ReportDefinition }
   | { readonly kind: "config" }
   | { readonly kind: "built-in"; readonly name: "overview" }
   | { readonly kind: "module"; readonly path: string };
@@ -2144,7 +2164,7 @@ interface ReportCliRequest {
     };
   readonly reportSelection: ReportSelection;
   readonly themeSelection: ThemeSelection;
-  readonly page?: ReportRoute;
+  readonly page?: string;
 }
 
 /** Resolve the CLI's one portable Record target without treating `.niceeval` as Record data. */
@@ -2396,13 +2416,13 @@ function reportUnsupportedFlag(command: ReportCliCommand, flags: Flags): string 
   return found?.[0];
 }
 
-function parseReportRoute(value: string | undefined): ReportRoute | undefined {
+function parseReportRoute(value: string | undefined): string | undefined {
   if (value === undefined) return undefined;
-  const parsed = reportRoute(value);
-  if (Either.isLeft(parsed)) {
-    throw usageError(`Invalid --page route "${value}": ${parsed.left.reason}.\n`);
+  const issue = validateReportRoute(value);
+  if (issue !== undefined) {
+    throw usageError(`Invalid --page route "${value}": ${issue.reason}.\n`);
   }
-  return parsed.right;
+  return value;
 }
 
 function reportSelection(cwd: string, value: string | undefined): ReportSelection {
@@ -2486,9 +2506,13 @@ function parseCurrentAttemptLocator(value: string): AttemptLocator {
 }
 
 interface LoadedCliReportInputs {
-  readonly report: Report;
+  readonly report: ReportDefinition;
   readonly theme: ThemeDefinition;
   readonly projectCurrentSelection?: AnalysisSelectionRequest;
+  /** Inputs whose bytes can change Page callbacks or component closure. */
+  readonly reportWatchInputs: readonly string[];
+  /** Every non-Record live input; Record identity is probed inside Report Host. */
+  readonly sourceWatchInputs: readonly string[];
   /** Record, config, and every statically discovered author module input. */
   readonly watchInputs: readonly string[];
 }
@@ -2512,7 +2536,11 @@ function loadCliReportInputs(request: ReportCliRequest): Effect.Effect<LoadedCli
       "load trusted Report config",
       loadTrustedReportConfig(request.cwd),
     );
-    const selectedReport = yield* reportFromSelection(request.reportSelection, configured.report);
+    const selectedReport = yield* reportFromSelection(
+      request.reportSelection,
+      configured.report,
+      configured.watchInputs,
+    );
     const selectedTheme = yield* themeFromSelection(request.themeSelection, configured.theme);
     const projectCurrentSelection = projectCurrent === undefined
       ? undefined
@@ -2523,16 +2551,21 @@ function loadCliReportInputs(request: ReportCliRequest): Effect.Effect<LoadedCli
             ? { experimentIds: request.target.experimentIds }
             : {}),
         });
+    const sourceWatchInputs = uniqueWatchInputs([
+      ...(projectCurrent?.watchInputs ?? []),
+      ...configured.watchInputs,
+      ...selectedReport.watchInputs,
+      ...selectedTheme.watchInputs,
+    ]);
     return Object.freeze({
       report: selectedReport.value,
       theme: selectedTheme.value,
+      reportWatchInputs: uniqueWatchInputs(selectedReport.watchInputs),
+      sourceWatchInputs,
       ...(projectCurrentSelection === undefined ? {} : { projectCurrentSelection }),
       watchInputs: uniqueWatchInputs([
         request.rootPath,
-        ...(projectCurrent?.watchInputs ?? []),
-        ...configured.watchInputs,
-        ...selectedReport.watchInputs,
-        ...selectedTheme.watchInputs,
+        ...sourceWatchInputs,
       ]),
     });
   });
@@ -2540,15 +2573,16 @@ function loadCliReportInputs(request: ReportCliRequest): Effect.Effect<LoadedCli
 
 function reportFromSelection(
   selection: ReportSelection,
-  configured: Report | undefined,
-): Effect.Effect<{ readonly value: Report; readonly watchInputs: readonly string[] }, CliFailure> {
+  configured: ReportDefinition | undefined,
+  configuredWatchInputs: readonly string[],
+): Effect.Effect<{ readonly value: ReportDefinition; readonly watchInputs: readonly string[] }, CliFailure> {
   switch (selection.kind) {
     case "fixed":
       return Effect.succeed(Object.freeze({ value: selection.report, watchInputs: Object.freeze([]) }));
     case "config":
       return Effect.succeed(Object.freeze({
         value: configured ?? defaultOverviewReport,
-        watchInputs: Object.freeze([]),
+        watchInputs: configured === undefined ? Object.freeze([]) : configuredWatchInputs,
       }));
     case "built-in":
       return Effect.succeed(Object.freeze({ value: defaultOverviewReport, watchInputs: Object.freeze([]) }));
@@ -2582,32 +2616,24 @@ function uniqueWatchInputs(paths: readonly string[]): readonly string[] {
   return Object.freeze([...new Set(paths.map((path) => resolvePath(path)))].sort());
 }
 
-function executeCliReport(
+function buildCliReportSite(
   request: ReportCliRequest,
   inputs: LoadedCliReportInputs,
 ) {
-  const target = request.command === "show"
-    ? Object.freeze({
-      kind: "show" as const,
-      ...(request.page === undefined ? {} : { route: request.page }),
-    })
-    : Object.freeze({ kind: "site" as const });
   const revision = request.target.kind === "attempt"
-    ? reportHost.execute({
+    ? buildReportSiteFromRecord({
       root: request.root,
       locator: request.target.locator,
       report: inputs.report,
       theme: inputs.theme,
-      target,
     })
-    : reportHost.execute({
+    : buildReportSiteFromRecord({
       root: request.root,
       selection: request.target.kind === "selection"
         ? request.target.selection
         : inputs.projectCurrentSelection!,
       report: inputs.report,
       theme: inputs.theme,
-      target,
     });
   return revision.pipe(Effect.mapError(reportExecutionFailure));
 }
@@ -2638,11 +2664,32 @@ function reportExecutionFailure(error: unknown): CliFailure {
       return usageError("record-migration-interrupted\nRestore the Record from Git or a backup before retrying.\n");
     case "report-route-invalid":
       return usageError(`Unknown Report route "${stringProperty(error, "route") ?? "unknown"}".\n`);
+    case "report-build-budget-exceeded":
+      return usageError(reportBuildBudgetExceededMessage(error));
     case "report-site-execution-problem":
       return usageError(reportSiteExecutionProblemMessage(error));
     default:
       return cliFailure("execute report from Record", error);
   }
+}
+
+/** Preserve the actionable dimension and target from the Host's closed budget error. */
+function reportBuildBudgetExceededMessage(error: unknown): string {
+  const budget = stringProperty(error, "budget");
+  const maximum = finiteNumberProperty(error, "maximum");
+  const observedAtLeast = finiteNumberProperty(error, "observedAtLeast");
+  if (budget === undefined || maximum === undefined || observedAtLeast === undefined) {
+    return "report-build-budget-exceeded\n";
+  }
+  const pageId = stringProperty(error, "pageId");
+  const route = stringProperty(error, "route");
+  const target = pageId === undefined && route === undefined
+    ? ""
+    : ` (${[
+      ...(pageId === undefined ? [] : [`page ${JSON.stringify(pageId)}`]),
+      ...(route === undefined ? [] : [`route ${JSON.stringify(route)}`]),
+    ].join(", ")})`;
+  return `report-build-budget-exceeded: ${budget} observed at least ${observedAtLeast}; maximum ${maximum}${target}\n`;
 }
 
 const REPORT_CLI_PROBLEMS_MAX = 20;
@@ -2687,17 +2734,21 @@ function stringProperty(value: unknown, key: string): string | undefined {
   return typeof candidate === "string" ? candidate : undefined;
 }
 
+function finiteNumberProperty(value: unknown, key: string): number | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const candidate = Reflect.get(value, key);
+  return typeof candidate === "number" && Number.isFinite(candidate) ? candidate : undefined;
+}
+
 function requireKnownReportPage(
   revision: ClosedSiteRevision,
-  page: ReportRoute | undefined,
+  page: string | undefined,
 ): Effect.Effect<void, CliUsageError> {
-  if (page === undefined || revision.execution.pages.some((candidate) => candidate.route === page)) {
+  const routes = closedSiteRevisionData(revision).routes;
+  if (page === undefined || routes.includes(page)) {
     return Effect.void;
   }
-  const available = revision.execution.pages
-    .flatMap((candidate) => candidate.route === undefined ? [] : [candidate.route])
-    .sort()
-    .join(", ");
+  const available = [...routes].sort().join(", ");
   return Effect.fail(usageError(
     `Unknown Report route "${page}". Available routes: ${available || "none"}.\n`,
   ));
@@ -2735,19 +2786,64 @@ function writeReportProgress(text: string): void {
   }
 }
 
-function makeCliReportProgress(rootPath: string): ReportHostProgressObserverService {
+const cliProgressFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
+
+/**
+ * Keeps interactive progress on one terminal line, while preserving plain
+ * line-oriented diagnostics when stderr is redirected to a file or CI log.
+ */
+class CliReportProgress {
+  private active: { readonly label: string; readonly timer: ReturnType<typeof setInterval> } | undefined;
+
+  start(label: string): () => void {
+    if (!process.stderr.isTTY) {
+      writeReportProgress(`⠋ ${label}…\n`);
+      return () => undefined;
+    }
+
+    if (this.active !== undefined) clearInterval(this.active.timer);
+    let frame = 0;
+    const render = () => writeReportProgress(`\r\u001b[2K${cliProgressFrames[frame++ % cliProgressFrames.length]} ${label}…`);
+    render();
+    const timer = setInterval(render, 80);
+    const active = { label, timer };
+    this.active = active;
+    return () => {
+      if (this.active !== active) return;
+      clearInterval(timer);
+      this.active = undefined;
+    };
+  }
+
+  complete(label: string, text: string): void {
+    if (process.stderr.isTTY) {
+      if (this.active?.label === label) {
+        clearInterval(this.active.timer);
+        this.active = undefined;
+      }
+      writeReportProgress(`\r\u001b[2K${text}\n`);
+      return;
+    }
+    writeReportProgress(`${text}\n`);
+  }
+}
+
+function makeCliReportProgress(
+  rootPath: string,
+  progress: CliReportProgress,
+): ReportHostProgressObserverService {
   return Object.freeze({
     report: (event: ReportHostProgressEvent) => {
       const label = event.phase === "record-open"
         ? `${reportHostPhaseLabels[event.phase]} (${rootPath})`
         : reportHostPhaseLabels[event.phase];
       if (event.type === "start") {
-        writeReportProgress(`⠋ ${label}…\n`);
+        progress.start(label);
         return;
       }
       const marker = event.outcome === "success" ? "✓" : "×";
       const outcome = event.outcome === "success" ? "" : ` · ${event.outcome}`;
-      writeReportProgress(`${marker} ${label} (${formatReportProgressDuration(event.durationMs)}${outcome})\n`);
+      progress.complete(label, `${marker} ${label} (${formatReportProgressDuration(event.durationMs)}${outcome})`);
     },
   });
 }
@@ -2759,12 +2855,13 @@ function cliPhaseOutcome<E>(exit: Exit.Exit<unknown, E>): "success" | "failure" 
 }
 
 function withCliReportPhase<A, E, R>(
+  progress: CliReportProgress,
   label: string,
   effect: Effect.Effect<A, E, R>,
 ): Effect.Effect<A, E, R> {
   return Effect.gen(function* () {
     const startedAt = yield* Clock.currentTimeNanos;
-    yield* Effect.sync(() => writeReportProgress(`⠋ ${label}…\n`));
+    const stopProgress = yield* Effect.sync(() => progress.start(label));
     return yield* effect.pipe(
       Effect.onExit((exit) => Effect.gen(function* () {
         const completedAt = yield* Clock.currentTimeNanos;
@@ -2772,9 +2869,10 @@ function withCliReportPhase<A, E, R>(
         const outcome = cliPhaseOutcome(exit);
         const marker = outcome === "success" ? "✓" : "×";
         const detail = outcome === "success" ? "" : ` · ${outcome}`;
-        yield* Effect.sync(() => writeReportProgress(
-          `${marker} ${label} (${formatReportProgressDuration(durationMs)}${detail})\n`,
-        ));
+        yield* Effect.sync(() => {
+          stopProgress();
+          progress.complete(label, `${marker} ${label} (${formatReportProgressDuration(durationMs)}${detail})`);
+        });
       })),
     );
   });
@@ -2786,46 +2884,39 @@ function runShowCommand(
   flags: Flags,
 ) {
   return Effect.gen(function* () {
+    const progress = new CliReportProgress();
     const request = yield* Effect.try({
       try: () => parseReportCliRequest({ command: "show", cwd, positionals, flags }),
       catch: (cause) => cliFailure("parse show arguments", cause),
     });
-    const inputs = yield* (flags.json
-      ? loadCliReportInputs(request)
-      : withCliReportPhase("Load project, config, Report, and Theme", loadCliReportInputs(request)));
-    const report = executeCliReport(request, inputs);
-    const revision = yield* (flags.json
-      ? report
-      : report.pipe(Effect.provideService(ReportHostProgressObserver, makeCliReportProgress(request.rootPath))));
-    yield* requireKnownReportPage(revision, request.page);
-    if (flags.json) {
-      const domainJson = yield* Effect.try({
-        try: () => renderShowJson(revision),
-        catch: (cause) => cliFailure("assemble show JSON", cause),
-      });
-      if (domainJson !== undefined) {
-        yield* cliReportConsole.write(domainJson).pipe(
-          Effect.mapError((error) => cliFailure("render Report show output", error)),
-        );
-      } else {
-        yield* reportHost.show({
-          revision,
-          format: "json" as const,
-          ...(request.page === undefined ? {} : { page: request.page }),
-        }).pipe(
-          Effect.provideService(ReportConsole, cliReportConsole),
-          Effect.mapError((error) => cliFailure("render Report show output", error)),
-        );
-      }
-    } else {
-      yield* withCliReportPhase("Render terminal report", reportHost.show({
-        revision,
-        ...(request.page === undefined ? {} : { page: request.page }),
-      }).pipe(
-        Effect.provideService(ReportConsole, cliReportConsole),
-        Effect.mapError((error) => cliFailure("render Report show output", error)),
-      ));
-    }
+    const inputs = yield* withCliReportPhase(progress,
+      "Load project, config, Report, and Theme",
+      loadCliReportInputs(request),
+    );
+    const show = request.target.kind === "attempt"
+      ? reportHost.show({
+          root: request.root,
+          locator: request.target.locator,
+          report: inputs.report,
+          ...(request.page === undefined ? {} : { route: request.page }),
+          format: flags.json ? "json" as const : "text" as const,
+        })
+      : reportHost.show({
+          root: request.root,
+          selection: request.target.kind === "selection"
+            ? request.target.selection
+            : inputs.projectCurrentSelection!,
+          report: inputs.report,
+          ...(request.page === undefined ? {} : { route: request.page }),
+          format: flags.json ? "json" as const : "text" as const,
+        });
+    const output = yield* show.pipe(
+      Effect.provideService(ReportHostProgressObserver, makeCliReportProgress(request.rootPath, progress)),
+      Effect.mapError(reportExecutionFailure),
+    );
+    yield* cliReportConsole.write(output).pipe(
+      Effect.mapError((error) => cliFailure("render Report show output", error)),
+    );
     return 0;
   });
 }
@@ -2836,6 +2927,7 @@ function runViewCommand(
   flags: Flags,
 ) {
   return Effect.gen(function* () {
+    const progress = new CliReportProgress();
     const request = yield* Effect.try({
       try: () => parseReportCliRequest({ command: "view", cwd, positionals, flags }),
       catch: (cause) => cliFailure("parse view arguments", cause),
@@ -2851,11 +2943,11 @@ function runViewCommand(
       if (request.page !== undefined) {
         return yield* Effect.fail(usageError("view --out does not accept --page.\n"));
       }
-      const inputs = yield* withCliReportPhase("Load project, config, Report, and Theme", loadCliReportInputs(request));
-      const revision = yield* executeCliReport(request, inputs).pipe(
-        Effect.provideService(ReportHostProgressObserver, makeCliReportProgress(request.rootPath)),
+      const inputs = yield* withCliReportPhase(progress, "Load project, config, Report, and Theme", loadCliReportInputs(request));
+      const revision = yield* buildCliReportSite(request, inputs).pipe(
+        Effect.provideService(ReportHostProgressObserver, makeCliReportProgress(request.rootPath, progress)),
       );
-      const receipt = yield* withCliReportPhase("Export static report site", reportHost.export({
+      const receipt = yield* withCliReportPhase(progress, "Export static report site", reportHost.export({
         revision,
         out: resolvePath(cwd, flags.out),
       }).pipe(
@@ -2866,24 +2958,29 @@ function runViewCommand(
       return 0;
     }
 
-    const initialInputs = yield* withCliReportPhase(
+    const initialInputs = yield* withCliReportPhase(progress,
       "Load project, config, Report, and Theme",
       loadCliReportInputs(request),
     );
-    const initial = yield* executeCliReport(request, initialInputs).pipe(
-      Effect.provideService(ReportHostProgressObserver, makeCliReportProgress(request.rootPath)),
+    const initial = yield* buildCliReportSite(request, initialInputs).pipe(
+      Effect.provideService(ReportHostProgressObserver, makeCliReportProgress(request.rootPath, progress)),
     );
     yield* requireKnownReportPage(initial, request.page);
+    const buildCache = yield* makeReportViewBuildCache(
+      request,
+      initialInputs,
+      initial,
+    );
 
     const { host, port } = yield* Effect.try({
       try: () => ({ host: viewHost(flags.host), port: viewPort(flags.port) }),
       catch: (cause) => cliFailure("parse view server arguments", cause),
     });
-    const server = yield* withCliReportPhase("Start HTTP server and file watcher", reportHost.serve({
+    const server = yield* withCliReportPhase(progress, "Start HTTP server and file watcher", reportHost.serve({
       url: `http://${host.includes(":") ? `[${host}]` : host}:${port}/`,
       watchInputs: initialInputs.watchInputs,
       initial: Effect.succeed(initial),
-      rebuild: () => rebuildReportView(request),
+      rebuild: () => rebuildReportView(request, buildCache),
       host,
       port,
     }).pipe(Effect.mapError((error) => cliFailure("open report view", error))));
@@ -2909,14 +3006,87 @@ function runViewCommand(
  * published with its next recoverable watch set; a typed boundary failure is
  * logged once and leaves last-good execution and the prior watch set.
  */
-function rebuildReportView(request: ReportCliRequest) {
+interface ReportViewBuildCache {
+  revision: ClosedSiteRevision;
+  /** Immutable page/shared bytes only; never a Sample, Scope, or ResolvedPage. */
+  pageBytes?: ClosedReportPageBytes;
+  watchInputs: readonly string[];
+  /** Every non-Record watcher input is byte-proven before exact no-op reuse. */
+  sourceFingerprint: ReportInputFingerprint;
+  /** Host-owned identity of the selected semantic Record snapshot. */
+  snapshotIdentity: string;
+  /** Undefined means some input could not be content-proven equivalent. */
+  pageIdentity?: string;
+  themeIdentity: string;
+}
+
+function rebuildReportView(request: ReportCliRequest, cache: ReportViewBuildCache) {
   return Effect.gen(function* () {
     const inputs = yield* loadCliReportInputs(request);
-    const site = yield* executeCliReport(request, inputs);
-    yield* requireKnownReportPage(site, request.page);
+    const [snapshotIdentity, sourceFingerprint, reportInputFingerprint, themeCss] = yield* Effect.all([
+      readReportSnapshotIdentity(request, inputs),
+      fingerprintReportSourceInputs(inputs.sourceWatchInputs),
+      fingerprintReportSourceInputs(inputs.reportWatchInputs),
+      closeReportThemeStylesheet(inputs.theme),
+    ]);
+    const pageIdentity = reportPageCacheIdentity(request, inputs, {
+      snapshotIdentity,
+      reportInputs: reportInputFingerprint,
+    });
+    const themeIdentity = reportCacheBytesIdentity(themeCss);
+    const cachedPages = cache.pageBytes;
+    const reusePages = cachedPages !== undefined &&
+      snapshotIdentity === cache.snapshotIdentity &&
+      pageIdentity !== undefined && pageIdentity === cache.pageIdentity;
+    const exactNoop = reusePages && themeIdentity === cache.themeIdentity &&
+      sameReportInputFingerprint(sourceFingerprint, cache.sourceFingerprint);
+    let revision: ClosedSiteRevision;
+    let pageBytes: ClosedReportPageBytes | undefined;
+    if (exactNoop) {
+      revision = cache.revision;
+      pageBytes = cachedPages;
+    } else if (reusePages && themeIdentity !== cache.themeIdentity) {
+      const rethemed = rethemeClosedReportPageBytes(
+        cachedPages,
+        themeCss,
+        signClosedSiteRevision,
+      );
+      if (rethemed === undefined) {
+        revision = yield* buildCliReportSite(request, inputs);
+        pageBytes = closeReportPageBytes(revision, {
+          selectionIdentity: reportSelectionCacheIdentity(request, inputs),
+          themeIdentity,
+        });
+      } else {
+        revision = rethemed;
+        pageBytes = closeReportPageBytes(revision, {
+          selectionIdentity: reportSelectionCacheIdentity(request, inputs),
+          themeIdentity,
+        });
+      }
+    } else {
+      revision = yield* buildCliReportSite(request, inputs);
+      pageBytes = closeReportPageBytes(revision, {
+        selectionIdentity: reportSelectionCacheIdentity(request, inputs),
+        themeIdentity,
+      });
+    }
+    yield* requireKnownReportPage(revision, request.page);
+    cache.revision = revision;
+    cache.pageBytes = pageBytes;
+    cache.watchInputs = inputs.watchInputs;
+    cache.sourceFingerprint = sourceFingerprint;
+    cache.snapshotIdentity = pageBytes?.sampleIdentity ?? snapshotIdentity;
+    cache.pageIdentity = pageBytes === undefined
+      ? undefined
+      : reportPageCacheIdentity(request, inputs, {
+        snapshotIdentity: pageBytes.sampleIdentity,
+        reportInputs: reportInputFingerprint,
+      });
+    cache.themeIdentity = themeIdentity;
     return Object.freeze({
       kind: "site" as const,
-      site,
+      site: revision,
       watchInputs: inputs.watchInputs,
     });
   }).pipe(
@@ -2927,6 +3097,176 @@ function rebuildReportView(request: ReportCliRequest) {
       );
     }),
   );
+}
+
+function makeReportViewBuildCache(
+  request: ReportCliRequest,
+  inputs: LoadedCliReportInputs,
+  revision: ClosedSiteRevision,
+): Effect.Effect<ReportViewBuildCache, CliFailure> {
+  return Effect.gen(function* () {
+    const [sourceFingerprint, reportInputFingerprint, themeCss] = yield* Effect.all([
+      fingerprintReportSourceInputs(inputs.sourceWatchInputs),
+      fingerprintReportSourceInputs(inputs.reportWatchInputs),
+      closeReportThemeStylesheet(inputs.theme),
+    ]);
+    const themeIdentity = reportCacheBytesIdentity(themeCss);
+    const selectionIdentity = reportSelectionCacheIdentity(request, inputs);
+    const pageBytes = closeReportPageBytes(revision, { selectionIdentity, themeIdentity });
+    const pageIdentity = reportPageCacheIdentity(request, inputs, {
+      snapshotIdentity: pageBytes?.sampleIdentity ?? "",
+      reportInputs: reportInputFingerprint,
+    });
+    return {
+      revision,
+      ...(pageBytes === undefined ? {} : { pageBytes }),
+      watchInputs: inputs.watchInputs,
+      sourceFingerprint,
+      snapshotIdentity: pageBytes?.sampleIdentity ?? "",
+      ...(pageBytes === undefined || pageIdentity === undefined ? {} : { pageIdentity }),
+      themeIdentity,
+    };
+  });
+}
+
+interface ReportInputFingerprint {
+  readonly digest: string;
+  /** False for a link or special file, whose stable content cannot be proven here. */
+  readonly complete: boolean;
+}
+
+function sameReportInputFingerprint(
+  left: ReportInputFingerprint,
+  right: ReportInputFingerprint,
+): boolean {
+  return left.complete && right.complete && left.digest === right.digest;
+}
+
+function reportPageCacheIdentity(
+  request: ReportCliRequest,
+  inputs: LoadedCliReportInputs,
+  input: {
+    readonly snapshotIdentity: string;
+    readonly reportInputs: ReportInputFingerprint;
+  },
+): string | undefined {
+  if (input.snapshotIdentity.length === 0 || !input.reportInputs.complete) return undefined;
+  return createHash("sha256").update(JSON.stringify([
+    "niceeval.report-page-bytes/v1",
+    REPORT_STATIC_RENDERER,
+    input.snapshotIdentity,
+    input.reportInputs.digest,
+    reportDefinitionIdentity(inputs.report),
+    reportSelectionCacheIdentity(request, inputs),
+  ])).digest("hex");
+}
+
+function reportCacheBytesIdentity(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+/** Delegates the exact Theme stylesheet closure to the static Host. */
+function closeReportThemeStylesheet(theme: ThemeDefinition): Effect.Effect<Uint8Array, CliFailure> {
+  return Effect.try({
+    try: () => closeStaticThemeStylesheet(theme),
+    catch: (cause) => cliFailure("close Report theme stylesheet", cause),
+  });
+}
+
+/**
+ * The Host owns Record selection, project-current narrowing, and semantic
+ * snapshot construction. This probe deliberately never opens a Sample.
+ */
+function readReportSnapshotIdentity(
+  request: ReportCliRequest,
+  inputs: LoadedCliReportInputs,
+) {
+  const target = request.target.kind === "attempt"
+    ? Object.freeze({ root: request.root, locator: request.target.locator })
+    : Object.freeze({
+      root: request.root,
+      selection: request.target.kind === "selection"
+        ? request.target.selection
+        : inputs.projectCurrentSelection!,
+    });
+  return reportSnapshotIdentityFromRecord(target).pipe(Effect.mapError(reportExecutionFailure));
+}
+
+function reportSelectionCacheIdentity(
+  request: ReportCliRequest,
+  inputs: LoadedCliReportInputs,
+): string {
+  const target = request.target.kind === "project-current"
+    ? inputs.projectCurrentSelection
+    : request.target;
+  return createHash("sha256").update(JSON.stringify(target)).digest("hex");
+}
+
+/**
+ * A source-watch signal is only a hint. This digest deliberately excludes the
+ * Record root: selected Record equivalence comes only from the Host-owned
+ * semantic snapshot probe. Links and special files make the result incomplete,
+ * so unprovable input can never produce an exact no-op; a missing optional
+ * path is a complete, watchable source-state observation.
+ */
+function fingerprintReportSourceInputs(
+  paths: readonly string[],
+): Effect.Effect<ReportInputFingerprint, CliFailure> {
+  return Effect.tryPromise({
+    try: async () => {
+      const hash = createHash("sha256");
+      const visited = new Set<string>();
+      let complete = true;
+      const visit = async (path: string): Promise<void> => {
+        const absolute = resolvePath(path);
+        if (visited.has(absolute)) return;
+        visited.add(absolute);
+        let info;
+        try {
+          info = await lstat(absolute);
+        } catch (cause) {
+          if (typeof cause === "object" && cause !== null && Reflect.get(cause, "code") === "ENOENT") {
+            // An absent optional config/module entry is itself a complete
+            // source-state observation. A later creation emits a watcher
+            // signal and changes this digest.
+            hash.update(`missing\0${absolute}\0`);
+            return;
+          }
+          throw cause;
+        }
+        hash.update(`path\0${absolute}\0`);
+        if (info.isSymbolicLink()) {
+          complete = false;
+          hash.update(`link\0${await readlink(absolute)}\0`);
+          return;
+        }
+        if (info.isFile()) {
+          hash.update("file\0");
+          hash.update(await readFile(absolute));
+          hash.update("\0");
+          return;
+        }
+        if (!info.isDirectory()) {
+          complete = false;
+          hash.update(`opaque\0${info.mode}\0`);
+          return;
+        }
+        hash.update("directory\0");
+        const names = (await readdir(absolute)).sort();
+        for (const name of names) yieldName(hash, name);
+        for (const name of names) await visit(join(absolute, name));
+      };
+      for (const path of [...new Set(paths.map((entry) => resolvePath(entry)))].sort()) {
+        await visit(path);
+      }
+      return Object.freeze({ digest: hash.digest("hex"), complete });
+    },
+    catch: (cause) => cliFailure("fingerprint Report source inputs", cause),
+  });
+}
+
+function yieldName(hash: ReturnType<typeof createHash>, name: string): void {
+  hash.update(`entry\0${name}\0`);
 }
 
 function staticExportFailure(error: unknown, out: string): CliFailure {

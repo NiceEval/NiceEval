@@ -176,46 +176,6 @@
         "default": "./dist/report/index.cjs"
       }
     },
-    "./jsx-runtime": {
-      "import": {
-        "types": "./dist/jsx-runtime.d.mts",
-        "default": "./dist/jsx-runtime.mjs"
-      },
-      "require": {
-        "types": "./dist/jsx-runtime.d.cts",
-        "default": "./dist/jsx-runtime.cjs"
-      }
-    },
-    "./jsx-dev-runtime": {
-      "import": {
-        "types": "./dist/jsx-dev-runtime.d.mts",
-        "default": "./dist/jsx-dev-runtime.mjs"
-      },
-      "require": {
-        "types": "./dist/jsx-dev-runtime.d.cts",
-        "default": "./dist/jsx-dev-runtime.cjs"
-      }
-    },
-    "./report/jsx-runtime": {
-      "import": {
-        "types": "./dist/report/jsx-runtime.d.mts",
-        "default": "./dist/report/jsx-runtime.mjs"
-      },
-      "require": {
-        "types": "./dist/report/jsx-runtime.d.cts",
-        "default": "./dist/report/jsx-runtime.cjs"
-      }
-    },
-    "./report/jsx-dev-runtime": {
-      "import": {
-        "types": "./dist/report/jsx-dev-runtime.d.mts",
-        "default": "./dist/report/jsx-dev-runtime.mjs"
-      },
-      "require": {
-        "types": "./dist/report/jsx-dev-runtime.d.cts",
-        "default": "./dist/report/jsx-dev-runtime.cjs"
-      }
-    },
     "./report/host": {
       "import": {
         "types": "./dist/report/host/index.d.mts",

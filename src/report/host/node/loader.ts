@@ -1,14 +1,20 @@
 // Trusted Node-side Report / Theme loading. Author modules are project code,
 // so the loader always uses the namespaced fresh project graph. In packaged
 // NiceEval, that graph resolves this exact install's `niceeval/*` imports to
-// the canonical CJS graph; the predicates below remain the final authority.
+// the canonical CJS graph; the versioned Symbol.for descriptors below remain
+// the final authority even when a trusted module reaches another package copy.
 
 import { readFile, stat } from "node:fs/promises";
 import { dirname, extname, join, resolve } from "node:path";
 import { Data, Effect } from "effect";
 import { freshImportModule } from "../../../fresh-import.ts";
-import { isReport, type Report } from "../../definition.ts";
-import { isThemeDefinition, type ThemeDefinition } from "../theme.ts";
+import { isReport, type ReportDefinition } from "../../definition/report.ts";
+import {
+  isThemeDefinition,
+  registerThemeSourceBase,
+  themeAssetInputs,
+  type ThemeDefinition,
+} from "../../theme.ts";
 
 export type ReportModuleLoadStage = "config" | "report" | "theme";
 
@@ -16,13 +22,13 @@ export type ReportModuleLoadCode =
   | "report-module-load-failed"
   | "report-module-invalid-default-export"
   | "report-module-invalid-report"
-  | "report-module-invalid-theme"
-  | "report-module-duplicate-runtime";
+  | "report-module-invalid-theme";
 
 /**
  * A recoverable, bounded failure at the trusted author-module boundary. A
- * Report-shaped value that fails the host WeakMap check is never accepted: it
- * means the project reached another NiceEval runtime or package version.
+ * Report definitions use a versioned Symbol.for descriptor, so the same
+ * contract remains recognizable through an ESM/CJS or duplicate-package
+ * boundary without accepting an arbitrary report-shaped object.
  */
 export class ReportModuleLoadError extends Data.TaggedError("ReportModuleLoadError")<{
   readonly code: ReportModuleLoadCode;
@@ -32,14 +38,14 @@ export class ReportModuleLoadError extends Data.TaggedError("ReportModuleLoadErr
 
 export interface LoadedTrustedConfig {
   /** Validated host products retained from config without structural casts. */
-  readonly report?: Report;
+  readonly report?: ReportDefinition;
   readonly theme?: ThemeDefinition;
   /** The config entry and its project-relative static import closure. */
   readonly watchInputs: readonly string[];
 }
 
 export interface LoadedTrustedReport {
-  readonly report: Report;
+  readonly report: ReportDefinition;
   /** The report entry and its project-relative static import closure. */
   readonly watchInputs: readonly string[];
 }
@@ -75,7 +81,13 @@ export function loadTrustedReportConfig(cwd: string): Effect.Effect<LoadedTruste
     }
     const report = value.report === undefined ? undefined : yield* validateReport(value.report, "config");
     const theme = value.theme === undefined ? undefined : yield* validateTheme(value.theme, "config");
-    const watchInputs = yield* staticModuleClosure(path, "config");
+    if (report?.theme !== undefined) registerThemeSourceBase(report.theme, dirname(path));
+    if (theme !== undefined) registerThemeSourceBase(theme, dirname(path));
+    const watchInputs = withThemeInputs(
+      yield* staticModuleClosure(path, "config"),
+      report?.theme,
+      theme,
+    );
     return Object.freeze({
       ...(report === undefined ? {} : { report }),
       ...(theme === undefined ? {} : { theme }),
@@ -90,7 +102,8 @@ export function loadTrustedReportModule(path: string): Effect.Effect<LoadedTrust
     yield* regularFile(path, "report", false);
     const value = yield* loadSingleDefault(path, "report");
     const report = yield* validateReport(value, "report");
-    const watchInputs = yield* staticModuleClosure(path, "report");
+    if (report.theme !== undefined) registerThemeSourceBase(report.theme, dirname(path));
+    const watchInputs = withThemeInputs(yield* staticModuleClosure(path, "report"), report.theme);
     return Object.freeze({ report, watchInputs });
   });
 }
@@ -101,9 +114,20 @@ export function loadTrustedThemeModule(path: string): Effect.Effect<LoadedTruste
     yield* regularFile(path, "theme", false);
     const value = yield* loadSingleDefault(path, "theme");
     const theme = yield* validateTheme(value, "theme");
-    const watchInputs = yield* staticModuleClosure(path, "theme");
+    registerThemeSourceBase(theme, dirname(path));
+    const watchInputs = withThemeInputs(yield* staticModuleClosure(path, "theme"), theme);
     return Object.freeze({ theme, watchInputs });
   });
+}
+
+function withThemeInputs(
+  inputs: readonly string[],
+  ...themes: readonly (ThemeDefinition | undefined)[]
+): readonly string[] {
+  return Object.freeze([...new Set([
+    ...inputs,
+    ...themes.flatMap((theme) => themeAssetInputs(theme)),
+  ])].sort());
 }
 
 /** Resolve a trusted CLI module path against the project; loader callers never receive a URL string. */
@@ -144,8 +168,18 @@ function loadSingleDefault(
     catch: (cause) => moduleError("report-module-load-failed", stage, loadReason(cause)),
   }).pipe(
     Effect.flatMap((module) => {
-      const names = Object.keys(module).filter((name) => name !== "__esModule");
-      if (names.length !== 1 || names[0] !== "default" || !Object.hasOwn(module, "default")) {
+      // Node's ESM-CJS interop surfaces a `module.exports` alias and
+      // static-analyzed re-export names (value undefined) on CommonJS
+      // wrappers. Only when that marker exists are they namespace artifacts,
+      // never author exports; the default Report remains the single real
+      // export. A pure ESM namespace has no such marker, so a genuine named
+      // export of undefined still fails the exact one-default-export check.
+      const names = Object.keys(module);
+      const cjsInterop = Object.hasOwn(module, "module.exports");
+      const realExports = cjsInterop
+        ? names.filter((name) => name !== "__esModule" && name !== "module.exports" && module[name] !== undefined)
+        : names;
+      if (realExports.length !== 1 || realExports[0] !== "default" || !Object.hasOwn(module, "default")) {
         return Effect.fail(moduleError(
           "report-module-invalid-default-export",
           stage,
@@ -160,14 +194,14 @@ function loadSingleDefault(
 function validateReport(
   value: unknown,
   stage: ReportModuleLoadStage,
-): Effect.Effect<Report, ReportModuleLoadError> {
+): Effect.Effect<ReportDefinition, ReportModuleLoadError> {
   if (isReport(value)) return Effect.succeed(value);
   return Effect.fail(moduleError(
-    looksLikeReport(value) ? "report-module-duplicate-runtime" : "report-module-invalid-report",
+    "report-module-invalid-report",
     stage,
     looksLikeReport(value)
-      ? "Report was created by a different NiceEval runtime or package version"
-      : "default export must be a Report created by this NiceEval runtime",
+      ? "Report has no supported niceeval.report.definition/v2 descriptor"
+      : "default export must be a Report created by defineReport",
   ));
 }
 

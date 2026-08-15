@@ -18,8 +18,8 @@ import {
   sourcesView,
 } from "../../analysis/index.ts";
 import type { AttemptLocator } from "../../attempt-locator.ts";
-import { analysisIssueText, evidenceRefText, presentMetric } from "../classic/format.ts";
-import type { ReportLocale } from "../classic/locale.ts";
+import { formatMetricScalar, missingText } from "./format.ts";
+import type { ReportLocale } from "./locale.ts";
 
 /** A table-safe projection that still contains the original complete metric. */
 export interface MetricDetailRow {
@@ -35,10 +35,12 @@ export interface MetricDetailRow {
 
 /** Converts a metric for display without splitting it into a new statistical value. */
 export function toMetricDetailRow(metric: MetricValue, locale?: ReportLocale): MetricDetailRow {
-  const presentation = presentMetric(metric, locale);
+  const value = metric.value === null
+    ? missingText("noSamples", locale)
+    : formatMetricScalar(metric.value, metric.unit, metric.format, locale);
   return Object.freeze({
     metric,
-    value: presentation.value,
+    value,
     state: metric.state,
     samples: metric.samples,
     total: metric.total,
@@ -70,7 +72,13 @@ export function toEvidenceRows(refs: readonly EvidenceRef[]): readonly Readonly<
 
 /** One string for constrained text surfaces; it includes all references. */
 export function toIssueText(issue: AnalysisIssue): string {
-  return analysisIssueText(issue);
+  const evidence = issue.refs.map(evidenceRefText).join(", ");
+  return evidence === "" ? issue.message : `${issue.message} (${evidence})`;
+}
+
+/** Evidence identity is already closed by Analysis; Report only formats its locator. */
+function evidenceRefText(reference: EvidenceRef): string {
+  return reference.identity.locator;
 }
 
 /** Closes Assertions / Evidence through the one published Analysis DomainView. */

@@ -1,400 +1,175 @@
-import type { SampleSnapshot } from "../../analysis/contracts.ts";
-import type { LocalizedText } from "../../shared/types.ts";
-import {
-  freezeClosedReportTree,
-  type ClosedDownload,
-  type ClosedReportNode,
-  type ClosedReportPage,
-  type ClosedReportProblem,
-  type ClosedReportTree,
-} from "../semantic/closed.ts";
-import {
-  freezeReportExecutionResults,
-  type BuiltInShowResult,
-  type ReportExecutionResults,
-} from "./results.ts";
+import type { ReportProblem } from "./machine.ts";
 
-/** Product projection names; callback work is always the full site closure. */
-export type ReportTargetSelection =
-  /**
-   * The only execution target. Product surfaces may choose a projection after
-   * this full-site closure has completed, but they never narrow author work.
-   */
-  | { readonly kind: "site" }
-  | { readonly kind: "show"; readonly route?: string }
-  | { readonly kind: "view"; readonly route: string }
-  | { readonly kind: "static" };
-
+/** Full-site budgets fixed by docs/feature/reports/architecture.md. */
 export const REPORT_PAGES_MAX = 20_000;
 export const REPORT_DOCUMENT_NODES_MAX = 20_000;
 export const REPORT_DOCUMENT_DEPTH_MAX = 32;
+export const REPORT_PAGE_HTML_BYTES_MAX = 16_777_216;
+export const REPORT_SITE_HTML_BYTES_MAX = 268_435_456;
+export const REPORT_BUILD_TIME_MS_MAX = 120_000;
+export const REPORT_BUILD_RSS_BYTES_MAX = 1_342_177_280;
 export const REPORT_DOWNLOAD_FILES_MAX = 1_000;
 export const REPORT_DOWNLOAD_FILE_BYTES_MAX = 33_554_432;
+export const REPORT_SOURCE_ASSET_BYTES_MAX = 8_388_608;
+export const REPORT_DIFF_ASSET_BYTES_MAX = 4_194_304;
+export const REPORT_SOURCE_DIFF_ASSET_BYTES_MAX = 134_217_728;
+export const REPORT_STATIC_ASSET_BYTES_MAX = 268_435_456;
 
-export interface ReportLimitExceeded {
-  readonly code: "report-limit-exceeded";
-  readonly limit:
-    | "pages"
-    | "document-nodes"
-    | "document-depth"
-    | "download-files"
-    | "download-file-bytes";
+export type ReportBuildBudget =
+  | "pages"
+  | "document-nodes"
+  | "document-depth"
+  | "page-html-bytes"
+  | "site-html-bytes"
+  | "build-time"
+  | "build-rss"
+  | "download-files"
+  | "download-file-bytes"
+  | "source-asset-bytes"
+  | "diff-asset-bytes"
+  | "source-diff-asset-bytes"
+  | "static-asset-bytes";
+
+export interface ReportBuildBudgetExceeded {
+  readonly code: "report-build-budget-exceeded";
+  readonly budget: ReportBuildBudget;
   readonly maximum: number;
   readonly observedAtLeast: number;
+  readonly pageId?: string;
+  readonly route?: string;
 }
 
-export interface ReportDefinitionIssue {
-  readonly path: readonly string[];
-  readonly reason: string;
+export function reportBuildBudgetExceeded(
+  budget: ReportBuildBudget,
+  maximum: number,
+  observedAtLeast: number,
+  target?: { readonly pageId: string; readonly route: string },
+): ReportBuildBudgetExceeded {
+  return Object.freeze({
+    code: "report-build-budget-exceeded" as const,
+    budget,
+    maximum,
+    observedAtLeast,
+    ...(target === undefined ? {} : target),
+  });
 }
 
-export interface ReportDefinitionInvalid {
-  readonly code: "report-definition-invalid";
-  readonly issues: readonly ReportDefinitionIssue[];
-}
-
-export interface ReportRouteInvalid {
-  readonly code: "report-route-invalid";
-  readonly route: string;
-  readonly reason: string;
-}
-
-/** A value identity, never the author module that supplied its definition. */
-export interface ReportExecutionIdentity {
-  readonly id: string;
-  readonly title?: LocalizedText;
-}
-
-/** A portable copy of selection facts; it intentionally omits Sample capability. */
-export interface ReportSampleSummary {
-  readonly identity: SampleSnapshot["identity"];
-  readonly selection: SampleSnapshot["selection"];
-  readonly coverage: SampleSnapshot["coverage"];
-  /** Counts are computed from the narrowed, non-excluded Snapshot frame. */
-  readonly runCount: number;
-  readonly slotCount: number;
-  readonly denominator: number;
-}
-
-export interface ReportPageSummary {
-  readonly pageId: string;
-  readonly path: string;
-  readonly kind: "plain" | "parameterized";
-  readonly navigation: boolean;
-  readonly instanceCount: number;
-}
-
-export type {
-  ClosedDownload,
-  ClosedReportNode,
-  ClosedReportPage,
-  ClosedReportProblem,
-  ClosedReportTree,
-};
-
-export type ReportPageResult =
-  | {
-      readonly state: "rendered";
-      readonly pageId: string;
-      readonly route: string;
-      readonly tree: ClosedReportPage;
-      readonly problemIds: readonly number[];
-    }
-  | {
-      readonly state: "execution-failed";
-      readonly pageId: string;
-      readonly route?: string;
-      readonly problemIds: readonly [number, ...number[]];
-    };
-
-export type ReportDownloadResult =
-  | {
-      readonly state: "built";
-      readonly download: ClosedDownload;
-    }
-  | {
-      readonly state: "execution-failed";
-      readonly downloadId: string;
-      readonly problemIds: readonly [number, ...number[]];
-    };
-
-/**
- * One immutable execution.  Renderer code reads `tree` only; page results
- * retain target-local failure isolation for show, view, and static policy.
- */
-export interface ReportExecution {
-  readonly report: ReportExecutionIdentity;
-  readonly sample: ReportSampleSummary;
-  /** Closed Host-owned product results; never a Sample or a Report callback. */
-  readonly results: ReportExecutionResults;
-  readonly target: ReportTargetSelection;
-  readonly pageSummaries: readonly ReportPageSummary[];
-  readonly pages: readonly ReportPageResult[];
-  readonly downloads: readonly ReportDownloadResult[];
-  readonly problemTable: readonly ClosedReportProblem[];
-  readonly tree: ClosedReportTree;
-}
-
-/** One exact emitted resource in a closed, self-contained report site. */
+/** One exact emitted resource. view and static read these same bytes. */
 export interface ClosedSiteFile {
-  /** Portable POSIX path, relative to the site root. */
   readonly path: string;
-  /** The exact response/write media type for these bytes. */
   readonly mediaType: string;
-  /** Final bytes. No renderer or author callback runs after this point. */
   readonly bytes: Uint8Array;
 }
 
+export interface ClosedSiteIdentity {
+  readonly format: "niceeval.report-site-revision/v1";
+  readonly renderer: "niceeval.report-ssg/v1";
+  readonly contentHash: string;
+}
+
+const closedSiteRevisionTypeId: unique symbol = Symbol.for(
+  "niceeval.report.closed-site-revision/v1",
+);
+
 /**
- * Content-addressed SSG closure. It deliberately owns both the semantic
- * execution and every page/asset/download byte consumed by view and export.
+ * Publicly opaque full-site closure. The unexported unique-symbol member keeps
+ * author code from constructing or inspecting it through the package type.
  */
 export interface ClosedSiteRevision {
-  readonly identity: {
-    readonly format: "niceeval.report-site-revision/v1";
-    readonly contentHash: string;
-    readonly renderer: "niceeval.report-ssg/v1";
-  };
-  readonly execution: ReportExecution;
+  readonly [closedSiteRevisionTypeId]: true;
+}
+
+/** @internal Transport and publisher view of the opaque revision. */
+export interface ClosedSiteRevisionData extends ClosedSiteRevision {
+  readonly identity: ClosedSiteIdentity;
   readonly files: readonly ClosedSiteFile[];
+  readonly routes: readonly string[];
+  /** The deterministic landing route when the revision has no root index.html. */
+  readonly defaultRoute?: string;
+  readonly problems: readonly ReportProblem[];
 }
 
-/**
- * Freezes renderer-safe Sample facts after all narrowing is complete. Report
- * never reopens Record or infers these counts from physical storage.
- */
-export function reportSampleSummary(snapshot: SampleSnapshot): ReportSampleSummary {
-  const activeSlots = snapshot.slots.filter((slot) => slot.state !== "excluded");
-  const runIds = new Set(activeSlots.map((slot) => slot.runId));
-  return Object.freeze({
-    identity: Object.freeze({ ...snapshot.identity }),
-    selection: freezeSampleSelection(snapshot.selection),
-    coverage: Object.freeze({ ...snapshot.coverage }),
-    runCount: runIds.size,
-    slotCount: activeSlots.length,
-    denominator: activeSlots.length,
-  });
-}
-
-export function reportLimit(
-  limit: ReportLimitExceeded["limit"],
-  maximum: number,
-  observedAtLeast: number,
-): ReportLimitExceeded {
-  return Object.freeze({
-    code: "report-limit-exceeded" as const,
-    limit,
-    maximum,
-    observedAtLeast,
-  });
-}
-
-/** Materializes one renderer-safe execution after all callback work has ended. */
-export function freezeReportExecution(input: {
-  readonly report: ReportExecutionIdentity;
-  readonly sample: ReportSampleSummary;
-  readonly builtInShow?: BuiltInShowResult;
-  readonly target: ReportTargetSelection;
-  readonly pageSummaries: readonly ReportPageSummary[];
-  readonly pages: readonly ReportPageResult[];
-  readonly downloads: readonly ReportDownloadResult[];
-  readonly problemTable: readonly ClosedReportProblem[];
-}): ReportExecution {
-  const tree = freezeClosedReportTree({
-    pages: input.pages.flatMap((page) => page.state === "rendered" ? [page.tree] : []),
-    downloads: input.downloads.flatMap((download) => download.state === "built" ? [download.download] : []),
-    problemTable: input.problemTable,
-  });
-  assertClosedDownloadLinks(tree);
-  const pageByKey = indexClosedPages(tree.pages);
-  const downloadById = indexClosedDownloads(tree.downloads);
-  const pages = Object.freeze(input.pages.map((page) => freezePageResult(page, pageByKey)));
-  const downloads = Object.freeze(input.downloads.map((download) => freezeDownloadResult(download, downloadById)));
-  return Object.freeze({
-    report: Object.freeze({
-      id: input.report.id,
-      ...(input.report.title === undefined ? {} : { title: freezeLocalizedText(input.report.title) }),
-    }),
-    sample: freezeReportSampleSummary(input.sample),
-    results: freezeReportExecutionResults(input.builtInShow),
-    target: freezeTarget(input.target),
-    pageSummaries: Object.freeze(input.pageSummaries.map((page) => Object.freeze({ ...page }))),
-    pages,
-    downloads,
-    problemTable: tree.problemTable,
-    tree,
-  });
-}
-
-function freezeReportSampleSummary(input: ReportSampleSummary): ReportSampleSummary {
-  return Object.freeze({
-    identity: Object.freeze({ ...input.identity }),
-    selection: freezeSampleSelection(input.selection),
-    coverage: Object.freeze({ ...input.coverage }),
-    runCount: input.runCount,
-    slotCount: input.slotCount,
-    denominator: input.denominator,
-  });
-}
-
-function freezeSampleSelection(
-  selection: SampleSnapshot["selection"],
-): SampleSnapshot["selection"] {
-  const selectedRunIds = Object.freeze([...selection.selectedRunIds]);
-  const problems = Object.freeze(selection.problems.map((problem) => Object.freeze({ ...problem })));
-  if (selection.policy === "explicit-runs") {
-    return Object.freeze({
-      policy: "explicit-runs" as const,
-      runIds: Object.freeze([...selection.runIds]),
-      selectedRunIds,
-      problems,
-    });
+export function makeClosedSiteRevision(input: {
+  readonly contentHash: string;
+  readonly files: readonly ClosedSiteFile[];
+  readonly routes: readonly string[];
+  readonly defaultRoute?: string;
+  readonly problems?: readonly ReportProblem[];
+}): ClosedSiteRevision {
+  if (typeof input.contentHash !== "string" || input.contentHash.length === 0) {
+    throw new TypeError("ClosedSiteRevision requires a non-empty content hash");
   }
-  return Object.freeze({
-    policy: "project-current" as const,
-    experimentIds: selection.experimentIds === "all"
-      ? "all"
-      : Object.freeze([...selection.experimentIds]),
-    selectedRunIds,
-    problems,
+  const paths = new Set<string>();
+  const files = input.files.map((file) => {
+    if (!isPortablePath(file.path) || typeof file.mediaType !== "string" || file.mediaType.length === 0 ||
+      !(file.bytes instanceof Uint8Array)) {
+      throw new TypeError("ClosedSiteRevision files must contain a portable path, media type, and bytes");
+    }
+    if (paths.has(file.path)) throw new TypeError(`ClosedSiteRevision repeats file path ${JSON.stringify(file.path)}`);
+    paths.add(file.path);
+    return Object.freeze({
+      path: file.path,
+      mediaType: file.mediaType,
+      bytes: new Uint8Array(file.bytes),
+    });
   });
+  files.sort((left, right) => compareUtf8(left.path, right.path));
+  const sourceRoutes = [...new Set(input.routes)];
+  const routes = [...sourceRoutes].sort(compareUtf8);
+  const defaultRoute = input.defaultRoute ?? sourceRoutes[0];
+  if (defaultRoute !== undefined && !routes.includes(defaultRoute)) {
+    throw new TypeError("ClosedSiteRevision default route must belong to its routes");
+  }
+  const revision: Omit<ClosedSiteRevisionData, typeof closedSiteRevisionTypeId> = {
+    identity: Object.freeze({
+      format: "niceeval.report-site-revision/v1" as const,
+      renderer: "niceeval.report-ssg/v1" as const,
+      contentHash: input.contentHash,
+    }),
+    files: Object.freeze(files),
+    routes: Object.freeze(routes),
+    ...(defaultRoute === undefined ? {} : { defaultRoute }),
+    problems: Object.freeze([...(input.problems ?? [])]),
+  };
+  Object.defineProperty(revision, closedSiteRevisionTypeId, {
+    value: true,
+    enumerable: false,
+    configurable: false,
+    writable: false,
+  });
+  return Object.freeze(revision) as unknown as ClosedSiteRevision;
 }
+
+/** @internal The only way transports inspect an opaque revision. */
+export function closedSiteRevisionData(value: ClosedSiteRevision): ClosedSiteRevisionData {
+  if (!isClosedSiteRevision(value)) throw new TypeError("value is not a ClosedSiteRevision");
+  return value;
+}
+
+export function isClosedSiteRevision(value: unknown): value is ClosedSiteRevisionData {
+  if (typeof value !== "object" || value === null) return false;
+  const brand = Object.getOwnPropertyDescriptor(value, closedSiteRevisionTypeId);
+  return brand !== undefined && "value" in brand && brand.value === true &&
+    Array.isArray((value as Partial<ClosedSiteRevisionData>).files) &&
+    typeof (value as Partial<ClosedSiteRevisionData>).identity?.contentHash === "string";
+}
+
+function isPortablePath(value: string): boolean {
+  return value.length > 0 && !value.startsWith("/") && !value.endsWith("/") &&
+    !value.includes("\\") && !value.includes("\u0000") &&
+    value.split("/").every((segment) => segment.length > 0 && segment !== "." && segment !== "..");
+}
+
+const encoder = new TextEncoder();
 
 export function compareUtf8(left: string, right: string): number {
   if (left === right) return 0;
-  const encoder = new TextEncoder();
   const leftBytes = encoder.encode(left);
   const rightBytes = encoder.encode(right);
   const length = Math.min(leftBytes.length, rightBytes.length);
   for (let index = 0; index < length; index += 1) {
-    const delta = leftBytes[index]! - rightBytes[index]!;
-    if (delta !== 0) return delta;
+    const difference = leftBytes[index]! - rightBytes[index]!;
+    if (difference !== 0) return difference;
   }
   return leftBytes.length - rightBytes.length;
-}
-
-function freezePageResult(
-  value: ReportPageResult,
-  pages: ReadonlyMap<string, ClosedReportPage>,
-): ReportPageResult {
-  if (value.state === "rendered") {
-    const tree = pages.get(closedPageKey(value.pageId, value.route));
-    if (tree === undefined) {
-      throw new TypeError("a rendered Page result must occur in the closed Report tree");
-    }
-    return Object.freeze({
-      state: "rendered" as const,
-      pageId: value.pageId,
-      route: value.route,
-      tree,
-      problemIds: tree.problemIds,
-    });
-  }
-  return Object.freeze({
-    state: "execution-failed" as const,
-    pageId: value.pageId,
-    ...(value.route === undefined ? {} : { route: value.route }),
-    problemIds: freezeNonEmpty(value.problemIds),
-  });
-}
-
-function freezeDownloadResult(
-  value: ReportDownloadResult,
-  downloads: ReadonlyMap<string, ClosedDownload>,
-): ReportDownloadResult {
-  if (value.state === "execution-failed") {
-    return Object.freeze({
-      state: "execution-failed" as const,
-      downloadId: value.downloadId,
-      problemIds: freezeNonEmpty(value.problemIds),
-    });
-  }
-  const download = downloads.get(value.download.id);
-  if (download === undefined) {
-    throw new TypeError("a built Download result must occur in the closed Report tree");
-  }
-  return Object.freeze({
-    state: "built" as const,
-    download,
-  });
-}
-
-function freezeNonEmpty(value: readonly [number, ...number[]]): readonly [number, ...number[]] {
-  const copy: [number, ...number[]] = [value[0], ...value.slice(1)];
-  return Object.freeze(copy);
-}
-
-function closedPageKey(pageId: string, route: string): string {
-  return `${pageId}\u0000${route}`;
-}
-
-function indexClosedPages(pages: readonly ClosedReportPage[]): ReadonlyMap<string, ClosedReportPage> {
-  const indexed = new Map<string, ClosedReportPage>();
-  for (const page of pages) {
-    const key = closedPageKey(page.pageId, page.route);
-    if (indexed.has(key)) throw new TypeError("a closed Report tree cannot repeat a Page route");
-    indexed.set(key, page);
-  }
-  return indexed;
-}
-
-function indexClosedDownloads(downloads: readonly ClosedDownload[]): ReadonlyMap<string, ClosedDownload> {
-  const indexed = new Map<string, ClosedDownload>();
-  for (const download of downloads) {
-    if (indexed.has(download.id)) throw new TypeError("a closed Report tree cannot repeat a Download id");
-    indexed.set(download.id, download);
-  }
-  return indexed;
-}
-
-function assertClosedDownloadLinks(tree: ClosedReportTree): void {
-  const ids = new Set(tree.downloads.map((download) => download.id));
-  for (const page of tree.pages) assertNodeDownloadLinks(page.node, ids);
-}
-
-function assertNodeDownloadLinks(node: ClosedReportNode, ids: ReadonlySet<string>): void {
-  switch (node.type) {
-    case "stack":
-    case "grid":
-    case "callout":
-    case "element":
-    case "link":
-      for (const child of node.children) assertNodeDownloadLinks(child, ids);
-      return;
-    case "download":
-      if (!ids.has(node.id)) throw new TypeError("a closed Download node must target this Report execution");
-      for (const child of node.children) assertNodeDownloadLinks(child, ids);
-      return;
-    case "primitive":
-      assertNodeDownloadLinks(node.text, ids);
-      assertNodeDownloadLinks(node.web, ids);
-      return;
-    case "text":
-    case "table":
-    case "bars":
-    case "line":
-    case "scatter":
-    case "stat":
-      return;
-  }
-}
-
-function freezeTarget(value: ReportTargetSelection): ReportTargetSelection {
-  switch (value.kind) {
-    case "site":
-      return Object.freeze({ kind: "site" as const });
-    case "show":
-      return Object.freeze({
-        kind: "show" as const,
-        ...(value.route === undefined ? {} : { route: value.route }),
-      });
-    case "view":
-      return Object.freeze({ kind: "view" as const, route: value.route });
-    case "static":
-      return Object.freeze({ kind: "static" as const });
-  }
-}
-
-function freezeLocalizedText(value: LocalizedText): LocalizedText {
-  return typeof value === "string" ? value : Object.freeze({ ...value });
 }

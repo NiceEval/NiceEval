@@ -13,6 +13,7 @@ import { compareCanonicalIdentity } from "../record/model/identifiers.ts";
 import {
   canonicalizeRunContext,
   type RunContext,
+  type RunExecutionContext,
   type RunContextJsonObject,
   type RunContextJsonValue,
 } from "../record/model/run-context.ts";
@@ -29,6 +30,7 @@ import type {
   AnalysisIssue,
   AnalysisRun,
   AnalysisRunContext,
+  AnalysisRunExecution,
   AnalysisSlotOccurrenceIdentity,
   SampleIdentity,
   AnalysisSelectionProblem,
@@ -374,13 +376,24 @@ function closeRunFacts(facts: RecordSelection["runFacts"][number]): AnalysisRun 
  */
 function closeRunContext(context: RunContext): AnalysisRunContext {
   return Object.freeze({
-    execution: Object.freeze({
-      agentId: context.execution.agentId,
-      model: context.execution.model,
-      reasoningEffort: context.execution.reasoningEffort,
-      flags: closeJsonObject(context.execution.flags),
-    }),
+    execution: closeAnalysisRunExecution(context.execution),
     labels: closeStringRecord(context.labels),
+  });
+}
+
+/**
+ * Internal closure shared by selected-Run snapshot construction and the
+ * origin-Attempt projection. It copies only durable JSON facts; neither path,
+ * reader, nor mutable Record object escapes into Sample.
+ */
+export function closeAnalysisRunExecution(
+  execution: RunExecutionContext,
+): AnalysisRunExecution {
+  return Object.freeze({
+    agentId: execution.agentId,
+    model: execution.model,
+    reasoningEffort: execution.reasoningEffort,
+    flags: closeJsonObject(execution.flags),
   });
 }
 

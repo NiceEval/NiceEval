@@ -1,84 +1,50 @@
+/**
+ * The standard report only composes Analysis-issued ClosedRows.  In
+ * particular, it does not create a second Measure catalog or copy an Analysis
+ * reducer: all denominator, missingness, provenance, and cost semantics come
+ * from the public Report/Analysis facade.
+ */
+
+import type { Sample } from "../../analysis/index.ts";
 import {
   aggregate,
-  allLogicalSlots,
-  attemptLatencyMs,
-  attemptPassed,
-  attemptToolFailure,
-  defineMeasure,
-  latestCompletedAttempt,
-  logicalSlots,
-  mean,
-  oneValue,
-  partial,
-  ratio,
-  retainContributingEvidence,
-  type ClosedRows,
-  type MetricValue,
-  type Sample,
-} from "../../analysis/index.ts";
+  attempt,
+  evalId,
+  experiment,
+} from "../model/aggregate.ts";
+import {
+  durationMs,
+  passRate,
+  tokens,
+} from "../model/metrics.ts";
 
-/**
- * NiceEval's built-in, closed statistical vocabulary. These are Measures, not
- * Report-side calculations: denominator, missingness, and evidence ownership
- * remain in Analysis.
- */
-const builtInMeasures = Object.freeze({
-  passRate: defineMeasure({
-    id: "niceeval.builtin.pass-rate",
-    population: logicalSlots,
-    input: attemptPassed,
-    withinAttempt: oneValue<boolean>(),
-    withinSlot: latestCompletedAttempt<boolean>(),
-    acrossSlots: ratio(),
-    denominator: allLogicalSlots(),
-    missing: partial(),
-    evidence: retainContributingEvidence(),
-    unit: "ratio",
-    format: "percent",
-    better: "higher",
-  }),
-  meanLatencyMs: defineMeasure({
-    id: "niceeval.builtin.mean-latency-ms",
-    population: logicalSlots,
-    input: attemptLatencyMs,
-    withinAttempt: oneValue<number>(),
-    withinSlot: latestCompletedAttempt<number>(),
-    acrossSlots: mean(),
-    denominator: allLogicalSlots(),
-    missing: partial(),
-    evidence: retainContributingEvidence(),
-    unit: "ms",
-    better: "lower",
-  }),
-  toolFailureRate: defineMeasure({
-    id: "niceeval.builtin.tool-failure-rate",
-    population: logicalSlots,
-    input: attemptToolFailure,
-    withinAttempt: oneValue<boolean>(),
-    withinSlot: latestCompletedAttempt<boolean>(),
-    acrossSlots: ratio(),
-    denominator: allLogicalSlots(),
-    missing: partial(),
-    evidence: retainContributingEvidence(),
-    unit: "ratio",
-    format: "percent",
-    better: "lower",
-  }),
-});
-
-export interface BuiltInSummaryRow {
-  readonly key: string;
-  readonly passRate: MetricValue<number>;
-  readonly meanLatencyMs: MetricValue<number>;
-  readonly toolFailureRate: MetricValue<number>;
-}
-
-export type BuiltInSummaryRows = ClosedRows<BuiltInSummaryRow>;
-
-/** One aggregate row retains MetricValue state, denominator, issues, and refs. */
-export function loadBuiltInSummaryRows(sample: Sample): Promise<BuiltInSummaryRows> {
+export function loadBuiltInSummaryRows(sample: Sample) {
   return aggregate(sample, {
     by: {},
-    values: builtInMeasures,
+    values: { passRate, durationMs, tokens },
   });
 }
+
+export type BuiltInSummaryRows = Awaited<ReturnType<typeof loadBuiltInSummaryRows>>;
+export type BuiltInSummaryRow = BuiltInSummaryRows[number];
+
+/** One closed row per selected Experiment for overview charts and tables. */
+export function loadBuiltInExperimentRows(sample: Sample) {
+  return aggregate(sample, {
+    by: { experiment },
+    values: { passRate, durationMs, tokens },
+  });
+}
+
+export type BuiltInExperimentRows = Awaited<ReturnType<typeof loadBuiltInExperimentRows>>;
+export type BuiltInExperimentRow = BuiltInExperimentRows[number];
+
+/** One closed row per selected logical Attempt; used only by the Attempts Page. */
+export function loadBuiltInAttemptRows(sample: Sample) {
+  return aggregate(sample, {
+    by: { experiment, evalId, attempt },
+    values: { passRate, durationMs, tokens },
+  });
+}
+
+export type BuiltInAttemptRows = Awaited<ReturnType<typeof loadBuiltInAttemptRows>>;

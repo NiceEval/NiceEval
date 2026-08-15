@@ -146,7 +146,8 @@ const assertionsFamily = fixedFamilyBinding({
   read: (reader, owner) => reader.readAssertions(owner),
 });
 
-const attemptObservabilityFamily = fixedFamilyBinding({
+/** @internal Cost projection owns this sealed, attempt-scoped Usage seam. */
+export const attemptObservabilityFamily = fixedFamilyBinding({
   owner: "attempt" as const,
   descriptor: attemptObservabilityRecordFamily,
   read: (reader, owner) => reader.readAttemptObservability(owner),
@@ -216,47 +217,11 @@ export const publishedAnalysisInputBindings = Object.freeze({
       });
     },
   }),
-  attemptCostUSD: Object.freeze({
-    id: "niceeval.attempt-cost-usd",
-    family: attemptObservabilityFamily,
-    project: ({ payload }: {
-      readonly member: LogicalSlot;
-      readonly core: ClosedAttemptCore;
-      readonly payload: RecordAttachmentPayloadSnapshot<AttemptObservabilityAttachment>;
-    }): InputProjection<number> => {
-      const usage = payload.usage;
-      if (usage.collection.state !== "complete") {
-        return collectionProjection(usage.collection, "usage", "usage collection is incomplete");
-      }
-      const amounts: number[] = [];
-      for (const observation of usage.observations) {
-        if (observation.kind === "provider-cost" && observation.currency === "USD") {
-          amounts.push(Number(observation.amount));
-        }
-      }
-      if (amounts.length === 0) {
-        return Object.freeze({
-          state: "missing" as const,
-          message: "no USD provider cost was recorded",
-        });
-      }
-      if (amounts.some((amount) => !Number.isFinite(amount))) {
-        return Object.freeze({
-          state: "failed" as const,
-          message: "a recorded USD provider cost is not representable as a finite number",
-        });
-      }
-      return Object.freeze({
-        state: "value" as const,
-        value: amounts.reduce((total, amount) => total + amount, 0),
-      });
-    },
-  }),
   /**
-   * The v0.12 `tokens` reading was `inputTokens + outputTokens`. Keep that
+   * The final token reading is `inputTokens + outputTokens`. It keeps that
    * exact, non-overlapping pair from the fixed Usage family: cache buckets
    * are separately accounted input and reasoning is already included in the
-   * output bucket, so neither belongs in this compatibility total.
+   * output bucket, so neither belongs in this total.
    */
   attemptTokens: Object.freeze({
     id: "niceeval.attempt-input-output-tokens",

@@ -7,6 +7,7 @@ import type {
   FixedFamilyOwnerRequirement,
   PublishedAnalysisInputBinding,
 } from "../analysis/bindings.ts";
+import { attemptObservabilityFamily } from "../analysis/bindings.ts";
 import type {
   BuiltinDomainView,
   ClosedDomainEntry,
@@ -17,6 +18,13 @@ import type {
   ClosedAttemptCore,
 } from "../analysis/domain-view.ts";
 import type { LogicalSlot } from "../analysis/definitions.ts";
+import type { PricingProfile } from "../analysis/cost.ts";
+import type { CostMetricValue } from "../analysis/cost.ts";
+import {
+  projectCostUsage,
+  unavailableCostSlot,
+  type CostSlotProjection,
+} from "../analysis/cost-projection.ts";
 import { sampleCapabilityTypeId } from "../analysis/contracts.ts";
 import type {
   ActiveAnalysisSlot,
@@ -39,6 +47,7 @@ import type {
   SlotId,
 } from "../analysis/contracts.ts";
 import type { RecordReaderReadError } from "../record/reader/errors.ts";
+import type { AttemptObservabilityAttachment } from "../record/family/observability.ts";
 import type {
   FixedFamilyRead,
   ReadableAttempt,
@@ -49,6 +58,7 @@ import type {
   SelectedRunRef,
 } from "../record/host/types.ts";
 import {
+  closeAnalysisRunExecution,
   decodeSampleSnapshot as decodeSnapshot,
   decodeSampleSnapshotEither as decodeSnapshotEither,
   encodeSampleSnapshot as encodeSnapshot,
@@ -62,12 +72,14 @@ interface SampleLifecycle {
   readonly issueCaptures: Set<AnalysisIssueCaptureState>;
   readonly attempts: AttemptLazyCache;
   readonly attachments: FixedFamilyLazyCache;
+  readonly costProjections: CostProjectionLazyCache;
   closed: boolean;
 }
 
 interface AnalysisIssueCaptureState {
   readonly lifecycle: SampleLifecycle;
   readonly issues: Map<string, AnalysisIssue>;
+  readonly costs: Map<string, AnalysisCostCaptureEntry>;
   closed: boolean;
 }
 
@@ -77,8 +89,21 @@ export type AnalysisIssueCaptureToken = AnalysisIssueCaptureState;
 /** @internal Execution-local collection that Report turns into its problem table. */
 export interface AnalysisIssueCapture {
   readonly issues: () => readonly AnalysisIssue[];
+  /** Closed cost values requested during this exact host execution. */
+  readonly costEntries: () => readonly AnalysisCostCaptureEntry[];
   readonly close: () => void;
   readonly run: <Value>(callback: () => Value) => Value;
+}
+
+/** @internal Host binds these data-only values to its target/page ownership. */
+export interface AnalysisCostCaptureEntry {
+  readonly measureId: string;
+  readonly row: {
+    readonly key: string;
+    readonly dimensions: Readonly<Record<string, import("../analysis/definitions.ts").DimensionValue>>;
+  };
+  readonly profileIdentity: string;
+  readonly projection: import("../analysis/cost.ts").CostProjectionValue;
 }
 
 interface SamplePromiseRunner {
@@ -133,6 +158,11 @@ type CacheDeferred = Deferred.Deferred<
   SampleClosedError
 >;
 
+type CostProjectionDeferred = Deferred.Deferred<
+  readonly CostSlotProjection[],
+  SampleClosedError
+>;
+
 /**
  * A Sample-local exact-once Core cache. The selected Attempt capability itself
  * is the key: no locator, path, Run id, or Attempt id is reconstructed here.
@@ -169,8 +199,20 @@ class AttemptLazyCache {
                       attempt: read.value,
                       // Do not defer this Core fact to another lookup. A
                       // successful ReadableAttempt is the only authority that
-                      // can close its terminal outcome for Analysis.
-                      core: Object.freeze({ outcome: read.value.document.outcome }),
+                      // can close its terminal outcome and origin execution
+                      // history for Analysis. The origin must not be replaced
+                      // with the selected target Run for carried/accepted
+                      // members.
+                      core: Object.freeze({
+                        outcome: read.value.document.outcome,
+                        origin: Object.freeze({
+                          runId: read.value.origin.runId,
+                          experimentId: read.value.origin.experimentId,
+                          startedAt: read.value.origin.startedAt,
+                          executionIdentityDigest: read.value.document.executionIdentityDigest,
+                          execution: closeAnalysisRunExecution(read.value.origin.context.execution),
+                        }),
+                      }),
                     })
                     : Object.freeze({ state: "core-unavailable" as const })
                 ),
@@ -262,6 +304,41 @@ class FixedFamilyLazyCache {
   }
 }
 
+/**
+ * Raw cost closure is memoized once for a Sample and Profile content identity.
+ * Grouped mean/total reductions reuse the same closed Slot/provider ledger;
+ * no Report page can trigger a second Usage interpretation for that pair.
+ */
+class CostProjectionLazyCache {
+  private readonly byProfileIdentity = new Map<string, CostProjectionDeferred>();
+
+  read(input: {
+    readonly sample: Sample;
+    readonly profile: PricingProfile;
+    readonly build: () => Effect.Effect<readonly CostSlotProjection[], SampleClosedError>;
+  }): Effect.Effect<readonly CostSlotProjection[], SampleClosedError> {
+    return Effect.uninterruptibleMask((restore) =>
+      Effect.gen(this, function* () {
+        const fresh = yield* Deferred.make<readonly CostSlotProjection[], SampleClosedError>();
+        const flight = yield* Effect.sync(() => {
+          const pending = this.byProfileIdentity.get(input.profile.contentIdentity);
+          if (pending !== undefined) return { _tag: "Follower" as const, deferred: pending };
+          this.byProfileIdentity.set(input.profile.contentIdentity, fresh);
+          return { _tag: "Leader" as const, deferred: fresh };
+        });
+        if (flight._tag === "Follower") return yield* restore(Deferred.await(flight.deferred));
+        const completed = yield* Effect.exit(restore(input.build()));
+        yield* Deferred.done(flight.deferred, completed);
+        return yield* Deferred.await(flight.deferred);
+      }),
+    );
+  }
+
+  clear(): void {
+    this.byProfileIdentity.clear();
+  }
+}
+
 const sampleBindings = new WeakMap<Sample, SampleBinding>();
 const issueCaptureContext = new AsyncLocalStorage<AnalysisIssueCaptureState>();
 
@@ -285,6 +362,7 @@ export function openSample(input: {
       issueCaptures: new Set(),
       attempts: new AttemptLazyCache(),
       attachments: new FixedFamilyLazyCache(),
+      costProjections: new CostProjectionLazyCache(),
     };
     const sample = bindSample({
       reader: input.reader,
@@ -381,11 +459,13 @@ export function captureAnalysisIssues(
     const state: AnalysisIssueCaptureState = {
       lifecycle: binding.lifecycle,
       issues: new Map(),
+      costs: new Map(),
       closed: false,
     };
     binding.lifecycle.issueCaptures.add(state);
     return Effect.succeed(Object.freeze({
       issues: () => freezeIssues([...state.issues.values()]),
+      costEntries: () => freezeCostEntries([...state.costs.values()]),
       close: () => {
         if (state.closed) return;
         state.closed = true;
@@ -427,6 +507,39 @@ export function recordAnalysisIssues(
   }
 }
 
+/** @internal Records one already-closed cost cell for the active Host execution. */
+export function recordAnalysisCostMetric(
+  sample: Sample,
+  input: {
+    readonly measureId: string;
+    readonly row: {
+      readonly key: string;
+      readonly dimensions: Readonly<Record<string, import("../analysis/definitions.ts").DimensionValue>>;
+    };
+    readonly metric: CostMetricValue;
+  },
+  capture: AnalysisIssueCaptureToken | undefined,
+): void {
+  const binding = sampleBindings.get(sample);
+  if (binding === undefined || binding.lifecycle.closed || capture === undefined || capture.closed || capture.lifecycle !== binding.lifecycle) {
+    return;
+  }
+  const dimensions = Object.freeze(Object.fromEntries(
+    Object.entries(input.row.dimensions).sort(([left], [right]) => compareUtf8(left, right)),
+  ));
+  const entry: AnalysisCostCaptureEntry = Object.freeze({
+    measureId: input.measureId,
+    row: Object.freeze({ key: input.row.key, dimensions }),
+    profileIdentity: input.metric.projection.profile.contentIdentity,
+    projection: input.metric.projection,
+  });
+  // Analysis only deduplicates byte-for-byte equivalent closed entries. A
+  // repeated machine key with distinct dimensions or projection remains
+  // visible to Host, which owns typed page/route conflict decisions.
+  const key = canonicalCostCaptureIdentity(entry);
+  if (!capture.costs.has(key)) capture.costs.set(key, entry);
+}
+
 /** @internal Enumerates selected logical Slots without Record I/O. */
 export function logicalSlotMembersForSample(
   sample: Sample,
@@ -439,6 +552,33 @@ export function logicalSlotMembersForSample(
       if (run === undefined) throw new Error("SampleSnapshot Slot has no selected AnalysisRun");
       return [logicalSlotFromActiveSlot(slot, run)];
     }));
+  });
+}
+
+/**
+ * @internal Reads and closes every selected Slot once for one Profile content
+ * identity. The return value contains only data, never a reader, owner, or
+ * attachment payload capable of another interpretation.
+ */
+export function readCostProjection(
+  sample: Sample,
+  profile: PricingProfile,
+): Effect.Effect<readonly CostSlotProjection[], SampleClosedError> {
+  return Effect.gen(function* () {
+    yield* assertSampleOpen(sample);
+    const binding = sampleBindings.get(sample);
+    if (binding === undefined) return yield* Effect.fail(sampleClosed(sample.snapshot.identity));
+    return yield* binding.lifecycle.costProjections.read({
+      sample,
+      profile,
+      build: () => Effect.flatMap(logicalSlotMembersForSample(sample), (members) =>
+        Effect.forEach(
+          members,
+          (member) => readCostSlot(sample, binding, member, profile),
+          { concurrency: 32 },
+        ).pipe(Effect.map((entries) => Object.freeze(entries))),
+      ),
+    });
   });
 }
 
@@ -614,6 +754,65 @@ function readFixedFamily<
   );
 }
 
+function readCostSlot(
+  sample: Sample,
+  binding: SampleBinding,
+  member: LogicalSlot,
+  profile: PricingProfile,
+): Effect.Effect<CostSlotProjection, SampleClosedError> {
+  if (member.state === "not-recorded") {
+    return Effect.succeed(unavailableCostSlot(member, "member-not-recorded"));
+  }
+  if (member.state === "core-invalid" || member.attempt === undefined) {
+    return Effect.succeed(unavailableCostSlot(member, "core-invalid"));
+  }
+  const included = member as LogicalSlot & { readonly attempt: AttemptEvidenceIdentity };
+  const refs = Object.freeze([evidenceRef(included.attempt)]);
+  const operation = Effect.gen(function* () {
+    const resolved = yield* resolveAttempt(sample, binding, included);
+    const cached = yield* readFixedFamily<
+      AttemptObservabilityAttachment,
+      typeof attemptObservabilityFamily
+    >(
+      sample,
+      binding,
+      resolved.attempt,
+      attemptObservabilityFamily,
+    );
+    if (cached.state === "read-failed") {
+      return unavailableCostSlot(included, "usage-unavailable", refs);
+    }
+    switch (cached.read.state) {
+      case "available":
+        return projectCostUsage({
+          member: included,
+          core: resolved.core,
+          usage: cached.read.value.usage,
+          profile,
+          refs,
+        });
+      case "not-recorded":
+        return unavailableCostSlot(included, "usage-not-recorded", refs);
+      case "unsupported":
+      case "migration-required":
+        return unavailableCostSlot(included, "usage-unsupported", refs);
+      case "invalid":
+        return unavailableCostSlot(included, "usage-invalid", refs);
+    }
+  });
+  return Effect.catchAll(operation, (error) =>
+    isSampleClosedError(error)
+      ? Effect.fail(error)
+      : Effect.succeed(unavailableCostSlot(
+        included,
+        error.code === "analysis-attempt-core-unavailable" || error.code === "analysis-attempt-read-failed"
+          ? "origin-run-unavailable"
+          : "usage-unavailable",
+        refs,
+      )),
+  );
+}
+
 function readDomainEntry<
   Kind extends BuiltinDomainViewKind,
   Payload,
@@ -786,6 +985,7 @@ function closeLifecycle(lifecycle: SampleLifecycle): void {
   lifecycle.inFlight.clear();
   lifecycle.attempts.clear();
   lifecycle.attachments.clear();
+  lifecycle.costProjections.clear();
   for (const capture of lifecycle.issueCaptures) capture.closed = true;
   lifecycle.issueCaptures.clear();
 }
@@ -860,6 +1060,37 @@ function freezeIssues(issues: readonly AnalysisIssue[]): readonly AnalysisIssue[
   );
 }
 
+function freezeCostEntries(
+  entries: readonly AnalysisCostCaptureEntry[],
+): readonly AnalysisCostCaptureEntry[] {
+  return Object.freeze([...entries].sort((left, right) =>
+    compareUtf8(canonicalCostCaptureIdentity(left), canonicalCostCaptureIdentity(right))
+  ));
+}
+
+function canonicalCostCaptureIdentity(entry: AnalysisCostCaptureEntry): string {
+  return canonicalCaptureJson(Object.freeze({
+    measureId: entry.measureId,
+    row: entry.row,
+    profileIdentity: entry.profileIdentity,
+    projection: entry.projection,
+  }));
+}
+
+function canonicalCaptureJson(value: unknown): string {
+  if (value === null || typeof value === "boolean" || typeof value === "number" || typeof value === "string") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) return `[${value.map(canonicalCaptureJson).join(",")}]`;
+  if (typeof value !== "object" || value === null) {
+    throw new Error("Analysis cost capture contains a non-JSON value");
+  }
+  const fields = Object.keys(value as Record<string, unknown>)
+    .sort(compareUtf8)
+    .map((key) => `${JSON.stringify(key)}:${canonicalCaptureJson((value as Record<string, unknown>)[key])}`);
+  return `{${fields.join(",")}}`;
+}
+
 function freezeRefs(refs: readonly EvidenceRef[]): readonly EvidenceRef[] {
   const values = new Map<string, EvidenceRef>();
   for (const ref of refs) {
@@ -909,4 +1140,16 @@ function canonicalIdentity(namespace: string, value: unknown): string {
   const encoded = JSON.stringify(value);
   if (encoded === undefined) throw new Error("DomainView identity input must be JSON-serializable");
   return `${namespace}-v1:${encoded}`;
+}
+
+function compareUtf8(left: string, right: string): number {
+  if (left === right) return 0;
+  const first = new TextEncoder().encode(left);
+  const second = new TextEncoder().encode(right);
+  const length = Math.min(first.length, second.length);
+  for (let index = 0; index < length; index += 1) {
+    const difference = first[index]! - second[index]!;
+    if (difference !== 0) return difference;
+  }
+  return first.length - second.length;
 }

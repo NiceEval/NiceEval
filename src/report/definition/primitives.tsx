@@ -34,7 +34,7 @@ import { renderTableText } from "./table-text.ts";
 import { gridContainerRules, normalizeGrid, planTextGrid, TEXT_GRID_SEPARATOR } from "./grid-layout.ts";
 import type { Dataset } from "../model/types.ts";
 import { isDataset } from "../model/dataset.ts";
-import { isMetricValue } from "../model/calculation.ts";
+import { isMetricValue } from "../model/metrics.ts";
 import type { MetricValue } from "../../analysis/index.ts";
 import type { ReportTarget } from "./report.ts";
 import { assertDownloadFile, type DownloadFile } from "./primitives/downloads.ts";
@@ -52,7 +52,8 @@ import {
   type TableContent,
   type TableContentRow,
 } from "./cell.tsx";
-import { formatMetricValue, missingText, verdictMark } from "../model/format.ts";
+import { formatMetricScalar, missingText, verdictMark } from "../model/format.ts";
+import { formatCostProjectionCellText, isCostMetricValue } from "../model/pricing.ts";
 
 
 function childArray(children: ReportNode): ReportNode[] {
@@ -577,7 +578,7 @@ export type TableProps<Row extends object = globalThis.Record<string, unknown>> 
   columns?: readonly PlainTableColumn<Row>[];
 } & TablePresentation;
 
-/** 官方组合组件内部的富 Cell 适配面；不从 niceeval/report 导出。 */
+/** 官方组合组件内部的富 Cell 形状；不从 niceeval/report 导出。 */
 export type TableContentViewProps = {
   data: TableContent | Dataset | null;
 } & TablePresentation;
@@ -599,9 +600,8 @@ function isPlainCellValue(value: unknown): value is Cell {
 }
 
 /**
- * Dataset → TableContent(Table 原语消费)。v0.12 的 `model/dataset.ts` 投影;当前 B 的
- * model/dataset.ts 只提供 datasetFromClosedRows 等封闭投影,面向 TableContentView 的
- * 这份展示投影先住在这里(唯一消费方是 tableContentOf)。
+ * Dataset → TableContent（Table 原语消费）。model/dataset.ts 提供封闭投影；面向
+ * TableContentView 的展示投影由 tableContentOf 在这里消费。
  */
 function datasetToTableContent(dataset: Dataset): TableContent {
   const columns = dataset.fields.map((f) => ({
@@ -815,9 +815,9 @@ function validateSiblingRowKeys(rows: readonly TableContentRow[]): void {
   }
 }
 
-// ───────────────────────── Metric 格渲染(v0.12 components/cell.tsx 的内联移植) ─────────────────────────
-// 语义适配:refs 是 closed EvidenceRef 对象;href 只对 identity.kind === "attempt" 的 ref
-// 生成,其它 ref 退化为纯文本序号,不拼假链接。
+// ───────────────────────── Metric 格渲染 ─────────────────────────
+// refs 是 closed EvidenceRef 对象；href 只对 identity.kind === "attempt" 的 ref
+// 生成，其它 ref 退化为纯文本序号，不拼假链接。
 
 /** closed refs 里能变成下钻目标的 attempt locator;单 ref 才可能成链,多 ref 各列一个序号。 */
 function refLocatorsOf(refs: readonly MetricValue["refs"][number][]): AttemptLocator[] {
@@ -841,7 +841,18 @@ function MetricCellView({
   showCoverage?: boolean;
 }): ReactNode {
   const loc = locale ?? "en";
-  const text = formatMetricValue(cell.value, cell.unit, cell.format, loc);
+  if (isCostMetricValue(cell)) {
+    const closed = formatCostProjectionCellText(cell, loc);
+    return (
+      <span className="niceeval-cell">
+        <span className="niceeval-value">{closed.text}</span>
+        {closed.detail === undefined ? null : <small className="niceeval-cell-detail">{closed.detail}</small>}
+      </span>
+    );
+  }
+  const text = cell.value === null
+    ? missingText("noSamples", loc)
+    : formatMetricScalar(cell.value, cell.unit, cell.format, loc);
   if (cell.value === null) {
     return (
       <span className="niceeval-cell niceeval-cell-missing">
@@ -1162,11 +1173,9 @@ export const Table = TableImplementation as TableComponent;
 export const TableContentView = TableImplementation as ReportComponent<TableContentViewProps>;
 Table.displayName = "Table";
 
-// ───────────────────────── Link / Download(additive 双面原语) ─────────────────────────
-// v0.12.1 没有这两个原语(其链接全部由 ctx.href/ctx.command 在组件内部按 locator 生成,
-// 下载走 Host 的 asset closure)。当前 components.ts 的语义版 Download 有长期价值且根
-// components.ts 即将删除,所以这里补成标准双面 primitive——不经过 generic semantic
-// model,只消费普通 closed 值。additive:任何 v0.12 行为都不因它们改变。
+// ───────────────────────── Link / Download 双面原语 ─────────────────────────
+// Link 与 Download 直接消费普通 closed 值；链接由 ctx.href/ctx.command 解析，下载由 Host
+// 的 asset closure 收集，不经过 generic semantic model。
 
 /**
  * Host 经 `ctx.href` 服务下载目标时使用的保留 target page id。它不是作者可声明的 Page,
@@ -1217,8 +1226,8 @@ export const Link = defineComponent<LinkProps>({
   },
 });
 Link.displayName = "Link";
-// Link labels intentionally accept ordinary React text children, matching the
-// v0.12 JSX call shape. The face above owns their explicit text semantics.
+// Link labels intentionally accept ordinary React text children. The face
+// above owns their explicit text semantics.
 Link[COMPONENT_RAW_CHILDREN] = true;
 
 export interface DownloadProps {

@@ -1,70 +1,17 @@
 import { Effect } from "effect";
-import type { AttemptLocator } from "../../attempt-locator.ts";
-import type { AnalysisSelectionRequest } from "../../analysis/index.ts";
-import type { RecordRoot } from "../../record/platform/root.ts";
+
 import { openViewServer } from "../../view/server.ts";
-import type { Report } from "../definition.ts";
-import type { ClosedSiteRevision, ReportTargetSelection } from "../execution/model.ts";
-import {
-  executeReportForAttemptFromRecord,
-  executeReportFromRecord,
-} from "./from-record.ts";
-import { showReport } from "./presentation.ts";
+import type { ClosedSiteRevision } from "../execution/model.ts";
+import { showReportFromRecord } from "./from-record.ts";
 import { exportStaticReport } from "./static.ts";
-import type { ThemeDefinition } from "./theme.ts";
-import {
-  openReportViewSession,
-} from "./view-session.ts";
-import type {
-  OpenReportViewSessionInput,
-} from "./view-session.ts";
-
-/**
- * Record-backed execution is the public, supported high-level Host entry for
- * the CLI, replacement CLI/Web hosts, and deep integrations. Report authors
- * use `niceeval/report` instead and receive neither readers nor loaders.
- */
-export type ReportHostExecuteInput =
-  | {
-      readonly root: RecordRoot;
-      readonly locator: AttemptLocator;
-      readonly report?: Report;
-      readonly theme?: ThemeDefinition;
-      readonly target?: ReportTargetSelection;
-    }
-  | {
-      readonly root: RecordRoot;
-      readonly selection: AnalysisSelectionRequest;
-      readonly report?: Report;
-      readonly theme?: ThemeDefinition;
-      readonly target?: ReportTargetSelection;
-    };
-
-function execute(input: ReportHostExecuteInput) {
-  return "locator" in input
-    ? executeReportForAttemptFromRecord(input)
-    : executeReportFromRecord(input);
-}
-
-const show = (input: {
-  readonly revision: ClosedSiteRevision;
-  readonly format?: "text" | "json";
-  readonly page?: string;
-}) => showReport({
-  execution: input.revision.execution,
-  ...(input.format === undefined ? {} : { format: input.format }),
-  ...(input.page === undefined ? {} : { page: input.page }),
-});
-
-/** One live Report server owns its scoped execution revision and transport. */
-export interface ReportHostServeInput<Requirements = never>
-  extends OpenReportViewSessionInput<Requirements> {
-  readonly host: string;
-  readonly port: number;
-}
+import { openReportViewSession } from "./view-session.ts";
+import type { OpenReportViewSessionInput } from "./view-session.ts";
 
 function serve<Requirements>(
-  input: ReportHostServeInput<Requirements>,
+  input: OpenReportViewSessionInput<Requirements> & {
+    readonly host: string;
+    readonly port: number;
+  },
 ) {
   return Effect.gen(function* () {
     const session = yield* openReportViewSession({
@@ -81,19 +28,15 @@ function serve<Requirements>(
   });
 }
 
-const exportReport = exportStaticReport;
-
-/** The complete public Report Host surface; loaders and renderer internals stay private. */
-export interface ReportHostSDK {
-  readonly execute: typeof execute;
-  readonly show: typeof show;
-  readonly serve: typeof serve;
-  readonly export: typeof exportReport;
-}
-
-export const reportHost: ReportHostSDK = Object.freeze({
-  execute,
-  show,
+/**
+ * The complete public Report Host facade. `show` opens one fixed Sample and
+ * executes one target. `serve` and `export` consume complete opaque revisions;
+ * loaders, watchers, Record readers, and private Page values stay unexported.
+ */
+export const reportHost = Object.freeze({
+  show: showReportFromRecord,
   serve,
-  export: exportReport,
+  export: exportStaticReport,
 });
+
+export type { ClosedSiteRevision };

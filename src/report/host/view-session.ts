@@ -41,8 +41,6 @@ export interface ReportViewSiteRebuild {
   readonly watchInputs?: readonly string[];
 }
 
-/** Backward-compatible name for the one supported rebuild shape. */
-export type ReportViewExecutionRebuild = ReportViewSiteRebuild;
 export type ReportViewRebuild = ReportViewSiteRebuild;
 
 export interface ReportViewSession<Requirements = never> {

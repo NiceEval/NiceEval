@@ -289,6 +289,8 @@ export type SampleInputObservation<Value> =
 export type MetricState =
   | "available"
   | "partial"
+  /** A specialized closed metric may have no reportable value at all. */
+  | "unavailable"
   | "empty"
   | "unsupported"
   | "failed";

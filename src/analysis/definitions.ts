@@ -491,8 +491,6 @@ export const attemptPassed = createPublishedInput(publishedAnalysisInputBindings
 
 export const attemptLatencyMs = createPublishedInput(publishedAnalysisInputBindings.attemptLatencyMs);
 
-const attemptCostUSD = createPublishedInput(publishedAnalysisInputBindings.attemptCostUSD);
-
 /** Recorded input plus output tokens for one selected logical Slot. */
 export const attemptTokens = createPublishedInput(
   publishedAnalysisInputBindings.attemptTokens,
@@ -500,35 +498,32 @@ export const attemptTokens = createPublishedInput(
 
 export const attemptToolFailure = createPublishedInput(publishedAnalysisInputBindings.attemptToolFailure);
 
-/** Mean recorded USD provider cost per selected logical Slot. */
-export const costUSD = defineMeasure({
-  id: "niceeval.cost-usd",
-  population: logicalSlots,
-  input: attemptCostUSD,
-  withinAttempt: oneValue<number>(),
-  withinSlot: latestCompletedAttempt<number>(),
-  acrossSlots: mean(),
-  denominator: allLogicalSlots(),
-  missing: partial(),
-  evidence: retainContributingEvidence(),
-  format: "currency-usd",
-  better: "lower",
-});
-
-/** Total recorded USD provider cost across the selected logical Slots. */
-export const totalCostUSD = defineMeasure({
-  id: "niceeval.total-cost-usd",
-  population: logicalSlots,
-  input: attemptCostUSD,
-  withinAttempt: oneValue<number>(),
-  withinSlot: latestCompletedAttempt<number>(),
-  acrossSlots: sumAcrossSlots(),
-  denominator: allLogicalSlots(),
-  missing: partial(),
-  evidence: retainContributingEvidence(),
-  format: "currency-usd",
-  better: "lower",
-});
+/**
+ * @internal A published specialized Measure whose execution is owned by a
+ * dedicated Analysis evaluator rather than the generic input/reduction path.
+ */
+export function createOpaqueMeasure<Member, Value>(input: {
+  readonly id: string;
+  readonly population: Population<Member>;
+  readonly unit?: string;
+  readonly format?: MeasureFormat;
+  readonly better?: "higher" | "lower" | "neutral";
+}): Measure<Member, Value> {
+  requireIdentifier(input.id, "Measure id");
+  populationIdentity(input.population);
+  if (input.better !== undefined && !["higher", "lower", "neutral"].includes(input.better)) {
+    throw definitionError("Measure better must be higher, lower, or neutral");
+  }
+  return Object.freeze({
+    kind: "measure" as const,
+    id: input.id,
+    population: input.population,
+    ...(input.unit === undefined ? {} : { unit: input.unit }),
+    ...(input.format === undefined ? {} : { format: input.format }),
+    ...(input.better === undefined ? {} : { better: input.better }),
+    [measureTypeId]: (value: Value) => value,
+  });
+}
 
 /** @internal Query executor accessors. None is re-exported by niceeval/analysis. */
 export function populationMembersState<Member>(

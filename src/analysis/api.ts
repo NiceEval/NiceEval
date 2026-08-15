@@ -40,7 +40,15 @@ import {
   type Relation,
   type WithinAttemptReduction,
   type WithinSlotReduction,
+  logicalSlots,
 } from "./definitions.ts";
+import {
+  costMeasureState,
+  isCostMeasure,
+  type CostMeasure,
+  type CostMetricValue,
+} from "./cost.ts";
+import { aggregateCostProjection } from "./cost-projection.ts";
 import {
   makeClosedRows,
   type AnalysisIssue,
@@ -59,7 +67,9 @@ import {
 import {
   assertSampleOpen,
   currentAnalysisIssueCapture,
+  recordAnalysisCostMetric,
   recordAnalysisIssues,
+  readCostProjection,
   readBuiltinDomainView,
   runSamplePromise,
   type AnalysisIssueCaptureToken,
@@ -75,7 +85,17 @@ export type DimensionSet = Readonly<Record<string, Dimension<any, any>>>;
 export type MeasureSet = Readonly<Record<string, Measure<any, any>>>;
 
 type DimensionOutput<Value> = Value extends Dimension<any, infer Output> ? Output : never;
-type MeasureOutput<Value> = Value extends Measure<any, infer Output> ? Output : never;
+
+/**
+ * The one result mapping for every requested Measure. Cost keeps `number` as
+ * its Measure value for ordinary axes while its closed cell exposes the
+ * authoritative CostProjectionValue without a Report cast.
+ */
+export type MeasureCell<Value> = Value extends CostMeasure
+  ? CostMetricValue
+  : Value extends Measure<any, infer Output>
+  ? MetricValue<Output>
+  : never;
 
 export type AggregateRow<By, Values> = Readonly<
   { readonly key: string }
@@ -83,7 +103,7 @@ export type AggregateRow<By, Values> = Readonly<
     readonly [Key in keyof By]: DimensionOutput<By[Key]>;
   }
   & {
-    readonly [Key in keyof Values]: MetricValue<MeasureOutput<Values[Key]>>;
+    readonly [Key in keyof Values]: MeasureCell<Values[Key]>;
   }
 >;
 
@@ -386,14 +406,21 @@ function executeFrame<By extends object, Measures extends object>(
           normalized.measures,
           ([name, measure]) => Effect.map(
             evaluateMeasure(context, normalized.population, group.members, measure),
-            (value) => [name, value] as const,
+            (value) => [name, measure, value] as const,
           ),
           { concurrency: ANALYSIS_READ_CONCURRENCY },
         );
-        for (const [name, value] of values) {
+        for (const [name, measure, value] of values) {
           row[name] = value;
           frameIssues.push(...value.issues);
           frameRefs.push(...value.refs);
+          if (isCostMeasure(measure)) {
+            recordAnalysisCostMetric(sample, {
+              measureId: measure.id,
+              row: Object.freeze({ key: group.key, dimensions: group.coordinates }),
+              metric: value as CostMetricValue,
+            }, capture);
+          }
         }
         rows.push(Object.freeze(row) as SemanticRow<By, Measures>);
         frameIssues.push(...group.issues);
@@ -409,7 +436,14 @@ function executeFrame<By extends object, Measures extends object>(
           id: canonicalIdentity("closed-rows", [
             sample.snapshot.identity.id,
             normalized.population.id,
-            groups.map((group) => group.key),
+            normalized.dimensions.map(([name, dimension]) => [name, dimension.id]),
+            normalized.measures.map(([name, measure]) => [name, measure.id]),
+            groups.map((group) => Object.freeze([
+              group.key,
+              Object.freeze(group.members
+                .map((member) => populationMembersState(normalized.population.members).key(member))
+                .sort(compareCanonicalCodeUnits)),
+            ])),
           ]),
         }),
         issues,
@@ -433,18 +467,28 @@ function inferAggregatePopulation(
   request: AggregateRequest<object, object>,
 ): Population<unknown> | Error {
   const candidates: Population<unknown>[] = [];
+  let hasCostMeasure = false;
   try {
     for (const dimension of Object.values(request.by)) {
       if (!isDimension(dimension)) return new Error("aggregate by must contain only Dimensions");
       candidates.push(dimension.population);
     }
     for (const measure of Object.values(request.values)) {
-      if (!isMeasure(measure)) return new Error("aggregate values must contain only Measures");
-      candidates.push(measure.population);
+      const cost = isCostMeasure(measure);
+      if (!cost && !isMeasure(measure)) return new Error("aggregate values must contain only Measures");
+      if (cost) {
+        // The CostMeasure descriptor, rather than a foreign package's
+        // Population object or a string id, binds it to this package's
+        // logical-Slot catalog.
+        hasCostMeasure = true;
+      } else {
+        candidates.push((measure as Measure<unknown, unknown>).population);
+      }
     }
   } catch (error) {
     return new Error(errorMessage(error));
   }
+  if (hasCostMeasure) return logicalSlots as unknown as Population<unknown>;
   const first = candidates[0];
   return first === undefined ? new Error("aggregate needs at least one Dimension or Measure") : first;
 }
@@ -456,7 +500,6 @@ function normalizeFrameRequest(
     return new Error("frame request must have kind frame");
   }
   try {
-    populationIdentity(request.population);
     if (!isPlainObject(request.by) || !isPlainObject(request.measures)) {
       return new Error("frame by and measures must be records");
     }
@@ -470,29 +513,39 @@ function normalizeFrameRequest(
       ids.add(dimension.id);
     }
     for (const [, measure] of measures) {
-      if (!isMeasure(measure)) return new Error("frame measures must contain only Measures");
-      if (ids.has(measure.id)) return new Error(`Measure identity collision: ${measure.id}`);
-      ids.add(measure.id);
+      const cost = isCostMeasure(measure);
+      if (!cost && !isMeasure(measure)) return new Error("frame measures must contain only Measures");
+      const descriptor = measure as Measure<unknown, unknown>;
+      if (ids.has(descriptor.id)) return new Error(`Measure identity collision: ${descriptor.id}`);
+      ids.add(descriptor.id);
     }
     const typedDimensions = dimensions.filter((entry): entry is [string, Dimension<unknown, DimensionValue>] =>
       isDimension(entry[1])
     );
     const typedMeasures = measures.filter((entry): entry is [string, Measure<unknown, unknown>] =>
-      isMeasure(entry[1])
+      isCostMeasure(entry[1]) || isMeasure(entry[1])
     );
+    // Explicit query Population capabilities stay package-local. Cross-package
+    // CostMeasure support is limited to aggregate()'s Measure-driven inference;
+    // a string id cannot author a new Population capability here.
+    populationIdentity(request.population);
+    const population = request.population;
     for (const [, descriptor] of [...typedDimensions, ...typedMeasures]) {
-      if (samePopulationMembers(request.population, descriptor.population)) continue;
+      const targetPopulation = isCostMeasure(descriptor)
+        ? logicalSlots as unknown as Population<unknown>
+        : descriptor.population;
+      if (samePopulationMembers(population, targetPopulation)) continue;
       const links = registeredRelations().filter((relation) =>
-        relation.from === request.population && relation.to === descriptor.population
+        relation.from === population && relation.to === targetPopulation
       );
       if (links.length !== 1) {
         return new Error(
-          `No unambiguous Relation connects ${request.population.id} to ${descriptor.population.id}`,
+          `No unambiguous Relation connects ${population.id} to ${targetPopulation.id}`,
         );
       }
     }
     return Object.freeze({
-      population: request.population,
+      population,
       dimensions: Object.freeze(typedDimensions),
       measures: Object.freeze(typedMeasures),
     });
@@ -556,8 +609,12 @@ function evaluateMeasure(
   sourcePopulation: Population<unknown>,
   sourceMembers: readonly unknown[],
   measure: Measure<unknown, unknown>,
-): Effect.Effect<MetricValue<unknown>, SampleClosedError> {
+): Effect.Effect<MetricValue<unknown> | CostMetricValue, SampleClosedError> {
   return Effect.gen(function* () {
+    const cost = costMeasureState(measure);
+    if (cost !== undefined) {
+      return yield* evaluateCostMeasure(context, sourcePopulation, sourceMembers, cost);
+    }
     const state = measureStateFor(measure);
     const denominator = denominatorState(state.denominator);
     const resolved: Reduced<unknown>[] = [];
@@ -608,6 +665,52 @@ function evaluateMeasure(
       enforceSameProducer: producerPolicyIsRequired(state.producers),
     });
   });
+}
+
+function evaluateCostMeasure(
+  context: QueryContext,
+  sourcePopulation: Population<unknown>,
+  sourceMembers: readonly unknown[],
+  state: NonNullable<ReturnType<typeof costMeasureState>>,
+): Effect.Effect<CostMetricValue, SampleClosedError> {
+  return Effect.gen(function* () {
+    const resolved = yield* Effect.forEach(
+      sourceMembers,
+      (member) => resolveMember(
+        context,
+        sourcePopulation,
+        member,
+        logicalSlots as unknown as Population<unknown>,
+      ),
+      { concurrency: ANALYSIS_READ_CONCURRENCY },
+    );
+    const relationIssues = freezeIssues(resolved.flatMap((entry) => entry.issues));
+    const keys = new Set(resolved.flatMap((entry) =>
+      entry.member === undefined ? [] : [logicalSlotKey(entry.member as LogicalSlot)]
+    ));
+    const entries = yield* readCostProjection(context.sample, state.profile);
+    const reduced = aggregateCostProjection(
+      state.profile,
+      entries.filter((entry) => keys.has(logicalSlotKey(entry.slot))),
+      state.mode,
+    );
+    return Object.freeze({
+      value: reduced.value,
+      state: reduced.projection.state,
+      samples: reduced.samples,
+      total: reduced.total,
+      basis: "slot" as const,
+      issues: relationIssues,
+      refs: dedupeRefs([...reduced.refs, ...relationIssues.flatMap((entry) => entry.refs)]),
+      format: "currency-usd" as const,
+      better: "lower" as const,
+      projection: reduced.projection,
+    });
+  });
+}
+
+function logicalSlotKey(slot: Pick<LogicalSlot, "runId" | "slotId">): string {
+  return `${slot.runId}\u0000${slot.slotId}`;
 }
 
 function resolveMember(
@@ -983,6 +1086,7 @@ function isDimension(value: unknown): value is Dimension<unknown, DimensionValue
 function isMeasure(value: unknown): value is Measure<unknown, unknown> {
   return typeof value === "object" && value !== null && (value as { readonly kind?: unknown }).kind === "measure";
 }
+
 
 function samePopulationMembers(left: Population<unknown>, right: Population<unknown>): boolean {
   return left === right || left.members === right.members;

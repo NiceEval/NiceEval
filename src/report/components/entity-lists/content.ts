@@ -114,7 +114,7 @@ function attemptCells(attempt: AttemptListItem): CellBag {
     // 层级表的判定构成列:该次判定,与 verdict 格同值。
     record: verdictCell(attempt.verdict),
     durationMs: measureCell(attempt.durationMs),
-    costUSD: measureCell(attempt.costUSD),
+    ...(attempt.costUSD === undefined ? {} : { costUSD: measureCell(attempt.costUSD) }),
   };
 }
 
@@ -126,9 +126,10 @@ const HIERARCHY_COLUMNS: readonly ColumnSpec[] = [
   { key: "durationMs", better: "lower", header: HEADER.durationMs },
   { key: "passRate", better: "higher", header: HEADER.passRate },
   { key: "tokens", better: "lower", header: HEADER.tokens },
-  { key: "costUSD", better: "lower", header: HEADER.costUSD },
   { key: "record", header: HEADER.record },
 ];
+
+const COST_COLUMN: ColumnSpec = { key: "costUSD", better: "lower", header: HEADER.costUSD };
 
 /** Attempt 平铺表的列集(AttemptList / FailureList 同一份)。 */
 const FLAT_ENTITY_COLUMNS: readonly ColumnSpec[] = [
@@ -136,8 +137,14 @@ const FLAT_ENTITY_COLUMNS: readonly ColumnSpec[] = [
   { key: "verdict", header: HEADER.verdict },
   { key: "result", header: HEADER.result },
   { key: "durationMs", better: "lower", header: HEADER.durationMs },
-  { key: "costUSD", better: "lower", header: HEADER.costUSD },
 ];
+
+function columnsWithCost(columns: readonly ColumnSpec[], includeCost: boolean): readonly ColumnSpec[] {
+  if (!includeCost) return columns;
+  const recordIndex = columns.findIndex((column) => column.key === "record");
+  if (recordIndex < 0) return [...columns, COST_COLUMN];
+  return [...columns.slice(0, recordIndex), COST_COLUMN, ...columns.slice(recordIndex)];
+}
 
 /** 层级实体的计数属于身份说明,必须留在同一个首格而不是渲染成续行。 */
 function identityCell(name: string, metadata: string): Cell {
@@ -203,7 +210,7 @@ function evalRow(
     // 判定构成列:该题 attempts 的计票,与 experiment 行计票同一形态。
     record: verdictCountsCell(row.attempts),
     durationMs: measureCell(row.durationMs),
-    costUSD: measureCell(row.costUSD),
+    ...(row.costUSD === undefined ? {} : { costUSD: measureCell(row.costUSD) }),
   };
   return {
     key: row.evalId,
@@ -262,7 +269,7 @@ function groupTableRow(
     durationMs: groupMetricValue(metrics, "durationMs"),
     passRate: groupMetricValue(metrics, "passRate"),
     tokens: groupMetricValue(metrics, "tokens"),
-    costUSD: groupMetricValue(metrics, "costUSD"),
+    ...(metrics?.costUSD === undefined ? {} : { costUSD: measureCell(metrics.costUSD) }),
     record: evals === 0
       ? { kind: "missing", code: GROUP_NO_SAMPLES }
       : verdictCountsCell(attempts),
@@ -310,7 +317,7 @@ function experimentRow(item: ExperimentListItem, view: HierarchyView): TableCont
     durationMs: measureCell(item.durationMs),
     passRate: measureCell(item.endToEndPassRate),
     tokens: measureCell(item.tokens),
-    costUSD: measureCell(item.costUSD),
+    ...(item.costUSD === undefined ? {} : { costUSD: measureCell(item.costUSD) }),
     record: verdictCountsCell(attempts),
   };
   return {
@@ -321,17 +328,19 @@ function experimentRow(item: ExperimentListItem, view: HierarchyView): TableCont
 }
 
 export function experimentListContent(items: readonly ExperimentListItem[]): TableContent {
+  const columns = columnsWithCost(HIERARCHY_COLUMNS, items.some((item) => item.costUSD !== undefined));
   return {
-    columns: HIERARCHY_COLUMNS,
+    columns,
     rows: items.map((item) =>
-      experimentRow(item, { columns: HIERARCHY_COLUMNS, item, labelPrefix: "" })),
+      experimentRow(item, { columns, item, labelPrefix: "" })),
   };
 }
 
 export function attemptListContent(items: readonly AttemptListItem[]): TableContent {
+  const columns = columnsWithCost(FLAT_ENTITY_COLUMNS, items.some((item) => item.costUSD !== undefined));
   return {
-    columns: FLAT_ENTITY_COLUMNS,
+    columns,
     // 与层级表里的 attempt 行同一份格子原料,只是裁到平铺列集。
-    rows: items.map((item) => attemptRow(item, FLAT_ENTITY_COLUMNS)),
+    rows: items.map((item) => attemptRow(item, columns)),
   };
 }

@@ -1,110 +1,86 @@
-import {
-  attemptEvidenceView,
-  query,
-  type AttemptEvidenceDomainView,
-  type Sample,
-  type SampleSnapshot,
+/** The stable explicit-Run membership selector. */
+
+import type {
+  Sample,
+  SampleSnapshot,
 } from "../../analysis/index.ts";
-import {
-  Callout,
-  defineReport,
-  Stack,
-  Stat,
-  Table,
-  Text,
-  type Report,
-} from "../author/index.ts";
+import { jsx } from "react/jsx-runtime";
+import type { Page } from "../definition/report.ts";
+import { type HeroData } from "../components/site-components/index.tsx";
+import { toAttemptEvidence } from "../model/conversions.ts";
 import {
   loadBuiltInSummaryRows,
   type BuiltInSummaryRows,
 } from "./analysis-values.ts";
-import { captureLeaderboardShowResult } from "./attempt-evidence-json.ts";
-import { registerBuiltInShowResult } from "../execution/results.ts";
+import {
+  RunMembershipResultView,
+  type MembershipRow,
+} from "./result-components.tsx";
+import {
+  builtInMachineProducerIds,
+  defineBuiltInReport,
+} from "./machine.ts";
 
-const MEMBERSHIP_ROWS_MAX = 200;
+interface RunMembershipPageInput {
+  readonly hero: HeroData;
+  readonly summary: BuiltInSummaryRows;
+  readonly members: readonly MembershipRow[];
+  readonly evidence: Awaited<ReturnType<typeof toAttemptEvidence>>;
+}
+
+function heroData(snapshot: SampleSnapshot): HeroData {
+  const latest = snapshot.runs.reduce<number | null>(
+    (current, run) => current === null || Number(run.startedAt) > current ? Number(run.startedAt) : current,
+    null,
+  );
+  return Object.freeze({
+    latestStartedAt: latest === null ? null : new Date(latest).toISOString(),
+    runs: snapshot.runs.length,
+  });
+}
+
+function membershipRows(snapshot: SampleSnapshot): readonly MembershipRow[] {
+  return Object.freeze(snapshot.slots.map((slot) => Object.freeze({
+    key: `${slot.runId}:${slot.slotId}`,
+    experiment: String(slot.experimentId),
+    eval: String(slot.evalId),
+    attempt: slot.attemptOrdinal,
+    selectedRun: String(slot.runId),
+    slot: String(slot.slotId),
+    state: slot.state,
+    relation: slot.state === "included" ? slot.relation : null,
+    locator: slot.state === "included" ? slot.attempt.locator : null,
+  })));
+}
 
 const runMembershipPage = {
   id: "run-membership",
   path: "/",
   title: "Run membership overview",
-  load: async (sample: Sample) => Object.freeze({
-    snapshot: sample.snapshot,
-    metrics: await loadBuiltInSummaryRows(sample),
-    evidence: await query(sample, { kind: "domain-view", view: attemptEvidenceView }),
-  }),
-  render: (input: {
-    readonly snapshot: SampleSnapshot;
-    readonly metrics: BuiltInSummaryRows;
-    readonly evidence: AttemptEvidenceDomainView;
-  }) => runMembershipNode(input),
-};
+  load: async (sample: Sample): Promise<RunMembershipPageInput> => {
+    const [summary, evidence] = await Promise.all([
+      loadBuiltInSummaryRows(sample),
+      toAttemptEvidence(sample),
+    ]);
+    return Object.freeze({
+      hero: heroData(sample.snapshot),
+      summary,
+      members: membershipRows(sample.snapshot),
+      evidence,
+    });
+  },
+  render: (input: RunMembershipPageInput) => jsx(RunMembershipResultView, input),
+} satisfies Page<void, RunMembershipPageInput>;
 
-/**
- * The bounded default for explicit historical Runs. Core membership, closed
- * Assertion evidence, and MetricValues stay independent facts.
- */
-export function runMembershipOverviewReport(): Report {
-  return registerBuiltInShowResult(defineReport({
+/** The bounded default for explicit historical Run selectors. */
+export function runMembershipOverviewReport() {
+  return defineBuiltInReport(builtInMachineProducerIds.runMembershipOverview, {
     title: "Run membership overview",
     pages: [runMembershipPage],
-  }), Object.freeze({ produce: captureLeaderboardShowResult }));
+  });
 }
 
 /** The CLI default Report for one or more explicit `--run` selectors. */
 export const defaultRunMembershipOverviewReport = runMembershipOverviewReport();
 
 export default defaultRunMembershipOverviewReport;
-
-function runMembershipNode(input: {
-  readonly snapshot: SampleSnapshot;
-  readonly metrics: BuiltInSummaryRows;
-  readonly evidence: AttemptEvidenceDomainView;
-}) {
-  const evidenceByLocator = new Map(
-    input.evidence.entries.map((entry) => [entry.attempt.locator, entry] as const),
-  );
-  const rows = input.snapshot.slots.slice(0, MEMBERSHIP_ROWS_MAX).map((slot) => {
-    const evidence = slot.state === "included"
-      ? evidenceByLocator.get(slot.attempt.locator)
-      : undefined;
-    return Object.freeze({
-      runId: slot.runId,
-      slotId: slot.slotId,
-      slotState: slot.state,
-      memberAction: slot.state === "excluded" ? slot.base.action : slot.action,
-      memberRelation: slot.state === "included" ? slot.relation : null,
-      sourceAttemptLocator: slot.state === "included"
-        ? slot.attempt.locator
-        : null,
-      evidenceState: evidence?.state ?? "not-recorded",
-    });
-  });
-  const omitted = input.snapshot.slots.length - rows.length;
-  const metrics = input.metrics[0];
-
-  return Stack({
-    children: [
-      ...(metrics === undefined
-        ? []
-        : [Stat({ label: "Pass rate", value: metrics.passRate })]),
-      Table({
-        caption: "Run membership",
-        columns: [
-          { key: "runId", label: "Run" },
-          { key: "slotId", label: "Slot" },
-          { key: "slotState", label: "Slot state" },
-          { key: "memberAction", label: "Member action" },
-          { key: "memberRelation", label: "Member relation" },
-          { key: "sourceAttemptLocator", label: "Source Attempt" },
-          { key: "evidenceState", label: "Assertion evidence" },
-        ],
-        rows,
-      }),
-      Callout({
-        tone: omitted === 0 ? "neutral" : "warning",
-        title: "Bounded summary",
-        children: [Text({ value: `Omitted rows: ${omitted}` })],
-      }),
-    ],
-  });
-}

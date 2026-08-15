@@ -202,12 +202,15 @@ export interface ReadableAttempt {
   readonly document: AttemptDocument;
   /**
    * Verified while resolving the exact nominal Attempt reference. It is the
-   * only origin Run capability Sample may use for origin-owned Sources.
+   * only origin Run Core projection Sample may use. In particular, a carried
+   * or accepted member must retain this origin's execution facts rather than
+   * substituting the selected target Run.
    */
   readonly origin: {
     readonly owner: SelectedOwnerRef;
     readonly runId: RunId;
     readonly experimentId: ExperimentId;
+    readonly startedAt: UtcMillis;
     readonly context: RunContext;
   };
 }

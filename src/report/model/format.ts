@@ -5,25 +5,20 @@
 // 原样保留);这里只格式化显示字节,不重新统计、不把 null 猜成零。
 
 import type { Verdict } from "../../types.ts";
-import type { AnalysisIssue, EvidenceRef, MeasureFormat, MetricValue } from "../../analysis/index.ts";
+import type { MeasureFormat, MetricValue } from "../../analysis/index.ts";
 import {
   DEFAULT_REPORT_LOCALE,
-  DISPLAY_LOCALES,
   localeText,
-  type LocalizedText,
   type ReportLocale,
 } from "./locale.ts";
 
-/** v0.12 的显示覆盖词表;当前 MeasureFormat 的 kind 字符串经 `resolveFormatUnit` 落到同一支。 */
+/** 当前 MeasureFormat 的显示覆盖词表；kind 字符串经 `resolveFormatUnit` 落到同一支。 */
 export type MetricFormat =
   | "number"
   | "percent"
   | "duration"
   | "currency"
   | { readonly kind: "custom"; readonly format: (value: number, locale: string) => string };
-
-/** 内部 AttemptMetric 显示覆盖：只格式化同一个终值，不改变口径。 */
-export type MetricDisplay = (value: number, locale: ReportLocale) => string;
 
 /**
  * 一套 id 的显示名：每个 id 缩成在这组里唯一的最短路径后缀，重名逐步加长到能区分为止
@@ -106,7 +101,7 @@ function formatNumberWithUnit(value: number, unit?: string): string {
 }
 
 /**
- * 当前 Analysis 的 MeasureFormat kind 词表 → v0.12 的 unit 开关。未知 kind 不映射,
+ * 当前 Analysis 的 MeasureFormat kind 词表 → unit 开关。未知 kind 不映射,
  * 回落声明 unit;两级都没有时按无单位读数格式化。词表只做显示适配,不新建统计口径。
  */
 function resolveFormatUnit(format: MeasureFormat | undefined, unit?: string): string | undefined {
@@ -133,49 +128,39 @@ function resolveFormatUnit(format: MeasureFormat | undefined, unit?: string): st
 }
 
 /**
- * 在 renderer 内按当前 locale 格式化一个 MetricValue 终值。
- * 结果不写回 MetricValue；text/web 两面各自调用同一函数。
- * `format` 同时接受 v0.12 的显示词表与当前 MeasureFormat kind 字符串。
- *
- * 兼容段(临时):当前 `src/report/index.ts` facade 还会以 `(metric, locale)` 形态调用;
- * Q.X 重写公共出口、H 删除 classic 后,这个对象重载随兼容段一并删除。
+ * Formats one complete Analysis-issued MetricValue.  The public formatter
+ * intentionally has no scalar overload: callers retain state, denominator,
+ * issues, and evidence rather than turning a metric into a bare number.
  */
-export function formatMetricValue(metric: MetricValue, locale?: ReportLocale): string;
 export function formatMetricValue(
+  metric: MetricValue,
+  locale: ReportLocale = DEFAULT_REPORT_LOCALE,
+): string {
+  const display = metric.value === null
+    ? missingText("noSamples", locale)
+    : formatMetricScalar(metric.value, metric.unit, metric.format, locale);
+  return `${display} · ${metric.samples} / ${metric.total} ${metric.basis} · ${metric.state}`;
+}
+
+/** @internal Scalar display for Report implementation modules only. */
+export function formatMetricScalar(
   value: number | null,
   unit?: string,
   format?: MetricFormat | MeasureFormat,
-  locale?: ReportLocale,
-): string;
-export function formatMetricValue(
-  value: number | null | MetricValue,
-  unitOrLocale?: string | ReportLocale,
-  format?: MetricFormat | MeasureFormat,
-  locale?: ReportLocale,
+  locale: ReportLocale = DEFAULT_REPORT_LOCALE,
 ): string {
-  if (typeof value === "object" && value !== null) {
-    const metric = value as MetricValue;
-    const loc = (unitOrLocale as ReportLocale | undefined) ?? DEFAULT_REPORT_LOCALE;
-    const display =
-      metric.value === null
-        ? missingText("noSamples", loc)
-        : formatMetricValue(metric.value, metric.unit, metric.format, loc);
-    return `${display} · ${metric.samples} / ${metric.total} ${metric.basis} · ${metric.state}`;
-  }
-  const metricValue = value as number | null;
-  if (metricValue === null) return missingText("noSamples", locale);
-  const unit = unitOrLocale as string | undefined;
+  if (value === null) return missingText("noSamples", locale);
   if (format && typeof format === "object" && format.kind === "custom") {
     const custom = format as { readonly format: (value: number, locale: string) => string };
-    return custom.format(metricValue, locale ?? DEFAULT_REPORT_LOCALE);
+    return custom.format(value, locale);
   }
   if (typeof format === "string") {
-    if (format === "percent") return formatNumberWithUnit(metricValue, "%");
-    if (format === "currency") return formatNumberWithUnit(metricValue, "$");
-    if (format === "duration") return formatNumberWithUnit(metricValue, "ms");
+    if (format === "percent") return formatNumberWithUnit(value, "%");
+    if (format === "currency") return formatNumberWithUnit(value, "$");
+    if (format === "duration") return formatNumberWithUnit(value, "ms");
   }
   const resolvedUnit = resolveFormatUnit(format as MeasureFormat | undefined, unit);
-  return formatNumberWithUnit(metricValue, resolvedUnit);
+  return formatNumberWithUnit(value, resolvedUnit);
 }
 
 /**
@@ -200,23 +185,6 @@ export function formatAxisTick(value: number, step: number, unit?: string): stri
   return unit ? `${sign}${fixed(abs, decimals)} ${unit}` : `${sign}${fixed(abs, decimals)}`;
 }
 
-/**
- * 内部旧切片把格式化结果投影进 Content 时使用；公共 MetricValue 不携带 display。
- */
-export function metricDisplay(
-  value: number | null,
-  unit?: string,
-  override?: MetricDisplay,
-): LocalizedText {
-  if (value === null) {
-    return localizedDisplay((locale) => localeText(locale, "cell.missing"));
-  }
-  if (override) {
-    return localizedDisplay((locale) => override(value, locale));
-  }
-  return formatMetricValue(value, unit);
-}
-
 /** missing 格内建 code → locale 词典 key。词表未命中时 missingText 原样返回 code。 */
 const MISSING_CODE_KEYS = {
   noSamples: "cell.missing",
@@ -227,20 +195,10 @@ const MISSING_CODE_KEYS = {
 /**
  * `missing` 格的本地化原因。code 是结构化代码,不是显示文本
  * (docs/feature/reports/library.md「缺数据、不适用与占位」)。
- * 无参调用是兼容段(临时):旧 facade 的 missingText() 恒返回统一显示符,随 Q.X/H 删除。
  */
-export function missingText(code?: string, locale: ReportLocale = DEFAULT_REPORT_LOCALE): string {
-  if (code === undefined) return "—";
+export function missingText(code: string, locale: ReportLocale = DEFAULT_REPORT_LOCALE): string {
   const key = MISSING_CODE_KEYS[code as keyof typeof MISSING_CODE_KEYS];
   return key ? localeText(locale, key) : code;
-}
-
-/** 内部旧切片生成 LocalizedText；公共 MetricValue 不走这条路径。 */
-export function localizedDisplay(make: (locale: ReportLocale) => string): LocalizedText {
-  const entries = DISPLAY_LOCALES.map((locale) => [locale, make(locale)] as const);
-  const first = entries[0]![1];
-  if (entries.every(([, text]) => text === first)) return first;
-  return Object.fromEntries(entries);
 }
 
 /** 无单位纯数字(scoreboard 总分等):一位小数,去尾零。 */
@@ -268,8 +226,8 @@ export function formatPoints(points: number): string {
   return `${formatPlainNumber(points)} ${points === 1 ? "pt" : "pts"}`;
 }
 
-// ── 以下是旧切片 Content 的内部展示辅助；公共 MetricValue 由 renderer 调
-//    formatMetricValue，不携带预生成 display。──
+// 以下格式化器服务于当前产品组件；公共 MetricValue 由 renderer 调
+// formatMetricValue，不携带预生成 display。
 
 /** 毫秒 → 人读耗时("850ms" / "1.2s" / "4m 20s" / "1h 4m")。 */
 export function formatDurationMs(ms: number): string {
@@ -416,8 +374,7 @@ export function fitFailureSummary(summary: string, maxChars: number): string {
 // ── ExperimentList(web ExperimentList.tsx / text faces.ts)共用的题型构成判据 ──
 
 /**
- * 题型构成:v0.12 的 model/types.ts 定义,当前 Analysis facade 尚未落盘时先住在这里,
- * B 的 model/types.ts 落定后可直接 re-export,调用方不改拼写。
+ * 题型构成。当前由 Report 的展示层定义，调用方以此作为稳定的显示联合。
  */
 export type EvaluationKindComposition = "pass" | "points" | "mixed";
 
@@ -441,53 +398,4 @@ export function experimentListEvaluationKindComposition(
   }
   if (hasPass && hasPoints) return "mixed";
   return hasPoints ? "points" : "pass";
-}
-
-// ── 兼容段(临时):当前 src/report/index.ts facade 的名字 ──
-// 这些导出只服务尚未切换的旧公共出口;实现全部委托上面的 v0.12 格式化函数,
-// 不构成第二套 formatter。Q.X 重写 index.ts / H 删除 classic 时整段删除。
-
-/** 旧 facade 的完整读数投影形状。 */
-export interface MetricPresentation {
-  readonly metric: MetricValue;
-  readonly value: string;
-  readonly coverage: string;
-  readonly state: MetricValue["state"];
-  readonly issues: readonly AnalysisIssue[];
-  readonly refs: readonly EvidenceRef[];
-  readonly text: string;
-}
-
-/** 旧 facade:把显示值与完整度、状态事实并列投影,不动 MetricValue 本体。 */
-export function presentMetric(
-  metric: MetricValue,
-  locale: ReportLocale = DEFAULT_REPORT_LOCALE,
-): MetricPresentation {
-  const value =
-    metric.value === null ? missingText("noSamples", locale) : formatMetricValue(metric.value, metric.unit, metric.format, locale);
-  return Object.freeze({
-    metric,
-    value,
-    coverage: `${metric.samples} / ${metric.total} ${metric.basis}`,
-    state: metric.state,
-    issues: metric.issues,
-    refs: metric.refs,
-    text: formatMetricValue(metric, locale),
-  });
-}
-
-/** 旧 facade:按 Analysis format 词汇格式化裸数(委托 v0.12 的 unit 开关)。 */
-export function formatMetricNumber(
-  value: number,
-  format: MeasureFormat | undefined,
-  locale: ReportLocale = DEFAULT_REPORT_LOCALE,
-): string {
-  return formatMetricValue(value, undefined, format, locale);
-}
-
-/** 旧 facade:本地化文本的直接解析,缺失时按 en → 首值 → 空串回退。 */
-export function formatLocalizedText(value: LocalizedText, locale: ReportLocale = DEFAULT_REPORT_LOCALE): string {
-  if (typeof value === "string") return value;
-  const exact = value[locale];
-  return exact ?? value.en ?? Object.values(value)[0] ?? "";
 }

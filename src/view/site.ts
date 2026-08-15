@@ -2,11 +2,10 @@
 // Rendering and filesystem publication belong to the report host's Effect
 // boundaries; this module must never rebuild a subset of Report callbacks.
 
-import type { ClosedSiteRevision } from "../report/execution/model.ts";
 import {
-  renderReportHtml,
-  type RenderReportHtmlInput,
-} from "../report/host/html.ts";
+  closedSiteRevisionData,
+  type ClosedSiteRevision,
+} from "../report/execution/model.ts";
 import {
   exportStaticReport,
   type ReportExportError,
@@ -47,7 +46,7 @@ export function planSite(
   }
   return Object.freeze({
     revision,
-    files: Object.freeze(revision.files.map((file) => Object.freeze({
+    files: Object.freeze(closedSiteRevisionData(revision).files.map((file) => Object.freeze({
       path: file.path,
       contentType: file.mediaType,
       bytes: new Uint8Array(file.bytes),
@@ -61,9 +60,4 @@ export function writeSite(
   out: string,
 ): Effect.Effect<ReportStaticExportReceipt, ReportExportError, ReportFileSystem> {
   return exportStaticReport({ revision: plan.revision, out });
-}
-
-/** A standalone HTML helper, separate from SiteRevision construction. */
-export function renderHtml(input: RenderReportHtmlInput): string {
-  return renderReportHtml(input);
 }

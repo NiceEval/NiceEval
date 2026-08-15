@@ -1640,6 +1640,10 @@ table.niceeval-report,
   font-feature-settings: "tnum";
   overflow-wrap: anywhere;
 }
+/* Generic table values stay on one line, but a Stat can carry an auditable
+   cost projection summary. Let that value wrap inside its Grid cell instead
+   of being clipped by the panel's border-overflow mask. */
+.niceeval-stat .niceeval-value { white-space: normal; }
 .niceeval-stat .niceeval-stat-detail {
   color: var(--muted);
   font-size: 12px;
@@ -1878,6 +1882,70 @@ html.niceeval-view-document body {
 }
 
 .niceeval-view-report-slot { margin: 0 auto 36px; }
+
+/* View shell owns only the modal chrome. The report body inside the dialog
+   keeps the same closed product markup and the same stylesheet as its direct
+   route; the runtime injects no second CSS owner. */
+.niceeval-view-dialog {
+  width: min(1120px, calc(100vw - 32px));
+  max-width: none;
+  height: auto;
+  max-height: 88vh;
+  margin: auto;
+  padding: 0;
+  overflow: auto;
+  border: 1px solid var(--niceeval-color-border, #262626);
+  border-radius: var(--niceeval-radius, 0);
+  color: var(--niceeval-color-text, #ededed);
+  background: var(--niceeval-color-page, #050505);
+}
+
+.niceeval-view-dialog::backdrop { background: rgb(0 0 0 / 55%); }
+
+.niceeval-view-dialog-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--niceeval-color-border, #262626);
+  background: var(--niceeval-color-surface, #0b0b0b);
+}
+
+.niceeval-view-dialog-title {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.niceeval-view-dialog-close {
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--niceeval-radius, 0);
+  color: var(--niceeval-color-text-secondary, #a1a1aa);
+  background: none;
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.niceeval-view-dialog-close:hover { color: var(--niceeval-color-text, #ededed); }
+.niceeval-view-dialog-close:focus-visible {
+  outline: 1px solid var(--niceeval-color-focus, #cbd6dc);
+  outline-offset: 2px;
+}
+
+.niceeval-view-dialog-body {
+  margin: 0;
+  padding: 20px 24px 32px;
+}
 
 .niceeval-view-problems {
   margin: 24px 0 0;

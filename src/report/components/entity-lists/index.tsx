@@ -43,7 +43,7 @@ export interface FailureListProps {
 /** 失败处理台:只列 failed / errored attempt,按 startedAt 新到旧、locator 升序收口。 */
 export const FailureList = defineComponent<FailureListProps>(async (props, ctx) => {
   const sample = props.input ?? ctx.scope;
-  const all = props.rows ?? await attemptListData(sample);
+  const all = props.rows ?? await attemptListData(sample, ctx.report.pricing);
   const failures = all
     .filter((item) => item.verdict === "failed" || item.verdict === "errored")
     .sort((left, right) => {
@@ -72,7 +72,7 @@ export interface AttemptListProps {
 
 /** 薄组合:attemptListData + Table。顺序保持传入顺序(不重排)。 */
 export const AttemptList = defineComponent<AttemptListProps>(async (props, ctx) => {
-  const rows = props.rows ?? await attemptListData(props.input ?? ctx.scope);
+  const rows = props.rows ?? await attemptListData(props.input ?? ctx.scope, ctx.report.pricing);
   return <TableContentView
     data={attemptListContent(rows)}
     locale={props.locale}
@@ -95,7 +95,7 @@ export interface ExperimentTableProps {
 
 export const ExperimentTable = defineComponent<ExperimentTableProps>(async (props, ctx) => {
   const sample = props.input ?? ctx.scope;
-  const rows = props.rows ?? await experimentListData(sample);
+  const rows = props.rows ?? await experimentListData(sample, ctx.report.pricing);
   // 当前 facade 只发布通过制读数,默认排序恒为 passRate 降序(数据本身已按此排好)。
   const defaultSort = "passRate";
   return <TableContentView

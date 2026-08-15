@@ -1,7 +1,6 @@
 // 官方组件 chrome 文案的 locale 字典与 LocalizedText 解析。
 // ReportLocale 是开放的 BCP 47 标签(数据协议不封语言上限);官方内置文案与
-// 内部旧切片的 LocalizedText 生成面覆盖 en / zh-CN；公共 MetricValue 由 renderer
-// 按当前 locale 格式化。
+// 官方固定文案覆盖 en / zh-CN；公共 MetricValue 由 renderer 按当前 locale 格式化。
 // 只覆盖组件自带的固定文案(verdict 词、缺数据、覆盖率角标、注脚、占位符等);
 // 维度键、issues 的 message 不经这里。
 // 刻意不 import src/i18n/(CLI 专用字典,locale 来源与 key 面完全不同)。
@@ -15,7 +14,7 @@ export type ReportLocale = string;
 
 export const DEFAULT_REPORT_LOCALE: ReportLocale = "en";
 
-/** 内部旧切片 LocalizedText 生成面覆盖的 locale 全集。 */
+/** 官方固定文案覆盖的 locale 全集。 */
 export const DISPLAY_LOCALES: readonly ReportLocale[] = ["en", "zh-CN"];
 
 /**
@@ -243,6 +242,25 @@ const en = {
   "attemptSource.abortReason": "prerequisite failed, test() ended here",
 
   "tabs.tab": "Tab",
+
+  /** 成本投影卡片的显示文案(docs/feature/reports/cost-projections/cli.md)。 */
+  "costProjection.unavailable": "cost projection unavailable",
+  "costProjection.basis.observed": "observed",
+  "costProjection.basis.estimated": "estimated",
+  "costProjection.basis.mixed": "mixed",
+  "costProjection.state.partial": "partial",
+  "costProjection.profile": "Pricing profile {identity} · {currency} · {decimals} decimals",
+  "costProjection.providerObserved": "Provider observed",
+  "costProjection.profileEstimated": "Profile estimated",
+  "costProjection.meanPerContributingSlot": "Mean per contributing slot",
+  "costProjection.totalKnownCost": "Total known cost",
+  "costProjection.knownValue": "Known value",
+  "costProjection.provenance": "Rate card {source} · as of {asOf}",
+  "costProjection.coverage": "{samples}/{total} slots",
+  "costProjection.unpriced": "Unpriced",
+  "costProjection.observedElsewhere": "Observed elsewhere",
+  "costProjection.notConverted": "not converted",
+  "costProjection.reason": "{provider} {code}",
 } as const;
 
 export type ReportMessageKey = keyof typeof en;
@@ -416,6 +434,24 @@ const zhCN: globalThis.Record<ReportMessageKey, string> = {
   "attemptSource.abortReason": "前置未过,test() 就地结束",
 
   "tabs.tab": "Tab",
+
+  "costProjection.unavailable": "成本投影不可用",
+  "costProjection.basis.observed": "供应商观测",
+  "costProjection.basis.estimated": "价格表估算",
+  "costProjection.basis.mixed": "混合",
+  "costProjection.state.partial": "部分",
+  "costProjection.profile": "价格配置 {identity} · {currency} · {decimals} 位小数",
+  "costProjection.providerObserved": "供应商观测金额",
+  "costProjection.profileEstimated": "价格表估算金额",
+  "costProjection.meanPerContributingSlot": "每个有贡献槽位的平均成本",
+  "costProjection.totalKnownCost": "已知总成本",
+  "costProjection.knownValue": "已知值",
+  "costProjection.provenance": "费率卡 {source} · 截止 {asOf}",
+  "costProjection.coverage": "{samples}/{total} 个槽位",
+  "costProjection.unpriced": "未报价",
+  "costProjection.observedElsewhere": "其它币种观测",
+  "costProjection.notConverted": "不换算",
+  "costProjection.reason": "{provider} {code}",
 };
 
 const dictionaries: globalThis.Record<string, globalThis.Record<ReportMessageKey, string>> = {
@@ -484,19 +520,4 @@ export function resolveMetricLabel(
   } catch {
     return fallback;
   }
-}
-
-// ── 兼容段(临时):当前 src/report/index.ts facade 的名字;Q.X/H 删除 ──
-
-/**
- * 旧 facade 的完整双语文案构造:无翻译时退回语言中立字符串,有翻译时必须同时给出
- * en 与 zh-CN。实现不依赖 classic,只复用一个对象冻结。
- */
-export function localizedText(en: string, translations: Readonly<Record<string, string>> = {}): LocalizedText {
-  if (Object.keys(translations).length === 0) return en;
-  const value = { en, ...translations };
-  if (!Object.hasOwn(value, "en") || !Object.hasOwn(value, "zh-CN")) {
-    throw new TypeError("localized text maps must provide text for en and zh-CN");
-  }
-  return Object.freeze(value);
 }

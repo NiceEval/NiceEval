@@ -128,7 +128,6 @@ export function parseOpenCodeTranscript(raw: string | undefined): ParsedTranscri
   let outputTokens = 0;
   let cacheReadTokens = 0;
   let cacheCreationTokens = 0;
-  let costUSD = 0;
   let requests = 0;
   let parseSuccess = true;
   let synth = 0;
@@ -142,20 +141,20 @@ export function parseOpenCodeTranscript(raw: string | undefined): ParsedTranscri
 
   const addUsage = (usage: unknown): void => {
     if (!usage || typeof usage !== "object") return;
+    // OpenCode derives its cost fields from model metadata. Keep only the
+    // recorded usage facts; Usage.costUSD is reserved for observed billing.
     const rawInput = num(usage, "input", "input_tokens", "inputTokens", "prompt_tokens");
     const output = num(usage, "output", "output_tokens", "outputTokens", "completion_tokens");
     let cacheRead = num(usage, "cacheRead", "cache_read", "cache_read_input_tokens", "cacheReadTokens");
     if (cacheRead === 0) cacheRead = num(get(usage, "prompt_tokens_details"), "cached_tokens");
     const cacheCreation = num(usage, "cacheWrite", "cache_write", "cache_creation_input_tokens");
-    const cost = num(usage, "cost", "costUSD", "total_cost");
-    if (rawInput === 0 && output === 0 && cacheRead === 0 && cacheCreation === 0 && cost === 0) return;
+    if (rawInput === 0 && output === 0 && cacheRead === 0 && cacheCreation === 0) return;
     // Chat Completions 口径的 prompt_tokens 可能含缓存命中
     const input = Math.max(0, rawInput - cacheRead);
     inputTokens += input;
     outputTokens += output;
     cacheReadTokens += cacheRead;
     cacheCreationTokens += cacheCreation;
-    costUSD += cost;
     requests += 1;
   };
 
@@ -236,13 +235,11 @@ export function parseOpenCodeTranscript(raw: string | undefined): ParsedTranscri
       }
 
       if (eventType === "step_finish" || eventType === "step_start") {
-        // OpenCode 1.18 把用量放在 part.tokens({input,output,...}) + part.cost。
+        // OpenCode 1.18 把 token 用量放在 part.tokens({input,output,...})。
+        // part.cost 是目录价格推导值，不能进入 observed Usage。
         const tokens = get(part, "tokens") ?? get(data, "tokens");
         if (tokens && typeof tokens === "object") {
-          addUsage({
-            ...(tokens as globalThis.Record<string, unknown>),
-            cost: get(part, "cost") ?? get(data, "cost"),
-          });
+          addUsage(tokens);
         } else {
           addUsage(get(data, "usage") ?? get(part, "usage") ?? get(state, "usage"));
         }
@@ -330,7 +327,6 @@ export function parseOpenCodeTranscript(raw: string | undefined): ParsedTranscri
   if (outputTokens) usage.outputTokens = outputTokens;
   if (cacheReadTokens) usage.cacheReadTokens = cacheReadTokens;
   if (cacheCreationTokens) usage.cacheCreationTokens = cacheCreationTokens;
-  if (costUSD) usage.costUSD = costUSD;
   if (requests) usage.requests = requests;
 
   return { events, usage, compactions: 0, parseSuccess };

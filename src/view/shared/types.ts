@@ -1,5 +1,5 @@
 // The browser shell's type-only data shape. Report content and Record facts
-// stay inside the completed ReportExecution projection; this shape carries
+// stay inside the closed site revision; this shape carries
 // only report-shell metadata and baked HTML blocks.
 
 export type LocalizedText = string | Readonly<Record<string, string>>;

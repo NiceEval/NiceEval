@@ -11,8 +11,10 @@
 
 import type {
   AttemptEvidenceDomainView,
+  CostMetricValue,
   JsonValue,
   MetricValue,
+  PricingProfile,
   Sample,
 } from "../../../analysis/index.ts";
 import type { AttemptLocator } from "../../../attempt-locator.ts";
@@ -21,14 +23,11 @@ import type { Verdict } from "../../../shared/types.ts";
 import {
   aggregate,
   attempt,
-  durationMs,
   evalId,
   experiment,
-  passRate,
-  tokens,
   type AggregationSubject,
-} from "../../model/calculation.ts";
-import { costUSD } from "../../model/metrics.ts";
+} from "../../model/aggregate.ts";
+import { costUSD, durationMs, passRate, tokens } from "../../model/metrics.ts";
 import { toAttemptEvidence } from "../../model/conversions.ts";
 import {
   attemptDetailTarget,
@@ -40,9 +39,9 @@ type UtcMillis = Sample["snapshot"]["runs"][number]["startedAt"];
 type ClosedAttemptEvidenceEntry = AttemptEvidenceDomainView["entries"][number];
 
 /**
- * 当前 Analysis facade 只发布通过制读数(没有总分 Measure),题型构成恒为
- * "pass"。字段保留是为了与 v0.12 的 *ListItem 形状对齐:未来 Analysis 发布
- * 计分制 Measure 时,这里与 content.ts 的列集一起按同一构成判据扩展。
+ * 当前 Analysis 只发布通过制读数（没有总分 Measure），题型构成恒为
+ * "pass"。未来 Analysis 发布计分制 Measure 时，这里与 content.ts 的列集一起按
+ * 同一构成判据扩展。
  */
 export type EvaluationKindComposition = "pass" | "points" | "mixed";
 
@@ -50,7 +49,8 @@ export type EvaluationKindComposition = "pass" | "points" | "mixed";
 export interface ExperimentMetrics {
   readonly passRate: MetricValue<number>;
   readonly durationMs: MetricValue<number>;
-  readonly costUSD: MetricValue<number>;
+  /** Present only when the owning Report declares a PricingProfile. */
+  readonly costUSD?: CostMetricValue;
   readonly tokens: MetricValue<number>;
 }
 
@@ -69,7 +69,8 @@ export interface AttemptListItem {
   readonly failureSummary: string | null;
   readonly passRate: MetricValue<number>;
   readonly durationMs: MetricValue<number>;
-  readonly costUSD: MetricValue<number>;
+  /** Present only when the owning Report declares a PricingProfile. */
+  readonly costUSD?: CostMetricValue;
   readonly tokens: MetricValue<number>;
   /** 所属 selected Run 的 startedAt(attempt 级起点不进 closed snapshot)。 */
   readonly startedAt: UtcMillis | null;
@@ -82,7 +83,7 @@ export interface ExperimentListEvalRow {
   readonly evalId: EvalId;
   readonly endToEndPassRate: MetricValue<number>;
   readonly durationMs: MetricValue<number>;
-  readonly costUSD: MetricValue<number>;
+  readonly costUSD?: CostMetricValue;
   readonly tokens: MetricValue<number>;
   readonly attempts: readonly AttemptListItem[];
 }
@@ -98,7 +99,7 @@ export interface ExperimentListItem {
   readonly evaluationKind: EvaluationKindComposition;
   readonly endToEndPassRate: MetricValue<number>;
   readonly durationMs: MetricValue<number>;
-  readonly costUSD: MetricValue<number>;
+  readonly costUSD?: CostMetricValue;
   readonly tokens: MetricValue<number>;
   /** 当前口径下没有 attempt 的题(active slot 为 not-recorded / core-invalid)。 */
   readonly missingEvalIds: readonly EvalId[];
@@ -113,7 +114,7 @@ export interface ExperimentListItem {
   readonly href: string;
 }
 
-/** Eval 路径层级布局:叶子 / 路径段组(折叠规则与 v0.12 nestLevel 一致)。 */
+/** Eval 路径层级布局：叶子 / 路径段组。 */
 export type EvalLayoutNode =
   | { readonly kind: "leaf"; readonly evalId: EvalId }
   | {
@@ -234,10 +235,13 @@ async function evidenceFacts(sample: Sample): Promise<ReadonlyMap<AttemptLocator
 
 async function attemptMetricRows(
   sample: Sample,
+  pricing: PricingProfile | null,
 ): Promise<ReadonlyMap<string, ExperimentMetrics>> {
   const rows = await aggregate(sample, {
     by: { experiment, evalId, attempt },
-    values: { passRate, durationMs, costUSD, tokens },
+    values: pricing === null
+      ? { passRate, durationMs, tokens }
+      : { passRate, durationMs, costUSD: costUSD(pricing), tokens },
   });
   const byKey = new Map<string, ExperimentMetrics>();
   for (const row of rows) {
@@ -245,7 +249,7 @@ async function attemptMetricRows(
     byKey.set(metricsKey(row.experiment as string, row.evalId as string, row.attempt), Object.freeze({
       passRate: row.passRate,
       durationMs: row.durationMs,
-      costUSD: row.costUSD,
+      ...(pricing === null ? {} : { costUSD: (row as unknown as { readonly costUSD: CostMetricValue }).costUSD }),
       tokens: row.tokens,
     }));
   }
@@ -258,20 +262,38 @@ function metricsKey(experimentId: string, evalIdValue: string, locator?: string)
     : `${experimentId}\u0000${evalIdValue}\u0000${locator}`;
 }
 
+/**
+ * Included Analysis subjects always have an aggregate row, even when every
+ * measure in that row is empty. Treat an omitted row as a broken Analysis
+ * contract instead of manufacturing a Report-owned MetricValue.
+ */
+function requireMetrics(
+  metrics: ExperimentMetrics | undefined,
+  subject: string,
+): ExperimentMetrics {
+  if (metrics === undefined) {
+    throw new Error(`Analysis aggregate omitted the required ${subject} row.`);
+  }
+  return metrics;
+}
+
 /** 每个 experiment 每道 Eval 一行,按 evalId 升序返回(不重排 attempt 语义)。 */
 async function evalMetricRows(
   sample: Sample,
+  pricing: PricingProfile | null,
 ): Promise<ReadonlyMap<string, ExperimentMetrics>> {
   const rows = await aggregate(sample, {
     by: { experiment, evalId },
-    values: { passRate, durationMs, costUSD, tokens },
+    values: pricing === null
+      ? { passRate, durationMs, tokens }
+      : { passRate, durationMs, costUSD: costUSD(pricing), tokens },
   });
   const byKey = new Map<string, ExperimentMetrics>();
   for (const row of rows) {
     byKey.set(metricsKey(row.experiment as string, row.evalId as string), Object.freeze({
       passRate: row.passRate,
       durationMs: row.durationMs,
-      costUSD: row.costUSD,
+      ...(pricing === null ? {} : { costUSD: (row as unknown as { readonly costUSD: CostMetricValue }).costUSD }),
       tokens: row.tokens,
     }));
   }
@@ -280,17 +302,20 @@ async function evalMetricRows(
 
 async function experimentMetricRows(
   sample: Sample,
+  pricing: PricingProfile | null,
 ): Promise<ReadonlyMap<ExperimentId, ExperimentMetrics>> {
   const rows = await aggregate(sample, {
     by: { experiment },
-    values: { passRate, durationMs, costUSD, tokens },
+    values: pricing === null
+      ? { passRate, durationMs, tokens }
+      : { passRate, durationMs, costUSD: costUSD(pricing), tokens },
   });
   const byId = new Map<ExperimentId, ExperimentMetrics>();
   for (const row of rows) {
     byId.set(row.experiment as ExperimentId, Object.freeze({
       passRate: row.passRate,
       durationMs: row.durationMs,
-      costUSD: row.costUSD,
+      ...(pricing === null ? {} : { costUSD: (row as unknown as { readonly costUSD: CostMetricValue }).costUSD }),
       tokens: row.tokens,
     }));
   }
@@ -304,12 +329,15 @@ async function experimentMetricRows(
 async function groupMetricRows(
   sample: Sample,
   prefixByExperiment: ReadonlyMap<ExperimentId, ReadonlyMap<EvalId, string>>,
+  pricing: PricingProfile | null,
 ): Promise<ReadonlyMap<string, ExperimentMetrics>> {
   const groupPrefix = (subject: AggregationSubject): string =>
     prefixByExperiment.get(subject.experimentId)?.get(subject.evalId) ?? "";
   const rows = await aggregate(sample, {
     by: { experiment, prefix: groupPrefix },
-    values: { passRate, durationMs, costUSD, tokens },
+    values: pricing === null
+      ? { passRate, durationMs, tokens }
+      : { passRate, durationMs, costUSD: costUSD(pricing), tokens },
   });
   const byKey = new Map<string, ExperimentMetrics>();
   for (const row of rows) {
@@ -318,7 +346,7 @@ async function groupMetricRows(
     byKey.set(metricsKey(row.experiment as string, prefix), Object.freeze({
       passRate: row.passRate,
       durationMs: row.durationMs,
-      costUSD: row.costUSD,
+      ...(pricing === null ? {} : { costUSD: (row as unknown as { readonly costUSD: CostMetricValue }).costUSD }),
       tokens: row.tokens,
     }));
   }
@@ -394,15 +422,21 @@ function selectedSlots(sample: Sample): readonly SlotSelection[] {
  * `attemptListData(sample)`:每个 included attempt 一项,顺序取自 Sample 展平顺序
  * (按 locator 去重后保持首次出现序,不重排)。
  */
-export async function attemptListData(sample: Sample): Promise<readonly AttemptListItem[]> {
+export async function attemptListData(
+  sample: Sample,
+  pricing: PricingProfile | null = null,
+): Promise<readonly AttemptListItem[]> {
   const [facts, metrics] = await Promise.all([
     evidenceFacts(sample),
-    attemptMetricRows(sample),
+    attemptMetricRows(sample, pricing),
   ]);
   const selections = selectedSlots(sample);
   return Object.freeze(selections.map((selection): AttemptListItem => {
     const fact = facts.get(selection.locator) ?? Object.freeze({ verdict: null, failureSummary: null });
-    const metric = metrics.get(metricsKey(selection.experimentId, selection.evalId, selection.locator));
+    const metric = requireMetrics(
+      metrics.get(metricsKey(selection.experimentId, selection.evalId, selection.locator)),
+      `attempt ${JSON.stringify(selection.locator)}`,
+    );
     const item: AttemptListItem = Object.freeze({
       locator: selection.locator,
       experimentId: selection.experimentId,
@@ -410,10 +444,10 @@ export async function attemptListData(sample: Sample): Promise<readonly AttemptL
       attemptOrdinal: selection.attemptOrdinal,
       verdict: fact.verdict,
       failureSummary: fact.failureSummary,
-      passRate: metric?.passRate ?? emptyMetric(),
-      durationMs: metric?.durationMs ?? emptyMetric(),
-      costUSD: metric?.costUSD ?? emptyMetric(),
-      tokens: metric?.tokens ?? emptyMetric(),
+      passRate: metric.passRate,
+      durationMs: metric.durationMs,
+      ...(metric.costUSD === undefined ? {} : { costUSD: metric.costUSD }),
+      tokens: metric.tokens,
       startedAt: selection.startedAt,
       href: attemptHref(selection.locator),
     });
@@ -421,30 +455,20 @@ export async function attemptListData(sample: Sample): Promise<readonly AttemptL
   }));
 }
 
-/** 缺失读数兜底:只有 Analysis 能签发有意义的 MetricValue,这里只放空状态。 */
-function emptyMetric(): MetricValue<number> {
-  return Object.freeze({
-    value: null,
-    state: "empty",
-    samples: 0,
-    total: 0,
-    basis: "attempt",
-    issues: Object.freeze([]),
-    refs: Object.freeze([]),
-  });
-}
-
 /**
  * `experimentListData(sample)`:每个 experiment 一项,展开到每道 Eval;初始排序按
  * 这份列表自身的题型构成选择主读数——当前 facade 只有通过制读数,恒为
  * endToEndPassRate 降序(缺数据沉底,同值按 experimentId 字典序收口)。
  */
-export async function experimentListData(sample: Sample): Promise<readonly ExperimentListItem[]> {
+export async function experimentListData(
+  sample: Sample,
+  pricing: PricingProfile | null = null,
+): Promise<readonly ExperimentListItem[]> {
   const snapshot = sample.snapshot;
-  const attempts = await attemptListData(sample);
+  const attempts = await attemptListData(sample, pricing);
   const [experimentMetrics, evalMetrics] = await Promise.all([
-    experimentMetricRows(sample),
-    evalMetricRows(sample),
+    experimentMetricRows(sample, pricing),
+    evalMetricRows(sample, pricing),
   ]);
 
   const attemptsByEval = new Map<string, AttemptListItem[]>();
@@ -487,7 +511,7 @@ export async function experimentListData(sample: Sample): Promise<readonly Exper
   }
   const hasGroups = [...prefixByExperiment.values()].some((prefixFor) => prefixFor.size > 0);
   const groupMetrics = hasGroups
-    ? await groupMetricRows(sample, prefixByExperiment)
+    ? await groupMetricRows(sample, prefixByExperiment, pricing)
     : new Map<string, ExperimentMetrics>();
   const watermarks = watermarksByExperiment(sample);
 
@@ -501,18 +525,24 @@ export async function experimentListData(sample: Sample): Promise<readonly Exper
       const list = attemptsByEval.get(metricsKey(experimentId, evalIdValue)) ?? [];
       const sorted = [...list].sort((left, right) =>
         left.attemptOrdinal - right.attemptOrdinal || left.locator.localeCompare(right.locator));
-      const metrics = evalMetrics.get(metricsKey(experimentId, evalIdValue));
+      const metrics = requireMetrics(
+        evalMetrics.get(metricsKey(experimentId, evalIdValue)),
+        `experiment/eval ${JSON.stringify(experimentId)}/${JSON.stringify(evalIdValue)}`,
+      );
       evalRows.push(Object.freeze({
         evalId: evalIdValue,
-        endToEndPassRate: metrics?.passRate ?? emptyMetric(),
-        durationMs: metrics?.durationMs ?? emptyMetric(),
-        costUSD: metrics?.costUSD ?? emptyMetric(),
-        tokens: metrics?.tokens ?? emptyMetric(),
+        endToEndPassRate: metrics.passRate,
+        durationMs: metrics.durationMs,
+        ...(metrics.costUSD === undefined ? {} : { costUSD: metrics.costUSD }),
+        tokens: metrics.tokens,
         attempts: Object.freeze(sorted),
       }));
     }
     const watermark = watermarks.get(experimentId);
-    const experimentMetric = experimentMetrics.get(experimentId);
+    const experimentMetric = requireMetrics(
+      experimentMetrics.get(experimentId),
+      `experiment ${JSON.stringify(experimentId)}`,
+    );
     const groupMetricsForItem = new Map<string, ExperimentMetrics>();
     const prefixes = [...new Set(prefixByExperiment.get(experimentId)?.values() ?? [])];
     for (const prefix of prefixes) {
@@ -525,10 +555,10 @@ export async function experimentListData(sample: Sample): Promise<readonly Exper
       model: watermark?.model ?? null,
       flags: watermark?.flags ?? null,
       evaluationKind: "pass",
-      endToEndPassRate: experimentMetric?.passRate ?? emptyMetric(),
-      durationMs: experimentMetric?.durationMs ?? emptyMetric(),
-      costUSD: experimentMetric?.costUSD ?? emptyMetric(),
-      tokens: experimentMetric?.tokens ?? emptyMetric(),
+      endToEndPassRate: experimentMetric.passRate,
+      durationMs: experimentMetric.durationMs,
+      ...(experimentMetric.costUSD === undefined ? {} : { costUSD: experimentMetric.costUSD }),
+      tokens: experimentMetric.tokens,
       missingEvalIds: Object.freeze(missing.sort((left, right) => left.localeCompare(right))),
       groupMetrics: groupMetricsForItem,
       evalRows: Object.freeze(evalRows),
