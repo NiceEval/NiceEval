@@ -1,0 +1,28 @@
+#!/usr/bin/env sh
+
+set -eu
+
+# A path checkout does not initialize a worktree.
+[ "${3:-0}" = "1" ] || exit 0
+
+worktree_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+git_dir=$(git rev-parse --path-format=absolute --git-dir 2>/dev/null) || exit 0
+common_git_dir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || exit 0
+
+# The primary checkout owns the local environment; never copy back into it.
+[ "$git_dir" != "$common_git_dir" ] || exit 0
+
+case "$common_git_dir" in
+	*/.git) primary_root=${common_git_dir%/.git} ;;
+	*) exit 0 ;;
+esac
+
+source_env=$primary_root/.env
+target_env=$worktree_root/.env
+
+[ -f "$source_env" ] || exit 0
+[ ! -e "$target_env" ] || exit 0
+
+umask 077
+cp "$source_env" "$target_env"
+printf 'Initialized linked worktree environment: %s\n' "$target_env"
