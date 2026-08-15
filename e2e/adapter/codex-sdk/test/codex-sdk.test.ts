@@ -119,7 +119,7 @@ it("show --execution 读回 Codex SDK converter 的代表性证据", async () =>
     ),
   );
   expect(execution.stdout).toMatch(
-    new RegExp(`^\\s*\\d+ \\| ASSISTANT \\| \\`?${sentinel}\\`? \\|\\s*$`, "m"),
+    new RegExp("^\\s*\\d+ \\| ASSISTANT \\| `?" + sentinel + "`? \\|\\s*$", "m"),
   );
 });
 
