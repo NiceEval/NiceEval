@@ -1,4 +1,5 @@
 import { formatMetricValue, verdictMark } from "./format.ts";
+import { classicTableCopy, type ClassicLocale } from "./localize.ts";
 import { isMetricValue, type MetricValue } from "./metric.ts";
 import type { ClassicVerdict } from "./sample.ts";
 
@@ -59,14 +60,16 @@ export function formatCellText(cell: Cell | null | undefined, locale?: string): 
       return cell.more !== undefined && cell.more > 0 ? `${cell.text} +${cell.more} more` : cell.text;
     case "score":
       return cell.possible === undefined ? String(cell.earned) : `${cell.earned} / ${cell.possible}`;
-    case "verdict":
+    case "verdict": {
+      const resolved = resolveCellLocale(locale);
       if (cell.counts !== undefined) {
         const parts = (["passed", "failed", "errored", "skipped"] as const)
           .filter((key) => cell.counts![key] > 0)
-          .map((key) => `${cell.counts![key]} ${key}`);
+          .map((key) => `${cell.counts![key]} ${classicTableCopy(resolved, key)}`);
         return parts.join(" · ") || "—";
       }
-      return cell.verdict ?? "—";
+      return cell.verdict === undefined ? "—" : classicTableCopy(resolved, cell.verdict);
+    }
     case "metric":
       return formatMetricValue(cell.metric.value, cell.metric.unit, cell.metric.format, locale);
     case "composition": {
@@ -76,6 +79,10 @@ export function formatCellText(cell: Cell | null | undefined, locale?: string): 
       return parts.join(" · ") || "—";
     }
   }
+}
+
+function resolveCellLocale(locale: string | undefined): ClassicLocale {
+  return locale === "zh-CN" ? "zh-CN" : "en";
 }
 
 export function cellFromUnknown(value: unknown): Cell {

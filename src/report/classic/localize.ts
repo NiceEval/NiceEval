@@ -68,6 +68,8 @@ export const CLASSIC_TABLE_COPY = {
   record: { en: "Record", "zh-CN": "记录" },
   recordCoverage: { en: "Record coverage", "zh-CN": "记录覆盖" },
   evals: { en: "evals", "zh-CN": "题目" },
+  passed: { en: "passed", "zh-CN": "通过" },
+  failed: { en: "failed", "zh-CN": "失败" },
   scored: { en: "scored", "zh-CN": "已计分" },
   errored: { en: "errored", "zh-CN": "出错" },
   skipped: { en: "skipped", "zh-CN": "跳过" },

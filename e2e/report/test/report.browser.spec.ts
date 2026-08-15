@@ -5,6 +5,7 @@
 // - inverse = hierarchy parent cell omits ordinary <a> when descendants.length > 0
 // - inverse = static locale document omits its document title, leaving title and body divergent
 // - inverse = recorded-data fallback bypasses the semantic bilingual report shell
+// - inverse = formatCellText renders verdict labels from raw status strings, ignoring locale
 // rerun: pnpm e2e --repo report -- --run test/report.browser.spec.ts
 //
 // 浏览器 owner 自己完成 exp → view --out → 真正的 niceeval view server → browser，
@@ -150,9 +151,29 @@ test("Report browser Journey：经典界面与自定义报告共用固定执行�
         await expect(page.getByRole("term").filter({ hasText: /^通过率$/ })).toBeVisible();
         await expect(page.getByRole("columnheader", { name: "实验", exact: true })).toBeVisible();
         await expect(page.getByRole("columnheader", { name: "平均耗时", exact: true })).toBeVisible();
+
+        // kill: inverse = formatCellText renders verdict labels from raw status
+        // strings, ignoring locale. invoke: read the zh-CN execution's
+        // Experiment hierarchy record cells. observe: verdict single values and
+        // counts read Chinese labels; URL, row identity href and numeric values
+        // stay unchanged.
+        const zhHierarchy = page.getByRole("table", { name: "实验层级" });
+        await expect(zhHierarchy.getByRole("cell", { name: "1 通过 · 1 失败 · 1 出错", exact: true })).toBeVisible();
+        await expect(zhHierarchy.getByRole("cell", { name: "1 通过", exact: true })).toBeVisible();
+        await expect(zhHierarchy.getByRole("cell", { name: "1 失败", exact: true })).toBeVisible();
+        await expect(zhHierarchy.getByRole("cell", { name: "1 出错", exact: true })).toBeVisible();
+        await expect(zhHierarchy.getByRole("cell", { name: "通过", exact: true }).first()).toBeVisible();
+        await expect(page.getByRole("link", { name: "main", exact: true }).first()).toHaveAttribute(
+          "href",
+          experimentHref!,
+        );
+        await expect(page.getByText("33.3%", { exact: true }).first()).toBeVisible();
         await page.getByRole("button", { name: "EN" }).click();
         await expect(page.getByRole("button", { name: "EN" })).toHaveAttribute("aria-pressed", "true");
         await expect(page.getByRole("tablist", { name: "Report pages" })).toBeVisible();
+        const enHierarchy = page.getByRole("table", { name: "Experiment hierarchy" });
+        await expect(enHierarchy.getByRole("cell", { name: "1 passed · 1 failed · 1 errored", exact: true })).toBeVisible();
+        await expect(enHierarchy.getByRole("cell", { name: "通过", exact: true })).toHaveCount(0);
 
         // kill: inverse = switchLocale returns on nextLocale === locale without
         // advancing the request generation. invoke: hold the zh-CN fragment,
