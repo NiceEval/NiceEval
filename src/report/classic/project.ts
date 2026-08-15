@@ -8,6 +8,7 @@ import type {
 import type { ProjectedRecordAttachmentResult } from "../../projection/attachment-result.ts";
 import type { ProjectedSample, ProjectionAccess } from "../../projection/model.ts";
 import type { Verdict } from "../../shared/types.ts";
+import { displayClassicExperimentId } from "./experiment-id.ts";
 import type { ClassicIdentityMap } from "./identity.ts";
 import type { ClassicLocale } from "./localize.ts";
 import type { ClassicExperimentProfile, ClassicSelectionOrigin } from "./origin.ts";
@@ -71,7 +72,7 @@ export function buildClassicSample(input: {
     const existing = units.get(key);
     if (existing !== undefined && existing.evaluationKind !== identity.kind) {
       throw new TypeError(
-        `classic Sample cannot merge ${identity.experimentId} × ${identity.evalId} with conflicting Evaluation kinds`,
+        `classic Sample cannot merge ${displayClassicExperimentId(identity.experimentId)} × ${identity.evalId} with conflicting Evaluation kinds`,
       );
     }
     const group = existing ?? {

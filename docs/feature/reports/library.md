@@ -169,6 +169,53 @@ trusted TS module 本身不是 sandbox；module 仍可以 import `node:fs` 或�
 
 `ExperimentScatter` 与 `ExperimentTable` 的 target 只在对应 route 已由当前 Report 展开时写出 href。单页 Report 不声明该 PageFamily 时，图表和层级仍正常呈现，但没有链接。static export、直接请求、新标签页与 live dialog 共用同一个 ordinary exact-route href。
 
+### classic Experiment PageFamily identity 与显示
+
+`ExperimentId` 仍是任意非空、没有 NUL 的 JavaScript string。classic 的 Experiment
+PageFamily 不把它当 route segment，也不改变通用 `ReportRoute` grammar。每个实例使用下列
+v1 identity：
+
+```text
+instance key  experiment-v1-<64 lowercase hex>
+route         /experiment-v1/<64 lowercase hex>
+```
+
+`<64 lowercase hex>` 是完整 SHA-256 digest 的 lowercase hexadecimal encoding。它精确地对
+下面的 byte sequence 取 digest；`prefix` 是 ASCII `niceeval/report/experiment-route/v1\0`。
+
+```text
+prefix || U64BE(experimentId.length) ||
+  U16BE(experimentId.charCodeAt(0)) || ... ||
+  U16BE(experimentId.charCodeAt(experimentId.length - 1))
+```
+
+这里的 `length` 和每个 `charCodeAt` 都是 JavaScript UTF-16 code unit。
+实现不 trim、normalize、case-fold 或 split slash，也不先把 ID 交给 `TextEncoder`。
+它增量写入 hash，因而不会为无界 ID 分配完整 preimage。固定向量如下：
+
+```text
+main    27aa0e14fb370cd1173032c9a0ec301ddb44646a2bdd8eebd65c8b32f94ceffb
+模型 A  2ee4f2d79186415813590395ed645cefc8abd7243e261e44dad019213c38395e
+U+D800  9a50fe57bd04d187e4390c375b80fda114ead0c0e2ff5104c79397a898b7cbd2
+U+D801  d0535d29b4654b1ee5d035763a8b7e312bdce76e0bea6b70efdaf96c52cccd0a
+```
+
+SHA-256 让此映射具备 collision-resistant 性质。相同 full digest 仍形成既有的
+`page-family-key-conflict` execution problem，并 fail closed。
+
+Report 文本使用 package-owned ExperimentId display seam。well-formed Unicode 保持原样。
+malformed UTF-16 显示为 `utf16-code-units:"..."`。该 wrapper 对反斜线、双引号、控制 code unit
+和 lone surrogate 使用 `\\`、`\"`、标准控制转义或大写 `\uXXXX`。因此原始 code unit 可逆。
+
+该 seam 用于 standard Report 的标题、Experiment table 与 tree row、scatter label、Traces cell、
+Attempt stat，以及所有 classic Experiment-facing label。
+
+Sample data、profile、grouping、narrowing、semantic identity、key 与 route target 始终携带原始 ID。
+
+旧 static artifact 使用它已有的文件和 href，因此保持 self-contained 且可用。
+新的 show、view 与 static export 只使用 v1 `/experiment-v1/...` namespace。
+它们不把旧 `/experiment/...` href 当成可导航 route，也不建立 alias。
+
 partial Sample 的 author tree 已含 `SampleNotices` 时，host 保留它在作者声明的位置。缺少该组件时，host 才在页面前置同一条提示；无论树里是否嵌套 `Section`、`Grid` 或 `List`，页面只有一条该选择提示。
 
 ### aggregate、passRate、costUSD 与 experiment

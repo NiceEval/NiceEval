@@ -1,4 +1,5 @@
 import { passRate, resultBearingAttemptCount, totalAttempts } from "./aggregate.ts";
+import { displayClassicExperimentId } from "./experiment-id.ts";
 import type {
   AttemptEvidence,
   AttemptListItem,
@@ -87,7 +88,7 @@ export async function toAttemptFixPrompt(attempt: AttemptEvidence): Promise<Copy
   }
   return [
     `Fix attempt ${attempt.locator}`,
-    `experiment: ${attempt.experimentId}`,
+    `experiment: ${displayClassicExperimentId(attempt.experimentId)}`,
     `eval: ${attempt.evalId}`,
     `verdict: ${attempt.result.verdict}`,
   ].join("\n");

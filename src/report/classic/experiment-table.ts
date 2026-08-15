@@ -11,6 +11,7 @@ import {
   type ScoringComposition,
 } from "./aggregate.ts";
 import { formatCellText, type Cell } from "./cell.ts";
+import { displayClassicExperimentId } from "./experiment-id.ts";
 import { classicTableCopy, type ClassicLocale } from "./localize.ts";
 import type { MetricValue } from "./metric.ts";
 import { classicAttemptLocator, type ClassicEvalUnit, type Sample } from "./sample.ts";
@@ -591,7 +592,7 @@ function experimentRow(
   const members: LeafMember[] = item.evalRows.map((row) => ({ kind: "eval" as const, row }));
   const nested = nestLevel(members, columns, locale);
   const bag: Record<string, Cell> = {
-    entity: textCell(item.experimentId),
+    entity: textCell(displayClassicExperimentId(item.experimentId)),
     model: item.model ? textCell(item.model) : { kind: "notApplicable" },
     agent: textCell(item.agent),
     durationMs: measureCell(item.durationMs),
@@ -606,7 +607,7 @@ function experimentRow(
   return {
     key: item.experimentId,
     kind: "experiment",
-    label: item.experimentId,
+    label: displayClassicExperimentId(item.experimentId),
     cells: projectCells(bag, columns),
     subRows: members.length > 0 ? [...nested, coverageRow(item, columns, locale)] : nested,
   };

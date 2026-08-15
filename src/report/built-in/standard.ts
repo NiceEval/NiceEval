@@ -36,6 +36,7 @@ import {
   resolveLocalizedText,
   type LocalizedText,
 } from "../classic/localize.ts";
+import { displayClassicExperimentId } from "../classic/experiment-id.ts";
 import {
   classicAttemptInstanceKey,
   classicAttemptRoute,
@@ -138,7 +139,9 @@ export async function standardExperimentRender(sample: Sample): Promise<ReportDo
   });
   const experimentId = sample.units[0]?.experimentId;
   return reportDocument({
-    title: experimentId === undefined ? copyOf(sample, "experimentTitle") : experimentId,
+    title: experimentId === undefined
+      ? copyOf(sample, "experimentTitle")
+      : displayClassicExperimentId(experimentId),
     presentation: "classic-dashboard",
     metadataOrigin: sample.metadataOrigin,
     children,
@@ -250,7 +253,7 @@ function tracesDocument(
       key: locator ?? attempt.attemptId,
       cells: Object.freeze({
         [attemptHeading]: locator ?? "—",
-        [experimentHeading]: attempt.experimentId,
+        [experimentHeading]: displayClassicExperimentId(attempt.experimentId),
         [evalHeading]: attempt.evalId,
         [conversationHeading]: conversationState(conversations, attempt, locale),
       }),
@@ -329,7 +332,10 @@ function attemptDocument(attempt: ClassicAttemptRow, sample: Sample): ReportDocu
   const unavailable = classicTableCopy(locale, "unavailable");
   const status = scoreStatus(attempt);
   const stats = [
-    reportStat({ label: copyOf(sample, "experiment"), value: attempt.experimentId }),
+    reportStat({
+      label: copyOf(sample, "experiment"),
+      value: displayClassicExperimentId(attempt.experimentId),
+    }),
     reportStat({ label: copyOf(sample, "eval"), value: attempt.evalId }),
     reportStat({ label: copyOf(sample, "evaluation"), value: attempt.evaluationKind }),
     ...(attempt.evaluationKind === "score"

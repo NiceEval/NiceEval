@@ -190,6 +190,22 @@ inline link 必须属于同一 execution closure。scatter point 与 tree-table 
 
 Semantic route 与 filesystem path 分开。Route / download constructor 固定 lowercase ASCII grammar；static host 把 author route 映射到 `a/b/index.html`，再从当前页面 output path 计算相对 href。所有 author outputs 与 host files 进入同一 collision set。
 
+classic Experiment PageFamily 是 package-owned identity adapter，不是 author route grammar 的例外。
+它从完整 ExperimentId 的 UTF-16 code units 增量形成 SHA-256 v1 digest。
+
+它固定使用 `experiment-v1-<digest>` instance key 和 `/experiment-v1/<digest>` route。
+精确 preimage、固定向量与 scalar-safe display 规则见
+[Library](library.md#classic-experiment-pagefamily-identity-与显示)。
+
+digest 是 collision-resistant identity。相同 full digest 仍交给既有的
+`page-family-key-conflict` fail-closed 边界。
+
+这条映射不改变 ExperimentId、Record 或通用 route grammar。
+Sample、profile lookup、grouping、narrowing 和 semantic identity 都保留原始 ID。
+只有进入 Report 文本的值经过 display seam。
+旧 static artifact 继续使用自身已有的本地文件。新 host 不把旧 `/experiment/...` href 当成 route，
+也不建立 alias。
+
 ## 一次 immutable execution
 
 `executeReport({ sampleHandle, report })` 在 bound sample handle 仍活时完成全部 Attachment I/O 与作者 graph。返回前：

@@ -13,11 +13,13 @@ import {
   formatMetricDisplay,
   formatRatio,
 } from "./format.ts";
+import { displayClassicExperimentId } from "./experiment-id.ts";
 import { experimentTableContent } from "./experiment-table.ts";
 import { defineComponent, evaluateClassicTree, Fragment, jsx } from "./jsx.ts";
 import { resolveLocalizedText, type LocalizedText } from "./localize.ts";
 import { isMetricValue, metricNumeric, type MetricValue } from "./metric.ts";
 import {
+  classicExperimentInstanceKey,
   classicAttemptTarget as classicAttemptRouteTarget,
   classicExperimentTarget,
 } from "./routes.ts";
@@ -287,7 +289,7 @@ export const AttemptSummary = defineComponent<{ readonly data: AttemptSummaryDat
     children: [
       reportStat({
         label: localize(ctx.scope, { en: "Experiment", "zh-CN": "实验" }),
-        value: props.data.experimentId,
+        value: displayClassicExperimentId(props.data.experimentId),
       }),
       reportStat({
         label: localize(ctx.scope, { en: "Eval", "zh-CN": "题目" }),
@@ -433,11 +435,20 @@ export const Bars = defineComponent<ClassicBarsProps>((props, ctx): ReportBlock 
     layout: "horizontal",
     better: yBetter,
     points: points.map((row, index) => {
-      const label = stringField(row, props.x) || `point-${index}`;
+      const rawLabel = stringField(row, props.x);
+      const label = rawLabel.length === 0
+        ? `point-${index}`
+        : props.x === "experiment"
+          ? displayClassicExperimentId(rawLabel)
+          : rawLabel;
       const series = props.color === undefined ? "all" : stringField(row, props.color) || "all";
-      const key = props.point === undefined
-        ? `${label}::${series}`
-        : stringField(row, props.point) || `${label}::${series}`;
+      const defaultKey = props.x === "experiment" && rawLabel.length > 0
+        ? `${classicExperimentInstanceKey(rawLabel)}::${series}`
+        : `${rawLabel || label}::${series}`;
+      const point = props.point === undefined ? "" : stringField(row, props.point);
+      const key = props.point === "experiment" && point.length > 0
+        ? String(classicExperimentInstanceKey(point))
+        : point || defaultKey;
       const metric = row[props.y];
       const value = metricNumeric(metric);
       return Object.freeze({
@@ -498,14 +509,12 @@ function experimentScatter(scope: Sample, reading: "passRate" | "totalScore"): R
         label,
         points: points.map((point) =>
           Object.freeze({
-            key: point.experimentId,
+            key: classicExperimentInstanceKey(point.experimentId),
             x: metricNumeric(point.costUSD),
             y: metricNumeric(point[reading]),
             xDisplay: formatMetricDisplay(point.costUSD, scope.locale),
             yDisplay: formatMetricDisplay(point[reading], scope.locale),
-            ...(classicExperimentTarget(point.experimentId) === undefined
-              ? {}
-              : { target: classicExperimentTarget(point.experimentId) }),
+            target: classicExperimentTarget(point.experimentId),
           }),
         ),
       }),
@@ -521,10 +530,7 @@ export const ExperimentTable = defineComponent<ClassicTableProps>((props, ctx): 
   const scope = props.input ?? ctx.scope;
   const content = experimentTableContent(scope);
   const experimentTargets = new Map(
-    scope.units.flatMap((unit) => {
-      const target = classicExperimentTarget(unit.experimentId);
-      return target === undefined ? [] : [[unit.experimentId, target] as const];
-    }),
+    scope.units.map((unit) => [unit.experimentId, classicExperimentTarget(unit.experimentId)] as const),
   );
   const attemptTargets = new Map(
     scope.attempts.flatMap((attempt) => {

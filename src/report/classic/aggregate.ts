@@ -1,5 +1,6 @@
 import { metricValue, type MetricBetter, type MetricFormat, type MetricValue } from "./metric.ts";
 import { classicAttemptHandleFromRow, type ClassicAttemptHandle } from "./attempt.ts";
+import { displayClassicExperimentId } from "./experiment-id.ts";
 import {
   type AggregationSubject,
   type ClassicAttemptRow,
@@ -447,12 +448,12 @@ function invokeGroup(
   } catch (cause) {
     const detail = cause instanceof Error ? cause.message : String(cause);
     throw new TypeError(
-      `group function ${field} failed for ${subject.experimentId} × ${subject.evalId}: ${detail}`,
+      `group function ${field} failed for ${displayClassicExperimentId(subject.experimentId)} × ${subject.evalId}: ${detail}`,
     );
   }
   if (typeof value !== "string") {
     throw new TypeError(
-      `group function ${field} must return a string for ${subject.experimentId} × ${subject.evalId}`,
+      `group function ${field} must return a string for ${displayClassicExperimentId(subject.experimentId)} × ${subject.evalId}`,
     );
   }
   return value;
