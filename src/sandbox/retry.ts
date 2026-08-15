@@ -57,7 +57,7 @@ export function withProvisionRetry<T>(
    * 歧义类第一次抛出:宁可判死一个 attempt,不留一台计费的无主实例
    * (见 docs/feature/sandbox/architecture.md)。
    */
-  reconcile?: Effect.Effect<void>,
+  reconcile?: Effect.Effect<void, unknown>,
 ): Effect.Effect<T, unknown> {
   const retry = (attempt: number): Effect.Effect<T, unknown> =>
     Effect.gen(function* () {

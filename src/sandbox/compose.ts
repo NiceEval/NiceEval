@@ -1257,15 +1257,7 @@ export function materializeDockerComposeProviderCase(
     const composeDownReconcile = Effect.tryPromise({
       try: () => composeDown(),
       catch: (cause) => cause,
-    }).pipe(Effect.catchAll((cleanupError) => Effect.sync(() => {
-      opts.feedback?.diagnostic({
-        code: "sandbox-provision-reconcile-failed",
-        level: "warning",
-        message:
-          `Compose project ${overlay.projectName} reconcile cleanup failed before provisioning retry: ` +
-          `${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`,
-      });
-    })));
+    }).pipe(Effect.asVoid);
 
     // 资源可能创建：先原子登记 best-effort finalizer。此后无论是中断还是失败，外层 Scope
     // 关闭都会执行 compose down；失败路径还会先显式跑一遍(幂等)，保持「先 down 再采证」的顺序。
@@ -1274,8 +1266,11 @@ export function materializeDockerComposeProviderCase(
     const failEnriched = (cause: unknown): Effect.Effect<never, ComposeMaterializationError> =>
       Effect.tryPromise({
         try: () => enrichComposeError(cause, overlay.projectName, composeFiles, cwd, env, runCompose),
-        catch: (enrichCause) => composeMaterializationError(overlay.projectName, enrichCause),
-      }).pipe(Effect.flatMap(Effect.fail));
+        catch: (enrichCause) => enrichCause,
+      }).pipe(Effect.matchEffect({
+        onFailure: (enrichCause) => Effect.fail(composeMaterializationError(overlay.projectName, enrichCause)),
+        onSuccess: (enriched) => Effect.fail(composeMaterializationError(overlay.projectName, enriched)),
+      }));
 
     return yield* Effect.gen(function* () {
       if (opts.ctx.signal?.aborted) return yield* Effect.interrupt;
