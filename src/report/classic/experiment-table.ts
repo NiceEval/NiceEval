@@ -14,6 +14,7 @@ import { formatCellText, type Cell } from "./cell.ts";
 import { displayClassicExperimentId } from "./experiment-id.ts";
 import { classicTableCopy, type ClassicLocale } from "./localize.ts";
 import type { MetricValue } from "./metric.ts";
+import { classicExperimentInstanceKey } from "./routes.ts";
 import { classicAttemptLocator, type ClassicEvalUnit, type Sample } from "./sample.ts";
 import { REPORT_DOCUMENT_DEPTH_MAX } from "../semantic/document.ts";
 
@@ -773,7 +774,12 @@ export function experimentTableContent(sample: Sample): ExperimentTableContent {
       align: column.better === undefined ? "left" : "right",
     })),
     rows: items.flatMap((item) =>
-      flattenRows(experimentRow(item, columns, locale), columns, item.experimentId, locale)
+      flattenRows(
+        experimentRow(item, columns, locale),
+        columns,
+        String(classicExperimentInstanceKey(item.experimentId)),
+        locale,
+      )
     ),
   };
 }
