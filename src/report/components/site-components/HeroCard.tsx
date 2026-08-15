@@ -52,10 +52,7 @@ export function HeroCard({
   const meta =
     data.latestStartedAt === null
       ? localeText(locale, "hero.noRuns")
-      : [
-          localeText(locale, "hero.lastRun", { time: formatLastRun(data.latestStartedAt, locale) }),
-          ...(data.runs > 1 ? [localeText(locale, "hero.composedRuns", { n: data.runs })] : []),
-        ].join(" · ");
+      : localeText(locale, "hero.lastRun", { time: formatLastRun(data.latestStartedAt, locale) });
   return (
     <header className={classNames("niceeval-report", "niceeval-hero", className)}>
       {logo === undefined ? null : (

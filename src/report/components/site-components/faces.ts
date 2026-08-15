@@ -29,10 +29,7 @@ export function heroCardText(
   const meta =
     data.latestStartedAt === null
       ? localeText(context.locale, "hero.noRuns")
-      : [
-          localeText(context.locale, "hero.lastRun", { time: formatDateTimeMinute(data.latestStartedAt) }),
-          ...(data.runs > 1 ? [localeText(context.locale, "hero.composedSnapshots", { n: data.runs })] : []),
-        ].join(" · ");
+      : localeText(context.locale, "hero.lastRun", { time: formatDateTimeMinute(data.latestStartedAt) });
   const lines = [resolveLocalizedText(title, context.locale)];
   if (branding.description !== undefined) {
     lines.push(...wrapDisplay(resolveLocalizedText(branding.description, context.locale), context.width));

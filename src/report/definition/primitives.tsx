@@ -846,7 +846,6 @@ function MetricCellView({
     return (
       <span className="niceeval-cell">
         <span className="niceeval-value">{closed.text}</span>
-        {closed.detail === undefined ? null : <small className="niceeval-cell-detail">{closed.detail}</small>}
       </span>
     );
   }

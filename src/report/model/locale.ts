@@ -193,10 +193,6 @@ const en = {
   /** Hero / HeroCard 的运行 meta(hero.noRuns 是 latestStartedAt 为 null 时的内置文案)。 */
   "hero.lastRun": "Last run {time}",
   "hero.noRuns": "No runs yet",
-  /** web 面的合成来源标注(仅 runs > 1 时显示)。 */
-  "hero.composedRuns": "composed from {n} runs",
-  /** text 面的合成来源标注(show 页首 meta 行,仅 runs > 1 时显示)。 */
-  "hero.composedSnapshots": "composed from {n} runs",
 
   /** CopyFixPrompt 的 web 面 chrome(prompt 本身面向 agent、固定英文,不经词典)。 */
   "copyFixPrompt.summary.one": "Fix prompt · {n} failure",
@@ -394,8 +390,6 @@ const zhCN: globalThis.Record<ReportMessageKey, string> = {
 
   "hero.lastRun": "最后运行 {time}",
   "hero.noRuns": "暂无运行",
-  "hero.composedRuns": "由 {n} 次运行合成",
-  "hero.composedSnapshots": "由 {n} 份快照合成",
 
   "copyFixPrompt.summary.one": "修复 prompt · {n} 个失败",
   "copyFixPrompt.summary.other": "修复 prompt · {n} 个失败",

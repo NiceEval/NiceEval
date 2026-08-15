@@ -12,7 +12,6 @@ import {
 import type { Cell } from "../../definition/cell.tsx";
 import type { ChartTargetPoint } from "../../definition/primitives/chart.tsx";
 import type { ReportTarget } from "../../definition/report.ts";
-import { ExperimentTable } from "../entity-lists/index.tsx";
 import { experimentDetailTarget } from "../../library/details.ts";
 import {
   formatInstant,
@@ -139,7 +138,7 @@ ExperimentScatter.displayName = "ExperimentScatter";
 
 export interface SampleOverviewProps extends ExperimentScatterProps {}
 
-/** The conventional summary + comparison + experiment table composition. */
+/** The conventional summary + comparison composition. */
 export const SampleOverview = defineComponent<SampleOverviewProps>((props) => (
   <Col className={props.className}>
     <SampleSummary input={props.input} locale={props.locale} />
@@ -150,7 +149,6 @@ export const SampleOverview = defineComponent<SampleOverviewProps>((props) => (
       pointTarget={props.pointTarget}
       locale={props.locale}
     />
-    <ExperimentTable input={props.input} locale={props.locale} />
   </Col>
 ));
 SampleOverview.displayName = "SampleOverview";
