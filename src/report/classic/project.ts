@@ -69,6 +69,11 @@ export function buildClassicSample(input: {
     }
     const key = unitKey(identity.experimentId, identity.evalId);
     const existing = units.get(key);
+    if (existing !== undefined && existing.evaluationKind !== identity.kind) {
+      throw new TypeError(
+        `classic Sample cannot merge ${identity.experimentId} × ${identity.evalId} with conflicting Evaluation kinds`,
+      );
+    }
     const group = existing ?? {
       experimentId: identity.experimentId,
       evalId: identity.evalId,

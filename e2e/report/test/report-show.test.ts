@@ -4,10 +4,15 @@
 //   an exact route; invoke = the fixture expands two attempt and two experiment
 //   pages, then calls show --page <family-id>; outcome = the old resolver exits
 //   successfully with its canonical first page instead of the usage error below.
+// - inverse = build a custom rollup Attempt handle without the current Sample,
+//   reorder nested boxed Sections, or merge historical Eval kinds by coordinate;
+//   invoke = render the author page and select two runs after the fixture changes
+//   one Eval from score to pass; outcome = agent data disappears, author order is
+//   changed, or incompatible history renders instead of a structured page failure.
 // rerun: pnpm e2e --repo report -- --run test/report-show.test.ts
 
 import { only } from "@niceeval/testkit";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import {
@@ -347,6 +352,33 @@ test("show 从一次固定 ReportExecution 呈现内建与自定义报告", asyn
       const primitiveSequence = ["Primitive children", "primitive-alpha", "42", "primitive-omega"];
       expect(terminalTextSequence(customAuthor.stdout, primitiveSequence)).toEqual(primitiveSequence);
 
+      const customAuthorTerminal = await runReportPty(
+        [niceevalBin, "show", "--report", "./reports/site.tsx", "--page", "author-api"],
+        {
+          columns: 120,
+          rows: 40,
+          cwd: projectRoot,
+          env: { TERM: "dumb", NO_COLOR: undefined, FORCE_COLOR: undefined },
+          timeoutMs: 60_000,
+        },
+      );
+      expect(customAuthorTerminal.exitCode, customAuthorTerminal.diagnostic()).toBe(0);
+      expect(customAuthorTerminal.stdout).toContain("Agent handle retained: 17");
+      const orderingBox = terminalBoxContaining(closedTerminalBoxes(customAuthorTerminal.stdout), [
+        "Terminal ordering",
+        "terminal-block-a",
+        "terminal-section-b",
+        "terminal-block-b",
+        "terminal-block-c",
+      ]);
+      const orderingOffsets = [
+        "terminal-block-a",
+        "terminal-section-b",
+        "terminal-block-b",
+        "terminal-block-c",
+      ].map((label) => orderingBox.indexOf(label));
+      expect(orderingOffsets).toEqual([...orderingOffsets].sort((left, right) => left - right));
+
       for (const family of ["attempt", "experiment"] as const) {
         const ambiguous = await niceeval.run(
           ["show", "--report", "./reports/execution-contracts.ts", "--page", family],
@@ -418,6 +450,86 @@ test("show 从一次固定 ReportExecution 呈现内建与自定义报告", asyn
       expect(reservedRoute.exitCode, reservedRoute.diagnostic()).not.toBe(0);
       expect(reservedRoute.stderr).toContain("ReportModuleLoadError");
       expect(reservedRoute.stderr).not.toContain("RESERVED_ROUTE_AUTHOR_CALLBACK_RAN");
+
+      await writeFile(join(projectRoot, "evals", "tool-call.eval.ts"), [
+        'import { defineEval } from "niceeval";',
+        "",
+        "export default defineEval({",
+        '  description: "tool-call: explicitly skipped summary fixture",',
+        "  test(t) {",
+        '    t.skip("report show explicit skip fixture");',
+        "  },",
+        "});",
+        "",
+      ].join("\n"), "utf8");
+      const skippedRun = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
+      expect(skippedRun.exitCode, skippedRun.diagnostic()).not.toBe(0);
+      expect(skippedRun.expReceipt(), skippedRun.diagnostic()).toMatchObject({ completion: "completed" });
+      const skippedRunId = only(skippedRun.expReceipt().runIds, () => true, skippedRun.diagnostic());
+      const skippedSummary = await runReportPty(
+        [
+          niceevalBin,
+          "show",
+          "--run",
+          skippedRunId,
+          "--report",
+          "./reports/site.tsx",
+          "--page",
+          "author-api",
+        ],
+        {
+          columns: 120,
+          rows: 40,
+          cwd: projectRoot,
+          env: { TERM: "dumb", NO_COLOR: undefined, FORCE_COLOR: undefined },
+          timeoutMs: 60_000,
+        },
+      );
+      expect(skippedSummary.exitCode, skippedSummary.diagnostic()).toBe(0);
+      const skippedSummaryRows = terminalBoxRows(
+        terminalBoxContaining(closedTerminalBoxes(skippedSummary.stdout), ["Pass rate", "Eval results"]),
+      );
+      const resultHeader = only(
+        skippedSummaryRows,
+        (row) => row.includes("Eval results"),
+        skippedSummary.diagnostic(),
+      );
+      const resultColumn = resultHeader.indexOf("Eval results");
+      expect(resultColumn).toBeGreaterThanOrEqual(0);
+      const resultCells = skippedSummaryRows
+        .slice(skippedSummaryRows.indexOf(resultHeader) + 1)
+        .map((row) => row[resultColumn] ?? "")
+        .filter((cell) => cell.length > 0);
+      expect(resultCells.join(" ")).toBe("0 passed · 1 failed · 1 scored · 1 errored · 1 skipped");
+
+      await writeFile(join(projectRoot, "evals", "score.eval.ts"), [
+        'import { defineEval } from "niceeval";',
+        "",
+        "export default defineEval({",
+        '  description: "score: kind conflict fixture",',
+        "  test() {},",
+        "});",
+        "",
+      ].join("\n"), "utf8");
+      const changedKindRun = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
+      expect(changedKindRun.exitCode, changedKindRun.diagnostic()).not.toBe(0);
+      expect(changedKindRun.expReceipt(), changedKindRun.diagnostic()).toMatchObject({ completion: "completed" });
+      const changedKindRunId = only(changedKindRun.expReceipt().runIds, () => true, changedKindRun.diagnostic());
+      const conflictingHistory = await niceeval.run([
+        "show",
+        "--run",
+        runId,
+        "--run",
+        changedKindRunId,
+        "--report",
+        "./reports/site.tsx",
+        "--page",
+        "author-api",
+      ]);
+      expect(conflictingHistory.exitCode, conflictingHistory.diagnostic()).toBe(0);
+      expect(conflictingHistory.stdout).toContain("Page /author-api · execution-failed");
+      expect(conflictingHistory.stdout).toContain("page-execution-failed");
+      expect(conflictingHistory.stdout).not.toContain("Classic author surface");
     },
   );
 });

@@ -144,7 +144,7 @@ export async function aggregate<
       row[key] = label;
     }
     for (const [key, calculation] of valueEntries) {
-      row[key] = await computeCalculation(calculation, group.units);
+      row[key] = await computeCalculation(sample, calculation, group.units);
     }
     rows.push(Object.freeze(row) as AggregateRow<Groups, Values>);
   }
@@ -506,11 +506,12 @@ function isCalculation(value: unknown): value is Calculation {
 }
 
 async function computeCalculation(
+  sample: Sample,
   calculation: Calculation,
   units: readonly ClassicEvalUnit[],
 ): Promise<MetricValue> {
   if (isRollupCalculation(calculation)) {
-    return computeRollup(calculation, units);
+    return computeRollup(sample, calculation, units);
   }
   return calculation.compute(units);
 }
@@ -520,6 +521,7 @@ function isRollupCalculation(value: Calculation): value is RollupCalculation {
 }
 
 async function computeRollup(
+  sample: Sample,
   calculation: RollupCalculation,
   units: readonly ClassicEvalUnit[],
 ): Promise<MetricValue> {
@@ -528,7 +530,7 @@ async function computeRollup(
   for (const unit of units) {
     const attemptValues: number[] = [];
     for (const attempt of unit.attempts) {
-      const handle = classicAttemptHandleFromRow(undefined, attempt);
+      const handle = classicAttemptHandleFromRow(sample, attempt);
       if (handle === undefined) {
         continue;
       }

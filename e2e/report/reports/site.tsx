@@ -116,6 +116,32 @@ const FixtureLocaleMetric = defineComponent(async (_props, ctx) => {
 });
 FixtureLocaleMetric.displayName = "FixtureLocaleMetric";
 
+const fixtureAgentMetric = rollup(
+  (attempt) => attempt.agent === "report-fixture" ? 17 : -17,
+  {
+    format: {
+      kind: "custom",
+      format: (value) => `Agent handle retained: ${value.toFixed(0)}`,
+    },
+  },
+);
+
+const FixtureAgentMetric = defineComponent(async (_props, ctx) => {
+  const points = await aggregate(ctx.scope, {
+    by: { experiment: fixtureGroup },
+    values: { fixtureAgentMetric },
+  });
+  return (
+    <Bars
+      points={points}
+      x="experiment"
+      y="fixtureAgentMetric"
+      layout="horizontal"
+    />
+  );
+});
+FixtureAgentMetric.displayName = "FixtureAgentMetric";
+
 const authorApi = {
   id: "author-api",
   title: { en: "Author API", "zh-CN": "作者 API" },
@@ -135,9 +161,17 @@ const authorApi = {
           {42}
           {"primitive-omega"}
         </Section>
+        <Section title="Terminal ordering">
+          {reportParagraph([reportText("terminal-block-a")])}
+          <Section title="terminal-section-b">
+            {reportParagraph([reportText("terminal-block-b")])}
+          </Section>
+          {reportParagraph([reportText("terminal-block-c")])}
+        </Section>
         <SampleSummary input={sample} />
         <FixtureLeaderboard />
         <FixtureLocaleMetric />
+        <FixtureAgentMetric />
         <ExperimentScatter input={sample} />
         <ExperimentTable input={sample} />
       </Col>

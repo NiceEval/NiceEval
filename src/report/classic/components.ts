@@ -22,7 +22,12 @@ import {
   classicExperimentTarget,
 } from "./routes.ts";
 import { CLASSIC_SELECTION_PROFILE_UNAVAILABLE } from "./origin.ts";
-import { classicAttemptLocator, type ClassicEvalUnit, type Sample } from "./sample.ts";
+import {
+  classicAttemptLocator,
+  type ClassicEvalUnit,
+  type ClassicVerdict,
+  type Sample,
+} from "./sample.ts";
 import {
   reportCellTable,
   reportCodeBlock,
@@ -218,7 +223,10 @@ export function classicSelectionNotice(sample: Sample): ReportStatus | null {
   }
   return reportStatus({
     tone: "warning",
-    label: CLASSIC_SELECTION_PROFILE_UNAVAILABLE.summary,
+    label: localize(sample, {
+      en: CLASSIC_SELECTION_PROFILE_UNAVAILABLE.summary,
+      "zh-CN": "此 Report 选择不包含当前项目声明的 profile",
+    }),
     detail: [reportText(CLASSIC_SELECTION_PROFILE_UNAVAILABLE.code)],
   });
 }
@@ -252,7 +260,6 @@ function isClassicSelectionNoticeBlock(block: ReportBlock): block is ReportStatu
   if (
     block.type !== "status"
     || block.tone !== "warning"
-    || block.label !== CLASSIC_SELECTION_PROFILE_UNAVAILABLE.summary
     || detail === undefined
     || detail.length !== 1
   ) {
@@ -266,33 +273,42 @@ export interface CopyBlockProps {
   readonly content: CopyBlockContent;
 }
 
-export const CopyBlock = defineComponent<CopyBlockProps>((props) =>
+export const CopyBlock = defineComponent<CopyBlockProps>((props, ctx) =>
   reportSection({
-    heading: "Copy",
+    heading: localize(ctx.scope, { en: "Copy", "zh-CN": "复制内容" }),
     children: [reportCodeBlock({ value: copyBlockText(props.content) })],
   })
 );
 CopyBlock.displayName = "CopyBlock";
 
-export const AttemptSummary = defineComponent<{ readonly data: AttemptSummaryData }>((props) =>
+export const AttemptSummary = defineComponent<{ readonly data: AttemptSummaryData }>((props, ctx) =>
   reportSection({
     heading: props.data.locator,
     children: [
-      reportStat({ label: "Experiment", value: props.data.experimentId }),
-      reportStat({ label: "Eval", value: props.data.evalId }),
-      reportStat({ label: "Verdict", value: props.data.verdict }),
+      reportStat({
+        label: localize(ctx.scope, { en: "Experiment", "zh-CN": "实验" }),
+        value: props.data.experimentId,
+      }),
+      reportStat({
+        label: localize(ctx.scope, { en: "Eval", "zh-CN": "题目" }),
+        value: props.data.evalId,
+      }),
+      reportStat({
+        label: localize(ctx.scope, { en: "Verdict", "zh-CN": "结论" }),
+        value: localizeAttemptResult(ctx.scope, props.data.verdict),
+      }),
     ],
   })
 );
 AttemptSummary.displayName = "AttemptSummary";
 
-export const AttemptAssessment = defineComponent<{ readonly attempt: AttemptEvidence }>((props) =>
+export const AttemptAssessment = defineComponent<{ readonly attempt: AttemptEvidence }>((props, ctx) =>
   reportSection({
-    heading: "Assessment",
+    heading: localize(ctx.scope, { en: "Assessment", "zh-CN": "评估" }),
     children: [
       reportStat({
-        label: "Verdict",
-        value: props.attempt.result.verdict ?? "unknown",
+        label: localize(ctx.scope, { en: "Verdict", "zh-CN": "结论" }),
+        value: localizeAttemptResult(ctx.scope, props.attempt.result.verdict),
       }),
     ],
   })
@@ -343,10 +359,13 @@ export const SampleSummary = defineComponent<{ readonly input?: Sample }>((props
   );
   const overall = passRate.compute(scope.units);
   const score = totalScore.compute(scope.units);
-  const results = evalResultCounts(scope.units);
+  const results = evalResultCounts(scope);
   const totalCost = totalAttempts(scope.units, "costUSD", { unit: "$", better: "lower" });
   const costNote = totalCost.samples < totalCost.total
-    ? `Cost available for ${totalCost.samples}/${totalCost.total} attempts`
+    ? localize(scope, {
+      en: `Cost available for ${totalCost.samples}/${totalCost.total} attempts`,
+      "zh-CN": `成本已提供 ${totalCost.samples}/${totalCost.total} 次尝试`,
+    })
     : undefined;
   const runRange = reportParagraph([
     reportText(
@@ -634,10 +653,11 @@ function experimentPoints(sample: Sample): readonly {
   );
 }
 
-function evalResultCounts(units: readonly ClassicEvalUnit[]): {
+function evalResultCounts(sample: Sample): {
   readonly display: string;
   readonly samples: number;
 } {
+  const units = sample.units;
   let passed = 0;
   let failed = 0;
   let errored = 0;
@@ -659,17 +679,58 @@ function evalResultCounts(units: readonly ClassicEvalUnit[]): {
       failed += 1;
     } else if (folded === "errored") {
       errored += 1;
+    } else if (unit.attempts.length > 0 && unit.attempts.every((attempt) => attempt.verdict === "skipped")) {
+      skipped += 1;
     }
   }
   return Object.freeze({
     display: [
-      ...(hasPass ? [`${passed} passed`, `${failed} failed`] : []),
-      ...(scored > 0 ? [`${scored} scored`] : []),
-      ...(errored > 0 ? [`${errored} errored`] : []),
-      ...(skipped > 0 ? [`${skipped} skipped`] : []),
+      ...(hasPass ? [resultCount(sample, passed, "passed"), resultCount(sample, failed, "failed")] : []),
+      ...(scored > 0 ? [resultCount(sample, scored, "scored")] : []),
+      ...(errored > 0 ? [resultCount(sample, errored, "errored")] : []),
+      ...(skipped > 0 ? [resultCount(sample, skipped, "skipped")] : []),
     ].join(" · "),
-    samples: passed + failed + scored + errored,
+    samples: passed + failed + scored + errored + skipped,
   });
+}
+
+function resultCount(
+  sample: Sample,
+  count: number,
+  result: "passed" | "failed" | "scored" | "errored" | "skipped",
+): string {
+  return `${count} ${localizeResult(sample, result)}`;
+}
+
+function localizeAttemptResult(
+  sample: Sample,
+  result: ClassicVerdict | "unreadable" | "unknown" | undefined,
+): string {
+  if (result === undefined || result === "unknown") {
+    return localize(sample, { en: "unknown", "zh-CN": "未知" });
+  }
+  if (result === "unreadable") {
+    return localize(sample, { en: "unreadable", "zh-CN": "无法读取" });
+  }
+  return localizeResult(sample, result);
+}
+
+function localizeResult(
+  sample: Sample,
+  result: "passed" | "failed" | "scored" | "errored" | "skipped",
+): string {
+  switch (result) {
+    case "passed":
+      return localize(sample, { en: "passed", "zh-CN": "通过" });
+    case "failed":
+      return localize(sample, { en: "failed", "zh-CN": "失败" });
+    case "scored":
+      return localize(sample, { en: "scored", "zh-CN": "已计分" });
+    case "errored":
+      return localize(sample, { en: "errored", "zh-CN": "出错" });
+    case "skipped":
+      return localize(sample, { en: "skipped", "zh-CN": "跳过" });
+  }
 }
 
 function groupUnitsByExperiment(

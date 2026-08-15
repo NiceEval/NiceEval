@@ -401,7 +401,6 @@ export function renderSectionText(
     sectionBoxedDepth: ctx.sectionBoxedDepth + 1,
   };
   const rows: Array<{ kind: "divider"; title: string; meta?: string } | { kind: "line"; text: string }> = [];
-  const bodyParts: string[] = [];
   for (const child of block.children) {
     if (child.type === "section") {
       rows.push({
@@ -410,20 +409,16 @@ export function renderSectionText(
         ...(child.meta === undefined ? {} : { meta: child.meta }),
       });
       const nested = renderClassicBlockText(child, nestedCtx);
-      if (nested.length > 0) bodyParts.push(nested.join("\n"));
+      if (nested.length > 0) rows.push({ kind: "line", text: nested.join("\n") });
       continue;
     }
     const rendered = renderClassicBlockText(child, nestedCtx).join("\n");
-    if (rendered.length > 0) bodyParts.push(rendered);
+    if (rendered.length > 0) rows.push({ kind: "line", text: rendered });
   }
-  const body = bodyParts.join("\n\n");
   return renderPanel({
     title: block.heading,
     ...(block.meta === undefined ? {} : { meta: block.meta }),
-    rows: [
-      ...rows,
-      ...(body.length > 0 ? [{ kind: "line" as const, text: body }] : []),
-    ],
+    rows,
     width: ctx.width,
     mode: "boxed",
   });
