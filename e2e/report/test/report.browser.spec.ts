@@ -9,6 +9,8 @@
 // - inverse = formatCellText renders verdict labels from raw status strings, ignoring locale
 // - inverse = SampleSummary's package-owned result and coverage copy stays English in zh-CN
 // - inverse = ranked-bar/scatter/tree-table headers stay English in zh-CN
+// - inverse = standard Attempts/Traces nav and Traces/Attempt package copy stay English in zh-CN
+// - inverse = empty conversation stays "available" and raw attachment.state leaks in zh-CN
 // - inverse = static classic chrome omits visible fixed-page hrefs
 // rerun: pnpm e2e --repo report -- --run test/report.browser.spec.ts
 //
@@ -97,6 +99,31 @@ test("Report browser Journey：经典界面与自定义报告共用固定执行�
         await page.getByRole("tab", { name: "Attempts" }).click();
         await expect(page.getByRole("tab", { name: "Attempts" })).toHaveAttribute("aria-selected", "true");
         await expect(page.getByRole("heading", { name: "Attempts", level: 1 })).toBeVisible();
+        await page.getByRole("tab", { name: "Traces" }).click();
+        await expect(page.getByRole("tab", { name: "Traces" })).toHaveAttribute("aria-selected", "true");
+        await expect(page.getByRole("heading", { name: "Traces", level: 1 })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "Conversation traces" })).toBeVisible();
+        await expect(page.getByRole("columnheader", { name: "Attempt" })).toBeVisible();
+        await expect(page.getByRole("columnheader", { name: "Conversation" })).toBeVisible();
+        // deliberate-error and score never send. Their conversation attachment
+        // is available with zero turns, so the reachable package copy is
+        // "available". Attempt-detail unavailable/unknown fields are not in
+        // this fixture.
+        await expect(
+          page.getByRole("row").filter({
+            has: page.getByRole("cell", { name: "deliberate-error", exact: true }),
+          }).getByRole("cell", { name: "available", exact: true }),
+        ).toBeVisible();
+        await expect(
+          page.getByRole("row").filter({
+            has: page.getByRole("cell", { name: "score", exact: true }),
+          }).getByRole("cell", { name: "available", exact: true }),
+        ).toBeVisible();
+        await expect(
+          page.getByRole("row").filter({
+            has: page.getByRole("cell", { name: "tool-call", exact: true }),
+          }).getByRole("cell", { name: /\d+ turn\(s\)/ }),
+        ).toBeVisible();
         await page.getByRole("tab", { name: "Report" }).click();
 
         // kill: inverse = parent cell omits ordinary <a> when descendants exist.
@@ -142,7 +169,10 @@ test("Report browser Journey：经典界面与自定义报告共用固定执行�
         await attemptLink.click();
         const dialog = page.locator("dialog[open]");
         await expect(dialog).toHaveAttribute("aria-label", locator!);
-        await expect(dialog.getByRole("table", { name: "Attempt" })).toBeVisible();
+        await expect(dialog.getByRole("heading", { name: "Attempt" })).toBeVisible();
+        await expect(dialog.getByRole("term").filter({ hasText: /^experiment$/ })).toBeVisible();
+        await expect(dialog.getByRole("term").filter({ hasText: /^eval$/ })).toBeVisible();
+        await expect(dialog.getByRole("term").filter({ hasText: /^verdict$/ })).toBeVisible();
         expect(page.url()).toBe(reportUrl);
         await dialog.getByRole("button", { name: "Close" }).click();
         await expect(page.locator("dialog[open]")).toHaveCount(0);
@@ -164,6 +194,87 @@ test("Report browser Journey：经典界面与自定义报告共用固定执行�
         await expect(page.getByRole("img", { name: "costUSD 与 passRate" })).toBeVisible();
         expect(await page.getByRole("columnheader", { name: "点", exact: true }).count()).toBeGreaterThan(0);
         expect(await page.getByRole("columnheader", { name: "链接", exact: true }).count()).toBeGreaterThan(0);
+        await expect(page.getByText("面向 AI Agent 的评测报告。", { exact: true })).toBeVisible();
+
+        // kill: inverse = standard Attempts/Traces nav stays English, or empty
+        // conversation / raw attachment.state stays English in zh-CN. invoke:
+        // switch the live standard report to 中文, open Traces, Attempts, and
+        // Attempt detail. observe: accessible names are Chinese; never-send
+        // rows show 可用; English package strings are gone.
+        await expect(page.getByRole("tab", { name: "尝试" })).toBeVisible();
+        await expect(page.getByRole("tab", { name: "追踪" })).toBeVisible();
+        await expect(page.getByRole("tab", { name: "Attempts" })).toHaveCount(0);
+        await expect(page.getByRole("tab", { name: "Traces" })).toHaveCount(0);
+        const zhExperimentLink = page.getByRole("table", { name: "实验层级" }).getByRole("link", {
+          name: "main",
+          exact: true,
+        });
+        await zhExperimentLink.click();
+        const zhExperimentDialog = page.locator("dialog[open]");
+        await expect(zhExperimentDialog.getByRole("heading", { name: "main", level: 1 })).toBeVisible();
+        await expect(zhExperimentDialog.getByRole("table", { name: "实验层级" })).toBeVisible();
+        await zhExperimentDialog.getByRole("button", { name: "关闭" }).click();
+        await expect(page.locator("dialog[open]")).toHaveCount(0);
+
+        await page.getByRole("tab", { name: "追踪" }).click();
+        await expect(page.getByRole("heading", { name: "追踪", level: 1 })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "会话追踪" })).toBeVisible();
+        await expect(page.getByRole("columnheader", { name: "尝试" })).toBeVisible();
+        await expect(page.getByRole("columnheader", { name: "实验" })).toBeVisible();
+        await expect(page.getByRole("columnheader", { name: "题目" })).toBeVisible();
+        await expect(page.getByRole("columnheader", { name: "会话" })).toBeVisible();
+        const zhErrorTrace = page.getByRole("row").filter({
+          has: page.getByRole("cell", { name: "deliberate-error", exact: true }),
+        });
+        const zhScoreTrace = page.getByRole("row").filter({
+          has: page.getByRole("cell", { name: "score", exact: true }),
+        });
+        await expect(zhErrorTrace.getByRole("cell", { name: "可用", exact: true })).toBeVisible();
+        await expect(zhScoreTrace.getByRole("cell", { name: "可用", exact: true })).toBeVisible();
+        await expect(
+          page.getByRole("row").filter({
+            has: page.getByRole("cell", { name: "tool-call", exact: true }),
+          }).getByRole("cell", { name: /^\d+ 轮$/ }),
+        ).toBeVisible();
+        await expect(page.getByText("Conversation traces", { exact: true })).toHaveCount(0);
+        await expect(page.getByText("available", { exact: true })).toHaveCount(0);
+        await expect(page.getByText("unavailable", { exact: true })).toHaveCount(0);
+        await expect(page.getByText("not recorded", { exact: true })).toHaveCount(0);
+        await expect(page.getByText("unsupported", { exact: true })).toHaveCount(0);
+        await expect(page.getByText("invalid", { exact: true })).toHaveCount(0);
+        await expect(page.getByText("migration-required", { exact: true })).toHaveCount(0);
+        await expect(page.getByText("migration-unavailable", { exact: true })).toHaveCount(0);
+        await expect(page.getByText("turn(s)")).toHaveCount(0);
+
+        await page.getByRole("tab", { name: "尝试" }).click();
+        await expect(page.getByRole("heading", { name: "尝试", level: 1 })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "Attempts", level: 1 })).toHaveCount(0);
+
+        await page.getByRole("tab", { name: "报告" }).click();
+        const zhMain = page.getByRole("button", { name: "main" });
+        if (await zhMain.getAttribute("aria-expanded") !== "true") {
+          await zhMain.click();
+        }
+        await expect(zhMain).toHaveAttribute("aria-expanded", "true");
+        const zhToolCall = page.getByRole("button", { name: "tool-call" });
+        if (await zhToolCall.getAttribute("aria-expanded") !== "true") {
+          await zhToolCall.click();
+        }
+        await expect(zhToolCall).toHaveAttribute("aria-expanded", "true");
+        const zhAttemptLink = page.getByRole("table", { name: "实验层级" }).getByRole("link", {
+          name: /^@1/,
+        });
+        await expect(zhAttemptLink).toBeVisible();
+        await zhAttemptLink.click();
+        const zhDialog = page.locator("dialog[open]");
+        await expect(zhDialog.getByRole("heading", { name: "尝试" })).toBeVisible();
+        await expect(zhDialog.getByRole("term").filter({ hasText: /^实验$/ })).toBeVisible();
+        await expect(zhDialog.getByRole("term").filter({ hasText: /^题目$/ })).toBeVisible();
+        await expect(zhDialog.getByRole("term").filter({ hasText: /^评测$/ })).toBeVisible();
+        await expect(zhDialog.getByRole("term").filter({ hasText: /^判定$/ })).toBeVisible();
+        await expect(zhDialog.getByText("Field", { exact: true })).toHaveCount(0);
+        await zhDialog.getByRole("button", { name: "关闭" }).click();
+        await expect(page.locator("dialog[open]")).toHaveCount(0);
 
         // kill: inverse = formatCellText renders verdict labels from raw status
         // strings, ignoring locale. invoke: read the zh-CN execution's
@@ -284,6 +395,10 @@ test("Report browser Journey：经典界面与自定义报告共用固定执行�
         await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
         await expect(page.getByRole("navigation", { name: "报告页面" })).toBeVisible();
         await expect(page.getByRole("link", { name: "报告", exact: true })).toBeVisible();
+        await expect(page.getByRole("link", { name: "尝试", exact: true })).toBeVisible();
+        await expect(page.getByRole("link", { name: "追踪", exact: true })).toBeVisible();
+        await expect(page.getByRole("link", { name: "Attempts", exact: true })).toHaveCount(0);
+        await expect(page.getByRole("link", { name: "Traces", exact: true })).toHaveCount(0);
         await expect(page.getByRole("table", { name: "实验层级" })).toBeVisible();
         await expect(page.getByRole("columnheader", { name: "实验", exact: true })).toBeVisible();
         await expect(page.getByRole("img", { name: "costUSD 与 passRate" })).toBeVisible();
