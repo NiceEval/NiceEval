@@ -16,16 +16,17 @@ niceeval view [selection] [report options] --out <directory>
 
 | 选项 | 含义 |
 |---|---|
-| --record <root> | 选择 Record root；省略时使用 <cwd>/.niceeval/record。 |
-| @<locator> | 精确选择一个 immutable Attempt。 |
-| --run <run-id> | 可重复；精确选择历史 Run。 |
-| --experiment <id> | 可重复；按完整 ExperimentId 收窄当前项目目标。 |
-| --report <module> | 选择内建 Report 或受信任 Report module。 |
-| --page <route> | 选择一个 exact route。 |
-| --port <port> | view 的监听端口；默认 4173，只绑定 loopback。 |
-| --no-open | 阻止 view 自动打开浏览器。 |
-| --json | 让 show 输出固定 JSON。 |
-| --out <directory> | 生成静态站，不启动 watcher 或长期 server。 |
+| `--record <root>` | 选择实际 Record root；省略时使用 `<cwd>/.niceeval/record`。 |
+| `@<locator>` | 精确选择一个 immutable Attempt。 |
+| `--run <run-id>` | 可重复；精确选择历史 Run。 |
+| `--experiment <id>` | 可重复；按完整 ExperimentId 收窄不带 locator 或 `--run` 的当前项目目标。 |
+| `--report <module>` | 选择内建 Report 或受信任的 Report module。 |
+| `--page <route>` | 选择一个已经展开的 exact route。 |
+| `--port <port>` | `view` 监听端口；默认 4173。 |
+| `--host <address>` | `view` 监听地址；省略时为 `127.0.0.1`，只写 `--host` 时等价于 `0.0.0.0`。 |
+| `--no-open` | 阻止 `view` 自动打开浏览器。 |
+| `--json` | 让 `show` 输出固定 JSON。 |
+| `--out <directory>` | 生成静态站，不启动 watcher 或长期 server。 |
 
 不传 locator、--run 或 --experiment 时，命令按当前项目身份形成 Sample。它选择全部匹配的 published Run，不按时间缩成最后一个 Run，也不写回 Record。没有匹配结果时，命令形成空 Sample；度量用自己的 state、samples、total 和 issues 表达结果。
 
@@ -109,12 +110,23 @@ Outcome 不是 Verdict。Report 不从 Record 重读或重算任一者。缺 ent
 
 ```sh
 niceeval view --report ./reports/summary.ts --port 4400
-niceeval view --run 01H... --page /attempt/attempt-01h... --no-open
+niceeval view --host 192.168.0.199
+niceeval view --host # 显式监听全部 IPv4 接口
+niceeval view --run 01H... --page /attempts/attempt-01h... --no-open
 ```
 
 view 打开 scoped ReportViewSession。没有 --page 时，它打开 root route /；Report 没有 root Page 时，用户必须显式传入 --page。导航只列当前成功 revision 中已经执行且 navigation 为真的普通 Page；详情 route 由页面内已闭合链接进入。
 
-Record identity 不能直接拼 route。Page params 的 encode() 负责产生规范小写 key；CLI 只显示该 key，页面正文仍显示领域对象自己的原始 identity。
+完全省略 `--host` 时，server 只监听 `127.0.0.1`。显式地址交给 Node 绑定；具体 hostname / IP
+只公布该地址，`0.0.0.0` 会公布 `127.0.0.1` 与启动时可见的非 internal IPv4 地址，`::` 则公布
+`[::1]` 与可直接序列化的非 internal IPv6 地址。`--page` 应用到全部公布 URL，但自动打开浏览器只使用第一条。
+
+非 loopback 监听是显式的网络暴露：它没有认证或 TLS，所有网络可达客户端都能读取报告、execution JSON 与
+downloads。CLI 每次成功启动这种 listener 都在 stderr 警告；使用者必须自行保证网络可信。HTTP host 只接受本次
+公布的 authority；只服务 `GET` / `HEAD`，其它 method 返回 `405`。这些限制不授权未来写端点；任何写端点都必须
+重新设计认证与 CSRF 边界。
+
+Record canonical ID 不能直接拼 route：Report 作者必须用 `reportInstanceKeyFromRecordId` 与 `reportRouteFromKeys` 形成 lowercase、domain-tagged route。CLI 中的 `attempt-01h...` 是 adapter 输出；Record 详情与页面正文仍显示原 uppercase `AttemptId`。
 
 每次成功 rebuild 固定包含 Report、config、theme 的内容快照、Sample 摘要和 immutable ReportExecution。页面打开、HTTP request 与浏览器刷新都不会重新读取事实。
 

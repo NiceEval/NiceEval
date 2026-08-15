@@ -47,7 +47,9 @@ niceeval view
 - text、JSON、HTTP 与浏览器使用同一 Report，公开 identity、数值、分母、状态和 issues 一致。
 - `show --execution`、`--timing` 与 `--source` 只显示运行时捕获事实，不从当前源码或私有文件补造。
 - view 的成功 rebuild 原子替换 last-good；Config / Report / Theme load 失败保留 last-good 并显示有界问题。
-- HTTP request、页面打开与刷新不触发新的作者数据请求；view 默认只绑定 loopback。
+- HTTP request、页面打开与刷新不触发新的作者数据请求；view 省略 `--host` 时只绑定
+  `127.0.0.1`，显式 host 才允许网络暴露。既有 browser Journey 验证 wildcard 公布可访问 URL、
+  非 loopback 警告、advertised Host 边界与只读 method 边界。
 
 ### 4. Static export
 

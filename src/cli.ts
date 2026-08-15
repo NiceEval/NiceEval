@@ -324,7 +324,7 @@ const FLAG_OPTIONS = {
   out: { type: "string" },
   /** `view` 命令专用:指定本地服务器监听端口。 */
   port: { type: "string" },
-  /** `view` 命令专用:指定 loopback 监听地址；拒绝公网或局域网地址。 */
+  /** `view` 命令专用:指定监听地址；省略时为 127.0.0.1，只写 `--host` 时为 0.0.0.0。非 loopback 监听无认证或 TLS，会向所有可达客户端暴露报告数据。 */
   host: { type: "string" },
   // 以下旧 show 切片只为实现收敛期间保留解析位置，不属于目标公开 CLI，也不进入参考页。
   /** `show` 专用：按一个 exact Attempt locator 展示已记录的 source snapshot。 */
@@ -2728,7 +2728,7 @@ function runViewCommand(
     yield* requireKnownReportPage(initial, request.page);
 
     const { host, port } = yield* Effect.try({
-      try: () => ({ host: loopbackViewHost(flags.host), port: viewPort(flags.port) }),
+      try: () => ({ host: viewHost(flags.host), port: viewPort(flags.port) }),
       catch: (cause) => cliFailure("parse view server arguments", cause),
     });
     const server = yield* reportHost.serve({
@@ -2740,8 +2740,15 @@ function runViewCommand(
       host,
       port,
     }).pipe(Effect.mapError((error) => cliFailure("open report view", error)));
-    const url = request.page === undefined ? server.url : new URL(request.page, server.url).toString();
-    yield* writeStdout(`niceeval view — open in a browser:\n${url}\n`);
+    const urls = server.urls.map((url) => request.page === undefined ? url : new URL(request.page, url).toString());
+    const url = urls[0]!;
+    if (!isLoopbackViewHost(host)) {
+      yield* writeStderr(
+        "Warning: niceeval view is listening beyond loopback without authentication or TLS; " +
+        "every reachable client can read report data, execution JSON, and downloads.\n",
+      );
+    }
+    yield* writeStdout(`niceeval view — open in a browser:\n${urls.join("\n")}\n`);
     if (flags.open !== false) {
       yield* openBrowser(url).pipe(Effect.catchAll(() => Effect.succeed(false)));
     }
@@ -2783,12 +2790,14 @@ function staticExportFailure(error: unknown, out: string): CliFailure {
   return cliFailure("export static Report", error);
 }
 
-function loopbackViewHost(value: string | undefined): string {
-  const host = value ?? "127.0.0.1";
-  if (host !== "127.0.0.1" && host !== "::1" && host !== "localhost") {
-    throw usageError(`view host must be loopback, got ${host}.\n`);
-  }
+function viewHost(value: string | undefined): string {
+  const host = (value ?? "127.0.0.1").trim();
+  if (host.length === 0) throw usageError("--host requires a non-empty address.\n");
   return host;
+}
+
+function isLoopbackViewHost(host: string): boolean {
+  return host === "127.0.0.1" || host === "::1" || host === "localhost";
 }
 
 function viewPort(value: number | undefined): number {

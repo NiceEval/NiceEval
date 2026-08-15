@@ -5,6 +5,7 @@
 import { readdirSync, statSync, watch, type FSWatcher } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { Socket } from "node:net";
+import { networkInterfaces } from "node:os";
 import { basename, dirname, resolve } from "node:path";
 import { Effect, Either } from "effect";
 import type * as Scope from "effect/Scope";
@@ -41,7 +42,7 @@ export interface ViewOptions<Requirements = never> {
   readonly input?: string;
   readonly out?: string;
   readonly port?: number;
-  /** Loopback only. A public listener is not a Report host capability. */
+  /** Defaults to loopback. An explicit address opts into that network exposure. */
   readonly host?: string;
   /** Retained for the CLI-shaped facade; it is never interpreted as Record data. */
   readonly scan?: ViewScanOptions;
@@ -210,7 +211,7 @@ interface WatchSet {
 }
 
 /**
- * Opens a real loopback HTTP server. A watcher event only requests
+ * Opens a real HTTP server, defaulting to loopback. A watcher event only requests
  * `session.refresh`; the session serializes rebuild and close, preserves the
  * last good immutable execution and recoverable watch set, and publishes a new
  * revision only on success. The Node server then atomically replaces its
@@ -223,9 +224,12 @@ export function openViewServer<Requirements>(
     if (options.session !== undefined && options.request !== undefined) {
       return yield* Effect.fail(serverError("open", "provide either session or request, not both"));
     }
-    const host = options.host ?? "127.0.0.1";
-    if (!isLoopbackHost(host)) {
-      return yield* Effect.fail(serverError("open", `view host must be loopback, got ${host}`));
+    const host = (options.host ?? "127.0.0.1").trim();
+    if (host.length === 0) {
+      return yield* Effect.fail(serverError("open", "view host must not be empty"));
+    }
+    if (host.includes("%")) {
+      return yield* Effect.fail(serverError("open", "scoped IPv6 view hosts are not supported"));
     }
     const port = options.port ?? 4173;
     if (!Number.isInteger(port) || port < 0 || port > 65_535) {
@@ -252,6 +256,8 @@ export function openViewServer<Requirements>(
       (value) => closeResources(value),
     );
     const address = yield* listen(resources.server, host, port);
+    const urls = viewUrls(host, address.port);
+    const advertisedAuthorities = Object.freeze(new Set(urls.map((url) => new URL(url).host)));
     const watches = yield* Effect.acquireRelease(
       openWatchers(initialWatchInputs, () => resources.refreshes.request()),
       (value) => closeWatchers(value),
@@ -259,7 +265,10 @@ export function openViewServer<Requirements>(
 
     yield* Effect.forkScoped(
       Effect.forever(
-        Effect.flatMap(resources.requests.take(), (request) => serveRequest(session, request)),
+        Effect.flatMap(
+          resources.requests.take(),
+          (request) => serveRequest(session, request, advertisedAuthorities),
+        ),
       ).pipe(Effect.catchAll(() => Effect.void)),
     );
     yield* Effect.forkScoped(
@@ -270,8 +279,7 @@ export function openViewServer<Requirements>(
     );
 
     const close = Effect.zipRight(closeWatchers(watches), closeResources(resources));
-    const url = `http://${formatHost(address.host)}:${address.port}/`;
-    return Object.freeze({ url, urls: Object.freeze([url]), close });
+    return Object.freeze({ url: urls[0]!, urls, close });
   });
 }
 
@@ -328,7 +336,20 @@ function listen(
 function serveRequest<Requirements>(
   session: ReportViewSession<Requirements>,
   request: HttpRequest,
+  advertisedAuthorities: ReadonlySet<string>,
 ): Effect.Effect<void> {
+  const authority = requestAuthority(request.request.headers.host);
+  if (authority === undefined || !advertisedAuthorities.has(authority)) {
+    return Effect.sync(() => sendText(request.response, 421, "view host is not advertised"));
+  }
+  if (request.request.method !== "GET" && request.request.method !== "HEAD") {
+    return Effect.sync(() => sendText(
+      request.response,
+      405,
+      "method not allowed",
+      { allow: "GET, HEAD" },
+    ));
+  }
   const url = requestUrl(request.request);
   if (url === undefined) {
     return Effect.sync(() => sendText(request.response, 400, "bad request"));
@@ -799,8 +820,56 @@ function downloadContentType(mediaType: string): string {
   return SAFE_MEDIA_TYPE.test(mediaType) ? mediaType : "application/octet-stream";
 }
 
-function isLoopbackHost(host: string): boolean {
-  return host === "127.0.0.1" || host === "::1" || host === "localhost";
+function viewUrls(host: string, port: number): readonly string[] {
+  if (host === "0.0.0.0") {
+    return urlsForAddresses([
+      "127.0.0.1",
+      ...interfaceAddresses("IPv4"),
+    ], port);
+  }
+  if (host === "::") {
+    return urlsForAddresses([
+      "::1",
+      ...interfaceAddresses("IPv6"),
+    ], port);
+  }
+  return Object.freeze([viewUrl(host, port)]);
+}
+
+function interfaceAddresses(family: "IPv4" | "IPv6"): readonly string[] {
+  const addresses: string[] = [];
+  for (const entries of Object.values(networkInterfaces())) {
+    for (const entry of entries ?? []) {
+      if (
+        entry.family === family &&
+        !entry.internal &&
+        !entry.address.includes("%") &&
+        (family !== "IPv6" || entry.scopeid === 0)
+      ) {
+        addresses.push(entry.address);
+      }
+    }
+  }
+  return addresses.sort((left, right) => left.localeCompare(right));
+}
+
+function urlsForAddresses(addresses: readonly string[], port: number): readonly string[] {
+  return Object.freeze([...new Set(addresses)].map((address) => viewUrl(address, port)));
+}
+
+function viewUrl(host: string, port: number): string {
+  return new URL(`http://${formatHost(host)}:${port}/`).toString();
+}
+
+function requestAuthority(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  try {
+    const url = new URL(`http://${value}`);
+    if (url.username.length > 0 || url.password.length > 0) return undefined;
+    return url.host;
+  } catch {
+    return undefined;
+  }
 }
 
 function formatHost(host: string): string {
