@@ -184,9 +184,6 @@ export interface SessionDeps {
    * 之前询问(决议序见 docs/feature/error-classification/architecture.md「分类链」)。
    */
   experimentClassifier?: AttemptFailureClassifier;
-  /** 仅供确定性单测注入:turn 重试执行体的随机数与睡眠(生产路径省略,走真实退避)。 */
-  retryRandom?: () => number;
-  retrySleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   /** 与 Fact collector 共用的 attempt 级源码事实序号分配器。 */
   nextSourceOrder?: () => number;
   /** Attempt-owned source snapshot registry; Runner injects it explicitly. */
@@ -426,8 +423,6 @@ export class SessionManager {
         slot: this.deps.concurrencySlot,
         reportRetry: (message: string) => ctx.progress({ message }),
         signal: ctx.signal,
-        random: this.deps.retryRandom,
-        sleep: this.deps.retrySleep,
       };
       const send = sendWithTurnRetry(sendOnce, retryDeps).pipe(
         Effect.tapError((error) => Effect.sync(() => {

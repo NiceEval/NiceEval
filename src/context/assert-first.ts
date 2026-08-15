@@ -122,8 +122,6 @@ export interface AssertFirstContextDeps {
   readonly onTurn?: import("./session.ts").SessionDeps["onTurn"];
   readonly concurrencySlot?: ConcurrencySlot;
   readonly experimentClassifier?: import("./session.ts").SessionDeps["experimentClassifier"];
-  readonly retryRandom?: import("./session.ts").SessionDeps["retryRandom"];
-  readonly retrySleep?: import("./session.ts").SessionDeps["retrySleep"];
   /** Attempt-owned source snapshot registry; never inferred from an Effect fiber. */
   readonly sourceRegistry?: SourceRegistry;
   /** Shared ordering with Assertion runtime source facts and Session user events. */
@@ -1523,8 +1521,6 @@ export function createAssertFirstEvalContext(
     ledgerHooks: deps.ledgerHooks,
     concurrencySlot: deps.concurrencySlot,
     experimentClassifier: deps.experimentClassifier,
-    retryRandom: deps.retryRandom,
-    retrySleep: deps.retrySleep,
     nextSourceOrder: deps.nextSourceOrder,
     sourceRegistry: deps.sourceRegistry,
   });
