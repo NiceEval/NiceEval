@@ -1707,6 +1707,10 @@ function validPhaseDuration(value: PhaseTiming): NonNegativeSafeInteger | undefi
   return makeNonNegativeSafeInteger(value.durationMs);
 }
 
+function validPhaseStartOffset(value: PhaseTiming): NonNegativeSafeInteger | undefined {
+  return makeNonNegativeSafeInteger(value.startOffsetMs);
+}
+
 function timingActivityProjection(
   activity: TimingActivity,
 ): { readonly phase: AttemptTimingInterval["phase"]; readonly label: StableLabel } | undefined {
@@ -1851,15 +1855,15 @@ function normalizeAttemptTiming(input: {
     // `phases` also carries a few known Run-owned anchors for first-dispatched
     // work. Keep their raw clock for child translation, but do not let them
     // create gaps in the Attempt execution-duration clock.
-    let sourceOffset: NonNegativeSafeInteger | undefined = requiredNonNegative(0);
     let attemptOffset: NonNegativeSafeInteger | undefined = requiredNonNegative(0);
     for (const source of phases) {
       const duration = validPhaseDuration(source);
+      const sourceStartOffsetMs = validPhaseStartOffset(source);
       const projection = attemptTimingProjection(source.name);
       if (
         duration === undefined
+        || sourceStartOffsetMs === undefined
         || projection.kind === "unsupported"
-        || sourceOffset === undefined
         || attemptOffset === undefined
       ) {
         limitations.addUnsupported("timing-interval");
@@ -1882,17 +1886,19 @@ function normalizeAttemptTiming(input: {
           Object.freeze({
             intervalId,
             startOffsetMs: attemptOffset,
-            sourceStartOffsetMs: sourceOffset,
+            sourceStartOffsetMs,
             durationMs: duration,
           }),
           new Set(),
         );
       }
-      if (duration === undefined || sourceOffset === undefined || attemptOffset === undefined) {
-        sourceOffset = undefined;
+      if (
+        duration === undefined
+        || sourceStartOffsetMs === undefined
+        || attemptOffset === undefined
+      ) {
         attemptOffset = undefined;
       } else {
-        sourceOffset = makeNonNegativeSafeInteger(sourceOffset + duration);
         if (projection.kind !== "outside-attempt-domain") {
           attemptOffset = makeNonNegativeSafeInteger(attemptOffset + duration);
         }

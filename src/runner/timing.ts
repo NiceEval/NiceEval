@@ -145,7 +145,7 @@ function createActivityTree(now: () => number): ActivityTree {
 
 interface OpenPhase {
   name: LifecyclePhase;
-  startedAt: number;
+  startOffsetMs: number;
   children: TimingActivity[];
 }
 
@@ -159,16 +159,19 @@ export function createTimingRecorder(now: () => number = () => performance.now()
   const offset = () => Math.max(0, Math.round(now() - origin));
   const nextId = () => `n${++nodeSeq}`;
 
-  function close(failed?: true): void {
-    if (!open) return;
+  function close(failed?: true): number {
+    const endOffsetMs = offset();
+    if (!open) return endOffsetMs;
     const entry: PhaseTiming = {
       name: open.name,
-      durationMs: Math.max(0, Math.round(now() - open.startedAt)),
+      startOffsetMs: open.startOffsetMs,
+      durationMs: Math.max(0, endOffsetMs - open.startOffsetMs),
       ...(failed ? { failed: true as const } : {}),
       ...(open.children.length > 0 ? { children: open.children } : {}),
     };
     phases.push(entry);
     open = undefined;
+    return endOffsetMs;
   }
 
   function attachChild(node: Omit<TimingActivity, "id">): TimingActivity | undefined {
@@ -195,8 +198,8 @@ export function createTimingRecorder(now: () => number = () => performance.now()
         phase === "sandbox.prepare.group" ||
         phase === "sandbox.prepare.experiment"
       ) return;
-      close();
-      open = { name: phase, startedAt: now(), children: [] };
+      const startOffsetMs = close();
+      open = { name: phase, startOffsetMs, children: [] };
     },
     failCurrent() {
       close(true);
@@ -205,10 +208,9 @@ export function createTimingRecorder(now: () => number = () => performance.now()
       close();
     },
     async measureClosing(phase, fn) {
-      close();
-      const startedAt = now();
+      const startOffsetMs = close();
       const children: TimingActivity[] = [];
-      open = { name: phase, startedAt, children };
+      open = { name: phase, startOffsetMs, children };
       try {
         const result = await fn();
         close();
@@ -231,10 +233,12 @@ export function createTimingRecorder(now: () => number = () => performance.now()
       parentStack.pop();
     },
     record(phase, durationMs, failed) {
-      close();
+      const endOffsetMs = close();
+      const measuredDurationMs = Math.max(0, Math.round(durationMs));
       phases.push({
         name: phase,
-        durationMs: Math.max(0, Math.round(durationMs)),
+        startOffsetMs: Math.max(0, endOffsetMs - measuredDurationMs),
+        durationMs: measuredDurationMs,
         ...(failed ? { failed: true as const } : {}),
       });
     },

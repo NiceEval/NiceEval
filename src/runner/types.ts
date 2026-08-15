@@ -202,6 +202,8 @@ export interface SandboxBuildRecord {
 /** Runner 阶段计时,按执行顺序;只记录实际发生的阶段(见 docs/feature/record/architecture.md)。 */
 export interface PhaseTiming {
   name: LifecyclePhase;
+  /** 相对本 attempt 单调时钟起点的阶段起点；与 children 使用同一量化时钟。 */
+  startOffsetMs: number;
   /** 阶段耗时;失败阶段计到抛错或超时中断时。 */
   durationMs: number;
   /** 该阶段抛错或被超时中断。主链至多一条,其后无主链条目;收尾阶段各自独立标记,不改判定。 */
